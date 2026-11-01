@@ -151,24 +151,35 @@
     return out;
   }
 
-  /* spec 097 FR-084, FR-100, FR-114 (merged with #920): the Characters setting applies in Real office too, and a crew appears in
-     its own world (Cheeky in the loft, Prehistoric in the cave), keeping its own art. The character set and the scene Real office
-     draws for a Characters value: a set listed in REAL_OFFICE_SETS has Real office pictures; today only the Office people (`office`,
-     the default), since the crew worlds are not built yet. A crew without them draws the Office people, and `coming` makes
-     Settings say so (FR-083, `realOfficeNote`). The one seam to change when a crew's world ships. */
-  const REAL_OFFICE_SETS = ['office'];
-  const CREW_WORLDS = { cheeky: 'Cheeky loft', prehistoric: 'Prehistoric cave', pirate: 'Pirate ship', monster: 'Haunted house' };
-  function realOfficeSet(choice) {
-    const c = String(choice || '');
-    if (REAL_OFFICE_SETS.includes(c)) return { set: c, scene: 'office', coming: false };
-    return { set: 'office', scene: 'office', coming: has(CREWS, c) };
+  /* Spec 102 FR-200..FR-202 (owner's latest, replaces 097 FR-100/FR-114's "crews pick their world"): worlds and character sets are two
+     flat lists of DATA, any set in any world, each world names a default set. Add a row to add a world or a set (a Pirate crew and world
+     later change nothing else). `flag` names a switch in WORLD_FLAGS: a row whose flag is off is not offered and never chosen (owner's
+     gate, 2026-11-01: a world such as the cave stays closed until spec 097 T156..T159 and spec 001's search land). `choice` is the Characters value that
+     picks a set. A set listed here has the full Real office pose set (FR-204); Minimalist and Cheeky are not listed yet. */
+  const WORLD_FLAGS = {};
+  const WORLDS = [
+    { id: 'photo', name: 'Photo office', defaultSet: 'office' },
+  ];
+  const REAL_SETS = [
+    { id: 'office', name: 'Office people', choice: '' },
+  ];
+  /* the Characters choices that name a crew (Minimalist has none), from CREWS: a new crew gets its note by construction */
+  const crewName = (c) => (c === 'minimalist' || has(CREWS, c)) ? c[0].toUpperCase() + c.slice(1) : '';
+  const on = (row, flags) => !row.flag || !!(flags || WORLD_FLAGS)[row.flag];
+  const rowOf = (list, id) => list.find((r) => r.id === id) || null;
+  /* the worlds offered now (Photo office first, always) */
+  function offeredWorlds(flags) { return WORLDS.filter((w) => on(w, flags)); }
+  /* FR-114: a stored value that is not an offered world id is the first world */
+  function parseWorld(v, flags) { const w = offeredWorlds(flags).find((x) => x.id === String(v)); return w ? w.id : WORLDS[0].id; }
+  /* FR-202: an explicit choice that has full poses and is on, else the world's default set, else Office people. `note` says why a
+     choice could not be drawn (the choice is kept). */
+  function peopleFor(world, choice, flags) {
+    const w = rowOf(WORLDS, parseWorld(world, flags)), c = String(choice || '');
+    const byChoice = c && c !== 'theme' ? REAL_SETS.find((s) => s.choice === c && on(s, flags)) : null;
+    if (byChoice) return { world: w.id, set: byChoice.id, setName: byChoice.name, note: '' };
+    const d = rowOf(REAL_SETS, w.defaultSet);
+    const def = d && on(d, flags) ? d : REAL_SETS[0];
+    return { world: w.id, set: def.id, setName: def.name, note: crewName(c) ? `Real office shows ${def.name} until ${crewName(c)} has Real office poses.` : '' };
   }
-  /* FR-083: the one Settings line under Office layout when Real office is on and the chosen crew's world is not built yet. */
-  function realOfficeNote(choice, view) {
-    if (view !== 'real' || !realOfficeSet(choice).coming) return '';
-    const c = String(choice || ''), w = has(CREW_WORLDS, c) ? CREW_WORLDS[c] : "this crew's world";
-    return `Real office shows the Office people until the ${w} is ready.`;
-  }
-
-  return { REAL_OFFICE_SETS, realOfficeSet, realOfficeNote, CREWS, PREHISTORIC_IDS, PIRATE_IDS, MONSTER_IDS, ALL_IDS, idsFor, storeKey, POSES, BOX, PX_PER_UNIT, FACE, FACE_W, FACE_H, FACE_CROP, faceBox, viewBox, poseFor, file, files, usable, IDS, MAX_ENTRIES, MAX_ID, seeded, seededRand, pickCharacter, assignCrew, pruneCrew, loadCrew };
+  return { WORLD_FLAGS, WORLDS, REAL_SETS, offeredWorlds, parseWorld, peopleFor, CREWS, PREHISTORIC_IDS, PIRATE_IDS, MONSTER_IDS, ALL_IDS, idsFor, storeKey, POSES, BOX, PX_PER_UNIT, FACE, FACE_W, FACE_H, FACE_CROP, faceBox, viewBox, poseFor, file, files, usable, IDS, MAX_ENTRIES, MAX_ID, seeded, seededRand, pickCharacter, assignCrew, pruneCrew, loadCrew };
 })());
