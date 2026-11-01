@@ -72,7 +72,7 @@ module.exports = async (ctx) => {
         short:C.filter(c=>/\u2026$/.test((c.querySelector('.ro-cn')||{}).textContent||'')).map(c=>c.dataset.name),initials:C.filter(c=>{const t=(c.querySelector('.ro-cn')||{}).textContent;return t!==c.dataset.name&&!/\u2026$/.test(t)}).map(c=>c.dataset.name),far:C.filter(c=>{const v=document.querySelector('#stage .ro-visitor[data-for="'+CSS.escape(c.dataset.for||c.dataset.pvopen||'')+'"]');if(!v)return false;const a=c.getBoundingClientRect(),b=v.getBoundingClientRect();return Math.abs((a.left+a.right)/2-(b.left+b.right)/2)>70}).map(c=>c.dataset.name),shortened:C.filter(c=>/\u2026$/.test((c.querySelector('.ro-cn')||{}).textContent||'')).length,chips:C.length,labels:P.map(p=>p.textContent)}})()`;
 
   // ---- FR-002, SC-004: flat is the default and loads nothing of Real office ----
-  await H.load({ w: 1440, h: 900 });
+  await H.load({ w: 1440, h: 900 }); await js(`localStorage.removeItem('durbar.officeview')`); await H.load({ w: 1440, h: 900 });
   assert.strictEqual(await js(`!!document.querySelector('.ro')`), false, 'flat by default');
   assert.strictEqual(await realFiles(), 0, 'flat mode requested a Real office file');
   assert.strictEqual(await js(`!!window.DurbarRealOffice`), false, 'flat mode loaded realoffice.js');
@@ -86,8 +86,9 @@ module.exports = async (ctx) => {
   assert.strictEqual(seg, 'cabins:false open:true real:false', 'three buttons, Open office pressed: ' + seg);
   await js(`document.querySelector('[data-officelayout="real"]').scrollIntoView({block:'center'})`);
   await H.shot(path.join(OUT, '097-office-layout-1440x900.png'), { prep: 'calm' });
-  await js(`document.querySelector('[data-officelayout="real"]').click()`);
+  await js(`document.querySelector('[data-officelayout="real"]').focus();document.querySelector('[data-officelayout="real"]').click()`);
   await must(`document.querySelector('[data-officelayout="real"]').getAttribute('aria-pressed')==='true'`, 'Real office pressed');
+  await must(`document.activeElement&&document.activeElement.dataset&&document.activeElement.dataset.officelayout==='real'`, 'the keyboard focus stays on the Real office button after the repaint');
   assert.strictEqual(await js(`localStorage.getItem('durbar.officeview')`), 'real', 'stored as real');
   assert.strictEqual(await js(`localStorage.getItem('durbar.doorsigns')`), 'off', 'durbar.doorsigns untouched');
   await js(`document.getElementById('scrClose').click()`);

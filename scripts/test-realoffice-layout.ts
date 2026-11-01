@@ -424,5 +424,10 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.feet as Record<s
   } else console.log('(dist/shared not built: the page-load check is skipped; npm test builds first)');
 }
 
+{
+  // sweep 2026-11-01: choosing an Office layout repaints Settings; the pressed button keeps the keyboard focus
+  const scr = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'screens.js'), 'utf8');
+  assert.ok(/const hadFocus=document\.activeElement===olb;\s*await paint\(\);[^\n]*\n\s*if\(hadFocus\)\{const nb=document\.querySelector\('\[data-officelayout="'\+k\+'"\]'\);if\(nb\)focusIn\(nb\);\}/.test(scr), 'the Office layout pick restores focus after the repaint');
+}
 console.log(`realoffice layout and lights tests passed (${cases} layouts, faces ${JSON.stringify(faces)})`);
 process.exitCode = 0;
