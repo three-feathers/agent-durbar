@@ -7,7 +7,7 @@
  *   its parent's real path; `notes.md` must be missing or a regular file with one link (`lstat`, not a link). A FIFO, a folder or a device is refused, and a
  *   read opens with `O_RDONLY | O_NONBLOCK | O_NOFOLLOW` (where the OS has them), checks `fstat` and reads at most `mdBytes + 1`
  *   bytes, so the cap is checked before anything is decoded.
- * - Writes go to a temp file in `.durbar` opened `O_CREAT | O_EXCL | O_WRONLY` (and `O_NOFOLLOW`), 0600 on POSIX; right before the
+ * - Writes go to a temp file in `.durbar/notes` opened `O_CREAT | O_EXCL | O_WRONLY` (and `O_NOFOLLOW`), 0600 on POSIX; right before the
  *   rename everything is checked again, including that `notes.md` still has the hash this cycle started from (an outside edit is
  *   imported first, never overwritten). On Windows a refused rename is tried once more after 200 ms.
  * - FR-051 (spec Changes 2026-11-01): no process is ever started (no git) and nothing outside `.durbar/notes` is written. `.durbar/notes/.gitignore`
@@ -27,7 +27,7 @@ import { isInsideRoots } from '../adapters/permissions';
 import type { NotesStore } from './notesstore';
 import { maskNoteText } from '../shared/redact';
 
-export type NotesFileFs = Pick<typeof nodeFs, 'realpathSync' | 'lstatSync' | 'statSync' | 'openSync' | 'fstatSync' | 'readSync' | 'writeSync' | 'fsyncSync' | 'closeSync' | 'renameSync' | 'unlinkSync' | 'mkdirSync' | 'rmdirSync' | 'linkSync'>;
+export type NotesFileFs = Pick<typeof nodeFs, 'realpathSync' | 'lstatSync' | 'statSync' | 'openSync' | 'fstatSync' | 'readSync' | 'writeSync' | 'fsyncSync' | 'closeSync' | 'renameSync' | 'readdirSync' | 'unlinkSync' | 'mkdirSync' | 'rmdirSync' | 'linkSync'>;
 /** The open flags used; tests pass a set without `O_NOFOLLOW` to act like Windows. */
 export type NotesFileFlags = Pick<typeof nodeFs.constants, 'O_RDONLY' | 'O_WRONLY' | 'O_CREAT' | 'O_EXCL' | 'O_APPEND'> & { O_NOFOLLOW?: number; O_NONBLOCK?: number };
 
@@ -49,6 +49,8 @@ const errCode = (e: unknown): string => {
   const c = (e as { code?: unknown } | null)?.code;
   return typeof c === 'string' && /^[A-Z0-9_]{2,24}$/.test(c) ? c : 'ERROR';
 };
+/** Git reads `.gitignore` byte for byte (a leading space, tab, VT, FF or NBSP is part of the pattern): only these bytes are Durbar's `*`. */
+const isStar = (b: Buffer): boolean => ['*', '*\n', '*\r\n'].includes(b.toString('latin1'));
 const sha256 = (b: Buffer | string): string => createHash('sha256').update(b).digest('hex');
 const WRITE_FAIL = (why: string): string => `Could not write .durbar/notes/notes.md: ${why}`;
 const READ_FAIL = (why: string): string => `Could not read .durbar/notes/notes.md: ${why}`;
@@ -170,7 +172,7 @@ export class NotesFile {
     const f = path.join(p.dir, '.gitignore');
     try { if (this.fs.lstatSync(f).isSymbolicLink()) return '.gitignore is a link'; } catch { /* missing: read says so */ }
     const r = readCapped(this.fs, this.k, f, 16);
-    if (r.ok) return r.buf.toString('utf8').trim() === '*' ? undefined : '.gitignore in .durbar/notes is not "*"';
+    if (r.ok) return isStar(r.buf) ? undefined : '.gitignore in .durbar/notes is not "*"';
     if (r.code !== 'missing') return `.gitignore ${READ_WHY[r.code]}`;
     let fd: number | undefined;
     try {
@@ -180,22 +182,32 @@ export class NotesFile {
     } catch (e) { return `.gitignore could not be written (${errCode(e)})`; } finally { if (fd !== undefined) { try { this.fs.closeSync(fd); } catch { /* gone */ } } }
   }
 
-  /** Delete `.gitignore` in `dir` only when it is a regular file with one link holding exactly `*` (Durbar's own). `true` when deleted. */
-  private dropIgnore(dir: string): boolean {
-    const f = path.join(dir, '.gitignore');
+  /**
+   * Delete `.gitignore` only when it is a regular file with one link holding exactly `*` (`isStar`), and Durbar made it (`own`: the
+   * caller's record; a file a repository ships is never deleted). Both folders and the real path of the file are checked again right
+   * before the unlink; a swap in the last instant stays open `[KNOWN GAP]` (Node has no unlinkat). `true` when deleted.
+   */
+  private dropIgnore(p: Place, own: boolean): boolean {
+    if (!own) return false;
+    const f = path.join(p.dir, '.gitignore');
     try {
-      if (this.fs.lstatSync(f).isSymbolicLink()) return false;
-      const r = readCapped(this.fs, this.k, f, 16);
-      if (!r.ok || r.buf.toString('utf8').trim() !== '*') return false;
+      const r = readCapped(this.fs, this.k, f, 16); // where there is no O_NOFOLLOW a link is read through; the real-path check below refuses it
+      if (!r.ok || !isStar(r.buf)) return false;
+      if (this.checkPlace(p) || !this.same(this.fs.realpathSync(f), f)) return false;
       this.fs.unlinkSync(f);
       return true;
     } catch { return false; }
   }
 
-  /** The person chose to keep the notes in git: Durbar's own `.gitignore` goes (called after the native box). `true` when it went. */
-  allowGit(folderPath: string): boolean {
+  /** Is there a `.gitignore` in `.durbar/notes` (any kind of entry)? For turn-on: only one Durbar makes is Durbar's to delete. */
+  hasIgnore(folderPath: string): boolean {
+    try { this.fs.lstatSync(path.join(this.fs.realpathSync(folderPath), '.durbar', 'notes', '.gitignore')); return true; } catch { return false; }
+  }
+
+  /** The person chose to keep the notes in git: Durbar's own `.gitignore` (`own`) goes (called after the native box). `true` when it went. */
+  allowGit(folderPath: string, own: boolean): boolean {
     const pl = this.place(folderPath, false);
-    return pl.ok && pl.p.has && this.dropIgnore(pl.p.dir);
+    return pl.ok && pl.p.has && this.dropIgnore(pl.p, own);
   }
 
   /** `notes.md` now: its bytes (`null`: missing), or why it is refused. `lstat` first: a link, a folder or a FIFO is never opened. */
@@ -378,18 +390,18 @@ export class NotesFile {
    * one link (a symlink or a hard link is never deleted) and its SHA-256 is `mirror` (the file Durbar last wrote); all of it is checked
    * again right before the unlink. Then `.durbar` is removed with `rmdir` only when it is empty (never recursively). Never throws.
    */
-  remove(folderPath: string, mirror: NotesMirror | undefined): RemoveResult {
+  remove(folderPath: string, mirror: NotesMirror | undefined, own = false): RemoveResult & { ignoreDropped?: true } {
     const keep = (why: string): RemoveResult => ({ removed: false, dirRemoved: false, why });
     try {
       const pl = this.place(folderPath, false);
-      if (!pl.ok) return keep(pl.code === 'missing' ? REMOVE_REFUSED('the folder is not there') : REMOVE_REFUSED(pl.error.replace(/^Could not read \.durbar\/notes\.md: /, '')));
+      if (!pl.ok) return keep(pl.code === 'missing' ? REMOVE_REFUSED('the folder is not there') : REMOVE_REFUSED(pl.error.replace(/^Could not read \.durbar\/notes\/notes\.md: /, '')));
       if (!pl.p.has) return keep(REMOVE_NONE);
       const cur = this.current(pl.p);
       if (!cur.ok) return keep(cur.code === 'too-big' ? REMOVE_CHANGED : REMOVE_REFUSED(`it ${cur.why}`));
       if (!cur.buf) return keep(REMOVE_NONE);
       if (!mirror || sha256(cur.buf) !== mirror.sha256) return keep(REMOVE_CHANGED);
       const again = this.recheck(pl.p, mirror.sha256);
-      if (again) return keep(again.code === 'changed' ? REMOVE_CHANGED : REMOVE_REFUSED(again.error.replace(/^Could not write \.durbar\/notes\.md: /, '').replace(/^notes\.md /, 'it ')));
+      if (again) return keep(again.code === 'changed' ? REMOVE_CHANGED : REMOVE_REFUSED(again.error.replace(/^Could not write \.durbar\/notes\/notes\.md: /, '').replace(/^notes\.md /, 'it ')));
       // Review of PR 931: never unlink by the name `notes.md`, which a swapped `.durbar` could point elsewhere. Rename the file to a random
       // name inside `.durbar`, check THAT name (its folder's real path, a regular file with one link, Durbar's hash), and unlink only it.
       // A swap before the rename moves the other file to the random name elsewhere, and the real-path check of that name (last, right
@@ -426,12 +438,13 @@ export class NotesFile {
       try { rp = this.fs.realpathSync(doomed); } catch { return putBack('.durbar changed while it was being deleted'); }
       if (!this.same(rp, doomed)) return putBack('.durbar changed while it was being deleted');
       try { this.fs.unlinkSync(doomed); } catch (e) { return putBack(`it could not be deleted (${errCode(e)})`); }
-      let dirRemoved = false;
+      let dirRemoved = false, ignoreDropped = false;
       if (!this.checkPlace(pl.p)) {
-        this.dropIgnore(pl.p.dir); // only Durbar's own `*`; a `.gitignore` the person made or changed stays, and so does the folder
+        // the `.gitignore` goes only when it is the last thing in the folder: a crash leftover (`.notes.md.*.tmp`, with note text) stays ignored
+        if (this.fs.readdirSync(pl.p.dir).join() === '.gitignore') ignoreDropped = this.dropIgnore(pl.p, own);
         try { this.fs.rmdirSync(pl.p.dir); dirRemoved = true; this.fs.rmdirSync(pl.p.durbar); } catch { /* not empty (ENOTEMPTY, EEXIST) or held open: it stays */ }
       }
-      return { removed: true, dirRemoved };
+      return { removed: true, dirRemoved, ...(ignoreDropped ? { ignoreDropped: true as const } : {}) };
     } catch (e) {
       return keep(REMOVE_REFUSED(`it could not be checked (${errCode(e)})`));
     }

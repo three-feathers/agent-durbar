@@ -13,7 +13,7 @@ import { pathToFileURL } from 'url';
 import type { AgentInfo } from '../src/shared/api';
 import { COUNT_UNREADABLE, NOTES_GONE, NOTES_REPLACED, NotesFile, REMOVE_CHANGED, REMOVE_NONE, syncNotesFile, type NotesFileFs } from '../src/main/notesfile';
 import { NotesStore } from '../src/main/notesstore';
-import { NATIVE_CANCELLED, NotesOps, SWITCH_ALREADY_OFF, SWITCH_MISSING, SWITCH_WORKSPACE, VALUES_PENDING, VALUES_PENDING_ON } from '../src/main/notesops';
+import { NATIVE_CANCELLED, NOT_OURS, NotesOps, SWITCH_ALREADY_OFF, SWITCH_MISSING, SWITCH_WORKSPACE, VALUES_PENDING, VALUES_PENDING_ON } from '../src/main/notesops';
 import { spawn } from 'child_process';
 import { FolderStore, parseSavedFolders } from '../src/main/folders';
 import { SIM_OPEN_CHANNELS } from '../src/main/simguard';
@@ -36,7 +36,7 @@ const canHardLink = ((): boolean => { try { const a = path.join(root, 'h1'), b =
 const repoAbove = ((): boolean => { for (let d = root; ; d = path.dirname(d)) { if (nodeFs.existsSync(path.join(d, '.git'))) return true; if (path.dirname(d) === d) return false; } })();
 const skip = (why: string): void => console.log(`  (skipped: ${why})`);
 
-const METHODS = ['realpathSync', 'lstatSync', 'statSync', 'openSync', 'fstatSync', 'readSync', 'writeSync', 'fsyncSync', 'closeSync', 'renameSync', 'unlinkSync', 'mkdirSync', 'rmdirSync', 'linkSync'] as const;
+const METHODS = ['readdirSync', 'realpathSync', 'lstatSync', 'statSync', 'openSync', 'fstatSync', 'readSync', 'writeSync', 'fsyncSync', 'closeSync', 'renameSync', 'unlinkSync', 'mkdirSync', 'rmdirSync', 'linkSync'] as const;
 type Method = typeof METHODS[number];
 function countingFs(): { fs: NotesFileFs; calls: { m: Method; p: string }[]; hook: Partial<Record<Method, (real: (...a: unknown[]) => unknown, ...a: unknown[]) => unknown>> } {
   const calls: { m: Method; p: string }[] = [];
@@ -88,7 +88,7 @@ function rig(opts: RigOpts = {}): { ops: NotesOps; folders: FolderStore; folders
   const timers: (() => void)[] = [];
   const ops = new NotesOps({
     agents, store: () => store, resumeIdFor: () => '', adapterIdOf: () => 'copilot', folderValues: () => opts.folderValues ?? [], sessionValues: (id) => opts.session?.[id] ?? [], now: tickClock,
-    file: () => file, fileOn: (k) => !!folders.get(k)?.notesProject, fileGit: (k) => folders.get(k)?.notesProject === 'git', setFileOn: (k, on, git) => folders.setNotesFile(k, on, git), setTimer: (fn) => { timers.push(fn); },
+    file: () => file, fileOn: (k) => !!folders.get(k)?.notesProject, fileGit: (k) => folders.get(k)?.notesProject === 'git', setFileOn: (k, on, git) => folders.setNotesFile(k, on, git), ignoreOwn: (k) => folders.get(k)?.notesIgnoreOwn === true, setIgnoreOwn: (k, own) => folders.setNotesIgnoreOwn(k, own), setTimer: (fn) => { timers.push(fn); },
     valuesPending: () => opts.pending?.() === true,
     confirmNative: async (kind) => { asked.push(kind); return opts.confirm ? opts.confirm(kind) : true; },
   });
@@ -140,8 +140,8 @@ async function main(): Promise<void> {
     const c = countingFs();
     const { folder, store } = await written(new NotesFile({ fs: c.fs, now: tickClock }));
     c.calls.length = 0;
-    const r = new NotesFile({ fs: c.fs, now: tickClock }).remove(folder, await store.getMirror(folder));
-    assert.deepStrictEqual(r, { removed: true, dirRemoved: true });
+    const r = new NotesFile({ fs: c.fs, now: tickClock }).remove(folder, await store.getMirror(folder), true);
+    assert.deepStrictEqual(r, { removed: true, dirRemoved: true, ignoreDropped: true });
     assert.ok(!nodeFs.existsSync(path.join(folder, '.durbar')), '.durbar is gone');
     const un = c.calls.filter((x) => x.m === 'unlinkSync').map((x) => x.p);
     const nd = path.join(folder, '.durbar', 'notes');
@@ -152,7 +152,7 @@ async function main(): Promise<void> {
   await test('remove: a .durbar with other files keeps them and stays', async () => {
     const { folder, store, file } = await written();
     nodeFs.writeFileSync(path.join(folder, '.durbar', 'notes', 'mine.txt'), 'keep me');
-    assert.deepStrictEqual(file.remove(folder, await store.getMirror(folder)), { removed: true, dirRemoved: false });
+    assert.deepStrictEqual(file.remove(folder, await store.getMirror(folder), true), { removed: true, dirRemoved: false });
     assert.strictEqual(nodeFs.readFileSync(path.join(folder, '.durbar', 'notes', 'mine.txt'), 'utf8'), 'keep me');
     assert.ok(!nodeFs.existsSync(md(folder)));
   });
@@ -160,7 +160,7 @@ async function main(): Promise<void> {
     const { folder, store, file } = await written();
     nodeFs.appendFileSync(md(folder), '\nmy own line\n');
     const before = nodeFs.readFileSync(md(folder));
-    assert.deepStrictEqual(file.remove(folder, await store.getMirror(folder)), { removed: false, dirRemoved: false, why: REMOVE_CHANGED });
+    assert.deepStrictEqual(file.remove(folder, await store.getMirror(folder), true), { removed: false, dirRemoved: false, why: REMOVE_CHANGED });
     assert.deepStrictEqual(nodeFs.readFileSync(md(folder)), before, 'untouched');
     assert.strictEqual(file.remove(folder, undefined).why, REMOVE_CHANGED, 'no mirror: Durbar never wrote it');
     assert.ok(nodeFs.existsSync(md(folder)));
@@ -204,7 +204,7 @@ async function main(): Promise<void> {
     const { folder, store, file } = await written();
     const other = path.join(fresh('elsewhere'), 'copy.md');
     nodeFs.linkSync(md(folder), other);
-    const r = file.remove(folder, await store.getMirror(folder));
+    const r = file.remove(folder, await store.getMirror(folder), true);
     assert.ok(!r.removed && /hard link/.test(r.why!), JSON.stringify(r));
     assert.ok(nodeFs.existsSync(md(folder)) && nodeFs.existsSync(other));
   });
@@ -212,7 +212,7 @@ async function main(): Promise<void> {
     const c = countingFs();
     const { folder, store } = await written();
     c.hook.unlinkSync = () => { throw Object.assign(new Error('busy'), { code: 'EBUSY' }); };
-    const r = new NotesFile({ fs: c.fs, now: tickClock, platform: 'win32' }).remove(folder, await store.getMirror(folder));
+    const r = new NotesFile({ fs: c.fs, now: tickClock, platform: 'win32' }).remove(folder, await store.getMirror(folder), true);
     assert.ok(!r.removed && /could not be deleted \(EBUSY\)/.test(r.why!), JSON.stringify(r));
     assert.ok(nodeFs.existsSync(md(folder)));
     const g = new NotesFile().remove(path.join(root, 'no-such-folder'), undefined);
@@ -221,9 +221,9 @@ async function main(): Promise<void> {
   });
   await test('remove: the source has no recursive delete', () => {
     const src = nodeFs.readFileSync(path.join(ROOT, 'src', 'main', 'notesfile.ts'), 'utf8');
-    const body = src.slice(src.indexOf('  remove(folderPath'), src.indexOf('  /**\n   * FR-051: append'));
+    const body = src.slice(src.indexOf('  remove(folderPath'), src.indexOf('/**\n * One mirror cycle'));
     assert.ok(body.length > 500, 'found remove()');
-    assert.ok(!/rmSync|recursive|rimraf|readdirSync/.test(body), 'remove() never deletes recursively');
+    assert.ok(!/rmSync|recursive|rimraf/.test(body), 'remove() never deletes recursively');
   });
 
   await test('remove: .durbar swapped for a link after the unlink is never rmdir-ed through the link', async () => {
@@ -232,7 +232,7 @@ async function main(): Promise<void> {
     const { folder, store } = await written();
     const outside = freshOut('outside-empty');
     c.hook.unlinkSync = (real, ...a) => { const r = real(...a); if (path.dirname(String(a[0])) === path.join(folder, '.durbar', 'notes')) { nodeFs.rmSync(path.join(folder, '.durbar'), { recursive: true }); nodeFs.symlinkSync(outside, path.join(folder, '.durbar'), 'dir'); } return r; };
-    const r = new NotesFile({ fs: c.fs, now: tickClock }).remove(folder, await store.getMirror(folder));
+    const r = new NotesFile({ fs: c.fs, now: tickClock }).remove(folder, await store.getMirror(folder), true);
     assert.deepStrictEqual(r, { removed: true, dirRemoved: false });
     assert.strictEqual(c.calls.filter((x) => x.m === 'rmdirSync').length, 0, 'no rmdir at all once .durbar is a link');
     assert.ok(nodeFs.statSync(outside).isDirectory() && nodeFs.lstatSync(path.join(folder, '.durbar')).isSymbolicLink(), 'the outside folder and the link stay');
@@ -349,7 +349,7 @@ async function main(): Promise<void> {
     nodeFs.mkdirSync(path.join(q.folder, '.durbar', 'notes'), { recursive: true });
     nodeFs.writeFileSync(path.join(q.folder, '.durbar', 'notes', '.gitignore'), 'mine\n');
     const own = okOf(await q.ops.setFile('a1', true, { git: true }));
-    assert.strictEqual(own.message, undefined);
+    assert.strictEqual(own.message, NOT_OURS);
     assert.strictEqual(nodeFs.readFileSync(path.join(q.folder, '.durbar', 'notes', '.gitignore'), 'utf8'), 'mine\n');
   });
   await test('turning on starts from nothing: the hash of an earlier import and the mirror of an earlier file are forgotten', async () => {
@@ -363,6 +363,25 @@ async function main(): Promise<void> {
     okOf(await r.ops.setFile('a1', true));
     assert.strictEqual(await r.store.getFileImport(r.folder), undefined, 'the old import hash is gone');
     assert.notStrictEqual((await r.store.getMirror(r.folder))?.sha256, undefined);
+  });
+  await test('only a .gitignore Durbar made is recorded as its own and deleted: turn-on records it, a shipped "*" is not recorded, Keep in git and Delete the file leave a shipped one', async () => {
+    const r = rig({ repo: true });
+    okOf(await r.ops.setFile('a1', true));
+    assert.strictEqual(r.folders.get(r.folder)!.notesIgnoreOwn, true, 'made by Durbar: recorded');
+    okOf(await r.ops.setFile('a1', false, { deleteFile: true }));
+    assert.ok(!nodeFs.existsSync(path.join(r.folder, '.durbar')) && r.folders.get(r.folder)!.notesIgnoreOwn === undefined, 'deleted with the folder, record cleared');
+    const q = rig({ repo: true });
+    nodeFs.mkdirSync(path.join(q.folder, '.durbar', 'notes'), { recursive: true });
+    nodeFs.writeFileSync(path.join(q.folder, '.durbar', 'notes', '.gitignore'), '*\n'); // shipped by the repository
+    okOf(await q.ops.setFile('a1', true));
+    assert.strictEqual(q.folders.get(q.folder)!.notesIgnoreOwn, undefined, 'a shipped file is not recorded as Durbar\'s');
+    const off = okOf(await q.ops.setFile('a1', false, { deleteFile: true }));
+    assert.ok(nodeFs.existsSync(path.join(q.folder, '.durbar', 'notes', '.gitignore')) && off.message!.startsWith('Deleted .durbar/notes/notes.md.'), `kept: ${off.message}`);
+    const g = rig({ repo: true });
+    nodeFs.mkdirSync(path.join(g.folder, '.durbar', 'notes'), { recursive: true });
+    nodeFs.writeFileSync(path.join(g.folder, '.durbar', 'notes', '.gitignore'), '*\n');
+    assert.strictEqual(okOf(await g.ops.setFile('a1', true, { git: true })).message, NOT_OURS);
+    assert.ok(nodeFs.existsSync(path.join(g.folder, '.durbar', 'notes', '.gitignore')), 'Keep in git does not delete a shipped file');
   });
   await test('setFile: only an agent id, a boolean and two yes/no options; a path from the window is never used', async () => {
     const r = rig();
@@ -524,7 +543,7 @@ async function main(): Promise<void> {
       const swap = (): void => { if (done) return; done = true; nodeFs.renameSync(path.join(folder, '.durbar'), aside); nodeFs.symlinkSync(outside, path.join(folder, '.durbar'), 'dir'); };
       if (when === 'rename') c.hook.renameSync = (real, ...a) => { if (String(a[0]) === md(folder)) swap(); return real(...a); };
       else c.hook.unlinkSync = (real, ...a) => { swap(); return real(...a); };
-      const r = new NotesFile({ fs: c.fs, now: tickClock }).remove(folder, await store.getMirror(folder));
+      const r = new NotesFile({ fs: c.fs, now: tickClock }).remove(folder, await store.getMirror(folder), true);
       assert.strictEqual(r.removed, false, `${when}: ${JSON.stringify(r)}`);
       const left = nodeFs.readdirSync(path.join(outside, 'notes')).map((n) => nodeFs.statSync(path.join(outside, 'notes', n)).ino);
       assert.ok(left.includes(ino), `${when}: the outside file still exists (${nodeFs.readdirSync(path.join(outside, 'notes')).join()})`);
@@ -546,7 +565,7 @@ async function main(): Promise<void> {
       c.hook.renameSync = (real, ...a) => { if (String(a[0]) === md(folder) && phase === 0) { toLink(); phase = 1; } return real(...a); };
       c.hook.lstatSync = (real, ...a) => { if (phase === 1 && String(a[0]) === d) toReal(); return real(...a); };
       c.hook.openSync = (real, ...a) => { if (phase === 1 && String(a[0]).endsWith('.del')) { toLink(); phase = 2; } return real(...a); };
-      const r = new NotesFile({ fs: c.fs, now: tickClock }).remove(folder, await store.getMirror(folder));
+      const r = new NotesFile({ fs: c.fs, now: tickClock }).remove(folder, await store.getMirror(folder), true);
       assert.ok(phase === 2 && !r.removed, `the sequence ran and nothing was deleted: ${JSON.stringify(r)}`);
       assert.ok(nodeFs.readdirSync(path.join(outside, 'notes')).map((n) => nodeFs.statSync(path.join(outside, 'notes', n)).ino).includes(ino), 'the outside file still exists');
     }
@@ -601,7 +620,7 @@ async function main(): Promise<void> {
     const { folder, store } = await written();
     let doomed = '';
     c.hook.unlinkSync = (real, ...a) => { if (String(a[0]).endsWith('.del')) { doomed = String(a[0]); nodeFs.writeFileSync(md(folder), 'a newer file\n'); throw Object.assign(new Error('perm'), { code: 'EPERM' }); } return real(...a); };
-    const r = new NotesFile({ fs: c.fs, now: tickClock }).remove(folder, await store.getMirror(folder));
+    const r = new NotesFile({ fs: c.fs, now: tickClock }).remove(folder, await store.getMirror(folder), true);
     assert.ok(!r.removed && doomed, JSON.stringify(r));
     assert.strictEqual(nodeFs.readFileSync(md(folder), 'utf8'), 'a newer file\n', 'the newer notes.md is kept');
     assert.ok(nodeFs.existsSync(doomed), 'the old one stays under its random name');
@@ -687,7 +706,7 @@ async function main(): Promise<void> {
       c.hook.lstatSync = (real, ...a) => { if (phase === 1 && String(a[0]) === d) { toReal(); nodeFs.renameSync(md(folder), doomed); nodeFs.writeFileSync(doomed, 'a decoy with other bytes\n'); phase = 2; } return real(...a); };
       c.hook.realpathSync = (real, ...a) => { if (phase === 3 && String(a[0]) === doomed) toLink(); return real(...a); };
       c.hook.linkSync = (real, ...a) => { const r = real(...a); phase = 3; return r; };
-      const r = new NotesFile({ fs: c.fs, now: tickClock }).remove(folder, await store.getMirror(folder));
+      const r = new NotesFile({ fs: c.fs, now: tickClock }).remove(folder, await store.getMirror(folder), true);
       assert.ok(phase === 3 && !r.removed, `the sequence ran: ${JSON.stringify(r)}`);
       assert.ok(nodeFs.readdirSync(path.join(outside, 'notes')).map((n) => nodeFs.statSync(path.join(outside, 'notes', n)).ino).includes(ino), `the outside file still exists (${nodeFs.readdirSync(path.join(outside, 'notes')).join()})`);
       assert.ok(/are now two names of the same file: delete \.notes\.md\.\d+\.[a-z0-9]+\.del in \.durbar\/notes once nothing holds it\.$/.test(r.why!), r.why);
@@ -698,7 +717,7 @@ async function main(): Promise<void> {
       const { folder, store } = await written();
       let doomed = '';
       c.hook.unlinkSync = (real, ...a) => { if (String(a[0]).endsWith('.del')) { doomed = String(a[0]); throw Object.assign(new Error('perm'), { code: 'EPERM' }); } return real(...a); };
-      const r = new NotesFile({ fs: c.fs, now: tickClock }).remove(folder, await store.getMirror(folder));
+      const r = new NotesFile({ fs: c.fs, now: tickClock }).remove(folder, await store.getMirror(folder), true);
       assert.ok(nodeFs.existsSync(md(folder)) && nodeFs.statSync(doomed).nlink === 2, 'two names of one file: notes.md and the random one');
       assert.ok(!c.calls.some((x) => x.m === 'unlinkSync' && x.p === md(folder)), 'notes.md is never unlinked by name');
       const n = path.basename(doomed);
@@ -732,7 +751,7 @@ async function main(): Promise<void> {
         if (phase === 3 && String(a[0]) === md(folder)) toLink(); // swapped right after any check, before an unlink by the name notes.md
         return real(...a);
       };
-      const r = new NotesFile({ fs: c.fs, now: tickClock }).remove(folder, await store.getMirror(folder));
+      const r = new NotesFile({ fs: c.fs, now: tickClock }).remove(folder, await store.getMirror(folder), true);
       assert.ok(phase === 3 && !r.removed, `the sequence ran: ${JSON.stringify(r)}`);
       assert.ok(nodeFs.existsSync(path.join(outside, 'notes', 'notes.md')) && nodeFs.statSync(path.join(outside, 'notes', 'notes.md')).ino === ino, 'the other folder\'s notes.md survives');
     }

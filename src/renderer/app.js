@@ -3230,6 +3230,7 @@ const NS_FILE_LABEL='Also keep these notes as .durbar/notes/notes.md in the proj
 const NS_FILE_WARN='Durbar will write every note of this folder to .durbar/notes/notes.md in the project. Agents and anyone with the folder can read it, and it may get committed and pushed with your code. Secrets are masked, but private ideas are not. Git ignores it unless you choose to keep it in git below.';
 const NS_FILE_STRAY='Text outside notes in an existing notes.md is removed when Durbar writes the file.';
 const NS_FILE_GIT='Keep these notes in git (Durbar will not ignore them, so they can be committed and pushed)';
+const NS_FILE_TRACKED='This file is already in the project. If git tracks it, git keeps tracking it: the notes written to it will be committed, whatever is ignored.';
 const NS_FILE_OWN='This is Durbar\'s own write: it also happens in Read-only mode.';
 const NS_FILE_COMMITTED='If .durbar/notes/notes.md was already committed, ignoring does not remove it from the repository.';
 function nsFilePaint(a,st){
@@ -3264,7 +3265,7 @@ async function nsFileOn(a,btn){
   if(c.exists&&c.count>0)lines.push(c.count+(c.count===1?' note':' notes')+' in the existing file will be added, marked "From the project file".');
   lines.push(NS_FILE_STRAY);
   lines.push(NS_FILE_OWN);
-  if(c.repo)lines.push(NS_FILE_COMMITTED);
+  if(c.repo)lines.push(c.exists?NS_FILE_TRACKED:NS_FILE_COMMITTED);
   const v=await askDialog({title:'Keep these notes in the project?',body:NS_FILE_WARN,lines,size:'m',check:c.repo?{label:NS_FILE_GIT,checked:false}:undefined,returnFocus:back,
     buttons:[{label:'Cancel',value:null},{label:'Turn on',value:'on',cls:'primary warn'}]});
   if(!v||v.value!=='on')return;

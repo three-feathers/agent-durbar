@@ -40,6 +40,9 @@ export interface NotesOpsDeps {
   fileGit?(folderKey: string): boolean;
   /** Saves the switch (`notesProject` in folders.json, T042); false when it could not be saved. Absent: the switch cannot be turned. */
   setFileOn?(folderKey: string, on: boolean, git?: boolean): boolean;
+  /** Whether Durbar made the folder's `.durbar/notes/.gitignore` (`notesIgnoreOwn`), and saving that; only such a file is deleted. */
+  ignoreOwn?(folderKey: string): boolean;
+  setIgnoreOwn?(folderKey: string, own: boolean): boolean;
   /**
    * True while some secret value Durbar may hold is still locked in the vault (main: `!mcpStore.noPrompt()`): the mask would be
    * incomplete, so no project-file cycle runs (review of PR 931). Absent: never pending.
@@ -69,6 +72,7 @@ export const VALUES_PENDING = 'Waiting for the secret store to unlock (it unlock
 export const VALUES_PENDING_ON = 'A secret value is still locked in the secret store, so Durbar cannot mask the file yet; the switch stays off. Start a session that uses MCP extras, then try again.';
 export const NATIVE_CANCELLED = 'Cancelled: nothing changed.';
 export const DELETE_LEFTOVER = 'A temp file from a crash (.notes.md.*.tmp) may remain in .durbar/notes.';
+export const NOT_OURS = 'A .gitignore is in .durbar/notes that Durbar did not make, so Durbar leaves it: git keeps ignoring the notes until you delete it.';
 export const SWITCH_UNSAVED = 'Could not save the choice in the folder list.';
 
 /** What a native confirmation is for (`confirmNative`). */
@@ -416,6 +420,7 @@ export class NotesOps {
       if (pending) return refuse(VALUES_PENDING_ON);
       // review of PR 931 (Q2): main asks with a native box the page cannot answer, before anything is written; the choice for git has its own words
       let message: string | undefined;
+      const existed = !was && t.file.hasIgnore(t.a.cwd);
       const git = !was && o.git === true;
       if (!was && !(await this.native(git ? 'git' : 'on', t.a))) return refuse(NATIVE_CANCELLED);
       if (!was) {
@@ -426,9 +431,11 @@ export class NotesOps {
         const ff = await t.store.setFileFolder(t.key, folderNameOf(t.a), t.file.folderId(t.a.cwd));
         if (!ff.ok) return ff;
         if (!setOn(t.key, true, git)) return refuse(SWITCH_UNSAVED);
-        if (git && t.file.allowGit(t.a.cwd)) message = 'Removed Durbar\'s .gitignore: git no longer ignores .durbar/notes.';
+        if (git && t.file.allowGit(t.a.cwd, this.d.ignoreOwn?.(t.key) === true)) { this.d.setIgnoreOwn?.(t.key, false); message = 'Removed Durbar\'s .gitignore: git no longer ignores .durbar/notes.'; }
+        else if (git && existed) message = NOT_OURS;
       }
-      const file = await this.syncFile(t.a.id, 1, !was); // only turning on may create the file (review 2 of PR 931)
+      const file = await this.syncFile(t.a.id, 1, !was);
+      if (!was && !git && !existed && t.file.hasIgnore(t.a.cwd)) this.d.setIgnoreOwn?.(t.key, true); // Durbar made it just now // only turning on may create the file (review 2 of PR 931)
       return { ok: true, on: true, ...(file ? { file } : {}), ...(message ? { message } : {}) };
     }
     // FR-050: while the switch is off Durbar never reads, stats or writes notes.md, so *Delete* is only part of turning it off
@@ -439,7 +446,8 @@ export class NotesOps {
     for (let p = this.cycles.get(t.key); p;) { await p.catch(() => undefined); const n = this.cycles.get(t.key); if (n === p) break; p = n; }
     const lines: string[] = [];
     if (o.deleteFile === true) {
-      const r = t.file.remove(t.a.cwd, await t.store.getMirror(t.key));
+      const r = t.file.remove(t.a.cwd, await t.store.getMirror(t.key), this.d.ignoreOwn?.(t.key) === true);
+      if (r.ignoreDropped) this.d.setIgnoreOwn?.(t.key, false);
       lines.push(r.removed ? (r.dirRemoved ? 'Deleted .durbar/notes/notes.md and the empty .durbar/notes folder.' : `Deleted .durbar/notes/notes.md. ${DELETE_LEFTOVER}`) : r.why ?? REMOVE_KEPT);
     } else lines.push('Durbar stopped writing .durbar/notes/notes.md; the file is left in the project.');
     return { ok: true, on: false, message: lines.join(' ') };

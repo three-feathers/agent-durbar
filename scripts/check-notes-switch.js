@@ -32,6 +32,7 @@ const STRAY = 'Text outside notes in an existing notes.md is removed when Durbar
 const OWN = "This is Durbar's own write: it also happens in Read-only mode.";
 const COMMITTED = 'If .durbar/notes/notes.md was already committed, ignoring does not remove it from the repository.';
 const GIT = 'Keep these notes in git (Durbar will not ignore them, so they can be committed and pushed)';
+const TRACKED = 'This file is already in the project. If git tracks it, git keeps tracking it: the notes written to it will be committed, whatever is ignored.';
 const CONFLICT = '.durbar/notes/notes.md has merge conflicts or could not be read. Fix it in your editor; Durbar will not overwrite it until then.';
 
 module.exports = async (ctx) => {
@@ -110,7 +111,7 @@ module.exports = async (ctx) => {
     check(d && d.lines.includes(STRAY), `${tag}: AC8, the stray-text line (${d && d.lines.join(' | ')})`);
     check(d && d.lines.includes(OWN), `${tag}: the dialog says it also happens in Read-only`);
     check(d && !d.lines.some((l) => /of your text in the existing file will be removed/.test(l)), `${tag}: no file: no lost-text line`);
-    check(d && d.lines.includes(COMMITTED) && d.check && d.check.on === false && d.check.label === GIT, `${tag}: in a repository the box is there, on, with the already-committed line (${JSON.stringify(d && d.check)})`);
+    check(d && d.lines.includes(COMMITTED) && d.check && d.check.on === false && d.check.label === GIT, `${tag}: in a repository the box is there, off, with the already-committed line (${JSON.stringify(d && d.check)})`);
     check(d && !d.lines.some((l) => /will be added/.test(l)), `${tag}: no file in the folder: no count line`);
     check(d && d.buttons.join('|') === 'Cancel|Turn on', `${tag}: Cancel and Turn on (${d && d.buttons.join('|')})`);
     lay = await layout();
@@ -138,6 +139,7 @@ module.exports = async (ctx) => {
     await openDialog(tag);
     d = await dlg();
     check(d && d.lines[0] === '4 notes in the existing file will be added, marked "From the project file".', `${tag}: the count of an existing file (${d && d.lines[0]})`);
+    check(d && d.lines.includes(TRACKED) && !d.lines.includes(COMMITTED), `${tag}: an existing file in a repository: git keeps tracking it, said plainly`);
     await press('Cancel');
     await closeScreen();
     await load(w, h, 'stray');

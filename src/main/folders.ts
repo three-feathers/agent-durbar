@@ -55,6 +55,8 @@ export interface SavedFolder {
   sessionModes?: SessionMode[];
   /** Spec 083 FR-050 (T042): the folder's notes are mirrored to `.durbar/notes/notes.md` in the project; `'git'`: the person chose to keep them in git (no `.gitignore`). Absent = off (the default). */
   notesProject?: true | 'git';
+  /** Spec 083 Changes 2026-11-01: Durbar itself made the folder's `.durbar/notes/.gitignore` (only such a file is ever deleted by Durbar). */
+  notesIgnoreOwn?: true;
 }
 
 export interface SessionMode {
@@ -276,6 +278,7 @@ export function parseSavedFolders(text: string): SavedFolder[] {
       ...(parsePrevMarks(o.prevPinned) ? { prevPinned: parsePrevMarks(o.prevPinned) } : {}),
       ...(parsePrevMarks(o.prevHidden) ? { prevHidden: parsePrevMarks(o.prevHidden) } : {}),
       ...(parseSessionModes(o.sessionModes) ? { sessionModes: parseSessionModes(o.sessionModes) } : {}),
+      ...(o.notesIgnoreOwn === true ? { notesIgnoreOwn: true as const } : {}),
       ...(o.notesProject === true || o.notesProject === 'git' ? { notesProject: o.notesProject } : {}), // spec 083 FR-050: only `true` or `'git'` turns it on; anything else is off (the old `notesFile` is dropped: Changes 2026-11-01)
     });
     if (out.length >= MAX_FOLDERS) break;
@@ -635,6 +638,17 @@ export class FolderStore {
     else delete cur.notesProject;
     if (this.save()) return true;
     if (was) cur.notesProject = was; else delete cur.notesProject; // not remembered: the switch keeps its old position
+    return false;
+  }
+
+  /** Spec 083: record whether Durbar made the folder's `.durbar/notes/.gitignore`; `false` when the folder is not saved or the list could not be written. */
+  setNotesIgnoreOwn(workspace: string, own: boolean): boolean {
+    const cur = this.get(workspace);
+    if (!cur) return false;
+    const was = cur.notesIgnoreOwn;
+    if (own) cur.notesIgnoreOwn = true; else delete cur.notesIgnoreOwn;
+    if (this.save()) return true;
+    if (was) cur.notesIgnoreOwn = was; else delete cur.notesIgnoreOwn;
     return false;
   }
 

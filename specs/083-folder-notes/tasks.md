@@ -13,7 +13,7 @@ description: "Tasks for spec 083: notes per folder, reachable inside the chats"
 - simulator and `npm test` only; zero AI credits; no real session, no `npm run smoke`, no `scripts/capture-raw.ts`;
 - no shell, no git calls from Durbar (FR-051); no path from the window;
 - never log note text, titles, session ids or secret values;
-- Durbar runs no git process; the only git-related write is FR-051's one `info/exclude` line; fake tokens in tests are built at run time;
+- Durbar runs no git process; the only git-related write is the `.gitignore` of `.durbar/notes` (spec Changes 2026-11-01, replacing FR-051's `info/exclude` line); fake tokens in tests are built at run time;
 - `npm run typecheck && npm run build && npm test` green;
 - UI tasks: `npm run check:office`, screenshots at 1440x900 and 1280x800 with `DURBAR_SIM=15`, and `npm run shots:docs -- --only <drivers>` for linked pictures that show the change;
 - renderer comments write "issue 699", never `#699` (theme-token ratchet).
