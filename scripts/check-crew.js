@@ -13,13 +13,13 @@
  * Then FR-055: a copy of dist/ with one picture removed. The desks of that character draw the plain figure (no <image>), the others
  * keep their pictures, and nothing is broken.
  *
- * Spec 077 FR-072, FR-074 (issue #815): the same checks run for the Prehistoric and Pirate crews (Characters = Prehistoric, Pirate) with their 6 characters: the desks, poses,
+ * Spec 077 FR-072, FR-074, FR-075 (issue #815): the same checks run for the Prehistoric, Pirate and Monster crews (Characters = Prehistoric, Pirate, Monster) with their 6 characters: the desks, poses,
  * sharpness, faces, glow, idle, the bed slot at both sizes and the missing-picture fallback. The steps that do not depend on the crew (the
  * review fixes of PR 621, the missing module) run once, with Cheeky.
  *
  *   npm run check:ui -- --only check-crew            (builds first)
  *   CREW_THEME=<theme id>         the theme under the crew (default clean-office)
- *   CREW_CHARS=<cheeky|prehistoric|pirate>  run one crew only (default: both)
+ *   CREW_CHARS=<cheeky|prehistoric|pirate|monster>  run one crew only (default: both)
  *   SHOTS_OUT=<folder>            screenshots (default: crew-shots in the OS temp folder)
  */
 const fs = require('fs');
@@ -31,7 +31,7 @@ const { helpers, jsLiteral } = require('./driver-helpers');
 /* spec 077 FR-064..FR-066: Cheeky is a Characters choice, picked on top of a theme */
 const THEME_ID = process.env.CREW_THEME || 'clean-office';
 let CHARS = 'cheeky'; // the crew being checked (see RUNS)
-const RUNS = process.env.CREW_CHARS ? [[process.env.CREW_CHARS, true]] : [['cheeky', true], ['prehistoric', false], ['pirate', false]]; // [Characters value, whole check (the crew-independent steps too)]
+const RUNS = process.env.CREW_CHARS ? [[process.env.CREW_CHARS, true]] : [['cheeky', true], ['prehistoric', false], ['pirate', false], ['monster', false]]; // [Characters value, whole check (the crew-independent steps too)]
 /* FR-014 zones in stage units: [x0, y0, x1, y1] */
 const ZONES = { 'monitor and halo': [101, 22, 187, 88], 'bubble and badge corner': [16, 3, 61, 34], 'cup zone': [96, 66, 114, 87] };
 /* FR-060: the screen's frame starts here; the portrait box ends here, so the status colour is never under it */
@@ -151,7 +151,7 @@ async function runCrew(ctx, full) {
   const out = process.env.SHOTS_OUT || path.join(os.tmpdir(), 'crew-shots');
   fs.mkdirSync(out, { recursive: true });
   const C = require('../src/renderer/crew.js');
-  const CREW_IDS = C.idsFor(CHARS), PIC_RE = /crew\/art\/(?:prehistoric-|pirate-)?([\w-]+)-(working|waiting|resting)\.webp/;
+  const CREW_IDS = C.idsFor(CHARS), PIC_RE = /crew\/art\/(?:prehistoric-|pirate-|monster-)?([\w-]+)-(working|waiting|resting)\.webp/;
   /* one Settings pick: a theme (kind 'theme', #thList) or a Characters value (kind 'characters', #chList) */
   const pickIn = async (kind, id) => {
     const list = kind === 'theme' ? '#thList' : '#chList', sel = `${list} [data-${kind}="${id}"]`;
@@ -258,7 +258,7 @@ async function runCrew(ctx, full) {
     await faceChecks(tag);
     assert.ok(seen.size === CREW_IDS.length, `${tag}: all ${CREW_IDS.length} ${CHARS} characters on screen with 15 agents (the simulator's name table uses every one, FR-073) (${[...seen]})`);
     // spec 077 FR-073 (issue #879): the simulator gives each demo name its fitting character; Ada and Hugo are the check's anchors (literals, not read from the table)
-    const want = { cheeky: { Ada: 'gamer', Hugo: 'bookworm' }, prehistoric: { Ada: 'braids', Hugo: 'inventor' }, pirate: { Ada: 'captain', Hugo: 'cook' } }[CHARS];
+    const want = { cheeky: { Ada: 'gamer', Hugo: 'bookworm' }, prehistoric: { Ada: 'braids', Hugo: 'inventor' }, pirate: { Ada: 'captain', Hugo: 'cook' }, monster: { Ada: 'werewolf', Hugo: 'vampire' } }[CHARS];
     const SC = require('../src/renderer/simcrew.js');
     assert.ok(await H.until(`(()=>{const U=window.__durbarSimUi,s=U.crew.state();return U.agents().filter((x)=>!x.parent).every((x)=>s.map[x.id]);})()`, 6000), `${tag}: every main agent has a character`);
     const named = await H.js(`(()=>{const U=window.__durbarSimUi,s=U.crew.state();return U.agents().filter((x)=>!x.parent).map((x)=>{const d=document.querySelector('#stage .desk[data-id="'+x.id+'"] svg.scene');return {name:x.baseName||x.name,c:s.map[x.id],sig:d?d.dataset.sig||'':null};});})()`);

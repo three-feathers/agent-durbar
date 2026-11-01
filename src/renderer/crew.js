@@ -14,11 +14,13 @@
   const PREHISTORIC_IDS = ['youngbeard', 'braids', 'bigbeard', 'ponytail', 'inventor', 'shaman'];
   /* spec 077 FR-074 (issue #815): the Pirate crew, 6 characters, `crew/art/pirate-<id>-<pose>.webp` */
   const PIRATE_IDS = ['captain', 'eyepatch', 'hook', 'cook', 'privateer', 'cabinboy'];
-  const CREWS = { cheeky: IDS, prehistoric: PREHISTORIC_IDS, pirate: PIRATE_IDS };
-  const ALL_IDS = IDS.concat(PREHISTORIC_IDS, PIRATE_IDS);
+  /* spec 077 FR-075 (issue #815): the Monster crew, 6 characters, `crew/art/monster-<id>-<pose>.webp` */
+  const MONSTER_IDS = ['frankenstein', 'ghost', 'mummy', 'seacreature', 'vampire', 'werewolf'];
+  const CREWS = { cheeky: IDS, prehistoric: PREHISTORIC_IDS, pirate: PIRATE_IDS, monster: MONSTER_IDS };
+  const ALL_IDS = IDS.concat(PREHISTORIC_IDS, PIRATE_IDS, MONSTER_IDS);
   /* the characters of a Characters value (an unknown value or the theme's own: the Cheeky crew, as before) and the key the choice is stored under */
   const idsFor = (choice) => has(CREWS, choice) ? CREWS[choice] : IDS;
-  const storeKey = (choice) => (choice === 'prehistoric' || choice === 'pirate') ? 'durbar.crew.' + choice : 'durbar.crew';
+  const storeKey = (choice) => (choice === 'prehistoric' || choice === 'pirate' || choice === 'monster') ? 'durbar.crew.' + choice : 'durbar.crew';
   const MAX_ENTRIES = 500, MAX_ID = 200;
   /* the portraits (spec 077 FR-050..FR-055, FR-059, FR-060): three poses per character, `crew/art/<id>-<pose>.webp`, 352x352 and square, drawn
      in a fixed square box of the 200x124 stage: 88x88 units at x 24, y 22 (twice the first build's, owner 2026-10-23). Its right edge is the
@@ -60,6 +62,13 @@
     cook: { working: [185, 150], waiting: [192, 150], resting: [181, 150] },
     privateer: { working: [230, 150], waiting: [208, 150], resting: [223, 150] },
     cabinboy: { working: [202, 150], waiting: [188, 150], resting: [170, 150] },
+    /* Monster (FR-075): read the same way, from a contact sheet of the three poses with a 50 px grid */
+    frankenstein: { working: [210, 145], waiting: [180, 140], resting: [178, 145] },
+    ghost: { working: [195, 175], waiting: [190, 170], resting: [180, 175] },
+    mummy: { working: [190, 170], waiting: [170, 175], resting: [180, 180] },
+    seacreature: { working: [205, 160], waiting: [178, 150], resting: [168, 160] },
+    vampire: { working: [205, 160], waiting: [175, 150], resting: [180, 155] },
+    werewolf: { working: [210, 160], waiting: [190, 150], resting: [186, 150] },
   };
   const k = BOX.w / PIC;
   /* a face box or the avatar's crop, in stage units: [x, y, w, h]; null for an unknown picture */
@@ -77,7 +86,7 @@
   }
   /* the pose for a status: working and thinking type, waiting and error need the person, the rest rests */
   const poseFor = (st) => (st === 'working' || st === 'thinking' || st === 'avatar') ? 'working' : (st === 'waiting' || st === 'error') ? 'waiting' : 'resting';
-  const file = (id, pose) => 'crew/art/' + (PREHISTORIC_IDS.includes(id) ? 'prehistoric-' : PIRATE_IDS.includes(id) ? 'pirate-' : '') + id + '-' + pose + '.webp';
+  const file = (id, pose) => 'crew/art/' + (PREHISTORIC_IDS.includes(id) ? 'prehistoric-' : PIRATE_IDS.includes(id) ? 'pirate-' : MONSTER_IDS.includes(id) ? 'monster-' : '') + id + '-' + pose + '.webp';
   const files = (ids) => (ids || IDS).reduce((a, id) => a.concat(POSES.map((p) => file(id, p))), []);
   /* FR-055: a character can be drawn when it is known and none of its pictures failed to load (`bad`: a Set of character ids) */
   const usable = (id, bad) => typeof id === 'string' && ALL_IDS.includes(id) && !(bad && bad.has && bad.has(id));
@@ -148,7 +157,7 @@
      the default), since the crew worlds are not built yet. A crew without them draws the Office people, and `coming` makes
      Settings say so (FR-083, `realOfficeNote`). The one seam to change when a crew's world ships. */
   const REAL_OFFICE_SETS = ['office'];
-  const CREW_WORLDS = { cheeky: 'Cheeky loft', prehistoric: 'Prehistoric cave', pirate: 'Pirate ship' };
+  const CREW_WORLDS = { cheeky: 'Cheeky loft', prehistoric: 'Prehistoric cave', pirate: 'Pirate ship', monster: 'Haunted house' };
   function realOfficeSet(choice) {
     const c = String(choice || '');
     if (REAL_OFFICE_SETS.includes(c)) return { set: c, scene: 'office', coming: false };
@@ -161,5 +170,5 @@
     return `Real office shows the Office people until the ${w} is ready.`;
   }
 
-  return { REAL_OFFICE_SETS, realOfficeSet, realOfficeNote, CREWS, PREHISTORIC_IDS, PIRATE_IDS, ALL_IDS, idsFor, storeKey, POSES, BOX, PX_PER_UNIT, FACE, FACE_W, FACE_H, FACE_CROP, faceBox, viewBox, poseFor, file, files, usable, IDS, MAX_ENTRIES, MAX_ID, seeded, seededRand, pickCharacter, assignCrew, pruneCrew, loadCrew };
+  return { REAL_OFFICE_SETS, realOfficeSet, realOfficeNote, CREWS, PREHISTORIC_IDS, PIRATE_IDS, MONSTER_IDS, ALL_IDS, idsFor, storeKey, POSES, BOX, PX_PER_UNIT, FACE, FACE_W, FACE_H, FACE_CROP, faceBox, viewBox, poseFor, file, files, usable, IDS, MAX_ENTRIES, MAX_ID, seeded, seededRand, pickCharacter, assignCrew, pruneCrew, loadCrew };
 })());

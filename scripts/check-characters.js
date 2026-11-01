@@ -3,7 +3,7 @@
  *
  * At 1440x900 and 1280x800, on Retro Pixel and on Corporate (no built-in theme has a dark surface; Retro's floor is dark, so it stands in
  * for "one dark"), everything through Settings (the real path):
- *   - the Characters section is right after Theme, lists The theme's own, Minimalist, Cheeky, Prehistoric and Pirate, each with a preview figure, and names the
+ *   - the Characters section is right after Theme, lists The theme's own, Minimalist, Cheeky, Prehistoric, Pirate and Monster, each with a preview figure, and names the
  *     theme's own figures; it fits the window (no page overflow);
  *   - Cheeky: every desk scene draws the crew kit with a portrait, the theme stays the one picked, the choice is announced;
  *   - a theme switch with Cheeky keeps the crew on the new theme;
@@ -76,8 +76,8 @@ module.exports = async (ctx) => {
       assert.ok(await H.until(`(document.querySelector('#chList [data-characters="theme"]')||{}).textContent&&document.querySelector('#chList [data-characters="theme"]').textContent.includes(${jsLiteral(own)})`, 4000), `${where}: The theme's own follows the theme (${own})`);
       const sc = await section();
       assert.ok(sc.afterTheme, `${where}: Characters comes right after Theme`);
-      assert.deepStrictEqual(sc.items.map((i) => i.id), ['theme', 'minimalist', 'cheeky', 'prehistoric', 'pirate'], `${where}: the five choices in order`);
-      assert.deepStrictEqual(sc.items.map((i) => i.pressed), ['true', 'false', 'false', 'false', 'false'], `${where}: the default is pressed`);
+      assert.deepStrictEqual(sc.items.map((i) => i.id), ['theme', 'minimalist', 'cheeky', 'prehistoric', 'pirate', 'monster'], `${where}: the six choices in order`);
+      assert.deepStrictEqual(sc.items.map((i) => i.pressed), ['true', 'false', 'false', 'false', 'false', 'false'], `${where}: the default is pressed`);
       for (const i of sc.items) {
         assert.ok(i.svg, `${where}: ${i.id} has a preview figure`);
         assert.ok(i.minFont >= 10.5, `${where}: ${i.id}: text is at least 10.5px (${i.minFont})`);
@@ -86,6 +86,7 @@ module.exports = async (ctx) => {
       assert.ok(sc.items.find((i) => i.id === 'cheeky').pic, `${where}: the Cheeky preview is a portrait`);
       assert.ok(sc.items.find((i) => i.id === 'prehistoric').pic, `${where}: the Prehistoric preview is a portrait (spec 077 FR-072)`);
       assert.ok(sc.items.find((i) => i.id === 'pirate').pic, `${where}: the Pirate preview is a portrait (spec 077 FR-074)`);
+      assert.ok(sc.items.find((i) => i.id === 'monster').pic, `${where}: the Monster preview is a portrait (spec 077 FR-075)`);
       assert.ok(!sc.items.find((i) => i.id === 'minimalist').pic && !sc.items.find((i) => i.id === 'theme').pic, `${where}: the other previews are drawn figures`);
       if (kit === 'pixel') assert.strictEqual(sc.items.find((i) => i.id === 'theme').kit, 'crispEdges', `${where}: The theme's own preview is a pixel figure`);
       assert.ok(sc.pageX && sc.pageY, `${where}: Settings does not overflow the page`);
@@ -121,6 +122,12 @@ module.exports = async (ctx) => {
       assert.ok(await H.until(`(()=>{const sc=[...document.querySelectorAll('#stage .desk[data-id] svg.scene')].filter(s=>s.getClientRects().length);return sc.length>=12&&sc.every(s=>/\\|crew(\\||$)/.test(s.dataset.sig||'')&&s.querySelector('image[href*="crew/art/pirate-"]'));})()`, 10000), `${where}: Pirate: every desk draws the crew kit with a Pirate portrait`);
       assert.strictEqual(await H.js(`window.THEME.current().id`), theme, `${where}: the theme stays ${theme} under Pirate`);
       assert.strictEqual(await H.js(`document.querySelectorAll('#stage image[href^="crew/art/"]:not([href*="pirate-"])').length`), 0, `${where}: no other crew's picture under Pirate`);
+      // Monster on top of the theme (FR-075): the crew kit with a Monster picture on every desk
+      await pickChars('monster');
+      await close();
+      assert.ok(await H.until(`(()=>{const sc=[...document.querySelectorAll('#stage .desk[data-id] svg.scene')].filter(s=>s.getClientRects().length);return sc.length>=12&&sc.every(s=>/\\|crew(\\||$)/.test(s.dataset.sig||'')&&s.querySelector('image[href*="crew/art/monster-"]'));})()`, 10000), `${where}: Monster: every desk draws the crew kit with a Monster portrait`);
+      assert.strictEqual(await H.js(`window.THEME.current().id`), theme, `${where}: the theme stays ${theme} under Monster`);
+      assert.strictEqual(await H.js(`document.querySelectorAll('#stage image[href^="crew/art/"]:not([href*="monster-"])').length`), 0, `${where}: no other crew's picture under Monster`);
       // Minimalist on top of the theme
       await pickChars('minimalist');
       await close();
