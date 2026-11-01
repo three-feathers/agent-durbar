@@ -120,8 +120,8 @@ module.exports = async (ctx) => {
     assert.ok(before.length >= 3, `three floors: ${before}`);
     const mouse = (type, p, extra = {}) => H.wc().sendInputEvent({ type, x: p.x, y: p.y, button: 'left', clickCount: 1, ...extra });
     const dragFloor = async (from, to, mid) => {
-      const a = await js(`(()=>{const r=document.querySelectorAll('#floorsPop .fl-floor')[${from}].querySelector('.fl-grip').getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)}})()`);
-      const b = await js(`(()=>{const r=document.querySelectorAll('#floorsPop .fl-floor')[${to}].getBoundingClientRect();return {x:Math.round(r.left+30),y:Math.round(r.top+r.height/2)}})()`);
+      const a = await js(`(()=>{const r=document.querySelectorAll('#floorsPop .fl-floor')[${jsLiteral(from)}].querySelector('.fl-grip').getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)}})()`);
+      const b = await js(`(()=>{const r=document.querySelectorAll('#floorsPop .fl-floor')[${jsLiteral(to)}].getBoundingClientRect();return {x:Math.round(r.left+30),y:Math.round(r.top+r.height/2)}})()`);
       mouse('mouseMove', a); await ctx.sleep(30); mouse('mouseDown', a);
       for (let i = 1; i <= 8; i++) { mouse('mouseMove', { x: Math.round(a.x + ((b.x - a.x) * i) / 8), y: Math.round(a.y + ((b.y - a.y) * i) / 8) }, { modifiers: ['leftButtonDown'] }); await ctx.sleep(25); }
       if (mid) await mid();
@@ -133,7 +133,7 @@ module.exports = async (ctx) => {
     assert.deepStrictEqual(mid, { lift: true, tf: true, other: '' }, 'mid-drag the lifted floor only has a transform');
     await until(`document.querySelector('#floorsPop .fl-floor .fl-t b').textContent!==${jsLiteral(before[0])}`).catch(() => {});
     const after = await rowNames();
-    assert.deepStrictEqual(after, [before[2], before[0], before[1]], `a real drag of the third floor's handle to the top reorders (${before} -> ${after}; said: ${await js("document.getElementById('srAnnounce').textContent")}; err: ${await js("(document.querySelector('#floorsPop .fl-err')||{}).textContent")})`);
+    assert.deepStrictEqual(after, [before[2], before[0], before[1]], "a real drag of the third floor's handle to the top reorders");
     await panel(false); await panel(true);
     assert.deepStrictEqual(await rowNames(), after, 'the order is the saved one when the panel is painted again');
     assert.ok((await H.floors()).length >= 1);

@@ -4713,7 +4713,7 @@ function afterFloorsChange(){
 /* FR-007 (PR #124 review): only with two or more floors, and compact (icon + "2/3"), so the top bar fits at 1280x800 with
    wide fonts too. With the Ground floor alone the top bar looks as before; the first extra floor is made in Settings > Floors. */
 const FLOORS_IC='<svg class="fl-ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M8 1.8l6.2 3.1L8 8 1.8 4.9z"/><path d="M1.8 8.1L8 11.2l6.2-3.1"/><path d="M1.8 11.1L8 14.2l6.2-3.1"/></svg>';
-/* 2026-11-01 (issue #1010): the floor row's icon buttons and drag handle, same 16px stroke style as ICON */
+/* 2026-11-01 (issue 1010): the floor row's icon buttons and drag handle, same 16px stroke style as ICON */
 const FL_IC={up:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3.5 10l4.5-4.5L12.5 10"/></svg>',
   down:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3.5 6l4.5 4.5L12.5 6"/></svg>',
   del:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M2.5 4.5h11M6.2 4.5V3h3.6v1.5M4 4.5l.6 8.5h6.8l.6-8.5M6.6 7v3.8M9.4 7v3.8"/></svg>',
@@ -4806,7 +4806,7 @@ async function floorCall(p){
   if(r&&r.state)applyFloors(r.state); else {renderFloorsPanel();renderFloorsSettings();}
   return r;
 }
-/* 2026-11-01 (issue #1010): drag a floor by its handle to reorder; the drop saves through the same call as Up and Down (reorderFloors).
+/* 2026-11-01 (issue 1010): drag a floor by its handle to reorder; the drop saves through the same call as Up and Down (reorderFloors).
    The drag code is the one of rooms, desks and places (reorder.js, issue 677): transform and opacity only, Esc cancels, the arrow buttons stay the keyboard route. */
 (function(){
   if(!RO||!RO.attach)return;
