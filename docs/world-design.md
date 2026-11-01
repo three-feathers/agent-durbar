@@ -64,7 +64,9 @@ Be specific without being a cliche: no flags of countries, tourist symbols, ster
 - **Nobody moves in sync.** Vary timing per person, with small idle motion: breathing, shifting, a pause in typing.
 - **Keep the head steady across a change.** Align frames on the head, so the eye follows it while the body changes, and add a short beat for sitting down.
 - **Limbs must not double in a dissolve.** If they do, it needs in-between frames, not a longer fade.
-- A walk is a walk, not a run pose gliding. Feet stay planted.
+- **Never two bodies at once.** A dissolve between two big poses shows a ghost. If moving a person looks wrong, do not move them across the room: ease them smaller and fade at the seat, and ease them up from small at the fixture, like a movie teleport. Nobody crosses over screens.
+- **The room stays put when someone leaves.** Their seat, plate and status stay, with a square, readable post-it (in the world's own style) saying where they went. Rows and screens resize only when the number of sessions changes, and they ease.
+- **Prefer a rig to more pictures for small motions.** Cut a person into head, torso and hands with pivots, so hands stay on the keys. Image models repeat poses, so several "in-between" frames often add little.
 - Reduced motion and Serious mode stop it. Hidden and off-screen pause it.
 
 ## Light
