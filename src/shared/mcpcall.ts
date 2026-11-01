@@ -10,7 +10,7 @@ export type McpCallClass = 'auth' | 'policy';
 const MAX = 4000;
 
 /** Organization access policy: Entra Conditional Access / device compliance. Tested first, because such a refusal also says "AADSTS" or "sign in". */
-const POLICY = /AADSTS53\d{4}|conditional access|device (?:is )?(?:required )?(?:to be )?managed|managed device|compliant device|device (?:is )?not (?:compliant|enrolled)/i;
+const POLICY = /AADSTS53(?:0\d\d|\d{4})(?!\d)|\binsufficient_claims\b|\binteraction_required\b|conditional access|device (?:is )?(?:required )?(?:to be )?managed|managed device|compliant device|device (?:is )?not (?:compliant|enrolled)/i;
 /**
  * The server wants a sign-in. Each Entra code below is one that signing in again fixes (meanings from Microsoft's published AADSTS error
  * list, written from memory and not re-checked online); every other `AADSTS50xxx` / `70xxx` code gets no class, because signing in does

@@ -500,6 +500,7 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .ed-count .del{color:var(--red-ink)}
 .chips>.ediff{flex:1 1 100%;min-width:0;margin:0 0 2px}
 .chips>.ediff[hidden]{display:none}
+.chips>.mcpwhy{flex:1 1 100%;min-width:0;display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:var(--t4-size);color:var(--ink-2);margin:0 0 2px} /* spec 058 FR-194 */
 .ediff>summary{font-size:11px;color:var(--muted)}
 .ediff>pre{max-height:min(320px,40vh)}
 .ediff .dl.file{display:flex;align-items:baseline;gap:8px;padding-top:2px;color:var(--ink-2)}

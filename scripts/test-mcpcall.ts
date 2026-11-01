@@ -13,6 +13,7 @@ import type { AgentInfo, AgentMcpEntry } from '../src/shared/api';
 import { McpCallTracker } from '../src/main/mcpcall';
 import { agentMcpReply, mcpRefreshOp } from '../src/main/mcpsession';
 import { classifyMcpCall } from '../src/shared/mcpcall';
+import { maskMcpEvent } from '../src/main/mcpmask';
 
 const info = (id: string): AgentInfo => ({ id, name: 'Ana', cwd: '/w', permMode: 'ask', model: 'auto' }) as AgentInfo;
 
@@ -35,7 +36,16 @@ async function main(): Promise<void> {
   const cases: [string, ReturnType<typeof classifyMcpCall>][] = [
     [POLICY_TEXT, 'policy'],
     ['AADSTS530001: blocked', 'policy'],
-    ['AADSTS53000 short code is not a policy code', undefined],
+    ['AADSTS53000: device not compliant', 'policy'],
+    ['AADSTS53001: device not domain joined', 'policy'],
+    ['AADSTS53003: blocked by conditional access', 'policy'],
+    ['aadsts530003: lower case', 'policy'],
+    ['error=insufficient_claims', 'policy'],
+    ['{"error":"interaction_required"}', 'policy'],
+    ['AADSTS5300: too short', undefined],
+    ['AADSTS5300001: seven digits', undefined],
+    ['not_insufficient_claims_at_all', undefined],
+    ['interaction_required_not', undefined],
     ['Blocked by Conditional Access policy', 'policy'],
     ['Your device must be managed to use this', undefined], // wording with "must": not claimed (only the known shapes)
     ['The device is required to be managed', 'policy'],
@@ -99,6 +109,28 @@ async function main(): Promise<void> {
   classifyMcpCall('AADSTS5300'.repeat(400_000));
   assert.ok(Number(process.hrtime.bigint() - t0) / 1e6 < 500, 'a huge text is cut first');
   assert.strictEqual(classifyMcpCall(' '.repeat(5000) + 'AADSTS530003'), undefined, 'text past the cut is not read');
+
+  // ---- FR-193: maskMcpEvent sets the word from the masked text, and only the word ----
+  {
+    const SECRET = 'sk-hostile-secret-value-1234567890';
+    const ev = (output: string, extra: Partial<AgentEvent> = {}): AgentEvent => ({ type: 'toolCall', sessionId: 's1', timestamp: 1, callId: 'c', tool: 'x-send', phase: 'failed', mcpServer: 'x', output, ...extra }) as AgentEvent;
+    const out = maskMcpEvent(ev(POLICY_TEXT + ' capolids=11111111-2222-3333-4444-555555555555'), []) as AgentEvent & { mcpCall?: string; output?: string };
+    assert.strictEqual(out.mcpCall, 'policy');
+    assert.deepStrictEqual(Object.keys(out).sort(), [...Object.keys(ev('')), 'mcpCall'].sort(), 'one new key, a word');
+    assert.strictEqual((maskMcpEvent(ev('plain failure')) as { mcpCall?: string }).mcpCall, undefined);
+    assert.strictEqual((maskMcpEvent(ev(POLICY_TEXT, { phase: 'complete' })) as { mcpCall?: string }).mcpCall, undefined, 'only a failed call');
+    assert.strictEqual((maskMcpEvent(ev(POLICY_TEXT, { mcpServer: undefined })) as { mcpCall?: string }).mcpCall, undefined, 'only an MCP call');
+    assert.strictEqual((maskMcpEvent(ev('The server answered 401 Unauthorized')) as { mcpCall?: string }).mcpCall, undefined, 'auth is not policy');
+    // the text is read after masking: a secret value in the session's list is gone before the match, and the word never holds it
+    const m = maskMcpEvent(ev('AADSTS530003 ' + SECRET), [SECRET]) as AgentEvent & { mcpCall?: string; output?: string };
+    assert.strictEqual(m.mcpCall, 'policy');
+    assert.ok(!JSON.stringify(m).includes(SECRET), 'the secret is masked and the word carries none of it');
+    // a code that only exists inside a masked value is not read
+    assert.strictEqual((maskMcpEvent(ev('x ' + SECRET + ' y'.padEnd(5)), [SECRET]) as { mcpCall?: string }).mcpCall, undefined);
+    const CODEY = 'AADSTS530003-value-of-a-secret-token';
+    assert.strictEqual((maskMcpEvent(ev('failed: ' + CODEY), [CODEY]) as { mcpCall?: string }).mcpCall, undefined, 'a code inside a masked value is not read: the match runs on the masked text');
+    assert.strictEqual((maskMcpEvent(ev('before AADSTS530003'.replace('AADSTS530003', 'AAD' + SECRET + 'STS530003')), [SECRET]) as { mcpCall?: string }).mcpCall, undefined, 'masking first: the secret is cut out, so no code is left');
+  }
 
   // ---- the tracker (FR-187, FR-188) ----
   {

@@ -102,7 +102,7 @@
   const CALL_WORDS={'policy':'last call blocked by your organization\u2019s access policy','auth':'last call needs sign-in'};
   const callWord=cls=>typeof cls==='string'&&own(CALL_WORDS,cls)?CALL_WORDS[cls]:'';
   function callHint(cls,app){
-    if(cls==='policy')return 'Your organization\u2019s access policy refused the server\u2019s last call (for example, the device must be managed). Agent Durbar cannot change that; ask your administrator.';
+    if(cls==='policy')return 'Your organization\u2019s access policy refused the server\u2019s last call (usually a managed-device check). Sign in again from Safari or Edge (Chrome needs the Microsoft Single Sign On extension), or ask your administrator. Agent Durbar cannot change the policy.';
     if(cls==='auth')return 'The server refused its last call for a missing sign-in. '+(app?plain(app,40):'Your agent app')+' keeps the sign-in; sign in again to use its tools.';
     return '';
   }
