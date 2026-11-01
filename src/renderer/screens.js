@@ -874,6 +874,7 @@
       if(g)g.querySelectorAll('[data-officelayout]').forEach(b=>{const t=b.dataset.officelayout;b.setAttribute('aria-pressed',String(t==='real'?view==='real':view!=='real'&&(t==='cabins')===on));});
       const n=$('dsR');if(n&&V)n.textContent=V.note();
       paint(); /* the World row appears with Real office, and Characters names the world's default set */
+      {const again=document.querySelector('[data-officelayout="'+k+'"]');if(again)again.focus({preventScroll:true});} /* the repaint replaced the button: keyboard focus stays on the choice just made */
       const tw=$('thWorld');if(tw){tw.textContent=worldWords();tw.hidden=!tw.textContent;}
       return;
     }

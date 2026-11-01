@@ -135,7 +135,8 @@ module.exports = async (ctx) => {
       await shot(world, 'asleep', w, h);
     }
     // ---- FR-121 inbox as a queue at the Boss door, FR-122 limit slip at the Bank, FR-124 MCP bubble ----
-    if (run('inbox')) for (const n of ['15', '3']) {
+    let staleRan = 0;
+    if (run('inbox')) for (const n of ['15', '3', '6', '8']) {
       await H.load({ w, h, query: q(world, { simelicit: '1', sim: n }), ready: REAL, settle: false });
       await must(PICS, 'the pictures');
       await must(`!!document.querySelector('#stage .ro-slip.ro-queue:not([hidden])')`, 'the queue slip');
@@ -162,7 +163,7 @@ module.exports = async (ctx) => {
       }
       await js(`document.getElementById('inboxClose').click()`);
       await must(`!document.getElementById('inboxDlg')`, 'the inbox closed');
-      await shot(world, n === '15' ? 'inbox' : 'inbox-3', w, h);
+      await shot(world, n === '15' ? 'inbox' : 'inbox-' + n, w, h);
       assert.deepStrictEqual(await slipOverlaps(), [], `${tag}: no slip covers a plate, a sign, a chair label, a chip or a cue`);
       const lim = await js(`(()=>{const e=document.querySelector('#stage .ro-slip.ro-limit');return e&&!e.hidden?{v:e.dataset.variant,btns:[...e.querySelectorAll('button')].map(b=>b.textContent.trim()),tips:[...e.querySelectorAll('button')].map(b=>b.title),input:(e.querySelector('input.limit-amt')||{}).ariaLabel,text:e.textContent}:null})()`);
       if (n === '15') {
@@ -180,10 +181,23 @@ module.exports = async (ctx) => {
       assert.strictEqual(el[0].fields, 0, `${tag}: the bubble has no input field (a form is answered in the chat)`);
       assert.ok(/^\S.*: \[MCP\] An MCP server asks for input$/.test(el[0].head), `${tag}: ${el[0].head}`);
       /* the buttons act: Deny on the first full slip answers the card; Answer in chat opens the chat */
-      if (sl.variant === 'full' && n === '3') {
-        const who = await js(`document.querySelector('#stage .ro-slip.ro-queue .sl-h b').textContent`);
-        await js(`[...document.querySelectorAll('#stage .ro-slip.ro-queue .ro-sbtn')].find(b=>b.textContent.trim()==='Deny').click()`);
+      if (sl.variant === 'full' && n !== '15') {
+        const who = await js(`(document.querySelector('#stage .ro-slip.ro-queue .sl-h b')||{}).textContent||''`);
+        const reqA0 = await js(`((document.querySelector('#stage .ro-slip.ro-queue .ro-sbtn[data-slipreq]')||{dataset:{}}).dataset.slipreq)||''`);
+        await js(`(()=>{const d=[...document.querySelectorAll('#stage .ro-slip.ro-queue .ro-sbtn')].find(b=>b.textContent.trim()==='Deny');if(d)d.click()})()`);
         await must(`(()=>{const e=document.querySelector('#stage .ro-slip.ro-queue');return !e||e.hidden||(e.querySelector('.sl-h b')||{}).textContent!==${jsLiteral(who)}})()`, 'the denied request gone from the slip');
+        /* a stale button (a double click, or a request that arrived meanwhile) must not answer the NEXT request: aim the old request's id at the new first slip and press */
+        if (await js(`!!document.querySelector('#stage .ro-slip.ro-queue .ro-sbtn[data-slipact="perm"]')`)) {
+          staleRan++;
+          const next = await js(`(document.querySelector('#stage .ro-slip.ro-queue .sl-h b')||{}).textContent||''`);
+          if (next) {
+            await js(`(()=>{const b=document.querySelector('#stage .ro-slip.ro-queue .ro-sbtn[data-slipact="perm"]');b.dataset.slipreq=${jsLiteral(reqA0)};b.click()})()`);
+            await must(`performance.now()>0&&true`, 'a beat');
+            const t0 = await js(`performance.now()`);
+            await must(`performance.now()>${t0 + 600}`, 'a short while for a wrong answer to show');
+            assert.strictEqual(await js(`(document.querySelector('#stage .ro-slip.ro-queue .sl-h b')||{}).textContent`), next, `${tag}: the stale button answered nothing: ${next} still waits`);
+          }
+        }
       }
       await js(`document.querySelector('#stage .ro-slip.ro-bubble [data-slipact="open"]').click()`);
       await must(`document.body.classList.contains('panel-open')`, 'the chat opened from the bubble');
@@ -213,6 +227,7 @@ module.exports = async (ctx) => {
         await shot(world, 'asleep-forced', w, h);
       });
     }
+    if (run('inbox')) assert.ok(staleRan > 0, `${tag}: the stale-button check ran (a queue of two or more in a full slip)`);
     // ---- FR-125 jumps ride the lift ----
     if (run('jumps')) {
       if (!OS_REDUCED) {

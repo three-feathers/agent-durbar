@@ -360,7 +360,7 @@
           const w = document.createElement('span'); w.textContent = ' ' + f.what + ' \u00B7 ' + f.folder; h.appendChild(w); e.appendChild(h);
           e.appendChild(p('sl-t', f.text));
           const row = document.createElement('div'); row.className = 'sl-act';
-          for (const a of f.actions) row.appendChild(btn(a.label, a.title, a.cls, a.k === 'open' ? { slipact: 'open', slipid: f.id } : { slipact: 'perm', slipid: f.id, slipidx: a.idx }));
+          for (const a of f.actions) row.appendChild(btn(a.label, a.title, a.cls, a.k === 'open' ? { slipact: 'open', slipid: f.id } : { slipact: 'perm', slipid: f.id, slipreq: f.req, slipidx: a.idx }));
           row.appendChild(btn('Show in chat', 'Open the chat', 'link', { slipact: 'open', slipid: f.id }));
           e.appendChild(row);
           for (const g of Q.folded) { const b = btn(g.text, '', 'sl-fold', { slipact: 'open', slipid: g.id }); e.appendChild(b); }
@@ -378,7 +378,7 @@
           e.appendChild(p('sl-h', L.who)); e.appendChild(p('sl-t', L.text));
           const row = document.createElement('div'); row.className = 'sl-act';
           if (L.input) { const i = document.createElement('input'); i.type = 'number'; i.className = 'limit-amt'; i.min = L.input.min; i.step = L.input.step; i.value = L.input.value; i.setAttribute('aria-label', L.input.label); row.appendChild(i); }
-          for (const a of L.actions) row.appendChild(btn(a.label, a.title, a.cls, { slipact: 'limit', slipid: L.id, slipidx: a.idx }));
+          for (const a of L.actions) row.appendChild(btn(a.label, a.title, a.cls, { slipact: 'limit', slipid: L.id, slipreq: L.req, slipidx: a.idx }));
           row.appendChild(btn('Show in chat', 'Open the chat', 'link', { slipact: 'open', slipid: L.id }));
           e.appendChild(row);
         },

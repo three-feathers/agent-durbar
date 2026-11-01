@@ -1768,6 +1768,9 @@ function realModel(model){
    from the very cards the chat and the inbox already hold (pendingCardOf, inboxActs, requestText), so the words, the buttons, their order and their tooltips are
    the flat ones; a click goes back to the card's own button (data-slipact, the handler below). A request that is only a status (an error, a plain wait) has no
    card and no slip. */
+/* each pending card is one request: its id is made once and kept, so a slip's button names the request it shows, not "the agent's first pending card" (a double click, or a new request arriving, must never answer another one) */
+const CARD_REQ=new WeakMap(); let CARD_REQ_N=0;
+const reqOf=c=>{if(!CARD_REQ.has(c))CARD_REQ.set(c,'rq'+(++CARD_REQ_N));return CARD_REQ.get(c);};
 function realSlips(){
   const D=window.DurbarPlaces, out={queue:null,limit:null,elicit:[]};
   const items=[];
@@ -1777,7 +1780,7 @@ function realSlips(){
     if(card.classList.contains('limit')){
       if(out.limit)continue; /* one slip at the Bank; the next waits in the inbox */
       const inp=card.querySelector('.limit-amt'), btns=[...card.querySelectorAll(':scope > .note-actions button')];
-      out.limit={id:a.id,name:a.name,who:a.name+' · '+who+' · at the Bank',text:requestText(card),input:inp?{label:inp.getAttribute('aria-label')||'',value:inp.value,min:inp.min,step:inp.step}:null,
+      out.limit={id:a.id,req:reqOf(card),name:a.name,who:a.name+' · '+who+' · at the Bank',text:requestText(card),input:inp?{label:inp.getAttribute('aria-label')||'',value:inp.value,min:inp.min,step:inp.step}:null,
         actions:btns.map((b,i)=>({idx:i,label:b.textContent,title:b.title||'',cls:(b.className.match(/\b(primary|danger|session)\b/)||[''])[0]}))};
     }else if(card.classList.contains('elicit')){
       out.elicit.push({id:a.id,name:a.name,head:a.name+': [MCP] '+(card.getAttribute('aria-label')||'An MCP server asks for input'),text:requestText(card)});
@@ -1788,7 +1791,7 @@ function realSlips(){
     const first=items[0], q=first.card.classList.contains('question');
     const what=q?'asks':'needs your OK';
     out.queue={total:items.length,
-      first:{id:first.a.id,name:first.a.name,who:first.who,what,folder:roomOf(first.a).name,text:requestText(first.card),
+      first:{id:first.a.id,req:reqOf(first.card),name:first.a.name,who:first.who,what,folder:roomOf(first.a).name,text:requestText(first.card),
         actions:(q?[]:inboxActs(first.card).map((b,i)=>({idx:i,label:b.textContent,title:b.title||'',cls:(b.className.match(/\b(primary|danger|session)\b/)||[''])[0]}))).concat(q?[{idx:-1,k:'open',label:'Answer in chat',title:'',cls:'primary'}]:[])},
       folded:items.slice(1,3).map(x=>({id:x.a.id,text:x.a.name+' '+(x.card.classList.contains('question')?'asks: ':'needs your OK: ')+requestText(x.card).slice(0,60)})),
       more:Math.max(0,items.length-3),door:D.BOSS};
@@ -1802,7 +1805,7 @@ document.addEventListener('click',e=>{
   if(act==='inbox'){openInbox();return;}
   if(!a)return;
   if(act==='open'){openPanel(a.id,true);return;}
-  const card=pendingCardOf(a); if(!card)return;
+  const card=[...getChat(a).el.querySelectorAll('.note.perm:not(.settled)')].find(n=>reqOf(n)===b.dataset.slipreq); if(!card)return; /* answered already or replaced: nothing is sent */
   if(act==='perm'){const src=inboxActs(card)[Number(b.dataset.slipidx)];if(src)src.click();return;}
   if(act==='limit'){
     const btns=[...card.querySelectorAll(':scope > .note-actions button')], src=btns[Number(b.dataset.slipidx)], inp=card.querySelector('.limit-amt'), mine=b.closest('.ro-slip')&&b.closest('.ro-slip').querySelector('.limit-amt');
