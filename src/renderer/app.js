@@ -917,7 +917,7 @@ const CANDIDATES=[['full',3,'side'],['full',2,'side'],['full',3],['full',2],['ro
 let LIVE_SIDE=false; const SIDE_W=196, SIDE_GAP=8;
 let LIVE_PREF=(()=>{try{return localStorage.getItem('durbar.liveActivity')!=='off';}catch(e){return true;}})();
 const LIVE_MASK=(()=>{const L=window.DurbarLiveAct,R=NO_REDACT?null:window.DurbarRedact;if(!L||!R||typeof R.redact!=='function')return null;
-  return {redact:t=>R.redact(t),cmd:t=>R.maskSecretCommand(t),url:t=>R.maskSecretUrl(t)};})();
+  return {redact:t=>R.redact(t),cmd:t=>R.maskSecretCommand(t),url:t=>R.maskSecretUrl(t),home:t=>R.maskHomePaths(t)};})();
 const LIVEACT=LIVE_MASK?window.DurbarLiveAct.create({mask:LIVE_MASK}):null;
 const liveOn=()=>!!LIVEACT&&LIVE_PREF;
 function setLiveOn(on){LIVE_PREF=!!on;try{localStorage.setItem('durbar.liveActivity',LIVE_PREF?'on':'off');}catch(e){}scheduleRender();}
@@ -1010,6 +1010,7 @@ function liveFeed(a,e){
   let x;
   if(e.type==='toolCall'&&e.phase==='start'){const k=toolKind(e.tool),l0=editLabel(e)||toolLabel(e.args),l=k==='edit'&&l0&&!e.mcpServer?EV.displayPath(l0,a.info&&a.info.cwd).rel:l0; /* spec 005 FR-020: an edit names its file relative to the folder */x={kind:k,label:l,simple:SIMPLE?plainChip(k,e.tool,l,true):'',skip:isTaskTool(e.tool)};}
   if(LIVEACT.onEvent(a.id,e,x))livePaintSoon(a);
+  if(OFFICE_VIEW==='real'&&window.DurbarRealOffice)window.DurbarRealOffice.feed(a.id); /* spec 097 FR-033: its monitor repaints at its own pace */
 }
 let HCAP=1; /* helpers shown on a compact strip before "+N more" (a layout parameter, chosen with the density) */
 let HX_OFF=false; /* simulator only (__durbarSimUi.hxOff): the helper step is skipped, so a driver can compare a layout with and without it (FR-091 item 2) */
@@ -1677,6 +1678,7 @@ async function setOfficeView(v){
   if(v===OFFICE_VIEW)return true;
   if(v==='real'&&signsOn()&&!(await openDoorsFirst('real')))return false;
   OFFICE_VIEW=v;try{localStorage.setItem('durbar.officeview',v);}catch(e){}
+  if(v==='flat'&&window.DurbarRealOffice&&window.DurbarRealOffice.leave)window.DurbarRealOffice.leave(); /* spec 097 Changes 2026-11-01 */
   syncWorld();layoutKey='';scheduleRender();return true;
 }
 /* spec 097 FR-084 (owners 2026-10-31): the Characters setting applies in Real office too; a set without Real office pictures (today
@@ -1762,6 +1764,16 @@ function realModel(model){
   });
   return {folders,places,alertIcon:signIcon('alert'),sessions:agents.filter(a=>!a.parent).map(a=>({id:a.id,folder:a.room}))};
 }
+/* spec 097 FR-030..FR-035: what a monitor shows: the agent's lines (liveact.js, masked), else its last reply or task through the same steps, with
+   the status lines the state asks for; no working mask: only the status word (fail closed). Live activity off: no live lines, as in flat. */
+function realScreen(id,state,word){
+  const a=byId(id), live=liveOn(), log=a&&live&&!a.parent?LIVEACT.screen(id):[];
+  const ask=state==='waiting'||state==='limit'||state==='error', quiet=!live&&(state==='working'||state==='thinking'); /* the setting hid what it does: the status and bars, as flat shows no reply while it works */
+  const task=!a||!LIVEACT||quiet?[]:ask?LIVEACT.strict(taskText(a),'plain'):!log.length?LIVEACT.block(taskOf(a),'plain'):[];
+  const reply=a&&LIVEACT&&!log.length&&(state==='done'||state==='idle')&&a.lastOutput?LIVEACT.block(a.lastOutput,'reply'):[]; /* as grownShowsReply */
+  return window.exports.screenFor(state,log,task,reply,word,quiet);
+}
+const roFrozen=()=>SIM&&qs.get('simfreeze')==='1'&&qs.get('romotion')!=='1'; /* simulator drivers measure boxes: the people hold still (as hl-still); romotion=1 opts back in */
 let RO_LAST=null; /* the last layout, for the drivers (window.__durbarSimUi.realLayout) */
 function renderReal(stage,floor,aw,ah,model){
   if(RO_LOAD!=='ready'){
@@ -1783,7 +1795,7 @@ function renderReal(stage,floor,aw,ah,model){
   }
   if(stage.dataset.d!=='real'){stage.dataset.d='real';stage.textContent='';}
   layoutKey='';GROW=0;setGrow(stage,0);spreadOffice(stage,false);stagePrev=null;
-  RO_LAST=window.DurbarRealOffice.render(stage,realModel(model),{w:aw,h:ah},{still:REDUCED||SERIOUS,world:pp.world,set:pp.set,remember:rememberOn(),
+  RO_LAST=window.DurbarRealOffice.render(stage,realModel(model),{w:aw,h:ah},{live:liveOn(),still:REDUCED||SERIOUS,hold:roFrozen()||(!!APP_SETTINGS&&APP_SETTINGS.characterMotion===false),screenOf:realScreen,world:pp.world,set:pp.set,remember:rememberOn(), /* FR-071: the 096 Motion setting, once it exists, stops the people */
     rand:CREW&&(SIM||!rememberOn())?CREW.seededRand:Math.random,onArt:()=>scheduleRender()});
   stage.style.width=aw+'px';stage.style.height=RO_LAST.height+'px';
   stage.dataset.fit=RO_LAST.scroll?'scroll':'ok';floor.classList.toggle('scrolls',!!RO_LAST.scroll);
@@ -4764,6 +4776,14 @@ function afterFloorsChange(){
 /* FR-007 (PR #124 review): only with two or more floors, and compact (icon + "2/3"), so the top bar fits at 1280x800 with
    wide fonts too. With the Ground floor alone the top bar looks as before; the first extra floor is made in Settings > Floors. */
 const FLOORS_IC='<svg class="fl-ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M8 1.8l6.2 3.1L8 8 1.8 4.9z"/><path d="M1.8 8.1L8 11.2l6.2-3.1"/><path d="M1.8 11.1L8 14.2l6.2-3.1"/></svg>';
+/* 2026-11-01 (issue 1010): the floor row's icon buttons and drag handle, same 16px stroke style as ICON */
+/* the focus button's tooltip (and the app's own tooltip helper, bound below): what it does now, and how to leave focus. The action is one-shot (onlyFloor): it switches this floor on and every other off; there is no separate "off" state. */
+const flFocusTip=(f,focused)=>focused?'Focus mode is on: only '+f.name+' is shown. Switch another floor on to leave it.':'Focus mode: show only '+f.name+' (switches every other floor off)';
+const FL_IC={focus:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M2.5 6V3.5H5M11 3.5h2.5V6M13.5 10v2.5H11M5 12.5H2.5V10"/></svg>',
+  up:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3.5 10l4.5-4.5L12.5 10"/></svg>',
+  down:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3.5 6l4.5 4.5L12.5 6"/></svg>',
+  del:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M2.5 4.5h11M6.2 4.5V3h3.6v1.5M4 4.5l.6 8.5h6.8l.6-8.5M6.6 7v3.8M9.4 7v3.8"/></svg>',
+  grip:'<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" focusable="false"><circle cx="6" cy="4" r="1.2"/><circle cx="10" cy="4" r="1.2"/><circle cx="6" cy="8" r="1.2"/><circle cx="10" cy="8" r="1.2"/><circle cx="6" cy="12" r="1.2"/><circle cx="10" cy="12" r="1.2"/></svg>'};
 function renderFloorsBtn(){
   const b=$('floorsBtn'); if(!b)return;
   const show=floorsLive()&&FLOORS.floors.length>1;
@@ -4815,15 +4835,15 @@ function floorsBodyHTML(px){
   const into=intoFloor();
   return (into?`<div class="fl-into"><label for="${px}Into">New folders go to</label><select id="${px}Into" class="fl-into-sel" title="Floor for the folders you add with + Folder or + Workspace">${opts(into)}</select></div>`:'')+
     FLOORS.floors.map((f,i)=>{
-      const rooms=roomsOnFloor(f.id);
-      return `<div class="fl-floor${f.on?'':' off'}"><div class="fl-row">
-        <button class="fl-sw" type="button" data-fl="on" data-floor="${esc(f.id)}" aria-pressed="${f.on}" aria-label="${esc(f.name)}: ${f.on?'on':'off'}. Switch ${f.on?'off':'on'}.">${f.on?'On':'Off'}</button>
+      const rooms=roomsOnFloor(f.id),focused=FLOORS.floors.length>1&&f.on&&FLOORS.floors.every(x=>x.id===f.id||!x.on);
+      return `<div class="fl-floor${f.on?'':' off'}" data-floor="${esc(f.id)}"><div class="fl-row"><span class="fl-grip" aria-hidden="true" title="Drag to reorder">${FL_IC.grip}</span>
+        <button class="swt${f.on?' on':''}" type="button" role="switch" data-fl="on" data-floor="${esc(f.id)}" aria-checked="${f.on}" aria-label="${esc(f.name)}: ${f.on?'on':'off'}. Switch ${f.on?'off':'on'}."><i></i></button>
         <div class="fl-t"><b title="${esc(f.name)}">${esc(f.name)}</b><small>${rooms.length} folder${rooms.length===1?'':'s'}</small><small class="fl-att" data-att="${esc(f.id)}"${offFloorAttention(f.id)?'':' hidden'}>${esc(offFloorAttention(f.id))}</small></div>
-        <button class="btn" type="button" data-fl="only" data-floor="${esc(f.id)}" title="Switch ${esc(f.name)} on and every other floor off" aria-label="Show only ${esc(f.name)}">Show only</button>
-        <button class="btn" type="button" data-fl="rename" data-floor="${esc(f.id)}" aria-label="Rename ${esc(f.name)}">Rename…</button>
-        <button class="btn" type="button" data-fl="up" data-floor="${esc(f.id)}" aria-label="Move ${esc(f.name)} up"${i===0?' disabled':''}>Up</button>
-        <button class="btn" type="button" data-fl="down" data-floor="${esc(f.id)}" aria-label="Move ${esc(f.name)} down"${i===last?' disabled':''}>Down</button>
-        ${f.ground?'':`<button class="btn danger" type="button" data-fl="del" data-floor="${esc(f.id)}" aria-label="Delete ${esc(f.name)}">Delete</button>`}</div>
+        <button class="btn fl-ib fl-focus" type="button" data-fl="only" data-floor="${esc(f.id)}" data-tip="${esc(flFocusTip(f,focused))}" aria-pressed="${focused}" aria-label="Focus mode: show only ${esc(f.name)}">${FL_IC.focus}</button>
+        <button class="btn fl-ib" type="button" data-fl="up" data-floor="${esc(f.id)}" title="Move up" aria-label="Move ${esc(f.name)} up"${i===0?' disabled':''}>${FL_IC.up}</button>
+        <button class="btn fl-ib" type="button" data-fl="down" data-floor="${esc(f.id)}" title="Move down" aria-label="Move ${esc(f.name)} down"${i===last?' disabled':''}>${FL_IC.down}</button>
+        <button class="btn fl-ib" type="button" data-fl="rename" data-floor="${esc(f.id)}" title="Rename" aria-label="Rename ${esc(f.name)}">${ICON('rename')}</button>
+        ${f.ground?'<span class="fl-ib-gap" aria-hidden="true"></span>':`<button class="btn fl-ib danger" type="button" data-fl="del" data-floor="${esc(f.id)}" title="Delete" aria-label="Delete ${esc(f.name)}">${FL_IC.del}</button>`}</div>
         ${rooms.map(r=>`<div class="fl-folder"><span class="fl-fn" title="${esc(r.path)}">${esc(r.name)}</span>${r.hidden?'<span class="tag">hidden</span>':''}<label class="sr-only" for="${px}m-${esc(r.id)}">Floor of ${esc(r.name)}</label><select id="${px}m-${esc(r.id)}" data-fl="move" data-room="${esc(r.id)}" title="Move ${esc(r.name)} to another floor">${opts(f.id)}</select></div>`).join('')}</div>`;}).join('')+
     `<div class="fl-new"><label class="sr-only" for="${px}New">New floor name</label><input id="${px}New" type="text" maxlength="40" placeholder="New floor name" autocomplete="off" spellcheck="false"><button class="btn" type="button" data-fl="create">Create</button></div>`+
     `<p class="fl-err" role="alert"${floorsErr?'':' hidden'}>${esc(floorsErr)}</p>`;
@@ -4852,6 +4872,22 @@ async function floorCall(p){
   if(r&&r.state)applyFloors(r.state); else {renderFloorsPanel();renderFloorsSettings();}
   return r;
 }
+/* 2026-11-01 (issue 1010): drag a floor by its handle to reorder; the drop saves through the same call as Up and Down (reorderFloors).
+   The drag code is the one of rooms, desks and places (reorder.js, issue 677): transform and opacity only, Esc cancels, the arrow buttons stay the keyboard route. */
+(function(){
+  if(window.DurbarTip)window.DurbarTip.bind(document.body,{selector:'.floors-ui .fl-focus',text:el=>el.dataset.tip||''});
+  if(!RO||!RO.attach)return;
+  RO.attach(document.body,[{kind:'floor',
+    item:t=>{const h=t.closest('.floors-ui .fl-grip');return h?h.closest('.fl-floor'):null;},
+    group:el=>[...el.parentNode.children].filter(x=>x.classList.contains('fl-floor')),
+    key:el=>el.dataset.floor}],{
+    commit:(kind,el,els,from,to)=>{
+      const ids=RO.moveTo(els.map(x=>x.dataset.floor),el.dataset.floor,els[to].dataset.floor,to>from);
+      const f=floorById(el.dataset.floor);
+      floorCall(bridge.reorderFloors(ids));
+      announce(RO.announce(f?f.name:'Floor',to+1,els.length,''));
+    }});
+})();
 async function floorAction(el){
   const fl=el.dataset.fl,id=el.dataset.floor,f=floorById(id);
   if((fl==='on'||fl==='only')&&f)startFloorSwitchTiming();
@@ -4870,7 +4906,7 @@ async function floorAction(el){
   }
   if(fl==='del'&&f){
     const n=roomsOnFloor(id).length;
-    const r=await askDialog({title:'Delete floor '+f.name+'?',body:(n?(n===1?'Its folder moves':'Its '+n+' folders move')+' to '+((FLOORS.floors.find(x=>x.ground)||{}).name||'the ground floor')+'. ':'')+'No folder is removed and no session is ended.',returnFocus:()=>{const b=el.closest('.floors-ui');return (b&&b.querySelector('.fl-sw'))||$('floorsBtn');},
+    const r=await askDialog({title:'Delete floor '+f.name+'?',body:(n?(n===1?'Its folder moves':'Its '+n+' folders move')+' to '+((FLOORS.floors.find(x=>x.ground)||{}).name||'the ground floor')+'. ':'')+'No folder is removed and no session is ended.',returnFocus:()=>{const b=el.closest('.floors-ui');return (b&&b.querySelector(`[data-fl="del"][data-floor="${CSS.escape(id)}"]`))||$('floorsBtn');},
       buttons:[{label:'Cancel',value:null},{label:'Delete floor',value:'ok',cls:'primary danger'}]});
     if(r)return floorCall(bridge.deleteFloor(id));
     return;
@@ -8414,7 +8450,7 @@ if(pendingOpen&&demoOn){openPanel(pendingOpen,false);pendingOpen=null;}
 const settleNow=()=>{if(!agentsListed||!window.__durbarSimReplayed||baselineQueued||baselineAsking)return false;if(renderQueued){renderQueued=false;renderAll();}return true;};
 /* simulator drivers load with simfreeze=1: the desk glow then holds still (FR-178: the geometry and screenshot checks measure boxes, so no zoom may be mid-way); the unread driver opts back in with hlmotion=1 to test the motion itself */
 if(SIM&&qs.get('simfreeze')==='1'&&qs.get('hlmotion')!=='1')document.documentElement.classList.add('hl-still');
-if(SIM)window.__durbarSimUi={agents:()=>agents,order:{get:()=>ORDER,saved:()=>bridge.getOrder?bridge.getOrder():null,reset:resetOrder,path:id=>(ROOMS.find(r=>'room:'+r.id===id)||{}).path||''}, /* issue 677 (check 033-order): the order held and saved, Reset, a room's key */
+if(SIM)window.__durbarSimUi={agents:()=>agents,setLive:setLiveOn,setOfficeView,order:{get:()=>ORDER,saved:()=>bridge.getOrder?bridge.getOrder():null,reset:resetOrder,path:id=>(ROOMS.find(r=>'room:'+r.id===id)||{}).path||''}, /* issue 677 (check 033-order): the order held and saved, Reset, a room's key */
   toast:(s,act)=>{const t=act?toastAction(esc(String(s)),String(act),()=>{},8000):toast(esc(String(s)),8000);return !!t;}, /* spec 097 FR-113: a toast for the world-chrome driver (simulator only) */realLayout:()=>RO_LAST, /* spec 097: the last Real office layout (check-office-overlap's Real office variant) */uncrowd:()=>{agents.forEach(x=>VISITS.unpin(x.id));scheduleRender();return true;},crowd:(pid,n,from)=>{const a=agents.filter(x=>!x.parent).slice(from||0,(from||0)+n);a.forEach(x=>VISITS.pin(x.id,pid,'test'));scheduleRender();return a.length;}, /* spec 097: n main agents stand at a place (a "+N" crowd for the driver; simulator only) */crew:{state:()=>({map:{...CREW_MAP},help:{...CREW_HELP},bad:[...CREW_BAD],hasModule:!!CREW}),renderAll:()=>{renderAll();return true;},probe:()=>{try{crewPreload();syncCrew();return {ok:true,of:agents.map(x=>crewOf(x)).filter(Boolean).length};}catch(e){return {ok:false,err:String(e&&e.message)};}},openInbox:()=>{openInbox();return true;},closeInbox:()=>{closeInbox();return true;},openPanel:id=>{openPanel(id);return true;},fall:c=>{const f0=CREW.file;CREW.file=(i,p)=>i===c?'crew/art/gone.webp':f0(i,p);crewLoaded.clear();crewPreload();CREW.file=f0;return true;}}, /* spec 077 (check-crew): the character map, a render, and one character's pictures failing to load */
   readAll:(quiet)=>{const n=UNREAD.size;UNREAD.ids().forEach(id=>{UNREAD.read(id);UNREAD_AT.delete(id);});if(!quiet)scheduleRender();return n;},notes:{all:()=>[...NT.by.values()].map(x=>x.notes||[]).flat(),saveMsg:btn=>{const a=byId(ui.selected);return notesSaveMsg(a,msgInfo(btn),btn);},noCommands:()=>{const x=agents.find(q=>q.live&&!q.parent&&!slashSupported(q));return x?x.name:'';},selNow:()=>{showSelButton();const b=document.getElementById('ntSelBtn');return !!b&&!b.hidden;},open:()=>openNotes(byId(ui.selected)),close:()=>closeNotes(false),search:q=>{const f=$('ntSearch');if(!f)return false;f.value=q;f.dispatchEvent(new Event('input'));return true;},marks:{clear:()=>{document.querySelectorAll('#chat .nt-mark').forEach(x=>x.remove());document.querySelectorAll('#chat .bubble').forEach(b=>{b._nd=undefined;});return true;},run:()=>notesMarkAll(byId(ui.selected))},change:(note,patch)=>notesChange(byId(ui.selected),note,patch),rename:note=>renameNote(byId(ui.selected),note,null),plant:n=>{const a=byId(ui.selected),st=a&&notesOf(a);if(!st||!st.ok)return false;st.notes.push(n);notesPaint();if(slashUi)slashUpdate();return true;}}, /* spec 083: the check-notes driver reads the window's notes and takes the paths a click cannot */
   sizingLounges:()=>lastSizing.reduce((n,m)=>n+(m.rolled||[]).length,0), sizingMains:()=>lastSizing.reduce((n,m)=>n+m.mains.length,0), /* FR-181: the desks it is sized for (a pill does not reshape the cards) */ /* spec 001 FR-180: the finished agents the office is sized for */

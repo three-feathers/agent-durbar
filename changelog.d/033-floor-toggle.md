@@ -1,0 +1,2 @@
+- The Floors panel is easier to use (issue #1010): the on/off is a toggle switch like the one for MCP servers, **Show only** is now a **Focus mode** icon button with a tooltip, Up and Down are arrow buttons, Rename and Delete are quiet icon buttons, and you can drag a floor by its handle to reorder it.
+- Switches (floors, MCP servers, Settings) are darker green when on and follow the office world, so on and off are easier to tell apart.
