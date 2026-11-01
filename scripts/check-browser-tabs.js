@@ -106,9 +106,14 @@ module.exports = async (ctx) => {
     await js(`document.querySelector('#bTabs .btab.on .btab-x').click()`);
     await wait(() => count() === n - 1 && !tabs().tabs.some((x) => x.tabId === want), 'the active tab closes');
   };
+  const seenKeys = new WeakMap();
+  let lastKeys = [];
   const pageKey = async (keyCode, modifiers) => {
     const wc = view().webContents;
     assert.ok(await H.focusWc(wc), 'the page has the focus before its key');
+    // what main's before-input-event gets from this key (listener only records; it is added once per view): a failing wait below names it
+    if (!seenKeys.has(wc)) { const log = []; seenKeys.set(wc, log); wc.on('before-input-event', (_e, i) => { log.push(`${i.type}:${i.key}|${i.code}|c${+!!i.control}m${+!!i.meta}s${+!!i.shift}`); if (log.length > 12) log.shift(); }); }
+    lastKeys = seenKeys.get(wc);
     wc.sendInputEvent({ type: 'keyDown', keyCode, modifiers });
     wc.sendInputEvent({ type: 'keyUp', keyCode, modifiers });
   };
@@ -343,7 +348,7 @@ module.exports = async (ctx) => {
   assert.ok(!/(C-|M-)(t|T|Tab|w|W)\b/.test(log), 'the page never saw the tab keys: ' + log);
   const n1 = count();
   await pageKey('W', [MOD]);
-  await wait(() => count() === n1 - 1 && !tabs().tabs.some((x) => x.tabId === keysTab), 'Ctrl/Cmd+W in the page closes its tab');
+  await wait(() => count() === n1 - 1 && !tabs().tabs.some((x) => x.tabId === keysTab), 'Ctrl/Cmd+W in the page closes its tab (main saw: ' + lastKeys.join(' ') + ')');
   // the bar's own keys (the window's handler): Ctrl+Tab and Ctrl+Shift+Tab
   await js(`document.getElementById('bAddr').focus()`);
   const a0 = tabs().active;
