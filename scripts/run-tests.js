@@ -1,18 +1,19 @@
 #!/usr/bin/env node
 /*
- * `npm test` (spec 008 delta 2026-10-19: faster CI). The suites are the `npm run test:*` names in the `test:serial` script,
- * which stays the single list and still runs everything one by one. Here the scripts are compiled ONCE (each `test:*` script
+ * `npm test` (spec 008 delta 2026-10-19: faster CI). The suites are the `npm run test:*` names in scripts/test-suites.txt (one per line;
+ * spec 008 delta 2026-11-01, it was one 4 KB line in package.json that conflicted in every PR pair), the single list. Here the scripts are compiled ONCE (each `test:*` script
  * starts with its own `tsc`, 40 compiles of about 5 s), then the suites run in parallel, each suite's own steps in order.
  *
  *   npm test                     all suites, parallel (TEST_JOBS=n to change the worker count; default: CPUs minus one, at most 8; nice 10)
  *   npm test -- folders claude   only suites whose name contains one of the words
  *   npm test -- --bail           (or TEST_BAIL=1) stop at the first failing suite, for iterating; the default still runs everything
- *   npm run test:serial          the old way, one after another
+ *   npm run test:serial          (--serial) one suite after another, same list
  *
  * With --bail no new suite starts after the first failure and the running ones are stopped (POSIX: the suite's whole process group;
  * Windows: `taskkill /T /F` on its tree), so no Electron or Xvfb is left behind. The final run, PR CI and the merge queue run everything.
  * Every suite writes its own temp folders; a suite's output is printed when it ends, whole, so lines never interleave.
  */
+const fs = require('fs');
 const { spawn, spawnSync } = require('child_process');
 const os = require('os');
 const path = require('path');
@@ -29,14 +30,22 @@ function parseArgs(argv, env) {
   return { bail: asked && !ci, ignoredBail: asked && ci, filters: argv.filter((a) => !a.startsWith('-')) };
 }
 
-// the suites: the `npm run test:*` names of test:serial, each as the ordered `node <file>` steps of its script
-function loadSuites(pkg, filters) {
-  const names = pkg.scripts['test:serial'].split('&&').map((s) => s.trim().replace(/^npm run /, ''));
+// scripts/test-suites.txt: one `test:*` script name per line; blank lines and `#` comments are ignored; a name twice is an error
+const SUITE_LIST = path.join(__dirname, 'test-suites.txt');
+function readSuiteList(text = fs.readFileSync(SUITE_LIST, 'utf8')) {
+  const names = text.split(/\r?\n/).map((l) => l.replace(/#.*$/, '').trim()).filter(Boolean);
+  const seen = new Set();
+  for (const n of names) { if (seen.has(n)) throw new Error(`test-suites.txt lists ${n} twice`); seen.add(n); }
+  return names;
+}
+
+// the suites: the names of the list, each as the ordered `node <file>` steps of its script
+function loadSuites(pkg, filters, names = readSuiteList()) {
   return names
     .filter((n) => !filters.length || filters.some((f) => n.includes(f)))
     .map((name) => {
       const cmd = pkg.scripts[name];
-      if (!cmd) throw new Error(`test:serial names ${name}, which is not a script`);
+      if (!cmd) throw new Error(`test-suites.txt names ${name}, which is not a script`);
       const steps = cmd.replace(TSC_PREFIX, '').split('&&').map((s) => s.trim().split(/\s+/));
       for (const s of steps) if (s[0] !== 'node') throw new Error(`${name}: only "node <file>" steps are supported here, got "${s.join(' ')}"`);
       return { name, steps: steps.map((s) => s.slice(1)) };
@@ -143,7 +152,7 @@ function runMain({ suites, jobs, bail, t0 = Date.now(), exit = process.exit, run
   });
 }
 
-module.exports = { parseArgs, loadSuites, stopChild, runSuites, runMain };
+module.exports = { parseArgs, readSuiteList, loadSuites, stopChild, runSuites, runMain };
 
 if (require.main === module) {
   const { ensureElectron } = require('./ensure-electron');
@@ -165,7 +174,7 @@ if (require.main === module) {
   }
 
   // leave a core for the desktop and run at low priority, so the machine stays usable while the suites run
-  const jobs = Math.max(1, Number(process.env.TEST_JOBS) || Math.min(os.cpus().length - 1, 8));
+  const jobs = process.argv.includes('--serial') ? 1 : Math.max(1, Number(process.env.TEST_JOBS) || Math.min(os.cpus().length - 1, 8));
   try { os.setPriority(10); } catch (_) { /* not allowed: normal priority */ }
   runMain({ suites, jobs, bail, t0 });
 }
