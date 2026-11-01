@@ -108,9 +108,25 @@ export function escapeGitSegment(seg: string): string {
 }
 
 /** FR-051: the anchored `info/exclude` line for a folder at `rel` (segments) from the repository root; `/` separators on every OS. */
-export function excludeLine(segments: readonly string[]): string {
-  return segments.length ? `/${segments.map(escapeGitSegment).join('/')}/.durbar/` : '/.durbar/';
+export function excludeLine(segments: readonly string[], durbar = '.durbar'): string {
+  return segments.length ? `/${segments.map(escapeGitSegment).join('/')}/${durbar}/` : `/${durbar}/`;
 }
+
+/** A canonical singleton or composition exclusion: a character NFC replaces, which git's precompose on macOS keeps (U+212B, U+F900...). */
+const isSingleton = (c: string): boolean => c.normalize('NFC') !== c;
+/** The composed form git's `core.precomposeunicode` gives: runs composed, singletons kept (spec Changes, review of #957). */
+function composeKeepingSingletons(s: string): string {
+  let out = '';
+  let run = '';
+  for (const c of s) {
+    if (isSingleton(c)) { out += run.normalize('NFC') + c; run = ''; } else run += c;
+  }
+  return out + run.normalize('NFC');
+}
+/** Decomposed Balinese vowels: NFC composes them and git's precompose does not, so beside a composed letter no form matches. */
+const DECOMPOSED_BALINESE = /[ᬅᬇᬉᬋᬍᬑᬺᬼᬾᬿᭂ]ᬵ/;
+/** The two shapes a sweep of real git found no form for (spec Changes): `addExclude` refuses them. A singleton before a combining mark, and decomposed Balinese. */
+const noFormMatches = (s: string): boolean => { if (DECOMPOSED_BALINESE.test(s)) return true; const cs = [...s]; return cs.some((c, i) => isSingleton(c) && i + 1 < cs.length && /^\p{M}/u.test(cs[i + 1])); };
 
 interface Place { folder: string; durbar: string; notes: string; hasDurbar: boolean }
 export type ReadBack =
@@ -489,12 +505,16 @@ export class NotesFile {
     const line = excludeLine(segments);
     let lines = [line];
     if (this.platform === 'darwin') {
-      // macOS merges NFC and NFD names and upper and lower case; git compares the form on disk or its NFC (core.precomposeunicode) and folds ASCII only, so each form of the given path and of the name on disk gets its line (spec Changes)
-      const disk = this.nameOnDisk(root, segments);
+      // macOS merges names by form and case, while git compares the form on disk or a composed form with singletons kept, and folds ASCII only: each form of the given path and of the name on disk gets its line (spec Changes)
+      let hasDurbar = true;
+      try { this.fs.lstatSync(path.join(folder, '.durbar')); } catch { hasDurbar = false; }
+      const disk = this.nameOnDisk(root, hasDurbar ? [...segments, '.durbar'] : segments);
       if (!disk) return fail('the name of a folder on disk could not be read');
-      if (disk.some((s) => /[\u0000-\u001f\u007f]/.test(s))) return { ok: false, error: EXCLUDE_UNSAFE_NAME };
-      const forms = (p: readonly string[]): string[] => [excludeLine(p), excludeLine(p.map((s) => s.normalize('NFC'))), excludeLine(p.map((s) => s.normalize('NFD')))];
-      lines = [...new Set([...forms(segments), ...forms(disk)])];
+      const durbar = hasDurbar ? disk[disk.length - 1] : '.durbar';
+      const diskPath = hasDurbar ? disk.slice(0, -1) : disk;
+      if ([...segments, ...diskPath].some(noFormMatches)) return { ok: false, error: EXCLUDE_UNSAFE_NAME };
+      const forms = (p: readonly string[]): string[] => [(s: string) => s, (s: string) => s.normalize('NFC'), (s: string) => s.normalize('NFD'), composeKeepingSingletons].map((f) => excludeLine(p.map(f), durbar));
+      lines = [...new Set([line, ...forms(segments), ...forms(diskPath)])];
     }
 
     let target: string;
@@ -558,23 +578,29 @@ export class NotesFile {
   }
 
   /**
-   * The path below `root` as it is stored on disk, one `readdir` per folder (spec Changes, review of #957): the entry with the same NFC and case fold that is the same file
-   * (`dev` and `ino`), so a twin on a volume that does not merge names is not taken. `undefined` when a folder cannot be listed or no entry is that file: the caller refuses rather than answer *Added* on a guess.
+   * The path below `root` as it is stored on disk (spec Changes, review of #957): one `readdir` per folder, taking the entry that is the same file (`dev` and `ino`). The fold only
+   * keeps a big folder cheap. If that finds nothing (not listable, or a case JavaScript folds differently from APFS), `realpathSync.native` answers. `undefined`: the caller refuses.
    */
   private nameOnDisk(root: string, segments: readonly string[]): string[] | undefined {
     const fold = (s: string): string => s.normalize('NFC').toUpperCase().toLowerCase();
-    const out: string[] = [];
-    let dir = root;
     try {
+      const out: string[] = [];
+      let dir = root;
       for (const seg of segments) {
         const want = this.fs.lstatSync(path.join(dir, seg));
         const name = this.fs.readdirSync(dir).find((n) => { if (fold(n) !== fold(seg)) return false; const st = this.fs.lstatSync(path.join(dir, n)); return st.dev === want.dev && st.ino === want.ino; });
-        if (name === undefined) return undefined;
+        if (name === undefined) throw new Error('no entry');
         out.push(name);
         dir = path.join(dir, name);
       }
+      return out;
+    } catch { /* below */ }
+    try {
+      const native = this.fs.realpathSync.native;
+      const rel = path.relative(native(root), native(path.join(root, ...segments)));
+      const out = rel ? rel.split(path.sep) : [];
+      return out.length === segments.length ? out : undefined;
     } catch { return undefined; }
-    return out;
   }
 }
 
