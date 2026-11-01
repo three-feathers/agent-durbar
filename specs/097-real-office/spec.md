@@ -343,6 +343,8 @@ Vikram judged the walk and the head-anchored sit-down *not natural enough*: two 
 - **Lobby chips and plates never travel (owner 2026-11-01):** a chip or plate that moves fades in at its new place, so nothing passes over anything. A slide uses `translate`, so an element keeps its own transform (the post-it's tilt, a person's motion).
 - **A session count change eases (owner 2026-11-01):** what the layout makes bigger or smaller eases there on `translate` and `scale`, in the same 280 to 520 ms as a move, with no layout during it; the text inside takes its new size at once.
 - **The lobby's own widths still follow who is there,** and fade in place. `[KNOWN GAP]` Keeping them fixed would need a new lobby rule.
+- **FR-180, changed 2026-11-01:** besides `opacity` and `transform`, a move may animate the `translate` and `scale` properties. They are composited as `transform` is and need no layout, and they let an element keep its own transform while it moves (the post-it's tilt, a person's motion), which animating `transform` would override. The motion driver checks this on a forced layout change, so it does not depend on a slide happening to run while it looks.
+- **Leaving Real office tears it down (2026-11-01):** the open zoom and its key listener, the observers, the screens' timers and what it remembers about people go, so an Escape reaches the app. Opening or closing a chat pauses and resumes the room at once, not at the next draw.
 - **The typing rig is in the pack** for the 15 people: head and two hands as WebP, `rig` in `people.json`. Cut with on-device Apple Vision by a one-off script, not at app time.
 - This delta's own sections below on the walk and the head anchor are superseded by this one.
 
