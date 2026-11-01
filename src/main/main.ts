@@ -110,7 +110,7 @@ import { parseCapIn, parseThemeId, startCap } from '../shared/credits';
 import { broadFolderKind } from '../shared/broadfolder';
 import { REPO_URL, aboutPanelOptions } from '../shared/about';
 import { modelControlFor } from '../shared/modelswitch';
-import { createDebugSink } from '../shared/redact';
+import { createDebugSink, redact } from '../shared/redact';
 import { profileDir } from './profiledir';
 import { simClockSetup } from './simclock';
 import { debugSwitchesToRemove } from './debugguard';
@@ -126,7 +126,7 @@ if (aumid) app.setAppUserModelId(aumid);
 // Developer/test hooks (spec 010): ignored in packaged builds unless DURBAR_DEV=1. Read hooks only from `dev`.
 const dev = devEnv(process.env, app.isPackaged);
 const devNote = devWarning(process.env, app.isPackaged);
-if (devNote) console.error(devNote);
+if (devNote) console.error(redact(devNote));
 configureDevClaudeBin(dev); // spec 012 FR-163: DURBAR_CLAUDE_BIN, dev/test only (`dev` is empty in a packaged build)
 // Spec 008 FR-103: a test run's window is never treated as hidden when another window covers it (the Windows CI desktop and a shared
 // X display run several drivers at once). Chromium then stops animation frames and throttles timers, so the page stopped drawing mid-check.
@@ -466,7 +466,7 @@ async function addMany(paths: string[], permMode: PermMode, opts: SessionOptions
 /** Folders remembered from earlier runs come back as "not started" agents: nothing runs until the first message. */
 function restoreFolders(): void {
   if (!folderStore) return;
-  for (const { folder: f, adapterId } of restorable(folderStore.load(), (i) => registry.has(i), console.warn)) {
+  for (const { folder: f, adapterId } of restorable(folderStore.load(), (i) => registry.has(i), (m) => console.warn(redact(m)))) {
     try {
       if (!fs.existsSync(f.workspace)) continue; // e.g. an unplugged drive: stays saved, just not shown
       // FR-021: the folder's last session comes back under its own id (resumed when first needed); a harness this build lacks starts fresh.
@@ -1060,7 +1060,7 @@ app.whenReady().then(() => {
   }
   {
     const dfile = path.join(app.getPath('userData'), 'durbar-doors.json');
-    doors = new Doors(loadDoors(dfile), (doc) => { try { saveDoors(dfile, doc); } catch (err) { console.warn('[doors] could not save', err instanceof Error ? err.message : err); } });
+    doors = new Doors(loadDoors(dfile), (doc) => { try { saveDoors(dfile, doc); } catch (err) { console.warn('[doors] could not save', redact(err instanceof Error ? err.message : err)); } });
   }
   {
     const file = path.join(app.getPath('userData'), 'durbar-schedules.json');
@@ -1111,7 +1111,7 @@ app.whenReady().then(() => {
       const driver = require(dev.DURBAR_DRIVER as string) as (c: typeof ctx) => Promise<void>;
       // spec 008 FR-090: a failing driver exits 1, so CI on every OS sees it without reading the log
       let failed = false;
-      void driver(ctx).catch((err) => { failed = true; console.error('DRIVER FAILED', err); }).finally(() => void router.disposeAll().finally(() => app.exit(failed ? 1 : 0)));
+      void driver(ctx).catch((err) => { failed = true; console.error('DRIVER FAILED', redact(err instanceof Error ? err.stack ?? err.message : err)); }).finally(() => void router.disposeAll().finally(() => app.exit(failed ? 1 : 0)));
     });
   }
   // macOS: a click on the Dock icon brings back the hidden window (FR-085), or opens a new one
