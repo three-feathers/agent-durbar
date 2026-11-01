@@ -119,14 +119,27 @@ module.exports = async (ctx) => {
     const deskIds = await js(`window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks).filter(d=>d.state!=='asleep').map(d=>d.id)`);
     const moveTo = async (x, y) => { wc().sendInputEvent({ type: 'mouseMove', x: Math.round(x), y: Math.round(y) }); await must(`true`, 'a tick'); };
     const OPENED = (i) => `(document.getElementById('roZoom')||{dataset:{}}).dataset.for===${jsLiteral(i)}`;
+    /* the zoom closes when the window loses the focus (FR-034), and on CI drivers run side by side, so another window can take it. Only that is tried again; anything else is a failure, with what was under the pointer */
+    await js(`window.__blurs=0;addEventListener('blur',()=>{window.__blurs++;});0`);
+    const blurs = () => js(`window.__blurs`);
+    const refocus = async () => { ctx.win.show(); ctx.win.focus(); wc().focus(); await must(`document.hasFocus()`, 'the window active again', 8000); };
+    const hover = async (i, p) => {
+      for (let t = 0; t < 5; t++) {
+        const was = await blurs();
+        await moveTo(p.x, p.y);
+        if (await H.until(OPENED(i), 15000)) return;
+        if ((await blurs()) === was) break;
+        console.log('[097-screens] the window lost the focus during the hover of', i);
+        await refocus(); await moveTo(1, 1);
+        await must(`!document.getElementById('roZoom')`, 'closed before trying again');
+      }
+      assert.fail('the zoom of ' + i + ': ' + JSON.stringify(await js(`(()=>{const e=document.elementFromPoint(${jsLiteral(p.x)},${jsLiteral(p.y)}),a=document.activeElement;return {at:e&&(e.className||e.tagName),for:e&&e.dataset&&e.dataset.for,focus:document.hasFocus(),blurs:window.__blurs,hidden:document.hidden,zoom:(document.getElementById('roZoom')||{dataset:{}}).dataset.for,active:a&&a.className,state:(window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks).find(d=>d.id===${jsLiteral(i)})||{}).state};})()`)));
+    };
     await moveTo(1, 1);
     let placed = {};
     for (const i of deskIds) {
       const p = await js(`(()=>{const b=document.querySelector('#stage .ro-screen[data-for="'+CSS.escape(${jsLiteral(i)})+'"]').getBoundingClientRect();return {x:b.left+b.width/2,y:b.top+b.height/3};})()`);
-      let open = false, nudges = -1;
-      for (let t = 0; t < 8 && !open; t++) { nudges++; await moveTo(p.x + t % 3, p.y); open = await H.until(OPENED(i), 2000); }
-      if (nudges) console.log('[097-screens] hover of', i, 'took', nudges, 'more moves');
-      if (!open) assert.fail('the zoom of ' + i + ': ' + JSON.stringify(await js(`(()=>{const e=document.elementFromPoint(${jsLiteral(p.x)},${jsLiteral(p.y)}),a=document.activeElement;return {at:e&&(e.className||e.tagName),for:e&&e.dataset&&e.dataset.for,focus:document.hasFocus(),hidden:document.hidden,zoom:(document.getElementById('roZoom')||{dataset:{}}).dataset.for,active:a&&a.className,state:(window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks).find(d=>d.id===${jsLiteral(i)})||{}).state};})()`)));
+      await hover(i, p);
       const z = await js(`(()=>{const P=document.getElementById('roZoom'),b=P.getBoundingClientRect(),fl=document.getElementById('floor').getBoundingClientRect();
         const hit=(e)=>{const a=e.getBoundingClientRect();return a.left<b.right&&b.left<a.right&&a.top<b.bottom&&b.top<a.bottom;};
         const own=document.querySelector('.ro-plate[data-id="'+CSS.escape(${jsLiteral(i)})+'"]');
@@ -158,12 +171,18 @@ module.exports = async (ctx) => {
     const mp = await js(`(()=>{const b=document.querySelector('#stage .ro-screen[data-for="'+CSS.escape(${jsLiteral(mid)})+'"]').getBoundingClientRect();return {x:b.left+b.width/2,y:b.top+b.height/3};})()`);
     await moveTo(1, 1);
     await must(`!document.getElementById('roZoom')`, 'the zoom closed when the pointer left');
-    await moveTo(mp.x, mp.y);
-    await must(OPENED(mid), 'the zoom of the middle desk');
+    await hover(mid, mp);
     const CHIPS = `(()=>{const R=e=>e.getBoundingClientRect(),hit=(a,b)=>a.left<b.right-0.3&&b.left<a.right-0.3&&a.top<b.bottom-0.3&&b.top<a.bottom-0.3,C=[...document.querySelectorAll('#stage .ro-chip')],P=[...document.querySelectorAll('#stage .ro-lplate')],out=[];for(const c of C){for(const p of P)if(hit(R(c),R(p)))out.push(c.textContent+' on '+p.textContent);for(const d of C)if(c!==d&&R(c).left<=R(d).left&&hit(R(c),R(d)))out.push(c.textContent+' on '+d.textContent);}return out;})()`;
     await H.until(`${CHIPS}.length===0`, 5000);
     assert.deepStrictEqual(await js(CHIPS), [], 'no chip on a plate or a chip in the zoom picture ' + w);
-    await H.shot(path.join(OUT, `097-zoom-${w}x${h}.png`), { prep: 'calm', keepHover: true });
+    for (let t = 0; t < 5; t++) {
+      const was = await blurs();
+      await H.shot(path.join(OUT, `097-zoom-${w}x${h}.png`), { prep: 'calm', keepHover: true });
+      if (await js(OPENED(mid))) break;
+      assert.notStrictEqual(await blurs(), was, 'the picture has the zoom, and the window kept the focus: ' + JSON.stringify(await js(`({focus:document.hasFocus(),blurs:window.__blurs})`)));
+      console.log('[097-screens] the window lost the focus during the picture');
+      await refocus(); await moveTo(1, 1); await hover(mid, mp);
+    }
     assert.ok(await js(OPENED(mid)), 'the picture has the zoom');
     // Esc: closes; a move inside the same screen does not bring it back; leaving and coming back does
     wc().sendInputEvent({ type: 'keyDown', keyCode: 'Escape' }); wc().sendInputEvent({ type: 'keyUp', keyCode: 'Escape' });
