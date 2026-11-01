@@ -277,8 +277,10 @@ if (worldIds.includes('retro')) {
 }
 {
   // the build script's own checks (a frame off the 8x grid is refused, two runs give the same bytes), where python3 is installed
-  const r = spawnSync('python3', ['-I', path.join(ROOT, 'scripts', 'build-arcade-pack.py'), '--selftest'], { encoding: 'utf8' });
-  if (r.error) console.log('build-arcade-pack selftest skipped: no python3 here; install it to run it'); else assert.strictEqual(r.status, 0, 'build-arcade-pack.py --selftest: ' + r.stdout + r.stderr);
+  const script = path.join(ROOT, 'scripts', 'build-arcade-pack.py');
+  const have = spawnSync('python3', ['-I', '-c', 'import PIL'], { encoding: 'utf8' });
+  if (have.error || have.status !== 0) console.log('build-arcade-pack selftest skipped: needs python3 with Pillow (not on this machine; the committed pictures are still checked above)');
+  else { const r = spawnSync('python3', ['-I', script, '--selftest'], { encoding: 'utf8' }); assert.strictEqual(r.status, 0, 'build-arcade-pack.py --selftest: ' + r.stdout + r.stderr); }
 }
 
 // ---- packaging (FR-060, FR-061, T012): the build ships each pack's pictures and its script, never ASSETS.md or the JSON; the CSP is unchanged ----
