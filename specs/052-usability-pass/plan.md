@@ -99,6 +99,6 @@ The renderer only: `src/renderer/app.js`, `screens.js`, `index.html`, `styles.cs
 - **Order and gates:** one table in [spec 005's plan](../005-chat-fullscreen-and-agent-strip/plan.md); D1 goes first.
 - **D1:** `requestText()` only; a small pure helper so a unit test can reach it without a page.
 - **Notices:** extend `toastActions()` with a card kind and a stay-open action; `mountToast()`, `holdTimer()` and `#toasts` stay; the top-right stack is a child of `#toasts`. `renderRestoreStrip()` and the away and crash painters become card painters, with the same words, then the three elements and `.notice-strip` go. Reused: the `setPermMode` loop of the restore strip for lowering all.
-- **Mac:** the existing darwin-only rule set moves from `.strip` to the rail's top row and `.ph`; the 78 px room moves into `.ph` when the rail is narrower.
+- **Mac (only with the list rail, after 005 T125):** the existing darwin-only rule set moves from `.strip` to the rail's top row and `.ph`; the 78 px room moves into `.ph` when the rail is narrower.
 - **Needs you:** T215 changes #1002's FR-202 path only, by a layout class on `body`. Over the office nothing changes.
 - **Constitution.** III: the safety prompt still asks every start and stays findable by the lock. V: no desk moves; cards never left over seats in Flat at 15. VI: `test-macos`, and a real Mac is a `[KNOWN GAP]`. VIII: mock numbers are marked as such.
