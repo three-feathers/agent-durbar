@@ -114,7 +114,7 @@
 .ro-lplate .ro-more{font-size:10.5px;color:var(--muted)}
 button.ro-lplate{cursor:pointer}
 .ro-lplate.wait{border-color:var(--c-waiting)}
-.ro-chip{transform:translateX(-50%);font-size:10.5px;padding:0 6px;border-radius:7px;white-space:nowrap;line-height:15px;background:var(--surface);color:var(--ink);border:1px solid var(--line);cursor:pointer}
+.ro-chip{transform:translateX(-50%);font-size:10.5px;padding:0 4px;border-radius:7px;white-space:nowrap;line-height:15px;background:var(--surface);color:var(--ink);border:1px solid var(--line);cursor:pointer}
 .ro-chip.wait{border-color:var(--c-waiting);font-weight:600}
 button.ro-chip{font-family:inherit;margin:0}
 .ro-chip:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
