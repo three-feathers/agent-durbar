@@ -798,7 +798,7 @@ async function driver(ctx) {
       await ctx.js(`localStorage.removeItem('durbar.floor')`); // start on the first floor that is on
       await load(q, w, h);
       const perFloor = []; /* what each floor screen chose, to compare with the same agents as the whole office (below) */
-      const names = await ctx.js(`(()=>{const p=document.getElementById('floorsPop'),was=p.hidden;if(was)document.getElementById('floorsBtn').click();const n=[...p.querySelectorAll('[data-fl="on"]')].filter(b=>b.getAttribute('aria-pressed')==='true').map(b=>b.getAttribute('aria-label').split(': ')[0]);if(was)document.getElementById('floorsBtn').click();return n;})()`);
+      const names = await ctx.js(`(()=>{const p=document.getElementById('floorsPop'),was=p.hidden;if(was)document.getElementById('floorsBtn').click();const n=[...p.querySelectorAll('[data-fl="on"]')].filter(b=>b.getAttribute('aria-checked')==='true').map(b=>b.getAttribute('aria-label').split(': ')[0]);if(was)document.getElementById('floorsBtn').click();return n;})()`);
       const on = Number((await ctx.js(`document.getElementById('floorsBtn').textContent.trim()`)).split('/')[0]);
       total++;
       if (!(on >= 2)) { failed++; console.log(`FAIL floor screens ${w}x${h} ${label}: precondition: two or more floors on, got ${on}`); continue; }

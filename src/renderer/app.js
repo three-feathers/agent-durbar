@@ -4764,6 +4764,14 @@ function afterFloorsChange(){
 /* FR-007 (PR #124 review): only with two or more floors, and compact (icon + "2/3"), so the top bar fits at 1280x800 with
    wide fonts too. With the Ground floor alone the top bar looks as before; the first extra floor is made in Settings > Floors. */
 const FLOORS_IC='<svg class="fl-ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M8 1.8l6.2 3.1L8 8 1.8 4.9z"/><path d="M1.8 8.1L8 11.2l6.2-3.1"/><path d="M1.8 11.1L8 14.2l6.2-3.1"/></svg>';
+/* 2026-11-01 (issue 1010): the floor row's icon buttons and drag handle, same 16px stroke style as ICON */
+/* the focus button's tooltip (and the app's own tooltip helper, bound below): what it does now, and how to leave focus. The action is one-shot (onlyFloor): it switches this floor on and every other off; there is no separate "off" state. */
+const flFocusTip=(f,focused)=>focused?'Focus mode is on: only '+f.name+' is shown. Switch another floor on to leave it.':'Focus mode: show only '+f.name+' (switches every other floor off)';
+const FL_IC={focus:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M2.5 6V3.5H5M11 3.5h2.5V6M13.5 10v2.5H11M5 12.5H2.5V10"/></svg>',
+  up:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3.5 10l4.5-4.5L12.5 10"/></svg>',
+  down:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3.5 6l4.5 4.5L12.5 6"/></svg>',
+  del:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M2.5 4.5h11M6.2 4.5V3h3.6v1.5M4 4.5l.6 8.5h6.8l.6-8.5M6.6 7v3.8M9.4 7v3.8"/></svg>',
+  grip:'<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" focusable="false"><circle cx="6" cy="4" r="1.2"/><circle cx="10" cy="4" r="1.2"/><circle cx="6" cy="8" r="1.2"/><circle cx="10" cy="8" r="1.2"/><circle cx="6" cy="12" r="1.2"/><circle cx="10" cy="12" r="1.2"/></svg>'};
 function renderFloorsBtn(){
   const b=$('floorsBtn'); if(!b)return;
   const show=floorsLive()&&FLOORS.floors.length>1;
@@ -4815,15 +4823,15 @@ function floorsBodyHTML(px){
   const into=intoFloor();
   return (into?`<div class="fl-into"><label for="${px}Into">New folders go to</label><select id="${px}Into" class="fl-into-sel" title="Floor for the folders you add with + Folder or + Workspace">${opts(into)}</select></div>`:'')+
     FLOORS.floors.map((f,i)=>{
-      const rooms=roomsOnFloor(f.id);
-      return `<div class="fl-floor${f.on?'':' off'}"><div class="fl-row">
-        <button class="fl-sw" type="button" data-fl="on" data-floor="${esc(f.id)}" aria-pressed="${f.on}" aria-label="${esc(f.name)}: ${f.on?'on':'off'}. Switch ${f.on?'off':'on'}.">${f.on?'On':'Off'}</button>
+      const rooms=roomsOnFloor(f.id),focused=FLOORS.floors.length>1&&f.on&&FLOORS.floors.every(x=>x.id===f.id||!x.on);
+      return `<div class="fl-floor${f.on?'':' off'}" data-floor="${esc(f.id)}"><div class="fl-row"><span class="fl-grip" aria-hidden="true" title="Drag to reorder">${FL_IC.grip}</span>
+        <button class="swt${f.on?' on':''}" type="button" role="switch" data-fl="on" data-floor="${esc(f.id)}" aria-checked="${f.on}" aria-label="${esc(f.name)}: ${f.on?'on':'off'}. Switch ${f.on?'off':'on'}."><i></i></button>
         <div class="fl-t"><b title="${esc(f.name)}">${esc(f.name)}</b><small>${rooms.length} folder${rooms.length===1?'':'s'}</small><small class="fl-att" data-att="${esc(f.id)}"${offFloorAttention(f.id)?'':' hidden'}>${esc(offFloorAttention(f.id))}</small></div>
-        <button class="btn" type="button" data-fl="only" data-floor="${esc(f.id)}" title="Switch ${esc(f.name)} on and every other floor off" aria-label="Show only ${esc(f.name)}">Show only</button>
-        <button class="btn" type="button" data-fl="rename" data-floor="${esc(f.id)}" aria-label="Rename ${esc(f.name)}">Rename…</button>
-        <button class="btn" type="button" data-fl="up" data-floor="${esc(f.id)}" aria-label="Move ${esc(f.name)} up"${i===0?' disabled':''}>Up</button>
-        <button class="btn" type="button" data-fl="down" data-floor="${esc(f.id)}" aria-label="Move ${esc(f.name)} down"${i===last?' disabled':''}>Down</button>
-        ${f.ground?'':`<button class="btn danger" type="button" data-fl="del" data-floor="${esc(f.id)}" aria-label="Delete ${esc(f.name)}">Delete</button>`}</div>
+        <button class="btn fl-ib fl-focus" type="button" data-fl="only" data-floor="${esc(f.id)}" data-tip="${esc(flFocusTip(f,focused))}" aria-pressed="${focused}" aria-label="Focus mode: show only ${esc(f.name)}">${FL_IC.focus}</button>
+        <button class="btn fl-ib" type="button" data-fl="up" data-floor="${esc(f.id)}" title="Move up" aria-label="Move ${esc(f.name)} up"${i===0?' disabled':''}>${FL_IC.up}</button>
+        <button class="btn fl-ib" type="button" data-fl="down" data-floor="${esc(f.id)}" title="Move down" aria-label="Move ${esc(f.name)} down"${i===last?' disabled':''}>${FL_IC.down}</button>
+        <button class="btn fl-ib" type="button" data-fl="rename" data-floor="${esc(f.id)}" title="Rename" aria-label="Rename ${esc(f.name)}">${ICON('rename')}</button>
+        ${f.ground?'<span class="fl-ib-gap" aria-hidden="true"></span>':`<button class="btn fl-ib danger" type="button" data-fl="del" data-floor="${esc(f.id)}" title="Delete" aria-label="Delete ${esc(f.name)}">${FL_IC.del}</button>`}</div>
         ${rooms.map(r=>`<div class="fl-folder"><span class="fl-fn" title="${esc(r.path)}">${esc(r.name)}</span>${r.hidden?'<span class="tag">hidden</span>':''}<label class="sr-only" for="${px}m-${esc(r.id)}">Floor of ${esc(r.name)}</label><select id="${px}m-${esc(r.id)}" data-fl="move" data-room="${esc(r.id)}" title="Move ${esc(r.name)} to another floor">${opts(f.id)}</select></div>`).join('')}</div>`;}).join('')+
     `<div class="fl-new"><label class="sr-only" for="${px}New">New floor name</label><input id="${px}New" type="text" maxlength="40" placeholder="New floor name" autocomplete="off" spellcheck="false"><button class="btn" type="button" data-fl="create">Create</button></div>`+
     `<p class="fl-err" role="alert"${floorsErr?'':' hidden'}>${esc(floorsErr)}</p>`;
@@ -4852,6 +4860,22 @@ async function floorCall(p){
   if(r&&r.state)applyFloors(r.state); else {renderFloorsPanel();renderFloorsSettings();}
   return r;
 }
+/* 2026-11-01 (issue 1010): drag a floor by its handle to reorder; the drop saves through the same call as Up and Down (reorderFloors).
+   The drag code is the one of rooms, desks and places (reorder.js, issue 677): transform and opacity only, Esc cancels, the arrow buttons stay the keyboard route. */
+(function(){
+  if(window.DurbarTip)window.DurbarTip.bind(document.body,{selector:'.floors-ui .fl-focus',text:el=>el.dataset.tip||''});
+  if(!RO||!RO.attach)return;
+  RO.attach(document.body,[{kind:'floor',
+    item:t=>{const h=t.closest('.floors-ui .fl-grip');return h?h.closest('.fl-floor'):null;},
+    group:el=>[...el.parentNode.children].filter(x=>x.classList.contains('fl-floor')),
+    key:el=>el.dataset.floor}],{
+    commit:(kind,el,els,from,to)=>{
+      const ids=RO.moveTo(els.map(x=>x.dataset.floor),el.dataset.floor,els[to].dataset.floor,to>from);
+      const f=floorById(el.dataset.floor);
+      floorCall(bridge.reorderFloors(ids));
+      announce(RO.announce(f?f.name:'Floor',to+1,els.length,''));
+    }});
+})();
 async function floorAction(el){
   const fl=el.dataset.fl,id=el.dataset.floor,f=floorById(id);
   if((fl==='on'||fl==='only')&&f)startFloorSwitchTiming();
@@ -4870,7 +4894,7 @@ async function floorAction(el){
   }
   if(fl==='del'&&f){
     const n=roomsOnFloor(id).length;
-    const r=await askDialog({title:'Delete floor '+f.name+'?',body:(n?(n===1?'Its folder moves':'Its '+n+' folders move')+' to '+((FLOORS.floors.find(x=>x.ground)||{}).name||'the ground floor')+'. ':'')+'No folder is removed and no session is ended.',returnFocus:()=>{const b=el.closest('.floors-ui');return (b&&b.querySelector('.fl-sw'))||$('floorsBtn');},
+    const r=await askDialog({title:'Delete floor '+f.name+'?',body:(n?(n===1?'Its folder moves':'Its '+n+' folders move')+' to '+((FLOORS.floors.find(x=>x.ground)||{}).name||'the ground floor')+'. ':'')+'No folder is removed and no session is ended.',returnFocus:()=>{const b=el.closest('.floors-ui');return (b&&b.querySelector(`[data-fl="del"][data-floor="${CSS.escape(id)}"]`))||$('floorsBtn');},
       buttons:[{label:'Cancel',value:null},{label:'Delete floor',value:'ok',cls:'primary danger'}]});
     if(r)return floorCall(bridge.deleteFloor(id));
     return;
