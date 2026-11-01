@@ -3,7 +3,7 @@
  *   FR-209  a limit answer in flight takes no second answer; a late answer never hides the next limit; a typed amount survives a repaint (inbox, in check-inbox-safety)
  *   FR-210  the answer bar: a repaint never puts focus on an answering button of another card (a native Enter would answer it); a limit has only "Show in chat"
  *   FR-211  a held Enter in the message box sends nothing (an answer moves focus there)
- *   FR-212  a plan card does not take focus from typing (spec 066 FR-064)
+ *   FR-212  a plan card does not take focus from other work (spec 066 FR-064)
  * Native keys (webContents.sendInputEvent with isAutoRepeat) are used where a synthetic event cannot see the default action.
  * Simulator only, no credits. Linux with xvfb-run:
  *
@@ -34,18 +34,18 @@ module.exports = async (ctx) => {
     const emit = (e) => js(`window.__durbarSimUi.emit(${jsLiteral(Object.assign({ timestamp: 1, sessionId: A }, e))})`);
     const perm = (rid, summary, extra) => emit({ type: 'status', status: 'needs-permission', intent: 'Waiting', permission: Object.assign({ requestId: rid, kind: 'shell', summary, state: 'pending' }, extra || {}) });
     const limit = (rid) => emit({ type: 'limit', phase: 'exhausted', requestId: rid, maxAiCredits: 5, usedAiCredits: 5 });
-    const ask = (rid, q) => emit({ type: 'question', phase: 'asked', requestId: rid, questions: [{ question: q, multiSelect: false, options: [{ label: 'yes' }, { label: 'no' }] }] });
+    const ask = (rid, q, labels) => emit({ type: 'question', phase: 'asked', requestId: rid, questions: [{ question: q, multiSelect: false, options: (labels || ['yes', 'no']).map((label) => ({ label })) }] });
     // a page per part; every answer that reaches the bridge is counted, and a limit answer can be held in flight (window.__hold)
     const fresh = async () => {
       await H.load({ w, h, focus: true });
       const first = await H.openSimAgent(`a=>!a.parent&&a.live&&a.info&&(a.state==='idle'||a.state==='done')`, '#msgInput');
       assert.ok(first.ok, `${w}: opened an idle agent's chat ${jsLiteral(first.seen)}`);
       A = first.id;
-      await js(`(()=>{const b=window.__durbarSimUi.bridge();window.__perm=[];window.__lim=[];window.__ans=[];window.__plan=[];window.__sent=[];window.__hold=false;window.__rel=[];
+      await js(`(()=>{const b=window.__durbarSimUi.bridge();window.__perm=[];window.__lim=[];window.__ans=[];window.__plan=[];window.__sent=[];window.__hold=false;window.__holdq=false;window.__relq=[];window.__rel=[];
         const p=b.resolvePermission,l=b.resolveLimit,q=b.answerQuestion,pl=b.resolvePlan,s=b.send;
         b.resolvePermission=function(id,rid,ok){window.__perm.push(rid+':'+ok);return p.apply(this,arguments)};
         b.resolveLimit=function(id,rid,c){window.__lim.push(JSON.stringify(c));if(window.__hold)return new Promise(r=>window.__rel.push(r));return l.apply(this,arguments)};
-        b.answerQuestion=function(id,rid){window.__ans.push(rid);return q.apply(this,arguments)};
+        b.answerQuestion=function(id,rid){window.__ans.push(rid);if(window.__holdq)return new Promise(r=>window.__relq.push(r));return q.apply(this,arguments)};
         b.resolvePlan=function(id,rid,a){window.__plan.push(rid+':'+(a&&a.kind));return pl.apply(this,arguments)};
         b.send=function(){window.__sent.push(1);return s.apply(this,arguments)};})()`);
       await setup();
@@ -105,6 +105,42 @@ module.exports = async (ctx) => {
     assert.ok(await until(`document.activeElement.textContent!=='no'&&document.activeElement.textContent!=='yes'`, 3000), `${w}: focus is not on an option of another question (is ${await activeLabel()})`);
     await nkey('Return');
     assert.deepStrictEqual(await got('ans'), [], `${w}: Enter answers neither question ${jsLiteral(await got('ans'))}`);
+
+    // option labels come from the agent: an option called "Show question" or "Skip" must not catch the focus of another card
+    for (const lbl of ['Show question', 'Skip']) {
+      await fresh();
+      await ask('r1-' + w, 'First?', [lbl, 'other']);
+      await ask('r2-' + w, 'Second?', [lbl, 'other']);
+      await barUp();
+      assert.ok(await js(`(()=>{const b=[...document.querySelectorAll('#answerBar .ab-opt')].find(x=>x.textContent===${jsLiteral(lbl)});if(!b)return false;b.focus();return document.activeElement===b})()`), `${w}: focus on the agent's option "${lbl}"`);
+      await emit({ type: 'question', phase: 'cancelled', requestId: 'r1-' + w, reason: 'stop' });
+      assert.ok(await until(`/Second\?/.test(document.getElementById('answerBar').textContent)`, 5000), `${w}: the bar shows the second question`);
+      assert.ok(await until(`document.activeElement.classList.contains('ghost')`, 3000), `${w}: focus is on the bar's own Show button, not on the option "${lbl}" (is ${await js('document.activeElement.className+"/"+document.activeElement.textContent')})`);
+      await nkey('Return');
+      assert.deepStrictEqual(await got('ans'), [], `${w}: Enter answers neither (option "${lbl}") ${jsLiteral(await got('ans'))}`);
+    }
+
+    // the same card repainted (a count change) while focus is on the bar's own "Skip" / "Show question", and the agent has an option of the same name: focus stays on the real control
+    for (const [lbl, cls] of [['Skip', 'danger'], ['Show question', 'ghost']]) {
+      await fresh();
+      await ask('s1-' + w, 'First?', [lbl, 'other']);
+      await barUp();
+      assert.ok(await until(`!!document.querySelector('#answerBar .${cls}')`, 5000), `${w}: the bar has its ${cls} button`);
+      await js(`document.querySelector('#answerBar .${cls}').focus()`);
+      await ask('s2-' + w, 'Second?', ['x', 'y']);
+      assert.ok(await until(`/1 of 2/.test(document.getElementById('answerBar').textContent)`, 5000), `${w}: the bar repainted with the count`);
+      assert.ok(await js(`document.activeElement.classList.contains('${cls}')&&!document.activeElement.classList.contains('ab-opt')`), `${w}: focus stays on the real "${lbl}" control, not the agent's option of that name (is ${await js('document.activeElement.className+"/"+document.activeElement.textContent')})`);
+    }
+
+    // ---- a held Enter in a chat question's "Other" box, with a slow bridge: one answer ----
+    await fresh();
+    await ask('o1-' + w, 'Pick one?', ['x', 'y']);
+    assert.ok(await until(`!!document.querySelector('#chat .note.question .q-other')`, 5000), `${w}: the question card is there`);
+    await js(`window.__holdq=true`);
+    await js(`(()=>{const o=document.querySelector('#chat .note.question .q-other');o.value='my answer';o.dispatchEvent(new Event('input',{bubbles:true}));o.focus();})()`);
+    await nkey('Return');
+    for (let i = 0; i < 5; i++) await nkey('Return', { repeat: true });
+    assert.strictEqual((await got('ans')).length, 1, `${w}: a held Enter in the Other box answers once ${jsLiteral(await got('ans'))}`);
 
     // ---- FR-210 (B): a limit card out of view: the bar has no amount to send, only "Show in chat" ----
     await fresh();
@@ -173,19 +209,73 @@ module.exports = async (ctx) => {
     assert.strictEqual(await js(`document.querySelectorAll('#chat .note.limit:not(.settled)').length`), 1, `${w}: the second limit is still waiting`);
     assert.strictEqual(await js(`window.__durbarSimUi.agents().find(a=>a.id===${jsLiteral(A)}).state`), 'waiting', `${w}: the agent still waits for you`);
 
-    // ---- FR-212 (E): a plan does not take focus from typing ----
+    // ---- FR-209: the adapter's `resolved` event comes first; the late reply never rewrites what it said ----
+    await fresh();
+    await limit('lr-' + w);
+    assert.ok(await until(`!!document.querySelector('#chat .note.limit .note-actions')`, 5000));
+    await js(`window.__hold=true`);
+    await js(`window.__cb('Raise limit').click()`);
+    assert.ok(await until(`window.__lim.length===1`, 3000));
+    await emit({ type: 'limit', phase: 'resolved', requestId: 'lr-' + w, action: 'cancel' });
+    assert.ok(await until(`/stopped here/.test(document.querySelector('#chat .note.limit .pstate').textContent)`, 3000), `${w}: the event settled the card as stopped`);
+    await js(`window.__rel.shift()({ok:true})`);
+    await H.settle(600).catch(() => {});
+    assert.ok(/stopped here/.test(await js(`document.querySelector('#chat .note.limit .pstate').textContent`)), `${w}: the late reply left it "stopped here" (is ${await js(`document.querySelector('#chat .note.limit .pstate').textContent`)})`);
+
+    // ---- FR-212 (E): the plan takes focus on Approve only if no modal is open, the box is empty, and focus is on the page or in the empty box ----
+    const plan = (n) => emit({ type: 'plan', phase: 'proposed', requestId: 'pl' + n + '-' + w, text: '1. Do a thing' });
+    const onApprove = () => js(`!!document.activeElement&&document.activeElement.textContent==='Approve'`);
+    // typing: stays, and Enter does not approve
     await fresh();
     await js(`(()=>{const m=document.getElementById('msgInput');m.focus();m.value='half a sentence';m.dispatchEvent(new Event('input',{bubbles:true}));})()`);
-    await emit({ type: 'plan', phase: 'proposed', requestId: 'pl1-' + w, text: '1. Do a thing' });
+    await plan(1);
     assert.ok(await until(`!!document.querySelector('#chat .plan-card')`, 5000), `${w}: the plan card is there`);
-    assert.strictEqual(await js(`document.activeElement.id`), 'msgInput', `${w}: focus stays in the message box`);
+    assert.strictEqual(await js(`document.activeElement.id`), 'msgInput', `${w}: with text in the box, focus stays there`);
     await nkey('Return');
     assert.deepStrictEqual(await got('plan'), [], `${w}: Enter while typing does not approve the plan ${jsLiteral(await got('plan'))}`);
-    // an empty box, focus not in a field: the plan takes focus on Approve as spec 066 says
+    // focus on the page: Approve (the send-then-approve flow)
     await fresh();
     await js(`document.activeElement&&document.activeElement.blur()`);
-    await emit({ type: 'plan', phase: 'proposed', requestId: 'pl2-' + w, text: '1. Another' });
-    assert.ok(await until(`document.activeElement&&document.activeElement.textContent==='Approve'`, 5000), `${w}: with nothing typed, focus goes to Approve`);
+    await plan(2);
+    assert.ok(await until(`document.activeElement&&document.activeElement.textContent==='Approve'`, 5000), `${w}: with nothing typed and focus on the page, focus goes to Approve`);
+    // focus in the empty box: Approve too
+    await fresh();
+    await js(`document.getElementById('msgInput').focus()`);
+    await plan(3);
+    assert.ok(await until(`document.activeElement&&document.activeElement.textContent==='Approve'`, 5000), `${w}: with the empty box focused, focus goes to Approve`);
+    // a modal is open (the inbox, focus on a heading): focus stays there
+    await fresh();
+    await js(`document.getElementById('inboxBtn').click()`);
+    assert.ok(await until(`!!document.querySelector('#inboxBody .ib-h')`, 5000));
+    await js(`document.querySelector('#inboxBody .ib-h').focus()`);
+    await plan(4);
+    assert.ok(await until(`!!document.querySelector('#chat .plan-card')`, 5000));
+    assert.strictEqual(await onApprove(), false, `${w}: with the inbox open, a plan does not take the focus`);
+    assert.ok(await js(`document.activeElement.classList.contains('ib-h')`), `${w}: focus is still on the inbox heading`);
+    // a modal is open and focus is on the page (nothing focused): the plan still does not take it
+    await fresh();
+    await js(`document.getElementById('inboxBtn').click()`);
+    assert.ok(await until(`!!document.getElementById('inboxDlg')`, 5000));
+    await js(`document.activeElement&&document.activeElement.blur()`);
+    await plan(6);
+    assert.ok(await until(`!!document.querySelector('#chat .plan-card')`, 5000));
+    assert.strictEqual(await onApprove(), false, `${w}: with the inbox open and focus on the page, a plan does not take the focus`);
+    // focus on a button of another card (a permission card's Deny in the chat): focus stays, a held Enter on it does not approve the plan
+    await fresh();
+    await perm('pd-' + w, 'Run before the plan');
+    assert.ok(await until(`!!document.querySelector('#chat .note.perm.pending .note-actions')`, 5000));
+    await js(`[...document.querySelectorAll('#chat .note.perm.pending .note-actions button')].find(b=>b.textContent==='Deny').focus()`);
+    await plan(5);
+    assert.ok(await until(`!!document.querySelector('#chat .plan-card')`, 5000));
+    assert.strictEqual(await onApprove(), false, `${w}: focus on another card's Deny is not taken by Approve`);
+    for (let i = 0; i < 3; i++) await nkey('Return', { repeat: true });
+    assert.deepStrictEqual(await got('plan'), [], `${w}: a held Enter does not approve the plan ${jsLiteral(await got('plan'))}`);
+    // a held Enter on the plan's own Approve answers nothing
+    await js(`[...document.querySelectorAll('#chat .plan-card button')].find(b=>b.textContent==='Approve').focus()`);
+    for (let i = 0; i < 3; i++) await nkey('Return', { repeat: true });
+    assert.deepStrictEqual(await got('plan'), [], `${w}: a held Enter on Approve answers nothing ${jsLiteral(await got('plan'))}`);
+    await nkey('Return');
+    assert.ok(await until(`window.__plan.length===1`, 3000), `${w}: one Enter on Approve approves (the control)`);
   }
   console.log('[answer-safety] PASS');
 };

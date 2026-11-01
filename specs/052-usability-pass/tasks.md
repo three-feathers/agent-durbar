@@ -353,3 +353,6 @@
 - [x] T206 Review of #1004 (independent security review): `check-answer-safety.js` first, then the answer bar's focus rule and no limit buttons in the bar [FR-210], the composer's repeat guard [FR-211], the limit card's in-flight lock, rounding and late-answer rule, the row's kept amount and Open key [FR-209]; native key steps with `isAutoRepeat`; every mutant run one at a time and listed in the PR
 - [x] T207 Plan card focus (spec 066 FR-064) [FR-212]; driver step in `check-answer-safety.js`
 - [x] T208 Corrected FR-206's wording (the broker ignores a second answer: no wrong approval from the stale row)
+- [x] T209 Re-review of #1004 at 97a9e6d7: inbox clicks stay in the inbox (`#inboxDlg` excluded at the document click handler), Enter in the limit amount raises, focus stays in the dialog after an answer [FR-213]; real-mouse and native-key steps
+- [x] T210 Plan focus rule (no modal, empty box, focus on the page or in the box) and held Enter/Space on the plan's buttons (spec 066 FR-064, an agent decision) [FR-212]
+- [x] T211 Answer bar same-card rule by position (agent-supplied option labels cannot catch focus); late limit reply skips a settled card; `inboxKey` row guard, Space guard and `live.contains(src)` kept and tested; question answers locked in flight [FR-209, FR-210, FR-206, FR-208]

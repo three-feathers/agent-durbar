@@ -47,7 +47,9 @@ module.exports = async (ctx) => {
       await js(`(()=>{const b=window.__durbarSimUi.bridge();window.__perm=[];window.__lim=[];if(!b.__w2){const p=b.resolvePermission,l=b.resolveLimit;
         b.resolvePermission=function(id,rid,ok){window.__perm.push(rid+':'+ok);return p.apply(this,arguments)};
         b.resolveLimit=function(id,rid,c){window.__lim.push(JSON.stringify(c));if(window.__hold)return new Promise(r=>window.__rel.push(r));return l.apply(this,arguments)};b.__w2=1;}
-        window.__hold=false;window.__rel=[];window.__ann=[];const sr=document.getElementById('srAnnounce');new MutationObserver(()=>window.__ann.push(sr.textContent)).observe(sr,{childList:true,characterData:true,subtree:true});})()`);
+        window.__hold=false;window.__rel=[];window.__ann=[];window.__sent=[];window.__done=[];
+        if(!b.__w3){const sd=b.send;b.send=function(){window.__sent.push(1);return sd.apply(this,arguments)};b.__w3=1;}
+        new MutationObserver(ms=>{for(const m of ms)for(const n of m.addedNodes){const d=n.nodeType===1&&(n.matches('.ib-done')?n:n.querySelector('.ib-done'));if(d)window.__done.push(d.textContent);}}).observe(document.body,{childList:true,subtree:true});const sr=document.getElementById('srAnnounce');new MutationObserver(()=>window.__ann.push(sr.textContent)).observe(sr,{childList:true,characterData:true,subtree:true});})()`);
     };
     await fresh();
     const perms = () => js('window.__perm.slice()');
@@ -75,7 +77,7 @@ module.exports = async (ctx) => {
     await js(`window.__stale.click()`);
     assert.ok(await until(`window.__perm.length>1||/Already answered/.test((document.querySelector(${jsLiteral(row(A) + ' .ib-done')})||{}).textContent||'')`, 3000), `${w}: the stale press ends`);
     assert.deepStrictEqual(await perms(), before, `${w}: a stale button sends nothing (card 1 was answered, card 2 is not its request): ${jsLiteral(await perms())}`);
-    assert.ok(await until(`/Already answered/.test((document.querySelector(${jsLiteral(row(A) + ' .ib-done')})||{}).textContent||'')`, 3000), `${w}: the stale button says so`);
+    assert.ok(await until(`window.__done.some(t=>/Already answered/.test(t))`, 3000), `${w}: the stale button says so ${jsLiteral(await js('window.__done'))}`);
     assert.ok(await until(`window.__ann.some(t=>/^Already answered/.test(t))`, 3000), `${w}: and it is announced ${jsLiteral(await js('window.__ann.slice(-4)'))}`);
     assert.strictEqual(await js(`document.querySelectorAll('#chat .note.perm.pending').length`), 1, `${w}: card 2 is still waiting`);
     await closeInbox();
@@ -166,9 +168,9 @@ module.exports = async (ctx) => {
     assert.strictEqual(await js(`document.querySelector(${jsLiteral(row(C) + ' .ib-amt')}).disabled`), true, `${w}: the amount is off while the row is answering`);
     assert.ok(await until(`window.__lim.length===1`, 3000), `${w}: Raise limit sends`);
     assert.strictEqual((await lims())[0], JSON.stringify({ kind: 'add', credits: 7 }), `${w}: it sent the 7 the row showed`);
-    const said = await until(`/Raise limit/.test((document.querySelector(${jsLiteral(row(C) + ' .ib-done')})||{}).textContent||'')`, 3000);
+    const said = await until(`window.__done.some(t=>/Raise limit/.test(t))`, 3000);
     assert.ok(said, `${w}: the row says what was pressed`);
-    assert.ok(!(await js(`/Allowed/.test((document.querySelector(${jsLiteral(row(C) + ' .ib-done')})||{}).textContent||'')`)), `${w}: it never says Allowed`);
+    assert.ok(!(await js(`window.__done.some(t=>/Allowed/.test(t))`)), `${w}: it never says Allowed`);
     await closeInbox();
 
     // ---- FR-208 in the chat: a held Alt+A (the answer keys of an open chat) answers nothing, one press answers the oldest ----
@@ -202,10 +204,73 @@ module.exports = async (ctx) => {
     await js(`(()=>{const a=window.__durbarSimUi.agents().find(x=>x.id===${jsLiteral(C)});const c=a.limit&&a.limit.n;[...c.querySelectorAll('.note-actions button')].find(b=>b.textContent==='Raise limit').click();})()`);
     assert.ok(await until(`window.__lim.length===1`, 3000), `${w}: the card's answer is in flight`);
     await js(`[...document.querySelectorAll(${jsLiteral(row(C) + ' button')})].find(b=>b.textContent==='Raise limit').click()`);
-    await H.settle(800).catch(() => {});
+    assert.ok(await until(`window.__done.some(t=>/Already answered/.test(t))`, 3000), `${w}: and the row says so ${jsLiteral(await js('window.__done'))}`);
     assert.strictEqual((await lims()).length, 1, `${w}: the row does not answer it a second time ${jsLiteral(await lims())}`);
-    assert.ok(await until(`/Already answered/.test((document.querySelector(${jsLiteral(row(C) + ' .ib-done')})||{}).textContent||'')`, 3000), `${w}: and the row says so`);
     await closeInbox();
+
+    // ---- the row's controls: a real click into the amount stays there (a row click used to open the chat behind the dialog and focus its message box) ----
+    await fresh();
+    await emit({ type: 'limit', sessionId: C, phase: 'exhausted', requestId: 'lk-' + w, maxAiCredits: 5, usedAiCredits: 5 });
+    await openInbox();
+    assert.ok(await until(`!!document.querySelector(${jsLiteral(row(C) + ' .ib-amt')})`, 5000));
+    const centre = (sel) => js(`(()=>{const e=document.querySelector(${jsLiteral(sel)});e.scrollIntoView({block:'center'});const r=e.getBoundingClientRect();return [Math.round(r.x+r.width/2),Math.round(r.y+r.height/2)]})()`);
+    const click = async (sel) => { const [x, y] = await centre(sel); wc().sendInputEvent({ type: 'mouseMove', x, y }); wc().sendInputEvent({ type: 'mouseDown', x, y, button: 'left', clickCount: 1 }); wc().sendInputEvent({ type: 'mouseUp', x, y, button: 'left', clickCount: 1 }); await ctx.sleep(150); };
+    // empty amount, real click on Raise limit: the focus is in the amount, nothing is sent
+    await js(`document.querySelector(${jsLiteral(row(C) + ' .ib-amt')}).value=''`);
+    await click(row(C) + ' button.primary');
+    assert.ok(await until(`document.activeElement.classList.contains('ib-amt')`, 3000), `${w}: after an empty Raise limit the focus is in the amount (is ${await js('document.activeElement.tagName+"."+document.activeElement.className')})`);
+    assert.deepStrictEqual(await lims(), [], `${w}: nothing is sent`);
+    // real click into the field, type 50, Enter: the amount is 50, no message goes to the agent
+    await js(`document.querySelector(${jsLiteral(row(C) + ' .ib-amt')}).value=''`);
+    await click(row(C) + ' .ib-amt');
+    assert.ok(await until(`document.activeElement.classList.contains('ib-amt')`, 3000), `${w}: a click into the amount focuses it (is ${await js('document.activeElement.tagName+"."+document.activeElement.className')})`);
+    await nkey('5', { char: '5' });
+    await nkey('0', { char: '0' });
+    assert.strictEqual(await js(`document.querySelector(${jsLiteral(row(C) + ' .ib-amt')}).value`), '50', `${w}: the typed digits are in the amount`);
+    assert.strictEqual(await js(`document.getElementById('msgInput').value`), '', `${w}: and not in the message box`);
+    await nkey('Return');
+    assert.ok(await until(`window.__lim.length===1`, 3000), `${w}: Enter in the amount raises the limit`);
+    assert.strictEqual((await lims())[0], JSON.stringify({ kind: 'add', credits: 50 }), `${w}: by the 50 typed`);
+    assert.deepStrictEqual(await js('window.__sent'), [], `${w}: no message was sent to the agent`);
+    await closeInbox();
+
+    // ---- an answered row keeps the focus in the dialog; the next Enter sends no draft; O and Enter during the fold open nothing ----
+    await fresh();
+    await perm(A, 'f1-' + w, 'Run focus one');
+    await js(`(()=>{const m=document.getElementById('msgInput');m.value='my draft';m.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+    await openInbox();
+    assert.ok(await until(`!!document.querySelector(${jsLiteral(row(A) + ' [data-k="approve"]')})`, 5000));
+    await js(`document.querySelector(${jsLiteral(row(A) + ' .ib-h')}).focus()`);
+    await nkey('A', { char: 'a' });
+    assert.ok(await until(`window.__perm.length===1`, 3000), `${w}: A answers the row`);
+    for (const t of [50, 300, 500]) {
+      await ctx.sleep(t === 50 ? 50 : 150);
+      assert.ok(await js(`!!document.activeElement.closest('#inboxDlg')`), `${w}: focus is still in the dialog after the answer (is ${await js('document.activeElement.id+"/"+document.activeElement.tagName')})`);
+    }
+    await nkey('Return');
+    assert.deepStrictEqual(await js('window.__sent'), [], `${w}: the next Enter sends no draft`);
+    assert.strictEqual(await js(`document.getElementById('msgInput').value`), 'my draft', `${w}: the draft is still there`);
+    // O and Enter on a row that is being answered open nothing
+    await fresh();
+    await perm(A, 'g1-' + w, 'Run fold one');
+    await openInbox();
+    assert.ok(await until(`!!document.querySelector(${jsLiteral(row(A) + ' [data-k="approve"]')})`, 5000));
+    await js(`document.querySelector(${jsLiteral(row(A) + ' [data-k="approve"]')}).click()`);
+    await kd(row(A) + ' .ib-h', 'o', false);
+    await kd(row(A) + ' .ib-h', 'Enter', false);
+    assert.strictEqual(await js(`!!document.getElementById('inboxDlg')`), true, `${w}: O and Enter on a row being answered do not open its chat`);
+    await closeInbox().catch(() => {});
+
+    // ---- FR-206: a card that rebuilt its buttons (the old ones are gone) is not answered through an old one ----
+    await fresh();
+    await perm(A, 'rb-' + w, 'Run rebuild');
+    await openInbox();
+    assert.ok(await until(`!!document.querySelector(${jsLiteral(row(A) + ' [data-k="approve"]')})`, 5000));
+    await js(`(()=>{const a=window.__durbarSimUi.agents().find(x=>x.id===${jsLiteral(A)});const n=document.querySelector('#chat .note.perm.pending');const r=n.querySelector(':scope > .note-actions');r.replaceWith(r.cloneNode(true));})()`);
+    await js(`document.querySelector(${jsLiteral(row(A) + ' [data-k="approve"]')}).click()`);
+    assert.ok(await until(`window.__done.some(t=>/Already answered/.test(t))`, 3000), `${w}: the row says so ${jsLiteral(await js('window.__done'))}`);
+    assert.deepStrictEqual(await perms(), [], `${w}: nothing is sent through the replaced button ${jsLiteral(await perms())}`);
+    await closeInbox().catch(() => {});
   }
   if (failed.length) throw new Error(failed.length + ' checks failed (INBOX_SOFT)');
   console.log('[inbox-safety] PASS');
