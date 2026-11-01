@@ -240,6 +240,10 @@ A spec author fills the template's *Experience* line: "tool surface", or "world 
 
 ## Changes
 
+### 2026-10-31: the weekly performance record (spec 097 FR-187)
+
+- **FR-057** **The weekly job records performance.** The scheduled run of `world-matrix.yml` also runs `scripts/check-perf.js --record` (spec 097 FR-187): flat and every shippable world, 15 and 40 agents; 0 AI credits. Its JSON is part of the artifact (FR-054), and `world-coverage.js` lists rows over budget in the "World coverage" issue (FR-060). **It records and never asserts a time** (AGENTS.md *Timing*, spec 021 FR-048b, FR-063): a CI machine's clock is no pass or fail, and comparisons are to flat in the same run and to last week's artifact. Not in the pull-request subset (FR-052), which stays at its 12-minute timeout; what pull requests get is the count-based `check-office-ops` (097 FR-186) in the ordinary suite. T044.
+
 ### 2026-10-31: strict release gate (owner decision, Q1)
 
 Vikram (Telegram DM, 2026-10-31 10:27 UTC): "design all 9, I don't want partly done ui". Real office ships only when every registered world moment is `designed` in each world that ships; `fallback-flat` is not allowed for a shipping world. FR-024, D3, US1, SC-001, Q1 and tasks T010, T032, T033 updated. No code yet.
