@@ -85,3 +85,22 @@ Numbers: T100..T127 (this delta); FR-100..FR-117.
 - [ ] T125 Each of the 9 missing moments designed or marked `fallback-flat` per world in the registry before that world ships (photo: lounge by Q5, walk by FR-073). Test: `test:surfaces` with the world marked shippable [FR-112]
 - [ ] T126 Photo-world experience art (lift doors, shaft, building, chat backdrop) approved by Vikram; cave and loft art approved by Paco per picture; provenance per the art-pipeline spec (Paco's side, not yet written; spec 098 FR-080). Test: `real:` the approvals quoted in `ASSETS.md`; the art-pipeline asset check green [FR-100, Q6]
 - [ ] T127 Docs: README (worlds, World setting, per-world size, limits), changelog fragment, spec tags and converge. Test: `npm run changelog:check`, `specs:check`
+
+## Phase 7: The 9 world moments (PR P7; delta 2026-10-31 later; spec 098 gate)
+
+Numbers: T128..T141; FR-118..FR-129. All nine are designed in the spec; the build ticks these. Every `sim:` test also holds "wording identical to flat".
+
+- [ ] T128 Registry: the 9 cells (lounge/asleep, walk, empty, first run, jumps, inbox, limit, elicitation, coffee) go from `missing` to `designed` for photo, cave and loft; the count of 26 or 27 settled. Test: `test:surfaces` green with each world's moments all `designed`; the printed count matches the registry [FR-112, FR-118..FR-126]
+- [ ] T129 [P] First run and empty office (`WELCOME_HTML` on the world panel, empty-floor plate and desks). Test: `sim:` per world: same `section.welcome`, focus order, no lift or lobby, ring absent under reduced motion; empty plate text equals flat, three dark desks, lobby and lift present [FR-118, FR-119]
+- [ ] T130 Asleep at the desk; FR-036, FR-035 and FR-041 row changed. Test: `sim:` person in `rest`, desk 0.62, screen off, lamp off with a shade over that desk only, plate, hover card and screen-reader name as FR-120; `check:office` 15 agents with three asleep, all floors, both sizes [FR-120, FR-129]
+- [ ] T131 [P] Inbox queue at the Boss door (slips under the lobby, dialog header). Test: `sim:` slip and dialog words, order and keys equal flat; keys only with focus inside; focus on the first row heading; no slip covers the avoid list [FR-121]
+- [ ] T132 [P] Limit card at the Bank (slip and chat column). Test: `sim:` `showLimit` words and tooltips equal flat; focus in the amount field; column figure at the Bank within 2 px of the floor line [FR-122]
+- [ ] T133 [P] Coffee break (floor, tent card, plate, chat card and bar). Test: `sim:` words and names equal flat; status Waiting, never Error [FR-123]
+- [ ] T134 [P] MCP elicitation bubble (Answer in chat and Show in chat only) and chat card. Test: `sim:` no field and two buttons in the bubble; chat card equals flat; masking as flat [FR-124]
+- [ ] T135 Jumps ride the lift (with T115 and 092 phase 4) and the walk pair. Test: `sim:` three frames each; no ride under a chat; one announcement; reduced motion goes straight to the end state [FR-125, FR-126]
+- [ ] T136 Coffee corner for real breaks only (the older art scenes fixed). Test: `sim:` every status plus one break: only that agent at the corner; none without a break [FR-128]
+- [ ] T137 Desk keeps its size during a visit (`realLayout`). Test: `test:realoffice-layout` visit start/end changes no rect; the next real change applies 0.62; `check:office` with a visit in progress, 15 agents, both sizes [FR-127, FR-073]
+- [ ] T138 FR-073 and the 024 interplay recorded: a line in spec 024 *Changes* saying Real office only, or a 024 delta (FR-004, FR-005) and a 001 FR-053 note if the owners want flat to follow. Test: `read:` the note exists; `specs:check` [FR-127]
+- [ ] T139 Forced-colours and reduced-motion shots for the nine (art hidden, words carry the meaning). Test: `sim:` forced-colours emulation per moment; reduced-motion emulation instant [FR-118..FR-126]
+- [ ] T140 Art approvals: cave and loft art and the three welcome images per picture by Paco, photo art by Vikram, before commit; loft standing sheets decision. Test: `real:` approvals quoted in `ASSETS.md` [FR-100, Q6]
+- [ ] T141 Docs: README (worlds, moments, limits), changelog fragment, spec tags and converge. Test: `npm run changelog:check`, `specs:check`
