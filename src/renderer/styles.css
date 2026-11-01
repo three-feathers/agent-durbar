@@ -2096,8 +2096,7 @@ body.simple #ctxMenu #compactBtn{display:flex!important} /* spec 005 FR-041: Tid
 .peek .pk-st{display:flex;align-items:center;gap:5px;font-size:11px;line-height:15px;color:var(--ink-2)}
 .peek .sh-mark{width:11px;height:11px;flex:none;color:var(--c-done)}
 .peek .pk-tx{font-size:11.5px;line-height:15px;color:var(--ink-2);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;white-space:normal}
-.peek .pk-sum{font-size:11px;line-height:15px;color:var(--ink-2);margin-top:2px;padding-top:3px;border-top:1px solid var(--line-2);cursor:pointer;white-space:normal}
-.peek .pk-sum u{color:var(--accent,var(--ink));text-underline-offset:2px}
+.peek .pk-sum{font-size:11px;line-height:15px;color:var(--ink-2);margin-top:2px;padding-top:3px;border-top:1px solid var(--line-2);white-space:normal}
 /* FR-055: one settle-in when an agent arrives in the lounge, one rise when it goes back to its desk (transform only) */
 .desk.shut.rolling .lg-sp{animation:shut-in .22s ease-out}
 .unit.unrolling{animation:shut-out .22s ease-out;transform-origin:50% 100%}

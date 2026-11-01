@@ -84,10 +84,10 @@ module.exports = async (ctx) => {
     assert.ok(g.loungesInRoom.every(Boolean) && !g.scrollY && !g.overflowX, `${w}: no overlap or scroll ${JSON.stringify(g)}`);
     const sumLine = g.lines.find((l) => l.sum);
     assert.ok(sumLine && /^(6 files, \+120 −35|2 files, \+8 −2) · /.test(sumLine.text) && sumLine.clickable, `${w}: the visible line starts with the numbers and is clickable ${JSON.stringify(sumLine)}`);
-    // the peek card names the source and says what a click does
-    const peek = await js(`(()=>{const d=document.querySelector('#stage .desk.shut[data-id="sim-4"]');const p=d.querySelector('.pk-sum');return {t:p&&p.textContent,title:p&&p.title,label:d.getAttribute('aria-label')}})()`);
-    assert.strictEqual(peek.t, '6 files changed, +120 −35, 1 commit, 40 min · Show changed files', `${w}: peek line`);
-    assert.ok(/Changed: 6 files changed/.test(peek.label) && /Counted by Agent Durbar/.test(peek.title), `${w}: label and tooltip ${JSON.stringify(peek)}`);
+    // the peek card names the source
+    const peek = await js(`(()=>{const d=document.querySelector('#stage .desk.shut[data-id="sim-4"]');const p=d.querySelector('.pk-sum');return {t:p&&p.textContent,label:d.getAttribute('aria-label')}})()`);
+    assert.strictEqual(peek.t, '6 files changed, +120 −35, 1 commit, 40 min · counted by Agent Durbar', `${w}: peek line`);
+    assert.ok(/Changed: 6 files changed/.test(peek.label), `${w}: the label ${JSON.stringify(peek)}`);
     // look at it: hover Noor (the peek card), then take the picture
     await js(`document.querySelector('#stage .desk.shut[data-id="sim-4"]').scrollIntoView({block:'center'})`);
     const box = await js(`(()=>{const r=document.querySelector('#stage .desk.shut[data-id="sim-4"]').getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)}})()`);
@@ -95,13 +95,14 @@ module.exports = async (ctx) => {
     ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: box.x, y: box.y });
     assert.ok(await until(`getComputedStyle(document.querySelector('#stage .desk.shut[data-id="sim-4"] .peek')).display!=='none'`, 4000), `${w}: the peek card opens`);
     await H.shot(path.join(OUT, `085-lounge-peek-${w}x${h}.png`), { prep: 'calm', keepHover: true });
-    // clicking the peek line opens the changed-files list (Noor: 4 files in the sim's git status), not the chat
-    await js(`document.querySelector('#stage .desk.shut[data-id="sim-4"] .pk-sum').click()`);
-    assert.ok(await until(`!!document.getElementById('mdT')&&/^Changes in /.test(document.getElementById('mdT').textContent)`), `${w}: the peek line opens the changed-files dialog`);
-    assert.ok(!(await js(`document.body.classList.contains('panel-open')`)), `${w}: the chat did not open`);
-    await js(`[...document.querySelectorAll('#modeDlg .dbtn .btn')].pop().click()`);
-    assert.ok(await until(`!document.getElementById('mdT')`), `${w}: closed`);
+    /* sweep: a hit test, not a scripted click: the peek card takes no pointer and no keyboard, so nothing in it may offer an action */
+    const hit = await js(`(()=>{const p=document.querySelector('#stage .desk.shut[data-id="sim-4"] .pk-sum'),b=p.getBoundingClientRect(),e=document.elementFromPoint(b.left+b.width/2,b.top+b.height/2);return {reached:!!(e&&e.closest&&e.closest('.peek')),offers:p.hasAttribute('data-sumfiles')||!!p.querySelector('u')||/Click/.test(p.title)};})()`);
+    console.log('[085] peek hit', JSON.stringify(hit));
+    assert.strictEqual(hit.reached, false, `${w}: the peek card takes no pointer`);
+    assert.strictEqual(hit.offers, false, `${w}: so its line offers no click`);
     // clicking the bubble: the visible line whose agent has numbers
+    /* the route that is left is a real one: a pointer reaches the line */
+    assert.ok(await js(`(()=>{const t=[...document.querySelectorAll('#stage .lg-t.sum.on')][0],b=t.getBoundingClientRect(),e=document.elementFromPoint(b.left+b.width/2,b.top+b.height/2);return !!(e&&e.closest&&e.closest('[data-sumfiles]'));})()`), `${w}: the bubble's line takes the pointer`);
     await js(`(()=>{const t=[...document.querySelectorAll('#stage .lg-t.sum.on')][0];t.click()})()`);
     assert.ok(await until(`!!document.getElementById('mdT')||/No uncommitted changes/.test(document.getElementById('toasts').textContent)`), `${w}: the bubble line opens the list (or says nothing is uncommitted)`);
     await js(`(()=>{const b=[...document.querySelectorAll('#modeDlg .dbtn .btn')].pop();if(b)b.click()})()`);
