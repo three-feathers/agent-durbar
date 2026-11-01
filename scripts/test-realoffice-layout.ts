@@ -427,8 +427,8 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.feet as Record<s
   const periods = new Set<number>();
   for (let i = 0; i < 200; i++) {
     const id = 'sess-' + i;
-    for (const pose of ['typeA', 'waveA', 'runA']) { const m = personMotion(id, pose, pose === 'runA' ? null : 'working'); assert.strictEqual(m.kind, 'frames'); assert.ok(m.period >= 0.62 && m.period <= 1.2, 'a natural rate: ' + m.period); assert.ok(m.sway >= 5 && m.sway <= 8, 'its own sway: ' + m.sway); assert.strictEqual(m.style, ({ typeA: 'type', waveA: 'wave', runA: 'run' } as Record<string, string>)[pose]); assert.ok(m.offset >= 0 && m.offset < m.period * 1000); }
-    const t = personMotion(id, 'typeA', 'working'); assert.ok(t.period >= 0.85 && t.period <= 1.1, 'typing 0.85-1.1 s: ' + t.period); periods.add(t.period); const r = personMotion(id, 'runA', null); assert.ok(r.period >= 0.62 && r.period <= 0.74, 'running about 3 steps a second: ' + r.period);
+    for (const pose of ['typeA', 'waveA', 'runA']) { const m = personMotion(id, pose, pose === 'runA' ? null : 'working'); assert.strictEqual(m.kind, 'frames'); assert.ok(m.period >= 0.72 && m.period <= 3.2, 'a natural rate: ' + m.period); assert.ok(m.sway >= 5 && m.sway <= 8, 'its own sway: ' + m.sway); assert.strictEqual(m.style, ({ typeA: 'type', waveA: 'wave', runA: 'run' } as Record<string, string>)[pose]); assert.ok(m.offset >= 0 && m.offset < m.period * 1000); }
+    const t = personMotion(id, 'typeA', 'working'); assert.ok(t.period >= 2.6 && t.period <= 3.2, 'typing 2.6-3.2 s a pair: ' + t.period); periods.add(t.period); const r = personMotion(id, 'runA', null); assert.ok(r.period >= 0.72 && r.period <= 0.82, 'running: ' + r.period);
     for (const st of ['thinking', 'done', 'idle'] as RealState[]) { const b = personMotion(id, st === 'thinking' ? 'think' : 'rest', st); assert.strictEqual(b.kind, 'breathe'); assert.ok(b.period >= 4 && b.period <= 5.5, 'breath: ' + b.period); assert.ok(4 / b.period <= 2); }
   }
   assert.ok(periods.size > 15, 'the room does not move in step: ' + periods.size);

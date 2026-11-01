@@ -438,9 +438,9 @@ export function personMotion(id: string, pose: string, state: RealState | null):
   const h = roHash(String(id)), share = (h % 1000) / 1000, share2 = ((h >>> 10) % 1000) / 1000;
   const out = (kind: 'frames' | 'breathe' | 'sip' | 'knock' | null, period: number, style: 'type' | 'wave' | 'run' | null = null) => ({ kind, period: Math.round(period * 100) / 100, offset: Math.round(share * period * 1000), sway: Math.round((5 + 3 * share2) * 100) / 100, style });
   if (state === 'error') return out(null, 0); /* FR-036: error is still */
-  if (pose === 'runA') return out('frames', 0.62 + 0.12 * share, 'run'); /* about three steps a second (spec Changes 2026-11-01) */
-  if (pose === 'waveA') return out('frames', 1 + 0.2 * share, 'wave');
-  if (roOwn(POSE_FRAME_B, pose)) return out('frames', 0.85 + 0.25 * share, 'type');
+  if (pose === 'runA') return out('frames', 0.72 + 0.1 * share, 'run'); /* about 2.6 steps a second (spec Changes 2026-11-01) */
+  if (pose === 'waveA') return out('frames', 1.7 + 0.4 * share, 'wave');
+  if (roOwn(POSE_FRAME_B, pose)) return out('frames', 2.6 + 0.6 * share, 'type');
   if (pose === 'coffee') return out('sip', 4);
   if (pose === 'knock') return out('knock', 2.6);
   return out('breathe', 4 + 1.5 * share);

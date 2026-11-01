@@ -117,18 +117,19 @@
 .m-br{animation:ro-br var(--ro-sw,6s) ease-in-out infinite}
 .m-sip{animation:ro-sip var(--ro-per,4s) ease-in-out infinite}
 .m-knock{animation:ro-knock var(--ro-per,2.6s) ease-in-out infinite}
+/* --ro-u is 1 % of this picture's height in px: a transform in % of the box is not run by the compositor, and would tick the main thread every frame */
 /* the coming picture first, so the figure never goes see-through */
-@keyframes ro-fa{0%,4%{opacity:1;animation-timing-function:ease-in-out}14%,50%{opacity:0;animation-timing-function:ease-in-out}60%,100%{opacity:1}}
-@keyframes ro-fb{0%{opacity:0;animation-timing-function:ease-in-out}10%,54%{opacity:1;animation-timing-function:ease-in-out}64%,100%{opacity:0}}
+@keyframes ro-fa{0%,6%{opacity:1;animation-timing-function:ease-in-out}30%,50%{opacity:0;animation-timing-function:ease-in-out}74%,100%{opacity:1}}
+@keyframes ro-fb{0%{opacity:0;animation-timing-function:ease-in-out}24%,56%{opacity:1;animation-timing-function:ease-in-out}80%,100%{opacity:0}}
 /* a stride's legs differ too much to blend for long: three or four frames, so it reads as movement and not as two people */
-@keyframes ro-fa-run{0%,2%{opacity:1;animation-timing-function:ease-in-out}8%,50%{opacity:0;animation-timing-function:ease-in-out}56%,100%{opacity:1}}
-@keyframes ro-fb-run{0%{opacity:0;animation-timing-function:ease-in-out}6%,52%{opacity:1;animation-timing-function:ease-in-out}58%,100%{opacity:0}}
-@keyframes ro-br{0%,100%{transform:rotate(-.22deg) scaleY(1)}30%{transform:rotate(.06deg) scaleY(1.013)}55%{transform:rotate(.26deg) scaleY(1.002)}80%{transform:rotate(.02deg) scaleY(1.011)}}
-@keyframes ro-type{0%,100%{transform:rotate(-.18deg) translateY(0)}13%{transform:rotate(-.08deg) translateY(.32%)}26%{transform:rotate(.04deg) translateY(-.12%)}39%{transform:rotate(.16deg) translateY(.26%)}52%{transform:rotate(.24deg) translateY(-.08%)}65%{transform:rotate(.12deg) translateY(.34%)}78%{transform:rotate(.02deg) translateY(-.1%)}90%{transform:rotate(-.1deg) translateY(.22%)}}
-@keyframes ro-wave{0%,100%{transform:rotate(-.55deg) translateY(.1%)}50%{transform:rotate(.55deg) translateY(-.25%)}}
-@keyframes ro-run{0%,50%,100%{transform:translate(0,.5%)}25%{transform:translate(.5%,-1.6%)}75%{transform:translate(-.5%,-1.6%)}}
-@keyframes ro-sip{0%,60%,100%{transform:rotate(-.1deg)}25%,40%{transform:rotate(-.9deg) translateY(-.45%)}}
-@keyframes ro-knock{0%,24%,100%{transform:none}6%,18%{transform:translateX(.7%) rotate(.3deg)}12%{transform:translateX(0)}}
+@keyframes ro-fa-run{0%,8%{opacity:1;animation-timing-function:ease-in-out}36%,50%{opacity:0;animation-timing-function:ease-in-out}78%,100%{opacity:1}}
+@keyframes ro-fb-run{0%{opacity:0;animation-timing-function:ease-in-out}28%,58%{opacity:1;animation-timing-function:ease-in-out}86%,100%{opacity:0}}
+@keyframes ro-br{0%,100%{transform:rotate(-.9deg) scale(1,1)}30%{transform:rotate(.1deg) scale(1.005,1.015)}55%{transform:rotate(1deg) scale(1.001,1.003)}80%{transform:rotate(.1deg) scale(1.005,1.014)}}
+@keyframes ro-type{0%,100%{transform:rotate(-.45deg) translateY(0)}13%{transform:rotate(-.2deg) translateY(calc(var(--ro-u,1px)*.55))}26%{transform:rotate(.05deg) translateY(calc(var(--ro-u,1px)*-.2))}39%{transform:rotate(.3deg) translateY(calc(var(--ro-u,1px)*.5))}52%{transform:rotate(.5deg) translateY(calc(var(--ro-u,1px)*-.15))}65%{transform:rotate(.25deg) translateY(calc(var(--ro-u,1px)*.6))}78%{transform:rotate(0deg) translateY(calc(var(--ro-u,1px)*-.2))}90%{transform:rotate(-.3deg) translateY(calc(var(--ro-u,1px)*.45))}}
+@keyframes ro-wave{0%,100%{transform:rotate(-1deg) translateY(calc(var(--ro-u,1px)*.15))}50%{transform:rotate(1deg) translateY(calc(var(--ro-u,1px)*-.35))}}
+@keyframes ro-run{0%,50%,100%{transform:translate(0,calc(var(--ro-u,1px)*.5))}25%{transform:translate(calc(var(--ro-u,1px)*.5),calc(var(--ro-u,1px)*-1.6))}75%{transform:translate(calc(var(--ro-u,1px)*-.5),calc(var(--ro-u,1px)*-1.6))}}
+@keyframes ro-sip{0%,60%,100%{transform:rotate(-.1deg)}25%,40%{transform:rotate(-.9deg) translateY(calc(var(--ro-u,1px)*-.45))}}
+@keyframes ro-knock{0%,24%,100%{transform:none}6%,18%{transform:translateX(calc(var(--ro-u,1px)*.7)) rotate(.3deg)}12%{transform:translateX(0)}}
 :is(.ro.still,.ro.hold) .ro-art>*,html[data-serious] .ro-art>*{animation:none!important}
 :is(.ro.still,.ro.hold) .ro-caret,html[data-serious] .ro-caret{display:none}
 /* FR-074: hidden, or a desk scrolled away or covered: stands still and catches up when seen again */

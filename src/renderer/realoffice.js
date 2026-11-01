@@ -76,27 +76,66 @@
     a.onfinish = a.oncancel = () => e.remove();
   }
   function fadeIn(e, ms, delay) { e.animate([{ opacity: 0 }, { opacity: 1 }], { duration: ms, delay: delay || 0, easing: 'steps(5, end)', fill: 'backwards' }); }
+  /* spec Changes 2026-11-01: measured on macOS at 15 agents, CSS animations that started during a draw stay on the main thread until they restart (renderer main 11.9 % of a core, then 0.6 %): once settled, each gets its own start time set again, so the compositor takes it and nobody's timing changes */
+  /* FR-074: nothing runs while hidden: a walk, a slide or a fade under way ends where it was going (the CSS ones pause by `animation-play-state`) */
+  function finishMoves(ro) { if (ro.getAnimations) for (const a of ro.getAnimations({ subtree: true })) if (!a.animationName) { try { a.finish(); } catch (e) { /* one with no end: none is drawn here */ } } }
+  let handTimer = 0, handStep = 0;
+  const HAND_MS = [3000, 8000, 15000, 30000]; /* measured: at 3 s it does not hold, at 15 s it does; the reason is not known, so it tries again */
+  function handOver(ro) {
+    handStep = 0;
+    if (handTimer) return;
+    const next = () => {
+      handTimer = setTimeout(() => {
+        handTimer = 0;
+        if (!CUR || CUR.ro !== ro || !ro.isConnected || !ro.getAnimations || !moving() || hiddenNow()) return;
+        for (const a of ro.getAnimations({ subtree: true })) {
+          if (!a.animationName || a.playState !== 'running' || a.startTime == null) continue;
+          a.startTime = a.startTime; /* the same place: not pause and play, which would take the animation away from `animation-play-state` and so from FR-074's pause */
+        }
+        if (++handStep < HAND_MS.length) next();
+      }, HAND_MS[handStep]);
+    };
+    next();
+  }
   /* spec Changes 2026-11-01: a person going to or from a place glides from where they were, with a stride bounce; the second picture waits for the arrival (GLIDING) */
   const WHERE = new Map(), GLIDING = new Map();
-  function glide(e, id, from, to, seated) {
-    if (!from || (from.x === to.x && from.y === to.y)) return false;
-    /* a seated picture stops at the waist: it rises into the chair behind the desk, it does not cross the room */
-    if (seated) { const a = e.animate([{ transform: `translateY(${(to.h * 0.12).toFixed(1)}px)`, opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 420, delay: 120, easing: 'cubic-bezier(.2,.7,.3,1)', fill: 'backwards' }); GLIDING.set(id, a); a.onfinish = a.oncancel = () => { if (GLIDING.get(id) === a) { GLIDING.delete(id); if (onArt) onArt(); } }; return true; }
-    const dx0 = from.x - to.x, dy0 = from.y - to.y, dist = Math.hypot(dx0, dy0), ms = Math.max(500, Math.min(1200, dist * 2.6)), s0 = to.h ? from.h / to.h : 1;
+  function walkFrames(e, from, to) {
+    const dx0 = from.x - to.x, dy0 = from.y - to.y, dist = Math.hypot(dx0, dy0), ms = Math.max(1400, Math.min(3000, dist * 5)), s0 = to.h ? from.h / to.h : 1;
     const o = getComputedStyle(e).transformOrigin.split(' ').map(parseFloat), ox = o[0] || 0, oy = o[1] || 0;
-    const steps = Math.max(2, Math.round(ms / 170)), kf = [];
+    const steps = Math.max(2, Math.round(ms / 380)), kf = [];
     const ease = (t) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
-    for (let i = 0; i <= 16; i++) {
-      const t = i / 16, q = 1 - ease(t), sc = 1 + (s0 - 1) * q, bounce = -Math.abs(Math.sin(Math.PI * steps * t)) * to.h * 0.016 * Math.min(1, 4 * Math.min(t, 1 - t));
-      kf.push({ transform: `translate(${(dx0 * q - ox * (1 - sc)).toFixed(2)}px,${(dy0 * q - oy * (1 - sc) + bounce).toFixed(2)}px) scale(${sc.toFixed(4)})`, opacity: Math.min(1, t * 6) });
+    for (let i = 0; i <= 32; i++) {
+      const t = i / 32, q = 1 - ease(t), sc = 1 + (s0 - 1) * q, bounce = -Math.abs(Math.sin(Math.PI * steps * t)) * to.h * 0.014 * Math.min(1, 4 * Math.min(t, 1 - t));
+      kf.push({ transform: `translate(${(dx0 * q - ox * (1 - sc)).toFixed(2)}px,${(dy0 * q - oy * (1 - sc) + bounce).toFixed(2)}px) scale(${sc.toFixed(4)})`, offset: t });
     }
-    const a = e.animate(kf, { duration: ms, easing: 'linear' });
-    GLIDING.set(id, a);
-    a.onfinish = a.oncancel = () => { if (GLIDING.get(id) === a) { GLIDING.delete(id); if (onArt) onArt(); } };
+    return { kf, ms };
+  }
+  function glide(e, id, from, to, seated, pair) {
+    if (!from || (from.x === to.x && from.y === to.y)) return false;
+    const done = (a) => { GLIDING.set(id, a); a.onfinish = a.oncancel = () => { if (GLIDING.get(id) === a) { GLIDING.delete(id); if (onArt) onArt(); } }; };
+    if (seated) {
+      /* a seated picture stops at the waist, so the standing one walks back, and the seated one rises into the chair as it arrives */
+      let ms = 0;
+      if (from.file && e.parentNode) {
+        const g = new Image(); g.className = 'ro-ghost v'; g.alt = ''; g.src = ART + from.file; box(g, from); e.parentNode.appendChild(g);
+        const back = { x: to.x + (to.w - from.w) / 2, y: to.y + to.h - from.h, w: from.w, h: from.h };
+        const w = walkFrames(g, { x: back.x, y: back.y, w: back.w, h: back.h }, from); ms = w.ms;
+        const n = w.kf.length - 1;
+        const kf = w.kf.map((f, i) => ({ ...w.kf[n - i], offset: i / n, opacity: i / n > 0.82 ? Math.max(0, 1 - (i / n - 0.82) / 0.18) : 1 }));
+        const a = g.animate(kf, { duration: ms, easing: 'linear' }); a.onfinish = a.oncancel = () => g.remove();
+      }
+      done(e.animate([{ transform: `translateY(${(to.h * 0.12).toFixed(1)}px)`, opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 520, delay: ms ? ms * 0.72 : 120, easing: 'cubic-bezier(.2,.7,.3,1)', fill: 'backwards' }));
+      return true;
+    }
+    const w = walkFrames(e, from, to);
+    const opts = { duration: w.ms, easing: 'linear' };
+    done(e.animate(w.kf, opts));
+    if (pair) pair.animate(w.kf, opts);
     return true;
   }
+
   function setVar(e, k, v) { if (e.style.getPropertyValue(k) !== v) e.style.setProperty(k, v); }
-  /* FR-181: a desk's picture frames and caret change on the same frame: one clock per desk, its own place in the cycle */
+  /* one clock per desk, its own place in the cycle: a desk's two pictures and caret stay together */
   function clock(e, ms) { for (const a of e.getAnimations()) a.startTime = ms; }
 
   /* a span with a status dot (the app's .dot classes, forced-colours aware) */
@@ -146,7 +185,7 @@
     CUR = { ro, screenOf: opts.screenOf || null, sized, still: !!opts.still, hold: !!opts.hold, desks: new Map(lay.zones.flatMap((z) => z.desks.map((d) => [d.id, d]))), agents: new Map(model.folders.flatMap((f) => f.agents.map((a) => [a.id, { ...a, folder: f.name }]))), drawn, scroll: !!lay.scroll };
     SLIDE = sameSize && moving() && !hiddenNow();
     CUR.painted = true;
-    ro.classList.toggle('paused', hiddenNow());
+    ro.classList.toggle('paused', hiddenNow()); if (hiddenNow()) finishMoves(ro);
     /* z-order (plan: art < lights < chrome): floor and fixtures, people and desks; the ambient and the lights; then signs, plates, chips */
     const art = layerOf(ro, 'ro-art'), amb = layerOf(ro, 'ro-amb'), lights = layerOf(ro, 'ro-lights'), chrome = layerOf(ro, 'ro-chrome');
     const lobby = el(art, 'lobby', 'div', 'ro-lobby'); box(lobby, { x: 0, y: 0, w: lay.width, h: lay.lobbyH });
@@ -196,7 +235,7 @@
           img(pe, d.person.file);
           if (fresh && CUR.drawn && moving() && !hiddenNow() && !OFF.has(k) && !glide(pe, k, WHERE.get(k), d.person, true)) fadeIn(pe, 150, 150); /* FR-073: in at the desk */
           WHERE.set(k, d.person);
-          if (m.kind) { setVar(pe, '--ro-per', m.period + 's'); setVar(pe, '--ro-sw', m.sway + 's'); }
+          if (m.kind) { setVar(pe, '--ro-per', m.period + 's'); setVar(pe, '--ro-sw', m.sway + 's'); setVar(pe, '--ro-u', (d.person.h / 100).toFixed(3) + 'px'); }
           if (two && two.on && !two.b._clock) { two.b._clock = true; clock(two.b, m.offset); clock(pe, m.offset); }
         } else if (!d.narrow) {
           const ini = el(art, 'i:' + k, 'div', 'ro-initials'); const r = 0.5 * lay.u; box(ini, { x: d.slot.x + 0.05 * d.slot.w + 0.42 * lay.u - r / 2, y: d.desk.y - r - 6, w: r, h: r }); ini.dataset.for = k; text(ini, initials(a.name));
@@ -256,12 +295,12 @@
           const sh = el(art, 'vs:' + v.id, 'div', 'ro-shadow'); box(sh, v.shadow);
           /* FR-070: stride frames, a sip, a knock or a breath; FR-073: in at the fixture after the fade at the desk */
           const m = L.personMotion(v.id, v.fig.pose, null), fresh = !art._k.has('v:' + v.id), mov = moving() && !OFF.has(v.id);
-          const two = mov && m.kind === 'frames' && v.fig.fileB && !BAD.has(v.fig.fileB) && !GLIDING.has(v.id) ? second(art, 'vb:' + v.id, v.id, v.fig, v.fig.fileB, 'ro-visitor2', m) : null;
+          const two = mov && m.kind === 'frames' && v.fig.fileB && !BAD.has(v.fig.fileB) ? second(art, 'vb:' + v.id, v.id, v.fig, v.fig.fileB, 'ro-visitor2', m) : null;
           const cl = two && two.on ? ' m-a m-' + m.style : mov ? ({ breathe: ' m-br', sip: ' m-sip', knock: ' m-knock' }[m.kind] || '') : '';
           const im = el(art, 'v:' + v.id, 'img', 'ro-visitor' + cl); box(im, v.fig); im.dataset.for = v.id; im.dataset.pose = v.fig.pose; im.dataset.feet = String(Math.round(v.fig.feetY * 10) / 10); img(im, v.fig.file);
-          if (cl) { setVar(im, '--ro-per', m.period + 's'); setVar(im, '--ro-sw', m.sway + 's'); setVar(im, '--ro-org', '50% ' + px(v.fig.feetY - v.fig.y)); }
-          if (fresh && CUR.drawn && moving() && !hiddenNow() && !glide(im, v.id, WHERE.get(v.id), v.fig)) fadeIn(im, 150, 150);
-          WHERE.set(v.id, v.fig);
+          if (cl) { setVar(im, '--ro-per', m.period + 's'); setVar(im, '--ro-sw', m.sway + 's'); setVar(im, '--ro-u', (v.fig.h / 100).toFixed(3) + 'px'); setVar(im, '--ro-org', '50% ' + px(v.fig.feetY - v.fig.y)); }
+          if (fresh && CUR.drawn && moving() && !hiddenNow() && !glide(im, v.id, WHERE.get(v.id), v.fig, false, two && two.b)) fadeIn(im, 150, 150);
+          WHERE.set(v.id, { ...v.fig, file: v.fig.file });
           if (two && two.on && !two.b._clock) { two.b._clock = true; clock(two.b, m.offset); clock(im, m.offset); }
         }
         /* FR-026 "as the flat lobby": a go-place visitor (Boss, Bank, Coffee) is the flat lobby's own button (data-pvopen, and
@@ -285,6 +324,7 @@
     watchOff(lay);
     SLIDE = false;
     CUR.drawn = true;
+    if (moving() && !hiddenNow()) handOver(ro);
     if (ZOOM) { if (!CUR.desks.has(ZOOM.id) || hiddenNow()) closeZoom(); else placeZoom(); }
     return lay;
   }
@@ -293,7 +333,7 @@
   function second(art, key, id, rect, file, cls, m) {
     const prev = art._k.get(key), on = !!prev && prev._file === file && prev._ok;
     const b = el(art, key, 'img', cls + (on ? ' m-b m-' + m.style : '') + (OFF.has(id) ? ' ro-off' : ''));
-    box(b, rect); b.dataset.for = id; setVar(b, '--ro-per', m.period + 's'); setVar(b, '--ro-sw', m.sway + 's');
+    box(b, rect); b.dataset.for = id; setVar(b, '--ro-per', m.period + 's'); setVar(b, '--ro-sw', m.sway + 's'); setVar(b, '--ro-u', (rect.h / 100).toFixed(3) + 'px');
     if (b._file !== file) {
       b._file = file; b._ok = false; b._clock = false;
       img(b, file);
@@ -358,7 +398,7 @@
     const added = fillRows(s.rows, shown);
     /* FR-033: the new line slides in, three steps, transform only; the text is already right, so a dropped frame costs nothing */
     if (added && s.painted && moving() && !s.away) s.lines.animate([{ transform: 'translateY(' + Math.min(added, 2) * f.lh + 'px)' }, { transform: 'none' }], { duration: 180, easing: 'steps(3, end)' });
-    if (data.caret && !s.caret) { s.caret = document.createElement('i'); s.caret.className = 'ro-caret'; s.box.appendChild(s.caret); const m = L.personMotion(id, 'typeA', d.state); setVar(s.caret, '--ro-per', m.period + 's'); if (moving()) clock(s.caret, m.offset); }
+    if (data.caret && !s.caret) { s.caret = document.createElement('i'); s.caret.className = 'ro-caret'; s.box.appendChild(s.caret); const m = L.personMotion(id, 'typeA', d.state); setVar(s.caret, '--ro-per', '1.2s'); if (moving()) clock(s.caret, m.offset); }
     else if (!data.caret && s.caret) { s.caret.remove(); s.caret = null; }
     s.painted = true;
     if (ZOOM && ZOOM.id === id) fillZoom();
@@ -367,7 +407,7 @@
   /* FR-074: a window hidden or back; FR-181: desks scrolled away stand still and do not paint, and catch up once when they are back */
   function resume() {
     if (!CUR) return;
-    const h = hiddenNow(); CUR.ro.classList.toggle('paused', h);
+    const h = hiddenNow(); CUR.ro.classList.toggle('paused', h); if (h) finishMoves(CUR.ro);
     if (h) { closeZoom(); return; }
     for (const [id, s] of SCR) if (s.dirty) plan(id);
   }

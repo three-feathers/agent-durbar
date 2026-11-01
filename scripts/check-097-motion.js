@@ -68,7 +68,7 @@ module.exports = async (ctx) => {
     for (const a of anims) {
       assert.ok(a.props.every((p) => p === 'opacity' || p === 'transform'), `FR-180: only opacity and transform: ${a.name}: ${a.props}`);
       if (/ro-(person|visitor)/.test(a.target) && /^ro-(fa|fb|fa-run|fb-run|br|type|wave|run|sip|knock)$/.test(a.name)) assert.ok(!/steps|step-/.test(a.ease), `people ease (spec Changes 2026-11-01): ${a.name}: ${a.ease}`);
-      if (/ro-(person|visitor)/.test(a.target) && /^ro-f[ab]/.test(a.name)) assert.ok(a.dur >= 620 && a.dur <= 1200, 'a frame period: ' + a.dur);
+      if (/ro-(person|visitor)/.test(a.target) && /^ro-f[ab]/.test(a.name)) assert.ok(a.dur >= 720 && a.dur <= 3200, 'a frame period: ' + a.dur);
       if (a.name === 'ro-br' || a.name === 'ro-type') assert.ok(a.dur >= 5000 && a.dur <= 8000, 'a sway: ' + a.dur);
     }
     // the two pictures alternate: computed opacity, always one showing, over two periods; and the pixels differ
@@ -132,7 +132,7 @@ module.exports = async (ctx) => {
   if (!realHide) await js(`(()=>{Object.defineProperty(document,'hidden',{configurable:true,get:()=>true});document.dispatchEvent(new Event('visibilitychange'));})();0`);
   console.log('[097-motion] hidden:', realHide ? 'a real hide' : 'the signal only (the window manager did not hide it)');
   await must(`document.querySelector('#stage .ro').classList.contains('paused')`, 'the scene paused when hidden');
-  const running = await js(`document.getAnimations().filter(a=>a.effect&&a.effect.target&&a.effect.target.closest&&a.effect.target.closest('.ro')&&a.playState==='running').map(a=>a.animationName)`);
+  const running = await js(`document.getAnimations().filter(a=>a.effect&&a.effect.target&&a.effect.target.closest&&a.effect.target.closest('.ro')&&a.playState==='running').map(a=>(a.animationName||'waapi')+':'+a.effect.target.className)`);
   assert.deepStrictEqual(running, [], 'FR-074: nothing runs while hidden');
   const hiddenText = await js(`window.__scr(${jsLiteral(hid)}).textContent`);
   await emit({ type: 'toolCall', sessionId: hid, callId: 'drv-hid', tool: 'read_file', phase: 'start', args: { path: 'src/while/hidden.ts' } });
