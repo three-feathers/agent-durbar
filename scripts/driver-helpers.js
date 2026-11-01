@@ -21,6 +21,7 @@ const LIMIT = 8000;
 const INDEX = path.join(__dirname, '..', 'dist', 'renderer', 'index.html');
 
 function waits(ctx) {
+  guardWindow(ctx.win); // spec 008 FR-136: a driver whose window closes fails (every driver uses waits or helpers)
   /** Wait until the page expression is truthy (polled every 50 ms), at most `ms`. */
   const until = async (expr, ms = LIMIT) => {
     const end = Date.now() + ms;
@@ -60,12 +61,41 @@ function waits(ctx) {
   return { until, settle, settleWalk, office, chatOf };
 }
 
+
+/**
+ * Spec 008 FR-136 (issue #922): a driver whose window closes fails. On Windows and Linux a closed window quits the app with exit 0
+ * (`window-all-closed`) before the driver's next assertion runs, and ui-suite counted that as a pass. `waits(ctx)` (so every driver, since `helpers(ctx)`
+ * calls it) fails the run when the window closes and main's `window-all-closed` fires. The driver's normal end (main's `app.exit`) closes the window
+ * too but quits without that event, so it stays a pass. A driver that closes its window on purpose calls the returned `allow()` before it does. On a Mac a close only hides the
+ * window (appmenu.ts hideOnClose), so there is nothing to catch. `fail` is injectable for the unit test.
+ */
+const guards = new WeakMap();
+function guardWindow(win, fail = failDriver, appLike = null) {
+  if (!win || typeof win.once !== 'function') return { allow() {} };
+  if (guards.has(win)) return guards.get(win);
+  let allowed = false, closed = false;
+  const g = { allow() { allowed = true; } };
+  guards.set(win, g);
+  const gone = () => { if (!allowed) fail('DRIVER FAILED AssertionError: the window closed before the driver finished (spec 008 FR-136)'); };
+  /* The verdict waits for main's `window-all-closed`, which only a real close emits: the driver's normal end (`app.exit`) closes the window too, but quits
+     without that event, and must stay a pass. */
+  const app = appLike || require('electron').app;
+  win.once('closed', () => { closed = true; });
+  app.on('window-all-closed', () => { if (closed || (typeof win.isDestroyed === 'function' && win.isDestroyed())) gone(); });
+  return g;
+}
+function failDriver(message) {
+  console.error(message);
+  require('electron').app.exit(1);
+}
+
 /**
  * The helpers every driver used to define for itself (FR-097). `H = helpers(ctx)`; it also carries `until`, `settle`, `office`, `chatOf`.
  * Values spliced into page code go through jsLiteral.
  */
 function helpers(ctx) {
   const w = waits(ctx);
+  const closeGuard = guardWindow(ctx.win);
   const wc = () => ctx.win.webContents;
   /** Run code in the page. A failure names the code (first 90 chars) and is thrown again, so the driver fails as before. */
   const js = async (code) => { try { return await ctx.js(code); } catch (e) { console.log('JS ERR for', String(code).slice(0, 90)); throw e; } };
@@ -78,6 +108,54 @@ function helpers(ctx) {
   const text = (sel, prop = 'innerText') => js(`(document.querySelector(${jsLiteral(sel)})||{})[${jsLiteral(prop)}]||''`);
   /** The data-id of the desk whose name starts with `name` (null when none). */
   const idOf = (name) => js(`(()=>{const d=[...document.querySelectorAll('#stage .desk[data-id]')].find(x=>x.querySelector('.name,.nm,h3,b')&&x.innerText.trim().startsWith(${jsLiteral(name)}));return d?d.dataset.id:null})()`);
+  /**
+   * Windows CI: the drivers run three at a time on one desktop and a hidden runner window loses the OS focus to a neighbour, so `document.hasFocus()`
+   * turns false in the middle of a driver (seen as `pageFocus:false, active:true, focus:false` in check-list-columns). `focusPage()` asks for the real
+   * focus until the page has it and returns whether it does. Only with `{ emulate: true }` does it then fall back to Chromium's focus emulation (CDP
+   * `Emulation.setFocusEmulationEnabled`), which makes `hasFocus()` true whatever the OS does and so hides every real blur: the caller owns that
+   * and ends it with `releaseFocus()` (try/finally) before any step that tests a focus loss. Nothing turns it on by itself, `H.key` included.
+   * `loseFocus()` releases, blurs the window and returns whether the page reports no focus, for a driver that tests a blur (assert its result).
+   * Every wait ends as soon as the condition holds. `webContents.isFocused()` is the host's view and stays real.
+   */
+  const emulating = new WeakSet();
+  const emulateFocus = async () => {
+    const c = wc();
+    if (!c || !c.debugger || emulating.has(c)) return;
+    try {
+      if (!c.debugger.isAttached()) c.debugger.attach('1.3');
+      await c.debugger.sendCommand('Emulation.setFocusEmulationEnabled', { enabled: true });
+      emulating.add(c);
+    } catch (e) { console.log('focus emulation unavailable:', String(e && e.message).slice(0, 80)); }
+  };
+  const releaseFocus = async () => {
+    const c = wc();
+    if (!c || !c.debugger || !emulating.has(c)) return;
+    emulating.delete(c);
+    try { await c.debugger.sendCommand('Emulation.setFocusEmulationEnabled', { enabled: false }); } catch { /* the page is gone */ }
+    try { if (c.debugger.isAttached()) c.debugger.detach(); } catch { /* already detached */ }
+  };
+  const focusPage = async (o = {}) => {
+    const end = Date.now() + (o.ms || 3000);
+    for (;;) {
+      try { if (ctx.win.show) ctx.win.show(); if (ctx.win.focus) ctx.win.focus(); wc().focus(); } catch { /* the window is going away: the guard reports it */ }
+      if (await w.until('document.hasFocus()', 400)) return true;
+      if (Date.now() > end) break;
+    }
+    if (!o.emulate) return false;
+    await emulateFocus();
+    return w.until('document.hasFocus()', 1500);
+  };
+  const loseFocus = async () => { await releaseFocus(); try { ctx.win.blur(); } catch { /* gone */ } return w.until('!document.hasFocus()', 4000); };
+  /** Give another web contents (a Browser tab's view) the real focus and wait until it reports it; false when it never does. */
+  const focusWc = async (target, ms = 3000) => {
+    const end = Date.now() + ms;
+    for (;;) {
+      try { target.focus(); } catch { /* gone */ }
+      const stop = Date.now() + 300;
+      while (Date.now() < stop) { if (target.isFocused()) return true; await ctx.sleep(30); }
+      if (Date.now() > end) return false;
+    }
+  };
   /**
    * A key press. Return and Enter also send the char event that activates a button; `char: 'always'` sends it for every key, `char: 'never'` for none (a shortcut such as Ctrl+K).
    * `pause` lets the key's own handler run; what it changes is waited for by the caller.
@@ -184,7 +262,7 @@ function helpers(ctx) {
     await goToFloor(list[0].id);
     for (let i = 0; i < list.length; i++) { await goToFloor(list[i].id); await w.settle(); await fn(list[i], i); }
   };
-  return { ...w, wc, js, click, clickText, exists, text, idOf, key, calm, clearToasts, load, shot, openSimAgent, floors, shownFloor, goToFloor, eachFloor, INDEX };
+  return { ...w, allowWindowClose: closeGuard.allow, wc, js, click, clickText, exists, text, idOf, key, calm, clearToasts, focusPage, releaseFocus, loseFocus, focusWc, load, shot, openSimAgent, floors, shownFloor, goToFloor, eachFloor, INDEX };
 }
 
 /**
@@ -211,4 +289,4 @@ async function shotWithView(win, view, file) {
   fs.writeFileSync(file, nativeImage.createFromBitmap(base, { width: size.width, height: size.height }).toPNG());
 }
 
-module.exports = { waits, helpers, jsLiteral, shotWithView, LIMIT, INDEX };
+module.exports = { waits, helpers, guardWindow, jsLiteral, shotWithView, LIMIT, INDEX };

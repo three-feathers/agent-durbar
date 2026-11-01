@@ -1,11 +1,12 @@
 /** IPC for folders: hide, close, remove, rename, default agent (specs 006, 033, 043, 044; moved out of main.ts as it was, spec 045 FR-060). */
-import { ipcHandle } from '../ipcguard';
+import { fromAppFrame as fromApp, ipcHandle } from '../ipcguard';
 import type { AdapterRouter } from '../../adapters/router';
 import type { AgentInfo } from '../../shared/api';
 import type { FolderStore } from '../folders';
 import { renameFolderOp } from '../folders';
 import type { AgentStateTracker } from '../mcp/agentstate';
 import type { Scheduler } from '../schedules';
+import { NATIVE_CANCELLED, type NotesOps } from '../notesops';
 
 export interface FoldersIpcDeps {
   /** Spec 087 FR-007a: a removed session's open sandbox note is forgotten (main's one-shot Continue). */
@@ -21,6 +22,19 @@ export interface FoldersIpcDeps {
   /** Per agent: the VS Code chat files last listed; dropped when the folder goes. */
   vsChatRefs: Map<string, unknown>;
   wsKey(a: AgentInfo): string;
+  /** Spec 083 FR-048 (T034b): *Also delete its notes*. Created when the app is ready: read when a handler runs. */
+  getNotesOps?(): NotesOps | undefined;
+}
+
+/** Spec 083 FR-048 (T034b): `folders:remove`'s options: absent, or an object with only `deleteNotes`, a boolean. */
+export function removeOpts(v: unknown): { deleteNotes: boolean } | undefined {
+  if (v === undefined) return { deleteNotes: false };
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return undefined;
+  const keys = Object.keys(v);
+  if (keys.some((k) => k !== 'deleteNotes')) return undefined;
+  const d = (v as { deleteNotes?: unknown }).deleteNotes;
+  if (d !== undefined && typeof d !== 'boolean') return undefined;
+  return { deleteNotes: d === true };
 }
 
 export function register(deps: FoldersIpcDeps): void {
@@ -43,10 +57,21 @@ export function register(deps: FoldersIpcDeps): void {
     folderStore()?.setClosed(key, closed === true);
     return { ok: true };
   });
-  ipcHandle('folders:remove', async (_e, id: unknown) => {
+  ipcHandle('folders:remove', async (e, id: unknown, opts: unknown) => {
+    if (!fromApp(e)) return { ok: false, removedIds: [] as string[] };
+    const o = removeOpts(opts);
     const a = typeof id === 'string' ? agents.get(id) : undefined;
-    if (!a) return { ok: false, removedIds: [] as string[] };
+    if (!a || !o) return { ok: false, removedIds: [] as string[] };
     const key = wsKey(a);
+    // spec 083 FR-048 (T034b): with *Also delete its notes*, main counts the folder's notes and asks natively BEFORE anything is removed
+    let forget = false;
+    if (o.deleteNotes) {
+      const ops = deps.getNotesOps?.();
+      if (!ops) return { ok: false, removedIds: [] as string[], error: 'Notes are not available.' };
+      const c = await ops.confirmForget(a.id);
+      if (!c.ok) return { ok: false, removedIds: [] as string[], ...(c.error === NATIVE_CANCELLED ? { cancelled: true } : {}), error: c.error };
+      forget = true;
+    }
     scheduler()?.removeFolder(key); // spec 044: a removed folder takes its schedules with it
     const removedIds = [...agents.values()].filter((x) => wsKey(x) === key).map((x) => x.id);
     for (const rid of removedIds) {
@@ -64,7 +89,10 @@ export function register(deps: FoldersIpcDeps): void {
     }
     scheduler()?.sessionsChanged();
     folderStore()?.remove(key);
-    return { ok: true, removedIds };
+    if (!forget) return { ok: true, removedIds };
+    // only this folder's notes file, by main's own key (never a path from the window); the project's .durbar/notes.md is not touched
+    const f = await deps.getNotesOps?.()?.forget(key);
+    return f && f.ok ? { ok: true, removedIds, notesDeleted: true } : { ok: true, removedIds, notesError: (f && !f.ok && f.error) || 'Notes are not available.' };
   });
   ipcHandle('folders:rename', (_e, id: unknown, label: unknown) => {
     const a = typeof id === 'string' ? agents.get(id) : undefined;
