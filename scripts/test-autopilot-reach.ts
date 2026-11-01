@@ -1,7 +1,7 @@
 /**
  * Spec 099 (*Changes*, Phase 3 gate): what stays out of reach. `AUTOPILOT_WIRED` is false, so the default build is unchanged for every person: the mode menu has no item, `agents:setAutopilot`
  * refuses, the window hears of no capability, the simulator offers none. All the code is behind it. Main's only way in is `autopilotOn`, whose other half is `autopilotTestGate`, which a packaged
- * build cannot open. The flip is one commit: `AUTOPILOT_WIRED`, `AUTOPILOT_SHIPPED` below, and T038's README; it waits for the review of #923 and the owners.
+ * build cannot open. The flip is two lines: `AUTOPILOT_WIRED` and the pin `AUTOPILOT_SHIPPED` below, then T038's README; it waits for the review of #923 and the owners.
  */
 import * as assert from 'assert';
 import * as fs from 'fs';
@@ -41,9 +41,12 @@ assert.ok(main.includes('const autopilotOn = (): boolean => AUTOPILOT_WIRED || a
 assert.ok(main.includes('enabled: autopilotOn,'), 'the ops read it');
 assert.ok(main.includes('windowAdapters(infos, autopilotOn())'), 'the window hears of no capability');
 assert.ok(main.includes("if (autopilotOn()) query.simautopilot = '1';"), 'the simulator offers it only then');
-// the flag lives in one line, and every test above and in the adapters' files follows it or a parameter, so a flip is that line (spec *Changes*)
+// the flag lives in one line, and every test above and in the adapters' files follows it or a parameter, so a flip is that line and the pin at the end of this file (spec *Changes*)
 assert.strictEqual((src('src/adapters/autopilotHost.ts').match(/^export const AUTOPILOT_WIRED = (false|true) as boolean;$/gm) ?? []).length, 1, 'one line');
 assert.strictEqual(typeof AUTOPILOT_WIRED, 'boolean');
+// The one deliberate pin. Turning Autopilot on for people needs the owners' decision (spec 099 *Changes*, Phase 3 gate): only then change this line together with the flag.
+const AUTOPILOT_SHIPPED = false;
+assert.strictEqual(AUTOPILOT_WIRED, AUTOPILOT_SHIPPED, 'AUTOPILOT_WIRED changed: this needs the owners\' decision (spec 099). If they have decided, set AUTOPILOT_SHIPPED here in the same commit.');
 // the simulator's capability is behind main's query, nothing else
 assert.ok(/get\('simautopilot'\)/.test(src('src/renderer/sim.ts')), 'the simulator asks main');
 
@@ -68,6 +71,9 @@ void (async () => {
   assert.deepStrictEqual(f.autopilotCalls, [{ sessionId: allow, settings: { limit: 5 } }, { sessionId: allow, settings: null, reason: 'stopped' }]);
   const ask = await f.start({ workspace: root, permissionMode: 'ask', quiet: true });
   await assert.rejects(f.setAutopilot!(ask, { limit: 5 }), /only in Allow all/);
+  // The deliberate pin (spec *Changes*, Phase 3 gate): last, so a flip fails here and nowhere else. Autopilot reaches nobody until the owners decide.
+  const AUTOPILOT_SHIPPED = false; // the one line to change alongside `AUTOPILOT_WIRED` in src/adapters/autopilotHost.ts
+  assert.strictEqual(AUTOPILOT_WIRED, AUTOPILOT_SHIPPED, 'AUTOPILOT_WIRED must stay false: flipping it needs the three owners\' decision (review of #923, spec 099 *Changes*). With that decision, change AUTOPILOT_SHIPPED in this file alongside it, and nothing else');
   process.exitCode = 0;
   console.log('test-autopilot-reach: OK');
 })();
