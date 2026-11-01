@@ -99,44 +99,92 @@
   }
   /* spec Changes 2026-11-01: a person going to or from a place glides from where they were, with a stride bounce; the second picture waits for the arrival (GLIDING) */
   const WHERE = new Map(), GLIDING = new Map();
-  function walkFrames(e, from, to) {
-    const dx0 = from.x - to.x, dy0 = from.y - to.y, dist = Math.hypot(dx0, dy0), ms = Math.max(1400, Math.min(3000, dist * 5)), s0 = to.h ? from.h / to.h : 1;
-    const o = getComputedStyle(e).transformOrigin.split(' ').map(parseFloat), ox = o[0] || 0, oy = o[1] || 0;
-    const steps = Math.max(2, Math.round(ms / 380)), kf = [];
-    const ease = (t) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
-    for (let i = 0; i <= 32; i++) {
-      const t = i / 32, q = 1 - ease(t), sc = 1 + (s0 - 1) * q, bounce = -Math.abs(Math.sin(Math.PI * steps * t)) * to.h * 0.014 * Math.min(1, 4 * Math.min(t, 1 - t));
-      kf.push({ transform: `translate(${(dx0 * q - ox * (1 - sc)).toFixed(2)}px,${(dy0 * q - oy * (1 - sc) + bounce).toFixed(2)}px) scale(${sc.toFixed(4)})`, offset: t });
-    }
-    return { kf, ms };
+  /* where a picture's head is on screen, and its height (spec Changes 2026-11-01); null when the art has no such data */
+  function headOf(rect) {
+    const m = root.DurbarRealOfficeArt, f = m && m.faces && rect && rect.file && m.faces[rect.file];
+    return f ? { x: rect.x + f[0] * rect.w, y: rect.y + f[1] * rect.h, h: f[2] * rect.h } : null;
   }
-  function glide(e, id, from, to, seated, pair) {
+  /* the placement that puts picture `R`'s head on `head`, at its height: { tx, ty, s } about the element's own transform origin */
+  function onHead(e, R, head) {
+    const h = headOf(R); if (!h || !head) return null;
+    const o = getComputedStyle(e).transformOrigin.split(' ').map(parseFloat), ox = o[0] || 0, oy = o[1] || 0, sc = head.h / h.h;
+    const lx = h.x - R.x, ly = h.y - R.y;
+    return { tx: head.x - R.x - ox - sc * (lx - ox), ty: head.y - R.y - oy - sc * (ly - oy), s: sc };
+  }
+  const T0 = { tx: 0, ty: 0, s: 1 };
+  const easeIO = (t) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
+  const css = (p, dy) => `translate(${p.tx.toFixed(2)}px,${(p.ty + (dy || 0)).toFixed(2)}px) scale(${p.s.toFixed(4)})`;
+  /* a walk from placement A to B, with a stride's bounce; `out` adds the dissolve and beat after the arrival */
+  function walkKf(A, B, ms, tail, R) {
+    const steps = Math.max(2, Math.round(ms / 380)), kf = [], total = ms + tail.ms;
+    for (let i = 0; i <= 32; i++) {
+      const t = i / 32, q = easeIO(t), bounce = -Math.abs(Math.sin(Math.PI * steps * t)) * R.h * 0.012 * Math.min(1, 4 * Math.min(t, 1 - t));
+      kf.push({ transform: css({ tx: A.tx + (B.tx - A.tx) * q, ty: A.ty + (B.ty - A.ty) * q, s: A.s + (B.s - A.s) * q }, bounce), offset: (t * ms) / total });
+    }
+    return kf;
+  }
+  /* one beat of sitting down: the head above where it ends, a little below it, then at rest */
+  const beat = (h) => [[0, -0.32 * h], [0.62, 0.05 * h], [1, 0]];
+  const SIT = 420;
+  /* two stand-alone pictures that walk (the stride dissolving) from placement A to B: `R` is the standing rect, `hidden` the part of the walk near the chair where only the first picture shows, so a head can land on a head */
+  function walkers(host, R, A, B, ms, tail, nearStart) {
+    const mk = (cls, file) => { const g = new Image(); g.className = cls; g.alt = ''; g.src = ART + file; g.style.transformOrigin = '0 0'; box(g, R); host.appendChild(g); setVar(g, '--ro-per', '.76s'); return g; };
+    const out = [mk('ro-ghost v walker' + (R.fileB ? ' m-a m-run' : ''), R.file)];
+    if (R.fileB) out.push(mk('ro-ghost v walker m-b m-run', R.fileB));
+    const total = ms + tail;
+    out.forEach((w, i) => {
+      const kf = walkKf(A, B, ms, { ms: tail }, R);
+      w._kf = kf; w._total = total;
+      if (i === 1) { /* the second picture only away from the chair */
+        const t = nearStart ? [{ opacity: 0, offset: 0 }, { opacity: 0, offset: 0.6 }, { opacity: 1, offset: 0.7 }, { opacity: 1, offset: 1 }] : [{ opacity: 1, offset: 0 }, { opacity: 1, offset: 0.3 }, { opacity: 0, offset: 0.4 }, { opacity: 0, offset: 1 }];
+        w.animate(t, { duration: total, easing: 'linear', fill: 'both' });
+      } else {
+        const t = nearStart ? [{ opacity: 1, offset: 0 }, { opacity: 1, offset: 0.6 }] : [{ opacity: 1, offset: 0.3 }, { opacity: 1, offset: 1 }];
+        const anim = w.animate(t, { duration: total, easing: 'linear', fill: nearStart ? 'backwards' : 'forwards' });
+        w._hold = anim;
+      }
+    });
+    return out;
+  }
+  function glide(e, id, from, to, seated) {
     if (!from || (from.x === to.x && from.y === to.y)) return false;
     const done = (a) => { GLIDING.set(id, a); a.onfinish = a.oncancel = () => { if (GLIDING.get(id) === a) { GLIDING.delete(id); if (onArt) onArt(); } }; };
+    const plain = () => { done(e.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 300, easing: 'ease-in-out', fill: 'backwards' })); return true; };
+    const seat = seated ? to : from, stand = seated ? from : to, sh = headOf(seat);
+    if (!sh || !stand.file || !e.parentNode) return plain();
+    const probe = new Image(); probe.className = 'ro-ghost v walker'; probe.style.transformOrigin = '0 0'; box(probe, stand); e.parentNode.appendChild(probe);
+    const end = onHead(probe, stand, sh); probe.remove();
+    if (!end) return plain();
+    const ms = Math.max(1400, Math.min(3000, Math.hypot(from.x - to.x, from.y - to.y) * 5)), total = ms + SIT, beats = beat(sh.h);
     if (seated) {
-      /* a seated picture stops at the waist, so the standing one walks back, and the seated one rises into the chair as it arrives */
-      let ms = 0;
-      if (from.file && e.parentNode) {
-        const g = new Image(); g.className = 'ro-ghost v'; g.alt = ''; g.src = ART + from.file; box(g, from); e.parentNode.appendChild(g);
-        const back = { x: to.x + (to.w - from.w) / 2, y: to.y + to.h - from.h, w: from.w, h: from.h };
-        const w = walkFrames(g, { x: back.x, y: back.y, w: back.w, h: back.h }, from); ms = w.ms;
-        const n = w.kf.length - 1;
-        const kf = w.kf.map((f, i) => ({ ...w.kf[n - i], offset: i / n, opacity: i / n > 0.82 ? Math.max(0, 1 - (i / n - 0.82) / 0.18) : 1 }));
-        const a = g.animate(kf, { duration: ms, easing: 'linear' }); a.onfinish = a.oncancel = () => g.remove();
-      }
-      done(e.animate([{ transform: `translateY(${(to.h * 0.12).toFixed(1)}px)`, opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 520, delay: ms ? ms * 0.72 : 120, easing: 'cubic-bezier(.2,.7,.3,1)', fill: 'backwards' }));
+      /* back to the chair: the standing picture walks, behind the desk for the last part, head on the seated head; then both dissolve on one beat */
+      const ws = walkers(e.parentNode, stand, T0, end, ms, SIT, false);
+      ws.forEach((w) => {
+        const kf = w._kf; for (const [t, dy] of beats) kf.push({ transform: css(end, dy), offset: (ms + t * SIT) / total });
+        const a = w.animate(kf.sort((x, y) => x.offset - y.offset), { duration: total, easing: 'linear', fill: 'forwards' });
+        a.onfinish = a.oncancel = () => w.remove();
+      });
+      ws[0].animate([{ opacity: 1 }, { opacity: 0 }], { duration: SIT, delay: ms, easing: 'ease-in-out', fill: 'forwards' });
+      setTimeout(() => { for (const w of ws) w.style.zIndex = '1'; }, ms * 0.62);
+      done(e.animate(beats.map(([t, dy]) => ({ transform: `translateY(${dy.toFixed(2)}px)`, opacity: Math.min(1, t * 1.6), offset: t })), { duration: SIT, delay: ms, easing: 'ease-in-out', fill: 'backwards' }));
       return true;
     }
-    const w = walkFrames(e, from, to);
-    const opts = { duration: w.ms, easing: 'linear' };
-    done(e.animate(w.kf, opts));
-    if (pair) pair.animate(w.kf, opts);
+    /* up from the chair: the mirror; the real picture shows when the walk arrives */
+    const ws = walkers(e.parentNode, stand, end, T0, ms, SIT, true);
+    ws.forEach((w) => {
+      const kf = w._kf.map((f) => ({ ...f, offset: (SIT + f.offset * total) / total }));
+      kf.unshift(...beats.slice().reverse().slice(0, -1).map(([t, dy], j) => ({ transform: css(end, dy), offset: (j / 2) * (SIT / total) })));
+      const a = w.animate(kf, { duration: total, easing: 'linear' });
+      a.onfinish = a.oncancel = () => w.remove();
+    });
+    ws[0].animate([{ opacity: 0 }, { opacity: 1 }], { duration: SIT, easing: 'ease-in-out', fill: 'backwards' });
+    done(e.animate([{ opacity: 0 }, { opacity: 0, offset: 0.995 }, { opacity: 1 }], { duration: total, easing: 'linear' }));
     return true;
   }
 
   function setVar(e, k, v) { if (e.style.getPropertyValue(k) !== v) e.style.setProperty(k, v); }
   /* one clock per desk, its own place in the cycle: a desk's two pictures and caret stay together */
-  function clock(e, ms) { for (const a of e.getAnimations()) a.startTime = ms; }
+  function clock(e, ms) { for (const a of e.getAnimations()) if (a.animationName) a.startTime = ms; } /* the CSS loops only: a walk under way keeps its own time */
 
   /* a span with a status dot (the app's .dot classes, forced-colours aware) */
   function dotHTML(state) { return '<span class="dot ' + ({ limit: 'waiting', asleep: 'idle' }[state] || state) + '" aria-hidden="true"></span>'; }
@@ -295,12 +343,12 @@
           const sh = el(art, 'vs:' + v.id, 'div', 'ro-shadow'); box(sh, v.shadow);
           /* FR-070: stride frames, a sip, a knock or a breath; FR-073: in at the fixture after the fade at the desk */
           const m = L.personMotion(v.id, v.fig.pose, null), fresh = !art._k.has('v:' + v.id), mov = moving() && !OFF.has(v.id);
-          const two = mov && m.kind === 'frames' && v.fig.fileB && !BAD.has(v.fig.fileB) ? second(art, 'vb:' + v.id, v.id, v.fig, v.fig.fileB, 'ro-visitor2', m) : null;
+          const two = mov && m.kind === 'frames' && v.fig.fileB && !BAD.has(v.fig.fileB) && !(GLIDING.has(v.id) || (fresh && CUR.drawn && WHERE.has(v.id))) ? second(art, 'vb:' + v.id, v.id, v.fig, v.fig.fileB, 'ro-visitor2', m) : null;
           const cl = two && two.on ? ' m-a m-' + m.style : mov ? ({ breathe: ' m-br', sip: ' m-sip', knock: ' m-knock' }[m.kind] || '') : '';
           const im = el(art, 'v:' + v.id, 'img', 'ro-visitor' + cl); box(im, v.fig); im.dataset.for = v.id; im.dataset.pose = v.fig.pose; im.dataset.feet = String(Math.round(v.fig.feetY * 10) / 10); img(im, v.fig.file);
           if (cl) { setVar(im, '--ro-per', m.period + 's'); setVar(im, '--ro-sw', m.sway + 's'); setVar(im, '--ro-u', (v.fig.h / 100).toFixed(3) + 'px'); setVar(im, '--ro-org', '50% ' + px(v.fig.feetY - v.fig.y)); }
-          if (fresh && CUR.drawn && moving() && !hiddenNow() && !glide(im, v.id, WHERE.get(v.id), v.fig, false, two && two.b)) fadeIn(im, 150, 150);
-          WHERE.set(v.id, { ...v.fig, file: v.fig.file });
+          if (fresh && CUR.drawn && moving() && !hiddenNow() && !glide(im, v.id, WHERE.get(v.id), v.fig, false)) fadeIn(im, 150, 150);
+          WHERE.set(v.id, v.fig);
           if (two && two.on && !two.b._clock) { two.b._clock = true; clock(two.b, m.offset); clock(im, m.offset); }
         }
         /* FR-026 "as the flat lobby": a go-place visitor (Boss, Bank, Coffee) is the flat lobby's own button (data-pvopen, and

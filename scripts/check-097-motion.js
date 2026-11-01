@@ -112,12 +112,17 @@ module.exports = async (ctx) => {
   await emit({ type: 'toolCall', sessionId: lobbyId, callId: 'drv-walk', tool: 'bash', phase: 'start', args: { command: 'npm run a-long-one' } });
   await must(`!!document.querySelector('#stage .ro-visitor[data-for="'+CSS.escape(${jsLiteral(lobbyId)})+'"]')`, 'the agent at its place in the lobby');
   assert.ok(await H.until(`window.__g.includes(${jsLiteral(seated)})`, 2000), 'FR-073: a fade where the person sat');
-  assert.ok(await H.until(`(()=>{const v=document.querySelector('#stage .ro-visitor[data-for="'+CSS.escape(${jsLiteral(lobbyId)})+'"]');return !!v&&v.getAnimations().some(a=>!a.animationName&&a.playState==='running'&&(a.effect.getKeyframes()[0].transform||'').startsWith('translate'));})()`, 2000), 'it glides from the desk (spec Changes 2026-11-01)');
-  await must(`!document.querySelector('#stage .ro-ghost')`, 'the fade over');
+  assert.ok(await H.until(`[...document.querySelectorAll('#stage .ro-ghost.walker')].some(w=>w.getAnimations().some(a=>!a.animationName&&a.playState==='running'&&(a.effect.getKeyframes()[0].transform||'').startsWith('translate')))`, 2000), 'a walker goes from the desk to the place (spec Changes 2026-11-01)');
+  await must(`!document.querySelector('#stage .ro-ghost')`, 'the fade over', 6000);
   const standing = await js(`document.querySelector('#stage .ro-visitor[data-for="'+CSS.escape(${jsLiteral(lobbyId)})+'"]').src`);
   await emit({ type: 'toolCall', sessionId: lobbyId, callId: 'drv-walk', tool: 'bash', phase: 'complete', output: 'ok' });
   await must(`!!document.querySelector('#stage .ro-person[data-for="'+CSS.escape(${jsLiteral(lobbyId)})+'"]')`, 'the person back at the desk');
   await must(`window.__g.includes(${jsLiteral(standing)})`, 'FR-073: a fade where the visitor stood');
+  // the head lands on the head (spec Changes 2026-11-01): the walker's last place against the seated picture, from the art's face table
+  const land = await js(`(()=>{const w=document.querySelector('#stage .ro-ghost.walker'),p=document.querySelector('#stage .ro-person[data-for="'+CSS.escape(${jsLiteral(lobbyId)})+'"]');if(!w||!p)return null;const a=w.getAnimations().find(x=>!x.animationName&&x.effect.getTiming().iterations===1&&(x.effect.getKeyframes()[0].transform||'').startsWith('translate'));if(!a)return null;a.pause();a.currentTime=a.effect.getTiming().duration-1;const F=window.DurbarRealOfficeArt.faces,head=(e)=>{const f=F[e.src.split('/').pop()],r=e.getBoundingClientRect();return {x:r.x+f[0]*r.width,y:r.y+f[1]*r.height,h:f[2]*r.height};};const A=head(w);p.getAnimations().forEach(x=>{if(!x.animationName){x.pause();x.currentTime=x.effect.getTiming().duration+x.effect.getTiming().delay-1;}});const B=head(p);a.play();p.getAnimations().forEach(x=>{if(!x.animationName)x.play();});return {dx:Math.abs(A.x-B.x),dy:Math.abs(A.y-B.y),dh:Math.abs(A.h-B.h),h:B.h};})()`);
+  assert.ok(land, 'a walker and a seated picture to compare');
+  console.log('[097-motion] head on head', JSON.stringify(land));
+  assert.ok(land.dx < 3 && land.dy < 3 && land.dh < 3, 'the walker' + "'s head lands on the seated head: " + JSON.stringify(land));
   assert.strictEqual(await js(`(window.__gz||{})[${jsLiteral(standing)}]`), '3', 'a visitor fades in front of its fixture');
   const order = await js(`(()=>{const q=(s)=>document.querySelector('#stage '+s+'[data-for="'+CSS.escape(${jsLiteral(lobbyId)})+'"]');return {p:+getComputedStyle(q('.ro-person')).zIndex,d:+getComputedStyle(q('.ro-desk')).zIndex,s:+getComputedStyle(q('.ro-screen')).zIndex};})()`);
   assert.ok(order.p < order.d && order.d < order.s, 'back behind the desk: ' + JSON.stringify(order));

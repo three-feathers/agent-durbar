@@ -15,6 +15,8 @@ export interface StandMeta { figH: number; poses: Record<string, [number, number
 export interface RealMeta {
   seat: Record<string, SeatMeta>; stand: Record<string, StandMeta>;
   fixtures: Record<string, [number, number]>; fixtureTop?: Record<string, number>; floorLine: number;
+  /** per picture file: face centre x, y and height as fractions of the picture (spec Changes 2026-11-01) */
+  faces?: Record<string, [number, number, number]>;
 }
 export interface Rect { x: number; y: number; w: number; h: number }
 export interface DeskBox {
