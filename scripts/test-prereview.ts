@@ -15,6 +15,8 @@ import * as cli from './prereview-cli';
 import * as post from './prereview-post';
 import { fakeQuery, FakeRecord, goodAnswer, usage } from './fakes/agent-sdk';
 
+if (process.platform === 'win32') { console.log('prereview: the bot is Linux only (spec 103 FR-025); skipped on Windows'); process.exit(0); }
+
 process.env.HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-prereview-home-')); // the account's own git config lives here (planted below)
 process.exitCode = 1; // an async test whose promise never settles must not exit 0
 const ROOT = path.join(__dirname, '..', '..');
@@ -36,7 +38,7 @@ function checkCore(): void {
   for (const f of [{ fork: true }, { author: 'mallory' }, { author: 'dependabot[bot]' }, { author: null }, { editor: 'mallory' }, { editor: 'unknown' }, { titleActors: ['vikramgorla', 'mallory'] }, { titleActors: [null] },
     { commits: [{ oid: sha, author: null }], commitsTotal: 1 }, { commits: [{ oid: sha, author: 'mallory' }], commitsTotal: 1 }, { commitsTotal: 150 }, { state: 'CLOSED' as const }, { state: 'MERGED' as const }]) {
     const r = bad(f as Partial<core.PrFacts>);
-    assert.ok(r.includes('https://github.com/o/r/pull/7') && r.startsWith('refused'), r);
+    assert.ok(/^refused \(.*\); author [^;]*; for a human: https:\/\/github\.com\/o\/r\/pull\/7$/.test(r), r);
   }
   assert.strictEqual(core.refusal({ ...base, state: 'MERGED' }, trusted, { replay: sha2.slice(0, 12) }), null, 'a merged PR with a replay sha of its own is read');
   bad({ state: 'MERGED' }, { replay: 'c'.repeat(12) });
