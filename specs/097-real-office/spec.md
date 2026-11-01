@@ -330,6 +330,10 @@ Each has a recommendation (Q6 is for Paco, the crew owner). The build waits for 
 
 ## Changes
 
+### 2026-11-02: the Real office note names every crew (review on #991)
+
+The note's crew names come from `CREWS` in `crew.js` (plus Minimalist), not a hand list, so a new crew (Pirate, Monster) gets the line by construction; `realOfficeNote` is removed (one path: `peopleFor(...).note`). Wording unchanged. test: `test:realoffice-layout` (every crew without a `REAL_SETS` row, and a future crew).
+
 ### 2026-11-01: the Office layout pick keeps keyboard focus (sweep finding)
 
 Choosing an Office layout repaints Settings; the pressed button is found again and refocused (only if it had focus). test: `scripts/test-realoffice-layout.ts` (source pin), `scripts/shots-097-realoffice.js` (driver: focus on the pressed button after the click).
