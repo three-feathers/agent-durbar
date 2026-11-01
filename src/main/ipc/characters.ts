@@ -15,7 +15,7 @@ import type { AdapterRegistry } from '../../adapters/registry';
 import type { AdapterRouter } from '../../adapters/router';
 import { CHARACTER_IDEAS, SHEET_NAME, buildCharacterPrompt, cleanDescription } from '../../shared/chargen';
 import { DEFAULT_STYLE_ID } from '../../shared/charstyle';
-import { MAX_CHARACTERS, cleanCharacterName, pinDecision } from '../../shared/charrules';
+import { cleanCharacterName, pinDecision } from '../../shared/charrules';
 import type { EncoderResult, FaceSet, FrameSet } from '../../shared/charrules';
 import { MAX_IMAGE_BYTES, checkImage } from '../../shared/imagecheck';
 import { maskHomePaths, redactMarkdown } from '../../shared/redact';
@@ -147,7 +147,6 @@ export function register(deps: CharactersIpcDeps): CharactersIpc {
     const kind = typeof adapterId === 'string' && registry.has(adapterId) ? adapterId : undefined;
     const ad = kind ? router.instance(kind) : undefined;
     if (!ad || ad.capabilities?.imageGen !== true || typeof ad.generateImage !== 'function') return { ok: false, error: NEEDS_CODEX };
-    if (store.list().length >= MAX_CHARACTERS) return { ok: false, error: `You have ${MAX_CHARACTERS} characters, the most Durbar keeps. Delete one first.`, full: true };
     drop();
     const ctl = new AbortController();
     running = ctl;

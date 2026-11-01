@@ -22,14 +22,15 @@ const T = require(path.join(ROOT, 'src', 'renderer', 'theme.js'));
 assert.deepStrictEqual(T.CHARACTERS, [...CHARACTER_CHOICES], 'theme.js lists the same Characters values, in the same order');
 assert.deepStrictEqual([...CHARACTER_CHOICES], ['theme', 'minimalist', 'cheeky', 'prehistoric', 'mine'], 'new crews are appended: the old values never move (FR-064, FR-072; spec 096 FR-040)');
 assert.strictEqual(CHARACTER_KITS.mine, 'crew', 'spec 096 FR-040: My characters draw the crew kit');
-// spec 096, coordinator's choice of 2026-10-31: `mine` is valid, but no window control may choose it before T042 and T044 can draw it. Settings' list is its own, and has no `mine`
+// spec 096 T044: Settings offers the first four and `mine` only behind the character list; a stored `mine` with no character draws the theme's own (check-characters runs it)
 {
   const screens = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'screens.js'), 'utf8');
   const list = /const charItems=\(\)=>\{[\s\S]*?const list=\[([^\n]*)\];/.exec(screens)?.[1] ?? '';
-  assert.deepStrictEqual([...list.matchAll(/\bid:'([a-z]+)'/g)].map((m) => m[1]), ['theme', 'minimalist', 'cheeky', 'prehistoric'], "Settings offers these; T044 adds 'mine' and changes this line");
+  assert.deepStrictEqual([...list.matchAll(/\bid:'([a-z]+)'/g)].map((m) => m[1]), ['theme', 'minimalist', 'cheeky', 'prehistoric'], 'Settings offers these always');
+  assert.ok(/if\(mineN>=0\)list\.push\(\{id:'mine'/.test(screens), 'and mine, when the app can list characters');
   assert.ok(!/T\.CHARACTERS|THEME\.CHARACTERS/.test(screens), 'and does not list from theme.js');
   const appJs = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'app.js'), 'utf8');
-  assert.ok(/THEME\.setCharacters\(drawableCharacters\(v&&v\.characters\)\)/.test(appJs) && /const drawableCharacters=c=>c==='mine'\?'theme':c;/.test(appJs), 'a stored mine draws the theme\'s own until T044 (check-characters runs it)');
+  assert.ok(/THEME\.setCharacters\(drawableCharacters\(CHARS_CHOSEN\)\)/.test(appJs) && /const drawableCharacters=c=>c==='mine'&&!\(CREW&&CREW\.idsFor\('mine'\)\.length\)\?'theme':c;/.test(appJs), "a stored mine with no character draws the theme's own");
 }
 assert.deepStrictEqual(T.CHARACTER_KITS, { ...CHARACTER_KITS }, 'theme.js maps each choice to the same kit');
 assert.strictEqual(T.LEGACY_CREW_THEME, LEGACY_CREW_THEME);

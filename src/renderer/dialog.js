@@ -50,7 +50,9 @@ function endAllBody(n,busyN){
       };
       const textOf=()=>input?d.querySelector('#mdIn').value:undefined;
       /* while open: Escape cancels, Tab wraps. On the document in the capture phase, so it also works when focus slipped out. */
+      const onTop=()=>{const a=doc.querySelectorAll('.dlg-ov');return !a.length||a[a.length-1]===d;}; /* spec 096 review: only the top dialog acts: a dialog over this one has its own keys and focus */
       const onKey=e=>{
+        if(!onTop())return;
         if(e.key==='Enter'&&input&&input.submitOnEnter&&!input.multiline&&e.target&&e.target.id==='mdIn'&&!e.isComposing){const p=row.querySelector('.primary');if(p){e.preventDefault();if(!p.disabled)p.click();return;}}
         if(e.key==='Escape'){e.preventDefault();e.stopPropagation();done(null);return;}
         if(e.key!=='Tab')return;
@@ -61,7 +63,7 @@ function endAllBody(n,busyN){
         else if(!e.shiftKey&&i===it.length-1){e.preventDefault();focusIn(it[0]);}
       };
       /* focus must not leave the dialog (a stray focus() on the control behind it, a click on the backdrop) */
-      const onFocusIn=e=>{if(!d.contains(e.target)){const f=first();if(f)focusIn(f);}};
+      const onFocusIn=e=>{if(onTop()&&!d.contains(e.target)){const f=first();if(f)focusIn(f);}};
       buttons.forEach(b=>{const el=doc.createElement('button');el.type='button';el.className='btn'+(b.cls?' '+b.cls:'');el.textContent=b.label;if(b.value===null)el.dataset.cancel='1';el.onclick=()=>{
         if(el.disabled)return;
         if(b.value!==null&&input&&typeof input.check==='function'){

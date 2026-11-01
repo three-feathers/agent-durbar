@@ -13,6 +13,7 @@ const C = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'crew.js')
   pruneCrew: (m: Record<string, string>, ids: string[]) => Record<string, string>;
   loadCrew: (j: unknown, ids?: string[]) => Record<string, string>;
   POSES: string[]; BOX: { x: number; y: number; w: number; h: number }; PX_PER_UNIT: number; FACE: Record<string, Record<string, number[]>>; FACE_W: number; FACE_H: number; faceBox: (id: string, pose: string) => number[] | null; viewBox: (id: string, pose: string, use?: string) => string | null;
+  registerOwn: (l: unknown) => string[]; ownName: (id: string) => string; ownRev: (id: string) => string; folderKey: (p: string, platform: string) => string; pinKey: (i: unknown, platform: string) => string | null; pinCrew: (m: Record<string, string>, s: { id: string; key: string }[], pins: Record<string, string>, ids: string[], bad?: Set<string>) => Record<string, string>; viewBoxAt: (f: number[], use?: string) => string;
   poseFor: (st: string) => string; file: (id: string, pose: string) => string; files: (ids?: string[]) => string[]; usable: (id: unknown, bad?: Set<string>) => boolean;
 };
 
@@ -206,5 +207,84 @@ assert.deepStrictEqual(Object.keys(C.FACE).sort(), [...C.ALL_IDS].sort(), 'a fac
   assert.strictEqual(uses.length, 1, 'app.js reads the table in one place');
   assert.ok(/SIM&&window\.DurbarSimCrew\?window\.DurbarSimCrew\.seed\(/.test(uses[0]), 'and only when SIM is on');
   assert.ok(!/simcrew|DurbarSimCrew/i.test(fs.readFileSync(path.join(root, 'src', 'renderer', 'crew.js'), 'utf8')), 'crew.js does not know the table');
+}
+
+// ---- spec 096 FR-043, FR-044: My characters registered with the crew, and pins in the pick ----
+{
+  const A = 'my-aaaaaaaaaaaa', B = 'my-bbbbbbbbbbbb', D = 'my-dddddddddddd';
+  const face = { working: [176, 150], waiting: [170, 150], resting: [176, 140] };
+  const urls = (id: string): Record<string, string> => ({ working: `blob:file:///${id}-w`, waiting: `blob:file:///${id}-t`, resting: `blob:file:///${id}-r`, blink: `blob:file:///${id}-b` });
+  const own = (id: string, name = id): Record<string, unknown> => ({ id, name, face, urls: urls(id) });
+  assert.deepStrictEqual(C.idsFor('mine'), [], 'nothing registered: no characters, never the Cheeky crew under another name');
+  assert.strictEqual(C.storeKey('mine'), 'durbar.crew.mine', 'its own saved map');
+  assert.strictEqual(C.usable(A), false);
+  assert.deepStrictEqual(C.registerOwn([own(A, 'Greta'), own(B)]), [A, B], 'the list, in its order (newest first)');
+  assert.deepStrictEqual(C.idsFor('mine'), [A, B]);
+  assert.deepStrictEqual(C.idsFor('cheeky'), C.IDS, 'the crews do not change');
+  assert.ok(C.usable(A) && !C.usable(A, new Set([A])), 'usable, and a bad picture still marks it (FR-055)');
+  assert.strictEqual(C.file(A, 'waiting'), urls(A).waiting, 'its picture is the URL');
+  assert.strictEqual(C.ownName(A), 'Greta');
+  assert.strictEqual(C.ownName('punk'), '', 'a built-in character has no name here');
+  assert.ok(C.faceBox(A, 'waiting'), 'a face box from its own points');
+  const vb = C.viewBox(A, 'waiting');
+  assert.ok(vb && vb === C.viewBoxAt([170, 150]) && vb !== C.viewBox(A, 'working'), 'the crop follows the pose\'s face point');
+  // what reaches scene markup is checked: nothing here may hold a quote or markup
+  const BAD: unknown[] = [
+    null, 'x', { id: A }, { ...own(D), id: '../my-dddddddddddd' }, { ...own(D), id: 'my-DDDDDDDDDDDD' }, { ...own(D), id: 'punk' }, { ...own(D), id: '__proto__' },
+    { ...own(D), urls: { ...urls(D), working: 'x" onload="alert(1)' } }, { ...own(D), urls: { ...urls(D), waiting: 'https://example.com/a.webp' } }, { ...own(D), urls: { ...urls(D), resting: 'data:image/svg+xml,<svg/>' } },
+    { ...own(D), urls: { ...urls(D), working: 'blob:x" onload="alert(1)' } }, { ...own(D), urls: { ...urls(D), waiting: "blob:x' onload='alert(1)" } }, { ...own(D), urls: { ...urls(D), resting: 'blob:x><script>' } }, { ...own(D), urls: { ...urls(D), working: 'blob:x y' } }, { ...own(D), urls: { ...urls(D), working: 'blob:' } }, { ...own(D), urls: { ...urls(D), working: 'blob:x&amp;y' } }, { ...own(D), urls: { ...urls(D), working: 'xblob:file:///a' } },
+    { ...own(D), urls: { working: urls(D).working } }, { ...own(D), face: { ...face, working: [176, NaN] } }, { ...own(D), face: { ...face, waiting: [176, 'x'] } }, { ...own(D), face: { ...face, resting: [176, 9999] } },
+  ];
+  for (const b of BAD) assert.deepStrictEqual(C.registerOwn([b]), [], `refused: ${JSON.stringify(b)}`);
+  assert.deepStrictEqual(C.registerOwn('nope'), [], 'not a list');
+  C.registerOwn([{ ...own(D), name: '<img src=x>', urls: { ...urls(D), blink: 'javascript:alert(1)' } }]);
+  assert.strictEqual(C.file(D, 'blink' as string), undefined, 'a bad blink URL is left out, the character stays');
+  // a new URL is a new signature; a second registration with the same URLs is not
+  C.registerOwn([own(A)]);
+  const rev = C.ownRev(A);
+  assert.ok(/^@\d+$/.test(rev));
+  C.registerOwn([own(A, 'renamed')]);
+  assert.strictEqual(C.ownRev(A), rev, 'a rename keeps the pictures, so the scene stays');
+  assert.strictEqual(C.ownName(A), 'renamed');
+  C.registerOwn([{ ...own(A), urls: { ...urls(A), working: 'blob:file:///new' } }]);
+  assert.notStrictEqual(C.ownRev(A), rev, 'new URLs: the scene is drawn again');
+  assert.strictEqual(C.ownRev('punk'), '', 'no change for the built-in crews');
+  // US2 scenario 2: a stored map naming a deleted character: the entry goes, the session gets a new pick
+  C.registerOwn([own(A), own(B)]);
+  assert.deepStrictEqual(C.loadCrew({ s1: A, s2: D, s3: 'punk' }, C.idsFor('mine')), { s1: A }, 'unknown ids dropped by loadCrew');
+  // least used with registered ids
+  assert.strictEqual(C.pickCharacter('n', C.idsFor('mine'), [A, A, B], () => 0), B, 'least used among the registered');
+  assert.strictEqual(new Set(Object.values(C.assignCrew({}, ['s1', 's2'], C.idsFor('mine'), (id) => C.seededRand(id)))).size, 2, 'no twin while one is free');
+  // folder keys are the same as main's
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { normaliseFolderKey } = require(path.join(__dirname, '..', 'src', 'shared', 'usagedoc.js')) as { normaliseFolderKey: (p: string, platform: string) => string };
+  for (const plat of ['win32', 'darwin', 'linux']) for (const p of ['/a/b', '/a/b/', '/a/b//', '/', '', ' /a/x ', 'C:\\Work\\App\\', 'c:/work/app', 'C:\\', '\\\\srv\\share\\', '~/x/', '/A/B\\']) assert.strictEqual(C.folderKey(p, plat), normaliseFolderKey(p, plat), `${plat} ${p}`);
+  // a session with no folder has no key: a pin on `/` must not dress it
+  for (const info of [undefined, null, {}, { cwd: '' }, { cwd: '   ' }, { cwd: 3 }]) assert.strictEqual(C.pinKey(info, 'darwin'), null, `no folder: ${JSON.stringify(info)}`);
+  assert.strictEqual(C.pinKey({ cwd: '/a/b/' }, 'darwin'), '/a/b');
+  assert.strictEqual(C.pinKey({ cwd: '/' }, 'darwin'), '/', 'a session really in `/` has that key');
+  assert.strictEqual(C.pinKey({ cwd: '/a', workspaceFile: '/w/x.code-workspace' }, 'darwin'), '/w/x.code-workspace', 'the workspace file first, as folderKeyOf');
+  assert.deepStrictEqual(C.pinCrew({}, [{ id: 's', key: null as unknown as string }], { '/': C.idsFor('mine')[0] }, C.idsFor('mine')), {}, 'and it is not dressed');
+  // FR-044: pinned first, counted as in use by the others
+  const ids = C.idsFor('mine');
+  const sess = [{ id: 's1', key: '/a' }, { id: 's2', key: '/a' }, { id: 's3', key: '/b' }];
+  const pinned = C.pinCrew({}, sess, { '/a': B }, ids);
+  assert.deepStrictEqual(pinned, { s1: B, s2: B }, 'both sessions of the folder, the other left to the pick');
+  const picked = C.assignCrew(pinned, ['s1', 's2', 's3'], ids, () => 0);
+  assert.deepStrictEqual(picked, { s1: B, s2: B, s3: A }, 'the pinned one counts as in use, so the other session gets the free one (with the pick first, s3 would get A too only by chance: rand 0 is the first of the pool)');
+  const order = C.assignCrew(C.pinCrew({}, sess, { '/a': A }, ids), ['s1', 's2', 's3'], ids, () => 0);
+  assert.deepStrictEqual(order, { s1: A, s2: A, s3: B }, 'pin order: a pin on the first character leaves the second to the others; assigning before pinning would give s3 the pinned one');
+  assert.deepStrictEqual(C.pinCrew({ s1: A }, sess, { '/a': B }, ids), { s1: B, s2: B }, 'a pin beats the random pick already kept');
+  assert.deepStrictEqual(C.pinCrew({ s3: A }, sess, {}, ids), { s3: A }, 'no pin: the kept pick stays');
+  assert.deepStrictEqual(C.pinCrew({ s1: 'punk' }, sess, { '/a': B }, C.IDS), { s1: B, s2: B }, 'a pin to a generated character also applies under a crew');
+  assert.deepStrictEqual(C.pinCrew({ s1: B }, sess, {}, C.IDS), {}, 'a pin taken away under a crew: its id is not in that list, so the session gets a new pick');
+  assert.deepStrictEqual(C.pinCrew({ s1: D }, sess, { '/a': D }, ids), {}, 'a pin to a character that is gone is not worn, and a kept deleted id goes (US4 scenario 2)');
+  assert.deepStrictEqual(C.pinCrew({}, sess, { '/a': B }, ids, new Set([B])), {}, 'a pinned character whose pictures failed is not worn (FR-055)');
+  assert.deepStrictEqual(C.pinCrew({}, [{ id: 's', key: '/a' }], Object.create({ '/a': B }) as Record<string, string>, ids), {}, 'a key is looked up as own data only');
+  assert.deepStrictEqual(C.pinCrew({}, [{ id: 's', key: 'toString' }], {}, ids), {}, 'and an inherited name is no pin');
+  C.registerOwn([]);
+  assert.deepStrictEqual(C.idsFor('mine'), [], 'an empty list clears them');
+  assert.strictEqual(C.file(A, 'working'), 'crew/art/' + A + '-working.webp', 'and their URLs are gone (no reader: usable is false)');
+  assert.strictEqual(C.usable(A), false);
 }
 console.log('crew tests passed');

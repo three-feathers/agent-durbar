@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:;">
 <title>Agent Durbar</title>
 <link rel="stylesheet" href="styles.css">
 <link rel="stylesheet" href="screens.css">
@@ -163,6 +163,7 @@
 <script src="signin.js"></script>
 <script src="harnesses.js"></script>
 <script src="profileeditor.js"></script>
+<script src="charmaker.js"></script><!-- spec 096: the character maker (window.DurbarCharMaker), read at call time by screens.js -->
 <script src="screens.js"></script>
 <script src="foldersetup.js"></script>
 <script src="demo.js"></script>
@@ -173,6 +174,8 @@
 <script src="safetext.js"></script>
 <script src="liveact.js"></script>
 <script src="app.js"></script>
+<script src="../shared/charstyle.js"></script><!-- spec 096 FR-050: DEFAULT_STYLE_ID, read through window.exports for "older style" -->
+<script src="../shared/ideas.js"></script><!-- spec 096 T040: pickFrom, read through window.exports by screens.js -->
 <script src="../shared/profiletemplates.js"></script><!-- spec 043 FR-018: read at call time by profileeditor.js and the simulator -->
 <script src="../shared/mcphealth.js"></script><!-- spec 058 FR-092: the simulator reads mcpHealthUpdate at call time, the same rule as main -->
 <script src="renderer.js"></script>

@@ -76,8 +76,8 @@ module.exports = async (ctx) => {
       assert.ok(await H.until(`(document.querySelector('#chList [data-characters="theme"]')||{}).textContent&&document.querySelector('#chList [data-characters="theme"]').textContent.includes(${jsLiteral(own)})`, 4000), `${where}: The theme's own follows the theme (${own})`);
       const sc = await section();
       assert.ok(sc.afterTheme, `${where}: Characters comes right after Theme`);
-      assert.deepStrictEqual(sc.items.map((i) => i.id), ['theme', 'minimalist', 'cheeky', 'prehistoric'], `${where}: the four choices in order`);
-      assert.deepStrictEqual(sc.items.map((i) => i.pressed), ['true', 'false', 'false', 'false'], `${where}: the default is pressed`);
+      assert.deepStrictEqual(sc.items.map((i) => i.id), ['theme', 'minimalist', 'cheeky', 'prehistoric', 'mine'], `${where}: the five choices in order (spec 096 FR-040)`);
+      assert.deepStrictEqual(sc.items.map((i) => i.pressed), ['true', 'false', 'false', 'false', 'false'], `${where}: the default is pressed`);
       for (const i of sc.items) {
         assert.ok(i.svg, `${where}: ${i.id} has a preview figure`);
         assert.ok(i.minFont >= 10.5, `${where}: ${i.id}: text is at least 10.5px (${i.minFont})`);
@@ -138,15 +138,39 @@ module.exports = async (ctx) => {
     await close();
     console.log(`[characters] ${tag} ok`, JSON.stringify(await desks()));
   }
-  // spec 096 (coordinator's choice of 2026-10-31): a stored `mine` must not draw the Cheeky crew under another name before T042 and T044 can show My characters
+  // spec 096 US2 scenario 4: a stored `mine` with no character draws the theme's own figures, never the Cheeky crew under another name, and stays stored
   await H.load({ w: 1280, h: 800, ready: 'fit', settle: false, query: { characters: 'mine', theme: 'retro' } });
   await H.office(15);
   assert.strictEqual(await H.js(`window.THEME.characters()`), 'theme', 'a stored mine draws the theme\'s own figures');
   assert.strictEqual((await desks()).anyPic, 0, 'and no crew portrait');
   assert.strictEqual(await H.js(`window.__durbarSimUi.bridge().getSettings().then(s=>s.characters)`), 'mine', 'the stored value stays');
   await openSettings();
-  assert.deepStrictEqual((await section()).items.map((i) => i.id), ['theme', 'minimalist', 'cheeky', 'prehistoric'], 'Settings does not offer mine');
+  let empty = (await section()).items.find((i) => i.id === 'mine');
+  assert.strictEqual(empty.pressed, 'true', 'My characters stays the choice');
+  assert.ok(empty.text.includes('Make one first') && !empty.pic, `with nothing to draw it says so (${empty.text})`);
   await close();
+  // spec 096 T044: the mine value, on any theme: the desks draw the saved characters, the theme stays, the preview is the newest one's working pose
+  for (const theme of ['retro', 'corporate']) {
+    await H.load({ w: 1280, h: 800, ready: 'fit', settle: false, query: { simmine: '2', theme } });
+    await H.office(15);
+    await openSettings();
+    await H.clearToasts();
+    const row = (await section()).items.find((i) => i.id === 'mine');
+    assert.ok(row.text.includes('2 characters'), `${theme}: the count (${row.text})`);
+    assert.strictEqual(await H.js(`(document.querySelector('#chList [data-characters="mine"] .chsw image')||{getAttribute(){return ''}}).getAttribute('href').slice(0,5)`), 'blob:', `${theme}: the preview is a saved picture`);
+    await H.js(`document.querySelector('#chList [data-characters="mine"]').click()`);
+    assert.ok(await H.until(`window.THEME.characters()==='mine'`, 4000), `${theme}: mine applied`);
+    assert.ok(await H.until(`[...document.querySelectorAll('#toasts .toast')].some(t=>/^Characters: My characters/.test(t.textContent))`, 4000), `${theme}: the choice is announced`);
+    assert.strictEqual(await H.js(`window.__durbarSimUi.bridge().getSettings().then(s=>s.characters)`), 'mine', `${theme}: saved`);
+    await close();
+    assert.ok(await H.until(`(()=>{const sc=[...document.querySelectorAll('#stage .desk[data-id] svg.scene')].filter(s=>s.getClientRects().length);return sc.length>=12&&sc.every(s=>/\\|crew\\|my-/.test(s.dataset.sig||'')&&s.querySelector('image[href^="blob:"]'))})()`, 10000), `${theme}: every desk scene draws a saved character`);
+    assert.strictEqual(await H.js(`window.THEME.current().id`), theme, `${theme}: the theme stays`);
+    assert.strictEqual(await H.js(`document.querySelectorAll('#stage image[href^="crew/art/"]').length`), 0, `${theme}: no crew picture under mine`);
+    await pickChars('theme');
+    await close();
+    assert.ok(await H.until(`document.querySelectorAll('#stage image[href^="blob:"]').length===0`, 8000), `${theme}: back to the theme's own, no saved picture is left`);
+    assert.ok(await H.until(`window.__durbarSimUi.crew.own().urls.length===0`, 4000), `${theme}: and the URLs are given back`);
+  }
   console.log('[characters] checks passed');
   process.exitCode = 0;
 };

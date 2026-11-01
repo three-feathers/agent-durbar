@@ -3,7 +3,7 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: AI character maker (owner request, Vikram 2026-10-30): make realistic crew characters with Codex image generation (3 poses + blink), My characters, folder pins, light portrait motion
-note: Q1-Q5 answered; probes P1-P8 not run; phases 2 and 3 (not T030, T031) built, no adapter makes pictures; window and motion not built
+note: Q1-Q5 answered; probes not run; phases 2, 3 (not T030, T030a, T031), 4 built; no adapter makes pictures, the dialog says so; no motion yet
 status: draft
 -->
 
@@ -11,7 +11,7 @@ status: draft
 
 **Created**: 2026-10-31
 
-**Status**: Draft (2026-10-31). Phases 2 and 3 (without T030, T031) are built, see *Changes*; nothing a user can reach yet. Q1-Q5 are answered by the owner (*Clarifications*); Paco answered Q1b (yes, built-in crews move too, 2026-10-31; *Changes*). Probes P1-P8 (plan.md) are OK'd by the owner on his ChatGPT plan and not yet run; they come before the adapter phase.
+**Status**: Draft (2026-10-31). Phases 2, 3 (without T030, T030a, T031) and 4 are built, see *Changes*: a user can reach My characters and the maker's dialog, which says it cannot make one, since no adapter makes pictures yet. Q1-Q5 are answered by the owner (*Clarifications*); Paco answered Q1b (yes, built-in crews move too, 2026-10-31; *Changes*). Probes P1-P8 (plan.md) are OK'd by the owner on his ChatGPT plan and not yet run; they come before the adapter phase.
 
 **Input**: Owner requests (Vikram, Telegram DMs, 2026-10-30 and 2026-10-31):
 - "for characters, add ai character maker";
@@ -60,7 +60,7 @@ A delta would bury that in 077's 70+ requirements, so it is a new spec, number *
   - Where the file lands: the image is made under `~/.codex/generated_images` and Codex copies it into the folder.
   - Cost: Codex is signed in with ChatGPT, so it uses the plan's limits and no API money.
   - Not checked: the same through `codex app-server`, transparency, a reference image, and a multi-panel sheet (probes P1-P6).
-- **CSP** (`src/renderer/index.html:6`): `img-src 'self' data:`.
+- **CSP** (`src/renderer/index.html:6`): was `img-src 'self' data:`; phase 4 adds `blob:` for images only (FR-043, *Changes*).
 
 ## Clarifications
 
@@ -79,7 +79,7 @@ Quote: "ok and go with your pick". This answers all five questions with the reco
 - **Q2**: **My characters** is its own Characters value; pins work under any crew.
 - **Q3**: pins apply only when Characters is a crew value (My characters, Cheeky, Prehistoric) in v1.
 - **Q4**: export only in v1; import in a follow-up through the same validator.
-- **Q5**: at most 24 saved characters, one generation at a time, a 5-minute timeout, no Durbar daily cap; the dialog warns about plan use on every try.
+- **Q5**: ~~at most 24 saved characters~~ (a warning since the owner's principle of 2026-10-31, *Changes*), one generation at a time, a 5-minute timeout, no Durbar daily cap; the dialog warns about plan use on every try.
 - **Q1b** (Paco): answered yes 2026-10-31, see *Changes*.
 
 ### Decisions taken by this spec
@@ -193,7 +193,7 @@ Under My characters each character has **Rename**, **Delete** and **Export…**.
 - **Two makers at once**: one generation at a time per app. A second press is disabled while one runs.
 - **App quits during a generation**: the child is closed, the temp folder is removed, and nothing is saved.
 - **userData not writable or disk full**: Save fails with a plain reason, and nothing half-written stays (write to a temp name, then rename).
-- **The 24-character cap is reached** (Q5): the maker says so and offers Manage.
+- **24 or more characters** (changed 2026-10-31, *Changes*): the maker warns and offers Cancel, Manage and Make another; nothing stops it.
 - **A character pinned to a folder that is no longer open**: the pin stays (folders come back) and is listed in Manage with the folder's short name.
 - **Built-in crew ids and generated ids** never clash: generated ids are `my-` plus 12 random hex characters from main.
 - **Windows command line length**: the prompt goes as an argv element (exec) or a JSON-RPC field (app-server). The wrapper plus 300 characters stays under 4,000 characters (unit test).
@@ -251,7 +251,7 @@ Under My characters each character has **Rename**, **Delete** and **Export…**.
   - The id is `my-` plus 12 random hex characters, made by main.
   - Writes go to a temp folder that is then renamed. Nothing is ever in the repository.
   - The store reads only folders whose name matches the id pattern and files from that list, never links. A bad folder is skipped with a warning (no path in the UI).
-  - At most 24 characters (Q5).
+  - From 24 characters the maker warns; the store has no limit (changed 2026-10-31, *Changes*).
 - **FR-031** **IPC** (main decides; ids from main; every handler through `ipcHandle`, `fromApp` checked as spec 045):
   - `character:generate(description, adapterId)` gives `{ ok, tryId, frames: { working, waiting, resting, blink? } as WebP bytes, face, notes[], tookMs }`. The try is held in main's memory under a random `tryId` (at most 1 held; a new generate or 10 minutes drops it).
   - `character:cancel(tryId)`.
@@ -330,8 +330,8 @@ Under My characters each character has **Rename**, **Delete** and **Export…**.
 
 ## Success Criteria *(mandatory)*
 
-- **SC-001** On the simulator, making, previewing, saving, renaming, pinning, exporting and deleting a character all work with 0 AI credits and no network (drivers and unit tests in `npm test` and CI).
-- **SC-002** With My characters and 15 simulated agents, `check:office` and `check:crew` pass at 1440x900 and 1280x800 (no overlap, no text under 10.5px, faces visible, idle portraits at full colour).
+- **SC-001** On the simulator, making, previewing, saving, renaming, pinning, exporting and deleting a character all work with 0 AI credits and no network (unit tests in `npm test` and CI; `check-charmaker` in `ui-platforms`: Linux and Windows on a PR that touches its paths, macOS nightly and by hand).
+- **SC-002** With My characters and 15 simulated agents, `check:office` and `check:crew` pass at 1440x900 and 1280x800 (no overlap, no text under 10.5px, faces visible, idle portraits at full colour). `check-crew mine` runs in `ui-platforms`; `check:office` with `OFFICE_CHARACTERS=mine` is **not a required check**: it runs on demand (`npm run check:themes`, or `full_themes` of `ci.yml`), and passed by hand on a Mac at phase 4 (*Changes*).
 - **SC-003** Every stored frame is a 352x352 WebP with alpha, at most 40 KB, with no metadata chunk (`test:imagecheck`, `test:charstore`). No user picture is decoded in the main process (source test: no `nativeImage.createFromBuffer`/`createFromPath` on the character path).
 - **SC-004** No description text appears in any file under userData, any log line, or any IPC reply after the generate call (a test scans the store and captured logs for a marker description).
 - **SC-005** With reduced motion, Serious mode, Motion off, or a hidden window, no portrait animation runs (`check-charmotion`). With motion on, no animated box enters a protected zone at any sampled frame.
@@ -389,6 +389,57 @@ Q1-Q5 are answered (*Clarifications*, owner decisions, 2026-10-31). Their text a
 - **Built** (`[IMPLEMENTED]`, `test:` `npm run test:chargen`, `npm run test:imagecheck`, `npm run test:crew-assets`): `src/shared/charstyle.ts` (FR-050, FR-051), `src/shared/chargen.ts` (FR-010..FR-013: `cleanDescription`, `buildCharacterPrompt`, `CHARACTER_IDEAS`, `pickCharacterIdeas`), `src/shared/imagecheck.ts` (FR-021 header checks), `src/shared/webpcheck.ts` (FR-023: `webpInfo`, `checkFrame`, `checkFrames`, `stripChunks`; the chunk walker moved here from `scripts/test-crew-assets.ts`). Nothing calls them yet: no adapter, IPC, window or store (phases 3 and 4). `[KNOWN GAP]` FR-020 (main's `lstat` and read) and FR-022 (the sandboxed encoder) are not built.
 - **Reuse** (spec 021 FR-031): the idea picker is now the neutral `pickFrom` in `src/shared/ideas.ts` (`themegen.ts`'s `pickIdeas` delegates to it), so the maker does not depend on theme-maker code, which is being removed (coordinator, 2026-10-31); spec 102 (worlds) can reuse it. **Phase 4 note**: T040 plans to factor helpers out of `aiTheme()`; per the same decision they must be extracted as neutral dialog helpers, not built on the theme maker's dialog. Character sets must work in any world: the `crew` kit and `theme.js` character list in T037/T042 must not assume a set belongs to one world or theme.
 - **Decisions of the build** (inside the spec's wording): the 300-code-point cut never leaves a dangling joiner; invisible format characters (zero width, bidi overrides, soft hyphen) and line separators are removed with the control characters, so they cannot hide a marker; angle brackets are removed, so a marker string can never appear (FR-011 says the markers are removed; removing them one by one can build a new one and is quadratic on nested input). `checkImage` also walks the PNG chunks to an `IEND` (a cut file is "cut short"), but does not refuse bytes after it: a PNG+ZIP polyglot passes the header check on purpose, and the sandboxed re-encode (FR-022) drops them. `stripChunks` removes only EXIF, XMP and ICC; any other unexpected chunk stays and `checkFrame` refuses it.
+
+### 2026-10-31: review of phase 4, fixes
+
+- **Modal dialogs** (`dialog` in `screens.js`, used by FR-034's question and the busy line): no focus trap let Tab reach the page behind, and a second open deleted the busy line, leaving a running try with no Cancel. Now: Tab wraps, stolen focus returns, Escape works with the focus anywhere, focus goes back to what opened it; a replaced dialog is dismissed, so its try is cancelled; the maker runs one flow at a time. This applies to every caller of `dialog`.
+- **A background prompt** (a folder's setup, spec 061) waits until no dialog or maker flow is open (`dialogsFree`, `holdDialogs`), so it cannot cancel a try or drop a picture; replaced by a dialog, it comes back, since it asks only once per folder. `DurbarDialog` now acts only when it is the top dialog.
+- **`{ confirmed }`** never reached main: the preload dropped it. It now passes it (`test:charipc` runs the real preload's source). Main still does not read it (T030a).
+- **Helpers** kept a deleted character; `syncCrew` drops it.
+- **`blob:` URLs with a quote** had no test; added, and `scenekits` escapes the URL as a second line.
+- **All frames unreadable**: the item, the rows and a toast say so, instead of "Characters: My characters." over the theme's figures.
+- **A session with no folder** had the key `/`; it now has none, so a pin on `/` cannot dress it (`pinKey`).
+- **A decode failure** of a My character is tried once more before it counts, and new URLs start clean.
+- **Scale**: a rename or pin no longer decodes every frame again (preload once per set of URLs). Measured `sim:` on this Mac with 60 characters: Settings opens in 24 ms and a rename takes 20 ms against 36 and 16 ms with 3. The store with real-sized frames: reading all frames of 60 takes 12 ms, of 200 takes 129 ms. Settings' serial fetch stays, since that does not scale badly. `[KNOWN GAP]` real IPC cost at large counts was not measured.
+- **Cost in `ui-platforms`** (macOS runs one at a time, 80-minute limit): `check-charmaker` adds 53 s and `check-crew mine` 16 s, measured on this Mac; `ui-platforms` on macOS was 43 minutes in October. They were not split further: both are `check-crew`'s and the maker's only window coverage.
+- T041's plan line is split off as T041c. T061 is done here, since this PR ships the CSP change. SC-001 and SC-002 now say where they run.
+
+### 2026-10-31: warn and let people pass (owner's principle)
+
+- **Decision**: Vikram, 2026-10-31 20:52 UTC, relayed by the coordinator: warn people and let them override; the app does not impose limits on a person's own money; only organizations may enforce. A limit stays only when it protects user data or the app, or is an organization's rule.
+- **Changed** (`test:charstore`, `test:charipc`, `check-charmaker`):
+  - **The cap of 24 characters** (Q5, FR-030): no longer a limit in the store, `character:generate`, `character:save` or the simulator. It protected nothing: a character is at most 160 KB. From `CHARACTERS_WARN_AT` (24) the maker says how many there are and offers Cancel, Manage, Make another. `full` left `CharacterTryResult`. `[KNOWN GAP]` all characters are in memory while shown (160 KB each at most), so a very long list costs memory; not measured.
+- **Kept, and why**:
+  - **One generation at a time; one held try, dropped after 10 minutes** (FR-031): protects the app, and a double press from a second picture nobody asked for.
+  - **5-minute generation limit, 20 s encoder limit**: end a hung child or window; the person can press Try again.
+  - **Description 3-300 code points, prompt under 4,000 characters** (FR-011): the prompt-injection guard and the Windows command line.
+  - **Name 1-40 characters, the refused and removed characters** (FR-031): what reaches the page and the export folder.
+  - **Sheet 20 MB, 512-4096 px; frame 352 px, 40 KB, chunk allow-list; 160 KB per character** (FR-020..FR-023): decoding untrusted bytes; `character.json` 4 KB.
+  - **A sheet that does not pass FR-024 or FR-026 is refused** (phase 3's choice 1): a frame must have alpha to pass FR-023. It is a frame rule, so kept, though the person has used a picture of their plan by then; flagged for the owner with the next item.
+  - **500 pins** (FR-033), **a pin only on an open folder**: size of the settings file; no text from the window becomes a stored path that main did not list.
+  - **Export suffix up to ` (99)`**: never overwrites; the loop ends.
+  - **The login question** (FR-034): is a warning, stays.
+- **Kept for now and flagged, awaiting the owner's word**: **`apikey` is refused** (FR-034, T041a, the team's brief). Read literally, the principle makes this a warning too: it is a limit on a person's own money. It is left as it is because the brief for this phase and FR-034 name it, nothing can report `apikey` before probe P6, so it reaches no real person today, and turning a refusal into a question is the owner's call rather than a side effect. If it changes: T041a's `loginGate` answers `ask` with the sharper text "Codex is signed in with an API key, so OpenAI charges this picture. Make it?".
+- **No such limit in phases 3 and 4**: a daily or monthly cap on pictures, a credit cap.
+
+### 2026-10-31: phase 4, the window (T040..T047)
+
+- **Built** (`[IMPLEMENTED]`, `sim:` `check-charmaker`, `check-crew` with `CREW_CHARS=mine`, `check-characters`, `check:office` with `OFFICE_CHARACTERS=mine`; `test:` `test:crew`, `test:charipc`, `test:characters`): the neutral dialog helpers in `screens.js` (`DurbarScreens.maker`: idea chips, harness picker, `readyKinds`, `imageCostLine`; `pickFrom` from `src/shared/ideas.ts`, nothing built on `aiTheme()`, T040), the login gate (`gatedGenerate`, `src/renderer/charmaker.js`, T041a), the help text (FR-035, T041b), the dialog (FR-040, FR-041), `registerOwn`, `pinCrew`, `folderKey` in `crew.js` (FR-043, FR-044), the `mine` value and the rows (FR-040, FR-042). Reused: `dialog`, `DurbarDialog` (rename, delete, pin's checkbox list), `X.toast`, `esc`, `chList`, `crewPreload`, `CREW_BAD`, the Characters save path. A set belongs to no theme or world: `mine` draws the crew kit on any of them (`check-characters`: Retro, Corporate).
+- **CSP, R3 decision: `blob:`.** `img-src 'self' data:` became `img-src 'self' data: blob:`; nothing else changed, and no `connect-src` or `script-src` was touched. Measured `sim:` on this Mac (18 desk-sized `<image>`s, a real 46 KB frame, 40 rounds three times): `blob:` 3.6-3.8 ms and 3 KB of markup per paint, `data:` 5.9-6.1 ms and 1,117 KB of markup, which the scene cache would also hold. `registerOwn` accepts only `blob:` URLs of `[A-Za-z0-9:/._-]`, an id `main` makes and numeric face points, since these strings end up in scene markup unescaped (`test:crew`).
+- **Names**: every name from the store or the model goes through `esc` in markup and `textContent` in `DurbarDialog`. `check-charmaker` runs a hostile name (main's rule skipped by `simminename=hostile`) through the preview, list, rows, rename, pin and delete dialogs, toasts and a desk's tooltip: no element, no script.
+- **What looking at the pictures showed**: a working or waiting desk with an empty chair in the office picture is not a fault: that agent is at a lobby place (9 desks, 9 visitors in the picture, the same as under Cheeky).
+- **Choices awaiting owner review** (the spec's wording left these open; each fails closed or is the smaller claim; the coordinator's phase 3 choices stand):
+  1. **"Cannot make one" is its own text.** US1 scenario 5's "This needs OpenAI Codex, installed and signed in..." would be false when no adapter has `imageGen` at all, which is every real app today: installing or signing in would not help. So: no adapter reports `imageGen` (`availability`: `off`): "This version of Agent Durbar cannot make characters yet...", only Close, and a line under the button in Settings before anyone opens it. Scenario 5's text stays for an app that has `imageGen` and is not ready (`needs`).
+  2. **`apikey` means refused.** FR-034 asks for a question with `apikey` before P6 and a refusal after it, but nothing can report `apikey` before P6, so that branch has no input: before P6 every real try is `unknown`. A reported `apikey` is refused; only the exact word `chatgpt` skips the question; anything else asks. It is read again on every try.
+  3. **The kind's source.** No real channel until P6 (T014) and T030a: `characterLoginKind` exists in the simulator only (`simlogin=chatgpt|unknown|apikey|absent`), and no answer means `unknown`. `characterGenerate` gets a third argument `{ confirmed }`, this try's own answer. The simulator's fake enforces it, so a call around the dialog makes nothing (`check-charmaker`). **Main ignores it until T030a**, and is closed meanwhile because no adapter has `imageGen`: `test:charipc` fails if an adapter sets `imageGen: true` or has `generateImage` before main has the gate. The T030a brief: read `confirmed` in `character:generate`.
+  4. **Busy line** is a small dialog with Cancel, not FR-041's toast: a toast's Cancel can be missed, and a second Make is impossible behind it. Escape and a click outside also cancel; a picture arriving after that is dropped, never shown.
+  5. **Preview**: a click outside does nothing (the plan already paid for that picture); Escape and Discard discard. FR-041's *Try it* is the preview itself, no separate button.
+  6. **URLs given back** (FR-043) when nothing shows them: another Characters value with no pin that draws, *and* Settings closed, since the rows show them. A delete revokes at once.
+  7. **Pin to a folder…** is a checkbox list of the open folders (`DurbarDialog` `picks`), not a menu, so one dialog can pin and unpin several; a pin on a folder that is not open stays listed there ("not open now"). A folder already pinned to another character shows "now <name>"; checking it replaces that pin (one pin per folder, FR-033).
+  8. **A desk's tooltip** ends in "· Wearing <name>" for My characters only (US4 scenario 1); the crews have no shown names.
+  9. **A character whose frames cannot be read** stays in the rows without a picture and is drawn nowhere.
+  10. **Cancel at the question of a Try again** returns to the picture already made, which can still be saved: nothing started, and main drops a held try only when the next one starts. A Cancel on the busy line goes back to the description, since that try had already dropped it.
+- `[KNOWN GAP]` Not verified: everything with real Codex or a real image model (P1-P8, SC-006), so real frames' face points against the desk zones are unmeasured: the fake's point is one fixed `[176, 150]`. FR-041's plan-usage line (`account/rateLimits/read`) is not built: no channel carries it to the window, and it belongs with the adapter route (T031); the cost line stands alone. FR-034 is enforced by the window and the simulator's fake, not yet by main (T030a). Rename and export reach the store only in `test:charstore` and `test:charipc`; in the window they run against the fake store. Windows and Linux: not run; this Mac only. Motion is phase 5. A window driver here was not disturbed, as far as its logs show, and no native dialog is involved.
 
 ### 2026-10-31: phase 3 choices (coordinator, awaiting owner review)
 

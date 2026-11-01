@@ -498,3 +498,21 @@ body.has-bridge #topBtns{display:flex}
 .ns-done{margin:10px 0 0}
 .ns-done>summary{cursor:pointer;margin:0 0 6px;padding:4px 2px;font-size:12px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;color:var(--ink-2);border-radius:6px}
 .ns-done>summary:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
+/* spec 096 FR-041, FR-042: the character maker's preview and My characters' rows */
+.dlg.cm-preview .cm-frames{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin:2px 0 8px}
+.cm-frame{margin:0;display:flex;flex-direction:column;align-items:center;gap:4px;min-width:0}
+.cm-frame figcaption{font-size:11.5px;color:var(--ink-2,inherit)}
+.cm-pic{display:block;width:88px;height:88px;border:1px solid var(--line-2);border-radius:8px;background:var(--bg);overflow:hidden}
+.cm-pic img{display:block;width:88px;height:88px}
+.cm-round{display:block;width:64px;height:64px;border-radius:50%;border:1px solid var(--line-2);background:var(--bg);overflow:hidden;margin-top:24px}
+.cm-round svg{display:block}
+.dlg .derr#cmSaveErr{margin:6px 0 0}
+.chm-list{list-style:none;margin:6px 0 0;padding:0;display:flex;flex-direction:column;gap:6px}
+.chm-row{display:flex;align-items:center;gap:10px;padding:6px 8px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);min-width:0}
+.chm-pic{flex:none;width:44px;height:44px;border-radius:8px;background:var(--bg);overflow:hidden}
+.chm-pic img{display:block;width:44px;height:44px}
+.chm-tx{flex:1 1 140px;min-width:0;display:flex;flex-direction:column;gap:1px}
+.chm-name,.chm-sub{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chm-sub{font-size:11.5px;color:var(--ink-2,inherit)}
+.chm-act{flex:none;display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end}
+.thpick[aria-disabled=true]{cursor:default}

@@ -29,6 +29,7 @@ Agent Durbar is an office-style desktop app to **see, chat with and coordinate A
 - **Sessions that last:** resume after a restart or a crash, scheduled prompts, undo an agent's file changes, notes, continue in another app.
 - **MCP servers** shared across your agent apps, with health, sign-in and per-tool switches.
 - **Six themes** and a theme maker.
+- **My characters**, your own people at the desks, on any theme ([spec 096](specs/096-ai-character-maker/spec.md)). `[KNOWN GAP]` Nothing can make one yet: Codex image generation stays off until it has been tested with a real Codex, so *Make a character with AI…* says so; everything else is checked on the simulator's fake generator only. When it is on, Codex keeps its own copy of each picture under `~/.codex/generated_images/`; Durbar neither reads nor deletes it, and keeps nothing from your description.
 
 ![Full-screen chat with the other agents in a slim strip, 1280x800](docs/screenshots/m6-fullchat-sim15-1280x800.png)
 

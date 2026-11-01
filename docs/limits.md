@@ -46,6 +46,7 @@ The short version is in the README's status block; this is the full record.
   - Windows day to day on real PCs, and Codex's sandbox on macOS and Windows;
   - the Durbar MCP server, to read the office from your own MCP client ([spec 041](../specs/041-durbar-mcp/spec.md), in progress).
 - **Ideas being specified:** a global assistant chat across sessions, multiple profiles (personal/work accounts), and a morning briefing. See the [issues](https://github.com/three-feathers/agent-durbar/issues).
+- **AI character maker** ([spec 096](../specs/096-ai-character-maker/spec.md)): no agent app makes pictures yet, so *Settings > Characters > Make a character with AI…* says it cannot make one. The dialog, the login question, My characters and pins are checked on the simulator's fake generator only (`sim:`); no real Codex picture has been made, and how Codex is signed in cannot be told yet, so every try will ask until probe P6 is run.
 - **Needs a purchase:** code signing and notarization ([spec 014](../specs/014-signing-and-notarization/spec.md)).
 
 What was built when, and how it was checked, is in the [feature history](feature-history.md) and the [CHANGELOG](../CHANGELOG.md).
