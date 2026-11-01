@@ -7,10 +7,11 @@ import { randomBytes } from 'crypto';
 import { shell } from 'electron';
 import type { BrowserWindow } from 'electron';
 import { fromAppFrame as fromApp, ipcHandle } from '../ipcguard';
-import { destroySessionView, ensureSessionView } from '../browser/views';
+import { closeTabView, destroySessionView, ensureTabView } from '../browser/views';
 import { makeBrowserController } from '../browser/controller';
+import { makeLinksToggle } from '../browser/tabs';
 import type { BrowserController, BrowserDeps } from '../browser/controller';
-import type { AgentInfo, BrowserResult, BrowserState } from '../../shared/api';
+import type { AgentInfo, BrowserResult, BrowserState, BrowserTabs } from '../../shared/api';
 import type { SettingsStore } from '../settings';
 
 export interface BrowserIpcDeps {
@@ -37,8 +38,14 @@ export function register(deps: BrowserIpcDeps): BrowserController {
   /** *Leave this page?* questions waiting for the window's answer, by request id. */
   const asks = new Map<string, { id: string; resolve(leave: boolean): void }>();
   const consented = (): boolean => (simulator && !deps.simAsksConsent) || deps.getSettingsStore()?.browserNoteAccepted === true;
+  // FR-123: one app-wide toggle, read here and never sent by the window. The simulator keeps it in memory (no user settings are written)
+  const linksToggle = makeLinksToggle(simulator, () => deps.getSettingsStore());
+  const linksNewTab = (): boolean => linksToggle.get();
   const ctl = makeBrowserController({
     consented,
+    linksNewTab,
+    emitTabs: (t: BrowserTabs) => deps.toRenderer('browser:tabs', t),
+    tabKey: (k) => deps.toRenderer('browser:key', k),
     pageDialog: (d) => deps.toRenderer('browser:dialog', d),
     askLeave: (id, known, shown) =>
       new Promise<boolean>((resolve) => {
@@ -52,13 +59,26 @@ export function register(deps: BrowserIpcDeps): BrowserController {
     known: (id) => agents.has(id) || (simulator && SIM_ID.test(id)), // main's agents are the top-level sessions; helpers live only in the window
     sim: simulator,
     window: win,
-    views: { ensureSessionView: (id, ev, sim) => ensureSessionView(id, ev, sim), destroySessionView },
+    views: { ensureTabView: (id, tabId, ev, sim) => ensureTabView(id, tabId, ev, sim), closeTabView, destroySessionView },
     emit: (s: BrowserState) => deps.toRenderer('browser:state', s),
     openExternal: (url) => (simulator ? Promise.resolve(false) : shell.openExternal(url)), // the simulator never opens the real desktop
   });
   ipcHandle('browser:open', (e, id: unknown, address: unknown) => (fromApp(e) ? ctl.open(id, address) : REFUSED));
   // the url of a chat link is agent text: main classifies it (web / mail / refused) whatever the window did; the window is trusted only as far as the other channels here
-  ipcHandle('browser:openLink', (e, id: unknown, url: unknown) => (fromApp(e) ? ctl.openLink(id, url) : REFUSED));
+  // FR-124: `how` is 'default' or 'newTab' (the link menu's *Open in a new tab*); anything else is refused in the controller
+  ipcHandle('browser:openLink', (e, id: unknown, url: unknown, how: unknown) => (fromApp(e) ? ctl.openLink(id, url, how) : REFUSED));
+  // spec 080 FR-127: page tabs. Main mints every tab id; a tab id from the window must have the shape AND belong to that session in main's map
+  ipcHandle('browser:newTab', (e, id: unknown, address: unknown) => (fromApp(e) ? ctl.newTab(id, address) : REFUSED));
+  ipcHandle('browser:selectTab', (e, id: unknown, tabId: unknown) => (fromApp(e) ? ctl.selectTab(id, tabId) : REFUSED));
+  ipcHandle('browser:closeTab', (e, id: unknown, tabId: unknown) => (fromApp(e) ? ctl.closeTab(id, tabId) : REFUSED));
+  // FR-123: only a real boolean changes it; every window is told, so every session's menu shows it the same
+  ipcHandle('browser:setLinksNewTab', (e, on: unknown) => {
+    if (!fromApp(e) || typeof on !== 'boolean') return { ok: false };
+    linksToggle.set(on);
+    const now = linksNewTab();
+    deps.toRenderer('browser:linksNewTab', now);
+    return { ok: true, on: now };
+  });
   // the only way a browser link reaches another app: a mailto: link after the user's click, re-checked here
   ipcHandle('browser:openMail', (e, url: unknown) => (fromApp(e) ? ctl.openMail(url) : { ok: false }));
   ipcHandle('browser:state', (e, id: unknown) => (fromApp(e) ? ctl.state(id) : REFUSED));

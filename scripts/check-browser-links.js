@@ -123,7 +123,7 @@ module.exports = async (ctx) => {
   assert.strictEqual(urlOf(viewB), 'durbar-sim://pages/links', 'and loads nothing in the tab');
   await js(`(()=>{const a=[...document.querySelectorAll('#chat .md a')].find(x=>x.textContent.trim()==='a web page');const r=a.getBoundingClientRect();a.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:r.left+4,clientY:r.top+4}))})()`);
   await wait(() => js(`!!document.querySelector('#modeMenu [data-lact="sys"]')&&!!document.querySelector('#modeMenu [data-lact="tab"]')`), 'the link menu offers both');
-  assert.strictEqual(await js(`[...document.querySelectorAll('#modeMenu [data-lact]')].map(b=>b.querySelector('b').textContent).join('|')`), 'Open in session browser|Open in system browser');
+  assert.strictEqual(await js(`[...document.querySelectorAll('#modeMenu [data-lact]')].map(b=>b.querySelector('b').textContent).join('|')`), 'Open in session browser|Open in a new tab|Open in system browser'); // spec 080 FR-124: Open in a new tab
   assert.ok(await js(`document.querySelector('#modeMenu').classList.contains('mode-menu')&&document.querySelector('#modeMenu').getAttribute('role')==='menu'`), 'the shared menu element');
   const before = logged.length;
   await js(`document.querySelector('#modeMenu [data-lact="sys"]').click()`);

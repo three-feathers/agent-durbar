@@ -132,14 +132,30 @@ module.exports = async (ctx) => {
   const opened = [];
   const onMsg = (_e, method, params) => { if (method === 'Page.javascriptDialogOpening') opened.push(params.type); };
   dbg.on('message', onMsg);
-  await clickInPage('#ask');
-  await wait(() => opened.includes('confirm'), 'a native confirm appeared for the user');
-  await dbg.sendCommand('Page.handleJavaScriptDialog', { accept: true });
-  await wait(async () => (await inView(`document.getElementById('result').textContent`)) === 'confirm returned true', 'the answer reached the page (OK)');
-  await clickInPage('#ask');
-  await wait(() => opened.length === 2, 'a second confirm');
-  await dbg.sendCommand('Page.handleJavaScriptDialog', { accept: false });
-  await wait(async () => (await inView(`document.getElementById('result').textContent`)) === 'confirm returned false', 'the answer reached the page (Cancel)');
+  /* One confirm, answered through the debugger. On Windows CI (main at d196770e too, run 41152490851, so not from the tabs change) the
+     second confirm was sometimes closed before the driver's answer reached it ("No dialog is showing"): the box the user sees is Electron's
+     native one, and the debugger's answer only settles Chromium's side of it. The page then has some answer; the driver asks again, up to 3
+     times, and checks the answer it gave itself. */
+  const answerConfirm = async (accept, label) => {
+    for (let i = 0; ; i++) {
+      const n = opened.filter((t) => t === 'confirm').length;
+      await inView(`document.getElementById('result').textContent=''`);
+      await clickInPage('#ask');
+      await wait(() => opened.filter((t) => t === 'confirm').length > n, `${label}: a native confirm appeared for the user`);
+      try {
+        await dbg.sendCommand('Page.handleJavaScriptDialog', { accept });
+      } catch (e) {
+        if (i >= 2 || !/No dialog is showing/.test(String(e && e.message))) throw e;
+        console.log(`[browser-scenarios] ${label}: the confirm closed before the driver's answer reached it, asking again`);
+        await wait(async () => (await inView(`document.getElementById('result').textContent`)) !== '', `${label}: the closed confirm returned to the page`);
+        continue;
+      }
+      await wait(async () => (await inView(`document.getElementById('result').textContent`)) === 'confirm returned ' + accept, `the answer reached the page (${label})`);
+      return;
+    }
+  };
+  await answerConfirm(true, 'OK');
+  await answerConfirm(false, 'Cancel');
   dbg.removeListener('message', onMsg);
   await go(PAGE + 'prompt');
   await wait(async () => (await inView(`document.getElementById('result').textContent`)) === 'prompt threw', 'prompt() throws (unsupported in the view)');

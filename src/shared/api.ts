@@ -13,7 +13,7 @@ import type { AdapterInfo } from './adapters';
 import type { OrgPolicyAppView } from './orgpolicy';
 import type { ActivityRow } from './activity';
 import type { RemoteState } from './remote';
-import type { NotesView, NotesWrote } from './notes';
+import type { NotesExport, NotesFileCount, NotesSetFile, NotesView, NotesWrote } from './notes';
 export type { RemoteState };
 export type { AdapterInfo };
 
@@ -831,7 +831,11 @@ export interface DurbarApi {
   /** Hide or show the folder of agent `id`; the choice is remembered. */
   setFolderHidden?(id: string, hidden: boolean): Promise<{ ok: boolean }>;
   /** Remove the folder of agent `id`: ends its sessions and forgets the folder. */
-  removeFolder?(id: string): Promise<{ ok: boolean; removedIds: string[] }>;
+  /**
+   * Spec 083 FR-048 (T034b): `deleteNotes` also deletes the folder's notes file, after main's native confirmation (Cancel: nothing is
+   * removed, `cancelled`). `notesDeleted` / `notesError` say what happened to the notes.
+   */
+  removeFolder?(id: string, opts?: { deleteNotes?: boolean }): Promise<{ ok: boolean; removedIds: string[]; cancelled?: boolean; error?: string; notesDeleted?: boolean; notesError?: string }>;
   /** Ends one main session and takes it out of the office (spec 006 FR-017); refused for the last main session of a folder and for helpers. */
   removeSession?(id: string): Promise<{ ok: boolean; error?: string }>;
   /** Sets the folder's display name (spec 006 FR-018); empty = the folder's own name. */
@@ -1056,7 +1060,7 @@ export interface DurbarApi {
   slashCommands?(id: string): Promise<{ ok: boolean; error?: string; entries: SlashCommandInfo[] }>;
   /**
    * Spec 083 FR-062 (issue 699): the folder's notes, by agent id (the window never passes a path). Everything stored is masked in main
-   * before it is written; a refusal carries a short reason. `notesSetFile` is answered by the simulator only for now (*Demo: no file written*).
+   * before it is written; a refusal carries a short reason. `notesFileCount` / `notesSetFile` are the project-file switch (T042; the simulator answers *Demo: no file written*).
    */
   notesList?(id: string): Promise<NotesView>;
   notesSave?(id: string, input: { role: 'user' | 'agent'; ord: number; text: string; from?: 'agent' | 'user' | 'selection' }): Promise<NotesWrote>;
@@ -1065,7 +1069,10 @@ export interface DurbarApi {
   notesDelete?(id: string, noteId: string, rev: number): Promise<NotesWrote>;
   notesDeleteAll?(id: string): Promise<NotesWrote>;
   notesStartOver?(id: string): Promise<NotesWrote>;
-  notesSetFile?(id: string, on: boolean): Promise<{ ok: boolean; demo?: boolean; message?: string; error?: string }>;
+  notesFileCount?(id: string): Promise<NotesFileCount>;
+  notesSetFile?(id: string, on: boolean, opts?: { deleteFile?: boolean; exclude?: boolean }): Promise<NotesSetFile>;
+  /** FR-048 (T034b): main shows the save dialog and writes the chosen file; the window sends no path. The simulator writes nothing (`demo`). */
+  notesExport?(id: string): Promise<NotesExport>;
   /** A folder's notes changed (another chat, another process): refetch the open folder's notes when the fingerprint is its own. */
   onNotesChanged?(cb: (v: { fingerprint: string }) => void): () => void;
   /** Spec 066: answer a proposed plan (window only). */
@@ -1126,8 +1133,17 @@ export interface DurbarApi {
   browserMute?(id: string, muted: boolean): Promise<BrowserResult>;
   /** Open the view's current http(s) address in the system browser (the existing external-link path). */
   browserOpenSystem?(id: string): Promise<{ ok: boolean }>;
-  /** Spec 080 FR-030: a link from the chat (agent text): main classifies it. A web link opens in the session's browser; `link` says why a refused one is not opened (`mailto` waits for the user's click through `browserOpenMail`). */
-  browserOpenLink?(id: string, url: string): Promise<BrowserResult>;
+  /** Spec 080 FR-030: a link from the chat (agent text): main classifies it. A web link opens in the session's browser; `link` says why a refused one is not opened (`mailto` waits for the user's click through `browserOpenMail`). `how: 'newTab'` (FR-124) is the link menu's *Open in a new tab*; the toggle itself is read in main. */
+  browserOpenLink?(id: string, url: string, how?: 'default' | 'newTab'): Promise<BrowserResult>;
+  /** Spec 080 FR-127: page tabs. Main mints every tab id; the window only names tabs main told it about. */
+  browserNewTab?(id: string, address?: string): Promise<BrowserResult>;
+  browserSelectTab?(id: string, tabId: string): Promise<BrowserResult>;
+  browserCloseTab?(id: string, tabId: string): Promise<BrowserResult>;
+  /** FR-123: the app-wide *Open chat links in a new tab* toggle. */
+  browserSetLinksNewTab?(on: boolean): Promise<{ ok: boolean; on?: boolean }>;
+  onBrowserTabs?(cb: (t: BrowserTabs) => void): () => void;
+  onBrowserKey?(cb: (k: BrowserKeyEvent) => void): () => void;
+  onBrowserLinksNewTab?(cb: (on: boolean) => void): () => void;
   /** Spec 080 FR-024: the user pressed *Open* on a mail link; main checks it is a `mailto:` link before it hands it to the system. */
   browserOpenMail?(url: string): Promise<{ ok: boolean }>;
   onBrowserState?(cb: (s: BrowserState) => void): () => void;
@@ -1182,10 +1198,31 @@ export interface BrowserState {
   memory?: 'reloaded' | 'many';
   /** A Chromium network error name such as ERR_CONNECTION_REFUSED after the last load failed. */
   error?: string;
+  /** Spec 080 FR-127: the page tab this state is about (the session's active tab, chosen by main). Absent before the first open. */
+  tabId?: string;
+  /** FR-126: the last tab request hit the 10-tab limit; the bar says so until a tab closes or another tab action. */
+  tabLimit?: true;
 }
-export type BrowserResult = { ok: true; state: BrowserState } | { ok: false; reason: string; state?: BrowserState; needsConsent?: true; link?: 'mailto' | 'refused' };
-/** A page dialog opened (FR-025d): the window raises a toast naming the session and, for a hidden view, brings its chat forward. `text` is masked page text. */
-export interface BrowserDialogEvent { id: string; type: string; text: string; shown: boolean }
+/** Spec 080 FR-127: one page tab as the window may see it. Explicit fields, primitives only; titles cleaned, URLs through `displayUrl`. */
+export interface BrowserTab {
+  tabId: string;
+  kind: 'user' | 'agent';
+  title: string;
+  url: string;
+  loading: boolean;
+  dialogOpen: boolean;
+  /** `dropped`: the cap closed this background tab's page (its address is kept); `reloaded` / `many` as `BrowserState.memory`. */
+  memory?: 'dropped' | 'reloaded' | 'many';
+}
+/** Spec 080 FR-127: the `browser:tabs` push. */
+export interface BrowserTabs { id: string; active: string; tabs: BrowserTab[] }
+export type BrowserResult =
+  | { ok: true; state: BrowserState; tabs?: BrowserTabs; linksNewTab?: boolean }
+  | { ok: false; reason: string; state?: BrowserState; needsConsent?: true; link?: 'mailto' | 'refused'; tabLimit?: true };
+/** A page dialog opened (FR-025d): the window raises a toast naming the session and, for a hidden view, brings its chat forward. `text` is masked page text. `tabId`: the tab it came from (FR-132); `bg`: a background tab of the session that is shown. */
+export interface BrowserDialogEvent { id: string; type: string; text: string; shown: boolean; tabId?: string; bg?: boolean }
+/** Spec 080 FR-130: a tab key pressed inside a page (main kept it from the page). */
+export interface BrowserKeyEvent { id: string; key: 'new' | 'close' | 'next' | 'prev' }
 /** FR-025e: ask *Leave this page?*; answer with `browserLeaveAnswer(req, leave)`. */
 export interface BrowserLeaveAsk { id: string; req: string; known: boolean; shown: boolean }
 export interface BrowserBounds { x: number; y: number; width: number; height: number }

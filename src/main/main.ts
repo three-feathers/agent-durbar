@@ -29,8 +29,9 @@ import { register as registerPreviousIpc } from './ipc/previous';
 import { register as registerProfilesIpc } from './ipc/profiles';
 import { createProfileFreshness } from './profilefiles';
 import { register as registerSlashIpc } from './ipc/slash';
+import { nativeConfirm } from './nativeconfirm';
 import { register as registerNotesIpc } from './ipc/notes';
-import { NotesOps } from './notesops';
+import { NotesOps, notesConfirmText } from './notesops';
 import { NotesStore } from './notesstore';
 import { NotesFile } from './notesfile';
 import { register as registerQuestionsIpc } from './ipc/questions';
@@ -827,7 +828,7 @@ registerOrgPolicyIpc({ view: () => orgPolicies.view() });
 registerAdaptersIpc({ adaptersList });
 const sandboxOps = registerSandboxIpc({ agents, router, getSettingsStore: () => settingsStore, readyAdapterIds }); // spec 087
 router.onEvent((e) => sandboxOps.onEvent(e)); // spec 087 FR-007a: Continue only answers a note main forwarded
-registerFoldersIpc({ browserGone, agents, router, agentState, getFolderStore: () => folderStore, getScheduler: () => scheduler, vsChatRefs, wsKey, forgetSandboxNote: (id) => sandboxOps.forget(id) });
+registerFoldersIpc({ browserGone, agents, router, agentState, getFolderStore: () => folderStore, getScheduler: () => scheduler, vsChatRefs, wsKey, forgetSandboxNote: (id) => sandboxOps.forget(id), getNotesOps: () => notesOps });
 registerFloorsIpc({ agents, getFolderStore: () => folderStore, wsKey });
 /* Spec 061: a folder's own agent setup (scan, decide, explain), window-only (FR-013); the pure handler bodies are unit-tested. */
 registerFolderSetupIpc({
@@ -1046,8 +1047,15 @@ app.whenReady().then(() => {
     agents, store: () => notesStore, resumeIdFor, adapterIdOf: (id) => router.adapterIdOf(id),
     folderValues: (key) => mcpStore?.knownSecretValues(key) ?? [], // FR-005: never decrypts, so no keychain prompt from a notes save
     sessionValues: (id) => (mcpStore?.noPrompt() ? mcp.secretValuesFor(id) : []), // forSession could unlock the vault: only when it cannot
-    // FR-050..FR-054 (T041): the .durbar/notes.md mirror; every folder's switch reads as off until T042 saves `notesFile` in folders.json, so no project file is touched
-    file: () => notesFile, fileOn: () => false,
+    // FR-050..FR-055 (T041, T042): the .durbar/notes.md mirror, only for a folder whose switch (`notesFile` in folders.json) is on
+    file: () => notesFile, fileOn: (key) => folderStore?.get(key)?.notesFile === true, setFileOn: (key, on) => folderStore?.setNotesFile(key, on) === true,
+    valuesPending: () => !!mcpStore && !mcpStore.noPrompt(), // review of PR 931: a value still locked in the vault would leave the mask incomplete
+    confirmNative: (kind, name, count) => nativeConfirm(win, notesConfirmText(kind, name, count)),
+    // FR-048 (T034b): main shows the save dialog; the window never sends a path
+    saveDialog: async (opts) => {
+      const r = win && !win.isDestroyed() ? await dialog.showSaveDialog(win, opts) : await dialog.showSaveDialog(opts);
+      return r.canceled || !r.filePath ? undefined : r.filePath;
+    },
   });
   appState = new AppStateStore(path.join(app.getPath('userData'), 'durbar-app-state.json'));
   appState.load();
@@ -1106,6 +1114,8 @@ app.whenReady().then(() => {
       /** Spec 080: the session browsers main holds (state only: address, memory note, ...), and what End session does to one (the simulator's End never reaches main). */
       browserStates: () => browser.liveIds().map((id) => browser.stateOf(id)),
       browserGone: (id: string) => browser.destroy(id),
+      /** Spec 080 T026: a session browser's page tabs, as the window gets them. */
+      browserTabs: (id: string) => browser.tabsOf(id),
       js: <T>(code: string): Promise<T> => (win as BrowserWindow).webContents.executeJavaScript(code, true) as Promise<T>,
       sleep: (ms: number) => new Promise<void>((r) => setTimeout(r, ms)),
       shot: async (file: string) => fs.writeFileSync(file, (await (win as BrowserWindow).webContents.capturePage()).toPNG()),

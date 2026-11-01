@@ -73,8 +73,6 @@ html[data-density="compact"] #topMoreMenu{--h-ctl:32px; --h-chip:26px; --h-pill:
 .brand{display:flex;align-items:center;gap:10px;min-width:0;flex:none}
 .brand-mark{width:32px;height:32px;border-radius:10px;background:var(--brand-bg,#e4ece6);display:grid;place-items:center;flex:none}
 .brand h1{margin:0;font-size:15px;line-height:1.15;font-weight:650;letter-spacing:-.01em;white-space:nowrap}
-.proto{display:inline-block;margin-top:2px;font-size:11px;font-weight:600;color:var(--pc-waiting);background:var(--pb-waiting);border:1px solid var(--proto-line);border-radius:999px;padding:0 8px;white-space:nowrap}
-.proto.sim{color:var(--blue-ink);background:var(--pb-working,#e3ecf4);border-color:var(--tone-info-line)}
 .stats{display:flex;gap:5px;flex:none;border-radius:var(--r-md);box-shadow:inset 0 0 0 1px var(--line)}
 /* spec 052 FR-103: the counters are one segmented strip. The frame is an inset shadow on the group and each counter keeps its 1px
    (transparent) border and the 5px gap, with a hairline divider drawn in the gap, so every width and the 32px height stay */
@@ -931,6 +929,25 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .dlg-mark{flex:none;display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;margin-right:5px;border:1px solid var(--tone-warn-line);border-radius:4px;background:var(--warn-bg);color:var(--amber-ink);font-size:var(--t5-size);font-weight:700;line-height:1}
 .stage .desk.card .dlg-mark,.stage .desk.shut .dlg-mark{position:absolute;left:2px;top:40px;margin:0;z-index:4}
 .pagetext{font-style:italic}
+/* spec 080 FR-122, FR-133: the page tabs above the bar. Tabs shrink to 72px, then the strip scrolls sideways inside itself (never the panel
+   or the office); text 11px or more; state is an icon plus a word (the word for screen readers and the tooltip), never colour alone. */
+.bstrip{flex:none;display:flex;align-items:flex-end;gap:4px;padding:6px max(16px,calc((100% - 1240px)/2)) 0;border-bottom:1px solid var(--line);min-width:0}
+.btabs{flex:0 1 auto;min-width:0;display:flex;align-items:flex-end;gap:2px;overflow-x:auto;overflow-y:hidden;scrollbar-width:thin;overscroll-behavior-x:contain}
+.btab{flex:0 1 168px;min-width:72px;display:flex;align-items:center;height:28px;border:1px solid transparent;border-bottom:0;border-radius:var(--r-sm) var(--r-sm) 0 0;background:transparent;color:var(--muted)}
+.btab:hover{background:var(--surface-2);color:var(--ink-2)}
+.btab.on{background:var(--raised);border-color:var(--line);color:var(--ink);margin-bottom:-1px;height:29px}
+.btab-b{flex:1;min-width:0;height:100%;display:flex;align-items:center;gap:5px;padding:0 2px 0 8px;border:0;background:none;color:inherit;font:inherit;font-size:var(--t5-size);cursor:pointer;text-align:left}
+.btab.on .btab-b{font-weight:600}
+.btab-b svg{width:13px;height:13px;flex:none}
+.btab-t{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.btab-x{flex:none;width:20px;height:20px;margin-right:4px;display:inline-flex;align-items:center;justify-content:center;padding:0;border:0;border-radius:var(--r-sm);background:none;color:var(--muted);cursor:pointer}
+.btab-x svg{width:11px;height:11px}
+.btab-x:hover{background:var(--surface-2);color:var(--ink)}
+.bnew{flex:none;width:26px;height:26px;margin-bottom:2px;display:inline-flex;align-items:center;justify-content:center;padding:0;border:1px solid transparent;border-radius:var(--r-sm);background:none;color:var(--ink-2);cursor:pointer}
+.bnew svg{width:14px;height:14px}
+.bnew:hover:not(:disabled){background:var(--surface-2);border-color:var(--line)}
+.bnew:disabled{opacity:.45;cursor:default}
+.bnote[data-kind="limit"]{color:var(--ink-2)}
 .bspin{animation:bspin 1s linear infinite}
 @keyframes bspin{to{transform:rotate(360deg)}}
 @media (prefers-reduced-motion:reduce){.bspin{animation:none}}

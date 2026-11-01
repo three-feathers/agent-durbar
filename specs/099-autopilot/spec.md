@@ -200,7 +200,7 @@ the cap is reached, the run ends with **cap**. Without a cap, the dialog says pl
   - `AgentInfo.autopilot?: { limit: number; cap?: number; run?: { continuation: number; startedAt: number } }` holds the state.
   - The window shows it as the fourth mode, and the mode menu lists Read-only, Ask first, Allow all and **Autopilot…**.
   - **From Read-only or Ask first: warn and let them choose** (owner ruling, D13). The menu offers **Autopilot…** in every mode. The native dialog (FR-055) says that the folder becomes Allow all, and that it stays Allow all after Autopilot ends.
-    - After the confirmation, and only then, `agents:setAutopilot` sets the session's mode to `allow` through the existing `setModeOp` path: the organization check and the pending approvals. That also saves Allow all as the folder's mode (`store.setPermMode`, `src/main/agentops.ts:63`), which is why the dialog says so. This one dialog replaces the page's Allow all confirmation for this step.
+    - After the confirmation, and only then, `agents:setAutopilot` sets the session's mode to `allow` through the existing `setModeOp` path: the organization check and the pending approvals. That also saves Allow all as the folder's mode (`store.setPermMode`, `src/main/agentops.ts:63`), which is why the dialog says so. This one dialog replaces the page's Allow all confirmation for this step. **Approvals waiting when this native path enters Autopilot stay waiting** (the page's "Also approve the N requests" option does not exist here): entering Autopilot never answers them. *(Decision by the coordinator, for owner review.)*
     - Cancel changes nothing. If `setModeOp` fails, Autopilot does not turn on, and the reason is shown. If the mode changed and Autopilot then fails to turn on, the session and the folder stay in Allow all, and the chat says so.
   - **Read-only and Ask first can never be combined with Autopilot.** Choosing either one ends Autopilot first (FR-051), so
     no code path leaves `autopilot` set while the mode is not `allow`.
@@ -208,7 +208,7 @@ the cap is reached, the run ends with **cap**. Without a cap, the dialog says pl
   from the plan card. It is a native dialog the page cannot answer, asked by main (D12, FR-055). There is no "don't ask again".
 - **FR-004** **Never a default.**
   - Not offered when adding or creating a folder (the `confirmAllow` path), nor as a folder's mode.
-  - A scheduled prompt runs in the mode attached to that schedule (FR-083; spec 044 FR-180). `autopilot` on a schedule is out of the first build (FR-084).
+  - A scheduled prompt runs in the mode attached to that schedule (FR-083; spec 044 FR-180). While scheduled Autopilot is held (FR-084), a stored `autopilot` on a schedule is **not sent**: the run log records the closed outcome `mode-refused` with a visible reason (spec 044 FR-183, FR-184), and the same holds for a schedule whose target session is on Autopilot.
   - Not settable by Durbar's MCP tools or by remote control.
   - `agents:setAutopilot` is window-only (`fromApp`).
 - **FR-005** **Never saved** *(for a session; a schedule stores its own choice: FR-084)*.
@@ -399,7 +399,7 @@ the cap is reached, the run ends with **cap**. Without a cap, the dialog says pl
   (spec 018, 087).
 - **FR-052** End session, quitting Durbar and a sign-in refresh end the run without a card in the chat. The next session is in
   Allow all (FR-005), and its goal is cleared first (FR-053).
-- **FR-053** **Clear first on every resume and relaunch.** On every resume or relaunch of a session whose adapter reports `autopilot`, the adapter clears the app's goal **before anything is sent**, a held message, a queued one or a scheduled one included. This covers a restart, a sign-in refresh, *End session* followed by a message, Previous sessions, Claude's relaunch with `--resume` (`needsRelaunch`, a cap change included), and Codex's mode-switch relaunch, a fresh child that resumes the same thread (`codex.ts:65`, `send`).
+- **FR-053** **Clear first on every resume and relaunch.** On every resume or relaunch of a session whose adapter reports `autopilot`, the adapter clears the app's goal **before anything is sent** (where the app has no goal feature, an older Claude Code without `/goal` or an older Codex without `thread/goal/*`, or the command is unknown, there is nothing to clear and the resume proceeds; fail-closed (FR-054) applies only where the feature exists and the clear fails; test on a fake without the feature; decision by the coordinator, for owner review), a held message, a queued one or a scheduled one included. This covers a restart, a sign-in refresh, *End session* followed by a message, Previous sessions, Claude's relaunch with `--resume` (`needsRelaunch`, a cap change included), and Codex's mode-switch relaunch, a fresh child that resumes the same thread (`codex.ts:65`, `send`).
   - Codex `thread/goal/clear`: its goal lives on the thread. Claude Code `/goal clear`. Copilot `mode.set interactive`.
   - It runs on every resume, not only for a session known to have been on Autopilot, because nothing records that across a restart (FR-005).
   - It shows nothing in the chat, except the FR-005 line. A clear with no goal set is not probed (`[KNOWN GAP]`, T091, T092, T094). A failed clear follows FR-054.
