@@ -283,6 +283,6 @@ assert.deepStrictEqual(dependabotProblems(depText), [], 'dependabot.yml: minor/p
 assert.ok(dependabotProblems(depText.replace(/\n      - dependency-name: '\*'\n        update-types: \['version-update:semver-major'\]/g, '')).length >= 2, 'a missing major ignore is caught');
 assert.ok(dependabotProblems(depText.replace(/\n      - dependency-name: electron/, '')).length === 1, 'a missing electron ignore is caught');
 assert.ok(dependabotProblems(depText.replace(/update-types: \[minor, patch\]/g, "patterns2: ['*']")).length >= 2, 'a group without update-types is caught');
-assert.strictEqual(dependabotProblems(depText.replace(/\n    cooldown:\n      default-days: 7/g, '')).length, 2, 'a missing cooldown is caught in both ecosystems');
-assert.strictEqual(dependabotProblems(depText.replace(/default-days: 7/g, 'default-days: 3')).length, 2, 'a 3-day cooldown is caught in both ecosystems');
+assert.strictEqual(dependabotProblems(depText.replace(/\n    cooldown:\n      default-days: 7/g, '')).length, 3, 'a missing cooldown is caught in every block (actions, npm, the bot\'s npm)');
+assert.strictEqual(dependabotProblems(depText.replace(/default-days: 7/g, 'default-days: 3')).length, 3, 'a 3-day cooldown is caught in every block');
 console.log('supplychain: ok');
