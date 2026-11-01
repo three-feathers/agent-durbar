@@ -55,10 +55,10 @@ function problems(L: Layout, W: number, H: number): string[] {
       if (d.screen.y < z.box.y + STRIP - 1) out.push(`screen of ${d.id} in the sign strip`);
     }
   }
-  const aways: Rect[] = L.zones.flatMap((z) => z.desks.filter((d) => d.away).map((d) => ({ x: d.away!.x - 40, y: d.away!.y, w: 80, h: 17 })));
+  const aways: Rect[] = L.zones.flatMap((z) => z.desks.filter((d) => d.away).map((d) => ({ x: d.away!.x - d.away!.s / 2, y: d.away!.y, w: d.away!.s, h: d.away!.s })));
   const all: [string, Rect[]][] = [['plate', plates], ['sign', signs], ['screen', screens], ['person', persons], ['away label', aways]];
   for (let i = 0; i < all.length; i++) for (let j = i; j < all.length; j++) for (let p = 0; p < all[i][1].length; p++) for (let q = i === j ? p + 1 : 0; q < all[j][1].length; q++)
-    if (inter(all[i][1][p], all[j][1][q], 1)) out.push(`${all[i][0]} ${p} overlaps ${all[j][0]} ${q}`);
+    if (!(all[j][0] === 'away label' && (all[i][0] === 'screen' || all[i][0] === 'sign')) && inter(all[i][1][p], all[j][1][q], 1)) out.push(`${all[i][0]} ${p} overlaps ${all[j][0]} ${q}`); /* a note may lie on a screen's edge or under a sign, as a note does (spec Changes 2026-11-01) */
   for (const f of L.fixtures) {
     if (f.slot.x < -0.5 || f.slot.x + f.slot.w > W + 0.5) out.push(`fixture ${f.id} leaves the band`);
     if (f.art && (f.art.y < -0.5 || f.art.y + f.art.h > L.lobbyH + 0.5)) out.push(`fixture ${f.id} cut by the band (FR-023)`);
@@ -89,8 +89,8 @@ for (const [W, H] of SIZES.slice(0, 2)) {
   faces[`${W}x${H + 52}`] = Math.round(L.faceH * 10) / 10;
 }
 console.log('desk face px with 15 agents:', JSON.stringify(faces));
-/* SC-002's 40 px is not met (35.2 px at 1280x800, 38.1 at 1440x900): a [KNOWN GAP] in spec 097; this is a ratchet so it never gets worse */
-const FACE_FLOOR = Number(process.env.REALOFFICE_FACE_MIN || 35);
+/* SC-002's 40 px is not met: a [KNOWN GAP] in spec 097; this is a ratchet so it never gets worse. Lowered 2026-11-01 from 35: an empty desk keeps its slot, so this is what everyone at a desk gets, owner decision for a room that stays still */
+const FACE_FLOOR = Number(process.env.REALOFFICE_FACE_MIN || 31);
 for (const [k, v] of Object.entries(faces)) assert.ok(v >= FACE_FLOOR - 1e-9, `SC-002 ratchet: desk face ${v} px at ${k}, at least ${FACE_FLOOR}`);
 
 // ---- FR-020: big screens: each at least 170 px tall and wider than tall-ish; text size rule is the renderer's ----
@@ -121,13 +121,15 @@ for (const [k, v] of Object.entries(faces)) assert.ok(v >= FACE_FLOOR - 1e-9, `S
   }
 }
 
-// ---- FR-017, Q5: away and asleep desks are narrower, with no person; away ones say where ----
+// ---- spec Changes 2026-11-01: an away or asleep desk keeps its slot and its screen, with no person; an away one says where ----
 {
   const m = model(6, 1, { away: false, states: ['working'] });
   m.folders[0].agents[1].away = 'library'; m.folders[0].agents[2].state = 'asleep';
   const L = realLayout(m, { w: 1440, h: 848 }, META);
   const d = Object.fromEntries(L.zones[0].desks.map((x) => [x.id, x]));
-  assert.ok(Math.abs(d.a1.slot.w / d.a0.slot.w - 0.62) < 0.01 && Math.abs(d.a2.slot.w / d.a0.slot.w - 0.62) < 0.01, 'away and asleep desks are 0.62 wide');
+  assert.ok(d.a1.slot.w === d.a0.slot.w && d.a2.slot.w === d.a0.slot.w, 'away and asleep desks keep their width');
+  const m0 = model(6, 1, { away: false, states: ['working'] }), L0 = realLayout(m0, { w: 1440, h: 848 }, META), d0 = L0.zones[0].desks.find((x) => x.id === 'a1')!;
+  assert.deepStrictEqual([d.a1.slot, d.a1.screen, d.a1.plate, d.a1.desk], [d0.slot, d0.screen, d0.plate, d0.desk], 'someone leaving moves nothing: slot, screen, plate and desk as when they sat');
   assert.ok(!d.a1.person && d.a1.away && !d.a2.person && !d.a2.away && d.a0.person, 'no person at an away or asleep desk; the away one says where');
 }
 
@@ -157,7 +159,7 @@ for (const [k, v] of Object.entries(faces)) assert.ok(v >= FACE_FLOOR - 1e-9, `S
   const lobbyFace = Math.min(...vs.map((v) => (v.face as Rect).h));
   console.log('lobby face px with 15 agents at 1280x800:', Math.round(lobbyFace * 10) / 10);
   /* FR-024's 18 px is a [KNOWN GAP] since the owner's realism rule (people 1.7 m against the 2.1 m door): a ratchet keeps the estimate */
-  assert.ok(lobbyFace >= 11, `FR-024 ratchet: lobby faces (estimate: 0.13 of a 1.7 m person) ${lobbyFace}`);
+  assert.ok(lobbyFace >= 10.5 /* from 11, 2026-11-01: full-width desks leave the lobby a little less */, `FR-024 ratchet: lobby faces (estimate: 0.13 of a 1.7 m person) ${lobbyFace}`);
   // owner 2026-10-31 09:03: one fixture per place; a crowd widens its place, empty places shrink; +N only past what fits
   for (const [W, H] of [[1440, 848], [1280, 748]] as [number, number][]) {
     const widths: number[] = [];

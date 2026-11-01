@@ -174,7 +174,7 @@ module.exports = async (ctx) => {
     assert.deepStrictEqual(d.bare, [], 'no awake desk is empty without a visit');
     assert.ok(d.persons + d.visitors >= 8, `people sit at their desks or stand in the lobby on a visit: ${d.persons} + ${d.visitors}`);
     assert.ok(d.fixtures >= 8, 'the lobby fixtures are drawn: ' + d.fixtures);
-    const aw = await js(`[...document.querySelectorAll('#stage .ro-away')].every(e=>/^at .+ ↑$/.test(e.textContent))`);
+    const aw = await js(`[...document.querySelectorAll('#stage .ro-away')].every(e=>/^at .+$/.test(e.textContent))`);
     assert.ok(aw, 'away desks say where');
     // ---- FR-038, FR-041, FR-046: cues and lights by status ----
     const cues = await js(`(()=>{const o={};for(const p of document.querySelectorAll('#stage .ro-plate')){const id=p.dataset.id,st=p.dataset.state;

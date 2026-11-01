@@ -25,7 +25,6 @@
 /* zones, people, desks and monitors */
 .ro-zone{border-radius:10px;background:rgba(255,255,255,.10);box-shadow:inset 0 0 0 1px rgba(255,255,255,.14)}
 .ro-person,.ro-person2{object-fit:fill;cursor:pointer}
-.ro-walkwrap{position:absolute}
 .ro-ghost.v{z-index:3} /* a visitor fades where it stood, in front of its fixture */
 .ro-ghost{object-fit:fill;pointer-events:none} /* FR-072, FR-073: an old pose or a person leaving, for its fade only */
 .ro-initials{display:flex;align-items:center;justify-content:center;border-radius:50%;background:var(--surface);color:var(--ink);border:1px solid var(--line);font-weight:700;font-size:13px;cursor:pointer}
@@ -161,7 +160,6 @@
 .ro-l1{display:flex;gap:5px;align-items:baseline;white-space:nowrap;overflow:hidden;min-width:0}
 .ro-l1 b{font-size:12px;overflow:hidden;text-overflow:ellipsis;flex:0 1 auto;min-width:2ch}
 .ro-role{font-size:10.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1 1 auto}
-.ro-plate.narrow .ro-role{display:none} /* an away or asleep desk is narrower: its name gets the room (the role is in the title and the accessible name) */
 .ro-help{font-size:10.5px;color:var(--muted);margin-left:auto;flex:none;display:inline-flex;gap:2px;align-items:center}
 .ro-l2{font-size:10.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ro-plate:is(.st-waiting,.st-limit){background:var(--tone-warn-bg,#fff4e2);border:1.5px solid var(--c-waiting)}
@@ -170,7 +168,8 @@
 .ro-plate.sel{outline:2px solid var(--sel-border,var(--focus));outline-offset:1px}
 .ro-plate:focus-visible,.ro-sb:focus-visible,.ro-lplate:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
 .ro .dot{flex:none}
-.ro-away{transform:translateX(-50%);font-size:10.5px;padding:1px 7px;border-radius:8px;white-space:nowrap;background:var(--surface);color:var(--muted);border:1px dashed var(--line)}
+.ro-away{box-sizing:border-box;transform:translateX(-50%) rotate(-2.5deg);display:flex;align-items:center;justify-content:center;text-align:center;font-size:12px;line-height:15px;padding:6px;overflow:hidden;overflow-wrap:anywhere;border-radius:1px 1px 7px 1px;background:var(--ro-note,#f6e27f);color:var(--ro-note-ink,#3b3205);box-shadow:0 2px 4px rgba(0,0,0,.26)} /* an empty seat's note, square like a real one (spec Changes 2026-11-01); a world styles its own */
+.ro-poof{position:absolute;z-index:3;border-radius:50%;pointer-events:none;background:radial-gradient(closest-side,rgba(255,244,214,.6),rgba(255,244,214,0))}
 .ro-bub{width:22px;height:22px;border-radius:7px 7px 7px 2px;background:var(--c-waiting);color:var(--surface);font-weight:800;font-size:14px;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,.25)}
 .ro-bang{width:18px;height:18px;border-radius:50%;background:var(--c-error);color:var(--surface);font-weight:800;font-size:12px;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 2px var(--surface)}
 .ro-dots{display:flex;gap:3px;align-items:flex-end}

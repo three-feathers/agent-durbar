@@ -105,6 +105,7 @@ export function problems(files: Map<string, Buffer>, peopleJson: string, md: str
     if (!meta.fixtureTop || !(meta.fixtureTop[id] >= 0 && meta.fixtureTop[id] < (meta.floorLine || 0))) out.push(`people.json fixture ${id}: no fixtureTop in range`);
   }
   want.add('desk.webp'); want.add('floor.webp');
+  for (const [pid, parts] of Object.entries((meta as { rig?: Record<string, Record<string, unknown>> }).rig || {})) for (const key of Object.keys(parts)) want.add(`${pid}-rig${key}.webp`); /* spec Changes 2026-11-01 */
   for (const f of want) if (!files.has(f)) out.push(`people.json names ${f}, which is not in the folder`);
   for (const f of files.keys()) if (!want.has(f)) out.push(`${f}: people.json does not name it`);
   return out;

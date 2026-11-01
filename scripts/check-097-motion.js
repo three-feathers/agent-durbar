@@ -60,11 +60,11 @@ module.exports = async (ctx) => {
     await loadReal(w, h);
     await js(INSTALL);
     const typist = await seat();
-    await must(`!!document.querySelector('#stage .ro-person.m-a[data-for="'+CSS.escape(${jsLiteral(typist)})+'"]')&&!!document.querySelector('#stage .ro-person2.m-b[data-for="'+CSS.escape(${jsLiteral(typist)})+'"]')`, 'the typist on two frames');
+    await must(`!!document.querySelector('#stage .ro-person.m-rig[data-for="'+CSS.escape(${jsLiteral(typist)})+'"]')&&document.querySelectorAll('#stage .ro-rig[data-for="'+CSS.escape(${jsLiteral(typist)})+'"] img').length===3`, 'the typist on the rig: head and two hands (spec Changes 2026-11-01)');
     const anims = await js(animInfo);
     const names = {}; for (const a of anims) names[a.name] = (names[a.name] || 0) + 1;
     console.log('[097-motion] animations', w, h, JSON.stringify(names));
-    assert.ok(names['ro-fa'] >= 2 && names['ro-fb'] >= 1 && names['ro-type'] >= 2, 'two-frame animations: ' + JSON.stringify(names));
+    assert.ok(names['ro-type'] >= 2 && names['ro-rig-hand'] >= 2 && names['ro-rig-head'] >= 1, 'two-frame animations: ' + JSON.stringify(names));
     for (const a of anims) {
       assert.ok(a.props.every((p) => p === 'opacity' || p === 'transform'), `FR-180: only opacity and transform: ${a.name}: ${a.props}`);
       if (/ro-(person|visitor)/.test(a.target) && /^ro-(fa|fb|fa-run|fb-run|br|type|wave|run|sip|knock)$/.test(a.name)) assert.ok(!/steps|step-/.test(a.ease), `people ease (spec Changes 2026-11-01): ${a.name}: ${a.ease}`);
@@ -72,8 +72,9 @@ module.exports = async (ctx) => {
       if (a.name === 'ro-br' || a.name === 'ro-type') assert.ok(a.dur >= 5000 && a.dur <= 8000, 'a sway: ' + a.dur);
     }
     // the two pictures alternate: computed opacity, always one showing, over two periods; and the pixels differ
-    const id = typist;
-    const alt = await js(`new Promise(res=>{const A=document.querySelector('#stage .ro-person[data-for="'+CSS.escape(${jsLiteral(id)})+'"]'),B=document.querySelector('#stage .ro-person2[data-for="'+CSS.escape(${jsLiteral(id)})+'"]');
+    await must(`!!document.querySelector('#stage .ro-visitor.m-a')&&!!document.querySelector('#stage .ro-visitor2.m-b')`, 'a runner on two pictures');
+    const id = await js(`document.querySelector('#stage .ro-visitor.m-a').dataset.for`);
+    const alt = await js(`new Promise(res=>{const A=document.querySelector('#stage .ro-visitor[data-for="'+CSS.escape(${jsLiteral(id)})+'"]'),B=document.querySelector('#stage .ro-visitor2[data-for="'+CSS.escape(${jsLiteral(id)})+'"]');
       const seen=new Set(),bad=[];const t0=performance.now();const iv=setInterval(()=>{if(!A.isConnected||!B.isConnected||!A.classList.contains('m-a')){clearInterval(iv);res({gone:true});return;}
         const a=+getComputedStyle(A).opacity,b=+getComputedStyle(B).opacity;seen.add(a+'/'+b);if(Math.max(a,b)<0.6)bad.push(a+'/'+b);if(a>0.05&&a<0.95||b>0.05&&b<0.95)window.__between=(window.__between||0)+1;if(performance.now()-t0>3200){clearInterval(iv);res({seen:[...seen],bad,srcA:A.src.split('/').pop(),srcB:B.src.split('/').pop(),startA:(A.getAnimations()[0]||{}).startTime,startB:(B.getAnimations()[0]||{}).startTime});}},40);})`);
     assert.ok(!alt.gone, 'the typist stayed at the desk');
@@ -84,9 +85,11 @@ module.exports = async (ctx) => {
     assert.notStrictEqual(alt.srcA, alt.srcB, 'two pictures');
     assert.strictEqual(alt.startA, alt.startB, 'FR-181: one clock per desk');
     assert.ok(alt.startA < 1500, 'its own place in the cycle, not the time it was drawn: ' + alt.startA);
-    await must(`!!window.__scr(${jsLiteral(id)}).querySelector('.ro-caret')`, 'a caret on the working screen');
-    assert.strictEqual(await js(`window.__scr(${jsLiteral(id)}).querySelector('.ro-caret').getAnimations()[0].startTime`), alt.startA, 'the caret on the same clock');
-    const r = await js(CROP(id)), first = await bitmap(r);
+    const rigClock = await js(`[...document.querySelectorAll('#stage .ro-rig[data-for="'+CSS.escape(${jsLiteral(typist)})+'"] img.h')].map(i=>i.getAnimations()[0].startTime)[0]`);
+    assert.strictEqual(typeof rigClock, 'number', 'the rig has a clock');
+    await must(`!!window.__scr(${jsLiteral(typist)}).querySelector('.ro-caret')`, 'a caret on the working screen');
+    assert.strictEqual(await js(`window.__scr(${jsLiteral(typist)}).querySelector('.ro-caret').getAnimations()[0].startTime`), await js(`document.querySelector('#stage .ro-person[data-for="'+CSS.escape(${jsLiteral(typist)})+'"]').getAnimations()[0].startTime`), 'the caret on the same clock as its desk');
+    const r = await js(CROP(typist)), first = await bitmap(r);
     let most = 0;
     for (let t = 0; t < 12 && most < 0.005; t++) { await ctx.sleep(180); most = Math.max(most, changed(first, await bitmap(r))); }
     console.log(`[097-motion] frames differ by ${(most * 100).toFixed(1)} % of the person's pixels`);
@@ -112,17 +115,12 @@ module.exports = async (ctx) => {
   await emit({ type: 'toolCall', sessionId: lobbyId, callId: 'drv-walk', tool: 'bash', phase: 'start', args: { command: 'npm run a-long-one' } });
   await must(`!!document.querySelector('#stage .ro-visitor[data-for="'+CSS.escape(${jsLiteral(lobbyId)})+'"]')`, 'the agent at its place in the lobby');
   assert.ok(await H.until(`window.__g.includes(${jsLiteral(seated)})`, 2000), 'FR-073: a fade where the person sat');
-  assert.ok(await H.until(`[...document.querySelectorAll('#stage .ro-ghost.ro-walker')].some(w=>w.getAnimations().some(a=>!a.animationName&&a.playState==='running'&&(a.effect.getKeyframes()[0].transform||'').startsWith('translate')))`, 2000), 'a walker goes from the desk to the place (spec Changes 2026-11-01)');
+  assert.strictEqual(await js(`document.querySelectorAll('#stage .ro-walker').length`), 0, 'nobody walks across the room (spec Changes 2026-11-01)');
   await must(`!document.querySelector('#stage .ro-ghost')`, 'the fade over', 6000);
   const standing = await js(`document.querySelector('#stage .ro-visitor[data-for="'+CSS.escape(${jsLiteral(lobbyId)})+'"]').src`);
   await emit({ type: 'toolCall', sessionId: lobbyId, callId: 'drv-walk', tool: 'bash', phase: 'complete', output: 'ok' });
   await must(`!!document.querySelector('#stage .ro-person[data-for="'+CSS.escape(${jsLiteral(lobbyId)})+'"]')`, 'the person back at the desk');
   await must(`window.__g.includes(${jsLiteral(standing)})`, 'FR-073: a fade where the visitor stood');
-  // the head lands on the head (spec Changes 2026-11-01): the walker's last place against the seated picture, from the art's face table
-  const land = await js(`(()=>{const w=document.querySelector('#stage .ro-ghost.ro-walker'),p=document.querySelector('#stage .ro-person[data-for="'+CSS.escape(${jsLiteral(lobbyId)})+'"]');if(!w||!p)return null;const a=w.getAnimations().find(x=>!x.animationName&&x.effect.getTiming().iterations===1&&(x.effect.getKeyframes()[0].transform||'').startsWith('translate'));if(!a)return null;a.pause();a.currentTime=a.effect.getTiming().duration-1;const F=window.DurbarRealOfficeArt.faces,head=(e)=>{const f=F[e.src.split('/').pop()],r=e.getBoundingClientRect();return {x:r.x+f[0]*r.width,y:r.y+f[1]*r.height,h:f[2]*r.height};};const A=head(w);p.getAnimations().forEach(x=>{if(!x.animationName){x.pause();x.currentTime=x.effect.getTiming().duration+x.effect.getTiming().delay-1;}});const B=head(p);a.play();p.getAnimations().forEach(x=>{if(!x.animationName)x.play();});return {dx:Math.abs(A.x-B.x),dy:Math.abs(A.y-B.y),dh:Math.abs(A.h-B.h),h:B.h};})()`);
-  assert.ok(land, 'a walker and a seated picture to compare');
-  console.log('[097-motion] head on head', JSON.stringify(land));
-  assert.ok(land.dx < 3 && land.dy < 3 && land.dh < 3, 'the walker' + "'s head lands on the seated head: " + JSON.stringify(land));
   assert.strictEqual(await js(`(window.__gz||{})[${jsLiteral(standing)}]`), '3', 'a visitor fades in front of its fixture');
   const order = await js(`(()=>{const q=(s)=>document.querySelector('#stage '+s+'[data-for="'+CSS.escape(${jsLiteral(lobbyId)})+'"]');return {p:+getComputedStyle(q('.ro-person')).zIndex,d:+getComputedStyle(q('.ro-desk')).zIndex,s:+getComputedStyle(q('.ro-screen')).zIndex};})()`);
   assert.ok(order.p < order.d && order.d < order.s, 'back behind the desk: ' + JSON.stringify(order));
@@ -152,7 +150,7 @@ module.exports = async (ctx) => {
   /* ---- FR-071, FR-047: reduced motion (emulated, page loaded with it) and Serious mode (the real switch): one still frame, text still updates ---- */
   const stillChecks = async (tag) => {
     await must(`document.getElementById('stage').dataset.d==='real'&&document.querySelector('#stage .ro').classList.contains('still')`, tag + ': the scene still');
-    await must(`document.querySelectorAll('#stage .ro-person2').length===0`, tag + ': no second frame');
+    await must(`document.querySelectorAll('#stage .ro-person2,#stage .ro-rig').length===0`, tag + ': no second frame and no rig');
     const n = await js(animInfo);
     assert.deepStrictEqual(n.map((a) => a.name), [], tag + ': nothing moves');
     await js(INSTALL);
@@ -185,7 +183,7 @@ module.exports = async (ctx) => {
   await stillChecks('reduced');
   await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [] });
   await loadReal(1440, 900);
-  await must(`document.querySelectorAll('#stage .ro-person2').length>0`, 'second frames without reduced motion');
+  await must(`document.querySelectorAll('#stage .ro-rig,#stage .ro-person2,#stage .ro-visitor2').length>0`, 'the rig or second frames without reduced motion');
   await js(`document.getElementById('settingsBtn').click()`);
   await must(`!!document.getElementById('seriousSw')`, 'the Serious mode switch');
   await js(`document.getElementById('seriousSw').click()`);

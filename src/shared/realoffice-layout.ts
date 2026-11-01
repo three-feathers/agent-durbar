@@ -15,14 +15,14 @@ export interface StandMeta { figH: number; poses: Record<string, [number, number
 export interface RealMeta {
   seat: Record<string, SeatMeta>; stand: Record<string, StandMeta>;
   fixtures: Record<string, [number, number]>; fixtureTop?: Record<string, number>; floorLine: number;
-  /** per picture file: face centre x, y and height as fractions of the picture (spec Changes 2026-11-01) */
-  faces?: Record<string, [number, number, number]>;
+  /** per person: the typing rig's head and hands, as fractions of the picture, with their pivots (spec Changes 2026-11-01) */
+  rig?: Record<string, Record<string, { x: number; y: number; w: number; h: number; px: number; py: number }>>;
 }
 export interface Rect { x: number; y: number; w: number; h: number }
 export interface DeskBox {
   id: string; state: RealState; slot: Rect; desk: Rect & { full: number }; plate: Rect; screen: Rect; glass: Rect;
   person: (Rect & { file: string; fileB: string | null; pose: string; pid: string; vis: Rect }) | null;
-  face: Rect | null; away: { x: number; y: number } | null; narrow: boolean; lamp: Rect;
+  face: Rect | null; away: { x: number; y: number; s: number } | null; narrow: boolean; lamp: Rect;
   bubble: { x: number; y: number } | null; bang: { x: number; y: number } | null; dots: { x: number; y: number } | null;
   call: { x: number; y: number };
 }
@@ -36,7 +36,7 @@ export interface Layout {
 }
 
 /* FR-010 constants (b2.js) */
-export const PW = 0.80, SR = 0.66, STRIP = 22, PAD = 8, ZGAP = 8, DESK_AT = 0.76, AWAY_W = 0.62;
+export const PW = 0.80, SR = 0.66, STRIP = 22, PAD = 8, ZGAP = 8, DESK_AT = 0.76;
 /** A desk face's height (crown to chin) as a share of the body height `u`: measured on 6 of the 15 people with a grid over the art
  *  (p01 0.30, p02 0.41, p04 0.27, p08 0.33, p11 0.33, p13 0.30), rounded down to 0.30; per person it varies (spec 097 delta 2026-10-31). */
 export const FACE_U = 0.30;
@@ -71,7 +71,7 @@ const roOwn = (o: object, k: string): boolean => Object.prototype.hasOwnProperty
 const roNeedsYou = (s: RealState): boolean => s === 'waiting' || s === 'limit';
 /** An agent without a person at its desk: away in the lobby, or asleep (Q5: lamp and screen off, a narrower desk). */
 const roNarrow = (a: RealAgent): boolean => !!a.away || a.state === 'asleep';
-const roWidthOf = (a: RealAgent): number => (roNarrow(a) ? AWAY_W : 1);
+const roWidthOf = (_a: RealAgent): number => 1; /* spec Changes 2026-11-01: an empty desk keeps its slot, so nothing moves when someone leaves */
 const roSeatOf = (meta: RealMeta, a: RealAgent): SeatMeta | null => (a.person && roOwn(meta.seat, a.person) ? meta.seat[a.person] : null);
 
 /** FR-022: a zone's desks in status order; ties keep the model's order. */
@@ -114,7 +114,6 @@ function roZoneStats(meta: RealMeta, z: RealFolder): { seated: boolean; rise: nu
   if (!st) {
     st = { seated: false, rise: 0, hand: DESK_AT * 0.9 };
     for (const a of z.agents) {
-      if (roNarrow(a)) continue;
       const m = roSeatOf(meta, a);
       st.seated = true; st.rise = Math.max(st.rise, m ? m.headTop / m.bodyH : 0.3); st.hand = Math.max(st.hand, m ? m.hand : DESK_AT);
     }
@@ -176,7 +175,7 @@ function roPack(meta: RealMeta, folders: RealFolder[], W: number, Ho: number, lo
     if (fits) for (let k = 0; k < 16; k++) /* 16 halvings: u to within 0.005 px (b2.js used 30) */ { const m = (lo + hi) / 2; if (H(m) <= avail) lo = m; else hi = m; }
     const used = H(lo), spread = Math.max(...rows.map((r) => r.n)) - Math.min(...rows.map((r) => r.n));
     const wide = uW >= U_MIN; /* every desk at least as wide as a person and a screen at the smallest u */
-    const score = (fits ? 2e6 : wide ? 1e6 - used : -used) + lo - spread * 5 - 0.08 * Math.max(0, avail - used);
+    const score = (fits ? 2e6 : wide ? 1e6 - used : uW * 100 - used) + lo - spread * 5 - 0.08 * Math.max(0, avail - used); /* nothing wide enough: the widest desks, not the shortest page */
     if (!best || score > best.score + 0.5) best = { rows, u: lo, used, score, fits, wide };
   }
   return best as { rows: Row[]; u: number; used: number; fits: boolean; wide: boolean };
@@ -282,18 +281,25 @@ function roLobby(meta: RealMeta, places: RealPlace[], W: number, Lb: number): { 
   return { fixtures, floorStrip: { x: 0, y: Lb - FLOOR, w: W, h: FLOOR } };
 }
 
+/** spec Changes 2026-11-01: an empty seat's note, square like a real one, standing on the desk where the person would sit, clear of the screen when there is room */
+function roNote(px: number, sx: number, slotW: number, sl: number, deskY: number, u: number, big: boolean): { x: number; y: number; s: number } {
+  const s = Math.round(Math.max(66, Math.min(112, 0.5 * u)));
+  const x = big ? px : Math.max(sx + s / 2 + 4, Math.min(px, sl - s / 2 - 4));
+  return { x: Math.min(x, sx + slotW - s / 2 - 2), y: deskY - s + 4, s };
+}
+
 /** FR-013, FR-016, FR-017, FR-036, FR-038: one desk (roStation) in a slot. */
 function roStation(meta: RealMeta, a: RealAgent, sx: number, y: number, Sw: number, u: number, g: Geom, big: boolean, scrH: number): DeskBox {
   const narrow = roNarrow(a);
   const slotW = Sw * roWidthOf(a);
   const deskY = y + g.deskBack, dw = slotW - 6, dh = g.dh;
-  const m = narrow ? null : roSeatOf(meta, a);
+  const m = roSeatOf(meta, a);
   const hand = m ? m.hand : DESK_AT;
   const headY = deskY - 0.015 * u - hand * u;
-  const px = big || narrow ? sx + slotW / 2 : sx + 0.05 * Sw + 0.42 * u;
+  const px = big ? sx + slotW / 2 : sx + 0.05 * Sw + 0.42 * u;
   let person: DeskBox['person'] = null, face: Rect | null = null;
   const pose = SEAT_POSE[a.state];
-  if (m && pose) {
+  if (m && pose && !narrow) {
     const k = u / m.bodyH, w = m.w * k, h = m.h * k, top = headY - m.headTop * k;
     person = { x: px - w / 2, y: top, w, h, file: `${a.person}-${pose}.webp`, fileB: roOwn(POSE_FRAME_B, pose) ? `${a.person}-${POSE_FRAME_B[pose]}.webp` : null, pose, pid: String(a.person),
       vis: { x: px - 0.3 * u, y: headY, w: 0.6 * u, h: Math.max(0, deskY - headY) } }; /* the head and shoulders: the monitor may cover a shoulder edge, never the face */
@@ -302,8 +308,7 @@ function roStation(meta: RealMeta, a: RealAgent, sx: number, y: number, Sw: numb
   let sl = px + 0.36 * u, sr = sx + slotW - 0.05 * Sw, sw = sr - sl;
   let foot = deskY + 0.13 * dh, neck = Math.max(6, 0.07 * u);
   let sh = Math.min(sw * (Sw > 300 ? 0.78 : 0.64), foot - neck - (y + STRIP + 3));
-  if (narrow && !big) { sl = sx + 0.1 * slotW; sr = sx + 0.9 * slotW; sw = sr - sl; sh = Math.min(sw * 0.64, foot - neck - (y + STRIP + 22)); }
-  if (big) { const top = narrow ? 22 : 6; /* an away desk's "at <place>" label sits above its screen */ sl = sx + 0.04 * slotW; sr = sx + 0.96 * slotW; sw = sr - sl; sh = scrH - 4 - top; neck = 0; foot = y + STRIP + top + sh; }
+  if (big) { const top = 6; sl = sx + 0.04 * slotW; sr = sx + 0.96 * slotW; sw = sr - sl; sh = scrH - 4 - top; neck = 0; foot = y + STRIP + top + sh; }
   sh = Math.max(12, sh);
   const screen = { x: sl, y: foot - neck - sh, w: sw, h: sh + neck + 4 };
   const glass = { x: sl + 3, y: foot - neck - sh + 3, w: sw - 6, h: sh - 6 };
@@ -313,7 +318,7 @@ function roStation(meta: RealMeta, a: RealAgent, sx: number, y: number, Sw: numb
   const desk = { x: sx + 3, y: deskY, w: dw, h: Math.min(dh, g.bottom - g.deskBack - 2), full: dh };
   return {
     id: a.id, state: a.state, narrow, slot: { x: sx, y, w: slotW, h: 0 }, desk, plate, screen, glass, person, face,
-    away: narrow && a.away ? { x: sx + slotW / 2, y: y + STRIP + 2 } : null,
+    away: narrow && a.away ? roNote(px, sx, slotW, sl, deskY, u, big) : null, /* the note on the desk, where the person would sit */
     lamp: { x: sx + 0.02 * slotW, y: Math.max(y + STRIP, headY - 0.35 * u), w: 0.96 * slotW, h: deskY + dh * 0.5 - Math.max(y + STRIP, headY - 0.35 * u) },
     bubble: person && roNeedsYou(a.state) ? { x: px + 0.2 * u - 6, y: headY - 0.04 * u } : null,
     bang: a.state === 'error' ? { x: sr - 10, y: screen.y - 8 } : null,

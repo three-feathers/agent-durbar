@@ -792,6 +792,19 @@ in the repository.
 - cut: two frames split at the widest empty gap, each centred on its torso on one shared canvas with the feet aligned, resized to at most 640 px tall, re-encoded WebP quality 0.80 method 6 with alpha, no metadata; `people.json` sizes are in the stand sheet's units, a runner 0.97 of the person's upright `letter` height (bent knees, an estimate)
 - licence: MIT
 
+### rig-layers
+
+- files: p01-righead.webp p01-rigl.webp p01-rigr.webp p02-righead.webp p02-rigl.webp p02-rigr.webp p03-righead.webp p03-rigl.webp p03-rigr.webp p04-righead.webp p04-rigl.webp p04-rigr.webp p05-righead.webp p05-rigl.webp p05-rigr.webp p06-righead.webp p06-rigl.webp p06-rigr.webp p07-righead.webp p07-rigl.webp p07-rigr.webp p08-righead.webp p08-rigl.webp p08-rigr.webp p09-righead.webp p09-rigl.webp p09-rigr.webp p10-righead.webp p10-rigl.webp p10-rigr.webp p11-righead.webp p11-rigl.webp p11-rigr.webp p12-righead.webp p12-rigl.webp p12-rigr.webp p13-righead.webp p13-rigl.webp p13-rigr.webp p14-righead.webp p14-rigl.webp p14-rigr.webp p15-righead.webp p15-rigl.webp p15-rigr.webp
+- source: each person's own `typeA` picture in this folder: a head and two hands, cut with soft edges
+- tool: on-device Apple Vision for the face and hand places, Core Graphics to cut, Chromium's WebP encoder at quality 0.85; a one-off script, no generated pixels
+- date: 2026-11-01
+- made by: Vikram's agent (Claude Code)
+- approved by: Vikram (owner), 2026-11-01, relayed: keep the typing rig
+- reference: none
+- prompt: none, no image generation
+- cut: `rig` in `people.json` has each layer's place and pivot as fractions of the picture
+- licence: MIT
+
 ## References (generated the same day, not shipped)
 
 - `room-art/b-person/b-person-sheet.png` (render-style reference for every seated sheet; an invented woman): A sheet with THREE poses side by side in one row, on a fully TRANSPARENT background (PNG with alpha channel), equal spacing with clear empty gaps between them. The SAME person in all three: a woman in her 30s with curly dark hair and a mustard cardigan over a white top, seen from the front, sitting on a black office chair, only her chair back and her upper body from the lap up are shown (draw NO desk, no table, no monitor). Pose 1 working: typing, looking down. Pose 2 waiting: right arm raised high. Pose 3 resting: leaning back with hands behind her head. Photoreal 3D render look, realistic, soft warm daylight, same camera about 20 degrees down, no text.
