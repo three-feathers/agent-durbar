@@ -145,6 +145,8 @@ fs.writeFileSync(wsFile, '{}');
     assert.deepStrictEqual(r2.opened, [real], 'the file manager gets the real path');
     const r3 = rec();
     assert.strictEqual((await openWith({ cwd: dir }, 'folder', mk(launchEnv('linux', LINUX_ALL), r3))).note, undefined, 'no note for a plain folder');
+    const r5 = rec();
+    assert.strictEqual((await openWith({ cwd: dir }, 'vscode', mk(launchEnv('linux', LINUX_ALL), r5))).note, undefined, 'nor from an editor');
     const toApp = path.join(root, 'plain-name'); fs.symlinkSync(appDir, toApp, 'dir');
     const r4 = rec();
     assert.strictEqual((await openWith({ cwd: toApp }, 'folder', mk(launchEnv('linux', LINUX_ALL), r4))).ok, false, 'a link to a package, behind a plain name: refused for the file manager');
