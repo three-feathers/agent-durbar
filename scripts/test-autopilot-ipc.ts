@@ -172,6 +172,14 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(x.fake.autopilotCalls, []);
     assert.deepStrictEqual(x.logs, []);
   }
+  // the gate is asked again after the dialog
+  {
+    const gate = { mode: 'ask' as PermMode, enabled: true };
+    const x = await office(Object.assign(gate, { confirm: async () => { gate.enabled = false; return true; } }));
+    assert.strictEqual((await turnOn(x)).error, NOT_AVAILABLE);
+    assert.strictEqual(x.a.permMode, 'ask');
+    assert.deepStrictEqual(onCalls(x), []);
+  }
   // the page's word is never enough: without the native answer nothing is on
   {
     let asked = 0;
