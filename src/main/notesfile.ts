@@ -1,17 +1,17 @@
 /**
- * The project notes file `.durbar/notes.md` (spec 083 FR-050..FR-055, T041, issue 699): main's mirror of a folder's notes into the
+ * The project notes file `.durbar/notes/notes.md` (spec 083 FR-050..FR-055, T041, issue 699): main's mirror of a folder's notes into the
  * project, used only while the folder's switch is on. The folder is the person's project: it may be a git repository that others
  * push to, and an agent with write rights or a `git pull` may change anything in it, so everything read here is hostile input.
  *
- * - Every path is real-path checked: `.durbar` must be a real folder (not a link or junction) right inside the folder's real path;
- *   `notes.md` must be missing or a regular file with one link (`lstat`, not a link). A FIFO, a folder or a device is refused, and a
+ * - Every path is real-path checked: `.durbar` and `.durbar/notes` must be real folders (not links or junctions), each right inside
+ *   its parent's real path; `notes.md` must be missing or a regular file with one link (`lstat`, not a link). A FIFO, a folder or a device is refused, and a
  *   read opens with `O_RDONLY | O_NONBLOCK | O_NOFOLLOW` (where the OS has them), checks `fstat` and reads at most `mdBytes + 1`
  *   bytes, so the cap is checked before anything is decoded.
  * - Writes go to a temp file in `.durbar` opened `O_CREAT | O_EXCL | O_WRONLY` (and `O_NOFOLLOW`), 0600 on POSIX; right before the
  *   rename everything is checked again, including that `notes.md` still has the hash this cycle started from (an outside edit is
  *   imported first, never overwritten). On Windows a refused rename is tried once more after 200 ms.
- * - FR-051: no process is ever started (no git), no `.gitignore` or other committed file is written; `addExclude` appends one
- *   escaped, anchored line to a real git directory's `info/exclude` and never creates `info/`.
+ * - FR-051 (spec Changes 2026-11-01): no process is ever started (no git) and nothing outside `.durbar/notes` is written. `.durbar/notes/.gitignore`
+ *   holds `*`, so git ignores the folder and itself; it is kept in place before every write, unless the person chose to keep the notes in git.
  *
  * Nothing here logs; messages carry a short reason, never a path or a note's text. The caller (`NotesOps`) decides whether the switch
  * is on: nothing in this module runs while it is off.
@@ -34,14 +34,12 @@ export type NotesFileFlags = Pick<typeof nodeFs.constants, 'O_RDONLY' | 'O_WRONL
 export interface NotesFileOptions {
   fs?: NotesFileFs;
   flags?: NotesFileFlags;
-  /** The platform paths are compared for (case) and whether modes, the uid check and the rename retry apply. Default `process.platform`. */
+  /** The platform paths are compared for (case) and whether modes and the rename retry apply. Default `process.platform`. */
   platform?: string;
   now?: () => Date;
   rand?: (n: number) => number;
   sleep?: (ms: number) => Promise<void>;
   pid?: number;
-  /** The current user's id (POSIX); `undefined` skips the owner check (Windows). Default `process.getuid`. */
-  uid?: () => number | undefined;
 }
 
 export type FileFail = { ok: false; code: 'refused' | 'missing' | 'conflict' | 'too-big' | 'changed' | 'write' | 'cap'; error: string };
@@ -52,11 +50,8 @@ const errCode = (e: unknown): string => {
   return typeof c === 'string' && /^[A-Z0-9_]{2,24}$/.test(c) ? c : 'ERROR';
 };
 const sha256 = (b: Buffer | string): string => createHash('sha256').update(b).digest('hex');
-const WRITE_FAIL = (why: string): string => `Could not write .durbar/notes.md: ${why}`;
-const READ_FAIL = (why: string): string => `Could not read .durbar/notes.md: ${why}`;
-const EXCLUDE_FAIL = (why: string): string => `Could not add .durbar/ to .git/info/exclude: ${why}`;
-/** FR-051: a folder path that cannot be one safe line. */
-export const EXCLUDE_UNSAFE_NAME = "This folder's name cannot be written to .git/info/exclude safely.";
+const WRITE_FAIL = (why: string): string => `Could not write .durbar/notes/notes.md: ${why}`;
+const READ_FAIL = (why: string): string => `Could not read .durbar/notes/notes.md: ${why}`;
 /** FR-050: the dialog's line when the existing file cannot be imported. */
 export const COUNT_UNREADABLE = 'The existing file cannot be read; Durbar will not change it.';
 const READ_WHY: Record<Exclude<Read, { ok: true }>['code'], string> = {
@@ -64,36 +59,21 @@ const READ_WHY: Record<Exclude<Read, { ok: true }>['code'], string> = {
   'too-big': 'is too large', changing: 'changed while being read', error: 'could not be opened',
 };
 
-/** FR-051: one path segment with gitignore's specials escaped (`*`, `?`, `[`, `\`, a leading `!` or `#`, trailing spaces). */
-export function escapeGitSegment(seg: string): string {
-  let out = seg.replace(/[\\*?[]/g, (c) => '\\' + c);
-  if (out.startsWith('!') || out.startsWith('#')) out = '\\' + out;
-  let end = out.length;
-  while (end > 0 && out[end - 1] === ' ') end--;
-  return end === out.length ? out : out.slice(0, end) + '\\ '.repeat(out.length - end);
-}
-
-/** FR-051: the anchored `info/exclude` line for a folder at `rel` (segments) from the repository root; `/` separators on every OS. */
-export function excludeLine(segments: readonly string[]): string {
-  return segments.length ? `/${segments.map(escapeGitSegment).join('/')}/.durbar/` : '/.durbar/';
-}
-
-interface Place { folder: string; durbar: string; notes: string; hasDurbar: boolean }
+interface Place { folder: string; durbar: string; dir: string; notes: string; has: boolean }
 export type ReadBack =
   | { ok: true; sha: string | null; changed: false }
   | { ok: true; sha: string; changed: true; sections: NotesMdSection[]; strayText: number; overflow: number }
   | FileFail;
-export type ExcludeResult = { ok: true; added: boolean; line: string } | { ok: false; error: string };
 /** FR-055 (T042): what *Delete the file* did. `removed` false: the file stays and `why` says so (a short fixed text, never a path). */
 export type RemoveResult = { removed: boolean; dirRemoved: boolean; why?: string };
 /** FR-055: the reasons a delete leaves the file. */
-export const REMOVE_CHANGED = '.durbar/notes.md changed since Durbar last wrote it, so it was left in the project.';
-export const REMOVE_NONE = 'There was no .durbar/notes.md to delete.';
+export const REMOVE_CHANGED = '.durbar/notes/notes.md changed since Durbar last wrote it, so it was left in the project.';
+export const REMOVE_NONE = 'There was no .durbar/notes/notes.md to delete.';
 /** Reviews 2 and 3 of PR 931: the folder's identity differs from the one recorded at turn-on (another folder at the same path, or a remount). */
-export const NOTES_REPLACED = 'This folder looks replaced, or its drive was remounted. Turn the switch off and on again to write .durbar/notes.md here.';
+export const NOTES_REPLACED = 'This folder looks replaced, or its drive was remounted. Turn the switch off and on again to write .durbar/notes/notes.md here.';
 /** Review of PR 931 (point 4): the switch is on and `notes.md` is not there (the folder was replaced, the file deleted, or never written). */
-export const NOTES_GONE = 'The project file is gone. Turn the switch off and on again to write .durbar/notes.md.';
-const REMOVE_REFUSED = (why: string): string => `Durbar did not delete .durbar/notes.md: ${why}.`;
+export const NOTES_GONE = 'The project file is gone. Turn the switch off and on again to write .durbar/notes/notes.md.';
+const REMOVE_REFUSED = (why: string): string => `Durbar did not delete .durbar/notes/notes.md: ${why}.`;
 
 export class NotesFile {
   private readonly fs: NotesFileFs;
@@ -103,7 +83,6 @@ export class NotesFile {
   private readonly rand: (n: number) => number;
   private readonly sleep: (ms: number) => Promise<void>;
   private readonly pid: number;
-  private readonly uid: () => number | undefined;
   /** Per real folder: the hash of a `notes.md` that did not parse (a conflict): the same bytes are not parsed again on every cycle. */
   private readonly unreadable = new Map<string, { sha: string; code: 'conflict' | 'too-big' }>();
   /** Notes masked for the file, by id and rev and the values used (masking 300 full notes on every write would cost about a second). */
@@ -134,17 +113,15 @@ export class NotesFile {
     this.rand = opts.rand ?? ((n) => randomInt(n));
     this.sleep = opts.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
     this.pid = opts.pid ?? process.pid;
-    this.uid = opts.uid ?? (() => (typeof process.getuid === 'function' ? process.getuid() : undefined));
   }
 
-  private get posix(): boolean { return this.platform !== 'win32'; }
   private ci(): boolean { return this.platform === 'win32' || this.platform === 'darwin'; }
   private same(a: string, b: string): boolean { return this.ci() ? a.toLowerCase() === b.toLowerCase() : a === b; }
   private inside(root: string, p: string): boolean { return isInsideRoots(p, [root], { realpath: (x) => x, caseInsensitive: this.ci() }); }
 
   /**
-   * FR-053: the folder's real path, `.durbar` (created 0700 when `create` and missing) as a real folder right inside it, and the path
-   * of `notes.md`. A link or junction, a path outside, or anything that is not a folder is refused.
+   * FR-053: the folder's real path, `.durbar` and `.durbar/notes` (each created 0700 when `create` and missing) as real folders, each
+   * right inside its parent, and the path of `notes.md`. A link or junction, a path outside, or anything that is not a folder is refused.
    */
   private place(folderPath: string, create: boolean): { ok: true; p: Place } | FileFail {
     const refuse = (why: string): FileFail => ({ ok: false, code: 'refused', error: (create ? WRITE_FAIL : READ_FAIL)(why) });
@@ -154,28 +131,71 @@ export class NotesFile {
       folder = this.fs.realpathSync(folderPath);
       if (!this.fs.lstatSync(folder).isDirectory()) return refuse('the folder is not there');
     } catch { return { ok: false, code: 'missing', error: (create ? WRITE_FAIL : READ_FAIL)('the folder is not there') }; }
-    const durbar = path.join(folder, '.durbar');
-    let st: nodeFs.Stats;
-    try { st = this.fs.lstatSync(durbar); } catch (e) {
-      if (errCode(e) !== 'ENOENT') return refuse(`.durbar could not be checked (${errCode(e)})`);
-      if (!create) return { ok: true, p: { folder, durbar, notes: path.join(durbar, 'notes.md'), hasDurbar: false } };
-      try { this.fs.mkdirSync(durbar, { mode: 0o700 }); st = this.fs.lstatSync(durbar); } catch (e2) { return refuse(`.durbar could not be created (${errCode(e2)})`); }
+    const durbar = path.join(folder, '.durbar'), dir = path.join(durbar, 'notes');
+    const p: Place = { folder, durbar, dir, notes: path.join(dir, 'notes.md'), has: false };
+    for (const [parent, d] of [[folder, durbar], [durbar, dir]]) {
+      let st: nodeFs.Stats;
+      try { st = this.fs.lstatSync(d); } catch (e) {
+        if (errCode(e) !== 'ENOENT') return refuse(`${path.basename(d)} could not be checked (${errCode(e)})`);
+        if (!create) return { ok: true, p };
+        try { this.fs.mkdirSync(d, { mode: 0o700 }); st = this.fs.lstatSync(d); } catch (e2) { return refuse(`${path.basename(d)} could not be created (${errCode(e2)})`); }
+      }
+      const checked = this.checkDir(parent, d, st);
+      if (checked) return refuse(checked);
     }
-    const checked = this.checkDurbar(folder, durbar, st);
-    if (checked) return refuse(checked);
-    return { ok: true, p: { folder, durbar, notes: path.join(durbar, 'notes.md'), hasDurbar: true } };
+    return { ok: true, p: { ...p, has: true } };
   }
 
-  /** `.durbar` is a real folder (not a link or junction) whose real path is itself, right inside the folder. A reason, or `undefined`. */
-  private checkDurbar(folder: string, durbar: string, st?: nodeFs.Stats): string | undefined {
+  /** `d` is a real folder (not a link or junction) whose real path is itself, right inside `parent`. A reason, or `undefined`. */
+  private checkDir(parent: string, d: string, st?: nodeFs.Stats): string | undefined {
+    const name = path.basename(d);
     try {
-      const s = st ?? this.fs.lstatSync(durbar);
-      if (s.isSymbolicLink()) return '.durbar is a link';
-      if (!s.isDirectory()) return '.durbar is not a folder';
-      const real = this.fs.realpathSync(durbar);
-      if (!this.inside(folder, real) || !this.same(real, durbar)) return '.durbar leads outside the folder';
+      const s = st ?? this.fs.lstatSync(d);
+      if (s.isSymbolicLink()) return `${name} is a link`;
+      if (!s.isDirectory()) return `${name} is not a folder`;
+      const real = this.fs.realpathSync(d);
+      if (!this.inside(parent, real) || !this.same(real, d)) return `${name} leads outside the folder`;
       return undefined;
-    } catch (e) { return `.durbar could not be checked (${errCode(e)})`; }
+    } catch (e) { return `${name} could not be checked (${errCode(e)})`; }
+  }
+  /** Both folders of a place, again. */
+  private checkPlace(p: Place): string | undefined { return this.checkDir(p.folder, p.durbar) ?? this.checkDir(p.durbar, p.dir); }
+
+  /**
+   * Spec Changes 2026-11-01: `.durbar/notes/.gitignore` holds `*`. Missing: created (`O_CREAT | O_EXCL | O_NOFOLLOW`). Anything else
+   * (other text, a link, a folder, a hard link, too big) is a reason to write nothing: the file may be tracked or edited, and then git
+   * might not ignore the notes. A reason, or `undefined`.
+   */
+  private ensureIgnore(p: Place): string | undefined {
+    const f = path.join(p.dir, '.gitignore');
+    try { if (this.fs.lstatSync(f).isSymbolicLink()) return '.gitignore is a link'; } catch { /* missing: read says so */ }
+    const r = readCapped(this.fs, this.k, f, 16);
+    if (r.ok) return r.buf.toString('utf8').trim() === '*' ? undefined : '.gitignore in .durbar/notes is not "*"';
+    if (r.code !== 'missing') return `.gitignore ${READ_WHY[r.code]}`;
+    let fd: number | undefined;
+    try {
+      fd = this.fs.openSync(f, this.k.O_CREAT | this.k.O_EXCL | this.k.O_WRONLY | (this.k.O_NOFOLLOW ?? 0), 0o600);
+      this.fs.writeSync(fd, Buffer.from('*\n'), 0, 2);
+      return undefined;
+    } catch (e) { return `.gitignore could not be written (${errCode(e)})`; } finally { if (fd !== undefined) { try { this.fs.closeSync(fd); } catch { /* gone */ } } }
+  }
+
+  /** Delete `.gitignore` in `dir` only when it is a regular file with one link holding exactly `*` (Durbar's own). `true` when deleted. */
+  private dropIgnore(dir: string): boolean {
+    const f = path.join(dir, '.gitignore');
+    try {
+      if (this.fs.lstatSync(f).isSymbolicLink()) return false;
+      const r = readCapped(this.fs, this.k, f, 16);
+      if (!r.ok || r.buf.toString('utf8').trim() !== '*') return false;
+      this.fs.unlinkSync(f);
+      return true;
+    } catch { return false; }
+  }
+
+  /** The person chose to keep the notes in git: Durbar's own `.gitignore` goes (called after the native box). `true` when it went. */
+  allowGit(folderPath: string): boolean {
+    const pl = this.place(folderPath, false);
+    return pl.ok && pl.p.has && this.dropIgnore(pl.p.dir);
   }
 
   /** `notes.md` now: its bytes (`null`: missing), or why it is refused. `lstat` first: a link, a folder or a FIFO is never opened. */
@@ -200,7 +220,7 @@ export class NotesFile {
   readBack(folderPath: string, mirror: NotesMirror | undefined, imported?: string): ReadBack {
     const pl = this.place(folderPath, false);
     if (!pl.ok) return pl;
-    if (!pl.p.hasDurbar) return { ok: true, sha: null, changed: false };
+    if (!pl.p.has) return { ok: true, sha: null, changed: false };
     const cur = this.current(pl.p);
     if (!cur.ok) return { ok: false, code: cur.code, error: cur.code === 'too-big' ? NOTES_MD_UNREADABLE : READ_FAIL(`it ${cur.why}`) };
     if (!cur.buf) return { ok: true, sha: null, changed: false };
@@ -224,7 +244,7 @@ export class NotesFile {
   count(folderPath: string, knownIds: ReadonlySet<string> = new Set()): { ok: true; count: number; exists: boolean; strayText: number } | { ok: false; error: string } {
     const pl = this.place(folderPath, false);
     if (!pl.ok) return pl.code === 'missing' ? { ok: false, error: pl.error } : { ok: false, error: COUNT_UNREADABLE };
-    if (!pl.p.hasDurbar) return { ok: true, count: 0, exists: false, strayText: 0 };
+    if (!pl.p.has) return { ok: true, count: 0, exists: false, strayText: 0 };
     const cur = this.current(pl.p);
     if (!cur.ok) return { ok: false, error: COUNT_UNREADABLE };
     if (!cur.buf) return { ok: true, count: 0, exists: false, strayText: 0 };
@@ -233,9 +253,9 @@ export class NotesFile {
     return { ok: true, count: parsed.sections.filter((s) => s.id === undefined || !knownIds.has(s.id)).length + parsed.overflow, exists: true, strayText: parsed.strayText };
   }
 
-  /** FR-053 right before the rename: `.durbar` unchanged, `notes.md` missing or a regular file, and its hash still `expect` (`null`: still missing). */
+  /** FR-053 right before the rename: both folders unchanged, `notes.md` missing or a regular file, and its hash still `expect` (`null`: still missing). */
   private recheck(p: Place, expect: string | null): FileFail | undefined {
-    const bad = this.checkDurbar(p.folder, p.durbar);
+    const bad = this.checkPlace(p);
     if (bad) return { ok: false, code: 'refused', error: WRITE_FAIL(bad) };
     const cur = this.current(p);
     if (!cur.ok) return { ok: false, code: 'refused', error: WRITE_FAIL(`notes.md ${cur.why}`) };
@@ -249,15 +269,21 @@ export class NotesFile {
    * O_WRONLY | O_NOFOLLOW`, 0600; everything is checked again right before the rename (and before the Windows retry); any failure
    * deletes the temp file. Returns the `mirror` for the store to persist.
    */
-  async syncOut(folderPath: string, text: string, expect: string | null): Promise<{ ok: true; mirror: NotesMirror } | FileFail> {
+  async syncOut(folderPath: string, text: string, expect: string | null, git = false): Promise<{ ok: true; mirror: NotesMirror } | FileFail> {
     const bytes = Buffer.from(text, 'utf8');
     if (bytes.length > NOTES_LIMITS.mdBytes) return { ok: false, code: 'cap', error: WRITE_FAIL('the notes are too large for the file') };
     const pl = this.place(folderPath, true);
     if (!pl.ok) return pl;
     const p = pl.p;
-    const early = this.recheck(p, expect);
+    // before the write and again before the rename: the checks, then `.gitignore` (unless the person chose git)
+    const check = (): FileFail | undefined => {
+      const f = this.recheck(p, expect);
+      const ig = f ? undefined : git ? undefined : this.ensureIgnore(p);
+      return f ?? (ig ? { ok: false, code: 'refused', error: WRITE_FAIL(ig) } : undefined);
+    };
+    const early = check();
     if (early) return early;
-    const tmp = path.join(p.durbar, `.notes.md.${this.pid}.${this.rand(36 ** 6).toString(36)}.tmp`);
+    const tmp = path.join(p.dir, `.notes.md.${this.pid}.${this.rand(36 ** 6).toString(36)}.tmp`);
     let fd: number | undefined;
     let made = false;
     try {
@@ -268,7 +294,7 @@ export class NotesFile {
       try { this.fs.fsyncSync(fd); } catch { /* best effort */ }
       this.fs.closeSync(fd);
       fd = undefined;
-      const late = this.recheck(p, expect);
+      const late = check();
       if (late) return late;
       try {
         this.fs.renameSync(tmp, p.notes);
@@ -276,7 +302,7 @@ export class NotesFile {
         if (this.platform !== 'win32' || !['EPERM', 'EBUSY', 'EACCES'].includes(errCode(e))) throw e;
         // Windows: another program (an editor, an indexer) holds the file; once more after 200 ms, checked again first
         await this.sleep(200);
-        const again = this.recheck(p, expect);
+        const again = check();
         if (again) return again;
         this.fs.renameSync(tmp, p.notes);
       }
@@ -288,32 +314,6 @@ export class NotesFile {
       if (fd !== undefined) { try { this.fs.closeSync(fd); } catch { /* gone */ } }
       if (made) { try { this.fs.unlinkSync(tmp); } catch { /* not there */ } }
     }
-  }
-
-  /** A real git directory: a real folder (after links) with a regular `HEAD` (and `objects/` when `full`), owned by this user (POSIX). */
-  private gitDir(dir: string, full: boolean): { ok: true; dir: string } | { ok: false; why: string } {
-    let real: string;
-    try { real = this.fs.realpathSync(dir); if (!this.fs.lstatSync(real).isDirectory()) return { ok: false, why: 'not a git repository' }; } catch { return { ok: false, why: 'not a git repository' }; }
-    try {
-      const head = this.fs.lstatSync(path.join(real, 'HEAD'));
-      if (head.isSymbolicLink() || !head.isFile()) return { ok: false, why: 'not a git repository' };
-      if (full) {
-        const obj = this.fs.lstatSync(path.join(real, 'objects'));
-        if (obj.isSymbolicLink() || !obj.isDirectory()) return { ok: false, why: 'not a git repository' };
-      }
-    } catch { return { ok: false, why: 'not a git repository' }; }
-    const me = this.posix ? this.uid() : undefined;
-    if (me !== undefined) {
-      try { if (this.fs.statSync(real).uid !== me) return { ok: false, why: 'owned by another user' }; } catch { return { ok: false, why: 'not a git repository' }; }
-    }
-    return { ok: true, dir: real };
-  }
-
-  /** The text of a small file a repository ships (`.git` file, `commondir`), at most `gitFileBytes`; `undefined` when it cannot be read. */
-  private small(file: string): string | undefined {
-    try { const st = this.fs.lstatSync(file); if (st.isSymbolicLink() || !st.isFile()) return undefined; } catch { return undefined; }
-    const r = readCapped(this.fs, this.k, file, NOTES_LIMITS.gitFileBytes);
-    return r.ok ? r.buf.toString('utf8') : undefined;
   }
 
   /** Walk up from a real folder path to the first `.git` (a folder, a file or anything else: the caller checks it). No git process (FR-051). */
@@ -334,7 +334,7 @@ export class NotesFile {
       const folder = this.fs.realpathSync(folderPath);
       if (!this.fs.lstatSync(folder).isDirectory()) return false;
       const g = this.findDotGit(folder);
-      return !!g && (g.st.isDirectory() || g.st.isFile() || g.st.isSymbolicLink()); // a linked .git counts: addExclude then refuses it and the switch stays off (review 2 of PR 931)
+      return !!g && (g.st.isDirectory() || g.st.isFile() || g.st.isSymbolicLink());
     } catch { return false; }
   }
 
@@ -383,7 +383,7 @@ export class NotesFile {
     try {
       const pl = this.place(folderPath, false);
       if (!pl.ok) return keep(pl.code === 'missing' ? REMOVE_REFUSED('the folder is not there') : REMOVE_REFUSED(pl.error.replace(/^Could not read \.durbar\/notes\.md: /, '')));
-      if (!pl.p.hasDurbar) return keep(REMOVE_NONE);
+      if (!pl.p.has) return keep(REMOVE_NONE);
       const cur = this.current(pl.p);
       if (!cur.ok) return keep(cur.code === 'too-big' ? REMOVE_CHANGED : REMOVE_REFUSED(`it ${cur.why}`));
       if (!cur.buf) return keep(REMOVE_NONE);
@@ -397,9 +397,9 @@ export class NotesFile {
       // for a process that cannot read the other folder and narrows it otherwise: one that can read it learns the random name, can put a
       // decoy under it here and swap again before the unlink (Node has no unlinkat). Under attack a file may be left under the random name.
       const name = `.notes.md.${this.pid}.${this.rand(36 ** 8).toString(36)}.del`;
-      const doomed = path.join(pl.p.durbar, name);
+      const doomed = path.join(pl.p.dir, name);
       try { this.fs.renameSync(pl.p.notes, doomed); } catch (e) { return keep(REMOVE_REFUSED(`it could not be deleted (${errCode(e)})`)); }
-      const left = (why: string, newer: boolean): RemoveResult => keep(REMOVE_REFUSED(`${why}; ${newer ? 'a newer notes.md is there, so the old one' : 'the file'} may be left as ${name}, in .durbar or in another folder: renaming it back to notes.md restores it`));
+      const left = (why: string, newer: boolean): RemoveResult => keep(REMOVE_REFUSED(`${why}; ${newer ? 'a newer notes.md is there, so the old one' : 'the file'} may be left as ${name}, in .durbar/notes or in another folder: renaming it back to notes.md restores it`));
       // the rename back never replaces a notes.md that appeared meanwhile (a POSIX rename would): a hard link fails with EEXIST instead
       const putBack = (why: string): RemoveResult => {
         try {
@@ -414,9 +414,9 @@ export class NotesFile {
         // unchecked unlink here could remove a file a swapped link points to). Nothing on this path ever unlinks the name `notes.md`
         // (re-check of review 3): when the random name cannot go, the answer says the file has two names and which one to delete.
         if (this.isHere(doomed)) { try { this.fs.unlinkSync(doomed); return keep(REMOVE_REFUSED(why)); } catch { /* held open: below */ } }
-        return keep(REMOVE_REFUSED(`${why}; notes.md and ${name} are now two names of the same file: delete ${name} in .durbar once nothing holds it`));
+        return keep(REMOVE_REFUSED(`${why}; notes.md and ${name} are now two names of the same file: delete ${name} in .durbar/notes once nothing holds it`));
       };
-      const moved = this.checkDurbar(pl.p.folder, pl.p.durbar);
+      const moved = this.checkPlace(pl.p);
       if (moved) return putBack('.durbar changed while it was being deleted');
       const r = readCapped(this.fs, this.k, doomed, NOTES_LIMITS.mdBytes);
       if (!r.ok || sha256(r.buf) !== mirror.sha256) return putBack('it changed while it was being deleted');
@@ -427,88 +427,13 @@ export class NotesFile {
       if (!this.same(rp, doomed)) return putBack('.durbar changed while it was being deleted');
       try { this.fs.unlinkSync(doomed); } catch (e) { return putBack(`it could not be deleted (${errCode(e)})`); }
       let dirRemoved = false;
-      if (!this.checkDurbar(pl.p.folder, pl.p.durbar)) {
-        try { this.fs.rmdirSync(pl.p.durbar); dirRemoved = true; } catch { /* not empty (ENOTEMPTY, EEXIST) or held open: it stays */ }
+      if (!this.checkPlace(pl.p)) {
+        this.dropIgnore(pl.p.dir); // only Durbar's own `*`; a `.gitignore` the person made or changed stays, and so does the folder
+        try { this.fs.rmdirSync(pl.p.dir); dirRemoved = true; this.fs.rmdirSync(pl.p.durbar); } catch { /* not empty (ENOTEMPTY, EEXIST) or held open: it stays */ }
       }
       return { removed: true, dirRemoved };
     } catch (e) {
       return keep(REMOVE_REFUSED(`it could not be checked (${errCode(e)})`));
-    }
-  }
-
-  /**
-   * FR-051: append the anchored `/<path>/.durbar/` line to the repository's `info/exclude`, once. The repository is found by walking up
-   * from the folder's real path to the first `.git`: a folder, or a file (worktree, submodule) whose `gitdir:` and `commondir` lead to
-   * the git directory. That directory must be real (`HEAD`, `objects/`, owned by this user) and already have a real `info/` folder (never
-   * created). `info/exclude` must be missing or a regular file (at most `excludeBytes`); it is opened `O_APPEND | O_NOFOLLOW`, 0600 on create.
-   */
-  addExclude(folderPath: string): ExcludeResult {
-    const fail = (why: string): ExcludeResult => ({ ok: false, error: EXCLUDE_FAIL(why) });
-    let folder: string;
-    try { folder = this.fs.realpathSync(folderPath); if (!this.fs.lstatSync(folder).isDirectory()) return fail('the folder is not there'); } catch { return fail('the folder is not there'); }
-    const found = this.findDotGit(folder);
-    if (!found) return fail('not a git repository');
-    const { root, st: dotGit } = found;
-    const rel = path.relative(root, folder);
-    const segments = rel ? rel.split(path.sep) : [];
-    if (segments.some((s) => /[\u0000-\u001f\u007f]/.test(s))) return { ok: false, error: EXCLUDE_UNSAFE_NAME };
-    const line = excludeLine(segments);
-
-    let target: string;
-    if (dotGit.isSymbolicLink()) return fail('.git is a link');
-    if (dotGit.isDirectory()) {
-      const g = this.gitDir(path.join(root, '.git'), true);
-      if (!g.ok) return fail(g.why);
-      target = g.dir;
-    } else if (dotGit.isFile()) {
-      const text = this.small(path.join(root, '.git'));
-      const gl = text?.split(/\r?\n/).find((l) => l.startsWith('gitdir:'));
-      const gd = gl?.slice('gitdir:'.length).trim();
-      if (!gd || /[\u0000-\u001f\u007f]/.test(gd)) return fail('not a git repository');
-      const g = this.gitDir(path.resolve(root, gd), false);
-      if (!g.ok) return fail(g.why);
-      let common = g.dir;
-      const cd = this.small(path.join(g.dir, 'commondir'));
-      if (cd !== undefined) {
-        const c = cd.split(/\r?\n/)[0].trim();
-        if (!c || /[\u0000-\u001f\u007f]/.test(c)) return fail('not a git repository');
-        common = path.resolve(g.dir, c);
-      } else {
-        try { this.fs.lstatSync(path.join(g.dir, 'commondir')); return fail('not a git repository'); } catch { /* none: the git directory itself */ }
-      }
-      const t = this.gitDir(common, true);
-      if (!t.ok) return fail(t.why);
-      target = t.dir;
-    } else return fail('not a git repository');
-
-    const info = path.join(target, 'info');
-    try { const st = this.fs.lstatSync(info); if (st.isSymbolicLink() || !st.isDirectory()) return fail('no info folder'); } catch { return fail('no info folder'); }
-    const exclude = path.join(info, 'exclude');
-    let existing = '';
-    let st: nodeFs.Stats | undefined;
-    try { st = this.fs.lstatSync(exclude); } catch (e) { if (errCode(e) !== 'ENOENT') return fail(`info/exclude could not be checked (${errCode(e)})`); }
-    if (st) {
-      if (st.isSymbolicLink()) return fail('info/exclude is a link');
-      if (!st.isFile()) return fail('info/exclude is not a regular file');
-      if (st.size > NOTES_LIMITS.excludeBytes) return fail('info/exclude is too large');
-      const r = readCapped(this.fs, this.k, exclude, NOTES_LIMITS.excludeBytes);
-      if (!r.ok) return fail(`info/exclude ${READ_WHY[r.code]}`);
-      existing = r.buf.toString('utf8');
-      if (existing.split(/\r?\n/).includes(line)) return { ok: true, added: false, line };
-    }
-    let fd: number | undefined;
-    try {
-      fd = this.fs.openSync(exclude, this.k.O_WRONLY | this.k.O_APPEND | this.k.O_CREAT | (this.k.O_NOFOLLOW ?? 0), 0o600);
-      const st2 = this.fs.fstatSync(fd);
-      if (!st2.isFile() || st2.nlink > 1) return fail('info/exclude is not a regular file');
-      const add = Buffer.from(`${existing && !existing.endsWith('\n') ? '\n' : ''}${line}\n`, 'utf8');
-      let off = 0;
-      while (off < add.length) off += this.fs.writeSync(fd, add, off, add.length - off);
-      return { ok: true, added: true, line };
-    } catch (e) {
-      return fail(errCode(e));
-    } finally {
-      if (fd !== undefined) { try { this.fs.closeSync(fd); } catch { /* gone */ } }
     }
   }
 }
@@ -522,6 +447,8 @@ export async function syncNotesFile(d: {
   file: NotesFile; store: NotesStore; folderKey: string; folderName: string; folderPath: string; values: readonly string[]; now?: () => Date;
   /** Only the turn-on call may create the file (review 2 of PR 931): any other cycle that finds no file reports it gone. */
   create?: boolean;
+  /** The person chose to keep the notes in git: no `.gitignore` is kept in `.durbar/notes`. */
+  git?: boolean;
 }): Promise<{ state: NotesFileState; retry?: boolean }> {
   const mirror = await d.store.getMirror(d.folderKey);
   // reviews 2 and 3 of PR 931: the folder must be the one the switch was turned on in (its identity is recorded at turn-on), so another
@@ -572,7 +499,7 @@ export async function syncNotesFile(d: {
     if (mirror?.sha256 !== want) await d.store.setMirror(d.folderKey, d.folderName, { sha256: want, bytes: Buffer.byteLength(text, 'utf8'), at: (d.now?.() ?? new Date()).toISOString() });
     return { state: done({}) };
   }
-  const w = await d.file.syncOut(d.folderPath, text, rb.sha);
+  const w = await d.file.syncOut(d.folderPath, text, rb.sha, d.git);
   if (!w.ok) return { state: done({ error: w.error }), retry: w.code === 'changed' };
   const m = await d.store.setMirror(d.folderKey, d.folderName, w.mirror);
   if (!m.ok) return { state: done({ error: m.error }) };

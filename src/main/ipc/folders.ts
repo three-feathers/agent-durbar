@@ -90,7 +90,7 @@ export function register(deps: FoldersIpcDeps): void {
     scheduler()?.sessionsChanged();
     folderStore()?.remove(key);
     if (!forget) return { ok: true, removedIds };
-    // only this folder's notes file, by main's own key (never a path from the window); the project's .durbar/notes.md is not touched
+    // only this folder's notes file, by main's own key (never a path from the window); the project's .durbar/notes/notes.md is not touched
     const f = await deps.getNotesOps?.()?.forget(key);
     return f && f.ok ? { ok: true, removedIds, notesDeleted: true } : { ok: true, removedIds, notesError: (f && !f.ok && f.error) || 'Notes are not available.' };
   });

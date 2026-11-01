@@ -77,7 +77,7 @@ async function main(): Promise<void> {
     // T042 (FR-060): the switch shows off, answers "Demo: no file written" and never turns on
     assert.deepStrictEqual(view(await N.notesList(a.id)).fileSwitch, { on: false }, 'the demo switch is offered, off by default');
     assert.strictEqual(view(await N.notesList(a.id)).file, undefined, 'no file state while off');
-    assert.deepStrictEqual(await N.notesSetFile(a.id, true, { exclude: true }), { ok: true, demo: true, on: false, message: 'Demo: no file written' });
+    assert.deepStrictEqual(await N.notesSetFile(a.id, true, { git: true }), { ok: true, demo: true, on: false, message: 'Demo: no file written' });
     assert.deepStrictEqual(view(await N.notesList(a.id)).fileSwitch, { on: false }, 'still off after the demo answer');
     assert.deepStrictEqual(await N.notesFileCount(a.id), { ok: true, count: 0, exists: false, strayText: 0, repo: true });
     assert.ok(!(await N.notesSetFile('nope', true)).ok && !(await N.notesFileCount('nope')).ok, 'an unknown chat is refused');
@@ -128,7 +128,7 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(on.set, { ok: true, demo: true, on: true, message: 'Demo: no file written' }, 'the demo never turns it off either');
     const conflict = await st('conflict');
     assert.ok(conflict.v.fileSwitch!.on && /merge conflicts/.test(conflict.v.file!.error!), 'conflict state');
-    assert.ok(/Could not write \.durbar\/notes\.md/.test((await st('writefail')).v.file!.error!), 'write-error state');
+    assert.ok(/Could not write \.durbar\/notes\/notes\.md/.test((await st('writefail')).v.file!.error!), 'write-error state');
     const missing = await st('missing');
     assert.ok(!missing.v.fileSwitch!.on && /folder is not there/.test(missing.v.fileSwitch!.disabled!) && missing.v.file === undefined, 'greyed with a reason');
     const ws = await st('workspace');
@@ -137,13 +137,6 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(ex.c, { ok: true, count: 4, exists: true, strayText: 0, repo: true });
     assert.deepStrictEqual((await st('norepo')).c, { ok: true, count: 0, exists: false, strayText: 0, repo: false });
     assert.deepStrictEqual((await st('stray')).c, { ok: true, count: 0, exists: true, strayText: 3, repo: true });
-    {
-      const sim = make('?simnotesfile=excludefail');
-      const a = (await sim.listAgents())[0];
-      const r = await sim.notesSetFile!(a.id, true, { exclude: true }) as { ok: boolean; excludeFailed?: boolean };
-      assert.ok(!r.ok && r.excludeFailed === true, 'excludefail: refused, the switch stays off');
-      assert.deepStrictEqual(await sim.notesSetFile!(a.id, true, { exclude: false }), { ok: true, demo: true, on: false, message: 'Demo: no file written' });
-    }
     const un = await st('unreadable');
     assert.ok(!un.c.ok && /cannot be read/.test(un.c.error), 'an unreadable file is refused');
   }

@@ -182,6 +182,7 @@ description: "Tasks for spec 083: notes per folder, reachable inside the chats"
 
 ## Phase 6: Converge
 
+- [x] T063 The project file in `.durbar/notes/` with a `.gitignore` of its own, no exclude line (spec Changes 2026-11-01; replaces PR #957): `notesfile.ts` (two-level place, `ensureIgnore`, `allowGit`), `notesops.ts` (`git` option, native `git` box), `folders.ts` (`notesProject`), `app.js` (box *Keep these notes in git*), tests with real `git`.
 - [ ] T060 `/speckit.converge`: spec statuses and `[IMPLEMENTED]` / `[KNOWN GAP]` tags match what was built; every linked screenshot that shows a changed screen is retaken (`npm run shots:docs -- --only …`); a `docs/agent-notes.md` entry for anything learned the hard way.
 - [x] T061 Stale-lock takeover race (issue #723): a takeover guard file and a lock token in `NotesStore.lock()` / `unlockFile()`; tests with an injected fs for a fresh lock taken over between the stale judgement and the move, and for a holder that lost its lock. [FR-008]
 - [x] T062 One shared capped read (issue #917): `src/shared/cappedread.ts` used by `notesfile.ts`, `mcp/auth.ts` and `adapters/slashcommands.ts`; `test:cappedread` (real fs: symlink, hard link, FIFO in a child with a time limit, cap, growth, regular file) plus each caller's suite. [FR-050, FR-053]

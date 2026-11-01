@@ -3226,12 +3226,12 @@ function nsPaint(){
 /* ---- the project-file switch (spec 083 T042, FR-050, FR-055) ----
    Off by default; main says whether it is on and why it is greyed (fileSwitch). Turning it on asks first (Cancel focused), turning it
    off asks Leave or Delete; the window sends only the chat's id and two yes/no choices, never a path. */
-const NS_FILE_LABEL='Also keep these notes as .durbar/notes.md in the project';
-const NS_FILE_WARN='Durbar will write every note of this folder to .durbar/notes.md in the project. Agents and anyone with the folder can read it, and it may get committed and pushed with your code. Secrets are masked, but private ideas are not. Durbar never adds it to git.';
+const NS_FILE_LABEL='Also keep these notes as .durbar/notes/notes.md in the project';
+const NS_FILE_WARN='Durbar will write every note of this folder to .durbar/notes/notes.md in the project. Agents and anyone with the folder can read it, and it may get committed and pushed with your code. Secrets are masked, but private ideas are not. Git ignores it unless you choose to keep it in git below.';
 const NS_FILE_STRAY='Text outside notes in an existing notes.md is removed when Durbar writes the file.';
-const NS_FILE_EXCLUDE='Keep it out of commits (adds .durbar/ to .git/info/exclude, local only)';
+const NS_FILE_GIT='Keep these notes in git (Durbar will not ignore them, so they can be committed and pushed)';
 const NS_FILE_OWN='This is Durbar\'s own write: it also happens in Read-only mode.';
-const NS_FILE_COMMITTED='If .durbar/notes.md was already committed, this does not remove it from the repository.';
+const NS_FILE_COMMITTED='If .durbar/notes/notes.md was already committed, ignoring does not remove it from the repository.';
 function nsFilePaint(a,st){
   const h=$('nsFile'); if(!h)return;
   const S=window.DurbarScreens, sw=st&&st.ok?st.fileSwitch:null;
@@ -3265,30 +3265,23 @@ async function nsFileOn(a,btn){
   lines.push(NS_FILE_STRAY);
   lines.push(NS_FILE_OWN);
   if(c.repo)lines.push(NS_FILE_COMMITTED);
-  const v=await askDialog({title:'Keep these notes in the project?',body:NS_FILE_WARN,lines,size:'m',check:c.repo?{label:NS_FILE_EXCLUDE,checked:true}:undefined,returnFocus:back,
+  const v=await askDialog({title:'Keep these notes in the project?',body:NS_FILE_WARN,lines,size:'m',check:c.repo?{label:NS_FILE_GIT,checked:false}:undefined,returnFocus:back,
     buttons:[{label:'Cancel',value:null},{label:'Turn on',value:'on',cls:'primary warn'}]});
   if(!v||v.value!=='on')return;
-  let r=null;try{r=await bridge.notesSetFile(id,true,c.repo?{exclude:v.checked===true}:undefined);}catch(e){r=null;}
-  if(r&&!r.ok&&r.excludeFailed){ /* review of PR 931: the exclude line could not be added, so nothing was turned on; the person decides */
-    nsFileSay(r.error||'');
-    const v2=await askDialog({title:'Could not keep it out of commits',body:(r.error||'')+' Turn it on anyway? .durbar/notes.md may then show in git status and get committed.',size:'m',returnFocus:back,
-      buttons:[{label:'Cancel',value:null},{label:'Turn on without keeping it out of commits',value:'on',cls:'primary warn'}]});
-    if(!v2||v2.value!=='on'){await notesFetch(a);return;}
-    try{r=await bridge.notesSetFile(id,true,{exclude:false});}catch(e){r=null;}
-  }
+  let r=null;try{r=await bridge.notesSetFile(id,true,c.repo&&v.checked===true?{git:true}:undefined);}catch(e){r=null;}
   if(!r||!r.ok){nsFileSay(/stays off/.test((r&&r.error)||'')?r.error:((r&&r.error)||'Could not turn it on.')+' The switch stays off.');await notesFetch(a);return;}
   await notesFetch(a);
-  nsFileSay(r.demo?(r.message||'Demo: no file written'):[r.file&&r.file.error?'':'Durbar now keeps .durbar/notes.md in the project.',r.message||''].filter(Boolean).join(' '));
+  nsFileSay(r.demo?(r.message||'Demo: no file written'):[r.file&&r.file.error?'':'Durbar now keeps .durbar/notes/notes.md in the project.',r.message||''].filter(Boolean).join(' '));
 }
 async function nsFileOff(a,btn){
   const id=liveRoot(a).id, back=()=>$('nsFileSw')||btn;
-  const v=await askDialog({title:'Stop keeping .durbar/notes.md?',body:'Durbar stops writing the file. Leave it in the project, or delete it? Durbar deletes it only when it holds exactly what Durbar would write.',lines:['If the file is tracked in git, deleting it shows as a deletion.'],size:'m',returnFocus:back,
+  const v=await askDialog({title:'Stop keeping .durbar/notes/notes.md?',body:'Durbar stops writing the file. Leave it in the project, or delete it? Durbar deletes it only when it holds exactly what Durbar would write.',lines:['If the file is tracked in git, deleting it shows as a deletion.'],size:'m',returnFocus:back,
     buttons:[{label:'Cancel',value:null},{label:'Delete the file',value:'delete',cls:'danger'},{label:'Leave the file',value:'leave',cls:'primary'}]});
   if(!v||(v.value!=='leave'&&v.value!=='delete'))return;
   let r=null;try{r=await bridge.notesSetFile(id,false,{deleteFile:v.value==='delete'});}catch(e){r=null;}
   await notesFetch(a);
   if(!r||!r.ok){nsFileSay((r&&r.error)||'Could not turn it off.');return;}
-  nsFileSay(r.demo?(r.message||'Demo: no file written'):(r.message||'Durbar stopped writing .durbar/notes.md.'));
+  nsFileSay(r.demo?(r.message||'Demo: no file written'):(r.message||'Durbar stopped writing .durbar/notes/notes.md.'));
 }
 /* ---- Export… and Delete all… (spec 083 T034b, FR-048) ----
    Export: main shows the system save dialog and writes the file (the window sends only the chat's id, never a path). Delete all: the
@@ -3308,7 +3301,7 @@ async function nsDeleteAll(a,btn){
   if(nsBusy||!bridge.notesDeleteAll)return;
   const st=notesOf(a), n=st&&st.ok?st.notes.length:0; if(!n)return;
   const lines=['Durbar remembers the last 300 deleted notes, so they don\'t come back from an older copy.'];
-  if(st.fileSwitch&&st.fileSwitch.on)lines.push('.durbar/notes.md is written again without them.');
+  if(st.fileSwitch&&st.fileSwitch.on)lines.push('.durbar/notes/notes.md is written again without them.');
   const v=await askDialog({title:'Delete all notes?',body:'Delete all '+(n===1?'1 note':n+' notes')+' of '+NS.name+', done ones included? This cannot be undone.',lines,size:'m',returnFocus:()=>$('nsDelAll')||btn,
     buttons:[{label:'Cancel',value:null},{label:'Delete all',value:'ok',cls:'primary danger'}]});
   if(!v||v.value!=='ok')return;
@@ -7754,7 +7747,7 @@ async function removeFolder(r){
   const nsA=nsAgentOf(r), nb=nsA&&byId(nsA.id), nst=nb?await notesFetch(nb):null, nn=nst&&nst.ok?nst.notes.length:0;
   const lines=[];
   if(nn)lines.push('Unticked, its notes stay and come back if you add the folder again.');
-  if(nn&&nst.fileSwitch&&nst.fileSwitch.on)lines.push('.durbar/notes.md stays in the project either way; Durbar stops updating it.');
+  if(nn&&nst.fileSwitch&&nst.fileSwitch.on)lines.push('.durbar/notes/notes.md stays in the project either way; Durbar stops updating it.');
   const v=await askDialog({title:'Remove folder?',body:msg,lines,size:nn?'m':undefined,check:nn?{label:'Also delete its notes ('+nn+')',checked:false}:undefined,
     buttons:[{label:'Cancel',value:null},{label:'Remove folder',value:'rm',cls:'primary danger'}]});
   if(!v||v.value!=='rm')return;
