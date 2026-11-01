@@ -43,4 +43,4 @@
 ## Delta 2026-11-01: monitor part and arrangement (FR-081, FR-082)
 
 - [ ] T147 `test:world-packs` and the block list: monitor and `focus` parts, `arrangement`, through spec 102's validator (102 T171). Test: `test:world-packs` with bad fixtures [FR-081]
-- [ ] T148 World matrix runs each world in its arrangement, and one row past its fall-back. Test: `sim:` `world-matrix.js` on a fixture world [FR-082]
+- [ ] T148 World matrix runs each world in its arrangement at 15 agents; a shared-pack fixture runs one row past its fall-back. Test: `sim:` `world-matrix.js` on a fixture world [FR-082]

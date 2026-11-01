@@ -129,12 +129,15 @@ world.json  arrangement: "circle"
    -> realoffice.js         rows? call as today. Otherwise load realoffice-arrangements once
    -> realLayout(model, view, meta, signs, arrangement)
         rows                exactly today's path
-        other               arrangementFits -> fit: that layout; no fit: rows, Layout.arrangement = "rows"
+        other, project      that layout, at every count up to 15
+        other, shared pack  arrangementFits -> fit: that layout; no fit: rows, Layout.arrangement = "rows"
    -> realoffice.js         same drawing, plus focus at Layout.focus when present
 ```
 
 - **`circle`:** split the floor round a centre `focus` rectangle, pack zones into left, top, right bands with the existing row maths per band, `u` the largest that fits, by bisection like FR-011. Bounded search: FR-019's 5 ms, fall-back attempt included.
 - **`facing-view`:** rows on a floor shortened by the `focus` band; the least code, since it calls the row path.
+- **`flanking`:** two desk blocks either side of a central aisle; fixtures in the aisle. **`aisles`:** staggered angled aisles, geometry open until the owner approves the mockup.
+- **Few agents:** each arrangement grows its screens inside itself at 4 or fewer (FR-230), so 097 FR-020's one shared row applies to `rows` only.
 - **Monitor in the engine:** `meta` gains an optional `monitor: {w, h, screenRect}`. Absent: today's `screen` and `glass`, byte for byte. A rows world with a monitor picture does pay for its picture: inside the part caps and the 097 FR-178 area row, and the same for every world; "no cost" (FR-231) is about the arrangement code.
 
 **Risks.**
@@ -142,7 +145,7 @@ world.json  arrangement: "circle"
 | Risk | Answer |
 |---|---|
 | 15 agents do not fit with a `focus` area | T165 first, pure and free; stop and ask (A5) |
-| A world looks wrong after falling back at many agents: a fire circle becomes rows with no fire | Said plainly in FR-230; the floor and wall stay the world's |
+| A project world has no fall-back, and the mockups measured under 40 px at 15 | FR-229's `[KNOWN GAP]`; T165 first, and the numbers go to the owner |
 | A lounger looks wrong with an upright seated frame | FR-224; art brief; the owner's look. No new poses |
 | Screens on small laptops | Same `screenRect` floor; bars under 150x60 (097 FR-032) |
 | Hostile `arrangement` | FR-226, fixtures in `test:worldpack` |
