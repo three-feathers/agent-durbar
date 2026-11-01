@@ -219,6 +219,7 @@ module.exports = async (ctx) => {
       same(await js(`__mc.reqs.length`), 2, `${what}: the first switch and the refused one, no re-send`);
       same(await pendingOf(busy), null, `${what}: nothing is queued from here`);
       check(!/stays/.test(await text('#toasts')), `${what}: no line that it stays: ${await text('#toasts')}`);
+      check(/The earlier queued switch could not be cancelled, so it may still apply when this reply ends\./.test(await text('#toasts')), `${what}: the toast says it may still apply: ${await text('#toasts')}`);
       await js(`window.__durbarSimUi.bridge().cancelQueuedModel(${jsLiteral(busy)},${jsLiteral(qid)})`);
     }
 

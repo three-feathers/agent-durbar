@@ -6783,7 +6783,7 @@ async function sendModelChange(a,req,ctx){
   /* review on PR 935: when this request does not take, the earlier valid switch is asked for again, so a refusal never loses it */
   const keep=async()=>old&&cancelled?await sendModelChange(a,old.req,{tgt:modelOf(old.req.model,a.info.adapterId),prev:old.prev,anchor:ctx.anchor,quiet:true}):false;
   /* the line about the earlier switch is shown only once it is queued again; a quiet re-send says nothing when it fails */
-  const fail=async(msg,ms)=>{const kept=await keep();if(!ctx.quiet)toast(msg+(kept?' The switch queued before stays.':''),ms);return false;};
+  const fail=async(msg,ms)=>{const kept=await keep();if(!ctx.quiet)toast(msg+(kept?' The switch queued before stays.':old&&!cancelled?' The earlier queued switch could not be cancelled, so it may still apply when this reply ends.':''),ms);return false;};
   const res=await bridge.setModel(a.id,req).catch(e=>({ok:false,error:String(e&&e.message||e)}));
   if(!res||!res.ok)return fail('Could not change the model: '+esc((res&&res.error)||'unknown error'),6000);
   const r=res.result||{},nm=ctx.tgt.name+(req.autoTier?' ('+DM.autoTierName(req.autoTier)+' routing)':'')+(DM.choiceWords(req)?' ('+DM.choiceWords(req)+')':''),gone=ctx.gone?' '+esc(ctx.gone):'';
