@@ -102,7 +102,7 @@ Needs spec 096's adapter capability and probes.
 
 ## Phase 8: Character sets (PR P8, split by the tasks) - US8
 
-- [ ] T100 [US8] Set format and `checkSet`, shared with `worldpack.ts`; closed names, caps as constants (`src/shared/worldpack.ts`). Test: `test:worldpack`: each missing pose, anchor and size; fallback only for the four optional poses; `full`, `heads`, refused; hostile fixture set; `test:world-packs` on built-ins [FR-204, FR-205, FR-206].
+- [ ] T100 [US8] Set format and `checkSet`, shared with `worldpack.ts`; closed names, caps as constants (`src/shared/worldpack.ts`). Test: `test:worldpack`: each missing pose, anchor and size; fallback only for the four optional poses and the back views; `full`, `heads`, refused; hostile fixture set; `test:world-packs` on built-ins [FR-204, FR-205, FR-206].
 - [ ] T101 [US8] `peopleFor` replaces 097's seams; heads from full frames; a theme's own figures while in use (`src/renderer/crew.js`, `src/shared/characters.ts`). Test: `test:characters`: every world, choice, level; `check:crew` at every density [FR-202, FR-203].
 - [ ] T102 [US8] World and Characters rows; policy through main; `default` value. Test: `check-worlds`, `check-characters` at both sizes, keyboard, one dark and one non-default theme [FR-201].
 - [ ] T103 [US8] Migration, once, in main. Test: `test:characters`: each row of FR-207, repeat run, bad value, no request and no door or send change; a mutant that skips writing fails [FR-207, SC-017].
