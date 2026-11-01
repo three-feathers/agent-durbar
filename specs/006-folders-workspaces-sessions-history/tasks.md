@@ -81,5 +81,5 @@
 ## 2026-11-01 delta: design sweep
 
 - [ ] T065 With spec 052 T214: the crash card on the floating surface, `shots-006-crash` follows, the lounge rule of FR-041 removed with `#crashStrip`, FR-041 changed in place [FR-041]
-- [ ] T066 With spec 005 T117: FR-033's row shares the tabs row; `shots-006-prevmarks` follows [FR-033]
+- [ ] T066 With spec 005 T117: FR-033's row joins the header's row (or the fallback's tabs row); `shots-006-prevmarks` follows [FR-033]
 - [x] T067 The left-sidebar owner question closed in the spec delta (no sidebar of chats; the rail lists running agents) [FR-033]

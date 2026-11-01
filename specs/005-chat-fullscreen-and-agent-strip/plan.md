@@ -180,13 +180,13 @@ specs/005-chat-fullscreen-and-agent-strip/
 | 1 | **D1** `052-needs-you-text` | 052 T209 | new, plus pure test | Reproduce "search_companies)Allow…" on `main`; none left | No: a small fix |
 | 2 | **K2** #1011 (open, stacked on #987) | 052 T210; #1011's own | `shots-033` | `.swt.on` 2.47:1 to 6.08:1 and 6.92:1 | Yes: `.fl-sw` goes |
 | | *Gate: Retro arcade lands* | | | | |
-| 3 | **C1** `005-chat-header` | 005 T117, T118, 006 T066 | new `check-chat-density` | Header 103 to 61; tabs and Previous one row 31; composer 122 to 91 | Yes: overrides and wrap rules go |
+| 3 | **C1** `005-chat-header` | 005 T117, T118, 006 T066 | new `check-chat-density` | Header, tabs and Previous on one row, 166 to 61 (fallback at 1280x800: 61 + 31, measurement stated); composer 122 to 91 | Yes: overrides and wrap rules go |
 | 4 | **C2** `005-chat-density` | 005 T119..T121 | `check-chat-density` | 575 to 442, 649 to 509, 1358 to 1167 px | Yes: box rules go |
-| 5 | **W** `005-chat-width` | 005 T122, T124 | new `check-chat-width`, full FR-195 | 126 letters at 3 widths; log 638 and 538 px without a rail (calculated) | Yes: 880 and 1240 px rules go, one token |
+| 5 | **W** `005-chat-width` | 005 T122, T124 | new `check-chat-width`, full FR-195 | 126 letters at 3 widths; log 669 and 569 px without a rail (calculated; 31 less on the fallback) | Yes: 880 and 1240 px rules go, one token |
 | 6 | **N1** `052-notices-card` | 052 T212, T213 | new `check-notices` | Three bars 93 px, desks move; no desk moves; red lock | No, until row 7: the surface first |
-| 7 | **N2** `052-notices-out` | 052 T214, 006 T065 | `check-notices`, `shots-006-crash` | No `.notice-strip` left; log 669 and 569 px (calculated) | Yes: three painters and their CSS go; rows 6 and 7 together remove more than they add |
+| 7 | **N2** `052-notices-out` | 052 T214, 006 T065 | `check-notices`, `shots-006-crash` | No `.notice-strip` left; log 700 and 600 px (calculated; 31 less on the fallback) | Yes: three painters and their CSS go; rows 6 and 7 together remove more than they add |
 | 8 | **Needs you** #1002's build | 052 T196..T202, T215 | `check-needs-panel` | Composer hidden 44 and 204 to 0 px; chat keeps window less 360 px, less the rail if one comes | No: a feature, itself gated on Retro and #994 |
-| 9 | **#1001, what is left** | 097 T171, T172 | `shots-097-chat` | Header 139 to 61 px; log 669 and 569 px | Yes: a smaller portrait, moved words, literals gone |
+| 9 | **#1001, what is left** | 097 T171, T172 | `shots-097-chat` | Header 139 to 61 px; log 700 and 600 px (31 less on the fallback) | Yes: a smaller portrait, moved words, literals gone |
 | 10 | **S** `052-settings-nav`, after spec 102 removes themes | 052 T219 | new `check-settings-nav` | 7238 px, 22 headings re-measured; each section one jump | Yes with themes gone; no alone |
 | | *Gate: the owner's look at the rail's form, T125. Rows below are the list form and are rewritten if he picks a floor plan* | | | | |
 | 11 | **R1** `005-rail` | 005 T113..T115, 052 T211 | new `check-rail`, `test-macos` | Log to FR-195's rail columns; two heights; 1280: scroll 34 px or none; contrast 4.5:1 | No: about 22 strip rules go, groups and tall rows arrive. Ceiling +120 lines |

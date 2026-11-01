@@ -132,14 +132,14 @@ IDs start after T083.
 
 PRs, gates and line-count goals: `plan.md`. Each PR measures on `main` first and writes the numbers in its description. All wait for T209 (052) and #1011. **No rail task starts before T125:** the rail's form is pending the owner's look.
 
-- [ ] T117 [PR C1] Measure first, targets header 103 to 61 px, tabs and Previous rows 31 + 32 to one 31 px row. Then build it; try the tabs inside the header's row at 1280 wide and at a chat 1060 px wide, and record the result. Test: new `check-chat-density` header steps; `check-chat-title`, `check-composer-toolbar` still pass [FR-199]
+- [ ] T117 [PR C1] Measure first, today's 103 + 31 + 32 = 166 px. Goal: header, tabs and *Previous sessions* on one row, 61 px with the task line under it. Fallback only if the one row fails at 1280x800 by FR-199's test: header 61 px and one 31 px row. State the measurement in the PR (free width, what was cut, which form shipped); also record the free width at a chat 1060 px wide, for the rail's look. Test: new `check-chat-density` header steps at both sizes, longest name, mutant that cuts a control; `check-chat-title`, `check-composer-toolbar` still pass [FR-199]
 - [ ] T118 [PR C1] Composer 122 to 91 px with Stop visible at both sizes; hint on the chips' row. Test: `check-chat-density`, `check-composer-toolbar` [FR-200]
 - [ ] T119 [PR C2] Measure first, targets 575 to 442, 649 to 509, 1358 to 1167 px. Then plain answers; the person's bubble stays; agent meta clipped, not removed. Test: heights within 16 px, accessible text unchanged, Compact and Simple [FR-201, FR-203, FR-205]
 - [ ] T120 [PR C2] Quiet tool rows and thinking with a left rule; failed, waiting and open states keep a box. Test: `check-chat-density`, `check-edits`, tool chip keyboard; mutant: a failed call with no box [FR-202]
 - [ ] T121 [PR C2] Copy and message menu on hover and focus, always in the tab order, visible for `hover:none` and an open menu; FR-173 and 052 FR-010 rewritten. Test: real pointer and Tab; `check-notes`; mutant: `display:none` [FR-204]
 - [ ] T122 [PR W] Measure first, targets 126 letters a line at 1440, 1920 and 2560 (146, 149 and 149 today). Then `--chat-prose`; 880 px and following 1240 px rules go. Test: new `check-chat-width`; `check-ui-text`; mutant: cap removed [FR-206]
 - [ ] T123 After T125, Paco's answer on manual order: record it in FR-198; if yes, rewrite FR-178..FR-188 and T099..T112 for the rail; if no, the owner decides [FR-198]
-- [ ] T124 [PR W] Last chat PR: `check-chat-density` asserts the log without a rail, 638 and 538 px within 8 px with the restore bar still there (calculated; measure first), Flat and Real; pictures retaken at both sizes (`npm run shots:docs`), docs (`features.md`, README), older FRs changed in place [FR-195, FR-208]
+- [ ] T124 [PR W] Last chat PR: `check-chat-density` asserts the log without a rail, 669 and 569 px (638 and 538 on FR-199's fallback) within 8 px with the restore bar still there (calculated; measure first), Flat and Real; pictures retaken at both sizes (`npm run shots:docs`), docs (`features.md`, README), older FRs changed in place [FR-195, FR-208]
 
 ### The rail: nothing here starts before T125
 
