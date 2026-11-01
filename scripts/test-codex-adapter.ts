@@ -94,6 +94,7 @@ async function main(): Promise<void> {
   {
     assert.deepStrictEqual(JSON.parse(JSON.stringify(CODEX_CAPABILITIES)), {
       interrupt: true, resume: true, images: true, models: true, planMode: true, effort: true, modelSwitch: { verified: true, contextTier: false },
+      autopilot: { capUnit: 'tokens', attachments: false, planApproval: false, verified: false }, // spec 099 T021
       permissionModes: ['read-only', 'ask', 'allow'], permModeSwitch: 'next-message',
       usage: { tokens: true, costUsd: false, nanoAiu: false }, context: true, caps: false, helpers: true, history: true, mcpStatus: true, mcpToggle: true, mcpStart: 'session', mcpToggleApplies: 'next-message', mcpTools: true, mcpToolFilter: true, mcpRestart: false, handoff: true, oneShot: true, deleteSession: true, renameSession: 'any', osSandbox: true,
     });

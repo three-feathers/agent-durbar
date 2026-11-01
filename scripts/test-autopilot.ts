@@ -11,9 +11,6 @@ import {
 } from '../src/adapters/autopilot';
 import * as core from '../src/adapters/autopilot';
 import type { AutopilotRunEvent } from '../src/adapters/autopilot';
-import { CLAUDE_DESCRIPTOR } from '../src/adapters/claude';
-import { CODEX_DESCRIPTOR } from '../src/adapters/codex';
-import { COPILOT_DESCRIPTOR } from '../src/adapters/copilot';
 import { eventProblems } from '../src/adapters/eventguard';
 import type { PermissionMode } from '../src/adapters/capabilities';
 import type { AutopilotEnd } from '../src/adapters/types';
@@ -47,17 +44,7 @@ for (const f of ['src/main/folders.ts', 'src/shared/credits.ts']) assert.ok(!/au
   }
 }
 
-// ---- 3. unreachable in Phase 1 ----
-for (const d of [COPILOT_DESCRIPTOR, CLAUDE_DESCRIPTOR, CODEX_DESCRIPTOR]) assert.strictEqual(d.capabilities.autopilot, undefined, `${d.id} reports no autopilot yet`);
-{
-  const files = walk('src').filter((f) => /\.(ts|js|html)$/.test(f));
-  const hits = (re: RegExp): string[] => files.filter((f) => re.test(src(f))).map((f) => f.split(path.sep).join('/')).sort();
-  assert.deepStrictEqual(hits(/agents:setAutopilot/), [], 'no agents:setAutopilot channel in src/');
-  assert.deepStrictEqual(hits(/setAutopilot/), ['src/adapters/types.ts', 'src/main/simguard.ts'], 'setAutopilot appears only in the interface and the simulator guard list: no adapter, no main caller');
-  assert.deepStrictEqual(hits(/autopilot/i), ['src/adapters/autopilot.ts', 'src/adapters/capabilities.ts', 'src/adapters/eventguard.ts', 'src/adapters/types.ts', 'src/main/simguard.ts', 'src/shared/api.ts'], 'Phase 1 touches only the types, the core, the event guard and the simulator guard list: no renderer, no main, no adapter');
-  // nothing outside the types, the core and the event guard imports the core
-  assert.deepStrictEqual(hits(/from '(\.\/|\.\.\/adapters\/)autopilot'/), ['src/adapters/eventguard.ts'], 'only the event guard imports the core in Phase 1');
-}
+// ---- 3. what is reachable: scripts/test-autopilot-reach.ts (Phase 2 gave the adapters the capability) ----
 
 // ---- helper: a run with a recording halt and emit ----
 interface Rig { run: AutopilotRun; events: AutopilotRunEvent[]; halts: AutopilotEnd[]; clock: { t: number } }
@@ -529,6 +516,8 @@ process.on('exit', () => { if (!finished) { console.error('autopilot test did no
     assert.strictEqual(isClaudeContinuation(msg({ parent_tool_use_id: 'toolu_1' })), false, 'a helper (FR-008)');
     assert.strictEqual(isClaudeContinuation(msg({ parent_tool_use_id: null })), true);
     assert.strictEqual(isClaudeContinuation(msg({ agentId: 'a1' })), false);
+    assert.strictEqual(isClaudeContinuation(msg({ agent_id: 'a1' })), false, 'FR-008: the stream names it agent_id');
+    assert.strictEqual(isClaudeContinuation(msg({ agent_id: null })), true);
     assert.strictEqual(isClaudeContinuation(msg({ isSidechain: true })), false, 'a sidechain (helper) message');
     assert.strictEqual(isClaudeContinuation(msg({ isSidechain: false })), true);
     assert.strictEqual(isClaudeContinuation(msg({ agentId: null })), true, 'a null agentId is the main stream, like a null parent_tool_use_id');

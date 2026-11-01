@@ -13,7 +13,7 @@ import { isAuthError, markAuthError, signInFromError } from './autherrors';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import type { AdapterCapabilities, AgentAdapter, AgentEvent, AgentMessage, PermissionMode, PlanAnswer, SignInCheck, SlashCommand, SlashExpansion, StartOptions, Unsubscribe, WriteGuard } from './types';
+import type { AdapterCapabilities, AgentAdapter, AgentEvent, AgentMessage, AutopilotEnd, AutopilotSettings, PermissionMode, PlanAnswer, SignInCheck, SlashCommand, SlashExpansion, StartOptions, Unsubscribe, WriteGuard } from './types';
 import type { McpToolInfo } from './types';
 import { normMcpTools } from './mcptools';
 import { codexSlashPlaces, SlashCache, vscodeUserPromptDirs } from './slashcommands';
@@ -26,7 +26,10 @@ import { CodexRpcError, createCodexRpc, realSpawn } from './codexRpc';
 import type { CodexRpc, RequestOutcome, SpawnFn } from './codexRpc';
 import { codexHistory, codexModelOptions, codexPreviousSessions } from './codexHistory';
 import { cleanAnswers, parseQuestionsWithOriginals, SkipNotes } from './questions';
-import { answerElicitation, cancelElicitations, runElicitation, type ElicitWaiter } from './elicitation';
+import { answerElicitation, cancelElicitations, declineElicitation, runElicitation, type ElicitWaiter } from './elicitation';
+import { AUTOPILOT_ANSWER, codexGoalEnd, goalText } from './autopilot';
+import { AUTOPILOT_NOT_ALLOW, AUTOPILOT_NO_PLAN, AUTOPILOT_ONE_RUN, AUTOPILOT_TEXT_ONLY, AUTOPILOT_WAIT_TURN, AUTOPILOT_WIRED, AutopilotState, CLEAR_WAIT_MS, LINE_CLOSED, LINE_SELF_STARTED, LINE_UNCONFIRMED, emitAutoAnswered, goalRefusal, lineNotCleared, within } from './autopilotHost';
+import type { AutopilotTuning } from './autopilotHost';
 import type { ElicitAnswer } from '../shared/elicit';
 import { codexMcpConfig, codexMcpServers, codexMcpState } from './codexMcp';
 import type { McpServerStatus } from './types';
@@ -80,6 +83,7 @@ export const CODEX_CAPABILITIES: AdapterCapabilities = Object.freeze({
   deleteSession: true, // spec 006 FR-028: thread/delete (hard delete; read: upstream app-server protocol, Codex 0.163; never run on a real thread)
   oneShot: true, // spec 040 FR-015: an ephemeral read-only thread in an empty temp folder
   osSandbox: true, // spec 087 FR-005: durbar_ro already is the floor; the state is reported, never continued without (fail closed)
+  autopilot: Object.freeze({ capUnit: 'tokens', attachments: false, planApproval: false, verified: false }), // spec 099 FR-001: fakes only until T092; nothing in main or the window reads it before T030, T033
 });
 
 /** Where the `codex` binary is and which version it reports. */
@@ -100,6 +104,8 @@ export interface CodexAdapterOptions {
   realpath?: (p: string) => string;
   closeGraceMs?: number;
   killGraceMs?: number;
+  /** Spec 099: test seams (no timers, no real clock). */
+  autopilot?: AutopilotTuning;
 }
 
 /** The real `locate`: the same PATH search and `--version` probe `adapters:list` uses. */
@@ -277,7 +283,26 @@ interface Live {
   anon: number;
   /** Spec 052 FR-172: the changes of `fileChange` items not yet completed, by item id (bounded): an approval names only the id. */
   fileChanges?: Map<string, CodexFileChange[]>;
+  /** Spec 099: the Autopilot state of this session; a helper's thread never has one (FR-008). */
+  auto?: AutopilotState;
+  /** Spec 099 FR-020: this run's first turn has started (it is no continuation). */
+  goalTurnSeen?: boolean;
+  /** Spec 099 FR-058: ids of turns Durbar started itself since the run began (a typed message): counted toward neither bound. */
+  ownTurns?: Set<string>;
+  /** Spec 099 FR-058: how many `turn/start` replies are outstanding, and the turns that started or ended meanwhile: their count waits for the reply. */
+  ownStarting?: number;
+  heldStarted?: string[];
+  heldCompleted?: string[];
+  /** Spec 099 FR-022: tokens the goal reported, for the end's spend. */
+  goalTokens?: number;
+  /** Spec 099: an MCP server switched during a run: a run does not relaunch, so it applies when the run ended. */
+  relaunchAfterRun?: boolean;
+  /** Spec 099: Durbar sent `thread/goal/clear` and has no answer yet. */
+  goalClearing?: boolean;
 }
+
+/** How many times one message may reopen a session while the wanted mode moves. */
+const MAX_REOPENS = 8;
 
 interface Child {
   rpc: CodexRpc;
@@ -303,6 +328,8 @@ export class CodexAdapter implements AgentAdapter {
   private inflight = new Set<Promise<unknown>>();
   /** Named sessions being started: reserved before the first await, so a second start or a stop sees them. */
   private starting = new Map<string, { cancelled: boolean; done: Promise<void> }>();
+  /** Spec 044 FR-180: sessions `send` is closing and opening again for a new mode, and the mode wanted now. */
+  private readonly reopening = new Map<string, { mode: PermissionMode; ended: boolean }>();
   private readonly spawnFn: SpawnFn;
   private readonly locate: () => Promise<CodexLocation | undefined>;
   private readonly platform: string;
@@ -311,6 +338,13 @@ export class CodexAdapter implements AgentAdapter {
   private readonly realpath: (p: string) => string;
   private readonly closeGraceMs?: number;
   private readonly killGraceMs?: number;
+  private readonly autopilotTuning?: AutopilotTuning;
+  /** Spec 099: during a reopen (`reopening`) the Autopilot state waiting for the new child, and a Stop that came meanwhile. */
+  private readonly parked = new Map<string, { auto: AutopilotState; stopped: boolean }>();
+  /** How many times one `send` opened the session again: the wanted mode can move during each, and this bounds that. */
+  private readonly reopenStarts = new Map<string, number>();
+  /** Spec 099 FR-053: `setAutopilot` was called on this adapter, so a goal may exist whatever `AUTOPILOT_WIRED` says. */
+  private autopilotUsed = false;
 
   constructor(o: CodexAdapterOptions = {}) {
     this.spawnFn = o.spawn ?? realSpawn;
@@ -321,6 +355,7 @@ export class CodexAdapter implements AgentAdapter {
     this.realpath = o.realpath ?? fs.realpathSync.native;
     this.closeGraceMs = o.closeGraceMs;
     this.killGraceMs = o.killGraceMs;
+    this.autopilotTuning = o.autopilot;
   }
 
   isLive(sessionId: string): boolean {
@@ -537,6 +572,14 @@ export class CodexAdapter implements AgentAdapter {
     const named = options.sessionId;
     if (!named) return this.startInner(options, { cancelled: false });
     if (this.sessions.has(named) || this.starting.has(named)) throw new Error(`Session ${named} is already running.`);
+    // a reopen compares the mode it wants with the one it got: a value that is no mode would never match (`startModeOf` opens it as Read-only), so it asks for Read-only; and a mode that keeps moving ends it
+    const reopen = this.reopening.get(named);
+    if (reopen) {
+      if (!(this.capabilities.permissionModes as readonly unknown[]).includes(reopen.mode)) reopen.mode = 'read-only';
+      const n = (this.reopenStarts.get(named) ?? 0) + 1;
+      this.reopenStarts.set(named, n);
+      if (n > MAX_REOPENS) throw new Error('The permission mode kept changing while Codex reopened this session, so nothing was sent. Send the message again.');
+    }
     // FR-143: a session that ran before (End session, a crash, a mode relaunch) comes back by resuming its own thread
     const prior = this.known.has(named) ? this.threadOf.get(named) : undefined;
     if (this.known.has(named) && !prior && options.resumeSessionId === undefined) throw new Error(`Session ${named} cannot be restarted.`);
@@ -636,6 +679,7 @@ export class CodexAdapter implements AgentAdapter {
       await c.rpc.notify('initialized');
     };
 
+    let goalFound = false;
     let child = open();
     let experimentalApi = false;
     try {
@@ -695,6 +739,14 @@ export class CodexAdapter implements AgentAdapter {
       if (!threadId) throw new Error('Codex did not return a thread id.');
       live.threadId = threadId;
       cancelled();
+      // spec 099 FR-053 (the mode-switch relaunch comes through here too): the goal lives on the thread, so it goes before anything can be sent; a failure fails the start
+      if (resumeId !== undefined && this.goalsWired()) {
+        try {
+          goalFound = await this.clearThreadGoal(live);
+        } catch (e) {
+          throw new Error(lineNotCleared(reasonOf(e)));
+        }
+      }
     } catch (e) {
       await this.closeChild(child);
       throw e instanceof Error ? e : new Error(String(e));
@@ -713,6 +765,7 @@ export class CodexAdapter implements AgentAdapter {
       throw new Error('Codex stopped unexpectedly while starting.');
     }
     if (!options.quiet) this.emit(live.sid, { type: 'status', status: 'idle', intent: `Ready in ${cwd}` });
+    if (goalFound) this.emit(live.sid, { type: 'status', status: 'idle', intent: LINE_CLOSED }); // FR-005
     this.emit(live.sid, { type: 'sandbox', sandbox: codexSandboxState(mode, this.platform) }); // spec 087 FR-011: from the checks above (a refused start never gets here)
     if (!options.quiet) void this.refreshMcp(live); // FR-147: the session's MCP servers; a quiet start emits nothing (C3), so its first message reads them
     return live.sid;
@@ -739,14 +792,57 @@ export class CodexAdapter implements AgentAdapter {
   }
 
   async send(sessionId: string, message: AgentMessage): Promise<void> {
+    const hold: { parked?: { auto: AutopilotState; stopped: boolean } } = {};
+    try {
+      await this.sendInner(sessionId, message, hold);
+    } finally {
+      // spec 099: on every path, a throw during a reopen included; only this call's own entry
+      if (hold.parked && this.parked.get(sessionId) === hold.parked) this.parked.delete(sessionId);
+      if (!this.reopening.has(sessionId)) this.reopenStarts.delete(sessionId);
+    }
+  }
+
+  private async sendInner(sessionId: string, message: AgentMessage, hold: { parked?: { auto: AutopilotState; stopped: boolean } }): Promise<void> {
     let live = this.mustGet(sessionId);
+    // spec 099: refusals first, so a refused message leaves everything as it was
+    const on = live.auto?.on ? live.auto : undefined;
+    if (on && message.plan) throw new Error(AUTOPILOT_NO_PLAN);
+    const startsRun = !!on && !on.running;
+    if (startsRun && (live.turnId !== undefined || live.turnStarting)) throw new Error(AUTOPILOT_WAIT_TURN);
+    if (startsRun && message.attachments?.length) throw new Error(AUTOPILOT_TEXT_ONLY); // D10
+    const goal = startsRun ? goalText(message.text, 'codex') : undefined;
+    if (goal && !goal.ok) throw new Error(goalRefusal(goal));
+    if (on) {
+      hold.parked = { auto: on, stopped: false };
+      this.parked.set(sessionId, hold.parked);
+    }
     // FR-144/FR-147: a mode or MCP switch chosen while it ran applies now, on a fresh child that resumes the same thread
     if (((live.wantMode && live.wantMode !== live.mode) || live.relaunch) && live.turnId === undefined && !live.turnStarting) {
-      const next = { ...live.options, permissionMode: live.wantMode ?? live.mode, sessionId, resumeSessionId: undefined, quiet: true };
-      await this.stop(sessionId, true);
-      await this.start(next);
-      live = this.mustGet(sessionId);
+      // spec 044 FR-180: the wanted mode can change while this reopens (Stop, a mode chosen, a scheduled run's end): read again after each await, and open again if it moved
+      const reopen = { mode: live.wantMode ?? live.mode, ended: false };
+      this.reopening.set(sessionId, reopen);
+      try {
+        let options = live.options;
+        do {
+          await this.stop(sessionId, true);
+          if (reopen.ended) throw new Error('This session was ended.');
+          await this.start({ ...options, permissionMode: reopen.mode, sessionId, resumeSessionId: undefined, quiet: true });
+          live = this.mustGet(sessionId);
+          options = live.options;
+          if (reopen.ended) throw new Error('This session was ended.');
+        } while (live.mode !== reopen.mode);
+      } finally {
+        this.reopening.delete(sessionId);
+      }
     }
+    if (on?.on) this.adoptAutopilot(live, on); // the settings outlive the child; the clear ran on the resume
+    // spec 099 FR-050: Stop came during the reopen: the session is back, and nothing is sent
+    if (hold.parked?.stopped) {
+      this.emit(sessionId, { type: 'status', status: 'idle', intent: 'Aborted' });
+      return;
+    }
+    // FR-050, FR-051: a Stop or a stricter mode during the reopen ended Autopilot, so this is no goal: a message in the mode now in force
+    if (startsRun && goal?.ok && on?.on) return this.sendGoal(live, on, goal.text);
     live.expectAborted = false;
     if (!live.mcpRead) void this.refreshMcp(live); // FR-147: after a quiet start, with the first message
     const images = (message.attachments ?? []).filter((a) => a.kind === 'image');
@@ -784,18 +880,220 @@ export class CodexAdapter implements AgentAdapter {
     };
     live.turnStarting = true;
     live.pendingInterrupt = false;
+    const own = !!live.auto?.run; // FR-058: a message Durbar sends, during a run or after it, is never a continuation
+    if (own) live.ownStarting = (live.ownStarting ?? 0) + 1;
     try {
       const res = await live.rpc.request('turn/start', params);
       const id = isObj(res) && isObj(res.turn) && typeof res.turn.id === 'string' ? res.turn.id : undefined;
+      if (own) this.ownTurnReply(live, id);
       if (id && live.turnId === undefined && !live.doneTurns.includes(id)) live.turnId = id;
       live.turnStarting = false;
       if (live.pendingInterrupt && live.turnId) await this.fireInterrupt(live, live.turnId);
     } catch (e) {
+      if (own) this.ownTurnReply(live, undefined); // FR-058: a failed reply counts the held turn, which errs toward stopping
       live.turnStarting = false;
       live.pendingInterrupt = false;
       if (isRpcError(e) || (e as { kind?: string }).kind === 'timeout') this.emit(sessionId, { type: 'status', status: 'error', intent: `Codex refused the message: ${reasonOf(e)}`.slice(0, 300) });
       throw e;
     }
+  }
+
+  /* ---------------- spec 099: Autopilot ---------------- */
+
+  /** FR-002, FR-012, FR-022: on for the next messages, or off (a running run stops, FR-050). The thread settings follow `setPermMode` from the next message (FR-144). */
+  async setAutopilot(sessionId: string, settings: AutopilotSettings | null, reason: AutopilotEnd = 'stopped'): Promise<void> {
+    const waiting = this.reopening.has(sessionId) ? this.parked.get(sessionId) : undefined;
+    if (settings === null && waiting) {
+      waiting.auto.settings = undefined; // no child to tell yet, and no run: the reopen sends no goal
+      return;
+    }
+    const live = this.mustGet(sessionId);
+    if (settings === null) return this.autopilotOff(live, reason);
+    if (live.broker.getMode() !== 'allow') throw new Error(AUTOPILOT_NOT_ALLOW);
+    if (live.auto?.running) throw new Error(AUTOPILOT_ONE_RUN);
+    if (settings.cap !== undefined && !(typeof settings.cap === 'number' && Number.isInteger(settings.cap) && settings.cap > 0)) throw new Error('Invalid token cap.');
+    this.adoptAutopilot(live, live.auto ?? this.newAutopilot(live)).turnOn(settings);
+    this.autopilotUsed = true;
+  }
+
+  /** FR-006, FR-053 act on this session: main can turn Autopilot on, or `setAutopilot` ran here. */
+  private goalsWired(): boolean {
+    return (this.autopilotTuning?.wired ?? AUTOPILOT_WIRED) || this.autopilotUsed;
+  }
+
+  /** The state's ports read the session through this, so they follow it onto a fresh child. */
+  private autopilotHolders = new WeakMap<AutopilotState, { live: Live }>();
+  private adoptAutopilot(live: Live, auto: AutopilotState): AutopilotState {
+    live.auto = auto;
+    const h = this.autopilotHolders.get(auto);
+    if (h) h.live = live;
+    return auto;
+  }
+
+  private async autopilotOff(live: Live, reason: AutopilotEnd): Promise<void> {
+    const auto = live.auto;
+    if (auto?.running) {
+      auto.run?.end(reason);
+      await auto.run?.whenStopped();
+    } else if (auto) auto.settings = undefined;
+  }
+
+  private newAutopilot(first: Live): AutopilotState {
+    const holder = { live: first };
+    const auto = new AutopilotState({
+      backstopPer: 1, // FR-021: Codex feeds `turn/completed`, and the limit's own `limit + 1` turns are the bound
+      // FR-050 (`real:` 2026-10-31, T093): the clear first, so no new turn starts, then the interrupt. FR-022: a goal that ended by itself lets its running turn finish.
+      halt: async (reason) => {
+        const live = holder.live;
+        const natural = reason === 'done' || reason === 'cap' || reason === 'blocked';
+        let failed: { e: unknown } | undefined;
+        try {
+          await this.clearThreadGoal(live);
+        } catch (e) {
+          failed = { e };
+        }
+        if (!natural) {
+          if (live.turnId) await this.fireInterrupt(live, live.turnId);
+          else live.pendingInterrupt = true; // the turn's id arrives with its `turn/started`
+        }
+        if (failed) throw failed.e;
+      },
+      interruptAgain: () => {
+        const live = holder.live;
+        if (live.turnId) void this.fireInterrupt(live, live.turnId);
+        else live.pendingInterrupt = true;
+      },
+      failClosed: () => this.endForGood(holder.live),
+      settled: () => { // FR-022: the budget goes with the goal. FR-147: a server switched during the run applies from here
+        if (holder.live.relaunchAfterRun) holder.live.relaunch = true;
+        holder.live.relaunchAfterRun = false;
+      },
+      emit: (b) => this.emit(holder.live.sid, b),
+      spend: () => (holder.live.goalTokens !== undefined ? { unit: 'tokens', value: holder.live.goalTokens } : undefined),
+    }, this.autopilotTuning);
+    this.autopilotHolders.set(auto, holder);
+    return auto;
+  }
+
+  /** FR-054: the session ends and its child is killed. A hung app-server gets no goodbye. */
+  private async endForGood(live: Live): Promise<void> {
+    if (this.sessions.get(live.sid) === live) this.sessions.delete(live.sid);
+    live.stopping = true;
+    live.muted = true;
+    live.broker.stop();
+    for (const [id, answer] of [...live.questions]) { this.skips.note(id, 'stop'); answer(null); }
+    cancelElicitations(live.elicitations);
+    live.rpc.close();
+    const wait = (this.closeGraceMs ?? 2000) + (this.killGraceMs ?? 1000) + 500;
+    let timer: NodeJS.Timeout | undefined;
+    await Promise.race([live.exited, new Promise<void>((r) => (timer = setTimeout(r, wait)))]);
+    if (timer) clearTimeout(timer);
+  }
+
+  /** FR-041, FR-053: `thread/goal/clear`. True when a goal was there. A Codex without goals answers method-not-found: nothing to clear. `cleared` must be a yes or a no (`read:` 0.164.0 generated schema; what it says with no goal set: T092). */
+  private async clearThreadGoal(live: Live): Promise<boolean> {
+    live.goalClearing = true;
+    try {
+      const r: unknown = await within(live.rpc.request('thread/goal/clear', { threadId: live.threadId, origin: 'user' }), this.autopilotTuning?.waitMs ?? CLEAR_WAIT_MS, 'Codex');
+      const cleared = isObj(r) ? r.cleared : undefined;
+      if (typeof cleared !== 'boolean') throw new Error('Codex did not say whether the goal was cleared.');
+      return cleared;
+    } catch (e) {
+      if (e instanceof CodexRpcError && e.code === -32601) return false;
+      throw e;
+    } finally {
+      live.goalClearing = false;
+    }
+  }
+
+  /** FR-012: `thread/goal/set` in place of `turn/start`, on the session's own thread (never a fork or an ephemeral one); it starts every turn by itself. */
+  private async sendGoal(live: Live, auto: AutopilotState, objective: string): Promise<void> {
+    if (live.mode !== 'allow') throw new Error(AUTOPILOT_NOT_ALLOW); // goal turns take the thread's settings: the thread must have been opened in Allow all
+    live.expectAborted = false;
+    live.goalTurnSeen = false;
+    live.ownTurns = new Set();
+    live.ownStarting = 0;
+    live.heldStarted = [];
+    live.heldCompleted = [];
+    live.goalTokens = undefined;
+    this.emit(live.sid, { type: 'status', status: 'working', intent: 'Thinking' });
+    const run = auto.begin();
+    try {
+      await live.rpc.request('thread/goal/set', { threadId: live.threadId, objective, tokenBudget: auto.settings?.cap ?? null, origin: 'user' });
+    } catch (e) {
+      auto.finish('error');
+      await run.whenStopped();
+      if (isRpcError(e) || (e as { kind?: string }).kind === 'timeout') this.emit(live.sid, { type: 'status', status: 'error', intent: `Codex refused the message: ${reasonOf(e)}`.slice(0, 300) });
+      throw e;
+    }
+  }
+
+  /** FR-058: the reply to a message's `turn/start`. Its turn counts toward nothing; a turn held meanwhile that is not it (or every one, on a failed reply) is counted now. */
+  private ownTurnReply(live: Live, id: string | undefined): void {
+    live.ownStarting = Math.max(0, (live.ownStarting ?? 1) - 1);
+    if (id) live.ownTurns?.add(id);
+    if (live.ownStarting > 0) return;
+    const started = live.heldStarted ?? [];
+    const completed = live.heldCompleted ?? [];
+    live.heldStarted = [];
+    live.heldCompleted = [];
+    for (const t of started) if (!live.ownTurns?.has(t)) this.countStarted(live);
+    for (const t of completed) if (!live.ownTurns?.has(t)) live.auto?.run?.backstopTurn();
+  }
+
+  /** FR-020: one per `turn/started` after the first in a run; after an end the core repeats `halt` (FR-054). */
+  private countStarted(live: Live): void {
+    if (!live.goalTurnSeen) {
+      live.goalTurnSeen = true;
+      return;
+    }
+    live.auto?.run?.continuation();
+  }
+
+  /** FR-006, FR-020, FR-021, FR-040. Only the session's own thread counts (FR-008). Runs before the turn's bookkeeping and the mapper. Shapes: `read:` 0.164.0 generated schema; the notifications carry no `origin`, so "not from Durbar" means no run of Durbar's. */
+  private autopilotNote(live: Live, method: string, params: unknown): void {
+    if (!isObj(params) || params.threadId !== live.threadId) return;
+    const auto = live.auto;
+    if (method === 'thread/goal/updated') {
+      const goal = isObj(params.goal) ? params.goal : undefined;
+      if (goal && typeof goal.tokensUsed === 'number' && Number.isFinite(goal.tokensUsed) && goal.tokensUsed >= 0) live.goalTokens = goal.tokensUsed;
+      const end = codexGoalEnd(goal?.status);
+      if (end && auto?.running) auto.finish(end);
+      else if (goal?.status === 'active' && !auto?.running && !live.goalClearing) this.selfStartedGoal(live); // FR-006
+      return;
+    }
+    if (method === 'thread/goal/cleared') {
+      if (auto?.running && !live.goalClearing) auto.finish('stopped'); // cleared from elsewhere: the loop is over
+      return;
+    }
+    if (!auto?.run) return;
+    const turn = isObj(params.turn) ? params.turn : undefined;
+    const id = turn && typeof turn.id === 'string' ? turn.id : undefined;
+    if (method === 'turn/started' && id) {
+      if (live.ownTurns?.has(id)) return;
+      if ((live.ownStarting ?? 0) > 0) { (live.heldStarted ??= []).push(id); return; }
+      // after a done ending the goal is gone: a turn nobody counts is stopped as a run of its own that ends at once
+      if (auto.on && auto.run.ended) { auto.begin().end('error'); return; }
+      this.countStarted(live);
+    } else if (method === 'turn/completed' && id && !auto.run.ended) {
+      if (live.ownTurns?.has(id)) return;
+      if ((live.ownStarting ?? 0) > 0) { (live.heldCompleted ??= []).push(id); return; }
+      if (turn?.status === 'failed') auto.finish('error'); // FR-040
+      else auto.run.backstopTurn(); // FR-021
+    }
+  }
+
+  /** FR-006: a goal nobody asked Durbar for: cleared, the turn interrupted, said in the chat. An unconfirmed clear ends the session (FR-054). */
+  private selfStartedGoal(live: Live): void {
+    if (!this.goalsWired()) return;
+    this.emit(live.sid, { type: 'status', status: 'idle', intent: LINE_SELF_STARTED });
+    void this.clearThreadGoal(live).then(
+      () => { if (live.turnId) void this.fireInterrupt(live, live.turnId); },
+      async () => {
+        await this.endForGood(live);
+        this.emit(live.sid, { type: 'status', status: 'stopped', intent: LINE_UNCONFIRMED });
+      },
+    );
   }
 
   /** Spec 066: the model Codex would use by default (for a plan turn when the session has no model of its own). */
@@ -868,6 +1166,13 @@ export class CodexAdapter implements AgentAdapter {
   }
 
   async interrupt(sessionId: string): Promise<void> {
+    // spec 099 FR-050: Stop while `send` reopens the session for a goal: no goal is sent, and it does not wait for the new child
+    const waiting = this.reopening.has(sessionId) ? this.parked.get(sessionId) : undefined;
+    if (waiting) {
+      waiting.auto.settings = undefined;
+      waiting.stopped = true;
+      return;
+    }
     const live = this.sessions.get(sessionId);
     if (!live) return;
     live.interrupting = true;
@@ -877,6 +1182,9 @@ export class CodexAdapter implements AgentAdapter {
       for (const p of [...(live.plans?.values() ?? [])]) p({ kind: 'reject' }); // spec 066: Stop rejects an open plan
       live.planTurn = undefined;
       cancelElicitations(live.elicitations); // FR-151
+      // spec 099 FR-050: Stop on Autopilot is the run's own stop order, and the session goes back to Allow all
+      if (live.auto?.running) return await this.autopilotOff(live, 'stopped');
+      if (live.auto?.on) await this.autopilotOff(live, 'stopped'); // no run, but a typed turn may be going: it stops below
       const turnId = live.turnId;
       if (!turnId) {
         // A turn is starting but its id is not known yet: remember the request and send it the moment the id arrives.
@@ -922,8 +1230,16 @@ export class CodexAdapter implements AgentAdapter {
   }
 
   setPermMode(sessionId: string, mode: PermissionMode, opts: { clearGrants?: boolean; approvePending?: boolean } = {}): { pending: number } {
+    const reopen = this.reopening.get(sessionId);
+    if (reopen) reopen.mode = mode; // `send` reads it again before it opens the session
     const live = this.sessions.get(sessionId);
-    if (!live) return { pending: 0 };
+    if (!live) {
+      const waiting = this.parked.get(sessionId);
+      if (reopen && waiting && mode !== 'allow') waiting.auto.settings = undefined; // spec 099 FR-051, FR-002
+      return { pending: 0 };
+    }
+    // spec 099 FR-051: main ends Autopilot first (T030); here too, so no path leaves it on outside Allow all (FR-002)
+    if (mode !== 'allow' && (live.auto?.on || live.auto?.running)) void this.autopilotOff(live, 'stopped');
     const rank = (m: PermissionMode): number => ({ 'read-only': 0, ask: 1, allow: 2 })[m] ?? 0;
     live.broker.setMode(mode);
     live.wantMode = mode === live.mode ? undefined : mode;
@@ -938,6 +1254,8 @@ export class CodexAdapter implements AgentAdapter {
   }
 
   async stop(sessionId: string, silent = false): Promise<void> {
+    const reopen = silent ? undefined : this.reopening.get(sessionId);
+    if (reopen) reopen.ended = true; // End session during a reopen: it does not open again
     const starting = this.starting.get(sessionId);
     if (starting) {
       // Stop during start: the start closes its child and never registers; wait for that.
@@ -948,6 +1266,7 @@ export class CodexAdapter implements AgentAdapter {
     const live = this.sessions.get(sessionId);
     if (!live) return;
     this.sessions.delete(sessionId);
+    if (!silent || !live.auto?.on) live.auto?.endQuietly(); // spec 099 FR-052; a mode relaunch keeps the settings for its next message
     live.stopping = true;
     live.muted = true;
     live.broker.stop();
@@ -1057,6 +1376,7 @@ export class CodexAdapter implements AgentAdapter {
       if (this.sessions.get(live.sid) === live) this.emitMcp(live);
       return;
     }
+    this.autopilotNote(live, method, params);
     // Keep the running turn's id for interrupt and stop.
     if (isObj(params) && (params.threadId === undefined || params.threadId === live.threadId)) {
       const turn = isObj(params.turn) ? params.turn : undefined;
@@ -1154,6 +1474,7 @@ export class CodexAdapter implements AgentAdapter {
     if (elicit && codexElicitationHasFields(params)) {
       if (live.stopping) return { result: { action: 'cancel' } };
       const p = isObj(params) ? params : {};
+      if (live.auto?.running) return { result: { ...declineElicitation((b) => this.emit(live.sid, b), `codex-e-${++live.anon}`, { message: p.message, schema: p.requestedSchema, mode: p.mode, url: p.url, source: p.serverName }) } }; // spec 099 FR-030
       const a = await runElicitation((b) => this.emit(live.sid, b), live.elicitations, `codex-e-${++live.anon}`, { message: p.message, schema: p.requestedSchema, mode: p.mode, url: p.url, source: p.serverName }, (m) => this.debug?.(`codex: ${m}`));
       return { result: { ...a } };
     }
@@ -1200,6 +1521,13 @@ export class CodexAdapter implements AgentAdapter {
       if (src && typeof src.id === 'string') idOf.set(q.question, src.id);
     });
     if (!asked.length || live.stopping) return { result: { answers: {} } };
+    // spec 099 FR-030: on a run every question gets the fixed sentence at once (a secret one stays unanswered, above)
+    if (live.auto?.running) {
+      emitAutoAnswered((b) => this.emit(live.sid, b), `codex-q-${++live.anon}`, asked);
+      const fixed: Record<string, { answers: string[] }> = {};
+      for (const id of idOf.values()) fixed[id] = { answers: [AUTOPILOT_ANSWER] };
+      return { result: { answers: fixed } };
+    }
     const requestId = `codex-q-${++live.anon}`;
     const answers = await new Promise<Record<string, string> | null>((resolve) => {
       live.questions.set(requestId, resolve);
@@ -1252,7 +1580,8 @@ export class CodexAdapter implements AgentAdapter {
     if (enabled) off.delete(name);
     else off.add(name);
     live.options = { ...live.options, disabledMcpServers: [...off] };
-    live.relaunch = true;
+    if (live.auto?.running) live.relaunchAfterRun = true; // spec 099
+    else live.relaunch = true;
     live.mcpAuthSeen?.delete(name);
     const cur = live.mcp.get(name) ?? { name, status: 'pending' };
     live.mcp.set(name, { ...cur, status: enabled ? 'pending' : 'disabled' });
@@ -1294,6 +1623,8 @@ export class CodexAdapter implements AgentAdapter {
   /** The child exited. Not caused by `stop`: the session is over and says so (FR-097). */
   private onExit(live: Live, code: number | null, signal: NodeJS.Signals | null): void {
     if (live.stopping || !live.rpc) return; // `stop`, or a child that was closed during start (a failed handshake, the Allow all retry)
+    // spec 099 FR-040, FR-054: a run ends with error; its clear finds the child gone, and the session ends and says so
+    if (live.auto?.running) return void live.auto.finish('error');
     live.muted = true;
     const registered = this.sessions.get(live.sid) === live;
     if (registered) this.sessions.delete(live.sid);

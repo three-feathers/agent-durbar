@@ -69,6 +69,8 @@ Autopilot on a schedule (FR-084) is out of the first build, pending the other tw
 
 ### Adapters
 
+Written once in `src/adapters/autopilotHost.ts` (Phase 2): the settings and run of one session, the 10 second wait, the clock sample, S3 and the fixed chat lines. `AUTOPILOT_WIRED` stays false until T030 (spec *Changes*).
+
 - **Copilot** (`copilot.ts`):
   - `setAutopilot` sets `live.autopilot` and calls `mode.set autopilot` or `interactive`;
   - `send` adds `agentMode: 'autopilot'`, `onUserInputRequest` auto-answers, and the elicitation is declined;

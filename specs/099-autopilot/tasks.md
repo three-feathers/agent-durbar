@@ -27,31 +27,31 @@ Numbers taken: spec 099, FR-001..FR-090 (sparse by group; FR-007, FR-008, FR-009
 
 ## Phase 2: Adapters (PR `099-p2-adapters`)
 
-- [ ] T020 Claude Code: `/goal` send, continuation count, `AskUserQuestion` auto-deny, end mapping, `/goal clear` after every
+- [x] T020 Claude Code: `/goal` send, continuation count, `AskUserQuestion` auto-deny, end mapping, `/goal clear` after every
   end and on Stop, `/goal` typed by the user refused while on Autopilot; capability `{capUnit: 'usd', attachments: false, planApproval: true, verified: false}`.
   Tests on the scripted CLI fake replay the probe's message shapes (`Stop hook feedback`, `aborted_streaming`, `Goal cleared`,
   `stop-hook-block-cap` before a `success` result ends with blocked)
   [FR-011, FR-020, FR-021, FR-030, FR-040, FR-041, FR-050, FR-058]
-- [ ] T021 Codex: `thread/goal/set` in place of `turn/start`, `tokenBudget`, the `turn/started` count, the `goal/updated` mapping,
+- [x] T021 Codex: `thread/goal/set` in place of `turn/start`, `tokenBudget`, the `turn/started` count, the `goal/updated` mapping,
   Stop with `goal/clear` and then `turn/interrupt`, `requestUserInput` auto-answer, never on an ephemeral thread; capability
   `{capUnit: 'tokens', attachments: false, planApproval: false, verified: false}`. Tests on the app-server fake replay the probe's notifications [FR-012, FR-020-FR-022, FR-030, FR-040, FR-050]
-- [ ] T022 Copilot on the fake SDK: `mode.set autopilot` and `interactive`, `agentMode`, `onUserInputRequest` auto-answer,
+- [x] T022 Copilot on the fake SDK: `mode.set autopilot` and `interactive`, `agentMode`, `onUserInputRequest` auto-answer,
   elicitation declined, `task_complete` and objective mapping, a cap below 30 raised to 30 and `cancel` on exhausted, Stop
   order, attachments sent with `agentMode`, the broker still answering permissions (no `setApproveAll`); capability
   `{capUnit: 'aiu', attachments: true, planApproval: true, verified: false}`. Continuations counted from `isAutopilotContinuation` behind a small
   function (T090)
   `halt('done')` keeps Copilot's mode (D8), so a repeated halt would not stop it: the adapter's `halt` does a real stop (`mode.set interactive`, `abort`) for a continuation after done. [FR-010, FR-020-FR-022, FR-030, FR-040, FR-050]
-- [ ] T023 [P] FR-006: an app entering its own autopilot or goal without Durbar is switched back and said in the chat, for each
+- [x] T023 [P] FR-006: an app entering its own autopilot or goal without Durbar is switched back and said in the chat, for each
   adapter + tests [FR-006]
-- [ ] T024 Clear first on every resume and relaunch (Codex mode-switch relaunch and Claude `--resume` included), before anything is sent. Fake adapter tests per app: the clear comes first in the recorded order; a failed clear sends nothing [FR-005, FR-052, FR-053]
-- [ ] T025 A stop or clear that fails: RPC error, dead child, `/goal clear` not acknowledged. Fake adapter tests per app: the guard interrupts a later continuation, the session is ended after the wait, the chat says so, the next message clears first The core repeats `halt` for every continuation after an end, so each adapter's `halt` must really stop the app when repeated after `done` (Copilot: not just keep its mode). [FR-041, FR-050, FR-054]
-- [ ] T026 Feed the backstop per app, and tell a typed Codex message from a continuation by its `turn/start` id. Fake adapter tests per app with the marker removed: the run ends with `error`; Claude's `num_turns` over the bound reports `error`, not done; Codex: a typed message is not counted, a `turn/started` before its reply is held, a failed reply counts Codex passes `backstopPer: 1` to `AutopilotRun` (an omitted value gives 100, which is Copilot's and Claude Code's); every adapter calls `checkElapsed()` at least every `CLOCK_SAMPLE_MS` from its own timer (the core owns none; a step back between two samples is a `[KNOWN GAP]`). [FR-020, FR-021, FR-040, FR-058]
-- [ ] T027 Cap scope per app: the lower wins, a higher value never loosens, a value at or below what was spent is refused, restored after every end (a failed restore leaves the tighter cap), a cap change during a run follows FR-022, nothing reaches `store.setMaxAiCredits`. Fake adapter tests [FR-022]
-- [ ] T028 Helpers: helper and sub-agent events do not count toward either bound, a helper gets no goal and no `autopilot` state, a new session opened from this one is not on Autopilot. Fake adapter test [FR-008]
+- [x] T024 Clear first on every resume and relaunch (Codex mode-switch relaunch and Claude `--resume` included), before anything is sent. Fake adapter tests per app: the clear comes first in the recorded order; a failed clear sends nothing [FR-005, FR-052, FR-053]
+- [x] T025 A stop or clear that fails: RPC error, dead child, `/goal clear` not acknowledged. Fake adapter tests per app: the guard interrupts a later continuation, the session is ended after the wait, the chat says so, the next message clears first The core repeats `halt` for every continuation after an end, so each adapter's `halt` must really stop the app when repeated after `done` (Copilot: not just keep its mode). [FR-041, FR-050, FR-054]
+- [x] T026 Feed the backstop per app, and tell a typed Codex message from a continuation by its `turn/start` id. Fake adapter tests per app with the marker removed: the run ends with `error`; Claude's `num_turns` over the bound reports `error`, not done; Codex: a typed message is not counted, a `turn/started` before its reply is held, a failed reply counts Codex passes `backstopPer: 1` to `AutopilotRun` (an omitted value gives 100, which is Copilot's and Claude Code's); every adapter calls `checkElapsed()` at least every `CLOCK_SAMPLE_MS` from its own timer (the core owns none; a step back between two samples is a `[KNOWN GAP]`). [FR-020, FR-021, FR-040, FR-058]
+- [x] T027 Cap scope per app: the lower wins, a higher value never loosens, a value at or below what was spent is refused, restored after every end (a failed restore leaves the tighter cap), a cap change during a run follows FR-022, nothing reaches `store.setMaxAiCredits`. Fake adapter tests [FR-022]
+- [x] T028 Helpers: helper and sub-agent events do not count toward either bound, a helper gets no goal and no `autopilot` state, a new session opened from this one is not on Autopilot. Fake adapter test [FR-008]
 
 ## Phase 3: Main and window (PR `099-p3-ui`)
 
-- [ ] T030 `agents:setAutopilot` (`fromApp`), validation, capability and organization checks, `nativeConfirm` through an injected `confirm` with text written in main (merge `main` first: #931), then `setModeOp('allow')` from Read-only or Ask first,
+- [ ] T030 Set `AUTOPILOT_WIRED` to true in `autopilotHost.ts` in the same commit (FR-006 and FR-053 until now hold only on an adapter where `setAutopilot` ran; `test-autopilot-reach.ts` fails otherwise), and leave Durbar's own `/goal clear` out of the Claude replay (`claudeHistory.ts`, FR-053). `agents:setAutopilot` (`fromApp`), validation, capability and organization checks, `nativeConfirm` through an injected `confirm` with text written in main (merge `main` first: #931), then `setModeOp('allow')` from Read-only or Ask first,
   `setModeOp` to Read-only or Ask first ends Autopilot first, nothing saved, activity log lines; IPC tests: not from the app
   refused, from Read-only and Ask first the dialog says the folder becomes Allow all and the folder is unchanged until it is accepted, a limit above 20 or hours above 2 carry the warning, Cancel changes nothing, the MCP tools and remote control have no path, a restart or resume comes back in `allow` [FR-002-FR-005, FR-051, FR-052, FR-055, FR-070, D12]
 - [ ] T031 No progress: the fingerprint at each continuation through the spec 063 runner (read-only), and the end after two
@@ -97,4 +97,4 @@ Numbers taken: spec 099, FR-001..FR-090 (sparse by group; FR-007, FR-008, FR-009
   and `ask_user` seen, Stop quiet; Claude's `stop-hook-block-cap`; Codex `blocked` [FR-010, FR-020, FR-021, FR-030, FR-040,
   FR-050]
 - [ ] T094 **Copilot** through the built adapter (needs a new owner OK, cap 30): a run to done, one to the limit (limit 1), and
-  one with `ask_user`; whether a resumed session comes back in `autopilot` [FR-005, FR-010, FR-020, FR-021, FR-030, FR-050, FR-053]
+  one with `ask_user`; whether a resumed session comes back in `autopilot`, and whether an Autopilot cap stays in the stored session after an end in the middle of a run [FR-005, FR-010, FR-020, FR-021, FR-030, FR-050, FR-053]
