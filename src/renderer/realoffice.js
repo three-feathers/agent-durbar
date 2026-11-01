@@ -223,11 +223,11 @@
           queued = false;
           if (!chrome.isConnected) return;
           const moved = [...chrome.querySelectorAll(':scope > .ro-chip, :scope > .ro-lplate')].some((e) => e._w != null && Math.abs(e.getBoundingClientRect().width - e._w) > 0.5);
-          if (moved) { fitPlates(chrome, chrome._W); stagger(chrome, chrome._W); }
+          if (moved) { chrome._settled = (chrome._settled || 0) + 1; fitPlates(chrome, chrome._W); stagger(chrome, chrome._W); } /* _settled: the driver sees the observer act */
         });
       });
     }
-    for (const e of chrome.querySelectorAll(':scope > .ro-chip, :scope > .ro-lplate')) chrome._ro.observe(e);
+    for (const e of chrome.querySelectorAll(':scope > .ro-chip, :scope > .ro-lplate')) chrome._ro.observe(e, { box: 'border-box' });
   }
 
   /* Paco's review of #921 (art): a lobby place plate reads in full (never an ellipsis) when there is room: a plate wider than its
@@ -339,5 +339,5 @@
 
   /* forget the session picks (Settings change of Characters, a test) */
   function reset() { PEOPLE = null; SEEN.clear(); TICKS.clear(); }
-  root.DurbarRealOffice = { render, reset, bad: () => [...BAD] };
+  root.DurbarRealOffice = { render, reset, bad: () => [...BAD], resolve }; /* resolve: for the driver's deterministic check */
 })(typeof self !== 'undefined' ? self : this);

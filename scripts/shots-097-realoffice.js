@@ -266,7 +266,8 @@ module.exports = async (ctx) => {
     /* a font face can arrive a moment after the drawing (a system font loads when first used): the office places chips and plates again
        then, so wait until no plate or chip overlaps another (the end state), and see that it stays so */
     await must(`(()=>{const r=${PLATES};return r.pp.length+r.cp.length+r.cc.length===0})()`, 'no overlap of plates and chips once the fonts have settled', 20000);
-    await ctx.sleep(400);
+    /* and the same two polls in a row (the placement has stopped moving) */
+    await must(`(()=>{const sig=[...document.querySelectorAll('#stage .ro-chip,#stage .ro-lplate')].map(e=>{const b=e.getBoundingClientRect();return Math.round(b.left*10)+','+Math.round(b.top*10)+','+Math.round(b.width*10)}).join(';');const same=window.__roSig===sig;window.__roSig=sig;return same})()`, 'the placement stopped moving');
     const r = await js(PLATES);
     const tag = `${sim} agents ${w}x${h}${font ? ' in ' + font : ''}`;
     assert.deepStrictEqual(r.pp.concat(r.cp, r.cc), [], `plates and chips do not overlap (${tag}): ${JSON.stringify(r.pp.concat(r.cp, r.cc))}`);
@@ -283,26 +284,54 @@ module.exports = async (ctx) => {
     const mp = await js(`(()=>{const p=document.querySelector('#stage .ro-lplate[data-placemore]');return {tag:p.tagName,pop:p.getAttribute('aria-haspopup'),name:p.getAttribute('aria-label')}})()`);
     assert.strictEqual(mp.tag, 'BUTTON', 'the "+N" plate is a button: ' + JSON.stringify(mp));
     assert.ok(mp.pop === 'menu' && /\d+ more: open the list/.test(mp.name), 'it names the list: ' + JSON.stringify(mp));
-    await js(`document.querySelector('#stage .ro-lplate[data-placemore]').click()`);
+    await js(`document.querySelector('#stage .ro-lplate[data-placemore]').focus();document.querySelector('#stage .ro-lplate[data-placemore]').click()`);
     await must(`!!document.getElementById('modeMenu')&&document.querySelectorAll('#modeMenu [data-pvopen]').length>=2`, 'the list of the people at the coffee corner');
     await H.key('Escape');
     await must(`!document.getElementById('modeMenu')`, 'the list closed');
+    await must(`document.activeElement&&document.activeElement.matches('#stage .ro-lplate[data-placemore]')`, 'focus is back on the "+N" plate after Escape');
     await loadReal(w, h);
     await js(`document.querySelector('#stage .ro-plate').focus()`);
     const first = await js(`document.activeElement.dataset.id`);
     await H.key('Right');
     await must(`document.activeElement.classList.contains('ro-plate')&&document.activeElement.dataset.id!==${jsLiteral(first)}`, 'the arrow key moved focus to another plate');
-    await js(`document.activeElement.focus()`);
+    const onId = await js(`document.activeElement.dataset.id`);
+    const FOCUSED = `document.activeElement&&document.activeElement.matches('#stage .ro-plate')&&document.activeElement.dataset.id===${jsLiteral(onId)}`;
+    /* the keyboard paths on their own: the native contextmenu event Chromium sends with Shift+F10 is blocked, so only the keydown handler can open the menu */
+    await js(`window.__roNoCtx=(e)=>{e.preventDefault();e.stopImmediatePropagation()};window.addEventListener('contextmenu',window.__roNoCtx,true);true`);
     await H.key('F10', ['shift'], { char: 'never' });
-    await must(`!!document.getElementById('modeMenu')`, 'the card menu on Shift+F10 at a plate');
+    await must(`!!document.getElementById('modeMenu')`, 'the card menu on Shift+F10 at a plate (contextmenu blocked)');
     await H.key('Escape');
     await must(`!document.getElementById('modeMenu')`, 'the card menu closed');
-    await js(`(()=>{const p=document.querySelector('#stage .ro-plate'),r=p.getBoundingClientRect();p.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:r.left+20,clientY:r.top+10}))})()`);
+    await must(FOCUSED, 'focus is back on the plate after Escape (Shift+F10)');
+    await js(`document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'ContextMenu',bubbles:true,cancelable:true}));true`);
+    await must(`!!document.getElementById('modeMenu')`, 'the card menu on the Menu key at a plate (contextmenu blocked)');
+    await H.key('Escape');
+    await must(`!document.getElementById('modeMenu')&&(${FOCUSED})`, 'the Menu key menu closed and focus is back on the plate');
+    await js(`window.removeEventListener('contextmenu',window.__roNoCtx,true);true`);
+    await js(`(()=>{const p=document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(${jsLiteral(onId)})+'"]'),r=p.getBoundingClientRect();p.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:r.left+20,clientY:r.top+10}));return true})()`);
     await must(`!!document.getElementById('modeMenu')`, 'the card menu on a right-click at a plate');
     await H.key('Escape');
-    await must(`!document.getElementById('modeMenu')`, 'the card menu closed again');
+    await must(`!document.getElementById('modeMenu')&&(${FOCUSED})`, 'the right-click menu closed and focus is back on the plate');
   }
 
+  // ---- the guards of the chip placement, deterministically (no font needed): chips widened after the drawing are placed again by the
+  //      ResizeObserver (settle), and a chip that sits on a plate is moved off it (resolve) ----
+  await loadReal(1280, 800, { sim: '12' });
+  assert.ok(await js(`window.__durbarSimUi.crowd('coffee',4)`) >= 3, 'people stand together at the coffee corner');
+  await must(`!!document.querySelector('#stage .ro-lplate')&&document.querySelectorAll('#stage .ro-chip').length>=3`, 'the lobby plates and the crowd\'s chips');
+  const NOOVER = `(()=>{const r=${PLATES};return r.pp.length+r.cp.length+r.cc.length===0})()`;
+  await must(NOOVER, 'no overlap before the chips are widened');
+  /* no drawing may rescue the placement (the simulator draws often): the page keeps its last layout while the chips are widened, so only the observer can place them again */
+  await js(`(()=>{const R=window.DurbarRealOffice;window.__roRender=R.render;R.render=()=>window.__durbarSimUi.realLayout();return true})()`);
+  const widened = await js(`(()=>{const st=document.createElement('style');st.id='roWiden';st.textContent='.ro-chip{padding:0 60px!important}';document.head.appendChild(st);const r=${PLATES};return r.pp.length+r.cp.length+r.cc.length})()`);
+  assert.ok(widened > 0, 'widened chips overlap right after the style (the observer has not run yet): ' + widened);
+  await must(NOOVER, 'no overlap after the chips were widened (placed again by the observer)', 20000);
+  await must(`(document.querySelector('#stage .ro-chrome')._settled||0)>=1`, 'the resize observer placed them again');
+  await js(`document.getElementById('roWiden').remove();window.DurbarRealOffice.render=window.__roRender;true`);
+  assert.ok(await js(`window.__durbarSimUi.crowd('coffee',3)`) >= 2, 'a few people stand at the coffee corner');
+  await must(`document.querySelectorAll('#stage .ro-chip').length>=2`, 'chips to place');
+  const moved = await js(`(()=>{const ch=document.querySelector('#stage .ro-chrome'),pl=document.querySelector('#stage .ro-lplate'),c=document.querySelector('#stage .ro-chip'),r=pl.getBoundingClientRect(),o=ch.getBoundingClientRect();c.style.left=(r.left-o.left+r.width/2)+'px';c.style.top=(r.top-o.top)+'px';const hit=()=>{const a=c.getBoundingClientRect(),b=pl.getBoundingClientRect();return a.left<b.right-0.5&&b.left<a.right-0.5&&a.top<b.bottom-0.5&&b.top<a.bottom-0.5};const before=hit();window.DurbarRealOffice.resolve(ch);return [before,hit()]})()`);
+  assert.deepStrictEqual(moved, [true, false], 'a chip put on a plate overlaps it, and resolve moves it off: ' + JSON.stringify(moved));
   // ---- FR-020: few agents, big screens ----
   for (const [w, h] of SIZES) {
     await loadReal(w, h, { sim: '3' });
@@ -315,8 +344,8 @@ module.exports = async (ctx) => {
   await loadReal(1440, 900);
   /* a simulator visit can take the person away between a read and a click: pick and click in one script, retry until a person was there */
   await must(`!!document.querySelector('#stage .ro-person[data-for]')`, 'a person at a desk');
-  let pid = '';
-  for (let t = 0; t < 20 && !pid; t++) { pid = await js(`(()=>{const p=document.querySelector('#stage .ro-person[data-for]');if(!p)return '';const id=p.dataset.for;p.click();return id})()`); if (!pid) await ctx.sleep(250); }
+  await must(`(()=>{const p=document.querySelector('#stage .ro-person[data-for]');if(!p)return false;window.__roPid=p.dataset.for;p.click();return true})()`, 'a person at a desk, clicked');
+  const pid = await js(`window.__roPid`);
   assert.ok(pid, 'a person is drawn and clicked');
   await must(`document.body.classList.contains('panel-open')`, 'the chat after a click on a person');
   await js(`document.getElementById('backBtn').click()`);
