@@ -1026,8 +1026,9 @@ app.whenReady().then(() => {
     agents, store: () => notesStore, resumeIdFor, adapterIdOf: (id) => router.adapterIdOf(id),
     folderValues: (key) => mcpStore?.knownSecretValues(key) ?? [], // FR-005: never decrypts, so no keychain prompt from a notes save
     sessionValues: (id) => (mcpStore?.noPrompt() ? mcp.secretValuesFor(id) : []), // forSession could unlock the vault: only when it cannot
-    // FR-050..FR-055 (T041, T042): the .durbar/notes.md mirror, only for a folder whose switch (`notesFile` in folders.json) is on
-    file: () => notesFile, fileOn: (key) => folderStore?.get(key)?.notesFile === true, setFileOn: (key, on) => folderStore?.setNotesFile(key, on) === true,
+    // FR-050..FR-055 (T041, T042): the .durbar/notes/notes.md mirror, only for a folder whose switch (`notesProject` in folders.json) is on
+    file: () => notesFile, fileOn: (key) => !!folderStore?.get(key)?.notesProject, fileGit: (key) => folderStore?.get(key)?.notesProject === 'git', setFileOn: (key, on, git) => folderStore?.setNotesFile(key, on, git) === true,
+    ignoreOwn: (key) => folderStore?.get(key)?.notesIgnoreOwn === true, setIgnoreOwn: (key, own) => folderStore?.setNotesIgnoreOwn(key, own) === true,
     valuesPending: () => !!mcpStore && !mcpStore.noPrompt(), // review of PR 931: a value still locked in the vault would leave the mask incomplete
     confirmNative: (kind, name, count) => nativeConfirm(win, notesConfirmText(kind, name, count)),
     // FR-048 (T034b): main shows the save dialog; the window never sends a path

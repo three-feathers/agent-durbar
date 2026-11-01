@@ -1,5 +1,5 @@
 /**
- * Spec 083 T042 (FR-050, FR-051, FR-055, issue 699): the project-file switch in main: the `notesFile` flag in folders.json, `NotesFile`'s
+ * Spec 083 T042 (FR-050, FR-051, FR-055, issue 699): the project-file switch in main: the `notesProject` flag in folders.json, `NotesFile`'s
  * `remove` / `inRepo` / `folderThere`, `NotesOps.fileCount` / `setFile` and the two IPC channels on a stand-in `electron`.
  * `npm run test:notesswitch`. Real temp folders under the real OS temp path and a counting fake `fs`; one ticking clock (never the wall
  * clock); no git process, no Electron, no credits.
@@ -13,7 +13,7 @@ import { pathToFileURL } from 'url';
 import type { AgentInfo } from '../src/shared/api';
 import { COUNT_UNREADABLE, NOTES_GONE, NOTES_REPLACED, NotesFile, REMOVE_CHANGED, REMOVE_NONE, syncNotesFile, type NotesFileFs } from '../src/main/notesfile';
 import { NotesStore } from '../src/main/notesstore';
-import { EXCLUDE_KEPT, NATIVE_CANCELLED, NotesOps, SWITCH_ALREADY_OFF, SWITCH_MISSING, SWITCH_WORKSPACE, VALUES_PENDING, VALUES_PENDING_ON } from '../src/main/notesops';
+import { NATIVE_CANCELLED, NOT_OURS, NotesOps, SWITCH_ALREADY_OFF, SWITCH_MISSING, SWITCH_WORKSPACE, VALUES_PENDING, VALUES_PENDING_ON } from '../src/main/notesops';
 import { spawn } from 'child_process';
 import { FolderStore, parseSavedFolders } from '../src/main/folders';
 import { SIM_OPEN_CHANNELS } from '../src/main/simguard';
@@ -23,9 +23,10 @@ const posix = process.platform !== 'win32';
 const realOf = (p: string): string => (nodeFs.realpathSync.native ?? nodeFs.realpathSync)(p);
 const root = realOf(nodeFs.mkdtempSync(path.join(os.tmpdir(), 'durbar-notesswitch-')));
 let seq = 0;
+const freshOut = (name: string): string => { const d = fresh(name); nodeFs.mkdirSync(path.join(d, 'notes')); return d; };
 const fresh = (name = 'proj'): string => { const d = path.join(root, `c${++seq}`, name); nodeFs.mkdirSync(d, { recursive: true }); return d; };
 const sha = (b: Buffer | string): string => createHash('sha256').update(b).digest('hex');
-const md = (folder: string): string => path.join(folder, '.durbar', 'notes.md');
+const md = (folder: string): string => path.join(folder, '.durbar', 'notes', 'notes.md');
 const ROOT = ((): string => { let d = __dirname; while (!nodeFs.existsSync(path.join(d, 'package.json'))) d = path.dirname(d); return d; })();
 let tick = Date.parse('2026-10-31T12:00:00.000Z');
 const tickClock = (): Date => new Date(tick += 1000);
@@ -35,7 +36,7 @@ const canHardLink = ((): boolean => { try { const a = path.join(root, 'h1'), b =
 const repoAbove = ((): boolean => { for (let d = root; ; d = path.dirname(d)) { if (nodeFs.existsSync(path.join(d, '.git'))) return true; if (path.dirname(d) === d) return false; } })();
 const skip = (why: string): void => console.log(`  (skipped: ${why})`);
 
-const METHODS = ['realpathSync', 'lstatSync', 'statSync', 'openSync', 'fstatSync', 'readSync', 'writeSync', 'fsyncSync', 'closeSync', 'renameSync', 'unlinkSync', 'mkdirSync', 'rmdirSync', 'linkSync'] as const;
+const METHODS = ['readdirSync', 'realpathSync', 'lstatSync', 'statSync', 'openSync', 'fstatSync', 'readSync', 'writeSync', 'fsyncSync', 'closeSync', 'renameSync', 'unlinkSync', 'mkdirSync', 'rmdirSync', 'linkSync'] as const;
 type Method = typeof METHODS[number];
 function countingFs(): { fs: NotesFileFs; calls: { m: Method; p: string }[]; hook: Partial<Record<Method, (real: (...a: unknown[]) => unknown, ...a: unknown[]) => unknown>> } {
   const calls: { m: Method; p: string }[] = [];
@@ -66,13 +67,13 @@ async function written(file = new NotesFile({ now: tickClock })): Promise<{ fold
 }
 
 /** NotesOps on real stores: a folder list file, the notes store, the mirror. */
-type RigOpts = { repo?: 'dir' | 'noinfo'; confirm?: (kind: string) => boolean; pending?: () => boolean; session?: Record<string, string[]>; folderValues?: string[] };
+type RigOpts = { repo?: boolean; confirm?: (kind: string) => boolean; pending?: () => boolean; session?: Record<string, string[]>; folderValues?: string[] };
 const asked: string[] = [];
 function rig(opts: RigOpts = {}): { ops: NotesOps; folders: FolderStore; foldersFile: string; store: NotesStore; folder: string; ws: string; gone: string; timers: (() => void)[]; file: NotesFile } {
   const base = fresh('base');
   const folder = path.join(base, 'proj');
   nodeFs.mkdirSync(folder);
-  if (opts.repo) { for (const d of ['.git', '.git/objects', ...(opts.repo === 'dir' ? ['.git/info'] : [])]) nodeFs.mkdirSync(path.join(base, d)); nodeFs.writeFileSync(path.join(base, '.git', 'HEAD'), 'ref: refs/heads/main\n'); }
+  if (opts.repo) nodeFs.mkdirSync(path.join(base, '.git'));
   const ws = path.join(base, 'team.code-workspace');
   nodeFs.writeFileSync(ws, '{"folders":[{"path":"proj"}]}');
   const gone = path.join(base, 'gone');
@@ -87,7 +88,7 @@ function rig(opts: RigOpts = {}): { ops: NotesOps; folders: FolderStore; folders
   const timers: (() => void)[] = [];
   const ops = new NotesOps({
     agents, store: () => store, resumeIdFor: () => '', adapterIdOf: () => 'copilot', folderValues: () => opts.folderValues ?? [], sessionValues: (id) => opts.session?.[id] ?? [], now: tickClock,
-    file: () => file, fileOn: (k) => folders.get(k)?.notesFile === true, setFileOn: (k, on) => folders.setNotesFile(k, on), setTimer: (fn) => { timers.push(fn); },
+    file: () => file, fileOn: (k) => !!folders.get(k)?.notesProject, fileGit: (k) => folders.get(k)?.notesProject === 'git', setFileOn: (k, on, git) => folders.setNotesFile(k, on, git), ignoreOwn: (k) => folders.get(k)?.notesIgnoreOwn === true, setIgnoreOwn: (k, own) => folders.setNotesIgnoreOwn(k, own), setTimer: (fn) => { timers.push(fn); },
     valuesPending: () => opts.pending?.() === true,
     confirmNative: async (kind) => { asked.push(kind); return opts.confirm ? opts.confirm(kind) : true; },
   });
@@ -103,31 +104,35 @@ const FOUR = '# Notes\n\n<!-- durbar-note -->\n## one\n\na\n\n<!-- durbar-note -
 
 async function main(): Promise<void> {
   // ---- the flag in folders.json (AC1) ----
-  await test('notesFile: off by default, saved as true, read back after a restart, removed when off', () => {
+  await test('notesProject: off by default, saved as true or \'git\', read back after a restart, removed when off, the old notesFile key is dropped', () => {
     const dir = fresh('flags');
     const file = path.join(dir, 'durbar-folders.json');
     const s = new FolderStore(file);
     s.load();
     s.upsert({ workspace: path.join(dir, 'p'), permMode: 'read-only' });
-    assert.strictEqual(s.get(path.join(dir, 'p'))!.notesFile, undefined, 'off by default');
-    assert.ok(!nodeFs.readFileSync(file, 'utf8').includes('notesFile'), 'not written while off');
+    assert.strictEqual(s.get(path.join(dir, 'p'))!.notesProject, undefined, 'off by default');
+    assert.ok(!nodeFs.readFileSync(file, 'utf8').includes('notesProject'), 'not written while off');
     assert.strictEqual(s.setNotesFile(path.join(dir, 'p'), true), true);
-    assert.strictEqual(JSON.parse(nodeFs.readFileSync(file, 'utf8')).folders[0].notesFile, true, 'saved as true');
+    assert.strictEqual(JSON.parse(nodeFs.readFileSync(file, 'utf8')).folders[0].notesProject, true, 'saved as true');
     const again = new FolderStore(file);
-    assert.strictEqual(again.load()[0].notesFile, true, 'read back after a restart');
+    assert.strictEqual(again.load()[0].notesProject, true, 'read back after a restart');
     s.upsert({ workspace: path.join(dir, 'p'), permMode: 'ask' });
-    assert.strictEqual(new FolderStore(file).load()[0].notesFile, true, 'a later upsert (mode change) keeps it');
+    assert.strictEqual(new FolderStore(file).load()[0].notesProject, true, 'a later upsert (mode change) keeps it');
     assert.strictEqual(s.setNotesFile(path.join(dir, 'p'), false), true);
-    assert.ok(!('notesFile' in JSON.parse(nodeFs.readFileSync(file, 'utf8')).folders[0]), 'removed when off');
+    assert.ok(!('notesProject' in JSON.parse(nodeFs.readFileSync(file, 'utf8')).folders[0]), 'removed when off');
+    assert.strictEqual(s.setNotesFile(path.join(dir, 'p'), true, true), true);
+    assert.strictEqual(new FolderStore(file).load()[0].notesProject, 'git', 'the choice for git is saved');
+    s.setNotesFile(path.join(dir, 'p'), false);
+    assert.strictEqual(parseSavedFolders(`{"folders":[{"workspace":${JSON.stringify(path.join(dir, 'p'))},"notesFile":true}]}`)[0].notesProject, undefined, 'a notesFile from an older version is dropped: the switch is off');
     assert.strictEqual(s.setNotesFile(path.join(dir, 'not-saved'), true), false, 'a folder that is not saved: false');
-    for (const v of ['"yes"', '1', '"true"', 'false', 'null', '{}']) {
-      assert.strictEqual(parseSavedFolders(`{"folders":[{"workspace":${JSON.stringify(path.join(dir, 'p'))},"notesFile":${v}}]}`)[0].notesFile, undefined, `notesFile ${v} reads as off`);
+    for (const v of ['"yes"', '1', '"true"', 'false', 'null', '{}', '"ignored"']) {
+      assert.strictEqual(parseSavedFolders(`{"folders":[{"workspace":${JSON.stringify(path.join(dir, 'p'))},"notesProject":${v}}]}`)[0].notesProject, undefined, `notesProject ${v} reads as off`);
     }
     // a list that cannot be saved keeps the old position and says so
     const ro = new FolderStore(path.join(dir, 'durbar-folders.json', 'nope', 'f.json'));
     (ro as unknown as { folders: unknown[] }).folders = [{ workspace: path.join(dir, 'p'), permMode: 'read-only', hidden: false }];
     assert.strictEqual(ro.setNotesFile(path.join(dir, 'p'), true), false, 'not saved: false');
-    assert.strictEqual(ro.get(path.join(dir, 'p'))!.notesFile, undefined, 'not saved: still off');
+    assert.strictEqual(ro.get(path.join(dir, 'p'))!.notesProject, undefined, 'not saved: still off');
   });
 
   // ---- NotesFile.remove (AC4, FR-055) ----
@@ -135,32 +140,33 @@ async function main(): Promise<void> {
     const c = countingFs();
     const { folder, store } = await written(new NotesFile({ fs: c.fs, now: tickClock }));
     c.calls.length = 0;
-    const r = new NotesFile({ fs: c.fs, now: tickClock }).remove(folder, await store.getMirror(folder));
-    assert.deepStrictEqual(r, { removed: true, dirRemoved: true });
+    const r = new NotesFile({ fs: c.fs, now: tickClock }).remove(folder, await store.getMirror(folder), true);
+    assert.deepStrictEqual(r, { removed: true, dirRemoved: true, ignoreDropped: true });
     assert.ok(!nodeFs.existsSync(path.join(folder, '.durbar')), '.durbar is gone');
     const un = c.calls.filter((x) => x.m === 'unlinkSync').map((x) => x.p);
-    assert.ok(un.length === 1 && path.dirname(un[0]) === path.join(folder, '.durbar') && /^\.notes\.md\.\d+\.[a-z0-9]+\.del$/.test(path.basename(un[0])), `only the renamed notes.md is unlinked: ${un.join()}`);
+    const nd = path.join(folder, '.durbar', 'notes');
+    assert.ok(un.length === 2 && un.every((u) => path.dirname(u) === nd) && /^\.notes\.md\.\d+\.[a-z0-9]+\.del$/.test(path.basename(un[0])) && path.basename(un[1]) === '.gitignore', `only the renamed notes.md and Durbar's own .gitignore are unlinked: ${un.join()}`);
     assert.ok(c.calls.some((x) => x.m === 'renameSync' && x.p === md(folder)), 'notes.md is renamed first');
-    assert.deepStrictEqual(c.calls.filter((x) => x.m === 'rmdirSync').map((x) => x.p), [path.join(folder, '.durbar')], 'rmdir of .durbar only');
+    assert.deepStrictEqual(c.calls.filter((x) => x.m === 'rmdirSync').map((x) => x.p), [nd, path.join(folder, '.durbar')], 'rmdir of .durbar/notes, then .durbar, nothing recursive');
   });
   await test('remove: a .durbar with other files keeps them and stays', async () => {
     const { folder, store, file } = await written();
-    nodeFs.writeFileSync(path.join(folder, '.durbar', 'mine.txt'), 'keep me');
-    assert.deepStrictEqual(file.remove(folder, await store.getMirror(folder)), { removed: true, dirRemoved: false });
-    assert.strictEqual(nodeFs.readFileSync(path.join(folder, '.durbar', 'mine.txt'), 'utf8'), 'keep me');
+    nodeFs.writeFileSync(path.join(folder, '.durbar', 'notes', 'mine.txt'), 'keep me');
+    assert.deepStrictEqual(file.remove(folder, await store.getMirror(folder), true), { removed: true, dirRemoved: false });
+    assert.strictEqual(nodeFs.readFileSync(path.join(folder, '.durbar', 'notes', 'mine.txt'), 'utf8'), 'keep me');
     assert.ok(!nodeFs.existsSync(md(folder)));
   });
   await test('remove: a file changed since Durbar wrote it (or with no mirror) stays, with the reason', async () => {
     const { folder, store, file } = await written();
     nodeFs.appendFileSync(md(folder), '\nmy own line\n');
     const before = nodeFs.readFileSync(md(folder));
-    assert.deepStrictEqual(file.remove(folder, await store.getMirror(folder)), { removed: false, dirRemoved: false, why: REMOVE_CHANGED });
+    assert.deepStrictEqual(file.remove(folder, await store.getMirror(folder), true), { removed: false, dirRemoved: false, why: REMOVE_CHANGED });
     assert.deepStrictEqual(nodeFs.readFileSync(md(folder)), before, 'untouched');
     assert.strictEqual(file.remove(folder, undefined).why, REMOVE_CHANGED, 'no mirror: Durbar never wrote it');
     assert.ok(nodeFs.existsSync(md(folder)));
     const none = fresh();
     assert.deepStrictEqual(file.remove(none, undefined), { removed: false, dirRemoved: false, why: REMOVE_NONE });
-    nodeFs.mkdirSync(path.join(none, '.durbar'));
+    nodeFs.mkdirSync(path.join(none, '.durbar', 'notes'), { recursive: true });
     assert.strictEqual(file.remove(none, undefined).why, REMOVE_NONE);
     assert.ok(nodeFs.existsSync(path.join(none, '.durbar')), 'an empty .durbar with no file is left alone');
   });
@@ -179,8 +185,8 @@ async function main(): Promise<void> {
     if (!canLink) { skip('cannot make links here'); return; }
     const { folder, store, file } = await written();
     const mirror = await store.getMirror(folder);
-    const outside = fresh('outside');
-    const target = path.join(outside, 'notes.md');
+    const outside = freshOut('outside');
+    const target = path.join(outside, 'notes', 'notes.md');
     nodeFs.renameSync(md(folder), target);
     nodeFs.symlinkSync(target, md(folder), 'file');
     const r1 = file.remove(folder, mirror);
@@ -198,7 +204,7 @@ async function main(): Promise<void> {
     const { folder, store, file } = await written();
     const other = path.join(fresh('elsewhere'), 'copy.md');
     nodeFs.linkSync(md(folder), other);
-    const r = file.remove(folder, await store.getMirror(folder));
+    const r = file.remove(folder, await store.getMirror(folder), true);
     assert.ok(!r.removed && /hard link/.test(r.why!), JSON.stringify(r));
     assert.ok(nodeFs.existsSync(md(folder)) && nodeFs.existsSync(other));
   });
@@ -206,7 +212,7 @@ async function main(): Promise<void> {
     const c = countingFs();
     const { folder, store } = await written();
     c.hook.unlinkSync = () => { throw Object.assign(new Error('busy'), { code: 'EBUSY' }); };
-    const r = new NotesFile({ fs: c.fs, now: tickClock, platform: 'win32' }).remove(folder, await store.getMirror(folder));
+    const r = new NotesFile({ fs: c.fs, now: tickClock, platform: 'win32' }).remove(folder, await store.getMirror(folder), true);
     assert.ok(!r.removed && /could not be deleted \(EBUSY\)/.test(r.why!), JSON.stringify(r));
     assert.ok(nodeFs.existsSync(md(folder)));
     const g = new NotesFile().remove(path.join(root, 'no-such-folder'), undefined);
@@ -215,18 +221,18 @@ async function main(): Promise<void> {
   });
   await test('remove: the source has no recursive delete', () => {
     const src = nodeFs.readFileSync(path.join(ROOT, 'src', 'main', 'notesfile.ts'), 'utf8');
-    const body = src.slice(src.indexOf('  remove(folderPath'), src.indexOf('  /**\n   * FR-051: append'));
+    const body = src.slice(src.indexOf('  remove(folderPath'), src.indexOf('/**\n * One mirror cycle'));
     assert.ok(body.length > 500, 'found remove()');
-    assert.ok(!/rmSync|recursive|rimraf|readdirSync/.test(body), 'remove() never deletes recursively');
+    assert.ok(!/rmSync|recursive|rimraf/.test(body), 'remove() never deletes recursively');
   });
 
   await test('remove: .durbar swapped for a link after the unlink is never rmdir-ed through the link', async () => {
     if (!canLink) { skip('cannot make links here'); return; }
     const c = countingFs();
     const { folder, store } = await written();
-    const outside = fresh('outside-empty');
-    c.hook.unlinkSync = (real, ...a) => { const r = real(...a); if (path.dirname(String(a[0])) === path.join(folder, '.durbar')) { nodeFs.rmdirSync(path.join(folder, '.durbar')); nodeFs.symlinkSync(outside, path.join(folder, '.durbar'), 'dir'); } return r; };
-    const r = new NotesFile({ fs: c.fs, now: tickClock }).remove(folder, await store.getMirror(folder));
+    const outside = freshOut('outside-empty');
+    c.hook.unlinkSync = (real, ...a) => { const r = real(...a); if (path.dirname(String(a[0])) === path.join(folder, '.durbar', 'notes')) { nodeFs.rmSync(path.join(folder, '.durbar'), { recursive: true }); nodeFs.symlinkSync(outside, path.join(folder, '.durbar'), 'dir'); } return r; };
+    const r = new NotesFile({ fs: c.fs, now: tickClock }).remove(folder, await store.getMirror(folder), true);
     assert.deepStrictEqual(r, { removed: true, dirRemoved: false });
     assert.strictEqual(c.calls.filter((x) => x.m === 'rmdirSync').length, 0, 'no rmdir at all once .durbar is a link');
     assert.ok(nodeFs.statSync(outside).isDirectory() && nodeFs.lstatSync(path.join(folder, '.durbar')).isSymbolicLink(), 'the outside folder and the link stay');
@@ -248,7 +254,7 @@ async function main(): Promise<void> {
     if (canLink && !repoAbove) {
       const lk = fresh('linkedgit');
       nodeFs.symlinkSync(path.join(base, '.git'), path.join(lk, '.git'), 'dir');
-      assert.strictEqual(f.inRepo(lk), true, 'a .git that is a link counts (review 2 of PR 931): the box shows, and addExclude refuses it');
+      assert.strictEqual(f.inRepo(lk), true, 'a .git that is a link counts (review 2 of PR 931): the box shows');
     }
     assert.strictEqual(f.folderThere(sub), true);
     assert.strictEqual(f.folderThere(path.join(base, 'missing')), false);
@@ -273,9 +279,9 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(okOf(await r.ops.list('g1')).fileSwitch, { on: true, disabled: SWITCH_MISSING }, 'greyed in both positions');
   });
   await test('fileCount: the notes an existing file adds, repo or not; refusals for a conflict, a workspace, a missing folder', async () => {
-    const r = rig({ repo: 'dir' });
+    const r = rig({ repo: true });
     assert.deepStrictEqual(await r.ops.fileCount('a1'), { ok: true, count: 0, exists: false, strayText: 0, repo: true });
-    nodeFs.mkdirSync(path.join(r.folder, '.durbar'));
+    nodeFs.mkdirSync(path.join(r.folder, '.durbar', 'notes'), { recursive: true });
     nodeFs.writeFileSync(md(r.folder), FOUR);
     assert.deepStrictEqual(await r.ops.fileCount('a1'), { ok: true, count: 4, exists: true, strayText: 0, repo: true });
     nodeFs.writeFileSync(md(r.folder), FOUR + '<<<<<<< ours\nx\n=======\ny\n>>>>>>> theirs\n');
@@ -286,92 +292,130 @@ async function main(): Promise<void> {
     if (!repoAbove) assert.strictEqual(okOf(await rig().ops.fileCount('a1')).repo, false, 'outside a repository');
   });
   await test('setFile on: an unreadable file keeps the switch off and the file as it is', async () => {
-    const r = rig({ repo: 'dir' });
-    nodeFs.mkdirSync(path.join(r.folder, '.durbar'));
+    const r = rig({ repo: true });
+    nodeFs.mkdirSync(path.join(r.folder, '.durbar', 'notes'), { recursive: true });
     const bad = FOUR + '<<<<<<< ours\nx\n=======\ny\n>>>>>>> theirs\n';
     nodeFs.writeFileSync(md(r.folder), bad);
-    refusedWith(await r.ops.setFile('a1', true, { exclude: true }), COUNT_UNREADABLE, 'unreadable');
-    assert.strictEqual(new FolderStore(r.foldersFile).load().find((f) => f.workspace === r.folder)!.notesFile, undefined, 'still off on disk');
+    refusedWith(await r.ops.setFile('a1', true), COUNT_UNREADABLE, 'unreadable');
+    assert.strictEqual(new FolderStore(r.foldersFile).load().find((f) => f.workspace === r.folder)!.notesProject, undefined, 'still off on disk');
     assert.strictEqual(nodeFs.readFileSync(md(r.folder), 'utf8'), bad);
-    assert.ok(!nodeFs.existsSync(path.join(path.dirname(r.folder), '.git', 'info', 'exclude')), 'no exclude line either');
+    assert.ok(!nodeFs.existsSync(path.join(r.folder, '.durbar', 'notes', '.gitignore')), 'no .gitignore written either');
   });
-  await test('setFile on in a repository: the flag, the exclude line before the first write, notes.md written, existing notes imported', async () => {
-    const r = rig({ repo: 'dir' });
+  await test('setFile on in a repository: the flag, .gitignore "*" before the first write, notes.md written, existing notes imported; turning on twice changes nothing', async () => {
+    const r = rig({ repo: true });
     okOf(await r.ops.add('a1', { text: 'Mine from Durbar' }));
-    nodeFs.mkdirSync(path.join(r.folder, '.durbar'));
+    nodeFs.mkdirSync(path.join(r.folder, '.durbar', 'notes'), { recursive: true });
     nodeFs.writeFileSync(md(r.folder), FOUR);
     const order: string[] = [];
     const c = countingFs();
-    c.hook.openSync = (real, ...a) => { const p = String(a[0]); if (p.endsWith('exclude')) order.push('exclude'); else if (p.includes('.durbar') && !p.endsWith('notes.md')) order.push('temp'); return real(...a); };
+    c.hook.openSync = (real, ...a) => { const p = String(a[0]); if (p.endsWith('.gitignore')) order.push('ignore'); else if (p.endsWith('.tmp')) order.push('temp'); return real(...a); };
     const ops = new NotesOps({ ...(r.ops as unknown as { d: ConstructorParameters<typeof NotesOps>[0] }).d, file: () => new NotesFile({ fs: c.fs, now: tickClock }) });
-    const res = okOf(await ops.setFile('a1', true, { exclude: true }));
-    assert.strictEqual(res.on, true);
-    assert.strictEqual(res.message, 'Added .durbar/ to .git/info/exclude (local only).');
+    asked.length = 0;
+    const res = okOf(await ops.setFile('a1', true));
+    assert.deepStrictEqual([res.on, res.message, asked], [true, undefined, ['on']]);
     assert.strictEqual(res.file?.error, undefined, JSON.stringify(res.file));
-    assert.deepStrictEqual([order[0], order.includes('temp')], ['exclude', true], `the exclude line comes before the first write: ${order.join()}`);
-    assert.strictEqual(new FolderStore(r.foldersFile).load().find((f) => f.workspace === r.folder)!.notesFile, true, 'saved and read back');
-    assert.strictEqual(nodeFs.readFileSync(path.join(path.dirname(r.folder), '.git', 'info', 'exclude'), 'utf8'), '/proj/.durbar/\n');
+    assert.ok(order.indexOf('ignore') >= 0 && order.indexOf('ignore') < order.indexOf('temp'), `the .gitignore comes before the first write: ${order.join()}`);
+    assert.strictEqual(nodeFs.readFileSync(path.join(r.folder, '.durbar', 'notes', '.gitignore'), 'utf8'), '*\n');
+    assert.strictEqual(new FolderStore(r.foldersFile).load().find((f) => f.workspace === r.folder)!.notesProject, true, 'saved and read back');
+    assert.deepStrictEqual(nodeFs.readdirSync(path.dirname(r.folder)).filter((n) => n !== 'proj' && n !== '.git' && n !== 'userdata' && n !== 'team.code-workspace'), [], 'nothing written outside the folder');
     const notes = okOf(await ops.list('a1')).notes;
     assert.strictEqual(notes.filter((n) => n.from === 'file').length, 4, 'the 4 notes of the file, From the project file');
     const text = nodeFs.readFileSync(md(r.folder), 'utf8');
     assert.ok(text.includes('Mine from Durbar') && text.includes('## four'), 'the file now mirrors every note');
     assert.deepStrictEqual(okOf(await ops.list('a1')).fileSwitch, { on: true });
-    const again = okOf(await ops.setFile('a1', true, { exclude: true }));
-    assert.strictEqual(again.message, '.durbar/ is already in .git/info/exclude.', 'turning on twice adds no second line');
+    assert.strictEqual(okOf(await ops.setFile('a1', true)).message, undefined, 'turning on twice says nothing and asks nothing more');
+    assert.deepStrictEqual(asked, ['on']);
   });
-  await test('setFile on: the box off adds no line; outside a repository no exclude is tried', async () => {
-    const r = rig({ repo: 'dir' });
-    const res = okOf(await r.ops.setFile('a1', true, { exclude: false }));
-    assert.strictEqual(res.message, undefined);
-    assert.ok(!nodeFs.existsSync(path.join(path.dirname(r.folder), '.git', 'info', 'exclude')), 'no exclude file');
-    assert.ok(nodeFs.existsSync(md(r.folder)), 'the file is written');
-    if (repoAbove) { skip('a .git above the temp folder'); return; }
-    const p = rig();
-    const c = countingFs();
-    const ops = new NotesOps({ ...(p.ops as unknown as { d: ConstructorParameters<typeof NotesOps>[0] }).d, file: () => new NotesFile({ fs: c.fs, now: tickClock }) });
-    const res2 = okOf(await ops.setFile('a1', true, { exclude: true }));
-    assert.strictEqual(res2.message, undefined, 'outside a repository: nothing said about exclude');
-    assert.ok(!c.calls.some((x) => /exclude/.test(x.p)), 'no info/exclude touched');
+  await test('the choice for git: its own native box, no .gitignore, only Durbar\'s own is removed; Cancel changes nothing', async () => {
+    let say = false;
+    const r = rig({ repo: true, confirm: () => say });
+    asked.length = 0;
+    refusedWith(await r.ops.setFile('a1', true, { git: true }), NATIVE_CANCELLED, 'Cancel');
+    assert.deepStrictEqual(asked, ['git']);
+    assert.ok(!nodeFs.existsSync(path.join(r.folder, '.durbar')) && !r.folders.get(r.folder)!.notesProject, 'nothing written, no flag');
+    say = true;
+    okOf(await r.ops.setFile('a1', true)); // first the ignoring way
+    assert.ok(nodeFs.existsSync(path.join(r.folder, '.durbar', 'notes', '.gitignore')));
+    okOf(await r.ops.setFile('a1', false, { deleteFile: false }));
+    const git = okOf(await r.ops.setFile('a1', true, { git: true }));
+    assert.strictEqual(git.message, 'Removed Durbar\'s .gitignore: git no longer ignores .durbar/notes.', JSON.stringify(git));
+    assert.deepStrictEqual(nodeFs.readdirSync(path.join(r.folder, '.durbar', 'notes')), ['notes.md'], 'no .gitignore, no recreation by the cycle');
+    assert.strictEqual(r.folders.get(r.folder)!.notesProject, 'git');
+    okOf(await r.ops.add('a1', { text: 'later' }));
+    await r.ops.syncFile('a1');
+    assert.ok(!nodeFs.existsSync(path.join(r.folder, '.durbar', 'notes', '.gitignore')) && nodeFs.readFileSync(md(r.folder), 'utf8').includes('later'), 'later cycles keep writing without one');
+    // a .gitignore the person made is not Durbar's: it stays, and its owner decides
+    const q = rig({ repo: true });
+    nodeFs.mkdirSync(path.join(q.folder, '.durbar', 'notes'), { recursive: true });
+    nodeFs.writeFileSync(path.join(q.folder, '.durbar', 'notes', '.gitignore'), 'mine\n');
+    const own = okOf(await q.ops.setFile('a1', true, { git: true }));
+    assert.strictEqual(own.message, NOT_OURS);
+    assert.strictEqual(nodeFs.readFileSync(path.join(q.folder, '.durbar', 'notes', '.gitignore'), 'utf8'), 'mine\n');
+  });
+  await test('turning on starts from nothing: the hash of an earlier import and the mirror of an earlier file are forgotten', async () => {
+    const r = rig();
+    okOf(await r.ops.setFile('a1', true));
+    nodeFs.appendFileSync(md(r.folder), '\n<!-- durbar-note -->\n## by hand\n\nan idea\n');
+    await r.ops.syncFile('a1');
+    assert.ok(await r.store.getFileImport(r.folder), 'the import is remembered while on');
+    okOf(await r.ops.setFile('a1', false, { deleteFile: false }));
+    nodeFs.rmSync(path.join(r.folder, '.durbar'), { recursive: true }); // the test's own folder
+    okOf(await r.ops.setFile('a1', true));
+    assert.strictEqual(await r.store.getFileImport(r.folder), undefined, 'the old import hash is gone');
+    assert.notStrictEqual((await r.store.getMirror(r.folder))?.sha256, undefined);
+  });
+  await test('only a .gitignore Durbar made is recorded as its own and deleted: turn-on records it, a shipped "*" is not recorded, Keep in git and Delete the file leave a shipped one', async () => {
+    const r = rig({ repo: true });
+    okOf(await r.ops.setFile('a1', true));
+    assert.strictEqual(r.folders.get(r.folder)!.notesIgnoreOwn, true, 'made by Durbar: recorded');
+    okOf(await r.ops.setFile('a1', false, { deleteFile: true }));
+    assert.ok(!nodeFs.existsSync(path.join(r.folder, '.durbar')) && r.folders.get(r.folder)!.notesIgnoreOwn === undefined, 'deleted with the folder, record cleared');
+    const q = rig({ repo: true });
+    nodeFs.mkdirSync(path.join(q.folder, '.durbar', 'notes'), { recursive: true });
+    nodeFs.writeFileSync(path.join(q.folder, '.durbar', 'notes', '.gitignore'), '*\n'); // shipped by the repository
+    okOf(await q.ops.setFile('a1', true));
+    assert.strictEqual(q.folders.get(q.folder)!.notesIgnoreOwn, undefined, 'a shipped file is not recorded as Durbar\'s');
+    const off = okOf(await q.ops.setFile('a1', false, { deleteFile: true }));
+    assert.ok(nodeFs.existsSync(path.join(q.folder, '.durbar', 'notes', '.gitignore')) && off.message!.startsWith('Deleted .durbar/notes/notes.md.'), `kept: ${off.message}`);
+    const g = rig({ repo: true });
+    nodeFs.mkdirSync(path.join(g.folder, '.durbar', 'notes'), { recursive: true });
+    nodeFs.writeFileSync(path.join(g.folder, '.durbar', 'notes', '.gitignore'), '*\n');
+    assert.strictEqual(okOf(await g.ops.setFile('a1', true, { git: true })).message, NOT_OURS);
+    assert.ok(nodeFs.existsSync(path.join(g.folder, '.durbar', 'notes', '.gitignore')), 'Keep in git does not delete a shipped file');
   });
   await test('setFile: only an agent id, a boolean and two yes/no options; a path from the window is never used', async () => {
     const r = rig();
     const elsewhere = fresh('elsewhere');
     for (const [on, opts, what] of [
-      ['true', undefined, 'on as text'], [1, undefined, 'on as a number'], [true, { path: elsewhere }, 'a path option'], [true, { folder: elsewhere, exclude: true }, 'a folder option'],
-      [true, { exclude: 'yes' }, 'exclude as text'], [false, { deleteFile: 1 }, 'deleteFile as a number'], [true, { deleteFile: true }, 'delete while turning on'],
-      [false, { exclude: true }, 'exclude while turning off'], [true, JSON.parse('{"__proto__":{"exclude":true}}'), '__proto__'], [true, [true], 'an array'], [true, 'exclude', 'a string'],
+      ['true', undefined, 'on as text'], [1, undefined, 'on as a number'], [true, { path: elsewhere }, 'a path option'], [true, { folder: elsewhere, git: true }, 'a folder option'],
+      [true, { git: 'yes' }, 'git as text'], [true, { exclude: true }, 'the old exclude option'], [false, { deleteFile: 1 }, 'deleteFile as a number'], [true, { deleteFile: true }, 'delete while turning on'],
+      [false, { git: true }, 'git while turning off'], [true, JSON.parse('{"__proto__":{"git":true}}'), '__proto__'], [true, [true], 'an array'], [true, 'git', 'a string'],
     ] as [unknown, unknown, string][]) refusedWith(await r.ops.setFile('a1', on, opts), /./, what);
     refusedWith(await r.ops.setFile(elsewhere, true), /chat is not open/, 'a path as the agent id');
     refusedWith(await r.ops.setFile('w1', true), SWITCH_WORKSPACE, 'a .code-workspace');
     refusedWith(await r.ops.setFile('g1', true), SWITCH_MISSING, 'a missing folder');
     assert.ok(!nodeFs.existsSync(path.join(elsewhere, '.durbar')) && !nodeFs.existsSync(path.join(r.folder, '.durbar')), 'nothing written anywhere');
-    assert.ok(r.folders.list().every((f) => !f.notesFile), 'no flag set');
+    assert.ok(r.folders.list().every((f) => !f.notesProject), 'no flag set');
   });
-  await test('setFile off: Leave keeps the file and the exclude line and says so; later changes write nothing', async () => {
-    const r = rig({ repo: 'dir' });
-    okOf(await r.ops.setFile('a1', true, { exclude: true }));
+  await test('setFile off: Leave keeps the file and says so; later changes write nothing', async () => {
+    const r = rig({ repo: true });
+    okOf(await r.ops.setFile('a1', true));
     const before = nodeFs.readFileSync(md(r.folder), 'utf8');
     const off = okOf(await r.ops.setFile('a1', false, { deleteFile: false }));
     assert.strictEqual(off.on, false);
-    assert.ok(off.message!.includes('left in the project') && off.message!.includes(EXCLUDE_KEPT), off.message);
-    assert.strictEqual(nodeFs.readFileSync(path.join(path.dirname(r.folder), '.git', 'info', 'exclude'), 'utf8'), '/proj/.durbar/\n', 'the exclude line stays');
-    assert.strictEqual(new FolderStore(r.foldersFile).load().find((f) => f.workspace === r.folder)!.notesFile, undefined, 'off on disk');
+    assert.ok(off.message!.includes('left in the project'), off.message);
+    assert.strictEqual(new FolderStore(r.foldersFile).load().find((f) => f.workspace === r.folder)!.notesProject, undefined, 'off on disk');
     okOf(await r.ops.add('a1', { text: 'after off' }));
     r.timers.splice(0).forEach((f) => f());
     await r.ops.syncFile('a1');
     assert.strictEqual(nodeFs.readFileSync(md(r.folder), 'utf8'), before, 'not written after off');
     assert.deepStrictEqual(okOf(await r.ops.list('a1')).fileSwitch, { on: false });
-    if (!repoAbove) {
-      const p = rig();
-      okOf(await p.ops.setFile('a1', true));
-      assert.ok(!okOf(await p.ops.setFile('a1', false)).message!.includes('exclude'), 'outside a repository: nothing said about exclude');
-    }
   });
   await test('setFile off: Delete removes the file Durbar wrote, keeps an edited one, and waits for a cycle in flight', async () => {
-    const r = rig({ repo: 'dir' });
-    okOf(await r.ops.setFile('a1', true, { exclude: false }));
+    const r = rig({ repo: true });
+    okOf(await r.ops.setFile('a1', true));
     const del = okOf(await r.ops.setFile('a1', false, { deleteFile: true }));
-    assert.ok(del.message!.startsWith('Deleted .durbar/notes.md and the empty .durbar folder.'), del.message);
+    assert.ok(del.message!.startsWith('Deleted .durbar/notes/notes.md and the empty .durbar/notes folder.'), del.message);
     assert.ok(!nodeFs.existsSync(path.join(r.folder, '.durbar')));
     okOf(await r.ops.setFile('a1', true));
     nodeFs.appendFileSync(md(r.folder), 'my hand edit\n');
@@ -427,11 +471,11 @@ async function main(): Promise<void> {
     const r = rig();
     const [a, b] = await Promise.all([r.ops.setFile('a1', true), r.ops.setFile('a1', false)]);
     assert.ok(okOf(a).on === true && okOf(b).on === false, JSON.stringify([a, b]));
-    assert.strictEqual(new FolderStore(r.foldersFile).load().find((f) => f.workspace === r.folder)!.notesFile, undefined, 'the last answer (off) is what is saved');
+    assert.strictEqual(new FolderStore(r.foldersFile).load().find((f) => f.workspace === r.folder)!.notesProject, undefined, 'the last answer (off) is what is saved');
     assert.deepStrictEqual(okOf(await r.ops.list('a1')).fileSwitch, { on: false });
     const [c2, d2] = await Promise.all([r.ops.setFile('a1', false), r.ops.setFile('a1', true)]);
     assert.ok(okOf(c2).on === false && okOf(d2).on === true);
-    assert.strictEqual(new FolderStore(r.foldersFile).load().find((f) => f.workspace === r.folder)!.notesFile, true, 'off then on: on');
+    assert.strictEqual(new FolderStore(r.foldersFile).load().find((f) => f.workspace === r.folder)!.notesProject, true, 'off then on: on');
   });
   await test('setFile off with Delete while the switch is already off: refused, notes.md not even looked at', async () => {
     const r = rig();
@@ -470,7 +514,7 @@ async function main(): Promise<void> {
     let locked = true;
     const r = rig({ pending: () => locked });
     refusedWith(await r.ops.setFile('a1', true), VALUES_PENDING_ON, 'turning on while locked (review 2 of PR 931)');
-    assert.ok(!nodeFs.existsSync(path.join(r.folder, '.durbar')) && !r.folders.get(r.folder)!.notesFile, 'off, nothing written');
+    assert.ok(!nodeFs.existsSync(path.join(r.folder, '.durbar')) && !r.folders.get(r.folder)!.notesProject, 'off, nothing written');
     locked = false;
     okOf(await r.ops.setFile('a1', true));
     assert.ok(nodeFs.existsSync(md(r.folder)), 'written by the turn-on call');
@@ -491,19 +535,19 @@ async function main(): Promise<void> {
     for (const when of ['rename', 'unlink'] as const) {
       const c = countingFs();
       const { folder, store } = await written();
-      const outside = fresh('outside');
-      nodeFs.writeFileSync(path.join(outside, 'notes.md'), 'someone else\'s different bytes\n');
-      const ino = nodeFs.statSync(path.join(outside, 'notes.md')).ino;
+      const outside = freshOut('outside');
+      nodeFs.writeFileSync(path.join(outside, 'notes', 'notes.md'), 'someone else\'s different bytes\n');
+      const ino = nodeFs.statSync(path.join(outside, 'notes', 'notes.md')).ino;
       const aside = path.join(path.dirname(folder), 'aside');
       let done = false;
       const swap = (): void => { if (done) return; done = true; nodeFs.renameSync(path.join(folder, '.durbar'), aside); nodeFs.symlinkSync(outside, path.join(folder, '.durbar'), 'dir'); };
       if (when === 'rename') c.hook.renameSync = (real, ...a) => { if (String(a[0]) === md(folder)) swap(); return real(...a); };
       else c.hook.unlinkSync = (real, ...a) => { swap(); return real(...a); };
-      const r = new NotesFile({ fs: c.fs, now: tickClock }).remove(folder, await store.getMirror(folder));
+      const r = new NotesFile({ fs: c.fs, now: tickClock }).remove(folder, await store.getMirror(folder), true);
       assert.strictEqual(r.removed, false, `${when}: ${JSON.stringify(r)}`);
-      const left = nodeFs.readdirSync(outside).map((n) => nodeFs.statSync(path.join(outside, n)).ino);
-      assert.ok(left.includes(ino), `${when}: the outside file still exists (${nodeFs.readdirSync(outside).join()})`);
-      if (when === 'rename') assert.ok(nodeFs.existsSync(path.join(outside, 'notes.md')), 'renamed back');
+      const left = nodeFs.readdirSync(path.join(outside, 'notes')).map((n) => nodeFs.statSync(path.join(outside, 'notes', n)).ino);
+      assert.ok(left.includes(ino), `${when}: the outside file still exists (${nodeFs.readdirSync(path.join(outside, 'notes')).join()})`);
+      if (when === 'rename') assert.ok(nodeFs.existsSync(path.join(outside, 'notes', 'notes.md')), 'renamed back');
       assert.ok(nodeFs.readdirSync(aside).length === 1, `${when}: Durbar's own file is kept (maybe under the random name)`);
     }
     // the sequence the real swapper found: the rename lands outside, .durbar looks real for its check, the read goes outside again
@@ -511,9 +555,9 @@ async function main(): Promise<void> {
     {
       const c = countingFs();
       const { folder, store } = await written();
-      const outside = fresh('outside3');
-      nodeFs.copyFileSync(md(folder), path.join(outside, 'notes.md'));
-      const ino = nodeFs.statSync(path.join(outside, 'notes.md')).ino;
+      const outside = freshOut('outside3');
+      nodeFs.copyFileSync(md(folder), path.join(outside, 'notes', 'notes.md'));
+      const ino = nodeFs.statSync(path.join(outside, 'notes', 'notes.md')).ino;
       const d = path.join(folder, '.durbar'), aside = path.join(path.dirname(folder), 'aside3');
       let state: 'real' | 'link' = 'real', phase = 0;
       const toLink = (): void => { if (state === 'link') return; nodeFs.renameSync(d, aside); nodeFs.symlinkSync(outside, d, 'dir'); state = 'link'; };
@@ -521,24 +565,24 @@ async function main(): Promise<void> {
       c.hook.renameSync = (real, ...a) => { if (String(a[0]) === md(folder) && phase === 0) { toLink(); phase = 1; } return real(...a); };
       c.hook.lstatSync = (real, ...a) => { if (phase === 1 && String(a[0]) === d) toReal(); return real(...a); };
       c.hook.openSync = (real, ...a) => { if (phase === 1 && String(a[0]).endsWith('.del')) { toLink(); phase = 2; } return real(...a); };
-      const r = new NotesFile({ fs: c.fs, now: tickClock }).remove(folder, await store.getMirror(folder));
+      const r = new NotesFile({ fs: c.fs, now: tickClock }).remove(folder, await store.getMirror(folder), true);
       assert.ok(phase === 2 && !r.removed, `the sequence ran and nothing was deleted: ${JSON.stringify(r)}`);
-      assert.ok(nodeFs.readdirSync(outside).map((n) => nodeFs.statSync(path.join(outside, n)).ino).includes(ino), 'the outside file still exists');
+      assert.ok(nodeFs.readdirSync(path.join(outside, 'notes')).map((n) => nodeFs.statSync(path.join(outside, 'notes', n)).ino).includes(ino), 'the outside file still exists');
     }
     // a real swapper in another process, bounded: no outside file is ever deleted
     if (!posix) { skip('the swapper process uses POSIX renames over links'); return; }
     const { folder, store } = await written();
     const mirror = await store.getMirror(folder);
     const bytes = nodeFs.readFileSync(md(folder));
-    const outside = fresh('outside2');
-    nodeFs.writeFileSync(path.join(outside, 'notes.md'), bytes); // identical bytes: the hard case
-    const ino = nodeFs.statSync(path.join(outside, 'notes.md')).ino;
+    const outside = freshOut('outside2');
+    nodeFs.writeFileSync(path.join(outside, 'notes', 'notes.md'), bytes); // identical bytes: the hard case
+    const ino = nodeFs.statSync(path.join(outside, 'notes', 'notes.md')).ino;
     const real = path.join(path.dirname(folder), 'real-durbar');
     const stop = path.join(path.dirname(folder), 'stop');
     const code = `const fs=require('fs');const [d,real,out,stop]=process.argv.slice(1);const end=Date.now()+60000;let n=0;process.stdout.write('R');
       while(!fs.existsSync(stop)&&Date.now()<end){try{fs.renameSync(d,real);fs.symlinkSync(out,d,'dir');for(let k=0;k<(n%7)*4;k++)fs.statSync(out);fs.unlinkSync(d);fs.renameSync(real,d);n++;}catch(e){try{if(!fs.existsSync(d)&&fs.existsSync(real))fs.renameSync(real,d);}catch(_){}}}
       try{if(fs.lstatSync(d).isSymbolicLink())fs.unlinkSync(d);}catch(_){}try{if(fs.existsSync(real))fs.renameSync(real,d);}catch(_){}process.stdout.write(String(n));`;
-    nodeFs.writeFileSync(path.join(folder, '.durbar', 'keep.txt'), 'keeps .durbar from being removed when empty');
+    nodeFs.writeFileSync(path.join(folder, '.durbar', 'notes', 'keep.txt'), 'keeps .durbar from being removed when empty');
     const child = spawn(process.execPath, ['-e', code, path.join(folder, '.durbar'), real, outside, stop], { stdio: ['ignore', 'pipe', 'ignore'] });
     let swaps = '';
     child.stdout.on('data', (b) => { swaps += String(b); });
@@ -558,9 +602,9 @@ async function main(): Promise<void> {
       try { if (nodeFs.lstatSync(path.join(folder, '.durbar')).isDirectory()) nodeFs.writeFileSync(md(folder), bytes, { flag: 'wx' }); } catch { /* there already, or swapped: next round */ }
       if (f().remove(folder, mirror).removed) deleted++;
       // a rename that landed in the outside folder (exposure): put the outside file back under its name, so every round can reach it
-      if (!nodeFs.existsSync(path.join(outside, 'notes.md'))) {
-        const moved = nodeFs.readdirSync(outside).find((n) => n.endsWith('.del') && nodeFs.statSync(path.join(outside, n)).ino === ino);
-        if (moved) { restored++; nodeFs.renameSync(path.join(outside, moved), path.join(outside, 'notes.md')); }
+      if (!nodeFs.existsSync(path.join(outside, 'notes', 'notes.md'))) {
+        const moved = nodeFs.readdirSync(path.join(outside, 'notes')).find((n) => n.endsWith('.del') && nodeFs.statSync(path.join(outside, 'notes', n)).ino === ino);
+        if (moved) { restored++; nodeFs.renameSync(path.join(outside, moved), path.join(outside, 'notes', 'notes.md')); }
       }
       if (i % 50 === 0) await new Promise((res) => setImmediate(res));
     }
@@ -568,47 +612,35 @@ async function main(): Promise<void> {
     await exited;
     console.log(`  (swapper: ${swaps.replace('R', '')} swaps; ${attempts} delete attempts, ${deleted} deletes of Durbar's own file, ${exposed} renames that landed in the other folder (exposures), ${restored} of them left under the random name and put back by the test)`);
     assert.ok(swaps.startsWith('R'), 'the swapper process ran');
-    const left = nodeFs.readdirSync(outside).map((n) => nodeFs.statSync(path.join(outside, n)).ino);
-    assert.ok(left.includes(ino), `the outside file survived ${swaps} swaps and ${deleted} deletes (${nodeFs.readdirSync(outside).join()})`);
+    const left = nodeFs.readdirSync(path.join(outside, 'notes')).map((n) => nodeFs.statSync(path.join(outside, 'notes', n)).ino);
+    assert.ok(left.includes(ino), `the outside file survived ${swaps} swaps and ${deleted} deletes (${nodeFs.readdirSync(path.join(outside, 'notes')).join()})`);
   });
   await test('PR 931 review 2, points 5 and 6: the rename back never replaces a newer notes.md, and the message names the exact file', async () => {
     const c = countingFs();
     const { folder, store } = await written();
     let doomed = '';
     c.hook.unlinkSync = (real, ...a) => { if (String(a[0]).endsWith('.del')) { doomed = String(a[0]); nodeFs.writeFileSync(md(folder), 'a newer file\n'); throw Object.assign(new Error('perm'), { code: 'EPERM' }); } return real(...a); };
-    const r = new NotesFile({ fs: c.fs, now: tickClock }).remove(folder, await store.getMirror(folder));
+    const r = new NotesFile({ fs: c.fs, now: tickClock }).remove(folder, await store.getMirror(folder), true);
     assert.ok(!r.removed && doomed, JSON.stringify(r));
     assert.strictEqual(nodeFs.readFileSync(md(folder), 'utf8'), 'a newer file\n', 'the newer notes.md is kept');
     assert.ok(nodeFs.existsSync(doomed), 'the old one stays under its random name');
-    assert.strictEqual(r.why, `Durbar did not delete .durbar/notes.md: it could not be deleted (EPERM); a newer notes.md is there, so the old one may be left as ${path.basename(doomed)}, in .durbar or in another folder: renaming it back to notes.md restores it.`);
+    assert.strictEqual(r.why, `Durbar did not delete .durbar/notes/notes.md: it could not be deleted (EPERM); a newer notes.md is there, so the old one may be left as ${path.basename(doomed)}, in .durbar/notes or in another folder: renaming it back to notes.md restores it.`);
     // no hard links on this file system: renamed back only when nothing is at notes.md
     const c2 = countingFs();
     const w2 = await written();
     c2.hook.unlinkSync = (real, ...a) => { if (String(a[0]).endsWith('.del')) throw Object.assign(new Error('perm'), { code: 'EPERM' }); return real(...a); };
     c2.hook.linkSync = () => { throw Object.assign(new Error('nolinks'), { code: 'EPERM' }); };
     const r2 = new NotesFile({ fs: c2.fs, now: tickClock }).remove(w2.folder, await w2.store.getMirror(w2.folder));
-    assert.strictEqual(r2.why, 'Durbar did not delete .durbar/notes.md: it could not be deleted (EPERM).');
+    assert.strictEqual(r2.why, 'Durbar did not delete .durbar/notes/notes.md: it could not be deleted (EPERM).');
     assert.ok(nodeFs.existsSync(md(w2.folder)) && nodeFs.readdirSync(path.join(w2.folder, '.durbar')).length === 1, 'renamed back, nothing left behind');
   });
-  await test('PR 931 review 2, point 1: a repository whose .git is a link: the box shows and the switch stays off; point 8: the text has one period', async () => {
+  await test('a repository whose .git is a link still shows the choice for git (the box is only a question)', async () => {
     if (!canLink) { skip('cannot make links here'); return; }
-    const r = rig({ repo: 'dir' });
+    const r = rig({ repo: true });
     const base = path.dirname(r.folder);
     nodeFs.renameSync(path.join(base, '.git'), path.join(base, 'gitdir-real'));
     nodeFs.symlinkSync(path.join(base, 'gitdir-real'), path.join(base, '.git'), 'dir');
     assert.strictEqual(okOf(await r.ops.fileCount('a1')).repo, true, 'the dialog offers the box');
-    const res = await r.ops.setFile('a1', true, { exclude: true }) as { ok: boolean; error?: string; excludeFailed?: boolean };
-    assert.deepStrictEqual([res.ok, res.excludeFailed, res.error], [false, true, 'Could not add .durbar/ to .git/info/exclude: .git is a link. The switch stays off.']);
-    assert.ok(!nodeFs.existsSync(path.join(r.folder, '.durbar')) && !r.folders.get(r.folder)!.notesFile, 'off, nothing written');
-    if (!posix) { skip('a folder name with a tab cannot be made on Windows'); return; }
-    const q = rig({ repo: 'dir' });
-    const tabbed = path.join(path.dirname(q.folder), 'a\tb');
-    nodeFs.mkdirSync(tabbed);
-    const ag = q.ops as unknown as { d: { agents: Map<string, AgentInfo> } };
-    ag.d.agents.set('t1', { ...ag.d.agents.get('a1')!, id: 't1', cwd: tabbed, folders: [tabbed] } as AgentInfo);
-    q.folders.upsert({ workspace: tabbed, permMode: 'read-only' });
-    const t = await q.ops.setFile('t1', true, { exclude: true }) as { ok: boolean; error?: string };
-    assert.strictEqual(t.error, "This folder's name cannot be written to .git/info/exclude safely. The switch stays off.");
   });
   /** A folder on a real disk (os.tmpdir() may be tmpfs): /var/tmp on POSIX when it is there, else the OS temp folder. */
   /** Whether this file system records a birth time, asked of the OS directly (not of the code under test). */
@@ -647,12 +679,12 @@ async function main(): Promise<void> {
     await r.store.setMirror(r.folder, 'proj', undefined);
     // another repository with its own notes.md is cloned to the same path: deleted and made again, not renamed aside
     nodeFs.rmSync(r.folder, { recursive: true }); // the test's own folder
-    nodeFs.mkdirSync(path.join(r.folder, '.durbar'), { recursive: true });
+    nodeFs.mkdirSync(path.join(r.folder, '.durbar', 'notes'), { recursive: true });
     const theirs = '# Notes\n\n<!-- durbar-note -->\n## their note\n\nfrom another repository\n';
     nodeFs.writeFileSync(md(r.folder), theirs);
     okOf(await r.ops.add('a1', { text: 'my private idea' }));
     const st = okOf(await r.ops.list('a1')).file;
-    assert.deepStrictEqual(st, { error: 'This folder looks replaced, or its drive was remounted. Turn the switch off and on again to write .durbar/notes.md here.' });
+    assert.deepStrictEqual(st, { error: 'This folder looks replaced, or its drive was remounted. Turn the switch off and on again to write .durbar/notes/notes.md here.' });
     assert.strictEqual(nodeFs.readFileSync(md(r.folder), 'utf8'), theirs, 'nothing written into the other folder');
     void locked;
   });
@@ -663,9 +695,9 @@ async function main(): Promise<void> {
     {
       const c = countingFs();
       const { folder, store } = await written();
-      const outside = fresh('outside4');
-      nodeFs.copyFileSync(md(folder), path.join(outside, 'notes.md'));
-      const ino = nodeFs.statSync(path.join(outside, 'notes.md')).ino;
+      const outside = freshOut('outside4');
+      nodeFs.copyFileSync(md(folder), path.join(outside, 'notes', 'notes.md'));
+      const ino = nodeFs.statSync(path.join(outside, 'notes', 'notes.md')).ino;
       const d = path.join(folder, '.durbar'), aside = path.join(path.dirname(folder), 'aside4');
       let state: 'real' | 'link' = 'real', phase = 0, doomed = '';
       const toLink = (): void => { if (state === 'link') return; nodeFs.renameSync(d, aside); nodeFs.symlinkSync(outside, d, 'dir'); state = 'link'; };
@@ -674,10 +706,10 @@ async function main(): Promise<void> {
       c.hook.lstatSync = (real, ...a) => { if (phase === 1 && String(a[0]) === d) { toReal(); nodeFs.renameSync(md(folder), doomed); nodeFs.writeFileSync(doomed, 'a decoy with other bytes\n'); phase = 2; } return real(...a); };
       c.hook.realpathSync = (real, ...a) => { if (phase === 3 && String(a[0]) === doomed) toLink(); return real(...a); };
       c.hook.linkSync = (real, ...a) => { const r = real(...a); phase = 3; return r; };
-      const r = new NotesFile({ fs: c.fs, now: tickClock }).remove(folder, await store.getMirror(folder));
+      const r = new NotesFile({ fs: c.fs, now: tickClock }).remove(folder, await store.getMirror(folder), true);
       assert.ok(phase === 3 && !r.removed, `the sequence ran: ${JSON.stringify(r)}`);
-      assert.ok(nodeFs.readdirSync(outside).map((n) => nodeFs.statSync(path.join(outside, n)).ino).includes(ino), `the outside file still exists (${nodeFs.readdirSync(outside).join()})`);
-      assert.ok(/are now two names of the same file: delete \.notes\.md\.\d+\.[a-z0-9]+\.del in \.durbar once nothing holds it\.$/.test(r.why!), r.why);
+      assert.ok(nodeFs.readdirSync(path.join(outside, 'notes')).map((n) => nodeFs.statSync(path.join(outside, 'notes', n)).ino).includes(ino), `the outside file still exists (${nodeFs.readdirSync(path.join(outside, 'notes')).join()})`);
+      assert.ok(/are now two names of the same file: delete \.notes\.md\.\d+\.[a-z0-9]+\.del in \.durbar\/notes once nothing holds it\.$/.test(r.why!), r.why);
     }
     // 5: every unlink of the random name fails (a Windows editor holds it): nothing unlinks notes.md; the answer names both names
     {
@@ -685,20 +717,20 @@ async function main(): Promise<void> {
       const { folder, store } = await written();
       let doomed = '';
       c.hook.unlinkSync = (real, ...a) => { if (String(a[0]).endsWith('.del')) { doomed = String(a[0]); throw Object.assign(new Error('perm'), { code: 'EPERM' }); } return real(...a); };
-      const r = new NotesFile({ fs: c.fs, now: tickClock }).remove(folder, await store.getMirror(folder));
+      const r = new NotesFile({ fs: c.fs, now: tickClock }).remove(folder, await store.getMirror(folder), true);
       assert.ok(nodeFs.existsSync(md(folder)) && nodeFs.statSync(doomed).nlink === 2, 'two names of one file: notes.md and the random one');
       assert.ok(!c.calls.some((x) => x.m === 'unlinkSync' && x.p === md(folder)), 'notes.md is never unlinked by name');
       const n = path.basename(doomed);
-      assert.strictEqual(r.why, `Durbar did not delete .durbar/notes.md: it could not be deleted (EPERM); notes.md and ${n} are now two names of the same file: delete ${n} in .durbar once nothing holds it.`);
+      assert.strictEqual(r.why, `Durbar did not delete .durbar/notes/notes.md: it could not be deleted (EPERM); notes.md and ${n} are now two names of the same file: delete ${n} in .durbar/notes once nothing holds it.`);
     }
     // re-check of review 3: the rename lands outside through a link; .durbar swapped back (a decoy under the random name here, the other
     // folder's file put back under its name); the unlink of the random name fails; .durbar swapped to the link: the outside notes.md survives
     {
       const c = countingFs();
       const { folder, store } = await written();
-      const outside = fresh('outside5');
-      nodeFs.writeFileSync(path.join(outside, 'notes.md'), 'the other folder\'s own file\n');
-      const ino = nodeFs.statSync(path.join(outside, 'notes.md')).ino;
+      const outside = freshOut('outside5');
+      nodeFs.writeFileSync(path.join(outside, 'notes', 'notes.md'), 'the other folder\'s own file\n');
+      const ino = nodeFs.statSync(path.join(outside, 'notes', 'notes.md')).ino;
       const d = path.join(folder, '.durbar'), aside = path.join(path.dirname(folder), 'aside5');
       let state: 'real' | 'link' = 'real', phase = 0, doomed = '';
       const toLink = (): void => { if (state === 'link') return; nodeFs.renameSync(d, aside); nodeFs.symlinkSync(outside, d, 'dir'); state = 'link'; };
@@ -707,7 +739,7 @@ async function main(): Promise<void> {
       c.hook.lstatSync = (real, ...a) => {
         if (phase === 1 && String(a[0]) === d) {
           toReal();
-          nodeFs.renameSync(path.join(outside, path.basename(doomed)), path.join(outside, 'notes.md')); // the other file back under its name
+          nodeFs.renameSync(path.join(outside, 'notes', path.basename(doomed)), path.join(outside, 'notes', 'notes.md')); // the other file back under its name
           nodeFs.renameSync(md(folder), doomed); // a decoy under the random name here, so the hard link back succeeds
           nodeFs.writeFileSync(doomed, 'a decoy\n');
           phase = 2;
@@ -719,9 +751,9 @@ async function main(): Promise<void> {
         if (phase === 3 && String(a[0]) === md(folder)) toLink(); // swapped right after any check, before an unlink by the name notes.md
         return real(...a);
       };
-      const r = new NotesFile({ fs: c.fs, now: tickClock }).remove(folder, await store.getMirror(folder));
+      const r = new NotesFile({ fs: c.fs, now: tickClock }).remove(folder, await store.getMirror(folder), true);
       assert.ok(phase === 3 && !r.removed, `the sequence ran: ${JSON.stringify(r)}`);
-      assert.ok(nodeFs.existsSync(path.join(outside, 'notes.md')) && nodeFs.statSync(path.join(outside, 'notes.md')).ino === ino, 'the other folder\'s notes.md survives');
+      assert.ok(nodeFs.existsSync(path.join(outside, 'notes', 'notes.md')) && nodeFs.statSync(path.join(outside, 'notes', 'notes.md')).ino === ino, 'the other folder\'s notes.md survives');
     }
   });
   await test('PR 931 review 2, points 2 and 3: only turning on creates the file; another folder at the same path is not written into', async () => {
@@ -736,24 +768,13 @@ async function main(): Promise<void> {
     assert.ok(nodeFs.existsSync(md(r.folder)));
     // the folder is replaced by another one at the same path that ships its own notes.md
     nodeFs.renameSync(r.folder, r.folder + '-old');
-    nodeFs.mkdirSync(path.join(r.folder, '.durbar'), { recursive: true });
+    nodeFs.mkdirSync(path.join(r.folder, '.durbar', 'notes'), { recursive: true });
     const theirs = '# Notes\n\n<!-- durbar-note -->\n## their note\n\nfrom another repository\n';
     nodeFs.writeFileSync(md(r.folder), theirs);
     okOf(await r.ops.add('a1', { text: 'my private idea' }));
     assert.deepStrictEqual(okOf(await r.ops.list('a1')).file, { error: NOTES_REPLACED });
     assert.strictEqual(nodeFs.readFileSync(md(r.folder), 'utf8'), theirs, 'nothing written into the other folder');
     assert.ok(!okOf(await r.ops.list('a1')).notes.some((n) => n.title === 'their note'), 'and nothing imported from it');
-  });
-  await test('PR 931 3 and 7: the exclude line goes in before the flag; when it cannot, the switch stays off; no options: no line', async () => {
-    const r = rig({ repo: 'noinfo' });
-    const res = await r.ops.setFile('a1', true, { exclude: true }) as { ok: boolean; error?: string; excludeFailed?: boolean };
-    assert.ok(!res.ok && res.excludeFailed === true && /no info folder\. The switch stays off\./.test(res.error!), JSON.stringify(res));
-    assert.ok(!nodeFs.existsSync(path.join(r.folder, '.durbar')) && !r.folders.get(r.folder)!.notesFile, 'off and nothing written');
-    okOf(await r.ops.setFile('a1', true, { exclude: false }));
-    assert.ok(nodeFs.existsSync(md(r.folder)), 'turned on without the line after an explicit choice');
-    const q = rig({ repo: 'dir' });
-    okOf(await q.ops.setFile('a1', true));
-    assert.ok(!nodeFs.existsSync(path.join(path.dirname(q.folder), '.git', 'info', 'exclude')), 'no options: no exclude line');
   });
   await test('PR 931 4: a file Durbar wrote that is gone is not recreated until the switch is turned on again', async () => {
     const r = rig();
@@ -771,23 +792,23 @@ async function main(): Promise<void> {
   });
   await test('PR 931 5: fileCount says how many lines of text outside notes an existing file would lose', async () => {
     const r = rig();
-    nodeFs.mkdirSync(path.join(r.folder, '.durbar'));
+    nodeFs.mkdirSync(path.join(r.folder, '.durbar', 'notes'), { recursive: true });
     nodeFs.writeFileSync(md(r.folder), 'my own plan\nline two\nline three\n');
     const c = okOf(await r.ops.fileCount('a1'));
     assert.deepStrictEqual([c.count, c.exists, c.strayText], [0, true, 3]);
   });
   await test('PR 931 Q2: a native box the page cannot answer, before turning on and before Delete', async () => {
     let say = false;
-    const r = rig({ repo: 'dir', confirm: () => say });
+    const r = rig({ repo: true, confirm: () => say });
     asked.length = 0;
-    refusedWith(await r.ops.setFile('a1', true, { exclude: true }), NATIVE_CANCELLED, 'Cancel in the native box');
+    refusedWith(await r.ops.setFile('a1', true), NATIVE_CANCELLED, 'Cancel in the native box');
     assert.deepStrictEqual(asked, ['on']);
-    assert.ok(!nodeFs.existsSync(path.join(r.folder, '.durbar')) && !r.folders.get(r.folder)!.notesFile && !nodeFs.existsSync(path.join(path.dirname(r.folder), '.git', 'info', 'exclude')), 'nothing written, no flag, no line');
+    assert.ok(!nodeFs.existsSync(path.join(r.folder, '.durbar')) && !r.folders.get(r.folder)!.notesProject , 'nothing written, no flag');
     say = true;
     okOf(await r.ops.setFile('a1', true));
     say = false;
     refusedWith(await r.ops.setFile('a1', false, { deleteFile: true }), NATIVE_CANCELLED, 'Delete cancelled');
-    assert.ok(nodeFs.existsSync(md(r.folder)) && r.folders.get(r.folder)!.notesFile === true, 'the file and the switch stay');
+    assert.ok(nodeFs.existsSync(md(r.folder)) && r.folders.get(r.folder)!.notesProject === true, 'the file and the switch stay');
     okOf(await r.ops.setFile('a1', false)); // Leave needs no box
     const none = new NotesOps({ ...(r.ops as unknown as { d: ConstructorParameters<typeof NotesOps>[0] }).d, confirmNative: undefined });
     refusedWith(await none.setFile('a1', true), NATIVE_CANCELLED, 'no native box wired: refused');
@@ -796,8 +817,8 @@ async function main(): Promise<void> {
   // ---- main wiring and the channels (AC1, IPC) ----
   await test('main.ts reads and saves the flag through the folder list; the two channels are not open to the simulator', () => {
     const mainSrc = nodeFs.readFileSync(path.join(ROOT, 'src', 'main', 'main.ts'), 'utf8');
-    assert.ok(/fileOn: \(key\) => folderStore\?\.get\(key\)\?\.notesFile === true/.test(mainSrc), 'fileOn reads notesFile');
-    assert.ok(/setFileOn: \(key, on\) => folderStore\?\.setNotesFile\(key, on\) === true/.test(mainSrc), 'setFileOn saves it');
+    assert.ok(/fileOn: \(key\) => !!folderStore\?\.get\(key\)\?\.notesProject/.test(mainSrc), 'fileOn reads notesProject');
+    assert.ok(/setFileOn: \(key, on, git\) => folderStore\?\.setNotesFile\(key, on, git\) === true/.test(mainSrc), 'setFileOn saves it');
     assert.ok(!/fileOn: \(\) => false/.test(mainSrc), 'no longer off for every folder');
     assert.ok(/confirmNative: \(kind, name, count\) => nativeConfirm\(win, /.test(mainSrc), 'main asks with the native box (not the page)');
     assert.ok(/valuesPending: \(\) => !!mcpStore && !mcpStore\.noPrompt\(\)/.test(mainSrc), 'a locked vault holds the file back');
@@ -819,14 +840,14 @@ async function main(): Promise<void> {
       (require('../src/main/ipcguard') as typeof import('../src/main/ipcguard')).initSimGuard(false);
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       const { register } = require('../src/main/ipc/notes') as typeof import('../src/main/ipc/notes');
-      const r = rig({ repo: 'dir' });
+      const r = rig({ repo: true });
       register({ getOps: () => r.ops });
       const frame = { url: pathToFileURL(path.join(__dirname, '..', 'src', 'renderer', 'index.html')).href };
       const app = { senderFrame: frame, sender: { mainFrame: frame } };
       const other = { senderFrame: { url: 'https://example.invalid/' }, sender: { mainFrame: { url: 'https://example.invalid/' } } };
       const call = async (e: unknown, ch: string, ...a: unknown[]): Promise<Record<string, unknown>> => (await handlers.get(ch)!(e, ...a)) as Record<string, unknown>;
       assert.deepStrictEqual(await call(app, 'notes:fileCount', 'a1'), { ok: true, count: 0, exists: false, strayText: 0, repo: true });
-      const on = await call(app, 'notes:setFile', 'a1', true, { exclude: false });
+      const on = await call(app, 'notes:setFile', 'a1', true);
       assert.strictEqual(on.ok, true, JSON.stringify(on));
       assert.ok(nodeFs.existsSync(md(r.folder)), 'written through the channel');
       await assert.rejects(Promise.resolve().then(() => handlers.get('notes:setFile')!(other, 'a1', false, { deleteFile: true })), /did not come from its own window/);
@@ -843,7 +864,7 @@ async function main(): Promise<void> {
   nodeFs.rmSync(diskRoot, { recursive: true, force: true }); // the same for the disk-backed one
   if (failures) { console.log(`notes switch: ${failures} failed`); process.exitCode = 1; return; }
   if (!posix) console.log('  (Windows: link cases depend on the runner allowing symlinks)');
-  console.log('notes switch: flag saved and read back, delete only what Durbar wrote (hash, links, rmdir), exclude before the first write, options and paths refused, channels app-only');
+  console.log('notes switch: flag saved and read back, delete only what Durbar wrote (hash, links, rmdir), .gitignore before the first write, the choice for git, options and paths refused, channels app-only');
   process.exitCode = 0;
 }
 void main();

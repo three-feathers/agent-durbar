@@ -1057,7 +1057,7 @@ export interface DurbarApi {
   notesDeleteAll?(id: string): Promise<NotesWrote>;
   notesStartOver?(id: string): Promise<NotesWrote>;
   notesFileCount?(id: string): Promise<NotesFileCount>;
-  notesSetFile?(id: string, on: boolean, opts?: { deleteFile?: boolean; exclude?: boolean }): Promise<NotesSetFile>;
+  notesSetFile?(id: string, on: boolean, opts?: { deleteFile?: boolean; git?: boolean }): Promise<NotesSetFile>;
   /** FR-048 (T034b): main shows the save dialog and writes the chosen file; the window sends no path. The simulator writes nothing (`demo`). */
   notesExport?(id: string): Promise<NotesExport>;
   /** A folder's notes changed (another chat, another process): refetch the open folder's notes when the fingerprint is its own. */

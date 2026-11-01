@@ -32,12 +32,17 @@ export interface NotesOpsDeps {
   /** The project-file mirror (T041, FR-053, FR-054). Absent: never used. */
   file?(): NotesFile | undefined;
   /**
-   * Whether a folder's project-file switch is on (FR-050; `notesFile` in folders.json, T042). Absent or false: nothing reads,
-   * stats or writes the folder's `.durbar/notes.md`.
+   * Whether a folder's project-file switch is on (FR-050; `notesProject` in folders.json, T042). Absent or false: nothing reads,
+   * stats or writes the folder's `.durbar/notes/notes.md`.
    */
   fileOn?(folderKey: string): boolean;
-  /** Saves the switch (`notesFile` in folders.json, T042); false when it could not be saved. Absent: the switch cannot be turned. */
-  setFileOn?(folderKey: string, on: boolean): boolean;
+  /** Whether the person chose to keep the folder's notes in git (`notesProject: 'git'`): then no `.gitignore` is kept. */
+  fileGit?(folderKey: string): boolean;
+  /** Saves the switch (`notesProject` in folders.json, T042); false when it could not be saved. Absent: the switch cannot be turned. */
+  setFileOn?(folderKey: string, on: boolean, git?: boolean): boolean;
+  /** Whether Durbar made the folder's `.durbar/notes/.gitignore` (`notesIgnoreOwn`), and saving that; only such a file is deleted. */
+  ignoreOwn?(folderKey: string): boolean;
+  setIgnoreOwn?(folderKey: string, own: boolean): boolean;
   /**
    * True while some secret value Durbar may hold is still locked in the vault (main: `!mcpStore.noPrompt()`): the mask would be
    * incomplete, so no project-file cycle runs (review of PR 931). Absent: never pending.
@@ -61,17 +66,17 @@ export interface NotesOpsDeps {
 
 /** FR-050 (T042): the reasons the switch is refused or greyed; short fixed texts, never a path. */
 export const SWITCH_WORKSPACE = 'The project file is not offered for a VS Code workspace.';
-export const SWITCH_MISSING = 'The folder is not there, so Durbar cannot keep .durbar/notes.md in it.';
-export const SWITCH_ALREADY_OFF = 'The switch is already off; Durbar does not touch .durbar/notes.md while it is off.';
+export const SWITCH_MISSING = 'The folder is not there, so Durbar cannot keep .durbar/notes/notes.md in it.';
+export const SWITCH_ALREADY_OFF = 'The switch is already off; Durbar does not touch .durbar/notes/notes.md while it is off.';
 export const VALUES_PENDING = 'Waiting for the secret store to unlock (it unlocks when a session with MCP extras starts); notes.md is not updated until then.';
 export const VALUES_PENDING_ON = 'A secret value is still locked in the secret store, so Durbar cannot mask the file yet; the switch stays off. Start a session that uses MCP extras, then try again.';
 export const NATIVE_CANCELLED = 'Cancelled: nothing changed.';
-export const DELETE_LEFTOVER = 'A temp file from a crash (.notes.md.*.tmp) may remain in .durbar.';
+export const DELETE_LEFTOVER = 'A temp file from a crash (.notes.md.*.tmp) may remain in .durbar/notes.';
+export const NOT_OURS = 'A .gitignore is in .durbar/notes that Durbar did not make, so Durbar leaves it: git keeps ignoring the notes until you delete it.';
 export const SWITCH_UNSAVED = 'Could not save the choice in the folder list.';
-export const EXCLUDE_KEPT = 'The .durbar/ line in .git/info/exclude stays (it is harmless).';
 
 /** What a native confirmation is for (`confirmNative`). */
-export type NativeKind = 'on' | 'delete' | 'deleteAll' | 'forget';
+export type NativeKind = 'on' | 'git' | 'delete' | 'deleteAll' | 'forget';
 /** FR-048 (T034b): short fixed texts, never a path. */
 export const EXPORT_NONE = 'There are no notes to export.';
 export const EXPORT_PENDING = 'A secret value is still locked in the secret store, so Durbar cannot mask the export yet. Start a session that uses MCP extras, then try again.';
@@ -82,10 +87,11 @@ export const DELETE_ALL_NONE = 'There are no notes to delete.';
 export function notesConfirmText(kind: NativeKind, name: string, count?: number): { ok: string; message: string; detail: string } {
   const n = typeof count === 'number' && Number.isInteger(count) && count > 0 ? count : 0;
   const notes = n === 1 ? '1 note' : `${n} notes`;
-  if (kind === 'on') return { ok: 'Turn on', message: `Keep the notes of ${name} in the project?`, detail: 'Durbar will write .durbar/notes.md in this folder. It may get committed and pushed with your code.' };
-  if (kind === 'delete') return { ok: 'Delete the file', message: `Delete .durbar/notes.md in ${name}?`, detail: 'Durbar deletes it only if it holds exactly what Durbar would write.' };
-  if (kind === 'deleteAll') return { ok: 'Delete all', message: `Delete all ${notes} of ${name}?`, detail: 'They are deleted from Durbar. A .durbar/notes.md left in the project and earlier exports still hold them.' };
-  return { ok: 'Remove and delete notes', message: n ? `Remove ${name} and delete its ${notes}?` : `Remove ${name} and delete its notes?`, detail: 'The notes are deleted from Durbar. .durbar/notes.md in the project is not touched, and a copy moved aside by Start over stays.' };
+  if (kind === 'on') return { ok: 'Turn on', message: `Keep the notes of ${name} in the project?`, detail: 'Durbar will write .durbar/notes/notes.md in this folder. It may get committed and pushed with your code.' };
+  if (kind === 'git') return { ok: 'Keep in git', message: `Keep the notes of ${name} in git?`, detail: 'Durbar will write .durbar/notes/notes.md in this folder and will not ignore it: git add -A stages it, and a push shares it with everyone who can read the repository. Secrets are masked, but private ideas are not.' };
+  if (kind === 'delete') return { ok: 'Delete the file', message: `Delete .durbar/notes/notes.md in ${name}?`, detail: 'Durbar deletes it only if it holds exactly what Durbar would write.' };
+  if (kind === 'deleteAll') return { ok: 'Delete all', message: `Delete all ${notes} of ${name}?`, detail: 'They are deleted from Durbar. A .durbar/notes/notes.md left in the project and earlier exports still hold them.' };
+  return { ok: 'Remove and delete notes', message: n ? `Remove ${name} and delete its ${notes}?` : `Remove ${name} and delete its notes?`, detail: 'The notes are deleted from Durbar. .durbar/notes/notes.md in the project is not touched, and a copy moved aside by Start over stays.' };
 }
 
 /** FR-053: at most one project-file write per folder in this time. */
@@ -93,7 +99,7 @@ const FILE_EVERY_MS = 500;
 
 type Refusal = { ok: false; code: 'invalid'; error: string };
 const refuse = (error: string): Refusal => ({ ok: false, code: 'invalid', error });
-const REMOVE_KEPT = 'Durbar did not delete .durbar/notes.md.';
+const REMOVE_KEPT = 'Durbar did not delete .durbar/notes/notes.md.';
 
 /** FR-009: the first 16 hex characters of SHA-256 of the message text with `\r\n` turned into `\n` and the ends trimmed. */
 export function digestOf(raw: string): string {
@@ -135,10 +141,10 @@ export class NotesOps {
       let pending = false;
       try { pending = this.d.valuesPending?.(t.key) === true; } catch { pending = true; }
       if (pending) return { error: VALUES_PENDING }; // review of PR 931: an incomplete mask would un-mask the shared file
-      const r = await syncNotesFile({ file: ft.file, store: t.store, folderKey: t.key, folderName: t.name, folderPath: ft.folderPath, values: this.fileValues(t.key), now: this.d.now, create });
+      const r = await syncNotesFile({ file: ft.file, store: t.store, folderKey: t.key, folderName: t.name, folderPath: ft.folderPath, values: this.fileValues(t.key), now: this.d.now, create, git: this.d.fileGit?.(t.key) === true });
       if (r.retry && retries > 0) this.schedule(t.a.id, t.key, retries - 1);
       return r.state;
-    }).catch((): NotesFileState => ({ error: 'Could not write .durbar/notes.md: ERROR' }));
+    }).catch((): NotesFileState => ({ error: 'Could not write .durbar/notes/notes.md: ERROR' }));
     this.cycles.set(t.key, run);
     return run;
   }
@@ -325,8 +331,8 @@ export class NotesOps {
 
   /**
    * FR-048 (T034b): a removed folder's notes file is deleted, after a mirror cycle of the folder already running has finished (a queued
-   * one finds the switch off with the folder gone and writes nothing). Only `<fingerprint(folderKey)>.json`; `.durbar/notes.md` and
-   * `.git/info/exclude` in the project are never touched here.
+   * one finds the switch off with the folder gone and writes nothing). Only `<fingerprint(folderKey)>.json`; `.durbar/notes/notes.md` and
+   * the project's git files are never touched here.
    */
   async forget(folderKey: string): Promise<{ ok: true; deleted: boolean } | NotesFail | Refusal> {
     const store = this.d.store();
@@ -372,18 +378,18 @@ export class NotesOps {
 
   /**
    * FR-050, FR-055 (T042, reviews of PR 931): turn the folder's project file on or off. On: refused while a secret value is locked;
-   * counts again (an unreadable file keeps the switch off); asks the native box; adds the exclude line when asked and the folder is in a
-   * repository (a failure keeps the switch off); clears the mirror, saves the flag and runs the one cycle that may create the file. Off:
+   * counts again (an unreadable file keeps the switch off); asks the native box; with the choice to keep the notes in git (`git`) the box says so and Durbar's own `.gitignore`
+   * goes; clears the mirror, saves the flag and runs the one cycle that may create the file. Off:
    * saves the flag, waits for a cycle already writing, and with `deleteFile` (after the native box) deletes `notes.md` only when it
    * holds exactly what Durbar would write.
    */
   async setFile(agentId: unknown, on: unknown, opts?: unknown): Promise<NotesSetFile | Refusal> {
     if (typeof on !== 'boolean') return refuse('On is yes or no.');
-    if (opts !== undefined && (!isObj(opts) || Object.keys(opts).some((k) => k !== 'deleteFile' && k !== 'exclude'))) return refuse('Unknown options.');
-    const o = (opts ?? {}) as { deleteFile?: unknown; exclude?: unknown };
-    if ((o.deleteFile !== undefined && typeof o.deleteFile !== 'boolean') || (o.exclude !== undefined && typeof o.exclude !== 'boolean')) return refuse('Unknown options.');
+    if (opts !== undefined && (!isObj(opts) || Object.keys(opts).some((k) => k !== 'deleteFile' && k !== 'git'))) return refuse('Unknown options.');
+    const o = (opts ?? {}) as { deleteFile?: unknown; git?: unknown };
+    if ((o.deleteFile !== undefined && typeof o.deleteFile !== 'boolean') || (o.git !== undefined && typeof o.git !== 'boolean')) return refuse('Unknown options.');
     if (on && o.deleteFile !== undefined) return refuse('Unknown options.');
-    if (!on && o.exclude !== undefined) return refuse('Unknown options.');
+    if (!on && o.git !== undefined) return refuse('Unknown options.');
     const t = this.switchTarget(agentId);
     if ('ok' in t) return t;
     // one switch call at a time per folder (review of 0be6db42): an on and an off in one tick never interleave around an await
@@ -397,7 +403,7 @@ export class NotesOps {
     try { return (await this.d.confirmNative(kind, folderNameOf(a), count)) === true; } catch { return false; }
   }
 
-  private async setFileNow(t: { a: AgentInfo; store: NotesStore; key: string; file: NotesFile }, on: boolean, o: { deleteFile?: unknown; exclude?: unknown }): Promise<NotesSetFile | Refusal> {
+  private async setFileNow(t: { a: AgentInfo; store: NotesStore; key: string; file: NotesFile }, on: boolean, o: { deleteFile?: unknown; git?: unknown }): Promise<NotesSetFile | Refusal> {
     const setOn = this.d.setFileOn!;
     let was = false;
     try { was = this.d.fileOn?.(t.key) === true; } catch { was = false; }
@@ -412,15 +418,11 @@ export class NotesOps {
       let pending = false;
       try { pending = !was && this.d.valuesPending?.(t.key) === true; } catch { pending = true; }
       if (pending) return refuse(VALUES_PENDING_ON);
-      // review of PR 931 (Q2): main asks with a native box the page cannot answer, before anything is written
-      if (!was && !(await this.native('on', t.a))) return refuse(NATIVE_CANCELLED);
+      // review of PR 931 (Q2): main asks with a native box the page cannot answer, before anything is written; the choice for git has its own words
       let message: string | undefined;
-      if (o.exclude === true && t.file.inRepo(t.a.cwd)) {
-        // review of PR 931 (point 3): the line goes in BEFORE the switch is saved; when it cannot, the switch stays off (no fail-open)
-        const x = t.file.addExclude(t.a.cwd);
-        if (!x.ok) return was ? { ok: true, on: true, message: x.error } : { ...refuse(`${x.error.replace(/\.$/, '')}. The switch stays off.`), excludeFailed: true };
-        message = x.added ? 'Added .durbar/ to .git/info/exclude (local only).' : '.durbar/ is already in .git/info/exclude.';
-      }
+      const existed = !was && t.file.hasIgnore(t.a.cwd);
+      const git = !was && o.git === true;
+      if (!was && !(await this.native(git ? 'git' : 'on', t.a))) return refuse(NATIVE_CANCELLED);
       if (!was) {
         // review of PR 931 (point 4): turning on starts from no `mirror`, so a file that was gone is written again only now
         const m = await t.store.setMirror(t.key, folderNameOf(t.a), undefined);
@@ -428,9 +430,12 @@ export class NotesOps {
         // review 3 of PR 931: the folder's identity is recorded now, apart from the mirror, and every cycle checks it
         const ff = await t.store.setFileFolder(t.key, folderNameOf(t.a), t.file.folderId(t.a.cwd));
         if (!ff.ok) return ff;
-        if (!setOn(t.key, true)) return refuse(SWITCH_UNSAVED);
+        if (!setOn(t.key, true, git)) return refuse(SWITCH_UNSAVED);
+        if (git && t.file.allowGit(t.a.cwd, this.d.ignoreOwn?.(t.key) === true)) { this.d.setIgnoreOwn?.(t.key, false); message = 'Removed Durbar\'s .gitignore: git no longer ignores .durbar/notes.'; }
+        else if (git && existed) message = NOT_OURS;
       }
-      const file = await this.syncFile(t.a.id, 1, !was); // only turning on may create the file (review 2 of PR 931)
+      const file = await this.syncFile(t.a.id, 1, !was);
+      if (!was && !git && !existed && t.file.hasIgnore(t.a.cwd)) this.d.setIgnoreOwn?.(t.key, true); // Durbar made it just now // only turning on may create the file (review 2 of PR 931)
       return { ok: true, on: true, ...(file ? { file } : {}), ...(message ? { message } : {}) };
     }
     // FR-050: while the switch is off Durbar never reads, stats or writes notes.md, so *Delete* is only part of turning it off
@@ -441,10 +446,10 @@ export class NotesOps {
     for (let p = this.cycles.get(t.key); p;) { await p.catch(() => undefined); const n = this.cycles.get(t.key); if (n === p) break; p = n; }
     const lines: string[] = [];
     if (o.deleteFile === true) {
-      const r = t.file.remove(t.a.cwd, await t.store.getMirror(t.key));
-      lines.push(r.removed ? (r.dirRemoved ? 'Deleted .durbar/notes.md and the empty .durbar folder.' : `Deleted .durbar/notes.md. ${DELETE_LEFTOVER}`) : r.why ?? REMOVE_KEPT);
-    } else lines.push('Durbar stopped writing .durbar/notes.md; the file is left in the project.');
-    if (t.file.inRepo(t.a.cwd)) lines.push(EXCLUDE_KEPT);
+      const r = t.file.remove(t.a.cwd, await t.store.getMirror(t.key), this.d.ignoreOwn?.(t.key) === true);
+      if (r.ignoreDropped) this.d.setIgnoreOwn?.(t.key, false);
+      lines.push(r.removed ? (r.dirRemoved ? 'Deleted .durbar/notes/notes.md and the empty .durbar/notes folder.' : `Deleted .durbar/notes/notes.md. ${DELETE_LEFTOVER}`) : r.why ?? REMOVE_KEPT);
+    } else lines.push('Durbar stopped writing .durbar/notes/notes.md; the file is left in the project.');
     return { ok: true, on: false, message: lines.join(' ') };
   }
 
