@@ -330,6 +330,10 @@ Each has a recommendation (Q6 is for Paco, the crew owner). The build waits for 
 
 ## Changes
 
+### 2026-11-02: the op row counts the least of its samples
+
+FR-185's row for one text change took the worst of 4 traces, so a render that happened to land inside one trace failed it on a slow machine (seen on Windows CI: `2775 16 16 16`). It now takes the least: anything else in a trace only adds, and a real cost such as `:has()` shows in all 4. `[KNOWN GAP]` a cost that hits only some of the 4 changes would not fail it.
+
 ### 2026-11-01: no walking; a person zooms out and zooms in, and the room stays still (Vikram, after watching; supersedes the walk, the head anchor and FR-017's narrower away and asleep desks)
 
 Vikram judged the walk and the head-anchored sit-down *not natural enough*: two bodies in the dissolves, a walker over the screens at a wrong scale, the room jumping when someone leaves. Replaced:
