@@ -1,5 +1,6 @@
 /** IPC for remote control of a live session (Copilot: github.com and GitHub Mobile): the confirmation, the events that end it, and the two handlers (spec 054 FR-003..FR-005, FR-011, FR-062; moved out of main.ts as it was, spec 045 FR-060). */
-import { BrowserWindow, dialog, shell } from 'electron';
+import { BrowserWindow, shell } from 'electron';
+import { nativeConfirm } from '../nativeconfirm';
 import { fromAppFrame as fromApp, ipcHandle } from '../ipcguard';
 import type { AdapterRouter } from '../../adapters/router';
 import type { AgentInfo } from '../../shared/api';
@@ -28,14 +29,11 @@ export function register(deps: RemoteIpcDeps): ReturnType<typeof createRemoteOps
     // FR-011: a native confirmation the page cannot answer (Cancel is the default), like harness setup's (spec 051 FR-004b)
     confirm: async (id) => {
       const a = agents.get(id);
-      const opts = {
-        type: 'warning' as const, buttons: ['Cancel', 'Turn on remote control'], defaultId: 0, cancelId: 0, noLink: true, title: 'Agent Durbar',
+      return nativeConfirm(deps.getWin(), {
+        ok: 'Turn on remote control',
         message: `Control ${a?.label || a?.name || 'this session'} from GitHub?`,
         detail: 'Its messages are sent to GitHub, so it can be followed and steered from github.com and GitHub Mobile. Anyone who can see the session on GitHub can steer it.\n\nOnly continue if you started this in Durbar.',
-      };
-      const win = deps.getWin();
-      const r = win ? await dialog.showMessageBox(win, opts) : await dialog.showMessageBox(opts);
-      return r.response === 1;
+      });
     },
     doorClosed: (id) => !!deps.doorClosed?.(id),
     record: (id, on) => {

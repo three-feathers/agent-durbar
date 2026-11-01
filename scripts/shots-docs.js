@@ -52,6 +52,7 @@ const DOC_SHOTS = [
   { name: 'shots-015-compact', files: ['015-compacting-office-1440x900.png', '015-compacting-office-1280x800.png', '015-compacting-chat-1440x900.png', '015-compacting-chat-1280x800.png'] },
   { name: 'shots-017', files: [{ to: '012-harness-picker-1440x900.png', from: '012-picker-1440x900.png' }] },
   { name: 'shots-024', files: ['024-lobby-1440x900.png'] },
+  { name: 'shots-097-realoffice', files: ['097-office-layout-1440x900.png'] }, // spec 097 P1: Real office mode (its photo-heavy 15-agent pictures stay out of the site budget: linked from the spec only, retaken with SHOTS_OUT=docs/screenshots)
   { name: 'shots-030-handoff', files: ['handoff-review-1440x900.png'] },
   { name: 'shots-033', files: ['033-floors-on-1440x900.png'] },
   { name: 'shots-040-aitheme', env: { DURBAR_SIM_KINDS: 'mixed' }, files: ['040-theme-picker-1440x900.png', '040-aitheme-preview-1440x900.png'] },
@@ -71,6 +72,8 @@ const DOC_SHOTS = [
   { name: 'check-notes', files: ['083-notes-drawer-1440x900.png', '083-notes-drawer-1280x800.png', '083-notes-slash-1440x900.png', '083-notes-slash-1280x800.png', '083-notes-selection-1440x900.png', '083-notes-selection-1280x800.png'] }, // spec 083: the Notes drawer and the notes in the "/" list
   { name: 'check-notes-count', files: ['083-notes-count-1440x900.png', '083-notes-count-1280x800.png', '083-notes-marker-1440x900.png', '083-notes-marker-1280x800.png'] }, // spec 083 T030, T031: the header count and the marker
   { name: 'check-notes-screen', files: ['083-notes-screen-1440x900.png', '083-notes-screen-1280x800.png'] }, // spec 083 T034a: the per-folder Notes screen
+  { name: 'check-notes-switch', files: ['083-notes-switch-1440x900.png', '083-notes-switch-1280x800.png'] }, // spec 083 T042: the project-file switch's warning
+  { name: 'check-notes-export', files: ['083-notes-export-1440x900.png', '083-notes-export-1280x800.png', '083-notes-remove-1440x900.png', '083-notes-remove-1280x800.png'] }, // spec 083 T034b: Delete all… and Remove folder's Also delete its notes
   { name: 'shots-074-navigator', files: ['074-navigator-start-1440x900.png'] },
   { name: 'check-browser-tabs', files: ['080-browser-tabs-1440x900.png'] }, // spec 080 FR-122 (US6): the page tab strip with 10 tabs
   { label: 'check-browser-tabs 1280', name: 'check-browser-tabs', env: { BROWSER_TABS_SIZE: '1280x800' }, files: ['080-browser-tabs-1280x800.png'] },

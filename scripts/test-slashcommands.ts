@@ -199,6 +199,15 @@ async function main(): Promise<void> {
     assert.strictEqual(expandSlash('/x', list), undefined, 'over MAX_SLASH_BYTES on the re-read: the typed text is sent');
   });
 
+  await test('issue #917: the shared read refuses a hard-linked command file after discovery (new for this caller; the file is not expanded)', () => {
+    const r = path.join(tmp, 'hardrepo');
+    const file = write(path.join(r, '.claude', 'commands', 'h.md'), 'body');
+    const list = discoverSlash(claudeSlashPlaces([r], path.join(r, 'nohome'), r));
+    assert.ok(expandSlash('/h', list)?.text.includes('body'), 'one link: expanded');
+    try { fs.linkSync(file, path.join(tmp, 'hardrepo-other.md')); } catch { return console.log('  (skipped: no hard links here)'); }
+    assert.strictEqual(expandSlash('/h', list), undefined, 'two links: refused');
+  });
+
   await test('safety (review on #535): a FIFO swapped in after discovery gives no expansion at once (no hang)', () => {
     if (process.platform === 'win32') return console.log('  (skipped on Windows: no mkfifo; the regular-file check still applies)');
     const r = path.join(tmp, 'fiforepo');
