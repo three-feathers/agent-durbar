@@ -129,8 +129,8 @@
   /* two stand-alone pictures that walk (the stride dissolving) from placement A to B: `R` is the standing rect, `hidden` the part of the walk near the chair where only the first picture shows, so a head can land on a head */
   function walkers(host, R, A, B, ms, tail, nearStart) {
     const mk = (cls, file) => { const g = new Image(); g.className = cls; g.alt = ''; g.src = ART + file; g.style.transformOrigin = '0 0'; box(g, R); host.appendChild(g); setVar(g, '--ro-per', '.76s'); return g; };
-    const out = [mk('ro-ghost v walker' + (R.fileB ? ' m-a m-run' : ''), R.file)];
-    if (R.fileB) out.push(mk('ro-ghost v walker m-b m-run', R.fileB));
+    const out = [mk('ro-ghost v ro-walker' + (R.fileB ? ' m-a m-run' : ''), R.file)];
+    if (R.fileB) out.push(mk('ro-ghost v ro-walker m-b m-run', R.fileB));
     const total = ms + tail;
     out.forEach((w, i) => {
       const kf = walkKf(A, B, ms, { ms: tail }, R);
@@ -152,7 +152,7 @@
     const plain = () => { done(e.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 300, easing: 'ease-in-out', fill: 'backwards' })); return true; };
     const seat = seated ? to : from, stand = seated ? from : to, sh = headOf(seat);
     if (!sh || !stand.file || !e.parentNode) return plain();
-    const probe = new Image(); probe.className = 'ro-ghost v walker'; probe.style.transformOrigin = '0 0'; box(probe, stand); e.parentNode.appendChild(probe);
+    const probe = new Image(); probe.className = 'ro-ghost v ro-walker'; probe.style.transformOrigin = '0 0'; box(probe, stand); e.parentNode.appendChild(probe);
     const end = onHead(probe, stand, sh); probe.remove();
     if (!end) return plain();
     const ms = Math.max(1400, Math.min(3000, Math.hypot(from.x - to.x, from.y - to.y) * 5)), total = ms + SIT, beats = beat(sh.h);
