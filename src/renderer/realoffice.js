@@ -226,7 +226,8 @@
         if (r - l < need) r = Math.min(W, l + need);
         p.style.left = px(l); p.style.maxWidth = px(Math.max(base, Math.min(r - l, need)));
       }
-      done.push({ x0: p.offsetLeft, x1: p.offsetLeft + p.offsetWidth, y0, y1 });
+      const rr = p.getBoundingClientRect(), cr = chrome.getBoundingClientRect();
+      done.push({ x0: rr.left - cr.left, x1: rr.right - cr.left, y0, y1 });
     }
   }
 
@@ -249,18 +250,19 @@
   function stagger(chrome, W) {
     const chips = [...chrome.querySelectorAll(':scope > .ro-chip')].sort((a, b) => parseFloat(a.dataset.x || a.style.left) - parseFloat(b.dataset.x || b.style.left));
     /* the place plates are there first: a chip never covers one */
-    const placed = [...chrome.querySelectorAll(':scope > .ro-lplate')].map((e) => [e.offsetLeft, e.offsetLeft + e.offsetWidth, e.offsetTop, e.offsetTop + e.offsetHeight]);
+    const cr = chrome.getBoundingClientRect(); /* fractional boxes: a rounded offsetLeft hides half a pixel of overlap */
+    const placed = [...chrome.querySelectorAll(':scope > .ro-lplate')].map((e) => { const r = e.getBoundingClientRect(); return [r.left - cr.left, r.right - cr.left, r.top - cr.top, r.bottom - cr.top]; });
     const band = W || chrome.clientWidth || 1e9;
     for (const c of chips) {
       const base = parseFloat(c.dataset.y || c.style.top) || 0, x0 = parseFloat(c.dataset.x || c.style.left) || 0;
       c.style.left = px(x0); c.style.top = px(base); if (c.dataset.full) { text(c.querySelector('.ro-cn'), c.dataset.full); delete c.dataset.full; }
-      const h = c.offsetHeight || 17;
-      const hits = (L0, R0, t) => placed.some(([a, b, y0, y1]) => a < R0 + 1 && L0 < b + 1 && y0 < t + h && t < y1);
+      const h = c.getBoundingClientRect().height || 17;
+      const hits = (L0, R0, t) => placed.some(([a, b, y0, y1]) => a < R0 + 1.5 && L0 < b + 1.5 && y0 < t + h && t < y1);
       /* Paco's review of #921: names while there is room. Every spot within 64 px left or right on up to three levels is tried, the
          least move first (a level costs 12 px); only when none is free do the initials try the same, then (a crowd with no room) the
          initials move right until they touch nobody */
       const best = () => {
-        const w = c.offsetWidth, l = x0 - w / 2; let pick = null;
+        const w = c.getBoundingClientRect().width, l = x0 - w / 2; let pick = null;
         for (let k = 0; k < 3; k++) {
           const t = base - 18 * k; if (t < 0 && k > 0) break;
           for (let d = 0; d <= 64; d += 2) for (const dx of d ? [d, -d] : [0]) {
@@ -277,7 +279,7 @@
         if (pick || !v) continue;
         c.dataset.full = nm; text(n, v); pick = best();
       }
-      if (!pick) { const w = c.offsetWidth, l = x0 - w / 2; let dx = 0; for (let i = 0; i < 20 && hits(l + dx, l + dx + w, base); i++) dx += 6; pick = { t: base, dx, l, w }; }
+      if (!pick) { const w = c.getBoundingClientRect().width, l = x0 - w / 2; let dx = 0; for (let i = 0; i < 20 && hits(l + dx, l + dx + w, base); i++) dx += 6; pick = { t: base, dx, l, w }; }
       placed.push([pick.l + pick.dx, pick.l + pick.dx + pick.w, pick.t, pick.t + h]);
       c.style.top = px(pick.t); c.style.left = px(x0 + pick.dx);
     }
