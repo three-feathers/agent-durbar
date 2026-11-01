@@ -192,10 +192,12 @@
         if (p.go) { ch.type = 'button'; ch.dataset.pvopen = v.id; if (fx.id === 'coffee') ch.dataset.coffeeid = v.id; attr(ch, 'aria-label', ag.title + '. Open the chat.'); } else ch.dataset.for = v.id;
         attr(ch, 'title', ag.title); ch.dataset.name = ag.name; chipFill(ch, ag.name, ag.needsYou, model.alertIcon);
       }
-      const pl = el(chrome, 'fp:' + fx.id, p.post ? 'button' : 'div', 'ro-lplate' + (p.visitors.some((v) => v.needsYou) ? ' wait' : '')); box(pl, { x: fx.plate.x, y: fx.plate.y });
-      if (p.post) { pl.type = 'button'; pl.dataset.post = '1'; } else { attr(pl, 'role', 'group'); }
+      /* FR-025/FR-026 "as the flat lobby": the people that do not fit ("+N") open the flat lobby's own list (data-placemore, app.js
+         openPlaceMenu), so the plate is a button then, with a name that says so */
+      const pl = el(chrome, 'fp:' + fx.id, p.post || fx.more > 0 ? 'button' : 'div', 'ro-lplate' + (p.visitors.some((v) => v.needsYou) ? ' wait' : '')); box(pl, { x: fx.plate.x, y: fx.plate.y });
+      if (p.post) { pl.type = 'button'; pl.dataset.post = '1'; } else if (fx.more > 0) { pl.type = 'button'; pl.dataset.placemore = fx.id; attr(pl, 'aria-haspopup', 'menu'); } else { attr(pl, 'role', 'group'); }
       pl.dataset.place = fx.id; pl.style.maxWidth = px(Math.max(44, fx.plate.w));
-      attr(pl, 'title', p.title); attr(pl, 'aria-label', p.title);
+      attr(pl, 'title', fx.more > 0 ? p.title + '. ' + fx.more + ' more: open the list.' : p.title); attr(pl, 'aria-label', fx.more > 0 ? p.title + '. ' + fx.more + ' more: open the list.' : p.title);
       /* owner 2026-10-31 09:03: no bare count when the people are visible; "+N" only for those that do not fit */
       const lsig = JSON.stringify([p.label, fx.more]);
       if (pl._sig !== lsig) { pl._sig = lsig; pl.textContent = ''; const s = document.createElement('span'); s.textContent = p.label; pl.appendChild(s); if (fx.more > 0) { const b = document.createElement('b'); b.className = 'ro-more'; b.textContent = '+' + fx.more; pl.appendChild(b); } }
@@ -203,7 +205,29 @@
     [art, amb, lights, chrome].forEach(sweep);
     fitPlates(chrome, lay.width);
     stagger(chrome, lay.width);
+    settle(chrome, lay.width);
     return lay;
+  }
+
+  /* a font that arrives after the measure (a lazily loaded bold face, another machine's metrics) widens a chip or plate: a
+     ResizeObserver sees it and places again, so nothing overlaps in the settled state. A width equal to the one the placement
+     used ends it (no loop). */
+  function settle(chrome, W) {
+    if (typeof ResizeObserver !== 'function') return;
+    chrome._W = W;
+    if (!chrome._ro) {
+      let queued = false;
+      chrome._ro = new ResizeObserver(() => {
+        if (queued) return; queued = true;
+        requestAnimationFrame(() => {
+          queued = false;
+          if (!chrome.isConnected) return;
+          const moved = [...chrome.querySelectorAll(':scope > .ro-chip, :scope > .ro-lplate')].some((e) => e._w != null && Math.abs(e.getBoundingClientRect().width - e._w) > 0.5);
+          if (moved) { fitPlates(chrome, chrome._W); stagger(chrome, chrome._W); }
+        });
+      });
+    }
+    for (const e of chrome.querySelectorAll(':scope > .ro-chip, :scope > .ro-lplate')) chrome._ro.observe(e);
   }
 
   /* Paco's review of #921 (art): a lobby place plate reads in full (never an ellipsis) when there is room: a plate wider than its
@@ -227,6 +251,7 @@
         p.style.left = px(l); p.style.maxWidth = px(Math.max(base, Math.min(r - l, need)));
       }
       const rr = p.getBoundingClientRect(), cr = chrome.getBoundingClientRect();
+      p._w = rr.width;
       done.push({ x0: rr.left - cr.left, x1: rr.right - cr.left, y0, y1 });
     }
   }
@@ -282,7 +307,25 @@
       }
       if (!pick) { const w = c.getBoundingClientRect().width, l = x0 - w / 2; let dx = 0; for (let i = 0; i < 40; i++) { const hl = hitList(l + dx, l + dx + w, base); if (!hl.length) break; dx = Math.max(...hl.map(([, b]) => b)) + 2 - l; } pick = { t: base, dx, l, w }; }
       placed.push([pick.l + pick.dx, pick.l + pick.dx + pick.w, pick.t, pick.t + h]);
-      c.style.top = px(pick.t); c.style.left = px(x0 + pick.dx);
+      c.style.top = px(pick.t); c.style.left = px(x0 + pick.dx); c._w = pick.w;
+    }
+    resolve(chrome);
+  }
+
+  /* the last word, on what is really drawn: a chip whose drawn box still touches a plate or an earlier chip (its width was not what
+     was measured: a font face that arrived in between, another machine's metrics) moves right past it. Left to right, a few passes. */
+  function resolve(chrome) {
+    const cr = chrome.getBoundingClientRect(), rel = (e) => { const r = e.getBoundingClientRect(); return { x0: r.left - cr.left, x1: r.right - cr.left, y0: r.top - cr.top, y1: r.bottom - cr.top }; };
+    const chips = [...chrome.querySelectorAll(':scope > .ro-chip')].sort((a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left);
+    for (let pass = 0; pass < 4; pass++) {
+      const placed = [...chrome.querySelectorAll(':scope > .ro-lplate')].map(rel);
+      let moved = false;
+      for (const c of chips) {
+        const r = rel(c), hit = placed.filter((q) => q.x0 < r.x1 - 0.3 && r.x0 < q.x1 - 0.3 && q.y0 < r.y1 - 0.3 && r.y0 < q.y1 - 0.3);
+        if (hit.length) { c.style.left = px((parseFloat(c.style.left) || 0) + Math.max(...hit.map((q) => q.x1)) + 1.5 - r.x0); moved = true; }
+        placed.push(rel(c));
+      }
+      if (!moved) break;
     }
   }
 

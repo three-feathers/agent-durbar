@@ -18,10 +18,12 @@
  *   - the lights move or the scene is not .still under reduced motion (emulated over CDP, page loaded with it) or Serious mode (the real
  *     Settings switch) (FR-047), or the lights show under forced colours (FR-051, emulated);
  *   - the ambient is outside 0.7..1 (FR-043; that it dims with fewer active agents is test:realoffice-layout's);
- *   - a place plate (Other tools, Postbox, ...) is cut by an ellipsis, is under 10.5 px or overlaps a plate or chip, or more than one chip
+ *   - a place plate (Other tools, Postbox, ...; also at 12 and 8 agents and in a wider font) is cut by an ellipsis, is under 10.5 px or overlaps a plate or chip, or more than one chip
  *     shows initials where a name has room (Paco's review of #921);
  *   - a lobby chip at the Boss, Bank or Coffee is not a button with a name, or Enter on it does not open the chat, or a chip has an
  *     emoji or a needs-you chip lacks the alert icon (FR-026, constitution V);
+ *   - a failed Discard or Send all of a held prompt still switches to Real office; the "+N" plate of a crowd does not open the flat list;
+ *     a plate does not take the arrow keys, Shift+F10 or a right-click (a card menu) (Codex pass on #921);
  *   - choosing Real office from the cabins with a door you closed does not ask first, or Keep cabins does not keep them (FR-004);
  *   - a click on a person or a plate does not open that agent's chat (FR-006);
  *   - a picture that fails to load leaves a broken image instead of the initials disc (FR-065).
@@ -123,6 +125,31 @@ module.exports = async (ctx) => {
   await must(`!!document.getElementById('modeDlg')`, 'the question again');
   await js(`[...document.querySelectorAll('#modeDlg .dbtn button')].find((x)=>/^(Open the doors|Discard)$/.test(x.textContent)).click()`);
   await must(`localStorage.getItem('durbar.officeview')==='real'`, 'Real office chosen after the doors opened');
+  await js(`localStorage.setItem('durbar.officeview','flat');localStorage.setItem('durbar.doorsigns','off')`);
+
+  // ---- Codex pass on #921: a failed Discard or Send all must not switch to Real office (the held prompts keep their door) ----
+  /* spec 017's cabins and doors go in a later change (PR 954); this test goes with them */
+  await js(`localStorage.setItem('durbar.officeview','flat');localStorage.setItem('durbar.doorsigns','on')`);
+  await H.load({ w: 1440, h: 900, query: { simschedfire: '6' } }); /* the simulator's one-off schedule that fires at the closed door in 6 s */
+  const target = await js(`window.__durbarSimUi.bridge().listSchedules().then((d)=>{const s=d.schedules.find((x)=>x.id==='sched-fire');return s&&s.target?s.target.session:null})`);
+  assert.ok(target, 'the simulator has a scheduled prompt for an agent');
+  const TBTN = `document.querySelector('#stage .unit [data-doorset="'+CSS.escape(${jsLiteral(target)})+'"]')`;
+  await must(`!!${TBTN}`, 'the target\'s door button');
+  if ((await js(`${TBTN}.getAttribute('aria-pressed')`)) !== 'true') await js(`${TBTN}.click()`);
+  await must(`window.__durbarSimUi.bridge().doorsList().then((d)=>((d[${jsLiteral(target)}]||{}).held||0)>=1)`, 'a held prompt at the closed door', 60000);
+  await must(`[...document.querySelectorAll('#stage .desk[data-id="'+CSS.escape(${jsLiteral(target)})+'"] .cb-sign')].some((e)=>/1 held/.test(e.getAttribute('title')||''))`, 'the door sign says 1 held', 20000);
+  await chooseReal();
+  await must(`!!document.getElementById('modeDlg')`, 'the question with a held prompt');
+  await js(`window.__roRel=window.__durbarSimUi.bridge().releaseHeld;window.__durbarSimUi.bridge().releaseHeld=async()=>({ok:false,error:'stubbed'});true`);
+  await js(`[...document.querySelectorAll('#modeDlg .dbtn button')].find((x)=>/^Discard$/.test(x.textContent)).click()`);
+  await must(`[...document.querySelectorAll('#toasts .toast')].some((t)=>/held prompts are still there/.test(t.textContent))`, 'the failed release says so');
+  assert.notStrictEqual(await js(`localStorage.getItem('durbar.officeview')`), 'real', 'a failed Discard does not switch to Real office');
+  assert.ok(await js(`window.__durbarSimUi.bridge().doorsList().then((d)=>((d[${jsLiteral(target)}]||{}).held||0)>=1)`), 'the held prompt is still held');
+  await js(`window.__durbarSimUi.bridge().releaseHeld=window.__roRel;true`);
+  await chooseReal();
+  await must(`!!document.getElementById('modeDlg')`, 'the question again');
+  await js(`[...document.querySelectorAll('#modeDlg .dbtn button')].find((x)=>/^Discard$/.test(x.textContent)).click()`);
+  await must(`localStorage.getItem('durbar.officeview')==='real'`, 'Real office after a Discard that worked');
   await js(`localStorage.setItem('durbar.officeview','flat');localStorage.setItem('durbar.doorsigns','off')`);
 
   for (const [w, h] of SIZES) {
@@ -229,6 +256,51 @@ module.exports = async (ctx) => {
     assert.strictEqual(run.tread, 0, 'no treadmill picture');
     for (const f of runners) assert.ok(Math.abs(f.off) <= 2 && f.sh && f.legs === 0, `the runner ${f.who} is on the floor with a shadow and no chip on the legs (${f.off} px)`);
     fs.writeFileSync(path.join(OUT, `097-real-lobby-${w}x${h}.png`), crop.toPNG());
+  }
+
+  // ---- plates and chips never overlap at other agent counts and in a wider font (CI's wider sans put a chip on the Terminal plate at 12 agents, 1280x800) ----
+  for (const sim of ['12', '8']) for (const [w, h] of SIZES) for (const font of ['', 'DejaVu Sans']) {
+    await loadReal(w, h, { sim });
+    if (font) await js(`(()=>{const st=document.createElement('style');st.textContent=${jsLiteral('.ro,.ro *{font-family:"' + font + '",sans-serif!important}')};document.head.appendChild(st);window.__durbarSimUi.render();return true})()`);
+    await must(`!!document.querySelector('#stage .ro-lplate')`, 'the lobby plates');
+    /* a font face can arrive a moment after the drawing (a system font loads when first used): the office places chips and plates again
+       then, so wait until no plate or chip overlaps another (the end state), and see that it stays so */
+    await must(`(()=>{const r=${PLATES};return r.pp.length+r.cp.length+r.cc.length===0})()`, 'no overlap of plates and chips once the fonts have settled', 20000);
+    await ctx.sleep(400);
+    const r = await js(PLATES);
+    const tag = `${sim} agents ${w}x${h}${font ? ' in ' + font : ''}`;
+    assert.deepStrictEqual(r.pp.concat(r.cp, r.cc), [], `plates and chips do not overlap (${tag}): ${JSON.stringify(r.pp.concat(r.cp, r.cc))}`);
+    assert.strictEqual(r.small, 0, `place plates at 10.5 px or more (${tag})`);
+  }
+
+  // ---- Codex pass on #921 (as the flat lobby): the "+N" of a crowded place opens the flat lobby's list; a plate answers the arrow keys,
+  //      Shift+F10 and the right-click like a flat desk ----
+  for (const [w, h] of SIZES) {
+    await loadReal(w, h);
+    /* the band holds everyone at these sizes, so the layout is told the coffee corner has room for two: the rest become "+N" (the plate's wiring is what is checked; the list is the app's own) */
+    assert.ok(await js(`(()=>{const L=window.exports,o=L.realLayout;L.realLayout=function(...a){const r=o.apply(this,a),f=r.fixtures.find((x)=>x.id==='coffee');if(f&&f.visitors.length>2){f.more=f.visitors.length-2;f.visitors=f.visitors.slice(0,2);}return r;};return window.__durbarSimUi.crowd('coffee',8)})()`) >= 8, 'a crowd stands at the coffee corner');
+    await must(`!!document.querySelector('#stage .ro-lplate[data-placemore]')`, 'a "+N" plate for the crowd at the coffee corner');
+    const mp = await js(`(()=>{const p=document.querySelector('#stage .ro-lplate[data-placemore]');return {tag:p.tagName,pop:p.getAttribute('aria-haspopup'),name:p.getAttribute('aria-label')}})()`);
+    assert.strictEqual(mp.tag, 'BUTTON', 'the "+N" plate is a button: ' + JSON.stringify(mp));
+    assert.ok(mp.pop === 'menu' && /\d+ more: open the list/.test(mp.name), 'it names the list: ' + JSON.stringify(mp));
+    await js(`document.querySelector('#stage .ro-lplate[data-placemore]').click()`);
+    await must(`!!document.getElementById('modeMenu')&&document.querySelectorAll('#modeMenu [data-pvopen]').length>=2`, 'the list of the people at the coffee corner');
+    await H.key('Escape');
+    await must(`!document.getElementById('modeMenu')`, 'the list closed');
+    await loadReal(w, h);
+    await js(`document.querySelector('#stage .ro-plate').focus()`);
+    const first = await js(`document.activeElement.dataset.id`);
+    await H.key('Right');
+    await must(`document.activeElement.classList.contains('ro-plate')&&document.activeElement.dataset.id!==${jsLiteral(first)}`, 'the arrow key moved focus to another plate');
+    await js(`document.activeElement.focus()`);
+    await H.key('F10', ['shift'], { char: 'never' });
+    await must(`!!document.getElementById('modeMenu')`, 'the card menu on Shift+F10 at a plate');
+    await H.key('Escape');
+    await must(`!document.getElementById('modeMenu')`, 'the card menu closed');
+    await js(`(()=>{const p=document.querySelector('#stage .ro-plate'),r=p.getBoundingClientRect();p.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:r.left+20,clientY:r.top+10}))})()`);
+    await must(`!!document.getElementById('modeMenu')`, 'the card menu on a right-click at a plate');
+    await H.key('Escape');
+    await must(`!document.getElementById('modeMenu')`, 'the card menu closed again');
   }
 
   // ---- FR-020: few agents, big screens ----
