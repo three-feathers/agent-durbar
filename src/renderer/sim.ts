@@ -71,7 +71,7 @@ type SimNotesView = import('../shared/notes').NotesView;
  * message saved twice makes one note. Page address `simnotes=some|many|long|secret` seeds each folder the first time it is asked.
  * Fake tokens are built at run time (push protection).
  */
-function simNotesApi(qs: URLSearchParams, folderOf: (id: string) => { key: string; name: string; session: string } | undefined): Pick<DurbarApi, 'notesList' | 'notesSave' | 'notesAdd' | 'notesUpdate' | 'notesDelete' | 'notesDeleteAll' | 'notesStartOver' | 'notesSetFile' | 'notesFileCount' | 'onNotesChanged'> {
+function simNotesApi(qs: URLSearchParams, folderOf: (id: string) => { key: string; name: string; session: string } | undefined): Pick<DurbarApi, 'notesList' | 'notesSave' | 'notesAdd' | 'notesUpdate' | 'notesDelete' | 'notesDeleteAll' | 'notesStartOver' | 'notesSetFile' | 'notesFileCount' | 'notesExport' | 'onNotesChanged'> & { forgetFolder(key: string): void } {
   const MAX = 300;
   const store = new Map<string, SimNote[]>();
   const subs: Array<(v: { fingerprint: string }) => void> = [];
@@ -195,6 +195,10 @@ function simNotesApi(qs: URLSearchParams, folderOf: (id: string) => { key: strin
       return { ok: true, fingerprint: 'sim' };
     },
     notesStartOver: async (id) => (folderOf(id) ? { ok: true, fingerprint: 'sim' } : gone),
+    /* spec 083 T034b: the demo never shows a save dialog and writes nothing */
+    notesExport: async (id) => (!folderOf(id) ? gone : { ok: true, demo: true, message: 'Demo: nothing written' }),
+    /* spec 083 T034b: Remove folder with Also delete its notes drops the in-memory demo notes of that folder (not a bridge call) */
+    forgetFolder: (key: string) => { store.delete(key); tell(key); },
     notesFileCount: async (id) => {
       if (!folderOf(id)) return gone;
       if (fileMode === 'workspace') return { ok: false, code: 'invalid', error: 'The project file is not offered for a VS Code workspace.' };
@@ -1994,7 +1998,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     } catch {
       simUserTheme = null;
     }
-    const simNotesBridge = simNotesApi(simQuery, (id) => { const s = sims.find((x) => x.info.id === id); return s ? { key: s.info.workspaceFile || s.info.cwd, name: (s.info as AgentInfo & { roomName?: string }).roomName ?? s.info.name, session: s.info.id } : undefined; }); // spec 083 FR-060
+    const { forgetFolder: simNotesForget, ...simNotesCalls } = simNotesApi(simQuery, (id) => { const s = sims.find((x) => x.info.id === id); return s ? { key: s.info.workspaceFile || s.info.cwd, name: (s.info as AgentInfo & { roomName?: string }).roomName ?? s.info.name, session: s.info.id } : undefined; }); // spec 083 FR-060
     const capApi: Partial<DurbarApi> = {
       usageTotals: async () => ({ ok: true, since: savedSince, office: saved.office, folders: saved.folders }),
       usageResetTotals: async () => { savedSince = new Date().toISOString(); saved = { office: zero, folders: [] }; return { ok: true, since: savedSince, office: zero, folders: [] }; },
@@ -2070,7 +2074,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         // come first, for check-ui-text's long-text pass; simslash=secret: fake token shapes (FR-014, issue #608)
         return { ok: true, entries: simSlashFor(s.info.adapterId ?? 'copilot', simQuery).map((e) => { const c = { ...e }; delete c.note; return c; }) }; // the note is the send's, not the list's
       },
-      ...simNotesBridge, // spec 083 FR-060
+      ...simNotesCalls, // spec 083 FR-060
       listProfiles: async (id) => {
         const s = sims.find((x) => x.info.id === id);
         if (!s || (s.info.adapterId && s.info.adapterId !== 'copilot')) return { ok: false, error: 'This agent app has no profiles.', profiles: [] };
@@ -3136,9 +3140,11 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         }
         return { ok: true, mode, pending };
       },
-      removeFolder: async (id) => {
+      removeFolder: async (id, opts) => {
         const src = sims.find((x) => x.info.id === id);
         const gone = src ? sims.filter((x) => x.info.cwd === src.info.cwd).map((x) => x.info.id) : [];
+        // spec 083 T034b: Also delete its notes (no native confirmation in the demo; nothing on disk)
+        if (src && opts && opts.deleteNotes === true) { simNotesForget(src.info.workspaceFile || src.info.cwd); for (const g of gone) sims.splice(sims.findIndex((x) => x.info.id === g), 1); return { ok: true, removedIds: gone, notesDeleted: true }; }
         for (const g of gone) sims.splice(sims.findIndex((x) => x.info.id === g), 1);
         return { ok: true, removedIds: gone };
       },

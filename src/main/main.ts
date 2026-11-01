@@ -31,7 +31,7 @@ import { createProfileFreshness } from './profilefiles';
 import { register as registerSlashIpc } from './ipc/slash';
 import { nativeConfirm } from './nativeconfirm';
 import { register as registerNotesIpc } from './ipc/notes';
-import { NotesOps } from './notesops';
+import { NotesOps, notesConfirmText } from './notesops';
 import { NotesStore } from './notesstore';
 import { NotesFile } from './notesfile';
 import { register as registerQuestionsIpc } from './ipc/questions';
@@ -807,7 +807,7 @@ registerOrgPolicyIpc({ view: () => orgPolicies.view() });
 registerAdaptersIpc({ adaptersList });
 const sandboxOps = registerSandboxIpc({ agents, router, getSettingsStore: () => settingsStore, readyAdapterIds }); // spec 087
 router.onEvent((e) => sandboxOps.onEvent(e)); // spec 087 FR-007a: Continue only answers a note main forwarded
-registerFoldersIpc({ browserGone, agents, router, agentState, getFolderStore: () => folderStore, getScheduler: () => scheduler, vsChatRefs, wsKey, forgetSandboxNote: (id) => sandboxOps.forget(id) });
+registerFoldersIpc({ browserGone, agents, router, agentState, getFolderStore: () => folderStore, getScheduler: () => scheduler, vsChatRefs, wsKey, forgetSandboxNote: (id) => sandboxOps.forget(id), getNotesOps: () => notesOps });
 registerFloorsIpc({ agents, getFolderStore: () => folderStore, wsKey });
 /* Spec 061: a folder's own agent setup (scan, decide, explain), window-only (FR-013); the pure handler bodies are unit-tested. */
 registerFolderSetupIpc({
@@ -1029,9 +1029,12 @@ app.whenReady().then(() => {
     // FR-050..FR-055 (T041, T042): the .durbar/notes.md mirror, only for a folder whose switch (`notesFile` in folders.json) is on
     file: () => notesFile, fileOn: (key) => folderStore?.get(key)?.notesFile === true, setFileOn: (key, on) => folderStore?.setNotesFile(key, on) === true,
     valuesPending: () => !!mcpStore && !mcpStore.noPrompt(), // review of PR 931: a value still locked in the vault would leave the mask incomplete
-    confirmNative: (kind, name) => nativeConfirm(win, kind === 'on'
-      ? { ok: 'Turn on', message: `Keep the notes of ${name} in the project?`, detail: 'Durbar will write .durbar/notes.md in this folder. It may get committed and pushed with your code.' }
-      : { ok: 'Delete the file', message: `Delete .durbar/notes.md in ${name}?`, detail: 'Durbar deletes it only if it holds exactly what Durbar would write.' }),
+    confirmNative: (kind, name, count) => nativeConfirm(win, notesConfirmText(kind, name, count)),
+    // FR-048 (T034b): main shows the save dialog; the window never sends a path
+    saveDialog: async (opts) => {
+      const r = win && !win.isDestroyed() ? await dialog.showSaveDialog(win, opts) : await dialog.showSaveDialog(opts);
+      return r.canceled || !r.filePath ? undefined : r.filePath;
+    },
   });
   appState = new AppStateStore(path.join(app.getPath('userData'), 'durbar-app-state.json'));
   appState.load();
