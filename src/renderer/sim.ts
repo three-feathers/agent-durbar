@@ -737,9 +737,9 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     /* mcpcall:begin */
     const simCallClass = (text: unknown, mcpAuth?: boolean): 'auth' | 'policy' | undefined => {
       const t = typeof text === 'string' ? text.slice(0, 4000) : '';
-      if (/AADSTS53\d{4}|conditional access|device (?:is )?(?:required )?(?:to be )?managed|managed device|compliant device|device (?:is )?not (?:compliant|enrolled)/i.test(t)) return 'policy';
-      if (mcpAuth === true || /\b401\s+unauthori[sz]ed|\b(?:http(?:\/\d(?:\.\d)?)?|status(?: code)?|code|error|response)[\s:=(-]{0,4}401\b|unauthori[sz]ed|AADSTS(?:50058|50072|50074|50076|50078|50079|50132|50133|50173|70008|70043|70044|700082|65001)\b|invalid_grant|token (?:is |has )?(?:expired|invalid)|sign[- ]?in (?:is )?required|MCP OAuth challenge required/i.test(t)) return 'auth';
-      return undefined;
+      if (/\bAADSTS53(?:0\d\d|\d{4})\b|\binsufficient_claims\b|conditional access|device (?:is )?(?:required )?(?:to be )?managed|managed device|compliant device|device (?:is )?not (?:compliant|enrolled)/i.test(t)) return 'policy';
+      if (mcpAuth === true || /\b401\s+unauthori[sz]ed|\b(?:http(?:\/\d(?:\.\d)?)?|status(?: code)?|code|error|response)[\s:=(-]{0,4}401\b|unauthori[sz]ed|\bAADSTS(?:50058|50072|50074|50076|50078|50079|50132|50133|50173|70008|70043|70044|700082|65001)\b|invalid_grant|token (?:is |has )?(?:expired|invalid)|sign[- ]?in (?:is )?required|MCP OAuth challenge required/i.test(t)) return 'auth';
+      return /\binteraction_required\b/i.test(t) ? 'policy' : undefined;
     };
     /* mcpcall:end */
     const emit = (e: AgentEvent): void => {
@@ -753,6 +753,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         else if (q && e.phase === 'failed') { const c = simCallClass(e.output, e.mcpAuth === true); if (c) (q.mcpCalls ??= new Map()).set(e.mcpServer, c); else q.mcpCalls?.delete(e.mcpServer); }
       }
       if (e.type === 'status' && e.status === 'stopped') { const q = sims.find((x) => x.info.id === e.sessionId); if (q) q.mcpCalls = undefined; }
+      if (e.type === 'toolCall' && e.phase === 'failed' && e.mcpServer && simCallClass(e.output) === 'policy') e = { ...e, mcpCall: 'policy' }; // FR-193: like maskMcpEvent, the word only
       listeners.forEach((l) => l(e));
       simSchedHook?.(e);
       if (e.type === 'status' && e.status === 'idle') {
