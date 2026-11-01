@@ -1024,7 +1024,7 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 #foldersPop{position:fixed;top:58px;right:14px;z-index:40;width:min(var(--pop-w-m),calc(100vw - 32px));max-height:min(70vh,520px);overflow-y:auto;background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:0 14px 40px rgba(40,35,25,.2);padding:var(--pop-pad)}
 #foldersPop[hidden]{display:none}
 /* floors (spec 033): panel like the folders popover; floor tag in room headers and door plates */
-#floorsPop{position:fixed;top:58px;right:14px;z-index:40;width:min(var(--pop-w-m),calc(100vw - 32px));max-height:min(72vh,560px);overflow-y:auto;background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:0 14px 40px rgba(40,35,25,.2);padding:var(--pop-pad)}
+#floorsPop{position:fixed;top:58px;right:14px;z-index:40;width:min(var(--pop-w-m),calc(100vw - 32px));max-height:min(72vh,560px);overflow-y:auto;overflow-x:hidden;background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:0 14px 40px rgba(40,35,25,.2);padding:var(--pop-pad)}
 #floorsPop[hidden]{display:none}
 #floorsPop:focus{outline:none}
 #liveBar #floorsBtn{display:inline-flex;align-items:center;gap:4px;padding:0 7px}
@@ -1034,8 +1034,21 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .floors-set{max-width:640px}
 .floors-set:focus{outline:none}
 .fl-floor{border-top:1px solid var(--line);padding:6px 0}
-.fl-row{display:flex;align-items:center;gap:6px}
+.fl-floor{position:relative}
+.fl-floor.reo-lift{background:var(--surface);border-radius:var(--r-md)}
+.fl-row{display:flex;align-items:center;gap:6px;min-height:var(--h-ctl)}
 .fl-row .btn{height:var(--h-ctl);padding:0 9px;font-size:12px}
+.fl-grip{flex:none;display:grid;place-items:center;width:18px;height:var(--h-ctl);color:var(--muted);cursor:grab;touch-action:none;margin-left:-4px}
+.fl-grip svg{width:14px;height:14px}
+.fl-grip:hover{color:var(--ink-2)}
+.fl-row .fl-only{border-color:transparent;background:transparent;color:var(--ink-2)}
+.fl-row .fl-only:hover{background:var(--surface-2);border-color:var(--line)}
+.fl-row .btn.fl-ib{width:var(--h-ctl);padding:0;justify-content:center;border-color:transparent;background:transparent;color:var(--ink-2)}
+.fl-row .btn.fl-ib:hover{background:var(--surface-2);border-color:var(--line)}
+.fl-row .btn.fl-ib.danger:hover{background:var(--tone-bad-soft);border-color:var(--tone-bad-line);color:var(--tone-bad-ink)}
+.fl-row .btn.fl-ib:disabled{border-style:solid;border-color:transparent;background:transparent;opacity:.4}
+.fl-row .btn.fl-ib svg{width:16px;height:16px;flex:none}
+.fl-ib-gap{flex:none;width:var(--h-ctl)}
 .fl-t{flex:1;min-width:0;display:flex;flex-direction:column}
 .fl-t b{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .fl-t small{font-size:11px;color:var(--muted)}

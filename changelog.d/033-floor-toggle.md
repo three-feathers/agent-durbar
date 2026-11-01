@@ -1,1 +1,1 @@
-- The floor On/Off in the Floors panel and Settings is now a toggle switch like the one for MCP servers, so it is easy to see it can be clicked (issue #1010).
+- The Floors panel is easier to use (issue #1010): the on/off is a toggle switch like the one for MCP servers, **Show only** is now **Only this floor**, Up and Down are arrow buttons, Rename and Delete are quiet icon buttons, and you can drag a floor by its handle to reorder it.

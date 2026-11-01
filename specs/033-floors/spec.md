@@ -190,6 +190,10 @@ When more than one floor is on, I can tell at a glance which floor each room bel
 
 ## Changes
 
+### 2026-11-01: the floor row in the panel, modern and draggable (issue #1010, owner request)
+
+Vikram: "Rename 'show only' to something more understandable and up and down as buttons and draggable floors. Modern design I said." In the Floors panel and Settings > Floors (one renderer): (1) **Show only** is now **Only this floor** (accessible name "Only this floor: <floor>"; it fits at 1280x800, so no shorter word); the action is unchanged (FR-022). (2) **Up** and **Down** are 32 px icon buttons with an up and a down arrow, names "Move <floor> up" and "Move <floor> down" unchanged, disabled (not dashed) at the ends; they stay the keyboard route. (3) Each row has a **drag handle**; dragging a floor by it reorders floors and saves through the same call as Up and Down (`reorderFloors`), with no new confirmation or undo (there was none). The drag is the one of rooms, desks and places of issue 677 (`reorder.js`, FR-082, FR-083: pointer events, `transform` and `opacity` only, Esc cancels), so this change **depends on PR #987** (branch `033-room-drag`) and is stacked on it; its `attach` gained an owner check so a second `attach` (floors) never ends a drag the first one began (reason for stacking rather than a second helper: one drag implementation, the change is 8 lines). (4) Row order: handle, toggle, name and count, then **Only this floor**, Up, Down, **Rename** and **Delete** as quiet icon buttons (no overflow menu: four 32 px buttons fit at 1280x800, and keeping them visible keeps every action one click), no border until hover; tokens only (`--h-ctl`, `--surface-2`, `--line`, `--muted`, `--ink-2`, `--tone-bad-*`), no new colour. Behaviour of every action is unchanged. Task T059.
+
 ### 2026-11-01: a failed order save is reported (sweep finding)
 
 `FolderStore.setOrder` throws when the file could not be written (the order stays in memory for this run), so the drag's *could not be saved* toast shows instead of a silent success. test: `scripts/test-roomorder.ts`.
@@ -266,3 +270,5 @@ The `status:` of the specs-index block used to read (moved here unchanged; the b
 - `[KNOWN GAP]` The Tools view is not filtered by floor (out of scope). An older build that saves the folder file drops floors (folders kept).
 
 - `[IMPLEMENTED]` sim: 2026-11-01 (issue #1010): `scripts/shots-033.js` asserts the floor switch in the panel is a `.swt` `role=switch` 38x22 px whose class matches `aria-checked`; drivers read `aria-checked`; mutation: changing the markup back to a text button fails it.
+
+- `[IMPLEMENTED]` sim: 2026-11-01 (issue #1010): `scripts/shots-033.js` does a real mouse drag of a floor's handle (only a transform changes mid-drag), checks the persisted order, that a press on the name does not drag, the controls' names, 32x32 icon buttons and the Up/Down save; mutant: dropping the `reorderFloors` call in the drop fails it. Not run on macOS or Windows.

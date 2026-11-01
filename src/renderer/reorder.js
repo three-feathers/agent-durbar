@@ -86,6 +86,7 @@
      the order; `hooks.end()` after every drag (drop or cancel); `hooks.disabled()` true = no drag now. A press that moves less than 6 px is a click. */
   function attach(host,kinds,hooks){
     let down=null, swallow=false;
+    const me={}; // one drag at a time overall (`live`), but each attach owns only the drags it began: a second attach (the floors list) never ends the first one's
     const doc=host.ownerDocument||document;
     host.addEventListener('pointerdown',e=>{
       if(e.button!==0||!e.isPrimary||live||(hooks.disabled&&hooks.disabled()))return;
@@ -106,21 +107,21 @@
         if(Math.hypot(e.clientX-down.x,e.clientY-down.y)<6)return;
         begin(down,e);down=null;
       }
-      if(live&&e.pointerId===live.id)move(e);
+      if(live&&live.me===me&&e.pointerId===live.id)move(e);
     });
     const finish=(e,drop)=>{
       if(down&&e.pointerId===down.id)down=null;
-      if(!live||e.pointerId!==live.id)return;
+      if(!live||live.me!==me||e.pointerId!==live.id)return;
       swallow=true;setTimeout(()=>{swallow=false;},0);
       end(drop);
     };
     doc.addEventListener('pointerup',e=>finish(e,true));
     doc.addEventListener('pointercancel',e=>finish(e,false));
-    doc.addEventListener('keydown',e=>{if(live&&e.key==='Escape'){e.preventDefault();e.stopPropagation();end(false);}},true);
-    doc.defaultView.addEventListener('blur',()=>{if(live)end(false);});
+    doc.addEventListener('keydown',e=>{if(live&&live.me===me&&e.key==='Escape'){e.preventDefault();e.stopPropagation();end(false);}},true);
+    doc.defaultView.addEventListener('blur',()=>{if(live&&live.me===me)end(false);});
     // a scroll or a wheel would move the cached slots: cancel instead of dropping somewhere unseen
-    doc.addEventListener('wheel',()=>{if(live)end(false);},{passive:true,capture:true});
-    doc.addEventListener('scroll',e=>{if(live&&(e.target===doc||(e.target.contains&&e.target.contains(host))))end(false);},{capture:true,passive:true});
+    doc.addEventListener('wheel',()=>{if(live&&live.me===me)end(false);},{passive:true,capture:true});
+    doc.addEventListener('scroll',e=>{if(live&&live.me===me&&(e.target===doc||(e.target.contains&&e.target.contains(host))))end(false);},{capture:true,passive:true});
     // the click that ends a drag must not open the desk or the tile that was dragged
     doc.addEventListener('click',e=>{if(swallow){e.stopPropagation();e.preventDefault();}},true);
     function begin(d,e){
@@ -128,7 +129,7 @@
       const from=els.indexOf(d.el);
       if(from<0||els.length<2)return;
       const slots=els.map(x=>{const r=x.getBoundingClientRect();return {left:r.left,top:r.top,width:r.width,height:r.height};}); // the only layout read of the drag
-      live={id:d.id,k:d.k,el:d.el,els,from,to:from,slots,x:d.x,y:d.y,last:null};
+      live={me,id:d.id,k:d.k,el:d.el,els,from,to:from,slots,x:d.x,y:d.y,last:null};
       try{host.setPointerCapture(d.id);}catch(_){}
       doc.body.classList.add('reo-dragging');
       d.el.classList.add('reo-lift');

@@ -17,6 +17,7 @@
  *   FR-023  Settings > Floors: a switch there updates the office, the pills, the top-bar button and the panel.
  * Spec 092 (floor screens): with two or more floors on the office shows one floor at a time, so "the office" below is the whole building: its floor screens
  * one after another (`building()`), each with one floor tag; the pills still count the whole building.
+ *   2026-11-01 (#1010): the row controls (Only this floor, icon buttons, handle), a real drag of a floor, the saved order, Up/Down the same save.
  * Screenshots: 033-floors-on, 033-floors-panel, 033-floor-off, 033-floor-off-panel, 033-settings-floors at both sizes.
  */
 const path = require('path');
@@ -105,6 +106,52 @@ module.exports = async (ctx) => {
     await shot('settings-floors', w, h);
     await js(`document.querySelector('#floorsSet [data-fl="on"][data-floor="f-personal"]').click()`);
     await until(`document.getElementById('floorsBtn').textContent.trim()==='3/3'`);
+    await js(`window.DurbarScreens.close()`); await calm();
+    // 2026-11-01 (issue #1010): the floor row's controls and a real drag of a floor by its handle
+    await panel(true);
+    const rowNames = () => js(`[...document.querySelectorAll('#floorsPop .fl-floor')].map(r=>r.querySelector('.fl-t b').textContent)`);
+    const ctl = await js(`(()=>{const r=document.querySelectorAll('#floorsPop .fl-floor')[1];const n=r.querySelector('.fl-t b').textContent;
+      const q=k=>r.querySelector('[data-fl="'+k+'"]');const box=e=>{const b=e.getBoundingClientRect();return Math.round(b.width)+'x'+Math.round(b.height)};
+      return {n,only:q('only').textContent+'|'+q('only').getAttribute('aria-label'),up:q('up').getAttribute('aria-label'),down:q('down').getAttribute('aria-label'),upTxt:q('up').textContent.trim(),
+        rn:q('rename').getAttribute('aria-label'),del:q('del').getAttribute('aria-label'),delTxt:q('del').textContent.trim(),upBox:box(q('up')),grip:!!r.querySelector('.fl-grip svg'),
+        firstUpDis:document.querySelector('#floorsPop .fl-floor [data-fl="up"]').disabled,small:[...r.querySelectorAll('button')].every(b=>parseFloat(getComputedStyle(b).fontSize)>=10.5)}})()`);
+    assert.deepStrictEqual(ctl, { n: ctl.n, only: `Only this floor|Only this floor: ${ctl.n}`, up: `Move ${ctl.n} up`, down: `Move ${ctl.n} down`, upTxt: '', rn: `Rename ${ctl.n}`, del: `Delete ${ctl.n}`, delTxt: '', upBox: '32x32', grip: true, firstUpDis: true, small: true }, 'the floor row controls: renamed Only this floor, icon buttons with their names, a handle');
+    const before = await rowNames();
+    assert.ok(before.length >= 3, `three floors: ${before}`);
+    const mouse = (type, p, extra = {}) => H.wc().sendInputEvent({ type, x: p.x, y: p.y, button: 'left', clickCount: 1, ...extra });
+    const dragFloor = async (from, to, mid) => {
+      const a = await js(`(()=>{const r=document.querySelectorAll('#floorsPop .fl-floor')[${from}].querySelector('.fl-grip').getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)}})()`);
+      const b = await js(`(()=>{const r=document.querySelectorAll('#floorsPop .fl-floor')[${to}].getBoundingClientRect();return {x:Math.round(r.left+30),y:Math.round(r.top+r.height/2)}})()`);
+      mouse('mouseMove', a); await ctx.sleep(30); mouse('mouseDown', a);
+      for (let i = 1; i <= 8; i++) { mouse('mouseMove', { x: Math.round(a.x + ((b.x - a.x) * i) / 8), y: Math.round(a.y + ((b.y - a.y) * i) / 8) }, { modifiers: ['leftButtonDown'] }); await ctx.sleep(25); }
+      if (mid) await mid();
+      mouse('mouseUp', b); await ctx.sleep(80);
+    };
+    // mid-drag: only transform moves (the lifted row has an inline transform, nothing else inline), the handle is the only start
+    let mid = null;
+    await dragFloor(2, 0, async () => { mid = await js(`(()=>{const l=document.querySelector('#floorsPop .reo-lift');return {lift:!!l,tf:!!(l&&l.style.transform),other:l?l.getAttribute('style').replace(/transform:[^;]*;?/,'').trim():'x'}})()`); await shot('floors-drag', w, h); });
+    assert.deepStrictEqual(mid, { lift: true, tf: true, other: '' }, 'mid-drag the lifted floor only has a transform');
+    await until(`document.querySelector('#floorsPop .fl-floor .fl-t b').textContent!==${jsLiteral(before[0])}`).catch(() => {});
+    const after = await rowNames();
+    assert.deepStrictEqual(after, [before[2], before[0], before[1]], `a real drag of the third floor's handle to the top reorders (${before} -> ${after}; said: ${await js("document.getElementById('srAnnounce').textContent")}; err: ${await js("(document.querySelector('#floorsPop .fl-err')||{}).textContent")})`);
+    await panel(false); await panel(true);
+    assert.deepStrictEqual(await rowNames(), after, 'the order is the saved one when the panel is painted again');
+    assert.ok((await H.floors()).length >= 1);
+    // a press on the floor's name or switch does not start a drag
+    const nm = await js(`(()=>{const b=document.querySelectorAll('#floorsPop .fl-floor')[1].querySelector('.fl-t').getBoundingClientRect();return {x:Math.round(b.left+10),y:Math.round(b.top+b.height/2)}})()`);
+    mouse('mouseMove', nm); await ctx.sleep(30); mouse('mouseDown', nm);
+    for (let i = 1; i <= 5; i++) { mouse('mouseMove', { x: nm.x, y: nm.y + i * 12 }, { modifiers: ['leftButtonDown'] }); await ctx.sleep(25); }
+    assert.strictEqual(await js(`document.querySelectorAll('#floorsPop .reo-lift').length`), 0, 'only the handle drags');
+    mouse('mouseUp', { x: nm.x, y: nm.y + 60 }); await ctx.sleep(60);
+    assert.deepStrictEqual(await rowNames(), after, 'a press elsewhere changes nothing');
+    // the arrow buttons use the same save: move the first one down, then put the order back with a drag
+    await js(`document.querySelector('#floorsPop .fl-floor [data-fl="down"]').click()`);
+    await until(`document.querySelector('#floorsPop .fl-floor .fl-t b').textContent===${jsLiteral(after[1])}`);
+    await js(`document.querySelectorAll('#floorsPop .fl-floor')[1].querySelector('[data-fl="down"]').click()`);
+    await until(`document.querySelector('#floorsPop .fl-floor .fl-t b').textContent===${jsLiteral(before[0])}&&document.querySelectorAll('#floorsPop .fl-floor')[1].querySelector('.fl-t b').textContent===${jsLiteral(before[1])}`);
+    assert.deepStrictEqual(await rowNames(), before, 'the original order is back');
+    await shot('floors-panel-rows', w, h);
+    await panel(false);
     await js(`window.DurbarScreens.close()`);
     await calm();
     assert.strictEqual(await js(`document.getElementById('floorsBtn').textContent.trim()`), '3/3');
