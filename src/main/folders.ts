@@ -664,6 +664,10 @@ export class FolderStore {
     const n = this.folders.length;
     this.folders = this.folders.filter((f) => f.workspace !== workspace);
     if (this.folders.length === n) return false;
+    // FR-081: a folder added again later has no saved position, so it must not come back to its old place
+    const rooms = this.orderDoc.rooms.filter((r) => r !== workspace);
+    const desks = Object.fromEntries(Object.entries(this.orderDoc.desks).filter(([k]) => k !== workspace));
+    this.orderDoc = { ...this.orderDoc, rooms, desks };
     this.save();
     return true;
   }

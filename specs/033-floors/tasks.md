@@ -146,4 +146,4 @@
 ## Phase 17: Change 2026-11-01 (floor switch looks like the MCP toggle, issue #1010)
 
 - [x] T058 Floor on/off uses the shared `.swt` switch (`role=switch`, `aria-checked`) in the panel and Settings; `.fl-sw` removed; drivers read `aria-checked`; `shots-033.js` asserts it [FR-007, FR-023]; screenshots, changelog fragment, docs
-- [x] T059 Floors panel row: **Only this floor**, icon buttons for Up, Down, Rename and Delete, a drag handle with reorder by drag (`reorder.js` attach for floors, depends on PR #987), `shots-033.js` drag and name checks, retaken linked pictures [FR-004, FR-022]
+- [x] T059 Floors panel row: **Focus mode** icon button, icon buttons for Up, Down, Rename and Delete, a drag handle with reorder by drag (`reorder.js` attach for floors, depends on PR #987), `shots-033.js` drag and name checks, retaken linked pictures [FR-004, FR-022]
