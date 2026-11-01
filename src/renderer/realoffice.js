@@ -16,16 +16,11 @@
   let SET_SHOWN = '';
   const peopleKey = () => SET_SHOWN === 'office' || !SET_SHOWN ? 'durbar.realpeople' : 'durbar.realpeople.' + SET_SHOWN;
   let onArt = null;
-  /* spec 097 FR-127: a lobby visit keeps the desk's size; the away width applies at the next real layout change (a different set of
-     agents, their asleep state, a resize, a world or set change): then every agent that is away at that moment narrows */
-  let EMPTY_BOX = null, SLIP_RO = null, SHAPE = '', NARROWED = new Set();
-  /* spec 097 FR-126: desk <-> lobby: who left or arrived (id -> {at, place}); the pair lasts 300 ms, nothing under reduced motion */
-  let WALK_MS = 300; let AWAY_PREV = new Map(); const WALKS = new Map(), VPOS = new Map();
+  let EMPTY_BOX = null, SLIP_RO = null;
 
   const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
   const px = (n) => Math.round(n * 10) / 10 + 'px';
   const box = (el, r) => { el.style.left = px(r.x); el.style.top = px(r.y); if (r.w != null) el.style.width = px(r.w); if (r.h != null) el.style.height = px(r.h); };
-  const byIdIn = (model, id) => model.folders.some((f) => f.agents.some((a) => a.id === id));
   const initials = (name) => String(name || '?').trim().split(/\s+/).slice(0, 2).map((w) => Array.from(w)[0] || '').join('').toUpperCase() || '?';
 
   /* the keyed layers: one Map per layer, elements reused by key; unseen keys are removed at the end of a render */
@@ -45,18 +40,7 @@
     layer._seen.add(key);
     return e;
   }
-  /* FR-126: a person that goes (desk -> lobby or back) fades out where it stood in 150 ms (opacity only) instead of vanishing; a still scene or a hidden page removes it at once */
-  let STILL = false;
-  function sweep(layer) {
-    for (const [k, e] of layer._k) if (!layer._seen.has(k)) {
-      if (layer._obs && layer._obs.delete(e)) layer._ro.unobserve(e); /* an element that leaves is also unobserved (the chrome layer's resize observer, settle), so the observed set cannot grow all day */
-      layer._k.delete(k);
-      if (!STILL && layer._ready && e.classList && (e.classList.contains('ro-person') || e.classList.contains('ro-visitor')) && !document.hidden && !(e.complete && !e.naturalWidth)) { /* a picture that failed to load is never kept to fade (FR-065) */ e.classList.add('ro-gone'); e.style.pointerEvents = 'none'; setTimeout(() => e.remove(), 170); } else e.remove();
-    }
-    layer._ready = true;
-  }
-  /* an element that did not exist at the last render (FR-126: arrives with a fade-in, after the first draw only) */
-  const born = (layer, key) => !!layer._ready && !layer._k.has(key);
+  function sweep(layer) { for (const [k, e] of layer._k) if (!layer._seen.has(k)) { if (layer._obs && layer._obs.delete(e)) layer._ro.unobserve(e); /* an element that leaves is also unobserved (the resize observer of the chrome layer, settle), so the observed set cannot grow all day */ e.remove(); layer._k.delete(k); } }
   function text(e, t) { t = String(t == null ? '' : t); if (e.textContent !== t) e.textContent = t; }
   function attr(e, k, v) { if (v == null || v === false) { if (e.hasAttribute(k)) e.removeAttribute(k); } else if (e.getAttribute(k) !== String(v)) e.setAttribute(k, String(v)); }
   function img(e, file, set) {
@@ -96,10 +80,8 @@
     const ids = Object.keys(meta.seat).sort();
     const who = people(model, ids, opts.rand, !!opts.remember);
     const seatOk = (p) => !!p && !['typeA', 'think', 'waveA', 'rest'].some((f) => BAD.has(SD + p + '-' + f + '.webp'));
-    const shape = JSON.stringify([view.w, view.h, world, set, model.folders.map((f) => [f.id, f.agents.map((a) => [a.id, a.state === 'asleep'])]), model.places.map((p) => p.id)]);
-    if (shape !== SHAPE) { SHAPE = shape; NARROWED = new Set(model.folders.flatMap((f) => f.agents.filter((a) => a.away).map((a) => a.id))); }
     const engine = {
-      folders: model.folders.map((f) => ({ id: f.id, agents: f.agents.map((a) => ({ id: a.id, state: a.state, away: a.away || null, keep: !!a.away && !NARROWED.has(a.id), person: seatOk(who[a.id]) ? who[a.id] : null })) })),
+      folders: model.folders.map((f) => ({ id: f.id, agents: f.agents.map((a) => ({ id: a.id, state: a.state, away: a.away || null, person: seatOk(who[a.id]) ? who[a.id] : null })) })),
       places: model.places.map((p) => ({ id: p.id, custom: !!p.custom, visitors: p.visitors.map((v) => ({ id: v.id, needsYou: !!v.needsYou, person: who[v.id] || null })) })),
     };
     const signs = {};
@@ -111,7 +93,6 @@
     ro.style.width = px(lay.width); ro.style.height = px(lay.height);
     ro.dataset.set = set; ro.dataset.world = world; ro.dataset.u = String(Math.round(lay.u)); ro.dataset.face = String(Math.round(lay.faceH * 10) / 10); ro.dataset.big = lay.big ? '1' : '0';
     ro.classList.toggle('still', !!opts.still);
-    STILL = !!opts.still;
     /* z-order (plan: art < lights < chrome): floor and fixtures, people and desks; the ambient and the lights; then signs, plates, chips */
     const art = layerOf(ro, 'ro-art'), amb = layerOf(ro, 'ro-amb'), lights = layerOf(ro, 'ro-lights'), chrome = layerOf(ro, 'ro-chrome');
     const lobby = el(art, 'lobby', 'div', 'ro-lobby'); box(lobby, { x: 0, y: 0, w: lay.width, h: lay.lobbyH });
@@ -123,16 +104,6 @@
     ro.dataset.ambient = String(ambient);
     const ambEl = el(amb, 'amb', 'div', 'ro-ambient'); box(ambEl, { x: 0, y: 0, w: lay.width, h: lay.height });
 
-    /* FR-126: who left for a place or came back since the last render (never on the first draw, never under reduced motion) */
-    const awayNow = new Map(model.folders.flatMap((f) => f.agents.filter((a) => a.away).map((a) => [a.id, a.awayLabel])));
-    const now0 = Date.now();
-    for (const [id, t] of WALKS) if (now0 - t.at >= WALK_MS) WALKS.delete(id);
-    if (ro._drawn && !opts.still) {
-      for (const [id, label] of awayNow) if (!AWAY_PREV.has(id)) WALKS.set(id, { at: now0, dir: 'out', place: label });
-      for (const id of AWAY_PREV.keys()) if (!awayNow.has(id) && byIdIn(model, id)) WALKS.set(id, { at: now0, dir: 'back', place: '' });
-      if (WALKS.size) setTimeout(() => { if (onArt) onArt(); }, WALK_MS + 30); /* redraw when the pair is over */
-    } else WALKS.clear();
-    AWAY_PREV = new Map(awayNow);
     EMPTY_BOX = null;
     if (model.empty) drawEmpty(art, chrome, lay, meta, model.empty);
     const byFolder = new Map(model.folders.map((f) => [f.id, f]));
@@ -163,8 +134,7 @@
         const lt = L.lightFor(d.state, { still: !!opts.still });
         /* the person (FR-036 first frame; P2 adds the second frame and motion), behind the desk; FR-065: the initials disc when the picture failed */
         if (d.person) {
-          const nb = born(art, 'p:' + k) && !STILL;
-          const pe = el(art, 'p:' + k, 'img', 'ro-person' + (a.asleep ? ' asleep' : '') + (nb ? ' ro-in' : '')); box(pe, d.person); pe.dataset.for = k; pe.dataset.pose = d.person.pose; img(pe, d.person.file, true);
+          const pe = el(art, 'p:' + k, 'img', 'ro-person' + (a.asleep ? ' asleep' : '')); box(pe, d.person); pe.dataset.for = k; pe.dataset.pose = d.person.pose; img(pe, d.person.file, true);
         } else if (!d.narrow && !a.away) {
           const ini = el(art, 'i:' + k, 'div', 'ro-initials'); const r = 0.5 * lay.u; box(ini, { x: d.slot.x + 0.05 * d.slot.w + 0.42 * lay.u - r / 2, y: d.desk.y - r - 6, w: r, h: r }); ini.dataset.for = k; text(ini, initials(a.name));
         }
@@ -190,18 +160,16 @@
         if (d.bubble) { const b = el(chrome, 'b:' + k, 'div', 'ro-bub'); box(b, d.bubble); attr(b, 'aria-hidden', 'true'); text(b, '?'); }
         if (d.bang) { const b = el(chrome, 'x:' + k, 'div', 'ro-bang'); box(b, d.bang); attr(b, 'aria-hidden', 'true'); text(b, '!'); }
         if (d.dots) { const b = el(chrome, 't:' + k, 'div', 'ro-dots'); box(b, d.dots); attr(b, 'aria-hidden', 'true'); if (!b.firstChild) b.innerHTML = '<i></i><i></i><i></i>'; }
-        const walk = WALKS.get(k);
-        if (d.away && !(walk && walk.dir === 'out')) { const w = el(chrome, 'a:' + k, 'div', 'ro-away'); box(w, d.away); text(w, 'at ' + a.awayLabel + ' \u2191'); }
+        if (d.away) { const w = el(chrome, 'a:' + k, 'div', 'ro-away'); box(w, d.away); text(w, 'at ' + a.awayLabel + ' \u2191'); }
         /* FR-123: the tent card of a coffee break stands on the empty desk (aria-hidden; the plate and the chip say it too) */
-        if (a.tent && d.away && !(walk && walk.dir === 'out')) { const t = el(chrome, 'tn:' + k, 'div', 'ro-tent'); t.dataset.surface = 'coffee-bar'; box(t, { x: d.slot.x + d.slot.w / 2, y: d.plate.y - 21 }); attr(t, 'aria-hidden', 'true'); text(t, a.tent); }
+        if (a.tent && d.away) { const t = el(chrome, 'tn:' + k, 'div', 'ro-tent'); t.dataset.surface = 'coffee-bar'; box(t, { x: d.slot.x + d.slot.w / 2, y: d.plate.y - 21 }); attr(t, 'aria-hidden', 'true'); text(t, a.tent); }
         /* FR-120: a static "z z" over a sleeping person (carved in the cave); aria-hidden, the plate and the name carry the meaning */
         if (a.asleep && d.person) { const z = el(chrome, 'z:' + k, 'div', 'ro-zz'); box(z, { x: d.person.x + d.person.w * 0.62, y: Math.max(d.slot.y + 2, d.person.y + d.person.h * 0.04) }); attr(z, 'aria-hidden', 'true'); text(z, 'z z'); }
         /* FR-016, FR-090: the name plate is the desk's one focusable button; the app's click handler opens the chat ([data-id]) */
         const pl = el(chrome, 'n:' + k, 'button', 'ro-plate st-' + d.state + (a.selected ? ' sel' : '') + (d.narrow ? ' narrow' : '') + (a.asleep ? ' asleep' : '')); box(pl, d.plate);
         pl.type = 'button'; pl.dataset.id = k; pl.dataset.state = d.state; if (a.asleep) pl.dataset.surface = 'lounge'; /* spec 098 FR-010: the moment's marker */
         attr(pl, 'aria-pressed', a.selected ? 'true' : 'false'); attr(pl, 'aria-label', a.label); attr(pl, 'title', a.tip);
-        const goes = walk && walk.dir === 'out' ? '\u2192 ' + walk.place : '';
-        const psig = JSON.stringify([a.name, a.role, a.word, a.task, a.helpers, d.state, goes]);
+        const psig = JSON.stringify([a.name, a.role, a.word, a.task, a.helpers, d.state]);
         if (pl._sig !== psig) {
           pl._sig = psig; pl.textContent = '';
           const l1 = document.createElement('span'); l1.className = 'ro-l1';
@@ -210,7 +178,7 @@
           if (a.helpers.length) { const h = document.createElement('span'); h.className = 'ro-help'; h.textContent = '+' + a.helpers.length + ' '; a.helpers.slice(0, 3).forEach((s) => h.insertAdjacentHTML('beforeend', dotHTML(s))); l1.appendChild(h); }
           const l2 = document.createElement('span'); l2.className = 'ro-l2';
           l2.insertAdjacentHTML('beforeend', dotHTML(d.state));
-          l2.appendChild(document.createTextNode(' ' + (goes || a.word + (a.task ? ' · ' + a.task : ''))));
+          l2.appendChild(document.createTextNode(' ' + (a.word + (a.task ? ' · ' + a.task : ''))));
           pl.appendChild(l1); pl.appendChild(l2);
         }
       }
@@ -228,8 +196,7 @@
         if (v.fig && !BAD.has(SD + v.fig.file)) {
           /* owner 2026-10-31 10:19 and 10:48: the feet on the front floor plane (layout), with a soft contact shadow under them */
           const sh = el(art, 'vs:' + v.id, 'div', 'ro-shadow'); box(sh, v.shadow);
-          const nbv = born(art, 'v:' + v.id) && !STILL;
-          const im = el(art, 'v:' + v.id, 'img', 'ro-visitor' + (nbv ? ' ro-in' : '')); box(im, v.fig); im.dataset.for = v.id; im.dataset.place = fx.id; im.dataset.pose = v.fig.pose; im.dataset.faces = v.fig.faces; im.dataset.feet = String(Math.round(v.fig.feetY * 10) / 10); img(im, v.fig.file, true);
+          const im = el(art, 'v:' + v.id, 'img', 'ro-visitor'); box(im, v.fig); im.dataset.for = v.id; im.dataset.place = fx.id; im.dataset.pose = v.fig.pose; im.dataset.faces = v.fig.faces; im.dataset.feet = String(Math.round(v.fig.feetY * 10) / 10); img(im, v.fig.file, true);
         }
         /* FR-026 "as the flat lobby": a go-place visitor (Boss, Bank, Coffee) is the flat lobby's own button (data-pvopen, and
            data-coffeeid for the coffee menu): app.js's delegated handlers open the chat; others forward to their plate (data-for) */
@@ -247,20 +214,7 @@
       const lsig = JSON.stringify([p.label, fx.more]);
       if (pl._sig !== lsig) { pl._sig = lsig; pl.textContent = ''; const s = document.createElement('span'); s.textContent = p.label; pl.appendChild(s); if (fx.more > 0) { const b = document.createElement('b'); b.className = 'ro-more'; b.textContent = '+' + fx.more; pl.appendChild(b); } }
     }
-    /* FR-126: the dotted trail between the desk and the place, drawn for the 300 ms of the pair only (an SVG path with a dash pattern fading in then out) */
-    const deskAt = new Map(lay.zones.flatMap((z) => z.desks.map((d) => [d.id, { x: d.slot.x + d.slot.w / 2, y: d.desk.y }])));
-    const figAt = new Map(lay.fixtures.flatMap((fx) => fx.visitors.filter((v) => v.fig).map((v) => [v.id, { x: v.fig.x + v.fig.w / 2, y: v.fig.feetY != null ? v.fig.feetY : v.fig.y + v.fig.h }])));
-    for (const [id, w] of WALKS) {
-      const a = figAt.get(id) || VPOS.get(id), b = deskAt.get(id);
-      if (!a || !b) continue;
-      const tr = el(chrome, 'tr:' + id, 'div', 'ro-trail ' + w.dir); box(tr, { x: 0, y: 0, w: lay.width, h: lay.height }); tr.dataset.surface = 'walk';
-      const sig = [a.x, a.y, b.x, b.y, lay.width, lay.height].map(Math.round).join();
-      if (tr._sig !== sig) { tr._sig = sig; tr.innerHTML = '<svg width="' + Math.round(lay.width) + '" height="' + Math.round(lay.height) + '" aria-hidden="true" focusable="false"><path d="M' + Math.round(b.x) + ' ' + Math.round(b.y) + ' Q' + Math.round((a.x + b.x) / 2) + ' ' + Math.round(Math.min(a.y, b.y) - 18) + ' ' + Math.round(a.x) + ' ' + Math.round(a.y) + '"/></svg>'; }
-      attr(tr, 'aria-hidden', 'true');
-    }
-    VPOS.clear(); for (const [id, p] of figAt) VPOS.set(id, p);
     drawSlips(chrome, lay, model.slips);
-    ro._drawn = true;
     [art, amb, lights, chrome].forEach(sweep);
     fitPlates(chrome, lay.width);
     stagger(chrome, lay.width);
@@ -567,5 +521,5 @@
 
   /* forget the session picks (Settings change of Characters, a test) */
   function reset() { PEOPLE = null; SEEN.clear(); TICKS.clear(); }
-  root.DurbarRealOffice = { render, reset, bad: () => [...BAD], resolve, stagger, walks: () => [...WALKS.keys()], walkInfo: () => JSON.stringify([...WALKS]), walkMs: (n) => { WALK_MS = n > 0 ? n : 300; } }; /* walks: the desks in a leave/arrive pair now (the driver's) */ /* resolve: for the driver's deterministic check */
+  root.DurbarRealOffice = { render, reset, bad: () => [...BAD], resolve, stagger }; /* resolve: for the driver's deterministic check */
 })(typeof self !== 'undefined' ? self : this);

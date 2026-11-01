@@ -78,6 +78,7 @@ const SIZES: [number, number][] = [[1440, 900 - 52], [1280, 800 - 52], [1440 - 4
 let cases = 0;
 for (const [W, H] of SIZES) for (const n of [1, 2, 3, 4, 5, 8, 12, 15, 20, 30, 40]) for (const f of [1, 2, 3, 4, 6, 8]) {
   if (f > n) continue;
+  if (W < 1000 && n > 15) continue; /* the chat is full-window (the office steps aside), so a narrow office beside it holds at most the 15-agent scale; away desks no longer narrow (owner 2026-11-01), so 20 or more asleep and away desks at 810 px have no room for a 40 px plate */
   const L = realLayout(model(n, f), { w: W, h: H }, META);
   const p = problems(L, W, H);
   if (n <= 15 && W >= 1280) assert.ok(!L.scroll, `${n} agents in ${f} folders at ${W}x${H}: no scroll at the 15-agent scale`);
@@ -95,7 +96,7 @@ for (const [W, H] of SIZES.slice(0, 2)) {
 }
 console.log('desk face px with 15 agents:', JSON.stringify(faces));
 /* SC-002's 40 px is not met (35.2 px at 1280x800, 38.1 at 1440x900): a [KNOWN GAP] in spec 097; this is a ratchet so it never gets worse */
-const FACE_FLOOR = Number(process.env.REALOFFICE_FACE_MIN || 35);
+const FACE_FLOOR = Number(process.env.REALOFFICE_FACE_MIN || 31); /* 35 while away desks narrowed (until 2026-11-01); a still room keeps them wide: 31.9 px at 1280x800 */
 for (const [k, v] of Object.entries(faces)) assert.ok(v >= FACE_FLOOR - 1e-9, `SC-002 ratchet: desk face ${v} px at ${k}, at least ${FACE_FLOOR}`);
 
 // ---- FR-020: big screens: each at least 170 px tall and wider than tall-ish; text size rule is the renderer's ----
@@ -126,36 +127,33 @@ for (const [k, v] of Object.entries(faces)) assert.ok(v >= FACE_FLOOR - 1e-9, `S
   }
 }
 
-// ---- FR-017, Q5: away and asleep desks are narrower, with no person; away ones say where ----
+// ---- FR-017, Q5, owner 2026-11-01: an asleep desk is narrower (0.62), an away desk keeps its width with an empty seat that says where ----
 {
   const m = model(6, 1, { away: false, states: ['working'] });
   m.folders[0].agents[1].away = 'library'; m.folders[0].agents[2].state = 'asleep';
   const L = realLayout(m, { w: 1440, h: 848 }, META);
   const d = Object.fromEntries(L.zones[0].desks.map((x) => [x.id, x]));
-  assert.ok(Math.abs(d.a1.slot.w / d.a0.slot.w - 0.62) < 0.01 && Math.abs(d.a2.slot.w / d.a0.slot.w - 0.62) < 0.01, 'away and asleep desks are 0.62 wide');
+  assert.ok(Math.abs(d.a1.slot.w / d.a0.slot.w - 1) < 0.01 && Math.abs(d.a2.slot.w / d.a0.slot.w - 0.62) < 0.01, 'an away desk is full width, an asleep desk 0.62 wide');
   assert.ok(!d.a1.person && d.a1.away && d.a2.person && !d.a2.away && d.a0.person, 'no person at an away desk, which says where; an asleep desk keeps its person (FR-129)');
   assert.strictEqual(d.a2.person!.pose, 'rest', 'an asleep person rests (FR-120, FR-129)');
   assert.strictEqual(d.a2.state, 'asleep');
 }
 
-// ---- FR-127: a lobby visit keeps the desk's size (`keep`); the away width applies at the next real layout change ----
+// ---- owner 2026-11-01 (a still room): a lobby visit changes no desk rect, and an away desk never narrows ----
 {
   const sigR = (l: ReturnType<typeof realLayout>): string => JSON.stringify([l.height, l.lobbyH, l.zones.map((z) => z.desks.map((d) => [d.id, d.slot, d.desk, d.screen, d.plate]))]);
   for (const [W, H] of SIZES) {
     const m = model(15, 4, { away: false });
     const before = realLayout(m, { w: W, h: H }, META);
     const during = JSON.parse(JSON.stringify(m)) as RealModel;
-    const a = during.folders[0].agents[0]; a.away = 'terminal'; a.keep = true;
+    const a = during.folders[0].agents[0]; a.away = 'terminal';
     const L2 = realLayout(during, { w: W, h: H }, META);
     const d0 = L2.zones.flatMap((z) => z.desks).find((d) => d.id === a.id)!;
-    assert.ok(d0.away && !d0.person && !d0.narrow, `a kept desk says where and has no person, at its full width, at ${W}x${H}`);
+    assert.ok(d0.away && !d0.person && !d0.narrow, `an away desk says where and has no person, at its full width, at ${W}x${H}`);
     const strip = (l: ReturnType<typeof realLayout>): string => JSON.stringify([l.height, l.zones.map((z) => z.desks.map((d) => [d.id, d.slot, d.desk, d.plate]))]);
     assert.strictEqual(strip(L2), strip(before), `a visit starting changes no desk rect or the height at ${W}x${H}`);
     const after = JSON.parse(JSON.stringify(m)) as RealModel; /* the visit is over */
     assert.strictEqual(strip(realLayout(after, { w: W, h: H }, META)), strip(before), 'and ending changes none either');
-    const real = JSON.parse(JSON.stringify(during)) as RealModel; real.folders[0].agents[0].keep = false; /* the next real layout change: the away width */
-    const narrowed = realLayout(real, { w: W, h: H }, META).zones.flatMap((z) => z.desks).find((d) => d.id === a.id)!;
-    assert.ok(Math.abs(narrowed.slot.w / d0.slot.w - 0.62) < 0.01 || narrowed.narrow, 'without keep the away desk narrows to 0.62');
     void sigR;
   }
 }
@@ -185,8 +183,8 @@ for (const [k, v] of Object.entries(faces)) assert.ok(v >= FACE_FLOOR - 1e-9, `S
   assert.ok(vs.length >= 3, 'visitors stand at fixtures');
   const lobbyFace = Math.min(...vs.map((v) => (v.face as Rect).h));
   console.log('lobby face px with 15 agents at 1280x800:', Math.round(lobbyFace * 10) / 10);
-  /* FR-024's 18 px is a [KNOWN GAP] since the owner's realism rule (people 1.7 m against the 2.1 m door): a ratchet keeps the estimate */
-  assert.ok(lobbyFace >= 11, `FR-024 ratchet: lobby faces (estimate: 0.13 of a 1.7 m person) ${lobbyFace}`);
+  /* FR-024's 18 px is a [KNOWN GAP] since the owner's realism rule (people 1.7 m against the 2.1 m door): a ratchet keeps the estimate (11 px until 2026-11-01; 10 px now that away desks keep their width and the room is sized for everyone seated) */
+  assert.ok(lobbyFace >= 10, `FR-024 ratchet: lobby faces (estimate: 0.13 of a 1.7 m person) ${lobbyFace}`);
   // owner 2026-10-31 09:03: one fixture per place; a crowd widens its place, empty places shrink; +N only past what fits
   for (const [W, H] of [[1440, 848], [1280, 748]] as [number, number][]) {
     const widths: number[] = [];
@@ -478,7 +476,7 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
   } else console.log('(dist/shared not built: the page-load check is skipped; npm test builds first)');
 }
 
-// ---- FR-127: the head room of the one raised hand: a waiting agent leaving for a place (kept) changes no desk of its row ----
+// ---- a still room: the head room of the one raised hand: a waiting agent leaving for a place changes no desk of its row ----
 {
   const m = model(6, 1, { away: false, states: ['working'] });
   /* the head room comes from the tallest sitter's headTop/bodyH: the agent that leaves is the tallest of its row, everyone else the lowest */
@@ -488,7 +486,7 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
   assert.ok(rise(byRise[0]) > rise(byRise[byRise.length - 1]) + 0.01, 'the art has sitters of different height');
   const strip = (l: ReturnType<typeof realLayout>): string => JSON.stringify([l.height, l.zones.map((z) => [z.box, z.desks.map((d) => [d.id, d.slot, d.desk, d.plate])])]);
   const before = strip(realLayout(m, { w: 1440, h: 848 }, META));
-  const gone = JSON.parse(JSON.stringify(m)) as RealModel; gone.folders[0].agents[0].away = 'boss'; gone.folders[0].agents[0].keep = true;
+  const gone = JSON.parse(JSON.stringify(m)) as RealModel; gone.folders[0].agents[0].away = 'boss';
   assert.strictEqual(strip(realLayout(gone, { w: 1440, h: 848 }, META)), before, 'the raised hand of an agent that left still has its head room: no row moves');
 }
 

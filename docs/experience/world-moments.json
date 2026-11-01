@@ -179,14 +179,14 @@
       "name": "Walk desk <-> place",
       "spec": "024 FR-005, 097 FR-073/075",
       "where": "#walkers, WALK_MS 1000",
-      "code": "present",
+      "code": "planned",
       "blocks": [
         "person",
         "fixture"
       ],
       "worlds": {
-        "photo": "built",
-        "cave": "built",
+        "photo": "designed",
+        "cave": "designed",
         "loft": "missing"
       },
       "nonNegotiables": "M"

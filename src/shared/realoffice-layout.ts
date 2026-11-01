@@ -4,9 +4,7 @@
    no imports: the page loads the compiled file after exports-shim.js and reads `exports.realLayout`; the tests import it. */
 
 export type RealState = 'working' | 'thinking' | 'waiting' | 'error' | 'limit' | 'done' | 'idle' | 'asleep';
-/** `keep` (spec 097 FR-127): the agent is away but its desk keeps the width it had, so a short visit never moves the office; the away width
- *  applies at the next real layout change (the renderer sets it then). */
-export interface RealAgent { id: string; state: RealState; away?: string | null; person?: string | null; keep?: boolean }
+export interface RealAgent { id: string; state: RealState; away?: string | null; person?: string | null }
 export interface RealFolder { id: string; agents: RealAgent[] }
 export interface RealVisitor { id: string; person?: string | null; needsYou?: boolean }
 export interface RealPlace { id: string; custom?: boolean; visitors: RealVisitor[] }
@@ -73,8 +71,8 @@ export const SEAT_POSE: Record<RealState, string | null> = { working: 'typeA', t
 
 const roOwn = (o: object, k: string): boolean => Object.prototype.hasOwnProperty.call(o, k);
 const roNeedsYou = (s: RealState): boolean => s === 'waiting' || s === 'limit';
-/** A narrower desk (0.62): away in the lobby, or asleep (Q5: lamp and screen off). FR-127: an away desk with `keep` stays full width. */
-const roNarrow = (a: RealAgent): boolean => (!!a.away && !a.keep) || a.state === 'asleep';
+/** A narrower desk (0.62): asleep (Q5, FR-120: lamp and screen off). An away desk never narrows (owner, 2026-11-01: a still room): it keeps its width with an empty seat. */
+const roNarrow = (a: RealAgent): boolean => a.state === 'asleep';
 const roWidthOf = (a: RealAgent): number => (roNarrow(a) ? AWAY_W : 1);
 /** FR-129: an empty chair now only ever means away; an asleep agent rests at the desk, in the dark. */
 const roSeated = (a: RealAgent): boolean => !a.away;
@@ -120,7 +118,7 @@ function roZoneStats(meta: RealMeta, z: RealFolder): { seated: boolean; rise: nu
   if (!st) {
     st = { seated: false, rise: 0, hand: DESK_AT * 0.9 };
     for (const a of z.agents) {
-      if (!roSeated(a) && !a.keep) continue; /* FR-127: a kept desk still holds the room of its person's raised hand */
+      /* an away desk holds the room of its person's raised hand as well: the room never moves when someone leaves or comes back */
       const m = roSeatOf(meta, a);
       st.seated = true; st.rise = Math.max(st.rise, m ? m.headTop / m.bodyH : 0.3); st.hand = Math.max(st.hand, m ? m.hand : DESK_AT);
     }

@@ -230,7 +230,7 @@ module.exports = async (ctx) => {
       for(const im of vs){const m=/(p\\d\\d)-(\\w+)\\.webp$/.exec(im.getAttribute('src')),pl=im.dataset.place,fx=document.querySelector('#stage .ro-fx[data-place="'+pl+'"],#stage .ro-kiosk[data-place="'+pl+'"]');
         const r=im.getBoundingClientRect(),footX=r.left+r.width*A.stand[m[1]].foot[m[2]],q=fx&&fx.getBoundingClientRect(),want=WANT[pl]||'letter';
         out.push({who:im.dataset.for,place:pl,pose:m[2],ok:m[2]===want||(m[2]==='letter'&&want==='runA'),faces:im.dataset.faces,meta:A.facing,side:q?(footX>q.left+q.width/2?'left':'right'):'none',footX,h:r.height,
-          anim:im.getAnimations().filter(a=>a.animationName!=='ro-in').length, /* spec 097 FR-126: the arrival fade (opacity, 150 ms, once) is the one animation a visitor may have */tf:getComputedStyle(im).transform,bm:getComputedStyle(im).mixBlendMode});}
+          anim:im.getAnimations().length,tf:getComputedStyle(im).transform,bm:getComputedStyle(im).mixBlendMode});}
       return {n:vs.length,agents:window.__durbarSimUi.agents().filter(a=>!a.parent).length,out};})()`;
     await must(SETTLED, 'three visitors with decoded pictures', 40000);
     /* simulator visits come and go on the wall clock: read the settled lobby again and again (in one page task each) until visitors at five different places were seen, or the time is up (then what was seen is checked) */
@@ -282,7 +282,6 @@ module.exports = async (ctx) => {
     assert.deepStrictEqual(pl.cp, [], 'no chip covers a place plate');
     assert.deepStrictEqual(pl.cc, [], 'no two chips overlap');
     assert.deepStrictEqual(pl.initials, [], `no bare initial in the lobby (names, or their first letters and an ellipsis): ${JSON.stringify(pl.initials)} of ${pl.chips}`);
-    await H.until(`window.DurbarRealOffice.walks().length===0`, 5000); /* no leave/arrive trail in a picture (spec 097 FR-126) */
     await H.shot(path.join(OUT, `097-real-15-${w}x${h}.png`), { prep: 'calm' });
     // ---- owner 2026-10-31 ("make a real running pose"): someone at the Terminal jogs in place (stride A in P1), no treadmill; a
     //      close crop of the lobby band shows it ----
@@ -426,7 +425,6 @@ module.exports = async (ctx) => {
     await loadReal(w, h, { sim: '3' });
     const big = await js(`document.querySelector('#stage .ro').dataset.big`);
     assert.strictEqual(big, '1', 'big screens with 3 agents');
-    await H.until(`window.DurbarRealOffice.walks().length===0`, 5000); /* no leave/arrive trail in a picture (spec 097 FR-126) */
     await H.shot(path.join(OUT, `097-real-3-${w}x${h}.png`), { prep: 'calm' });
   }
 
@@ -493,7 +491,6 @@ module.exports = async (ctx) => {
   const amb = Number(await js(`document.querySelector('#stage .ro').dataset.ambient`));
   assert.ok(amb >= 0.7 && amb <= 1 && amb15 >= 0.7 && amb15 <= 1, 'ambient in 0.7..1: ' + amb + ', ' + amb15);
   console.log('[097] ambient: 15 agents', amb15, '8 agents', amb);
-    await H.until(`window.DurbarRealOffice.walks().length===0`, 5000); /* no leave/arrive trail in a picture (spec 097 FR-126) */
   await H.shot(path.join(OUT, '097-real-lights-1440x900.png'), { prep: 'calm' });
 
   // ---- FR-065: a picture that fails: no broken image, the initials disc ----
