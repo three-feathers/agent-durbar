@@ -26,7 +26,7 @@ Between any two worlds, all of these differ, and you can tell them apart from a 
 
 **The side-by-side test:** put two worlds side by side at thumbnail size. If the seating plan and screen shapes match, it is not a new world. Plan a new world against the others before drawing it.
 
-Be specific without being a cliche: no tourist symbols, stereotypes, or copied logos and postal marks. **Flags:** invented flags with our golden logo mark are fine, as in the Durbar hall; flags of countries are not. No arches. Anything sacred stays out of decoration.
+Be specific without being a cliche: no tourist symbols, stereotypes, or copied logos and postal marks. **Flags:** invented flags with our golden logo mark are fine, as in the Durbar hall; flags of countries are not. Arches appear only in a world drawn from a historical court that used them, such as the Durbar hall. Anything sacred stays out of decoration.
 
 ## State must be obvious
 
@@ -62,6 +62,17 @@ Be specific without being a cliche: no tourist symbols, stereotypes, or copied l
 - Hover or keyboard focus opens a big, readable screen. Nothing is hover-only.
 - Screens look active: scrolling thinking, not placeholders.
 
+## The whole app belongs to the world
+
+Everything in the app must be in harmony with the world, not only the room. [Spec 097](../specs/097-real-office/spec.md) holds the rules:
+
+- **Tool surfaces take the world through tokens only** (FR-113): settings, dialogs, the composer, toasts and every other tool surface get colours, fonts, radii and shadows from tokens, with no art behind text and no size change.
+- **The world's colours cover the whole page** (FR-130): while Real office is shown they replace the theme's colours and its two shadows, in the List view and Settings too. The theme's fonts, title weight and radii stay, and leaving gives the theme back.
+- **Chat keeps its structure, controls, words and tab order** (FR-106). In Real office it gains a desk-side column, a header portrait and a world surface at least 78 % opaque behind its text. The text is never on a picture.
+- **Contrast rules stay** (FR-113, FR-106): each world's token set passes in light and forced-colours modes, and chat text is checked against the composited surface, 4.5:1, or 3:1 for large text.
+
+A world is not finished until its chat and settings screens have been looked at beside the room.
+
 ## Motion
 
 - **Natural and smooth,** never choppy or GIF-like. Crossfade between frames, and add small eased moves.
@@ -94,4 +105,5 @@ Spec 097 FR-178 and after hold the budgets. In short:
 4. Crop check: every person, every pose, at every count.
 5. Labels: none cut, none over a person or a fixture.
 6. Watch it move, on a video, before you believe it.
-7. Write down what still looks wrong. A mockup is a question, not a proof.
+7. Look at its chat and settings screens beside the room.
+8. Write down what still looks wrong. A mockup is a question, not a proof.
