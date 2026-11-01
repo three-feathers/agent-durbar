@@ -3552,7 +3552,7 @@ function reoStep(kind,el,delta){
   renderAll(); /* now, so the focus can go back to the moved element */
   const sel=kind==='room'?`.room[data-key="room:${CSS.escape(roomOfEl(el)?roomOfEl(el).id:'')}"]`:kind==='desk'?`.desk[data-id="${CSS.escape(keyOf)}"]`:`.place[data-place="${CSS.escape(keyOf)}"]`;
   const moved=document.querySelector('#stage '+sel);
-  if(moved){if(kind==='room'){const b=moved.querySelector('.room-more,.room-new');if(b)b.focus({preventScroll:true});}else{if(!moved.hasAttribute('tabindex')&&moved.tagName!=='BUTTON')moved.setAttribute('tabindex','-1');moved.focus({preventScroll:true});}
+  if(moved){if(kind==='room'){if(!moved.contains(document.activeElement)){const b=moved.querySelector('.room-more,.room-new,.desk[data-id]');if(b)b.focus({preventScroll:true});}}else{if(!moved.hasAttribute('tabindex')&&moved.tagName!=='BUTTON')moved.setAttribute('tabindex','-1');moved.focus({preventScroll:true});}
     const node=kind==='desk'?moved.closest('.unit'):moved,now=reoGroup(kind,node);reoSay(kind,node,now,now.indexOf(node));}
   return true;
 }

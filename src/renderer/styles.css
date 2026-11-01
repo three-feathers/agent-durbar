@@ -2195,7 +2195,7 @@ body.simple #ctxMenu #compactBtn{display:flex!important} /* spec 005 FR-041: Tid
 
 /* Rearranging the office (spec 033 delta 2026-11-01, issue #677): while a drag runs, only transform and opacity change; nothing moves in the layout. */
 .reo-dragging,.reo-dragging *{cursor:grabbing!important;user-select:none!important}
-.reo-lift{position:relative;z-index:30;opacity:.88;box-shadow:0 8px 22px rgba(0,0,0,.28);pointer-events:none;will-change:transform}
+.reo-lift{z-index:30;opacity:.88;box-shadow:0 8px 22px rgba(0,0,0,.28);pointer-events:none;will-change:transform}
 .reo-slot{transition:transform .14s ease-out;will-change:transform}
 @media (prefers-reduced-motion:reduce){.reo-slot{transition:none}}
 .room-head{cursor:grab}
