@@ -6,7 +6,7 @@ How to design a world for Real office, built-in or user-made. Spec [098](../spec
 
 1. **It is a real place, not a dashboard.** People, furniture and light belong to one room with one horizon, one scale and one light direction.
 2. **At a glance, you know who needs you.** Someone across the room should read each person's state without reading a word.
-3. **Design for 15 on one floor; make 3 to 4 beautiful.** Fifteen must fit at 1440x900 and 1280x800, with no overlap, no office scroll and text at least 10.5 px. Most real floors hold 3 or 4 people, so that view gets the most care. Lifts carry the rest. Faces may go down to 24 px only on a floor of 15, at both sizes; with fewer people they grow, and hover always shows them big ([spec 102](../specs/102-worlds-on-demand/spec.md) FR-229). Text never goes under 10.5 px.
+3. **Design for 15 on one floor; make 3 to 4 beautiful.** Fifteen must fit at 1440x900 and 1280x800, with no overlap, no office scroll and text at least 10.5 px. Most real floors hold 3 or 4 people, so that view gets the most care. Lifts carry the rest. Faces may go down to 24 px only on a floor of 15, at both sizes; with fewer people they grow, and hover always shows them big (owner decision, 2026-11-01). Text never goes under 10.5 px.
 4. **Space is for people and screens.** Decoration earns its pixels or goes. Grow people and screens to fill the room when few are present.
 5. **Fast before fancy.** A world that lags does not ship. See [Performance](#performance).
 6. **Worlds differ; contracts do not.** Fit rules, status colours and accessibility stay the same everywhere. Everything you can see changes, the seating plan included.
