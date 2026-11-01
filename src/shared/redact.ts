@@ -61,8 +61,8 @@ const HOSTX = String.raw`\.?(?:${COLON}[0-9]{1,5})?`;
  * OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 const NOT_AFTER = '(?![A-Za-z0-9])';
-/** A body that may hold `_`, `-` or `.`, so it must have a digit near its start: `cfut_cross_validation_results…` is a name, not a key. Bounded lookahead. */
-const dg = (cls: string, min: number): string => String.raw`(?=${cls}{0,128}[0-9])${cls}{${min},}`;
+/** A body that may hold `_`, `-` or `.` must have a digit near its start and not read as lower-case words (`cfut_cross_validation_results_v2` is a name, not a key). Bounded lookaheads. */
+const dg = (cls: string, min: number): string => String.raw`(?![a-z]{1,32}(?:[_-][a-z0-9]{1,32}){2,16}(?![A-Za-z0-9_-]))(?=${cls}{0,128}[0-9])${cls}{${min},}`;
 const W = '[A-Za-z0-9_-]';
 const PREFIXED = [
   // cloud

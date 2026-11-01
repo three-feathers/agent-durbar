@@ -149,7 +149,7 @@ const STAYS = [
   // Windows and relative paths
   'private_key=C:/keys/server_2026.pem', 'secret: C:/Users/me/secret1.txt', 'private_key=C:\\keys\\server_2026.pem', 'private_key=keys/server_2026.pem', 'token: dist/assets/index-a1b2.js', 'secret=../conf/key2.txt',
   // names that look like tokens, and things that only start like one
-  'nfc_normalize_unicode_string_with_long_name', 'sgp_' + 'cross_validation_results_for_the_final_model_fit', 'sbp_' + 'cross_validation_results_for_the_final_model_fit', 'glc_' + 'cross_validation_results_for_the_final_model', 'figd_' + 'cross_validation_results_for_the_final', 'cfk_' + 'cross_validation_results_for_the_final_model', 'tskey-auth-kube-config-documentation-page', 'cfut_' + 'cross_validation_results_for_model_fitting_vx', 'ACCAGTTGCATGCATGCATG', 'ABIAGATTACAGATTACAGA', 'ico-' + hex(32) + '.css',
+  'nfc_normalize_unicode_string_with_long_name', 'sgp_' + 'cross_validation_results_for_the_final_model_fit', 'sbp_' + 'cross_validation_results_for_the_final_model_fit', 'glc_' + 'cross_validation_results_for_the_final_model', 'figd_' + 'cross_validation_results_for_the_final', 'cfk_' + 'cross_validation_results_for_the_final_model', 'tskey-auth-kube-config-documentation-page', 'cfut_' + 'cross_validation_results_for_model_fitting_v2', 'glpat-' + 'cross-validation-results-v2-final', 'sgp_' + 'CrossValidation_ResultsForThe_FinalModelFitting_LongName', 'sbp_' + 'cross_validation_results_for_the_final_model_v2', 'ACCAGTTGCATGCATGCATG', 'ABIAGATTACAGATTACAGA', 'ico-' + hex(32) + '.css',
   // a token shape glued to a word is not one (except `sk-ant-`, on purpose)
   'x' + 'np' + 'm_' + an(36), 'my' + 'sk' + '_live_' + an(24), 'a' + 'gh' + 'p_' + an(36),
   // `-u` away from curl, and curl with no password
