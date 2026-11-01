@@ -42,11 +42,11 @@
 
 ## Phase 2: Screens and motion (PR P2) - US3, US4
 
-- [ ] T030 [P] [US3] Screen lines from the live readout buffer through `DurbarSafeText` (after main's `maskMcpEvent`), ANSI strip, 24 lines × 200 chars, `textContent` only; bars for small screens; repaint ≤ every 2 s; status screens. Test: `test:realoffice-layout` (or `test-safetext`) hostile strings: token, MCP secret value, `~/` path, `<img onerror>`, Markdown link, ANSI, 1 MB → masked, inert, capped [FR-030..FR-033, FR-035, SC-005]
-- [ ] T031 [P] [US3] `zoomRect(target, avoid, viewport)` pure placement + zoom panel (hover and focus, Esc, named region). Test: unit: never covers the avoid list, stays in the viewport; `sim:` hover and Tab at 15 agents [FR-034]
-- [ ] T032 [US3] Big screens for n ≤ 4 with real text. Test: `sim:` 3 agents at 1280x800, ≥ 8 lines at ≥ 11 px [FR-020, SC-003]
-- [ ] T033 [US4] Motion: 2-frame swaps per agent period, breathe, visitor motions, pose cross-fade, desk ↔ lobby fade, pause when hidden; off under reduced motion, Serious mode, `characterMotion` off. Test: `sim:` frame captures differ while working and are equal under reduced motion [FR-070..FR-074]
-- [ ] T034 Screenshots of the hover zoom; README limits (no walking, FR-075). Test: `npm run shots:docs`
+- [x] T030 [P] [US3] Screen lines from the live readout buffer through `DurbarSafeText` (after main's `maskMcpEvent`), ANSI strip, 24 lines × 200 chars, `textContent` only; bars for small screens; repaint ≤ every 2 s; status screens. Test: `test:realoffice-layout` (or `test-safetext`) hostile strings: token, MCP secret value, `~/` path, `<img onerror>`, Markdown link, ANSI, 1 MB → masked, inert, capped [FR-030..FR-033, FR-035, SC-005] Evidence: `test:liveact`, `test:realoffice-layout`, `sim:` `shots-097-screens`.
+- [x] T031 [P] [US3] `zoomRect(target, avoid, viewport)` pure placement + zoom panel (hover and focus, Esc, named region). Test: unit: never covers the avoid list, stays in the viewport; `sim:` hover and Tab at 15 agents [FR-034] Evidence: `test:realoffice-layout` (270 placements), `sim:` `shots-097-screens` (every awake screen, both sizes).
+- [x] T032 [US3] Big screens for n ≤ 4 with real text. Test: `sim:` 3 agents at 1280x800, ≥ 8 lines at ≥ 11 px [FR-020, SC-003] Evidence: `sim:` `shots-097-screens`: 11 to 14 drawn lines at 13 px.
+- [x] T033 [US4] Motion: 2-frame swaps per agent period, breathe, visitor motions, pose cross-fade, desk ↔ lobby fade, pause when hidden; off under reduced motion, Serious mode, `characterMotion` off. Test: `sim:` frame captures differ while working and are equal under reduced motion [FR-070..FR-074] Evidence: `sim:` `check-097-motion`; `characterMotion` read only, the setting does not exist yet (`[KNOWN GAP]`).
+- [x] T034 Screenshots of the hover zoom; README limits (no walking, FR-075). Test: `npm run shots:docs` Evidence: `sim:` `shots-097-screens` writes the zoom pictures (linked from the spec only, site budget); `docs/limits.md` says no walking.
 
 ## Phase 3: My characters and manual lighting (PR P3) - US5
 
@@ -63,7 +63,7 @@ Numbers: T100..T127 (this delta); FR-100..FR-117.
 - [x] T100 [P] World seam (built as `peopleFor` in `crew.js`, spec 102 FR-202): `realOfficeWorld(characters, worldPref)` in `crew.js` (crews → worlds, `durbar.world`), `REAL_OFFICE_WORLDS` = registry shippable worlds. Test: unit: every Characters value × every preference, bad and unshippable values → match; `test:surfaces` compares the list with `docs/experience/world-moments.json` [FR-100, FR-112, FR-114]
 - [x] T101 Pack move `realoffice/art/` → `realoffice/worlds/photo/` with `world.json` (spec 098 T031); per-world lazy load and cap in `test:realoffice-assets`. Test: `test:realoffice-assets` per pack ≤ 10 MB; `sim:` request log: flat loads nothing, photo loads no other world [FR-115]
 - [x] T102 Settings World row (shown when a second world is offered; storage is a KNOWN GAP, see spec Changes 2026-11-01) (`screens.js` `signsRow()` area), FR-083 line as "World: <name>". Test: `sim:` radio group by keyboard, only shippable worlds listed, choice survives a restart, bad stored value → match [FR-114, FR-083]
-- [ ] T103 [P] World token sets for each world (070 types; the photo world's set is built in P1, T028; cave and loft remain). Test: spec 098 T020 lint and T021 driver green per world [FR-113]
+- [~] T103 [P] World token sets for each world (070 types; the photo world's set is built in P1, T028; the cave's is built, loft remains). Test: spec 098 T020 lint and T021 driver green per world [FR-113]
 - [ ] T104 [P] Grounding: `realLayout` places standing frames on the band's floor line by `floorLine`, scales by fixture `realHeight`; contact shadow (no treadmill since 2026-10-31 11:22; a running frame needs new art). Test: `test:realoffice-layout` foot line ± 2 px and scale ± 5 % for every place and pose, 1/5/12 visitors, both sizes; `check:office` Real office variant measures the figure's lowest opaque pixel ± 2 px from the floor line and a shadow under it [FR-117]
 
 ## Phase 5: The lift in the world (PR P5; needs 092 phase 3, T022..T027)
