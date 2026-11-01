@@ -125,7 +125,7 @@ const STAYS = [
   // file paths, also where a secret word is next to them
   '/usr/local/lib/node_modules/npm/bin/npm-cli.js', 'C:\\Users\\me\\AppData\\Roaming\\npm\\node_modules', 'src/shared/redact.ts:89:12', '~/.ssh/known_hosts', 'private_key=/home/me/.ssh/id_rsa_work_laptop', 'private_key=./keys/server_2026.pem', 'PWD=/home/me/projects/agent-durbar', 'password_file: /etc/app/secret.txt',
   // code and config
-  'token: string', 'password: string;', 'apiKey: undefined', 'const token = getToken123();', 'token = await client.getAccessTokenFromConfig()', 'password=$DB_PASS', 'password: ${DB_PASSWORD}', 'token=%TOKEN%', 'api_key=<your-api-key>', 'secret: true', 'auth: false',
+  'token: string', 'password: string;', 'apiKey: undefined', 'const token = getToken123();', 'token = await client.getAccessTokenFromConfig()', 'password=$DB_PASS', 'token_url=https://x.example/1', 'secret=https://x.example/page2', 'auth: https://login.example/v2', 'password: ${DB_PASSWORD}', 'token=%TOKEN%', 'api_key=<your-api-key>', 'secret: true', 'auth: false',
   // words beside a secret word
   'max_tokens=4096', 'input_tokens: 12345678', 'token_count: 12345678', 'tokens=99999999', 'primary_key=abc12345', 'sort_key: created_at_2026', 'public_key=abc12345xyz', 'keyboard: 12345678', 'compass=12345678', 'bypass=12345678', 'pass: 12 tests', 'password: required', 'author: someone1234',
   // near a prefix

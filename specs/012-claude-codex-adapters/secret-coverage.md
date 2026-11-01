@@ -69,7 +69,7 @@ Checked by reading the code on 2026-11-01 (`read:`), not by a run.
 | **The chat's message bubbles** | **No** | The agent's text is shown as it wrote it (`mdSet`): the user's own session, and the text must be readable to work with. A secret an agent prints is on screen. Tool arguments in the chat are masked |
 | **Saved prompts** (scheduled, `durbar-schedules.json`) | **No** | Stored as written, readable only by the user (see `docs/safety.md`) |
 | **The agent apps' own session files** | **No** | Written by Copilot, Claude Code or Codex, not by Durbar |
-| `console.*` in main and adapters | No, and fixed text today | Developer warnings; `console.error('DRIVER FAILED', err)` and two `console.warn(…, err)` print an error object; driver mode is dev only. `[KNOWN GAP]`: no rule stops a new `console.*` with agent text |
+| `console.*` in main and adapters | No, and fixed text today | Developer warnings; a few print an error object (`DRIVER FAILED`, dev only; `[doors] could not save`). `[KNOWN GAP]`: no rule stops a new `console.*` with agent text |
 | `codexRpc` stderr buffer, `claudeTransport` `stderrTail` | Not masked, by design never logged | Comments there; callers mask before use |
 | A simulator name check (`src/renderer/sim.ts`) | Own small regex | Not a mask: simulator only, refuses a name; left as it is |
 

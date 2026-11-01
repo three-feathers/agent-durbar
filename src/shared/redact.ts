@@ -131,9 +131,9 @@ const VAL = String.raw`[A-Za-z0-9+/=_.~:@!#$%^*?-]`;
 /**
  * `name=value`, `"name": "value"`, `name := value`, also JSON-escaped (FR-080 delta 2026-11-01). The match starts at the separator, so plain
  * text costs one test per `:` or `=`. See the delta for what counts as a value: a digit in the first 128 characters and 8 or more, or 20 or more
- * without digit or dot; never what starts like a path or variable, or is a call.
+ * without digit or dot; never what starts like a path or variable, or is a call or a URL (its credential and query have their own rules).
  */
-const NAMED_SECRET = new RegExp(String.raw`(?<=${SECRET_NAMES}\\{0,2}["'\`]?\s{0,8})((?::=|=>|[:=]|%3[DdAa])\s{0,8}\\{0,2}["'\`]?)(?![./~$%<{\[(])(?![\w.$]{0,128}\()(?:(?=${VAL}{0,128}[0-9])${VAL}{8,4096}|[A-Za-z+/=_~:@!#^*?-]{20,4096})`, 'gi');
+const NAMED_SECRET = new RegExp(String.raw`(?<=${SECRET_NAMES}\\{0,2}["'\`]?\s{0,8})((?::=|=>|[:=]|%3[DdAa])\s{0,8}\\{0,2}["'\`]?)(?![./~$%<{\[(])(?![\w.$]{0,128}\()(?![\w+.-]{0,24}:\/\/)(?:(?=${VAL}{0,128}[0-9])${VAL}{8,4096}|[A-Za-z+/=_~:@!#^*?-]{20,4096})`, 'gi');
 const PATTERNS: RegExp[] = [
   KEY_BLOCK,
   shape(String.raw`(authorization\s{0,8}[:=]\s{0,8})(?:(?:bearer|basic|token)\s{1,8})?(?!'?\[(?:redacted|secret hidden)\]'?\}*(?:[\s",;]|$))[^\s",;]+`, 'gi'), // a value R12 already hid, whole, inside single quotes (`Authorization='[redacted]'}`) stays as it is; `[redacted]TOKEN` is not a hidden value
