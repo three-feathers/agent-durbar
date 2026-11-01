@@ -2354,7 +2354,7 @@ function syncChatColumn(){
   const pp=roPeople(), person=RO.personOf(a.id), v=VISITS.at(a.id), old=shutPlan(roomOf(a)).get(a.id)==='old'&&!v;
   const ls=E.lightState(isFailing(a)?'failing':isRetrying(a)?'retrying':isCompacting(a)?'compacting':vis(a),{limit:!!a.limit,paused:!!a.paused,asleep:old});
   const lt=E.lightFor(ls,{still:REDUCED||SERIOUS}), words=E.lampWords(lt), pose=(E.SEAT_POSE||{})[ls]||'rest';
-  const cw=window.innerWidth>=1440?300:250, pw=Math.min(window.innerWidth,parseFloat(getComputedStyle(p).maxWidth)||Infinity), show=window.innerWidth>=1200; /* the chat is full-window: the panel can be as wide as the window, or its max-width (not measured from its box, which the column changes) */
+  const cw=window.innerWidth>=1440?300:250, pw=Math.min(window.innerWidth,parseFloat(getComputedStyle(p).maxWidth)||Infinity), show=window.innerWidth>=1200&&pw-cw>=480; /* the chat is full-window: the panel can be as wide as the window, or its max-width (not measured from its box, which the column changes) */
   const file=person&&!v&&/^[a-z0-9-]{1,24}$/.test(person)?'realoffice/sets/'+pp.set+'/'+person+'-'+pose+'.webp':'';
   const pack=/^[a-z0-9-]{1,24}$/.test(pp.set)&&/^[a-z0-9-]{1,24}$/.test(pp.world);
   const key=[a.id,ls,words,file,stWord(a),v?v.place:'',helpersOf(a).length,cw,show,pp.world,pp.set].join('|');
