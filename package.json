@@ -184,7 +184,7 @@
     "test:characters": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-characters.js",
     "test:crew": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-crew.js",
     "test:crew-assets": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-crew-assets.js",
-    "test:realoffice-layout": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-realoffice-layout.js",
+    "test:realoffice-layout": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-realoffice-layout.js && node dist-scripts/scripts/test-realoffice-aisles.js",
     "test:realoffice-assets": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-realoffice-assets.js",
     "test:navigator": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-navigator.js",
     "test:composersize": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-composer-size.js",

@@ -27,14 +27,18 @@ export interface DeskBox {
   face: Rect | null; away: { x: number; y: number } | null; narrow: boolean; lamp: Rect;
   bubble: { x: number; y: number } | null; bang: { x: number; y: number } | null; dots: { x: number; y: number } | null;
   call: { x: number; y: number };
+  /** `aisles` only (spec 102 FR-256..FR-259): the marquee, the standing person's box and the side the screen faces */
+  marquee?: Rect; stand?: Rect; facing?: 'left' | 'right';
 }
 /** `id` is the folder's id; `part` is 1, or 2, 3... for the rest of a folder split over rows */
-export interface ZoneBox { id: string; part: number; box: Rect; sign: Rect; desks: DeskBox[] }
+export interface ZoneBox { id: string; part: number; box: Rect; sign: Rect; desks: DeskBox[]; /** `aisles`: the sign shows name, counts, + and menu only; path and cost go to its hover (FR-256) */ signShort?: boolean }
 export interface VisitorBox { id: string; fig: (Rect & { file: string; pose: string; feetY: number; faces: 'left' | 'right' }) | null; chip: { x: number; y: number }; face: Rect | null; shadow: Rect | null }
 export interface FixtureBox { id: string; custom: boolean; art: Rect | null; slot: Rect; plate: { x: number; y: number; w: number }; visitors: VisitorBox[]; more: number; light: Rect }
 export interface Layout {
   u: number; big: boolean; lobbyH: number; floorH: number; width: number; height: number; scroll: boolean; faceH: number;
   zones: ZoneBox[]; fixtures: FixtureBox[]; floorStrip: Rect;
+  /** `aisles` only: the pixel scale (CSS px per art pixel) and the cabinet's size */
+  g?: number; cabinet?: { w: number; h: number; gw: number; gh: number; cols: number; rows: number };
 }
 
 /* FR-010 constants (b2.js) */
@@ -396,3 +400,6 @@ export function assignPeople(map: Record<string, string>, sessions: readonly { i
   }
   return out;
 }
+
+/** the lobby band (fixtures and their visitors), for arrangements other than `rows` (spec 102 FR-256: the arcade hall keeps today's band) */
+export { roLobby as lobbyBand };
