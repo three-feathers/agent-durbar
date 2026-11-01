@@ -243,6 +243,51 @@ module.exports = async (ctx) => {
     assert.strictEqual((await got('lim')).length, 2, w + ': a second answer can be sent now ' + jsLiteral(await got('lim')));
     await js(`window.__hold=false;window.__rel.splice(0).forEach(r=>r({ok:true}))`);
 
+    // ---- FR-209: a card that is already settled keeps its status: a late failure and the 30 s timer neither blank it nor add a false note ----
+    const noteCount = (txt) => js(`[...document.querySelectorAll('#chat .note')].filter(x=>x.textContent.includes(${jsLiteral(txt)})).length`);
+    const pstate = () => js(`document.querySelector('#chat .note.limit .pstate').textContent`);
+    // (a) Raise in flight, the card is settled by the adapter's event (header Stop), the call then fails
+    await fresh({ simlimitwait: '1500' });
+    await limit('ls1-' + w);
+    assert.ok(await until(`!!document.querySelector('#chat .note.limit .note-actions')`, 5000));
+    await js(`window.__hold=true`);
+    await js(`window.__cb('Raise limit').click()`);
+    assert.ok(await until(`window.__lim.length===1`, 3000));
+    await emit({ type: 'limit', phase: 'resolved', requestId: 'ls1-' + w, action: 'cancel' });
+    assert.ok(await until(`/stopped here/.test(document.querySelector('#chat .note.limit .pstate').textContent)`, 3000));
+    await js(`window.__rel.shift()({ok:false,error:'hung then failed'})`);
+    await H.settle(500).catch(() => {});
+    assert.ok(/stopped here/.test(await pstate()), w + ': a late failure leaves "stopped here" (is ' + (await pstate()) + ')');
+    assert.strictEqual(await noteCount('Could not answer the spending limit'), 0, w + ': and adds no false "Could not answer" note');
+    // (b) Raise in flight, settled by the event, then the wait runs out
+    await fresh({ simlimitwait: '1000' });
+    await limit('ls2-' + w);
+    assert.ok(await until(`!!document.querySelector('#chat .note.limit .note-actions')`, 5000));
+    await js(`window.__hold=true`);
+    await js(`window.__cb('Raise limit').click()`);
+    assert.ok(await until(`window.__lim.length===1`, 3000));
+    await emit({ type: 'limit', phase: 'resolved', requestId: 'ls2-' + w, action: 'cancel' });
+    assert.ok(await until(`/stopped here/.test(document.querySelector('#chat .note.limit .pstate').textContent)`, 3000));
+    await ctx.sleep(1800);
+    assert.ok(/stopped here/.test(await pstate()), w + ': the timer leaves "stopped here" (is ' + (await pstate()) + ')');
+    assert.strictEqual(await noteCount('No reply after'), 0, w + ': and adds no "No reply" note');
+    // (c) two answers: the first succeeds, the second is rejected
+    await fresh({ simlimitwait: '1000' });
+    await limit('ls3-' + w);
+    assert.ok(await until(`!!document.querySelector('#chat .note.limit .note-actions')`, 5000));
+    await js(`window.__hold=true`);
+    await js(`window.__cb('Raise limit').click()`);
+    assert.ok(await until(`!window.__cb('Remove limit').disabled`, 4000), w + ': the card unlocked after the wait');
+    await js(`window.__cb('Remove limit').click()`);
+    assert.ok(await until(`window.__lim.length===2`, 3000));
+    await js(`window.__rel[0]({ok:true})`);
+    assert.ok(await until(`document.querySelector('#chat .note.limit').classList.contains('settled')`, 3000), w + ': the first answer settled the card');
+    const before = await pstate();
+    await js(`window.__rel[1]({ok:false,error:'late'})`);
+    await H.settle(500).catch(() => {});
+    assert.strictEqual(await pstate(), before, w + ': the second, rejected answer leaves the status (' + before + ')');
+    assert.strictEqual(await noteCount('Could not answer the spending limit'), 0, w + ': and adds no false note');
+
     // ---- FR-209: a question answer that fails unlocks the whole card again (buttons, options and boxes) ----
     await fresh();
     await ask('ql-' + w, 'Lock?', ['yes', 'no']);
@@ -289,6 +334,20 @@ module.exports = async (ctx) => {
     assert.strictEqual(await js(`document.getElementById('msgInput').value`), 'go', w + ': the typed letters are in the message box');
     await nkey('Return');
     assert.deepStrictEqual(await got('plan'), [], w + ': Enter after typing does not approve the plan ' + jsLiteral(await got('plan')));
+
+    // ---- FR-212: pasting when a plan arrives goes to the box too ----
+    await fresh();
+    require('electron').clipboard.writeText('pasted text');
+    await js(`document.getElementById('msgInput').focus()`);
+    await plan(8);
+    assert.ok(await until(`document.activeElement&&document.activeElement.textContent==='Approve'`, 5000), w + ': (the plan took the focus)');
+    wc().sendInputEvent({ type: 'keyDown', keyCode: 'V', modifiers: ['control'] });
+    wc().sendInputEvent({ type: 'keyUp', keyCode: 'V', modifiers: ['control'] });
+    await ctx.sleep(300);
+    assert.strictEqual(await js(`document.activeElement.id`), 'msgInput', w + ': Ctrl+V on Approve moves focus to the message box');
+    assert.strictEqual(await js(`document.getElementById('msgInput').value`), 'pasted text', w + ': and the paste lands there');
+    await nkey('Return');
+    assert.deepStrictEqual(await got('plan'), [], w + ': Enter after the paste does not approve the plan ' + jsLiteral(await got('plan')));
 
     // ---- FR-212 (E): the plan takes focus on Approve only if no modal is open, the box is empty, and focus is on the page or in the empty box ----
     const onApprove = () => js(`!!document.activeElement&&document.activeElement.textContent==='Approve'`);

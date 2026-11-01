@@ -5470,10 +5470,10 @@ function showLimit(a,e){
   const lock=on=>{row.querySelectorAll('button,input').forEach(x=>{x.disabled=on;});pst.textContent=on?' → Sending…':'';};
   const answer=async choice=>{
     if(inFlight)return; const my=++seq; inFlight=my; lock(true);
-    const timer=setTimeout(()=>{if(inFlight===my){inFlight=0;lock(false);addNote(liveChat(a),'No reply after '+Math.round(LIMIT_WAIT_MS/1000)+' seconds. You can answer again; if the first answer arrives late, both may count.',true);}},LIMIT_WAIT_MS);
+    const timer=setTimeout(()=>{if(inFlight===my&&!n.classList.contains('settled')){inFlight=0;lock(false);addNote(liveChat(a),'No reply after '+Math.round(LIMIT_WAIT_MS/1000)+' seconds. You can answer again; if the first answer arrives late, both may count.',true);}},LIMIT_WAIT_MS);
     const r=await bridge.resolveLimit(a.id,e.requestId,choice).catch(err=>({ok:false,error:String(err&&err.message||err)}));
     clearTimeout(timer); const mine=inFlight===my; if(mine)inFlight=0;
-    if(!r||!r.ok){if(mine){lock(false);addNote(liveChat(a),'Could not answer the spending limit: '+esc((r&&r.error)||'unknown error'),true);}return;}
+    if(!r||!r.ok){if(mine&&!n.classList.contains('settled')){lock(false);addNote(liveChat(a),'Could not answer the spending limit: '+esc((r&&r.error)||'unknown error'),true);}return;}
     if(a.limit&&a.limit.requestId===e.requestId)settleLimit(a,choice.kind);
     else if(!n.classList.contains('settled')){ /* a late answer settles its own card only, and only if the adapter's `resolved` event (which comes first) has not: it never rewrites what happened */
       row.remove();n.classList.add('settled',choice.kind==='cancel'?'denied':'approved');
@@ -5512,7 +5512,7 @@ function showPlan(a,e){
   if(ui.selected===a.id&&!modalOpen()&&!(mb&&mb.value)&&(!ae||ae===document.body||ae===mb))focusIn(ok);
   row.addEventListener('keydown',ev=>{
     if(ev.repeat&&(ev.key==='Enter'||ev.key===' '))ev.preventDefault(); /* a held Enter or Space on Approve, Revise or Reject answers nothing */
-    else if(ev.key.length===1&&ev.key!==' '&&!ev.ctrlKey&&!ev.metaKey&&!ev.altKey){const mb2=$('msgInput');if(mb2)focusIn(mb2);} /* starting to type goes to the message box, so the next Enter cannot approve the plan unread */
+    else if((ev.key.length===1&&ev.key!==' '&&!ev.ctrlKey&&!ev.metaKey&&!ev.altKey)||((ev.ctrlKey||ev.metaKey)&&!ev.altKey&&ev.key.toLowerCase()==='v')||(ev.shiftKey&&ev.key==='Insert')){const mb2=$('msgInput');if(mb2)focusIn(mb2);} /* starting to type or paste goes to the message box, so the next Enter cannot approve the plan unread */
   });
 }
 function settlePlan(a,action){
