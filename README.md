@@ -85,7 +85,7 @@ All `npm run` commands, the repository layout and how we work (spec-driven with 
 
 Agent Durbar is by **Three Feathers**. Key contributors: [vikramgorla](https://github.com/vikramgorla), [fjcabello](https://github.com/fjcabello) and [rubenlupi](https://github.com/rubenlupi) (GitHub handles are used as the names). The names live in [`src/shared/about.ts`](src/shared/about.ts) and are shown in the OS About panel and in Settings > About.
 
-The Cheeky and Prehistoric Crew pictures (`src/renderer/crew/art/`) were made by Paco with ChatGPT image generation, and Paco did the final pass; [`ASSETS.md`](src/renderer/crew/art/ASSETS.md) gives the tool and date of each (spec 077). The app id is `io.github.three-feathers.agentdurbar` since 2026-10-16; a build from before then is a separate app to the OS.
+The Cheeky, Prehistoric and Pirate Crew pictures (`src/renderer/crew/art/`) were made by Paco with ChatGPT image generation, and Paco did the final pass; [`ASSETS.md`](src/renderer/crew/art/ASSETS.md) gives the tool and date of each (spec 077). The app id is `io.github.three-feathers.agentdurbar` since 2026-10-16; a build from before then is a separate app to the OS.
 
 The Real office pictures (`src/renderer/realoffice/art/`) were made with Codex image generation on Vikram's plan and approved by Vikram, MIT like the code; [`ASSETS.md`](src/renderer/realoffice/art/ASSETS.md) gives each sheet's tool, date and prompt (spec 097).
 
