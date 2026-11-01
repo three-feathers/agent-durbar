@@ -119,7 +119,7 @@ Needs spec 096's adapter capability and probes.
 
 ## Worlds repository (delta 2026-11-01)
 
-- [ ] T190 Repin `APP_SHA` in `three-feathers/agent-durbar-worlds` `.github/workflows/validate.yml` from the head of #955 to a commit on this repository's `main`, once #955 is merged. Test: `real:` that repository's `Validate worlds` check green on the new sha [FR-240].
+- [ ] T190 No world pack merges in the worlds repository before this is done (the pin must not point at a squashed or deleted branch, or the gate cannot check anything). Repin `APP_SHA` in `three-feathers/agent-durbar-worlds` `.github/workflows/validate.yml` from the head of #955 to a commit on this repository's `main`, once #955 is merged. Test: `real:` that repository's `Validate worlds` check green on the new sha [FR-240].
 - [ ] T191 Catalogue entries carry `bytes` and `sha256` for downloadable packs; a pack without a hash is not offered or loaded. Test: `test:worldsource`, a mutant that offers a hashless pack fails [FR-241].
 - [ ] T192 Download rejects what is not a stored zip of `world.json` and the closed `.webp` list at the expected size. Test: `test:worldsource` hostile bodies (HTML, executable, other archive, wrong length) store nothing [FR-242].
 - [ ] T193 Point FR-073, FR-085 and FR-086 and `docs/worlds-source.md` at the worlds repository; the first `worlds-*` release is made there. Test: `real:` T043 reads from that release, 0 AI credits [FR-243].
