@@ -13,10 +13,14 @@ export interface RealPlace { id: string; custom?: boolean; visitors: RealVisitor
 export interface RealModel { folders: RealFolder[]; places: RealPlace[] }
 export interface SeatMeta { w: number; h: number; headTop: number; bodyH: number; hand: number }
 /** `feet` and `top`: per pose, the lowest and highest opaque row as a share of the picture's height, measured from its alpha (owner 2026-10-31 10:19) */
-export interface StandMeta { figH: number; poses: Record<string, [number, number]>; feet?: Record<string, number>; top?: Record<string, number> }
+export interface StandMeta { figH: number; poses: Record<string, [number, number]>; feet?: Record<string, number>; top?: Record<string, number>; foot?: Record<string, number> }
+/* `foot`: per pose, the horizontal centre of the planted feet as a share of the picture's width (spec 097 FR-191): the figure stands on it,
+   not on the middle of its box, because a three-quarter view has its feet off the box's centre. */
 export interface RealMeta {
   seat: Record<string, SeatMeta>; stand: Record<string, StandMeta>;
   fixtures: Record<string, [number, number]>; fixtureTop?: Record<string, number>; floorLine: number;
+  /** the side every standing picture faces, baked into the files (spec 097 FR-191); the lobby puts visitors to the right of their fixture, so 'left' */
+  facing?: 'left' | 'right';
 }
 export interface Rect { x: number; y: number; w: number; h: number }
 export interface DeskBox {
@@ -28,7 +32,7 @@ export interface DeskBox {
 }
 /** `id` is the folder's id; `part` is 1, or 2, 3... for the rest of a folder split over rows */
 export interface ZoneBox { id: string; part: number; box: Rect; sign: Rect; desks: DeskBox[] }
-export interface VisitorBox { id: string; fig: (Rect & { file: string; pose: string; feetY: number }) | null; chip: { x: number; y: number }; face: Rect | null; shadow: Rect | null }
+export interface VisitorBox { id: string; fig: (Rect & { file: string; pose: string; feetY: number; faces: 'left' | 'right' }) | null; chip: { x: number; y: number }; face: Rect | null; shadow: Rect | null }
 export interface FixtureBox { id: string; custom: boolean; art: Rect | null; slot: Rect; plate: { x: number; y: number; w: number }; visitors: VisitorBox[]; more: number; light: Rect }
 export interface Layout {
   u: number; big: boolean; lobbyH: number; floorH: number; width: number; height: number; scroll: boolean; faceH: number;
@@ -49,8 +53,8 @@ export const ORDER_SEARCH_MAX = 7;
 /** FR-020: big screens with this many visible agents or fewer. */
 export const BIG_MAX = 4;
 /** FR-024: visitors' activity pose per place, and the fallback when a person has no picture for it. */
-export const FX_POSE: Record<string, string> = { library: 'book', software: 'box', terminal: 'runA', web: 'touch', boss: 'knock', coffee: 'coffee', bank: 'letter', postbox: 'letter', other: 'tool' };
-export const POSE_FALLBACK: Record<string, string> = { box: 'letter', touch: 'letter', tool: 'letter', wait: 'letter', runA: 'letter' };
+export const FX_POSE: Record<string, string> = { library: 'book', software: 'book', terminal: 'runA', web: 'type', boss: 'knock', coffee: 'counter', bank: 'counter', postbox: 'letter', other: 'type' };
+export const POSE_FALLBACK: Record<string, string> = { wait: 'letter', runA: 'letter' };
 /** Owner 2026-10-31 ("make a real running pose", replacing the treadmill): the Terminal visitor jogs in place. P1 draws stride A
  *  still; the second frame of each two-frame pose is recorded here for the stepped motion of phase P2. */
 export const POSE_FRAME_B: Record<string, string> = { runA: 'runB' };
@@ -185,10 +189,10 @@ function roPack(meta: RealMeta, folders: RealFolder[], W: number, Ho: number, lo
 }
 
 /** FR-024: the standing picture for a visitor at a place (the pose, else its fallback), or null when the person has neither. */
-export function standPose(meta: RealMeta, person: string | null | undefined, place: string, custom: boolean): { pose: string; size: [number, number]; figH: number; feet: number; top: number } | null {
+export function standPose(meta: RealMeta, person: string | null | undefined, place: string, custom: boolean): { pose: string; size: [number, number]; figH: number; feet: number; top: number; foot: number } | null {
   if (!person || !roOwn(meta.stand, person)) return null;
   const st = meta.stand[person], want = custom ? 'wait' : (roOwn(FX_POSE, place) ? FX_POSE[place] : 'wait');
-  for (const p of [want, POSE_FALLBACK[want]]) if (p && roOwn(st.poses, p)) return { pose: p, size: st.poses[p], figH: st.figH, feet: st.feet && roOwn(st.feet, p) ? st.feet[p] : 1, top: st.top && roOwn(st.top, p) ? st.top[p] : 0 };
+  for (const p of [want, POSE_FALLBACK[want]]) if (p && roOwn(st.poses, p)) return { pose: p, size: st.poses[p], figH: st.figH, feet: st.feet && roOwn(st.feet, p) ? st.feet[p] : 1, top: st.top && roOwn(st.top, p) ? st.top[p] : 0, foot: st.foot && roOwn(st.foot, p) ? st.foot[p] : 0.5 };
   return null;
 }
 /** a person's standing height (top of the head to the soles) in sheet pixels, from the upright 'letter' pose (else the sheet's figure height) */
@@ -267,7 +271,8 @@ function roLobby(meta: RealMeta, places: RealPlace[], W: number, Lb: number): { 
         /* the feet (the picture's lowest opaque row) stand on the front floor plane, in front of the fixture; one scale per person,
            from its upright 'letter' pose, NEAR_SCALE larger than at the wall line. */
         const k = nearPx / standHeight(meta, String(v.person)), fw2 = sp.size[0] * k, fh2 = sp.size[1] * k;
-        fig = { x: cx - fw2 / 2, y: frontY - sp.feet * fh2, w: fw2, h: fh2, file: `${v.person}-${sp.pose}.webp`, pose: sp.pose, feetY: frontY };
+        const faces = meta.facing || 'left';
+        fig = { x: cx - sp.foot * fw2, y: frontY - sp.feet * fh2, w: fw2, h: fh2, file: `${v.person}-${sp.pose}.webp`, pose: sp.pose, feetY: frontY, faces };
         const headY = fig.y + sp.top * fh2;
         face = { x: cx - 0.065 * nearPx, y: headY, w: 0.13 * nearPx, h: 0.13 * nearPx };
         /* a soft elliptical contact shadow on the floor, centred on the foot line, a little wider than the stance */

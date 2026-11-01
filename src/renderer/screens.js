@@ -40,8 +40,10 @@
   const isOpen=()=>!!cur;
   function paint(focus){
     if(!cur)return;
-    if(cur.kind==='tools')paintTools(focus);else if(cur.kind==='folder')paintFolder(focus);else if(cur.kind==='notes')paintNotes(focus);else return paintSettings(focus); /* Settings paints after an await: the promise is returned so a caller can act once it is drawn */
-    if(window.DurbarHarnesses&&window.DurbarHarnesses.shown)window.DurbarHarnesses.shown(false);
+    let done;
+    if(cur.kind==='tools')paintTools(focus);else if(cur.kind==='folder')paintFolder(focus);else if(cur.kind==='notes')paintNotes(focus);else done=paintSettings(focus);
+    if(cur.kind!=='settings'&&window.DurbarHarnesses&&window.DurbarHarnesses.shown)window.DurbarHarnesses.shown(false);
+    return done; /* a promise for Settings (async): a caller may wait for the new page */
   }
   /* modal: body is an element or html; buttons [{label,value,cls}]; resolves value (or null when dismissed). `validate(root)` may return an error text (keeps it open and shows it), `true` (keeps it open; the caller already showed the error) or a promise of either. */
   function dialog({title,html,buttons,wide,size,cls,validate,onOpen}){
@@ -873,8 +875,9 @@
       const on=!!X.signs.get(), view=V?V.get():'flat', g=olb.parentElement;
       if(g)g.querySelectorAll('[data-officelayout]').forEach(b=>{const t=b.dataset.officelayout;b.setAttribute('aria-pressed',String(t==='real'?view==='real':view!=='real'&&(t==='cabins')===on));});
       const n=$('dsR');if(n&&V)n.textContent=V.note();
+      const hadFocus=document.activeElement===olb;
       await paint(); /* the World row appears with Real office, and Characters names the world's default set */
-      {const again=document.querySelector('[data-officelayout="'+k+'"]');if(again)again.focus({preventScroll:true});} /* the repaint replaced the button: keyboard focus stays on the choice just made */
+      if(hadFocus){const nb=document.querySelector('[data-officelayout="'+k+'"]');if(nb)focusIn(nb);} /* the repaint replaced the pressed button: keep the keyboard where it was */
       const tw=$('thWorld');if(tw){tw.textContent=worldWords();tw.hidden=!tw.textContent;}
       return;
     }

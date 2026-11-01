@@ -219,8 +219,8 @@
     const byPlace = new Map(model.places.map((p) => [p.id, p]));
     for (const fx of lay.fixtures) {
       const p = byPlace.get(fx.id), file = 'fx-' + fx.id + '.webp';
-      if (fx.art && !fx.custom && !BAD.has(WD + file)) { const im = el(art, 'f:' + fx.id, 'img', 'ro-fx'); box(im, fx.art); img(im, file); }
-      else if (fx.art && fx.custom) { const ki = el(art, 'f:' + fx.id, 'div', 'ro-kiosk'); box(ki, { x: fx.art.x + fx.art.w * 0.2, y: fx.art.y + fx.art.h * 0.35, w: fx.art.w * 0.6, h: fx.art.h * 0.65 }); if (ki._ic !== p.icon) { ki._ic = p.icon; ki.innerHTML = p.icon || ''; } }
+      if (fx.art && !fx.custom && !BAD.has(WD + file)) { const im = el(art, 'f:' + fx.id, 'img', 'ro-fx'); box(im, fx.art); im.dataset.place = fx.id; img(im, file); }
+      else if (fx.art && fx.custom) { const ki = el(art, 'f:' + fx.id, 'div', 'ro-kiosk'); ki.dataset.place = fx.id; box(ki, { x: fx.art.x + fx.art.w * 0.2, y: fx.art.y + fx.art.h * 0.35, w: fx.art.w * 0.6, h: fx.art.h * 0.65 }); if (ki._ic !== p.icon) { ki._ic = p.icon; ki.innerHTML = p.icon || ''; } }
       const fl = L.fixtureLight(fx.id, p.visitors.length, p.visitors.some((v) => v.needsYou));
       if (fl && fx.art) { const li = el(lights, 'fl:' + fx.id, 'div', 'ro-fxl fxl-' + fl + (fx.id === 'boss' ? ' boss' : '')); box(li, fx.light); }
       for (const v of fx.visitors) {
@@ -229,7 +229,7 @@
           /* owner 2026-10-31 10:19 and 10:48: the feet on the front floor plane (layout), with a soft contact shadow under them */
           const sh = el(art, 'vs:' + v.id, 'div', 'ro-shadow'); box(sh, v.shadow);
           const nbv = born(art, 'v:' + v.id) && !STILL;
-          const im = el(art, 'v:' + v.id, 'img', 'ro-visitor' + (nbv ? ' ro-in' : '')); box(im, v.fig); im.dataset.for = v.id; im.dataset.pose = v.fig.pose; im.dataset.feet = String(Math.round(v.fig.feetY * 10) / 10); img(im, v.fig.file, true);
+          const im = el(art, 'v:' + v.id, 'img', 'ro-visitor' + (nbv ? ' ro-in' : '')); box(im, v.fig); im.dataset.for = v.id; im.dataset.place = fx.id; im.dataset.pose = v.fig.pose; im.dataset.faces = v.fig.faces; im.dataset.feet = String(Math.round(v.fig.feetY * 10) / 10); img(im, v.fig.file, true);
         }
         /* FR-026 "as the flat lobby": a go-place visitor (Boss, Bank, Coffee) is the flat lobby's own button (data-pvopen, and
            data-coffeeid for the coffee menu): app.js's delegated handlers open the chat; others forward to their plate (data-for) */
