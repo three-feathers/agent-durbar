@@ -44,4 +44,13 @@ for (const p of ['src/renderer/realoffice/**', 'docs/experience/**', 'scripts/wo
 assert.ok(!/- 'src\/renderer\/(app|styles|screens)/.test(code), 'shared renderer files do not start the subset (D5)');
 for (const m of code.matchAll(/uses: (\S+)/g)) assert.ok(/@[0-9a-f]{40}$/.test(m[1]), `pinned: ${m[1]}`);
 assert.ok(/retention-days: 14/.test(code), 'artifacts kept 14 days');
+const jobs = { subset, weekly: code.slice(code.indexOf('  weekly:')) };
+for (const [name, text] of Object.entries(jobs)) {
+  assert.ok(/node scripts\/world-matrix\.js --selftest/.test(text), `${name} runs the page checks' selftest: with every moment planned, nothing else proves them`);
+  assert.ok(text.indexOf('--selftest') < text.indexOf('name: World matrix at'), `${name}: the selftest comes first`);
+  assert.ok(!/^\s+issues: write/m.test(text), `${name}: no issues: write until T043 uses it`);
+}
+const watch = fs.readFileSync(path.join(__dirname, '..', '.github', 'workflows', 'nightly-watch.yml'), 'utf8');
+assert.ok(/workflows: \[[^\]]*\bWorld matrix\b[^\]]*\]/.test(watch), 'nightly-watch reports a failed weekly run (T042, FR-055)');
+assert.ok(/^name: World matrix$/m.test(code), 'by the name nightly-watch lists');
 console.log('world matrix: pure parts and workflow shape ok');

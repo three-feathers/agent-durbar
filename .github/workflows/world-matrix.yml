@@ -5,8 +5,7 @@ name: World matrix
 # Artifacts only (14 days): nothing is committed, the matrix is not in shots:docs. Not a required check.
 #
 #   weekly (Monday 04:47 UTC, outside the retro's hour): full set at 1440x900 and 1280x800, one forced-colours pass at 1280x800,
-#     and the tool-surface driver at both sizes. `issues: write` is the spec's (FR-063: only the scheduled and manual run may write
-#     to GitHub, for the "World coverage" issue of T043); no step in this file uses it yet.
+#     and the tool-surface driver at both sizes. `issues: write` (FR-063) comes with T043, the step that uses it.
 #   pull request: only for the world-layer paths of FR-052 (shared renderer files do not start it: D5). The touched worlds (all
 #     worlds when anything outside worlds/<id>/ changed) at 1280x800 only, plus the tool-surface driver. contents: read, no secret,
 #     so a fork PR can run it. A red scheduled run is reported by nightly-watch.yml (FR-055).
@@ -68,6 +67,9 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y xvfb
       - run: npm ci
       - run: npm run build
+      # the page checks themselves, on fixture pages: a matrix with no present moment checks no cell, so this is what proves them
+      - name: World matrix selftest
+        run: node scripts/world-matrix.js --selftest
       - name: World matrix at 1280x800
         env:
           WORLDS: ${{ steps.worlds.outputs.worlds }}
@@ -92,8 +94,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     permissions:
-      contents: read
-      issues: write
+      contents: read # `issues: write` comes with T043, the step that uses it
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -105,6 +106,9 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y xvfb
       - run: npm ci
       - run: npm run build
+      # the page checks themselves, on fixture pages: a matrix with no present moment checks no cell, so this is what proves them
+      - name: World matrix selftest
+        run: node scripts/world-matrix.js --selftest
       - name: World matrix at 1440x900 and 1280x800
         run: node scripts/world-matrix.js
       - name: World matrix, forced colours at 1280x800
