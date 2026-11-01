@@ -126,7 +126,7 @@ module.exports = async (ctx) => {
       let open = false, nudges = -1;
       for (let t = 0; t < 8 && !open; t++) { nudges++; await moveTo(p.x + t % 3, p.y); open = await H.until(OPENED(i), 2000); }
       if (nudges) console.log('[097-screens] hover of', i, 'took', nudges, 'more moves');
-      if (!open) assert.fail('the zoom of ' + i + ': ' + JSON.stringify(await js(`(()=>{const e=document.elementFromPoint(${p.x},${p.y}),a=document.activeElement;return {at:e&&(e.className||e.tagName),for:e&&e.dataset&&e.dataset.for,focus:document.hasFocus(),hidden:document.hidden,zoom:(document.getElementById('roZoom')||{dataset:{}}).dataset.for,active:a&&a.className,state:(window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks).find(d=>d.id===${jsLiteral(i)})||{}).state};})()`)));
+      if (!open) assert.fail('the zoom of ' + i + ': ' + JSON.stringify(await js(`(()=>{const e=document.elementFromPoint(${jsLiteral(p.x)},${jsLiteral(p.y)}),a=document.activeElement;return {at:e&&(e.className||e.tagName),for:e&&e.dataset&&e.dataset.for,focus:document.hasFocus(),hidden:document.hidden,zoom:(document.getElementById('roZoom')||{dataset:{}}).dataset.for,active:a&&a.className,state:(window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks).find(d=>d.id===${jsLiteral(i)})||{}).state};})()`)));
       const z = await js(`(()=>{const P=document.getElementById('roZoom'),b=P.getBoundingClientRect(),fl=document.getElementById('floor').getBoundingClientRect();
         const hit=(e)=>{const a=e.getBoundingClientRect();return a.left<b.right&&b.left<a.right&&a.top<b.bottom&&b.top<a.bottom;};
         const own=document.querySelector('.ro-plate[data-id="'+CSS.escape(${jsLiteral(i)})+'"]');
