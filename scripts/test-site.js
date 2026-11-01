@@ -124,8 +124,7 @@ assert.match(docs, /<a class="keep" href="index\.html#download">Download<\/a>/, 
 
 // spec 050 FR-012 (issue #759): every picture the site links is a palette PNG (colour type 3), made by `npm run shots:docs` or `npm run shots:compress`;
 // a linked picture the quality guard refused to compress is named in KEPT_ORIGINAL with the reason
-const KEPT_ORIGINAL = {
-};
+const KEPT_ORIGINAL = {};
 for (const f of require('./shots-docs.js').linkedImages(ROOT)) {
   const b = fs.readFileSync(path.join(ROOT, 'docs', 'screenshots', f)).subarray(0, 26);
   assert.ok(KEPT_ORIGINAL[f] || b[25] === 3, `${f} is not a palette PNG: run \`npm run shots:compress\` (or name it in KEPT_ORIGINAL with the reason the quality guard refused it)`);

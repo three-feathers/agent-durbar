@@ -547,6 +547,11 @@ async function driver(ctx) {
       const tag = `real sim${sim}${rooms ? '-rooms' + rooms : ''}-${w}x${h}`;
       await load(`sim=${sim}&simfreeze=1&officeview=real${rooms ? '&simrooms=' + rooms : ''}`, w, h);
       if (!(await H.until(`!!document.querySelector('#stage .ro .ro-plate')&&[...document.querySelectorAll('#stage .ro img')].every(i=>i.complete)`, 15000))) { total++; failed++; console.log(`FAIL ${tag}: the Real office was not drawn`); continue; }
+      /* OFFICE_FONT: the other fonts of other machines (a CI runner's wider sans broke the chips and plates once): every Real office text in that family, drawn again */
+      if (process.env.OFFICE_FONT) {
+        const css = '.ro,.ro *{font-family:"' + process.env.OFFICE_FONT.replace(/[^A-Za-z0-9 -]/g, '') + '",sans-serif!important}';
+        await ctx.js(`(()=>{const st=document.createElement('style');st.textContent=${jsLiteral(css)};document.head.appendChild(st);window.__durbarSimUi.render();return true})()`);
+      }
       await stable(tag);
       for (const [step, amb] of [['closed', 0.7], ['closed', 1]]) {
         const res = await ctx.js(`(${realCheck.toString()})(${amb})`);
