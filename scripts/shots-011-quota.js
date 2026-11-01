@@ -270,5 +270,16 @@ module.exports = async (ctx) => {
   assert.strictEqual((await reads()).length, n0, 'no polling');
   await js(`0`);
   await settle();
+  /* sweep: Escape closes the session dialog first, then Settings under it (a stand-in dialog: the order is what is checked, not one route to it) */
+  await load(1440, 900, '');
+  await js(`document.getElementById('settingsBtn').click();0`);
+  assert.ok(await until(`!!document.getElementById('scrClose')`), 'Settings open');
+  await js(`(()=>{const d=document.createElement('div');d.id='sessDlg';d.className='dlg-ov';document.body.appendChild(d);})();0`);
+  await H.key('Escape');
+  assert.ok(await until(`!document.getElementById('sessDlg')`, 2000), 'Escape closes the session dialog');
+  assert.ok(await js(`!!document.getElementById('scrClose')`), 'and leaves Settings open');
+  await H.key('Escape');
+  assert.ok(await until(`!document.getElementById('scrClose')`, 2000), 'a second Escape closes Settings');
+
   console.log('[011-quota] PASS');
 };
