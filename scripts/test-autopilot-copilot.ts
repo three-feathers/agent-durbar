@@ -16,6 +16,7 @@ import type { AgentEvent } from '../src/adapters/types';
 
 const NANO = 1e9;
 const tick = async (n = 6): Promise<void> => { for (let i = 0; i < n; i++) await new Promise((r) => setImmediate(r)); };
+const until = async (ok: () => boolean, what: string): Promise<void> => { for (let i = 0; i < 2000 && !ok(); i++) await new Promise((r) => setTimeout(r, 1)); assert.ok(ok(), what); };
 const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-ap-copilot-'));
 const cont = { type: 'user.message', data: { content: '', source: 'autopilot', agentMode: 'autopilot', isAutopilotContinuation: true } };
 
@@ -468,6 +469,30 @@ async function main(): Promise<void> {
     await tick();
     assert.deepStrictEqual(n.order(), [], 'nothing changes for a session not on Autopilot in this phase');
     assert.ok(!n.lines().includes(LINE_SELF_STARTED));
+  }
+
+  // FR-006: a loop that cannot be turned off is not called off: the session ends, and the chat says so (as Claude Code and Codex)
+  for (const [what, set] of [
+    ['mode.set refused', (x: FakeSession) => { x.modeSetFail = 'no'; }],
+    ['abort refused', (x: FakeSession) => { x.abortFail = 'no'; }],
+    ['mode.set never answers', (x: FakeSession) => { x.rpc.mode.set = () => new Promise(() => undefined); }],
+  ] as [string, (x: FakeSession) => void][]) {
+    const r = await rig({ tuning: { wired: true, waitMs: 5 } });
+    set(r.s);
+    fire(r.s, { type: 'session.mode_changed', data: { newMode: 'autopilot', previousMode: 'interactive' } });
+    await until(() => r.lines().includes(LINE_UNCONFIRMED), what + ': the chat says it could not be confirmed');
+    assert.ok(r.s.calls.some((c) => c.name === 'disconnect'), what + ': the session is ended');
+  }
+
+  // FR-006: while it is being turned off, more of the same does not start it again or say it twice
+  {
+    const r = await rig({ tuning: { wired: true, waitMs: 40 } });
+    r.s.rpc.mode.set = () => new Promise(() => undefined);
+    const ev = { type: 'session.mode_changed', data: { newMode: 'autopilot', previousMode: 'interactive' } };
+    fire(r.s, ev); fire(r.s, ev);
+    await tick();
+    assert.strictEqual(r.lines().filter((l) => l === LINE_SELF_STARTED).length, 1, 'said once');
+    await until(() => r.lines().includes(LINE_UNCONFIRMED), 'and it still ends');
   }
 
   // FR-006: the runtime enters autopilot, or continues, without Durbar

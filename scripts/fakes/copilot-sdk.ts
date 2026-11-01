@@ -61,7 +61,8 @@ export class FakeSession {
     return 'msg-' + this.calls.length;
   }
   getEvents = async (): Promise<unknown[]> => [];
-  abort = async (): Promise<void> => this.rec('abort', undefined);
+  abortFail: string | null = null;
+  abort = async (): Promise<void> => { this.rec('abort', undefined); if (this.abortFail) throw new Error(this.abortFail); };
   disconnect = async (): Promise<void> => this.rec('disconnect', undefined);
   rpc = {
     eventLog: { registerInterest: async (a: unknown) => this.rec('registerInterest', undefined, a) },

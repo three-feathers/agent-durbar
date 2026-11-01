@@ -9,7 +9,7 @@ import { MAX_ANSWER, parseQuestions, SkipNotes } from './questions';
 import type { SkipReason } from './questions';
 import { answerElicitation, cancelElicitations, declineElicitation, runElicitation, type ElicitWaiter } from './elicitation';
 import { AUTOPILOT_ANSWER, goalText } from './autopilot';
-import { AUTOPILOT_NOT_ALLOW, AUTOPILOT_NO_PLAN, AUTOPILOT_ONE_RUN, AUTOPILOT_WAIT_TURN, AUTOPILOT_WIRED, AutopilotState, CLEAR_WAIT_MS, LINE_CAP_NOT_RESTORED, LINE_CLOSED, LINE_SELF_STARTED, capInForce, emitAutoAnswered, goalRefusal, lineNotCleared, within } from './autopilotHost';
+import { AUTOPILOT_NOT_ALLOW, AUTOPILOT_NO_PLAN, AUTOPILOT_ONE_RUN, AUTOPILOT_WAIT_TURN, AUTOPILOT_WIRED, AutopilotState, CLEAR_WAIT_MS, LINE_CAP_NOT_RESTORED, LINE_CLOSED, LINE_SELF_STARTED, LINE_UNCONFIRMED, capInForce, emitAutoAnswered, goalRefusal, lineNotCleared, within } from './autopilotHost';
 import type { AutopilotTuning } from './autopilotHost';
 import { MIN_CAP } from '../shared/credits';
 import type { ElicitAnswer } from '../shared/elicit';
@@ -151,6 +151,7 @@ interface Live {
   sawWork?: boolean;
   /** Spec 099 FR-054: resolves on `session.mode_changed` to `interactive`. */
   modeAck?: () => void;
+  selfStopping?: boolean; /* FR-006: turning a self-started loop off is in flight */
 }
 
 /** Spec 087 FR-022c (review on PR #833): why sends are held while a lowering that passed the time limit has not answered; the way back is a new session. */
@@ -1191,10 +1192,21 @@ export class CopilotAdapter implements AgentAdapter {
 
   /** FR-006: the app went into its own loop without Durbar: out of it, and said in the chat. */
   private selfStarted(sid: string, live: Live): void {
-    if (!this.goalsWired()) return;
+    if (!this.goalsWired() || live.selfStopping) return;
+    live.selfStopping = true;
     this.emit(sid, { type: 'status', status: 'idle', intent: LINE_SELF_STARTED });
-    void live.session.rpc.mode.set({ mode: 'interactive' }).catch(() => undefined);
-    void live.session.abort().catch(() => undefined);
+    const ms = this.autopilotTuning.waitMs ?? CLEAR_WAIT_MS;
+    void (async () => {
+      try {
+        await within(Promise.resolve(live.session.rpc.mode.set({ mode: 'interactive' })), ms, 'Copilot');
+        await within(Promise.resolve(live.session.abort()), ms, 'Copilot');
+      } catch { /* as Claude Code and Codex: not confirmed off, so the session ends */
+        await this.stop(sid).catch(() => undefined);
+        this.emit(sid, { type: 'status', status: 'stopped', intent: LINE_UNCONFIRMED });
+      } finally {
+        live.selfStopping = false;
+      }
+    })();
   }
 
   /** What a session event means for Autopilot (FR-006, FR-020, FR-021, FR-022, FR-040). True: the event does not reach the window. */
