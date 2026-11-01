@@ -251,3 +251,62 @@ probe cleared; HX = 0
 - **Not moved now:** the schedules, Needs you and usage chips keep their native `title` (smaller PR); `bind` takes any selector so they can move later.
 - **Failure modes:** a tooltip that sticks (every hide path above plus the disconnected-anchor check in `refresh`), a double tooltip (pill `title=""` beats the group's inherited `title`), a tooltip over the pill or outside the window (`place`, unit-tested and asserted at both sizes), a theme with poor contrast (inverted `--ink`/`--surface`; the driver computes the ratio in every built-in theme and Serious mode).
 - **Constitution:** I (this delta, tasks first), V (12px text, calm, no motion), VI (drawn by the app, same on all three OSes), VIII (limits listed in FR-187).
+
+## Delta 2026-11-01: room-by-room layout search, and the renders (FR-193..FR-203)
+
+**Depends on.** PRs #941 and #950 (097 T156, T159, `check-office-ops`, `MDIRTY`) and #936 (spec 097's budgets); 097 T145 (`check-perf --record`, #959). #954 removes doors and cabins, which changes `stageParts` and the closed-room paths. Build after those land, and re-read `chooseLayout` then: line numbers and parts here are from `main` at `1afb2881`.
+
+### A trial, before and after
+
+```text
+today     stageHTML -> svgHollow -> #probe (whole stage) -> forced layout -> scrollHeight, scrollWidth, headers, card widths
+
+after     parts = stageParts(...)                     memo per room signature (FR-201 a)
+          shells: one per part, empty                 same class, --w, --min, --cols
+          read each shell's width                     one small forced layout
+          for parts not remembered: slot of that width, measure answers   one forced layout, only the changed parts
+          shells get the heights and overflow
+          read scrollHeight, scrollWidth from #probe  same test as today
+```
+
+- **The answers of a part:** `{h, overX, overY, heads, headsGiving, sizeAfterGiving, cardW, cards}`. `h` and overflow go back to the shell (`box-sizing:border-box;height`, an empty spacer for overflow), so the browser adds them up.
+- **Where slots live.** Inside `#probe`, because of `#probe .rdw` and `#probe .room-head>.ren` and because `.stage[data-d]` rules must apply; in one absolutely placed block with no size of its own, so it adds nothing to the `#probe` scroll sizes. A slot is `display:flex;align-items:flex-start` at the width, so a room still resolves `flex` and `min-width` and is measured unstretched.
+- **Pure parts** go in `src/renderer/probe.js`, tested in Node (`test:probe`): the memo key, the clearing, `linesOf` (top-down lines from shell rectangles), the FR-197 stop. No DOM. The app keeps the DOM steps next to `probeSet`.
+- **Reference path.** Today's trial stays callable (`trialWhole`), used by FR-198 and FR-199. The comparison hook is on `__durbarSimUi`, simulator only (`test:simguard`), and opens no channel to main.
+
+### The property test
+
+`scripts/layout-seeds.js` is pure: seed (mulberry32) to an office; each field's range named; bias towards tight fits, since that is where answers can differ. `scripts/check-layout-same.js` is the driver. Every wait is an `until()`; no timing asserted. A case costs about one whole search (0.45 to 1.2 s under Xvfb, *estimate*), so the PR slice is the fixed list plus about 10 seeds per size, sized to stay under 30 s (AGENTS.md *Timing*), split if it does not. The 500-seed run is by hand before the switch and weekly after it (the job of spec 098 FR-057 when it lands). The FR-033 54 cases run once too.
+
+### Risks
+
+| Risk | What guards it |
+|---|---:|
+| Memory rarely hits: neighbours share spare width, so one room's change moves their widths | T167 before any build; stop point FR-200 |
+| A class left by the previous trial changes a height (FR-196) | T168 measures it; state joins the key if real |
+| A rule that sees a part's siblings or the stage. A grep of `styles.css` found none for `.room` (`read:`, by pattern only) | Property test; T170 scans for it, so a later rule fails |
+| A height read through a stretched row (`container:lounge / size`, `.stage[data-spread]`) | `#probe` has no `data-spread`; property test boxes |
+| Fractional widths and rounding | Browser adds up (shells), not JS; exact width in the key |
+| Fonts arrive between two searches | `document.fonts.ready` clears memory |
+| A stale key picks a wrong layout | Whole check FR-198 for false fits; property test both ways; `staleFits` row |
+| Two paths to keep | The old one is small and is the guard and the reference; deleting it is a later, separate decision |
+| Source-text tests in `test:probe` tie to `chooseLayout`'s text | Update them to behaviour in T171 |
+| Conflict with #950, #954, #921 in `app.js` | Build after them |
+| Savings at 40 agents still miss 1500 ms | Owner question Q1; reported, not hidden |
+
+### What measuring needs
+
+- **Spike (T167):** an instrumented copy of the built page, as FR-033 did (`OPS_INDEX` loads another build of the page in `check-office-ops`). Xvfb on a quiet machine (load below core count, spec 097 FR-188), no credits.
+- **Reference:** `check-perf --record` and `check-office-ops`, 15 and 40 agents, 1440x900 and 1280x800, 3 runs, medians, alternating before and after.
+- **The Mac (T181):** whoever has one, on a quiet machine. `npm ci && npm run build`, then the same two drivers with `DURBAR_SIM=15` and `=40`, no `xvfb-run`, `DURBAR_SIM_FREEZE=1` as in the driver. Builds from `main` before and after the merge, 3 runs each. Records machine, device pixel ratio, GPU status, load. 0 AI credits, no secrets. No screenshots of private folders: simulator only. Windows or Linux laptop if someone has one; not required for this delta.
+
+### Recommendations on the open questions
+
+- **Q1:** 1500 ms binds at 15 agents, and at 40 a recorded row of at most 2000 ms, the first estimate under 097 T157. Even a free search leaves at least 1.8 s there, so 1500 ms at 40 would demand cutting renders by more than half, sight unseen. Revisit with T167's numbers.
+- **Q2:** the Mac decides what you feel; the reference machine decides regressions, since it is the one rerun. Target the 1500 ms on the reference machine, because it is what the weekly record can compare, and record the Mac beside it.
+- **Q3:** on a low gain, build what stands alone (FR-201 a to c, FR-202), which needs no memory across widths, and bring the search back to you with its numbers.
+- **Q4:** no hold, for now: the wait only moves when the user sees the office. Ask again only if (a) to (c) miss.
+
+### Constitution Check
+
+I (spec delta first; no `src/` here). II untouched (renderer only). III and IV: no secret, 0 credits. V: same layout, same look; text and fit rules unchanged. VI: same code on all OSes; proof per OS only through the long run, `[KNOWN GAP]`. VII: tests named; no UI change, so no new screenshots expected, and the box comparison is what says so. VIII: every number here says where it came from; the targets are not claimed.

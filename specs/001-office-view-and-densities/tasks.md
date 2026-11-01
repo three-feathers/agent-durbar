@@ -236,3 +236,39 @@ Numbers checked against `main` (00d340eb) and every open PR on 2026-10-25: none 
 - [x] T162 Issue #897 (FR-190): docs: spec delta, `changelog.d/001-office-height-diag.md`; screenshots not retaken (0.6 px)
 - [x] T163 (FR-191): `check-office-overlap.js`: the Browser tab block polls the native views (`nativeViews`: exactly one on the window, none after Back, toasts cleared each poll, last-seen diagnostics) instead of fixed pauses; `measure` fails a figure off its slot only after two identical reads of the figures and lit slots; hooks `OFFICE_TEST_STUCK_WALKER=off|moved`, `OFFICE_ONLY=browser`
 - [x] T164 (FR-191): docs: spec delta, `changelog.d/001-office-browser-waits.md`; no screenshots (driver only)
+
+## Delta 2026-11-01: room-by-room layout search, and the renders (FR-193..FR-203)
+
+Numbers taken: T167..T183. Each phase one small PR, after #941, #950, #954, #936 and #959 land. Test: 0 AI credits; no timing assert in a driver.
+
+**Phase 0: measure, then decide (nothing in `src/` changes)**
+
+- [ ] T167 Spike on an instrumented copy: parts × trials distinct by the FR-195 key; parts FR-197 could skip; start split into renders (script, style, layout, paint) and the rest; the about 27 unnamed reads by call site. 15 and 40 agents, both sizes, 3 runs. Record in a dated delta; set the limits of FR-200; **stop and ask the owner if under half of today's search time at 40 agents is projected.** Test: `sim:` [FR-200, FR-201, FR-202]
+- [ ] T168 On the same copy: does a class left by `fitHead` ever change a later trial's size answer, and does a giving chip ever lower a room? Record yes or no with the case. Test: `sim:` [FR-196, FR-197]
+
+**Phase 1: the proof, before the change**
+
+- [ ] T169 `scripts/layout-seeds.js`: seed to office, pure, every range named. Test: `test:layoutseeds` same seed same office; each field reaches its range [FR-199]
+- [ ] T170 `scripts/check-layout-same.js` with a hook on `__durbarSimUi` (simulator only), first comparing today's path against itself, then scanning `styles.css` for a rule that sees a part's siblings or the stage. Test: `sim:` passes on `main`; a planted `.room:nth-child` rule is reported; `test:simguard` [FR-199]
+
+**Phase 2: the search**
+
+- [ ] T171 `probe.js`: memo key, clearing, `linesOf`, the stop. `test:probe`: dropping any key field fails; each clearing event clears; source-text checks of `chooseLayout` become behaviour checks where they break [FR-195, FR-197]
+- [ ] T172 `app.js`: shells, slots, the FR-194 trial, `trialWhole` kept, behind one switch off by default. Test: `sim:` `check-layout-same` with it on; `check:office`, `check-office-overlap` [FR-193, FR-194]
+- [ ] T173 Trial state per T168's answer. Test: `sim:` a fixture with a height-changing class [FR-196]
+- [ ] T174 Top-down stop and lazy `any`, only if T168 allows. Test: `test:probe`; `sim:` the case where nothing fits gives today's `lastAny` [FR-197]
+- [ ] T175 Whole check and fall-back; `searchFellBack` counter. Test: `sim:` a planted wrong part answer falls back and counts [FR-198]
+- [ ] T176 Counts in `check-office-ops` and limits in `office-ops-rules.js`. Test: `test:officeops` the judge fails over a limit; `probesAtStart` falling fails [FR-200]
+- [ ] T177 Memory across the two searches at start, only if T167 shows the gain. Test: `sim:` `check-layout-same`, a font-load case [FR-195]
+- [ ] T178 Mutants, listed in the PR: key without width; key without `hx`; slot without `--gf`; shell without overflow; no font clearing; a skipped trial; a stale class. Each must fail `check-layout-same` or `test:probe`. Then run 500 seeds per size, chat closed and open, with the FR-033 54 cases; turn the switch on; the PR slice joins `ui-suite.js`. Test: `sim:` SC-005 [FR-199, SC-005]
+
+**Phase 3: renders and reads**
+
+- [ ] T179 HTML per room and desk signature; a render reuses a search's header answers; a render whose parts did not change skips the fits and the spread, each by its T167 gain. Test: `sim:` `check-office-ops`, `staleFits` 0, `check-crew`; a status change still updates what it should [FR-201]
+- [ ] T180 Layout reads, by site as T167 names them, until under 40 or the proof it cannot be; then lower `readsPerStatus`. Test: `sim:` `check-office-ops`; `check:office`, `check-office-overlap` unchanged [FR-202]
+
+**Phase 4: the numbers**
+
+- [ ] T181 Real-machine run on the Mac, simulator only, 0 AI credits, before and after, by whoever has one. Test: `real:` numbers in a dated delta [FR-203, SC-007]
+- [ ] T182 Spec 097 once #950 lands: 097 T157's text names this delta, and 097 T156 and 097 T157 are ticked or moved by the owner's decision on T181; `/speckit.converge`. Test: `npm run specs:check` [FR-203]
+- [ ] T183 Docs: `docs/limits.md`, `docs/development.md` if commands change, a `changelog.d/` fragment in each phase's PR. Test: `npm run test:docsscripts`, `changelog:check` [FR-203]
