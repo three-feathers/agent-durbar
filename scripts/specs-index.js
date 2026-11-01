@@ -106,7 +106,7 @@ const CONFLICT_RE = /^(<<<<<<<|\|\|\|\|\|\|\||>>>>>>>)( |$)/;
 function conflictMarkers(root = ROOT) {
   const found = [];
   const walk = (dir) => {
-    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true }).sort((x, y) => (x.name < y.name ? -1 : x.name > y.name ? 1 : 0))) {
       const p = path.join(dir, e.name);
       if (e.isDirectory()) walk(p);
       else if (e.isFile() && e.name.endsWith('.md')) {
