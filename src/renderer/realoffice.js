@@ -257,7 +257,8 @@
       const base = parseFloat(c.dataset.y || c.style.top) || 0, x0 = parseFloat(c.dataset.x || c.style.left) || 0;
       c.style.left = px(x0); c.style.top = px(base); if (c.dataset.full) { text(c.querySelector('.ro-cn'), c.dataset.full); delete c.dataset.full; }
       const h = c.getBoundingClientRect().height || 17;
-      const hits = (L0, R0, t) => placed.some(([a, b, y0, y1]) => a < R0 + 1.5 && L0 < b + 1.5 && y0 < t + h && t < y1);
+      const hitList = (L0, R0, t) => placed.filter(([a, b, y0, y1]) => a < R0 + 1.5 && L0 < b + 1.5 && y0 < t + h && t < y1);
+      const hits = (L0, R0, t) => hitList(L0, R0, t).length > 0;
       /* Paco's review of #921: names while there is room. Every spot within 64 px left or right on up to three levels is tried, the
          least move first (a level costs 12 px); only when none is free do the initials try the same, then (a crowd with no room) the
          initials move right until they touch nobody */
@@ -279,7 +280,7 @@
         if (pick || !v) continue;
         c.dataset.full = nm; text(n, v); pick = best();
       }
-      if (!pick) { const w = c.getBoundingClientRect().width, l = x0 - w / 2; let dx = 0; for (let i = 0; i < 20 && hits(l + dx, l + dx + w, base); i++) dx += 6; pick = { t: base, dx, l, w }; }
+      if (!pick) { const w = c.getBoundingClientRect().width, l = x0 - w / 2; let dx = 0; for (let i = 0; i < 40; i++) { const hl = hitList(l + dx, l + dx + w, base); if (!hl.length) break; dx = Math.max(...hl.map(([, b]) => b)) + 2 - l; } pick = { t: base, dx, l, w }; }
       placed.push([pick.l + pick.dx, pick.l + pick.dx + pick.w, pick.t, pick.t + h]);
       c.style.top = px(pick.t); c.style.left = px(x0 + pick.dx);
     }
