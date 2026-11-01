@@ -683,6 +683,8 @@ async function checkCli(): Promise<void> {
       const viaLink = path.join(botDir, 'lnk', 'gate.key');
       assert.ok(core.ancestorProblems(viaLink, (u) => u === me || u === 0, spoofBot as any, (q) => fs.realpathSync(q)).some((m) => /as written/.test(m)), 'the folder the link sits in is the bot\'s: refused even though the target is sound');
       assert.deepStrictEqual(core.ancestorProblems(path.join(soundDir, 'gate.key'), (u) => u === me || u === 0, spoofBot as any, (q) => fs.realpathSync(q)), [], 'the same file by its real path is fine');
+      { const spoofLink = (q: string) => ({ uid: q === path.join(botDir, 'lnk') ? me + 1000 : fs.lstatSync(q).uid, mode: fs.lstatSync(q).mode, isSymlink: fs.lstatSync(q).isSymbolicLink(), isDirectory: true });
+        assert.ok(core.ancestorProblems(viaLink, (u) => u === me || u === 0, spoofLink as any, (q) => fs.realpathSync(q)).some((m) => /as written/.test(m) && /owned by/.test(m)), 'a link created by the bot is refused by its owner, whatever its (meaningless) mode'); }
       assert.ok(core.ancestorProblems(path.join(soundDir, '..', path.basename(botDir), 'lnk', 'gate.key'), (u) => u === me || u === 0, spoofBot as any, (q) => fs.realpathSync(q)).length > 0, 'a path with .. is normalised and walked as written');
     }
     // the runner side: what it loads must not be owned by its own user
