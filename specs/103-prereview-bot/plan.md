@@ -11,7 +11,7 @@ A script the coordinating session runs on one PR. A gate, under the operator's a
 - **Language**: TypeScript (the repo's), bash for the gate (as `pr-gate.sh`). Node 18.14 or later (the SDK's minimum).
 - **Why the Agent SDK**: owner's decision, and it fits: reach findings need reading beyond the diff, and the SDK gives Read, Grep, Glob, hooks, a typed `init` and cost messages, with no tool loop of ours. The price is that it runs the Claude Code binary, hence the box. It authenticates with an API key; Anthropic does not allow a claude.ai login for agents built on it (`read:` docs).
 - **New dependency**: `@anthropic-ai/claude-agent-sdk` (0.3.316 seen on npm 2026-11-01; pin an exact version at least 7 days old, spec 021 FR-062 cooldown), and `tsx`, in `scripts/prereview/` only. Why: FR-020, FR-022. Native binary through optional dependencies, so the install keeps them.
-- **Storage**: `/var/lib/durbar-prereview/` on the server: `secrets/`, `app/` (installed copy), `repo/` (own clone), `state/` (ledger, reports). None in a repo.
+- **Storage**: `/var/lib/durbar-prereview/` on the server, a **root-owned** folder (spec 103 FR-045): `app/` (installed copy) and `gate.key` belong to the operator, never the bot; `secrets/`, `repo/` (own clone) and `state/` (ledger, reports) belong to the bot's user. None in a repo.
 - **Testing**: `test:prereview` with fakes; 0 credits; no network.
 - **Constraints**: FR-060 (outside text), FR-061 (identity); Linux only.
 
@@ -61,7 +61,8 @@ In **your own terminal, with no agent attached to it**. Nothing is pasted in cha
 2. **Console, API keys**: create a key **in that workspace**, named `durbar-prereview-<server>`. Leave the page open; it shows once.
 3. **On the server**, make the user and the folder (Q1; with Q1 declined see below):
    ```sh
-   sudo useradd --system --create-home --home-dir /var/lib/durbar-prereview --shell /usr/sbin/nologin durbar-prereview
+   sudo useradd --system --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin durbar-prereview
+   sudo install -d -m 755 -o root -g root /var/lib/durbar-prereview
    sudo install -d -m 700 -o durbar-prereview -g durbar-prereview /var/lib/durbar-prereview/secrets
    ```
 4. **Save it.** This prompts nothing and shows nothing; paste the key, then Enter. It is not in the command line or shell history:

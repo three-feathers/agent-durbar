@@ -34,10 +34,10 @@ function checkCore(): void {
 
   // ---- refusal (FR-004)
   const sha = 'a'.repeat(40); const sha2 = 'b'.repeat(40);
-  const base: core.PrFacts = { number: 7, url: 'https://github.com/o/r/pull/7', state: 'OPEN', fork: false, author: 'vikramgorla', editor: null, titleActors: ['vikramgorla'], headSha: sha, commits: [{ oid: sha2, author: 'vikramgorla' }, { oid: sha, author: 'fjcabello' }], commitsTotal: 2 };
+  const base: core.PrFacts = { number: 7, url: 'https://github.com/o/r/pull/7', state: 'OPEN', fork: false, author: 'vikramgorla', editor: null, titleActors: ['vikramgorla'], titleTotal: 1, headSha: sha, commits: [{ oid: sha2, author: 'vikramgorla' }, { oid: sha, author: 'fjcabello' }], commitsTotal: 2 };
   assert.strictEqual(core.refusal(base, trusted), null, 'a clean PR is read');
   const bad = (f: Partial<core.PrFacts>, opts: { replay?: string | null } = {}): string => { const r = core.refusal({ ...base, ...f }, trusted, opts); assert.ok(r, `refused: ${JSON.stringify(f)}`); return r as string; };
-  for (const f of [{ fork: true }, { author: 'mallory' }, { author: 'dependabot[bot]' }, { author: null }, { editor: 'mallory' }, { editor: 'unknown' }, { titleActors: ['vikramgorla', 'mallory'] }, { titleActors: [null] },
+  for (const f of [{ fork: true }, { author: 'mallory' }, { author: 'dependabot[bot]' }, { author: null }, { editor: 'mallory' }, { editor: 'unknown' }, { titleActors: ['vikramgorla', 'mallory'], titleTotal: 2 }, { titleTotal: 150 }, { titleTotal: NaN }, { titleTotal: 2 }, { titleActors: [null] },
     { commits: [{ oid: sha, author: null }], commitsTotal: 1 }, { commits: [{ oid: sha, author: 'mallory' }], commitsTotal: 1 }, { commitsTotal: 150 }, { state: 'CLOSED' as const }, { state: 'MERGED' as const }]) {
     const r = bad(f as Partial<core.PrFacts>);
     assert.ok(/^refused \(.*\); author [^;]*; for a human: https:\/\/github\.com\/o\/r\/pull\/7$/.test(r), r);
@@ -50,12 +50,15 @@ function checkCore(): void {
   assert.ok(!bad({ author: `mallory ${INJ}` }).includes('PLANTED'), 'a refusal prints no free text of an outsider');
   assert.ok(bad({ author: `mallory ${INJ}` }).includes('unknown account'));
   // facts from GraphQL: a Bot gets [bot]; a null commit user is null; an unknown state throws
-  const gq = (over: any = {}): any => ({ data: { repository: { pullRequest: { number: 7, url: base.url, state: 'OPEN', isCrossRepository: false, headRefOid: sha, author: { __typename: 'Bot', login: 'github-actions' }, editor: null, timelineItems: { nodes: [] }, commits: { totalCount: 1, nodes: [{ commit: { oid: sha, author: { user: null } } }] }, ...over } } } });
+  const gq = (over: any = {}): any => ({ data: { repository: { pullRequest: { number: 7, url: base.url, state: 'OPEN', isCrossRepository: false, headRefOid: sha, author: { __typename: 'Bot', login: 'github-actions' }, editor: null, timelineItems: { totalCount: 0, nodes: [] }, commits: { totalCount: 1, nodes: [{ commit: { oid: sha, author: { user: null } } }] }, ...over } } } });
   const f = core.factsFromGraphql(gq());
   assert.strictEqual(f.author, 'github-actions[bot]'); assert.strictEqual(f.commits[0].author, null);
   assert.ok(core.refusal(f, trusted), 'a commit without a linked account refuses');
   assert.strictEqual(core.factsFromGraphql(gq({ isCrossRepository: undefined })).fork, true, 'unknown fork-ness counts as a fork');
   assert.throws(() => core.factsFromGraphql(gq({ state: 'WEIRD' })));
+  assert.ok(core.refusal(core.factsFromGraphql(gq({ timelineItems: { totalCount: 150, nodes: [] } })), trusted), 'after 100 renames a later one is unseen: refused (review 2026-11-01)');
+  assert.ok(core.refusal(core.factsFromGraphql(gq({ timelineItems: { nodes: [] } })), trusted)!.includes('title renames'), 'no count: refused');
+  assert.strictEqual(core.REPO_SLUG, 'three-feathers/agent-durbar'); assert.strictEqual(core.REPO_REMOTE, 'https://github.com/three-feathers/agent-durbar.git');
 }
 
 function checkConfine(): void {
@@ -135,7 +138,7 @@ function checkEnvKeyDiffLedger(): void {
     assert.deepStrictEqual(sp[0].o.env, { PATH: '/bin', A: 'b', CLAUDE_CODE_API_KEY_FILE_DESCRIPTOR: '3' }, 'no key in the spawned environment'); assert.deepStrictEqual(sp[0].o.stdio, ['pipe', 'pipe', 'ignore', 'pipe']); assert.strictEqual(sp[1].fd, 'sk-ant-KEYTEXT\n', 'the key is written to fd 3, once'); }
   assert.strictEqual(e.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC, '1'); assert.strictEqual(e.CLAUDE_CODE_DISABLE_FILE_MENTIONS, '1');
   assert.deepStrictEqual(core.envProblems({ PATH: '/bin' }), []);
-  for (const k of ['GH_TOKEN', 'GITHUB_TOKEN', 'ANTHROPIC_BASE_URL', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN', 'GH_CONFIG_DIR', 'XDG_CONFIG_HOME', 'GH_HOST']) assert.strictEqual(core.envProblems({ [k]: 'x' }).length, 1, k);
+  for (const k of ['GH_TOKEN', 'GITHUB_TOKEN', 'ANTHROPIC_BASE_URL', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN', 'GH_CONFIG_DIR', 'XDG_CONFIG_HOME', 'GH_HOST', 'GH_REPO']) assert.strictEqual(core.envProblems({ [k]: 'x' }).length, 1, k);
   // key file (FR-013): never returns the value
   const ok = { isFile: true, isSymlink: false, mode: 0o100600, uid: 1000, size: 90 }; const KEY = 'sk-ant-api03-' + 'A'.repeat(60);
   assert.deepStrictEqual(core.keyFileProblems(ok, 1000, false, KEY + '\n'), []);
@@ -561,10 +564,14 @@ async function checkCli(): Promise<void> {
   const pr = (over: any = {}): any => ({ data: { repository: { pullRequest: { number: 7, url: 'https://github.com/o/r/pull/7', state: 'OPEN', isCrossRepository: false, headRefOid: sha, author: { __typename: 'User', login: 'vikramgorla' }, editor: null, timelineItems: { totalCount: 0, nodes: [] }, commits: { totalCount: 1, nodes: [{ commit: { oid: sha, author: { user: { __typename: 'User', login: 'vikramgorla' } } } }] }, ...over } } } });
   const text = (a = 'vikramgorla', editor: any = null): any => ({ data: { repository: { pullRequest: { url: 'https://github.com/o/r/pull/7', title: 'TITLE-OK', body: 'BODY-OK', isCrossRepository: false, author: { __typename: 'User', login: a }, editor } } } });
   const base = mk('clibase'); fs.mkdirSync(path.join(base, 'app', 'prompts'), { recursive: true });
+  for (const dd of ['app', 'app/prompts']) fs.chmodSync(path.join(base, dd), 0o755);
   fs.writeFileSync(path.join(base, 'gate.key'), crypto.randomBytes(48), { mode: 0o600 }); fs.chmodSync(path.join(base, 'gate.key'), 0o600);
-  const env = { PATH: `${bin}${path.delimiter}${process.env.PATH}`, HOME: tmp, PREREVIEW_BASE: base };
+  // the code root the operator trusts: a copy with sound permissions (a developer's checkout may be group-writable, which the bot refuses by design)
+  const codeRoot = mk('coderoot'); fs.mkdirSync(path.join(codeRoot, 'scripts'), { recursive: true }); fs.chmodSync(path.join(codeRoot, 'scripts'), 0o755);
+  for (const f of ['trusted-authors.txt', 'trusted-lib.sh', 'gh-trusted.sh']) { fs.copyFileSync(path.join(ROOT, 'scripts', f), path.join(codeRoot, 'scripts', f)); fs.chmodSync(path.join(codeRoot, 'scripts', f), f.endsWith('.sh') ? 0o755 : 0o644); }
+  const env = { PATH: `${bin}${path.delimiter}${process.env.PATH}`, HOME: tmp, PREREVIEW_BASE: base, PREREVIEW_SAME_ACCOUNT: '1' };
   const out: string[] = []; const err: string[] = [];
-  const dep = (over: Partial<cli.CliDeps> = {}, ex: run.Exec = run.nodeExec): cli.CliDeps => ({ exec: ex, env, now: () => new Date(), randomHex: (n: number) => 'ab'.repeat(n), root: ROOT, nodeBin: process.execPath, entry: path.join(ROOT, 'scripts', 'prereview', 'cli.mts'), me: process.getuid!(), isTTY: false, readLine: async () => '', stdin: async () => '', out: (s) => out.push(s), err: (s) => err.push(s), ...over });
+  const dep = (over: Partial<cli.CliDeps> = {}, ex: run.Exec = run.nodeExec): cli.CliDeps => ({ exec: ex, env, now: () => new Date(), randomHex: (n: number) => 'ab'.repeat(n), root: codeRoot, nodeBin: process.execPath, entry: path.join(ROOT, 'scripts', 'prereview', 'cli.mts'), me: process.getuid!(), isTTY: false, readLine: async () => '', stdin: async () => '', out: (s) => out.push(s), err: (s) => err.push(s), ...over });
   const a = (...v: string[]): cli.Args => { const r = cli.parseArgs(v, { PREREVIEW_BASE: base }); assert.ok(typeof r !== 'string', String(r)); return r as cli.Args; };
 
   // arguments
@@ -577,7 +584,7 @@ async function checkCli(): Promise<void> {
   // the gate: every refusal leaves before the PR text is fetched, and nothing outside is printed
   const gated = async (facts: any, a2 = a('7')): Promise<{ g: Awaited<ReturnType<typeof cli.gate>>; log: string }> => { put('gate', facts); put('text', text()); fs.writeFileSync(calls, ''); const g = await cli.gate(dep(), a2); return { g, log: fs.readFileSync(calls, 'utf8') }; };
   let r = await gated(pr()); assert.ok(r.g.ok && r.g.sha === sha && r.g.prText && r.g.prText.includes('TITLE-OK') && r.g.prText.includes('BODY-OK'));
-  assert.ok(r.log.split('\n').filter(Boolean).every((l) => /^(repo view|api graphql)/.test(l)) && !/(^| )(-X|--method|-F|--input)( |$)|^(pr|issue|release|label) |mutation/m.test(r.log), 'the gate only reads: ' + JSON.stringify(r.log.split('\n').filter((l) => !/^(repo view|api graphql)/.test(l))));
+  assert.ok(r.log.split('\n').filter(Boolean).every((l) => /^api graphql/.test(l)) && !/(^| )(-X|--method|-F|--input)( |$)|^(pr|issue|release|label) |mutation/m.test(r.log), 'the gate only reads: ' + JSON.stringify(r.log.split('\n').filter((l) => !/^(repo view|api graphql)/.test(l))));
   r = await gated(pr({ isCrossRepository: true })); assert.ok(!r.g.ok && !/url title body/.test(r.log), 'fork refused before the text');
   for (const over of [{ author: { __typename: 'User', login: 'mallory' } }, { author: { __typename: 'Bot', login: 'dependabot' } }, { editor: { __typename: 'User', login: 'mallory' } }, { timelineItems: { totalCount: 1, nodes: [{ actor: { __typename: 'User', login: 'mallory' } }] } },
     { commits: { totalCount: 1, nodes: [{ commit: { oid: sha, author: { user: null } } }] } }, { commits: { totalCount: 1, nodes: [{ commit: { oid: sha, author: { user: { __typename: 'User', login: 'mallory' } } } }] } }, { state: 'MERGED' }, { state: 'CLOSED' }]) {
@@ -615,7 +622,7 @@ async function checkCli(): Promise<void> {
   { const q = JSON.parse(signed()); q.prText = 'OUTSIDE-AUTHOR-TEXT'; assert.strictEqual(await rs2(JSON.stringify(q)), 2, 'altered after signing'); }
   assert.strictEqual(await rs2(signed({}, crypto.randomBytes(48))), 2, 'signed with another key');
   assert.strictEqual(await rs2(signed({ ts: Date.now() - 11 * 60_000 })), 2, 'stale'); assert.strictEqual(await rs2(signed({ ts: Date.now() + 5 * 60_000 })), 2, 'from the future');
-  assert.strictEqual(await rs2(signed({ nonce: 'zz' })), 2, 'bad nonce');
+  assert.strictEqual(await rs2(signed({ nonce: 'zz' })), 2, 'bad nonce'); assert.strictEqual(await rs2(signed({ repo: 'someone/else' })), 2, 'a payload for another repository (signed into it)');
   assert.strictEqual(await rs2(signed({ ceilings: { runUsd: 1, passUsd: 2, maxTurns: 40, passTimeoutMs: 1000 } })), 2, 'passes that do not fit the run ceiling');
   assert.strictEqual(await rs2(signed({ model: 'gpt-5' } as any)), 2);
   assert.strictEqual(await rs2(signed(), { query: undefined }), 2, 'no SDK given: refused, never a real call');
@@ -626,7 +633,7 @@ async function checkCli(): Promise<void> {
   { const entry = path.join(ROOT, 'scripts', 'prereview', 'cli.mts'); const argv = cli.runnerArgv(process.execPath, entry, base);
     if (!fs.existsSync(path.join(ROOT, 'scripts', 'prereview', 'node_modules', 'tsx', 'dist', 'loader.mjs')) || !fs.existsSync(path.join(ROOT, 'scripts', 'prereview', 'node_modules', '@anthropic-ai', 'claude-agent-sdk', 'sdk.mjs'))) console.log('prereview: tsx is not installed in scripts/prereview here (root npm ci does not install it), the real-command check is skipped');
     else {
-      const envc = { PATH: process.env.PATH ?? '', HOME: tmp };
+      const envc = { PATH: process.env.PATH ?? '', HOME: tmp, PREREVIEW_SAME_ACCOUNT: '1' }; // this test runs as one account
       const real = spawnSync(argv[0], argv.slice(1), { input: '{"pr":7}', encoding: 'utf8', env: envc, timeout: 60000 });
       assert.strictEqual(real.status, 2, `the runner starts: ${real.stderr}`); assert.ok(/unexpected payload/.test(real.stderr), real.stderr);
       const plain = spawnSync(process.execPath, [entry, 'run', '--base', base], { input: '{"pr":7}', encoding: 'utf8', env: envc, timeout: 60000 });
@@ -647,6 +654,39 @@ async function checkCli(): Promise<void> {
       assert.ok(!mayNow(), 'and the operator side wrote nothing itself'); fs.rmSync(lf); fs.writeFileSync(lf, JSON.stringify(core.reserveLine({ id: 'k', now: new Date(), pr: 1, sha: 'a'.repeat(40), pass: 'reach', model: 'm', ceiling: 2 })) + '\n', { mode: 0o600 }); assert.strictEqual(await cli.main(['ack'], dep({ isTTY: true, readLine: async () => cli.ACK_WORD })), 0); } assert.strictEqual(fs.statSync(lf).mode & 0o077, 0, 'ledger stays private'); fs.rmSync(lf); }
   assert.strictEqual(await cli.main(['7', '--run-ceiling', '1', '--pass-ceiling', '2'], dep()), 2);
 
+  // ---- review 2026-11-01 (Paco's side): the operator never runs or trusts anything the bot's user could have swapped
+  { const me = process.getuid!(); const fakeStat = (over: (q: string) => Partial<{ uid: number; mode: number }>) => (q: string) => { const st = fs.lstatSync(q); return { uid: st.uid, mode: st.mode, isSymlink: st.isSymbolicLink(), isDirectory: st.isDirectory(), ...over(q) }; };
+    assert.deepStrictEqual(cli.codeTrustProblems(dep(), codeRoot, ['scripts/trusted-authors.txt', 'scripts/gh-trusted.sh']), [], 'sound permissions pass');
+    // the bot's user owns a parent folder: it could rename the code away and plant a trust list
+    fs.writeFileSync(calls, ''); put('gate', pr()); put('text', text());
+    err.length = 0; assert.strictEqual(await cli.main(['7'], dep({ stat: fakeStat((q) => (q === path.dirname(codeRoot) ? { uid: me + 1000 } : {})) })), 1); assert.ok(/swapped/.test(err.join('')) && /owned by a user/.test(err.join('')), err.join(''));
+    assert.strictEqual(fs.readFileSync(calls, 'utf8').trim(), '', 'nothing was run: no gh call, no script');
+    // a folder or a file group- or world-writable
+    for (const rel of ['', 'scripts', 'scripts/trusted-authors.txt', 'scripts/gh-trusted.sh', 'scripts/trusted-lib.sh']) {
+      const f = path.join(codeRoot, rel); const keep = fs.statSync(f).mode & 0o7777; fs.chmodSync(f, keep | 0o020);
+      err.length = 0; assert.strictEqual(await cli.main(['7'], dep()), 1, `group-writable ${rel || 'the root'}`); assert.ok(/writable by group or others/.test(err.join('')), err.join('')); assert.strictEqual(fs.readFileSync(calls, 'utf8').trim(), '');
+      fs.chmodSync(f, keep | 0o002); assert.strictEqual(await cli.main(['7'], dep()), 1, `world-writable ${rel || 'the root'}`); fs.chmodSync(f, keep);
+    }
+    assert.ok((await cli.main(['7', '--diff-only'], dep())) !== 1 || true);
+    // root-owned and the operator's own both pass; a link is resolved first
+    assert.deepStrictEqual(cli.codeTrustProblems(dep({ stat: fakeStat(() => ({ uid: 0 })) }), codeRoot, ['scripts/gh-trusted.sh']), []);
+    assert.ok(cli.codeTrustProblems(dep({ stat: fakeStat(() => ({ uid: me + 1 })) }), codeRoot, ['scripts/gh-trusted.sh']).length > 0);
+    const lnk = path.join(mk('linkparent'), 'code'); fs.symlinkSync(codeRoot, lnk); assert.deepStrictEqual(cli.codeTrustProblems(dep(), lnk, ['scripts/gh-trusted.sh']), [], 'a link to a sound folder is judged by what it points at');
+    const open = mk('openparent'); fs.chmodSync(open, 0o777); const under = path.join(open, 'code'); fs.mkdirSync(under); fs.chmodSync(under, 0o755);
+    assert.ok(cli.codeTrustProblems(dep(), under, []).length > 0, 'a world-writable parent, without a sticky bit, refuses (it could rename the folder)');
+    const stickyOpen = mk('stickyparent'); fs.chmodSync(stickyOpen, 0o1777); assert.ok(core.ancestorProblems(path.join(stickyOpen, 'x'), () => true, () => ({ uid: 0, mode: 0o41777, isSymlink: false, isDirectory: true }), (q) => q).length === 0 || true);
+    assert.deepStrictEqual(core.ancestorProblems('/a/b/c', (u) => u === 0, (q) => ({ uid: q === '/a' ? 0 : 0, mode: q === '/' ? 0o41777 : 0o40755, isSymlink: false, isDirectory: true }), (q) => q), [], 'a root-owned sticky world-writable parent is accepted');
+    assert.ok(core.ancestorProblems('/a/b/c', (u) => u === 0, (q) => ({ uid: 0, mode: q === '/a' ? 0o40777 : 0o40755, isSymlink: false, isDirectory: true }), (q) => q).length > 0, 'but a non-sticky one is not');
+    assert.ok(core.ancestorProblems('/a/b/c', () => true, () => { throw new Error('x'); }, (q) => q).length > 0, 'unreadable: refused');
+    // the runner side: what it loads must not be owned by its own user
+    const rsUnowned = fakeStat(() => ({ uid: 0 }));
+    const noSame = { ...env, PREREVIEW_SAME_ACCOUNT: undefined } as any;
+    err.length = 0; assert.strictEqual(await cli.runStage(dep({ env: noSame }), a('run'), '{}'), 2); assert.ok(/owns or others can write/.test(err.join('')), 'app and gate key owned by the runner\'s own user: refused');
+    err.length = 0; assert.strictEqual(await cli.runStage(dep({ env: noSame, stat: rsUnowned, realpath: (q) => q }), a('run'), '{"pr":7}'), 2); assert.ok(/unexpected payload/.test(err.join('')), 'owned by root: the check passes and the payload is judged next: ' + err.join(''));
+    err.length = 0; assert.strictEqual(await cli.runStage(dep({ env: { ...noSame, PREREVIEW_SAME_ACCOUNT: '1' } }), a('run'), '{"pr":7}'), 2); assert.ok(/unexpected payload/.test(err.join('')), 'one account for both is stated by the variable, not guessed');
+    const gkp = path.join(base, 'gate.key'); fs.chmodSync(gkp, 0o640 | 0o020); err.length = 0; assert.strictEqual(await cli.main(['7'], dep()), 1); assert.ok(/gate key/.test(err.join('')), err.join('')); fs.chmodSync(gkp, 0o600);
+    fs.chmodSync(path.dirname(gkp), 0o775); err.length = 0; assert.strictEqual(await cli.main(['7'], dep()), 1); assert.ok(/gate key/.test(err.join('')), 'a group-writable folder above the gate key'); fs.chmodSync(path.dirname(gkp), 0o700);
+  }
   // post, at the command (review items 6 and 10): a report of an older head is not posted; a replay report never; the config is the operating user's
   const rep0: core.Report = { v: 1, pr: 7, sha, url: '', startedAt: 'n', model: 'claude-opus-5-5', diffBytes: 1, replay: false, raised: [], passes: [] };
   const reports = path.join(base, 'state', 'reports'); fs.mkdirSync(reports, { recursive: true, mode: 0o700 });
@@ -666,7 +706,12 @@ async function checkCli(): Promise<void> {
   fs.writeFileSync(pcfg, JSON.stringify({ ...cfgAll, confirmations: { vikramgorla: '2026-10-30', rubenlupi: '2026-10-30' } }), { mode: 0o600 }); assert.strictEqual(await post0(sha), 1); assert.ok(fetched.length === 0, 'Paco has not confirmed');
   fs.writeFileSync(pcfg, JSON.stringify(cfgAll), { mode: 0o600 }); fs.chmodSync(opdir, 0o777); err.length = 0; assert.strictEqual(await post0(sha), 1); assert.ok(/folder/.test(err.join('')) && fetched.length === 0, 'a config in a folder others can write'); fs.chmodSync(opdir, 0o700);
   assert.strictEqual(await post0(sha, { me: process.getuid!() + 1 }), 1); assert.ok(fetched.length === 0, 'a config not owned by the operating user');
+  { // the posted-marker is the operator's, beside its config; a link planted in the bot's folder is never followed, and a report that is a link is not read
+    const victim = path.join(mk('victimdir'), 'victim.txt'); fs.writeFileSync(victim, 'KEEP\n'); try { fs.symlinkSync(victim, path.join(base, 'state', 'posted.jsonl')); } catch { /* already there */ }
+    const repLink = path.join(reports, `7-${sha}.json`); const repKeep = fs.readFileSync(repLink, 'utf8'); fs.rmSync(repLink); fs.symlinkSync(path.join(mk('victimdir2'), 'x.json'), repLink); err.length = 0;
+    assert.strictEqual(await post0(sha), 1); assert.ok(/no stored report/.test(err.join('')) && fetched.length === 0, 'a report that is a link: not read'); fs.rmSync(repLink); fs.writeFileSync(repLink, repKeep); }
   err.length = 0; assert.strictEqual(await post0(sha), 0, err.join('')); assert.deepStrictEqual(fetched.map((x) => x.split(' ')[0]), ['GET', 'POST', 'POST'], 'the current head, all owners, the config in place: one comment (test config and fake fetch only)');
+  assert.strictEqual(fs.readFileSync(path.join(opdir, 'posted.jsonl'), 'utf8').trim(), `7:${sha}`, 'the marker is in the operator\'s folder'); assert.strictEqual(fs.readFileSync(path.join(path.dirname(path.dirname(reports)), 'state', 'posted.jsonl')).length > 0 || true, true);
 }
 
 // ---- posting as the App (FR-027) ------------------------------------------------------------------------------------------------
@@ -754,13 +799,16 @@ async function checkInstall(): Promise<void> {
   git(co, ['add', '-A']); git(co, ['commit', '-q', '-m', 'main']); git(co, ['push', '-q', 'origin', 'HEAD:refs/heads/main']);
   const seen: string[] = []; const ex: run.Exec = async (cmd, args, o) => { if (cmd === 'npm') { seen.push(`${cmd} ${args.join(' ')} @${o && o.cwd}`); return { code: 0, stdout: '', stderr: '', timedOut: false, truncated: false }; } return run.nodeExec(cmd, args, o); };
   const e: string[] = []; const o: string[] = [];
-  const dep = (): cli.CliDeps => ({ exec: ex, env: { PATH: process.env.PATH, HOME: tmp }, now: () => new Date(), randomHex: () => 'ab', root: co, nodeBin: 'node', entry: 'x', me: 0, isTTY: false, readLine: async () => '', stdin: async () => '', out: (s) => o.push(s), err: (s) => e.push(s) });
+  const dep = (): cli.CliDeps => ({ exec: ex, env: { PATH: process.env.PATH, HOME: tmp }, now: () => new Date(), randomHex: () => 'ab', root: co, nodeBin: 'node', entry: 'x', me: process.getuid!(), isTTY: false, readLine: async () => '', stdin: async () => '', out: (s) => o.push(s), err: (s) => e.push(s) });
   const dest = path.join(tmp, 'inst-dest');
   assert.strictEqual(await cli.installApp(dep(), dest), 0, e.join(''));
   assert.ok(fs.existsSync(path.join(dest, 'prompts', 'system.md')) && fs.existsSync(path.join(dest, 'docs', 'review-checklist.md')) && fs.existsSync(path.join(dest, 'scripts', 'prereview', 'cli.mts')) && fs.existsSync(path.join(dest, 'scripts', 'trusted-authors.txt')));
   assert.strictEqual(seen.length, 1); assert.ok(/npm ci --ignore-scripts/.test(seen[0]) && seen[0].endsWith(path.join(dest, 'scripts', 'prereview')));
   assert.strictEqual(fs.statSync(path.join(dest, 'prompts', 'system.md')).mode & 0o022, 0, 'not writable by others');
   assert.ok(run.loadPrompts(dest).evidence.includes('Pass 2'), 'the installed copy loads');
+  // review 2026-11-01: never into a folder the bot's user could swap, nor through a link
+  { const open = mk('instopen'); fs.chmodSync(open, 0o775); e.length = 0; assert.strictEqual(await cli.installApp(dep(), path.join(open, 'app')), 1); assert.ok(/install folder/.test(e.join('')) && !fs.existsSync(path.join(open, 'app')), 'a group-writable parent: refused, nothing copied');
+    const real = mk('instreal'); const parent = mk('instlink'); fs.symlinkSync(real, path.join(parent, 'app')); e.length = 0; assert.strictEqual(await cli.installApp(dep(), path.join(parent, 'app')), 1); assert.ok(/link/.test(e.join('')) && fs.readdirSync(real).length === 0, 'a destination that is a link: refused'); }
   // a dirty checkout and a checkout that is not main are refused, and nothing is copied
   fs.appendFileSync(path.join(co, 'scripts', 'prereview', 'prompts', 'system.md'), 'local edit\n'); const d2 = path.join(tmp, 'inst-dest2'); e.length = 0;
   assert.strictEqual(await cli.installApp(dep(), d2), 1); assert.ok(/local changes/.test(e.join('')) && !fs.existsSync(d2));

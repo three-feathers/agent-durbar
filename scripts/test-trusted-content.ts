@@ -173,6 +173,8 @@ try {
   for (const [a, e, f] of [['mallory', null, false], ['vikramgorla', actor('mallory'), false], ['vikramgorla', null, true], ['dependabot', null, false]] as Array<[string, object | null, boolean]>) {
     put('prtext', ptext(a, e, f)); pt = prt(); assert.ok(!/PLANTED|TITLE|BODY/.test(pt.stdout), `no outside PR text: ${a}`); assert.ok(pt.stdout.includes('not shown, for a human'), pt.stdout);
   }
+  for (const bad of ['../x', 'a/b/c', '/x', 'x/', 'a b/c', '']) assert.strictEqual(spawnSync('bash', [path.join(ROOT, 'scripts', 'gh-trusted.sh'), '1', '--pr-text', '--repo', bad], { env, encoding: 'utf8' }).status, 2, `--repo ${bad} refused`);
+  put('prtext', ptext('vikramgorla', null)); assert.ok(spawnSync('bash', [path.join(ROOT, 'scripts', 'gh-trusted.sh'), '1', '--pr-text', '--repo', 'o/r'], { env, encoding: 'utf8' }).stdout.includes('title: TITLE'), '--repo names the repository itself');
   assert.strictEqual(spawnSync('bash', [path.join(ROOT, 'scripts', 'gh-trusted.sh'), '1', '--other'], { env, encoding: 'utf8' }).status, 2, 'an unknown mode is refused');
 } finally {
   fs.rmSync(dir, { recursive: true, force: true });

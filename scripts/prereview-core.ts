@@ -6,6 +6,10 @@
 import * as crypto from 'crypto';
 import { maskTokenShapes } from '../src/shared/redact';
 
+/** The one repository the bot reads: the gate's query, the PR text, the posting target and the runner's remote all come from this, and it is signed into the payload. */
+export const REPO_SLUG = 'three-feathers/agent-durbar';
+export const REPO_REMOTE = `https://github.com/${REPO_SLUG}.git`;
+
 // ---- who may be read (FR-004) ------------------------------------------------------------------------------------------------
 
 /** The logins of scripts/trusted-authors.txt, read the way scripts/trusted-lib.sh reads them (plain logins, an optional [bot]). */
@@ -34,6 +38,8 @@ export interface PrFacts {
   editor: string | null;
   /** actors of every title rename */
   titleActors: Array<string | null>;
+  /** how many title renames GitHub says there are (the query reads the first 100) */
+  titleTotal: number;
   headSha: string;
   /** every commit of the PR: its oid and the linked login of its author, null when no account is linked */
   commits: Array<{ oid: string; author: string | null }>;
@@ -60,6 +66,7 @@ export function factsFromGraphql(json: any): PrFacts {
     author: who(pr.author),
     editor: pr.editor ? who(pr.editor) ?? 'unknown' : null,
     titleActors: titles.map((t) => who(t && t.actor)),
+    titleTotal: Number(pr.timelineItems && pr.timelineItems.totalCount),
     headSha: pr.headRefOid,
     commits: nodes.map((n) => ({ oid: String(n && n.commit && n.commit.oid), author: n && n.commit && n.commit.author && n.commit.author.user ? who(n.commit.author.user) : null })),
     commitsTotal: Number(pr.commits && pr.commits.totalCount),
@@ -83,6 +90,7 @@ export function refusal(pr: PrFacts, trusted: readonly string[], opts: { replay?
   if (pr.author === 'dependabot[bot]') return outside('dependabot: its text is upstream text, a human decides');
   if (!isTrusted(pr.author, trusted)) return outside('author is outside the trusted list');
   if (pr.editor !== null && !isTrusted(pr.editor, trusted)) return outside('title or body last edited by an outside account');
+  if (!Number.isInteger(pr.titleTotal) || pr.titleTotal > pr.titleActors.length) return outside('more title renames than can be checked');
   if (pr.titleActors.some((a) => !isTrusted(a, trusted))) return outside('title renamed by an outside account');
   if (pr.commitsTotal > pr.commits.length || !Number.isInteger(pr.commitsTotal)) return outside('more commits than can be checked');
   if (pr.commits.some((c) => c.author === null)) return outside('a commit has no linked account');
@@ -210,7 +218,7 @@ export function minimalEnv(a: { path: string; home: string; configDir: string; t
   };
 }
 /** Variables that, set in the running process, refuse the run: a GitHub credential, or another way to pay or another place to send the key. */
-const REFUSED_ENV = ['GH_TOKEN', 'GITHUB_TOKEN', 'GH_ENTERPRISE_TOKEN', 'GITHUB_ENTERPRISE_TOKEN', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_BASE_URL', 'CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX', 'CLAUDE_CODE_USE_FOUNDRY', 'GH_CONFIG_DIR', 'XDG_CONFIG_HOME', 'GH_HOST'];
+const REFUSED_ENV = ['GH_TOKEN', 'GITHUB_TOKEN', 'GH_ENTERPRISE_TOKEN', 'GITHUB_ENTERPRISE_TOKEN', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_BASE_URL', 'CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX', 'CLAUDE_CODE_USE_FOUNDRY', 'GH_CONFIG_DIR', 'XDG_CONFIG_HOME', 'GH_HOST', 'GH_REPO'];
 export function envProblems(env: Record<string, string | undefined>): string[] {
   return REFUSED_ENV.filter((k) => env[k] !== undefined && env[k] !== '').map((k) => `${k} is set; the bot holds no GitHub credential and pays only with its own key`);
 }
@@ -516,12 +524,12 @@ export function revalidateReport(raw: unknown): Report {
 // ---- the gate's payload, signed (FR-004 at the runner) -------------------------------------------------------------------------
 
 export interface GatePayload {
-  pr: number; sha: string; url: string; replay: boolean; prText: string | null; model: string;
+  repo: string; pr: number; sha: string; url: string; replay: boolean; prText: string | null; model: string;
   ceilings: Ceilings; raised: string[]; outDir: string | null; allowGhLogin: boolean; ts: number; nonce: string; sig?: string;
 }
 /** A fixed-order encoding of everything the runner will act on, so no field can change without the signature changing. */
 export function canonicalPayload(p: GatePayload): string {
-  return JSON.stringify([p.pr, p.sha, p.url, p.replay, p.prText, p.model, p.ceilings.runUsd, p.ceilings.passUsd, p.ceilings.maxTurns, p.ceilings.passTimeoutMs, p.raised, p.outDir, p.allowGhLogin, p.ts, p.nonce]);
+  return JSON.stringify([p.repo, p.pr, p.sha, p.url, p.replay, p.prText, p.model, p.ceilings.runUsd, p.ceilings.passUsd, p.ceilings.maxTurns, p.ceilings.passTimeoutMs, p.raised, p.outDir, p.allowGhLogin, p.ts, p.nonce]);
 }
 export const signPayload = (p: GatePayload, key: Buffer): string => crypto.createHmac('sha256', key).update(canonicalPayload(p)).digest('hex');
 export const PAYLOAD_MAX_AGE_MS = 10 * 60_000;
@@ -534,4 +542,32 @@ export function payloadProblems(p: GatePayload, key: Buffer | null, now: number,
   if (!Number.isFinite(p.ts) || now - p.ts > PAYLOAD_MAX_AGE_MS || p.ts - now > 60_000) return ['payload is stale'];
   if (typeof p.nonce !== 'string' || !/^[0-9a-f]{16,64}$/.test(p.nonce) || seen.has(p.nonce)) return ['payload was already used'];
   return [];
+}
+
+// ---- who may write what the operator runs or trusts (review 2026-11-01, Paco's side) -------------------------------------------
+
+export interface StatLite { uid: number; mode: number; isSymlink: boolean; isDirectory: boolean }
+/**
+ * A path whose content decides what runs or whom to trust (the installed code, the trust list, `gh-trusted.sh`, the gate key) is only as safe
+ * as every folder above it: the owner of a parent can rename the folder away and plant its own. So the file or folder itself and EVERY
+ * ancestor, links resolved first, must be owned by an allowed uid (the operator side: root or the operator; the runner side: anyone but
+ * itself) and not writable by group or others. A sticky world-writable folder owned by root (/tmp) is accepted: its sticky bit stops a
+ * stranger renaming what we own. Returns the problems, empty when sound. `stat` and `realpath` are injected.
+ */
+export function ancestorProblems(p: string, ownerOk: (uid: number) => boolean, stat: (q: string) => StatLite, realpath: (q: string) => string, label = 'path'): string[] {
+  let real: string;
+  try { real = realpath(p); } catch { return [`${label} cannot be resolved`]; }
+  const out: string[] = [];
+  let cur = real;
+  for (let n = 0; n < 64; n++) {
+    let st: StatLite;
+    try { st = stat(cur); } catch { out.push(`${label}: cannot read ${cur === real ? 'it' : 'a folder above it'}`); break; }
+    const sticky = (st.mode & 0o1000) !== 0;
+    if (!ownerOk(st.uid)) out.push(`${label}: ${cur === real ? 'it is' : 'a folder above it is'} owned by a user that may not own what is run or trusted`);
+    else if ((st.mode & 0o022) !== 0 && !(sticky && st.uid === 0 && cur !== real)) out.push(`${label}: ${cur === real ? 'it is' : 'a folder above it is'} writable by group or others`);
+    const up = cur.replace(/\/[^/]*$/, '') || '/';
+    if (up === cur || cur === '/') break;
+    cur = up;
+  }
+  return out;
 }

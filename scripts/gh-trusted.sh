@@ -8,10 +8,12 @@
 # line comment is even requested, so an independent reader (the pre-review bot) cannot start from them.
 n=$1
 mode=${2:-}
+repo_arg=
+if [ "${3:-}" = --repo ]; then repo_arg=${4:-}; [[ $repo_arg =~ ^[A-Za-z0-9_-][A-Za-z0-9._-]*/[A-Za-z0-9_-][A-Za-z0-9._-]*$ ]] || { echo "usage: --repo owner/name" >&2; exit 2; }; fi
 case $n in ''|*[!0-9]*) echo "usage: scripts/gh-trusted.sh <issue or PR number> [--pr-text]" >&2; exit 2;; esac
 case $mode in ''|--pr-text) ;; *) echo "usage: scripts/gh-trusted.sh <issue or PR number> [--pr-text]" >&2; exit 2;; esac
 . "$(dirname "$0")/trusted-lib.sh" || exit 2
-R=$(gh repo view --json nameWithOwner -q .nameWithOwner) || exit 1
+if [ -n "$repo_arg" ]; then R=$repo_arg; else R=$(gh repo view --json nameWithOwner -q .nameWithOwner) || exit 1; fi
 OWNER=${R%%/*}; NAME=${R##*/}
 A='author{__typename login} editor{__typename login}'
 if [ "$mode" = --pr-text ]; then
