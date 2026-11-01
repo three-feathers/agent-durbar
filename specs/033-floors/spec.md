@@ -190,6 +190,10 @@ When more than one floor is on, I can tell at a glance which floor each room bel
 
 ## Changes
 
+### 2026-11-01: a failed order save is reported (sweep finding)
+
+`FolderStore.setOrder` throws when the file could not be written (the order stays in memory for this run), so the drag's *could not be saved* toast shows instead of a silent success. test: `scripts/test-roomorder.ts`.
+
 ### 2026-11-01: rearrange rooms, desks and places by drag and drop (issue #677, owner idea; the owner answered on the issue 2026-10-24)
 
 Owner answers (Vikram, on the issue): both **desks inside a room** and **folders (rooms) on the canvas** move; the order of rooms is saved with the floors, is **global** and works in **all themes**; it is kept in the **same storage as floors**; keyboard parity: yes; "manual order is just about sequencing, **auto placement should still work**"; and the same drag and drop for **places** (the lobby tiles, spec 024).

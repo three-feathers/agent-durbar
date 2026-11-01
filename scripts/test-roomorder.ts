@@ -130,6 +130,13 @@ try {
   const junk = new FolderStore(file);
   assert.deepStrictEqual(junk.load(), []);
   assert.deepStrictEqual(junk.order(), { rooms: [], desks: {}, places: [] });
+  // a save that fails is reported to the caller (the renderer's toast), and the order stays for this run
+  const blocker = path.join(dir, 'not-a-folder');
+  fs.writeFileSync(blocker, 'x');
+  const stuck = new FolderStore(path.join(blocker, 'folders.json'));
+  stuck.load();
+  assert.throws(() => stuck.setOrder({ rooms: ['/x'] }), /could not be saved/, 'a failed save is not reported as kept');
+  assert.deepStrictEqual(stuck.order().rooms, ['/x'], 'the order stays in memory');
 } finally {
   fs.rmSync(dir, { recursive: true, force: true });
 }
