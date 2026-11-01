@@ -86,8 +86,9 @@ module.exports = async (ctx) => {
   assert.strictEqual(seg, 'cabins:false open:true real:false', 'three buttons, Open office pressed: ' + seg);
   await js(`document.querySelector('[data-officelayout="real"]').scrollIntoView({block:'center'})`);
   await H.shot(path.join(OUT, '097-office-layout-1440x900.png'), { prep: 'calm' });
-  await js(`document.querySelector('[data-officelayout="real"]').click()`);
+  await js(`document.querySelector('[data-officelayout="real"]').focus();document.querySelector('[data-officelayout="real"]').click()`);
   await must(`document.querySelector('[data-officelayout="real"]').getAttribute('aria-pressed')==='true'`, 'Real office pressed');
+  await must(`document.activeElement&&document.activeElement.dataset&&document.activeElement.dataset.officelayout==='real'`, 'the keyboard focus stays on the Real office button after the repaint');
   assert.strictEqual(await js(`localStorage.getItem('durbar.officeview')`), 'real', 'stored as real');
   assert.strictEqual(await js(`localStorage.getItem('durbar.doorsigns')`), 'off', 'durbar.doorsigns untouched');
   await js(`document.getElementById('scrClose').click()`);

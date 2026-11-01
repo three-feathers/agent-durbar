@@ -873,7 +873,9 @@
       const on=!!X.signs.get(), view=V?V.get():'flat', g=olb.parentElement;
       if(g)g.querySelectorAll('[data-officelayout]').forEach(b=>{const t=b.dataset.officelayout;b.setAttribute('aria-pressed',String(t==='real'?view==='real':view!=='real'&&(t==='cabins')===on));});
       const n=$('dsR');if(n&&V)n.textContent=V.note();
+      const hadFocus=document.activeElement===olb;
       paint(); /* the World row appears with Real office, and Characters names the world's default set */
+      if(hadFocus){const nb=document.querySelector('[data-officelayout="'+k+'"]');if(nb)nb.focus();} /* the repaint replaced the pressed button: keep the keyboard where it was */
       const tw=$('thWorld');if(tw){tw.textContent=worldWords();tw.hidden=!tw.textContent;}
       return;
     }

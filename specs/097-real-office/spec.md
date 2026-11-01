@@ -330,6 +330,10 @@ Each has a recommendation (Q6 is for Paco, the crew owner). The build waits for 
 
 ## Changes
 
+### 2026-11-01: the Office layout pick keeps keyboard focus (sweep finding)
+
+Choosing an Office layout repaints Settings; the pressed button is found again and refocused (only if it had focus). test: `scripts/test-realoffice-layout.ts` (source pin), `scripts/shots-097-realoffice.js` (driver: focus on the pressed button after the click).
+
 ### 2026-10-31: owner answers (Q1-Q6, lobby places) and the phase P1 build
 
 **Owner answers** (Telegram, relayed to the build agent by Vikram's coordinating agent; quoted as relayed):
