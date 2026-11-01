@@ -243,3 +243,10 @@ A spec author fills the template's *Experience* line: "tool surface", or "world 
 ### 2026-10-31: strict release gate (owner decision, Q1)
 
 Vikram (Telegram DM, 2026-10-31 10:27 UTC): "design all 9, I don't want partly done ui". Real office ships only when every registered world moment is `designed` in each world that ships; `fallback-flat` is not allowed for a shipping world. FR-024, D3, US1, SC-001, Q1 and tasks T010, T032, T033 updated. No code yet.
+
+### 2026-11-01: a monitor part in `desk-screen`, and a named arrangement in `world.json` (owner decisions; spec 102 FR-220..FR-236)
+
+Owner's decisions, Vikram, 2026-11-01, relayed by his coordinating agent. Stacked on #937. Numbers taken: FR-081, FR-082, T147, T148.
+
+- **FR-081** **Amends FR-030, FR-031.** `desk-screen` gains an optional monitor picture with the same `screenRect` rules: app text as `textContent` on an opaque token surface, contrast from tokens, no text in art, the 097 FR-032 floor (spec 102 FR-220..FR-222). `screenRect` is then on the monitor, not the desk. The block count of FR-033 does not change. **FR-031's refusal of a layout value stands, with one exception:** `arrangement`, one id from a closed list checked by the validator (spec 102 FR-226). "Positions come from the layout engine" still holds: arrangements are engine code with tests, never a pack's positions. `room` also gains `focus`, a still picture placed by the engine (spec 102 FR-227).
+- **FR-082** **Block test.** FR-032's test covers the monitor and `arrangement` through the shared validator; a world's matrix row runs in the arrangement it names (spec 102 FR-229); a project world has no fall-back to rows at high counts (spec 102 FR-230).
