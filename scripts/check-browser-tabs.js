@@ -106,9 +106,14 @@ module.exports = async (ctx) => {
     await js(`document.querySelector('#bTabs .btab.on .btab-x').click()`);
     await wait(() => count() === n - 1 && !tabs().tabs.some((x) => x.tabId === want), 'the active tab closes');
   };
+  const seenKeys = new WeakMap();
+  let lastKeys = [];
   const pageKey = async (keyCode, modifiers) => {
     const wc = view().webContents;
-    wc.focus();
+    assert.ok(await H.focusWc(wc), 'the page has the focus before its key');
+    // what main's before-input-event gets from this key (listener only records; it is added once per view): a failing wait below names it
+    if (!seenKeys.has(wc)) { const log = []; seenKeys.set(wc, log); wc.on('before-input-event', (_e, i) => { log.push(`${i.type}:${i.key}|${i.code}|c${+!!i.control}m${+!!i.meta}s${+!!i.shift}`); if (log.length > 12) log.shift(); }); }
+    lastKeys = seenKeys.get(wc);
     wc.sendInputEvent({ type: 'keyDown', keyCode, modifiers });
     wc.sendInputEvent({ type: 'keyUp', keyCode, modifiers });
   };
@@ -217,12 +222,14 @@ module.exports = async (ctx) => {
     await go(WEB + 'tabs?focus=1'); // a new page load: its own 5
     const n = count();
     await inWc(openerWc, `setTimeout(()=>window.open('/index?timer=1'),300);true`, 'the timer');
-    win().webContents.focus();
-    await js(`document.getElementById('msgInput').focus()`);
-    await wait(() => win().webContents.isFocused() && js(`document.activeElement&&document.activeElement.id==='msgInput'`), 'the composer has the focus');
+    // the OS focus can go to a neighbour on a busy Windows runner: ask again on every round until the window and the composer have it
+    await wait(async () => { if (!win().webContents.isFocused()) win().webContents.focus(); await js(`document.getElementById('msgInput').focus()`); return win().webContents.isFocused() && js(`document.activeElement&&document.activeElement.id==='msgInput'`); }, 'the composer has the focus');
     await wait(() => count() === n + 1 && view() && view().webContents.getURL() === WEB + 'index?timer=1' && !view().webContents.isLoading(), 'the timer\'s tab opens and loads');
     assert.ok(!view().webContents.isFocused(), 'FR-129: the new page did not take the focus');
-    assert.ok(win().webContents.isFocused() && await js(`document.activeElement&&document.activeElement.id==='msgInput'`), 'FR-129: the composer keeps it');
+    // the page did not take it (above), and the composer is still the active element; the OS may have given the window's own focus to a neighbour
+    // meanwhile (Windows CI, Linux under load: nobody focused), so ask for it again until the window reports it
+    assert.strictEqual(await js(`document.activeElement&&document.activeElement.id`), 'msgInput', 'FR-129: the composer keeps it');
+    await wait(() => { if (!win().webContents.isFocused()) win().webContents.focus(); return win().webContents.isFocused() && !view().webContents.isFocused(); }, 'FR-129: the window has the focus and the page does not');
   }
 
   // US6.5: 10 tabs
@@ -253,7 +260,11 @@ module.exports = async (ctx) => {
     return P})()`);
   assert.deepStrictEqual(fit, [], 'SC-011 at ' + size);
   if (process.env.OUT || process.env.SHOTS_OUT) {
-    await js(`(async()=>{const r=await window.agentDurbar.browserSelectTab('sim-1',${jsLiteral(tabs().tabs[0].tabId)});return true})()`);
+    const firstId = tabs().tabs[0].tabId;
+    await js(`(async()=>{const r=await window.agentDurbar.browserSelectTab('sim-1',${jsLiteral(firstId)});return true})()`);
+    // This tab was dropped by the cap (US6.10), so selecting it reloads it: right after the call its entry still reads `about:blank`, no address, loading
+    // (issue #934, seen on Ubuntu CI as "timed out: the first tab for the picture"). Read the address to expect only once the page has loaded again.
+    await wait(() => { const t = tabs(), f = t.tabs[0]; return t.active === firstId && f.tabId === firstId && f.url && !f.loading && view() && !view().webContents.isLoading(); }, 'the first tab has loaded again');
     const first = tabs().tabs[0];
     await wait(async () => tabs().active === first.tabId && view() && !view().webContents.isLoading() && (await js(`(()=>{const e=document.querySelector('#bTabs .btab.on');return !!e&&e.dataset.tab===${jsLiteral(first.tabId)}&&document.getElementById('bAddr').value===${jsLiteral(first.url)}})()`)), 'the first tab for the picture, in the strip and the bar too');
     win().webContents.sendInputEvent({ type: 'mouseMove', x: 1, y: 1 });
@@ -288,7 +299,9 @@ module.exports = async (ctx) => {
   await wait(() => slowWc.isDestroyed(), 'the loading tab\'s view is gone');
   console.log('[browser-tabs] US6.6 ok');
 
-  // US6.12: the strip's keys
+  // US6.12: the strip's keys. The strip must show main's 9 tabs and the new active tab first: read earlier it still lists the tab just closed, and
+  // Home would name a tab that is gone (issue #934 family: a value read before the window caught up; seen as "Home moves the focus to the first tab").
+  await wait(() => js(`(()=>{const e=document.querySelector('#bTabs .btab.on');return document.querySelectorAll('#bTabs .btab').length===9&&!!e&&e.dataset.tab===${jsLiteral(wantNext)}&&!document.querySelector('#bTabs [data-tab=${jsLiteral(order[i])}]')})()`), 'the strip shows the 9 tabs and the tab after the closed one');
   await js(`document.querySelector('#bTabs .btab.on .btab-b').focus()`);
   let st = await stripTabs();
   const sel0 = st.findIndex((x) => x.sel === 'true');
@@ -333,14 +346,20 @@ module.exports = async (ctx) => {
   await wait(() => inView(`document.getElementById('log').textContent.includes('a')`), 'the page logs its own keys');
   const log = await inView(`document.getElementById('log').textContent`);
   assert.ok(!/(C-|M-)(t|T|Tab|w|W)\b/.test(log), 'the page never saw the tab keys: ' + log);
+  // the window closes "its active tab" from the tab list it last received: main's active tab must be the strip's before the key, or the key closes the one the
+  // strip still shows (seen on Windows CI as the 1280 run's "Ctrl/Cmd+W in the page closes its tab", the #934 family)
+  await wait(() => js(`(()=>{const e=document.querySelector('#bTabs .btab.on');return !!e&&e.dataset.tab===${jsLiteral(keysTab)}})()`), 'the strip shows the keys page as the active tab');
   const n1 = count();
   await pageKey('W', [MOD]);
-  await wait(() => count() === n1 - 1 && !tabs().tabs.some((x) => x.tabId === keysTab), 'Ctrl/Cmd+W in the page closes its tab');
+  await wait(() => count() === n1 - 1 && !tabs().tabs.some((x) => x.tabId === keysTab), 'Ctrl/Cmd+W in the page closes its tab (main saw: ' + lastKeys.join(' ') + ')');
   // the bar's own keys (the window's handler): Ctrl+Tab and Ctrl+Shift+Tab
   await js(`document.getElementById('bAddr').focus()`);
   const a0 = tabs().active;
   await H.key('Tab', ['control'], { char: 'never' });
   await wait(() => tabs().active !== a0, 'Ctrl+Tab in the bar');
+  // the window works out "previous" from the tab list it last received, so the strip must show main's new active tab before the next key (issue #934)
+  const a1 = tabs().active;
+  await wait(() => js(`(()=>{const e=document.querySelector('#bTabs .btab.on');return !!e&&e.dataset.tab===${jsLiteral(a1)}})()`), 'the strip shows the tab Ctrl+Tab chose');
   await H.key('Tab', ['control', 'shift'], { char: 'never' });
   await wait(() => tabs().active === a0, 'Ctrl+Shift+Tab back');
   assert.ok(afterTab);

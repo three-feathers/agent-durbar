@@ -270,7 +270,7 @@ button.room-aiu:hover{text-decoration:underline;text-underline-offset:2px}
 /* spec 052 FR-101: on cards and list rows a status that needs nothing from you is a dot and the word in its colour; Waiting, Error,
    Failing and Limit reached (a waiting state) keep the filled pill. Only colours change: the pill keeps its height and padding */
 :is(.desk,.lrow) .pill:is(.st-working,.st-thinking,.st-compacting,.st-idle,.st-done){background:transparent;border-color:transparent}
-.stage[data-d="full"] .desk.is-idle .scene:not(:has(.crew-pic)),.stage[data-d="full"] .desk.is-idle .info{opacity:.7}
+.stage[data-d="full"] .desk.is-idle .scene:not(.has-crew-pic),.stage[data-d="full"] .desk.is-idle .info{opacity:.7}
 
 /* sub-agents: beside the parent, connected by a line */
 .helpers{position:relative;display:flex;flex-direction:column;gap:var(--hgap,6px);margin-left:14px;padding-left:2px;flex:none}
@@ -288,7 +288,7 @@ button.room-aiu:hover{text-decoration:underline;text-underline-offset:2px}
 .hrole{font-size:10.5px;color:var(--muted);line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .hst{display:flex;align-items:center;gap:4px;font-size:10.5px;color:var(--ink-2);margin-top:2px;white-space:nowrap}
 .hst .dot{width:7px;height:7px}
-.helper.is-idle .scene:not(:has(.crew-pic)),.helper.is-idle .hinfo{opacity:.7}
+.helper.is-idle .scene:not(.has-crew-pic),.helper.is-idle .hinfo{opacity:.7}
 .more{width:var(--hw,auto);height:var(--mh,26px);border-radius:9px;border:1px dashed var(--line-2);background:transparent;color:var(--ink-2);font-size:11.5px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;text-align:center}
 .more:hover{background:color-mix(in srgb,var(--raised) 60%,transparent)}
 .more .dot{width:7px;height:7px}
@@ -672,8 +672,8 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .desk.card.is-error[aria-pressed="true"],.helper.hc.is-error[aria-pressed="true"]{box-shadow:inset 3px 0 0 var(--c-error),0 0 0 1.5px var(--sel-border,#7fa0bd)}
 .sc{display:block;min-width:0}
 .sc>svg,.sc>.cb-scene>svg{width:100%;height:auto;display:block;overflow:visible}
-.is-idle .sc>svg:not(:has(.crew-pic)),.is-idle .sc>.cb-scene>svg:not(:has(.crew-pic)){opacity:.68}
-.is-idle svg:has(.crew-pic)>:not(.pp),.is-idle svg:has(.crew-pic) .pp>:not(.crew-pic){opacity:.7} /* spec 077 FR-061: an idle crew portrait is full colour; the furniture and text keep the dim */
+.is-idle .sc>svg:not(.has-crew-pic),.is-idle .sc>.cb-scene>svg:not(.has-crew-pic){opacity:.68}
+.is-idle svg.has-crew-pic>:not(.pp),.is-idle svg.has-crew-pic .pp>:not(.crew-pic){opacity:.7} /* spec 077 FR-061: an idle crew portrait is full colour; the furniture and text keep the dim */
 .ci{min-width:0;display:flex;flex-direction:column;gap:2px;container-type:inline-size}
 .l1{display:flex;align-items:baseline;gap:6px;min-width:0}
 .l1 .name{font-size:13.5px;line-height:17px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:0 1 auto;min-width:0}
@@ -2194,3 +2194,12 @@ body.simple #ctxMenu #compactBtn{display:flex!important} /* spec 005 FR-041: Tid
 .nt-selbtn[hidden]{display:none}
 .cp-btn,.nt-btn,.nt-mark{user-select:none;-webkit-user-select:none}
 
+
+/* Rearranging the office (spec 033 delta 2026-11-01, issue 677): while a drag runs, only transform and opacity change; nothing moves in the layout. */
+.reo-dragging,.reo-dragging *{cursor:grabbing!important;user-select:none!important}
+.reo-lift{z-index:30;opacity:.88;box-shadow:var(--shadow-pop);pointer-events:none;will-change:transform}
+.reo-slot{transition:transform .14s ease-out;will-change:transform}
+@media (prefers-reduced-motion:reduce){.reo-slot{transition:none}}
+.room-head{cursor:grab}
+.room-head :is(button,a,input){cursor:pointer}
+#stage .place[data-reo]{cursor:grab}

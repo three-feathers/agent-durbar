@@ -474,6 +474,103 @@ async function driver(ctx) {
       if (r2.problems.length) { failed++; console.log(`FAIL ${label} +expanded: ${r2.problems.slice(0, 6).join('; ')}`); }
     }
   };
+  /* spec 097 FR-091, FR-050, SC-001, SC-002, SC-004 (OFFICE_VIEW=real): the Real office variant, run alone (check-parallel.js adds it as its own
+     job): SIM 12 and 15 (and 15 in one folder, and in 15 folders) at both sizes, chat closed, open, closed again; no overlap of plates, signs, place plates, chips, screens and faces; nothing
+     outside the floor; no text under 10.5px; no page overflow; no office scroll at the 15-agent scale; the desk face size (SC-002, a ratchet: 35px,
+     the 40px target is a KNOWN GAP); every plate, sign and chip readable (4.5:1) at the room's dimmest (70%) and full ambient (FR-050); and flat
+     mode requests no Real office file (SC-004). */
+  if (process.env.OFFICE_VIEW === 'real') {
+    await load('sim=15&simfreeze=1', 1440, 900);
+    const flatFiles = await ctx.js(`performance.getEntriesByType('resource').map(e=>e.name).filter(n=>/realoffice|\\/shared\\/(lights|realoffice-layout)\\.js/.test(n))`);
+    total++;
+    if (flatFiles.length || (await ctx.js(`!!window.DurbarRealOffice||!!document.querySelector('.ro')`))) { failed++; console.log('FAIL real: flat mode loaded Real office files: ' + flatFiles.join(', ')); }
+    const realCheck = (amb) => {
+      const P = [], ro = document.querySelector('#stage .ro'), L = window.__durbarSimUi.realLayout();
+      if (!ro || !L) return { problems: ['no Real office drawn'], info: {} };
+      if (amb != null) ro.style.setProperty('--ro-amb', String(1 - amb));
+      const o = ro.getBoundingClientRect(), fl = document.getElementById('floor').getBoundingClientRect();
+      const R = (e) => { const b = e.getBoundingClientRect(); return { x: b.left, y: b.top, r: b.right, b: b.bottom }; };
+      const boxes = [];
+      const add = (kind, e, r) => { if (e && !e.getClientRects().length) return; boxes.push({ kind, id: e ? (e.dataset.id || e.dataset.place || e.dataset.folder || e.textContent.slice(0, 16)) : '', r: r || R(e) }); };
+      document.querySelectorAll('#stage .ro-plate').forEach((e) => add('plate', e));
+      document.querySelectorAll('#stage .ro-sign').forEach((e) => add('sign', e));
+      document.querySelectorAll('#stage .ro-lplate').forEach((e) => add('placeplate', e));
+      document.querySelectorAll('#stage .ro-chip').forEach((e) => add('chip', e));
+      document.querySelectorAll('#stage .ro-away').forEach((e) => add('away', e));
+      document.querySelectorAll('#stage .ro-screen .ro-bezel').forEach((e) => add('screen', e));
+      for (const z of L.zones) for (const d of z.desks) if (d.person) add('face', null, { x: o.left + d.person.vis.x, y: o.top + d.person.vis.y, r: o.left + d.person.vis.x + d.person.vis.w, b: o.top + d.person.vis.y + Math.min(d.person.vis.h, L.faceH * 1.2) });
+      const hit = (a, b) => a.x + 0.5 < b.r && b.x + 0.5 < a.r && a.y + 0.5 < b.b && b.y + 0.5 < a.b;
+      for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
+        const a = boxes[i], b = boxes[j];
+        if (a.kind === 'face' && b.kind === 'face') continue;
+        if (hit(a.r, b.r)) P.push(`${a.kind} ${a.id} overlaps ${b.kind} ${b.id}`);
+      }
+      for (const b of boxes) if (b.r.x < fl.left - 0.5 || b.r.r > fl.right + 0.5 || b.r.y < o.top - 0.5 || b.r.b > o.bottom + 0.5) P.push(`${b.kind} ${b.id} outside the office`);
+      let minFont = 99;
+      const walk = (n) => { for (const c of n.childNodes) { if (c.nodeType === 3 && c.textContent.trim()) { const e = c.parentElement; if (e.getClientRects().length) minFont = Math.min(minFont, parseFloat(getComputedStyle(e).fontSize)); } else if (c.nodeType === 1) walk(c); } };
+      walk(ro);
+      if (minFont < 10.5) P.push(`text at ${minFont}px`);
+      document.querySelectorAll('#stage .ro-plate').forEach((e) => { if (e.scrollHeight > e.clientHeight + 1) P.push(`plate ${e.dataset.id} cuts its lines (${e.scrollHeight}>${e.clientHeight})`); });
+      /* FR-050: text against its own background, which the lights never touch (chrome is above them) */
+      const rgb = (c) => (c.match(/[\d.]+/g) || []).map(Number);
+      const lum = ([r, g, b]) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
+      const bgOf = (e) => { for (let n = e; n; n = n.parentElement) { const c = rgb(getComputedStyle(n).backgroundColor); if (c.length >= 3 && (c.length < 4 || c[3] > 0.95)) return c; } return [255, 255, 255]; };
+      let minRatio = 99;
+      document.querySelectorAll('#stage .ro-plate b, #stage .ro-plate .ro-l2, #stage .ro-sign b, #stage .ro-lplate span, #stage .ro-chip').forEach((e) => {
+        if (!e.getClientRects().length) return;
+        const a = lum(rgb(getComputedStyle(e).color)), b = lum(bgOf(e)), k = (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+        minRatio = Math.min(minRatio, k);
+        if (k < 4.5) P.push(`contrast ${k.toFixed(2)} on ${e.className || e.tagName} "${e.textContent.slice(0, 20)}"`);
+      });
+      const se = document.scrollingElement;
+      if (se.scrollWidth > innerWidth + 1 || se.scrollHeight > innerHeight + 1) P.push('the page overflows');
+      if (amb != null) ro.style.removeProperty('--ro-amb');
+      return { problems: P, info: { plates: document.querySelectorAll('#stage .ro-plate').length, face: L.faceH, u: L.u, scroll: L.scroll, minFont, minRatio } };
+    };
+    /* simrooms=1: one folder of 15, split over rows (its sign repeats); simrooms=solo: 15 folders, past the exhaustive search */
+    for (const [sim, rooms] of [[3, ''], [12, ''], [15, ''], [15, '1'], [15, 'solo']]) for (const [w, h] of SIZES) {
+      if (!mine()) continue;
+      const tag = `real sim${sim}${rooms ? '-rooms' + rooms : ''}-${w}x${h}`;
+      await load(`sim=${sim}&simfreeze=1&officeview=real${rooms ? '&simrooms=' + rooms : ''}`, w, h);
+      if (!(await H.until(`!!document.querySelector('#stage .ro .ro-plate')&&[...document.querySelectorAll('#stage .ro img')].every(i=>i.complete)`, 15000))) { total++; failed++; console.log(`FAIL ${tag}: the Real office was not drawn`); continue; }
+      /* OFFICE_FONT: the other fonts of other machines (a CI runner's wider sans broke the chips and plates once): every Real office text in that family, drawn again */
+      if (process.env.OFFICE_FONT) {
+        const css = '.ro,.ro *{font-family:"' + process.env.OFFICE_FONT.replace(/[^A-Za-z0-9 -]/g, '') + '",sans-serif!important}';
+        await ctx.js(`(()=>{const st=document.createElement('style');st.textContent=${jsLiteral(css)};document.head.appendChild(st);window.__durbarSimUi.render();return true})()`);
+      }
+      await stable(tag);
+      for (const [step, amb] of [['closed', 0.7], ['closed', 1]]) {
+        const res = await ctx.js(`(${realCheck.toString()})(${amb})`);
+        total++;
+        if (sim === 15 && res.info.scroll) res.problems.push('the office scrolls at the 15-agent scale');
+        if (sim === 15 && !rooms && res.info.face < 35) res.problems.push(`desk face ${res.info.face.toFixed(1)}px (ratchet 35px; SC-002 target 40px is a KNOWN GAP)`);
+        if (res.problems.length) { failed++; console.log(`FAIL ${tag} ${step} ambient ${amb}: ${res.problems.slice(0, 12).join('; ')}`); }
+        rows.push({ label: `${tag} ${step} ambient ${amb}`, d: 'real', h: '-', rooms: '-', plates: res.info.plates, desks: res.info.plates, stageH: Math.round(res.info.u || 0), floorH: 0, minFont: res.info.minFont, problems: res.problems.length });
+        console.log(`  ${tag}: face ${res.info.face ? res.info.face.toFixed(1) : '?'}px, u ${res.info.u ? res.info.u.toFixed(0) : '?'}, contrast >= ${res.info.minRatio ? res.info.minRatio.toFixed(2) : '?'}`);
+      }
+      if (shotsDir) await ctx.shot(path.join(shotsDir, `${prefix}-${tag.replace(/ /g, '-')}.png`));
+      /* chat open: the chat takes the window (spec 001: body.panel-open hides the office); the page must not overflow, and closing it draws the same office */
+      const before = await ctx.js(`[...document.querySelectorAll('#stage .ro-plate')].map(e=>{const r=e.getBoundingClientRect();return Math.round(r.x)+','+Math.round(r.y)}).join(';')`);
+      await ctx.js(`document.querySelector('#stage .ro-plate').click()`);
+      const open = await H.until(`document.body.classList.contains('panel-open')`, 8000);
+      const of = await ctx.js(`(()=>{const se=document.scrollingElement;return se.scrollWidth>innerWidth+1||se.scrollHeight>innerHeight+1})()`);
+      await ctx.js(`document.getElementById('backBtn').click()`);
+      const back = await H.until(`!document.body.classList.contains('panel-open')&&!!document.querySelector('#stage .ro .ro-plate')`, 8000);
+      await stable(tag + ' after the chat');
+      const after = await ctx.js(`[...document.querySelectorAll('#stage .ro-plate')].map(e=>{const r=e.getBoundingClientRect();return Math.round(r.x)+','+Math.round(r.y)}).join(';')`);
+      total++;
+      const P2 = [];
+      if (!open) P2.push('the chat did not open from a plate'); if (of) P2.push('the page overflows with the chat open'); if (!back) P2.push('the office did not come back');
+      if (before !== after) P2.push('the office moved after the chat was closed');
+      if (P2.length) { failed++; console.log(`FAIL ${tag} chat: ${P2.join('; ')}`); }
+      rows.push({ label: `${tag} chat open/closed`, d: 'real', h: '-', rooms: '-', plates: '-', desks: '-', stageH: 0, floorH: 0, minFont: '-', problems: P2.length });
+    }
+    console.log('\nlayout summary (Real office):');
+    rows.forEach((r) => console.log(`  ${r.problems ? 'FAIL' : 'ok  '} ${r.label.padEnd(60)} plates=${r.plates} minFont=${r.minFont}`));
+    console.log(`\noffice check (Real office): ${total - failed}/${total} checks passed, ${failed} failed`);
+    if (failed) { process.exitCode = 1; fs.writeFileSync(process.env.OFFICE_FAIL_MARKER || path.join(os.tmpdir(), 'durbar-office-check.fail'), String(failed)); }
+    return;
+  }
   for (const sim of SIMS) {
     for (const [w, h] of SIZES) {
       if (!mine()) continue;

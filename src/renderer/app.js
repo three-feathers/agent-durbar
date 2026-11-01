@@ -153,7 +153,10 @@ const floorsOnList=()=>floorsLive()?FLOORS.floors.filter(f=>f.on):[];
 const floorTagsOn=()=>floorsOnList().length>1;
 const floorRank=r=>{const f=floorById(r.floor);return f?FLOORS.floors.indexOf(f):0;};
 /* rooms in floor order; inside a floor, the order they were added (stable) */
-const roomsInOrder=()=>ROOMS.map((r,i)=>[r,i]).sort((x,y)=>floorRank(x[0])-floorRank(y[0])||x[1]-y[1]).map(p=>p[0]);
+/* issue 677 (spec 033 delta 2026-11-01): inside a floor, the saved manual order first (by folder path), then the rest in the order they were added. Sequencing only. */
+const RO=window.DurbarReorder;
+let ORDER=RO.empty();
+const roomsInOrder=()=>{const rk=new Map(ORDER.rooms.map((k,i)=>[k,i])),at=r=>rk.has(r.path)?rk.get(r.path):1e9;return ROOMS.map((r,i)=>[r,i]).sort((x,y)=>floorRank(x[0])-floorRank(y[0])||at(x[0])-at(y[0])||x[1]-y[1]).map(p=>p[0]);};
 const floorTag=r=>{if(!floorTagsOn())return '';const f=floorById(r.floor);return f?`<span class="floor-tag" title="Floor: ${esc(f.name)}">${esc(f.name)}</span>`:'';};
 /* spec 092 (floors as places, phase 1): with two or more floors on, the office shows one floor at a time. The current floor is a display
    preference of this window (FR-022: its id in localStorage, like the detail level); the rules live in floornav.js (pure). */
@@ -296,6 +299,7 @@ const SEEN_SERVERS=new Set(); /* MCP server names seen in tool events this run (
 let CUSTOM=[]; /* the user's own places [{id,name,icon}] (spec 024 FR-018), from the settings; changed only through setCustomPlaces */
 const customIds=()=>CUSTOM.map(p=>p.id);
 /* One name for a place everywhere it is shown (tile, card text, Settings options, toasts). A custom place shows the user's own text; callers escape it. */
+const reorderablePlace=id=>!window.DurbarPlaces.SPECIAL.includes(id)&&window.DurbarPlaces.allPlaces(CUSTOM).some(p=>p.id===id); /* issue 677: the Boss, coffee corner, Bank and Postbox stay where they are */
 const fixedPlace=id=>window.DurbarPlaces.IDS.includes(id)||window.DurbarPlaces.SPECIAL.includes(id); /* built-ins, coffee corner, Boss, Bank, Postbox: theme words */
 const placeLabel=id=>fixedPlace(id)?wordOf('place-'+id):window.DurbarPlaces.placeName(id,CUSTOM);
 /* spec 052 FR-013: a themed place name with its plain name, for tooltips and screen readers ("Cartridge Bay (Software library)") */
@@ -330,7 +334,7 @@ const lobbyArt=()=>{
 /* the lobby's tiles (spec 001 FR-039): the places with the Boss in the middle of the row, then the coffee corner (spec 068), the Bank and the
    Postbox (only where the app has schedules, not in the demo); the fixed tiles are never mapping choices */
 const postShown=()=>!!(bridge&&bridge.listSchedules)&&!demoOn;
-const lobbyPlaces=()=>{const D=window.DurbarPlaces,ps=D.allPlaces(CUSTOM),m=new Map(ps.map(p=>[p.id,p]));return D.lobbyOrder(ps.map(p=>p.id),postShown()).map(id=>m.get(id)||{id,name:''});};
+const lobbyPlaces=()=>{const D=window.DurbarPlaces,ps=RO.sortBy(D.allPlaces(CUSTOM),p=>p.id,ORDER.places),m=new Map(ps.map(p=>[p.id,p]));return D.lobbyOrder(ps.map(p=>p.id),postShown()).map(id=>m.get(id)||{id,name:''});}; /* issue 677: the places in the saved order; the Boss, coffee corner, Bank and Postbox keep their fixed spots */
 const lobbyOn=()=>!demoOn&&agents.some(a=>a.live&&!a.parent);
 const MAX_TILES=8, canAddPlace=()=>!!(bridge&&bridge.addPlace)&&window.DurbarPlaces.allPlaces(CUSTOM).length<MAX_TILES;
 /* who is at a place and visible under the current filters (a hidden room or a filtered-out agent has no figure) */
@@ -402,7 +406,7 @@ function lobbyHTML(aw){
     const more=sp.more?`<button class="pv pv-more" type="button" data-key="pv-more:${esc(p.id)}" data-placemore="${esc(p.id)}" aria-haspopup="menu" title="${sp.more} more here. Open the list." aria-label="${sp.more} more at ${esc(placeLabelFull(p.id))}: ${esc(ids.slice(sp.shown).map(id=>byId(id).name).join(', '))}"><span class="slot more" data-slot="${sp.shown}">+${sp.more}</span>${mode==='named'?'<span class="pv-t"><b class="pv-n">more</b></span>':''}</button>`:'';
     const wait=boss&&ids.length?bossWait(ids[0]):''; /* FR-034: the longest wait, in the header */
     const label=`${placeLabelFull(p.id)}: ${who.length?who.join(cf||bank?', ':'; '):'nobody'}${wait?'. Longest wait '+wait:''}`; /* the accessible name: everyone there, in full (the title is placeTip) */
-    return `<div class="place${ids.length?' busy':''}${cf?' coffee':''}${boss?' boss':''}${bank?' bank':''}${named?'':' unnamed'}${box||named?'':' compact'}"${sty} data-key="place:${p.id}" data-place="${p.id}" data-chips="${mode}" tabindex="-1" role="group" title="${esc(placeTip(p.id,ids,wait))}" aria-label="${esc(label)}"><span class="plh">${placeIcon(p)}${named?`<span class="pn">${esc(placeLabel(p.id))}</span>`:''}${wait&&(!boss||box.wait)?`<span class="bw" aria-hidden="true">${esc(wait)}</span>`:''}${ids.length&&(box||named)?`<span class="pc" aria-hidden="true">${ids.length}</span>`:''}</span><span class="prow" aria-hidden="${ids.length?'false':'true'}">${ids.length?chips+more:'<span class="pv-none">nobody</span>'}</span></div>`;
+    return `<div class="place${ids.length?' busy':''}${cf?' coffee':''}${boss?' boss':''}${bank?' bank':''}${named?'':' unnamed'}${box||named?'':' compact'}"${sty} data-key="place:${p.id}" data-place="${p.id}"${reorderablePlace(p.id)?' data-reo="1"':''} data-chips="${mode}" tabindex="-1" role="group" title="${esc(placeTip(p.id,ids,wait))}" aria-label="${esc(label)}"><span class="plh">${placeIcon(p)}${named?`<span class="pn">${esc(placeLabel(p.id))}</span>`:''}${wait&&(!boss||box.wait)?`<span class="bw" aria-hidden="true">${esc(wait)}</span>`:''}${ids.length&&(box||named)?`<span class="pc" aria-hidden="true">${ids.length}</span>`:''}</span><span class="prow" aria-hidden="${ids.length?'false':'true'}">${ids.length?chips+more:'<span class="pv-none">nobody</span>'}</span></div>`;
   }).join('')}${add?'<button class="place-add" type="button" data-key="place-add" title="Add a place" aria-label="Add a place">+</button>':''}${lobbyArt()}</section>`;
 }
 /* spec 001 FR-038: the Postbox: the next three scheduled runs, the letters still due today, a flag for a missed or failed last run. A button:
@@ -1178,10 +1182,11 @@ function officeModel(ignoreStatus){
   roomsInOrder().forEach(r=>{
     if(!roomShown(r)||!onScreen(r)||(ui.ws!=='all'&&ui.ws!==r.id))return;
     const plan=shutPlan(r); /* spec 001 FR-051: from the whole room, not the status filter */
-    const shown=agents.filter(a=>!a.parent&&a.room===r.id&&(ignoreStatus||matchStatus(a)));
+    let shown=agents.filter(a=>!a.parent&&a.room===r.id&&(ignoreStatus||matchStatus(a)));
     if(!shown.length)return;
     const key=a=>Math.min(prio(a),...helpersOf(a).map(prio));
     shown.sort((x,y)=>key(x)-key(y));
+    if(ORDER.desks[r.path])shown=RO.sortBy(shown,a=>a.id,ORDER.desks[r.path]); /* issue 677: the desks the user put in order come first, in that order */
     const mains=shown.filter(a=>!plan.has(a.id)), rolled=shown.filter(a=>plan.has(a.id)).map(a=>({a,k:plan.get(a.id)}));
     rooms.push({r,mains,rolled,all:agents.filter(a=>wsOf(a)===r.id)});
   });
@@ -1234,7 +1239,14 @@ const signsOn=()=>!!(window.DurbarRoom&&window.DurbarRoom.doorSign)&&SIGN_PREF;
    (a failed open, a stopped Send all, a restart) keeps its cabin and button, so it can always be opened. */
 async function setSignsOn(on){
   on=!!on;
-  if(!on&&SIGN_PREF&&bridge&&bridge.setDoor){
+  if(!on&&SIGN_PREF&&!(await openDoorsFirst('open')))return false;
+  SIGN_PREF=on;try{localStorage.setItem('durbar.doorsigns',SIGN_PREF?'on':'off');}catch(e){}layoutKey='';scheduleRender();
+  return true;
+}
+/* FR-027, and spec 097 FR-004: leaving the cabins for an office without doors (Open office or Real office) asks first when a door you
+   closed is shut or holds prompts, then opens those doors; false when the user keeps the cabins or a door could not be opened */
+async function openDoorsFirst(to){
+  if(bridge&&bridge.setDoor){
     const mine=agents.filter(a=>!a.parent&&(doorOf(a).closed||doorOf(a).held));
     if(mine.length){
       const held=mine.reduce((n,a)=>n+doorOf(a).held,0), shut=mine.filter(a=>doorOf(a).closed).length;
@@ -1242,7 +1254,7 @@ async function setSignsOn(on){
         body:'An open office has no doors. '+(shut?(shut===1?'1 door you closed is opened':shut+' doors you closed are opened')+' first'+(held?', and ':'.'):'')+(held?(held===1?'1 prompt is':held+' prompts are')+' held there: send them (in order, through the schedules) or discard them.':''),
         lines:mine.slice(0,8).map(a=>a.name+(doorOf(a).closed?' · door closed':'')+(doorOf(a).held?' · '+doorOf(a).held+' held':'')).concat(mine.length>8?['and '+(mine.length-8)+' more']:[]),
         buttons:[{label:'Keep cabins',value:null},...(held?[{label:'Discard',value:'discard'},{label:'Send all ('+held+')',value:'send'}]:[{label:'Open the doors',value:'open',cls:'primary'}])],
-        returnFocus:()=>document.querySelector('[data-officelayout="open"]')});
+        returnFocus:()=>document.querySelector(`[data-officelayout="${to}"]`)});
       if(!v||!v.value)return false;
       for(const a of mine){
         const d=doorOf(a);
@@ -1251,11 +1263,10 @@ async function setSignsOn(on){
           if(!r||!r.ok){toast('Could not open the door of '+esc(a.name)+', so the office keeps its cabins.',5200).classList.add('err');scheduleRender();return false;}
           DOORS[a.id]={closed:false,held:r.held||0};doorRemoteOff.delete(a.id);
         }
-        if(doorOf(a).held&&v.value!=='open')await sendOrDiscard(a,v.value,doorOf(a).held);
+        if(doorOf(a).held&&v.value!=='open'&&!(await sendOrDiscard(a,v.value,doorOf(a).held))){scheduleRender();return false;} /* a release that failed keeps the held prompts (and their door control): the office does not switch */
       }
     }
   }
-  SIGN_PREF=on;try{localStorage.setItem('durbar.doorsigns',SIGN_PREF?'on':'off');}catch(e){}layoutKey='';scheduleRender();
   return true;
 }
 /* FR-027: a door the user closed, or one still holding prompts, stays visible (cabin, sign and button) in an open office */
@@ -1359,8 +1370,9 @@ async function askHeld(a,btn,closed){
 }
 async function sendOrDiscard(a,how,n){
   const q=await bridge.releaseHeld(a.id,how).catch(()=>null);
-  if(!q||!q.ok){toast('The held prompts are still there: '+esc((q&&q.error)||'could not '+how+' them')+'.',5200).classList.add('err');return;}
+  if(!q||!q.ok){toast('The held prompts are still there: '+esc((q&&q.error)||'could not '+how+' them')+'.',5200).classList.add('err');return false;}
   toast(esc(a.name)+': '+(how==='send'?(n===1?'the held prompt goes out when '+esc(a.name)+' is free.':'the '+n+' held prompts go out one by one.'):(n===1?'1 held prompt discarded.':n+' held prompts discarded.')),4200);
+  return true;
 }
 async function closeDoor(a){
   const r=await bridge.setDoor(a.id,true).catch(()=>null);
@@ -1643,6 +1655,140 @@ const EMPTY_DESK='<svg class="empty-desk" viewBox="0 0 120 72" aria-hidden="true
    It waits 600ms and checks the card is still there, so a start that loads agents a moment later does not ring. */
 function ringFolder(){if(reducedMotion())return;setTimeout(()=>{const b=$('addFolder'),st=$('stage');if(!b||!st||!st.querySelector('.welcome')||!b.getClientRects().length)return;
   b.classList.remove('ring-once');void b.offsetWidth;b.classList.add('ring-once');setTimeout(()=>b.classList.remove('ring-once'),1600);},600);}
+/* ---------------- Real office (spec 097 phase P1) ----------------
+   A second renderer of the same office model (D1): Settings > Office layout > Real office (FR-001), kept in localStorage
+   `durbar.officeview` (FR-003; any other value or a storage error is flat, the default). Its script, CSS, pure modules and art load
+   only on first use (FR-061): flat mode never requests them. `durbar.doorsigns` is untouched, so leaving Real office restores the
+   cabins or open choice. */
+let OFFICE_VIEW=(()=>{try{return localStorage.getItem('durbar.officeview')==='real'?'real':'flat';}catch(e){return 'flat';}})();
+if(qs.has('sim')&&/^(real|flat)$/.test(qs.get('officeview')||''))OFFICE_VIEW=qs.get('officeview'); /* drivers: the simulator only */
+const officeView=()=>OFFICE_VIEW;
+/* spec 097 FR-100, FR-113 (owner 2026-10-31 10:46: the top bar and menus follow the Real office look): while Real office is shown, its
+   world's token set (today the photo world for every Characters value, until the crew worlds ship) paints the whole chrome; flat, or a
+   Real office that failed to load, gives the user's theme back (theme.js setWorld) */
+const syncWorld=()=>{
+  const on=OFFICE_VIEW==='real'&&RO_LOAD!=='failed';
+  if(on&&!document.getElementById('roWorldCss')){const l=document.createElement('link');l.id='roWorldCss';l.rel='stylesheet';l.href='realoffice-world.css';document.head.appendChild(l);} /* its rules, also in the List view (FR-061: only once Real office is chosen) */
+  if(THEME&&THEME.setWorld)THEME.setWorld(on?roPeople().world:null); /* html[data-world] is the shown world's id (spec 101 FR-033 reads it) */
+};
+/* FR-004: from the cabins, the same "Switch to an open office?" question as Open office; false when the user keeps the cabins */
+async function setOfficeView(v){
+  v=v==='real'?'real':'flat';
+  if(v===OFFICE_VIEW)return true;
+  if(v==='real'&&signsOn()&&!(await openDoorsFirst('real')))return false;
+  OFFICE_VIEW=v;try{localStorage.setItem('durbar.officeview',v);}catch(e){}
+  syncWorld();layoutKey='';scheduleRender();return true;
+}
+/* spec 097 FR-084 (owners 2026-10-31): the Characters setting applies in Real office too; a set without Real office pictures (today
+   every crew) shows the Office people, and Settings says so until that crew's world ships (FR-083, FR-100, FR-114) */
+/* spec 102 FR-200..FR-202 (owner's latest; replaces 097 FR-100/FR-114's "crews pick their world"): worlds and character sets are two flat
+   lists in crew.js, any set in any world. The World choice is kept in localStorage `durbar.world` (a bad or unoffered value is the first
+   world); `[KNOWN GAP]` spec 102 FR-201 keeps it in durbar-settings.json through main, which needs an IPC channel and is not built yet.
+   A pack that failed to load is skipped: the first world and Office people, which always ship. */
+let RO_WORLD=(()=>{try{return localStorage.getItem('durbar.world')||'';}catch(e){return '';}})();
+if(qs.has('sim')&&CREW&&CREW.WORLD_FLAGS){ /* drivers: the simulator only; switches a flagged world on and picks a world */
+  for(const f of (qs.get('worldflags')||'').split(',').filter(Boolean))if(Object.prototype.hasOwnProperty.call(CREW.WORLD_FLAGS,f))CREW.WORLD_FLAGS[f]=true;
+  if(qs.get('world'))RO_WORLD=qs.get('world');
+}
+const PACKS={}; /* 'worlds/<id>' or 'sets/<id>' -> 'loading' | 'ready' | 'failed' (spec 097 FR-115, spec 102 FR-205: only the shown ones load) */
+const roPeople=()=>{
+  if(!CREW||!CREW.peopleFor)return {world:'photo',set:'office',setName:'Office people',note:''};
+  let r=CREW.peopleFor(RO_WORLD,crewChoice());
+  if(PACKS['worlds/'+r.world]==='failed'||PACKS['sets/'+r.set]==='failed'){
+    const w=PACKS['worlds/'+r.world]==='failed'?CREW.WORLDS[0].id:r.world;
+    r=CREW.peopleFor(w,PACKS['sets/'+r.set]==='failed'?'':crewChoice()); if(PACKS['sets/'+r.set]==='failed')r={world:r.world,set:CREW.REAL_SETS[0].id,setName:CREW.REAL_SETS[0].name,note:''};
+  }
+  return r;
+};
+const roWorlds=()=>CREW&&CREW.offeredWorlds?CREW.offeredWorlds().map(w=>({id:w.id,name:w.name})):[];
+function setRoWorld(id){
+  id=CREW&&CREW.parseWorld?CREW.parseWorld(id):'photo';
+  RO_WORLD=id;try{localStorage.setItem('durbar.world',id);}catch(e){}
+  syncWorld();layoutKey='';if(OFFICE_VIEW==='real')scheduleRender();return id;
+}
+/* loads one pack's script (and its stylesheet when world.json names one) the first time it is shown */
+function ensurePack(kind,id){
+  const key=kind+'/'+id;
+  if(PACKS[key])return PACKS[key]==='ready';
+  PACKS[key]='loading';
+  const sc=document.createElement('script');sc.src='realoffice/'+kind+'/'+id+'/'+(kind==='worlds'?'world':'set')+'.js';
+  sc.onload=()=>{
+    const g=window[kind==='worlds'?'DurbarRealOfficeWorlds':'DurbarRealOfficeSets'], m=g&&g[id];
+    if(!m){PACKS[key]='failed';}else{
+      PACKS[key]='ready';
+      if(kind==='worlds'&&typeof m.css==='string'&&/^[\w.-]+\.css$/.test(m.css)&&!document.getElementById('roWorldCss-'+id)){const l=document.createElement('link');l.id='roWorldCss-'+id;l.rel='stylesheet';l.href='realoffice/worlds/'+id+'/'+m.css;document.head.appendChild(l);}
+    }
+    syncWorld();layoutKey='';scheduleRender();};
+  sc.onerror=()=>{PACKS[key]='failed';syncWorld();layoutKey='';scheduleRender();};
+  document.body.appendChild(sc);
+  return false;
+}
+let RO_LOAD=''; /* '', 'loading', 'ready', 'failed' */
+syncWorld();
+function loadRealOffice(){
+  if(RO_LOAD)return;
+  RO_LOAD='loading';
+  const css=document.createElement('link');css.rel='stylesheet';css.href='realoffice.css';document.head.appendChild(css);
+  const files=['../shared/lights.js','../shared/realoffice-layout.js','realoffice.js']; /* the pure modules write to window.exports (exports-shim.js) */
+  const next=i=>{
+    if(i>=files.length){RO_LOAD=window.DurbarRealOffice&&window.exports&&window.exports.realLayout?'ready':'failed';if(RO_LOAD==='failed')roFailed();layoutKey='';scheduleRender();return;}
+    const sc=document.createElement('script');sc.src=files[i];sc.onload=()=>next(i+1);sc.onerror=()=>{RO_LOAD='failed';roFailed();layoutKey='';scheduleRender();};
+    document.body.appendChild(sc);
+  };
+  next(0);
+}
+function roFailed(){syncWorld();toast('The Real office could not be loaded, so the office is shown flat.',5200).classList.add('err');}
+/* the plain model Real office draws (no markup but the places' own icons): every text is already masked (deskMask = DurbarSafeText) */
+function realModel(model){
+  const D=window.DurbarPlaces, E=window.exports;
+  const stOf=(a,asleep)=>E.lightState(isFailing(a)?'failing':isRetrying(a)?'retrying':isCompacting(a)?'compacting':vis(a),{limit:!!a.limit,paused:!!a.paused,asleep:!!asleep});
+  const folders=model.map(m=>{
+    const r=m.r, old=new Set((m.rolled||[]).filter(x=>x.k==='old').map(x=>x.a.id)); /* Q5: an agent asleep in a nap bed keeps a narrow desk, lamp and screen off */
+    const list=m.mains.concat((m.rolled||[]).map(x=>x.a));
+    const counts=['waiting','error','working','done','idle'].map(k=>{const n=m.all.filter(a=>!a.parent&&(k==='working'?(vis(a)==='working'||vis(a)==='thinking'):vis(a)===k)).length;return {state:k,n,word:LABELS[k].toLowerCase()};}).filter(c=>c.n);
+    const u=SIM_QUIET_HEADS.has('aiu')?null:roomAiu(r);
+    return {id:r.id,name:r.name,path:deskMask(showPath(r.path)),cost:u?u.long:'',counts,newSess:!!(bridge&&bridge.newSession&&anyKindReady()&&!demoOn),menu:!!(bridge&&bridge.removeFolder&&!demoOn),
+      agents:list.map(a=>{const v=VISITS.at(a.id),st=stOf(a,old.has(a.id)),task=deskMask(taskOf(a)),place=v?placeLabel(v.place):'',needs=st==='waiting'||st==='limit';
+        return {id:a.id,name:a.name,role:a.role,state:st,word:stWord(a),task,tip:deskTip(a),selected:ui.selected===a.id,away:v?v.place:null,awayLabel:place,
+          label:[a.name,a.role,stWord(a)].concat(task?[task]:[],needs?['needs you']:[],place?['at '+place]:[]).join(', ')+'. Open chat panel.', /* FR-090: text for setAttribute, not markup */
+          helpers:helpersOf(a).map(h=>stOf(h,false))};})};
+  });
+  const places=lobbyPlaces().map(p=>{
+    const ids=p.id===D.POSTBOX?[]:placeVisitors(p.id), custom=CUSTOM.some(q=>q.id===p.id);
+    const wait=p.id===D.BOSS&&ids.length?bossWait(ids[0]):'';
+    return {id:p.id,label:placeLabel(p.id),custom,icon:custom?placeIcon(p):'',post:p.id===D.POSTBOX,go:p.id===D.BOSS||p.id===D.BANK||p.id===D.COFFEE,
+      title:p.id===D.POSTBOX?placeLabelFull(p.id)+': the next scheduled runs. Open Settings > Schedules.':placeTip(p.id,ids,wait),
+      visitors:ids.map(id=>{const a=byId(id),v=VISITS.at(id);return {id,name:a.name,needsYou:vis(a)==='waiting'||!!a.limit,title:visitorWords(a,v,true)};})};
+  });
+  return {folders,places,alertIcon:signIcon('alert'),sessions:agents.filter(a=>!a.parent).map(a=>({id:a.id,folder:a.room}))};
+}
+let RO_LAST=null; /* the last layout, for the drivers (window.__durbarSimUi.realLayout) */
+function renderReal(stage,floor,aw,ah,model){
+  if(RO_LOAD!=='ready'){
+    loadRealOffice();
+    if(RO_LOAD==='failed')return false;
+    if(stage.dataset.d!=='real-wait'){stage.dataset.d='real-wait';stage.style.width=aw+'px';stage.style.height='auto';stage.innerHTML='<div class="empty">Opening the Real office…</div>';}
+    return true;
+  }
+  /* the shown world's and set's packs (a switch keeps the old picture until the new pack is there) */
+  const pp=roPeople(), packsReady=[ensurePack('worlds',pp.world),ensurePack('sets',pp.set)].every(Boolean);
+  if(!packsReady){
+    const failed=['worlds/'+pp.world,'sets/'+pp.set].some(k=>PACKS[k]==='failed');
+    if(!failed){
+      if(stage.dataset.d!=='real'&&stage.dataset.d!=='real-wait'){stage.dataset.d='real-wait';stage.style.width=aw+'px';stage.style.height='auto';stage.innerHTML='<div class="empty">Opening the Real office…</div>';}
+      return true;
+    }
+    if((pp.world===CREW.WORLDS[0].id&&PACKS['worlds/'+pp.world]==='failed')||(pp.set===CREW.REAL_SETS[0].id&&PACKS['sets/'+pp.set]==='failed')){RO_LOAD='failed';roFailed();return false;} /* the first world or Office people cannot load: flat */
+    return renderReal(stage,floor,aw,ah,model); /* roPeople() now names the first world and Office people */
+  }
+  if(stage.dataset.d!=='real'){stage.dataset.d='real';stage.textContent='';}
+  layoutKey='';GROW=0;setGrow(stage,0);spreadOffice(stage,false);stagePrev=null;
+  RO_LAST=window.DurbarRealOffice.render(stage,realModel(model),{w:aw,h:ah},{still:REDUCED||SERIOUS,world:pp.world,set:pp.set,remember:rememberOn(),
+    rand:CREW&&(SIM||!rememberOn())?CREW.seededRand:Math.random,onArt:()=>scheduleRender()});
+  stage.style.width=aw+'px';stage.style.height=RO_LAST.height+'px';
+  stage.dataset.fit=RO_LAST.scroll?'scroll':'ok';floor.classList.toggle('scrolls',!!RO_LAST.scroll);
+  return true;
+}
 function renderOffice(){
   if(ui.view!=='office')return;
   const floor=$('floor'), stage=$('stage');
@@ -1670,6 +1816,7 @@ function renderOffice(){
     stage.innerHTML='<div class="empty">'+EMPTY_DESK+(!agents.length&&!demoOn?'No agents yet. Use "+ Folder" at the top left to add a folder'+(SIMPLE?'.':' (or "+ Workspace" for a VS Code .code-workspace file).'):(agents.length&&ROOMS.every(r=>r.hidden)?'All folders are hidden. Open Manage folders (next to the folder filter) to show them again.':agents.length&&floorsLive()&&!floorsOnList().length?(FLOORS.floors.length>1?'All floors are off. Open "Floors" above or Settings > Floors to switch one on.':'Your only floor is off. Switch it on in Settings > Floors.'):agents.length&&ROOMS.every(r=>!roomShown(r))?('Nothing to show: every folder is hidden or on a floor that is off. Open '+(floorsLive()&&FLOORS.floors.length>1?(SIMPLE?'"Floors" above, or ':'"Floors" or "Folders" above, or '):(SIMPLE?'':'"Folders" above, or '))+'Settings > Floors.'):'No agents match these filters.'))+'</div>';
     floor.classList.remove('scrolls'); return;
   }
+  if(officeView()==='real'&&renderReal(stage,floor,aw,ah,model))return; /* spec 097: Real office draws the same model; flat below is unchanged */
   /* Density is chosen from the unfiltered set so cards do not change shape when a status pill filters. */
   const sizing=lastSizing=sizingModel(model); /* what chooseLayout is given (the hook below reads it) */
   const key=JSON.stringify([aw,ah,FORCE_DENSITY,liveOn(),THEME.themeIdForCache(),lobbyOn(),floorTagsOn()&&floorsOnList().map(f=>f.id+':'+f.name),curFloorId(),allFloorsView(),sizing.map(m=>m.r.closed?[m.r.id,'closed']:[m.r.id,m.mains.map(a=>[a.id,helpersOf(a).length,!!ui.expanded[a.id]]),(m.rolled||[]).map(x=>[x.a.id,x.k]),!!ui.expanded['shut:'+m.r.id]])]);
@@ -1858,7 +2005,9 @@ function renderList(){
 document.addEventListener('click',e=>{const b=e.target.closest('#list [data-lsort]');if(!b)return;
   LSORT=ACT.nextSort(LSORT,b.dataset.lsort);renderList();const n=document.querySelector(`#list [data-lsort="${CSS.escape(b.dataset.lsort)}"]`);if(n)focusIn(n);});
 
+let REO_LATE=false;
 function renderAll(){
+  if(RO.busy()){REO_LATE=true;return;} /* issue 677: no repaint under a drag in progress; it comes when the drag ends */
   syncChatNos(); /* spec 074 FR-011 */
   if(CREW_FOR)syncCrew(); /* spec 077: a closed session frees its character even when no desk is drawn (the last one) */
   AMB_ID=pickAmbulanceId();
@@ -3041,7 +3190,7 @@ function nsClosed(){
 /* the screen's body: the tools once, the list on every change (so the search field keeps its focus and text) */
 function nsRender(focus){
   const h=$('nsHost'); if(!h)return;
-  h.innerHTML=`<section class="scr-sec ns-sec" aria-label="${esc('Notes of '+NS.name)}"><div class="ns-tools"><input class="nt-find" id="nsSearch" type="search" placeholder="Search notes" aria-label="Search notes" autocomplete="off" spellcheck="false"><button class="btn sm primary" id="nsAdd" type="button">+ Note</button></div><div id="nsFile" class="ns-file"></div><div id="nsList"></div></section>`;
+  h.innerHTML=`<section class="scr-sec ns-sec" aria-label="${esc('Notes of '+NS.name)}"><div class="ns-tools"><input class="nt-find" id="nsSearch" type="search" placeholder="Search notes" aria-label="Search notes" autocomplete="off" spellcheck="false"><button class="btn sm primary" id="nsAdd" type="button">+ Note</button><button class="btn sm" id="nsExport" type="button" title="Save every note of this folder, done ones included, as a Markdown file">Export…</button><button class="btn sm danger" id="nsDelAll" type="button">Delete all…</button></div><div id="nsFile" class="ns-file"></div><div id="nsList"></div></section>`;
   wireNotesScreen(h);
   nsPaint();
 }
@@ -3068,6 +3217,10 @@ function nsPaint(){
   const d=$('nsDone'); if(d)d.addEventListener('toggle',()=>{NS.doneOpen=d.open;});
   ntFocusBack(list,fm);
   const add=$('nsAdd'); if(add)add.disabled=!a||!notesOn(a)||!st.ok||!!st.readOnly;
+  /* spec 083 T034b: Export… needs notes (an unreadable folder has none to give), Delete all… notes it can change */
+  const none=!a||!notesOn(a)||!st.ok||!st.notes.length, ex=$('nsExport'), da=$('nsDelAll');
+  if(ex){ex.disabled=none||!bridge.notesExport;}
+  if(da){da.disabled=none||!!st.readOnly||!bridge.notesDeleteAll;}
   nsFilePaint(a,st);
 }
 /* ---- the project-file switch (spec 083 T042, FR-050, FR-055) ----
@@ -3137,6 +3290,36 @@ async function nsFileOff(a,btn){
   if(!r||!r.ok){nsFileSay((r&&r.error)||'Could not turn it off.');return;}
   nsFileSay(r.demo?(r.message||'Demo: no file written'):(r.message||'Durbar stopped writing .durbar/notes.md.'));
 }
+/* ---- Export… and Delete all… (spec 083 T034b, FR-048) ----
+   Export: main shows the system save dialog and writes the file (the window sends only the chat's id, never a path). Delete all: the
+   window asks with the count (Cancel focused), then main asks again natively (a dialog the page cannot answer) and keeps tombstones. */
+let nsBusy=false;
+async function nsExport(a,btn){
+  if(nsBusy||!bridge.notesExport)return;
+  nsBusy=true;
+  let r=null;try{r=await bridge.notesExport(liveRoot(a).id);}catch(e){r=null;}
+  finally{nsBusy=false;}
+  if(r&&!r.ok&&r.cancelled){focusIn($('nsExport')||btn);return;}
+  if(!r||!r.ok){toast(esc((r&&r.error)||'Could not export the notes.'),5000).classList.add('err');focusIn($('nsExport')||btn);return;}
+  const t=r.demo?(r.message||'Demo: nothing written'):'Exported '+r.count+(r.count===1?' note':' notes')+' to '+r.name+'.';
+  toast(esc(t),4000).classList.add('ok');announce(t);focusIn($('nsExport')||btn);
+}
+async function nsDeleteAll(a,btn){
+  if(nsBusy||!bridge.notesDeleteAll)return;
+  const st=notesOf(a), n=st&&st.ok?st.notes.length:0; if(!n)return;
+  const lines=['Durbar remembers the last 300 deleted notes, so they don\'t come back from an older copy.'];
+  if(st.fileSwitch&&st.fileSwitch.on)lines.push('.durbar/notes.md is written again without them.');
+  const v=await askDialog({title:'Delete all notes?',body:'Delete all '+(n===1?'1 note':n+' notes')+' of '+NS.name+', done ones included? This cannot be undone.',lines,size:'m',returnFocus:()=>$('nsDelAll')||btn,
+    buttons:[{label:'Cancel',value:null},{label:'Delete all',value:'ok',cls:'primary danger'}]});
+  if(!v||v.value!=='ok')return;
+  nsBusy=true;
+  let r=null;try{r=await bridge.notesDeleteAll(liveRoot(a).id);}catch(e){r=null;}
+  finally{nsBusy=false;}
+  await notesFetch(a);
+  if(!r||!r.ok){toast(esc((r&&r.error)||'Could not delete the notes.'),5000).classList.add('err');focusIn($('nsDelAll')&&!$('nsDelAll').disabled?$('nsDelAll'):$('nsSearch'));return;}
+  const c=typeof r.count==='number'?r.count:n, t=(c===1?'1 note':c+' notes')+' deleted.';
+  toast(esc(t),3200).classList.add('ok');announce(t);focusIn($('nsSearch')||$('nsAdd'));
+}
 /* the rows the keyboard can reach: a folded Done group's rows are not shown */
 function nsVisibleRows(){return [...document.querySelectorAll('#nsList .nt-row')].filter(r=>!r.closest('details:not([open])'));} /* a closed <details> keeps its rows' boxes in Chromium: test the fold, not the boxes */
 function nsFocusRow(id){
@@ -3148,6 +3331,8 @@ function wireNotesScreen(h){
   h.addEventListener('click',e=>{
     const a=byId(NS.id); if(!a)return;
     if(e.target.closest('#nsAdd')){addNoteUi(a,$('nsAdd'));return;}
+    const exb=e.target.closest('#nsExport'); if(exb){if(!exb.disabled)nsExport(a,exb);return;}
+    const dab=e.target.closest('#nsDelAll'); if(dab){if(!dab.disabled)nsDeleteAll(a,dab);return;}
     const fsw=e.target.closest('#nsFileSw'); if(fsw){if(!fsw.disabled)nsFileToggle(a,fsw);return;}
     const b=e.target.closest('[data-nt]'); if(!b)return;
     if(b.dataset.nt==='startover'){startOverNotes(a,b);return;}
@@ -3461,6 +3646,87 @@ document.addEventListener('click',e=>{
   const ns=e.target.closest('[data-newsess]'); if(ns){const r=ROOMS.find(x=>x.id===ns.dataset.newsess),ag=r&&agents.find(x=>!x.parent&&x.room===r.id);if(ag)newSession(ag);return;}
   const t=e.target.closest('[data-id]'); if(t&&!t.closest('#panel')){openPanel(t.dataset.id,true);} /* spec 074 FR-019: mouse or keyboard, desk or list row */
 });
+
+/* ---- issue 677 (spec 033 delta 2026-11-01): rearrange rooms, desks and places by drag and by keyboard. Order is sequencing only: the layout
+   stays automatic. Mouse: press and drag a room's header, a desk or a place tile. Keyboard: Alt+arrows move the focused desk or place,
+   Alt+Shift+arrows the room of the focused element; the folder menu has Move earlier / Move later for rooms. ---- */
+function roomOfEl(el){const k=(el.getAttribute('data-key')||'').replace(/^room:/,'');return ROOMS.find(r=>r.id===k)||null;}
+const REO_KEY={room:el=>{const r=roomOfEl(el);return r?r.path:'';},desk:el=>el.dataset.id||(el.querySelector('.desk[data-id]')||{dataset:{}}).dataset.id||'',place:el=>el.dataset.place||''};
+const reoStage=()=>$('stage');
+function reoGroup(kind,el){
+  const st=reoStage();if(!st)return [el];
+  if(kind==='room'){const r=roomOfEl(el),f=r&&r.floor;return [...st.querySelectorAll('.room')].filter(x=>{const q=roomOfEl(x);return q&&q.floor===f;});}
+  if(kind==='desk')return [...el.parentElement.children].filter(c=>c.classList&&c.classList.contains('unit'));
+  return [...st.querySelectorAll('.lobby .place[data-reo]')];
+}
+/* the whole group in its shown order (also what the status filter hides), as keys: the base for a move */
+function reoFull(kind,el){
+  if(kind==='room'){const r=roomOfEl(el);return roomsInOrder().filter(x=>x.floor===r.floor).map(x=>x.path);}
+  if(kind==='desk'){const r=roomOfEl(el.closest('.room')),key=a=>Math.min(prio(a),...helpersOf(a).map(prio));
+    const l=agents.filter(a=>!a.parent&&a.room===r.id).sort((x,y)=>key(x)-key(y));return RO.sortBy(l,a=>a.id,ORDER.desks[r.path]).map(a=>a.id);}
+  return RO.sortBy(window.DurbarPlaces.allPlaces(CUSTOM),p=>p.id,ORDER.places).map(p=>p.id);
+}
+async function saveOrder(){
+  ORDER=RO.sanitize(ORDER);
+  if(!bridge||!bridge.setOrder)return; /* the demo keeps the order until the page is reloaded */
+  try{const d=await bridge.setOrder(ORDER);if(!d)throw new Error('no answer');}
+  catch(e){toast('The new order could not be saved. It stays until you close the app.',5000);}
+}
+function reoCommit(kind,el,els,from,to){
+  const key=REO_KEY[kind](el),target=REO_KEY[kind](els[to]),full=reoFull(kind,el),next=RO.moveTo(full,key,target,to>from);
+  if(kind==='room'){ORDER.rooms=RO.merge(ORDER.rooms,next,RO.MAX_ROOMS);}
+  else if(kind==='desk'){const r=roomOfEl(el.closest('.room'));ORDER.desks={[r.path]:next.slice(0,RO.MAX_DESKS),...Object.fromEntries(Object.entries(ORDER.desks).filter(([k])=>k!==r.path))};}
+  else ORDER.places=RO.merge(ORDER.places,next,RO.MAX_PLACES);
+  saveOrder();
+}
+const reoName=(kind,el)=>kind==='room'?(roomOfEl(el)||{name:'Folder'}).name:kind==='desk'?((byId(REO_KEY.desk(el))||{name:'Desk'}).name):placeLabel(el.dataset.place);
+function reoSay(kind,el,els,to){
+  const where=kind==='desk'?'its room':kind==='room'?'':'the lobby';
+  announce(RO.announce(reoName(kind,el),to+1,els.length,where));
+}
+/* one step by keyboard (or the menu): `el` swaps with its neighbour; false when it is already at that end */
+function reoStep(kind,el,delta){
+  const els=reoGroup(kind,el),i=els.indexOf(el),j=i+delta;
+  if(i<0||els.length<2)return false;
+  if(j<0||j>=els.length){announce((reoName(kind,el)+' is already '+(delta<0?'first':'last')+'.'));return false;}
+  const keyOf=REO_KEY[kind](el);
+  reoCommit(kind,el,els,i,j);
+  renderAll(); /* now, so the focus can go back to the moved element */
+  const sel=kind==='room'?`.room[data-key="room:${CSS.escape(roomOfEl(el)?roomOfEl(el).id:'')}"]`:kind==='desk'?`.desk[data-id="${CSS.escape(keyOf)}"]`:`.place[data-place="${CSS.escape(keyOf)}"]`;
+  const moved=document.querySelector('#stage '+sel);
+  if(moved){if(kind==='room'){if(!moved.contains(document.activeElement)){const b=moved.querySelector('.room-more,.room-new,.desk[data-id]');if(b)b.focus({preventScroll:true});}}else{if(!moved.hasAttribute('tabindex')&&moved.tagName!=='BUTTON')moved.setAttribute('tabindex','-1');moved.focus({preventScroll:true});}
+    const node=kind==='desk'?moved.closest('.unit'):moved,now=reoGroup(kind,node);reoSay(kind,node,now,now.indexOf(node));}
+  return true;
+}
+function resetOrder(){
+  if(RO.isEmpty(ORDER))return;
+  ORDER=RO.empty();saveOrder();renderAll();announce('Office order reset to automatic.');
+}
+(function(){
+  const st=reoStage();if(!st||!RO)return;
+  const inHelpers=t=>!!t.closest('.helpers,.shuttered,.desk.shut');
+  RO.attach(st,[
+    {kind:'desk',item:t=>{const d=t.closest('.desk[data-id]');return d&&!inHelpers(d)?d.closest('.unit'):null;},group:el=>reoGroup('desk',el),key:REO_KEY.desk},
+    {kind:'place',item:t=>{const p=t.closest('.place[data-reo]');return p&&!t.closest('button')?p:null;},group:el=>reoGroup('place',el),key:REO_KEY.place},
+    {kind:'room',item:t=>{const h=t.closest('.room-head');return h&&!t.closest('button,a,input,.room-aiu')?h.closest('.room'):null;},group:el=>reoGroup('room',el),key:REO_KEY.room}
+  ],{
+    disabled:()=>ui.view!=='office'||modalOpen()||!!document.getElementById('modeMenu'),
+    commit:reoCommit,
+    end:()=>{if(REO_LATE){REO_LATE=false;}renderAll();}
+  });
+  document.addEventListener('keydown',e=>{
+    if(!e.altKey||e.ctrlKey||e.metaKey||e.isComposing||e.defaultPrevented||ui.view!=='office'||modalOpen())return;
+    const d={ArrowLeft:-1,ArrowUp:-1,ArrowRight:1,ArrowDown:1}[e.key];
+    if(!d||!e.target||!e.target.closest||!e.target.closest('#stage')||e.target.closest('input,textarea,select,[contenteditable="true"]'))return;
+    let kind='',el=null;
+    if(e.shiftKey){el=e.target.closest('.room');kind='room';}
+    else if((el=e.target.closest('.place[data-reo]')))kind='place';
+    else{const dk=e.target.closest('.desk[data-id]');if(dk&&!inHelpers(dk)){el=dk.closest('.unit');kind='desk';}}
+    if(!el)return;
+    e.preventDefault();e.stopPropagation();
+    reoStep(kind,el,d);
+  },true);
+})();
 /* a file dropped anywhere else must not navigate the window away */
 ['dragover','drop'].forEach(t=>window.addEventListener(t,e=>{if(e.dataTransfer&&[...(e.dataTransfer.types||[])].includes('Files'))e.preventDefault();}));
 /* spec 052 FR-175 / spec 074 FR-025 (review on PR 597): "a dialog is open" for the global shortcuts = any modal element, the app's
@@ -3831,6 +4097,7 @@ function palActions(){
     {label:SIMPLE?'Show or hide earlier chats':'Show or hide previous sessions',kw:'previous earlier sessions chats history resume list collapse expand',keys:keyLabels(PREV_KEYS),run:togglePrevByKey,ok:()=>{const b=$('prevBtn'),x=$('prev');return !!b&&!!x&&!x.hidden&&!vsViewing;}}, /* spec 006 FR-036 */
     {label:'Notes',hint:'Saved messages and ideas of this folder',kw:'notes saved messages ideas drawer insert keep',keys:keyLabels(NOTES_KEYS),run:()=>toggleNotes(byId(ui.selected)),ok:()=>!!ui.selected&&!!$('notesDrawer')&&notesOn(byId(ui.selected))}, /* spec 083 */
     {label:'Keyboard shortcuts',kw:'keys shortcuts help hotkeys',keys:['?'],run:openKbdHelp},
+    {label:'Reset the office order',hint:'Rooms, desks and places go back to the automatic order',kw:'reorder rearrange order reset arrange drag sequence',run:resetOrder,ok:()=>!RO.isEmpty(ORDER)}, /* issue 677 */
     {label:'Go to… (navigator)',hint:'Floor, folder, agent or a chat by number',kw:'navigator go jump floor folder chat number spotlight',keys:keyLabels(navKeyParts()),run:()=>openPalette({nav:true}),nav:true}, /* spec 074 FR-015 */
     {label:'Send to several sessions…',hint:'One message to the running sessions you pick',kw:'send several many all broadcast message group sessions',run:()=>sendToSeveral(),ok:()=>!!bridge&&!!bridge.send&&sendTargets().filter(x=>!x.why).length>=2}, /* spec 064 FR-001 */
     {label:'End all sessions',hint:'Ends every running session; the chats stay',kw:'end stop all sessions quit day close',run:()=>endAllSessions(),ok:()=>!!bridge&&!!bridge.end&&endAllTargets().length>0},
@@ -3996,6 +4263,7 @@ function openKbdHelp(back){
     [keyLabels(PREV_KEYS),SIMPLE?'Show or hide earlier chats in a chat':'Show or hide previous sessions in a chat'], /* spec 006 FR-036 */
     [keyLabels(NOTES_KEYS),'Show or hide the Notes drawer in a chat'], /* spec 083 FR-026 */
     [['←','→','↑','↓'],'Move between desks'],
+    [['Alt','← →'],'Move the focused desk or place earlier or later; with Shift, its room (Option on a Mac)'], /* issue 677 */
     [['F2'],'Rename the focused session or folder (Fn+F2 on a Mac)'], /* spec 059 FR-024: in place, on a desk, row, door or chat title */
     [['Esc'],'Back, or close'],
     [keyLabels(['mod',IS_MAC?'⌫':'Backspace']),'Back to the office from a chat, outside text (in a text box it deletes)'], /* spec 074 FR-020 */
@@ -4170,7 +4438,7 @@ async function renderAwayStrip(){
 }
 $('endAllBtn').onclick=()=>endAllSessions($('topMoreBtn'));
 if($('sendSeveralBtn'))$('sendSeveralBtn').onclick=()=>sendToSeveral($('topMoreBtn'));
-const DESK_NAV='#stage .desk, #stage .helper, #stage .plate';
+const DESK_NAV='#stage .desk, #stage .helper, #stage .plate, #stage .ro-plate'; /* spec 097 FR-090: the Real office plates are the focusable cards there */
 $('wsFilter').addEventListener('change',e=>{ui.ws=e.target.value;renderAll();});
 function setView(v){ui.view=v;document.body.classList.toggle('list-mode',v==='list');
   $('vOffice').setAttribute('aria-pressed',String(v==='office'));$('vList').setAttribute('aria-pressed',String(v==='list'));renderAll();}
@@ -6253,6 +6521,11 @@ document.addEventListener('click',e=>{
 /* spec 006 FR-022: folder actions on a room's header (right-click, or the context-menu key on its door), same menu element as the mode menu.
    spec 033 FR-024 (issue 590): with two or more floors, "Move to floor ▸" opens a second level in the same element (‹ Back, one radio
    item per floor, the current one ticked and disabled); the move is the Floors panel's moveRoomToFloor, then an Undo toast. */
+/* issue 677: the folder menu's Move earlier / Move later. The neighbours are the rooms of its floor that are shown (also in the List view). */
+const roomPeers=r=>roomsInOrder().filter(x=>x.floor===r.floor&&roomShown(x)&&agents.some(a=>!a.parent&&a.room===x.id));
+const roomMoveOk=r=>ui.view==='office'&&roomPeers(r).length>1;
+const roomStepAt=(r,d)=>{const l=roomPeers(r),i=l.indexOf(r);return i>=0&&i+d>=0&&i+d<l.length;};
+function moveRoomStep(r,d){const el=document.querySelector(`#stage .room[data-key="room:${CSS.escape(r.id)}"]`);if(el)reoStep('room',el,d);}
 function openFolderMenu(r,x,y,anchor){
   if(!r||demoOn||!bridge||!bridge.removeFolder)return;
   closeModeMenu();
@@ -6268,6 +6541,7 @@ function openFolderMenu(r,x,y,anchor){
       +(nsAgentOf(r)?it('notes',NSX().menuLabel(nsMenuCount(r)),'Saved messages and ideas of this folder'):'') /* spec 083 FR-044, D10 */
       +(bridge.renameFolder?it('rename','Rename…','A display name for this room'):'')
       +(canMove?`<button type="button" role="menuitem" data-fact="floor" aria-haspopup="menu" aria-expanded="false"><span class="mt"><b>Move to floor</b><small>${esc(here?'Now on '+here.name+'. Its agents go with it':'Its agents go with it')}</small></span><span class="ck" aria-hidden="true">▸</span></button>`:'')
+      +(roomMoveOk(r)?it('rup','Move earlier','One place earlier in its floor',null,roomStepAt(r,-1)?'':' aria-disabled="true"')+it('rdn','Move later','One place later in its floor',null,roomStepAt(r,1)?'':' aria-disabled="true"'):'') /* issue 677 */
       +(bridge.mcpFolderState&&agents.some(x=>x.room===r.id&&!x.parent&&x.info&&feat(x,'mcp'))?it('mcp','MCP extras…','Optional servers for this folder only'):'')
       +(()=>{const u=roomAiu(r);return u?it('cost','Cost',u.long+' in this folder. Click for the cost by folder'):'';})()
       +(bridge.setFolderHidden?it('hide','Hide','Out of the office; its sessions keep running'):'')
@@ -6291,6 +6565,7 @@ function openFolderMenu(r,x,y,anchor){
     if(t.getAttribute('aria-disabled')==='true')return;
     closeModeMenu();
     if(f==='to'){moveFolderByMenu(r,t.dataset.floor,anchor);return;}
+    if(f==='rup'||f==='rdn'){moveRoomStep(r,f==='rup'?-1:1);return;}
     if(f==='notes'){const p=nsAgentOf(r);if(p)openNotesScreen(byId(p.id),{opener:anchor});return;}
     const ag=agents.find(q=>!q.parent&&q.room===r.id);
     if(f==='new'){if(ag)newSession(ag);}else if(f==='sched')openSchedules(r);else if(f==='mcp'){const o=folderOfRoom(r.id);if(o)window.DurbarScreens.folderMcp(o.key,o.name);}else if(f==='cost')window.DurbarScreens.openTools(null,'cost');else if(f==='rename')renameFolder(r,anchor);else if(f==='hide')hideFolder(r,true);else removeFolder(r);});
@@ -6322,7 +6597,7 @@ document.addEventListener('contextmenu',e=>{
   /* spec 033 FR-024: in the List view the Folder cell opens the folder menu of that row's folder; the rest of the row keeps the agent's menu */
   const lf=e.target.closest('#list .lrow[data-id] .lfold');
   if(lf&&bridge&&bridge.removeFolder&&!demoOn){const a=byId(lf.closest('.lrow').dataset.id),rr=a&&roomOf(a);if(rr&&ROOMS.includes(rr)){e.preventDefault();const b=lf.getBoundingClientRect();openFolderMenu(rr,e.clientX||b.left+8,e.clientY||b.bottom,lf.closest('.lrow'));return;}}
-  const d=e.target.closest('.desk[data-id], .helper[data-id], .lrow[data-id]');if(!d||d.closest('#panel'))return;
+  const d=e.target.closest('.desk[data-id], .helper[data-id], .lrow[data-id], .ro-plate[data-id]');if(!d||d.closest('#panel'))return;
   const a=byId(d.dataset.id),ra=a&&liveRoot(a);if(!ra||!ra.live)return;
   const r=d.getBoundingClientRect();
   if(openModeMenu(a,e.clientX||r.left+16,e.clientY||r.top+16,d))e.preventDefault();
@@ -6330,7 +6605,7 @@ document.addEventListener('contextmenu',e=>{
 /* spec 005 FR-177: the same card menu from the keyboard (Shift+F10 or the Menu key on a focused desk or list row), so Mark as read does not need a mouse */
 document.addEventListener('keydown',e=>{
   if(!((e.key==='F10'&&e.shiftKey)||e.key==='ContextMenu'))return;
-  const d=e.target&&e.target.closest&&e.target.closest('.desk[data-id], .lrow[data-id]'); if(!d||e.target!==d||d.closest('#panel'))return;
+  const d=e.target&&e.target.closest&&e.target.closest('.desk[data-id], .lrow[data-id], .ro-plate[data-id]'); if(!d||e.target!==d||d.closest('#panel'))return;
   const a=byId(d.dataset.id),ra=a&&liveRoot(a); if(!ra||!ra.live)return;
   const r=d.getBoundingClientRect();
   if(openModeMenu(a,r.left+16,r.top+16,d))e.preventDefault();
@@ -6530,9 +6805,18 @@ async function aboutKinds(){
 
 /* ---------------- switch model and context, compact (spec 030) ---------------- */
 const DM=window.DurbarModels;
-const modelOf=(id,kind)=>modelsFor(kind).find(m=>m.id===(id||'auto'))||{id:id||'auto',name:(id||'auto')==='auto'?'Auto':String(id),efforts:[]};
+const modelOf=(id,kind)=>{const l=modelsFor(kind),w=id||'auto';return l.find(m=>m.id===w)||(w==='auto'&&l.find(m=>m.id==='default'))||{id:w,name:w==='auto'?'Auto':String(w),efforts:[]};}; /* spec 030 FR-065: a session on `auto` is on the app's own default, which Claude Code's list calls `default` */
 const ctrlOf=a=>(a.info&&a.info.modelControl)||{switch:'none',compact:false};
 const tierOf=a=>a.info&&a.info.tier==='long'?'long':'default';
+/* spec 030 FR-060: what the session will run next: a queued switch when there is one, else what it has. Every choice is built on this, and the menu ticks it. */
+function choiceOf(a){
+  const p=a.pendingModel&&a.pendingModel.req;
+  if(p)return {model:p.model,effort:p.effort!==undefined?p.effort:a.info.effort,tier:p.contextTier==='long'?'long':'default',autoTier:p.autoTier};
+  return {model:modelOf(a.info.model,a.info.adapterId).id,effort:a.info.effort,tier:tierOf(a)};
+}
+/* spec 030 FR-061: one change at a time per agent: the next is built on the answer to the one before, never on a state read before it came */
+function modelTurn(a,fn){const p=(a.modelChain||Promise.resolve()).then(fn,fn);a.modelChain=p.catch(()=>undefined);return p;}
+const pendLabel=p=>{const w=DM.choiceWords(p.req);return p.name+(w?' ('+w+')':'');};
 const busyNow=a=>a.state==='working'||a.state==='thinking'||a.state==='waiting'||!!a.worked||!!a.compacting;
 const UNVERIFIED_WHY='Not verified on a real account yet: if a switch does nothing or fails, start a new session.';
 const NO_SWITCH_WHY='This agent cannot change its model in place yet. Start a new session with the model you want; this one keeps its model until it ends.';
@@ -6556,8 +6840,8 @@ function addInfoNote(chat,text,cls){
 function modelChipHTML(a){
   const m=modelLabel(a.info),pend=a.pendingModel;
   const win=modelWindow(a), txt=m.name+(pend?' → '+pend.name:''); /* spec 005 FR-050 (issue 627): the name only (and a queued switch); effort, tier and window are in the name and the tooltip */
-  const title=m.title+(pend?'. Next: '+pend.name+(pend.tier==='long'?' (long context)':'')+', when the current reply ends.':'')+(ctrlOf(a).switch==='none'?' This agent cannot switch in place; click for why.':' Click to change the model or the context.');
-  return `<button class="mchip mchip-btn" id="modelChip" type="button" aria-haspopup="menu" aria-expanded="false" aria-label="${esc('Model: '+m.text+(win?', '+DM.fmtTokens(win)+' tokens context window':'')+(pend?'; next: '+pend.name:''))}" title="${esc(title+(win?' Context window: '+DM.fmtTokens(win)+' tokens.':''))}">${CT_IC.model}<span>${esc(txt)}</span><svg class="chev" viewBox="0 0 10 10" width="9" height="9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5l3 3 3-3"/></svg></button>`;
+  const title=m.title+(pend?'. Next: '+pendLabel(pend)+', when the current reply ends.':'')+(ctrlOf(a).switch==='none'?' This agent cannot switch in place; click for why.':' Click to change the model or the context.');
+  return `<button class="mchip mchip-btn" id="modelChip" type="button" aria-haspopup="menu" aria-expanded="false" aria-label="${esc('Model: '+m.text+(win?', '+DM.fmtTokens(win)+' tokens context window':'')+(pend?'; next: '+pendLabel(pend):''))}" title="${esc(title+(win?' Context window: '+DM.fmtTokens(win)+' tokens.':''))}">${CT_IC.model}<span>${esc(txt)}</span><svg class="chev" viewBox="0 0 10 10" width="9" height="9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5l3 3 3-3"/></svg></button>`;
 }
 /* spec 005 FR-037: the window in use: as the runtime reported it for this session, else the model list's (spec 030), else none */
 function modelWindow(a){
@@ -6644,7 +6928,8 @@ function closeModelMenu(){const m=document.getElementById('modelMenu');if(m){m.r
 function openModelMenu(a0,x,y,anchor){
   const a=liveRoot(a0); if(!a||!a.live||!a.info||!bridge.setModel)return;
   closeModelMenu();closeModeMenu();
-  const on=ctrlOf(a).switch!=='none'&&!!bridge.setModel, curId=a.info.model||'auto', cur=modelOf(curId,a.info.adapterId), tier=tierOf(a), pend=a.pendingModel;
+  /* spec 030 FR-060: the menu shows what comes next: with a queued switch its model, effort and window are the ticked ones */
+  const on=ctrlOf(a).switch!=='none'&&!!bridge.setModel, next=choiceOf(a), cur=modelOf(next.model,a.info.adapterId), curId=cur.id, tier=next.tier, pend=a.pendingModel;
   const dis=on?'':' aria-disabled="true"';
   const kl=modelsFor(a.info.adapterId), list=kl.length?kl:[cur];
   let h=on?'':`<p class="mm-why" role="note">${esc(NO_SWITCH_WHY)}</p>`;
@@ -6655,16 +6940,16 @@ function openModelMenu(a0,x,y,anchor){
     return `<button type="button" role="menuitemradio" aria-checked="${chk}" data-pick="${esc(m.id)}"${dis||(ob?' aria-disabled="true"':'')}${ow?` class="${m.orgBlocked?'mm-org':'mm-orgdoubt'}" title="${esc(ow)}"`:''}><span class="mt"><b>${esc(m.name)}${m.multiplier!=null?' ×'+esc(m.multiplier):''}</b><small>${ow?esc(ow):esc(DM.priceLine(m))+(w?' · '+esc(DM.fmtTokens(w))+' window':'')}</small></span><span class="ck">${chk?'✓':''}</span></button>`;}).join('');
   /* spec 007 FR-013/FR-017: the Auto routing tier, a group like the effort (Copilot's Auto only); a locked organization tier shows disabled */
   const ats=curId==='auto'?DM.autoTiersOf(cur):[];
-  if(ats.length){const atNow=DM.autoTierOf(cur,a.info.autoTier),lock=DM.autoTierLocked(cur);
+  if(ats.length){const atNow=DM.autoTierOf(cur,next.autoTier||a.info.autoTier),lock=DM.autoTierLocked(cur);
     /* review on PR 642: the locked reason is the buttons' description (aria-describedby), not only a title; a lock with no known name still locks */
     h+='<p class="mm-h">Auto routing</p><div class="mm-seg" role="group" aria-label="Auto routing"'+(lock?' aria-describedby="mmAutoLock"':'')+'>'+ats.map(t=>`<button type="button" data-autotier="${esc(t)}" aria-pressed="${t===atNow}"${lock?' aria-disabled="true" aria-describedby="mmAutoLock"':dis} title="${esc(DM.AUTO_TIER_HINT[t]+(lock?'. Set by your organization\'s Copilot policy.':'.'))}">${esc(DM.autoTierName(t))}</button>`).join('')+'</div>'+(lock?`<p class="mm-why mm-lock" id="mmAutoLock" role="note">Set by your organization's Copilot policy${atNow?': '+esc(DM.autoTierName(atNow)):''}.</p>`:'');}
-  if((cur.efforts||[]).length)h+='<p class="mm-h">Reasoning effort</p><div class="mm-seg" role="group" aria-label="Reasoning effort">'+['',...cur.efforts].map(x=>{const on2=(a.info.effort||'')===x;return `<button type="button" data-effort="${esc(x)}" aria-pressed="${on2}"${dis}>${x?esc(x):'Default'}</button>`;}).join('')+'</div>';
+  if((cur.efforts||[]).length)h+='<p class="mm-h">Reasoning effort</p><div class="mm-seg" role="group" aria-label="Reasoning effort">'+['',...cur.efforts].map(x=>{const on2=(next.effort||'')===x;return `<button type="button" data-effort="${esc(x)}" aria-pressed="${on2}"${dis}>${x?esc(x):'Default'}</button>`;}).join('')+'</div>';
   /* spec 005 FR-050: the window choice of this model only: Long context where it has one, else the one window it has */
   const w0=DM.windowOf(cur);
   if(DM.hasLong(cur)||w0>0)h+=`<p class="mm-h">Context window</p>`+(DM.hasLong(cur)?'':`<p class="mm-info">${esc(DM.fmtTokens(w0))} (the only window of this model)</p>`);
   if(DM.hasLong(cur))h+=`<button type="button" role="menuitemcheckbox" aria-checked="${tier==='long'}" data-tier="1"${dis} class="mm-tier"><span class="mt"><b>Long context</b><small>${esc(DM.fmtTokens(DM.windowOf(cur,'long')))} window · ${esc(DM.priceLine(cur,'long'))}</small></span><span class="ck">${tier==='long'?'✓':''}</span></button>`;
-  if(pend)h+=`<div class="mm-pend" role="status"><span>Next: <b>${esc(pend.name)}</b>${pend.tier==='long'?' (long context)':''}, when this reply ends.</span><button type="button" data-cancelq="1">Cancel</button></div>`;
-  h+=on?'<p class="mm-note">Applies from the next message; the conversation is kept. Costlier switches ask first, and your spending limit never changes.'+(ctrlOf(a).unverified?' '+esc(UNVERIFIED_WHY):'')+'</p>':'<div class="mm-foot"><button type="button" class="btn" data-newsess="1">New session…</button></div>';
+  if(pend)h+=`<div class="mm-pend" role="status"><span>Next: <b>${esc(pend.name)}</b>${DM.choiceWords(pend.req)?' ('+esc(DM.choiceWords(pend.req))+')':''}, when this reply ends.</span><button type="button" data-cancelq="1">Cancel</button></div>`;
+  h+=on?'<p class="mm-note">'+(pend?'Applies when this reply ends':'Applies from the next message')+'; the conversation is kept. Costlier switches ask first, and your spending limit never changes.'+(ctrlOf(a).unverified?' '+esc(UNVERIFIED_WHY):'')+'</p>':'<div class="mm-foot"><button type="button" class="btn" data-newsess="1">New session…</button></div>';
   const m=document.createElement('div');m.id='modelMenu';m.className='mode-menu model-menu';m.setAttribute('role','menu');m.setAttribute('aria-label','Model and context for '+a.name);
   m.innerHTML=h;document.body.appendChild(m);
   const {px,py}=placeMenu(m,x,y,anchor); /* spec 005 FR-037: above a toolbar chip */
@@ -6674,9 +6959,10 @@ function openModelMenu(a0,x,y,anchor){
     if(b.dataset.cancelq){closeModelMenu();cancelPendingModel(a,anchor);return;}
     if(b.getAttribute('aria-disabled')==='true')return;
     closeModelMenu();
-    if(b.dataset.pick!==undefined){const t=modelOf(b.dataset.pick,a.info.adapterId),own=a.info.autoTier;chooseModel(a,Object.assign({model:t.id,contextTier:t.id===cur.id?tier:'default'},t.id!==cur.id&&own&&DM.autoTiersOf(t).includes(own)&&!DM.autoTierLocked(t)?{autoTier:own}:{}),anchor);} /* spec 007 FR-016: back on Auto with the agent's own tier */
-    else if(b.dataset.effort!==undefined)chooseModel(a,{model:cur.id,effort:b.dataset.effort||null,contextTier:tier},anchor);
-    else if(b.dataset.tier)chooseModel(a,{model:cur.id,contextTier:tier==='long'?'default':'long'},anchor);
+    /* spec 030 FR-060, FR-061: a row says only what it changes; the rest comes from the state when its turn comes, not from this menu's picture of it */
+    if(b.dataset.pick!==undefined)chooseModel(a,{model:b.dataset.pick},anchor);
+    else if(b.dataset.effort!==undefined)chooseModel(a,{effort:b.dataset.effort||null},anchor);
+    else if(b.dataset.tier)chooseModel(a,{tier:tier==='long'?'default':'long'},anchor);
     else if(b.dataset.autotier!==undefined)chooseAutoTier(a,b.dataset.autotier,anchor);
   });
   m.addEventListener('keydown',e=>{const it=[...m.querySelectorAll('button')],i=it.indexOf(document.activeElement);
@@ -6686,43 +6972,47 @@ function openModelMenu(a0,x,y,anchor){
   const c=$('modelChip');if(c&&anchor===c)c.setAttribute('aria-expanded','true');
 }
 
-async function chooseModel(a,req,anchor){
-  try{await chooseModelInner(a,req,anchor);}finally{refocusAnchor(anchor);}
+function chooseModel(a,change,anchor){
+  return modelTurn(a,async()=>{try{await chooseModelInner(a,change,anchor);}finally{refocusAnchor(anchor);}});
 }
-async function chooseModelInner(a,req,anchor){
-  const cur=modelOf(a.info.model,a.info.adapterId),tgt=modelOf(req.model,a.info.adapterId),tierFrom=tierOf(a),tierTo=req.contextTier==='long'?'long':'default';
-  const sameEffort=req.effort===undefined||(req.effort||'')===(a.info.effort||'');
-  const pend=a.pendingModel;
-  if(!pend&&tgt.id===cur.id&&tierTo===tierFrom&&sameEffort)return;
+async function chooseModelInner(a,change,anchor){
+  const kind=a.info.adapterId,base=choiceOf(a),cur=modelOf(a.info.model,kind),tierFrom=tierOf(a),pend=a.pendingModel;
+  const {req:merged,dropped}=DM.mergeChoice(base,change,id=>modelOf(id,kind));
+  if(DM.sameChoice(base,merged))return;
+  const tgt=modelOf(merged.model,kind),tierTo=merged.contextTier;
+  /* spec 007 FR-016: back on Auto with the agent's own tier; a tier queued for this same Auto stays */
+  const own=a.info.autoTier,autoTier=tgt.id!==base.model?(own&&DM.autoTiersOf(tgt).includes(own)&&!DM.autoTierLocked(tgt)?own:undefined):base.autoTier;
   const c=STATS.agent(a.id).ctx,tokens=c?c.tokens:undefined;
   const cap=isUsdCap(a)?undefined:a.info.maxAiCredits,used=a.usage?a.usage.nano/1e9:0; /* the switch estimate is in AI credits: a dollar cap is not compared */
   const cf=DM.confirmFor(cur,tgt,{tokens,cap,used,tierFrom,tierTo});
-  const confirm={};
-  if(cf.needed||(req.autoTier&&tgt.id==='auto'&&DM.autoTierConfirm('efficiency',req.autoTier).needed)){
+  const confirm={},gone=DM.droppedText(dropped,tgt.name);
+  /* spec 030 FR-061: the model and window of the queued switch were confirmed already: changing only the effort on top does not ask again */
+  const asked=pend&&pend.req&&pend.req.model===merged.model&&(pend.req.contextTier||'default')===tierTo;
+  if(!asked&&(cf.needed||(autoTier&&tgt.id==='auto'&&DM.autoTierConfirm('efficiency',autoTier).needed))){
     const lines=cf.reasons.map(r=>r.text);
+    if(gone)lines.push(gone);
     lines.push('Price now: '+DM.priceLine(cur,tierFrom)+'. New: '+DM.priceLine(tgt,tierTo)+'.');
     if(cf.estimate!==undefined&&!cf.overCap)lines.push('Reading this conversation once would cost about '+DM.fmtCredits(cf.estimate)+' AI credits with '+tgt.name+' (an estimate, if nothing is cached).');
     if(cap>0)lines.push('Your spending limit of '+fmtCap(cap)+' AI credits is not changed.');
     if(busyNow(a))lines.push('A reply is running: the switch applies when it ends.'+(ctrlOf(a).unverified?' If you stop the reply, whether the switch still applies is not verified.':''));
     if(ctrlOf(a).unverified)lines.push(UNVERIFIED_WHY);
     /* review on PR 642: back on Auto with the agent's own tier: the dialog names it, with the higher-tier reasons when it is above Efficiency */
-    const at=req.autoTier&&tgt.id==='auto'?req.autoTier:'';
+    const at=autoTier&&tgt.id==='auto'?autoTier:'';
     if(at)lines.unshift(...DM.autoTierConfirm('efficiency',at).reasons,'Auto routes with '+DM.autoTierName(at)+', the tier this agent chose before.');
     const r=await askDialog({title:'Switch '+a.name+' to '+tgt.name+(at?' ('+DM.autoTierName(at)+' routing)':'')+(tierTo==='long'?' (long context)':'')+'?',body:'The conversation is kept. From the next message this agent uses the new model.',lines,returnFocus:anchor,
       buttons:[{label:'Cancel',value:null},{label:cf.compaction?'Compact and switch':cf.overCap?'Switch anyway':'Switch',value:'ok',cls:'primary'+(cf.overCap?' warn':'')}]});
     if(!r)return;
     if(cf.compaction)confirm.compaction='accept';
   }
-  /* an effort the new model does not support is cleared (its default), never sent: the runtime would refuse the switch */
-  const effort=req.effort!==undefined?req.effort:(a.info.effort&&tgt.id!==cur.id&&!(tgt.efforts||[]).includes(a.info.effort)?null:undefined);
-  await sendModelChange(a,Object.assign({model:tgt.id,contextTier:tierTo},effort!==undefined?{effort}:{},req.autoTier?{autoTier:req.autoTier}:{},confirm.compaction?{confirm}:{}),{prev:{model:cur.id,effort:a.info.effort,tier:tierFrom,autoTier:a.info.autoTier},tgt,anchor});
+  await sendModelChange(a,Object.assign({},merged,autoTier?{autoTier}:{},confirm.compaction?{confirm}:{}),{prev:{model:cur.id,effort:a.info.effort,tier:tierFrom,autoTier:a.info.autoTier},tgt,anchor,gone});
 }
 /* spec 007 FR-014: a tier of Auto, switched like a model (same call, Undo, queue); a higher tier asks first with the app's dialog */
-async function chooseAutoTier(a,to,anchor){
+function chooseAutoTier(a,to,anchor){return modelTurn(a,()=>chooseAutoTierInner(a,to,anchor));}
+async function chooseAutoTierInner(a,to,anchor){
   try{
-    const cur=modelOf('auto',a.info.adapterId);
-    if((a.info.model||'auto')!=='auto'||!DM.autoTiersOf(cur).includes(to)||DM.autoTierLocked(cur))return;
-    const from=DM.autoTierOf(cur,a.info.autoTier);
+    const cur=modelOf('auto',a.info.adapterId),next=choiceOf(a);
+    if(next.model!=='auto'||!DM.autoTiersOf(cur).includes(to)||DM.autoTierLocked(cur))return;
+    const from=DM.autoTierOf(cur,next.autoTier||a.info.autoTier);
     if(from===to&&!a.pendingModel)return;
     const cf=DM.autoTierConfirm(from,to);
     if(cf.needed){
@@ -6734,38 +7024,57 @@ async function chooseAutoTier(a,to,anchor){
         buttons:[{label:'Cancel',value:null},{label:'Switch',value:'ok',cls:'primary'}]});
       if(!r)return;
     }
-    await sendModelChange(a,{model:'auto',autoTier:to,contextTier:tierOf(a)},{prev:{model:'auto',effort:a.info.effort,tier:tierOf(a),autoTier:a.info.autoTier},tgt:cur,anchor}); /* Undo restores the agent's own choice, "none" included */
+    await sendModelChange(a,{model:'auto',autoTier:to,contextTier:next.tier},{prev:{model:modelOf(a.info.model,a.info.adapterId).id,effort:a.info.effort,tier:tierOf(a),autoTier:a.info.autoTier},tgt:cur,anchor}); /* Undo restores the agent's own choice, "none" included */
   }finally{refocusAnchor(anchor);}
 }
 async function sendModelChange(a,req,ctx){
+  /* spec 030 FR-061: this request holds the whole choice, so it replaces a queued one: the older switch leaves the runtime's queue first, or it would run too and Cancel would miss it */
+  const old=a.pendingModel||ctx.old,queuedNow=a.pendingModel;
+  let cancelled=!!ctx.cancelled; /* review on PR 935: the earlier switch is asked for again only when it really left the runtime's queue, or it would be queued twice (or an applied one sent again) */
+  if(queuedNow){const c=bridge.cancelQueuedModel?await bridge.cancelQueuedModel(a.id,queuedNow.queueId).catch(()=>undefined):undefined;cancelled=!!(c&&c.ok);a.pendingModel=undefined;updateModelChip(a);}
+  /* review on PR 935: when this request does not take, the earlier valid switch is asked for again, so a refusal never loses it */
+  const keep=async()=>old&&cancelled?await sendModelChange(a,old.req,{tgt:modelOf(old.req.model,a.info.adapterId),prev:old.prev,anchor:ctx.anchor,quiet:true}):false;
+  /* the line about the earlier switch is shown only once it is queued again; a quiet re-send says nothing when it fails */
+  const fail=async(msg,ms)=>{const kept=await keep();if(!ctx.quiet)toast(msg+(kept?' The switch queued before stays.':old&&!cancelled?' The earlier queued switch could not be cancelled, so it may still apply when this reply ends.':''),ms);return false;};
   const res=await bridge.setModel(a.id,req).catch(e=>({ok:false,error:String(e&&e.message||e)}));
-  if(!res||!res.ok){toast('Could not change the model: '+esc((res&&res.error)||'unknown error'),6000);return;}
-  const r=res.result||{},nm=ctx.tgt.name+(req.autoTier?' ('+DM.autoTierName(req.autoTier)+' routing)':'')+(req.contextTier==='long'?' (long context)':'');
+  if(!res||!res.ok)return fail('Could not change the model: '+esc((res&&res.error)||'unknown error'),6000);
+  const r=res.result||{},nm=ctx.tgt.name+(req.autoTier?' ('+DM.autoTierName(req.autoTier)+' routing)':'')+(DM.choiceWords(req)?' ('+DM.choiceWords(req)+')':''),gone=ctx.gone?' '+esc(ctx.gone):'';
   if(r.status==='applied'){
-    if(req.autoTier){a.info.autoTier=req.autoTier;updateModelChip(a);} /* spec 007 FR-016: also when the runtime sends no model change for a tier */
-    else if(req.autoTier===null){a.info.autoTier=undefined;updateModelChip(a);}
+    /* spec 030 FR-060: the answer is the state: a session that has not started and a same-model change send no model event, and the next choice is built on this */
+    a.info.model=r.model||req.model;
+    if(req.effort===null)a.info.effort=undefined;else if(req.effort!==undefined)a.info.effort=req.effort;
+    a.info.tier=req.contextTier==='long'?'long':undefined;
+    a.role=roleFor(a.info);a.ctxWaiting=true;
+    if(req.autoTier)a.info.autoTier=req.autoTier; /* spec 007 FR-016: also when the runtime sends no model change for a tier */
+    else if(req.autoTier===null)a.info.autoTier=undefined;
+    updateModelChip(a);updateCtxChip(a);scheduleRender();
     /* spec 052 (2026-10-21): one Undo toast per agent; a newer switch replaces the older toast (only the last switch can be undone) */
-    if(!ctx.undo){document.querySelectorAll('#toasts .toast[data-undo-model="'+CSS.escape(a.id)+'"]').forEach(t=>t.remove());const t=toastAction(esc(a.name)+': <b>'+esc(nm)+'</b> from the next message.','Undo',()=>undoModel(a,ctx.prev,ctx.anchor),8000);if(t&&t.dataset)t.dataset.undoModel=a.id;}
+    if(!ctx.undo){document.querySelectorAll('#toasts .toast[data-undo-model="'+CSS.escape(a.id)+'"]').forEach(t=>t.remove());const t=toastAction(esc(a.name)+': <b>'+esc(nm)+'</b> from the next message.'+gone,'Undo',()=>undoModel(a,ctx.prev,ctx.anchor),8000);if(t&&t.dataset)t.dataset.undoModel=a.id;}
     else toast(esc(a.name)+': back to <b>'+esc(nm)+'</b>.',3800);
+    return true;
   }else if(r.status==='queued'){
-    a.pendingModel={queueId:r.queueId,name:ctx.tgt.name+(req.autoTier?' ('+DM.autoTierName(req.autoTier)+')':''),tier:req.contextTier,prev:ctx.prev};updateModelChip(a);
-    toast(esc(a.name)+' is replying: <b>'+esc(nm)+'</b> applies when the reply ends.',5000);
+    a.pendingModel={queueId:r.queueId,name:ctx.tgt.name+(req.autoTier?' ('+DM.autoTierName(req.autoTier)+')':''),req,prev:ctx.prev};updateModelChip(a);
+    if(!ctx.quiet)toast(esc(a.name)+' is replying: <b>'+esc(nm)+'</b> applies when the reply ends.'+gone,5000);
+    return true;
   }else if(r.status==='needs-confirmation'){
     const cf=r.confirmation||{};
     const d=await askDialog({title:'Compact the context first?',body:(cf.targetName||ctx.tgt.name)+' has a window of '+DM.fmtTokens(cf.targetLimit)+' tokens, and this conversation uses '+DM.fmtTokens(cf.currentTokens)+'. It must be compacted before the switch, which costs one model call.',returnFocus:ctx.anchor,
       buttons:[{label:'Cancel',value:null},{label:'Compact and switch',value:'ok',cls:'primary'}]});
-    if(d)await sendModelChange(a,Object.assign({},req,{confirm:{compaction:'accept'}}),ctx);
-  }else toast(esc(r.message||'The model was not changed.'),5000);
+    if(d)return sendModelChange(a,Object.assign({},req,{confirm:{compaction:'accept'}}),Object.assign({},ctx,{old,cancelled}));
+    return fail(esc(a.name)+': the model was not changed.',5000);
+  }else return fail(esc(r.message||'The model was not changed.'),5000);
 }
-async function undoModel(a,prev,anchor){
+function undoModel(a,prev,anchor){return modelTurn(a,()=>undoModelInner(a,prev,anchor));}
+async function undoModelInner(a,prev,anchor){
   if(!bridge.setModel)return;
   /* spec 007 FR-014/FR-016: back to the agent's own tier, or to none of its own (null: the default again); never against a lock */
   const am=modelOf('auto',a.info.adapterId),tierOk=prev.model==='auto'&&DM.autoTiersOf(am).length&&!DM.autoTierLocked(am);
   const req=Object.assign({model:prev.model,contextTier:prev.tier,effort:prev.effort||null},tierOk?{autoTier:DM.autoTiersOf(am).includes(prev.autoTier)?prev.autoTier:null}:{});
-  await sendModelChange(a,req,{prev,tgt:modelOf(prev.model),anchor,undo:true});
+  await sendModelChange(a,req,{prev,tgt:modelOf(prev.model,a.info.adapterId),anchor,undo:true});
   refocusAnchor(anchor);
 }
-async function cancelPendingModel(a,anchor){
+function cancelPendingModel(a,anchor){return modelTurn(a,()=>cancelPendingInner(a,anchor));}
+async function cancelPendingInner(a,anchor){
   const p=a.pendingModel;if(!p||!bridge.cancelQueuedModel)return;
   const r=await bridge.cancelQueuedModel(a.id,p.queueId).catch(()=>({ok:false}));
   if(r&&r.ok){a.pendingModel=undefined;updateModelChip(a);toast(esc(a.name)+': the queued switch to <b>'+esc(p.name)+'</b> was cancelled.',3800);}
@@ -7452,16 +7761,29 @@ async function hideFolder(r,hidden){
 }
 async function removeFolder(r){
   const ags=agents.filter(x=>x.room===r.id), busy=ags.filter(x=>['working','thinking','waiting'].includes(x.state)).length;
-  const msg=busy?`${esc(r.name)} has ${busy} agent${busy===1?'':'s'} still working. Remove the folder and end ${busy===1?'it':'them'}?`:`Remove ${esc(r.name)}? Its sessions end here; your earlier ${esc(kindWord(((ags.find(x=>!x.parent)||{}).info||{}).adapterId))} sessions stay on disk and can be resumed if you add the folder again.`;
-  if(!window.confirm(unesc(msg)))return;
-  const root=ags.find(x=>!x.parent); const res=root&&bridge.removeFolder?await bridge.removeFolder(root.id):{ok:true,removedIds:[]};
+  /* plain text (askDialog sets textContent), so the name is joined, not escaped */
+  const msg=busy?r.name+` has ${busy} agent${busy===1?'':'s'} still working. Remove the folder and end ${busy===1?'it':'them'}?`:'Remove '+r.name+`? Its sessions end here; your earlier ${kindWord(((ags.find(x=>!x.parent)||{}).info||{}).adapterId)} sessions stay on disk and can be resumed if you add the folder again.`;
+  /* spec 083 FR-048 (T034b): the folder's notes, fetched through its main chat; the box only when it has notes, unticked */
+  const nsA=nsAgentOf(r), nb=nsA&&byId(nsA.id), nst=nb?await notesFetch(nb):null, nn=nst&&nst.ok?nst.notes.length:0;
+  const lines=[];
+  if(nn)lines.push('Unticked, its notes stay and come back if you add the folder again.');
+  if(nn&&nst.fileSwitch&&nst.fileSwitch.on)lines.push('.durbar/notes.md stays in the project either way; Durbar stops updating it.');
+  const v=await askDialog({title:'Remove folder?',body:msg,lines,size:nn?'m':undefined,check:nn?{label:'Also delete its notes ('+nn+')',checked:false}:undefined,
+    buttons:[{label:'Cancel',value:null},{label:'Remove folder',value:'rm',cls:'primary danger'}]});
+  if(!v||v.value!=='rm')return;
+  const del=!!(nn&&v.checked===true);
+  const root=ags.find(x=>!x.parent); const res=root&&bridge.removeFolder?await bridge.removeFolder(root.id,del?{deleteNotes:true}:undefined):{ok:true,removedIds:[]};
+  if(res&&!res.ok&&res.cancelled){toast(esc(r.name)+' and its notes are kept.',3600);return;}
   if(!res.ok){toast('Could not remove the folder.',4000).classList.add('err');return;}
+  if(nb)NT.by.delete(notesKey(nb));
   if(ui.selected&&(byId(ui.selected)||{}).room===r.id)closePanel();
   const gone=new Set(ags.map(x=>x.id));
   for(let i=agents.length-1;i>=0;i--){if(gone.has(agents[i].id)||gone.has(agents[i].parent)){DRAFTS.delete(agents[i].id);UNREAD.forget(agents[i].id);UNREAD_AT.delete(agents[i].id);UNREAD_SAID.delete(agents[i].id);HL_AT.delete(agents[i].id);delete chats[agents[i].id];delete prev[agents[i].id];agents.splice(i,1);}}
   const ri=ROOMS.indexOf(r); if(ri>=0)ROOMS.splice(ri,1);
   if(ui.ws===r.id)ui.ws='all';
-  renderFilter(); renderFolders(); scheduleRender(); toast(esc(r.name)+' removed.',3200).classList.add('ok');
+  renderFilter(); renderFolders(); scheduleRender();
+  if(res.notesError)toast(esc(r.name)+' removed; its notes could not be deleted. '+esc(res.notesError),6000).classList.add('err');
+  else toast(esc(r.name)+(res.notesDeleted?' removed and its notes deleted.':' removed.'),3200).classList.add('ok');
 }
 /* spec 006 FR-018: a display name for the room; empty goes back to the folder's own name */
 /* The submit part of a folder rename (FR-022): the dialog and the inline field both call it. Resolves {ok:true}, {ok:false,reason} (a rule refusal) or {ok:false} (a toast was shown). */
@@ -8012,7 +8334,7 @@ if(bridge){
     if(e.target&&e.target.classList&&e.target.classList.contains('fl-into-sel')){INTO=e.target.value;renderIntoFloor();renderFloorsPanel();renderFloorsSettings();}});
   document.addEventListener('keydown',e=>{const t=e.target;if(e.key==='Enter'&&t&&t.closest&&t.closest('.floors-ui .fl-new')){e.preventDefault();floorAction(t.closest('.fl-new').querySelector('[data-fl="create"]'));}});
   document.body.classList.toggle('simple',SIMPLE);
-  window.DurbarScreens.init({shutters:{get:()=>SHUT_PREF,set:setShutOn,usable:()=>!!SHUT},signs:{get:()=>SIGN_PREF,set:setSignsOn,usable:()=>!!(window.DurbarRoom&&window.DurbarRoom.doorSign)},navKey:{text:navKeyText,textOf:c=>keyText(NAV.comboParts(c)),defText:()=>keyText(NAV.comboParts(NAV.DEFAULT_COMBO)),isDefault:()=>NAV.sameCombo(NAV_KEY,NAV.DEFAULT_COMBO),set:setNavKey,recording:on=>{navRecording=!!on;},fromEvent:e=>NAV.comboFromEvent(e,IS_MAC),clash:c=>NAV.clashOf(c,IS_MAC)},roomName:id=>{const r=ROOMS.find(x=>x.id===id);return r?r.name:String(id||'');},refreshKinds:()=>loadKinds(true),setAccounts,detail:{get:()=>SIMPLE?'simple':'expert',set:setDetail},density:{get:()=>DENSITY,set:setDensity},liveAct:{get:()=>LIVE_PREF,set:setLiveOn,usable:()=>!!LIVEACT},bridge,stats:STATS,esc,mask:safeMask,toast,announce,floors:{on:()=>floorsLive(),render:()=>renderFloorsSettings()},sched:{on:()=>!!bridge.listSchedules&&!demoOn,render:()=>renderSchedSettings()},onSettings:v=>{APP_SETTINGS=v||{};},onUsageReset,isSerious:()=>SERIOUS,isNotify:()=>NOTIFY,setNotify:on=>{NOTIFY=!!on;},breakResume:()=>BREAK_RESUME,setBreakResume:v=>{BREAK_RESUME=v==='ask'?'ask':'auto';},chatLinksIn:()=>CHAT_LINKS,setChatLinksIn:v=>{CHAT_LINKS=v==='system'?'system':'session';},setSerious:on=>{SERIOUS=!!on;markSerious();scheduleRender();},usageSince:()=>LEDGER.since(),usageOffice:()=>LEDGER.office(),costData,usageError:()=>usageSaveError,
+  window.DurbarScreens.init({shutters:{get:()=>SHUT_PREF,set:setShutOn,usable:()=>!!SHUT},signs:{get:()=>SIGN_PREF,set:setSignsOn,usable:()=>!!(window.DurbarRoom&&window.DurbarRoom.doorSign),view:{get:officeView,set:setOfficeView,note:()=>roPeople().note&&officeView()==='real'?roPeople().note:'',world:{get:()=>roPeople().world,set:setRoWorld,list:roWorlds,defaultSet:()=>roPeople().setName}}},navKey:{text:navKeyText,textOf:c=>keyText(NAV.comboParts(c)),defText:()=>keyText(NAV.comboParts(NAV.DEFAULT_COMBO)),isDefault:()=>NAV.sameCombo(NAV_KEY,NAV.DEFAULT_COMBO),set:setNavKey,recording:on=>{navRecording=!!on;},fromEvent:e=>NAV.comboFromEvent(e,IS_MAC),clash:c=>NAV.clashOf(c,IS_MAC)},roomName:id=>{const r=ROOMS.find(x=>x.id===id);return r?r.name:String(id||'');},refreshKinds:()=>loadKinds(true),setAccounts,detail:{get:()=>SIMPLE?'simple':'expert',set:setDetail},density:{get:()=>DENSITY,set:setDensity},liveAct:{get:()=>LIVE_PREF,set:setLiveOn,usable:()=>!!LIVEACT},bridge,stats:STATS,esc,mask:safeMask,toast,announce,floors:{on:()=>floorsLive(),render:()=>renderFloorsSettings()},sched:{on:()=>!!bridge.listSchedules&&!demoOn,render:()=>renderSchedSettings()},onSettings:v=>{APP_SETTINGS=v||{};},onUsageReset,isSerious:()=>SERIOUS,isNotify:()=>NOTIFY,setNotify:on=>{NOTIFY=!!on;},breakResume:()=>BREAK_RESUME,setBreakResume:v=>{BREAK_RESUME=v==='ask'?'ask':'auto';},chatLinksIn:()=>CHAT_LINKS,setChatLinksIn:v=>{CHAT_LINKS=v==='system'?'system':'session';},setSerious:on=>{SERIOUS=!!on;markSerious();scheduleRender();},usageSince:()=>LEDGER.since(),usageOffice:()=>LEDGER.office(),costData,usageError:()=>usageSaveError,
     places:window.DurbarPlaces,customPlaces:()=>CUSTOM,placeMap:()=>PLACE_MAP,placeLabel,setCustomPlaces,placeServers:()=>[...SEEN_SERVERS],setPlaceMap:m=>{PLACE_MAP=(m&&typeof m==='object')?m:{};scheduleRender();},
     applyTheme,
     applyCharacters,charPreview, /* spec 077 FR-068 */
@@ -8074,6 +8396,7 @@ if(bridge){
       :apply();
     }).catch(()=>apply());}else apply();
   };
+  if(bridge.getOrder)bridge.getOrder().then(d=>{ORDER=RO.sanitize(d);scheduleRender();}).catch(()=>{}); /* issue 677: a failed or corrupt read keeps the automatic order */
   if(bridge.getSettings)bridge.getSettings().then(v=>{APP_SETTINGS=v||{};PLACE_MAP=(v&&v.placeMap)||{};CUSTOM=(v&&Array.isArray(v.customPlaces))?v.customPlaces:[];SERIOUS=!!(v&&v.seriousMode);markSerious();NOTIFY=!!(v&&v.notifyNeedsMe!==false);BREAK_RESUME=v&&v.breakResume==='ask'?'ask':'auto';CHAT_LINKS=v&&v.chatLinksIn==='system'?'system':'session';themeBoot(v);}).catch(()=>{});
   setInterval(()=>{if(VISITS.tick())scheduleRender();},250);
   setInterval(coffeeTick,SIM_BREAK?1000:5000); /* spec 068: resume, ask or remind when a break is due */
@@ -8089,7 +8412,8 @@ if(pendingOpen&&demoOn){openPanel(pendingOpen,false);pendingOpen=null;}
 const settleNow=()=>{if(!agentsListed||!window.__durbarSimReplayed||baselineQueued||baselineAsking)return false;if(renderQueued){renderQueued=false;renderAll();}return true;};
 /* simulator drivers load with simfreeze=1: the desk glow then holds still (FR-178: the geometry and screenshot checks measure boxes, so no zoom may be mid-way); the unread driver opts back in with hlmotion=1 to test the motion itself */
 if(SIM&&qs.get('simfreeze')==='1'&&qs.get('hlmotion')!=='1')document.documentElement.classList.add('hl-still');
-if(SIM)window.__durbarSimUi={agents:()=>agents,crew:{state:()=>({map:{...CREW_MAP},help:{...CREW_HELP},bad:[...CREW_BAD],hasModule:!!CREW}),renderAll:()=>{renderAll();return true;},probe:()=>{try{crewPreload();syncCrew();return {ok:true,of:agents.map(x=>crewOf(x)).filter(Boolean).length};}catch(e){return {ok:false,err:String(e&&e.message)};}},openInbox:()=>{openInbox();return true;},closeInbox:()=>{closeInbox();return true;},openPanel:id=>{openPanel(id);return true;},fall:c=>{const f0=CREW.file;CREW.file=(i,p)=>i===c?'crew/art/gone.webp':f0(i,p);crewLoaded.clear();crewPreload();CREW.file=f0;return true;}}, /* spec 077 (check-crew): the character map, a render, and one character's pictures failing to load */
+if(SIM)window.__durbarSimUi={agents:()=>agents,order:{get:()=>ORDER,saved:()=>bridge.getOrder?bridge.getOrder():null,reset:resetOrder,path:id=>(ROOMS.find(r=>'room:'+r.id===id)||{}).path||''}, /* issue 677 (check 033-order): the order held and saved, Reset, a room's key */
+  toast:(s,act)=>{const t=act?toastAction(esc(String(s)),String(act),()=>{},8000):toast(esc(String(s)),8000);return !!t;}, /* spec 097 FR-113: a toast for the world-chrome driver (simulator only) */realLayout:()=>RO_LAST, /* spec 097: the last Real office layout (check-office-overlap's Real office variant) */uncrowd:()=>{agents.forEach(x=>VISITS.unpin(x.id));scheduleRender();return true;},crowd:(pid,n,from)=>{const a=agents.filter(x=>!x.parent).slice(from||0,(from||0)+n);a.forEach(x=>VISITS.pin(x.id,pid,'test'));scheduleRender();return a.length;}, /* spec 097: n main agents stand at a place (a "+N" crowd for the driver; simulator only) */crew:{state:()=>({map:{...CREW_MAP},help:{...CREW_HELP},bad:[...CREW_BAD],hasModule:!!CREW}),renderAll:()=>{renderAll();return true;},probe:()=>{try{crewPreload();syncCrew();return {ok:true,of:agents.map(x=>crewOf(x)).filter(Boolean).length};}catch(e){return {ok:false,err:String(e&&e.message)};}},openInbox:()=>{openInbox();return true;},closeInbox:()=>{closeInbox();return true;},openPanel:id=>{openPanel(id);return true;},fall:c=>{const f0=CREW.file;CREW.file=(i,p)=>i===c?'crew/art/gone.webp':f0(i,p);crewLoaded.clear();crewPreload();CREW.file=f0;return true;}}, /* spec 077 (check-crew): the character map, a render, and one character's pictures failing to load */
   readAll:(quiet)=>{const n=UNREAD.size;UNREAD.ids().forEach(id=>{UNREAD.read(id);UNREAD_AT.delete(id);});if(!quiet)scheduleRender();return n;},notes:{all:()=>[...NT.by.values()].map(x=>x.notes||[]).flat(),saveMsg:btn=>{const a=byId(ui.selected);return notesSaveMsg(a,msgInfo(btn),btn);},noCommands:()=>{const x=agents.find(q=>q.live&&!q.parent&&!slashSupported(q));return x?x.name:'';},selNow:()=>{showSelButton();const b=document.getElementById('ntSelBtn');return !!b&&!b.hidden;},open:()=>openNotes(byId(ui.selected)),close:()=>closeNotes(false),search:q=>{const f=$('ntSearch');if(!f)return false;f.value=q;f.dispatchEvent(new Event('input'));return true;},marks:{clear:()=>{document.querySelectorAll('#chat .nt-mark').forEach(x=>x.remove());document.querySelectorAll('#chat .bubble').forEach(b=>{b._nd=undefined;});return true;},run:()=>notesMarkAll(byId(ui.selected))},change:(note,patch)=>notesChange(byId(ui.selected),note,patch),rename:note=>renameNote(byId(ui.selected),note,null),plant:n=>{const a=byId(ui.selected),st=a&&notesOf(a);if(!st||!st.ok)return false;st.notes.push(n);notesPaint();if(slashUi)slashUpdate();return true;}}, /* spec 083: the check-notes driver reads the window's notes and takes the paths a click cannot */
   sizingLounges:()=>lastSizing.reduce((n,m)=>n+(m.rolled||[]).length,0), sizingMains:()=>lastSizing.reduce((n,m)=>n+m.mains.length,0), /* FR-181: the desks it is sized for (a pill does not reshape the cards) */ /* spec 001 FR-180: the finished agents the office is sized for */
   hxOff:(off)=>{HX_OFF=!!off;layoutKey='';scheduleRender();return HX_OFF;},renamePrevRow,settleNow,bridge:()=>bridge,render:()=>{layoutKey='';scheduleRender();},loungeTurn,quietHeads:(parts)=>{SIM_QUIET_HEADS=new Set(Array.isArray(parts)?parts:[]);},paint:()=>scheduleRender(),emit:onLiveEvent,

@@ -1,3 +1,4 @@
+import type { OrderDoc } from './roomorder';
 import type { FolderSetupDecision, FolderSetupView, HookExplanation } from './foldersetup';
 import type { BroadKind } from './broadfolder';
 import type { AgentEvent, McpServerStatus } from '../adapters/types';
@@ -13,7 +14,7 @@ import type { AdapterInfo } from './adapters';
 import type { OrgPolicyAppView } from './orgpolicy';
 import type { ActivityRow } from './activity';
 import type { RemoteState } from './remote';
-import type { NotesFileCount, NotesSetFile, NotesView, NotesWrote } from './notes';
+import type { NotesExport, NotesFileCount, NotesSetFile, NotesView, NotesWrote } from './notes';
 export type { RemoteState };
 export type { AdapterInfo };
 
@@ -819,7 +820,11 @@ export interface DurbarApi {
   /** Hide or show the folder of agent `id`; the choice is remembered. */
   setFolderHidden?(id: string, hidden: boolean): Promise<{ ok: boolean }>;
   /** Remove the folder of agent `id`: ends its sessions and forgets the folder. */
-  removeFolder?(id: string): Promise<{ ok: boolean; removedIds: string[] }>;
+  /**
+   * Spec 083 FR-048 (T034b): `deleteNotes` also deletes the folder's notes file, after main's native confirmation (Cancel: nothing is
+   * removed, `cancelled`). `notesDeleted` / `notesError` say what happened to the notes.
+   */
+  removeFolder?(id: string, opts?: { deleteNotes?: boolean }): Promise<{ ok: boolean; removedIds: string[]; cancelled?: boolean; error?: string; notesDeleted?: boolean; notesError?: string }>;
   /** Ends one main session and takes it out of the office (spec 006 FR-017); refused for the last main session of a folder and for helpers. */
   removeSession?(id: string): Promise<{ ok: boolean; error?: string }>;
   /** Sets the folder's display name (spec 006 FR-018); empty = the folder's own name. */
@@ -838,6 +843,10 @@ export interface DurbarApi {
   onlyFloor?(id: string): Promise<FloorsResult>;
   /** Move the folder of agent `agentId` (all its agents) to a floor. */
   moveFolderToFloor?(agentId: string, floorId: string): Promise<FloorsResult>;
+  /** The saved manual order of rooms (by folder path), desks inside a room (by agent id) and places (by place id); sequencing only (issue #677). */
+  getOrder?(): Promise<OrderDoc>;
+  /** Saves the order; resolves with what was kept after cleaning. */
+  setOrder?(doc: OrderDoc): Promise<OrderDoc>;
 
   /** Credit caps (spec 011). `credits: null` removes the cap. */
   getSettings?(): Promise<AppSettingsView>;
@@ -1049,6 +1058,8 @@ export interface DurbarApi {
   notesStartOver?(id: string): Promise<NotesWrote>;
   notesFileCount?(id: string): Promise<NotesFileCount>;
   notesSetFile?(id: string, on: boolean, opts?: { deleteFile?: boolean; exclude?: boolean }): Promise<NotesSetFile>;
+  /** FR-048 (T034b): main shows the save dialog and writes the chosen file; the window sends no path. The simulator writes nothing (`demo`). */
+  notesExport?(id: string): Promise<NotesExport>;
   /** A folder's notes changed (another chat, another process): refetch the open folder's notes when the fingerprint is its own. */
   onNotesChanged?(cb: (v: { fingerprint: string }) => void): () => void;
   /** Spec 066: answer a proposed plan (window only). */

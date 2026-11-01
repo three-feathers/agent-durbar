@@ -1,0 +1,1 @@
+- **Downloadable worlds move to their own repository** (spec 102 delta 2026-11-01, owner decision): packs will be served from `three-feathers/agent-durbar-worlds`; worlds that ship in the app stay here, the app holds each pack's hash and loads nothing without one. Spec only; nothing is built.
