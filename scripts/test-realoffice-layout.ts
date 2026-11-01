@@ -9,7 +9,10 @@ import { lightFor, lightState, LIGHT_TABLE, ambientFor, doneTick, fixtureLight, 
 
 process.exitCode = 1;
 const ROOT = (() => { let d = __dirname; while (!fs.existsSync(path.join(d, 'package.json'))) d = path.dirname(d); return d; })();
-const META = JSON.parse(fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'realoffice', 'art', 'people.json'), 'utf8')) as RealMeta;
+const RO = path.join(ROOT, 'src', 'renderer', 'realoffice');
+const readJson = (...p: string[]): Record<string, unknown> => JSON.parse(fs.readFileSync(path.join(RO, ...p), 'utf8'));
+/** what realoffice.js hands the engine: a world's furniture numbers with a set's people numbers */
+const META = { ...readJson('worlds', 'photo', 'world.json'), ...readJson('sets', 'office', 'set.json') } as unknown as RealMeta;
 const PEOPLE = Object.keys(META.seat).sort();
 assert.strictEqual(PEOPLE.length, 15, 'the art has 15 seated people');
 
@@ -321,22 +324,44 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
   assert.ok(best6 < 15, `7 folders with the full search: ${best6.toFixed(2)} ms (3.5 ms on the dev machine)`);
 }
 
-// ---- FR-084: the Characters setting in Real office (the seam in crew.js) ----
+// ---- spec 102 FR-200..FR-202: the world and set seam in crew.js (two flat lists of data, any set in any world) ----
 {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const C = require(path.join(ROOT, 'src', 'renderer', 'crew.js')) as { realOfficeSet: (c: string) => { set: string; scene: string; coming: boolean }; realOfficeNote: (c: string, v: string) => string; REAL_OFFICE_SETS: string[] };
-  assert.deepStrictEqual(C.REAL_OFFICE_SETS, ['office'], 'only the Office people have Real office pictures today');
-  for (const c of ['theme', 'minimalist', '', 'mine', '__proto__']) assert.deepStrictEqual(C.realOfficeSet(c), { set: 'office', scene: 'office', coming: false }, `${c || '(none)'}: the Office people, no note`);
-  for (const c of ['cheeky', 'prehistoric']) assert.deepStrictEqual(C.realOfficeSet(c), { set: 'office', scene: 'office', coming: true }, `${c}: a crew without Real office pictures shows the Office people, and Settings says so`);
-  // FR-083: the Settings line, for a crew only and only with Real office chosen
-  assert.strictEqual(C.realOfficeNote('cheeky', 'real'), 'Real office shows the Office people until the Cheeky loft is ready.', 'Cheeky: the note names its world');
-  assert.strictEqual(C.realOfficeNote('prehistoric', 'real'), 'Real office shows the Office people until the Prehistoric cave is ready.', 'Prehistoric: the note names its world');
-  for (const c of ['theme', 'minimalist', '', 'mine', '__proto__', 'office']) assert.strictEqual(C.realOfficeNote(c, 'real'), '', `${c || '(none)'}: the Office people, no note`);
-  for (const v of ['cabins', 'open', '']) assert.strictEqual(C.realOfficeNote('cheeky', v), '', `${v || '(none)'}: no note outside Real office`);
-  C.REAL_OFFICE_SETS.push('cheeky');
-  assert.deepStrictEqual(C.realOfficeSet('cheeky'), { set: 'cheeky', scene: 'office', coming: false }, 'a crew with pictures is drawn (the seam)');
-  assert.strictEqual(C.realOfficeNote('cheeky', 'real'), '', 'a crew whose world shipped has no note');
-  C.REAL_OFFICE_SETS.pop();
+  const C = require(path.join(ROOT, 'src', 'renderer', 'crew.js')) as { WORLD_FLAGS: Record<string, boolean>; WORLDS: { id: string; name: string; defaultSet: string; flag?: string }[]; REAL_SETS: { id: string; name: string; choice: string; flag?: string }[]; offeredWorlds: (f?: Record<string, boolean>) => { id: string }[]; parseWorld: (v: unknown, f?: Record<string, boolean>) => string; peopleFor: (w: unknown, c: unknown, f?: Record<string, boolean>) => { world: string; set: string; setName: string; note: string }; CREWS: Record<string, unknown> };
+  assert.deepStrictEqual(C.offeredWorlds().map((w) => w.id), ['photo'], 'today only Photo office is offered');
+  assert.deepStrictEqual(C.REAL_SETS.map((s) => s.id), ['office'], 'today only the Office people have Real office poses');
+  // the lists are data: a flagged world with its own default set is added by rows alone (a Pirate world later changes no code)
+  C.WORLDS.push({ id: 'pirate', name: 'Pirate ship', defaultSet: 'pirates', flag: 'pirate' });
+  C.REAL_SETS.push({ id: 'pirates', name: 'Pirates', choice: 'pirates', flag: 'pirate' });
+  C.WORLD_FLAGS.pirate = false;
+  const ON: Record<string, boolean> = { pirate: true }, OFF: Record<string, boolean> = { pirate: false };
+  try {
+    assert.deepStrictEqual(C.offeredWorlds(OFF).map((w) => w.id), ['photo'], 'flag off: only Photo office is offered');
+    assert.deepStrictEqual(C.offeredWorlds(ON).map((w) => w.id), ['photo', 'pirate'], 'flag on: both, Photo office first');
+    for (const w of C.WORLDS) assert.ok(C.REAL_SETS.some((s) => s.id === w.defaultSet), `${w.id}: its default set is in the list of sets`);
+    for (const r of [...C.WORLDS, ...C.REAL_SETS]) if (r.flag) assert.ok(r.flag in C.WORLD_FLAGS, `${r.id}: its flag exists`);
+    for (const v of ['pirate', 'loft', '', null, undefined, 3, '__proto__', 'match']) assert.strictEqual(C.parseWorld(v, OFF), 'photo', `${String(v)}: Photo office while the flag is off`);
+    assert.strictEqual(C.parseWorld('pirate', ON), 'pirate');
+    for (const v of ['', null, '__proto__', 'constructor', 'toString']) assert.strictEqual(C.parseWorld(v, ON), 'photo');
+    for (const f of [OFF, ON]) for (const w of ['photo', 'pirate', 'bogus', '']) for (const c of ['theme', 'minimalist', 'cheeky', 'pirates', 'prehistoric', 'mine', '', '__proto__', 'office']) {
+      const r = C.peopleFor(w, c, f), world = C.parseWorld(w, f), row = C.WORLDS.find((x) => x.id === world)!;
+      assert.strictEqual(r.world, world, 'the world is the parsed one');
+      assert.ok(C.REAL_SETS.some((s) => s.id === r.set && (!s.flag || f[s.flag])), `${w}/${c}: only an installed set is drawn`);
+      const explicit = C.REAL_SETS.find((s) => s.choice === c && c && (!s.flag || f[s.flag]));
+      const defRow = C.REAL_SETS.find((s) => s.id === row.defaultSet)!, def = !defRow.flag || f[defRow.flag] ? defRow.id : 'office';
+      assert.strictEqual(r.set, explicit ? explicit.id : def, `${w}/${c}: an explicit full set wins in any world, else the world's default, else Office people`);
+    }
+    assert.deepStrictEqual(C.peopleFor('photo', 'theme', OFF), { world: 'photo', set: 'office', setName: 'Office people', note: '' });
+    assert.deepStrictEqual(C.peopleFor('pirate', 'theme', ON), { world: 'pirate', set: 'pirates', setName: 'Pirates', note: '' }, "a world's default set");
+    assert.strictEqual(C.peopleFor('photo', 'pirates', ON).set, 'pirates', 'any set in any world');
+    assert.strictEqual(C.peopleFor('photo', 'pirates', OFF).set, 'office', 'flag off: the set is not drawn');
+  } finally { C.WORLDS.pop(); C.REAL_SETS.pop(); delete C.WORLD_FLAGS.pirate; }
+  // FR-083 / FR-202: the note (peopleFor's), for a crew choice with no Real office poses; the names come from CREWS, so every crew without a REAL_SETS row has one
+  const note = (c: string): string => C.peopleFor('photo', c).note;
+  for (const c of ['minimalist', ...Object.keys(C.CREWS)]) if (!C.REAL_SETS.some((s) => s.choice === c)) assert.strictEqual(note(c), `Real office shows Office people until ${c[0].toUpperCase() + c.slice(1)} has Real office poses.`, `${c}: has its note`);
+  for (const c of ['theme', 'mine', '', '__proto__', 'constructor', 'office']) assert.strictEqual(note(c), '', `${c || '(none)'}: no note`);
+  C.CREWS.pirate = []; // a future crew (mutant check: a hand list of names would miss it)
+  try { assert.strictEqual(note('pirate'), 'Real office shows Office people until Pirate has Real office poses.', 'a new crew gets its note by construction'); } finally { delete C.CREWS.pirate; }
 }
 
 // ---- FR-037: who sits where ----
@@ -420,5 +445,10 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
   } else console.log('(dist/shared not built: the page-load check is skipped; npm test builds first)');
 }
 
+{
+  // sweep 2026-11-01: choosing an Office layout repaints Settings; the pressed button keeps the keyboard focus
+  const scr = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'screens.js'), 'utf8');
+  assert.ok(/const hadFocus=document\.activeElement===olb;\s*await paint\(\);[^\n]*\n\s*if\(hadFocus\)\{const nb=document\.querySelector\('\[data-officelayout="'\+k\+'"\]'\);if\(nb\)focusIn\(nb\);\}/.test(scr), 'the Office layout pick restores focus after the repaint');
+}
 console.log(`realoffice layout and lights tests passed (${cases} layouts, faces ${JSON.stringify(faces)})`);
 process.exitCode = 0;

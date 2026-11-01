@@ -40,8 +40,10 @@
   const isOpen=()=>!!cur;
   function paint(focus){
     if(!cur)return;
-    if(cur.kind==='tools')paintTools(focus);else if(cur.kind==='folder')paintFolder(focus);else if(cur.kind==='notes')paintNotes(focus);else paintSettings(focus);
+    let done;
+    if(cur.kind==='tools')paintTools(focus);else if(cur.kind==='folder')paintFolder(focus);else if(cur.kind==='notes')paintNotes(focus);else done=paintSettings(focus);
     if(cur.kind!=='settings'&&window.DurbarHarnesses&&window.DurbarHarnesses.shown)window.DurbarHarnesses.shown(false);
+    return done; /* a promise for Settings (async): a caller may wait for the new page */
   }
   /* modal: body is an element or html; buttons [{label,value,cls}]; resolves value (or null when dismissed). `validate(root)` may return an error text (keeps it open and shows it), `true` (keeps it open; the caller already showed the error) or a promise of either. */
   function dialog({title,html,buttons,wide,size,cls,validate,onOpen}){
@@ -341,7 +343,8 @@
     /* the items are painted again after a theme pick: the theme's own figures and every preview follow the theme */
     const charItems=()=>{
       const cur=window.THEME.characters(), own=window.THEME.themeKit(), crewN=window.DurbarCrew&&Array.isArray(window.DurbarCrew.IDS)?window.DurbarCrew.IDS.length:0; const preN=window.DurbarCrew&&Array.isArray(window.DurbarCrew.PREHISTORIC_IDS)?window.DurbarCrew.PREHISTORIC_IDS.length:0;
-      const list=[{id:'theme',name:'The theme\u2019s own',sub:(KIT_NAMES[own]||own)+' figures'},{id:'minimalist',name:'Minimalist',sub:'The calm office figure'},{id:'cheeky',name:'Cheeky',sub:crewN?crewN+' cheeky characters':'Cheeky characters'},{id:'prehistoric',name:'Prehistoric',sub:preN?preN+' cave characters':'Cave characters'}];
+      const real=X.signs&&X.signs.view&&X.signs.view.get()==='real'&&X.signs.view.world; /* FR-201: in Real office the first choice is the world's default set */
+      const list=[real?{id:'theme',name:'World\u2019s default ('+real.defaultSet()+')',sub:'People follow the world'}:{id:'theme',name:'The theme\u2019s own',sub:(KIT_NAMES[own]||own)+' figures'},{id:'minimalist',name:'Minimalist',sub:'The calm office figure'},{id:'cheeky',name:'Cheeky',sub:crewN?crewN+' cheeky characters':'Cheeky characters'},{id:'prehistoric',name:'Prehistoric',sub:preN?preN+' cave characters':'Cave characters'}];
       return list.map((c)=>`<li class="throw"><button class="thpick" type="button" data-characters="${esc(c.id)}" aria-pressed="${c.id===cur}" aria-label="Characters ${esc(c.name)}: ${esc(c.sub)}"><span class="chsw" aria-hidden="true">${X.charPreview?X.charPreview(c.id):''}</span><span class="thtx"><b title="${esc(c.name)}">${esc(c.name)}</b><small>${esc(c.sub)}</small></span></button></li>`).join('');
     };
     const charSec=window.THEME&&window.THEME.setCharacters&&X.applyCharacters?`<section class="scr-sec" aria-labelledby="chH"><h3 id="chH">Characters</h3>
@@ -368,7 +371,7 @@
     const dl=X.detail?X.detail.get():'expert';
     const detailSec=X.detail?`<section class="scr-sec" aria-labelledby="detH"><h3 id="detH">Detail level</h3>
         <p class="scr-note">Expert adds tokens, models, context and paths. Permissions work the same in both.</p>
-        <div class="seg" role="group" aria-label="Detail level"><button type="button" data-detail="simple" aria-pressed="${dl==='simple'}">Simple</button><button type="button" data-detail="expert" aria-pressed="${dl!=='simple'}">Expert</button></div>${X.density?densityRow():''}${X.liveAct&&X.liveAct.usable()?liveActRow():''}${X.shutters&&X.shutters.usable()?shuttersRow():''}${X.signs&&X.signs.usable()?signsRow():''}</section>`:'';
+        <div class="seg" role="group" aria-label="Detail level"><button type="button" data-detail="simple" aria-pressed="${dl==='simple'}">Simple</button><button type="button" data-detail="expert" aria-pressed="${dl!=='simple'}">Expert</button></div>${X.density?densityRow():''}${X.liveAct&&X.liveAct.usable()?liveActRow():''}${X.shutters&&X.shutters.usable()?shuttersRow():''}${X.signs&&X.signs.usable()?signsRow()+worldRow():''}</section>`:'';
     /* spec 074 FR-013 (issue 548): the navigator shortcut, recorded here, checked for clashes, kept for this window */
     const keySec=X.navKey?`<section class="scr-sec" aria-labelledby="keyH"><h3 id="keyH">Keyboard</h3>
         <p class="scr-note">Go to (the navigator) opens from anywhere: a floor, a folder, an agent, or a chat by its number (C and the number).</p>
@@ -428,7 +431,7 @@
       if(v&&v.ok){X.onUsageReset(v);X.toast('Usage totals were reset.',2600);paintSettings();}
       else{const m=$('usageTotalsMsg');if(m)m.textContent='Could not reset the totals.';}
     };
-    r.onclick=onSettingsClick;
+    r.onclick=onSettingsClick;r.onkeydown=worldKeys;
     r.onchange=e=>{if(e.target&&e.target.id==='chatLinksSel')return onChatLinksChange(e);return onPlaceChange(e);};
     /* theme picker (spec 037): click applies live through app.js's applyTheme; no restart */
     /* spec 037 FR-014: each swatch shows its own theme's colours (validated colour values set through CSSOM) */
@@ -447,7 +450,7 @@
     /* spec 077 FR-068: a Characters pick applies live through app.js's applyCharacters and shows the new choice at once */
     if($('chList'))$('chList').addEventListener('click',(e)=>{
       const b=e.target.closest&&e.target.closest('[data-characters]');if(!b||!X.applyCharacters)return;
-      X.applyCharacters(b.dataset.characters);
+      Promise.resolve(X.applyCharacters(b.dataset.characters)).then(()=>{const n=$('dsR'),V=X.signs&&X.signs.view;if(n&&V)n.textContent=V.note();}); /* spec 102 FR-202: the one line saying a choice has no Real office poses follows the pick */
       $('chList').querySelectorAll('[data-characters]').forEach((x)=>x.setAttribute('aria-pressed',String(x===b)));
     });
     if($('thImport'))$('thImport').onclick=async()=>{
@@ -717,6 +720,25 @@
   }
   /* spec 017 FR-008, FR-014, FR-027 (owner 2026-10-24: "office with cabins vs open office modes in config to switch between old and this
      new mode"): Office with cabins (default) or Open office (the desks exactly as before the cabins); kept per computer */
+  /* spec 102 FR-201 (097 FR-114): the World row, a radio group, only with Real office on and more than one world offered (a flagged world is
+     not offered, so with the flag off the Settings page is as before). Keyboard: arrows move and select; tokens only. */
+  function worldRow(){
+    const V=X.signs&&X.signs.view, W=V&&V.world, list=W?W.list():[];
+    if(!W||V.get()!=='real'||list.length<2)return '';
+    const cur=W.get();
+    return `<div class="scr-row" id="wrRow"><span class="scr-row-l" id="wrL">World</span><div class="seg" role="radiogroup" aria-labelledby="wrL" aria-describedby="wrN" id="wrGroup">${list.map(w=>`<button type="button" role="radio" data-world="${esc(w.id)}" aria-checked="${w.id===cur}" tabindex="${w.id===cur?'0':'-1'}">${esc(w.name)}</button>`).join('')}</div><span class="scr-note small" id="wrN">The room Real office draws. Its people follow the world unless you pick a set under Characters.</span></div>`;
+  }
+  /* the pick applies at once; the page is painted again (Characters names the new default) and focus returns to the radio */
+  async function pickWorld(b){
+    const id=b.dataset.world;X.signs.view.world.set(id);await paintSettings();
+    const nb=document.querySelector('#wrGroup [data-world="'+CSS.escape(id)+'"]');if(nb)focusIn(nb);
+  }
+  function worldKeys(e){
+    const b=e.target.closest&&e.target.closest('#wrGroup [data-world]');if(!b)return;
+    const all=[...b.parentElement.querySelectorAll('[data-world]')], i=all.indexOf(b), k=e.key;
+    const to=k==='ArrowRight'||k==='ArrowDown'?all[(i+1)%all.length]:k==='ArrowLeft'||k==='ArrowUp'?all[(i-1+all.length)%all.length]:k==='Home'?all[0]:k==='End'?all[all.length-1]:null;
+    if(to){e.preventDefault();pickWorld(to);}
+  }
   function signsRow(){
     const on=!!X.signs.get();
     /* spec 097 FR-001: a third choice, Real office (a separate preference, durbar.officeview: Open office and cabins keep their own) */
@@ -842,6 +864,8 @@
       if(res&&res.ok){X.setSerious(!!res.seriousMode);ss.classList.toggle('on',!!res.seriousMode);ss.setAttribute('aria-checked',res.seriousMode?'true':'false');const m=$('seriousMsg');if(m)m.textContent=res.seriousMode?'Serious mode is on: no mood drawings.':'Serious mode is off.';}
       return;
     }
+    const wb=e.target.closest('#wrGroup [data-world]');
+    if(wb&&X.signs&&X.signs.view&&X.signs.view.world){pickWorld(wb);return;}
     const olb=e.target.closest('[data-officelayout]');
     if(olb&&X.signs){
       const k=olb.dataset.officelayout, V=X.signs.view;
@@ -851,6 +875,9 @@
       const on=!!X.signs.get(), view=V?V.get():'flat', g=olb.parentElement;
       if(g)g.querySelectorAll('[data-officelayout]').forEach(b=>{const t=b.dataset.officelayout;b.setAttribute('aria-pressed',String(t==='real'?view==='real':view!=='real'&&(t==='cabins')===on));});
       const n=$('dsR');if(n&&V)n.textContent=V.note();
+      const hadFocus=document.activeElement===olb;
+      await paint(); /* the World row appears with Real office, and Characters names the world's default set */
+      if(hadFocus){const nb=document.querySelector('[data-officelayout="'+k+'"]');if(nb)focusIn(nb);} /* the repaint replaced the pressed button: keep the keyboard where it was */
       const tw=$('thWorld');if(tw){tw.textContent=worldWords();tw.hidden=!tw.textContent;}
       return;
     }

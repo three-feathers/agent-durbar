@@ -3,7 +3,7 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Real office mode (owner request, Vikram 2026-10-30/31): a realistic front-facing open-plan office as a second office mode beside flat (default), live screens, animated people, status lights; folds in #692
-note: P1 (scene, lights) built; P2 (screens, motion), P3 (My characters, manual lighting) not; crews' worlds (FR-100/FR-114) not
+note: P1 (scene, lights) built; world seam (T100..T102, pack move) built, no second world offered; P2 (screens, motion), P3 (My characters, manual lighting) not
 status: building
 -->
 
@@ -330,6 +330,14 @@ Each has a recommendation (Q6 is for Paco, the crew owner). The build waits for 
 
 ## Changes
 
+### 2026-11-02: the Real office note names every crew (review on #991)
+
+The note's crew names come from `CREWS` in `crew.js` (plus Minimalist), not a hand list, so a new crew (Pirate, Monster) gets the line by construction; `realOfficeNote` is removed (one path: `peopleFor(...).note`). Wording unchanged. test: `test:realoffice-layout` (every crew without a `REAL_SETS` row, and a future crew).
+
+### 2026-11-01: the Office layout pick keeps keyboard focus (sweep finding)
+
+Choosing an Office layout repaints Settings; the pressed button is found again and refocused (only if it had focus). test: `scripts/test-realoffice-layout.ts` (source pin), `scripts/shots-097-realoffice.js` (driver: focus on the pressed button after the click).
+
 ### 2026-10-31: owner answers (Q1-Q6, lobby places) and the phase P1 build
 
 **Owner answers** (Telegram, relayed to the build agent by Vikram's coordinating agent; quoted as relayed):
@@ -631,6 +639,14 @@ Numbers checked 2026-10-31 against `main`, the P1 branch and open PRs: 097 uses 
 - **No bare initials in the lobby (FR-026, Paco's request on #921)**: chips make room in this order: the nearest free spot (64 px, three levels), then the chips already placed on the row slide left (never onto a plate), then the name shortens (first 6 down to 2 letters and an ellipsis); chip padding is 4 px and the gap 1 px; text stays 10.5 px. `sim:` `shots-097-realoffice` asserts at 15, 12 and 8 agents, both sizes, in the default font and DejaVu Sans, that no chip is a bare initial, (`sim:` also a synthetic strip of fixed-width plates and chips: two chips between two plates keep whole names by the first sliding left, and three that cannot fit never become initials; mutants: no slide, initials back, both fail). **Measured limit [KNOWN GAP]**: at 1280x800 the pair beside the Software library plate (Elif, Rosa in the simulator) has about 60 px between two plates; in the default font both fit by sliding unless one carries a needs-you icon, and in DejaVu Sans (about 10 % wider) one of them shows its first letters and an ellipsis, a little away from its person (12 and 15 agents, one chip); text was not shrunk, and no chip is a bare initial. Listed in `docs/limits.md`.
 - The Shift+F10 and Menu-key tests block the native `contextmenu` event so only the keydown handler can open the card menu; Escape returns focus to the plate (and to the "+N" plate); the placement guards have deterministic checks (chips widened by a style after the drawing, and a chip put on a plate, no font needed); the 400 ms sleep is a second `until()` that sees the same placement twice. Each has a mutant.
 - Re-review at f941d25b, three more test gaps: `resolve` is proven as part of every placement (a render whose chip measure is 40 px stale inside `stagger` only is put right by `resolve`; mutant: the call removed); the observer test changes padding and the left border (the border box, not the content box; mutant: `observe(e)` fails); the observed set follows the elements (`sweep` unobserves what it removes; `_obs.size` equals the chips and plates drawn after a crowd leaves; mutant: no `unobserve`).
+
+### 2026-11-01: the world seam, following spec 102 where it differs (T100, T101, T102)
+
+Spec 102 FR-200..FR-213 are the owner's latest on worlds (two flat lists, any set in any world, a default set per world); where this spec says otherwise they win:
+- **FR-100, FR-114** ("crews pick their world", *Match my characters*) are replaced: `peopleFor(world, choice)` in `crew.js` (FR-202's order: an explicit choice with full poses, else the world's default set, else Office people). `realOfficeSet` is gone. Worlds and sets are data rows (`WORLDS`, `REAL_SETS`, `WORLD_FLAGS`): a row with a `flag` that is off is not offered. `[IMPLEMENTED]` `test:` `test:realoffice-layout` (every value x world x flag, plus a made-up third world added by rows alone).
+- **FR-115** (per-world packs) and spec 102 FR-205: `realoffice/worlds/<id>/` (room: desk, floor, fixtures, `world.json`, optional `world.css`) and `realoffice/sets/<id>/` (people, `set.json`), each lazy; `html[data-world]` is the shown world's id. `test:realoffice-assets` checks a world together with its default set under the 10 MB cap (spec 102 FR-213). `[IMPLEMENTED]` `test:` `test:realoffice-assets`.
+- **T102 / spec 102 FR-201**: a **World** radio row under Office layout, shown only when Real office is on and more than one world is offered (none is yet, so nothing shows); Characters' first choice reads *World's default (<set>)* in Real office. `[KNOWN GAP]` spec 102 FR-201 replaces the Office layout row and keeps `world` in `durbar-settings.json` through main; here the World choice is `localStorage` `durbar.world` and Real office is still the opt-in third layout button (the owner keeps it opt-in), because the main-process path and the layout migration (FR-207) are not built. `[KNOWN GAP]` an explicit Office people choice is not in the Characters list yet (the default is the way to get it).
+- A set with fewer people than agents repeats people (spread across folders by `assignPeople`).
 
 ### 2026-10-31: visitors face their fixture (facing poses; stacked on #921)
 

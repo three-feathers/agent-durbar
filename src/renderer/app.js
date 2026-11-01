@@ -1691,7 +1691,7 @@ const officeView=()=>OFFICE_VIEW;
 const syncWorld=()=>{
   const on=OFFICE_VIEW==='real'&&RO_LOAD!=='failed';
   if(on&&!document.getElementById('roWorldCss')){const l=document.createElement('link');l.id='roWorldCss';l.rel='stylesheet';l.href='realoffice-world.css';document.head.appendChild(l);} /* its rules, also in the List view (FR-061: only once Real office is chosen) */
-  if(THEME&&THEME.setWorld)THEME.setWorld(on?'photo':null);
+  if(THEME&&THEME.setWorld)THEME.setWorld(on?roPeople().world:null); /* html[data-world] is the shown world's id (spec 101 FR-033 reads it) */
 };
 /* FR-004: from the cabins, the same "Switch to an open office?" question as Open office; false when the user keeps the cabins */
 async function setOfficeView(v){
@@ -1703,14 +1703,55 @@ async function setOfficeView(v){
 }
 /* spec 097 FR-084 (owners 2026-10-31): the Characters setting applies in Real office too; a set without Real office pictures (today
    every crew) shows the Office people, and Settings says so until that crew's world ships (FR-083, FR-100, FR-114) */
-const realOfficeSet=()=>CREW&&CREW.realOfficeSet?CREW.realOfficeSet(crewChoice()):{set:'office',scene:'office',coming:false};
+/* spec 102 FR-200..FR-202 (owner's latest; replaces 097 FR-100/FR-114's "crews pick their world"): worlds and character sets are two flat
+   lists in crew.js, any set in any world. The World choice is kept in localStorage `durbar.world` (a bad or unoffered value is the first
+   world); `[KNOWN GAP]` spec 102 FR-201 keeps it in durbar-settings.json through main, which needs an IPC channel and is not built yet.
+   A pack that failed to load is skipped: the first world and Office people, which always ship. */
+let RO_WORLD=(()=>{try{return localStorage.getItem('durbar.world')||'';}catch(e){return '';}})();
+if(qs.has('sim')&&CREW&&CREW.WORLD_FLAGS){ /* drivers: the simulator only; switches a flagged world on and picks a world */
+  for(const f of (qs.get('worldflags')||'').split(',').filter(Boolean))if(Object.prototype.hasOwnProperty.call(CREW.WORLD_FLAGS,f))CREW.WORLD_FLAGS[f]=true;
+  if(qs.get('world'))RO_WORLD=qs.get('world');
+}
+const PACKS={}; /* 'worlds/<id>' or 'sets/<id>' -> 'loading' | 'ready' | 'failed' (spec 097 FR-115, spec 102 FR-205: only the shown ones load) */
+const roPeople=()=>{
+  if(!CREW||!CREW.peopleFor)return {world:'photo',set:'office',setName:'Office people',note:''};
+  let r=CREW.peopleFor(RO_WORLD,crewChoice());
+  if(PACKS['worlds/'+r.world]==='failed'||PACKS['sets/'+r.set]==='failed'){
+    const w=PACKS['worlds/'+r.world]==='failed'?CREW.WORLDS[0].id:r.world;
+    r=CREW.peopleFor(w,PACKS['sets/'+r.set]==='failed'?'':crewChoice()); if(PACKS['sets/'+r.set]==='failed')r={world:r.world,set:CREW.REAL_SETS[0].id,setName:CREW.REAL_SETS[0].name,note:''};
+  }
+  return r;
+};
+const roWorlds=()=>CREW&&CREW.offeredWorlds?CREW.offeredWorlds().map(w=>({id:w.id,name:w.name})):[];
+function setRoWorld(id){
+  id=CREW&&CREW.parseWorld?CREW.parseWorld(id):'photo';
+  RO_WORLD=id;try{localStorage.setItem('durbar.world',id);}catch(e){}
+  syncWorld();layoutKey='';if(OFFICE_VIEW==='real')scheduleRender();return id;
+}
+/* loads one pack's script (and its stylesheet when world.json names one) the first time it is shown */
+function ensurePack(kind,id){
+  const key=kind+'/'+id;
+  if(PACKS[key])return PACKS[key]==='ready';
+  PACKS[key]='loading';
+  const sc=document.createElement('script');sc.src='realoffice/'+kind+'/'+id+'/'+(kind==='worlds'?'world':'set')+'.js';
+  sc.onload=()=>{
+    const g=window[kind==='worlds'?'DurbarRealOfficeWorlds':'DurbarRealOfficeSets'], m=g&&g[id];
+    if(!m){PACKS[key]='failed';}else{
+      PACKS[key]='ready';
+      if(kind==='worlds'&&typeof m.css==='string'&&/^[\w.-]+\.css$/.test(m.css)&&!document.getElementById('roWorldCss-'+id)){const l=document.createElement('link');l.id='roWorldCss-'+id;l.rel='stylesheet';l.href='realoffice/worlds/'+id+'/'+m.css;document.head.appendChild(l);}
+    }
+    syncWorld();layoutKey='';scheduleRender();};
+  sc.onerror=()=>{PACKS[key]='failed';syncWorld();layoutKey='';scheduleRender();};
+  document.body.appendChild(sc);
+  return false;
+}
 let RO_LOAD=''; /* '', 'loading', 'ready', 'failed' */
 syncWorld();
 function loadRealOffice(){
   if(RO_LOAD)return;
   RO_LOAD='loading';
   const css=document.createElement('link');css.rel='stylesheet';css.href='realoffice.css';document.head.appendChild(css);
-  const files=['../shared/lights.js','../shared/realoffice-layout.js','realoffice/art/people.js','realoffice.js']; /* the pure modules write to window.exports (exports-shim.js) */
+  const files=['../shared/lights.js','../shared/realoffice-layout.js','realoffice.js']; /* the pure modules write to window.exports (exports-shim.js) */
   const next=i=>{
     if(i>=files.length){RO_LOAD=window.DurbarRealOffice&&window.exports&&window.exports.realLayout?'ready':'failed';if(RO_LOAD==='failed')roFailed();layoutKey='';scheduleRender();return;}
     const sc=document.createElement('script');sc.src=files[i];sc.onload=()=>next(i+1);sc.onerror=()=>{RO_LOAD='failed';roFailed();layoutKey='';scheduleRender();};
@@ -1751,10 +1792,20 @@ function renderReal(stage,floor,aw,ah,model){
     if(stage.dataset.d!=='real-wait'){stage.dataset.d='real-wait';stage.style.width=aw+'px';stage.style.height='auto';stage.innerHTML='<div class="empty">Opening the Real office…</div>';}
     return true;
   }
+  /* the shown world's and set's packs (a switch keeps the old picture until the new pack is there) */
+  const pp=roPeople(), packsReady=[ensurePack('worlds',pp.world),ensurePack('sets',pp.set)].every(Boolean);
+  if(!packsReady){
+    const failed=['worlds/'+pp.world,'sets/'+pp.set].some(k=>PACKS[k]==='failed');
+    if(!failed){
+      if(stage.dataset.d!=='real'&&stage.dataset.d!=='real-wait'){stage.dataset.d='real-wait';stage.style.width=aw+'px';stage.style.height='auto';stage.innerHTML='<div class="empty">Opening the Real office…</div>';}
+      return true;
+    }
+    if((pp.world===CREW.WORLDS[0].id&&PACKS['worlds/'+pp.world]==='failed')||(pp.set===CREW.REAL_SETS[0].id&&PACKS['sets/'+pp.set]==='failed')){RO_LOAD='failed';roFailed();return false;} /* the first world or Office people cannot load: flat */
+    return renderReal(stage,floor,aw,ah,model); /* roPeople() now names the first world and Office people */
+  }
   if(stage.dataset.d!=='real'){stage.dataset.d='real';stage.textContent='';}
   layoutKey='';GROW=0;setGrow(stage,0);spreadOffice(stage,false);stagePrev=null;
-  const set=realOfficeSet();
-  RO_LAST=window.DurbarRealOffice.render(stage,realModel(model),{w:aw,h:ah},{still:REDUCED||SERIOUS,set:set.set,remember:rememberOn(),
+  RO_LAST=window.DurbarRealOffice.render(stage,realModel(model),{w:aw,h:ah},{still:REDUCED||SERIOUS,world:pp.world,set:pp.set,remember:rememberOn(),
     rand:CREW&&(SIM||!rememberOn())?CREW.seededRand:Math.random,onArt:()=>scheduleRender()});
   stage.style.width=aw+'px';stage.style.height=RO_LAST.height+'px';
   stage.dataset.fit=RO_LAST.scroll?'scroll':'ok';floor.classList.toggle('scrolls',!!RO_LAST.scroll);
@@ -8312,7 +8363,7 @@ if(bridge){
     if(e.target&&e.target.classList&&e.target.classList.contains('fl-into-sel')){INTO=e.target.value;renderIntoFloor();renderFloorsPanel();renderFloorsSettings();}});
   document.addEventListener('keydown',e=>{const t=e.target;if(e.key==='Enter'&&t&&t.closest&&t.closest('.floors-ui .fl-new')){e.preventDefault();floorAction(t.closest('.fl-new').querySelector('[data-fl="create"]'));}});
   document.body.classList.toggle('simple',SIMPLE);
-  window.DurbarScreens.init({shutters:{get:()=>SHUT_PREF,set:setShutOn,usable:()=>!!SHUT},signs:{get:()=>SIGN_PREF,set:setSignsOn,usable:()=>!!(window.DurbarRoom&&window.DurbarRoom.doorSign),view:{get:officeView,set:setOfficeView,note:()=>CREW&&CREW.realOfficeNote?CREW.realOfficeNote(crewChoice(),officeView()):''}},navKey:{text:navKeyText,textOf:c=>keyText(NAV.comboParts(c)),defText:()=>keyText(NAV.comboParts(NAV.DEFAULT_COMBO)),isDefault:()=>NAV.sameCombo(NAV_KEY,NAV.DEFAULT_COMBO),set:setNavKey,recording:on=>{navRecording=!!on;},fromEvent:e=>NAV.comboFromEvent(e,IS_MAC),clash:c=>NAV.clashOf(c,IS_MAC)},roomName:id=>{const r=ROOMS.find(x=>x.id===id);return r?r.name:String(id||'');},refreshKinds:()=>loadKinds(true),setAccounts,detail:{get:()=>SIMPLE?'simple':'expert',set:setDetail},density:{get:()=>DENSITY,set:setDensity},liveAct:{get:()=>LIVE_PREF,set:setLiveOn,usable:()=>!!LIVEACT},bridge,stats:STATS,esc,mask:safeMask,toast,announce,floors:{on:()=>floorsLive(),render:()=>renderFloorsSettings()},sched:{on:()=>!!bridge.listSchedules&&!demoOn,render:()=>renderSchedSettings()},onSettings:v=>{APP_SETTINGS=v||{};},onUsageReset,isSerious:()=>SERIOUS,isNotify:()=>NOTIFY,setNotify:on=>{NOTIFY=!!on;},breakResume:()=>BREAK_RESUME,setBreakResume:v=>{BREAK_RESUME=v==='ask'?'ask':'auto';},chatLinksIn:()=>CHAT_LINKS,setChatLinksIn:v=>{CHAT_LINKS=v==='system'?'system':'session';},setSerious:on=>{SERIOUS=!!on;markSerious();scheduleRender();},usageSince:()=>LEDGER.since(),usageOffice:()=>LEDGER.office(),costData,usageError:()=>usageSaveError,
+  window.DurbarScreens.init({shutters:{get:()=>SHUT_PREF,set:setShutOn,usable:()=>!!SHUT},signs:{get:()=>SIGN_PREF,set:setSignsOn,usable:()=>!!(window.DurbarRoom&&window.DurbarRoom.doorSign),view:{get:officeView,set:setOfficeView,note:()=>roPeople().note&&officeView()==='real'?roPeople().note:'',world:{get:()=>roPeople().world,set:setRoWorld,list:roWorlds,defaultSet:()=>roPeople().setName}}},navKey:{text:navKeyText,textOf:c=>keyText(NAV.comboParts(c)),defText:()=>keyText(NAV.comboParts(NAV.DEFAULT_COMBO)),isDefault:()=>NAV.sameCombo(NAV_KEY,NAV.DEFAULT_COMBO),set:setNavKey,recording:on=>{navRecording=!!on;},fromEvent:e=>NAV.comboFromEvent(e,IS_MAC),clash:c=>NAV.clashOf(c,IS_MAC)},roomName:id=>{const r=ROOMS.find(x=>x.id===id);return r?r.name:String(id||'');},refreshKinds:()=>loadKinds(true),setAccounts,detail:{get:()=>SIMPLE?'simple':'expert',set:setDetail},density:{get:()=>DENSITY,set:setDensity},liveAct:{get:()=>LIVE_PREF,set:setLiveOn,usable:()=>!!LIVEACT},bridge,stats:STATS,esc,mask:safeMask,toast,announce,floors:{on:()=>floorsLive(),render:()=>renderFloorsSettings()},sched:{on:()=>!!bridge.listSchedules&&!demoOn,render:()=>renderSchedSettings()},onSettings:v=>{APP_SETTINGS=v||{};},onUsageReset,isSerious:()=>SERIOUS,isNotify:()=>NOTIFY,setNotify:on=>{NOTIFY=!!on;},breakResume:()=>BREAK_RESUME,setBreakResume:v=>{BREAK_RESUME=v==='ask'?'ask':'auto';},chatLinksIn:()=>CHAT_LINKS,setChatLinksIn:v=>{CHAT_LINKS=v==='system'?'system':'session';},setSerious:on=>{SERIOUS=!!on;markSerious();scheduleRender();},usageSince:()=>LEDGER.since(),usageOffice:()=>LEDGER.office(),costData,usageError:()=>usageSaveError,
     places:window.DurbarPlaces,customPlaces:()=>CUSTOM,placeMap:()=>PLACE_MAP,placeLabel,setCustomPlaces,placeServers:()=>[...SEEN_SERVERS],setPlaceMap:m=>{PLACE_MAP=(m&&typeof m==='object')?m:{};scheduleRender();},
     applyTheme,
     applyCharacters,charPreview, /* spec 077 FR-068 */
