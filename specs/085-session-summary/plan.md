@@ -5,3 +5,5 @@
 3. `src/renderer/sessionsummary.js` (pure words, `window.DurbarSessionSummary`): the card text from the summary and the usage text; `app.js`: `endLive`, the card menu End and End all sessions ask for the summary before the end and add the note after it; the button **Show uncommitted changes** reuses `showFolderStatus`'s dialog.
 4. `src/renderer/sim.ts`: `simsummary=1` fixtures.
 5. Tests: `scripts/test-sessionsummary.ts` (hostile git output, bounds, argv has no shell and no user string, mutations), driver `scripts/check-session-summary.js` in `scripts/ui-suite.js`. Docs: README, changelog fragment, `docs/agent-notes.md` if something is learned.
+
+6. 2026-10-31 (T006..T012): `VendorStats` + `capabilities.sessionStats` (Copilot `rpc.usage.getMetrics`; Claude and Codex gaps), `cleanVendorStats` and `SummaryDays` (rollup file) in `src/main/sessionsummary.ts`, `final` on `agents:sessionSummary`, `short()` and the reported and briefing sentences in `src/renderer/sessionsummary.js`, the lounge line and the strip sentence in `app.js`, simulator fixtures, driver.

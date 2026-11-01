@@ -133,8 +133,12 @@ for (const c of ['agents:end', 'agents:remove']) assert.ok(/profileFreshness\?\.
   assert.ok(ns >= 0 && so > ns, '"agents:send" notes the session start before sendOp');
   assert.ok(/await sessionStarts\.noteStart\(id, ag\.cwd\)/.test(send) && /const ag = agents\.get\(id\)/.test(send), '"agents:send" notes the start for main\'s own folder of that agent');
   const sum = regs.get('agents:sessionSummary')?.[0]?.block ?? '';
-  assert.ok(/ipcHandle\('agents:sessionSummary', async \(e, id: unknown\)/.test(sum), '"agents:sessionSummary" takes only the id from the window');
+  assert.ok(/ipcHandle\('agents:sessionSummary', async \(e, id: unknown, final\?: unknown\)/.test(sum), '"agents:sessionSummary" takes only the id from the window');
   assert.ok(/agents\.get\(id\)/.test(sum) && /sessionStarts\.summarize\(a\.id, a\.cwd\)/.test(sum), '"agents:sessionSummary" summarizes main\'s own folder for the session, never one the window sends');
+  assert.ok(/readReported\(router\.forAgent\(a\.id\), a\.id\)/.test(sum) && /final === true/.test(sum), '"agents:sessionSummary" asks the agent app\'s totals through the adapter of main\'s own agent, and only `final === true` marks an End');
+  const endBlock = regs.get('agents:end')?.[0]?.block ?? '';
+  assert.ok(/finals\.get\(id\)/.test(endBlock) && /if \(day\) deps\.getSummaryDays\?\.\(\)\?\.add\(day\)/.test(endBlock) && /Date\.now\(\) - fin\.at < 60_000/.test(endBlock) && !/getSummaryDays[^;]*\.add\([^)]*id/.test(endBlock), '"agents:end" adds the numbers of a summary asked for this End to the day rollup (numbers only), after the session ended');
+  assert.ok(!/getSummaryDays/.test(regs.get('agents:remove')?.[0]?.block ?? ''), '"agents:remove" adds nothing to the rollup (FR-009)');
   for (const c of ['agents:end', 'agents:remove']) assert.ok(/sessionStarts\.forget\(/.test(regs.get(c)?.[0]?.block ?? ''), `"${c}" must forget the session start`);
 }
 assert.ok(/fresh\.prune\(/.test(fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'ipc', 'profiles.ts'), 'utf8')), 'profiles.ts prunes sessions no longer in the office on a change');

@@ -11,6 +11,8 @@ import type { AutoTier, CompactResult, ContextTier, ModelOption, ModelSwitchRequ
 import type { AdapterCapabilities, PermissionMode } from './capabilities';
 import type { OrgPolicy } from '../shared/orgpolicy';
 import type { HandoffResult } from './handoff';
+import type { VendorStats } from './vendorstats';
+export type { VendorStats };
 import type { HistoryResult, PreviousSession } from './history';
 import type { RemoteState } from '../shared/remote';
 import type { EditInfo } from '../shared/edits';
@@ -698,6 +700,8 @@ export interface AgentAdapter {
   cancelQueuedModel?(sessionId: string, queueId: string): Promise<void>;
   /** Compact the context now (spends a model call); `focus` steers the summary. Optional. */
   compact?(sessionId: string, focus?: string): Promise<CompactResult>;
+  /** Spec 085 FR-010: what the agent app itself reports about the session so far, as counts only (never names or text); undefined = nothing reported. Optional (`capabilities.sessionStats`). */
+  sessionStats?(sessionId: string): Promise<VendorStats | undefined>;
   /** A markdown hand-off summary of the conversation, made without changing it (spec 030 FR-034). Optional (`capabilities.handoff`). */
   handoffSummary?(sessionId: string): Promise<HandoffResult>;
   /**

@@ -90,6 +90,7 @@ export const SIM_OPTIONAL_MEMBERS: Readonly<Record<string, ((c: Caps) => boolean
   restartMcpServer: (c: Caps) => !!c.mcpRestart,
   listMcpTools: (c: Caps) => !!c.mcpTools,
   handoffSummary: (c: Caps) => !!c.handoff,
+  sessionStats: (c: Caps) => !!c.sessionStats, // spec 085 FR-010
   generateText: (c: Caps) => !!c.oneShot,
   setRemote: (c: Caps) => !!c.remote,
   renameSession: (c: Caps) => !!c.renameSession,

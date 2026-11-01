@@ -51,6 +51,8 @@ import * as os from 'os';
 import * as fs from 'fs';
 import * as path from 'path';
 import { cleanSummary } from './handoff';
+import { copilotVendorStats } from './vendorstats';
+import type { VendorStats } from './vendorstats';
 import type { HandoffResult } from './handoff';
 import { sessionIdOk } from '../shared/sessionid';
 import { allowedRemoteUrl, cleanRemoteError, isRemoteVisibility } from '../shared/remote';
@@ -216,6 +218,7 @@ export const COPILOT_CAPABILITIES: AdapterCapabilities = Object.freeze({
   mcpSignIn: true, // spec 058 FR-064: rpc.mcp.oauth.login (@experimental; read: SDK 1.0.22-1.0.26 rpc.d.ts; real: worked once, macOS 2026-10-23, one server; the rest in T105)
   mcpSignInSteps: 'If Sign in is not available, sign in from the Copilot CLI: run `copilot`, type `/mcp auth {name}` and finish in your browser. Then use Restart session with these servers. This may not carry over to this session (seen on 2026-10-23).', // FR-068
   mcpSignInNote: 'Checked once on a real account; other servers and systems not yet.', // FR-074/FR-180: the row's honest note
+  sessionStats: true, // spec 085 FR-012: rpc.usage.getMetrics (@experimental; read: SDK 1.0.24; not run on a real session)
   handoff: true, // spec 030 FR-034: rpc.history.summarizeForHandoff (cost unverified)
   modelSwitch: Object.freeze({ verified: true, contextTier: true }), // spec 030 Phase 3 (real 2026-10-20, Copilot Pro): switch, effort, long tier, confirmation and compact-and-switch (T041, T044, T045)
   planMode: true, // spec 066 FR-003: mode.set plan + onExitPlanModeRequest (@experimental)
@@ -1369,6 +1372,14 @@ export class CopilotAdapter implements AgentAdapter {
     } catch (err) {
       return { success: false, message: runtimeMessage(err, 'The runtime refused to compact.') };
     }
+  }
+
+  /** Spec 085 FR-010/FR-012: the runtime's own totals (`rpc.usage.getMetrics`, experimental), as counts only; an older runtime without the call, or a bad answer, reports nothing. */
+  async sessionStats(sessionId: string): Promise<VendorStats | undefined> {
+    const live = this.mustGet(sessionId);
+    const usage = (live.session.rpc as unknown as { usage?: { getMetrics?: () => Promise<unknown> } }).usage;
+    if (typeof usage?.getMetrics !== 'function') return undefined;
+    return copilotVendorStats(await usage.getMetrics());
   }
 
   /** Spec 030 FR-034: the runtime's own hand-off summary (`rpc.history.summarizeForHandoff`, experimental); the conversation is not changed. */

@@ -12,11 +12,12 @@ import { PermissionBroker, mcpToolBlockList, startModeOf } from './permissions';
 import type { BrokerEvent, PermissionLike } from './permissions';
 import { normMcpTools } from './mcptools';
 import type { AgentAdapter, AgentEvent, AgentMessage, CompactResult, LimitAction, McpSignInResult, McpToolInfo, ModelOption, ModelSwitchRequest, ModelSwitchResult, PermissionMode, StartOptions, UsageEvent } from './types';
+import { cleanVendorStats } from './vendorstats';
 import type { HistoryResult, PreviousSession } from './history';
 
 export type OptionalMember =
   | 'interrupt' | 'resolvePermission' | 'revokeGrant' | 'revokeCall' | 'setCap' | 'resolveLimit' | 'setMcpEnabled' | 'setModel'
-  | 'cancelQueuedModel' | 'compact' | 'listModelOptions' | 'listPreviousSessions' | 'history' | 'setPermMode' | 'handoffSummary' | 'generateText' | 'renameSession' | 'deleteSession' | 'restartMcpServer' | 'listMcpTools'
+  | 'cancelQueuedModel' | 'compact' | 'listModelOptions' | 'listPreviousSessions' | 'history' | 'setPermMode' | 'handoffSummary' | 'generateText' | 'renameSession' | 'deleteSession' | 'restartMcpServer' | 'listMcpTools' | 'sessionStats'
   | 'startMcpSignIn' | 'cancelMcpSignIn' | 'refreshMcpStatus';
 
 export type Step =
@@ -57,6 +58,7 @@ const DEFAULT_CAPS: AdapterCapabilities = {
   mcpToolFilter: true,
   handoff: true,
   oneShot: true,
+  sessionStats: true,
 };
 
 interface FakeSession {
@@ -97,6 +99,9 @@ export class FakeAdapter implements AgentAdapter {
   declare listModelOptions?: () => Promise<ModelOption[]>;
   declare listPreviousSessions?: (cwd: string, excludeIds?: ReadonlySet<string>) => Promise<PreviousSession[]>;
   declare history?: (sessionId: string) => Promise<HistoryResult>;
+  /** Spec 085: what `sessionStats` answers (set by a test; a function may throw or hang); `sessionStats` exists only with `capabilities.sessionStats`. */
+  statsAnswer: unknown = { files: 3, added: 40, removed: 7, nanoAiu: 2_500_000_000, requests: 2 };
+  declare sessionStats?: (sessionId: string) => Promise<import('./vendorstats').VendorStats | undefined>;
   declare handoffSummary?: (sessionId: string) => Promise<HandoffResult>;
   declare generateText?: (prompt: string) => Promise<{ text: string; costUsd?: number }>;
   declare renameSession?: (sessionId: string, name: string) => Promise<void>;
@@ -154,6 +159,7 @@ export class FakeAdapter implements AgentAdapter {
       mcpRestart: !!c.mcpRestart && !omit.has('restartMcpServer'),
       mcpTools: !!c.mcpTools && !omit.has('listMcpTools'),
       handoff: !!c.handoff && !omit.has('handoffSummary'),
+      sessionStats: !!c.sessionStats && !omit.has('sessionStats'),
       oneShot: !!c.oneShot && !omit.has('generateText'),
       mcpSignIn: !!c.mcpSignIn && !omit.has('startMcpSignIn'),
       deleteSession: !!c.deleteSession && !omit.has('deleteSession'),
@@ -235,6 +241,7 @@ export class FakeAdapter implements AgentAdapter {
         if (this.failRename !== undefined) throw new Error(this.failRename);
       };
     }
+    if (caps.sessionStats) this.sessionStats = async (sid) => { this.mustGet(sid); const a = typeof this.statsAnswer === 'function' ? await (this.statsAnswer as () => unknown)() : this.statsAnswer; return cleanVendorStats(a); };
     if (caps.handoff) this.handoffSummary = async (sid) => (this.mustGet(sid), { summary: '## Goal\nFake hand-off summary.' });
     if (has('setModel')) this.setModel = async (sid, request) => (this.mustGet(sid), { status: 'applied', model: request.model });
     if (has('cancelQueuedModel')) this.cancelQueuedModel = async (sid) => void this.mustGet(sid);

@@ -36,7 +36,7 @@ module.exports = async (ctx) => {
     assert.ok(typeof cost === 'string' && cost.length > 0, `${w}: sim-1 has a usage figure for the card (${cost})`);
     await endOf('sim-1');
     let c = await card();
-    assert.strictEqual(c.text, `Session summary: 12 files changed, +340 −80, 3 new files, 1 commit, 1 pull request opened, 25 min, ${cost}.`, `${w}: sim-1 card, with its own cost`);
+    assert.strictEqual(c.text, `Session summary: 12 files changed, +340 −80, 3 new files, 1 commit, 1 pull request opened, 25 min, ${cost}. GitHub Copilot reported: 12 files, +338 −80, 2.5 AI credits, 2 requests.`, `${w}: sim-1 card, with its own cost, and the vendor's numbers as a labelled sentence of their own`);
     assert.strictEqual(c.count, 1, `${w}: one card`);
     assert.strictEqual(c.btn, 'Show uncommitted changes');
     assert.ok(c.inside && !c.overflowX && c.font >= 10.5, `${w}: the card fits and is legible ${JSON.stringify(c)}`);
@@ -63,6 +63,55 @@ module.exports = async (ctx) => {
     c = await card();
     assert.match(c.text, /^Session summary: 2 files changed, \+5 −1, no commits, 1 h 5 min, cost .*\. The folder already had changes when the session began; they are counted too\.$/, `${w}: sim-3 card: ${c.text}`);
   }
+
+  // ---- FR-008: the lounge line (Noor and Maya rest in the lounge); FR-009: the strip's sentence; FR-014: calm, no overlap
+  for (const [w, h] of [[1440, 900], [1280, 800]]) {
+    await H.load({ w, h, query: { simsummary: '1', simaway: '1' } });
+    await H.calm();
+    assert.ok(await until(`document.querySelectorAll('#stage .lounge .lg-t.sum').length>=1&&document.querySelectorAll('#stage .desk.shut').length===2`, 20000), `${w}: the lounge shows its lines`);
+    // the strip: one sentence from the rollup, labelled in its tooltip
+    assert.ok(await until(`!!document.querySelector('#awayStrip .aw-brief')`, 10000), `${w}: the strip has the day's numbers`);
+    const strip = await js(`(()=>{const e=document.querySelector('#awayStrip .aw-brief'),R=e.getBoundingClientRect(),S=document.getElementById('awayStrip').getBoundingClientRect();return {t:e.textContent,title:e.title,font:parseFloat(getComputedStyle(e).fontSize),inside:R.width>0&&R.left>=S.left-0.5&&R.right<=S.right+0.5&&R.top>=S.top-0.5&&R.bottom<=S.bottom+0.5,overflowX:document.documentElement.scrollWidth>document.documentElement.clientWidth+1}})()`);
+    assert.strictEqual(strip.t, 'Sessions ended yesterday and today: 3, 18 files changed, +400 −90, 2 commits, 2 h 10 min.', `${w}: strip sentence`);
+    assert.ok(strip.font >= 10.5 && strip.inside && !strip.overflowX && /Counted by Agent Durbar/.test(strip.title) && /counts twice/.test(strip.title), `${w}: strip legible, inside, honest tooltip ${JSON.stringify(strip)}`);
+    // the lounge: every visible line is 10.5 px or more, on one line inside its bubble; the line starts with the numbers
+    const geo = () => js(`(()=>{const out=[];for(const b of document.querySelectorAll('#stage .lg-bub')){const t=b.querySelector('.lg-t.on');if(!t)continue;const B=b.getBoundingClientRect(),T=t.getBoundingClientRect(),cs=getComputedStyle(t);
+      out.push({text:t.textContent,sum:t.classList.contains('sum'),font:parseFloat(cs.fontSize),oneLine:T.height<=parseFloat(cs.lineHeight)*3+1,inside:T.left>=B.left-0.5&&T.right<=B.right+0.5&&T.top>=B.top-0.5&&T.bottom<=B.bottom+0.5,clickable:cs.pointerEvents==='auto'});}
+      const L=[...document.querySelectorAll('#stage .lounge')].map(l=>{const R=l.getBoundingClientRect(),room=l.closest('.room').getBoundingClientRect();return R.left>=room.left-0.5&&R.right<=room.right+0.5&&R.bottom<=room.bottom+0.5});
+      return {lines:out,loungesInRoom:L,scrollY:document.getElementById('floor').scrollHeight>document.getElementById('floor').clientHeight+1,overflowX:document.documentElement.scrollWidth>document.documentElement.clientWidth+1}})()`);
+    let g = await geo();
+    assert.ok(g.lines.length >= 1 && g.lines.every((l) => l.font >= 10.5 && l.inside), `${w}: lounge lines legible and inside ${JSON.stringify(g.lines)}`);
+    assert.ok(g.loungesInRoom.every(Boolean) && !g.scrollY && !g.overflowX, `${w}: no overlap or scroll ${JSON.stringify(g)}`);
+    const sumLine = g.lines.find((l) => l.sum);
+    assert.ok(sumLine && /^(6 files, \+120 −35|2 files, \+8 −2) · /.test(sumLine.text) && sumLine.clickable, `${w}: the visible line starts with the numbers and is clickable ${JSON.stringify(sumLine)}`);
+    // the peek card names the source
+    const peek = await js(`(()=>{const d=document.querySelector('#stage .desk.shut[data-id="sim-4"]');const p=d.querySelector('.pk-sum');return {t:p&&p.textContent,label:d.getAttribute('aria-label')}})()`);
+    assert.strictEqual(peek.t, '6 files changed, +120 −35, 1 commit, 40 min · counted by Agent Durbar', `${w}: peek line`);
+    assert.ok(/Changed: 6 files changed/.test(peek.label), `${w}: the label ${JSON.stringify(peek)}`);
+    // look at it: hover Noor (the peek card), then take the picture
+    await js(`document.querySelector('#stage .desk.shut[data-id="sim-4"]').scrollIntoView({block:'center'})`);
+    const box = await js(`(()=>{const r=document.querySelector('#stage .desk.shut[data-id="sim-4"]').getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)}})()`);
+    await H.shot(path.join(OUT, `085-lounge-summary-${w}x${h}.png`), { prep: 'calm', keepHover: false });
+    ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: box.x, y: box.y });
+    assert.ok(await until(`getComputedStyle(document.querySelector('#stage .desk.shut[data-id="sim-4"] .peek')).display!=='none'`, 4000), `${w}: the peek card opens`);
+    await H.shot(path.join(OUT, `085-lounge-peek-${w}x${h}.png`), { prep: 'calm', keepHover: true });
+    /* sweep: a hit test, not a scripted click: the peek card takes no pointer and no keyboard, so nothing in it may offer an action */
+    const hit = await js(`(()=>{const p=document.querySelector('#stage .desk.shut[data-id="sim-4"] .pk-sum'),b=p.getBoundingClientRect(),e=document.elementFromPoint(b.left+b.width/2,b.top+b.height/2);return {reached:!!(e&&e.closest&&e.closest('.peek')),offers:p.hasAttribute('data-sumfiles')||!!p.querySelector('u')||/Click/.test(p.title)};})()`);
+    console.log('[085] peek hit', JSON.stringify(hit));
+    assert.strictEqual(hit.reached, false, `${w}: the peek card takes no pointer`);
+    assert.strictEqual(hit.offers, false, `${w}: so its line offers no click`);
+    // clicking the bubble: the visible line whose agent has numbers
+    /* the route that is left is a real one: a pointer reaches the line */
+    assert.ok(await js(`(()=>{const t=[...document.querySelectorAll('#stage .lg-t.sum.on')][0],b=t.getBoundingClientRect(),e=document.elementFromPoint(b.left+b.width/2,b.top+b.height/2);return !!(e&&e.closest&&e.closest('[data-sumfiles]'));})()`), `${w}: the bubble's line takes the pointer`);
+    await js(`(()=>{const t=[...document.querySelectorAll('#stage .lg-t.sum.on')][0];t.click()})()`);
+    assert.ok(await until(`!!document.getElementById('mdT')||/No uncommitted changes/.test(document.getElementById('toasts').textContent)`), `${w}: the bubble line opens the list (or says nothing is uncommitted)`);
+    await js(`(()=>{const b=[...document.querySelectorAll('#modeDlg .dbtn .btn')].pop();if(b)b.click()})()`);
+  }
+  // hostile numbers in the strip (a broken main) show as nothing wrong
+  await H.load({ w: 1440, h: 900, query: { simsummary: '1', simaway: 'hostile' } });
+  assert.ok(await until(`!!document.getElementById('awayStrip')&&!document.getElementById('awayStrip').hidden`, 10000), 'hostile: the strip shows');
+  assert.strictEqual(await js(`document.querySelectorAll('#awayStrip .aw-brief').length`), 0, 'hostile: no sentence from broken numbers');
+  assert.ok(!(await js(`/NaN|Infinity|undefined|\\[object/.test(document.getElementById('awayStrip').textContent)`)), 'hostile: no garbage shown');
   // without the simulator fixture (an ended session main has no start for) there is no card
   await H.load({ w: 1440, h: 900 });
   await endOf('sim-1', false);
