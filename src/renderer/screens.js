@@ -344,7 +344,7 @@
         <ul class="thlist" id="chList">${charItems()}</ul></section>`:'';
     /* Logo (spec 101 FR-020..FR-023): the top-bar icon, the Characters pattern; DurbarLogo (logo-marks.js) keeps the choice in localStorage and applies it at once */
     const LG=window.DurbarLogo;
-    const logoItems=()=>{const cur=LG.current();return LG.IDS.map((id)=>{const n=LG.NAMES[id];return `<li class="throw"><button class="thpick" type="button" data-logo="${esc(id)}" aria-pressed="${id===cur}" aria-label="Logo ${esc(n[0])}: ${esc(n[1])}"><span class="lgsw" aria-hidden="true">${LG.preview(id)}</span><span class="thtx"><b title="${esc(n[0])}">${esc(n[0])}</b><small>${esc(n[1])}</small></span></button></li>`;}).join('');};
+    const logoItems=()=>{const cur=LG.current();return LG.IDS.map((id)=>{const n=LG.NAMES[id];return `<li class="throw"><button class="thpick" type="button" data-logo="${esc(id)}" aria-pressed="${id===cur}" aria-label="Logo ${esc(n[0])}: ${esc(n[1])}"><span class="lgsw" aria-hidden="true">${LG.preview(id)}</span><span class="thtx"><b title="${esc(n[0])}">${esc(n[0])}</b><small title="${esc(n[1])}">${esc(n[1])}</small></span></button></li>`;}).join('');};
     const logoSec=LG&&LG.IDS?`<section class="scr-sec" aria-labelledby="lgH"><h3 id="lgH">Logo</h3>
         <p class="scr-note">The icon in the top bar; it takes the colours of your world. The app\u2019s own icon in the Dock, taskbar or Finder stays the same.</p>
         <ul class="thlist" id="lgList">${logoItems()}</ul></section>`:'';

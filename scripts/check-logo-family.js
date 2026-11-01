@@ -87,7 +87,7 @@ module.exports = async (ctx) => {
     const sec = await js(`(()=>{const h=document.getElementById('lgH'),ch=document.getElementById('chH'),sec=h.closest('section'),prev=sec.previousElementSibling;
       return {afterChars:!!prev&&prev.contains(ch),note:sec.querySelector('.scr-note').textContent,items:[...document.querySelectorAll('#lgList [data-logo]')].map(b=>({id:b.dataset.logo,tag:b.tagName,pressed:b.getAttribute('aria-pressed'),label:b.getAttribute('aria-label'),
         pv:(()=>{const s=b.querySelector('svg.logo-pv');const r=s&&s.getBoundingClientRect();return r?[Math.round(r.width),Math.round(r.height)]:null;})(),hidden:b.querySelector('svg.logo-pv')?b.querySelector('svg.logo-pv').getAttribute('aria-hidden'):null,
-        minFont:Math.min(...[...b.querySelectorAll('b,small')].map(e=>parseFloat(getComputedStyle(e).fontSize))),bg:(()=>{const p=b.querySelector('svg.logo-pv [data-slot="plate"]');return p?getComputedStyle(p).fill:null;})()})),
+        titled:[...b.querySelectorAll('small')].every(e=>e.title===e.textContent),minFont:Math.min(...[...b.querySelectorAll('b,small')].map(e=>parseFloat(getComputedStyle(e).fontSize))),bg:(()=>{const p=b.querySelector('svg.logo-pv [data-slot="plate"]');return p?getComputedStyle(p).fill:null;})()})),
       pageX:document.documentElement.scrollWidth<=innerWidth}})()`);
     assert.ok(sec.afterChars, `${tag}: Logo comes right after Characters`);
     assert.ok(/The icon in the top bar; it takes the colours of your world\. The app.s own icon in the Dock, taskbar or Finder stays the same\./.test(sec.note), `${tag}: the note says what the choice does and does not change: ${sec.note}`);
@@ -97,6 +97,7 @@ module.exports = async (ctx) => {
       assert.strictEqual(i.tag, 'BUTTON', `${tag}: icon ${i.id} is a button`);
       assert.ok(/^Logo .+: .+/.test(i.label), `${tag}: icon ${i.id} has a name for a screen reader: ${i.label}`);
       assert.deepStrictEqual(i.pv, [64, 64], `${tag}: icon ${i.id} previews at 64 px`);
+      assert.ok(i.titled, `${tag}: icon ${i.id}: a cut one-liner keeps its full text in a title (check-ui-text ellipsis-title)`);
       assert.ok(i.minFont >= 10.5, `${tag}: icon ${i.id} text is ${i.minFont}px`);
     }
     assert.ok(/Prompt sovereign/.test(sec.items[0].label) && /Terminal chair/.test(sec.items[1].label) && /Figure with badge/.test(sec.items[2].label) && /Underscore floor/.test(sec.items[3].label), `${tag}: the four names`);
@@ -150,10 +151,13 @@ module.exports = async (ctx) => {
 
     // ---- every icon on every flat theme (FR-034) ----
     const palettes = async (label, expect) => {
+      let here = null; // a theme may place the name differently from Clean: every icon on one theme keeps that theme's tile and name position
       for (const id of IDS) {
         await setLogo(id);
         const b = await bar();
-        assert.deepStrictEqual({ w: b.w, h: b.h, h1x: b.h1x, h1y: b.h1y }, home, `${tag} ${label} icon ${id}: tile size and name position unchanged: ${JSON.stringify(b)}`);
+        here = here || { w: b.w, h: b.h, h1x: b.h1x, h1y: b.h1y };
+        assert.deepStrictEqual({ w: b.w, h: b.h, h1x: b.h1x, h1y: b.h1y }, here, `${tag} ${label} icon ${id}: tile size and name position unchanged: ${JSON.stringify(b)}`);
+        assert.deepStrictEqual([b.w, b.h], [32, 32], `${tag} ${label} icon ${id}: the tile is 32 px`);
         assert.strictEqual(b.img, 0, `${tag} ${label} icon ${id}: no <img>`);
         const e = expect(id, b);
         for (const [k, v] of Object.entries(e)) if (b[k] !== null) assert.strictEqual(b[k], v, `${tag} ${label} icon ${id}: ${k} is ${v}, got ${b[k]}`);
