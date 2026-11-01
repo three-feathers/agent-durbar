@@ -168,8 +168,8 @@ export interface PermissionInfo {
 
 /**
  * Spec 003 FR-099: the reason a request ran without a question. `session-grant`: the user's "Approve for this session" rule(s) (`key` is the first,
- * `keys` every rule that allowed it: a write in several folders needs one rule per folder; all can be revoked); `allow-all`: the mode; `in-folder`: a read that Durbar checked to be inside the session's folders; `attachment`: a read of a file the user attached; `app`: reserved for an adapter that really
- * reports the agent app's own decision (no adapter sets it yet, FR-106).
+ * `keys` every rule that allowed it: a write in several folders needs one rule per folder; all can be revoked); `allow-all`: the mode; `in-folder`: a read that Durbar checked to be inside the session's folders; `attachment`: a read of a file the user attached; `app`: set only by an adapter that really
+ * reports the agent app's own decision (`classifier`: Codex auto-review and Copilot assisted approval, FR-109..FR-111; Claude Code reports none, FR-106).
  */
 /** Spec 003 FR-102: most rule keys one `allowedBy` lists. The broker, `eventguard` and the window (`whyallowed.js` `KEYS_MAX`, same number, checked by test:permissions) all use it; more rules are counted in `more`, not dropped silently. */
 export const ALLOWED_BY_KEYS_MAX = 50;
@@ -179,6 +179,14 @@ export type AllowedBy =
   | { kind: 'in-folder' }
   | { kind: 'attachment' }
   | { kind: 'app'; source: 'config' | 'hook' | 'classifier' };
+
+/**
+ * Spec 003 FR-109: the quiet note for a call the agent app's own automatic reviewer approved (Codex auto-review, Copilot assisted approval),
+ * built only from an app's report, never from its text. The one place that makes it, so adapters cannot disagree.
+ */
+export function appApprovedPermission(callId: string): PermissionInfo {
+  return { requestId: callId, kind: 'app-review', summary: 'Approved by the agent app', state: 'approved', via: 'quiet', allowedBy: { kind: 'app', source: 'classifier' } };
+}
 
 /** A remembered "Approve for this session" permission; can be revoked. */
 export interface SessionGrant {

@@ -14,6 +14,7 @@
 import { codexEdit } from './edits';
 import type { EventBody } from './map';
 import type { EditInfo } from './types';
+import { appApprovedPermission } from './types';
 import { resetMs, usageLimitClosing } from './usagelimit';
 import { isObj, nonEmptyStr as str } from '../shared/guards';
 import { isMcpAuthChallenge } from './mcpauth';
@@ -181,6 +182,16 @@ export class CodexMapper {
     if (!agentId && method.startsWith('item/')) this.retries.progress(); // not usage: a failed turn can report tokens too
 
     switch (method) {
+      case 'item/autoApprovalReview/completed': {
+        // spec 003 FR-110 ([UNSTABLE] in the app-server schema): only an `approved` review of a named item; the rationale text is never read
+        // one-to-one only: a stdin review names its parent command and an execve review is one of many for one item, so an approved
+        // child must not tag a parent whose other review may be denied; the source must be the app's own reviewer
+        const id = ownStr(params, 'targetItemId');
+        const kind = ownStr(own(params, 'action'), 'type');
+        if (!id || ownStr(params, 'decisionSource') !== 'agent' || ownStr(own(params, 'review'), 'status') !== 'approved') return;
+        if (kind !== 'command' && kind !== 'applyPatch' && kind !== 'mcpToolCall') return;
+        return this.emit({ type: 'permission', permission: appApprovedPermission(id), agentId });
+      }
       case 'error': {
         // spec 034 FR-017: Codex retries the request by itself (`willRetry: true`); a fixed reason and the status only, never the message
         const info = agentId ? null : codexRetry(params);

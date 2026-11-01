@@ -312,7 +312,7 @@ async function main(): Promise<void> {
   // spec 003 FR-099..FR-103 (issue #605): why a request ran without asking; undo through the existing revoke
   {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const W = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'whyallowed.js')) as { KEYS_MAX: number; describe: (by: unknown, live: unknown, opts?: unknown) => null | { kind: string; pill: string; sentence: string; label?: string; undoKeys?: string[]; gone?: boolean } };
+    const W = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'whyallowed.js')) as { KEYS_MAX: number; keep: (old: any, next: any) => any; describe: (by: unknown, live: unknown, opts?: unknown) => null | { kind: string; pill: string; sentence: string; label?: string; undoKeys?: string[]; gone?: boolean } };
     const perm = (ev: BrokerEvent[], from = 0) => ev.slice(from).filter((e): e is Extract<BrokerEvent, { permission: unknown }> => 'permission' in e).map((e) => e.permission);
 
     // a session rule: the grant's key and label ride on the auto-approved request
@@ -574,6 +574,19 @@ const mkRoots2 = (m: { ask?: boolean; allow?: boolean }, roots?: string[]) => {
       assert.strictEqual(calls.length, 1, 'no hostile call reached the adapter');
     }
 
+    // FR-110: the broker's reason is kept over an app's, in either order; an app's report never replaces it
+    {
+      const app = { kind: 'app', source: 'classifier' }, grant = { kind: 'session-grant', key: 'k', label: 'l' };
+      for (const own of [grant, { kind: 'allow-all' }, { kind: 'in-folder' }, { kind: 'attachment' }]) {
+        assert.strictEqual(W.keep(own, app), own, 'the app does not replace ' + own.kind);
+        assert.strictEqual(W.keep(app, own), own, 'the broker replaces the app, ' + own.kind);
+      }
+      assert.strictEqual(W.keep(undefined, app), app);
+      assert.strictEqual(W.keep(app, app).kind, 'app');
+    }
+    assert.ok(eventProblems({ type: 'permission', sessionId: 's', timestamp: 1, permission: { requestId: 'q'.repeat(257), kind: 'write', summary: 'x', state: 'approved' } }).length, 'a long requestId is refused');
+    assert.deepStrictEqual(eventProblems({ type: 'permission', sessionId: 's', timestamp: 1, permission: { requestId: 'q'.repeat(256), kind: 'write', summary: 'x', state: 'approved' } }), []);
+
     // the event guard refuses a malformed reason
     const ev = (allowedBy: unknown) => eventProblems({ type: 'permission', sessionId: 's', timestamp: 1, permission: { requestId: 'q', kind: 'write', summary: 'x', state: 'approved', allowedBy } });
     for (const ok of [{ kind: 'allow-all' }, { kind: 'in-folder' }, { kind: 'attachment' }, { kind: 'session-grant', key: 'k', label: 'l', keys: ['k', 'j'] }, { kind: 'session-grant', key: 'k', label: 'l' }, { kind: 'app', source: 'config' }, undefined]) assert.deepStrictEqual(ev(ok), [], JSON.stringify(ok));
@@ -612,6 +625,7 @@ const mkRoots2 = (m: { ask?: boolean; allow?: boolean }, roots?: string[]) => {
     }
     assert.ok(/mode chip under the message box/.test(W.describe({ kind: 'allow-all' }, live)?.sentence ?? ''));
     assert.strictEqual(W.describe({ kind: 'app', source: 'classifier' }, live)?.pill, 'Allowed: agent app classifier');
+    assert.match(W.describe({ kind: 'app', source: 'classifier' }, live)?.sentence ?? '', /automatic approval review/, 'FR-112: not Claude Code\'s auto-mode word');
     assert.strictEqual(W.describe({ kind: 'app', source: 'classifier' }, live)?.undoKeys, undefined, 'Durbar does not own an app rule');
     const evil = '<img src=x onerror=alert(1)>' + 'A'.repeat(1000);
     const dd = W.describe({ kind: 'session-grant', key: 'k1', label: evil }, live);

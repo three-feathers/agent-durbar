@@ -379,4 +379,24 @@ const run = (events: RawEvent[]): EventBody[] => {
   assert.strictEqual(plainRuntimeError('Standalone server does not support session effect \'other\''), 'Standalone server does not support session effect \'other\'', 'another effect is not rewritten');
   assert.strictEqual(plainRuntimeError(undefined), undefined);
 }
+// spec 003 FR-111: Copilot's own assisted-approval judge approved a call: a quiet app/classifier note; nothing else is a reason
+{
+  const pc = (data: Record<string, unknown>): EventBody[] => run([{ type: 'permission.completed', data } as unknown as RawEvent]);
+  const ok = pc({ requestId: 'r1', toolCallId: 'tc1', decisionSource: 'assisted_approval', result: { kind: 'approved' } });
+  assert.deepStrictEqual(ok, [{ type: 'permission', agentId: undefined, permission: { requestId: 'tc1', kind: 'app-review', summary: 'Approved by the agent app', state: 'approved', via: 'quiet', allowedBy: { kind: 'app', source: 'classifier' } } }]);
+  assert.strictEqual(pc({ requestId: 'r1', toolCallId: 'tc1', decisionSource: 'assisted_approval', result: { kind: 'approved-for-location' } }).length, 1, 'an approved scope is still an approval');
+  for (const bad of [
+    { toolCallId: 'tc1', decisionSource: 'human_response', result: { kind: 'approved' } },
+    { toolCallId: 'tc1', decisionSource: 'host_policy', result: { kind: 'approved' } },
+    { toolCallId: 'tc1', decisionSource: 'unattended_fallback', result: { kind: 'approved' } },
+    { toolCallId: 'tc1', result: { kind: 'approved' } }, // older sessions: no source, not a reason
+    { toolCallId: 'tc1', decisionSource: 'assisted_approval', result: { kind: 'denied-by-rules' } },
+    { toolCallId: 'tc1', decisionSource: 'assisted_approval', result: { kind: 'cancelled' } },
+    { toolCallId: 'tc1', decisionSource: 'assisted_approval' },
+    { decisionSource: 'assisted_approval', result: { kind: 'approved' } },
+    { toolCallId: '', decisionSource: 'assisted_approval', result: { kind: 'approved' } },
+    { toolCallId: 7, decisionSource: 'assisted_approval', result: { kind: 'approved' } },
+    { toolCallId: 'tc1', decisionSource: 'assisted_approval', result: 'approved' },
+  ]) assert.deepStrictEqual(pc(bad), [], JSON.stringify(bad));
+}
 console.log('event mapping tests passed');
