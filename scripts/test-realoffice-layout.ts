@@ -300,13 +300,19 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.feet as Record<s
 // ---- spec 102 FR-200..FR-202: the world and set seam in crew.js (two flat lists of data, any set in any world) ----
 {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const C = require(path.join(ROOT, 'src', 'renderer', 'crew.js')) as { WORLD_FLAGS: Record<string, boolean>; WORLDS: { id: string; name: string; defaultSet: string; flag?: string }[]; REAL_SETS: { id: string; name: string; choice: string; flag?: string }[]; offeredWorlds: (f?: Record<string, boolean>) => { id: string }[]; parseWorld: (v: unknown, f?: Record<string, boolean>) => string; peopleFor: (w: unknown, c: unknown, f?: Record<string, boolean>) => { world: string; set: string; setName: string; note: string }; realOfficeNote: (c: string, v: string, w?: string, f?: Record<string, boolean>) => string };
-  assert.deepStrictEqual(C.offeredWorlds().map((w) => w.id), ['photo'], 'today only Photo office is offered');
-  assert.deepStrictEqual(C.REAL_SETS.map((s) => s.id), ['office'], 'today only the Office people have Real office poses');
+  const C = require(path.join(ROOT, 'src', 'renderer', 'crew.js')) as unknown as { WORLD_FLAGS: Record<string, boolean>;  WORLDS: { id: string; name: string; defaultSet: string; flag?: string }[]; REAL_SETS: { id: string; name: string; choice: string; flag?: string }[]; offeredWorlds: (f?: Record<string, boolean>) => { id: string }[]; parseWorld: (v: unknown, f?: Record<string, boolean>) => string; peopleFor: (w: unknown, c: unknown, f?: Record<string, boolean>) => { world: string; set: string; setName: string; note: string }; realOfficeNote: (c: string, v: string, w?: string, f?: Record<string, boolean>) => string };
+  assert.deepStrictEqual(C.WORLD_FLAGS, { cave: false }, 'the cave is behind an off-by-default flag until the owner opens it (spec 097 phase 4 gate)');
+  assert.deepStrictEqual(C.offeredWorlds().map((w) => w.id), ['photo'], 'flag off: only Photo office is offered');
+  assert.deepStrictEqual(C.offeredWorlds({ cave: true }).map((w) => w.id), ['photo', 'cave'], 'flag on: Photo office first, then the cave');
+  assert.deepStrictEqual(C.REAL_SETS.map((s) => s.id), ['office', 'prehistoric'], 'Office people and Prehistoric have Real office poses');
+  assert.deepStrictEqual(C.peopleFor('cave', 'theme', { cave: true }), { world: 'cave', set: 'prehistoric', setName: 'Prehistoric', note: '' }, "the cave's default set is Prehistoric");
+  assert.deepStrictEqual(C.peopleFor('cave', 'theme', { cave: false }), { world: 'photo', set: 'office', setName: 'Office people', note: '' }, 'flag off: the cave is not drawn');
+  assert.strictEqual(C.peopleFor('photo', 'prehistoric', { cave: true }).set, 'prehistoric', 'any set in any world: Prehistoric in the Photo office');
+  assert.strictEqual(C.peopleFor('photo', 'prehistoric', { cave: false }).set, 'office', 'flag off: the set is not drawn either');
   // the lists are data: a flagged world with its own default set is added by rows alone (a Pirate world later changes no code)
   C.WORLDS.push({ id: 'pirate', name: 'Pirate ship', defaultSet: 'pirates', flag: 'pirate' });
   C.REAL_SETS.push({ id: 'pirates', name: 'Pirates', choice: 'pirates', flag: 'pirate' });
-  C.WORLD_FLAGS.pirate = false;
+  (C.WORLD_FLAGS as Record<string, boolean>).pirate = false;
   const ON: Record<string, boolean> = { pirate: true }, OFF: Record<string, boolean> = { pirate: false };
   try {
     assert.deepStrictEqual(C.offeredWorlds(OFF).map((w) => w.id), ['photo'], 'flag off: only Photo office is offered');
@@ -328,11 +334,11 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.feet as Record<s
     assert.deepStrictEqual(C.peopleFor('pirate', 'theme', ON), { world: 'pirate', set: 'pirates', setName: 'Pirates', note: '' }, "a world's default set");
     assert.strictEqual(C.peopleFor('photo', 'pirates', ON).set, 'pirates', 'any set in any world');
     assert.strictEqual(C.peopleFor('photo', 'pirates', OFF).set, 'office', 'flag off: the set is not drawn');
-  } finally { C.WORLDS.pop(); C.REAL_SETS.pop(); delete C.WORLD_FLAGS.pirate; }
+  } finally { C.WORLDS.pop(); C.REAL_SETS.pop(); delete (C.WORLD_FLAGS as Record<string, boolean>).pirate; }
   // FR-083 / FR-202: the note, only for a choice with no Real office poses and only with Real office on
   assert.strictEqual(C.realOfficeNote('cheeky', 'real', 'photo'), 'Real office shows Office people until Cheeky has Real office poses.');
   assert.strictEqual(C.realOfficeNote('minimalist', 'real', 'photo'), 'Real office shows Office people until Minimalist has Real office poses.');
-  assert.strictEqual(C.realOfficeNote('prehistoric', 'real', 'photo'), 'Real office shows Office people until Prehistoric has Real office poses.');
+  assert.strictEqual(C.realOfficeNote('prehistoric', 'real', 'photo'), 'Real office shows Office people until Prehistoric has Real office poses.', 'flag off: Prehistoric has no poses yet (the flag is what is closed)');
   for (const c of ['theme', 'mine', '', '__proto__', 'office']) assert.strictEqual(C.realOfficeNote(c, 'real', 'photo'), '', `${c || '(none)'}: no note`);
   for (const v of ['cabins', 'open', '']) assert.strictEqual(C.realOfficeNote('cheeky', v, 'photo'), '', `${v || '(none)'}: no note outside Real office`);
 }

@@ -138,12 +138,14 @@
      later change nothing else). `flag` names a switch in WORLD_FLAGS: a row whose flag is off is not offered and never chosen (owner's
      gate, 2026-11-01: a world such as the cave stays closed until spec 097 T156..T159 and spec 001's search land). `choice` is the Characters value that
      picks a set. A set listed here has the full Real office pose set (FR-204); Minimalist and Cheeky are not listed yet. */
-  const WORLD_FLAGS = {};
+  const WORLD_FLAGS = { cave: false };
   const WORLDS = [
     { id: 'photo', name: 'Photo office', defaultSet: 'office' },
+    { id: 'cave', name: 'Prehistoric cave', defaultSet: 'prehistoric', flag: 'cave' },
   ];
   const REAL_SETS = [
     { id: 'office', name: 'Office people', choice: '' },
+    { id: 'prehistoric', name: 'Prehistoric', choice: 'prehistoric', flag: 'cave' },
   ];
   const CHOICE_NAMES = { minimalist: 'Minimalist', cheeky: 'Cheeky', prehistoric: 'Prehistoric' };
   const on = (row, flags) => !row.flag || !!(flags || WORLD_FLAGS)[row.flag];
