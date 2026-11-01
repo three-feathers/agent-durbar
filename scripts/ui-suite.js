@@ -71,6 +71,7 @@ const DRIVERS = [
   { name: 'shots-058-mcp-refresh' }, // spec 058 FR-187..FR-192 (#779): the last call's outcome on a Running row, Refresh and the re-read on open
   { name: 'shots-model', label: 'shots-model 1440', env: { MODEL_W: '1440', MODEL_H: '900' } },
   { name: 'shots-model', label: 'shots-model 1280', env: { MODEL_W: '1280', MODEL_H: '800' } },
+  { name: 'check-model-choice' }, // spec 030 FR-060..FR-066: model, effort and context chosen one after another stay together, each app, each order
   { name: 'shots-007-autotier' }, // spec 007 FR-013..FR-018 (#607): the Auto routing tier in the model menu, confirm, Undo, the organization lock
   { name: 'shots-043-editor' }, // spec 043 FR-014: the profile file editor (modes, split widths, save round trip, unsaved guard)
   { name: 'shots-043-ai' }, // spec 043 FR-026..FR-039: Create with AI (canned generation, Extra tools, Stop waiting, Cancel and reopen)
@@ -85,6 +86,7 @@ const DRIVERS = [
   { name: 'check-question-visible' },
   { name: 'check-chat-no-scroll' },
   { name: 'check-chat-title' }, // spec 052 FR-180 (#789): the chat header's title uses the free room up to the buttons
+  { name: 'check-no-demo-badge' }, // spec 052 FR-181: no Demo / Live badge in the top bar; the demo cues remain
   { name: 'check-sim-guard' }, // spec 010 FR-026: the real preload API is refused by main under DURBAR_SIM
   { name: 'shots-069-mcp-global' }, // spec 069: add to the agent apps' own lists, review, remove, source chips
   { name: 'shots-069-harmonize' }, // spec 069 part 2: copy servers between the agent apps' lists
@@ -104,6 +106,8 @@ const DRIVERS = [
   { name: 'check-notes' }, // spec 083: save a message, the Notes drawer, Insert and notes in the "/" list (US1 scenarios 1..6, SC-001, SC-002)
   { name: 'check-notes-count' }, // spec 083 T030..T032: the header count, the marker on a saved message, the drawer's search (SC-005)
   { name: 'check-notes-screen' }, // spec 083 T034a: the per-folder Notes screen, its three ways in, Done (FR-044, FR-045)
+  { name: 'check-notes-switch' }, // spec 083 T042: the project-file switch, its dialogs and states (FR-050, FR-055)
+  { name: 'check-notes-export' }, // spec 083 T034b: Export…, Delete all… and Remove folder's Also delete its notes (FR-048)
   { name: 'check-edits' }, // spec 005 FR-020..FR-026: file edits in the chat
   { name: 'shots-068-coffee' }, // spec 068: coffee break (simbreak=8 in its own query)
   { name: 'shots-001-lobby' }, // spec 001 FR-034..FR-040: Boss queue, Bank, Postbox and its letter, who is at a place (simsched in its own query)
