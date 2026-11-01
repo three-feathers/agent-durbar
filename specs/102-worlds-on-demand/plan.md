@@ -14,7 +14,7 @@ A world pack becomes a validated, code-free data file that can arrive from outsi
 - **Testing**: Node tests with fixtures and an injected request layer; simulator drivers through `ui-suite.js`; world matrix (098).
 - **Performance**: 097 FR-178's rows (op rows asserted, times recorded). Hash re-check of a few MB at load is async.
 - **Constraints**: no network in `npm test`; no AI credits; 10 MB a pack; three OSes (a closed list of names means Windows rules are tested on every OS).
-- **Scale**: 11 project worlds, at most 64 installed and 500 MB; about 15 source pictures per world (estimate).
+- **Scale**: a handful of project worlds, at most 64 installed and 500 MB; about 15 source pictures per world (estimate).
 
 ## Constitution check
 
@@ -72,7 +72,7 @@ Facts below were read in the repo or checked on 2026-10-31; the web sources are 
 
 **A source's label comes only from main.** Main stores origin and source when it stores a world, and sends the words the UI shows. Nothing in a pack or catalogue reaches that field, so a pack cannot claim to be ours by construction, not by a filter.
 
-**Registry.** `docs/experience/world-moments.json` gets one row per country (`pack: worlds/<id>`, `crews: []`, `shippable: false`), and every moment gets a cell (098 FR-011). Own worlds never enter the registry; for them `momentCoverage` is the check.
+**Registry.** `docs/experience/world-moments.json` gets one row per downloadable world (`pack: worlds/<id>`, `crews: []`, `shippable: false`), and every moment gets a cell (098 FR-011). Own worlds never enter the registry; for them `momentCoverage` is the check.
 
 **World matrix.** The driver mounts a pack from `worlds/<id>` by a dev hook in the simulator (same `world:part` shape), with no network.
 
@@ -97,7 +97,7 @@ The spec's *Context* table is the list. Changes to reused code:
 - **P0** this spec.
 - **P1 Format and validator** (no UI, no network): `worldzip`, `worldpack`, `worldmoments`, `worldprompts`, fixtures. Depends on 098's block test or builds that piece.
 - **P2 Store, seam, windows**: `worlds/store.ts`, `world:list`, `world:part`, World row, fixture world in the simulator, `placeWindows`. Depends on #921.
-- **P3 Download**: catalogue, sources, notice, policy slice, dialog. All places `coming`.
+- **P3 Download**: catalogue, sources, notice, policy slice, dialog. All downloadable worlds `coming`.
 - **P4 Picture worlds**: one PR per world or small batch (art, `ASSETS.md`, registry row), `coming` to `available` only through the gate (FR-035). Needs #936 built.
 - **P5 Hand path** (when the app cannot generate images): prompt pack, upload, report, try, save, export.
 - **P6 In-app** (first-class): needs 096's pipeline and probes; retires the theme maker in the same PR.
@@ -112,8 +112,8 @@ P1 to P3 may merge before the gate with nothing visible as available; P4 to P6 r
 - **Spec 096 not built**: P5 needs the encoder, `imagecheck.ts` and `webpcheck.ts`. P5 builds them to 096's words and 096 then reuses them.
 - **Daily releases carry the catalogue**: a mis-typed hash breaks one world for one day; `test:world-catalogue` and T043's check catch it first.
 - **Hand-made quality**: anchors from alpha may misplace a visitor; the report and Try it show it; 097 FR-117's check runs on the try (`[KNOWN GAP]` for odd art).
-- **Weekly matrix growth** with 19 picture worlds; shard per world.
-- **Art backlog**: crews to full poses, Retro pixel people and five new worlds are much more art than the places; each gate in FR-035 keeps them from shipping half done, and `coming` keeps the list honest.
+- **Weekly matrix growth** with each picture world; shard per world.
+- **Art backlog**: crews to full poses, Retro pixel people and each new world are much art; each gate in FR-035 keeps them from shipping half done, and `coming` keeps the list honest.
 - **Repo growth** from art (OP-3); about 2.5 MB per world version, and redos count.
 - **App size**: about 22.6 MB of shipped art, then about 26.8 MB with Retro game (estimates, FR-213); the 30 MB budget test stops growth.
 
