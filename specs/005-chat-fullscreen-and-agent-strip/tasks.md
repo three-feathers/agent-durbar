@@ -138,7 +138,7 @@ PRs, gates and line-count goals: `plan.md`. Each PR measures on `main` first and
 - [ ] T120 [PR C2] Quiet tool rows and thinking with a left rule; failed, waiting and open states keep a box. Test: `check-chat-density`, `check-edits`, tool chip keyboard; mutant: a failed call with no box [FR-202]
 - [ ] T121 [PR C2] Copy and message menu on hover and focus, always in the tab order, visible for `hover:none` and an open menu; FR-173 and 052 FR-010 rewritten. Test: real pointer and Tab; `check-notes`; mutant: `display:none` [FR-204]
 - [ ] T122 [PR W] Measure first, targets 126 letters a line at 1440, 1920 and 2560 (146, 149 and 149 today). Then `--chat-prose`; 880 px and following 1240 px rules go. Test: new `check-chat-width`; `check-ui-text`; mutant: cap removed [FR-206]
-- [ ] T123 After T125, Paco's answer on manual order: record it in FR-198; if yes, rewrite FR-178..FR-188 and T099..T112 for the rail; if no, the owner decides [FR-198]
+- [ ] T123 After T125, with Paco's yes of 2026-11-01 recorded in FR-198: rewrite FR-178, FR-180, FR-182, FR-185..FR-188 and T099..T112 for the rail's form [FR-198]
 - [ ] T124 [PR W] Last chat PR: `check-chat-density` asserts the log without a rail, 669 and 569 px (638 and 538 on FR-199's fallback) within 8 px with the restore bar still there (calculated; measure first), Flat and Real; pictures retaken at both sizes (`npm run shots:docs`), docs (`features.md`, README), older FRs changed in place [FR-195, FR-208]
 
 ### The rail: nothing here starts before T125
