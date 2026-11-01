@@ -3,7 +3,7 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Worlds and character sets as two flat lists of untrusted data packs (owner decisions, Vikram 2026-10-31; #932, #933): any set in any world, downloaded on demand with a plain internet notice from an extensible source, made in the app or by a prompt pack, and shared; one validator for all
-note: spec, plan, tasks only; nothing built; first ship waits for spec 097 FR-179; monitor part and arrangements specified; Retro arcade plan (FR-250..FR-270)
+note: spec, plan, tasks only; nothing built; first ship waits for spec 097 FR-179; monitor part and arrangements specified; next built-in world (FR-250..FR-270)
 status: draft
 -->
 
