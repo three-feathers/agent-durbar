@@ -345,3 +345,13 @@
 
 ## FR-181: no Demo / Live badge in the top bar (2026-10-31, owner)
 - [x] T193 `check-no-demo-badge.js` first (fails with the badge), then `#protoBadge`, `.proto` and `setBadge` removed; UI-suite entry; the cues that remain are listed in the spec delta [FR-181]
+
+## FR-191..FR-205: the Needs you panel (2026-11-01, owner). Not before the Retro world and #994
+- [ ] T195 Owner's answers to Q-NY-1..Q-NY-16; the spec's proposed lines updated [FR-191..FR-204]
+- [ ] T196 Tests first: `createArrivals()` in `attention.js`, `test-attention` with its mutants [FR-193, FR-205]
+- [ ] T197 Panel in place of the modal: non-modal region, no layout effect, automatic opening with no focus change, dismiss and reopen, keys; `scripts/check-needs-panel.js` steps 1, 2, 3, 8 [FR-191, FR-192, FR-194, FR-195]
+- [ ] T198 Request binding and guards in rows, by #994's mechanism: stale press, `RISE_GUARD_MS`, `e.repeat`, the word from the card's real outcome; driver steps 5, 6 and mutants [FR-197, FR-198, FR-200]
+- [ ] T199 What a row offers, per the owner's answers: limit, long request, question, form, error, usage window, Read-only; simulator hooks; driver step 7 [FR-196, FR-199]
+- [ ] T200 Announcements and the burst; keyed row updates; one slide, reduced motion, `check:perf`; driver step 4 [FR-201, FR-204]
+- [ ] T201 Chat, other views, sizes, Flat and Real office, tokens, slips; driver steps 9, 10 [FR-202, FR-203]
+- [ ] T202 Existing drivers follow the panel; pictures retaken; docs, changelog fragment; older FRs updated in place (the delta's list), spec 003, 074, 092, 097 lines included; `/speckit.converge` [FR-205]
