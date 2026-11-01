@@ -17,7 +17,7 @@
  *   FR-023  Settings > Floors: a switch there updates the office, the pills, the top-bar button and the panel.
  * Spec 092 (floor screens): with two or more floors on the office shows one floor at a time, so "the office" below is the whole building: its floor screens
  * one after another (`building()`), each with one floor tag; the pills still count the whole building.
- *   2026-11-01 (#1010): the row controls (Only this floor, icon buttons, handle), a real drag of a floor, the saved order, Up/Down the same save.
+ *   2026-11-01 (#1010): the row controls (Focus mode icon button with pressed state and a keyboard tooltip, icon buttons, handle), a real drag of a floor, the saved order, Up/Down the same save.
  * Screenshots: 033-floors-on, 033-floors-panel, 033-floor-off, 033-floor-off-panel, 033-settings-floors at both sizes.
  */
 const path = require('path');
@@ -112,10 +112,19 @@ module.exports = async (ctx) => {
     const rowNames = () => js(`[...document.querySelectorAll('#floorsPop .fl-floor')].map(r=>r.querySelector('.fl-t b').textContent)`);
     const ctl = await js(`(()=>{const r=document.querySelectorAll('#floorsPop .fl-floor')[1];const n=r.querySelector('.fl-t b').textContent;
       const q=k=>r.querySelector('[data-fl="'+k+'"]');const box=e=>{const b=e.getBoundingClientRect();return Math.round(b.width)+'x'+Math.round(b.height)};
-      return {n,only:q('only').textContent+'|'+q('only').getAttribute('aria-label'),up:q('up').getAttribute('aria-label'),down:q('down').getAttribute('aria-label'),upTxt:q('up').textContent.trim(),
+      return {n,only:q('only').textContent.trim()+'|'+q('only').getAttribute('aria-label')+'|'+q('only').getAttribute('aria-pressed')+'|'+q('only').dataset.tip+'|'+box(q('only')),up:q('up').getAttribute('aria-label'),down:q('down').getAttribute('aria-label'),upTxt:q('up').textContent.trim(),
         rn:q('rename').getAttribute('aria-label'),del:q('del').getAttribute('aria-label'),delTxt:q('del').textContent.trim(),upBox:box(q('up')),grip:!!r.querySelector('.fl-grip svg'),
         firstUpDis:document.querySelector('#floorsPop .fl-floor [data-fl="up"]').disabled,small:[...r.querySelectorAll('button')].every(b=>parseFloat(getComputedStyle(b).fontSize)>=10.5)}})()`);
-    assert.deepStrictEqual(ctl, { n: ctl.n, only: `Only this floor|Only this floor: ${ctl.n}`, up: `Move ${ctl.n} up`, down: `Move ${ctl.n} down`, upTxt: '', rn: `Rename ${ctl.n}`, del: `Delete ${ctl.n}`, delTxt: '', upBox: '32x32', grip: true, firstUpDis: true, small: true }, 'the floor row controls: renamed Only this floor, icon buttons with their names, a handle');
+    assert.deepStrictEqual(ctl, { n: ctl.n, only: `|Focus mode: show only ${ctl.n}|false|Focus mode: show only ${ctl.n} (switches every other floor off)|32x32`, up: `Move ${ctl.n} up`, down: `Move ${ctl.n} down`, upTxt: '', rn: `Rename ${ctl.n}`, del: `Delete ${ctl.n}`, delTxt: '', upBox: '32x32', grip: true, firstUpDis: true, small: true }, 'the floor row controls: Focus mode icon button, icon buttons with their names, a handle');
+    // the focus button: tooltip on keyboard focus, pressed state after it is used, how to leave it
+    await js(`document.querySelectorAll('#floorsPop .fl-floor')[1].querySelector('[data-fl="only"]').focus()`);
+    await until(`(()=>{const t=document.getElementById('appTip');return !!t&&!t.hidden&&t.textContent.startsWith('Focus mode: show only ')})()`);
+    await js(`document.querySelectorAll('#floorsPop .fl-floor')[1].querySelector('[data-fl="only"]').click()`);
+    await until(`document.querySelectorAll('#floorsPop [data-fl="only"][aria-pressed="true"]').length===1`);
+    assert.strictEqual(await js(`document.querySelectorAll('#floorsPop [data-fl="only"][aria-pressed="true"]')[0].dataset.tip.startsWith('Focus mode is on: only ')`), true, 'the pressed focus button says how to leave');
+    await shot('floors-focus', w, h);
+    for (let k = 1; k <= 2; k++) { await js(`document.querySelector('#floorsPop [data-fl="on"]:not(.on)').click()`); await until(`document.querySelectorAll('#floorsPop [data-fl="on"].on').length===${jsLiteral(k + 1)}`); }
+    await until(`document.querySelectorAll('#floorsPop [data-fl="on"].on').length===3&&document.querySelectorAll('#floorsPop [data-fl="only"][aria-pressed="true"]').length===0`);
     const before = await rowNames();
     assert.ok(before.length >= 3, `three floors: ${before}`);
     const mouse = (type, p, extra = {}) => H.wc().sendInputEvent({ type, x: p.x, y: p.y, button: 'left', clickCount: 1, ...extra });
