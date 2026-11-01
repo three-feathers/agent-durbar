@@ -15,7 +15,7 @@
 - [ ] T002 **Measure** a 10 s simulator capture: `capturePage` piped to `ffmpeg` against `x11grab`; real fps, KB per second, one Electron at a time. Write the result in the plan's tables; correct FR-021 and FR-022 if the figures say so. No code kept. Estimate: 1 h, under $1.
 - [ ] T003 **Unreleased gate** [FR-008]: `docs/site/unreleased.json`, the build check over HTML, feed, captions and README, `worlds.json`, and no `note` of a draft spec in the site's specs index. Lands before any page, and before an open PR's note reaches the site. Test: a stand-in phrase in each place fails; a shipped theme's text passes. Estimate: 1 h, $2.
 - [ ] T004 [P] **Release filter** [FR-027]: `latestRelease()` takes `v*` only. Test: fake list with `media-library` and `worlds-*` first picks the `v*` one; mutation fails. Estimate: 30 min, $2.
-- [ ] T005 **`blog:check`** [FR-060..FR-066]: `scripts/check-posts.js`, fixtures, allowlist, hash list with a stand-in in tests, online author check (fake `gh` in tests), security hold, in `npm test`. The real host's hash is added by a human-run step that reads it from stdin, prints nothing and is not in any log. Sensitive size (spec 021 FR-038): analyst, implementer, reviewer. Test: SC-004 and a mutant per rule. Estimate: 3 h, $6.
+- [ ] T005 **`blog:check`** [FR-060..FR-068]: `scripts/check-posts.js`, fixtures, allowlist, hash list with a stand-in in tests, an owner's name without `humanRead` fails, no employer list anywhere, online author check (fake `gh` in tests), security hold, in `npm test`. The real host's hash is added by a human-run step that reads it from stdin, prints nothing and is not in any log. Sensitive size (spec 021 FR-038): analyst, implementer, reviewer. Test: SC-004 and a mutant per rule. Estimate: 3 h, $6.
 - [ ] T006 [P] **Media manifest** [FR-022..FR-025]: `docs/site/media.json`, schema and budget checks, player markup (no `autoplay`, `loop`), `media-src 'self'`, builds without files. Test: removing captions, poster or a hash fails; over budget fails. Estimate: 2 h, $4.
 
 ## Phase 2: Site
@@ -39,10 +39,10 @@
 ## Phase 5: Blog
 
 - [ ] T016 **Blog pages and feed** [FR-050..FR-055]: reader, list, post page with label and *What this post did not verify*, feed; sample post only in test fixtures. Test: a post without label fails; list and feed links resolve. Estimate: 2 h, $4.
-- [ ] T017 [P] `scripts/blog-digest.js` [FR-072, FR-074]: reuses `weekly-retro.js`'s collection, filters on author before printing, prints facts or "nothing to say". Test: fixtures for both, and an outside author's title never appears (mutation). Estimate: 1 h, $2.
+- [ ] T017 [P] `scripts/blog-digest.js` [FR-068, FR-072, FR-074]: reuses `weekly-retro.js`'s collection, filters on author before printing, prints facts or "nothing to say". Test: fixtures for both, an outside author's title never appears, and a fixture commit's author, email and trailer never appear (mutations). Estimate: 1 h, $2.
 - [ ] T018 **Rule change** [FR-070]: after the owner's OK, with Paco's and Ruben's views recorded on the PR, apply spec 021 FR-076's delta (T055). **Needs a written yes; do not start before.** Test: `rules:check`. Estimate: 15 min, under $1.
 - [ ] T019 **Back-fill batch** [FR-041, FR-053, FR-075]: posts and clips on one PR, first evidence link PR #1. Dated by subject day, labelled with the day written. **A human owner reads the whole batch and approves in writing before merge.** Needs T016, T018 and Q3. Estimate: 1 day, $6 to $8, plus his reading.
-- [ ] T020 **Start daily** [FR-071..FR-074, FR-078, FR-079]: add the digest step to the agents' daily round in `docs/collaboration.md`; first post by the rota in Q4; first 5 read by a human. Estimate: at most $0.45 a post.
+- [ ] T020 **Start daily** [FR-071..FR-074, FR-078, FR-079]: add the digest step to the agents' daily round in `docs/collaboration.md`; first post by the rota in Q4; human reads per FR-079; review list in the PR template's place for posts. Estimate: at most $0.45 a post.
 - [ ] T021 **Measure** [SC-005]: real token use of the first 3 posts, in the plan. Above the budget: stop daily posts and ask the owner. Also confirm playback by hand in a browser on the live site, and on a phone if a human can (`real:`, or say not checked).
 
 ## Later, only if asked

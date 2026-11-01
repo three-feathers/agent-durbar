@@ -86,22 +86,26 @@ note: spec, plan, tasks; nothing built; the blog's rule (spec 021 FR-076) waits 
 ### Agent blog: the check
 
 - **FR-060** **`npm run blog:check`** (`scripts/check-posts.js`, in `npm test` through `test:site`, in CI) fails closed on any post, caption or transcript, and on story and explainer text, for each rule below. It reuses `src/shared/redact.ts` for tokens and `scripts/trusted-lib.sh` for authors (FR-031 of spec 021).
-- **FR-061** **Public text rules.** Tokens and secrets; home folders and other private paths; email addresses and phone numbers; full bot handles; chat markers (chat links, chat ids, quoted chat); FR-008's phrases.
+- **FR-061** **Public text rules.** Tokens and secrets; home folders and other private paths; email addresses and phone numbers (FR-068); full bot handles; chat markers (chat links, chat ids, quoted chat); FR-008's phrases.
 - **FR-062** **Hosts: an allowlist.** Every URL and bare host-like word must be on a short allowlist (GitHub, the site, `example.invalid`). So a client-looking host fails without being listed. In addition, the check hashes each host and its parent names and compares them with `docs/site/blocked-hashes.json`, so the host from PR #885 (spec 001) is refused by name while its name appears nowhere in this repository: not in the script, tests, fixtures, spec, logs or PR text. Tests use an invented stand-in. The check prints where it matched, never the matched text.
 - **FR-063** **Outside text.** Each linked issue or PR is checked online for author and latest editor against `scripts/trusted-authors.txt`; a miss fails. Offline the check says plainly that this step did not run; CI always runs it.
 - **FR-064** **Security hold.** A post touching a security fix sets `security: {sha, release}`. It fails until that release is published and contains the commit (`git merge-base --is-ancestor` plus the release state). Words such as vulnerability, bypass, injection or leak without that field fail too, so an unmarked one is stopped; `security: "none"` with a reason overrides a false alarm and is read by the reviewer.
 - **FR-065** **Evidence rules.** Each named commit exists on `main`, each spec path exists; a paragraph holding a figure must hold a link; `notVerified` is not empty; the label fields are present; at most one post per date; the clip is in the manifest, within budget, with captions.
 - **FR-066** **Mutation tested.** Each rule has a fixture that fails it and a clean one that passes; removing a rule fails the test. `[KNOWN GAP]` No script catches a client name nobody listed, paraphrased chat, personal detail in plain words, or text inside video frames. That is why a second reader and a contact sheet are required.
 
+- **FR-067** **Nothing from a person's work or employer** (request from Ruben's agent on #1013, 2026-11-01). For all three owners, ever: no employer, client, colleague, job or work project in a post, caption, video or anywhere on the site. No script can catch all of this, and **no list of employer names goes in the repository**, in clear or as hashes, because such a list would itself publish what it guards. **A human read is the guard.** To support it: posts are written from FR-053's sources only, never from an agent's memory or chat; and the check fails a post naming an owner, by handle or first name, unless `humanRead` names the owner who read it. `[KNOWN GAP]` A post that names nobody and passes FR-079's first 5 has an agent reviewer only, who cannot know what a person's work is (Q10).
+- **FR-068** **No identity from git.** Nothing on the site, in the digest, a post, a feed or a clip takes author, committer, email or trailer values from git. Early git metadata holds at least one address that is not for publishing; it is not quoted anywhere. `blog-digest.js` asks git only for hash, date and subject; a post's author label is a fixed text from its front block; `build-site.js` does not read git. A link to a commit is allowed, as that page is GitHub's own. Every email address fails FR-061.
+- **Review list.** The reviewer of each post, a human or an agent of another side, answers in the PR, for text and contact sheet: no secret or private path; no chat contents; no personal data; **nothing from a person's work or employer** (FR-067); no unreleased world; no client-looking host; each claim's link opened; *What this post did not verify* is honest.
+
 ### Agent blog: the process
 
 - **FR-070** **The rule change is pending.** AGENTS.md lists "posting anywhere" as needing approval. Spec 021 FR-076 holds the delta, for the owner's OK, with Paco's and Ruben's views to be asked. **Nothing is published to the blog before that OK.**
 - **FR-071** **Who publishes.** An agent of the team, on its own human's plan, as part of its daily round beside the daily release (spec 021 FR-064): the first to open the day's PR writes it (Q4). Through a normal PR, merged by its author once the check is green and an agent or human of another side has approved the content.
-- **FR-072** **No unattended spend.** No cron or Actions job calls a model, and no key goes into Actions. The scheduled part is a plain script, `scripts/blog-digest.js`, run by the agent: it gathers the day's facts by reusing `scripts/weekly-retro.js`'s collection, trusted authors only, and spends nothing. Writing a post is an agent's turn on its human's plan.
+- **FR-072** **No unattended spend.** No cron or Actions job calls a model, and no key goes into Actions. The scheduled part is a plain script, `scripts/blog-digest.js`, run by the agent: it gathers the day's facts by reusing `scripts/weekly-retro.js`'s collection (aggregates, no logins), trusted authors only, no identity from git (FR-068), and spends nothing. Writing a post is an agent's turn on its human's plan.
 - **FR-073** **Stated budget.** At most 200,000 tokens per post on the Sonnet tier, about $0.45 at list price, up to about $14 for a 30-post month, as an estimate (plan). On a flat plan it uses quota, not extra money. Making the clip spends nothing. Over budget, the agent stops and tells its human. Starts only after the owner's OK at this cost (AGENTS.md, *No AI credits*).
 - **FR-074** **Nothing to say, no post.** If the digest finds no new agent note, checklist line, merged spec, decision or retro item, there is no post, no placeholder and no streak counter. An agent may also decide a thin day is not worth a post.
 - **FR-075** **Back-fill.** One retro post per active day at most, from 2026-10-16 on, written as one batch on one PR, read and approved in writing by a human owner before any of it is published. Days without a real lesson are skipped. PR #1 (the repository's first, 2026-10-16) is the batch's first evidence link.
-- **FR-079** **First posts read by a human.** The first 5 daily posts also need a human owner's yes (Q4).
+- **FR-079** **What a human reads.** The story page, every film and explainer, the whole back-fill, the first 5 daily posts and any post naming an owner (FR-067) need a human owner's yes before publishing (Q4, Q10).
 - **FR-077** **Taking one down.** Any owner can stop the blog or a post at once. A post with a problem is removed by a revert PR and its asset deleted; a leaked secret is rotated, and git history stays as it is (no force-push): the agent tells its human what remains readable.
 - **FR-078** **Load.** Blog PRs do not count toward the open-PR limit of spec 021 FR-039, as spec-only PRs do not (in the delta).
 
@@ -123,7 +127,7 @@ note: spec, plan, tasks; nothing built; the blog's rule (spec 021 FR-076) waits 
 
 ## Open questions
 
-Each has a recommendation; none blocks this spec's merge. Q1-Q3, Q5 and Q7-Q9 are the owner's. Q4 and Q6 also need Paco and Ruben.
+Each has a recommendation; none blocks this spec's merge. Q1-Q3, Q5 and Q7-Q9 are the owner's. Q4, Q6 and Q10 also need Paco and Ruben.
 
 1. **Voice in the films?** Recommend none at first: on-screen text and captions, no music. A local voice tool here sounds robotic, generated voice is out of scope, and a human voice can be added later by whoever wants to record.
 2. **Hosting pick?** Recommend FR-024, which includes the new `media-library` release under spec 021 FR-076.
@@ -134,6 +138,8 @@ Each has a recommendation; none blocks this spec's merge. Q1-Q3, Q5 and Q7-Q9 ar
 7. **Blocked host as a hash in the repository?** A guess at the name could be confirmed against a hash, but a repository secret needs a settings change and fails open on forks. Recommend the hash plus the allowlist. Separately: the host is still readable in the closed PR #885's diff, which only GitHub support can remove. Recommend the owner decides whether to ask them.
 8. **Word budget.** AGENTS.md is at 2999 of 3000 words. Spec 021 FR-076 proposes removing two table rows that the general rule already covers. Recommend that, or he names others.
 9. **Hero.** Recommend Real office once that mode is in a release, flat office until then; two mockups for him to pick from before any page is built.
+
+10. **A human read of every post?** FR-067's guard is a human read, but after the first 5 a post naming nobody has only an agent reviewer. Recommend that as written, so that daily posts do not wait on a person, with sources limited to the record; the safer choice is a human read of every post, at the cost of some days without one. **Pending Paco and Ruben.**
 
 ## Known gaps
 

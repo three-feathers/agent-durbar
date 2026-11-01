@@ -116,7 +116,7 @@ Time, as estimates: site and check tasks are 1 to 3 hours of agent time each; th
 2. Branch `104-blog-<date>` in a worktree, write the post with `notVerified`.
 3. `node scripts/make-video.js` for the clip; upload review copy to the draft release.
 4. `npm run blog:check`; open the PR (`documentation`, `area:docs`, `spec:104`); `Docs: n/a`.
-5. Another side's reviewer reads text and contact sheet; a human too for the first 5.
+5. Another side's reviewer answers the review list (spec, after FR-068) on text and contact sheet; a human too where FR-079 says so.
 6. Upload to `media-library`, update nothing else, merge through the queue; Pages deploys.
 
 ## Constitution check
