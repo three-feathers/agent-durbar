@@ -330,6 +330,16 @@ Each has a recommendation (Q6 is for Paco, the crew owner). The build waits for 
 
 ## Changes
 
+### 2026-11-01: people move smoothly (Vikram's requirement on #979, relayed 2026-11-01)
+
+*"Animation must be smooth and look natural, with no lag; stepped frame swaps alone are not enough."* This replaces FR-070's stepped frames and periods, this delta's item 2 and item 3 below, and, for people only, FR-181's stepped timing and 2 changes a second. FR-180 stands: `transform` and `opacity` only, no layout, no `mix-blend-mode`. FR-071 and FR-074 stand: nothing moves under reduced motion or Serious mode, and hidden or off-screen desks pause.
+- **Frames cross-fade.** Two pictures of a pose fade with eased `opacity`, about 10 to 14 % of a cycle, the coming one first, so nothing pops and the figure never goes see-through.
+- **A small movement on top, on both pictures, on one clock:** breathing and a slow sway from the feet; a typing bob; the body following a wave; a running bounce. Each is eased and a per-person loop (`personMotion`'s `sway`, 5 to 8 s), so people are not in step.
+- **Rates:** typing 0.85 to 1.1 s a pair, a wave 1 to 1.2 s, running 0.62 to 0.74 s, about three steps a second.
+- **Going to and from a place glides:** a person who leaves a desk for a fixture, or comes back, moves with an eased `transform` from the old place, with a stride bounce, 500 to 1200 ms by distance, in place of FR-073's stepped fade alone. `[KNOWN GAP]` FR-075 stands: the pack has no side-view walk frames, so this is a person gliding in their pose, not a walk.
+- FR-072's and FR-073's fades are eased, no longer stepped.
+- `test:` `npm run test:realoffice-layout` for the rates; `sim:` `scripts/check-097-motion.js`: both frames seen and in between, the figure never below 0.6, eased timing, nothing but `transform` and `opacity`, the glide, and what stops it. The budget and the owner's verdict on the look are in this delta's PR report; numbers below.
+
 ### 2026-10-31: owner answers (Q1-Q6, lobby places) and the phase P1 build
 
 **Owner answers** (Telegram, relayed to the build agent by Vikram's coordinating agent; quoted as relayed):
