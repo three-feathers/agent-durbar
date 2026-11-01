@@ -7,14 +7,16 @@ export const ARRANGEMENTS = ['rows', 'aisles'] as const;
 export type Arrangement = (typeof ARRANGEMENTS)[number];
 export const isArrangement = (v: unknown): v is Arrangement => typeof v === 'string' && (ARRANGEMENTS as readonly string[]).includes(v);
 
-/** FR-256: a person at their cabinet is 72 grid pixels tall and 34 wide (provisional: the art's reduced size), the face 24 from crown to chin (provisional, by eye) */
+/** FR-256: a person at their cabinet is 72 grid pixels tall and 34 wide (provisional: the art's reduced size), the face 19 from crown to chin (the smallest of the 15 people, measured by `build-arcade-pack.py` into `faceBox`; RA1 had 24 by eye) */
 export const AISLE_PERSON = { w: 34, h: 72 } as const;
-export const FACE_GRID = 24;
+export const FACE_GRID = 19;
 /** FR-229: the face floor, crown to chin, only on a floor of 15 */
 export const FACE_FLOOR = 24;
 export const AISLE_PLATE_H = 24, AISLE_SIGN_H = 20, AISLE_PAD = 8, AISLE_COLS = 5, AISLE_STAGGER = 0.08;
 /** the sign's shortest form: a name cut to about 30 px, counts, **+** and the room menu (FR-256); path and cost go to its hover and focus */
 export const AISLE_SIGN_MIN_W = 120;
+/** the three cabinet drawings the pack ships (`monitor.webp` big, `monitor-half.webp` small, `monitor-narrow.webp`): CRT size in grid pixels. The plan picks among these only (spec 102 FR-257). */
+export const CABINETS = { big: { gw: 75, gh: 50 }, small: { gw: 56, gh: 32 }, narrow: { gw: 44, gh: 32 } } as const;
 /** the face of a cabinet in grid pixels: the CRT `gw` x `gh`, a 5 px bezel, a 7 px side panel, 38 px of marquee, deck and base, a 3 px crown */
 export const cabGrid = (gw: number, gh: number): { w: number; h: number } => ({ w: gw + 17, h: Math.max(gh + 41, AISLE_PERSON.h + 1) });
 
@@ -37,22 +39,14 @@ function planFor(k: number, W: number, F: number): Plan {
     return { g, gw, gh, cols, rows, big, sl: Math.max(3, Math.min(13, Math.floor(spareY / (2 * rows + 2)))), rowH: rowCost(gh, g), slotW, fits: true };
   };
   if (k <= 4) {
-    let best: Plan | null = null;
-    for (const g of [3, 2]) for (let gh = 60; gh >= 30; gh--) {
-      const p = tryPlan(g, Math.round(gh * 1.5), gh, 2, true);
-      if (p && (!best || p.gw * p.g * p.gh * p.g > best.gw * best.g * best.gh * best.g || (p.gw * p.g * p.gh * p.g === best.gw * best.g * best.gh * best.g && p.g > best.g))) best = p;
-    }
-    if (best) return best;
+    /* one or two columns of the big cabinet: g = 3 where the floor is tall enough, else 2 (the mockup's own choice at both sizes) */
+    for (const g of [3, 2]) { const p = tryPlan(g, CABINETS.big.gw, CABINETS.big.gh, 2, true); if (p) return p; }
   } else {
-    /* 5 to 8: g = 3 wherever it fits; 9 to 15: five columns, three rows, g = 2 */
-    for (const g of [3, 2]) for (const gw of [56, 52, 48, 44]) for (const cols of [5, 4, 3, 2]) {
-      const gh = gw >= 52 ? 32 : 30;
-      const p = tryPlan(g, gw, gh, cols, false);
-      if (p) return p;
-    }
+    /* 5 to 8: g = 3 wherever it fits; 9 to 15: five columns, three rows, g = 2; the narrow drawing where the chat leaves little width */
+    for (const g of [3, 2]) for (const c of [CABINETS.small, CABINETS.narrow]) for (const cols of [5, 4, 3, 2]) { const p = tryPlan(g, c.gw, c.gh, cols, false); if (p) return p; }
   }
   /* it does not fit: five columns of the smallest cabinet, as many rows as it takes, and the floor scrolls */
-  const g = 2, gw = 44, gh = 30, cols = k <= 4 ? 2 : AISLE_COLS, cab = cabGrid(gw, gh), rows = Math.max(1, Math.ceil(k / cols));
+  const g = 2, gw = CABINETS.narrow.gw, gh = CABINETS.narrow.gh, cols = k <= 4 ? 2 : AISLE_COLS, cab = cabGrid(gw, gh), rows = Math.max(1, Math.ceil(k / cols));
   return { g, gw, gh, cols, rows, big: false, sl: 3, rowH: rowCost(gh, g), slotW: cab.w * g + Math.ceil((AISLE_PERSON.w * g) / 2), fits: false };
 }
 

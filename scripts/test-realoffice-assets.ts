@@ -6,18 +6,22 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
+import { spawnSync } from 'child_process';
 import { webpInfo } from './webpinfo';
+import { ARRANGEMENTS, CABINETS, FACE_FLOOR, FACE_GRID, cabGrid } from '../src/shared/realoffice-arrangements';
 
 process.exitCode = 1;
 const ROOT = (() => { let d = __dirname; while (!fs.existsSync(path.join(d, 'package.json'))) d = path.dirname(d); return d; })();
 const RO = path.join(ROOT, 'src', 'renderer', 'realoffice');
 
 /** FR-062 caps, in bytes, by kind of picture */
-export const CAPS = { person: 80 * 1024, fixture: 120 * 1024, desk: 60 * 1024, floor: 40 * 1024, wall: 120 * 1024, monitor: 30 * 1024, total: 10 * 1024 * 1024 };
+export const CAPS = { person: 80 * 1024, fixture: 120 * 1024, desk: 60 * 1024, floor: 40 * 1024, wall: 120 * 1024, monitor: 30 * 1024, glow: 20 * 1024, total: 10 * 1024 * 1024 };
+/** spec 102 FR-213: all shipped art (every world and every set) at most this many bytes */
+export const SHIPPED_MAX = 30 * 1024 * 1024;
 export const PERSON_MAX_H = 640;
 const KEYS = ['files', 'source', 'tool', 'date', 'made by', 'approved by', 'reference', 'prompt', 'cut', 'licence'];
 const CLAUSE = /fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named/;
-const kindOf = (f: string): keyof typeof CAPS | null => /^fx-[a-z]+\.webp$/.test(f) ? 'fixture' : /^[a-z][a-z0-9]*-\w+\.webp$/.test(f) ? 'person' : f === 'desk.webp' ? 'desk' : f === 'floor.webp' ? 'floor' : f === 'wall.webp' ? 'wall' : f === 'monitor.webp' ? 'monitor' : null;
+const kindOf = (f: string): keyof typeof CAPS | null => /^fx-[a-z]+\.webp$/.test(f) ? 'fixture' : /^p\d\d-[\w-]+\.webp$/.test(f) || /^[a-z][a-z0-9]*-\w+\.webp$/.test(f) ? 'person' : f === 'desk.webp' ? 'desk' : /^floor(-night)?\.webp$/.test(f) ? 'floor' : /^wall(-night)?\.webp$/.test(f) ? 'wall' : /^monitor(-[a-z]+)?\.webp$/.test(f) ? 'monitor' : f === 'glow.webp' ? 'glow' : null;
 
 /** ASSETS.md: one section per source sheet (`### name`), each a list of `- key: value` lines */
 export function sections(md: string): Map<string, Record<string, string>> {
@@ -48,7 +52,8 @@ export function removals(md: string): string[] {
 /** Everything wrong with a pack (pictures, people.json text, ASSETS.md text), as sentences (empty = fine). */
 export function problems(files: Map<string, Buffer>, peopleJson: string, md: string): string[] {
   const out: string[] = [];
-  let total = 0;
+  let total = 0, pixelArt = false;
+  try { pixelArt = (JSON.parse(peopleJson) as { pixelArt?: unknown }).pixelArt === true; } catch (e) { /* reported below */ }
   const listed = new Map<string, string>();
   const secs = sections(md);
   for (const [name, s] of secs) {
@@ -74,6 +79,8 @@ export function problems(files: Map<string, Buffer>, peopleJson: string, md: str
     let info;
     try { info = webpInfo(buf); } catch (e) { out.push(`${name}: not a WebP file`); continue; }
     for (const c of info.chunks) if (!['VP8 ', 'VP8L', 'VP8X', 'ALPH'].includes(c)) out.push(`${name}: metadata or unexpected chunk "${c}" (strip EXIF, XMP, ICC and C2PA)`);
+    /* spec 102 FR-254, SC-025: a pixel-art picture is lossless (VP8L), one file pixel per grid pixel, and never animated */
+    if (pixelArt && !(info.chunks.includes('VP8L') && !info.chunks.includes('VP8 ') && !info.chunks.includes('ALPH'))) out.push(`${name}: a pixel-art picture must be lossless (VP8L only)`);
     if (kind !== 'floor' && kind !== 'wall' && !info.chunks.includes('ALPH') && !info.chunks.includes('VP8L')) out.push(`${name}: no alpha channel`);
     if (kind === 'monitor' && info.height > 300) out.push(`${name}: ${info.height} px tall, over 300 (spec 102 FR-220)`);
     if (kind === 'person' && info.height > PERSON_MAX_H) out.push(`${name}: ${info.height} px tall, over ${PERSON_MAX_H}`);
@@ -86,16 +93,18 @@ export function problems(files: Map<string, Buffer>, peopleJson: string, md: str
   const want = new Set<string>();
   for (const [pid, m] of Object.entries(meta.seat || {})) {
     for (const p of ['typeA', 'typeB', 'waveA', 'waveB', 'think', 'rest']) want.add(`${pid}-${p}.webp`);
-    const ok = m.w > 100 && m.w < 2000 && m.h > 100 && m.h < 2000 && m.headTop >= 0 && m.headTop < m.h && m.bodyH > 100 && m.headTop + m.bodyH <= m.h + 1 && m.hand > 0.3 && m.hand < 1.2;
+    const q = pixelArt ? 8 : 1; /* a pixel-art picture has one file pixel per grid pixel: its numbers are the shipped ones over 8 */
+    const ok = m.w > 100 / q && m.w < 2000 / q && m.h > 100 / q && m.h < 2000 / q && m.headTop >= 0 && m.headTop < m.h && m.bodyH > 100 / q && m.headTop + m.bodyH <= m.h + 1 && m.hand > 0.3 && m.hand < 1.2;
     if (!ok) out.push(`people.json seat ${pid}: numbers out of range ${JSON.stringify(m)}`);
     const info = files.has(`${pid}-typeA.webp`) ? webpInfo(files.get(`${pid}-typeA.webp`) as Buffer) : null;
     if (info && Math.abs(info.width / info.height - m.w / m.h) > 0.02) out.push(`people.json seat ${pid}: ${m.w}x${m.h} does not match the picture's shape ${info.width}x${info.height}`);
   }
   for (const [pid, m] of Object.entries(meta.stand || {})) {
-    if (!(m.figH > 100 && m.figH < 3000)) out.push(`people.json stand ${pid}: figH out of range`);
+    const q = pixelArt ? 8 : 1;
+    if (!(m.figH > 100 / q && m.figH < 3000 / q)) out.push(`people.json stand ${pid}: figH out of range`);
     for (const [p, wh] of Object.entries(m.poses || {})) {
       want.add(`${pid}-${p}.webp`);
-      if (!Array.isArray(wh) || wh.length !== 2 || !(wh[0] > 50 && wh[1] > 100 && wh[1] < 2 * m.figH)) out.push(`people.json stand ${pid} ${p}: size out of range`);
+      if (!Array.isArray(wh) || wh.length !== 2 || !(wh[0] > 50 / q && wh[1] > 100 / q && wh[1] < 2 * m.figH)) out.push(`people.json stand ${pid} ${p}: size out of range`);
       const ft = (m as { feet?: Record<string, number> }).feet, tp = (m as { top?: Record<string, number> }).top, fc = (m as { foot?: Record<string, number> }).foot;
       if (fc && !(fc[p] > 0.2 && fc[p] < 0.9)) out.push(`people.json stand ${pid} ${p}: foot centre out of range (spec 097 FR-191)`);
       if (!ft || !(ft[p] > 0.8 && ft[p] <= 1) || !tp || !(tp[p] >= 0 && tp[p] < 0.2)) out.push(`people.json stand ${pid} ${p}: no measured feet/top line in range (owner 2026-10-31 10:19)`);
@@ -107,7 +116,16 @@ export function problems(files: Map<string, Buffer>, peopleJson: string, md: str
     if (!meta.fixtureTop || !(meta.fixtureTop[id] >= 0 && meta.fixtureTop[id] < (meta.floorLine || 0))) out.push(`people.json fixture ${id}: no fixtureTop in range`);
   }
   want.add('desk.webp'); want.add('floor.webp');
-  for (const k of ['wall', 'monitor'] as const) if ((meta as Record<string, unknown>)[k] !== undefined) want.add(String((meta as Record<string, unknown>)[k])); // optional parts a world names (spec 102 FR-220)
+  for (const k of ['wall', 'monitor'] as const) { const v = (meta as Record<string, unknown>)[k]; if (typeof v === 'string') want.add(v); } // optional parts a world names (spec 102 FR-220)
+  /* the arcade names its parts in objects (spec 102 FR-252, FR-257, FR-260): three cabinets, the night room, the glow strip */
+  const objs = meta as unknown as { monitor?: Record<string, { file: string; cells: number; screenRect: number[]; marqueeRect: number[] }>; night?: { wall: string; floor: string }; glow?: { file: string; cells: string[] } };
+  if (objs.monitor && typeof objs.monitor === 'object') for (const [k, mv] of Object.entries(objs.monitor)) {
+    want.add(mv.file);
+    const inUnit = (a: number[]): boolean => Array.isArray(a) && a.length === 4 && a.every((v) => v >= 0 && v <= 1) && a[0] + a[2] <= 1.0001 && a[1] + a[3] <= 1.0001 && a[2] > 0 && a[3] > 0;
+    if (!inUnit(mv.screenRect) || !inUnit(mv.marqueeRect) || mv.cells !== 4) out.push(`monitor ${k}: screenRect, marqueeRect (fractions of a cell) and 4 cells needed (spec 102 FR-221, FR-257)`);
+  }
+  if (objs.night) { want.add(objs.night.wall); want.add(objs.night.floor); }
+  if (objs.glow) want.add(objs.glow.file);
   for (const f of want) if (!files.has(f)) out.push(`people.json names ${f}, which is not in the folder`);
   for (const f of files.keys()) if (!want.has(f)) out.push(`${f}: people.json does not name it`);
   return out;
@@ -203,6 +221,64 @@ const total = [...files.values()].reduce((s, b) => s + b.length, 0);
   assert.ok(problems(one('p01-book.webp', Buffer.from('not an image at all, just some text')), pj1, okMd).some((p) => /not a WebP/.test(p)), 'red: not a picture');
   const big = new Map(files); big.set('p01-typeA.webp', Buffer.concat([good, Buffer.alloc(CAPS.total)]));
   assert.ok(problems(big, pj, md).some((p) => /over 10485760/.test(p)), 'red: a pack over 10 MB');
+}
+
+// ---- Retro arcade and Retro pixel people (spec 102 T206, T207, T208; FR-252..FR-254, FR-259, SC-025): lossless, on the grid, the numbers measured ----
+if (worldIds.includes('retro')) {
+  const w = readPack('worlds', 'retro'), st = readPack('sets', 'retro');
+  const wj = w.json as { pixelArt?: boolean; arrangement?: string; defaultSet: string; monitor: Record<string, { cell: number[]; glass: number[] }>; night?: object; lightSets?: string[] };
+  const sj = st.json as { pixelArt?: boolean; seat: Record<string, unknown>; stand: Record<string, { poses: Record<string, number[]> }>; faceBox: Record<string, { pose: string; box: number[] }> };
+  assert.strictEqual(wj.pixelArt, true, 'the arcade is pixel art'); assert.strictEqual(sj.pixelArt, true, 'Retro pixel people are pixel art');
+  assert.strictEqual(wj.defaultSet, 'retro'); assert.ok((ARRANGEMENTS as readonly string[]).includes(String(wj.arrangement)), 'its arrangement is one the engine has');
+  assert.ok(!wj.lightSets, 'lightSets waits for the night welcome part (FR-252: all three or none)');
+  for (const [id, b] of [...w.files, ...st.files]) {
+    const info = webpInfo(b);
+    assert.deepStrictEqual(info.chunks.filter((c) => c !== 'VP8X'), ['VP8L'], `${id}: lossless, one chunk, no animation (FR-254)`);
+  }
+  /* the cabinets are exactly the drawings the plan chooses among, with their glass where the plan puts it */
+  for (const k of ['big', 'small', 'narrow'] as const) {
+    const cab = cabGrid(CABINETS[k].gw, CABINETS[k].gh), m = wj.monitor[k];
+    assert.deepStrictEqual(m.cell, [cab.w, cab.h], `the ${k} cabinet's drawing is ${cab.w} x ${cab.h}, as the plan assumes`);
+    assert.deepStrictEqual(m.glass.slice(2), [CABINETS[k].gw, CABINETS[k].gh], `the ${k} glass is the plan's`);
+    const info = webpInfo(w.files.get(k === 'big' ? 'monitor.webp' : k === 'small' ? 'monitor-half.webp' : 'monitor-narrow.webp') as Buffer);
+    assert.deepStrictEqual([info.width, info.height], [cab.w * 4, cab.h], `${k}: four cells in a strip`);
+  }
+  // the set: 15 people x 17 frames, no more, no fewer; a person missing a required frame fails (T207)
+  const SEATED = ['typeA', 'typeB', 'waveA', 'waveB', 'think', 'rest'], VIEWA = ['type', 'book', 'knock', 'letter', 'counter'], FACE = ['face-book', 'face-coffee', 'face-knock', 'face-letter', 'face-runA', 'face-runB'];
+  assert.strictEqual(st.files.size, 15 * 17, '255 frames');
+  for (const pid of Object.keys(sj.seat)) for (const p of [...SEATED, ...VIEWA, ...FACE]) assert.ok(st.files.has(`${pid}-${p}.webp`), `${pid} has ${p}`);
+  assert.strictEqual(Object.keys(sj.seat).length, 15);
+  const heights = Object.entries(sj.faceBox).map(([pid, f]) => { assert.strictEqual(f.pose, 'face-book'); const [x, y, fw, fh] = f.box, [pw, ph] = sj.stand[pid].poses['face-book']; assert.ok(x >= 0 && y >= 0 && x + fw <= pw && y + fh <= ph && fw > 8 && fh > 8, `${pid}: faceBox inside its frame`); return fh; });
+  assert.strictEqual(heights.length, 15, 'a faceBox per person (T201)');
+  assert.ok(Math.min(...heights) >= FACE_GRID, `the smallest measured face (${Math.min(...heights)} grid px) is at least the layout's FACE_GRID (${FACE_GRID}): the layout never promises more than the art has`);
+  assert.ok(Math.min(...heights) * 2 >= FACE_FLOOR, 'at g = 2 the smallest face is at least the 24 px floor (FR-229)');
+  // T208: the sizes of the committed files, against the caps
+  const wBytes = [...w.files.values()].reduce((n, b) => n + b.length, 0), sBytes = [...st.files.values()].reduce((n, b) => n + b.length, 0);
+  console.log(`retro arcade: world ${(wBytes / 1024).toFixed(1)} KB (${w.files.size} files), people ${(sBytes / 1024).toFixed(1)} KB (${st.files.size} files), together ${((wBytes + sBytes) / 1024).toFixed(1)} KB`);
+  assert.ok(wBytes + sBytes < 1024 * 1024, 'the arcade with its people is under 1 MB (FR-253 expected about 0.4 MB)');
+  // a person missing a required frame fails; a lossy picture in a pixel-art pack fails; a planted file over each cap fails
+  const mini = JSON.stringify({ pixelArt: true, seat: {}, stand: { p01: { figH: 72, poses: { book: [32, 71] }, feet: { book: 1 }, top: { book: 0 } } }, fixtures: {}, floorLine: 48, fixtureTop: {} });
+  const sec = `### stand-p01\n- files: p01-book.webp\n- source: s\n- tool: t\n- date: 2026-11-01\n- made by: m\n- approved by: Vikram, 2026-11-01\n- reference: none\n- prompt: a person\n- cut: c\n- licence: MIT\n- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named.\n- likeness-check: Vikram, 2026-11-01\n\n## Removed\n\nNone.\n`;
+  const rel = (p: string[]): string[] => p.filter((x) => !/desk.webp|floor.webp/.test(x));
+  const lossless = st.files.get('p01-face-book.webp') as Buffer, lossy = fs.readFileSync(path.join(RO, 'sets', 'office', 'p01-book.webp'));
+  assert.deepStrictEqual(rel(problems(new Map([['p01-book.webp', lossless]]), mini, sec)), [], 'a lossless pixel picture passes');
+  assert.ok(rel(problems(new Map([['p01-book.webp', lossy]]), mini, sec)).some((x) => /must be lossless/.test(x)), 'red: a lossy picture in a pixel-art pack');
+  assert.ok(rel(problems(new Map([['p01-book.webp', lossless]]), mini.replace('"p01":', '"p01":{"figH":72,"poses":{"book":[32,71],"coffee":[30,71]},"feet":{"book":1,"coffee":1},"top":{"book":0,"coffee":0}},"p02":'), sec)).some((x) => /not in the folder/.test(x)), 'red: a person missing a frame it names');
+  for (const [name, kind] of [['fx-bank.webp', 'fixture'], ['desk.webp', 'desk'], ['floor.webp', 'floor'], ['wall.webp', 'wall'], ['monitor.webp', 'monitor'], ['glow.webp', 'glow'], ['p01-book.webp', 'person']] as const) {
+    const over = Buffer.concat([lossless, Buffer.alloc(CAPS[kind])]);
+    assert.ok(problems(new Map([[name, over]]), mini, sec).some((x) => new RegExp(`${name.replace('.', '\\.')}: \\d+ bytes, over the ${kind} cap`).test(x)), `red: a planted ${kind} over its cap`);
+  }
+}
+{
+  // FR-213, SC-025: all shipped art, every world and every set, under 30 MB
+  let all = 0; for (const kind of ['worlds', 'sets']) for (const id of dirs(kind)) for (const f of fs.readdirSync(path.join(RO, kind, id))) if (f.endsWith('.webp')) all += fs.statSync(path.join(RO, kind, id, f)).size;
+  console.log(`all shipped art: ${(all / 1024 / 1024).toFixed(2)} MB of ${SHIPPED_MAX / 1024 / 1024}`);
+  assert.ok(all <= SHIPPED_MAX, 'all shipped art is at most 30 MB');
+}
+{
+  // the build script's own checks (a frame off the 8x grid is refused, two runs give the same bytes), where python3 is installed
+  const r = spawnSync('python3', ['-I', path.join(ROOT, 'scripts', 'build-arcade-pack.py'), '--selftest'], { encoding: 'utf8' });
+  if (r.error) console.log('build-arcade-pack selftest skipped: no python3 here; install it to run it'); else assert.strictEqual(r.status, 0, 'build-arcade-pack.py --selftest: ' + r.stdout + r.stderr);
 }
 
 // ---- packaging (FR-060, FR-061, T012): the build ships each pack's pictures and its script, never ASSETS.md or the JSON; the CSP is unchanged ----
