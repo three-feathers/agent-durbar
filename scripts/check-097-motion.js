@@ -254,7 +254,7 @@ module.exports = async (ctx) => {
   await js(`document.getElementById('floor').scrollTop=0;0`);
   const rigAway = await seat();
   await must(onRig(rigAway), 'a desk on the rig to scroll away');
-  const late = await js(`new Promise((done)=>{const f=document.getElementById('floor');f.scrollTop=0;const t0=performance.now();let bad=0,seen=0;const look=()=>{for(const r of document.querySelectorAll('#stage .ro-rig')){const p=document.querySelector('#stage .ro-person[data-for="'+CSS.escape(r.dataset.for)+'"]');if(!p)continue;if(p.classList.contains('ro-off'))seen++;if(p.classList.contains('ro-off')!==r.classList.contains('ro-off'))bad++;}if(performance.now()-t0<1500)requestAnimationFrame(look);else done({bad,seen});};f.scrollTop=f.scrollHeight;requestAnimationFrame(look);})`);
+  const late = await js(`new Promise((done)=>{const f=document.getElementById('floor');f.scrollTop=0;const t0=performance.now();let bad=0,seen=0,seenAt=0;const look=()=>{for(const r of document.querySelectorAll('#stage .ro-rig')){const p=document.querySelector('#stage .ro-person[data-for="'+CSS.escape(r.dataset.for)+'"]');if(!p)continue;if(p.classList.contains('ro-off'))seen++;if(p.classList.contains('ro-off')!==r.classList.contains('ro-off'))bad++;}if(seen&&!seenAt)seenAt=performance.now();if(performance.now()-t0<20000&&!(seenAt&&performance.now()-seenAt>500))requestAnimationFrame(look);else done({bad,seen,ms:Math.round(performance.now()-t0)});};f.scrollTop=f.scrollHeight;requestAnimationFrame(look);})`);
   console.log('[097-motion] rig with its person', JSON.stringify(late));
   const lod = await js(`document.querySelector('#stage .ro').className`);
   if (/lod[12]/.test(lod)) console.log('[097-motion] no rig check: the frame rate dropped them here', lod);
