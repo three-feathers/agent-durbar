@@ -1,5 +1,5 @@
 /** IPC for sessions and agents: list, add, send, stop, end, new session, mode, cap, limit, pause, remove, wake, permissions, git status, open in VS Code (spec 045 FR-060; moved out of main.ts as it was). */
-import { dialog } from 'electron';
+import { dialog, shell } from 'electron';
 import { fromAppFrame as fromApp, ipcHandle, ipcOn } from '../ipcguard';
 import type { AdapterRouter } from '../../adapters/router';
 import { historyOf } from '../../adapters/router';
@@ -19,6 +19,7 @@ import type { CheckpointStore } from '../checkpoints';
 import type { createRemoteOps } from '../remoteops';
 import type { Scheduler } from '../schedules';
 import { openInVSCode } from '../vscode';
+import { listTargets, openWith, ownedAgent, realDeps } from '../openwith';
 import type { AddWorkspace, EnsureLive, SendOp } from './types';
 
 export interface AgentsIpcDeps {
@@ -236,4 +237,10 @@ export function register(deps: AgentsIpcDeps): void {
     // Only paths of agents we started: the workspace file if there is one, else the folder.
     return a ? openInVSCode(a.workspaceFile ?? a.cwd) : { ok: false, error: 'unknown agent' };
   });
+  // spec 009 FR-019..FR-024 (issue #685): the "Open with" menu. The window sends an agent id (and a fixed target id); the folder is main's.
+  const ownedOf = (id: unknown) => ownedAgent(agents, id);
+  ipcHandle('agents:openWithTargets', (e, id: unknown) => (fromApp(e) ? listTargets(ownedOf(id), realDeps((p) => shell.openPath(p))) : []));
+  ipcHandle('agents:openWith', (e, id: unknown, target: unknown) =>
+    fromApp(e) ? openWith(ownedOf(id), target, realDeps((p) => shell.openPath(p))) : { ok: false, error: 'invalid request' },
+  );
 }

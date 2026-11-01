@@ -21,7 +21,7 @@ export interface LaunchEnv {
   isFile: (p: string) => boolean;
 }
 
-const defaultEnv = (): LaunchEnv => ({
+export const defaultEnv = (): LaunchEnv => ({
   platform: process.platform,
   env: process.env,
   homedir: require('os').homedir() as string,
@@ -76,7 +76,7 @@ export function planVSCodeLaunch(target: string, e: LaunchEnv = defaultEnv()): L
   return undefined;
 }
 
-function planEdition(ed: Edition, target: string, e: LaunchEnv): LaunchPlan | undefined {
+export function planEdition(ed: Edition, target: string, e: LaunchEnv): LaunchPlan | undefined {
   if (e.platform === 'win32') {
     const join = path.win32.join;
     const roots = [
@@ -128,28 +128,18 @@ function planCmd(cmdFile: string, target: string, e: LaunchEnv): LaunchPlan | un
   return { command: comspec, args: ['/d', '/s', '/c', `"${cmdFile}" "${target}"`], via: cmdFile };
 }
 
-/**
- * Open a folder or .code-workspace file with VS Code.
- * A single absolute path argument; never a shell with user-controlled text (see planCmd for the one guarded exception).
- */
-export function openInVSCode(target: string): Promise<{ ok: boolean; error?: string; edition?: string }> {
+export type OpenResult = { ok: boolean; error?: string; edition?: string };
+
+/** Start a plan with no shell: detached, no stdio, hidden window. `spawnFn` is injectable so tests never start an editor (spec 009 FR-022). */
+export function spawnPlan(plan: LaunchPlan, spawnFn: typeof spawn = spawn, platform: NodeJS.Platform = process.platform): Promise<OpenResult> {
   return new Promise((resolve) => {
-    if (typeof target !== 'string' || !path.isAbsolute(target)) return resolve({ ok: false, error: 'path must be absolute' });
-    if (target.includes('\0')) return resolve({ ok: false, error: 'invalid path' });
-    const plan = planVSCodeLaunch(target);
-    if (!plan) {
-      return resolve({
-        ok: false,
-        error: 'VS Code was not found (also looked for VS Code Insiders and VSCodium). Install it from https://code.visualstudio.com (on macOS, run "Shell Command: Install \'code\' command in PATH" from its command palette, or keep it in /Applications).',
-      });
-    }
-    // windowsVerbatimArguments: the /s /c string above is already quoted for cmd.exe.
-    const child = spawn(plan.command, plan.args, {
+    // windowsVerbatimArguments: the /s /c string in planCmd is already quoted for cmd.exe.
+    const child = spawnFn(plan.command, plan.args, {
       stdio: 'ignore',
       detached: true,
       shell: false,
       windowsHide: true,
-      windowsVerbatimArguments: process.platform === 'win32' && plan.args[0] === '/d',
+      windowsVerbatimArguments: platform === 'win32' && plan.args[0] === '/d',
     });
     child.once('error', (err: NodeJS.ErrnoException) =>
       resolve({ ok: false, error: err.code === 'ENOENT' ? `Could not start ${plan.edition ?? 'VS Code'} (${plan.via})` : err.message }),
@@ -159,4 +149,21 @@ export function openInVSCode(target: string): Promise<{ ok: boolean; error?: str
       resolve({ ok: true, edition: plan.edition });
     });
   });
+}
+
+/**
+ * Open a folder or .code-workspace file with VS Code.
+ * A single absolute path argument; never a shell with user-controlled text (see planCmd for the one guarded exception).
+ */
+export function openInVSCode(target: string): Promise<OpenResult> {
+  if (typeof target !== 'string' || !path.isAbsolute(target)) return Promise.resolve({ ok: false, error: 'path must be absolute' });
+  if (target.includes('\0')) return Promise.resolve({ ok: false, error: 'invalid path' });
+  const plan = planVSCodeLaunch(target);
+  if (!plan) {
+    return Promise.resolve({
+      ok: false,
+      error: 'VS Code was not found (also looked for VS Code Insiders and VSCodium). Install it from https://code.visualstudio.com (on macOS, run "Shell Command: Install \'code\' command in PATH" from its command palette, or keep it in /Applications).',
+    });
+  }
+  return spawnPlan(plan);
 }
