@@ -100,6 +100,8 @@ Next to the model picker I see the credit multiplier and an estimate of cost rel
 
 ## Changes
 
+- 2026-11-01 (sweep of the build): Escape closes a session dialog over Settings first, then Settings.
+
 ### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
 
 The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
