@@ -41,9 +41,9 @@
   function paint(focus){
     if(!cur)return;
     let done;
-    if(cur.kind==='tools')done=paintTools(focus);else if(cur.kind==='folder')done=paintFolder(focus);else if(cur.kind==='notes')done=paintNotes(focus);else done=paintSettings(focus);
+    if(cur.kind==='tools')paintTools(focus);else if(cur.kind==='folder')paintFolder(focus);else if(cur.kind==='notes')paintNotes(focus);else done=paintSettings(focus);
     if(cur.kind!=='settings'&&window.DurbarHarnesses&&window.DurbarHarnesses.shown)window.DurbarHarnesses.shown(false);
-    return done; /* a promise for the async screens: a caller may wait for the new page */
+    return done; /* a promise for Settings (async): a caller may wait for the new page */
   }
   /* modal: body is an element or html; buttons [{label,value,cls}]; resolves value (or null when dismissed). `validate(root)` may return an error text (keeps it open and shows it), `true` (keeps it open; the caller already showed the error) or a promise of either. */
   function dialog({title,html,buttons,wide,size,cls,validate,onOpen}){
