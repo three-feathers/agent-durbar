@@ -52,6 +52,7 @@ const SCENES = {
 function rootCheck(selector, minPx) {
   const root = document.querySelector(selector);
   if (!root) return { found: false, problems: [`no element matches ${selector}`] };
+  { const b = root.getBoundingClientRect(), cs = getComputedStyle(root); if (!(b.width > 0 && b.height > 0) || cs.visibility === 'hidden' || cs.display === 'none') return { found: false, problems: [`${selector} is on the page but hidden`] }; } /* a hidden root has nothing to check: it must not pass as clean */
   const problems = [];
   const visible = (e) => { const b = e.getBoundingClientRect(); const cs = getComputedStyle(e); return b.width > 0 && b.height > 0 && cs.visibility !== 'hidden' && cs.display !== 'none'; };
   const label = (e) => (e.tagName.toLowerCase() + (e.className && typeof e.className === 'string' ? '.' + e.className.trim().split(/\s+/)[0] : '')).slice(0, 40);
@@ -167,7 +168,7 @@ async function driver(ctx) {
             await H.load({ w, h, query: { ...scene.query, simfreeze: '1', world: c.world }, ready: 'fit', settle: false });
             if (scene.act) await ctx.js(scene.act);
             const sel = `[data-surface="${c.moment}"]`; /* ids are kebab-case (registry schema, FR-011) */
-            await H.until(`document.querySelector(${jsLiteral(sel)})`, 10000);
+            await H.until(`(()=>{const e=document.querySelector(${jsLiteral(sel)});return !!e&&e.getClientRects().length>0;})()`, 10000);
             await H.settle();
             const result = await ctx.js(`(${rootCheck.toString()})(${jsLiteral(sel)}, ${MIN_PX})`);
             const name = `${c.moment}-${c.world}-${size}${forced ? '-forced' : ''}.png`;
@@ -201,6 +202,9 @@ const FIXTURES = {
   'low contrast': { html: GOOD.replace('<p>', '<p style="color:#bbb">'), expect: /contrast/ },
   'picture behind text': { html: GOOD.replace('<p>', '<p style="background-image:linear-gradient(red,blue)">'), expect: /picture behind text/ },
   'missing root': { html: GOOD.replace('data-surface="fx"', 'data-surface="other"'), expect: 'missing' },
+  'hidden root (display)': { html: GOOD.replace('data-surface="fx" style="', 'data-surface="fx" style="display:none;'), expect: 'missing' },
+  'hidden root (parent)': { html: '<div style="display:none">' + GOOD + '</div>', expect: 'missing' },
+  'hidden root (visibility)': { html: GOOD.replace('data-surface="fx" style="', 'data-surface="fx" style="visibility:hidden;'), expect: 'missing' },
 };
 async function selftest(ctx) {
   const results = [];
