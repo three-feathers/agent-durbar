@@ -62,7 +62,7 @@ Facts below were read in the repo or checked on 2026-10-31; the web sources are 
    scripts/world-pack.js  reproducible zip
 ```
 
-**The notice is enforced in main.** `world:download` takes a one-use token that main issued when it composed the notice (key, URL, size, host), valid for 5 minutes on a monotonic clock. No token means no request, so the renderer alone cannot start a silent download.
+**The notice is enforced in main (FR-072).** Every request-starting channel takes a one-use token that main issued when it composed the notice (key, URL, size, host), valid for 5 minutes on a monotonic clock. No token means no request, so the renderer alone cannot start a silent download.
 
 **Download flow**: list -> notice token -> click -> `makeDownloadGet` per hop with host check -> length and SHA-256 -> zip -> `worldpack` -> encoder -> part hashes -> temp folder -> rename -> `installed.json` -> world offered.
 
