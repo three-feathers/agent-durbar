@@ -15,8 +15,15 @@ export interface SettingsIpcDeps {
 export function register(deps: SettingsIpcDeps): void {
   const { getRunTheme, clearRunTheme } = deps;
   const settingsStore = deps.getSettingsStore;
-  ipcHandle('settings:get', () => ({ defaultMaxAiCredits: settingsStore()?.defaultMaxAiCredits, placeMap: settingsStore()?.placeMap ?? {}, customPlaces: settingsStore()?.customPlaces ?? [], seriousMode: settingsStore()?.seriousMode ?? false, notifyNeedsMe: settingsStore()?.notifyNeedsMe ?? true, breakResume: settingsStore()?.breakResume ?? 'auto', chatLinksIn: settingsStore()?.chatLinksIn ?? 'session', theme: getRunTheme() ?? settingsStore()?.theme ?? 'clean-office', characters: settingsStore()?.characters ?? 'theme', about: aboutView(app.getVersion()) }));
+  ipcHandle('settings:get', () => ({ defaultMaxAiCredits: settingsStore()?.defaultMaxAiCredits, placeMap: settingsStore()?.placeMap ?? {}, customPlaces: settingsStore()?.customPlaces ?? [], seriousMode: settingsStore()?.seriousMode ?? false, stillHighlights: settingsStore()?.stillHighlights ?? false, notifyNeedsMe: settingsStore()?.notifyNeedsMe ?? true, breakResume: settingsStore()?.breakResume ?? 'auto', chatLinksIn: settingsStore()?.chatLinksIn ?? 'session', theme: getRunTheme() ?? settingsStore()?.theme ?? 'clean-office', characters: settingsStore()?.characters ?? 'theme', about: aboutView(app.getVersion()) }));
   ipcHandle('settings:setSeriousMode', (_e, on: unknown) => ({ ok: true, seriousMode: settingsStore()?.setSeriousMode(on) ?? false }));
+  /* spec 001 FR-192: Still highlights (no motion); only a boolean changes it */
+  ipcHandle('settings:setStillHighlights', (_e, on: unknown) => {
+    const st = settingsStore();
+    if (!st || typeof on !== 'boolean') return { ok: false, stillHighlights: st?.stillHighlights ?? false }; /* refused: the real value in force, not a false "saved" */
+    const inForce = st.setStillHighlights(on);
+    return { ok: inForce === on, stillHighlights: inForce }; /* not ok: the save failed and it stayed as it was */
+  });
   /* spec 052 FR-059: OS notifications when an agent needs you and the window is in the background (on unless turned off) */
   ipcHandle('settings:setNotifyNeedsMe', (_e, on: unknown) => ({ ok: true, notifyNeedsMe: settingsStore()?.setNotifyNeedsMe(on) ?? true }));
   /* spec 081 FR-022 (Q6 = A): the agent-app update check at start: on unless turned off */

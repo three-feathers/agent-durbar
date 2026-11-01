@@ -205,6 +205,8 @@ export interface AppSettingsView {
   customPlaces?: CustomPlaceView[];
   /** Serious mode (spec 034): the agent figures show no monster, ambulance or other mood drawing. */
   seriousMode?: boolean;
+  /** Spec 001 FR-192: desk highlights keep the glow and the New badge but no motion. */
+  stillHighlights?: boolean;
   /** Active theme id (specs 035-040). Omitted = Clean Office. */
   theme?: string;
   /** Spec 077 FR-064: who sits at the desks (`theme`: the theme's own). */
@@ -861,6 +863,8 @@ export interface DurbarApi {
   removePlace?(id: string): Promise<CustomPlaceResult>;
   /** Turn Serious mode on or off (spec 034). */
   setSeriousMode?(on: boolean): Promise<{ ok: boolean; seriousMode?: boolean }>;
+  /** Turn Still highlights (no motion) on or off (spec 001 FR-192). */
+  setStillHighlights?(on: boolean): Promise<{ ok: boolean; stillHighlights?: boolean }>;
   /** Turn the "needs you" OS notifications on or off (spec 052 FR-059). */
   setNotifyNeedsMe?(on: boolean): Promise<{ ok: boolean; notifyNeedsMe?: boolean }>;
   /** Spec 068 FR-006: what happens when a coffee break ends. */
