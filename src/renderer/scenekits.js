@@ -107,7 +107,7 @@
     o.seed = (a && (a.id || a.name)) || o.k.shirt + o.k.hair;
     const { st, mood, mini, c, k, T } = o;
     const art = artOf(o); /* a theme's character, desk and monitor art (spec 040 FR-023), drawn over every kit as over the office one */
-    let s = `<svg class="scene${c ? ' sc-c' : ''}" data-sig="${st}|${k.shirt}${k.skin}${k.hair}${k.style}${k.glasses ? 1 : 0}|${c ? 'c' : mini ? 'm' : 'f'}|${o.themeKey || ''}|${mood.body}${mood.trouble || ''}${mood.coffee ? 'C' : ''}|${kitId}${K.sigExtra ? '|' + K.sigExtra(o) : ''}" viewBox="${c ? '16 5 176 116' : mini ? '22 4 166 118' : '0 0 200 124'}"${K.crisp ? ' shape-rendering="crispEdges"' : ''} aria-hidden="true" focusable="false">`;
+    let s = `<svg class="scene${c ? ' sc-c' : ''}${K.noFace && K.noFace(o) ? ' has-crew-pic' : ''}" data-sig="${st}|${k.shirt}${k.skin}${k.hair}${k.style}${k.glasses ? 1 : 0}|${c ? 'c' : mini ? 'm' : 'f'}|${o.themeKey || ''}|${mood.body}${mood.trouble || ''}${mood.coffee ? 'C' : ''}|${kitId}${K.sigExtra ? '|' + K.sigExtra(o) : ''}" viewBox="${c ? '16 5 176 116' : mini ? '22 4 166 118' : '0 0 200 124'}"${K.crisp ? ' shape-rendering="crispEdges"' : ''} aria-hidden="true" focusable="false">`;
     s += `<ellipse cx="100" cy="118" rx="88" ry="3.5" fill="${T('--scene-shadow')}" opacity=".06"/>`;
     s += K.backdrop ? K.backdrop(o) : '';
     s += halo(o);
@@ -141,7 +141,7 @@
     o.st = 'avatar';
     const art = artOf(o);
     const vb = (K.avatarView && K.avatarView(o)) || '50 20 48 48';
-    return `<svg viewBox="${vb}" width="100%" height="100%"${K.crisp ? ' shape-rendering="crispEdges"' : ''} aria-hidden="true" focusable="false">${K.hairBack ? K.hairBack(o) : ''}${K.body(o)}${art.body}${K.head(o)}${K.hair(o)}${K.noFace && K.noFace(o) ? '' : face(Object.assign({}, o, { st: 'working' }), K.crisp)}${K.headTop ? K.headTop(o) : ''}${art.head}</svg>`;
+    return `<svg${K.noFace && K.noFace(o) ? ' class="has-crew-pic"' : ''} viewBox="${vb}" width="100%" height="100%"${K.crisp ? ' shape-rendering="crispEdges"' : ''} aria-hidden="true" focusable="false">${K.hairBack ? K.hairBack(o) : ''}${K.body(o)}${art.body}${K.head(o)}${K.hair(o)}${K.noFace && K.noFace(o) ? '' : face(Object.assign({}, o, { st: 'working' }), K.crisp)}${K.headTop ? K.headTop(o) : ''}${art.head}</svg>`;
   }
 
   const KIT = {};
