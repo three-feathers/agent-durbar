@@ -125,7 +125,7 @@ Needs spec 096's adapter capability and probes.
 - [ ] T192 Download rejects what is not a stored zip of `world.json` and the closed `.webp` list at the expected size. Test: `test:worldsource` hostile bodies (HTML, executable, other archive, wrong length) store nothing [FR-242].
 - [ ] T193 Point FR-073, FR-085 and FR-086 and `docs/worlds-source.md` at the worlds repository; the first `worlds-*` release is made there. Test: `real:` T043 reads from that release, 0 AI credits [FR-243].
 - [ ] T194 `--repo owner/name` for `scripts/gh-trusted.sh`, `scripts/pr-gate.sh`, `scripts/claim.sh` with the trusted list read from this repository; `pr-gate.sh`'s `src/` rule skipped for a repository without `src/`. Test: `test:trustedcontent`, `test:claim`, `test:prgatenotes` with a second repository name [FR-244].
-- [ ] T195 `sourceCommit` in the catalogue, and a CI job on a catalogue change: fetch that commit of the worlds repository, rebuild, compare `sha256` and `bytes`, compare cards, run the world matrix. No secret; 0 AI credits; not in `npm test`. Test: `read:` the job on a planted wrong hash fails, `real:` once on the first world [FR-085, FR-016].
+- [ ] T195 `sourceCommit` in the catalogue, and a CI job on a catalogue change: fetch that commit of the worlds repository, rebuild each world and set, compare `sha256` and `bytes`, compare cards, run the world matrix. No secret; 0 AI credits; not in `npm test`. Test: `read:` the job on a planted wrong hash fails, `real:` once on the first world [FR-085, FR-016].
 
 ## Final
 
