@@ -589,6 +589,7 @@ Each recommendation is the reviewer's (rubenlupi, review of PR #923 at `dfe6428e
 
 ## Changes
 
+- **2026-11-01**: FR-006 on Copilot, as on Claude Code and Codex: when turning a self-started loop off fails or gets no answer within the wait, the session ends and the chat says it could not be confirmed. Before, the failure was ignored and the loop could go on spending under a line saying it was off.
 - **2026-10-31**: Owner answers to Q1-Q4 recorded as D8-D11 (quote under *Clarifications*). S4 changed from "no attachments on
   Autopilot" to attachments per app capability (FR-001 `attachments`, FR-058). Copilot caps below 30 are raised to 30 (FR-022,
   FR-055). T090 ran (0.434 AI credits): FR-010 keeps the broker and drops the `setApproveAll` fallback; FR-020 names
