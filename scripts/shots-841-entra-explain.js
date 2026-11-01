@@ -59,6 +59,21 @@ module.exports = async (ctx) => {
     // the line, under the failed call
     await call(id, 'agent365-mail', 'p1', 'failed', POLICY);
     assert.ok(await until(`document.querySelectorAll('#chat .mcpwhy').length===1`), `${w}: one line under the failed call`);
+    /* sweep: the line goes with its chip when older chips collapse, and comes back with it */
+    {
+      for (let i = 0; i < 12; i++) await call(id, 'plain', 'c' + i, 'complete', 'ok');
+      await settle();
+      const shown = `(()=>{const e=document.querySelector('#chat .mcpwhy');return !!e&&e.getClientRects().length>0;})()`;
+      const chipOf = `(()=>{const e=document.querySelector('#chat .mcpwhy');return e&&e.previousElementSibling&&e.previousElementSibling.getClientRects().length>0;})()`;
+      assert.strictEqual(await js(chipOf), false, `${w}: its chip has collapsed under the newer ones`);
+      assert.strictEqual(await js(shown), false, `${w}: and the line with it`);
+      await js(`document.querySelector('#chat .chips-more').click();0`);
+      assert.ok(await until(shown), `${w}: Show earlier brings the line back`);
+      await js(`document.querySelector('#chat .chips-more').click();0`);
+      assert.ok(await until(`!${shown}`), `${w}: Show fewer hides it again`);
+      await js(`document.querySelector('#chat .chips-more').click();0`);
+      await until(shown);
+    }
     let n = (await notes())[0];
     assert.strictEqual(n.text, LINE, `${w}: the fixed words`);
     assert.deepStrictEqual(n.btn, [{ tag: 'BUTTON', type: 'button', text: 'Sign in again…', tab: 0 }], `${w}: a real button, in the tab order`);
