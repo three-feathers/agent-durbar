@@ -3,7 +3,7 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: AI character maker (owner request, Vikram 2026-10-30): make realistic crew characters with Codex image generation (3 poses + blink), My characters, folder pins, light portrait motion
-note: spec, plan, tasks drafted; Q1-Q5 answered 2026-10-31; Q1b (built-in crew motion) answered yes by Paco 2026-10-31; probes P1-P8 not run; nothing built
+note: spec, plan, tasks drafted; Q1-Q5 answered 2026-10-31; Q1b (built-in crew motion) answered yes by Paco 2026-10-31; probes P1-P8 not run; pure core built (phase 2: prompt, style, image and WebP checks); adapter, window and motion not built
 status: draft
 -->
 
@@ -374,8 +374,18 @@ Q1-Q5 are answered (*Clarifications*, owner decisions, 2026-10-31). Their text a
 
 ## Changes
 
+### 2026-11-01: two faults in `src/shared/webpcheck.ts` (read-only pass, reproduced on macOS)
+
+`stripChunks` must not change its input: `Buffer.slice` shares memory, so a `Buffer` given to it lost its VP8X flags (0x3c became 0x10); a plain `Uint8Array` was safe. It now copies each part. A RIFF chunk of odd size is followed by a pad byte (FR-023's walker): a final odd chunk without it now counts as truncated, so `checkFrame` refuses the file and `stripChunks` returns `null`, where before both passed it. `test:` `npm run test:imagecheck`. The byte copy on #955 takes the same change.
+
 ### 2026-10-31: built-in crews get v1 motion (Q1b answered yes)
 
 - **Decision**: Paco (owner of spec 077, the crews) answered Q1b: yes. The built-in Cheeky and Prehistoric crews get the same v1 motion as My characters: the breathing bob, the pose cross-fade, the typing cue and the status glow. No art change, and no blink until he adds eyes-closed frames.
 - **Source**: Paco, relayed by his agent in the team chat on 2026-10-31 07:02 UTC and noted on PR #912.
 - **Changed**: Q1b moved out of *Open questions*; D5, FR-058, FR-061 and FR-062 (motion scope), T051..T054, T061 and plan R11 updated from "My characters only" to "My characters plus the built-in crews, no blink for crews without eyes-closed frames". FR-062 asked for this follow-up delta and for a line in spec 077 `## Changes`; both are done. No FR or task number added.
+
+### 2026-10-31: phase 2, the pure core (T020..T024)
+
+- **Built** (`[IMPLEMENTED]`, `test:` `npm run test:chargen`, `npm run test:imagecheck`, `npm run test:crew-assets`): `src/shared/charstyle.ts` (FR-050, FR-051), `src/shared/chargen.ts` (FR-010..FR-013: `cleanDescription`, `buildCharacterPrompt`, `CHARACTER_IDEAS`, `pickCharacterIdeas`), `src/shared/imagecheck.ts` (FR-021 header checks), `src/shared/webpcheck.ts` (FR-023: `webpInfo`, `checkFrame`, `checkFrames`, `stripChunks`; the chunk walker moved here from `scripts/test-crew-assets.ts`). Nothing calls them yet: no adapter, IPC, window or store (phases 3 and 4). `[KNOWN GAP]` FR-020 (main's `lstat` and read) and FR-022 (the sandboxed encoder) are not built.
+- **Reuse** (spec 021 FR-031): the idea picker is now the neutral `pickFrom` in `src/shared/ideas.ts` (`themegen.ts`'s `pickIdeas` delegates to it), so the maker does not depend on theme-maker code, which is being removed (coordinator, 2026-10-31); spec 102 (worlds) can reuse it. **Phase 4 note**: T040 plans to factor helpers out of `aiTheme()`; per the same decision they must be extracted as neutral dialog helpers, not built on the theme maker's dialog. Character sets must work in any world: the `crew` kit and `theme.js` character list in T037/T042 must not assume a set belongs to one world or theme.
+- **Decisions of the build** (inside the spec's wording): the 300-code-point cut never leaves a dangling joiner; invisible format characters (zero width, bidi overrides, soft hyphen) and line separators are removed with the control characters, so they cannot hide a marker; angle brackets are removed, so a marker string can never appear (FR-011 says the markers are removed; removing them one by one can build a new one and is quadratic on nested input). `checkImage` also walks the PNG chunks to an `IEND` (a cut file is "cut short"), but does not refuse bytes after it: a PNG+ZIP polyglot passes the header check on purpose, and the sandboxed re-encode (FR-022) drops them. `stripChunks` removes only EXIF, XMP and ICC; any other unexpected chunk stays and `checkFrame` refuses it.

@@ -8,6 +8,7 @@
  * The result then goes through `checkUserManifest` like any imported pack. The description is user text: never logged.
  */
 import { checkUserManifest, SCENE_KITS, UI_STYLES } from './themes';
+import { pickFrom } from './ideas';
 import { FONT_ALLOW, TYPED_TOKENS, typedValue } from './themetokens';
 
 /** The scene words a generated theme may rename (spec 036 FR-003). */
@@ -64,12 +65,9 @@ export const THEME_IDEAS = [
   'a beach shack in the tropics', 'an autumn forest cabin', 'a mid-century airport lounge', 'a chess club in Vienna',
 ];
 
-/** `n` different ideas, picked with `rand` (Math.random by default). */
+/** `n` different theme ideas (the neutral `pickIdeas` in ideas.ts, with the theme list). */
 export function pickIdeas(n: number, rand: () => number = Math.random): string[] {
-  const pool = THEME_IDEAS.slice();
-  const out: string[] = [];
-  while (out.length < n && pool.length) out.push(pool.splice(Math.floor(rand() * pool.length), 1)[0]);
-  return out;
+  return pickFrom(THEME_IDEAS, n, rand);
 }
 export const MAX_DESCRIPTION = 300;
 export const MAX_PASSES = 3;
