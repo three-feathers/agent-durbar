@@ -1041,8 +1041,7 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .fl-grip{flex:none;display:grid;place-items:center;width:18px;height:var(--h-ctl);color:var(--muted);cursor:grab;touch-action:none;margin-left:-4px}
 .fl-grip svg{width:14px;height:14px}
 .fl-grip:hover{color:var(--ink-2)}
-.fl-row .fl-only{border-color:transparent;background:transparent;color:var(--ink-2)}
-.fl-row .fl-only:hover{background:var(--surface-2);border-color:var(--line)}
+.fl-row .fl-only{color:var(--ink)} /* 2026-11-01: a bordered button at rest, so it reads as one */
 .fl-row .btn.fl-ib{width:var(--h-ctl);padding:0;justify-content:center;border-color:transparent;background:transparent;color:var(--ink-2)}
 .fl-row .btn.fl-ib:hover{background:var(--surface-2);border-color:var(--line)}
 .fl-row .btn.fl-ib.danger:hover{background:var(--tone-bad-soft);border-color:var(--tone-bad-line);color:var(--tone-bad-ink)}
