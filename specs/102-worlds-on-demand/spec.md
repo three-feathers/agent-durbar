@@ -578,6 +578,10 @@ Agent decisions stand until the owner changes them.
 
 ## Changes
 
+### 2026-11-01: a missing screenRect is refused (sweep finding)
+
+FR-032: a pack whose `desk-half.webp` entry has no `screenRect` is refused ("The small desk needs a screenRect in world.json, so its screen can be checked."), not skipped. test: `scripts/test-worldpack.ts`, fixture `manifest-screen-missing`.
+
 ### 2026-10-31: every world looks different (owner decision)
 
 Replaces the earlier decision that places may share a Mediterranean feel. New FR-014..FR-019, SC-011..SC-013, a rewritten FR-011 and FR-021, FR-035 (g). Written before this spec's first PR, so no build is affected.

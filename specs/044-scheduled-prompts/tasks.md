@@ -94,3 +94,8 @@
 ## Changes 2026-10-31 (owner decision, spec 021 FR-067): no door
 
 - [ ] T128 In spec 017's removal PR: `hold` and `door` paths out of the scheduler; old outcomes readable; history words. Test: `test-schedules`, `test:schedhist`; an old log with `skipped-door-full` loads; `check:sched-history` at both sizes [FR-127, FR-128]
+
+- [ ] T140 `Schedule.mode` and the agent it was chosen for: parse and validate in main; missing or unknown = no mode; apply for one turn without saving and restore; `skipped-mode` and `mode-refused`; a stored `autopilot` is refused until the three owners confirm (spec 099 FR-084). `test:schedules`: a bad value, a missing value, another agent, a restart mid-turn, a stored `autopilot` not sent [FR-180, FR-181, FR-183, FR-184]
+- [ ] T141 Form: required mode with the reused choice, modes the agent lacks not offered, row text, *Choose a mode*; the Allow all confirmation naming the schedule and agent, window only, asked again on an edit; Autopilot not offered in the first build (its confirmation is held with spec 099 T097); IPC tests (not from the app refused, no MCP or remote path). `sim:` both sizes [FR-180, FR-182, FR-184]
+- [ ] T142 The first-launch popup listing schedules without a mode, an explicit choice for each, closing leaves them waiting, nothing sent. `test:` and `sim:` both sizes [FR-181]
+- [ ] T143 Loops: the field per pass, no Autopilot on a loop (open for the owner). `test:schedules` [FR-180]

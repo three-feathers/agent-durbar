@@ -124,6 +124,7 @@ for (const k of ['x', 'y', 'left', 'top', 'width', 'height', 'position', 'size',
   assert.ok(set((m) => { m.parts['desk-half.webp'].anchors.screenRect = { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }; }).ok, 'exactly the minimum screen');
   assert.ok(!set((m) => { m.parts['desk-half.webp'].anchors.screenRect = { x: 0.1, y: 0.1, w: 0.19, h: 0.2 }; }).ok, 'one step too narrow');
   assert.ok(!set((m) => { m.parts['desk-half.webp'].anchors.screenRect = { x: 0.1, y: 0.1, w: 0.2, h: 0.19 }; }).ok, 'one step too short');
+  { const r = set((m) => { delete m.parts['desk-half.webp'].anchors.screenRect; }); assert.ok(!r.ok && /needs a screenRect/.test(r.reason), 'no screenRect is refused, not skipped: ' + r.reason); }
 }
 // hashes: downloaded packs carry them and they must match
 {

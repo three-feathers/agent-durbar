@@ -454,7 +454,8 @@ export function partProblem(spec: PartSpec, buf: Uint8Array): string {
 function screenProblem(m: SafeManifest, buf: Uint8Array | null): string {
   const e = Object.prototype.hasOwnProperty.call(m.parts, 'desk-half.webp') ? m.parts['desk-half.webp'] : undefined;
   const r = e && (e.anchors.screenRect as { w: number; h: number } | undefined);
-  if (!e || !r || !buf) return '';
+  if (!e || !buf) return '';
+  if (!r) return 'The small desk needs a screenRect in world.json, so its screen can be checked.';
   const h = pictureHeader(buf);
   if (typeof h === 'string') return '';
   return r.w * h.width < MIN_SCREEN_W || r.h * h.height < MIN_SCREEN_H ? 'The screen on the small desk is too small to read.' : '';

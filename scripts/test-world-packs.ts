@@ -105,6 +105,7 @@ const R: Record<string, string> = {
   R92: "world.json is damaged.",
   R93: "world.json repeats a field name.",
   R94: "The pack has no world.json.",
+  R95: "The small desk needs a screenRect in world.json, so its screen can be checked.",
 };
 /** Why each hostile package is refused: pinned, so a fixture that is refused for the wrong reason (or by a different rule after an edit) fails. */
 const WHY: Record<string, string> = {
@@ -294,6 +295,7 @@ const WHY: Record<string, string> = {
   "manifest-anchor-rect-overflow": R.R46,
   "manifest-anchor-extra-key": R.R78,
   "manifest-screen-too-small": R.R79,
+  "manifest-screen-missing": R.R95,
   "manifest-hash-wrong": R.R80,
   "manifest-hash-malformed": R.R81,
   "manifest-bytes-wrong": R.R82,
