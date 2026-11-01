@@ -3246,7 +3246,7 @@ const mcpLevelsNow=()=>mcpLevels||MCPX().mcpWarnDefaults();
 /* the window to measure against when the report has none: the reported context figure, else the model's; none right after a model change (FR-024) */
 /* finding 4: only a model change makes the window unknown. After a compaction whose new size was not said (Codex, Claude) the window is still the one last reported */
 function mcpWindow(a){const c=STATS.agent(a.id).ctx;if(a.ctxWaiting===true)return 0;if(c&&c.limit>0)return c.limit;return a.mcpWinKnown||modelWindow(a)||0;}
-const mcpReport=a=>{const v=MCP_CTX.get(a.id);return v&&v.report||null;};
+const mcpReport=a=>{const v=MCP_CTX.get(a.id),r=v&&v.report||null;if(r&&r.window&&a.mcpOldAt!==undefined&&v.at===a.mcpOldAt){const {window:_old,...rest}=r;return rest;}return r;}; /* spec 100 change 2026-11-01: measured under the model before: not its window */
 function mcpChipCost(a){
   const X=MCPX(), r=mcpReport(a);
   if(!r)return {fig:'',words:'',level:'none'};
@@ -6860,6 +6860,7 @@ function onModelEvent(a,e){
   }
   a.ctxWaiting=true; /* the runtime reports the new window with the next message */
   a.mcpWinKnown=0; /* spec 100: the old model's window says nothing about this one */
+  {const v=MCP_CTX.get(a.id);a.mcpOldAt=v&&v.report?v.at:undefined;}
   if(MCP_CTX.has(a.id)){repaintMcpChip(a);mcpWarnLine(a);}
   if(e.cause==='user'&&a.pendingModel)a.pendingModel=undefined;
   /* the start-up report and Auto's own routing are not a change the user needs to hear about */

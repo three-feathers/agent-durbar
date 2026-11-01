@@ -310,6 +310,19 @@ module.exports = async (ctx) => {
     await emit(X, { type: 'compaction', phase: 'complete', trigger: 'auto', tokensAfter: 5000, timestamp: T1 + 950_000 });
     assert.ok(await until(`!/8 % of the window/.test(document.getElementById('mcpBtn').getAttribute('aria-label'))`), `${w}: not the old window after a sized compaction: ${(await chip()).name}`);
     await emit(X, { type: 'context', tokens: 50_000, limit: 100_000 });
+    // a report that carries its own window, measured under the old model, says nothing about the new one (spec 100 change 2026-11-01)
+    {
+      const [C] = await liveOf('claude');
+      assert.ok(C, `${w}: a running Claude Code chat`);
+      await openChat(C);
+      const LABEL = `(document.getElementById('mcpBtn').getAttribute('aria-label')||'')`;
+      assert.ok(await until(`/\\d+ % of the window/.test(${LABEL})`), `${w}: a share from the report's own window: ${(await chip()).name}`);
+      const old = /(\d+) % of the window/.exec((await chip()).name)[1];
+      await emit(C, { type: 'model', model: 'other-model', cause: 'user' });
+      assert.ok(await until(`!/ % of the window/.test(${LABEL})`), `${w}: no share from the old model's window, was ${old} %: ${(await chip()).name}`);
+      await emit(C, { type: 'context', tokens: 10_000, limit: 5_000_000 });
+      assert.ok(await until(`/\\d+ % of the window/.test(${LABEL})&&!new RegExp('\\\\b'+${jsLiteral(old)}+' % of').test(${LABEL})`), `${w}: the new window counts: ${(await chip()).name}`);
+    }
     assert.ok(await until(`/38 % of the window/.test(document.getElementById('mcpBtn').getAttribute('aria-label'))`), `${w}: the new model's window`);
     const [K] = await liveOf('claude');
     assert.ok(K, `${w}: a running Claude Code chat`);

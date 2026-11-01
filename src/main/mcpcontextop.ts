@@ -155,6 +155,15 @@ export class McpContextTracker {
     return run;
   }
 
+  /** The last figures stay, but only for servers still loaded (a switch-off must not stay in the warning). */
+  private keepLoaded(id: string, s: ReturnType<McpContextTracker['slot']>): void {
+    const kept = cleanReport(s.raw as McpContextReport, this.d.live(id), this.d.off(id), this.d.secrets(id));
+    if (JSON.stringify(kept) !== JSON.stringify(s.report)) {
+      s.report = kept;
+      this.d.push(id, this.view(id));
+    }
+  }
+
   private async read(id: string, ad: Pick<AgentAdapter, 'mcpContext'>): Promise<void> {
     const s = this.slot(id);
     let timer: unknown;
@@ -169,7 +178,8 @@ export class McpContextTracker {
         }),
       ]);
     } catch {
-      return; // a slow or failing read changes nothing: the last figures stay, and nothing is logged
+      if (this.slots.get(id) === s && hasFigures(s.report)) this.keepLoaded(id, s); // a slow or failing read says nothing about the figures: the last ones stay, and nothing is logged
+      return;
     } finally {
       if (timer !== undefined) (this.d.clearTimer ?? ((t) => clearTimeout(t as ReturnType<typeof setTimeout>)))(timer);
     }
@@ -179,12 +189,7 @@ export class McpContextTracker {
       return;
     }
     if (r?.failed === true && hasFigures(s.report)) {
-      // a failed read says nothing about the figures: the last ones stay, but only for servers still loaded (a switch-off must not stay in the warning)
-      const kept = cleanReport(s.raw as McpContextReport, this.d.live(id), this.d.off(id), this.d.secrets(id));
-      if (JSON.stringify(kept) !== JSON.stringify(s.report)) {
-        s.report = kept;
-        this.d.push(id, this.view(id));
-      }
+      this.keepLoaded(id, s);
       return;
     }
     const report = cleanReport(r as McpContextReport, this.d.live(id), this.d.off(id), this.d.secrets(id));

@@ -284,6 +284,26 @@ async function main(): Promise<void> {
     t.onEvent(modelEv());
     await settle();
     assert.deepStrictEqual(h.pushed.at(-1)?.report, { servers: [] }, 'a real empty list replaces them');
+    // the same with a read that never answers: the limit fires, the kept figures still leave the switched-off server out (spec 100 change 2026-11-01)
+    {
+      const slow: McpContextReport = { servers: [{ name: 'heavy', tokens: 60_000, source: 'reported' }, { name: 'small', tokens: 1000, source: 'reported' }], window: 200_000, total: 61_000 };
+      let hang = false;
+      const hs = harness(() => (hang ? new Promise<McpContextReport>(() => undefined) : slow));
+      hs.h.live = conn('heavy', 'small');
+      hs.t.onEvent(mcpEv(hs.h.live));
+      await settle();
+      assert.strictEqual(reportTotal(hs.t.view(ID).report), 61_000);
+      hang = true;
+      hs.h.now += 5000;
+      hs.h.live = [{ name: 'heavy', status: 'disabled' }, { name: 'small', status: 'connected' }];
+      hs.t.onEvent(mcpEv(hs.h.live));
+      await settle();
+      assert.strictEqual(hs.h.timers.size, 1, 'the read is waiting on its limit');
+      for (const x of [...hs.h.timers]) (x as { fn: () => void }).fn();
+      await settle();
+      assert.deepStrictEqual(hs.t.view(ID).report?.servers.map((x) => x.name), ['small'], 'a timed-out read keeps only what is still loaded');
+      assert.deepStrictEqual(hs.h.pushed.at(-1)?.report?.servers.map((x) => x.name), ['small'], 'and the window is told');
+    }
     // a server switched off, then a failed read: the kept figures leave it out, the warning follows, and the time stays that of the measurement
     const two: McpContextReport = { servers: [{ name: 'heavy', tokens: 60_000, source: 'reported' }, { name: 'small', tokens: 1000, source: 'reported' }], window: 200_000, total: 61_000 };
     let answer2: McpContextReport = two;
