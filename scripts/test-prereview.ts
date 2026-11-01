@@ -612,7 +612,7 @@ async function checkCli(): Promise<void> {
   const gk = fs.readFileSync(path.join(base, 'gate.key')); let nc = 0;
   const base0: core.GatePayload = JSON.parse(JSON.stringify(payload)); delete base0.sig;
   assert.deepStrictEqual(core.payloadProblems(payload, gk, Date.now(), new Set()), [], 'what main signed verifies');
-  assert.ok(core.payloadProblems({ ...payload, prText: 'OUTSIDE-AUTHOR-TEXT' }, gk, Date.now(), new Set()).length > 0, 'a changed field breaks the signature');
+  assert.ok(core.payloadProblems({ ...payload, prText: 'OUTSIDE-AUTHOR-TEXT' }, gk, Date.now(), new Set()).length > 0, 'a changed field breaks the signature'); assert.ok(core.payloadProblems({ ...payload, repo: 'someone/else' }, gk, Date.now(), new Set()).length > 0, 'the repository is signed');
   const signed = (over: Partial<core.GatePayload> = {}, key = gk): string => { const q: core.GatePayload = { ...base0, ts: Date.now(), nonce: (++nc).toString(16).padStart(16, '0'), ...over }; q.sig = core.signPayload(q, key); return JSON.stringify(q); };
   const calls0: string[] = []; const spyQuery: any = () => { calls0.push('called'); throw new Error('no model call in a test'); };
   const rs2 = (text: string, over: Partial<cli.CliDeps> = {}): Promise<number> => cli.runStage(dep({ query: spyQuery, ...over }), a('run'), text);
@@ -678,6 +678,7 @@ async function checkCli(): Promise<void> {
     assert.deepStrictEqual(core.ancestorProblems('/a/b/c', (u) => u === 0, (q) => ({ uid: q === '/a' ? 0 : 0, mode: q === '/' ? 0o41777 : 0o40755, isSymlink: false, isDirectory: true }), (q) => q), [], 'a root-owned sticky world-writable parent is accepted');
     assert.ok(core.ancestorProblems('/a/b/c', (u) => u === 0, (q) => ({ uid: 0, mode: q === '/a' ? 0o40777 : 0o40755, isSymlink: false, isDirectory: true }), (q) => q).length > 0, 'but a non-sticky one is not');
     assert.ok(core.ancestorProblems('/a/b/c', () => true, () => { throw new Error('x'); }, (q) => q).length > 0, 'unreadable: refused');
+    assert.ok(core.ancestorProblems('/a/b/c', () => true, (q) => ({ uid: q === '/a' ? 5 : 0, mode: q === '/a' ? 0o41777 : 0o40755, isSymlink: false, isDirectory: true }), (q) => q).length > 0, 'a sticky world-writable folder of anyone but root is not accepted');
     // the runner side: what it loads must not be owned by its own user
     const rsUnowned = fakeStat(() => ({ uid: 0 }));
     const noSame = { ...env, PREREVIEW_SAME_ACCOUNT: undefined } as any;
@@ -708,7 +709,7 @@ async function checkCli(): Promise<void> {
   assert.strictEqual(await post0(sha, { me: process.getuid!() + 1 }), 1); assert.ok(fetched.length === 0, 'a config not owned by the operating user');
   { // the posted-marker is the operator's, beside its config; a link planted in the bot's folder is never followed, and a report that is a link is not read
     const victim = path.join(mk('victimdir'), 'victim.txt'); fs.writeFileSync(victim, 'KEEP\n'); try { fs.symlinkSync(victim, path.join(base, 'state', 'posted.jsonl')); } catch { /* already there */ }
-    const repLink = path.join(reports, `7-${sha}.json`); const repKeep = fs.readFileSync(repLink, 'utf8'); fs.rmSync(repLink); fs.symlinkSync(path.join(mk('victimdir2'), 'x.json'), repLink); err.length = 0;
+    const repLink = path.join(reports, `7-${sha}.json`); const repKeep = fs.readFileSync(repLink, 'utf8'); fs.rmSync(repLink); const valid = path.join(mk('victimdir2'), 'x.json'); fs.writeFileSync(valid, repKeep); fs.symlinkSync(valid, repLink); err.length = 0;
     assert.strictEqual(await post0(sha), 1); assert.ok(/no stored report/.test(err.join('')) && fetched.length === 0, 'a report that is a link: not read'); fs.rmSync(repLink); fs.writeFileSync(repLink, repKeep); }
   err.length = 0; assert.strictEqual(await post0(sha), 0, err.join('')); assert.deepStrictEqual(fetched.map((x) => x.split(' ')[0]), ['GET', 'POST', 'POST'], 'the current head, all owners, the config in place: one comment (test config and fake fetch only)');
   assert.strictEqual(fs.readFileSync(path.join(opdir, 'posted.jsonl'), 'utf8').trim(), `7:${sha}`, 'the marker is in the operator\'s folder'); assert.strictEqual(fs.readFileSync(path.join(path.dirname(path.dirname(reports)), 'state', 'posted.jsonl')).length > 0 || true, true);
