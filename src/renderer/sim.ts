@@ -2899,7 +2899,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
             if (!opts.freeze) timer = window.setInterval(tick, Math.round(2600 / speed));
             if (!opts.freeze) {
               const screenTimer = window.setInterval(screenTick, Math.round(1300 / speed));
-              window.addEventListener('pagehide', () => { window.clearInterval(screenTimer); if (timer) window.clearInterval(timer); }, { once: true });
+              if (typeof window.addEventListener === 'function') window.addEventListener('pagehide', () => { window.clearInterval(screenTimer); if (timer) window.clearInterval(timer); }, { once: true });
             }
           }, 0);
         }
