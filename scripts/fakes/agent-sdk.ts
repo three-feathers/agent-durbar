@@ -2,6 +2,7 @@
  * A fake of the Agent SDK's `query()` for `npm run test:prereview` (spec 103). It spends nothing and opens no network. It records what it
  * was given, plays the PreToolUse hook the way the real SDK would (so a test can try hostile tool calls), and answers from a script.
  */
+import * as fs from 'fs';
 import type { QueryFn } from '../prereview-run';
 
 export interface FakeScript {
@@ -18,7 +19,7 @@ export interface FakeScript {
   /** messages to send before the result */
   before?: any[];
 }
-export interface FakeRecord { calls: Array<{ prompt: string; options: any }>; decisions: Array<{ tool: string; decision: string }> }
+export interface FakeRecord { calls: Array<{ prompt: string; options: any; linkAtStart?: boolean }>; decisions: Array<{ tool: string; decision: string }> }
 
 export const goodAnswer = (extra: Record<string, unknown> = {}): unknown => ({ findings: [{ kind: 'reach', path: 'src/a.ts', line: 3, claim: 'misses the list view', evidence: 'src/b.ts:9 calls it', how_to_check: 'open the list view' }], not_checked: 'nothing ran', ...extra });
 export const usage = (cost = 0.42, basis: string = 'list') => ({ total_cost_usd: cost, modelUsage: { 'claude-opus-5-5': { inputTokens: 1000, outputTokens: 200, cacheReadInputTokens: 5000, cacheCreationInputTokens: 3000, costUSD: cost, costBasis: basis } } });
@@ -28,7 +29,8 @@ export function fakeQuery(script: FakeScript | ((n: number) => FakeScript), rec:
   return ({ prompt, options: opts }) => {
     const options: any = opts;
     const s = typeof script === 'function' ? script(n++) : script;
-    rec.calls.push({ prompt, options });
+    let linkAtStart = false; try { linkAtStart = fs.readdirSync(options.cwd, { withFileTypes: true }).some((e) => e.isSymbolicLink()); } catch { /* no folder */ }
+    rec.calls.push({ prompt, options, linkAtStart });
     return (async function* () {
       if (s.throws) throw new Error('boom ghp_' + 'a'.repeat(36));
       if (s.init !== null) {
