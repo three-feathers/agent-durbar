@@ -4,7 +4,7 @@
 group: index
 title: Full-screen chat and agent strip
 status: building
-note: tool-JSON decoder, saved output and masking (T038-T048) not built
+note: tool-JSON decoder, saved output and masking (T038-T048) not built; rail, density and width (FR-190..FR-208) specified
 -->
 
 **Feature Branch**: `005-chat-fullscreen-and-agent-strip` (reverse-engineered; milestone 6, built on the chat panel of milestones 1-5)
@@ -408,3 +408,83 @@ The `status:` of the specs-index block used to read (moved here unchanged; the b
 *Honest limits:* `[KNOWN GAP]` Windows and macOS rendering and a real screen reader are not verified (simulator on Linux only); the order is per window and per computer; ids of real sessions are stable across a restart only as far as the existing `durbar.chatNo` already relies on (not re-verified here, `read:`); whether *End session* removes the agent from `agents` or leaves it labelled `Ended` is `unverified` and T101 reads it before the prune rule is coded (Q-strip-4).
 
 **Tasks:** T099..T112 in `tasks.md`. Numbers taken: FR-178..FR-189 and T099..T112 of this spec (checked against `main`, remote branches and open PRs on 2026-10-29; no open PR touches this spec).
+
+### 2026-11-01: the agent rail, chat density and a full-width page (design sweep, FR-190..FR-208)
+
+**Status: specified, not built.** Nothing here is `[IMPLEMENTED]`; the `test:` and `sim:` lines say what the build must prove.
+
+*Source.* A design sweep on 2026-11-01, simulator only, at main `c5f039a1`. Every "after" number below was measured on a mock made by injecting CSS into the running page, not on built code, so each PR measures first. *Owner decision* (Vikram, direct message, 2026-11-01 18:27 UTC): all of the sweep's findings and recommendations are accepted. Rail, density and width live here; Mac rules, Needs you, notices, controls and Settings in spec 052's delta of the same date; tokens and the font in spec 070's; the chat in the world in spec 097's; the closed sidebar question in spec 006's. **The PR order, with its gates and line-count goals, is one table in this spec's `plan.md`.**
+
+*What each one replaces.* Older text is changed in place by the PR that builds it, so the spec keeps describing what the code does until then.
+
+| Older text | Replaced by |
+|---|---|
+| Story 2 (a strip at the top), its scenario 2 ("moves to the front") | FR-190, FR-191: a rail, by folder, needing you first |
+| FR-002 (a horizontal strip, 64 px; really 48 px since 052 FR-095) | FR-190..FR-193. Kept from it: every visible top-level agent, `aria-current`, an accessible name with status |
+| SC-001 | FR-195: all 15 in the rail, no page overflow, the rail's own scroll limited as stated |
+| SC-002 | FR-191: those needing you lead their folder, and their folders lead the rail |
+| FR-004, FR-039 | FR-199: what the header holds does not change, only how it is arranged |
+| FR-173 and 052 FR-010 (visible at rest) | FR-204 |
+| FR-178..FR-189 (manual order, unbuilt) | **Pending Paco's view**, FR-198 |
+
+*Existing capabilities reused, no second list (FR-031 of spec 021):* `stripAgents()`, `prio` and `renderStrip()`'s keyed rows through `morphHTML` (`data-sw`, `data-key`, `.sel`, `aria-current`); the `data-sw` click that opens a chat; the strip item's menu; the kept scroll and `SCROLL.reveal`; `needsMe()`, `needsMeOrder()`, `NEED_SINCE`, `ATT.waitLabel` (052 FR-014, FR-061); `rememberOn()`; the `--t*`, `--s-*`, `--r-*` and status tokens (spec 070). The strip's code becomes the rail's: this is a change of `renderStrip`, not a new component.
+
+#### The rail (R)
+
+- **FR-190** **A rail replaces the strip.** With a chat open, a column on the left of the window, full height, 220 px wide, lists every agent `stripAgents()` lists; `.strip` goes. Its top row holds **Office** (FR-003), the amber Needs you count and the red lock (052 FR-216, FR-219) and the hide button (FR-194). It exists only while a chat is open: the office and List have none, and a screen over a chat covers it as a screen covers the strip today. Clicking a row switches the chat, as now.
+- **FR-191** **By folder, needing you first.** A heading per folder (name, count of agents). Folders with someone needing you come first, by their oldest wait; the others keep the office's room order. Inside a folder, `needsMe()` agents come first, oldest first by `NEED_SINCE`, then the rest in today's `prio` then creation order. A row moves only when a status changes, never with time. The count on the amber button and the tall rows are the same list (052 FR-014).
+- **FR-192** **Two row heights, no more.** A plain row is 30 px: avatar 22 px, name, status word. A tall row (`needsMe()`) is about 52 px and tinted by status: avatar, name, age, and up to two lines of what is asked, by `requestText()` or the task line. `.sel` and focus do not change a height. **Not built, on purpose:** a row growing with its wait. It was mocked and it does catch the eye, but with 5 agents waiting the last row would move about 15 px a minute under the pointer (formula, not measured).
+- **FR-193** **Age in words.** "Waiting 2 min", "Waiting 1 h 5 min", from `ATT.waitLabel` with 052 FR-061's 30-second text-only tick; design rules 5 and 7 hold. A failing or error row shows its status word without an age unless `NEED_SINCE` has one.
+- **FR-194** **Collapses and hides.** In a window under about 1100 px wide the rail is 52 px of avatars: rows 36 px, avatars 28 px, a status ring on those needing you, the name and status in `title` and the accessible name, headings reduced to a 1 px line. Anyone can hide it with the button in its top row or a palette command, and bring it back with a button in the chat header or the same command. The choice is saved per window, only when `rememberOn()`. **While hidden, the Office button, the amber count and the red lock move to the chat header**, so nothing that needs you depends on the rail. No new key in the first build.
+- **FR-195** **Fit, measured first.** At 1440x900 and 1280x800 with 15 agents, simulator, Flat and Real office:
+
+  | Measured on the mock | 1440 today | 1440 rail | 1280 today | 1280 rail |
+  |---|---:|---:|---:|---:|
+  | Message log height, px | 533 | 717 | 433 | 617 |
+  | Log as share of the window | 59% | 80% | 54% | 77% |
+  | Characters of chat in view | 1156 | 1569 | 1016 | 1440 |
+  | Header, px | 103 | 61 | 103 | 61 |
+  | Composer, px | 122 | 91 | 122 | 91 |
+
+  The rail PR alone reaches only the strip's 48 px; the other rows come with FR-199..FR-202. The final PR of the chat work asserts the table, with the log within 8 px of it. No page overflow and no horizontal overflow at either size.
+- **FR-196** **1280x800 with 15 agents.** On the mock the rail's list needs 790 px in 756 px: **34 px of scroll, inside the rail, accepted by the owner.** Trying tall rows near 52 px instead of the mock's 60 px should remove it (6 tall rows x 8 px; calculated, not captured). If two lines of the question do not fit 52 px unclipped at 11 px, tall rows stay at 60 px and the 34 px stands. At 40 agents the rail scrolls and nothing else moves.
+- **FR-197** **Readable and reachable.** A `nav` named "Agents" with real headings; rows stay buttons with the status in the accessible name; opening a chat reveals its row; no new animation; the smallest text at least 10.5 px (11 on the mock); tokens only, so worlds carry it. `[KNOWN GAP]` until measured: the contrast of text on tall tinted rows, which the sweep did not check; the rail PR measures it at 4.5:1 in the Flat and Real sets and picks the tint to pass. Forced colours keep words and borders.
+- **FR-198** **Manual order: PENDING PACO'S VIEW.** Paco chose FR-178..FR-189 (issue #880; his answers to Q-strip-1..7 on 2026-10-30), and the rail does the opposite of FR-179, which says a manual order never moves by status. Proposed, accepted by the owner, and not final until Paco answers: **status order by default; favourites as their own group on top; manual order inside a folder only if someone turns it on.** Until he answers, T099..T112 do not start and the rail ships with status order only, no star and no drag. If he agrees: FR-178, FR-179, FR-182 (Alt+Up and Alt+Down), FR-185 (per folder), FR-186 (vertical), FR-187 (the rail's sizes) and FR-188 are rewritten in that PR. If he does not, this goes back to the owner; no agent picks.
+
+#### Chat density (C)
+
+The chat's chrome takes 367 of 900 px today, 41% of the window, in five rows plus a notice. No text gets smaller in any of this.
+
+- **FR-199** **One header row, one tabs row.** The header is 61 px (from 103): who, state and actions on one row, the task and usage line under it (052 FR-095's stated design, which grew). What it holds stays FR-004's and FR-039's. *Chat*, *Browser* and *Previous sessions* share one 31 px row, saving 32 px; an open *Previous sessions* unfolds under it as today (006 FR-033). `read:` the sweep's build list says "header and tabs on one row" and its numbers come from this arrangement, with the tabs on their own row beside *Previous sessions*. T117 also tries the tabs inside the header's row, measured at 1280 wide with the rail (a chat 1060 px wide) with the longest name, and takes it only if nothing is cut. The numbers above are the floor either way.
+- **FR-200** **Composer 91 px at rest** (from 122). Smaller padding, a 32 px box and buttons, the hint on the chips' row with the words the chips already say removed (full text in its `title`). Growth, the handle and the saved size stay FR-044..FR-049's. Stop stays visible; every toolbar control stays FR-037..FR-056's.
+- **FR-201** **Plain answers.** An agent's answer is text on the page. Only the person's own message stays a bubble. An answer's meta line goes **visually** only: the agent's name stays for screen readers. Waiting and error cards keep their boxes, because they ask for something.
+- **FR-202** **Quiet tool rows and thinking.** A tool call is one borderless row until it fails, waits or opens; FR-006 stands (focusable buttons, `aria-expanded`, failed calls marked, never by colour alone). Thinking has a left rule and no card (FR-005 is otherwise unchanged).
+- **FR-203** **Targets, same content at 1440x900, measured first:**
+
+  | Content | Before, px | After, px |
+  |---|---:|---:|
+  | Agent message with thinking and 3 tools | 575 | 442 |
+  | With an approval card | 649 | 509 |
+  | Long message with helpers | 1358 | 1167 |
+
+  Within 16 px of each. `[KNOWN GAP]` until the driver covers them: Compact density and Simple mode were not captured by the sweep.
+- **FR-204** **Copy and the message menu on hover and focus.** Replaces FR-173's and 052 FR-010's "visible at rest, dimmed". They are always in the tab order (`opacity`, never `display`), appear on hover of the message, on `:focus-visible` and while their menu is open, and stay visible where `@media (hover:none)` applies. **The known loss:** a mouse user does not see them until hovering; the owner accepted that with the rest.
+- **FR-205** **Names stay for screen readers.** A hidden meta line is clipped, not removed; a driver reads the accessible text of a message before and after and they must match, apart from the moved buttons' order.
+
+#### Width (W)
+
+- **FR-206** **`--chat-prose`: the page is full width, prose is capped.** Option D of four. The log and the composer use the whole width, with 24 px of padding; tool rows, diffs and code use all of it; text starts at the left edge; the person's bubble stays right. Paragraphs, lists and thinking are capped at `--chat-prose`, about 100ch (744 px in today's font). It replaces the 880 px centred column in `#chat` and `.composer`, and the 1240 px header rules go with it where they follow that column. A wider cap is one line. `--chat-prose` is an app-owned size and no pack may set it (070 D2).
+
+  | Letters per line, measured | 1440 | 1920 | 2560 |
+  |---|---:|---:|---:|
+  | A. Today, 880 px centred | 146 | 149 | 149 |
+  | B. 1120 px centred | 187 | 189 | 189 |
+  | C. Everything full width | 233 | 316 | 354 |
+  | **D. Page full width, prose capped** | **126** | **126** | **126** |
+
+  The target is that D row, within 4 letters. "100ch" is the first guess and the letter count is the requirement: the app keeps its system font (070 FR-058), whose `ch` differs by system, so the driver measures letters, and the token is re-measured if the font ever changes.
+- **FR-207** **Tests.** New drivers, each with `until()` waits, in the UI suite, at 1440x900 and 1280x800, Flat and Real office, with a planted mutation per rule:
+  - `check-rail.js`: 15 rows; groups and order by FR-191 after a request arrives and after it is answered; exactly two heights; no row height changes with time (clock advanced); the same list as the amber count; collapse under 1100 px and hide with names kept; no page overflow; rail scroll at most 34 px at 1280; text contrast on tall rows. Existing drivers that read `.sitem` follow (about 23 scripts, among them `check-office-fill`, `shots-074-navigator`, `test-macos`).
+  - `check-chat-density.js`: the two tables of FR-195 and FR-203; Stop visible at both sizes; the hover and focus rule by real keyboard and pointer; accessible text unchanged; Compact and Simple.
+  - `check-chat-width.js`: letters per line at 1440, 1920 and 2560; a code block and a diff wider than the prose cap; no horizontal overflow.
+- **FR-208** **Not checked by anyone yet.** Real macOS, Windows and real sessions; a real screen reader; hover states, dark themes and the browser tab under the rail. The first three stay `[KNOWN GAP]` after the build and say so in each PR; hover states, dark themes and the browser tab are in the drivers above.
