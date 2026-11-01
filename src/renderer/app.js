@@ -6778,11 +6778,14 @@ async function chooseAutoTierInner(a,to,anchor){
 async function sendModelChange(a,req,ctx){
   /* spec 030 FR-061: this request holds the whole choice, so it replaces a queued one: the older switch leaves the runtime's queue first, or it would run too and Cancel would miss it */
   const old=a.pendingModel||ctx.old,queuedNow=a.pendingModel;
-  if(queuedNow){if(bridge.cancelQueuedModel)await bridge.cancelQueuedModel(a.id,queuedNow.queueId).catch(()=>undefined);a.pendingModel=undefined;updateModelChip(a);}
+  let cancelled=!!ctx.cancelled; /* review on PR 935: the earlier switch is asked for again only when it really left the runtime's queue, or it would be queued twice (or an applied one sent again) */
+  if(queuedNow){const c=bridge.cancelQueuedModel?await bridge.cancelQueuedModel(a.id,queuedNow.queueId).catch(()=>undefined):undefined;cancelled=!!(c&&c.ok);a.pendingModel=undefined;updateModelChip(a);}
   /* review on PR 935: when this request does not take, the earlier valid switch is asked for again, so a refusal never loses it */
-  const keep=async()=>{if(old)await sendModelChange(a,old.req,{tgt:modelOf(old.req.model,a.info.adapterId),prev:old.prev,anchor:ctx.anchor,quiet:true});};
+  const keep=async()=>old&&cancelled?await sendModelChange(a,old.req,{tgt:modelOf(old.req.model,a.info.adapterId),prev:old.prev,anchor:ctx.anchor,quiet:true}):false;
+  /* the line about the earlier switch is shown only once it is queued again; a quiet re-send says nothing when it fails */
+  const fail=async(msg,ms)=>{const kept=await keep();if(!ctx.quiet)toast(msg+(kept?' The switch queued before stays.':''),ms);return false;};
   const res=await bridge.setModel(a.id,req).catch(e=>({ok:false,error:String(e&&e.message||e)}));
-  if(!res||!res.ok){toast('Could not change the model: '+esc((res&&res.error)||'unknown error')+(old?' The switch queued before stays.':''),6000);await keep();return;}
+  if(!res||!res.ok)return fail('Could not change the model: '+esc((res&&res.error)||'unknown error'),6000);
   const r=res.result||{},nm=ctx.tgt.name+(req.autoTier?' ('+DM.autoTierName(req.autoTier)+' routing)':'')+(DM.choiceWords(req)?' ('+DM.choiceWords(req)+')':''),gone=ctx.gone?' '+esc(ctx.gone):'';
   if(r.status==='applied'){
     /* spec 030 FR-060: the answer is the state: a session that has not started and a same-model change send no model event, and the next choice is built on this */
@@ -6796,16 +6799,18 @@ async function sendModelChange(a,req,ctx){
     /* spec 052 (2026-10-21): one Undo toast per agent; a newer switch replaces the older toast (only the last switch can be undone) */
     if(!ctx.undo){document.querySelectorAll('#toasts .toast[data-undo-model="'+CSS.escape(a.id)+'"]').forEach(t=>t.remove());const t=toastAction(esc(a.name)+': <b>'+esc(nm)+'</b> from the next message.'+gone,'Undo',()=>undoModel(a,ctx.prev,ctx.anchor),8000);if(t&&t.dataset)t.dataset.undoModel=a.id;}
     else toast(esc(a.name)+': back to <b>'+esc(nm)+'</b>.',3800);
+    return true;
   }else if(r.status==='queued'){
     a.pendingModel={queueId:r.queueId,name:ctx.tgt.name+(req.autoTier?' ('+DM.autoTierName(req.autoTier)+')':''),req,prev:ctx.prev};updateModelChip(a);
     if(!ctx.quiet)toast(esc(a.name)+' is replying: <b>'+esc(nm)+'</b> applies when the reply ends.'+gone,5000);
+    return true;
   }else if(r.status==='needs-confirmation'){
     const cf=r.confirmation||{};
     const d=await askDialog({title:'Compact the context first?',body:(cf.targetName||ctx.tgt.name)+' has a window of '+DM.fmtTokens(cf.targetLimit)+' tokens, and this conversation uses '+DM.fmtTokens(cf.currentTokens)+'. It must be compacted before the switch, which costs one model call.',returnFocus:ctx.anchor,
       buttons:[{label:'Cancel',value:null},{label:'Compact and switch',value:'ok',cls:'primary'}]});
-    if(d)await sendModelChange(a,Object.assign({},req,{confirm:{compaction:'accept'}}),Object.assign({},ctx,{old}));
-    else{if(old)toast(esc(a.name)+': the model was not changed. The switch queued before stays.',5000);await keep();}
-  }else{toast(esc(r.message||'The model was not changed.')+(old?' The switch queued before stays.':''),5000);await keep();}
+    if(d)return sendModelChange(a,Object.assign({},req,{confirm:{compaction:'accept'}}),Object.assign({},ctx,{old,cancelled}));
+    return fail(esc(a.name)+': the model was not changed.',5000);
+  }else return fail(esc(r.message||'The model was not changed.'),5000);
 }
 function undoModel(a,prev,anchor){return modelTurn(a,()=>undoModelInner(a,prev,anchor));}
 async function undoModelInner(a,prev,anchor){
