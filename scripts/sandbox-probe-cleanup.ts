@@ -5,7 +5,7 @@
  * The real run of 2026-10-28 (`real:`, Linux 7.0, bubblewrap 0.9.0, CLI 1.0.98; issue #806) left the session folder F behind: it held a
  * `.git/` with an empty `hooks/` and a `config` the probe never made. Ask first's floor denies `<root>/.git/hooks` and `<root>/.git/config`
  * (FR-004), and the runtime or bubblewrap leaves a placeholder for each one that did not exist. `gitPlaceholders` recognises exactly that:
- * a plain `.git` folder that holds exactly `hooks` (a plain, empty folder) and `config` (a plain, empty file), nothing else.
+ * a plain `.git` folder that holds exactly `hooks` (a plain, empty folder) and `config` (a plain, empty file, or on macOS a plain, empty folder), nothing else.
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -21,6 +21,7 @@ export function gitPlaceholders(gitDir: string): boolean {
     const hooks = path.join(gitDir, 'hooks');
     if (!plainDir(hooks) || fs.readdirSync(hooks).length) return false;
     const cfg = fs.lstatSync(path.join(gitDir, 'config'));
+    if (cfg.isDirectory()) return fs.readdirSync(path.join(gitDir, 'config')).length === 0; // macOS, Seatbelt (`real:` 2026-11-01, #834)
     return cfg.isFile() && cfg.size === 0;
   } catch {
     return false;
@@ -46,7 +47,8 @@ export function removeOwn(dir: string, parent: string, allowed: readonly string[
     if (git) {
       // non-recursive on purpose: rmdir refuses a folder that is no longer empty
       fs.rmdirSync(path.join(dir, '.git', 'hooks'));
-      fs.unlinkSync(path.join(dir, '.git', 'config'));
+      const cfg = path.join(dir, '.git', 'config');
+      if (fs.lstatSync(cfg).isDirectory()) fs.rmdirSync(cfg); else fs.unlinkSync(cfg);
       fs.rmdirSync(path.join(dir, '.git'));
     }
     fs.rmdirSync(dir);
