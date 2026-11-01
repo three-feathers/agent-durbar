@@ -186,7 +186,7 @@ module.exports = async (ctx) => {
         if (c.length) { pick = { id, room: c[0], pad: spare(c[0]) - shrink(c[0]) / 2 }; break; }
       }
       assert.ok(pick, 'an agent that starts to match the status filter narrows a room that is not rewritten, and its header has room to spare when wide (the stale-fit case for a neighbour\'s width)');
-      await js(`(()=>{const s=document.createElement('style');s.id='ops-width';s.textContent='#stage .room[data-key="${pick.room}"] .room-head::after{content:"";flex:none;width:${pick.pad}px}';document.head.append(s);})()`);
+      await js(`(()=>{const s=document.createElement('style');s.id='ops-width';s.textContent=${jsLiteral(`#stage .room[data-key="${pick.room}"] .room-head::after{content:"";flex:none;width:${pick.pad}px}`)};document.head.append(s);})()`);
       await js(`window.DurbarFit()`); // every header fitted, the filter on
       await drawn(status(pick.id, 'working')); await compare("a neighbour's width, an agent starts to match the status filter");
       await drawn(status(pick.id, 'error')); await compare("a neighbour's width, an agent stops matching the status filter");
