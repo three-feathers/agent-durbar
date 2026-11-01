@@ -228,6 +228,28 @@ module.exports = async (ctx) => {
       });
     }
     if (run('inbox')) assert.ok(staleRan > 0, `${tag}: the stale-button check ran (a queue of two or more in a full slip)`);
+    // ---- spec 097 FR-004 / Codex sweep: choosing an Office layout keeps keyboard focus on the choice; FR-122: Show in chat from the limit slip focuses the amount field ----
+    if (run('focus') && world === 'photo') {
+      await H.load({ w, h, query: q(world), ready: REAL, settle: false, focus: true });
+      await js(`window.DurbarScreens.openSettings()`);
+      await must(`!!document.querySelector('[data-officelayout="open"]')`, 'Settings');
+      await js(`document.querySelector('[data-officelayout="open"]').focus()`);
+      await H.key('Return');
+      await must(`document.querySelector('[data-officelayout="open"]').getAttribute('aria-pressed')==='true'`, 'Open office chosen');
+      assert.strictEqual(await js(`(document.activeElement.dataset||{}).officelayout`), 'open', `${tag}: after the repaint the focus is on the choice just made`);
+      await js(`document.querySelector('[data-officelayout="real"]').focus()`);
+      await H.key('Return');
+      await must(`document.querySelector('[data-officelayout="real"]').getAttribute('aria-pressed')==='true'`, 'Real office chosen');
+      assert.strictEqual(await js(`(document.activeElement.dataset||{}).officelayout`), 'real', `${tag}: and back`);
+      await js(`document.getElementById('scrClose').click()`);
+    }
+    if (run('limitfocus')) {
+      await H.load({ w, h, query: q(world), ready: REAL, settle: false });
+      await must(`!!document.querySelector('#stage .ro-slip.ro-limit:not([hidden]) [data-slipfocus="limit"]')`, 'the limit slip');
+      await js(`document.querySelector('#stage .ro-slip.ro-limit [data-slipfocus="limit"]').click()`);
+      await must(`document.activeElement&&document.activeElement.classList.contains('limit-amt')&&!!document.activeElement.closest('#chat')`, 'the amount field in the chat has focus');
+      assert.strictEqual(await js(`document.activeElement.getAttribute('aria-label')`), 'AI credits to add to the limit', `${tag}: the flat field`);
+    }
     // ---- FR-125 jumps ride the lift ----
     if (run('jumps')) {
       if (!OS_REDUCED) {

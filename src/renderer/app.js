@@ -1804,7 +1804,12 @@ document.addEventListener('click',e=>{
   const a=byId(b.dataset.slipid), act=b.dataset.slipact;
   if(act==='inbox'){openInbox();return;}
   if(!a)return;
-  if(act==='open'){openPanel(a.id,true);return;}
+  if(act==='open'){
+    openPanel(a.id,true);
+    /* spec 097 FR-122: from the limit slip, the chat opens with the keyboard in the card's amount field (the slip's own field is first in its tab order) */
+    if(b.dataset.slipfocus==='limit')requestAnimationFrame(()=>{const f=document.querySelector('#chat .note.limit:not(.settled) .limit-amt');if(f)focusIn(f);});
+    return;
+  }
   const card=[...getChat(a).el.querySelectorAll('.note.perm:not(.settled)')].find(n=>reqOf(n)===b.dataset.slipreq); if(!card)return; /* answered already or replaced: nothing is sent */
   if(act==='perm'){const src=inboxActs(card)[Number(b.dataset.slipidx)];if(src)src.click();return;}
   if(act==='limit'){
