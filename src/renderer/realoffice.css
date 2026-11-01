@@ -168,8 +168,9 @@
 .ro-plate.sel{outline:2px solid var(--sel-border,var(--focus));outline-offset:1px}
 .ro-plate:focus-visible,.ro-sb:focus-visible,.ro-lplate:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
 .ro .dot{flex:none}
-.ro-away{box-sizing:border-box;transform:translateX(-50%) rotate(-2.5deg);display:flex;align-items:center;justify-content:center;text-align:center;font-size:12px;line-height:15px;padding:6px;overflow:hidden;overflow-wrap:anywhere;border-radius:1px 1px 7px 1px;background:var(--ro-note,#f6e27f);color:var(--ro-note-ink,#3b3205);box-shadow:0 2px 4px rgba(0,0,0,.26)} /* an empty seat's note, square like a real one (spec Changes 2026-11-01); a world styles its own */
-.ro-poof{position:absolute;z-index:3;border-radius:50%;pointer-events:none;background:radial-gradient(closest-side,rgba(255,244,214,.6),rgba(255,244,214,0))}
+.ro{--ro-note:#f6e27f;--ro-note-ink:#3b3205;--ro-poof:rgba(255,244,214,.6)} /* a world sets its own: the post-it is yellow paper in every theme of Photo office, with dark ink */
+.ro-away{box-sizing:border-box;transform:translateX(-50%) rotate(-2.5deg);display:flex;align-items:center;justify-content:center;text-align:center;font-size:12px;line-height:15px;padding:6px;overflow:hidden;overflow-wrap:anywhere;border-radius:1px 1px 7px 1px;background:var(--ro-note);color:var(--ro-note-ink);box-shadow:0 2px 4px rgba(0,0,0,.26);pointer-events:none} /* an empty seat's note, square like a real one (spec Changes 2026-11-01); a world styles its own */
+.ro-poof{position:absolute;z-index:3;border-radius:50%;pointer-events:none;background:radial-gradient(closest-side,var(--ro-poof),transparent)}
 .ro-bub{width:22px;height:22px;border-radius:7px 7px 7px 2px;background:var(--c-waiting);color:var(--surface);font-weight:800;font-size:14px;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,.25)}
 .ro-bang{width:18px;height:18px;border-radius:50%;background:var(--c-error);color:var(--surface);font-weight:800;font-size:12px;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 2px var(--surface)}
 .ro-dots{display:flex;gap:3px;align-items:flex-end}

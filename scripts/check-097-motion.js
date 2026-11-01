@@ -59,8 +59,11 @@ module.exports = async (ctx) => {
   for (const [w, h] of SIZES) {
     await loadReal(w, h);
     await js(INSTALL);
-    const typist = await seat();
-    await must(`!!document.querySelector('#stage .ro-person.m-rig[data-for="'+CSS.escape(${jsLiteral(typist)})+'"]')&&document.querySelectorAll('#stage .ro-rig[data-for="'+CSS.escape(${jsLiteral(typist)})+'"] img').length===3`, 'the typist on the rig: head and two hands (spec Changes 2026-11-01)');
+    /* simulator visits run on the wall clock and can take a person from the desk on a slow machine: another idle one then */
+    const onRig = (i) => `!!document.querySelector('#stage .ro-person.m-rig[data-for="'+CSS.escape(${jsLiteral(i)})+'"]')&&document.querySelectorAll('#stage .ro-rig[data-for="'+CSS.escape(${jsLiteral(i)})+'"] img').length===3`;
+    let typist = await seat();
+    for (let t = 1; t < 4 && !(await H.until(onRig(typist), 5000)); t++) typist = await seat(0);
+    await must(onRig(typist), 'the typist on the rig: head and two hands (spec Changes 2026-11-01)');
     const anims = await js(animInfo);
     const names = {}; for (const a of anims) names[a.name] = (names[a.name] || 0) + 1;
     console.log('[097-motion] animations', w, h, JSON.stringify(names));
