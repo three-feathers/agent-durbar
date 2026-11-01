@@ -55,7 +55,7 @@ export function problems(files: Map<string, Buffer>, peopleJson: string, md: str
     for (const k of KEYS) if (!s[k]) out.push(`ASSETS.md ${name}: no "${k}"`);
     if (s.licence && !/^MIT\b/.test(s.licence)) out.push(`ASSETS.md ${name}: licence is not MIT`);
     if (s.date && !/^\d{4}-\d{2}-\d{2}$/.test(s.date)) out.push(`ASSETS.md ${name}: date is not YYYY-MM-DD`);
-    const person = /^(seat|stand|stand2|run|set)-[a-z0-9]+$/.test(name);
+    const person = /^(seat|stand|stand2|run|set|facing)-[a-z0-9]+$/.test(name);
     if (person) {
       if (!CLAUSE.test(s.fictional || '')) out.push(`ASSETS.md ${name}: no fictional-people clause (FR-067)`);
       const lc = s['likeness-check'] || '';
@@ -81,7 +81,7 @@ export function problems(files: Map<string, Buffer>, peopleJson: string, md: str
   for (const f of listed.keys()) if (!files.has(f)) out.push(`ASSETS.md lists ${f}, which is not in the folder`);
   if (total > CAPS.total) out.push(`the pack is ${total} bytes, over ${CAPS.total}`);
   // FR-066: people.json
-  let meta: { seat?: Record<string, Record<string, number>>; stand?: Record<string, { figH: number; poses: Record<string, number[]> }>; fixtures?: Record<string, number[]>; fixtureTop?: Record<string, number>; floorLine?: number; desk?: number[] } = {};
+  let meta: { seat?: Record<string, Record<string, number>>; stand?: Record<string, { figH: number; poses: Record<string, number[]> }>; facing?: string; fixtures?: Record<string, number[]>; fixtureTop?: Record<string, number>; floorLine?: number; desk?: number[] } = {};
   try { meta = JSON.parse(peopleJson); } catch (e) { out.push('people.json is not JSON'); return out; }
   const want = new Set<string>();
   for (const [pid, m] of Object.entries(meta.seat || {})) {
@@ -96,7 +96,8 @@ export function problems(files: Map<string, Buffer>, peopleJson: string, md: str
     for (const [p, wh] of Object.entries(m.poses || {})) {
       want.add(`${pid}-${p}.webp`);
       if (!Array.isArray(wh) || wh.length !== 2 || !(wh[0] > 50 && wh[1] > 100 && wh[1] < 2 * m.figH)) out.push(`people.json stand ${pid} ${p}: size out of range`);
-      const ft = (m as { feet?: Record<string, number> }).feet, tp = (m as { top?: Record<string, number> }).top;
+      const ft = (m as { feet?: Record<string, number> }).feet, tp = (m as { top?: Record<string, number> }).top, fc = (m as { foot?: Record<string, number> }).foot;
+      if (fc && !(fc[p] > 0.2 && fc[p] < 0.9)) out.push(`people.json stand ${pid} ${p}: foot centre out of range (spec 097 FR-191)`);
       if (!ft || !(ft[p] > 0.8 && ft[p] <= 1) || !tp || !(tp[p] >= 0 && tp[p] < 0.2)) out.push(`people.json stand ${pid} ${p}: no measured feet/top line in range (owner 2026-10-31 10:19)`);
     }
   }
@@ -124,7 +125,7 @@ const readPack = (kind: string, id: string): { files: Map<string, Buffer>; md: s
   return { files, md: fs.readFileSync(path.join(dir, 'ASSETS.md'), 'utf8'), json: JSON.parse(fs.readFileSync(path.join(dir, meta), 'utf8')) };
 };
 const files = new Map<string, Buffer>(); // the shipped Photo office with its default set, for the checks below
-let md = '', pj = '', META: { seat: Record<string, unknown>; stand: Record<string, { poses: object }> } = { seat: {}, stand: {} };
+let md = '', pj = '', META: { seat: Record<string, unknown>; stand: Record<string, { poses: object }>; facing?: string } = { seat: {}, stand: {} };
 let packs = 0, biggest = 0;
 const setIds = dirs('sets'), worldIds = dirs('worlds');
 assert.ok(worldIds.includes('photo') && setIds.includes('office'), 'the Photo office and the Office people ship');
@@ -160,7 +161,11 @@ for (const wid of worldIds) {
 }
 for (const sid of setIds) assert.ok(worldIds.some((w) => (readPack('worlds', w).json as { defaultSet: string }).defaultSet === sid), `${sid}: a set the repo ships is the default of a world (so the cap counts it)`);
 assert.strictEqual(Object.keys(META.seat).length, 15, '15 seated people (the Office people)');
-assert.ok(Object.values(META.stand).every((s) => ['book', 'coffee', 'letter', 'knock', 'runA', 'runB'].every((p) => p in s.poses) && !('tread' in s.poses)), 'every person has the standing poses and no treadmill');
+assert.ok(Object.values(META.stand as Record<string, { poses: object }>).every((s) => ['book', 'type', 'knock', 'counter', 'letter', 'runA', 'runB'].every((p) => p in s.poses) && !('tread' in s.poses) && Object.keys(s.poses).length === 7), 'every person has exactly the five lobby poses and the two running strides, no treadmill (owner 2026-10-31 11:22), and no old front-facing pose (FR-191)');
+assert.strictEqual(META.facing, 'left', 'the pictures face left (FR-191)');
+assert.ok(Object.values(META.stand as Record<string, { foot?: Record<string, number>; poses: object }>).every((s) => s.foot && Object.keys(s.poses).every((p) => (s.foot as Record<string, number>)[p] > 0.2)), 'every standing picture has its measured foot centre (FR-191)');
+const pending = [...sections(md)].filter(([, s]) => /^pending/.test(s['likeness-check'] || '')).map(([n]) => n);
+assert.deepStrictEqual(pending, [], 'every Office person has its likeness check on record (Vikram, 2026-10-31 10:46 UTC; FR-068)');
 const total = [...files.values()].reduce((s, b) => s + b.length, 0);
 
 // ---- the check itself: each rule fails on its broken case ----
@@ -175,6 +180,7 @@ const total = [...files.values()].reduce((s, b) => s + b.length, 0);
   const book = files.get('p01-book.webp') as Buffer;
   assert.deepStrictEqual(only(problems(one('p01-book.webp', book), pj1, okMd)), [], 'a good person sheet passes');
   assert.ok(only(problems(one('p01-book.webp', book), pj1.replace('"feet":{"book":0.97},', ''), okMd)).some((p) => /feet\/top/.test(p)), 'red: a standing picture without its measured foot line');
+  assert.ok(only(problems(one('p01-book.webp', book), pj1.replace('"top":{"book":0}', '"top":{"book":0},"foot":{"book":0.95}'), okMd)).some((p) => /foot centre/.test(p)), 'red: a foot centre at the edge of the picture (FR-191)');
   assert.ok(only(problems(one('p01-book.webp', book), pj1, okMd.replace(/- fictional:.*\n/, ''))).some((p) => /fictional/.test(p)), 'red: a person sheet without the clause');
   assert.ok(only(problems(one('p01-book.webp', book), pj1, okMd.replace(/- likeness-check:.*\n/, ''))).some((p) => /likeness-check/.test(p)), 'red: without the likeness-check field');
   assert.ok(only(problems(one('p01-book.webp', book), pj1, okMd.replace('likeness-check: Vikram, 2026-10-31', 'likeness-check: , 2026-10-31'))).some((p) => /likeness-check/.test(p)), 'red: an empty approver');
