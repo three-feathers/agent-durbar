@@ -200,3 +200,20 @@ html[data-world] .inbox-dlg .ibw-faces{margin-left:auto;display:flex}
 html[data-world] .inbox-dlg .ibw-face{width:30px;height:30px;margin-left:-6px;border-radius:50%;overflow:hidden;border:2px solid var(--surface);background:var(--surface-2);display:block}
 html[data-world] .inbox-dlg .ibw-face:first-child{margin-left:0}
 html[data-world] .inbox-dlg .ibw-face>*{width:100%;height:100%}
+
+/* spec 097 FR-106 (T120): the chat in the world: the header portrait (64 px, aria-hidden) with a ring in the lamp's colour; the chat keeps the whole window's width */
+.ro-portrait{--rc-lamp:#8c8579}
+.ro-portrait[data-lamp="warm"]{--rc-lamp:#f2c27a}
+.ro-portrait[data-lamp="bright"]{--rc-lamp:#f0a030}
+.ro-portrait[data-lamp="on"]{--rc-lamp:#d9c29a}
+.ro-portrait[data-lamp="off"]{--rc-lamp:#4a4640}
+.ro-portrait[data-call="red"]{--rc-lamp:#d9443a}
+.ro-portrait[data-call="orange"]{--rc-lamp:#f07a20}
+.ro-portrait{position:relative;flex:none;display:inline-block;width:64px;height:64px;border-radius:50%;margin-right:10px;background:var(--surface-2);box-shadow:0 0 0 3px var(--rc-lamp,#8c8579)}
+.ro-portrait>.rp-clip{position:absolute;inset:0;border-radius:50%;overflow:hidden}
+.ro-portrait .rp-clip>img{position:absolute;display:block;max-width:none;height:auto}
+.ro-portrait>.dot{position:absolute;right:-2px;bottom:-2px;box-shadow:0 0 0 2px var(--surface)}
+body.ro-chat .ph .avatar{display:none}
+.ro-lampwords{font-size:11px;color:var(--ink-2)}
+@media (forced-colors:active){.ro-portrait{box-shadow:none;border:2px solid CanvasText}}
+.ro-portrait>.rp-ini{display:flex;align-items:center;justify-content:center;width:100%;height:100%;font-size:26px;color:var(--ink)}

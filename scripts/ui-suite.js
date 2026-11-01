@@ -113,6 +113,7 @@ const DRIVERS = [
   { name: 'shots-097-realoffice' }, // spec 097 P1: Real office mode (the switch, the scene, the lights, flat loads none of it)
   { name: 'shots-097-moments' }, // spec 097 FR-118..FR-129: the nine world moments (first run, empty office, asleep at the desk, walk, inbox, limit, elicitation, coffee, jumps) in the Photo office and the cave
   { name: 'shots-097-moments', label: 'shots-097-moments cave', env: { MOMENTS_WORLDS: 'cave' } }, // the same nine moments in the Prehistoric cave (its flag is the simulator's page address)
+  { name: 'shots-097-chat' }, // spec 097 FR-106 (T120): the chat in the world: desk-side column, portrait, lamp words, surface and contrast, card tails
   { name: 'shots-097-cave' }, // spec 097 phase 4: the Prehistoric cave behind its flag (World row, its set, any set in any world, no blend)
   { name: 'shots-001-lobby' }, // spec 001 FR-034..FR-040: Boss queue, Bank, Postbox and its letter, who is at a place (simsched in its own query)
   { name: 'check-done-desk-mask' }, // spec 041 FR-065: no token of a done reply on the office floor

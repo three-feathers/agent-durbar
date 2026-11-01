@@ -567,5 +567,5 @@
 
   /* forget the session picks (Settings change of Characters, a test) */
   function reset() { PEOPLE = null; SEEN.clear(); TICKS.clear(); }
-  root.DurbarRealOffice = { render, reset, bad: () => [...BAD], resolve, stagger, walks: () => [...WALKS.keys()], walkInfo: () => JSON.stringify([...WALKS]), walkMs: (n) => { WALK_MS = n > 0 ? n : 300; } }; /* walks: the desks in a leave/arrive pair now (the driver's) */ /* resolve: for the driver's deterministic check */
+  root.DurbarRealOffice = { render, reset, bad: () => [...BAD], resolve, stagger, walks: () => [...WALKS.keys()], walkInfo: () => JSON.stringify([...WALKS]), personOf: (id) => (PEOPLE && has(PEOPLE, id) ? PEOPLE[id] : null), /* the chat's desk-side column draws the same person (spec 097 FR-106) */ walkMs: (n) => { WALK_MS = n > 0 ? n : 300; } }; /* walks: the desks in a leave/arrive pair now (the driver's) */ /* resolve: for the driver's deterministic check */
 })(typeof self !== 'undefined' ? self : this);

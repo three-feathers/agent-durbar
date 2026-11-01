@@ -49,6 +49,18 @@ export function lightFor(state: string, opts?: { still?: boolean }): Light {
   return opts && opts.still ? { ...row, motion: null } : { ...row };
 }
 
+/** FR-107: the lamp state in words, the same in every world (a flame or a neon strip is still "Lamp"): for the hover card, the chat header and the desk-side plate,
+ *  so a light is never the only cue (FR-046). One phrase per FR-041 row. */
+export function lampWords(l: Light): string {
+  if (l.lamp === 'off') return 'Lamp off';
+  if (l.lamp === 'low') return 'Lamp low';
+  if (l.call === 'amber') return 'Lamp bright, amber call light';
+  if (l.call === 'red') return 'Lamp on, red error light';
+  if (l.call === 'orange') return 'Lamp on, orange call light';
+  if (l.lamp === 'warm') return 'Lamp warm, steady';
+  return 'Lamp on, breathing';
+}
+
 /** FR-043: an active agent works, thinks, waits for the user, hit its limit or failed. */
 export const isActive = (s: LightState): boolean => s === 'working' || s === 'thinking' || s === 'waiting' || s === 'limit' || s === 'error';
 

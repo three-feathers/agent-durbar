@@ -1701,6 +1701,8 @@ function setRoWorld(id){
   RO_WORLD=id;try{localStorage.setItem('durbar.world',id);}catch(e){}
   syncWorld();layoutKey='';if(OFFICE_VIEW==='real')scheduleRender();return id;
 }
+/* a loaded pack's numbers (the pack script assigns DurbarRealOfficeWorlds / DurbarRealOfficeSets), or null */
+const packMeta=(kind,id)=>{const g=window[kind==='worlds'?'DurbarRealOfficeWorlds':'DurbarRealOfficeSets'];return g&&Object.prototype.hasOwnProperty.call(g,id)?g[id]:null;};
 /* loads one pack's script (and its stylesheet when world.json names one) the first time it is shown */
 function ensurePack(kind,id){
   const key=kind+'/'+id;
@@ -1708,7 +1710,7 @@ function ensurePack(kind,id){
   PACKS[key]='loading';
   const sc=document.createElement('script');sc.src='realoffice/'+kind+'/'+id+'/'+(kind==='worlds'?'world':'set')+'.js';
   sc.onload=()=>{
-    const g=window[kind==='worlds'?'DurbarRealOfficeWorlds':'DurbarRealOfficeSets'], m=g&&g[id];
+    const m=packMeta(kind,id);
     if(!m){PACKS[key]='failed';}else{
       PACKS[key]='ready';
       if(kind==='worlds'&&typeof m.css==='string'&&/^[\w.-]+\.css$/.test(m.css)&&!document.getElementById('roWorldCss-'+id)){const l=document.createElement('link');l.id='roWorldCss-'+id;l.rel='stylesheet';l.href='realoffice/worlds/'+id+'/'+m.css;document.head.appendChild(l);}
@@ -2340,6 +2342,39 @@ function wireComposerGrip(){const g=$('composerGrip'),t=$('msgInput');if(!g||!t)
 function autoGrow(){sizeComposer();setSend();ntNoticeSync();}
 function setSend(){const b=$('sendBtn'),t=$('msgInput');if(!b||!t)return;const a=byId(ui.selected);const busy=a&&chats[a.id]&&chats[a.id].busy;b.setAttribute('aria-disabled',String(!!busy||(!t.value.trim()&&!attached.length)));syncRunState();}
 
+/* spec 097 FR-106 (T120): the chat in Real office. The panel keeps its structure and the whole window's width; it gains a header portrait (64 px, cropped on the face by
+   portraitCrop) with a ring in the lamp's colour and the status dot, and the lamp in words (FR-107) in the header's meta line. Decorative and aria-hidden, no tab stop, so the tab
+   order is the flat one. The same person the office draws (DurbarRealOffice.personOf). (The desk-side column of the first design was removed by the owner on 2026-11-01.) */
+function syncChatHeader(){
+  const p=$('panel'); if(!p)return;
+  const E=window.exports||{}, RO=window.DurbarRealOffice, a=byId(ui.selected);
+  const on=document.body.classList.contains('panel-open')&&officeView()==='real'&&RO_LOAD==='ready'&&!!RO&&!!RO.personOf&&!!E.lightFor&&!!E.lampWords&&!!a&&!a.parent;
+  const port0=document.getElementById('roPortrait');
+  document.body.classList.toggle('ro-chat',on);
+  if(!on){if(port0)port0.remove();return;}
+  const pp=roPeople(), person=RO.personOf(a.id), v=VISITS.at(a.id), old=shutPlan(roomOf(a)).get(a.id)==='old'&&!v;
+  const ls=E.lightState(isFailing(a)?'failing':isRetrying(a)?'retrying':isCompacting(a)?'compacting':vis(a),{limit:!!a.limit,paused:!!a.paused,asleep:old});
+  const lt=E.lightFor(ls,{still:REDUCED||SERIOUS}), words=E.lampWords(lt), pose=(E.SEAT_POSE||{})[ls]||'rest';
+  const file=person&&!v&&/^[a-z0-9-]{1,24}$/.test(person)?'realoffice/sets/'+pp.set+'/'+person+'-'+pose+'.webp':'';
+  const pack=/^[a-z0-9-]{1,24}$/.test(pp.set)&&/^[a-z0-9-]{1,24}$/.test(pp.world);
+  const key=[a.id,ls,words,file,stWord(a),v?v.place:'',helpersOf(a).length,pp.world,pp.set].join('|');
+  /* the header portrait: the person's head and shoulders in a ring that carries the lamp's colour, with the status dot */
+  let port=port0; const top=p.querySelector('.ph-top');
+  if(top&&(!port||port._k!==key)){
+    if(port)port.remove();
+    port=document.createElement('span');port.id='roPortrait';port.className='ro-portrait';port.setAttribute('aria-hidden','true');port._k=key;
+    port.dataset.lamp=lt.lamp;port.dataset.call=lt.call||'';
+    const sm=(packMeta('sets',pp.set)||{}).seat, seatM=sm&&person&&Object.prototype.hasOwnProperty.call(sm,person)?sm[person]:null, crop=seatM&&E.portraitCrop?E.portraitCrop(seatM):null;
+    if(file&&pack){const clip=document.createElement('span');clip.className='rp-clip';const im=document.createElement('img');im.alt='';im.draggable=false;im.src=file;
+      if(crop&&seatM){im.style.width=(seatM.w/crop.s*100)+'%';im.style.left=(-crop.x/crop.s*100)+'%';im.style.top=(-crop.y/crop.s*100)+'%';} /* the face fills the circle: the data of the layout's face box */
+      clip.appendChild(im);port.appendChild(clip);}
+    else{const t=document.createElement('b');t.className='rp-ini';t.textContent=Array.from(String(a.name||'?'))[0].toUpperCase();port.appendChild(t);} /* away or no picture: the initial, as the office's disc */
+    const d=document.createElement('i');d.className='dot '+({limit:'waiting',asleep:'idle'}[ls]||ls);port.appendChild(d);
+    top.insertBefore(port,top.firstChild);
+  }
+  /* the lamp in words in the header's meta line (FR-107) */
+  const meta=p.querySelector('.ph-meta'); if(meta){let lw=meta.querySelector('.ro-lampwords');if(!lw){lw=document.createElement('span');lw.className='ro-lampwords';meta.appendChild(lw);}if(lw.textContent!==words)lw.textContent=words;}
+}
 function updatePanelHeader(){
   const a=byId(ui.selected); if(!a)return; const st=vis(a);
   const ph=$('panelHead'); if(!ph)return;
@@ -2350,6 +2385,8 @@ function updatePanelHeader(){
   updateCapChip(a);
   $('pauseBtn').querySelector('span').textContent=a.paused?'Resume':'Pause';
   syncRunState(); /* spec 005 FR-038: Send or Stop follows the turn */
+  syncChatHeader(); /* spec 097 FR-106: the portrait and the lamp words follow the header */
+  requestAnimationFrame(syncChatHeader); /* once more when the panel has its layout */
 }
 /* spec 052 FR-003: the chat header's More menu. A real menu: arrows move, Home/End jump, Esc closes and returns focus to More;
    a choice or a click elsewhere closes it. The items are the old buttons with their ids, so their handlers stay as they were. */
