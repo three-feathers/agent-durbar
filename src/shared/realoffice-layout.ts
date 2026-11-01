@@ -11,12 +11,16 @@ export interface RealPlace { id: string; custom?: boolean; visitors: RealVisitor
 export interface RealModel { folders: RealFolder[]; places: RealPlace[] }
 export interface SeatMeta { w: number; h: number; headTop: number; bodyH: number; hand: number }
 /** `feet` and `top`: per pose, the lowest and highest opaque row as a share of the picture's height, measured from its alpha (owner 2026-10-31 10:19) */
-export interface StandMeta { figH: number; poses: Record<string, [number, number]>; feet?: Record<string, number>; top?: Record<string, number> }
+export interface StandMeta { figH: number; poses: Record<string, [number, number]>; feet?: Record<string, number>; top?: Record<string, number>; foot?: Record<string, number> }
+/* `foot`: per pose, the horizontal centre of the planted feet as a share of the picture's width (spec 097 FR-191): the figure stands on it,
+   not on the middle of its box, because a three-quarter view has its feet off the box's centre. */
 export interface RealMeta {
   seat: Record<string, SeatMeta>; stand: Record<string, StandMeta>;
   fixtures: Record<string, [number, number]>; fixtureTop?: Record<string, number>; floorLine: number;
   /** per person: the typing rig's head and hands, as fractions of the picture, with their pivots (spec Changes 2026-11-01) */
   rig?: Record<string, Record<string, { x: number; y: number; w: number; h: number; px: number; py: number }>>;
+  /** the side every standing picture faces, baked into the files (spec 097 FR-191); the lobby puts visitors to the right of their fixture, so 'left' */
+  facing?: 'left' | 'right';
 }
 export interface Rect { x: number; y: number; w: number; h: number }
 export interface DeskBox {
@@ -28,7 +32,7 @@ export interface DeskBox {
 }
 /** `id` is the folder's id; `part` is 1, or 2, 3... for the rest of a folder split over rows */
 export interface ZoneBox { id: string; part: number; box: Rect; sign: Rect; desks: DeskBox[] }
-export interface VisitorBox { id: string; fig: (Rect & { file: string; fileB: string | null; pose: string; feetY: number }) | null; chip: { x: number; y: number }; face: Rect | null; shadow: Rect | null }
+export interface VisitorBox { id: string; fig: (Rect & { file: string; fileB: string | null; b: Rect | null; pose: string; feetY: number; faces: 'left' | 'right' }) | null; chip: { x: number; y: number }; face: Rect | null; shadow: Rect | null }
 export interface FixtureBox { id: string; custom: boolean; art: Rect | null; slot: Rect; plate: { x: number; y: number; w: number }; visitors: VisitorBox[]; more: number; light: Rect }
 export interface Layout {
   u: number; big: boolean; lobbyH: number; floorH: number; width: number; height: number; scroll: boolean; faceH: number;
@@ -49,8 +53,8 @@ export const ORDER_SEARCH_MAX = 7;
 /** FR-020: big screens with this many visible agents or fewer. */
 export const BIG_MAX = 4;
 /** FR-024: visitors' activity pose per place, and the fallback when a person has no picture for it. */
-export const FX_POSE: Record<string, string> = { library: 'book', software: 'box', terminal: 'runA', web: 'touch', boss: 'knock', coffee: 'coffee', bank: 'letter', postbox: 'letter', other: 'tool' };
-export const POSE_FALLBACK: Record<string, string> = { box: 'letter', touch: 'letter', tool: 'letter', wait: 'letter', runA: 'letter' };
+export const FX_POSE: Record<string, string> = { library: 'book', software: 'book', terminal: 'runA', web: 'type', boss: 'knock', coffee: 'counter', bank: 'counter', postbox: 'letter', other: 'type' };
+export const POSE_FALLBACK: Record<string, string> = { wait: 'letter', runA: 'letter' };
 /** FR-070: the second frame of each two-frame pose. Owner 2026-10-31 ("make a real running pose", replacing the treadmill): the
  *  Terminal visitor jogs in place, runA and runB. */
 export const POSE_FRAME_B: Record<string, string> = { typeA: 'typeB', waveA: 'waveB', runA: 'runB' };
@@ -182,10 +186,10 @@ function roPack(meta: RealMeta, folders: RealFolder[], W: number, Ho: number, lo
 }
 
 /** FR-024: the standing picture for a visitor at a place (the pose, else its fallback), or null when the person has neither. */
-export function standPose(meta: RealMeta, person: string | null | undefined, place: string, custom: boolean): { pose: string; size: [number, number]; figH: number; feet: number; top: number } | null {
+export function standPose(meta: RealMeta, person: string | null | undefined, place: string, custom: boolean): { pose: string; size: [number, number]; figH: number; feet: number; top: number; foot: number } | null {
   if (!person || !roOwn(meta.stand, person)) return null;
   const st = meta.stand[person], want = custom ? 'wait' : (roOwn(FX_POSE, place) ? FX_POSE[place] : 'wait');
-  for (const p of [want, POSE_FALLBACK[want]]) if (p && roOwn(st.poses, p)) return { pose: p, size: st.poses[p], figH: st.figH, feet: st.feet && roOwn(st.feet, p) ? st.feet[p] : 1, top: st.top && roOwn(st.top, p) ? st.top[p] : 0 };
+  for (const p of [want, POSE_FALLBACK[want]]) if (p && roOwn(st.poses, p)) return { pose: p, size: st.poses[p], figH: st.figH, feet: st.feet && roOwn(st.feet, p) ? st.feet[p] : 1, top: st.top && roOwn(st.top, p) ? st.top[p] : 0, foot: st.foot && roOwn(st.foot, p) ? st.foot[p] : 0.5 };
   return null;
 }
 /** a person's standing height (top of the head to the soles) in sheet pixels, from the upright 'letter' pose (else the sheet's figure height) */
@@ -264,7 +268,10 @@ function roLobby(meta: RealMeta, places: RealPlace[], W: number, Lb: number): { 
         /* the feet (the picture's lowest opaque row) stand on the front floor plane, in front of the fixture; one scale per person,
            from its upright 'letter' pose, NEAR_SCALE larger than at the wall line. */
         const k = nearPx / standHeight(meta, String(v.person)), fw2 = sp.size[0] * k, fh2 = sp.size[1] * k;
-        fig = { x: cx - fw2 / 2, y: frontY - sp.feet * fh2, w: fw2, h: fh2, file: `${v.person}-${sp.pose}.webp`, fileB: roOwn(POSE_FRAME_B, sp.pose) && roOwn(meta.stand[String(v.person)].poses, POSE_FRAME_B[sp.pose]) ? `${v.person}-${POSE_FRAME_B[sp.pose]}.webp` : null, pose: sp.pose, feetY: frontY };
+        const faces = meta.facing || 'left', st = meta.stand[String(v.person)], fb = roOwn(POSE_FRAME_B, sp.pose) && roOwn(st.poses, POSE_FRAME_B[sp.pose]) ? POSE_FRAME_B[sp.pose] : null;
+        /* the two running pictures have their own canvases: each in its own box, the feet on one spot, so changing picture moves no foot */
+        const b = fb ? (() => { const w = st.poses[fb][0] * k, h = st.poses[fb][1] * k; return { x: cx - (st.foot && roOwn(st.foot, fb) ? st.foot[fb] : sp.foot) * w, y: frontY - (st.feet && roOwn(st.feet, fb) ? st.feet[fb] : sp.feet) * h, w, h }; })() : null;
+        fig = { x: cx - sp.foot * fw2, y: frontY - sp.feet * fh2, w: fw2, h: fh2, file: `${v.person}-${sp.pose}.webp`, fileB: fb ? `${v.person}-${fb}.webp` : null, b, pose: sp.pose, feetY: frontY, faces };
         const headY = fig.y + sp.top * fh2;
         face = { x: cx - 0.065 * nearPx, y: headY, w: 0.13 * nearPx, h: 0.13 * nearPx };
         /* a soft elliptical contact shadow on the floor, centred on the foot line, a little wider than the stance */
@@ -441,14 +448,13 @@ function roHash(id: string): number { let h = 7; for (let i = 0; i < id.length; 
  * pictures in step, with `period` s per pair), 'breathe', 'sip', 'knock', or null (a still pose: error, a person on hold). The period is
  * per agent: 1.15-1.5 s for two frames, 4-5.5 s for a breath. `offset` is where its cycle starts, in ms.
  */
-export function personMotion(id: string, pose: string, state: RealState | null): { kind: 'frames' | 'breathe' | 'sip' | 'knock' | null; period: number; offset: number; sway: number; style: 'type' | 'wave' | 'run' | null } {
+export function personMotion(id: string, pose: string, state: RealState | null): { kind: 'frames' | 'breathe' | 'knock' | null; period: number; offset: number; sway: number; style: 'type' | 'wave' | 'run' | null } {
   const h = roHash(String(id)), share = (h % 1000) / 1000, share2 = ((h >>> 10) % 1000) / 1000;
-  const out = (kind: 'frames' | 'breathe' | 'sip' | 'knock' | null, period: number, style: 'type' | 'wave' | 'run' | null = null) => ({ kind, period: Math.round(period * 100) / 100, offset: Math.round(share * period * 1000), sway: Math.round((5 + 3 * share2) * 100) / 100, style });
+  const out = (kind: 'frames' | 'breathe' | 'knock' | null, period: number, style: 'type' | 'wave' | 'run' | null = null) => ({ kind, period: Math.round(period * 100) / 100, offset: Math.round(share * period * 1000), sway: Math.round((5 + 3 * share2) * 100) / 100, style });
   if (state === 'error') return out(null, 0); /* FR-036: error is still */
   if (pose === 'runA') return out('frames', 0.72 + 0.1 * share, 'run'); /* about 2.6 steps a second (spec Changes 2026-11-01) */
   if (pose === 'waveA') return out('frames', 1.7 + 0.4 * share, 'wave');
   if (roOwn(POSE_FRAME_B, pose)) return out('frames', 2.6 + 0.6 * share, 'type');
-  if (pose === 'coffee') return out('sip', 4);
   if (pose === 'knock') return out('knock', 2.6);
   return out('breathe', 4 + 1.5 * share);
 }

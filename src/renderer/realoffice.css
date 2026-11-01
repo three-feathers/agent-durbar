@@ -107,7 +107,7 @@
 /* People (spec Changes 2026-11-01): two pictures of a pose cross-fade, and a small eased movement runs on both, on one clock; opacity and transform only (FR-180),
    so the compositor runs them. The second picture is hidden unless its animation runs, so every off switch below leaves the first showing: reduced motion (styles.css), Serious mode, .still and .hold (FR-071). */
 .ro-person2,.ro-visitor2{opacity:0}
-.ro-art>:is(.m-a,.m-b,.m-br,.m-sip,.m-knock){transform-origin:var(--ro-org,50% 100%);backface-visibility:hidden}
+.ro-art>:is(.m-a,.m-b,.m-br,.m-knock){transform-origin:var(--ro-org,50% 100%);backface-visibility:hidden}
 .m-a.m-type{animation:ro-fa var(--ro-per,1s) linear infinite,ro-type var(--ro-sw,6s) ease-in-out infinite}
 .m-b.m-type{animation:ro-fb var(--ro-per,1s) linear infinite,ro-type var(--ro-sw,6s) ease-in-out infinite}
 .m-a.m-wave{animation:ro-fa var(--ro-per,1.1s) linear infinite,ro-wave var(--ro-per,1.1s) ease-in-out infinite}
@@ -115,7 +115,6 @@
 .m-a.m-run{animation:ro-fa-run var(--ro-per,.68s) linear infinite,ro-run var(--ro-per,.68s) ease-in-out infinite}
 .m-b.m-run{animation:ro-fb-run var(--ro-per,.68s) linear infinite,ro-run var(--ro-per,.68s) ease-in-out infinite}
 .m-br{animation:ro-br var(--ro-sw,6s) ease-in-out infinite}
-.m-sip{animation:ro-sip var(--ro-per,4s) ease-in-out infinite}
 .m-knock{animation:ro-knock var(--ro-per,2.6s) ease-in-out infinite}
 /* --ro-u is 1 % of this picture's height in px: a transform in % of the box is not run by the compositor, and would tick the main thread every frame */
 /* the typing rig (spec Changes 2026-11-01): a still picture and its small body movement; over it a head and two hands, cut from it, on transform only */
@@ -126,7 +125,7 @@
 .ro-rig .l,.ro-rig .r{animation:ro-rig-hand var(--ro-pat,2.8s) ease-in-out infinite}
 .ro-rig .r{animation-direction:reverse;animation-duration:calc(var(--ro-pat,2.8s)*1.13)}
 :is(.ro.still,.ro.hold,.ro.lod1,.ro.lod2) .ro-rig img,html[data-serious] .ro-rig img{animation:none!important}
-.ro.lod2 .ro-art>:is(.m-br,.m-rig,.m-sip,.m-knock){animation:none!important}
+.ro.lod2 .ro-art>:is(.m-br,.m-rig,.m-knock){animation:none!important}
 .ro.paused .ro-rig img,.ro-off.ro-rig img{animation-play-state:paused!important}
 /* the coming picture first, so the figure never goes see-through */
 @keyframes ro-fa{0%,6%{opacity:1;animation-timing-function:ease-in-out}30%,50%{opacity:0;animation-timing-function:ease-in-out}74%,100%{opacity:1}}
@@ -140,7 +139,6 @@
 @keyframes ro-run{0%,50%,100%{transform:translate(0,calc(var(--ro-u,1px)*.5))}25%{transform:translate(calc(var(--ro-u,1px)*.5),calc(var(--ro-u,1px)*-1.6))}75%{transform:translate(calc(var(--ro-u,1px)*-.5),calc(var(--ro-u,1px)*-1.6))}}
 @keyframes ro-rig-hand{0%,58%,100%{transform:none}5%{transform:translateY(calc(var(--ro-u,1px)*-.75)) rotate(-2deg)}10%{transform:translateY(calc(var(--ro-u,1px)*.15))}16%{transform:translateY(calc(var(--ro-u,1px)*-.55)) rotate(1.5deg)}21%{transform:none}27%{transform:translateY(calc(var(--ro-u,1px)*-.85)) rotate(-1deg)}33%{transform:translateY(calc(var(--ro-u,1px)*.1))}39%{transform:translateY(calc(var(--ro-u,1px)*-.5)) rotate(1deg)}45%{transform:none}51%{transform:translateY(calc(var(--ro-u,1px)*-.6))}}
 @keyframes ro-rig-head{0%,100%{transform:rotate(-.9deg)}22%{transform:rotate(-.2deg) translateY(calc(var(--ro-u,1px)*.35))}48%{transform:rotate(.9deg)}74%{transform:rotate(.2deg) translateY(calc(var(--ro-u,1px)*.3))}}
-@keyframes ro-sip{0%,60%,100%{transform:rotate(-.1deg)}25%,40%{transform:rotate(-.9deg) translateY(calc(var(--ro-u,1px)*-.45))}}
 @keyframes ro-knock{0%,24%,100%{transform:none}6%,18%{transform:translateX(calc(var(--ro-u,1px)*.7)) rotate(.3deg)}12%{transform:translateX(0)}}
 :is(.ro.still,.ro.hold) .ro-art>*,html[data-serious] .ro-art>*{animation:none!important}
 :is(.ro.still,.ro.hold) .ro-caret,html[data-serious] .ro-caret{display:none}

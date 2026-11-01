@@ -317,8 +317,8 @@
     const byPlace = new Map(model.places.map((p) => [p.id, p]));
     for (const fx of lay.fixtures) {
       const p = byPlace.get(fx.id), file = 'fx-' + fx.id + '.webp';
-      if (fx.art && !fx.custom && !BAD.has(file)) { const im = el(art, 'f:' + fx.id, 'img', 'ro-fx'); box(im, fx.art); img(im, file); }
-      else if (fx.art && fx.custom) { const ki = el(art, 'f:' + fx.id, 'div', 'ro-kiosk'); box(ki, { x: fx.art.x + fx.art.w * 0.2, y: fx.art.y + fx.art.h * 0.35, w: fx.art.w * 0.6, h: fx.art.h * 0.65 }); if (ki._ic !== p.icon) { ki._ic = p.icon; ki.innerHTML = p.icon || ''; } }
+      if (fx.art && !fx.custom && !BAD.has(file)) { const im = el(art, 'f:' + fx.id, 'img', 'ro-fx'); box(im, fx.art); im.dataset.place = fx.id; img(im, file); }
+      else if (fx.art && fx.custom) { const ki = el(art, 'f:' + fx.id, 'div', 'ro-kiosk'); ki.dataset.place = fx.id; box(ki, { x: fx.art.x + fx.art.w * 0.2, y: fx.art.y + fx.art.h * 0.35, w: fx.art.w * 0.6, h: fx.art.h * 0.65 }); if (ki._ic !== p.icon) { ki._ic = p.icon; ki.innerHTML = p.icon || ''; } }
       const fl = L.fixtureLight(fx.id, p.visitors.length, p.visitors.some((v) => v.needsYou));
       if (fl && fx.art) { const li = el(lights, 'fl:' + fx.id, 'div', 'ro-fxl fxl-' + fl + (fx.id === 'boss' ? ' boss' : '')); box(li, fx.light); }
       for (const v of fx.visitors) {
@@ -326,11 +326,11 @@
         if (v.fig && !BAD.has(v.fig.file)) {
           /* owner 2026-10-31 10:19 and 10:48: the feet on the front floor plane (layout), with a soft contact shadow under them */
           const sh = el(art, 'vs:' + v.id, 'div', 'ro-shadow'); box(sh, v.shadow);
-          /* FR-070: stride frames, a sip, a knock or a breath; FR-073: in at the fixture after the fade at the desk */
+          /* FR-070: stride frames, a knock or a breath; FR-073: in at the fixture after the fade at the desk */
           const m = L.personMotion(v.id, v.fig.pose, null), fresh = !art._k.has('v:' + v.id), mov = moving() && !OFF.has(v.id);
-          const two = mov && m.kind === 'frames' && v.fig.fileB && !BAD.has(v.fig.fileB) && !(GLIDING.has(v.id) || (fresh && CUR.drawn && WHERE.has(v.id))) ? second(art, 'vb:' + v.id, v.id, v.fig, v.fig.fileB, 'ro-visitor2', m) : null;
-          const cl = two && two.on ? ' m-a m-' + m.style : mov ? ({ breathe: ' m-br', sip: ' m-sip', knock: ' m-knock' }[m.kind] || '') : '';
-          const im = el(art, 'v:' + v.id, 'img', 'ro-visitor' + cl); box(im, v.fig); im.dataset.for = v.id; im.dataset.pose = v.fig.pose; im.dataset.feet = String(Math.round(v.fig.feetY * 10) / 10); img(im, v.fig.file);
+          const two = mov && m.kind === 'frames' && v.fig.fileB && !BAD.has(v.fig.fileB) && !(GLIDING.has(v.id) || (fresh && CUR.drawn && WHERE.has(v.id))) ? second(art, 'vb:' + v.id, v.id, v.fig.b || v.fig, v.fig.fileB, 'ro-visitor2', m) : null;
+          const cl = two && two.on ? ' m-a m-' + m.style : mov ? ({ breathe: ' m-br', knock: ' m-knock' }[m.kind] || '') : '';
+          const im = el(art, 'v:' + v.id, 'img', 'ro-visitor' + cl); box(im, v.fig); im.dataset.for = v.id; im.dataset.place = fx.id; im.dataset.pose = v.fig.pose; im.dataset.faces = v.fig.faces; im.dataset.feet = String(Math.round(v.fig.feetY * 10) / 10); img(im, v.fig.file);
           if (cl) { setVar(im, '--ro-per', m.period + 's'); setVar(im, '--ro-sw', m.sway + 's'); setVar(im, '--ro-u', (v.fig.h / 100).toFixed(3) + 'px'); setVar(im, '--ro-org', '50% ' + px(v.fig.feetY - v.fig.y)); }
           if (fresh && CUR.drawn && moving() && !hiddenNow() && !glide(im, v.id, WHERE.get(v.id), v.fig)) fadeIn(im, 150, 150);
           WHERE.set(v.id, v.fig);

@@ -250,35 +250,64 @@ for (const [W, H] of SIZES) {
   const term = L.fixtures.find((f) => f.id === 'terminal')!.visitors[0];
   assert.strictEqual(term.fig!.pose, 'runA', 'the Terminal visitor runs (stride A), no treadmill');
   assert.strictEqual(term.fig!.file, 'p03-runA.webp', 'the running picture of that person');
+  { const f = term.fig!, b = f.b!, st = META.stand.p03; const footA = f.x + st.foot!.runA * f.w, footB = b.x + st.foot!.runB * b.w, feetA = f.y + st.feet!.runA * f.h, feetB = b.y + st.feet!.runB * b.h;
+    assert.ok(Math.abs(footA - footB) < 0.01 && Math.abs(feetA - feetB) < 0.01, `changing picture moves no foot: ${footA} ${footB}, ${feetA} ${feetB}`); }
   assert.ok(Math.abs(term.fig!.feetY - front) <= 0.5, 'the Terminal visitor stands on the front floor plane');
   const sr = META.stand.p03, tf = (sr.feet as Record<string, number>).runA, tt = (sr.top as Record<string, number>).runA;
   assert.ok(Math.abs(term.fig!.y + term.fig!.h * tf - front) <= 2, `the runner's lowest foot is on the front floor plane at ${W} (within 2 px)`);
   const runTall = term.fig!.h * (tf - tt), upTall = (L.fixtures.find((f) => f.id === 'terminal')!.visitors[0].fig!.h / sr.poses.runA[1]) * standHeight(META, 'p03');
   assert.ok(runTall / upTall > 0.9 && runTall / upTall < 1.0, `a runner is a little shorter than upright (bent knees): ${(runTall / upTall).toFixed(3)}`);
 }
-// ---- the running pose: every person has both strides, measured, the same canvas for both (no jump when P2 steps them) ----
+// ---- the running pose: every person has both strides, measured, at one scale, each picture in its own box with the feet in one place ----
 assert.strictEqual(POSE_FRAME_B.runA, 'runB', 'stride B of the running pose');
 for (const pid of PEOPLE) {
   const st = META.stand[pid];
   for (const p of ['runA', 'runB']) assert.ok(Array.isArray(st.poses[p]) && st.feet && st.feet[p] > 0.9 && st.top && st.top[p] < 0.1, `${pid} has a measured ${p}`);
-  assert.deepStrictEqual(st.poses.runA, st.poses.runB, `${pid}: both strides share one canvas`);
+  const a = st.poses.runA, b = st.poses.runB, fa = st.feet!.runA, fb = st.feet!.runB;
+  assert.ok(Math.abs(a[1] * fa - b[1] * fb) / (a[1] * fa) < 0.03, `${pid}: both strides stand as tall (${a[1] * fa} and ${b[1] * fb}), so P2's swap does not jump`);
   assert.strictEqual(standPose(META, pid, 'terminal', false)!.pose, 'runA', `${pid} runs at the Terminal`);
 }
 {
   const noRun = JSON.parse(JSON.stringify(META)) as RealMeta; delete noRun.stand.p01.poses.runA;
   assert.strictEqual(standPose(noRun, 'p01', 'terminal', false)!.pose, 'letter', 'a person without the running picture stands (letter)');
 }
-// the anchor uses the measured foot line, not the picture's box: the mockup's art had up to 6 % empty rows under the feet
-assert.ok(Object.values(META.stand).some((s) => Object.values(s.feet as Record<string, number>).some((f) => f < 0.97)), 'some sprite has empty rows under its feet (so a box anchor would float)');
+// the anchor uses the measured foot line and foot centre, not the picture's box: a three-quarter view has its feet well off the box's middle
+assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<string, number>).some((f) => Math.abs(f - 0.5) > 0.2)), 'some picture has its feet far off the middle (so a box-centred anchor would be wrong)');
 
-// ---- FR-024: stand poses and fallbacks ----
+// ---- FR-024, FR-191: stand poses and fallbacks ----
 {
-  assert.strictEqual(standPose(META, 'p01', 'library', false)!.pose, 'book');
-  assert.strictEqual(standPose(META, 'p02', 'software', false)!.pose, 'box', 'p02 has the extra poses');
-  assert.strictEqual(standPose(META, 'p01', 'software', false)!.pose, 'letter', 'box falls back to letter');
+  for (const [place, pose] of Object.entries({ library: 'book', software: 'book', terminal: 'runA', web: 'type', boss: 'knock', coffee: 'counter', bank: 'counter', postbox: 'letter', other: 'type' })) assert.strictEqual(standPose(META, 'p01', place, false)!.pose, pose, `${place}: ${pose}`);
   assert.strictEqual(standPose(META, 'p01', 'c-abc', true)!.pose, 'letter', 'a custom place: wait, else letter');
+  const noBook = JSON.parse(JSON.stringify(META)) as RealMeta; delete noBook.stand.p01.poses.book;
+  assert.strictEqual(standPose(noBook, 'p01', 'library', false), null, 'a pose with no fallback and no picture: no figure (the initials disc stays)');
   assert.strictEqual(standPose(META, 'nobody', 'library', false), null);
   assert.strictEqual(standPose(META, '__proto__', 'library', false), null, 'own keys only');
+}
+
+// ---- FR-191: visitors face their fixture; the pictures face left, so every visitor stands to the right of its fixture ----
+{
+  assert.strictEqual(META.facing, 'left', 'the pictures are baked facing left');
+  for (const pid of PEOPLE) for (const [p, f] of Object.entries(META.stand[pid].foot || {})) assert.ok(f > 0.2 && f < 0.9, `${pid} ${p}: the foot centre is inside the picture (${f})`);
+  for (const pid of PEOPLE) for (const p of Object.keys(META.stand[pid].poses)) assert.ok(META.stand[pid].foot && p in (META.stand[pid].foot as object), `${pid} ${p} has a measured foot centre`);
+  for (const [W, H] of [[1440, 900], [1280, 800]]) {
+    const m = model(15, 4);
+    m.places = ['library', 'software', 'terminal', 'web', 'boss', 'coffee', 'bank', 'postbox', 'other'].map((id, i) => ({ id, visitors: [{ id: 'v' + i, person: PEOPLE[i] }, { id: 'w' + i, person: PEOPLE[(i + 5) % 15] }] }));
+    const L = realLayout(m, { w: W, h: H }, META);
+    let n = 0;
+    for (const f of L.fixtures) for (const v of f.visitors) if (v.fig && f.art) {
+      n++;
+      assert.strictEqual(v.fig.faces, 'left', `${v.id} at ${f.id} faces left`);
+      assert.ok(Math.abs(v.fig.x + (META.stand[String(m.places.flatMap((p) => p.visitors).find((x) => x.id === v.id)!.person)].foot as Record<string, number>)[v.fig.pose] * v.fig.w - v.chip.x) < 0.5, `${v.id}: the planted feet are where its chip and shadow are, not the middle of the picture`);
+      const feetX = v.fig.x + (META.stand[String(m.places.flatMap((p) => p.visitors).find((x) => x.id === v.id)!.person)].foot as Record<string, number>)[v.fig.pose] * v.fig.w;
+      assert.ok(feetX > f.art.x + f.art.w / 2, `${v.id} at ${f.id} stands to the right of the fixture's middle (${feetX.toFixed(0)} vs ${(f.art.x + f.art.w / 2).toFixed(0)}), so facing left faces the fixture`);
+    }
+    assert.ok(n >= 12, `visitors checked at ${W}: ${n}`);
+  }
+  /* a picture set that faced right would be wrong for every visitor: the check reads the meta, not the code path */
+  const flipped = JSON.parse(JSON.stringify(META)) as RealMeta; flipped.facing = 'right';
+  const bare = JSON.parse(JSON.stringify(META)) as RealMeta; delete bare.facing;
+  assert.strictEqual(realLayout(model(15, 4), { w: 1440, h: 900 }, bare).fixtures.flatMap((f) => f.visitors).find((v) => v.fig)!.fig!.faces, 'left', 'no `facing` in people.json: the shipped pictures face left');
+  assert.strictEqual(realLayout(model(15, 4), { w: 1440, h: 900 }, flipped).fixtures.flatMap((f) => f.visitors).find((v) => v.fig)!.fig!.faces, 'right', 'red: the side follows the meta');
 }
 
 // ---- SC-007: under 5 ms for 40 agents in 8 folders (CPU time, minimum of runs, agent-notes "Timing checks") ----
@@ -435,7 +464,7 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.feet as Record<s
   }
   assert.ok(periods.size > 15, 'the room does not move in step: ' + periods.size);
   assert.strictEqual(personMotion('a', 'think', 'error').kind, null, 'FR-036: error is still');
-  assert.strictEqual(personMotion('a', 'coffee', null).kind, 'sip');
+  assert.strictEqual(personMotion('a', 'counter', null).kind, 'breathe', 'at a counter: a breath');
   assert.strictEqual(personMotion('a', 'knock', null).kind, 'knock');
   assert.strictEqual(personMotion('a', 'book', null).kind, 'breathe');
   // the layout names the second frame; every file it names exists in the pack and shares the first frame's canvas

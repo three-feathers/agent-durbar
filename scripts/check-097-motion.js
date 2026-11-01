@@ -70,7 +70,7 @@ module.exports = async (ctx) => {
     assert.ok(names['ro-type'] >= 2 && names['ro-rig-hand'] >= 2 && names['ro-rig-head'] >= 1, 'two-frame animations: ' + JSON.stringify(names));
     for (const a of anims) {
       assert.ok(a.props.every((p) => p === 'opacity' || p === 'transform'), `FR-180: only opacity and transform: ${a.name}: ${a.props}`);
-      if (/ro-(person|visitor)/.test(a.target) && /^ro-(fa|fb|fa-run|fb-run|br|type|wave|run|sip|knock)$/.test(a.name)) assert.ok(!/steps|step-/.test(a.ease), `people ease (spec Changes 2026-11-01): ${a.name}: ${a.ease}`);
+      if (/ro-(person|visitor)/.test(a.target) && /^ro-(fa|fb|fa-run|fb-run|br|type|wave|run|knock)$/.test(a.name)) assert.ok(!/steps|step-/.test(a.ease), `people ease (spec Changes 2026-11-01): ${a.name}: ${a.ease}`);
       if (/ro-(person|visitor)/.test(a.target) && /^ro-f[ab]/.test(a.name)) assert.ok(a.dur >= 720 && a.dur <= 3200, 'a frame period: ' + a.dur);
       if (a.name === 'ro-br' || a.name === 'ro-type') assert.ok(a.dur >= 5000 && a.dur <= 8000, 'a sway: ' + a.dur);
     }
