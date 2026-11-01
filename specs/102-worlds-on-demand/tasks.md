@@ -12,7 +12,7 @@
 
 - [x] T001 Spec, plan, tasks, checklist and specs-index block (`specs/102-worlds-on-demand/`). Test: `npm run specs:check`, `npm run rules:check`.
 - [ ] T002 After #921, #925 and #936 land, write FR-190's lines into the `## Changes` of specs 076, 077, 096, 097 and 098, naming 097 FR-060, FR-100, FR-112, FR-114, FR-115, T100, T102, D3, FR-001..FR-004, FR-081, FR-083, FR-084, Q6; add block `room` and `defaultSet` to the registry and its test. Test: `npm run specs:check`, `test:surfaces` [FR-190].
-- [ ] T004 In its own PR, not this one, before T043: `AGENTS.md`'s *Needs approval* and *Rework rate* lines name `worlds-*` releases, per spec 021 FR-066, with the owner's direct OK on the text recorded (date and channel; an agent's relay does not authorise a rule-file change), naming what each change replaces (FR-063). Test: `npm run rules:check`; `read:` [FR-086].
+- [ ] T004 In its own PR, not this one, before T043: `AGENTS.md`'s *Needs approval* and *Rework rate* lines name `worlds-*` releases, per spec 021 FR-066, with the owner's direct OK (Vikram, Telegram DM, 2026-10-31 16:53 UTC), naming what each change replaces (FR-063). Test: `npm run rules:check`; `read:` [FR-086].
 - [ ] T003 Paco's answer on OP-8, and any owner change to the agent decisions OP-1, OP-5, written into the spec. Test: `read:` [Open points].
 
 ## Phase 1: Format and validator (PR P1), no UI, no network
