@@ -4,12 +4,12 @@
 group: 046
 title: Pre-review bot (team tooling on the Claude Agent SDK)
 status: draft
-note: spec, plan, tasks; nothing built; owner answers Q1-Q5; key steps for the owner in the plan
+note: phases 1-2 built, fake SDK only; posting as the App built but off; real runs (phase 3) wait for the owner
 -->
 
 **Feature Branch**: `103-prereview-bot` (spec). The build is one small PR per phase.
 **Created**: 2026-11-01
-**Status**: Draft: spec, plan and tasks; nothing built; no key exists; nothing has been spent.
+**Status**: Phases 1 and 2 built (fake SDK only, `test:prereview`); `[KNOWN GAP]` no real call has been made, nothing has been spent; phase 3 waits for the owner.
 **Input**: Owner's order (Vikram, 2026-11-01): a read-only bot that reads our PRs before other owners do, on API credits of his API organisation. Recorded in spec 021 as FR-069. Team tooling under `scripts/`, not app code: no `src/` change, no feature for users. Numbers: spec 103, checked 2026-11-01 against `main`, the remote branches and the open PRs (specs up to 102 are taken).
 
 ## Why

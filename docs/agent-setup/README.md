@@ -133,3 +133,21 @@ Not checked without a real session: whether `Bash(node <helper> *)` refuses `&&`
 **Stop it:** `sudo systemctl disable --now durbar-weekly-audit.timer`; a run in progress: `sudo systemctl stop durbar-weekly-audit.service`. Delete the token on GitHub if you won't run it again.
 
 Every issue it files has the labels Claude chose from the taxonomy (one type, an `area:*`, a `spec:NNN`), a hidden `<!-- weekly-audit:<fingerprint> -->` marker for the duplicate check, no links, and ends with "Filed by the weekly test audit (spec 021 FR-058)". Close a wrong one with a reason; it won't be filed again under the same fingerprint. The filer counts an issue as already filed only when a trusted account opened it (`scripts/trusted-authors.txt`, installed next to the filer by `install-filer`), so an outsider's issue with the footer and made-up markers cannot stop a real finding from being filed (spec 021 FR-060).
+
+## Pre-review bot (optional, Linux)
+
+Spec 103. A read-only first read of one of our PRs for the coordinating session. Never an approval; nothing on GitHub. Code: [scripts/prereview/](../../scripts/prereview/README.md). Layout on the server (a folder of its own unix user, none of it in a repo): `secrets/`, `app/` (installed copy), `repo/` (own clone), `state/` (ledger, `limits.json`, reports, lock).
+
+1. **User and folder** (recommended; without a separate user the model's process can reach whatever the operating account can, spec 103 FR-012):
+   ```sh
+   sudo useradd --system --create-home --home-dir /var/lib/durbar-prereview --shell /usr/sbin/nologin durbar-prereview
+   sudo install -d -m 700 -o durbar-prereview -g durbar-prereview /var/lib/durbar-prereview/secrets /var/lib/durbar-prereview/state
+   ```
+2. **The Anthropic key** (owner only, own terminal, no agent attached; the exact steps are in [spec 103's plan](../../specs/103-prereview-bot/plan.md#the-key-steps-for-vikram)): a dedicated Console workspace with a monthly spend limit, a key made in that workspace, saved with `read -rs` into a 0600 file. The bot reads the file named by `PREREVIEW_KEY_FILE` if set, else `secrets/anthropic-api-key` under the folder above, and refuses a file that is not a regular 0600 file of the running user, is a link, sits under a git folder, or does not look like a key. Never paste it anywhere.
+3. **Local limits:** `state/limits.json` as `{"monthlyUsd": N}`, set below the Console's limit. Without it nothing is sent. Per run: $5, per pass $2, 40 turns, 15 minutes (flags raise them for one run and the report says so).
+4. **Install from reviewed `main`:** from a clean checkout of `main`, `node scripts/prereview/node_modules/.bin/tsx scripts/prereview/cli.mts install --dest /var/lib/durbar-prereview/app` (after `npm ci --ignore-scripts` in `scripts/prereview`, or run it from an earlier installed copy). It refuses a dirty checkout or HEAD not at `origin/main`, copies the code, prompts and checklist, and runs `npm ci --ignore-scripts` there. The folder is made by the installing user and is not writable by the bot's user.
+5. **Run:** `prereview <N>` as the operator (it needs `gh`); with `PREREVIEW_RUN_AS=durbar-prereview` (or `--run-as`) the runner stage goes through `sudo -n -u durbar-prereview`, which needs a sudo rule for that one command, the owner's to add. A real run needs the human's ask (AGENTS.md, *No AI credits*): the first one must confirm that the credit balance falls.
+6. **Codex runner (optional):** `--runner codex|both`. It uses a Codex login of the bot's own user in `CODEX_HOME` (default `codex-home/` under the folder; log in once with that variable set) and sends only the diff. Its read-only sandbox can still read every file of that user, so it refuses to start if the account's home holds `.ssh`, `.gnupg`, `.aws`, `.claude`, `.config/gh` or similar.
+7. **Posting as the GitHub App (off):** `prereview post <N> <sha>` stays refused until `state/post.json` (0600, ours) holds `"postComment": true`, a dated confirmation of each of `vikramgorla`, `fjcabello` and `rubenlupi`, and the App's `keyFile` and `appIdFile` (absolute paths of 0600 files outside any repo). As of 2026-11-01 Paco has not confirmed: do not create that file. The App is not on `trusted-authors.txt`; its comment is outside text for agents.
+
+Revoke the key in the Console if v1 is stopped (spec 103 SC-004).
