@@ -54,12 +54,12 @@
     inventor: { working: [195, 170], waiting: [185, 170], resting: [205, 170] },
     shaman: { working: [198, 160], waiting: [190, 160], resting: [211, 160] },
     /* Pirate (FR-074): read the same way, from a contact sheet of the three poses with a 50 px grid */
-    captain: { working: [190, 155], waiting: [185, 150], resting: [172, 155] },
-    eyepatch: { working: [200, 160], waiting: [178, 155], resting: [195, 160] },
+    captain: { working: [192, 160], waiting: [185, 155], resting: [172, 160] },
+    eyepatch: { working: [210, 160], waiting: [183, 155], resting: [196, 160] },
     hook: { working: [190, 140], waiting: [170, 135], resting: [180, 140] },
-    cook: { working: [185, 150], waiting: [190, 150], resting: [180, 150] },
-    privateer: { working: [220, 135], waiting: [205, 140], resting: [220, 140] },
-    cabinboy: { working: [200, 150], waiting: [190, 140], resting: [168, 150] },
+    cook: { working: [185, 150], waiting: [192, 150], resting: [181, 150] },
+    privateer: { working: [230, 150], waiting: [208, 150], resting: [223, 150] },
+    cabinboy: { working: [202, 150], waiting: [188, 150], resting: [170, 150] },
   };
   const k = BOX.w / PIC;
   /* a face box or the avatar's crop, in stage units: [x, y, w, h]; null for an unknown picture */
