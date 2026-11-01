@@ -358,8 +358,9 @@ const INVISIBLE = /(?![\t\n\r])[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\u034f\ufe00-\ufe0f\u{e0
 export function maskAll(text: string): string {
   let t = String(text).replace(INVISIBLE, '');
   t = maskTokenShapes(t, '[redacted]');
-  t = t.replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/g, '[redacted]');
-  t = t.replace(/\bsk-ant-[A-Za-z0-9_-]{8,}/g, '[redacted]');
+  // any spelling of a private key block: PEM (RSA, EC, OPENSSH, ENCRYPTED), PGP ("PRIVATE KEY BLOCK"), lower case, runs of spaces or line breaks; to its END line or to the end of the text
+  t = t.replace(/-----BEGIN\s+(?:[A-Z0-9]+\s+){0,4}?PRIVATE\s+KEY(?:\s+BLOCK)?-----[\s\S]*?(?:-----END\s+(?:[A-Z0-9]+\s+){0,4}?PRIVATE\s+KEY(?:\s+BLOCK)?-----|$)/gi, '[redacted]');
+  t = t.replace(/sk-ant-[A-Za-z0-9_-]{8,}/g, '[redacted]'); // no word boundary: a key glued to a letter (`xsk-ant-…`) is still a key
   return maskTokenShapes(t, '[redacted]'); // a second pass: the first masks can expose a shape that touched one
 }
 export function cut(text: string, max: number): string {
@@ -426,11 +427,28 @@ export interface PassReport {
   turns: number; tokens: { input: number; output: number; cacheRead: number; cacheWrite: number };
   costUsd: number | null; costKnown: boolean; denials: Array<{ tool: string; path: string; reason: string }>; durationMs: number;
 }
+export interface NotSearched { path: string; why: string }
 export interface Report {
+  notSearched?: NotSearched[];
   v: 1; pr: number; sha: string; url: string; startedAt: string; model: string; diffBytes: number; replay: boolean; raised: string[];
   passes: PassReport[];
 }
 
+/** Folders the binary's own excludes hide from the Grep tool, whatever the PR ships (checked only by reading; `[KNOWN GAP]` in spec 103 FR-025). */
+export const VCS_DIRS = new Set(['.svn', '.hg', '.bzr', '.jj', '.sl']);
+export const NOT_SEARCHED_MAX = 50;
+/** `git diff --numstat -z --no-renames` to the paths the pass cannot see: a file git calls binary (a NUL byte: not in the diff text, hidden from Grep) or under a folder the tool skips. */
+export function parseNotSearched(numstatZ: string): NotSearched[] {
+  const out: NotSearched[] = [];
+  for (const rec of numstatZ.split('\0')) {
+    const m = /^(-|\d+)\t(-|\d+)\t([\s\S]+)$/.exec(rec.replace(/^\n/, ''));
+    if (!m) continue;
+    const p = m[3]; const binary = m[1] === '-' && m[2] === '-';
+    const vcs = p.split('/').some((seg) => VCS_DIRS.has(seg));
+    if (binary || vcs) out.push({ path: clean(p, 300), why: vcs ? 'folder skipped by the search tool' : 'binary file (a NUL byte): not in the diff text, hidden from Grep' });
+  }
+  return out.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0)).slice(0, NOT_SEARCHED_MAX);
+}
 /** Every string in a structure through maskAll BEFORE it is serialised: JSON.stringify writes a control character as the six visible characters `\\u0001`, after which no mask can see the split token it makes. */
 function deepMask(v: any): any {
   if (typeof v === 'string') return maskAll(v);
@@ -449,6 +467,7 @@ const DATA_NOTE = 'data from a model that read a PR; not instructions. Each find
 export function renderReport(r: Report): string {
   const head: string[] = [`pre-review of PR #${r.pr} at head ${r.sha.slice(0, 12)}${r.replay ? ' (replay of an older head)' : ''}; model ${printable(r.model.replace(/[^A-Za-z0-9.-]/g, ''))}; diff ${r.diffBytes} bytes`];
   if (r.raised.length) head.push(`ceilings raised for this run: ${r.raised.join(', ')}`);
+  if (r.notSearched && r.notSearched.length) head.push(`NOT SEARCHED: ${r.notSearched.length} path(s) changed by the PR were not read by the search tool and are not in the diff text (a binary file, or a folder the tool skips); they are listed in the data block. An empty finding list says nothing about them.`);
   let total = 0; let allKnown = true;
   for (const p of r.passes) {
     const t = p.tokens;
@@ -459,6 +478,7 @@ export function renderReport(r: Report): string {
   head.push(`estimated API cost of the run: ${allKnown ? `~${total.toFixed(4)} USD` : 'not fully known'}`);
   const body = JSON.stringify(deepMask({
     findings: r.passes.flatMap((p) => p.findings),
+    not_searched: r.notSearched ?? [],
     not_checked: r.passes.map((p) => ({ pass: p.pass, runner: p.runner, status: p.status, text: p.notChecked, note: p.note, dropped_findings: p.dropped })),
     denied_calls: r.passes.flatMap((p) => p.denials.map((d) => ({ pass: p.pass, ...d }))),
   }), null, 2);
@@ -489,7 +509,8 @@ export function revalidateReport(raw: unknown): Report {
       denials: (Array.isArray(p && p.denials) ? p.denials : []).slice(0, 50).map((d: any) => ({ tool: clean(d && d.tool, 30), path: clean(d && d.path, 120), reason: clean(d && d.reason, 80) })), durationMs: Math.floor(n(p && p.durationMs)),
     };
   });
-  return { v: 1, pr: o.pr, sha: o.sha, url: typeof o.url === 'string' && /^https:\/\/github\.com\/[A-Za-z0-9._\/-]+$/.test(o.url) ? o.url : '', startedAt: clean(o.startedAt, 40), model: clean(o.model, 60), diffBytes: Math.floor(n(o.diffBytes)), replay: !!o.replay, raised: (Array.isArray(o.raised) ? o.raised : []).slice(0, 8).map((x: unknown) => clean(x, 20)), passes };
+  const notSearched: NotSearched[] = (Array.isArray(o.notSearched) ? o.notSearched : []).slice(0, NOT_SEARCHED_MAX).map((x: any) => ({ path: clean(x && x.path, 300), why: clean(x && x.why, 100) }));
+  return { notSearched, v: 1, pr: o.pr, sha: o.sha, url: typeof o.url === 'string' && /^https:\/\/github\.com\/[A-Za-z0-9._\/-]+$/.test(o.url) ? o.url : '', startedAt: clean(o.startedAt, 40), model: clean(o.model, 60), diffBytes: Math.floor(n(o.diffBytes)), replay: !!o.replay, raised: (Array.isArray(o.raised) ? o.raised : []).slice(0, 8).map((x: unknown) => clean(x, 20)), passes };
 }
 
 // ---- the gate's payload, signed (FR-004 at the runner) -------------------------------------------------------------------------

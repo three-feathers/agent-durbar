@@ -38,6 +38,8 @@
 
 - [x] T021 Third review round (FR-039..FR-042): strip-then-mask and `renderReport` masking, ignore files removed and tested against the real Grep, CI fails instead of skipping the real-SDK test, the key to the claude process on fd 3. Test: `test:prereview` [FR-039..FR-042]
 
+- [x] T022 Fourth review round (FR-043, FR-044): glued key and every private-key-block spelling masked, not-searched paths named in the report. Test: `test:prereview` [FR-043, FR-044]
+
 ## Phase 3: Real, owner's ask (spends credits)
 
 - [ ] T011 **Owner:** the key steps in the plan; Q1 to Q3 answered. Then one run, on the smallest open trusted PR. Say the cost first. Check the `init` line, a denial from a planted path, the ledger against the Console, **and that the credit balance is what fell**. Stop if not. Test: `real:` recorded [FR-010, FR-013, FR-014, FR-021]

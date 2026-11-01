@@ -21,3 +21,4 @@ Pitfalls found while building it (2026-11-01; agent-notes is at its word budget,
 - A deny-list of path names is the wrong shape for a boundary: check real readability (`access`) and allow-list characters.
 - A PR-shipped `.ignore` or `.rgignore` hides files from the Grep tool (checked with the real binary); `stripLinks` deletes them at any depth. `.gitignore` is inert without a `.git`, and the whole `.git` is removed.
 - Mask only after stripping invisible characters, and mask strings before `JSON.stringify` (it writes a control character as six visible characters). The key goes to the claude process on fd 3, not in its environment.
+- Mask every spelling of a key, not the one you have seen: a key glued to a letter (`xsk-ant-…`), a PGP block (`PRIVATE KEY BLOCK`), lower case and runs of spaces. Files with a NUL byte and folders such as `.svn` are invisible to Grep and to the diff text, so the report names them (`NOT SEARCHED`).

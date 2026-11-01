@@ -9,7 +9,7 @@ import * as path from 'path';
 import { spawn } from 'child_process';
 import {
   BOX_TOOLS, Ceilings, OUTPUT_SCHEMA, Pass, PassReport, Report, DIFF_CAP_BYTES, clean, confine, costOf, diffProblems,
-  envProblems, finalLine, initProblems, keyFileProblems, maskAll, mayRun, minimalEnv, renderReport, reserveLine, tokensOf, validateAnswer,
+  envProblems, finalLine, parseNotSearched, initProblems, keyFileProblems, maskAll, mayRun, minimalEnv, renderReport, reserveLine, tokensOf, validateAnswer,
 } from './prereview-core';
 
 // ---- process runner (no shell, ever) -------------------------------------------------------------------------------------------
@@ -314,6 +314,8 @@ export async function runReview(d: RunDeps, i: RunInput): Promise<RunResult> {
     if (diffR.truncated) return refuse(`diff is over the cap of ${DIFF_CAP_BYTES} bytes; split the PR or read it by hand`);
     const dp = diffProblems(diffR.stdout); if (dp.length) return refuse(dp.join('; '));
     const diff = diffR.stdout;
+    const ns = await git(['-C', P.repo, 'diff', '--numstat', '-z', '--no-renames', '--no-ext-diff', '--no-textconv', mb.stdout.trim(), i.sha], { maxBytes: 2_000_000 });
+    const notSearched = ns.code === 0 && !ns.truncated ? parseNotSearched(ns.stdout) : [{ path: '(the list of changed files could not be read)', why: 'unknown' }];
 
     const limits = (() => { try { return JSON.parse(fs.readFileSync(path.join(P.state, 'limits.json'), 'utf8')); } catch { return {}; } })();
     const ledgerFile = path.join(P.state, 'ledger.jsonl');
@@ -345,7 +347,7 @@ export async function runReview(d: RunDeps, i: RunInput): Promise<RunResult> {
         if (outcome.status === 'misconfigured') break; // a wrong box stops the whole run
       }
     }
-    const report: Report = { v: 1, pr: i.pr, sha: i.sha, url: i.url, startedAt: d.now().toISOString(), model: i.model, diffBytes: Buffer.byteLength(diff, 'utf8'), replay: i.replay, raised: i.raised, passes: reports };
+    const report: Report = { notSearched, v: 1, pr: i.pr, sha: i.sha, url: i.url, startedAt: d.now().toISOString(), model: i.model, diffBytes: Buffer.byteLength(diff, 'utf8'), replay: i.replay, raised: i.raised, passes: reports };
     const text = renderReport(report);
     const files: string[] = []; const warnings: string[] = [];
     const me = typeof process.getuid === 'function' ? process.getuid() : -1;
