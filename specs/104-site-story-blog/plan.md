@@ -28,7 +28,7 @@ Keep the generator: `scripts/build-site.js` gets new tokens, new pages and a pos
 
 A 720p frame as a poster: PNG 722 KB, JPEG (`q:v` 6) 102 KB, WebP (quality 70) 52 KB. Encoding took about 15 s for 30 s of video at CRF 28 on 2 threads.
 
-Why FR-021 and FR-022: at these rates 4 minutes with sound is about 17.5 MB, 90 s silent about 5.8 MB, and 45 s at the lower setting about 1.8 MB. AV1 at these settings was larger, so one H.264 file stays.
+Why FR-021 and FR-022: voice and chiptune add about 8 KB/s, so at 73 KB/s 4 minutes is about 17.5 MB; at the lower setting with sound, 48 KB/s (an estimate adding the two rows), 90 s is about 4.3 MB and 40 s about 1.9 MB. Pixel art may well compress better; T002 measures. AV1 at these settings was larger, so one H.264 file stays.
 
 ### Budget (estimates from the table)
 
@@ -54,10 +54,10 @@ Git gains text only: post, captions and manifest entry, an estimated 4 KB a post
 | Release assets, linked directly | None | Each under 2 GiB, 1,000 per release, no total or bandwidth limit | `real:` asset redirects to another host, `application/octet-stream`, `Content-Disposition: attachment`, no CORS header, range works (206). Breaks FR-004: a second host in the CSP; player behaviour not tried | No, as the player's source |
 | **Release assets as the store, Pages as the server** | None | Both of the above | `real:` Pages serves `video/mp4`, ranges (206), `max-age=600`; same-origin, no CSP host | **Pick** |
 | README attachments | None | 10 MB on a free plan, 100 MB paid | Hand upload, not for a site | No |
-| YouTube, Vimeo | None | Theirs | Third-party embed and tracking, account, breaks FR-004 | No |
+| YouTube or Vimeo as the site's player | None | Theirs | Third-party embed and tracking, breaks FR-004 | No: the channel (FR-029) is separate, and the site embeds nothing |
 | Paid object storage or CDN | None | Theirs | Money and an account (needs approval), a second host | No: not needed at this size |
 
-**Pick**: `media-library` release as the store, fetched and hash-checked into `_site/media/` by `pages.yml`, cached per file with `actions/cache`. Immutable releases are off on this repository (`read:` API, 2026-11-01), so assets can be added to one release. A clip and its poster are two assets, so the 1,000-asset limit is about 500 posts; then a new `media-library-2` follows the same pattern.
+**Pick** (YouTube below is a second place to publish, FR-029, not the site's source): `media-library` release as the store, fetched and hash-checked into `_site/media/` by `pages.yml`, cached per file with `actions/cache`. Immutable releases are off on this repository (`read:` API, 2026-11-01), so assets can be added to one release. A clip, its poster and a Short are three assets, so the 1,000-asset limit is about 330 posts; then a new `media-library-2` follows the same pattern.
 
 Measure first: a deploy with the start set (T008) confirms fetch and deploy fit the 10-minute limit; `pages.yml` ran about 4 minutes on 2026-11-01, queue included. If a much larger artifact is too slow, lower the ceiling.
 
@@ -68,7 +68,8 @@ Measure first: a deploy with the start set (T008) confirms fetch and deploy fit 
 - **Capture**: T002 tries `capturePage` frames piped to `ffmpeg` (works on every OS) against `x11grab` under Xvfb (Linux only). Keep the one that holds 24 fps.
 - **Load**: one Electron at a time, `nice`.
 - **Mac**: only the Mac session records, in simulator mode, with its own screen tool; the file then takes the same encode and contact sheet.
-- **Voice**: none (Q1). `espeak-ng` is present and not used.
+- **Voice and style** (spec FR-020): local Kokoro, male and female in turns; chiptune; pixel cast; the Rule File voice reads real rule text; one diagram per chapter. The film pipeline of last week is not in this repository and its sample is in progress elsewhere: T011 starts from it and takes nothing unreviewed. Kokoro is not installed here (`real:`), so T002 has no voice figure until that sample is measured. No new npm dependency; the voice tool is an author's tool, like `ffmpeg`.
+- **Shorts** (FR-028): same recipe, 720x1280, burned-in captions; release asset only.
 
 ## Site design
 
@@ -84,7 +85,7 @@ Facts `read:` from `origin/main` on 2026-11-01; commit counts by author date, me
 
 | Chapter | Facts | Evidence |
 |---|---|---|
-| 1. Before the repository | Owner's statement: first prototype and development with Grok, then he moved to Claude. No date | Spec FR-041; first commit holds `prototype/` |
+| 1. Grok, then OpenClaw, then Claude | His account: Grok first; from 2026-10-17 OpenClaw for about a day; then Claude from 2026-10-18 19:36 +02:00 | Spec FR-041; `3e0472e0` holds `prototype/`; `1c439284` |
 | 2. Day 1, 2026-10-16 | First commit 12:53 +02:00; 97 commits; first PR merged 17:43 UTC; 22 spec files added; Spec Kit skills for Claude added 19:35 +02:00 | `3e0472e0`, PR #1, `2a309c3c`, constitution ("reverse-engineered") |
 | 3. Three humans, agents build | "Humans set strategy; agents merge"; Three Feathers | `AGENTS.md`, README |
 | 4. The busy week | 609 commits on 2026-10-22, 502 on 2026-10-23; about 1,100 required fixes in about 300 PRs grouped into a checklist | git log, `docs/review-checklist.md` |
@@ -106,7 +107,7 @@ All **estimates**, not measured. Prices are Anthropic's list prices as cached in
 | Back-fill batch | 17 posts at most | about $6 to $8, before reviews |
 | Other side's review of a post | 30k in, 1k out | about $0.07 |
 | Each build PR (T002..T017) | wide range; not sized | about $2 to $6, so about $30 to $85 in all |
-| Making any video, CI, storage, Pages | none | $0 credits; machine time only |
+| Making any video, voice and music (local), YouTube upload, CI, storage, Pages | none | $0 credits; machine time only |
 
 Time, as estimates: site and check tasks are 1 to 3 hours of agent time each; the story film 3 to 5 hours with reviews; the back-fill a day, then the human's reading. First 3 real posts replace the first row's estimate with a measurement (SC-005).
 
