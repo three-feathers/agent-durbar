@@ -189,17 +189,17 @@ function closerAt(v: string): number {
 }
 /** A cookie header: `name=value` pairs split by `;`. Returns where the pairs end, or -1 when this is prose. A hand-written scan, one pass, no regex to go wrong: it stops at a quote, a backslash or the
  *  line's end. A pair followed by more text counts when its value is long enough to be one (`sid=abcdef12 && curl x`); `cookie: a=b is the format` is prose, and a short later pair ends it there, so an `Expires=Wed, 21 Oct` stays. */
-function cookieEnd(s: string, from: number): number {
+function cookieEnd(s: string, from: number, newlineFrom: (i: number) => number): number {
   const ends = (c: string | undefined): boolean => c === undefined || c === '\r' || c === '\n' || c === '"' || c === "'" || c === '\\';
   let i = from;
   let end = -1;
   for (;;) {
     const nameAt = i;
-    while (i < s.length && i - nameAt < 128 && !/[\s=;,"'\\]/.test(s[i])) i++;
+    while (i < s.length && i - nameAt < 128 && !/[\s=;,"'\\|&`$(]/.test(s[i])) i++;
     if (i === nameAt || s[i] !== '=') return end;
     const valueAt = ++i;
-    if (s[i] === '"') { const q = s.indexOf('"', i + 1); const nl = s.indexOf('\n', i); i = q < 0 || (nl >= 0 && nl < q) ? (nl < 0 ? s.length : nl) : q + 1; } else while (i < s.length && !/[\s;"'\\]/.test(s[i])) i++;
-    if (ends(s[i])) return i;
+    if (s[i] === '"') { const q = s.indexOf('"', i + 1); const nl = newlineFrom(i); i = q < 0 || (nl >= 0 && nl < q) ? (nl < 0 ? s.length : nl) : q + 1; } else while (i < s.length && !/[\s;"'\\|&`]/.test(s[i]) && !(s[i] === '$' && (s[i + 1] === '(' || s[i + 1] === '{'))) i++;
+    if (ends(s[i]) || s[i] === '|' || s[i] === '&' || s[i] === '`' || s[i] === '$') return i; // the shell after it stays visible (STOP's rule; a diff reaches the approval card through `redact`)
     if (s[i] === ';') {
       end = i;
       i++;
@@ -218,22 +218,27 @@ function maskCookies(s: string, mask: string): string {
   if (!/cookie/i.test(s)) return s;
   let out = '';
   let from = 0;
+  // the next line break, found once and kept: looking it up per head made `cookie: a="x" ` repeated quadratic (976 ms on 1 MB)
+  let nl = -2;
+  const newlineFrom = (i: number): number => { if (nl !== -1 && nl < i) nl = s.indexOf('\n', i); return nl; };
   COOKIE_HEAD.lastIndex = 0;
   for (let m = COOKIE_HEAD.exec(s); m; m = COOKIE_HEAD.exec(s)) {
     const at = m.index + m[0].length;
-    const end = cookieEnd(s, at);
+    const end = cookieEnd(s, at, newlineFrom);
     if (end > at) { out += s.slice(from, at) + mask; from = end; COOKIE_HEAD.lastIndex = end; }
   }
   return from === 0 ? s : out + s.slice(from);
 }
+/** A password in a command-shaped rule: ends at shell syntax, and at brackets, so `curl -u a:b(curl) x` shows `(curl)`. */
+const CMD_VALUE = String.raw`(?:[^\s"'|;&\`$()<>]|\$(?![({]))+`;
 const PATTERNS: RegExp[] = [
   KEY_BLOCK,
   shape(String.raw`(authorization\s{0,8}[:=]\s{0,8})(?:(?:bearer|basic|token)\s{1,8})?(?!'?\[(?:redacted|secret hidden)\]'?\}*(?:[\s",;]|$))[^\s",;]+`, 'gi'), // a value R12 already hid, whole, inside single quotes (`Authorization='[redacted]'}`) stays as it is; `[redacted]TOKEN` is not a hidden value
   shape(String.raw`((?:set-)?cookie\\{0,2}["']\s{0,8}:\s{0,8}\\{0,2}")(?=[^\s=;,"'\\]{1,128}=)(?:[^"\\\r\n]|\\(?!"))*`, 'gi'), // `"Cookie": "sid=…"`, in JSON: to the closing quote. The header form: `maskCookies`.
   // a `.netrc` entry: the word `password`, a space, the value
-  /(\bmachine\s{1,8}\S{1,253}\s{1,8}(?:login\s{1,8}\S{1,128}\s{1,8})?password\s{1,8})\S+/g,
+  new RegExp(String.raw`(\bmachine\s{1,8}\S{1,253}\s{1,8}(?:login\s{1,8}\S{1,128}\s{1,8})?password\s{1,8})${CMD_VALUE}`, 'g'),
   // `curl -u user:pass` (only after `curl`: `git push -u origin:main` is not this); the user stays, a bare `-u user` has no secret to hide
-  /(\bcurl\b[^\r\n]{0,200}?\s(?:-[A-Za-z]{0,8}u|--user)[ =]{0,2}["']?[^\s:"']{0,128}:)(?:[^\s"'|;&`$]|\$(?![({]))+/g,
+  new RegExp(String.raw`(\bcurl\b[^\r\n]{0,200}?\s(?:-[A-Za-z]{0,8}u|--user)[ =]{0,2}["']?[^\s:"']{0,128}:)${CMD_VALUE}`, 'g'),
   shape(String.raw`([a-z][a-z0-9+.-]{1,20}:\/\/)[^\s/:@"]{0,200}:[^\s/@"]{1,200}(?=@)`, 'gi'),
   /(?<![A-Za-z0-9_-])tid=[0-9a-f]{8,64};[^\s"|<>`&]*/g,
   // OAuth and signed-URL values in a URL's query or fragment (an authorization address, a loopback callback, a presigned link), also percent-encoded inside

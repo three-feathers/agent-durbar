@@ -4,6 +4,8 @@
  * Read from the TypeScript syntax tree, so spacing, comments and `console["warn"]` make no difference. Every argument of a `console.*` call, or of `process.stdout.write` or
  * `process.stderr.write`, must be fixed text or one direct `redact(...)` call (`redact(a) + b` is refused). `console` and those streams may not be used any other way: no alias
  * (`const c = console`, `const { warn } = console`), no callback (`f(console.warn)`), no `console['warn']`.
+ * Limits, not caught (this is a guard against slips, not against a determined author; a reviewer still reads the code): `globalThis.console.warn`, `const { stderr } = process`,
+ * `const p = process; p.stderr.write`, `import c from "console"`, `require("console").warn`, `require("fs").writeSync(2, x)`, and a local function that happens to be named `redact`.
  */
 const fs = require('fs');
 const path = require('path');
