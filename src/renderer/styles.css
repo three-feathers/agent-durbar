@@ -742,6 +742,7 @@ body:has(#aiTryBar) #toasts{bottom:100px}
    over the halo go to a layer of their own, and where Chromium cannot merge that layer into the page (it depends on the desks around: the lounge's
    two-row room did it) it draws them blurred. fill-opacity is painted with the scene, a few steps a second like the other compact animations. */
 @keyframes halo{from{fill-opacity:.5}to{fill-opacity:1}}
+/* spec 097 T158 (open): measured at 15 agents, Xvfb, one launch: these 13 animations are 26 of 37 points of a core (restyle of the group and repaint of the scene on every tick); an opacity pulse costs 12, but is the very thing the review of #554 turned down. Not changed until the blur question is answered on a real GPU. */
 .sc-c .wave{transform-origin:20% 90%;animation:wave var(--m-wave,2.8s ease-in-out infinite)}
 @keyframes wave{0%,100%{transform:rotate(-4deg)}50%{transform:rotate(6deg)}}
 .sc-c .cursor{animation:dotp var(--m-cursor,1.6s ease-in-out infinite)}
@@ -751,7 +752,8 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .sc-c .halo{animation-timing-function:steps(6)}
 .sc-c .wave{animation-timing-function:steps(8)}
 .sc-c .bar{animation-timing-function:steps(8)}
-.sc-c .hand-l,.sc-c .hand-r{animation-timing-function:steps(1)}
+/* spec 097 T158 (probe, `check-office-ops` handPositions): `tap` is two keyframes run `alternate`; steps(1) is jump-end, which holds `from` in both directions, so the hands never moved (one position over two cycles) while 16 animations ticked. steps(2,jump-none) shows both positions, as many changes a second as the 8 steps did not (4) */
+.sc-c .hand-l,.sc-c .hand-r{animation-timing-function:steps(2,jump-none)}
 .sc-c .bubble-g{animation-timing-function:steps(4)}
 .sc-c .td,.sc-c .cursor{animation-timing-function:steps(5)}
 .sc-c .steam{animation-timing-function:steps(6)}

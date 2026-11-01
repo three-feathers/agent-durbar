@@ -1,11 +1,17 @@
 /*
- * Spec 097 FR-185, FR-186 (T142, T148; flat rows only so far): operation counts of the flat office, never times. Simulator only (DURBAR_SIM=15 DURBAR_SIM_FREEZE=1),
- * no AI credits. At 15 and 40 agents the driver replaces the text of one desk's name (a child-list change, which is what a render does and what `:has()` watches),
- * reads a layout property so that the style is recalculated inside the trace, and counts:
- *   - elements recalculated: the `elementCount` of every UpdateLayoutTree on the renderer's main thread in a short contentTracing of that change, summed. A count, not a
- *     time. Animations are switched off for the trace so that only the change counts. A trace without one such event fails the row (a renamed thread or category would
- *     otherwise read as 0 and pass).
- * It is not a status change: FR-186's status event (renders, layout reads) is a row still to build. What one status change still costs is not asserted here.
+ * Spec 097 FR-184..FR-186 (T142, T148, T156, T158, T159; flat rows): operation counts of the flat office, never times. Simulator only (DURBAR_SIM=15
+ * DURBAR_SIM_FREEZE=1), no AI credits, no timing assert: every wait is an until(), every row a count, judged by `office-ops-rules.js` (its unit test shows the
+ * judge can fail). At 15 and 40 agents, desks as scenes:
+ *   - at start: renders, layout searches and probes (a probe is one trial office laid out into the hidden #probe, a forced layout) the page made by the time the office is drawn;
+ *   - animations: the infinite ones running, how many animate a property other than transform and opacity (FR-180), and the positions a compact desk's tapping hand shows;
+ *   - elements recalculated by one replaced text node (the `elementCount` of every UpdateLayoutTree on the main thread in a short contentTracing, animations
+ *     off; a trace with none fails the row, so a renamed thread cannot read as 0);
+ *   - one status event of one agent, 8 times, each a real change (every sample must draw, none may search; renders, style reads of the floor and layout reads are the median): renders and searches are the app's own counters (`__durbarSimUi.ops()`), reads are offset*, client*, scroll*, getBoundingClientRect and
+ *     getClientRects calls. The first proxy for renders, `getComputedStyle(#floor)`, was read twice per render and showed two where there was one;
+ *   - after each of those status updates no `data-placed` mark sits on anything but a role or a pencil (a finished turn marks the desk unread and shifts keyless spans);
+ *   - at 15 agents, 1280x800: after each status pill's filter and its clearing, after Simple to Expert and back, after an agent starts or stops matching a status filter (a neighbour room's width changes while its HTML does not; its header is made tight by a spacer) and after a body class changes with no room changing (the fit key), the header and usage-line fit classes equal what a
+ *     full fit gives (stale fits).
+ * A row over its limit today is a KNOWN_FAILURE with its open task and a ceiling.
  *
  *   npm run check:ui -- --only check-office-ops      (builds first)
  *   OPS_INDEX=<index.html>   load another build of the page (a mutation or a before/after run)
@@ -15,11 +21,8 @@ const os = require('os');
 const path = require('path');
 const assert = require('assert');
 const { contentTracing } = require('electron');
-const { helpers, jsLiteral } = require('./driver-helpers');
-
-/* Limits are counts. FR-185 / T148: one text change recalculates at most this many elements (measured after the fix: see the spec). */
-const LIMITS = { elementsRecalculated: 50 };
-const KNOWN_FAILURES = {}; // 'row@n': 'T-number of the task that fixes it'
+const { helpers, waits, jsLiteral } = require('./driver-helpers');
+const { judge } = require('./office-ops-rules');
 
 const FLAT = `document.querySelectorAll('#stage .desk[data-id]').length>=1&&!document.querySelector('#stage .ro')`;
 
@@ -41,32 +44,168 @@ function elementsRecalculated(events) {
     .reduce((s, e) => s + ((e.args && e.args.elementCount) || 0), 0);
 }
 
+/* The counters, in the page: layout reads and the floor's style reads between `start()` and `stop()`, renders and searches from the app's own counters */
+const INSTRUMENT = `(()=>{ if(window.__ops)return; const O=window.__ops={on:false,reads:0,gcsFloor:0,base:null};
+  const bump=()=>{if(O.on)O.reads++;};
+  for(const prop of ['offsetWidth','offsetHeight','offsetTop','offsetLeft','clientWidth','clientHeight','clientTop','clientLeft','scrollHeight','scrollWidth','scrollTop','scrollLeft'])
+    for(const proto of [HTMLElement.prototype,Element.prototype]){const d=Object.getOwnPropertyDescriptor(proto,prop);if(d&&d.get)Object.defineProperty(proto,prop,{...d,get(){bump();return d.get.call(this);}});}
+  for(const m of ['getBoundingClientRect','getClientRects']){const f=Element.prototype[m];Element.prototype[m]=function(){bump();return f.apply(this,arguments);};}
+  const g=window.getComputedStyle;window.getComputedStyle=function(e){if(O.on&&e&&e.id==='floor')O.gcsFloor++;return g.apply(this,arguments);};
+  O.start=()=>{O.reads=0;O.gcsFloor=0;O.base=window.__durbarSimUi.ops();O.on=true;};
+  O.stop=()=>{O.on=false;const n=window.__durbarSimUi.ops();return {reads:O.reads,renders:n.renders-O.base.renders,searches:n.searches-O.base.searches,gcsFloor:O.gcsFloor};};
+})()`;
+const TWO_FRAMES = `new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r(true))))`;
+/* the header and usage-line fit classes: what a full fit (DurbarFit) would change is a stale fit */
+const FIT_STATE = `[...document.querySelectorAll('#stage .room-head,#stage .desk .use')].map(e=>e.className).join('|')`;
+
+
 module.exports = async (ctx) => {
   const H = helpers(ctx);
   const { js } = H;
+  const { until } = waits(ctx);
   const rows = {};
+  const med = (a) => [...a].sort((x, y) => x - y)[Math.floor(a.length / 2)];
+  /* run `action` (page code) and wait until the office has drawn at least one more render, then two frames */
+  const drawn = async (action, ms = 8000) => {
+    const before = await js(`window.__durbarSimUi.ops().renders`);
+    await js(action);
+    assert.ok(await until(`window.__durbarSimUi.ops().renders>${before}`, ms), `the office drew after: ${action.slice(0, 80)}`);
+    await js(TWO_FRAMES);
+  };
   for (const n of [15, 40]) {
-    await H.load({ w: 1440, h: 900, index: process.env.OPS_INDEX || undefined, query: { sim: String(n) }, ready: FLAT, readyMs: 30000 });
+    const load = (w = 1440, h = 900) => H.load({ w, h, index: process.env.OPS_INDEX || undefined, query: { sim: String(n) }, ready: FLAT, readyMs: 30000 });
+    await load();
+    await js(`localStorage.setItem('durbar.doorsigns','off')`); // desks as scenes, not doors: every working desk animates (the doors and signs are going)
+    await load();
+
+    /* the start */
+    const start = await js(`window.__durbarSimUi.ops()`);
+    rows[`searchesAtStart@${n}`] = start.searches; rows[`probesAtStart@${n}`] = start.probes; rows[`rendersAtStart@${n}`] = start.renders;
+    console.log('[ops]', n, 'agents at start: renders', start.renders, 'layout searches', start.searches, 'probes', start.probes);
+
+    /* animations (FR-180): only transform and opacity animate */
+    const anim = await js(`(()=>{const ok=new Set(['offset','easing','composite','computedOffset','transform','opacity']);let running=0,other=0;const names={};
+      for(const a of document.getAnimations()){if(a.playState!=='running'||!a.effect||a.effect.getComputedTiming().iterations!==Infinity)continue;running++;
+        const bad=new Set();for(const kf of a.effect.getKeyframes())for(const k of Object.keys(kf))if(!ok.has(k))bad.add(k);
+        if(bad.size){other++;names[[...bad].join(',')]=(names[[...bad].join(',')]||0)+1;}}
+      return {running,other,names};})()`);
+    rows[`animatedOtherProperties@${n}`] = anim.other;
+    rows[`animationsRunning@${n}`] = anim.running;
+    console.log('[ops]', n, 'agents:', anim.running, 'infinite animations running,', anim.other, 'animate a property other than transform and opacity', JSON.stringify(anim.names));
+    /* a tapping hand of a compact desk: the positions it shows, sampled by setting the animation's time (two cycles, forward and back), so no clock is involved */
+    const hand = await js(`(()=>{for(const h of document.querySelectorAll('#stage svg.sc-c .hand-l')){const a=h.getAnimations()[0];if(!a)continue;
+      const d=a.effect.getComputedTiming().duration;a.pause();const seen=new Set();
+      for(const t of [0.05,0.3,0.55,0.8,0.95,1.05,1.3,1.55,1.8,1.95]){a.currentTime=t*d;seen.add(getComputedStyle(h).transform);}
+      a.play();return {positions:seen.size,dur:d};}return null;})()`);
+    assert.ok(hand, `${n} agents: a compact desk has a tapping hand`);
+    rows[`handPositions@${n}`] = hand.positions;
+    console.log('[ops]', n, 'agents: a compact desk hand shows', hand.positions, 'positions over two cycles');
+
+    /* one replaced text node, animations off so that only the change counts */
     await js(`(()=>{const s=document.createElement('style');s.textContent='*,*::before,*::after{animation:none!important;transition:none!important}';document.head.append(s);})()`);
-    /* one text change in one desk (a name's text node replaced: a child-list change, which is what a render does and what `:has()` watches), then a layout read so that the style is recalculated inside the trace */
     const change = (i) => js(`(()=>{document.querySelector('#stage .desk[data-id] .name').textContent=${jsLiteral('Op ')}+${i};return document.body.offsetHeight;})()`);
     await change(0);
     await H.settle();
     const counts = [];
     for (let i = 1; i <= 4; i++) counts.push(elementsRecalculated(await trace(() => change(i))));
     assert.ok(counts.every((c) => c > 0), `${n} agents: a replaced text node must recalculate some element; a trace with none means the trace's thread or event name changed (${counts})`);
-    rows[`elementsRecalculated@${n}`] = Math.max(...counts);
-    console.log(`[ops] ${n} agents: elements recalculated by one text change`, counts.join(' '));
+    rows[`elementsRecalculated@${n}`] = Math.min(...counts); // the least of 4: a render that lands inside one trace by itself (a timer) only adds, and the `:has()` cost shows in all 4
+    console.log('[ops]', n, 'agents: elements recalculated by one text change', counts.join(' '));
+
+    /* one status event of one agent, each a real change; every sample must be one render, no search, one style read of the floor */
+    await js(INSTRUMENT);
+    const ids = await js(`window.__durbarSimUi.agents().filter(a=>!a.parent).map(a=>a.id)`);
+    const id = ids[3];
+    const emit = (st) => `window.__durbarSimEmit({type:'status',sessionId:${jsLiteral(id)},timestamp:Date.now(),status:${jsLiteral(st)}})`;
+    await drawn(emit('working')); // so that every change below is a real change of one agent's status
+    const per = { renders: [], searches: [], reads: [], gcsFloor: [] }, leaks = [];
+    for (let i = 0; i < 8; i++) {
+      await js(`window.__ops.start()`);
+      await drawn(emit(i % 2 ? 'working' : 'idle'));
+      const o = await js(`window.__ops.stop()`);
+      for (const k of Object.keys(per)) per[k].push(o[k]);
+      /* a finished turn marks the desk unread (a "New" label before the name), which shifts the keyless spans a morph matches by position */
+      leaks.push(await js(`document.querySelectorAll('#stage [data-placed]:not(.role):not(.ren)').length`));
+    }
+    rows[`leakedPlaced@${n}`] = Math.max(...leaks);
+    console.log('[ops]', n, 'agents, per status update (8): renders', per.renders.join(','), 'searches', per.searches.join(','), 'reads', per.reads.join(','), 'floor style reads', per.gcsFloor.join(','));
+    /* every update drew (a missed render would show 0), and at most one render of something else (the coffee break's own timer, \`coffeeTick\`, can fall in the window and
+       add one: traced, it is the only other caller); the row is the median, so a second render caused by the update itself would show */
+    assert.ok(per.renders.every((r) => r >= 1 && r <= 2), `${n} agents: every status update is one render, two at most with a timer's (${per.renders})`);
+    rows[`rendersPerStatus@${n}`] = med(per.renders);
+    rows[`searchesPerStatus@${n}`] = Math.max(...per.searches);
+    rows[`floorStyleReadsPerStatus@${n}`] = med(per.gcsFloor);
+    rows[`readsPerStatus@${n}`] = med(per.reads);
+
+    if (n === 15) {
+      /* stale fits (T156): what an incremental fit leaves must equal a full fit, after a status filter and its clearing, and across Simple and Expert, at 1280x800 */
+      const stale = [];
+      await load(1280, 800);
+      await js(INSTRUMENT);
+      const compare = async (what) => {
+        const after = await js(FIT_STATE);
+        await js(`window.DurbarFit()`);
+        const full = await js(FIT_STATE);
+        if (after !== full) stale.push(what);
+      };
+      const pill = (k) => `document.querySelector('#stats .stat[data-k=${jsLiteral(k)}]').click()`;
+      const pills = await js(`[...document.querySelectorAll('#stats .stat[data-k]')].map(b=>b.dataset.k)`);
+      for (const k of pills) { // every status pill leaves some rooms some desks and others all of theirs
+        await drawn(pill(k)); await compare(`status filter ${k} on`);
+        await drawn(pill(k)); await compare(`status filter ${k} cleared`);
+      }
+      await drawn(`window.__durbarSimUi.setDetail('simple')`); await compare('Expert to Simple');
+      await drawn(`window.__durbarSimUi.setDetail('expert')`); await compare('Simple to Expert');
+
+      /* A neighbour's width (the widthMoved guard): rooms share a line by --w. A status filter is on, so the rooms draw only the matching desks while the layout key (sized on every
+         agent) does not change: when an agent starts to match, its room gains a desk and a wider --w, the layout is reused, and a neighbour whose HTML does not change gets narrower.
+         No real header is near its limit at this size, so make one so: measure each room's header (its width and the width its parts use) before and after, pick a room the render
+         does not rewrite (a mark on it survives) whose header is narrower, and add a spacer that leaves the header just whole when wide and over its width when narrow. */
+      const NAMES = `(()=>{const o={};for(const r of document.querySelectorAll('#stage .room')){const hd=r.querySelector('.room-head');if(!hd)continue;const cs=getComputedStyle(hd);const kids=[...hd.children].filter(c=>c.getClientRects().length);const used=kids.reduce((x,c)=>x+c.getBoundingClientRect().width,0)+(parseFloat(cs.columnGap)||0)*Math.max(0,kids.length-1)+parseFloat(cs.paddingLeft)+parseFloat(cs.paddingRight);o[r.dataset.key]={w:hd.getBoundingClientRect().width,used,kept:r.hasAttribute('data-ops-mark')};}return o;})()`;
+      const MARK = `document.querySelectorAll('#stage .room').forEach(r=>r.setAttribute('data-ops-mark',''))`; // a room the render rewrites loses the mark
+      const UNMARK = `document.querySelectorAll('[data-ops-mark]').forEach(r=>r.removeAttribute('data-ops-mark'))`;
+      const status = (id, st) => `window.__durbarSimEmit({type:'status',sessionId:${jsLiteral(id)},timestamp:Date.now(),status:${jsLiteral(st)}})`;
+      // every agent in error (an error keeps the desk, nothing rests in a lounge) but the first of each room (working); the filter 'working' hides the rest
+      const mains = await js(`(()=>{const o=[];for(const r of document.querySelectorAll('#stage .room')){let i=0;for(const d of r.querySelectorAll('.desk[data-id]'))o.push([d.dataset.id,i++===0]);}return o;})()`);
+      await js(mains.map(([id, first]) => status(id, first ? 'working' : 'error')).join(';'));
+      await H.settle();
+      await drawn(pill('working'));
+      let pick = null;
+      for (const [id, first] of mains) { // one hidden agent starts working
+        if (first) continue;
+        await js(MARK);
+        const wide = await js(NAMES);
+        const s0 = (await js(`window.__durbarSimUi.ops()`)).searches;
+        await drawn(status(id, 'working'));
+        const narrow = await js(NAMES);
+        const searched = (await js(`window.__durbarSimUi.ops()`)).searches > s0; // a new search fits everything: not the case under test
+        await js(UNMARK);
+        await drawn(status(id, 'error'));
+        const spare = (r) => wide[r].w - wide[r].used, shrink = (r) => wide[r].w - narrow[r].w;
+        const c = searched ? [] : Object.keys(wide).filter((r) => narrow[r] && narrow[r].kept && shrink(r) > 4 && spare(r) >= shrink(r) / 2).sort((x, y) => shrink(y) - shrink(x));
+        if (c.length) { pick = { id, room: c[0], pad: spare(c[0]) - shrink(c[0]) / 2 }; break; }
+      }
+      assert.ok(pick, 'an agent that starts to match the status filter narrows a room that is not rewritten, and its header has room to spare when wide (the stale-fit case for a neighbour\'s width)');
+      await js(`(()=>{const s=document.createElement('style');s.id='ops-width';s.textContent=${jsLiteral(`#stage .room[data-key="${pick.room}"] .room-head::after{content:"";flex:none;width:${pick.pad}px}`)};document.head.append(s);})()`);
+      await js(`window.DurbarFit()`); // every header fitted, the filter on
+      await drawn(status(pick.id, 'working')); await compare("a neighbour's width, an agent starts to match the status filter");
+      await drawn(status(pick.id, 'error')); await compare("a neighbour's width, an agent stops matching the status filter");
+      await js(`document.getElementById('ops-width').remove()`);
+      await drawn(pill('working')); // the filter off
+      await js(`window.DurbarFit()`); // so that the next case starts from fitted headers
+
+      /* The fit key (what else decides a fit): the body's classes change with no change to any room's HTML. A class that squeezes every name stands for chat open, zoom...;
+         the office is drawn again with the same rooms and the headers must be fitted to it. */
+      await js(`(()=>{const s=document.createElement('style');s.id='ops-key';s.textContent='body.ops-squeeze #stage .room-name{padding-right:4000px!important}';document.head.append(s);})()`);
+      await js(`window.DurbarFit()`);
+      await drawn(`document.body.classList.add('ops-squeeze');window.__durbarSimUi.setDetail('expert')`); await compare('a body class changes, no room does');
+      await drawn(`document.body.classList.remove('ops-squeeze');window.__durbarSimUi.setDetail('expert')`); await compare('the body class goes, no room changes');
+      rows[`staleFits@${n}`] = stale.length;
+      if (stale.length) console.log('[ops] stale fits after:', stale.join(', '));
+    }
   }
-  const failed = [];
-  for (const [key, value] of Object.entries(rows)) {
-    const [row, n] = key.split('@');
-    const known = KNOWN_FAILURES[key];
-    if (value > LIMITS[row]) {
-      if (known) console.log(`[ops] ${key} = ${value} over ${LIMITS[row]} (known failure, fix ${known})`);
-      else failed.push(`${key} = ${value}, limit ${LIMITS[row]}`);
-    } else if (known) failed.push(`${key} = ${value} is within its limit: delete its KNOWN_FAILURES entry (${known})`);
-  }
+  const { failed, notes } = judge(rows);
+  for (const l of notes) console.log('[ops]', l);
   assert.deepStrictEqual(failed, [], `op rows over their limits:\n  ${failed.join('\n  ')}`);
   console.log('[ops] checks passed');
   process.exitCode = 0;
