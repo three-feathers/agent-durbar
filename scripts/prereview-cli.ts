@@ -243,9 +243,13 @@ export async function main(argv: string[], d: CliDeps): Promise<number> {
 
 /** A file of the bot's folder, read by the operator: a plain file only (a link there could name any file the operator can read), size-capped. */
 function readPlainFile(file: string, max: number): string {
-  const st = fs.lstatSync(file);
-  if (!st.isFile() || st.isSymbolicLink() || st.size > max) throw new Error('not a plain file');
-  return fs.readFileSync(file, 'utf8');
+  // one open that never follows a link and never waits for a writer (a FIFO planted there would hang this process), then judge the handle, not the name
+  const fd = fs.openSync(file, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
+  try {
+    const st = fs.fstatSync(fd);
+    if (!st.isFile() || st.size > max) throw new Error('not a plain file');
+    return fs.readFileSync(fd, 'utf8');
+  } finally { fs.closeSync(fd); }
 }
 /** `post`: only past the gate of FR-027. Re-checks FR-004 on the PR first (a PR that became untrusted gets nothing). */
 async function postStage(d: CliDeps, a: Args): Promise<number> {
@@ -284,11 +288,15 @@ export async function installApp(d: CliDeps, dest: string): Promise<number> {
   const f = await git(['fetch', '--quiet', 'origin', 'main']); if (f.code !== 0) { d.err(HUMAN('could not fetch origin/main\n')); return 1; }
   const [h, o] = [await git(['rev-parse', 'HEAD']), await git(['rev-parse', 'origin/main'])];
   if (h.code !== 0 || h.stdout.trim() === '' || h.stdout.trim() !== o.stdout.trim()) { d.err(HUMAN('HEAD is not origin/main; install from reviewed main only\n')); return 1; }
-  const dt = ancestorProblems(path.dirname(dest), (uid) => uid === 0 || uid === d.me, statOf(d), realOf(d), 'install folder');
+  // the destination itself when it is there (it is emptied, never removed: its parent is root's), else its parent
+  const dt = ancestorProblems(fs.existsSync(dest) ? dest : path.dirname(dest), (uid) => uid === 0 || uid === d.me, statOf(d), realOf(d), 'install folder');
   if (dt.length) { d.err(HUMAN(`install into a folder only root or you can write: ${dt.join('; ')}\n`)); return 1; }
   try { if (fs.lstatSync(dest).isSymbolicLink()) { d.err(HUMAN('the install destination is a link\n')); return 1; } } catch { /* not there yet */ }
   for (const [src] of INSTALL_FILES) if (!fs.existsSync(path.join(d.root, src))) { d.err(HUMAN(`missing ${src}\n`)); return 1; }
-  fs.rmSync(dest, { recursive: true, force: true });
+  try {
+    fs.mkdirSync(dest, { recursive: true, mode: 0o755 });
+    for (const e of fs.readdirSync(dest)) fs.rmSync(path.join(dest, e), { recursive: true, force: true }); // the children, not `dest`: the operator cannot unlink a folder inside root's
+  } catch { d.err(HUMAN('could not prepare the install destination (is it a folder you own?)\n')); return 1; }
   for (const [src, to] of INSTALL_FILES) { const t = path.join(dest, to); fs.mkdirSync(path.dirname(t), { recursive: true, mode: 0o755 }); fs.copyFileSync(path.join(d.root, src), t); fs.chmodSync(t, 0o644); }
   fs.chmodSync(path.join(dest, 'scripts', 'gh-trusted.sh'), 0o755);
   const npm = await d.exec('npm', ['ci', '--ignore-scripts', '--no-audit', '--no-fund'], { cwd: path.join(dest, 'scripts', 'prereview'), env: { PATH: d.env.PATH ?? '/usr/bin:/bin', HOME: d.env.HOME ?? '/nonexistent' }, timeoutMs: 300_000 });

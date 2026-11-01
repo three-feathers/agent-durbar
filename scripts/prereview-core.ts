@@ -557,17 +557,28 @@ export interface StatLite { uid: number; mode: number; isSymlink: boolean; isDir
 export function ancestorProblems(p: string, ownerOk: (uid: number) => boolean, stat: (q: string) => StatLite, realpath: (q: string) => string, label = 'path'): string[] {
   let real: string;
   try { real = realpath(p); } catch { return [`${label} cannot be resolved`]; }
+  // The path as written is walked too, each component judged by its own owner and mode (a link counts as the link): a link inside a folder the
+  // bot can write is judged by its target alone otherwise, and can be repointed after the check (review 2026-11-01).
+  const parts: string[] = [];
+  for (const seg of p.split('/')) { if (seg === '' || seg === '.') continue; if (seg === '..') parts.pop(); else parts.push(seg); }
+  const lexical = '/' + parts.join('/');
   const out: string[] = [];
-  let cur = real;
-  for (let n = 0; n < 64; n++) {
-    let st: StatLite;
-    try { st = stat(cur); } catch { out.push(`${label}: cannot read ${cur === real ? 'it' : 'a folder above it'}`); break; }
-    const sticky = (st.mode & 0o1000) !== 0;
-    if (!ownerOk(st.uid)) out.push(`${label}: ${cur === real ? 'it is' : 'a folder above it is'} owned by a user that may not own what is run or trusted`);
-    else if ((st.mode & 0o022) !== 0 && !(sticky && st.uid === 0 && cur !== real)) out.push(`${label}: ${cur === real ? 'it is' : 'a folder above it is'} writable by group or others`);
-    const up = cur.replace(/\/[^/]*$/, '') || '/';
-    if (up === cur || cur === '/') break;
-    cur = up;
-  }
+  const walk = (start: string, what: string): void => {
+    let cur = start;
+    for (let n = 0; n < 64; n++) {
+      let st: StatLite;
+      try { st = stat(cur); } catch { out.push(`${label}: cannot read ${cur === start ? 'it' : 'a folder above it'} (${what})`); return; }
+      const sticky = (st.mode & 0o1000) !== 0;
+      const who = cur === start ? 'it is' : 'a folder above it is';
+      if (!ownerOk(st.uid)) out.push(`${label}: ${who} owned by a user that may not own what is run or trusted (${what})`);
+      // a link's own mode means nothing (777 on Linux); its owner does
+      else if (!st.isSymlink && (st.mode & 0o022) !== 0 && !(sticky && st.uid === 0 && cur !== start)) out.push(`${label}: ${who} writable by group or others (${what})`);
+      const up = cur.replace(/\/[^/]*$/, '') || '/';
+      if (up === cur || cur === '/') return;
+      cur = up;
+    }
+  };
+  walk(real, 'resolved');
+  if (lexical !== real) walk(lexical, 'as written');
   return out;
 }

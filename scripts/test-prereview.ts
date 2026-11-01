@@ -453,7 +453,6 @@ async function checkRun(): Promise<void> {
   assert.ok(w.rec.calls[0].prompt.indexOf('INSTALLED REACH') > w.rec.calls[0].prompt.indexOf('=====diff-end-'), 'the pass instructions come after the material');
   assert.ok(!fs.existsSync(path.join(w.markerDir, 'fired')), 'no hook, textconv, external diff or fsmonitor of the hostile account fired');
   assert.ok(res.report.passes.every((p) => p.denials.length >= 2), 'the link and the outside path were denied, and reported');
-  assert.ok(res.text.includes('PLANTED'.slice(0, 7)) || true);
   assert.deepStrictEqual(res.report.notSearched!.map((x) => x.path), ['.svn/entries', 'blob.bin'], 'the PR\'s binary file and its .svn file are named as not searched'); assert.ok(res.text.includes('NOT SEARCHED: 2 path(s)'));
   // the ledger: a reserve before and a final after each send; the folder holds nothing left over
   const ledger = core.parseLedger(fs.readFileSync(path.join(w.places.state, 'ledger.jsonl'), 'utf8'));
@@ -667,18 +666,25 @@ async function checkCli(): Promise<void> {
       err.length = 0; assert.strictEqual(await cli.main(['7'], dep()), 1, `group-writable ${rel || 'the root'}`); assert.ok(/writable by group or others/.test(err.join('')), err.join('')); assert.strictEqual(fs.readFileSync(calls, 'utf8').trim(), '');
       fs.chmodSync(f, keep | 0o002); assert.strictEqual(await cli.main(['7'], dep()), 1, `world-writable ${rel || 'the root'}`); fs.chmodSync(f, keep);
     }
-    assert.ok((await cli.main(['7', '--diff-only'], dep())) !== 1 || true);
+    { const g = await cli.gate(dep(), a('7', '--diff-only')); assert.ok(g.ok, 'with every permission restored the gate passes again'); }
     // root-owned and the operator's own both pass; a link is resolved first
     assert.deepStrictEqual(cli.codeTrustProblems(dep({ stat: fakeStat(() => ({ uid: 0 })) }), codeRoot, ['scripts/gh-trusted.sh']), []);
     assert.ok(cli.codeTrustProblems(dep({ stat: fakeStat(() => ({ uid: me + 1 })) }), codeRoot, ['scripts/gh-trusted.sh']).length > 0);
     const lnk = path.join(mk('linkparent'), 'code'); fs.symlinkSync(codeRoot, lnk); assert.deepStrictEqual(cli.codeTrustProblems(dep(), lnk, ['scripts/gh-trusted.sh']), [], 'a link to a sound folder is judged by what it points at');
     const open = mk('openparent'); fs.chmodSync(open, 0o777); const under = path.join(open, 'code'); fs.mkdirSync(under); fs.chmodSync(under, 0o755);
     assert.ok(cli.codeTrustProblems(dep(), under, []).length > 0, 'a world-writable parent, without a sticky bit, refuses (it could rename the folder)');
-    const stickyOpen = mk('stickyparent'); fs.chmodSync(stickyOpen, 0o1777); assert.ok(core.ancestorProblems(path.join(stickyOpen, 'x'), () => true, () => ({ uid: 0, mode: 0o41777, isSymlink: false, isDirectory: true }), (q) => q).length === 0 || true);
     assert.deepStrictEqual(core.ancestorProblems('/a/b/c', (u) => u === 0, (q) => ({ uid: q === '/a' ? 0 : 0, mode: q === '/' ? 0o41777 : 0o40755, isSymlink: false, isDirectory: true }), (q) => q), [], 'a root-owned sticky world-writable parent is accepted');
     assert.ok(core.ancestorProblems('/a/b/c', (u) => u === 0, (q) => ({ uid: 0, mode: q === '/a' ? 0o40777 : 0o40755, isSymlink: false, isDirectory: true }), (q) => q).length > 0, 'but a non-sticky one is not');
     assert.ok(core.ancestorProblems('/a/b/c', () => true, () => { throw new Error('x'); }, (q) => q).length > 0, 'unreadable: refused');
     assert.ok(core.ancestorProblems('/a/b/c', () => true, (q) => ({ uid: q === '/a' ? 5 : 0, mode: q === '/a' ? 0o41777 : 0o40755, isSymlink: false, isDirectory: true }), (q) => q).length > 0, 'a sticky world-writable folder of anyone but root is not accepted');
+    { // review 2026-11-01 (re-review): a link inside a folder the bot can write is judged by its target alone unless the path as written is walked too
+      const botDir = mk('botdir2'); const soundDir = mk('sounddir2'); fs.writeFileSync(path.join(soundDir, 'gate.key'), 'x', { mode: 0o600 }); fs.symlinkSync(soundDir, path.join(botDir, 'lnk'));
+      const spoofBot = (q: string) => fs.lstatSync(q) && { uid: q === botDir ? me + 1000 : fs.lstatSync(q).uid, mode: fs.lstatSync(q).mode, isSymlink: fs.lstatSync(q).isSymbolicLink(), isDirectory: true };
+      const viaLink = path.join(botDir, 'lnk', 'gate.key');
+      assert.ok(core.ancestorProblems(viaLink, (u) => u === me || u === 0, spoofBot as any, (q) => fs.realpathSync(q)).some((m) => /as written/.test(m)), 'the folder the link sits in is the bot\'s: refused even though the target is sound');
+      assert.deepStrictEqual(core.ancestorProblems(path.join(soundDir, 'gate.key'), (u) => u === me || u === 0, spoofBot as any, (q) => fs.realpathSync(q)), [], 'the same file by its real path is fine');
+      assert.ok(core.ancestorProblems(path.join(soundDir, '..', path.basename(botDir), 'lnk', 'gate.key'), (u) => u === me || u === 0, spoofBot as any, (q) => fs.realpathSync(q)).length > 0, 'a path with .. is normalised and walked as written');
+    }
     // the runner side: what it loads must not be owned by its own user
     const rsUnowned = fakeStat(() => ({ uid: 0 }));
     const noSame = { ...env, PREREVIEW_SAME_ACCOUNT: undefined } as any;
@@ -697,6 +703,7 @@ async function checkCli(): Promise<void> {
   const cfgAll = { postComment: true, confirmations: { vikramgorla: '2026-10-30', fjcabello: '2026-10-31', rubenlupi: '2026-10-30' }, keyFile: path.join(kdir, 'k.pem'), appIdFile: path.join(kdir, 'id') };
   fs.chmodSync(opdir, 0o700); fs.writeFileSync(pcfg, JSON.stringify(cfgAll), { mode: 0o600 });
   const fetched: string[] = []; const fakeFetch: any = async (url: string, init: any) => { fetched.push(`${init.method} ${url.replace('https://api.github.com', '')}`); const k = `${init.method} ${url}`; return { status: /installation$/.test(url) ? 200 : /access_tokens$/.test(url) ? 201 : 201, json: async () => (/installation$/.test(url) ? { id: 5 } : /access_tokens$/.test(url) ? { token: 'ghs_FAKE' } : { html_url: 'https://github.com/o/r/pull/7#issuecomment-9' }) }; };
+  let victimFile = '';
   const penv = { ...env, PREREVIEW_POST_CONFIG: pcfg }; put('gate', pr());
   const post0 = (sh: string, over: Partial<cli.CliDeps> = {}): Promise<number> => cli.main(['post', '7', sh], dep({ fetch: fakeFetch, env: penv, ...over }));
   const old = 'e'.repeat(40); putRep({ ...rep0, sha: old }); fetched.length = 0; err.length = 0;
@@ -708,11 +715,14 @@ async function checkCli(): Promise<void> {
   fs.writeFileSync(pcfg, JSON.stringify(cfgAll), { mode: 0o600 }); fs.chmodSync(opdir, 0o777); err.length = 0; assert.strictEqual(await post0(sha), 1); assert.ok(/folder/.test(err.join('')) && fetched.length === 0, 'a config in a folder others can write'); fs.chmodSync(opdir, 0o700);
   assert.strictEqual(await post0(sha, { me: process.getuid!() + 1 }), 1); assert.ok(fetched.length === 0, 'a config not owned by the operating user');
   { // the posted-marker is the operator's, beside its config; a link planted in the bot's folder is never followed, and a report that is a link is not read
-    const victim = path.join(mk('victimdir'), 'victim.txt'); fs.writeFileSync(victim, 'KEEP\n'); try { fs.symlinkSync(victim, path.join(base, 'state', 'posted.jsonl')); } catch { /* already there */ }
+    victimFile = path.join(mk('victimdir'), 'victim.txt'); const victim = victimFile; fs.writeFileSync(victim, 'KEEP\n'); try { fs.symlinkSync(victim, path.join(base, 'state', 'posted.jsonl')); } catch { /* already there */ }
+    { // a FIFO in the bot's folder must not hang the operator's post, nor be read
+      const fifo = path.join(reports, `7-${'9'.repeat(40)}.json`); if (spawnSync('mkfifo', [fifo]).status === 0) { const t0 = Date.now(); err.length = 0;
+        assert.strictEqual(await cli.main(['post', '7', '9'.repeat(40)], dep({ fetch: fakeFetch, env: penv })), 1); assert.ok(/no stored report/.test(err.join('')) && Date.now() - t0 < 20_000, 'a FIFO: refused at once, not waited on'); fs.rmSync(fifo); } else console.log('prereview: mkfifo is not available, the FIFO case is skipped'); }
     const repLink = path.join(reports, `7-${sha}.json`); const repKeep = fs.readFileSync(repLink, 'utf8'); fs.rmSync(repLink); const valid = path.join(mk('victimdir2'), 'x.json'); fs.writeFileSync(valid, repKeep); fs.symlinkSync(valid, repLink); err.length = 0;
     assert.strictEqual(await post0(sha), 1); assert.ok(/no stored report/.test(err.join('')) && fetched.length === 0, 'a report that is a link: not read'); fs.rmSync(repLink); fs.writeFileSync(repLink, repKeep); }
   err.length = 0; assert.strictEqual(await post0(sha), 0, err.join('')); assert.deepStrictEqual(fetched.map((x) => x.split(' ')[0]), ['GET', 'POST', 'POST'], 'the current head, all owners, the config in place: one comment (test config and fake fetch only)');
-  assert.strictEqual(fs.readFileSync(path.join(opdir, 'posted.jsonl'), 'utf8').trim(), `7:${sha}`, 'the marker is in the operator\'s folder'); assert.strictEqual(fs.readFileSync(path.join(path.dirname(path.dirname(reports)), 'state', 'posted.jsonl')).length > 0 || true, true);
+  assert.strictEqual(fs.readFileSync(path.join(opdir, 'posted.jsonl'), 'utf8').trim(), `7:${sha}`, 'the marker is in the operator\'s folder'); assert.strictEqual(fs.readFileSync(victimFile, 'utf8'), 'KEEP\n', 'a post that reached the marker wrote nothing through the link planted in the bot\'s folder'); assert.ok(fs.lstatSync(path.join(base, 'state', 'posted.jsonl')).isSymbolicLink(), 'and left it alone');
 }
 
 // ---- posting as the App (FR-027) ------------------------------------------------------------------------------------------------
@@ -807,6 +817,13 @@ async function checkInstall(): Promise<void> {
   assert.strictEqual(seen.length, 1); assert.ok(/npm ci --ignore-scripts/.test(seen[0]) && seen[0].endsWith(path.join(dest, 'scripts', 'prereview')));
   assert.strictEqual(fs.statSync(path.join(dest, 'prompts', 'system.md')).mode & 0o022, 0, 'not writable by others');
   assert.ok(run.loadPrompts(dest).evidence.includes('Pass 2'), 'the installed copy loads');
+  // review 2026-11-01 (re-review): the documented layout, a destination inside a parent the operator cannot write: it is emptied, never removed
+  { const top = mk('instroot'); const app = path.join(top, 'app'); fs.mkdirSync(app, { mode: 0o755 }); fs.chmodSync(app, 0o755);
+    fs.writeFileSync(path.join(app, 'OLD-FILE'), 'old'); fs.mkdirSync(path.join(app, 'old', 'deep'), { recursive: true }); fs.writeFileSync(path.join(app, 'old', 'deep', 'x'), 'old');
+    fs.chmodSync(top, 0o555); e.length = 0;
+    try { assert.strictEqual(await cli.installApp(dep(), app), 0, e.join('')); } finally { fs.chmodSync(top, 0o700); }
+    assert.ok(!fs.existsSync(path.join(app, 'OLD-FILE')) && !fs.existsSync(path.join(app, 'old')), 'the old copy is gone'); assert.ok(fs.existsSync(path.join(app, 'prompts', 'system.md')), 'the new copy is in'); assert.ok(fs.existsSync(app));
+    fs.chmodSync(top, 0o555); try { const nope = path.join(top, 'newapp'); e.length = 0; assert.strictEqual(await cli.installApp(dep(), nope), 1); assert.ok(/could not prepare|install folder/.test(e.join('')), 'a destination that cannot be made: refused with a message, not thrown'); } finally { fs.chmodSync(top, 0o700); } }
   // review 2026-11-01: never into a folder the bot's user could swap, nor through a link
   { const open = mk('instopen'); fs.chmodSync(open, 0o775); e.length = 0; assert.strictEqual(await cli.installApp(dep(), path.join(open, 'app')), 1); assert.ok(/install folder/.test(e.join('')) && !fs.existsSync(path.join(open, 'app')), 'a group-writable parent: refused, nothing copied');
     const real = mk('instreal'); const parent = mk('instlink'); fs.symlinkSync(real, path.join(parent, 'app')); e.length = 0; assert.strictEqual(await cli.installApp(dep(), path.join(parent, 'app')), 1); assert.ok(/link/.test(e.join('')) && fs.readdirSync(real).length === 0, 'a destination that is a link: refused'); }

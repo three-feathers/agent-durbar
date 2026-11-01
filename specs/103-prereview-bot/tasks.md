@@ -42,6 +42,8 @@
 
 - [x] T023 Review of Paco's side (FR-045..FR-047): root-owned top folder, ancestor-ownership check for code, trust list, `gh-trusted.sh`, gate key and install; operator writes nothing into the bot's folders; one repository constant, signed; title-rename count; FR-013 text. Test: `test:prereview`, `test:trustedcontent` [FR-045..FR-047]
 
+- [x] T024 Re-review of Paco's side (amends FR-045): install empties its destination, plain-file read by one open, ancestors as written, no `|| true` assertions. Test: `test:prereview`
+
 ## Phase 3: Real, owner's ask (spends credits)
 
 - [ ] T011 **Owner:** the key steps in the plan; Q1 to Q3 answered. Then one run, on the smallest open trusted PR. Say the cost first. Check the `init` line, a denial from a planted path, the ledger against the Console, **and that the credit balance is what fell**. Stop if not. Test: `real:` recorded [FR-010, FR-013, FR-014, FR-021]
