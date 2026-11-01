@@ -36,6 +36,7 @@ const DRIVERS = [
   { name: 'shots-033', env: { DURBAR_SIM_FLOORS: '1' } },
   { name: 'shots-092', env: { DURBAR_SIM_FLOORS: '1' } }, // spec 092 phase 1: floor screens (one floor at a time), PageUp/PageDown, the scroll rule, floors going off and on, an empty floor
   { name: 'shots-092-lift', env: { DURBAR_SIM_FLOORS: '1' } }, // spec 092 phase 2: the lift panel, its badges and the All floors view (FR-006..FR-008, FR-013..FR-017, FR-028, FR-031..FR-037)
+  { name: 'shots-033-order' }, // spec 033 delta 2026-11-01 (#677): drag and Alt+arrows to rearrange rooms, desks and places; saved, survives a reload, corrupt order tolerated
   { name: 'shots-033-move', env: { DURBAR_SIM_FLOORS: '1' } }, // spec 033 FR-024 (#590): Move to floor in the folder menu, with Undo
   { name: 'shots-034-list' },
   { name: 'shots-015-compact' }, // spec 015 FR-014: Compacting on the desk, list, header, strip and ring (simcompact=1 in its own query)
@@ -110,6 +111,7 @@ const DRIVERS = [
   { name: 'check-notes-export' }, // spec 083 T034b: Export…, Delete all… and Remove folder's Also delete its notes (FR-048)
   { name: 'check-edits' }, // spec 005 FR-020..FR-026: file edits in the chat
   { name: 'shots-068-coffee' }, // spec 068: coffee break (simbreak=8 in its own query)
+  { name: 'shots-097-realoffice' }, // spec 097 P1: Real office mode (the switch, the scene, the lights, flat loads none of it)
   { name: 'shots-001-lobby' }, // spec 001 FR-034..FR-040: Boss queue, Bank, Postbox and its letter, who is at a place (simsched in its own query)
   { name: 'check-done-desk-mask' }, // spec 041 FR-065: no token of a done reply on the office floor
   // spec 052 FR-171: wrapping, sizes, box widths, field weight, dark contrast. Two drivers that run at once (issue #738: one took ~650 s
