@@ -3,7 +3,7 @@
 import assert from 'assert';
 import fs from 'fs';
 import path from 'path';
-import { redact, maskSecretCommand, maskSecretUrl } from '../src/shared/redact';
+import { redact, maskSecretCommand, maskSecretUrl, maskHomePaths } from '../src/shared/redact';
 
 const ROOT = path.join(__dirname, '..', '..');
 const R = path.join(ROOT, 'src', 'renderer');
@@ -270,5 +270,142 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
   ok(/const key=JSON\.stringify\(\[aw,ah,FORCE_DENSITY,liveOn\(\),/.test(app), 'layout key follows the setting');
   const scr = fs.readFileSync(path.join(R, 'screens.js'), 'utf8');
   ok(scr.includes('id="liveActSw"') && scr.includes('Live activity on desks'), 'Settings switch');
+}
+// spec 097 FR-030, FR-031, SC-005: a Real office monitor's lines: the same events and masks, control codes stripped first, inert, capped
+{
+  type Line = { n: number; k: string; t: string };
+  const hm = { ...mask, home: (s: string) => maskHomePaths(s, []) };
+  const F = () => L.create({ mask: hm }) as unknown as Feed & { screen(id: string): Line[]; block(raw: string, k?: string): { k: string; t: string }[] };
+  const TOKEN = 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4';
+  const all = (ls: Line[]) => ls.map((l) => l.t).join('\n');
+  let f = F();
+  // lines build up and scroll: oldest first, kinds, numbers that stay with a line
+  f.onEvent('s', ev({ type: 'toolCall', phase: 'start', tool: 'bash', callId: 'c1', args: {} }), { kind: 'run', label: 'npm test' });
+  f.onEvent('s', ev({ type: 'toolCall', phase: 'complete', tool: 'bash', callId: 'c1' }));
+  f.onEvent('s', ev({ type: 'toolCall', phase: 'start', tool: 'bash', callId: 'c2', args: {} }), { kind: 'run', label: 'npm run lint' });
+  f.onEvent('s', ev({ type: 'toolCall', phase: 'failed', tool: 'bash', callId: 'c2' }));
+  f.onEvent('s', ev({ type: 'thinking', reasoningId: 'r', delta: 'First I look. Then I act. ' }));
+  let ls = f.screen('s');
+  eq(ls.map((l) => l.k), ['ok', 'err', 'think', 'think'], 'tool lines take their result; a thinking block adds its sentences');
+  eq(ls[0].t, 'Running npm test', 'the readout phrase');
+  const first = ls[0].n;
+  f.onEvent('s', ev({ type: 'output', delta: 'Done now. ' }));
+  ls = f.screen('s');
+  eq(ls[0].n, first, 'a line keeps its number');
+  eq(ls[ls.length - 1].t, 'Done now.', 'the newest line is last');
+  // a finished turn keeps its lines: unlike the desk readout, a done screen still shows them (FR-035)
+  f.onEvent('s', ev({ type: 'status', status: 'idle' }));
+  eq(f.of('s'), null, 'the readout is empty');
+  ok(all(f.screen('s')).includes('Done now.'), 'the screen keeps the lines after the turn');
+  // the cap: 24 lines, 200 characters, also from 1 MB of text; linear enough to take at most a moment
+  f = F();
+  for (let i = 0; i < 60; i++) f.onEvent('s', ev({ type: 'toolCall', phase: 'start', tool: 'bash', callId: 'x' + i, args: {} }), { kind: 'run', label: 'step' + i });
+  ls = f.screen('s');
+  eq(ls.length, 24, 'at most 24 lines');
+  eq(ls[23].t, 'Running step59', 'the newest kept');
+  f = F();
+  f.onEvent('s', ev({ type: 'output', delta: 'word '.repeat(200000), final: true, text: 'word '.repeat(200000) }));
+  ls = f.screen('s');
+  ok(ls.length > 0 && ls.length <= 24 && ls.every((l) => Array.from(l.t).length <= 200), '1 MB of text: capped');
+  f = F();
+  f.onEvent('s', ev({ type: 'output', delta: 'x'.repeat(1048576) }));
+  eq(f.screen('s'), [], '1 MB with no space: all of it is a cut word, nothing shows');
+  // hostile output (SC-005): token, home path, markup, a link, ANSI, in reply and thinking and a tool label
+  const HOSTILE = 'See ' + TOKEN + ' in /Users/alice/.ssh/id and C:\\Users\\alice\\x and <img src=x onerror=alert(1)> and [click](https://evil.example/a) \x1b[31mred\x1b[0m \x1b]0;title\x07end\x07\u202e. ';
+  for (const type of ['output', 'thinking']) {
+    f = F();
+    f.onEvent('s', ev({ type, reasoningId: 'r', delta: HOSTILE }));
+    const t = all(f.screen('s'));
+    ok(!t.includes('ghp_') && !t.includes('A1b2C3d4'), type + ': token masked: ' + t);
+    ok(!t.includes('alice'), type + ': home path shortened: ' + t);
+    ok(!/[\x00-\x08\x0b-\x1f\x7f-\x9f\u202a-\u202e]/.test(t), type + ': no control code left');
+    ok(!t.includes('https://evil') && t.includes('click'), type + ': a Markdown link is its word');
+    ok(t.includes('<img src=x onerror=alert(1)>'), type + ': HTML stays text for textContent to show: ' + t);
+    ok(t.includes('red') && t.includes('end'), type + ': the words around the codes stay');
+  }
+  // a token split by an escape is whole again BEFORE the mask (the strip must come first)
+  f = F();
+  const split = 'ghp_A1b2\x1b[0mC3d4E5f6G7h8I9j0K1l2M3n4 next. ';
+  f.onEvent('s', ev({ type: 'output', delta: split }));
+  ok(!all(f.screen('s')).includes('A1b2') && !all(f.screen('s')).includes('M3n4'), 'a token split by ANSI is masked: ' + all(f.screen('s')));
+  f = F();
+  f.onEvent('s', ev({ type: 'toolCall', phase: 'start', tool: 'bash', callId: 'c', args: {} }), { kind: 'run', label: 'curl -H "x: gh\x1b[0mp_A1b2C3d4E5f6G7h8I9j0K1l2M3n4" /home/alice/y' });
+  ok(!all(f.screen('s')).includes('A1b2') && !all(f.screen('s')).includes('alice'), 'a tool label too: ' + all(f.screen('s')));
+  // a token still arriving is not shown half: the word being written is held back until it ends
+  f = F();
+  f.onEvent('s', ev({ type: 'output', delta: 'Reading ghp_A1b2C3' }));
+  eq(all(f.screen('s')), 'Reading', 'half a token: held back');
+  f.onEvent('s', ev({ type: 'output', delta: 'd4E5f6G7h8I9j0K1l2M3n4 done ' }));
+  ok(!all(f.screen('s')).includes('A1b2'), 'the whole token: masked');
+  // a text cut at KEEP loses its first word: half a token at the cut is never shown
+  f = F();
+  const pad = ' filler'.repeat(200);
+  f.onEvent('s', ev({ type: 'output', delta: 'ghp_A1b2C3d4E5f6G7h8I9j0K1l2M3n4' + pad.slice(0, 1200 - 10) + ' ' }));
+  ok(!/[A-Za-z0-9]{6,}/.test(all(f.screen('s')).replace(/filler|redacted/g, '')), 'a cut token head or tail does not show: ' + all(f.screen('s')).slice(0, 80));
+  // fail closed: no working mask, no lines
+  const none = L.create({ mask: {} as never }) as unknown as ReturnType<typeof F>;
+  none.onEvent('s', ev({ type: 'output', delta: 'secret words ' }));
+  eq(none.screen('s'), [], 'no mask: no lines');
+  eq(none.block('secret words'), [], 'no mask: no block');
+  const bad = L.create({ mask: { ...mask, redact: () => { throw new Error('x'); } } }) as unknown as ReturnType<typeof F>;
+  bad.onEvent('s', ev({ type: 'output', delta: 'secret words ' }));
+  eq(bad.screen('s'), [], 'a throwing mask: no lines');
+  // review of P2: hidden characters inside a token, on a screen and on flat's own path; a joiner stays when nothing is masked
+  const ST = require(path.join(R, 'safetext.js')) as { excerpt(t: string, r: (s: string) => string, n?: number): string; maskRaw(t: string, r: (s: string) => string): string; maskLabel(t: string, k: string, m: Record<string, (s: string) => string>): string };
+  const tail = 'E5f6G7h8I9j0K1l2M3n4', head = 'ghp_A1b2C3d4';
+  for (const [nm, ch] of [['ZWSP', '\u200b'], ['SHY', '\u00ad'], ['ALM', '\u061c'], ['LS', '\u2028'], ['ZWJ', '\u200d'], ['tag', '\u{e0041}'], ['VS', '\ufe0f']] as const) {
+    const tok = head + ch + tail;
+    f = F();
+    f.onEvent('s', ev({ type: 'output', delta: 'See ' + tok + ' here. ' }));
+    ok(!/A1b2|M3n4/.test(all(f.screen('s'))), nm + ': masked on a screen: ' + all(f.screen('s')));
+    f = F();
+    f.onEvent('s', ev({ type: 'toolCall', phase: 'start', tool: 'bash', callId: 'c', args: {} }), { kind: 'run', label: 'echo ' + tok });
+    ok(!/A1b2|M3n4/.test(all(f.screen('s'))), nm + ': masked in a tool line');
+    const red = (x: string) => redact(x, {});
+    ok(!/A1b2|M3n4/.test(ST.maskRaw(tok, red)), nm + ': flat maskRaw');
+    ok(!/A1b2|M3n4/.test(ST.excerpt(tok, red, 200)), nm + ': flat excerpt');
+    ok(!/A1b2|M3n4/.test(ST.maskLabel(tok, 'read', mask)), nm + ': flat maskLabel');
+    const lo = L.create({ mask }) as unknown as Feed;
+    lo.onEvent('s', ev({ type: 'output', delta: 'See ' + tok + ' now. Done. ' }));
+    ok(!/A1b2|M3n4/.test(String(lo.of('s')?.lines)), nm + ': flat readout');
+  }
+  const persian = 'می\u200cخواهم', red2 = (x: string) => redact(x, {});
+  eq(ST.maskRaw(persian, red2), persian, 'a joiner stays when nothing is masked (flat)');
+  f = F();
+  f.onEvent('s', ev({ type: 'output', delta: persian + ' done. ' }));
+  ok(all(f.screen('s')).includes('\u200c'), 'a joiner stays when nothing is masked (screen)');
+  // escape introducers: the letter after one may belong to the token
+  for (const intro of ['\x9b', '\x1b[', '\x1b', '\x9d', '\x90']) {
+    f = F();
+    f.onEvent('s', ev({ type: 'output', delta: 'See gh' + intro + 'p_A1b2C3d4E5f6G7h8I9j0K1l2M3n4 here. ' }));
+    ok(!/A1b2|M3n4/.test(all(f.screen('s'))), JSON.stringify(intro) + ': masked: ' + all(f.screen('s')));
+  }
+  // FR-035 strict: a question or approval: the command and URL masks too, one line, 200 characters; a missing mask: nothing
+  f = F();
+  const lines = (f as unknown as { strict(raw: string, k?: string): { k: string; t: string }[] }).strict('Allow: curl --api-key abc123secretvalue9 https://user:pw@example.test/x?token=zzz999 and more. ' + 'word '.repeat(5000));
+  eq(lines.length, 1, 'one line');
+  ok(Array.from(lines[0].t).length <= 200, 'at most 200 characters');
+  ok(!lines[0].t.includes('abc123secretvalue9'), 'the command mask ran: ' + lines[0].t);
+  ok(!lines[0].t.includes('pw@') && !lines[0].t.includes('zzz999'), 'the URL mask ran: ' + lines[0].t);
+  const u1 = (f as unknown as { strict(raw: string): { t: string }[] }).strict('Open https://example.test/cb?code=zzz999&x=1 please')[0].t;
+  ok(!u1.includes('zzz999'), 'a URL secret the command mask leaves: ' + u1);
+  f = F();
+  f.onEvent('s', ev({ type: 'output', delta: 'plain\u200b wo\u00adrd\u061c here. ' }));
+  eq(all(f.screen('s')), 'plain word here.', 'invisible characters do not reach a screen');
+  eq((L.create({ mask: { redact: mask.redact } as never }) as unknown as { strict(r: string): unknown[] }).strict('words'), [], 'no command mask: nothing');
+  // helpers' events never reach their parent's screen; a dropped agent keeps nothing
+  f = F();
+  f.onEvent('s', ev({ type: 'output', agentId: 'h', delta: 'helper words ' }));
+  eq(f.screen('s'), [], 'a helper stays off the screen');
+  // the page wiring: main's masked events come through liveFeed; flat's readout does not change by it
+  const app = fs.readFileSync(path.join(R, 'app.js'), 'utf8');
+  ok(/if\(LIVEACT\.onEvent\(a\.id,e,x\)\)livePaintSoon\(a\);\s*if\(OFFICE_VIEW==='real'&&window\.DurbarRealOffice\)window\.DurbarRealOffice\.feed\(a\.id\);/.test(app), 'liveFeed tells the monitor');
+  ok(/home:t=>R\.maskHomePaths\(t\)/.test(app), 'the page masks home paths on screens');
+  const rs = app.slice(app.indexOf('function realScreen'), app.indexOf('const roFrozen='));
+  ok(/quiet=!live&&\(state==='working'\|\|state==='thinking'\)/.test(rs) && /\|\|quiet\?\[\]/.test(rs), 'Live activity off: a busy screen shows no task');
+  ok(/\(state==='done'\|\|state==='idle'\)&&a\.lastOutput/.test(rs), 'the last reply only when done or idle, as flat');
+  ok(/ask\?LIVEACT\.strict\(/.test(rs), 'a question or error through the strict mask');
+  const ro = fs.readFileSync(path.join(R, 'realoffice.js'), 'utf8');
+  ok(!/\.ro-sl|ro-rows[^]*innerHTML/.test(ro.slice(ro.indexOf('function fillRows'), ro.indexOf('function paintScreen'))), 'rows take no markup');
 }
 console.log(`liveact: ${n} checks passed`);
