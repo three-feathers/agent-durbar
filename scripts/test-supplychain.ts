@@ -138,6 +138,7 @@ const rootPkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf
 assert.ok(!JSON.stringify(rootPkg.dependencies) .includes('claude-agent-sdk') && !JSON.stringify(rootPkg.devDependencies).includes('claude-agent-sdk') && !rootPkg.workspaces, 'the app does not depend on the bot\'s SDK and has no workspace link');
 assert.ok(!Object.keys(lock.packages).some((k) => k.includes('claude-agent-sdk')), 'the root lockfile does not hold the bot\'s SDK');
 assert.ok(Array.isArray(rootPkg.build.files) && rootPkg.build.files.every((f: string) => f.startsWith('dist') || f.startsWith('!') || !f.includes('prereview')), 'electron-builder cannot pack the bot');
+assert.ok(/directory:\s*\/scripts\/prereview\b/.test(fs.readFileSync(path.join(root, '.github', 'dependabot.yml'), 'utf8')), 'Dependabot watches the bot\'s own lockfile (spec 103 review, 2026-11-01)');
 assert.ok(/"exclude":\s*\[[^\]]*scripts\/prereview/.test(fs.readFileSync(path.join(root, 'tsconfig.scripts.json'), 'utf8')), 'the root script build never needs the SDK');
 
 const wfDir = path.join(root, '.github', 'workflows');

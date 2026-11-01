@@ -3,6 +3,7 @@
  * shell: every outside thing (the file system, `realpath`, the clock) is passed in, so `npm run test:prereview` runs it with fakes and
  * spends nothing. Text from a model or from a PR is data here: it is masked, allow-listed and capped, and nothing in it starts anything.
  */
+import * as crypto from 'crypto';
 import { maskTokenShapes } from '../src/shared/redact';
 
 // ---- who may be read (FR-004) ------------------------------------------------------------------------------------------------
@@ -109,9 +110,17 @@ export function shaToRead(pr: PrFacts, replay?: string | null): string {
 export const BOX_TOOLS = ['Read', 'Grep', 'Glob'] as const;
 export type Verdict = { allow: true } | { allow: false; reason: string };
 
-/** A glob or pattern that could leave the folder: absolute, home, a `..` segment, a drive letter, a null byte. */
+/**
+ * A glob is read by the tools, not by this check, so it is refused unless it is made only of characters whose meaning is plain: letters,
+ * digits, `_ . / * ? @ + -` and a space. No brace, bracket, parenthesis, `!`, `~`, `,`, `\\` or `$` form (`{/etc/passwd,a}`, `{{/etc,a},b}/*`,
+ * `.{.,x}/secret`, `[.][.]/x` all get through a deny-list). Also not absolute, no `..` segment. A model that wanted `*.{ts,tsx}` asks twice.
+ */
 export function badPattern(p: string): boolean {
-  return p.includes('\0') || /^([\/\\~]|[A-Za-z]:)/.test(p) || p.split(/[\/\\]/).includes('..') || /\{[^}]*(?:^|,)[\/\\~]|\{[^}]*\.\.[\/\\,}]/.test(p);
+  return p.includes('\0') || !/^[\p{L}\p{N}_.\/*?@+ -]*$/u.test(p) || p.startsWith('/') || p.split('/').includes('..');
+}
+/** A path the tools would expand before this check sees it: a leading `~` (their home), `$` or `%` variables, a drive or UNC form. */
+export function badPathText(p: string): boolean {
+  return p.includes('\0') || p.startsWith('~') || /[$%]/.test(p) || /^[A-Za-z]:/.test(p) || p.startsWith('\\\\');
 }
 
 /**
@@ -129,7 +138,7 @@ export function confine(call: { tool_name?: unknown; tool_input?: unknown }, wor
   let root: string;
   try { root = realpath(worktree); } catch { return deny('worktree unreadable'); }
   const inside = (p: string): Verdict => {
-    if (p.includes('\0')) return deny('bad path');
+    if (badPathText(p)) return deny('bad path');
     const abs = p.startsWith('/') || /^[A-Za-z]:[\/\\]/.test(p) ? p : `${worktree}${sep}${p}`;
     let real: string;
     try { real = realpath(abs); } catch { return deny('path not readable'); }
@@ -177,7 +186,7 @@ export function minimalEnv(a: { key: string; path: string; home: string; configD
   return { ANTHROPIC_API_KEY: a.key, PATH: a.path, HOME: a.home, CLAUDE_CONFIG_DIR: a.configDir, TMPDIR: a.tmp };
 }
 /** Variables that, set in the running process, refuse the run: a GitHub credential, or another way to pay or another place to send the key. */
-const REFUSED_ENV = ['GH_TOKEN', 'GITHUB_TOKEN', 'GH_ENTERPRISE_TOKEN', 'GITHUB_ENTERPRISE_TOKEN', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_BASE_URL', 'CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX', 'CLAUDE_CODE_USE_FOUNDRY'];
+const REFUSED_ENV = ['GH_TOKEN', 'GITHUB_TOKEN', 'GH_ENTERPRISE_TOKEN', 'GITHUB_ENTERPRISE_TOKEN', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_BASE_URL', 'CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX', 'CLAUDE_CODE_USE_FOUNDRY', 'GH_CONFIG_DIR', 'XDG_CONFIG_HOME', 'GH_HOST'];
 export function envProblems(env: Record<string, string | undefined>): string[] {
   return REFUSED_ENV.filter((k) => env[k] !== undefined && env[k] !== '').map((k) => `${k} is set; the bot holds no GitHub credential and pays only with its own key`);
 }
@@ -260,14 +269,16 @@ export function monthTotal(lines: LedgerLine[], now: Date): number {
   for (const l of last.values()) if (monthOf(l.t) === now.toISOString().slice(0, 7)) total += spent(l);
   return total;
 }
-/** True when a send ended with a cost it could not state and no person has acknowledged it since. */
+/** True when a send ended with a cost it could not state, or was killed before it ended (a reserve with no final line), and no person has acknowledged it since (spec 103 user story 3). */
 export function needsLook(lines: LedgerLine[]): boolean {
   let flagged = false;
+  const open = new Set<string>(); // a reserve that never got its final line: the run was killed after (or during) the send
   for (const l of lines) {
-    if (l.kind === 'ack') flagged = false;
-    else if (l.kind === 'final' && !(l.costKnown === true && num(l.cost) && l.cost >= 0)) flagged = true;
+    if (l.kind === 'ack') { flagged = false; open.clear(); }
+    else if (l.kind === 'reserve') open.add(l.id);
+    else if (l.kind === 'final') { open.delete(l.id); if (!(l.costKnown === true && num(l.cost) && l.cost >= 0)) flagged = true; }
   }
-  return flagged;
+  return flagged || open.size > 0;
 }
 /** One pure check, called right before each pass (and so each send). Unknown or unreadable means no. */
 export function mayRun(ledgerText: string, a: { passUsd: number; runSpentUsd: number; runUsd: number; monthlyUsd: unknown; now: Date }): { ok: true } | { ok: false; why: string } {
@@ -275,7 +286,7 @@ export function mayRun(ledgerText: string, a: { passUsd: number; runSpentUsd: nu
   if (!num(a.passUsd) || a.passUsd <= 0) return { ok: false, why: 'pass ceiling is not a positive number' };
   const { lines, bad } = parseLedger(ledgerText);
   if (bad > 0) return { ok: false, why: `ledger has ${bad} unreadable line(s); a person looks first` };
-  if (needsLook(lines)) return { ok: false, why: 'an earlier run could not state its cost; a person looks at the Console, then acknowledges it' };
+  if (needsLook(lines)) return { ok: false, why: 'an earlier send has no stated cost (or was killed); a person looks at the Console, then runs `prereview ack`' };
   if (a.runSpentUsd + a.passUsd > a.runUsd) return { ok: false, why: 'this pass would pass the per-run ceiling' };
   const total = monthTotal(lines, a.now);
   if (!(total + a.passUsd <= a.monthlyUsd)) return { ok: false, why: `this month's ledger (${total.toFixed(2)} USD) plus this pass's ceiling is over the local monthly ceiling` };
@@ -419,8 +430,10 @@ export function renderReport(r: Report): string {
 
 /** Folders under the running account's home that a read-only Codex sandbox could still read. Any of them present refuses the Codex runner. */
 export const CREDENTIAL_DIRS = ['.ssh', '.gnupg', '.aws', '.claude', '.config/gh', '.config/durbar-samikshak', '.config/durbar-prereview', '.npmrc', '.netrc'];
-export function codexStartProblems(a: { home: string; codexHome: string | undefined; exists: (p: string) => boolean; join: (...p: string[]) => string; inRepo: boolean }): string[] {
+export function codexStartProblems(a: { home: string; codexHome: string | undefined; exists: (p: string) => boolean; join: (...p: string[]) => string; inRepo: boolean; readable?: string[] }): string[] {
   const out: string[] = [];
+  // the cause, not a list of names: a secret this uid can read is a secret a hostile diff can ask the sandbox-less Codex to read (it has no hook)
+  for (const f of a.readable ?? []) out.push(`${f} is readable by the user Codex would run as; run Codex as a user that cannot read any key (spec 103 FR-026)`);
   if (!a.home) out.push('HOME is not set, so the account\'s credential folders cannot be checked');
   for (const d of CREDENTIAL_DIRS) if (a.home) if (a.exists(a.join(a.home, ...d.split('/')))) out.push(`${d} exists in the running account's home; a read-only Codex sandbox can still read it; run as the separate unix user (FR-012)`);
   if (!a.codexHome || !a.codexHome.startsWith('/')) out.push('CODEX_HOME must be an absolute folder of its own');
@@ -451,4 +464,27 @@ export function revalidateReport(raw: unknown): Report {
     };
   });
   return { v: 1, pr: o.pr, sha: o.sha, url: typeof o.url === 'string' && /^https:\/\/github\.com\/[A-Za-z0-9._\/-]+$/.test(o.url) ? o.url : '', startedAt: clean(o.startedAt, 40), model: clean(o.model, 60), diffBytes: Math.floor(n(o.diffBytes)), replay: !!o.replay, raised: (Array.isArray(o.raised) ? o.raised : []).slice(0, 8).map((x: unknown) => clean(x, 20)), passes };
+}
+
+// ---- the gate's payload, signed (FR-004 at the runner) -------------------------------------------------------------------------
+
+export interface GatePayload {
+  pr: number; sha: string; url: string; replay: boolean; prText: string | null; model: string; runner: 'claude' | 'codex';
+  ceilings: Ceilings; raised: string[]; outDir: string | null; allowGhLogin: boolean; ts: number; nonce: string; sig?: string;
+}
+/** A fixed-order encoding of everything the runner will act on, so no field can change without the signature changing. */
+export function canonicalPayload(p: GatePayload): string {
+  return JSON.stringify([p.pr, p.sha, p.url, p.replay, p.prText, p.model, p.runner, p.ceilings.runUsd, p.ceilings.passUsd, p.ceilings.maxTurns, p.ceilings.passTimeoutMs, p.raised, p.outDir, p.allowGhLogin, p.ts, p.nonce]);
+}
+export const signPayload = (p: GatePayload, key: Buffer): string => crypto.createHmac('sha256', key).update(canonicalPayload(p)).digest('hex');
+export const PAYLOAD_MAX_AGE_MS = 10 * 60_000;
+/** The runner holds no GitHub credential, so it accepts only a payload the gate (which checked FR-004) signed: fresh, never seen, intact. */
+export function payloadProblems(p: GatePayload, key: Buffer | null, now: number, seen: ReadonlySet<string>): string[] {
+  if (!key || key.length < 32) return ['no gate key (32 bytes or more): the runner takes only payloads the gate signed'];
+  if (typeof p.sig !== 'string' || !/^[0-9a-f]{64}$/.test(p.sig)) return ['payload is not signed by the gate'];
+  const want = Buffer.from(signPayload(p, key), 'hex'); const got = Buffer.from(p.sig, 'hex');
+  if (want.length !== got.length || !crypto.timingSafeEqual(want, got)) return ['payload signature does not match'];
+  if (!Number.isFinite(p.ts) || now - p.ts > PAYLOAD_MAX_AGE_MS || p.ts - now > 60_000) return ['payload is stale'];
+  if (typeof p.nonce !== 'string' || !/^[0-9a-f]{16,64}$/.test(p.nonce) || seen.has(p.nonce)) return ['payload was already used'];
+  return [];
 }

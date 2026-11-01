@@ -212,13 +212,37 @@ export interface RunDeps {
   places: Places; remote: string; ghLoggedIn: () => Promise<boolean>; log: (line: string) => void;
 }
 export interface RunInput {
-  pr: number; sha: string; url: string; replay: boolean; prText: string | null; model: string; runner: 'claude' | 'codex' | 'both';
+  pr: number; sha: string; url: string; replay: boolean; prText: string | null; model: string; runner: 'claude' | 'codex';
   ceilings: Ceilings; raised: string[]; outDir?: string; allowGhLogin?: boolean; codexBin?: string;
 }
-export type RunResult = { ok: true; report: Report; text: string; files: string[] } | { ok: false; why: string };
+export type RunResult = { ok: true; report: Report; text: string; files: string[]; warnings: string[] } | { ok: false; why: string };
 
 const remoteOk = (r: string): boolean => /^https:\/\/github\.com\/[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+(\.git)?$/.test(r) || (path.isAbsolute(r) && !r.includes('\0'));
-const write0600 = (file: string, text: string): void => { fs.writeFileSync(file, text, { mode: 0o600 }); fs.chmodSync(file, 0o600); };
+/** The folder a result goes in must be a real folder of ours that others cannot write (a planted link would send the write elsewhere). */
+export function resultDirProblem(dir: string, me: number): string | null {
+  try {
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    const st = fs.lstatSync(dir);
+    if (st.isSymbolicLink() || !st.isDirectory()) return 'the results folder is a link or not a folder';
+    if (st.uid !== me) return 'the results folder is not owned by the running user';
+    if ((st.mode & 0o022) !== 0) return 'the results folder is writable by others';
+    return null;
+  } catch { return 'the results folder cannot be made'; }
+}
+/**
+ * Writes a new file at 0600 that was not there: O_EXCL | O_NOFOLLOW, so a planted link or file is never followed or reused. An older file
+ * of ours at the name (same PR and sha again) is removed first, only if it is a plain file; a link or anything else refuses.
+ */
+export function writeNew0600(file: string, text: string): string | null {
+  try {
+    let st: fs.Stats | null = null; try { st = fs.lstatSync(file); } catch { st = null; }
+    if (st) { if (!st.isFile() || st.isSymbolicLink()) return 'a link or a non-file sits at the result name'; fs.unlinkSync(file); }
+    const noFollow = (fs.constants as any).O_NOFOLLOW ?? 0;
+    const fd = fs.openSync(file, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | noFollow, 0o600);
+    try { fs.writeFileSync(fd, text); fs.fchmodSync(fd, 0o600); } finally { fs.closeSync(fd); }
+    return null;
+  } catch { return 'could not write the result file'; }
+}
 
 export async function runReview(d: RunDeps, i: RunInput): Promise<RunResult> {
   const P = d.places;
@@ -318,7 +342,9 @@ export async function runReview(d: RunDeps, i: RunInput): Promise<RunResult> {
       }
     }
     if (i.runner !== 'claude') {
-      const cp = codexStartProblems({ home: d.env.HOME ?? '', codexHome: d.env.CODEX_HOME, exists: (p) => fs.existsSync(p), join: path.join, inRepo: (() => { let p = d.env.CODEX_HOME ?? '/'; for (let n = 0; n < 40; n++) { if (fs.existsSync(path.join(p, '.git'))) return true; const up = path.dirname(p); if (up === p) break; p = up; } return false; })() });
+      const secretLike = [P.keyFile, d.env.PREREVIEW_KEY_FILE, d.env.PREREVIEW_APP_KEY_FILE, ...(d.env.PREREVIEW_SECRET_FILES ?? '').split(path.delimiter)].filter((f): f is string => !!f && path.isAbsolute(f));
+      const readable = [...new Set(secretLike)].filter((f) => { try { fs.accessSync(f, fs.constants.R_OK); return true; } catch { return false; } }).map(() => 'a key file');
+      const cp = codexStartProblems({ readable, home: d.env.HOME ?? '', codexHome: d.env.CODEX_HOME, exists: (p) => fs.existsSync(p), join: path.join, inRepo: (() => { let p = d.env.CODEX_HOME ?? '/'; for (let n = 0; n < 40; n++) { if (fs.existsSync(path.join(p, '.git'))) return true; const up = path.dirname(p); if (up === p) break; p = up; } return false; })() });
       for (const pass of passes) {
         if (cp.length) { const p = base(pass, 'codex'); p.status = 'misconfigured'; p.note = clean(cp.join('; '), 300); reports.push(p); continue; }
         // diff and the fixed prompts only: no PR title, body or comment ever reaches Codex (FR-026)
@@ -332,16 +358,18 @@ export async function runReview(d: RunDeps, i: RunInput): Promise<RunResult> {
 
     const report: Report = { v: 1, pr: i.pr, sha: i.sha, url: i.url, startedAt: d.now().toISOString(), model: i.model, diffBytes: Buffer.byteLength(diff, 'utf8'), replay: i.replay, raised: i.raised, passes: reports };
     const text = renderReport(report);
-    const files: string[] = [];
+    const files: string[] = []; const warnings: string[] = [];
+    const me = typeof process.getuid === 'function' ? process.getuid() : -1;
     const dirs = [path.join(P.state, 'reports'), ...(i.outDir ? [i.outDir] : [])];
     for (const dir of dirs) {
-      fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+      const dp2 = resultDirProblem(dir, me);
+      if (dp2) { warnings.push(`${dir === dirs[0] ? 'state' : '--out'}: ${dp2}`); continue; } // the report is already paid for: say so, never write through it
       const stem = path.join(dir, `${i.pr}-${i.sha}`);
-      write0600(`${stem}.json`, JSON.stringify(report, null, 2)); write0600(`${stem}.md`, text); files.push(`${stem}.json`, `${stem}.md`);
-      for (const r of raws) { write0600(`${stem}.${r.pass}.raw`, maskAll(r.text)); files.push(`${stem}.${r.pass}.raw`); } // local file only; masked as well
+      const items: Array<[string, string]> = [[`${stem}.json`, JSON.stringify(report, null, 2)], [`${stem}.md`, text], ...raws.map((r): [string, string] => [`${stem}.${r.pass}.raw`, maskAll(r.text)])]; // raw: local file only; masked as well
+      for (const [f, t] of items) { const w = writeNew0600(f, t); if (w) warnings.push(`${path.basename(f)}: ${w}`); else files.push(f); }
     }
     d.log(`done: ${reports.map((p) => `${p.pass}/${p.runner}=${p.status}`).join(' ')}; diff ${report.diffBytes} bytes; denials ${reports.reduce((n, p) => n + p.denials.length, 0)}`);
-    return { ok: true, report, text, files };
+    return { ok: true, report, text, files, warnings };
   } finally {
     // worktree, temp home, lock: always
     try { if (work) fs.rmSync(work, { recursive: true, force: true }); } catch { /* ignore */ }

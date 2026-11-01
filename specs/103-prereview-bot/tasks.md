@@ -32,6 +32,8 @@
 - [x] T017 Results folder and `--out`. Test: file modes, `unusable` raw kept local only [FR-028]
 - [x] T018 Adversarial text in title, body, diff, file contents and model answer stays data. Test: mutants in the PR list [FR-029]
 
+- [x] T019 Review fixes of #997 (FR-030..FR-033): Codex key-readability refusal and no `both`, runnable `--run-as` command, signed gate payload, safe results writes, glob and `~` allow-list, post gate limits, killed-run needs-look and `ack`, gh-config env refusals, Dependabot entry, tsx upgrade. Test: `test:prereview` (each case fails when its fix is removed), `test:supplychain` [FR-030..FR-033]
+
 ## Phase 3: Real, owner's ask (spends credits)
 
 - [ ] T011 **Owner:** the key steps in the plan; Q1 to Q3 answered. Then one run, on the smallest open trusted PR. Say the cost first. Check the `init` line, a denial from a planted path, the ledger against the Console, **and that the credit balance is what fell**. Stop if not. Test: `real:` recorded [FR-010, FR-013, FR-014, FR-021]

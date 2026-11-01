@@ -39,3 +39,19 @@ updates:
       - dependency-name: '*'
         update-types: ['version-update:semver-major']
       - dependency-name: electron
+  - package-ecosystem: npm
+    directory: /scripts/prereview
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 1
+    cooldown:
+      default-days: 7
+    labels: [task, area:security, spec:103]
+    groups:
+      prereview:
+        patterns: ['*']
+        update-types: [minor, patch]
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']

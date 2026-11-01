@@ -17,7 +17,7 @@ import { OWNERS_REQUIRED, Report, clean, keyFileProblems, renderReport } from '.
 export interface PostConfig { postComment?: unknown; confirmations?: unknown }
 
 /** The gate. Pure. Anything but `postComment === true` and a valid date for each owner is a no. */
-export function postGate(cfg: PostConfig | null | undefined): { ok: true } | { ok: false; why: string } {
+export function postGate(cfg: PostConfig | null | undefined, now: Date = new Date()): { ok: true } | { ok: false; why: string } {
   if (!cfg || typeof cfg !== 'object') return { ok: false, why: 'posting is off (no config)' };
   if (cfg.postComment !== true) return { ok: false, why: 'posting is off (postComment is not true)' };
   const c = cfg.confirmations;
@@ -25,16 +25,22 @@ export function postGate(cfg: PostConfig | null | undefined): { ok: true } | { o
   const missing = OWNERS_REQUIRED.filter((o) => {
     if (!Object.prototype.hasOwnProperty.call(c, o)) return true;
     const v = (c as Record<string, unknown>)[o];
-    return typeof v !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(v) || Number.isNaN(Date.parse(v));
+    return typeof v !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(v) || Number.isNaN(Date.parse(v)) || v > now.toISOString().slice(0, 10); // a date still to come is no confirmation
   });
   return missing.length ? { ok: false, why: `owner confirmation missing: ${missing.join(', ')}` } : { ok: true };
 }
 
-/** The config file must be ours and not writable by others, or anyone on the machine could switch posting on. */
+/**
+ * The config file must belong to the operating user (the one who runs `post`), not to the bot's user, and neither it nor its folder may be
+ * writable by others. `[KNOWN GAP]` This is a local file check: any process of the operating account can still edit it, so it stops a
+ * mistake and the bot's own user, not that account. With one account for both, it is a convention only.
+ */
 export function readPostConfig(file: string, me: number): { cfg: PostConfig | null; problem?: string } {
   let st: fs.Stats;
   try { st = fs.lstatSync(file); } catch { return { cfg: null }; }
-  if (!st.isFile() || st.isSymbolicLink() || st.uid !== me || (st.mode & 0o022) !== 0) return { cfg: null, problem: 'post config is not a plain file of the running user, or is writable by others' };
+  let dir: fs.Stats | null = null; try { dir = fs.lstatSync(path.dirname(file)); } catch { dir = null; }
+  if (!st.isFile() || st.isSymbolicLink() || st.uid !== me || (st.mode & 0o022) !== 0) return { cfg: null, problem: 'post config is not a plain file of the operating user, or is writable by others' };
+  if (!dir || dir.isSymbolicLink() || !dir.isDirectory() || dir.uid !== me || (dir.mode & 0o022) !== 0) return { cfg: null, problem: 'the post config\'s folder is not the operating user\'s own, or is writable by others (keep it outside the bot\'s state folder)' };
   try { return { cfg: JSON.parse(fs.readFileSync(file, 'utf8')) }; } catch { return { cfg: null, problem: 'post config is not JSON' }; }
 }
 
@@ -74,7 +80,7 @@ export function buildComment(report: Report): string {
 export const MAX_COMMENT = 60_000;
 
 export async function postComment(deps: PostDeps, a: { owner: string; repo: string; pr: number; report: Report; cfg: PostConfig | null; keyFile: string; appIdFile: string }): Promise<{ ok: true; url: string } | { ok: false; why: string }> {
-  const gate = postGate(a.cfg); if (!gate.ok) return gate; // before any read of the key and before any network
+  const gate = postGate(a.cfg, deps.now()); if (!gate.ok) return gate; // before any read of the key and before any network
   if (!/^[A-Za-z0-9._-]{1,100}$/.test(a.owner) || !/^[A-Za-z0-9._-]{1,100}$/.test(a.repo) || !Number.isInteger(a.pr) || a.pr < 1) return { ok: false, why: 'bad repository or PR number' };
   if (a.report.pr !== a.pr) return { ok: false, why: 'report is for another PR' };
   const text = buildComment(a.report);

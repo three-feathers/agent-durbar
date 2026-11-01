@@ -15,3 +15,6 @@ Pitfalls found while building it (2026-11-01; agent-notes is at its word budget,
 - The `init` message of the SDK arrives only after the prompt is given to `query()`, so a wrong box is aborted at `init` but the first request may already be in flight; the ledger counts that pass at its ceiling anyway.
 - A pass that stops at `init` states no cost, and an unknown cost blocks the next run until a person acknowledges it (an `ack` line in the ledger). That is deliberate.
 - `.ts` files of the repo are CommonJS; `cli.mts` (ESM, run by tsx) must import them as a default export.
+- `--run-as` runs `node --import <tsx loader by path> cli.mts run` (a plain `node cli.mts run` cannot read TypeScript); `test:prereview` runs that exact command when tsx is installed in this folder (CI's root `npm ci` does not install it, so there it is skipped).
+- Codex has no hook: it refuses to start when any key file is readable by its user, so give it a unix user of its own. A glob is allowed only in plain characters (no braces or brackets); a model that wants `*.{ts,tsx}` asks twice.
+- A deny-list of path names is the wrong shape for a boundary: check real readability (`access`) and allow-list characters.
