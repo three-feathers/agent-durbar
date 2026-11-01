@@ -350,10 +350,8 @@ module.exports = async (ctx) => {
   await js(`document.getElementById('msgInput').focus()`);
   // Windows and Linux have no app menu (spec 052 FR-083, appmenu.ts), so nothing there binds Ctrl+W: pressed here it must close no tab and
   // no window. On a Mac Cmd+W is the menu's Close Window (it hides the window, the old behaviour; FR-130 [KNOWN GAP]), so it is not pressed.
-  // A closed window ends the app (window-all-closed) with exit 0 before any assertion below runs, so the close itself fails the driver.
+  // A closed window fails the driver at once: the shared helpers guard every driver's window (spec 008 FR-136, issue #922).
   const w0 = win();
-  const onClosed = () => { console.error('DRIVER FAILED AssertionError: Ctrl+W outside the Browser tab closed the window'); app.exit(1); };
-  w0.once('closed', onClosed);
   if (!IS_MAC) await H.key('W', ['control'], { char: 'never' });
   await toBrowser(); // the precondition: the browser still answers, and nothing was closed
   await wait(() => count() === n2 && tabs().tabs.length === n2, 'Ctrl+W outside the Browser tab closed no tab');
@@ -361,7 +359,6 @@ module.exports = async (ctx) => {
   // isVisible() is not: on the Windows CI runner it is false for this window even when no key was pressed (run 41191186758, 2026-10-31).
   const winState = w0.isDestroyed() ? 'destroyed' : `visible=${w0.isVisible()} minimized=${w0.isMinimized()}`;
   assert.ok(!w0.isDestroyed() && !w0.webContents.isDestroyed() && (process.platform === 'win32' || w0.isVisible()), 'and the window is still there: ' + winState);
-  w0.removeListener('closed', onClosed);
   console.log('[browser-tabs] US6.11 ok');
 
   // US6.10 and the cap: six pages in this session's tabs; at most four stay loaded; a dropped background tab has no view and comes back

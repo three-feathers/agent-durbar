@@ -3041,7 +3041,7 @@ function nsClosed(){
 /* the screen's body: the tools once, the list on every change (so the search field keeps its focus and text) */
 function nsRender(focus){
   const h=$('nsHost'); if(!h)return;
-  h.innerHTML=`<section class="scr-sec ns-sec" aria-label="${esc('Notes of '+NS.name)}"><div class="ns-tools"><input class="nt-find" id="nsSearch" type="search" placeholder="Search notes" aria-label="Search notes" autocomplete="off" spellcheck="false"><button class="btn sm primary" id="nsAdd" type="button">+ Note</button></div><div id="nsFile" class="ns-file"></div><div id="nsList"></div></section>`;
+  h.innerHTML=`<section class="scr-sec ns-sec" aria-label="${esc('Notes of '+NS.name)}"><div class="ns-tools"><input class="nt-find" id="nsSearch" type="search" placeholder="Search notes" aria-label="Search notes" autocomplete="off" spellcheck="false"><button class="btn sm primary" id="nsAdd" type="button">+ Note</button><button class="btn sm" id="nsExport" type="button" title="Save every note of this folder, done ones included, as a Markdown file">Export…</button><button class="btn sm danger" id="nsDelAll" type="button">Delete all…</button></div><div id="nsFile" class="ns-file"></div><div id="nsList"></div></section>`;
   wireNotesScreen(h);
   nsPaint();
 }
@@ -3068,6 +3068,10 @@ function nsPaint(){
   const d=$('nsDone'); if(d)d.addEventListener('toggle',()=>{NS.doneOpen=d.open;});
   ntFocusBack(list,fm);
   const add=$('nsAdd'); if(add)add.disabled=!a||!notesOn(a)||!st.ok||!!st.readOnly;
+  /* spec 083 T034b: Export… needs notes (an unreadable folder has none to give), Delete all… notes it can change */
+  const none=!a||!notesOn(a)||!st.ok||!st.notes.length, ex=$('nsExport'), da=$('nsDelAll');
+  if(ex){ex.disabled=none||!bridge.notesExport;}
+  if(da){da.disabled=none||!!st.readOnly||!bridge.notesDeleteAll;}
   nsFilePaint(a,st);
 }
 /* ---- the project-file switch (spec 083 T042, FR-050, FR-055) ----
@@ -3137,6 +3141,36 @@ async function nsFileOff(a,btn){
   if(!r||!r.ok){nsFileSay((r&&r.error)||'Could not turn it off.');return;}
   nsFileSay(r.demo?(r.message||'Demo: no file written'):(r.message||'Durbar stopped writing .durbar/notes.md.'));
 }
+/* ---- Export… and Delete all… (spec 083 T034b, FR-048) ----
+   Export: main shows the system save dialog and writes the file (the window sends only the chat's id, never a path). Delete all: the
+   window asks with the count (Cancel focused), then main asks again natively (a dialog the page cannot answer) and keeps tombstones. */
+let nsBusy=false;
+async function nsExport(a,btn){
+  if(nsBusy||!bridge.notesExport)return;
+  nsBusy=true;
+  let r=null;try{r=await bridge.notesExport(liveRoot(a).id);}catch(e){r=null;}
+  finally{nsBusy=false;}
+  if(r&&!r.ok&&r.cancelled){focusIn($('nsExport')||btn);return;}
+  if(!r||!r.ok){toast(esc((r&&r.error)||'Could not export the notes.'),5000).classList.add('err');focusIn($('nsExport')||btn);return;}
+  const t=r.demo?(r.message||'Demo: nothing written'):'Exported '+r.count+(r.count===1?' note':' notes')+' to '+r.name+'.';
+  toast(esc(t),4000).classList.add('ok');announce(t);focusIn($('nsExport')||btn);
+}
+async function nsDeleteAll(a,btn){
+  if(nsBusy||!bridge.notesDeleteAll)return;
+  const st=notesOf(a), n=st&&st.ok?st.notes.length:0; if(!n)return;
+  const lines=['Durbar remembers the last 300 deleted notes, so they don\'t come back from an older copy.'];
+  if(st.fileSwitch&&st.fileSwitch.on)lines.push('.durbar/notes.md is written again without them.');
+  const v=await askDialog({title:'Delete all notes?',body:'Delete all '+(n===1?'1 note':n+' notes')+' of '+NS.name+', done ones included? This cannot be undone.',lines,size:'m',returnFocus:()=>$('nsDelAll')||btn,
+    buttons:[{label:'Cancel',value:null},{label:'Delete all',value:'ok',cls:'primary danger'}]});
+  if(!v||v.value!=='ok')return;
+  nsBusy=true;
+  let r=null;try{r=await bridge.notesDeleteAll(liveRoot(a).id);}catch(e){r=null;}
+  finally{nsBusy=false;}
+  await notesFetch(a);
+  if(!r||!r.ok){toast(esc((r&&r.error)||'Could not delete the notes.'),5000).classList.add('err');focusIn($('nsDelAll')&&!$('nsDelAll').disabled?$('nsDelAll'):$('nsSearch'));return;}
+  const c=typeof r.count==='number'?r.count:n, t=(c===1?'1 note':c+' notes')+' deleted.';
+  toast(esc(t),3200).classList.add('ok');announce(t);focusIn($('nsSearch')||$('nsAdd'));
+}
 /* the rows the keyboard can reach: a folded Done group's rows are not shown */
 function nsVisibleRows(){return [...document.querySelectorAll('#nsList .nt-row')].filter(r=>!r.closest('details:not([open])'));} /* a closed <details> keeps its rows' boxes in Chromium: test the fold, not the boxes */
 function nsFocusRow(id){
@@ -3148,6 +3182,8 @@ function wireNotesScreen(h){
   h.addEventListener('click',e=>{
     const a=byId(NS.id); if(!a)return;
     if(e.target.closest('#nsAdd')){addNoteUi(a,$('nsAdd'));return;}
+    const exb=e.target.closest('#nsExport'); if(exb){if(!exb.disabled)nsExport(a,exb);return;}
+    const dab=e.target.closest('#nsDelAll'); if(dab){if(!dab.disabled)nsDeleteAll(a,dab);return;}
     const fsw=e.target.closest('#nsFileSw'); if(fsw){if(!fsw.disabled)nsFileToggle(a,fsw);return;}
     const b=e.target.closest('[data-nt]'); if(!b)return;
     if(b.dataset.nt==='startover'){startOverNotes(a,b);return;}
@@ -7439,16 +7475,29 @@ async function hideFolder(r,hidden){
 }
 async function removeFolder(r){
   const ags=agents.filter(x=>x.room===r.id), busy=ags.filter(x=>['working','thinking','waiting'].includes(x.state)).length;
-  const msg=busy?`${esc(r.name)} has ${busy} agent${busy===1?'':'s'} still working. Remove the folder and end ${busy===1?'it':'them'}?`:`Remove ${esc(r.name)}? Its sessions end here; your earlier ${esc(kindWord(((ags.find(x=>!x.parent)||{}).info||{}).adapterId))} sessions stay on disk and can be resumed if you add the folder again.`;
-  if(!window.confirm(unesc(msg)))return;
-  const root=ags.find(x=>!x.parent); const res=root&&bridge.removeFolder?await bridge.removeFolder(root.id):{ok:true,removedIds:[]};
+  /* plain text (askDialog sets textContent), so the name is joined, not escaped */
+  const msg=busy?r.name+` has ${busy} agent${busy===1?'':'s'} still working. Remove the folder and end ${busy===1?'it':'them'}?`:'Remove '+r.name+`? Its sessions end here; your earlier ${kindWord(((ags.find(x=>!x.parent)||{}).info||{}).adapterId)} sessions stay on disk and can be resumed if you add the folder again.`;
+  /* spec 083 FR-048 (T034b): the folder's notes, fetched through its main chat; the box only when it has notes, unticked */
+  const nsA=nsAgentOf(r), nb=nsA&&byId(nsA.id), nst=nb?await notesFetch(nb):null, nn=nst&&nst.ok?nst.notes.length:0;
+  const lines=[];
+  if(nn)lines.push('Unticked, its notes stay and come back if you add the folder again.');
+  if(nn&&nst.fileSwitch&&nst.fileSwitch.on)lines.push('.durbar/notes.md stays in the project either way; Durbar stops updating it.');
+  const v=await askDialog({title:'Remove folder?',body:msg,lines,size:nn?'m':undefined,check:nn?{label:'Also delete its notes ('+nn+')',checked:false}:undefined,
+    buttons:[{label:'Cancel',value:null},{label:'Remove folder',value:'rm',cls:'primary danger'}]});
+  if(!v||v.value!=='rm')return;
+  const del=!!(nn&&v.checked===true);
+  const root=ags.find(x=>!x.parent); const res=root&&bridge.removeFolder?await bridge.removeFolder(root.id,del?{deleteNotes:true}:undefined):{ok:true,removedIds:[]};
+  if(res&&!res.ok&&res.cancelled){toast(esc(r.name)+' and its notes are kept.',3600);return;}
   if(!res.ok){toast('Could not remove the folder.',4000).classList.add('err');return;}
+  if(nb)NT.by.delete(notesKey(nb));
   if(ui.selected&&(byId(ui.selected)||{}).room===r.id)closePanel();
   const gone=new Set(ags.map(x=>x.id));
   for(let i=agents.length-1;i>=0;i--){if(gone.has(agents[i].id)||gone.has(agents[i].parent)){DRAFTS.delete(agents[i].id);UNREAD.forget(agents[i].id);UNREAD_AT.delete(agents[i].id);UNREAD_SAID.delete(agents[i].id);HL_AT.delete(agents[i].id);delete chats[agents[i].id];delete prev[agents[i].id];agents.splice(i,1);}}
   const ri=ROOMS.indexOf(r); if(ri>=0)ROOMS.splice(ri,1);
   if(ui.ws===r.id)ui.ws='all';
-  renderFilter(); renderFolders(); scheduleRender(); toast(esc(r.name)+' removed.',3200).classList.add('ok');
+  renderFilter(); renderFolders(); scheduleRender();
+  if(res.notesError)toast(esc(r.name)+' removed; its notes could not be deleted. '+esc(res.notesError),6000).classList.add('err');
+  else toast(esc(r.name)+(res.notesDeleted?' removed and its notes deleted.':' removed.'),3200).classList.add('ok');
 }
 /* spec 006 FR-018: a display name for the room; empty goes back to the folder's own name */
 /* The submit part of a folder rename (FR-022): the dialog and the inline field both call it. Resolves {ok:true}, {ok:false,reason} (a rule refusal) or {ok:false} (a toast was shown). */
