@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" role="img" aria-label="Agent Durbar">
+  <title>Agent Durbar: Prompt sovereign</title>
+  <rect data-slot="plate" fill="#10141E" x="0" y="0" width="16" height="16" rx="3"/>
+  <path data-slot="gold" fill="#FFC21A" d="M3 4L2.5 1L4.2 2.3L5.5 0.8L6.8 2.3L8.5 1L8 4Z"/>
+  <path data-slot="gold" fill="#FFC21A" d="M3 5H4.8L7.8 8L4.8 11H3V9.8L4.8 8L3 6.2Z"/>
+  <rect data-slot="gold" fill="#FFC21A" x="9" y="9" width="4.5" height="2"/>
+  <rect data-slot="bot" fill="#C2DEFF" x="2" y="12" width="3" height="3" rx="0.5"/>
+  <rect data-slot="bot" fill="#C2DEFF" x="7" y="12" width="3" height="3" rx="0.5"/>
+  <rect data-slot="bot" fill="#C2DEFF" x="12" y="12" width="3" height="3" rx="0.5"/>
+</svg>

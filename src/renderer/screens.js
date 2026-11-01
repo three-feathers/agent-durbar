@@ -342,6 +342,12 @@
     const charSec=window.THEME&&window.THEME.setCharacters&&X.applyCharacters?`<section class="scr-sec" aria-labelledby="chH"><h3 id="chH">Characters</h3>
         <p class="scr-note">Who sits at the desks, on top of any theme; the choice applies at once and is kept on this computer.</p>
         <ul class="thlist" id="chList">${charItems()}</ul></section>`:'';
+    /* Logo (spec 101 FR-020..FR-023): the top-bar icon, the Characters pattern; DurbarLogo (logo-marks.js) keeps the choice in localStorage and applies it at once */
+    const LG=window.DurbarLogo;
+    const logoItems=()=>{const cur=LG.current();return LG.IDS.map((id)=>{const n=LG.NAMES[id];return `<li class="throw"><button class="thpick" type="button" data-logo="${esc(id)}" aria-pressed="${id===cur}" aria-label="Logo ${esc(n[0])}: ${esc(n[1])}"><span class="lgsw" aria-hidden="true">${LG.preview(id)}</span><span class="thtx"><b title="${esc(n[0])}">${esc(n[0])}</b><small title="${esc(n[1])}">${esc(n[1])}</small></span></button></li>`;}).join('');};
+    const logoSec=LG&&LG.IDS?`<section class="scr-sec" aria-labelledby="lgH"><h3 id="lgH">Logo</h3>
+        <p class="scr-note">The icon in the top bar; it takes the colours of your world. The app\u2019s own icon in the Dock, taskbar or Finder stays the same.</p>
+        <ul class="thlist" id="lgList">${logoItems()}</ul></section>`:'';
     const ab=app.about;
     const aboutSec=ab?`<section class="scr-sec" aria-labelledby="aboutH"><h3 id="aboutH">About</h3>
         <p class="scr-note"><b>${esc(ab.name)}</b> ${esc(ab.version)} · by <b>${esc(ab.owner)}</b></p>
@@ -377,7 +383,7 @@
         <li>It does not see your bill; costs are estimates.</li>
         <li>It sends nothing to any server of its own.</li>
         <li>Rooms you hide or switch off still run and cost money.</li></ul></section>`;
-    r.innerHTML=head('Settings')+`<div class="scr-body">${hsSec}${pfSec}${detailSec}${keySec}${notSec}${themeSec}${charSec}${capSec}${moodSec}${breakSec}${linksSec}${notifySec}${schedSec}${floorsSec}${placesSec}
+    r.innerHTML=head('Settings')+`<div class="scr-body">${hsSec}${pfSec}${detailSec}${keySec}${notSec}${themeSec}${charSec}${logoSec}${capSec}${moodSec}${breakSec}${linksSec}${notifySec}${schedSec}${floorsSec}${placesSec}
       <details class="scr-adv" id="advMcp"${advOpen?' open':''}><summary><h3 class="scr-adv-h">Advanced: MCP servers (extra tools for agents)</h3><span class="mtag warn" id="advMcpAtt"${live&&live.agg.attention?'':' hidden'}>${esc(attText(live?live.agg.attention:0))}</span></summary>
       <section class="scr-sec" aria-labelledby="mcpH"><h3 id="mcpH" tabindex="-1">MCP servers</h3>
         ${liveSection()}
@@ -444,6 +450,12 @@
       const b=e.target.closest&&e.target.closest('[data-characters]');if(!b||!X.applyCharacters)return;
       X.applyCharacters(b.dataset.characters);
       $('chList').querySelectorAll('[data-characters]').forEach((x)=>x.setAttribute('aria-pressed',String(x===b)));
+    });
+    /* spec 101 FR-020: a Logo pick shows at once in the top bar and is kept (no IPC, no file) */
+    if($('lgList'))$('lgList').addEventListener('click',(e)=>{
+      const b=e.target.closest&&e.target.closest('[data-logo]');if(!b||!window.DurbarLogo)return;
+      const v=window.DurbarLogo.set(b.dataset.logo);
+      $('lgList').querySelectorAll('[data-logo]').forEach((x)=>x.setAttribute('aria-pressed',String(x.dataset.logo===v)));
     });
     if($('thImport'))$('thImport').onclick=async()=>{
       if(!X.bridge.importTheme)return;

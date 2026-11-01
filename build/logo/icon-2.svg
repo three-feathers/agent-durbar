@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-label="Agent Durbar">
+  <title>Agent Durbar: Terminal chair</title>
+  <rect data-slot="plate" fill="#03183A" x="0" y="0" width="1024" height="1024" rx="200"/>
+  <path data-slot="gold" fill="#FFC21A" d="M451 192L433 131L478 159L512 100L545 159L591 131L574 192Z"/>
+  <rect data-slot="gold" fill="#FFC21A" x="356" y="212" width="312" height="445" rx="8"/>
+  <rect data-slot="screen" fill="#060C1A" x="388" y="254" width="247" height="340" rx="8"/>
+  <path data-slot="cream" fill="#FBF6EE" d="M423 367.7Q419.7 371.5 423.5 374.8L468.9 415L423.5 455.2Q419.7 458.5 423 462.3L435 475.7Q438.3 479.5 442 476.2L508.9 417Q511.1 415 508.9 413L442 353.8Q438.3 350.5 435 354.3Z"/>
+  <rect data-slot="cream" fill="#FBF6EE" x="510" y="456" width="95" height="23" rx="4"/>
+  <rect data-slot="gold" fill="#FFC21A" x="327" y="649" width="371" height="110" rx="6"/>
+  <rect data-slot="gold" fill="#FFC21A" x="341" y="750" width="43" height="140" rx="3"/>
+  <rect data-slot="gold" fill="#FFC21A" x="639" y="750" width="43" height="140" rx="3"/>
+  <rect data-slot="bot" fill="#C2DEFF" x="198.5" y="666" width="12" height="74"/>
+  <circle data-slot="bot" fill="#C2DEFF" cx="204.5" cy="666" r="15"/>
+  <rect data-slot="bot" fill="#C2DEFF" x="131" y="704" width="147" height="98" rx="36"/>
+  <circle data-slot="eye" fill="#0E1420" cx="171.5" cy="753" r="14"/>
+  <circle data-slot="eye" fill="#0E1420" cx="237.5" cy="753" r="14"/>
+  <rect data-slot="bot" fill="#C2DEFF" x="152" y="806" width="105" height="68" rx="26"/>
+  <rect data-slot="bot" fill="#C2DEFF" x="168" y="860" width="21" height="32" rx="5"/>
+  <rect data-slot="bot" fill="#C2DEFF" x="217" y="860" width="21" height="32" rx="5"/>
+  <rect data-slot="bot" fill="#C2DEFF" x="812.5" y="666" width="12" height="74"/>
+  <circle data-slot="bot" fill="#C2DEFF" cx="818.5" cy="666" r="15"/>
+  <rect data-slot="bot" fill="#C2DEFF" x="745" y="704" width="147" height="98" rx="36"/>
+  <circle data-slot="eye" fill="#0E1420" cx="785.5" cy="753" r="14"/>
+  <circle data-slot="eye" fill="#0E1420" cx="851.5" cy="753" r="14"/>
+  <rect data-slot="bot" fill="#C2DEFF" x="766" y="806" width="105" height="68" rx="26"/>
+  <rect data-slot="bot" fill="#C2DEFF" x="782" y="860" width="21" height="32" rx="5"/>
+  <rect data-slot="bot" fill="#C2DEFF" x="831" y="860" width="21" height="32" rx="5"/>
+</svg>

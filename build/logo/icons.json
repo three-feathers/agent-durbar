@@ -1,0 +1,122 @@
+{
+  "note": "Written by scripts/build-icons.js (npm run icons:build). test:logo-assets fails when a source changed without a rebuild. Output bytes may differ across OSes.",
+  "sources": {
+    "build/logo/icon-1.svg": "1688f5c460cf6c833adae6f3f4da59762e7c2cc0ba31fc30a7e43942227e1ea0",
+    "build/logo/icon-1-32.svg": "ac1459717616e0f636bcd262d0c6d1857024a856ec8e23e6db15328452332124",
+    "build/logo/icon-1-20.svg": "02fa6aada0b130d955041a79a3990da99b9f73968345dc901303efac8139bc7f",
+    "build/logo/icon-1-16.svg": "90d7f9e57e7c0e09da41bab0e52d6a16f2ad04765af6eaf112191506e917b745",
+    "build/logo/icon-2.svg": "08678f42c7822a5230baf1055f7e585cf0b596b2eaa9dd5a55058645cc0eefc2",
+    "build/logo/icon-2-32.svg": "45bdadbf13d4171fe78fef42ebec92d1a4a597112bc59b7d66ad56bee755368b",
+    "build/logo/icon-2-20.svg": "3e7dc66e4547844b4c5eacf7adefbd238159dc8d0e5498675c76d3f47345c5ed",
+    "build/logo/icon-2-16.svg": "9ce2245b28d101e9de7fc9ca6bb2067524995e638ee4dc14bfbcb598380d809e",
+    "build/logo/icon-3.svg": "c8c10dd0eb348cae30d00af3d50703cf285d2c537eafd7ad4890d80d05241a0f",
+    "build/logo/icon-3-32.svg": "20b857c3b85cf9754b6287e183e60f8289e4be22e50c5c58343843cd283c1463",
+    "build/logo/icon-3-20.svg": "8bbdc41feec20712be0c313726e1b9b77c451cb04d15b42f0f18d239cea07515",
+    "build/logo/icon-3-16.svg": "090c50b714ad4775fa39910ca12127404c343969a2202b6ddf1c64c16b0fd80f",
+    "build/logo/icon-5.svg": "95b018de12d6dcb82cfe202f94544eaf76fc611948aa87676536555dcf12ef40",
+    "build/logo/icon-5-32.svg": "53ac42989f075459ce3698caf28859dbca91efaffcccfce8d31f6dacba009e73",
+    "build/logo/icon-5-20.svg": "3ee50d912671083242c56ebc02108c0bdfb514b07b918731c8318ae83859f8ae",
+    "build/logo/icon-5-16.svg": "70f9fb4938829c4233718d5c393986147d7be8e813267827edc1f26bf127216f"
+  },
+  "outputs": {
+    "build/icon.png": "8c170d1c359c74797bbcf5a965dfa07b906b1af14e0ce0a9dc65475d3ee1d1b6",
+    "build/icon.ico": "0b3d453f54b438e789d477acec15af7b1c21db4c172dd2788c371b4a9ffdc2cf",
+    "build/icon.icns": "3f11aa8aad5953e77ea5d3b9485d9d5834fb612250d45d44407a5d8a994b8168",
+    "build/icon.svg": "1688f5c460cf6c833adae6f3f4da59762e7c2cc0ba31fc30a7e43942227e1ea0"
+  },
+  "renderer": {
+    "src/renderer/logo-marks.js": "d3d7fb68d93389bef2e5b4e44deb6ba4a6cb5b2486c014e0eea2cd753ab2e7dc"
+  },
+  "ico": [
+    {
+      "size": 16,
+      "from": "icon-1-16.svg"
+    },
+    {
+      "size": 24,
+      "from": "icon-1-32.svg"
+    },
+    {
+      "size": 32,
+      "from": "icon-1-32.svg"
+    },
+    {
+      "size": 48,
+      "from": "icon-1-32.svg"
+    },
+    {
+      "size": 64,
+      "from": "icon-1-32.svg"
+    },
+    {
+      "size": 128,
+      "from": "icon-1.svg"
+    },
+    {
+      "size": 256,
+      "from": "icon-1.svg"
+    }
+  ],
+  "icns": [
+    {
+      "type": "icp4",
+      "size": 16,
+      "from": "icon-1-16.svg",
+      "plateInset": 1
+    },
+    {
+      "type": "icp5",
+      "size": 32,
+      "from": "icon-1-32.svg",
+      "plateInset": 1
+    },
+    {
+      "type": "ic11",
+      "size": 32,
+      "from": "icon-1-32.svg",
+      "plateInset": 1
+    },
+    {
+      "type": "ic12",
+      "size": 64,
+      "from": "icon-1-32.svg",
+      "plateInset": 1
+    },
+    {
+      "type": "ic07",
+      "size": 128,
+      "from": "icon-1.svg",
+      "plateInset": 0.8046875
+    },
+    {
+      "type": "ic13",
+      "size": 256,
+      "from": "icon-1.svg",
+      "plateInset": 0.8046875
+    },
+    {
+      "type": "ic08",
+      "size": 256,
+      "from": "icon-1.svg",
+      "plateInset": 0.8046875
+    },
+    {
+      "type": "ic14",
+      "size": 512,
+      "from": "icon-1.svg",
+      "plateInset": 0.8046875
+    },
+    {
+      "type": "ic09",
+      "size": 512,
+      "from": "icon-1.svg",
+      "plateInset": 0.8046875
+    },
+    {
+      "type": "ic10",
+      "size": 1024,
+      "from": "icon-1.svg",
+      "plateInset": 0.8046875
+    }
+  ]
+}

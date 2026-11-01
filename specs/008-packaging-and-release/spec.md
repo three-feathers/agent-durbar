@@ -139,6 +139,10 @@ Retired spec numbers, never to be reused for a new spec (`specs:check` and `--ad
 
 ## Changes
 
+### 2026-10-31: the app icon's source moves to spec 101
+
+- [Spec 101](../101-logo-family/spec.md) owns the app icon from its P1: `build/icon.*` come from `build/logo/` by `npm run icons:build`. FR-025 stays (the Linux window icon is `build/icon.png`). Nothing built yet.
+
 ### 2026-10-31: a driver whose window closes fails (issue #922)
 
 - **FR-136** `[IMPLEMENTED]` `test:` `sim:` On Windows and Linux a closed window quits the app (`window-all-closed`) with exit 0 before the driver's next assertion runs, and `ui-suite.js` counted the driver as passed (found while fixing #915: a mutant that closed the window on Ctrl+W let `check-browser-tabs` stop early and pass). `waits(ctx)` in `scripts/driver-helpers.js` (which `helpers(ctx)` calls) now arms `guardWindow(ctx.win)`: if the window closes and main's `window-all-closed` fires before the driver ends, it prints `DRIVER FAILED AssertionError: the window closed before the driver finished (spec 008 FR-136)` and exits 1, so every `ui-suite.js` driver is covered (`test:uisuite` checks that each one loads the shared helpers; `installed-app-check.js` and `pack-esm-check.js` drive a packaged app and are not covered). A driver that closes its window on purpose calls `H.allowWindowClose()` first (none does today). The driver's normal end is not a failure: main ends it with `app.exit`, which closes the window too (a first version that watched only `closed` failed every driver) but emits no `window-all-closed`. The guard is in the shared helper, not in `src/main/main.ts` as #922 first proposed: the window is the driver's, no product code changes, and the unit test (`test:uisuite`) plus a mutant run cover it. `[KNOWN GAP]` on a Mac a close only hides the window (`hideOnClose`), so there is no `closed` event and nothing to catch there; the `check-browser-tabs` Ctrl+W step keeps its own `isDestroyed()` assert for that reason. `sim:` Linux, a throw-away driver that closes its window: guard off exit 0 (the bug), guard on exit 1 with the message, `allowWindowClose()` exit 0, a driver that ends normally exit 0.

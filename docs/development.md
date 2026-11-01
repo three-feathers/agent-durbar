@@ -13,6 +13,7 @@ npm run test:claudecli    # opt-in, not in `npm test`: the flags Durbar's Claude
 DURBAR_CLAUDE_BIN=/abs/path/claude npm start   # dev/test only: use that Claude Code file first (absolute path to an existing file; ignored in a packaged build; prints a warning)
 npm run check:office      # layout check at 1440x900 and 1280x800 (Electron; xvfb on Linux), simulator only
 npm run shots:docs        # retake every screenshot the README and the website link (simulator, one Electron at a time; -- --only, --list, --out <dir>); every picture it writes is palette-compressed (about 60% smaller, with a quality guard)
+npm run icons:build      # by hand, one offscreen Electron: rebuilds build/icon.{svg,png,ico,icns}, build/logo/icons.json and src/renderer/logo-marks.js from the drawings in build/logo (spec 101); test:logo-assets fails when they are stale
 npm run shots:compress    # compress screenshots by hand: the linked ones, or the files you name (-- --check only lists; DURBAR_SHOTS_COMPRESS=off turns it off in shots:docs)
 npm run check:geometry    # Retro lays out exactly like Clean Office (CHECK_ALL_THEMES=1: every theme, about a minute)
 npm run check:ui          # every simulator driver that asserts, one after another, on any OS (UI_SUITE_XVFB=1 keeps windows off a Linux desktop); -- --list names them, -- --only check-notes,check-edits runs just those
