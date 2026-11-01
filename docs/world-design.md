@@ -68,7 +68,7 @@ Everything in the app must be in harmony with the world, not only the room. [Spe
 
 - **Tool surfaces other than chat take the world through tokens only** (FR-113): settings, dialogs, the composer, toasts and the rest get colours, fonts, radii and shadows from tokens, with no art behind text and no size change.
 - **The world's colours cover the whole page** (FR-130): while Real office is shown they replace the theme's colours and its two shadows, in the List view and Settings too. The theme's fonts, title weight and radii stay, and leaving gives the theme back.
-- **Chat gets a world surface** (FR-106), at least 78 % opaque behind its text, with a desk-side column and a header portrait. It keeps its structure, controls, words and tab order, and the text is never on a picture.
+- **Chat gets a world surface** (FR-106), at least 78 % opaque behind its text, with a header portrait. The desk-side column was removed (owner, 2026-11-01). It keeps its structure, controls, words and tab order, and the text is never on a picture.
 - **Contrast rules stay** (FR-113, FR-106): each world's token set passes in light and forced-colours modes, and chat text is checked against the composited surface, 4.5:1, or 3:1 for large text.
 
 A world is not finished until its chat and settings screens have been looked at beside the room.
