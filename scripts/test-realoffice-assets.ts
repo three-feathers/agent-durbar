@@ -13,11 +13,11 @@ const ROOT = (() => { let d = __dirname; while (!fs.existsSync(path.join(d, 'pac
 const RO = path.join(ROOT, 'src', 'renderer', 'realoffice');
 
 /** FR-062 caps, in bytes, by kind of picture */
-export const CAPS = { person: 80 * 1024, fixture: 120 * 1024, desk: 60 * 1024, floor: 40 * 1024, total: 10 * 1024 * 1024 };
+export const CAPS = { person: 80 * 1024, fixture: 120 * 1024, desk: 60 * 1024, floor: 40 * 1024, wall: 120 * 1024, monitor: 30 * 1024, total: 10 * 1024 * 1024 };
 export const PERSON_MAX_H = 640;
 const KEYS = ['files', 'source', 'tool', 'date', 'made by', 'approved by', 'reference', 'prompt', 'cut', 'licence'];
 const CLAUSE = /fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named/;
-const kindOf = (f: string): keyof typeof CAPS | null => /^fx-[a-z]+\.webp$/.test(f) ? 'fixture' : /^[a-z][a-z0-9]*-\w+\.webp$/.test(f) ? 'person' : f === 'desk.webp' ? 'desk' : f === 'floor.webp' ? 'floor' : null;
+const kindOf = (f: string): keyof typeof CAPS | null => /^fx-[a-z]+\.webp$/.test(f) ? 'fixture' : /^[a-z][a-z0-9]*-\w+\.webp$/.test(f) ? 'person' : f === 'desk.webp' ? 'desk' : f === 'floor.webp' ? 'floor' : f === 'wall.webp' ? 'wall' : f === 'monitor.webp' ? 'monitor' : null;
 
 /** ASSETS.md: one section per source sheet (`### name`), each a list of `- key: value` lines */
 export function sections(md: string): Map<string, Record<string, string>> {
@@ -74,7 +74,8 @@ export function problems(files: Map<string, Buffer>, peopleJson: string, md: str
     let info;
     try { info = webpInfo(buf); } catch (e) { out.push(`${name}: not a WebP file`); continue; }
     for (const c of info.chunks) if (!['VP8 ', 'VP8L', 'VP8X', 'ALPH'].includes(c)) out.push(`${name}: metadata or unexpected chunk "${c}" (strip EXIF, XMP, ICC and C2PA)`);
-    if (kind !== 'floor' && !info.chunks.includes('ALPH') && !info.chunks.includes('VP8L')) out.push(`${name}: no alpha channel`);
+    if (kind !== 'floor' && kind !== 'wall' && !info.chunks.includes('ALPH') && !info.chunks.includes('VP8L')) out.push(`${name}: no alpha channel`);
+    if (kind === 'monitor' && info.height > 300) out.push(`${name}: ${info.height} px tall, over 300 (spec 102 FR-220)`);
     if (kind === 'person' && info.height > PERSON_MAX_H) out.push(`${name}: ${info.height} px tall, over ${PERSON_MAX_H}`);
   }
   for (const f of listed.keys()) if (!files.has(f)) out.push(`ASSETS.md lists ${f}, which is not in the folder`);
@@ -106,6 +107,7 @@ export function problems(files: Map<string, Buffer>, peopleJson: string, md: str
     if (!meta.fixtureTop || !(meta.fixtureTop[id] >= 0 && meta.fixtureTop[id] < (meta.floorLine || 0))) out.push(`people.json fixture ${id}: no fixtureTop in range`);
   }
   want.add('desk.webp'); want.add('floor.webp');
+  for (const k of ['wall', 'monitor'] as const) if ((meta as Record<string, unknown>)[k] !== undefined) want.add(String((meta as Record<string, unknown>)[k])); // optional parts a world names (spec 102 FR-220)
   for (const f of want) if (!files.has(f)) out.push(`people.json names ${f}, which is not in the folder`);
   for (const f of files.keys()) if (!want.has(f)) out.push(`${f}: people.json does not name it`);
   return out;
@@ -133,6 +135,16 @@ for (const wid of worldIds) {
   assert.strictEqual(wj.formatVersion, 1, `${wid}: formatVersion 1`);
   assert.ok(typeof wj.name === 'string' && wj.name.length >= 1 && Array.from(wj.name).length <= 40, `${wid}: name 1-40 characters`);
   assert.ok(setIds.includes(wj.defaultSet), `${wid}: its default set (${wj.defaultSet}) is a set in the repo`);
+  // a world's own rules (spec 097 FR-180, FR-182): scoped to the world, no blend, no blur, no filter, no outside url, no colour in a text rule
+  const cssName = (w.json as { css?: string }).css;
+  assert.strictEqual(fs.existsSync(path.join(RO, 'worlds', wid, 'world.css')), cssName === 'world.css', `${wid}: world.css exists exactly when world.json names it`);
+  if (cssName) {
+    const css = fs.readFileSync(path.join(RO, 'worlds', wid, 'world.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+    assert.ok(!/mix-blend-mode\s*:\s*(?!normal)/.test(css) && !/backdrop-filter|[^-]filter\s*:/.test(css), `${wid}: world.css has no blend mode, blur or filter (FR-180)`);
+    assert.ok(!/url\(\s*['"]?(?:https?:|\/|\.\.|data:)/i.test(css), `${wid}: world.css loads only files of its own folder`);
+    for (const sel of css.split('}').map((r) => r.split('{')[0].trim()).filter((x) => x && !x.startsWith('@') && !x.startsWith(')'))) assert.ok(sel.includes(`[data-world="${wid}"]`), `${wid}: every rule is scoped to the world: ${sel.slice(0, 60)}`);
+    for (const m of css.matchAll(/url\(\s*([\w.-]+)\s*\)/g)) assert.ok(w.files.has(m[1]), `${wid}: world.css names ${m[1]}, which is in the folder`);
+  }
   const st = readPack('sets', wj.defaultSet), sj = st.json as { id: string; level: string };
   assert.strictEqual(sj.id, wj.defaultSet, `${wj.defaultSet}: set.json id is the folder`);
   assert.strictEqual(sj.level, 'full', `${wj.defaultSet}: a world's default set has full poses (FR-204)`);
