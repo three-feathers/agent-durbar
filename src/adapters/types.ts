@@ -233,6 +233,8 @@ export interface ToolCallEvent extends BaseEvent {
   edit?: EditInfo;
   /** Spec 058 FR-063: this failed MCP tool call needs the user to sign in to `mcpServer` (set by the adapter, never carries vendor text). Only on `phase: 'failed'` with `mcpServer`. */
   mcpAuth?: true;
+  /** Spec 058 FR-193 (issue #841): set by `maskMcpEvent` (never by an adapter) on a failed MCP call whose masked output reads like an organization access policy refusal. A word only. */
+  mcpCall?: 'policy';
 }
 
 export interface SubagentEvent extends BaseEvent {
