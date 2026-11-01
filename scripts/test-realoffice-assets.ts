@@ -123,7 +123,7 @@ const readPack = (kind: string, id: string): { files: Map<string, Buffer>; md: s
   return { files, md: fs.readFileSync(path.join(dir, 'ASSETS.md'), 'utf8'), json: JSON.parse(fs.readFileSync(path.join(dir, meta), 'utf8')) };
 };
 const files = new Map<string, Buffer>(); // the shipped Photo office with its default set, for the checks below
-let md = '', pj = '', META: { seat: Record<string, unknown>; stand: Record<string, { poses: object }> } = { seat: {}, stand: {} };
+let md = '', pj = '', META: { seat: Record<string, unknown>; stand: Record<string, { poses: object }>; facing?: string } = { seat: {}, stand: {} };
 let packs = 0, biggest = 0;
 const setIds = dirs('sets'), worldIds = dirs('worlds');
 assert.ok(worldIds.includes('photo') && setIds.includes('office'), 'the Photo office and the Office people ship');
