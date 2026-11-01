@@ -327,10 +327,11 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
   const C = require(path.join(ROOT, 'src', 'renderer', 'crew.js')) as { realOfficeSet: (c: string) => { set: string; scene: string; coming: boolean }; realOfficeNote: (c: string, v: string) => string; REAL_OFFICE_SETS: string[] };
   assert.deepStrictEqual(C.REAL_OFFICE_SETS, ['office'], 'only the Office people have Real office pictures today');
   for (const c of ['theme', 'minimalist', '', 'mine', '__proto__']) assert.deepStrictEqual(C.realOfficeSet(c), { set: 'office', scene: 'office', coming: false }, `${c || '(none)'}: the Office people, no note`);
-  for (const c of ['cheeky', 'prehistoric']) assert.deepStrictEqual(C.realOfficeSet(c), { set: 'office', scene: 'office', coming: true }, `${c}: a crew without Real office pictures shows the Office people, and Settings says so`);
+  for (const c of ['cheeky', 'prehistoric', 'pirate']) assert.deepStrictEqual(C.realOfficeSet(c), { set: 'office', scene: 'office', coming: true }, `${c}: a crew without Real office pictures shows the Office people, and Settings says so`);
   // FR-083: the Settings line, for a crew only and only with Real office chosen
   assert.strictEqual(C.realOfficeNote('cheeky', 'real'), 'Real office shows the Office people until the Cheeky loft is ready.', 'Cheeky: the note names its world');
   assert.strictEqual(C.realOfficeNote('prehistoric', 'real'), 'Real office shows the Office people until the Prehistoric cave is ready.', 'Prehistoric: the note names its world');
+  assert.strictEqual(C.realOfficeNote('pirate', 'real'), 'Real office shows the Office people until the Pirate ship is ready.', 'Pirate: the note names its world');
   for (const c of ['theme', 'minimalist', '', 'mine', '__proto__', 'office']) assert.strictEqual(C.realOfficeNote(c, 'real'), '', `${c || '(none)'}: the Office people, no note`);
   for (const v of ['cabins', 'open', '']) assert.strictEqual(C.realOfficeNote('cheeky', v), '', `${v || '(none)'}: no note outside Real office`);
   C.REAL_OFFICE_SETS.push('cheeky');
