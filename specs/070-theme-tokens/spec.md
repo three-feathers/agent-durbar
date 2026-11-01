@@ -88,6 +88,8 @@ A pack with a script in an SVG, a font that is not on the allow-list, a 2px font
 
 ## Changes
 
+- **2026-11-01** (owner pick, Vikram; #1014's T030): the app's text uses `-webkit-font-smoothing: auto`, not `antialiased`, which thinned strokes on macOS. Compared in the chat and on cards at 1x on a real screen and at 2x as rendered by Chromium: `auto` is a little heavier and darker, and easier to read in grey text. Only macOS honours this property. `read:` not seen on a real Retina panel.
+
 ### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
 
 The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
