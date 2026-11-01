@@ -226,11 +226,11 @@ module.exports = async (ctx) => {
     const SETTLED = `(()=>{const v=[...document.querySelectorAll('#stage .ro-visitor')];return v.length>=3&&v.every(i=>i.complete&&i.naturalWidth>0)})()`;
     /* written out here, not read from FX_POSE: a driver that asks the code what to expect cannot catch the code being wrong */
     const WANT_POSE = ({ library: 'book', software: 'book', terminal: 'runA', web: 'type', boss: 'knock', coffee: 'counter', bank: 'counter', postbox: 'letter', other: 'type' });
-    const FACING = `(()=>{const A=self.DurbarRealOfficeArt,WANT=${jsLiteral(WANT_POSE)},out=[],vs=[...document.querySelectorAll('#stage .ro-visitor')];
+    const FACING = `(()=>{const A=(self.DurbarRealOfficeSets||{}).office||{},WANT=${jsLiteral(WANT_POSE)},out=[],vs=[...document.querySelectorAll('#stage .ro-visitor')];
       for(const im of vs){const m=/(p\\d\\d)-(\\w+)\\.webp$/.exec(im.getAttribute('src')),pl=im.dataset.place,fx=document.querySelector('#stage .ro-fx[data-place="'+pl+'"],#stage .ro-kiosk[data-place="'+pl+'"]');
         const r=im.getBoundingClientRect(),footX=r.left+r.width*A.stand[m[1]].foot[m[2]],q=fx&&fx.getBoundingClientRect(),want=WANT[pl]||'letter';
         out.push({who:im.dataset.for,place:pl,pose:m[2],ok:m[2]===want||(m[2]==='letter'&&want==='runA'),faces:im.dataset.faces,meta:A.facing,side:q?(footX>q.left+q.width/2?'left':'right'):'none',footX,h:r.height,
-          anim:im.getAnimations().length,tf:getComputedStyle(im).transform,bm:getComputedStyle(im).mixBlendMode});}
+          anim:im.getAnimations().filter(a=>a.animationName!=='ro-in').length, /* spec 097 FR-126: the arrival fade (opacity, 150 ms, once) is the one animation a visitor may have */tf:getComputedStyle(im).transform,bm:getComputedStyle(im).mixBlendMode});}
       return {n:vs.length,agents:window.__durbarSimUi.agents().filter(a=>!a.parent).length,out};})()`;
     await must(SETTLED, 'three visitors with decoded pictures', 40000);
     /* simulator visits come and go on the wall clock: read the settled lobby again and again (in one page task each) until visitors at five different places were seen, or the time is up (then what was seen is checked) */
