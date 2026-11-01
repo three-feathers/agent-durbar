@@ -5,7 +5,7 @@
  *   OUT=docs/screenshots DURBAR_USER_DATA=$(mktemp -d) DURBAR_SIM=15 DURBAR_SIM_FREEZE=1 \
  *     DURBAR_DRIVER=$PWD/scripts/shots-006-remove.js xvfb-run -a npx electron . --no-sandbox
  *
- * At both sizes: the folder menu (the ⋯ button on a room header, or right-click) lists New session, Schedules here, Notes (N)…, Rename…, MCP extras…, Cost, Hide and Remove folder; Remove from
+ * At both sizes: the folder menu (the ⋯ button on a room header, or right-click) lists New session, Schedules here, Notes (N)…, Rename…, Move earlier, Move later (two or more rooms on the floor, issue 677), MCP extras…, Cost, Hide and Remove folder; Remove from
  * it removes the room after the confirmation, the app's own dialog with Cancel focused (Cancel keeps it; spec 083 T034b). With one agent per folder (simrooms=solo) the chat header
  * shows Remove folder, which removes that folder. Writes remove-folder-menu-<w>x<h>.png and remove-folder-chat-<w>x<h>.png.
  */
@@ -32,7 +32,7 @@ module.exports = async (ctx) => {
     assert.ok(normNotes('Notes…') === 'Notes (N)…' && normNotes('Notes (3)…') === 'Notes (N)…' && normNotes('Notes (0)…') === 'Notes (N)…' && normNotes('Rename…') === 'Rename…', 'both Notes forms normalise to one token');
     const items = await js(`[...document.querySelectorAll('#modeMenu [data-fact] b')].map(b=>b.textContent)`);
     console.log('[006-rm]', w, 'menu', JSON.stringify(items));
-    assert.deepStrictEqual(items.map(normNotes), ['New session', 'Schedules here', 'Notes (N)…', 'Rename…', 'MCP extras…', 'Cost', 'Hide', 'Remove folder']);
+    assert.deepStrictEqual(items.map(normNotes), ['New session', 'Schedules here', 'Notes (N)…', 'Rename…', 'Move earlier', 'Move later', 'MCP extras…', 'Cost', 'Hide', 'Remove folder']);
     assert.ok(await js(`document.activeElement&&document.activeElement.closest('#modeMenu')!==null`), 'focus is in the menu');
     // the visible ⋯ button opens the same menu
     await js(`(document.getElementById('modeMenu')&&document.getElementById('modeMenu').remove(),true)`);
