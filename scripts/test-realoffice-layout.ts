@@ -360,8 +360,9 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
   const note = (c: string): string => C.peopleFor('photo', c).note;
   for (const c of ['minimalist', ...Object.keys(C.CREWS)]) if (!C.REAL_SETS.some((s) => s.choice === c)) assert.strictEqual(note(c), `Real office shows Office people until ${c[0].toUpperCase() + c.slice(1)} has Real office poses.`, `${c}: has its note`);
   for (const c of ['theme', 'mine', '', '__proto__', 'constructor', 'office']) assert.strictEqual(note(c), '', `${c || '(none)'}: no note`);
-  C.CREWS.pirate = []; // a future crew (mutant check: a hand list of names would miss it)
-  try { assert.strictEqual(note('pirate'), 'Real office shows Office people until Pirate has Real office poses.', 'a new crew gets its note by construction'); } finally { delete C.CREWS.pirate; }
+  C.CREWS.futurecrew = []; // a future crew (mutant check: a hand list of names would miss it)
+  try { assert.strictEqual(note('futurecrew'), 'Real office shows Office people until Futurecrew has Real office poses.', 'a new crew gets its note by construction'); } finally { delete C.CREWS.futurecrew; }
+  assert.strictEqual(note('pirate'), 'Real office shows Office people until Pirate has Real office poses.', 'spec 077 FR-074: the Pirate crew has its Real office note');
 }
 
 // ---- FR-037: who sits where ----

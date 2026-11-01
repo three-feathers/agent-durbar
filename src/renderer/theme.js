@@ -354,8 +354,8 @@
   const SCENE_KITS=['office','corporate','pixel','court-indian','court-european','court-japanese','crew'];
   /* Characters, separate from themes (spec 077 FR-064, FR-065): who sits at the desks. 'theme' is the theme's own kit (the default);
      the others name a kit that is drawn on top of any theme. The same list and rule as src/shared/characters.ts (test:characters). */
-  const CHARACTERS=['theme','minimalist','cheeky','prehistoric'];
-  const CHARACTER_KITS={minimalist:'office',cheeky:'crew',prehistoric:'crew'};
+  const CHARACTERS=['theme','minimalist','cheeky','prehistoric','pirate'];
+  const CHARACTER_KITS={minimalist:'office',cheeky:'crew',prehistoric:'crew',pirate:'crew'};
   const LEGACY_CREW_THEME='cheeky-crew'; /* FR-066: no longer a theme; FR-067 maps it to Clean Office with Characters = Cheeky */
   function parseCharacters(v){return typeof v==='string'&&CHARACTERS.includes(v)?v:undefined;}
   function kitFor(themeKit,choice){const c=parseCharacters(choice);if(c&&c!=='theme')return CHARACTER_KITS[c];return themeKit||'office';}
