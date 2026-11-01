@@ -1,0 +1,322 @@
+{
+ "formatVersion": 1,
+ "id": "prehistoric",
+ "name": "Prehistoric",
+ "level": "full",
+ "seat": {
+  "bigbeard": {
+   "bodyH": 338,
+   "h": 352,
+   "hand": 0.88,
+   "headTop": 14,
+   "w": 390
+  },
+  "braids": {
+   "bodyH": 344,
+   "h": 352,
+   "hand": 0.88,
+   "headTop": 8,
+   "w": 352
+  },
+  "inventor": {
+   "bodyH": 343,
+   "h": 352,
+   "hand": 0.88,
+   "headTop": 9,
+   "w": 377
+  },
+  "ponytail": {
+   "bodyH": 343,
+   "h": 389,
+   "hand": 0.88,
+   "headTop": 46,
+   "w": 397
+  },
+  "shaman": {
+   "bodyH": 343,
+   "h": 352,
+   "hand": 0.88,
+   "headTop": 9,
+   "w": 352
+  },
+  "youngbeard": {
+   "bodyH": 342,
+   "h": 352,
+   "hand": 0.88,
+   "headTop": 10,
+   "w": 427
+  }
+ },
+ "stand": {
+  "bigbeard": {
+   "feet": {
+    "book": 1.0,
+    "coffee": 1.0,
+    "knock": 1.0,
+    "letter": 0.9916,
+    "runA": 0.9917,
+    "runB": 0.9916
+   },
+   "figH": 361,
+   "poses": {
+    "book": [
+     204,
+     352
+    ],
+    "coffee": [
+     240,
+     352
+    ],
+    "knock": [
+     284,
+     350
+    ],
+    "letter": [
+     282,
+     357
+    ],
+    "runA": [
+     238,
+     361
+    ],
+    "runB": [
+     255,
+     359
+    ]
+   },
+   "top": {
+    "book": 0.0,
+    "coffee": 0.0,
+    "knock": 0.0,
+    "letter": 0.0084,
+    "runA": 0.0083,
+    "runB": 0.0084
+   }
+  },
+  "braids": {
+   "feet": {
+    "book": 1.0,
+    "coffee": 1.0,
+    "knock": 1.0,
+    "letter": 0.9923,
+    "runA": 0.9923,
+    "runB": 0.9923
+   },
+   "figH": 391,
+   "poses": {
+    "book": [
+     142,
+     386
+    ],
+    "coffee": [
+     164,
+     384
+    ],
+    "knock": [
+     186,
+     387
+    ],
+    "letter": [
+     262,
+     391
+    ],
+    "runA": [
+     201,
+     391
+    ],
+    "runB": [
+     180,
+     391
+    ]
+   },
+   "top": {
+    "book": 0.0,
+    "coffee": 0.0,
+    "knock": 0.0,
+    "letter": 0.0077,
+    "runA": 0.0077,
+    "runB": 0.0077
+   }
+  },
+  "inventor": {
+   "feet": {
+    "book": 1.0,
+    "coffee": 1.0,
+    "knock": 1.0,
+    "letter": 0.9927,
+    "runA": 0.9927,
+    "runB": 0.9927
+   },
+   "figH": 410,
+   "poses": {
+    "book": [
+     176,
+     404
+    ],
+    "coffee": [
+     182,
+     402
+    ],
+    "knock": [
+     200,
+     402
+    ],
+    "letter": [
+     225,
+     410
+    ],
+    "runA": [
+     184,
+     409
+    ],
+    "runB": [
+     181,
+     410
+    ]
+   },
+   "top": {
+    "book": 0.0,
+    "coffee": 0.0,
+    "knock": 0.0,
+    "letter": 0.0073,
+    "runA": 0.0073,
+    "runB": 0.0073
+   }
+  },
+  "ponytail": {
+   "feet": {
+    "book": 1.0,
+    "coffee": 1.0,
+    "knock": 1.0,
+    "letter": 0.9922,
+    "runA": 0.9923,
+    "runB": 0.9922
+   },
+   "figH": 388,
+   "poses": {
+    "book": [
+     156,
+     382
+    ],
+    "coffee": [
+     178,
+     380
+    ],
+    "knock": [
+     202,
+     378
+    ],
+    "letter": [
+     181,
+     387
+    ],
+    "runA": [
+     188,
+     388
+    ],
+    "runB": [
+     180,
+     387
+    ]
+   },
+   "top": {
+    "book": 0.0,
+    "coffee": 0.0,
+    "knock": 0.0,
+    "letter": 0.0052,
+    "runA": 0.0077,
+    "runB": 0.0078
+   }
+  },
+  "shaman": {
+   "feet": {
+    "book": 1.0,
+    "coffee": 1.0,
+    "knock": 1.0,
+    "letter": 0.9944,
+    "runA": 0.9915,
+    "runB": 0.9944
+   },
+   "figH": 355,
+   "poses": {
+    "book": [
+     158,
+     350
+    ],
+    "coffee": [
+     164,
+     351
+    ],
+    "knock": [
+     204,
+     352
+    ],
+    "letter": [
+     172,
+     355
+    ],
+    "runA": [
+     183,
+     355
+    ],
+    "runB": [
+     195,
+     354
+    ]
+   },
+   "top": {
+    "book": 0.0,
+    "coffee": 0.0,
+    "knock": 0.0,
+    "letter": 0.0085,
+    "runA": 0.0056,
+    "runB": 0.0085
+   }
+  },
+  "youngbeard": {
+   "feet": {
+    "book": 1.0,
+    "coffee": 1.0,
+    "knock": 1.0,
+    "letter": 0.9916,
+    "runA": 0.9916,
+    "runB": 0.9916
+   },
+   "figH": 357,
+   "poses": {
+    "book": [
+     183,
+     351
+    ],
+    "coffee": [
+     192,
+     354
+    ],
+    "knock": [
+     222,
+     352
+    ],
+    "letter": [
+     220,
+     356
+    ],
+    "runA": [
+     196,
+     357
+    ],
+    "runB": [
+     188,
+     357
+    ]
+   },
+   "top": {
+    "book": 0.0,
+    "coffee": 0.0,
+    "knock": 0.0,
+    "letter": 0.0084,
+    "runA": 0.0084,
+    "runB": 0.0084
+   }
+  }
+ }
+}

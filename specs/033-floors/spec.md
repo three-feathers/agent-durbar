@@ -190,6 +190,10 @@ When more than one floor is on, I can tell at a glance which floor each room bel
 
 ## Changes
 
+### 2026-11-01: the floor row in the panel, modern and draggable (issue #1010, owner request)
+
+Vikram: "Rename 'show only' to something more understandable and up and down as buttons and draggable floors. Modern design I said." In the Floors panel and Settings > Floors (one renderer): (1) **Show only** is now **Focus mode**, a 32 px icon button with a focus frame (four corner brackets) after the owner found the text button odd: accessible name "Focus mode: show only <floor>", the app's own tooltip (`DurbarTip`, also on keyboard focus) says what it does; the action is unchanged and one-shot (FR-022: this floor on, every other off). When this floor is the only one on (two or more floors) the button is `aria-pressed="true"` with a filled state and its tooltip says "Focus mode is on: only <floor> is shown. Switch another floor on to leave it."; there is no separate off action. (2) **Up** and **Down** are 32 px icon buttons with an up and a down arrow, names "Move <floor> up" and "Move <floor> down" unchanged, disabled (not dashed) at the ends; they stay the keyboard route. (3) Each row has a **drag handle**; dragging a floor by it reorders floors and saves through the same call as Up and Down (`reorderFloors`), with no new confirmation or undo (there was none). The drag is the one of rooms, desks and places of issue 677 (`reorder.js`, FR-082, FR-083: pointer events, `transform` and `opacity` only, Esc cancels), so this change **depends on PR #987** (branch `033-room-drag`) and is stacked on it; its `attach` gained an owner check so a second `attach` (floors) never ends a drag the first one began (reason for stacking rather than a second helper: one drag implementation, the change is 8 lines). (4) Row order: handle, toggle, name and count, then **Only this floor**, Up, Down, **Rename** and **Delete** as quiet icon buttons (no overflow menu: four 32 px buttons fit at 1280x800, and keeping them visible keeps every action one click), no border until hover; tokens only (`--h-ctl`, `--surface-2`, `--line`, `--muted`, `--ink-2`, `--tone-bad-*`), no new colour. Behaviour of every action is unchanged. Task T059. **Switch colours (sweep finding, same day):** the shared `.swt` (so the MCP servers' too) no longer uses the literals `#7fae92`, `#6a9a7d` and a white knob (2.47:1 on the page, 2.35:1 in the photo office); the on track is `--sage-ink` (6.08:1 and 6.92:1 on `--surface`), the on knob `--surface`, the off knob `--ink-2`, so they follow the world, each pair 3:1 or more (`test:theme-tokens` section 7, per world); forced colours: Highlight track and HighlightText knob when on, ButtonText knob when off.
+
 ### 2026-11-01: a removed folder loses its saved place; a drop outside the group (review of #987)
 
 - **FR-081 (clarified).** `FolderStore.remove` drops the folder from the saved `rooms` and `desks`, so a folder removed and added again has no saved position and comes after the ordered ones. test: `scripts/test-roomorder.ts` (remove, then add; the file is pruned too).
@@ -221,6 +225,10 @@ Owner answers (Vikram, on the issue): both **desks inside a room** and **folders
 - **Q3** May the Boss, coffee corner, Bank and Postbox move too? *Default:* no (spec 001 FR-039 fixes them).
 - **Q4** Desk ids of a session that was never saved change at the next start, so its position is forgotten (rooms, which are paths, and places keep theirs). *Default:* accepted.
 - **Q5** Touch drag (a touch screen) is not built. *Default:* mouse, pen and keyboard.
+
+### 2026-11-01: the floor on/off is the MCP toggle (issue #1010, owner request)
+
+Vikram: the floor On/Off was a text pill and "not easy to catch that it was the button". The control in the Floors panel and in Settings > Floors (one renderer, `renderFloorsPanel` markup) is now the shared switch of the MCP servers list (`.swt` in `screens.css`, 38x22 px, `role="switch"`, `aria-checked`, the shared focus ring), not a second toggle; the On/Off word is gone and the accessible name still says "<floor>: on. Switch off." Behaviour is unchanged (`floorAction`, confirmations, agents keep running, SC-003). FR-007 and FR-023 are unchanged. Text size: no visible text on the switch; the rest keeps its sizes (10.5px minimum). Task T058.
 
 ### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
 
@@ -266,3 +274,8 @@ The `status:` of the specs-index block used to read (moved here unchanged; the b
 - FR-019: CI runs `npm test` on Windows, macOS and Linux; the layout was looked at on macOS only.
 - Deviation from the first design: the floor for new folders is chosen in the Floors panel, not in the top bar (no room at 1280x800; research R7, FR-006 updated).
 - `[KNOWN GAP]` The Tools view is not filtered by floor (out of scope). An older build that saves the folder file drops floors (folders kept).
+
+- `[IMPLEMENTED]` sim: 2026-11-01 (issue #1010): `scripts/shots-033.js` asserts the floor switch in the panel is a `.swt` `role=switch` 38x22 px whose class matches `aria-checked`; drivers read `aria-checked`; mutation: changing the markup back to a text button fails it.
+
+- `[IMPLEMENTED]` sim: 2026-11-01 (issue #1010): `scripts/shots-033.js` does a real mouse drag of a floor's handle (only a transform changes mid-drag), checks the persisted order, that a press on the name does not drag, the controls' names, 32x32 icon buttons and the Up/Down save; mutant: dropping the `reorderFloors` call in the drop fails it. Not run on macOS or Windows.
+- `[KNOWN GAP]` 2026-11-01 (issue #1010): the toggle switch's forced-colours rule (`screens.css`, Highlight track, HighlightText knob) and the floor row's pointer drag with a touch screen or pen were not seen in a real session; only a mouse drag in the simulator and the contrast numbers are tested. The icon buttons (Up, Down, Focus mode, Rename, Delete) and the drag handle were not used by hand with the keyboard beyond the simulator's focus and click checks, and nothing was run by hand on macOS or Windows (CI runs the suite there).

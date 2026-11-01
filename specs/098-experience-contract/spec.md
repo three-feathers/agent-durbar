@@ -3,15 +3,15 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Experience contract (team decision 2026-10-31, all three sides): a small registry of world moments only, three surface kinds (world moment, tool surface, outside the world), a world matrix run weekly and as a small path-filtered PR subset, one rolling world-coverage issue, a block contract for world packs; enforced by tests, not rule text
-note: spec, plan, tasks drafted; registry seeded (26 world moments, 9 missing per world); nothing built
-status: draft
+note: registry seeded (26 world moments, 9 missing per world); world matrix built, every moment still planned, so it checks no cell yet
+status: building
 -->
 
 **Feature Branch**: `098-experience-contract` (spec); code branches `098-pN-slug`, one per phase
 
 **Created**: 2026-10-31
 
-**Status**: Draft (2026-10-31). Spec, plan, tasks and the seeded registry only; no check, driver or workflow is built.
+**Status**: Building (2026-11-01). Spec, plan, tasks and the seeded registry; the world matrix (`scripts/world-matrix.js`, `world-matrix.yml`) is built; every moment is still `planned`, so it checks no cell until T011; no other check or driver is built.
 
 **Input**: Owner question (Vikram, Telegram, 2026-10-31 09:56 UTC): floors and the lift, moving between floors, the chat window, the question and answer experience, and "the full app adapts" in Real office (spec 097). Vikram's agent answered it with an experience inventory and mockups in three worlds (outside the repo, described under *Evidence*). How to keep that inventory honest as the app grows was then agreed in the team chat.
 
@@ -179,7 +179,7 @@ A spec author fills the template's *Experience* line: "tool surface", or "world 
 - **FR-053** **Shared files.** Changes to shared renderer files (`app.js`, `styles.css`, `screens.js`, ...) do not start the PR subset (D5); the weekly run covers them.
 - **FR-054** **Artifacts only.** Both runs upload `out/world-matrix/` as a workflow artifact (14 days); nothing is committed, the matrix is not in `DOC_SHOTS`, `NO_DRIVER` or `shots:docs`, and `docs/screenshots/` and the site budget (spec 050 FR-012) are untouched. `test:surfaces` asserts that no matrix or tool-surface driver is named in `scripts/shots-docs.js` and that `out/` is git-ignored.
 - **FR-055** **Red means owned.** `world-matrix.yml` is added to the workflow list of `nightly-watch.yml`, so a failed scheduled run opens or updates its issue (spec 021 FR-063); the owner of that issue fixes or pauses within 24 h.
-- **FR-056** **A cell's check fails the run only for `built` and `fallback-flat` cells**; `designed` and `missing` cells are shot and reported, not failed (they show the flat rendering by D3).
+- **FR-056** **A cell's check fails the run only for `built` and `fallback-flat` cells**; `designed` and `missing` cells are shot and reported, not failed (they show the flat rendering by D3). A root that is on the page but hidden (`display:none`, also from a parent, or `visibility:hidden`) counts as not found, so it always fails.
 
 #### Coverage issue
 
@@ -240,6 +240,7 @@ A spec author fills the template's *Experience* line: "tool surface", or "world 
 
 ## Changes
 
+- 2026-11-01 (sweep of the build): **FR-056**: a moment's root that is on the page but hidden (`display:none`, also from a parent, or `visibility:hidden`) counts as not found, so it always fails: with nothing visible to check it passed as clean. **FR-063**: the weekly job gets `issues: write` with T043, the step that uses it, and not before. CI runs the page checks' selftest in both jobs.
 - **2026-11-01** (owner request, Vikram): `docs/world-design.md` writes down the visual principles learnt from reviewing real world mockups. It is guidance for making worlds: this spec and spec 102 stay the contract. `read:` no code changes.
 
 ### 2026-10-31: the weekly performance record (spec 097 FR-187)
