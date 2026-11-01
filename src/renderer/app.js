@@ -6077,7 +6077,7 @@ async function openWithRun(a,target,label,btn,isFolder){
   const done=busy(btn,'Opening…');
   try{
     const r=bridge.openWith?await bridge.openWith(liveRoot(a).id,target):await bridge.openInVSCode(liveRoot(a).id);
-    toast(r.ok?'Opening '+(isFolder?'the folder in your file manager':'in '+esc(r.edition||label))+'… (this opens the folder only; the conversation stays here)':'Could not open '+esc(label)+': '+esc(r.error||'unknown error'),r.ok?4200:5200).classList.add(r.ok?'ok':'err');
+    toast(r.ok?'Opening '+(isFolder?'the folder in your file manager':'in '+esc(r.edition||label))+'… (this opens the folder only; the conversation stays here)'+(r.note?' '+esc(r.note):''):'Could not open '+esc(label)+': '+esc(r.error||'unknown error'),r.ok?4200:5200).classList.add(r.ok?'ok':'err');
   }catch(err){toast('Could not open '+esc(label)+': '+esc(String(err&&err.message||err)),5000).classList.add('err');}
   finally{done();}
 }

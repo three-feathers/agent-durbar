@@ -6,7 +6,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { checkFolder, listTargets, openWith, ownedAgent } from '../src/main/openwith';
+import { checkFolder, listTargets, openWith, ownedAgent, LINK_NOTE } from '../src/main/openwith';
 import type { Deps, OwnedAgent } from '../src/main/openwith';
 import type { LaunchEnv, LaunchPlan } from '../src/main/vscode';
 import { spawnPlan } from '../src/main/vscode';
@@ -18,6 +18,7 @@ const mk = (le: LaunchEnv, rec: Rec, over: Partial<Deps> = {}): Deps => ({
   platform: le.platform, // the platform under test, so the Windows branches of abs() and planCmd really run
   launchEnv: le,
   lstat: (p) => (p.startsWith(root) ? fs.lstatSync(p) : fakeLstat(p)),
+  realpath: (p) => fs.realpathSync(p),
   openPath: async (p) => (rec.opened.push(p), ''),
   start: async (plan) => (rec.started.push(plan), { ok: true, edition: plan.edition }),
   ...over,
@@ -29,7 +30,7 @@ const fakeLstat = (p: string) => {
 };
 const rec = (): Rec => ({ started: [], opened: [] });
 
-const root = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-openwith-'));
+const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-openwith-'))); // real: on macOS the temp folder itself is behind a link
 const dir = path.join(root, 'proj');
 fs.mkdirSync(dir);
 const dashDir = path.join(root, '-rf');
@@ -80,7 +81,13 @@ fs.writeFileSync(wsFile, '{}');
   for (const rel of ['-rf', '--help', '-x/y', 'rel/dir']) assert.match((checkFolder(rel, d0) as { error: string }).error, /not absolute/, `${rel}: refused for not being absolute, before any look at the disk`);
   assert.match((checkFolder(path.join(root, 'gone'), d0) as { error: string }).error, /no longer exists/);
   assert.match((checkFolder(file, d0) as { error: string }).error, /not a folder/);
-  if (linkOk) assert.match((checkFolder(link, d0) as { error: string }).error, /link/);
+  if (linkOk) {
+    assert.deepStrictEqual(checkFolder(link, d0), { ok: true, path: fs.realpathSync(dir), linked: true }, 'a link is followed to its real path (owner decision)');
+    const toFile = path.join(root, 'link-to-file'); fs.symlinkSync(file, toFile);
+    assert.match((checkFolder(toFile, d0) as { error: string }).error, /not a folder/, 'a link to a file');
+    const nowhere = path.join(root, 'link-nowhere'); fs.symlinkSync(path.join(root, 'gone'), nowhere);
+    assert.match((checkFolder(nowhere, d0) as { error: string }).error, /no longer exists/, 'a link that leads nowhere');
+  }
 
   // ---- editors: discovery is spec 009's, argv is exactly the folder, no shell (FR-022) ----
   for (const [plat, files, vars] of [
@@ -122,8 +129,29 @@ fs.writeFileSync(wsFile, '{}');
   { const r = rec(); const res = await openWith({ cwd: dir }, 'vscode', mk(launchEnv('linux', []), r)); assert.strictEqual(res.ok, false); assert.match(res.error!, /not found/); assert.deepStrictEqual(r.started, []); }
   // a repository cannot supply an editor: a code binary inside the folder (or PATH entry relative to it) is never used
   { const r = rec(); const res = await openWith({ cwd: dir }, 'vscode', mk(launchEnv('linux', [path.join(dir, 'code'), path.join(dir, 'bin', 'code'), 'bin/code', './bin/code', 'node_modules/.bin/code'], { PATH: './bin:node_modules/.bin:bin' }), r)); assert.strictEqual(res.ok, false); assert.deepStrictEqual(r.started, []); }
-  // a missing / link / file folder: nothing is started or opened
-  for (const bad of [path.join(root, 'gone'), file, ...(linkOk ? [link] : []), '-rf']) {
+  if (linkOk) {
+    // a link: the real path is the one argument, with the note; never the link's own path
+    const real = fs.realpathSync(dir);
+    const r1 = rec();
+    const ed = await openWith({ cwd: link }, 'vscode', mk(launchEnv('linux', LINUX_ALL), r1));
+    assert.strictEqual(ed.ok, true);
+    assert.strictEqual(ed.note, LINK_NOTE);
+    assert.strictEqual(r1.started.length, 1);
+    assert.deepStrictEqual(r1.started[0].args.slice(-1), [real], 'the editor gets the real path');
+    assert.ok(!LINK_NOTE.includes('/') && !LINK_NOTE.includes('\\'), 'the note holds no path');
+    const r2 = rec();
+    const fm = await openWith({ cwd: link }, 'folder', mk(launchEnv('linux', LINUX_ALL), r2));
+    assert.strictEqual(fm.note, LINK_NOTE);
+    assert.deepStrictEqual(r2.opened, [real], 'the file manager gets the real path');
+    const r3 = rec();
+    assert.strictEqual((await openWith({ cwd: dir }, 'folder', mk(launchEnv('linux', LINUX_ALL), r3))).note, undefined, 'no note for a plain folder');
+    const toApp = path.join(root, 'plain-name'); fs.symlinkSync(appDir, toApp, 'dir');
+    const r4 = rec();
+    assert.strictEqual((await openWith({ cwd: toApp }, 'folder', mk(launchEnv('linux', LINUX_ALL), r4))).ok, false, 'a link to a package, behind a plain name: refused for the file manager');
+    assert.deepStrictEqual(r4.opened, []);
+  }
+  // a missing / file folder: nothing is started or opened
+  for (const bad of [path.join(root, 'gone'), file, '-rf']) {
     for (const t of ['vscode', 'folder']) {
       const r = rec();
       const res = await openWith({ cwd: bad }, t, mk(launchEnv('linux', LINUX_ALL), r));

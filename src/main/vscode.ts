@@ -128,7 +128,7 @@ function planCmd(cmdFile: string, target: string, e: LaunchEnv): LaunchPlan | un
   return { command: comspec, args: ['/d', '/s', '/c', `"${cmdFile}" "${target}"`], via: cmdFile };
 }
 
-export type OpenResult = { ok: boolean; error?: string; edition?: string };
+export type OpenResult = { ok: boolean; error?: string; edition?: string; note?: string };
 
 /** Start a plan with no shell: detached, no stdio, hidden window. `spawnFn` is injectable so tests never start an editor (spec 009 FR-022). */
 export function spawnPlan(plan: LaunchPlan, spawnFn: typeof spawn = spawn, platform: NodeJS.Platform = process.platform): Promise<OpenResult> {

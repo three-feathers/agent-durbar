@@ -1069,7 +1069,7 @@ export interface DurbarApi {
   /** Spec 009 FR-019..FR-024 (issue #685): the installed editors and the file manager for the agent's own folder. Optional: older bridges lack it. */
   openWithTargets?(id: string): Promise<{ id: string; label: string; hint: string }[]>;
   /** Opens that folder in one of the fixed targets; the folder is main's (by agent id), never the window's. It never moves a session. */
-  openWith?(id: string, target: string): Promise<{ ok: boolean; error?: string; edition?: string }>;
+  openWith?(id: string, target: string): Promise<{ ok: boolean; error?: string; edition?: string; note?: string }>;
   /** Spec 063: the git branch and uncommitted changes of the agent's folder (read-only). Optional: older bridges lack it. */
   gitStatus?(id: string): Promise<FolderGitStatus>;
   /** Spec 085: what the session did since its first message in this run (time, git files and lines, commits), for the card shown when it ends. Optional: older bridges lack it. */

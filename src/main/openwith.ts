@@ -34,6 +34,8 @@ export interface Deps {
   launchEnv: LaunchEnv;
   /** `lstat`: never follows a link. Throws when the path is missing. */
   lstat: (p: string) => StatLike;
+  /** The real path behind a link (`fs.realpathSync`). Throws when it leads nowhere. */
+  realpath: (p: string) => string;
   /** `shell.openPath`: resolves to '' on success, else an error text. */
   openPath: (p: string) => Promise<string>;
   /** Starts a plan (no shell). Tests give a recorder; nothing in a test ever starts an editor. */
@@ -41,7 +43,7 @@ export interface Deps {
 }
 
 export function realDeps(openPath: (p: string) => Promise<string>): Deps {
-  return { platform: process.platform, launchEnv: defaultEnv(), lstat: (p) => fs.lstatSync(p), openPath, start: (plan) => spawnPlan(plan) };
+  return { platform: process.platform, launchEnv: defaultEnv(), lstat: (p) => fs.lstatSync(p), realpath: (p) => fs.realpathSync(p), openPath, start: (plan) => spawnPlan(plan) };
 }
 
 /** FR-021: folders whose name makes the file manager run them instead of showing them. Checked on every OS (one rule). */
@@ -49,19 +51,29 @@ const LAUNCHABLE_DIR = /\.(app|bundle|workflow|action|prefpane|saver|xpc|kext|fr
 
 const abs = (p: string, platform: NodeJS.Platform): boolean => (platform === 'win32' ? path.win32.isAbsolute(p) : path.posix.isAbsolute(p));
 
-/** FR-021: absolute, no NUL, exists, a real directory, not a link. */
-export function checkFolder(p: unknown, d: Pick<Deps, 'platform' | 'lstat'>): { ok: true; path: string } | { ok: false; error: string } {
+/** The note of an answer whose folder was a link (spec *Changes* 2026-11-01). No path in it. */
+export const LINK_NOTE = 'This folder is a link, so its real folder was opened.';
+
+/** FR-021: absolute, no NUL, exists, a directory; a link is followed once to its real path, which must pass the same checks (owner decision, spec *Changes* 2026-11-01). */
+export function checkFolder(p: unknown, d: Pick<Deps, 'platform' | 'lstat' | 'realpath'>): { ok: true; path: string; linked?: boolean } | { ok: false; error: string } {
   if (typeof p !== 'string' || !p || p.includes('\0')) return { ok: false, error: 'This agent has no usable folder.' };
   if (!abs(p, d.platform)) return { ok: false, error: 'The folder path is not absolute, so it was not opened.' };
+  const gone = { ok: false as const, error: 'This folder no longer exists (moved, renamed or deleted).' };
   let st: StatLike;
+  let real = p;
+  let linked = false;
   try {
     st = d.lstat(p);
+    if (st.isSymbolicLink()) {
+      real = d.realpath(p);
+      linked = true;
+      st = d.lstat(real);
+    }
   } catch {
-    return { ok: false, error: 'This folder no longer exists (moved, renamed or deleted).' };
+    return gone;
   }
-  if (st.isSymbolicLink()) return { ok: false, error: 'This folder is a link. Open the real folder instead; links are not followed.' };
-  if (!st.isDirectory()) return { ok: false, error: 'This is not a folder, so it was not opened.' };
-  return { ok: true, path: p };
+  if (st.isSymbolicLink() || !st.isDirectory()) return { ok: false, error: 'This is not a folder, so it was not opened.' };
+  return linked ? { ok: true, path: real, linked: true } : { ok: true, path: p };
 }
 
 function fileManagerHint(platform: NodeJS.Platform): string {
@@ -95,7 +107,7 @@ export async function openWith(agent: OwnedAgent | undefined, targetId: unknown,
     if (LAUNCHABLE_DIR.test(path.basename(f.path.replace(/[\\/]+$/, '')))) return { ok: false, error: 'This folder looks like an application or package, so it was not opened in the file manager.' };
     try {
       const err = await d.openPath(f.path);
-      return err ? { ok: false, error: err } : { ok: true };
+      return err ? { ok: false, error: err } : { ok: true, ...(f.linked ? { note: LINK_NOTE } : {}) };
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : String(e) };
     }
@@ -105,6 +117,7 @@ export async function openWith(agent: OwnedAgent | undefined, targetId: unknown,
   const ed = EDITIONS.find((e) => e.name === name);
   if (!ed) return { ok: false, error: 'unknown target' };
   let dest: string;
+  let linked = false;
   if (agent.workspaceFile) {
     // a .code-workspace file of an agent main started: a regular file, not a link, never given to the file manager
     const w = agent.workspaceFile;
@@ -120,6 +133,7 @@ export async function openWith(agent: OwnedAgent | undefined, targetId: unknown,
     const f = checkFolder(agent.cwd, d);
     if (!f.ok) return f;
     dest = f.path;
+    linked = !!f.linked;
   }
   const plan = planEdition(ed, dest, d.launchEnv);
   if (!plan) {
@@ -131,7 +145,7 @@ export async function openWith(agent: OwnedAgent | undefined, targetId: unknown,
     };
   }
   const r = await d.start({ ...plan, edition: name });
-  return r.ok ? { ok: true, edition: name } : { ok: false, error: r.error ?? 'unknown error', edition: name };
+  return r.ok ? { ok: true, edition: name, ...(linked ? { note: LINK_NOTE } : {}) } : { ok: false, error: r.error ?? 'unknown error', edition: name };
 }
 
 /** FR-020: the folder is main's. Only an agent id of an agent main started finds anything; a path (or anything else) finds nothing. */
