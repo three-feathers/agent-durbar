@@ -125,6 +125,12 @@ module.exports = async (ctx) => {
     await shot('floors-focus', w, h);
     for (let k = 1; k <= 2; k++) { await js(`document.querySelector('#floorsPop [data-fl="on"]:not(.on)').click()`); await until(`document.querySelectorAll('#floorsPop [data-fl="on"].on').length===${jsLiteral(k + 1)}`); }
     await until(`document.querySelectorAll('#floorsPop [data-fl="on"].on').length===3&&document.querySelectorAll('#floorsPop [data-fl="only"][aria-pressed="true"]').length===0`);
+    // a cancelled Delete gives the focus back to that floor's Delete button (not the top-bar button)
+    await js(`document.querySelectorAll('#floorsPop .fl-floor')[2].querySelector('[data-fl="del"]').click()`);
+    await until(`!!document.getElementById('modeDlg')`);
+    await js(`[...document.querySelectorAll('#modeDlg button')].find(b=>b.textContent.trim()==='Cancel').click()`);
+    await until(`!document.getElementById('modeDlg')`);
+    assert.strictEqual(await js(`(()=>{const a=document.activeElement;const f=a&&a.closest('.fl-floor');return f?a.dataset.fl+':'+f.querySelector('.fl-t b').textContent:'elsewhere'})()`), 'del:' + (await rowNames())[2], 'after Cancel the focus is on that floor\'s Delete button');
     const before = await rowNames();
     assert.ok(before.length >= 3, `three floors: ${before}`);
     const mouse = (type, p, extra = {}) => H.wc().sendInputEvent({ type, x: p.x, y: p.y, button: 'left', clickCount: 1, ...extra });
