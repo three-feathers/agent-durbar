@@ -323,9 +323,9 @@ module.exports = async (ctx) => {
   await must(NOOVER, 'no overlap before the chips are widened');
   /* no drawing may rescue the placement (the simulator draws often): the page keeps its last layout while the chips are widened, so only the observer can place them again */
   await js(`(()=>{const R=window.DurbarRealOffice;window.__roRender=R.render;R.render=()=>window.__durbarSimUi.realLayout();return true})()`);
-  const WIDEN = "(()=>{const st=document.createElement('style');st.id='roWiden';st.textContent='.ro-chip{padding:0 60px!important}';document.head.appendChild(st);const r=" + PLATES + ';return r.pp.length+r.cp.length+r.cc.length})()';
+  const WIDEN = "(()=>{const st=document.createElement('style');st.id='roWiden';st.textContent='.ro-chip{padding:0 30px!important;border-left-width:30px!important;border-left-style:solid!important}';document.head.appendChild(st);const r=" + PLATES + ';return r.pp.length+r.cp.length+r.cc.length})()';
   const widened = await js(WIDEN);
-  assert.ok(widened > 0, 'widened chips overlap right after the style (the observer has not run yet): ' + widened);
+  assert.ok(widened > 0, 'widened chips overlap right after the style (the observer has not run yet; padding and border change the border box, not the content box): ' + widened);
   await must(NOOVER, 'no overlap after the chips were widened (placed again by the observer)', 20000);
   await must(`(document.querySelector('#stage .ro-chrome')._settled||0)>=1`, 'the resize observer placed them again');
   await js(`document.getElementById('roWiden').remove();window.DurbarRealOffice.render=window.__roRender;true`);
@@ -333,6 +333,16 @@ module.exports = async (ctx) => {
   await must(`document.querySelectorAll('#stage .ro-chip').length>=2`, 'chips to place');
   const moved = await js(`(()=>{const ch=document.querySelector('#stage .ro-chrome'),pl=document.querySelector('#stage .ro-lplate'),c=document.querySelector('#stage .ro-chip'),r=pl.getBoundingClientRect(),o=ch.getBoundingClientRect();c.style.left=(r.left-o.left+r.width/2)+'px';c.style.top=(r.top-o.top)+'px';const hit=()=>{const a=c.getBoundingClientRect(),b=pl.getBoundingClientRect();return a.left<b.right-0.5&&b.left<a.right-0.5&&a.top<b.bottom-0.5&&b.top<a.bottom-0.5};const before=hit();window.DurbarRealOffice.resolve(ch);return [before,hit()]})()`);
   assert.deepStrictEqual(moved, [true, false], 'a chip put on a plate overlaps it, and resolve moves it off: ' + JSON.stringify(moved));
+  // ---- resolve is part of every placement (not only callable): a render whose measure is stale (the chips measured 40 px narrower than they are, in stagger only) is put right by resolve ----
+  const STALE = await js("(()=>{const o=Element.prototype.getBoundingClientRect;Element.prototype.getBoundingClientRect=function(){const r=o.call(this);if(this.classList&&this.classList.contains('ro-chip')){const st=new Error().stack||'';if(/at resolve/.test(st))return r;if(/at stagger/.test(st))return new DOMRect(r.left,r.top,Math.max(1,r.width-40),r.height);}return r};try{window.__durbarSimUi.crew.renderAll();const r=" + PLATES + ";return r.pp.length+r.cp.length+r.cc.length}finally{Element.prototype.getBoundingClientRect=o}})()");
+  assert.strictEqual(STALE, 0, 'resolve puts right a placement measured on stale widths: ' + STALE);
+  // ---- the observed set follows the elements: chips that leave are unobserved (it cannot grow all day) ----
+  const OBS = `(()=>{const ch=document.querySelector('#stage .ro-chrome');return ch._obs.size===ch.querySelectorAll(':scope > .ro-chip, :scope > .ro-lplate').length})()`;
+  await must(OBS, 'the observed set matches the chips and plates drawn');
+  const had = await js(`document.querySelectorAll('#stage .ro-chip').length`);
+  await js(`window.__durbarSimUi.uncrowd()`);
+  await must(`document.querySelectorAll('#stage .ro-chip').length<${jsLiteral(had)}`, 'the crowd left the coffee corner');
+  await must(OBS, 'the observed set shrank with them (unobserve)');
   // ---- FR-020: few agents, big screens ----
   for (const [w, h] of SIZES) {
     await loadReal(w, h, { sim: '3' });

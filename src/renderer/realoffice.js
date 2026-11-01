@@ -37,7 +37,8 @@
     layer._seen.add(key);
     return e;
   }
-  function sweep(layer) { for (const [k, e] of layer._k) if (!layer._seen.has(k)) { e.remove(); layer._k.delete(k); } }
+  /* an element that leaves is also unobserved (the resize observer of the chrome layer, settle), so the observed set cannot grow all day */
+  function sweep(layer) { for (const [k, e] of layer._k) if (!layer._seen.has(k)) { if (layer._obs && layer._obs.delete(e)) layer._ro.unobserve(e); e.remove(); layer._k.delete(k); } }
   function text(e, t) { t = String(t == null ? '' : t); if (e.textContent !== t) e.textContent = t; }
   function attr(e, k, v) { if (v == null || v === false) { if (e.hasAttribute(k)) e.removeAttribute(k); } else if (e.getAttribute(k) !== String(v)) e.setAttribute(k, String(v)); }
   function img(e, file) {
@@ -227,7 +228,8 @@
         });
       });
     }
-    for (const e of chrome.querySelectorAll(':scope > .ro-chip, :scope > .ro-lplate')) chrome._ro.observe(e, { box: 'border-box' });
+    if (!chrome._obs) chrome._obs = new Set();
+    for (const e of chrome.querySelectorAll(':scope > .ro-chip, :scope > .ro-lplate')) if (!chrome._obs.has(e)) { chrome._obs.add(e); chrome._ro.observe(e, { box: 'border-box' }); }
   }
 
   /* Paco's review of #921 (art): a lobby place plate reads in full (never an ellipsis) when there is room: a plate wider than its
