@@ -144,8 +144,8 @@ world.json  arrangement: "circle"
 
 | Risk | Answer |
 |---|---|
-| 15 agents do not fit with a `focus` area | T165 first, pure and free; stop and ask (A5) |
-| A project world has no fall-back, and the mockups measured under 40 px at 15 | FR-229's `[KNOWN GAP]`; T165 first, and the numbers go to the owner |
+| 15 agents do not fit with a `focus` area at 24 px faces | T165 first, pure and free; redesign the arrangement (A5) |
+| A project world has no fall-back, and the beach's mockup is under 24 px at 15 | Redesign (FR-235); T165 first, measured in the app |
 | A lounger looks wrong with an upright seated frame | FR-224; art brief; the owner's look. No reclining poses |
 | Screens on small laptops | Same `screenRect` floor; bars under 150x60 (097 FR-032) |
 | Hostile `arrangement` | FR-226, fixtures in `test:worldpack` |
