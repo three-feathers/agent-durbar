@@ -304,6 +304,7 @@ function editCandidate(input: Record<string, unknown>, prev: Schedule): Record<s
     loop: limitsOf(input.loop),
     // a limit is dropped only by an explicit `cap: null`; no key keeps it (and its spend, below)
     cap: input.cap === undefined ? prev.cap : input.cap,
+    ...(prev.mode === 'autopilot' ? { mode: 'autopilot' } : {}), // spec 099 FR-084: an edit never turns a refused schedule into one that runs
   };
 }
 
@@ -736,7 +737,7 @@ export class Scheduler {
     this.attrib.set(session, s.id);
     const pass = l.passes;
     const started = l.startedAt; // restartLoop edits this object in place, so keep the value from before the await
-    const { r, reason } = await this.sendRun(s, s.prompt);
+    const { r, reason, autopilot } = await this.sendRun(s, s.prompt);
     const after = this.deps.now();
     // `save` (Pause, Resume, an edit) may have replaced the object while send was awaited: act on the current one, and only if it is
     // still this loop in this pass (not stopped, removed, or its turn already ended)
@@ -745,6 +746,15 @@ export class Scheduler {
     if (!cur || !cl || cl.ended || !cl.inPass || cl.passes !== pass || cl.startedAt !== started) return;
     if (r) {
       this.record(cur, 'sent', now, { session: typeof r === 'string' ? r : session });
+      return;
+    }
+    if (autopilot) {
+      // spec 099 T032: the session went on Autopilot while this waited: not a pass, not an error
+      if (this.attrib.get(session) === cur.id) this.attrib.delete(session);
+      cl.inPass = false;
+      cl.passes = pass - 1;
+      this.record(cur, 'skipped-autopilot', now, { session });
+      cur.next = now + this.lastDelay(cl) * MIN;
       return;
     }
     // the pass could not be sent: it counts as a failed pass (FR-013)
@@ -1002,6 +1012,7 @@ export class Scheduler {
     if (!s) return { ok: false, error: 'A schedule needs a prompt and either a time, an interval of 5 to 1440 minutes or a calendar rule. A limit must be a positive amount.' };
     // FR-123: a prompt over the limit is refused, never cut; one that did not change (Pause, Resume, Delete-side saves of an old entry) stays
     if (s.mode === 'autopilot' && prev?.mode !== 'autopilot') return { ok: false, error: 'Autopilot on a schedule is not available.' }; // spec 099 FR-084
+    if (prev?.mode === 'autopilot') s.mode = 'autopilot'; // a Pause or an edit keeps the marker: it stays refused and never runs in the session's mode
     if (needsReview(s) && s.prompt !== prev?.prompt) return { ok: false, error: `The prompt is ${s.prompt.length.toLocaleString('en-US')} of ${MAX_PROMPT.toLocaleString('en-US')} characters: shorten it to save.` };
     // a save of an existing schedule that is not an edit (Pause, Resume, "Use the folder's agent") never moves it to another folder or revives a done one
     if (!edit && prev) {

@@ -135,7 +135,7 @@ const set = (f: { node: any }, sel: string, v: string) => { const i = f.node.que
 
 /** The page's wiring: what cannot run here is pinned by its text. The driver `check-autopilot` runs it for real. */
 function pageChecks(): void {
-  const app = fs.readFileSync(path.join(root, 'src', 'renderer', 'app.js'), 'utf8');
+  const app = fs.readFileSync(path.join(root, 'src', 'renderer', 'app.js'), 'utf8').replace(/^\s*\/\/.*$/gm, '');
   const part = (a: string, b: string): string => app.slice(app.indexOf(a), app.indexOf(b));
   assert.ok(app.includes("const isOn=a.info.permMode===k&&!a.info.autopilot;"), 'FR-056: the check mark follows the real mode');
   assert.ok(app.includes("if(!c||!bridge.setAutopilot)") || app.includes('!c||a.parent||!bridge.setAutopilot'), 'no capability: no item');

@@ -1283,6 +1283,8 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       run.timer = window.setTimeout(step, 120);
     };
     const simApHeld = new Map<string, () => void>();
+    const simApState = new Set<(p: { id: string; autopilot: AgentInfo['autopilot'] | null }) => void>();
+    const simApSay = (s: SimAgent): void => { for (const cb of simApState) cb({ id: s.info.id, autopilot: s.info.autopilot ?? null }); };
     /* the driver goes on from a `simaphold` */
     (window as unknown as { __durbarSimApGo?: (id: string) => void }).__durbarSimApGo = (id) => { const f = simApHeld.get(id); simApHeld.delete(id); f?.(); };
     const simLog = (s: SimAgent, decision: ActivityRow['decision'], action: string, mode: string = s.info.permMode): void => {
@@ -3037,7 +3039,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         const s = sims.find((x) => x.info.id === id);
         if (!s) return;
         if (s.apRun) simApEnd(s, 'stopped'); // spec 099 FR-050
-        else if (s.info.autopilot) s.info.autopilot = undefined;
+        else if (s.info.autopilot) { s.info.autopilot = undefined; simApSay(s); } // no run, so no event: main's state message
         if (s.limitReq) {
           emit({ type: 'limit', sessionId: id, timestamp: now(), phase: 'resolved', requestId: s.limitReq, action: 'cancel' });
           s.limitReq = undefined;
@@ -3181,7 +3183,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         if (!s) return { ok: false, error: 'unknown agent' };
         if (settings === null) {
           if (s.apRun) simApEnd(s, 'stopped');
-          else if (s.info.autopilot) { simLog(s, 'autopilot-off', 'Turned off'); s.info.autopilot = undefined; }
+          else if (s.info.autopilot) { simLog(s, 'autopilot-off', 'Turned off'); s.info.autopilot = undefined; simApSay(s); }
           return { ok: true, mode: s.info.permMode };
         }
         if (!SIM_AUTOPILOT) return { ok: false, error: 'Autopilot is not available yet.' };
@@ -3295,6 +3297,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       onAgentRenamed: (cb) => { renamedListeners.add(cb); return () => renamedListeners.delete(cb); },
       /* spec 076 FR-205: like main's start guard, a Codex session started in Allow all (canned advice) shows the advice once */
       onOrgNote: (cb) => { simOrgNotes.add(cb); return () => simOrgNotes.delete(cb); },
+      onAutopilotState: (cb) => { simApState.add(cb); return () => simApState.delete(cb); },
       listPrevious: async (id) => {
         await prevWait();
         const src = sims.find((x) => x.info.id === id);

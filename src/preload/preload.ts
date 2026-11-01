@@ -100,6 +100,7 @@ const api: DurbarApi = {
   onDoorsFull: (cb) => sub('doors:full', cb),
   onDoorsChanged: (cb) => sub('doors:changed', cb),
   onOrgNote: (cb) => sub('agents:orgNote', cb),
+  onAutopilotState: (cb) => sub('agents:autopilot', cb),
   onRemoteUrl: (cb) => sub('agents:remoteUrl', cb),
   exportTheme: (id) => ipcRenderer.invoke('theme:export', id),
   setCap: (id, credits) => ipcRenderer.invoke('agents:setCap', id, credits),

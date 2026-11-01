@@ -250,6 +250,7 @@ const autopilotOps = createAutopilotOps({
   },
   log: (a, decision, action) => logActivity(a, decision, action),
   say: (a, line) => toRenderer('agents:orgNote', { id: a.id, text: line }),
+  changed: (a) => toRenderer('agents:autopilot', { id: a.id, autopilot: a.autopilot ?? null }),
   rememberLimit: (limit) => settingsStore?.setAutopilotLimit(limit),
   warn: (line) => console.warn(line),
 });

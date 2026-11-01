@@ -22,6 +22,10 @@ export type AutopilotResult = { ok: boolean; error?: string; cancelled?: true; m
 export const NOT_AVAILABLE = 'Autopilot is not available yet.';
 export const REMOTE_ON = 'Stop remote control first: Autopilot and remote control from GitHub are never on together.';
 export const ORG_UNREAD = "Durbar could not read your organization's policy for this agent app, so it cannot start Autopilot. Try again in a moment.";
+/** How long each step of turning on may take; Stop and End do not wait for it. Proposed, as FR-054's 10 seconds. */
+export const SETUP_WAIT_MS = 30_000;
+export const TOOK_TOO_LONG = 'Autopilot did not start: the agent app did not answer in time.';
+export const NO_READ = "If Durbar cannot read this folder's changes it cannot see a lack of progress";
 export const CHANGED = 'This session changed while you were deciding, so Autopilot did not start. Choose it again.';
 export const WARN_LIMIT = 'Above 20 extra turns, this run can spend much more before it stops.';
 export const WARN_HOURS = 'Above 2 hours, this run can spend much more before it stops.';
@@ -34,6 +38,11 @@ export const SESSIONS_WARN_FROM = 3;
 export function plainLine(v: unknown, max = 120): string {
   const s = String(v ?? '').replace(HIDDEN_ALL_RE, '').replace(/[‎‏؜⁪-⁯]|[\u{e0000}-\u{e007f}]/gu, '').replace(/[\u0000-\u001f\u007f-\u009f]+/g, ' ').trim();
   return s.length > max ? `${s.slice(0, max - 1)}…` : s;
+}
+
+/** FR-082 and every error Durbar shows: control characters out, then masked, then cut: a token never leaves a prefix. */
+export function maskedLine(v: unknown, max = 300): string {
+  return plainLine(redact(plainLine(v, Number.MAX_SAFE_INTEGER)), max);
 }
 
 export const capWords = (unit: Unit, v: number): string => (unit === 'usd' ? `$${v} (Claude's estimate)` : unit === 'tokens' ? `${v} tokens` : `${v} AI credits`);
@@ -98,6 +107,7 @@ export function dialogText(f: DialogFacts): { message: string; detail: string; o
     if (f.ownCap !== undefined && f.ownCap < s.cap) lines.push(`This session's limit of ${capWords(f.unit, f.ownCap)} is lower, so it stays in force.`);
   } else {
     lines.push(`No spend cap: Autopilot stops when the task is done, at the turn limit, after ${hours} hour${hours === 1 ? '' : 's'}, when it makes no progress, or when you press Stop.`);
+    lines.push(`${NO_READ}: then only the ${s.limit} turn${s.limit === 1 ? '' : 's'}, the ${hours} hour${hours === 1 ? '' : 's'} or Stop end the run.`);
     if (f.ownCap !== undefined && f.unit) lines.push(`This session's limit of ${capWords(f.unit, f.ownCap)} still applies.`);
     if (spent) lines.push(`Spent so far in this session: ${spent}.`);
   }
@@ -131,13 +141,19 @@ export interface AutopilotOpsDeps {
   rememberLimit?(limit: number): void;
   warn?(line: string): void;
   now?(): number;
+  /** Main's state changed with no `ended` event for the window to read (FR-050, FR-052, a stop with no run). */
+  changed?(a: AgentInfo): void;
+  /** Test seam; production uses `SETUP_WAIT_MS`. */
+  setupWaitMs?: number;
 }
 
-interface Turning { stopped: boolean }
+/** One turning-on. `released` rejects at a Stop or an End: nothing waits on a call that may never answer. */
+interface Turning { stopped: boolean; release(): void; released: Promise<never> }
+const RELEASED = Symbol('released');
 interface Progress { runId: string; last?: string | null; have: boolean; unchanged: number; activity: boolean; chain: Promise<void> }
 
 /** FR-082: a masked, cut log line for a bad event; the event's text is never logged as it came. */
-const problemLine = (p: string[]): string => plainLine(redact(p.join('; ')), 300);
+const problemLine = (p: string[]): string => maskedLine(p.join('; '), 300);
 
 export function createAutopilotOps(d: AutopilotOpsDeps) {
   const turning = new Map<string, Turning>();
@@ -154,6 +170,21 @@ export function createAutopilotOps(d: AutopilotOpsDeps) {
     const hadRun = !!a.autopilot.run;
     a.autopilot = undefined;
     if (!hadRun) d.log?.(a, 'autopilot-off', how); // with a run, its `ended` event logs the end
+    d.changed?.(a); // the window follows, also when no event will come
+  };
+
+  /** A Stop, an End or a run nobody asked for: this turning-on is over, now, whatever its call is doing. A later answer finds `stopped`. */
+  const releaseTurning = (id: string): void => {
+    const t = turning.get(id);
+    if (!t) return;
+    t.stopped = true;
+    turning.delete(id);
+    t.release();
+  };
+  const limited = <T>(t: Turning, p: Promise<T>, ms: number): Promise<T> => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    p.catch(() => undefined);
+    return Promise.race([p, t.released, new Promise<never>((_r, rej) => { timer = setTimeout(() => rej(new Error(TOOK_TOO_LONG)), ms); })]).finally(() => clearTimeout(timer));
   };
 
   /** FR-054: the stop could not be confirmed. A known state whatever happens: Allow all, no Autopilot, the session's process gone. */
@@ -165,8 +196,7 @@ export function createAutopilotOps(d: AutopilotOpsDeps) {
 
   /** FR-050, FR-051: everything that happens before the first await is the stop. Also ends a turning-on that is under way. */
   const off = (id: string, reason: AutopilotEnd = 'stopped'): Promise<AutopilotResult> => {
-    const t = turning.get(id);
-    if (t) t.stopped = true;
+    releaseTurning(id);
     const a = d.agents.get(id);
     const ad = a ? d.router.forAgent(a.id) : undefined;
     if (!a || !ad) return Promise.resolve(refuse('unknown agent'));
@@ -176,14 +206,14 @@ export function createAutopilotOps(d: AutopilotOpsDeps) {
     const stopped = (async () => ad.setAutopilot?.(a.id, null, reason))(); // the adapter's own sync part runs here, before anything else
     return stopped.then(() => ({ ok: true, mode: a.permMode }), async (err: unknown) => {
       await failClosed(a);
-      return { ok: true, mode: a.permMode, note: plainLine(errText(err), 200) };
+      return { ok: true, mode: a.permMode, note: maskedLine(errText(err), 200) };
     });
   };
 
   /** Everything checked again where an await has passed. Returns the refusal. */
   const recheck = (a: AgentInfo, ad: unknown, t: Turning, mode: PermMode): string | undefined => {
     if (!d.enabled()) return NOT_AVAILABLE;
-    if (t.stopped || d.agents.get(a.id) !== a || d.router.forAgent(a.id) !== ad || a.permMode !== mode) return CHANGED;
+    if (t.stopped || turning.get(a.id) !== t || d.agents.get(a.id) !== a || d.router.forAgent(a.id) !== ad || a.permMode !== mode) return CHANGED;
     if (d.remoteOn(a.id)) return REMOTE_ON;
     return undefined;
   };
@@ -205,10 +235,14 @@ export function createAutopilotOps(d: AutopilotOpsDeps) {
     if (settings.cap !== undefined && unit && spent !== undefined && settings.cap <= spent) return refuse(`A cap of ${capWords(unit, settings.cap)} is not above what this session has spent (${capWords(unit, Math.round(spent * 1e4) / 1e4)}).`);
     if (d.remoteOn(a.id)) return refuse(REMOTE_ON);
     const mode = a.permMode;
-    const t: Turning = { stopped: false };
+    let release: () => void = () => undefined;
+    const released = new Promise<never>((_r, rej) => { release = () => rej(RELEASED); });
+    released.catch(() => undefined);
+    const t: Turning = { stopped: false, release, released };
+    const wait = d.setupWaitMs ?? SETUP_WAIT_MS;
     turning.set(a.id, t);
     try {
-      const no = await d.org(a).catch(() => ORG_UNREAD); // a read that failed refuses, never fails open
+      const no = await limited(t, d.org(a), wait).catch((e: unknown) => { if (e === RELEASED) throw e; return ORG_UNREAD; }); // a read that failed or hung refuses, never fails open
       if (no) return refuse(no);
       let bad = recheck(a, ad, t, mode);
       if (bad) return refuse(bad);
@@ -217,9 +251,14 @@ export function createAutopilotOps(d: AutopilotOpsDeps) {
         ownCap: unit && unit !== 'tokens' ? a.maxAiCredits : undefined, others: [...d.agents.values()].filter((x) => x.autopilot).length,
         sandboxOff: !!(a.sandbox && a.sandbox.heldFloor && !a.sandbox.managed && !a.sandbox.untilNewSession), verified: cap.verified === true,
       });
-      if (!(await d.confirm(text))) return { ok: false, cancelled: true, error: 'Cancelled.' }; // nothing has changed yet
-      if (!ad.isLive(a.id)) await d.ensureLive(a); // a resume sends nothing
-      const after = await d.org(a).catch(() => ORG_UNREAD); // the policy may have changed behind the dialog
+      // no limit on a person's answer; a Stop or an End ends this wait, and a yes after it finds nothing to do
+      if (!(await Promise.race([d.confirm(text), t.released]))) return { ok: false, cancelled: true, error: 'Cancelled.' }; // nothing has changed yet
+      bad = recheck(a, ad, t, mode);
+      if (bad) return refuse(bad);
+      if (!ad.isLive(a.id)) await limited(t, d.ensureLive(a), wait); // a resume sends nothing
+      bad = recheck(a, ad, t, mode);
+      if (bad) return refuse(bad);
+      const after = await limited(t, d.org(a), wait).catch((e: unknown) => { if (e === RELEASED) throw e; return ORG_UNREAD; }); // the policy may have changed behind the dialog
       if (after) return refuse(after);
       // from here to the adapter's call there is no await: remote control, a stop or a mode change during the dialog are all seen here
       bad = recheck(a, ad, t, mode);
@@ -230,24 +269,35 @@ export function createAutopilotOps(d: AutopilotOpsDeps) {
         if (!r.ok) return refuse(r.error ?? 'Could not change the mode.');
         pending = r.pending;
       }
+      // the adapter's answer may come after a limit or a Stop: an on it reports then is taken straight back
+      const backOff = (): Promise<void> => Promise.resolve().then(() => ad.setAutopilot?.(a.id, null, 'stopped')).then(() => undefined).catch(() => failClosed(a));
+      let abandoned = false;
+      const call = (async () => ad.setAutopilot?.(a.id, settings))();
+      call.then(() => { if (abandoned) void backOff(); }, () => undefined);
       try {
-        await ad.setAutopilot(a.id, settings);
+        await limited(t, call, wait);
       } catch (err) {
-        if (mode !== 'allow') say(a, `Autopilot did not start, and this session and its folder stay in Allow all: ${plainLine(errText(err), 200)}`, true);
-        return { ...refuse(plainLine(errText(err), 300)), mode: a.permMode };
+        abandoned = true;
+        void backOff();
+        if (err === RELEASED) return { ...refuse(CHANGED), mode: a.permMode };
+        if (mode !== 'allow') say(a, `Autopilot did not start, and this session and its folder stay in Allow all: ${maskedLine(errText(err), 200)}`, true);
+        return { ...refuse(maskedLine(errText(err), 300)), mode: a.permMode };
       }
-      if (t.stopped || d.remoteOn(a.id) || a.permMode !== 'allow' || d.agents.get(a.id) !== a) {
-        await Promise.resolve().then(() => ad.setAutopilot?.(a.id, null, 'stopped')).catch(() => failClosed(a));
+      // the truth after the last await: a Stop, an End, remote control, a mode change, or a run the guard stopped: Autopilot is not on, and the answer says so
+      if (t.stopped || turning.get(a.id) !== t || d.remoteOn(a.id) || a.permMode !== 'allow' || d.agents.get(a.id) !== a || !ad.isLive(a.id)) {
+        await backOff();
         return { ...refuse(d.remoteOn(a.id) ? REMOTE_ON : CHANGED), mode: a.permMode };
       }
       a.autopilot = { limit: settings.limit, hours: settings.hours ?? DEFAULT_HOURS, ...(settings.cap !== undefined ? { cap: settings.cap } : {}) };
       d.log?.(a, 'autopilot-on', `Autopilot on: up to ${settings.limit} more turns, ${settings.cap !== undefined && unit ? capWords(unit, settings.cap) : 'no spend cap'}`);
       d.rememberLimit?.(settings.limit);
+      d.changed?.(a);
       return { ok: true, mode: a.permMode, autopilot: a.autopilot, ...(pending ? { pending } : {}) };
     } catch (err) {
-      return refuse(plainLine(errText(err), 300));
+      if (err === RELEASED) return { ...refuse(CHANGED), mode: a.permMode };
+      return { ...refuse(maskedLine(errText(err), 300)), mode: a.permMode };
     } finally {
-      turning.delete(a.id);
+      if (turning.get(a.id) === t) turning.delete(a.id);
     }
   };
 
@@ -290,8 +340,7 @@ export function createAutopilotOps(d: AutopilotOpsDeps) {
     endForMode: (a: AgentInfo): void => { void off(a.id); },
     /** `agents:stop`: the adapter's interrupt is its own stop order, so only main's state comes down here. */
     stopSeen: (id: string): void => {
-      const t = turning.get(id);
-      if (t) t.stopped = true;
+      releaseTurning(id);
       const a = d.agents.get(id);
       if (a) dropState(a, 'Stopped');
     },
@@ -322,6 +371,14 @@ export function createAutopilotOps(d: AutopilotOpsDeps) {
       if (!problems.length && auto && (e as AutopilotEvent).phase !== 'ended' && !a?.autopilot) problems.push('autopilot event on a session not on Autopilot');
       if (!problems.length) return true;
       d.warn?.(`[autopilot] dropped a bad event: ${problemLine(problems)}`);
+      // a run that ends with an event main cannot read has still ended: main's run never stands on it
+      if (auto && raw.agentId === undefined && (raw as { phase?: unknown }).phase === 'ended' && a?.autopilot) {
+        say(a, 'Autopilot stopped: Durbar could not read how its run ended.', true);
+        void off(a.id, 'error');
+        return false;
+      }
+      // a run during turning-on: main is not counting it, so this turning-on is over (the adapter is told below)
+      if (auto && a && !a.autopilot && turning.has(a.id)) releaseTurning(a.id);
       // the adapter runs something main does not count: it is stopped, never left going unseen
       if (auto && !eventProblems(e).length && a && !a.autopilot && raw.agentId === undefined && (e as AutopilotEvent).phase !== 'ended') {
         void Promise.resolve().then(() => d.router.forAgent(a.id)?.setAutopilot?.(a.id, null, 'error')).catch(() => failClosed(a));
@@ -334,6 +391,7 @@ export function createAutopilotOps(d: AutopilotOpsDeps) {
       const a = d.agents.get(e.sessionId);
       if (e.type === 'status' && (e.status === 'stopped' || e.intent === LINE_CLOSED)) {
         // FR-005, FR-052: no card and no event, but the session is no longer on Autopilot
+        releaseTurning(e.sessionId);
         if (e.status === 'stopped') spend.delete(e.sessionId);
         progress.delete(e.sessionId);
         if (a && e.status !== 'stopped' && a.autopilot) void off(a.id); // the session lives on: its adapter must not keep settings main no longer has
@@ -368,10 +426,14 @@ export function createAutopilotOps(d: AutopilotOpsDeps) {
     },
     /** The session is gone (End session, removed): nothing of it stays. */
     forget: (id: string): void => {
+      releaseTurning(id);
       progress.delete(id);
       spend.delete(id);
       const a = d.agents.get(id);
-      if (a) a.autopilot = undefined;
+      if (a?.autopilot) {
+        a.autopilot = undefined;
+        d.changed?.(a);
+      }
     },
   };
 }

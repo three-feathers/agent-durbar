@@ -426,11 +426,11 @@ async function main(): Promise<void> {
     assert.ok(client.last.calls.some((c) => c.name === 'mode.set'));
   }
 
-  // FR-053 stays off in a real session until T030 wires it (AUTOPILOT_WIRED), unless setAutopilot ran on this adapter
+  // FR-053 off where `wired` is false (the default build, AUTOPILOT_WIRED), unless setAutopilot ran on this adapter
   {
     const client = new FakeClient();
     client.onDisk.add('old-2');
-    const ad = new FakeCopilot(client);
+    const ad = new FakeCopilot(client, undefined, { wired: false });
     await ad.start({ workspace: ws, resumeSessionId: 'old-2', permissionMode: 'allow', quiet: true });
     assert.ok(!client.last.calls.some((c) => c.name.startsWith('mode.')), 'nothing new on a real resume yet');
   }

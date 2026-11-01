@@ -491,12 +491,12 @@ async function main(): Promise<void> {
     const s2 = await old.ad.start({ workspace: os.tmpdir(), resumeSessionId: t2, permissionMode: 'allow', quiet: true });
     assert.ok(old.ad.isLive(s2), 'method not found: no goal can exist');
     await old.ad.stop(s2);
-    const off = make();
+    const off = make({}, { wired: false });
     const f3 = await off.ad.start({ workspace: os.tmpdir(), permissionMode: 'allow', quiet: true });
     const t3 = off.ad.resumeIdOf(f3) as string;
     await off.ad.stop(f3);
     const s3 = await off.ad.start({ workspace: os.tmpdir(), resumeSessionId: t3, permissionMode: 'allow', quiet: true });
-    assert.strictEqual(off.srv.requests('thread/goal/clear').length, 0, 'AUTOPILOT_WIRED is false until T030');
+    assert.strictEqual(off.srv.requests('thread/goal/clear').length, 0, '`wired` false (the default build): nothing new on a resume');
     await off.ad.stop(s3);
   }
 

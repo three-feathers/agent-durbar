@@ -425,10 +425,10 @@ async function main(): Promise<void> {
     await tick();
     assert.deepStrictEqual(f.users().slice(-2), ['/goal clear', 'again']);
     // the real default: nothing new on a resume, and on an older CLI no clear even when on
-    const off = await rig({ exists: true, id: 'aaaaaaaa-4' });
+    const off = await rig({ exists: true, id: 'aaaaaaaa-4', tuning: { wired: false } });
     await off.ad.send(off.sid, { text: 'hello' });
     await tick();
-    assert.deepStrictEqual(off.users(), ['hello'], 'AUTOPILOT_WIRED is false until T030');
+    assert.deepStrictEqual(off.users(), ['hello'], '`wired` false (the default build): nothing new on a resume');
     const old = await rig({ exists: true, id: 'aaaaaaaa-6', version: '2.1.200', tuning: { wired: true } });
     await old.ad.send(old.sid, { text: 'hello' });
     await tick();

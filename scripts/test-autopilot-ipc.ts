@@ -5,7 +5,9 @@
  */
 process.exitCode = 1;
 import * as assert from 'assert';
+import { execFileSync } from 'child_process';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { pathToFileURL } from 'url';
 import { createRegistry } from '../src/adapters/registry';
@@ -47,7 +49,7 @@ async function main(): Promise<void> {
   const foreign = { senderFrame: foreignFrame, sender: { mainFrame: foreignFrame } };
 
   /** One office: a session in `mode`, the real router, the real remote ops, and a store and log that record. */
-  async function office(o: { mode?: PermMode; enabled?: boolean; caps?: R; confirm?: AutopilotOpsDeps['confirm']; org?: AutopilotOpsDeps['org']; fingerprint?: AutopilotOpsDeps['fingerprint']; remoteConfirm?: (id: string) => Promise<boolean>; live?: boolean } = {}) {
+  async function office(o: { mode?: PermMode; enabled?: boolean; caps?: R; confirm?: AutopilotOpsDeps['confirm']; org?: AutopilotOpsDeps['org']; fingerprint?: AutopilotOpsDeps['fingerprint']; remoteConfirm?: (id: string) => Promise<boolean>; live?: boolean; setupWaitMs?: number; ensureLive?: AutopilotOpsDeps['ensureLive'] } = {}) {
     handlers.clear();
     const fake = new FakeAdapter({ capabilities: o.caps ?? { autopilot: AP, remote: true, remoteService: { name: 'GitHub', host: 'github.com', mobile: 'GitHub Mobile' } } } as never);
     const desc = { id: 'fake', displayName: 'Fake', create: () => fake, detect: async () => ({ state: 'ready' }), capabilities: fake.capabilities } as unknown as AdapterDescriptor;
@@ -63,13 +65,14 @@ async function main(): Promise<void> {
     const logs: string[] = [];
     const says: string[] = [];
     const warns: string[] = [];
+    const pushed: unknown[] = [];
     const asked: Array<{ message: string; detail: string; ok: string }> = [];
     const opsDeps = { agents, router, store: { setPermMode: (k: string, m: string) => void saved.push(['folder', m]), setSessionMode: (k: string, s: string, m: string) => void saved.push(['session', m]), setMaxAiCredits: () => assert.fail('FR-022: never the folder cap') }, wsKey: (x: AgentInfo) => x.cwd, log: (x: AgentInfo, d: string, t: string) => void logs.push(`${d}: ${t}`), orgRefusal: undefined as undefined | ((x: AgentInfo, m: PermMode) => string | undefined) } as never as import('../src/main/agentops').OpsDeps;
     let onAuto: (id: string) => boolean = () => false;
     const remoteOps = createRemoteOps({ known: (x) => agents.has(x), adapterOf: (x) => router.forAgent(x), open: async () => undefined, modeOf: (x) => agents.get(x)?.permMode, confirm: o.remoteConfirm, autopilotOn: (x) => onAuto(x) });
     const ops = createAutopilotOps({
       agents, router, ops: opsDeps, enabled: () => o.enabled !== false, remoteOn: (x) => remoteOps.engaged(x), org: o.org ?? (async () => undefined),
-      confirm: o.confirm ?? (async (t) => { asked.push(t); return true; }), ensureLive: async () => undefined, appName: () => 'Fake', folderLabel: (x) => x.cwd, fingerprint: o.fingerprint,
+      confirm: o.confirm ?? (async (t) => { asked.push(t); return true; }), ensureLive: o.ensureLive ?? (async () => undefined), setupWaitMs: o.setupWaitMs, changed: (x) => void pushed.push(x.autopilot ?? null), appName: () => 'Fake', folderLabel: (x) => x.cwd, fingerprint: o.fingerprint,
       log: (x, d, t) => void logs.push(`${d}: ${t}`), say: (_x, l) => void says.push(l), warn: (l) => void warns.push(l),
     });
     onAuto = (x) => ops.engaged(x);
@@ -82,7 +85,7 @@ async function main(): Promise<void> {
     register({ agents, router, agentState: { ensure: () => undefined, noteSend: () => undefined, noteSendFailed: () => undefined, isBusy: () => false, remove: () => undefined } as never, opsDeps, remoteOps, autopilot: ops, mcpSecrets: () => [], logMcp: () => undefined, getScheduler: () => undefined, getCheckpointStore: () => undefined, vsChatRefs: new Map(), continued: new Map(), wsKey: (x: AgentInfo) => x.cwd, asEffort: () => undefined, addMany: async () => ({ ok: true, agents: [] }) as never, addWorkspace: async () => a, sendOp: async () => ({ ok: true }), ensureLive: async () => undefined, readyAdapterIds: async () => new Set(), forgetOpenSession: () => undefined, maskHistory: (_i: unknown, h: unknown) => h } as never);
     const call = (ch: string, ...args: unknown[]) => Promise.resolve(handlers.get(ch)!(win, ...args)) as Promise<R>;
     const emit = (e: R): void => (fake as unknown as { emit(s: string, b: R): void }).emit(id, e);
-    return { fake, id, a, agents, router, saved, logs, says, warns, asked, ops, remoteOps, opsDeps, call, seen, emit };
+    return { fake, id, a, agents, router, saved, logs, says, warns, pushed, asked, ops, remoteOps, opsDeps, call, seen, emit };
   }
   const turnOn = (x: { call: (c: string, ...a: unknown[]) => Promise<R>; id: string }, s: unknown = { limit: 5 }) => x.call('agents:setAutopilot', x.id, s);
   const onCalls = (x: { fake: FakeAdapter }): AutopilotSettings[] => x.fake.autopilotCalls.filter((c) => c.settings).map((c) => c.settings as AutopilotSettings);
@@ -187,6 +190,8 @@ async function main(): Promise<void> {
     assert.match(s({ settings: { limit: 5, hours: 3 } }).detail, /Above 2 hours/);
     assert.ok(!/already on Autopilot/.test(s({ others: 2, settings: { limit: 5 } }).detail));
     assert.match(s({ others: 3, settings: { limit: 5 } }).detail, /3 sessions are already on Autopilot\. Each one spends on its own\./);
+    assert.match(s({ settings: { limit: 40, hours: 8 } }).detail, /If Durbar cannot read this folder's changes it cannot see a lack of progress: then only the 40 turns, the 8 hours or Stop end the run\./, 'said when no cap is set');
+    assert.ok(!/cannot see a lack/.test(s({ settings: { limit: 5, cap: 40 } }).detail));
     assert.match(s({ settings: { limit: 5, cap: 30 }, raised: true, spent: 2 }).detail, /Spend cap: 30 AI credits for this session in total \(2 AI credits so far\)\.\nCopilot's smallest cap is 30 AI credits, so Autopilot uses 30\./);
     assert.match(s({ settings: { limit: 5, cap: 40 }, ownCap: 35 }).detail, /This session's limit of 35 AI credits is lower/);
     assert.match(s({ settings: { limit: 5 }, ownCap: 35 }).detail, /This session's limit of 35 AI credits still applies/);
@@ -256,6 +261,7 @@ async function main(): Promise<void> {
     assert.match(String(await cache(() => ({ ...emptyOrgPolicy('C'), runtimeUnread: 'failed' })).autopilotRefusal('c')), /could not read/, 'the runtime did not answer: the file is not enough');
     assert.match(String(await cache(() => ({ ...emptyOrgPolicy('C'), runtimeUnread: 'none' })).autopilotRefusal('c')), /could not read/);
     assert.match(String(await new OrgPolicyCache({ ids: () => [], adapter: () => undefined }).autopilotRefusal('nope')), /could not read/, 'no read at all');
+    assert.match(String(await cache(() => ({ ...emptyOrgPolicy('C'), unreadable: true })).autopilotRefusal('c')), /could not read/, 'unreadable, and nothing found');
     assert.strictEqual(await new OrgPolicyCache({ ids: () => ['c'], adapter: () => ({ displayName: 'C', readOrgPolicy: () => wholeOrgPolicy('C', [], ['bad'], 'doubt') }) }).refusal('c', { mode: 'allow' }), undefined, 'Allow all itself is unchanged: advice');
     assert.strictEqual((await readCopilotOrgPolicy(undefined, () => emptyOrgPolicy('C'))).runtimeUnread, 'none');
     assert.strictEqual((await readCopilotOrgPolicy({ rpc: { managedSettings: { resolve: async () => { throw new Error('x'); } } } } as never, () => emptyOrgPolicy('C'))).runtimeUnread, 'failed');
@@ -269,7 +275,7 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(x.asked, [], 'before the dialog');
     assert.strictEqual(x.a.permMode, 'ask');
 
-    const y = await office();
+    const y = await office({ remoteConfirm: async () => assert.fail('refused before its dialog') as never });
     assert.strictEqual((await turnOn(y)).ok, true);
     const r = await y.remoteOps.setRemote(y.id, true);
     assert.deepStrictEqual([r.ok, /on Autopilot/.test(String(r.error))], [false, true], 'its own check, not only the mode');
@@ -518,8 +524,6 @@ async function main(): Promise<void> {
       { type: 'autopilot', phase: 'continued', runId: 'r1', n: 9, limit: 5 },
       { type: 'autopilot', phase: 'continued', runId: 'r1', n: 1, limit: 5000 },
       { type: 'autopilot', phase: 'continued', runId: '<img src=x onerror=1>', n: 1, limit: 5 },
-      { type: 'autopilot', phase: 'ended', runId: 'r1', n: 1, limit: 5, reason: 'ghp_' + 'a'.repeat(36) },
-      { type: 'autopilot', phase: 'ended', runId: 'r1', n: 1, limit: 5, reason: 'done', spend: { unit: 'x', value: -1 } },
       { type: 'autopilot', phase: 'continued', runId: 'r1', n: 1, limit: 5, agentId: 'helper' },
       { type: 'autopilot', phase: 'ghp_' + 'a'.repeat(36) + '\nx', runId: 'r1', n: 1, limit: 5 },
       { type: 'question', phase: 'asked', requestId: 'q', questions: [{ question: 'q?', options: [] }], autoAnswered: 'yes' },
@@ -531,6 +535,20 @@ async function main(): Promise<void> {
     assert.ok(x.warns.every((w) => !w.includes('ghp_a') && !/[\n\r]/.test(w)), 'masked');
     assert.ok(x.a.autopilot, 'a dropped end changes nothing');
     assert.strictEqual(x.a.autopilot?.run?.continuation, 0);
+    // a malformed end: dropped, and main's run does not stand on it: the adapter is told, the window hears, the chat says so
+    for (const bad of [{ reason: 'ghp_' + 'a'.repeat(36) }, { reason: 'done', spend: { unit: 'x', value: -1 } }]) {
+      const m = await office();
+      await turnOn(m);
+      m.emit({ type: 'autopilot', phase: 'started', runId: 'r1', n: 0, limit: 5 });
+      m.emit({ type: 'autopilot', phase: 'ended', runId: 'r1', n: 1, limit: 5, ...bad });
+      assert.strictEqual(m.seen.filter((e) => e.type === 'autopilot').length, 1, 'not forwarded');
+      assert.strictEqual(m.a.autopilot, undefined, 'no run left standing');
+      await tick();
+      assert.deepStrictEqual(m.fake.autopilotCalls.at(-1), { sessionId: m.id, settings: null, reason: 'error' });
+      assert.strictEqual(m.pushed.at(-1), null);
+      assert.match(m.says.join(), /could not read how its run ended/);
+      assert.ok(m.warns.every((w) => !w.includes('ghp_a')));
+    }
     x.emit({ type: 'question', phase: 'asked', requestId: 'q1', questions: [{ question: 'q?', options: [] }], autoAnswered: true });
     assert.strictEqual(x.seen.filter((e) => e.type === 'question').length, 1);
     // a plain question and other events pass untouched, in the default build too
@@ -601,9 +619,202 @@ async function main(): Promise<void> {
     const exec = async (a: string[]) => { calls.push(a); return a.includes('status') ? '## main\0 M a\0' : 'diff'; };
     const f1 = await folderFingerprint('/f', exec as never);
     assert.ok(typeof f1 === 'string' && f1.length === 64);
-    assert.ok(calls.every((c) => c.includes('status') || c.includes('diff')));
-    assert.strictEqual(await folderFingerprint('/f', (async () => { throw new Error('no repo'); }) as never), null);
+    assert.ok(calls.every((c) => c.includes('status') || c.includes('diff') || c.includes('rev-parse')), 'read-only');
+    assert.strictEqual(await folderFingerprint('/f', (async () => { throw new Error('fatal: not a git repository (or any of the parent directories): .git'); }) as never), null);
+    await assert.rejects(folderFingerprint('/f', (async () => { throw new Error('timeout'); }) as never), /timeout/, 'a status that failed is not "not git": it is not known');
     await assert.rejects(folderFingerprint('/f', (async (a: string[]) => { if (a.includes('diff')) throw new Error('too big'); return '## main\0'; }) as never));
+    // the real runner and real git: no fake could see that the runner refuses an option
+    const scratch = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-099-fp-')));
+    try {
+      const git = (d: string, ...a: string[]): void => void execFileSync('git', ['-C', d, '-c', 'user.name=t', '-c', 'user.email=t@e', '-c', 'commit.gpgsign=false', ...a], { stdio: 'ignore' });
+      const repo = path.join(scratch, 'repo');
+      fs.mkdirSync(repo);
+      git(repo, 'init', '-q');
+      fs.writeFileSync(path.join(repo, 'a.txt'), 'one\n');
+      const unborn0 = await folderFingerprint(repo);
+      assert.ok(typeof unborn0 === 'string', 'a repository with no commit yet has a fingerprint');
+      assert.strictEqual(await folderFingerprint(repo), unborn0, 'unborn: the same twice');
+      git(repo, 'add', 'a.txt');
+      const unborn1 = await folderFingerprint(repo);
+      assert.notStrictEqual(unborn1, unborn0, 'unborn: a staged file shows');
+      fs.writeFileSync(path.join(repo, 'a.txt'), 'two\n');
+      assert.notStrictEqual(await folderFingerprint(repo), unborn1, 'unborn: an edit shows');
+      git(repo, 'add', 'a.txt');
+      git(repo, 'commit', '-qm', 'x');
+      const f0 = await folderFingerprint(repo);
+      assert.ok(typeof f0 === 'string');
+      assert.strictEqual(await folderFingerprint(repo), f0, 'the same twice');
+      fs.writeFileSync(path.join(repo, 'a.txt'), 'three\n');
+      const f1 = await folderFingerprint(repo);
+      assert.notStrictEqual(f1, f0, 'an edit shows');
+      fs.writeFileSync(path.join(repo, 'a.txt'), 'four\n');
+      assert.notStrictEqual(await folderFingerprint(repo), f1, 'a second edit to a file already changed shows: the diff, not only the status');
+      const plain = path.join(scratch, 'plain');
+      fs.mkdirSync(plain);
+      assert.strictEqual(await folderFingerprint(plain), null, 'not a git folder');
+      await assert.rejects(folderFingerprint(path.join(scratch, 'gone')));
+      // through main: two unchanged continuations in a real repository end the run
+      const real = await office({ fingerprint: () => folderFingerprint(repo) });
+      await turnOn(real);
+      real.emit({ type: 'autopilot', phase: 'started', runId: 'r1', n: 0, limit: 9 });
+      real.emit({ type: 'autopilot', phase: 'continued', runId: 'r1', n: 1, limit: 9 });
+      real.emit({ type: 'autopilot', phase: 'continued', runId: 'r1', n: 2, limit: 9 });
+      await until(() => real.fake.autopilotCalls.some((c) => c.reason === 'no-progress'));
+    } finally {
+      fs.rmSync(scratch, { recursive: true, force: true });
+    }
+  }
+
+  // ---- review: a setup that hangs is bounded; Stop and End always release; a late answer never re-engages ----
+  {
+    const hang = <T>(): Promise<T> => new Promise<T>(() => undefined);
+    const a1 = await office({ org: () => hang(), setupWaitMs: 15 });
+    assert.strictEqual((await turnOn(a1)).error, ORG_UNREAD, 'a read that hangs refuses');
+    assert.strictEqual(a1.ops.engaged(a1.id), false);
+    const a2 = await office({ mode: 'ask', ensureLive: () => hang(), setupWaitMs: 15 });
+    a2.fake.isLive = () => false;
+    const r2 = await turnOn(a2);
+    assert.match(String(r2.error), /did not answer in time/);
+    assert.strictEqual(a2.ops.engaged(a2.id), false);
+    assert.strictEqual(a2.a.permMode, 'ask', 'nothing moved');
+    // the adapter's call hangs: limit, told off at once, and told off again if its answer comes later
+    const a3 = await office({ setupWaitMs: 15 });
+    const real3 = a3.fake.setAutopilot!;
+    let answer3: () => void = () => undefined;
+    a3.fake.setAutopilot = async (s, c, why) => { if (c) await new Promise<void>((res) => { answer3 = res; }); await real3.call(a3.fake, s, c, why); };
+    assert.match(String((await turnOn(a3)).error), /did not answer in time/);
+    assert.strictEqual(a3.ops.engaged(a3.id), false);
+    assert.strictEqual(a3.a.autopilot, undefined);
+    const offs = a3.fake.autopilotCalls.filter((c) => c.settings === null).length;
+    answer3();
+    await tick();
+    assert.ok(a3.fake.autopilotCalls.filter((c) => c.settings === null).length > offs, 'a late on is taken straight back');
+    assert.strictEqual(a3.a.autopilot, undefined, 'and does not re-engage');
+    assert.strictEqual(a3.ops.engaged(a3.id), false);
+    // Stop and End release at once, with no limit near
+    for (const how of ['agents:stop', 'agents:end'] as const) {
+      const b1 = await office({ org: () => hang() });
+      const p1 = turnOn(b1);
+      await until(() => b1.ops.engaged(b1.id));
+      void b1.call(how, b1.id);
+      assert.strictEqual(b1.ops.engaged(b1.id), false, `${how}: released in the same tick`);
+      assert.strictEqual((await p1).error, CHANGED, `${how}: the hung read ended`);
+      const b2 = await office({ confirm: () => hang() });
+      const p2 = turnOn(b2);
+      await until(() => b2.ops.engaged(b2.id));
+      await tick();
+      void b2.call(how, b2.id);
+      assert.strictEqual((await p2).error, CHANGED, `${how}: a dialog with no answer`);
+      const b3 = await office();
+      b3.fake.stop = () => hang();
+      const real = b3.fake.setAutopilot!;
+      let go: () => void = () => undefined;
+      b3.fake.setAutopilot = async (s, c, why) => { if (c) await new Promise<void>((res) => { go = res; }); await real.call(b3.fake, s, c, why); };
+      const p3 = turnOn(b3);
+      await until(() => onHold(go));
+      void b3.call(how, b3.id);
+      assert.strictEqual((await p3).ok, false, `${how}: the adapter's hung call`);
+      go();
+      await tick();
+      assert.strictEqual(b3.a.autopilot, undefined, 'its late answer changes nothing');
+      assert.strictEqual(b3.ops.engaged(b3.id), false);
+      // and it can be turned on again after
+      const b4 = await office({ org: () => hang(), setupWaitMs: 15 });
+      await turnOn(b4);
+      b4.ops.stopSeen(b4.id);
+      assert.strictEqual(b4.ops.engaged(b4.id), false);
+    }
+    // a run started during setup: the guard stops it, and the answer is not ok
+    const c1 = await office();
+    const realC = c1.fake.setAutopilot!;
+    let goC: () => void = () => undefined;
+    c1.fake.setAutopilot = async (s, k, why) => { if (k) await new Promise<void>((res) => { goC = res; }); await realC.call(c1.fake, s, k, why); };
+    const pc = turnOn(c1);
+    await until(() => onHold(goC));
+    c1.emit({ type: 'autopilot', phase: 'started', runId: 'r7', n: 0, limit: 5 });
+    goC();
+    const rc1 = await pc;
+    assert.strictEqual(rc1.ok, false, 'not "on" while the adapter was told off');
+    assert.strictEqual(c1.a.autopilot, undefined);
+    await tick();
+    assert.ok(c1.fake.autopilotCalls.some((c) => c.settings === null));
+    // End during setup: a status stopped, or a session that is simply gone
+    const c2 = await office();
+    const realC2 = c2.fake.setAutopilot!;
+    let goC2: () => void = () => undefined;
+    c2.fake.setAutopilot = async (s, k, why) => { if (k) await new Promise<void>((res) => { goC2 = res; }); await realC2.call(c2.fake, s, k, why); };
+    const pc2 = turnOn(c2);
+    await until(() => onHold(goC2));
+    c2.emit({ type: 'status', status: 'stopped' });
+    goC2();
+    assert.strictEqual((await pc2).ok, false);
+    assert.strictEqual(c2.a.autopilot, undefined);
+    const c3 = await office();
+    const realC3 = c3.fake.setAutopilot!;
+    let goC3: () => void = () => undefined;
+    c3.fake.setAutopilot = async (s, k, why) => { if (k) await new Promise<void>((res) => { goC3 = res; }); await realC3.call(c3.fake, s, k, why); };
+    const pc3 = turnOn(c3);
+    await until(() => onHold(goC3));
+    c3.fake.isLive = () => false;
+    goC3();
+    assert.strictEqual((await pc3).ok, false, 'not live: not on');
+    assert.strictEqual(c3.a.autopilot, undefined);
+  }
+
+  // ---- review: errors are masked, then cut, in main: a bare token across the cut leaves no prefix ----
+  {
+    const token = 'ghp_' + 'abcDEF123'.repeat(5);
+    for (const pad of [190, 280, 295]) {
+      const x = await office({ mode: 'ask' });
+      x.fake.setAutopilot = async () => { throw new Error('x'.repeat(pad) + ' ' + token + ' end'); };
+      const r = await turnOn(x);
+      assert.ok(!/ghp_|abcDEF/.test(String(r.error)), `refused: ${pad}`);
+      assert.ok(String(r.error).length <= 300);
+      assert.ok(!/ghp_|abcDEF/.test(x.says.join()), `the chat line: ${pad}`);
+      const y = await office();
+      await turnOn(y);
+      y.fake.setAutopilot = async () => { throw new Error('y'.repeat(pad) + ' ' + token); };
+      const ry = await y.ops.off(y.id);
+      assert.ok(!/ghp_|abcDEF/.test(String(ry.note)), `the note: ${pad}`);
+    }
+  }
+
+  // ---- review: main's state reaches the window with no event: a stop with no run, turning on, a closed session ----
+  {
+    const x = await office();
+    await turnOn(x);
+    assert.deepStrictEqual(x.pushed, [{ limit: 5, hours: 2 }]);
+    await x.call('agents:stop', x.id);
+    assert.deepStrictEqual(x.pushed.at(-1), null, 'Stop on a typed turn: no run, no ended event, and the chip follows');
+    const y = await office();
+    await turnOn(y);
+    y.emit({ type: 'status', status: 'stopped' });
+    assert.strictEqual(y.pushed.at(-1), null);
+    const z = await office();
+    await turnOn(z);
+    await z.call('agents:setMode', z.id, 'allow', {});
+    assert.strictEqual(z.pushed.at(-1), null);
+    const w = await office();
+    await turnOn(w);
+    w.ops.forget(w.id);
+    assert.strictEqual(w.pushed.at(-1), null);
+  }
+
+  // ---- both `forget` calls: what the session spent goes with it, also where the adapter's stop says nothing ----
+  {
+    const x = await office();
+    x.fake.stop = async () => undefined;
+    x.emit({ type: 'usage', nanoAiu: 40e9 });
+    await x.call('agents:end', x.id);
+    assert.strictEqual((await turnOn(x, { limit: 5, cap: 35 })).ok, true, 'agents:end forgets');
+    const y = await office();
+    y.fake.stop = async () => undefined;
+    y.agents.set('other', { id: 'other', cwd: y.a.cwd } as never);
+    y.emit({ type: 'usage', nanoAiu: 40e9 });
+    assert.strictEqual((await y.call('agents:remove', y.id)).ok, true);
+    y.agents.set(y.id, y.a);
+    y.router.bind(y.id, 'fake');
+    assert.strictEqual((await turnOn(y, { limit: 5, cap: 35 })).ok, true, 'agents:remove forgets');
   }
 
   // ---- T098, FR-009: Stop, and only Stop ----
@@ -665,6 +876,40 @@ async function main(): Promise<void> {
     await st.tick();
     assert.strictEqual(sends, sent0, 'a stored autopilot is never sent');
     assert.strictEqual(sc.last?.outcome, 'skipped-autopilot');
+    // an Edit or a Pause keeps the marker: it stays refused, and never runs in the session's mode
+    const kept = st.save({ id: 'efgh5678', edit: true, prompt: 'new words', every: 60 }, () => true);
+    assert.strictEqual(kept.ok, true, JSON.stringify(kept));
+    assert.strictEqual((kept as { schedule: { mode?: string } }).schedule.mode, 'autopilot', 'an edit keeps it');
+    const paused = st.save({ id: 'efgh5678', folder: '/f', prompt: 'new words', every: 60, paused: true }, () => true);
+    assert.strictEqual((paused as { schedule: { mode?: string } }).schedule.mode, 'autopilot', 'a Pause keeps it');
+    // a loop: not a pass, and when it went on Autopilot during the send, not an error either
+    const loopDoc = (): unknown => ({ pausedAll: false, schedules: [{ id: 'loop1234', folder: '/f', prompt: 'p', target: { session: 's1', agent: 'copilot' }, loop: { minDelay: 5, maxDelay: 60, defaultDelay: 30, maxPasses: 9, passes: 2, endAt: clock.t + 1e9 }, next: clock.t - 1 }] });
+    let loopSends = 0;
+    onAuto = true;
+    const lp = make(parseSchedules(JSON.stringify(loopDoc()), clock.t), async () => { loopSends++; return 's1'; });
+    (lp.doc.schedules[0] as { next?: number }).next = clock.t - 1;
+    await lp.tick();
+    assert.strictEqual(loopSends, 0, 'a due pass is not sent');
+    assert.strictEqual(lp.runsOf('loop1234')[0]?.outcome, 'skipped-autopilot');
+    assert.strictEqual(lp.doc.schedules[0].loop?.passes, 2, 'not a pass');
+    onAuto = false;
+    const lr = make(parseSchedules(JSON.stringify(loopDoc()), clock.t), async () => { throw AUTOPILOT_HELD; });
+    (lr.doc.schedules[0] as { next?: number }).next = clock.t - 1;
+    await lr.tick();
+    assert.strictEqual(lr.runsOf('loop1234')[0]?.outcome, 'skipped-autopilot', 'the race: not failed');
+    const lc = lr.doc.schedules[0].loop!;
+    assert.strictEqual(lc.passes, 2, 'the race: not a pass');
+    assert.ok(!lc.inPass && !lc.ended);
+    assert.ok(!lc.errorStreak, 'the race: no error counted');
+    // the door: stays there
+    let doorSends = 0;
+    onAuto = true;
+    const dr = make(JSON.parse(JSON.stringify(doc)), async () => { doorSends++; return 's1'; });
+    assert.strictEqual(await dr.releaseDoorRun('abcd1234', 'p'), 'busy');
+    assert.strictEqual(doorSends, 0);
+    onAuto = false;
+    const dr2 = make(JSON.parse(JSON.stringify(doc)), async () => { throw AUTOPILOT_HELD; });
+    assert.strictEqual(await dr2.releaseDoorRun('abcd1234', 'p'), 'busy', 'the race too');
     const made = st.save({ folder: '/f', prompt: 'p', every: 60, mode: 'autopilot' }, () => true);
     assert.strictEqual(made.ok, false);
     assert.match(String((made as { error?: string }).error), /not available/);
@@ -679,7 +924,7 @@ async function main(): Promise<void> {
   }
 
   // ---- main.ts: the lines that hand this over cannot run here ----
-  const mainTs = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'main.ts'), 'utf8');
+  const mainTs = codeOf(fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'main.ts'), 'utf8'));
   for (const line of [
     "const autopilotOn = (): boolean => AUTOPILOT_WIRED || autopilotTestGate(process.env, app.isPackaged);",
     "confirm: (o) => nativeConfirm(win, o),",
@@ -691,14 +936,17 @@ async function main(): Promise<void> {
     "windowAdapters(infos, autopilotOn())",
     "if (autopilotOps.engaged(a.id)) throw AUTOPILOT_HELD;",
     "if (autopilotOn()) query.simautopilot = '1';",
+    "changed: (a) => toRenderer('agents:autopilot', { id: a.id, autopilot: a.autopilot ?? null }),",
   ]) assert.ok(mainTs.includes(line), `main.ts: ${line}`);
   assert.ok(mainTs.indexOf('router.setEventGuard(') < mainTs.indexOf("router.onEvent((e) => toRenderer('agent:event'"), 'the guard is set before the window hears anything');
-  const sim = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'simguard.ts'), 'utf8');
+  const sim = codeOf(fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'simguard.ts'), 'utf8'));
   assert.ok(!sim.includes('agents:setAutopilot'), 'not on SIM_OPEN_CHANNELS');
   assert.strictEqual(dialogs.length, 0, 'no native box was asked in this file');
   process.exitCode = 0;
   console.log('test-autopilot-ipc: OK');
 }
+/** Text without comments: a commented-out line pins nothing. */
+const codeOf = (t: string): string => t.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
 const onHold = (go: () => void): boolean => go.toString() !== '() => undefined';
 const tick = (): Promise<void> => new Promise((r) => setTimeout(r, 5));
 async function until(fn: () => boolean): Promise<void> {

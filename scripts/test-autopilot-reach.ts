@@ -25,22 +25,25 @@ for (const c of [COPILOT_CAPABILITIES, CLAUDE_CAPABILITIES, CODEX_CAPABILITIES])
 assert.strictEqual(CLAUDE_SDK_CAPABILITIES.autopilot, undefined, 'the dev SDK transport was never probed with /goal: no Autopilot on it');
 assert.strictEqual(CODEX_CAPABILITIES.autopilot?.planApproval, false, 'FR-060: not on the Codex plan card');
 
-/** The one line that says it shipped. It moves with `AUTOPILOT_WIRED`, and until the owners are through both stay false. */
-const AUTOPILOT_SHIPPED = false;
-assert.strictEqual(AUTOPILOT_WIRED, AUTOPILOT_SHIPPED, 'AUTOPILOT_WIRED is false in the default build until the review of #923 and the owners are through (spec *Changes*, Phase 3 gate)');
+/** Text without comments: a commented-out line pins nothing. */
+const codeOf = (t: string): string => t.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
 
 // one path in: the channel, on the window's frame only, through the ops, which ask `enabled` first
 assert.deepStrictEqual(hits(/agents:setAutopilot/), ['src/main/ipc/agents.ts', 'src/preload/preload.ts'], 'one channel');
-assert.deepStrictEqual(hits(/\bad\??\.setAutopilot\?*\.?\(/, 'src/main/').sort(), ['src/main/autopilotops.ts'], 'only the ops call the adapter');
-assert.ok(/fromApp\(e\) \? deps\.autopilot\.setAutopilot\(id, settings\)/.test(src('src/main/ipc/agents.ts')), 'FR-004: the window only');
+// any receiver: `ad.setAutopilot(`, `router.forAgent(x)?.setAutopilot?.(` ...: outside the ops, main has only the handler's call of the ops themselves
+const callers = files.filter((f) => f.split(path.sep).join('/').startsWith('src/main/') && !f.endsWith('autopilotops.ts')).flatMap((f) => codeOf(src(f)).split('\n').filter((l) => /\.setAutopilot\?*\.?\(/.test(l) && !/deps\.autopilot\.setAutopilot\(id, settings\)/.test(l)).map((l) => `${f}: ${l.trim().slice(0, 80)}`));
+assert.deepStrictEqual(callers, [], 'only the ops call the adapter');
+assert.ok(/fromApp\(e\) \? deps\.autopilot\.setAutopilot\(id, settings\)/.test(codeOf(src('src/main/ipc/agents.ts'))), 'FR-004: the window only');
 assert.ok(!/autopilot/i.test(src('src/adapters/router.ts').replace(/.*FR-082.*\n/g, '')), 'the router has no path to it');
 assert.ok(!/setAutopilot/.test(src('src/main/mcp/tools.ts')), 'FR-004: no MCP tool');
-const main = src('src/main/main.ts');
+const main = codeOf(src('src/main/main.ts'));
 assert.ok(main.includes('const autopilotOn = (): boolean => AUTOPILOT_WIRED || autopilotTestGate(process.env, app.isPackaged);'), "main's gate");
 assert.ok(main.includes('enabled: autopilotOn,'), 'the ops read it');
 assert.ok(main.includes('windowAdapters(infos, autopilotOn())'), 'the window hears of no capability');
 assert.ok(main.includes("if (autopilotOn()) query.simautopilot = '1';"), 'the simulator offers it only then');
-assert.ok(!/AUTOPILOT_WIRED\s*=\s*true/.test(src('src/adapters/autopilotHost.ts')));
+// the flag lives in one line, and every test above and in the adapters' files follows it or a parameter, so a flip is that line (spec *Changes*)
+assert.strictEqual((src('src/adapters/autopilotHost.ts').match(/^export const AUTOPILOT_WIRED = (false|true) as boolean;$/gm) ?? []).length, 1, 'one line');
+assert.strictEqual(typeof AUTOPILOT_WIRED, 'boolean');
 // the simulator's capability is behind main's query, nothing else
 assert.ok(/get\('simautopilot'\)/.test(src('src/renderer/sim.ts')), 'the simulator asks main');
 

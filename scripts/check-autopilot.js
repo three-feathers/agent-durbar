@@ -11,7 +11,9 @@ const os = require('os');
 const path = require('path');
 const { helpers, jsLiteral } = require('./driver-helpers');
 const OUT = process.env.OUT || os.tmpdir();
-const ON = process.env.DURBAR_AUTOPILOT_TEST === '1';
+// the flag itself turns it on for everyone: the driver follows it, so a flip needs no change here
+const { AUTOPILOT_WIRED } = require('../dist/adapters/autopilotHost');
+const ON = process.env.DURBAR_AUTOPILOT_TEST === '1' || AUTOPILOT_WIRED === true;
 const SIZES = [[1440, 900], [1280, 800]];
 const q = (o = {}) => ({ simkinds: 'mixed', ...(ON ? { simautopilot: '1' } : {}), ...o });
 const REASONS = ['done', 'cap', 'limit', 'no-progress', 'blocked', 'stopped', 'error'];
@@ -214,6 +216,11 @@ module.exports = async (ctx) => {
     assert.strictEqual(await js(`document.getElementById('msgInput').getAttribute('aria-label')`), 'Message ' + backName, 'the composer is back');
     assert.ok(await js(`!!document.getElementById('attFile')&&getComputedStyle(document.getElementById('attFile')).display!=='none'&&!document.getElementById('apNoAttach')`), 'the attach button is back');
     await H.shot(path.join(OUT, `099-end-stopped-${w}.png`), { prep: 'calm' });
+    // Stop on a typed turn with Autopilot on and no run: no ended event comes, and the chip still follows main
+    await js(`(()=>{const a=window.__durbarSimUi.agents().find(x=>x.id===${jsLiteral(id)});return window.__durbarSimUi.bridge().setAutopilot(a.id,{limit:5}).then(r=>{a.info.autopilot=r.autopilot;});})()`);
+    await js(`(()=>{const a=window.__durbarSimUi.agents().find(x=>x.id===${jsLiteral(id)});const c=document.getElementById('modeChip');c.outerHTML=c.outerHTML;return !!a.info.autopilot;})()`);
+    await js(`window.__durbarSimUi.bridge().stop(${jsLiteral(id)}).then(()=>0)`);
+    await must(`!window.__durbarSimUi.agents().find(x=>x.id===${jsLiteral(id)}).info.autopilot&&/^Allow all/.test(document.getElementById('modeChip').innerText.trim())`, 'a stop with no run: the chip is not stale');
     // Run again asks again
     await H.clickText('.note.ap-end button', 'Run again on Autopilot…');
     await must(`!!document.querySelector('#modeDlg .ap-form')`, 'the form again');
