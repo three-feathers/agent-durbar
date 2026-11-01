@@ -42,6 +42,14 @@ module.exports = async (ctx) => {
     return S.flatMap(s=>A.filter(a=>hit(R(s),R(a))).map(a=>s.className+' x '+a.className+' '+(a.textContent||'').slice(0,20)).concat(F.filter(f=>hit(R(s),f)).map(()=>s.className+' x a face')))})()`);
   const fontsOk = `[...document.querySelectorAll('#stage .ro-plate,#stage .ro-eplate,#stage .ro-zz,#stage .welcome *')].every(e=>parseFloat(getComputedStyle(e).fontSize)>=10.5)`;
 
+  /* a runner whose OS asks for reduced motion (a Windows VM often does) draws the still scene: the moving parts are then asserted by the emulation block (nothing moves), not looked at */
+  if (process.env.MOMENTS_FORCE_REDUCED === '1') { /* a developer aid: pretend to be such a runner (the emulation block below resets it) */
+    const dbg = ctx.win.webContents.debugger; if (!dbg.isAttached()) dbg.attach('1.3');
+    await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
+  }
+  await H.load({ w: 1440, h: 900, query: { simfreeze: '1' }, ready: 'fit', settle: false });
+  const OS_REDUCED = await js(`matchMedia('(prefers-reduced-motion: reduce)').matches`);
+  if (OS_REDUCED) console.log('[moments] the OS asks for reduced motion: the pair, the ring and the ride are checked in their reduced form only');
   for (const world of WORLDS) for (const [w, h] of SIZES) {
     const tag = `${world} ${w}x${h}`;
     // ---- FR-118 first run ----
@@ -73,9 +81,11 @@ module.exports = async (ctx) => {
           await must(`performance.now()>1500`, 'the time the ring would have started');
           assert.strictEqual(await js(`document.getElementById('addFolder').classList.contains('ring-once')`), false, `${tag}: reduced motion: no ring`);
         });
-        await H.load({ w, h, query: q(world, { sim: undefined, officeview: undefined }), ready: `!!document.querySelector('#stage .welcome')`, settle: false });
-        await must(`document.getElementById('addFolder').classList.contains('ring-once')`, '+ Folder rings once');
-        await must(`!document.getElementById('addFolder').classList.contains('ring-once')`, 'the ring over');
+        if (!OS_REDUCED) {
+          await H.load({ w, h, query: q(world, { sim: undefined, officeview: undefined }), ready: `!!document.querySelector('#stage .welcome')`, settle: false });
+          await must(`document.getElementById('addFolder').classList.contains('ring-once')`, '+ Folder rings once');
+          await must(`!document.getElementById('addFolder').classList.contains('ring-once')`, 'the ring over');
+        }
       }
       await shot(world, 'firstrun', w, h);
     }
@@ -205,25 +215,27 @@ module.exports = async (ctx) => {
     }
     // ---- FR-125 jumps ride the lift ----
     if (run('jumps')) {
-      await js(`localStorage.removeItem('durbar.floor')`); /* the first floor, whatever an earlier size left */
-      await H.load({ w, h, query: q(world, { simfloors: '1' }), ready: REAL, settle: false, focus: true });
-      await must(PICS, 'the pictures');
-      await must(`!!document.querySelector('#lift:not([hidden]) [data-lift]')`, 'the lift');
-      const floor0 = await H.shownFloor();
-      await H.key('PageDown', [], { pause: 30 });
-      await must(`!!document.querySelector('#stage .ro-ride')`, 'the ride');
-      const rd = await js(`(()=>{const r=document.querySelector('#stage .ro-ride'),L=window.__durbarSimUi.realLayout();return {top:parseFloat(r.style.top),lobbyH:L.lobbyH,doors:r.querySelectorAll('.rr-door').length,disp:r.querySelector('.rr-disp').textContent,aria:r.getAttribute('aria-hidden'),
-        glow:!!document.querySelector('#lift .ride-to'),size:parseFloat(getComputedStyle(r.querySelector('.rr-disp')).fontSize),tabbable:r.querySelectorAll('button,[tabindex]').length}})()`);
-      assert.strictEqual(rd.top, rd.lobbyH, `${tag}: the ride covers the desk area only, the lobby stays`);
-      assert.strictEqual(rd.doors, 2, `${tag}: two doors`);
-      assert.ok(/^[\u25B2\u25BC] \d \u00B7 \S/.test(rd.disp), `${tag}: the display says where: ${rd.disp}`);
-      assert.ok(rd.aria === 'true' && rd.tabbable === 0 && rd.size >= 10.5 && rd.glow, `${tag}: aria-hidden, no tab stop, text >= 10.5px, the target button glows: ${JSON.stringify(rd)}`);
-      assert.notStrictEqual(await H.shownFloor(), floor0, `${tag}: the floor changed`);
-      await H.shot(path.join(OUT, `${world}-jump-f1-${w}x${h}.png`), { prep: 'mouse', delay: 120, tag: 'moments', what: `${world}-jump-f1-${w}x${h}` });
-      await must(`!!document.querySelector('#stage .ro-ride.opening')`, 'the cover opening');
-      await H.shot(path.join(OUT, `${world}-jump-f2-${w}x${h}.png`), { prep: 'mouse', delay: 10, tag: 'moments', what: `${world}-jump-f2-${w}x${h}` });
-      await must(`!document.querySelector('#stage .ro-ride')&&!document.querySelector('#lift .ride-to')`, 'the ride over');
-      assert.strictEqual(await js(`document.getElementById('srAnnounce').textContent`).then((t) => /^Floor .+, \d of \d$/.test(t)), true, `${tag}: one announcement of the floor`);
+      if (!OS_REDUCED) {
+        await js(`localStorage.removeItem('durbar.floor')`); /* the first floor, whatever an earlier size left */
+        await H.load({ w, h, query: q(world, { simfloors: '1' }), ready: REAL, settle: false, focus: true });
+        await must(PICS, 'the pictures');
+        await must(`!!document.querySelector('#lift:not([hidden]) [data-lift]')`, 'the lift');
+        const floor0 = await H.shownFloor();
+        await H.key('PageDown', [], { pause: 30 });
+        await must(`!!document.querySelector('#stage .ro-ride')`, 'the ride');
+        const rd = await js(`(()=>{const r=document.querySelector('#stage .ro-ride'),L=window.__durbarSimUi.realLayout();return {top:parseFloat(r.style.top),lobbyH:L.lobbyH,doors:r.querySelectorAll('.rr-door').length,disp:r.querySelector('.rr-disp').textContent,aria:r.getAttribute('aria-hidden'),
+          glow:!!document.querySelector('#lift .ride-to'),size:parseFloat(getComputedStyle(r.querySelector('.rr-disp')).fontSize),tabbable:r.querySelectorAll('button,[tabindex]').length}})()`);
+        assert.strictEqual(rd.top, rd.lobbyH, `${tag}: the ride covers the desk area only, the lobby stays`);
+        assert.strictEqual(rd.doors, 2, `${tag}: two doors`);
+        assert.ok(/^[\u25B2\u25BC] \d \u00B7 \S/.test(rd.disp), `${tag}: the display says where: ${rd.disp}`);
+        assert.ok(rd.aria === 'true' && rd.tabbable === 0 && rd.size >= 10.5 && rd.glow, `${tag}: aria-hidden, no tab stop, text >= 10.5px, the target button glows: ${JSON.stringify(rd)}`);
+        assert.notStrictEqual(await H.shownFloor(), floor0, `${tag}: the floor changed`);
+        await H.shot(path.join(OUT, `${world}-jump-f1-${w}x${h}.png`), { prep: 'mouse', delay: 120, tag: 'moments', what: `${world}-jump-f1-${w}x${h}` });
+        await must(`!!document.querySelector('#stage .ro-ride.opening')`, 'the cover opening');
+        await H.shot(path.join(OUT, `${world}-jump-f2-${w}x${h}.png`), { prep: 'mouse', delay: 10, tag: 'moments', what: `${world}-jump-f2-${w}x${h}` });
+        await must(`!document.querySelector('#stage .ro-ride')&&!document.querySelector('#lift .ride-to')`, 'the ride over');
+        assert.strictEqual(await js(`document.getElementById('srAnnounce').textContent`).then((t) => /^Floor .+, \d of \d$/.test(t)), true, `${tag}: one announcement of the floor`);
+      }
       // reduced motion: the floor changes at once, no cover
       await js(`localStorage.removeItem('durbar.floor')`);
       await emulate([{ name: 'prefers-reduced-motion', value: 'reduce' }], async () => {
@@ -253,7 +265,7 @@ module.exports = async (ctx) => {
       assert.strictEqual(await js(`[...document.querySelectorAll('#stage .ro-chip')].filter(c=>c.dataset.coffeeid).length+document.querySelectorAll('#stage .ro-tent').length`), 0, `${tag}: with no coffee break nobody stands at the corner and no tent card is shown`);
     }
     // ---- FR-126 walk: leave and arrive, a pair of 300 ms; FR-127 the desk keeps its size ----
-    if (run('walk')) {
+    if (run('walk') && !OS_REDUCED) {
       await H.load({ w, h, query: q(world, { simrooms: '2', simhelpers: '0' }), ready: REAL, settle: false });
       await must(PICS, 'the pictures');
       await js(`window.__durbarSimUi.agents().filter(a=>!a.parent).forEach(a=>{window.__durbarSimUi.unvisit(a.id)})`);
