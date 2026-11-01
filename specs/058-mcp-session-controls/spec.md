@@ -388,6 +388,8 @@ All answered by the owner: option A for each (see *Clarifications*). The options
 
 ## Changes
 
+- 2026-11-01 (sweep of the build): **FR-194**: the policy line hides and comes back with its call when older calls collapse.
+
 ### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
 
 The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
