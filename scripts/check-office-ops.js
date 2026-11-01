@@ -55,8 +55,19 @@ module.exports = async (ctx) => {
     const counts = [];
     for (let i = 1; i <= 4; i++) counts.push(elementsRecalculated(await trace(() => change(i))));
     assert.ok(counts.every((c) => c > 0), `${n} agents: a replaced text node must recalculate some element; a trace with none means the trace's thread or event name changed (${counts})`);
-    rows[`elementsRecalculated@${n}`] = Math.max(...counts);
+    rows[`elementsRecalculated@${n}`] = Math.min(...counts); // the least of 4: a render that lands inside one trace by itself (a timer) only adds, and the `:has()` cost shows in all 4
     console.log(`[ops] ${n} agents: elements recalculated by one text change`, counts.join(' '));
+    /* spec 102 T212: a world's arrangement has the same row and no allowance of its own: the arcade, one text change on a marquee */
+    await H.load({ w: 1440, h: 900, index: process.env.OPS_INDEX || undefined, query: { sim: String(n), officeview: 'real', worldflags: 'retro', world: 'retro' }, ready: `!!document.querySelector('#stage .ro .ro-marquee')`, readyMs: 30000 });
+    await js(`(()=>{const s=document.createElement('style');s.textContent='*,*::before,*::after{animation:none!important;transition:none!important}';document.head.appendChild(s);})();0`);
+    const changeW = (i) => js(`(()=>{document.querySelector('#stage .ro-marquee').textContent=${jsLiteral('Op ')}+${i};return document.body.offsetHeight;})()`);
+    await changeW(0);
+    await H.settle();
+    const countsW = [];
+    for (let i = 1; i <= 4; i++) countsW.push(elementsRecalculated(await trace(() => changeW(i))));
+    assert.ok(countsW.every((c) => c > 0), `${n} agents, arcade: a replaced text node must recalculate some element (${countsW})`);
+    rows[`elementsRecalculated@retro${n}`] = Math.min(...countsW);
+    console.log(`[ops] ${n} agents, arcade: elements recalculated by one text change`, countsW.join(' '));
   }
   const failed = [];
   for (const [key, value] of Object.entries(rows)) {

@@ -867,6 +867,20 @@ Security: FR-083 scopes revocation by source and never touches a person's own wo
 
 D7, FR-085, FR-170, FR-181, US2 scenario 1, FR-205, FR-241, plan and T195 follow FR-240. New: `sourceCommit` and a CI job, so a catalogue PR's hash is still checked against reviewed files (FR-085's old guarantee). Downloadable sets follow FR-240 (an agent decision he can reverse), and T195 covers them.
 
+### 2026-11-02: Retro arcade, the hall drawn (RA3, T209..T212), behind its closed flag
+
+Written with the build. Motion, status light and night are RA4 and RA5.
+
+- **FR-256, mirroring:** on the `scale` property, not `transform`: a motion on `transform` (a breath, a zoom) would flip the picture back. A count change's easing keeps the flip. No text is in a mirrored element.
+- **FR-257:** the art's side panel is on its right, so it faces left. A cabinet facing right is the picture mirrored, and its glass and marquee rectangles move with it.
+- **The person and the glass:** at the small and narrow cabinets someone standing beside it reaches about 12 grid px over the glass. They stand in front of the cabinet's body and behind its glass, so nothing lies under the screen's text. Moving them out would not leave room for 15 at the narrowest floor.
+- **An empty place (097's still room):** the note stands where the person would, beside the glass, never over its text.
+- **FR-256, the bend:** it flattens to nothing before anything scrolls: at 1280x800 with a banner over the floor, 15 people have 3 px to spare.
+- **FR-229, op row:** `check-office-ops` has the row for this world at 15 and 40, with no allowance of its own. Measured: 1 element for one text change on a marquee at both.
+- `[KNOWN GAP]` **Chat open is not drawn yet:** on this base a chat hides the office, so `aislesLayout` is checked at those widths only by `test-realoffice-aisles`; the driver checks chat closed. It comes with #1001.
+- `[KNOWN GAP]` T212 asks for a mutant adding a node on a status update: `check-office-ops` on `main` has no such row yet (#950 brings it). `check:office` has no world id yet; `shots-102-arcade` carries the overlap checks instead.
+- `[KNOWN GAP]` **Lobby people are not on the grid:** `lobbyBand` scales them by the door, as in other worlds, so their pixels can be uneven (FR-255). The asleep console (FR-259) is not drawn, and a screen's own text is not pixel type. Windows at 125 % and 150 % are not looked at (T204).
+
 ### 2026-11-01: Retro arcade, frames and packs built (RA2, T201, T207, T208); numbers measured
 
 Nothing draws these files; `WORLD_FLAGS.retro` stays closed. Written with the build, so the spec says what was built.
