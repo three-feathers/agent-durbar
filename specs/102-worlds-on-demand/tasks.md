@@ -132,6 +132,14 @@ Needs spec 096's adapter capability and probes.
 - [ ] T111 Retro pixel people, new, with provenance and likeness fields. Test: `test:world-packs`, asset test; `read:` the owner's look [FR-200, FR-209].
 - [ ] T112 My characters: level per character, 096's Real office frames. Test: `test:world-packs` on 096's fixture; `test:charstore` [FR-206].
 
+## Worlds repository (delta 2026-11-01)
+
+- [ ] T190 Repin `APP_SHA` in `three-feathers/agent-durbar-worlds` `.github/workflows/validate.yml` from the head of #955 to a commit on this repository's `main`, once #955 is merged. Test: `real:` that repository's `Validate worlds` check green on the new sha [FR-240].
+- [ ] T191 Catalogue entries carry `bytes` and `sha256` for downloadable packs; a pack without a hash is not offered or loaded. Test: `test:worldsource`, a mutant that offers a hashless pack fails [FR-241].
+- [ ] T192 Download rejects what is not a stored zip of `world.json` and the closed `.webp` list at the expected size. Test: `test:worldsource` hostile bodies (HTML, executable, other archive, wrong length) store nothing [FR-242].
+- [ ] T193 Point FR-073, FR-085 and FR-086 and `docs/worlds-source.md` at the worlds repository; the first `worlds-*` release is made there. Test: `real:` T043 reads from that release, 0 AI credits [FR-243].
+- [ ] T194 `--repo owner/name` for `scripts/gh-trusted.sh`, `scripts/pr-gate.sh`, `scripts/claim.sh` with the trusted list read from this repository; `pr-gate.sh`'s `src/` rule skipped for a repository without `src/`. Test: `test:trustedcontent`, `test:claim`, `test:prgatenotes` with a second repository name [FR-244].
+
 ## Final
 
 - [ ] T095 Screenshots at both sizes for linked pictures, `npm run shots:docs`; a country world only in `docs/` once it is `available` (the matrix stays artifacts only, 098 FR-054). Test: `npm run shots:docs`, look at each.
