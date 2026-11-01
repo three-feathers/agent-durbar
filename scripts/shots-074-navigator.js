@@ -505,7 +505,7 @@ module.exports = async (ctx) => {
     assert.ok(/F$/.test(defText), `${w}: the default is shown (${defText})`);
     await js(`document.getElementById('navKeyRec').focus();document.getElementById('navKeyRec').click()`);
     await key('K', [MOD], { char: 'never' });
-    assert.ok(/command palette/.test(await H.text('#navKeyMsg')), `${w}: Ctrl+K is refused with a reason`);
+    assert.ok(await until(`/command palette/.test(document.getElementById('navKeyMsg').textContent)`), `${w}: Ctrl+K is refused with a reason (${await H.text('#navKeyMsg')})`);
     assert.ok(!(await H.exists('#palDlg')), `${w}: recording swallowed Ctrl+K`);
     await key('G', [MOD, 'shift'], { char: 'never' });
     assert.ok(/^Saved/.test(await H.text('#navKeyMsg')) && /G$/.test(await H.text('#navKeyNow')), `${w}: Ctrl+Shift+G saved`);

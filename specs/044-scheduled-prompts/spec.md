@@ -34,7 +34,7 @@ In **Folders**, each folder has **Schedules**. The dialog lists the folder's sch
 1. **Given** the agent is working or waiting for an approval or an answer when a run is due, **Then** that run is skipped (not queued) and recorded as "skipped: the agent was busy". *(test:)*
 2. **Given** the app was closed or the computer asleep at the due time, **When** the app runs again, **Then** a missed once-schedule is marked "missed" and is not sent; an interval schedule continues from now (the missed runs are not caught up). *(test:)*
 3. **Given** **Pause all schedules** (in the Folders panel), **Then** nothing is sent until it is switched off; the choice is kept across restarts. *(test:, sim:)*
-4. Runs use the session's own credit cap. *(Mode: replaced 2026-10-31, FR-180 and FR-182: a run uses its schedule's mode; it used to be the session's, so a schedule never allowed more than the agent already might.)* *(read: the send path is the user's)*
+4. Runs use the session's own credit cap. *(Mode: replaced 2026-10-31, FR-180 and FR-182, and replaced back 2026-11-01, owner: runs use the session's mode again; see *Changes*. The 2026-10-31 text read: a run uses its schedule's mode; it used to be the session's, so a schedule never allowed more than the agent already might.)* *(read: the send path is the user's)*
 
 ### Edge Cases
 
@@ -61,7 +61,19 @@ In **Folders**, each folder has **Schedules**. The dialog lists the folder's sch
 
 ## Changes
 
+### 2026-11-01: a schedule takes its session's mode; no per-schedule mode, no popup (owner decision, Vikram; replaces the entry of 2026-10-31 below)
+
+Owner decision of Vikram, 2026-10-31 and restated 2026-11-01 (matching Paco; first written on PR #965's thread, recorded here because no spec said it): **a scheduled prompt runs in its session's mode, as it always did, and a session can be in any mode, Autopilot included.** There is no mode on a schedule, no mode choice in the form, no first-launch popup, and no Allow all or Autopilot opt-in on a schedule.
+
+- **Replaced:** FR-180 (a schedule has a mode), FR-181 (no run without a chosen mode; *Waiting for a mode*; the upgrade popup), FR-182 (Allow all and Autopilot as a per-schedule opt-in), the Autopilot hold and the *Owner ruling on Q-A* paragraph of the entry below, and the *Open, proposed* line on loops. Scenario 4 of User Story 2 reads again as it did before 2026-10-31: **runs use the session's mode and the session's own credit cap.**
+- **Not replaced:** FR-183 (organization policy is checked at save and at each run; a refusal does not send, `mode-refused`) and FR-184 (a mode the agent cannot use is not sent) now speak of the **session's** mode, not a stored one. `skipped-mode` is not added.
+- **Tasks:** T140..T143 are dropped (`[-]`, nothing was built). A schedule due for a session on Autopilot is sent like any other; whether Autopilot counts that message as one of its continuations is a question for spec 099's build and stays a `[KNOWN GAP]` there.
+- **Warn, do not limit:** nothing here asks Durbar to withhold a schedule from the user; the session's mode already carries the user's own choice.
+- **What a build still owes:** PR #965 carries code for the replaced text (`Schedule.mode`, `waitingForMode`, `schedmode.ts`, the popup). It shrinks to its stand-alone bug fixes; that is its own task, not this delta.
+
 ### 2026-10-31: every schedule has its own mode (spec 099 FR-083, FR-084)
+
+**Replaced 2026-11-01 by the entry above (owner): a schedule takes its session's mode. FR-180, FR-181 and FR-182 and the Autopilot hold below are void; FR-183 and FR-184 stand for the session's mode. Kept as the record of what was decided and when.**
 
 **Owner decisions** (Vikram, relayed by his coordinating agent): 18:56 UTC, a scheduled prompt runs in the mode attached to that scheduled prompt; 19:02 UTC, schedules support all modes with a selection on each schedule, and existing schedules get a popup after upgrade asking the user to choose. **Today a schedule has no mode** (`Schedule` in `src/main/schedules.ts`): a run takes the session's mode through `deps.send`. Not built; tasks T140..T143. FR-182's wording needs the three owners (below).
 
@@ -433,3 +445,9 @@ Owner (Paco, 2026-10-28): a schedule's prompt was limited to 2,000 characters (`
 - **FR-126** [IMPLEMENTED] `test: test-doors` **The doors file never passes its limit.** Held prompts are now up to 10,000 characters (`MAX_PROMPT` is the doors' limit too), so 200 held runs of a CJK prompt are 5.7 MB and 5 doors of 200 ASCII runs are 9.6 MB, over the 4 MB (`MAX_FILE`) that `loadDoors` accepts: it would move the file to `.bad` and every held run would be lost (breaks FR-111). `Doors.hold` now measures the file as it would be written (the same serialisation as `saveDoors`, in bytes, so multi-byte text and escapes count) and returns `'full'` (outcome `skipped-door-full`, nothing queued) when it would pass `HELD_FILE_CAP` (`MAX_FILE` minus room for the worst case of door keys, which `setClosed` adds without measuring: `MAX_DOORS` keys of `MAX_KEY` (300) characters written as 6 bytes each plus 64 bytes of entry format, about 0.9 MB; amended 2026-10-28 from the review of #845, which found that the first margin of 512 KB could be passed by 500 such keys; `test: test-doors` closes 500 worst-case doors after filling the holds). The exact measure was chosen over a bigger `MAX_FILE` because the worst case (1,000 runs of 10,000 control characters, 6 bytes each in JSON) would need 60 MB, which no load should accept. Count limits (`MAX_HELD`, `MAX_TOTAL_HELD`) stay. The schedules file is separate: 50 schedules at the maximum is about 0.5 MB (FR-120).
 - *2026-10-28, from the review of #845:* (1) a loop that needs review ends at its limits (time, passes, cap) before its review skip is recorded, so `dueAt` never stays in the past and the timer never re-arms at 0 ms; `test: test-schedules-runs` (also with a hold set). (2) A once schedule paused for review (`pausedReason` `review`) offers Edit… and Delete only, no Resume (its time has passed, so Resume could only fail), in the app and the simulator alike; `sim: check-sched-edit`. (3) An opened long prompt takes the full row width (the text column goes to `flex-basis:100%`, as `.sc-hist` does) and the buttons wrap under it, so it does not wrap at about 240px beside them; `sim: check-sched-edit`. (4) The `044-length-review-*` pictures show the "Needs review" row (the driver scrolls it into the list and asserts it with `until()`).
 - Audit of other text boxes with a `maxlength` that could cut long user text: listed in the PR for #843 (not changed here).
+
+### 2026-10-31: scheduled prompts with no door (owner decision, spec 021 FR-067, spec 017 FR-029; planned, not built)
+
+- **FR-127** **No door concept.** A due run is sent, or skipped, paused or held for the existing reasons only: Pause all, a schedule's pause, a limit, a busy agent, an ended session, an update lock, a coffee break. FR-110, FR-111 go, and FR-112's closed door falls away (a loop's hold keeps its other causes). The outcome `held` stays for update and break. `skipped-door-full` stays readable in old logs and is never written again. History's wording drops "closed door".
+- **FR-128** **Migration** is spec 017 FR-031, FR-032: prompts already queued are not auto-sent and are asked about once; every schedule then runs as normal, with no door check anywhere, including those of a session that had a closed door.
+- `[KNOWN GAP]` No one-click way to hold prompts for one session. Remaining: Pause/Resume per schedule and Pause all, which skip runs rather than queue them.
