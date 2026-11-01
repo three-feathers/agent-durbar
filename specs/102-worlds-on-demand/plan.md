@@ -117,6 +117,40 @@ P1 to P3 may merge before the gate with nothing visible as available; P4 to P6 r
 - **Repo growth** from art (OP-3); about 2.5 MB per world version, and redos count.
 - **App size**: about 22.6 MB of shipped art, then about 26.8 MB with Retro game (estimates, FR-213); the 30 MB budget test stops growth.
 
+## Monitor and arrangements (FR-220..FR-236)
+
+**Reuse (spec 021 FR-031).** `realLayout`, `FX_POSE`, the `Layout`, `ZoneBox` and `DeskBox` types (`src/shared/realoffice-layout.ts`, #921); `test:realoffice-layout`; `check-office-ops`, `check:office`, `world-matrix.js`; `worldpack.ts` and `test:worldpack` (FR-050, one validator); `ro-bezel` as the monitor's fallback; FR-061's lazy load in 097; `DurbarReorder` and the model's order (#987).
+
+**Looked at and not reused: `chooseLayout` and the room-by-room search (#984).** The brief named them, but they are the flat office's: DOM probes, densities, wrapping rooms. A world's office never runs them (097 keeps its own pure engine, "a Real office start, with no search"). An arrangement in that code would add a DOM search to a path that has none. FR-233 records this; no interplay beyond the shared gate.
+
+```text
+world.json  arrangement: "circle"
+   -> worldpack.ts          id in ARRANGEMENTS, focus.webp present
+   -> realoffice.js         rows? call as today. Otherwise load realoffice-arrangements once
+   -> realLayout(model, view, meta, signs, arrangement)
+        rows                exactly today's path
+        other               arrangementFits -> fit: that layout; no fit: rows, Layout.arrangement = "rows"
+   -> realoffice.js         same drawing, plus focus at Layout.focus when present
+```
+
+- **`circle`:** split the floor round a centre `focus` rectangle, pack zones into left, top, right bands with the existing row maths per band, `u` the largest that fits, by bisection like FR-011. Bounded search: FR-019's 5 ms, fall-back attempt included.
+- **`facing-view`:** rows on a floor shortened by the `focus` band; the least code, since it calls the row path.
+- **Monitor in the engine:** `meta` gains an optional `monitor: {w, h, screenRect}`. Absent: today's `screen` and `glass`, byte for byte. A rows world with a monitor picture does pay for its picture: inside the part caps and the 097 FR-178 area row, and the same for every world; "no cost" (FR-231) is about the arrangement code.
+
+**Risks.**
+
+| Risk | Answer |
+|---|---|
+| 15 agents do not fit with a `focus` area | T165 first, pure and free; stop and ask (A5) |
+| A world looks wrong after falling back at many agents: a fire circle becomes rows with no fire | Said plainly in FR-230; the floor and wall stay the world's |
+| A lounger looks wrong with an upright seated frame | FR-224; art brief; the owner's look. No new poses |
+| Screens on small laptops | Same `screenRect` floor; bars under 150x60 (097 FR-032) |
+| Hostile `arrangement` | FR-226, fixtures in `test:worldpack` |
+| Conflict with 097's engine on open PRs | Build after #921 and #974; 097's text through T164 |
+| Fire as endless animation | Still picture; FR-227 |
+
+**Order:** after 102 P1 (validator) and #921. T165 and T166 can run first as they are pure and on the simulator.
+
 ## Done when
 
 Tasks ticked, `/speckit.converge` run, SC-001..SC-018 read, README *Safety model* lists the new connection, and `real:` rows recorded or left as `[KNOWN GAP]`.
