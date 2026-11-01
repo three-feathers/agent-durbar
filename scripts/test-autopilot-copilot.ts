@@ -42,6 +42,25 @@ async function main(): Promise<void> {
   process.exitCode = 1;
   assert.deepStrictEqual({ ...COPILOT_CAPABILITIES.autopilot }, { capUnit: 'aiu', attachments: true, planApproval: true, verified: false }, 'T022: capability, not verified');
 
+  // FR-050: Stop acts before anything is awaited: a hung limit answer and a sign-in refresh hold nothing back (Phase 3)
+  {
+    const r = await rig();
+    await r.ad.setAutopilot!(r.sid, { limit: 5 });
+    await r.ad.send(r.sid, { text: 'go' });
+    const live = (r.ad as unknown as { sessions: Map<string, { limitRequestId?: string }> }).sessions.get(r.sid)!;
+    live.limitRequestId = 'stuck';
+    (r.s.rpc as unknown as { ui: unknown }).ui = { handlePendingSessionLimitsExhausted: () => new Promise(() => undefined) };
+    void r.ad.interrupt!(r.sid);
+    assert.deepStrictEqual(reasons(r), ['stopped'], 'ended in the same tick as Stop');
+    const q = await rig();
+    await q.ad.setAutopilot!(q.sid, { limit: 5 });
+    await q.ad.send(q.sid, { text: 'go' });
+    (q.ad as unknown as { refreshing: Promise<void> }).refreshing = new Promise(() => undefined);
+    void q.ad.setAutopilot!(q.sid, null, 'stopped');
+    assert.deepStrictEqual(reasons(q), ['stopped'], 'a refresh does not hold a stop back');
+    (q.ad as unknown as { refreshing?: Promise<void> }).refreshing = undefined;
+  }
+
   // only in Allow all
   {
     const r = await rig({ mode: 'ask' });
@@ -407,11 +426,11 @@ async function main(): Promise<void> {
     assert.ok(client.last.calls.some((c) => c.name === 'mode.set'));
   }
 
-  // FR-053 stays off in a real session until T030 wires it (AUTOPILOT_WIRED), unless setAutopilot ran on this adapter
+  // FR-053 off where `wired` is false (the default build, AUTOPILOT_WIRED), unless setAutopilot ran on this adapter
   {
     const client = new FakeClient();
     client.onDisk.add('old-2');
-    const ad = new FakeCopilot(client);
+    const ad = new FakeCopilot(client, undefined, { wired: false });
     await ad.start({ workspace: ws, resumeSessionId: 'old-2', permissionMode: 'allow', quiet: true });
     assert.ok(!client.last.calls.some((c) => c.name.startsWith('mode.')), 'nothing new on a real resume yet');
   }
@@ -462,11 +481,11 @@ async function main(): Promise<void> {
 
   // FR-006: until T030 a session not on Autopilot is left alone
   {
-    const n = await rig();
+    const n = await rig({ tuning: { wired: false } });
     fire(n.s, { type: 'session.mode_changed', data: { newMode: 'autopilot', previousMode: 'interactive' } });
     fire(n.s, cont);
     await tick();
-    assert.deepStrictEqual(n.order(), [], 'nothing changes for a session not on Autopilot in this phase');
+    assert.deepStrictEqual(n.order(), [], 'nothing changes for a session not on Autopilot where `wired` is false (the default build)');
     assert.ok(!n.lines().includes(LINE_SELF_STARTED));
   }
 

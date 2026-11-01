@@ -1068,6 +1068,9 @@ export class CopilotAdapter implements AgentAdapter {
 
   /** FR-002, FR-010, FR-022: on for the next messages, or off (a running run stops, FR-050). The broker keeps answering `onPermissionRequest`; never `setApproveAll`. */
   async setAutopilot(sessionId: string, settings: AutopilotSettings | null, reason: AutopilotEnd = 'stopped'): Promise<void> {
+    // FR-050: a stop acts before anything is awaited; a sign-in refresh may hold the wait below for long
+    const here = settings === null ? this.sessions.get(sessionId) : undefined;
+    if (here) return this.autopilotOff(sessionId, here, reason);
     await this.refreshing?.catch(() => undefined);
     const live = this.mustGet(sessionId);
     if (settings === null) return this.autopilotOff(sessionId, live, reason);
@@ -1347,15 +1350,17 @@ export class CopilotAdapter implements AgentAdapter {
     if (!live) return;
     live.broker.denyPending();
     this.cancelQuestions(live, 'interrupt');
+    // spec 099 FR-050: Stop on Autopilot is the run's own stop order, and it starts before the limit card's answer is awaited
+    const running = !!live.auto?.running;
+    const off = running || live.auto?.on ? this.autopilotOff(sessionId, live, 'stopped') : undefined;
     await this.cancelLimit(live);
-    // spec 099 FR-050: Stop on Autopilot is the run's own stop order, and the session goes back to Allow all
-    if (live.auto?.running) {
-      await this.autopilotOff(sessionId, live, 'stopped');
+    if (running) {
+      await off;
       if (this.sessions.get(sessionId) === live) this.emit(sessionId, { type: 'status', status: 'idle', intent: 'Aborted' });
       return;
     }
-    if (live.auto?.on) {
-      await this.autopilotOff(sessionId, live, 'stopped'); // no run, but a typed turn may be going: it stops below
+    if (off) {
+      await off; // no run, but a typed turn may be going: it stops below
       if (this.sessions.get(sessionId) !== live) return;
     }
     try {

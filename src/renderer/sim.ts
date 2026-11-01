@@ -270,6 +270,8 @@ interface SimOptions {
 /** A grant scope as the broker builds it: key and chip label. */
 type SimScope = { key: string; label: string };
 interface SimAgent {
+  /** Spec 099 FR-080: the simulated Autopilot run. */
+  apRun?: { runId: string; n: number; limit: number; timer: number };
   info: AgentInfo;
   /** Spec 087: the person chose Continue without the OS sandbox (this session), or the note is waiting. */
   sbxContinued?: boolean;
@@ -418,6 +420,11 @@ const SIM_MODELS: ModelChoice[] = [
  * is read): Claude Code and Copilot block Allow all, Claude Code blocks the `haiku` model and the `create_issue` tool of `github`,
  * Copilot blocks the `my-notes` MCP server; Codex's policy could not be read for Allow all (advice only, still selectable).
  */
+/** Spec 099 FR-080: only when main says Autopilot is on (`simautopilot`, spec *Changes*, Phase 3 gate). `simhostile=1`: the scripted texts carry markup, for the driver. */
+const simApQs = typeof location !== 'undefined' ? new URLSearchParams(location.search) : null;
+const SIM_AUTOPILOT = simApQs?.get('simautopilot') === '1';
+const simApCap = (id: string): { capUnit: 'aiu' | 'usd' | 'tokens'; attachments: boolean; planApproval: boolean; verified: boolean } | undefined =>
+  id === 'copilot' ? { capUnit: 'aiu', attachments: true, planApproval: true, verified: false } : id === 'claude' ? { capUnit: 'usd', attachments: false, planApproval: true, verified: false } : id === 'codex' ? { capUnit: 'tokens', attachments: false, planApproval: false, verified: false } : undefined;
 const SIM_ORG = typeof location !== 'undefined' && new URLSearchParams(location.search).get('simorgpolicy') === '1';
 /** Spec 087 FR-022c (review on PR #833): `?simsbxlower=refuse`: the app refuses to lower a Copilot floor at the switch to Allow all (the floor is kept, the window toasts). */
 const SIM_LOWER_REFUSE = typeof location !== 'undefined' && new URLSearchParams(location.search).get('simsbxlower') === 'refuse';
@@ -886,7 +893,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       const log = runs[sc.id];
       const top = log[log.length - 1];
       const session = x.session !== undefined && /^[A-Za-z0-9._:-]{1,128}$/.test(x.session) ? x.session : undefined;
-      if (top && ['skipped-busy', 'skipped-paused', 'held', 'skipped-door-full', 'skipped-review'].includes(outcome) && top.outcome === outcome && top.session === session && !top.manual) {
+      if (top && ['skipped-busy', 'skipped-paused', 'held', 'skipped-door-full', 'skipped-review', 'skipped-autopilot'].includes(outcome) && top.outcome === outcome && top.session === session && !top.manual) {
         top.n = Math.min(100000, (top.n ?? 1) + 1);
         top.until = now;
         return true;
@@ -1038,7 +1045,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         const s = simAgentOf(sc);
         const busy = !!s && (s.state === 'working' || s.state === 'thinking' || s.state === 'waiting' || !!s.perm || (!!s.breakUntil && Date.now() < s.breakUntil)); // spec 068 FR-008: a coffee break counts as busy
         const door = s ? simDoors.map.get(s.info.id) : undefined;
-        const outcome = sc.prompt.length > simPromptMax() ? 'skipped-review' : simSched.pausedAll ? 'skipped-paused' : sc.cap && (sc.spent ?? 0) >= sc.cap.amount ? 'skipped-cap' : !s ? 'failed' : door?.closed ? 'held' : busy ? 'skipped-busy' : 'sent';
+        const outcome = sc.prompt.length > simPromptMax() ? 'skipped-review' : simSched.pausedAll ? 'skipped-paused' : sc.cap && (sc.spent ?? 0) >= sc.cap.amount ? 'skipped-cap' : !s ? 'failed' : s.info.autopilot ? 'skipped-autopilot' : door?.closed ? 'held' : busy ? 'skipped-busy' : 'sent';
         if (outcome === 'held' && door) { door.held.push({ prompt: sc.prompt, at: now, scheduleId: sc.id }); simDoors.changed(); } // spec 044 FR-110
         if (outcome === 'sent' && s) {
           emit({ type: 'user', sessionId: s.info.id, timestamp: now, text: sc.prompt } as AgentEvent);
@@ -1235,6 +1242,63 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         { t: t(6), agent: 'Ben', folder: 'api', app: 'GitHub Copilot', mode: 'allow', action: 'Spending limit set to 300 AI credits', decision: 'limit-change' },
       ] as ActivityRow[];
     })();
+    /**
+     * Spec 099 FR-080: a simulated run: 2 continuations and then done; `?sim=autopilot-<reason>` ends it with another reason; `simaphold=1` waits at continuation 2 until `__durbarSimUi.autopilotGo()`.
+     * All kinds answer one question by themselves on the way (FR-030). No credits.
+     */
+    const simApSpend = (s: SimAgent): { unit: 'aiu' | 'usd' | 'tokens'; value: number } | undefined => { const c = simApCap(s.info.adapterId ?? 'copilot'); return c ? { unit: c.capUnit, value: c.capUnit === 'tokens' ? 12000 : c.capUnit === 'usd' ? 0.04 : 1.5 } : undefined; };
+    const simApEnd = (s: SimAgent, reason: 'done' | 'cap' | 'limit' | 'no-progress' | 'blocked' | 'stopped' | 'error'): void => {
+      const run = s.apRun;
+      if (!run) return;
+      window.clearTimeout(run.timer);
+      s.apRun = undefined;
+      if (s.info.autopilot) { s.info.autopilot.run = undefined; if (reason !== 'done') s.info.autopilot = undefined; }
+      const id = s.info.id;
+      const spend = simApSpend(s);
+      s.state = 'idle'; closeOpen(s);
+      simLog(s, 'autopilot-end', `Autopilot ended: ${reason}, after ${run.n} more turns`);
+      emit({ type: 'autopilot', sessionId: id, timestamp: now(), phase: 'ended', runId: run.runId, n: run.n, limit: run.limit, reason, ...(spend ? { spend } : {}) } as AgentEvent);
+      emit({ type: 'status', sessionId: id, timestamp: now(), status: 'idle', ...(reason === 'stopped' ? { intent: 'Aborted' } : {}) });
+    };
+    const simApRun = (s: SimAgent): void => {
+      const ap = s.info.autopilot;
+      if (!ap) return;
+      const id = s.info.id;
+      const qs = typeof location !== 'undefined' ? new URLSearchParams(location.search) : null;
+      const script = /^autopilot-(.+)$/.exec(qs?.get('sim') ?? '')?.[1];
+      const reason = (['cap', 'limit', 'no-progress', 'blocked', 'stopped', 'error'].includes(script ?? '') ? script : 'done') as Parameters<typeof simApEnd>[1];
+      const hold = qs?.get('simaphold') === '1';
+      const hostile = qs?.get('simhostile') === '1' ? '<img src=x onerror="window.__apPwned=1"> ' : '';
+      const run: NonNullable<SimAgent['apRun']> = { runId: 'simrun-' + Date.now(), n: 0, limit: ap.limit, timer: 0 };
+      s.apRun = run;
+      ap.run = { continuation: 0, startedAt: Date.now() };
+      s.state = 'working';
+      emit({ type: 'status', sessionId: id, timestamp: now(), status: 'working', intent: 'Thinking' });
+      emit({ type: 'autopilot', sessionId: id, timestamp: now(), phase: 'started', runId: run.runId, n: 0, limit: run.limit } as AgentEvent);
+      const req = 'simq-' + run.runId;
+      emit({ type: 'question', sessionId: id, timestamp: now(), phase: 'asked', requestId: req, questions: [{ question: hostile + 'Which file name should I use?', multiSelect: false, options: [{ label: 'a' }, { label: 'b' }] }], autoAnswered: true } as AgentEvent);
+      emit({ type: 'question', sessionId: id, timestamp: now(), phase: 'answered', requestId: req, answers: {}, autoAnswered: true } as AgentEvent);
+      const last = reason === 'limit' ? run.limit : 2;
+      const step = (): void => {
+        if (s.apRun !== run) return;
+        if (run.n < Math.min(last, run.limit)) {
+          run.n++;
+          if (s.info.autopilot) s.info.autopilot.run = { continuation: run.n, startedAt: s.info.autopilot.run?.startedAt ?? Date.now() };
+          emit({ type: 'autopilot', sessionId: id, timestamp: now(), phase: 'continued', runId: run.runId, n: run.n, limit: run.limit } as AgentEvent);
+          emit({ type: 'output', sessionId: id, timestamp: now(), delta: hostile + 'Working on it. ' } as AgentEvent);
+          if (hold && run.n === 2) { simApHeld.set(s.info.id, step); return; }
+          run.timer = window.setTimeout(step, 120);
+          return;
+        }
+        simApEnd(s, reason);
+      };
+      run.timer = window.setTimeout(step, 120);
+    };
+    const simApHeld = new Map<string, () => void>();
+    const simApState = new Set<(p: { id: string; autopilot: AgentInfo['autopilot'] | null }) => void>();
+    const simApSay = (s: SimAgent): void => { for (const cb of simApState) cb({ id: s.info.id, autopilot: s.info.autopilot ?? null }); };
+    /* the driver goes on from a `simaphold` */
+    (window as unknown as { __durbarSimApGo?: (id: string) => void }).__durbarSimApGo = (id) => { const f = simApHeld.get(id); simApHeld.delete(id); f?.(); };
     const simLog = (s: SimAgent, decision: ActivityRow['decision'], action: string, mode: string = s.info.permMode): void => {
       simActivity.push({ t: new Date().toISOString(), agent: s.info.label || s.info.name, folder: s.info.cwd.split(/[\\/]/).pop() || s.info.name, app: SIM_APP[s.info.adapterId ?? 'copilot'] ?? String(s.info.adapterId), mode, action: action.slice(0, 160), decision });
       if (simActivity.length > 5000) simActivity.splice(0, simActivity.length - 5000);
@@ -2587,7 +2651,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     const simExpired = new Set<string>(simAuthMode === 'expired' ? ['copilot', 'claude'] : []);
     const SIM_AUTH_ERROR = 'Failed to authenticate. API Error: 401 OAuth access token is invalid.';
     const signInState = (a: AdapterInfo): AdapterInfo => (a.state === 'ready' && simSignedOut.has(a.id) ? { ...a, state: 'not-signed-in', hint: 'Sign in first: open Settings > Agent apps and choose Sign in….' } : a);
-    const simAdapters = (): AdapterInfo[] => simAdapterList().map(signInState);
+    const simAdapters = (): AdapterInfo[] => simAdapterList().map(signInState).map((k) => (SIM_AUTOPILOT && simApCap(k.id) ? { ...k, capabilities: { ...k.capabilities, autopilot: simApCap(k.id) } } : k));
     const simAdapterList = (): AdapterInfo[] => [
       { id: 'copilot', displayName: 'Copilot', state: 'ready', version: 'sim', capabilities: { ...copilotCaps } },
       ...(simKinds ? [
@@ -2942,6 +3006,8 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         if (crashProbe.on) crashProbe.sends++;
         const s = sims.find((x) => x.info.id === id);
         if (!s) return { ok: false, error: 'unknown agent' };
+        if (s.info.autopilot && !s.apRun) { simApRun(s); return { ok: true }; } // spec 099 FR-080
+        if (s.apRun) { emit({ type: 'output', sessionId: id, timestamp: now(), delta: 'Noted.' } as AgentEvent); return { ok: true }; } // FR-058: a plain message, not a new goal
         if (opts?.plan) {
           // spec 066 FR-008: a short plan after a moment; nothing runs until it is answered
           simPlan(s, text);
@@ -2999,6 +3065,8 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         // Stop = interrupt the turn only (like the real adapter): pending approval denied, grants kept, back to Ready.
         const s = sims.find((x) => x.info.id === id);
         if (!s) return;
+        if (s.apRun) simApEnd(s, 'stopped'); // spec 099 FR-050
+        else if (s.info.autopilot) { s.info.autopilot = undefined; simApSay(s); } // no run, so no event: main's state message
         if (s.limitReq) {
           emit({ type: 'limit', sessionId: id, timestamp: now(), phase: 'resolved', requestId: s.limitReq, action: 'cancel' });
           s.limitReq = undefined;
@@ -3020,6 +3088,8 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         const s = sims.find((x) => x.info.id === id);
         if (!s) return;
         if (s.grants.size) { s.grants.clear(); grantsEvent(s); }
+        if (s.apRun) { window.clearTimeout(s.apRun.timer); s.apRun = undefined; } // spec 099 FR-052: no card
+        s.info.autopilot = undefined;
         s.state = 'idle'; closeOpen(s); simRemote.delete(id); // spec 054 FR-003
         s.mcpSign = undefined; // spec 058 FR-065: End session forgets an open sign-in
         if (s.info.sandbox?.untilNewSession) { delete s.info.sandbox; emit({ type: 'sandbox', sessionId: id, timestamp: now(), sandbox: null }); } // spec 087: a kept floor ends with the session
@@ -3090,7 +3160,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         const bad = o.adapterId !== undefined ? notReady(o.adapterId) : undefined;
         if (bad) return { ok: false, error: bad };
         extra++;
-        const info = { ...src.info, alias: undefined, adapterId: o.adapterId ?? src.info.adapterId, id: 'sim-n' + extra, permMode: o.permMode ?? src.info.permMode, model: o.model ?? 'auto', tier: undefined, effort: o.effort, maxAiCredits: o.maxAiCredits === null ? undefined : o.maxAiCredits ?? defaultCap } as AgentInfo;
+        const info = { ...src.info, autopilot: undefined, alias: undefined, adapterId: o.adapterId ?? src.info.adapterId, id: 'sim-n' + extra, permMode: o.permMode ?? src.info.permMode, model: o.model ?? 'auto', tier: undefined, effort: o.effort, maxAiCredits: o.maxAiCredits === null ? undefined : o.maxAiCredits ?? defaultCap } as AgentInfo;
         if (mixed) { // the new session follows its kind's capabilities like the roster does
           const k = caps(info.adapterId ?? 'copilot');
           if (!k.caps || (k.capUnit === 'usd' && o.maxAiCredits === undefined)) info.maxAiCredits = undefined; // the AIU default is not a dollar cap
@@ -3134,10 +3204,48 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         simSbxAlways.delete(String(app));
         return { ok: true };
       },
+      /* spec 099: main's rules as the simulator can have them: the driver cannot press main's native dialog, so `__durbarSimUi.autopilotDialog` answers it (a yes by default) and records what was asked */
+      setAutopilot: async (id, settings) => {
+        const s = sims.find((x) => x.info.id === id);
+        if (!s) return { ok: false, error: 'unknown agent' };
+        if (settings === null) {
+          if (s.apRun) simApEnd(s, 'stopped');
+          else if (s.info.autopilot) { simLog(s, 'autopilot-off', 'Turned off'); s.info.autopilot = undefined; simApSay(s); }
+          return { ok: true, mode: s.info.permMode };
+        }
+        if (!SIM_AUTOPILOT) return { ok: false, error: 'Autopilot is not available yet.' };
+        const cap = simApCap(s.info.adapterId ?? 'copilot');
+        if (!cap) return { ok: false, error: 'This agent app has no Autopilot.' };
+        if (s.info.autopilot) return { ok: false, error: 'This session is already on Autopilot.' };
+        const lim = settings.limit, hrs = settings.hours ?? 2, c = settings.cap;
+        if (!Number.isInteger(lim) || lim < 1 || lim > 1000) return { ok: false, error: 'The turn limit must be a whole number from 1 to 1000.' };
+        if (!(hrs >= 1 && hrs <= 168)) return { ok: false, error: 'The time limit must be from 1 to 168 hours.' };
+        if (c !== undefined && !(typeof c === 'number' && c > 0)) return { ok: false, error: 'The spend cap must be a number above 0.' };
+        const org = simOrgMode(s.info.adapterId, 'allow');
+        if (org) return { ok: false, error: org + ': Autopilot runs in Allow all, so it is blocked too.' };
+        if (simRemote.has(id)) return { ok: false, error: 'Stop remote control first: Autopilot and remote control from GitHub are never on together.' };
+        const ui = (window as unknown as { __durbarSimUi?: { autopilotDialog?: (o: unknown) => boolean; autopilotAsked?: unknown[] } }).__durbarSimUi;
+        const asked = { from: s.info.permMode, settings };
+        if (ui) (ui.autopilotAsked ??= []).push(asked);
+        if (ui?.autopilotDialog && !ui.autopilotDialog(asked)) return { ok: false, cancelled: true, error: 'Cancelled.' };
+        if (s.info.permMode !== 'allow') { // as `setPermMode` does: Allow all has no floor here
+          simLog(s, 'mode-change', `to Allow all`, 'allow');
+          s.info.permMode = 'allow';
+          if (s.info.sandbox) { delete s.info.sandbox; emit({ type: 'sandbox', sessionId: id, timestamp: now(), sandbox: null }); }
+        }
+        const finalCap = c !== undefined && cap.capUnit === 'aiu' ? Math.max(c, 30) : c;
+        s.info.autopilot = { limit: lim, hours: hrs, ...(finalCap !== undefined ? { cap: finalCap } : {}) };
+        simLog(s, 'autopilot-on', `Autopilot on: up to ${lim} more turns`);
+        return { ok: true, mode: 'allow', autopilot: s.info.autopilot };
+      },
       setPermMode: async (id, mode, o) => {
         if (crashProbe.on) crashProbe.modeSets++;
         const s = sims.find((x) => x.info.id === id);
         if (!s) return { ok: false, error: 'unknown agent' };
+        if (s.info.autopilot) { // spec 099 FR-051: ends first
+          if (s.apRun) simApEnd(s, 'stopped');
+          else s.info.autopilot = undefined;
+        }
         const org = simOrgMode(s.info.adapterId, mode); // spec 076 FR-203, as main refuses it
         if (org) return { ok: false, error: org + ': pick another permission mode.' };
         const MW: Record<string, string> = { 'read-only': 'Read-only', ask: 'Ask first', allow: 'Allow all' };
@@ -3218,6 +3326,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       onAgentRenamed: (cb) => { renamedListeners.add(cb); return () => renamedListeners.delete(cb); },
       /* spec 076 FR-205: like main's start guard, a Codex session started in Allow all (canned advice) shows the advice once */
       onOrgNote: (cb) => { simOrgNotes.add(cb); return () => simOrgNotes.delete(cb); },
+      onAutopilotState: (cb) => { simApState.add(cb); return () => simApState.delete(cb); },
       listPrevious: async (id) => {
         await prevWait();
         const src = sims.find((x) => x.info.id === id);
@@ -3265,7 +3374,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         // spec 003 (2026-10-21): like main, the session comes back in the mode last chosen for it (prev-1 was last in Allow all), else the opener's
         const own = simSessionModes.get(sessionId);
         const mode = own ?? src.info.permMode;
-        const info = { ...src.info, id: 'sim-n' + extra, alias: simPrevNames.get(sessionId), permMode: mode, permFrom: own ? 'session' : 'opener', permRestored: own === 'allow' ? true : undefined } as AgentInfo;
+        const info = { ...src.info, autopilot: undefined, id: 'sim-n' + extra, alias: simPrevNames.get(sessionId), permMode: mode, permFrom: own ? 'session' : 'opener', permRestored: own === 'allow' ? true : undefined } as AgentInfo;
         const modeWas = mode !== src.info.permMode ? src.info.permMode : undefined;
         sims.push({ info, room: src.room, state: 'idle', intent: 'Ready', prompt: '', helpers: 0, tool: 0, think: 0, files: src.files, grants: new Map() });
         const t = Date.now() - 2 * 3600e3;

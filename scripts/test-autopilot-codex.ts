@@ -491,12 +491,12 @@ async function main(): Promise<void> {
     const s2 = await old.ad.start({ workspace: os.tmpdir(), resumeSessionId: t2, permissionMode: 'allow', quiet: true });
     assert.ok(old.ad.isLive(s2), 'method not found: no goal can exist');
     await old.ad.stop(s2);
-    const off = make();
+    const off = make({}, { wired: false });
     const f3 = await off.ad.start({ workspace: os.tmpdir(), permissionMode: 'allow', quiet: true });
     const t3 = off.ad.resumeIdOf(f3) as string;
     await off.ad.stop(f3);
     const s3 = await off.ad.start({ workspace: os.tmpdir(), resumeSessionId: t3, permissionMode: 'allow', quiet: true });
-    assert.strictEqual(off.srv.requests('thread/goal/clear').length, 0, 'AUTOPILOT_WIRED is false until T030');
+    assert.strictEqual(off.srv.requests('thread/goal/clear').length, 0, '`wired` false (the default build): nothing new on a resume');
     await off.ad.stop(s3);
   }
 
@@ -510,11 +510,11 @@ async function main(): Promise<void> {
 
   // FR-006: a goal nobody asked for is cleared and said; Durbar does not follow. Until T030 a session not on Autopilot is left alone.
   {
-    const n = await rig();
+    const n = await rig({}, { wired: false });
     n.srv.goals.add(n.tid);
     status(n, 'active');
     await settle(n.srv);
-    assert.deepStrictEqual(n.wire(), [], 'nothing changes for a session not on Autopilot in this phase');
+    assert.deepStrictEqual(n.wire(), [], 'nothing changes for a session not on Autopilot where `wired` is false (the default build)');
     assert.ok(!n.lines().includes(LINE_SELF_STARTED));
     const r = await rig({}, { wired: true });
     r.srv.goals.add(r.tid);

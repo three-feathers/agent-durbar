@@ -11,7 +11,7 @@ import { localTime, nextRuleRun, parseRule } from '../shared/schedrules';
 import type { CalendarRule } from '../shared/schedrules';
 import { LOOP_MAX_DELAY, LOOP_MAX_HOURS, LOOP_MAX_PASSES, LOOP_MIN_DELAY, clampPace, cleanReason, oneLine, parsePace } from '../shared/looppace';
 
-export type Outcome = 'sent' | 'skipped-busy' | 'skipped-paused' | 'skipped-cap' | 'skipped-ended' | 'missed' | 'failed' | 'held' | 'ended' | 'skipped-door-full' | 'skipped-review';
+export type Outcome = 'sent' | 'skipped-busy' | 'skipped-paused' | 'skipped-cap' | 'skipped-ended' | 'missed' | 'failed' | 'held' | 'ended' | 'skipped-door-full' | 'skipped-review' | 'skipped-autopilot';
 export type CapUnit = 'aiu' | 'usd';
 /** FR-014: one session instead of the folder's agent. `name` is display only. */
 export interface ScheduleTarget {
@@ -58,6 +58,8 @@ export interface Schedule {
   id: string;
   folder: string;
   prompt: string;
+  /** Spec 099 FR-084: `autopilot` is out of the first build: kept when read, so a run is refused and the log says why, never sent in the session's mode. */
+  mode?: 'autopilot';
   /** Every N minutes (5..1440), or */
   every?: number;
   /** once at this time (epoch ms). With `every`: the first run, and the runs keep that time of day (spec 044 FR-007, e.g. every day at 08:30). */
@@ -117,15 +119,17 @@ export const FOLD_FLUSH_MS = 60 * 60_000;
 /** Spec 044 FR-120 (issue #843): the longest prompt, in characters (`String.length` of the trimmed text). A longer one is refused by `save` and never cut. */
 export const MAX_PROMPT = 10_000;
 /** FR-124: a stored prompt over the limit (a hand-edited file) is kept whole and not sent: the schedule needs review. */
+/** Spec 099 T032: thrown by main's send when the session went on Autopilot after this run looked: outcome `skipped-autopilot`. */
+export const AUTOPILOT_HELD = Symbol('autopilot');
 export const needsReview = (s: Pick<Schedule, 'prompt'>): boolean => s.prompt.length > MAX_PROMPT;
 export const MIN_EVERY = 5;
 export const MAX_EVERY = 1440;
 const MIN = 60_000;
-const OUTCOMES: Outcome[] = ['sent', 'skipped-busy', 'skipped-paused', 'skipped-cap', 'skipped-ended', 'missed', 'failed', 'held', 'ended', 'skipped-door-full', 'skipped-review'];
+const OUTCOMES: Outcome[] = ['sent', 'skipped-busy', 'skipped-paused', 'skipped-cap', 'skipped-ended', 'missed', 'failed', 'held', 'ended', 'skipped-door-full', 'skipped-review', 'skipped-autopilot'];
 const END_REASONS: LoopEndReason[] = ['user', 'agent', 'session', 'limit', 'passes', 'time', 'no-pace', 'errors', 'app-closed'];
 const RUN_REASONS: RunReason[] = ['no-agent', 'send-error', ...END_REASONS];
 /** Spec 044 FR-037: a skip that repeats with the same outcome and session is one entry with a count. */
-const FOLDS: Outcome[] = ['skipped-busy', 'skipped-paused', 'held', 'skipped-door-full', 'skipped-review'];
+const FOLDS: Outcome[] = ['skipped-busy', 'skipped-paused', 'held', 'skipped-door-full', 'skipped-review', 'skipped-autopilot'];
 const LASTASK_SOURCES = ['agent', 'default', 'clamped'];
 const ID_RE = /^[A-Za-z0-9._:-]{1,128}$/;
 const AGENT_RE = /^[A-Za-z0-9._-]{1,32}$/;
@@ -227,6 +231,7 @@ export function cleanSchedule(o: unknown, now: number, keepId = true): Schedule 
   const every = num(r.every);
   const at = num(r.at);
   const s: Schedule = { id: keepId && typeof r.id === 'string' && /^[A-Za-z0-9-]{8,64}$/.test(r.id) ? r.id : randomUUID(), folder, prompt };
+  if (r.mode === 'autopilot') s.mode = 'autopilot'; // spec 099 FR-084: never run; `save` refuses a new one
   let rule = r.rule === undefined ? undefined : parseRule(r.rule);
   if (r.rule !== undefined && !rule) return undefined; // a bad rule drops the schedule, like a bad interval
   if (r.loop !== undefined && r.loop !== null) {
@@ -404,6 +409,8 @@ export interface SchedulerDeps {
   isBusy(folder: string, session?: string): boolean;
   /** Sends the prompt to the folder's agent or the schedule's target; false when it could not, else true or the session id it went to (for FR-015 attribution). */
   send(folder: string, prompt: string, s: Schedule): Promise<boolean | string>;
+  /** Spec 099 T032, FR-083: the session this run would go to is on Autopilot, or being turned on: not sent while T096 is held, and the run log says why. */
+  onAutopilot?(s: Schedule): boolean;
   /** FR-014: the session still exists. */
   hasSession(session: string): boolean;
   /** FR-015: the cap unit of the agent app that would run the schedule, or undefined when it reports no spending in a unit. */
@@ -505,11 +512,12 @@ export class Scheduler {
   }
 
   /** What a send gave: its result, and whether it threw (`send-error`) or said it could not (`no-agent`, FR-036). */
-  private async sendRun(s: Schedule, prompt: string): Promise<{ r: boolean | string; reason?: RunReason }> {
+  private async sendRun(s: Schedule, prompt: string): Promise<{ r: boolean | string; reason?: RunReason; autopilot?: true }> {
     try {
       const r = await this.deps.send(s.folder, prompt, s);
       return r ? { r } : { r, reason: 'no-agent' };
-    } catch {
+    } catch (err) {
+      if (err === AUTOPILOT_HELD) return { r: false, autopilot: true }; // spec 099 T032: turned on while this send waited for its session
       return { r: false, reason: 'send-error' };
     }
   }
@@ -700,6 +708,11 @@ export class Scheduler {
       this.record(s, 'skipped-paused', now, { session });
       return;
     }
+    if (s.mode === 'autopilot' || this.deps.onAutopilot?.(s)) {
+      this.record(s, 'skipped-autopilot', now, { session }); // spec 099 T032: not a pass, not queued
+      s.next = now + this.lastDelay(l) * MIN;
+      return;
+    }
     if (this.settle(s, now)) {
       this.record(s, 'held', now, { session });
       return;
@@ -723,7 +736,7 @@ export class Scheduler {
     this.attrib.set(session, s.id);
     const pass = l.passes;
     const started = l.startedAt; // restartLoop edits this object in place, so keep the value from before the await
-    const { r, reason } = await this.sendRun(s, s.prompt);
+    const { r, reason, autopilot } = await this.sendRun(s, s.prompt);
     const after = this.deps.now();
     // `save` (Pause, Resume, an edit) may have replaced the object while send was awaited: act on the current one, and only if it is
     // still this loop in this pass (not stopped, removed, or its turn already ended)
@@ -732,6 +745,15 @@ export class Scheduler {
     if (!cur || !cl || cl.ended || !cl.inPass || cl.passes !== pass || cl.startedAt !== started) return;
     if (r) {
       this.record(cur, 'sent', now, { session: typeof r === 'string' ? r : session });
+      return;
+    }
+    if (autopilot) {
+      // spec 099 T032: the session went on Autopilot while this waited: not a pass, not an error
+      if (this.attrib.get(session) === cur.id) this.attrib.delete(session);
+      cl.inPass = false;
+      cl.passes = pass - 1;
+      this.record(cur, 'skipped-autopilot', now, { session });
+      cur.next = now + this.lastDelay(cl) * MIN;
       return;
     }
     // the pass could not be sent: it counts as a failed pass (FR-013)
@@ -873,6 +895,7 @@ export class Scheduler {
         else if (this.doc.pausedAll) outcome = 'skipped-paused';
         else if (s.target && !this.deps.hasSession(s.target.session)) outcome = 'skipped-ended';
         else if (s.cap && (s.spent ?? 0) >= s.cap.amount) outcome = 'skipped-cap';
+        else if (s.mode === 'autopilot' || this.deps.onAutopilot?.(s)) outcome = 'skipped-autopilot'; // spec 099 T032
         else if ((held = this.deps.hold?.(s, now) ?? false)) outcome = held === 'full' ? 'skipped-door-full' : 'held'; // FR-110: queued at a door closed by the user, before busy
         else if (this.deps.isBusy(s.folder, s.target?.session)) outcome = 'skipped-busy';
         else if (this.deps.heldBy?.(s)) {
@@ -885,7 +908,7 @@ export class Scheduler {
           const sr = await this.sendRun(s, s.prompt);
           r = sr.r;
           reason = sr.reason;
-          outcome = r ? 'sent' : 'failed';
+          outcome = sr.autopilot ? 'skipped-autopilot' : r ? 'sent' : 'failed';
           if (typeof r === 'string' && r) this.attrib.set(r, s.id);
         }
         this.record(s, outcome, now, { session: typeof r === 'string' && r ? r : s.target?.session, reason });
@@ -925,6 +948,8 @@ export class Scheduler {
     if (needsReview(s)) return { ok: false, error: `This prompt is over ${MAX_PROMPT.toLocaleString('en-US')} characters. Shorten it with Edit… first.` };
     if (s.target && !this.deps.hasSession(s.target.session)) return { ok: false, error: 'That session has ended.' };
     if (s.cap && (s.spent ?? 0) >= s.cap.amount) return { ok: false, error: 'This schedule has reached its limit.' };
+    if (s.mode === 'autopilot') return { ok: false, error: 'Autopilot on a schedule is not available.' };
+    if (this.deps.onAutopilot?.(s)) return { ok: false, error: 'That session is on Autopilot. A schedule does not run under it. Stop Autopilot first.' };
     if (this.deps.isBusy(s.folder, s.target?.session)) return { ok: false, error: 'The agent is busy. Try again when it is free.' };
     this.running = true;
     let r: boolean | string = false;
@@ -932,7 +957,7 @@ export class Scheduler {
       const sr = await this.sendRun(s, s.prompt);
       r = sr.r;
       if (typeof r === 'string' && r) this.attrib.set(r, s.id);
-      this.record(s, r ? 'sent' : 'failed', this.deps.now(), { session: typeof r === 'string' && r ? r : s.target?.session, reason: sr.reason, manual: true });
+      this.record(s, sr.autopilot ? 'skipped-autopilot' : r ? 'sent' : 'failed', this.deps.now(), { session: typeof r === 'string' && r ? r : s.target?.session, reason: sr.reason, manual: true });
     } finally {
       this.running = false;
       this.commit();
@@ -954,6 +979,7 @@ export class Scheduler {
     if (s.target && !this.deps.hasSession(s.target.session)) return 'ended';
     if (s.cap && (s.spent ?? 0) >= s.cap.amount) return 'cap';
     if (this.deps.heldBy?.(s)) return 'updating'; // spec 081 FR-013: its agent app is updating
+    if (s.mode === 'autopilot' || this.deps.onAutopilot?.(s)) return 'busy'; // spec 099 T032: stays at the door
     if (this.running || this.deps.isBusy(s.folder, s.target?.session)) return 'busy';
     this.running = true;
     let r: boolean | string = false;
@@ -961,6 +987,7 @@ export class Scheduler {
       const sr = await this.sendRun(s, prompt);
       r = sr.r;
       if (typeof r === 'string' && r) this.attrib.set(r, s.id);
+      if (sr.autopilot) return 'busy';
       this.record(s, r ? 'sent' : 'failed', this.deps.now(), { session: typeof r === 'string' && r ? r : s.target?.session, reason: sr.reason });
     } finally {
       this.running = false;
@@ -983,6 +1010,8 @@ export class Scheduler {
     const s = cleanSchedule(edit && prev ? editCandidate(input as Record<string, unknown>, prev) : { ...(input as object), next: undefined, spent: undefined, spentUnknown: undefined, pausedReason: undefined, loop: limitsOf((input as { loop?: unknown }).loop) }, now);
     if (!s) return { ok: false, error: 'A schedule needs a prompt and either a time, an interval of 5 to 1440 minutes or a calendar rule. A limit must be a positive amount.' };
     // FR-123: a prompt over the limit is refused, never cut; one that did not change (Pause, Resume, Delete-side saves of an old entry) stays
+    if (s.mode === 'autopilot' && prev?.mode !== 'autopilot') return { ok: false, error: 'Autopilot on a schedule is not available.' }; // spec 099 FR-084
+    if (prev?.mode === 'autopilot') s.mode = 'autopilot'; // a Pause or an edit keeps the marker: it stays refused and never runs in the session's mode
     if (needsReview(s) && s.prompt !== prev?.prompt) return { ok: false, error: `The prompt is ${s.prompt.length.toLocaleString('en-US')} of ${MAX_PROMPT.toLocaleString('en-US')} characters: shorten it to save.` };
     // a save of an existing schedule that is not an edit (Pause, Resume, "Use the folder's agent") never moves it to another folder or revives a done one
     if (!edit && prev) {

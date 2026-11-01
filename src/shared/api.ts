@@ -212,6 +212,8 @@ export interface AppSettingsView {
   characters?: 'theme' | 'minimalist' | 'cheeky' | 'prehistoric';
   /** OS notifications when an agent needs you while the window is in the background (spec 052 FR-059). On unless turned off. */
   notifyNeedsMe?: boolean;
+  /** Spec 099 S1: the turn limit last used for Autopilot; absent until then. */
+  autopilotLimit?: number;
   /** Spec 068 FR-006: after a coffee break, `auto` resumes by itself when it costs nothing extra; `ask` always asks. */
   breakResume?: 'auto' | 'ask';
   /** Spec 080 FR-031: where a plain click on a chat link opens (default `'session'`). */
@@ -263,7 +265,7 @@ export interface ProfileInfo {
 }
 
 /** What a scheduled run came to (spec 044; main's `Outcome`). */
-export type ScheduleOutcome = 'sent' | 'skipped-busy' | 'skipped-paused' | 'skipped-cap' | 'skipped-ended' | 'missed' | 'failed' | 'held' | 'ended' | 'skipped-door-full' | 'skipped-review';
+export type ScheduleOutcome = 'sent' | 'skipped-busy' | 'skipped-paused' | 'skipped-cap' | 'skipped-ended' | 'missed' | 'failed' | 'held' | 'ended' | 'skipped-autopilot' | 'skipped-door-full' | 'skipped-review';
 /** Spec 044 FR-036: one entry of a schedule's run log, as `scheduleRuns` returns it (newest first). Reason codes only, never text. */
 export interface ScheduleRunInfo {
   at: number;
@@ -810,6 +812,8 @@ export interface DurbarApi {
   handoff?(id: string): Promise<{ ok: boolean; error?: string; summary?: string; costUsd?: number }>;
   /** Turn remote control (follow and steer from the agent app's web or mobile app) on or off for live agent `id` (spec 054 FR-004). */
   setRemote?(id: string, on: boolean): Promise<RemoteState>;
+  /** Spec 099: Autopilot on (its settings; main asks the native confirmation) or off (`null`). Refused while `AUTOPILOT_WIRED` is false. */
+  setAutopilot?(id: string, settings: { limit: number; hours?: number; cap?: number } | null): Promise<{ ok: boolean; error?: string; cancelled?: true; mode?: PermMode; autopilot?: AgentInfo['autopilot']; pending?: number; note?: string }>;
   /** Open agent `id`'s remote link (stored in main, https://github.com only) in the system browser (spec 054 FR-005). */
   openRemote?(id: string): Promise<{ ok: boolean }>;
   /** Spec 065: a turn's file changes (what an undo would do), the undo itself, and the note after a turn that changed files. */
@@ -915,6 +919,8 @@ export interface DurbarApi {
   onDoorsFull?(cb: (p: { id: string }) => void): () => void;
   /** Spec 076 FR-203: a session started under advice of its agent app's organization policy; the words to show (no policy values). */
   onOrgNote?(cb: (p: { id: string; text: string }) => void): () => void;
+  /** Spec 099: main's Autopilot state of one session changed; the window shows what main holds. */
+  onAutopilotState?(cb: (p: { id: string; autopilot: AgentInfo['autopilot'] | null }) => void): () => void;
   /** Spec 054 FR-062: remote control is still on with a new (checked) link after a relaunch. */
   onRemoteUrl?(cb: (p: { id: string; url: string }) => void): () => void;
   onHarnessDone?(cb: (p: { kind: string; op: string; ok: boolean; exitCode?: number | null; reason?: string; lines: string[]; error?: string; failure?: string; fallback?: 'official'; note?: string }) => void): () => void;

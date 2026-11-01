@@ -112,7 +112,7 @@ for (const f of ipcFiles) {
 const FROM_APP = [
   'activity:clear', 'activity:export', 'activity:list',
   'adapters:sandboxAlwaysOff', 'adapters:sandboxHosts', 'agents:sandboxContinue', // spec 087: the OS sandbox choices and the Settings line
-  'agents:checkpointPreview', 'agents:checkpointUndo', 'agents:gitStatus', 'agents:mcpCancelSignIn', 'agents:mcpOpenSignIn', 'agents:mcpRefresh', 'agents:mcpSignIn', 'agents:openRemote', 'agents:resolvePlan', 'agents:send', 'agents:sessionSummary', 'agents:setMode', 'agents:setRemote',
+  'agents:checkpointPreview', 'agents:checkpointUndo', 'agents:gitStatus', 'agents:mcpCancelSignIn', 'agents:mcpOpenSignIn', 'agents:mcpRefresh', 'agents:mcpSignIn', 'agents:openRemote', 'agents:resolvePlan', 'agents:send', 'agents:sessionSummary', 'agents:setMode', 'agents:setAutopilot', 'agents:setRemote',
   'app:dismissInterrupted', 'app:dismissSinceAway', 'app:interrupted', 'app:sinceAway', 'doors:held', 'doors:list', 'doors:release', 'doors:set', // 'app:interrupted': spec 006 FR-041, ids and folder names of the sessions a crash left mid-turn
   'folders:create', 'folders:createCancel', 'folders:createCheck', 'folders:createPickParent', // spec 093 FR-080: create a folder (writes to the disk, runs git), and end its clone
   'folders:remove', // spec 083 FR-048 (T034b): with {deleteNotes} it deletes the folder's notes file

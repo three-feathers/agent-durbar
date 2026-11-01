@@ -4,6 +4,7 @@
  */
 import type { AdapterRouter } from '../adapters/router';
 import type { AgentAdapter, AgentMessage, StartOptions } from '../adapters/types';
+import { LINE_UNCONFIRMED } from '../adapters/autopilotHost';
 import { interruptOf, refusesLive, setCapOf, setMcpEnabledOf, setPermModeOf } from '../adapters/router';
 import { parseAmount, parseCapIn } from '../shared/credits';
 import { answerTooLong, MAX_ANSWER, readAnswerPayload } from '../adapters/questions';
@@ -24,6 +25,10 @@ export interface OpsDeps {
   orgRefusal?(a: AgentInfo, mode: PermMode): string | undefined;
   /** Spec 076 FR-203: why the agent app's own organization policy refuses switching this MCP server on, or undefined. */
   orgMcpRefusal?(a: AgentInfo, name: string): Promise<string | undefined>;
+  /** Spec 099 FR-051: a mode chosen on Autopilot ends it first, before anything else and whatever the mode change then does. */
+  endAutopilot?(a: AgentInfo): void;
+  /** Spec 099 FR-050: Stop: main's Autopilot state comes down before anything is awaited; the adapter's interrupt is the run's stop order. */
+  autopilotStopSeen?(id: string): void;
 }
 
 const MODE_WORDS: Record<PermMode, string> = { 'read-only': 'Read-only', ask: 'Ask first', allow: 'Allow all' };
@@ -51,6 +56,10 @@ export function setModeOp(d: OpsDeps, id: unknown, mode: unknown, opts: unknown)
   if (!a || !ad) return { ok: false, error: 'unknown agent' };
   const o = (opts && typeof opts === 'object' ? opts : {}) as Record<string, unknown>;
   const m = validMode(mode);
+  if (a.autopilot) {
+    d.endAutopilot?.(a); // spec 099 FR-051: a person can always get down, also when the switch below is then refused
+    if (m === 'allow' && a.permMode === 'allow') return { ok: true, mode: m, pending: 0 }; // Allow all from Autopilot is only a stop: nothing to save or log twice
+  }
   const no = d.orgRefusal?.(a, m); // FR-203: refused before anything changes
   if (no) return { ok: false, error: no };
   const r = setPermModeOf(ad, a.id, m, { clearGrants: o.clearGrants === true, approvePending: o.approvePending === true });
@@ -106,7 +115,20 @@ export async function setCapOp(d: OpsDeps, id: unknown, credits: unknown): Promi
 /** `agents:stop`: interrupts the running turn only. */
 export async function stopTurnOp(d: OpsDeps, id: string): Promise<{ ok: false; error: string } | undefined> {
   const ad = d.agents.has(id) ? d.router.forAgent(id) : undefined;
-  if (ad && refusesLive(ad, id, await interruptOf(ad, id))) return { ok: false, error: NO_INTERRUPT };
+  const onAutopilot = !!d.agents.get(id)?.autopilot;
+  d.autopilotStopSeen?.(id); // spec 099 FR-050: before anything is awaited
+  if (!onAutopilot) {
+    if (ad && refusesLive(ad, id, await interruptOf(ad, id))) return { ok: false, error: NO_INTERRUPT };
+    return undefined;
+  }
+  // a stop that fails on Autopilot fails closed (FR-054): the session's process goes, and main's state is already down
+  try {
+    if (ad) await interruptOf(ad, id);
+  } catch {
+    await Promise.resolve().then(() => ad?.stop(id)).catch(() => undefined);
+    return { ok: false, error: LINE_UNCONFIRMED };
+  }
+  return undefined;
 }
 
 /**

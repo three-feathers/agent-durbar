@@ -18,6 +18,8 @@ export interface AdapterRouter {
   onEvent(listener: (e: AgentEvent) => void): Unsubscribe;
   /** Debug sink for every adapter, existing and created later. */
   setDebug(fn: ((message: string) => void) | undefined): void;
+  /** Spec 099 FR-082: main's check on every event, before any listener gets it. False drops the event. Asked once per event. */
+  setEventGuard(fn: ((e: AgentEvent) => boolean) | undefined): void;
   /** Spec 065 FR-001: the write guard every adapter instance calls before a file-edit write. */
   setWriteGuard(fn: WriteGuard | undefined): void;
   created(): readonly AgentAdapter[];
@@ -46,9 +48,20 @@ export function createRouter(reg: AdapterRegistry): AdapterRouter {
   const listeners = new Set<{ fn: (e: AgentEvent) => void; offs: Map<string, Unsubscribe> }>();
   let debug: ((message: string) => void) | undefined;
   let writeGuard: WriteGuard | undefined;
+  let eventGuard: ((e: AgentEvent) => boolean) | undefined;
+  const verdicts = new WeakMap<AgentEvent, boolean>();
+  const passes = (e: AgentEvent): boolean => {
+    if (!eventGuard) return true;
+    const seen = verdicts.get(e);
+    if (seen !== undefined) return seen;
+    const ok = eventGuard(e);
+    verdicts.set(e, ok);
+    return ok;
+  };
+  const guarded = (fn: (e: AgentEvent) => void) => (e: AgentEvent): void => { if (passes(e)) fn(e); };
 
   const attach = (id: string, ad: AgentAdapter): void => {
-    for (const l of listeners) l.offs.set(id, ad.onEvent(l.fn));
+    for (const l of listeners) l.offs.set(id, ad.onEvent(guarded(l.fn)));
     if (debug) ad.debug = debug;
     if (writeGuard) ad.writeGuard = writeGuard;
   };
@@ -82,7 +95,7 @@ export function createRouter(reg: AdapterRegistry): AdapterRouter {
     onEvent(listener) {
       const l = { fn: listener, offs: new Map<string, Unsubscribe>() };
       listeners.add(l);
-      for (const [id, ad] of instances) l.offs.set(id, ad.onEvent(listener));
+      for (const [id, ad] of instances) l.offs.set(id, ad.onEvent(guarded(listener)));
       return () => {
         listeners.delete(l);
         for (const off of l.offs.values()) off();
@@ -92,6 +105,9 @@ export function createRouter(reg: AdapterRegistry): AdapterRouter {
     setWriteGuard(fn) {
       writeGuard = fn;
       for (const ad of instances.values()) ad.writeGuard = fn;
+    },
+    setEventGuard(fn) {
+      eventGuard = fn;
     },
     setDebug(fn) {
       debug = fn;

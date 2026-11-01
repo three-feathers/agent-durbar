@@ -895,7 +895,7 @@ export class ClaudeAdapter implements AgentAdapter {
 
   /** FR-126: a session's chat for the replay after a resume. */
   async history(sessionId: string): Promise<HistoryResult> {
-    return readClaudeHistory(sessionId, this.sessions.get(sessionId)?.cwd, this.deps.configDir);
+    return readClaudeHistory(sessionId, this.sessions.get(sessionId)?.cwd, this.deps.configDir, this.goalsWired());
   }
 
   /**
