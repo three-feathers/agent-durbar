@@ -1,5 +1,5 @@
 /**
- * Issue #917 (spec 083 T043): the shared capped, non-blocking, no-follow read (`src/shared/cappedread.ts`), on the real file system,
+ * Issue #917 (spec 083 T062): the shared capped, non-blocking, no-follow read (`src/shared/cappedread.ts`), on the real file system,
  * and its three callers (notes file, MCP key file, slash commands) are covered by their own suites. Guards under test: no-follow,
  * non-block (a FIFO in a child with a time limit), regular file, one link, cap, and `size + 1` growth. `npm run test:cappedread`.
  */
@@ -9,6 +9,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { execFileSync } from 'child_process';
 import { readCapped } from '../src/shared/cappedread';
+import { realFs, discoverSlash, SLASH_HEAD_BYTES } from '../src/adapters/slashcommands';
 
 const posix = process.platform !== 'win32';
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-capped-'));
@@ -71,6 +72,25 @@ const code = (r: ReturnType<typeof readCapped>): string => (r.ok ? 'ok' : r.code
       process.stdout.write(JSON.stringify([r.ok, r.code]));`;
     const out = execFileSync(process.execPath, ['-e', child], { timeout: 8000, encoding: 'utf8' });
     assert.deepStrictEqual(JSON.parse(out), [false, 'not-file'], out);
+  });
+  await test('slash commands: a file swapped to a symlink after realpath is refused by O_NOFOLLOW; the 8 KiB head slice cuts a bigger file', () => {
+    // the real slash-command reader (`realFs.readHead`), not the helper alone: a caller that drops O_NOFOLLOW or the slice fails here
+    fs.writeFileSync(f('cmd-target'), 'secret');
+    const big = 'a'.repeat(SLASH_HEAD_BYTES * 2 + 5);
+    fs.writeFileSync(f('big.md'), big);
+    assert.strictEqual(realFs.readHead(f('big.md'), SLASH_HEAD_BYTES, 64 * 1024).length, SLASH_HEAD_BYTES, 'cut to the head, not the whole file');
+    assert.throws(() => realFs.readHead(f('big.md'), SLASH_HEAD_BYTES, 10), /too large/);
+    if (!posix) return console.log('  (symlink part skipped on Windows: no O_NOFOLLOW)');
+    fs.symlinkSync(f('cmd-target'), f('cmd-link.md'));
+    assert.throws(() => realFs.readHead(f('cmd-link.md'), 100, 1000), /cannot read \(link\)/);
+    // end to end: realpath and lstat answered "a regular file" before the swap, the open then meets the link
+    const dir = f('cmds');
+    fs.mkdirSync(dir);
+    fs.writeFileSync(path.join(dir, 'ok.md'), 'Do it.');
+    fs.symlinkSync(f('cmd-target'), path.join(dir, 'swapped.md'));
+    const swapped = { ...realFs, realpath: (p: string) => p, lstat: (p: string) => (p.endsWith('swapped.md') ? fs.lstatSync(path.join(dir, 'ok.md')) : fs.lstatSync(p)) };
+    const names = discoverSlash([{ dir, root: dir, scope: 'folder', kind: 'command', layout: 'md-files', whereBase: '' }], { fs: swapped, caseInsensitive: false }).map((e) => e.name);
+    assert.deepStrictEqual(names, ['ok'], 'the swapped file is skipped, the plain one stays');
   });
   await test('vet: runs after the file and link checks, before the size check; its text is returned; Windows-like flags still read', () => {
     fs.writeFileSync(f('v'), 'x'.repeat(50));

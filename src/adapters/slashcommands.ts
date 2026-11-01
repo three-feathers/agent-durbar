@@ -95,7 +95,7 @@ export interface SlashFs {
   mtime(p: string): number;
 }
 
-const realFs: SlashFs = {
+export const realFs: SlashFs = {
   realpath: (p) => fs.realpathSync(p),
   lstat: (p) => fs.lstatSync(p),
   readdir: (p) => fs.readdirSync(p),

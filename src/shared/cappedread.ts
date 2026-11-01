@@ -1,5 +1,5 @@
 /**
- * The one capped, non-blocking, no-follow read of a file that a project or a user folder ships (issue #917, spec 083 T043).
+ * The one capped, non-blocking, no-follow read of a file that a project or a user folder ships (issue #917, spec 083 T062).
  * It had three copies (`notesfile.ts`, `mcp/auth.ts`, `adapters/slashcommands.ts`). It lives in `src/shared` so `src/adapters` and
  * `src/main` both use it. No imports (`docs/agent-notes.md`: a `src/shared` module with imports can no longer load in the page); the
  * file system and the open flags are passed in, so tests drive it with a fake or without `O_NOFOLLOW`, like Windows.
