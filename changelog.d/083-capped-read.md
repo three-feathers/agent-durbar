@@ -1,1 +1,0 @@
-- **Stricter reads of two files** (spec 083, issue #917): the connection key file and slash command files are now refused when they have a second hard link, and a slash command file is opened without following a link; all three capped file reads share one tested helper (`src/shared/cappedread.ts`). Checked by `test:cappedread` and the key file and slash command suites.
