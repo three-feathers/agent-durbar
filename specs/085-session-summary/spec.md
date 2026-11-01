@@ -41,6 +41,10 @@ Lounge bubble and daily briefing placement; vendor-reported numbers (Copilot `se
 
 ## Changes
 
+### 2026-11-01: the peek card's line is text (sweep of the build)
+
+The peek card takes no pointer and no keyboard (`pointer-events: none`, `aria-hidden`), so its *Show changed files* could never be used: the line now says the numbers and who counted them. The bubble's line opens the changed files, and the desk's label says the numbers.
+
 ### 2026-10-31: lounge bubble, daily briefing and vendor-reported numbers (issue #604, owner go 2026-10-23; the rest of the issue after #718)
 
 Existing capability checked first (spec 021 FR-031), all reused and none replaced: `agents:sessionSummary` and `SessionStarts.summarize` (the measured numbers), `window.DurbarSessionSummary` (the words), the spec 063 folder dialog (`showFolderStatus`, `gitStatus`) for "the changed-files list", the lounge's peek card and bubble (`restHTML`, `bubbleHTML`, spec 001 FR-052..FR-055), the **Since you were away** strip (`renderAwayStrip`, `app:sinceAway`, spec 052 FR-089; it is the only briefing the app itself shows, the *Start my day* template of spec 044 being an agent prompt), the `capabilities` flags with the adapter contract test (spec 012 FR-027), `scripts/fakes/copilot-sdk.ts` and `FakeAdapter`. Nothing in this delta depends on doors, cabins (#954) or the court and corporate themes (#948); the lounge here is the one that stays.
