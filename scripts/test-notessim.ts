@@ -39,8 +39,12 @@ async function main(): Promise<void> {
     const a = agents[0];
     const sameFolder = agents.find((x: AgentInfo) => x.id !== a.id && x.cwd === a.cwd);
     const elsewhere = agents.find((x: AgentInfo) => x.cwd !== a.cwd)!;
-    const N = sim as Required<Pick<DurbarApi, 'notesList' | 'notesSave' | 'notesAdd' | 'notesUpdate' | 'notesDelete' | 'notesDeleteAll' | 'notesStartOver' | 'notesSetFile' | 'onNotesChanged'>>;
+    const N = sim as Required<Pick<DurbarApi, 'notesList' | 'notesSave' | 'notesAdd' | 'notesUpdate' | 'notesDelete' | 'notesDeleteAll' | 'notesStartOver' | 'notesSetFile' | 'notesFileCount' | 'notesExport' | 'onNotesChanged'>>;
     assert.ok(Object.values(N).every((f) => typeof f === 'function'), 'every notes call exists on the simulator bridge');
+    // spec 083 T034b: the demo shows no save dialog and writes nothing; Remove folder's helper is not on the bridge
+    assert.deepStrictEqual(await N.notesExport(a.id), { ok: true, demo: true, message: 'Demo: nothing written' });
+    assert.ok(!(await N.notesExport('nobody')).ok, 'an unknown chat is refused');
+    assert.ok(!('forgetFolder' in sim), 'the demo\'s forget helper is not a bridge call');
     const events: string[] = [];
     const off = N.onNotesChanged((v) => events.push(v.fingerprint));
     assert.strictEqual(view(await N.notesList(a.id)).notes.length, 0);
@@ -70,7 +74,13 @@ async function main(): Promise<void> {
       assert.ok(!/ghp_|a1B2c3/.test(u.note!.text), 'sim update: masked');
       assert.ok(!(await N.notesUpdate(a.id, w.note!.id, 2, { title: 'a' + sep + 'b' })).ok, 'sim: a title with a control is refused');
     }
-    assert.deepStrictEqual(await N.notesSetFile(a.id, true), { ok: true, demo: true, message: 'Demo: no file written' });
+    // T042 (FR-060): the switch shows off, answers "Demo: no file written" and never turns on
+    assert.deepStrictEqual(view(await N.notesList(a.id)).fileSwitch, { on: false }, 'the demo switch is offered, off by default');
+    assert.strictEqual(view(await N.notesList(a.id)).file, undefined, 'no file state while off');
+    assert.deepStrictEqual(await N.notesSetFile(a.id, true, { exclude: true }), { ok: true, demo: true, on: false, message: 'Demo: no file written' });
+    assert.deepStrictEqual(view(await N.notesList(a.id)).fileSwitch, { on: false }, 'still off after the demo answer');
+    assert.deepStrictEqual(await N.notesFileCount(a.id), { ok: true, count: 0, exists: false, strayText: 0, repo: true });
+    assert.ok(!(await N.notesSetFile('nope', true)).ok && !(await N.notesFileCount('nope')).ok, 'an unknown chat is refused');
     assert.ok(events.length >= 4, 'changes are announced');
     off();
     const before = events.length;
@@ -104,6 +114,38 @@ async function main(): Promise<void> {
     const as = (await secret.listAgents())[0];
     const sn = view(await secret.notesList!(as.id)).notes;
     assert.ok(sn.length >= 1 && sn[0].hidden && sn[0].text.includes('[redacted]') && !JSON.stringify(sn).includes(GH.slice(6, 18)), 'the secret seed is masked, with its tokens built at run time');
+  }
+
+  // T042: the states drivers pick with simnotesfile=
+  {
+    const st = async (q: string): Promise<{ v: Extract<NotesView, { ok: true }>; c: Awaited<ReturnType<NonNullable<DurbarApi['notesFileCount']>>>; set: Awaited<ReturnType<NonNullable<DurbarApi['notesSetFile']>>> }> => {
+      const sim = make('?simnotesfile=' + q);
+      const a = (await sim.listAgents())[0];
+      return { v: view(await sim.notesList!(a.id)), c: await sim.notesFileCount!(a.id), set: await sim.notesSetFile!(a.id, false, { deleteFile: true }) };
+    };
+    const on = await st('on');
+    assert.deepStrictEqual([on.v.fileSwitch, on.v.file], [{ on: true }, { info: '2 lines of text outside notes in notes.md were removed.' }]);
+    assert.deepStrictEqual(on.set, { ok: true, demo: true, on: true, message: 'Demo: no file written' }, 'the demo never turns it off either');
+    const conflict = await st('conflict');
+    assert.ok(conflict.v.fileSwitch!.on && /merge conflicts/.test(conflict.v.file!.error!), 'conflict state');
+    assert.ok(/Could not write \.durbar\/notes\.md/.test((await st('writefail')).v.file!.error!), 'write-error state');
+    const missing = await st('missing');
+    assert.ok(!missing.v.fileSwitch!.on && /folder is not there/.test(missing.v.fileSwitch!.disabled!) && missing.v.file === undefined, 'greyed with a reason');
+    const ws = await st('workspace');
+    assert.ok(ws.v.fileSwitch === undefined && !ws.c.ok, 'not offered for a .code-workspace');
+    const ex = await st('existing');
+    assert.deepStrictEqual(ex.c, { ok: true, count: 4, exists: true, strayText: 0, repo: true });
+    assert.deepStrictEqual((await st('norepo')).c, { ok: true, count: 0, exists: false, strayText: 0, repo: false });
+    assert.deepStrictEqual((await st('stray')).c, { ok: true, count: 0, exists: true, strayText: 3, repo: true });
+    {
+      const sim = make('?simnotesfile=excludefail');
+      const a = (await sim.listAgents())[0];
+      const r = await sim.notesSetFile!(a.id, true, { exclude: true }) as { ok: boolean; excludeFailed?: boolean };
+      assert.ok(!r.ok && r.excludeFailed === true, 'excludefail: refused, the switch stays off');
+      assert.deepStrictEqual(await sim.notesSetFile!(a.id, true, { exclude: false }), { ok: true, demo: true, on: false, message: 'Demo: no file written' });
+    }
+    const un = await st('unreadable');
+    assert.ok(!un.c.ok && /cannot be read/.test(un.c.error), 'an unreadable file is refused');
   }
 
   // masking is a must: without it the simulator refuses to keep a note (fails closed)

@@ -6,7 +6,7 @@
  *     DURBAR_DRIVER=$PWD/scripts/shots-006-remove.js xvfb-run -a npx electron . --no-sandbox
  *
  * At both sizes: the folder menu (the ⋯ button on a room header, or right-click) lists New session, Schedules here, Notes (N)…, Rename…, MCP extras…, Cost, Hide and Remove folder; Remove from
- * it removes the room after the confirmation (Cancel keeps it). With one agent per folder (simrooms=solo) the chat header
+ * it removes the room after the confirmation, the app's own dialog with Cancel focused (Cancel keeps it; spec 083 T034b). With one agent per folder (simrooms=solo) the chat header
  * shows Remove folder, which removes that folder. Writes remove-folder-menu-<w>x<h>.png and remove-folder-chat-<w>x<h>.png.
  */
 const assert = require('assert');
@@ -40,13 +40,14 @@ module.exports = async (ctx) => {
     assert.deepStrictEqual(await js(`[...document.querySelectorAll('#modeMenu [data-fact] b')].map(b=>b.textContent)`), items, 'the ⋯ button opens the folder menu');
     await H.shot(path.join(OUT, `remove-folder-menu-${w}x${h}.png`), { prep: 'calm', delay: 200 });
     // Cancel keeps the room
-    await js(`(window.confirm=()=>false,true)`);
-    await js(`document.querySelector('#modeMenu [data-fact="rm"]').click()`); await until(`!document.getElementById('modeMenu')`, 'the menu to close after Cancel');
+    // spec 083 T034b: the question is the app's own dialog (askDialog), Cancel focused
+    const answer = async (label, what) => { await until(`!!document.querySelector('#modeDlg .dbtn')`, `the Remove folder dialog (${what})`); assert.strictEqual(await js(`(document.activeElement||{}).textContent`), 'Cancel', `Cancel is focused (${what})`); await js(`[...document.querySelectorAll('#modeDlg .dbtn button')].find(b=>b.textContent===${jsLiteral(label)}).click()`); await until(`!document.getElementById('modeDlg')`, `the dialog to close (${what})`); };
+    await js(`document.querySelector('#modeMenu [data-fact="rm"]').click()`); await until(`!document.getElementById('modeMenu')`, 'the menu to close');
+    await answer('Cancel', 'Cancel');
     assert.deepStrictEqual(await rooms(), before, 'Cancel keeps the folder');
     // Remove
     await js(openMenu); await until(menuItems, 'the folder menu again');
-    await js(`(window.confirm=()=>true,true)`);
-    await js(`document.querySelector('#modeMenu [data-fact="rm"]').click()`); await until(`document.querySelectorAll('#stage .room [data-door]').length===${jsLiteral(before.length - 1)}`, 'the folder to go');
+    await js(`document.querySelector('#modeMenu [data-fact="rm"]').click()`); await answer('Remove folder', 'Remove'); await until(`document.querySelectorAll('#stage .room [data-door]').length===${jsLiteral(before.length - 1)}`, 'the folder to go');
     const after = await rooms();
     assert.ok(!after.includes(target) && after.length === before.length - 1, `the folder is removed (${before.length} -> ${after.length})`);
     // one agent per folder: Remove folder in the chat header
@@ -55,8 +56,7 @@ module.exports = async (ctx) => {
     await js(`document.querySelector('#stage .desk[data-id]').click()`); await until(`!!document.getElementById('rmFolderBtn')`, 'the chat header');
     assert.ok(await js(`!!document.getElementById('rmFolderBtn')&&!document.getElementById('rmSessBtn')`), 'a single-session folder shows Remove folder, not Remove from office');
     await H.shot(path.join(OUT, `remove-folder-chat-${w}x${h}.png`), { prep: 'calm', delay: 200 });
-    await js(`(window.confirm=()=>true,true)`);
-    await js(`document.getElementById('rmFolderBtn').click()`); await until(`document.querySelectorAll('#stage .room [data-door]').length===${jsLiteral(solo.length - 1)}`, 'the folder to go from the chat header');
+    await js(`document.getElementById('rmFolderBtn').click()`); await answer('Remove folder', 'the chat header'); await until(`document.querySelectorAll('#stage .room [data-door]').length===${jsLiteral(solo.length - 1)}`, 'the folder to go from the chat header');
     const solo2 = await rooms();
     assert.strictEqual(solo2.length, solo.length - 1, `the folder is removed from the chat header (${solo.length} -> ${solo2.length})`);
   }

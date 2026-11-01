@@ -374,6 +374,10 @@ Q1-Q5 are answered (*Clarifications*, owner decisions, 2026-10-31). Their text a
 
 ## Changes
 
+### 2026-11-01: two faults in `src/shared/webpcheck.ts` (read-only pass, reproduced on macOS)
+
+`stripChunks` must not change its input: `Buffer.slice` shares memory, so a `Buffer` given to it lost its VP8X flags (0x3c became 0x10); a plain `Uint8Array` was safe. It now copies each part. A RIFF chunk of odd size is followed by a pad byte (FR-023's walker): a final odd chunk without it now counts as truncated, so `checkFrame` refuses the file and `stripChunks` returns `null`, where before both passed it. `test:` `npm run test:imagecheck`. The byte copy on #955 takes the same change.
+
 ### 2026-10-31: built-in crews get v1 motion (Q1b answered yes)
 
 - **Decision**: Paco (owner of spec 077, the crews) answered Q1b: yes. The built-in Cheeky and Prehistoric crews get the same v1 motion as My characters: the breathing bob, the pose cross-fade, the typing cue and the status glow. No art change, and no blink until he adds eyes-closed frames.
