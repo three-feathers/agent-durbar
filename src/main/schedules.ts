@@ -304,7 +304,6 @@ function editCandidate(input: Record<string, unknown>, prev: Schedule): Record<s
     loop: limitsOf(input.loop),
     // a limit is dropped only by an explicit `cap: null`; no key keeps it (and its spend, below)
     cap: input.cap === undefined ? prev.cap : input.cap,
-    ...(prev.mode === 'autopilot' ? { mode: 'autopilot' } : {}), // spec 099 FR-084: an edit never turns a refused schedule into one that runs
   };
 }
 
