@@ -545,6 +545,11 @@ module.exports = async (ctx) => {
     assert.strictEqual(set.sec, RGB(W['--surface']), 'Settings sections are the world surface');
     assert.strictEqual(set.ink, RGB(W['--ink']), 'Settings text is the world ink');
     await H.shot(path.join(OUT, `097-world-settings-${w}x${h}.png`), { prep: 'calm' });
+    // 2026-11-01 (spec 033 delta, issue 1010): the toggle switch follows the world: an on switch is the world's --sage-ink, its knob the world's surface
+    const sw = await js(`(()=>{const b=document.querySelector('#screen .swt.on');if(!b)return null;b.scrollIntoView({block:'center'});const cs=getComputedStyle(b),k=getComputedStyle(b.querySelector('i'));return {bg:cs.backgroundColor,knob:k.backgroundColor}})()`);
+    assert.ok(sw, 'Settings has an on switch');
+    assert.deepStrictEqual(sw, { bg: RGB(W['--sage-ink']), knob: RGB(W['--surface']) }, 'the on switch follows the world');
+    await H.shot(path.join(OUT, `097-world-switch-${w}x${h}.png`), { prep: 'calm' });
     await js(`document.getElementById('scrClose').click()`);
     // a dialog: the keyboard shortcuts sheet, frosted glass on a warm scrim
     await js(`document.getElementById('kbdHelpBtn').click()`);
