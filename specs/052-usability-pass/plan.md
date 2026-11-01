@@ -96,8 +96,8 @@ The renderer only: `src/renderer/app.js`, `screens.js`, `index.html`, `styles.cs
 
 ## FR-191..FR-205 (2026-11-01): the Needs you panel
 
-- **Order.** Not before the Retro world (owner) and #994's request binding are on `main`. Owner's answers to Q-NY-1..Q-NY-16 first (`/speckit.clarify`); the spec's "proposed" lines become decided or change. Re-read `paintInbox()` then: #994 moves its button helpers.
-- **Existing capability reused:** see the delta's table. No new list, no new store, no new IPC. One new setting only if Q-NY-16 says so (the `notifyNeedsMe` path).
+- **Order.** Not before the Retro world (owner) and #994's request binding are on `main`. Q-NY-1..Q-NY-16 are agent decisions of 2026-11-01, told to the owner and reversible by him; a reversal changes the spec first. Re-read `paintInbox()` then: #994 moves its button helpers.
+- **Existing capability reused:** see the delta's table. No new list, no new store, no new IPC. One new setting, Q-NY-16's switch (the `notifyNeedsMe` path).
 - **Pure part.** `createArrivals()` in `attention.js`, next to `createNotifier()`, with the same injected clock; unit tests in `test-attention`. The notifier stays as it is, because its forgetting is right for OS notifications.
 - **The page part.** `openInbox()` and `closeInbox()` stay the entry points, gaining a "moved by itself" path that touches no focus. `paintInbox()` becomes a keyed update. `#inboxDlg` keeps its id, so drivers change as little as possible. `inboxKey` gains `e.repeat`, drops the Tab trap, and handles a key only with focus inside.
 - **Placement.** Absolute inside `.workspace`, which also holds the floor, the list and the chat, so it never enters the flex layout. Anchored below the top bar and any notice strip, whose height comes from the workspace, not a fixed number. Stacked under toasts, popovers and dialogs. `.dlg` no longer applies, so `html[data-density="compact"]`'s selector list and the world CSS that blurs dialogs are checked.
