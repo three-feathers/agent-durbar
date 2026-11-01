@@ -136,3 +136,8 @@ Numbers: T165..T170; FR-191..FR-194.
 - [x] T169 [US1] Docs: changelog fragment, `docs/limits.md` size and facing note, spec tags (the README states no pack size, so none to change). Test: `npm run changelog:check`, `specs:check` [FR-193]
 - [ ] T170 [US1] Owner look at the lobby screenshots; a real mirrored-picture check by pixels if a side ever changes. Test: `real:` owner verdict [FR-191]
 
+
+## 2026-11-01 delta: the chat in the world inside the denser chat (design sweep, FR-224..FR-227; PR #1001)
+
+- [ ] T171 On #1001's branch, after spec 005's chat PRs: measure, then 32 px portrait, header 61 px, lamp words on the task line. Test: `sim:` `shots-097-chat` at both sizes, both worlds; mutants: 64 px, words back on the meta line [FR-224, FR-225, FR-227]
+- [ ] T172 No literals in `realoffice-world.css` or #1001's chat rules; the art rules in `realoffice.css` under spec 070's ratchet. Test: `test:theme-tokens` (T022 of spec 070) [FR-226]

@@ -127,3 +127,24 @@ IDs start after T083.
 - [ ] T110 Persistence: simulator-only `stripstore=1` option; reload keeps order and favourites; an ended agent's id is gone from the saved key. Test: driver step with `until()` after reload [FR-184, FR-185]
 - [ ] T111 15 agents with 4 favourites at 1440x900 and 1280x800: favourites are the first four, no overlap, the office/chat/header boxes equal the baseline, reduced motion has no drag animation, the six themes alike (`check:geometry` stays as is). Test: driver + `check:office` unchanged [FR-187]
 - [ ] T112 Docs and shots: README (feature + shortcut), changelog fragment, retake `m6-fullchat-sim15-*.png` with `npm run shots:docs`, tick tasks, spec status and `[IMPLEMENTED]` tags, `npm run specs:check` and `changelog:check` [FR-178..FR-189]
+
+## 2026-11-01 delta: the agent rail, chat density and width (design sweep, FR-190..FR-208)
+
+PRs, gates and line-count goals: `plan.md`. Each PR measures on `main` first and writes the numbers in its description. All wait for T220 (052) and #1011. **No rail task starts before T125:** the rail's form is pending the owner's look.
+
+- [ ] T117 [PR C1] Measure first, today's 103 + 31 + 32 = 166 px. Goal: header, tabs and *Previous sessions* on one row, 61 px with the task line under it. Fallback only if the one row fails at 1280x800 by FR-199's test: header 61 px and one 31 px row. State the measurement in the PR (free width, what was cut, which form shipped); also record the free width at a chat 1060 px wide, for the rail's look. Test: new `check-chat-density` header steps at both sizes, longest name, mutant that cuts a control; `check-chat-title`, `check-composer-toolbar` still pass [FR-199]
+- [ ] T118 [PR C1] Composer 122 to 91 px with Stop visible at both sizes; hint on the chips' row. Test: `check-chat-density`, `check-composer-toolbar` [FR-200]
+- [ ] T119 [PR C2] Measure first, targets 575 to 442, 649 to 509, 1358 to 1167 px. Then plain answers; the person's bubble stays; agent meta clipped, not removed. Test: heights within 16 px, accessible text unchanged, Compact and Simple [FR-201, FR-203, FR-205]
+- [ ] T120 [PR C2] Quiet tool rows and thinking with a left rule; failed, waiting and open states keep a box. Test: `check-chat-density`, `check-edits`, tool chip keyboard; mutant: a failed call with no box [FR-202]
+- [ ] T121 [PR C2] Copy and message menu on hover and focus, always in the tab order, visible for `hover:none` and an open menu; FR-173 and 052 FR-010 rewritten. Test: real pointer and Tab; `check-notes`; mutant: `display:none` [FR-204]
+- [ ] T122 [PR W] Measure first, targets 126 letters a line at 1440, 1920 and 2560 (146, 149 and 149 today). Then `--chat-prose`; 880 px and following 1240 px rules go. Test: new `check-chat-width`; `check-ui-text`; mutant: cap removed [FR-206]
+- [ ] T123 After T125, with Paco's yes of 2026-11-01 recorded in FR-198: rewrite FR-178, FR-180, FR-182, FR-185..FR-188 and T099..T112 for the rail's form [FR-198]
+- [ ] T124 [PR W] Last chat PR: `check-chat-density` asserts the log without a rail, 669 and 569 px (638 and 538 on FR-199's fallback) within 8 px with the restore bar still there (calculated; measure first), Flat and Real; pictures retaken at both sizes (`npm run shots:docs`), docs (`features.md`, README), older FRs changed in place [FR-195, FR-208]
+
+### The rail: nothing here starts before T125
+
+- [ ] T125 The owner looks at the mocks and picks the rail's form, list or floor plan. Record it in the spec; if not the list, rewrite FR-190..FR-197, 052 FR-215 and the rail tasks below before any build [FR-190..FR-197]
+- [ ] T113 [PR R1] Measure first: `scripts/check-rail.js` on `main` records log, share, characters, strip and chrome rows at both sizes and fails on the rail's assertions. Targets for this PR: FR-195's rail columns (717 and 617 px) [FR-195, FR-207]
+- [ ] T114 [PR R1] `renderStrip` becomes the rail, `.strip` goes: `stripAgents()` extended to groups and order; keyed rows kept; `body.panel-open` lays out rail plus panel; Office in the top row. Test: `check-rail` order and fit, `.sitem`-reading drivers follow [FR-190, FR-191]
+- [ ] T115 [PR R1] Two heights and age in words; try tall rows at 52 px (else 60 px and 34 px of scroll, FR-196); measure text contrast on tall rows and set the tint to 4.5:1. Test: `check-rail` heights by clock, contrast; mutants: a third height, a wait-driven height [FR-192, FR-193, FR-196, FR-197]
+- [ ] T116 [PR R2] Collapse under about 1100 px, hide and bring back, palette command, per-window memory, moving the Office, amber and lock controls when hidden. Test: `check-rail` at 1024x768, keyboard route, names kept; mutant: hiding drops the amber count [FR-194]

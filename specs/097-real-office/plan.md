@@ -101,3 +101,7 @@ Passes; see spec *Constitution check*. No new runtime dependency; no IPC; no ada
 - **Bubble and slip**: the inbox/answer-bar component renders into a bubble or slip frame (098 blocks); placement through `zoomRect` (FR-034) with plates, chips and the lift in the avoid list (FR-108..FR-110).
 - **Grounding**: `realLayout`'s lobby step places standing frames by `floorLine` and scales them by fixture px-per-metre (FR-117); the contact shadow is a CSS ellipse in the same rect.
 - **Checks**: spec 098's `test:surfaces`, `test:world-packs`, token lint and world matrix hold the worlds; 097's `check:office` Real office variant runs per world for the fit, grounding and contrast checks.
+
+## The chat in the world inside the denser chat (delta 2026-11-01; FR-224..FR-227)
+
+Order: row 9 of [spec 005's plan table](../005-chat-fullscreen-and-agent-strip/plan.md). #1001's branch is changed in place on top of the chat PRs: CSS size for the portrait, `lampWords` moved in the header painter, tokens in place of literals. No new file. Constitution V: the header keeps its target with the world on. FR-113 and FR-130 stand.

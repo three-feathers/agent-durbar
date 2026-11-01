@@ -168,3 +168,49 @@ specs/005-chat-fullscreen-and-agent-strip/
 **Constitution check.** I (adapters): untouched. III (safe, no secrets): ids only in `localStorage`, no logging. IV/V (calm, legible): 10.5px, 48px strip, no new motion beyond the drag. VI (parity): Alt on Windows/Linux, Option on a Mac; no POSIX assumptions. VII (gates): test + driver + shots. VIII (honest limits): the gaps in the spec.
 
 **Risks.** `app.js` is shared with other open work: merge `main` first. The keyed morph must not drop focus or a drag in progress during the 30 s repaint tick and on status events: the renderer defers a strip repaint while a drag is active (T106).
+
+## 2026-11-01 delta: the design sweep's build order (one table for specs 005, 006, 052, 070, 097; FR-190..FR-208 here)
+
+**This table is the order.** The sweep's order, after D1 and K2, each row one small PR with a driver test. "Measure first" means the PR's first commit runs its driver on `main`, writes the numbers in the PR description and only then builds to the target. If a measurement disagrees with a target by more than the tolerance in the spec, the PR says so and asks; it does not move the target. Numbers from `main` at the sweep (`c5f039a1`). **Net** says whether the PR should remove more lines than it adds, counting `src/` only, with new drivers and tests apart.
+
+**Gates.** D1 and K2 go first. **Retro arcade (spec 102: #1005, #1006, #1007 and what its plan builds next) stays ahead** unless the owner says otherwise. **The rail's form, list or floor plan, is pending the owner's look (T125), and no rail build comes before it,** so its rows are last and rows 3 to 10 do not depend on it. The token and control track runs alongside. Settings waits for spec 102 to remove themes.
+
+| # | PR, branch | Tasks | Driver | Measure first, target | Net |
+|---|---|---|---|---|---|
+| 1 | **D1** `052-needs-you-text` | 052 T220 | new, plus pure test | Reproduce "search_companies)Allow…" on `main`; none left | No: a small fix |
+| 2 | **K2** #1011 (open, on main) | 052 T221; #1011's own | `shots-033` | `.swt.on` 2.47:1 to 6.08:1 and 6.92:1 | Yes: `.fl-sw` goes |
+| | *Gate: Retro arcade lands* | | | | |
+| 3 | **C1** `005-chat-header` | 005 T117, T118, 006 T066 | new `check-chat-density` | Header, tabs and Previous on one row, 166 to 61 (fallback at 1280x800: 61 + 31, measurement stated); composer 122 to 91 | Yes: overrides and wrap rules go |
+| 4 | **C2** `005-chat-density` | 005 T119..T121 | `check-chat-density` | 575 to 442, 649 to 509, 1358 to 1167 px | Yes: box rules go |
+| 5 | **W** `005-chat-width` | 005 T122, T124 | new `check-chat-width`, full FR-195 | 126 letters at 3 widths; log 669 and 569 px without a rail (calculated; 31 less on the fallback) | Yes: 880 and 1240 px rules go, one token |
+| 6 | **N1** `052-notices-card` | 052 T212, T213 | new `check-notices` | Three bars 93 px, desks move; no desk moves; red lock | No, until row 7: the surface first |
+| 7 | **N2** `052-notices-out` | 052 T214, 006 T065 | `check-notices`, `shots-006-crash` | No `.notice-strip` left; log 700 and 600 px (calculated; 31 less on the fallback) | Yes: three painters and their CSS go; rows 6 and 7 together remove more than they add |
+| 8 | **Needs you** #1002's build | 052 T196..T202, T215 | `check-needs-panel` | Composer hidden 44 and 204 to 0 px; chat keeps window less 360 px, less the rail if one comes | No: a feature, itself gated on Retro and #994 |
+| 9 | **#1001, what is left** | 097 T171, T172 | `shots-097-chat` | Header 139 to 61 px; log 700 and 600 px (31 less on the fallback) | Yes: a smaller portrait, moved words, literals gone |
+| 10 | **S** `052-settings-nav`, after spec 102 removes themes | 052 T219 | new `check-settings-nav` | 7238 px, 22 headings re-measured; each section one jump | Yes with themes gone; no alone |
+| | *Gate: the owner's look at the rail's form, T125. Rows below are the list form and are rewritten if he picks a floor plan* | | | | |
+| 11 | **R1** `005-rail` | 005 T113..T115, 052 T222 | new `check-rail`, `test-macos` | Log to FR-195's rail columns; two heights; 1280: scroll 34 px or none; contrast 4.5:1 | No: about 22 strip rules go, groups and tall rows arrive. Ceiling +120 lines |
+| 12 | **R2** `005-rail-collapse` | 005 T116 | `check-rail` | 52 px under 1100 px; nothing lost when hidden | No: small addition |
+
+*Alongside, any time after row 2 (spec 070's Phase 3 and spec 052's controls):*
+
+| # | PR, branch | Tasks | Driver | Measure first, target | Net |
+|---|---|---|---|---|---|
+| A1 | `070-token-lint` | 070 T022 | `test:theme-tokens` with mutants | Commit real counts (386, 114, 221; 570, 291, 344; 305; 127; 99) | No: adds a script, no visual change |
+| A2 | `070-wb-registry` | 070 T023 | fixture pack in `test:theme-tokens` | Confirm the drop first; 0 dropped after | No: registry grows |
+| A3 | `052-toggle-rule` | 052 T216 | `check-ui-text`, screen drivers | 17 checkboxes, 9 switches: immediate ones moved | Yes, with `sw()` |
+| A4 | `070-component-tokens` | 070 T024 | `test:theme-tokens`, `check:perf` | World switch row unchanged | Yes, once literals fold |
+| A5 | `052-accent` | 052 T217 | `check-ui-text` | No browser blue; ratchet lowered | No: a few lines either way |
+| A6 | `052-info-notes` | 052 T218 | `check-ui-text` | `.note.info` not amber | No: small |
+| A7 | `070-shadows` | 070 T025 | `check-ui-text`, `check:office` | 34 shadows to 4 on screen | Yes |
+| A8 | `070-type-scale` | 070 T026 | `check-ui-text`, `check:geometry` | 14 sizes to 6, 8 weights to 3, chrome only | Yes |
+| A9 | `070-control-heights` | 070 T027 | `check-ui-text`, top bar fit | 7 heights to 4 | Yes |
+| A10 | `070-radii` | 070 T028 | `check-ui-text` | 21 radii to 6 | Yes |
+| A11 | `070-ui-helpers` | 070 T029 | existing drivers | 99 button class sets falling | Yes over time; not its first PR |
+| A12 | `070-font-smoothing`, no new font (FR-058 of spec 070) | 070 T030 | `test-macos` pins the choice | Real Mac at 2x and 1x: `antialiased` against `auto`; the Mac owner picks | No: one line either way |
+
+**Risks.** `app.js` is shared with many open PRs: merge `main` first, and small PRs help. About 23 drivers read `.sitem` or `.strip`; R1 updates them in one go and keeps `data-sw` so most need only a selector. The rail's rows change if the owner picks a floor plan; where FR-198's order shows waits for that (Paco agreed the rule on 2026-11-01); no other row waits for it. Numbers here come from a mock on one Linux machine: a measure-first run may disagree, which is why it comes first. A list rail removes the Mac's drag strip, and no one here can test that: 052 FR-215.
+
+**Constitution check.** I: this spec-only PR comes first. II: renderer only, plus a registry entry. III: no safety rule changes; 003 FR-026 stands and 052 FR-219 keeps a warning findable. IV: simulator only. V: text never smaller, 10.5 px floor, 15 agents fit both sizes, and, if the list rail is picked, a rail scroll limited as FR-196 says. VI: Mac rules in 052 FR-215; Windows and Mac rendering unverified here (`[KNOWN GAP]`). VIII: each number says measured, mock, calculated or reasoned.
+
+**Existing capability check (FR-031 of spec 021).** No new tool, library or component: `renderStrip`, `toastActions`, `mountToast`, `holdTimer`, `sw()`, `requestText`, `needsMe`, `test:theme-tokens`, `check-ui-text`. New files: drivers, `scripts/inventory.js`, and later `src/renderer/ui.js` (FR-056 of spec 070).

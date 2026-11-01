@@ -4,7 +4,7 @@
 group: 046
 title: Full theme tokens: typed tokens for fonts (system allow-list, no downloads), title weight, radii and shadows; the people's clothes and hair; cup and laptop slots; per-value fallback with a note, pair-wise contrast fallback, hostile values refuse the pack; AI maker extended; a ratchet on the renderer's colour literals
 status: building
-note: phase 1 built; T020 remaining colour literals onto tokens open
+note: phase 1 built; T020 remaining colour literals onto tokens open; phase 3 (tiers, closed world list, size lint, app font) specified
 -->
 
 **Feature Branch**: `070-theme-tokens`
@@ -120,3 +120,69 @@ The `status:` of the specs-index block used to read (moved here unchanged; the b
 
 - **D3 delta.** In the `crew` scene kit only, a character's skin tone comes from its portrait and its cast entry (`CAST` in `crew.js`), not from the agent's hash: skin tones stay varied across the cast (spec 077 Q1.2). Every other kit and the plain fallback figure keep D3.
 - **FR-040 delta.** The ratchet counts code, not bitmaps: the portraits under `src/renderer/crew/` are fixed-colour pictures governed by spec 077 FR-050..FR-056 (`test:crew-assets`) instead. `crew.js` holds the cast's hand and sleeve colours and is outside the scanned files; `scenekits.js` gains no colour literal.
+
+### 2026-11-01: Phase 3, tiers, a closed world list, a size lint and the app's font (design sweep; FR-051..FR-059)
+
+**Status: specified, not built.** Source and owner decision: spec 005's delta of this date. **No new tool:** the owner accepted extending what exists. Compared and not chosen: Style Dictionary (v5.7.1, 13 dependencies, only helps a second platform, which this app has not; reconsider if tokens must feed something non-CSS) and a component library or framework (Tailwind, Radix Themes, Lit: a rewrite of 2513 CSS rules and 330 button sites; Radix needs React; none helps worlds, which arrive as data at run time and carry no CSS). The problem is enforcement. Sizes from `npm view` on 2026-11-01; nothing was installed, and no trial migration was run.
+
+*What exists and stays:* `CLEAN_TOKENS`, `TYPED_TOKENS`, the two pinned copies (FR-001), `checkUserManifest`, `themeIssues`, `contrastFix`, D2, D4..D6, `--t1..5`, `--s-1..5`, `--h-*`, `WORLD_SETS`, `test:theme-tokens`, and 098 FR-040's extension of the lint. *Measured against the house rules (`docs/design-rules.md`):* 386 literal `font-size` declarations against 92 through a token; 14 font sizes on screen against 5 allowed.
+
+- **FR-051** **Three tiers.** **Tier 1**, sizes, app-owned, no pack can touch them (D2): `--t1..5` plus `--t-tag`, `--s-0..5`, `--h-ctl`, `--h-sm`, `--h-chip`, `--h-switch`, `--chat-prose` (005 FR-206), elevation. **Tier 2**, semantic, the closed list of FR-052. **Tier 3**, component: always `var()` of tiers 1 and 2, added only when two places share a value, never set by a pack, for example `--btn-h`, `--btn-primary-bg`, `--switch-on`, `--switch-off`, `--note-info-bg`, `--pop-shadow`, `--overlay`. No colour-primitive tier: a pack's values are its primitives.
+- **FR-052** **A closed list of what a world may set.** Surfaces `--bg --surface --surface-2 --raised --soft --note`; text `--ink --ink-2 --muted`; lines `--line --line-2 --line-ctl`; action `--accent` (today `--sage-ink`, aliased first), `--accent-soft` (today `--sage`), `--focus --sel-border --sel-ring`; danger and warning `--red-ink --amber-ink --warn-bg --bad-bg`; the bar `--wb-*`; shape and type `--r-sm..xl --shadow-card --shadow-pop --font --font-mono --ui-display --t1-weight`. About 45 names against 152 today; `read:` a proposal from `WORLD_SETS` and the CSS, and a real pack may add a few, each by a spec line. Status colours (`--c-*`, `--pb-*`, `--pc-*`) are not on it (`docs/world-design.md`); `--tone-*` stays derived; flat scene slots stay outside it. **FR-130 of spec 097 stands:** a world's own set changes colours and the two shadows, so fonts and radii on the list apply to a pack, not to the Photo office. Enforcement stays D5 and D6: dropped with a count, or refused if hostile. Scope: a world pack; the 152 stay for themes until spec 102 removes those.
+- **FR-053** **`--wb-*` joins the registry.** `read:` they appear in `theme.js` and a test, not in `src/shared`, so a downloaded pack's `--wb-*` would be dropped as unknown and could not set its bar, although spec 102 says the bar follows the pack. The `--wb-*` pairs of `WORLD_PAIRS` join the shared contrast check. `test:` a fixture pack sets them and imports with no drops, and a failing pair is repaired. Needed before the first downloaded world; coordinated with spec 102's branches. The test confirms the gap first, since no pack was imported in the sweep.
+- **FR-054** **A ratchet for sizes, weights, radii and shadows.** `tools/inventory.js` from the sweep moves to `scripts/`, with a baseline fixture, and its `--check` runs inside `test:theme-tokens`, with no second lint. Like FR-040, a count over the baseline fails and a count under it fails until lowered in the same change.
+
+  | Check, chrome rules; office selectors counted apart | Start |
+  |---|---:|
+  | `font-size`, `line-height`, `font-weight` literals | 386, 114, 221 |
+  | `padding`, `margin`, `gap` off the scale | 570, 291, 344 |
+  | `border-radius` that is not a token, 999px or 50% | 305 |
+  | `box-shadow` literal outside tokens | 127 |
+  | A tier 3 name in a pack or `WORLD_SETS`; a pack token off the list | 0 from the start |
+  | New `<button>` class set not in the fixture | 99 |
+  | Measured in `check-ui-text`: distinct font sizes or control heights on a surface over the scale | Warn, then fail |
+
+  The numbers are the sweep's; the first run commits what it finds on `main`. **Why this may stall:** T020 has been open since 2026-10-21 and a ratchet stops growth, not a backlog. So migrations are tied to something the owner sees: chat, toggles and dialogs first, the office last and maybe never (`check:geometry`, `check:office`). A checkbox that acts at once cannot be linted: a review line (052 FR-222).
+- **FR-055** **The scale.**
+
+  | Token | On screen today | Proposal | Values |
+  |---|---:|---:|---|
+  | Font size | 14 | 6 | 10.5 (tags only), 11, 12, 13, 14, 16 |
+  | Font weight | 8 | 3 | 400, 500, 600 |
+  | Radius | 21 | 6 | 6, 10, 14, 18, pill, circle |
+  | Shadow | 34 | 4 | none, card, pop, focus ring |
+  | Space | 30 | 6 | 2, 4, 8, 12, 16, 24 |
+  | Button height | 7 | 4 | 32, 28, 24 icon, 22 switch |
+
+  Snapping the chrome to it in the running app changed 108 to 398 styles per screen, with nothing under 10.5 px and nothing clipped, and the office left alone. 46% of text is bold; `read:` the sweep thinks much of the heavy look comes from that. **It changes older text when built:** design rule 1 (2 heights), `--t1` and `--t2`'s 650 to 600 (FR-098 of 052), and the 8 px radius family. FR-002's `--t1-weight` grammar (500-800) stays while themes exist. The 10.5 px floor stays. It applies to chrome; desk cards, rooms and the lobby keep their sizes.
+- **FR-056** **Control helpers, no library.** One small `src/renderer/ui.js` (`Ui.btn`, `Ui.switch`, `Ui.chip`, `Ui.note`) returning escaped strings, as `sw()` in `screens.js` does. A site moves when it is touched. `@layer` is allowed once literals settle; neither `@layer` nor `@property` has been tried here.
+- **FR-057** **World switch cost.** The sweep reasoned that tier 3 adds no runtime cost. `check:perf`'s world-switch row (097 FR-178) must not move when T024 lands; that is the measurement.
+- **FR-058** **The app's font: keep the current stack. Nothing clearly wins.** The owner asked (2026-11-01) for a crisper font if one exists, and left the choice to the agent. **Decision: no bundled font; `--font` stays `system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif`.** It resolves to Segoe UI on Windows, the system's San Francisco on macOS, and whatever fontconfig gives on Linux (Noto Sans on the test machine, DejaVu Sans on CI). No font ships with the app today, and `--font-mono` and the fallback are unchanged. The agent's decision, accepted by the owner on 2026-11-01.
+
+  *How it was judged.* Real chat, cards and top bar, plus a specimen at 10.5, 11, 12, 13 and 14 px in weights 400 and 600, in the simulator under xvfb at device pixel ratio 1 and 2. Candidates were loaded from their own official files into the running page: Inter 4.1 (plain and its hinted build), IBM Plex Sans 3.005, Source Sans 3.052, Geist 1.800, Noto Sans (the hinted file), against the current stack and DejaVu. Measure: of the pixels a glyph touches, the share that are mid-grey rather than solid; lower is crisper. Two fontconfig settings stand in for other systems, **as proxies only**: full hinting with subpixel order (FreeType's v40 mode, close in kind to DirectWrite) and no hinting in grey (close in kind to macOS at 1x).
+
+  | Mid-grey share, weight 400, 11 px / 13 px | Current here (Noto) | Inter | Plex | Source Sans | Geist |
+  |---|---:|---:|---:|---:|---:|
+  | This Linux, slight hinting, ratio 1 | .79 / .73 | .74 / .73 | .75 / .72 | .75 / .73 | .72 / .74 |
+  | Windows proxy, ratio 1 | .65 / .71 | .64 / .70 | .63 / .76 | .69 / .75 | .69 / .74 |
+  | macOS proxy, ratio 1 | .81 / .72 | .79 / .67 | .82 / .74 | .79 / .73 | .79 / .64 |
+  | This Linux, ratio 2 | .54 / .47 | .52 / .46 | .56 / .52 | not run | .54 / .47 |
+
+  **What that says.** The candidates sit within about .05 of each other, and the order changes from row to row and size to size. The screen's pixel ratio moves the number about .25 and the hinting mode up to .14, each more than any font. Beside that, on the two systems most users have, the current stack is not a font we can beat here: Segoe UI and San Francisco are the systems' own, and neither can be rendered on this machine. An unhinted bundled font on a Windows screen at 100% risks being worse than Segoe UI (reasoned, not seen). The plain Inter file has no hinting tables at all (no `fpgm`, `prep`, `gasp`); Plex has small ones; Geist and Noto are autohinted; the Source Sans TTF has none.
+
+  | Other things weighed | Current | Inter | Plex | Source Sans | Geist | Noto hinted |
+  |---|---|---|---|---|---|---|
+  | Size for 400, 500, 600, 700 (KB) | 0 | 455 (352 variable) | 260 | 436 | 185 | 2500 as TTF |
+  | Digits | Tabular here | Proportional, needs `tnum` | Tabular | Tabular | Proportional, needs `tnum` | Tabular |
+  | Greek, Cyrillic, Latin extended | System | Yes | Yes | Yes | **No Greek** | Yes |
+  | Devanagari, Arabic, CJK | System | System fallback | System fallback | System fallback | System fallback | System fallback |
+  | Top bar free width at 1280, px | 75 (DejaVu 0) | 63 | 93 | 139 | 77 | 80 |
+  | x-height (of the em) | Noto .536 | .546 | .516 | .486, reads small at 10.5 px | .530 | .536 |
+  | Licence | n/a | OFL | OFL | OFL | OFL | OFL |
+
+  Size is no obstacle (the art pack is 5.88 MB of 10 MB, and there is no package budget). The costs are elsewhere: a bundled face needs `font-src 'self'` in a CSP that names none today, so `@font-face` is blocked, and two tests pin that CSP as unchanged (077 FR-057, 097 FR-060); `--font`'s default must then be on the allow-list (FR-040), and D1 stays for packs. Names in other languages would mix the bundled face with the system's in one line, as they mix system faces now. If the owner still wants one look everywhere, **Inter is the candidate**: its number is no worse than the current stack's in any row above, and it has the candidates' widest symbol coverage and a width near Noto's; it would not be crisper, only the same everywhere.
+
+  **What does make text look heavy, and is measured: bold.** On a system with only Regular and Bold faces (the test machine's Noto Sans), weights 500 and below render Regular and 550 and up render **Bold**. At 13 px, weight 600 prints 57% more ink than 400 in today's stack, and 37% with a real SemiBold (Noto's own SemiBold, 13% less ink and 2% narrower than the Bold shown today). So the sweep's "46% of text is bold" costs most exactly where no semibold exists. FR-055's fewer weights are the crispness work, and T026 uses 600 only where emphasis is meant, knowing 500 may read as 400 on such a system.
+
+  **One property to test on a real Mac.** `body` sets `-webkit-font-smoothing:antialiased`, which only macOS honours and which thins strokes. T030 compares it with `auto` on a real Mac at 2x and on a 1x screen; the Mac owner picks. `[KNOWN GAP]` nobody could run it here.
+- **FR-059** **Not checked, for the font.** Source Sans at ratio 2 (no Electron slot was free; it was already behind on x-height at 10.5 px). Segoe UI and San Francisco themselves; any real Windows or macOS rendering, ClearType settings, or Windows display scaling; the proxies are FreeType, not DirectWrite or Core Text. Geist and Inter's `tnum` at every number site. Whether a font feels crisper to a person: a pixel share is a stand-in, and the pictures are for the owner's eye. Side-by-side pictures, for each of the four settings (specimen, 4x zoom, chat, cards, top bar), are in the sweep's working folder, not the repo; the owner has them on request.

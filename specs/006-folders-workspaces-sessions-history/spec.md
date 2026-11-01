@@ -324,3 +324,11 @@ Why: when Durbar is killed, crashes or the machine stops while agents are workin
 
 ### 2026-10-27: + Folder can also create a folder (cross-reference; owned by spec 093, issue #805)
 Spec 093 adds a choice to **+ Folder** (FR-001 here): add an existing folder (unchanged), or create one (clone a repository, a new local repository with `git init`, or an empty folder). The created folder is added through the same `addMany` path, in the top bar's mode like Add existing (default Read-only; owner answer Q2 = b, 2026-10-27). Requirements, security model and tasks are in `specs/093-create-folder/`; nothing in this spec changes until it is built.
+
+### 2026-11-01: the sidebar option closes; the crash card floats (design sweep; spec 005 FR-190, spec 052 FR-218)
+
+**Status: specified, not built.** The owner accepted the sweep's recommendations on 2026-11-01 (spec 005's delta).
+
+- **The "collapsible left sidebar of chats" row and the owner question closes.** The patterns table above kept a left rail as an owner option (the *Corrected* block's "Q1: Disclosure section above the chat (built) or a left rail…"). Answer: **the section stays for previous sessions; no sidebar of chats.** The agent rail (005 FR-190, its form pending the owner's look) lists the **running agents** the strip listed, not history, so *Previous sessions* stays a disclosure, FR-033 otherwise unchanged. The table's reason "would lose its 880px measure" no longer holds either, as 005 FR-206 replaces that column; the decision does not rest on it.
+- **FR-033, its place only.** The collapsed row joins the chat header's row with the tabs (005 FR-199), or on that spec's fallback shares one 31 px row with the tabs. The button, count, breakdown and the expanded lists stay.
+- **FR-041, its place only.** "One strip under the top bar" becomes a card on the one floating surface (052 FR-218): the same words and the same *Resume all*, *Pick…* and *Dismiss*. FR-042..FR-046 stay, and it no longer moves the office's lounge corners, so the lounge rule in FR-041 falls away with `#crashStrip`; `check:office` shows it. `shots-006-crash` follows (T065).
