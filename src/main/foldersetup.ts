@@ -11,7 +11,7 @@ import { createHash } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { NAME_RE } from '../shared/mcp';
-import { maskTokenShapes, secretFlag, shQuote } from '../shared/redact';
+import { maskBareTokenShapes, secretFlag, shQuote } from '../shared/redact';
 import type { McpServerSpec } from '../shared/mcp';
 import { isBroadRule } from '../shared/foldersetup';
 import { stripTomlComment, tomlStringArray, tomlUnquote as unq } from './codextoml';
@@ -49,12 +49,12 @@ export const MAX_SHOWN = 8000;
 /**
  * FR-014 / FR-016 (review #424): what a hook command or a rule shows. Only real token shapes are hidden (GitHub and OpenAI/Anthropic
  * keys, bearer tokens, JWTs, AWS keys): their classes cannot contain shell syntax, so `--auth=$(curl …|sh)` or a backtick payload is
- * always shown. The shapes are `redact`'s own (`maskTokenShapes`, spec 012 FR-080), not a copy, so a token after `_` is hidden too.
+ * always shown. The shapes are `redact`'s own (`maskBareTokenShapes`, spec 012 FR-080), not a copy, so a token after `_` is hidden too.
  * The flag- and name-based masking used for MCP arguments is NOT used here: it let a repository choose what is hidden.
  * `hidden` marks that something was replaced, so the window shows it and leaves the item unticked.
  */
 export function shownCommand(cmd: string): { text: string; hidden: boolean } {
-  const text = maskTokenShapes(cmd, '[secret hidden]');
+  const text = maskBareTokenShapes(cmd, '[secret hidden]');
   return { text, hidden: text !== cmd };
 }
 

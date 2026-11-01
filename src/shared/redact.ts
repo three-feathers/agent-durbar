@@ -1,6 +1,7 @@
 /**
  * Secret redaction (spec 012 FR-006, constitution III). Pure: no Electron, no Node-only imports, so it is unit-tested.
- * Everything that reaches the `DURBAR_LOG` debug log, and later vendor stderr, goes through `redact` first.
+ * Everything that reaches the `DURBAR_LOG` debug log, and vendor stderr, goes through `redact` first.
+ * What the mask covers and misses, against public lists: `specs/012-claude-codex-adapters/secret-coverage.md`.
  */
 
 /** Longest input handled per call; the rest is dropped, so a huge stderr cannot stall the main process. */
@@ -18,12 +19,12 @@ const LONG_OK_NAME = /^(PATH|PATHEXT|PSMODULEPATH|HOME|HOMEPATH|HOMEDRIVE|USERPR
    underscores and up to 4 snake_case words (`my_eyJ…`, `MY__eyJ…`, `____eyJ…`), kept in the output (T128). */
 /* A token may also start right after a percent-encoded byte (`?q=token%3Dghp_…`, `%22ghp_…%22`, `%2F`, `%3A`), where the char before
    it is a hex digit (spec 012 FR-080 delta 2026-10-22, T129, review of PR #543), and after a `%` encoded any number of times
-   (`%253D`, `%2525253D`): the last escape of a re-encoded `%` always follows `25`, so `(?:%|25)XX` covers every depth with a
-   fixed-width lookbehind (T130; over-masks a token glued to a literal `25XX`, fail-safe). It may also start right after a backslash
+   (`%253D`, `%2525253D`): a re-encoded `%` is `%25`, so `%(?:25){0,8}XX` covers up to 8 re-encodings (T130, T137: a bare `25XX` used to count too, any depth, and made
+   every `eyJ` in `25AAeyJ…` a start scanning up to 4096 characters: 4.5 s of CPU on 1 MB). It may also start right after a backslash
    escape (`\n`, `\t`, `\uXXXX`, `\xXX`), because the debug log redacts *after* `JSON.stringify`, which turns a token at the start of a
    line into `\nghp_…` (T130, review of PR #549). A quoted-printable escape (`=3Dghp_…`: `=` and two upper-case hex digits) and a
    `%uXXXX` escape (`%u003Dghp_…`, merged into the `%XX` branch so the start costs no more per position) start a token too (T132, issue #551). Every branch is fixed-width, so each position costs O(1): still linear. */
-const PCT = String.raw`(?<=(?:%(?:u[0-9A-Fa-f]{2})?|25)[0-9A-Fa-f]{2}|=[0-9A-F]{2}|\\(?:[nrtbfv]|u[0-9A-Fa-f]{4}|x[0-9A-Fa-f]{2}))`;
+const PCT = String.raw`(?<=%(?:(?:25){0,8}|u[0-9A-Fa-f]{2})[0-9A-Fa-f]{2}|=[0-9A-F]{2}|\\(?:[nrtbfv]|u[0-9A-Fa-f]{4}|x[0-9A-Fa-f]{2}))`;
 /** Where a token shape may start: no letter or digit before it, or right after a `%XX`, `%uXXXX`, `=XX` or backslash escape. */
 const START = String.raw`(?:(?<![A-Za-z0-9])|${PCT})`;
 const shape = (body: string, flags = 'g'): RegExp => new RegExp(START + body, flags);
@@ -44,28 +45,94 @@ const COLON = String.raw`(?::|\\{1,2}(?:u003[Aa]|x3[Aa])|%(?:25){0,8}3[Aa])`;
 const DOT = String.raw`(?:\.|%(?:25){0,8}2[Ee])`;
 /** After a webhook host: an optional trailing dot and an optional `:port` (the colon in any spelling). */
 const HOSTX = String.raw`\.?(?:${COLON}[0-9]{1,5})?`;
-/** Bare token shapes (GitHub, OpenAI/Anthropic, Bearer, JWT, AWS, Slack, Discord, Telegram); also used by the folder-setup display (spec 061 FR-014). */
+/**
+ * Fixed-prefix tokens by family, one regex with one start (spec 012 FR-080 delta 2026-11-01, T137; every list entry and why it is or is
+ * not here: `specs/012-claude-codex-adapters/secret-coverage.md`). Only a prefix distinctive enough to be safe beside text: `pk_live_`
+ * (public), a bare hex or UUID key (no prefix) stay out. Linear: a literal prefix, then one bounded or tail-free class; a body that
+ * must end is `{N}` plus a lookahead, so a failed try costs at most N steps and an open-ended body consumes its run.
+ * Formats written from gitleaks' `config/gitleaks.toml` and vendors' public token formats (`THIRD_PARTY_NOTICES.md`). For gitleaks:
+ * MIT License. Copyright (c) 2019 Zachary Rice. Permission is hereby granted, free of charge, to any person obtaining a copy of this
+ * software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation
+ * the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to
+ * whom the Software is furnished to do so, subject to the following conditions: The above copyright notice and this permission notice shall
+ * be included in all copies or substantial portions of the Software. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+ * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO
+ * EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+ * OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ */
+const NOT_AFTER = '(?![A-Za-z0-9])';
+/** A body that may hold `_`, `-` or `.` must have a digit near its start and not read as lower-case words (`cfut_cross_validation_results_v2` is a name, not a key). Bounded lookaheads. */
+const dg = (cls: string, min: number): string => String.raw`(?![a-z]{1,32}(?:[_-][a-z0-9]{1,32}){2,16}(?![A-Za-z0-9_-]))(?=${cls}{0,128}[0-9])${cls}{${min},}`;
+const W = '[A-Za-z0-9_-]';
+const PREFIXED = [
+  // cloud
+  String.raw`(?:AKIA|ASIA|(?:ABIA|ACCA|A3T[A-Z0-9])(?=[A-Z]{0,15}[0-9]))[A-Z0-9]{16}${NOT_AFTER}`, // AWS access key ids (the rarer prefixes need a digit: `ACCAGTTGCATGCATGCATG` is DNA)
+  String.raw`bedrock-api-key-${dg('[A-Za-z0-9+/=_-]', 20)}`, // Amazon Bedrock, short-lived
+  String.raw`ya29\.${dg(W, 20)}|GOCSPX-${dg(W, 24)}`, // Google OAuth access token, client secret
+  String.raw`[A-Za-z0-9_~.]{3}[0-9]Q~[A-Za-z0-9_~.-]{31,34}(?![A-Za-z0-9_~.-])`, // Entra ID (Azure AD) client secret
+  String.raw`do[opr]_v1_[a-f0-9]{64}|v1\.0-[a-f0-9]{24}-[a-f0-9]{146}|cf(?:ut|at|k)_${dg(W, 40)}`, // DigitalOcean, Cloudflare
+  String.raw`vcc_${dg('[A-Za-z0-9]', 40)}|nf[pcub]_${dg(W, 30)}|rnd_${dg('[A-Za-z0-9]', 32)}|xai-${dg('[A-Za-z0-9]', 40)}|nvapi-${dg(W, 40)}|csk-${dg('[A-Za-z0-9]', 40)}|pcsk_${dg(W, 40)}|(?<![-_])fw_${dg('[A-Za-z0-9]', 24)}|BBDC-${dg('[A-Za-z0-9+/_-]', 40)}|CFPAT-${dg(W, 43)}|unkey_${dg('[A-Za-z0-9]', 20)}|bkua_${dg('[A-Za-z0-9]', 32)}|lin_oauth_${dg('[A-Za-z0-9]', 40)}|sk\.eyJ${dg('[A-Za-z0-9_.-]', 20)}`, // format from public lists, not confirmed by a vendor page (secret-coverage.md): Vercel, Netlify, Render, xAI, NVIDIA, Cerebras, Pinecone, Fireworks, Bitbucket, Contentful, Unkey, Buildkite, Linear, Mapbox
+  String.raw`HRKU-${dg(W, 40)}|fo1_${W}{43}|fm[12][ar]?_[A-Za-z0-9+/]{100,}={0,3}|vc[parki]_[A-Za-z0-9]{40,}`, // Heroku, Fly.io, Vercel
+  String.raw`sbp_${dg('[A-Za-z0-9_]', 40)}|sb_secret_${dg(W, 20)}|napi_[A-Za-z0-9]{40,}|pscale_(?:tkn|oauth|pw)_${dg('[A-Za-z0-9_=.-]', 32)}|AstraCS:[A-Za-z0-9]{24}:[a-f0-9]{64}`, // Supabase, Neon, PlanetScale, DataStax
+  String.raw`[A-Za-z0-9]{14}\.atlasv1\.[A-Za-z0-9_=-]{60,}|hv[sbr]\.${dg(W, 24)}|dp\.(?:pt|st|ct|sa|scim|audit)\.${dg('[A-Za-z0-9._-]', 40)}|pul-[a-f0-9]{40}|ops_eyJ[A-Za-z0-9+/]{100,}={0,3}|A3-[A-Z0-9]{6}-(?:[A-Z0-9]{11}|[A-Z0-9]{6}-[A-Z0-9]{5})-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}|AGE-SECRET-KEY-1[A-Z0-9]{58}|tskey-${dg('[A-Za-z0-9-]', 20)}|sha256~${W}{43}`, // Terraform, Vault, Doppler, Pulumi, 1Password, age, Tailscale, OpenShift
+  // code hosts and CI
+  String.raw`gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}`, // GitHub
+  String.raw`gl(?:pat|dt|rt|ft|ffct|imt|agent|oas|soat|ptt|cbt)-${dg('[A-Za-z0-9_.-]', 20)}|GR1348941${dg(W, 20)}`, // GitLab (spec 093: a clone URL's user part must not be one)
+  String.raw`ATATT3${dg('[A-Za-z0-9_=-]', 20)}`, // Atlassian
+  String.raw`CCIP(?:AT|RJ)_${dg('[A-Za-z0-9_]', 20)}|sgp_${dg('[A-Za-z0-9_]', 40)}|(?:pat|sat)\.${W}{22}\.[A-Za-z0-9]{24}\.[A-Za-z0-9]{20}|PMAK-[A-Fa-f0-9]{24}-[A-Fa-f0-9]{34}`, // CircleCI, Sourcegraph, Harness, Postman
+  // AI providers (`sk-`: OpenAI, Anthropic, DeepSeek, OpenRouter). `sk-ant-` also glued to a word: below.
+  String.raw`sk-(?:ant-)?${W}{20,}|gsk_[A-Za-z0-9]{40,}|pplx-[A-Za-z0-9]{40,}`,
+  String.raw`(?<![-_])hf_[A-Za-z0-9]{30,}|api_org_[A-Za-z0-9]{30,}|(?<![-_])r8_[A-Za-z0-9]{30,}|tvly-${dg(W, 20)}|lsv2_[a-z]{2}_${dg('[A-Za-z0-9_]', 30)}`, // Hugging Face (letters only is real), Replicate, Tavily, LangSmith. A two-letter prefix does not start after `-` or `_`: base64url holds those by chance
+  // package registries
+  String.raw`npm_[A-Za-z0-9]{36,}|pypi-Ag${dg(W, 50)}|rubygems_[a-f0-9]{48}|CLOJARS_[A-Za-z0-9]{60}|dckr_pat_${dg(W, 20)}`, // npm, PyPI, RubyGems, Clojars, Docker
+  // chat and mail (Slack, Discord, Telegram tokens: their own shapes below)
+  String.raw`SG\.${dg('[A-Za-z0-9_.=-]', 40)}|(?<![-_])key-[a-f0-9]{32}${NOT_AFTER}|[a-f0-9]{32}-us[0-9]{1,2}${NOT_AFTER}|xkeysib-[a-f0-9]{64}-[A-Za-z0-9]{16}|re_[A-Za-z0-9]{8}_[A-Za-z0-9]{24}|[0-9]{15,16}(?:\||%7[Cc])${W}{27,40}${NOT_AFTER}`, // SendGrid, Mailgun, Mailchimp, Brevo, Resend, Facebook
+  // payment
+  String.raw`(?:sk|rk)_(?:live|test|prod)_(?=[A-Za-z]{0,128}[0-9])[A-Za-z0-9]{16,}|whsec_[A-Za-z0-9]{24,}|sq0(?:atp|csp)-${dg(W, 22)}|rzp_(?:live|test)_[A-Za-z0-9]{14,}|FLWSECK(?:_TEST)?-[A-Za-z0-9]{12,}(?:-X)?|access-(?:sandbox|development|production)-[a-f0-9-]{36}|shp(?:at|ca|pa|ss)_[A-Fa-f0-9]{32}|pdl_(?:live|sdbx)_${dg('[A-Za-z0-9_]', 20)}|duffel_(?:test|live)_[A-Za-z0-9_=-]{43}`, // Stripe, Square, Razorpay, Flutterwave, Plaid, Shopify, Paddle, Duffel
+  // developer tools
+  String.raw`lin_api_[A-Za-z0-9]{40,}|ntn_[A-Za-z0-9]{40,}|sntry[su]_[A-Za-z0-9+/=_]{40,}|gl(?:c|sa)_${dg('[A-Za-z0-9+/_]', 32)}={0,3}|NR(?:AK|II|JS)-${dg('[A-Za-z0-9-]', 19)}|dt0c01\.[A-Za-z0-9]{24}\.[A-Za-z0-9]{64}|ph[xs]_[A-Za-z0-9]{30,}|sl\.${dg(W, 100)}|pat[A-Za-z0-9]{14}\.[a-f0-9]{64}|pnu_[A-Za-z0-9]{36}|rdme_[A-Za-z0-9]{70}|shippo_(?:live|test)_[A-Fa-f0-9]{40}|EZ[AT]K[A-Za-z0-9]{54}|ico-[A-Za-z0-9]{32}(?![A-Za-z0-9.])|API-[A-Z0-9]{26}${NOT_AFTER}|fio-u-[A-Za-z0-9_=-]{64}|s-s4t2(?:ud|af)-[a-f0-9]{64}|[A-Za-z0-9]{6}_[A-Za-z0-9]{29}_mmk|sm_[aps]at_[A-Za-z0-9]{16}|tk-us-${W}{48}|p8e-[A-Za-z0-9]{32}|(?:sc|ext|scauth|authress)_[A-Za-z0-9]{5,30}\.[A-Za-z0-9]{4,6}\.acc[_-][A-Za-z0-9-]{10,32}\.[A-Za-z0-9+/_=-]{30,120}`, // Linear, Notion, Sentry, Grafana, New Relic, Dynatrace, PostHog, Dropbox, Airtable, Prefect, ReadMe, Shippo, EasyPost, Infracost (not a `.css` name), Octopus, Frame.io, 42, MaxMind, SettleMint, Scalingo, Adobe, Authress
+].join('|');
+/**
+ * Prefixes made only of base64 characters: inside base64 a `/EAAA…` is ordinary (zero bytes are `AAAA`), so these never start after `/`, `+`, `-` or `_` (base64url), never on a line
+ * wrapped from or into a long base64 line, and must end on a character that is not base64. Each run has one start, so a failed end costs its run once; `EAAA`'s body can hold `-`,
+ * so it is bounded (T137, reviews of #1015). `%` is in the X bearer's run class but not in `NOT_B64_AFTER`: on `%41AAAA…+` a failed end backtracks to a `%` and matches, so a run of
+ * such starts cannot fail over and over: that is what keeps it linear. The bearer must hold a `%` too, which base64 never does.
+ */
+const LINE_BREAK = String.raw`(?:\\[nr]|[\r\n]){1,2}`;
+const NOT_B64_AFTER = String.raw`(?![A-Za-z0-9+/=])(?!${LINE_BREAK}[A-Za-z0-9+/=]{40})`;
+const B64_START = String.raw`(?:(?<![A-Za-z0-9+/_-])|${PCT})(?<![A-Za-z0-9+/=]{40}${LINE_BREAK})`;
+const B64_PREFIXED = [
+  String.raw`ABSK[A-Za-z0-9+/]{100,}={0,2}`, // Amazon Bedrock, long-lived
+  String.raw`AIza${W}{35}(?![_-])|GOOG1[A-Z0-9]{40,}`, // Google API key (Gemini too), storage HMAC
+  String.raw`LTAI[A-Za-z0-9]{12,}|4b1d[A-Za-z0-9]{38}|dapi[a-f0-9]{32}(?:-[0-9])?`, // Alibaba, ClickHouse, Databricks
+  String.raw`AKCp[A-Za-z0-9]{60,}|cmVmd[A-Za-z0-9]{59}|SK[A-Fa-f0-9]{32}|eyJrIjoi[A-Za-z0-9]{70,}={0,3}`, // JFrog, Twilio, old Grafana keys
+  String.raw`EAA[CM][A-Za-z0-9]{100,}|EAAA${W}{60,128}|A{20,24}(?=[A-Za-z0-9]{0,128}%)[B-Za-z0-9%][A-Za-z0-9%]{79,}`, // Facebook, Square, X (Twitter) bearer
+  String.raw`1\/\/0${dg(W, 30)}|AKLT${dg(W, 20)}|oy2(?=[a-z]{0,43}[0-9])[a-z0-9]{43}|cio(?=[A-Za-z]{0,32}[0-9])[A-Za-z0-9]{32}|ATBB${dg('[A-Za-z0-9_=-]', 20)}`, // format from public lists, not confirmed by a vendor page: Google refresh, Volcengine, NuGet, crates.io, Bitbucket
+].join('|');
+
+/** Bare token shapes: their classes hold no shell syntax. `maskBareTokenShapes` is these alone, for the folder-setup display (spec 061 FR-014); `maskTokenShapes` adds the rules that hold a name. */
 const TOKEN_SHAPES: Array<RegExp | Guarded> = [
-  shape(String.raw`gh[pousr]_[A-Za-z0-9]{20,}`),
-  shape(String.raw`github_pat_[A-Za-z0-9_]{20,}`),
-  shape(String.raw`glpat-[A-Za-z0-9_-]{20,}`), // GitLab personal access token (spec 093: a clone URL's user part must not be one)
-  shape(String.raw`sk-(?:ant-)?[A-Za-z0-9_-]{20,}`),
+  shape(`(?:${PREFIXED})`),
+  new RegExp(`${B64_START}(?:${B64_PREFIXED})${NOT_B64_AFTER}`, 'g'),
+  /sk-ant-[A-Za-z0-9_-]{8,}/g, // no start: a key glued to a letter (`xsk-ant-…`) is still a key (from spec 103's `maskAll`)
   // any case: `bearer xyz` in a lowercased log line is the same secret (review on PR #630)
   shape(String.raw`[Bb][Ee][Aa][Rr][Ee][Rr]\s{1,8}[A-Za-z0-9._~+/=-]{8,}`),
   // The JWT starts at its literal `eyJ`, and its start and prefix are checked behind it (a bounded lookbehind), so the engine only
   // stops at an `eyJ`. Matching the prefix forward instead tried up to 40 word characters at every position of a run that passes
   // the `%XX` start (`2525…`): linear, but about 40x the cost of the other shapes (T130, review of PR #549). The prefix stays.
   new RegExp(String.raw`(?<=(?:(?<![A-Za-z0-9_-])|${PCT})_{0,8}(?:[A-Za-z0-9]{1,40}_{1,3}){0,4})eyJ[A-Za-z0-9_-]{5,4096}\.[A-Za-z0-9_-]{5,4096}\.[A-Za-z0-9_-]{5,4096}`, 'g'),
-  shape(String.raw`(?:AKIA|ASIA)[A-Z0-9]{16}(?![A-Za-z0-9])`),
   // Chat-tool secrets (T132, issue #551). Slack tokens: `xoxb-`, `xoxp-`, `xoxa-`, `xoxc-`, `xoxd-` (browser session), `xoxr-`, `xoxs-`,
-  // `xoxe-` and `xapp-`, then 10+ token characters or `%XX` escapes (a URL-encoded `xoxd-…%2B…%2F`); `xoxo-` is not a Slack prefix.
-  guarded(shape(String.raw`(?:xox[abcdeprs]|xapp)-(?:[A-Za-z0-9-]|%[0-9A-Fa-f]{2}){10,}`), /xox|xapp-/i),
+  // `xoxe-` and `xapp-`, then 8+ token characters or `%XX` escapes (a URL-encoded `xoxd-…%2B…%2F`); `xoxo-` is not a Slack prefix.
+  guarded(shape(String.raw`(?:xox[abcdeprs]|xapp)-(?:[A-Za-z0-9-]|%[0-9A-Fa-f]{2}){8,}`), /xox|xapp-/i),
+  guarded(shape(String.raw`xox[os]-[0-9]{1,20}-[0-9]{1,20}-[0-9]{1,20}-[A-Fa-f0-9]{8,}`), /xox[os]-[0-9]/), // the legacy four-part Slack form (a plain `xoxo-…` is a hug: stays)
   // Webhooks: the fixed host and path sit in a lookbehind (host in any case, optional trailing dot and `:port`), so the scheme and host
   // stay and only the secret path is masked. Between segments one or two slashes (`//`); the segments before the last are bounded
   // classes split by a fixed `/`, the last one is unbounded (`[A-Za-z0-9_-]+`, a long or underscore secret is masked whole), so there
   // is no nested quantifier. Slack: `services`, `workflows` and `triggers` paths.
   guarded(new RegExp(String.raw`(?<=${ci('hooks.slack.com')}${HOSTX}${SL2}(?:${ci('services')}|${ci('workflows')}|${ci('triggers')})${SL2})(?:[A-Za-z0-9]{1,64}${SL2}){2,3}[A-Za-z0-9_-]+`, 'g'), /hooks\.slack\.com/i),
   guarded(new RegExp(String.raw`(?<=${ci('discord')}(?:${ci('app')})?${ci('.com')}${HOSTX}${SL2}${ci('api')}${SL2}(?:[Vv][0-9]{1,2}${SL2})?${ci('webhooks')}${SL2})[0-9]{5,30}${SL2}[A-Za-z0-9_-]{20,}`, 'g'), /discord(?:app)?\.com/i),
+  // Microsoft Teams incoming webhook: the host stays, the path is the secret.
+  guarded(new RegExp(String.raw`(?<=${ci('.webhook.office.com')}${HOSTX}${SL2}${ci('webhookb2')}${SL2})[A-Za-z0-9@_-]{20,}(?:(?:${SL})[A-Za-z0-9@_-]{1,128}){0,4}`, 'g'), /webhook\.office\.com/i),
   // Telegram bot token: `<6-12 digits>:<exactly 35 chars>` (the real shape, so an id, a session or a file name is not one), bare or
   // right after `/bot` on any host, port or path (`api.telegram.org/bot…`, `api.telegram.org/file/bot…`, a local Bot API server, a
   // proxy): a letter then precedes it, so the lookbehind is host-free.
@@ -75,9 +142,114 @@ const TOKEN_SHAPES: Array<RegExp | Guarded> = [
   guarded(shape(String.raw`[MNO][DTjz][A-Za-z0-9_-]{21,26}${DOT}[A-Za-z0-9_-]{6}${DOT}[A-Za-z0-9_-]{27,}`), /(?:\.|%(?:25){0,8}2[Ee])[A-Za-z0-9_-]{6}(?:\.|%(?:25){0,8}2[Ee])/),
 ];
 
-function maskShapes(text: string, mask: string, guard: boolean): string {
+/** A private key block in any spelling (PEM, OpenSSH, encrypted, PGP; lower case, runs of spaces): to its END line or, cut off, to the end of the text (the first match takes the rest, so no rescan). A PUBLIC block does not match. */
+const KEY_BLOCK = /-----BEGIN[\sA-Z0-9_-]{0,100}?PRIVATE\s{1,8}KEY(?:\s{1,8}BLOCK)?-----[\s\S]*?(?:-----END[\sA-Z0-9_-]{0,100}?PRIVATE\s{1,8}KEY(?:\s{1,8}BLOCK)?-----|$)/gi;
+/** A name that holds a secret, right before its separator (checked backwards from the separator, so `max_tokens` and `token_count` are not it). */
+const SECRET_NAMES = `(?:${['secret_?access_?key', 'session_?token', 'client_?secret', 'api_?secret', 'app_?secret', 'consumer_?secret', 'shared_?secret', 'secret_?key', 'api[_-]?key', 'access[_-]?key', 'auth[_-]?key', 'account_?key', 'sharedaccesskey', 'private[_-]?key', 'priv_?key', 'signing_?key', 'encryption_?key', 'master_?key', 'license_?key', 'service_?key', 'token', 'secret', 'password', 'passwd', 'passphrase', 'contrase(?:n|ñ)a', '_gitlab_session'].map(ci).join('|')}|(?<![A-Za-z])(?:${['pwd', 'pass', 'auth'].map(ci).join('|')}))`;
+/**
+ * A value's simple stop rule, the same in free text and commands: a space, a quote, a backtick, `<`, `>`, `,`, `;`, `|`, `&`, `$(`, `${`, `**`, and (`closerAt`) a closing bracket of one opened
+ * before the name. So `token=abc12345;curl${IFS}x|sh` shows the shell, a note's `{token:abc12345,name:bob}` keeps its name, and `password=Summer2024&Secure!9` leaves `&Secure!9`
+ * (listed in secret-coverage.md: a tail is a smaller loss than a person's note, and a permission line must not hide a command an agent wrote). In a URL query `#` stops it too.
+ */
+const STOP = String.raw`\s"'\`\\<>,;|&`;
+const NV = `[^${STOP}]`;
+const VALUE_END = String.raw`(?:[\s"'\`,;)\]}|&<>]|$)`;
+const valueBody = (extra = ''): string => String.raw`(?:[^${STOP}$*${extra}]|\\(?!["'\`nrt\\])|\$(?![({])|\*(?![\s*]|$))+`;
+/** A value starting with `/` is a path, unless it reads as base64 (`aws_secret_access_key=/aB3d…`): 32 or more base64 characters, a digit, and a run of 16 with no slash. */
+const SLASH_B64 = String.raw`(?=\/[A-Za-z0-9+/=]{31})(?=[A-Za-z0-9+/=]{0,128}[0-9])(?=[A-Za-z0-9+/=]{0,64}[A-Za-z0-9+=]{16})`;
+/** What is a value only in form. */
+const NOT_A_VALUE = [
+  String.raw`\.{1,2}[\\/]|~[\\/]|[A-Za-z]:[\\/]|[<{\[]`, // a path, a placeholder
+  String.raw`\$(?:[{(]|[A-Z0-9_]{1,128}\b|[a-z][a-z0-9_]{0,128}\b)|%[A-Za-z_]`, // a variable
+  String.raw`[\w.-]{1,128}(?:[\\/][\w.-]{1,128}){1,16}\.[A-Za-z0-9]{1,8}${VALUE_END}`, // keys/server_2026.pem (base64 has no dot)
+  String.raw`[a-z0-9_.-]{1,64}(?:[\\/][a-z0-9_.-]{1,64}){1,16}${VALUE_END}`, // src/foo1 (base64 is never all lower case)
+  String.raw`[\w+.-]{0,24}:\/\/`, // a URL: its credential and query have their own rules
+  String.raw`\$?[\w.]{1,128}\((?![^()\r\n]{0,128}\)[\w!@#$%^&*])`, // getToken2(a, b), but not Sup3r(S3cret)99
+  String.raw`[A-Za-z_$][\w$]{0,64}(?:\.[A-Za-z_$][\w$]{0,64}){1,8}${VALUE_END}`, // config.token2
+  String.raw`[0-9]{1,128}[.:/-][0-9.:/TZ+-]{0,128}${VALUE_END}`, // 127.0.0.1:8080, 1523/1523, 2026-11-01T10:00:00Z
+  String.raw`(?![0-9a-f]{8}-[0-9a-f]{4}-)[a-z]{2}[a-z0-9]{0,30}(?:[_-][a-z0-9]{1,32}){1,16}${VALUE_END}`, // lower-case words, as in dg(): gpt-4o-mini, reset-flow-v2 (a UUID is not)
+].join('|');
+/**
+ * `name=value`, `"name": "value"`, `name := value`, in any case for the name but not the value (`$DB_PASS` is a variable, `$uperS3cret` is not), also JSON-escaped (FR-080 delta 2026-11-01). The match starts
+ * at the separator, so plain text costs one test per `:` or `=`. A value is 8 or more characters with a digit in the first 128, or 20 or more with a symbol letters and hyphens do not explain
+ * (`please-enter-your-password` is prose, and a saved note keeps the mask for good). The body has no tail, so open-ended is linear.
+ */
+const named = (before: string, extra: string): RegExp => new RegExp(String.raw`(?<=${before}${SECRET_NAMES}\\{0,2}["'\`]?\s{0,8})((?::=|=>|[:=]|%3[DdAa])\s{0,8}\\{0,2}["'\`]?)(?:${SLASH_B64}|(?!\/|${NOT_A_VALUE})(?:(?=${NV}{8})(?=${NV}{0,128}[0-9])|(?=${NV}{20})(?=[A-Za-z_.-]{0,128}[+=~@!#^*?])))${valueBody(extra)}`, 'g');
+const NAMED_IN_QUERY = named('[?&]', '#');
+const NAMED_SECRET = named('', '');
+/** Where in a value the first closing bracket with no opener inside the value is, or -1: `(token=abc12345)` keeps its `)`, `Sup3r(S3cret)99` is one value. */
+function closerAt(v: string): number {
+  const open = { ')': 0, ']': 0, '}': 0 };
+  for (let i = 0; i < v.length; i++) {
+    const c = v[i];
+    if (c === '(') open[')']++; else if (c === '[') open[']']++; else if (c === '{') open['}']++;
+    else if (c === ')' || c === ']' || c === '}') { if (open[c] === 0) return i; open[c]--; }
+  }
+  return -1;
+}
+/** A cookie header: `name=value` pairs split by `;`. Returns where the pairs end, or -1 when this is prose. A hand-written scan, one pass, no regex to go wrong: it stops at a quote, a backslash or the
+ *  line's end. A pair followed by more text counts when its value is long enough to be one (`sid=abcdef12 && curl x`); `cookie: a=b is the format` is prose, and a short later pair ends it there, so an `Expires=Wed, 21 Oct` stays. */
+function cookieEnd(s: string, from: number, newlineFrom: (i: number) => number): number {
+  const ends = (c: string | undefined): boolean => c === undefined || c === '\r' || c === '\n' || c === '"' || c === "'" || c === '\\';
+  let i = from;
+  let end = -1;
+  for (;;) {
+    const nameAt = i;
+    while (i < s.length && i - nameAt < 128 && !/[\s=;,"'\\|&`$(]/.test(s[i])) i++;
+    if (i === nameAt || s[i] !== '=') return end;
+    const valueAt = ++i;
+    if (s[i] === '"') { const q = s.indexOf('"', i + 1); const nl = newlineFrom(i); i = q < 0 || (nl >= 0 && nl < q) ? (nl < 0 ? s.length : nl) : q + 1; } else while (i < s.length && !/[\s;"'\\|&`]/.test(s[i]) && !(s[i] === '$' && (s[i + 1] === '(' || s[i + 1] === '{'))) i++;
+    if (ends(s[i]) || s[i] === '|' || s[i] === '&' || s[i] === '`' || s[i] === '$') return i; // the shell after it stays visible (STOP's rule; a diff reaches the approval card through `redact`)
+    if (s[i] === ';') {
+      end = i;
+      i++;
+      while (s[i] === ' ' || s[i] === '\t') i++;
+      if (ends(s[i])) return end;
+      continue;
+    }
+    let j = i; // whitespace after the value: the end of the header only when the line ends there
+    while (s[j] === ' ' || s[j] === '\t') j++;
+    if (ends(s[j])) return i;
+    return i - valueAt >= 8 ? i : end;
+  }
+}
+const COOKIE_HEAD = shape(String.raw`(?:set-)?cookie\s{0,8}:\s{0,8}`, 'gi');
+function maskCookies(s: string, mask: string): string {
+  if (!/cookie/i.test(s)) return s;
+  let out = '';
+  let from = 0;
+  // the next line break, found once and kept: looking it up per head made `cookie: a="x" ` repeated quadratic (976 ms on 1 MB)
+  let nl = -2;
+  const newlineFrom = (i: number): number => { if (nl !== -1 && nl < i) nl = s.indexOf('\n', i); return nl; };
+  COOKIE_HEAD.lastIndex = 0;
+  for (let m = COOKIE_HEAD.exec(s); m; m = COOKIE_HEAD.exec(s)) {
+    const at = m.index + m[0].length;
+    const end = cookieEnd(s, at, newlineFrom);
+    if (end > at) { out += s.slice(from, at) + mask; from = end; COOKIE_HEAD.lastIndex = end; }
+  }
+  return from === 0 ? s : out + s.slice(from);
+}
+/** A password in a command-shaped rule: ends at shell syntax, and at brackets, so `curl -u a:b(curl) x` shows `(curl)`. */
+const CMD_VALUE = String.raw`(?:[^\s"'|;&\`$()<>]|\$(?![({]))+`;
+const PATTERNS: RegExp[] = [
+  KEY_BLOCK,
+  shape(String.raw`(authorization\s{0,8}[:=]\s{0,8})(?:(?:bearer|basic|token)\s{1,8})?(?!'?\[(?:redacted|secret hidden)\]'?\}*(?:[\s",;]|$))[^\s",;]+`, 'gi'), // a value R12 already hid, whole, inside single quotes (`Authorization='[redacted]'}`) stays as it is; `[redacted]TOKEN` is not a hidden value
+  shape(String.raw`((?:set-)?cookie\\{0,2}["']\s{0,8}:\s{0,8}\\{0,2}")(?=[^\s=;,"'\\]{1,128}=)(?:[^"\\\r\n]|\\(?!"))*`, 'gi'), // `"Cookie": "sid=…"`, in JSON: to the closing quote. The header form: `maskCookies`.
+  // a `.netrc` entry: the word `password`, a space, the value
+  new RegExp(String.raw`(\bmachine\s{1,8}\S{1,253}\s{1,8}(?:login\s{1,8}\S{1,128}\s{1,8})?password\s{1,8})${CMD_VALUE}`, 'g'),
+  // `curl -u user:pass` (only after `curl`: `git push -u origin:main` is not this); the user stays, a bare `-u user` has no secret to hide
+  new RegExp(String.raw`(\bcurl\b[^\r\n]{0,200}?\s(?:-[A-Za-z]{0,8}u|--user)[ =]{0,2}["']?[^\s:"']{0,128}:)${CMD_VALUE}`, 'g'),
+  shape(String.raw`([a-z][a-z0-9+.-]{1,20}:\/\/)[^\s/:@"]{0,200}:[^\s/@"]{1,200}(?=@)`, 'gi'),
+  /(?<![A-Za-z0-9_-])tid=[0-9a-f]{8,64};[^\s"|<>`&]*/g,
+  // OAuth and signed-URL values in a URL's query or fragment (an authorization address, a loopback callback, a presigned link), also percent-encoded inside
+  // another URL; the names are not secret-looking, so the token shapes miss them (review on #635: a CLI's stderr reaches the debug sink).
+  // A fixed separator and name, then a value that stops at the next separator: no tail, so linear.
+  /((?:[?&#;]|%(?:3[Ff]|26|23|3[Bb]))(?:code|state|code_verifier|code_challenge|id_token|access_token|refresh_token|client_secret|sig|x-amz-signature|x-amz-security-token|x-goog-signature)(?:=|%3[Dd]))[^&;#\s"'\\<>]+/gi,
+];
+
+/** Only the token shapes. The JWT's prefix is outside its match (lookbehind), so it stays too. */
+function maskBare(text: string, mask: string, guard: boolean): string {
   let out = text;
-  // A function, so `$&` or `$1` in the mask stays literal; the JWT's prefix is outside its match (lookbehind), so it stays too.
   for (const t of TOKEN_SHAPES) {
     if (t instanceof RegExp) out = out.replace(t, () => mask);
     else if (!guard || t.marker.test(out)) out = out.replace(t.re, () => mask);
@@ -85,25 +257,34 @@ function maskShapes(text: string, mask: string, guard: boolean): string {
   return out;
 }
 
-/** Replaces every bare token shape with `mask` (a JWT's leading underscores and words stay). Linear; no env rules, no header or URL rules. */
+function maskShapes(text: string, mask: string, guard: boolean): string {
+  let out = text;
+  // A function, so `$&` or `$1` in the mask stays literal; group 1, when a pattern has one, is what names the secret and stays.
+  for (const p of PATTERNS) out = out.replace(p, (_m: string, keep?: unknown) => (typeof keep === 'string' ? keep : '') + mask);
+  out = maskCookies(out, mask);
+  out = maskBare(out, mask, guard);
+  // Last: a value with its own shape is gone whole by now (a named-secret value stops at `\`, which would leave the tail of `token=123456\u003A…`).
+  const value = (m: string, keep: string): string => { const v = m.slice(keep.length); const i = closerAt(v); return keep + mask + (i < 0 ? '' : v.slice(i)); };
+  return out.replace(NAMED_IN_QUERY, value).replace(NAMED_SECRET, value);
+}
+
+/** The one key-shape mask (FR-031): replaces every key block, secret header, URL credential, named secret and bare token shape with `mask` (a JWT's leading underscores and words stay). `redact` adds the env values and the cut. Linear. */
 export function maskTokenShapes(text: string, mask: string): string {
   return maskShapes(text, mask, true);
 }
+/**
+ * Only the bare token shapes, for what must show its shell syntax (spec 061 FR-014, `shownCommand`): their classes hold no `$`, backtick, `(`, `|` or `;`, so a repository's
+ * `--auth=$(curl …|sh)` stays visible. `maskTokenShapes`' name, header and cookie rules hide to a space or to the line's end, and would let a repository choose what is hidden.
+ */
+export function maskBareTokenShapes(text: string, mask: string): string {
+  return maskBare(text, mask, true);
+}
+/** Test only: every pattern's source, for the check that none nests quantifiers (`scripts/test-redact-shapes.ts`). */
+export const _maskSourcesForTest = (): string[] => [...PATTERNS, ...TOKEN_SHAPES.map((t) => (t instanceof RegExp ? t : t.re)), NAMED_IN_QUERY, NAMED_SECRET, COOKIE_HEAD].map((r) => r.source);
 /** Test only: the same without the marker guard, to prove the guard never changes the result. */
 export function maskTokenShapesUnguarded(text: string, mask: string): string {
   return maskShapes(text, mask, false);
 }
-
-/** Key-like shapes. Each is linear: bounded classes, no nested quantifiers, starts anchored where a token cannot already be running. Order matters: header and URL first. */
-const PATTERNS: Array<[RegExp, string]> = [
-  [shape(String.raw`(authorization\s{0,8}[:=]\s{0,8})(?:(?:bearer|basic|token)\s{1,8})?(?!'?\[redacted\]'?\}*(?:[\s",;]|$))[^\s",;]+`, 'gi'), '$1[redacted]'], // a value R12 already hid, whole, inside single quotes (`Authorization='[redacted]'}`) stays as it is; `[redacted]TOKEN` is not a hidden value
-  [shape(String.raw`([a-z][a-z0-9+.-]{1,20}:\/\/)[^\s/:@"]{1,200}:[^\s/@"]{1,200}@`, 'gi'), '$1[redacted]@'],
-  [/(?<![A-Za-z0-9_-])tid=[0-9a-f]{8,64};[^\s"]{0,2000}/g, '[redacted]'],
-  // OAuth values in a URL's query or fragment (an authorization address, a loopback callback), also percent-encoded inside another
-  // URL; the names are not secret-looking, so the token shapes miss them (review on #635: a CLI's stderr reaches the debug sink).
-  // A fixed separator and name, then a bounded value that stops at the next separator: linear.
-  [/((?:[?&#;]|%(?:3[Ff]|26|23|3[Bb]))(?:code|state|code_verifier|code_challenge|id_token|access_token|refresh_token|client_secret)(?:=|%3[Dd]))[^&;#\s"'\\<>]{1,4096}/gi, '$1[redacted]'],
-];
 
 type Env = Record<string, string | undefined>;
 
@@ -156,7 +337,6 @@ export function redact(text: unknown, env?: Env): string {
       if (s.includes(value)) s = s.split(value).join(`[redacted:${name}]`);
     }
     s = cut(s, REDACT_MAX_CHARS);
-    for (const [re, rep] of PATTERNS) s = s.replace(re, rep);
     return maskTokenShapes(s, '[redacted]');
   } catch {
     return '[redaction failed]';

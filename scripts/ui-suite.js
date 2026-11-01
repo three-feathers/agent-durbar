@@ -156,6 +156,7 @@ const DRIVERS = [
  * so a driver can no longer be written, cited as `sim:` evidence and never run. Moving one into DRIVERS is the way out of this list.
  */
 const NOT_IN_SUITE = {
+  'check-console-mask': 'not a window driver: a source check, run by npm test as test:consolemask (spec 012 T137)',
   'world-matrix': 'spec 098 FR-051/FR-054: the world matrix has its own workflow (world-matrix.yml, weekly and a path-filtered pull request subset) and writes only to out/world-matrix; it is not part of the every-PR suite. Its checks are proven by `node scripts/world-matrix.js --selftest`',
   'shots-034': 'passes alone but takes about 124 s (fixed settles at both sizes, Serious mode, reduced motion, mini); CI is near its limit (#738). Needs its sleeps turned into until() waits before it joins the suite. Since spec 068 FR-005 it checks that the credit limit is a break, not a faint',
   'shots-024-custom': 'passes alone with DURBAR_SIM_PLACES=3 but takes about 89 s (custom places: seeding, Add / Edit dialog, Settings, rename, delete at both sizes); too long for the suite today. Run it by hand: DURBAR_SIM_PLACES=3 as its header says',
