@@ -1,59 +1,9 @@
 {
- "desk": [
-  900,
-  344
- ],
+ "formatVersion": 1,
+ "id": "office",
+ "name": "Office people",
+ "level": "full",
  "facing": "left",
- "fixtureTop": {
-  "bank": 36,
-  "boss": 8,
-  "coffee": 18,
-  "library": 13,
-  "other": 158,
-  "postbox": 136,
-  "software": 8,
-  "terminal": 46,
-  "web": 138
- },
- "fixtures": {
-  "bank": [
-   234,
-   276
-  ],
-  "boss": [
-   236,
-   276
-  ],
-  "coffee": [
-   230,
-   276
-  ],
-  "library": [
-   226,
-   276
-  ],
-  "other": [
-   126,
-   276
-  ],
-  "postbox": [
-   100,
-   276
-  ],
-  "software": [
-   150,
-   276
-  ],
-  "terminal": [
-   184,
-   276
-  ],
-  "web": [
-   100,
-   276
-  ]
- },
- "floorLine": 276,
  "seat": {
   "p01": {
    "bodyH": 507,
@@ -1062,6 +1012,5 @@
     "type": 0.0098
    }
   }
- },
- "version": 1
+ }
 }

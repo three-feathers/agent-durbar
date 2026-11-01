@@ -3,7 +3,7 @@
    fixture lights) < .ro-chrome (signs, plates, chips, cues: never dimmed, FR-044). The art keeps its own colours; everything that
    is UI uses the theme's tokens (D2). Light colours are fixed for meaning (FR-049). Lights are opacity and transforms only, with
    no blur filter and no script per frame (FR-048). */
-.ro{position:relative;overflow:hidden;border-radius:var(--r-lg,10px);background:#c9a77c url(realoffice/art/floor.webp) center/cover;
+.ro{position:relative;overflow:hidden;border-radius:var(--r-lg,10px);background:#c9a77c url(realoffice/worlds/photo/floor.webp) center/cover;
   --ro-warm:255,214,150;--ro-amber:240,160,48;--ro-red:217,68,58;--ro-orange:240,122,32;--ro-green:63,170,99;--ro-screen:150,190,235;--ro-lit:255,194,122;--ro-ring:255,255,255}
 .ro *{box-sizing:border-box}
 .ro-art,.ro-amb,.ro-lights,.ro-chrome{position:absolute;inset:0;pointer-events:none}
@@ -12,7 +12,7 @@
 
 /* the lobby band: the back wall (the art's own colours) with the fixtures, a strip of floor in front */
 .ro-lobby{background:linear-gradient(#cbbdb3,#c6b6aa 80%,#bdab9e);border-bottom:1px solid rgba(0,0,0,.18)}
-.ro-strip{background:url(realoffice/art/floor.webp) center top/100% auto;box-shadow:inset 0 3px 4px -2px rgba(0,0,0,.25)}
+.ro-strip{background:url(realoffice/worlds/photo/floor.webp) center top/100% auto;box-shadow:inset 0 3px 4px -2px rgba(0,0,0,.25)}
 .ro-fx{object-fit:fill}
 .ro-kiosk{display:flex;align-items:center;justify-content:center;border-radius:8px 8px 3px 3px;background:linear-gradient(#3b3f45,#24272b);border:2px solid #15171a;color:#dfe8f2}
 .ro-kiosk svg{width:45%;height:auto}

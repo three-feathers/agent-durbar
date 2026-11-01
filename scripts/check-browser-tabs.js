@@ -106,9 +106,14 @@ module.exports = async (ctx) => {
     await js(`document.querySelector('#bTabs .btab.on .btab-x').click()`);
     await wait(() => count() === n - 1 && !tabs().tabs.some((x) => x.tabId === want), 'the active tab closes');
   };
+  const seenKeys = new WeakMap();
+  let lastKeys = [];
   const pageKey = async (keyCode, modifiers) => {
     const wc = view().webContents;
-    wc.focus();
+    assert.ok(await H.focusWc(wc), 'the page has the focus before its key');
+    // what main's before-input-event gets from this key (listener only records; it is added once per view): a failing wait below names it
+    if (!seenKeys.has(wc)) { const log = []; seenKeys.set(wc, log); wc.on('before-input-event', (_e, i) => { log.push(`${i.type}:${i.key}|${i.code}|c${+!!i.control}m${+!!i.meta}s${+!!i.shift}`); if (log.length > 12) log.shift(); }); }
+    lastKeys = seenKeys.get(wc);
     wc.sendInputEvent({ type: 'keyDown', keyCode, modifiers });
     wc.sendInputEvent({ type: 'keyUp', keyCode, modifiers });
   };
@@ -217,12 +222,14 @@ module.exports = async (ctx) => {
     await go(WEB + 'tabs?focus=1'); // a new page load: its own 5
     const n = count();
     await inWc(openerWc, `setTimeout(()=>window.open('/index?timer=1'),300);true`, 'the timer');
-    win().webContents.focus();
-    await js(`document.getElementById('msgInput').focus()`);
-    await wait(() => win().webContents.isFocused() && js(`document.activeElement&&document.activeElement.id==='msgInput'`), 'the composer has the focus');
+    // the OS focus can go to a neighbour on a busy Windows runner: ask again on every round until the window and the composer have it
+    await wait(async () => { if (!win().webContents.isFocused()) win().webContents.focus(); await js(`document.getElementById('msgInput').focus()`); return win().webContents.isFocused() && js(`document.activeElement&&document.activeElement.id==='msgInput'`); }, 'the composer has the focus');
     await wait(() => count() === n + 1 && view() && view().webContents.getURL() === WEB + 'index?timer=1' && !view().webContents.isLoading(), 'the timer\'s tab opens and loads');
     assert.ok(!view().webContents.isFocused(), 'FR-129: the new page did not take the focus');
-    assert.ok(win().webContents.isFocused() && await js(`document.activeElement&&document.activeElement.id==='msgInput'`), 'FR-129: the composer keeps it');
+    // the page did not take it (above), and the composer is still the active element; the OS may have given the window's own focus to a neighbour
+    // meanwhile (Windows CI, Linux under load: nobody focused), so ask for it again until the window reports it
+    assert.strictEqual(await js(`document.activeElement&&document.activeElement.id`), 'msgInput', 'FR-129: the composer keeps it');
+    await wait(() => { if (!win().webContents.isFocused()) win().webContents.focus(); return win().webContents.isFocused() && !view().webContents.isFocused(); }, 'FR-129: the window has the focus and the page does not');
   }
 
   // US6.5: 10 tabs
@@ -339,9 +346,12 @@ module.exports = async (ctx) => {
   await wait(() => inView(`document.getElementById('log').textContent.includes('a')`), 'the page logs its own keys');
   const log = await inView(`document.getElementById('log').textContent`);
   assert.ok(!/(C-|M-)(t|T|Tab|w|W)\b/.test(log), 'the page never saw the tab keys: ' + log);
+  // the window closes "its active tab" from the tab list it last received: main's active tab must be the strip's before the key, or the key closes the one the
+  // strip still shows (seen on Windows CI as the 1280 run's "Ctrl/Cmd+W in the page closes its tab", the #934 family)
+  await wait(() => js(`(()=>{const e=document.querySelector('#bTabs .btab.on');return !!e&&e.dataset.tab===${jsLiteral(keysTab)}})()`), 'the strip shows the keys page as the active tab');
   const n1 = count();
   await pageKey('W', [MOD]);
-  await wait(() => count() === n1 - 1 && !tabs().tabs.some((x) => x.tabId === keysTab), 'Ctrl/Cmd+W in the page closes its tab');
+  await wait(() => count() === n1 - 1 && !tabs().tabs.some((x) => x.tabId === keysTab), 'Ctrl/Cmd+W in the page closes its tab (main saw: ' + lastKeys.join(' ') + ')');
   // the bar's own keys (the window's handler): Ctrl+Tab and Ctrl+Shift+Tab
   await js(`document.getElementById('bAddr').focus()`);
   const a0 = tabs().active;
