@@ -22,3 +22,7 @@ Branch `025-changelog-fragments` (owning spec: this one, it owns "Keep docs in s
 7. **Merge timing**: this PR lands **after** the current stack (merge plan of 2026-10-22) and is not stacked on it. The alpha.11 release (#517) has merged. At merge time (#520): merge `origin/main` into the branch; on a `specs/README.md` conflict take `main`'s version; run `npm run specs:index -- --import` (blocks updated, rows removed); run `npm test`; push; gate; merge. Later, once no open PR edits the rows, a small PR adds `<!-- specs-index: strict -->`.
 
 Constitution check: no `src/` change, no app behaviour change, no secrets, no network, no shell with user strings (Node `fs` only; the bash Docs check reads only `git diff`), no AI credits. Windows/macOS/Linux: `path.join`, CRLF-tolerant reads, lower-case fragment names. Honest limits: Linux only by hand; `[KNOWN GAP]` fold order.
+
+## Delta 2026-11-01: feature inventory
+
+A Markdown table is the data (no second file): the check parses its rows. Reuses `world-moments.json` (spec 098) for moment ids and `shippable`, `package.json` scripts and `scripts/` for proof tags, and each `spec.md` `specs-index` status. No `src/` change.

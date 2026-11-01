@@ -161,14 +161,15 @@ Another team's agent's approval (via its human's account) counts.
 ## Keep docs in sync
 
 A PR that changes behaviour, scripts, permissions, settings, MCP or tools, release status or contributors updates in the same PR:
-- **README** (short): status block (fold PR's), features, *Safety model* (**Read-only / Ask first / Allow all**), credits. Rest in `docs/`: `features.md` (features, MCP, Tools), `install.md`, `safety.md`, `development.md` (`npm run`), `limits.md`.
-- **Changelog**: a `changelog.d/<branch>.md` fragment, never `CHANGELOG.md` (`changelog.d/README.md`; no merge freeze, spec 008 FR-117..FR-120).
+- **README**: status block (fold PR's), *Safety model* (**Read-only / Ask first / Allow all**), credits. Rest in `docs/`: `features.md`, `install.md`, `safety.md`, `development.md` (`npm run`), `limits.md`.
+- **Changelog**: a `changelog.d/<branch>.md` fragment, never `CHANGELOG.md` (`changelog.d/README.md`).
+- **Feature inventory** (owner ask, 2026-11-01): add, change or remove a user-visible feature, update its row in `docs/feature-inventory.md` (checked in `npm test`).
 - **Spec**: task ticked, tags and the `specs-index` block current (new spec: `npm run specs:index -- --add specs/NNN-name`); no `specs/README.md` rows.
-- **Screenshots**: retake every linked picture showing the change, any spec's (`npm run shots:docs`, both sizes), and look at each. New linked pictures need `DOC_SHOTS` or a reasoned `NO_DRIVER` in `scripts/shots-docs.js`. Cannot: say so in the PR and open an issue.
+- **Screenshots**: retake every linked picture showing the change, any spec's (`npm run shots:docs`, both sizes), and look at each. New linked pictures need `DOC_SHOTS` or a reasoned `NO_DRIVER` in `scripts/shots-docs.js`.
 - Touched pages of `docs/`, `CONTRIBUTING.md`, `SECURITY.md` (the website is generated; `docs/site/gallery.json` only for key screenshots); contributors in `src/shared/about.ts`, `package.json`, `LICENSE`, README (`npm run test:about`).
 - Rules change here only; keep the PR template and `docs/collaboration.md` consistent.
 
-No impact: tick *no docs impact* and write `Docs: n/a <reason>` (the *Docs check* reads it; never to hide a real change). Cannot do them: open an `area:docs` *Task* issue, assign it, link it from the PR and say what is left; never skip silently.
+No impact: tick *no docs impact* and write `Docs: n/a <reason>` (the *Docs check* reads it; never to hide a real change). Cannot (screenshots too): open an `area:docs` *Task* issue, link it from the PR and say what is left; never skip silently.
 
 ## Before you finish
 
