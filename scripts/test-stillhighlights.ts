@@ -56,6 +56,19 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(await call('settings:setStillHighlights', true), { ok: false, stillHighlights: false }, 'no store: ok is false');
     handlers.clear();
     register({ getSettingsStore: () => store, getRunTheme: () => undefined, clearRunTheme: () => undefined });
+    // sweep: a save that fails is said, and the setting stays as it was (Settings says "It stays off")
+    {
+      const blocker = path.join(dir, 'a-file');
+      fs.writeFileSync(blocker, 'x');
+      const stuck = new SettingsStore(path.join(blocker, 'durbar-settings.json'));
+      stuck.load();
+      handlers.clear();
+      register({ getSettingsStore: () => stuck, getRunTheme: () => undefined, clearRunTheme: () => undefined });
+      assert.deepStrictEqual(await call('settings:setStillHighlights', true), { ok: false, stillHighlights: false }, 'a failed save: not ok, and the value in force');
+      assert.strictEqual(stuck.stillHighlights, false, 'rolled back in memory too');
+      handlers.clear();
+      register({ getSettingsStore: () => store, getRunTheme: () => undefined, clearRunTheme: () => undefined });
+    }
     // another setting keeps it
     await call('settings:setStillHighlights', true);
     store.setSeriousMode(true);

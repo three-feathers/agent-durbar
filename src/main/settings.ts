@@ -134,9 +134,10 @@ export class SettingsStore {
     const next: AppSettings = { ...this.s };
     if (v) next.stillHighlights = true;
     else delete next.stillHighlights;
+    const was = this.s;
     this.s = next;
-    this.save();
-    return v;
+    if (!this.save()) this.s = was; /* not saved: back to what it was, so the switch and the next start agree */
+    return this.stillHighlights;
   }
 
   /** Serious mode (spec 034): off by default. */

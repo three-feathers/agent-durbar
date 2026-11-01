@@ -21,7 +21,8 @@ export function register(deps: SettingsIpcDeps): void {
   ipcHandle('settings:setStillHighlights', (_e, on: unknown) => {
     const st = settingsStore();
     if (!st || typeof on !== 'boolean') return { ok: false, stillHighlights: st?.stillHighlights ?? false }; /* refused: the real value in force, not a false "saved" */
-    return { ok: true, stillHighlights: st.setStillHighlights(on) };
+    const inForce = st.setStillHighlights(on);
+    return { ok: inForce === on, stillHighlights: inForce }; /* not ok: the save failed and it stayed as it was */
   });
   /* spec 052 FR-059: OS notifications when an agent needs you and the window is in the background (on unless turned off) */
   ipcHandle('settings:setNotifyNeedsMe', (_e, on: unknown) => ({ ok: true, notifyNeedsMe: settingsStore()?.setNotifyNeedsMe(on) ?? true }));
