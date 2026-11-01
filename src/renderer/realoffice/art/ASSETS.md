@@ -1059,6 +1059,9 @@ The sections below are kept as the record of how those sheets were made, approve
 - reference: none
 - prompt: none, no image generation
 - cut: `rig` in `people.json` has each layer's place and pivot as fractions of the picture
+- size in px per layer: p01 head 206x216, l 103x67, r 104x67; p02 head 215x226, l 93x80, r 93x79; p03 head 203x214, l 95x76, r 95x79; p04 head 260x273, l 112x75, r 107x74; p05 head 250x261, l 122x73, r 118x74; p06 head 212x222, l 112x92, r 111x95; p07 head 220x231, l 109x85, r 102x81; p08 head 225x236, l 92x85, r 89x81; p09 head 202x211, l 105x80, r 102x81; p10 head 198x206, l 103x74, r 98x72; p11 head 200x210, l 99x85, r 103x78; p12 head 251x263, l 111x88, r 110x93; p13 head 227x238, l 101x82, r 100x85; p14 head 216x226, l 105x88, r 101x91; p15 head 227x238, l 106x85, r 90x85; 0.31 MB in all
+- chunks: WebP with alpha, no EXIF, XMP or ICC chunk (all 45 checked by `test:realoffice-assets`)
+- likeness-check: nothing was generated: each layer is a piece of a person's own picture, so the likeness check of `seat-pNN` above holds
 - licence: MIT
 
 ## Removed

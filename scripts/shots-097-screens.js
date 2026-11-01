@@ -236,6 +236,38 @@ module.exports = async (ctx) => {
     await moveToPoint(1, 1);
   }
 
+  /* Ruben's review of #979: a chat opening and closing pauses and resumes at once; leaving Real office leaves no key listener behind */
+  mark('leave');
+  await loadReal(1440, 900);
+  await js(INSTALL);
+  {
+    ctx.win.show(); ctx.win.focus(); wc().focus();
+    await must(`document.hasFocus()`, 'the window active', 8000);
+    await must(`!document.querySelector('#stage .ro').classList.contains('paused')`, 'the room running');
+    await js(`document.body.classList.add('panel-open');0`);
+    assert.ok(await H.until(`document.querySelector('#stage .ro').classList.contains('paused')`, 1000), 'a panel over the office pauses it, with no draw');
+    await js(`document.body.classList.remove('panel-open');0`);
+    assert.ok(await H.until(`!document.querySelector('#stage .ro').classList.contains('paused')`, 1000), 'and it resumes');
+    /* opened by the pointer: its plate is not what holds it, and the pointer stays there when the office goes */
+    const one = (await js(pickWorking))[0];
+    const hp = await js(`(()=>{const b=document.querySelector('#stage .ro-screen[data-for="'+CSS.escape(${jsLiteral(one)})+'"]').getBoundingClientRect();return {x:Math.round(b.left+b.width/2),y:Math.round(b.top+b.height/3)};})()`);
+    wc().sendInputEvent({ type: 'mouseMove', x: 1, y: 1 });
+    wc().sendInputEvent({ type: 'mouseMove', x: hp.x, y: hp.y });
+    await must(`!!document.getElementById('roZoom')`, 'a zoom open by the pointer');
+    await js(`window.DurbarRealOffice.leave();0`); /* directly: leaving closes it, whatever the elements do */
+    assert.strictEqual(await js(`!!document.getElementById('roZoom')`), false, 'leave closes the zoom');
+    await js(`window.__durbarSimUi.setLive(true);0`);
+    await must(`!!document.querySelector('#stage .ro .ro-plate')`, 'the room drawn again after leave');
+    await js(`window.__escs=0;document.addEventListener('keydown',(e)=>{if(e.key==='Escape')window.__escs++;});0`);
+    await js(`window.__durbarSimUi.setOfficeView('flat');0`);
+    await must(`document.getElementById('stage').dataset.d!=='real'&&!document.getElementById('roZoom')`, 'flat office, no zoom');
+    wc().sendInputEvent({ type: 'keyDown', keyCode: 'Escape' }); wc().sendInputEvent({ type: 'keyUp', keyCode: 'Escape' });
+    assert.ok(await H.until(`window.__escs===1`, 3000), 'Escape reaches the app after leaving Real office');
+    await js(`window.__durbarSimUi.setOfficeView('real');0`);
+    await must(REAL, 'back in Real office');
+    await must(`!!document.querySelector('#stage .ro .ro-plate')`, 'the room drawn again');
+  }
+
   /* review of P2: Live activity off (the setting itself, stored before load): a working screen shows its word and bars, not the task or the last reply; a question is cut at 200 */
   mark('live off');
   await js(`localStorage.setItem('durbar.liveActivity','off');0`);

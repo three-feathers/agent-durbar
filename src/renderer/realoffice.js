@@ -367,6 +367,8 @@
       if (pl._sig !== lsig) { pl._sig = lsig; pl.textContent = ''; const s = document.createElement('span'); s.textContent = p.label; pl.appendChild(s); if (fx.more > 0) { const b = document.createElement('b'); b.className = 'ro-more'; b.textContent = '+' + fx.more; pl.appendChild(b); } }
     }
     sweep(art, drawn && moving() && !hiddenNow()); [amb, lights, chrome].forEach((l) => sweep(l));
+    for (const id of WHERE.keys()) if (!CUR.agents.has(id)) WHERE.delete(id); /* a session gone: what stays is bounded by the sessions there are */
+    watchBody(); wasHidden = hiddenNow();
     fitPlates(chrome, lay.width);
     stagger(chrome, lay.width);
     /* a chip or plate does not travel: it fades in where it now is, so nothing passes over anything (owner 2026-11-01) */
@@ -491,8 +493,16 @@
   }
 
   /* FR-074: a window hidden or back; FR-181: desks scrolled away stand still and do not paint, and catch up once when they are back */
+  /* body.panel-open comes and goes between draws: the room pauses and resumes at once */
+  let bodyWatch = null, wasHidden = false;
+  function watchBody() {
+    if (bodyWatch || typeof MutationObserver !== 'function') return;
+    bodyWatch = new MutationObserver(() => { if (hiddenNow() !== wasHidden) resume(); });
+    bodyWatch.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+  }
   function resume() {
     if (!CUR) return;
+    wasHidden = hiddenNow();
     const h = hiddenNow(); CUR.ro.classList.toggle('paused', h); if (h) finishMoves(CUR.ro);
     if (h) { closeZoom(); return; }
     for (const [id, s] of SCR) if (s.dirty) plan(id);
@@ -741,6 +751,18 @@
   }
 
   /* forget the session picks (Settings change of Characters, a test) */
-  function reset() { PEOPLE = null; SEEN.clear(); TICKS.clear(); }
-  root.DurbarRealOffice = { render, reset, feed, resume, bad: () => [...BAD], resolve, stagger }; /* resolve: for the driver's deterministic check */
+  function reset() { PEOPLE = null; SEEN.clear(); TICKS.clear(); WHERE.clear(); }
+  /* leaving Real office: nothing of it goes on, and no key listener of the zoom stays to swallow an Escape */
+  function leave() {
+    closeZoom();
+    if (IO) { IO.disconnect(); IO = null; }
+    for (const s of SCR.values()) clearTimeout(s.timer);
+    SCR.clear(); OFF.clear(); WHERE.clear(); GLIDING.clear();
+    clearTimeout(handTimer); handTimer = 0; clearTimeout(lodTimer); lodTimer = 0;
+    LOD = 0; lodBad = 0; lodGood = 0; DISMISSED = '';
+    if (bodyWatch) { bodyWatch.disconnect(); bodyWatch = null; }
+    wasHidden = false;
+    CUR = null;
+  }
+  root.DurbarRealOffice = { render, reset, leave, feed, resume, whereSize: () => WHERE.size, bad: () => [...BAD], resolve, stagger }; /* resolve: for the driver's deterministic check */
 })(typeof self !== 'undefined' ? self : this);

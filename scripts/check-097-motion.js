@@ -28,6 +28,7 @@ module.exports = async (ctx) => {
   const PICS = `[...document.querySelectorAll('#stage .ro img')].every(i=>i.complete)`;
   /* a frozen simulator (nothing changes but what the driver emits); romotion=1: the people move, as outside a driver */
   /* the machine's own setting must not decide this driver: Windows CI runners have "reduce motion" on, and then everyone rightly stands still */
+  const dbg0 = () => { const d = ctx.win.webContents.debugger; if (!d.isAttached()) d.attach('1.3'); return d; };
   const motionOn = () => { const d = ctx.win.webContents.debugger; if (!d.isAttached()) d.attach('1.3'); return d.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] }); };
   await motionOn();
   const loadReal = async (w, h, query = {}) => {
@@ -46,6 +47,7 @@ module.exports = async (ctx) => {
   const onRig = (i) => `!!document.querySelector('#stage .ro-person.m-rig[data-for="'+CSS.escape(${jsLiteral(i)})+'"]')&&document.querySelectorAll('#stage .ro-rig[data-for="'+CSS.escape(${jsLiteral(i)})+'"] img').length===3`;
   /* what the page says about a desk that is not on the rig, for the log */
   const rigState = (i) => js(`(()=>{const q=(c)=>document.querySelector('#stage '+c+'[data-for="'+CSS.escape(${jsLiteral(i)})+'"]'),p=q('.ro-person'),r=q('.ro-rig'),d=window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks).find(x=>x.id===${jsLiteral(i)});return {reduced:matchMedia('(prefers-reduced-motion: reduce)').matches,hidden:document.hidden,focus:document.hasFocus(),ro:document.querySelector('#stage .ro').className,person:p&&p.className,pose:p&&p.dataset.pose,anims:p&&p.getAnimations().map(a=>a.animationName||a.playState),rig:r&&r.querySelectorAll('img').length,state:d&&d.state,layoutPose:d&&d.person&&d.person.pose,pid:d&&d.person&&d.person.pid,hasRig:!!(d&&d.person&&window.DurbarRealOfficeArt.rig&&window.DurbarRealOfficeArt.rig[d.person.pid])};})()`);
+  const ALLOWED = ['opacity', 'transform', 'translate', 'scale']; /* FR-180, changed 2026-11-01: all composited, none needs layout */
   const seat = async (nth = 0) => {
     const id = await js(`window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks).filter(d=>d.state==='idle'&&d.person).map(d=>d.id)[${jsLiteral(nth)}]`);
     assert.ok(id, 'an idle agent at a desk');
@@ -80,7 +82,7 @@ module.exports = async (ctx) => {
     console.log('[097-motion] animations', w, h, JSON.stringify(names));
     assert.ok(names['ro-type'] >= 2 && names['ro-rig-hand'] >= 2 && names['ro-rig-head'] >= 1, 'two-frame animations: ' + JSON.stringify(names));
     for (const a of anims) {
-      assert.ok(a.props.every((p) => p === 'opacity' || p === 'transform'), `FR-180: only opacity and transform: ${a.name}: ${a.props}`);
+      assert.ok(a.props.every((p) => ALLOWED.includes(p)), `FR-180: only ${ALLOWED}: ${a.name}: ${a.props}`);
       if (/ro-(person|visitor)/.test(a.target) && /^ro-(fa|fb|fa-run|fb-run|br|type|wave|run|knock)$/.test(a.name)) assert.ok(!/steps|step-/.test(a.ease), `people ease (spec Changes 2026-11-01): ${a.name}: ${a.ease}`);
       if (/ro-(person|visitor)/.test(a.target) && /^ro-f[ab]/.test(a.name)) assert.ok(a.dur >= 720 && a.dur <= 3200, 'a frame period: ' + a.dur);
       if (a.name === 'ro-br' || a.name === 'ro-type') assert.ok(a.dur >= 5000 && a.dur <= 8000, 'a sway: ' + a.dur);
@@ -221,6 +223,20 @@ module.exports = async (ctx) => {
     const pick = await js(`(()=>{const d=window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks).find(x=>x.person&&document.querySelector('#stage .ro-desk[data-for="'+CSS.escape(x.id)+'"]'));const e=document.querySelector('#stage .ro-desk[data-for="'+CSS.escape(d.id)+'"]'),b=e.getBoundingClientRect();return {id:d.id,w:b.width,x:b.left,y:b.top,total:window.__durbarSimUi.agents().filter(a=>!a.parent).length};})()`);
     const out = await js(`new Promise((done)=>{const id=${jsLiteral(pick.id)},e=()=>document.querySelector('#stage .ro-desk[data-for="'+CSS.escape(id)+'"]');const L=window.__durbarSimUi.agents();const go=L.filter(a=>!a.parent&&a.id!==id).slice(0,5).map(a=>a.id);for(const g of go)window.__durbarSimUi.removeAgent(g);const t0=performance.now();let last=t0,first=null,sized=[];const look=(t)=>{const n=performance.now(),x=e();if(x){const b=x.getBoundingClientRect(),st=parseFloat(x.style.width);const anim=x.getAnimations().find(a=>!a.animationName&&a.effect.getKeyframes().some(k=>k.scale&&k.scale!=='1 1'));if(st&&Math.abs(st-${jsLiteral(pick.w)})>=1&&first===null)first={visual:b.width,layout:st,anim:!!anim,x:b.left,y:b.top};}sized.push(n-last);last=n;if(n-t0<1200)requestAnimationFrame(look);else{const s=sized.slice(1).sort((p,q)=>p-q);done({first,frames:s.length,median:s[s.length>>1],p95:s[Math.floor(s.length*.95)],max:s[s.length-1],over33:s.filter(v=>v>33.4).length,final:x&&x.getBoundingClientRect().width,layout:x&&parseFloat(x.style.width)});}};requestAnimationFrame(look);})`);
     console.log('[097-motion] count change', JSON.stringify({ was: pick.w, ...out }));
+    /* FR-180 on purpose, not by luck: another change, and every move that starts is read at once */
+    const moves = await js(`new Promise((done)=>{const L=window.__durbarSimUi.agents();const g=L.filter(a=>!a.parent&&a.id!==${jsLiteral(pick.id)}).slice(0,1).map(a=>a.id)[0];if(g)window.__durbarSimUi.removeAgent(g);const out=new Set();const t0=performance.now();const look=()=>{for(const a of document.getAnimations()){if(a.animationName||!a.effect||!a.effect.target||!a.effect.target.closest||!a.effect.target.closest('#stage .ro'))continue;for(const k of a.effect.getKeyframes())for(const p of Object.keys(k))if(!['offset','computedOffset','easing','composite'].includes(p))out.add(p);}if(performance.now()-t0<400)requestAnimationFrame(look);else done([...out]);};requestAnimationFrame(look);})`);
+    console.log('[097-motion] move properties', JSON.stringify(moves));
+    assert.ok(await H.until(`window.DurbarRealOffice.whereSize()<=window.__durbarSimUi.agents().filter(a=>!a.parent).length`, 3000), 'what is remembered about people goes with the sessions: ' + await js(`window.DurbarRealOffice.whereSize()`));
+    assert.ok(moves.every((p) => ALLOWED.includes(p)), 'FR-180: moves use only ' + ALLOWED + ': ' + moves);
+    assert.ok(moves.includes('scale') || moves.includes('translate'), 'and moves were there to read: ' + moves);
+    /* FR-071: reduced motion turned on later, with no reload: a change no longer moves anything */
+    await dbg0().sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
+    await must(`matchMedia('(prefers-reduced-motion: reduce)').matches`, 'reduced motion on');
+    await js(`new Promise(r=>setTimeout(r,700))`); // a bound: the moves above have ended
+    const stillMoves = await js(`(()=>{const L=window.__durbarSimUi.agents();const g=L.filter(a=>!a.parent&&a.id!==${jsLiteral(pick.id)}).slice(0,1).map(a=>a.id)[0];if(g)window.__durbarSimUi.removeAgent(g);window.__durbarSimUi.setLive(true);return new Promise((done)=>{let seen=0;const t0=performance.now();const look=()=>{for(const a of document.getAnimations())if(!a.animationName&&a.effect&&a.effect.target&&a.effect.target.closest&&a.effect.target.closest('#stage .ro')&&a.effect.getKeyframes().some(k=>k.scale||k.translate))seen++;if(performance.now()-t0<500)requestAnimationFrame(look);else done({seen,left:L.filter(a=>!a.parent).length});};requestAnimationFrame(look);});})()`);
+    console.log('[097-motion] moves under reduced motion', JSON.stringify(stillMoves));
+    assert.strictEqual(stillMoves.seen, 0, 'no move under reduced motion turned on later: ' + JSON.stringify(stillMoves));
+    await motionOn();
     assert.ok(out.first, 'the desk changed size when the count did: ' + JSON.stringify(out));
     assert.ok(out.first.anim, 'it eases on scale: ' + JSON.stringify(out));
     assert.ok(Math.abs(out.first.visual - pick.w) < Math.abs(out.first.layout - pick.w) * 0.25, 'it starts near the size it was: ' + JSON.stringify({ was: pick.w, ...out.first }));

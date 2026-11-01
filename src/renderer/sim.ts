@@ -2897,7 +2897,10 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
             // simspeed=N (perf checks, spec 052): background activity N times faster
             const speed = Math.max(1, Math.min(50, Number(typeof location !== 'undefined' ? new URLSearchParams(location.search).get('simspeed') : null) || 1));
             if (!opts.freeze) timer = window.setInterval(tick, Math.round(2600 / speed));
-            if (!opts.freeze) window.setInterval(screenTick, Math.round(1300 / speed));
+            if (!opts.freeze) {
+              const screenTimer = window.setInterval(screenTick, Math.round(1300 / speed));
+              window.addEventListener('pagehide', () => { window.clearInterval(screenTimer); if (timer) window.clearInterval(timer); }, { once: true });
+            }
           }, 0);
         }
         /* simresume=1 (spec 006 FR-021): Priya's folder came back after a restart as its last session, not started yet */
