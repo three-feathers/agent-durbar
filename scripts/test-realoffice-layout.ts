@@ -450,6 +450,20 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.feet as Record<s
   } else console.log('(dist/shared not built: the page-load check is skipped; npm test builds first)');
 }
 
+// ---- FR-127: the head room of the one raised hand: a waiting agent leaving for a place (kept) changes no desk of its row ----
+{
+  const m = model(6, 1, { away: false, states: ['working'] });
+  /* the head room comes from the tallest sitter's headTop/bodyH: the agent that leaves is the tallest of its row, everyone else the lowest */
+  const rise = (p: string): number => META.seat[p].headTop / META.seat[p].bodyH;
+  const byRise = PEOPLE.slice().sort((p, q) => rise(q) - rise(p));
+  m.folders[0].agents.forEach((x, i) => { x.person = i === 0 ? byRise[0] : byRise[byRise.length - 1]; });
+  assert.ok(rise(byRise[0]) > rise(byRise[byRise.length - 1]) + 0.01, 'the art has sitters of different height');
+  const strip = (l: ReturnType<typeof realLayout>): string => JSON.stringify([l.height, l.zones.map((z) => [z.box, z.desks.map((d) => [d.id, d.slot, d.desk, d.plate])])]);
+  const before = strip(realLayout(m, { w: 1440, h: 848 }, META));
+  const gone = JSON.parse(JSON.stringify(m)) as RealModel; gone.folders[0].agents[0].away = 'boss'; gone.folders[0].agents[0].keep = true;
+  assert.strictEqual(strip(realLayout(gone, { w: 1440, h: 848 }, META)), before, 'the raised hand of an agent that left still has its head room: no row moves');
+}
+
 // ---- spec 097 FR-110, FR-121: placeBox puts a slip on the free spot nearest its door, never on anything in the avoid list ----
 {
   const bounds = { x: 0, y: 200, w: 600, h: 300 };

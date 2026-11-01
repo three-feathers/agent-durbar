@@ -56,7 +56,7 @@ module.exports = async (ctx) => {
         await js(`localStorage.setItem('durbar.officeview','real');localStorage.setItem('durbar.world',${jsLiteral(world)})`);
         await H.load({ w, h, query: q(world, { sim: undefined, officeview: undefined }), ready: `!!document.querySelector('#stage .welcome')`, settle: false });
       }
-      await must(`!!document.getElementById('roWorldCss-${world}')`, 'the world stylesheet');
+      await must(`!!document.getElementById('roWorldCss-'+${jsLiteral(world)})`, 'the world stylesheet');
       await must(`document.documentElement.dataset.world===${jsLiteral(world)}`, 'the world on html');
       const fr = await js(`(()=>{try{const c=document.querySelector('#stage .welcome');return {surface:c.dataset.surface,labelled:c.getAttribute('aria-labelledby'),h:document.getElementById('wlT').textContent,lift:!!document.querySelector('#lift:not([hidden])'),lobby:!!document.querySelector('#stage .lobby,#stage .ro-lobby'),counts:getComputedStyle(document.getElementById('stats')).visibility,ring:!!document.querySelector('#addFolder.ring,#addFolder[data-ring]'),
         btns:[...c.querySelectorAll('button')].map(b=>b.textContent.trim()),small:[...c.querySelectorAll('*')].filter(e=>e.children.length===0&&e.textContent.trim()&&parseFloat(getComputedStyle(e).fontSize)<10.5).length}}catch(e){return {err:String(e)}}})()`);
