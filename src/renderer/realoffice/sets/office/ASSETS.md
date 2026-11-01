@@ -1,8 +1,8 @@
-# Real office art: provenance (spec 097 FR-062..FR-069)
+# Real office set: Office people: provenance (spec 097 FR-062..FR-069, spec 102 FR-205)
 
 Every picture in this folder, where it comes from, who made and approved it, the exact prompt, and how it was cut and re-encoded.
 Checked by `npm run test:realoffice-assets` (every file listed once, every section complete, the fictional-people clause and a
-`likeness-check` on every person sheet). Only the `.webp` files and `people.json` ship (as `realoffice/art/people.js`); this file stays
+`likeness-check` on every person sheet). Only the `.webp` files and `set.json` ship (as `realoffice/sets/office/set.js`); this file stays
 in the repository.
 
 - **Licence:** MIT, like the code and the crew art (spec 097 FR-064, Q4: Vikram, 2026-10-31).
@@ -43,19 +43,6 @@ in the repository.
 - fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (recorded by the build PR, 2026-10-31; the prompt above did not carry it)
 - likeness-check: Vikram, 2026-10-31 10:46 UTC (contact sheet of p01–p15 reviewed; none resembles a real or famous person)
 - cut: one picture per pose, re-encoded WebP 0.80 with alpha, no metadata, at most 640 px tall
-- licence: MIT
-
-### desk3
-
-- files: desk.webp
-- source: `room-art/v2/desk3/desk3.png` (not shipped), sliced by the mockup's slicer
-- tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
-- date: 2026-10-31
-- made by: Vikram's agent (Claude Code)
-- approved by: Vikram, 2026-10-31
-- reference: `room-art/b-desk2/b-desk-front-2.png` (an earlier generated desk; its prompt is under *References* below)
-- prompt: One office desk seen from the front, centred, on a fully TRANSPARENT background (PNG with alpha channel, no floor, no shadow plane). Light oak desktop, black steel legs, a light oak front modesty panel. The desktop is completely empty except a white mug at the far right end. No monitor, no chair, no person, no keyboard. Same look as the attached desk. Photoreal 3D render, front-facing camera about 20 degrees down, mild perspective, soft warm daylight, clean, calm, realistic, office-safe, no text, no logos.
-- cut: one picture per pose, re-encoded WebP 0.80 with alpha, no metadata
 - licence: MIT
 
 ### seat-p02
@@ -268,19 +255,6 @@ in the repository.
 - cut: one picture per pose, re-encoded WebP 0.80 with alpha, no metadata, at most 640 px tall
 - licence: MIT
 
-### b-backwall
-
-- files: fx-library.webp fx-software.webp fx-terminal.webp fx-web.webp fx-boss.webp fx-coffee.webp fx-bank.webp fx-postbox.webp fx-other.webp floor.webp
-- source: `room-art/b-backwall/b-backwall.png` (not shipped), one 1672x941 render of the whole back wall
-- tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
-- date: 2026-10-31
-- made by: Vikram's agent (Claude Code)
-- approved by: Vikram, 2026-10-31
-- reference: none
-- prompt: A wide 16:9 panoramic view of the back wall of the office, seen straight on from the front. From left to right along the wall: a library bookshelf, a software shelf, a wall-mounted terminal screen, a globe kiosk, double doors (the Boss office), a coffee bar, a bank counter with a glass panel, a blue postbox, and a red tool cart. High windows above the wall with daylight. The floor in the foreground is light oak and completely empty. No people. Photoreal 3D render, front-facing eye-level-from-slightly-above camera (about 20° down), mild perspective, modern open-plan software office, warm daylight, light oak, white walls, black steel, plants; clean, calm, realistic, no text, no logos.
-- cut: the build PR re-cropped every fixture from the wall at one top (y 192) and one floor line (y 468), so each is whole and all share a scale (FR-023); sides feathered over 14 px; the Terminal keeps the wall screen only (rows above y 331), the Web the globe only (rows from y 332); `floor.webp` is the floor band (y 470..600) at quality 0.70; WebP, no metadata
-- re-cut (#921 review, owner 2026-11-01): the Web globe's wall and floor patch showed in front of the wall (a feathered rectangle with the photo's floor at the bottom); the picture was cut out again with Pillow (background flood-filled from the edges, floor rows and a stray strip removed, the largest piece kept, edge softened 0.7 px), re-encoded as WebP quality 80, method 6, no metadata; same size and floor line. Other fixtures are photo bays and were looked at at both sizes (no change).
-- licence: MIT
 
 ## Facing poses (spec 097 FR-191..FR-194; added 2026-10-31)
 

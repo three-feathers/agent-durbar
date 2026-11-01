@@ -72,7 +72,7 @@ module.exports = async (ctx) => {
         short:C.filter(c=>/\u2026$/.test((c.querySelector('.ro-cn')||{}).textContent||'')).map(c=>c.dataset.name),initials:C.filter(c=>{const t=(c.querySelector('.ro-cn')||{}).textContent;return t!==c.dataset.name&&!/\u2026$/.test(t)}).map(c=>c.dataset.name),far:C.filter(c=>{const v=document.querySelector('#stage .ro-visitor[data-for="'+CSS.escape(c.dataset.for||c.dataset.pvopen||'')+'"]');if(!v)return false;const a=c.getBoundingClientRect(),b=v.getBoundingClientRect();return Math.abs((a.left+a.right)/2-(b.left+b.right)/2)>70}).map(c=>c.dataset.name),shortened:C.filter(c=>/\u2026$/.test((c.querySelector('.ro-cn')||{}).textContent||'')).length,chips:C.length,labels:P.map(p=>p.textContent)}})()`;
 
   // ---- FR-002, SC-004: flat is the default and loads nothing of Real office ----
-  await H.load({ w: 1440, h: 900 });
+  await H.load({ w: 1440, h: 900 }); await js(`localStorage.removeItem('durbar.officeview')`); await H.load({ w: 1440, h: 900 });
   assert.strictEqual(await js(`!!document.querySelector('.ro')`), false, 'flat by default');
   assert.strictEqual(await realFiles(), 0, 'flat mode requested a Real office file');
   assert.strictEqual(await js(`!!window.DurbarRealOffice`), false, 'flat mode loaded realoffice.js');
@@ -86,12 +86,27 @@ module.exports = async (ctx) => {
   assert.strictEqual(seg, 'cabins:false open:true real:false', 'three buttons, Open office pressed: ' + seg);
   await js(`document.querySelector('[data-officelayout="real"]').scrollIntoView({block:'center'})`);
   await H.shot(path.join(OUT, '097-office-layout-1440x900.png'), { prep: 'calm' });
-  await js(`document.querySelector('[data-officelayout="real"]').click()`);
+  await js(`document.querySelector('[data-officelayout="real"]').focus();document.querySelector('[data-officelayout="real"]').click()`);
   await must(`document.querySelector('[data-officelayout="real"]').getAttribute('aria-pressed')==='true'`, 'Real office pressed');
+  await must(`document.activeElement&&document.activeElement.dataset&&document.activeElement.dataset.officelayout==='real'`, 'the keyboard focus stays on the Real office button after the repaint');
   assert.strictEqual(await js(`localStorage.getItem('durbar.officeview')`), 'real', 'stored as real');
   assert.strictEqual(await js(`localStorage.getItem('durbar.doorsigns')`), 'off', 'durbar.doorsigns untouched');
   await js(`document.getElementById('scrClose').click()`);
   await must(REAL, 'the Real office after the Settings choice');
+  /* spec 097 FR-115, spec 102 FR-201, FR-205: html[data-world] is the shown world; only that world's and that set's packs were asked for; no World row while one world is offered */
+  assert.strictEqual(await js(`document.documentElement.dataset.world`), 'photo', 'html[data-world] is photo in Real office');
+  assert.strictEqual(await js(`document.querySelector('#stage .ro').dataset.world+'/'+document.querySelector('#stage .ro').dataset.set`), 'photo/office', 'the room draws the Photo office with the Office people');
+  const packFiles = await js(`[...new Set([...document.querySelectorAll('script[src],link[href],#stage img[src]')].map(e=>e.getAttribute('src')||e.getAttribute('href')).filter(n=>/realoffice\\/(worlds|sets)\\//.test(n)).map(n=>n.replace(/^.*realoffice\\/(worlds|sets)\\/([^/]+)\\/.*$/,'$1/$2')))].sort().join(' ')`);
+  assert.strictEqual(packFiles, 'sets/office worlds/photo', 'Real office asked for the Photo office and the Office people only: ' + packFiles);
+  await js(`window.DurbarScreens.openSettings()`);
+  await must(`!!document.querySelector('[data-officelayout="real"]')`, 'Settings');
+  assert.strictEqual(await js(`!!document.querySelector('#wrGroup')`), false, 'no World row while only one world is offered');
+  assert.ok(/World\u2019s default \(Office people\)/.test(await js(`document.querySelector('#chList [data-characters="theme"]').getAttribute('aria-label')`)), 'Characters starts with the world\u2019s default set');
+  await js(`document.querySelector('#chList [data-characters="cheeky"]').click()`);
+  await must(`document.getElementById('dsR').textContent==='Real office shows Office people until Cheeky has Real office poses.'`, 'Cheeky has no Real office poses: Settings says so under Office layout');
+  await js(`document.querySelector('#chList [data-characters="theme"]').click()`);
+  await must(`document.getElementById('dsR').textContent===''`, 'the line goes with the default');
+  await js(`document.getElementById('scrClose').click()`);
   await js(`window.DurbarScreens.openSettings()`);
   await must(`!!document.querySelector('[data-officelayout="open"]')`, 'the Office layout row');
   await js(`document.querySelector('[data-officelayout="open"]').click()`);
@@ -188,7 +203,7 @@ module.exports = async (ctx) => {
     assert.strictEqual(bub.x, bub.e, 'one "!" per error desk');
     // ---- owner 2026-10-31 10:19 and 10:48: every visitor's feet (its measured foot line) on the FRONT floor plane (in front of the
     //      fixtures, FRONT_DEPTH of the strip below the wall line) within 2 px, with a contact shadow there; no chip over a figure's lower 25 % ----
-    const FEET = `(()=>{const A=self.DurbarRealOfficeArt,sr=document.querySelector('#stage .ro-strip').getBoundingClientRect(),wl=sr.top+3,fl=wl+self.exports.FRONT_DEPTH*(sr.bottom-wl),out=[];
+    const FEET = `(()=>{const A=Object.assign({},self.DurbarRealOfficeWorlds.photo,self.DurbarRealOfficeSets.office),sr=document.querySelector('#stage .ro-strip').getBoundingClientRect(),wl=sr.top+3,fl=wl+self.exports.FRONT_DEPTH*(sr.bottom-wl),out=[];
       const chips=[...document.querySelectorAll('#stage .ro-chip')].map(c=>c.getBoundingClientRect());
       for(const im of document.querySelectorAll('#stage .ro-visitor')){const m=/(p\\d\\d)-(\\w+)\\.webp$/.exec(im.getAttribute('src'));const f=A.stand[m[1]].feet[m[2]],t=A.stand[m[1]].top[m[2]],fc=A.stand[m[1]].foot[m[2]];
         const r=im.getBoundingClientRect(),y=r.top+r.height*f,cx=r.left+r.width*fc,lo=r.top+r.height*(f-0.25*(f-t));
@@ -211,7 +226,7 @@ module.exports = async (ctx) => {
     const SETTLED = `(()=>{const v=[...document.querySelectorAll('#stage .ro-visitor')];return v.length>=3&&v.every(i=>i.complete&&i.naturalWidth>0)})()`;
     /* written out here, not read from FX_POSE: a driver that asks the code what to expect cannot catch the code being wrong */
     const WANT_POSE = ({ library: 'book', software: 'book', terminal: 'runA', web: 'type', boss: 'knock', coffee: 'counter', bank: 'counter', postbox: 'letter', other: 'type' });
-    const FACING = `(()=>{const A=self.DurbarRealOfficeArt,WANT=${jsLiteral(WANT_POSE)},out=[],vs=[...document.querySelectorAll('#stage .ro-visitor')];
+    const FACING = `(()=>{const A=Object.assign({},self.DurbarRealOfficeWorlds.photo,self.DurbarRealOfficeSets.office),WANT=${jsLiteral(WANT_POSE)},out=[],vs=[...document.querySelectorAll('#stage .ro-visitor')];
       for(const im of vs){const m=/(p\\d\\d)-(\\w+)\\.webp$/.exec(im.getAttribute('src')),pl=im.dataset.place,fx=document.querySelector('#stage .ro-fx[data-place="'+pl+'"],#stage .ro-kiosk[data-place="'+pl+'"]');
         const r=im.getBoundingClientRect(),footX=r.left+r.width*A.stand[m[1]].foot[m[2]],q=fx&&fx.getBoundingClientRect(),want=WANT[pl]||'letter';
         out.push({who:im.dataset.for,place:pl,pose:m[2],ok:m[2]===want||(m[2]==='letter'&&want==='runA'),faces:im.dataset.faces,meta:A.facing,side:q?(footX>q.left+q.width/2?'left':'right'):'none',footX,h:r.height,
@@ -497,7 +512,7 @@ module.exports = async (ctx) => {
   /* a simulator visit can take the chosen person to the lobby before its picture fails (then no disc is drawn at its desk): try another person, up to six times */
   let discOk = false;
   for (let t = 0; t < 6 && !discOk; t++) {
-    const victim = await js(`(()=>{const i=document.querySelector('#stage .ro-person');if(!i)return '';const f=i.dataset.for;i.src='realoffice/art/missing.webp';return f})()`);
+    const victim = await js(`(()=>{const i=document.querySelector('#stage .ro-person');if(!i)return '';const f=i.dataset.for;i.src='realoffice/sets/office/missing.webp';return f})()`);
     if (victim) discOk = await H.until(`!!document.querySelector('#stage .ro-initials[data-for="'+CSS.escape(${jsLiteral(victim)})+'"]')`, 5000);
   }
   assert.ok(discOk, 'the initials disc after a failed picture');

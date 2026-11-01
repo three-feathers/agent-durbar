@@ -10,14 +10,14 @@ import { webpInfo } from './webpinfo';
 
 process.exitCode = 1;
 const ROOT = (() => { let d = __dirname; while (!fs.existsSync(path.join(d, 'package.json'))) d = path.dirname(d); return d; })();
-const DIR = path.join(ROOT, 'src', 'renderer', 'realoffice', 'art');
+const RO = path.join(ROOT, 'src', 'renderer', 'realoffice');
 
 /** FR-062 caps, in bytes, by kind of picture */
 export const CAPS = { person: 80 * 1024, fixture: 120 * 1024, desk: 60 * 1024, floor: 40 * 1024, total: 10 * 1024 * 1024 };
 export const PERSON_MAX_H = 640;
 const KEYS = ['files', 'source', 'tool', 'date', 'made by', 'approved by', 'reference', 'prompt', 'cut', 'licence'];
 const CLAUSE = /fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named/;
-const kindOf = (f: string): keyof typeof CAPS | null => /^p\d\d-\w+\.webp$/.test(f) ? 'person' : /^fx-[a-z]+\.webp$/.test(f) ? 'fixture' : f === 'desk.webp' ? 'desk' : f === 'floor.webp' ? 'floor' : null;
+const kindOf = (f: string): keyof typeof CAPS | null => /^fx-[a-z]+\.webp$/.test(f) ? 'fixture' : /^[a-z][a-z0-9]*-\w+\.webp$/.test(f) ? 'person' : f === 'desk.webp' ? 'desk' : f === 'floor.webp' ? 'floor' : null;
 
 /** ASSETS.md: one section per source sheet (`### name`), each a list of `- key: value` lines */
 export function sections(md: string): Map<string, Record<string, string>> {
@@ -55,7 +55,7 @@ export function problems(files: Map<string, Buffer>, peopleJson: string, md: str
     for (const k of KEYS) if (!s[k]) out.push(`ASSETS.md ${name}: no "${k}"`);
     if (s.licence && !/^MIT\b/.test(s.licence)) out.push(`ASSETS.md ${name}: licence is not MIT`);
     if (s.date && !/^\d{4}-\d{2}-\d{2}$/.test(s.date)) out.push(`ASSETS.md ${name}: date is not YYYY-MM-DD`);
-    const person = /^(seat|stand|stand2|run|facing)-p\d\d$/.test(name);
+    const person = /^(seat|stand|stand2|run|set|facing)-[a-z0-9]+$/.test(name);
     if (person) {
       if (!CLAUSE.test(s.fictional || '')) out.push(`ASSETS.md ${name}: no fictional-people clause (FR-067)`);
       const lc = s['likeness-check'] || '';
@@ -112,22 +112,50 @@ export function problems(files: Map<string, Buffer>, peopleJson: string, md: str
   return out;
 }
 
-// ---- the real pack ----
-const files = new Map<string, Buffer>();
-for (const f of fs.readdirSync(DIR)) if (f.endsWith('.webp')) files.set(f, fs.readFileSync(path.join(DIR, f)));
-const md = fs.readFileSync(path.join(DIR, 'ASSETS.md'), 'utf8');
-const pj = fs.readFileSync(path.join(DIR, 'people.json'), 'utf8');
-for (const f of fs.readdirSync(DIR)) assert.ok(f.endsWith('.webp') || f === 'people.json' || f === 'ASSETS.md', 'only pictures, people.json and ASSETS.md in the folder: ' + f);
-const real = problems(files, pj, md);
-assert.deepStrictEqual(real, [], 'the shipped pack passes: ' + real.slice(0, 10).join('; '));
-const total = [...files.values()].reduce((s, b) => s + b.length, 0);
-const META = JSON.parse(pj);
+// ---- the real packs (spec 102 FR-205, FR-213; 097 FR-115): a world and a set are separate folders; the 10 MB cap counts a world with its default set ----
+const dirs = (kind: string): string[] => fs.readdirSync(path.join(RO, kind)).filter((d) => fs.statSync(path.join(RO, kind, d)).isDirectory()).sort();
+const readPack = (kind: string, id: string): { files: Map<string, Buffer>; md: string; json: Record<string, unknown> } => {
+  const dir = path.join(RO, kind, id), files = new Map<string, Buffer>();
+  const meta = kind === 'worlds' ? 'world.json' : 'set.json';
+  for (const f of fs.readdirSync(dir)) {
+    if (f.endsWith('.webp')) files.set(f, fs.readFileSync(path.join(dir, f)));
+    else assert.ok(f === meta || f === 'ASSETS.md' || (kind === 'worlds' && f === 'world.css'), `only pictures, ${meta}${kind === 'worlds' ? ', world.css' : ''} and ASSETS.md in ${kind}/${id}: ${f}`);
+  }
+  return { files, md: fs.readFileSync(path.join(dir, 'ASSETS.md'), 'utf8'), json: JSON.parse(fs.readFileSync(path.join(dir, meta), 'utf8')) };
+};
+const files = new Map<string, Buffer>(); // the shipped Photo office with its default set, for the checks below
+let md = '', pj = '', META: { seat: Record<string, unknown>; stand: Record<string, { poses: object }>; facing?: string } = { seat: {}, stand: {} };
+let packs = 0, biggest = 0;
+const setIds = dirs('sets'), worldIds = dirs('worlds');
+assert.ok(worldIds.includes('photo') && setIds.includes('office'), 'the Photo office and the Office people ship');
+for (const wid of worldIds) {
+  const w = readPack('worlds', wid), wj = w.json as { id: string; name: string; defaultSet: string; formatVersion: number };
+  assert.strictEqual(wj.id, wid, `${wid}: world.json id is the folder`);
+  assert.strictEqual(wj.formatVersion, 1, `${wid}: formatVersion 1`);
+  assert.ok(typeof wj.name === 'string' && wj.name.length >= 1 && Array.from(wj.name).length <= 40, `${wid}: name 1-40 characters`);
+  assert.ok(setIds.includes(wj.defaultSet), `${wid}: its default set (${wj.defaultSet}) is a set in the repo`);
+  const st = readPack('sets', wj.defaultSet), sj = st.json as { id: string; level: string };
+  assert.strictEqual(sj.id, wj.defaultSet, `${wj.defaultSet}: set.json id is the folder`);
+  assert.strictEqual(sj.level, 'full', `${wj.defaultSet}: a world's default set has full poses (FR-204)`);
+  const all = new Map([...w.files, ...st.files]);
+  const mdAll = w.md + '\n## The default set\n\n' + st.md;
+  assert.deepStrictEqual(removals(st.md), [], `${wj.defaultSet}: its removal records are complete`);
+  const merged = JSON.stringify({ ...w.json, ...st.json });
+  const real = problems(all, merged, mdAll);
+  assert.deepStrictEqual(real, [], `${wid} + ${wj.defaultSet} pass: ` + real.slice(0, 10).join('; '));
+  const pending = [...sections(mdAll)].filter(([, x]) => /^pending/.test(x['likeness-check'] || '')).map(([n]) => n);
+  assert.deepStrictEqual(pending, [], `${wid}: every person has its likeness check on record (FR-068)`);
+  packs++; biggest = Math.max(biggest, [...all.values()].reduce((n, b) => n + b.length, 0));
+  if (wid === 'photo') { for (const [k, v] of all) files.set(k, v); md = mdAll; pj = merged; META = JSON.parse(merged); }
+}
+for (const sid of setIds) assert.ok(worldIds.some((w) => (readPack('worlds', w).json as { defaultSet: string }).defaultSet === sid), `${sid}: a set the repo ships is the default of a world (so the cap counts it)`);
 assert.strictEqual(Object.keys(META.seat).length, 15, '15 seated people (the Office people)');
 assert.ok(Object.values(META.stand as Record<string, { poses: object }>).every((s) => ['book', 'type', 'knock', 'counter', 'letter', 'runA', 'runB'].every((p) => p in s.poses) && !('tread' in s.poses) && Object.keys(s.poses).length === 7), 'every person has exactly the five lobby poses and the two running strides, no treadmill (owner 2026-10-31 11:22), and no old front-facing pose (FR-191)');
 assert.strictEqual(META.facing, 'left', 'the pictures face left (FR-191)');
 assert.ok(Object.values(META.stand as Record<string, { foot?: Record<string, number>; poses: object }>).every((s) => s.foot && Object.keys(s.poses).every((p) => (s.foot as Record<string, number>)[p] > 0.2)), 'every standing picture has its measured foot centre (FR-191)');
 const pending = [...sections(md)].filter(([, s]) => /^pending/.test(s['likeness-check'] || '')).map(([n]) => n);
 assert.deepStrictEqual(pending, [], 'every Office person has its likeness check on record (Vikram, 2026-10-31 10:46 UTC; FR-068)');
+const total = [...files.values()].reduce((s, b) => s + b.length, 0);
 
 // ---- the check itself: each rule fails on its broken case ----
 {
@@ -166,21 +194,23 @@ assert.deepStrictEqual(pending, [], 'every Office person has its likeness check 
   assert.ok(problems(big, pj, md).some((p) => /over 10485760/.test(p)), 'red: a pack over 10 MB');
 }
 
-// ---- packaging (FR-060, FR-061, T012): the build ships the pictures and people.js, never ASSETS.md; the CSP is unchanged ----
+// ---- packaging (FR-060, FR-061, T012): the build ships each pack's pictures and its script, never ASSETS.md or the JSON; the CSP is unchanged ----
 const copy = fs.readFileSync(path.join(ROOT, 'scripts', 'copy-assets.js'), 'utf8');
-assert.ok(/'realoffice', 'art'/.test(copy), 'copy-assets.js copies realoffice/art');
-const OUT = path.join(ROOT, 'dist', 'renderer', 'realoffice', 'art');
+assert.ok(/'worlds', 'world', 'DurbarRealOfficeWorlds'/.test(copy) && /'sets', 'set', 'DurbarRealOfficeSets'/.test(copy), 'copy-assets.js copies realoffice/worlds and realoffice/sets');
 if (fs.existsSync(path.join(ROOT, 'dist', 'renderer', 'index.html'))) {
-  assert.deepStrictEqual(fs.readdirSync(OUT).sort(), [...files.keys(), 'people.js'].sort(), 'dist holds exactly the pictures and people.js: no ASSETS.md, no people.json');
-  const js = fs.readFileSync(path.join(OUT, 'people.js'), 'utf8');
-  const m = /self\.DurbarRealOfficeArt=(\{.*\});\s*$/.exec(js);
-  assert.ok(m, 'people.js sets self.DurbarRealOfficeArt');
-  assert.deepStrictEqual(JSON.parse((m as RegExpExecArray)[1]), META, 'people.js carries people.json unchanged');
+  for (const [kind, json, global] of [['worlds', 'world', 'DurbarRealOfficeWorlds'], ['sets', 'set', 'DurbarRealOfficeSets']]) for (const id of dirs(kind)) {
+    const src = readPack(kind, id), out = path.join(ROOT, 'dist', 'renderer', 'realoffice', kind, id);
+    const extra = kind === 'worlds' && fs.existsSync(path.join(RO, kind, id, 'world.css')) ? ['world.css'] : [];
+    assert.deepStrictEqual(fs.readdirSync(out).sort(), [...src.files.keys(), json + '.js', ...extra].sort(), `dist ${kind}/${id} holds exactly the pictures and ${json}.js: no ASSETS.md, no ${json}.json`);
+    const m = new RegExp(`self\\.${global}\\[\"${id}\"\\]=(\\{.*\\});\\s*$`).exec(fs.readFileSync(path.join(out, json + '.js'), 'utf8'));
+    assert.ok(m, `${json}.js sets self.${global}[${id}]`);
+    assert.deepStrictEqual(JSON.parse((m as RegExpExecArray)[1]), src.json, `${json}.js carries ${json}.json unchanged`);
+  }
   for (const f of ['realoffice.js', 'realoffice.css', 'realoffice-world.css']) assert.ok(fs.existsSync(path.join(ROOT, 'dist', 'renderer', f)), f + ' is built');
 }
 const index = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'index.html'), 'utf8');
 const csp = /Content-Security-Policy" content="([^"]*)"/.exec(index);
 assert.strictEqual(csp && csp[1], "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;", 'the CSP is unchanged (FR-060)');
 assert.ok(!/realoffice/.test(index), 'index.html does not load Real office (FR-061: only on first use)');
-console.log(`realoffice assets tests passed (${files.size} pictures, ${(total / 1024 / 1024).toFixed(2)} MB)`);
+console.log(`realoffice assets tests passed (${packs} world packs with their default sets, largest ${(biggest / 1024 / 1024).toFixed(2)} MB; the Photo office ${files.size} pictures, ${(total / 1024 / 1024).toFixed(2)} MB)`);
 process.exitCode = 0;
