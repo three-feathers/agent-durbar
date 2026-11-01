@@ -595,7 +595,7 @@ async function main(): Promise<void> {
     const MAX_ATTEMPTS = 20000;
     let attempts = 0;
     // count the exposures: a rename of notes.md that landed in the other folder through the swapped link (the dangerous rounds)
-    const watched = { ...nodeFs, renameSync: (a: nodeFs.PathLike, b: nodeFs.PathLike): void => { nodeFs.renameSync(a, b); if (String(a) === md(folder) && nodeFs.existsSync(path.join(outside, path.basename(String(b))))) exposed++; } } as unknown as NotesFileFs;
+    const watched = { ...nodeFs, renameSync: (a: nodeFs.PathLike, b: nodeFs.PathLike): void => { nodeFs.renameSync(a, b); if (String(a) === md(folder) && nodeFs.existsSync(path.join(outside, 'notes', path.basename(String(b))))) exposed++; } } as unknown as NotesFileFs;
     const fw = new NotesFile({ fs: watched, now: tickClock });
     for (let i = 0; i < MAX_ATTEMPTS; i++) {
       attempts++;
@@ -604,7 +604,7 @@ async function main(): Promise<void> {
       // a rename that landed in the outside folder (exposure): put the outside file back under its name, so every round can reach it
       if (!nodeFs.existsSync(path.join(outside, 'notes', 'notes.md'))) {
         const moved = nodeFs.readdirSync(path.join(outside, 'notes')).find((n) => n.endsWith('.del') && nodeFs.statSync(path.join(outside, 'notes', n)).ino === ino);
-        if (moved) { restored++; nodeFs.renameSync(path.join(outside, moved), path.join(outside, 'notes', 'notes.md')); }
+        if (moved) { restored++; nodeFs.renameSync(path.join(outside, 'notes', moved), path.join(outside, 'notes', 'notes.md')); }
       }
       if (i % 50 === 0) await new Promise((res) => setImmediate(res));
     }
