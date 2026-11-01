@@ -2595,7 +2595,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       },
     };
 
-    const simKinds = simKindsParam === '1' || simKindsParam === 'solo'; // spec 012 FR-136: '1' = two ready harnesses (picker shown), 'solo' = only Copilot ready (picker hidden)
+    const simKinds = simKindsParam === '1' || simKindsParam === 'solo' || simKindsParam === 'ready'; /* 'ready' (spec 011 FR-092): all three apps ready */ // spec 012 FR-136: '1' = two ready harnesses (picker shown), 'solo' = only Copilot ready (picker hidden)
     // Spec 006 FR-028: `simprev=inoffice|inoffice-solo|error` make the next delete answer a refusal or an error. Delete… disabled (no per-session delete) is seen with `simkinds=mixed`, where Ada is Claude Code.
     const simPrev = simQuery.get('simprev') ?? '';
     // Spec 006 FR-034/FR-036: `simprevdelay=<ms>` (at most 10 s) makes both lists answer late, so a driver can press Ctrl+Shift+H while they load.
@@ -2621,6 +2621,47 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     const simExpired = new Set<string>(simAuthMode === 'expired' ? ['copilot', 'claude'] : []);
     const SIM_AUTH_ERROR = 'Failed to authenticate. API Error: 401 OAuth access token is invalid.';
     const signInState = (a: AdapterInfo): AdapterInfo => (a.state === 'ready' && simSignedOut.has(a.id) ? { ...a, state: 'not-signed-in', hint: 'Sign in first: open Settings > Agent apps and choose Sign in….' } : a);
+    /* spec 011 FR-092: the account-limit fixtures; raw reads, sanitised and stepped by shared/quota.ts as main does it */
+    const simQuotaEntries = new Map<string, import('../shared/quota').QuotaEntry>();
+    const simQuotaCount = new Map<string, number>();
+    const simQuotaMode = (app: string): string => {
+      const raw = simQuery.get('simquota') ?? '';
+      const per = raw.split(',').map((p) => p.split(':')).find((p) => p.length === 2 && p[0] === app);
+      if (per) return per[1];
+      if (app === 'claude') return 'noread'; // Claude Code has no free call (FR-081)
+      return raw && !raw.includes(':') ? raw : 'current';
+    };
+    const simQuotaFixture = (app: string, mode: string, nth: number, now: number): { read: unknown; at?: number } => {
+      const H = 3_600_000, D = 24 * H;
+      const reqs = (used: number, limit: number, left: number, extra: Record<string, unknown> = {}) => ({ id: 'premium_interactions', label: 'Premium requests', unit: 'requests', used, limit, remainingPercent: left, resetsAt: new Date(now + 12 * D).toISOString(), resetZone: 'UTC', ...extra });
+      const chat = { id: 'chat', label: 'Chat requests', unit: 'requests', used: 0, unlimited: true };
+      const wins = (first: number, second: number, extra: Record<string, unknown> = {}) => [{ id: 'primary', label: '5-hour window', unit: 'percent', usedPercent: first, windowMins: 300, resetsAt: now + 3 * H, ...extra }, { id: 'secondary', label: 'Weekly window', unit: 'percent', usedPercent: second, windowMins: 10080, resetsAt: now + 5 * D }];
+      const source = app === 'copilot' ? 'GitHub Copilot, account.getQuota (experimental; can lag a few minutes)' : app === 'codex' ? 'Codex, account/rateLimits/read' : 'Simulated';
+      const KEY_A = 'a'.repeat(32), KEY_B = 'b'.repeat(32);
+      const ok = (buckets: unknown[], at?: number) => ({ read: { kind: 'ok', source, buckets, accountKey: KEY_A }, at });
+      const copilot = app === 'copilot';
+      const fail = (failure: string) => ({ read: { kind: 'failed', failure } });
+      switch (mode) {
+        case 'near': return ok(copilot ? [reqs(1410, 1500, 6, { overageAllowed: true }), chat] : wins(93, 41));
+        case 'exhausted': return ok(copilot ? [reqs(1500, 1500, 0), chat] : wins(100, 60));
+        case 'stale': return ok(copilot ? [reqs(506, 1500, 66.3), chat] : wins(12, 41), now - 40 * 60_000);
+        case 'agingsoon': return ok(copilot ? [reqs(506, 1500, 66.3)] : wins(12, 41), now - 15 * 60_000 + 2500);
+        case 'resetsoon': return ok(copilot ? [reqs(1410, 1500, 6, { resetsAt: now + 2500 })] : wins(93, 41, { resetsAt: now + 2500 }));
+        case 'partial': return ok(copilot ? [reqs(506, 1500, 66.3), { id: 'chat', label: 'Chat requests', unit: 'requests', used: 'lots' }] : [wins(12, 41)[0], { id: 'secondary', label: 'Weekly window', unit: 'percent', usedPercent: 'lots' }]);
+        case 'switched': return nth === 1 ? ok(copilot ? [reqs(506, 1500, 66.3)] : wins(12, 41)) : { read: { kind: 'failed', failure: 'unavailable', accountKey: KEY_B } };
+        case 'nokey': return { read: { kind: 'ok', source, buckets: copilot ? [reqs(506, 1500, 66.3)] : wins(12, 41) } };
+        case 'failed': return fail('unavailable');
+        case 'failagain': return nth === 1 ? ok(copilot ? [reqs(506, 1500, 66.3), chat] : wins(12, 41)) : fail('timeout');
+        case 'ratelimited': return fail('rate-limited');
+        case 'signedout': return fail('signed-out');
+        case 'malformed': return { read: { kind: 'ok', source, buckets: 'nonsense' } };
+        case 'notreported': return copilot ? ok([]) : { read: { kind: 'not-reported', reason: 'api-key' } };
+        case 'unlimited': return ok([chat]);
+        case 'resetpast': return ok(copilot ? [reqs(1500, 1500, 0, { resetsAt: now - H })] : wins(100, 41, { resetsAt: now - H }));
+        case 'hostile': return { read: { kind: 'ok', source: '<script>alert(1)</script> \u202eevil', buckets: [{ id: 'x', label: '<img src=x onerror="document.title=1"> ' + 'long'.repeat(60), unit: 'requests', used: 7, remaining: Infinity, limit: -5, remainingPercent: NaN, resetsAt: 1e300, resetZone: '<b>zone</b>' }, { id: '__proto__', label: '<b>bold</b>', unit: 'requests', used: 3, limit: 1e300 }, { id: 'bad', label: 'gone', unit: 'dollars', used: 1 }] } };
+        default: return ok(copilot ? [reqs(506, 1500, 66.3), chat] : wins(12, 41));
+      }
+    };
     const simAdapters = (): AdapterInfo[] => simAdapterList().map(signInState);
     const simAdapterList = (): AdapterInfo[] => [
       { id: 'copilot', displayName: 'Copilot', state: 'ready', version: 'sim', capabilities: { ...copilotCaps } },
@@ -2629,7 +2670,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
           ? { id: 'claude', displayName: 'Claude Code', state: 'not-installed', hint: 'Install Claude Code, then choose Check again.', capabilities: { ...copilotCaps, caps: false, mcpToggle: false, remote: false } }
           : { id: 'claude', displayName: 'Claude Code', state: 'ready', version: 'sim', where: '~/.local/bin/claude', capabilities: { ...copilotCaps, caps: false, mcpToggle: false, remote: false } },
         // spec 060 FR-003: found through a version manager's folder (nvm), shown as where it was found
-        { id: 'codex', displayName: 'Codex', state: 'too-old', version: '0.9.0', hint: 'Update Codex to 1.0 or newer, then choose Check again.', where: '~/.nvm/versions/node/v22.3.0/bin/codex', capabilities: { ...copilotCaps, interrupt: false, history: false, permissionModes: ['read-only'], remote: false } },      ] as AdapterInfo[] : []),
+        simKindsParam === 'ready' ? { id: 'codex', displayName: 'Codex', state: 'ready', version: 'sim', where: '~/.nvm/versions/node/v22.3.0/bin/codex', capabilities: { ...copilotCaps, caps: false, mcpToggle: false, remote: false } } : { id: 'codex', displayName: 'Codex', state: 'too-old', version: '0.9.0', hint: 'Update Codex to 1.0 or newer, then choose Check again.', where: '~/.nvm/versions/node/v22.3.0/bin/codex', capabilities: { ...copilotCaps, interrupt: false, history: false, permissionModes: ['read-only'], remote: false } },      ] as AdapterInfo[] : []),
       ...(mixed ? SIM_MIXED_KINDS : []),
     ];
     const notReady = (adapterId: string): string | undefined => {
@@ -2772,6 +2813,33 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
           else if (a.id === 'codex') out[a.id] = SIM_CODEX;
         }
         return out;
+      },
+      // spec 011 FR-092: fixtures per app, through the same pure steps as main (window.exports, shared/quota.ts); no adapter, no network.
+      // `simquota=near` or `simquota=copilot:near,codex:failed`; `simquotafloor=0` lifts the floors so a driver can ask twice.
+      harnessQuota: async (mode, only) => {
+        const q = (window as unknown as { exports: typeof import('../shared/quota') }).exports;
+        const w = window as unknown as { __durbarSimQuotaReads?: string[]; __durbarSimQuotaReject?: boolean; __durbarSimQuotaGates?: Record<string, Promise<void> | undefined> };
+        const gate = only !== undefined ? w.__durbarSimQuotaGates?.[only] : undefined;
+        if (gate) await gate; // a driver holds one app's answer back
+        if (w.__durbarSimQuotaReject) throw new Error('refused by the fixture');
+        const now = Date.now(), out: Record<string, ReturnType<typeof q.quotaView>> = {};
+        for (const a of simAdapters()) {
+          if (only !== undefined && a.id !== only) continue;
+          if (a.state === 'not-signed-in') { out[a.id] = q.quotaView(a.id, q.applyQuotaRead(undefined, { kind: 'failed', failure: 'signed-out' }, now)); continue; }
+          if (a.state !== 'ready') continue;
+          const m = simQuotaMode(a.id);
+          if (m === 'noread') { out[a.id] = q.quotaView(a.id, q.applyQuotaRead(undefined, { kind: 'not-reported', reason: 'no-read' }, now)); continue; }
+          const was = simQuotaEntries.get(a.id);
+          if (q.quotaShouldAsk(was, mode ?? 'cached', now) || (mode === 'check' && simQuery.get('simquotafloor') === '0')) {
+            (w.__durbarSimQuotaReads = w.__durbarSimQuotaReads ?? []).push(a.id);
+            const nth = (simQuotaCount.get(a.id) ?? 0) + 1;
+            simQuotaCount.set(a.id, nth);
+            const f = simQuotaFixture(a.id, m, nth, now);
+            simQuotaEntries.set(a.id, q.applyQuotaRead({ ...was, askedAt: now }, q.sanitiseQuotaRead(f.read, now), f.at ?? now));
+          }
+          out[a.id] = q.quotaView(a.id, simQuotaEntries.get(a.id));
+        }
+        return { ok: true as const, apps: out };
       },
       copilotAuth: async () => ({ known: true, signedIn: true, ...(simQuery.get('simnopwsh') === '1' ? { pwshMissing: true } : {}) }), // spec 052 FR-073: page address simnopwsh=1 shows the Windows PowerShell 7 hint
       // spec 060 FR-002: in the app, ask main for the real routes of this OS (main assumes a typical new machine under the simulator);

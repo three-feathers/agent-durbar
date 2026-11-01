@@ -23,6 +23,7 @@ import type { DevEnv } from '../devhooks';
 import { HarnessSetup, confirmText, posixTrusted } from '../harnesssetup';
 import { simulatorOn } from '../simguard';
 import { accountCheck, createAccountCache } from '../accounts';
+import { createQuotaCache, quotaCheck, quotaIpcAnswer } from '../quota';
 import { copilotDir, copilotServerNames } from '../mcpfiles';
 import type { createRemoteOps } from '../remoteops';
 
@@ -62,6 +63,8 @@ export function register(deps: HarnessIpcDeps): HarnessIpc {
     list: () => adaptersList(false),
     check: accountCheck({ simulator: simulatorOn(dev), has: (id) => registry.has(id), instance: (id) => router.instance(id), copilotServers: () => copilotServerNames(copilotDir(dev)) }),
   });
+  /* Spec 011 FR-083, FR-090: the account limits each provider reports; none under the simulator, whose page has its own fixtures. */
+  const quota = createQuotaCache({ list: () => adaptersList(false), check: quotaCheck({ simulator: simulatorOn(dev), has: (id) => registry.has(id), instance: (id) => router.instance(id) }) });
   const detectEnv = nodeDetectEnv();
   const harnessSetup = new HarnessSetup({
     detectEnv,
@@ -90,6 +93,7 @@ export function register(deps: HarnessIpcDeps): HarnessIpc {
     // spec 012 FR-158: only an adapter already created is refreshed (none is created here); Copilot restarts its shared client
     afterSignIn: async (kind: string) => {
       accounts.forget(kind); // spec 051 FR-014: the account line is asked again after a sign-in
+      quota.forget(kind); // spec 011 FR-084: the figures of the account before this sign-in are dropped
       const ad = router.created().find((x) => x.id === kind);
       if (!ad?.refreshAuth) return;
       // spec 012 FR-158 / 054 FR-011: a reconnected session is not remote any more; say so instead of keeping a stale Remote chip
@@ -247,6 +251,8 @@ export function register(deps: HarnessIpcDeps): HarnessIpc {
   });
   // FR-022: `true` = Settings opened (cached once-per-run facts kept); 'check' = Check again or a finished sign-in (asked anew)
   ipcHandle('harness:accounts', async (e, refresh: unknown) => (fromApp(e) ? accounts.get(refresh === true || refresh === 'check', refresh === 'check') : {}));
+  // spec 011 FR-090: the reusable channel; validated in main, a refusal is never an empty success
+  ipcHandle('harness:quota', (e, mode: unknown, app: unknown) => quotaIpcAnswer(fromApp(e), mode, app, quota, isSetupKind));
   ipcHandle('harness:copilotAuth', async (e) => {
     if (!fromApp(e)) return { known: false };
     const pw = harnessSetup.pwshMissing() ? { pwshMissing: true } : {}; // spec 052 FR-073: Windows only, a file check, no process

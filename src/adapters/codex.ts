@@ -20,6 +20,8 @@ import { codexSlashPlaces, SlashCache, vscodeUserPromptDirs } from './slashcomma
 import type { SlashPlace } from './slashcommands';
 import { cleanPlanText, reviseText } from './plan';
 import type { AdapterDescriptor } from './capabilities';
+import type { QuotaRead } from '../shared/quota';
+import { codexQuota, quotaFailureOf } from './quotamap';
 import type { EventBody } from './map';
 import { CodexMapper } from './codexMap';
 import { CodexRpcError, createCodexRpc, realSpawn } from './codexRpc';
@@ -77,6 +79,7 @@ export const CODEX_CAPABILITIES: AdapterCapabilities = Object.freeze({
   mcpRestart: false, // spec 058 FR-012 (Q8): no per-server restart; Restart session with these servers instead
   handoff: true, // spec 030 FR-034: an ephemeral fork, the thread is not changed
   renameSession: 'any', // spec 059 FR-007: thread/name/set on the live child or a short-lived app-server (real 2026-10-20: codex resume lists the name once the thread has had a turn)
+  accountQuota: true, // spec 011 FR-081: account/rateLimits/read (read: no thread, no turn, no spend; spec 012 FR-156)
   deleteSession: true, // spec 006 FR-028: thread/delete (hard delete; read: upstream app-server protocol, Codex 0.163; never run on a real thread)
   oneShot: true, // spec 040 FR-015: an ephemeral read-only thread in an empty temp folder
   osSandbox: true, // spec 087 FR-005: durbar_ro already is the floor; the state is reported, never continued without (fail closed)
@@ -497,6 +500,29 @@ export class CodexAdapter implements AgentAdapter {
       return codexAccount(await this.probe((rpc) => rpc.request('account/read', { refreshToken: false })));
     } catch {
       return { status: 'unknown' };
+    }
+  }
+
+  /**
+   * Spec 011 FR-081: the plan's windows from `account/rateLimits/read` on a short-lived app-server (no thread, no turn, nothing billed).
+   * An API-key sign-in is refused by that call although it works (FR-156 delta): "not reported". `includeToken: false`: no token is ever asked for.
+   */
+  async accountQuota(): Promise<QuotaRead> {
+    try {
+      return await this.probe(async (rpc) => {
+        try {
+          return codexQuota(await rpc.request('account/rateLimits/read', {}));
+        } catch (e) {
+          if (e instanceof CodexRpcError && e.kind === 'rpc' && (e.code === -32601 || /method not found|unknown variant|unknown method/i.test(e.message))) return { kind: 'not-reported', reason: 'unsupported' } as QuotaRead;
+          if (isAuthError(e)) {
+            const a = await rpc.request('getAuthStatus', { includeToken: false, refreshToken: false }).catch(() => undefined);
+            if (isObj(a) && a.authMethod === 'apikey') return { kind: 'not-reported', reason: 'api-key' } as QuotaRead;
+          }
+          return { kind: 'failed', failure: quotaFailureOf(e) } as QuotaRead;
+        }
+      });
+    } catch (e) {
+      return { kind: 'failed', failure: quotaFailureOf(e) };
     }
   }
 

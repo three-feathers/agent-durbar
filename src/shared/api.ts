@@ -163,6 +163,7 @@ export type LimitChoice = { kind: 'add'; credits: number } | { kind: 'set'; cred
 
 import type { AboutView } from './about';
 import type { AccountView } from './account';
+import type { QuotaMode, QuotaView } from './quota';
 import type { AutoTier, CompactResult, ContextTier, ManagedAutoTier, ModelControl, ModelPricing, ModelSwitchRequest, ModelSwitchResult, PriceClass } from './modelswitch';
 
 /** Saved credit totals as the window receives them (spec 011 FR-026). Numbers, a display name and the folder's own path (already known to the window); the file holds a hash, never the path. */
@@ -901,6 +902,8 @@ export interface DurbarApi {
   copilotAuth?(): Promise<{ known: boolean; signedIn?: boolean; pwshMissing?: boolean }>;
   /** Spec 051 FR-014: the account each installed agent app reports (`{ [appId]: { status, text } }`); `refresh` asks again. Personal data: shown in the window only. */
   harnessAccounts?(refresh?: boolean | 'check'): Promise<Record<string, AccountView>>;
+  /** Spec 011 FR-090: the account limits each app's provider reports. `cached` asks nothing; `open` and `check` ask within their floors. Refused: `ok: false`. */
+  harnessQuota?(mode?: QuotaMode, app?: string): Promise<{ ok: true; apps: Record<string, QuotaView> } | { ok: false; error: string }>;
   onHarnessProgress?(cb: (p: { kind: string; op: string; lines: string[]; elapsedMs: number; url?: string; code?: string; needsPaste?: boolean }) => void): () => void;
   /** spec 012 FR-158: remote control ended because the agent app reconnected after a new sign-in. */
   /** Remote control ended without the user (spec 012 FR-158, spec 054 FR-062): an agent id, or the id with a plain reason. */

@@ -132,7 +132,7 @@ const REACHES_AGENT_APP = [
   'agents:listProfiles', 'agents:selectProfile', 'agents:mcp', 'agents:setMcp', 'agents:mcpSignIn', 'agents:mcpOpenSignIn', 'agents:mcpCancelSignIn', 'agents:setRemote', 'agents:openRemote',
   'sessions:listPrevious', 'sessions:rename', 'sessions:delete',
   'adapters:list', 'models:list',
-  'harness:run', 'harness:paste', 'harness:cancel', 'harness:copilotAuth', 'harness:accounts', 'harness:openSignIn', 'harness:updates',
+  'harness:run', 'harness:paste', 'harness:cancel', 'harness:copilotAuth', 'harness:accounts', 'harness:quota', 'harness:openSignIn', 'harness:updates',
   'schedules:runNow',
 ];
 // a channel added later that also reaches an agent app (PR #505's profiles:generate) is refused by the default deny; list it here when it lands
@@ -226,7 +226,7 @@ assert.ok(/if \(fromAppFrame\(e\) && simAllows\(channel\)\) fn\(/.test(guardSrc)
   assert.deepStrictEqual(Object.keys(SIM_OPTIONAL_MEMBERS).sort(), inIface, 'SIM_OPTIONAL_MEMBERS lists exactly the optional members of interface AgentAdapter');
   const full = {
     capUnit: 'credits', interrupt: true, models: true, history: true, caps: true, mcpToggle: true, mcpRestart: true, mcpTools: true, handoff: true,
-    oneShot: true, remote: true, renameSession: 'any', deleteSession: true, mcpSignIn: true, permModeSwitch: 'live',
+    oneShot: true, remote: true, renameSession: 'any', deleteSession: true, mcpSignIn: true, permModeSwitch: 'live', accountQuota: true,
   };
   const none = { capUnit: 'credits', permModeSwitch: 'none' };
   for (const [tag, caps] of [['all on', full], ['all off', none], ['some', { ...none, history: true, mcpSignIn: true, permModeSwitch: 'live' }]] as const) {

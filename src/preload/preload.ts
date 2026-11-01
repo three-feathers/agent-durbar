@@ -88,6 +88,7 @@ const api: DurbarApi = {
   harnessOpenPage: (kind) => ipcRenderer.invoke('harness:openPage', kind),
   harnessOpenSignIn: (kind, url) => ipcRenderer.invoke('harness:openSignIn', kind, url),
   copilotAuth: () => ipcRenderer.invoke('harness:copilotAuth'),
+  harnessQuota: (mode?: unknown, app?: unknown) => ipcRenderer.invoke('harness:quota', mode, app),
   harnessAccounts: (refresh?: boolean | 'check') => ipcRenderer.invoke('harness:accounts', refresh === 'check' ? 'check' : refresh === true),
   onHarnessProgress: (cb) => sub('harness:progress', cb),
   onHarnessDone: (cb) => sub('harness:done', cb),

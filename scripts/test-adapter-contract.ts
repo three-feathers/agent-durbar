@@ -142,6 +142,7 @@ export async function runContract(name: string, make: () => ContractTarget, hook
     assert.strictEqual(has('generateText'), !!cap.oneShot, M('C2', 'generateText() <=> capabilities.oneShot'));
     assert.strictEqual(has('setRemote'), !!cap.remote, M('C2', 'setRemote() <=> capabilities.remote (spec 054 FR-001)'));
     assert.strictEqual(has('renameSession'), !!cap.renameSession, M('C2', 'renameSession() <=> capabilities.renameSession (spec 059 FR-007)'));
+    assert.strictEqual(has('accountQuota'), !!cap.accountQuota, M('C2', 'accountQuota() <=> capabilities.accountQuota (spec 011 FR-081)'));
     assert.strictEqual(has('deleteSession'), !!cap.deleteSession, M('C2', 'deleteSession() <=> capabilities.deleteSession (spec 006 FR-028)'));
     assert.strictEqual(has('sandboxHost'), !!cap.osSandbox, M('C2', 'sandboxHost() <=> capabilities.osSandbox (spec 087 FR-012)'));
     if (has('continueWithoutSandbox')) assert.ok(cap.osSandbox, M('C2', 'continueWithoutSandbox() only with capabilities.osSandbox (spec 087 FR-007a)'));
@@ -363,7 +364,7 @@ export const ALL_OPTIONAL = Object.keys(OMITTABLE) as OptionalMember[];
 /** Optional `AgentAdapter` members FakeAdapter does not implement (so it cannot omit them): fields, and methods no fake test needs yet. */
 const NOT_IN_FAKE = [
   'debug', 'writeGuard', 'resolvePlan', 'answerQuestion', 'answerElicitation', 'listAgentProfiles', 'reloadAgentProfiles', 'selectAgentProfile', 'setRemote',
-  'authStatus', 'verifySignIn', 'accountInfo', 'refreshAuth', 'resumeIdOf', 'listSlashCommands', 'expandSlashCommand', 'readOrgPolicy',
+  'authStatus', 'verifySignIn', 'accountInfo', 'accountQuota', 'refreshAuth', 'resumeIdOf', 'listSlashCommands', 'expandSlashCommand', 'readOrgPolicy',
   'continueWithoutSandbox', 'sandboxHost', // spec 087: real adapters only (C2 below)
 ];
 

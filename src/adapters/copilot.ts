@@ -29,6 +29,8 @@ import type {
   WriteGuard,
 } from './types';
 import type { AdapterDescriptor } from './capabilities';
+import type { QuotaRead } from '../shared/quota';
+import { copilotQuota, quotaAccountKey, quotaFailureOf, quotaWithKey } from './quotamap';
 import { EventMapper } from './map';
 import type { EventBody, RawEvent } from './map';
 import { autoTierToSend, compactResultFrom, managedAutoTierFrom, modelConfig, modelOptionFrom, runtimeHasAutoTiers, runtimeMessage, sdkTier, switchResultFrom, withAutoTiers } from './copilotmodel';
@@ -223,6 +225,7 @@ export const COPILOT_CAPABILITIES: AdapterCapabilities = Object.freeze({
   renameSession: 'any', // spec 059 FR-007: rpc.name.set (@experimental; real 2026-10-20 on a live session, 0 credits); a stored session through a prompt-free resume: real 2026-10-21 (T050a, 0 credits)
   remoteService: Object.freeze({ name: 'GitHub', host: 'github.com', mobile: 'GitHub Mobile' }), // spec 054 FR-060
   osSandbox: true, // spec 087: the local sandbox through session.rpc.options.update (@experimental; read: SDK 1.0.22-1.0.26; not run on a real session)
+  accountQuota: true, // spec 011 FR-081: account.getQuota (read: no session, no prompt, no spend; spec 068, spec 012 FR-156)
   deleteSession: true, // spec 006 FR-028: CopilotClient.deleteSession (read: SDK 1.0.22-1.0.26 client.d.ts; never run on a real session)
   oneShot: true, // spec 040 FR-015: a throw-away SDK session with no tools and no MCP, deleted after (real 2026-10-20: no tool ran, nothing left on disk)
 });
@@ -521,6 +524,26 @@ export class CopilotAdapter implements AgentAdapter {
       return plan ? { ...id, plan } : id;
     } catch {
       return { status: 'unknown' };
+    }
+  }
+
+  /**
+   * Spec 011 FR-081: the account's quota snapshots from `account.getQuota` on the shared runtime client (no session, no prompt, nothing
+   * billed; @experimental, and it can lag). A runtime without the call is "not reported". Only figures leave; login and token never do.
+   */
+  async accountQuota(): Promise<QuotaRead> {
+    let key: string | undefined;
+    try {
+      const client = await this.getClient();
+      // FR-095: getQuota names no account; the local auth status does. Only a one-way fingerprint of it goes on
+      const st = (await client.getAuthStatus().catch(() => undefined)) as { host?: unknown; login?: unknown } | undefined;
+      key = quotaAccountKey(st?.login, st?.host);
+      const rpc = (client as unknown as { rpc?: { account?: { getQuota?: (p: object) => Promise<unknown> } } }).rpc;
+      if (typeof rpc?.account?.getQuota !== 'function') return { kind: 'not-reported', reason: 'unsupported' };
+      return quotaWithKey(copilotQuota(await rpc.account.getQuota({})), key);
+    } catch (e) {
+      if (isMethodNotFound(e)) return { kind: 'not-reported', reason: 'unsupported' };
+      return quotaWithKey({ kind: 'failed', failure: quotaFailureOf(e) }, key);
     }
   }
 

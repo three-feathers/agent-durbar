@@ -96,3 +96,11 @@
 - Real IPC without a session (0 AIU): `usage:totals` read a seeded file from userData (path key dropped), `usage:resetTotals` emptied it on disk.
 - Not verified: recording from real `usage` events (needs a real session).
 
+
+# Plan: 011 account quota per agent app (2026-10-31, issue #690)
+
+- **Shared** `src/shared/quota.ts`, pure with no imports so it also loads in the page (`../shared/quota.js`, read at call time through `window.exports`): the simulator and main run the same steps.
+- **Adapters** optional `accountQuota()` behind `capabilities.accountQuota`; `src/adapters/quotamap.ts` maps vendor shapes and error text to fixed kinds. Lists: `types.ts`, C2 and `NOT_IN_FAKE`, `SIM_OPTIONAL_MEMBERS`.
+- **Main** `src/main/quota.ts` (pure apart from given functions, like `accounts.ts`); `harness:quota` in `ipc/harness.ts`; `forget` next to `accounts.forget`.
+- **Window** `harnesses.js` paints `.hs-quota` after the cards, `screens.js` calls `loadQuota`; `app.js` adds the dialog line and the handover hook.
+- **Risks** the vendor shapes are `read:` only (bad fields drop out to "not reported"); `@experimental` on Copilot's call (method missing is "not reported").
