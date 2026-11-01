@@ -327,7 +327,7 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
 // ---- spec 102 FR-200..FR-202: the world and set seam in crew.js (two flat lists of data, any set in any world) ----
 {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const C = require(path.join(ROOT, 'src', 'renderer', 'crew.js')) as unknown as { WORLD_FLAGS: Record<string, boolean>;  WORLDS: { id: string; name: string; defaultSet: string; flag?: string }[]; REAL_SETS: { id: string; name: string; choice: string; flag?: string }[]; offeredWorlds: (f?: Record<string, boolean>) => { id: string }[]; parseWorld: (v: unknown, f?: Record<string, boolean>) => string; peopleFor: (w: unknown, c: unknown, f?: Record<string, boolean>) => { world: string; set: string; setName: string; note: string }; realOfficeNote: (c: string, v: string, w?: string, f?: Record<string, boolean>) => string };
+  const C = require(path.join(ROOT, 'src', 'renderer', 'crew.js')) as unknown as { WORLD_FLAGS: Record<string, boolean>;  WORLDS: { id: string; name: string; defaultSet: string; flag?: string }[]; REAL_SETS: { id: string; name: string; choice: string; flag?: string }[]; offeredWorlds: (f?: Record<string, boolean>) => { id: string }[]; parseWorld: (v: unknown, f?: Record<string, boolean>) => string; peopleFor: (w: unknown, c: unknown, f?: Record<string, boolean>) => { world: string; set: string; setName: string; note: string }; CREWS: Record<string, unknown> };
   assert.deepStrictEqual(C.WORLD_FLAGS, { cave: false }, 'the cave is behind an off-by-default flag until the owner opens it (spec 097 phase 4 gate)');
   assert.deepStrictEqual(C.offeredWorlds().map((w) => w.id), ['photo'], 'flag off: only Photo office is offered');
   assert.deepStrictEqual(C.offeredWorlds({ cave: true }).map((w) => w.id), ['photo', 'cave'], 'flag on: Photo office first, then the cave');
@@ -362,12 +362,13 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
     assert.strictEqual(C.peopleFor('photo', 'pirates', ON).set, 'pirates', 'any set in any world');
     assert.strictEqual(C.peopleFor('photo', 'pirates', OFF).set, 'office', 'flag off: the set is not drawn');
   } finally { C.WORLDS.pop(); C.REAL_SETS.pop(); delete (C.WORLD_FLAGS as Record<string, boolean>).pirate; }
-  // FR-083 / FR-202: the note, only for a choice with no Real office poses and only with Real office on
-  assert.strictEqual(C.realOfficeNote('cheeky', 'real', 'photo'), 'Real office shows Office people until Cheeky has Real office poses.');
-  assert.strictEqual(C.realOfficeNote('minimalist', 'real', 'photo'), 'Real office shows Office people until Minimalist has Real office poses.');
-  assert.strictEqual(C.realOfficeNote('prehistoric', 'real', 'photo'), 'Real office shows Office people until Prehistoric has Real office poses.', 'flag off: Prehistoric has no poses yet (the flag is what is closed)');
-  for (const c of ['theme', 'mine', '', '__proto__', 'office']) assert.strictEqual(C.realOfficeNote(c, 'real', 'photo'), '', `${c || '(none)'}: no note`);
-  for (const v of ['cabins', 'open', '']) assert.strictEqual(C.realOfficeNote('cheeky', v, 'photo'), '', `${v || '(none)'}: no note outside Real office`);
+  // FR-083 / FR-202: the note (peopleFor's), for a crew choice with no Real office poses; the names come from CREWS, so every crew without a REAL_SETS row has one
+  const note = (c: string): string => C.peopleFor('photo', c).note;
+  for (const c of ['minimalist', ...Object.keys(C.CREWS)]) if (!C.REAL_SETS.some((s) => s.choice === c)) assert.strictEqual(note(c), `Real office shows Office people until ${c[0].toUpperCase() + c.slice(1)} has Real office poses.`, `${c}: has its note`);
+  for (const c of ['theme', 'mine', '', '__proto__', 'constructor', 'office']) assert.strictEqual(note(c), '', `${c || '(none)'}: no note`);
+  assert.strictEqual(note('prehistoric'), 'Real office shows Office people until Prehistoric has Real office poses.', 'flag off: Prehistoric has no poses yet (the flag is what is closed)');
+  C.CREWS.pirate = []; // a future crew (mutant check: a hand list of names would miss it)
+  try { assert.strictEqual(note('pirate'), 'Real office shows Office people until Pirate has Real office poses.', 'a new crew gets its note by construction'); } finally { delete C.CREWS.pirate; }
 }
 
 // ---- FR-037: who sits where ----
