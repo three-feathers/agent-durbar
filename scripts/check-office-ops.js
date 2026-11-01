@@ -9,7 +9,7 @@
  *   - one status event of one agent, 8 times, each a real change (every sample must draw, none may search; renders, style reads of the floor and layout reads are the median): renders and searches are the app's own counters (`__durbarSimUi.ops()`), reads are offset*, client*, scroll*, getBoundingClientRect and
  *     getClientRects calls. The first proxy for renders, `getComputedStyle(#floor)`, was read twice per render and showed two where there was one;
  *   - after each of those status updates no `data-placed` mark sits on anything but a role or a pencil (a finished turn marks the desk unread and shifts keyless spans);
- *   - at 15 agents, 1100x700 (headers are tight there): after each status pill's filter and its clearing, and after Simple to Expert and back, the header and usage-line fit classes equal what a
+ *   - at 15 agents, 1280x800: after each status pill's filter and its clearing, after Simple to Expert and back, after an agent starts or stops matching a status filter (a neighbour room's width changes while its HTML does not; its header is made tight by a spacer) and after a body class changes with no room changing (the fit key), the header and usage-line fit classes equal what a
  *     full fit gives (stale fits).
  * A row over its limit today is a KNOWN_FAILURE with its open task and a ceiling.
  *
@@ -139,22 +139,66 @@ module.exports = async (ctx) => {
 
     if (n === 15) {
       /* stale fits (T156): what an incremental fit leaves must equal a full fit, after a status filter and its clearing, and across Simple and Expert, at 1280x800 */
-      await load(1100, 700);
-      await js(INSTRUMENT);
       const stale = [];
+      await load(1280, 800);
+      await js(INSTRUMENT);
       const compare = async (what) => {
         const after = await js(FIT_STATE);
         await js(`window.DurbarFit()`);
         const full = await js(FIT_STATE);
         if (after !== full) stale.push(what);
       };
+      const pill = (k) => `document.querySelector('#stats .stat[data-k=${jsLiteral(k)}]').click()`;
       const pills = await js(`[...document.querySelectorAll('#stats .stat[data-k]')].map(b=>b.dataset.k)`);
       for (const k of pills) { // every status pill leaves some rooms some desks and others all of theirs
-        await drawn(`document.querySelector('#stats .stat[data-k=${jsLiteral(k)}]').click()`); await compare(`status filter ${k} on`);
-        await drawn(`document.querySelector('#stats .stat[data-k=${jsLiteral(k)}]').click()`); await compare(`status filter ${k} cleared`);
+        await drawn(pill(k)); await compare(`status filter ${k} on`);
+        await drawn(pill(k)); await compare(`status filter ${k} cleared`);
       }
       await drawn(`window.__durbarSimUi.setDetail('simple')`); await compare('Expert to Simple');
       await drawn(`window.__durbarSimUi.setDetail('expert')`); await compare('Simple to Expert');
+
+      /* A neighbour's width (the widthMoved guard): rooms share a line by --w. A status filter is on, so the rooms draw only the matching desks while the layout key (sized on every
+         agent) does not change: when an agent starts to match, its room gains a desk and a wider --w, the layout is reused, and a neighbour whose HTML does not change gets narrower.
+         No real header is near its limit at this size, so make one so: measure each room's header (its width and the width its parts use) before and after, pick a room the render
+         does not rewrite (a mark on it survives) whose header is narrower, and add a spacer that leaves the header just whole when wide and over its width when narrow. */
+      const NAMES = `(()=>{const o={};for(const r of document.querySelectorAll('#stage .room')){const hd=r.querySelector('.room-head');if(!hd)continue;const cs=getComputedStyle(hd);const kids=[...hd.children].filter(c=>c.getClientRects().length);const used=kids.reduce((x,c)=>x+c.getBoundingClientRect().width,0)+(parseFloat(cs.columnGap)||0)*Math.max(0,kids.length-1)+parseFloat(cs.paddingLeft)+parseFloat(cs.paddingRight);o[r.dataset.key]={w:hd.getBoundingClientRect().width,used,kept:r.hasAttribute('data-ops-mark')};}return o;})()`;
+      const MARK = `document.querySelectorAll('#stage .room').forEach(r=>r.setAttribute('data-ops-mark',''))`; // a room the render rewrites loses the mark
+      const UNMARK = `document.querySelectorAll('[data-ops-mark]').forEach(r=>r.removeAttribute('data-ops-mark'))`;
+      const status = (id, st) => `window.__durbarSimEmit({type:'status',sessionId:${jsLiteral(id)},timestamp:Date.now(),status:${jsLiteral(st)}})`;
+      // every agent in error (an error keeps the desk, nothing rests in a lounge) but the first of each room (working); the filter 'working' hides the rest
+      const mains = await js(`(()=>{const o=[];for(const r of document.querySelectorAll('#stage .room')){let i=0;for(const d of r.querySelectorAll('.desk[data-id]'))o.push([d.dataset.id,i++===0]);}return o;})()`);
+      await js(mains.map(([id, first]) => status(id, first ? 'working' : 'error')).join(';'));
+      await H.settle();
+      await drawn(pill('working'));
+      let pick = null;
+      for (const [id, first] of mains) { // one hidden agent starts working
+        if (first) continue;
+        await js(MARK);
+        const wide = await js(NAMES);
+        const s0 = (await js(`window.__durbarSimUi.ops()`)).searches;
+        await drawn(status(id, 'working'));
+        const narrow = await js(NAMES);
+        const searched = (await js(`window.__durbarSimUi.ops()`)).searches > s0; // a new search fits everything: not the case under test
+        await js(UNMARK);
+        await drawn(status(id, 'error'));
+        const spare = (r) => wide[r].w - wide[r].used, shrink = (r) => wide[r].w - narrow[r].w;
+        const c = searched ? [] : Object.keys(wide).filter((r) => narrow[r] && narrow[r].kept && shrink(r) > 4 && spare(r) >= shrink(r) / 2).sort((x, y) => shrink(y) - shrink(x));
+        if (c.length) { pick = { id, room: c[0], pad: spare(c[0]) - shrink(c[0]) / 2 }; break; }
+      }
+      assert.ok(pick, 'an agent that starts to match the status filter narrows a room that is not rewritten, and its header has room to spare when wide (the stale-fit case for a neighbour\'s width)');
+      await js(`(()=>{const s=document.createElement('style');s.id='ops-width';s.textContent='#stage .room[data-key="${pick.room}"] .room-head::after{content:"";flex:none;width:${pick.pad}px}';document.head.append(s);})()`);
+      await js(`window.DurbarFit()`); // every header fitted, the filter on
+      await drawn(status(pick.id, 'working')); await compare("a neighbour's width, an agent starts to match the status filter");
+      await drawn(status(pick.id, 'error')); await compare("a neighbour's width, an agent stops matching the status filter");
+      await js(`document.getElementById('ops-width').remove()`);
+      await drawn(pill('working')); // the filter off
+
+      /* The fit key (what else decides a fit): the body's classes change with no change to any room's HTML. A class that squeezes every name stands for chat open, zoom...;
+         the office is drawn again with the same rooms and the headers must be fitted to it. */
+      await js(`(()=>{const s=document.createElement('style');s.id='ops-key';s.textContent='body.ops-squeeze #stage .room-name{padding-right:4000px!important}';document.head.append(s);})()`);
+      await js(`window.DurbarFit()`);
+      await drawn(`document.body.classList.add('ops-squeeze');window.__durbarSimUi.setDetail('expert')`); await compare('a body class changes, no room does');
+      await drawn(`document.body.classList.remove('ops-squeeze');window.__durbarSimUi.setDetail('expert')`); await compare('the body class goes, no room changes');
       rows[`staleFits@${n}`] = stale.length;
       if (stale.length) console.log('[ops] stale fits after:', stale.join(', '));
     }
