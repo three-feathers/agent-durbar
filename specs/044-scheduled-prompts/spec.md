@@ -34,7 +34,7 @@ In **Folders**, each folder has **Schedules**. The dialog lists the folder's sch
 1. **Given** the agent is working or waiting for an approval or an answer when a run is due, **Then** that run is skipped (not queued) and recorded as "skipped: the agent was busy". *(test:)*
 2. **Given** the app was closed or the computer asleep at the due time, **When** the app runs again, **Then** a missed once-schedule is marked "missed" and is not sent; an interval schedule continues from now (the missed runs are not caught up). *(test:)*
 3. **Given** **Pause all schedules** (in the Folders panel), **Then** nothing is sent until it is switched off; the choice is kept across restarts. *(test:, sim:)*
-4. Runs use the session's own credit cap. *(Mode: replaced 2026-10-31, FR-180 and FR-182: a run uses its schedule's mode; it used to be the session's, so a schedule never allowed more than the agent already might.)* *(read: the send path is the user's)*
+4. Runs use the session's own credit cap. *(Mode: replaced 2026-10-31, FR-180 and FR-182, and replaced back 2026-11-01, owner: runs use the session's mode again; see *Changes*. The 2026-10-31 text read: a run uses its schedule's mode; it used to be the session's, so a schedule never allowed more than the agent already might.)* *(read: the send path is the user's)*
 
 ### Edge Cases
 
@@ -61,7 +61,19 @@ In **Folders**, each folder has **Schedules**. The dialog lists the folder's sch
 
 ## Changes
 
+### 2026-11-01: a schedule takes its session's mode; no per-schedule mode, no popup (owner decision, Vikram; replaces the entry of 2026-10-31 below)
+
+Owner decision of Vikram, 2026-10-31 and restated 2026-11-01 (matching Paco; first written on PR #965's thread, recorded here because no spec said it): **a scheduled prompt runs in its session's mode, as it always did, and a session can be in any mode, Autopilot included.** There is no mode on a schedule, no mode choice in the form, no first-launch popup, and no Allow all or Autopilot opt-in on a schedule.
+
+- **Replaced:** FR-180 (a schedule has a mode), FR-181 (no run without a chosen mode; *Waiting for a mode*; the upgrade popup), FR-182 (Allow all and Autopilot as a per-schedule opt-in), the Autopilot hold and the *Owner ruling on Q-A* paragraph of the entry below, and the *Open, proposed* line on loops. Scenario 4 of User Story 2 reads again as it did before 2026-10-31: **runs use the session's mode and the session's own credit cap.**
+- **Not replaced:** FR-183 (organization policy is checked at save and at each run; a refusal does not send, `mode-refused`) and FR-184 (a mode the agent cannot use is not sent) now speak of the **session's** mode, not a stored one. `skipped-mode` is not added.
+- **Tasks:** T140..T143 are dropped (`[-]`, nothing was built). A schedule due for a session on Autopilot is sent like any other; whether Autopilot counts that message as one of its continuations is a question for spec 099's build and stays a `[KNOWN GAP]` there.
+- **Warn, do not limit:** nothing here asks Durbar to withhold a schedule from the user; the session's mode already carries the user's own choice.
+- **What a build still owes:** PR #965 carries code for the replaced text (`Schedule.mode`, `waitingForMode`, `schedmode.ts`, the popup). It shrinks to its stand-alone bug fixes; that is its own task, not this delta.
+
 ### 2026-10-31: every schedule has its own mode (spec 099 FR-083, FR-084)
+
+**Replaced 2026-11-01 by the entry above (owner): a schedule takes its session's mode. FR-180, FR-181 and FR-182 and the Autopilot hold below are void; FR-183 and FR-184 stand for the session's mode. Kept as the record of what was decided and when.**
 
 **Owner decisions** (Vikram, relayed by his coordinating agent): 18:56 UTC, a scheduled prompt runs in the mode attached to that scheduled prompt; 19:02 UTC, schedules support all modes with a selection on each schedule, and existing schedules get a popup after upgrade asking the user to choose. **Today a schedule has no mode** (`Schedule` in `src/main/schedules.ts`): a run takes the session's mode through `deps.send`. Not built; tasks T140..T143. FR-182's wording needs the three owners (below).
 
