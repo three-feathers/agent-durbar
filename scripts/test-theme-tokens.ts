@@ -256,6 +256,50 @@ for (const f of FILES) {
   }
   assert.ok(!/(?:font|font-size|padding|margin|width|height|gap|line-height)\s*:/.test(block.replace(/\/\*[\s\S]*?\*\//g, '')), 'no font, size or spacing in the world rules (070 D2)');
 }
+// ---- 6b. spec 097 FR-180: what world CSS may animate, and nothing blends  ----
+function worldCssProblems(cssIn: string): string[] {
+  const css = cssIn.replace(/\/\*[\s\S]*?\*\//g, ''), out: string[] = [];
+  if (/mix-blend-mode\s*:/.test(css)) out.push('mix-blend-mode: nothing blends (FR-180)');
+  for (const m of css.matchAll(/@keyframes\s+([\w-]+)\s*\{((?:[^{}]*\{[^{}]*\})*)\s*\}/g)) {
+    for (const d of m[2].matchAll(/([a-z-]+)\s*:/g)) if (!['transform', 'opacity'].includes(d[1])) out.push(`@keyframes ${m[1]} animates ${d[1]}: only transform and opacity (FR-180)`);
+  }
+  for (const m of css.matchAll(/(?:^|[;{\s])transition(?:-property)?\s*:\s*([^;}]+)/g)) {
+    for (const part of m[1].replace(/\([^)]*\)/g, '').split(',')) { const name = part.trim().split(/\s+/)[0]; if (!['transform', 'opacity', 'none'].includes(name)) out.push(`transition names ${name}: only transform and opacity (FR-180)`); }
+  }
+  /* FR-181: a light moves in steps; FR-180, T151: the lights have no box-shadow to repaint */
+  for (const m of css.matchAll(/(?:^|[;{\s])animation\s*:\s*([^;}]+)/g)) if (!/steps\(\d+/.test(m[1]) && !/^none\b/.test(m[1].trim())) out.push(`animation "${m[1].trim()}" is not stepped (FR-181)`);
+  for (const m of css.matchAll(/([^{}]*)\{([^{}]*)\}/g)) if (/\.ro-(glow|call|lamp|fxl)\b/.test(m[1]) && /box-shadow\s*:(?!\s*none)/.test(m[2])) out.push(`${m[1].trim()} has a box-shadow: a light is a static gradient (T151)`);
+  /* FR-182: a blur only on the allow list, whatever the media query; `none` turns it off */
+  const ALLOW = new Set(['.toast', '.more-menu', '.mode-menu', '.grants-pop', '.ct-more-pop', '#defaultsPop', '#foldersPop', '#floorsPop']);
+  for (const m of css.matchAll(/([^{}]*)\{([^{}]*)\}/g)) {
+    if (!/(?:^|[;\s])(?:-webkit-)?backdrop-filter\s*:(?!\s*none)/.test(m[2])) continue;
+    const sel = m[1].replace(/html\[data-world\]\s*/g, '').trim();
+    const inner = /^:is\((.*)\)$/.exec(sel);
+    for (const one of (inner ? inner[1] : sel).split(',').map((x) => x.trim())) if (!ALLOW.has(one)) out.push(`backdrop-filter on ${one}: not on FR-182's allow list`);
+  }
+  if (/will-change\s*:/.test(css)) out.push('will-change: only on an element that animates now, and none does today (FR-180)');
+  return out;
+}
+{
+  /* FR-182 holds in every style sheet of the app, not only a world's */
+  for (const f of fs.readdirSync(path.join(ROOT, 'src', 'renderer')).filter((x) => x.endsWith('.css'))) assert.deepStrictEqual(worldCssProblems(fs.readFileSync(path.join(ROOT, 'src', 'renderer', f), 'utf8')).filter((p) => /backdrop-filter/.test(p)), [], `${f}: FR-182`);
+  for (const f of ['realoffice.css', 'realoffice-world.css']) assert.deepStrictEqual(worldCssProblems(fs.readFileSync(path.join(ROOT, 'src', 'renderer', f), 'utf8')), [], `${f}: FR-180`);
+  const red = (css: string, why: RegExp, what: string): void => assert.ok(worldCssProblems(css).some((p) => why.test(p)), 'red: ' + what);
+  red('.a{mix-blend-mode:screen}', /mix-blend-mode/, 'a blend mode');
+  red('@keyframes k{50%{box-shadow:0 0 1px red}}', /animates box-shadow/, 'a keyframe with box-shadow');
+  red('@keyframes k{0%{opacity:0}50%{filter:blur(1px)}}', /animates filter/, 'a keyframe with filter');
+  red('.a{transition:width 1s}', /transition names width/, 'a transition of a layout property');
+  red('.a{transition:opacity 1s,top 1s}', /transition names top/, 'the second name of a transition');
+  red('.a{transition:all 1s}', /transition names all/, 'transition: all');
+  red('.a{will-change:transform}', /will-change/, 'will-change');
+  red('html[data-world] :is(.toast,.dlg){backdrop-filter:blur(2px)}', /on \.dlg/, 'a blur on .dlg');
+  red('.scr-panel{-webkit-backdrop-filter:blur(2px)}', /on \.scr-panel/, 'a blur on a large panel');
+  assert.deepStrictEqual(worldCssProblems('html[data-world] .toast{backdrop-filter:blur(2px)}.dlg{backdrop-filter:none}@media (forced-colors:active){.dlg{backdrop-filter:none}}'), [], 'a listed blur, and turning it off, pass');
+  red('.a{animation:k 2s ease-in-out infinite}', /not stepped/, 'a smooth animation');
+  red('.ro-glow.x{opacity:1;box-shadow:0 0 1px red}', /box-shadow/, 'a light with a box-shadow');
+  assert.deepStrictEqual(worldCssProblems('/* mix-blend-mode:screen */ .a{transition:opacity 1s;background:red}@keyframes k{50%{opacity:.5;transform:scale(2)}}'), [], 'the allowed forms pass');
+  assert.deepStrictEqual(worldCssProblems('.a{animation:k 2s steps(4,end) infinite;box-shadow:0 0 1px red}.ro-call.b{animation:none}'), [], 'a stepped animation, none, and a shadow on something that is not a light pass');
+}
 // ---- 7. applied while Real office is shown, the user's theme restored on leaving (on a stub page) ----
 {
   const mkDoc = (): { documentElement: { style: { m: Map<string, string>; setProperty: (k: string, v: string) => void; removeProperty: (k: string) => void }; dataset: Record<string, string> } } => {

@@ -17,7 +17,10 @@
 
   const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
   const px = (n) => Math.round(n * 10) / 10 + 'px';
-  const box = (el, r) => { el.style.left = px(r.x); el.style.top = px(r.y); if (r.w != null) el.style.width = px(r.w); if (r.h != null) el.style.height = px(r.h); };
+  /* FR-184: nothing rewrites what did not change: a style or dataset value is written only when it differs */
+  const sty = (e, k, v) => { if (e.style[k] !== v) e.style[k] = v; };
+  const dset = (e, k, v) => { if (e.dataset[k] !== v) e.dataset[k] = v; };
+  const box = (el, r) => { sty(el, 'left', px(r.x)); sty(el, 'top', px(r.y)); if (r.w != null) sty(el, 'width', px(r.w)); if (r.h != null) sty(el, 'height', px(r.h)); };
   const initials = (name) => String(name || '?').trim().split(/\s+/).slice(0, 2).map((w) => Array.from(w)[0] || '').join('').toUpperCase() || '?';
 
   /* the keyed layers: one Map per layer, elements reused by key; unseen keys are removed at the end of a render */
@@ -41,16 +44,22 @@
   function sweep(layer) { for (const [k, e] of layer._k) if (!layer._seen.has(k)) { if (layer._obs && layer._obs.delete(e)) layer._ro.unobserve(e); e.remove(); layer._k.delete(k); } }
   function text(e, t) { t = String(t == null ? '' : t); if (e.textContent !== t) e.textContent = t; }
   function attr(e, k, v) { if (v == null || v === false) { if (e.hasAttribute(k)) e.removeAttribute(k); } else if (e.getAttribute(k) !== String(v)) e.setAttribute(k, String(v)); }
-  function img(e, file) {
-    const src = ART + file;
+  /* FR-183: a person or the desk comes in two sizes, chosen by what it is shown at (`shown`, CSS px; the browser multiplies by the device pixel ratio); `px` is the full picture's width. FR-065: a failed picture marks `file`, whichever size failed */
+  /* owner 2026-11-01: faces stay sharp. The half-size picture only when it is shown at least this much smaller than it is, where the softness cannot be seen; a little more memory for that */
+  const HALF_MARGIN = 1.5;
+  function img(e, file, shown) {
+    const src = ART + file, meta = root.DurbarRealOfficeArt, w = meta && meta.px && meta.px[file];
+    if (w) { const sizes = Math.ceil(shown * HALF_MARGIN) + 'px'; if (e.getAttribute('sizes') !== sizes) e.setAttribute('sizes', sizes); }
     if (e.getAttribute('src') !== src) {
-      e.alt = ''; e.decoding = 'async'; e.draggable = false; e.setAttribute('aria-hidden', 'true');
+      if (e.getAttribute('aria-hidden') !== 'true') { e.alt = ''; e.decoding = 'async'; e.draggable = false; e.setAttribute('aria-hidden', 'true'); }
       e.onerror = () => { if (!BAD.has(file)) { BAD.add(file); if (onArt) onArt(); } };
+      if (w) e.setAttribute('srcset', ART + file.replace(/\.webp$/, '.h.webp') + ' ' + Math.ceil(w / 2) + 'w, ' + src + ' ' + w + 'w'); else e.removeAttribute('srcset');
       e.src = src;
     }
   }
   /* a span with a status dot (the app's .dot classes, forced-colours aware) */
-  function dotHTML(state) { return '<span class="dot ' + ({ limit: 'waiting', asleep: 'idle' }[state] || state) + '" aria-hidden="true"></span>'; }
+  const dotClass = (state) => 'dot ' + ({ limit: 'waiting', asleep: 'idle' }[state] || state);
+  function dotHTML(state) { return '<span class="' + dotClass(state) + '" aria-hidden="true"></span>'; }
 
   /* FR-037: one person per session, kept in durbar.realpeople; the simulator uses a seeded pick so pictures repeat run to run */
   function people(model, ids, rand, remember) {
@@ -85,8 +94,8 @@
 
     let ro = stage.querySelector(':scope > .ro');
     if (!ro) { stage.textContent = ''; ro = document.createElement('div'); ro.className = 'ro'; stage.appendChild(ro); ro.addEventListener('click', forward); }
-    ro.style.width = px(lay.width); ro.style.height = px(lay.height);
-    ro.dataset.set = set; ro.dataset.u = String(Math.round(lay.u)); ro.dataset.face = String(Math.round(lay.faceH * 10) / 10); ro.dataset.big = lay.big ? '1' : '0';
+    sty(ro, 'width', px(lay.width)); sty(ro, 'height', px(lay.height));
+    dset(ro, 'set', set); dset(ro, 'u', String(Math.round(lay.u))); dset(ro, 'face', String(Math.round(lay.faceH * 10) / 10)); dset(ro, 'big', lay.big ? '1' : '0');
     ro.classList.toggle('still', !!opts.still);
     /* z-order (plan: art < lights < chrome): floor and fixtures, people and desks; the ambient and the lights; then signs, plates, chips */
     const art = layerOf(ro, 'ro-art'), amb = layerOf(ro, 'ro-amb'), lights = layerOf(ro, 'ro-lights'), chrome = layerOf(ro, 'ro-chrome');
@@ -95,8 +104,9 @@
     /* FR-043: the room ambient: the share of active desks among the visible ones */
     const states = lay.zones.flatMap((z) => z.desks.map((d) => d.state));
     const ambient = L.ambientFor(states);
-    ro.style.setProperty('--ro-amb', String(Math.round((1 - ambient) * 1000) / 1000));
-    ro.dataset.ambient = String(ambient);
+    const ambV = String(Math.round((1 - ambient) * 1000) / 1000);
+    if (ro.style.getPropertyValue('--ro-amb') !== ambV) ro.style.setProperty('--ro-amb', ambV);
+    dset(ro, 'ambient', String(ambient));
     const ambEl = el(amb, 'amb', 'div', 'ro-ambient'); box(ambEl, { x: 0, y: 0, w: lay.width, h: lay.height });
 
     const byFolder = new Map(model.folders.map((f) => [f.id, f]));
@@ -107,32 +117,20 @@
       const zk = z.id + '\u0000' + z.part; /* a folder too big for one row has more parts, each its own zone (the sign repeats, "continued") */
       const zb = el(art, 'z:' + zk, 'div', 'ro-zone'); box(zb, z.box);
       /* FR-018: the folder sign: name, path, counts, cost, + and the room menu (the app's own handlers: data-newsess, data-foldermenu) */
-      const sg = el(chrome, 's:' + zk, 'div', 'ro-sign'); box(sg, { x: z.sign.x, y: z.sign.y, h: z.sign.h }); sg.style.maxWidth = px(z.sign.w);
-      sg.dataset.folder = z.id;
-      const sig = JSON.stringify([f.name, f.path, f.counts, f.cost, f.newSess, f.menu, z.part]);
-      if (sg._sig !== sig && z.part > 1) { sg._sig = sig; sg.textContent = ''; const b = document.createElement('b'); b.textContent = f.name + ' (continued)'; b.title = f.name + '\n' + f.path; sg.appendChild(b); }
-      if (sg._sig !== sig) {
-        sg._sig = sig; sg.textContent = '';
-        const b = document.createElement('b'); b.textContent = f.name; b.title = f.name + '\n' + f.path; sg.appendChild(b);
-        const p = document.createElement('span'); p.className = 'ro-path'; p.textContent = f.path; sg.appendChild(p);
-        const sc = document.createElement('span'); sc.className = 'ro-sc';
-        for (const c of f.counts) { const s = document.createElement('span'); s.className = 'ro-cnt'; s.title = c.n + ' ' + c.word; s.insertAdjacentHTML('beforeend', dotHTML(c.state)); s.appendChild(document.createTextNode(String(c.n))); sc.appendChild(s); }
-        if (f.cost) { const m = document.createElement('span'); m.className = 'ro-cost'; m.textContent = f.cost; sc.appendChild(m); }
-        if (f.newSess) { const nb = document.createElement('button'); nb.type = 'button'; nb.className = 'ro-sb'; nb.dataset.newsess = z.id; nb.title = nb.ariaLabel = 'New session in ' + f.name; nb.setAttribute('aria-label', 'New session in ' + f.name); nb.textContent = '+'; sc.appendChild(nb); }
-        if (f.menu) { const mb = document.createElement('button'); mb.type = 'button'; mb.className = 'ro-sb'; mb.dataset.foldermenu = z.id; mb.setAttribute('aria-haspopup', 'menu'); mb.setAttribute('aria-label', 'Folder actions for ' + f.name); mb.title = 'Folder actions'; mb.textContent = '⋯'; sc.appendChild(mb); }
-        sg.appendChild(sc);
-      }
+      const sg = el(chrome, 's:' + zk, 'div', 'ro-sign'); box(sg, { x: z.sign.x, y: z.sign.y, h: z.sign.h }); sty(sg, 'maxWidth', px(z.sign.w));
+      dset(sg, 'folder', z.id);
+      signFill(sg, f, z);
       for (const d of z.desks) {
         const a = byAgent.get(d.id), k = d.id;
         const lt = L.lightFor(d.state, { still: !!opts.still });
         /* the person (FR-036 first frame; P2 adds the second frame and motion), behind the desk; FR-065: the initials disc when the picture failed */
         if (d.person) {
-          const pe = el(art, 'p:' + k, 'img', 'ro-person'); box(pe, d.person); pe.dataset.for = k; pe.dataset.pose = d.person.pose; img(pe, d.person.file);
+          const pe = el(art, 'p:' + k, 'img', 'ro-person'); box(pe, d.person); dset(pe, 'for', k); dset(pe, 'pose', d.person.pose); img(pe, d.person.file, d.person.w);
         } else if (!d.narrow) {
-          const ini = el(art, 'i:' + k, 'div', 'ro-initials'); const r = 0.5 * lay.u; box(ini, { x: d.slot.x + 0.05 * d.slot.w + 0.42 * lay.u - r / 2, y: d.desk.y - r - 6, w: r, h: r }); ini.dataset.for = k; text(ini, initials(a.name));
+          const ini = el(art, 'i:' + k, 'div', 'ro-initials'); const r = 0.5 * lay.u; box(ini, { x: d.slot.x + 0.05 * d.slot.w + 0.42 * lay.u - r / 2, y: d.desk.y - r - 6, w: r, h: r }); dset(ini, 'for', k); text(ini, initials(a.name));
         }
-        const dc = el(art, 'd:' + k, 'div', 'ro-desk' + (d.narrow ? ' narrow' : '')); box(dc, d.desk); dc.dataset.for = k;
-        const dk = dc.firstChild || dc.appendChild(document.createElement('img')); dk.style.height = px(d.desk.full); img(dk, 'desk.webp');
+        const dc = el(art, 'd:' + k, 'div', 'ro-desk' + (d.narrow ? ' narrow' : '')); box(dc, d.desk); dset(dc, 'for', k);
+        const dk = dc.firstChild || dc.appendChild(document.createElement('img')); sty(dk, 'height', px(d.desk.full)); img(dk, 'desk.webp', d.desk.w);
         /* the monitor: P1 shows the status on the glass (decorative line bars; live, masked text is phase P2, FR-030..FR-035) */
         const sc = el(art, 'm:' + k, 'div', 'ro-screen st-' + d.state + (lt.glow === 'off' ? ' off' : '')); box(sc, d.screen); sc.dataset.for = k;
         if (!sc.firstChild) sc.innerHTML = '<div class="ro-bezel"><div class="ro-glass"></div></div><div class="ro-neck"></div><div class="ro-foot"></div>';
@@ -148,7 +146,7 @@
           const t0 = TICKS.get(k); call = t0 && now - t0 < 2000 ? 'green' : null;
           if (call) setTimeout(() => { if (onArt) onArt(); }, 2050 - (now - t0)); /* redraw when the tick is over */
         } else { L.doneTick(SEEN, k, d.state); TICKS.delete(k); }
-        if (call) { const c = el(lights, 'c:' + k, 'div', 'ro-call call-' + call + (lt.motion === 'pulse' ? ' pulse' : '') + (call === 'green' && !opts.still ? ' fade' : '')); box(c, { x: d.call.x, y: d.call.y, w: 10, h: 10 }); c.dataset.for = k; }
+        if (call) { const c = el(lights, 'c:' + k, 'div', 'ro-call call-' + call + (lt.motion === 'pulse' ? ' pulse' : '') + (call === 'green' && !opts.still ? ' fade' : '')); box(c, { x: d.call.x, y: d.call.y, w: 10, h: 10 }); dset(c, 'for', k); }
         /* FR-038: cues, inside the slot */
         if (d.bubble) { const b = el(chrome, 'b:' + k, 'div', 'ro-bub'); box(b, d.bubble); attr(b, 'aria-hidden', 'true'); text(b, '?'); }
         if (d.bang) { const b = el(chrome, 'x:' + k, 'div', 'ro-bang'); box(b, d.bang); attr(b, 'aria-hidden', 'true'); text(b, '!'); }
@@ -156,20 +154,10 @@
         if (d.away) { const w = el(chrome, 'a:' + k, 'div', 'ro-away'); box(w, d.away); text(w, 'at ' + a.awayLabel + ' ↑'); }
         /* FR-016, FR-090: the name plate is the desk's one focusable button; the app's click handler opens the chat ([data-id]) */
         const pl = el(chrome, 'n:' + k, 'button', 'ro-plate st-' + d.state + (a.selected ? ' sel' : '') + (d.narrow ? ' narrow' : '')); box(pl, d.plate);
-        pl.type = 'button'; pl.dataset.id = k; pl.dataset.state = d.state;
+        if (pl.type !== 'button') pl.type = 'button';
+        dset(pl, 'id', k); dset(pl, 'state', d.state);
         attr(pl, 'aria-pressed', a.selected ? 'true' : 'false'); attr(pl, 'aria-label', a.label); attr(pl, 'title', a.tip);
-        const psig = JSON.stringify([a.name, a.role, a.word, a.task, a.helpers, d.state]);
-        if (pl._sig !== psig) {
-          pl._sig = psig; pl.textContent = '';
-          const l1 = document.createElement('span'); l1.className = 'ro-l1';
-          const nm = document.createElement('b'); nm.textContent = a.name; l1.appendChild(nm);
-          const rl = document.createElement('span'); rl.className = 'ro-role'; rl.textContent = a.role; l1.appendChild(rl);
-          if (a.helpers.length) { const h = document.createElement('span'); h.className = 'ro-help'; h.textContent = '+' + a.helpers.length + ' '; a.helpers.slice(0, 3).forEach((s) => h.insertAdjacentHTML('beforeend', dotHTML(s))); l1.appendChild(h); }
-          const l2 = document.createElement('span'); l2.className = 'ro-l2';
-          l2.insertAdjacentHTML('beforeend', dotHTML(d.state));
-          l2.appendChild(document.createTextNode(' ' + a.word + (a.task ? ' · ' + a.task : '')));
-          pl.appendChild(l1); pl.appendChild(l2);
-        }
+        plateFill(pl, a, d.state);
       }
     }
     /* the lobby band: fixtures, their lights, visitors and chips, place plates (FR-023..FR-027, FR-045) */
@@ -185,34 +173,90 @@
         if (v.fig && !BAD.has(v.fig.file)) {
           /* owner 2026-10-31 10:19 and 10:48: the feet on the front floor plane (layout), with a soft contact shadow under them */
           const sh = el(art, 'vs:' + v.id, 'div', 'ro-shadow'); box(sh, v.shadow);
-          const im = el(art, 'v:' + v.id, 'img', 'ro-visitor'); box(im, v.fig); im.dataset.for = v.id; im.dataset.place = fx.id; im.dataset.pose = v.fig.pose; im.dataset.faces = v.fig.faces; im.dataset.feet = String(Math.round(v.fig.feetY * 10) / 10); img(im, v.fig.file);
+          const im = el(art, 'v:' + v.id, 'img', 'ro-visitor'); box(im, v.fig); dset(im, 'for', v.id); dset(im, 'place', fx.id); dset(im, 'pose', v.fig.pose); dset(im, 'faces', v.fig.faces); dset(im, 'feet', String(Math.round(v.fig.feetY * 10) / 10)); img(im, v.fig.file, v.fig.w);
         }
         /* FR-026 "as the flat lobby": a go-place visitor (Boss, Bank, Coffee) is the flat lobby's own button (data-pvopen, and
            data-coffeeid for the coffee menu): app.js's delegated handlers open the chat; others forward to their plate (data-for) */
-        const ch = el(chrome, 'vc:' + v.id, p.go ? 'button' : 'span', 'ro-chip' + (ag.needsYou ? ' wait' : '')); box(ch, v.chip); ch.dataset.y = String(v.chip.y); ch.dataset.x = String(v.chip.x);
-        if (p.go) { ch.type = 'button'; ch.dataset.pvopen = v.id; if (fx.id === 'coffee') ch.dataset.coffeeid = v.id; attr(ch, 'aria-label', ag.title + '. Open the chat.'); } else ch.dataset.for = v.id;
-        attr(ch, 'title', ag.title); ch.dataset.name = ag.name; chipFill(ch, ag.name, ag.needsYou, model.alertIcon);
+        const ch = el(chrome, 'vc:' + v.id, p.go ? 'button' : 'span', 'ro-chip' + (ag.needsYou ? ' wait' : '')); dset(ch, 'y', String(v.chip.y)); dset(ch, 'x', String(v.chip.x)); /* its place is stagger()'s to write */
+        if (p.go) { if (ch.type !== 'button') ch.type = 'button'; dset(ch, 'pvopen', v.id); if (fx.id === 'coffee') dset(ch, 'coffeeid', v.id); attr(ch, 'aria-label', ag.title + '. Open the chat.'); } else dset(ch, 'for', v.id);
+        attr(ch, 'title', ag.title); dset(ch, 'name', ag.name); chipFill(ch, ag.name, ag.needsYou, model.alertIcon);
       }
       /* FR-025/FR-026 "as the flat lobby": the people that do not fit ("+N") open the flat lobby's own list (data-placemore, app.js
          openPlaceMenu), so the plate is a button then, with a name that says so */
       const pl = el(chrome, 'fp:' + fx.id, p.post || fx.more > 0 ? 'button' : 'div', 'ro-lplate' + (p.visitors.some((v) => v.needsYou) ? ' wait' : '')); box(pl, { x: fx.plate.x, y: fx.plate.y });
-      if (p.post) { pl.type = 'button'; pl.dataset.post = '1'; } else if (fx.more > 0) { pl.type = 'button'; pl.dataset.placemore = fx.id; attr(pl, 'aria-haspopup', 'menu'); } else { attr(pl, 'role', 'group'); }
-      pl.dataset.place = fx.id; pl.style.maxWidth = px(Math.max(44, fx.plate.w));
+      if (p.post) { if (pl.type !== 'button') pl.type = 'button'; dset(pl, 'post', '1'); } else if (fx.more > 0) { if (pl.type !== 'button') pl.type = 'button'; dset(pl, 'placemore', fx.id); attr(pl, 'aria-haspopup', 'menu'); } else { attr(pl, 'role', 'group'); }
+      dset(pl, 'place', fx.id); sty(pl, 'maxWidth', px(Math.max(44, fx.plate.w)));
       attr(pl, 'title', fx.more > 0 ? p.title + '. ' + fx.more + ' more: open the list.' : p.title); attr(pl, 'aria-label', fx.more > 0 ? p.title + '. ' + fx.more + ' more: open the list.' : p.title);
       /* owner 2026-10-31 09:03: no bare count when the people are visible; "+N" only for those that do not fit */
       const lsig = JSON.stringify([p.label, fx.more]);
       if (pl._sig !== lsig) { pl._sig = lsig; pl.textContent = ''; const s = document.createElement('span'); s.textContent = p.label; pl.appendChild(s); if (fx.more > 0) { const b = document.createElement('b'); b.className = 'ro-more'; b.textContent = '+' + fx.more; pl.appendChild(b); } }
     }
     [art, amb, lights, chrome].forEach(sweep);
-    fitPlates(chrome, lay.width);
-    stagger(chrome, lay.width);
+    /* FR-184: a status update reads no layout here: chips and plates are measured and placed again only when one of them or the width changed */
+    const lobbySig = JSON.stringify([lay.width, [...chrome.querySelectorAll(':scope > .ro-chip')].map((c) => [c.dataset.name, c.dataset.x, c.dataset.y, !!c._ic]), [...chrome.querySelectorAll(':scope > .ro-lplate')].map((e) => [e.dataset.place, e.title, e.style.left, e.style.top])]);
+    if (chrome._lobbySig !== lobbySig) { placeLobby(chrome, lay.width); chrome._lobbySig = document.hidden || document.body.classList.contains('panel-open') ? null : lobbySig; } /* under a chat nothing is laid out: what it measures there is not remembered */
+    else for (const e of chrome.querySelectorAll(':scope > .ro-chip, :scope > .ro-lplate')) if (e._at) { sty(e, 'left', e._at[0]); sty(e, 'top', e._at[1]); if (e._at[2]) sty(e, 'maxWidth', e._at[2]); } /* the draw above wrote the unplaced box: back to where they were placed */
     settle(chrome, lay.width);
     return lay;
   }
 
+  /* FR-018, FR-184: the folder sign keeps its nodes: only the counts and the cost change on a status update, and the + and the room menu keep the focus */
+  function signFill(sg, f, z) {
+    const sig = JSON.stringify([f.name, f.path, !!f.cost, f.newSess, f.menu, z.part]);
+    if (sg._sig !== sig) {
+      sg._sig = sig; sg.textContent = ''; sg._cnt = null; sg._cost = null;
+      const b = document.createElement('b'); b.textContent = z.part > 1 ? f.name + ' (continued)' : f.name; b.title = f.name + '\n' + f.path; sg.appendChild(b);
+      if (z.part > 1) return;
+      const p = document.createElement('span'); p.className = 'ro-path'; p.textContent = f.path; sg.appendChild(p);
+      const sc = document.createElement('span'); sc.className = 'ro-sc'; sg._sc = sc; sg._cnt = new Map();
+      if (f.cost) { const m = document.createElement('span'); m.className = 'ro-cost'; sc.appendChild(m); sg._cost = m; }
+      if (f.newSess) { const nb = document.createElement('button'); nb.type = 'button'; nb.className = 'ro-sb'; nb.dataset.newsess = z.id; nb.title = 'New session in ' + f.name; nb.setAttribute('aria-label', 'New session in ' + f.name); nb.textContent = '+'; sc.appendChild(nb); }
+      if (f.menu) { const mb = document.createElement('button'); mb.type = 'button'; mb.className = 'ro-sb'; mb.dataset.foldermenu = z.id; mb.setAttribute('aria-haspopup', 'menu'); mb.setAttribute('aria-label', 'Folder actions for ' + f.name); mb.title = 'Folder actions'; mb.textContent = '⋯'; sc.appendChild(mb); }
+      sg.appendChild(sc);
+    }
+    if (!sg._cnt) return;
+    if (sg._cost) text(sg._cost, f.cost);
+    /* one count per state, reused by state and kept in the model's order, in front of the cost and the buttons */
+    const sc = sg._sc, live = new Set(f.counts.map((c) => c.state));
+    for (const [st, e] of sg._cnt) if (!live.has(st)) { e.remove(); sg._cnt.delete(st); }
+    let next = sc.firstChild;
+    for (const c of f.counts) {
+      let e = sg._cnt.get(c.state);
+      if (!e) { e = document.createElement('span'); e.className = 'ro-cnt'; e.insertAdjacentHTML('beforeend', dotHTML(c.state)); e._n = document.createTextNode(''); e.appendChild(e._n); sg._cnt.set(c.state, e); }
+      if (e._n.data !== String(c.n)) e._n.data = String(c.n);
+      attr(e, 'title', c.n + ' ' + c.word);
+      if (e === next) next = next.nextSibling; else sc.insertBefore(e, next);
+    }
+  }
+
+  /* FR-016, FR-184: the plate keeps its nodes on a status change: only the text and the dot that changed are written (a helper's list is rebuilt when it changes) */
+  function plateFill(pl, a, state) {
+    let P = pl._parts;
+    if (!P) {
+      P = pl._parts = { l1: document.createElement('span'), nm: document.createElement('b'), rl: document.createElement('span'), l2: document.createElement('span'), dot: document.createElement('span'), tn: document.createTextNode(''), h: null, hs: '' };
+      P.l1.className = 'ro-l1'; P.rl.className = 'ro-role'; P.l1.append(P.nm, P.rl);
+      P.l2.className = 'ro-l2'; P.dot.setAttribute('aria-hidden', 'true'); P.l2.append(P.dot, P.tn);
+      pl.textContent = ''; pl.append(P.l1, P.l2);
+    }
+    text(P.nm, a.name); text(P.rl, a.role);
+    const hs = a.helpers.join();
+    if (P.hs !== hs) {
+      P.hs = hs; if (P.h) { P.h.remove(); P.h = null; }
+      if (a.helpers.length) { P.h = document.createElement('span'); P.h.className = 'ro-help'; P.h.textContent = '+' + a.helpers.length + ' '; a.helpers.slice(0, 3).forEach((s) => P.h.insertAdjacentHTML('beforeend', dotHTML(s))); P.l1.appendChild(P.h); }
+    }
+    const dc = dotClass(state), line = ' ' + a.word + (a.task ? ' · ' + a.task : '');
+    if (P.dot.className !== dc) P.dot.className = dc;
+    if (P.tn.data !== line) P.tn.data = line;
+  }
+
+
   /* a font that arrives after the measure (a lazily loaded bold face, another machine's metrics) widens a chip or plate: a
      ResizeObserver sees it and places again, so nothing overlaps in the settled state. A width equal to the one the placement
      used ends it (no loop). */
+  function placeLobby(chrome, W) {
+    fitPlates(chrome, W); stagger(chrome, W);
+    for (const e of chrome.querySelectorAll(':scope > .ro-chip, :scope > .ro-lplate')) e._at = [e.style.left, e.style.top, e.style.maxWidth];
+  }
   function settle(chrome, W) {
     if (typeof ResizeObserver !== 'function') return;
     chrome._W = W;
@@ -224,7 +268,7 @@
           queued = false;
           if (!chrome.isConnected) return;
           const moved = [...chrome.querySelectorAll(':scope > .ro-chip, :scope > .ro-lplate')].some((e) => e._w != null && Math.abs(e.getBoundingClientRect().width - e._w) > 0.5);
-          if (moved) { chrome._settled = (chrome._settled || 0) + 1; fitPlates(chrome, chrome._W); stagger(chrome, chrome._W); } /* _settled: the driver sees the observer act */
+          if (moved) { chrome._settled = (chrome._settled || 0) + 1; placeLobby(chrome, chrome._W); } /* _settled: the driver sees the observer act */
         });
       });
     }
@@ -259,16 +303,21 @@
   }
 
   /* a chip is [alert icon] + name; the icon is the app's own Alert sign (app.js signIcon, built from trusted markup, not the model's
-     text; constitution V: no emoji), the name goes in with textContent. `label` is the name or, when crowded, the initials. */
+     text; constitution V: no emoji), the name goes in with textContent. `label` is the name; a crowded chip shows initials, stagger()
+     keeps the full name in data-full, and a render does not write the name back only for stagger() to cut it again (FR-184). */
   function chipFill(ch, label, wait, icon) {
     const w = wait && icon ? icon : '';
     if (ch._ic !== w || !ch.querySelector('.ro-cn')) {
-      ch._ic = w; ch.textContent = '';
+      ch._ic = w; ch.textContent = ''; delete ch.dataset.full;
       if (w) { const i = document.createElement('span'); i.className = 'ro-ci'; i.setAttribute('aria-hidden', 'true'); i.innerHTML = w; ch.appendChild(i); }
       const n = document.createElement('span'); n.className = 'ro-cn'; ch.appendChild(n);
     }
+    if (ch.dataset.full === label) return;
+    if (ch.dataset.full !== undefined) delete ch.dataset.full;
     text(ch.querySelector('.ro-cn'), label);
   }
+
+  /* the width of a text in a chip's font, without touching the chip (no write, no layout): what its initials will take */
 
   /* visitors' name chips stand above their heads (owner 2026-10-31 10:48: never over the feet or legs; the layout gives each its
      place); when two would touch, the chip takes the nearest free spot (up to 64 px left or right, up to three levels up, inside the

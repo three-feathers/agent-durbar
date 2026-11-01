@@ -3,19 +3,20 @@
 /* ---------- spec 097 FR-100, FR-113: a Real office world (html[data-world], set by theme.js only while Real office is shown) ----------
    Tokens only, no colour literals (test:theme-tokens): theme.js paints the world's colour set on the page; these rules give the top
    bar and the toasts the world's dark glass by re-scoping the same tokens to its --wb-* values (custom properties cascade, so every
-   control inside follows), give the bar's own menu the page values back (--wp-*), and make the floating panels frosted glass: the
-   token fill at 90% (theme.js WORLD_GLASS; its contrast is checked over black) with a blur behind. No size, padding or font changes
+   control inside follows), give the bar's own menu the page values back (--wp-*), and make the small floating panels frosted glass: the
+   token fill at 90% (theme.js WORLD_GLASS; its contrast is checked over black) with a blur behind. FR-182: dialogs (.dlg) have no blur: the
+   opaque token surface; test:theme-tokens allows backdrop-filter only on FR-182's list. No size, padding or font changes
    (070 D2). Under forced colours the system colours win; with reduced transparency or more contrast the glass is opaque. */
 html[data-world] .topbar,html[data-world] .toast{--bg:var(--wb-bg);--surface:var(--wb-surface);--surface-2:var(--wb-surface-2);--raised:var(--wb-surface);--ink:var(--wb-ink);--ink-2:var(--wb-ink-2);--muted:var(--wb-muted);--line:var(--wb-line);--line-2:var(--wb-line-2);--line-ctl:var(--wb-line-ctl);--focus:var(--wb-focus);--warn-bg:var(--wb-warn-bg);--amber-ink:var(--wb-warn-ink);--tone-warn-soft:var(--wb-warn-bg)}
 html[data-world] .topbar{color:var(--ink);background:linear-gradient(180deg,var(--wb-surface) 0%,var(--wb-bg) 55%,var(--wb-bg-2) 100%);border-bottom-color:var(--wb-bg-2);box-shadow:inset 0 1px 0 color-mix(in srgb,var(--wb-ink) 9%,transparent),0 6px 18px -8px color-mix(in srgb,var(--wb-bg-2) 85%,transparent)}
 html[data-world] .topbar .more-menu{--bg:var(--wp-bg);--surface:var(--wp-surface);--surface-2:var(--wp-surface-2);--raised:var(--wp-raised);--ink:var(--wp-ink);--ink-2:var(--wp-ink-2);--muted:var(--wp-muted);--line:var(--wp-line);--line-2:var(--wp-line-2);--line-ctl:var(--wp-line-ctl);--focus:var(--wp-focus);--warn-bg:var(--wp-warn-bg);--amber-ink:var(--wp-amber-ink);color:var(--ink)}
-html[data-world] :is(.more-menu,.mode-menu,.grants-pop,#defaultsPop,#foldersPop,#floorsPop,.ct-more-pop,.dlg){background:color-mix(in srgb,var(--surface) 90%,transparent);-webkit-backdrop-filter:blur(18px) saturate(1.25);backdrop-filter:blur(18px) saturate(1.25);border-color:color-mix(in srgb,var(--line-2) 75%,transparent);box-shadow:var(--shadow-pop)}
+html[data-world] :is(.more-menu,.mode-menu,.grants-pop,#defaultsPop,#foldersPop,#floorsPop,.ct-more-pop){background:color-mix(in srgb,var(--surface) 90%,transparent);-webkit-backdrop-filter:blur(18px) saturate(1.25);backdrop-filter:blur(18px) saturate(1.25);border-color:color-mix(in srgb,var(--line-2) 75%,transparent);box-shadow:var(--shadow-pop)}
+html[data-world] .dlg{background:var(--surface);border-color:var(--line-2);box-shadow:var(--shadow-pop)}
 html[data-world] .dlg-ov{background:color-mix(in srgb,var(--wb-bg-2) 34%,transparent)}
-html[data-world] .dlg.wide>.dbtn{background:transparent}
 html[data-world] .toast{color:var(--ink);background:color-mix(in srgb,var(--wb-bg) 90%,transparent);-webkit-backdrop-filter:blur(14px) saturate(1.2);backdrop-filter:blur(14px) saturate(1.2);box-shadow:var(--shadow-pop)}
 html[data-world] .app-tip{background:var(--wb-bg);color:var(--wb-ink);border-color:var(--wb-line)}
 @media (prefers-reduced-transparency:reduce),(prefers-contrast:more){
-  html[data-world] :is(.more-menu,.mode-menu,.grants-pop,#defaultsPop,#foldersPop,#floorsPop,.ct-more-pop,.dlg){background:var(--surface);-webkit-backdrop-filter:none;backdrop-filter:none}
+  html[data-world] :is(.more-menu,.mode-menu,.grants-pop,#defaultsPop,#foldersPop,#floorsPop,.ct-more-pop){background:var(--surface);-webkit-backdrop-filter:none;backdrop-filter:none}
   html[data-world] .toast{background:var(--wb-bg);-webkit-backdrop-filter:none;backdrop-filter:none}
 }
 @media (forced-colors:active){

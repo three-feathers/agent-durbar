@@ -17,7 +17,7 @@ export const CAPS = { person: 80 * 1024, fixture: 120 * 1024, desk: 60 * 1024, f
 export const PERSON_MAX_H = 640;
 const KEYS = ['files', 'source', 'tool', 'date', 'made by', 'approved by', 'reference', 'prompt', 'cut', 'licence'];
 const CLAUSE = /fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named/;
-const kindOf = (f: string): keyof typeof CAPS | null => /^p\d\d-\w+\.webp$/.test(f) ? 'person' : /^fx-[a-z]+\.webp$/.test(f) ? 'fixture' : f === 'desk.webp' ? 'desk' : f === 'floor.webp' ? 'floor' : null;
+const kindOf = (f: string): keyof typeof CAPS | null => /^p\d\d-\w+(\.h)?\.webp$/.test(f) ? 'person' : /^fx-[a-z]+\.webp$/.test(f) ? 'fixture' : f === 'desk.webp' || f === 'desk.h.webp' ? 'desk' : f === 'floor.webp' ? 'floor' : null;
 
 /** ASSETS.md: one section per source sheet (`### name`), each a list of `- key: value` lines */
 export function sections(md: string): Map<string, Record<string, string>> {
@@ -107,7 +107,23 @@ export function problems(files: Map<string, Buffer>, peopleJson: string, md: str
   }
   want.add('desk.webp'); want.add('floor.webp');
   for (const f of want) if (!files.has(f)) out.push(`people.json names ${f}, which is not in the folder`);
-  for (const f of files.keys()) if (!want.has(f)) out.push(`${f}: people.json does not name it`);
+  for (const f of files.keys()) if (!want.has(f.replace(/\.h\.webp$/, '.webp'))) out.push(`${f}: people.json does not name it`);
+  return out;
+}
+
+/** FR-183 (T144, T153): every person and the desk has both sizes, the half-size picture is half of each side (rounded up) and `px` is the full picture's width. */
+export function halfProblems(files: Map<string, Buffer>, px: Record<string, number> | undefined): string[] {
+  const out: string[] = [];
+  const twoSizes = (f: string): boolean => /^p\d\d-\w+\.webp$/.test(f) || f === 'desk.webp';
+  for (const name of files.keys()) {
+    if (/\.h\.webp$/.test(name)) { if (!files.has(name.replace(/\.h\.webp$/, '.webp'))) out.push(`${name}: no full-size picture`); continue; }
+    if (!twoSizes(name)) continue;
+    const half = name.replace(/\.webp$/, '.h.webp'), a = webpInfo(files.get(name) as Buffer);
+    if (!px || px[name] !== a.width) out.push(`people.json px: ${name} is ${a.width} wide, px says ${px ? px[name] : 'nothing'}`);
+    if (!files.has(half)) { out.push(`${name}: no half-size picture ${half}`); continue; }
+    const b = webpInfo(files.get(half) as Buffer);
+    if (b.width !== Math.ceil(a.width / 2) || b.height !== Math.ceil(a.height / 2)) out.push(`${half}: ${b.width}x${b.height}, not half of ${a.width}x${a.height}`);
+  }
   return out;
 }
 
@@ -119,6 +135,7 @@ const pj = fs.readFileSync(path.join(DIR, 'people.json'), 'utf8');
 for (const f of fs.readdirSync(DIR)) assert.ok(f.endsWith('.webp') || f === 'people.json' || f === 'ASSETS.md', 'only pictures, people.json and ASSETS.md in the folder: ' + f);
 const real = problems(files, pj, md);
 assert.deepStrictEqual(real, [], 'the shipped pack passes: ' + real.slice(0, 10).join('; '));
+assert.deepStrictEqual(halfProblems(files, JSON.parse(pj).px), [], 'every person and the desk has both sizes (FR-183)');
 const total = [...files.values()].reduce((s, b) => s + b.length, 0);
 const META = JSON.parse(pj);
 assert.strictEqual(Object.keys(META.seat).length, 15, '15 seated people (the Office people)');
@@ -163,6 +180,19 @@ assert.deepStrictEqual(pending, [], 'every Office person has its likeness check 
   assert.ok(problems(one('p01-book.webp', Buffer.from('not an image at all, just some text')), pj1, okMd).some((p) => /not a WebP/.test(p)), 'red: not a picture');
   const big = new Map(files); big.set('p01-typeA.webp', Buffer.concat([good, Buffer.alloc(CAPS.total)]));
   assert.ok(problems(big, pj, md).some((p) => /over 10485760/.test(p)), 'red: a pack over 10 MB');
+}
+
+{
+  const px = JSON.parse(pj).px as Record<string, number>;
+  const without = new Map(files); without.delete('p01-typeA.h.webp');
+  assert.ok(halfProblems(without, px).some((p) => /p01-typeA.webp: no half-size/.test(p)), 'red: a person without the half-size picture');
+  const noDesk = new Map(files); noDesk.delete('desk.h.webp');
+  assert.ok(halfProblems(noDesk, px).some((p) => /desk.webp: no half-size/.test(p)), 'red: the desk without the half-size picture');
+  const wrong = new Map(files); wrong.set('p01-typeA.h.webp', files.get('p01-typeA.webp') as Buffer);
+  assert.ok(halfProblems(wrong, px).some((p) => /not half of/.test(p)), 'red: a half-size picture of the wrong size');
+  assert.ok(halfProblems(files, { ...px, 'p01-typeA.webp': 1 }).some((p) => /people.json px/.test(p)), 'red: px not the picture\'s width');
+  const orphan = new Map(files); orphan.set('p99-x.h.webp', files.get('p01-typeA.h.webp') as Buffer);
+  assert.ok(halfProblems(orphan, px).some((p) => /no full-size/.test(p)), 'red: a half-size picture with no full one');
 }
 
 // ---- packaging (FR-060, FR-061, T012): the build ships the pictures and people.js, never ASSETS.md; the CSP is unchanged ----

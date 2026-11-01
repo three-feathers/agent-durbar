@@ -4,7 +4,7 @@
    is UI uses the theme's tokens (D2). Light colours are fixed for meaning (FR-049). Lights are opacity and transforms only, with
    no blur filter and no script per frame (FR-048). */
 .ro{position:relative;overflow:hidden;border-radius:var(--r-lg,10px);background:#c9a77c url(realoffice/art/floor.webp) center/cover;
-  --ro-warm:255,214,150;--ro-amber:240,160,48;--ro-red:217,68,58;--ro-orange:240,122,32;--ro-green:63,170,99;--ro-screen:150,190,235;--ro-lit:255,194,122;--ro-ring:255,255,255}
+  --ro-warm:255,214,150;--ro-lamp:255,228,184;--ro-fx-lamp:255,232,192;--ro-amber:240,160,48;--ro-red:217,68,58;--ro-orange:240,122,32;--ro-green:63,170,99;--ro-screen:150,190,235;--ro-lit:255,194,122;--ro-ring:255,255,255}
 .ro *{box-sizing:border-box}
 .ro-art,.ro-amb,.ro-lights,.ro-chrome{position:absolute;inset:0;pointer-events:none}
 .ro-chrome>*,.ro-art>[data-for],.ro-art .ro-screen{pointer-events:auto}
@@ -39,30 +39,41 @@
 .ro-screen:hover .ro-bezel{box-shadow:0 0 0 2px var(--focus,#8db8e0),0 3px 8px rgba(0,0,0,.3)}
 
 /* FR-043: the room ambient, over the art only */
-.ro-ambient{background:#140e08;opacity:calc(var(--ro-amb,0) * .75);transition:opacity 1.5s ease}
+.ro-ambient{background:#140e08;opacity:calc(var(--ro-amb,0) * .75);transition:opacity 1.5s steps(6,end)}
 
-/* FR-040, FR-041: lamp, screen glow and call light per desk */
-.ro-lamp{border-radius:50%;background:radial-gradient(closest-side,rgba(var(--ro-warm),.55),rgba(var(--ro-warm),0));mix-blend-mode:screen;opacity:0}
+/* FR-040, FR-041: lamp, screen glow and call light per desk. FR-180: nothing blends (a blend mode put 20 render passes in each frame): a lamp is a
+   gradient pre-tinted to what --ro-warm screened over what lamps really lie on gave (--ro-lamp, the lit-area mean over the 15 and 8 agent office; --ro-fx-lamp for the lobby), and an off lamp is a dark gradient */
+.ro-lamp{border-radius:50%;background:radial-gradient(closest-side,rgba(var(--ro-lamp),.55),rgba(var(--ro-lamp),0));opacity:0}
 .ro-lamp.lamp-warm{opacity:.55}.ro-lamp.lamp-bright{opacity:.8}.ro-lamp.lamp-on{opacity:.42}.ro-lamp.lamp-low{opacity:.15}
-.ro-lamp.lamp-off{opacity:1;mix-blend-mode:multiply;background:radial-gradient(closest-side,rgba(20,14,8,.28),rgba(20,14,8,0))}
-.ro-glow{border-radius:8px;opacity:0;box-shadow:0 0 18px 6px rgba(var(--ro-screen),.35)}
+.ro-lamp.lamp-off{opacity:1;background:radial-gradient(closest-side,rgba(20,14,8,.28),rgba(20,14,8,0))}
+/* FR-180, T151: a glow is a static gradient, not a box-shadow: the same soft ring round the glass (a blurred shadow's fall-off, four sides and four corners) with nothing to blur; it starts at the bezel, 3px inside the box, so that it has no hard inner edge */
+.ro-glow{border-radius:8px;opacity:0;--ro-gc:var(--ro-screen);--ro-ga:.35;--ro-ge:24px;
+  --ro-gs:rgba(var(--ro-gc),calc(var(--ro-ga)*.75)) 0,rgba(var(--ro-gc),calc(var(--ro-ga)*.5)) 25%,rgba(var(--ro-gc),calc(var(--ro-ga)*.25)) 50%,rgba(var(--ro-gc),calc(var(--ro-ga)*.09)) 75%,rgba(var(--ro-gc),0) 100%}
+.ro-glow::before{content:"";position:absolute;inset:calc(3px - var(--ro-ge));background-repeat:no-repeat;
+  background-image:linear-gradient(to top,var(--ro-gs)),linear-gradient(to bottom,var(--ro-gs)),linear-gradient(to left,var(--ro-gs)),linear-gradient(to right,var(--ro-gs)),
+    radial-gradient(circle var(--ro-ge) at 100% 100%,var(--ro-gs)),radial-gradient(circle var(--ro-ge) at 0 100%,var(--ro-gs)),radial-gradient(circle var(--ro-ge) at 100% 0,var(--ro-gs)),radial-gradient(circle var(--ro-ge) at 0 0,var(--ro-gs));
+  background-position:top center,bottom center,left center,right center,left top,right top,left bottom,right bottom;
+  background-size:calc(100% - 2*var(--ro-ge)) var(--ro-ge),calc(100% - 2*var(--ro-ge)) var(--ro-ge),var(--ro-ge) calc(100% - 2*var(--ro-ge)),var(--ro-ge) calc(100% - 2*var(--ro-ge)),var(--ro-ge) var(--ro-ge),var(--ro-ge) var(--ro-ge),var(--ro-ge) var(--ro-ge),var(--ro-ge) var(--ro-ge)}
 .ro-glow.glow-on{opacity:.8}.ro-glow.glow-breathe{opacity:.7}.ro-glow.glow-low{opacity:.25}
-.ro-glow.glow-red{opacity:.9;box-shadow:0 0 14px 4px rgba(var(--ro-red),.4)}
-.ro-call{width:10px;height:10px;border-radius:50%;border:1.5px solid rgba(var(--ro-ring),.85)}
-.ro-call.call-amber{background:rgb(var(--ro-amber));box-shadow:0 0 8px 3px rgba(var(--ro-amber),.55)}
-.ro-call.call-red{background:rgb(var(--ro-red));box-shadow:0 0 6px 2px rgba(var(--ro-red),.45)}
-.ro-call.call-orange{background:rgb(var(--ro-orange));box-shadow:0 0 6px 2px rgba(var(--ro-orange),.45)}
-.ro-call.call-green{background:rgb(var(--ro-green));box-shadow:0 0 6px 2px rgba(var(--ro-green),.45)}
+.ro-glow.glow-red{opacity:.9;--ro-gc:var(--ro-red);--ro-ga:.4;--ro-ge:20px}
+/* a call light's halo is a static gradient behind it too */
+.ro-call{width:10px;height:10px;border-radius:50%;border:1.5px solid rgba(var(--ro-ring),.85);isolation:isolate;--ro-cc:var(--ro-amber);--ro-ca:.45;background:rgb(var(--ro-cc))}
+.ro-call::after{content:"";position:absolute;inset:-12.5px;z-index:-1;border-radius:50%;background:radial-gradient(closest-side,rgba(var(--ro-cc),calc(var(--ro-ca)*.77)) 31%,rgba(var(--ro-cc),calc(var(--ro-ca)*.5)) 50%,rgba(var(--ro-cc),calc(var(--ro-ca)*.16)) 75%,rgba(var(--ro-cc),0))}
+.ro-call.call-amber{--ro-cc:var(--ro-amber);--ro-ca:.55}
+.ro-call.call-red{--ro-cc:var(--ro-red)}
+.ro-call.call-orange{--ro-cc:var(--ro-orange)}
+.ro-call.call-green{--ro-cc:var(--ro-green)}
 /* FR-045: lobby fixture lights */
-.ro-fxl{opacity:.9;mix-blend-mode:screen;background:radial-gradient(ellipse 50% 45% at 50% 40%,rgba(var(--ro-warm),.5),rgba(var(--ro-warm),0))}
+.ro-fxl{opacity:.9;background:radial-gradient(ellipse 50% 45% at 50% 40%,rgba(var(--ro-fx-lamp),.5),rgba(var(--ro-fx-lamp),0))}
 .ro-fxl.fxl-soft{opacity:.5}
-.ro-fxl.fxl-glow{background:radial-gradient(ellipse 45% 35% at 45% 55%,rgba(var(--ro-warm),.6),rgba(var(--ro-warm),0))}
-.ro-fxl.fxl-busy{mix-blend-mode:normal;background:radial-gradient(circle 7px at 50% 3%,rgb(var(--ro-amber)) 0 5px,rgba(var(--ro-amber),.45) 6px,rgba(var(--ro-amber),0) 16px)}
+.ro-fxl.fxl-glow{background:radial-gradient(ellipse 45% 35% at 45% 55%,rgba(var(--ro-fx-lamp),.6),rgba(var(--ro-fx-lamp),0))}
+.ro-fxl.fxl-busy{background:radial-gradient(circle 7px at 50% 3%,rgb(var(--ro-amber)) 0 5px,rgba(var(--ro-amber),.45) 6px,rgba(var(--ro-amber),0) 16px)}
 
-/* FR-041 motion: one animation per desk at most (FR-048); none under reduced motion (styles.css), Serious mode or .still (FR-047) */
-.ro-call.pulse{animation:ro-pulse 2.2s ease-in-out infinite}
-.ro-glow.breathe{animation:ro-breathe 5s ease-in-out infinite}
-.ro-call.fade{animation:ro-fade 2s ease-in forwards}
+/* FR-041 motion: one animation per desk at most (FR-048); none under reduced motion (styles.css), Serious mode or .still (FR-047). FR-181: stepped, at most 8 changes a second
+   (the pulse 3.6, the breath 3.2, the tick's fade 5), and only the states of FR-041's table move: a stepped value causes damage only on a step */
+.ro-call.pulse{animation:ro-pulse 2.2s steps(4,end) infinite}
+.ro-glow.breathe{animation:ro-breathe 5s steps(8,end) infinite}
+.ro-call.fade{animation:ro-fade 2s steps(4,end) forwards}
 @keyframes ro-pulse{50%{opacity:.55;transform:scale(1.25)}}
 @keyframes ro-breathe{50%{opacity:.35}}
 @keyframes ro-fade{0%,60%{opacity:1}100%{opacity:0}}
