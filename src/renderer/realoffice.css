@@ -7,6 +7,7 @@
   --ro-warm:255,214,150;--ro-amber:240,160,48;--ro-red:217,68,58;--ro-orange:240,122,32;--ro-green:63,170,99;--ro-screen:150,190,235;--ro-lit:255,194,122;--ro-ring:255,255,255}
 .ro *{box-sizing:border-box}
 .ro-art,.ro-amb,.ro-lights,.ro-chrome{position:absolute;inset:0;pointer-events:none}
+.ro-art{z-index:0} /* spec 097 FR-120: its children (a sleeper's person and desk) order among themselves; the layers above still paint over the whole art layer */
 .ro-chrome>*,.ro-art>[data-for],.ro-art .ro-screen{pointer-events:auto}
 .ro-art>*,.ro-lights>*,.ro-chrome>*{position:absolute}
 
@@ -120,3 +121,82 @@ button.ro-chip{font-family:inherit;margin:0}
   .ro-amb{display:none}
   .ro-lights *{animation:none!important}
 }
+
+/* spec 097 FR-126: desk <-> lobby is a leave/arrive pair of 300 ms (opacity only): the person fades out where it stood (0-150 ms), the
+   figure fades in at the place (150-300 ms), a dotted trail fades in then out between them. Nothing under reduced motion or Serious mode
+   (the scene is .still then and the elements are never added). */
+.ro-in{animation:ro-in .15s ease-out .15s backwards}
+.ro-gone{animation:ro-out .15s ease-in forwards}
+@keyframes ro-in{from{opacity:0}}
+@keyframes ro-out{to{opacity:0}}
+.ro-trail{pointer-events:none!important;animation:ro-trail .3s linear forwards}
+.ro-trail svg{display:block;overflow:visible}
+.ro-trail path{fill:none;stroke:rgba(255,255,255,.88);stroke-width:3;stroke-dasharray:2 9;stroke-linecap:round}
+@keyframes ro-trail{0%{opacity:0}50%{opacity:1}100%{opacity:0}}
+@media (prefers-reduced-motion:reduce){.ro-in,.ro-gone,.ro-trail{animation:none}.ro-trail{display:none}}
+html[data-serious] :is(.ro-in,.ro-gone,.ro-trail){animation:none}
+/* spec 097 FR-120: a static "z z" over a person asleep at the desk (aria-hidden; the plate and the name say it) */
+.ro-zz{pointer-events:none!important;font-style:italic;font-weight:700;font-size:11px;line-height:1;color:#f4efe6;text-shadow:0 1px 2px rgba(0,0,0,.75);letter-spacing:.06em;white-space:nowrap}
+.ro-plate.asleep{background:var(--surface-2,var(--surface))}
+.ro-plate.asleep .ro-l2{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+@media (forced-colors:active){.ro-zz,.ro-trail{display:none}}
+/* spec 097 FR-119 empty office: the sentence of the flat office, word for word, on an opaque plate over three empty desks */
+.ro-eplate{padding:9px 16px;border-radius:10px;font-size:13.5px;line-height:1.45;text-align:center;background:var(--surface);color:var(--ink);border:1px solid var(--line);box-shadow:0 6px 18px rgba(0,0,0,.28)}
+.ro-edesk{cursor:default}
+.ro-escreen{cursor:default}
+/* FR-120: the sleeper sits in front of its own dark screen (the screen is off and behind the person); the desk stays in front of the person */
+.ro-person.asleep{z-index:2}
+.ro-desk.asleep{z-index:3}
+
+/* spec 097 FR-121, FR-122, FR-124: the queue slip at the Boss door, the limit slip at the Bank and the MCP bubble at the desk. An opaque face
+   (never text over a picture), the app's own tokens and button classes; the world's paper, tablet or note is in its world.css. Nothing moves. */
+.ro-slip{width:330px;max-width:calc(100% - 8px);padding:8px 11px 9px;border-radius:10px;background:var(--surface);color:var(--ink);border:1px solid var(--line-2,var(--line));box-shadow:0 6px 16px rgba(0,0,0,.28);font-size:12px;line-height:1.4;z-index:6;pointer-events:auto}
+.ro-slip[hidden]{display:none}
+.ro-slip.ro-limit{width:400px}
+.ro-slip p{margin:0}
+.ro-slip .sl-h{font-size:12px}
+.ro-slip .sl-h b{font-weight:700}
+.ro-slip .sl-h span{color:var(--muted)}
+.ro-slip .sl-t{margin:3px 0 6px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.ro-slip .sl-act{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.ro-slip .btn.sm{height:auto;min-height:24px;padding:3px 9px;font-size:12px}
+.ro-slip .limit-amt{width:68px;font:inherit;font-size:12px;padding:3px 6px;border-radius:7px;border:1px solid var(--line-2,var(--line));background:var(--surface);color:var(--ink)}
+.ro-slip .sl-fold,.ro-slip .sl-more,.ro-slip .ro-pill{display:block;width:100%;margin:5px 0 0;padding:2px 0 0;text-align:left;font:inherit;font-size:11.5px;color:var(--muted);background:none;border:0;border-top:1px dashed var(--line);cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ro-slip .sl-more{font-weight:700;color:var(--ink)}
+.ro-slip .ro-pill{margin:0;border:0;padding:0;font-weight:700;color:var(--ink);font-size:12px}
+.ro-slip .linkbtn{font-size:12px}
+.ro-slip :is(button,input):focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.ro-slip[data-variant="pill"]{width:auto;padding:4px 12px}
+.ro-slip.ro-limit,.ro-slip.ro-bubble{border-color:var(--c-waiting)}
+.ro-slip.ro-bubble{width:360px}
+@media (forced-colors:active){.ro-slip{border:2px solid CanvasText;background:Canvas;color:CanvasText}}
+/* spec 097 FR-123: the tent card on the empty desk of a coffee break (paper, folded: a darker edge); text and edge colour are the app's tokens */
+.ro-tent{transform:translateX(-50%);padding:1px 9px 2px;border-radius:3px 3px 0 0;font-size:11px;font-weight:700;line-height:1.35;white-space:nowrap;background:var(--surface);color:var(--ink);border:1px solid var(--line-2,var(--line));border-bottom:3px solid var(--c-waiting);box-shadow:0 2px 4px rgba(0,0,0,.25);pointer-events:none!important}
+@media (forced-colors:active){.ro-tent{border:1px solid CanvasText;border-bottom-width:3px}}
+
+/* spec 097 FR-125: the ride (two doors over the desk area, never the lobby; transform and opacity only). The world's doors are in its world.css. */
+.ro-ride{position:absolute;left:0;right:0;overflow:hidden;z-index:40;pointer-events:none}
+.ro-ride .rr-door{position:absolute;top:0;bottom:0;width:50%;background:#9aa0a6;border:1px solid rgba(0,0,0,.35)}
+.ro-ride .rr-door.l{left:0;transform:translateX(-100%)}
+.ro-ride .rr-door.r{right:0;transform:translateX(100%)}
+.ro-ride.closing .rr-door.l,.ro-ride.opening .rr-door.l{transform:none}
+.ro-ride.closing .rr-door.r,.ro-ride.opening .rr-door.r{transform:none}
+.ro-ride.closing .rr-door.l{animation:rr-l-in .35s ease-in}
+.ro-ride.closing .rr-door.r{animation:rr-r-in .35s ease-in}
+.ro-ride.opening .rr-door.l{animation:rr-l-out .64s ease-out forwards}
+.ro-ride.opening .rr-door.r{animation:rr-r-out .64s ease-out forwards}
+@keyframes rr-l-in{from{transform:translateX(-100%)}}
+@keyframes rr-r-in{from{transform:translateX(100%)}}
+@keyframes rr-l-out{to{transform:translateX(-100%)}}
+@keyframes rr-r-out{to{transform:translateX(100%)}}
+.ro-ride .rr-disp{position:absolute;left:50%;top:14px;transform:translateX(-50%);z-index:1;padding:3px 14px;border-radius:6px;font-size:12px;font-weight:700;white-space:nowrap;background:var(--surface);color:var(--ink);border:1px solid var(--line-2,var(--line))}
+#lift .lift-b.ride-to{box-shadow:0 0 0 2px var(--focus)}
+@media (forced-colors:active){.ro-ride .rr-door{background:Canvas;border-color:CanvasText}.ro-ride .rr-disp{border-color:CanvasText}}
+
+/* spec 097 FR-121: the inbox header (the Boss door and the queue's faces; aria-hidden) */
+html[data-world] .inbox-dlg .ib-world{display:flex;align-items:center;gap:12px;padding:8px 12px;border-bottom:1px solid var(--line);background:var(--surface-2)}
+html[data-world] .inbox-dlg .ibw-door{height:54px;width:auto;border-radius:4px}
+html[data-world] .inbox-dlg .ibw-faces{margin-left:auto;display:flex}
+html[data-world] .inbox-dlg .ibw-face{width:30px;height:30px;margin-left:-6px;border-radius:50%;overflow:hidden;border:2px solid var(--surface);background:var(--surface-2);display:block}
+html[data-world] .inbox-dlg .ibw-face:first-child{margin-left:0}
+html[data-world] .inbox-dlg .ibw-face>*{width:100%;height:100%}

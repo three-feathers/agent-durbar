@@ -27,3 +27,34 @@
   .ro[data-world="cave"]{background-image:none;background-color:Canvas}
   .ro[data-world="cave"] .ro-lobby,.ro[data-world="cave"] .ro-strip{background-image:none}
 }
+
+/* The nine world moments in the cave (spec 097 FR-118..FR-126). Clay and stone: the pieces re-scope the app's own tokens to the clay, so the controls and
+   text inside them keep a tested contrast on it (ink #2e2117 on #f1e2c4 is 12:1). Nothing moves except the first-run's ring and the ride (opacity, transform). */
+.ro[data-world="cave"] :is(.ro-slip,.ro-eplate,.ro-tent){--surface:#f1e2c4;--surface-2:#e8d4b0;--raised:#f6ead2;--ink:#2e2117;--ink-2:#4a3829;--muted:#5b4836;--line:#b79a6c;--line-2:#8a6b43;--c-waiting:#b4571b;--focus:#7a3b0f;background:var(--surface);color:var(--ink);border:2px solid #6b4423;border-radius:16px 22px 14px 20px}
+.ro[data-world="cave"] .ro-tent{border-radius:4px 4px 0 0;border-bottom:3px solid #8a4b1f}
+/* spec 097 FR-118 first run: the cave mouth wall, the card a slab of clay */
+html[data-world="cave"] #floor:has(> #stage > .welcome){background:linear-gradient(180deg,rgba(255,206,140,.28),rgba(30,14,4,.1) 60%,rgba(20,10,4,.3)),#3a2518 url(wall.webp) 0 0/auto 100% repeat-x}
+html[data-world="cave"] #stage > .welcome{--surface:#f1e2c4;--surface-2:#e8d4b0;--raised:#f6ead2;--ink:#2e2117;--ink-2:#4a3829;--muted:#5b4836;--line:#b79a6c;--line-2:#8a6b43;--focus:#7a3b0f;background:var(--surface);border:2px solid #6b4423;border-radius:18px 24px 16px 22px;box-shadow:0 14px 34px rgba(10,4,0,.5)}
+/* spec 097 FR-120 asleep: the shade is a plain dark translucency, "z z" carved in stone */
+.ro[data-world="cave"] .ro-lamp.lamp-off{background:radial-gradient(closest-side,rgba(14,8,2,.66),rgba(14,8,2,.36) 80%,rgba(14,8,2,0));opacity:1}
+.ro[data-world="cave"] .ro-zz{color:#e9d8b5;text-shadow:0 1px 0 #2e2117,0 -1px 0 rgba(255,255,255,.3)}
+.ro[data-world="cave"] .ro-plate.asleep{background:#e9dcc4}
+/* spec 097 FR-121 the inbox: clay tablets at the Boss door (a pin of fired clay) */
+.ro[data-world="cave"] .ro-queue::before{content:"";position:absolute;left:18px;top:-6px;width:10px;height:10px;border-radius:50%;background:#8a4b1f;box-shadow:0 1px 2px rgba(0,0,0,.5)}
+/* spec 097 FR-125 the ride: slabs of the cave wall */
+.ro[data-world="cave"] .ro-ride .rr-door{background:#4a3524 url(wall.webp) center/cover;border-color:#1c0f06}
+.ro[data-world="cave"] .ro-ride .rr-door.l{box-shadow:inset -6px 0 12px rgba(0,0,0,.45)}
+.ro[data-world="cave"] .ro-ride .rr-door.r{box-shadow:inset 6px 0 12px rgba(0,0,0,.45)}
+.ro[data-world="cave"] .ro-ride .rr-disp{--surface:#f1e2c4;--ink:#2e2117;--line-2:#6b4423}
+/* spec 097 FR-122, FR-123, FR-124 the cards in the chat: clay tones (the words, buttons and order are the flat ones) */
+html[data-world="cave"] #chat .note.limit{background:#f1e2c4;border-color:#b4571b}
+html[data-world="cave"] #chat .note.coffee,html[data-world="cave"] #coffeeBar{background:#e9dcc4;border-color:#8a6b43}
+html[data-world="cave"] #chat .note.elicit{background:#e3e6dc;border-color:#7d8a6e}
+@media (forced-colors:active){
+  html[data-world="cave"] #floor:has(> #stage > .welcome){background:Canvas}
+  .ro[data-world="cave"] .ro-ride .rr-door{background:Canvas}
+  html[data-world="cave"] #chat :is(.note.limit,.note.coffee,.note.elicit),html[data-world="cave"] #coffeeBar{background:Canvas;border-color:CanvasText}
+}
+
+/* spec 097 FR-118 first run: no counts in the top bar (all zero); the space stays, so the bar does not move */
+html[data-world="cave"] body:has(#stage > .welcome) #stats{visibility:hidden}

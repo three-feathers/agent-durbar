@@ -1620,7 +1620,7 @@ let layoutKey='', layout=null;
 let SIM_QUIET_HEADS=new Set(); /* spec 001 FR-023 (2026-10-23): simulator only (__durbarSimUi.quietHeads(['siren','aiu'])): room headers drawn without those parts, so a driver can lay the office out first and add them after, as a late siren or cost does */
 let HEAD_RETRY=''; /* the layout key and header contents of the last relayout made because a header no longer held its parts */
 /* spec 001 FR-026: what a new user needs before the first folder: sign in once (spec 052 FR-056: named by the AI account, not the app), add a folder (Read-only), or look around in the demo */
-const WELCOME_HTML=`<section class="welcome" aria-labelledby="wlT"><h2 id="wlT">Welcome to Agent Durbar</h2>
+const WELCOME_HTML=`<section class="welcome" aria-labelledby="wlT" data-surface="first-run"><h2 id="wlT">Welcome to Agent Durbar</h2>
   <p class="wl-sub">Your AI agents in one office: see what each one is doing, chat with it, and decide what it may do. For code, documents, research or notes, with GitHub Copilot, Claude Code or OpenAI Codex side by side.</p>
   <ol class="wl-steps">
     <li><b>Connect your AI account once</b>: ChatGPT (through Codex), Claude (through Claude Code) or GitHub Copilot (a free plan works). <b>Connect an AI account…</b> installs the agent app and signs in for you, showing every step; nothing is typed in a terminal.<br><span class="wl-which">Which one? Have ChatGPT: Codex. Have Claude: Claude Code. Neither: GitHub Copilot (free).</span></li>
@@ -1744,7 +1744,14 @@ function realModel(model){
     const u=SIM_QUIET_HEADS.has('aiu')?null:roomAiu(r);
     return {id:r.id,name:r.name,path:deskMask(showPath(r.path)),cost:u?u.long:'',counts,newSess:!!(bridge&&bridge.newSession&&anyKindReady()&&!demoOn),menu:!!(bridge&&bridge.removeFolder&&!demoOn),
       agents:list.map(a=>{const v=VISITS.at(a.id),st=stOf(a,old.has(a.id)),task=deskMask(taskOf(a)),place=v?placeLabel(v.place):'',needs=st==='waiting'||st==='limit';
-        return {id:a.id,name:a.name,role:a.role,state:st,word:stWord(a),task,tip:deskTip(a),selected:ui.selected===a.id,away:v?v.place:null,awayLabel:place,
+        const asleep=old.has(a.id)&&!v;
+        if(asleep){ /* spec 097 FR-120, FR-129: asleep at the desk; the words of the lounge's peek card and label, the same masked reply (shutReply) */
+          const ago=ACT.agoLong(sinceLast(a)), said=SHUT.spoken(ago), line=shutReply(a,140), who=a.profile?a.profile.name+' · '+a.role:a.role;
+          return {id:a.id,name:a.name,role:a.role,state:st,word:'Asleep',task:ago?'finished '+ago:'',asleep:true,tip:'Asleep · '+stWord(a)+(ago?' · finished '+ago:'')+' · Lamp off\n'+shutReply(a,300),selected:ui.selected===a.id,away:null,awayLabel:'',
+            label:a.name+', '+who+', folder '+deskMask(showPath(r.path))+', asleep at the desk'+(said?', finished '+said:'')+': '+line+(/[.!?…]$/.test(line)?'':'.')+' Open chat panel.',helpers:helpersOf(a).map(h=>stOf(h,false))};
+        }
+        const br=v&&v.place===D.COFFEE&&BREAKS.get(a.id)&&BREAKS.get(a.id).kind!=='cap'?coffeeWord()+' \u00B7 '+coffeeUntilWords(a):''; /* spec 097 FR-123: the tent card on the empty desk of a coffee break (an app's usage window), never of Durbar's cap at the Bank */
+        return {id:a.id,name:a.name,role:a.role,state:st,word:stWord(a),task,tent:br,tip:deskTip(a),selected:ui.selected===a.id,away:v?v.place:null,awayLabel:place,
           label:[a.name,a.role,stWord(a)].concat(task?[task]:[],needs?['needs you']:[],place?['at '+place]:[]).join(', ')+'. Open chat panel.', /* FR-090: text for setAttribute, not markup */
           helpers:helpersOf(a).map(h=>stOf(h,false))};})};
   });
@@ -1755,10 +1762,56 @@ function realModel(model){
       title:p.id===D.POSTBOX?placeLabelFull(p.id)+': the next scheduled runs. Open Settings > Schedules.':placeTip(p.id,ids,wait),
       visitors:ids.map(id=>{const a=byId(id),v=VISITS.at(id);return {id,name:a.name,needsYou:vis(a)==='waiting'||!!a.limit,title:visitorWords(a,v,true)};})};
   });
-  return {folders,places,alertIcon:signIcon('alert'),sessions:agents.filter(a=>!a.parent).map(a=>({id:a.id,folder:a.room}))};
+  return {folders,places,slips:realSlips(),alertIcon:signIcon('alert'),sessions:agents.filter(a=>!a.parent).map(a=>({id:a.id,folder:a.room}))};
 }
+/* spec 097 FR-121, FR-122, FR-124 (Real office): the requests the world draws as slips at the Boss door and the Bank, and as a bubble at the desk. Plain data
+   from the very cards the chat and the inbox already hold (pendingCardOf, inboxActs, requestText), so the words, the buttons, their order and their tooltips are
+   the flat ones; a click goes back to the card's own button (data-slipact, the handler below). A request that is only a status (an error, a plain wait) has no
+   card and no slip. */
+function realSlips(){
+  const D=window.DurbarPlaces, out={queue:null,limit:null,elicit:[]};
+  const items=[];
+  for(const a of needsMeOrder()){
+    const card=pendingCardOf(a); if(!card)continue;
+    const who=a.profile?a.profile.name+' · '+a.role:a.role;
+    if(card.classList.contains('limit')){
+      if(out.limit)continue; /* one slip at the Bank; the next waits in the inbox */
+      const inp=card.querySelector('.limit-amt'), btns=[...card.querySelectorAll(':scope > .note-actions button')];
+      out.limit={id:a.id,name:a.name,who:a.name+' · '+who+' · at the Bank',text:requestText(card),input:inp?{label:inp.getAttribute('aria-label')||'',value:inp.value,min:inp.min,step:inp.step}:null,
+        actions:btns.map((b,i)=>({idx:i,label:b.textContent,title:b.title||'',cls:(b.className.match(/\b(primary|danger|session)\b/)||[''])[0]}))};
+    }else if(card.classList.contains('elicit')){
+      out.elicit.push({id:a.id,name:a.name,head:a.name+': [MCP] '+(card.getAttribute('aria-label')||'An MCP server asks for input'),text:requestText(card)});
+    }else if(card.classList.contains('coffee')){ /* the coffee corner has its own words (tent card, plate); no slip */ }
+    else items.push({a,card,who});
+  }
+  if(items.length){
+    const first=items[0], q=first.card.classList.contains('question');
+    const what=q?'asks':'needs your OK';
+    out.queue={total:items.length,
+      first:{id:first.a.id,name:first.a.name,who:first.who,what,folder:roomOf(first.a).name,text:requestText(first.card),
+        actions:(q?[]:inboxActs(first.card).map((b,i)=>({idx:i,label:b.textContent,title:b.title||'',cls:(b.className.match(/\b(primary|danger|session)\b/)||[''])[0]}))).concat(q?[{idx:-1,k:'open',label:'Answer in chat',title:'',cls:'primary'}]:[])},
+      folded:items.slice(1,3).map(x=>({id:x.a.id,text:x.a.name+' '+(x.card.classList.contains('question')?'asks: ':'needs your OK: ')+requestText(x.card).slice(0,60)})),
+      more:Math.max(0,items.length-3),door:D.BOSS};
+  }
+  return out;
+}
+/* the slips' buttons: the card's own buttons (index into the same list the inbox shows), the limit amount copied into the card's own field first */
+document.addEventListener('click',e=>{
+  const b=e.target.closest&&e.target.closest('[data-slipact]'); if(!b)return;
+  const a=byId(b.dataset.slipid), act=b.dataset.slipact;
+  if(act==='inbox'){openInbox();return;}
+  if(!a)return;
+  if(act==='open'){openPanel(a.id,true);return;}
+  const card=pendingCardOf(a); if(!card)return;
+  if(act==='perm'){const src=inboxActs(card)[Number(b.dataset.slipidx)];if(src)src.click();return;}
+  if(act==='limit'){
+    const btns=[...card.querySelectorAll(':scope > .note-actions button')], src=btns[Number(b.dataset.slipidx)], inp=card.querySelector('.limit-amt'), mine=b.closest('.ro-slip')&&b.closest('.ro-slip').querySelector('.limit-amt');
+    if(inp&&mine)inp.value=mine.value;
+    if(src)src.click();
+  }
+});
 let RO_LAST=null; /* the last layout, for the drivers (window.__durbarSimUi.realLayout) */
-function renderReal(stage,floor,aw,ah,model){
+function renderReal(stage,floor,aw,ah,model,empty){
   if(RO_LOAD!=='ready'){
     loadRealOffice();
     if(RO_LOAD==='failed')return false;
@@ -1774,11 +1827,11 @@ function renderReal(stage,floor,aw,ah,model){
       return true;
     }
     if((pp.world===CREW.WORLDS[0].id&&PACKS['worlds/'+pp.world]==='failed')||(pp.set===CREW.REAL_SETS[0].id&&PACKS['sets/'+pp.set]==='failed')){RO_LOAD='failed';roFailed();return false;} /* the first world or Office people cannot load: flat */
-    return renderReal(stage,floor,aw,ah,model); /* roPeople() now names the first world and Office people */
+    return renderReal(stage,floor,aw,ah,model,empty); /* roPeople() now names the first world and Office people */
   }
   if(stage.dataset.d!=='real'){stage.dataset.d='real';stage.textContent='';}
   layoutKey='';GROW=0;setGrow(stage,0);spreadOffice(stage,false);stagePrev=null;
-  RO_LAST=window.DurbarRealOffice.render(stage,realModel(model),{w:aw,h:ah},{still:REDUCED||SERIOUS,world:pp.world,set:pp.set,remember:rememberOn(),
+  RO_LAST=window.DurbarRealOffice.render(stage,Object.assign(realModel(model),empty?{empty}:{}),{w:aw,h:ah},{still:REDUCED||SERIOUS,world:pp.world,set:pp.set,remember:rememberOn(),
     rand:CREW&&(SIM||!rememberOn())?CREW.seededRand:Math.random,onArt:()=>scheduleRender()});
   stage.style.width=aw+'px';stage.style.height=RO_LAST.height+'px';
   stage.dataset.fit=RO_LAST.scroll?'scroll':'ok';floor.classList.toggle('scrolls',!!RO_LAST.scroll);
@@ -1798,6 +1851,10 @@ function renderOffice(){
      Only while some floor that is on has agents; otherwise the messages below (nothing added yet, all hidden) still apply. */
   if(!model.length&&oneFloorView()&&agents.some(a=>!a.parent&&roomShown(roomOf(a)))){
     const f=floorById(curFloorId()), nm=f?f.name:'this floor', filt=!!ui.status||ui.ws!=='all';
+    if(officeView()==='real'){ /* spec 097 FR-119: the world's empty floor (the same sentence, three empty desks, the shared lobby) */
+      const line=filt?'Nothing on '+nm+' matches the current filter.':'Nothing on '+nm+' yet. Move a folder here from its \u22EF menu (Move to floor).';
+      if(renderReal(stage,floor,aw,ah,[],{text:line,id:f?f.id:''}))return;
+    }
     stage.dataset.d='card'; stage.style.width=aw+'px'; stage.style.height='auto'; layoutKey=''; GROW=0; setGrow(stage,0); spreadOffice(stage,false);
     stagePrev=null;
     stage.innerHTML='<div class="empty floor-empty" data-floor-empty="'+esc(f?f.id:'')+'">'+EMPTY_DESK+(filt?'Nothing on '+esc(nm)+' matches the current filter.':'Nothing on '+esc(nm)+' yet. Move a folder here from its ⋯ menu (Move to floor).')+'</div>'+lobbyHTML(aw);
@@ -1807,6 +1864,7 @@ function renderOffice(){
   if(!model.length){
     stage.dataset.d='card'; stage.style.width=aw+'px'; stage.style.height='auto'; layoutKey=''; GROW=0; setGrow(stage,0); spreadOffice(stage,false);
     stagePrev=null;
+    if(officeView()==='real'&&RO_LOAD!=='failed')ensurePack('worlds',roPeople().world); /* spec 097 FR-118: the world's own stylesheet skins the first run (the pack, not the office, is needed) */
     if(!agents.length&&!demoOn){if(!stage.querySelector('.welcome'))ringFolder();stage.innerHTML=welcomeHTML();floor.classList.remove('scrolls');return;} /* spec 001 FR-026: first run */
     stage.innerHTML='<div class="empty">'+EMPTY_DESK+(!agents.length&&!demoOn?'No agents yet. Use "+ Folder" at the top left to add a folder'+(SIMPLE?'.':' (or "+ Workspace" for a VS Code .code-workspace file).'):(agents.length&&ROOMS.every(r=>r.hidden)?'All folders are hidden. Open Manage folders (next to the folder filter) to show them again.':agents.length&&floorsLive()&&!floorsOnList().length?(FLOORS.floors.length>1?'All floors are off. Open "Floors" above or Settings > Floors to switch one on.':'Your only floor is off. Switch it on in Settings > Floors.'):agents.length&&ROOMS.every(r=>!roomShown(r))?('Nothing to show: every folder is hidden or on a floor that is off. Open '+(floorsLive()&&FLOORS.floors.length>1?(SIMPLE?'"Floors" above, or ':'"Floors" or "Folders" above, or '):(SIMPLE?'':'"Folders" above, or '))+'Settings > Floors.'):'No agents match these filters.'))+'</div>';
     floor.classList.remove('scrolls'); return;
@@ -2509,7 +2567,7 @@ function openPanel(id,focus){
    <div id="chat" role="log" aria-live="off" aria-label="Chat with ${esc(a.name)}" tabindex="0"></div>
    ${notesOn(a)?notesDrawerHTML():''}<!-- spec 083 FR-020: the Notes drawer covers the chat log only -->
    ${BP.available(a)?BP.paneHTML():''}
-   <div class="answer-bar coffee-bar" id="coffeeBar" role="region" aria-label="Coffee break" hidden></div>
+   <div class="answer-bar coffee-bar" id="coffeeBar" role="region" aria-label="Coffee break" data-surface="coffee-bar" hidden></div>
    <div class="answer-bar" id="answerBar" role="region" aria-label="Waiting for your answer" hidden></div>
    <div class="composer"><div class="cgrip" id="composerGrip" role="separator" aria-orientation="horizontal" aria-label="Resize message box" aria-controls="msgInput" tabindex="0" title="Drag to resize the message box. Double-click to let it grow with your text again."></div><div class="att-note" id="attNote" role="alert" hidden></div><div class="attached" id="attached" aria-label="Attachments"></div>
     <p class="nt-notice" id="ntNotice" role="status" hidden></p>
@@ -3899,6 +3957,14 @@ function openInbox(focusId){
   closeInbox(); inboxBack=back&&back!==document.body?back:null;
   const d=document.createElement('div');d.id='inboxDlg';d.className='dlg-ov';
   d.innerHTML='<div class="dlg l inbox-dlg" role="dialog" aria-modal="true" aria-labelledby="inboxT" aria-describedby="inboxKeys"><h3 id="inboxT">Needs you</h3><div class="dbody" id="inboxBody"></div><p class="inbox-keys" id="inboxKeys"'+(SIMPLE?' hidden':'')+'>Keys: J/K move · A allow · S session · D deny · O open</p><div class="dbtn"><button class="btn" type="button" id="inboxClose">Close</button></div></div>';
+  /* spec 097 FR-121: in Real office the dialog gains a header with the world's Boss door and the queue's faces (the same avatar(a) as the rows; aria-hidden, so the dialog's name,
+     words, focus order and keys are the flat ones). The world id is checked before it is put into a path. */
+  {const wd=document.documentElement.dataset.world;
+    if(officeView()==='real'&&/^[a-z0-9-]{1,24}$/.test(wd||'')){
+      const hd=document.createElement('div');hd.className='ib-world';hd.dataset.surface='inbox';hd.setAttribute('aria-hidden','true');
+      hd.innerHTML='<img class="ibw-door" alt="" src="realoffice/worlds/'+wd+'/fx-boss.webp"><span class="ibw-faces">'+needsMeOrder().slice(0,4).map(a=>'<span class="ibw-face">'+avatar(a)+'</span>').join('')+'</span>';
+      const dl=d.querySelector('.inbox-dlg');dl.insertBefore(hd,dl.firstChild);
+    }}
   document.body.appendChild(d);
   d.addEventListener('click',e=>{if(e.target===d)closeInbox();});
   d.addEventListener('keydown',inboxKey);
@@ -3934,6 +4000,11 @@ function flipInbox(paint){
   body.querySelectorAll('.inbox-row[data-id]').forEach(r=>{const t=before.get(r.dataset.id);if(t==null)return;const dy=t-r.getBoundingClientRect().top;
     if(Math.abs(dy)>=1)motion(r,[{transform:`translateY(${dy}px)`},{transform:'none'}],{duration:200,easing:'ease-out'});});
 }
+/* spec 052 FR-076: a card's buttons as the inbox shows them (Allow, Allow for session, Deny, then others; the broad grants left out). Spec 097 FR-121: the Boss door's slip
+   uses the same list, so the world's buttons are the inbox's buttons in the inbox's order */
+const inboxKind=src=>src.dataset.act==='session'?'session':/danger/.test(src.className)?'deny':/primary/.test(src.className)?'approve':'other';
+const INBOX_RANK={approve:0,session:1,deny:2,other:3};
+const inboxActs=card=>[...card.querySelectorAll(':scope > .note-actions button')].filter(x=>!x.dataset.broad).sort((x,y)=>INBOX_RANK[inboxKind(x)]-INBOX_RANK[inboxKind(y)]);
 function paintInbox(focusIndex){
   const body=$('inboxBody'); if(!body)return;
   const list=needsMeOrder();
@@ -3950,12 +4021,12 @@ function paintInbox(focusIndex){
     for(const dd of card?card.querySelectorAll(':scope > details.pdiff, :scope > details.pcmd'):[]){const c=dd.cloneNode(true);c.open=false;act.before(c);} /* spec 052 FR-063, FR-080: the card's "Show the change" and (Simple) "Show the command", collapsed */
     /* spec 052 FR-076: Allow, Allow for session, Deny in one fixed order inside a group that never wraps; FR-096: "Open" is a small link-style
        button at the end of the heading line (a question keeps "Answer in chat" with the actions). FR-077: each button names its key in its title and aria-keyshortcuts. */
-    const KEY={approve:'A',session:'S',deny:'D',open:'O'}, RANK={approve:0,session:1,deny:2,other:3};
+    const KEY={approve:"A",session:"S",deny:"D",open:"O"};
     const ans=document.createElement('span');ans.className='ib-ans';act.appendChild(ans);
     const add=(label,cls,k,fn,title,box)=>{const b=document.createElement('button');b.type='button';b.className=cls==='link'?'linkbtn ib-open':'btn sm '+cls;b.textContent=label;b.dataset.k=k;b.setAttribute('aria-describedby','ibh'+i+' ibt'+i);
       if(KEY[k]){b.setAttribute('aria-keyshortcuts',KEY[k]);title=(title?title+' ':'')+'(key '+KEY[k]+')';}if(title)b.title=title;b.onclick=fn;(box||ans).appendChild(b);};
-    const kOf=src=>src.dataset.act==='session'?'session':/danger/.test(src.className)?'deny':/primary/.test(src.className)?'approve':'other';
-    if(card&&!q)for(const src of [...card.querySelectorAll(':scope > .note-actions button')].filter(x=>!x.dataset.broad).sort((x,y)=>RANK[kOf(x)]-RANK[kOf(y)])){
+    const kOf=inboxKind;
+    if(card&&!q)for(const src of inboxActs(card)){
       const k=kOf(src);
       /* spec 003 FR-097: the Read-only denial's "Switch to Ask first…" opens the same mode menu, from the chat (the inbox is modal) */
       if(src.dataset.act==='ro-ask'){add(src.textContent,'',k,()=>{closeInbox();openPanel(a.id,true);requestAnimationFrame(()=>{if(!src.isConnected)return;src.focus({preventScroll:true});src.click();});},src.title);ans.lastElementChild.setAttribute('aria-haspopup','menu');continue;}
@@ -4535,13 +4606,38 @@ function announceFloor(id){const p=window.DurbarFloorNav.place(FLOORS.floors,id)
 /* spec 092 FR-021: figures are placed where they belong after a floor change, never walked across it */
 function noWalkNow(){NO_WALK_ONCE=true;[...walkers.keys()].forEach(dropWalker);}
 /* spec 092 FR-009 (phase 1: instant), FR-012: show another floor that is on. edge: where a screen that scrolls starts ('bottom' when moving up the building). */
+/* spec 097 FR-125 (phase 5 of the plan, the part that needs no lift art): the ride covers only the desk area (never the lobby band) with two doors, 350 ms closing over
+   the old floor, the new floor drawn behind them, 640 ms opening; a display says where, the target floor's button glows. aria-hidden and without a tab stop: the
+   floor change is still announced once (announceFloor) and the lift button keeps focus. A second jump during a ride restarts it toward the new floor. */
+let RIDE_T=0;
+function rideFloor(from,to,swap){
+  clearTimeout(RIDE_T); document.querySelectorAll('.ro-ride').forEach(x=>x.remove()); document.querySelectorAll('#lift .ride-to').forEach(x=>x.classList.remove('ride-to'));
+  const ro=document.querySelector('#stage .ro');
+  if(officeView()!=='real'||REDUCED||SERIOUS||reducedMotion()||!ro||!RO_LAST||!document.body||document.hidden)return false;
+  const FN=window.DurbarFloorNav, list=floorsOnList(), i=list.findIndex(x=>x.id===from), j=list.findIndex(x=>x.id===to), f=floorById(to), c=LIFT_COUNTS&&LIFT_COUNTS[to];
+  const r=document.createElement('div'); r.className='ro-ride closing'; r.dataset.surface='floor-jumps'; r.setAttribute('aria-hidden','true');
+  r.style.top=RO_LAST.lobbyH+'px'; r.style.height=Math.max(0,RO_LAST.height-RO_LAST.lobbyH)+'px';
+  r.innerHTML='<div class="rr-door l"></div><div class="rr-door r"></div><div class="rr-disp"></div>';
+  r.querySelector('.rr-disp').textContent=(j<i?'▲ ':'▼ ')+(j+1)+' · '+(f?f.name:'');
+  ro.appendChild(r);
+  const b=document.querySelector('#lift [data-lift="'+CSS.escape(to)+'"]'); if(b)b.classList.add('ride-to');
+  RIDE_T=setTimeout(()=>{
+    swap();
+    const r2=document.querySelector('#stage .ro-ride'); if(!r2)return; /* the floor was drawn again: the ride's cover went with the old picture */
+    const d=r2.querySelector('.rr-disp'); if(c&&FN&&FN.badgeText&&c.n)d.textContent=FN.badgeText(c)+' here';
+    r2.classList.remove('closing'); r2.classList.add('opening');
+    RIDE_T=setTimeout(()=>{r2.remove(); if(b)b.classList.remove('ride-to');},1000);
+  },350);
+  return true;
+}
 function goToFloor(id,o){
   o=o||{};
   const f=oneFloorView()&&floorsOnList().find(x=>x.id===id);
   if(!f||f.id===curFloorId())return false;
+  const from=curFloorId();
   curFloor=f.id; saveCurFloor(); noWalkNow();
-  renderAll();
-  const fl=$('floor'); if(fl)fl.scrollTop=o.edge==='bottom'?fl.scrollHeight:0;
+  const after=()=>{renderAll();const fl=$('floor'); if(fl)fl.scrollTop=o.edge==='bottom'?fl.scrollHeight:0;};
+  if(!rideFloor(from,f.id,after))after(); /* spec 097 FR-125: in Real office the jump rides the lift (the cover closes over the old floor, the new one is drawn behind it, the cover opens); instant under reduced motion, Serious mode and in the flat office */
   if(o.announce!==false)announceFloor(f.id);
   return true;
 }
@@ -8301,7 +8397,7 @@ if(pendingOpen&&demoOn){openPanel(pendingOpen,false);pendingOpen=null;}
 const settleNow=()=>{if(!agentsListed||!window.__durbarSimReplayed||baselineQueued||baselineAsking)return false;if(renderQueued){renderQueued=false;renderAll();}return true;};
 /* simulator drivers load with simfreeze=1: the desk glow then holds still (FR-178: the geometry and screenshot checks measure boxes, so no zoom may be mid-way); the unread driver opts back in with hlmotion=1 to test the motion itself */
 if(SIM&&qs.get('simfreeze')==='1'&&qs.get('hlmotion')!=='1')document.documentElement.classList.add('hl-still');
-if(SIM)window.__durbarSimUi={agents:()=>agents,toast:(s,act)=>{const t=act?toastAction(esc(String(s)),String(act),()=>{},8000):toast(esc(String(s)),8000);return !!t;}, /* spec 097 FR-113: a toast for the world-chrome driver (simulator only) */realLayout:()=>RO_LAST, /* spec 097: the last Real office layout (check-office-overlap's Real office variant) */crowd:(pid,n,from)=>{const a=agents.filter(x=>!x.parent).slice(from||0,(from||0)+n);a.forEach(x=>VISITS.pin(x.id,pid,'test'));scheduleRender();return a.length;}, /* spec 097: n main agents stand at a place (a "+N" crowd for the driver; simulator only) */crew:{state:()=>({map:{...CREW_MAP},help:{...CREW_HELP},bad:[...CREW_BAD],hasModule:!!CREW}),renderAll:()=>{renderAll();return true;},probe:()=>{try{crewPreload();syncCrew();return {ok:true,of:agents.map(x=>crewOf(x)).filter(Boolean).length};}catch(e){return {ok:false,err:String(e&&e.message)};}},openInbox:()=>{openInbox();return true;},closeInbox:()=>{closeInbox();return true;},openPanel:id=>{openPanel(id);return true;},fall:c=>{const f0=CREW.file;CREW.file=(i,p)=>i===c?'crew/art/gone.webp':f0(i,p);crewLoaded.clear();crewPreload();CREW.file=f0;return true;}}, /* spec 077 (check-crew): the character map, a render, and one character's pictures failing to load */
+if(SIM)window.__durbarSimUi={agents:()=>agents,toast:(s,act)=>{const t=act?toastAction(esc(String(s)),String(act),()=>{},8000):toast(esc(String(s)),8000);return !!t;}, /* spec 097 FR-113: a toast for the world-chrome driver (simulator only) */realLayout:()=>RO_LAST, /* spec 097: the last Real office layout (check-office-overlap's Real office variant) */visit:(id,pid)=>{VISITS.pin(id,pid,'test');scheduleRender();return true;},unvisit:id=>{const r=VISITS.unpin(id);scheduleRender();return r;}, /* spec 097 FR-126 (the moments driver): one agent leaves for a place and comes back; simulator only */crowd:(pid,n,from)=>{const a=agents.filter(x=>!x.parent).slice(from||0,(from||0)+n);a.forEach(x=>VISITS.pin(x.id,pid,'test'));scheduleRender();return a.length;}, /* spec 097: n main agents stand at a place (a "+N" crowd for the driver; simulator only) */crew:{state:()=>({map:{...CREW_MAP},help:{...CREW_HELP},bad:[...CREW_BAD],hasModule:!!CREW}),renderAll:()=>{renderAll();return true;},probe:()=>{try{crewPreload();syncCrew();return {ok:true,of:agents.map(x=>crewOf(x)).filter(Boolean).length};}catch(e){return {ok:false,err:String(e&&e.message)};}},openInbox:()=>{openInbox();return true;},closeInbox:()=>{closeInbox();return true;},openPanel:id=>{openPanel(id);return true;},fall:c=>{const f0=CREW.file;CREW.file=(i,p)=>i===c?'crew/art/gone.webp':f0(i,p);crewLoaded.clear();crewPreload();CREW.file=f0;return true;}}, /* spec 077 (check-crew): the character map, a render, and one character's pictures failing to load */
   readAll:(quiet)=>{const n=UNREAD.size;UNREAD.ids().forEach(id=>{UNREAD.read(id);UNREAD_AT.delete(id);});if(!quiet)scheduleRender();return n;},notes:{all:()=>[...NT.by.values()].map(x=>x.notes||[]).flat(),saveMsg:btn=>{const a=byId(ui.selected);return notesSaveMsg(a,msgInfo(btn),btn);},noCommands:()=>{const x=agents.find(q=>q.live&&!q.parent&&!slashSupported(q));return x?x.name:'';},selNow:()=>{showSelButton();const b=document.getElementById('ntSelBtn');return !!b&&!b.hidden;},open:()=>openNotes(byId(ui.selected)),close:()=>closeNotes(false),search:q=>{const f=$('ntSearch');if(!f)return false;f.value=q;f.dispatchEvent(new Event('input'));return true;},marks:{clear:()=>{document.querySelectorAll('#chat .nt-mark').forEach(x=>x.remove());document.querySelectorAll('#chat .bubble').forEach(b=>{b._nd=undefined;});return true;},run:()=>notesMarkAll(byId(ui.selected))},change:(note,patch)=>notesChange(byId(ui.selected),note,patch),rename:note=>renameNote(byId(ui.selected),note,null),plant:n=>{const a=byId(ui.selected),st=a&&notesOf(a);if(!st||!st.ok)return false;st.notes.push(n);notesPaint();if(slashUi)slashUpdate();return true;}}, /* spec 083: the check-notes driver reads the window's notes and takes the paths a click cannot */
   sizingLounges:()=>lastSizing.reduce((n,m)=>n+(m.rolled||[]).length,0), sizingMains:()=>lastSizing.reduce((n,m)=>n+m.mains.length,0), /* FR-181: the desks it is sized for (a pill does not reshape the cards) */ /* spec 001 FR-180: the finished agents the office is sized for */
   hxOff:(off)=>{HX_OFF=!!off;layoutKey='';scheduleRender();return HX_OFF;},renamePrevRow,settleNow,bridge:()=>bridge,render:()=>{layoutKey='';scheduleRender();},loungeTurn,quietHeads:(parts)=>{SIM_QUIET_HEADS=new Set(Array.isArray(parts)?parts:[]);},paint:()=>scheduleRender(),emit:onLiveEvent,

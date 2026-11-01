@@ -3,7 +3,7 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
-import { realLayout, lobbyWidths, sortDesks, assignPeople, standPose, standHeight, POSE_FRAME_B, lobbyRange, PERSON_M, DOOR_M, FRONT_DEPTH, NEAR_SCALE, CHIP_H, U_MIN, U_MAX, U_MAX_BIG, FACE_U, PLATE_H, PLATE_H_ASK, STRIP,
+import { placeBox, realLayout, lobbyWidths, sortDesks, assignPeople, standPose, standHeight, POSE_FRAME_B, lobbyRange, PERSON_M, DOOR_M, FRONT_DEPTH, NEAR_SCALE, CHIP_H, U_MIN, U_MAX, U_MAX_BIG, FACE_U, PLATE_H, PLATE_H_ASK, STRIP,
   type RealModel, type RealMeta, type RealAgent, type RealState, type Rect, type Layout } from '../src/shared/realoffice-layout';
 import { lightFor, lightState, LIGHT_TABLE, ambientFor, doneTick, fixtureLight, isActive, type LightState } from '../src/shared/lights';
 
@@ -51,10 +51,12 @@ function problems(L: Layout, W: number, H: number): string[] {
     signs.push(z.sign);
     if (!inside(z.sign, z.box, 3)) out.push(`sign of ${z.id} leaves its zone`);
     for (const d of z.desks) {
-      plates.push(d.plate); screens.push(d.screen); if (d.person) persons.push(d.person.vis);
+      plates.push(d.plate); screens.push(d.screen); if (d.person && d.state !== 'asleep') persons.push(d.person.vis);
+      /* FR-120: an asleep person sits in front of its own, dark screen; it still touches no other screen */
+      if (d.person && d.state === 'asleep') for (const o of z.desks) if (o.id !== d.id && inter(d.person.vis, o.screen, 1)) out.push(`asleep person of ${d.id} under the screen of ${o.id}`);
       for (const [k, r] of [['plate', d.plate], ['screen', d.screen], ['desk', d.desk]] as [string, Rect][]) if (!inside(r, z.box, 2)) out.push(`${k} of ${d.id} leaves its zone ${JSON.stringify(r)} ${JSON.stringify(z.box)}`);
       if (d.plate.w < 40) out.push(`plate of ${d.id} is ${d.plate.w}px wide`);
-      if (d.person && inter(d.person.vis, d.screen, 1)) out.push(`person of ${d.id} under its screen`);
+      if (d.person && d.state !== 'asleep' && inter(d.person.vis, d.screen, 1)) out.push(`person of ${d.id} under its screen`);
       if (d.screen.y < z.box.y + STRIP - 1) out.push(`screen of ${d.id} in the sign strip`);
     }
   }
@@ -131,13 +133,37 @@ for (const [k, v] of Object.entries(faces)) assert.ok(v >= FACE_FLOOR - 1e-9, `S
   const L = realLayout(m, { w: 1440, h: 848 }, META);
   const d = Object.fromEntries(L.zones[0].desks.map((x) => [x.id, x]));
   assert.ok(Math.abs(d.a1.slot.w / d.a0.slot.w - 0.62) < 0.01 && Math.abs(d.a2.slot.w / d.a0.slot.w - 0.62) < 0.01, 'away and asleep desks are 0.62 wide');
-  assert.ok(!d.a1.person && d.a1.away && !d.a2.person && !d.a2.away && d.a0.person, 'no person at an away or asleep desk; the away one says where');
+  assert.ok(!d.a1.person && d.a1.away && d.a2.person && !d.a2.away && d.a0.person, 'no person at an away desk, which says where; an asleep desk keeps its person (FR-129)');
+  assert.strictEqual(d.a2.person!.pose, 'rest', 'an asleep person rests (FR-120, FR-129)');
+  assert.strictEqual(d.a2.state, 'asleep');
+}
+
+// ---- FR-127: a lobby visit keeps the desk's size (`keep`); the away width applies at the next real layout change ----
+{
+  const sigR = (l: ReturnType<typeof realLayout>): string => JSON.stringify([l.height, l.lobbyH, l.zones.map((z) => z.desks.map((d) => [d.id, d.slot, d.desk, d.screen, d.plate]))]);
+  for (const [W, H] of SIZES) {
+    const m = model(15, 4, { away: false });
+    const before = realLayout(m, { w: W, h: H }, META);
+    const during = JSON.parse(JSON.stringify(m)) as RealModel;
+    const a = during.folders[0].agents[0]; a.away = 'terminal'; a.keep = true;
+    const L2 = realLayout(during, { w: W, h: H }, META);
+    const d0 = L2.zones.flatMap((z) => z.desks).find((d) => d.id === a.id)!;
+    assert.ok(d0.away && !d0.person && !d0.narrow, `a kept desk says where and has no person, at its full width, at ${W}x${H}`);
+    const strip = (l: ReturnType<typeof realLayout>): string => JSON.stringify([l.height, l.zones.map((z) => z.desks.map((d) => [d.id, d.slot, d.desk, d.plate]))]);
+    assert.strictEqual(strip(L2), strip(before), `a visit starting changes no desk rect or the height at ${W}x${H}`);
+    const after = JSON.parse(JSON.stringify(m)) as RealModel; /* the visit is over */
+    assert.strictEqual(strip(realLayout(after, { w: W, h: H }, META)), strip(before), 'and ending changes none either');
+    const real = JSON.parse(JSON.stringify(during)) as RealModel; real.folders[0].agents[0].keep = false; /* the next real layout change: the away width */
+    const narrowed = realLayout(real, { w: W, h: H }, META).zones.flatMap((z) => z.desks).find((d) => d.id === a.id)!;
+    assert.ok(Math.abs(narrowed.slot.w / d0.slot.w - 0.62) < 0.01 || narrowed.narrow, 'without keep the away desk narrows to 0.62');
+    void sigR;
+  }
 }
 
 // ---- FR-016, FR-015: plate heights ----
 {
   const L = realLayout(model(8, 2, { away: false }), { w: 1440, h: 848 }, META);
-  for (const z of L.zones) for (const d of z.desks) assert.strictEqual(d.plate.h, d.state === 'waiting' || d.state === 'limit' ? PLATE_H_ASK : PLATE_H, 'plate height by need');
+  for (const z of L.zones) for (const d of z.desks) assert.strictEqual(d.plate.h, d.state === 'waiting' || d.state === 'limit' || d.state === 'asleep' ? PLATE_H_ASK : PLATE_H, 'plate height by need');
 }
 
 // ---- FR-038: cues only where they belong ----
@@ -422,6 +448,24 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.feet as Record<s
     const ex = vm.runInContext('exports', ctx) as Record<string, unknown>;
     for (const k of ['realLayout', 'lobbyWidths', 'assignPeople', 'lightFor', 'lightState', 'ambientFor', 'doneTick', 'fixtureLight', 'redact']) assert.strictEqual(typeof ex[k], 'function', `${k} is on the page's exports with every shared module loaded`);
   } else console.log('(dist/shared not built: the page-load check is skipped; npm test builds first)');
+}
+
+// ---- spec 097 FR-110, FR-121: placeBox puts a slip on the free spot nearest its door, never on anything in the avoid list ----
+{
+  const bounds = { x: 0, y: 200, w: 600, h: 300 };
+  const free = placeBox({ w: 200, h: 100 }, [], bounds, { x: 300, y: 200 });
+  assert.ok(free && Math.abs(free.x + 100 - 300) <= 10 && free.y === 200, 'no obstacle: centred under the door, at the top');
+  const wall: Rect[] = [{ x: 150, y: 200, w: 300, h: 60 }];
+  const moved = placeBox({ w: 200, h: 100 }, wall, bounds, { x: 300, y: 200 })!;
+  assert.ok(!inter(moved, wall[0], 0) && inside(moved, bounds, 0), 'an obstacle at the door: the slip goes beside or below it, inside the bounds');
+  assert.strictEqual(placeBox({ w: 200, h: 100 }, [{ x: 0, y: 200, w: 600, h: 300 }], bounds, { x: 300, y: 200 }), null, 'no free spot: null, never an overlap');
+  assert.strictEqual(placeBox({ w: 700, h: 10 }, [], bounds, { x: 0, y: 0 }), null, 'wider than the bounds: null');
+  for (const [W, H] of SIZES.slice(0, 2)) {
+    const L = realLayout(model(15, 4, { away: false }), { w: W, h: H }, META);
+    const avoid: Rect[] = L.zones.flatMap((z) => [z.sign, ...z.desks.map((d) => d.plate)]) as Rect[];
+    const pill = placeBox({ w: 190, h: 24 }, avoid, { x: 0, y: L.lobbyH, w: W, h: L.height - L.lobbyH }, { x: W / 2, y: L.lobbyH });
+    assert.ok(pill && !avoid.some((r) => inter(pill, r, 0)), `15 agents at ${W}x${H}: the one-line pill finds a free spot`);
+  }
 }
 
 console.log(`realoffice layout and lights tests passed (${cases} layouts, faces ${JSON.stringify(faces)})`);
