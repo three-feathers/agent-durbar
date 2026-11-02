@@ -12,7 +12,7 @@
  *        are disabled and the focus goes to the search field; with the switch on it says notes.md is written again;
  *   AC6  Remove folder's dialog has "Also delete its notes (3)", unticked, with the line that the notes stay; Cancel removes nothing;
  *        unticked, Remove sends no option; ticked, the window sends {deleteNotes:true}; a folder without notes has no box and sends no option; with the switch on it says
- *        .durbar/notes.md stays in the project.
+ *        .durbar/notes/notes.md stays in the project.
  * Every dialog's layout: inside the window, no text under 10.5px, the buttons inside the dialog. Screenshots of the Delete all… and
  * Remove folder dialogs at each size. A miss is collected; the run fails at the end unless "all checks passed" is printed.
  */
@@ -23,8 +23,8 @@ const { helpers, jsLiteral } = require('./driver-helpers');
 const OUT = process.env.OUT || process.env.SHOTS_OUT || require('os').tmpdir();
 const SIZES = process.env.NOTES_ONE_SIZE ? [[1440, 900]] : [[1440, 900], [1280, 800]];
 const STAYS = 'Unticked, its notes stay and come back if you add the folder again.';
-const MD_STAYS = '.durbar/notes.md stays in the project either way; Durbar stops updating it.';
-const MD_AGAIN = '.durbar/notes.md is written again without them.';
+const MD_STAYS = '.durbar/notes/notes.md stays in the project either way; Durbar stops updating it.';
+const MD_AGAIN = '.durbar/notes/notes.md is written again without them.';
 
 module.exports = async (ctx) => {
   const H = helpers(ctx);

@@ -16,6 +16,7 @@ const idle = (aborted = false) => ({ type: 'session.idle', data: aborted ? { abo
 const tick = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
 
 async function main(): Promise<void> {
+  const watchdog = setTimeout(() => { console.error('copilot cap: stuck (a Stop that waits for the runtime for ever?)'); process.exit(1); }, 30000); // a hung await would let node exit 0 without the closing line
   const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-cap-test-'));
   const client = new FakeClient();
   const ad = new FakeCopilot(client);
@@ -120,8 +121,33 @@ async function main(): Promise<void> {
   assert.deepStrictEqual([limits()[0]?.phase, limits()[0]?.usedAiCredits], ['exhausted', 35]);
   await ad.stop(sid2).catch(() => undefined);
 
+  // spec 052 FR-209: a runtime that never answers the pending-limit call does not keep Stop from finishing
+  client.turnScript = [usage(40), idle()];
+  const sid3 = await ad.start({ workspace: ws, model: 'gpt-6-luna', maxAiCredits: 30, quiet: true });
+  const s3 = client.last;
+  (ad as unknown as { stopStepMs: number }).stopStepMs = 80;
+  events.length = 0;
+  await ad.send(sid3, { text: 'over' });
+  for (let i = 0; i < 20 && !limits().length; i++) await new Promise((r) => setTimeout(r, 50));
+  assert.ok(limits().length, 'the third session reached its cap');
+  let hung = 0;
+  (s3 as unknown as { abort: () => Promise<void>; disconnect: () => Promise<void> }).abort = () => new Promise(() => undefined); // abort and disconnect hang too
+  (s3 as unknown as { disconnect: () => Promise<void> }).disconnect = () => new Promise(() => undefined);
+  (s3.rpc as Record<string, unknown>).ui = { handlePendingSessionLimitsExhausted: () => { hung++; return new Promise(() => undefined); } } as never; // hangs for ever
+  s3.fire('session_limits_exhausted.requested', { requestId: 'rt-hang', maxAiCredits: 30, usedAiCredits: 35 }); // the runtime's own pending limit, which Stop must cancel
+  const t0 = Date.now();
+  await ad.interrupt(sid3); // Interrupt goes on too
+  assert.ok(Date.now() - t0 < 3000, 'interrupt() finished with cancel and abort hanging');
+  s3.fire('session_limits_exhausted.requested', { requestId: 'rt-hang2', maxAiCredits: 30, usedAiCredits: 35 });
+  await ad.stop(sid3);
+  assert.ok(Date.now() - t0 < 3000, 'stop() finished although the runtime never answered the limit');
+  assert.strictEqual(hung, 2, 'the hung pending-limit call was made twice (interrupt, stop) and given up on');
+  assert.ok(Date.now() - t0 < 6000, '... with cancel, abort and disconnect all hanging');
+  assert.strictEqual((ad as unknown as { sessions: Map<string, unknown> }).sessions.has(sid3), false, '... and the session is gone from the adapter');
+
   await ad.stop(sid).catch(() => undefined);
   fs.rmSync(ws, { recursive: true, force: true });
+  clearTimeout(watchdog);
   console.log('copilot cap: held send, add/set/unset/cancel, still over, mid-turn stop, Stop drops, runtime path OK');
 }
 main().catch((e) => { console.error(e); process.exit(1); });
