@@ -2,7 +2,7 @@
  * Cheeky Crew (spec 077 FR-014, FR-051, FR-055, FR-058). Simulator only (DURBAR_SIM=15 DURBAR_SIM_FREEZE=1), no AI credits.
  *
  * At 1440x900 and 1280x800, with Characters = Cheeky picked in Settings on top of the theme CREW_THEME (default Clean Office; spec 077 FR-070
- * runs it on Retro Pixel and Corporate too), both through Settings (the real path):
+ * runs it on Retro Pixel too), both through Settings (the real path):
  *   - every desk scene draws exactly one portrait, in its fixed box, and that box keeps clear of the protected zones of FR-014 (the
  *     monitor and halo, the thought bubble and chat badge corner, the cup zone); the picture is the pose of the desk's status;
  *   - every picture loads (natural size known) and is drawn at no more than half its natural size (sharp, FR-051);

@@ -1063,11 +1063,7 @@ export class CopilotAdapter implements AgentAdapter {
     live.broker.denyPending();
     this.cancelQuestions(live, 'interrupt');
     await this.cancelLimit(live);
-    try {
-      await live.session.abort();
-    } catch {
-      /* nothing running */
-    }
+    await this.within(live.session.abort(), this.stopStepMs).catch(() => undefined); // nothing running, or a hung runtime: given up on after stopStepMs, the interrupt goes on
     this.emit(sessionId, { type: 'status', status: 'idle', intent: 'Aborted' });
   }
 
@@ -1079,14 +1075,10 @@ export class CopilotAdapter implements AgentAdapter {
     await this.cancelLimit(live);
     live.broker.stop(); // pending permissions are denied cleanly (renderer clears Approve/Deny) and grants are dropped
     this.cancelQuestions(live, 'stop');
-    try {
-      await live.session.abort();
-    } catch {
-      /* nothing running */
-    }
+    await this.within(live.session.abort(), this.stopStepMs).catch(() => undefined); // nothing running, or hung: given up on after stopStepMs
     live.unsubscribe();
     try {
-      await live.session.disconnect();
+      await this.within(live.session.disconnect(), this.stopStepMs); // a hung disconnect is given up on; a failing one still throws (after the hook folder is removed)
     } finally {
       // spec 061: the accepted folder hooks' private copy, removed even when disconnect() throws (re-review #424)
       if (live.hookDir) fs.rmSync(live.hookDir, { recursive: true, force: true });
@@ -1620,11 +1612,26 @@ export class CopilotAdapter implements AgentAdapter {
     if (!id) return;
     live.limitRequestId = undefined;
     try {
-      await live.session.rpc.ui.handlePendingSessionLimitsExhausted({ requestId: id, response: { action: 'cancel' } });
+      await this.within(live.session.rpc.ui.handlePendingSessionLimitsExhausted({ requestId: id, response: { action: 'cancel' } }), this.stopStepMs); // a hung runtime call must not keep Stop from going on (spec 052 FR-209)
     } catch {
       /* already answered elsewhere */
     }
   }
+
+  /** Waits for `p` at most `ms`, then gives up on it (it may still finish; its later failure is not reported); a failure within `ms` is thrown. */
+  private async within(p: Promise<unknown>, ms: number): Promise<void> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const gaveUp = new Promise<void>((resolve) => { timer = setTimeout(resolve, ms); });
+    p.catch(() => undefined);
+    try {
+      await Promise.race([p, gaveUp]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
+  /** How long Stop, End session and Interrupt wait for each runtime call (cancel the pending limit, abort, disconnect) before going on (test hook: set it low). */
+  private stopStepMs = 5000;
 
   /** Switch one MCP server on or off in a running session (the runtime does not write this to ~/.copilot). */
   async setMcpEnabled(sessionId: string, name: string, enabled: boolean): Promise<void> {

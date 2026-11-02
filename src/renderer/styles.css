@@ -1595,7 +1595,7 @@ body.has-bridge:not(.simple) .folder-ctl #foldersBtn{border-top-left-radius:0;bo
 .sched-top .st-ico{position:relative;display:inline-flex;flex:none}
 .sched-top .st-mark,.sched-top .st-pause{display:none;position:absolute;pointer-events:none}
 .sched-top.trouble .st-mark{display:block;right:-5px;top:-4px;width:9px;height:9px;border-radius:50%;border:1.5px solid var(--c-waiting);box-sizing:content-box;background:
-  linear-gradient(var(--st-glyph,var(--surface)),var(--st-glyph,var(--surface))) 50% 2px/1.5px 3.5px no-repeat,linear-gradient(var(--st-glyph,var(--surface)),var(--st-glyph,var(--surface))) 50% 6.5px/1.5px 1.5px no-repeat,currentColor} /* --st-glyph: Corporate, whose buttons are dark on a dark bar, sets it to the bar's colour (themes.css), so the "!" always inverts the disc */ /* the disc is the button's text colour (3:1 or more against the button in every theme, checked by check-sched-top); the amber ring gives the warning tone, the drawn "!" the meaning */
+  linear-gradient(var(--surface),var(--surface)) 50% 2px/1.5px 3.5px no-repeat,linear-gradient(var(--surface),var(--surface)) 50% 6.5px/1.5px 1.5px no-repeat,currentColor} /* --st-glyph: Corporate, whose buttons are dark on a dark bar, sets it to the bar's colour (themes.css), so the "!" always inverts the disc */ /* the disc is the button's text colour (3:1 or more against the button in every theme, checked by check-sched-top); the amber ring gives the warning tone, the drawn "!" the meaning */
 .sched-top.paused{opacity:.62}
 .sched-top.paused .st-pause{display:block;right:-4px;bottom:-3px;width:7px;height:7px;background:linear-gradient(currentColor,currentColor) 0 0/2px 7px no-repeat,linear-gradient(currentColor,currentColor) 5px 0/2px 7px no-repeat}
 .sched-top.none b{display:none}
@@ -1777,6 +1777,8 @@ html.hl-still .desk .pp,html.hl-still .desk::after{animation:none!important} /* 
 .spin{display:inline-block;flex:none;width:12px;height:12px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:spin .7s linear infinite;opacity:.8}
 @keyframes spin{to{transform:rotate(360deg)}}
 /* FR-048: an answered inbox row shows the answer, then folds away; the empty state has a check badge */
+.inbox-row .ib-ans .ib-amt{width:84px;height:28px;border:1px solid var(--line-ctl);border-radius:8px;padding:0 8px;font:inherit;font-size:12px;background:var(--raised);color:var(--ink)} /* FR-207: the limit row's amount, as the card's */
+.inbox-row .ib-ans .ib-amt[aria-invalid="true"]{border-color:var(--red-ink)}
 .inbox-row.settled .ib-done{margin:0;font-size:var(--t3-size);font-weight:650;color:var(--ink-2);min-height:28px;display:flex;align-items:center}
 .inbox-row.settled .ib-done.yes{color:var(--pc-done)}
 .inbox-row.settled .ib-done.no{color:var(--red-ink)}

@@ -223,7 +223,6 @@ body.has-bridge #topBtns{display:flex}
 .chsw svg{display:block;width:58px;height:58px;margin:0 auto}
 .thtx{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 6px;min-width:0;padding:0 2px}
 .thtx b{flex:0 1 auto;font-size:12px;font-weight:600;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis} /* spec 052 FR-053: one line */
-.thover{flex-basis:100%;font-size:11px;font-weight:600;letter-spacing:.04em;color:var(--muted);line-height:1.2}
 .thtx small{flex-basis:100%;font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* FR-030: lead sentence, the rest behind More; MCP under a closed Advanced group */
 .scr-more{margin:2px 0 6px}
