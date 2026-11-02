@@ -27,7 +27,9 @@ const assert = require('assert');
 module.exports = async (ctx) => {
   const H = helpers(ctx);
   const { until, settle, js } = H;
-  const installFrames = () => js(`window.__cvF=n=>new Promise(r=>{let i=0;const f=()=>++i>=n?r():requestAnimationFrame(f);requestAnimationFrame(f)});true`);
+  const installFrames = () => js(`window.__cvF=n=>new Promise(r=>{let i=0;const f=()=>++i>=n?r():requestAnimationFrame(f);requestAnimationFrame(f)});window.__cvFo=0;document.addEventListener('focusin',()=>{window.__cvFo++;},true);window.__cvQ=async()=>{const c=document.getElementById('chat');await window.__cvF(2);let last='',n=0;for(let i=0;i<240&&n<3;i++){await window.__cvF(1);const k=c.scrollTop+'/'+c.scrollHeight;if(k===last)n++;else{n=0;last=k;}}return n>=3};true`);
+  /* waits on state, not time: two frames after a scroll, then until the chat's scroll position and height stop changing for three frames */
+  const quiet = async (what) => assert.ok(await js('window.__cvQ()'), `the chat settles after ${what}`);
   const MUT = process.env.DURBAR_CV_MUTANT || '';
   const MUTANTS = {
     off: '.chat-inner>*{content-visibility:visible!important}',
@@ -91,8 +93,8 @@ module.exports = async (ctx) => {
     const ap = await js(`(()=>{const el=document.querySelector('#chat .chat-inner'),src=el.children[el.children.length-3];const t0=performance.now();for(let i=0;i<100;i++){const m=src.cloneNode(true);m.removeAttribute('id');el.appendChild(m);void m.getBoundingClientRect().height;}const t=performance.now()-t0;for(let i=0;i<100;i++)el.lastElementChild.remove();return Math.round(t)})()`);
     console.log(`TIMING ${tag}: appending 100 messages one by one with a layout read each: ${ap} ms (rule ${MUT === 'off' || process.env.CVBASE ? 'off' : 'on'})`);
     /* 2. REOPEN: at the end, and it stays (the skipped heights settle) */
-    await js(`document.getElementById('chat').scrollTop=3000`); await ctx.sleep(150);
-    await reopen(id); await ctx.sleep(300);
+    await js(`document.getElementById('chat').scrollTop=3000`); await quiet('a scroll');
+    await reopen(id); await quiet('a reopen');
     assert.ok(await until(`${gap}<=1`, 4000), `${tag}: after a reopen the chat is at its end and stays: ${await js(gap)}`);
 
     /* 3. SCROLL: no jump, real heights */
@@ -107,7 +109,7 @@ module.exports = async (ctx) => {
         if(D){const s0=c.scrollTop;c.scrollTop=Math.max(0,s0-D);applied=s0-c.scrollTop;}
         await __cvF(2);
         const v=inView();const e=v[0];if(!e)return {none:true};const snap=()=>{const o={};for(let k=+e.dataset.cv-45;k<=+e.dataset.cv+12;k++){const x=c.querySelector('.chat-inner>[data-cv="'+k+'"]');if(x)o[k]=Math.round(x.getBoundingClientRect().height)+(x.firstElementChild.checkVisibility({contentVisibilityAuto:true})?'v':'s');}return o;};const sn1=snap();const t1=e.getBoundingClientRect().top-cr.top,s1=Math.round(c.scrollTop),h1=c.scrollHeight;
-        await __cvF(3);await new Promise(r=>setTimeout(r,40));const t2=e.getBoundingClientRect().top-cr.top;
+        await window.__cvQ();const t2=e.getBoundingClientRect().top-cr.top;
         const sn2=snap();const chg=Object.keys(sn2).filter(k=>sn1[k]!==sn2[k]).map(k=>k+':'+sn1[k]+'>'+sn2[k]).join(' ');const place=E?Math.round((E.getBoundingClientRect().top-(top0+applied))*10)/10:0;
         return {chg,s1,s2:Math.round(c.scrollTop),h1,h2:c.scrollHeight,i:+e.dataset.cv,jump:Math.round((t2-t1)*10)/10,place,seen:inView().map(x=>[+x.dataset.cv,Math.round(x.getBoundingClientRect().height*10)/10])}})()`);
       if (process.env.CVLOG) { console.log('STEP', label, delta, r.i, r.jump, r.place, r.s1, r.s2, r.h1, r.h2, Math.abs(r.jump)>1?r.chg:''); return r; }
@@ -118,21 +120,23 @@ module.exports = async (ctx) => {
       for (const [i, hh] of r.seen) assert.ok(Math.abs(hh - hv.h[i]) <= 0.6, `${tag} ${label}: message ${i} has its real height ${hv.h[i]}, not ${hh}`);
       return r;
     };
-    await js(`document.getElementById('chat').scrollTop=1e7`); await ctx.sleep(150);
+    await js(`document.getElementById('chat').scrollTop=1e7`); await quiet('a scroll');
     let steps = 0;
     for (let i = 0; i < 70; i++) { await stepCheck(`step ${i}`, i % 3 === 0 ? 1500 : 380); steps++; }
     for (let i = 0; i < 6; i++) { // the mouse wheel
       const p = await js(`(()=>{const r=document.getElementById('chat').getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)}})()`);
+      const wheelFrom = await js(`document.getElementById('chat').scrollTop`);
       H.wc().sendInputEvent({ type: 'mouseWheel', x: p.x, y: p.y, deltaX: 0, deltaY: 120 * (i < 3 ? 1 : -1), canScroll: true });
-      await ctx.sleep(600); await stepCheck(`wheel ${i}`, 0);
+      assert.ok(await until(`document.getElementById('chat').scrollTop!==${jsLiteral(wheelFrom)}`, 3000), `${tag}: the wheel scrolled the chat`);
+      await quiet('a wheel step'); await stepCheck(`wheel ${i}`, 0);
     }
     console.log(`KNOWN GAP ${tag}: ${bigJumps.filter((x) => x > 1).length} of ${bigJumps.length} jumps of 1500px into never-seen messages moved the view (largest ${Math.max(0, ...bigJumps)}px); steps of 380px and the wheel: none`);
-    await js(`document.getElementById('chat').scrollTop=0`); await ctx.sleep(150);
-    await ctx.sleep(400);
+    await js(`document.getElementById('chat').scrollTop=0`); await quiet('a scroll');
+    await quiet('the jump to the start');
     assert.strictEqual(await js(`document.getElementById('chat').scrollTop`), 0, `${tag}: the start of the chat stays the start (no late shift)`);
     // one pass over everything remembers the real heights: the whole chat is as tall as with the rule off
     await js(`(async()=>{const c=document.getElementById('chat');for(let y=0;y<c.scrollHeight;y+=c.clientHeight*0.8){c.scrollTop=y;await new Promise(r=>requestAnimationFrame(r));}})()`);
-    await js(`document.getElementById('chat').scrollTop=0`); await ctx.sleep(200);
+    await js(`document.getElementById('chat').scrollTop=0`); await quiet('a scroll');
     const tot = await js(`document.getElementById('chat').scrollHeight`);
     assert.ok(Math.abs(tot - hv.total) <= 2, `${tag}: after one pass the chat is as tall as with the rule off: ${tot} against ${hv.total}`);
     // the copy button hangs under the bubble (bottom:-11px): it must not be cut off by the skipped box
@@ -144,19 +148,21 @@ module.exports = async (ctx) => {
     const send = async (txt) => {
       await js(`(()=>{const i=document.getElementById('msgInput');i.value=${jsLiteral(txt)};i.dispatchEvent(new Event('input',{bubbles:true}));document.getElementById('sendBtn').click();})()`);
     };
-    const sample = (ms, scrolled) => js(`(async()=>{const c=document.getElementById('chat');const out={max:0,n:0,s0:c.scrollTop};const end=performance.now()+${jsLiteral(ms)};
+    const sample = (ms, scrolled) => js(`(async()=>{const c=document.getElementById('chat');const out={max:0,n:0,s0:c.scrollTop,ser:[]};const end=performance.now()+${jsLiteral(ms)};
       while(performance.now()<end){await new Promise(r=>requestAnimationFrame(r));await new Promise(r=>setTimeout(r,0));const g=c.scrollHeight-c.scrollTop-c.clientHeight;out.n++;
-        const bad=${scrolled ? 'Math.abs(c.scrollTop-out.s0)>1' : 'g>60'};if(bad&&out.prev){out.max=Math.max(out.max,${scrolled ? 'Math.abs(c.scrollTop-out.s0)' : 'g'});}out.prev=bad;}
+        const bad=${scrolled ? 'Math.abs(c.scrollTop-out.s0)>1' : 'g>60'};if(bad&&out.prev){out.max=Math.max(out.max,${scrolled ? 'Math.abs(c.scrollTop-out.s0)' : 'g'});}out.prev=bad;if(out.ser.length<400)out.ser.push(Math.round(g)+(c.dataset.pin==='1'?'':'p0'));}
       out.busy=!!document.querySelector('#chat .typing');return out})()`);
-    await js(`document.getElementById('chat').scrollTop=1e7`); await ctx.sleep(200);
+    await reopen(id); await quiet('a reopen'); // the app's own way to the end
+    assert.ok(await until(`${gap}<=1`, 4000), `${tag}: the reopened chat is at its end before the turn: ${await js(gap)}`);
+    const pre = await js(`(()=>{const c=document.getElementById('chat');return {gap:Math.round(c.scrollHeight-c.scrollTop-c.clientHeight),pin:c.dataset.pin,st:Math.round(c.scrollTop),sh:c.scrollHeight}})()`);
     await send('quick links please');
     assert.ok(await until(`!!document.querySelector('#chat .typing')||document.querySelectorAll('#chat .chat-inner>.msg').length>${jsLiteral(N + 2)}`, 8000), `${tag}: a turn starts`);
     const s1 = await sample(2500, false);
-    assert.ok(s1.max === 0 && s1.n > 20, `${tag}: a streaming turn stays pinned to the end of the chat (largest gap ${s1.max}px in ${s1.n} frames)`);
+    assert.ok(s1.max === 0 && s1.n > 20, `${tag}: a streaming turn stays pinned to the end of the chat (largest gap ${s1.max}px in ${s1.n} frames; pre-send ${JSON.stringify(pre)}; gaps ${s1.ser.slice(0, 30).join(' ')})`);
     assert.ok(await until(`!document.querySelector('#chat .typing')`, 30000), `${tag}: the turn ends`);
-    await ctx.sleep(300);
+    await quiet('the turn');
     assert.ok(await until(`${gap}<=1`, 4000), `${tag}: the end stays in view after the turn: ${await js(gap)}`);
-    await js(`document.getElementById('chat').scrollTop=document.getElementById('chat').scrollTop-3000`); await ctx.sleep(300);
+    await js(`document.getElementById('chat').scrollTop=document.getElementById('chat').scrollTop-3000`); await quiet('a scroll');
     const before = await js(`document.getElementById('chat').scrollTop`);
     await send('and one more');
     assert.ok(await until(`!!document.querySelector('#chat .typing')`, 8000), `${tag}: a second turn starts`);
@@ -165,20 +171,21 @@ module.exports = async (ctx) => {
     assert.ok(await until(`!document.querySelector('#chat .typing')`, 30000), `${tag}: the second turn ends`);
 
     /* 5. COPY across skipped messages */
-    await js(`document.getElementById('chat').scrollTop=0`); await ctx.sleep(250);
+    await js(`document.getElementById('chat').scrollTop=0`); await quiet('a scroll');
     const sel = await js(`(()=>{const e=[...document.querySelectorAll('#chat .chat-inner>.msg[data-cv]')];const a=e[5].querySelector('.bubble'),b=e[40].querySelector('.bubble');
       const skipped=e.slice(6,40).filter(x=>!(x.firstElementChild||x).checkVisibility({contentVisibilityAuto:true})).length;const r=document.createRange();r.setStart(a.firstChild,0);r.setEnd(b.firstChild,b.firstChild.length);const s=getSelection();s.removeAllRanges();s.addRange(r);
       return {skipped,text:s.toString()}})()`);
     if (!process.env.CVBASE) assert.ok(sel.skipped >= 20, `${tag}: the messages between the ends of the selection are skipped: ${sel.skipped}`);
     const { clipboard } = require('electron');
     await clipboard.writeText('');
-    H.wc().copy(); await ctx.sleep(200);
-    const copied = String(await clipboard.readText());
+    H.wc().copy();
+    let copied = '';
+    for (let k = 0; k < 50 && !copied; k++) { copied = String(await clipboard.readText()); if (!copied) await ctx.sleep(60); }
     assert.ok(copied.includes('⟦' + '00020' + '⟧') && copied.includes('⟦' + '00040' + '⟧') && copied.length >= sel.text.length * 0.95, `${tag}: Copy gives the whole selection: ${copied.length} of ${sel.text.length} chars`);
     await js(`getSelection().removeAllRanges()`);
 
     /* 6. FIND (Chromium's own; the app has no Find box) */
-    await js(`document.getElementById('chat').scrollTop=0`); await ctx.sleep(250);
+    await js(`document.getElementById('chat').scrollTop=0`); await quiet('a scroll');
     const tok = '⟦' + '02500' + '⟧';
     const found = await new Promise((resolve) => {
       const wc = H.wc(); let res = null;
@@ -192,20 +199,22 @@ module.exports = async (ctx) => {
     assert.ok(landed, `${tag}: the chat scrolled to the hit (message 2500 is in view)`);
 
     /* 7. FOCUS: a button in a skipped message */
-    await js(`document.getElementById('chat').scrollTop=0`); await ctx.sleep(250);
+    await js(`document.getElementById('chat').scrollTop=0`); await quiet('a scroll');
     const foc = await js(`(async()=>{const c=document.getElementById('chat');const t=document.querySelector('#chat .chat-inner>[data-cv="3000"]'),btn=t&&t.querySelector('.cvfocus');
       if(!btn)return {none:true};const was=t.firstElementChild.checkVisibility({contentVisibilityAuto:true});
-      btn.focus();await __cvF(3);const cr=c.getBoundingClientRect(),r=btn.getBoundingClientRect();
+      btn.focus();for(let i=0;i<60;i++){await __cvF(1);const q=btn.getBoundingClientRect(),w=c.getBoundingClientRect();if(document.activeElement===btn&&q.bottom>w.top&&q.top<w.bottom)break;}const cr=c.getBoundingClientRect(),r=btn.getBoundingClientRect();
       return {was,active:document.activeElement===btn,inView:r.bottom>cr.top&&r.top<cr.bottom,top:c.scrollTop}})()`);
     assert.ok(!foc.none, `${tag}: message 3000 has a button`);
     assert.ok((foc.was === false || process.env.CVBASE) && foc.active && foc.inView, `${tag}: focus() on a button in a skipped message works and shows it: ${JSON.stringify(foc)}`);
     // Tab walks on through the next messages; each stop is in view
-    await js(`document.getElementById('chat').scrollTop=0`); await ctx.sleep(250);
+    await js(`document.getElementById('chat').scrollTop=0`); await quiet('a scroll');
     await js(`(()=>{const b=document.querySelector('#chat .chat-inner>[data-cv="10"] .cvfocus');if(b)b.focus();})()`);
     const seen = [];
     for (let i = 0; i < 14; i++) {
+      const was = await js(`window.__cvFo`);
       await H.key('Tab', [], { char: 'never', pause: 0 });
-      await ctx.sleep(60);
+      assert.ok(await until(`window.__cvFo>${jsLiteral(was)}`, 2000), `${tag}: Tab moved the focus`);
+      await quiet('a Tab');
       seen.push(await js(`(()=>{const c=document.getElementById('chat'),cr=c.getBoundingClientRect(),a=document.activeElement,m=a&&a.closest('.chat-inner>*[data-cv]');if(!m)return {out:true};const r=a.getBoundingClientRect();return {i:+m.dataset.cv,inView:r.bottom>cr.top-1&&r.top<cr.bottom+1}})()`));
     }
     const inChat = seen.filter((s) => !s.out);

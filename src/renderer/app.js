@@ -2444,7 +2444,10 @@ function paintPanelTitle(a,h){
   else h.textContent=a.name;
 }
 let PANEL_OPENED_AT=0; /* the click guard of FR-020 item 1: the second click of a double-click on a desk lands on the header of the chat it opened */
+/* spec 005 FR-210: before a chat is taken off screen, mark all but its newest 4 messages .cvo (styles.css), so the next open lays out only those near the view */
+function cvMark(){const el=document.querySelector('#chat > .chat-inner'); if(!el)return; const k=el.children, n=k.length; if(n<=40)return; for(let i=0;i<n;i++)k[i].classList.toggle('cvo',i<n-4);}
 function openPanel(id,focus){
+  if(ui.selected!==id||!document.body.classList.contains('panel-open'))cvMark();
   const a=byId(id); if(!a)return; if(!pulling)PULLED.delete(id); /* the user came back: this session may bring its chat forward again */
   if(ui.selected!==id||!document.body.classList.contains('panel-open'))PANEL_OPENED_AT=performance.now(); closeSlash(); keepDraft(); ui.selected=id; attached=(DRAFTS.get(id)||{att:[]}).att.slice();
   noteRecentChat(a); rememberUi();
@@ -2483,7 +2486,7 @@ function openPanel(id,focus){
   const chat=getChat(a); $('chat').appendChild(chat.el);
   updatePanelHeader(); renderGrants();
   const chatEl=$('chat'); chatEl.dataset.pin='1'; chatEl.scrollTop=1e6;
-  let rs=0; const restick=()=>{if(ui.selected!==a.id||chatEl.scrollHeight-chatEl.scrollTop-chatEl.clientHeight>400)return; chatEl.scrollTop=chatEl.scrollHeight; if(++rs<4)requestAnimationFrame(restick); else chatEl.onscroll();}; if(chat.el.childElementCount>20)requestAnimationFrame(restick); /* spec 005 FR-210: the messages at the end get their real height a frame after the first layout, so the end moves; follow it for 4 frames, then read the pin again; a chat of 20 or fewer messages has no skipped one and is left alone */
+  let rs=0; const restick=()=>{if(ui.selected!==a.id||chatEl.scrollHeight-chatEl.scrollTop-chatEl.clientHeight>400)return; chatEl.scrollTop=chatEl.scrollHeight; if(++rs<4)requestAnimationFrame(restick); else chatEl.onscroll();}; if(chat.el.childElementCount>4)requestAnimationFrame(restick); /* spec 005 FR-210: the messages at the end get their real height a frame after the first layout, so the end moves; follow it for 4 frames, then read the pin again; a chat of 4 or fewer messages has no skipped one and is left alone */
   chatEl.onscroll=()=>{chatEl.dataset.pin=(chatEl.scrollHeight-chatEl.scrollTop-chatEl.clientHeight<80)?'1':'0';};
   $('panel').querySelector('.panel-in').classList.toggle('ro',!!(a.live&&a.parent));
   $('backBtn').onclick=closePanel;
@@ -3573,7 +3576,7 @@ function wireToolbar(){
   ctObs={res,mut};
   fitToolbar();
 }
-function closePanel(){closeSlash();keepDraft();
+function closePanel(){closeSlash();keepDraft();cvMark();
   BP.hide(); hideSelButton(); /* spec 080 FR-009: the browser view comes off the window; the page stays loaded */
   if(ctObs){ctObs.res.disconnect();ctObs.mut.disconnect();ctObs=null;} closeCtMore(false); closeCtxMenu();
   const id=ui.selected; ui.selected=null; document.body.classList.remove('panel-open'); $('panel').innerHTML='';
