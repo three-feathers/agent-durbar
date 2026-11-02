@@ -11,7 +11,7 @@ const os = require('os');
 const fs = require('fs');
 const path = require('path');
 const assert = require('assert');
-const { helpers } = require('./driver-helpers');
+const { helpers, jsLiteral } = require('./driver-helpers');
 
 const OUT = process.env.SHOTS_OUT || fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-001-halo-'));
 fs.mkdirSync(OUT, { recursive: true });
@@ -38,7 +38,7 @@ module.exports = async (ctx) => {
     for (const [w, h] of SIZES) for (const z of [1, 2]) {
       await H.load({ w, h });
       wc().setZoomFactor(z);
-      await H.until(`Math.abs(window.devicePixelRatio-${z})<0.01`);
+      await H.until(`Math.abs(window.devicePixelRatio-${jsLiteral(z)})<0.01`);
       await frames(); /* the zoomed layout is painted before the single read */
       const r = await inspect();
       const tag = `${w}x${h} zoom ${z}${reduced ? ' reduced motion' : ''}`;
