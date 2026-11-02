@@ -347,5 +347,48 @@ process.on('exit', () => { if (!fr114Done) { console.error('FR-114 checks did no
     fs.rmSync(outDir, { recursive: true, force: true });
   }
   fr114Done = true;
-  console.log('ui-suite: check-parallel and ui-suite install Electron once before their parallel jobs (FR-114)');
+  // spec 008 FR-095, FR-138: one retry, alone; a repeated failure stays a failure, a pass on retry is FLAKY in the log and the job summary
+async function retries(): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { main, DRIVERS } = require(SUITE) as { main: (o: unknown) => Promise<void>; DRIVERS: Array<{ name: string; label?: string }> };
+  const name = DRIVERS[0].label || DRIVERS[0].name;
+  const tmp = fs.mkdtempSync(path.join(require('os').tmpdir(), 'ui-suite-retry-'));
+  const summary = path.join(tmp, 'summary.md');
+  const env = { ...process.env }, log = console.log, was = process.exitCode;
+  const go = async (results: boolean[], retry: string): Promise<{ code: unknown; out: string; runs: number; sum: string }> => {
+    fs.writeFileSync(summary, '');
+    process.env.UI_SUITE_RETRY = retry; process.env.UI_SUITE_JOBS = '1'; process.env.UI_SUITE_OUT = tmp; process.env.GITHUB_STEP_SUMMARY = summary;
+    process.exitCode = 0;
+    const lines: string[] = []; console.log = (...a: unknown[]) => { lines.push(a.join(' ')); };
+    let runs = 0;
+    try {
+      await main({ ensure: () => true, argv: ['--only', DRIVERS[0].name], run: async () => { const ok = results[runs++]; return { ok, secs: 0, why: ok ? '' : 'broken', log: '' }; } });
+    } finally { console.log = log; }
+    const code = process.exitCode; process.exitCode = was;
+    return { code, out: lines.join('\n'), runs, sum: fs.readFileSync(summary, 'utf8') };
+  };
+  try {
+    const twice = await go([false, false], '1');
+    assert.strictEqual(twice.code, 1, 'FR-138: failing twice fails the job');
+    assert.strictEqual(twice.runs, 2, 'one retry, not more');
+    assert.ok(!/FLAKY/.test(twice.out + twice.sum), 'failing twice is not FLAKY');
+    assert.ok(new RegExp('failed: ' + name).test(twice.out), 'and it is named: ' + twice.out.slice(-200));
+    const once = await go([false, true], '1');
+    assert.strictEqual(once.code, 0, 'a pass on retry passes the job');
+    assert.ok(/FLAKY \(passed only on retry\)/.test(once.out), 'FLAKY on the final line');
+    assert.ok(/Flaky drivers/.test(once.sum) && once.sum.includes(name), 'FLAKY in the job summary: ' + once.sum);
+    const off = await go([false, true], '0');
+    assert.strictEqual(off.code, 1, 'no retry where it is off'); assert.strictEqual(off.runs, 1);
+    const clean = await go([true], '1');
+    assert.strictEqual(clean.code, 0); assert.strictEqual(clean.runs, 1, 'a pass is not run again');
+    assert.ok(!/FLAKY/.test(clean.out + clean.sum));
+  } finally {
+    for (const k of ['UI_SUITE_RETRY', 'UI_SUITE_JOBS', 'UI_SUITE_OUT', 'GITHUB_STEP_SUMMARY']) { if (env[k] === undefined) delete process.env[k]; else process.env[k] = env[k]; }
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+  const yml = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'ui-platforms.yml'), 'utf8');
+  assert.ok(/UI_SUITE_RETRY: \$\{\{ matrix\.os != 'ubuntu-latest' && '1' \|\| '0' \}\}/.test(yml), 'FR-138: macOS and Windows retry once, Linux does not');
+}
+await retries();
+console.log('ui-suite: check-parallel and ui-suite install Electron once before their parallel jobs (FR-114)');
 })().catch((e) => { console.error(e); process.exitCode = 1; });
