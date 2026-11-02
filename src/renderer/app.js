@@ -4055,9 +4055,7 @@ function rollCount(box,n){
   box.replaceChildren(inn,out);
   box._roll=setTimeout(()=>{if(box.dataset.n===txt)box.textContent=txt;},260);
 }
-/* spec 052 FR-206: each pending card is one request, its id made once and kept (the same lines as PR 994's, spec 097 FR-122: keep one when both land) */
-const CARD_REQ=new WeakMap(); let CARD_REQ_N=0;
-const reqOf=c=>{if(!CARD_REQ.has(c))CARD_REQ.set(c,'rq'+(++CARD_REQ_N));return CARD_REQ.get(c);};
+/* spec 052 FR-206 and spec 097 FR-122: each pending card is one request, its id made once and kept (CARD_REQ and reqOf, declared with realSlips above: one copy) */
 function pendingCardOf(a){const c=getChat(a);const all=[...c.el.querySelectorAll('.note.perm:not(.settled)')].filter(n=>n.querySelector(':scope > .note-actions button'));return all[0]||null;}
 /* spec 052 FR-048: focus goes back to where it was when the inbox opened (still in the page and shown), else to the inbox button */
 let inboxBack=null;
