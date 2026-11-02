@@ -8,7 +8,7 @@
  *     text at least 10.5 px, the page does not overflow; a pick changes the top bar at once, is stored (durbar.logo) and survives a
  *     reload, a bad stored value shows icon 1, a blocked localStorage fails nothing, and the window icon is never touched;
  *   - the flat office: Clean (base palette, a plate per icon), every other built-in UI style and a generated one (the theme's brand
- *     pair), forced colours (system colours), and a world (html[data-world], set here by hand: spec 097's seam sets it) with and without an
+ *     pair), forced colours (system colours), and a world (html[data-world], by hand for each palette, and once through Real office itself) with and without an
  *     approved palette;
  *   - every icon on every one of those, tile size and name position unchanged; pictures of the top bar go to LOGO_OUT.
  * A miss prints DRIVER FAILED; the npm script exits non-zero unless "all checks passed" is printed.
@@ -180,6 +180,14 @@ module.exports = async (ctx) => {
     assert.ok(await until(`!document.documentElement.dataset.ui`, 4000), `${tag}: back to Clean Office`);
     await H.settle();
 
+    // ---- the real seam, now on main: Real office sets the world, and the bar follows it there and back (FR-033) ----
+    await H.load({ w, h, query: { officeview: 'real' }, ready: `!!document.querySelector('#stage .ro .ro-plate')`, settle: false });
+    assert.ok(await H.until(`document.documentElement.dataset.world==='photo'`, 8000), `${tag}: Real office sets the world`);
+    assert.strictEqual(await js(`getComputedStyle(document.querySelector('.brand-mark')).backgroundColor`), rgb(WORLDS.photo.plate), `${tag}: the bar has the world's plate`);
+    await js(`window.__durbarSimUi.setOfficeView('flat');0`);
+    assert.ok(await H.until(`!document.documentElement.dataset.world`, 8000), `${tag}: leaving Real office clears the world`);
+    assert.strictEqual(await js(`getComputedStyle(document.querySelector('.brand-mark')).backgroundColor`), rgb(PLATE['1']), `${tag}: the bar has the base plate again`);
+    await H.load({ w, h, ready: 'fit' });
     // ---- a world wins over the theme; no approved palette falls back (FR-033) ----
     for (const [world, p] of Object.entries(WORLDS)) {
       await js(`document.documentElement.dataset.world=${jsLiteral(world)}`);

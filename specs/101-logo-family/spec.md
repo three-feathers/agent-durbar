@@ -229,6 +229,10 @@ Tool surface (spec 098): the picker is a Settings section and the top-bar icon t
 
 ## Changes
 
+### 2026-11-02: the real world seam, and the pictures
+
+Spec 097's seam is on `main` now: `check-logo-family` also goes through Real office, where `html[data-world]` is set for real, and back. Only `photo` is reachable that way from the driver; the cave and loft palettes are still set by hand. **Pictures:** the merge with `main` keeps `main`'s pictures, and only the two README heroes (`shots-hero`) are retaken here; every other picture shows the old top-bar icon until the daily screenshot refresh retakes it.
+
 ### 2026-11-01: phases 1 to 3 built (`101-logo-build`)
 
 - **Paco approved the cave and loft columns on 2026-11-01** (relayed in Vikram's build instruction; Q6): FR-062 is met for their flat palettes, which are in `src/renderer/logo.css` with a `Paco` row in `build/logo/ASSETS.md`. Painted cave and loft pictures are still not in the repo (phase 4 not built).
