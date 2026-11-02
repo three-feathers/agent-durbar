@@ -73,8 +73,7 @@ export const workerRun = (label: string, code: string, data: Record<string, unkn
 };
 
 /**
- * `cpuMs` for this thread alone where Node has it (22 and later; the adversarial workers read it too). Process CPU also counts the collector's helper threads, which a big input wakes and a small
- * one does not: `EditStreams` read 45x on a macOS runner for 16x the input, linear in every size measured on Linux (spec 012 T138).
+ * `cpuMs` for this thread alone where Node has it (the adversarial workers read it too): process CPU also counts the collector's helper threads, which do not belong to the code being timed (spec 012 T138).
  */
 const threadCpuMs = (f: () => void, capMs: number): number => {
   const tc = (process as unknown as { threadCpuUsage?: (prev?: NodeJS.CpuUsage) => NodeJS.CpuUsage }).threadCpuUsage;
