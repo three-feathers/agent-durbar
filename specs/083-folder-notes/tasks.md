@@ -126,12 +126,12 @@ description: "Tasks for spec 083: notes per folder, reachable inside the chats"
   - AC1: a selection inside one bubble shows the button at its end (placed with `placeMenu`, never over the composer); it saves only the selected text with `from: selection` and the message's source.
   - AC2: a selection across messages or outside the log shows no button.
   - AC3: the message `⋯` has *Save selection to notes* while a selection lies inside it (keyboard path).
-- [ ] T034 [US4] The per-folder Notes screen. [FR-044, FR-045, FR-048] Split on 2026-10-30 into T034a and T034b (spec *Changes*, decided by the coordinator under Ruben's delegation): *Export…* needs T040's writer.
+- [x] T034 [US4] The per-folder Notes screen. [FR-044, FR-045, FR-048] Split on 2026-10-30 into T034a and T034b (spec *Changes*, decided by the coordinator under Ruben's delegation): *Export…* needs T040's writer.
 - [x] T034a [US4] The screen, its ways in and *Done*. [FR-044, FR-045]
   - AC1: reached from the folder `⋯` (*Notes (N)…*), the drawer's *All notes of this folder…* and Ctrl+K *Notes of <folder>*; nothing new on the office floor (`check:office` unchanged).
   - AC2: all notes, search, *Done (N)* folded, *Mark done* / *Mark not done*; done notes leave the `/` list and the count.
   - AC5: screenshots of the screen at both sizes.
-- [ ] T034b [US4] Export, delete all and removed folders (after T040). [FR-048]
+- [x] T034b [US4] Export, delete all and removed folders (after T040). [FR-048] Built 2026-10-31 (spec *Changes*: export, delete all and removed folders; `test:notesexport`, `check-notes-export`).
   - AC3: *Export…* goes through main's save dialog (the window sends no path) and writes FR-052's format without session ids, mode 0600 (unit test with a fake dialog).
   - AC4: *Delete all…* asks with the count (*Cancel* focused) and leaves tombstones.
   - AC6: *Remove folder*'s dialog has *Also delete its notes* (only when the folder has notes, unticked by default); unticked: the text says the notes stay and re-adding the folder shows them; ticked: the store file is gone after removal (unit test on the store key and the IPC flag).
@@ -163,7 +163,7 @@ description: "Tasks for spec 083: notes per folder, reachable inside the chats"
   - AC14: bidi and zero-width characters (`HIDDEN_ALL_RE`, `src/shared/names.ts`) are removed from titles read from the file, or the choice not to is written in the spec.
   - AC15: the `mdBytes` cap applies to the bytes read from disk before they are decoded; the parse runs off the hot path, and sections past `notesPerFolder` are counted without being built (a hostile file at the cap costs about 3 s of CPU today).
   - AC16: whether a `done` change in the file counts as an edit is decided and written in the spec, with a test.
-- [ ] T042 [US5] The switch and its states in the Notes screen. [FR-050, FR-055]
+- [x] T042 [US5] The switch and its states in the Notes screen. [FR-050, FR-055] Built 2026-10-31 (spec *Changes*, 2026-10-31, the project-file switch): `test:` `scripts/test-notesswitch.ts` (`npm run test:notesswitch`), `scripts/test-notessim.ts`, `scripts/test-notesipc.ts`, `scripts/test-ipcchannels.ts`; `sim:` `scripts/check-notes-switch.js` (in `ui-suite.js`), screenshots [1440x900](../../docs/screenshots/083-notes-switch-1440x900.png) and [1280x800](../../docs/screenshots/083-notes-switch-1280x800.png). Not run by a person on Windows or macOS.
   - AC1: off by default; turning it on shows the FR-050 warning with *Cancel* focused; `notesFile: true` saved in `folders.json` and read back.
   - AC2: not offered for a `.code-workspace`; greyed with a reason when the folder is missing.
   - AC3: the conflict and write-error states show their words in the screen and the drawer.
@@ -184,6 +184,7 @@ description: "Tasks for spec 083: notes per folder, reachable inside the chats"
 
 - [ ] T060 `/speckit.converge`: spec statuses and `[IMPLEMENTED]` / `[KNOWN GAP]` tags match what was built; every linked screenshot that shows a changed screen is retaken (`npm run shots:docs -- --only …`); a `docs/agent-notes.md` entry for anything learned the hard way.
 - [x] T061 Stale-lock takeover race (issue #723): a takeover guard file and a lock token in `NotesStore.lock()` / `unlockFile()`; tests with an injected fs for a fresh lock taken over between the stale judgement and the move, and for a holder that lost its lock. [FR-008]
+- [x] T062 One shared capped read (issue #917): `src/shared/cappedread.ts` used by `notesfile.ts`, `mcp/auth.ts` and `adapters/slashcommands.ts`; `test:cappedread` (real fs: symlink, hard link, FIFO in a child with a time limit, cap, growth, regular file) plus each caller's suite. [FR-050, FR-053]
 
 ## Later (not in this spec's PRs)
 

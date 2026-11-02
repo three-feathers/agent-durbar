@@ -238,6 +238,8 @@ As a user, I can be sure that an agent running inside Durbar cannot use Durbar's
 
 ## Changes
 
+- **2026-10-31, FR-013 is checked in CPU time (issue #940).** The test of the 200 ms budget (`scripts/test-mcp-tools.ts` 12i) measured wall clock and failed at 267 ms on a loaded machine (AGENTS.md *Timing*: no wall-clock asserts). It now sums the CPU time (user + system) of the seven read tools with 15 agents and 40 folders and takes the least of 5 rounds, still under 200 ms; the budget and FR-013 are unchanged. The other cost asserts of that file (the path reducer on 200k characters, the T065 masking-cost cases of 12l, the 2000 ms limits and the 30 ms order check) use the same CPU clock. `[KNOWN GAP]` CPU time does not see a tool that waits without working (a blocked read); the tools answer from memory, so none waits.
+
 - **2026-10-30, spec 080 (session browser) delta, T001 of `specs/080-session-browser/tasks.md`** (*decided by the coordinator under Ruben's delegation*; docs only, no new FR or task number here). Spec 080 adds a second Durbar-owned MCP server for agents, so this spec records what stays and what does not apply to it:
   - **The server.** `durbar-browser` is a per-session server that gives a session's own agent the browser tools of 080 FR-045. It is **not** this spec's server (`agent-durbar`): it has its own helper flag (`--durbar-browser-tool <tokenfile>`), its own socket or pipe name (`src/main/mcp/paths.ts`) and no switch of this spec. It lives beside 072's `durbar-loop`, the same per-session pattern.
   - **FR-030 still holds for `agent-durbar` only.** Durbar's own control server is still never added to any agent's MCP configuration. FR-030 does not cover `durbar-browser` (and `durbar-loop`): those are added to one session's `mcpServers` only while their switch is on (080 FR-041, 072).
@@ -427,3 +429,7 @@ The `status:` of the specs-index block used to read (moved here unchanged; the b
   - **FR-056** The dialog shows **how** the request connected: the bridge's parent process name, when the OS gives it cheaply, labelled as reported by the bridge (see the consistency pass, item 7). `[KNOWN GAP]` (planned task): refusing a peer whose process is a descendant of one of Durbar's own runtime processes (Linux `SO_PEERCRED`, macOS `LOCAL_PEERPID`, Windows named-pipe client PID). That is stronger than the env marker of FR-034, which an agent can unset. It is left out of v1 and needs its own task.
   - **Related:** #130 (Global Assistant Chat): Durbar's read tools plus the user's own MCP client already give phase 1 of #130 without a built-in assistant; mobile access stays out (loopback only, FR-002). #131 (profiles): the server, socket and secret would be per profile.
 - **2026-10-18**: first draft (analyst, for the coordinator). Not reviewed by the owner.
+
+### 2026-10-31: no `door` in list folders (spec 017 FR-034; planned, not built)
+
+- **FR-066** `durbar_list_folders` drops its `door` field with spec 017's removal PR (spec 017 T024). A change for MCP clients, said in the changelog.

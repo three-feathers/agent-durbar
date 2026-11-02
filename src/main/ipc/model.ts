@@ -28,12 +28,22 @@ export interface SetModelDeps {
   agents: Map<string, AgentInfo>;
   router: Pick<AdapterRouter, 'forAgent'>;
   defaultId: string;
-  /** The models a switch is checked against (spec 030 FR-018). */
-  models(): Promise<ModelChoice[]>;
+  /** The models a switch is checked against (spec 030 FR-018): those of this session's own agent app (FR-063). */
+  models(adapterId: string): Promise<ModelChoice[]>;
   /** Spec 076 FR-203: the agent app's own organization policy on this model. */
   orgModel?(adapterId: string, model: string): Promise<OrgVerdict | undefined>;
   /** Saves the choice in this app's own folder file. */
   save(a: AgentInfo, choice: Parameters<FolderStore['setModelChoice']>[1]): void;
+}
+
+/**
+ * Spec 030 FR-065: `auto` on another agent app means its own default (the adapters take it and report it), though its list may not name it; Claude Code's
+ * list calls it `default`, with that entry's efforts. Copilot's `auto` is a real entry of its list and is never added.
+ */
+function withOwnDefault(models: ModelChoice[], adapterId: string, defaultId: string): ModelChoice[] {
+  if (adapterId === defaultId || models.some((m) => m.id === 'auto')) return models;
+  const own = models.find((m) => m.id === 'default');
+  return [...models, { id: 'auto', name: 'Auto', efforts: own?.efforts ?? [] }];
 }
 
 /** `agents:setModel` (spec 030; spec 076 FR-203: a model the organization policy blocks is refused before anything is switched or saved). */
@@ -43,7 +53,7 @@ export async function setModelOp(d: SetModelDeps, id: unknown, raw: unknown): Pr
   if (!a || !ad) return { ok: false, error: 'unknown agent' };
   if (typeof ad.setModel !== 'function') return { ok: false, error: NO_SWITCH };
   try {
-    const parsed = parseSwitchRequest(raw, await d.models());
+    const parsed = parseSwitchRequest(raw, withOwnDefault(await d.models(a.adapterId ?? d.defaultId), a.adapterId ?? d.defaultId, d.defaultId));
     if (!parsed.ok) return { ok: false, error: parsed.error };
     const req: ModelSwitchRequest = parsed.request;
     // Spec 007 FR-015: the tiers come from the default kind's list (Copilot's `auto`); another agent app never gets one.
@@ -90,11 +100,15 @@ export function onAutoTierFailed(e: AgentEvent, agents: Map<string, AgentInfo>, 
 export function register(deps: ModelIpcDeps): void {
   const { agents, router, registry, wsKey } = deps;
   const folderStore = deps.getFolderStore;
-  /** The last list of models the account offers; a switch request is checked against it (spec 030 FR-018). */
-  let lastModels: ModelChoice[] = [];
-  const modelsForValidation = async (): Promise<ModelChoice[]> => {
-    if (!lastModels.length) lastModels = (await modelOptionsOf(router.instance(registry.defaultId))).filter((m) => !m.disabled).map(({ disabled: _d, ...m }) => m);
-    return lastModels;
+  /** The last list of models each agent app offers; a switch request is checked against its session's own app (spec 030 FR-018, FR-063). */
+  const lastModels = new Map<string, ModelChoice[]>();
+  const modelsForValidation = async (kind: string): Promise<ModelChoice[]> => {
+    let list = lastModels.get(kind);
+    if (!list?.length) {
+      list = (await modelOptionsOf(router.instance(kind))).filter((m) => !m.disabled).map(({ disabled: _d, ...m }) => m);
+      lastModels.set(kind, list);
+    }
+    return list;
   };
 
   ipcHandle('agents:setModel', (_e, id: unknown, raw: unknown) => setModelOp({ agents, router, orgModel: deps.orgModel, defaultId: registry.defaultId, models: modelsForValidation, save: (a, c) => folderStore()?.setModelChoice(wsKey(a), c) }, id, raw));
@@ -145,8 +159,7 @@ export function register(deps: ModelIpcDeps): void {
     if (!id) return { ok: false, error: 'unknown agent app', models: [] };
     try {
       const models = await withOrgModels((await modelOptionsOf(router.instance(id))).filter((m) => !m.disabled).map(({ disabled: _d, ...m }) => m), deps.orgModel && ((m) => deps.orgModel!(id, m)));
-      if (id !== registry.defaultId) return { ok: true, models };
-      lastModels = models;
+      lastModels.set(id, models);
       return { ok: true, models };
     } catch (err) {
       return { ok: false, error: errText(err), models: [] };
