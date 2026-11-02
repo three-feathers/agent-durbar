@@ -65,29 +65,9 @@
       "swatch": "#3f6a54"
     },
     {
-      "name": "Corporate",
-      "screenshot": "site-theme-corporate-1440x900.png",
-      "swatch": "#2c5468"
-    },
-    {
       "name": "Retro Pixel",
       "screenshot": "site-theme-retro-1440x900.png",
       "swatch": "#1d2b53"
-    },
-    {
-      "name": "Durbar · Indian Court",
-      "screenshot": "site-theme-durbar-indian-1440x900.png",
-      "swatch": "#d9962b"
-    },
-    {
-      "name": "Durbar · European Court",
-      "screenshot": "site-theme-durbar-european-1440x900.png",
-      "swatch": "#2c4a78"
-    },
-    {
-      "name": "Durbar · Japanese Court",
-      "screenshot": "site-theme-durbar-japanese-1440x900.png",
-      "swatch": "#c24a42"
     }
   ],
   "aiTheme": {
