@@ -347,7 +347,7 @@ process.on('exit', () => { if (!fr114Done) { console.error('FR-114 checks did no
     fs.rmSync(outDir, { recursive: true, force: true });
   }
   fr114Done = true;
-  // spec 008 FR-095, FR-137: one retry, alone; a repeated failure stays a failure, a pass on retry is FLAKY in the log and the job summary
+  // spec 008 FR-095, FR-138: one retry, alone; a repeated failure stays a failure, a pass on retry is FLAKY in the log and the job summary
 async function retries(): Promise<void> {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const { main, DRIVERS } = require(SUITE) as { main: (o: unknown) => Promise<void>; DRIVERS: Array<{ name: string; label?: string }> };
@@ -369,7 +369,7 @@ async function retries(): Promise<void> {
   };
   try {
     const twice = await go([false, false], '1');
-    assert.strictEqual(twice.code, 1, 'FR-137: failing twice fails the job');
+    assert.strictEqual(twice.code, 1, 'FR-138: failing twice fails the job');
     assert.strictEqual(twice.runs, 2, 'one retry, not more');
     assert.ok(!/FLAKY/.test(twice.out + twice.sum), 'failing twice is not FLAKY');
     assert.ok(new RegExp('failed: ' + name).test(twice.out), 'and it is named: ' + twice.out.slice(-200));
@@ -387,7 +387,7 @@ async function retries(): Promise<void> {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
   const yml = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'ui-platforms.yml'), 'utf8');
-  assert.ok(/UI_SUITE_RETRY: \$\{\{ matrix\.os != 'ubuntu-latest' && '1' \|\| '0' \}\}/.test(yml), 'FR-137: macOS and Windows retry once, Linux does not');
+  assert.ok(/UI_SUITE_RETRY: \$\{\{ matrix\.os != 'ubuntu-latest' && '1' \|\| '0' \}\}/.test(yml), 'FR-138: macOS and Windows retry once, Linux does not');
 }
 await retries();
 console.log('ui-suite: check-parallel and ui-suite install Electron once before their parallel jobs (FR-114)');
