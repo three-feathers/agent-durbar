@@ -16,6 +16,7 @@
   let SET_SHOWN = '';
   const peopleKey = () => SET_SHOWN === 'office' || !SET_SHOWN ? 'durbar.realpeople' : 'durbar.realpeople.' + SET_SHOWN;
   let onArt = null;
+  let EMPTY_BOX = null, SLIP_RO = null;
   /* phase P2 (FR-030..FR-035, FR-070..FR-074). CUR: the drawn scene; a monitor repaints on its own, at most once per REPAINT_MS, only when its
      lines changed, and not at all while the office is hidden or the desk is scrolled away: so no timer runs in an idle office. */
   const REPAINT_MS = 2000; /* FR-033 */
@@ -270,12 +271,14 @@
     const lobby = el(art, 'lobby', 'div', 'ro-lobby'); box(lobby, { x: 0, y: 0, w: lay.width, h: lay.lobbyH });
     const strip = el(art, 'strip', 'div', 'ro-strip'); box(strip, lay.floorStrip);
     /* FR-043: the room ambient: the share of active desks among the visible ones */
-    const states = lay.zones.flatMap((z) => z.desks.map((d) => d.state));
+    const states = model.empty ? ['idle'] : lay.zones.flatMap((z) => z.desks.map((d) => d.state)); /* FR-119: an empty floor is lit at 70 % (FR-043) */
     const ambient = L.ambientFor(states);
     ro.style.setProperty('--ro-amb', String(Math.round((1 - ambient) * 1000) / 1000));
     ro.dataset.ambient = String(ambient);
     const ambEl = el(amb, 'amb', 'div', 'ro-ambient'); box(ambEl, { x: 0, y: 0, w: lay.width, h: lay.height });
 
+    EMPTY_BOX = null;
+    if (model.empty) drawEmpty(art, chrome, lay, meta, model.empty);
     const byFolder = new Map(model.folders.map((f) => [f.id, f]));
     const byAgent = new Map(model.folders.flatMap((f) => f.agents.map((a) => [a.id, a])));
     const now = Date.now();
@@ -308,7 +311,7 @@
           const fresh = !art._k.has('p:' + k);
           const rigged = d.person.pose === 'typeA' && moving() && LOD === 0 && !GLIDING.has(k) && !(fresh && CUR.drawn && WHERE.has(k)) && meta.rig && has(meta.rig, d.person.pid) ? meta.rig[d.person.pid] : null;
           const two = !rigged && moving() && m.kind === 'frames' && d.person.fileB && !BAD.has(SD + d.person.fileB) && !GLIDING.has(k) ? second(art, 'pb:' + k, k, d.person, d.person.fileB, 'ro-person2', m) : null;
-          const pe = el(art, 'p:' + k, 'img', 'ro-person' + (rigged ? ' m-rig' : two && two.on ? ' m-a m-' + m.style : m.kind === 'breathe' && moving() ? ' m-br' : '') + (OFF.has(k) ? ' ro-off' : ''));
+          const pe = el(art, 'p:' + k, 'img', 'ro-person' + (a.asleep ? ' asleep' : '') + (rigged ? ' m-rig' : two && two.on ? ' m-a m-' + m.style : m.kind === 'breathe' && moving() ? ' m-br' : '') + (OFF.has(k) ? ' ro-off' : ''));
           box(pe, d.person); pe.dataset.for = k; pe.dataset.pose = d.person.pose;
           const was = pe.getAttribute('src');
           if (was && was !== SD + d.person.file && moving() && !hiddenNow() && !OFF.has(k)) { const g = pe.cloneNode(false); art.insertBefore(g, pe); fadeAway(g, 120); pe.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 170, delay: 90, easing: 'ease-in-out', fill: 'backwards' }); } /* FR-072, spec Changes 2026-11-01: the old out, then the new in */
@@ -321,10 +324,10 @@
         } else if (!d.narrow) {
           const ini = el(art, 'i:' + k, 'div', 'ro-initials'); const r = 0.5 * lay.u; box(ini, { x: d.slot.x + 0.05 * d.slot.w + 0.42 * lay.u - r / 2, y: d.desk.y - r - 6, w: r, h: r }); ini.dataset.for = k; text(ini, initials(a.name));
         }
-        const dc = el(art, 'd:' + k, 'div', 'ro-desk' + (d.narrow ? ' narrow' : '')); box(dc, d.desk); dc.dataset.for = k;
+        const dc = el(art, 'd:' + k, 'div', 'ro-desk' + (d.narrow ? ' narrow' : '') + (a.asleep ? ' asleep' : '')); box(dc, d.desk); dc.dataset.for = k;
         const dk = dc.firstChild || dc.appendChild(document.createElement('img')); dk.style.height = px(d.desk.full); img(dk, 'desk.webp');
         /* the monitor: the glass in the art; its text sits with the chrome, above the lights (FR-044), and repaints on its own (FR-033) */
-        const sc = el(art, 'm:' + k, 'div', 'ro-screen st-' + d.state + (lt.glow === 'off' ? ' off' : '')); box(sc, d.screen); sc.dataset.for = k;
+        const sc = el(art, 'm:' + k, 'div', 'ro-screen st-' + d.state + (lt.glow === 'off' ? ' off' : '') + (a.asleep ? ' asleep' : '')); box(sc, d.screen); sc.dataset.for = k;
         if (!sc.firstChild) sc.innerHTML = '<div class="ro-bezel"><div class="ro-glass" aria-hidden="true"></div></div><div class="ro-neck"></div><div class="ro-foot"></div>';
         const bez = sc.firstChild; bez.style.height = px(d.glass.h + 6);
         screenBox(chrome, d, k);
@@ -342,10 +345,12 @@
         if (d.bubble) { const b = el(chrome, 'b:' + k, 'div', 'ro-bub'); box(b, d.bubble); attr(b, 'aria-hidden', 'true'); text(b, '?'); }
         if (d.bang) { const b = el(chrome, 'x:' + k, 'div', 'ro-bang'); box(b, d.bang); attr(b, 'aria-hidden', 'true'); text(b, '!'); }
         if (d.dots) { const b = el(chrome, 't:' + k, 'div', 'ro-dots'); box(b, d.dots); attr(b, 'aria-hidden', 'true'); if (!b.firstChild) b.innerHTML = '<i></i><i></i><i></i>'; }
-        if (d.away) { const w = el(chrome, 'a:' + k, 'div', 'ro-away'); box(w, { x: d.away.x, y: d.away.y, w: d.away.s, h: d.away.s }); text(w, 'at ' + a.awayLabel); if (!w._in && CUR.drawn && moving() && !hiddenNow()) w.animate([{ transform: 'translateX(-50%) rotate(-2.5deg) scale(.7)', opacity: 0 }, { transform: 'translateX(-50%) rotate(-2.5deg)', opacity: 1 }], { duration: ZOOM_IN, delay: ZOOM_OUT - 40, easing: 'cubic-bezier(.2,.7,.3,1)', fill: 'backwards' }); w._in = true; }
+        if (d.away) { const w = el(chrome, 'a:' + k, 'div', 'ro-away'); w.dataset.place = a.away; if (a.away === 'coffee') w.dataset.surface = 'coffee-bar'; /* spec 098 FR-010: the moment's marker */ w.style.setProperty('--ro-note', L.notePaper(a.away)); w.style.setProperty('--ro-note-ink', L.NOTE_INK); box(w, { x: d.away.x, y: d.away.y, w: d.away.s, h: d.away.s }); text(w, 'at ' + a.awayLabel); if (!w._in && CUR.drawn && moving() && !hiddenNow()) w.animate([{ transform: 'translateX(-50%) rotate(-2.5deg) scale(.7)', opacity: 0 }, { transform: 'translateX(-50%) rotate(-2.5deg)', opacity: 1 }], { duration: ZOOM_IN, delay: ZOOM_OUT - 40, easing: 'cubic-bezier(.2,.7,.3,1)', fill: 'backwards' }); w._in = true; }
+        /* FR-120: a static "z z" over a sleeping person (carved in the cave); aria-hidden, the plate and the name carry the meaning */
+        if (a.asleep && d.person) { const z = el(chrome, 'z:' + k, 'div', 'ro-zz'); box(z, { x: d.person.x + d.person.w * 0.62, y: Math.max(d.slot.y + 2, d.person.y + d.person.h * 0.04) }); attr(z, 'aria-hidden', 'true'); text(z, 'z z'); }
         /* FR-016, FR-090: the name plate is the desk's one focusable button; the app's click handler opens the chat ([data-id]) */
-        const pl = el(chrome, 'n:' + k, 'button', 'ro-plate st-' + d.state + (a.selected ? ' sel' : '') + (d.narrow ? ' narrow' : '')); box(pl, d.plate);
-        pl.type = 'button'; pl.dataset.id = k; pl.dataset.state = d.state;
+        const pl = el(chrome, 'n:' + k, 'button', 'ro-plate st-' + d.state + (a.selected ? ' sel' : '') + (d.narrow ? ' narrow' : '') + (a.asleep ? ' asleep' : '')); box(pl, d.plate);
+        pl.type = 'button'; pl.dataset.id = k; pl.dataset.state = d.state; if (a.asleep) pl.dataset.surface = 'lounge'; /* spec 098 FR-010: the moment's marker */
         attr(pl, 'aria-pressed', a.selected ? 'true' : 'false'); attr(pl, 'aria-label', a.label); attr(pl, 'title', a.tip);
         const psig = JSON.stringify([a.name, a.role, a.word, a.task, a.helpers, d.state]);
         if (pl._sig !== psig) {
@@ -356,7 +361,7 @@
           if (a.helpers.length) { const h = document.createElement('span'); h.className = 'ro-help'; h.textContent = '+' + a.helpers.length + ' '; a.helpers.slice(0, 3).forEach((s) => h.insertAdjacentHTML('beforeend', dotHTML(s))); l1.appendChild(h); }
           const l2 = document.createElement('span'); l2.className = 'ro-l2';
           l2.insertAdjacentHTML('beforeend', dotHTML(d.state));
-          l2.appendChild(document.createTextNode(' ' + a.word + (a.task ? ' · ' + a.task : '')));
+          l2.appendChild(document.createTextNode(' ' + (a.word + (a.task ? ' · ' + a.task : ''))));
           pl.appendChild(l1); pl.appendChild(l2);
         }
       }
@@ -400,10 +405,12 @@
       const lsig = JSON.stringify([p.label, fx.more]);
       if (pl._sig !== lsig) { pl._sig = lsig; pl.textContent = ''; const s = document.createElement('span'); s.textContent = p.label; pl.appendChild(s); if (fx.more > 0) { const b = document.createElement('b'); b.className = 'ro-more'; b.textContent = '+' + fx.more; pl.appendChild(b); } }
     }
+    drawSlips(chrome, lay, model.slips);
     sweep(art, drawn && moving() && !hiddenNow()); [amb, lights, chrome].forEach((l) => sweep(l));
     for (const id of WHERE.keys()) if (!CUR.agents.has(id)) WHERE.delete(id); /* a session gone: what stays is bounded by the sessions there are */
     watchBody(); wasHidden = hiddenNow();
     fitPlates(chrome, lay.width);
+    fitRoles(chrome);
     stagger(chrome, lay.width);
     /* a chip or plate does not travel: it fades in where it now is, so nothing passes over anything (owner 2026-11-01) */
     for (const e of chrome.querySelectorAll(':scope > .ro-chip, :scope > .ro-lplate')) {
@@ -429,6 +436,132 @@
     }
     settle(chrome, lay.width);
     return lay;
+  }
+
+  /* spec 097 FR-119 (empty office): a floor with nothing on it. Three empty desks of the world, their screens off, under the plate that holds
+     the flat office's own sentence (word for word, textContent). The shared lobby above is the real one (the caller passes the places). */
+  function drawEmpty(art, chrome, lay, meta, empty) {
+    const W = lay.width, top = lay.lobbyH, H = lay.height - top;
+    const dw = Math.max(120, Math.min(W * 0.26, 340, (H - 60) / 0.7)), dh = dw * (meta.desk[1] / meta.desk[0]);
+    const gap = (W - 3 * dw) / 4, y0 = top + Math.max(70, H * 0.42);
+    for (let i = 0; i < 3; i++) {
+      const x = gap + i * (dw + gap);
+      const dc = el(art, 'ed:' + i, 'div', 'ro-desk ro-edesk'); box(dc, { x, y: y0, w: dw, h: Math.min(dh * 0.72, lay.height - y0 - 6) }); attr(dc, 'aria-hidden', 'true');
+      const dk = dc.firstChild || dc.appendChild(document.createElement('img')); dk.style.height = px(dh); img(dk, 'desk.webp');
+      const sw = dw * 0.5, sh = sw * 0.64;
+      const sc = el(art, 'em:' + i, 'div', 'ro-screen ro-escreen st-idle off'); box(sc, { x: x + dw / 2 - sw / 2, y: y0 - sh - 10, w: sw, h: sh + 14 }); attr(sc, 'aria-hidden', 'true');
+      if (!sc.firstChild) sc.innerHTML = '<div class="ro-bezel"><div class="ro-glass"></div></div><div class="ro-neck"></div><div class="ro-foot"></div>';
+      sc.firstChild.style.height = px(sh);
+    }
+    const pw = Math.min(560, W - 40);
+    const pl = el(chrome, 'ep', 'div', 'ro-eplate'); box(pl, { x: (W - pw) / 2, y: top + 14, w: pw });
+    pl.dataset.surface = 'empty-office'; pl.dataset.floorEmpty = empty.id || '';
+    text(pl, empty.text);
+    EMPTY_BOX = { x: (W - pw) / 2 - 4, y: top + 10, w: pw + 8, h: 64 }; /* the plate (two lines at most) is on the avoid list of the slips */
+  }
+
+  /* spec 097 FR-121, FR-122, FR-124: slips and a bubble. The words, buttons and their order come from the app (the cards' own); this draws them on
+     the free spot nearest their door or desk (placeBox: never on a plate, a sign, a chair label or a cue; always under the lobby band, FR-110).
+     A queue slip that has no room for its words becomes a one-line pill; a limit slip or bubble with no room is not drawn (the Bank's chip, the
+     desk's plate and the top bar's Inbox button say it too). The buttons carry data-slipact; app.js clicks the card's own button. */
+  function drawSlips(chrome, lay, slips) {
+    const P = root.exports && root.exports.placeBox, A = root.exports && root.exports.slipAvoid;
+    const want = [];
+    if (slips && slips.queue) want.push('queue');
+    if (slips && slips.limit) want.push('limit');
+    for (const e of (slips && slips.elicit) || []) want.push('elicit:' + e.id);
+    if (!want.length || !P || !A) return;
+    const avoid = A(lay);
+    if (EMPTY_BOX) avoid.push(EMPTY_BOX);
+    /* with more than four agents the monitors are read from afar: a slip takes a spot clear of them, else a smaller variant (the pill); with big screens (four or fewer) it may sit over one */
+    const softAvoid = lay.big ? [] : lay.zones.flatMap((z) => z.desks.map((d) => d.screen));
+    const bounds = { x: 4, y: lay.lobbyH + 4, w: lay.width - 8, h: lay.height - lay.lobbyH - 8 };
+    const door = (id) => { const f = lay.fixtures.find((x) => x.id === id); return f ? { x: f.slot.x + f.slot.w / 2, y: lay.lobbyH } : { x: lay.width / 2, y: lay.lobbyH }; };
+    const hits = (r) => avoid.some((q) => r.x < q.x + q.w && q.x < r.x + r.w && r.y < q.y + q.h && q.y < r.y + r.h);
+    const put = (key, cls, build, anchor, variants, surface) => {
+      const e = el(chrome, key, 'div', cls); e.dataset.surface = surface;
+      /* a late stylesheet, font or text change gives the slip another box than the one it was placed with: it is placed again (once per change) */
+      if (typeof ResizeObserver === 'function') {
+        if (!SLIP_RO) SLIP_RO = new ResizeObserver((list) => { for (const en of list) { const t = en.target; if (t._at && (Math.ceil(t.offsetWidth) + 2 > t._at.w || Math.ceil(t.offsetHeight) + 2 > t._at.h) && onArt) onArt(); } });
+        if (!e._obs) { e._obs = true; SLIP_RO.observe(e); }
+      }
+      /* the fullest variant that fits is used; a spot that is still free is kept, so a slip does not hop from render to render */
+      const order = variants;
+      for (const v of order) {
+        const sig = JSON.stringify([v, build.sig]);
+        if (e._sig !== sig) { e._sig = sig; e._at = null; e.textContent = ''; build.fill(e, v); }
+        e.hidden = false;
+        if (e._at && e._v === v) { e.style.left = px(e._at.x); e.style.top = px(e._at.y); }
+        else { e.style.left = '0px'; e.style.top = '0px'; }
+        e.style.width = ''; e.style.height = '';
+        const size = () => ({ w: Math.ceil(e.offsetWidth) + 2, h: Math.ceil(e.offsetHeight) + 2 });
+        let r = size();
+        if (e._at && e._v === v && e._at.w >= r.w && e._at.h >= r.h && !hits({ x: e._at.x, y: e._at.y, w: r.w, h: r.h }) && e._at.x + r.w <= bounds.x + bounds.w && e._at.y + r.h <= bounds.y + bounds.h) { avoid.push({ x: e._at.x, y: e._at.y, w: r.w, h: r.h }); e.dataset.variant = v; return true; }
+        for (let pass = 0; pass < 2; pass++) { /* the second pass re-places with the box it really has (a late font can widen the text) */
+          const at = P(r, avoid.concat(softAvoid), bounds, anchor) || (lay.big || v === 'pill' ? P(r, avoid, bounds, anchor) : null); /* a one-line pill may sit over a monitor when there is no other spot */
+          if (!at) break;
+          e.style.left = px(at.x); e.style.top = px(at.y);
+          const r2 = size();
+          if (r2.w <= r.w && r2.h <= r.h) { e._at = at; e._v = v; e.dataset.variant = v; avoid.push(at); return true; }
+          r = r2;
+        }
+      }
+      e.hidden = true; e._at = null; e._v = null; e.dataset.variant = 'none'; return false;
+    };
+    const btn = (label, title, cls, data) => { const b = document.createElement('button'); b.type = 'button'; b.className = cls === 'link' ? 'linkbtn ro-sbtn' : cls === 'sl-fold' || cls === 'sl-more' || cls === 'ro-pill' ? 'ro-sbtn ' + cls : 'btn sm ro-sbtn ' + cls; /* the inbox's own button classes (spec 052 FR-076) */ b.textContent = label; if (title) b.title = title; for (const k of Object.keys(data)) b.dataset[k] = String(data[k]); return b; };
+    const p = (cls, t) => { const n = document.createElement('p'); n.className = cls; n.textContent = t; return n; };
+    if (slips.queue) {
+      const Q = slips.queue;
+      put('slip:queue', 'ro-slip ro-queue', {
+        sig: Q,
+        fill: (e, v) => {
+          e.setAttribute('role', 'group'); e.setAttribute('aria-label', Q.total + (Q.total === 1 ? ' request needs you' : ' requests need you'));
+          if (v === 'pill') { e.appendChild(btn(Q.total + (Q.total === 1 ? ' needs you' : ' need you') + ' \u00B7 Open the inbox', '', 'ro-pill', { slipact: 'inbox' })); return; }
+          const f = Q.first, h = document.createElement('p'); h.className = 'sl-h';
+          const nm = document.createElement('b'); nm.textContent = f.name; h.appendChild(nm);
+          const w = document.createElement('span'); w.textContent = ' ' + f.what + ' \u00B7 ' + f.folder; h.appendChild(w); e.appendChild(h);
+          e.appendChild(p('sl-t', f.text));
+          const row = document.createElement('div'); row.className = 'sl-act';
+          for (const a of f.actions) row.appendChild(btn(a.label, a.title, a.cls, a.k === 'open' ? { slipact: 'open', slipid: f.id } : { slipact: 'perm', slipid: f.id, slipreq: f.req, slipidx: a.idx }));
+          row.appendChild(btn('Show in chat', 'Open the chat', 'link', { slipact: 'open', slipid: f.id }));
+          if (f.detail) row.appendChild(btn('Review in the inbox', 'This request has a change or a command to read first: the inbox shows it', 'ro-sbtn-review primary', { slipact: 'inbox' })); /* no Allow on a slip whose card has details (review on PR 994) */
+          e.appendChild(row);
+          for (const g of Q.folded) { const b = btn(g.text, '', 'sl-fold', { slipact: 'open', slipid: g.id }); e.appendChild(b); }
+          if (Q.more > 0) e.appendChild(btn('+' + Q.more + ' more \u00B7 Open the inbox', '', 'sl-more', { slipact: 'inbox' }));
+        },
+      }, door('boss'), ['full', 'pill'], 'inbox');
+    }
+    if (slips.limit) {
+      const L = slips.limit;
+      put('slip:limit', 'ro-slip ro-limit', {
+        sig: [L.id, L.name, L.who, L.text, L.actions, L.input && [L.input.label, L.input.min, L.input.step, L.input.value]],
+        fill: (e, v) => {
+          e.setAttribute('role', 'group'); e.setAttribute('aria-label', 'Spending limit reached');
+          if (v === 'pill') { e.appendChild(btn(L.name + ': Spending limit reached \u00B7 Show in chat', 'Open the chat', 'ro-pill', { slipact: 'open', slipid: L.id, slipfocus: 'limit' })); return; }
+          e.appendChild(p('sl-h', L.who)); e.appendChild(p('sl-t', L.text));
+          const row = document.createElement('div'); row.className = 'sl-act';
+          if (L.input) { const i = document.createElement('input'); i.type = 'number'; i.className = 'limit-amt'; i.min = L.input.min; i.step = L.input.step; i.value = L.input.value; i.setAttribute('aria-label', L.input.label); row.appendChild(i); }
+          for (const a of L.actions) row.appendChild(btn(a.label, a.title, a.cls, { slipact: 'limit', slipid: L.id, slipreq: L.req, slipidx: a.idx }));
+          row.appendChild(btn('Show in chat', 'Open the chat', 'link', { slipact: 'open', slipid: L.id, slipfocus: 'limit' }));
+          e.appendChild(row);
+        },
+      }, door('bank'), ['full', 'pill'], 'limit-card');
+    }
+    for (const B of slips.elicit || []) {
+      const d = lay.zones.flatMap((z) => z.desks).find((x) => x.id === B.id);
+      if (!d) continue;
+      put('slip:' + B.id, 'ro-slip ro-bubble', {
+        sig: B,
+        fill: (e) => {
+          e.setAttribute('role', 'group'); e.setAttribute('aria-label', B.head);
+          e.appendChild(p('sl-h', B.head)); e.appendChild(p('sl-t', B.text));
+          const row = document.createElement('div'); row.className = 'sl-act';
+          row.appendChild(btn('Answer in chat', '', 'primary', { slipact: 'open', slipid: B.id }));
+          row.appendChild(btn('Show in chat', 'Open the chat', 'link', { slipact: 'open', slipid: B.id }));
+          e.appendChild(row);
+        },
+      }, { x: d.slot.x + d.slot.w / 2, y: d.slot.y }, ['full'], 'elicitation');
+    }
   }
 
   /* a font that arrives after the measure (a lazily loaded bold face, another machine's metrics) widens a chip or plate: a
@@ -652,6 +785,20 @@
      slot grows to the right, then to the left, into free space only (up to the next plate on the same rows or the band's edge); no
      fixture moves. Measured once per render, left to right, so a plate never covers another. Too little room keeps the ellipsis
      (the driver fails on it). */
+  /* review 2026-11-02: a role that has no room for about three characters is not shown (a one-letter sliver reads as a mistake). Done once per draw and only for a plate
+     whose width or words changed (not per frame): show every changed role, read all widths, then hide the ones that are too narrow. */
+  const ROLE_MIN = 20; /* px: about three characters of the 10.5 px role text */
+  function fitRoles(chrome) {
+    const todo = [];
+    for (const p of chrome.querySelectorAll(':scope > .ro-plate')) {
+      const r = p.querySelector('.ro-role'); if (!r) continue;
+      const key = p.style.width + '|' + p.style.height + '|' + p._sig;
+      if (p._rk === key) continue;
+      p._rk = key; r.hidden = false; todo.push(r);
+    }
+    const w = todo.map((r) => r.getBoundingClientRect().width);
+    todo.forEach((r, i) => { r.hidden = w[i] < ROLE_MIN; });
+  }
   function fitPlates(chrome, W) {
     const pl = [...chrome.querySelectorAll(':scope > .ro-lplate')].sort((a, b) => a.offsetLeft - b.offsetLeft);
     const done = [];
