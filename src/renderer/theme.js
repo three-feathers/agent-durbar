@@ -676,6 +676,18 @@
         '--wb-warn-bg':'#4e3618','--wb-warn-ink':'#f7cf8a'}, /* a counter or the inbox that needs you: amber glass with amber text */
       shadow:{'--shadow-card':'0 1px 3px rgba(46,32,18,.10)','--shadow-pop':'0 18px 48px rgba(46,32,18,.30), 0 2px 6px rgba(46,32,18,.12)'},
     },
+    /* the cave: parchment-and-stone page, a bar of dark cave brown with torchlight gold (the logo's cave palette, spec 101 FR-033) */
+    cave:{
+      name:'Prehistoric cave',
+      page:{'--bg':'#e4d6bf','--surface':'#f7efe0','--surface-2':'#efe3cc','--raised':'#fbf5e8','--card':'#f7efe0','--soft':'#f3e9d6','--note':'#efe3cc',
+        '--line':'#d9c6a6','--line-2':'#c2a87f','--line-ctl':'#86704f','--ink':'#2a1a10','--ink-2':'#4f3a28','--muted':'#5a4430',
+        '--sage':'#b8793a','--sage-ink':'#7a3f14','--focus':'#8f4a10','--sel-border':'#a8672c','--sel-ring':'#efd9bb','--sel-ring-2':'#f1dfc4',
+        '--stat-sel-border':'#a8672c','--stat-sel-ring':'#efd9bb','--brand-mark':'#fff1dc','--brand-bg':'#7a4420','--avatar-bg':'#ecdcc0'},
+      bar:{'--wb-bg':'#2a1710','--wb-bg-2':'#1c0f0a','--wb-surface':'#3b2418','--wb-surface-2':'#4a2f20','--wb-ink':'#f6e3c4','--wb-ink-2':'#e8cfa6',
+        '--wb-muted':'#dcc29a','--wb-line':'#5c4030','--wb-line-2':'#6e4e3a','--wb-line-ctl':'#b08e6c','--wb-focus':'#f2b46e',
+        '--wb-warn-bg':'#4e3010','--wb-warn-ink':'#f7cf8a'},
+      shadow:{'--shadow-card':'0 1px 3px rgba(40,22,10,.12)','--shadow-pop':'0 18px 48px rgba(40,22,10,.34), 0 2px 6px rgba(40,22,10,.14)'},
+    },
   };
   /* the tokens themes.css re-scopes inside the top bar ([--x, --wb-x]); the bar's menu gets the page values back as --wp-x */
   const WORLD_BAR_MAP=[['--bg','--wb-bg'],['--surface','--wb-surface'],['--surface-2','--wb-surface-2'],['--raised','--wb-surface'],['--ink','--wb-ink'],['--ink-2','--wb-ink-2'],

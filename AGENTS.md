@@ -169,7 +169,7 @@ A PR that changes behaviour, scripts, permissions, settings, MCP or tools, relea
 - Touched pages of `docs/`, `CONTRIBUTING.md`, `SECURITY.md` (the website is generated; `docs/site/gallery.json` only for key screenshots); contributors in `src/shared/about.ts`, `package.json`, `LICENSE`, README (`npm run test:about`).
 - Rules change here only; keep the PR template and `docs/collaboration.md` consistent.
 
-No impact: tick *no docs impact* and write `Docs: n/a <reason>` (the *Docs check* reads it; never to hide a real change). Cannot (screenshots too): open an `area:docs` *Task* issue, link it from the PR and say what is left; never skip silently.
+No impact: tick *no docs impact* and write `Docs: n/a <reason>` (the *Docs check* reads it; never to hide a real change). Cannot (screenshots too): open an `area:docs` *Task* issue, assign it, link it from the PR and say what is left; never skip silently.
 
 ## Before you finish
 

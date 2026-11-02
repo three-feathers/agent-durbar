@@ -11,7 +11,7 @@ One row per thing a user can do or see. [features.md](features.md) stays the use
 |---|---|---|---|---|---|
 | Desk: name, role, status word, task | works | works | mock+planned (desk-card) | 001 034 097 | test:mood driver:shots-097-realoffice |
 | Moods and trouble signs (heavy, monster, siren) | works | works pose, dots and lights only | mock+planned (desk-lights) | 034 097 | test:mood read:src/renderer/realoffice.js |
-| Helpers (sub-agents): card, tree, own chat, needs you | works | missing, only `+N` and 3 dots | none | 001 015 097 | test:helpercard read:src/renderer/realoffice.js |
+| Helpers (sub-agents): card, tree, own chat, needs you | works | missing, only `+N` and 3 dots; planned as small figures beside the desk (owner idea, spec delta pending) | planned | 001 015 097 | test:helpercard read:src/renderer/realoffice.js |
 | Live activity on the desk | works | in PR 097-p2-screens | mock+planned (live-screen) | 001 097 | test:liveact driver:shots-001-live-activity |
 | Model, tokens, cost, context, last tool on the desk | works | missing | none | 019 097 | test:ctxbreakdown read:src/renderer/realoffice.js |
 | Unread "New", draft, question marks | works | missing | none | 001 005 | test:unread read:src/renderer/realoffice.js |
@@ -56,5 +56,7 @@ One row per thing a user can do or see. [features.md](features.md) stays the use
 | Characters and crews | works | works | none | 077 096 | test:characters test:crew |
 | Harness setup, agent-app updates | works | works | none | 051 081 | test:harnesssetup test:updatecheck |
 | Remote control | works | works | none | 054 | test:remote driver:shots-054-remote |
+| Terminal tab in a chat | planned | planned | none | 094 | read:specs/094-terminal-tab/spec.md |
+| Next built-in world: aisle layout | missing | in PR 102-arcade-p1-aisles | planned | 102 | read:specs/102-worlds-on-demand/spec.md |
 
 Exempt: 002 008 010 013 025 045 050 (not user features: adapters, packaging, simulator, live checks, docs rule, security sweep, website). Any other spec with `status: built` must be in a row.
