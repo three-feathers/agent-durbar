@@ -79,9 +79,22 @@
   }
   /* FR-071 and FR-047: may anything move now? Web Animations do not see the CSS rules, so this is asked before each one; `still` holds Serious mode and reduced motion at load, the query a later change */
   function moving() {
-    if (!CUR || CUR.still || CUR.hold) return false;
+    if (!CUR || CUR.still || CUR.hold || !CUR.ro._ready) return false;
     try { if (matchMedia('(prefers-reduced-motion: reduce)').matches) return false; } catch (e) { return false; }
     return true;
+  }
+  /* FR-228: loops started while the first draw is busy stay on the main thread (Chromium: "incompatible animations"), at 60 style recalculations a second, sometimes for 30 s:
+     the room stands still for its first 2 s, then everything starts in one pass. Measured: 2 s and 3 s held 4 of 4; 0.7 s, waiting for the pictures to decode, or for 30 quiet frames did not */
+  const READY_MS = 2000;
+  function whenReady(ro) {
+    if (ro._ready || ro._waiting) return;
+    ro._waiting = true;
+    setTimeout(() => {
+      ro._ready = true;
+      if (!CUR || CUR.ro !== ro) return;
+      for (const c of SCR.values()) if (c.caret) clock(c.caret, c.caretMs);
+      if (onArt) onArt();
+    }, READY_MS);
   }
   /* FR-074: hidden, or the office under a chat or a screen (body.panel-open hides it): nothing paints */
   function hiddenNow() { return document.hidden || !CUR || !CUR.ro.isConnected || document.body.classList.contains('panel-open'); }
@@ -386,6 +399,7 @@
     watchOff(lay);
     SLIDE = false;
     CUR.drawn = true;
+    whenReady(ro);
     if (moving() && !hiddenNow()) handOver(ro);
     watchFrames(ro);
     if (wasLive !== undefined && wasLive !== CUR.live) for (const [id, s] of SCR) { /* the setting holds at once: it does not wait for the next line, or the repaint pace */
@@ -491,7 +505,7 @@
     const added = fillRows(s.rows, shown);
     /* FR-033: the new line slides in, three steps, transform only; the text is already right, so a dropped frame costs nothing */
     if (added && s.painted && moving() && !s.away) s.lines.animate([{ transform: 'translateY(' + Math.min(added, 2) * f.lh + 'px)' }, { transform: 'none' }], { duration: 180, easing: 'steps(3, end)' });
-    if (data.caret && !s.caret) { s.caret = document.createElement('i'); s.caret.className = 'ro-caret'; s.box.appendChild(s.caret); const m = L.personMotion(id, 'typeA', d.state); setVar(s.caret, '--ro-per', '1.2s'); if (moving()) clock(s.caret, m.offset); }
+    if (data.caret && !s.caret) { s.caret = document.createElement('i'); s.caret.className = 'ro-caret'; s.box.appendChild(s.caret); const m = L.personMotion(id, 'typeA', d.state); setVar(s.caret, '--ro-per', '1.2s'); s.caretMs = m.offset; if (moving()) clock(s.caret, m.offset); }
     else if (!data.caret && s.caret) { s.caret.remove(); s.caret = null; }
     s.painted = true;
     if (ZOOM && ZOOM.id === id) fillZoom();

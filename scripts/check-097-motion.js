@@ -31,8 +31,17 @@ module.exports = async (ctx) => {
   const dbg0 = () => { const d = ctx.win.webContents.debugger; if (!d.isAttached()) d.attach('1.3'); return d; };
   const motionOn = () => { const d = ctx.win.webContents.debugger; if (!d.isAttached()) d.attach('1.3'); return d.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] }); };
   await motionOn();
+  /* FR-228: nothing of the room's loops runs during the first draw; afterwards they all do */
+  {
+    await H.load({ w: 1440, h: 900, query: { officeview: 'real', romotion: '1' }, ready: REAL, settle: false });
+    const LOOPS = `document.querySelector('#stage .ro .ro-art').getAnimations({subtree:true}).filter(a=>a.animationName).length`;
+    assert.strictEqual(await js(`document.querySelector('#stage .ro')._ready===true`), false, 'FR-228: still at the first draw');
+    assert.strictEqual(await js(LOOPS), 0, 'FR-228: no loop of the art during the first draw');
+    await must(`(${LOOPS})>0`, 'FR-228: the loops start', 6000);
+  }
   const loadReal = async (w, h, query = {}) => {
     await H.load({ w, h, query: { officeview: 'real', romotion: '1', ...query }, ready: REAL, settle: false });
+    await must(`document.querySelector('#stage .ro')._ready===true`, 'the room ready to move (FR-228)', 6000);
     await must(PICS, 'the pictures');
     await must(`document.querySelectorAll('#stage .ro-stext:not(.off) .ro-sl').length>0`, 'text on the screens');
     await H.calm();
