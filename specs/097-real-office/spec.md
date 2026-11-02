@@ -330,6 +330,12 @@ Each has a recommendation (Q6 is for Paco, the crew owner). The build waits for 
 
 ## Changes
 
+### 2026-11-02: the room's motion starts when the room is ready, and runs at 12 changes a second (owner's choice A; FR-228, FR-229, T173, T174)
+
+*Found, measured on macOS at 15 agents:* the room's idle cost has two parts. Settled it is about 25 % of a core, and all of that is continuous redraw: one person swaying smoothly costs nearly as much as the whole room, and nothing moving costs 0.4 %. In the first seconds it is about 40 %, sometimes for 30 s or more, because Chromium refuses to run an animation on the compositor while the first draw is busy, with the reason "the target has incompatible animations", and it stays on the main thread (60 style recalculations a second). Starting it again later works only now and then, which is what `handOver` has been retrying.
+
+- **FR-228** `[IMPLEMENTED]` (T173; `sim:` `check-097-motion`) **Motion starts when the room is ready.** On a first draw the room stands still until the pictures it just drew are decoded, at most 2.5 s, then its loops all start in one pass, with no fade or poof running. No look changes once it moves. `handOver` stays for what starts later.
+
 ### 2026-11-01: no walking; a person zooms out and zooms in, and the room stays still (Vikram, after watching; supersedes the walk, the head anchor and FR-017's narrower away and asleep desks)
 
 Vikram judged the walk and the head-anchored sit-down *not natural enough*: two bodies in the dissolves, a walker over the screens at a wrong scale, the room jumping when someone leaves. Replaced:
