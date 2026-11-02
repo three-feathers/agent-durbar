@@ -61,7 +61,7 @@ for (const f of srcFiles) {
   for (const [re, what] of BYPASS) assert.ok(!re.test(src), `${rel} uses ${what}: register through ipcHandle / ipcOn (ipcguard.ts), the only file that may touch ipcMain or webContents.ipc`);
 }
 // the scan is not vacuous: each pattern catches the bypass it is for (mutations M8, M9 of the review on #514)
-for (const [sample, n] of [["win.webContents.ipc.handle('theme:generate', h)", 1], ["ipcMain.on('agents:setPaused', h)", 0], ["ipcMain.handleOnce('x', h)", 0], ["wc['ipc'].on('x', h)", 2], ["const { ipc } = win.webContents;", 3], ["const { ipc: x, id } = w;", 3]] as const) {
+for (const [sample, n] of [["win.webContents.ipc.handle('theme:remove', h)", 1], ["ipcMain.on('agents:setPaused', h)", 0], ["ipcMain.handleOnce('x', h)", 0], ["wc['ipc'].on('x', h)", 2], ["const { ipc } = win.webContents;", 3], ["const { ipc: x, id } = w;", 3]] as const) {
   assert.ok(BYPASS[n][0].test(sample), `the bypass scan catches: ${sample}`);
 }
 assert.ok(BYPASS.every(([re]) => !re.test("ipcHandle('a', (e) => ipcRenderer.invoke('b'))") && !re.test('const { ipcHandle, ipcOn } = g;')), 'the scan leaves ipcHandle, ipcOn and ipcRenderer alone');
