@@ -117,6 +117,25 @@ P1 to P3 may merge before the gate with nothing visible as available; P4 to P6 r
 - **Repo growth** from art (OP-3); about 2.5 MB per world version, and redos count.
 - **App size**: about 22.6 MB of shipped art, then about 26.8 MB with Retro game (estimates, FR-213); the 30 MB budget test stops growth.
 
+## Delta 2026-11-02: petrol garage, founders' garage and rooftop terrace (FR-280..FR-299)
+
+**Reused (spec 021 FR-031).** `layoutFor`, `ARRANGEMENTS`, `Layout`, `lobbyBand`, `lobbyWidths`, `stagger`, `lightFor` (#1016, 097); `WORLDS`, `WORLD_FLAGS`, `peopleFor`, `parseWorld`, `offeredWorlds` (`crew.js`); `worldflags`, `officeview`, `world` (simulator options); `NOTE_PAPER`, `NOTE_INK`, `notePaper` (#994); the 12-a-second grid and `check-097-motion` (#1046); `world-matrix.js`, `check-world-tools`, `test:surfaces` (098); T093, T094, `check-world-distinct`; `test:realoffice-assets`; FR-227's `focus.webp`; FR-223's `desk-back`; the moment rules of FR-271 on #1014. **New and shared, none per world:** the table-driven plan function, `focus` drawn, floor and wall from pack parts with no `world.css`, `notePaper`, `noteStyle`, `--moments`, `DURBAR_SIM_WORLDFLAGS`.
+
+**Order of work, by the named exception (decided, Q11).** Landed alone, because reachable today: T244 (the matrix fix and `--moments`), T247's scene, T248. On a branch, costing no credits: T240's cards, which land with T093's check because `test:world-catalogue` reads them, so they are not unreachable, T241, T242, T243, T245, T258, then the owner's look at grey boxes (T246). Art follows his written yes per image run, after checking the plan's usage (Q1), one pack at a time. **Then one PR per world, in the order petrol, founders', roof:** its table in `ARRANGEMENTS`, its pack (T250, T251, T252), its helpers (T253) when T235 has landed, its row and flag (T259) and its cells (T254). The first also brings T242, T243, T245, T249 and T258, unless Cave has brought T242. Per world after landing: T255, with the 30-day ask. T256 as its PRs land. T257 only when the store is on `main`.
+
+| Step | Gate | Cost |
+|---|---|---|
+| T244, T247's scene, T248 | The next built-in world's stack on `main` | 0 AI credits; about 3 shared PRs, landing alone |
+| T240..T243, T245, T249, T258 | T093 for T240; on a branch until the first world's art is approved | 0 AI credits; about 200 lines of plan code plus tests and small shared rules, inside the per-world PRs |
+| T246 | The plans pass T241 | The owner's look |
+| T250..T253, T259 | Q1, T240, T246 | 36 to 54 images on the owner's plan, check its usage first; about 0.75 MB a pack (estimate); 3 per-world PRs, each with its table, pack, flag and cells |
+| T254, T255 | FR-035, with 097 FR-179; T254 lands in its world's PR | Owner's look per world, `real:` run on a Mac; over 30 days behind the flag, the owner chooses: open or remove |
+| T257 | #955, #966, T043, T190 | Two PRs per world |
+
+**Risk: the plans are arithmetic.** `bays` has the tightest numbers, since 8 seats at 156 px have no room for a bust beside the screen; hence the stacked back bank. T241 comes before any art so that a plan can fail cheaply. **Risk: repo growth,** an estimated 2.25 MB that stays in history after T257 (Q2).
+
+**Constitution.** I: spec, plan, tasks here, no `src/`. II: nothing vendor-specific. III: packs stay data; `notePaper` and `noteStyle` are validated (FR-055); the simulator flag exists only under `DURBAR_SIM`. IV: image runs only on the owner's written yes, simulator otherwise. V: 10.5 px, 15 agents at both sizes, no status by colour alone, reduced motion freezes everything. VI: no path or shell difference; packaged runs listed. VII: FR-297's table. VIII: the mock's limits are stated, numbers tagged as arithmetic or measured.
+
 ## Done when
 
 Tasks ticked, `/speckit.converge` run, SC-001..SC-018 read, README *Safety model* lists the new connection, and `real:` rows recorded or left as `[KNOWN GAP]`.

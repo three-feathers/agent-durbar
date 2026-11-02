@@ -871,9 +871,6 @@
         ${v.env.concat(v.headers).length?`<div class="srv-secrets" aria-label="Secret values (masked)">${v.env.map(x=>secretChip('env',x)).join('')}${v.headers.map(x=>secretChip('header',x)).join('')}</div>`:''}
       </div>
       <div class="srv-act">${sw(v.enabled&&v.trusted,(v.enabled?'Disable ':'Enable ')+v.name,'data-act="toggle"')}<button class="btn sm" type="button" data-act="edit">Edit</button><button class="btn sm danger" type="button" data-act="remove">Remove</button></div></li>`).join('');
-    const leg=st.legacy.map(v=>`<li class="srv legacy" data-legacy="${esc(v.name)}"><div class="srv-main"><div class="srv-top"><b class="srv-name">${esc(v.name)}</b><span class="mtag warn">old app-level server, not applied</span><span class="mtag">${esc(v.transport)}</span></div>
-        <code class="srv-cmd" title="${esc(cmd(v))}">${esc(cap(cmd(v),180))}</code></div>
-      <div class="srv-act"><button class="btn sm" type="button" data-act="move">Move here</button><button class="btn sm danger" type="button" data-act="rmlegacy">Remove</button></div></li>`).join('');
     r.innerHTML=head('MCP extras · '+st.name)+`<div class="scr-body">
       <section class="scr-sec" aria-labelledby="fxH"><h3 id="fxH">Extra servers for <code>${esc(st.name)}</code> <small>${FOLDER_NOTE.toLowerCase()}</small></h3>
         <p class="scr-note">These servers are optional and belong to <b>this folder only</b>: agents in other folders do not get them. Servers from your Copilot CLI list are available to every agent and are not edited here.</p>
@@ -884,8 +881,7 @@
         ${srv?`<ul class="srvs" id="srvList">${srv}</ul>`:'<p class="scr-empty">No extras for this folder. Your Copilot CLI servers are already available to its agents.</p>'}
         <p class="scr-note small">Changes apply to <b>new</b> sessions in this folder and to agents that start or resume afterwards. A running session keeps its servers until it ends, or until you switch one in that agent's MCP menu.</p>
       </section>
-      ${leg?`<section class="scr-sec" aria-labelledby="lgH"><h3 id="lgH">Old app-level servers <small>not applied</small></h3>
-        <p class="scr-note">Earlier versions kept one global list of servers. Those are no longer used anywhere. <b>Move here</b> puts one into this folder (switched off; you review and trust it again), or remove it.</p><ul class="srvs" id="legList">${leg}</ul></section>`:''}</div>`;
+    </div>`;
     wireHead();
     $('mcpAdd').onclick=()=>editServer(null,st);
     $('mcpImportVs').onclick=()=>importVSCode(st);
@@ -897,15 +893,6 @@
     const st=cur&&cur.st;if(!st)return;
     const li=e.target.closest('li.srv');if(!li)return;
     const act=(e.target.closest('[data-act]')||{}).dataset;if(!act)return;
-    if(li.dataset.legacy){
-      const n=li.dataset.legacy;
-      if(act.act==='move'){const res=await X.bridge.mcpMoveLegacy(n,st.key);X.toast(res&&res.ok?esc(n)+' moved here (off). Review it and switch it on.':'Could not move: '+esc((res&&res.error)||'unknown error'),4200);paintFolder();}
-      else if(act.act==='rmlegacy'){
-        const r=await dialog({title:'Remove old server "'+n+'"?',html:'<p class="dsub">It is deleted from Agent Durbar with its stored secret values. It was not being used.</p>',buttons:[{label:'Cancel',value:null},{label:'Remove',value:'ok',cls:'primary danger'}]});
-        if(r){await X.bridge.mcpRemoveLegacy(n);paintFolder();}
-      }
-      return;
-    }
     const name=li.dataset.name,v=st.servers.find(x=>x.name===name);if(!v)return;
     if(act.act==='toggle'){const turnOn=!(v.enabled&&v.trusted);await toggleServer(v,turnOn,st);}
     else if(act.act==='edit')editServer(v,st);
