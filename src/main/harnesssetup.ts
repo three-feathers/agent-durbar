@@ -438,6 +438,8 @@ export class HarnessSetup {
       const cls = classifyFailure({ code, text, platform: this.deps.detectEnv.platform, timedOut: r.reason === 'timeout' });
       if (!ok) failure = cls;
       else if (cls === 'vendor-up-to-date') failure = cls;
+      // real: `claude update` with updates disabled exits 0 and says so (T040); a success exit must not hide that
+      else if (cls === 'managed' && r.op === 'update') failure = cls;
       if (r.codexUpdate && codexNeedsFallback({ ok, reason: r.reason, cls })) fallback = 'official';
       if (ok && r.op === 'update' && this.deps.snapshot) {
         try {

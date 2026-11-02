@@ -273,13 +273,13 @@ When the start check finds a new version, the Settings entry and the card get a 
   - ***End N sessions and update*** uses the wording of the existing *End all sessions?* dialog (`askDialog` in `src/renderer/app.js` `endAllSessions`: "N sessions end and free their places (M still working: their replies stop). The chats stay; send a message to pick up where you left off."). It adds, when there are any, the number of pending permission requests (they are denied) and of queued or scheduled prompts for those sessions (they are not sent once the sessions have ended; one that would resume them is held, as above). Each session's running turn is interrupted first (`stopTurnOp`), then the session ends (`endSessionOp`, which does not interrupt by itself), and it stays resumable.
   - **Count again after the native confirmation.** If a session is open by then (one the lock could not stop, such as a session started from outside Durbar's own start path), the update does not start and the gate dialog comes back.
   - Durbar does not offer "update now anyway" while sessions are open.
-- **FR-014** `[IMPLEMENTED]` for the classes and the advice; `[KNOWN GAP]` for the vendor texts: `claude-update-disabled`, `claude-update-uptodate`, `win-uac-cancelled` and the three `winget-*` fixtures are PLACEHOLDER shapes, not recorded output, until T040/T041 record them (review on #721). **Failure advice** (US4). A failed check or update is classified from the exit code, the error code and the masked output, by a pure function with fixtures per source and OS:
+- **FR-014** `[IMPLEMENTED]` for the classes and the advice; `[KNOWN GAP]` for the Windows vendor texts: `win-uac-cancelled` and the three `winget-*` fixtures are PLACEHOLDER shapes, not recorded output, until T041 records them (review on #721). `claude-update-disabled` and `claude-update-uptodate` are `real:` Linux recordings (2026-11-02, T040). **Failure advice** (US4). A failed check or update is classified from the exit code, the error code and the masked output, by a pure function with fixtures per source and OS:
   - *Needs administrator rights* (`EACCES`, `EPERM` on a folder Durbar does not own, Homebrew owned by another account): the command to copy, never an offer to elevate.
   - *File in use* (Windows `EBUSY`, `EPERM` on the binary, "being used by another process", winget's in-use result): name the app and ask to close it. Inside Durbar, FR-013 already prevents this.
   - *Managed by your organization*:
     - Durbar's own policy (spec 076);
     - a winget or Group Policy refusal;
-    - **only on the vendor's own text that updates are disabled** (for example Claude Code's message when `DISABLE_UPDATES` or a managed setting blocks it), matched against a fixture of the documented shape (`[KNOWN GAP]`: not yet a recorded one, T040).
+    - **only on the vendor's own text that updates are disabled** (for example Claude Code's message when `DISABLE_UPDATES` or a managed setting blocks it), matched against a fixture of the recorded shape (`real:` Linux, Claude Code 2.1.316, T040: exit code 0 and "Updates are disabled by your administrator."; macOS and Windows not recorded).
 
     `claude update` saying "up to date" is **not** *Managed*. It follows the user's channel (FR-004, Q7 = C), so the card says *Claude Code says it is up to date on its channel* and shows no toast. No retry is offered for *Managed*.
   - *Cancelled at the administrator prompt* (UAC refused).
@@ -499,6 +499,13 @@ When the start check finds a new version, the Settings entry and the card get a 
 - **`features.agentAppUpdateCheck: false` and `updates.mode: "off"`** hide the check entirely (076 FR-158); `allowInAppInstall: false` keeps the read-only button (FR-022). T036 updates 076 FR-174.
 
 ## Changes
+
+### 2026-11-02: Linux real check (T040): a vendor "updates are disabled" answer exits 0 (issue #662)
+
+- **Found (`real:` Linux, Claude Code 2.1.316, isolated HOME, no credentials, no model call):** `claude update` with `DISABLE_UPDATES=1` prints "Updates are disabled by your administrator. Contact your IT team to get the latest version." and exits **0**. `claude update` on the latest version prints "Claude Code is up to date (2.1.316)" and exits 0. One `npm view <pkg> version --json --no-update-notifier` makes one request (`GET registry.npmjs.org/<pkg>`).
+- **Bug:** a successful exit hid the *Managed* class, so the card could show an update that did nothing as done.
+- **FR-014 (changed):** for an `update` run, text classified *Managed* is reported as the failure class `managed` also when the exit code is 0 (No retry, as before). Test: `scripts/test-harnesssetup.ts`.
+- The two Claude fixtures are now recorded shapes. Windows and macOS texts stay `[KNOWN GAP]` (T041, T042).
 
 ### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
 

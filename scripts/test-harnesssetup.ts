@@ -756,6 +756,15 @@ void (async () => {
       u.child().emit('close', 0); await tick(); await tick();
       assert.deepStrictEqual([u.done[0].ok, u.done[0].failure, u.done[0].fallback], [true, 'vendor-up-to-date', undefined]);
     }
+    // real: `claude update` with updates disabled exits 0 with the vendor's text; that is Managed, not a success
+    {
+      const u = mkU('linux', ['/home/u/.local/bin/claude'], { '/home/u/.local/bin/claude': '/home/u/.local/share/claude/versions/2.1.309' });
+      const p = u.setup.prepare('claude', 'update', 0);
+      assert.ok(p.ok && u.setup.start((p as unknown as { job: never }).job).ok);
+      u.child().out.emit('data', fx081('claude-update-disabled'));
+      u.child().emit('close', 0); await tick(); await tick();
+      assert.strictEqual(u.done[0].failure, 'managed', 'exit 0 with the disabled text is Managed');
+    }
     // FR-011: after an update the done event says when Durbar still finds the old version, or another copy first
     {
       let version = '0.163.0', where = '/usr/local/bin/codex';
