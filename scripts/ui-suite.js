@@ -103,6 +103,7 @@ const DRIVERS = [
   { name: 'check-office-ops' }, // spec 097 FR-185, FR-186 (T142, T148): operation counts of the flat office, never times: elements recalculated by one text change at 15 and 40 agents
   { name: 'check-characters' }, // spec 077 FR-064..FR-069: Settings > Characters on Retro Pixel (Cheeky, Minimalist, the theme's own)
   { name: 'check-removed-themes' }, // spec 035 FR-017, FR-018: a stored id of a removed theme shows Clean Office, in both sizes; Retro stays
+  { name: 'shots-040-picker' }, // spec 040 FR-031, FR-032: no AI maker or Import; Remove a saved theme asks first, Clean Office after
   { name: 'check-permission-scope' }, // spec 003 FR-108: the approval card says how far "for this session" reaches
   { name: 'check-answer-safety' }, // spec 052 FR-209..FR-212: the answer bar, a held Enter, a limit in flight, a plan while typing
   { name: 'check-inbox-safety' }, // spec 052 FR-206..FR-208: Needs you: a stale button, a held key and a limit row answer nothing they should not
