@@ -917,7 +917,7 @@ const CANDIDATES=[['full',3,'side'],['full',2,'side'],['full',3],['full',2],['ro
 let LIVE_SIDE=false; const SIDE_W=196, SIDE_GAP=8;
 let LIVE_PREF=(()=>{try{return localStorage.getItem('durbar.liveActivity')!=='off';}catch(e){return true;}})();
 const LIVE_MASK=(()=>{const L=window.DurbarLiveAct,R=NO_REDACT?null:window.DurbarRedact;if(!L||!R||typeof R.redact!=='function')return null;
-  return {redact:t=>R.redact(t),cmd:t=>R.maskSecretCommand(t),url:t=>R.maskSecretUrl(t)};})();
+  return {redact:t=>R.redact(t),cmd:t=>R.maskSecretCommand(t),url:t=>R.maskSecretUrl(t),home:t=>R.maskHomePaths(t)};})();
 const LIVEACT=LIVE_MASK?window.DurbarLiveAct.create({mask:LIVE_MASK}):null;
 const liveOn=()=>!!LIVEACT&&LIVE_PREF;
 function setLiveOn(on){LIVE_PREF=!!on;try{localStorage.setItem('durbar.liveActivity',LIVE_PREF?'on':'off');}catch(e){}scheduleRender();}
@@ -1010,6 +1010,7 @@ function liveFeed(a,e){
   let x;
   if(e.type==='toolCall'&&e.phase==='start'){const k=toolKind(e.tool),l0=editLabel(e)||toolLabel(e.args),l=k==='edit'&&l0&&!e.mcpServer?EV.displayPath(l0,a.info&&a.info.cwd).rel:l0; /* spec 005 FR-020: an edit names its file relative to the folder */x={kind:k,label:l,simple:SIMPLE?plainChip(k,e.tool,l,true):'',skip:isTaskTool(e.tool)};}
   if(LIVEACT.onEvent(a.id,e,x))livePaintSoon(a);
+  if(OFFICE_VIEW==='real'&&window.DurbarRealOffice)window.DurbarRealOffice.feed(a.id); /* spec 097 FR-033: its monitor repaints at its own pace */
 }
 let HCAP=1; /* helpers shown on a compact strip before "+N more" (a layout parameter, chosen with the density) */
 let HX_OFF=false; /* simulator only (__durbarSimUi.hxOff): the helper step is skipped, so a driver can compare a layout with and without it (FR-091 item 2) */
@@ -1677,6 +1678,7 @@ async function setOfficeView(v){
   if(v===OFFICE_VIEW)return true;
   if(v==='real'&&signsOn()&&!(await openDoorsFirst('real')))return false;
   OFFICE_VIEW=v;try{localStorage.setItem('durbar.officeview',v);}catch(e){}
+  if(v==='flat'&&window.DurbarRealOffice&&window.DurbarRealOffice.leave)window.DurbarRealOffice.leave(); /* spec 097 Changes 2026-11-01 */
   syncWorld();layoutKey='';scheduleRender();return true;
 }
 /* spec 097 FR-084 (owners 2026-10-31): the Characters setting applies in Real office too; a set without Real office pictures (today
@@ -1762,6 +1764,16 @@ function realModel(model){
   });
   return {folders,places,alertIcon:signIcon('alert'),sessions:agents.filter(a=>!a.parent).map(a=>({id:a.id,folder:a.room}))};
 }
+/* spec 097 FR-030..FR-035: what a monitor shows: the agent's lines (liveact.js, masked), else its last reply or task through the same steps, with
+   the status lines the state asks for; no working mask: only the status word (fail closed). Live activity off: no live lines, as in flat. */
+function realScreen(id,state,word){
+  const a=byId(id), live=liveOn(), log=a&&live&&!a.parent?LIVEACT.screen(id):[];
+  const ask=state==='waiting'||state==='limit'||state==='error', quiet=!live&&(state==='working'||state==='thinking'); /* the setting hid what it does: the status and bars, as flat shows no reply while it works */
+  const task=!a||!LIVEACT||quiet?[]:ask?LIVEACT.strict(taskText(a),'plain'):!log.length?LIVEACT.block(taskOf(a),'plain'):[];
+  const reply=a&&LIVEACT&&!log.length&&(state==='done'||state==='idle')&&a.lastOutput?LIVEACT.block(a.lastOutput,'reply'):[]; /* as grownShowsReply */
+  return window.exports.screenFor(state,log,task,reply,word,quiet);
+}
+const roFrozen=()=>SIM&&qs.get('simfreeze')==='1'&&qs.get('romotion')!=='1'; /* simulator drivers measure boxes: the people hold still (as hl-still); romotion=1 opts back in */
 let RO_LAST=null; /* the last layout, for the drivers (window.__durbarSimUi.realLayout) */
 function renderReal(stage,floor,aw,ah,model){
   if(RO_LOAD!=='ready'){
@@ -1783,7 +1795,7 @@ function renderReal(stage,floor,aw,ah,model){
   }
   if(stage.dataset.d!=='real'){stage.dataset.d='real';stage.textContent='';}
   layoutKey='';GROW=0;setGrow(stage,0);spreadOffice(stage,false);stagePrev=null;
-  RO_LAST=window.DurbarRealOffice.render(stage,realModel(model),{w:aw,h:ah},{still:REDUCED||SERIOUS,world:pp.world,set:pp.set,remember:rememberOn(),
+  RO_LAST=window.DurbarRealOffice.render(stage,realModel(model),{w:aw,h:ah},{live:liveOn(),still:REDUCED||SERIOUS,hold:roFrozen()||(!!APP_SETTINGS&&APP_SETTINGS.characterMotion===false),screenOf:realScreen,world:pp.world,set:pp.set,remember:rememberOn(), /* FR-071: the 096 Motion setting, once it exists, stops the people */
     rand:CREW&&(SIM||!rememberOn())?CREW.seededRand:Math.random,onArt:()=>scheduleRender()});
   stage.style.width=aw+'px';stage.style.height=RO_LAST.height+'px';
   stage.dataset.fit=RO_LAST.scroll?'scroll':'ok';floor.classList.toggle('scrolls',!!RO_LAST.scroll);
@@ -2088,7 +2100,7 @@ function refreshChips(box){
   const chips=[...box.children].filter(c=>c.classList.contains('chip'));
   let more=box.querySelector('.chips-more');
   const expanded=box.dataset.exp==='1', hide=Math.max(0,chips.length-CHIPS_SHOWN);
-  chips.forEach((c,i)=>{c.hidden=!expanded&&i<hide;const d=c._ed&&c._ed.diffEl;if(d)d.hidden=c.hidden;}); /* spec 005: an edit's diff hides with its row */
+  chips.forEach((c,i)=>{c.hidden=!expanded&&i<hide;const d=c._ed&&c._ed.diffEl;if(d)d.hidden=c.hidden;const w=c.nextElementSibling;if(w&&w.classList.contains('mcpwhy'))w.hidden=c.hidden;}); /* spec 005: an edit's diff hides with its row; spec 058 FR-194: and the policy line under a call */
   if(hide>0){
     if(!more){more=document.createElement('button');more.type='button';more.className='chips-more';box.prepend(more);}
     more.textContent=expanded?'Show fewer':'+'+hide+' earlier';more.setAttribute('aria-expanded',String(expanded));
@@ -2325,7 +2337,7 @@ function requestText(n){const c=n.cloneNode(true);c.querySelectorAll('.note-acti
 /* spec 052 FR-060: the key of a permission card's button, and the one click path the bar and the keys share */
 const answerKeyOf=b=>b.dataset.act==='session'?'S':/\bdanger\b/.test(b.className)?'D':/\bprimary\b/.test(b.className)?'A':'';
 const chatKeyText=k=>keyText(KEYS.chatParts(k,IS_MAC)), chatKeyAria=k=>ariaKeys(KEYS.chatParts(k,IS_MAC)); /* FR-084: Alt+A elsewhere, ⌥⌘A on a Mac */
-const answerPress=(src,what)=>()=>{const word=src.textContent;src.click();announce(word+': '+what);const m=$('msgInput');if(m)focusIn(m);};
+const answerPress=(src,what)=>()=>{if(src.disabled)return;const word=src.textContent;src.click();announce(word+': '+what);const m=$('msgInput');if(m)focusIn(m);};
 function wireAnswerBar(a){
   if(answerObs){answerObs.m.disconnect();answerObs.i.disconnect();answerObs=null;}
   const bar=$('answerBar'), chat=$('chat'); if(!bar||!chat)return;
@@ -2356,7 +2368,7 @@ function wireAnswerBar(a){
     const n=waiting().length, text=textOf(card);
     /* the same request, count and words: keep the bar as it is (a repaint would drop what you type in its box and its focus) */
     const key=n+'\u0001'+text;if(painted&&bar._card===card&&painted===key&&!bar.hidden)return;
-    const hadFocus=bar.contains(document.activeElement);
+    const ae=document.activeElement, hadFocus=bar.contains(ae), prevCard=bar._card, hadIdx=hadFocus?[...bar.querySelectorAll('.ab-act button,.ab-act input')].indexOf(ae):-1; /* by position, never by text: option labels come from the agent */
     painted=key;bar._card=card;
     const q=card.classList.contains('question'), long=text.length>480, fit=q&&!long?qFits(card):null;
     bar.innerHTML='<span class="ab-q"><b><span class="ab-n" dir="auto"></span></b> <span></span></span><span class="ab-act"></span>';
@@ -2370,24 +2382,27 @@ function wireAnswerBar(a){
     const add=(label,cls,fn,title,keys)=>{const b=document.createElement('button');b.type='button';b.className='btn '+cls;b.textContent=label;if(title)b.title=title;if(keys)b.setAttribute('aria-keyshortcuts',keys);b.onclick=fn;act.appendChild(b);return b;};
     if(fit){
       const said=w=>{announce('Answered: '+w);const m=$('msgInput');if(m)focusIn(m);};
-      for(const o of fit.opts){const lb=(o.querySelector('.q-lbl')||o).textContent;add(lb,'ab-opt',()=>{o.click();fit.ok.click();said(lb);},o.title);}
+      for(const o of fit.opts){const lb=(o.querySelector('.q-lbl')||o).textContent;add(lb,'ab-opt',()=>{if(o.disabled||fit.ok.disabled)return;o.click();fit.ok.click();said(lb);},o.title);}
       const box=document.createElement('input');box.type='text';box.className='ab-other';box.maxLength=window.exports.MAX_ANSWER;box.placeholder='Other answer';box.setAttribute('aria-label','Other answer: '+fit.q);box.setAttribute('aria-keyshortcuts','Enter');box.title='Type your own answer; Enter sends it';
       box.addEventListener('keydown',ev=>{if(ev.key!=='Enter'||ev.shiftKey||ev.isComposing||ev.altKey||ev.ctrlKey||ev.metaKey)return;ev.preventDefault();
         const v=box.value.replace(/\s+/g,' ').trim();if(!v){announce('Type an answer first, or choose an option.');return;}
-        fit.other.value=v;fit.other.dispatchEvent(new Event('input',{bubbles:true}));fit.ok.click();said(v);});
+        if(fit.ok.disabled)return;fit.other.value=v;fit.other.dispatchEvent(new Event('input',{bubbles:true}));fit.ok.click();said(v);});
       act.appendChild(box);
-      if(fit.skip)add(fit.skip.textContent,'danger',()=>{fit.skip.click();announce('Skipped');const m=$('msgInput');if(m)focusIn(m);},fit.skip.title);
+      if(fit.skip)add(fit.skip.textContent,'danger',()=>{if(fit.skip.disabled)return;fit.skip.click();announce('Skipped');const m=$('msgInput');if(m)focusIn(m);},fit.skip.title);
     }
     else if(q)add('Answer in chat','primary',show);
     /* FR-016: a long request is answered in the chat only; the wide grant (any arguments) stays in the card */
     /* FR-060: Alt+A / Alt+S / Alt+D (⌥⌘A/S/D on a Mac, FR-084) press the same buttons (permission requests only) */
-    else if(!long)for(const src of card.querySelectorAll(':scope > .note-actions button'))if(!src.dataset.broad){
+    else if(!long&&!card.classList.contains('limit'))for(const src of card.querySelectorAll(':scope > .note-actions button'))if(!src.dataset.broad){ /* a spending limit has an amount the bar cannot show: only "Show in chat" (review of PR 1004) */
       /* spec 003 FR-095: a Read-only denial's "Switch to Ask first…" opens the mode menu here, anchored to the bar's own button */
       if(src.dataset.act==='ro-ask'){const b=add(src.textContent,'',()=>roAskOpen(a,b),src.title);b.dataset.act='ro-ask';b.setAttribute('aria-haspopup','menu');b.setAttribute('aria-expanded','false');continue;}
       const k=card.classList.contains('limit')?'':answerKeyOf(src);add(src.textContent,(src.className.match(/\b(primary|danger|session)\b/)||[''])[0],answerPress(src,text),k?(src.title?src.title+' ':'')+'('+chatKeyText(k)+')':src.title,k?chatKeyAria(k):'');}
     add(q?'Show question':'Show in chat','ghost',show,q?'Scroll to the question in the chat':'Scroll to the request in the chat');
     bar.hidden=false;
-    if(hadFocus){const f=act.querySelector('button,input');if(f)focusIn(f);}
+    /* FR-016 (review of PR 1004): a repaint keeps focus on the same control only while the card is the same; a new card or a changed count never puts it on an answering
+       button (a native Enter would answer): it goes to "Show in chat" / "Show question", which answers nothing */
+    if(hadFocus){const same=prevCard===card, cs=[...act.querySelectorAll('button,input')];
+      const f=(same&&hadIdx>=0&&cs[hadIdx])||act.querySelector('.ghost');if(f)focusIn(f);}
   }
   const check=()=>{const p=pending();if(p!==card){card=p;cardVisible=inView();}else cardVisible=inView();paint();};
   const mo=new MutationObserver(()=>check());mo.observe(chat,{childList:true,subtree:true});
@@ -2588,7 +2603,7 @@ function openPanel(id,focus){
   fitPlaceholder();if(window.ResizeObserver){if(phRO)phRO.disconnect();else phRO=new ResizeObserver(fitPlaceholder);phRO.observe(input);}
   input.addEventListener('input',autoGrow);
   initSlash(a,input); /* spec 073: the "/" list; its keydown runs first, so Enter / Tab / Esc pick or close while it is open */
-  input.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage(input.value);}});
+  input.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();if(e.repeat)return; /* spec 052 FR-208: a held Enter (from an answer that moved focus here) sends nothing */sendMessage(input.value);}});
   $('sendBtn').onclick=()=>{if($('sendBtn').getAttribute('aria-disabled')!=='true')sendMessage(input.value);};
   setSend(); wireToolbar(); /* spec 005 FR-037..FR-040 */
   wireComposerGrip(); /* spec 005 FR-044..FR-048 */
@@ -3226,12 +3241,13 @@ function nsPaint(){
 /* ---- the project-file switch (spec 083 T042, FR-050, FR-055) ----
    Off by default; main says whether it is on and why it is greyed (fileSwitch). Turning it on asks first (Cancel focused), turning it
    off asks Leave or Delete; the window sends only the chat's id and two yes/no choices, never a path. */
-const NS_FILE_LABEL='Also keep these notes as .durbar/notes.md in the project';
-const NS_FILE_WARN='Durbar will write every note of this folder to .durbar/notes.md in the project. Agents and anyone with the folder can read it, and it may get committed and pushed with your code. Secrets are masked, but private ideas are not. Durbar never adds it to git.';
+const NS_FILE_LABEL='Also keep these notes as .durbar/notes/notes.md in the project';
+const NS_FILE_WARN='Durbar will write every note of this folder to .durbar/notes/notes.md in the project. Agents and anyone with the folder can read it, and it may get committed and pushed with your code. Secrets are masked, but private ideas are not. Git ignores it unless you choose to keep it in git below.';
 const NS_FILE_STRAY='Text outside notes in an existing notes.md is removed when Durbar writes the file.';
-const NS_FILE_EXCLUDE='Keep it out of commits (adds .durbar/ to .git/info/exclude, local only)';
+const NS_FILE_GIT='Keep these notes in git (Durbar will not ignore them, so they can be committed and pushed)';
+const NS_FILE_TRACKED='This file is already in the project. If git tracks it, git keeps tracking it: the notes written to it will be committed, whatever is ignored.';
 const NS_FILE_OWN='This is Durbar\'s own write: it also happens in Read-only mode.';
-const NS_FILE_COMMITTED='If .durbar/notes.md was already committed, this does not remove it from the repository.';
+const NS_FILE_COMMITTED='If .durbar/notes/notes.md was already committed, ignoring does not remove it from the repository.';
 function nsFilePaint(a,st){
   const h=$('nsFile'); if(!h)return;
   const S=window.DurbarScreens, sw=st&&st.ok?st.fileSwitch:null;
@@ -3264,31 +3280,24 @@ async function nsFileOn(a,btn){
   if(c.exists&&c.count>0)lines.push(c.count+(c.count===1?' note':' notes')+' in the existing file will be added, marked "From the project file".');
   lines.push(NS_FILE_STRAY);
   lines.push(NS_FILE_OWN);
-  if(c.repo)lines.push(NS_FILE_COMMITTED);
-  const v=await askDialog({title:'Keep these notes in the project?',body:NS_FILE_WARN,lines,size:'m',check:c.repo?{label:NS_FILE_EXCLUDE,checked:true}:undefined,returnFocus:back,
+  if(c.repo)lines.push(c.exists?NS_FILE_TRACKED:NS_FILE_COMMITTED);
+  const v=await askDialog({title:'Keep these notes in the project?',body:NS_FILE_WARN,lines,size:'m',check:c.repo?{label:NS_FILE_GIT,checked:false}:undefined,returnFocus:back,
     buttons:[{label:'Cancel',value:null},{label:'Turn on',value:'on',cls:'primary warn'}]});
   if(!v||v.value!=='on')return;
-  let r=null;try{r=await bridge.notesSetFile(id,true,c.repo?{exclude:v.checked===true}:undefined);}catch(e){r=null;}
-  if(r&&!r.ok&&r.excludeFailed){ /* review of PR 931: the exclude line could not be added, so nothing was turned on; the person decides */
-    nsFileSay(r.error||'');
-    const v2=await askDialog({title:'Could not keep it out of commits',body:(r.error||'')+' Turn it on anyway? .durbar/notes.md may then show in git status and get committed.',size:'m',returnFocus:back,
-      buttons:[{label:'Cancel',value:null},{label:'Turn on without keeping it out of commits',value:'on',cls:'primary warn'}]});
-    if(!v2||v2.value!=='on'){await notesFetch(a);return;}
-    try{r=await bridge.notesSetFile(id,true,{exclude:false});}catch(e){r=null;}
-  }
+  let r=null;try{r=await bridge.notesSetFile(id,true,c.repo&&v.checked===true?{git:true}:undefined);}catch(e){r=null;}
   if(!r||!r.ok){nsFileSay(/stays off/.test((r&&r.error)||'')?r.error:((r&&r.error)||'Could not turn it on.')+' The switch stays off.');await notesFetch(a);return;}
   await notesFetch(a);
-  nsFileSay(r.demo?(r.message||'Demo: no file written'):[r.file&&r.file.error?'':'Durbar now keeps .durbar/notes.md in the project.',r.message||''].filter(Boolean).join(' '));
+  nsFileSay(r.demo?(r.message||'Demo: no file written'):[r.file&&r.file.error?'':'Durbar now keeps .durbar/notes/notes.md in the project.',r.message||''].filter(Boolean).join(' '));
 }
 async function nsFileOff(a,btn){
   const id=liveRoot(a).id, back=()=>$('nsFileSw')||btn;
-  const v=await askDialog({title:'Stop keeping .durbar/notes.md?',body:'Durbar stops writing the file. Leave it in the project, or delete it? Durbar deletes it only when it holds exactly what Durbar would write.',lines:['If the file is tracked in git, deleting it shows as a deletion.'],size:'m',returnFocus:back,
+  const v=await askDialog({title:'Stop keeping .durbar/notes/notes.md?',body:'Durbar stops writing the file. Leave it in the project, or delete it? Durbar deletes it only when it holds exactly what Durbar would write.',lines:['If the file is tracked in git, deleting it shows as a deletion.'],size:'m',returnFocus:back,
     buttons:[{label:'Cancel',value:null},{label:'Delete the file',value:'delete',cls:'danger'},{label:'Leave the file',value:'leave',cls:'primary'}]});
   if(!v||(v.value!=='leave'&&v.value!=='delete'))return;
   let r=null;try{r=await bridge.notesSetFile(id,false,{deleteFile:v.value==='delete'});}catch(e){r=null;}
   await notesFetch(a);
   if(!r||!r.ok){nsFileSay((r&&r.error)||'Could not turn it off.');return;}
-  nsFileSay(r.demo?(r.message||'Demo: no file written'):(r.message||'Durbar stopped writing .durbar/notes.md.'));
+  nsFileSay(r.demo?(r.message||'Demo: no file written'):(r.message||'Durbar stopped writing .durbar/notes/notes.md.'));
 }
 /* ---- Export… and Delete all… (spec 083 T034b, FR-048) ----
    Export: main shows the system save dialog and writes the file (the window sends only the chat's id, never a path). Delete all: the
@@ -3308,7 +3317,7 @@ async function nsDeleteAll(a,btn){
   if(nsBusy||!bridge.notesDeleteAll)return;
   const st=notesOf(a), n=st&&st.ok?st.notes.length:0; if(!n)return;
   const lines=['Durbar remembers the last 300 deleted notes, so they don\'t come back from an older copy.'];
-  if(st.fileSwitch&&st.fileSwitch.on)lines.push('.durbar/notes.md is written again without them.');
+  if(st.fileSwitch&&st.fileSwitch.on)lines.push('.durbar/notes/notes.md is written again without them.');
   const v=await askDialog({title:'Delete all notes?',body:'Delete all '+(n===1?'1 note':n+' notes')+' of '+NS.name+', done ones included? This cannot be undone.',lines,size:'m',returnFocus:()=>$('nsDelAll')||btn,
     buttons:[{label:'Cancel',value:null},{label:'Delete all',value:'ok',cls:'primary danger'}]});
   if(!v||v.value!=='ok')return;
@@ -3644,7 +3653,7 @@ document.addEventListener('click',e=>{
   const sc=e.target.closest('[data-schedroom]'); if(sc){const r=ROOMS.find(x=>x.id===sc.dataset.schedroom);if(r)openSchedules(r);return;}
   const fm=e.target.closest('[data-foldermenu]'); if(fm){const r=ROOMS.find(x=>x.id===fm.dataset.foldermenu),b=fm.getBoundingClientRect();openFolderMenu(r,b.left,b.bottom+4,fm);return;}
   const ns=e.target.closest('[data-newsess]'); if(ns){const r=ROOMS.find(x=>x.id===ns.dataset.newsess),ag=r&&agents.find(x=>!x.parent&&x.room===r.id);if(ag)newSession(ag);return;}
-  const t=e.target.closest('[data-id]'); if(t&&!t.closest('#panel')){openPanel(t.dataset.id,true);} /* spec 074 FR-019: mouse or keyboard, desk or list row */
+  const t=e.target.closest('[data-id]'); if(t&&!t.closest('#panel,#inboxDlg')){openPanel(t.dataset.id,true);} /* spec 074 FR-019: mouse or keyboard, desk or list row */
 });
 
 /* ---- issue 677 (spec 033 delta 2026-11-01): rearrange rooms, desks and places by drag and by keyboard. Order is sequencing only: the layout
@@ -3775,6 +3784,7 @@ document.addEventListener('keydown',e=>{
   if(KEYS.chatKeyDown(e,IS_MAC)&&/^Key[ASDN]$/.test(e.code)&&ui.selected&&$('panel')&&!modalOpen()){
     const t=e.target, typing=t&&t.matches&&t.matches('input,textarea,[contenteditable="true"]')&&String((t.value!=null?t.value:t.textContent)||'').length>0;
     if(!typing){const k=e.code.slice(3);
+      if(e.repeat&&k!=='N'){e.preventDefault();return;} /* spec 052 FR-208: a held Alt+A, Alt+S or Alt+D answers nothing */
       if(k==='N'){e.preventDefault();openNextNeedsMe();return;}
       if(answerObs&&answerObs.answerKey&&answerObs.answerKey(k)){e.preventDefault();return;}}
   }
@@ -3973,9 +3983,13 @@ function rollCount(box,n){
   box.replaceChildren(inn,out);
   box._roll=setTimeout(()=>{if(box.dataset.n===txt)box.textContent=txt;},260);
 }
+/* spec 052 FR-206: each pending card is one request, its id made once and kept (the same lines as PR 994's, spec 097 FR-122: keep one when both land) */
+const CARD_REQ=new WeakMap(); let CARD_REQ_N=0;
+const reqOf=c=>{if(!CARD_REQ.has(c))CARD_REQ.set(c,'rq'+(++CARD_REQ_N));return CARD_REQ.get(c);};
 function pendingCardOf(a){const c=getChat(a);const all=[...c.el.querySelectorAll('.note.perm:not(.settled)')].filter(n=>n.querySelector(':scope > .note-actions button'));return all[0]||null;}
 /* spec 052 FR-048: focus goes back to where it was when the inbox opened (still in the page and shown), else to the inbox button */
 let inboxBack=null;
+const INBOX_AMT=new Map(); /* FR-209: what was typed in a limit row's amount, per request id, so a repaint does not lose it */
 let inboxTick=0;
 function closeInbox(){clearInterval(inboxTick);inboxTick=0;const d=$('inboxDlg');if(!d)return;d.remove();const back=inboxBack;inboxBack=null;
   const b=back&&back.isConnected&&back.getClientRects().length&&!back.disabled?back:$('inboxBtn');if(b&&b.getClientRects().length)focusIn(b);}
@@ -3986,7 +4000,7 @@ function openInbox(focusId){
   const back=$('inboxDlg')?inboxBack:document.activeElement;
   closeInbox(); inboxBack=back&&back!==document.body?back:null;
   const d=document.createElement('div');d.id='inboxDlg';d.className='dlg-ov';
-  d.innerHTML='<div class="dlg l inbox-dlg" role="dialog" aria-modal="true" aria-labelledby="inboxT" aria-describedby="inboxKeys"><h3 id="inboxT">Needs you</h3><div class="dbody" id="inboxBody"></div><p class="inbox-keys" id="inboxKeys"'+(SIMPLE?' hidden':'')+'>Keys: J/K move · A allow · S session · D deny · O open</p><div class="dbtn"><button class="btn" type="button" id="inboxClose">Close</button></div></div>';
+  d.innerHTML='<div class="dlg l inbox-dlg" role="dialog" aria-modal="true" aria-labelledby="inboxT" aria-describedby="inboxKeys"><h3 id="inboxT">Needs you</h3><div class="dbody" id="inboxBody"></div><p class="inbox-keys" id="inboxKeys"'+(SIMPLE?' hidden':'')+'>Keys: J/K move · A allow · S session · D deny · O open · spending limits: buttons only</p><div class="dbtn"><button class="btn" type="button" id="inboxClose">Close</button></div></div>';
   document.body.appendChild(d);
   d.addEventListener('click',e=>{if(e.target===d)closeInbox();});
   d.addEventListener('keydown',inboxKey);
@@ -4003,13 +4017,17 @@ function inboxKey(e){
   if(e.key==='Escape'){e.preventDefault();e.stopPropagation();closeInbox();return;}
   if(e.key==='Tab'){const f=[...d.querySelectorAll('button,summary,[tabindex="-1"].ib-h,input')].filter(x=>x.getClientRects().length);if(!f.length)return;const i=f.indexOf(document.activeElement);if(e.shiftKey&&(i<=0)){e.preventDefault();focusIn(f[f.length-1]);}else if(!e.shiftKey&&i===f.length-1){e.preventDefault();focusIn(f[0]);}return;}
   if(e.altKey||e.ctrlKey||e.metaKey)return;
+  if(e.target&&e.target.tagName==='INPUT')return; /* spec 052 FR-207: typing an amount is not a command */
   const rows=[...d.querySelectorAll('.inbox-row')], row=document.activeElement&&document.activeElement.closest('.inbox-row'), ri=rows.indexOf(row);
   const go=i=>{const r=rows[Math.max(0,Math.min(rows.length-1,i))];if(r)focusIn(r.querySelector('.ib-h'));};
   const k=e.key.toLowerCase();
+  /* spec 052 FR-208: a held key answers nothing (and a held Enter does not press the focused button again); J and K may still repeat */
+  if(e.repeat&&(k==='a'||k==='s'||k==='d'||k==='o'||e.key==='Enter'||e.key===' ')){e.preventDefault();return;}
   if(k==='j'||e.key==='ArrowDown'){e.preventDefault();go(ri+1);return;}
   if(k==='k'||e.key==='ArrowUp'){e.preventDefault();go(ri<0?0:ri-1);return;}
   if(!row)return;
   const act=x=>{const b=row.querySelector(`[data-k="${x}"]`);if(b){e.preventDefault();b.click();}};
+  if(row.classList.contains('settled')||row.dataset.answering)return; /* FR-208: a row being answered or answered takes no key (O or Enter during the fold would open its chat) */
   if(k==='a')act('approve');else if(k==='d')act('deny');else if(k==='s')act('session');
   else if(k==='o'||(e.key==='Enter'&&document.activeElement.classList.contains('ib-h'))){e.preventDefault();row.querySelector('[data-k="open"]').click();}
 }
@@ -4024,10 +4042,12 @@ function flipInbox(paint){
 }
 function paintInbox(focusIndex){
   const body=$('inboxBody'); if(!body)return;
+  const ae0=document.activeElement, typing=ae0&&ae0.classList&&ae0.classList.contains('ib-amt')&&body.contains(ae0)?{rq:ae0.dataset.rq,a:ae0.selectionStart,b:ae0.selectionEnd}:null; /* a repaint leaves focus in an amount field (restored to the same request's field) */
   const list=needsMeOrder();
   body.innerHTML=list.length?'':'<p class="inbox-empty" tabindex="-1"><span class="ib-ok" aria-hidden="true"></span><span><b>All clear. Nobody needs you right now.</b><small>Agents that ask for permission, ask a question, reach their limit or hit an error appear here.</small></span></p>'; /* spec 052 FR-048 */
   list.forEach((a,i)=>{
     const card=pendingCardOf(a), row=document.createElement('section');row.className='inbox-row';
+    const rq=card?reqOf(card):'', isLimit=!!card&&card.classList.contains('limit'); /* FR-206: the request this row was painted for; FR-207: a limit row has its own amount and no letter key */
     const st=vis(a), q=card&&card.classList.contains('question'), what=card?(q?'asks':card.classList.contains('limit')?'reached its spending limit':card.classList.contains('coffee')?'is on a '+coffeeWord().toLowerCase():'needs your OK'):(st==='error'?'has an error':a.limit?'reached its limit':LABELS[st]||st);
     row.setAttribute('aria-labelledby','ibh'+i);row.dataset.id=a.id;
     row.innerHTML='<div class="ib-av" aria-hidden="true">'+avatar(a)+'</div><div class="ib-main"><div class="ib-top"><h4 class="ib-h" id="ibh'+i+'" tabindex="-1"><b class="ib-n"></b> <span class="ib-sub"><span class="ib-w"></span> <span class="ib-f"></span> <span class="ib-wait"></span></span></h4></div><p class="ib-t" id="ibt'+i+'"></p><div class="ib-act"></div></div>';
@@ -4042,19 +4062,29 @@ function paintInbox(focusIndex){
     const ans=document.createElement('span');ans.className='ib-ans';act.appendChild(ans);
     const add=(label,cls,k,fn,title,box)=>{const b=document.createElement('button');b.type='button';b.className=cls==='link'?'linkbtn ib-open':'btn sm '+cls;b.textContent=label;b.dataset.k=k;b.setAttribute('aria-describedby','ibh'+i+' ibt'+i);
       if(KEY[k]){b.setAttribute('aria-keyshortcuts',KEY[k]);title=(title?title+' ':'')+'(key '+KEY[k]+')';}if(title)b.title=title;b.onclick=fn;(box||ans).appendChild(b);};
-    const kOf=src=>src.dataset.act==='session'?'session':/danger/.test(src.className)?'deny':/primary/.test(src.className)?'approve':'other';
+    const kOf=src=>isLimit?'other':src.dataset.act==='session'?'session':/danger/.test(src.className)?'deny':/primary/.test(src.className)?'approve':'other';
+    let amt=null; /* FR-207: the amount the card would send, shown in the row and sent from it */
+    if(isLimit){const ci=card.querySelector('.limit-amt');if(ci){amt=document.createElement('input');amt.type='number';amt.min=ci.min;amt.step=ci.step;amt.value=INBOX_AMT.has(rq)?INBOX_AMT.get(rq):ci.value;amt.className='limit-amt ib-amt';amt.dataset.rq=rq;
+      amt.setAttribute('aria-label',ci.getAttribute('aria-label')||'Amount to add');amt.title=amt.getAttribute('aria-label');amt.oninput=()=>{amt.removeAttribute('aria-invalid');INBOX_AMT.set(rq,amt.value);};
+      amt.onkeydown=ev=>{if(ev.key!=='Enter'||ev.isComposing)return;ev.preventDefault();if(!ev.repeat){const r=[...ans.querySelectorAll('button')].find(x=>x.dataset.k==='other'&&x.classList.contains('primary'));if(r)r.click();}}; /* Enter in the field presses the row's own Raise limit; a held Enter does nothing */ans.appendChild(amt);}}
     if(card&&!q)for(const src of [...card.querySelectorAll(':scope > .note-actions button')].filter(x=>!x.dataset.broad).sort((x,y)=>RANK[kOf(x)]-RANK[kOf(y)])){
       const k=kOf(src);
       /* spec 003 FR-097: the Read-only denial's "Switch to Ask first…" opens the same mode menu, from the chat (the inbox is modal) */
       if(src.dataset.act==='ro-ask'){add(src.textContent,'',k,()=>{closeInbox();openPanel(a.id,true);requestAnimationFrame(()=>{if(!src.isConnected)return;src.focus({preventScroll:true});src.click();});},src.title);ans.lastElementChild.setAttribute('aria-haspopup','menu');continue;}
       add(src.textContent,(src.className.match(/\b(primary|danger|session)\b/)||[''])[0],k,ev=>{const word=k==='deny'?'Denied':k==='other'?src.textContent:'Allowed';
         /* spec 052 FR-047/FR-048: the row's buttons go busy, then the row shows the answer for 600ms, folds away in 200ms, then the list repaints */
-        if(row.classList.contains('settled')||row.dataset.answering)return; row.dataset.answering='1';
-        act.querySelectorAll('button').forEach(x=>{if(x!==ev.currentTarget)x.disabled=true;});const done=busy(ev.currentTarget,'Sending…');
-        focusIn(row.querySelector('.ib-h'));src.click();
-        setTimeout(()=>{const left=needsMeOrder().length;announce(word+' '+a.name+'. '+(left?left+' left.':'Nobody else needs you.'));renderInboxBtn();
+        if(row.classList.contains('settled')||row.dataset.answering)return;
+        /* FR-207: the Raise button sends the number the row shows; an empty or zero amount sends nothing */
+        const raises=isLimit&&/primary/.test(src.className)&&amt; if(raises&&!(Math.round(parseFloat(amt.value)*100)/100>0)){amt.setAttribute('aria-invalid','true');announce('Enter an amount above zero to raise the limit.');focusIn(amt);return;}
+        row.dataset.answering='1';
+        /* FR-206: the card must still be this agent's live pending card with this request id and its button still there; else nothing is sent */
+        const live=rq&&[...getChat(a).el.querySelectorAll('.note.perm:not(.settled)')].find(n=>reqOf(n)===rq), waiting=!!live&&live.contains(src)&&src.disabled, stale=!live||!live.contains(src)||waiting; /* the card is live and still holds this very button (a card may rebuild its buttons); a disabled one is still on its way, not answered */
+        act.querySelectorAll('button,input').forEach(x=>{if(x!==ev.currentTarget)x.disabled=true;});const done=busy(ev.currentTarget,'Sending…');
+        focusIn(row.querySelector('.ib-h'));
+        if(!stale){if(raises){const ci=live.querySelector('.limit-amt');if(ci)ci.value=amt.value;}src.click();}
+        setTimeout(()=>{const left=needsMeOrder().length;announce(stale?(waiting?'Still waiting for the answer. ':'Already answered. ')+a.name+'.':word+' '+a.name+'. '+(left?left+' left.':'Nobody else needs you.'));renderInboxBtn();
           if(!row.isConnected){done();paintInbox(i);return;}
-          row.classList.add('settled');act.innerHTML='';const p=document.createElement('p');p.className='ib-done '+(k==='deny'?'no':k==='other'?'':'yes');p.textContent=k==='deny'?'Denied':k==='other'?word:'✓ '+word;act.appendChild(p);
+          row.classList.add('settled');act.innerHTML='';const p=document.createElement('p');p.className='ib-done '+(stale||k==='other'?'':k==='deny'?'no':'yes');p.textContent=stale?(waiting?'Still waiting':'Already answered'):k==='deny'?'Denied':k==='other'?word:'✓ '+word;act.appendChild(p);
           setTimeout(()=>{if(!row.isConnected)return paintInbox(i);if(reducedMotion())return paintInbox(i);
             row.classList.add('gone');setTimeout(()=>flipInbox(()=>paintInbox(i)),180);},600);},250);},src.title);
     }
@@ -4063,7 +4093,9 @@ function paintInbox(focusIndex){
     body.appendChild(row);
   });
   /* FR-033: focus a heading (it reads the agent and its request through the row), never a button */
-  if(focusIndex!=null){const hs=body.querySelectorAll('.ib-h');const h=hs[Math.min(focusIndex,hs.length-1)]||body.querySelector('.inbox-empty')||$('inboxClose');if(h)focusIn(h);}
+  const again=typing&&[...body.querySelectorAll('.ib-amt')].find(x=>x.dataset.rq===typing.rq);
+  if(again){focusIn(again);try{again.setSelectionRange(typing.a,typing.b);}catch(e){}}
+  else if(focusIndex!=null){const hs=body.querySelectorAll('.ib-h');const h=hs[Math.min(focusIndex,hs.length-1)]||body.querySelector('.inbox-empty')||$('inboxClose');if(h)focusIn(h);}
 }
 function openNextNeedsMe(){
   const list=needsMeOrder(); if(!list.length){toast('Nobody needs you right now.',2600);return;}
@@ -4764,6 +4796,14 @@ function afterFloorsChange(){
 /* FR-007 (PR #124 review): only with two or more floors, and compact (icon + "2/3"), so the top bar fits at 1280x800 with
    wide fonts too. With the Ground floor alone the top bar looks as before; the first extra floor is made in Settings > Floors. */
 const FLOORS_IC='<svg class="fl-ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M8 1.8l6.2 3.1L8 8 1.8 4.9z"/><path d="M1.8 8.1L8 11.2l6.2-3.1"/><path d="M1.8 11.1L8 14.2l6.2-3.1"/></svg>';
+/* 2026-11-01 (issue 1010): the floor row's icon buttons and drag handle, same 16px stroke style as ICON */
+/* the focus button's tooltip (and the app's own tooltip helper, bound below): what it does now, and how to leave focus. The action is one-shot (onlyFloor): it switches this floor on and every other off; there is no separate "off" state. */
+const flFocusTip=(f,focused)=>focused?'Focus mode is on: only '+f.name+' is shown. Switch another floor on to leave it.':'Focus mode: show only '+f.name+' (switches every other floor off)';
+const FL_IC={focus:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M2.5 6V3.5H5M11 3.5h2.5V6M13.5 10v2.5H11M5 12.5H2.5V10"/></svg>',
+  up:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3.5 10l4.5-4.5L12.5 10"/></svg>',
+  down:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3.5 6l4.5 4.5L12.5 6"/></svg>',
+  del:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M2.5 4.5h11M6.2 4.5V3h3.6v1.5M4 4.5l.6 8.5h6.8l.6-8.5M6.6 7v3.8M9.4 7v3.8"/></svg>',
+  grip:'<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" focusable="false"><circle cx="6" cy="4" r="1.2"/><circle cx="10" cy="4" r="1.2"/><circle cx="6" cy="8" r="1.2"/><circle cx="10" cy="8" r="1.2"/><circle cx="6" cy="12" r="1.2"/><circle cx="10" cy="12" r="1.2"/></svg>'};
 function renderFloorsBtn(){
   const b=$('floorsBtn'); if(!b)return;
   const show=floorsLive()&&FLOORS.floors.length>1;
@@ -4815,15 +4855,15 @@ function floorsBodyHTML(px){
   const into=intoFloor();
   return (into?`<div class="fl-into"><label for="${px}Into">New folders go to</label><select id="${px}Into" class="fl-into-sel" title="Floor for the folders you add with + Folder or + Workspace">${opts(into)}</select></div>`:'')+
     FLOORS.floors.map((f,i)=>{
-      const rooms=roomsOnFloor(f.id);
-      return `<div class="fl-floor${f.on?'':' off'}"><div class="fl-row">
-        <button class="fl-sw" type="button" data-fl="on" data-floor="${esc(f.id)}" aria-pressed="${f.on}" aria-label="${esc(f.name)}: ${f.on?'on':'off'}. Switch ${f.on?'off':'on'}.">${f.on?'On':'Off'}</button>
+      const rooms=roomsOnFloor(f.id),focused=FLOORS.floors.length>1&&f.on&&FLOORS.floors.every(x=>x.id===f.id||!x.on);
+      return `<div class="fl-floor${f.on?'':' off'}" data-floor="${esc(f.id)}"><div class="fl-row"><span class="fl-grip" aria-hidden="true" title="Drag to reorder">${FL_IC.grip}</span>
+        <button class="swt${f.on?' on':''}" type="button" role="switch" data-fl="on" data-floor="${esc(f.id)}" aria-checked="${f.on}" aria-label="${esc(f.name)}: ${f.on?'on':'off'}. Switch ${f.on?'off':'on'}."><i></i></button>
         <div class="fl-t"><b title="${esc(f.name)}">${esc(f.name)}</b><small>${rooms.length} folder${rooms.length===1?'':'s'}</small><small class="fl-att" data-att="${esc(f.id)}"${offFloorAttention(f.id)?'':' hidden'}>${esc(offFloorAttention(f.id))}</small></div>
-        <button class="btn" type="button" data-fl="only" data-floor="${esc(f.id)}" title="Switch ${esc(f.name)} on and every other floor off" aria-label="Show only ${esc(f.name)}">Show only</button>
-        <button class="btn" type="button" data-fl="rename" data-floor="${esc(f.id)}" aria-label="Rename ${esc(f.name)}">Rename…</button>
-        <button class="btn" type="button" data-fl="up" data-floor="${esc(f.id)}" aria-label="Move ${esc(f.name)} up"${i===0?' disabled':''}>Up</button>
-        <button class="btn" type="button" data-fl="down" data-floor="${esc(f.id)}" aria-label="Move ${esc(f.name)} down"${i===last?' disabled':''}>Down</button>
-        ${f.ground?'':`<button class="btn danger" type="button" data-fl="del" data-floor="${esc(f.id)}" aria-label="Delete ${esc(f.name)}">Delete</button>`}</div>
+        <button class="btn fl-ib fl-focus" type="button" data-fl="only" data-floor="${esc(f.id)}" data-tip="${esc(flFocusTip(f,focused))}" aria-pressed="${focused}" aria-label="Focus mode: show only ${esc(f.name)}">${FL_IC.focus}</button>
+        <button class="btn fl-ib" type="button" data-fl="up" data-floor="${esc(f.id)}" title="Move up" aria-label="Move ${esc(f.name)} up"${i===0?' disabled':''}>${FL_IC.up}</button>
+        <button class="btn fl-ib" type="button" data-fl="down" data-floor="${esc(f.id)}" title="Move down" aria-label="Move ${esc(f.name)} down"${i===last?' disabled':''}>${FL_IC.down}</button>
+        <button class="btn fl-ib" type="button" data-fl="rename" data-floor="${esc(f.id)}" title="Rename" aria-label="Rename ${esc(f.name)}">${ICON('rename')}</button>
+        ${f.ground?'<span class="fl-ib-gap" aria-hidden="true"></span>':`<button class="btn fl-ib danger" type="button" data-fl="del" data-floor="${esc(f.id)}" title="Delete" aria-label="Delete ${esc(f.name)}">${FL_IC.del}</button>`}</div>
         ${rooms.map(r=>`<div class="fl-folder"><span class="fl-fn" title="${esc(r.path)}">${esc(r.name)}</span>${r.hidden?'<span class="tag">hidden</span>':''}<label class="sr-only" for="${px}m-${esc(r.id)}">Floor of ${esc(r.name)}</label><select id="${px}m-${esc(r.id)}" data-fl="move" data-room="${esc(r.id)}" title="Move ${esc(r.name)} to another floor">${opts(f.id)}</select></div>`).join('')}</div>`;}).join('')+
     `<div class="fl-new"><label class="sr-only" for="${px}New">New floor name</label><input id="${px}New" type="text" maxlength="40" placeholder="New floor name" autocomplete="off" spellcheck="false"><button class="btn" type="button" data-fl="create">Create</button></div>`+
     `<p class="fl-err" role="alert"${floorsErr?'':' hidden'}>${esc(floorsErr)}</p>`;
@@ -4852,6 +4892,22 @@ async function floorCall(p){
   if(r&&r.state)applyFloors(r.state); else {renderFloorsPanel();renderFloorsSettings();}
   return r;
 }
+/* 2026-11-01 (issue 1010): drag a floor by its handle to reorder; the drop saves through the same call as Up and Down (reorderFloors).
+   The drag code is the one of rooms, desks and places (reorder.js, issue 677): transform and opacity only, Esc cancels, the arrow buttons stay the keyboard route. */
+(function(){
+  if(window.DurbarTip)window.DurbarTip.bind(document.body,{selector:'.floors-ui .fl-focus',text:el=>el.dataset.tip||''});
+  if(!RO||!RO.attach)return;
+  RO.attach(document.body,[{kind:'floor',
+    item:t=>{const h=t.closest('.floors-ui .fl-grip');return h?h.closest('.fl-floor'):null;},
+    group:el=>[...el.parentNode.children].filter(x=>x.classList.contains('fl-floor')),
+    key:el=>el.dataset.floor}],{
+    commit:(kind,el,els,from,to)=>{
+      const ids=RO.moveTo(els.map(x=>x.dataset.floor),el.dataset.floor,els[to].dataset.floor,to>from);
+      const f=floorById(el.dataset.floor);
+      floorCall(bridge.reorderFloors(ids));
+      announce(RO.announce(f?f.name:'Floor',to+1,els.length,''));
+    }});
+})();
 async function floorAction(el){
   const fl=el.dataset.fl,id=el.dataset.floor,f=floorById(id);
   if((fl==='on'||fl==='only')&&f)startFloorSwitchTiming();
@@ -4870,7 +4926,7 @@ async function floorAction(el){
   }
   if(fl==='del'&&f){
     const n=roomsOnFloor(id).length;
-    const r=await askDialog({title:'Delete floor '+f.name+'?',body:(n?(n===1?'Its folder moves':'Its '+n+' folders move')+' to '+((FLOORS.floors.find(x=>x.ground)||{}).name||'the ground floor')+'. ':'')+'No folder is removed and no session is ended.',returnFocus:()=>{const b=el.closest('.floors-ui');return (b&&b.querySelector('.fl-sw'))||$('floorsBtn');},
+    const r=await askDialog({title:'Delete floor '+f.name+'?',body:(n?(n===1?'Its folder moves':'Its '+n+' folders move')+' to '+((FLOORS.floors.find(x=>x.ground)||{}).name||'the ground floor')+'. ':'')+'No folder is removed and no session is ended.',returnFocus:()=>{const b=el.closest('.floors-ui');return (b&&b.querySelector(`[data-fl="del"][data-floor="${CSS.escape(id)}"]`))||$('floorsBtn');},
       buttons:[{label:'Cancel',value:null},{label:'Delete floor',value:'ok',cls:'primary danger'}]});
     if(r)return floorCall(bridge.deleteFloor(id));
     return;
@@ -5006,9 +5062,22 @@ function tTool(T,e){
       if(done&&T.actId===e.callId)tActNext(T);}
     if(c.edit)edQueue(c);
     else if(e.phase!=='update'||e.output!=null||e.args!==undefined)chipRepaint(c);
+    if(e.phase==='failed'&&e.mcpCall==='policy'&&e.mcpServer&&!c.mcpNote)mcpPolicyNote(c); /* spec 058 FR-194 (issue 841): main's word, never the text */
     if(c.edit&&T.actId===e.callId)tAct(T,e.callId,c);}}
   tScroll(T);
 }
+/* spec 058 FR-194 (issue 841): under a failed MCP call that main marked `policy` (an Entra Conditional Access refusal, from the masked text),
+   one fixed line and a Sign in again... button. The words are written here: nothing of the tool's output reaches them, they are set as
+   text (no markup), and only a person's press opens the existing MCP servers dialog, where the row's own Sign in again... is. */
+const MCP_POLICY_LINE='Your organization\u2019s sign-in rules refused this tool. This usually means a managed-device check. Sign in again using a browser your organization allows.';
+function mcpPolicyNote(c){
+  const n=document.createElement('div');n.className='mcpwhy';n.setAttribute('role','note');
+  const t=document.createElement('span');t.textContent=MCP_POLICY_LINE;
+  const b=document.createElement('button');b.type='button';b.className='btn sm mcpwhy-btn';b.textContent='Sign in again\u2026';
+  b.setAttribute('aria-label','Sign in again: open the MCP servers');
+  n.append(t,b);c.el.after(n);c.mcpNote=n;
+}
+document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest('.mcpwhy-btn');if(!b)return;e.stopPropagation();const a=byId(ui.selected),r=a&&liveRoot(a);if(r&&window.DurbarScreens)Promise.resolve(window.DurbarScreens.agentMcp(r,mcpOpts(r))).finally(()=>refreshMcpCount(r));});
 function chipRepaint(c){
   const el=makeChip({tool:c.tool,label:c.label,full:c.cmd,ms:c.ms,res:c.res,output:c.output,state:c.state});
   el.style.animation='none'; /* a repaint is not a new call: no pop (FR-021, no jank while the arguments stream) */
@@ -5439,13 +5508,22 @@ function showLimit(a,e){
   const row=document.createElement('div');row.className='note-actions';
   const amt=document.createElement('input');amt.type='number';amt.min='0.01';amt.step=usd?'0.01':'1';amt.value=String(max||(usd?MIN_USD_CAP:MIN_CAP));amt.className='limit-amt';amt.setAttribute('aria-label',usd?'Dollars to add to the limit':'AI credits to add to the limit');
   const mk=(l,cls,title,fn)=>{const b=document.createElement('button');b.type='button';b.className='btn '+cls;b.textContent=l;if(title)b.title=title;b.onclick=fn;row.appendChild(b);return b;};
+  let inFlight=0,seq=0; /* FR-209: one answer at a time; the buttons and the field are off while it is on its way (the card says "Sending…"), back on if it fails or after 30 s */
+  const pst=n.querySelector('.pstate');
+  const lock=on=>{row.querySelectorAll('button,input').forEach(x=>{x.disabled=on;});pst.textContent=on?' → Sending…':'';};
   const answer=async choice=>{
+    if(inFlight)return; const my=++seq; inFlight=my; lock(true);
+    const timer=setTimeout(()=>{if(inFlight===my&&!n.classList.contains('settled')){inFlight=0;lock(false);addNote(liveChat(a),'No reply after '+Math.round(LIMIT_WAIT_MS/1000)+' seconds. You can answer again; if the first answer arrives late, both may count.',true);}},LIMIT_WAIT_MS);
     const r=await bridge.resolveLimit(a.id,e.requestId,choice).catch(err=>({ok:false,error:String(err&&err.message||err)}));
-    if(!r||!r.ok){addNote(liveChat(a),'Could not answer the spending limit: '+esc((r&&r.error)||'unknown error'),true);return;}
-    settleLimit(a,choice.kind);
+    clearTimeout(timer); const mine=inFlight===my; if(mine)inFlight=0;
+    if(!r||!r.ok){if(mine&&!n.classList.contains('settled')){lock(false);addNote(liveChat(a),'Could not answer the spending limit: '+esc((r&&r.error)||'unknown error'),true);}return;}
+    if(a.limit&&a.limit.requestId===e.requestId)settleLimit(a,choice.kind);
+    else if(!n.classList.contains('settled')){ /* a late answer settles its own card only, and only if the adapter's `resolved` event (which comes first) has not: it never rewrites what happened */
+      row.remove();n.classList.add('settled',choice.kind==='cancel'?'denied':'approved');
+      n.querySelector('.pstate').textContent=' → '+(choice.kind==='cancel'?'stopped here':choice.kind==='unset'?'limit removed':'limit raised');}
   };
   row.appendChild(amt);
-  mk('Raise limit','primary',usd?'Let the agent use this many more dollars (counted from what it used or the limit, whichever is higher) and continue':'Raise the limit by this many AI credits and let the agent continue',()=>{const v=parseFloat(amt.value);if(!(v>0)){focusIn(amt);return;}answer({kind:'add',credits:Math.round(v*100)/100});});
+  mk('Raise limit','primary',usd?'Let the agent use this many more dollars (counted from what it used or the limit, whichever is higher) and continue':'Raise the limit by this many AI credits and let the agent continue',()=>{const v=Math.round(parseFloat(amt.value)*100)/100;if(!(v>0)){focusIn(amt);return;}answer({kind:'add',credits:v});});
   mk('Remove limit','session','Remove the limit and let the agent continue',()=>answer({kind:'unset'}));
   mk('Stop here','danger','Cancel the blocked request. The agent is ready for your next message (the limit stays).',()=>answer({kind:'cancel'}));
   n.appendChild(row);
@@ -5472,7 +5550,13 @@ function showPlan(a,e){
   n.appendChild(row);
   tChips(t.T).appendChild(n);stickyScroll(liveChat(a));
   a.plan={requestId:e.requestId,n,st,row};
-  if(ui.selected===a.id)focusIn(ok);
+  /* spec 066 (2026-11-01 delta): the plan never takes focus from typing: with text in the message box, or focus in any text field, Approve is left alone */
+  const ae=document.activeElement, mb=$('msgInput');
+  if(ui.selected===a.id&&!modalOpen()&&!(mb&&mb.value)&&(!ae||ae===document.body||ae===mb))focusIn(ok);
+  row.addEventListener('keydown',ev=>{
+    if(ev.repeat&&(ev.key==='Enter'||ev.key===' '))ev.preventDefault(); /* a held Enter or Space on Approve, Revise or Reject answers nothing */
+    else if((ev.key.length===1&&ev.key!==' '&&!ev.ctrlKey&&!ev.metaKey&&!ev.altKey)||((ev.ctrlKey||ev.metaKey)&&!ev.altKey&&ev.key.toLowerCase()==='v')||(ev.shiftKey&&ev.key==='Insert')){const mb2=$('msgInput');if(mb2)focusIn(mb2);} /* starting to type or paste goes to the message box, so the next Enter cannot approve the plan unread */
+  });
 }
 function settlePlan(a,action){
   const P=a.plan;if(!P)return;a.plan=null;
@@ -5512,9 +5596,12 @@ function showQuestion(a,e){
     others.push(other);opts.appendChild(other);opts.appendChild(hint);box.appendChild(opts);n.appendChild(box);
   });
   const row=document.createElement('div');row.className='note-actions';
+  let sending=false; /* one answer at a time: the buttons and boxes are off while it is on its way, back on if it fails (a held Enter sent six) */
+  const lockQ=on=>{sending=on;n.querySelectorAll('.note-actions button,.q-opt,.q-other').forEach(x=>{x.disabled=on;});};
   const send=async answers=>{
+    if(sending)return; lockQ(true);
     const r=await bridge.answerQuestion(a.id,e.requestId,answers).catch(err=>({ok:false,error:String(err&&err.message||err)}));
-    if(!r||!r.ok){addNote(liveChat(a),'Could not answer: '+esc((r&&r.error)||'unknown error'),true);return;}
+    if(!r||!r.ok){lockQ(false);addNote(liveChat(a),'Could not answer: '+esc((r&&r.error)||'unknown error'),true);return;}
     settleQuestion(a,answers,undefined,e.requestId);
   };
   const ok=document.createElement('button');ok.type='button';ok.className='btn primary';ok.textContent='Answer';
@@ -5667,6 +5754,7 @@ function settleLimit(a,action){
 /* ---------------- coffee break (spec 068): a usage limit puts the agent in the coffee corner until the limit resets ---------------- */
 const COFFEE=window.DurbarCoffee;
 let BREAK_RESUME='auto'; /* the setting (FR-006): 'auto' resumes by itself when it costs nothing extra; 'ask' always asks */
+const LIMIT_WAIT_MS=(()=>{try{const q=new URLSearchParams(location.search),v=Number(q.get('simlimitwait'));return q.has('sim')&&v>0?v:30000;}catch(e){return 30000;}})(); /* how long a limit answer may take before its card unlocks (the simulator drivers shorten it) */
 const SIM_BREAK=(()=>{try{const q=new URLSearchParams(location.search);return q.has('sim')&&q.has('simbreak');}catch(e){return false;}})(); /* simulator drivers: short waits (FR-017) */
 const BREAKS=COFFEE.createBreaks(SIM_BREAK?{marginMs:2000,gapMs:3000,lateMs:600000,remindMs:20000}:{});
 const coffeeWord=()=>'Coffee break'; /* a status word: plain in every theme (spec 035: status pills keep their size); only the corner's name is themed */
@@ -7754,7 +7842,7 @@ async function removeFolder(r){
   const nsA=nsAgentOf(r), nb=nsA&&byId(nsA.id), nst=nb?await notesFetch(nb):null, nn=nst&&nst.ok?nst.notes.length:0;
   const lines=[];
   if(nn)lines.push('Unticked, its notes stay and come back if you add the folder again.');
-  if(nn&&nst.fileSwitch&&nst.fileSwitch.on)lines.push('.durbar/notes.md stays in the project either way; Durbar stops updating it.');
+  if(nn&&nst.fileSwitch&&nst.fileSwitch.on)lines.push('.durbar/notes/notes.md stays in the project either way; Durbar stops updating it.');
   const v=await askDialog({title:'Remove folder?',body:msg,lines,size:nn?'m':undefined,check:nn?{label:'Also delete its notes ('+nn+')',checked:false}:undefined,
     buttons:[{label:'Cancel',value:null},{label:'Remove folder',value:'rm',cls:'primary danger'}]});
   if(!v||v.value!=='rm')return;
@@ -8399,7 +8487,7 @@ if(pendingOpen&&demoOn){openPanel(pendingOpen,false);pendingOpen=null;}
 const settleNow=()=>{if(!agentsListed||!window.__durbarSimReplayed||baselineQueued||baselineAsking)return false;if(renderQueued){renderQueued=false;renderAll();}return true;};
 /* simulator drivers load with simfreeze=1: the desk glow then holds still (FR-178: the geometry and screenshot checks measure boxes, so no zoom may be mid-way); the unread driver opts back in with hlmotion=1 to test the motion itself */
 if(SIM&&qs.get('simfreeze')==='1'&&qs.get('hlmotion')!=='1')document.documentElement.classList.add('hl-still');
-if(SIM)window.__durbarSimUi={agents:()=>agents,order:{get:()=>ORDER,saved:()=>bridge.getOrder?bridge.getOrder():null,reset:resetOrder,path:id=>(ROOMS.find(r=>'room:'+r.id===id)||{}).path||''}, /* issue 677 (check 033-order): the order held and saved, Reset, a room's key */
+if(SIM)window.__durbarSimUi={agents:()=>agents,setLive:setLiveOn,setOfficeView,order:{get:()=>ORDER,saved:()=>bridge.getOrder?bridge.getOrder():null,reset:resetOrder,path:id=>(ROOMS.find(r=>'room:'+r.id===id)||{}).path||''}, /* issue 677 (check 033-order): the order held and saved, Reset, a room's key */
   toast:(s,act)=>{const t=act?toastAction(esc(String(s)),String(act),()=>{},8000):toast(esc(String(s)),8000);return !!t;}, /* spec 097 FR-113: a toast for the world-chrome driver (simulator only) */realLayout:()=>RO_LAST, /* spec 097: the last Real office layout (check-office-overlap's Real office variant) */uncrowd:()=>{agents.forEach(x=>VISITS.unpin(x.id));scheduleRender();return true;},crowd:(pid,n,from)=>{const a=agents.filter(x=>!x.parent).slice(from||0,(from||0)+n);a.forEach(x=>VISITS.pin(x.id,pid,'test'));scheduleRender();return a.length;}, /* spec 097: n main agents stand at a place (a "+N" crowd for the driver; simulator only) */crew:{state:()=>({map:{...CREW_MAP},help:{...CREW_HELP},bad:[...CREW_BAD],hasModule:!!CREW}),renderAll:()=>{renderAll();return true;},probe:()=>{try{crewPreload();syncCrew();return {ok:true,of:agents.map(x=>crewOf(x)).filter(Boolean).length};}catch(e){return {ok:false,err:String(e&&e.message)};}},openInbox:()=>{openInbox();return true;},closeInbox:()=>{closeInbox();return true;},openPanel:id=>{openPanel(id);return true;},fall:c=>{const f0=CREW.file;CREW.file=(i,p)=>i===c?'crew/art/gone.webp':f0(i,p);crewLoaded.clear();crewPreload();CREW.file=f0;return true;}}, /* spec 077 (check-crew): the character map, a render, and one character's pictures failing to load */
   readAll:(quiet)=>{const n=UNREAD.size;UNREAD.ids().forEach(id=>{UNREAD.read(id);UNREAD_AT.delete(id);});if(!quiet)scheduleRender();return n;},notes:{all:()=>[...NT.by.values()].map(x=>x.notes||[]).flat(),saveMsg:btn=>{const a=byId(ui.selected);return notesSaveMsg(a,msgInfo(btn),btn);},noCommands:()=>{const x=agents.find(q=>q.live&&!q.parent&&!slashSupported(q));return x?x.name:'';},selNow:()=>{showSelButton();const b=document.getElementById('ntSelBtn');return !!b&&!b.hidden;},open:()=>openNotes(byId(ui.selected)),close:()=>closeNotes(false),search:q=>{const f=$('ntSearch');if(!f)return false;f.value=q;f.dispatchEvent(new Event('input'));return true;},marks:{clear:()=>{document.querySelectorAll('#chat .nt-mark').forEach(x=>x.remove());document.querySelectorAll('#chat .bubble').forEach(b=>{b._nd=undefined;});return true;},run:()=>notesMarkAll(byId(ui.selected))},change:(note,patch)=>notesChange(byId(ui.selected),note,patch),rename:note=>renameNote(byId(ui.selected),note,null),plant:n=>{const a=byId(ui.selected),st=a&&notesOf(a);if(!st||!st.ok)return false;st.notes.push(n);notesPaint();if(slashUi)slashUpdate();return true;}}, /* spec 083: the check-notes driver reads the window's notes and takes the paths a click cannot */
   sizingLounges:()=>lastSizing.reduce((n,m)=>n+(m.rolled||[]).length,0), sizingMains:()=>lastSizing.reduce((n,m)=>n+m.mains.length,0), /* FR-181: the desks it is sized for (a pill does not reshape the cards) */ /* spec 001 FR-180: the finished agents the office is sized for */
