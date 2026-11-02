@@ -111,9 +111,22 @@ module.exports = async (ctx) => {
     if (run('asleep')) {
       await H.load({ w, h, query: q(world), ready: REAL, settle: false });
       await must(PICS, 'the pictures');
-      /* the simulator's finished agents finished just now (the couch); make them finish 34 minutes ago (asleep), as the app's own clock reads it */
-      await js(`window.__durbarSimUi.agents().filter(a=>!a.parent&&a.state==='done').forEach(a=>{a.lastEventAt=Date.now()-34*60000});window.__durbarSimUi.crew.renderAll()`);
-      await must(`document.querySelectorAll('#stage .ro-plate.asleep').length>=1`, 'an asleep desk');
+      /* the simulator's finished agents finished just now (the couch); make them finish 34 minutes ago, with their last message UNREAD: an unread reply keeps its full desk (spec 001 FR-173), so nobody sleeps yet (owner 2026-11-02) */
+      const widths = () => js(`(()=>{const L=window.__durbarSimUi.realLayout();return {face:Math.round(L.faceH*10)/10,desks:L.zones.flatMap(z=>z.desks).map(d=>[d.id,d.state,Math.round(d.slot.w*10)/10]).sort()}})()`);
+      await js(`window.__durbarSimUi.agents().filter(a=>!a.parent&&a.state==='done').forEach(a=>{a.lastEventAt=Date.now()-34*60000;window.__durbarSimUi.unread.mark(a.id)});window.__durbarSimUi.crew.renderAll()`);
+      await must(PICS, 'the pictures');
+      const before = await widths();
+      assert.strictEqual(before.desks.filter((x) => x[1] === 'asleep').length, 0, `${tag}: an unread reply does not sleep`);
+      assert.strictEqual(await js(`document.querySelectorAll('#stage .ro-plate.asleep').length`), 0, `${tag}: no asleep plate while the message is unread`);
+      await shot(world, 'asleep-unread', w, h);
+      /* the message is read (the app's own Mark as read): that desk is asleep and narrows to 0.62, the others take the freed room, in one step */
+      await js(`window.__durbarSimUi.agents().filter(a=>!a.parent&&a.state==='done').forEach(a=>window.__durbarSimUi.unread.read(a.id))`);
+      await must(`document.querySelectorAll('#stage .ro-plate.asleep').length>=1`, 'an asleep desk once read');
+      const after = await widths();
+      const sleepers = after.desks.filter((x) => x[1] === 'asleep');
+      assert.ok(sleepers.length >= 1 && sleepers.every((x) => after.desks.some((o) => o[1] !== 'asleep' && Math.abs(x[2] / o[2] - 0.62) < 0.01)), `${tag}: an asleep desk whose message is read is 0.62 wide: ${JSON.stringify(sleepers)}`);
+      assert.ok(after.face >= before.face - 1, `${tag}: the room the narrowing frees is not lost (the row search is discrete: up to 1 px either way): desk faces ${before.face} -> ${after.face} px`);
+      console.log('[moments] widths when the message is read', `desk faces ${before.face} -> ${after.face} px; widths`, JSON.stringify(before.desks.slice(0, 5)), '->', JSON.stringify(after.desks.slice(0, 5)));
       const sl = await js(`(()=>{const P=[...document.querySelectorAll('#stage .ro-plate.asleep')];return P.map(p=>({id:p.dataset.id,l:p.getAttribute('aria-label'),t:p.getAttribute('title'),x:p.textContent,
         person:!!document.querySelector('#stage .ro-person.asleep[data-for="'+p.dataset.id+'"]'),zz:!!document.querySelector('#stage .ro-zz'),w:p.getBoundingClientRect().width,
         scr:(document.querySelector('#stage .ro-screen.asleep[data-for="'+p.dataset.id+'"]')||{className:''}).className}))})()`);
@@ -123,10 +136,10 @@ module.exports = async (ctx) => {
         assert.ok(/Asleep \u00B7 finished 34 min ago$/.test(x.x), `${tag}: the plate: ${x.x}`);
         assert.ok(x.person && x.zz, `${tag}: a person rests at the desk and the z z is drawn`);
       }
-      const geo = await js(`(()=>{const L=window.__durbarSimUi.realLayout(),D=L.zones.flatMap(z=>z.desks),a=D.filter(d=>d.state==='asleep'),full=d=>L.zones.find(z=>z.desks.includes(d)).desks.find(x=>!x.narrow&&!x.away);
+      const geo = await js(`(()=>{const L=window.__durbarSimUi.realLayout(),D=L.zones.flatMap(z=>z.desks),a=D.filter(d=>d.state==='asleep'),full=d=>D.find(x=>!x.narrow&&!x.away&&Math.abs(x.slot.y-d.slot.y)<1)||D.find(x=>!x.narrow&&!x.away);
         return {ratio:a.map(d=>d.slot.w/full(d).slot.w),pose:a.map(d=>d.person&&d.person.pose),shades:document.querySelectorAll('#stage .ro-lamp.lamp-off').length,asleep:a.length,screensOff:document.querySelectorAll('#stage .ro-screen.asleep.off').length,
           chair:a.filter(d=>d.away).length,small:[...document.querySelectorAll('#stage .ro-plate.asleep *,#stage .ro-zz')].filter(e=>parseFloat(getComputedStyle(e).fontSize)<10.5).length}})()`);
-      assert.ok(geo.ratio.every((r) => Math.abs(r - 1) < 0.02), `${tag}: an asleep desk keeps its full width (#979): ${geo.ratio}`);
+      assert.ok(geo.ratio.length >= 1 && geo.ratio.every((r) => Math.abs(r - 0.62) < 0.02), `${tag}: an asleep desk whose message is read is 0.62 wide: ${geo.ratio}`);
       assert.deepStrictEqual(geo.pose, geo.pose.map(() => 'rest'), `${tag}: the person is in rest`);
       assert.strictEqual(geo.shades, geo.asleep, `${tag}: a shade over each asleep desk only`);
       assert.strictEqual(geo.screensOff, geo.asleep, `${tag}: their screens are off`);
@@ -282,18 +295,42 @@ module.exports = async (ctx) => {
       await must(`(window.__durbarSimUi.agents().find(a=>a.name==='Tomas')||{}).paused||[...document.querySelectorAll('#stage .ro-plate')].some(p=>/Tomas/.test(p.textContent)&&/Coffee/i.test(p.textContent))`, 'Tomas on a coffee break', 30000);
       if (process.env.MOMENTS_FONT) { await js(`(()=>{const s=document.createElement('style');s.textContent='#stage .ro *{font-family:'+${jsLiteral(process.env.MOMENTS_FONT)}+' !important}';document.head.appendChild(s);window.__durbarSimUi.crew.renderAll();})()`); await H.until(PICS, 10000); } /* a developer aid: another font's widths (CI's Linux fonts are wider) */
       const cf = await js(`(()=>{const p=[...document.querySelectorAll('#stage .ro-plate')].find(p=>/Tomas/.test(p.textContent));return {plate:p.textContent,label:p.getAttribute('aria-label'),title:p.getAttribute('title'),state:p.dataset.state,away:[...document.querySelectorAll('#stage .ro-away')].map(e=>e.textContent),
-        chips:[...document.querySelectorAll('#stage .ro-chip')].filter(c=>c.dataset.coffeeid).map(c=>[c.textContent,c.getAttribute('aria-label')]),tent:[...document.querySelectorAll('#stage .ro-tent')].map(e=>e.textContent)}})()`);
+        chips:[...document.querySelectorAll('#stage .ro-chip')].filter(c=>c.dataset.coffeeid).map(c=>[c.textContent,c.getAttribute('aria-label')])}})()`);
       assert.ok(/^TomasPrompt tuner Coffee break \u00B7 Coffee break \u2014 resumes at /.test(cf.plate) && cf.state === 'waiting', `${tag}: the plate and the status (Waiting, never Error): ${cf.plate} ${cf.state}`);
       assert.ok(/^Tomas, Prompt tuner, Coffee break, .*at Coffee corner\. Open chat panel\.$/.test(cf.label), `${tag}: the name: ${cf.label}`);
-      assert.deepStrictEqual(cf.away.filter((t) => /Coffee corner/.test(t)), [], `${tag}: on a coffee break the tent card stands where the post-it would (the label and the plate say "at Coffee corner")`);
-      assert.deepStrictEqual(await js(`(()=>{const R=e=>e.getBoundingClientRect(),T=[...document.querySelectorAll('#stage .ro-tent')],N=[...document.querySelectorAll('#stage .ro-away')];return T.flatMap(t=>N.filter(n=>{const a=R(t),b=R(n);return a.left<b.right-0.5&&b.left<a.right-0.5&&a.top<b.bottom-0.5&&b.top<a.bottom-0.5}).map(n=>JSON.stringify([R(t),R(n)])))})()`), [], `${tag}: no tent card overlaps any post-it in the room (its own desk's nor a neighbour's)`);
-      assert.deepStrictEqual(cf.tent.length === 1 && /^Coffee break \u00B7 until /.test(cf.tent[0]), true, `${tag}: one tent card: ${cf.tent}`);
+      assert.ok(cf.away.some((t) => /^at Coffee corner until /.test(t)), `${tag}: the coffee-break post-it says where and until when (owner 2026-11-02): ${JSON.stringify(cf.away)}`);
+      assert.strictEqual(await js(`document.querySelectorAll('#stage .ro-tent').length`), 0, `${tag}: no tent card (replaced by the post-it)`);
+      assert.deepStrictEqual(await js(`(()=>{const R=e=>e.getBoundingClientRect(),N=[...document.querySelectorAll('#stage .ro-away')],o=[];for(let i=0;i<N.length;i++)for(let j=i+1;j<N.length;j++){const a=R(N[i]),b=R(N[j]);if(a.left<b.right-0.5&&b.left<a.right-0.5&&a.top<b.bottom-0.5&&b.top<a.bottom-0.5)o.push([N[i].textContent,N[j].textContent])}return o})()`), [], `${tag}: no post-it overlaps another, a wide font included`);
+      assert.ok(await js(`getComputedStyle(document.querySelector('#stage .ro-away[data-place="coffee"]')).backgroundColor`) !== await js(`getComputedStyle(document.querySelector('#stage .ro-away:not([data-place="coffee"])')||document.body).backgroundColor`), `${tag}: the coffee post-it has its own colour`);
       assert.strictEqual(cf.chips.length, 1, `${tag}: only the agent on a coffee break stands at the corner (FR-128): ${JSON.stringify(cf.chips)}`);
       assert.ok(/^Tomas \(until .* back in \d+ min\)\. Open the chat\.$/.test(cf.chips[0][1]), `${tag}: the corner chip's name: ${cf.chips[0][1]}`);
       await shot(world, 'coffee', w, h);
       await H.load({ w, h, query: q(world), ready: REAL, settle: false });
       await must(PICS, 'the pictures');
-      assert.strictEqual(await js(`[...document.querySelectorAll('#stage .ro-chip')].filter(c=>c.dataset.coffeeid).length+document.querySelectorAll('#stage .ro-tent').length`), 0, `${tag}: with no coffee break nobody stands at the corner and no tent card is shown`);
+      assert.strictEqual(await js(`[...document.querySelectorAll('#stage .ro-chip')].filter(c=>c.dataset.coffeeid).length`), 0, `${tag}: with no coffee break nobody stands at the corner `);
+    }
+    // ---- owner 2026-11-02: one post-it colour per reason (the place), dark ink, the words stay ----
+    if (run('notes')) {
+      await H.load({ w, h, query: q(world), ready: REAL, settle: false }); /* the Boss's post-its are the simulator's own waiting agents (a visit to the Boss is not pinned) */
+      await must(PICS, 'the pictures');
+      const PL = ['boss', 'bank', 'coffee', 'library', 'software', 'terminal', 'web', 'other'];
+      await js(`window.__durbarSimUi.uncrowd();${PL.filter((id) => id !== 'boss').map((id, i) => `window.__durbarSimUi.crowd(${jsLiteral(id)},1,${8 + i})`).join(';')}`);
+      const CONTRAST = `const P=s=>{const m=/rgba?\\(([^)]+)\\)/.exec(s);return m?m[1].split(/[ ,\\/]+/).filter(Boolean).slice(0,3).map(Number):[0,0,0]},Lm=c=>{const f=x=>{x/=255;return x<=0.03928?x/12.92:Math.pow((x+0.055)/1.055,2.4)};return 0.2126*f(c[0])+0.7152*f(c[1])+0.0722*f(c[2])},K=(a,b)=>{const x=Lm(P(a)),y=Lm(P(b));return (Math.max(x,y)+0.05)/(Math.min(x,y)+0.05)};`;
+      const readNotes = () => js(`(()=>{${CONTRAST}return [...document.querySelectorAll('#stage .ro-away')].map(e=>{const c=getComputedStyle(e);return {place:e.dataset.place,text:e.textContent,bg:c.backgroundColor,ink:c.color,ratio:K(c.color,c.backgroundColor),size:parseFloat(c.fontSize)}})})()`);
+      await must(`document.querySelectorAll('#stage .ro-away').length>=8`, 'a post-it for each place');
+      const ns = await readNotes();
+      assert.deepStrictEqual([...new Set(ns.map((x) => x.place))].sort(), PL.slice().sort(), `${tag}: one post-it for each place: ${JSON.stringify(ns.map((x) => [x.place, x.text]))}`);
+      assert.strictEqual(new Set(ns.map((x) => x.bg)).size, PL.length, `${tag}: one colour per place, all different: ${JSON.stringify(ns.map((x) => [x.place, x.bg]))}`);
+      for (const x of ns) {
+        assert.ok(x.ratio >= 4.5 && x.size >= 10.5, `${tag}: ${x.place} ink contrast ${x.ratio.toFixed(2)}:1 at ${x.size}px`);
+        assert.ok(/^at [A-Z]/.test(x.text), `${tag}: the words stay: ${x.text}`);
+      }
+      await shot(world, 'notes', w, h);
+      await emulate([{ name: 'forced-colors', value: 'active' }], async () => {
+        const fc = await readNotes();
+        assert.ok(fc.length >= 8 && fc.every((x) => x.ratio >= 4.5), `${tag}: forced colours keep the post-it text readable: ${JSON.stringify(fc.map((x) => [x.place, x.ratio.toFixed(1)]))}`);
+      });
+      console.log('[moments] notes ok', ns.length);
     }
   }
 };
