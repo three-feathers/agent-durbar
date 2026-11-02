@@ -26,7 +26,7 @@
 - [x] T017 Merge of main (with #530, #508 popovers) on 2026-10-22: the remaining `#e5be78` border literals in `styles.css` and `screens.css` (toast, mode-chip restored tag, warn button, mode-menu why, answer bar, notice strip, inbox button, setup dialog tags) use `var(--tone-warn-line)`, as #530 did for `#e3bdb7` (Ruben on #530); the ratchet is regenerated: styles.css 156 -> 127, screens.css 16 -> 14, themes.css 52 -> 51; app.js 15 -> 17 (main's two literals since the last count, not this PR's); `check:geometry` keeps Pink Studio in its every-theme list (nightly, `CHECK_ALL_THEMES=1`; pull requests run Retro only, spec 008 FR-111, owner decision) [FR-041]
 - [x] T018 Review on #500 (Paco's agent): allow-lists looked up by own property in both copies (`constructor`, `__proto__`, `toString`, `hasOwnProperty` as fonts and keys); one test per part of `HOSTILE_RE` and the renderer's rule pinned to main's; spec wording (Story 1 `--shadow-pop` covers menus and popovers, Story 3, SC-002, FR-020 unknown `--names`) [FR-020]
 
-## Phase 3 (2026-11-01, design sweep; FR-051..FR-059). PRs, gates and line-count goals: spec 005 `plan.md`
+## Phase 3 (2026-11-01, design sweep; FR-051..FR-060). PRs, gates and line-count goals: spec 005 `plan.md`
 
 - [ ] T022 [PR A1] `tools/inventory.js` to `scripts/inventory.js`, baseline fixture, `--check` in `test:theme-tokens`; office selectors counted apart; no visual change. Measure first: commit real counts against 386, 114, 221; 570, 291, 344; 305; 127; 99. Test: a planted literal of each kind fails; a lower count fails until lowered [FR-054]
 - [ ] T023 [PR A2] `--wb-*` and the closed list in the registry, both copies; `WORLD_PAIRS` in the shared contrast check. Measure first: a fixture pack proves the drop on `main`. Test: 0 dropped, repaired pair, tier 3 name in a pack refused. Coordinate with spec 102 [FR-052, FR-053]
@@ -38,3 +38,4 @@
 - [ ] T029 [PR A11] `src/renderer/ui.js` and first dialogs; `@layer` only after the literals settle, tried first. Test: drivers of the moved dialogs; ratchet on button class sets [FR-056]
 - [ ] T030 [PR A12] The owner accepted keeping the font (2026-11-01); this only settles smoothing. A real Mac at 2x and at 1x: `-webkit-font-smoothing` `antialiased` against `auto`; the Mac owner picks; one line in `styles.css`. Test: `test-macos` pins the choice; `real:` the owner's look, no AI credits [FR-058]
 - [x] T031 Font decision: compared in the simulator, keep the system stack, no bundled font, reasons and limits in the spec [FR-058, FR-059]
+- [ ] T032 With each surface's PR (spec 005 R1, spec 052 T224, spec 105 T003): the tier 1 tokens of FR-060, no new literal. Test: `test:theme-tokens` ratchet [FR-060]

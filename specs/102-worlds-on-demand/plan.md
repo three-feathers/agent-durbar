@@ -117,6 +117,16 @@ P1 to P3 may merge before the gate with nothing visible as available; P4 to P6 r
 - **Repo growth** from art (OP-3); about 2.5 MB per world version, and redos count.
 - **App size**: about 22.6 MB of shipped art, then about 26.8 MB with Retro game (estimates, FR-213); the 30 MB budget test stops growth.
 
+## Delta 2026-11-02: world order rows and helpers (FR-271, FR-272)
+
+| Order | Row | Tasks | Gate | Size |
+|---|---|---|---|---|
+| Next built-in | Retro game | this plan's Retro arcade section | The Retro arcade plan and FR-213 | As planned |
+| After it | **Terminal world**, arrangement `panes`, shades as tokens | T233, T234 | The next built-in world has shipped; #990's `ARRANGEMENTS` is on `main`; the owner's look | One arrangement in the engine and token sets; less art than a picture world |
+| With each world | Helpers as kids | T235 | One moment in the registry, then a cell per world | Art per world |
+
+Reused: `realLayout`, FR-226's list, `WORLD_SETS`, `lightFor`, the live-screen masking of 097; the registry and matrix of spec 098. Public notes and changelogs name no unreleased world.
+
 ## Done when
 
 Tasks ticked, `/speckit.converge` run, SC-001..SC-018 read, README *Safety model* lists the new connection, and `real:` rows recorded or left as `[KNOWN GAP]`.

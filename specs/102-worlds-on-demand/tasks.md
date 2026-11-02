@@ -139,3 +139,9 @@ Other specs: #921 (097 P1), #936 and 097 T156..T159 (gate), 098's checks, 096 (P
 **MVP**: P1, P2, P3 and one world: downloaded with a plain notice, after the gate. **Independent tests**: US1 by the fake request layer; US2 per world; US3 by hostile fixtures; US4 by the fake generator; US5 by policy fixtures; US6 by round trip; US7 by the adversarial set; US8 by `peopleFor`, migration and request logs.
 
 **Parallel**: T010, T011 in P1; worlds in P4 (limited by art batches and the owner's looks, not by code); T055, T058 in P5.
+
+## Delta 2026-11-02: helpers as kids and the Terminal world's row (FR-271, FR-272)
+
+- [ ] T233 The `panes` arrangement: pure layouts (groups, main, tiled) for 1 to 15 agents, joining FR-226's list. Test: `test:realoffice-layout`; a status change gives equal rectangles; mutant: reorder on status [FR-272]
+- [ ] T234 Terminal world's build after the next built-in world: shades as token sets (Green, Amber, White, Paper), each through 070 D4. Test: `test:theme-tokens`, `check:office` at both sizes, owner's look; nothing in public notes before it ships [FR-272]
+- [ ] T235 `helpers` as a registered moment, required in each world's cell; kids in Flat and the Photo office first, then each world's art. Test: spec 098's registry check fails a missing cell, a simulator driver for 15 agents with helpers, 3 kids and `+N`; mutant: no `+N` [FR-271]
