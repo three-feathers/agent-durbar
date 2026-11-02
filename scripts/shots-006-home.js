@@ -16,7 +16,7 @@ module.exports = async (ctx) => {
   await ctx.waitFor(`[...document.querySelectorAll('#toasts .toast')].some((t)=>/SSH keys/.test(t.textContent))`, 5000);
   await ctx.js(`(()=>{document.querySelectorAll('#toasts .toast').forEach((t)=>{if(!/SSH keys/.test(t.textContent))t.remove();});return true})()`);
   await ctx.sleep(900);
-  const room = await ctx.js(`[...document.querySelectorAll('.room-name, .plate-tx b')].some((n)=>n.textContent.trim()==='home')`);
+  const room = await ctx.js(`[...document.querySelectorAll('.room-name')].some((n)=>n.textContent.trim()==='home')`);
   if (!room) throw new Error('the added home folder has no room');
   await ctx.shot(path.join(process.env.OUT || path.join(__dirname, '..', 'docs', 'screenshots'), `006-home-warning-${size[1]}x${size[2]}.png`)); // OUT: spec 001 FR-082
   console.log('[shots-006-home] saved', `${size[1]}x${size[2]}`);

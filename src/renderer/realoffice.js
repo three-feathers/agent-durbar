@@ -788,7 +788,7 @@
     }
   }
 
-  /* a chip is [alert icon] + name; the icon is the app's own Alert sign (app.js signIcon, built from trusted markup, not the model's
+  /* a chip is [alert icon] + name; the icon is the app's own Alert sign (app.js ALERT_ICON, built from trusted markup, not the model's
      text; constitution V: no emoji), the name goes in with textContent. `label` is the name or, when crowded, the initials. */
   function chipFill(ch, label, wait, icon) {
     const w = wait && icon ? icon : '';

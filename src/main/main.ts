@@ -36,9 +36,8 @@ import { NotesStore } from './notesstore';
 import { NotesFile } from './notesfile';
 import { register as registerQuestionsIpc } from './ipc/questions';
 import { register as registerRemoteIpc } from './ipc/remote';
-import { register as registerDoorsIpc } from './ipc/doors';
-import { Doors, loadDoors, saveDoors } from './doors';
-import type { HeldRun } from './doors';
+import { register as registerHeldMigIpc } from './ipc/heldmig';
+import { HeldBeforeUpdate, discardAside, loadHeld, saveHeld } from './doormigrate';
 import { register as registerSchedulesIpc } from './ipc/schedules';
 import { register as registerSettingsIpc } from './ipc/settings';
 import { register as registerThemesIpc } from './ipc/themes';
@@ -78,6 +77,7 @@ import { McpStore } from './mcpstore';
 import { AgentStateTracker } from './mcp/agentstate';
 import { maskMcpEvent, maskMcpHistory } from './mcpmask';
 import { registerMcpIpc, safeStorageCodec } from './mcpipc';
+import { McpCostStore } from './mcpcosts';
 import { appServerUrls } from './mcpsignin';
 import { globalFiles } from './mcpglobal';
 import { GlobalLists, sessionGlobalFor } from './mcpglobalio';
@@ -145,6 +145,7 @@ let folderStore: FolderStore | undefined;
 let settingsStore: SettingsStore | undefined;
 /** Global MCP servers (spec 019), created when the app is ready (needs userData and safeStorage). */
 let mcpStore: McpStore | undefined;
+let mcpCostStore: McpCostStore | undefined;
 /** All-time tool usage (spec 020), created when the app is ready. */
 let usageStore: UsageStore | undefined;
 /** Credit totals per folder kept across restarts (spec 011 FR-025, issue #21). */
@@ -200,6 +201,9 @@ const mcp = registerMcpIpc({
   orgMcp: (id, s) => orgPolicies.mcp(appIdOf(id), s), // spec 076 FR-202/FR-203
   orgMcpNow: (id, s) => orgPolicies.mcpNow(appIdOf(id), s),
   orgTool: (id, server, tool) => orgPolicies.tool(appIdOf(id), server, tool),
+  pushContext: (id, view) => toRenderer('mcp-context', { id, view }), // spec 100 FR-003
+  costs: () => mcpCostStore,
+  globalList: (app) => { const a = globalLists.state(() => []).apps.find((x) => x.app === app); return a && !a.error ? a.servers.map((v) => v.name) : undefined; }, // spec 100 FR-012
 });
 registerMcpGlobalIpc({ lists: () => globalLists, offList: () => mcpStore?.ambientDisabled() ?? [], setOff: (k, off) => mcpStore?.setAmbientDisabled(k, off) });
 /** Files the user picked through the native dialog; only these can be attached. */
@@ -394,7 +398,7 @@ async function addWorkspace(
   const { result: id } = await startGuardOp(orgGuard, ad, { ...startOptionsFor(draft), resumeSessionId: opts.resumeSessionId });
   router.bind(id, adapterId);
   const saved = folderStore?.get(wsKey(draft));
-  const info: AgentInfo = { ...draft, id, hidden: saved?.hidden, closed: saved?.closed, label: saved?.label, defaultAgent: saved?.defaultAgent };
+  const info: AgentInfo = { ...draft, id, hidden: saved?.hidden, label: saved?.label, defaultAgent: saved?.defaultAgent };
   agents.set(id, info);
   applyStoredAlias(info); // spec 059 FR-014
   if (opts.persist) folderStore?.upsert({ workspace: wsKey(info), permMode, model, effort, maxAiCredits: usdCap ? saved?.maxAiCredits : info.maxAiCredits, floor: opts.floor, adapterId });
@@ -478,7 +482,7 @@ function restoreFolders(): void {
         // last mode wins over the folder's (several sessions of one folder may be in different modes), and the chat says which it was.
         const sm = modeForSession(f, [ls?.id], f.permMode);
         const rm = restoreMode(sm.mode);
-        const info = infoFor(f.workspace, rm.mode, ls?.id ?? randomUUID(), f.model || DEFAULT_MODEL, f.effort, { lazy: true, tier: f.contextTier, hidden: f.hidden, closed: f.closed, floor: folderStore.floorOfFolder(f.workspace), permRestored: rm.restored || undefined, permFrom: ls ? (sm.fromSession ? 'session' : 'folder') : undefined, maxAiCredits: router.instance(kind).capabilities?.capUnit === 'usd' ? undefined : f.maxAiCredits ?? settingsStore?.defaultMaxAiCredits }, router.instance(kind));
+        const info = infoFor(f.workspace, rm.mode, ls?.id ?? randomUUID(), f.model || DEFAULT_MODEL, f.effort, { lazy: true, tier: f.contextTier, hidden: f.hidden, floor: folderStore.floorOfFolder(f.workspace), permRestored: rm.restored || undefined, permFrom: ls ? (sm.fromSession ? 'session' : 'folder') : undefined, maxAiCredits: router.instance(kind).capabilities?.capUnit === 'usd' ? undefined : f.maxAiCredits ?? settingsStore?.defaultMaxAiCredits }, router.instance(kind));
         if (ls) info.resumeLast = true;
         if (f.label) info.label = f.label;
         if (f.defaultAgent) info.defaultAgent = f.defaultAgent;
@@ -539,9 +543,8 @@ async function sendOp(id: string, text: string, attachments: PickedFile[], ad: A
 
 // ---- scheduled prompts (spec 044): per folder, while the app runs; the run goes through the user's own send path ----
 let scheduler: Scheduler | undefined;
-/* spec 017 FR-015..FR-017, spec 044 FR-110: doors the user closed (Do not disturb) and the runs held there; keyed by the session's resume id */
-let doors: Doors | undefined;
-const doorKey = (a: AgentInfo): string => resumeIdFor(a.id);
+/* spec 017 FR-031: the scheduled prompts that were held behind a door before the update; asked about once, never sent or dropped by themselves. Keyed by the session's resume id. */
+let heldBefore: HeldBeforeUpdate | undefined;
 const folderAgent = (folder: string): AgentInfo | undefined => [...agents.values()].find((x) => wsKey(x) === folder);
 /** The session a schedule runs in: its target (FR-014), only while that session is in this folder, else the folder's agent. */
 const scheduleAgent = (s: { folder: string; target?: { session: string } }): AgentInfo | undefined => {
@@ -575,9 +578,6 @@ const scheduleDeps = (file: string): SchedulerDeps => ({
     const unit = caps.capUnit === 'usd' ? 'usd' : 'aiu';
     return (unit === 'usd' ? caps.usage.costUsd : caps.usage.nanoAiu) ? unit : undefined; // FR-015: a limit needs the spend in that unit
   },
-  /* spec 044 FR-110: a run for an agent behind a door the user closed is queued there (held): never sent, never dropped. A full queue
-     (spec 017 FR-016, 200 runs) still answers true, so nothing goes out while the door is closed. */
-  hold: (s, now) => doorsIpc.hold(scheduleAgent(s)?.id, { at: now, prompt: s.prompt, scheduleId: s.id }), // the rule: doorops.ts (tested)
   send: async (folder, prompt, s) => {
     const a = scheduleAgent(s);
     const ad = a ? router.forAgent(a.id) : undefined;
@@ -730,10 +730,8 @@ const renameSessionOpFor = (openIds: () => ReadonlySet<string>) => renameOp({
 
 // ---- IPC (spec 045 FR-060): every handler lives in src/main/ipc/<area>.ts, registered here through ipcHandle / ipcOn (ipcguard.ts). ----
 // Stores created in whenReady, and state that changes, are passed as getters so a handler reads them when it runs.
-const remoteOps = registerRemoteIpc({ agents, router, toRenderer, getWin: () => win, logActivity, doorClosed: (id) => { const a = agents.get(id); return !!a && !!doors?.isClosed(doorKey(a)); } });
-/* spec 017 FR-017: a held run goes out through the same path as a scheduled one (the window shows it as the user's message) */
-/* spec 044 FR-111 (review on #631): Send all goes through the scheduler (Pause all, the schedule, its limit, busy incl. coffee breaks, credited) */
-const doorsIpc = registerDoorsIpc({ agents, router, doors: () => doors, keyOf: doorKey, remoteOps, toRenderer, release: (run: HeldRun) => (scheduler ? scheduler.releaseDoorRun(run.scheduleId, run.prompt) : Promise.resolve('failed' as const)) });
+const remoteOps = registerRemoteIpc({ agents, router, toRenderer, getWin: () => win, logActivity });
+registerHeldMigIpc({ held: () => heldBefore, router });
 registerAppIpc({
   getSinceAway: () => sinceAway,
   clearSinceAway: () => { sinceAway = null; },
@@ -1014,6 +1012,8 @@ app.whenReady().then(() => {
   /* Dev/test theme seed (spec 036 FR-005): DURBAR_THEME=<id> makes the office open on that theme for the per-theme checks; invalid ids fall back in the renderer. */
   if (dev.DURBAR_THEME) runTheme = parseThemeId(dev.DURBAR_THEME);
   mcpStore = new McpStore(path.join(app.getPath('userData'), 'durbar-mcp.json'), safeStorageCodec);
+  mcpCostStore = new McpCostStore(path.join(app.getPath('userData'), 'durbar-mcp-costs.json')); // spec 100: its own file, so a figure can never overwrite a server store that failed to load
+  mcpCostStore.load();
   folderSetupStore = new FolderSetupStore(path.join(app.getPath('userData'), 'folder-setup.json')); // spec 061: digests and paths only
   mcpStore.load();
   usageStore = new UsageStore(path.join(app.getPath('userData'), 'durbar-tool-usage.json'));
@@ -1026,8 +1026,9 @@ app.whenReady().then(() => {
     agents, store: () => notesStore, resumeIdFor, adapterIdOf: (id) => router.adapterIdOf(id),
     folderValues: (key) => mcpStore?.knownSecretValues(key) ?? [], // FR-005: never decrypts, so no keychain prompt from a notes save
     sessionValues: (id) => (mcpStore?.noPrompt() ? mcp.secretValuesFor(id) : []), // forSession could unlock the vault: only when it cannot
-    // FR-050..FR-055 (T041, T042): the .durbar/notes.md mirror, only for a folder whose switch (`notesFile` in folders.json) is on
-    file: () => notesFile, fileOn: (key) => folderStore?.get(key)?.notesFile === true, setFileOn: (key, on) => folderStore?.setNotesFile(key, on) === true,
+    // FR-050..FR-055 (T041, T042): the .durbar/notes/notes.md mirror, only for a folder whose switch (`notesProject` in folders.json) is on
+    file: () => notesFile, fileOn: (key) => !!folderStore?.get(key)?.notesProject, fileGit: (key) => folderStore?.get(key)?.notesProject === 'git', setFileOn: (key, on, git) => folderStore?.setNotesFile(key, on, git) === true,
+    ignoreOwn: (key) => folderStore?.get(key)?.notesIgnoreOwn, setIgnoreOwn: (key, id) => folderStore?.setNotesIgnoreOwn(key, id) === true,
     valuesPending: () => !!mcpStore && !mcpStore.noPrompt(), // review of PR 931: a value still locked in the vault would leave the mask incomplete
     confirmNative: (kind, name, count) => nativeConfirm(win, notesConfirmText(kind, name, count)),
     // FR-048 (T034b): main shows the save dialog; the window never sends a path
@@ -1059,8 +1060,20 @@ app.whenReady().then(() => {
     interrupted = found.items.length ? found : null;
   }
   {
+    // spec 017 FR-031: read through the old caps and the `.bad` rule; its `closed` flags are ignored; the file goes when its queue is empty
     const dfile = path.join(app.getPath('userData'), 'durbar-doors.json');
-    doors = new Doors(loadDoors(dfile), (doc) => { try { saveDoors(dfile, doc); } catch (err) { console.warn('[doors] could not save', redact(err instanceof Error ? err.message : err)); } });
+    const loaded = loadHeld(dfile);
+    if (loaded.damaged) console.warn('[held] the old file of held prompts could not be read; it was kept aside as durbar-doors.json.bad');
+    heldBefore = new HeldBeforeUpdate(loaded, {
+      sessionOf: (key) => [...agents.keys()].find((id) => resumeIdFor(id) === key),
+      scheduleExists: (id) => !!id && !!scheduler?.doc.schedules.some((x) => x.id === id),
+      release: (run) => (scheduler ? scheduler.releaseDoorRun(run.scheduleId, run.prompt) : Promise.resolve('failed' as const)),
+      persist: (doc) => { try { saveHeld(dfile, doc); } catch (err) { console.warn('[held] could not save', redact(err instanceof Error ? err.message : err)); } },
+      discardBad: () => discardAside(dfile),
+      changed: () => toRenderer('heldmig:changed', heldBefore?.list()),
+      stopped: (agentId, why) => toRenderer('heldmig:stopped', { id: agentId, why }),
+    });
+    setInterval(() => heldBefore?.retry(), 5000).unref(); // a coffee break that ends, or a sibling that frees the folder, moves a chosen Send on (retry does nothing without one)
   }
   {
     const file = path.join(app.getPath('userData'), 'durbar-schedules.json');

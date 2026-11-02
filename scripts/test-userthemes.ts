@@ -3,15 +3,25 @@ import * as assert from 'node:assert';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { checkUserManifest, USER_THEME_LIMITS } from '../src/shared/themes';
+import { checkUserManifest, USER_THEME_LIMITS, RESERVED_THEME_IDS } from '../src/shared/themes';
 import { UserThemeStore } from '../src/main/themes';
 
-const BUILT = new Set(['clean-office', 'corporate', 'retro', 'durbar-indian', 'durbar-european', 'durbar-japanese', 'cheeky-crew']);
+const BUILT = new Set(RESERVED_THEME_IDS);
+for (const id of ['clean-office', 'retro', 'cheeky-crew', 'corporate', 'durbar-indian', 'durbar-european', 'durbar-japanese']) assert.ok(BUILT.has(id), `${id} is reserved (spec 035 FR-018)`);
+// main's handlers use exactly this list: no local copy (a mutant that drops the spread there fails this)
+assert.ok(/BUILT_IN_THEME_IDS = RESERVED_THEME_IDS;/.test(fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'ipc', 'themes.ts'), 'utf8')), 'ipc/themes.ts reads the shared reserved list');
 
 // --- manifest validation ---
 assert.strictEqual(checkUserManifest('{"id":"ocean","name":"Ocean"}').ok, true);
 assert.strictEqual(checkUserManifest('{"id":"ocean"}').id, 'ocean');
 assert.strictEqual(checkUserManifest('not json').ok, false);
+// spec 017 FR-034 (owner decision 2026-10-31: no doors): a saved theme naming the removed door-art slot or --door-* tokens still loads; they are ignored and listed as dropped
+{
+  const old = checkUserManifest(JSON.stringify({ id: 'olddoors', name: 'Old', tokens: { '--door-bg': '#112233', '--plant-dark': '#223344' }, art: { 'door-art': '<path d="M1 1"/>', 'lobby-art': '<rect width="1" height="1"/>' } }));
+  assert.strictEqual(old.ok, true, 'a theme with door-art loads');
+  if (old.ok) assert.ok(old.dropped?.includes('art.door-art'), 'door-art is listed as dropped');
+  assert.strictEqual(checkUserManifest(JSON.stringify({ id: 'nope', name: 'N', art: { 'not-a-slot': '<path d="M1 1"/>' } })).ok, false, 'any other unknown slot is still refused');
+}
 assert.strictEqual(checkUserManifest('[]').ok, false);
 assert.strictEqual(checkUserManifest('{"id":"Bad Id"}').ok, false, 'id must be lowercase kebab');
 assert.strictEqual(checkUserManifest('{"id":""}').ok, false);
@@ -25,7 +35,15 @@ assert.strictEqual(checkUserManifest('{"id":"x","tokens":{"display":"none"}}').o
 assert.ok(checkUserManifest('{"id":"x","tokens":{"--chair":"x\\"/><style>a{}</style>"}}').error!.includes('--chair'), 'a markup value is refused and named');
 assert.strictEqual(checkUserManifest('{"id":"x","tokens":{"--chair":"url(x)"}}').ok, false, 'url() is refused');
 assert.strictEqual(checkUserManifest('{"id":"x","tokens":{"--chair":"rgb(1 2 3 / .5)"}}').ok, true, 'a colour function is fine');
-assert.strictEqual(checkUserManifest('{"id":"x","ui":"court-japanese"}').ok, true, 'a listed UI style is fine');
+assert.strictEqual(checkUserManifest('{"id":"x","ui":"retro"}').ok, true, 'a listed UI style is fine');
+// spec 035 FR-018: a saved theme naming a removed style or kit still loads; the value is reported as dropped (the window falls back with a note)
+for (const k of ['corporate', 'court-indian', 'court-european', 'court-japanese']) {
+  const r = checkUserManifest(JSON.stringify({ id: 'old', ui: k, scene: k }));
+  assert.strictEqual(r.ok, true, k + ': a saved theme keeps working');
+  assert.deepStrictEqual(r.dropped, ['ui', 'scene'], k + ': both values are reported');
+}
+assert.deepStrictEqual(checkUserManifest('{"id":"x","ui":"retro","scene":"pixel"}').dropped, [], 'a kept style and kit report nothing');
+assert.ok(checkUserManifest('{"id":"x","ui":"court-mars"}').error!.includes('ui must be one of: clean, retro'), 'only the removed names are tolerated');
 assert.ok(checkUserManifest('{"id":"x","ui":"neon"}').error!.includes('ui must be one of'), 'an unknown UI style is refused');
 assert.strictEqual(checkUserManifest('{"id":"x","scene":"pixel"}').ok, true, 'a listed scene kit is fine');
 assert.strictEqual(checkUserManifest('{"id":"x","art":{"room-floor":"<rect/>","char-robe":"<rect/>"}}').ok, true, 'drawn art slots are fine');
