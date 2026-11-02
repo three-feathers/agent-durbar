@@ -122,6 +122,10 @@ For folders I trust I can pick the mode that approves everything without prompts
 
 ## Changes
 
+### 2026-11-02: a removed picture
+
+`docs/screenshots/003-allow-all-menu-1280x800.png` was removed by owner decision with `docs/feature-history.md`, as no driver writes it; the plan's mention stays as written. It is in git at commit 1c75b5bee.
+
 ### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
 
 The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
