@@ -13,7 +13,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { marksSource, fileName, IDS, SIZES } = require('./logo-marks');
+const { marksSource, fileName, IDS, SIZES, captureProblem } = require('./logo-marks');
 
 const ROOT = path.join(__dirname, '..');
 const LOGO = path.join(ROOT, 'build', 'logo');
@@ -68,7 +68,9 @@ async function main() {
     await win.webContents.executeJavaScript('new Promise(r=>{const i=document.querySelector("img");(i.complete?Promise.resolve():new Promise(x=>{i.onload=x;})).then(()=>requestAnimationFrame(()=>requestAnimationFrame(()=>r(true))));})');
     const img = await win.webContents.capturePage({ x: 0, y: 0, width: px, height: px });
     const sz = img.getSize();
-    const out = (sz.width === px ? img : img.resize({ width: px, height: px, quality: 'best' })).toPNG();
+    const wrong = captureProblem(sz, px);
+    if (wrong) throw new Error(file + ': ' + wrong);
+    const out = img.toPNG();
     cache.set(key, out);
     return out;
   }

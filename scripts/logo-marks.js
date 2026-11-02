@@ -21,8 +21,14 @@ const LOGO_DIR = path.join(__dirname, '..', 'build', 'logo');
 /** The file name of icon `id` at `size` (1024 has no suffix). */
 const fileName = (id, size) => `icon-${id}${size === 1024 ? '' : '-' + size}.svg`;
 
+/** A shape written `<path ...></path>`: every check and `innerShapes` read self-closed shapes only. */
+const CLOSED_SHAPE = /<\/(?:rect|path|circle|ellipse|polygon)\s*>/;
+/** What is wrong with a capture of a square icon of `px`, or '': never resampled, a clamped window would give a squashed icon. */
+const captureProblem = (sz, px) => (sz.width === px && sz.height === px ? '' : `a capture of ${sz.width}x${sz.height} for an icon of ${px}: the window was not that size`);
+
 /** The shapes of an SVG text, without `fill`, `<title>` and the root element: what goes inside an inline <svg>. */
 function innerShapes(svg) {
+  if (CLOSED_SHAPE.test(svg)) throw new Error('a shape with a closing tag would be left out of the top bar: write it self-closed');
   const shapes = svg.match(/<(?:rect|path|circle|ellipse|polygon)\b[^>]*\/>/g) || [];
   return shapes.map((s) => s.replace(/\s+fill="[^"]*"/, '')).join('');
 }
@@ -64,4 +70,4 @@ function marksSource(read) {
 `;
 }
 
-module.exports = { IDS, SIZES, SLOTS, NAMES, LOGO_DIR, fileName, innerShapes, marksSource };
+module.exports = { IDS, SIZES, SLOTS, NAMES, LOGO_DIR, fileName, innerShapes, marksSource, CLOSED_SHAPE, captureProblem };

@@ -142,7 +142,8 @@ module.exports = async (ctx) => {
       try{window.localStorage;}catch(e){threw=true;}
       let r={threw};try{r.stored=window.DurbarLogo.stored();r.set=window.DurbarLogo.set('2');r.cur=window.DurbarLogo.current();}catch(e){r.error=String(e);}
       if(real)Object.defineProperty(window,'localStorage',real);else delete window.localStorage;return r;})()`);
-    const blockedOk = !!blocked.skipped || (blocked.threw && !blocked.error && blocked.stored === '1' && blocked.set === '2');
+    assert.ok(!blocked.skipped, tag + ': localStorage could be blocked for this check: ' + blocked.skipped);
+    const blockedOk = blocked.threw && !blocked.error && blocked.stored === '1' && blocked.set === '2';
     assert.ok(blockedOk, tag + ': a blocked localStorage fails nothing: ' + JSON.stringify(blocked));
     await js(`localStorage.removeItem('durbar.logo')`);
     await H.load({ w, h, ready: 'fit' });

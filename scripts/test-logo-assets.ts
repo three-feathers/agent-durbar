@@ -10,7 +10,7 @@ import { contrast } from '../src/shared/themegen';
 const ROOT = path.join(__dirname, '..', '..');
 const LOGO = path.join(ROOT, 'build', 'logo');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const M = require(path.join(ROOT, 'scripts', 'logo-marks.js')) as { IDS: string[]; SIZES: number[]; SLOTS: string[]; fileName: (id: string, size: number) => string; marksSource: (read?: (f: string) => string) => string; innerShapes: (s: string) => string };
+const M = require(path.join(ROOT, 'scripts', 'logo-marks.js')) as { IDS: string[]; SIZES: number[]; SLOTS: string[]; fileName: (id: string, size: number) => string; marksSource: (read?: (f: string) => string) => string; innerShapes: (s: string) => string; CLOSED_SHAPE: RegExp; captureProblem: (sz: { width: number; height: number }, px: number) => string };
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const B = require(path.join(ROOT, 'scripts', 'build-icons.js')) as { ICO: number[][]; ICNS: (string | number)[][]; MAC_PLATE: number; writeIco: (e: { size: number; png: Buffer }[]) => Buffer; writeIcns: (e: { type: string; png: Buffer }[]) => Buffer };
 
@@ -68,6 +68,7 @@ export function svgProblems(name: string, svg: string): string[] {
   for (const [re, what] of [[/<image\b/i, '<image>'], [/\bhref\s*=/i, 'href'], [/data:/i, 'data:'], [/Gradient/i, 'a gradient'], [/<filter\b/i, '<filter>'], [/\bstroke/i, 'stroke'], [/<style\b/i, '<style>'], [/<script\b/i, '<script>'], [/<text\b/i, '<text>'], [/var\(/i, 'var()'], [/\son[a-z]+\s*=/i, 'an event handler'], [/<foreignObject\b/i, '<foreignObject>']] as [RegExp, string][]) {
     if (re.test(svg)) out.push(`${name}: contains ${what} (FR-010)`);
   }
+  if (M.CLOSED_SHAPE.test(svg)) out.push(`${name}: a shape with a closing tag (the top bar would lose it): write it self-closed`);
   const shapes = svg.match(/<(?:rect|path|circle|ellipse|polygon)\b[^>]*\/>/g) || [];
   if (shapes.length < 5) out.push(`${name}: only ${shapes.length} shapes`);
   for (const s of shapes) {
@@ -227,6 +228,10 @@ for (const rel of ['scripts', 'src', 'package.json', 'README.md']) {
   bad(good.replace(' fill="#C2DEFF"', ''), /literal fill/, 'a shape with no fill fails');
   bad(good.replace('viewBox="0 0 20 20"', 'viewBox="0 0 32 32"'), /viewBox/, 'a wrong viewBox fails');
   bad(good.replace('<title>', '<linearGradient id="g"/><title>'), /gradient/, 'a gradient fails');
+  bad(good.replace('</svg>', '<path data-slot="gold" fill="#FFC21A" d="M0 0"></path></svg>'), /closing tag/, 'a shape with a closing tag fails');
+  assert.throws(() => M.marksSource(() => good.replace('</svg>', '<path data-slot="gold" fill="#FFC21A" d="M0 0"></path></svg>')), /closing tag/, 'and the generator refuses it');
+  assert.strictEqual(M.captureProblem({ width: 256, height: 256 }, 256), '', 'an exact capture is fine');
+  for (const sz of [{ width: 1024, height: 740 }, { width: 2048, height: 2048 }, { width: 512, height: 512 }]) assert.match(M.captureProblem(sz, 1024), /capture of/, `a capture of ${sz.width}x${sz.height} is refused`);
   const md = fs.readFileSync(path.join(LOGO, 'ASSETS.md'), 'utf8');
   const one = new Map([['icon-1-20.svg', good]]);
   const head = '| file | icon | form | world | tool | date | prompt | made by | licence | approved by |\n|---|---|---|---|---|---|---|---|---|---|\n';
