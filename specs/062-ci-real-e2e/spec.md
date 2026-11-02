@@ -3,8 +3,8 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: End-to-end checks with real CI accounts on every supported OS: install, sign in, models, one turn through Durbar's adapters; one platform list for OS workflows
-status: building
-note: T009: red runs (#856) not fixed, E2E paused
+status: built
+note: real runs green on 3 OSes 2026-11-02 (#856); daily schedule back; Windows has no OS sandbox for Claude or Copilot on the runner
 -->
 
 **Feature Branch**: `062-ci-real-e2e`
@@ -57,9 +57,11 @@ The list of supported CI platforms lives in one file, `.github/platforms.json`. 
 **Why:** the failures of 2026-10-25..2026-10-28 are only `no "ok" in the answer: (empty)` for Copilot and Claude, which does not say where the turn went. The "No network layer" install failures were fixed on 2026-10-27 (spec 081; the scripts pass `nodeDownloadGet`) and Windows/macOS were green on 10-28.
 **Change:** the `Detail` of a turn without "ok" adds `events <type:count,...>; status <words>[; sandbox on/off]`, a fixed vocabulary, never message text, then passes through `clean()`. No check is loosened.
 **Tasks:** T010.
+**Owner decision 2026-11-02:** fix now and restore the daily run; stability over cost.
+**Cost per week** (counted from the hand runs of 2026-11-02, 41374046702 / 41374405248 / 41375398060): the turn runs daily on Linux (7) plus Monday on macOS and Windows (1 each), so 9 turns per app a week; the other days macOS and Windows list models only (no tokens). Copilot 0.068 AIU a turn on Linux and macOS, up to 0.166 on Windows, so about 0.7 AIU; Claude (Haiku) about $0.001 a turn, up to $0.0025 once, so about $0.01 to $0.02; Codex about 13.3k input and 5 output tokens a turn, so about 120k input and 45 output tokens. Retries by hand add to this.
 
 **Cause found by the hand run 41373742601 (2026-11-02):** on Linux (Claude) and Windows (Claude, Copilot) the turn ended with `events sandbox:2,status:2; status idle>stopped` and no message: since spec 087 (2026-10-25) Durbar sends nothing when the agent app's OS sandbox cannot start (`Not sent: the OS sandbox could not start`) and offers *Continue without the OS sandbox*. The check read that early `idle` as the end of the turn. That matches the first red day (10-25). The earlier `No network layer` failures were the missing download getter (fixed 2026-10-27, spec 081).
-**Change 2:** the turn takes that offer (`continueWithoutSandbox`, then sends again) **only where this spec records that the runner cannot have the sandbox**: Windows, for Claude and Copilot (`mayContinueWithoutSandbox`, unit-tested in `test-platforms.ts`). There the row's *Read-only turn* column carries the adapter's notice, a recorded gap, not a failure. On Linux and macOS a sandbox that cannot start fails the row with the trace and the notice as detail (a regression, never loosened; a flaky Copilot start on Linux shows red and is reported). The "ok" check is unchanged.
+**Change 2:** the turn takes that offer (`continueWithoutSandbox`, then sends again) **only where this spec records that the runner cannot have the sandbox**: Windows, for Claude and Copilot (`mayContinueWithoutSandbox`, unit-tested in `test-platforms.ts`). There the row's *Read-only turn* column carries the adapter's notice, a recorded gap, not a failure. On Linux and macOS a sandbox that cannot start fails the row with the trace and the notice as detail (a regression, never loosened; a flaky Copilot start on Linux shows red and is reported). The "ok" check is unchanged. The decision in `turn()` is tested with a fake adapter on each platform (`test-platforms.ts`), not only in the helper.
 **Change 3 (T009):** the workflow installs `bubblewrap` and `socat` on Linux so Claude's sandbox starts there (the run showed `needs socat`); the `schedule:` block and the cron check in `test-platforms.ts` are back, FR-009's "no schedule" ends (FR-001 and FR-006 daily apply again). On Windows neither Claude Code ("no OS sandbox on Windows") nor Copilot ("requires BaseContainer", the runner's Windows) can start one: that stays a recorded `[KNOWN GAP]` in the row, not a failure.
 
 

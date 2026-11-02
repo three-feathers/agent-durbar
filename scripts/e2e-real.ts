@@ -32,7 +32,7 @@ import type { ModelOption } from '../src/shared/modelswitch';
 type Step = 'install' | 'detect' | 'sign-in' | 'models' | 'turn';
 interface Row { app: SetupKind; os: string; ok: boolean; failedAt?: Step; route?: string; version?: string; signIn?: string; models?: number; sampleModels?: string; readOnly?: string; model?: string; answer?: string; usage?: string; secs: number; detail?: string }
 
-const APPS: { kind: SetupKind; model?: string; descriptor: { create(): AgentAdapter } }[] = [
+export const APPS: { kind: SetupKind; model?: string; descriptor: { create(): AgentAdapter } }[] = [
   { kind: 'copilot', model: 'auto', descriptor: COPILOT_DESCRIPTOR },
   { kind: 'claude', model: 'haiku', descriptor: CLAUDE_DESCRIPTOR },
   { kind: 'codex', descriptor: CODEX_DESCRIPTOR },
@@ -185,7 +185,7 @@ function trace(events: AgentEvent[], sid: string): string {
   return `events ${[...counts].map(([k, n]) => `${k}:${n}`).join(',') || 'none'}; status ${statuses || 'none'}${sandbox ? `; sandbox ${sandbox}` : ''}`;
 }
 
-async function turn(ad: AgentAdapter, app: (typeof APPS)[number], events: AgentEvent[], mode: 'read-only' | 'allow', pick: { model?: string; effort?: string }): Promise<{ ok: boolean; detail?: string; answer?: string; usage?: string; sandboxNote?: string }> {
+export async function turn(ad: AgentAdapter, app: (typeof APPS)[number], events: AgentEvent[], mode: 'read-only' | 'allow', pick: { model?: string; effort?: string }, platform: string = process.platform): Promise<{ ok: boolean; detail?: string; answer?: string; usage?: string; sandboxNote?: string }> {
   {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), `durbar-e2e-${app.kind}-`));
     try {
@@ -201,7 +201,7 @@ async function turn(ad: AgentAdapter, app: (typeof APPS)[number], events: AgentE
       // the account and the turn are still proved.
       const note = [...events].reverse().find((e) => e.type === 'sandbox' && e.sessionId === sid && e.notice?.actions.includes('continue')) as { notice?: { text: string } } | undefined;
       if (note?.notice && !events.some((e) => e.type === 'output' && e.sessionId === sid)) sandboxNote = clean(note.notice.text);
-      if (sandboxNote && mayContinueWithoutSandbox(process.platform, app.kind) && ad.continueWithoutSandbox) {
+      if (sandboxNote && mayContinueWithoutSandbox(platform, app.kind) && ad.continueWithoutSandbox) {
         await ad.continueWithoutSandbox(sid);
         from = events.length;
         await ad.send(sid, { text: 'Reply with only the word ok.' });

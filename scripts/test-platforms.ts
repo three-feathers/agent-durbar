@@ -2,7 +2,8 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
-import { cheapCodex, mayContinueWithoutSandbox } from './e2e-real';
+import { APPS, cheapCodex, mayContinueWithoutSandbox, turn } from './e2e-real';
+import type { AgentAdapter, AgentEvent } from '../src/adapters/types';
 import type { ModelOption } from '../src/shared/modelswitch';
 
 const ROOT = path.join(__dirname, '..', '..');
@@ -40,3 +41,27 @@ assert.strictEqual(mayContinueWithoutSandbox('win32', 'claude'), true);
 assert.strictEqual(mayContinueWithoutSandbox('win32', 'copilot'), true);
 for (const [pl, k] of [['linux', 'claude'], ['linux', 'copilot'], ['darwin', 'claude'], ['darwin', 'copilot'], ['win32', 'codex'], ['linux', 'codex']] as const) assert.strictEqual(mayContinueWithoutSandbox(pl, k), false, `${pl} ${k}: a sandbox that cannot start fails the row`);
 console.log(`platforms: ${(list as string[]).join(', ')}; e2e-real and install-check use the list; no pull_request with secrets, no push trigger, daily; Codex picks a small model`);
+
+// spec 062 delta 2026-11-02: the wiring in turn(), with a fake adapter whose sandbox cannot start: the fallback is taken on Windows for Claude/Copilot only
+(async () => {
+  const run = async (platform: string, kind: 'claude' | 'copilot'): Promise<{ ok: boolean; continued: boolean }> => {
+    const events: AgentEvent[] = [];
+    let continued = false;
+    const emit = (e: object): void => { events.push({ sessionId: 's1', timestamp: 0, ...e } as AgentEvent); };
+    const ad = {
+      start: async () => 's1',
+      send: async () => {
+        if (!continued) { emit({ type: 'sandbox', sandbox: null, notice: { text: 'The OS sandbox could not start.', actions: ['continue'] } }); emit({ type: 'status', status: 'idle', intent: 'Not sent: the OS sandbox could not start' }); }
+        else { emit({ type: 'output', delta: 'ok', final: true, text: 'ok' }); emit({ type: 'status', status: 'idle' }); }
+      },
+      continueWithoutSandbox: async () => { continued = true; },
+      stop: async () => undefined,
+    } as unknown as AgentAdapter;
+    const r = await turn(ad, APPS.find((a) => a.kind === kind)!, events, 'read-only', {}, platform);
+    return { ok: r.ok, continued };
+  };
+  assert.deepStrictEqual(await run('win32', 'claude'), { ok: true, continued: true }, 'Windows Claude continues without the sandbox');
+  assert.deepStrictEqual(await run('win32', 'copilot'), { ok: true, continued: true }, 'Windows Copilot continues without the sandbox');
+  for (const pl of ['linux', 'darwin']) for (const k of ['claude', 'copilot'] as const) assert.deepStrictEqual(await run(pl, k), { ok: false, continued: false }, `${pl} ${k}: a sandbox that cannot start fails the row and is not skipped`);
+  console.log('turn(): sandbox fallback only on Windows for Claude and Copilot');
+})();
