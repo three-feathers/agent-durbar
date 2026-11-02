@@ -5,7 +5,6 @@
 
 /* lights without a blend mode: a warm lamp is a plain translucent gradient, the lamp's shade a darker one */
 .ro[data-world="photo"] :is(.ro-lamp,.ro-fxl){mix-blend-mode:normal}
-.ro[data-world="photo"] .ro-lamp.lamp-off{background:radial-gradient(closest-side,rgba(14,10,6,.62),rgba(14,10,6,.34) 80%,rgba(14,10,6,0));opacity:1}
 
 /* spec 097 FR-118 first run: the entrance in morning light, the card on a paper plate */
 html[data-world="photo"] #floor:has(> #stage > .welcome){background:linear-gradient(180deg,rgba(255,246,226,.62),rgba(255,236,205,.18) 55%,rgba(60,38,20,.18)),url(floor.webp) center/cover}

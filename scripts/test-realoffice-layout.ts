@@ -500,6 +500,14 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
   }
 }
 
+// ---- owner 2026-11-02: a narrow (asleep) plate keeps room for a name of nine characters at 12 px bold (about 70 px plus padding) ----
+for (const [W, H] of SIZES.slice(0, 2)) {
+  const m = model(15, 4, { away: false }); m.folders.forEach((f) => f.agents.forEach((a, i) => { if (i % 2 === 1) a.state = 'asleep'; }));
+  const L = realLayout(m, { w: W, h: H }, META), sl = L.zones.flatMap((z) => z.desks).filter((d) => d.state === 'asleep');
+  assert.ok(sl.length >= 4 && sl.every((d) => d.slot.w < 0.7 * Math.max(...L.zones.flatMap((z) => z.desks).map((x) => x.slot.w))), 'there are narrow desks');
+  for (const d of sl) assert.ok(d.plate.w >= 84, `the plate of a narrow desk is ${d.plate.w}px at ${W}x${H}: a name of nine characters needs 84`);
+}
+
 // ---- owner 2026-11-02: one post-it paper colour per place, dark ink at 4.5:1 or better on each, one default for a custom place ----
 {
   const lum = (hex: string): number => { const c = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255).map((x) => (x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4))); return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; };

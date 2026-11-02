@@ -111,9 +111,9 @@ module.exports = async (ctx) => {
     if (run('asleep')) {
       await H.load({ w, h, query: q(world), ready: REAL, settle: false });
       await must(PICS, 'the pictures');
-      /* the simulator's finished agents finished just now (the couch); make them finish 34 minutes ago, with their last message UNREAD: an unread reply keeps its full desk (spec 001 FR-173), so nobody sleeps yet (owner 2026-11-02) */
+      /* the simulator's finished agents finished just now (the couch); make them finish 34 minutes ago, named with nine characters (longer than the simulator's own), with their last message UNREAD: an unread reply keeps its full desk (spec 001 FR-173), so nobody sleeps yet (owner 2026-11-02) */
       const widths = () => js(`(()=>{const L=window.__durbarSimUi.realLayout();return {face:Math.round(L.faceH*10)/10,desks:L.zones.flatMap(z=>z.desks).map(d=>[d.id,d.state,Math.round(d.slot.w*10)/10]).sort()}})()`);
-      await js(`window.__durbarSimUi.agents().filter(a=>!a.parent&&a.state==='done').forEach(a=>{a.lastEventAt=Date.now()-34*60000;window.__durbarSimUi.unread.mark(a.id)});window.__durbarSimUi.crew.renderAll()`);
+      await js(`window.__durbarSimUi.agents().filter(a=>!a.parent&&a.state==='done').forEach(a=>{a.lastEventAt=Date.now()-34*60000;a.name='Alexandre';window.__durbarSimUi.unread.mark(a.id)});window.__durbarSimUi.crew.renderAll()`);
       await must(PICS, 'the pictures');
       const before = await widths();
       assert.strictEqual(before.desks.filter((x) => x[1] === 'asleep').length, 0, `${tag}: an unread reply does not sleep`);
@@ -141,11 +141,20 @@ module.exports = async (ctx) => {
           chair:a.filter(d=>d.away).length,small:[...document.querySelectorAll('#stage .ro-plate.asleep *,#stage .ro-zz')].filter(e=>parseFloat(getComputedStyle(e).fontSize)<10.5).length}})()`);
       assert.ok(geo.ratio.length >= 1 && geo.ratio.every((r) => Math.abs(r - 0.62) < 0.02), `${tag}: an asleep desk whose message is read is 0.62 wide: ${geo.ratio}`);
       assert.deepStrictEqual(geo.pose, geo.pose.map(() => 'rest'), `${tag}: the person is in rest`);
-      assert.strictEqual(geo.shades, geo.asleep, `${tag}: a shade over each asleep desk only`);
+      assert.strictEqual(geo.shades, geo.asleep, `${tag}: a lamp-off marker on each asleep desk only`);
+      /* owner 2026-11-02: no dark oval over the room behind a sleeper; the person dims instead */
+      const dim = await js(`(()=>{const L=[...document.querySelectorAll('#stage .ro-lights .ro-lamp.lamp-off')].map(e=>{const c=getComputedStyle(e);return [c.backgroundImage,c.backgroundColor]});const P=[...document.querySelectorAll('#stage .ro-person.asleep')].map(e=>getComputedStyle(e).filter);const A=[...document.querySelectorAll('#stage .ro-person:not(.asleep)')].map(e=>getComputedStyle(e).filter);return {L,P,A}})()`);
+      assert.ok(dim.L.length >= 1 && dim.L.every(([i, c]) => i === 'none' && /rgba\(0, 0, 0, 0\)|transparent/.test(c)), `${tag}: no shade over the room behind a sleeper: ${JSON.stringify(dim.L)}`);
+      assert.ok(dim.P.length >= 1 && dim.P.every((f) => /brightness\(0\.7/.test(f)) && dim.A.every((f) => f === 'none'), `${tag}: the sleeping person dims, awake people do not: ${JSON.stringify([dim.P, dim.A])}`);
       assert.strictEqual(geo.screensOff, geo.asleep, `${tag}: their screens are off`);
       assert.strictEqual(geo.chair + geo.small, 0, `${tag}: no empty-chair marker on an asleep desk; no text under 10.5px`);
       console.log('[moments] asleep ok', sl.length);
       await shot(world, 'asleep', w, h);
+      /* the name has priority in a narrow plate: no name is cut, at any desk (owner 2026-11-02) */
+      const CUT = `[...document.querySelectorAll('#stage .ro-plate .ro-l1 b')].filter(b=>b.scrollWidth>b.clientWidth+0.5).map(b=>b.textContent)`;
+      await H.until(CUT + '.length===0', 4000).catch(() => undefined); /* plates are fitted after the draw */
+      const cut = await js(CUT);
+      assert.deepStrictEqual(cut, [], `${tag}: a plate cuts a name: ${JSON.stringify(cut)}`);
     }
     // ---- FR-121 inbox as a queue at the Boss door, FR-122 limit slip at the Bank, FR-124 MCP bubble ----
     let staleRan = 0;
