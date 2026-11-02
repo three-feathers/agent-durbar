@@ -852,7 +852,10 @@ export class Scheduler {
     this.running = true;
     try {
       const now = this.deps.now();
-      for (const s of this.doc.schedules) {
+      // by id, looked up now: `remove` and `save` change the list while a send is awaited, and a deleted schedule must not fire
+      for (const id of this.doc.schedules.map((x) => x.id)) {
+        let s = this.doc.schedules.find((x) => x.id === id);
+        if (!s) continue;
         const t = this.dueNow(s);
         if (t === undefined || t > now) continue;
         if (s.loop) {
@@ -874,11 +877,16 @@ export class Scheduler {
           continue;
         } else {
           this.heldUntil.delete(s.id);
-          const sr = await this.sendRun(s, s.prompt);
+          const sent = s;
+          const sr = await this.sendRun(sent, sent.prompt);
           r = sr.r;
           reason = sr.reason;
           outcome = r ? 'sent' : 'failed';
-          if (typeof r === 'string' && r) this.attrib.set(r, s.id);
+          if (typeof r === 'string' && r) this.attrib.set(r, sent.id);
+          // `save` replaces the stored object while the send is awaited: what follows (`done`, `next`) must reach the stored one, or a once schedule would run again
+          const stored = this.doc.schedules.find((x) => x.id === sent.id);
+          if (!stored) continue; // deleted while its send was awaited: nothing is logged or updated for it
+          s = stored;
         }
         this.record(s, outcome, now, { session: typeof r === 'string' && r ? r : s.target?.session, reason });
         if (outcome === 'skipped-ended' || outcome === 'skipped-cap' || (outcome === 'skipped-review' && !recurring(s))) {
