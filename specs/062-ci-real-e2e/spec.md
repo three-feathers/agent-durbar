@@ -52,6 +52,12 @@ The list of supported CI platforms lives in one file, `.github/platforms.json`. 
 
 ## Changes
 
+### 2026-11-02: a failed turn says what happened (#856)
+
+**Why:** the failures of 2026-10-25..2026-10-28 are only `no "ok" in the answer: (empty)` for Copilot and Claude, which does not say where the turn went. The "No network layer" install failures were fixed on 2026-10-27 (spec 081; the scripts pass `nodeDownloadGet`) and Windows/macOS were green on 10-28.
+**Change:** the `Detail` of a turn without "ok" adds `events <type:count,...>; status <words>[; sandbox on/off]`, a fixed vocabulary, never message text, then passes through `clean()`. No check is loosened.
+**Tasks:** T010.
+
 ### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
 
 The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):

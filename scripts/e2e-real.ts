@@ -169,6 +169,16 @@ async function check(app: (typeof APPS)[number], noTurn: boolean): Promise<Row> 
   return { ...row, ok: true, secs: Math.round((Date.now() - t0) / 1000) };
 }
 
+/** Spec 062 delta 2026-11-02: what happened in a turn that gave no answer, in a fixed vocabulary (event types and counts, status words, sandbox on/off), never message text. */
+function trace(events: AgentEvent[], sid: string): string {
+  const mine = events.filter((e) => e.sessionId === sid);
+  const counts = new Map<string, number>();
+  for (const e of mine) counts.set(e.type, (counts.get(e.type) ?? 0) + 1);
+  const statuses = mine.filter((e): e is Extract<AgentEvent, { type: 'status' }> => e.type === 'status').map((e) => e.status).join('>');
+  const sandbox = mine.filter((e) => e.type === 'sandbox').map((e) => ((e as { sandbox: unknown }).sandbox ? 'on' : 'off')).join('>');
+  return `events ${[...counts].map(([k, n]) => `${k}:${n}`).join(',') || 'none'}; status ${statuses || 'none'}${sandbox ? `; sandbox ${sandbox}` : ''}`;
+}
+
 async function turn(ad: AgentAdapter, app: (typeof APPS)[number], events: AgentEvent[], mode: 'read-only' | 'allow', pick: { model?: string; effort?: string }): Promise<{ ok: boolean; detail?: string; answer?: string; usage?: string }> {
   {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), `durbar-e2e-${app.kind}-`));
@@ -187,7 +197,7 @@ async function turn(ad: AgentAdapter, app: (typeof APPS)[number], events: AgentE
       const usage = use.length ? `${use.reduce((s, u) => s + (u.inputTokens ?? 0), 0)} in / ${use.reduce((s, u) => s + (u.outputTokens ?? 0), 0)} out${use.some((u) => u.nanoAiu) ? `, ${(use.reduce((s, u) => s + (u.nanoAiu ?? 0), 0) / 1e9).toFixed(3)} AIU` : ''}${use.some((u) => u.costUsd) ? `, ≈ $${use.reduce((s, u) => s + (u.costUsd ?? 0), 0).toFixed(4)}` : ''}` : 'none reported';
       await ad.stop(sid).catch(() => undefined);
       if (err) return { ok: false, detail: clean(err.intent ?? 'error'), answer, usage };
-      if (!/\bok\b/i.test(out)) return { ok: false, detail: clean(`no "ok" in the answer: ${out.slice(0, 80) || '(empty)'}`), answer, usage };
+      if (!/\bok\b/i.test(out)) return { ok: false, detail: clean(`no "ok" in the answer: ${out.slice(0, 80) || '(empty)'}; ${trace(events, sid)}`), answer, usage };
       return { ok: true, answer, usage };
     } catch (e) {
       return { ok: false, detail: clean(e instanceof Error ? e.message : e) };
