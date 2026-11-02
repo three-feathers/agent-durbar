@@ -361,14 +361,14 @@
         <ul class="thlist" id="thList">${themes.map((t)=>{const by=t.author&&t.author!==baseAuthor?t.author:'';return `<li class="throw"><button class="thpick" type="button" data-theme="${esc(t.id)}" aria-pressed="${t.id===curTheme}" aria-label="Theme ${esc(t.name)}${t.own?', yours':''}${by?esc(', by '+by):''}"><span class="thsw" data-theme-sw="${esc(t.id)}" aria-hidden="true"><i class="thsw-wall"></i><i class="thsw-desk"></i><i class="thsw-chair"></i><i class="thsw-ag"></i></span><span class="thtx"><b title="${esc(t.name)}">${esc(t.name)}</b>${t.own?'<span class="mtag">yours</span>':''}${by?`<small>${esc(by)}</small>`:''}</span></button></li>`;}).join('')}</ul>
         ${themeFallbackNote(themes)}
         ${badThemes.length?`<p class="scr-note warn" role="status">${badThemes.length} theme folder${badThemes.length>1?'s were':' was'} ignored: ${esc(badThemes.map((b)=>b.id+': '+(b.error||'invalid')).join('; '))}</p>`:''}
-        <div class="scr-tools">${X.bridge.generateTheme?'<button class="btn" type="button" id="thAi">Make a theme with AI…</button>':''}<button class="btn" type="button" id="thImport">Import a theme…</button><button class="btn" type="button" id="thExport" title="Copy the active theme's folder (one of your own themes) to a folder you pick">Export the active theme…</button></div></section>`;
+        <div class="scr-tools"><button class="btn" type="button" id="thExport" title="Copy the active theme's folder (one of your own themes) to a folder you pick">Export the active theme…</button>${userThemes.some((u)=>u.ok!==false)&&X.bridge.removeTheme?'<button class="btn" type="button" id="thRemove" title="Delete the active theme (one of your own themes) from this computer">Remove the active theme…</button>':''}</div></section>`;
     /* Characters (spec 077 FR-064, FR-068): who sits at the desks, on top of any theme; the theme picker's pattern, one figure per choice */
     const KIT_NAMES={office:'Minimalist',pixel:'Pixel',crew:'Cheeky'};
     /* the items are painted again after a theme pick: the theme's own figures and every preview follow the theme */
     const charItems=()=>{
-      const cur=window.THEME.characters(), own=window.THEME.themeKit(), crewN=window.DurbarCrew&&Array.isArray(window.DurbarCrew.IDS)?window.DurbarCrew.IDS.length:0; const preN=window.DurbarCrew&&Array.isArray(window.DurbarCrew.PREHISTORIC_IDS)?window.DurbarCrew.PREHISTORIC_IDS.length:0,pirN=window.DurbarCrew&&Array.isArray(window.DurbarCrew.PIRATE_IDS)?window.DurbarCrew.PIRATE_IDS.length:0,monN=window.DurbarCrew&&Array.isArray(window.DurbarCrew.MONSTER_IDS)?window.DurbarCrew.MONSTER_IDS.length:0;
+      const cur=window.THEME.characters(), own=window.THEME.themeKit(), crewN=window.DurbarCrew&&Array.isArray(window.DurbarCrew.IDS)?window.DurbarCrew.IDS.length:0; const preN=window.DurbarCrew&&Array.isArray(window.DurbarCrew.PREHISTORIC_IDS)?window.DurbarCrew.PREHISTORIC_IDS.length:0,pirN=window.DurbarCrew&&Array.isArray(window.DurbarCrew.PIRATE_IDS)?window.DurbarCrew.PIRATE_IDS.length:0,monN=window.DurbarCrew&&Array.isArray(window.DurbarCrew.MONSTER_IDS)?window.DurbarCrew.MONSTER_IDS.length:0,royN=window.DurbarCrew&&Array.isArray(window.DurbarCrew.ROYAL_IDS)?window.DurbarCrew.ROYAL_IDS.length:0,rebN=window.DurbarCrew&&Array.isArray(window.DurbarCrew.REBELS_IDS)?window.DurbarCrew.REBELS_IDS.length:0;
       const real=X.view&&X.view.get()==='real'&&X.view.world; /* FR-201: in Real office the first choice is the world's default set */
-      const list=[real?{id:'theme',name:'World\u2019s default ('+real.defaultSet()+')',sub:'People follow the world'}:{id:'theme',name:'The theme\u2019s own',sub:(KIT_NAMES[own]||own)+' figures'},{id:'minimalist',name:'Minimalist',sub:'The calm office figure'},{id:'cheeky',name:'Cheeky',sub:crewN?crewN+' cheeky characters':'Cheeky characters'},{id:'prehistoric',name:'Prehistoric',sub:preN?preN+' cave characters':'Cave characters'},{id:'pirate',name:'Pirate',sub:pirN?pirN+' pirate characters':'Pirate characters'},{id:'monster',name:'Monster',sub:monN?monN+' monster characters':'Monster characters'}];
+      const list=[real?{id:'theme',name:'World\u2019s default ('+real.defaultSet()+')',sub:'People follow the world'}:{id:'theme',name:'The theme\u2019s own',sub:(KIT_NAMES[own]||own)+' figures'},{id:'minimalist',name:'Minimalist',sub:'The calm office figure'},{id:'cheeky',name:'Cheeky',sub:crewN?crewN+' cheeky characters':'Cheeky characters'},{id:'prehistoric',name:'Prehistoric',sub:preN?preN+' cave characters':'Cave characters'},{id:'pirate',name:'Pirate',sub:pirN?pirN+' pirate characters':'Pirate characters'},{id:'monster',name:'Monster',sub:monN?monN+' monster characters':'Monster characters'},{id:'royal',name:'Royal',sub:royN?royN+' royal characters':'Royal characters'},{id:'rebels',name:'Animal Rebels',sub:rebN?rebN+' animal characters':'Animal characters'}];
       return list.map((c)=>`<li class="throw"><button class="thpick" type="button" data-characters="${esc(c.id)}" aria-pressed="${c.id===cur}" aria-label="Characters ${esc(c.name)}: ${esc(c.sub)}"><span class="chsw" aria-hidden="true">${X.charPreview?X.charPreview(c.id):''}</span><span class="thtx"><b title="${esc(c.name)}">${esc(c.name)}</b><small>${esc(c.sub)}</small></span></button></li>`).join('');
     };
     const charSec=window.THEME&&window.THEME.setCharacters&&X.applyCharacters?`<section class="scr-sec" aria-labelledby="chH"><h3 id="chH">Characters</h3>
@@ -482,15 +482,6 @@
       /* a repaint of the list that a theme pick started earlier can land between this click and the change itself and show the old choice (check-characters on CI): once the change is applied, the buttons say what is applied */
       Promise.resolve(done).then(()=>{const l=$('chList');if(l&&window.THEME&&window.THEME.characters){const cur=window.THEME.characters();l.querySelectorAll('[data-characters]').forEach((x)=>x.setAttribute('aria-pressed',String(x.dataset.characters===cur)));}});
     });
-    if($('thImport'))$('thImport').onclick=async()=>{
-      if(!X.bridge.importTheme)return;
-      const res=await X.bridge.importTheme().catch(()=>null);
-      if(!res||!res.ok){X.toast(esc(res&&res.error||'The theme folder could not be imported (cancelled or not a valid pack).'),4200);return;}
-      X.toast('Theme <b>'+esc(res.name||res.id)+'</b> imported.',3200);
-      if(X.applyTheme)X.applyTheme(res.id);
-      paintSettings();
-    };
-    if($('thAi'))$('thAi').onclick=()=>aiTheme(curTheme);
     if($('thExport'))$('thExport').onclick=async()=>{
       if(!X.bridge.exportTheme)return;
       /* spec 040 FR-019: the theme active NOW, not the one when Settings was painted; a built-in one says why it cannot be exported */
@@ -502,10 +493,22 @@
       if(!res||!res.ok){X.toast(esc(res&&res.error||'Export did not work (cancelled, or only your own themes can be exported).'),4200);return;}
       X.toast('Theme copied to <b>'+esc(res.to)+'</b>.',4200);
     };
+    if($('thRemove'))$('thRemove').onclick=async()=>{
+      /* spec 040 FR-032: remove one of the themes you saved, after a question; the theme in use goes to Clean Office. A built-in one says why it stays */
+      const active=(window.THEME&&window.THEME.current&&window.THEME.current().id)||curTheme;
+      const mine=themes.find((t)=>t.id===active&&t.own);
+      if(!mine){X.toast(esc((themes.find((t)=>t.id===active)||{name:active}).name)+' is built into the app, so it cannot be removed. Pick one of your own themes (marked "yours") first.',6000);return;}
+      const ask=await dialog({title:'Remove this theme?',html:`<p class="dsub"><b>${esc(mine.name)}</b> is deleted from this computer, and Clean Office is used instead. This cannot be undone: export it first if you want a copy.</p>`,buttons:[{label:'Cancel',value:null},{label:'Remove theme',value:'rm',cls:'danger'}]});
+      if(!ask||ask.value!=='rm')return;
+      const res=await X.bridge.removeTheme(mine.id).catch(()=>null);
+      if(!res||!res.ok){X.toast(esc(res&&res.error||'The theme could not be removed.'),4200);return;}
+      if(window.THEME&&window.THEME.forgetUser)window.THEME.forgetUser(mine.id);
+      if(X.applyTheme)await X.applyTheme('clean-office'); /* saved before the list is painted again */
+      X.toast('Theme <b>'+esc(mine.name)+'</b> removed. Clean Office is on.',3600);
+      paintSettings();
+    };
     if(focus&&!atSec){const h=r.querySelector('h2');if(h){h.tabIndex=-1;h.focus({preventScroll:true});}}
   }
-  /* spec 040 FR-014..FR-018: AI theme maker. Describe -> one prompt to a harness with `oneShot` -> a checked manifest ->
-     preview (Try it, live, not saved) -> Save as my theme, Try again or Discard (back to the theme that was active). User text is never logged. */
   /* spec 040 FR-015 / spec 052 FR-093: what one one-shot request costs, in the words of the app's plan (also used by spec 043 FR-028) */
   function oneShotCostLine(k){const n=k.displayName||k.id;
     return 'Uses your own '+n+' account: '+(k.id==='claude'?'a small cost (at most $0.25, usually about a cent).':k.id==='copilot'?'a few AI credits from your plan.':k.id==='codex'?'a small part of your ChatGPT plan\'s usage.':'a small cost on your own plan.');}
@@ -519,108 +522,6 @@
       const parts=[d?d+' value'+(d>1?'s use':' uses')+' the defaults (not usable)':'',c?c+' colour'+(c>1?'s':'')+' adjusted so text stays readable':''].filter(Boolean);
       return parts.length?esc(t.name)+': '+parts.join('; '):'';}).filter(Boolean);
     return lines.length?`<p class="scr-note small" role="status" id="thFallbacks">${lines.join('; ')}.</p>`:'';
-  }
-  async function aiTheme(){
-    const before=(window.THEME&&window.THEME.current&&window.THEME.current().id)||'clean-office';
-    let kinds=[];
-    if(X.bridge.listAdapters){try{kinds=((await X.bridge.listAdapters())||[]).filter((k)=>k&&k.state==='ready'&&k.capabilities&&k.capabilities.oneShot);}catch(e){kinds=[];}}
-    if(!kinds.length){await dialog({title:'Make a theme with AI',html:'<p class="dsub">This needs Claude Code, OpenAI Codex or GitHub Copilot, installed and signed in on this computer.</p>',buttons:[{label:'Close',value:'ok',cls:'primary'}]});return;}
-    let desc='',kind=kinds[0].id;
-    /* spec 052 FR-093: the cost line names only the app picked in "Made by", and follows the selection */
-    const aiCostLine=(id)=>oneShotCostLine(kinds.find((x)=>x.id===id)||kinds[0]);
-    /* spec 040 FR-021: a few example looks at random, so people see how to describe one */
-    let ideas=[];
-    if(X.bridge.themeIdeas){try{ideas=(await X.bridge.themeIdeas())||[];}catch(e){ideas=[];}}
-    const pick=()=>{const p=ideas.slice(),o=[];while(o.length<4&&p.length)o.push(p.splice(Math.floor(Math.random()*p.length),1)[0]);return o;};
-    const ideaHtml=()=>ideas.length?`<div class="ai-ideas" id="aiIdeas"><span class="scr-note small">Ideas:</span>${pick().map((i)=>`<button class="btn ai-idea" type="button" data-idea="${esc(i)}">${esc(i)}</button>`).join('')}<button class="btn ai-more" type="button" id="aiMore" title="Show other ideas">More ideas</button></div>`:'';
-    for(;;){
-      const r=await dialog({title:'Make a theme with AI',size:'m',html:`<p class="dsub">Describe a look in a few words, for example “a night-shift newsroom” or “a ship's bridge at dawn”.</p>
-        <ul class="dlist ai-pts"><li>One request, small cost</li><li>No tools, nothing kept</li><li>Preview before saving</li></ul>
-        <p class="scr-note small">The agent app you pick designs a light or dark theme. Durbar keeps only safe values and checks that text stays readable.</p>
-        <label>Look<textarea id="aiDesc" rows="3" maxlength="300" placeholder="A calm library at night">${esc(desc)}</textarea></label>
-        ${ideaHtml()}
-        <label>Made by<select id="aiKind">${kinds.map((k)=>`<option value="${esc(k.id)}"${k.id===kind?' selected':''}>${esc(k.displayName||k.id)}</option>`).join('')}</select></label>
-        <p class="scr-note small" id="aiCost">${esc(aiCostLine(kind))}</p>`,
-        buttons:[{label:'Cancel',value:null},{label:'Make the theme',value:'go',cls:'primary'}],
-        validate:(d)=>{const v=d.querySelector('#aiDesc').value.trim();return v.length<3?'Describe the look in a few words.':false;},
-        onOpen:(d)=>{const t=d.querySelector('#aiDesc');t.addEventListener('input',()=>{desc=t.value;});
-          d.addEventListener('click',(e)=>{const b=e.target.closest&&e.target.closest('.ai-idea');if(b){t.value=b.dataset.idea;desc=t.value;focusIn(t);return;}
-            if(e.target.closest&&e.target.closest('#aiMore')){const box=d.querySelector('#aiIdeas');if(box)box.outerHTML=ideaHtml();}});d.querySelector('#aiKind').addEventListener('change',(e)=>{kind=e.target.value;const c=d.querySelector('#aiCost');if(c)c.textContent=aiCostLine(kind);});}});
-      if(!r||r.value!=='go')return;
-      const busy=X.toast?X.toast('Making the theme… this can take up to a minute.',60000):null;
-      let g=null;
-      try{g=await X.bridge.generateTheme(desc.trim(),kind);}catch(e){g={ok:false,error:String(e&&e.message||e)};}
-      if(busy&&busy.remove)busy.remove();
-      if(!g||!g.ok){
-        const again=await dialog({title:'No theme this time',html:`<p class="dsub">${esc((g&&g.error)||'Unknown error.')}</p>${g&&g.costUsd?`<p class="scr-note small">Cost: about $${esc(g.costUsd.toFixed(4))} (estimate).</p>`:''}${g&&g.nanoAiu?`<p class="scr-note small">Used ${esc(aiCredits(g.nanoAiu))} AI credits (as reported by Copilot).</p>`:''}`,buttons:[{label:'Close',value:null},{label:'Try again',value:'again',cls:'primary'}]});
-        if(again&&again.value==='again')continue;return;
-      }
-      const m=g.manifest, toks=m.tokens||{}, hex=/^#[0-9a-f]{3,6}$/i;
-      /* spec 070 FR-025: colours apart from fonts and shapes; FR-024: what the contrast fix adjusts when the theme is applied */
-      const typed=(window.THEME&&window.THEME.TYPED_TOKENS)||{}, nShape=Object.keys(toks).filter((k)=>Object.prototype.hasOwnProperty.call(typed,k)).length, nCol=Object.keys(toks).length-nShape;
-      const tokenLine=nCol+' colour'+(nCol===1?'':'s')+(nShape?', '+nShape+(nShape===1?' font or shape':' fonts and shapes'):'');
-      const adjusted=(window.THEME&&window.THEME.contrastCheck?window.THEME.contrastCheck(m):[]).length;
-      const swatches=['--bg','--surface','--ink','--sage','--blue','--amber','--brand-bg','--desk'].filter((k)=>hex.test(toks[k]||'')).map((k)=>`<span class="ai-sw" title="${esc(k)}" data-col="${esc(toks[k])}"></span>`).join('');
-      /* spec 052 (2026-10-21, round 1): say what each word renames (the Clean Office word), never the internal key such as place-library */
-      const plain=(k)=>String(window.THEME&&window.THEME.plainWord?window.THEME.plainWord(k):k).split(':')[0];
-      const words=Object.entries(m.words||{}).map(([k,v])=>`<li><small>${esc(plain(k))}</small> ${esc(v)}</li>`).join('');
-      const lookId=(id)=>id==='clean'||id==='office'?'clean-office':id==='pixel'?'retro':id; /* style / scene kit -> the built-in theme it comes from */
-      const lookName=(id)=>{const t=window.THEME&&window.THEME.list?window.THEME.list().find((x)=>x.id===lookId(id)):null;return t?t.name:String(id||'');};
-      for(;;){
-        const pick=await dialog({title:'Theme: '+m.name,wide:true,html:`<div class="ai-sws" aria-hidden="true">${swatches}</div>
-          <p class="dsub">Built on the <b>${esc(lookName(m.ui))}</b> look, with <b>${esc(lookName(m.scene))}</b> people and furniture; ${esc(tokenLine)}.${g.costUsd?` Made for about $${esc(g.costUsd.toFixed(4))} (estimate).`:''}${g.nanoAiu?` Used ${esc(aiCredits(g.nanoAiu))} AI credits (as reported by Copilot).`:''}</p>
-          ${words?`<ul class="ai-words">${words}</ul>`:''}
-          ${g.warnings&&g.warnings.length?`<p class="scr-note small">${esc(g.warnings.join('; '))}.</p>`:''}
-          ${adjusted?`<p class="scr-note small">${adjusted} colour${adjusted>1?'s':''} adjusted so text stays readable.</p>`:''}
-          <p class="scr-note small">Try it shows it now without saving. Discard goes back to the theme you had.</p>`,
-          buttons:[{label:'Discard',value:null},{label:'Try again',value:'again'},{label:'Try it',value:'try'},{label:'Save as my theme',value:'save',cls:'primary'}],
-          onOpen:(d)=>d.querySelectorAll('[data-col]').forEach((el)=>{if(hex.test(el.dataset.col))el.style.background=el.dataset.col;})}); /* CSSOM, validated hex only */
-        const choice=pick&&pick.value;
-        if(choice==='try'){
-          /* spec 040 FR-021: look at it in the real office: Settings closes, a small bar offers Save / Details / Try again / Discard */
-          if(X.previewTheme)X.previewTheme(m);
-          close();
-          const next=await tryBar(m.name);
-          if(next==='save'||next==='details'){open('settings');await new Promise((r)=>setTimeout(r,60));}
-          if(next==='details')continue;
-          if(next==='save'){
-            const res=await X.bridge.saveGeneratedTheme(m).catch(()=>null);
-            if(!res||!res.ok){X.toast(esc((res&&res.error)||'The theme could not be saved.'),5000);if(X.previewTheme)X.previewTheme(before);return;}
-            if(X.applyTheme)X.applyTheme(res.id);
-            X.toast('Theme <b>'+esc(res.name||res.id)+'</b> saved. It is in the list as one of yours.',3600);
-            paintSettings();return;
-          }
-          if(X.previewTheme)X.previewTheme(before);
-          if(next==='again'){open('settings');await new Promise((r)=>setTimeout(r,60));break;}
-          return;
-        }
-        if(choice==='save'){
-          const res=await X.bridge.saveGeneratedTheme(m).catch(()=>null);
-          if(!res||!res.ok){X.toast(esc((res&&res.error)||'The theme could not be saved.'),5000);continue;}
-          if(X.applyTheme)X.applyTheme(res.id);
-          X.toast('Theme <b>'+esc(res.name||res.id)+'</b> saved. It is in the list as one of yours.',3600);
-          paintSettings();return;
-        }
-        if(X.previewTheme)X.previewTheme(before); /* Discard or Try again: back to the theme that was active */
-        if(choice==='again')break;
-        return;
-      }
-    }
-  }
-  /* the "trying a theme" bar over the live office; resolves 'save' | 'details' | 'again' | 'discard' (Escape) */
-  function tryBar(name){
-    return new Promise((resolve)=>{
-      const old=document.getElementById('aiTryBar');if(old)old.remove();
-      const b=document.createElement('div');b.id='aiTryBar';b.className='ai-trybar';b.setAttribute('role','dialog');b.setAttribute('aria-label','Trying a theme');
-      b.innerHTML=`<span>Trying <b></b>. Nothing is saved yet.</span><button class="btn" type="button" data-t="discard">Discard</button><button class="btn" type="button" data-t="again">Try again</button><button class="btn" type="button" data-t="details">Details</button><button class="btn primary" type="button" data-t="save">Save as my theme</button>`;
-      b.querySelector('b').textContent=name;
-      const done=(v)=>{b.remove();document.removeEventListener('keydown',onKey,true);resolve(v);};
-      const onKey=(e)=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();done('discard');}};
-      b.addEventListener('click',(e)=>{const t=e.target.closest&&e.target.closest('[data-t]');if(t)done(t.dataset.t);});
-      document.addEventListener('keydown',onKey,true);
-      document.body.appendChild(b);
-      focusIn(b.querySelector('[data-t="save"]'));
-    });
   }
   /* one server of the Copilot CLI list (or the built-in one): read-only, with its exact command/URL and a switch for new sessions */
   function cliRow(a){
@@ -970,9 +871,6 @@
         ${v.env.concat(v.headers).length?`<div class="srv-secrets" aria-label="Secret values (masked)">${v.env.map(x=>secretChip('env',x)).join('')}${v.headers.map(x=>secretChip('header',x)).join('')}</div>`:''}
       </div>
       <div class="srv-act">${sw(v.enabled&&v.trusted,(v.enabled?'Disable ':'Enable ')+v.name,'data-act="toggle"')}<button class="btn sm" type="button" data-act="edit">Edit</button><button class="btn sm danger" type="button" data-act="remove">Remove</button></div></li>`).join('');
-    const leg=st.legacy.map(v=>`<li class="srv legacy" data-legacy="${esc(v.name)}"><div class="srv-main"><div class="srv-top"><b class="srv-name">${esc(v.name)}</b><span class="mtag warn">old app-level server, not applied</span><span class="mtag">${esc(v.transport)}</span></div>
-        <code class="srv-cmd" title="${esc(cmd(v))}">${esc(cap(cmd(v),180))}</code></div>
-      <div class="srv-act"><button class="btn sm" type="button" data-act="move">Move here</button><button class="btn sm danger" type="button" data-act="rmlegacy">Remove</button></div></li>`).join('');
     r.innerHTML=head('MCP extras · '+st.name)+`<div class="scr-body">
       <section class="scr-sec" aria-labelledby="fxH"><h3 id="fxH">Extra servers for <code>${esc(st.name)}</code> <small>${FOLDER_NOTE.toLowerCase()}</small></h3>
         <p class="scr-note">These servers are optional and belong to <b>this folder only</b>: agents in other folders do not get them. Servers from your Copilot CLI list are available to every agent and are not edited here.</p>
@@ -983,8 +881,7 @@
         ${srv?`<ul class="srvs" id="srvList">${srv}</ul>`:'<p class="scr-empty">No extras for this folder. Your Copilot CLI servers are already available to its agents.</p>'}
         <p class="scr-note small">Changes apply to <b>new</b> sessions in this folder and to agents that start or resume afterwards. A running session keeps its servers until it ends, or until you switch one in that agent's MCP menu.</p>
       </section>
-      ${leg?`<section class="scr-sec" aria-labelledby="lgH"><h3 id="lgH">Old app-level servers <small>not applied</small></h3>
-        <p class="scr-note">Earlier versions kept one global list of servers. Those are no longer used anywhere. <b>Move here</b> puts one into this folder (switched off; you review and trust it again), or remove it.</p><ul class="srvs" id="legList">${leg}</ul></section>`:''}</div>`;
+    </div>`;
     wireHead();
     $('mcpAdd').onclick=()=>editServer(null,st);
     $('mcpImportVs').onclick=()=>importVSCode(st);
@@ -996,15 +893,6 @@
     const st=cur&&cur.st;if(!st)return;
     const li=e.target.closest('li.srv');if(!li)return;
     const act=(e.target.closest('[data-act]')||{}).dataset;if(!act)return;
-    if(li.dataset.legacy){
-      const n=li.dataset.legacy;
-      if(act.act==='move'){const res=await X.bridge.mcpMoveLegacy(n,st.key);X.toast(res&&res.ok?esc(n)+' moved here (off). Review it and switch it on.':'Could not move: '+esc((res&&res.error)||'unknown error'),4200);paintFolder();}
-      else if(act.act==='rmlegacy'){
-        const r=await dialog({title:'Remove old server "'+n+'"?',html:'<p class="dsub">It is deleted from Agent Durbar with its stored secret values. It was not being used.</p>',buttons:[{label:'Cancel',value:null},{label:'Remove',value:'ok',cls:'primary danger'}]});
-        if(r){await X.bridge.mcpRemoveLegacy(n);paintFolder();}
-      }
-      return;
-    }
     const name=li.dataset.name,v=st.servers.find(x=>x.name===name);if(!v)return;
     if(act.act==='toggle'){const turnOn=!(v.enabled&&v.trusted);await toggleServer(v,turnOn,st);}
     else if(act.act==='edit')editServer(v,st);

@@ -188,7 +188,6 @@ export function registerMcpIpc(deps: {
       key,
       name: nameOfKey(key),
       servers: s.list(key),
-      legacy: s.legacyList(),
       secretsPersist: s.secretsPersist,
       skipped: s.forSession(key, [], names).skipped,
       cliNames: names,
@@ -226,7 +225,6 @@ export function registerMcpIpc(deps: {
   });
   ipcHandle('mcp:setEnabled', (_e, key: unknown, name: unknown, enabled: unknown, trustAck: unknown) =>
     knownKey(key) && typeof name === 'string' ? store().setEnabled(key, name, enabled === true, trustAck === true) : { ok: false, error: 'Unknown server.' });
-  ipcHandle('mcp:moveLegacy', (_e, name: unknown, key: unknown) => (knownKey(key) && typeof name === 'string' ? store().moveLegacy(name, key, cliNames()) : bad));
   /** Per-folder import from `.vscode/mcp.json` (spec 020 FR-020): preview, then apply the ticked ids. Read-only for the file; imported servers arrive off and untrusted. */
   ipcHandle('mcp:importPreview', (_e, key: unknown) => {
     if (!knownKey(key)) return { ...bad, label: '.vscode/mcp.json', files: [], items: [], digest: '', skipped: 0 };
@@ -241,7 +239,6 @@ export function registerMcpIpc(deps: {
       return { ok: false, error: 'Could not save the server list.', imported: [], failed: [] };
     }
   });
-  ipcHandle('mcp:removeLegacy', (_e, name: unknown) => ({ ok: typeof name === 'string' && store().removeLegacy(name) }));
 
   /** Spec 058 FR-078: what Agent Durbar passed as disabled at the last session start, and what the user switched since: a runtime `disabled` for these is ours, not the agent app's. */
   const launched = new Map<string, Set<string>>();

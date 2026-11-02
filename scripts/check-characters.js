@@ -2,7 +2,7 @@
  * Characters, separate from themes (spec 077 FR-064..FR-069, issue #814). Simulator only (DURBAR_SIM=15 DURBAR_SIM_FREEZE=1), no AI credits.
  *
  * At 1440x900 and 1280x800, on Retro Pixel (the one built-in theme with a dark floor; Clean Office is the other), everything through Settings (the real path):
- *   - the Characters section is right after Theme, lists The theme's own, Minimalist, Cheeky, Prehistoric, Pirate and Monster, each with a preview figure, and names the
+ *   - the Characters section is right after Theme, lists The theme's own, Minimalist, Cheeky, Prehistoric, Pirate, Monster, Royal and Animal Rebels, each with a preview figure, and names the
  *     theme's own figures; it fits the window (no page overflow);
  *   - Cheeky: every desk scene draws the crew kit with a portrait, the theme stays the one picked, the choice is announced;
  *   - a theme switch with Cheeky keeps the crew on the new theme;
@@ -73,8 +73,8 @@ module.exports = async (ctx) => {
       assert.ok(await H.until(`(document.querySelector('#chList [data-characters="theme"]')||{}).textContent&&document.querySelector('#chList [data-characters="theme"]').textContent.includes(${jsLiteral(own)})`, 4000), `${where}: The theme's own follows the theme (${own})`);
       const sc = await section();
       assert.ok(sc.afterTheme, `${where}: Characters comes right after Theme`);
-      assert.deepStrictEqual(sc.items.map((i) => i.id), ['theme', 'minimalist', 'cheeky', 'prehistoric', 'pirate', 'monster'], `${where}: the six choices in order`);
-      assert.deepStrictEqual(sc.items.map((i) => i.pressed), ['true', 'false', 'false', 'false', 'false', 'false'], `${where}: the default is pressed`);
+      assert.deepStrictEqual(sc.items.map((i) => i.id), ['theme', 'minimalist', 'cheeky', 'prehistoric', 'pirate', 'monster', 'royal', 'rebels'], `${where}: the eight choices in order`);
+      assert.deepStrictEqual(sc.items.map((i) => i.pressed), ['true', 'false', 'false', 'false', 'false', 'false', 'false', 'false'], `${where}: the default is pressed`);
       for (const i of sc.items) {
         assert.ok(i.svg, `${where}: ${i.id} has a preview figure`);
         assert.ok(i.minFont >= 10.5, `${where}: ${i.id}: text is at least 10.5px (${i.minFont})`);
@@ -84,6 +84,8 @@ module.exports = async (ctx) => {
       assert.ok(sc.items.find((i) => i.id === 'prehistoric').pic, `${where}: the Prehistoric preview is a portrait (spec 077 FR-072)`);
       assert.ok(sc.items.find((i) => i.id === 'pirate').pic, `${where}: the Pirate preview is a portrait (spec 077 FR-074)`);
       assert.ok(sc.items.find((i) => i.id === 'monster').pic, `${where}: the Monster preview is a portrait (spec 077 FR-075)`);
+      assert.ok(sc.items.find((i) => i.id === 'royal').pic, `${where}: the Royal preview is a portrait (spec 077 FR-076)`);
+      assert.ok(sc.items.find((i) => i.id === 'rebels').pic, `${where}: the Animal Rebels preview is a portrait (spec 077 FR-077)`);
       assert.ok(!sc.items.find((i) => i.id === 'minimalist').pic && !sc.items.find((i) => i.id === 'theme').pic, `${where}: the other previews are drawn figures`);
       if (kit === 'pixel') assert.strictEqual(sc.items.find((i) => i.id === 'theme').kit, 'crispEdges', `${where}: The theme's own preview is a pixel figure`);
       assert.ok(sc.pageX && sc.pageY, `${where}: Settings does not overflow the page`);
@@ -125,6 +127,18 @@ module.exports = async (ctx) => {
       assert.ok(await H.until(`(()=>{const sc=[...document.querySelectorAll('#stage .desk[data-id] svg.scene')].filter(s=>s.getClientRects().length);return sc.length>=12&&sc.every(s=>/\\|crew(\\||$)/.test(s.dataset.sig||'')&&s.querySelector('image[href*="crew/art/monster-"]'));})()`, 10000), `${where}: Monster: every desk draws the crew kit with a Monster portrait`);
       assert.strictEqual(await H.js(`window.THEME.current().id`), theme, `${where}: the theme stays ${theme} under Monster`);
       assert.ok(await H.until(`document.querySelectorAll('#stage image[href^="crew/art/"]:not([href*="monster-"])').length===0`, 3000), `${where}: no other crew's picture under Monster`); // waits for the repaint like the Prehistoric and Pirate lines (FR-048b)
+      // Royal on top of the theme (FR-076): the crew kit with a Royal picture on every desk
+      await pickChars('royal');
+      await close();
+      assert.ok(await H.until(`(()=>{const sc=[...document.querySelectorAll('#stage .desk[data-id] svg.scene')].filter(s=>s.getClientRects().length);return sc.length>=12&&sc.every(s=>/\\|crew(\\||$)/.test(s.dataset.sig||'')&&s.querySelector('image[href*="crew/art/royal-"]'));})()`, 10000), `${where}: Royal: every desk draws the crew kit with a Royal portrait`);
+      assert.strictEqual(await H.js(`window.THEME.current().id`), theme, `${where}: the theme stays ${theme} under Royal`);
+      assert.ok(await H.until(`document.querySelectorAll('#stage image[href^="crew/art/"]:not([href*="royal-"])').length===0`, 3000), `${where}: no other crew's picture under Royal`); // waits for the repaint like the Prehistoric, Pirate and Monster lines (FR-048b)
+      // Animal Rebels on top of the theme (FR-077): the crew kit with an Animal Rebels picture on every desk
+      await pickChars('rebels');
+      await close();
+      assert.ok(await H.until(`(()=>{const sc=[...document.querySelectorAll('#stage .desk[data-id] svg.scene')].filter(s=>s.getClientRects().length);return sc.length>=12&&sc.every(s=>/\\|crew(\\||$)/.test(s.dataset.sig||'')&&s.querySelector('image[href*="crew/art/rebels-"]'));})()`, 10000), `${where}: Animal Rebels: every desk draws the crew kit with an Animal Rebels portrait`);
+      assert.strictEqual(await H.js(`window.THEME.current().id`), theme, `${where}: the theme stays ${theme} under Animal Rebels`);
+      assert.ok(await H.until(`document.querySelectorAll('#stage image[href^="crew/art/"]:not([href*="rebels-"])').length===0`, 3000), `${where}: no other crew's picture under Animal Rebels`); // waits for the repaint like the other crews' lines (FR-048b)
       // Minimalist on top of the theme
       await pickChars('minimalist');
       await close();

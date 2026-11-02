@@ -4,6 +4,8 @@ import { MCP_CARD_MAX_CHARS, maskMcpHistory, maskMcpError, maskMcpEvent, maskMcp
 import type { AgentEvent } from '../src/adapters/types';
 import * as fs from 'fs';
 import * as path from 'path';
+import { assertLinearShape, assertWithinYardstick } from './redact-growth-lib';
+import { redact } from '../src/shared/redact';
 
 const GH = 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8';
 const SESSION = 'zq-hunter2-session-value';
@@ -89,14 +91,11 @@ assert.strictEqual(maskMcpError(undefined), undefined);
   // 1 MB of URL-like text: cut to the card limit before the pattern masks, so it stays fast
   {
     maskMcpEvent(card({ output: '?a=&'.repeat(25_000) }), [HDR]); // warm the regexes
-    // CPU time against a 100 KB baseline from the same run, best of 3 per size: correct code measures ~3.3x for 10x input (the cut makes both cheap), the old order (cut after the URL pass) ~12x and ~700-1200 ms
-    const cpuMs = (f: () => void): number => { const c = process.cpuUsage(); f(); const d = process.cpuUsage(c); return (d.user + d.system) / 1000; };
-    let a = Infinity, t = Infinity, big!: { output: string };
-    for (let i = 0; i < 3; i++) {
-      a = Math.min(a, cpuMs(() => void maskMcpEvent(card({ output: '?a=&'.repeat(25_000) }), [HDR])));
-      t = Math.min(t, cpuMs(() => { big = maskMcpEvent(card({ output: '?a=&'.repeat(250_000) }), [HDR]) as unknown as { output: string }; }));
-    }
-    assert.ok(t < Math.max(400, a * 6), `1 MB output masked in ${t} ms CPU (100 KB: ${a} ms)`);
+    // Against what the right order must do, in the same run (spec 012 T138): `redact` on the 1 MB, then the slow URL pass on the text at the card limit. Correct code measures about 1x, the old order (cut after the URL pass) about 5x.
+    const bigText = '?a=&'.repeat(250_000), atCut = bigText.slice(0, MCP_CARD_MAX_CHARS);
+    const big = maskMcpEvent(card({ output: bigText }), [HDR]) as unknown as { output: string };
+    assertWithinYardstick('1 MB output is cut before the URL pass', () => void maskMcpEvent(card({ output: bigText }), [HDR]), () => { redact(bigText); maskMcpEvent(card({ output: atCut }), [HDR]); }, 2.5);
+    assertLinearShape('MCP card output', (x) => void maskMcpEvent(card({ output: x }), [HDR]), (n) => '?a=&'.repeat(Math.ceil(n / 4)));
     assert.ok(big.output.length <= MCP_CARD_MAX_CHARS + 20, 'cut to the card limit');
     const sec = maskMcpEvent(card({ output: 'w '.repeat(30_000) + 'k=' + HDR + ' ' + GH }), [HDR]) as unknown as { output: string };
     assert.ok(!sec.output.includes(HDR) && !sec.output.includes('ghp_'), 'a secret past the cut leaves nothing');
