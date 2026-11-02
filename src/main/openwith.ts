@@ -8,7 +8,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
-import { EDITIONS, defaultEnv, planEdition, spawnPlan } from './vscode';
+import { EDITIONS, EDITOR_NOT_FOUND, defaultEnv, planEdition, spawnPlan } from './vscode';
 import type { LaunchEnv, LaunchPlan, OpenResult } from './vscode';
 
 export type TargetId = 'vscode' | 'vscode-insiders' | 'vscodium' | 'folder';
@@ -48,8 +48,18 @@ export function realDeps(openPath: (p: string) => Promise<string>, reveal: (p: s
   return { platform: process.platform, launchEnv: defaultEnv(), lstat: (p) => fs.lstatSync(p), realpath: (p) => fs.realpathSync(p), openPath, reveal, start: (plan) => spawnPlan(plan) };
 }
 
-/** FR-021: folders whose name makes the file manager run them instead of showing them. Checked on every OS (one rule). */
-const LAUNCHABLE_DIR = /\.(app|bundle|workflow|action|prefpane|saver|xpc|kext|framework|plugin|command)$/i;
+/** FR-026: a folder the file manager would run instead of showing: on macOS a name with an extension or a bundle's `Contents`, on Windows a `name.{CLSID}` shell folder. */
+function isPackage(p: string, d: Pick<Deps, 'platform' | 'lstat'>): boolean {
+  if (d.platform === 'win32') return /\.\{[0-9a-f-]+\}[. ]*$/i.test(path.win32.basename(p));
+  if (d.platform !== 'darwin') return false;
+  if (path.posix.extname(path.posix.basename(p))) return true;
+  try {
+    d.lstat(path.posix.join(p, 'Contents'));
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 const abs = (p: string, platform: NodeJS.Platform): boolean => (platform === 'win32' ? path.win32.isAbsolute(p) : path.posix.isAbsolute(p));
 
@@ -109,7 +119,7 @@ export async function openWith(agent: OwnedAgent | undefined, targetId: unknown,
   if (targetId === 'folder') {
     const f = checkFolder(agent.cwd, d);
     if (!f.ok) return f;
-    if (LAUNCHABLE_DIR.test(path.basename(f.path.replace(/[\\/]+$/, '')))) {
+    if (isPackage(f.path, d)) {
       d.reveal(f.path);
       return { ok: true, note: f.linked ? LINK_NOTE + ' ' + PACKAGE_NOTE : PACKAGE_NOTE };
     }
@@ -161,6 +171,16 @@ export async function openWith(agent: OwnedAgent | undefined, targetId: unknown,
   }
   const r = await d.start({ ...plan, edition: name });
   return r.ok ? { ok: true, edition: name, ...(linked ? { note: LINK_NOTE } : wsLinked ? { note: WORKSPACE_LINK_NOTE } : {}) } : { ok: false, error: r.error ?? 'unknown error', edition: name };
+}
+
+/** FR-027: Open in editor and Continue in VS Code: the first installed edition (FR-015's order), through the same checks as the menu. */
+export async function openInFirstEditor(agent: OwnedAgent | undefined, d: Deps): Promise<OpenResult> {
+  if (!agent) return { ok: false, error: 'unknown agent' };
+  const id = Object.keys(EDITOR_TARGETS).find((t) => {
+    const ed = EDITIONS.find((e) => e.name === EDITOR_TARGETS[t]);
+    return !!ed && installed(ed, d);
+  });
+  return id ? openWith(agent, id, d) : { ok: false, error: EDITOR_NOT_FOUND };
 }
 
 /** FR-020: the folder is main's. Only an agent id of an agent main started finds anything; a path (or anything else) finds nothing. */

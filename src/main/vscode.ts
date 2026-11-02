@@ -151,6 +151,8 @@ export function spawnPlan(plan: LaunchPlan, spawnFn: typeof spawn = spawn, platf
   });
 }
 
+export const EDITOR_NOT_FOUND = 'VS Code was not found (also looked for VS Code Insiders and VSCodium). Install it from https://code.visualstudio.com (on macOS, run "Shell Command: Install \'code\' command in PATH" from its command palette, or keep it in /Applications).';
+
 /**
  * Open a folder or .code-workspace file with VS Code.
  * A single absolute path argument; never a shell with user-controlled text (see planCmd for the one guarded exception).
@@ -162,7 +164,7 @@ export function openInVSCode(target: string): Promise<OpenResult> {
   if (!plan) {
     return Promise.resolve({
       ok: false,
-      error: 'VS Code was not found (also looked for VS Code Insiders and VSCodium). Install it from https://code.visualstudio.com (on macOS, run "Shell Command: Install \'code\' command in PATH" from its command palette, or keep it in /Applications).',
+      error: EDITOR_NOT_FOUND,
     });
   }
   return spawnPlan(plan);

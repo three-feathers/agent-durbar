@@ -6,10 +6,10 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { checkFolder, listTargets, openWith, ownedAgent, LINK_NOTE } from '../src/main/openwith';
+import { checkFolder, listTargets, openInFirstEditor, openWith, ownedAgent, LINK_NOTE } from '../src/main/openwith';
 import type { Deps, OwnedAgent } from '../src/main/openwith';
 import type { LaunchEnv, LaunchPlan } from '../src/main/vscode';
-import { spawnPlan } from '../src/main/vscode';
+import { EDITIONS, EDITOR_NOT_FOUND, planEdition, spawnPlan } from '../src/main/vscode';
 
 const launchEnv = (platform: NodeJS.Platform, files: string[], vars: NodeJS.ProcessEnv = {}, homedir = '/home/a'): LaunchEnv => ({ platform, env: vars, homedir, isFile: (p) => files.includes(p) });
 const LINUX_ALL = ['/usr/bin/code', '/usr/bin/code-insiders', '/usr/bin/codium'];
@@ -43,7 +43,7 @@ const dashDir = path.join(root, '-rf');
 fs.mkdirSync(dashDir);
 const file = path.join(root, 'run.sh');
 fs.writeFileSync(file, '#!/bin/sh\n');
-const appDir = path.join(root, 'Thing.app');
+const appDir = path.join(root, ON_WIN ? 'Thing.{21EC2020-3AEA-1069-A2DD-08002B30309D}' : 'Thing.app'); // a package on the OS that has this kind (FR-026)
 fs.mkdirSync(appDir);
 const spaced = path.join(root, 'a b & c');
 fs.mkdirSync(spaced);
@@ -156,7 +156,7 @@ fs.writeFileSync(wsFile, '{}');
     assert.strictEqual((await openWith({ cwd: dir }, 'vscode', mk(HOST(), r5))).note, undefined, 'nor from an editor');
     const toApp = path.join(root, 'plain-name'); fs.symlinkSync(appDir, toApp, 'dir');
     const r4 = rec();
-    { const res = await openWith({ cwd: toApp }, 'folder', mk(HOST(), r4)); assert.strictEqual(res.ok, true, 'a link to a package, behind a plain name: shown'); assert.strictEqual(r4.revealed.length, 1, 'revealed'); assert.match(res.note!, /is a link.*selected, not opened/); }
+    { const res = await openWith({ cwd: toApp }, 'folder', mk(ON_WIN ? HOST() : launchEnv('darwin', []), r4)); assert.strictEqual(res.ok, true, 'a link to a package, behind a plain name: shown'); assert.strictEqual(r4.revealed.length, 1, 'revealed'); assert.match(res.note!, /is a link.*selected, not opened/); }
     assert.deepStrictEqual(r4.opened, []);
   }
   // a missing / file folder: nothing is started or opened
@@ -181,11 +181,45 @@ fs.writeFileSync(wsFile, '{}');
 
   // ---- the file manager: shell.openPath on a real directory only (FR-023) ----
   { const r = rec(); const res = await openWith({ cwd: dir }, 'folder', mk(NONE(), r)); assert.strictEqual(res.ok, true); assert.deepStrictEqual(r.opened, [dir]); }
-  { const r = rec(); const res = await openWith({ cwd: appDir }, 'folder', mk(NONE(), r)); assert.strictEqual(res.ok, true, 'an .app folder is shown, with a note'); assert.match(res.note!, /selected, not opened/); assert.deepStrictEqual(r.opened, [], 'openPath would run it'); assert.deepStrictEqual(r.revealed, [appDir], 'it is revealed'); }
   { const r = rec(); const res = await openWith({ cwd: dir }, 'folder', mk(NONE(), r)); assert.deepStrictEqual(r.revealed, [], 'a plain folder is opened'); assert.deepStrictEqual(r.opened, [dir]); assert.strictEqual(res.note, undefined); }
-  for (const n of ['x.APP', 'x.bundle', 'x.workflow', 'x.command', 'x.kext']) {
-    const p = path.join(root, n); fs.mkdirSync(p);
-    const r = rec(); assert.strictEqual((await openWith({ cwd: p }, 'folder', mk(NONE(), r))).ok, true, n); assert.deepStrictEqual(r.opened, [], n + ': never opened'); assert.deepStrictEqual(r.revealed, [p], n + ': revealed');
+  // FR-026: what the file manager would run is revealed, by what it is, not by a list of names
+  {
+    const le = (p: NodeJS.Platform): LaunchEnv => launchEnv(p, [], {}, p === 'win32' ? 'C:\\Users\\a' : '/home/a');
+    const noContents = (p: string) => { if (/[\\/]Contents$/.test(p)) throw new Error('ENOENT'); return fakeLstat(p); };
+    const show = async (platform: NodeJS.Platform, cwd: string, lstat: Deps['lstat'] = noContents): Promise<{ note?: string; r: Rec }> => { const r = rec(); const res = await openWith({ cwd }, 'folder', mk(le(platform), r, { lstat })); assert.strictEqual(res.ok, true, cwd); return { note: res.note, r }; };
+    for (const n of ['/w/x.app', '/w/x.APP', '/w/x.pkg', '/w/x.mpkg', '/w/x.scptd', '/w/x.appex', '/w/my.project']) {
+      const { note, r } = await show('darwin', n);
+      assert.deepStrictEqual([r.opened, r.revealed], [[], [n]], n + ': revealed on macOS, never opened'); assert.match(note!, /selected, not opened/);
+    }
+    { const { r } = await show('darwin', '/w/plain', fakeLstat); assert.deepStrictEqual([r.opened, r.revealed], [[], ['/w/plain']], 'a bundle with no extension: it has Contents'); }
+    { const { r, note } = await show('darwin', '/w/plain'); assert.deepStrictEqual([r.opened, r.revealed, note], [['/w/plain'], [], undefined], 'a plain folder is opened on macOS'); }
+    { const { r } = await show('darwin', '/w/.hidden'); assert.deepStrictEqual(r.opened, ['/w/.hidden'], 'a leading dot is no extension'); }
+    for (const n of ['C:\\w\\x.{21EC2020-3AEA-1069-A2DD-08002B30309D}', 'C:\\w\\x.{21ec2020-3aea-1069-a2dd-08002b30309d}. ']) { const { r } = await show('win32', n); assert.deepStrictEqual([r.opened, r.revealed], [[], [n]], n + ': revealed on Windows'); }
+    { const { r } = await show('win32', 'C:\\w\\x.app'); assert.deepStrictEqual(r.opened, ['C:\\w\\x.app'], 'Windows runs no .app folder'); }
+    { const { r } = await show('linux', '/w/x.app'); assert.deepStrictEqual(r.opened, ['/w/x.app'], 'Linux has no packages'); }
+  }
+  // FR-022's guard on the route the PATH finds: a .cmd alone on PATH, no .exe beside it
+  {
+    const cmd = 'C:\\tools\\bin\\codium.cmd', ed = EDITIONS.find((e) => e.name === 'VSCodium')!;
+    const onPath = (dir: string, file: string): LaunchEnv => launchEnv('win32', [file], { PATH: dir }, 'C:\\Users\\a');
+    const le = onPath('C:\\tools\\bin', cmd);
+    assert.deepStrictEqual(planEdition(ed, 'C:\\work\\proj', le)?.args.slice(-1), [`"${cmd}" "C:\\work\\proj"`], 'a safe folder goes through the .cmd');
+    for (const t of ['C:\\a & calc', 'C:\\%PATH%', 'C:\\a"b', 'C:\\a^b']) {
+      assert.strictEqual(planEdition(ed, t, le), undefined, t + ' plans nothing');
+      const r = rec(); const res = await openWith({ cwd: t }, 'vscodium', mk(le, r));
+      assert.strictEqual(res.ok, false, t); assert.deepStrictEqual(r.started, [], t + ' starts nothing'); assert.match(res.error!, /cannot open a folder with this name safely/);
+    }
+    assert.strictEqual(planEdition(ed, 'C:\\work\\proj', onPath('C:\\a&b\\bin', 'C:\\a&b\\bin\\codium.cmd')), undefined, 'a PATH folder with & plans nothing');
+  }
+  // FR-027: the old route is the menu's route: the first installed edition, through the same checks
+  {
+    { const r = rec(); const res = await openInFirstEditor({ cwd: dir }, mk(HOST(), r)); assert.strictEqual(res.edition, 'VS Code'); assert.deepStrictEqual(r.started[0].args, [dir]); }
+    { const r = rec(); const le = ON_WIN ? launchEnv('win32', [WIN_ALL[2]], { LOCALAPPDATA: 'C:\\L' }, 'C:\\Users\\a') : launchEnv('linux', ['/usr/bin/codium']); assert.strictEqual((await openInFirstEditor({ cwd: dir }, mk(le, r))).edition, 'VSCodium', 'the next edition when the first is missing'); }
+    { const r = rec(); assert.deepStrictEqual(await openInFirstEditor({ cwd: file }, mk(HOST(), r)), { ok: false, error: 'This is not a folder, so it was not opened.' }); assert.deepStrictEqual(r.started, [], 'a file is refused'); }
+    { const r = rec(); assert.deepStrictEqual(await openInFirstEditor({ cwd: dir }, mk(NONE(), r)), { ok: false, error: EDITOR_NOT_FOUND }); }
+    { assert.deepStrictEqual(await openInFirstEditor(undefined, mk(HOST(), rec())), { ok: false, error: 'unknown agent' }); }
+    const src = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'ipc', 'agents.ts'), 'utf8');
+    assert.match(src, /'agents:openInVSCode', \(e, id: unknown\) => \(fromApp\(e\) \? openInFirstEditor\(ownedOf\(id\), owDeps\(\)\)/, 'the channel takes the guarded path');
   }
   { const res = await openWith({ cwd: dir }, 'folder', mk(NONE(), rec(), { openPath: async () => 'Failed to open path' })); assert.deepStrictEqual([res.ok, res.error], [false, 'Failed to open path']); }
   { const res = await openWith({ cwd: dir }, 'folder', mk(NONE(), rec(), { openPath: async () => { throw new Error('boom'); } })); assert.deepStrictEqual([res.ok, res.error], [false, 'boom']); }
