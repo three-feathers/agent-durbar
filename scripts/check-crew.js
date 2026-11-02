@@ -256,7 +256,7 @@ async function runCrew(ctx, full) {
     await faceChecks(tag);
     assert.ok(seen.size === CREW_IDS.length, `${tag}: all ${CREW_IDS.length} ${CHARS} characters on screen with 15 agents (the simulator's name table uses every one, FR-073) (${[...seen]})`);
     // spec 077 FR-073 (issue #879): the simulator gives each demo name its fitting character; Ada and Hugo are the check's anchors (literals, not read from the table)
-    const want = { cheeky: { Ada: 'gamer', Hugo: 'bookworm' }, prehistoric: { Ada: 'braids', Hugo: 'inventor' }, pirate: { Ada: 'captain', Hugo: 'cook' }, monster: { Ada: 'werewolf', Hugo: 'vampire' }, royal: { Ada: 'knight', Hugo: 'alchemist' } }[CHARS];
+    const want = { cheeky: { Ada: 'gamer', Hugo: 'bookworm' }, prehistoric: { Ada: 'braids', Hugo: 'inventor' }, pirate: { Ada: 'captain', Hugo: 'cook' }, monster: { Ada: 'werewolf', Hugo: 'vampire' }, royal: { Ada: 'knight', Hugo: 'alchemist' }, rebels: { Ada: 'fox', Hugo: 'owl' } }[CHARS];
     const SC = require('../src/renderer/simcrew.js');
     assert.ok(await H.until(`(()=>{const U=window.__durbarSimUi,s=U.crew.state();return U.agents().filter((x)=>!x.parent).every((x)=>s.map[x.id]);})()`, 6000), `${tag}: every main agent has a character`);
     const named = await H.js(`(()=>{const U=window.__durbarSimUi,s=U.crew.state();return U.agents().filter((x)=>!x.parent).map((x)=>{const d=document.querySelector('#stage .desk[data-id="'+x.id+'"] svg.scene');return {name:x.baseName||x.name,c:s.map[x.id],sig:d?d.dataset.sig||'':null};});})()`);
