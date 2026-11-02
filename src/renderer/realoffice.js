@@ -118,7 +118,28 @@
   const WHERE = new Map(), GLIDING = new Map();
   /* spec Changes 2026-11-01: a person zooms out where they were and zooms in where they go: never two bodies, nothing crosses the room */
   const ZOOM_OUT = 280, ZOOM_IN = 320;
+  /* spec 102 FR-262: in a pixel world the teleport is a dissolve: three copies under static dither masks, from a small pool; only opacity moves */
+  let PIXEL = false; const DIS_POOL = [];
+  const DIS_MS = 150;
+  function dissolve(e, out, delay) {
+    if (!e.parentNode) return;
+    [0, 1, 2].forEach((i) => {
+      const c = DIS_POOL.pop() || document.createElement('img');
+      c.alt = ''; c.setAttribute('aria-hidden', 'true'); c.className = 'ro-dis d' + i + (e.classList.contains('mir') ? ' mir' : '');
+      c.src = e.getAttribute('src'); c.style.cssText = 'left:' + e.style.left + ';top:' + e.style.top + ';width:' + e.style.width + ';height:' + e.style.height;
+      e.parentNode.insertBefore(c, e.nextSibling);
+      const peak = 0.34 + i * 0.2;
+      const a = c.animate([{ opacity: 0 }, { opacity: 1, offset: out ? 1 - peak : peak }, { opacity: 0 }], { duration: DIS_MS, delay, easing: 'steps(3)', fill: 'both' });
+      a.onfinish = a.oncancel = () => { c.remove(); if (DIS_POOL.length < 12) DIS_POOL.push(c); };
+    });
+  }
+  /* spec 102 FR-260: a done flourish: one coin rises and fades, 2 s, once; stepped; its element is always there */
+  function coinUp(chrome, k, g) {
+    const co = chrome._k.get('co:' + k); if (!co) return;
+    co.animate([{ transform: 'translateY(0)', opacity: 1 }, { transform: 'translateY(' + -20 * g + 'px)', opacity: 0 }], { duration: 2000, easing: 'steps(10)' });
+  }
   function poof(host, r, delay) {
+    if (PIXEL) return;
     const d = document.createElement('div'); d.className = 'ro-poof';
     const w = r.h * 0.8; box(d, { x: r.x + r.w / 2 - w / 2, y: r.y + r.h * 0.45 - w / 2, w, h: w }); host.appendChild(d);
     const a = d.animate([{ transform: 'scale(.5)', opacity: 0 }, { opacity: 1, offset: 0.4 }, { transform: 'scale(1.2)', opacity: 0 }], { duration: ZOOM_IN, delay, easing: 'ease-out', fill: 'backwards' });
@@ -128,12 +149,20 @@
     const r = { x: parseFloat(e.style.left) || 0, y: parseFloat(e.style.top) || 0, w: parseFloat(e.style.width) || 0, h: parseFloat(e.style.height) || 0 };
     e.className = 'ro-ghost' + (e.classList.contains('ro-visitor') ? ' v' : ''); delete e.dataset.for;
     if (e.parentNode && r.h) poof(e.parentNode, r, 0);
+    if (PIXEL) { dissolve(e, true, 0); const f = e.animate([{ opacity: 1 }, { opacity: 0 }], { duration: DIS_MS, easing: 'steps(3)', fill: 'forwards' }); f.onfinish = f.oncancel = () => e.remove(); return; }
     const a = e.animate([{ transform: 'scale(1)', opacity: 1 }, { transform: 'scale(.62)', opacity: 0 }], { duration: ZOOM_OUT, easing: 'cubic-bezier(.5,0,.8,.5)', fill: 'forwards' });
     a.onfinish = a.oncancel = () => e.remove();
   }
   function glide(e, id, from, to) {
     if (!from || (from.x === to.x && from.y === to.y)) return false;
     if (e.parentNode) poof(e.parentNode, to, ZOOM_OUT - 40);
+    if (PIXEL) {
+      dissolve(e, false, DIS_MS);
+      const f = e.animate([{ opacity: 0 }, { opacity: 1 }], { duration: DIS_MS, delay: DIS_MS, easing: 'steps(3)', fill: 'backwards' });
+      GLIDING.set(id, f);
+      f.onfinish = f.oncancel = () => { if (GLIDING.get(id) === f) { GLIDING.delete(id); if (onArt) onArt(); } };
+      return true;
+    }
     const a = e.animate([{ transform: 'scale(.62)', opacity: 0 }, { transform: 'scale(1.03)', opacity: 1, offset: 0.72 }, { transform: 'none', opacity: 1 }], { duration: ZOOM_IN, delay: ZOOM_OUT - 40, easing: 'cubic-bezier(.2,.7,.3,1)', fill: 'backwards' });
     GLIDING.set(id, a);
     a.onfinish = a.oncancel = () => { if (GLIDING.get(id) === a) { GLIDING.delete(id); if (onArt) onArt(); } };
@@ -146,7 +175,8 @@
 
   /* the typing rig: a wrapper with the body's movement on the body's clock, over it a head and two hands cut from the same picture (spec Changes 2026-11-01) */
   /* spec 102 FR-257: the cabinet: one of the world's drawings, a strip of colour variants; the colour stays with the session */
-  function cabinetOf(dc, meta, cab, k) {
+  function cabinetOf(dc, meta, cab, k, state) {
+    dc.classList.toggle('st-idle', state === 'idle'); /* FR-260: dim by opacity: a shade would darken the floor beside it too */
     const kind = cab.gw === meta.monitor.big.glass[2] ? 'big' : cab.gw === meta.monitor.small.glass[2] ? 'small' : 'narrow', m = meta.monitor[kind];
     let h = 0; for (const c of k) h = (h * 31 + c.charCodeAt(0)) >>> 0;
     const url = 'url("' + WD + m.file + '")', size = m.cells * 100 + '% 100%', pos = ((h % m.cells) / Math.max(1, m.cells - 1)) * 100 + '% 0';
@@ -220,6 +250,7 @@
     if (SET_SHOWN !== set) { SET_SHOWN = set; PEOPLE = null; SEEN.clear(); TICKS.clear(); } /* the people belong to a set: switching sets draws its own, kept apart */
     const meta = Object.assign({}, root.DurbarRealOfficeWorlds[world], root.DurbarRealOfficeSets[set]); /* the world's furniture numbers with the set's people numbers */
     onArt = opts.onArt || null;
+    PIXEL = !!meta.pixelArt;
     const ids = Object.keys(meta.seat).sort();
     const who = people(model, ids, opts.rand, !!opts.remember);
     const seatOk = (p) => !!p && !['typeA', 'think', 'waveA', 'rest'].some((f) => BAD.has(SD + p + '-' + f + '.webp'));
@@ -284,17 +315,22 @@
       for (const d of z.desks) {
         const a = byAgent.get(d.id), k = d.id;
         const lt = L.lightFor(d.state, { still: !!opts.still });
+        const st = lay.cabinet ? L.aisleStatus(d.state, !!opts.still) : null; /* spec 102 FR-260 */
         /* the person, behind the desk: FR-036's pose, FR-070's second frame or breath, FR-072's cross-fade; FR-065: the initials disc when the picture failed */
         if (d.person) {
           const m = L.personMotion(k, d.person.pose, d.state);
           const fresh = !art._k.has('p:' + k);
           const rigged = d.person.pose === 'typeA' && moving() && LOD === 0 && !GLIDING.has(k) && !(fresh && CUR.drawn && WHERE.has(k)) && meta.rig && has(meta.rig, d.person.pid) ? meta.rig[d.person.pid] : null;
           const two = !rigged && moving() && m.kind === 'frames' && d.person.fileB && !BAD.has(SD + d.person.fileB) && !GLIDING.has(k) ? second(art, 'pb:' + k, k, d.person, d.person.fileB, 'ro-person2', m) : null;
-          const pe = el(art, 'p:' + k, 'img', 'ro-person' + (rigged ? ' m-rig' : two && two.on ? ' m-a m-' + m.style : m.kind === 'breathe' && moving() ? ' m-br' : '') + (OFF.has(k) ? ' ro-off' : ''));
+          const pe = el(art, 'p:' + k, 'img', 'ro-person' + (lay.cabinet ? (st.bob && moving() ? ' bob' : '') : rigged ? ' m-rig' : two && two.on ? ' m-a m-' + m.style : m.kind === 'breathe' && moving() ? ' m-br' : '') + (OFF.has(k) ? ' ro-off' : ''));
           box(pe, d.person); pe.dataset.for = k; pe.dataset.pose = d.person.pose;
           if (d.facing) pe.classList.toggle('mir', d.facing === 'right');
+          if (lay.cabinet) { /* FR-261: people in 4 phases on one clock, whenever each began: at most 8 frames a second */
+            let h = 0; for (const c of k) h = (h * 31 + c.charCodeAt(0)) >>> 0; setVar(pe, '--ro-ph', -(h % 4) * 0.25 + 's');
+            if (st.bob) for (const an of pe.getAnimations()) if (an.animationName && an.startTime !== 0) an.startTime = 0;
+          }
           const was = pe.getAttribute('src');
-          if (was && was !== SD + d.person.file && moving() && !hiddenNow() && !OFF.has(k)) { const g = pe.cloneNode(false); art.insertBefore(g, pe); fadeAway(g, 120); pe.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 170, delay: 90, easing: 'ease-in-out', fill: 'backwards' }); } /* FR-072, spec Changes 2026-11-01: the old out, then the new in */
+          if (was && was !== SD + d.person.file && !lay.cabinet /* a pixel world swaps the frame: no second picture (FR-261) */ && moving() && !hiddenNow() && !OFF.has(k)) { const g = pe.cloneNode(false); art.insertBefore(g, pe); fadeAway(g, 120); pe.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 170, delay: 90, easing: 'ease-in-out', fill: 'backwards' }); } /* FR-072, spec Changes 2026-11-01: the old out, then the new in */
           img(pe, d.person.file, true);
           if (fresh && CUR.drawn && moving() && !hiddenNow() && !OFF.has(k) && !glide(pe, k, WHERE.get(k), d.person)) fadeIn(pe, 150, 150); /* FR-073: in at the desk */
           WHERE.set(k, d.person);
@@ -305,7 +341,7 @@
           const ini = el(art, 'i:' + k, 'div', 'ro-initials'); const r = 0.5 * lay.u; box(ini, { x: d.slot.x + 0.05 * d.slot.w + 0.42 * lay.u - r / 2, y: d.desk.y - r - 6, w: r, h: r }); ini.dataset.for = k; text(ini, initials(a.name));
         }
         const dc = el(art, 'd:' + k, 'div', 'ro-desk' + (d.narrow ? ' narrow' : '') + (lay.cabinet ? ' ro-cab' + (d.facing === 'right' ? ' mir' : '') : '')); box(dc, d.desk); dc.dataset.for = k;
-        if (lay.cabinet) cabinetOf(dc, meta, lay.cabinet, k);
+        if (lay.cabinet) cabinetOf(dc, meta, lay.cabinet, k, d.state);
         else { const dk = dc.firstChild || dc.appendChild(document.createElement('img')); dk.style.height = px(d.desk.full); img(dk, 'desk.webp'); }
         /* the monitor: the glass in the art; its text sits with the chrome, above the lights (FR-044), and repaints on its own (FR-033) */
         const sc = el(art, 'm:' + k, 'div', 'ro-screen st-' + d.state + (lt.glow === 'off' ? ' off' : '')); box(sc, d.screen); sc.dataset.for = k;
@@ -313,13 +349,22 @@
         const bez = sc.firstChild; bez.style.height = px(d.glass.h + 6);
         screenBox(chrome, d, k);
         /* spec 102 FR-257: the marquee carries the name: real text, level, never inside the mirrored picture */
-        if (d.marquee) { const mq = el(chrome, 'mq:' + k, 'div', 'ro-marquee'); box(mq, d.marquee); attr(mq, 'aria-hidden', 'true'); text(mq, a.name); }
+        if (d.marquee) {
+          const mq = el(chrome, 'mq:' + k, 'div', 'ro-marquee mq-' + st.marquee); box(mq, d.marquee); attr(mq, 'aria-hidden', 'true'); text(mq, a.name); mq.dataset.for = k;
+          /* the flash is opacity on the marquee's own ::after: no node, and it moves with the marquee (FR-261); one beat for all of them */
+          if (/flash/.test(st.marquee)) for (const an of mq.getAnimations({ subtree: true })) if (an.startTime !== 0) an.startTime = 0;
+          const gc = meta.glow, gi = Math.max(0, gc.cells.indexOf(d.state)), gw = gc.cell[0] * lay.g, gh = gc.cell[1] * lay.g;
+          const fg = el(art, 'fg:' + k, 'div', 'ro-fglow g-' + st.glow); box(fg, { x: Math.max(d.slot.x, Math.min(d.desk.x + (d.desk.w - gw) / 2, d.slot.x + d.slot.w - gw)), y: d.plate.y - gh / 2, w: gw, h: gh }); fg.dataset.for = k;
+          const gp = (gi / Math.max(1, gc.cells.length - 1)) * 100 + '% 0'; if (fg.style.backgroundPosition !== gp) fg.style.backgroundPosition = gp;
+          const q = el(chrome, 'cu:' + k, 'div', 'ro-cue cue-' + st.cue); box(q, d.cue); q.dataset.for = k; attr(q, 'aria-hidden', 'true'); text(q, { none: '', dots: '\u2022\u2022\u2022', ask: '?', bang: '!', tick: '\u2713', zz: 'z z' }[st.cue]);
+          const co = el(chrome, 'co:' + k, 'div', 'ro-coin'); box(co, { x: d.face.x + d.face.w / 2 - 3 * lay.g, y: d.face.y, w: 6 * lay.g, h: 6 * lay.g }); attr(co, 'aria-hidden', 'true'); co.dataset.for = k;
+        }
         /* FR-040, FR-041: lamp, screen glow and call light, as classes over the art (D4) */
         const lamp = el(lights, 'l:' + k, 'div', 'ro-lamp lamp-' + lt.lamp + (lt.motion === 'pulse' ? ' pulse' : '')); box(lamp, d.lamp);
         const glow = el(lights, 'g:' + k, 'div', 'ro-glow glow-' + lt.glow + (lt.motion === 'breathe' ? ' breathe' : '')); box(glow, { x: d.glass.x - 6, y: d.glass.y - 6, w: d.glass.w + 12, h: d.glass.h + 12 });
         let call = lt.call;
         if (call === 'green-once') {
-          if (L.doneTick(SEEN, k, d.state)) TICKS.set(k, now);
+          if (L.doneTick(SEEN, k, d.state)) { TICKS.set(k, now); if (st && st.flourish && moving() && !hiddenNow()) coinUp(chrome, k, lay.g); }
           const t0 = TICKS.get(k); call = t0 && now - t0 < 2000 ? 'green' : null;
           if (call) setTimeout(() => { if (onArt) onArt(); }, 2050 - (now - t0)); /* redraw when the tick is over */
         } else { L.doneTick(SEEN, k, d.state); TICKS.delete(k); }
