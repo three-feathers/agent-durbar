@@ -236,3 +236,5 @@ Numbers checked against `main` (00d340eb) and every open PR on 2026-10-25: none 
 - [x] T162 Issue #897 (FR-190): docs: spec delta, `changelog.d/001-office-height-diag.md`; screenshots not retaken (0.6 px)
 - [x] T163 (FR-191): `check-office-overlap.js`: the Browser tab block polls the native views (`nativeViews`: exactly one on the window, none after Back, toasts cleared each poll, last-seen diagnostics) instead of fixed pauses; `measure` fails a figure off its slot only after two identical reads of the figures and lit slots; hooks `OFFICE_TEST_STUCK_WALKER=off|moved`, `OFFICE_ONLY=browser`
 - [x] T164 (FR-191): docs: spec delta, `changelog.d/001-office-browser-waits.md`; no screenshots (driver only)
+- [x] T190 (FR-210): `styles.css`: the halo is a still glow (`opacity: .75`, no `@keyframes halo`); `scripts/check-001-halo.js` registered in `ui-suite.js`, mutation-checked (`fill-opacity` and `opacity` animations put back both fail it)
+- [x] T191 (FR-210): docs: spec delta, `docs/agent-notes.md` line on the blur measured, `changelog.d/001-halo-cheap.md`; screenshots not retaken (a glow that no longer pulses)

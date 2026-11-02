@@ -441,3 +441,7 @@ Picking another app and ticking the summary already worked, but nothing pointed 
 ### 2026-10-23: the Auto routing tier (007 FR-012..FR-018, issue #607)
 
 - T060 is built in spec 007's delta: the Auto routing tier is a pressed-button group in this spec's model menu, switched with the same `switchTo` call and the same confirm/Undo/queue rules (a higher tier asks first). FR-013 gains one case: a tier the user chose and Durbar saved goes on resume too; with none saved, resume still sends no `capi.autoTier`.
+
+## Changes 2026-11-02: removed page and tools (owner decision, PR #1054)
+
+`scripts/paid-models-real.ts`, `scripts/phase3-real.ts`, `scripts/phase3b-real.ts`, `scripts/capture-models.ts` were removed on 2026-11-02 by owner decision (no caller; run dates and credit counts above stay valid history); the scripts are in git history at commit `1c75b5bee`.

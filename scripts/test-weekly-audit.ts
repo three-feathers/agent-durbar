@@ -504,19 +504,20 @@ const many = (k: number): Finding[] => Array.from({ length: k }, (_, i) => good(
 
   // ---- the mutation helper
   {
-    const pkg = { scripts: { 'test:serial': 'npm run test:a && npm run test:b', 'test:a': 'tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-a.js && node scripts/x.js', 'test:b': 'node scripts/b.js; curl x', 'test:c': 'node scripts/c.js' } };
-    assert.deepStrictEqual(suiteSteps(pkg, 'test:a'), [['dist-scripts/scripts/test-a.js'], ['scripts/x.js']]);
-    assert.match(String(suiteSteps(pkg, 'test:b')), /not "node <file>"/, 'a step that is not node <file> is refused');
-    assert.match(String(suiteSteps(pkg, 'test:c')), /not in test:serial/);
-    assert.match(String(suiteSteps(pkg, 'test:a; rm')), /test:\* script name/);
-    const pkg2 = { scripts: { 'test:serial': 'npm run test:x && npm run test:y', 'test:x': 'node scripts/a.js extra', 'test:y': 'npx scripts/a.js' } };
-    assert.match(String(suiteSteps(pkg2, 'test:x')), /not "node <file>"/, 'a node step with an extra argument');
-    assert.match(String(suiteSteps(pkg2, 'test:y')), /not "node <file>"/, 'a step that is not node');
+    const pkg = { scripts: { 'test:a': 'tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-a.js && node scripts/x.js', 'test:b': 'node scripts/b.js; curl x', 'test:c': 'node scripts/c.js' } };
+    assert.deepStrictEqual(suiteSteps(pkg, 'test:a', ['test:a', 'test:b']), [['dist-scripts/scripts/test-a.js'], ['scripts/x.js']]);
+    assert.match(String(suiteSteps(pkg, 'test:b', ['test:a', 'test:b'])), /not "node <file>"/, 'a step that is not node <file> is refused');
+    assert.match(String(suiteSteps(pkg, 'test:c', ['test:a', 'test:b'])), /not in test-suites.txt/);
+    assert.match(String(suiteSteps(pkg, 'test:a; rm', ['test:a', 'test:b'])), /test:\* script name/);
+    const pkg2 = { scripts: { 'test:x': 'node scripts/a.js extra', 'test:y': 'npx scripts/a.js' } };
+    assert.match(String(suiteSteps(pkg2, 'test:x', ['test:x', 'test:y'])), /not "node <file>"/, 'a node step with an extra argument');
+    assert.match(String(suiteSteps(pkg2, 'test:y', ['test:x', 'test:y'])), /not "node <file>"/, 'a step that is not node');
     // a scratch worktree with one suite
     const wt = path.join(tmp, 'wt');
     fs.mkdirSync(path.join(wt, 'src'), { recursive: true });
     fs.mkdirSync(path.join(wt, 'scripts'), { recursive: true });
-    fs.writeFileSync(path.join(wt, 'package.json'), JSON.stringify({ scripts: { 'test:serial': 'npm run test:fake', 'test:fake': 'node scripts/fake-test.js' } }));
+    fs.writeFileSync(path.join(wt, 'package.json'), JSON.stringify({ scripts: { 'test:fake': 'node scripts/fake-test.js' } }));
+    fs.writeFileSync(path.join(wt, 'scripts', 'test-suites.txt'), 'test:fake\n');
     const lib = 'exports.add = (a, b) => a + b; // sum\nexports.twice = (a) => a + a;\n';
     fs.writeFileSync(path.join(wt, 'src', 'lib.js'), lib);
     fs.writeFileSync(path.join(wt, 'scripts', 'fake-test.js'), "const assert = require('assert'); const l = require('../src/lib.js'); assert.strictEqual(l.add(2, 3), 5); if (process.env.GH_TOKEN) throw new Error('token leaked to the test'); console.log('ok');\n");
@@ -546,7 +547,7 @@ const many = (k: number): Finding[] => Array.from({ length: k }, (_, i) => good(
     assert.deepStrictEqual(addsForbidden('const req = 1; uire', 'const requi = 1; re'), [], 'counting words: none added');
     assert.ok(addsForbidden('x = a + b; // req uire', 'x = a + b; // require').length === 1, 'removing text that forms a forbidden word is refused too');
     assert.strictEqual(fs.readFileSync(path.join(wt, 'src', 'lib.js'), 'utf8'), lib, 'refused mutants never touch the file');
-    refused(['mutate', '--test', 'test:nope', '--file', 'src/lib.js', '--find', 'a + b', '--replace', 'a - b'], /not in test:serial/, 'an unknown suite');
+    refused(['mutate', '--test', 'test:nope', '--file', 'src/lib.js', '--find', 'a + b', '--replace', 'a - b'], /not in test-suites.txt/, 'an unknown suite');
     refused(['rm', '--test', 'test:fake'], /usage/, 'an unknown command');
     assert.strictEqual(mutateRun(['baseline', '--test', 'test:fake'], { DURBAR_AUDIT_WORKTREE: 'relative' }, 60_000).result, 'refused', 'the worktree must be absolute');
     fs.writeFileSync(path.join(wt, '.weekly-audit-mutate.lock'), '');

@@ -102,3 +102,35 @@ Q2-Q8 are answered; **Q1 (art format) is open again** (2026-10-23). Tasks are ma
 - [x] T091 `simcrew.js` (demo name -> character per crew), seeded in `app.js` `syncCrew` under the simulator only [FR-073]
 - [x] T092 Tests: `test:crew` (every demo name has a valid id in each crew, the real path is untouched); `check-crew` asserts Ada and Hugo wear their characters in both crews at both sizes [FR-073]
 - [x] T093 Docs: changelog fragment, the linked screenshots that show crew characters retaken [FR-073]
+
+## The Pirate Crew (delta 2026-11-01, issue #815, crew 2 of 5; FR-074)
+
+- [x] T094 Spec delta FR-074 [spec]
+- [x] T095 `crew.js` (`PIRATE_IDS`, `CREWS.pirate`, `storeKey`, file prefix, `FACE` points), `characters.ts`, `theme.js`, `api.ts`, `sim.ts`, `screens.js`, `app.js` and `simcrew.js` (Pirate column) with the `pirate` value [FR-074, FR-073]
+- [x] T096 18 pictures `crew/art/pirate-*.webp` and their `ASSETS.md` rows; the size cap unchanged [FR-074, FR-050, FR-054]
+- [x] T097 Tests: `test:crew`, `test:characters`, `test:crew-assets`; `check-crew` and `check-characters` cover Pirate [FR-074]
+- [x] T098 Docs: README, `docs/themes.md`, changelog fragment, the linked Settings screenshots retaken [FR-074]
+
+## The Monster Crew (delta 2026-11-01, issue #815, crew 3 of 5; FR-075)
+
+- [x] T099 Spec delta FR-075 [spec]
+- [x] T100 `crew.js` (`MONSTER_IDS`, `CREWS.monster`, `storeKey`, file prefix, `FACE` points; its Real office note comes from `peopleFor`, #991), `characters.ts`, `theme.js`, `api.ts`, `sim.ts`, `screens.js`, `app.js` and `simcrew.js` (Monster column) with the `monster` value [FR-075, FR-073]
+- [x] T101 18 pictures `crew/art/monster-*.webp` and their `ASSETS.md` rows; the `test:crew-assets` total cap raised from 2.5 MiB to 3 MiB [FR-075, FR-050, FR-054]
+- [x] T102 Tests: `test:crew`, `test:characters`, `test:crew-assets`, `test:realoffice-layout`; `check-crew`, `check-characters` and `check-office-overlap` cover Monster [FR-075]
+- [x] T103 Docs: README, `docs/themes.md`, changelog fragment, the linked Settings screenshots retaken [FR-075]
+
+## The Royal Crew (delta 2026-11-02, issue #815, crew 4 of 5; FR-076)
+
+- [x] T104 Spec delta FR-076 [spec]
+- [x] T105 `crew.js` (`ROYAL_IDS`, `CREWS.royal`, `storeKey`, file prefix, `FACE` points; its Real office note comes from `peopleFor`, #991), `characters.ts`, `theme.js`, `api.ts`, `sim.ts`, `screens.js`, `app.js` and `simcrew.js` (Royal column) with the `royal` value [FR-076, FR-073]
+- [x] T106 18 pictures `crew/art/royal-*.webp` and their `ASSETS.md` rows; the `test:crew-assets` total cap raised from 3 MiB to 4 MiB [FR-076, FR-050, FR-054]
+- [x] T107 Tests: `test:crew`, `test:characters`, `test:crew-assets`, `test:realoffice-layout`; `check-crew`, `check-characters` and `check-office-overlap` cover Royal [FR-076]
+- [x] T108 Docs: README, `docs/themes.md`, changelog fragment, the linked Settings screenshots retaken [FR-076]
+
+## The Animal Rebels Crew (delta 2026-11-02, issue #815, crew 5 of 5; FR-077)
+
+- [x] T109 Spec delta FR-077 [spec]
+- [x] T110 `crew.js` (`REBELS_IDS`, `CREWS.rebels`, `FACE` points; `storeKey` and `file()` come from `CREWS`; its Real office note comes from `peopleFor`, #991), `characters.ts`, `theme.js`, `api.ts`, `sim.ts`, `screens.js`, `app.js` and `simcrew.js` (Animal Rebels column) with the `rebels` value [FR-077, FR-073]
+- [x] T111 18 pictures `crew/art/rebels-*.webp` and their `ASSETS.md` rows; the `test:crew-assets` total cap raised from 4 MiB to 4.5 MiB [FR-077, FR-050, FR-054]
+- [x] T112 Tests: `test:crew`, `test:characters`, `test:crew-assets`, `test:realoffice-layout`; `check-crew`, `check-characters` and `check-office-overlap` cover Animal Rebels [FR-077]
+- [x] T113 Docs: README, `docs/themes.md`, changelog fragment, the linked Settings screenshots retaken; issue #815's five crews are all in [FR-077]
