@@ -200,14 +200,14 @@ module.exports = async (ctx) => {
     /* FR-230: a sign redrawing under the keyboard gives the focus back to the same button. A marked button proves the redraw happened */
     {
       const zone = (await js(`window.__durbarSimUi.realLayout().zones.filter(z=>z.desks.some(d=>d.state==='working')).map(z=>({id:z.id,desk:z.desks.find(d=>d.state==='working').id}))[0]`));
-      const SIGN = `document.querySelector('.ro-sign[data-folder="'+CSS.escape(${jsLiteral(zone.id)})+'"]')`;
-      const counts = () => js(`${SIGN}.querySelector('.ro-sc').textContent`);
+      const SIGN = `.ro-sign[data-folder=${JSON.stringify(zone.id)}]`;
+      const counts = () => js(`document.querySelector(${jsLiteral(SIGN + ' .ro-sc')}).textContent`);
       const c0 = await counts();
       for (const [i, attr] of ['newsess', 'foldermenu'].entries()) {
-        await js(`(()=>{const b=${SIGN}.querySelector('[data-'+${jsLiteral(attr)}+']');b.__marked=1;b.focus();})();0`);
+        await js(`(()=>{const b=document.querySelector(${jsLiteral(SIGN + ' [data-' + attr + ']')});b.__marked=1;b.focus();})();0`);
         const was = await counts();
         await emit({ type: 'status', sessionId: zone.desk, status: i ? 'working' : 'idle', intent: 'Driver work' });
-        await must(`${SIGN}.querySelector('.ro-sc').textContent!==${jsLiteral(was)}`, 'the sign redrawn');
+        await must(`document.querySelector(${jsLiteral(SIGN + ' .ro-sc')}).textContent!==${jsLiteral(was)}`, 'the sign redrawn');
         await must(`(()=>{const a=document.activeElement;return a.dataset[${jsLiteral(attr)}]===${jsLiteral(zone.id)}&&!a.__marked;})()`, 'the focus on the redrawn sign\'s ' + attr + ' button');
       }
       assert.strictEqual(await counts(), c0, 'the desk back as it was');
