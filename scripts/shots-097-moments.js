@@ -151,7 +151,7 @@ module.exports = async (ctx) => {
       console.log('[moments] asleep ok', sl.length);
       await shot(world, 'asleep', w, h);
       /* the name has priority in a narrow plate: no name is cut, at any desk (owner 2026-11-02) */
-      const CUT = `[...document.querySelectorAll('#stage .ro-plate .ro-l1 b')].filter(b=>b.scrollWidth>b.clientWidth+0.5).map(b=>b.textContent)`;
+      const CUT = `[...document.querySelectorAll('#stage .ro-plate .ro-l1 b')].filter(b=>{const r=document.createRange();r.selectNodeContents(b);return r.getBoundingClientRect().width>b.getBoundingClientRect().width+0.01}).map(b=>b.textContent)`;
       await H.until(CUT + '.length===0', 4000).catch(() => undefined); /* plates are fitted after the draw */
       const cut = await js(CUT);
       assert.deepStrictEqual(cut, [], `${tag}: a plate cuts a name: ${JSON.stringify(cut)}`);
