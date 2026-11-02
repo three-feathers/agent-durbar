@@ -876,7 +876,7 @@ Written with the build. Motion, status light and night are RA4 and RA5.
 - **The person and the glass:** at the small and narrow cabinets someone standing beside it reaches about 12 grid px over the glass. They stand in front of the cabinet's body and behind its glass, so nothing lies under the screen's text. Moving them out would not leave room for 15 at the narrowest floor.
 - **An empty place (097's still room):** the note stands where the person would, beside the glass, never over its text.
 - **FR-256, the bend:** it flattens to nothing before anything scrolls: at 1280x800 with a banner over the floor, 15 people have 3 px to spare.
-- **FR-229, op row:** `check-office-ops` has the row for this world at 15 and 40, with no allowance of its own. Measured: 1 element for one text change on a marquee at both.
+- **FR-229, op row:** `check-office-ops` has the row for this world at 15 and 40, with no allowance of its own. Measured: 0 elements for one text change on a marquee at both (1 before main removed its last `:has()` rule, #949), the least of 4 traces: the room's own render lands inside one trace in some runs.
 - **The page's `require`:** it answers only `./realoffice-layout`. A shim answering everything broke the office when `crew.js` could not load (`check-crew`).
 - `[KNOWN GAP]` **Chat open is not drawn yet:** on this base a chat hides the office, so `aislesLayout` is checked at those widths only by `test-realoffice-aisles`; the driver checks chat closed. It comes with #1001.
 - `[KNOWN GAP]` T212 asks for a mutant adding a node on a status update: `check-office-ops` on `main` has no such row yet (#950 brings it). `check:office` has no world id yet; `shots-102-arcade` carries the overlap checks instead.

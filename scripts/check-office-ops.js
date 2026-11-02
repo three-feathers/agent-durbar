@@ -49,7 +49,7 @@ module.exports = async (ctx) => {
     await H.load({ w: 1440, h: 900, index: process.env.OPS_INDEX || undefined, query: { sim: String(n) }, ready: FLAT, readyMs: 30000 });
     await js(`(()=>{const s=document.createElement('style');s.textContent='*,*::before,*::after{animation:none!important;transition:none!important}';document.head.append(s);})()`);
     /* one text change in `text` (a text node replaced: a child-list change, which is what a render does and what `:has()` watches), then a layout read so that the style is recalculated inside the trace */
-    const measure = async (host, text, key, label) => {
+    const measure = async (host, text, key, label, pick) => {
       const change = (i) => js(`(()=>{document.querySelector(${jsLiteral(text)}).textContent=${jsLiteral('Op ')}+${i};return document.body.offsetHeight;})()`);
       await change(0);
       await H.settle();
@@ -58,14 +58,14 @@ module.exports = async (ctx) => {
       assert.ok(probe > 0, `${label}: a new element must recalculate some element; a trace with none means the trace's thread or event name changed (${probe})`);
       const counts = [];
       for (let i = 1; i <= 4; i++) counts.push(elementsRecalculated(await trace(() => change(i))));
-      rows[key] = Math.max(...counts);
+      rows[key] = pick(...counts);
       console.log(`[ops] ${label}: elements recalculated by one text change`, counts.join(' '));
     };
-    await measure('#stage .desk[data-id]', '#stage .desk[data-id] .name', `elementsRecalculated@${n}`, `${n} agents`);
-    /* spec 102 T212: a world's arrangement has the same row and no allowance of its own: the arcade, one text change on a marquee */
+    await measure('#stage .desk[data-id]', '#stage .desk[data-id] .name', `elementsRecalculated@${n}`, `${n} agents`, Math.max);
+    /* spec 102 T212: a world's arrangement has the same row and no allowance of its own: the arcade, one text change on a marquee. The least of 4: this room's own render lands inside one trace in some runs (seen 0 0 132 0, 392 0 0 0), and that is not the text change */
     await H.load({ w: 1440, h: 900, index: process.env.OPS_INDEX || undefined, query: { sim: String(n), officeview: 'real', worldflags: 'retro', world: 'retro' }, ready: `!!document.querySelector('#stage .ro .ro-marquee')`, readyMs: 30000 });
     await js(`(()=>{const s=document.createElement('style');s.textContent='*,*::before,*::after{animation:none!important;transition:none!important}';document.head.appendChild(s);})();0`);
-    await measure('#stage .ro-marquee', '#stage .ro-marquee', `elementsRecalculated@retro${n}`, `${n} agents, arcade`);
+    await measure('#stage .ro-marquee', '#stage .ro-marquee', `elementsRecalculated@retro${n}`, `${n} agents, arcade`, Math.min);
   }
   const failed = [];
   for (const [key, value] of Object.entries(rows)) {
