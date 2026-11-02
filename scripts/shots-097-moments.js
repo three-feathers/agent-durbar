@@ -155,6 +155,9 @@ module.exports = async (ctx) => {
       await H.until(CUT + '.length===0', 4000).catch(() => undefined); /* plates are fitted after the draw */
       const cut = await js(CUT);
       assert.deepStrictEqual(cut, [], `${tag}: a plate cuts a name: ${JSON.stringify(cut)}`);
+      /* a role with no room for about three characters is hidden, not shown as a sliver (owner 2026-11-02) */
+      const sliver = await js(`[...document.querySelectorAll('#stage .ro-plate .ro-role')].filter(r=>!r.hidden&&getComputedStyle(r).display!=='none'&&r.getBoundingClientRect().width<19).map(r=>[r.textContent,Math.round(r.getBoundingClientRect().width)])`);
+      assert.deepStrictEqual(sliver, [], `${tag}: a role is shown as a sliver: ${JSON.stringify(sliver)}`);
     }
     // ---- FR-121 inbox as a queue at the Boss door, FR-122 limit slip at the Bank, FR-124 MCP bubble ----
     let staleRan = 0;

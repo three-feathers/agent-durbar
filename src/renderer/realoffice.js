@@ -381,6 +381,7 @@
     for (const id of WHERE.keys()) if (!CUR.agents.has(id)) WHERE.delete(id); /* a session gone: what stays is bounded by the sessions there are */
     watchBody(); wasHidden = hiddenNow();
     fitPlates(chrome, lay.width);
+    fitRoles(chrome);
     stagger(chrome, lay.width);
     /* a chip or plate does not travel: it fades in where it now is, so nothing passes over anything (owner 2026-11-01) */
     for (const e of chrome.querySelectorAll(':scope > .ro-chip, :scope > .ro-lplate')) {
@@ -750,6 +751,20 @@
      slot grows to the right, then to the left, into free space only (up to the next plate on the same rows or the band's edge); no
      fixture moves. Measured once per render, left to right, so a plate never covers another. Too little room keeps the ellipsis
      (the driver fails on it). */
+  /* owner 2026-11-02: a role that has no room for about three characters is not shown (a one-letter sliver reads as a mistake). Done once per draw and only for a plate
+     whose width or words changed (not per frame): show every changed role, read all widths, then hide the ones that are too narrow. */
+  const ROLE_MIN = 20; /* px: about three characters of the 10.5 px role text */
+  function fitRoles(chrome) {
+    const todo = [];
+    for (const p of chrome.querySelectorAll(':scope > .ro-plate')) {
+      const r = p.querySelector('.ro-role'); if (!r) continue;
+      const key = p.style.width + '|' + p.style.height + '|' + p._sig;
+      if (p._rk === key) continue;
+      p._rk = key; r.hidden = false; todo.push(r);
+    }
+    const w = todo.map((r) => r.getBoundingClientRect().width);
+    todo.forEach((r, i) => { r.hidden = w[i] < ROLE_MIN; });
+  }
   function fitPlates(chrome, W) {
     const pl = [...chrome.querySelectorAll(':scope > .ro-lplate')].sort((a, b) => a.offsetLeft - b.offsetLeft);
     const done = [];
