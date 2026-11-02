@@ -146,6 +146,75 @@ try {
     assert.ok(!html.includes('<img') && !html.includes('<script>'), 'escaped');
     assert.ok(html.includes('Automatic (Allow all)') && html.includes('Allow all'));
     assert.deepStrictEqual(Object.values(T.DECISION_WORDS), ['Allowed once by you', 'Allowed for the session', 'Denied', 'Automatic (Allow all)', 'Automatic (session permission)', 'Mode changed', 'Limit changed', 'Remote control on', 'Remote control off', 'Session deleted', 'MCP restart']);
+
+    // issue #973: the export is the notes export's atomic, no-follow write (main's own handler on a stand-in `electron`, a fake save dialog)
+    {
+      const electronPath = require.resolve('electron');
+      let pick: string | undefined;
+      const handlers = new Map<string, (e: unknown, ...a: unknown[]) => unknown>();
+      const fake = { ipcMain: { handle: (ch: string, fn: (e: unknown, ...a: unknown[]) => unknown) => handlers.set(ch, fn), on: () => undefined }, app: { getVersion: () => '0.0.0-test' }, dialog: { showSaveDialog: async () => (pick ? { canceled: false, filePath: pick } : { canceled: true }) } };
+      const saved = require.cache[electronPath];
+      require.cache[electronPath] = { id: electronPath, filename: electronPath, loaded: true, exports: fake } as unknown as NodeJS.Module;
+      const out = fs.realpathSync(fs.mkdtempSync(path.join(dir, 'exp-')));
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        (require('../src/main/ipcguard') as typeof import('../src/main/ipcguard')).initSimGuard(false);
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const { register } = require('../src/main/ipc/activity') as typeof import('../src/main/ipc/activity');
+        const st = new ActivityStore(path.join(out, 'activity.json'), { ...noTimer, env: {} });
+        st.record({ ...base });
+        register({ getActivityStore: () => st, getWin: () => undefined });
+        const frame = { url: require('url').pathToFileURL(path.join(__dirname, '..', 'src', 'renderer', 'index.html')).href };
+        const win = { senderFrame: frame, sender: { mainFrame: frame } };
+        const exp = async (to: string, fmt = 'csv'): Promise<Record<string, unknown>> => { pick = to; return (await handlers.get('activity:export')!(win, fmt)) as Record<string, unknown>; };
+        const leftovers = (d: string): string[] => fs.readdirSync(d).filter((n) => n.endsWith('.tmp'));
+        const posix = process.platform !== 'win32';
+        // a new file: exact content, 0600 where modes apply, no temp file left
+        const f1 = path.join(out, 'a.csv');
+        assert.deepStrictEqual(await exp(f1), { ok: true, count: 1, to: 'a.csv' });
+        assert.strictEqual(fs.readFileSync(f1, 'utf8'), activityCsv(st.all()));
+        if (posix) assert.strictEqual(fs.statSync(f1).mode & 0o777, 0o600, 'mode 0600');
+        assert.deepStrictEqual(leftovers(out), []);
+        // a plain file is replaced; a bad format and a cancelled dialog write nothing
+        assert.strictEqual((await exp(f1, 'json')).ok, true);
+        assert.strictEqual(JSON.parse(fs.readFileSync(f1, 'utf8')).length, 1, 'replaced');
+        assert.strictEqual((await exp(path.join(out, 'b.csv'), 'xml')).ok, false);
+        pick = undefined;
+        assert.strictEqual(((await handlers.get('activity:export')!(win, 'csv')) as { cancelled?: boolean }).cancelled, true);
+        // a link at the chosen name is refused and the file it points to is not touched
+        const victim = path.join(out, 'victim.txt');
+        fs.writeFileSync(victim, 'keep me');
+        let linked = true;
+        const lnk = path.join(out, 'link.csv');
+        try { fs.symlinkSync(victim, lnk, 'file'); } catch { linked = false; }
+        if (linked) {
+          const r = await exp(lnk);
+          assert.strictEqual(r.ok, false);
+          assert.match(String(r.error), /is a link/);
+          assert.strictEqual(fs.readFileSync(victim, 'utf8'), 'keep me', 'the link target is untouched');
+          assert.ok(fs.lstatSync(lnk).isSymbolicLink(), 'the link is still a link');
+        } else console.log('skip: symlinks are not allowed here');
+        // a hard link is refused (it would write through to the other name)
+        const hard = path.join(out, 'hard.csv');
+        let hardOk = true;
+        try { fs.linkSync(victim, hard); } catch { hardOk = false; }
+        if (hardOk) {
+          assert.match(String((await exp(hard)).error), /hard link/);
+          assert.strictEqual(fs.readFileSync(victim, 'utf8'), 'keep me');
+        }
+        // a folder, a missing folder and a FIFO
+        assert.match(String((await exp(out)).error), /folder/);
+        assert.match(String((await exp(path.join(out, 'nope', 'x.csv'))).error), /not there/);
+        if (posix) {
+          const fifo = path.join(out, 'pipe.csv');
+          if (require('child_process').spawnSync('mkfifo', [fifo], { stdio: 'ignore' }).status === 0) assert.match(String((await exp(fifo)).error), /not a regular file/);
+        }
+        assert.deepStrictEqual(leftovers(out), [], 'no temp file after a refusal');
+      } finally {
+        if (saved) require.cache[electronPath] = saved;
+        else delete require.cache[electronPath];
+      }
+    }
     fs.rmSync(dir, { recursive: true, force: true });
     console.log('activity tests passed');
   })().catch((e) => { console.error(e); process.exit(1); });

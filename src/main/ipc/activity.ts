@@ -1,11 +1,12 @@
 /** IPC for the activity log: read, export through the save dialog, clear (spec 052 FR-071; moved out of main.ts as it was, spec 045 FR-060). */
 import { BrowserWindow, dialog } from 'electron';
-import * as fs from 'fs';
-import * as path from 'path';
 import { fromAppFrame as fromApp, ipcHandle } from '../ipcguard';
 import { activityCsv, activityJson } from '../../shared/activity';
-import { errText } from '../agentops';
+import { writeNotesExport } from '../notesexport';
 import type { ActivityStore } from '../activitystore';
+
+/** 5000 rows of at most a few hundred bytes each; far above that is not an activity log. */
+const ACTIVITY_EXPORT_MAX_BYTES = 16 * 1024 * 1024;
 
 export interface ActivityIpcDeps {
   /** Created when the app is ready: read when a handler runs. */
@@ -29,12 +30,9 @@ export function register(deps: ActivityIpcDeps): void {
     const r = win && !win.isDestroyed() ? await dialog.showSaveDialog(win, opts) : await dialog.showSaveDialog(opts);
     if (r.canceled || !r.filePath) return { ok: false, cancelled: true };
     const rows = activityStore()?.all() ?? [];
-    try {
-      fs.writeFileSync(r.filePath, format === 'csv' ? activityCsv(rows) : activityJson(rows), { encoding: 'utf8', mode: 0o600 });
-      return { ok: true, count: rows.length, to: path.basename(r.filePath) };
-    } catch (err) {
-      return { ok: false, error: errText(err).slice(0, 160) };
-    }
+    // the notes export's write (spec 083 T034b): temp file exclusive, no-follow, 0600, re-checked, renamed; refuses links, hard links, FIFOs and devices
+    const w = await writeNotesExport(r.filePath, format === 'csv' ? activityCsv(rows) : activityJson(rows), { what: 'activity', maxBytes: ACTIVITY_EXPORT_MAX_BYTES });
+    return w.ok ? { ok: true, count: rows.length, to: w.name } : { ok: false, error: w.error.slice(0, 160) };
   });
   ipcHandle('activity:clear', (e) => {
     if (!fromApp(e)) return { ok: false };

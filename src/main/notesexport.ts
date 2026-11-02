@@ -13,6 +13,8 @@
  *   (best effort: when the chosen folder was moved away meanwhile, the temp file stays in it, spec `[KNOWN GAP]`).
  * The steps follow `NotesFile.syncOut` (`notesfile.ts`), not shared with it: there the re-check is a hash, here the file's identity.
  *
+ * The activity export (spec 052 FR-071, issue #973) uses the same function with `what` and `maxBytes` set.
+ *
  * No Electron import (the dialog is injected into `NotesOps`); nothing here logs; a refusal is a short reason without a path.
  */
 import * as nodeFs from 'fs';
@@ -32,6 +34,10 @@ export interface NotesExportOptions {
   rand?: (n: number) => number;
   sleep?: (ms: number) => Promise<void>;
   pid?: number;
+  /** What is exported, for the refusal texts: `notes` (default) or `activity`. */
+  what?: string;
+  /** Largest text accepted; default the notes' file limit. */
+  maxBytes?: number;
 }
 
 export type ExportWrote = { ok: true; name: string; bytes: number } | { ok: false; error: string };
@@ -40,7 +46,7 @@ const errCode = (e: unknown): string => {
   const c = (e as { code?: unknown } | null)?.code;
   return typeof c === 'string' && /^[A-Z0-9_]{2,24}$/.test(c) ? c : 'ERROR';
 };
-export const EXPORT_FAIL = (why: string): string => `Could not export the notes: ${why}.`;
+export const EXPORT_FAIL = (why: string, what = 'notes'): string => `Could not export the ${what}: ${why}.`;
 
 /**
  * The default file name the dialog offers: `<folder>-notes.md`, with every character a file name cannot hold on Windows, macOS or
@@ -82,10 +88,11 @@ export async function writeNotesExport(file: unknown, text: string, opts: NotesE
   const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   const pid = opts.pid ?? process.pid;
   const p = path; // paths of this machine; `platform` only picks modes and the Windows rename retry
-  const fail = (why: string): ExportWrote => ({ ok: false, error: EXPORT_FAIL(why) });
+  const EXPORT_FAIL_ = (why: string): string => EXPORT_FAIL(why, opts.what);
+  const fail = (why: string): ExportWrote => ({ ok: false, error: EXPORT_FAIL_(why) });
   if (typeof file !== 'string' || !file || file.length > 4096 || file.includes('\u0000') || !p.isAbsolute(file)) return fail('that is not a file path');
   const bytes = Buffer.from(String(text), 'utf8');
-  if (bytes.length > NOTES_LIMITS.mdBytes) return fail('the notes are too large for one file');
+  if (bytes.length > (opts.maxBytes ?? NOTES_LIMITS.mdBytes)) return fail('the text is too large for one file');
   const name = p.basename(file);
   if (!name || name === '.' || name === '..' || /[\\/]$/.test(file)) return fail('that is not a file name');
 
@@ -94,18 +101,18 @@ export async function writeNotesExport(file: unknown, text: string, opts: NotesE
     let dir: string;
     try {
       dir = fs.realpathSync(p.dirname(file));
-      if (!fs.lstatSync(dir).isDirectory()) return { ok: false, error: EXPORT_FAIL('the chosen folder is not a folder') };
-    } catch { return { ok: false, error: EXPORT_FAIL('the chosen folder is not there') }; }
+      if (!fs.lstatSync(dir).isDirectory()) return { ok: false, error: EXPORT_FAIL_('the chosen folder is not a folder') };
+    } catch { return { ok: false, error: EXPORT_FAIL_('the chosen folder is not there') }; }
     const at = p.join(dir, name);
     let st: nodeFs.BigIntStats;
     try { st = fs.lstatSync(at, { bigint: true }) as nodeFs.BigIntStats; } catch (e) {
       if (errCode(e) === 'ENOENT') return { ok: true, dir, file: at, name, was: null };
-      return { ok: false, error: EXPORT_FAIL(`the chosen file could not be checked (${errCode(e)})`) };
+      return { ok: false, error: EXPORT_FAIL_(`the chosen file could not be checked (${errCode(e)})`) };
     }
-    if (st.isSymbolicLink()) return { ok: false, error: EXPORT_FAIL('the chosen file is a link') };
-    if (st.isDirectory()) return { ok: false, error: EXPORT_FAIL('the chosen name is a folder') };
-    if (!st.isFile()) return { ok: false, error: EXPORT_FAIL('the chosen file is not a regular file (a device, a pipe or a socket)') };
-    if (st.nlink > BigInt(1)) return { ok: false, error: EXPORT_FAIL('the chosen file has more than one link (a hard link)') };
+    if (st.isSymbolicLink()) return { ok: false, error: EXPORT_FAIL_('the chosen file is a link') };
+    if (st.isDirectory()) return { ok: false, error: EXPORT_FAIL_('the chosen name is a folder') };
+    if (!st.isFile()) return { ok: false, error: EXPORT_FAIL_('the chosen file is not a regular file (a device, a pipe or a socket)') };
+    if (st.nlink > BigInt(1)) return { ok: false, error: EXPORT_FAIL_('the chosen file has more than one link (a hard link)') };
     return { ok: true, dir, file: at, name, was: `${st.dev}:${st.ino}:${st.birthtimeNs}:${st.mtimeNs}:${st.size}` };
   };
   const first = look();
@@ -114,8 +121,8 @@ export async function writeNotesExport(file: unknown, text: string, opts: NotesE
   const recheck = (): string | undefined => {
     const now = look();
     if (!now.ok) return now.error;
-    if (now.dir !== first.dir) return EXPORT_FAIL('the chosen folder changed while Durbar was writing');
-    if (now.was !== first.was) return EXPORT_FAIL('the chosen file changed while Durbar was writing');
+    if (now.dir !== first.dir) return EXPORT_FAIL_('the chosen folder changed while Durbar was writing');
+    if (now.was !== first.was) return EXPORT_FAIL_('the chosen file changed while Durbar was writing');
     return undefined;
   };
   const tmp = p.join(first.dir, `.durbar-export.${pid}.${rand(36 ** 6).toString(36)}.tmp`);
