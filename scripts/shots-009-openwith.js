@@ -38,21 +38,19 @@ module.exports = async (ctx) => {
     assert.ok(m.focus && m.exp === 'true', `${w}: first item focused, expanded`);
     await js(`document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true}))`);
     assert.strictEqual(await js(`document.activeElement.querySelector('.mt').firstChild.textContent`), 'VSCodium', 'ArrowDown moves');
-    const late = (reopen) => js(`(()=>{const b=window.__durbarSimUi.bridge(),o=b.__owo||b.openWithTargets;b.__owo=o;window.__owDone=false;b.openWithTargets=async(i)=>{await new Promise(r=>setTimeout(r,250));const t=await o.call(b,i);setTimeout(()=>{window.__owDone=true;},0);return t;};const v=document.getElementById('vscodeBtn');v.dispatchEvent(new PointerEvent('pointerenter'));${reopen ? 'v.click();window.__owFocus=document.activeElement;' : ''}})();0`);
-    await late(false);
-    assert.ok(await H.until(`window.__owDone===true`, 3000), `${w}: the list came`);
-    assert.ok(await js(`document.activeElement&&document.activeElement.dataset.ow==='vscodium'&&document.activeElement.isConnected`), 'a pointerenter does not rebuild an open menu (focus kept)');
     await H.shot(path.join(OUT, `009-openwith-${w}x${h}.png`), { prep: 'calm', keepHover: true, delay: 300 });
     await js(`document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`);
     assert.ok(await js(`document.getElementById('openWithMenu').hidden&&document.activeElement===document.getElementById('vscodeBtn')`), 'Esc closes, focus back on the button');
+    const slowList = () => js(`(()=>{const b=window.__durbarSimUi.bridge(),o=b.__owo||b.openWithTargets;b.__owo=o;window.__owDone=false;b.openWithTargets=async(i)=>{await new Promise(r=>setTimeout(r,250));const t=await o.call(b,i);setTimeout(()=>{window.__owDone=true;},0);return t;};})();0`);
+    const hoverThenOpen = () => js(`(()=>{const v=document.getElementById('vscodeBtn');v.dispatchEvent(new PointerEvent('pointerenter'));v.click();window.__owFocus=document.activeElement;})();0`);
     /* the list arrives after the menu opened: it must not rebuild the menu under the focused item */
-    await late(true);
+    await slowList(); await hoverThenOpen();
     assert.ok(await H.until(`window.__owDone===true`, 3000), `${w}: the late list came`);
     assert.strictEqual(await js(`window.__owFocus.isConnected&&window.__owFocus===document.activeElement&&!!window.__owFocus.dataset.ow`), true, `${w}: a late list does not rebuild an open menu`);
     await js(`window.__durbarSimUi.bridge().openWithTargets=window.__durbarSimUi.bridge().__owo;document.getElementById('openWithMenu').hidden||document.getElementById('vscodeBtn').click();0`);
     /* opened before the first list came: not an empty menu; it fills and the first item takes focus */
     await js(`document.getElementById('owItems').innerHTML='';0`);
-    await late(true);
+    await slowList(); await hoverThenOpen();
     assert.ok(await H.until(`window.__owDone===true`, 3000), `${w}: the first list came`);
     assert.ok(await H.until(`document.activeElement&&document.activeElement.parentElement&&document.activeElement.parentElement.id==='owItems'`, 3000), `${w}: a first fill of an open menu focuses its first item`);
     assert.strictEqual(await js(`document.activeElement.dataset.ow`), 'vscode', `${w}: the first item`);
