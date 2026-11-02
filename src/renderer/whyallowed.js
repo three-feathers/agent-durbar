@@ -10,6 +10,7 @@
 })(typeof self!=='undefined'?self:this, function(CT){
   'use strict';
   const LABEL_MAX=240;
+  const ID_MAX=256; /* = REQUEST_ID_MAX in src/adapters/eventguard.ts (test:permissions checks they agree); the guard runs in tests only, this holds in the app */
   const KEYS_MAX=50; /* = ALLOWED_BY_KEYS_MAX in src/adapters/types.ts (test:permissions checks they agree) */
   const APP={config:'config',hook:'hook',classifier:'classifier'};
   const APP_WORDS={config:"the agent app's config",hook:"a hook of the agent app",classifier:"the agent app's automatic approval review"};
@@ -63,5 +64,5 @@
   }
   /* the reason to keep when two events name one call: Durbar's own broker (any kind but 'app') beats an app's report, in either order */
   const keep=(old,next)=>old&&old.kind!=='app'&&next&&next.kind==='app'?old:next;
-  return {describe,keep,LABEL_MAX,KEYS_MAX};
+  return {describe,keep,ID_MAX,LABEL_MAX,KEYS_MAX};
 });

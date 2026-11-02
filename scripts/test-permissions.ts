@@ -3,7 +3,7 @@ import * as assert from 'assert';
 import * as path from 'path';
 import { PermissionBroker, cleanGrantKey, grantScope, revokeGrantFor, revokeCallFor, CALLS_MAX, CALL_KEYS_MAX, isInsideRoots } from '../src/adapters/permissions';
 import type { BrokerEvent } from '../src/adapters/permissions';
-import { eventProblems } from '../src/adapters/eventguard';
+import { eventProblems, REQUEST_ID_MAX } from '../src/adapters/eventguard';
 import { ALLOWED_BY_KEYS_MAX } from '../src/adapters/types';
 import { codexPermission } from '../src/adapters/codexModes';
 
@@ -312,7 +312,7 @@ async function main(): Promise<void> {
   // spec 003 FR-099..FR-103 (issue #605): why a request ran without asking; undo through the existing revoke
   {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const W = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'whyallowed.js')) as { KEYS_MAX: number; keep: (old: any, next: any) => any; describe: (by: unknown, live: unknown, opts?: unknown) => null | { kind: string; pill: string; sentence: string; label?: string; undoKeys?: string[]; gone?: boolean } };
+    const W = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'whyallowed.js')) as { KEYS_MAX: number; ID_MAX: number; keep: (old: any, next: any) => any; describe: (by: unknown, live: unknown, opts?: unknown) => null | { kind: string; pill: string; sentence: string; label?: string; undoKeys?: string[]; gone?: boolean } };
     const perm = (ev: BrokerEvent[], from = 0) => ev.slice(from).filter((e): e is Extract<BrokerEvent, { permission: unknown }> => 'permission' in e).map((e) => e.permission);
 
     // a session rule: the grant's key and label ride on the auto-approved request
@@ -584,6 +584,7 @@ const mkRoots2 = (m: { ask?: boolean; allow?: boolean }, roots?: string[]) => {
       assert.strictEqual(W.keep(undefined, app), app);
       assert.strictEqual(W.keep(app, app).kind, 'app');
     }
+    assert.strictEqual(W.ID_MAX, REQUEST_ID_MAX, 'the window and the guard agree');
     assert.ok(eventProblems({ type: 'permission', sessionId: 's', timestamp: 1, permission: { requestId: 'q'.repeat(257), kind: 'write', summary: 'x', state: 'approved' } }).length, 'a long requestId is refused');
     assert.deepStrictEqual(eventProblems({ type: 'permission', sessionId: 's', timestamp: 1, permission: { requestId: 'q'.repeat(256), kind: 'write', summary: 'x', state: 'approved' } }), []);
 

@@ -4753,7 +4753,7 @@ function chipRepaint(c){
    shows nothing. Undo is the grant chips' own revoke (bridge.revokeGrant). The words come from DurbarWhyAllowed. ---- */
 const WHY=window.DurbarWhyAllowed, WHY_KEEP=400;
 function whyNote(a,p){
-  if(!p||!p.allowedBy||typeof p.requestId!=='string'||!p.requestId||!WHY||!WHY.describe(p.allowedBy,null))return;
+  if(!p||!p.allowedBy||typeof p.requestId!=='string'||!p.requestId||!WHY||p.requestId.length>WHY.ID_MAX||!WHY.describe(p.allowedBy,null))return;
   const m=a.why||(a.why=new Map());const by=WHY.keep(m.get(p.requestId),p.allowedBy);m.set(p.requestId,by);
   while(m.size>WHY_KEEP)m.delete(m.keys().next().value);
   const c=a.turn&&a.turn.T.chipEls[p.requestId];
