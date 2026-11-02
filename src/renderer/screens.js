@@ -246,6 +246,29 @@
       void agentMcp(m.a,m.o);
     }
   }
+  /* ---------------- spec 100 FR-012, FR-020: Settings > MCP servers: the warning levels and the last figures (never measured: nothing; Durbar starts no server for it) ---------------- */
+  let mcpCosts=null;
+  function mcpCostSection(){
+    if(!X.bridge.setMcpWarnLevels||!X.mcpLevels)return '';
+    const L=X.mcpLevels(), mc=window.exports||{};
+    const per={};for(const [app,m] of Object.entries(mcpCosts||{}))for(const [n,e] of Object.entries(m||{}))(Object.prototype.hasOwnProperty.call(per,n)?per[n]:(per[n]={}))[app]=e;
+    const now=Date.now(), clock=at=>mc.costWhen(at,now); /* FR-012: a month-old figure does not read as today's */
+    const rows=Object.keys(per).sort((a,b)=>a.localeCompare(b)).map(n=>{const t=mc.costLine(per[n],clock);return t?`<li><b>${esc(n)}</b> <span>${esc(t)}</span></li>`:'';}).join('');
+    return `<h4 class="scr-sub" id="mcpWarnH">Tool definitions in the context window</h4>
+        <div class="scr-tools mcp-levels"><label class="capf">Warn when MCP tool definitions take more than <input id="mcpWarnPct" type="number" min="5" max="90" step="1" value="${L.warn}"> % of a session's window</label><label class="capf">strongly above <input id="mcpStrongPct" type="number" min="5" max="90" step="1" value="${L.strong}"> %</label><label class="mcp-off"><input id="mcpWarnOff" type="checkbox"${L.off?' checked':''}> Off</label><button class="btn" type="button" id="mcpWarnSave">Save</button><span class="scr-note small" id="mcpWarnMsg" role="status"></span></div>
+        <p class="scr-note small">The warning never changes anything by itself.</p>
+        ${rows?`<ul class="mcp-costs" id="mcpCosts" aria-label="Last measured size of each server's tool definitions">${rows}</ul>`:''}`;
+  }
+  function wireMcpLevels(){
+    const save=$('mcpWarnSave');if(!save)return;
+    save.onclick=async()=>{
+      const v={warn:Number($('mcpWarnPct').value),strong:Number($('mcpStrongPct').value),off:$('mcpWarnOff').checked}, msg=$('mcpWarnMsg');
+      if(!(window.exports||{}).parseWarnLevels(v)){msg.textContent='Use whole percents from 5 to 90, the first below the second.';return;}
+      let r=null;try{r=await X.bridge.setMcpWarnLevels(v);}catch(e){r=null;}
+      if(r&&r.levels)X.setMcpLevels(r.levels);
+      msg.textContent=r&&r.ok?'Saved.':'Not saved.';
+    };
+  }
   async function paintSettings(focus){
     const first=!mcp;
     if(first)root().innerHTML=head('Settings')+'<div class="scr-body"><p class="scr-note">Loading…</p></div>';
@@ -253,6 +276,7 @@
     if(!cur||cur.kind!=='settings')return;
     const r=root();
     if(!mcp){r.innerHTML=head('Settings')+'<div class="scr-body"><p class="scr-note">MCP settings are not available in this build.</p></div>';wireHead();return;}
+    if(X.bridge.mcpCosts){try{const c=await X.bridge.mcpCosts();mcpCosts=c&&c.ok?c.costs:null;}catch(e){mcpCosts=null;}}
     const amb=mcp.cli.map(cliRow).join('');
     const globSec=globalSection();
     let app={};
@@ -333,7 +357,7 @@
     const themeSec=`<section class="scr-sec" aria-labelledby="themeH"><h3 id="themeH">Theme</h3>
         <p class="scr-note">The look of the office; the choice applies at once and is kept on this computer.</p>
         ${worldNote()}
-        <details class="scr-more"><summary>More</summary><p class="scr-note small">Colours, fonts (system fonts only), corner radii, shadows, the people's clothes and hair, small art (desk gadgets too) and scene words (places, lobby, doors). Status, permission and credit wording never change, and the layout always fits 15 agents at 1280×800. A theme is a folder with a data-only manifest.json (no scripts, no CSS).</p></details>
+        <details class="scr-more"><summary>More</summary><p class="scr-note small">Colours, fonts (system fonts only), corner radii, shadows, the people's clothes and hair, small art (desk gadgets too) and scene words (places, lobby). Status, permission and credit wording never change, and the layout always fits 15 agents at 1280×800. A theme is a folder with a data-only manifest.json (no scripts, no CSS).</p></details>
         <ul class="thlist" id="thList">${themes.map((t)=>{const by=t.author&&t.author!==baseAuthor?t.author:'';return `<li class="throw"><button class="thpick" type="button" data-theme="${esc(t.id)}" aria-pressed="${t.id===curTheme}" aria-label="Theme ${esc(t.name)}${t.own?', yours':''}${by?esc(', by '+by):''}"><span class="thsw" data-theme-sw="${esc(t.id)}" aria-hidden="true"><i class="thsw-wall"></i><i class="thsw-desk"></i><i class="thsw-chair"></i><i class="thsw-ag"></i></span><span class="thtx"><b title="${esc(t.name)}">${esc(t.name)}</b>${t.own?'<span class="mtag">yours</span>':''}${by?`<small>${esc(by)}</small>`:''}</span></button></li>`;}).join('')}</ul>
         ${themeFallbackNote(themes)}
         ${badThemes.length?`<p class="scr-note warn" role="status">${badThemes.length} theme folder${badThemes.length>1?'s were':' was'} ignored: ${esc(badThemes.map((b)=>b.id+': '+(b.error||'invalid')).join('; '))}</p>`:''}
@@ -342,9 +366,9 @@
     const KIT_NAMES={office:'Minimalist',pixel:'Pixel',crew:'Cheeky'};
     /* the items are painted again after a theme pick: the theme's own figures and every preview follow the theme */
     const charItems=()=>{
-      const cur=window.THEME.characters(), own=window.THEME.themeKit(), crewN=window.DurbarCrew&&Array.isArray(window.DurbarCrew.IDS)?window.DurbarCrew.IDS.length:0; const preN=window.DurbarCrew&&Array.isArray(window.DurbarCrew.PREHISTORIC_IDS)?window.DurbarCrew.PREHISTORIC_IDS.length:0;
-      const real=X.signs&&X.signs.view&&X.signs.view.get()==='real'&&X.signs.view.world; /* FR-201: in Real office the first choice is the world's default set */
-      const list=[real?{id:'theme',name:'World\u2019s default ('+real.defaultSet()+')',sub:'People follow the world'}:{id:'theme',name:'The theme\u2019s own',sub:(KIT_NAMES[own]||own)+' figures'},{id:'minimalist',name:'Minimalist',sub:'The calm office figure'},{id:'cheeky',name:'Cheeky',sub:crewN?crewN+' cheeky characters':'Cheeky characters'},{id:'prehistoric',name:'Prehistoric',sub:preN?preN+' cave characters':'Cave characters'}];
+      const cur=window.THEME.characters(), own=window.THEME.themeKit(), crewN=window.DurbarCrew&&Array.isArray(window.DurbarCrew.IDS)?window.DurbarCrew.IDS.length:0; const preN=window.DurbarCrew&&Array.isArray(window.DurbarCrew.PREHISTORIC_IDS)?window.DurbarCrew.PREHISTORIC_IDS.length:0,pirN=window.DurbarCrew&&Array.isArray(window.DurbarCrew.PIRATE_IDS)?window.DurbarCrew.PIRATE_IDS.length:0,monN=window.DurbarCrew&&Array.isArray(window.DurbarCrew.MONSTER_IDS)?window.DurbarCrew.MONSTER_IDS.length:0,royN=window.DurbarCrew&&Array.isArray(window.DurbarCrew.ROYAL_IDS)?window.DurbarCrew.ROYAL_IDS.length:0;
+      const real=X.view&&X.view.get()==='real'&&X.view.world; /* FR-201: in Real office the first choice is the world's default set */
+      const list=[real?{id:'theme',name:'World\u2019s default ('+real.defaultSet()+')',sub:'People follow the world'}:{id:'theme',name:'The theme\u2019s own',sub:(KIT_NAMES[own]||own)+' figures'},{id:'minimalist',name:'Minimalist',sub:'The calm office figure'},{id:'cheeky',name:'Cheeky',sub:crewN?crewN+' cheeky characters':'Cheeky characters'},{id:'prehistoric',name:'Prehistoric',sub:preN?preN+' cave characters':'Cave characters'},{id:'pirate',name:'Pirate',sub:pirN?pirN+' pirate characters':'Pirate characters'},{id:'monster',name:'Monster',sub:monN?monN+' monster characters':'Monster characters'},{id:'royal',name:'Royal',sub:royN?royN+' royal characters':'Royal characters'}];
       return list.map((c)=>`<li class="throw"><button class="thpick" type="button" data-characters="${esc(c.id)}" aria-pressed="${c.id===cur}" aria-label="Characters ${esc(c.name)}: ${esc(c.sub)}"><span class="chsw" aria-hidden="true">${X.charPreview?X.charPreview(c.id):''}</span><span class="thtx"><b title="${esc(c.name)}">${esc(c.name)}</b><small>${esc(c.sub)}</small></span></button></li>`).join('');
     };
     const charSec=window.THEME&&window.THEME.setCharacters&&X.applyCharacters?`<section class="scr-sec" aria-labelledby="chH"><h3 id="chH">Characters</h3>
@@ -371,7 +395,7 @@
     const dl=X.detail?X.detail.get():'expert';
     const detailSec=X.detail?`<section class="scr-sec" aria-labelledby="detH"><h3 id="detH">Detail level</h3>
         <p class="scr-note">Expert adds tokens, models, context and paths. Permissions work the same in both.</p>
-        <div class="seg" role="group" aria-label="Detail level"><button type="button" data-detail="simple" aria-pressed="${dl==='simple'}">Simple</button><button type="button" data-detail="expert" aria-pressed="${dl!=='simple'}">Expert</button></div>${X.density?densityRow():''}${X.liveAct&&X.liveAct.usable()?liveActRow():''}${X.shutters&&X.shutters.usable()?shuttersRow():''}${X.signs&&X.signs.usable()?signsRow()+worldRow():''}</section>`:'';
+        <div class="seg" role="group" aria-label="Detail level"><button type="button" data-detail="simple" aria-pressed="${dl==='simple'}">Simple</button><button type="button" data-detail="expert" aria-pressed="${dl!=='simple'}">Expert</button></div>${X.density?densityRow():''}${X.liveAct&&X.liveAct.usable()?liveActRow():''}${X.shutters&&X.shutters.usable()?shuttersRow():''}${X.view?officeRow()+worldRow():''}</section>`:'';
     /* spec 074 FR-013 (issue 548): the navigator shortcut, recorded here, checked for clashes, kept for this window */
     const keySec=X.navKey?`<section class="scr-sec" aria-labelledby="keyH"><h3 id="keyH">Keyboard</h3>
         <p class="scr-note">Go to (the navigator) opens from anywhere: a floor, a folder, an agent, or a chat by its number (C and the number).</p>
@@ -393,6 +417,7 @@
         <details class="scr-more"><summary>More</summary><p class="scr-note small">There is nothing to configure or import here. Each agent can switch single servers off from its own header (MCP button). Claude Code and Codex read their own MCP settings; each agent's <b>MCP</b> item (in its chat's More menu) shows what it uses.</p></details>
         <p class="scr-warn" role="note"><b>MCP servers run local commands with your user rights.</b> The Copilot runtime starts the servers of your CLI list in every session, exactly as the CLI does. Read-only MCP tools can run without asking even in Read-only mode.</p>
         ${fileNote}
+        ${mcpCostSection()}
         <h4 class="scr-sub">From the Copilot CLI list <small>all agents</small></h4>
         <ul class="srvs" id="ambList">${amb}</ul>
         <p class="scr-note small">${glob&&glob.ok?'<b>Remove…</b> edits':'You cannot edit these here: change'} <code>${esc(f.label)}</code>${glob&&glob.ok?' after you confirm, with a backup next to it.':' with the Copilot CLI or an editor.'} The switch only controls whether <b>new</b> sessions started by this app start a server; a running session keeps its servers until it ends, or until you switch one in that agent's MCP menu.</p>
@@ -417,6 +442,7 @@
     if(X.sched&&$('schedSet'))X.sched.render();
     /* spec 044 FR-030: the top-bar Schedules button, Ctrl+Shift+S and Ctrl+K open Settings at the Schedules heading (also when Settings is open already) */
     if(cur.section==='schedules'){cur.section=null;const h=$('schH');if(h){scrollInBody(h);h.focus({preventScroll:true});atSec=true;}}
+    wireMcpLevels();
     if($('capSave'))$('capSave').onclick=async()=>{
       const v=parseFloat($('capDef').value),msg=$('capMsg');
       if($('capDef').value.trim()!==''&&!(v>=30&&v<=1e6)){msg.textContent='Enter a number from 30 (the runtime minimum), or leave it empty for no cap.';return;}
@@ -450,8 +476,11 @@
     /* spec 077 FR-068: a Characters pick applies live through app.js's applyCharacters and shows the new choice at once */
     if($('chList'))$('chList').addEventListener('click',(e)=>{
       const b=e.target.closest&&e.target.closest('[data-characters]');if(!b||!X.applyCharacters)return;
-      Promise.resolve(X.applyCharacters(b.dataset.characters)).then(()=>{const n=$('dsR'),V=X.signs&&X.signs.view;if(n&&V)n.textContent=V.note();}); /* spec 102 FR-202: the one line saying a choice has no Real office poses follows the pick */
+      const done=X.applyCharacters(b.dataset.characters);
+      Promise.resolve(done).then(()=>{const n=$('dsR'),V=X.view;if(n&&V)n.textContent=V.note();}); /* spec 102 FR-202: the one line saying a choice has no Real office poses follows the pick */
       $('chList').querySelectorAll('[data-characters]').forEach((x)=>x.setAttribute('aria-pressed',String(x===b)));
+      /* a repaint of the list that a theme pick started earlier can land between this click and the change itself and show the old choice (check-characters on CI): once the change is applied, the buttons say what is applied */
+      Promise.resolve(done).then(()=>{const l=$('chList');if(l&&window.THEME&&window.THEME.characters){const cur=window.THEME.characters();l.querySelectorAll('[data-characters]').forEach((x)=>x.setAttribute('aria-pressed',String(x.dataset.characters===cur)));}});
     });
     if($('thImport'))$('thImport').onclick=async()=>{
       if(!X.bridge.importTheme)return;
@@ -718,19 +747,17 @@
     const on=!!X.shutters.get();
     return `<div class="scr-row"><span class="scr-row-l" id="shL">Finished agents rest in the lounge</span>${sw(on,'Finished agents rest in the lounge: in a room where others still work, finished agents move to a couch, then to a nap bed','id="shutSw" aria-describedby="shN"')}<span class="scr-note small" id="shN">In a room where others still work, finished agents rest on a couch, and after 10 minutes on a nap bed, so the busy desks get the space.</span></div>`;
   }
-  /* spec 017 FR-008, FR-014, FR-027 (owner 2026-10-24: "office with cabins vs open office modes in config to switch between old and this
-     new mode"): Office with cabins (default) or Open office (the desks exactly as before the cabins); kept per computer */
   /* spec 102 FR-201 (097 FR-114): the World row, a radio group, only with Real office on and more than one world offered (a flagged world is
      not offered, so with the flag off the Settings page is as before). Keyboard: arrows move and select; tokens only. */
   function worldRow(){
-    const V=X.signs&&X.signs.view, W=V&&V.world, list=W?W.list():[];
+    const V=X.view, W=V&&V.world, list=W?W.list():[];
     if(!W||V.get()!=='real'||list.length<2)return '';
     const cur=W.get();
     return `<div class="scr-row" id="wrRow"><span class="scr-row-l" id="wrL">World</span><div class="seg" role="radiogroup" aria-labelledby="wrL" aria-describedby="wrN" id="wrGroup">${list.map(w=>`<button type="button" role="radio" data-world="${esc(w.id)}" aria-checked="${w.id===cur}" tabindex="${w.id===cur?'0':'-1'}">${esc(w.name)}</button>`).join('')}</div><span class="scr-note small" id="wrN">The room Real office draws. Its people follow the world unless you pick a set under Characters.</span></div>`;
   }
   /* the pick applies at once; the page is painted again (Characters names the new default) and focus returns to the radio */
   async function pickWorld(b){
-    const id=b.dataset.world;X.signs.view.world.set(id);await paintSettings();
+    const id=b.dataset.world;X.view.world.set(id);await paintSettings();
     const nb=document.querySelector('#wrGroup [data-world="'+CSS.escape(id)+'"]');if(nb)focusIn(nb);
   }
   function worldKeys(e){
@@ -739,11 +766,10 @@
     const to=k==='ArrowRight'||k==='ArrowDown'?all[(i+1)%all.length]:k==='ArrowLeft'||k==='ArrowUp'?all[(i-1+all.length)%all.length]:k==='Home'?all[0]:k==='End'?all[all.length-1]:null;
     if(to){e.preventDefault();pickWorld(to);}
   }
-  function signsRow(){
-    const on=!!X.signs.get();
-    /* spec 097 FR-001: a third choice, Real office (a separate preference, durbar.officeview: Open office and cabins keep their own) */
-    const view=X.signs.view?X.signs.view.get():'flat', pressed=k=>k==='real'?view==='real':view!=='real'&&(k==='cabins')===on;
-    return `<div class="scr-row"><span class="scr-row-l" id="dsL">Office layout</span><div class="seg" role="group" aria-labelledby="dsL" aria-describedby="dsN dsR"><button type="button" data-officelayout="cabins" aria-pressed="${pressed('cabins')}">Office with cabins</button><button type="button" data-officelayout="open" aria-pressed="${pressed('open')}">Open office</button>${X.signs.view?`<button type="button" data-officelayout="real" aria-pressed="${pressed('real')}">Real office</button>`:''}</div><span class="scr-note small" id="dsN">Office with cabins: each session is a cabin. While the agent works, waits or must not be disturbed, its door is closed with its photo and a sign (Busy, In a meeting, Waiting for you, Do not disturb, Away); when it is done or free, the door stands open (Done, Available), and you can close a door yourself. Open office: the plain desks and status words, with no doors; doors you closed are opened first.${X.signs.view?' Real office: a realistic open-plan office, with a person at each desk, places along the back wall and lights that follow the status of each agent.':''}</span><span class="scr-note small" id="dsR">${X.signs.view?esc(X.signs.view.note()):''}</span></div>`;
+  /* spec 017 FR-029 (owner 2026-10-31: no doors) and spec 097 FR-001: Open office or Real office, a separate preference (durbar.officeview) */
+  function officeRow(){
+    const view=X.view.get()==='real'?'real':'open', pressed=k=>k===view;
+    return `<div class="scr-row"><span class="scr-row-l" id="dsL">Office layout</span><div class="seg" role="group" aria-labelledby="dsL" aria-describedby="dsN dsR"><button type="button" data-officelayout="open" aria-pressed="${pressed('open')}">Open office</button><button type="button" data-officelayout="real" aria-pressed="${pressed('real')}">Real office</button></div><span class="scr-note small" id="dsN">Open office: the plain desks and status words. Real office: a realistic open-plan office, with a person at each desk, places along the back wall and lights that follow the status of each agent.</span><span class="scr-note small" id="dsR">${esc(X.view.note())}</span></div>`;
   }
   function liveActRow(){
     const on=!!X.liveAct.get();
@@ -865,16 +891,14 @@
       return;
     }
     const wb=e.target.closest('#wrGroup [data-world]');
-    if(wb&&X.signs&&X.signs.view&&X.signs.view.world){pickWorld(wb);return;}
+    if(wb&&X.view&&X.view.world){pickWorld(wb);return;}
     const olb=e.target.closest('[data-officelayout]');
-    if(olb&&X.signs){
-      const k=olb.dataset.officelayout, V=X.signs.view;
-      /* FR-027: Open office may ask first about doors you closed (and stay with cabins); spec 097 FR-004: so may Real office */
-      if(k==='real'){if(V)await V.set('real');}
-      else if((await X.signs.set(k==='cabins'))!==false&&V)await V.set('flat');
-      const on=!!X.signs.get(), view=V?V.get():'flat', g=olb.parentElement;
-      if(g)g.querySelectorAll('[data-officelayout]').forEach(b=>{const t=b.dataset.officelayout;b.setAttribute('aria-pressed',String(t==='real'?view==='real':view!=='real'&&(t==='cabins')===on));});
-      const n=$('dsR');if(n&&V)n.textContent=V.note();
+    if(olb&&X.view){
+      const k=olb.dataset.officelayout, V=X.view;
+      await V.set(k==='real'?'real':'flat');
+      const view=V.get()==='real'?'real':'open', g=olb.parentElement;
+      if(g)g.querySelectorAll('[data-officelayout]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.officelayout===view)));
+      const n=$('dsR');if(n)n.textContent=V.note();
       const hadFocus=document.activeElement===olb;
       await paint(); /* the World row appears with Real office, and Characters names the world's default set */
       if(hadFocus){const nb=document.querySelector('[data-officelayout="'+k+'"]');if(nb)focusIn(nb);} /* the repaint replaced the pressed button: keep the keyboard where it was */
@@ -1225,6 +1249,9 @@
     const load=async()=>X.bridge.agentMcp(a.id);
     /* FR-176: opening the dialog counts as a look (like the window regaining focus): main reads the list once soon after a sign-in attempt */
     let st=await X.bridge.agentMcp(a.id,true);
+    /* spec 100 FR-003, FR-011: the MCP figures; opening asks (main: at most once a minute), the answer repaints through mcpEvent */
+    const mc=window.exports||{}, ctxOf=()=>X.mcpCtx?X.mcpCtx(a.id):null;
+    if(X.bridge.agentMcpContext&&X.mcpCtxSet)void Promise.resolve(X.bridge.agentMcpContext(a.id,true)).then(v=>{if(v&&v.ok)X.mcpCtxSet(a.id,v);}).catch(()=>0);
     const restarting=new Set(); /* server names whose Restart is under way (FR-031: the button stays disabled) */
     const openDet=new Set(); /* server names whose Details are open (kept over a repaint) */
     let sessBusy=false;
@@ -1273,6 +1300,7 @@
       return `<div class="mcp-refresh"><button class="btn sm" type="button" id="mcpRefresh" data-refresh="1"${refreshBusy?' aria-disabled="true"':''} aria-label="Refresh the state of every server">${refreshBusy?'Refreshing…':'Refresh'}</button><span class="dsub small" id="mcpRefreshNote" role="status">${esc(refreshNote||'Asks '+app+' for the state of every server again.')}</span></div>`;
     };
     const body=s=>{
+      const mcC=ctxOf(), mcRep=mcC&&mcC.view&&mcC.view.report||null, mcTop=mcRep?mc.heaviest(mcRep,1)[0]:undefined;
       const rows=s.servers.map(x=>{
         const W=window.DurbarMcpWords, app=s.app||o&&o.appName;
         const octx={off:x.off,defaultOn:x.defaultOn,origin:x.origin,app,launchedOff:x.launchedOff,switchedHere:x.switchedHere};
@@ -1308,14 +1336,16 @@
         const rmb=removable&&(X.bridge.mcpGlobalRemovePreview||X.bridge.mcpRemove)?`<button class="btn sm" type="button" data-mrm="${esc(x.name)}" aria-label="${esc('Remove '+x.name+'…')}" title="Remove it from the list it comes from (you review the change first)">Remove…</button>`:'';
         const why=removable?'':srcs.includes('builtin')?'Built into the agent app':'Reported by the running session; managed by the agent app';
         const sg=x.canSignIn||x.signInSteps||x.signIn?signHTML(x,s):'';
-        return `<li class="srv sm${open||sg?' open':''}" data-n="${esc(x.name)}"${why?` title="${esc(why)}"`:''}><div class="srv-main"><div class="srv-top">${nameEl}${srcChips(x)}${stat}${org?'<span class="mtag warn org-tag">Blocked by your organization</span>':''}${!x.defaultOn&&by!=='settings'?`<span class="mtag">${x.origin==='folder'?'off in folder extras':'off in Settings'}</span>`:''}</div>${hh.why}${org?`<span class="srv-hint srv-org" id="${orgId}">${esc(org)}.</span>`:orgMay?`<span class="srv-hint srv-org">${esc(orgMay)}.</span>`:''}${hint?`<span class="srv-hint">${esc(hint)}</span>`:''}${btnRow(det,hh.diag)}${detBox}</div>
+        /* spec 100 FR-011: this row's tokens and label */
+        const costW=mcRep&&s.live?mc.rowFigure(mc.serverOf(mcRep,x),{off:x.off||!x.defaultOn,status:x.status,hasReport:true,largest:!!mcTop&&mc.serverOf({servers:[mcTop]},x)===mcTop}):'';
+        return `<li class="srv sm${open||sg?' open':''}" data-n="${esc(x.name)}"${why?` title="${esc(why)}"`:''}><div class="srv-main"><div class="srv-top">${nameEl}${srcChips(x)}${stat}${org?'<span class="mtag warn org-tag">Blocked by your organization</span>':''}${!x.defaultOn&&by!=='settings'?`<span class="mtag">${x.origin==='folder'?'off in folder extras':'off in Settings'}</span>`:''}${costW?`<span class="mcp-cost">${esc(costW)}</span>`:''}</div>${hh.why}${org?`<span class="srv-hint srv-org" id="${orgId}">${esc(org)}.</span>`:orgMay?`<span class="srv-hint srv-org">${esc(orgMay)}.</span>`:''}${hint?`<span class="srv-hint">${esc(hint)}</span>`:''}${btnRow(det,hh.diag)}${detBox}</div>
           <div class="srv-act">${rs}${againB(x)}${rmb}${sw(eff,(appOff?x.name+' is off in '+(app?W.plain(app,40):'the agent app'):(eff?'Switch off ':'Switch on ')+x.name+' for '+a.name+(s.live?' in this session':' when its session starts')),'data-n="'+esc(x.name)+'"'+(!x.defaultOn||fixed||appOff||org?' disabled':'')+(org?' aria-describedby="'+orgId+'"':''))}</div>${sg}${open?toolsHTML(x.name):''}</li>`;}).join('');
       /* FR-022 / FR-030 / FR-032: Restart session lives only here (Q10) */
       const rsess=s.canRestartSession&&X.bridge.agentMcpRestartSession?`<div class="mcp-rsess"><button class="btn sm" type="button" id="mcpRestartSess"${sessBusy?' disabled':''}>${sessBusy?'Restarting session…':'Restart session with these servers'}</button><span class="dsub small">${noServerRestart?esc(o.appName||'This agent app')+' cannot restart one server; use this instead. ':''}Ends this session and resumes it with the servers in Settings and the folder's extras. The conversation is kept.${s.start==='next-message'?' The servers start with your next message.':''}</span></div>`:'';
       /* spec 058 FR-164 (owner 2026-10-23): sign in again to every server Copilot can redo, so the signed runtime writes each sign-in anew */
       const againN=(s.servers||[]).filter(x=>x.canSignInAgain&&!x.signIn).length;
       const againAll=againN>1&&X.bridge.agentMcpSignIn?`<div class="mcp-rsess"><button class="btn sm" type="button" id="mcpSignAgainAll"${againBusy?' disabled':''}>${againBusy?'Starting sign-ins…':'Sign in again to all ('+againN+')…'}</button><span class="dsub small">For keychain prompts that come back on every launch (sign-ins saved by an older Agent Durbar): ${esc(s.app||'the agent app')} forgets each saved sign-in and you sign in again in your browser, one page per server.</span></div>`:'';
-      return `<p class="dsub">${s.live?(fixed?'This agent is running.':s.toggleApplies==='next-message'?'This agent is running: a switch applies from your next message.':'This agent is running: a switch applies right away.'):'This agent has no running session: your choices apply when it starts.'} Servers from your agent apps' own lists apply to every folder (see <b>Settings</b>); <i>Durbar folder</i> servers belong to this agent's folder only. Here you can only switch one off for <b>${esc(a.name)}</b>.</p>${fixed?'<p class="dsub" role="note"><b>The switches are off for this agent app:</b> it cannot change its MCP servers while it runs. They are set when the session starts.</p>':''}${refreshRow(s)}<ul class="srvs" id="agMcp">${rows||'<li class="scr-empty">No MCP servers.</li>'}</ul>${rsess}${againAll}<p class="dsub small">A switch stays for this agent, also in its next sessions, until the app is closed.</p>`;
+      return `<p class="dsub">${s.live?(fixed?'This agent is running.':s.toggleApplies==='next-message'?'This agent is running: a switch applies from your next message.':'This agent is running: a switch applies right away.'):'This agent has no running session: your choices apply when it starts.'} Servers from your agent apps' own lists apply to every folder (see <b>Settings</b>); <i>Durbar folder</i> servers belong to this agent's folder only. Here you can only switch one off for <b>${esc(a.name)}</b>.</p>${fixed?'<p class="dsub" role="note"><b>The switches are off for this agent app:</b> it cannot change its MCP servers while it runs. They are set when the session starts.</p>':''}${refreshRow(s)}<ul class="srvs" id="agMcp">${rows||'<li class="scr-empty">No MCP servers.</li>'}</ul>${mcRep&&s.live?`<p class="dsub small mcp-total" id="mcpTotal">${mc.totalLine(mcRep,mcC.window)?`<b>${esc(mc.totalLine(mcRep,mcC.window))}.</b> `:''}${esc(mc.footnoteOf(mcRep,mcC.app))}${mcRep.servers.some(y=>y.deferredTokens)?' Tools loaded on demand are not in the window until they are used, so they are not in this total.':''}</p>`:''}${rsess}${againAll}<p class="dsub small">A switch stays for this agent, also in its next sessions, until the app is closed.</p>`;
     };
     let dlg=null;
     /* spec 069 FR-032/FR-033: expanded rows and their tools, loaded once per open dialog (again after a Restart) */
@@ -1516,7 +1546,10 @@
       await repaint();
     };
     const d0=dialog({title:'MCP servers for '+a.name,wide:true,html:body(st),buttons:[{label:'Settings',value:'settings'},{label:'Folder extras…',value:'folder'},{label:'Done',value:'ok',cls:'primary'}],
-      onOpen:d=>{dlg=d.querySelector('.dlg');dlg._ov=d;if(st.canRefresh)setTimeout(()=>{void refresh(false);},0); /* FR-190: every open reads the states again */d.addEventListener('click',async e=>{
+      onOpen:d=>{dlg=d.querySelector('.dlg');dlg._ov=d;
+        /* spec 100 FR-022: from the warning line: the heaviest server's switch has the focus; nothing is switched */
+        if(o&&o.focusServer)setTimeout(()=>{const row=(st.servers||[]).find(y=>mc.serverOf({servers:[o.focusServer]},y)),b=row&&[...d.querySelectorAll('.dbody button.swt')].find(x=>x.dataset.n===row.name);if(b)focusIn(b);},0);
+        if(st.canRefresh)setTimeout(()=>{void refresh(false);},0); /* FR-190: every open reads the states again */d.addEventListener('click',async e=>{
         const tg=e.target.closest('button[data-tools]');if(tg){void toggleTools(tg.dataset.tools);return;}
         const ad=e.target.closest('[data-tall][aria-disabled="true"],input[data-tool][aria-disabled="true"]');if(ad){e.preventDefault();return;} /* FR-064: focusable, never changed */
         const ta=e.target.closest('button[data-tall]');if(ta&&!ta.disabled){const n=ta.dataset.tall,r=toolsOf.get(n);if(r&&r.ok){void saveOff(n,ta.getAttribute('aria-checked')==='true'?r.tools.filter(t=>!t.orgBlocked).map(t=>t.name).filter(t=>/^[A-Za-z0-9_.-]{1,128}$/.test(t)):[]);}return;}
