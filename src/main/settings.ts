@@ -9,6 +9,8 @@ import { randomInt } from 'crypto';
 import { parseNewFolderParent } from '../shared/newfolder';
 import { ANNOUNCE_APPS, parseAnnounced, parseCap, parseSandboxAlways, parseSettings, parseThemeId } from '../shared/credits';
 import type { AppSettings } from '../shared/credits';
+import { mcpWarnDefaults, parseWarnLevels } from '../shared/mcpcost';
+import type { McpWarnLevels } from '../shared/mcpcost';
 import { addCustomPlace, removeCustomPlace, setPlaceEntry, updateCustomPlace } from '../shared/places';
 import type { CustomPlace, PlaceError, PlaceMap } from '../shared/places';
 import { migrateLegacyTheme, parseCharacters } from '../shared/characters';
@@ -104,6 +106,19 @@ export class SettingsStore {
     if (v === 'system') next.chatLinksIn = 'system';
     else delete next.chatLinksIn;
     return this.commit(next) ? v : this.chatLinksIn;
+  }
+
+  /** Spec 100 FR-020: the MCP warning levels. */
+  get mcpWarnLevels(): McpWarnLevels {
+    return this.s.mcpWarnLevels ?? mcpWarnDefaults();
+  }
+
+  /** Whole percents from 5 to 90, warn below strong. Refused or not written: `ok` false and the value stays as it was. Returns what is in force. */
+  setMcpWarnLevels(v: unknown): { ok: boolean; levels: McpWarnLevels } {
+    const levels = parseWarnLevels(v);
+    if (!levels) return { ok: false, levels: this.mcpWarnLevels };
+    if (this.commit({ ...this.s, mcpWarnLevels: levels })) return { ok: true, levels };
+    return { ok: false, levels: this.mcpWarnLevels };
   }
 
   /** Spec 080 FR-123: *Open chat links in a new tab*, app-wide, off by default. */
@@ -232,9 +247,7 @@ export class SettingsStore {
     if (id !== undefined && migrateRemovedTheme({ theme: id }).changed) { // spec 035 FR-018: a removed built-in is never stored: Clean Office
       const next: AppSettings = { ...this.s };
       delete next.theme;
-      this.s = next;
-      this.save();
-      return { ok: true, theme: 'clean-office' };
+      return this.commit(next) ? { ok: true, theme: 'clean-office' } : { ok: false, theme: this.s.theme ?? 'clean-office' };
     }
     if (id === undefined) return { ok: false, theme: this.s.theme };
     const next: AppSettings = { ...this.s };

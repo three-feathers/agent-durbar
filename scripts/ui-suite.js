@@ -31,7 +31,7 @@ const DRIVERS = [
   { name: 'shots-001-welcome', sim: false }, // the first-run screen: no simulator
   { name: 'check-office-fill' }, // spec 001 FR-041..FR-046: grown desks with few agents (its own sim, simrooms and simhelpers per layout)
   { name: 'shots-017' },
-  { name: 'shots-017-signs' }, // spec 017 FR-003..FR-009: meeting-room door signs on session desks (word, icon, colour, contrast in 6 themes, fit)
+  { name: 'check-no-doors' }, // spec 017 FR-029..FR-034: no doors anywhere (15 agents, both sizes), and the prompts held behind a door before the update: one notice, Send / Discard / Decide later, never sent or dropped on their own
   { name: 'shots-018' },
   { name: 'shots-033', env: { DURBAR_SIM_FLOORS: '1' } },
   { name: 'shots-092', env: { DURBAR_SIM_FLOORS: '1' } }, // spec 092 phase 1: floor screens (one floor at a time), PageUp/PageDown, the scroll rule, floors going off and on, an empty floor
@@ -71,6 +71,7 @@ const DRIVERS = [
   { name: 'shots-076-orgpolicy' }, // spec 076 FR-202..FR-205 (#602): what the agent app's own organization policy blocks, greyed with the reason
   { name: 'shots-058-mcp-health' }, // spec 058 FR-090..FR-096 (#603): failure reason, when, Copy diagnostics (masked), the MCP chip dot
   { name: 'shots-058-mcp-refresh' }, // spec 058 FR-187..FR-192 (#779): the last call's outcome on a Running row, Refresh and the re-read on open
+  { name: 'shots-100-mcp-context' }, // spec 100 T017, T024: MCP tool definitions in the window: chip, dialog, line, compaction hint, Settings; fixtures only
   { name: 'shots-841-entra-explain' }, // spec 058 FR-193, FR-194 (#841): the fixed line and Sign in again... under a failed policy call
   { name: 'shots-model', label: 'shots-model 1440', env: { MODEL_W: '1440', MODEL_H: '900' } },
   { name: 'shots-model', label: 'shots-model 1280', env: { MODEL_W: '1280', MODEL_H: '800' } },

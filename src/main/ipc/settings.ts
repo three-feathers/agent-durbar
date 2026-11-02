@@ -3,6 +3,7 @@ import { app } from 'electron';
 import { ipcHandle } from '../ipcguard';
 import { aboutView } from '../../shared/about';
 import { parseCap } from '../../shared/credits';
+import { mcpWarnDefaults } from '../../shared/mcpcost';
 import type { SettingsStore } from '../settings';
 
 export interface SettingsIpcDeps {
@@ -16,7 +17,7 @@ export interface SettingsIpcDeps {
 export function register(deps: SettingsIpcDeps): void {
   const { getRunTheme, clearRunTheme } = deps;
   const settingsStore = deps.getSettingsStore;
-  ipcHandle('settings:get', () => ({ defaultMaxAiCredits: settingsStore()?.defaultMaxAiCredits, placeMap: settingsStore()?.placeMap ?? {}, customPlaces: settingsStore()?.customPlaces ?? [], seriousMode: settingsStore()?.seriousMode ?? false, notifyNeedsMe: settingsStore()?.notifyNeedsMe ?? true, breakResume: settingsStore()?.breakResume ?? 'auto', chatLinksIn: settingsStore()?.chatLinksIn ?? 'session', theme: getRunTheme() ?? settingsStore()?.theme ?? 'clean-office', characters: settingsStore()?.characters ?? 'theme', about: aboutView(app.getVersion()) }));
+  ipcHandle('settings:get', () => ({ defaultMaxAiCredits: settingsStore()?.defaultMaxAiCredits, placeMap: settingsStore()?.placeMap ?? {}, customPlaces: settingsStore()?.customPlaces ?? [], seriousMode: settingsStore()?.seriousMode ?? false, notifyNeedsMe: settingsStore()?.notifyNeedsMe ?? true, breakResume: settingsStore()?.breakResume ?? 'auto', chatLinksIn: settingsStore()?.chatLinksIn ?? 'session', mcpWarnLevels: settingsStore()?.mcpWarnLevels, theme: getRunTheme() ?? settingsStore()?.theme ?? 'clean-office', characters: settingsStore()?.characters ?? 'theme', about: aboutView(app.getVersion()) }));
   /* issue #1023: a setter returns the value now in force, so `ok` is true only when that is what was asked for (a failed save keeps the old value) */
   const setting = <K extends string, T>(key: K, fallback: T, set: (st: SettingsStore, v: unknown) => T, want: (v: unknown) => unknown = (v) => v) => (_e: unknown, v: unknown) => {
     const st = settingsStore();
@@ -34,6 +35,10 @@ export function register(deps: SettingsIpcDeps): void {
   ipcHandle('settings:setBreakResume', setting<'breakResume', 'auto' | 'ask'>('breakResume', 'auto', (st, v) => st.setBreakResume(v)));
   /* spec 080 FR-031: where a plain click on a chat link opens. A preference like the others here (the window's trust boundary); the URL of a click is checked in main whichever it is. */
   ipcHandle('settings:setChatLinksIn', setting<'chatLinksIn', 'session' | 'system'>('chatLinksIn', 'session', (st, v) => st.setChatLinksIn(v)));
+  /* spec 100 FR-020: the MCP warning levels; refused values keep the setting */
+  ipcHandle('settings:setMcpWarnLevels', (_e, v: unknown) => {
+    return settingsStore()?.setMcpWarnLevels(v) ?? { ok: false, levels: mcpWarnDefaults() }; // a refusal or a failed write says so: never "Saved"
+  });
   /* DURBAR_THEME (spec 040 FR-008): a theme for this run only, never saved; a pick in Settings replaces it and is saved as usual. */
   ipcHandle('settings:setTheme', (_e, id: unknown) => {
     clearRunTheme();

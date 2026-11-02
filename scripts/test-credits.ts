@@ -282,6 +282,9 @@ try {
     assert.strictEqual(s1.setTheme('cheeky-crew').ok, false, 'the old Cheeky Crew id migrates and saves in one step: not ok when the save fails');
     assert.strictEqual(s1.characters, 'theme', 'and nothing of it is kept');
     assert.strictEqual(s1.setTheme(null).ok, false);
+    assert.strictEqual(s1.setTheme('corporate').ok, false, 'a removed built-in theme resolves to Clean Office and saves: not ok when the save fails');
+    assert.strictEqual(s1.setMcpWarnLevels({ warn: 20, strong: 40 }).ok, false, 'MCP warning levels: not ok when the save fails');
+    assert.notStrictEqual(s1.mcpWarnLevels.warn, 20, 'and not kept');
     assert.strictEqual(s1.setCharacters('cheeky').ok, false);
     assert.strictEqual(s1.characters, 'theme');
     assert.deepStrictEqual(s1.setPlace('srv', 'desk'), { ok: false, placeMap: {} }, 'place: not ok, map unchanged');
