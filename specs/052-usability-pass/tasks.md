@@ -361,7 +361,7 @@
 - [x] T226 Measure stop and interrupt after the 5 s give-up on a real Copilot runtime (issue #1028): `scripts/copilot-giveup-real.ts`, 7 prompts plus 2 to check the fixes [FR-228]
 - [x] T227 The row says Stop was sent; `send` waits for calls given up on (`test:copilotcap`, mutation-checked; `real:` the next message runs) [FR-229]
 - [x] T228 `start` and rename of the same id wait for a late close (`test:copilotcap`, mutation-checked; `real:` the resumed session lives) [FR-230]
-- [x] T246 Measure the runtime's own limit after a give-up on a real Copilot runtime (issue #1028 question 3): `--repl`, `--forge`, 31.81 AI credits [FR-231]
+- [x] T246 Measure the runtime's own limit after a give-up on a real Copilot runtime (issue #1028 question 3): `--repl`, `--forge`, 32.05 AI credits [FR-231]
 - [x] T247 A send after a give-up waits for the end of the stopped turn (`test:copilotcap`, mutation-checked; `real:`) [FR-232]
 - [x] T248 Stop at a limit shows no error (`test:copilotcap`, mutation-checked; `real:`) [FR-233]
 - [x] T249 A raise under what was used keeps the card and the message (`test:copilotcap`, mutation-checked; `real:`) [FR-234]

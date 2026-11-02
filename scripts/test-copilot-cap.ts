@@ -1,5 +1,5 @@
 /**
- * Spec 011 FR-070..FR-074: the Copilot adapter enforces the session cap itself (the runtime did not, real 2026-10-20). Fake SDK only:
+ * Spec 011 FR-070..FR-074: the Copilot adapter enforces the session cap itself (when the runtime does and does not: spec 052 FR-231). Fake SDK only:
  * no runtime, no account, no credits.
  */
 import * as assert from 'assert';
@@ -7,7 +7,7 @@ import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { FakeClient, FakeCopilot } from './fakes/copilot-sdk';
+import { FakeClient, FakeCopilot, RestartingFakeCopilot } from './fakes/copilot-sdk';
 import type { FakeSession } from './fakes/copilot-sdk';
 import type { AgentEvent } from '../src/adapters/types';
 
@@ -224,9 +224,158 @@ async function main(): Promise<void> {
   await assert.rejects(ad.renameSession(h5.id, 'A name'), /has not finished closing this session/, 'and the rename');
   assert.strictEqual(resumesOf(h5.id), 0, 'nothing resumed it');
 
+  // spec 052 FR-232 (real 2026-11-02): the abort answers 1 ms before its idle, and that `Aborted` settles a card: the next card waits for it
+  lateWait(5000);
+  const h6 = await hungSession();
+  await ad.stop(h6.id);
+  client.turnScript = [];
+  const h6Id = await ad.start({ workspace: ws, model: 'gpt-6-luna', quiet: true, maxAiCredits: 30 });
+  const h6s = client.last as FakeSession;
+  let landAbort: () => void = () => undefined;
+  (h6s as unknown as { abort: () => Promise<void> }).abort = () => new Promise<void>((r) => { landAbort = r; });
+  h6s.fire('session.usage_checkpoint', { totalNanoAiu: 31 * NANO });
+  (h6s as unknown as { processing: boolean }).processing = true;
+  await ad.interrupt(h6Id);
+  events.length = 0;
+  const next6 = ad.send(h6Id, { text: 'held' });
+  await tick();
+  landAbort();
+  await new Promise((r) => setTimeout(r, 180)); // past the grace, so only `processing` holds it
+  assert.strictEqual(limits().length, 0, 'no card while the stopped turn has not ended');
+  (h6s as unknown as { processing: boolean }).processing = false;
+  h6s.fire('session.idle', { aborted: true });
+  await next6;
+  const kinds6 = events.filter((e) => e.sessionId === h6Id && (e.type === 'limit' || (e.type === 'status' && (e as { intent?: unknown }).intent === 'Aborted'))).map((e) => e.type);
+  assert.deepStrictEqual(kinds6, ['status', 'limit'], 'the abort\'s Aborted first, then the card, which it cannot settle');
+  assert.strictEqual(sends(h6s), 0, 'over the cap: held, not sent');
+  // the idle can come just after isProcessing said no: the grace covers it
+  const h7Id = await ad.start({ workspace: ws, model: 'gpt-6-luna', quiet: true, maxAiCredits: 30 });
+  const h7s = client.last as FakeSession;
+  let landAbort7: () => void = () => undefined;
+  (h7s as unknown as { abort: () => Promise<void> }).abort = () => new Promise<void>((r) => { landAbort7 = r; });
+  h7s.fire('session.usage_checkpoint', { totalNanoAiu: 31 * NANO });
+  await ad.interrupt(h7Id);
+  events.length = 0;
+  const next7 = ad.send(h7Id, { text: 'held' });
+  await tick();
+  landAbort7();
+  await new Promise((r) => setTimeout(r, 20));
+  h7s.fire('session.idle', { aborted: true });
+  await next7;
+  assert.deepStrictEqual(events.filter((e) => e.sessionId === h7Id && (e.type === 'limit' || (e.type === 'status' && (e as { intent?: unknown }).intent === 'Aborted'))).map((e) => e.type), ['status', 'limit'], 'the idle just after the answer is still first');
+
+  // spec 052 FR-233 (real 2026-11-02): Stop on a limit request: the runtime's `query` error is that Stop, and only until the idle
+  const queryError = { errorType: 'query', message: 'No response was returned. Send your message again to retry.' };
+  const errors = (id: string): number => events.filter((e) => e.type === 'status' && e.sessionId === id && e.status === 'error').length;
+  client.turnScript = [];
+  const e1 = await ad.start({ workspace: ws, model: 'gpt-6-luna', quiet: true, maxAiCredits: 30 });
+  const e1s = client.last as FakeSession;
+  (e1s.rpc as Record<string, unknown>).ui = { handlePendingSessionLimitsExhausted: async () => ({ success: true }) } as never;
+  e1s.fire('session_limits_exhausted.requested', { requestId: 'rt-q', maxAiCredits: 30, usedAiCredits: 31 });
+  events.length = 0;
+  await ad.interrupt(e1);
+  e1s.fire('session.error', queryError);
+  assert.strictEqual(errors(e1), 0, 'Stop at a limit shows no error');
+  e1s.fire('session.error', { errorType: 'other', message: 'something else' });
+  assert.strictEqual(errors(e1), 1, 'another error does');
+  e1s.fire('session.idle', { aborted: true });
+  e1s.fire('session.error', queryError);
+  assert.strictEqual(errors(e1), 2, 'after the idle the same error is real');
+  // ... and a Stop with no limit request does not hide it
+  const e2 = await ad.start({ workspace: ws, model: 'gpt-6-luna', quiet: true });
+  const e2s = client.last as FakeSession;
+  events.length = 0;
+  await ad.interrupt(e2);
+  e2s.fire('session.error', queryError);
+  assert.strictEqual(errors(e2), 1, 'no limit cancelled: it shows');
+
+  // spec 052 FR-234 (real 2026-11-02): the runtime refuses a cap under what was used, and takes an `add` under it with no error while ending the turn
+  const r1 = await ad.start({ workspace: ws, model: 'gpt-6-luna', quiet: true, maxAiCredits: 30 });
+  const r1s = client.last as FakeSession;
+  r1s.fire('session.usage_checkpoint', { totalNanoAiu: 36 * NANO });
+  events.length = 0;
+  await ad.send(r1, { text: 'kept' });
+  const r1a = limits()[0];
+  r1s.calls.length = 0;
+  await ad.resolveLimit(r1, r1a.requestId!, { kind: 'add', credits: 1 });
+  assert.strictEqual(r1s.calls.filter((c) => c.name === 'options.update').length, 0, 'a raise under what was used never reaches the runtime');
+  const r1b = limits().filter((e) => e.phase === 'exhausted')[1];
+  assert.ok(r1b && r1b.requestId !== r1a.requestId, 'it asks again');
+  const askedBefore = limits().filter((e) => e.phase === 'exhausted').length;
+  await ad.resolveLimit(r1, r1b.requestId!, { kind: 'set', credits: 36 });
+  assert.strictEqual(limits().filter((e) => e.phase === 'exhausted').length, askedBefore + 1, 'at what was used is not above it: asked again');
+  assert.strictEqual(r1s.calls.filter((c) => c.name === 'options.update').length, 0, 'and it does not reach the runtime');
+  const r1c = limits().filter((e) => e.phase === 'exhausted').pop() as Extract<AgentEvent, { type: 'limit' }>;
+  // a refused update puts the card and its message back
+  const update = r1s.rpc.options.update;
+  (r1s.rpc.options as { update: unknown }).update = async () => { throw new Error('This session has already used 40 AI credits. The session limit must be above 40'); };
+  await assert.rejects(ad.resolveLimit(r1, r1c.requestId!, { kind: 'set', credits: 37 }), /already used 40/);
+  (r1s.rpc.options as { update: unknown }).update = update;
+  await ad.resolveLimit(r1, r1c.requestId!, { kind: 'set', credits: 50 });
+  assert.deepStrictEqual((r1s.calls.filter((c) => c.name === 'send').pop()?.args[0] as { prompt: string }).prompt, 'kept', 'the message survived the refusal and goes now');
+  // the runtime's own request: nothing is sent to it, the turn keeps waiting, the card stays
+  const r2 = await ad.start({ workspace: ws, model: 'gpt-6-luna', quiet: true, maxAiCredits: 30 });
+  const r2s = client.last as FakeSession;
+  (r2s.rpc as Record<string, unknown>).ui = { handlePendingSessionLimitsExhausted: async (x: unknown) => { r2s.calls.push({ name: 'handlePending', args: [x] }); } } as never;
+  r2s.fire('session.usage_checkpoint', { totalNanoAiu: 36 * NANO });
+  r2s.fire('session_limits_exhausted.requested', { requestId: 'rt-low', maxAiCredits: 30, usedAiCredits: 36 });
+  r2s.calls.length = 0;
+  await assert.rejects(ad.resolveLimit(r2, 'rt-low', { kind: 'add', credits: 1 }), /already used 36\.00 AI credits/);
+  await assert.rejects(ad.resolveLimit(r2, 'rt-low', { kind: 'set', credits: 36 }), /already used 36\.00 AI credits/, 'at what was used is not above it');
+  assert.strictEqual(r2s.calls.filter((c) => c.name === 'handlePending').length, 0, 'the runtime got nothing');
+  await ad.resolveLimit(r2, 'rt-low', { kind: 'add', credits: 7 });
+  assert.strictEqual(r2s.calls.filter((c) => c.name === 'handlePending').length, 1, 'a raise above it goes');
+  await ad.resolveLimit(r2, 'rt-low2', { kind: 'unset' });
+  assert.strictEqual(r2s.calls.filter((c) => c.name === 'handlePending').length, 2, 'removing the limit always goes');
+
+  // spec 052 FR-235 (real 2026-11-02): a resume with a cap under what was used is refused; it opens with Durbar's cap standing in
+  const o1 = await ad.start({ workspace: ws, model: 'gpt-6-luna', quiet: true, maxAiCredits: 30 });
+  await ad.stop(o1);
+  client.resumeOverCap = 48.2;
+  const resumedBefore = client.resumed.length;
+  await ad.start({ workspace: ws, model: 'gpt-6-luna', quiet: true, maxAiCredits: 30, resumeSessionId: o1 });
+  assert.strictEqual(client.resumed.length, resumedBefore + 1, 'opened');
+  assert.strictEqual(client.resumed[client.resumed.length - 1].config.sessionLimits, undefined, 'with no runtime limit');
+  const o1s = client.last as FakeSession;
+  events.length = 0;
+  await ad.send(o1, { text: 'after' });
+  assert.strictEqual(sends(o1s), 0, 'nothing is sent unasked');
+  const o1a = limits()[0];
+  assert.deepStrictEqual([o1a.phase, o1a.maxAiCredits, o1a.usedAiCredits], ['exhausted', 30, 48.2], 'the card says what was used');
+  await ad.resolveLimit(o1, o1a.requestId!, { kind: 'set', credits: 60 });
+  assert.strictEqual(sends(o1s), 1, 'a raise sends it');
+  assert.deepStrictEqual(o1s.calls.filter((c) => c.name === 'options.update').pop()?.args, [{ sessionLimits: { maxAiCredits: 60 } }], 'and the runtime has its limit again');
+  // a known id goes the same way; any other refusal is still a failure
+  await ad.stop(o1);
+  await ad.start({ workspace: ws, model: 'gpt-6-luna', quiet: true, maxAiCredits: 30, sessionId: o1 });
+  assert.strictEqual(client.resumed[client.resumed.length - 1].config.sessionLimits, undefined, 'by sessionId too');
+  await ad.stop(o1);
+  client.resumeOverCap = 0;
+  const o1Resume = client.resumeSession.bind(client);
+  (client as unknown as { resumeSession: unknown }).resumeSession = async () => { (client as unknown as { resumeSession: unknown }).resumeSession = o1Resume; throw new Error('another refusal'); };
+  await assert.rejects(ad.start({ workspace: ws, model: 'gpt-6-luna', quiet: true, maxAiCredits: 30, resumeSessionId: o1 }), /another refusal/, 'another refusal stays a failure: the limit is not dropped to get past it');
+  (client as unknown as { resumeSession: unknown }).resumeSession = o1Resume;
+  // the reconnect after a sign-in: refused too, and the session lives on with its cap held by Durbar
+  const re = new RestartingFakeCopilot();
+  const reEvents: AgentEvent[] = [];
+  re.onEvent((e) => reEvents.push(e));
+  const reId = await re.start({ workspace: ws, model: 'gpt-6-luna', quiet: true, maxAiCredits: 30 });
+  re.prepare = (c) => { c.resumeOverCap = 31.5; };
+  await re.refreshAuth();
+  const reClient = re.clients[re.clients.length - 1];
+  assert.strictEqual(reClient.resumed.length, 1, 'the reconnect opened it');
+  assert.strictEqual(reClient.resumed[0].config.sessionLimits, undefined, 'with no runtime limit');
+  await re.send(reId, { text: 'reconnected' });
+  assert.strictEqual(sends(reClient.last), 0, 'and it holds the message');
+  const reLimit = reEvents.filter((e) => e.type === 'limit' && e.phase === 'exhausted').pop() as Extract<AgentEvent, { type: 'limit' }>;
+  assert.deepStrictEqual([reLimit.maxAiCredits, reLimit.usedAiCredits], [30, 31.5]);
+  await re.stop(reId);
+  await re.dispose();
+  client.resumeOverCap = 0;
+
   await ad.stop(sid).catch(() => undefined);
   fs.rmSync(ws, { recursive: true, force: true });
   clearTimeout(watchdog);
-  console.log('copilot cap: held send, add/set/unset/cancel, still over, mid-turn stop, Stop drops, runtime path, late abort and late close OK');
+  console.log('copilot cap: held send, add/set/unset/cancel, still over, mid-turn stop, Stop drops, runtime path, late abort and late close, a raise under the used amount, a resume over the cap OK');
 }
 main().catch((e) => { console.error(e); process.exit(1); });
