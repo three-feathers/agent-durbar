@@ -77,6 +77,8 @@
     "test:credits": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-credits.js",
     "test:site": "node scripts/test-site.js",
     "test:docsscripts": "node scripts/test-docs-scripts.js",
+    "test:worldmatrix": "node scripts/test-world-matrix.js",
+    "world:matrix": "npm run build && node scripts/world-matrix.js",
     "test:compressshots": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-compress-shots.js",
     "test:theme-tokens": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-theme-tokens.js",
     "test:checkparallel": "node scripts/test-check-parallel.js",

@@ -388,7 +388,7 @@ module.exports = async (ctx) => {
   await js(`document.querySelector('#bTabs .btab.on .btab-x').click()`);
   await wait(() => count() === 1 && tabs().active !== last, 'the last tab closed: one new tab');
   await wait(() => attached().length === 0, 'with no view (FR-004)');
-  assert.strictEqual(await js(`document.querySelector('#bTabs .btab.on .btab-t').textContent`), 'New tab', 'named New tab');
+  await wait(() => js(`document.querySelector('#bTabs .btab.on .btab-t').textContent==='New tab'`), 'named New tab'); // FR-048b: the strip redraws after the tab has closed
   await wait(() => js(`document.activeElement&&document.activeElement.id==='bAddr'`), 'the address field is focused');
   console.log('[browser-tabs] US6.7 ok');
   const pages = ['links', 'form', 'index', 'getform', 'storage', 'file'];

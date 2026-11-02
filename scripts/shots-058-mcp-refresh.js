@@ -25,7 +25,7 @@ const path = require('path');
 const { helpers, jsLiteral } = require('./driver-helpers');
 const OUT = process.env.OUT || '/tmp';
 
-const MAIL = 'jane.doe@contoso.example';
+const MAIL = 'jane.doe@example.invalid';
 const TRACE = '0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0';
 const CLAIMS = 'eyJhY2Nlc3NfdG9rZW4iOnsibmJmIjp7ImVzc2VudGlhbCI6dHJ1ZX19fQ';
 const POLICY = `AADSTS530003: Your device is required to be managed to access this resource. Trace ID: ${TRACE}. User: ${MAIL}. claims=${CLAIMS}`;

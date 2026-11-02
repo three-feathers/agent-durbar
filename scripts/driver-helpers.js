@@ -240,7 +240,7 @@ function helpers(ctx) {
   const floors = async () => {
     const open = await js(`!document.getElementById('floorsPop').hidden`);
     if (!open) { await js(`document.getElementById('floorsBtn').click()`); await w.until(`!document.getElementById('floorsPop').hidden`); }
-    const rows = await js(`[...document.querySelectorAll('#floorsPop [data-fl="on"]')].map(b=>({id:b.dataset.floor,name:b.getAttribute('aria-label').split(': ')[0],on:b.getAttribute('aria-pressed')==='true'}))`);
+    const rows = await js(`[...document.querySelectorAll('#floorsPop [data-fl="on"]')].map(b=>({id:b.dataset.floor,name:b.getAttribute('aria-label').split(': ')[0],on:b.getAttribute('aria-checked')==='true'}))`);
     if (!open) { await js(`document.getElementById('floorsBtn').click()`); await w.until(`document.getElementById('floorsPop').hidden`); }
     return rows.filter((r) => r.on).map(({ id, name }) => ({ id, name }));
   };

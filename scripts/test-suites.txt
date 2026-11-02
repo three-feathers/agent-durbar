@@ -167,3 +167,4 @@ test:claudecliunit
 test:rules
 test:weeklyretro
 test:docsscripts
+test:worldmatrix
