@@ -19,10 +19,14 @@
   /* spec 077 FR-076 (issue #815): the Royal crew, 6 characters, `crew/art/royal-<id>-<pose>.webp` */
   const ROYAL_IDS = ['alchemist', 'princess', 'knight', 'jester', 'queen', 'king'];
   const CREWS = { cheeky: IDS, prehistoric: PREHISTORIC_IDS, pirate: PIRATE_IDS, monster: MONSTER_IDS, royal: ROYAL_IDS };
-  const ALL_IDS = IDS.concat(PREHISTORIC_IDS, PIRATE_IDS, MONSTER_IDS, ROYAL_IDS);
+  const ALL_IDS = Object.values(CREWS).flat();
+  /* the crew each character belongs to, from CREWS alone (ids are unique across crews), so a new crew is one CREWS entry: Cheeky keeps its old
+     unprefixed file names and store key, every later crew uses `crew/art/<crew>-<id>-<pose>.webp` and `durbar.crew.<crew>` */
+  const CREW_OF = new Map(Object.entries(CREWS).flatMap(([c, ids]) => ids.map((id) => [id, c])));
+  const LEGACY_CREW = 'cheeky';
   /* the characters of a Characters value (an unknown value or the theme's own: the Cheeky crew, as before) and the key the choice is stored under */
   const idsFor = (choice) => has(CREWS, choice) ? CREWS[choice] : IDS;
-  const storeKey = (choice) => (choice === 'prehistoric' || choice === 'pirate' || choice === 'monster' || choice === 'royal') ? 'durbar.crew.' + choice : 'durbar.crew';
+  const storeKey = (choice) => has(CREWS, choice) && choice !== LEGACY_CREW ? 'durbar.crew.' + choice : 'durbar.crew';
   const MAX_ENTRIES = 500, MAX_ID = 200;
   /* the portraits (spec 077 FR-050..FR-055, FR-059, FR-060): three poses per character, `crew/art/<id>-<pose>.webp`, 352x352 and square, drawn
      in a fixed square box of the 200x124 stage: 88x88 units at x 24, y 22 (twice the first build's, owner 2026-10-23). Its right edge is the
@@ -95,7 +99,7 @@
   }
   /* the pose for a status: working and thinking type, waiting and error need the person, the rest rests */
   const poseFor = (st) => (st === 'working' || st === 'thinking' || st === 'avatar') ? 'working' : (st === 'waiting' || st === 'error') ? 'waiting' : 'resting';
-  const file = (id, pose) => 'crew/art/' + (PREHISTORIC_IDS.includes(id) ? 'prehistoric-' : PIRATE_IDS.includes(id) ? 'pirate-' : MONSTER_IDS.includes(id) ? 'monster-' : ROYAL_IDS.includes(id) ? 'royal-' : '') + id + '-' + pose + '.webp';
+  const file = (id, pose) => { const c = CREW_OF.get(id); return 'crew/art/' + (c && c !== LEGACY_CREW ? c + '-' : '') + id + '-' + pose + '.webp'; };
   const files = (ids) => (ids || IDS).reduce((a, id) => a.concat(POSES.map((p) => file(id, p))), []);
   /* FR-055: a character can be drawn when it is known and none of its pictures failed to load (`bad`: a Set of character ids) */
   const usable = (id, bad) => typeof id === 'string' && ALL_IDS.includes(id) && !(bad && bad.has && bad.has(id));
