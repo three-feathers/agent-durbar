@@ -33,7 +33,7 @@
 - [ ] T024 [PR A4] Tier 3 for the switch and buttons, `--accent` aliases; `check:perf`'s world switch row unchanged. Test: `test:theme-tokens`, `.swt.on` turns with the world in `check-ui-text` [FR-051, FR-057]
 - [ ] T025 [PR A7] Four pop values and the overlay become tokens, 34 shadows on screen to 4, dialog shadow per FR-001's note. Test: `check-ui-text`, `check:office` [FR-055]
 - [ ] T026 [PR A8] Type scale in the chrome: 14 sizes to 6, 8 weights to 3, `--t1`/`--t2` 650 to 600; design rules and FR-098 changed in place. 600 only where emphasis is meant, knowing 500 can read as 400 where a system has only Regular and Bold. Test: `check-ui-text` measured rule, `check:geometry`, screenshots at both sizes in Flat and Photo [FR-055, FR-058]
-- [ ] T027 [PR A9] Control heights other than buttons (A14 sets `--h-ctl` and buttons): selects, inputs and `.seg` to 28, 24 (`.seg` 26, selects 19/26/30, inputs 28/30), switch 22. Test: `check-ui-text`, top bar fit at 1280 [FR-055]
+- [ ] T027 [PR A9] Control heights other than buttons (A14 sets `--h-ctl` and buttons): selects, inputs and `.seg` to 24 (`.seg` 26, selects 19/26/30, inputs 28/30), switch drawn 18 in a 24 target (FR-075). Test: `check-ui-text`, top bar fit at 1280 [FR-055]
 - [ ] T028 [PR A10] Radii onto 6, 10, 14, 18, pill, circle, in the chrome; design rule 2. Test: `check-ui-text`, ratchet [FR-055]
 - [ ] T029 [PR A11] `src/renderer/ui.js` and first dialogs; `@layer` only after the literals settle, tried first. Test: drivers of the moved dialogs; ratchet on button class sets [FR-056]
 - [ ] T030 [PR A12] The owner accepted keeping the font (2026-11-01); this only settles smoothing. A real Mac at 2x and at 1x: `-webkit-font-smoothing` `antialiased` against `auto`; the Mac owner picks; one line in `styles.css`. Test: `test-macos` pins the choice; `real:` the owner's look, no AI credits [FR-058]
@@ -44,7 +44,7 @@
 
 - [ ] T033 Measure first: re-run the button table on `main`, Send and Compact included; a colour snapshot of Real office, cave, Retro and a user pack as a fixture, new driver `check-flat-look`. No visual change. Test: the driver passes on `main` [FR-063, FR-066]
 - [ ] T034 FR-061's values and `--accent` as tokens in both pinned copies; a non-Clean pack's fallback keeps today's values; `test-theme.ts`, `shots-097-realoffice.js` pins updated, naming each. Test: `test:theme-tokens`, `check-flat-look` [FR-061, FR-065, FR-066]
-- [ ] T035 `--h-ctl` 28, `--btn-h-quiet`, padding and text; `.ib`, `.fl-ib`, `.ptab`; Compact 24; design rule 1 changed in place. Test: acceptance 2, `check:geometry`, `check:office`, top bar at 1280 [FR-063, FR-064]
+- [ ] T035 `--h-ctl` 24 (FR-075), padding and text; `.ib`, `.fl-ib`, `.ptab`; approvals 28; design rule 1 changed in place. Test: acceptance 2, `check:geometry`, `check:office`, top bar at 1280 [FR-063, FR-064]
 - [ ] T036 `--btn-primary-*`, Send, secondary outline, and the list of roles changed, in the PR description. Test: acceptance 1; mutant: a second primary in one dialog [FR-062]
 - [ ] T037 T020's literals, file by file, after #948 and #954; ratchet lowered. Test: acceptance 4, 5 [FR-065]
 - [ ] T038 Contrast pairs and mutants [FR-067]
@@ -52,8 +52,10 @@
 
 ## World surfaces further from Flat (2026-11-02, owner; FR-068..FR-074). PRs A15..A17 of spec 005's plan
 
-- [ ] T040 [Gate] The owner picks a surface colour and button sizes from the second round of mocks; values go in FR-068 and FR-072 in the same day's spec change [FR-068, FR-072]
+- [x] T040 [Gate] The owner picked Stone and 24 px on 2026-11-02, from the mocks; values in FR-075 [FR-068, FR-072, FR-075]
 - [ ] T041 [PR A15] FR-069's 29 names in the registry, both pinned copies, with Flat's values and the fallback; `--prose-lh`; no visual change. Test: `test:theme-tokens`, a fixture pack with the names imports with no drops; mutants: a tier 3 name in a pack, a hostile art value [FR-069, FR-073]
 - [ ] T042 [PR A15] FR-074's pairs in `WORLD_PAIRS`, in the shared check; the plate on art check. Test: `test:theme-tokens`; mutant: a failing pair [FR-074]
 - [ ] T043 [PR A16] Prose at 14 on 23 px in every set; 005 FR-203's table measured again. Test: `check-chat-density`, `check-ui-text`; mutant: 13 px back [FR-071]
-- [ ] T044 [PR A17] FR-072's chosen sizes and styles, if the pick lowers them: `--h-ctl`, design rule 1, FR-063's table. Test: `check-ui-text`, `check:geometry`, `check:office`, the top bar at 1280; mutant: a button at 23 px [FR-072]
+- [ ] T044 [PR A14] FR-075's sizes in tier 1, with T035; FR-076's edges on every control; `check-ui-text` walks them. Design rule 1 changed in place. Test: acceptance 2, `check-ui-text`, `check:geometry`, `check:office`, the top bar at 1280; mutants: a button at 23 px, a ghost with no edge [FR-075, FR-076]
+- [ ] T045 [PR A16] `NOTE_PAPER`'s rule gains "you"; `--memo` kept ΔE 10 or more from every reason. Test: `test:realoffice-layout`; mutant: canary [FR-077]
+- [ ] T046 [PR with Compact's owner, after A14] FR-079's Compact: what shrinks, measured on the same content. Test: `check-chat-density`; mutant: a control under 24 [FR-079]

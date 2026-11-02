@@ -75,7 +75,7 @@ Everything in the app must be in harmony with the world, not only the room. [Spe
 - **Chat gets a world surface** (FR-106), at least 78 % opaque behind its text, with a header portrait. The desk-side column was removed (owner, 2026-11-01). It keeps its structure, controls, words and tab order, and the text is never on a picture.
 - **Contrast rules stay** (FR-113, FR-106): each world's token set passes in light and forced-colours modes, and chat text is checked against the composited surface, 4.5:1, or 3:1 for large text.
 
-**Decided, being built (owner, 2026-11-02; [spec 097](../specs/097-real-office/spec.md) FR-231..FR-235):** a world also sets corners; the chat header takes the bar's dark material; the chat is a sheet on the world's desk, code a monitor, your message a post-it in its own paper.
+**Decided, being built (owner, 2026-11-02; [spec 097](../specs/097-real-office/spec.md) FR-231..FR-235):** a world also sets corners; the chat header takes the bar's dark material; the chat is a sheet on the world's desk, code a monitor, your message a post-it in its own paper. In the Photo office the paper is cool stone, not beige: cream beside oak read as Flat.
 
 **Recolouring the paper is not enough.** With the page colours alone, a chat measured nearly the same as Flat's (mean lightness 93.5 against 96.3, with the room at 60): a room is made of its materials, not its paper. Bring the materials to the edges of the reading, and keep text off them.
 
