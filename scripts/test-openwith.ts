@@ -105,7 +105,8 @@ fs.writeFileSync(wsFile, '{}');
     const t = listTargets({ cwd: dir }, mk(le, rec()));
     assert.deepStrictEqual(t.map((x) => x.id), ['vscode', 'vscode-insiders', 'vscodium', 'folder'], `${plat}: all installed editions then the folder`);
     for (const id of ['vscode', 'vscode-insiders', 'vscodium']) {
-      for (const folder of [dir, dashDir, spaced]) {
+      /* this machine's real folders, or on Windows, for the POSIX rows, made-up ones (fakeLstat): D:\\x is not absolute by POSIX rules */
+      for (const folder of ON_WIN && plat !== 'win32' ? ['/w/proj', '/w/-rf', '/w/with space'] : [dir, dashDir, spaced]) {
         const r = rec();
         const res = await openWith({ cwd: folder }, id, mk(le, r));
         assert.strictEqual(res.ok, true, `${plat} ${id}`);
