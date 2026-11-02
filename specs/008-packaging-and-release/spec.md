@@ -136,6 +136,7 @@ Retired spec numbers, never to be reused for a new spec (`specs:check` and `--ad
 | `v0.1.3` | 2026-10-30 | [release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.3) | First daily stable release (spec 021 FR-064): chat links in the session browser, Save selection to notes, status tooltips, lobby and desk-height fixes, macOS PR tests; planned. | No |
 | `v0.1.4` | 2026-10-31 | [release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.4) | Daily stable release (spec 021 FR-064): page tabs in the session browser, better AI themes, per-folder Notes screen; planned. | No |
 | `v0.1.5` | 2026-11-01 | [release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.5) | Daily stable release (spec 021 FR-064): notes export, delete all and the optional project notes file, model/effort/context choices stay together and Copilot model switching works, no Demo/Live badge, shorter README; planned. | No |
+| `v0.1.6` | 2026-11-02 | [release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.6) | Daily stable release (spec 021 FR-064): Real office as a third Office layout with moving people and masked monitors, a wider secret mask compared with public lists, drag and drop rearranging, an easier Floors panel, Conditional Access refusals explained under the failed MCP tool call | No |
 
 ## Changes
 
