@@ -147,3 +147,4 @@
 ## 2026-10-29: real macOS on pull requests, path-filtered (#854 B8)
 
 - [x] T116: `.github/workflows/macos-pr.yml` (real macOS build and test, `paths:` filter, not required), `test-ui-suite.ts` guards, README/AGENTS wording [FR-135]
+- [x] T117: `guardWindow` in `scripts/driver-helpers.js` (armed by `waits(ctx)`), unit-tested in `test-ui-suite.ts`; `check-browser-tabs` drops its own copy [FR-136] (#922)

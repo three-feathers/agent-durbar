@@ -101,6 +101,25 @@ function setBlock(text, meta) {
   return `${block}\n${t}`;
 }
 
+/* Conflict markers left in any Markdown file under specs/ (spec 025 FR-018): always an error, strict marker or not. "=======" alone is a Markdown heading underline, so it is not looked for. */
+const CONFLICT_RE = /^(<<<<<<<|\|\|\|\|\|\|\||>>>>>>>)( |$)/;
+function conflictMarkers(root = ROOT) {
+  const found = [];
+  const walk = (dir) => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true }).sort((x, y) => (x.name < y.name ? -1 : x.name > y.name ? 1 : 0))) {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) walk(p);
+      else if (e.isFile() && e.name.endsWith('.md')) {
+        read(p).split(/\r?\n/).forEach((l, i) => {
+          if (CONFLICT_RE.test(l)) found.push(`${path.relative(root, p).split(path.sep).join('/')}:${i + 1}: a conflict marker was left in (${l.slice(0, 7)})`);
+        });
+      }
+    }
+  };
+  walk(path.join(root, 'specs'));
+  return found;
+}
+
 /* Every spec folder with its block: [{ dir, num, meta, errors }]. */
 function readSpecs(root = ROOT) {
   const specs = path.join(root, 'specs');
@@ -231,7 +250,7 @@ function importIndex(root = ROOT, { write = true } = {}) {
   return { readme: out.join('\n'), specs: rows.size, errors };
 }
 
-module.exports = { RETIRED, STATUSES, NOTE_MAX, parseBlock, setBlock, valueErrors, readSpecs, generate, check, addBlock, groupId, importIndex };
+module.exports = { RETIRED, STATUSES, NOTE_MAX, parseBlock, setBlock, valueErrors, readSpecs, generate, check, conflictMarkers, addBlock, groupId, importIndex };
 
 if (require.main === module) {
   const args = process.argv.slice(2);
@@ -251,10 +270,13 @@ if (require.main === module) {
     }
     if (args.includes('--check')) {
       const { problems, strict } = check(root, { strict: args.includes('--strict') });
+      const markers = conflictMarkers(root);
+      for (const m of markers) console.error(`error: ${m}`);
+      if (markers.length) console.log(`specs:check: ${markers.length} conflict marker(s)`);
       for (const p of problems) console[strict ? 'error' : 'log'](`${strict ? 'error' : 'warning'}: ${p}`);
       if (problems.length && !strict) console.log('(warning only until specs/README.md has the line "<!-- specs-index: strict -->")');
-      console.log(problems.length ? `specs:check: ${problems.length} problem(s)` : 'specs:check ok');
-      process.exit(problems.length && strict ? 1 : 0);
+      if (!markers.length) console.log(problems.length ? `specs:check: ${problems.length} problem(s)` : 'specs:check ok');
+      process.exit((problems.length && strict) || markers.length ? 1 : 0);
     }
     const { text, errors } = generate(root);
     for (const e of errors) console.error(`error: ${e}`);

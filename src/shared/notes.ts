@@ -84,6 +84,11 @@ export interface NotesDoc {
   mirror?: NotesMirror;
   /** The last `notes.md` imported (FR-054; T041 review): the same file is never imported twice, after a restart too. */
   fileImport?: { sha256: string; at: string };
+  /**
+   * The project folder's identity recorded when the switch was turned on (review 3 of PR 931): `<dev>:<ino>:<birth time in ns>` (or
+   * `<dev>:<ino>` where the file system has no birth time), never a path. Every cycle compares it with the folder found now.
+   */
+  fileFolder?: { id: string; at: string };
   /** Ids of notes imported from `notes.md` sections without an id that no successful write has put into the file yet (T041 review). */
   filePending?: string[];
 }
@@ -257,10 +262,12 @@ export function parseNotesDoc(raw: string): ParseResult {
   const m = d.mirror as Record<string, unknown> | undefined;
   const mirror = m && typeof m === 'object' && typeof m.sha256 === 'string' && /^[0-9a-f]{64}$/.test(m.sha256) && intIn(m.bytes, 0, NOTES_LIMITS.mdBytes) && isoOk(m.at)
     ? { sha256: m.sha256, bytes: m.bytes as number, at: m.at as string } : undefined;
+  const ff = d.fileFolder as Record<string, unknown> | undefined;
+  const fileFolder = ff && typeof ff === 'object' && typeof ff.id === 'string' && /^[0-9]{1,24}:[0-9]{1,24}(?::[0-9]{1,24})?$/.test(ff.id) && isoOk(ff.at) ? { id: ff.id, at: ff.at as string } : undefined;
   const fi = d.fileImport as Record<string, unknown> | undefined;
   const fileImport = fi && typeof fi === 'object' && typeof fi.sha256 === 'string' && /^[0-9a-f]{64}$/.test(fi.sha256) && isoOk(fi.at) ? { sha256: fi.sha256, at: fi.at as string } : undefined;
   const filePending = Array.isArray(d.filePending) ? [...new Set(d.filePending.filter((x): x is string => typeof x === 'string' && ids.has(x)))] : [];
-  return { ok: true, dropped, doc: { version: 1, folderName: cleanFolderName(d.folderName), notes, tombstones: capTombstones(tombstones), ...(mirror ? { mirror } : {}), ...(fileImport ? { fileImport } : {}), ...(filePending.length ? { filePending } : {}) } };
+  return { ok: true, dropped, doc: { version: 1, folderName: cleanFolderName(d.folderName), notes, tombstones: capTombstones(tombstones), ...(mirror ? { mirror } : {}), ...(fileFolder ? { fileFolder } : {}), ...(fileImport ? { fileImport } : {}), ...(filePending.length ? { filePending } : {}) } };
 }
 
 /** Compact JSON, the way it is written and measured. */
@@ -275,7 +282,8 @@ export type NoteChange =
   | { op: 'add'; text: string; title?: string; from: NoteFrom; hidden: boolean; source?: NoteSource }
   | { op: 'update'; id: string; rev: number; title?: string; text?: string; done?: boolean; hidden?: boolean }
   | { op: 'delete'; id: string; rev: number }
-  | { op: 'deleteAll' };
+  /** `only`: the notes main counted (id and rev); a later or edited note stays (T034b). Absent: every note. */
+  | { op: 'deleteAll'; only?: readonly { id: string; rev: number }[] };
 
 export type ChangeResult =
   | { ok: true; doc: NotesDoc; note?: Note }
@@ -307,8 +315,11 @@ export function applyChange(doc: NotesDoc, change: NoteChange, now: Date, newId:
     return { ok: true, doc: d, note };
   }
   if (change.op === 'deleteAll') {
-    for (const n of d.notes) d.tombstones.push({ id: n.id, deletedAt: stamp });
-    d.notes = [];
+    const only = change.only ? new Map(change.only.map((x) => [x.id, x.rev])) : undefined;
+    const gone = only ? d.notes.filter((n) => only.get(n.id) === n.rev) : d.notes;
+    for (const n of gone) d.tombstones.push({ id: n.id, deletedAt: stamp });
+    const goneIds = new Set(gone.map((n) => n.id));
+    d.notes = d.notes.filter((n) => !goneIds.has(n.id));
     d.tombstones = capTombstones(d.tombstones);
     return { ok: true, doc: d };
   }
@@ -383,6 +394,7 @@ export function mergeDocs(a: NotesDoc, b: NotesDoc): NotesDoc {
   notes.sort((x, y) => (x.createdAt < y.createdAt ? -1 : x.createdAt > y.createdAt ? 1 : x.id < y.id ? -1 : 1));
   const mirror = [a.mirror, b.mirror].filter((m): m is NotesMirror => !!m).sort((x, y) => (x.at < y.at ? 1 : -1))[0];
   const fileImport = [a.fileImport, b.fileImport].filter((m): m is { sha256: string; at: string } => !!m).sort((x, y) => (x.at < y.at ? 1 : -1))[0];
+  const fileFolder = [a.fileFolder, b.fileFolder].filter((m): m is { id: string; at: string } => !!m).sort((x, y) => (x.at < y.at ? 1 : -1))[0];
   return {
     version: 1,
     folderName: a.folderName || b.folderName,
@@ -390,6 +402,7 @@ export function mergeDocs(a: NotesDoc, b: NotesDoc): NotesDoc {
     tombstones: capTombstones([...dead].map(([id, deletedAt]) => ({ id, deletedAt }))),
     ...(mirror ? { mirror } : {}),
     ...(fileImport ? { fileImport } : {}),
+    ...(fileFolder ? { fileFolder } : {}),
     ...pendingOf(a, b, notes, mirror),
   };
 }
@@ -404,5 +417,16 @@ export function orderForFolder(notes: readonly Note[], session?: string): Note[]
 export type NotesFail = { ok: false; code: 'stale' | 'cap' | 'missing' | 'invalid' | 'unreadable' | 'write'; error: string; current?: Note };
 /** The project file's state while its switch is on (FR-053, FR-054): `error` blocks writing it (a conflict, a refused link, a failed write); `info` is a note for the screen (stray text, notes not imported). */
 export interface NotesFileState { error?: string; info?: string }
-export type NotesView = { ok: true; fingerprint: string; folderName: string; notes: Note[]; max: number; readOnly?: string; session?: string; file?: NotesFileState } | NotesFail;
-export type NotesWrote = { ok: true; fingerprint: string; note?: Note; existing?: boolean } | NotesFail;
+/**
+ * The project-file switch as the Notes screen shows it (FR-050, T042): `on` from `notesFile` in folders.json; `disabled` is the reason the
+ * switch is greyed (the folder is not there). Absent from a `.code-workspace`'s view: the switch is not offered there.
+ */
+export interface NotesFileSwitch { on: boolean; disabled?: string }
+/** `notes:fileCount` (FR-050, only while turning on): notes the existing file would add, whether it exists, whether the folder is in a git repository. */
+export type NotesFileCount = { ok: true; count: number; exists: boolean; strayText: number; repo: boolean } | NotesFail;
+/** `notes:setFile` (FR-050, FR-055): the switch's new position, the mirror's state after turning on, and a short line for the screen. */
+export type NotesSetFile = { ok: true; on: boolean; file?: NotesFileState; message?: string; demo?: boolean } | (NotesFail & { excludeFailed?: true });
+export type NotesView = { ok: true; fingerprint: string; folderName: string; notes: Note[]; max: number; readOnly?: string; session?: string; file?: NotesFileState; fileSwitch?: NotesFileSwitch } | NotesFail;
+export type NotesWrote = { ok: true; fingerprint: string; note?: Note; existing?: boolean; count?: number } | NotesFail;
+/** FR-048 (T034b): what *Export…* did: the count and the chosen file's base name (never its folder), a cancel, or the demo's answer. */
+export type NotesExport = { ok: true; count: number; name: string } | { ok: true; demo: true; message: string } | { ok: false; cancelled: true } | NotesFail;

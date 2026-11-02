@@ -39,9 +39,9 @@ body.screen-open .workspace{display:none}
 .mtag{display:inline-block;font-size:10.5px;font-weight:650;padding:1px 7px;border-radius:999px;background:var(--tone-info-faint);border:1px solid var(--tone-info-line);color:var(--tone-info-ink)}
 .mtag.warn{background:var(--tone-warn-bg);border-color:var(--tone-warn-line);color:var(--tone-warn-ink)}
 .swt{position:relative;width:38px;height:22px;border-radius:999px;border:1px solid var(--line-2);background:var(--tone-neutral-track);cursor:pointer;padding:0;flex:none;transition:background .15s}
-.swt i{position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .15s}
-.swt.on{background:#7fae92;border-color:#6a9a7d}
-.swt.on i{transform:translateX(16px)}
+.swt i{position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:var(--ink-2);box-shadow:0 1px 2px color-mix(in srgb,var(--ink) 25%,transparent);transition:transform .15s}
+.swt.on{background:var(--sage-ink);border-color:var(--sage-ink)} /* 2026-11-01: a token that follows the world, 3:1 or more on the page; the knob is the page colour on it (test:theme-tokens, section 7) */
+.swt.on i{transform:translateX(16px);background:var(--surface)}
 .swt:disabled{opacity:1;border-style:dashed;background:var(--surface-2);cursor:not-allowed} /* spec 052 FR-052: readable, not faded */
 .swt:disabled i{box-shadow:0 0 0 1px var(--line-ctl)}
 .mst{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--ink-2)}
@@ -487,6 +487,15 @@ body.has-bridge #topBtns{display:flex}
 /* spec 083 T034a: the folder's Notes screen (the rows are the drawer's .nt-row) */
 .ns-tools{display:flex;align-items:center;gap:8px;margin:0 0 10px}
 .ns-tools .nt-find{margin:0;height:var(--h-ctl,30px);font-size:13px}
+.ns-file{margin:0 0 10px}
+.ns-file-row{display:flex;align-items:center;gap:12px;justify-content:space-between;padding:8px 10px;border:1px solid var(--line);border-radius:9px;background:var(--surface)}
+.ns-file-l{display:flex;flex-direction:column;gap:2px;min-width:0}
+.ns-file-l b{font-size:13px;font-weight:600;color:var(--ink)}
+.ns-file-l small{font-size:12px;color:var(--ink-2)}
+.ns-file-why,.ns-file-msg{margin:4px 2px 0;font-size:12px;line-height:1.45;color:var(--ink-2)}
+.ns-file-msg:empty{display:none}
 .ns-done{margin:10px 0 0}
 .ns-done>summary{cursor:pointer;margin:0 0 6px;padding:4px 2px;font-size:12px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;color:var(--ink-2);border-radius:6px}
 .ns-done>summary:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
+
+@media (forced-colors:active){.swt{border-color:ButtonText;forced-color-adjust:none;background:Canvas}.swt i{background:ButtonText;box-shadow:none}.swt.on{background:Highlight;border-color:Highlight}.swt.on i{background:HighlightText}} /* on and off differ by the knob's place and by colour: both survive */
