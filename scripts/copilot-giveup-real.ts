@@ -7,7 +7,7 @@
  *
  *   node dist-scripts/scripts/copilot-giveup-real.js <out.json> [--spend] [--phases p1,p2,...]
  *
- * A real hang is made with SIGSTOP on the runtime process (Linux/macOS), so the pipe stays open and calls wait, as a hung runtime's
+ * A real hang is made with SIGSTOP on the runtime process (Linux only), so the pipe stays open and calls wait, as a hung runtime's
  * would; SIGCONT brings it back. Ask first, and the permission gate approves only the exact fixed command of the step. Everything runs
  * in a scratch folder this script makes under the temp folder, removed at the end with the session.
  *
@@ -35,7 +35,7 @@ const wanted = phaseArg >= 0 ? (args[phaseArg + 1] ?? '').split(',') : ['baselin
 const outFile = args.find((a, i) => !a.startsWith('--') && !(i > 0 && (args[i - 1] === '--phases' || args[i - 1] === '--max-prompts')));
 if (!outFile) throw new Error('usage: copilot-giveup-real.js <out.json> [--spend] [--phases p1,p2,...]');
 if (spend && process.env.CI) throw new Error('refused: --spend never runs under CI');
-if (process.platform === 'win32') throw new Error('refused: SIGSTOP is Linux/macOS only');
+if (process.platform !== 'linux') throw new Error('refused: Linux only (SIGSTOP and `ps --ppid`)');
 
 const maxArg = args.indexOf('--max-prompts');
 const MAX_PROMPTS = maxArg >= 0 ? Number(args[maxArg + 1]) : 7; // baseline, term, hang, next send + stop, question, limit, and one send after a limit if the runtime raised one
