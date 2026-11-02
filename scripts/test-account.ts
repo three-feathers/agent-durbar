@@ -592,9 +592,12 @@ void (async () => {
       c3.createSession = async (cfg: Record<string, unknown>) => { const sx = await orig3(cfg); (sx as unknown as { disconnect: () => Promise<void> }).disconnect = () => new Promise<void>(() => undefined); return sx; };
       c3.deleteSession = () => new Promise<void>(() => undefined);
       const ad3 = tune(new FakeCopilot(c3), { planTimeoutMs: 500 });
-      const t3 = Date.now();
-      assert.deepStrictEqual(await ad3.accountInfo(), { ...base, plan: 'Copilot Individual' });
-      assert.ok(Date.now() - t3 < 1000, 'hung cleanup calls do not hold the answer');
+      // the cleanup calls never settle, so the answer arriving at all proves they do not hold it; the 10 s race is only a hang guard,
+      // not a timing assert (FR-048b: no wall-clock budgets; the old 1 s check failed under CI load)
+      const hung = Symbol('hung');
+      const got = await Promise.race([ad3.accountInfo(), new Promise<typeof hung>((r) => setTimeout(() => r(hung), 10_000).unref())]);
+      assert.notStrictEqual(got, hung, 'hung cleanup calls do not hold the answer');
+      assert.deepStrictEqual(got, { ...base, plan: 'Copilot Individual' });
       await until(() => !fs.existsSync(created(c3)[0].workingDirectory as string), 'the folder is still removed');
       assert.ok(!fs.existsSync(created(c3)[0].workingDirectory as string), 'the folder is still removed');
     }

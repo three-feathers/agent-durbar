@@ -64,6 +64,16 @@ The `status:` of the specs-index block used to read (moved here unchanged; the b
 
 - Where FR-009 and FR-014 say "release PR", read the release's doc-only *fold PR*, cut from the tag after the tag's workflow has written the release notes from that commit's fragments (spec 008 owns the release flow). The fold itself is unchanged; `changelog:build` gains `--stdout` (print only the new section, edit nothing) and `--previous <tag>` (refuse while the previous release has no section). No change to this spec's status.
 
-### 2026-10-31: `deprecated` (spec 021 FR-068; planned, not built)
+### 2026-11-01: `specs:check` refuses conflict markers
 
-- **FR-017** The fixed status words gain `deprecated`: removed with no direct replacement; the note says why and when. Built by spec 021 T053. Which specs change: spec 021 FR-068's PRs; see spec 035 FR-020, spec 040 FR-033, spec 017 FR-035.
+A merge was committed with conflict markers in a spec, and `specs:check` passed (spec 102's PR #999, fixed forward).
+
+- **FR-018** `[IMPLEMENTED]` `test:` `npm run specs:check` fails on a line starting with `<<<<<<<`, `|||||||` or `>>>>>>>` followed by a space or the end of the line, in any `.md` file under `specs/`, and names the file and line. It is an error whether or not `specs/README.md` has the strict marker of FR-012. A line of `=======` alone is not looked for, because it is a Markdown heading underline.
+
+### 2026-10-31: `deprecated` (spec 021 FR-068)
+
+- **FR-017** `[IMPLEMENTED]` The fixed status words gain `deprecated`: removed with no direct replacement; the note says why and when. Built by spec 021 T053. Which specs change: spec 021 FR-068's PRs; see spec 035 FR-020, spec 040 FR-033, spec 017 FR-035.
+
+## Changes 2026-11-02: removed page and tools (owner decision, PR #1054)
+
+`docs/feature-history.md` and the pictures only it linked (the m2..m8, 002 and 003 pictures that no driver writes) were removed on 2026-11-02 by owner decision; the old text above that cites them stays as written, and they are in git history at commit `1c75b5bee`. Pictures a driver still writes were kept.
