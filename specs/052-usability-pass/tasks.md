@@ -354,4 +354,6 @@
 - [ ] T199 What a row offers, per the agent decisions: limit, long request, question, form, error, usage window, Read-only; simulator hooks; driver step 7 [FR-196, FR-199]
 - [ ] T200 Announcements and the burst; keyed row updates; one slide, reduced motion, `check:perf`; driver step 4 [FR-201, FR-204]
 - [ ] T201 Chat, other views, sizes, Flat and Real office, tokens, slips; driver steps 9, 10 [FR-202, FR-203]
+- [ ] T224 Your door: faces in a line, "N outside your door, oldest first", the control's name, below notices. Measure first the rows at 1280 with a notice. Test: `check-needs-panel` step 11 [FR-191, FR-196, FR-203]
+- [ ] T225 In a chat, on request, the panel pushes the chat; composer never covered; hint and chips at 700 px; `check:perf` with a long chat. Test: step 11; mutant: panel over the chat [FR-202, Q-NY-1]
 - [ ] T202 Existing drivers follow the panel; pictures retaken; docs, changelog fragment; older FRs updated in place (the delta's list), spec 003, 074, 092, 097 lines included; `/speckit.converge` [FR-205]
