@@ -19,7 +19,7 @@ const rowsOf = (v: unknown): unknown[] => (Array.isArray(v) ? v.slice(0, MAX_ROW
  * `id` (`mcpServer:<name>`; the label is presentation only). The types do not say whether its `tokens` hold its children's (`parentId`), so
  * the figure is the larger of the two and nothing counts twice (spec 100 Changes 2026-10-31, `[KNOWN GAP]`). Unknown kinds are ignored. `null`: no figures.
  */
-export function copilotMcpContext(raw: unknown): McpContextReport {
+export function copilotMcpContext(raw: unknown, names: readonly string[] = []): McpContextReport {
   const a = isObj(raw) && 'contextAttribution' in raw ? raw.contextAttribution : raw;
   if (!isObj(a)) return { servers: [], failed: true }; // `null` until the session has initialised, or junk: says nothing about the servers
   const entries = rowsOf(a.entries).filter(isObj);
@@ -39,6 +39,21 @@ export function copilotMcpContext(raw: unknown): McpContextReport {
     const parentIsServer = entries.some((e) => e.id === id && typeof e.parentId === 'string' && servers.has(e.parentId));
     if (!parentIsServer) list.push({ name: s.name, tokens: Math.max(s.own, s.children), source: 'reported' });
   }
+  // `real:` Copilot CLI 1.0.98 (2026-11-02, T031): no `mcpServer` entry at all; a server's tools are `toolDefinition` entries
+  // `toolDefinition:<server>-<tool>` (parent `toolDefinitions`). Group them by the longest known server name followed by "-".
+  const byTool = new Map<string, number>();
+  const known = [...names].filter(nameOk).sort((x, y) => y.length - x.length);
+  for (const e of entries) {
+    if (e.kind !== 'toolDefinition' || !nameOk(e.id)) continue;
+    const rest = e.id.replace(/^toolDefinition:/, '');
+    const owner = known.find((n) => rest.startsWith(`${n}-`));
+    if (owner) byTool.set(owner, (byTool.get(owner) ?? 0) + (safeTokens(e.tokens) ?? 0));
+  }
+  for (const [name, tokens] of byTool) {
+    const have = list.find((x) => x.name === name);
+    if (have) have.tokens = Math.max(have.tokens ?? 0, tokens);
+    else list.push({ name, tokens, source: 'reported' });
+  }
   return { servers: list, ...(window ? { window } : {}), ...(total !== undefined ? { total } : {}) };
 }
 
@@ -51,6 +66,12 @@ export function claudeMcpContext(raw: unknown, names: readonly string[]): McpCon
   if (!isObj(raw)) return { servers: [], failed: true };
   const byNorm = new Map(names.map((n) => [normalizeServer(n), n]));
   const servers = new Map<string, McpContextServer>();
+  // `real:` Claude Code 2.1.316 (2026-11-02, T031): `mcpTools[].isLoaded` is false for every tool, also when tool search is off or `auto`
+  // loaded them. The truth is the category list: id `mcp_tools` (kind used) = in the window, `mcp_tools_deferred` = not.
+  const cats = rowsOf(raw.categories).filter(isObj);
+  const inWindow = cats.some((c) => c.id === 'mcp_tools' && c.kind !== 'deferred' && c.isDeferred !== true);
+  const offWindow = cats.some((c) => c.id === 'mcp_tools_deferred' || (c.isDeferred === true && /^mcp/.test(String(c.id))));
+  const deferred = (t: Record<string, unknown>): boolean => (inWindow ? false : offWindow ? true : t.isLoaded === false);
   for (const t of rowsOf(raw.mcpTools)) {
     if (!isObj(t)) continue;
     const fromTool = nameOk(t.name) ? parseMcpToolName(t.name, names)?.mcpServer : undefined;
@@ -58,7 +79,7 @@ export function claudeMcpContext(raw: unknown, names: readonly string[]): McpCon
     const tokens = safeTokens(t.tokens);
     if (!name || tokens === undefined) continue;
     const s = servers.get(name) ?? { name, tokens: 0, deferredTokens: 0, tools: 0, source: 'reported' as const };
-    if (t.isLoaded === false) s.deferredTokens = (s.deferredTokens ?? 0) + tokens;
+    if (deferred(t)) s.deferredTokens = (s.deferredTokens ?? 0) + tokens;
     else s.tokens = (s.tokens ?? 0) + tokens;
     s.tools = (s.tools ?? 0) + 1;
     servers.set(name, s);

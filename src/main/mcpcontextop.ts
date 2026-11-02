@@ -53,6 +53,10 @@ interface Slot {
   running?: string;
   /** The `context` event's one re-ask was used. */
   retried?: boolean;
+  /** A turn has begun (`working`), so the next `idle` is a turn's end. */
+  worked?: boolean;
+  /** The one more ask at a turn's end when the figures are still missing (`real:` Copilot CLI 1.0.98: `null` through the whole first turn, T031). */
+  idleRetried?: boolean;
   /** The last list had a server still starting. */
   waiting?: boolean;
   /** The adapter's control channel was busy: ask when the turn ends. */
@@ -241,6 +245,11 @@ export class McpContextTracker {
       void this.ask(id);
     } else if (e.type === 'status' && e.status === 'idle' && s.atTurnEnd) {
       s.atTurnEnd = false;
+      void this.ask(id);
+    } else if (e.type === 'status' && e.status === 'working') {
+      s.worked = true;
+    } else if (e.type === 'status' && e.status === 'idle' && s.worked && !s.idleRetried && !s.asking && !hasFigures(s.report)) {
+      s.idleRetried = true; // once, at the end of a turn: never on a timer
       void this.ask(id);
     }
   }

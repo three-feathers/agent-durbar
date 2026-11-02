@@ -107,6 +107,37 @@ async function main(): Promise<void> {
     assert.ok(h.pushed.at(-1)?.report?.servers.some((s) => s.name === 'github'));
   }
 
+  // T031 real: Copilot's attribution stays null through the whole first turn, so the context-event retry (taken at the turn's start) finds nothing:
+  // one more ask when that turn ends, and not on an idle that is no turn's end
+  {
+    let reply: McpContextReport = { servers: [], failed: true };
+    const { h, t } = harness(() => reply);
+    t.onEvent(mcpEv(conn('github')));
+    await settle();
+    t.onEvent(statusEv('idle'));
+    await settle();
+    assert.strictEqual(h.asks, 1, 'an idle before any turn: no ask');
+    t.onEvent(statusEv('working'));
+    t.onEvent(ctxEv());
+    await settle();
+    assert.strictEqual(h.asks, 2, 'the context event at the start of the first turn: still nothing');
+    reply = FIG;
+    t.onEvent(statusEv('idle'));
+    await settle();
+    assert.strictEqual(h.asks, 3, "asked at the first turn's end");
+    assert.ok(h.pushed.at(-1)?.report?.servers.some((s) => s.name === 'github'), 'the figures arrive');
+    t.onEvent(statusEv('working'));
+    t.onEvent(statusEv('idle'));
+    await settle();
+    assert.strictEqual(h.asks, 3, 'figures in hand: no more asks');
+  }
+  {
+    const { h, t } = harness(() => ({ servers: [], failed: true }));
+    t.onEvent(mcpEv(conn('github')));
+    for (let i = 0; i < 4; i++) { t.onEvent(statusEv('working')); t.onEvent(statusEv('idle')); await settle(); }
+    assert.strictEqual(h.asks, 2, 'never any figure: one turn-end ask, not one per turn');
+  }
+
   // FR-003: never on a timer: only the read's own limit is ever pending, and it is cleared; the real timers are never used
   {
     const realT = global.setTimeout, realI = global.setInterval;

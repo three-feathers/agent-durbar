@@ -205,6 +205,16 @@ assert.strictEqual(cop([], { categories: { mcpTools: 5000 } }).total, 5000);
 assert.strictEqual(copilotMcpContext({ entries: [], limit: 1000 }).window, 1000, 'a reply without the wrapper');
 for (const bad of [null, undefined, 'x', 7, [], { contextAttribution: null }, { contextAttribution: 'x' }]) assert.deepStrictEqual(copilotMcpContext(bad), { servers: [], failed: true }, 'not a report: a failed read');
 assert.strictEqual(cop([]).failed, undefined, 'a real empty list is not a failure');
+// T031 real shape (Copilot CLI 1.0.98): no mcpServer entry; a server's tools are toolDefinition entries named <server>-<tool>
+{
+  const td = (rest: string, tokens: number) => entry('toolDefinition', `toolDefinition:${rest}`, tokens, 'toolDefinitions');
+  const real = (names: string[]) => copilotMcpContext({ contextAttribution: { limit: 128_000, categories: { mcpTools: 4434 }, entries: [entry('system', 'systemPrompt', 5783), entry('system', 'toolDefinitions', 10840), td('bash', 592), td('read_bash', 223), td('alpha-alpha_tool_0', 63), td('alpha-alpha_tool_1', 63), td('beta-x-b_tool_0', 144), td('beta-b_tool_0', 100), td('beta-x-b_tool_1', 144)] } }, names);
+  assert.deepStrictEqual([...real(['alpha', 'beta', 'beta-x']).servers].sort((x, y) => x.name.localeCompare(y.name)), [{ name: 'alpha', tokens: 126, source: 'reported' }, { name: 'beta', tokens: 100, source: 'reported' }, { name: 'beta-x', tokens: 288, source: 'reported' }], 'tool definitions grouped by the longest server name; built-in tools are no server');
+  assert.deepStrictEqual(real([]).servers, [], 'no known names: no guess');
+  assert.strictEqual(real(['alpha']).total, 4434);
+  assert.strictEqual(real(['alpha']).window, 128_000);
+  assert.deepStrictEqual(copilotMcpContext({ contextAttribution: { limit: 1, entries: [entry('mcpServer', 'mcpServer:a', 500), entry('toolDefinition', 'toolDefinition:a-t', 300, 'toolDefinitions')] } }, ['a']).servers, [{ name: 'a', tokens: 500, source: 'reported' }], 'both shapes for one server: the larger, once');
+}
 assert.strictEqual(cop([entry('mcpServer', 'mcpServer:' + 'n'.repeat(500), 1)]).servers[0].name.length, 500, 'not cut here: main masks, then cuts');
 assert.strictEqual(cop(Array.from({ length: 2100 }, (_, i) => entry('mcpServer', `mcpServer:s${i}`, 1))).servers.length, 2000, 'at most 2000 entries');
 
@@ -226,6 +236,16 @@ assert.strictEqual(cl([], { rawMaxTokens: Infinity }).window, undefined);
 assert.deepStrictEqual(claudeMcpContext(null, NAMES), { servers: [], failed: true });
 assert.strictEqual(claudeMcpContext({ mcpTools: [] }, NAMES).failed, undefined, 'a real empty list is not a failure');
 assert.strictEqual(codexMcpContext([]).failed, undefined, 'a real empty list is not a failure');
+// T031 real (Claude Code 2.1.316): isLoaded is false on every tool; the category says whether they are in the window
+{
+  const tools = [{ name: 'mcp__web__a', serverName: 'web', tokens: 138, isLoaded: false }, { name: 'mcp__web__b', serverName: 'web', tokens: 138, isLoaded: false }];
+  const inWin = cl(tools, { categories: [{ id: 'system_tools', name: 'System tools', tokens: 900, kind: 'used' }, { id: 'mcp_tools', name: 'MCP tools', tokens: 276, kind: 'used' }] }).servers[0];
+  assert.deepStrictEqual([inWin.tokens, inWin.deferredTokens], [276, 0], 'tool search off or auto-loaded: in the window, whatever isLoaded says');
+  const off = cl(tools, { categories: [{ id: 'mcp_tools_deferred', name: 'MCP tools (deferred)', tokens: 276, kind: 'deferred', isDeferred: true }] }).servers[0];
+  assert.deepStrictEqual([off.tokens, off.deferredTokens], [0, 276], 'deferred category: not in the window');
+  const none = cl(tools).servers[0];
+  assert.deepStrictEqual([none.tokens, none.deferredTokens], [0, 276], 'no category list: the flag decides, as before');
+}
 assert.strictEqual(reportTotal(cl([{ serverName: 'web', tokens: 40_000, isLoaded: false }, { serverName: 'web', tokens: 10, isLoaded: true }])), 10, 'an unloaded tool is not in the window');
 
 // T014: Codex

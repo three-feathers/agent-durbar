@@ -1741,7 +1741,7 @@ export class CopilotAdapter implements AgentAdapter {
     const metadata = this.sessions.get(sessionId)?.session.rpc.metadata as unknown as { getContextAttribution?: () => Promise<unknown> } | undefined;
     if (typeof metadata?.getContextAttribution !== 'function') return { servers: [] };
     try {
-      return copilotMcpContext(await metadata.getContextAttribution());
+      return copilotMcpContext(await metadata.getContextAttribution(), this.mappers.get(sessionId)?.mcpNamesOn() ?? []);
     } catch {
       return { servers: [], failed: true };
     }

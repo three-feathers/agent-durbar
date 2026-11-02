@@ -4,7 +4,7 @@
 group: 046
 title: MCP context cost (owner 2026-10-31): each MCP server's tool-definition tokens (the agent app's own figure where it reports one, else estimated) in the MCP chip and dialogs, a calm warning at 15 % / 30 % of the session's window naming the heaviest servers, a compaction hint, never changes anything by itself
 status: building
-note: phases 1-3 built, unit tests, fakes and simulator; real check T031 and the per-folder off T032 to do
+note: phases 1-3 built; real check T031 done 2026-11-02 (three fixes); the per-folder off T032 to do
 -->
 
 **Feature Branch**: `100-mcp-context` (spec); code branches `100-pN-slug`, one per phase
@@ -170,10 +170,10 @@ and "Off". Kept in Durbar's settings.
 
 - **FR-040** Only server names and numbers reach the window; no env, header, URL, command, or secret value; no tool schema is stored.
 - **FR-041** Read-only mode: same behaviour; the actions change Durbar's MCP choices only (as today's switch).
-- **FR-042** `[KNOWN GAP]` `real:` to do (T031). No credits: the Copilot attribution and Claude `summary` reads make no model call (`read:`); Claude `full` is not used
-  (decided Q2). The simulator and unit tests cover the feature; a real check needs the owner.
+- **FR-042** `[IMPLEMENTED]` `real:` T031 2026-11-02 (Copilot CLI 1.0.98 / SDK 1.0.22, Claude Code 2.1.316, codex-cli 0.163.0, Linux, 9 tiny prompts, cheapest models, two local servers). The Copilot attribution and Claude `summary` reads make no model call (Claude's needs no message at all); Claude `full` is not used
+  (decided Q2). Shapes and what the real check changed: spec *Changes* 2026-11-02.
 - **FR-043** Adapter-neutral: vendor calls stay in adapters; `src/shared` and the renderer see `McpContextReport` only.
-- **FR-044** `[KNOWN GAP]` Codex figures are estimates only, and whether Codex defers MCP tools is unknown. Copilot's call is
+- **FR-044** `[KNOWN GAP]` Codex figures are estimates only, and `real:` T031 shows Codex loads MCP tool definitions on demand (see *Changes* 2026-11-02): the estimate is an upper bound, an owner decision. Copilot's call is
   experimental and may be missing on some plans, a primary-case risk: then "not reported by Copilot" shows, never an estimate. Claude `summary` figures are Claude Code's own estimates.
 - **FR-045** UI: text at least 10.5px; the chip and dialog fit 1440x900 and 1280x800 with 15 agents; Windows, macOS, Linux alike.
 
@@ -211,3 +211,4 @@ All decided by the owner on 2026-10-31 (Telegram 11:25 UTC: "Agree on all, mine 
 - 2026-10-31 (review of the build): **FR-003**: a restart goes through `pending`; any change of the running servers asks. A server stuck `pending` no longer holds the ask back: the first figure comes with the others, that server reads "size not known" and the figure "at least" (FR-024). **FR-001**: Copilot's `categories.mcpTools` is a floor under the servers' sum (a max, never added).
 - 2026-10-31: owner answers recorded (Q1-Q6, Copilot is the primary case); FRs and tasks updated.
 - 2026-10-31: spec, research, plan and tasks drafted (owner report of 2026-10-31).
+- 2026-11-02 (`real:` T031, owner's OK 2026-11-02; Copilot CLI 1.0.98 / SDK 1.0.22, Claude Code 2.1.316, codex-cli 0.163.0; Linux; 9 prompts; two local stdio servers of 3 and 30 tools). Answers: (1) **Copilot has no `mcpServer` entry.** `getContextAttribution()` is `{contextAttribution}` (`null` before the first message and through the whole first turn); a server's tools are `toolDefinition` entries `toolDefinition:<server>-<tool>`. The build showed no server at all on a real runtime (the owner's primary case). Fix: group those entries by the longest known server name; `mcpServer` entries still count, the larger figure wins. (2) **The `null` outlasts the first turn's context event**, which used up the one retry (FR-003), so no figure would come until the dialog opened. Fix: one more ask at the end of the first turn that has no figure (not on a timer). Real check: the figure is there at that turn's `idle`. (3) **Claude `isLoaded` is false on every tool**, also with tool search off or `auto`, when the tools are in the window (`categories` id `mcp_tools`, kind used); deferred (`mcp_tools_deferred`) is the only true case. Counting by `isLoaded` would show 0 tokens and never warn. Fix: the category decides, the flag only when there is no category. This confirms the 2026-10-31 FR-020 reading for deferred tools (their tokens are outside `totalTokens`; the CLI's default here deferred all of them). (4) **Disturbance:** asking during a Copilot turn (9 reads, 150 ms apart) changed nothing: same events, same usage. Claude is not asked during a turn by design. (5) **Copilot parents (owner item 4):** there is no parent figure to double count; the sum of the tool entries is within 2 % of `categories.mcpTools` (4509 against 4434), so the floor never under-warns here. (6) **Codex defers:** 33 added tools raised the prompt by 953 tokens, the estimate says 5490; the built-in `codex_apps` server (156 tools, estimate about 54k) is not in an 18k prompt. Not changed here: how a Codex figure is labelled is an owner decision (the footnote's "can differ by a third" is wrong by a factor of five); `[KNOWN GAP]`. Not seen: Copilot `deferTools: auto`, a mixed loaded and deferred Claude list, Windows and macOS.
