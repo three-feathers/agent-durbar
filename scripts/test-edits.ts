@@ -308,7 +308,7 @@ const TOKEN = 'ghp_abcdefghijklmnopqrstuvwxyz0123456789';
   timed('partialJson deep objects', () => partialJson('{"a":'.repeat(N / 2)));
   // a streamed Write whose content is a long run of spaces, through the whole stream path
   // This reaches `redact`, so spec 012 T138 measures it in the same run: spaces against ordinary text through the same path, which is the old bug (regexes retrying at each blank took seconds to a minute).
-  // Not a growth check: on Node 22 in CI the spaces read 46-49x for 16x the input, 14x here on Node 24, not reproduced or explained (`[KNOWN GAP]` in the spec).
+  // Not a growth check: the whole text is masked again at each 1/8 of growth, so at this size CPU grows faster than the input until the 1/8 rule caps it (`[KNOWN GAP]` in the spec, issue 1052).
   const write = (x: string): void => {
     const st = new EditStreams();
     st.begin('w', 'Write');
@@ -316,6 +316,32 @@ const TOKEN = 'ghp_abcdefghijklmnopqrstuvwxyz0123456789';
     for (let i = 0; i < args.length; i += 4096) st.delta('w', args.slice(i, i + 4096));
   };
   assertWithinYardstick('EditStreams Write of spaces', () => write(' '.repeat(N) + 'x' + ' '.repeat(N)), () => write('word '.repeat(2 * N / 5)), 10);
+  // That compares the path with itself, so what keeps the path linear is counted, with no clock (review of #1048): a parse at each 1/8 of growth, so twice the text adds at most 7 parses (log 2 / log 1.125 is 5.9)
+  // and the characters parsed stay under 10 times the text. Parsing every 128 characters makes 6000 parses of 800k.
+  const parses = (total: number, chunk: number): { n: number; chars: number } => {
+    const st = new ArgStream('Write');
+    let n = 0;
+    let chars = 0;
+    for (let seen = 0; seen < total; seen += chunk) if (st.append('x'.repeat(chunk))) { n++; chars += st.length; }
+    return { n, chars };
+  };
+  for (const chunk of [64, 512, 4096]) {
+    for (const total of [100_000, 200_000, 400_000]) {
+      const one = parses(total, chunk);
+      const two = parses(2 * total, chunk);
+      assert.ok(two.n - one.n <= 7, `parses at ${chunk}-character fragments: ${one.n} for ${total} characters, ${two.n} for twice that`);
+      assert.ok(two.chars < 10 * 2 * total, `characters parsed at ${chunk}-character fragments: ${two.chars} for ${2 * total}`);
+    }
+  }
+  // ... and the stream parses only when `append` says so
+  const updates = (chunk: number): number => {
+    const es2 = new EditStreams();
+    const args = '{"file_path":"/tmp/d/a.txt","content":"' + 'word '.repeat(40_000);
+    let n = 0;
+    for (let i = 0; i < args.length; i += chunk) n += es2.delta('w', args.slice(i, i + chunk), i === 0 ? 'Write' : undefined).filter((x) => x.phase === 'update').length;
+    return n;
+  };
+  assert.ok(updates(512) <= parses(200_100, 512).n + 1, `updates of a 200k Write at 512-character fragments: ${updates(512)}`);
   // a Codex/plain diff whose `--- ` line ends in a long run of spaces followed by text (the lazy capture retried every position)
   timed('patchFiles long --- line', () => patchFiles('--- a/x.ts' + ' '.repeat(N) + 'y\n+++ b/x.ts\n@@\n+1\n'));
   timed('patchFiles long +++ line', () => patchFiles('--- a/x.ts\n+++ b/x.ts' + ' '.repeat(N) + 'y\n@@\n+1\n'));
