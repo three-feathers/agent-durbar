@@ -16,6 +16,7 @@
 import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
+import { redact } from '../shared/redact';
 import { MAX_SERVERS, MCP_TOOL_OFF_RE, NAME_RE, trustHash, validateInput } from '../shared/mcp';
 import type { McpSecretKey, McpServerInput, McpServerSpec, McpServerView, McpTransport, McpTrustInfo } from '../shared/mcp';
 
@@ -83,8 +84,11 @@ function safe<T>(f: () => T, fallback: T): T {
 export class McpStore {
   /** Extras by folder/workspace key (the saved-folder key: .code-workspace file or folder path). */
   private folders = new Map<string, Rec[]>();
-  /** Servers of the old app-level list (milestone 8): kept, never passed to a session, movable into a folder. */
-  private legacyRecs: Rec[] = [];
+  /**
+   * Spec 020 change 2026-11-02: the old app-level lists (`servers`, `legacy`) are no longer used. A file that still has them is carried
+   * through each save untouched (never parsed, never decrypted, never logged), so nothing is deleted from the user's disk.
+   */
+  private oldLists: Record<string, unknown> = {};
   private disabledAmbient = new Set<string>();
   /** Spec 069 FR-061: single MCP tools turned off, per folder key, by server name (names only). */
   private toolsOff = new Map<string, Record<string, string[]>>();
@@ -95,6 +99,8 @@ export class McpStore {
   /** A secret value was added, changed or dropped since the vault was written: the next save encrypts a new vault. */
   private vaultDirty = false;
   private persistKnown?: boolean;
+  /** Spec 019 change 2026-10-31: the file exists but could not be used, so it loaded as empty: moved aside before the first write. */
+  private unreadable = false;
 
   constructor(
     private readonly file: string,
@@ -107,7 +113,7 @@ export class McpStore {
   }
 
   private allRecs(): Rec[] {
-    const out = [...this.legacyRecs];
+    const out: Rec[] = [];
     for (const list of this.folders.values()) out.push(...list);
     return out;
   }
@@ -199,20 +205,29 @@ export class McpStore {
 
   load(): void {
     this.folders = new Map();
-    this.legacyRecs = [];
+    this.oldLists = {};
     this.disabledAmbient = new Set();
     this.toolsOff = new Map();
     this.vaultBlob = undefined;
     this.unlocked = false;
     this.vaultDirty = false;
+    this.unreadable = false;
     let doc: unknown;
     try {
-      if (fs.statSync(this.file).size > MAX_FILE) return;
+      if (fs.statSync(this.file).size > MAX_FILE) {
+        this.unreadable = true;
+        return;
+      }
       doc = JSON.parse(fs.readFileSync(this.file, 'utf8'));
-    } catch {
+    } catch (e) {
+      this.unreadable = (e as NodeJS.ErrnoException).code !== 'ENOENT'; // a missing file is a normal empty store
       return;
     }
-    const o = (doc && typeof doc === 'object' ? doc : {}) as Record<string, unknown>;
+    if (!doc || typeof doc !== 'object' || Array.isArray(doc)) {
+      this.unreadable = true;
+      return;
+    }
+    const o = doc as Record<string, unknown>;
     if (typeof o.vault === 'string') this.vaultBlob = o.vault;
     const to = o.toolsOff && typeof o.toolsOff === 'object' && !Array.isArray(o.toolsOff) ? (o.toolsOff as Record<string, unknown>) : {};
     for (const key of Object.keys(to).slice(0, MAX_FOLDERS)) {
@@ -226,8 +241,7 @@ export class McpStore {
       if (Object.keys(rec).length) this.toolsOff.set(key, rec);
     }
     if (Array.isArray(o.disabledAmbient)) for (const n of o.disabledAmbient) if (typeof n === 'string' && n.length <= 80) this.disabledAmbient.add(n);
-    // Version 1 (milestone 8) had one global `servers` list: it becomes `legacy`. Version 2 has `legacy` too.
-    this.legacyRecs = this.parseList([...(Array.isArray(o.servers) ? o.servers : []), ...(Array.isArray(o.legacy) ? o.legacy : [])]);
+    for (const k of ['servers', 'legacy']) if (Array.isArray(o[k]) && (o[k] as unknown[]).length) this.oldLists[k] = o[k]; // kept as it is, ignored
     const f = o.folders && typeof o.folders === 'object' && !Array.isArray(o.folders) ? (o.folders as Record<string, unknown>) : {};
     for (const key of Object.keys(f).slice(0, MAX_FOLDERS)) {
       if (!key || key.length > MAX_KEY) continue;
@@ -236,7 +250,25 @@ export class McpStore {
     }
   }
 
+  /** Rename the unusable file to a dated sibling. Never deleted, never read; a failed rename throws, so the save writes nothing over it. */
+  private moveUnreadableAside(): void {
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-'); // no ":" in a Windows file name
+    let dest = `${this.file}.unreadable-${stamp}`;
+    for (let n = 1; fs.existsSync(dest); n++) dest = `${this.file}.unreadable-${stamp}-${n}`;
+    try {
+      fs.renameSync(this.file, dest);
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e; // gone since the load: nothing left to keep
+      this.unreadable = false;
+      return;
+    }
+    this.unreadable = false;
+    safe(() => fs.chmodSync(dest, fs.statSync(dest).isDirectory() ? 0o700 : 0o600), undefined); // a folder needs its search bit to stay readable
+    console.warn(redact(`MCP store: an unreadable file was moved aside as ${path.basename(dest)}`));
+  }
+
   private save(): void {
+    if (this.unreadable) this.moveUnreadableAside();
     let vault = this.vaultBlob;
     if (this.vaultDirty) {
       // A value changed: the new vault needs every value, so the old one is decrypted first (once per run), then encrypted once.
@@ -278,7 +310,7 @@ export class McpStore {
     for (const [k, list] of this.folders) if (list.length) folders[k] = list.map(ser);
     const toolsOff: Record<string, Record<string, string[]>> = {};
     for (const [k, m] of this.toolsOff) if (Object.keys(m).length) toolsOff[k] = m;
-    const doc = { version: 3, folders, legacy: this.legacyRecs.map(ser), disabledAmbient: [...this.disabledAmbient], ...(Object.keys(toolsOff).length ? { toolsOff } : {}), ...(vault !== undefined ? { vault } : {}) };
+    const doc = { version: 3, folders, ...this.oldLists, disabledAmbient: [...this.disabledAmbient], ...(Object.keys(toolsOff).length ? { toolsOff } : {}), ...(vault !== undefined ? { vault } : {}) };
     fs.mkdirSync(path.dirname(this.file), { recursive: true });
     const tmp = `${this.file}.tmp`;
     fs.writeFileSync(tmp, JSON.stringify(doc, null, 1), { mode: 0o600 });
@@ -348,14 +380,9 @@ export class McpStore {
     return this.validKey(key) ? this.recsOf(key).map((r) => this.view(r)) : [];
   }
 
-  /** Servers of the old app-level list: shown (off, not applied) so the user can move or remove them. */
-  legacyList(): McpServerView[] {
-    return this.legacyRecs.map((r) => ({ ...this.view(r), enabled: false }));
-  }
-
   /**
    * Names only (spec 024 FR-015): the extras of every saved folder, in any state (on, off, untrusted, secrets missing), each exact name once,
-   * for the Settings > Places list. Memory only; no command, URL, env, folder key or path. Old app-level servers are not included. A name that
+   * for the Settings > Places list. Memory only; no command, URL, env, folder key or path. A name that
    * matches `reserved` (the Copilot CLI list, built-in servers) ignoring case is left out: its CLI row already covers it.
    */
   extraNames(reserved: Iterable<string> = []): string[] {
@@ -451,31 +478,6 @@ export class McpStore {
     r.enabled = enabled;
     this.save();
     return { ok: true, view: this.view(r) };
-  }
-
-  /** Move an old app-level server into a folder: it arrives off and untrusted (the user reviews and trusts it there). */
-  moveLegacy(name: string, key: string, reserved: Iterable<string> = []): StoreResult {
-    if (!this.validKey(key)) return { ok: false, error: 'Unknown folder.' };
-    const r = this.legacyRecs.find((x) => lc(x.name) === lc(name));
-    if (!r) return { ok: false, error: 'That old server no longer exists.' };
-    if ([...reserved].some((n) => lc(n) === lc(r.name))) return { ok: false, error: `"${r.name}" is already a server of the Copilot CLI list.` };
-    if (this.find(key, r.name)) return { ok: false, error: `A server named "${r.name}" already exists in this folder.` };
-    if (this.recsOf(key).length >= MAX_SERVERS) return { ok: false, error: `At most ${MAX_SERVERS} servers per folder.` };
-    if (!this.folders.has(key) && this.folders.size >= MAX_FOLDERS) return { ok: false, error: `Extras are kept for at most ${MAX_FOLDERS} folders.` };
-    const moved: Rec = { ...r, enabled: false, trust: undefined };
-    this.legacyRecs = this.legacyRecs.filter((x) => x !== r);
-    this.folders.set(key, [...this.recsOf(key), moved]);
-    this.save();
-    return { ok: true, view: this.view(moved) };
-  }
-
-  removeLegacy(name: string): boolean {
-    const r = this.legacyRecs.find((x) => lc(x.name) === lc(name));
-    if (!r) return false;
-    this.legacyRecs = this.legacyRecs.filter((x) => x !== r);
-    if ([...r.env, ...r.headers].some((s) => s.ref !== undefined || s.value !== undefined)) this.vaultDirty = true;
-    this.save();
-    return true;
   }
 
   private static toolList(v: unknown): string[] {

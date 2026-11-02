@@ -21,10 +21,10 @@ One row per thing a user can do or see. [features.md](features.md) stays the use
 | Lobby places, visitors, away at a place | works | works | mock+planned (lobby) | 024 | test:places driver:shots-024 |
 | Boss queue, Bank, Postbox | works | works | mock+planned (boss-bank-post-coffee) | 001 024 | driver:shots-001-lobby read:src/renderer/realoffice.js |
 | Coffee break at a usage limit | works | works | planned (coffee-bar) | 068 | test:coffeebreak driver:shots-068-coffee |
-| Finished agents rest in the lounge | works | missing, rest at the desk (decided) | planned (lounge) | 001 097 | test:rooms read:docs/experience/world-moments.json |
+| Finished agents rest in the lounge | works | missing, rest at the desk (decided) | planned (lounge) | 001 097 | read:docs/experience/world-moments.json |
 | Floors, lift, All floors, Focus mode | works | works | mock+planned (lift-panel) | 033 092 | test:floors test:floornav driver:shots-092-lift |
 | Status pills as filters | works | works | none | 001 | driver:shots-001-welcome read:src/renderer/app.js |
-| Room doors (cabin signs) | works, removal in PR 017-remove-doors | works | none | 017 | test:doors |
+| Room doors (cabin signs) | works, removal in PR 017-remove-doors | works | none | 017 | driver:check-no-doors |
 | Room menu: New session, Schedules, Rename, Cost, Move | works | works on the folder sign | none | 001 006 | driver:shots-005-cardmenu read:src/renderer/realoffice.js |
 | Full-screen chat, other agents in a strip | works | works, in PR 097-chat-in-world for the world's own frame | mock+planned (chat-open) | 005 | test:innerscroll driver:shots-005-cardmenu |
 | Thinking, tool calls, Markdown | works | works | mock+planned (chat-shell) | 015 016 | test:markdown test:events |
@@ -59,4 +59,4 @@ One row per thing a user can do or see. [features.md](features.md) stays the use
 | Terminal tab in a chat | planned | planned | none | 094 | read:specs/094-terminal-tab/spec.md |
 | Next built-in world: aisle layout | missing | in PR 102-arcade-p1-aisles | planned | 102 | read:specs/102-worlds-on-demand/spec.md |
 
-Exempt: 002 008 010 013 025 045 050 (not user features: adapters, packaging, simulator, live checks, docs rule, security sweep, website). Any other spec with `status: built` must be in a row.
+Exempt: 002 008 010 013 025 045 050 062 (not user features: adapters, packaging, simulator, live checks, docs rule, security sweep, website, real-account CI checks). Any other spec with `status: built` must be in a row.
