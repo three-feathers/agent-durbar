@@ -1171,6 +1171,7 @@ All three answered on PR #575 (09:03-09:06 UTC) with option a, the recommended o
 ## Changes
 
 - 2026-11-01 (sweep of the build): **FR-208**: a slow reply of an earlier paint of Settings does not overwrite the Organization section of a later one.
+- 2026-11-02 (pre-review): **FR-208**: the status pill keeps its own width (it stretched across the row), and `shots-076-orgpolicy` checks a failed `orgpolicy:view` (says unknown, no row, no "no policy" line; mutation-checked).
 
 ### 2026-10-31: Settings > Organization, the part of issue #602 that needs no native code (FR-208)
 

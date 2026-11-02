@@ -231,5 +231,14 @@ module.exports = async (ctx) => {
   assert.strictEqual(await js(`!!document.querySelector('#orgSet p.scr-note.warn')`), false, 'no failure line from the earlier read');
   await js(`document.getElementById('scrClose').click()`);
 
+  /* sweep: a read that fails says "unknown" and shows no row that could read as clear (the section stays, FR-208) */
+  await H.load({ w: 1440, h: 900, ready: 'fit', focus: true, query: { simkinds: 'mixed', simorgpolicy: '1' } });
+  await js(`(()=>{const b=window.__durbarSimUi.bridge();b.orgPolicyView=()=>Promise.reject(new Error('refused'));})();0`);
+  await js(`document.getElementById('settingsBtn').click()`);
+  assert.ok(await until(`!!document.querySelector('#orgSet p.scr-note.warn')`), 'a failed read: the section says so');
+  assert.ok(/unknown/.test(await js(`document.querySelector('#orgSet p.scr-note.warn').textContent`)), 'a failed read: it says unknown');
+  assert.strictEqual(await js(`document.querySelectorAll('#orgSet li.orgrow').length+(/No policy/.test(document.getElementById('orgSet').textContent)?1:0)`), 0, 'a failed read: no row and no "no policy" line');
+  await js(`document.getElementById('scrClose').click()`);
+
   console.log('[076] orgpolicy PASS');
 };
