@@ -36,8 +36,9 @@ export const worstGrowth = { ratio: 0, label: '' }; // the highest full/baseline
 // `reps` (default 1, so the other callers are unchanged): the baseline is timed as `run(small, reps)`, and `run` must then repeat the work `reps`
 // times inside one timing and give the mean per run, so a baseline of a few ms is read well above the Windows timer tick (a tick-sized baseline
 // caps the ratio near 15 and hides a quadratic rule that stays under the floor).
-export const assertLinearGrowth = (label: string, run: (input: string, reps?: number) => { cpu: number; wall: number }, input: string, floorMs = 100, reps = 1): void => {
-  const small = input.slice(0, Math.ceil(input.length / FACTOR));
+// `baseline`: when a prefix is not the same shape (a run with a different tail), the caller builds the 1/16 input itself.
+export const assertLinearGrowth = (label: string, run: (input: string, reps?: number) => { cpu: number; wall: number }, input: string, floorMs = 100, reps = 1, baseline?: string): void => {
+  const small = baseline ?? input.slice(0, Math.ceil(input.length / FACTOR));
   let full = Infinity;
   let base = Infinity;
   let wall = 0;
@@ -69,4 +70,17 @@ export const workerRun = (label: string, code: string, data: Record<string, unkn
     return { cpu, wall };
   }
   throw new assert.AssertionError({ message: `${label}: worker hung twice (${why})` });
+};
+
+/**
+ * The growth of a function on one shape: `make(400k)` against 16 repeats of `make(25k)` in the same run, so both timings cover the same number of characters and neither sits near a timer tick.
+ * A plain 50k-against-400k ratio with a limit of 24 failed linear code on Windows (spec 012 T137, review of #1015): 50k read 31 ms where its neighbours read 78 to 156, 2 ticks of 15.6 ms, and the
+ * ratio was 24.7. CPU time, so load does not move it; a wall backstop of 10x stays only for a blocking wait (`cpuMs`). A quadratic shape fails fast on the first baseline.
+ */
+export const assertLinearShape = (label: string, work: (x: string) => void, make: (n: number) => string): void => {
+  const small = make(25_000);
+  const once = cpuMs(() => work(small), 3000);
+  assert.ok(once < 3000, `${label}: ${once.toFixed(0)} ms CPU at ${small.length} characters (quadratic?)`);
+  const run = (x: string, reps = 1): { cpu: number; wall: number } => ({ cpu: cpuMs(() => { for (let i = 0; i < reps; i++) work(x); }, 8000) / reps, wall: 0 });
+  assertLinearGrowth(label, run, make(400_000), 100, FACTOR, small);
 };

@@ -28,7 +28,7 @@ The sweep's claim, checked by running it on `main`: `npm_`, `AIza`, `sk_live_` a
 
 ## What can and cannot be repeated offline
 
-**Can**, with no download, on any machine (`npm run test:runtime-redact`, `npm run test:redact-growth-shapes`): one sample per family; seeded samples of everything the mask hid before this change, in the contexts it hid them (`scripts/redact-held-lib.ts`); each digit-guarded prefix with a letters-only body, pinned as a limit; the false-positive list; the adversarial runs.
+**Can**, with no download, on any machine (`npm run test:runtime-redact`, `npm run test:redact-growth-shapes`, `shapes2`): one sample per family; seeded samples of everything the mask hid before this change, in the contexts it hid them (`scripts/redact-held-lib.ts`); each digit-guarded prefix with a letters-only body, pinned as a limit; the false-positive list; the adversarial runs.
 
 **Cannot**: the counts above (120, 105, 101, 7, 87), every `after` cell in the gitleaks table, and the GitHub and TruffleHog counts. The lists are not in this repository and the generator was not committed, so these are a dated snapshot that a later regex change does not update, and CI does not check them. Repeating them means downloading the lists again and writing the generator again.
 
@@ -100,7 +100,7 @@ A shape goes in only with a prefix distinctive enough to stand beside normal tex
 - `-u user:pass` of a tool other than curl: `-u` alone is too common (`git push -u origin:main`).
 - PuTTY `.ppk` bodies, XML pairs such as `nuget.config`. `.netrc` is hidden only in the `machine … password …` form, not a lone `password x` line.
 - Vendors change formats; a new prefix passes until it is added. Comparing again is a matter of rerunning this method.
-- A shape added by this change, encoded more than 8 times (`%25` repeated) or glued to a literal `25XX`, does not count as starting after an escape. The shapes of before keep the wider start.
+- A shape added by this change, encoded more than 8 times (`%25` repeated) or glued to a literal `25XX`, does not count as starting after an escape (tested at 8 and 9). The shapes of before keep the wider start.
 - **The one thing `main` hid that now shows**: text after `|`, `&`, `<`, `>` or a backtick in a `tid=` value (`tid=abcdef12;a|sh` keeps `|sh`), the stop rule above, so an agent cannot hide a command behind it. Whether a real Copilot token can hold one of these was not checked.
 - Over-masking is accepted (a `glpat-cross-validation-results-v2-final`, a `next_page_token=…`, a `key-<32 hex>` that is a cache key at the start of a word, `pass: 12345678`, `auth: oauth2-proxy-config`, and a whole line after `Cookie: a=b`).
 

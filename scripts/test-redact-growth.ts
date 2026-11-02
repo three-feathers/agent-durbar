@@ -6,7 +6,7 @@
 import * as assert from 'assert';
 import { REDACT_MAX_CHARS, _uncappedForTest, redact } from '../src/shared/redact';
 import { spawnSync } from 'child_process';
-import { assertLinearGrowth, cpuMs, worstGrowth, workerRun } from './redact-growth-lib';
+import { assertLinearGrowth, assertLinearShape, cpuMs, worstGrowth, workerRun } from './redact-growth-lib';
 
 const part = process.argv[2];
 const BT = '`';
@@ -44,7 +44,7 @@ if (part === 'tokens') {
 }
 }
 
-if (part === 'adversarial') {
+if (part === 'adversarial' || part === 'adversarial2') {
 // 9. adversarial 1 MB inputs: every pattern stays linear (growth against a same-shape quarter-size input, no fixed time limit)
 {
   const MB = 1_000_000;
@@ -151,7 +151,8 @@ if (part === 'adversarial') {
   const code = `const {workerData:w}=require('worker_threads');const flag=new Int32Array(w.sab,0,1),out=new Float64Array(w.sab,8,2);` +
     `try{const {redact}=require(w.mod);const tc=typeof process.threadCpuUsage==='function';const w0=process.hrtime.bigint(),c0=tc?process.threadCpuUsage():null;redact(w.input,{});const wall=Number(process.hrtime.bigint()-w0)/1e6;let cpu=wall;if(tc){const d=process.threadCpuUsage(c0);cpu=(d.user+d.system)/1000}out[0]=cpu;out[1]=wall;Atomics.store(flag,0,1)}` +
     `catch(e){Atomics.store(flag,0,2)}Atomics.notify(flag,0)`;
-  for (const [k, v] of Object.entries(adversarial)) assertLinearGrowth(`adversarial ${k}`, (input) => workerRun(`adversarial ${k}`, code, { mod, input }, 30000), v);
+  // two suites, each case in one (over 30 s on Windows as one)
+  for (const [k, v] of Object.entries(adversarial).filter((_e, i) => i % 2 === (part === 'adversarial' ? 0 : 1))) assertLinearGrowth(`adversarial ${k}`, (input) => workerRun(`adversarial ${k}`, code, { mod, input }, 30000), v);
 }
 
 }
@@ -159,17 +160,8 @@ if (part === 'adversarial') {
 if (part === 'r11') {
     // cost: a long run of `Bearer ` words and many escaped R7 objects (same interleaved ratio as the block below)
     const rshapes: Array<[string, string]> = [['Bearer ', 'Bearer '], ['--auth Bearer ', '--auth Bearer '], ['obj', '{\\"name\\":\\"token\\",\\"value\\":\\"x y\\"} '], ['arr', '{\\"name\\":\\"token\\",\\"value\\":[\\"x\\"]} '], ['hdr', 'Authorization: Bearer '], ['qhdr', '-H "Authorization: Bearer" '], ['eq', '--auth=Bearer '], ['sq', "Authorization: 'a "], ['dq', 'Authorization: "a '], ['mixed', `Authorization: "a Authorization: 'a `], ['tok', 'TOKEN=Auth: '], ['unclosed', 'x Authorization: "a '], ['unclosed1', "Cookie: 'a "], ['schemeq', 'Authorization: Basic "a '], ['argsq', 'curl Authorization: "a ']];
-    for (const [, unit] of rshapes) {
-      const mk = (n: number): string => unit.repeat(Math.ceil(n / unit.length)).slice(0, n);
-      const time = (x: string): number => cpuMs(() => { _uncappedForTest.maskSecretArgs([x]); _uncappedForTest.maskSecretArgs(['-c', x]); _uncappedForTest.maskSecretCommand(x); }, 8000);
-      let tSmall = Infinity;
-      let tBig = Infinity;
-      for (let i = 0; i < 5; i++) { tSmall = Math.min(tSmall, time(mk(50_000))); tBig = Math.min(tBig, time(mk(400_000))); if (tBig < 8000 && tBig / Math.max(tSmall, 20) < 24) break; }
-      const t200 = time(mk(200_000));
-      const ratio = tBig / Math.max(tSmall, 20);
-      console.log(`redact: 14c R11/R7 ${JSON.stringify(unit)} 50k=${Math.round(tSmall)} ms 400k=${Math.round(tBig)} ms ratio ${ratio.toFixed(1)} 200k=${Math.round(t200)} ms`);
-      assert.ok(t200 < 5000 && tBig < 8000 && ratio < 24, `14c: R11/R7 ${JSON.stringify(unit)} grew too fast: ${tSmall} -> ${tBig} ms (ratio ${ratio.toFixed(1)}), 200k ${t200} ms`);
-    }
+    const work = (x: string): void => { _uncappedForTest.maskSecretArgs([x]); _uncappedForTest.maskSecretArgs(['-c', x]); _uncappedForTest.maskSecretCommand(x); };
+    for (const [, unit] of rshapes) assertLinearShape(`14c R11/R7 ${JSON.stringify(unit)}`, work, (n) => unit.repeat(Math.ceil(n / unit.length)).slice(0, n));
 }
 
 if (part === 'args') {
@@ -179,68 +171,25 @@ if (part === 'args') {
   const total = cpuMs(() => { for (const [, unit] of shapes) run(unit.repeat(Math.ceil(200_000 / unit.length)).slice(0, 200_000)); }, 20000);
   console.log(`redact: 14c masking 200k-char adversarial inputs in ${total} ms`);
   assert.ok(total < 20000, `14c: masking 200k-char adversarial inputs took ${total} ms`);
-  // linearity: 50k vs 400k (8x apart), 5 interleaved pairs, min CPU time of each size (cpuMs), so neither a load burst nor other
-  // processes on the CPU move the ratio.
-  // Linear is a ratio of about 8; three doublings at up to 3x each allow 24; quadratic would be about 64.
-  for (const unit of ['{"a":"x y ', 'x ', '"a ']) {
-    const small = unit.repeat(Math.ceil(50_000 / unit.length));
-    const big = unit.repeat(Math.ceil(400_000 / unit.length));
-    const time = (x: string): number => cpuMs(() => run(x), 8000);
-    let tSmall = Infinity;
-    let tBig = Infinity;
-    for (let i = 0; i < 5; i++) { tSmall = Math.min(tSmall, time(small)); tBig = Math.min(tBig, time(big)); if (tBig < 8000 && tBig / Math.max(tSmall, 20) < 24) break; }
-    const ratio = tBig / Math.max(tSmall, 20);
-    console.log(`redact: 14c linearity ${JSON.stringify(unit)} 50k=${Math.round(tSmall)} ms 400k=${Math.round(tBig)} ms ratio ${ratio.toFixed(1)}`);
-    assert.ok(tBig < 8000 && ratio < 24, `14c: ${JSON.stringify(unit)} grew too fast: ${tSmall} -> ${tBig} ms (ratio ${ratio.toFixed(1)})`);
-  }
+  for (const unit of ['{"a":"x y ', 'x ', '"a ']) assertLinearShape(`14c linearity ${JSON.stringify(unit)}`, run, (n) => unit.repeat(Math.ceil(n / unit.length)).slice(0, n));
 }
 
 if (part === 'runs') {
   const run = (x: string): void => { _uncappedForTest.maskSecretArgs([x]); _uncappedForTest.maskSecretArgs(['-c', x]); _uncappedForTest.maskSecretCommand(x); };
-  // single-character runs (a regex with an unanchored `+$`, or overlapping classes, is quadratic here): same interleaved ratio check
+  // single-character runs (a regex with an unanchored `+$`, or overlapping classes, is quadratic here): the same growth check
   const runs: Array<[string, (n: number) => string]> = [
     [';;; x', (n) => ';'.repeat(n) + ' x'], ['&&& x', (n) => '&'.repeat(n) + ' x'], ['||| x', (n) => '|'.repeat(n) + ' x'], ['a``` x', (n) => 'a' + '`'.repeat(n) + ' x'],
     [';;;x y', (n) => ';'.repeat(n) + 'x y'], ['&&&x y', (n) => '&'.repeat(n) + 'x y'], ['|||x y', (n) => '|'.repeat(n) + 'x y'], ['a```b y', (n) => 'a' + '`'.repeat(n) + 'b y'],
   ];
-  for (const [name, gen] of runs) {
-    const time = (x: string): number => cpuMs(() => run(x), 8000);
-    const small = gen(50_000);
-    const big = gen(400_000);
-    let tSmall = time(small);
-    assert.ok(tSmall < 3000, `14c: run ${name} at 50k took ${tSmall} ms (quadratic?)`); // a quadratic one would take minutes at 400k
-    let tBig = Infinity;
-    for (let i = 0; i < 5; i++) { tSmall = Math.min(tSmall, time(small)); tBig = Math.min(tBig, time(big)); if (tBig < 8000 && tBig / Math.max(tSmall, 20) < 24) break; }
-    const ratio = tBig / Math.max(tSmall, 20);
-    const t200 = time(gen(200_000));
-    console.log(`redact: 14c run ${name} 50k=${Math.round(tSmall)} ms 400k=${Math.round(tBig)} ms ratio ${ratio.toFixed(1)} 200k=${Math.round(t200)} ms`);
-    assert.ok(t200 < 5000 && tBig < 8000 && ratio < 24, `14c: run ${name} grew too fast: ${tSmall} -> ${tBig} ms (ratio ${ratio.toFixed(1)}), 200k ${t200} ms`);
-  }
-
+  for (const [name, gen] of runs) assertLinearShape(`14c run ${name}`, run, gen);
 }
 
 if (part === 'wrappers') {
-  // (i) cost: wrapper shapes stay linear (50k vs 400k, 3 interleaved pairs, min CPU time of each (cpuMs, T068); linear is about 8, quadratic about 64)
+  // (i) cost: wrapper shapes stay linear
   const run = (x: string): void => { _uncappedForTest.maskSecretArgs(['sh', '-c', x]); _uncappedForTest.maskSecretArgs(['powershell', '-Command', x]); _uncappedForTest.maskSecretCommand(x); };
-  for (const unit of ['sh -c "x \\"y\\"" ', `powershell -Command "a ${BT}" `, 'cmd /c a ^" ', 'bash -c "sh -c \\"a ', "pwsh -c 'a '' ", '"--token ']) {
-    const mk = (n: number): string => unit.repeat(Math.ceil(n / unit.length)).slice(0, n);
-    const time = (x: string): number => cpuMs(() => run(x), 8000);
-    let tSmall = Infinity;
-    let tBig = Infinity;
-    for (let i = 0; i < 3; i++) { tSmall = Math.min(tSmall, time(mk(50_000))); tBig = Math.min(tBig, time(mk(400_000))); if (tBig < 8000 && tBig / Math.max(tSmall, 20) < 24) break; }
-    const ratio = tBig / Math.max(tSmall, 20);
-    console.log(`redact: 14d linearity ${JSON.stringify(unit)} 50k=${Math.round(tSmall)} ms 400k=${Math.round(tBig)} ms ratio ${ratio.toFixed(1)}`);
-    assert.ok(tBig < 8000 && ratio < 24, `14d: ${JSON.stringify(unit)} grew too fast: ${tSmall} -> ${tBig} ms (ratio ${ratio.toFixed(1)})`);
-  }
+  for (const unit of ['sh -c "x \\"y\\"" ', `powershell -Command "a ${BT}" `, 'cmd /c a ^" ', 'bash -c "sh -c \\"a ', "pwsh -c 'a '' ", '"--token ']) assertLinearShape(`14d linearity ${JSON.stringify(unit)}`, run, (n) => unit.repeat(Math.ceil(n / unit.length)).slice(0, n));
   // review of #455 item 1: one long backslash run after a cmd wrapper (no quote after it) is not retried from each position
-  for (const head of ['cmd /c ^x ', 'cmd /c \\"x ']) {
-    const time = (n: number): number => { const x = head + '\\'.repeat(n); return cpuMs(() => { _uncappedForTest.maskSecretCommand(x); }, 8000); };
-    let tSmall = Infinity;
-    let tBig = Infinity;
-    for (let i = 0; i < 3; i++) { tSmall = Math.min(tSmall, time(50_000)); tBig = Math.min(tBig, time(400_000)); if (tBig < 8000 && tBig / Math.max(tSmall, 20) < 24) break; }
-    const ratio = tBig / Math.max(tSmall, 20);
-    console.log(`redact: 14d linearity ${JSON.stringify(head)} + run 50k=${Math.round(tSmall)} ms 400k=${Math.round(tBig)} ms ratio ${ratio.toFixed(1)}`);
-    assert.ok(tBig < 8000 && ratio < 24, `14d: ${JSON.stringify(head)} + backslash run grew too fast: ${tSmall} -> ${tBig} ms (ratio ${ratio.toFixed(1)})`);
-  }
+  for (const head of ['cmd /c ^x ', 'cmd /c \\"x ']) assertLinearShape(`14d linearity ${JSON.stringify(head)} + backslash run`, (x) => { _uncappedForTest.maskSecretCommand(x); }, (n) => head + '\\'.repeat(n));
 }
 
 if (part === 'hashtable') {
@@ -312,15 +261,17 @@ if (part === 'hashtablegrowth') {
   }
 }
 
-if (part === 'shapes') {
+if (part === 'shapes' || part === 'shapes2') {
 // Linear, part 2: adversarial runs, in a child with a hard stop, so a stall fails instead of hanging. CPU time on 1/16 of the input and on all of it
 // (the same method as `assertLinearGrowth` in test-redact.ts, limit 40 for 16x; never a wall-clock ratio), then one whole REDACT_MAX_CHARS run.
 {
-  const units: Record<string, string> = {
+  const allUnits: Record<string, string> = {
     sep: ':=', named: 'password=', namedSpace: 'password= ', namedQuote: '"token": "', namedNoDigit: 'secret:abc ', namedPath: 'token=a/', namedCallOpen: 'token=a(', namedDigits: 'token=1.', namedDollar: 'token=$a', namedLong: 'token=' + 'a'.repeat(127) + ' ',  namedCall: 'token=a.b', spaces: 'token        ',
     begin: '-----BEGIN ', beginLong: '-----BEGIN ' + 'A'.repeat(90) + ' ', beginName: '-----BEGIN RSA ', endNoBegin: '-----END PRIVATE KEY-----', endAfterBegin: '-----END ',
     cookie: 'cookie: ', cookieEq: 'cookie: a=', cookieJson: '"cookie":"a=', cookieNoEq: 'cookie: ' + 'a'.repeat(120) + ' ', netrc: 'machine a ', netrcFull: 'machine a login b password ', curl: 'curl ', curlU: 'curl -u a:',  jwtOne: 'eyJabcde.', jwtTwo: 'eyJabcde.abcde.', jwtRun: 'a_' + 'eyJ', jwtRuns: ('25AA' + 'eyJ').repeat(570) + ' ', jwtRunsOne: ('25AA' + 'eyJ').repeat(570) + '.abcde ', jwtRunsTwo: ('25AA' + 'eyJ').repeat(570) + '.abcde.a ', entra: 'abc1Q', entraRun: '1Q~', prefix: 'np' + 'm_', under: '_', pct: '%25', digits: '1234567890123456', hexRun: 'abcdef0123456789', hexUs: 'abcdef0123456789abcdef0123456789-u', sg: 'SG' + '.', dots: 'aaaaaaaaaaaaaa.', atlas: 'aaaaaaaaaaaaaa.at' + 'lasv1.', a22: 'A', fbId: '1234567890123456|', authress: 'sc' + '_abcde.abcd.acc_', teams: '.webhook.office.com/webhookb2/', query: '?sig=', jwt25: '25AAeyJ', jwt25Body: '25AAeyJabcdefgh', r25: '25', jwtDash: '-eyJ', jwtPct: '%41eyJ', b64Eaaa: 'EAAA-', b64Pct: '%41AAAAAAAAAAAAAAAAAAAAAAAB' + 'a'.repeat(90) + '+', b64Line: 'EAAA' + 'a'.repeat(70) + '\n', b64Wrap: 'a'.repeat(76) + '\n', cookieQuote: 'cookie: a="x" ', cookieQuoteLine: 'cookie: a="x\n', cookiePairs: 'cookie: a=1;', machineRun: 'machine h password x;', curlParen: 'curl -u a:b(', cookieWord: 'cookie: a=1 x ', closers: 'token=abc12345) ', cookieHead: 'cookie:', namedDotted: 'token=a.b.', namedWords: 'token=ab-c-',  b64EaaaEnd: 'EAAA' + 'a'.repeat(70) + '/',  text: 'the quick brown fox: reads src/a.ts = done, foo_bar-baz. ',
   };
+  // two suites, each trap in one (over 30 s on Windows as one); `pct` in both, as the neighbour the JWT traps are read against
+  const units = Object.fromEntries(Object.entries(allUnits).filter(([k], i) => k === 'pct' || (part === 'shapes2') === (k.startsWith('jwt') || i % 2 === 1)));
   const mod = require.resolve('../src/shared/redact');
   const code = `
     const { redact, REDACT_MAX_CHARS } = require(${JSON.stringify(mod)});
@@ -345,7 +296,7 @@ if (part === 'shapes') {
     assert.ok(v.max < 10_000, `${k}: a run of REDACT_MAX_CHARS took ${v.max.toFixed(0)} ms CPU`);
   }
   // A JWT's length bound hides a stall from the growth ratio (each `eyJ` costs up to a fixed 4096 steps), so against a neighbour of the same size: the regex alone took 3.5 s on `25AA` + `eyJ`, 25 times `pct`
-  for (const k of ['jwt25', 'jwt25Body', 'jwtOne', 'jwtTwo', 'jwtRun', 'jwtRuns', 'jwtRunsOne', 'jwtRunsTwo']) assert.ok(measured[k].max < Math.max(1000, measured.pct.max * 8), `${k}: ${measured[k].max.toFixed(0)} ms CPU on REDACT_MAX_CHARS, against ${measured.pct.max.toFixed(0)} ms for a run of %25`);
+  for (const k of ['jwt25', 'jwt25Body', 'jwtOne', 'jwtTwo', 'jwtRun', 'jwtRuns', 'jwtRunsOne', 'jwtRunsTwo'].filter((j) => j in measured)) assert.ok(measured[k].max < Math.max(1000, measured.pct.max * 8), `${k}: ${measured[k].max.toFixed(0)} ms CPU on REDACT_MAX_CHARS, against ${measured.pct.max.toFixed(0)} ms for a run of %25`);
 }
 }
 

@@ -179,9 +179,10 @@ const HELD_SHAPES: Array<RegExp | Guarded | ((s: string, mask: string) => string
   // Discord bot token (the id is the base64 of a numeric id, so its second character is D, T, j or z; the dots may be percent-encoded): base64 user id, `.`, 6-character timestamp, `.`, HMAC (27 or more); the first character is M, N or O.
   guarded(shape(String.raw`[MNO][DTjz][A-Za-z0-9_-]{21,26}${DOT}[A-Za-z0-9_-]{6}${DOT}[A-Za-z0-9_-]{27,}`), /(?:\.|%(?:25){0,8}2[Ee])[A-Za-z0-9_-]{6}(?:\.|%(?:25){0,8}2[Ee])/),
 ];
+/* The lookahead is every character these two can start with: without it a run of punctuation passes the start and tries all 100 alternatives at each position (`&` repeated: 90 to 14 ms per MB). */
 const TOKEN_SHAPES: Array<RegExp | Guarded> = [
-  new RegExp(START_BOUNDED + `(?:${PREFIXED})`, 'g'),
-  new RegExp(`${B64_START}(?:${B64_PREFIXED})${NOT_B64_AFTER}`, 'g'),
+  new RegExp('(?=[A-Za-z0-9_~.])' + START_BOUNDED + `(?:${PREFIXED})`, 'g'),
+  new RegExp(`(?=[A-Za-z0-9])${B64_START}(?:${B64_PREFIXED})${NOT_B64_AFTER}`, 'g'),
   /sk-ant-[A-Za-z0-9_-]{8,}/g, // no start: a key glued to a letter (`xsk-ant-…`) is still a key (from spec 103's `maskAll`)
   guarded(shape(String.raw`xox[os]-[0-9]{1,20}-[0-9]{1,20}-[0-9]{1,20}-[A-Fa-f0-9]{8,}`), /xox[os]-[0-9]/), // the legacy four-part Slack form (a plain `xoxo-…` is a hug: stays)
   // Microsoft Teams incoming webhook: the host stays, the path is the secret.

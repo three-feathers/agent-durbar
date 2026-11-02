@@ -22,7 +22,7 @@ const FAMILIES: Record<string, string[]> = {
   awsKeyIds: ['AK' + 'IA' + up(16), 'AS' + 'IA' + up(16), 'AB' + 'IA' + up(16), 'AC' + 'CA' + up(16), 'A3' + 'TA' + up(16)],
   bedrock: ['AB' + 'SK' + an(120) + '==', 'bedrock-' + 'api-key-' + an(40)],
   google: ['AI' + 'za' + an(35), 'ya' + '29.' + an(40), 'GOC' + 'SPX-' + an(28), 'GO' + 'OG1' + up(50)],
-  entra: [an(3) + '8' + 'Q~' + an(33)],
+  entra: [an(3) + '8' + 'Q~' + an(33), '_a.' + '8' + 'Q~' + an(33), '~ab' + '8' + 'Q~' + an(33), '.ab' + '8' + 'Q~' + an(33)],
   altCloud: ['LT' + 'AI' + an(20)],
   doCloudflare: ['do' + 'p_v1_' + hex(64), 'do' + 'o_v1_' + hex(64), 'do' + 'r_v1_' + hex(64), 'v1.' + '0-' + hex(24) + '-' + hex(146), 'cf' + 'ut_' + an(40), 'cf' + 'at_' + an(40), 'cf' + 'k_' + an(40)],
   publicLists: ['vc' + 'c_' + an(50), 'nf' + 'p_' + an(40), 'rn' + 'd_' + an(32), 'xa' + 'i-' + an(80), 'nv' + 'api-' + an(60), 'cs' + 'k-' + an(48), 'pc' + 'sk_' + an(60), 'fw' + '_' + an(24), 'BB' + 'DC-' + an(44), 'CF' + 'PAT-' + an(43), 'un' + 'key_' + an(30), 'bk' + 'ua_' + hex(40), 'li' + 'n_oauth_' + an(40), 'sk' + '.eyJ' + an(40)],
@@ -79,6 +79,16 @@ for (const [family, samples] of Object.entries(FAMILIES)) {
 // the start every shape shares: after `_`, a quote, an encoded byte, a JSON escape
 for (const s of ['np' + 'm_' + an(36), 'sk' + '_live_' + an(24), 'AI' + 'za' + an(35)]) {
   for (const pre of ['"', 'x=', '%3D', '=3D', '\\n', '`']) assert.ok(!redact(pre + s, {}).includes(s.slice(4)), `start after ${pre}`);
+}
+
+// A shape added by T137 starts after `%` re-encoded up to 8 times (the old shapes have no limit: redact-held-lib.ts); one more level is a listed limit
+for (const s of ['np' + 'm_' + an(36), 'sk' + '_live_' + an(24), 'AI' + 'za' + an(35), 'AB' + 'SK' + an(120)]) {
+  for (const depth of [0, 1, 2, 7, 8]) {
+    const before = 'q=%' + '25'.repeat(depth) + '3D';
+    assert.strictEqual(redact(before + s, {}), before + '[redacted]', `${s.slice(0, 4)}… after % encoded ${depth} more times`);
+  }
+  const deep = 'q=%' + '25'.repeat(9) + '3D' + s;
+  assert.strictEqual(redact(deep, {}), deep, `limit: ${s.slice(0, 4)}… after 9 more`);
 }
 
 // Issue #1009's five, in both masks
