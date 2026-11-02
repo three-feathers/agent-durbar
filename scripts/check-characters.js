@@ -64,8 +64,6 @@ module.exports = async (ctx) => {
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
     const tag = `${w}x${h}`;
     await H.load({ w, h, ready: 'fit', settle: false });
-    // spec 017: with the cabins on a busy or waiting desk is a closed door; this check reads desk scenes, so the cabins are off here
-    if (await H.js(`localStorage.getItem('durbar.doorsigns')!=='off'`)) { await H.js(`localStorage.setItem('durbar.doorsigns','off')`); await H.load({ w, h, ready: 'fit', settle: false }); }
     await H.office(15);
     assert.strictEqual(await H.js(`window.THEME.characters()`), 'theme', `${tag}: The theme's own is the default`);
     for (const [theme, kit, own] of THEMES) {
