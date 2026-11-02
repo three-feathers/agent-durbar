@@ -337,6 +337,51 @@ module.exports = async (ctx) => {
     console.log(`[follow] ${tag} ok`);
   }
 
+  // ---- pre-review: an automatic send follows nothing; the keys wait behind Settings; the Real office has the marker and the focus too
+  const EXTRA = [
+    ['a coffee break resuming by itself', async () => {
+      await H.load({ w: 1440, h: 900, query: { simbreak: '12' } });
+      const tomas = await idByName('Tomas');
+      await setting(true);
+      await openChat(A);
+      await ok(`(window.__durbarSimUi.agents().find(a=>a.id===${jsLiteral(tomas)})||{}).coffee===true`, 'Tomas is on a break', 12000);
+      await ok(`(window.__durbarSimUi.agents().find(a=>a.id===${jsLiteral(tomas)})||{}).coffee===false`, 'Tomas resumed by itself', 20000);
+      await ctx.sleep(300); // a bound on a negative: longer than the send's answer in the simulator
+      assert.strictEqual(await panelOpen(), true, 'FR-183: the chat being read stays open when another agent resumes by itself');
+      assert.strictEqual(await followed(), '', 'FR-183: an automatic send follows nothing');
+    }],
+    ['the keys behind Settings', async () => {
+      await H.load({ w: 1440, h: 900 });
+      await setting(true);
+      await mclick('#settingsBtn');
+      await ok(`!!document.getElementById('followSw')`, 'Settings is open');
+      await H.key(']', [], { char: 'always' });
+      await ctx.sleep(200); // a bound on a negative
+      assert.strictEqual(await panelOpen(), false, 'FR-186: ] does not open a chat behind Settings');
+      await H.key('Escape');
+    }],
+    ['the Real office', async () => {
+      const REAL = `!!document.querySelector('#stage .ro .ro-plate')&&document.getElementById('stage').dataset.d==='real'`;
+      await H.load({ w: 1440, h: 900, query: { officeview: 'real' } });
+      await ok(REAL, 'the Real office');
+      await setting(true);
+      await ok(REAL, 'the Real office after Settings');
+      const plate = `#stage .ro-plate[data-id="${A}"]`;
+      await mclick(plate);
+      await ok(`document.body.classList.contains('panel-open')`, 'its chat opens');
+      await mclick('#msgInput'); await type('hello real'); await H.key('Return');
+      await ok(`!document.body.classList.contains('panel-open')`, 'back to the office');
+      await ok(`!!document.activeElement&&document.activeElement.dataset.id===${jsLiteral(A)}&&document.activeElement.classList.contains('ro-plate')`, 'FR-183: the focus on its plate');
+      await ok(`!!document.querySelector(${jsLiteral(plate)}+'.is-followed')`, 'FR-183: its plate is marked');
+      assert.strictEqual(await js(`getComputedStyle(document.querySelector(${jsLiteral(plate)})).outlineStyle`), 'dashed', 'not colour alone');
+      await E(B, { type: 'status', status: 'working', intent: 'Another' }); /* a redraw must not take the mark away */
+      await until(`document.querySelector(${jsLiteral(`#stage .ro-plate[data-id="${B}"]`)})&&document.querySelector(${jsLiteral(`#stage .ro-plate[data-id="${B}"]`)}).classList.contains('st-working')`, 4000);
+      await ok(`!!document.querySelector(${jsLiteral(plate)}+'.is-followed')`, 'the mark survives a redraw');
+      await js(`window.__durbarSimUi.setOfficeView&&window.__durbarSimUi.setOfficeView('flat');0`);
+    }],
+  ];
+  for (const [what, run] of EXTRA) { console.log('[follow]', what); await run(); }
+
   // ---- reduced motion: the marker and the strip add no animation or transition
   {
     const dbg = ctx.win.webContents.debugger;

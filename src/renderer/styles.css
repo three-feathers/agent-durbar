@@ -2207,7 +2207,7 @@ body.simple #ctxMenu #compactBtn{display:flex!important} /* spec 005 FR-041: Tid
 
 
 /* spec 052 FR-182..FR-190 (issue 686): Auto-follow. No animation or transition anywhere (FR-189): reduced motion and Still highlights change nothing. */
-.desk.is-followed,button.lrow.is-followed{outline-style:dashed;outline-width:2px;outline-color:var(--focus);outline-offset:-4px}
+.desk.is-followed,button.lrow.is-followed,.ro-plate.is-followed{outline-style:dashed;outline-width:2px;outline-color:var(--focus);outline-offset:-4px}
 .follow-strip{gap:6px 10px;flex-wrap:nowrap}
 .follow-strip .af-t{flex:1 1 0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .follow-strip .af-pos{flex:none;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}

@@ -3830,7 +3830,7 @@ document.addEventListener('keydown',e=>{
   }
   /* spec 052 FR-014: N opens the next agent that needs you (waiting, error or at its limit), outside text fields and dialogs */
   /* spec 052 FR-186: [ and ] are Previous and Next in the attention queue, only with Auto-follow on, outside text fields, dialogs and menus */
-  if(AF_ON&&(e.key==='['||e.key===']')&&!e.altKey&&!e.ctrlKey&&!e.metaKey&&!e.isComposing&&!(e.target&&e.target.closest&&e.target.closest('input,textarea,select,[contenteditable="true"],[role="dialog"],[role="menu"]'))&&!modalOpen()){e.preventDefault();afGo(e.key===']'?1:-1);return;}
+  if(AF_ON&&(e.key==='['||e.key===']')&&!e.altKey&&!e.ctrlKey&&!e.metaKey&&!e.isComposing&&!(e.target&&e.target.closest&&e.target.closest('input,textarea,select,[contenteditable="true"],[role="dialog"],[role="menu"]'))&&!modalOpen()){const v=afSnapshot();if(v.dialog||v.menu||v.screen)return;e.preventDefault();afGo(e.key===']'?1:-1);return;}
   if((e.key==='i'||e.key==='I')&&!e.altKey&&!e.ctrlKey&&!e.metaKey&&!e.isComposing&&!(e.target&&e.target.closest&&e.target.closest('input,textarea,select,[contenteditable="true"],[role="dialog"],[role="menu"]'))&&!modalOpen()){e.preventDefault();openInbox();return;}
   /* spec 052 FR-043: ? opens the keyboard shortcut sheet, outside text fields and dialogs */
   if(e.key==='?'&&!e.altKey&&!e.ctrlKey&&!e.metaKey&&!e.isComposing&&!(e.target&&e.target.closest&&e.target.closest('input,textarea,select,[contenteditable="true"],[role="dialog"],[role="menu"]'))&&!modalOpen()){e.preventDefault();openKbdHelp();return;}
@@ -4122,7 +4122,7 @@ document.addEventListener('keydown',e=>{ /* FR-185: a key typed into a field cou
 },true);
 const afCanOpen=id=>{const a=byId(id);return !!a&&roomShown(roomOf(a));}; /* FR-188: a hidden folder or an off floor is never opened by itself */
 function afFocusDesk(id){
-  const d=document.querySelector(`#stage .desk[data-id="${CSS.escape(id)}"]`)||document.querySelector(`#list button.lrow[data-id="${CSS.escape(id)}"]`);
+  const d=document.querySelector(`#stage .desk[data-id="${CSS.escape(id)}"],#stage .ro-plate[data-id="${CSS.escape(id)}"]`)||document.querySelector(`#list button.lrow[data-id="${CSS.escape(id)}"]`);
   if(d&&d.getClientRects().length){focusIn(d);return true;}
   return false;
 }
@@ -4200,7 +4200,7 @@ function afSetPaused(on){
 function afTick(){
   const ids=new Set(AF_ON&&!AF_PAUSED?AFT.ids():[]);
   document.querySelectorAll('.is-followed').forEach(n=>{if(!ids.has(n.dataset.id)){n.classList.remove('is-followed');n.removeAttribute('data-following');}});
-  for(const id of ids)document.querySelectorAll(`#stage .desk[data-id="${CSS.escape(id)}"], #list button.lrow[data-id="${CSS.escape(id)}"]`).forEach(n=>{n.classList.add('is-followed');n.setAttribute('data-following','1');});
+  for(const id of ids)document.querySelectorAll(`#stage .desk[data-id="${CSS.escape(id)}"], #stage .ro-plate[data-id="${CSS.escape(id)}"], #list button.lrow[data-id="${CSS.escape(id)}"]`).forEach(n=>{n.classList.add('is-followed');n.setAttribute('data-following','1');});
   if(AF_ON&&!AF_PAUSED){afScan();afSyncHeld(afQueueIds());}
   afRender();
   if(AF_ON&&!AF_PAUSED&&AFT.pendingList().length){
@@ -6382,7 +6382,7 @@ async function sendLive(text,forId,opts){
   if(a.planNext){a.planNext=false;renderAttached();}
   if(planFirst)addNote(chat,'Asked for a plan first: nothing changes until you approve it.');
   const r=await bridge.send(a.id,text||'Please look at the attached file(s).',atts.map(x=>({path:x.path,name:x.name,kind:x.kind})),planFirst?{plan:true}:undefined);
-  if(r.ok)afOnAccepted(a); /* spec 052 FR-183: accepted by the agent app */
+  if(r.ok&&!(opts&&opts.coffee))afOnAccepted(a); /* spec 052 FR-183: accepted by the agent app; a break resuming by itself is not the person's send */
   if(!r.ok){closeTurn(a);const n=addNote(chat,'Send failed: '+esc((r.error&&safeMask(r.error))||'unknown error'),true); /* spec 041 FR-065 (delta 2026-10-23): the app's error is masked (shown whole, not cut); no mask: a neutral word */modeRefusalAction(a,n,r.error);setState(a,'error',null,'Send failed: '+safeExcerpt(r.error,100,'unknown error'));}
   else if(r.slash)addNote(chat,'Sent the text of <code>'+esc(DurbarCutText.cutText(safeMask(r.slash),160))+'</code> (the agent app does not load it in Durbar’s sessions).'+(r.slashNote?' '+esc(DurbarCutText.cutText(safeMask(r.slashNote),200)):'')); /* spec 073 FR-005; slashNote: masked, then cut (FR-013) */
   else if(r.slashNote)addNote(chat,esc(DurbarCutText.cutText(safeMask(r.slashNote),240))); /* spec 073 (review on PR 615): over the size cap, sent as typed; masked, then cut (FR-013) */
