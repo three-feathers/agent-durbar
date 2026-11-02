@@ -877,6 +877,7 @@ Written with the build. Motion, status light and night are RA4 and RA5.
 - **An empty place (097's still room):** the note stands where the person would, beside the glass, never over its text.
 - **FR-256, the bend:** it flattens to nothing before anything scrolls: at 1280x800 with a banner over the floor, 15 people have 3 px to spare.
 - **FR-229, op row:** `check-office-ops` has the row for this world at 15 and 40, with no allowance of its own. Measured: 1 element for one text change on a marquee at both.
+- **The page's `require`:** it answers only `./realoffice-layout`. A shim answering everything broke the office when `crew.js` could not load (`check-crew`).
 - `[KNOWN GAP]` **Chat open is not drawn yet:** on this base a chat hides the office, so `aislesLayout` is checked at those widths only by `test-realoffice-aisles`; the driver checks chat closed. It comes with #1001.
 - `[KNOWN GAP]` T212 asks for a mutant adding a node on a status update: `check-office-ops` on `main` has no such row yet (#950 brings it). `check:office` has no world id yet; `shots-102-arcade` carries the overlap checks instead.
 - `[KNOWN GAP]` **Lobby people are not on the grid:** `lobbyBand` scales them by the door, as in other worlds, so their pixels can be uneven (FR-255). The asleep console (FR-259) is not drawn, and a screen's own text is not pixel type. Windows at 125 % and 150 % are not looked at (T204).
