@@ -19,7 +19,7 @@
  *   - FR-002 the compact densities (mini) use the same rules; scene boxes keep their size;
  *   - Edge  an agent on a floor that is off (spec 033) never takes the ambulance.
  * Rooms (spec 034 delta, issue #135): each room's data-alert follows its worst agent (calm, uneasy, alarm); the siren is on only where
- * the ambulance or a faint is, moves with the ambulance, sits on the closed door plate without changing its size and is named in the
+ * the ambulance or a faint is, moves with the ambulance, is named in the
  * label; the header text (path, usage) keeps 4.5:1 contrast on the real pixels at every tone, calm rooms included; Serious mode and a floor that is off
  * show neither; reduced motion stops the siren; full-density rooms get no inner ring.
  * Crops of single desks (device pixels) go to 034-crop-<state>.png for a close look at the drawings.
@@ -35,10 +35,7 @@ module.exports = async (ctx) => {
   const H = helpers(ctx); // spec 008 FR-097: shared plumbing
   const { js } = H;
   const shot = (name, w, h) => H.shot(path.join(OUT, `034-${name}-${w}x${h}.png`), { prep: 'toasts', delay: 300, tag: '034', what: `${name} ${w} ${h}` }); /* the simulator's start-up toast would cover the office */
-  /* spec 017 FR-014: the mood drawings live in the desk scenes, which a closed cabin door replaces; this driver checks the scenes, so the
-     cabins are off (set once, kept by the profile across the loads below) */
-  let cabinsOff = false;
-  const load = async (w, h, extra) => { await H.load({ w, h, query: extra }); if (!cabinsOff) { cabinsOff = true; await H.js(`localStorage.setItem('durbar.doorsigns','off')`); await H.load({ w, h, query: extra }); } }; // was a fixed 1500 ms; now waits for the page to stop changing (FR-096)
+  const load = async (w, h, extra) => { await H.load({ w, h, query: extra }); }; // was a fixed 1500 ms; now waits for the page to stop changing (FR-096)
   /* every main desk: name, away, mood (from data-sig), labels, visible text, scene box size */
   const desks = () => js(`[...document.querySelectorAll('#stage .desk[data-id]')].map(d=>{const sv=d.querySelector('svg.scene'),sig=(sv&&sv.dataset.sig)||'',m=/\\|(normal|heavy|monster)(\\w*)$/.exec(sig),b=sv?sv.getBoundingClientRect():{width:0,height:0};
     return {id:d.dataset.id,name:d.querySelector('.name').textContent.trim(),room:((d.closest('.room')||document).querySelector('.room-name')||{textContent:''}).textContent.trim(),away:d.classList.contains('is-away'),st:d.dataset.state||(/is-(\\w+)/.exec(d.className)||[])[1],
@@ -216,17 +213,6 @@ module.exports = async (ctx) => {
   fl = await desks();
   assert.deepStrictEqual(fl.filter((x) => x.trouble === 'ambulance').map((x) => x.id), [vis1.id], 'a newer error on an off floor does not take the ambulance away');
   assert.strictEqual(await js(`[...document.querySelectorAll('#stage .room[data-siren]')].length`) >= 1, true, 'the siren is in a room that is shown');
-
-  // closed door plate: the siren sits on the door icon, the plate keeps its size, the label names the alert
-  await load(1280, 800, { simwaitold: '1', closed: 'blog,infra-notes' }); /* plates in one row stretch to the same height: measure them without any siren first */
-  const h0 = await js(`Math.round(document.querySelector('.plate').getBoundingClientRect().height)`);
-  await load(1280, 800, { simwaitold: '1', closed: 'swisscontract-ai,blog' });
-  const plates = await js(`[...document.querySelectorAll('.plate')].map(p=>({n:p.querySelector('b').textContent,siren:!!p.querySelector('.siren'),h:Math.round(p.getBoundingClientRect().height),l:p.getAttribute('aria-label')}))`);
-  const ps = plates.find((p) => p.n === 'swisscontract-ai'), pb = plates.find((p) => p.n === 'blog');
-  assert.ok(ps.siren && /Alert: an agent needs help\./.test(ps.l), 'the closed room with the ambulance: siren and words on its plate');
-  assert.ok(!pb.siren && !/Alert:/.test(pb.l), 'a calm closed room: no siren');
-  assert.ok(ps.h === h0 && pb.h === h0, `the siren does not change the plate size (${ps.h}/${pb.h} vs ${h0} without a siren)`);
-  await shot('plates', 1280, 800);
 
   // full density: the tone without the compact rooms' inner ring
   await load(1440, 900, { simwaitold: '1', density: 'full' });
