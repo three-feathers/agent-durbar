@@ -131,6 +131,10 @@ interface Live {
   sandboxNoteOpen?: boolean;
   /** Spec 087: an `options.update` for the floor that is still running (a send waits for it). */
   sandboxApplying?: Promise<void>;
+  /** Spec 052 FR-229: runtime calls of a Stop that have not answered yet, settled ones removed: a send made before they land is lost (real 2026-11-02). */
+  lateCalls?: Set<Promise<void>>;
+  /** Spec 052 FR-229: counts interrupts, so a send that waited through one does not go on. */
+  interrupts?: number;
 }
 
 /** Spec 087 FR-022c (review on PR #833): why sends are held while a lowering that passed the time limit has not answered; the way back is a new session. */
@@ -138,6 +142,14 @@ export const COPILOT_LOWER_WAIT = 'it has not answered the earlier request to tu
 /** Spec 087 FR-007: the note when Copilot's sandbox is not in force (nothing was sent), and the refusal under the policy (FR-019). */
 export const copilotSandboxNotice = (reason: string): string => `Copilot could not start its OS sandbox: ${reason.replace(/[.\s]+$/, '')}. Nothing was sent.`;
 export const copilotSandboxRefusal = (reason: string): string => `Copilot could not start its OS sandbox: ${reason.replace(/[.\s]+$/, '')}. Read-only and Ask first need it on this computer (your organization's policy), so nothing was sent.`;
+
+/** Spec 052 FR-229: the row after an interrupt given up on; the runtime's own `session.idle` brings "Aborted" back when the abort lands. */
+export const COPILOT_STOP_SENT = 'Stop sent: Copilot has not answered yet';
+/** Spec 052 FR-229: the row while a send waits for a late abort, and the send's failure when it never answers. */
+export const COPILOT_STOP_WAIT = 'Waiting for Copilot to stop the last turn';
+export const COPILOT_STOP_NO_ANSWER = 'Copilot has not answered Stop yet, so your message was not sent. Send it again in a moment, or end the session.';
+/** Spec 052 FR-230: a start of an id whose late close never answers. */
+export const COPILOT_CLOSE_NO_ANSWER = 'Copilot has not finished closing this session, so it was not opened again. Try again in a moment.';
 
 /** FR-070: credits a live session has used, as far as the runtime reported them. */
 const usedCredits = (live: Live): number => ((live.usedCheckpointNano ?? 0) + (live.usedSinceNano ?? 0)) / 1e9;
@@ -438,8 +450,10 @@ export class CopilotAdapter implements AgentAdapter {
       live.broker.denyPending(); // the old runtime's requests and questions die with it
       this.cancelQuestions(live, 'reconnect');
       live.limitRequestId = undefined;
+      live.lateCalls?.clear(); // spec 052 FR-230: the old runtime and its calls are gone
       this.emit(sid, { type: 'status', status: 'working', intent: 'Reconnecting Copilot…' });
     }
+    this.lateCloses.clear();
     this.client = undefined;
     this.starting = undefined;
     if (old) {
@@ -715,6 +729,7 @@ export class CopilotAdapter implements AgentAdapter {
   }
 
   private async startLocked(options: StartOptions): Promise<string> {
+    await this.waitLateClose(options.resumeSessionId ?? options.sessionId);
     const { cwd, folders } = resolveWorkspaceCwd(options.workspace);
     const client = await this.getClient();
     let sid = options.resumeSessionId ?? options.sessionId ?? '';
@@ -927,6 +942,7 @@ export class CopilotAdapter implements AgentAdapter {
     await this.refreshing?.catch(() => undefined); // FR-158: send on the reconnected session
     const live = this.mustGet(sessionId);
     await live.sandboxApplying?.catch(() => undefined);
+    if (!(await this.waitLateCalls(sessionId, live))) return;
     // spec 087 FR-007: the sandbox is not in force: nothing is sent until the person chooses (or, under the policy, ever)
     const hold = live.sandboxHold;
     if (hold && !(this.sandboxContinued.has(sessionId) && !live.requireOsSandbox)) {
@@ -1058,11 +1074,13 @@ export class CopilotAdapter implements AgentAdapter {
   async interrupt(sessionId: string): Promise<void> {
     const live = this.sessions.get(sessionId);
     if (!live) return;
+    live.interrupts = (live.interrupts ?? 0) + 1;
     live.broker.denyPending();
     this.cancelQuestions(live, 'interrupt');
     await this.cancelLimit(live);
-    await this.within(live.session.abort(), this.stopStepMs).catch(() => undefined); // nothing running, or a hung runtime: given up on after stopStepMs, the interrupt goes on
-    this.emit(sessionId, { type: 'status', status: 'idle', intent: 'Aborted' });
+    const answered = await this.within(live, live.session.abort(), this.stopStepMs).catch(() => true); // a failure: nothing running; no answer: a hung runtime, given up on after stopStepMs, the interrupt goes on
+    this.emit(sessionId, { type: 'status', status: 'idle', intent: 'Aborted' }); // the window settles its cards on this word
+    if (!answered) this.emit(sessionId, { type: 'status', status: 'idle', intent: COPILOT_STOP_SENT }); // spec 052 FR-229: not aborted yet, real 2026-11-02
   }
 
   /** End the session: frees the runtime session. Its history stays on disk and sending again resumes it. */
@@ -1073,14 +1091,15 @@ export class CopilotAdapter implements AgentAdapter {
     await this.cancelLimit(live);
     live.broker.stop(); // pending permissions are denied cleanly (renderer clears Approve/Deny) and grants are dropped
     this.cancelQuestions(live, 'stop');
-    await this.within(live.session.abort(), this.stopStepMs).catch(() => undefined); // nothing running, or hung: given up on after stopStepMs
+    await this.within(live, live.session.abort(), this.stopStepMs).catch(() => undefined); // nothing running, or hung: given up on after stopStepMs
     live.unsubscribe();
     try {
-      await this.within(live.session.disconnect(), this.stopStepMs); // a hung disconnect is given up on; a failing one still throws (after the hook folder is removed)
+      await this.within(live, live.session.disconnect(), this.stopStepMs); // a hung disconnect is given up on; a failing one still throws (after the hook folder is removed)
     } finally {
       // spec 061: the accepted folder hooks' private copy, removed even when disconnect() throws (re-review #424)
       if (live.hookDir) fs.rmSync(live.hookDir, { recursive: true, force: true });
     }
+    this.keepLateClose(sessionId, live);
     this.sessions.delete(sessionId);
     this.mappers.delete(sessionId);
     this.endKeptFloor(sessionId, live);
@@ -1446,6 +1465,7 @@ export class CopilotAdapter implements AgentAdapter {
         live.userTitle = name; // and no other title reaches Durbar's sync rule while this session is open (spec 059 FR-011)
         return;
       }
+      await this.waitLateClose(sessionId); // spec 052 FR-230
       const client = await this.getClient();
       const meta = await client.getSessionMetadata(sessionId).catch(() => undefined);
       const dir = meta?.context?.workingDirectory;
@@ -1563,7 +1583,7 @@ export class CopilotAdapter implements AgentAdapter {
   private async stopAtCap(sid: string, live: Live): Promise<void> {
     live.localLimit = { requestId: 'durbar-cap-stopping' };
     try {
-      await live.session.abort();
+      await this.track(live, live.session.abort());
     } catch {
       /* already ended */
     }
@@ -1610,26 +1630,65 @@ export class CopilotAdapter implements AgentAdapter {
     if (!id) return;
     live.limitRequestId = undefined;
     try {
-      await this.within(live.session.rpc.ui.handlePendingSessionLimitsExhausted({ requestId: id, response: { action: 'cancel' } }), this.stopStepMs); // a hung runtime call must not keep Stop from going on (spec 052 FR-209)
+      await this.within(live, live.session.rpc.ui.handlePendingSessionLimitsExhausted({ requestId: id, response: { action: 'cancel' } }), this.stopStepMs); // a hung runtime call must not keep Stop from going on (spec 052 FR-209)
     } catch {
       /* already answered elsewhere */
     }
   }
 
-  /** Waits for `p` at most `ms`, then gives up on it (it may still finish; its later failure is not reported); a failure within `ms` is thrown. */
-  private async within(p: Promise<unknown>, ms: number): Promise<void> {
+  /** Spec 052 FR-229: remembers a Stop's runtime call until it settles, whoever waits for it. */
+  private track<T>(live: Live, p: Promise<T>): Promise<T> {
+    const calls = (live.lateCalls ??= new Set());
+    const settled: Promise<void> = p.then(() => undefined, () => undefined).finally(() => { calls.delete(settled); });
+    calls.add(settled);
+    return p;
+  }
+
+  /** Waits for `p` at most `ms`: true when it answered, false when given up on (it may still land; `lateCalls` keeps it until then; its later failure is not reported); a failure within `ms` is thrown. */
+  private async within(live: Live, p: Promise<unknown>, ms: number): Promise<boolean> {
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const gaveUp = new Promise<void>((resolve) => { timer = setTimeout(resolve, ms); });
-    p.catch(() => undefined);
+    const gaveUp = new Promise<boolean>((resolve) => { timer = setTimeout(() => resolve(false), ms); });
     try {
-      await Promise.race([p, gaveUp]);
+      return await Promise.race([this.track(live, p).then(() => true), gaveUp]);
     } finally {
       if (timer) clearTimeout(timer);
     }
   }
 
+  /**
+   * Spec 052 FR-229: a message sent while an abort given up on has not landed is cleared by it, with no error (real 2026-11-02), so it
+   * waits. False: the session ended or was stopped again meanwhile, and the message is dropped as Stop drops a held one.
+   */
+  private async waitLateCalls(sid: string, live: Live): Promise<boolean> {
+    if (!live.lateCalls?.size) return true;
+    const stops = live.interrupts;
+    this.emit(sid, { type: 'status', status: 'working', intent: COPILOT_STOP_WAIT });
+    const landed = await this.capped(Promise.all([...live.lateCalls]).then(() => true), this.lateWaitMs);
+    if (this.sessions.get(sid) !== live || live.interrupts !== stops) return false;
+    if (landed) return true;
+    this.emit(sid, { type: 'status', status: 'idle', intent: 'Not sent: Copilot has not answered Stop' });
+    throw new Error(COPILOT_STOP_NO_ANSWER);
+  }
+
+  /** Spec 052 FR-230: an ended session's calls that have not landed, by id: a late `session.detach` kills a resumed session of that id (real 2026-11-02). */
+  private lateCloses = new Map<string, Promise<unknown>>();
+
+  private keepLateClose(sid: string, live: Live): void {
+    if (!live.lateCalls?.size) return;
+    const closing: Promise<unknown> = Promise.all([...live.lateCalls]).finally(() => { if (this.lateCloses.get(sid) === closing) this.lateCloses.delete(sid); });
+    this.lateCloses.set(sid, closing);
+  }
+
+  /** Spec 052 FR-230: called under the session lock, before anything resumes this id. */
+  private async waitLateClose(id: string | undefined): Promise<void> {
+    const closing = id ? this.lateCloses.get(id) : undefined;
+    if (closing && !(await this.capped(closing.then(() => true), this.lateWaitMs))) throw new Error(COPILOT_CLOSE_NO_ANSWER);
+  }
+
   /** How long Stop, End session and Interrupt wait for each runtime call (cancel the pending limit, abort, disconnect) before going on (test hook: set it low). */
   private stopStepMs = 5000;
+  /** How long a send or a start waits for calls given up on (spec 052 FR-229, FR-230; test hook: set it low). */
+  private lateWaitMs = 30_000;
 
   /** Switch one MCP server on or off in a running session (the runtime does not write this to ~/.copilot). */
   async setMcpEnabled(sessionId: string, name: string, enabled: boolean): Promise<void> {

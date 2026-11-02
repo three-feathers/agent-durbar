@@ -11,6 +11,10 @@
  * would; SIGCONT brings it back. Ask first, and the permission gate approves only the exact fixed command of the step. Everything runs
  * in a scratch folder this script makes under the temp folder, removed at the end with the session.
  *
+ * Phases: `baseline` (abort with a command running), `term` (a command that ignores SIGTERM), `hang` (give-up, next message), `stop` (End and
+ * resume under a hang), `question` (an answer under a hang), `late` (a close held back, then a resume), `limit` (can the runtime's limit be
+ * provoked; `options.update` refuses a cap under 30, so it was not, real 2026-11-02). A run of them all is at most 7 prompts.
+ *
  * Output: event names and timings only, never prompts' answers, session ids, paths or tool output.
  */
 import * as fs from 'fs';
@@ -303,17 +307,20 @@ async function main(): Promise<number> {
 
     if (spend && wanted.includes('late')) {
       beginPhase('late');
-      // the worst order a slow runtime could give: the old object's detach reaches the runtime AFTER the same id was resumed
+      // the worst order a slow runtime could give: the old object's detach reaches the runtime after a resume of the same id. Before
+      // FR-230 the resume went first and the late detach killed it; now the resume is refused until the close has landed.
       const old = live().session;
       const realDisconnect = old.disconnect.bind(old);
-      old.disconnect = () => { mark('detach: held back'); return new Promise(() => undefined); };
+      let release: () => void = () => undefined;
+      old.disconnect = () => { mark('detach: held back'); return new Promise<void>((r) => { release = r; }) as Promise<unknown>; };
       await ad.stop(sid);
       mark('stop returned');
+      await startSession(true).then(() => mark('resumed over the open close (FR-230 failed)'), (e: unknown) => mark(`resume refused: ${msg(e)}`));
+      await realDisconnect().catch(() => undefined);
+      release();
+      mark('late detach done');
       await startSession(true);
       mark('resumed');
-      await eventsReach();
-      await realDisconnect().catch(() => undefined);
-      mark('late detach done');
       await eventsReach();
       await pollProcessing(1000);
     }
