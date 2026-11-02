@@ -57,7 +57,7 @@ module.exports = async (ctx) => {
     assert.ok(probe > 0, `${n} agents: a new element in a desk must recalculate some element; a trace with none means the trace's thread or event name changed (${probe})`);
     const counts = [];
     for (let i = 1; i <= 4; i++) counts.push(elementsRecalculated(await trace(() => change(i))));
-    rows[`elementsRecalculated@${n}`] = Math.max(...counts);
+    rows[`elementsRecalculated@${n}`] = Math.min(...counts); // the least of 4: a render that lands inside one trace by itself (a timer) only adds, and the `:has()` cost shows in all 4
     console.log(`[ops] ${n} agents: elements recalculated by one text change`, counts.join(' '));
   }
   const failed = [];
