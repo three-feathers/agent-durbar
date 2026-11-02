@@ -1170,6 +1170,30 @@ async function main(): Promise<void> {
     assert.ok(swapped && nodeFs.existsSync(path.join(outside, '.gitignore')), 'the other folder\'s .gitignore is not deleted');
   });
 
+  await test('ownership of the .gitignore is device, inode AND birth time: the same inode with another birth time, or another inode, is not Durbar\'s (allowGit and Delete keep it)', async () => {
+    const withBirth = (birth: bigint): NotesFileFs => ({ ...nodeFs, lstatSync: (p: nodeFs.PathLike, o?: unknown) => { const st = (nodeFs.lstatSync as (p: nodeFs.PathLike, o?: unknown) => nodeFs.Stats)(p, o); return (o as { bigint?: boolean } | undefined)?.bigint && String(p).endsWith('.gitignore') ? Object.assign(Object.create(st), { birthtimeNs: birth }) : st; } }) as unknown as NotesFileFs;
+    const B1 = 2_000_000_000_000_000_000n;
+    const setup = async (): Promise<{ folder: string; id: string; store: NotesStore }> => {
+      const r = rig();
+      must(await r.store.add(r.key, 'proj', { text: 'mine' }));
+      assert.deepStrictEqual((await cycle(r)).state, {});
+      return { folder: r.folder, id: new NotesFile({ fs: withBirth(B1) }).ignoreId(r.folder)!, store: r.store };
+    };
+    const a = await setup();
+    assert.ok(a.id.endsWith(`:${B1}`), a.id);
+    const [dev, ino] = a.id.split(':');
+    const other = new NotesFile({ fs: withBirth(B1 + 1n) });
+    assert.strictEqual(other.allowGit(a.folder, a.id), false, 'same inode, another birth time: not the file Durbar made');
+    assert.strictEqual(new NotesFile({ fs: withBirth(B1) }).allowGit(a.folder, `${dev}:${BigInt(ino) + 1n}:${B1}`), false, 'another inode');
+    assert.strictEqual(new NotesFile({ fs: withBirth(B1) }).allowGit(a.folder, `${BigInt(dev) + 1n}:${ino}:${B1}`), false, 'another device');
+    assert.ok(nodeFs.existsSync(ign(a.folder)), 'kept');
+    const b = await setup();
+    const mirror = await b.store.getMirror(b.folder);
+    assert.strictEqual(other.remove(b.folder, mirror, b.id).ignoreDropped, undefined, 'Delete the file keeps a .gitignore with another birth time');
+    assert.ok(nodeFs.existsSync(ign(b.folder)));
+    assert.strictEqual(new NotesFile({ fs: withBirth(B1) }).allowGit(a.folder, a.id), true, 'the same identity: deleted');
+  });
+
   await test('FR-054: stray text before the first note is reported once as info', async () => {
     const r = rig();
     nodeFs.mkdirSync(path.join(r.folder, '.durbar', 'notes'), { recursive: true });
