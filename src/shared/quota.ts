@@ -1,7 +1,7 @@
 /**
  * Spec 011 FR-080..FR-090 (issue #690): what a provider itself reports about an account's limits, adapter-neutral. Pure, no imports,
  * so it also loads in the page as `../shared/quota.js` and the simulator runs the same steps as main (read through `window.exports`).
- * Never a bill, never a guess: an absent qFigure stays absent ("not reported", never zero), units are never mixed across apps (nothing
+ * Never a bill, never a guess: an absent figure stays absent ("not reported", never zero), units are never mixed across apps (nothing
  * here takes two apps' figures together), and a failure is never shaped like a success.
  */
 
@@ -388,7 +388,7 @@ export function quotaLine(v: QuotaView, now: number, opts: { tz?: string } = {})
 export interface QuotaOtherApp { id: string; name: string; ready: boolean; signedIn: boolean; view?: QuotaView }
 
 /**
- * FR-088: the other apps worth naming: ready, known to be signed in, and not near their qOwn reported limit. A suggestion for a person,
+ * FR-088: the other apps worth naming: ready, known to be signed in, and not near their own reported limit. A suggestion for a person,
  * nothing more; `known` says whether that app reported current figures, so a window never implies room it was not told about.
  */
 export function quotaAlternatives(app: string, others: readonly QuotaOtherApp[], now: number): Array<{ id: string; name: string; known: boolean }> {
