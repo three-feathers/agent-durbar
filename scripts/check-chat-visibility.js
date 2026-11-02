@@ -92,6 +92,9 @@ module.exports = async (ctx) => {
 
     const ap = await js(`(()=>{const el=document.querySelector('#chat .chat-inner'),src=el.children[el.children.length-3];const t0=performance.now();for(let i=0;i<100;i++){const m=src.cloneNode(true);m.removeAttribute('id');el.appendChild(m);void m.getBoundingClientRect().height;}const t=performance.now()-t0;for(let i=0;i<100;i++)el.lastElementChild.remove();return Math.round(t)})()`);
     console.log(`TIMING ${tag}: appending 100 messages one by one with a layout read each: ${ap} ms (rule ${MUT === 'off' || process.env.CVBASE ? 'off' : 'on'})`);
+    /* a message never seen is guessed at 90px (nosize and zero guess 0): read before anything was scrolled to */
+    const guess = await js(`document.querySelector('#chat .chat-inner>[data-cv="1500"]').getBoundingClientRect().height`);
+    if (!process.env.CVBASE) assert.ok(Math.abs(guess - 90) <= 0.6, `${tag}: a skipped message never seen is guessed at 90px: ${guess}`);
     /* 2. REOPEN: at the end, and it stays (the skipped heights settle) */
     await js(`document.getElementById('chat').scrollTop=3000`); await quiet('a scroll');
     await reopen(id); await quiet('a reopen');
