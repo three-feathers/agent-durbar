@@ -58,6 +58,9 @@ The list of supported CI platforms lives in one file, `.github/platforms.json`. 
 **Change:** the `Detail` of a turn without "ok" adds `events <type:count,...>; status <words>[; sandbox on/off]`, a fixed vocabulary, never message text, then passes through `clean()`. No check is loosened.
 **Tasks:** T010.
 
+**Cause found by the hand run 41373742601 (2026-11-02):** on Linux (Claude) and Windows (Claude, Copilot) the turn ended with `events sandbox:2,status:2; status idle>stopped` and no message: since spec 087 (2026-10-25) Durbar sends nothing when the agent app's OS sandbox cannot start (`Not sent: the OS sandbox could not start`) and offers *Continue without the OS sandbox*. The check read that early `idle` as the end of the turn. That matches the first red day (10-25). The earlier `No network layer` failures were the missing download getter (fixed 2026-10-27, spec 081).
+**Change 2:** the turn takes that offer like a person would (`continueWithoutSandbox`, then sends again), and the row's *Read-only turn* column says so with the adapter's own notice text, so the sandbox gap is recorded, not hidden. The "ok" check is unchanged; an app whose sandbox starts is not touched.
+
 ### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
 
 The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):

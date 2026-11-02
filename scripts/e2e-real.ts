@@ -159,6 +159,7 @@ async function check(app: (typeof APPS)[number], noTurn: boolean): Promise<Row> 
     row.readOnly = ro.ok ? 'ok' : ro.detail;
     const t = ro.ok || app.kind !== 'codex' ? ro : await turn(ad, app, events, 'allow', pick);
     row.answer = t.answer;
+    if (t.sandboxNote) row.readOnly = `${row.readOnly}; OS sandbox could not start, continued without it: ${t.sandboxNote}`;
     row.usage = t.usage;
     if (!t.ok) return fail('turn', t.detail);
   } catch (e) {
@@ -179,14 +180,28 @@ function trace(events: AgentEvent[], sid: string): string {
   return `events ${[...counts].map(([k, n]) => `${k}:${n}`).join(',') || 'none'}; status ${statuses || 'none'}${sandbox ? `; sandbox ${sandbox}` : ''}`;
 }
 
-async function turn(ad: AgentAdapter, app: (typeof APPS)[number], events: AgentEvent[], mode: 'read-only' | 'allow', pick: { model?: string; effort?: string }): Promise<{ ok: boolean; detail?: string; answer?: string; usage?: string }> {
+async function turn(ad: AgentAdapter, app: (typeof APPS)[number], events: AgentEvent[], mode: 'read-only' | 'allow', pick: { model?: string; effort?: string }): Promise<{ ok: boolean; detail?: string; answer?: string; usage?: string; sandboxNote?: string }> {
   {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), `durbar-e2e-${app.kind}-`));
     try {
+      let sandboxNote: string | undefined;
       const sid = await ad.start({ workspace: dir, permissionMode: mode, ...(pick.model ? { model: pick.model } : {}), ...(pick.effort ? { reasoningEffort: pick.effort } : {}), quiet: true });
+      const closed = (from: number): boolean => events.slice(from).some((e) => e.type === 'status' && (e.status === 'idle' || e.status === 'error') && e.sessionId === sid);
+      let from = events.length;
       await ad.send(sid, { text: 'Reply with only the word ok.' });
       const deadline = Date.now() + 180_000;
-      while (Date.now() < deadline && !events.some((e) => e.type === 'status' && (e.status === 'idle' || e.status === 'error') && e.sessionId === sid)) await sleep(250);
+      while (Date.now() < deadline && !closed(from)) await sleep(250);
+      // Spec 087 (delta 2026-11-02): when the app's OS sandbox cannot start on this runner, Durbar sends nothing and offers "Continue
+      // without the OS sandbox". The check takes that offer like a person would, records the reason in the row, and sends again, so
+      // the account and the turn are still proved.
+      const note = [...events].reverse().find((e) => e.type === 'sandbox' && e.sessionId === sid && e.notice?.actions.includes('continue')) as { notice?: { text: string } } | undefined;
+      if (note?.notice && !events.some((e) => e.type === 'output' && e.sessionId === sid) && ad.continueWithoutSandbox) {
+        sandboxNote = clean(note.notice.text);
+        await ad.continueWithoutSandbox(sid);
+        from = events.length;
+        await ad.send(sid, { text: 'Reply with only the word ok.' });
+        while (Date.now() < deadline && !closed(from)) await sleep(250);
+      }
       // the closing event of each message holds its full text; without one, the deltas are joined
       const outs = events.filter((e) => e.type === 'output' && e.sessionId === sid) as Array<{ delta?: string; final?: boolean; text?: string }>;
       const finals = outs.filter((e) => e.final && typeof e.text === 'string');
@@ -197,8 +212,8 @@ async function turn(ad: AgentAdapter, app: (typeof APPS)[number], events: AgentE
       const usage = use.length ? `${use.reduce((s, u) => s + (u.inputTokens ?? 0), 0)} in / ${use.reduce((s, u) => s + (u.outputTokens ?? 0), 0)} out${use.some((u) => u.nanoAiu) ? `, ${(use.reduce((s, u) => s + (u.nanoAiu ?? 0), 0) / 1e9).toFixed(3)} AIU` : ''}${use.some((u) => u.costUsd) ? `, ≈ $${use.reduce((s, u) => s + (u.costUsd ?? 0), 0).toFixed(4)}` : ''}` : 'none reported';
       await ad.stop(sid).catch(() => undefined);
       if (err) return { ok: false, detail: clean(err.intent ?? 'error'), answer, usage };
-      if (!/\bok\b/i.test(out)) return { ok: false, detail: clean(`no "ok" in the answer: ${out.slice(0, 80) || '(empty)'}; ${trace(events, sid)}`), answer, usage };
-      return { ok: true, answer, usage };
+      if (!/\bok\b/i.test(out)) return { ok: false, detail: clean(`no "ok" in the answer: ${out.slice(0, 80) || '(empty)'}; ${trace(events, sid)}${sandboxNote ? `; sandbox note: ${sandboxNote}` : ''}`), answer, usage };
+      return { ok: true, answer, usage, ...(sandboxNote ? { sandboxNote } : {}) };
     } catch (e) {
       return { ok: false, detail: clean(e instanceof Error ? e.message : e) };
     } finally {
