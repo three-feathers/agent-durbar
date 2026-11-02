@@ -349,7 +349,7 @@
     /* Organization (spec 076 FR-208, issue 602): what each agent app's own organization policy blocks, read-only, painted after the paint into #orgSet */
     const orgSec=X.bridge.orgPolicyView&&window.DurbarOrgWords?`<section class="scr-sec" aria-labelledby="orgH" id="orgSec"><h3 id="orgH" tabindex="-1">Organization</h3>
         <p class="scr-note">What your organization's own policy for each agent app blocks. Agent Durbar only reads it, never changes it.</p>
-        <div id="orgSet" role="status" aria-live="polite"><p class="scr-note small">Reading…</p></div></section>`:'';
+        <div id="orgSet"><p class="scr-note small">Reading…</p></div></section>`:'';
     /* Theme (specs 037-040): pick a built-in or imported pack; applies live, no restart. */
     const curTheme=(app.theme||'clean-office');
     let userThemes=[];
@@ -442,7 +442,7 @@
       const sec=window.DurbarOrgWords.sectionOf(v,failed);
       if(!sec.failed&&!sec.rows.length){const w=$('orgSec');if(w)w.remove();return;}
       const e=X.esc;
-      box.innerHTML=sec.failed?`<p class="scr-note warn">${e(sec.failText)}</p>`:`<ul class="orgrows">${sec.rows.map(r=>`<li class="orgrow" data-org="${e(r.id)}" data-state="${r.state}"><b>${e(r.app)}</b> <span class="mtag${r.state==='unknown'?' warn':''}">${e(r.status)}</span>${r.note?`<small>${e(r.note)}</small>`:''}${r.paths.length?`<small>From: ${r.paths.map(x=>`<code>${e(x)}</code>`).join(', ')}</small>`:''}${r.modes.length?`<ul>${r.modes.map(m=>`<li>${e(m.mode)}: ${e(m.why)}${m.refused?'':' (advice only)'}</li>`).join('')}</ul>`:''}${r.noMode?`<small>${e(r.noMode)}</small>`:''}${r.counts.length?`<small>${e(r.counts.join(' · '))}</small>`:''}${r.problems.map(x=>`<small class="warn">${e(x)}</small>`).join('')}</li>`).join('')}</ul>`;
+      box.innerHTML=sec.failed?`<p class="scr-note warn" role="status">${e(sec.failText)}</p>`:`<ul class="orgrows">${sec.rows.map(r=>`<li class="orgrow" data-org="${e(r.id)}" data-state="${r.state}"><b>${e(r.app)}</b> <span class="mtag${r.state==='unknown'?' warn':''}">${e(r.status)}</span>${r.note?`<small>${e(r.note)}</small>`:''}${r.paths.length?`<small>From: ${r.paths.map(x=>`<code>${e(x)}</code>`).join(', ')}</small>`:''}${r.modes.length?`<ul>${r.modes.map(m=>`<li>${e(m.mode)}: ${e(m.why)}${m.advice?' (advice only)':''}</li>`).join('')}</ul>`:''}${r.noMode?`<small>${e(r.noMode)}</small>`:''}${r.counts.length?`<small>${e(r.counts.join(' · '))}</small>`:''}${r.problems.map(x=>`<small class="warn">${e(x)}</small>`).join('')}</li>`).join('')}</ul>`;
     })();}
     if(hsSec&&window.DurbarHarnesses.loadSandbox)window.DurbarHarnesses.loadSandbox(); /* spec 087 FR-012: the OS sandbox line per app, after the paint */
     wireHead();

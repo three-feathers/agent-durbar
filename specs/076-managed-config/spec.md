@@ -4,12 +4,12 @@
 group: 046
 title: Managed configuration for organizations: one admin-only config folder (policy.json, MCP list, icon, theme pack) sets the display name and icon, allowed agent apps, MCP lists and endpoints, an agent/profile/skill registry, OpenTelemetry, theme and custom LLMs with admin token pricing, plus the accepted additions (mode lock, proxy and CA, feature switches, installers, signing, spend caps, folder rules, updates, registry/MDM sources, signed config, audit log, retention, rebrand build, legal notice, version pins, endpoint auth, sign-in, vendor settings view); everything set there is locked; a narrow-only user layer; bad config fails closed and visibly
 status: draft
-note: spec only; decisions recorded, signing purchase needs the owner's OK
+note: Settings > Organization (FR-208) built; the rest is spec only; decisions recorded, signing purchase needs the owner's OK
 -->
 
 **Feature Branch**: `076-managed-config`
 **Created**: 2026-10-23
-**Status**: Draft. Section O (FR-198..FR-207, phase P27, issue #602) is built (PR 644; `[IMPLEMENTED]` tags there); everything else is spec only, nothing built. Q1-Q12 answered by Vikram on 2026-10-23 (defaults, except Q10: admin token pricing). A1-A19 accepted by Vikram on 2026-10-23 as requirements (section N); the code-signing certificate purchase still needs his explicit OK at purchase time. Security review by Paco's agent (2026-10-23, 17 items) folded in; R1-R8 answered by Vikram on 2026-10-23 (recommended defaults).
+**Status**: Draft. Section O (FR-198..FR-207, phase P27, issue #602) is built (PR 644; `[IMPLEMENTED]` tags there) and so is the read-only Settings > Organization section (FR-208); everything else is spec only, nothing built. Q1-Q12 answered by Vikram on 2026-10-23 (defaults, except Q10: admin token pricing). A1-A19 accepted by Vikram on 2026-10-23 as requirements (section N); the code-signing certificate purchase still needs his explicit OK at purchase time. Security review by Paco's agent (2026-10-23, 17 items) folded in; R1-R8 answered by Vikram on 2026-10-23 (recommended defaults).
 **Input**: Owner request by Vikram (2026-10-23): "Durbar must be packageable and usable in corporate environments. All of it is driven by a config folder (config files plus icons), and anything set there is locked, i.e. not editable in the UI (shown as *Set by your organization*):
 1. change the app display name and icon (the original name stays in About and credits);
 2. restrict which agent apps (harnesses) are allowed;
@@ -1025,7 +1025,12 @@ https://learn.chatgpt.com/docs/enterprise/managed-configuration.md (`allowed_app
   reader and are not listed. The text is escaped, at least 10.5px, and the section is not shown when the bridge has no view or the view is
   empty. Not built here: showing top-level keys of the vendor files (FR-194's key list), FR-195's "which one wins" line, macOS MDM and the
   Windows registry (P17), server-managed settings, Codex `mcp_servers` identity rules and a real managed machine (`[KNOWN GAP]`, FR-206).
-  Section O's phase P27 stays open for those. `[IMPLEMENTED]` `test:` `test-orgwords.ts`; `sim:` `shots-076-orgpolicy.js` (`?simorgpolicy=1`).
+  Section O's phase P27 stays open for those.
+  **Relation to FR-015:** FR-208 is the read-only part of that diagnostics page for the agent apps' own policies (FR-207); FR-015's page (Durbar's own
+  managed config, shown only under a policy) is not built. When it is, this section becomes a part of that one page, not a second Organization page.
+  **Not understood is unknown:** a view that is not a plain object is a failed read; an entry that is not an object, or whose `found` and `unreadable` are not
+  both booleans, reads unknown (never "no policy"); only `{}` hides the section. A `fatal` policy (the app refuses to start) also reads unknown here: the view does not carry it (`[KNOWN GAP]`).
+  The list is not a live region; only the failure line is announced. Problem lines are in the warning colour; advice that already says Durbar could not read the policy does not add "(advice only)". `[IMPLEMENTED]` `test:` `test-orgwords.ts`; `sim:` `shots-076-orgpolicy.js` (`?simorgpolicy=1`). Pictures: [1440x900](../../docs/screenshots/076-orgpolicy-organization-1440x900.png), [1280x800](../../docs/screenshots/076-orgpolicy-organization-1280x800.png).
 
 ### M. Testing
 
@@ -1235,7 +1240,7 @@ ignored, FR-007d). Narrow-only; a value that is not a boolean, a malformed `perm
 The rule is built and tested (`requireOsSandboxFrom`, `src/main/sandboxpolicy.ts`), but this spec has no policy reader yet, so it is not
 reachable in the app (`[KNOWN GAP]`, as `updatepolicy.ts`). FR-173's open point is answered by spec 087: Claude Code's and Copilot's
 OS sandboxes now hold their shell commands in Read-only and Ask first, and Settings > Agent apps shows each app's sandbox line (spec 087
-FR-012); there is no Organization page yet for the pointer FR-012 asks for.
+FR-012); Settings > Organization exists since FR-208, but it carries no sandbox pointer yet (`[KNOWN GAP]`: the pointer FR-012 asks for).
 
 ### 2026-10-31: the theme maker and Import are retired (spec 040 FR-031; spec 021 FR-067)
 
