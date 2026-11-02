@@ -535,8 +535,6 @@ export interface McpFolderState {
   /** Display name of the folder. */
   name: string;
   servers: McpServerView[];
-  /** Old app-level servers that are not applied; they can be moved into this folder or removed. */
-  legacy: McpServerView[];
   secretsPersist: boolean;
   /** Extras that are on but are not passed to new sessions, with the reason. */
   skipped: { name: string; reason: string }[];
@@ -1014,7 +1012,6 @@ export interface DurbarApi {
   mcpUpsert?(key: string, input: McpServerInput, originalName?: string): Promise<McpResult>;
   mcpRemove?(key: string, name: string): Promise<{ ok: boolean }>;
   mcpSetEnabled?(key: string, name: string, enabled: boolean, trustAck?: boolean): Promise<McpResult>;
-  mcpMoveLegacy?(name: string, key: string): Promise<McpResult>;
   /** Per-folder import from VS Code's `.vscode/mcp.json` (spec 020 FR-020): a preview, then the ticked ids. Imported servers are off and untrusted. */
   mcpImportPreview?(key: string): Promise<McpImportPreview>;
   /** Spec 061: a folder's own agent setup (masked), the person's decision (window only, FR-013), and an AI explanation of a hook (FR-015). */
@@ -1022,7 +1019,6 @@ export interface DurbarApi {
   folderSetupDecide?(key: string, decision: FolderSetupDecision): Promise<{ ok: boolean; error?: string; view?: FolderSetupView; folderRules?: Record<string, boolean> }>;
   folderSetupExplain?(key: string, id: string): Promise<HookExplanation>;
   mcpImportApply?(key: string, ids: string[], digest: string): Promise<McpImportResult>;
-  mcpRemoveLegacy?(name: string): Promise<{ ok: boolean }>;
   /** Spec 069: the agent apps' user-level MCP lists (names only), read now. */
   mcpGlobalState?(): Promise<GlobalState>;
   /** Spec 069 FR-005: what adding `input` to the chosen apps' lists would write; nothing is written. */
