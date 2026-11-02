@@ -372,6 +372,8 @@ module.exports = async (ctx) => {
       await mclick('#msgInput'); await type('hello real'); await H.key('Return');
       await ok(`!document.body.classList.contains('panel-open')`, 'back to the office');
       await ok(`!!document.activeElement&&document.activeElement.dataset.id===${jsLiteral(A)}&&document.activeElement.classList.contains('ro-plate')`, 'FR-183: the focus on its plate');
+      await ctx.sleep(300); // a bound on a negative: the zoom by focus opens at once, the one by hover in 120 ms
+      assert.strictEqual(await js(`!!document.getElementById('roZoom')`), false, 'FR-183: a keyboard send moves the focus, and opens no screen zoom');
       await ok(`!!document.querySelector(${jsLiteral(plate)}+'.is-followed')`, 'FR-183: its plate is marked');
       await js(`document.activeElement.blur();0`); /* a focused plate shows the focus ring instead */
       await ok(`getComputedStyle(document.querySelector(${jsLiteral(plate)})).outlineStyle==='dashed'`, 'not colour alone');

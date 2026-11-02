@@ -4126,6 +4126,8 @@ function afFocusDesk(id){
   if(d&&d.getClientRects().length){focusIn(d);return true;}
   return false;
 }
+/* FR-183: focus moved here is not the person asking for a screen's zoom */
+const afQuiet=fn=>{const R=window.DurbarRealOffice;if(R&&R.quietFocus)R.quietFocus(fn);else fn();};
 /* FR-183: an accepted message follows its agent and returns to the office */
 function afOnAccepted(a0){
   if(!AF_ON||AF_PAUSED||!a0||a0.parent)return;
@@ -4135,8 +4137,7 @@ function afOnAccepted(a0){
     let moved=false,fname='';
     const f=floorsLive()&&floorById(room.floor);
     if(f&&floorScreens()&&oneFloorView()&&f.id!==curFloorId()){moved=goToFloor(f.id,{announce:false});fname=f.name;} /* FR-188: no second floor announcement */
-    if(afPanelId()){AFT.setLast(ui.selected);AF_AUTO=true;try{closePanel();}finally{AF_AUTO=false;}}
-    afFocusDesk(a.id);
+    afQuiet(()=>{if(afPanelId()){AFT.setLast(ui.selected);AF_AUTO=true;try{closePanel();}finally{AF_AUTO=false;}}afFocusDesk(a.id);});
     announce(a.name+' is working'+(moved&&fname?' on '+fname:'')+'. Back to the office.');
   }
   afTick();
@@ -4216,8 +4217,7 @@ function afGo(dir){
   if(!id){
     if(cur)AFT.setLast(ui.selected);
     const last=AFT.lastDesk();
-    if(cur){AF_AUTO=true;try{closePanel();}finally{AF_AUTO=false;}}
-    if(last)afFocusDesk(last);
+    afQuiet(()=>{if(cur){AF_AUTO=true;try{closePanel();}finally{AF_AUTO=false;}}if(last)afFocusDesk(last);});
     announce('Nothing needs you. Back to the office.');afTick();return;
   }
   AFT.manualOpen(id); AF_HELD={id,at:ids.indexOf(id)};
