@@ -154,7 +154,23 @@
 
   function setVar(e, k, v) { if (e.style.getPropertyValue(k) !== v) e.style.setProperty(k, v); }
   /* one clock per desk, its own place in the cycle: a desk's two pictures and caret stay together */
-  function clock(e, ms) { for (const a of e.getAnimations()) if (a.animationName) a.startTime = ms; } /* the CSS loops only: a walk under way keeps its own time */
+  /* FR-229: every endless loop on one grid: the whole effect stepped, duration and start on 1/12 s, so all of them change on the same frames and the rest stay unpainted */
+  const STEP_MS = 1000 / 12, onStep = (ms) => Math.round(ms / STEP_MS) * STEP_MS;
+  const offStep = (ms) => { const m = ((ms % STEP_MS) + STEP_MS) % STEP_MS; return Math.min(m, STEP_MS - m) > 0.01; };
+  function snap(a) { if (a.playState === 'running' && a.startTime != null && offStep(a.startTime)) a.startTime = onStep(a.startTime); } /* a paused one stays paused (FR-074): a resume keeps its place, off the grid until it comes back here */
+  function onGrid(host) {
+    for (const a of host.getAnimations({ subtree: true })) {
+      if (!a.animationName) continue;
+      const t = a.effect.getTiming();
+      if (t.iterations !== Infinity) continue;
+      if (!t.easing.startsWith('steps')) {
+        const n = Math.max(2, Math.round(t.duration / STEP_MS));
+        a.effect.updateTiming({ duration: n * STEP_MS, easing: 'steps(' + n + ', end)' });
+      }
+      if (a.pending) a.ready.then(() => snap(a), () => {}); else snap(a);
+    }
+  }
+  function clock(e, ms) { for (const a of e.getAnimations()) if (a.animationName) a.startTime = onStep(ms); } /* the CSS loops only: a walk under way keeps its own time */
 
   /* the typing rig: a wrapper with the body's movement on the body's clock, over it a head and two hands cut from the same picture (spec Changes 2026-11-01) */
   function rigOf(art, k, rect, r, m, pe) {
@@ -245,7 +261,7 @@
     if (ZOOM && !ZOOM.panel.isConnected) closeZoom();
     const sized = view.w + 'x' + view.h, sameSize = !!CUR && CUR.sized === sized && !!CUR.painted;
     const wasLive = CUR && CUR.ro === ro ? CUR.live : undefined;
-    CUR = { ro, live: opts.live, screenOf: opts.screenOf || null, sized, still: !!opts.still, hold: !!opts.hold, desks: new Map(lay.zones.flatMap((z) => z.desks.map((d) => [d.id, d]))), agents: new Map(model.folders.flatMap((f) => f.agents.map((a) => [a.id, { ...a, folder: f.name }]))), drawn, scroll: !!lay.scroll };
+    CUR = { pixelArt: !!meta.pixelArt, ro, live: opts.live, screenOf: opts.screenOf || null, sized, still: !!opts.still, hold: !!opts.hold, desks: new Map(lay.zones.flatMap((z) => z.desks.map((d) => [d.id, d]))), agents: new Map(model.folders.flatMap((f) => f.agents.map((a) => [a.id, { ...a, folder: f.name }]))), drawn, scroll: !!lay.scroll };
     SLIDE = sameSize && moving() && !hiddenNow();
     CUR.painted = true;
     ro.classList.toggle('paused', hiddenNow()); if (hiddenNow()) finishMoves(ro);
@@ -400,6 +416,7 @@
     SLIDE = false;
     CUR.drawn = true;
     whenReady(ro);
+    if (moving() && !meta.pixelArt) onGrid(ro);
     if (moving() && !hiddenNow()) handOver(ro);
     watchFrames(ro);
     if (wasLive !== undefined && wasLive !== CUR.live) for (const [id, s] of SCR) { /* the setting holds at once: it does not wait for the next line, or the repaint pace */
@@ -505,7 +522,7 @@
     const added = fillRows(s.rows, shown);
     /* FR-033: the new line slides in, three steps, transform only; the text is already right, so a dropped frame costs nothing */
     if (added && s.painted && moving() && !s.away) s.lines.animate([{ transform: 'translateY(' + Math.min(added, 2) * f.lh + 'px)' }, { transform: 'none' }], { duration: 180, easing: 'steps(3, end)' });
-    if (data.caret && !s.caret) { s.caret = document.createElement('i'); s.caret.className = 'ro-caret'; s.box.appendChild(s.caret); const m = L.personMotion(id, 'typeA', d.state); setVar(s.caret, '--ro-per', '1.2s'); s.caretMs = m.offset; if (moving()) clock(s.caret, m.offset); }
+    if (data.caret && !s.caret) { s.caret = document.createElement('i'); s.caret.className = 'ro-caret'; s.box.appendChild(s.caret); const m = L.personMotion(id, 'typeA', d.state); setVar(s.caret, '--ro-per', '1.2s'); s.caretMs = m.offset; if (moving()) { clock(s.caret, m.offset); if (CUR && !CUR.pixelArt) onGrid(s.caret); }; }
     else if (!data.caret && s.caret) { s.caret.remove(); s.caret = null; }
     s.painted = true;
     if (ZOOM && ZOOM.id === id) fillZoom();
@@ -524,6 +541,7 @@
     wasHidden = hiddenNow();
     const h = hiddenNow(); CUR.ro.classList.toggle('paused', h); if (h) finishMoves(CUR.ro);
     if (h) { closeZoom(); return; }
+    if (moving() && !CUR.pixelArt) onGrid(CUR.ro); /* FR-229 */
     for (const [id, s] of SCR) if (s.dirty) plan(id);
   }
   document.addEventListener('visibilitychange', resume);
@@ -534,6 +552,7 @@
     const art = CUR.ro.querySelector(':scope > .ro-art');
     for (const key of ['p:', 'pb:', 'rg:']) { const e = art && art._k.get(key + id); if (e) e.classList.toggle('ro-off', off); }
     const s = SCR.get(id); if (s) s.box.classList.toggle('ro-off', off);
+    if (!off && moving() && !CUR.pixelArt) onGrid(CUR.ro); /* FR-229: back in view, back on the grid */
   }
   function watchOff(lay) {
     if (!lay.scroll || typeof IntersectionObserver !== 'function') {

@@ -38,6 +38,12 @@ module.exports = async (ctx) => {
     assert.strictEqual(await js(`document.querySelector('#stage .ro')._ready===true`), false, 'FR-228: still at the first draw');
     assert.strictEqual(await js(LOOPS), 0, 'FR-228: no loop of the art during the first draw');
     await must(`(${LOOPS})>0`, 'FR-228: the loops start', 6000);
+    /* FR-229: every endless loop on one grid of 1/12 s */
+    const GRID = `(()=>{const S=1000/12,off=(v)=>{const m=((v%S)+S)%S;return Math.min(m,S-m);},bad=[];let n=0;for(const a of document.querySelector('#stage .ro').getAnimations({subtree:true})){if(!a.animationName)continue;const t=a.effect.getTiming();if(t.iterations!==Infinity)continue;n++;if(!t.easing.startsWith('steps')||off(t.duration)>0.01||off(a.startTime)>0.01)bad.push(a.animationName+' '+t.easing+' '+t.duration+' '+a.startTime);}return {n,bad};})()`;
+    await must(`(${GRID}).n>=8`, 'FR-229: loops to look at', 6000);
+    const grid = await js(GRID);
+    console.log('[097-motion] grid', grid.n, 'loops');
+    assert.deepStrictEqual(grid.bad, [], 'FR-229: every loop stepped, its duration and start on the grid');
   }
   const loadReal = async (w, h, query = {}) => {
     await H.load({ w, h, query: { officeview: 'real', romotion: '1', ...query }, ready: REAL, settle: false });
