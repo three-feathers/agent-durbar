@@ -332,6 +332,13 @@ async function checkBox(): Promise<void> {
  */
 async function checkRealSdk(): Promise<void> {
   const sdkFile = path.join(ROOT, 'scripts', 'prereview', 'node_modules', '@anthropic-ai', 'claude-agent-sdk', 'sdk.mjs');
+  // the SDK package alone is not enough: its claude binary comes from a platform package (an optional dependency), absent after `npm ci --omit=optional` or on an unsupported platform
+  const scopeDir = path.join(ROOT, 'scripts', 'prereview', 'node_modules', '@anthropic-ai');
+  const hasBinary = fs.existsSync(scopeDir) && fs.readdirSync(scopeDir).some((n) => n.startsWith(`claude-agent-sdk-${process.platform}-`) && fs.existsSync(path.join(scopeDir, n, 'claude')));
+  if (fs.existsSync(sdkFile) && !hasBinary) {
+    if (process.env.PREREVIEW_REQUIRE_REAL_SDK) throw new Error('PREREVIEW_REQUIRE_REAL_SDK is set but the SDK\'s platform binary is not installed in scripts/prereview');
+    console.log('prereview: the SDK\'s platform binary is not installed here, the real-binary test is skipped; the Ubuntu CI job runs it'); return;
+  }
   if (!fs.existsSync(sdkFile) && process.env.PREREVIEW_REQUIRE_REAL_SDK) throw new Error('PREREVIEW_REQUIRE_REAL_SDK is set (the Ubuntu CI job) but the real SDK is not installed in scripts/prereview: the install step failed or was dropped, so the real-binary test would have skipped silently');
   if (!fs.existsSync(sdkFile)) { console.log('prereview: the real SDK is not installed here (npm ci --prefix scripts/prereview), the real-binary test is skipped; the Ubuntu CI job runs it'); return; }
   const sdk: any = await (new Function('p', 'return import(p)'))(pathToFileURL(sdkFile).href);
