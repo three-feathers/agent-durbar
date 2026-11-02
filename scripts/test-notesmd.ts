@@ -1,5 +1,5 @@
 /**
- * Spec 083 T040 (FR-052, FR-054, SC-004, issue 699): the `.durbar/notes.md` writer and parser. `npm run test:notesmd`. Pure: no fs,
+ * Spec 083 T040 (FR-052, FR-054, SC-004, issue 699): the `.durbar/notes/notes.md` writer and parser. `npm run test:notesmd`. Pure: no fs,
  * no clock, no credits. The fuzz uses a seeded PRNG, so a failure names its seed and repeats.
  */
 import * as assert from 'assert';

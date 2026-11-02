@@ -96,7 +96,7 @@ The renderer only: `src/renderer/app.js`, `screens.js`, `index.html`, `styles.cs
 
 ## FR-191..FR-205 (2026-11-01): the Needs you panel
 
-- **Order.** Not before the Retro world (owner) and #994's request binding are on `main`. Q-NY-1..Q-NY-16 are agent decisions of 2026-11-01, told to the owner and reversible by him; a reversal changes the spec first. Re-read `paintInbox()` then: #994 moves its button helpers.
+- **Order.** Not before the Retro world (owner). The request binding (#994) and the modal inbox's guards (#1004) are on `main`. Q-NY-1..Q-NY-16 are agent decisions of 2026-11-01, told to the owner and reversible by him; a reversal changes the spec first. Re-read `paintInbox()` then: #994 moved its button helpers.
 - **Existing capability reused:** see the delta's table. No new list, no new store, no new IPC. One new setting, Q-NY-16's switch (the `notifyNeedsMe` path).
 - **Pure part.** `createArrivals()` in `attention.js`, next to `createNotifier()`, with the same injected clock; unit tests in `test-attention`. The notifier stays as it is, because its forgetting is right for OS notifications.
 - **The page part.** `openInbox()` and `closeInbox()` stay the entry points, gaining a "moved by itself" path that touches no focus. `paintInbox()` becomes a keyed update. `#inboxDlg` keeps its id, so drivers change as little as possible. `inboxKey` gains `e.repeat`, drops the Tab trap, and handles a key only with focus inside.

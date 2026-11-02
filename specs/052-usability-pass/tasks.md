@@ -346,14 +346,27 @@
 ## FR-181: no Demo / Live badge in the top bar (2026-10-31, owner)
 - [x] T193 `check-no-demo-badge.js` first (fails with the badge), then `#protoBadge`, `.proto` and `setBadge` removed; UI-suite entry; the cues that remain are listed in the spec delta [FR-181]
 
-## FR-191..FR-205: the Needs you panel (2026-11-01, owner). Not before the Retro world and #994
+## FR-191..FR-205: the Needs you panel (2026-11-01, owner). Not before the Retro world
 - [x] T195 Q-NY-1..Q-NY-16 recorded as agent decisions of 2026-11-01, told to the owner and reversible by him [FR-191..FR-204]
 - [ ] T196 Tests first: `createArrivals()` in `attention.js`, `test-attention` with its mutants [FR-193, FR-205]
 - [ ] T197 Panel in place of the modal: non-modal region, no layout effect, automatic opening with no focus change, dismiss and reopen, the Settings switch, keys; `scripts/check-needs-panel.js` steps 1, 2, 3, 8 [FR-191, FR-192, FR-194, FR-195]
-- [ ] T198 Request binding and guards in rows, by #994's mechanism: stale press, `RISE_GUARD_MS`, `e.repeat`, the word from the card's real outcome; driver steps 5, 6 and mutants [FR-197, FR-198, FR-200]
+- [ ] T198 Request binding and guards in rows, by the mechanism on `main` (#994, #1004): stale press, `RISE_GUARD_MS`, `e.repeat`, the word from the card's real outcome; driver steps 5, 6 and mutants [FR-197, FR-198, FR-200]
 - [ ] T199 What a row offers, per the agent decisions: limit, long request, question, form, error, usage window, Read-only; simulator hooks; driver step 7 [FR-196, FR-199]
 - [ ] T200 Announcements and the burst; keyed row updates; one slide, reduced motion, `check:perf`; driver step 4 [FR-201, FR-204]
 - [ ] T201 Chat, other views, sizes, Flat and Real office, tokens, slips; driver steps 9, 10 [FR-202, FR-203]
 - [ ] T224 Your door: faces in a line, "N outside your door, oldest first", the control's name, below notices. Measure first the rows at 1280 with a notice. Test: `check-needs-panel` step 11 [FR-191, FR-196, FR-203]
 - [ ] T225 In a chat, on request, the panel pushes the chat; composer never covered; hint and chips at 700 px; `check:perf` with a long chat. Test: step 11; mutant: panel over the chat [FR-202, Q-NY-1]
 - [ ] T202 Existing drivers follow the panel; pictures retaken; docs, changelog fragment; older FRs updated in place (the delta's list), spec 003, 074, 092, 097 lines included; `/speckit.converge` [FR-205]
+
+## FR-206..FR-208: the Needs you inbox cannot answer a request by accident (2026-11-01)
+- [x] T203 `check-inbox-safety.js` first (on `main` it fails: a stale button re-answers a request, a held A answers, key A sends a limit's hidden amount), then `reqOf` and the live-card check in `paintInbox` [FR-206]; UI-suite entry
+- [x] T204 Limit row: the amount field in the row, no letter keys, own words, empty amount sends nothing, typing is not a command [FR-207]
+- [x] T205 `inboxKey` ignores `e.repeat` on A, S, D, O, Enter, Space and the chat's Alt+A/S/D; no key on a row being answered [FR-208]; five mutants run
+- [x] T206 Review of #1004 (independent security review): `check-answer-safety.js` first, then the answer bar's focus rule and no limit buttons in the bar [FR-210], the composer's repeat guard [FR-211], the limit card's in-flight lock, rounding and late-answer rule, the row's kept amount and Open key [FR-209]; native key steps with `isAutoRepeat`; every mutant run one at a time and listed in the PR
+- [x] T207 Plan card focus (spec 066 FR-064) [FR-212]; driver step in `check-answer-safety.js`
+- [x] T208 Corrected FR-206's wording (the broker ignores a second answer: no wrong approval from the stale row)
+- [x] T209 Re-review of #1004 at 97a9e6d7: inbox clicks stay in the inbox (`#inboxDlg` excluded at the document click handler), Enter in the limit amount raises, focus stays in the dialog after an answer [FR-213]; real-mouse and native-key steps
+- [x] T210 Plan focus rule (no modal, empty box, focus on the page or in the box) and held Enter/Space on the plan's buttons (spec 066 FR-064, an agent decision) [FR-212]
+- [x] T211 Answer bar same-card rule by position (agent-supplied option labels cannot catch focus); late limit reply skips a settled card; `inboxKey` row guard, Space guard and `live.contains(src)` kept and tested; question answers locked in flight [FR-209, FR-210, FR-206, FR-208]
+- [x] T212 Third review of #1004: typing on a plan goes to the box; a hung limit answer (Sending…, 30 s unlock, "Still waiting", Copilot `cancelLimit` time limit); Space guard step; bar ignores locked cards; repaint keeps focus in the amount; tests for the question unlock and the amount's repeat check [FR-209, FR-210, FR-212, FR-213]
+- [x] T213 Fourth review of #1004: a settled limit card keeps its status (timer and late failure), `stop`/`interrupt` give up on cancel, abort and disconnect after 5 s (`test:copilotcap` with all three hanging), paste on the plan goes to the box [FR-209, FR-212]
