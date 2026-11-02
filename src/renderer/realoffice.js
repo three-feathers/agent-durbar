@@ -493,6 +493,7 @@
           const row = document.createElement('div'); row.className = 'sl-act';
           for (const a of f.actions) row.appendChild(btn(a.label, a.title, a.cls, a.k === 'open' ? { slipact: 'open', slipid: f.id } : { slipact: 'perm', slipid: f.id, slipreq: f.req, slipidx: a.idx }));
           row.appendChild(btn('Show in chat', 'Open the chat', 'link', { slipact: 'open', slipid: f.id }));
+          if (f.detail) row.appendChild(btn('Review in the inbox', 'This request has a change or a command to read first: the inbox shows it', 'ro-sbtn-review primary', { slipact: 'inbox' })); /* no Allow on a slip whose card has details (review on PR 994) */
           e.appendChild(row);
           for (const g of Q.folded) { const b = btn(g.text, '', 'sl-fold', { slipact: 'open', slipid: g.id }); e.appendChild(b); }
           if (Q.more > 0) e.appendChild(btn('+' + Q.more + ' more \u00B7 Open the inbox', '', 'sl-more', { slipact: 'inbox' }));

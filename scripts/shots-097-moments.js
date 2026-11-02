@@ -165,7 +165,7 @@ module.exports = async (ctx) => {
       await H.load({ w, h, query: q(world, { simelicit: '1', sim: n }), ready: REAL, settle: false });
       await must(PICS, 'the pictures');
       await must(`!!document.querySelector('#stage .ro-slip.ro-queue:not([hidden])')`, 'the queue slip');
-      const sl = await js(`(()=>{const e=document.querySelector('#stage .ro-slip.ro-queue');return {variant:e.dataset.variant,btns:[...e.querySelectorAll('button')].map(b=>b.textContent.trim()),sub:[...e.querySelectorAll('button')].map(b=>b.title),h:(e.querySelector('.sl-h')||{}).textContent,
+      const sl = await js(`(()=>{const e=document.querySelector('#stage .ro-slip.ro-queue');return {variant:e.dataset.variant,act:[...e.querySelectorAll('.sl-act button')].map(b=>b.textContent.trim()),total:(window.__durbarSimUi.slips().queue||{}).total,btns:[...e.querySelectorAll('button')].map(b=>b.textContent.trim()),sub:[...e.querySelectorAll('button')].map(b=>b.title),h:(e.querySelector('.sl-h')||{}).textContent,
         r:e.getBoundingClientRect().toJSON(),lobby:document.querySelector('#stage .ro-lobby').getBoundingClientRect().bottom,small:[...e.querySelectorAll('*')].filter(x=>x.children.length===0&&parseFloat(getComputedStyle(x).fontSize)<10.5).length}})()`);
       assert.ok(sl.r.top >= sl.lobby - 0.5, `${tag}: the slip sits under the lobby band`);
       assert.strictEqual(sl.small, 0, `${tag}: slip text >= 10.5px`);
@@ -176,14 +176,20 @@ module.exports = async (ctx) => {
         focus:document.activeElement&&document.activeElement.className,header:!!h,aria:h&&h.getAttribute('aria-hidden'),door:h&&h.querySelector('img.ibw-door').getAttribute('src'),faces:h&&h.querySelectorAll('.ibw-face').length,bg:getComputedStyle(document.querySelector('#inboxDlg .inbox-dlg')).backdropFilter,
         small:[...document.querySelectorAll('#inboxDlg *')].filter(x=>x.children.length===0&&x.textContent.trim()&&parseFloat(getComputedStyle(x).fontSize)<10.5).length}})()`);
       assert.strictEqual(dlg.title, 'Needs you', `${tag}: the dialog keeps its heading`);
+            const rowsN = await js(`document.querySelectorAll('#inboxDlg .inbox-row').length`); assert.strictEqual(sl.total, rowsN, tag + ': the slip count (' + sl.total + ') is the inbox row count (' + rowsN + '; needsMe ' + (await js('window.__durbarSimUi.needsCount()')) + ')');
       assert.ok(dlg.header && dlg.aria === 'true' && dlg.faces >= 1 && dlg.door === `realoffice/worlds/${world}/fx-boss.webp`, `${tag}: the header with the world's Boss door and the queue's faces, aria-hidden: ${JSON.stringify(dlg)}`);
       assert.ok(/ib-h/.test(dlg.focus), `${tag}: focus lands on the first row's heading, never a button`);
       assert.strictEqual(dlg.bg, 'none', `${tag}: no blur behind the dialog text: ${dlg.bg}`);
       assert.strictEqual(dlg.small, 0, `${tag}: the dialog's text >= 10.5px`);
-      if (sl.variant === 'full') {
+      const rowDetail = await js(`!!document.querySelector('#inboxDlg .inbox-row details.pdiff, #inboxDlg .inbox-row details.pcmd')`);
+      if (sl.variant === 'full' && rowDetail) {
+        /* the inbox row shows a change or a command to read: the slip offers no Allow, only the way to it (review on #994) */
+        assert.deepStrictEqual(sl.act, ['Show in chat', 'Review in the inbox'], `${tag}: no Allow on a slip whose card has a change or command to read (the .sl-act buttons): ${JSON.stringify(sl.act)}`);
+      }
+      if (sl.variant === 'full' && !rowDetail) {
         const flat = dlg.btns.filter((b) => !/^Open$/.test(b));
-        assert.deepStrictEqual(sl.btns.slice(0, flat.length), flat, `${tag}: the slip's buttons are the inbox's, in its order`);
-        assert.strictEqual(sl.btns[flat.length], 'Show in chat', `${tag}: then Show in chat`);
+        assert.deepStrictEqual(sl.act.slice(0, flat.length), flat, `${tag}: the slip's buttons are the inbox's, in its order`);
+        assert.strictEqual(sl.act[flat.length], 'Show in chat', `${tag}: then Show in chat`);
         assert.ok(sl.h.startsWith(dlg.first), `${tag}: the first slip is the inbox's first row`);
       }
       await js(`document.getElementById('inboxClose').click()`);
@@ -208,7 +214,7 @@ module.exports = async (ctx) => {
       assert.strictEqual(el[0].fields, 0, `${tag}: the bubble has no input field (a form is answered in the chat)`);
       assert.ok(/^\S.*: \[MCP\] An MCP server asks for input$/.test(el[0].head), `${tag}: ${el[0].head}`);
       /* the buttons act: Deny on the first full slip answers the card; Answer in chat opens the chat */
-      if (sl.variant === 'full' && n !== '15') {
+      if (sl.variant === 'full' && n !== '15' && !rowDetail) {
         const who = await js(`(document.querySelector('#stage .ro-slip.ro-queue .sl-h b')||{}).textContent||''`);
         const reqA0 = await js(`((document.querySelector('#stage .ro-slip.ro-queue .ro-sbtn[data-slipreq]')||{dataset:{}}).dataset.slipreq)||''`);
         await js(`(()=>{const d=[...document.querySelectorAll('#stage .ro-slip.ro-queue .ro-sbtn')].find(b=>b.textContent.trim()==='Deny');if(d)d.click()})()`);
@@ -320,6 +326,43 @@ module.exports = async (ctx) => {
       await H.load({ w, h, query: q(world), ready: REAL, settle: false });
       await must(PICS, 'the pictures');
       assert.strictEqual(await js(`[...document.querySelectorAll('#stage .ro-chip')].filter(c=>c.dataset.coffeeid).length`), 0, `${tag}: with no coffee break nobody stands at the corner `);
+    }
+    // ---- review on #994 (2026-11-02): a slip never offers Allow without the change or command the inbox row shows; other approve rules ----
+    if (run('review')) {
+      await H.load({ w, h, query: q(world, { sim: '3', simfloors: '1' }), ready: REAL, settle: false });
+      await must(PICS, 'the pictures');
+      await must(`!!document.querySelector('#stage .ro-slip.ro-queue[data-variant="full"]')`, 'the full queue slip');
+      const PERM = `document.querySelectorAll('#stage .ro-slip.ro-queue [data-slipact="perm"]').length`;
+      const first = await js(`window.__durbarSimUi.slips().queue.first.id`);
+      assert.ok(await js(`window.__durbarSimUi.clearDetail(${jsLiteral(first)})`), `${tag}: the first card is there to clear`);
+      await must(PERM + '>=1', 'the slip with the inbox buttons once the card has no change to read');
+      assert.ok(await js(PERM) >= 1, `${tag}: with no change to read, the slip offers the inbox's buttons`);
+      const pending = () => js(`document.querySelectorAll('#chat .note.perm:not(.settled)').length+':'+window.__durbarSimUi.agents().filter(a=>a.state==='waiting').length`);
+      const before = await pending();
+      /* keys: a plain A, S, D, J or K from outside a slip answers nothing */
+      for (const k of ['a', 's', 'd', 'j', 'k']) await H.key(k, []);
+      assert.strictEqual(await pending(), before, `${tag}: plain keys pressed outside a slip or the inbox answer nothing`);
+      assert.ok(await js(`window.__durbarSimUi.addDetail(${jsLiteral(first)})`), `${tag}: the card gets a change to read`);
+      await must(`document.querySelectorAll('#stage .ro-slip.ro-queue [data-slipact="perm"]').length===0&&/Review in the inbox/.test(document.querySelector('#stage .ro-slip.ro-queue').textContent)`, 'the slip without Allow, with a way to the inbox');
+      assert.ok(await js(`/Show in chat/.test(document.querySelector('#stage .ro-slip.ro-queue').textContent)`), `${tag}: Show in chat stays`);
+      await shot(world, 'review-slip', w, h);
+      /* a stale button that names this very request, pressed after the change arrived: it opens the inbox, it answers nothing */
+      const req = await js(`window.__durbarSimUi.slips().queue.first.req`);
+      await js(`(()=>{const b=document.createElement('button');b.dataset.slipact='perm';b.dataset.slipid=${jsLiteral(first)};b.dataset.slipreq=${jsLiteral(req)};b.dataset.slipidx='0';document.body.appendChild(b);b.click();b.remove()})()`);
+      await must(`!!document.querySelector('#inboxDlg .inbox-row')`, 'the inbox opens instead of an answer');
+      assert.strictEqual(await js(`window.__durbarSimUi.agents().filter(a=>a.id===${jsLiteral(first)})[0].state`), 'waiting', `${tag}: nothing was answered`);
+      await js(`document.getElementById('inboxClose').click()`);
+      /* a planted secret in an MCP message is masked on the slip's text path (requestText) */
+      const tok = 'ghp_' + 'A1b2'.repeat(9);
+      const masked = await js(`window.__durbarSimUi.requestText(${jsLiteral('Allow ' + tok + ' to run')})`);
+      assert.ok(!masked.includes(tok.slice(4, 24)), `${tag}: a token-like value is masked in a slip's text: ${masked}`);
+      /* Serious mode: no ride */
+      await js(`window.__durbarSimUi.setSerious(true)`);
+      const f0 = await js(`localStorage.getItem('durbar.floor')`);
+      await H.key('PageDown', [], { pause: 30 });
+      await must(`localStorage.getItem('durbar.floor')!==${jsLiteral(f0)}`, 'the floor changed');
+      assert.strictEqual(await js(`document.querySelectorAll('.ro-ride').length`), 0, `${tag}: no ride in Serious mode`);
+      await js(`window.__durbarSimUi.setSerious(false)`);
     }
     // ---- owner 2026-11-02: one post-it colour per reason (the place), dark ink, the words stay ----
     if (run('notes')) {
