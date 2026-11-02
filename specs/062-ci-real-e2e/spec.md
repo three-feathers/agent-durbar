@@ -59,8 +59,9 @@ The list of supported CI platforms lives in one file, `.github/platforms.json`. 
 **Tasks:** T010.
 
 **Cause found by the hand run 41373742601 (2026-11-02):** on Linux (Claude) and Windows (Claude, Copilot) the turn ended with `events sandbox:2,status:2; status idle>stopped` and no message: since spec 087 (2026-10-25) Durbar sends nothing when the agent app's OS sandbox cannot start (`Not sent: the OS sandbox could not start`) and offers *Continue without the OS sandbox*. The check read that early `idle` as the end of the turn. That matches the first red day (10-25). The earlier `No network layer` failures were the missing download getter (fixed 2026-10-27, spec 081).
+**Change 2:** the turn takes that offer (`continueWithoutSandbox`, then sends again) **only where this spec records that the runner cannot have the sandbox**: Windows, for Claude and Copilot (`mayContinueWithoutSandbox`, unit-tested in `test-platforms.ts`). There the row's *Read-only turn* column carries the adapter's notice, a recorded gap, not a failure. On Linux and macOS a sandbox that cannot start fails the row with the trace and the notice as detail (a regression, never loosened; a flaky Copilot start on Linux shows red and is reported). The "ok" check is unchanged.
 **Change 3 (T009):** the workflow installs `bubblewrap` and `socat` on Linux so Claude's sandbox starts there (the run showed `needs socat`); the `schedule:` block and the cron check in `test-platforms.ts` are back, FR-009's "no schedule" ends (FR-001 and FR-006 daily apply again). On Windows neither Claude Code ("no OS sandbox on Windows") nor Copilot ("requires BaseContainer", the runner's Windows) can start one: that stays a recorded `[KNOWN GAP]` in the row, not a failure.
-**Change 2:** the turn takes that offer like a person would (`continueWithoutSandbox`, then sends again), and the row's *Read-only turn* column says so with the adapter's own notice text, so the sandbox gap is recorded, not hidden. The "ok" check is unchanged; an app whose sandbox starts is not touched.
+
 
 ### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
 

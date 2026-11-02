@@ -2,7 +2,7 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
-import { cheapCodex } from './e2e-real';
+import { cheapCodex, mayContinueWithoutSandbox } from './e2e-real';
 import type { ModelOption } from '../src/shared/modelswitch';
 
 const ROOT = path.join(__dirname, '..', '..');
@@ -35,4 +35,8 @@ assert.deepStrictEqual(cheapCodex([m('gpt-6-gemini')], {}), { model: 'gpt-6-gemi
 assert.deepStrictEqual(cheapCodex(codexList, { E2E_CODEX_MODEL: 'gpt-7-mini', E2E_CODEX_EFFORT: 'minimal' }), { model: 'gpt-7-mini', effort: 'minimal' }, 'the env wins');
 assert.deepStrictEqual(cheapCodex(codexList, { E2E_CODEX_MODEL: 'claude-haiku', E2E_CODEX_EFFORT: 'Bad Value' }), { model: 'gpt-6-mini', effort: 'low' }, 'a non-Codex model or a malformed effort in the env is ignored');
 assert.deepStrictEqual(cheapCodex([], {}), {}, 'nothing listed: Codex decides');
+// spec 062 delta 2026-11-02: the sandbox fallback only where the runner cannot have one (Windows: Claude, Copilot)
+assert.strictEqual(mayContinueWithoutSandbox('win32', 'claude'), true);
+assert.strictEqual(mayContinueWithoutSandbox('win32', 'copilot'), true);
+for (const [pl, k] of [['linux', 'claude'], ['linux', 'copilot'], ['darwin', 'claude'], ['darwin', 'copilot'], ['win32', 'codex'], ['linux', 'codex']] as const) assert.strictEqual(mayContinueWithoutSandbox(pl, k), false, `${pl} ${k}: a sandbox that cannot start fails the row`);
 console.log(`platforms: ${(list as string[]).join(', ')}; e2e-real and install-check use the list; no pull_request with secrets, no push trigger, daily; Codex picks a small model`);

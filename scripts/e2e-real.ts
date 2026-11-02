@@ -57,6 +57,11 @@ export function cheapCodex(models: ModelOption[], env: NodeJS.ProcessEnv = proce
   return { ...(pick ? { model: pick.id } : {}), ...(effort ? { effort } : {}) };
 }
 
+/** Spec 062 delta 2026-11-02: only where the spec records that the runner cannot have the app's OS sandbox (Windows: Claude Code has none, Copilot needs BaseContainer) may the check take "Continue without the OS sandbox". Elsewhere a sandbox that cannot start is a regression and the row fails. */
+export function mayContinueWithoutSandbox(platform: string, kind: SetupKind): boolean {
+  return platform === 'win32' && (kind === 'claude' || kind === 'copilot');
+}
+
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
 function killTree(child: { pid?: number }): void {
@@ -195,8 +200,8 @@ async function turn(ad: AgentAdapter, app: (typeof APPS)[number], events: AgentE
       // without the OS sandbox". The check takes that offer like a person would, records the reason in the row, and sends again, so
       // the account and the turn are still proved.
       const note = [...events].reverse().find((e) => e.type === 'sandbox' && e.sessionId === sid && e.notice?.actions.includes('continue')) as { notice?: { text: string } } | undefined;
-      if (note?.notice && !events.some((e) => e.type === 'output' && e.sessionId === sid) && ad.continueWithoutSandbox) {
-        sandboxNote = clean(note.notice.text);
+      if (note?.notice && !events.some((e) => e.type === 'output' && e.sessionId === sid)) sandboxNote = clean(note.notice.text);
+      if (sandboxNote && mayContinueWithoutSandbox(process.platform, app.kind) && ad.continueWithoutSandbox) {
         await ad.continueWithoutSandbox(sid);
         from = events.length;
         await ad.send(sid, { text: 'Reply with only the word ok.' });

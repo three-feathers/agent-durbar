@@ -63,7 +63,7 @@ jobs:
       # without it. Installed so the sandboxed path is the one tested here (ubuntu-latest).
       - name: Install the OS sandbox helpers (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get install -y --no-install-recommends bubblewrap socat
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends bubblewrap socat
       # FR-007: the turn on Linux every run; on macOS and Windows only on Monday's scheduled run or a manual run with full_turn
       - name: Turn or no turn
         id: mode
