@@ -497,4 +497,4 @@ Proposed 2026-10-24 and reviewed by the owner. **Acceptance (FR-037):** Vikram (
 
 ### 2026-11-02: three more worlds, for testing lobbies together (owner decision, FR-077; spec 102)
 
-- **FR-077** Owner decision of Vikram, 2026-11-02, on #555: petrol garage, founders' garage and rooftop terrace are all built as worlds, so that all lobbies can be tested together; spec first, in spec 102 (FR-280..FR-299). No rule changes. Numbers taken: FR-077 (main, remote branches and open PRs reach FR-076 here).
+- **FR-077** Owner decision of Vikram, 2026-11-02, on #555: petrol garage, founders' garage and rooftop terrace are all built as worlds, so that all lobbies can be tested together; spec first, in spec 102 (FR-280..FR-299). He answered that delta's Q1..Q10 the same day, 15:48 UTC, relayed by his coordinating agent, with its recommendations: art only after grey-box plans pass, each image run on his written yes; closed flag in this repository and out of packaged builds until the store lands, then on demand. No rule changes. Numbers taken: FR-077 (main, remote branches and open PRs reach FR-076 here).

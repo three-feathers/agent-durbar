@@ -121,13 +121,13 @@ P1 to P3 may merge before the gate with nothing visible as available; P4 to P6 r
 
 **Reused (spec 021 FR-031).** `layoutFor`, `ARRANGEMENTS`, `Layout`, `lobbyBand`, `lobbyWidths`, `stagger`, `lightFor` (#1016, 097); `WORLDS`, `WORLD_FLAGS`, `peopleFor`, `parseWorld`, `offeredWorlds` (`crew.js`); `worldflags`, `officeview`, `world` (simulator options); `NOTE_PAPER`, `NOTE_INK`, `notePaper` (#994); the 12-a-second grid and `check-097-motion` (#1046); `world-matrix.js`, `check-world-tools`, `test:surfaces` (098); T093, T094, `check-world-distinct`; `test:realoffice-assets`; FR-227's `focus.webp`; FR-223's `desk-back`; the moment rules of FR-271 on #1014. **New and shared, none per world:** the table-driven plan function, `focus` drawn, floor and wall from pack parts with no `world.css`, `notePaper`, `noteStyle`, `--moments`, `DURBAR_SIM_WORLDFLAGS`.
 
-**Order of work.** No art first: T240, T241, T242..T245, T247, T248, T249, T258, then the owner's look at grey boxes (T246). Art follows his yes (Q1): T250, T251, T252, T253, one at a time. Then T254, T255 per world, T256. T257 only when the store is on `main`.
+**Order of work.** No art first: T240, T241, T242..T245, T247, T248, T249, T258, then the owner's look at grey boxes (T246). Art follows his written yes per image run, after checking the plan's usage (Q1): T250, T251, T252, T253, one at a time. How it lands is Q11's: as recommended, each world whole behind its flag, and only reachable shared work before it. Then T254, T255 per world, T256. T257 only when the store is on `main`.
 
 | Step | Gate | Cost |
 |---|---|---|
-| T240..T249, T258 | The next built-in world's stack on `main`; T093 | 0 AI credits; about 200 lines of plan code plus tests and small shared rules; about 8 PRs |
+| T240..T249, T258 | The next built-in world's stack on `main`; T093 | 0 AI credits; about 200 lines of plan code plus tests and small shared rules; about 3 shared PRs, and the rest inside the per-world PRs if Q11 goes as recommended |
 | T246 | The plans pass T241 | The owner's look |
-| T250..T253 | Q1, T240, T246 | 36 to 54 images on the owner's plan; about 0.75 MB a pack (estimate) |
+| T250..T253 | Q1, T240, T246 | 36 to 54 images on the owner's plan, check its usage first; about 0.75 MB a pack (estimate) |
 | T254, T255 | FR-035, with 097 FR-179 | Owner's look per world, `real:` run on a Mac |
 | T257 | #955, #966, T043, T190 | Two PRs per world |
 

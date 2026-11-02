@@ -142,7 +142,7 @@ Other specs: #921 (097 P1), #936 and 097 T156..T159 (gate), 098's checks, 096 (P
 
 ## Delta 2026-11-02: petrol garage, founders' garage and rooftop terrace (FR-280..FR-299)
 
-Starts after the next built-in world's stack lands (FR-296). All behind closed flags (FR-294). 0 AI credits except T250..T253, which wait for the owner's yes (Q1). Each task is a small PR; each new rule gets a planted mutation; driver waits use `until()`.
+Starts after the next built-in world's stack lands (FR-296, decided Q4). All behind closed flags (FR-294, decided Q2). 0 AI credits except T250..T253: each image run waits for the owner's written yes, after checking the plan's usage (Q1). **How they land, if Q11 goes as recommended:** T244, T247's scene and T248 alone; T241, T246 on a branch; one PR per world with its table, pack, flag and cells; the first also brings T242, T243, T245, T249, T258. Each new rule gets a planted mutation; driver waits use `until()`.
 
 **No art**
 
@@ -155,19 +155,19 @@ Starts after the next built-in world's stack lands (FR-296). All behind closed f
 - [ ] T246 Grey-box look: the three plans at 3, 4, 8 and 15, both sizes, chat closed, in flat placeholder boxes with no generated art, plus each beside the worlds that have plans. **The owner looks before any image is made.** Test: `read:` his answer on the PR; `sim:` pictures as artifacts only [FR-292, FR-297]
 - [ ] T247 Lobby order constant per arrangement, and a crowded scene of the `lobby` moment: 15 agents with 5 at the Boss, with all 15 at the Boss, and with 3 custom places. Test: `world-matrix`'s overlap, size and contrast checks at both sizes; `stagger` and `lobbyWidths` are not changed; a mutant dropping a plate from the collision list fails [FR-285, FR-286]
 - [ ] T248 `DURBAR_SIM_WORLDFLAGS` in `main.ts`, under `DURBAR_SIM` only, ignored in a packaged build; T094's contact sheet gains one page of lobbies from `matrix.json`, artifact only. Test: `test:` a packaged-build path ignores it; `sim:` World row lists the three; `test:surfaces`: not in `shots-docs` [FR-295]
-- [ ] T249 Packaged builds leave out these folders while their flags are closed: one line in `build.files`, on the owner's answer to Q2. Test: a file-list test against the `dist` file set, and a mutant opening the exclusion fails [FR-294, SC-035]
+- [ ] T249 Packaged builds leave out these folders while their flags are closed: one line in `build.files` (decided, Q2). Test: a file-list test against the `dist` file set, and a mutant opening the exclusion fails [FR-294, SC-035]
 - [ ] T258 One driver for all three, `scripts/shots-102-places.js`, using the checks of the next built-in world's driver with a world id: overlap, 10.5 px, Tab, contrast, hostile names, no text in art layers, a sky edge at 3:1, luminance limits, the signature picture equal across all states, nothing moving under reduced motion, Serious mode and a hidden window; `check-097-motion` with the world id. In `ui-suite.js`. Test: `sim:`, each failure planted once [FR-288, FR-289, FR-290, SC-034]
 
-**Art (needs Q1, T240, T246; one image at a time; stop at 18 per pack)**
+**Art (needs T240, T246, and the owner's written yes per image run, Q1; check the plan's usage first; one image at a time, one pack at a time; stop at 18 per pack)**
 
 - [ ] T250 Petrol garage pack: FR-292's list, FR-284, FR-285, FR-287; a generic pale car and a black bike with no badge; `ASSETS.md`. Test: `test:world-packs`, `test:realoffice-assets`, `check-world-distinct`, T258's driver, matrix at both sizes; `read:` `owner-check` per picture [FR-284, FR-285, FR-289, FR-292, SC-033]
 - [ ] T251 Founders' garage pack, sharing nothing with T250; portrait monitor; no text on the wall of arrows. Test: as T250 [FR-015, FR-284, FR-285, FR-292, SC-032]
 - [ ] T252 Rooftop terrace pack; still pool, no pillar box, generic towers. Test: as T250, and FR-290's limits on `wall.webp` and `floor.webp` [FR-284, FR-285, FR-290, FR-292]
-- [ ] T253 Clay helpers, one strip per world, after T235: four poses, three looks, fully dressed, no water, no tools near them. Test: FR-271's driver at 15 agents per world, `+N`; `read:` `owner-check`: no photorealistic child, no likeness [FR-271, FR-291]
+- [ ] T253 Clay helpers (decided, Q5), one strip per world, after T235: four poses, three looks, fully dressed, no water, no tools near them. Test: FR-271's driver at 15 agents per world, `+N`; `read:` `owner-check`: no photorealistic child, no likeness [FR-271, FR-291]
 
 **Before each is offered**
 
 - [ ] T254 Fill every registry cell per world, `shippable` only under 098 FR-024; chat and Settings looked at beside the room (FR-106, FR-113). Test: `test:surfaces`, `check-world-tools`, matrix at both sizes [FR-035, FR-297]
 - [ ] T255 Per world, separately: `check-perf --record` against Photo office in the same run; the owner's look at 3, 4, 8, 15 at both sizes with a video; `distinct-check`; the flag opens only then. Ruben's look asked for. Test: `real:` recorded by whoever has the Mac, and the owner's look in `ASSETS.md`; `test:world-catalogue` fails without it [FR-017, FR-035, FR-297, SC-036]
-- [ ] T256 Lines in 097 and 098 (FR-299) once the PRs holding them land; real lines at narrow glass beside `aisles`; world design guide read again. Test: `npm run specs:check`, `read:` [FR-293, FR-299]
-- [ ] T257 On demand, when the store lands and on Q3: move each folder to `three-feathers/agent-durbar-worlds`, two pull requests by FR-243, a pinned hash, T249's line removed, a `coming` row, then `available`. Test: `test:world-catalogue`, T195's job, `real:` T043's download; a file-list test: no such art in this repository [FR-240, FR-241, FR-243, FR-294]
+- [ ] T256 Lines in 097 and 098 (FR-299) and FR-271's clay reading, Photo office included (Q5), once the PRs holding them land; real lines at narrow glass beside `aisles`; world design guide read again. Test: `npm run specs:check`, `read:` [FR-293, FR-299]
+- [ ] T257 On demand, when the store lands (decided, Q3): move each folder to `three-feathers/agent-durbar-worlds`, two pull requests by FR-243, a pinned hash, T249's line removed, a `coming` row, then `available`. Test: `test:world-catalogue`, T195's job, `real:` T043's download; a file-list test: no such art in this repository [FR-240, FR-241, FR-243, FR-294]

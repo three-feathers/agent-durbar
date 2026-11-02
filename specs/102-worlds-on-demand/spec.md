@@ -628,7 +628,7 @@ D7, FR-085, FR-170, FR-181, US2 scenario 1, FR-205, FR-241, plan and T195 follow
 
 ### 2026-11-02: petrol garage, founders' garage and rooftop terrace, three worlds (owner decision, Vikram, on #555; spec 021 FR-077; FR-280..FR-299, SC-030..SC-036, T240..T258)
 
-**Status: specified; nothing built, no image made for a pack, no flag exists.** The owner asked for all three to be built as worlds, so that all lobbies can be tested together (#555). The idea is Ruben's, from #555. **Numbers** checked against `main`, remote branches and open PRs: #1005 reaches FR-270, SC-027, T232; #1014 takes FR-271, FR-272, T233..T235. This delta is written against those open PRs: anything cited from #990, #994, #1001, #1005, #1014, #1016, #1025, #1030 or #1046 can still change. **No unreleased world is named in public notes or changelogs before it ships** (FR-272 on #1014).
+**Status: specified, and the owner's answers are at the end of this entry; nothing built, no image made for a pack, no flag exists.** The owner asked for all three to be built as worlds, so that all lobbies can be tested together (#555). The idea is Ruben's, from #555. **Numbers** checked against `main`, remote branches and open PRs: #1005 reaches FR-270, SC-027, T232; #1014 takes FR-271, FR-272, T233..T235. This delta is written against those open PRs: anything cited from #990, #994, #1001, #1005, #1014, #1016, #1025, #1030 or #1046 can still change. **No unreleased world is named in public notes or changelogs before it ships** (FR-272 on #1014).
 
 **What the mock shows and does not** (`read:` its code and pictures, outside the repo, made 2026-11-02 from 8 Codex images). It answers "is the idea attractive at 15 people", and is not a design to copy:
 
@@ -638,7 +638,7 @@ D7, FR-085, FR-170, FR-181, US2 scenario 1, FR-205, FR-241, plan and T195 follow
 
 #### The worlds
 
-- **FR-280** **Three worlds, three packs.** Each is one row of FR-011 and one pack, picked in the World row like any other, and any set works in it (FR-200). None changes what an agent does, its session, permission mode, model, cap or MCP extras.
+- **FR-280** **Three worlds, three packs.** Each is one row of FR-011, added when it lands (Q11), and one pack, picked in the World row like any other, and any set works in it (FR-200). None changes what an agent does, its session, permission mode, model, cap or MCP extras.
 
   | World | Id | Arrangement | Default set | Delivery |
   |---|---|---|---|---|
@@ -727,7 +727,7 @@ D7, FR-085, FR-170, FR-181, US2 scenario 1, FR-205, FR-241, plan and T195 follow
   | Other tools | kraft | `#c8b58f` | `#e8dabb` | `#e2cc9c` |
   | Postbox and a custom place | plain | `#d8d5cc` | `#f4f2eb` | `#f1eee4` |
 
-  Postbox has no colour of its own in #994's table and takes the plain one (Q9). Dark, pale and sunny, so the paper belongs to the room. Values are a start; the owner's look may move them inside the family.
+  Postbox has no colour of its own in #994's table and takes the plain one (decided, Q9). Dark, pale and sunny, so the paper belongs to the room. Values are a start; the owner's look may move them inside the family.
 
 #### Calm, contrast and helpers
 
@@ -744,11 +744,11 @@ D7, FR-085, FR-170, FR-181, US2 scenario 1, FR-205, FR-241, plan and T195 follow
   - `wall.webp`'s brightest 5 % of pixels stay at relative luminance 0.80 or less, and `floor.webp`'s mean stays between 0.15 and 0.55 (`test:world-packs`, decoded). These numbers are a first bar from one picture; T097's rule applies, and they move only by evidence.
   - Screens stay the app's opaque dark face under the hood, with no glare or reflection painted over text.
   - The same pass runs for the two garages: charcoal floor against plates, and pale floor against the tape-style paper, whose edge the app draws.
-- **FR-291** **Helpers are clay-toy people** (FR-271 on #1014; #1014 makes `helpers` a required moment). These three worlds are photographic, and **no photorealistic child is ever drawn**: a helper is a small clay-toy figure, visibly a toy, with rounded plasticine shapes and thumb marks, no real child's likeness. Three shown per parent, then `+N`; four poses (playing, hand up, error, done); fully dressed in everyday clothes: overalls and a toy car with no badge in the petrol garage, a T-shirt and wooden blocks in the founders' garage, shorts, T-shirt and sun hat with a ball on the roof. **Never swimwear, never in or at the pool, never near a soldering iron or a car in the art:** they stand beside the parent's plate and nowhere else. One `helpers.webp` strip per world, one image, under FR-041's rules once FR-271 lands; D4 is unchanged for adults. `[KNOWN GAP]` FR-271 says "in that world's own drawing style": this delta reads clay as the style for photographic worlds, for the owner to confirm with Q5. Whether the moment lands here or waits is T235's order.
+- **FR-291** **Helpers are clay-toy people** (FR-271 on #1014; #1014 makes `helpers` a required moment). These three worlds are photographic, and **no photorealistic child is ever drawn**: a helper is a small clay-toy figure, visibly a toy, with rounded plasticine shapes and thumb marks, no real child's likeness. Three shown per parent, then `+N`; four poses (playing, hand up, error, done); fully dressed in everyday clothes: overalls and a toy car with no badge in the petrol garage, a T-shirt and wooden blocks in the founders' garage, shorts, T-shirt and sun hat with a ball on the roof. **Never swimwear, never in or at the pool, never near a soldering iron or a car in the art:** they stand beside the parent's plate and nowhere else. One `helpers.webp` strip per world, one image, under FR-041's rules once FR-271 lands; D4 is unchanged for adults. `[KNOWN GAP]` FR-271 says "in that world's own drawing style": this delta reads clay as the style for photographic worlds, as the owner confirmed (Q5), Photo office included. Whether the moment lands here or waits is T235's order.
 
 #### Art and fit
 
-- **FR-292** **Art: 12 to 18 images per pack, one at a time.** A generation runs only after the world's card passes (FR-017), the owner has said yes (Q1) and the plan has passed in grey boxes (T246). One `codex exec` at a time, machine-wide. Each pack starts from these 10 images, and a fixture or part that reads badly gets its own image: **stop at 18 and ask**.
+- **FR-292** **Art: 12 to 18 images per pack, one at a time.** A generation runs only after the world's card passes (FR-017), the plan has passed in grey boxes (T246) and the owner has said yes in writing to that run (Q1). Check the plan's usage first. One `codex exec` at a time, machine-wide, one pack at a time. Each pack starts from these 10 images, and a fixture or part that reads badly gets its own image: **stop at 18 and ask**.
 
   | # | Image | Pack files |
   |---|---|---|
@@ -775,20 +775,20 @@ D7, FR-085, FR-170, FR-181, US2 scenario 1, FR-205, FR-241, plan and T195 follow
   | Glass | at least 112 x 64 | at least 112 x 118 | at least 120 x 66 |
   | Smallest front face | about 28 to 33 | about 30 | about 30 |
 
-  **The face floor is 24 px, measured crown to chin in the app** (FR-229, owner 2026-11-01), only on a floor of 15; with fewer people faces grow, and hover and focus show them big. People seen from behind have no face and do not count (FR-256). `[KNOWN GAP]` none of this is measured. T241 measures in a pure test **before any image is made**. A plan that fails is redesigned, and it stays out of `ARRANGEMENTS` (SC-019): the first move is a smaller lane, wall or pool, since decoration gives way first. `[KNOWN GAP]` 097 FR-032's bar for real lines is at 150 x 60: T256 writes these three into 097 beside `aisles` (T232 on #1005). `[KNOWN GAP]` a back-bank person who is waiting or in error shows a back in `bays`: state reads from the light, plate and bubble, and the owner's look decides whether that is enough (Q6).
+  **The face floor is 24 px, measured crown to chin in the app** (FR-229, owner 2026-11-01), only on a floor of 15; with fewer people faces grow, and hover and focus show them big. People seen from behind have no face and do not count (FR-256). `[KNOWN GAP]` none of this is measured. T241 measures in a pure test **before any image is made**. A plan that fails is redesigned, and it stays out of `ARRANGEMENTS` (SC-019): the first move is a smaller lane, wall or pool, since decoration gives way first. `[KNOWN GAP]` 097 FR-032's bar for real lines is at 150 x 60: T256 writes these three into 097 beside `aisles` (T232 on #1005). `[KNOWN GAP]` a back-bank person who is waiting or in error shows a back in `bays`: state reads from the light, plate and bubble. The owner kept this bank, to be judged on the grey boxes (Q6).
 
 #### Delivery, testing and order
 
-- **FR-294** **Delivery, by spec 102's state today: closed flag now, on demand later.** The destination is **on demand**: these are not in OP-10's and FR-213's short list of what ships, and the owner's note on #555 expected a world pack once worlds on demand are live. **That path does not exist yet:** the pack store #966 is held (`status:blocked`), the validator #955 is open, no catalogue exists, and T190 forbids any pack in the worlds repository until #955 merges. So, until then, and subject to Q2:
+- **FR-294** **Delivery, by spec 102's state today: closed flag now, on demand later.** The destination is **on demand**: these are not in OP-10's and FR-213's short list of what ships, and the owner's note on #555 expected a world pack once worlds on demand are live. **That path does not exist yet:** the pack store #966 is held (`status:blocked`), the validator #955 is open, no catalogue exists, and T190 forbids any pack in the worlds repository until #955 merges. So, until then, by the owner's decision (Q2):
   - Each pack sits at `src/renderer/realoffice/worlds/<id>/`, flag closed, drawn only by the simulator with `worldflags`. A closed flag means not offered and never chosen: a stored id means the first world, and nothing of it loads (`parseWorld`, `peopleFor`).
   - **A closed flag does not keep bytes out of the installer:** `copy-assets.js` copies every world folder and `package.json` ships `dist/**/*`. So one exclusion in `build.files` plus a file-list test keep them out of packaged builds while their flags are closed. No release carries unapproved art.
-  - This is a temporary exception to FR-240's "this repository holds no downloadable art", the owner's to allow. The same folder, with no `world.css`, then moves to `three-feathers/agent-durbar-worlds` when the store lands (T257), and takes FR-243's two pull requests, a pinned hash and FR-035's gate. Git history keeps what was here, an estimated 2.25 MB.
-  - If the owner wants any of them offered before the store lands, that is a built-in, changing OP-10 and FR-213's list (Q3). The 30 MB test holds: 23.0 MB estimated for all planned shipped art (FR-253) plus about 2.25 MB fits; three packs at 4 MB each would be 35 MB and would not.
+  - This is a temporary exception to FR-240's "this repository holds no downloadable art", allowed by the owner (Q2). The same folder, with no `world.css`, then moves to `three-feathers/agent-durbar-worlds` when the store lands (T257), and takes FR-243's two pull requests, a pinned hash and FR-035's gate. Git history keeps what was here, an estimated 2.25 MB.
+  - They are not built-ins, and they join neither OP-10's nor FR-213's list (Q3). Offering one before the store lands would change that and needs a new decision. The 30 MB test holds: 23.0 MB estimated for all planned shipped art (FR-253) plus about 2.25 MB fits; three packs at 4 MB each would be 35 MB and would not.
 - **FR-295** **Testing all lobbies together, on the world matrix** (098 FR-050..FR-052, FR-031 check: no new driver, no new switch in the UI).
   - **By hand:** `DURBAR_SIM=15 DURBAR_SIM_WORLDFLAGS=garage-petrol,garage-founders,rooftop npm start` lists them in the World row beside the worlds already open, so one click switches. Main passes the value on as the existing `worldflags` option, under `DURBAR_SIM` only, as it does the other simulator options; a packaged app has no such path.
   - **By script:** `node scripts/world-matrix.js --worlds photo,garage-petrol,garage-founders,rooftop --moments lobby,boss-bank-post-coffee`, at both sizes. `--moments` is new, and small; FR-286's scene is an extra scene of the `lobby` moment, so `--moments lobby` runs it and no new world moment is added. T094's contact sheet takes `matrix.json` and shows these on one page, world by world, at full width, as an artifact only (098 FR-054).
   - **A real fault this finds:** on #994's and #1030's versions the driver passes `world` and not `worldflags`. A closed-flag world then quietly draws Photo office and passes (`parseWorld`), and that holds for Cave too. **T244 passes the flags and fails a cell whose drawn `data-world` is not the one asked for.**
-- **FR-296** **Order: after the next built-in world's stack lands** (#1005, #1016, #1022, #1025, #1030 and what follows them), since `layoutFor`, the flags' pattern and `aisles` come from it. **The owner's world order elsewhere stays:** nothing here moves any row of #1014's plan, Cave, Durbar hall, or the next built-in world. He can move these (Q4). The tasks with no art cost no credits and can start when `layoutFor` is on `main`. FR-039 applies, and nothing here counts as urgent.
+- **FR-296** **Order: after the next built-in world's stack lands** (#1005, #1016, #1022, #1025, #1030 and what follows them), since `layoutFor`, the flags' pattern and `aisles` come from it. **The owner's world order elsewhere stays:** nothing here moves any row of #1014's plan, Cave, Durbar hall, or the next built-in world. That is his decision (Q4), and he can still move them. The tasks with no art cost no credits and can start when `layoutFor` is on `main`. FR-039 applies, and nothing here counts as urgent.
 - **FR-297** **Before each is offered.** FR-035 with no exception: 097 FR-179 (T156..T159), `test:world-packs`, all moments, the matrix, provenance, FR-016, `distinct-check`, the default set. **The owner's look is required before each is offered, per world, separately:** one can open while another waits.
 
   | Check | By whom | Tag |
@@ -801,8 +801,8 @@ D7, FR-085, FR-170, FR-181, US2 scenario 1, FR-205, FR-241, plan and T195 follow
   | Packaged Windows, macOS and Linux run with flags open | Whoever has each | `real:`, else `[KNOWN GAP]` |
   | First real download, once on demand (T043) | Whoever has each OS | `real:`, 0 AI credits |
 
-  Everything else is `test:` and `sim:`, 0 AI credits. Image runs are real usage of the owner's plan, Q1.
-- **FR-298** **What #555 asked that does not carry over.** **A floor marked Basement or Rooftop** (B and R on the lift): replaced by the owner's decision to build worlds, and a world applies to the whole office as today. No per-floor world is specified. **The "Est. today" sign:** packs set no words and art holds no text (Q7). **The seagull:** would need motion, and the first build has none; a still gull is a prop inside `focus.webp`, if wanted. **An agent in sunglasses:** poses are the set's, not a world's (D4). **A night rooftop with fairy lights:** `lightSets` (FR-252 on #1005) could carry it; not in the first build (Q8).
+  Everything else is `test:` and `sim:`, 0 AI credits. Image runs are real usage of the owner's plan: check the plan's usage first (Q1).
+- **FR-298** **What #555 asked that does not carry over.** **A floor marked Basement or Rooftop** (B and R on the lift): replaced by the owner's decision to build worlds, and dropped (Q10): a world applies to the whole office as today. **The "Est. today" sign:** dropped (Q7): packs set no words and art holds no text. **The seagull:** would need motion, and the first build has none; a still gull is a prop inside `focus.webp`, if wanted. **An agent in sunglasses:** poses are the set's, not a world's (D4). **A night rooftop with fairy lights:** `lightSets` (FR-252 on #1005) could carry it; not in the first build: one light each (Q8).
 - **FR-299** **Other specs**, written by T256 once the PRs holding those lines land: 098 FR-030, FR-031 (`notePaper`, `noteStyle`, `helpers`), registry rows; 097 FR-032 and FR-023's lobby order; 024's and 001 FR-039's order stays their own, only the drawing changes.
 
 #### Acceptance, edge cases, success criteria
@@ -842,17 +842,28 @@ D7, FR-085, FR-170, FR-181, US2 scenario 1, FR-205, FR-241, plan and T195 follow
 - **SC-035** With flags closed, no packaged file holds these worlds' art, and no stored choice draws them.
 - **SC-036** The owner's look is recorded for a world before its flag opens, and the matrix cell of a closed-flag world draws that world and no other.
 
-#### Open questions for the owner
+#### Owner's answers (Vikram, 2026-11-02, 15:48 UTC, relayed by his coordinating agent; spec 021 FR-077)
 
-Nothing is spent or decided by this delta; each has a recommendation. "ok" takes them all.
+He answered "ok" to all ten, with the recommendations. These are decisions now, and FR-280..FR-299 read accordingly.
 
-- **Q1 Image runs (costs plan usage).** 12 to 18 images per pack, 36 to 54 in all, on your ChatGPT plan, one at a time. What that costs in plan limits is not known. *Recommended:* yes, after the grey boxes pass, one pack at a time, petrol first, then founders', then roof, and a stop at 18 each. **No run until your written yes.**
-- **Q2 Where the art sits until the store lands.** (a) In this repository, flag closed, left out of packaged builds; (b) the same, in packaged builds, as Cave and the next built-in world are; (c) wait for #955 and #966, and test nothing together until then. *Recommended:* (a): it is testable now, and no release carries unapproved art. It needs your exception to FR-240.
-- **Q3 Delivered how, in the end.** On demand, or built-in? *Recommended:* on demand, once the store lands, per your note on #555. Built-in would change OP-10's list, and is the only way to offer them before the store.
-- **Q4 Order.** *Recommended:* as FR-296: after the next built-in world's stack, nothing else moves, and these go after #1014's row unless you move them. Move them if testing lobbies together matters more.
-- **Q5 Clay for helpers in photographic worlds.** *Recommended:* yes, clay in these three, and read FR-271 that way for Photo office too. Art approval as for any picture.
-- **Q6 Half the petrol garage seen from behind.** It makes the plan distinct and shows screens best, and you said backs are fine; at 15, up to 8 people are read by light, plate and bubble rather than a face. *Recommended:* keep, judged on the grey boxes. The alternative is a front-facing back bank, closer to `rows`.
-- **Q7 "Est. today".** Ruben's sign breaks "packs set no words" and "no text in art". *Recommended:* drop it; the wall of arrows carries the idea. Ruben may want to say.
-- **Q8 Night and day.** *Recommended:* one light each in the first build; a night roof later as `lightSets`, with its own image cost.
-- **Q9 Postbox paper.** #994's table has no Postbox row. *Recommended:* the plain paper, as now.
-- **Q10 #555.** *Recommended:* stays open until all three are offered, or closed with what is not built (FR-298) if you prefer; the per-floor idea is dropped unless you bring it back.
+- **Q1 Image runs: decided.** Art only after the grey-box plans pass (T246), one pack at a time, and **each image run on his written yes**. Before any run, check the plan's usage first.
+- **Q2 Where the art sits: decided.** In this repository, flag closed, out of packaged builds, until the store lands. This is his exception to FR-240 for these three, and it ends at T257.
+- **Q3 Delivery: decided.** On demand once the store lands. They do not join OP-10's list.
+- **Q4 Order: decided.** After the next built-in world's stack; nothing else moves.
+- **Q5 Helpers: decided.** Clay-toy in these three, and the same reading of FR-271 for Photo office. Written into FR-271 when #1014 lands (T256).
+- **Q6 The petrol garage's back bank: decided.** Kept, and judged on the grey boxes (T246).
+- **Q7 "Est. today": decided.** The sign is dropped.
+- **Q8 Light: decided.** One light each.
+- **Q9 Postbox paper: decided.** The plain paper.
+- **Q10 #555: decided.** It stays open until all three are offered. The per-floor idea is dropped.
+
+**Still open for the owner**
+
+- **Q11 Unreachable code.** His new rule, on its way through the weekly retro: no unreachable code lands. These worlds either name themselves as the closed-flag exception, or wait to land whole. Waiting for all three means waiting for the held store (Q2, Q3), since no packaged build can reach them before it. *Recommended:* **the closed-flag exception, as narrow as it can be: each world lands whole behind its flag, and nothing lands before its pack exists.**
+  - **Lands on its own, because it is reachable today:** T244's matrix fix and `--moments`, T247's crowded scene over the worlds that exist, T248. They serve every world, Cave included.
+  - **Stays on a branch until that world's art is approved:** T241's plan and T246's grey boxes, shown from the branch. No id joins `ARRANGEMENTS` on `main` without its pack.
+  - **Lands in one PR per world:** that world's table in `ARRANGEMENTS`, its pack, its flag and T254's cells. The first world's PR also brings T242, T243, T245, T249 and T258, unless Cave has brought T242 first.
+  - **Why this counts as reachable enough to name:** every path runs under `worldflags` in the simulator and in CI (T258, the matrix) from the day it lands.
+  - **Its exit, per world:** the flag opens on the owner's look and the store (T255, T257), or the world's code and pack are removed. A world that waits **over 30 days** after landing goes back to him with that choice. The number is an agent's proposal.
+  - **The alternative, three worlds at once:** a very large PR, and art held on a branch for an unknown time. It reaches users no sooner.
+  This delta does not write the rule itself: that is the weekly retro's and spec 021's.
