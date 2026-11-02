@@ -165,7 +165,7 @@ module.exports = async (ctx) => {
       await H.load({ w, h, query: q(world, { simelicit: '1', sim: n }), ready: REAL, settle: false });
       await must(PICS, 'the pictures');
       await must(`!!document.querySelector('#stage .ro-slip.ro-queue:not([hidden])')`, 'the queue slip');
-      const sl = await js(`(()=>{const e=document.querySelector('#stage .ro-slip.ro-queue');return {variant:e.dataset.variant,total:(window.__durbarSimUi.slips().queue||{}).total,btns:[...e.querySelectorAll('button')].map(b=>b.textContent.trim()),sub:[...e.querySelectorAll('button')].map(b=>b.title),h:(e.querySelector('.sl-h')||{}).textContent,
+      const sl = await js(`(()=>{const e=document.querySelector('#stage .ro-slip.ro-queue');return {variant:e.dataset.variant,act:[...e.querySelectorAll('.sl-act button')].map(b=>b.textContent.trim()),total:(window.__durbarSimUi.slips().queue||{}).total,btns:[...e.querySelectorAll('button')].map(b=>b.textContent.trim()),sub:[...e.querySelectorAll('button')].map(b=>b.title),h:(e.querySelector('.sl-h')||{}).textContent,
         r:e.getBoundingClientRect().toJSON(),lobby:document.querySelector('#stage .ro-lobby').getBoundingClientRect().bottom,small:[...e.querySelectorAll('*')].filter(x=>x.children.length===0&&parseFloat(getComputedStyle(x).fontSize)<10.5).length}})()`);
       assert.ok(sl.r.top >= sl.lobby - 0.5, `${tag}: the slip sits under the lobby band`);
       assert.strictEqual(sl.small, 0, `${tag}: slip text >= 10.5px`);
@@ -184,12 +184,12 @@ module.exports = async (ctx) => {
       const rowDetail = await js(`!!document.querySelector('#inboxDlg .inbox-row details.pdiff, #inboxDlg .inbox-row details.pcmd')`);
       if (sl.variant === 'full' && rowDetail) {
         /* the inbox row shows a change or a command to read: the slip offers no Allow, only the way to it (review on #994) */
-        assert.deepStrictEqual(sl.btns, ['Show in chat', 'Review in the inbox'], `${tag}: no Allow on a slip whose card has a change or command to read: ${JSON.stringify(sl.btns)}`);
+        assert.deepStrictEqual(sl.act, ['Show in chat', 'Review in the inbox'], `${tag}: no Allow on a slip whose card has a change or command to read (the .sl-act buttons): ${JSON.stringify(sl.act)}`);
       }
       if (sl.variant === 'full' && !rowDetail) {
         const flat = dlg.btns.filter((b) => !/^Open$/.test(b));
-        assert.deepStrictEqual(sl.btns.slice(0, flat.length), flat, `${tag}: the slip's buttons are the inbox's, in its order`);
-        assert.strictEqual(sl.btns[flat.length], 'Show in chat', `${tag}: then Show in chat`);
+        assert.deepStrictEqual(sl.act.slice(0, flat.length), flat, `${tag}: the slip's buttons are the inbox's, in its order`);
+        assert.strictEqual(sl.act[flat.length], 'Show in chat', `${tag}: then Show in chat`);
         assert.ok(sl.h.startsWith(dlg.first), `${tag}: the first slip is the inbox's first row`);
       }
       await js(`document.getElementById('inboxClose').click()`);
@@ -334,7 +334,7 @@ module.exports = async (ctx) => {
       await must(`!!document.querySelector('#stage .ro-slip.ro-queue[data-variant="full"]')`, 'the full queue slip');
       const PERM = `document.querySelectorAll('#stage .ro-slip.ro-queue [data-slipact="perm"]').length`;
       const first = await js(`window.__durbarSimUi.slips().queue.first.id`);
-      assert.ok(await js(`window.__durbarSimUi.clearDetail(${jsLiteral(first)})`) || true);
+      assert.ok(await js(`window.__durbarSimUi.clearDetail(${jsLiteral(first)})`), `${tag}: the first card is there to clear`);
       await must(PERM + '>=1', 'the slip with the inbox buttons once the card has no change to read');
       assert.ok(await js(PERM) >= 1, `${tag}: with no change to read, the slip offers the inbox's buttons`);
       const pending = () => js(`document.querySelectorAll('#chat .note.perm:not(.settled)').length+':'+window.__durbarSimUi.agents().filter(a=>a.state==='waiting').length`);
