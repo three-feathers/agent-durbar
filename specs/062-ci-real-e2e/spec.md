@@ -59,6 +59,7 @@ The list of supported CI platforms lives in one file, `.github/platforms.json`. 
 **Tasks:** T010.
 
 **Cause found by the hand run 41373742601 (2026-11-02):** on Linux (Claude) and Windows (Claude, Copilot) the turn ended with `events sandbox:2,status:2; status idle>stopped` and no message: since spec 087 (2026-10-25) Durbar sends nothing when the agent app's OS sandbox cannot start (`Not sent: the OS sandbox could not start`) and offers *Continue without the OS sandbox*. The check read that early `idle` as the end of the turn. That matches the first red day (10-25). The earlier `No network layer` failures were the missing download getter (fixed 2026-10-27, spec 081).
+**Change 3 (T009):** the workflow installs `bubblewrap` and `socat` on Linux so Claude's sandbox starts there (the run showed `needs socat`); the `schedule:` block and the cron check in `test-platforms.ts` are back, FR-009's "no schedule" ends (FR-001 and FR-006 daily apply again). On Windows neither Claude Code ("no OS sandbox on Windows") nor Copilot ("requires BaseContainer", the runner's Windows) can start one: that stays a recorded `[KNOWN GAP]` in the row, not a failure.
 **Change 2:** the turn takes that offer like a person would (`continueWithoutSandbox`, then sends again), and the row's *Read-only turn* column says so with the adapter's own notice text, so the sandbox gap is recorded, not hidden. The "ok" check is unchanged; an app whose sandbox starts is not touched.
 
 ### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
@@ -73,7 +74,6 @@ The `status:` of the specs-index block used to read (moved here unchanged; the b
 **Why:** the scheduled run failed on 4 days in a row (2026-10-25..2026-10-28) at the step "Install, sign in, list models, one turn", on all 3 OSes until 10-27 and on Linux on 10-28, and each run spends real credits. Owner: "pause it until someone fixes it".
 
 - **FR-009** `.github/workflows/e2e-real.yml` has **no `schedule` trigger** (the block is kept as a comment, with a pointer here and to #856). `workflow_dispatch` (with `full_turn`) stays, so it can be run by hand. Supersedes the "daily" part of FR-001 and FR-006 until T009 is done. Not disabled in the repo settings. `scripts/test-platforms.ts` checks that no live `schedule` key exists and that the manual trigger does.
-- `[KNOWN GAP]` real-account E2E does not run on a schedule until the cause is found and fixed (#856): install, sign-in, model list and turn of the three apps are not checked daily on any OS. Last two failures seen in the logs (one line each, not analysed further): Linux 10-28 Copilot and Claude "no ok in the answer: (empty)"; Windows 10-27 Claude and Codex "No network layer is set up for the installer download".
 
 ### 2026-10-22: cheaper runs (owner, Vikram, 21:42 UTC)
 

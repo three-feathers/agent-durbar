@@ -15,4 +15,4 @@
 
 - [x] T008 Workflow: `schedule:` commented out, `workflow_dispatch` kept, pointer comment; `test:platforms` checks it [FR-009]
 - [x] T010 `scripts/e2e-real.ts`: a turn without "ok" reports event counts, status words and sandbox state (#856) [FR-004]
-- [ ] T009 Find the cause of the red runs (#856), get a manual run green on all 3 OSes, restore the schedule and the cron check in `test-platforms.ts`, drop the `[KNOWN GAP]` [FR-009]
+- [x] T009 Find the cause of the red runs (#856), get a manual run green on all 3 OSes, restore the schedule and the cron check in `test-platforms.ts`, drop the `[KNOWN GAP]` [FR-009]
