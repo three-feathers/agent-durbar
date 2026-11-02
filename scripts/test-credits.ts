@@ -260,8 +260,8 @@ try {
     fs.writeFileSync(blocker, 'x');
     const mk = (): SettingsStore => { const x = new SettingsStore(path.join(blocker, 'durbar-settings.json'), () => 'c-bbbbbb'); x.load(); return x; };
     const s1 = mk();
-    assert.strictEqual(s1.setDefaultMaxAiCredits(75), undefined, 'cap: not saved, still none');
-    assert.strictEqual(s1.defaultMaxAiCredits, undefined);
+    assert.strictEqual(s1.setDefaultMaxAiCredits(75), 75, 'cap: a first cap is the safe direction, in force for this run');
+    assert.strictEqual(s1.unsaved, true);
     assert.strictEqual(s1.setSeriousMode(true), false);
     assert.strictEqual(s1.seriousMode, false, 'serious mode rolled back');
     assert.strictEqual(s1.setChatLinksNewTab(true), false);
@@ -279,12 +279,38 @@ try {
     assert.strictEqual(s1.newFolderParent, undefined, 'new-folder parent rolled back');
     assert.strictEqual(s1.setTheme('dark').ok, false, 'theme: not ok');
     assert.strictEqual(s1.theme, undefined);
+    assert.strictEqual(s1.setTheme('cheeky-crew').ok, false, 'the old Cheeky Crew id migrates and saves in one step: not ok when the save fails');
+    assert.strictEqual(s1.characters, 'theme', 'and nothing of it is kept');
     assert.strictEqual(s1.setTheme(null).ok, false);
     assert.strictEqual(s1.setCharacters('cheeky').ok, false);
     assert.strictEqual(s1.characters, 'theme');
     assert.deepStrictEqual(s1.setPlace('srv', 'desk'), { ok: false, placeMap: {} }, 'place: not ok, map unchanged');
     assert.strictEqual(s1.addPlace('Lab', 'star').ok, false);
     assert.deepStrictEqual(s1.customPlaces, []);
+    // the safe direction (review of #1036): turning the OS-sandbox choice off, or a tighter default cap, is in force for this run even when the file cannot be written; the opposite is rolled back
+    {
+      const root = path.join(dir, 'later-blocked');
+      const f = path.join(root, 'durbar-settings.json');
+      const sb = new SettingsStore(f); sb.load();
+      assert.strictEqual(sb.setSandboxAlwaysContinue('claude', true), true);
+      assert.strictEqual(sb.setDefaultMaxAiCredits(100), 100);
+      assert.strictEqual(sb.unsaved, false, 'saved');
+      fs.rmSync(root, { recursive: true, force: true });
+      fs.writeFileSync(root, 'x'); // the folder is now a file: every save fails
+      assert.strictEqual(sb.setSandboxAlwaysContinue('claude', false), false, 'off takes effect');
+      assert.strictEqual(sb.sandboxAlwaysContinue('claude'), false, 'and stays off in memory');
+      assert.strictEqual(sb.unsaved, true, 'and says it was not saved');
+      assert.strictEqual(sb.setSandboxAlwaysContinue('codex', true), false, 'turning it on is rolled back');
+      assert.strictEqual(sb.sandboxAlwaysContinue('codex'), false);
+      assert.strictEqual(sb.setDefaultMaxAiCredits(60), 60, 'a lower cap is in force for this run');
+      assert.strictEqual(sb.setDefaultMaxAiCredits(200), 60, 'a higher cap is rolled back');
+      assert.strictEqual(sb.setDefaultMaxAiCredits(''), 60, 'no cap is rolled back');
+      assert.strictEqual(sb.defaultMaxAiCredits, 60);
+      const nb = new SettingsStore(path.join(dir, 'later-blocked2', 'x', 'durbar-settings.json')); nb.load();
+      fs.mkdirSync(path.join(dir, 'later-blocked2'), { recursive: true }); fs.rmSync(path.join(dir, 'later-blocked2'), { recursive: true, force: true }); fs.writeFileSync(path.join(dir, 'later-blocked2'), 'x');
+      assert.strictEqual(nb.setDefaultMaxAiCredits(60), 60, 'none -> a cap is tighter, in force');
+      assert.strictEqual(nb.unsaved, true);
+    }
     // and a writable one still stores and reports each of them
     const f9 = path.join(dir, 'ok9', 'durbar-settings.json');
     const s2 = new SettingsStore(f9); s2.load();
@@ -328,12 +354,21 @@ async function ipcChecks(): Promise<void> {
     };
     const good = new SettingsStore(path.join(d, 'g', 'durbar-settings.json')); good.load();
     await run(good, true);
+    // clearing the cap is ok when it is saved (the expected value is what the setter parses, not the raw input)
+    assert.deepStrictEqual(await call('settings:setDefaultCap', null), { ok: true, defaultMaxAiCredits: undefined }, 'clearing the cap through IPC is ok');
+    assert.deepStrictEqual(await call('settings:setDefaultCap', ''), { ok: true, defaultMaxAiCredits: undefined });
     fs.writeFileSync(path.join(d, 'blocker'), 'x');
     const bad = new SettingsStore(path.join(d, 'blocker', 'durbar-settings.json')); bad.load();
     await run(bad, false);
     assert.deepStrictEqual(await call('settings:setSeriousMode', true), { ok: false, seriousMode: false }, 'a failed save reports the value in force');
-    assert.deepStrictEqual(await call('settings:setDefaultCap', 75), { ok: false, defaultMaxAiCredits: undefined });
+    assert.deepStrictEqual(await call('settings:setDefaultCap', 75), { ok: false, unsaved: true, defaultMaxAiCredits: 75 });
     await run(undefined, false);
+    // a tighter cap that could not be saved is in force and the reply says so (the window shows "this run only")
+    handlers.clear();
+    const fresh = new SettingsStore(path.join(d, 'blocker', 'durbar-settings.json')); fresh.load();
+    register({ getSettingsStore: () => fresh, getRunTheme: () => undefined, clearRunTheme: () => undefined });
+    assert.deepStrictEqual(await call('settings:setDefaultCap', 60), { ok: false, unsaved: true, defaultMaxAiCredits: 60 });
+    assert.deepStrictEqual(await call('settings:setDefaultCap', 500), { ok: false, defaultMaxAiCredits: 60 }, 'a looser one is not kept');
   } finally {
     if (saved) require.cache[electronPath] = saved;
     else delete require.cache[electronPath];

@@ -77,7 +77,7 @@ export function register(deps: BrowserIpcDeps): BrowserController {
     linksToggle.set(on);
     const now = linksNewTab();
     deps.toRenderer('browser:linksNewTab', now);
-    return { ok: true, on: now };
+    return { ok: now === on, on: now };
   });
   // the only way a browser link reaches another app: a mailto: link after the user's click, re-checked here
   ipcHandle('browser:openMail', (e, url: unknown) => (fromApp(e) ? ctl.openMail(url) : { ok: false }));

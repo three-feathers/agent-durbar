@@ -56,13 +56,15 @@ export class SettingsStore {
     return this.s.defaultMaxAiCredits;
   }
 
-  /** `undefined`/invalid clears the default. Returns the stored value. */
+  /** `undefined`/invalid clears the default. Returns the value in force. A tighter cap (none -> a cap, or a lower one) stays in force for this run even when it cannot be saved (`unsaved`); a looser one or none is rolled back. */
   setDefaultMaxAiCredits(v: unknown): number | undefined {
     const cap = parseCap(v);
     const next: AppSettings = { ...this.s };
     if (cap === undefined) delete next.defaultMaxAiCredits;
     else next.defaultMaxAiCredits = cap;
-    return this.commit(next) ? cap : this.s.defaultMaxAiCredits;
+    const tighter = cap !== undefined && (this.s.defaultMaxAiCredits === undefined || cap < this.s.defaultMaxAiCredits);
+    this.commit(next, tighter);
+    return this.s.defaultMaxAiCredits;
   }
 
   /** Spec 093 FR-006: the parent of the last folder created from + Folder, when it is a valid absolute path. */
@@ -144,7 +146,8 @@ export class SettingsStore {
     const list = parseSandboxAlways([...set]);
     if (list.length) next.sandboxAlwaysContinue = list;
     else delete next.sandboxAlwaysContinue;
-    return this.commit(next) ? on : this.sandboxAlwaysContinue(app);
+    this.commit(next, !on); // turning the choice off is the safe direction: in force for this run even if it cannot be saved (`unsaved`); turning it on is rolled back
+    return this.sandboxAlwaysContinue(app);
   }
 
   /** OS notifications when an agent needs you (spec 052 FR-059): on by default; only `false` is written. */
@@ -310,12 +313,22 @@ export class SettingsStore {
   }
 
   /** The one way a setter stores a change (issue #1023): memory takes `next` only when the file was written; else it stays as it was and this is false. */
-  private commit(next: AppSettings): boolean {
+  private commit(next: AppSettings, keepOnFail = false): boolean {
     const before = this.s;
     this.s = next;
-    if (this.save()) return true;
-    this.s = before;
+    if (this.save()) {
+      this.kept = false;
+      return true;
+    }
+    if (keepOnFail) this.kept = true; // a safer change takes effect for this run even though it cannot be stored (see `unsaved`)
+    else this.s = before;
     return false;
+  }
+
+  private kept = false;
+  /** True when the last change is in force for this run only because the file could not be written. Only safer changes are kept like that (the OS-sandbox choice turned off, a tighter default cap); the next successful save clears it. */
+  get unsaved(): boolean {
+    return this.kept;
   }
 
   private save(): boolean {

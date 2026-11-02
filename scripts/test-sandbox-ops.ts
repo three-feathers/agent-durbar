@@ -76,6 +76,13 @@ async function main(): Promise<void> {
   assert.deepStrictEqual(ops.alwaysOff(true, 7), { ok: false });
   assert.deepStrictEqual(ops.alwaysOff(true, 'claude'), { ok: true });
   assert.deepStrictEqual(stored.pop(), ['claude', false]);
+  // issue 1023: turning the choice off is the safe direction. It is off for this run even if the file could not be written, and the window is told it will not last; a store that still has it on is not "ok"
+  {
+    const mk = (still: boolean, unsaved?: boolean) => createSandboxOps({ adapterOf: () => undefined, instance: () => ad, readyAdapterIds: async () => new Set(['claude']), store: () => ({ setSandboxAlwaysContinue: () => still, sandboxAlwaysContinue: () => still, unsaved }) });
+    assert.deepStrictEqual(mk(false, true).alwaysOff(true, 'claude'), { ok: true, saved: false }, 'off for this run, not saved: said');
+    assert.deepStrictEqual(mk(false, false).alwaysOff(true, 'claude'), { ok: true }, 'saved: no extra word');
+    assert.deepStrictEqual(mk(true, false).alwaysOff(true, 'claude'), { ok: false }, 'still on: not ok');
+  }
   // review round 8 (4): the window always gets the cleaned sandbox event: the seam, and main.ts pinned to it
   const { toWindowEvent } = await import('../src/main/sandboxops');
   const fs = await import('fs');

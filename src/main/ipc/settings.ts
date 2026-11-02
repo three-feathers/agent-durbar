@@ -21,7 +21,9 @@ export function register(deps: SettingsIpcDeps): void {
   const setting = <K extends string, T>(key: K, fallback: T, set: (st: SettingsStore, v: unknown) => T, want: (v: unknown) => unknown = (v) => v) => (_e: unknown, v: unknown) => {
     const st = settingsStore();
     const now = st ? set(st, v) : fallback;
-    return { ok: st !== undefined && now === want(v), [key]: now } as { ok: boolean } & Record<K, T>;
+    const same = st !== undefined && now === want(v);
+    // a safer change kept for this run only (a tighter cap that could not be saved): in force, but not ok, and the window is told
+    return { ok: same && !st.unsaved, ...(same && st.unsaved ? { unsaved: true } : {}), [key]: now } as { ok: boolean; unsaved?: true } & Record<K, T>;
   };
   ipcHandle('settings:setSeriousMode', setting('seriousMode', false, (st, v) => st.setSeriousMode(v)));
   /* spec 052 FR-059: OS notifications when an agent needs you and the window is in the background (on unless turned off) */

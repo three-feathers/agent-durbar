@@ -421,7 +421,9 @@
       const v=parseFloat($('capDef').value),msg=$('capMsg');
       if($('capDef').value.trim()!==''&&!(v>=30&&v<=1e6)){msg.textContent='Enter a number from 30 (the runtime minimum), or leave it empty for no cap.';return;}
       let res=null; try{res=await X.bridge.setDefaultCap($('capDef').value.trim()===''?null:Math.round(v*100)/100);}catch(err){res=null;}
-      if(saveFailed(res,'capMsg','as it was')){$('capDef').value=res&&res.defaultMaxAiCredits?String(res.defaultMaxAiCredits):'';return;}
+      if(res&&res.unsaved){app.defaultMaxAiCredits=res.defaultMaxAiCredits;if(X.onSettings)X.onSettings({defaultMaxAiCredits:res.defaultMaxAiCredits});msg.textContent='Applied for this run only: the limit of '+res.defaultMaxAiCredits+' AIU could not be saved and will be lost when Agent Durbar restarts.';return;} /* a tighter limit stays in force even when it cannot be saved */
+      if(saveFailed(res,'capMsg','as it was')){$('capDef').value=app.defaultMaxAiCredits||'';return;} /* the value the window already holds, also when the call itself failed */
+      app.defaultMaxAiCredits=res.defaultMaxAiCredits;
       if(X.onSettings)X.onSettings({defaultMaxAiCredits:res&&res.defaultMaxAiCredits});
       msg.textContent=res&&res.defaultMaxAiCredits?'Saved: new sessions start with a cap of '+res.defaultMaxAiCredits+' AIU.':'Saved: new sessions start without a cap.';
     };

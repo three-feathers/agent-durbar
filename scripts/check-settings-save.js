@@ -80,6 +80,16 @@ module.exports = async (ctx) => {
     await working('setDefaultCap');
     await js(`document.getElementById('capDef').value='75';document.getElementById('capSave').click()`);
     await ok(`/^Saved/.test(document.getElementById('capMsg').textContent)`, `${w}: with a working save it says Saved`);
+    // the call itself fails (no reply): the box goes back to the limit the window holds (75), never to empty
+    await failing('setDefaultCap', null);
+    await js(`document.getElementById('capDef').value='90';document.getElementById('capSave').click()`);
+    await ok(`document.getElementById('capMsg').textContent.startsWith('Could not save')`, `${w}: a failed call says it could not save`);
+    assert.strictEqual(await js(`document.getElementById('capDef').value`), '75', `${w}: the box keeps the limit in force`);
+    // a tighter limit that could not be saved stays in force for this run, and says so
+    await failing('setDefaultCap', { ok: false, unsaved: true, defaultMaxAiCredits: 60 });
+    await js(`document.getElementById('capDef').value='60';document.getElementById('capSave').click()`);
+    await ok(`document.getElementById('capMsg').textContent.startsWith('Applied for this run only')`, `${w}: a kept limit says this run only`);
+    await working('setDefaultCap');
     await js(`window.DurbarScreens.close();0`);
   }
   console.log('[011] settings save checks passed');

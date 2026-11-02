@@ -15,7 +15,7 @@ export interface SandboxOpsDeps {
   /** An adapter instance by app id (throws for an unknown one). */
   instance(app: string): AgentAdapter;
   readyAdapterIds(): Promise<ReadonlySet<string>>;
-  store(): { setSandboxAlwaysContinue(app: unknown, on: unknown): boolean; sandboxAlwaysContinue(app: string): boolean } | undefined;
+  store(): { setSandboxAlwaysContinue(app: unknown, on: unknown): boolean; sandboxAlwaysContinue(app: string): boolean; readonly unsaved?: boolean } | undefined;
 }
 
 /**
@@ -90,10 +90,13 @@ export function createSandboxOps(deps: SandboxOpsDeps) {
       return out;
     },
     /** FR-007c: Settings only undoes the stored choice, for a known app id. */
-    alwaysOff(fromApp: boolean, app: unknown): { ok: boolean } {
+    alwaysOff(fromApp: boolean, app: unknown): { ok: boolean; saved?: false } {
       if (!fromApp || typeof app !== 'string' || !(ANNOUNCE_APPS as readonly string[]).includes(app)) return { ok: false };
-      deps.store()?.setSandboxAlwaysContinue(app, false);
-      return { ok: true };
+      const st = deps.store();
+      if (!st) return { ok: true };
+      // safe direction: off for this run whatever the save did; if the file could not be written the choice is back after a restart, and the window says so
+      const still = st.setSandboxAlwaysContinue(app, false);
+      return still ? { ok: false } : st.unsaved ? { ok: true, saved: false } : { ok: true };
     },
   };
 }

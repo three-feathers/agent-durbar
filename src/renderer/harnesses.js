@@ -446,7 +446,7 @@
     const b = e.target.closest && e.target.closest('[data-hs]'); if (!b) return false;
     const kind = b.dataset.kind, card = b.closest('.hs-card'), name = card ? card.querySelector('b').textContent : kind;
     if (b.dataset.hs === 'reveal') reveal(b);
-    else if (b.dataset.hs === 'sbxundo') { if (B.sandboxAlwaysOff) B.sandboxAlwaysOff(kind).then(() => loadSandbox()).then(() => toastLike('The OS sandbox note shows again for ' + name + '.')); }
+    else if (b.dataset.hs === 'sbxundo') { if (B.sandboxAlwaysOff) B.sandboxAlwaysOff(kind).then((r) => loadSandbox().then(() => toastLike(r && r.ok === false ? 'Could not turn this off for ' + name + '.' : r && r.saved === false ? 'The OS sandbox note shows again for ' + name + ' for this run only: it could not be saved, so after a restart Durbar may continue without the sandbox again.' : 'The OS sandbox note shows again for ' + name + '.'))); }
     else if (b.dataset.hs === 'check') onChange(true);
     else if (b.dataset.hs === 'checkall') checkNow();
     else if (b.dataset.hs === 'updcheck') checkNow(kind);

@@ -1311,6 +1311,9 @@ process.on('exit', () => {
     assert.ok(/ipcHandle\('browser:setLinksNewTab', \(e, on: unknown\) => \{\n\s*if \(!fromApp\(e\) \|\| typeof on !== 'boolean'\) return \{ ok: false \};/.test(ipcSrc), 'setLinksNewTab refuses a non-boolean with no effect');
     assert.ok(/ctl\.openLink\(id, url, how\)/.test(ipcSrc) && /const linksToggle = makeLinksToggle\(simulator, \(\) => deps\.getSettingsStore\(\)\);/.test(ipcSrc) && /linksNewTab = \(\): boolean => linksToggle\.get\(\)/.test(ipcSrc), 'the toggle is read in main (makeLinksToggle, tested below)');
     assert.ok(/typeof on !== 'boolean'\) return \{ ok: false \};\n\s*linksToggle\.set\(on\);/.test(ipcSrc), 'the toggle is set through makeLinksToggle only');
+    // issue 1023: both settings replies say ok only when the setter's result is what was asked for
+    assert.ok(/return \{ ok: now === on, on: now \};/.test(ipcSrc), 'setLinksNewTab answers ok only when the value is in force');
+    assert.ok(/return \{ ok: deps\.getSettingsStore\(\)\?\.acceptBrowserNote\(\) \?\? false \};/.test(ipcSrc), 'consentAccept answers the save result');
     const pre = preloadChannels().all;
     for (const c of CH) assert.ok(pre.has(c), `the preload calls ${c}`);
     assert.deepStrictEqual([...pre].filter((c) => c.startsWith('browser:')).sort(), [...CH].sort(), 'the preload calls nothing else under browser:');

@@ -798,7 +798,7 @@ export interface DurbarApi {
   /** Spec 087 FR-012: per ready agent app, whether its OS sandbox can run here (Settings > Agent apps). */
   sandboxHosts?(): Promise<Record<string, SandboxHostView>>;
   /** Spec 087 FR-007c: undo *Always continue on this computer* for an app. */
-  sandboxAlwaysOff?(app: string): Promise<{ ok: boolean }>;
+  sandboxAlwaysOff?(app: string): Promise<{ ok: boolean; saved?: false }>;
   /** Change the model, effort or context tier of agent `id` (spec 030). Validated in main; saved with the folder entry once applied. */
   setModel?(id: string, request: ModelSwitchRequest): Promise<{ ok: boolean; error?: string; result?: ModelSwitchResult }>;
   /** Remove a queued model switch (spec 030). */
