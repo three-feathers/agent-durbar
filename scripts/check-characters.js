@@ -64,8 +64,6 @@ module.exports = async (ctx) => {
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
     const tag = `${w}x${h}`;
     await H.load({ w, h, ready: 'fit', settle: false });
-    // spec 017: with the cabins on a busy or waiting desk is a closed door; this check reads desk scenes, so the cabins are off here
-    if (await H.js(`localStorage.getItem('durbar.doorsigns')!=='off'`)) { await H.js(`localStorage.setItem('durbar.doorsigns','off')`); await H.load({ w, h, ready: 'fit', settle: false }); }
     await H.office(15);
     assert.strictEqual(await H.js(`window.THEME.characters()`), 'theme', `${tag}: The theme's own is the default`);
     for (const [theme, kit, own] of THEMES) {
@@ -120,7 +118,7 @@ module.exports = async (ctx) => {
       await close();
       assert.ok(await H.until(`(()=>{const sc=[...document.querySelectorAll('#stage .desk[data-id] svg.scene')].filter(s=>s.getClientRects().length);return sc.length>=12&&sc.every(s=>/\\|crew(\\||$)/.test(s.dataset.sig||'')&&s.querySelector('image[href*="crew/art/pirate-"]'));})()`, 10000), `${where}: Pirate: every desk draws the crew kit with a Pirate portrait`);
       assert.strictEqual(await H.js(`window.THEME.current().id`), theme, `${where}: the theme stays ${theme} under Pirate`);
-      assert.strictEqual(await H.js(`document.querySelectorAll('#stage image[href^="crew/art/"]:not([href*="pirate-"])').length`), 0, `${where}: no other crew's picture under Pirate`);
+      assert.ok(await H.until(`document.querySelectorAll('#stage image[href^="crew/art/"]:not([href*="pirate-"])').length===0`, 3000), `${where}: no other crew's picture under Pirate`); // waits like the Prehistoric line above: the desks repaint a moment after the pick
       // Monster on top of the theme (FR-075): the crew kit with a Monster picture on every desk
       await pickChars('monster');
       await close();
