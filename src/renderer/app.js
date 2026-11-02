@@ -2482,9 +2482,11 @@ function paintPanelTitle(a,h){
 }
 let PANEL_OPENED_AT=0; /* the click guard of FR-020 item 1: the second click of a double-click on a desk lands on the header of the chat it opened */
 /* spec 005 FR-210: before a chat is taken off screen, mark all but its newest 4 messages .cvo (styles.css), so the next open lays out only those near the view. Each marked message also keeps the height it has now as its fallback size, so a message that is skipped is not a 90px guess but its real height and a scroll through it does not shift the view */
-function cvMark(){const el=document.querySelector('#chat > .chat-inner'); if(!el)return; const k=el.children, n=k.length; if(n<=40)return;
+function cvMark(){const el=document.querySelector('#chat > .chat-inner'); if(!el)return; const k=el.children, n=k.length; if(n<=40)return; el.dataset.cvw=el.clientWidth;
   const h=[]; for(let i=0;i<n-4;i++)h.push(k[i].getBoundingClientRect().height);
   for(let i=0;i<n;i++){const e=k[i], old=i<n-4; e.classList.toggle('cvo',old); e.style.containIntrinsicBlockSize=(old&&h[i]>0)?'auto '+Math.round(h[i]*100)/100+'px':'';}}
+/* spec 005 FR-213: the stored heights are for the width they were measured at; if the chat is wider or narrower now, drop the marks (the chat lays out in full once, then the next close measures again) */
+function cvUnmarkIfResized(el){const w0=+el.dataset.cvw; if(!w0||Math.abs(el.clientWidth-w0)<=1)return; delete el.dataset.cvw; for(const e of el.children){e.classList.remove('cvo');e.style.containIntrinsicBlockSize='';}}
 function openPanel(id,focus){
   if(ui.selected!==id||!document.body.classList.contains('panel-open'))cvMark();
   const a=byId(id); if(!a)return; if(!pulling)PULLED.delete(id); /* the user came back: this session may bring its chat forward again */
@@ -2524,9 +2526,9 @@ function openPanel(id,focus){
   renderStrip(); const sl=$('stripList'); if(sl)sl.scrollLeft=stripScroll;
   const chat=getChat(a); $('chat').appendChild(chat.el);
   updatePanelHeader(); renderGrants();
-  const chatEl=$('chat'); chatEl.dataset.pin='1'; chatEl.scrollTop=1e6;
-  let rs=0; const restick=()=>{if(ui.selected!==a.id||chatEl.scrollHeight-chatEl.scrollTop-chatEl.clientHeight>400)return; chatEl.scrollTop=chatEl.scrollHeight; if(++rs<4)requestAnimationFrame(restick); else chatEl.onscroll();}; if(chat.el.childElementCount>4)requestAnimationFrame(restick); /* spec 005 FR-210: the messages at the end get their real height a frame after the first layout, so the end moves; follow it for 4 frames, then read the pin again; a chat of 4 or fewer messages has no skipped one and is left alone */
-  chatEl.onscroll=()=>{chatEl.dataset.pin=(chatEl.scrollHeight-chatEl.scrollTop-chatEl.clientHeight<80)?'1':'0';};
+  const chatEl=$('chat'); chatEl.dataset.pin='1'; chatEl._stuck=undefined; chatEl.scrollTop=1e6;
+  let rs=0; const restick=()=>{if(ui.selected!==a.id)return; if(rs===0)cvUnmarkIfResized(chat.el); if(chatEl.scrollHeight-chatEl.scrollTop-chatEl.clientHeight>400)return; chatEl.scrollTop=chatEl.scrollHeight; if(++rs<4)requestAnimationFrame(restick); else chatEl.onscroll();}; if(chat.el.childElementCount>4)requestAnimationFrame(restick); /* spec 005 FR-210: the messages at the end get their real height a frame after the first layout, so the end moves; follow it for 4 frames, then read the pin again; a chat of 4 or fewer messages has no skipped one and is left alone */
+  chatEl.onscroll=()=>{if(chatEl.scrollHeight-chatEl.scrollTop-chatEl.clientHeight<80)chatEl.dataset.pin='1'; else if(chatEl._stuck===undefined||chatEl.scrollTop<chatEl._stuck-1)chatEl.dataset.pin='0';}; /* spec 005 FR-214: the scroll event of the app's own stick-to-bottom write arrives a frame later, when a new block may already have grown the page; that is not the user leaving the end, only a move up from the last stick is */
   $('panel').querySelector('.panel-in').classList.toggle('ro',!!(a.live&&a.parent));
   $('backBtn').onclick=closePanel;
   refreshFolderStatus(a); /* spec 063: branch and changed files on the folder chip */
@@ -5089,7 +5091,7 @@ function mdSet(el,raw,now){
 let stickyRaf=0; const stickyChats=new Set();
 function stickyScroll(chat){stickyChats.add(chat);if(!stickyRaf)stickyRaf=requestAnimationFrame(stickyFlush);}
 function stickyFlush(){stickyRaf=0;const c=$('chat');const l=[...stickyChats];stickyChats.clear();
-  if(c&&c.dataset.pin!=='0'&&l.some(chat=>chat.el.parentNode===c))c.scrollTop=c.scrollHeight;
+  if(c&&c.dataset.pin!=='0'&&l.some(chat=>chat.el.parentNode===c)){c.scrollTop=c.scrollHeight;c._stuck=c.scrollTop;}
   const bodies=[...thinkScroll];thinkScroll.clear();bodies.forEach(b=>{if(b.isConnected&&b.scrollHeight>b.clientHeight)b.scrollTop=b.scrollHeight;});}
 const thinkScroll=new Set(); /* the open thinking box follows its own text, in the same frame */
 

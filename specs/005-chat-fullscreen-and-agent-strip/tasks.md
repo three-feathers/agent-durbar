@@ -130,3 +130,5 @@ IDs start after T083.
 - [x] T130 `.chat-inner>.cvo{content-visibility:auto;contain-intrinsic-block-size:auto 90px;overflow-clip-margin:14px}` in `styles.css`; `cvMark` in `app.js` marks all but the newest 4 when a chat is taken off screen, each with its measured height as fallback size [FR-210]
 - [x] T131 `openPanel` follows the end for four frames after the first layout [FR-211]
 - [x] T132 Driver `check-chat-visibility` (4,000 messages, both sizes, timing off against on, scroll, heights, stream, copy, find, focus, mutants), registered in `ui-suite.js` [FR-210, FR-211]
+- [x] T133 `cvUnmarkIfResized`: drop the marks when the chat's width changed since `cvMark`; driver case 8 (resize between close and reopen) [FR-213]
+- [x] T134 `_stuck`: the pin goes off only on a move up from the app's last stick-to-bottom write [FR-214]

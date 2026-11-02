@@ -19,6 +19,7 @@
  *   5. COPY: a selection across skipped messages copies in full (selection and real Copy).
  *   6. FIND: Chromium's find-in-page (the app has no Find box and no Print) finds a token in a skipped message and scrolls to it.
  *   7. FOCUS: focus() and Tab reach a button in a skipped message and bring it into view.
+ *   8. RESIZE: close, narrow the window to 820px, reopen: the marks are dropped (spec 005 FR-213); after one more close the new heights are stored.
  * Mutants caught on 2026-11-02: off (1), hidden (3, real heights), nosize and zero (1, the 90px and measured sizes).
  * A miss prints DRIVER FAILED (Electron still exits 0), so the npm script exits non-zero unless "all checks passed" is printed.
  */
@@ -160,7 +161,7 @@ module.exports = async (ctx) => {
     const send = async (txt) => {
       await js(`(()=>{const i=document.getElementById('msgInput');i.value=${jsLiteral(txt)};i.dispatchEvent(new Event('input',{bubbles:true}));document.getElementById('sendBtn').click();})()`);
     };
-    const sample = (ms, scrolled) => js(`(async()=>{const c=document.getElementById('chat');const out={max:0,n:0,s0:c.scrollTop,ser:[]};const end=performance.now()+${jsLiteral(ms)};
+    const sample = (ms, scrolled) => js(`(async()=>{const c=document.getElementById('chat');const out={max:0,n:0,s0:c.scrollTop,ser:[],ev:[]};c.addEventListener('scroll',()=>out.ev.push([out.n,Math.round(c.scrollHeight-c.scrollTop-c.clientHeight),Math.round(c.scrollTop),c.dataset.pin]),{passive:true});const end=performance.now()+${jsLiteral(ms)};
       while(performance.now()<end){await new Promise(r=>requestAnimationFrame(r));await new Promise(r=>setTimeout(r,0));const g=c.scrollHeight-c.scrollTop-c.clientHeight;out.n++;
         const bad=${scrolled ? 'Math.abs(c.scrollTop-out.s0)>1' : 'g>60'};if(bad&&out.prev){out.max=Math.max(out.max,${scrolled ? 'Math.abs(c.scrollTop-out.s0)' : 'g'});}out.prev=bad;if(out.ser.length<400)out.ser.push(Math.round(g)+(c.dataset.pin==='1'?'':'p0'));}
       out.busy=!!document.querySelector('#chat .typing');return out})()`);
@@ -170,7 +171,7 @@ module.exports = async (ctx) => {
     await send('quick links please');
     assert.ok(await until(`!!document.querySelector('#chat .typing')||document.querySelectorAll('#chat .chat-inner>.msg').length>${jsLiteral(N + 2)}`, 8000), `${tag}: a turn starts`);
     const s1 = await sample(2500, false);
-    assert.ok(s1.max === 0 && s1.n > 20, `${tag}: a streaming turn stays pinned to the end of the chat (largest gap ${s1.max}px in ${s1.n} frames; pre-send ${JSON.stringify(pre)}; gaps ${s1.ser.slice(0, 30).join(' ')})`);
+    assert.ok(s1.max === 0 && s1.n > 20, `${tag}: a streaming turn stays pinned to the end of the chat (largest gap ${s1.max}px in ${s1.n} frames; pre-send ${JSON.stringify(pre)}; gaps ${s1.ser.slice(0, 30).join(' ')}; scroll events [frame,gap,top,pin] ${JSON.stringify(s1.ev.slice(0, 12))})`);
     assert.ok(await until(`!document.querySelector('#chat .typing')`, 30000), `${tag}: the turn ends`);
     await quiet('the turn');
     assert.ok(await until(`${gap}<=1`, 4000), `${tag}: the end stays in view after the turn: ${await js(gap)}`);
@@ -231,6 +232,27 @@ module.exports = async (ctx) => {
     }
     const inChat = seen.filter((s) => !s.out);
     assert.ok(inChat.length >= 10 && new Set(inChat.map((s) => s.i)).size >= 4 && inChat.every((s, k) => s.inView && (k === 0 || s.i >= inChat[k - 1].i)), `${tag}: Tab moves through the messages and each stop is in view: ${JSON.stringify(seen)}`);
+    /* 8. RESIZE: the stored heights belong to the width they were measured at. Close, make the window narrower, reopen: the marks are dropped
+       (nothing skipped, so nothing stale), then three-screen jumps still have real heights; one more close and reopen marks again with fresh heights. */
+    await reopen(id); await quiet('a reopen'); // marked at the old width
+    assert.ok((await js(`document.querySelectorAll('#chat .chat-inner>.cvo').length`)) > N * 0.9, `${tag}: marked before the resize`);
+    await js(`document.getElementById('backBtn').click()`);
+    ctx.win.setContentSize(820, h); // the chat is capped at 865px, so only a window below that changes its width
+    assert.ok(await until(`innerWidth<=830`, 5000), `${tag}: the window is narrower`);
+    await js(`(()=>{document.querySelector('#stage .desk[data-id='+JSON.stringify(${jsLiteral(String(id))})+']').click()})()`);
+    assert.ok(await until(`document.body.classList.contains('panel-open')&&!!document.querySelector('#chat .chat-inner')`, 15000), `${tag}: the chat is open again`);
+    await quiet('the reopen at the new width');
+    assert.strictEqual(await js(`document.querySelectorAll('#chat .chat-inner>.cvo').length`), 0, `${tag}: a changed width drops the marks (${JSON.stringify(await js("(()=>{const e=document.querySelector('#chat > .chat-inner');return {cvw:e.dataset.cvw,now:e.clientWidth,win:innerWidth}})()"))})`);
+    await forceOff(true); await js(`document.getElementById('chat').scrollTop=0`); await quiet('measuring');
+    const hv2 = await js(`[...document.querySelectorAll('#chat .chat-inner>.msg[data-cv]')].map(x=>Math.round(x.getBoundingClientRect().height*10)/10)`);
+    await forceOff(false);
+    hv.h = hv2;
+    await reopen(id); await quiet('the reopen after the resize'); // marks again, with heights measured at the new width
+    const est2 = await js(`[1500,2500,3000].map(i=>document.querySelector('#chat .chat-inner>[data-cv="'+i+'"]').getBoundingClientRect().height)`);
+    [1500, 2500, 3000].forEach((i, k) => assert.ok(Math.abs(est2[k] - hv2[i]) <= 0.6, `${tag}: after the resize message ${i} is skipped with its new height ${hv2[i]}, not ${est2[k]}`));
+    await js(`document.getElementById('chat').scrollTop=1e7`); await quiet('the end');
+    for (let i = 0; i < 12; i++) await stepCheck(`resized step ${i}`, chat_h * 3);
+    ctx.win.setContentSize(w, h);
     console.log(`OK ${tag}: ${steps} scroll steps, ${N} messages, ${sk.skipped} skipped on reopen`);
   }
   console.log('all checks passed');
