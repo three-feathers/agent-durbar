@@ -73,3 +73,7 @@ A merge was committed with conflict markers in a spec, and `specs:check` passed 
 ### 2026-10-31: `deprecated` (spec 021 FR-068)
 
 - **FR-017** `[IMPLEMENTED]` The fixed status words gain `deprecated`: removed with no direct replacement; the note says why and when. Built by spec 021 T053. Which specs change: spec 021 FR-068's PRs; see spec 035 FR-020, spec 040 FR-033, spec 017 FR-035.
+
+## Changes 2026-11-02: removed page and tools (owner decision, PR #1054)
+
+`docs/feature-history.md` and the pictures only it linked (the m2..m8, 002, 003 and 034 pictures that no driver writes) were removed on 2026-11-02 by owner decision; the old text above that cites them stays as written, and they are in git history at commit `1c75b5bee`. Pictures a driver still writes were kept.

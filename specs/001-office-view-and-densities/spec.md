@@ -675,3 +675,7 @@ Nothing here was run on a real session for this delta (0 credits); the `real:` e
 ## Changes 2026-10-31: doors removed (pointer, spec 017 T024)
 
 Spec 017 FR-029 (owner decision, no doors) removed the Office with cabins layout, the desk door button, meeting-room signs, room door plates, **Close all** / **Open all**, door-held schedules and the door refusal of remote control, and `door-art`, `--door-*` and the door words of the theme contract. Any requirement in this spec about those (door plates, plate totals or siren, door signs, collapse, Close all / Open all, the `door` field) no longer applies and is kept as a record; Hide folder, floors and the plain status word stay. See spec 017's table of what was lost and what remains.
+
+## Changes 2026-11-02: removed page and tools (owner decision, PR #1054)
+
+`docs/feature-history.md` and the pictures only it linked (the m2..m8, 002, 003 and 034 pictures that no driver writes) were removed on 2026-11-02 by owner decision; the old text above that cites them stays as written, and they are in git history at commit `1c75b5bee`. Pictures a driver still writes were kept.
