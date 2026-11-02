@@ -665,7 +665,7 @@
         '--sage':'#c4934f','--sage-ink':'#7b4a1e','--focus':'#9a5b12','--sel-border':'#b07a3c','--sel-ring':'#f0e0c8','--sel-ring-2':'#f3e6d2',
         '--stat-sel-border':'#b07a3c','--stat-sel-ring':'#f0e0c8','--brand-mark':'#fff6e8','--brand-bg':'#8a5a28','--avatar-bg':'#efe3d0'},
       /* the top bar: dark wood / charcoal glass with light warm text and an amber focus ring */
-      bar:{'--wb-bg':'#2a231e','--wb-bg-2':'#1f1a16','--wb-surface':'#3a3029','--wb-surface-2':'#463a31','--wb-ink':'#f7efe4','--wb-ink-2':'#e6d6c2',
+      bar:{'--world-tint':'#c9a77c','--wb-bg':'#2a231e','--wb-bg-2':'#1f1a16','--wb-surface':'#3a3029','--wb-surface-2':'#463a31','--wb-ink':'#f7efe4','--wb-ink-2':'#e6d6c2',
         '--wb-muted':'#dccab4','--wb-line':'#5c4d40','--wb-line-2':'#6e5c4c','--wb-line-ctl':'#a8927a','--wb-focus':'#f2b35c',
         '--wb-warn-bg':'#4e3618','--wb-warn-ink':'#f7cf8a'}, /* a counter or the inbox that needs you: amber glass with amber text */
       shadow:{'--shadow-card':'0 1px 3px rgba(46,32,18,.10)','--shadow-pop':'0 18px 48px rgba(46,32,18,.30), 0 2px 6px rgba(46,32,18,.12)'},
@@ -677,7 +677,7 @@
         '--line':'#d9c6a6','--line-2':'#c2a87f','--line-ctl':'#86704f','--ink':'#2a1a10','--ink-2':'#4f3a28','--muted':'#5a4430',
         '--sage':'#b8793a','--sage-ink':'#7a3f14','--focus':'#8f4a10','--sel-border':'#a8672c','--sel-ring':'#efd9bb','--sel-ring-2':'#f1dfc4',
         '--stat-sel-border':'#a8672c','--stat-sel-ring':'#efd9bb','--brand-mark':'#fff1dc','--brand-bg':'#7a4420','--avatar-bg':'#ecdcc0'},
-      bar:{'--wb-bg':'#2a1710','--wb-bg-2':'#1c0f0a','--wb-surface':'#3b2418','--wb-surface-2':'#4a2f20','--wb-ink':'#f6e3c4','--wb-ink-2':'#e8cfa6',
+      bar:{'--world-tint':'#4a3524','--wb-bg':'#2a1710','--wb-bg-2':'#1c0f0a','--wb-surface':'#3b2418','--wb-surface-2':'#4a2f20','--wb-ink':'#f6e3c4','--wb-ink-2':'#e8cfa6',
         '--wb-muted':'#dcc29a','--wb-line':'#5c4030','--wb-line-2':'#6e4e3a','--wb-line-ctl':'#b08e6c','--wb-focus':'#f2b46e',
         '--wb-warn-bg':'#4e3010','--wb-warn-ink':'#f7cf8a'},
       shadow:{'--shadow-card':'0 1px 3px rgba(40,22,10,.12)','--shadow-pop':'0 18px 48px rgba(40,22,10,.34), 0 2px 6px rgba(40,22,10,.14)'},
@@ -699,6 +699,7 @@
     if(!own(WORLD_SETS,id))return null;
     const w=WORLD_SETS[id], t=Object.assign({},CLEAN_TOKENS,w.page,w.bar);
     for(const [k] of WORLD_BAR_MAP)t['--wp-'+k.slice(2)]=t[k];
+    t['--wb-bar-shadow']='inset 0 1px 0 color-mix(in srgb,var(--wb-ink) 9%,transparent),0 6px 18px -8px color-mix(in srgb,var(--wb-bg-2) 85%,transparent)'; /* FR-226: the top bar's one shadow */
     return t;
   }
   function glassOver(v,over){const a=hex6(v),b=hex6(over);return '#'+[0,2,4].map(i=>Math.round(parseInt(a.slice(i,i+2),16)*WORLD_GLASS+parseInt(b.slice(i,i+2),16)*(1-WORLD_GLASS)).toString(16).padStart(2,'0')).join('');}

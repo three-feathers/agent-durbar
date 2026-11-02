@@ -426,6 +426,17 @@ export function placeBox(size: { w: number; h: number }, avoid: readonly Rect[],
   return best ? { x: best.x, y: best.y, w: size.w, h: size.h } : null;
 }
 
+/** Spec 097 FR-106 (owner 2026-11-01: "too much space above head"): the square of a seated picture that the chat's round header portrait shows. The side is 0.72 of the
+ *  body height (the face, FACE_U of it, fills about 40 % of the circle), its top is 12 % of the side above the top of the head, and it stays inside the picture (moved down or
+ *  sideways, never smaller). Same data as the layout's face box (FACE_U, `headTop`, `bodyH`): one definition of where the face is. */
+export const PORTRAIT_SIDE = 0.72, PORTRAIT_AIR = 0.12;
+export function portraitCrop(seat: { w: number; h: number; headTop: number; bodyH: number }): { x: number; y: number; s: number } {
+  const s = Math.min(PORTRAIT_SIDE * seat.bodyH, seat.w, seat.h);
+  const y = Math.max(0, Math.min(seat.h - s, seat.headTop - PORTRAIT_AIR * s));
+  const x = Math.max(0, Math.min(seat.w - s, seat.w / 2 - s / 2));
+  return { x, y, s };
+}
+
 /** Owner ruling 2026-11-02: the post-it on an empty seat has one paper colour per reason (the place the agent went to), dark ink on every one (contrast 4.5:1 or more,
  *  held by test:realoffice-layout); the words "at <place>" stay, so colour never carries the meaning alone. One default for a place the table does not know (a custom place).
  *  The Boss is a calm blue, not an alarm colour: most visits to the Boss door are ordinary. No shadow or animation belongs to the colours. */
