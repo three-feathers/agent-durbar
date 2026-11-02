@@ -30,7 +30,7 @@ delta in this PR for its one new button (FR-060).
 Existing capabilities checked (AGENTS.md FR-031):
 - **Self-paced loops (spec 072)** send a prompt again and again on Durbar's timer, within Durbar's limits. Autopilot sends one
   message and lets the agent app continue inside its own goal loop. The two do not share a mechanism. A loop's pass runs in
-  its schedule's mode (FR-083; spec 044 FR-180).
+  the session's mode (*Changes* 2026-11-01: FR-083's schedule mode and spec 044 FR-180 are void).
 - **Reused**: `setModeOp` and the Allow all path (FR-002), the cap paths of spec 011 and 012 FR-150 (FR-022), the question
   card (FR-030), the plan card (FR-060), the organization checks of spec 076 (FR-070), and the git status runner of spec 063
   (FR-023).

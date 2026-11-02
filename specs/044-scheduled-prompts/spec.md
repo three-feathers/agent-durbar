@@ -455,3 +455,7 @@ Owner (Paco, 2026-10-28): a schedule's prompt was limited to 2,000 characters (`
 ## Changes 2026-11-02: removed page and tools (owner decision, PR #1054)
 
 `scripts/mcp-readonly-copilot-real.ts` were removed on 2026-11-02 by owner decision (no caller; run dates and credit counts above stay valid history); the scripts are in git history at commit `1c75b5bee`.
+
+## Changes 2026-11-02: where the ruling on a schedule's mode is written, and its date
+
+The written source of the ruling that a schedule takes its session's mode is the owner's comment on PR #965 of 2026-11-01 09:24 UTC ("Owner decision, 2026-11-01, matching Paco: a schedule takes its session's mode ... No per-schedule mode, no upgrade popup, no Allow all on a schedule"). The dated entry above says "2026-10-31 and restated 2026-11-01": 2026-10-31 is when the per-schedule text it replaces was decided, and 2026-11-01 is the date of the ruling itself. `[KNOWN GAP]` The earlier 2026-10-31 statement is not on #965's thread, so it is taken from the spec's own entry. #965 is closed; its two stand-alone bug fixes are #1064 (T144) and its branch holds the replaced code (`Schedule.mode`, `waitingForMode`, `schedmode.ts`, the popup), which must not be merged.

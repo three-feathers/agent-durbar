@@ -57,3 +57,7 @@ Owner answered Q1-Q9 on 2026-10-22 (see spec.md); Q6 is (b), no Read-only except
 ## Order
 
 T001 → T002 → T003 → T004/T005 → T006 → T007/T008 → T010..T013. T020 and T021 after their PRs. T022/T023 with the last Phase 1 PR. Phase 2: T030 first, then T031 → T032 → T033 → T034 → T035/T036 → T037.
+
+## Delta 2026-11-02: warn, do not limit
+
+- [ ] T042 Loop limits as warnings: `src/shared/looppace.ts:11-13` and `src/main/schedules.ts:191-192`, `:765`, `:997` stop refusing past the defaults; the loop form warns and lets the user raise them; `minDelay` of at least 5, `maxPasses` of at least 1 and a required run limit stay. Test: `test:schedules` and the loop form driver: a raised number is accepted, a loop with no run limit is refused [R5, FR-003]
