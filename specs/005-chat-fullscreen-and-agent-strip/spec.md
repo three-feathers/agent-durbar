@@ -107,6 +107,18 @@ Header actions: **Stop** (interrupt the turn; the agent stays ready), **End sess
 
 ## Changes
 
+### 2026-11-02: reopening a long chat is fast (owner yes, Vikram; sweeper report 2026-11-02)
+
+**FR-210** `[IMPLEMENTED]` `sim:` A message in the chat is laid out and painted only near the view: `.chat-inner>*` has `content-visibility:auto` with `contain-intrinsic-size:auto 90px` (a message never seen is guessed at 90 px, a seen one keeps its last height) and `overflow-clip-margin:14px` (the copy button hangs under a reply and would be cut off). It reuses the pattern of spec 083's `.nt-row`. Reopening a chat of 4,000 simulated messages took about 2,500 ms and now takes about 300 ms (`check-chat-visibility`, same page, rule forced off against on; Linux simulator, printed not asserted).
+
+**FR-211** `[IMPLEMENTED]` `sim:` Opening a chat follows the end for four frames (`openPanel`): the last messages get their real height one frame after the first layout, which had left the view 32 px short of the end. Unchanged: the chat opens at its end (position is not kept across a close, as before), and it stays pinned while a turn streams.
+
+**FR-212** `[KNOWN GAP]` `sim:` A jump of about three screens (scrollbar drag, Home) into messages never seen can move the view, because the unseen ones are only guessed: 6 to 7 of 24 such jumps at 1440x900 and 10 of 24 at 1280x800 in the driver, the largest about 1,250 px. Wheel, arrow and Page keys (steps up to one screen) never moved it. Not fixed: any guess is wrong for some message, and the browser's scroll anchoring does not always make up for it. Messages seen once keep their real height until the chat is closed.
+
+**Checked and unchanged** (`check-chat-visibility`, 1440x900 and 1280x800, 4,000 messages): real heights equal those with the rule off; the whole chat is as tall after one pass; the copy button is not cut off; a streaming turn keeps the end; a chat scrolled up is not moved by a turn; a selection across skipped messages copies in full (selection and real Copy); Chromium's find-in-page finds a hit in a skipped message and scrolls to it; `focus()` and Tab reach a button in a skipped message and show it. The app has **no Find box and no Print**, so only the engine's find was tested. Mutants the driver catches: see its header.
+
+**Tasks:** T130..T132 in `tasks.md`. Numbers taken: FR-210..FR-212, T130..T132 (checked against `main`, the remote branches and the open PRs on 2026-11-02; #1014 holds FR-190..FR-209 and T113..T129).
+
 ### 2026-10-31: MCP context cost (spec 100)
 
 **FR-052**: the token summary adds an *MCP tools* bar when a report exists, labelled as estimated when it is; the MCP chip adds the tokens (FR-053). Owned by [spec 100](../100-mcp-context/spec.md) FR-010, FR-013.

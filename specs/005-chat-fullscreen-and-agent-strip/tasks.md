@@ -127,3 +127,6 @@ IDs start after T083.
 - [ ] T110 Persistence: simulator-only `stripstore=1` option; reload keeps order and favourites; an ended agent's id is gone from the saved key. Test: driver step with `until()` after reload [FR-184, FR-185]
 - [ ] T111 15 agents with 4 favourites at 1440x900 and 1280x800: favourites are the first four, no overlap, the office/chat/header boxes equal the baseline, reduced motion has no drag animation, the six themes alike (`check:geometry` stays as is). Test: driver + `check:office` unchanged [FR-187]
 - [ ] T112 Docs and shots: README (feature + shortcut), changelog fragment, retake `m6-fullchat-sim15-*.png` with `npm run shots:docs`, tick tasks, spec status and `[IMPLEMENTED]` tags, `npm run specs:check` and `changelog:check` [FR-178..FR-189]
+- [x] T130 `.chat-inner>*{content-visibility:auto;contain-intrinsic-size:auto 90px;overflow-clip-margin:14px}` in `styles.css` [FR-210]
+- [x] T131 `openPanel` follows the end for four frames after the first layout [FR-211]
+- [x] T132 Driver `check-chat-visibility` (4,000 messages, both sizes, timing off against on, scroll, heights, stream, copy, find, focus, mutants), registered in `ui-suite.js`; the 3-screen jump is a printed `[KNOWN GAP]` [FR-210..FR-212]
