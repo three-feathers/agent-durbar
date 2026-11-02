@@ -158,6 +158,10 @@ Spec Kit says to ask the owner when something is ambiguous. The owner was not as
 
 ## Changes
 
+### 2026-11-02: timing checks over the mask are measured against the same run (FR-080 delta, T138)
+
+*Found:* the shared mask costs more per character since T137, so fixed limits over it went red on slow runners with no change in the code they check (Windows `test:runtime-mcp`: 406 ms against a limit from a 63 ms baseline). *Changed (tests only):* every ratio or fixed-limit timing check whose code reaches `redact` or `maskShapes` now uses `assertLinearShape` (the same shape, 1/16 the size, 16 repeats, same run) or the new `assertWithinYardstick` (for what is not growth: `maskMcpText`'s cut before the URL pass against `redact` plus the pass on the cut text, the R12 "hides the rest" limit against `redact` on the same text, the `durbar_mcp_state` budget against `redact` on 1 MB). `test:` `scripts/redact-growth-lib.ts` and the suites using it. Left, because they stop before the mask: `test-redact.ts` T065, `test-mcp-tools.ts` 12l(c0). Left, as catastrophe stops only: 10 s of CPU in `assertLinearGrowth`, the `shapes` part's 10 s run. `[KNOWN GAP]` not converted, not over the mask: other suites' fixed limits, such as `test-mcpcall.ts`, `test-mcpwords.ts`, the parser cases in `test-edits.ts`, and `test-mcp-tools.ts`'s seven read tools (little masking). A slowdown only in the mask below the 100 ms floor of `assertLinearGrowth` still passes, as it did.
+
 ### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
 
 The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
