@@ -6,7 +6,7 @@
  *     DURBAR_DRIVER=$PWD/scripts/shots-033-move.js xvfb-run -a npx electron . --no-sandbox
  *
  * Real key presses (sendInputEvent), at 1440x900 and 1280x800; exits non-zero on a miss:
- *   - the context-menu key on a room's door opens the folder menu; it has "Move to floor" after "Rename…";
+ *   - the context-menu key on a room's ⋯ button opens the folder menu; it has "Move to floor" after "Rename…";
  *   - Right arrow opens the floors (‹ Back first, every floor in order, the current one ticked and aria-disabled), Left arrow and
  *     Escape go back to the top level, focus on "Move to floor";
  *   - Enter on another floor moves the folder: its room carries the new floor's tag and every agent of that room is now in it
@@ -30,10 +30,10 @@ module.exports = async (ctx) => {
       font:Math.min(...[...m.querySelectorAll('b,small')].map(e=>parseFloat(getComputedStyle(e).fontSize))),
       fits:b.top>=0&&b.left>=0&&b.bottom<=innerHeight&&b.right<=innerWidth}})()`);
   /* rooms in the office: name, floor tag and the agent ids at their desks (main agents only) */
-  const rooms = () => js(`[...document.querySelectorAll('#stage .room')].map(r=>({id:(r.querySelector('[data-door]')||{dataset:{}}).dataset.door,name:r.querySelector('.room-name').textContent,
+  const rooms = () => js(`[...document.querySelectorAll('#stage .room')].map(r=>({id:r.dataset.room,name:r.querySelector('.room-name').textContent,
     floor:(r.querySelector('.floor-tag')||{}).textContent||null,agents:[...r.querySelectorAll('.desk[data-id]')].filter(d=>!d.closest('.helpers')).map(d=>d.dataset.id).sort()}))`);
   const openByKey = async (roomId) => {
-    await js(`(()=>{const m=document.getElementById('modeMenu');if(m)m.remove();const d=document.querySelector(${jsLiteral(`#stage .room [data-door="${roomId}"]`)});d.focus();return true})()`);
+    await js(`(()=>{const m=document.getElementById('modeMenu');if(m)m.remove();const d=document.querySelector(${jsLiteral(`#stage .room[data-room="${roomId}"] [data-foldermenu]`)});d.focus();return true})()`);
     await key('Apps', [], { char: 'never', pause: 30 });
     // some platforms have no Apps key code in sendInputEvent: fall back to the event the key sends (keyboard contextmenu, no coordinates)
     if (!(await js(`!!document.getElementById('modeMenu')`))) await js(`document.activeElement.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true}))`);
@@ -98,7 +98,7 @@ module.exports = async (ctx) => {
     await key('Return', [], { pause: 50 });
     await until(`!document.getElementById('modeMenu')`, 3000);
     // spec 092 (FR-001, edge case "an agent's folder moves to another floor"): the room leaves the screen of the floor it was on; the user is not moved
-    await until(`!document.querySelector(${jsLiteral(`#stage .room [data-door="${room.id}"]`)})`, 5000);
+    await until(`!document.querySelector(${jsLiteral(`#stage .room[data-room="${room.id}"]`)})`, 5000);
     await settle();
     assert.strictEqual(await H.shownFloor(), floorList[0].id, 'the user stays on the floor they were on');
     assert.ok(!(await rooms()).some((r) => r.id === room.id), 'the room left this floor screen');
@@ -108,7 +108,7 @@ module.exports = async (ctx) => {
     await shot('move-toast', w, h);
     // the room is on the floor it was moved to (its agents followed), one PageDown away
     assert.ok(await H.goToFloor(target), 'the target floor is shown');
-    await until(`!!document.querySelector(${jsLiteral(`#stage .room [data-door="${room.id}"]`)})`, 5000);
+    await until(`!!document.querySelector(${jsLiteral(`#stage .room[data-room="${room.id}"]`)})`, 5000);
     await settle();
     rs = await rooms();
     const moved = rs.find((r) => r.id === room.id);
@@ -116,9 +116,9 @@ module.exports = async (ctx) => {
     assert.deepStrictEqual(moved.agents, room.agents, 'its agents followed (same desks in the moved room)');
     // Undo: back to where it was, agents too (the room leaves this screen again, the user is not moved)
     await js(`[...document.querySelectorAll('#toasts .toast.with-act .toast-act')].pop().click()`);
-    await until(`!document.querySelector(${jsLiteral(`#stage .room [data-door="${room.id}"]`)})`, 5000);
+    await until(`!document.querySelector(${jsLiteral(`#stage .room[data-room="${room.id}"]`)})`, 5000);
     assert.ok(await H.goToFloor(floorList[0].id), 'the first floor is shown again');
-    await until(`!!document.querySelector(${jsLiteral(`#stage .room [data-door="${room.id}"]`)})`, 5000);
+    await until(`!!document.querySelector(${jsLiteral(`#stage .room[data-room="${room.id}"]`)})`, 5000);
     await settle();
     rs = await rooms();
     const back = rs.find((r) => r.id === room.id);
