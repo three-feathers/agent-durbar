@@ -503,6 +503,7 @@ When the start check finds a new version, the Settings entry and the card get a 
 ### 2026-11-02: Linux real check (T040): a vendor "updates are disabled" answer exits 0 (issue #662)
 
 - **Found (`real:` Linux, Claude Code 2.1.316, isolated HOME, no credentials, no model call):** `claude update` with `DISABLE_UPDATES=1` prints "Updates are disabled by your administrator. Contact your IT team to get the latest version." and exits **0**. `claude update` on the latest version prints "Claude Code is up to date (2.1.316)" and exits 0. One `npm view <pkg> version --json --no-update-notifier` makes one request (`GET registry.npmjs.org/<pkg>`).
+- **npm update, `real:` Linux, scratch prefix:** `install -g <pkg>@latest` moved codex 0.163.0 to 0.166.0, copilot 1.0.101 to 1.0.105 and claude-code 2.1.304 to 2.1.316, exit 0 each; no change needed. npm 12 warns about uncovered install scripts for claude-code (warning only).
 - **Bug:** a successful exit hid the *Managed* class, so the card could show an update that did nothing as done.
 - **FR-014 (changed):** for an `update` run, text classified *Managed* is reported as the failure class `managed` also when the exit code is 0 (No retry, as before). Test: `scripts/test-harnesssetup.ts`.
 - The two Claude fixtures are now recorded shapes. Windows and macOS texts stay `[KNOWN GAP]` (T041, T042).
