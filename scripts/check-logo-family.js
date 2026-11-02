@@ -186,7 +186,7 @@ module.exports = async (ctx) => {
     assert.strictEqual(await js(`getComputedStyle(document.querySelector('.brand-mark')).backgroundColor`), rgb(WORLDS.photo.plate), `${tag}: the bar has the world's plate`);
     await js(`window.__durbarSimUi.setOfficeView('flat');0`);
     assert.ok(await H.until(`!document.documentElement.dataset.world`, 8000), `${tag}: leaving Real office clears the world`);
-    assert.strictEqual(await js(`getComputedStyle(document.querySelector('.brand-mark')).backgroundColor`), rgb(PLATE['1']), `${tag}: the bar has the base plate again`);
+    assert.strictEqual(await js(`getComputedStyle(document.querySelector('.brand-mark')).backgroundColor`), rgb(PLATE[await js(`document.documentElement.dataset.logo`)]), `${tag}: the bar has the chosen icon's base plate again`);
     await H.load({ w, h, ready: 'fit' });
     // ---- a world wins over the theme; no approved palette falls back (FR-033) ----
     for (const [world, p] of Object.entries(WORLDS)) {
