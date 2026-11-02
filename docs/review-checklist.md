@@ -1,6 +1,6 @@
 # Review checklist: first time right
 
-Run this on your own diff **before you ask for review**, as a reviewer who assumes it is wrong: read the real diff (`git diff origin/main...HEAD`), not your memory of it. Every line is a mistake a reviewer here actually found. The rules around it (review-ready, learn after every round, fast lane) are in [AGENTS.md](../AGENTS.md) (*First time right*, FR-047..FR-049). Add a line when you find a new kind of mistake (reason and one evidence link); fix or delete a wrong one. Guidance only: nothing here overrides AGENTS.md, the constitution or the safety rules. Tool pitfalls go to [agent-notes.md](agent-notes.md).
+Run this on your own diff **before you ask for review**, as a reviewer who assumes it is wrong: read the real diff (`git diff origin/main...HEAD`). Rules: [AGENTS.md](../AGENTS.md) (*First time right*). Add a line for a new mistake (reason, one evidence link); fix or delete a wrong one. Guidance only: nothing here overrides AGENTS.md, the constitution or the safety rules. Tool pitfalls: [agent-notes.md](agent-notes.md).
 
 ## Where the list comes from
 
@@ -26,7 +26,8 @@ On 2026-10-23 Vikram's agent grouped the ~1,100 *Required fixes* in reviews of ~
 ## The branch and CI
 
 - [ ] **Mergeable, and CI ran on this head.** A conflicting PR runs only CodeQL (no build, tests, gate or UI). Merge `origin/main`, push, read the checks of *that* sha (`scripts/pr-gate.sh <N>`). [#620](https://github.com/three-feathers/agent-durbar/pull/620), [#560](https://github.com/three-feathers/agent-durbar/pull/560)
-- [ ] **After every merge of `main`, `git diff --stat origin/main...HEAD` lists only your files**: a bad resolution silently dropped another PR's code and its tests. [#560](https://github.com/three-feathers/agent-durbar/pull/560)
+- [ ] **After merging `main`, `git diff --stat origin/main...HEAD` lists only your files**: a bad resolution dropped another PR's code and tests. [#560](https://github.com/three-feathers/agent-durbar/pull/560)
+- [ ] **No conflict markers**: `specs:check` covers `specs/`.
 - [ ] **`package.json` test lists: keep both sides** of a `test:serial` conflict, then `npm test`. [#565](https://github.com/three-feathers/agent-durbar/pull/565)
 - [ ] **CI for the exact sha, never "green" from memory**: `gh pr checks <N>`, then post `checks run at <sha>: …`. [#630](https://github.com/three-feathers/agent-durbar/pull/630), [#588](https://github.com/three-feathers/agent-durbar/pull/588)
 - [ ] **New CodeQL alerts fixed at the cause**, test code included (or dismissed with a reason). [#598](https://github.com/three-feathers/agent-durbar/pull/598)
@@ -51,9 +52,9 @@ On 2026-10-23 Vikram's agent grouped the ~1,100 *Required fixes* in reviews of ~
 
 ## Hostile input and security
 
-- [ ] **Outside text never reaches an agent** (FR-060): a script, workflow or brief that reads GitHub text filters by author and latest editor **before** printing a body or title (`scripts/trusted-lib.sh`), and passes titles, branches and bodies through `env:`. A fixture with an outside injection payload must not appear in the output (`scripts/test-trusted-content.ts`).
+- [ ] **Outside text never reaches an agent** (FR-060): a script, workflow or brief that reads GitHub text filters by author and latest editor **before** printing a body or title (`scripts/trusted-lib.sh`) and passes them through `env:`; an outside injection fixture must not appear in the output (`scripts/test-trusted-content.ts`).
 - [ ] **A parser input cap keeps token boundaries**: when a match ends at the cap, inspect the next character (`1.2.30` cut to `1.2.3` must not pass); test exact-cap and continuation; removing the guard fails. [#664](https://github.com/three-feathers/agent-durbar/issues/664)
-- [ ] **Hostile lists in linear time, bytes capped as well as counts**: dedupe with a `Set` of keys (never `some` + `JSON.stringify`: 4,096 entries took 4.7 s on the main thread), cap per list and per source, skip an unchanged text by SHA-256 (not size and times), test the biggest input with a CPU bound. [#644](https://github.com/three-feathers/agent-durbar/pull/644)
+- [ ] **Hostile lists in linear time, bytes capped as well as counts**: dedupe with a `Set` of keys (never `some` + `JSON.stringify`: 4.7 s for 4,096 entries), cap per list and source, skip unchanged text by SHA-256, test the biggest input with a CPU bound. [#644](https://github.com/three-feathers/agent-durbar/pull/644)
 - [ ] **User config is copied through an allow-list**: own properties, unknown keys dropped, all-or-nothing; test nested objects, huge strings, out-of-range numbers, `__proto__`. [#629](https://github.com/three-feathers/agent-durbar/pull/629), [#535](https://github.com/three-feathers/agent-durbar/pull/535)
 - [ ] **Escaping has a test**: a hostile name with markup, so dropping `esc()` fails. [#552](https://github.com/three-feathers/agent-durbar/pull/552)
 - [ ] **Files and paths**: links (`lstat`), absolute-path checks for every env var (`APPDATA` and `XDG_CONFIG_HOME`), size caps, Windows reserved names. [#535](https://github.com/three-feathers/agent-durbar/pull/535), [#615](https://github.com/three-feathers/agent-durbar/pull/615)
@@ -93,9 +94,9 @@ On 2026-10-23 Vikram's agent grouped the ~1,100 *Required fixes* in reviews of ~
 - [ ] **File identity = device, inode, birth time**: test delete and recreate, and the failure path. PR #931
 - [ ] **A destructive call behind a native confirmation has no side door**: another call deleting the same data asks the same way. Spec 083 T034b
 - [ ] **A stale-breaker that looks, then deletes by path is a race**: move aside and check identity, or carry a token. Issue #723
-- [ ] **A script that spends credits gates every send**: budget checked in one pure function right before each send; unknown usage is unknown, never 0; only the exact command runs in a mode with no approval card; take a baseline first; plant cap-raised, extra-prompt and stop-disabled mutants. [#827](https://github.com/three-feathers/agent-durbar/pull/827)
+- [ ] **A script that spends credits gates every send**: budget checked in one pure function right before each send; unknown usage is unknown, never 0; only the exact command runs without an approval card; take a baseline; plant cap-raised, extra-prompt and stop-disabled mutants. [#827](https://github.com/three-feathers/agent-durbar/pull/827)
 - [ ] **Main changes what the window reads in one synchronous step, then awaits teardown**: a tab list updated before its active tab let a driver name a removed tab (spec 080 closeTab, 2026-10-31).
-- [ ] **A handler main gives Electron answers on every path**: `setWindowOpenHandler` code that calls main's own logic is wrapped so a throw still returns `deny` (and a test makes it throw); a page's request never moves the keyboard focus unless the page itself had it (spec 080, review of #915, 2026-10-31).
+- [ ] **A handler main gives Electron answers on every path**: `setWindowOpenHandler` code that calls main's logic is wrapped so a throw still returns `deny` (a test makes it throw); a page's request never moves focus unless the page had it (spec 080, #915).
 - [ ] **A driver runs a page's script in that page's own `webContents`**, not in "the attached view": a page that opens a tab stops being the attached one mid-step (spec 080 `check-browser-tabs`, 2026-10-31).
 - [ ] **A menu row sends only its own field**, merged when its turn comes; a fake answers as the real runtime does (spec 030).
 - [ ] **Mutate each guard both ways**: surviving mutants hid four real gaps (#935).
@@ -108,6 +109,8 @@ On 2026-10-23 Vikram's agent grouped the ~1,100 *Required fixes* in reviews of ~
 - [ ] **A refusable action says so**: the handler returns whether it acted, the UI announces success only then, the button is disabled with the reason. [#640](https://github.com/three-feathers/agent-durbar/pull/640)
 - [ ] **Announcements reach a screen reader** (live region used and tested); focus lands sensibly after Escape. [#622](https://github.com/three-feathers/agent-durbar/pull/622)
 - [ ] **Theme tokens, not literals**; check one dark and one non-default theme. [#530](https://github.com/three-feathers/agent-durbar/pull/530), [#588](https://github.com/three-feathers/agent-durbar/pull/588)
+- [ ] **A driver's contrast check parses `color(srgb …)`** too: an `rgb()`-only parser reads it as black and passes. [#921](https://github.com/three-feathers/agent-durbar/pull/921)
+- [ ] **No emoji as an icon** (a missing glyph on Linux): the app's SVG icon; a clickable chip is a `button`. A driver on wall-clock sim state waits with `until()` and is looped under load. [#921](https://github.com/three-feathers/agent-durbar/pull/921)
 - [ ] **Tooltips stay within the limit** with the longest real value. [#630](https://github.com/three-feathers/agent-durbar/pull/630)
 - [ ] **Screenshots at 1440x900 and 1280x800**, every linked picture of the changed screen retaken (`npm run shots:docs`) and looked at (no figures mid-walk). [#632](https://github.com/three-feathers/agent-durbar/pull/632), [#574](https://github.com/three-feathers/agent-durbar/pull/574)
 
