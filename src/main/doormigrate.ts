@@ -101,15 +101,44 @@ export interface LoadedHeld {
   doc: HeldDoc;
   /** The file was too large or not JSON, or some of its runs were unusable: it was kept aside as `<file>.bad` (part of it may still be read). */
   damaged: boolean;
+  /** A copy was kept aside (`damaged` without it: no copy could be made, and the file stays where it is). */
+  aside: boolean;
 }
 
-function keepAside(file: string): boolean {
-  try {
-    fs.renameSync(file, `${file}.bad`);
-    return true;
-  } catch {
-    return false;
+/** The kept-aside names, in the order they are tried: `<file>.bad`, then `<file>.bad.1` .. `.bad.9`. */
+const asideNames = (file: string): string[] => [`${file}.bad`, ...Array.from({ length: 9 }, (_, i) => `${file}.bad.${i + 1}`)];
+
+/** Copy `file` to the first free kept-aside name, never over a file that is there (a copy the person chose to keep). True when a copy exists. */
+function copyAside(file: string): boolean {
+  for (const to of asideNames(file)) {
+    try {
+      fs.copyFileSync(file, to, fs.constants.COPYFILE_EXCL);
+      return true;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException)?.code !== 'EEXIST') return false;
+    }
   }
+  return false;
+}
+
+/** Delete every kept-aside copy (only on the person's choice). True when none is left. */
+export function discardAside(file: string): boolean {
+  let ok = true;
+  for (const f of asideNames(file)) {
+    try {
+      fs.rmSync(f, { force: true });
+    } catch {
+      ok = false;
+    }
+  }
+  return ok;
+}
+
+/** Keep `file` aside and take it out of the way; false (and the file stays where it is) when no copy could be made. */
+function keepAside(file: string): boolean {
+  if (!copyAside(file)) return false;
+  removeFile(file);
+  return true;
 }
 
 /**
@@ -123,27 +152,23 @@ export function loadHeld(file: string): LoadedHeld {
     if (fs.statSync(file).size > MAX_FILE) throw new Error('too large');
     text = fs.readFileSync(file, 'utf8');
   } catch (err) {
-    if ((err as NodeJS.ErrnoException)?.code === 'ENOENT') return { doc: empty(), damaged: false };
-    return { doc: empty(), damaged: keepAside(file) };
+    if ((err as NodeJS.ErrnoException)?.code === 'ENOENT') return { doc: empty(), damaged: false, aside: false };
+    return { doc: empty(), damaged: true, aside: keepAside(file) };
   }
   try {
     JSON.parse(text);
   } catch {
-    return { doc: empty(), damaged: keepAside(file) };
+    return { doc: empty(), damaged: true, aside: keepAside(file) };
   }
   const { doc, dropped } = parseHeldCounting(text);
   if (dropped > 0) {
-    // runs that could not be read are never deleted silently: the whole file is kept aside, the notice says so
-    try {
-      fs.copyFileSync(file, `${file}.bad`);
-    } catch {
-      /* the notice still says it */
-    }
-    if (!Object.keys(doc.held).length) removeFile(file);
-    return { doc, damaged: true };
+    // runs that could not be read are never deleted silently: the whole file is kept aside, the notice says so; the original stays if no copy could be made
+    const kept = copyAside(file);
+    if (kept && !Object.keys(doc.held).length) removeFile(file);
+    return { doc, damaged: true, aside: kept };
   }
   if (!Object.keys(doc.held).length) removeFile(file);
-  return { doc, damaged: false };
+  return { doc, damaged: false, aside: false };
 }
 
 function removeFile(file: string): void {
@@ -179,6 +204,8 @@ export interface HeldList {
   notice: boolean;
   /** A damaged file was kept aside at this start (the notice says so). */
   damaged: boolean;
+  /** The damaged file was kept aside (otherwise it stays where it is). */
+  aside: boolean;
 }
 
 export interface MigrateDeps {
@@ -207,9 +234,11 @@ export class HeldBeforeUpdate {
   private busyKeys = new Set<string>();
   private doc: HeldDoc;
   private damaged: boolean;
+  private readonly aside: boolean;
   constructor(loaded: LoadedHeld, private deps: MigrateDeps) {
     this.doc = loaded.doc;
     this.damaged = loaded.damaged;
+    this.aside = loaded.aside;
   }
 
   list(): HeldList {
@@ -221,7 +250,7 @@ export class HeldBeforeUpdate {
         items.push({ id: r.id, ...(session ? { session } : {}), prompt: r.prompt, at: r.at, canSend: !why, ...(why ? { why } : {}) });
       }
     }
-    return { items, notice: !this.doc.noticed && (items.length > 0 || this.damaged), damaged: this.damaged };
+    return { items, notice: !this.doc.noticed && (items.length > 0 || this.damaged), damaged: this.damaged, aside: this.aside };
   }
 
   /** The notice was shown: never again (whatever the person chose, Escape included). */
@@ -288,7 +317,8 @@ export class HeldBeforeUpdate {
       this.busyKeys.add(key);
       let r: ReleaseResult;
       try {
-        r = await this.deps.release(run).catch((): ReleaseResult => 'failed');
+        // the session or the schedule may have gone since Send was chosen: a run whose session has gone must not land in a sibling
+        r = !this.deps.sessionOf(key) || !this.deps.scheduleExists(run.scheduleId) ? 'gone' : await this.deps.release(run).catch((): ReleaseResult => 'failed');
       } finally {
         this.busyKeys.delete(key);
       }

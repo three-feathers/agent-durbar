@@ -15,7 +15,7 @@ export interface HeldMigIpcDeps {
 const okIds = (v: unknown): v is string[] | undefined => v === undefined || (Array.isArray(v) && v.length <= MAX_IDS && v.every((x) => typeof x === 'string' && x.length > 0 && x.length <= 100));
 
 export function register(deps: HeldMigIpcDeps): void {
-  const empty = { items: [], notice: false, damaged: false };
+  const empty = { items: [], notice: false, damaged: false, aside: false };
   deps.router.onEvent((e) => deps.held()?.onStatus(e));
   ipcHandle('heldmig:list', (e) => (fromApp(e) ? deps.held()?.list() ?? empty : empty));
   ipcHandle('heldmig:noticed', (e) => {

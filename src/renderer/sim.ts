@@ -1003,7 +1003,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
        for the first agent and 1 whose session has gone (`simheld=N,nogone` seeds none of those), with a schedule for each of the first agent's. */
     type SimHeld = { id: string; session?: string; prompt: string; at: number; scheduleId?: string };
     const simHeld = { items: [] as SimHeld[], noticed: false, chosen: new Set<string>(), subs: simHeldSubs,
-      list(): HeldBeforeList { return { items: this.items.map((h) => ({ id: h.id, ...(h.session ? { session: h.session } : {}), prompt: h.prompt, at: h.at, canSend: !!h.session && simSched.list.some((x) => x.id === h.scheduleId), ...(!h.session ? { why: 'its session has gone' } : !simSched.list.some((x) => x.id === h.scheduleId) ? { why: 'its schedule has gone' } : {}) })), notice: !this.noticed && this.items.length > 0, damaged: false }; },
+      list(): HeldBeforeList { return { items: this.items.map((h) => ({ id: h.id, ...(h.session ? { session: h.session } : {}), prompt: h.prompt, at: h.at, canSend: !!h.session && simSched.list.some((x) => x.id === h.scheduleId), ...(!h.session ? { why: 'its session has gone' } : !simSched.list.some((x) => x.id === h.scheduleId) ? { why: 'its schedule has gone' } : {}) })), notice: !this.noticed && this.items.length > 0, damaged: false, aside: false }; },
       changed() { const d = this.list(); this.subs.forEach((f) => f(d)); } };
     simHeldRef = simHeld;
     {
@@ -2255,7 +2255,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       onSchedules: (cb) => { simSched.subs.push(cb); return () => undefined; },
       onScheduleRan: (cb) => { simSched.ran.push(cb); return () => undefined; },
       // spec 017 FR-031: prompts held behind a door before the update (memory only in the simulator)
-      heldList: async () => simHeldRef ? simHeldRef.list() : { items: [], notice: false, damaged: false },
+      heldList: async () => simHeldRef ? simHeldRef.list() : { items: [], notice: false, damaged: false, aside: false },
       heldNoticed: async () => { if (simHeldRef) simHeldRef.noticed = true; return { ok: true }; },
       heldSend: async (ids) => {
         const H = simHeldRef;

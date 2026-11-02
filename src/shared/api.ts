@@ -262,7 +262,7 @@ export interface ProfileInfo {
 /** What a scheduled run came to (spec 044; main's `Outcome`). */
 /** Spec 017 FR-031: one prompt held behind a door before the update, as the window sees it (it masks and cuts the text). */
 export interface HeldBeforeItem { id: string; session?: string; prompt: string; at: number; canSend: boolean; why?: string }
-export interface HeldBeforeList { items: HeldBeforeItem[]; notice: boolean; damaged: boolean }
+export interface HeldBeforeList { items: HeldBeforeItem[]; notice: boolean; damaged: boolean; aside: boolean }
 export type ScheduleOutcome = 'sent' | 'skipped-busy' | 'skipped-paused' | 'skipped-cap' | 'skipped-ended' | 'missed' | 'failed' | 'held' | 'ended' | 'skipped-door-full' | 'skipped-review';
 /** Spec 044 FR-036: one entry of a schedule's run log, as `scheduleRuns` returns it (newest first). Reason codes only, never text. */
 export interface ScheduleRunInfo {

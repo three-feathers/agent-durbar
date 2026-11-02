@@ -1226,11 +1226,11 @@ function morphParts(stage,parts){
 /* spec 017 FR-031 (owner 2026-10-31: no doors): scheduled prompts that were held behind a door before the update. Never sent and never lost
    without a choice: one notice, once (Send, Discard, or Decide later: the default, and Escape), and what is undecided stays as a row in
    Settings > Schedules. Prompts are masked first, then cut (never cut before masking); without the mask they are not shown (fail closed). */
-let HELD={items:[],notice:false,damaged:false};
+let HELD={items:[],notice:false,damaged:false,aside:false};
 const heldClean=l=>{
-  const o={items:[],notice:false,damaged:false};
+  const o={items:[],notice:false,damaged:false,aside:false};
   if(!l||typeof l!=='object')return o;
-  o.notice=l.notice===true;o.damaged=l.damaged===true;
+  o.notice=l.notice===true;o.damaged=l.damaged===true;o.aside=l.aside===true;
   for(const i of (Array.isArray(l.items)?l.items:[]).slice(0,2000)){
     if(!i||typeof i!=='object'||typeof i.id!=='string'||typeof i.prompt!=='string')continue;
     o.items.push({id:i.id,session:typeof i.session==='string'?i.session:'',prompt:i.prompt,canSend:i.canSend===true,why:typeof i.why==='string'?i.why.slice(0,100):''});
@@ -1265,8 +1265,8 @@ async function heldNotice(){
   await bridge.heldNoticed().catch(()=>{});
   const lines=heldGroups().slice(0,8).map(g=>{const gone=g.items.every(i=>!i.canSend);return g.name+': '+g.items.length+(gone&&g.items[0].why?' · only Discard ('+g.items[0].why+')':'');});
   if(HELD.items.length>lines.length&&heldGroups().length>8)lines.push('and '+(heldGroups().length-8)+' more');
-  const dmg=HELD.damaged?'Parts of the old file of held prompts could not be read, so the file was kept aside as durbar-doors.json.bad in the app\'s data folder; nothing unreadable was used or sent. ':'';
-  if(HELD.damaged){const w=await askDialog({title:'Held prompts: a file was kept aside',body:dmg+(n?'':'Nothing was sent. ')+'You can delete the kept-aside file now, or keep it (it is not looked at again).',buttons:[{label:'Keep it',value:null},{label:'Delete the kept-aside file',value:'del'}]});if(w&&w.value==='del'&&bridge.heldDiscardBad){const r=await bridge.heldDiscardBad().catch(()=>null);toast(r&&r.ok?'The kept-aside file was deleted.':'The kept-aside file could not be deleted.',4200);}if(!n)return;}
+  const dmg=HELD.damaged?(HELD.aside?'Parts of the old file of held prompts could not be read, so the file was kept aside as durbar-doors.json.bad (or .bad.1 and so on) in the app\'s data folder; nothing unreadable was used or sent. ':'Parts of the old file of held prompts could not be read, and no copy could be kept aside, so durbar-doors.json stays where it is in the app\'s data folder; nothing unreadable was used or sent. '):'';
+  if(HELD.damaged){const w=await askDialog({title:HELD.aside?'Held prompts: a file was kept aside':'Held prompts: a file could not be read',body:dmg+(n?'':'Nothing was sent. ')+(HELD.aside?'You can delete the kept-aside file now, or keep it (it is not looked at again).':''),buttons:HELD.aside?[{label:'Keep it',value:null},{label:'Delete the kept-aside file',value:'del'}]:[{label:'OK',value:null}]});if(w&&w.value==='del'&&bridge.heldDiscardBad){const r=await bridge.heldDiscardBad().catch(()=>null);toast(r&&r.ok?'The kept-aside file was deleted.':'The kept-aside file could not be deleted.',4200);}if(!n)return;}
   const v=await askDialog({title:'Scheduled prompts were held behind a door',
     body:(n===1?'1 scheduled prompt was':n+' scheduled prompts were')+' held behind a door. Doors are gone. Nothing was sent. Send goes one by one through the schedules (Pause all and each schedule\'s limit still apply). Decide later keeps them in Settings > Schedules.',
     lines,buttons:[{label:'Decide later',value:null},{label:'Discard ('+n+')',value:'discard'},...(sendable?[{label:'Send ('+sendable+')',value:'send'}]:[])]});
@@ -1611,6 +1611,8 @@ function loadRealOffice(){
 }
 function roFailed(){syncWorld();toast('The Real office could not be loaded, so the office is shown flat.',5200).classList.add('err');}
 /* the plain model Real office draws (no markup but the places' own icons): every text is already masked (deskMask = DurbarSafeText) */
+/* the Alert sign of a needs-you chip in Real office (spec 097 FR-026): a warning triangle in the text colour, built here from trusted markup (the sign set of the removed meeting-room doors, spec 017, kept only for this one) */
+const ALERT_ICON='<svg viewBox="0 0 12 12" aria-hidden="true" focusable="false" data-icon="alert"><path d="M6 1.6 11 10.4H1Z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M6 4.8v2.6M6 8.9v.1" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>';
 function realModel(model){
   const D=window.DurbarPlaces, E=window.exports;
   const stOf=(a,asleep)=>E.lightState(isFailing(a)?'failing':isRetrying(a)?'retrying':isCompacting(a)?'compacting':vis(a),{limit:!!a.limit,paused:!!a.paused,asleep:!!asleep});
@@ -1632,7 +1634,7 @@ function realModel(model){
       title:p.id===D.POSTBOX?placeLabelFull(p.id)+': the next scheduled runs. Open Settings > Schedules.':placeTip(p.id,ids,wait),
       visitors:ids.map(id=>{const a=byId(id),v=VISITS.at(id);return {id,name:a.name,needsYou:vis(a)==='waiting'||!!a.limit,title:visitorWords(a,v,true)};})};
   });
-  return {folders,places,alertIcon:signIcon('alert'),sessions:agents.filter(a=>!a.parent).map(a=>({id:a.id,folder:a.room}))};
+  return {folders,places,alertIcon:ALERT_ICON,sessions:agents.filter(a=>!a.parent).map(a=>({id:a.id,folder:a.room}))};
 }
 /* spec 097 FR-030..FR-035: what a monitor shows: the agent's lines (liveact.js, masked), else its last reply or task through the same steps, with
    the status lines the state asks for; no working mask: only the status word (fail closed). Live activity off: no live lines, as in flat. */

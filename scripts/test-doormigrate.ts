@@ -7,6 +7,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { GONE_SCHEDULE, GONE_SESSION, HeldBeforeUpdate, loadHeld, MAX_FILE, MAX_HELD, MAX_KEY, MAX_KEYS, parseHeld, saveHeld } from '../src/main/doormigrate';
+import { discardAside } from '../src/main/doormigrate';
 import type { HeldRun, MigrateDeps, ReleaseResult } from '../src/main/doormigrate';
 import { MAX_PROMPT } from '../src/main/schedules';
 import { harness } from './test-schedules';
@@ -234,6 +235,49 @@ async function main(): Promise<void> {
     assert.strictEqual(gone, 0, 'nothing is deleted on start');
     assert.strictEqual(t4.discardBad(), true);
     assert.strictEqual(gone, 1);
+  }
+
+  // ---- pre-review of #954: a backup that cannot be made keeps the original; an earlier kept-aside copy is never overwritten ----
+  {
+    const f = path.join(dir, 'noroom.json');
+    const body = JSON.stringify({ doors: { k: { held: [{ id: 'x', at: 'bad', prompt: 'p' }] } } });
+    fs.writeFileSync(f, body);
+    for (const n of ['', ...Array.from({ length: 9 }, (_, i) => `.${i + 1}`)]) fs.mkdirSync(f + '.bad' + n); // every backup name is taken by a directory
+    const l = loadHeld(f);
+    assert.deepStrictEqual([l.damaged, l.aside], [true, false], 'it says the file could not be kept aside');
+    assert.strictEqual(fs.readFileSync(f, 'utf8'), body, 'the original stays when no copy could be made');
+    const g = path.join(dir, 'twice.json');
+    fs.writeFileSync(g + '.bad', 'the copy the person kept');
+    fs.writeFileSync(g, JSON.stringify({ doors: { k: { held: [run('a', 'ok'), { id: 'x', at: 'bad', prompt: 'p' }] } } }));
+    const l2 = loadHeld(g);
+    assert.deepStrictEqual([l2.damaged, l2.aside], [true, true]);
+    assert.strictEqual(fs.readFileSync(g + '.bad', 'utf8'), 'the copy the person kept', 'the earlier kept-aside copy is not overwritten');
+    assert.ok(fs.existsSync(g + '.bad.1'), 'the new copy has the next free name');
+    const u = path.join(dir, 'unparsable.json');
+    fs.writeFileSync(u + '.bad', 'older');
+    fs.writeFileSync(u, '{"doors": {');
+    assert.strictEqual(loadHeld(u).aside, true);
+    assert.deepStrictEqual([fs.readFileSync(u + '.bad', 'utf8'), fs.existsSync(u), fs.readFileSync(u + '.bad.1', 'utf8')], ['older', false, '{"doors": {'], 'an unparsable file is moved to the next free name');
+    assert.strictEqual(discardAside(g), true);
+    assert.deepStrictEqual([fs.existsSync(g + '.bad'), fs.existsSync(g + '.bad.1')], [false, false], 'Delete removes every kept-aside copy');
+  }
+
+  // ---- pre-review of #954: a Send does not go to a sibling after its session has gone ----
+  {
+    const f = path.join(dir, 'goneafter.json');
+    fs.writeFileSync(f, OLD({ k1: { held: [run('a', 'one')] } }));
+    const sessions = ['k1'];
+    const t = make(f, { sessions, results: ['busy'] });
+    await t.m.send();
+    assert.strictEqual(t.m.isReleasing('k1'), true);
+    sessions.length = 0; // the session is closed while the Send waits
+    t.results = ['sent'];
+    t.m.retry();
+    t.later.shift()?.();
+    await new Promise((r) => setImmediate(r));
+    assert.deepStrictEqual(t.sends, [], 'nothing is sent once the session has gone');
+    assert.deepStrictEqual([t.m.isReleasing('k1'), t.stops.length], [false, 1], 'the Send stops and says so');
+    assert.deepStrictEqual(fileHeld(f), ['one'], 'the prompt stays held (Discard only)');
   }
 
   // ---- old schedule logs (spec 044 FR-127) ----

@@ -37,7 +37,7 @@ import { NotesFile } from './notesfile';
 import { register as registerQuestionsIpc } from './ipc/questions';
 import { register as registerRemoteIpc } from './ipc/remote';
 import { register as registerHeldMigIpc } from './ipc/heldmig';
-import { HeldBeforeUpdate, loadHeld, saveHeld } from './doormigrate';
+import { HeldBeforeUpdate, discardAside, loadHeld, saveHeld } from './doormigrate';
 import { register as registerSchedulesIpc } from './ipc/schedules';
 import { register as registerSettingsIpc } from './ipc/settings';
 import { register as registerThemesIpc } from './ipc/themes';
@@ -1061,7 +1061,7 @@ app.whenReady().then(() => {
       scheduleExists: (id) => !!id && !!scheduler?.doc.schedules.some((x) => x.id === id),
       release: (run) => (scheduler ? scheduler.releaseDoorRun(run.scheduleId, run.prompt) : Promise.resolve('failed' as const)),
       persist: (doc) => { try { saveHeld(dfile, doc); } catch (err) { console.warn('[held] could not save', err instanceof Error ? err.message : err); } },
-      discardBad: () => { try { fs.rmSync(`${dfile}.bad`, { force: true }); return true; } catch { return false; } },
+      discardBad: () => discardAside(dfile),
       changed: () => toRenderer('heldmig:changed', heldBefore?.list()),
       stopped: (agentId, why) => toRenderer('heldmig:stopped', { id: agentId, why }),
     });
