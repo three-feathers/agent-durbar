@@ -170,13 +170,17 @@ module.exports = async (ctx) => {
       assert.ok(sl.r.top >= sl.lobby - 0.5, `${tag}: the slip sits under the lobby band`);
       assert.strictEqual(sl.small, 0, `${tag}: slip text >= 10.5px`);
       /* the inbox's own words for the same request, to compare: its first row, its buttons in its order */
+      /* the simulator's MCP request arrives a little after the first draw: wait for it and for the slip to count every request, so the dialog (built once, when opened) and the slip are compared at the same set */
+      await must(`window.__durbarSimUi.slips().elicit.length>=1`, 'the MCP request');
+      await must(`(()=>{const e=document.querySelector('#stage .ro-slip.ro-queue'),m=e&&/^(\\d+) /.exec(e.getAttribute('aria-label')||'');return !!m&&Number(m[1])===window.__durbarSimUi.needsCount()})()`, 'the slip to count every request that needs you');
       await js(`document.getElementById('inboxBtn').click()`);
       await must(`!!document.querySelector('#inboxDlg .inbox-row')`, 'the inbox');
       const dlg = await js(`(()=>{const r=document.querySelector('#inboxDlg .inbox-row'),h=document.querySelector('#inboxDlg .ib-world');return {title:document.getElementById('inboxT').textContent,first:r.querySelector('.ib-n').textContent,btns:[...r.querySelectorAll('.ib-ans button')].map(b=>b.textContent.trim()),
         focus:document.activeElement&&document.activeElement.className,header:!!h,aria:h&&h.getAttribute('aria-hidden'),door:h&&h.querySelector('img.ibw-door').getAttribute('src'),faces:h&&h.querySelectorAll('.ibw-face').length,bg:getComputedStyle(document.querySelector('#inboxDlg .inbox-dlg')).backdropFilter,
         small:[...document.querySelectorAll('#inboxDlg *')].filter(x=>x.children.length===0&&x.textContent.trim()&&parseFloat(getComputedStyle(x).fontSize)<10.5).length}})()`);
       assert.strictEqual(dlg.title, 'Needs you', `${tag}: the dialog keeps its heading`);
-            const rowsN = await js(`document.querySelectorAll('#inboxDlg .inbox-row').length`); assert.strictEqual(sl.total, rowsN, tag + ': the slip count (' + sl.total + ') is the inbox row count (' + rowsN + '; needsMe ' + (await js('window.__durbarSimUi.needsCount()')) + ')');
+            /* the slip's drawn count (its aria-label) and the inbox's rows are read in the same moment, waiting until() the draw has caught up with a request that arrived meanwhile (a slower runner showed 5 against 6) */
+      await must(`(()=>{const e=document.querySelector('#stage .ro-slip.ro-queue'),m=e&&/^(\\d+) /.exec(e.getAttribute('aria-label')||'');return !!m&&Number(m[1])===document.querySelectorAll('#inboxDlg .inbox-row').length})()`, 'the slip count to equal the inbox row count');
       assert.ok(dlg.header && dlg.aria === 'true' && dlg.faces >= 1 && dlg.door === `realoffice/worlds/${world}/fx-boss.webp`, `${tag}: the header with the world's Boss door and the queue's faces, aria-hidden: ${JSON.stringify(dlg)}`);
       assert.ok(/ib-h/.test(dlg.focus), `${tag}: focus lands on the first row's heading, never a button`);
       assert.strictEqual(dlg.bg, 'none', `${tag}: no blur behind the dialog text: ${dlg.bg}`);
