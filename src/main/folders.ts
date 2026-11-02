@@ -55,8 +55,8 @@ export interface SavedFolder {
   sessionModes?: SessionMode[];
   /** Spec 083 FR-050 (T042): the folder's notes are mirrored to `.durbar/notes/notes.md` in the project; `'git'`: the person chose to keep them in git (no `.gitignore`). Absent = off (the default). */
   notesProject?: true | 'git';
-  /** Spec 083 Changes 2026-11-01: Durbar itself made the folder's `.durbar/notes/.gitignore` (only such a file is ever deleted by Durbar). */
-  notesIgnoreOwn?: true;
+  /** Spec 083 Changes 2026-11-01: identity (`dev:ino[:birth]`) of the `.durbar/notes/.gitignore` Durbar itself made (only that very file is ever deleted by Durbar). */
+  notesIgnoreOwn?: string;
 }
 
 export interface SessionMode {
@@ -278,7 +278,7 @@ export function parseSavedFolders(text: string): SavedFolder[] {
       ...(parsePrevMarks(o.prevPinned) ? { prevPinned: parsePrevMarks(o.prevPinned) } : {}),
       ...(parsePrevMarks(o.prevHidden) ? { prevHidden: parsePrevMarks(o.prevHidden) } : {}),
       ...(parseSessionModes(o.sessionModes) ? { sessionModes: parseSessionModes(o.sessionModes) } : {}),
-      ...(o.notesIgnoreOwn === true ? { notesIgnoreOwn: true as const } : {}),
+      ...(typeof o.notesIgnoreOwn === 'string' && /^[0-9]{1,24}:[0-9]{1,24}(?::[0-9]{1,24})?$/.test(o.notesIgnoreOwn) ? { notesIgnoreOwn: o.notesIgnoreOwn } : {}),
       ...(o.notesProject === true || o.notesProject === 'git' ? { notesProject: o.notesProject } : {}), // spec 083 FR-050: only `true` or `'git'` turns it on; anything else is off (the old `notesFile` is dropped: Changes 2026-11-01)
     });
     if (out.length >= MAX_FOLDERS) break;
@@ -641,12 +641,12 @@ export class FolderStore {
     return false;
   }
 
-  /** Spec 083: record whether Durbar made the folder's `.durbar/notes/.gitignore`; `false` when the folder is not saved or the list could not be written. */
-  setNotesIgnoreOwn(workspace: string, own: boolean): boolean {
+  /** Spec 083: record the identity of the `.durbar/notes/.gitignore` Durbar made (or forget it); `false` when the folder is not saved or the list could not be written. */
+  setNotesIgnoreOwn(workspace: string, id: string | undefined): boolean {
     const cur = this.get(workspace);
     if (!cur) return false;
     const was = cur.notesIgnoreOwn;
-    if (own) cur.notesIgnoreOwn = true; else delete cur.notesIgnoreOwn;
+    if (id) cur.notesIgnoreOwn = id; else delete cur.notesIgnoreOwn;
     if (this.save()) return true;
     if (was) cur.notesIgnoreOwn = was; else delete cur.notesIgnoreOwn;
     return false;

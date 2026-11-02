@@ -184,13 +184,13 @@ export class NotesFile {
 
   /**
    * Delete `.gitignore` only when it is a regular file with one link holding exactly `*` (`isStar`), and Durbar made it (`own`: the
-   * caller's record; a file a repository ships is never deleted). Both folders and the real path of the file are checked again right
+   * caller's record of its identity; a file a repository ships, or one that replaced it, is never deleted). Both folders and the real path of the file are checked again right
    * before the unlink; a swap in the last instant stays open `[KNOWN GAP]` (Node has no unlinkat). `true` when deleted.
    */
-  private dropIgnore(p: Place, own: boolean): boolean {
-    if (!own) return false;
+  private dropIgnore(p: Place, ownId: string | undefined): boolean {
     const f = path.join(p.dir, '.gitignore');
     try {
+      if (!ownId || this.idOf(f, false) !== ownId) return false; // not the file Durbar made
       const r = readCapped(this.fs, this.k, f, 16); // where there is no O_NOFOLLOW a link is read through; the real-path check below refuses it
       if (!r.ok || !isStar(r.buf)) return false;
       if (this.checkPlace(p) || !this.same(this.fs.realpathSync(f), f)) return false;
@@ -199,15 +199,19 @@ export class NotesFile {
     } catch { return false; }
   }
 
-  /** Is there a `.gitignore` in `.durbar/notes` (any kind of entry)? For turn-on: only one Durbar makes is Durbar's to delete. */
-  hasIgnore(folderPath: string): boolean {
-    try { this.fs.lstatSync(path.join(this.fs.realpathSync(folderPath), '.durbar', 'notes', '.gitignore')); return true; } catch { return false; }
+  /**
+   * The identity (`<dev>:<ino>[:<birth ns>]`, like `folderId`) of the file `.durbar/notes/.gitignore`, `undefined` when there is none.
+   * Recorded when Durbar makes the file; only a file with that identity is Durbar's to delete (a re-clone or another branch that
+   * tracks its own `.gitignore` replaces the file and so changes the identity).
+   */
+  ignoreId(folderPath: string): string | undefined {
+    try { return this.idOf(path.join(this.fs.realpathSync(folderPath), '.durbar', 'notes', '.gitignore'), false); } catch { return undefined; }
   }
 
   /** The person chose to keep the notes in git: Durbar's own `.gitignore` (`own`) goes (called after the native box). `true` when it went. */
-  allowGit(folderPath: string, own: boolean): boolean {
+  allowGit(folderPath: string, ownId: string | undefined): boolean {
     const pl = this.place(folderPath, false);
-    return pl.ok && pl.p.has && this.dropIgnore(pl.p, own);
+    return pl.ok && pl.p.has && this.dropIgnore(pl.p, ownId);
   }
 
   /** `notes.md` now: its bytes (`null`: missing), or why it is refused. `lstat` first: a link, a folder or a FIFO is never opened. */
@@ -358,9 +362,14 @@ export class NotesFile {
    * replaced (fails safe: turn the switch off and on). `undefined` where the OS gives no inode.
    */
   folderId(folderPath: string): string | undefined {
+    try { return this.idOf(this.fs.realpathSync(folderPath), true); } catch { return undefined; }
+  }
+
+  /** `<dev>:<ino>[:<birth ns>]` of `p` itself (no link followed), `undefined` where there is none or `dir` says it is not a folder. */
+  private idOf(p: string, dir: boolean): string | undefined {
     try {
-      const st = this.fs.lstatSync(this.fs.realpathSync(folderPath), { bigint: true }) as unknown as { dev: bigint; ino: bigint; birthtimeNs: bigint; isDirectory(): boolean };
-      if (!st.isDirectory() || st.ino <= 0n) return undefined;
+      const st = this.fs.lstatSync(p, { bigint: true }) as unknown as { dev: bigint; ino: bigint; birthtimeNs: bigint; isDirectory(): boolean };
+      if (st.isDirectory() !== dir || st.ino <= 0n) return undefined;
       const born = st.birthtimeNs > 86_400_000_000_000n; // 0 or 1970: the file system gives no birth time
       return `${st.dev}:${st.ino}${born ? `:${st.birthtimeNs}` : ''}`;
     } catch { return undefined; }
@@ -390,7 +399,7 @@ export class NotesFile {
    * one link (a symlink or a hard link is never deleted) and its SHA-256 is `mirror` (the file Durbar last wrote); all of it is checked
    * again right before the unlink. Then `.durbar` is removed with `rmdir` only when it is empty (never recursively). Never throws.
    */
-  remove(folderPath: string, mirror: NotesMirror | undefined, own = false): RemoveResult & { ignoreDropped?: true } {
+  remove(folderPath: string, mirror: NotesMirror | undefined, ownId?: string): RemoveResult & { ignoreDropped?: true } {
     const keep = (why: string): RemoveResult => ({ removed: false, dirRemoved: false, why });
     try {
       const pl = this.place(folderPath, false);
@@ -441,7 +450,7 @@ export class NotesFile {
       let dirRemoved = false, ignoreDropped = false;
       if (!this.checkPlace(pl.p)) {
         // the `.gitignore` goes only when it is the last thing in the folder: a crash leftover (`.notes.md.*.tmp`, with note text) stays ignored
-        if (this.fs.readdirSync(pl.p.dir).join() === '.gitignore') ignoreDropped = this.dropIgnore(pl.p, own);
+        if (this.fs.readdirSync(pl.p.dir).join() === '.gitignore') ignoreDropped = this.dropIgnore(pl.p, ownId);
         try { this.fs.rmdirSync(pl.p.dir); dirRemoved = true; this.fs.rmdirSync(pl.p.durbar); } catch { /* not empty (ENOTEMPTY, EEXIST) or held open: it stays */ }
       }
       return { removed: true, dirRemoved, ...(ignoreDropped ? { ignoreDropped: true as const } : {}) };

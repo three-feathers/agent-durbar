@@ -1001,18 +1001,18 @@ async function main(): Promise<void> {
     nodeFs.writeFileSync(ign(r.folder), 'my own rules\n'); // not checked, not touched
     must(await r.store.add(r.key, 'proj', { text: 'more' }));
     assert.deepStrictEqual((await run()).state, {});
-    assert.strictEqual(r.file.allowGit(r.folder, true), false, 'a .gitignore with other text stays');
+    assert.strictEqual(r.file.allowGit(r.folder, r.file.ignoreId(r.folder)), false, 'a .gitignore with other text stays');
     assert.strictEqual(nodeFs.readFileSync(ign(r.folder), 'utf8'), 'my own rules\n');
     nodeFs.writeFileSync(ign(r.folder), '*\n');
-    assert.strictEqual(r.file.allowGit(r.folder, true), true);
+    assert.strictEqual(r.file.allowGit(r.folder, r.file.ignoreId(r.folder)), true);
     assert.ok(!nodeFs.existsSync(ign(r.folder)), 'Durbar\'s own is gone');
-    assert.strictEqual(r.file.allowGit(r.folder, true), false, 'nothing left to remove');
-    assert.strictEqual(r.file.allowGit(fresh('none'), true), false, 'no .durbar: nothing');
+    assert.strictEqual(r.file.allowGit(r.folder, r.file.ignoreId(r.folder)), false, 'nothing left to remove');
+    assert.strictEqual(r.file.allowGit(fresh('none'), 'a:1'), false, 'no .durbar: nothing');
     if (canLink) {
       const other = path.join(fresh('x'), 'ig');
       nodeFs.writeFileSync(other, '*\n');
       nodeFs.symlinkSync(other, ign(r.folder), 'file');
-      assert.strictEqual(r.file.allowGit(r.folder, true), false, 'a link is never followed or removed');
+      assert.strictEqual(r.file.allowGit(r.folder, r.file.ignoreId(r.folder)), false, 'a link is never followed or removed');
       assert.ok(nodeFs.existsSync(other));
     }
   });
@@ -1068,7 +1068,7 @@ async function main(): Promise<void> {
       nodeFs.writeFileSync(ign(r.folder), bad);
       assert.match((await cycle(r)).state.error ?? '', /is not "\*"/, JSON.stringify(bad));
       assert.ok(!nodeFs.existsSync(md(r.folder)), `${JSON.stringify(bad)}: nothing written`);
-      assert.strictEqual(r.file.allowGit(r.folder, true), false, `${JSON.stringify(bad)}: not deleted as Durbar's`);
+      assert.strictEqual(r.file.allowGit(r.folder, r.file.ignoreId(r.folder)), false, `${JSON.stringify(bad)}: not deleted as Durbar's`);
       assert.ok(nodeFs.existsSync(ign(r.folder)));
     }
     for (const good of ['*', '*\n', '*\r\n']) {
@@ -1099,21 +1099,21 @@ async function main(): Promise<void> {
     const file = new NotesFile({ now: tickClock });
     const mirror = await store.getMirror(folder);
     nodeFs.writeFileSync(path.join(nd(folder), '.notes.md.1.abc.tmp'), 'secret idea\n');
-    const res = file.remove(folder, mirror, true);
+    const res = file.remove(folder, mirror, file.ignoreId(folder));
     assert.deepStrictEqual(res, { removed: true, dirRemoved: false }, JSON.stringify(res));
     assert.strictEqual(nodeFs.readFileSync(ign(folder), 'utf8'), '*\n', 'the .gitignore stays');
     if (haveGit) { gitOut(folder, 'init', '-q'); gitOut(folder, 'add', '-A'); assert.strictEqual((gitOut(folder, 'diff', '--cached', '--name-only') ?? '').trim(), '', 'nothing staged'); }
     nodeFs.unlinkSync(path.join(nd(folder), '.notes.md.1.abc.tmp'));
-    assert.deepStrictEqual(file.remove(folder, mirror, true), { removed: false, dirRemoved: false, why: 'There was no .durbar/notes/notes.md to delete.' });
+    assert.deepStrictEqual(file.remove(folder, mirror, file.ignoreId(folder)), { removed: false, dirRemoved: false, why: 'There was no .durbar/notes/notes.md to delete.' });
   });
 
   await test('a .gitignore Durbar did not make is never deleted (allowGit, Delete the file); the folder then stays', async () => {
     const r = rig();
     must(await r.store.add(r.key, 'proj', { text: 'mine' }));
     assert.deepStrictEqual((await cycle(r)).state, {});
-    assert.strictEqual(r.file.allowGit(r.folder, false), false);
+    assert.strictEqual(r.file.allowGit(r.folder, undefined), false);
     assert.ok(nodeFs.existsSync(ign(r.folder)));
-    const res = r.file.remove(r.folder, await r.store.getMirror(r.key), false);
+    const res = r.file.remove(r.folder, await r.store.getMirror(r.key), undefined);
     assert.deepStrictEqual(res, { removed: true, dirRemoved: false });
     assert.ok(nodeFs.existsSync(ign(r.folder)), 'still there, and the folder with it');
   });
@@ -1156,7 +1156,7 @@ async function main(): Promise<void> {
     nodeFs.symlinkSync(target, ign(r.folder), 'file');
     must(await r.store.add(r.key, 'proj', { text: 'again' }));
     assert.match((await cycle(r)).state.error ?? '', /\.gitignore is a link/);
-    assert.strictEqual(r.file.allowGit(r.folder, true), false);
+    assert.strictEqual(r.file.allowGit(r.folder, r.file.ignoreId(r.folder)), false);
     assert.ok(nodeFs.lstatSync(ign(r.folder)).isSymbolicLink() && nodeFs.existsSync(target), 'the link and its target stay');
     // a swap of the folder between the read and the unlink: the other folder's .gitignore survives
     const r2 = rig();
@@ -1166,7 +1166,7 @@ async function main(): Promise<void> {
     nodeFs.writeFileSync(path.join(outside, '.gitignore'), '*\n');
     let swapped = false;
     r2.c.hook.realpathSync = (real, p) => { if (!swapped && String(p) === ign(r2.folder)) { swapped = true; nodeFs.rmSync(nd(r2.folder), { recursive: true }); nodeFs.symlinkSync(outside, nd(r2.folder), 'dir'); } return real(p); };
-    assert.strictEqual(r2.file.allowGit(r2.folder, true), false);
+    assert.strictEqual(r2.file.allowGit(r2.folder, r2.file.ignoreId(r2.folder)), false);
     assert.ok(swapped && nodeFs.existsSync(path.join(outside, '.gitignore')), 'the other folder\'s .gitignore is not deleted');
   });
 
