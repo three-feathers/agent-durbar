@@ -38,12 +38,14 @@ export interface Deps {
   realpath: (p: string) => string;
   /** `shell.openPath`: resolves to '' on success, else an error text. */
   openPath: (p: string) => Promise<string>;
+  /** `shell.showItemInFolder`: selects the item in the file manager and runs nothing. */
+  reveal: (p: string) => void;
   /** Starts a plan (no shell). Tests give a recorder; nothing in a test ever starts an editor. */
   start: (plan: LaunchPlan) => Promise<OpenResult>;
 }
 
-export function realDeps(openPath: (p: string) => Promise<string>): Deps {
-  return { platform: process.platform, launchEnv: defaultEnv(), lstat: (p) => fs.lstatSync(p), realpath: (p) => fs.realpathSync(p), openPath, start: (plan) => spawnPlan(plan) };
+export function realDeps(openPath: (p: string) => Promise<string>, reveal: (p: string) => void): Deps {
+  return { platform: process.platform, launchEnv: defaultEnv(), lstat: (p) => fs.lstatSync(p), realpath: (p) => fs.realpathSync(p), openPath, reveal, start: (plan) => spawnPlan(plan) };
 }
 
 /** FR-021: folders whose name makes the file manager run them instead of showing them. Checked on every OS (one rule). */
@@ -53,6 +55,9 @@ const abs = (p: string, platform: NodeJS.Platform): boolean => (platform === 'wi
 
 /** The note of an answer whose folder was a link (spec *Changes* 2026-11-01). No path in it. */
 export const LINK_NOTE = 'This folder is a link, so its real folder was opened.';
+export const WORKSPACE_LINK_NOTE = 'This workspace file is a link, so its real file was opened.';
+/** A folder named like an application: shown, because opening it would run it (spec *Changes* 2026-11-02). */
+export const PACKAGE_NOTE = 'It looks like an application or package, so it is selected, not opened.';
 
 /** FR-021: absolute, no NUL, exists, a directory; a link is followed once to its real path, which must pass the same checks (owner decision, spec *Changes* 2026-11-01). */
 export function checkFolder(p: unknown, d: Pick<Deps, 'platform' | 'lstat' | 'realpath'>): { ok: true; path: string; linked?: boolean } | { ok: false; error: string } {
@@ -104,7 +109,10 @@ export async function openWith(agent: OwnedAgent | undefined, targetId: unknown,
   if (targetId === 'folder') {
     const f = checkFolder(agent.cwd, d);
     if (!f.ok) return f;
-    if (LAUNCHABLE_DIR.test(path.basename(f.path.replace(/[\\/]+$/, '')))) return { ok: false, error: 'This folder looks like an application or package, so it was not opened in the file manager.' };
+    if (LAUNCHABLE_DIR.test(path.basename(f.path.replace(/[\\/]+$/, '')))) {
+      d.reveal(f.path);
+      return { ok: true, note: f.linked ? LINK_NOTE + ' ' + PACKAGE_NOTE : PACKAGE_NOTE };
+    }
     try {
       const err = await d.openPath(f.path);
       return err ? { ok: false, error: err } : { ok: true, ...(f.linked ? { note: LINK_NOTE } : {}) };
@@ -118,17 +126,24 @@ export async function openWith(agent: OwnedAgent | undefined, targetId: unknown,
   if (!ed) return { ok: false, error: 'unknown target' };
   let dest: string;
   let linked = false;
+  let wsLinked = false;
   if (agent.workspaceFile) {
-    // a .code-workspace file of an agent main started: a regular file, not a link, never given to the file manager
+    // a .code-workspace file of an agent main started: a regular file, or a link to one (with a note), never given to the file manager
     const w = agent.workspaceFile;
     if (typeof w !== 'string' || w.includes('\0') || !abs(w, d.platform) || !/\.code-workspace$/i.test(w)) return { ok: false, error: 'This workspace file is not usable.' };
+    let real = w;
     try {
-      const st = d.lstat(w);
-      if (st.isSymbolicLink() || !st.isFile()) return { ok: false, error: 'This workspace file is not a regular file, so it was not opened.' };
+      let st = d.lstat(w);
+      if (st.isSymbolicLink()) {
+        real = d.realpath(w);
+        st = d.lstat(real);
+        wsLinked = true;
+      }
+      if (st.isSymbolicLink() || !st.isFile() || !/\.code-workspace$/i.test(real)) return { ok: false, error: 'This workspace file is not a regular file, so it was not opened.' };
     } catch {
       return { ok: false, error: 'This workspace file no longer exists.' };
     }
-    dest = w;
+    dest = real;
   } else {
     const f = checkFolder(agent.cwd, d);
     if (!f.ok) return f;
@@ -145,7 +160,7 @@ export async function openWith(agent: OwnedAgent | undefined, targetId: unknown,
     };
   }
   const r = await d.start({ ...plan, edition: name });
-  return r.ok ? { ok: true, edition: name, ...(linked ? { note: LINK_NOTE } : {}) } : { ok: false, error: r.error ?? 'unknown error', edition: name };
+  return r.ok ? { ok: true, edition: name, ...(linked ? { note: LINK_NOTE } : wsLinked ? { note: WORKSPACE_LINK_NOTE } : {}) } : { ok: false, error: r.error ?? 'unknown error', edition: name };
 }
 
 /** FR-020: the folder is main's. Only an agent id of an agent main started finds anything; a path (or anything else) finds nothing. */

@@ -2283,7 +2283,7 @@ function paintFolderStatus(a){
 }
 async function showFolderStatus(a,chip,st0){
   const st=st0||(FSTAT.get(a.id)||{}).st;if(!st||!st.repo)return;
-  const r=await askDialog({title:'Changes in '+(folderNameOf(a)||'this folder'),body:GS.body(st),lines:GS.lines(st),buttons:[{label:'Open in VS Code',value:'vscode'},{label:'Done',value:null,cls:'primary'}],returnFocus:chip});
+  const r=await askDialog({title:'Changes in '+(folderNameOf(a)||'this folder'),body:GS.body(st),lines:GS.lines(st),buttons:[{label:'Open in editor',value:'vscode'},{label:'Done',value:null,cls:'primary'}],returnFocus:chip});
   if(r&&r.value==='vscode'&&bridge.openInVSCode)openLive(a,chip);
 }
 /* spec 074 FR-022 (issues 587, 612): unsent text and attachments per chat, in memory only (this window; never written to disk: a draft
@@ -6064,6 +6064,7 @@ async function pickLive(want){addPicked(await bridge.pickAttachments(want));}
 async function fillOpenWith(a){
   const items=$('owItems'),menu=$('openWithMenu');if(!items||(menu&&!menu.hidden))return; /* never rebuild an open menu: it would drop the focused item */
   let t=null;try{t=bridge.openWithTargets?await bridge.openWithTargets(liveRoot(a).id):null;}catch(err){t=null;}
+  if(!items.isConnected||(menu&&!menu.hidden))return; /* it opened while the list was on its way */
   if(!Array.isArray(t))t=[{id:'vscode',label:'VS Code',hint:'Opens this folder in VS Code'}];
   items.innerHTML=t.map(x=>`<button class="more-it" role="menuitem" tabindex="-1" type="button" data-ow="${esc(x.id)}" title="${esc(x.hint)}"><span class="mt">${esc(x.label)}<small>${esc(x.hint)}</small></span></button>`).join('');
   items.querySelectorAll('[data-ow]').forEach(b=>{b.onclick=()=>openWithRun(a,b.dataset.ow,b.querySelector('.mt').firstChild.textContent,$('vscodeBtn'),b.dataset.ow==='folder');});

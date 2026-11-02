@@ -239,8 +239,9 @@ export function register(deps: AgentsIpcDeps): void {
   });
   // spec 009 FR-019..FR-024 (issue #685): the "Open with" menu. The window sends an agent id (and a fixed target id); the folder is main's.
   const ownedOf = (id: unknown) => ownedAgent(agents, id);
-  ipcHandle('agents:openWithTargets', (e, id: unknown) => (fromApp(e) ? listTargets(ownedOf(id), realDeps((p) => shell.openPath(p))) : []));
+  const owDeps = () => realDeps((p) => shell.openPath(p), (p) => shell.showItemInFolder(p));
+  ipcHandle('agents:openWithTargets', (e, id: unknown) => (fromApp(e) ? listTargets(ownedOf(id), owDeps()) : []));
   ipcHandle('agents:openWith', (e, id: unknown, target: unknown) =>
-    fromApp(e) ? openWith(ownedOf(id), target, realDeps((p) => shell.openPath(p))) : { ok: false, error: 'invalid request' },
+    fromApp(e) ? openWith(ownedOf(id), target, owDeps()) : { ok: false, error: 'invalid request' },
   );
 }

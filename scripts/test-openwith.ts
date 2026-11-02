@@ -13,13 +13,14 @@ import { spawnPlan } from '../src/main/vscode';
 
 const launchEnv = (platform: NodeJS.Platform, files: string[], vars: NodeJS.ProcessEnv = {}, homedir = '/home/a'): LaunchEnv => ({ platform, env: vars, homedir, isFile: (p) => files.includes(p) });
 const LINUX_ALL = ['/usr/bin/code', '/usr/bin/code-insiders', '/usr/bin/codium'];
-interface Rec { started: LaunchPlan[]; opened: string[] }
+interface Rec { started: LaunchPlan[]; opened: string[]; revealed: string[] }
 const mk = (le: LaunchEnv, rec: Rec, over: Partial<Deps> = {}): Deps => ({
   platform: le.platform, // the platform under test, so the Windows branches of abs() and planCmd really run
   launchEnv: le,
   lstat: (p) => (p.startsWith(root) ? fs.lstatSync(p) : fakeLstat(p)),
   realpath: (p) => fs.realpathSync(p),
   openPath: async (p) => (rec.opened.push(p), ''),
+  reveal: (p) => { rec.revealed.push(p); },
   start: async (plan) => (rec.started.push(plan), { ok: true, edition: plan.edition }),
   ...over,
 });
@@ -28,7 +29,7 @@ const fakeLstat = (p: string) => {
   if (/gone$/.test(p)) throw new Error('ENOENT');
   return { isDirectory: () => true, isFile: () => /\.code-workspace$/.test(p), isSymbolicLink: () => false };
 };
-const rec = (): Rec => ({ started: [], opened: [] });
+const rec = (): Rec => ({ started: [], opened: [], revealed: [] });
 
 const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-openwith-'))); // real: on macOS the temp folder itself is behind a link
 const dir = path.join(root, 'proj');
@@ -162,9 +163,11 @@ fs.writeFileSync(wsFile, '{}');
       assert.deepStrictEqual([r.started, r.opened], [[], []], `${t} ${bad}: nothing launched`);
     }
   }
-  // a workspace file goes to an editor only, as the one argument; never to the file manager; a link or folder in its place is refused
+  // a workspace file goes to an editor only, as the one argument; never to the file manager; a folder in its place, or a link to anything but a workspace file, is refused
   { const r = rec(); assert.strictEqual((await openWith(agents.get('a2'), 'vscode', mk(launchEnv('linux', LINUX_ALL), r))).ok, true); assert.deepStrictEqual(r.started[0].args, [wsFile]);
     const r2 = rec(); assert.strictEqual((await openWith(agents.get('a2'), 'folder', mk(launchEnv('linux', LINUX_ALL), r2))).ok, true); assert.deepStrictEqual(r2.opened, [dir], 'the file manager gets the folder, not the workspace file'); }
+  { const r = rec(), link = path.join(root, 'link.code-workspace'); fs.symlinkSync(wsFile, link); const res = await openWith({ cwd: dir, workspaceFile: link }, 'vscode', mk(launchEnv('linux', LINUX_ALL), r)); assert.strictEqual(res.ok, true, 'a linked workspace file opens'); assert.match(res.note!, /workspace file is a link/); assert.deepStrictEqual(r.started[0].args, [fs.realpathSync(wsFile)], 'its real file is the one argument'); }
+  { const r = rec(), link = path.join(root, 'tofile.code-workspace'); fs.symlinkSync(file, link); const res = await openWith({ cwd: dir, workspaceFile: link }, 'vscode', mk(launchEnv('linux', LINUX_ALL), r)); assert.strictEqual(res.ok, false, 'a link to something that is no workspace file is refused'); assert.deepStrictEqual(r.started, []); }
   { const r = rec(); const res = await openWith({ cwd: dir, workspaceFile: file }, 'vscode', mk(launchEnv('linux', LINUX_ALL), r)); assert.strictEqual(res.ok, false, 'not a .code-workspace'); assert.deepStrictEqual(r.started, []); }
   { const r = rec(); const res = await openWith({ cwd: dir, workspaceFile: path.join(root, 'gone.code-workspace') }, 'vscode', mk(launchEnv('linux', LINUX_ALL), r)); assert.strictEqual(res.ok, false); assert.deepStrictEqual(r.started, []); }
   // a failed launch says so
@@ -172,7 +175,8 @@ fs.writeFileSync(wsFile, '{}');
 
   // ---- the file manager: shell.openPath on a real directory only (FR-023) ----
   { const r = rec(); const res = await openWith({ cwd: dir }, 'folder', mk(launchEnv('linux', []), r)); assert.strictEqual(res.ok, true); assert.deepStrictEqual(r.opened, [dir]); }
-  { const r = rec(); const res = await openWith({ cwd: appDir }, 'folder', mk(launchEnv('linux', []), r)); assert.strictEqual(res.ok, false, 'an .app folder could run'); assert.match(res.error!, /application or package/); assert.deepStrictEqual(r.opened, []); }
+  { const r = rec(); const res = await openWith({ cwd: appDir }, 'folder', mk(launchEnv('linux', []), r)); assert.strictEqual(res.ok, true, 'an .app folder is shown, with a note'); assert.match(res.note!, /selected, not opened/); assert.deepStrictEqual(r.opened, [], 'openPath would run it'); assert.deepStrictEqual(r.revealed, [appDir], 'it is revealed'); }
+  { const r = rec(); const res = await openWith({ cwd: dir }, 'folder', mk(launchEnv('linux', []), r)); assert.deepStrictEqual(r.revealed, [], 'a plain folder is opened'); assert.deepStrictEqual(r.opened, [dir]); assert.strictEqual(res.note, undefined); }
   for (const n of ['x.APP', 'x.bundle', 'x.workflow', 'x.command', 'x.kext']) {
     const p = path.join(root, n); fs.mkdirSync(p);
     const r = rec(); assert.strictEqual((await openWith({ cwd: p }, 'folder', mk(launchEnv('linux', []), r))).ok, false, n); assert.deepStrictEqual(r.opened, []);

@@ -281,7 +281,7 @@
       <div class="pe-head">
         <div class="pe-tt"><h3 id="peT"></h3><span class="pe-dirty" id="peDirty" hidden>Unsaved</span><p class="pe-sub" id="peSub"></p></div>
         <div class="seg pe-modes" id="peModes" role="group" aria-label="View"><button type="button" data-pm="edit" aria-pressed="false">Edit</button><button type="button" data-pm="split" aria-pressed="false">Split</button><button type="button" data-pm="preview" aria-pressed="false">Preview</button></div>
-        <div class="pe-acts">${X.bridge.openProfileInVSCode?'<button class="btn sm" type="button" id="peVs" title="Open this file in VS Code">Open in VS Code</button>':''}<button class="btn sm primary" type="button" id="peSave" title="Save (Ctrl+S)">Save</button><button class="btn sm" type="button" id="peClose">Close</button></div>
+        <div class="pe-acts">${X.bridge.openProfileInVSCode?'<button class="btn sm" type="button" id="peVs" title="Open this file in VS Code, or Insiders or VSCodium if that is what is installed">Open in editor</button>':''}<button class="btn sm primary" type="button" id="peSave" title="Save (Ctrl+S)">Save</button><button class="btn sm" type="button" id="peClose">Close</button></div>
       </div>
       <p class="pe-ro" id="peRo" role="note" hidden></p>
       <div class="pe-main" id="peMain">

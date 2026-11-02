@@ -84,6 +84,14 @@ In **Previous sessions**, "VS Code chat history" lists chats VS Code saved for t
 
 ## Changes
 
+### 2026-11-02: Open with warns instead of refusing (owner's "warn, do not limit", #976)
+
+- **A package-named folder** (`.app`, `.bundle` and the rest of FR-021's list) is no longer refused for **Show in folder**: it is revealed in the file manager with `shell.showItemInFolder`, which selects it and runs nothing, and the toast says so. `shell.openPath` still never gets one, because that is what would run it.
+- **A `.code-workspace` file that is a link** is followed to its real file, which must be a regular `.code-workspace` file, with a note, as a folder is.
+- **Still refused, FR-021 and FR-022:** a link to a file as a folder, a path that leads nowhere, and on Windows a path with `&`, `%` or another character `cmd.exe` could misread through a `.cmd`. That last one is a **shell-injection guard**, not a preference: it keeps a folder's name from running as a command. It says how to get there another way.
+- **Names:** the two buttons that use the fallback route (folder status dialog, profile editor) read **Open in editor**: they were wrong whenever the route fell back to Insiders or VSCodium.
+- **A fix:** the menu's list arriving after the menu opened rebuilt it and dropped the focused item. `test:` `npm run test:openwith`, `shots-009-openwith`; `[KNOWN GAP]` a real reveal and a real launch through a link were not run.
+
 ### 2026-11-01: Open with follows a symbolic-link folder, with a note (owner decision, #976)
 
 Vikram's call (relayed, 2026-11-01 03:48 UTC), replacing the safer default of FR-021: a project folder that is a symbolic link is opened, not refused. Main resolves the link to its real path, and every other check of FR-021 and FR-022 then applies to that real path: it must be a directory (a link to a file is refused), a link that leads nowhere says the folder no longer exists, a link to a launchable package is refused for **Show in folder**, and the editor or file manager gets the real path as its one argument. The answer carries a note, shown after the toast's usual text: *This folder is a link, so its real folder was opened.* The note holds no path. A `.code-workspace` file that is a link stays refused; the decision was about folders. `test:` `npm run test:openwith`; `[KNOWN GAP]` a real launch through a link and a Windows junction were not run.
