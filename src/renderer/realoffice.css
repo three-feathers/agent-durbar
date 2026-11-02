@@ -232,7 +232,7 @@ button.ro-chip{font-family:inherit;margin:0}
 .ro-slip.ro-bubble{width:360px}
 @media (forced-colors:active){.ro-slip{border:2px solid CanvasText;background:Canvas;color:CanvasText}}
 /* spec 097 FR-123: the tent card on the empty desk of a coffee break (paper, folded: a darker edge); text and edge colour are the app's tokens */
-.ro-tent{transform:translateX(-50%);padding:1px 9px 2px;border-radius:3px 3px 0 0;font-size:11px;font-weight:700;line-height:1.35;white-space:nowrap;background:var(--surface);color:var(--ink);border:1px solid var(--line-2,var(--line));border-bottom:3px solid var(--c-waiting);box-shadow:0 2px 4px rgba(0,0,0,.25);pointer-events:none!important}
+.ro-tent{transform:translate(-50%,-100%);text-align:center;padding:1px 9px 2px;border-radius:3px 3px 0 0;font-size:11px;font-weight:700;line-height:1.35;overflow-wrap:anywhere;background:var(--surface);color:var(--ink);border:1px solid var(--line-2,var(--line));border-bottom:3px solid var(--c-waiting);box-shadow:0 2px 4px rgba(0,0,0,.25);pointer-events:none!important}
 @media (forced-colors:active){.ro-tent{border:1px solid CanvasText;border-bottom-width:3px}}
 
 /* spec 097 FR-125: the ride (two doors over the desk area, never the lobby; transform and opacity only). The world's doors are in its world.css. */
