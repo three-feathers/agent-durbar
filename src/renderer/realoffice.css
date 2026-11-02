@@ -208,9 +208,6 @@ button.ro-chip{font-family:inherit;margin:0}
 .ro-eplate{padding:9px 16px;border-radius:10px;font-size:13.5px;line-height:1.45;text-align:center;background:var(--surface);color:var(--ink);border:1px solid var(--line);box-shadow:0 6px 18px rgba(0,0,0,.28)}
 .ro-edesk{cursor:default}
 .ro-escreen{cursor:default}
-/* FR-120: the sleeper sits in front of its own dark screen (the screen is off and behind the person); the desk stays in front of the person */
-.ro-person.asleep{z-index:2}
-.ro-desk.asleep{z-index:3}
 
 /* spec 097 FR-121, FR-122, FR-124: the queue slip at the Boss door, the limit slip at the Bank and the MCP bubble at the desk. An opaque face
    (never text over a picture), the app's own tokens and button classes; the world's paper, tablet or note is in its world.css. Nothing moves. */

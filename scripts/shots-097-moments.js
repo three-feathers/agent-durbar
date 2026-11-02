@@ -284,7 +284,8 @@ module.exports = async (ctx) => {
         chips:[...document.querySelectorAll('#stage .ro-chip')].filter(c=>c.dataset.coffeeid).map(c=>[c.textContent,c.getAttribute('aria-label')]),tent:[...document.querySelectorAll('#stage .ro-tent')].map(e=>e.textContent)}})()`);
       assert.ok(/^TomasPrompt tuner Coffee break \u00B7 Coffee break \u2014 resumes at /.test(cf.plate) && cf.state === 'waiting', `${tag}: the plate and the status (Waiting, never Error): ${cf.plate} ${cf.state}`);
       assert.ok(/^Tomas, Prompt tuner, Coffee break, .*at Coffee corner\. Open chat panel\.$/.test(cf.label), `${tag}: the name: ${cf.label}`);
-      assert.ok(cf.away.includes('at Coffee corner \u2191'), `${tag}: the empty chair says "at Coffee corner"`);
+      assert.deepStrictEqual(cf.away.filter((t) => /Coffee corner/.test(t)), [], `${tag}: on a coffee break the tent card stands where the post-it would (the label and the plate say "at Coffee corner")`);
+      assert.strictEqual(await js(`(()=>{const R=e=>e.getBoundingClientRect(),T=[...document.querySelectorAll('#stage .ro-tent')],N=[...document.querySelectorAll('#stage .ro-away')];return T.flatMap(t=>N.filter(n=>{const a=R(t),b=R(n);return a.left<b.right-0.5&&b.left<a.right-0.5&&a.top<b.bottom-0.5&&b.top<a.bottom-0.5})).length})()`), 0, `${tag}: the tent card and the post-it on the same desk do not overlap`);
       assert.deepStrictEqual(cf.tent.length === 1 && /^Coffee break \u00B7 until /.test(cf.tent[0]), true, `${tag}: one tent card: ${cf.tent}`);
       assert.strictEqual(cf.chips.length, 1, `${tag}: only the agent on a coffee break stands at the corner (FR-128): ${JSON.stringify(cf.chips)}`);
       assert.ok(/^Tomas \(until .* back in \d+ min\)\. Open the chat\.$/.test(cf.chips[0][1]), `${tag}: the corner chip's name: ${cf.chips[0][1]}`);

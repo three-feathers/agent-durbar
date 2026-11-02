@@ -421,6 +421,23 @@ export function placeBox(size: { w: number; h: number }, avoid: readonly Rect[],
   return best ? { x: best.x, y: best.y, w: size.w, h: size.h } : null;
 }
 
+/** Spec 097 FR-110, FR-121: what a slip, a bubble or a pill must never cover, from the drawn layout: signs, plates, faces (who needs you is read from them),
+ *  the post-it on an empty seat, a desk's `?` bubble and `!` mark. Pure, so a test holds it to the boxes the renderer really draws. */
+export function slipAvoid(lay: Layout): Rect[] {
+  const out: Rect[] = [];
+  for (const z of lay.zones) {
+    out.push({ x: z.sign.x, y: z.sign.y, w: z.sign.w, h: z.sign.h });
+    for (const d of z.desks) {
+      out.push(d.plate);
+      if (d.face) out.push(d.face);
+      if (d.away) out.push({ x: d.away.x - d.away.s / 2 - 4, y: d.away.y - 2, w: d.away.s + 8, h: d.away.s + 6 }); /* the note's own square, with a little for its tilt */
+      if (d.bubble) out.push({ x: d.bubble.x, y: d.bubble.y - 24, w: 24, h: 24 });
+      if (d.bang) out.push({ x: d.bang.x, y: d.bang.y, w: 20, h: 20 });
+    }
+  }
+  return out;
+}
+
 /* ---- Phase P2: live screens and motion (FR-030..FR-035, FR-070..FR-074) ---- */
 
 /** One line of a monitor: `n` stays with the line while it scrolls, `k` is its kind (FR-032's colours), `t` is masked text. */

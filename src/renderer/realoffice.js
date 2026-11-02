@@ -316,8 +316,8 @@
         if (d.bubble) { const b = el(chrome, 'b:' + k, 'div', 'ro-bub'); box(b, d.bubble); attr(b, 'aria-hidden', 'true'); text(b, '?'); }
         if (d.bang) { const b = el(chrome, 'x:' + k, 'div', 'ro-bang'); box(b, d.bang); attr(b, 'aria-hidden', 'true'); text(b, '!'); }
         if (d.dots) { const b = el(chrome, 't:' + k, 'div', 'ro-dots'); box(b, d.dots); attr(b, 'aria-hidden', 'true'); if (!b.firstChild) b.innerHTML = '<i></i><i></i><i></i>'; }
-        if (d.away) { const w = el(chrome, 'a:' + k, 'div', 'ro-away'); box(w, { x: d.away.x, y: d.away.y, w: d.away.s, h: d.away.s }); text(w, 'at ' + a.awayLabel); if (!w._in && CUR.drawn && moving() && !hiddenNow()) w.animate([{ transform: 'translateX(-50%) rotate(-2.5deg) scale(.7)', opacity: 0 }, { transform: 'translateX(-50%) rotate(-2.5deg)', opacity: 1 }], { duration: ZOOM_IN, delay: ZOOM_OUT - 40, easing: 'cubic-bezier(.2,.7,.3,1)', fill: 'backwards' }); w._in = true; }
-        /* FR-123: the tent card of a coffee break stands on the empty desk (aria-hidden; the plate and the chip say it too) */
+        if (d.away && !a.tent) { const w = el(chrome, 'a:' + k, 'div', 'ro-away'); box(w, { x: d.away.x, y: d.away.y, w: d.away.s, h: d.away.s }); text(w, 'at ' + a.awayLabel); if (!w._in && CUR.drawn && moving() && !hiddenNow()) w.animate([{ transform: 'translateX(-50%) rotate(-2.5deg) scale(.7)', opacity: 0 }, { transform: 'translateX(-50%) rotate(-2.5deg)', opacity: 1 }], { duration: ZOOM_IN, delay: ZOOM_OUT - 40, easing: 'cubic-bezier(.2,.7,.3,1)', fill: 'backwards' }); w._in = true; }
+        /* FR-123: the tent card of a coffee break stands on the empty desk in place of the post-it (the two did not fit one desk: 2026-11-02 merge of #979); aria-hidden, the plate, the name and the chip say "at Coffee corner" */
         if (a.tent && d.away) { const t = el(chrome, 'tn:' + k, 'div', 'ro-tent'); t.dataset.surface = 'coffee-bar'; box(t, { x: d.slot.x + d.slot.w / 2, y: d.plate.y - 21 }); attr(t, 'aria-hidden', 'true'); text(t, a.tent); }
         /* FR-120: a static "z z" over a sleeping person (carved in the cave); aria-hidden, the plate and the name carry the meaning */
         if (a.asleep && d.person) { const z = el(chrome, 'z:' + k, 'div', 'ro-zz'); box(z, { x: d.person.x + d.person.w * 0.62, y: Math.max(d.slot.y + 2, d.person.y + d.person.h * 0.04) }); attr(z, 'aria-hidden', 'true'); text(z, 'z z'); }
@@ -435,23 +435,13 @@
      A queue slip that has no room for its words becomes a one-line pill; a limit slip or bubble with no room is not drawn (the Bank's chip, the
      desk's plate and the top bar's Inbox button say it too). The buttons carry data-slipact; app.js clicks the card's own button. */
   function drawSlips(chrome, lay, slips) {
-    const P = root.exports && root.exports.placeBox;
+    const P = root.exports && root.exports.placeBox, A = root.exports && root.exports.slipAvoid;
     const want = [];
     if (slips && slips.queue) want.push('queue');
     if (slips && slips.limit) want.push('limit');
     for (const e of (slips && slips.elicit) || []) want.push('elicit:' + e.id);
-    if (!want.length || !P) return;
-    const avoid = [];
-    for (const z of lay.zones) {
-      avoid.push({ x: z.sign.x, y: z.sign.y, w: z.sign.w, h: z.sign.h });
-      for (const d of z.desks) {
-        avoid.push(d.plate);
-        if (d.face) avoid.push(d.face); /* who needs you is read from the faces: a slip never covers one */
-        if (d.away) avoid.push({ x: d.away.x - 80, y: d.away.y - 1, w: 160, h: 21 }); /* the chair label, \"at Software library\" at its longest */
-        if (d.bubble) avoid.push({ x: d.bubble.x, y: d.bubble.y - 24, w: 24, h: 24 });
-        if (d.bang) avoid.push({ x: d.bang.x, y: d.bang.y, w: 20, h: 20 });
-      }
-    }
+    if (!want.length || !P || !A) return;
+    const avoid = A(lay);
     if (EMPTY_BOX) avoid.push(EMPTY_BOX);
     /* with more than four agents the monitors are read from afar: a slip takes a spot clear of them, else a smaller variant (the pill); with big screens (four or fewer) it may sit over one */
     const softAvoid = lay.big ? [] : lay.zones.flatMap((z) => z.desks.map((d) => d.screen));

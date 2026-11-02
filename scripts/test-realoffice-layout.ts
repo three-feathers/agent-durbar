@@ -3,7 +3,7 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
-import { placeBox, screenFit, screenFor, personMotion, zoomRect, realLayout, lobbyWidths, sortDesks, assignPeople, standPose, standHeight, POSE_FRAME_B, lobbyRange, PERSON_M, DOOR_M, FRONT_DEPTH, NEAR_SCALE, CHIP_H, U_MIN, U_MAX, U_MAX_BIG, FACE_U, PLATE_H, PLATE_H_ASK, STRIP,
+import { placeBox, slipAvoid, screenFit, screenFor, personMotion, zoomRect, realLayout, lobbyWidths, sortDesks, assignPeople, standPose, standHeight, POSE_FRAME_B, lobbyRange, PERSON_M, DOOR_M, FRONT_DEPTH, NEAR_SCALE, CHIP_H, U_MIN, U_MAX, U_MAX_BIG, FACE_U, PLATE_H, PLATE_H_ASK, STRIP,
   type RealModel, type RealMeta, type RealAgent, type RealState, type Rect, type Layout } from '../src/shared/realoffice-layout';
 import { lightFor, lightState, LIGHT_TABLE, ambientFor, doneTick, fixtureLight, isActive, type LightState } from '../src/shared/lights';
 
@@ -51,12 +51,10 @@ function problems(L: Layout, W: number, H: number): string[] {
     signs.push(z.sign);
     if (!inside(z.sign, z.box, 3)) out.push(`sign of ${z.id} leaves its zone`);
     for (const d of z.desks) {
-      plates.push(d.plate); screens.push(d.screen); if (d.person && d.state !== 'asleep') persons.push(d.person.vis);
-      /* FR-120: an asleep person sits in front of its own, dark screen; it still touches no other screen */
-      if (d.person && d.state === 'asleep') for (const o of z.desks) if (o.id !== d.id && inter(d.person.vis, o.screen, 1)) out.push(`asleep person of ${d.id} under the screen of ${o.id}`);
+      plates.push(d.plate); screens.push(d.screen); if (d.person) persons.push(d.person.vis);
       for (const [k, r] of [['plate', d.plate], ['screen', d.screen], ['desk', d.desk]] as [string, Rect][]) if (!inside(r, z.box, 2)) out.push(`${k} of ${d.id} leaves its zone ${JSON.stringify(r)} ${JSON.stringify(z.box)}`);
       if (d.plate.w < 40) out.push(`plate of ${d.id} is ${d.plate.w}px wide`);
-      if (d.person && d.state !== 'asleep' && inter(d.person.vis, d.screen, 1)) out.push(`person of ${d.id} under its screen`);
+      if (d.person && inter(d.person.vis, d.screen, 1)) out.push(`person of ${d.id} under its screen`);
       if (d.screen.y < z.box.y + STRIP - 1) out.push(`screen of ${d.id} in the sign strip`);
     }
   }
@@ -473,6 +471,22 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
   const before = strip(realLayout(m, { w: 1440, h: 848 }, META));
   const gone = JSON.parse(JSON.stringify(m)) as RealModel; gone.folders[0].agents[0].away = 'boss';
   assert.strictEqual(strip(realLayout(gone, { w: 1440, h: 848 }, META)), before, 'the raised hand of an agent that left still has its head room: no row moves');
+}
+
+// ---- spec 097 FR-121, review of #994: a slip never covers the post-it on an empty seat (the note's real box, 66 to 112 px square, not a one-line label) ----
+{
+  for (const [W, H] of SIZES.slice(0, 2)) for (const n of [3, 15]) {
+    const m = model(n, 3, { away: false });
+    const flat = m.folders.flatMap((f) => f.agents); flat[0].away = 'library'; flat[1].away = 'terminal';
+    const L = realLayout(m, { w: W, h: H }, META), av = slipAvoid(L);
+    const notes = L.zones.flatMap((z) => z.desks).filter((d) => d.away);
+    assert.strictEqual(notes.length, 2);
+    for (const d of notes) {
+      const s = d.away!.s, box = { x: d.away!.x - s / 2, y: d.away!.y, w: s, h: s };
+      assert.ok(av.some((r) => r.x <= box.x + 0.5 && r.y <= box.y + 0.5 && r.x + r.w >= box.x + box.w - 0.5 && r.y + r.h >= box.y + box.h - 0.5), `the post-it of ${d.id} (${s}px) is wholly on the avoid list at ${W}x${H} with ${n} agents`);
+    }
+    for (const z of L.zones) for (const d of z.desks) assert.ok(av.some((r) => r === d.plate) && (!d.face || av.includes(d.face)), 'plates and faces stay on the avoid list');
+  }
 }
 
 // ---- spec 097 FR-110, FR-121: placeBox puts a slip on the free spot nearest its door, never on anything in the avoid list ----
