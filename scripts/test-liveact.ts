@@ -1,6 +1,7 @@
 /** Live activity on the desks (spec 001 FR-028..FR-032): readout rules, masking through the shared redact module, the paint throttle,
  * and the page wiring. `npm run test:liveact`. No credits spent. */
 import assert from 'assert';
+import { assertLinearShape } from './redact-growth-lib';
 import fs from 'fs';
 import path from 'path';
 import { redact, maskSecretCommand, maskSecretUrl, maskHomePaths } from '../src/shared/redact';
@@ -179,16 +180,10 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
 // long, fast thinking stays cheap (the block keeps its newest 1200 characters)
 {
   const f = mk();
-  // CPU time, not wall time, so a loaded machine cannot fail it; wall time only has a loose 10x backstop for a blocking wait
-  // (spec 041 T068, review of PR #527)
-  const w0 = process.hrtime.bigint();
-  const c0 = process.cpuUsage();
-  for (let i = 0; i < 4000; i++) f.onEvent('a', ev({ type: 'thinking', reasoningId: 'r', delta: 'Word '.repeat(10) + 'end. ' }));
-  const cpu = process.cpuUsage(c0);
-  const ms = (cpu.user + cpu.system) / 1000;
-  const wall = Number(process.hrtime.bigint() - w0) / 1e6;
-  ok(ms < 3000, '4000 deltas in under 3 s of CPU (' + ms + ' ms)');
-  ok(wall < 30000, '4000 deltas: wall-time backstop (' + wall.toFixed(1) + ' ms wall, limit 30000 ms)');
+  // 16 times the deltas against a fresh feed in the same run, by CPU time (spec 012 T138): the length of the string is the number of deltas
+  const deltas = (feed: ReturnType<typeof mk>, n: number): void => { for (let i = 0; i < n; i++) feed.onEvent('a', ev({ type: 'thinking', reasoningId: 'r', delta: 'Word '.repeat(10) + 'end. ' })); };
+  deltas(f, 4000);
+  assertLinearShape('4000 deltas', (x) => deltas(mk(), x.length), (n) => '.'.repeat(n), 4000);
   ok(Array.from(f.of('a')!.lines).length <= L.PANEL_MAX, 'panel text bounded');
   ok(Array.from(f.of('a')!.long).length <= L.STREAM_MAX, 'grown desk text bounded');
 }

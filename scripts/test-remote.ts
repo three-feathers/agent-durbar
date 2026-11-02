@@ -8,7 +8,8 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { allowedRemoteUrl, cleanRemoteError } from '../src/shared/remote';
-import { createRemoteOps, DOOR_CLOSED, NO_REMOTE, NOT_IN_ALLOW_ALL, NOT_RUNNING } from '../src/main/remoteops';
+import { createRemoteOps, NO_REMOTE, NOT_IN_ALLOW_ALL, NOT_RUNNING } from '../src/main/remoteops';
+import { HeldBeforeUpdate, loadHeld, saveHeld } from '../src/main/doormigrate';
 import { FakeClient, FakeCopilot } from './fakes/copilot-sdk';
 import type { FakeSession } from './fakes/copilot-sdk';
 import type { AgentAdapter } from '../src/adapters/types';
@@ -156,8 +157,8 @@ async function main(): Promise<void> {
     const srcDir = path.join(root, 'src');
     const walk = (d: string): string[] => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(d, e.name)) : /\.ts$/.test(e.name) ? [path.join(d, e.name)] : []));
     const callers = walk(srcDir).flatMap((f) => fs.readFileSync(f, 'utf8').split(/\r?\n/).filter((l) => /\.setRemote\(/.test(l) && !/^\s*(\/\/|\*)/.test(l)).map((l) => path.basename(f) + ': ' + l.trim()));
-    assert.ok(callers.length >= 4, 'the scan found the setRemote callers: ' + callers.length);
-    for (const l of callers) assert.ok(/^(remoteops|doorops|doors|remote)\.ts/.test(l), 'unexpected setRemote caller: ' + l);
+    assert.ok(callers.length >= 3, 'the scan found the setRemote callers: ' + callers.length);
+    for (const l of callers) assert.ok(/^(remoteops|remote)\.ts/.test(l), 'unexpected setRemote caller: ' + l);
     assert.ok(!callers.some((l) => /setRemote\([^)]*true\)/.test(l)), 'no source calls setRemote(..., true) directly: ' + callers.join(' | '));
     // SDK 1.0.26: `remote.enable(` is the sole control. Exactly one call in src/ (comments ignored), inside CopilotAdapter.setRemote;
     // `enableRemoteSessions` is never set to anything but false. Mutants: a stray enable in the resume path, `enableRemoteSessions: true`.
@@ -256,18 +257,39 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(calls, [true, false], 'a second release does nothing');
     assert.ok((await ops.setRemote('a', false)).ok, 'turning off needs no confirmation');
   }
-  // ---- spec 054 FR-040 (spec 017 FR-018, owner 2026-10-23): a door the user closed refuses remote control; turning it off still works
+  const root2For = (): string => { let r = __dirname; while (!fs.existsSync(path.join(r, 'package.json'))) r = path.dirname(r); return r; };
+  // ---- spec 054 FR-065 (spec 017 FR-033, owner decision 2026-10-31: no doors): nothing turns remote control off or refuses it because of a door; every other rule stands ----
   {
     const calls: boolean[] = [];
-    let closed = true, asked = 0;
+    let asked = 0;
     const ad = { capabilities: { remote: true }, isLive: () => true, setRemote: async (_id: string, on: boolean) => { calls.push(on); return { ok: true, on }; } } as unknown as AgentAdapter;
-    const ops = createRemoteOps({ known: () => true, adapterOf: () => ad, open: async () => undefined, modeOf: () => 'ask', confirm: async () => (asked++, true), doorClosed: () => closed });
-    assert.deepStrictEqual(await ops.setRemote('a', true), { ok: false, error: DOOR_CLOSED }, 'refused while the door is closed');
-    assert.deepStrictEqual([calls, asked], [[], 0], 'refused before the confirmation and before the adapter');
-    assert.ok((await ops.setRemote('a', false)).ok, 'turning it off is allowed while closed');
-    closed = false;
-    assert.ok((await ops.setRemote('a', true)).ok, 'an open door allows it again (with its confirmation)');
-    assert.strictEqual(asked, 1);
+    let mode = 'ask';
+    const ops = createRemoteOps({ known: () => true, adapterOf: () => ad, open: async () => undefined, modeOf: () => mode, confirm: async () => (asked++, true) });
+    assert.ok((await ops.setRemote('a', true)).ok, 'on works, with its own confirmation');
+    assert.deepStrictEqual([calls, asked], [[true], 1], 'on needs the confirmation (FR-011)');
+    assert.ok((await ops.setRemote('a', false)).ok, 'off still works without a confirmation');
+    assert.deepStrictEqual([calls, asked], [[true, false], 1]);
+    mode = 'allow';
+    assert.deepStrictEqual(await ops.setRemote('a', true), { ok: false, error: NOT_IN_ALLOW_ALL }, 'refused in Allow all, as before');
+    assert.deepStrictEqual([calls, asked], [[true, false], 1], 'refused before the confirmation and before the adapter');
+    // the door words and the dependency are gone from the operations and their wiring
+    for (const f of ['src/main/remoteops.ts', 'src/main/ipc/remote.ts']) assert.ok(!/door/i.test(fs.readFileSync(path.join(root2For(), f), 'utf8')), f + ' has no door');
+  }
+  // ---- spec 017 FR-033: the update turns nothing on. A session whose door had turned remote control off stays off: reading the old file, listing, sending and discarding never touch remote control ----
+  {
+    const fake = new FakeClient();
+    const ad = new FakeCopilot(fake);
+    const sid = await ad.start({ workspace: dir, quiet: true });
+    const doorsFile = path.join(dir, 'durbar-doors.json');
+    fs.writeFileSync(doorsFile, JSON.stringify({ doors: { [sid]: { closed: true, held: [{ id: 'h1', at: 1, prompt: 'held one', scheduleId: 's1' }] } } }));
+    const loaded = loadHeld(doorsFile);
+    const m = new HeldBeforeUpdate(loaded, { sessionOf: () => sid, scheduleExists: () => true, release: async () => 'paused-all', persist: (d) => saveHeld(doorsFile, d), changed: () => undefined, stopped: () => undefined });
+    m.list(); m.noticed(); await m.send(); m.discard();
+    const sessions = [...fake.sessions.values()];
+    assert.ok(sessions.length >= 1);
+    for (const x of sessions) assert.ok(!names(x).some((n) => n.startsWith('remote.')), 'the update made no remote.* call');
+    assert.ok(!/setRemote|remote/i.test(fs.readFileSync(path.join(root2For(), 'src/main/doormigrate.ts'), 'utf8')), 'the migration module cannot touch remote control');
+    await ad.dispose();
   }
 
   fs.rmSync(dir, { recursive: true, force: true });

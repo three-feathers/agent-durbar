@@ -24,8 +24,6 @@ export interface SavedFolder {
   workspace: string;
   permMode: SavedPermMode;
   hidden: boolean;
-  /** The room's door is closed in the office (spec 017). */
-  closed?: boolean;
   model?: string;
   effort?: string;
   /** Context tier chosen for this folder's sessions (spec 030); absent = the model's default. Only ever our own choice, never Copilot's settings. */
@@ -53,8 +51,10 @@ export interface SavedFolder {
   prevHidden?: PrevMark[];
   /** Spec 003 (2026-10-21 delta): the permission mode last chosen for each session of this folder (newest 50), so a session comes back in its own mode, not the folder's last one. Ids and modes only. */
   sessionModes?: SessionMode[];
-  /** Spec 083 FR-050 (T042): the folder's notes are mirrored to `.durbar/notes.md` in the project. A flag only; absent = off (the default). */
-  notesFile?: true;
+  /** Spec 083 FR-050 (T042): the folder's notes are mirrored to `.durbar/notes/notes.md` in the project; `'git'`: the person chose to keep them in git (no `.gitignore`). Absent = off (the default). */
+  notesProject?: true | 'git';
+  /** Spec 083 Changes 2026-11-01: identity (`dev:ino[:birth]`) of the `.durbar/notes/.gitignore` Durbar itself made (only that very file is ever deleted by Durbar). */
+  notesIgnoreOwn?: string;
 }
 
 export interface SessionMode {
@@ -240,6 +240,16 @@ export function parsePrevMarks(v: unknown): PrevMark[] | undefined {
 
 const MAX_FOLDERS = 200;
 
+/** Spec 017 FR-034: does a saved folder still carry the old `closed` flag (a door plate)? It is ignored on read and dropped from the file. */
+export function hasLegacyClosed(text: string): boolean {
+  try {
+    const list = (JSON.parse(text) as { folders?: unknown } | null)?.folders;
+    return Array.isArray(list) && list.some((e) => !!e && typeof e === 'object' && 'closed' in (e as object));
+  } catch {
+    return false;
+  }
+}
+
 /** Parse the file text; unknown shapes and bad entries are dropped, duplicates collapsed. */
 export function parseSavedFolders(text: string): SavedFolder[] {
   let doc: unknown;
@@ -260,7 +270,6 @@ export function parseSavedFolders(text: string): SavedFolder[] {
       workspace: o.workspace,
       permMode: o.permMode === 'ask' || o.permMode === 'allow' ? o.permMode : 'read-only',
       hidden: o.hidden === true,
-      closed: o.closed === true ? true : undefined,
       model: typeof o.model === 'string' && o.model.length <= 100 ? o.model : undefined,
       effort: parseEffort(o.effort),
       contextTier: parseTier(o.contextTier),
@@ -276,7 +285,8 @@ export function parseSavedFolders(text: string): SavedFolder[] {
       ...(parsePrevMarks(o.prevPinned) ? { prevPinned: parsePrevMarks(o.prevPinned) } : {}),
       ...(parsePrevMarks(o.prevHidden) ? { prevHidden: parsePrevMarks(o.prevHidden) } : {}),
       ...(parseSessionModes(o.sessionModes) ? { sessionModes: parseSessionModes(o.sessionModes) } : {}),
-      ...(o.notesFile === true ? { notesFile: true as const } : {}), // spec 083 FR-050: only `true` turns it on; anything else is off
+      ...(typeof o.notesIgnoreOwn === 'string' && /^[0-9]{1,24}:[0-9]{1,24}(?::[0-9]{1,24})?$/.test(o.notesIgnoreOwn) ? { notesIgnoreOwn: o.notesIgnoreOwn } : {}),
+      ...(o.notesProject === true || o.notesProject === 'git' ? { notesProject: o.notesProject } : {}), // spec 083 FR-050: only `true` or `'git'` turns it on; anything else is off (the old `notesFile` is dropped: Changes 2026-11-01)
     });
     if (out.length >= MAX_FOLDERS) break;
   }
@@ -310,10 +320,12 @@ export class FolderStore {
   constructor(private readonly file: string) {}
 
   load(): SavedFolder[] {
+    let legacy = false;
     try {
       const text = fs.readFileSync(this.file, 'utf8');
       this.folders = parseSavedFolders(text);
       this.floorsDoc = parseSavedFloors(text);
+      legacy = hasLegacyClosed(text);
       this.orderDoc = parseSavedOrder(text);
     } catch {
       this.folders = [];
@@ -322,6 +334,7 @@ export class FolderStore {
     }
     // A folder pointing at a floor that is gone is on the ground floor (FR-014).
     for (const f of this.folders) if (f.floor && floorOps.floorOf(f.floor, this.floorsDoc) === floorOps.GROUND) f.floor = undefined;
+    if (legacy) this.save(); // spec 017 FR-034: the old `closed` flags are dropped from the file now, not at some later save
     return this.list();
   }
 
@@ -618,23 +631,26 @@ export class FolderStore {
     this.save();
   }
 
-  setClosed(workspace: string, closed: boolean): boolean {
+  /** Spec 083 FR-050 (T042): the project-file switch of the folder's notes; `false` when the folder is not saved or the file could not be written. */
+  setNotesFile(workspace: string, on: boolean, git = false): boolean {
     const cur = this.get(workspace);
     if (!cur) return false;
-    cur.closed = closed ? true : undefined;
-    this.save();
-    return true;
+    const was = cur.notesProject;
+    if (on) cur.notesProject = git ? 'git' : true;
+    else delete cur.notesProject;
+    if (this.save()) return true;
+    if (was) cur.notesProject = was; else delete cur.notesProject; // not remembered: the switch keeps its old position
+    return false;
   }
 
-  /** Spec 083 FR-050 (T042): the project-file switch of the folder's notes; `false` when the folder is not saved or the file could not be written. */
-  setNotesFile(workspace: string, on: boolean): boolean {
+  /** Spec 083: record the identity of the `.durbar/notes/.gitignore` Durbar made (or forget it); `false` when the folder is not saved or the list could not be written. */
+  setNotesIgnoreOwn(workspace: string, id: string | undefined): boolean {
     const cur = this.get(workspace);
     if (!cur) return false;
-    const was = cur.notesFile;
-    if (on) cur.notesFile = true;
-    else delete cur.notesFile;
+    const was = cur.notesIgnoreOwn;
+    if (id) cur.notesIgnoreOwn = id; else delete cur.notesIgnoreOwn;
     if (this.save()) return true;
-    if (was) cur.notesFile = was; else delete cur.notesFile; // not remembered: the switch keeps its old position
+    if (was) cur.notesIgnoreOwn = was; else delete cur.notesIgnoreOwn;
     return false;
   }
 
