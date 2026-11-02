@@ -345,3 +345,6 @@
 
 ## FR-181: no Demo / Live badge in the top bar (2026-10-31, owner)
 - [x] T193 `check-no-demo-badge.js` first (fails with the badge), then `#protoBadge`, `.proto` and `setBadge` removed; UI-suite entry; the cues that remain are listed in the spec delta [FR-181]
+
+## 2026-11-02: activity export, atomic no-follow write (issue #973)
+- [x] T245 `activity:export` through `writeNotesExport` (new `what` and `maxBytes` options); `test-activity` cases for a link target, hard link, FIFO, folder, replace and mode [FR-071]
