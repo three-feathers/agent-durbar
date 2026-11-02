@@ -61,14 +61,23 @@ function checkCore(): void {
   assert.ok(!bad({ author: `mallory ${INJ}` }).includes('PLANTED'), 'a refusal prints no free text of an outsider');
   assert.ok(bad({ author: `mallory ${INJ}` }).includes('unknown account'));
   // facts from GraphQL: a Bot gets [bot]; a null commit user is null; an unknown state throws
-  const gq = (over: any = {}): any => ({ data: { repository: { pullRequest: { number: 7, url: base.url, state: 'OPEN', isCrossRepository: false, headRefOid: sha, author: { __typename: 'Bot', login: 'github-actions' }, editor: null, timelineItems: { totalCount: 0, nodes: [] }, commits: { totalCount: 1, nodes: [{ commit: { oid: sha, author: { user: null } } }] }, ...over } } } });
+  const gq = (over: any = {}): any => ({ data: { repository: { pullRequest: { number: 7, url: base.url, state: 'OPEN', isCrossRepository: false, headRefOid: sha, author: { __typename: 'Bot', login: 'github-actions' }, editor: null, timelineItems: { totalCount: 16, filteredCount: 0, nodes: [] }, commits: { totalCount: 1, nodes: [{ commit: { oid: sha, author: { user: null } } }] }, ...over } } } });
   const f = core.factsFromGraphql(gq());
   assert.strictEqual(f.author, 'github-actions[bot]'); assert.strictEqual(f.commits[0].author, null);
   assert.ok(core.refusal(f, trusted), 'a commit without a linked account refuses');
   assert.strictEqual(core.factsFromGraphql(gq({ isCrossRepository: undefined })).fork, true, 'unknown fork-ness counts as a fork');
   assert.throws(() => core.factsFromGraphql(gq({ state: 'WEIRD' })));
-  assert.ok(core.refusal(core.factsFromGraphql(gq({ timelineItems: { totalCount: 150, nodes: [] } })), trusted), 'after 100 renames a later one is unseen: refused (review 2026-11-01)');
-  assert.ok(core.refusal(core.factsFromGraphql(gq({ timelineItems: { nodes: [] } })), trusted)!.includes('title renames'), 'no count: refused');
+  // the real shape (found on the first real run, #1037): with itemTypes, totalCount counts ALL timeline items, filteredCount only the renames
+  { // this fixture has other refusals (an unlinked commit); only the title-rename one is looked at
+    const rf = (t: any): string | null => { const r = core.refusal(core.factsFromGraphql(gq({ timelineItems: { nodes: [], ...t } })), trusted); return r && r.includes('title renames') ? r : null; };
+    assert.strictEqual(rf({ totalCount: 16, filteredCount: 0 }), null, 'sixteen timeline items, no rename: not refused for titles');
+    assert.ok(rf({ totalCount: 0, filteredCount: 150 } as any) !== null, 'after 100 renames a later one is unseen: refused, whatever totalCount says');
+    assert.ok(rf({ totalCount: 150, filteredCount: 0 }) === null, 'a big totalCount alone is not a reason');
+    assert.ok(rf({ totalCount: 16 }) !== null, 'no filteredCount: refused (fail closed)');
+    assert.ok(rf({ filteredCount: -1 }) !== null, 'a negative count is nonsense: refused');
+    assert.ok(rf({ filteredCount: 'many' }) !== null, 'not a number: refused');
+    const withActors = core.factsFromGraphql(gq({ timelineItems: { totalCount: 30, filteredCount: 1, nodes: [{ actor: { __typename: 'User', login: 'mallory' } }] } })); assert.ok(core.refusal(withActors, trusted)!.includes('renamed'), 'an outside renamer is still refused');
+    assert.ok(/timelineItems\(first:100,itemTypes:\[RENAMED_TITLE_EVENT\]\)\{filteredCount /.test(core.GATE_QUERY('o', 'r', 7)) && !/RENAMED_TITLE_EVENT\]\)\{totalCount/.test(core.GATE_QUERY('o', 'r', 7)), 'the query asks for filteredCount, never the filter-blind totalCount'); }
   assert.strictEqual(core.REPO_SLUG, 'three-feathers/agent-durbar'); assert.strictEqual(core.REPO_REMOTE, 'https://github.com/three-feathers/agent-durbar.git');
 }
 
@@ -578,7 +587,7 @@ async function checkCli(): Promise<void> {
   fs.writeFileSync(path.join(bin, 'gh'), `#!/bin/bash\nprintf '%s\\n' "$*" | tr '\\n' ' ' >> "${calls}"; echo >> "${calls}"\nprog=.; prev=; for a in "$@"; do { [ "$prev" = --jq ] || [ "$prev" = -q ]; } && prog=$a; prev=$a; done\ncase "$1 $2" in\n "repo view") echo '{"nameWithOwner":"o/r"}' | jq -r "$prog"; exit;;\n "auth status") exit 1;;\nesac\ncase "$*" in *timelineItems*) f=gate;; *"pullRequest(number"*) f=text;; *) f=bad;; esac\n[ -f "${fx}/$f.json" ] || { echo "fake gh: no fixture for $*" >&2; exit 9; }\njq -r "$prog" < "${fx}/$f.json"\n`, { mode: 0o755 });
   const put = (n: string, v: unknown): void => fs.writeFileSync(path.join(fx, `${n}.json`), JSON.stringify(v));
   const sha = 'd'.repeat(40);
-  const pr = (over: any = {}): any => ({ data: { repository: { pullRequest: { number: 7, url: 'https://github.com/o/r/pull/7', state: 'OPEN', isCrossRepository: false, headRefOid: sha, author: { __typename: 'User', login: 'vikramgorla' }, editor: null, timelineItems: { totalCount: 0, nodes: [] }, commits: { totalCount: 1, nodes: [{ commit: { oid: sha, author: { user: { __typename: 'User', login: 'vikramgorla' } } } }] }, ...over } } } });
+  const pr = (over: any = {}): any => ({ data: { repository: { pullRequest: { number: 7, url: 'https://github.com/o/r/pull/7', state: 'OPEN', isCrossRepository: false, headRefOid: sha, author: { __typename: 'User', login: 'vikramgorla' }, editor: null, timelineItems: { totalCount: 16, filteredCount: 0, nodes: [] }, commits: { totalCount: 1, nodes: [{ commit: { oid: sha, author: { user: { __typename: 'User', login: 'vikramgorla' } } } }] }, ...over } } } });
   const text = (a = 'vikramgorla', editor: any = null): any => ({ data: { repository: { pullRequest: { url: 'https://github.com/o/r/pull/7', title: 'TITLE-OK', body: 'BODY-OK', isCrossRepository: false, author: { __typename: 'User', login: a }, editor } } } });
   const base = mk('clibase'); fs.mkdirSync(path.join(base, 'app', 'prompts'), { recursive: true });
   for (const dd of ['app', 'app/prompts']) fs.chmodSync(path.join(base, dd), 0o755);
@@ -603,7 +612,7 @@ async function checkCli(): Promise<void> {
   let r = await gated(pr()); assert.ok(r.g.ok && r.g.sha === sha && r.g.prText && r.g.prText.includes('TITLE-OK') && r.g.prText.includes('BODY-OK'));
   assert.ok(r.log.split('\n').filter(Boolean).every((l) => /^api graphql/.test(l)) && !/(^| )(-X|--method|-F|--input)( |$)|^(pr|issue|release|label) |mutation/m.test(r.log), 'the gate only reads: ' + JSON.stringify(r.log.split('\n').filter((l) => !/^(repo view|api graphql)/.test(l))));
   r = await gated(pr({ isCrossRepository: true })); assert.ok(!r.g.ok && !/url title body/.test(r.log), 'fork refused before the text');
-  for (const over of [{ author: { __typename: 'User', login: 'mallory' } }, { author: { __typename: 'Bot', login: 'dependabot' } }, { editor: { __typename: 'User', login: 'mallory' } }, { timelineItems: { totalCount: 1, nodes: [{ actor: { __typename: 'User', login: 'mallory' } }] } },
+  for (const over of [{ author: { __typename: 'User', login: 'mallory' } }, { author: { __typename: 'Bot', login: 'dependabot' } }, { editor: { __typename: 'User', login: 'mallory' } }, { timelineItems: { totalCount: 20, filteredCount: 1, nodes: [{ actor: { __typename: 'User', login: 'mallory' } }] } },
     { commits: { totalCount: 1, nodes: [{ commit: { oid: sha, author: { user: null } } }] } }, { commits: { totalCount: 1, nodes: [{ commit: { oid: sha, author: { user: { __typename: 'User', login: 'mallory' } } } }] } }, { state: 'MERGED' }, { state: 'CLOSED' }]) {
     r = await gated(pr(over)); assert.ok(!r.g.ok, JSON.stringify(over)); assert.ok(!/url title body/.test(r.log), 'the PR text was not fetched for a refused PR');
     assert.ok(!(r.g as any).why.includes('TITLE'));

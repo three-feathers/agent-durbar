@@ -1,0 +1,1 @@
+- **Text on macOS is a little stronger**: the app no longer thins its strokes, so grey text in chats and on cards is easier to read (spec 070).
