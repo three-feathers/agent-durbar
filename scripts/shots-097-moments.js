@@ -314,9 +314,9 @@ module.exports = async (ctx) => {
       await H.load({ w, h, query: q(world), ready: REAL, settle: false }); /* the Boss's post-its are the simulator's own waiting agents (a visit to the Boss is not pinned) */
       await must(PICS, 'the pictures');
       const PL = ['boss', 'bank', 'coffee', 'library', 'software', 'terminal', 'web', 'other'];
-      await js(`window.__durbarSimUi.uncrowd();${PL.filter((id) => id !== 'boss').map((id, i) => `window.__durbarSimUi.crowd(${jsLiteral(id)},1,${8 + i})`).join(';')}`);
+      await js('window.__durbarSimUi.uncrowd();' + PL.filter((id) => id !== 'boss').map((id, i) => 'window.__durbarSimUi.crowd(' + jsLiteral(id) + ',1,' + (8 + i) + ')').join(';'));
       const CONTRAST = `const P=s=>{const m=/rgba?\\(([^)]+)\\)/.exec(s);return m?m[1].split(/[ ,\\/]+/).filter(Boolean).slice(0,3).map(Number):[0,0,0]},Lm=c=>{const f=x=>{x/=255;return x<=0.03928?x/12.92:Math.pow((x+0.055)/1.055,2.4)};return 0.2126*f(c[0])+0.7152*f(c[1])+0.0722*f(c[2])},K=(a,b)=>{const x=Lm(P(a)),y=Lm(P(b));return (Math.max(x,y)+0.05)/(Math.min(x,y)+0.05)};`;
-      const readNotes = () => js(`(()=>{${CONTRAST}return [...document.querySelectorAll('#stage .ro-away')].map(e=>{const c=getComputedStyle(e);return {place:e.dataset.place,text:e.textContent,bg:c.backgroundColor,ink:c.color,ratio:K(c.color,c.backgroundColor),size:parseFloat(c.fontSize)}})})()`);
+      const readNotes = () => js('(()=>{' + CONTRAST + "return [...document.querySelectorAll('#stage .ro-away')].map(e=>{const c=getComputedStyle(e);return {place:e.dataset.place,text:e.textContent,bg:c.backgroundColor,ink:c.color,ratio:K(c.color,c.backgroundColor),size:parseFloat(c.fontSize)}})})()");
       await must(`document.querySelectorAll('#stage .ro-away').length>=8`, 'a post-it for each place');
       const ns = await readNotes();
       assert.deepStrictEqual([...new Set(ns.map((x) => x.place))].sort(), PL.slice().sort(), `${tag}: one post-it for each place: ${JSON.stringify(ns.map((x) => [x.place, x.text]))}`);
