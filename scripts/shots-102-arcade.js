@@ -156,6 +156,7 @@ module.exports = async (ctx) => {
   }
   await must(`(()=>{const ro=document.querySelector('#stage .ro').getBoundingClientRect();return window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks).every(k=>{const m=document.querySelector('#stage .ro-desk[data-for="'+CSS.escape(k.id)+'"]').getBoundingClientRect();return Math.abs(m.left-ro.left-k.desk.x)<1&&Math.abs(m.top-ro.top-k.desk.y)<1;});})()`, 'every cabinet at its place');
   await H.shot(path.join(OUT, '102-arcade-status-1440x900.png'), { prep: 'calm' });
+  await must(`document.querySelector('#stage .ro')._ready===true`, 'the room ready to move (097 FR-228)', 6000);
   await setStates(['working', 'thinking', 'waiting', 'thinking', 'error', 'working']);
   await js(`new Promise(r=>setTimeout(r,130))`); /* a bound, on purpose: people who start later keep the same 4 phases */
   await setStates(['working', 'working', 'waiting', 'working', 'error', 'working']);
