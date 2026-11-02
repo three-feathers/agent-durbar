@@ -1,3 +1,4 @@
+import type { OrderDoc } from './roomorder';
 import type { FolderSetupDecision, FolderSetupView, HookExplanation } from './foldersetup';
 import type { BroadKind } from './broadfolder';
 import type { AgentEvent, McpServerStatus } from '../adapters/types';
@@ -842,6 +843,10 @@ export interface DurbarApi {
   onlyFloor?(id: string): Promise<FloorsResult>;
   /** Move the folder of agent `agentId` (all its agents) to a floor. */
   moveFolderToFloor?(agentId: string, floorId: string): Promise<FloorsResult>;
+  /** The saved manual order of rooms (by folder path), desks inside a room (by agent id) and places (by place id); sequencing only (issue #677). */
+  getOrder?(): Promise<OrderDoc>;
+  /** Saves the order; resolves with what was kept after cleaning. */
+  setOrder?(doc: OrderDoc): Promise<OrderDoc>;
 
   /** Credit caps (spec 011). `credits: null` removes the cap. */
   getSettings?(): Promise<AppSettingsView>;
