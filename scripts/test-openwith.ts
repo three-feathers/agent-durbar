@@ -150,7 +150,7 @@ fs.writeFileSync(wsFile, '{}');
     assert.strictEqual((await openWith({ cwd: dir }, 'vscode', mk(launchEnv('linux', LINUX_ALL), r5))).note, undefined, 'nor from an editor');
     const toApp = path.join(root, 'plain-name'); fs.symlinkSync(appDir, toApp, 'dir');
     const r4 = rec();
-    assert.strictEqual((await openWith({ cwd: toApp }, 'folder', mk(launchEnv('linux', LINUX_ALL), r4))).ok, false, 'a link to a package, behind a plain name: refused for the file manager');
+    { const res = await openWith({ cwd: toApp }, 'folder', mk(launchEnv('linux', LINUX_ALL), r4)); assert.strictEqual(res.ok, true, 'a link to a package, behind a plain name: shown'); assert.strictEqual(r4.revealed.length, 1, 'revealed'); assert.match(res.note!, /is a link.*selected, not opened/); }
     assert.deepStrictEqual(r4.opened, []);
   }
   // a missing / file folder: nothing is started or opened
