@@ -304,6 +304,29 @@ const codec = (available = true): SecretCodec => ({
     h.setAmbientDisabled('x', true);
     assert.strictEqual(decrypted.length, 0);
     assert.deepStrictEqual(JSON.parse(fs.readFileSync(g, 'utf8')).servers, servers, 'still on disk after a write');
+    // old servers' vault values: the vault is rebuilt from today's servers only, so they go at the next secret change; the old list keeps a dangling ref
+    {
+      const m = tmp();
+      const OLDV = 'old-vault-DUMMY-value';
+      const oldList = [{ name: 'old-three', transport: 'stdio', command: 'node', env: [{ key: 'Q', ref: 'oldref' }], headers: [] }];
+      const v0 = codec().encrypt(JSON.stringify({ r1: SECRET, oldref: OLDV }));
+      fs.writeFileSync(m, JSON.stringify({ version: 3, legacy: oldList, vault: v0,
+        folders: { [K1]: [{ name: 'now', transport: 'stdio', command: 'node', args: ['n.js'], enabled: true, trust, env: [{ key: 'T', ref: 'r1' }], headers: [] }] } }));
+      const u = new McpStore(m, codec());
+      u.load();
+      assert.ok(u.upsert(K2, { name: 'more', transport: 'stdio', command: 'node', env: [{ key: 'M', value: 'm-DUMMY-value' }] }).ok);
+      const after = JSON.parse(fs.readFileSync(m, 'utf8'));
+      assert.deepStrictEqual(after.legacy, oldList, 'the old list stays as inert JSON, dangling ref and all');
+      const inVault = JSON.parse(codec().decrypt(after.vault)) as Record<string, string>;
+      assert.strictEqual(inVault.oldref, undefined, 'the old server\'s vault value is gone after a secret change');
+      assert.ok(!Object.values(inVault).includes(OLDV));
+      assert.ok(!fs.readFileSync(m, 'utf8').includes(OLDV));
+      const w = new McpStore(m, codec());
+      w.load();
+      assert.strictEqual(w.forSession(K1).mcpServers.now.env?.T, SECRET, 'today\'s secrets survive');
+      assert.ok(w.upsert(K2, { name: 'again', transport: 'stdio', command: 'node' }).ok, 'a dangling ref errors nothing');
+      assert.deepStrictEqual(JSON.parse(fs.readFileSync(m, 'utf8')).legacy, oldList);
+    }
     // a hostile old list (huge, wrong types, prototype keys) changes nothing
     const k = tmp();
     fs.writeFileSync(k, JSON.stringify({ version: 2, servers: 'x', legacy: [{ __proto__: { polluted: 1 }, name: ['a'] }, null, 5], folders: {} }));
