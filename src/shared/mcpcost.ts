@@ -144,6 +144,15 @@ export function shareOf(r: McpContextReport | null | undefined, window?: number)
   return total === undefined || !w ? undefined : (total / w) * 100;
 }
 
+/**
+ * Spec 100 *Changes* 2026-11-02 (owner): a figure the agent app did not report (Codex's estimate from tool schemas) is an upper bound, since
+ * the app loads definitions on demand. It is shown ("at most"), but it never raises a level, a warning line or a compaction hint: no share.
+ */
+export function warnShare(r: McpContextReport | null | undefined, window?: number): number | undefined {
+  if (!r || anyEstimated(r)) return undefined;
+  return shareOf(r, window);
+}
+
 /** FR-020, FR-021: strictly above a level counts; off or an unknown share is 'none'. */
 export function levelOf(share: number | undefined, levels: McpWarnLevels): McpLevel {
   if (levels.off || share === undefined || !Number.isFinite(share)) return 'none';
@@ -199,7 +208,7 @@ export function lineAction(state: McpLineState, level: McpLevel): 'none' | 'show
 
 /** FR-024: the warning for a report, or null: no line while the window is unknown or nothing has a figure. A partial total warns only above the level, as "at least". */
 export function warningOf(r: McpContextReport | null | undefined, window: number | undefined, levels: McpWarnLevels): { level: McpLevel; share: number; atLeast: boolean; window: number; total: number; servers: McpContextServer[] } | null {
-  const share = shareOf(r, window);
+  const share = warnShare(r, window);
   const level = levelOf(share, levels);
   if (!r || share === undefined || level === 'none') return null;
   return { level, share, atLeast: !!r.partial, window: windowOf(r, window) as number, total: reportTotal(r) as number, servers: heaviest(r, 3) };
@@ -217,7 +226,7 @@ export function fmtK(n: number): string {
 export function figureOf(s: Pick<McpContextServer, 'tokens' | 'source' | 'capped'>): string {
   const t = safeTokens(s.tokens);
   if (t === undefined) return '';
-  return `${s.capped ? '≥' : s.source === 'estimated' ? '≈' : ''}${fmtK(t)}`;
+  return `${s.capped ? '≥' : s.source === 'estimated' ? 'at most ' : ''}${fmtK(t)}`;
 }
 
 /** Whether any figure in the report is an estimate: then the total is one too. */
@@ -230,15 +239,15 @@ export const hasFigures = (r: McpContextReport | null | undefined): boolean => r
 export function chipFigure(r: McpContextReport | null | undefined): string {
   const t = reportTotal(r);
   if (!r || t === undefined) return '';
-  return `${anyCapped(r) ? '≥' : anyEstimated(r) ? '≈' : ''}${fmtK(t)}`;
+  return `${anyCapped(r) ? '≥' : anyEstimated(r) ? 'at most ' : ''}${fmtK(t)}`;
 }
 
 const pctWord = (share: number): number => Math.round(share);
 
 /** "about 38 thousand tokens" / "38 thousand tokens". */
-function tokenWords(t: number, about: boolean): string {
+function tokenWords(t: number, atMost: boolean): string {
   const n = t >= 1e6 ? `${Number((t / 1e6).toFixed(1))} million` : t >= 1000 ? `${Math.round(t / 1000)} thousand` : String(t);
-  return `${about ? 'about ' : ''}${n} tokens`;
+  return `${atMost ? 'at most ' : ''}${n} tokens`;
 }
 
 /** FR-010, FR-021: the words of the chip's name and tooltip: never colour alone. '' with no figure. */
@@ -247,11 +256,11 @@ export function chipWords(r: McpContextReport | null | undefined, window: number
   if (!r || t === undefined) return '';
   const est = anyEstimated(r);
   const share = shareOf(r, window);
-  const level = levelOf(share, levels);
+  const level = levelOf(warnShare(r, window), levels);
   const least = r.partial ? 'at least ' : '';
   const parts = [`MCP tool definitions: ${least}${tokenWords(t, est && !least)}`];
   if (share !== undefined) parts.push(`${least}${pctWord(share)} % of the window`);
-  parts.push(est ? 'estimated' : 'reported');
+  parts.push(est ? 'an upper bound, not reported by the agent app' : 'reported');
   const said = parts.join(', ');
   if (level === 'strong') return `${said}. Far above the warning level of ${levels.strong} %`;
   if (level === 'warn') return `${said}. Above the warning level of ${levels.warn} %`;
@@ -279,7 +288,7 @@ export function compactionHintText(w: { share: number; atLeast: boolean; servers
  * this session already showed or dismissed.
  */
 export function compactionHint(r: McpContextReport | null | undefined, window: number | undefined, levels: McpWarnLevels, times: readonly number[], now: number, shown: Partial<Record<McpLevel, boolean>>): { level: McpLevel; text: string; top?: string } | null {
-  const share = shareOf(r, window);
+  const share = warnShare(r, window);
   if (!r || levels.off || share === undefined || share < levels.warn || !compactionBurst(times, now)) return null;
   const level: McpLevel = share > levels.strong ? 'strong' : 'warn';
   if (shown[level] === true) return null;
@@ -298,7 +307,7 @@ export function costLine(per: Record<string, { tokens?: number; deferredTokens?:
   for (const app of Object.keys(COST_APP_WORDS)) {
     const e = per[app];
     if (!e) continue;
-    const mark = e.capped ? '≥' : e.source === 'estimated' ? '≈' : '';
+    const mark = e.capped ? '≥' : e.source === 'estimated' ? 'at most ' : '';
     const t = safeTokens(e.tokens);
     const dt = safeTokens(e.deferredTokens);
     const bits = [t !== undefined && (t > 0 || !dt) ? `${mark}${fmtK(t)}` : '', dt ? `${mark}${fmtK(dt)} on demand` : ''].filter(Boolean);
@@ -322,9 +331,9 @@ export function rowFigure(s: McpContextServer | undefined, o: { off?: boolean; s
   if (!o.hasReport) return '';
   if (!s || s.source === 'unknown') return 'size not known';
   const fig = figureOf(s);
-  const main = fig ? `${fig} tokens${s.source === 'estimated' ? ' (estimated)' : ''}` : '';
+  const main = fig ? `${fig} tokens` : '';
   const dt = safeTokens(s.deferredTokens);
-  const def = dt !== undefined && dt > 0 ? `loaded on demand: ${s.source === 'estimated' ? '≈' : ''}${fmtK(dt)}` : '';
+  const def = dt !== undefined && dt > 0 ? `loaded on demand: ${s.source === 'estimated' ? 'at most ' : ''}${fmtK(dt)}` : '';
   const text = [main, def].filter(Boolean).join(', ') || 'size not known';
   return o.largest ? `${text}, largest` : text;
 }
@@ -342,6 +351,6 @@ export function totalLine(r: McpContextReport | null | undefined, window: number
 /** FR-011, FR-044: the footnote names the source; an estimate says how. `app` is the short name ("Copilot"). */
 export function footnoteOf(r: McpContextReport | null | undefined, app: string): string {
   if (!r || !hasFigures(r)) return `Size not reported by ${app}.`;
-  if (anyEstimated(r)) return `Estimated by Agent Durbar from the tool definitions: about 4 characters per token; the real figure can differ by a third.`;
+  if (anyEstimated(r)) return `Counted by Agent Durbar from the tool definitions (about 4 characters per token). The agent app loads them on demand, so this is at most what they take; it never raises a warning.`;
   return `Reported by ${app}.`;
 }

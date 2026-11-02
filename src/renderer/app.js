@@ -3448,12 +3448,12 @@ function mcpChipCost(a){
   const X=MCPX(), r=mcpReport(a);
   if(!r)return {fig:'',words:'',level:'none'};
   const w=mcpWindow(a), L=mcpLevelsNow();
-  return {fig:X.chipFigure(r),words:X.hasFigures(r)?X.chipWords(r,w,L):'Size of their tool definitions not reported by '+mcpAppWord(a),level:X.levelOf(X.shareOf(r,w),L)};
+  return {fig:X.chipFigure(r),words:X.hasFigures(r)?X.chipWords(r,w,L):'Size of their tool definitions not reported by '+mcpAppWord(a),level:X.levelOf(X.warnShare(r,w),L)};
 }
 /* spec 100: "Copilot", "Claude Code", "Codex": the footnote's and the line's short name */
 const mcpAppWord=a=>String(kindWord(a.info&&a.info.adapterId)||'the agent app').replace(/^GitHub /,'');
 /* FR-013: the bar of the token summary */
-function mcpBar(a){const X=MCPX(),r=mcpReport(a);const t=r?X.reportTotal(r):undefined;return t===undefined?undefined:{tokens:t,estimated:X.chipFigure(r).charAt(0)==='\u2248'};}
+function mcpBar(a){const X=MCPX(),r=mcpReport(a);const t=r?X.reportTotal(r):undefined;return t===undefined?undefined:{tokens:t,estimated:/^at most/.test(X.chipFigure(r))};}
 function repaintMcpChip(a){
   const el=$('mcpBtn'),cur=ui.selected&&byId(ui.selected);if(!el||!cur||liveRoot(cur)!==a)return;
   const had=document.activeElement===el,t=document.createElement('template');t.innerHTML=mcpChipHTML(a);const n=t.content.firstElementChild;

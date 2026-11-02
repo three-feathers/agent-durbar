@@ -2,7 +2,7 @@
  * Spec 100 FR-002, FR-020..FR-024, FR-030: the estimator and the level rules. `npm run test:mcpcost`. No Electron, no network, no credits.
  */
 import * as assert from 'assert';
-import { chipFigure, chipWords, compactionBurst, compactionHint, compactionHintText, costLine, costWhen, MCP_COST_MAX_ESTIMATE, forMasking, serverOf, stripUnsafe, estimateTool, estimateTools, figureOf, fmtK, footnoteOf, hasFigures, heaviest, levelOf, lineAction, mcpWarnDefaults, parseWarnLevels, reportTotal, rowFigure, safeTokens, shareOf, totalLine, warningOf, warningText } from '../src/shared/mcpcost';
+import { chipFigure, chipWords, compactionBurst, compactionHint, compactionHintText, costLine, costWhen, MCP_COST_MAX_ESTIMATE, forMasking, serverOf, stripUnsafe, estimateTool, estimateTools, figureOf, fmtK, footnoteOf, hasFigures, heaviest, levelOf, lineAction, mcpWarnDefaults, parseWarnLevels, reportTotal, rowFigure, safeTokens, shareOf, totalLine, warnShare, warningOf, warningText } from '../src/shared/mcpcost';
 import type { McpContextReport, McpLevel } from '../src/shared/mcpcost';
 import { claudeMcpContext, codexMcpContext, copilotMcpContext } from '../src/adapters/mcpcontext';
 
@@ -108,39 +108,39 @@ assert.ok(/at least 20 %/.test(warningText(atLeast)), warningText(atLeast));
 assert.strictEqual(warningOf(rep(90_000), undefined, { ...L, off: true }), null, 'off: no line');
 
 // the words (US1, US2, US3, SC-002)
-const owner = warningOf({ window: 200_000, servers: [{ name: 'github', tokens: 41_000, source: 'estimated' }, { name: 'jira', tokens: 12_000, source: 'estimated' }, { name: 'c', tokens: 9000, source: 'estimated' }, { name: 'd', tokens: 100, source: 'estimated' }] }, undefined, L);
+const owner = warningOf({ window: 200_000, servers: [{ name: 'github', tokens: 41_000, source: 'reported' }, { name: 'jira', tokens: 12_000, source: 'reported' }, { name: 'c', tokens: 9000, source: 'reported' }, { name: 'd', tokens: 100, source: 'reported' }] }, undefined, L);
 assert.ok(owner);
-assert.strictEqual(warningText(owner), 'MCP tool definitions take 31 % of this 200k window (github ≈41k, jira ≈12k, c ≈9k). This can make the conversation compact often.');
-assert.strictEqual(compactionHintText(owner), 'MCP tool definitions take 31 % of the window, so each compaction frees less. Switching off github would free ≈41k.');
+assert.strictEqual(warningText(owner), 'MCP tool definitions take 31 % of this 200k window (github 41k, jira 12k, c 9k). This can make the conversation compact often.');
+assert.strictEqual(compactionHintText(owner), 'MCP tool definitions take 31 % of the window, so each compaction frees less. Switching off github would free 41k.');
 const big = warningOf(rep(200_000, { window: 1_000_000 }), undefined, L);
 assert.ok(big && /1M window, 200k tokens/.test(warningText(big)), 'a 1M window also says the tokens');
 assert.ok(big && /\(github 200k\)/.test(warningText(big)), 'a reported figure has no ≈');
 assert.deepStrictEqual([fmtK(0), fmtK(400), fmtK(1200), fmtK(9960), fmtK(38_000), fmtK(1_000_000), fmtK(1_500_000)], ['0', '0.4k', '1.2k', '10k', '38k', '1M', '1.5M']);
 assert.strictEqual(figureOf({ tokens: 12_000, source: 'reported' }), '12k');
-assert.strictEqual(figureOf({ tokens: 12_000, source: 'estimated' }), '≈12k');
+assert.strictEqual(figureOf({ tokens: 12_000, source: 'estimated' }), 'at most 12k');
 assert.strictEqual(figureOf({ tokens: 12_000, source: 'estimated', capped: true }), '≥12k');
 assert.strictEqual(figureOf({ source: 'unknown' }), '');
 assert.strictEqual(chipFigure(rep(38_000)), '38k');
-assert.strictEqual(chipFigure({ servers: [{ name: 'a', tokens: 38_000, source: 'estimated' }] }), '≈38k');
+assert.strictEqual(chipFigure({ servers: [{ name: 'a', tokens: 38_000, source: 'estimated' }] }), 'at most 38k');
 assert.strictEqual(chipFigure({ servers: [{ name: 'a', source: 'unknown' }] }), '');
-assert.strictEqual(chipWords({ servers: [{ name: 'a', tokens: 38_000, source: 'estimated' }], window: 200_000 }, undefined, L), 'MCP tool definitions: about 38 thousand tokens, 19 % of the window, estimated. Above the warning level of 15 %');
+assert.strictEqual(chipWords({ servers: [{ name: 'a', tokens: 38_000, source: 'estimated' }], window: 200_000 }, undefined, L), 'MCP tool definitions: at most 38 thousand tokens, 19 % of the window, an upper bound, not reported by the agent app');
 assert.strictEqual(chipWords(rep(70_000), undefined, L), 'MCP tool definitions: 70 thousand tokens, 35 % of the window, reported. Far above the warning level of 30 %');
 assert.strictEqual(chipWords(rep(10_000), undefined, L), 'MCP tool definitions: 10 thousand tokens, 5 % of the window, reported');
 assert.strictEqual(chipWords(rep(10_000, { window: undefined }), undefined, L), 'MCP tool definitions: 10 thousand tokens, reported', 'window unknown: tokens only');
 assert.strictEqual(rowFigure({ name: 'a', tokens: 12_000, source: 'reported' }, { hasReport: true }), '12k tokens');
-assert.strictEqual(rowFigure({ name: 'a', tokens: 12_000, source: 'estimated' }, { hasReport: true, largest: true }), '≈12k tokens (estimated), largest');
+assert.strictEqual(rowFigure({ name: 'a', tokens: 12_000, source: 'estimated' }, { hasReport: true, largest: true }), 'at most 12k tokens, largest');
 assert.strictEqual(rowFigure({ name: 'a', tokens: 0, deferredTokens: 400, source: 'reported' }, { hasReport: true }), '0 tokens, loaded on demand: 0.4k');
 for (const o of [{ off: true }, { status: 'failed' }, { status: 'disabled' }, { status: 'needs-auth' }]) assert.strictEqual(rowFigure({ name: 'a', tokens: 12_000, source: 'reported' }, { ...o, hasReport: true }), 'not loaded', 'a failed or off server shows no figure');
 assert.strictEqual(rowFigure({ name: 'a', source: 'unknown' }, { hasReport: true }), 'size not known');
 assert.strictEqual(rowFigure(undefined, { hasReport: true }), 'size not known');
 assert.strictEqual(rowFigure(undefined, { hasReport: false }), '', 'no report: the row stays as it was');
-assert.strictEqual(totalLine({ servers: [{ name: 'a', tokens: 38_000, source: 'estimated' }], window: 200_000 }, undefined), 'Tool definitions of these servers: ≈38k tokens, 19 % of the 200k window');
+assert.strictEqual(totalLine({ servers: [{ name: 'a', tokens: 38_000, source: 'estimated' }], window: 200_000 }, undefined), 'Tool definitions of these servers: at most 38k tokens, 19 % of the 200k window');
 assert.strictEqual(totalLine(rep(38_000, { partial: true }), undefined), 'Tool definitions of the servers that answered: 38k tokens, 19 % of the 200k window');
 assert.strictEqual(totalLine(rep(38_000, { window: undefined }), undefined), 'Tool definitions of these servers: 38k tokens', 'window unknown: no percentage');
 assert.strictEqual(totalLine({ servers: [] }, 1000), '');
 assert.strictEqual(footnoteOf(rep(1), 'Copilot'), 'Reported by Copilot.');
 assert.strictEqual(footnoteOf({ servers: [] }, 'Copilot'), 'Size not reported by Copilot.', 'no estimate from Copilot (decided Q4)');
-assert.ok(/about 4 characters per token; the real figure can differ by a third/.test(footnoteOf({ servers: [{ name: 'a', tokens: 1, source: 'estimated' }] }, 'Codex')));
+assert.ok(/^Counted by Agent Durbar .*loads them on demand, so this is at most what they take; it never raises a warning/.test(footnoteOf({ servers: [{ name: 'a', tokens: 1, source: 'estimated' }] }, 'Codex')));
 
 // a server's definitions stop being counted at a limit, marked, and nothing past the cap is copied
 const heavy = estimateTools(Array.from({ length: 400 }, (_, i) => ({ name: `t${i}`, description: 'x'.repeat(40_000) })));
@@ -162,15 +162,15 @@ assert.strictEqual(serverOf(keyed, { name: 'plain' })?.tokens, 2, 'by the name w
 assert.strictEqual(serverOf(null, { name: 'x' }), undefined);
 // partial in the chip's words (finding 7)
 assert.strictEqual(chipWords(rep(70_000, { partial: true }), undefined, L), 'MCP tool definitions: at least 70 thousand tokens, at least 35 % of the window, reported. Far above the warning level of 30 %');
-assert.ok(/at least 40 thousand tokens, at least 20 %.*estimated/.test(chipWords({ servers: [{ name: 'a', tokens: 40_000, source: 'estimated' }], window: 200_000, partial: true }, undefined, L)), 'no "at least about"');
+assert.ok(/at least 40 thousand tokens, at least 20 %.*reported/.test(chipWords({ servers: [{ name: 'a', tokens: 40_000, source: 'reported' }], window: 200_000, partial: true }, undefined, L)), 'no "at least about"');
 
 // FR-030: the hint
 const burst = [NOW, NOW - MIN, NOW - 2 * MIN, NOW - 3 * MIN];
-const r31: McpContextReport = { window: 200_000, servers: [{ name: 'github', tokens: 41_000, source: 'estimated' }, { name: 'jira', tokens: 21_000, source: 'estimated' }] };
+const r31: McpContextReport = { window: 200_000, servers: [{ name: 'github', tokens: 41_000, source: 'reported' }, { name: 'jira', tokens: 21_000, source: 'reported' }] };
 const hint = compactionHint(r31, undefined, L, burst, NOW, {});
 assert.ok(hint);
 assert.deepStrictEqual([hint.level, hint.top], ['strong', 'github']);
-assert.strictEqual(hint.text, 'MCP tool definitions take 31 % of the window, so each compaction frees less. Switching off github would free ≈41k.');
+assert.strictEqual(hint.text, 'MCP tool definitions take 31 % of the window, so each compaction frees less. Switching off github would free 41k.');
 assert.strictEqual(compactionHint(r31, undefined, L, burst.slice(1), NOW, {}), null, 'no burst: no hint');
 assert.strictEqual(compactionHint(rep(20_000), undefined, L, burst, NOW, {}), null, '10 %: below the warn level');
 assert.strictEqual(compactionHint(rep(30_000), undefined, L, burst, NOW, {})?.level, 'warn', 'exactly the warn level counts here ("at least", FR-030)');
@@ -182,9 +182,21 @@ assert.ok(/at least/.test(compactionHint({ ...r31, partial: true }, undefined, L
 
 // FR-012: the Settings line
 const at = (ms: number): string => `t${ms}`;
-assert.strictEqual(costLine({ codex: { tokens: 12_000, source: 'estimated', at: 5 }, claude: { tokens: 0, deferredTokens: 400, source: 'reported', at: 9 } }, at), '0.4k on demand in Claude Code, ≈12k in Codex, measured t9');
+assert.strictEqual(costLine({ codex: { tokens: 12_000, source: 'estimated', at: 5 }, claude: { tokens: 0, deferredTokens: 400, source: 'reported', at: 9 } }, at), '0.4k on demand in Claude Code, at most 12k in Codex, measured t9');
 assert.strictEqual(costLine({ copilot: { tokens: 12_000, source: 'reported', at: 5 } }, at), '12k in Copilot, measured t5');
 assert.strictEqual(costLine({}, at), '', 'never measured: nothing');
+// owner 2026-11-02 (Codex loads tool definitions on demand): an estimate is an upper bound and never warns, whatever its size
+{
+  const big: McpContextReport = { window: 100_000, servers: [{ name: 'codex_apps', tokens: 90_000, source: 'estimated' }, { name: 'x', tokens: 9000, source: 'estimated' }] };
+  assert.strictEqual(warningOf(big, undefined, L), null, 'a Codex figure at 99 %: no warning line');
+  assert.strictEqual(chipWords(big, undefined, L).includes('warning level'), false, 'no "above the warning level" in the chip words');
+  assert.strictEqual(compactionHint(big, undefined, L, burst, NOW, {}), null, 'no compaction hint');
+  assert.strictEqual(warnShare(big), undefined, 'no share to warn from');
+  assert.strictEqual(chipFigure(big), 'at most 99k', 'the figure itself is still shown, as an upper bound');
+  assert.strictEqual(levelOf(warnShare(big), L), 'none');
+  assert.ok(warningOf({ ...big, servers: big.servers.map((x) => ({ ...x, source: 'reported' as const })) }, undefined, L), 'the same numbers reported by an app still warn');
+  assert.strictEqual(warningOf({ ...big, servers: [...big.servers, { name: 'r', tokens: 1, source: 'reported' }] }, undefined, L), null, 'one estimate in the report: still no warning');
+}
 assert.strictEqual(costLine({ codex: { tokens: 12_000, source: 'estimated', capped: true, at: 5 } }, at), '≥12k in Codex, measured t5', 'over the cap: ≥, as the dialog');
 // FR-012: the date when not today
 const T0 = new Date(2026, 9, 31, 10, 21).getTime();

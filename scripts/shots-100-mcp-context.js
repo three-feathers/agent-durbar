@@ -185,17 +185,17 @@ module.exports = async (ctx) => {
 
     // a failed server: partial
     await openChat(D);
-    await setFig(D, rep([['github', 10_000, 'estimated']], 200_000, { partial: true, servers: [{ name: 'github', tokens: 10_000, source: 'estimated' }, { name: 'my-notes', source: 'unknown', error: 'list failed' }] }));
+    await setFig(D, rep([['github', 10_000, 'reported']], 200_000, { partial: true, servers: [{ name: 'github', tokens: 10_000, source: 'reported' }, { name: 'my-notes', source: 'unknown', error: 'list failed' }] }));
     await until(`/10k/.test((document.querySelector('#mcpBtn .ct-mcpk')||{}).textContent||'')`);
     assert.deepStrictEqual(await lines(), [], `${w}: partial below the level: no line`);
-    await setFig(D, { servers: [{ name: 'github', tokens: 40_000, source: 'estimated' }, { name: 'my-notes', source: 'unknown', error: 'list failed' }, { name: 'github-mcp-server', source: 'unknown' }], window: 200_000, partial: true });
+    await setFig(D, { servers: [{ name: 'github', tokens: 40_000, source: 'reported' }, { name: 'my-notes', source: 'unknown', error: 'list failed' }, { name: 'github-mcp-server', source: 'unknown' }], window: 200_000, partial: true });
     assert.ok(await until(`document.querySelectorAll('.mcp-line').length===1`), `${w}: partial above the level`);
     assert.match((await lines())[0].text, /take at least 20 %/, `${w}: at least`);
     assert.match((await chip()).name, /at least 40 thousand tokens, at least 20 % of the window/, `${w}: the chip says at least too`);
     await openDlg();
     assert.strictEqual(await cost('my-notes'), 'size not known', `${w}: the failed list's row`);
-    assert.match(await total(), /Tool definitions of the servers that answered: ≈40k tokens, 20 % of the 200k window/, `${w}: the partial total`);
-    assert.match(await total(), /about 4 characters per token; the real figure can differ by a third/, `${w}: an estimate says how`);
+    assert.match(await total(), /Tool definitions of the servers that answered: 40k tokens, 20 % of the 200k window/, `${w}: the partial total`);
+    assert.match(await total(), /Reported by/, `${w}: the source is named`);
     await shot(`100-failed-${w}x${h}.png`);
     await closeDlg();
 
@@ -281,26 +281,25 @@ module.exports = async (ctx) => {
     const [X] = await liveOf('codex');
     assert.ok(X, `${w}: a running Codex chat`);
     await openChat(X);
-    assert.ok(await until(`/≈38k/.test((document.querySelector('#mcpBtn .ct-mcpk')||{}).textContent||'')`), `${w}: the ≈ mark`);
+    assert.ok(await until(`/at most 38k/.test((document.querySelector('#mcpBtn .ct-mcpk')||{}).textContent||'')`), `${w}: the at-most mark`);
     // a real Codex report has no window: it comes from the context event
     await emit(X, { type: 'context', tokens: 50_000, limit: 200_000 });
     assert.ok(await until(`/19 % of the window/.test(document.getElementById('mcpBtn').getAttribute('aria-label'))`), `${w}: the share against the reported window`);
     c = await chip();
-    assert.ok(/about 38 thousand tokens, 19 % of the window, estimated/.test(c.name) && c.warn, `${w}: estimated ${JSON.stringify(c)}`);
-    assert.match((await lines())[0].text, /github ≈26k/, `${w}: the line marks estimates`);
+    assert.ok(/at most 38 thousand tokens, 19 % of the window, an upper bound/.test(c.name) && !c.warn, `${w}: an upper bound, no warning ${JSON.stringify(c)}`);
+    assert.deepStrictEqual(await lines(), [], `${w}: a Codex figure never raises the line (owner 2026-11-02)`);
     await openDlg();
-    assert.strictEqual(await cost('github'), '≈26k tokens (estimated), largest');
-    assert.match(await total(), /Estimated by Agent Durbar from the tool definitions/);
+    assert.strictEqual(await cost('github'), 'at most 26k tokens, largest');
+    assert.match(await total(), /Counted by Agent Durbar from the tool definitions .*at most what they take/);
     await shot(`100-codex-${w}x${h}.png`);
     await closeDlg();
     // FR-030 on Codex: its compactions do not say the new size and its report has no window: the hint still comes (finding 4)
     const T1 = await js(`Date.now()`);
     for (let i = 0; i < 4; i++) await emit(X, { type: 'compaction', phase: 'complete', trigger: 'auto', timestamp: T1 + i * 200_000 });
-    assert.ok(await until(`document.querySelectorAll('.mcp-hint').length===1`), `${w}: the hint on Codex, after a compaction with no size`);
-    assert.match(await js(`document.querySelector('.mcp-hint').innerText`), /19 % of the window/, `${w}: of the window last reported`);
+    await settle();
+    assert.strictEqual(await js(`document.querySelectorAll('.mcp-hint').length`), 0, `${w}: no hint from a Codex figure`);
     // the window after a model change is not the old model's, also when a compaction comes first (finding 5)
-    assert.ok(await until(`document.querySelectorAll('.mcp-hint').length===1`), `${w}: still the hint`);
-    await emit(X, { type: 'model', model: 'other-model', cause: 'user' });
+        await emit(X, { type: 'model', model: 'other-model', cause: 'user' });
     await emit(X, { type: 'compaction', phase: 'complete', trigger: 'auto', timestamp: T1 + 900_000 });
     assert.ok(await until(`!/19 % of the window/.test(document.getElementById('mcpBtn').getAttribute('aria-label'))`), `${w}: not the old window: ${(await chip()).name}`);
     await emit(X, { type: 'context', tokens: 50_000, limit: 500_000 });
@@ -342,7 +341,7 @@ module.exports = async (ctx) => {
     await settle();
     assert.deepStrictEqual(await js(`[document.getElementById('mcpWarnPct').value,document.getElementById('mcpStrongPct').value,document.getElementById('mcpWarnOff').checked]`), ['15', '30', false]);
     const costLine = await js(`[...document.querySelectorAll('#mcpCosts li')].map(x=>x.innerText.replace(/\\s+/g,' '))`);
-    assert.ok(costLine.some((t) => /^github 41k in Copilot, 0\.4k on demand in Claude Code, ≈38k in Codex, measured /.test(t)), `${w}: the last figures ${JSON.stringify(costLine)}`);
+    assert.ok(costLine.some((t) => /^github 41k in Copilot, 0\.4k on demand in Claude Code, at most 38k in Codex, measured /.test(t)), `${w}: the last figures ${JSON.stringify(costLine)}`);
     await js(`document.getElementById('mcpWarnH').scrollIntoView({block:'start'});true`);
     await settle();
     assert.ok(await js(`document.getElementById('mcpWarnH').compareDocumentPosition(document.getElementById('ambList'))&Node.DOCUMENT_POSITION_FOLLOWING`), 'the section sits above the list');

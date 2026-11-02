@@ -140,7 +140,7 @@ t('spec 100 FR-013: the MCP tools bar; inside Tool definitions, so the other par
   assert.deepStrictEqual(keys(s), ['system:10000', 'toolDefinitions:50000', 'conversation:20000', 'other:20000', 'mcp:40000'], 'the sum for Other leaves it out');
   const bar = s.bars.find((b) => b.key === 'mcp');
   assert.deepStrictEqual([bar?.label, bar?.share], ['MCP tools', 20]);
-  assert.strictEqual(B.summary({ tokens: 100, limit: 1000 }, { mcp: { tokens: 50, estimated: true } }).bars[0].label, 'MCP tools (estimated)');
+  assert.strictEqual(B.summary({ tokens: 100, limit: 1000 }, { mcp: { tokens: 50, estimated: true } }).bars[0].label, 'MCP tools (at most)');
   const only = B.summary({ tokens: 100, limit: 1000 }, { mcp: { tokens: 50 }, app: 'Codex' });
   assert.strictEqual(only.note, 'Breakdown not reported by Codex.', 'a total-only app still says so');
   assert.deepStrictEqual(B.summary({ tokens: 100, limit: 1000 }, { mcp: { tokens: NaN } }).bars, [], 'a bad figure: no bar');

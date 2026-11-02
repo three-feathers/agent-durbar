@@ -33,7 +33,7 @@
     if(bars.length&&tokens-sum>0)bars.push({key:'other',label:'Other',tokens:tokens-sum,share:share(tokens-sum,of)});
     /* spec 100 FR-013: the MCP part, labelled as estimated when it is. It is inside "Tool definitions" where that is reported, so it never joins the sum above */
     const note=bars.length?'':'Breakdown not reported by '+app+'.';
-    if(o.mcp&&num(o.mcp.tokens))bars.push({key:'mcp',label:'MCP tools'+(o.mcp.estimated?' (estimated)':''),tokens:o.mcp.tokens,share:share(o.mcp.tokens,of)});
+    if(o.mcp&&num(o.mcp.tokens))bars.push({key:'mcp',label:'MCP tools'+(o.mcp.estimated?' (at most)':''),tokens:o.mcp.tokens,share:share(o.mcp.tokens,of)});
     const tip=lv.pct===null?'Context: '+fmt(tokens)+' tokens used, window size not reported':'Context '+lv.pct+'% of '+fmt(limit);
     const name=(lv.pct===null?'Context window: '+fmt(tokens)+' tokens used, window size not reported':'Context window '+lv.pct+'% used: '+fmt(tokens)+' of '+fmt(limit)+' tokens')+'. Open the token summary';
     return {known:true,tokens,limit,pct:lv.pct,level:lv.level,bars,note,tip,name};
