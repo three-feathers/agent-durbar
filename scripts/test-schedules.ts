@@ -778,6 +778,26 @@ async function phase2(): Promise<void> {
     assert.deepStrictEqual(out, ['/w:first'], 'the deleted schedule did not fire');
   }
 
+  {
+    // (3) a schedule deleted during its own send is neither logged nor updated
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    const out: string[] = [];
+    const h = harness({ pausedAll: false, schedules: [] }, 1_000_000_000_000, { send: async (f, p) => { out.push(`${f}:${p}`); await gate; return 'folder-agent'; } });
+    h.sch.start();
+    const a = h.sch.save({ folder: '/w', prompt: 'solo', at: h.now + 10 * MIN }, () => true);
+    assert.ok(a.ok);
+    const id = a.ok ? a.schedule.id : '';
+    const run = h.advance(10 * MIN);
+    await new Promise((x) => setImmediate(x));
+    assert.deepStrictEqual(out, ['/w:solo'], 'the run is going out');
+    assert.strictEqual(h.sch.remove(id), true);
+    release();
+    await run;
+    await new Promise((x) => setImmediate(x));
+    assert.deepStrictEqual(h.sch.runsOf(id), [], 'no log entry is made for a schedule deleted during its own send');
+    assert.ok(!h.sch.doc.schedules.some((x) => x.id === id), 'it is not brought back');
+  }
 }
 
 if (require.main === module) main().catch((e) => { console.error(e); process.exit(1); });
