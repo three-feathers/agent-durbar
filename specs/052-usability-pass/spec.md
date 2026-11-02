@@ -1088,4 +1088,4 @@ Spec 017 FR-029 (owner decision, no doors) removed the Office with cabins layout
 
 ## Changes 2026-11-02: removed page and tools (owner decision, PR #1054)
 
-`docs/feature-history.md` and the pictures only it linked (the m2..m8, 002, 003 and 034 pictures that no driver writes) were removed on 2026-11-02 by owner decision; the old text above that cites them stays as written, and they are in git history at commit `1c75b5bee`. Pictures a driver still writes were kept.
+`docs/feature-history.md` and the pictures only it linked (the m2..m8, 002 and 003 pictures that no driver writes) were removed on 2026-11-02 by owner decision; the old text above that cites them stays as written, and they are in git history at commit `1c75b5bee`. Pictures a driver still writes were kept.
