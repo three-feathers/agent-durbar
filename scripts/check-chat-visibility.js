@@ -1,25 +1,25 @@
 /*
- * Check for spec 005 FR-210: a long chat is laid out only near the view (`.chat-inner>*{content-visibility:auto}`), and nothing else
- * about the chat changes. Simulator only (no AI credits).
+ * Check for spec 005 FR-210/FR-211: closing a long chat marks its older messages (`cvMark`: class `cvo` plus their measured height as
+ * the fallback size), so reopening lays out only the ones near the view, and nothing else about the chat changes. Simulator only.
  *
- *   npm run check:ui -- --only check-chat-visibility
- *   DURBAR_CV_MUTANT=off|hidden|nosize|zero node scripts/ui-suite.js --only check-chat-visibility     (must FAIL; see below)
+ *   node scripts/ui-suite.js --only check-chat-visibility            (npm run check:ui runs it with the rest)
+ *   DURBAR_CV_MUTANT=off|hidden|nosize|zero node scripts/ui-suite.js --only check-chat-visibility     (must FAIL)
+ *   CVWH=1280x520 ...   one other window size; CVBASE=1 skips the "is skipped" checks (with DURBAR_CV_MUTANT=off: the rule-off baseline)
  *
- * At 1440x900 and 1280x800 the first agent's chat is filled with 4000 simulated messages (copies of its own, with texts of 1 to 23
- * sentences and a unique token each, so the heights differ), then:
- *   1. SKIPPED: most messages are skipped (not laid out) and the last one is not; the reopen time is measured with the rule on and
- *      with it forced off in this same page (printed, not asserted: a wall-clock ratio is flaky, the skipped count is the proof).
- *   2. REOPEN: closing and opening the chat lands at the end, as it always did, and stays there.
- *   3. SCROLL: from the end to the start in steps (and then by the mouse wheel), the message in view never moves by itself after the
- *      step (no jump), and every message in view has the height it has with the rule off (real heights); the total height is the same
- *      after one pass, and the copy button hanging under a bubble is not cut off.
- *   4. STREAM: a turn that streams keeps the chat at its end (pinned); a chat scrolled up is not moved by it.
- *   5. COPY: a selection across skipped messages gives the same text, by the selection and by the real Copy.
- *   6. FIND: Chromium's find-in-page (the app has no Find box of its own) finds a token in a skipped message and scrolls to it.
+ * At 1440x900 and 1280x800 the first agent's chat is filled with 4000 simulated messages (copies of its own with 1 to 9 sentences, a
+ * unique token each and a button on every tenth, so heights differ), then, waiting on state (until(), two frames after a scroll, the chat's
+ * scroll position and height unchanged for three frames), never on a fixed sleep:
+ *   1. SKIPPED: 3993+ of 4004 are skipped and the newest is not; reopen time with the rule off and on in the same page is printed, not asserted.
+ *      A fresh copy skipped from its first layout is 90px; a skipped message has the height it was measured at (the size guess mutants fail here).
+ *   2. REOPEN: lands at the end and stays there.
+ *   3. SCROLL: 70 steps from the end, every third three screens, then the wheel: the message in view never moves by itself, a message that
+ *      stays in view moves by the scroll only, every message in view has its rule-off height, the chat is as tall as with the rule off,
+ *      a seen message keeps its height while skipped, and the copy button under a reply is not cut off.
+ *   4. STREAM: a turn keeps the chat pinned to its end; a chat scrolled up is not moved by it.
+ *   5. COPY: a selection across skipped messages copies in full (selection and real Copy).
+ *   6. FIND: Chromium's find-in-page (the app has no Find box and no Print) finds a token in a skipped message and scrolls to it.
  *   7. FOCUS: focus() and Tab reach a button in a skipped message and bring it into view.
- * Mutants (DURBAR_CV_MUTANT, an override style added after the page loads), each run and caught on 2026-11-02: off = the rule removed (fails 1),
- * hidden = content-visibility:hidden (fails at the first real-height check), nosize = no remembered size and zero = a 0px guess (both fail 4, the pinned
- * end while a turn streams). CVBASE=1 skips the 'is skipped' checks, CVLOG=1 prints every scroll step instead of asserting. The app has no Print and no Find box.
+ * Mutants caught on 2026-11-02: off (1), hidden (3, real heights), nosize and zero (1, the 90px and measured sizes).
  * A miss prints DRIVER FAILED (Electron still exits 0), so the npm script exits non-zero unless "all checks passed" is printed.
  */
 const { helpers, jsLiteral } = require('./driver-helpers');
@@ -69,7 +69,7 @@ module.exports = async (ctx) => {
   const pending = `window.__durbarSimUi&&document.body.classList.contains('panel-open')&&!!document.querySelector('#chat .chat-inner')`;
   const median = (a) => a.slice().sort((x, y) => x - y)[Math.floor(a.length / 2)];
 
-  for (const [w, h] of [[1440, 900], [1280, 800]]) {
+  for (const [w, h] of (process.env.CVWH ? [process.env.CVWH.split('x').map(Number)] : [[1440, 900], [1280, 800]])) {
     const tag = `${w}x${h}`;
     const id = await open(w, h);
 
@@ -93,9 +93,12 @@ module.exports = async (ctx) => {
     const ap = await js(`(()=>{const el=document.querySelector('#chat .chat-inner'),src=el.children[el.children.length-3];const t0=performance.now();for(let i=0;i<100;i++){const m=src.cloneNode(true);m.removeAttribute('id');el.appendChild(m);void m.getBoundingClientRect().height;}const t=performance.now()-t0;for(let i=0;i<100;i++)el.lastElementChild.remove();return Math.round(t)})()`);
     console.log(`TIMING ${tag}: appending 100 messages one by one with a layout read each: ${ap} ms (rule ${MUT === 'off' || process.env.CVBASE ? 'off' : 'on'})`);
     /* a message never laid out is guessed at 90px (nosize and zero guess 0): a fresh copy that is skipped from its first layout, removed again at once */
-    const guess = await js(`(async()=>{const el=document.querySelector('#chat .chat-inner'),m=el.children[el.children.length-12].cloneNode(true);m.removeAttribute('id');m.dataset.cv='probe';m.classList.add('cvo');
+    const guess = await js(`(async()=>{const el=document.querySelector('#chat .chat-inner'),m=el.children[el.children.length-12].cloneNode(true);m.removeAttribute('id');m.dataset.cv='probe';m.classList.add('cvo');m.style.containIntrinsicBlockSize='';
       el.insertBefore(m,el.children[50]);await __cvF(2);const h=m.getBoundingClientRect().height;m.remove();await __cvF(2);return h})()`);
     if (!process.env.CVBASE) assert.ok(Math.abs(guess - 90) <= 0.6, `${tag}: a skipped message never laid out is guessed at 90px: ${guess}`);
+    /* the fallback of a skipped message is its measured height (cvMark), not a guess: the reopened chat is as tall as it was */
+    const est = await js(`[1500,2500,3000].map(i=>document.querySelector('#chat .chat-inner>[data-cv="'+i+'"]').getBoundingClientRect().height)`);
+    if (!process.env.CVBASE) [1500, 2500, 3000].forEach((i, k) => assert.ok(Math.abs(est[k] - hv.h[i]) <= 0.6, `${tag}: skipped message ${i} has its measured height ${hv.h[i]}, not ${est[k]}`));
     /* 2. REOPEN: at the end, and it stays (the skipped heights settle) */
     await js(`document.getElementById('chat').scrollTop=3000`); await quiet('a scroll');
     await reopen(id); await quiet('a reopen');
@@ -104,7 +107,7 @@ module.exports = async (ctx) => {
     /* 3. SCROLL: no jump, real heights */
     /* delta > 0: scroll up by delta px. A small step keeps one message in view, so its place after the step must be where the step puts it
        (what you look at moves by the scroll and nothing else); then, for every step, a message in view does not drift while the page settles. */
-    const bigJumps = []; // jumps of 3 screens into messages never seen: the unseen ones are guessed (KNOWN GAP, printed, not asserted)
+    const chat_h = await js(`document.getElementById('chat').clientHeight`); // steps are sized by the chat's own height: a screen differs by machine
     const stepCheck = async (label, delta) => {
       const r = await js(`(async()=>{const c=document.getElementById('chat'),cr=c.getBoundingClientRect(),D=${jsLiteral(delta || 0)};
         const inView=()=>[...c.querySelectorAll('.chat-inner>.msg[data-cv]')].filter(e=>{const r=e.getBoundingClientRect();return r.bottom>cr.top+4&&r.top<cr.bottom-4;});
@@ -118,15 +121,14 @@ module.exports = async (ctx) => {
         return {chg,s1,s2:Math.round(c.scrollTop),h1,h2:c.scrollHeight,i:+e.dataset.cv,jump:Math.round((t2-t1)*10)/10,place,seen:inView().map(x=>[+x.dataset.cv,Math.round(x.getBoundingClientRect().height*10)/10])}})()`);
       if (process.env.CVLOG) { console.log('STEP', label, delta, r.i, r.jump, r.place, r.s1, r.s2, r.h1, r.h2, Math.abs(r.jump)>1?r.chg:''); return r; }
       assert.ok(!r.none, `${tag} ${label}: a message is in view`);
-      if (delta > 900) { bigJumps.push(Math.abs(r.jump)); }
-      else assert.ok(Math.abs(r.jump) <= 1, `${tag} ${label}: the message in view does not drift while the page settles: ${JSON.stringify({ i: r.i, jump: r.jump })}`);
+      assert.ok(Math.abs(r.jump) <= 1, `${tag} ${label}: the message in view does not drift while the page settles: ${JSON.stringify({ i: r.i, jump: r.jump })}`);
       assert.ok(Math.abs(r.place) <= 1, `${tag} ${label}: the message that stayed in view moved by the scroll only (off by ${r.place}px)`);
       for (const [i, hh] of r.seen) assert.ok(Math.abs(hh - hv.h[i]) <= 0.6, `${tag} ${label}: message ${i} has its real height ${hv.h[i]}, not ${hh}`);
       return r;
     };
     await js(`document.getElementById('chat').scrollTop=1e7`); await quiet('a scroll');
     let steps = 0;
-    for (let i = 0; i < 70; i++) { await stepCheck(`step ${i}`, i % 3 === 0 ? 1500 : 380); steps++; }
+    for (let i = 0; i < 70; i++) { await stepCheck(`step ${i}`, i % 3 === 0 ? chat_h * 3 : Math.round(chat_h * 0.5)); steps++; } // half a screen, and every third step three screens
     for (let i = 0; i < 6; i++) { // the mouse wheel
       const p = await js(`(()=>{const r=document.getElementById('chat').getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)}})()`);
       const wheelFrom = await js(`document.getElementById('chat').scrollTop`);
@@ -140,7 +142,7 @@ module.exports = async (ctx) => {
     await js(`document.getElementById('chat').scrollTop=0`); await quiet('leaving message 3500');
     const kept = await js(`(()=>{const m=document.querySelector('#chat .chat-inner>[data-cv="3500"]');return {h:m.getBoundingClientRect().height,skipped:!m.firstElementChild.checkVisibility({contentVisibilityAuto:true})}})()`);
     assert.ok(h1 > 0 && Math.abs(kept.h - h1) <= 0.6 && (kept.skipped || process.env.CVBASE || MUT === 'hidden'), `${tag}: a seen message keeps its height ${h1} while skipped: ${JSON.stringify(kept)}`);
-    console.log(`KNOWN GAP ${tag}: ${bigJumps.filter((x) => x > 1).length} of ${bigJumps.length} jumps of 1500px into never-seen messages moved the view (largest ${Math.max(0, ...bigJumps)}px); steps of 380px and the wheel: none`);
+    console.log(`CHAT HEIGHT ${tag}: ${chat_h}px`);
     await js(`document.getElementById('chat').scrollTop=0`); await quiet('a scroll');
     await quiet('the jump to the start');
     assert.strictEqual(await js(`document.getElementById('chat').scrollTop`), 0, `${tag}: the start of the chat stays the start (no late shift)`);
