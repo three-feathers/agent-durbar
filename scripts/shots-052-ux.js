@@ -44,18 +44,17 @@ module.exports = async (ctx) => {
     assert.ok(aa.n > 0 && aa.n === aa.allow, 'one Allow all icon per Allow all card: ' + JSON.stringify(aa));
     assert.ok(aa.inside, 'the icon stays inside its card');
     const sv = await js(`(()=>{const d=[...document.querySelectorAll('#stage .desk[data-id]')].find(x=>x.innerText.trim().startsWith('Sven'));const p=d&&[...d.querySelectorAll('.pill,.stl')].find(x=>x.getClientRects().length);return p?{text:p.innerText.trim(),cls:p.className,title:d.getAttribute('title')||'',tip:p.getAttribute('title')||'',label:d.getAttribute('aria-label')||''}:null})()`);
-    /* spec 017 (review on #631): the door sign keeps the word Failing, in the failing colours, with its own icon */
     assert.ok(sv && /^Failing/.test(sv.text) && /st-failing/.test(sv.cls), 'Sven reads Failing: ' + JSON.stringify(sv));
     assert.ok(/Last activity (just now|\d+ min ago)/.test(sv.title), 'the card says when it last did something: ' + sv.title);
     // FR-006: room counts in words
     const dots = await js(`[...document.querySelectorAll('#stage .room-dots[role="img"]')].map(x=>x.getAttribute('aria-label'))`);
     assert.ok(dots.length && dots.every((l) => /\d+ (waiting for you|error|working|done|idle)/.test(l)), 'room counts have words: ' + dots[0]);
     await shot(`052-office-${w}x${h}.png`);
-    // #308: the defaults are one group; doors and the demo live under ⋯
+    // #308: the defaults are one group; the demo lives under ⋯
     assert.ok(await js(`!!document.querySelector('.defaults-grp #permMode')&&!!document.querySelector('.defaults-grp #modelSel')`), 'defaults grouped');
     await js(`document.getElementById('topMoreBtn').focus()`); key('Down'); await until(`!document.getElementById('topMoreMenu').hidden`);
-    const tm = await js(`({open:!document.getElementById('topMoreMenu').hidden,ids:['closeAll','openAll','demoToggle','endAllBtn'].map(i=>!!document.querySelector('#topMoreMenu #'+i))})`);
-    assert.ok(tm.open && tm.ids.every(Boolean), 'the ⋯ menu holds the doors, the demo and End all sessions (FR-090): ' + JSON.stringify(tm));
+    const tm = await js(`({open:!document.getElementById('topMoreMenu').hidden,ids:['demoToggle','endAllBtn'].map(i=>!!document.querySelector('#topMoreMenu #'+i))})`);
+    assert.ok(tm.open && tm.ids.every(Boolean), 'the ⋯ menu holds the demo and End all sessions (FR-090): ' + JSON.stringify(tm));
     await shot(`052-topbar-more-${w}x${h}.png`);
     key('Escape'); await until(`document.getElementById('topMoreMenu').hidden&&document.activeElement.id==='topMoreBtn'`);
     assert.ok(await js(`document.getElementById('topMoreMenu').hidden&&document.activeElement.id==='topMoreBtn'`), '⋯ closes on Esc');

@@ -127,6 +127,19 @@ export function pinProblems(file: string, text: string): string[] {
 const lock = JSON.parse(fs.readFileSync(path.join(root, 'package-lock.json'), 'utf8'));
 assert.deepStrictEqual(lockProblems(lock), [], 'package-lock.json: every entry resolves on registry.npmjs.org with an integrity');
 assert.ok(Object.keys(lock.packages).length > 50, 'the lockfile was actually read');
+// spec 103 FR-022: the pre-review bot's own lockfile is held to the same rule, and stays out of the app and the root install
+const prLockPath = path.join(root, 'scripts', 'prereview', 'package-lock.json');
+const prLock = JSON.parse(fs.readFileSync(prLockPath, 'utf8'));
+assert.deepStrictEqual(lockProblems(prLock), [], 'scripts/prereview/package-lock.json: every entry resolves on registry.npmjs.org with an integrity');
+assert.ok(Object.keys(prLock.packages).length > 10 && prLock.packages['node_modules/@anthropic-ai/claude-agent-sdk'], 'the second lockfile was actually read');
+const prPkg = JSON.parse(fs.readFileSync(path.join(root, 'scripts', 'prereview', 'package.json'), 'utf8'));
+assert.ok(/^\d+\.\d+\.\d+$/.test(prPkg.dependencies['@anthropic-ai/claude-agent-sdk']) && /^\d+\.\d+\.\d+$/.test(prPkg.dependencies.tsx), 'exact pins, no ranges');
+const rootPkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+assert.ok(!JSON.stringify(rootPkg.dependencies) .includes('claude-agent-sdk') && !JSON.stringify(rootPkg.devDependencies).includes('claude-agent-sdk') && !rootPkg.workspaces, 'the app does not depend on the bot\'s SDK and has no workspace link');
+assert.ok(!Object.keys(lock.packages).some((k) => k.includes('claude-agent-sdk')), 'the root lockfile does not hold the bot\'s SDK');
+assert.ok(Array.isArray(rootPkg.build.files) && rootPkg.build.files.every((f: string) => f.startsWith('dist') || f.startsWith('!') || !f.includes('prereview')), 'electron-builder cannot pack the bot');
+assert.ok(/directory:\s*\/scripts\/prereview\b/.test(fs.readFileSync(path.join(root, '.github', 'dependabot.yml'), 'utf8')), 'Dependabot watches the bot\'s own lockfile (spec 103 review, 2026-11-01)');
+assert.ok(/"exclude":\s*\[[^\]]*scripts\/prereview/.test(fs.readFileSync(path.join(root, 'tsconfig.scripts.json'), 'utf8')), 'the root script build never needs the SDK');
 
 const wfDir = path.join(root, '.github', 'workflows');
 let uses = 0;
@@ -179,6 +192,7 @@ assert.strictEqual(mut((e) => { delete e.resolved; }).length, 1, 'a missing reso
 assert.strictEqual(mut((e) => { delete e.integrity; }).length, 1, 'a missing integrity is caught');
 assert.strictEqual(mut((e) => { e.integrity = 'md5-abc'; }).length, 1, 'a weak integrity is caught');
 assert.strictEqual(lockProblems({}).length, 1, 'a lockfile without packages is caught');
+{ const bad2 = JSON.parse(fs.readFileSync(path.join(root, 'scripts', 'prereview', 'package-lock.json'), 'utf8')); bad2.packages['node_modules/tsx'].resolved = 'https://evil.example/tsx-4.19.2.tgz'; assert.ok(lockProblems(bad2).length > 0, 'a bad entry in the second lockfile is caught'); }
 // name tied to the URL (the lodash -> evil-lodash swap), scoped names, aliases, versions
 const withKey = (key: string, e: any) => lockProblems({ packages: { '': {}, [key]: e } });
 const ok = (n: string, v = '1.0.0') => ({ version: v, resolved: `https://registry.npmjs.org/${n}/-/${n.replace(/^@[^/]+\//, '')}-${v}.tgz`, integrity: 'sha512-AAAA' });
@@ -269,6 +283,6 @@ assert.deepStrictEqual(dependabotProblems(depText), [], 'dependabot.yml: minor/p
 assert.ok(dependabotProblems(depText.replace(/\n      - dependency-name: '\*'\n        update-types: \['version-update:semver-major'\]/g, '')).length >= 2, 'a missing major ignore is caught');
 assert.ok(dependabotProblems(depText.replace(/\n      - dependency-name: electron/, '')).length === 1, 'a missing electron ignore is caught');
 assert.ok(dependabotProblems(depText.replace(/update-types: \[minor, patch\]/g, "patterns2: ['*']")).length >= 2, 'a group without update-types is caught');
-assert.strictEqual(dependabotProblems(depText.replace(/\n    cooldown:\n      default-days: 7/g, '')).length, 2, 'a missing cooldown is caught in both ecosystems');
-assert.strictEqual(dependabotProblems(depText.replace(/default-days: 7/g, 'default-days: 3')).length, 2, 'a 3-day cooldown is caught in both ecosystems');
+assert.strictEqual(dependabotProblems(depText.replace(/\n    cooldown:\n      default-days: 7/g, '')).length, 3, 'a missing cooldown is caught in every block (actions, npm, the bot\'s npm)');
+assert.strictEqual(dependabotProblems(depText.replace(/default-days: 7/g, 'default-days: 3')).length, 3, 'a 3-day cooldown is caught in every block');
 console.log('supplychain: ok');
