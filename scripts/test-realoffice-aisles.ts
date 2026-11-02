@@ -3,7 +3,7 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
-import { realLayout, type RealMeta, type RealModel, type RealAgent, type RealState, type Rect, type Layout } from '../src/shared/realoffice-layout';
+import { realLayout, sortDesks, type RealMeta, type RealModel, type RealAgent, type RealState, type Rect, type Layout } from '../src/shared/realoffice-layout';
 import { aislesLayout, layoutFor, aisleTabOrder, aisleFace, FACE_FLOOR, AISLE_SIGN_MIN_W, ARRANGEMENTS } from '../src/shared/realoffice-arrangements';
 
 process.exitCode = 1;
@@ -127,6 +127,13 @@ for (const nm of NAMES) {
       const a = byId.get(order[i - 1])!, b = byId.get(order[i])!;
       assert.ok(b.desk.y > a.desk.y - 40 && (b.desk.x > a.desk.x || b.desk.y > a.desk.y), `${n} at ${W}: ${order[i - 1]} then ${order[i]} is the next seat, in reading order`);
     }
+  }
+  // FR-022 in this arrangement: seats, and so Tab, go by status inside each folder, in the model's order of folders
+  const seats = (m: RealModel): string[] => aisleTabOrder(aislesLayout(m, { w: 1440, h: 848 }, META, SIGNS(m.folders.length)));
+  assert.deepStrictEqual(seats(model(5, 1, ['idle', 'working', 'waiting', 'done', 'error'])), ['a2', 'a4', 'a1', 'a3', 'a0'], 'one folder: needs you, error, working, done, idle');
+  for (const [n, f] of [[15, 1], [15, 3], [8, 4], [40, 8]]) {
+    const m = model(n, f);
+    assert.deepStrictEqual(seats(m), m.folders.flatMap((x) => sortDesks(x.agents).map((a) => a.id)), `${n} in ${f}: status order in every folder`);
   }
   // screens face inwards (FR-256)
   assert.deepStrictEqual([0, 1, 2, 3, 4].map((c) => aisleFace(c, 5, 0)), ['right', 'right', 'right', 'left', 'left']);
