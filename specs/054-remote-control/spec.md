@@ -208,3 +208,7 @@ The `status:` of the specs-index block used to read (moved here unchanged; the b
 
 - **FR-065** `[IMPLEMENTED]` **No door concept.** FR-040, FR-042 go: nothing turns remote control off because of a door, and `DOOR_CLOSED` and `doorClosed` go. Every other rule stands: off by default, on only by its own confirmation in main, refused in Allow all (FR-011, FR-070), off when a session ends. **Migration**: spec 017 FR-033: a session whose door had turned it off stays off, and the update never turns it on. FR-041's known gap (what the vendor does with messages typed while off) stands.
 - `[KNOWN GAP]` No one-click way to cut remote control together with holding prompts for one session, and nothing refuses turning it on again. Remaining: **Stop remote control** per session, no dialog (More menu, palette).
+
+## Changes 2026-11-02: removed page and tools (owner decision, PR #1054)
+
+`scripts/remote-copilot-real.ts` were removed on 2026-11-02 by owner decision (no caller; run dates and credit counts above stay valid history); the scripts are in git history at commit `1c75b5bee`.

@@ -17,7 +17,6 @@
  * writes into a new temporary folder; only then are the files copied, so a failed run leaves the old pictures in place.
  * Every written picture is then palette-compressed in place (scripts/compress-shots.js, spec 050 FR-012; DURBAR_SHOTS_COMPRESS=off skips it).
  * Linked = `docs/screenshots/*.png` (or `screenshots/*.png` in a docs page) in README.md and the docs pages of docs/site/pages.json, `file` in docs/site/gallery.json, any `*.png` in docs/site/landing.json.
- * docs/feature-history.md and CHANGELOG.md keep their old pictures on purpose (a record, spec 025 FR-006).
  */
 const path = require('path');
 const fs = require('fs');
@@ -54,7 +53,7 @@ const DOC_SHOTS = [
   { name: 'shots-097-realoffice', files: ['097-office-layout-1440x900.png'] }, // spec 097 P1: Real office mode (its photo-heavy 15-agent pictures stay out of the site budget: linked from the spec only, retaken with SHOTS_OUT=docs/screenshots)
   { name: 'shots-030-handoff', files: ['handoff-review-1440x900.png'] },
   { name: 'shots-033', files: ['033-floors-on-1440x900.png'] },
-  { name: 'shots-040-aitheme', env: { DURBAR_SIM_KINDS: 'mixed' }, files: ['040-theme-picker-1440x900.png', '040-aitheme-preview-1440x900.png'] },
+  { name: 'shots-040-picker', files: ['040-theme-picker-1440x900.png'] }, // spec 040 FR-032: the theme picker, Export and Remove
   { name: 'shots-043-ai', files: ['043-ai-questionnaire-1440x900.png'] },
   { name: 'shots-043-manage', files: ['043-profile-delete-confirm-1440x900.png'] },
   { name: 'shots-043-editor', files: ['043-editor-new-asp-split-1440x900.png', '043-editor-split-clean-1440x900.png'] },

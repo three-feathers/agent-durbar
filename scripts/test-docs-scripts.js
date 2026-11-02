@@ -1,8 +1,7 @@
 /*
  * `npm run test:docsscripts` (spec 021 FR-063, T046): every `npm run <name>` in the live docs names a script that exists in package.json.
  * Files: README.md, CONTRIBUTING.md, AGENTS.md, docs/**\/*.md, changelog.d/*.md and specs/*\/quickstart.md. Placeholders (`npm run <name>`, `npm run $X`)
- * and `npm run x -- --args` are handled (only the name counts). docs/feature-history.md is read too: it is prose about the present
- * commands, not a dated log, so a dead name there misleads. Older specs, plans and tasks keep removed names as history and are not read.
+ * and `npm run x -- --args` are handled (only the name counts). Older specs, plans and tasks keep removed names as history and are not read.
  */
 'use strict';
 const assert = require('assert');
