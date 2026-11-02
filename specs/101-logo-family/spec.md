@@ -229,14 +229,20 @@ Tool surface (spec 098): the picker is a Settings section and the top-bar icon t
 
 ## Changes
 
+### 2026-11-03: the generator and its checks fail loudly (review of #988)
+
+- `build-icons` refuses a capture that is not exactly the size asked for, in both directions, instead of resampling it: a clamped window would have written a squashed icon. `test:`
+- A shape written with a closing tag (`<path ...></path>`) is refused by `test:logo-assets` and by the generator: it passed the element list, and the top bar would have lost it without a word. `test:`
+- `check-logo-family` fails when it cannot block `localStorage`, instead of passing without testing. `sim:`
+
 ### 2026-11-02: the real world seam, and the pictures
 
-Spec 097's seam is on `main` now: `check-logo-family` also goes through Real office, where `html[data-world]` is set for real, and back. Only `photo` is reachable that way from the driver; the cave and loft palettes are still set by hand. **Pictures:** the merge with `main` keeps `main`'s pictures, and only the two README heroes (`shots-hero`) are retaken here; every other picture shows the old top-bar icon until the daily screenshot refresh retakes it.
+Spec 097's seam is on `main` now: `check-logo-family` also goes through Real office, where `html[data-world]` is set for real, and back. Only `photo` is reachable that way from the driver; the cave and loft palettes are still set by hand. **Pictures:** the merge with `main` keeps `main`'s pictures, and only the two README heroes (`shots-hero`) are retaken so far. No job refreshes pictures: `world-matrix` keeps its results as artifacts and commits nothing. So every linked picture that shows the top bar is retaken with `npm run shots:docs`, looked at and committed as the last step before merge, once the owner has accepted the icons (T018 stays open until then).
 
 ### 2026-11-01: phases 1 to 3 built (`101-logo-build`)
 
 - **Paco approved the cave and loft columns on 2026-11-01** (relayed in Vikram's build instruction; Q6): FR-062 is met for their flat palettes, which are in `src/renderer/logo.css` with a `Paco` row in `build/logo/ASSETS.md`. Painted cave and loft pictures are still not in the repo (phase 4 not built).
-- `[IMPLEMENTED]` `test:` `sim:` FR-010..FR-014, FR-020..FR-023 (vector previews), FR-030..FR-032, FR-034, FR-035, FR-040..FR-044, FR-050, FR-051, FR-060..FR-062, FR-070..FR-072. FR-033 and FR-101/FR-102 are implemented as the selectors `html[data-world="photo"|"cave"|"loft"][data-world]`; `[KNOWN GAP]` nothing on `main` sets `data-world` yet (spec 097 P1 does, on its own branch), so the driver sets it by hand; a world with no block (country, kingdom) keeps the base palette.
+- `[IMPLEMENTED]` `test:` `sim:` FR-010..FR-014, FR-020..FR-023 (vector previews), FR-030..FR-032, FR-034, FR-035, FR-040..FR-044, FR-050, FR-051, FR-060..FR-062, FR-070..FR-072. FR-033 and FR-101/FR-102 are implemented as the selectors `html[data-world="photo"|"cave"|"loft"][data-world]`; `[KNOWN GAP]` the driver reaches `photo` through Real office (the entry above) and sets the cave and loft by hand; a world with no block (country, kingdom) keeps the base palette.
 - **Deltas to the text above, made while building:**
   - FR-036: the forced-colours rules are in `src/renderer/logo.css` (loaded after `styles.css`, so they beat the slot rules at equal weight), not in `styles.css`'s block; the tile keeps its size with an inset outline instead of a border.
   - FR-032: the palettes live in `src/renderer/logo.css`, a file outside the theme-literals ratchet of spec 070; its colours are token declarations, and `index.html` and `styles.css` gain no literal. `--logo-plate` is the chosen icon's plate, from `--logo-plate-1..5` (one per icon in Clean; all equal in a theme or a world), so a Settings preview can show its own plate.
