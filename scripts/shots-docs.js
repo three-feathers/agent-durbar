@@ -28,11 +28,10 @@ const SHOTS = path.join(ROOT, 'docs', 'screenshots');
 const CLOCK = '2026-10-20T09:30:00Z';
 
 /** `f`: a file the driver writes under the same name; `{ to, from }`: the linked name and the name the driver writes. */
-const THEMES = [['clean-office', 'clean'], ['corporate'], ['durbar-european'], ['durbar-indian'], ['durbar-japanese'], ['retro']];
+const THEMES = [['clean-office', 'clean'], ['retro']];
 const DOC_SHOTS = [
   { name: 'shots-hero', files: ['m5-sim15-1440x900-closed.png', 'm6-fullchat-sim15-1280x800.png'] },
   { name: 'shots-003-011', files: ['m6-fullchat-sim15-1440x900.png', '003-allow-all-menu-1440x900.png'] },
-  { name: 'shots-017-signs', files: ['017-signs-1440x900.png', '017-held-dialog-1440x900.png', '017-open-office-1440x900.png', '017-open-office-1280x800.png', '017-office-layout-1440x900.png'] }, // spec 017 FR-004: meeting-room door signs on the desks
   { name: 'check-office-fill', files: ['001-helpers-2-1440x900.png', '001-helpers-2-1280x800.png', '001-helpers-3-1440x900.png', '001-helpers-3-1280x800.png', '001-fill-1-1440x900.png', '001-fill-1-1920x1080.png', '001-fill-4-1440x900.png', '001-fill-6-1440x900.png', '001-shutters-1440x900.png'] },
   { name: 'shots-001-live-activity', freeze: false, files: ['001-live-activity-dense-1440x900.png', '001-live-activity-side-1440x900.png'] },
   { name: 'shots-001-lobby', files: ['001-lobby-15-1280x800.png', '001-lobby-15-1440x900.png', '001-lobby-15-1440x900-retro.png', '001-lobby-3-1440x900.png'] },
@@ -52,9 +51,10 @@ const DOC_SHOTS = [
   { name: 'shots-015-compact', files: ['015-compacting-office-1440x900.png', '015-compacting-office-1280x800.png', '015-compacting-chat-1440x900.png', '015-compacting-chat-1280x800.png'] },
   { name: 'shots-017', files: [{ to: '012-harness-picker-1440x900.png', from: '012-picker-1440x900.png' }] },
   { name: 'shots-024', files: ['024-lobby-1440x900.png'] },
+  { name: 'shots-097-realoffice', files: ['097-office-layout-1440x900.png'] }, // spec 097 P1: Real office mode (its photo-heavy 15-agent pictures stay out of the site budget: linked from the spec only, retaken with SHOTS_OUT=docs/screenshots)
   { name: 'shots-030-handoff', files: ['handoff-review-1440x900.png'] },
   { name: 'shots-033', files: ['033-floors-on-1440x900.png'] },
-  { name: 'shots-040-aitheme', env: { DURBAR_SIM_KINDS: 'mixed' }, files: ['040-theme-picker-1440x900.png', '040-aitheme-preview-1440x900.png'] },
+  { name: 'shots-040-picker', files: ['040-theme-picker-1440x900.png'] }, // spec 040 FR-032: the theme picker, Export and Remove
   { name: 'shots-043-ai', files: ['043-ai-questionnaire-1440x900.png'] },
   { name: 'shots-043-manage', files: ['043-profile-delete-confirm-1440x900.png'] },
   { name: 'shots-043-editor', files: ['043-editor-new-asp-split-1440x900.png', '043-editor-split-clean-1440x900.png'] },
@@ -83,7 +83,7 @@ const DOC_SHOTS = [
   ...THEMES.map(([id, short]) => ({
     label: `shots-themes ${id}`, name: 'shots-themes', env: { DURBAR_THEME: id, SHOTS_SIZE: '1440x900', SHOTS_PREFIX: '' },
     files: [{ to: `site-theme-${short || id}-1440x900.png`, from: `${id}-1440x900.png` }]
-      .concat(['corporate', 'durbar-indian', 'retro'].includes(id) ? [{ to: `035-${id}-1440x900.png`, from: `${id}-1440x900.png` }] : []),
+      .concat(['retro'].includes(id) ? [{ to: `035-${id}-1440x900.png`, from: `${id}-1440x900.png` }] : []),
   })),
 ];
 

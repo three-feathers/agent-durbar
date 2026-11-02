@@ -10,7 +10,7 @@ A world pack becomes a validated, code-free data file that can arrive from outsi
 
 - **Language**: TypeScript in `src/main`, `src/shared`; plain JS in the renderer; plain Node for scripts.
 - **Dependencies**: none new. Node `crypto` (SHA-256, Ed25519), `zlib` (`inflateRawSync` with `maxOutputLength`); Electron `net.request` through `netget.ts`.
-- **Storage**: `userData/worlds/<key>/`; `worlds/catalogue.json` and `worlds/<id>/` in the repo; `durbar.world` in `localStorage` (097 FR-114).
+- **Storage**: `userData/worlds/<key>/`; `worlds/catalogue.json` and shipped worlds in this repo, downloadable worlds in the worlds repository (FR-240); `durbar.world` in `localStorage` (097 FR-114).
 - **Testing**: Node tests with fixtures and an injected request layer; simulator drivers through `ui-suite.js`; world matrix (098).
 - **Performance**: 097 FR-178's rows (op rows asserted, times recorded). Hash re-check of a few MB at load is async.
 - **Constraints**: no network in `npm test`; no AI credits; 10 MB a pack; three OSes (a closed list of names means Windows rules are tested on every OS).
@@ -58,7 +58,7 @@ Facts below were read in the repo or checked on 2026-10-31; the web sources are 
    worldprompts.ts       prompts per part (exclusion clause), wrapper for a description
    worldsource.ts        hop rules, Ed25519 verify inputs, catalogue parser, worldsPolicyFrom
  repo
-   worlds/catalogue.json  copied into the app; worlds/<id>/ {world.json, parts, card.json, ASSETS.md} not copied
+   worlds/catalogue.json  copied into the app; downloadable worlds/<id>/ {world.json, parts, card.json, ASSETS.md} in the worlds repository
    scripts/world-pack.js  reproducible zip
 ```
 
@@ -72,9 +72,9 @@ Facts below were read in the repo or checked on 2026-10-31; the web sources are 
 
 **A source's label comes only from main.** Main stores origin and source when it stores a world, and sends the words the UI shows. Nothing in a pack or catalogue reaches that field, so a pack cannot claim to be ours by construction, not by a filter.
 
-**Registry.** `docs/experience/world-moments.json` gets one row per downloadable world (`pack: worlds/<id>`, `crews: []`, `shippable: false`), and every moment gets a cell (098 FR-011). Own worlds never enter the registry; for them `momentCoverage` is the check.
+**Registry.** `docs/experience/world-moments.json` gets one row per downloadable world (`pack: worlds/<id>` in the worlds repository, `crews: []`, `shippable: false`), and every moment gets a cell (098 FR-011). Own worlds never enter the registry; for them `momentCoverage` is the check.
 
-**World matrix.** The driver mounts a pack from `worlds/<id>` by a dev hook in the simulator (same `world:part` shape), with no network.
+**World matrix.** The driver mounts a pack from `worlds/<id>`, at `sourceCommit` for a downloadable world (FR-085), by a dev hook in the simulator (same `world:part` shape), with no network.
 
 ## Code paths reused (spec 021 FR-031)
 
@@ -153,6 +153,25 @@ world.json  arrangement: "circle"
 | Fire as endless animation | Still picture; FR-227 |
 
 **Order:** after 102 P1 (validator) and #921. T165 and T166 can run first as they are pure and on the simulator.
+
+## Delta 2026-11-02: petrol garage, founders' garage and rooftop terrace (FR-280..FR-299)
+
+**Reused (spec 021 FR-031).** `layoutFor`, `ARRANGEMENTS`, `Layout`, `lobbyBand`, `lobbyWidths`, `stagger`, `lightFor` (#1016, 097); `WORLDS`, `WORLD_FLAGS`, `peopleFor`, `parseWorld`, `offeredWorlds` (`crew.js`); `worldflags`, `officeview`, `world` (simulator options); `NOTE_PAPER`, `NOTE_INK`, `notePaper` (#994); the 12-a-second grid and `check-097-motion` (#1046); `world-matrix.js`, `check-world-tools`, `test:surfaces` (098); T093, T094, `check-world-distinct`; `test:realoffice-assets`; FR-227's `focus.webp`; FR-223's `desk-back`; the moment rules of FR-271 on #1014. **New and shared, none per world:** the table-driven plan function, `focus` drawn, floor and wall from pack parts with no `world.css`, `notePaper`, `noteStyle`, `--moments`, `DURBAR_SIM_WORLDFLAGS`.
+
+**Order of work, by the named exception (decided, Q11).** Landed alone, because reachable today: T244 (the matrix fix and `--moments`), T247's scene, T248. On a branch, costing no credits: T240's cards, which land with T093's check because `test:world-catalogue` reads them, so they are not unreachable, T241, T242, T243, T245, T258, then the owner's look at grey boxes (T246). Art follows his written yes per image run, after checking the plan's usage (Q1), one pack at a time. **Then one PR per world, in the order petrol, founders', roof:** its table in `ARRANGEMENTS`, its pack (T250, T251, T252), its helpers (T253) when T235 has landed, its row and flag (T259) and its cells (T254). The first also brings T242, T243, T245, T249 and T258, unless Cave has brought T242. Per world after landing: T255, with the 30-day ask. T256 as its PRs land. T257 only when the store is on `main`.
+
+| Step | Gate | Cost |
+|---|---|---|
+| T244, T247's scene, T248 | The next built-in world's stack on `main` | 0 AI credits; about 3 shared PRs, landing alone |
+| T240..T243, T245, T249, T258 | T093 for T240; on a branch until the first world's art is approved | 0 AI credits; about 200 lines of plan code plus tests and small shared rules, inside the per-world PRs |
+| T246 | The plans pass T241 | The owner's look |
+| T250..T253, T259 | Q1, T240, T246 | 36 to 54 images on the owner's plan, check its usage first; about 0.75 MB a pack (estimate); 3 per-world PRs, each with its table, pack, flag and cells |
+| T254, T255 | FR-035, with 097 FR-179; T254 lands in its world's PR | Owner's look per world, `real:` run on a Mac; over 30 days behind the flag, the owner chooses: open or remove |
+| T257 | #955, #966, T043, T190 | Two PRs per world |
+
+**Risk: the plans are arithmetic.** `bays` has the tightest numbers, since 8 seats at 156 px have no room for a bust beside the screen; hence the stacked back bank. T241 comes before any art so that a plan can fail cheaply. **Risk: repo growth,** an estimated 2.25 MB that stays in history after T257 (Q2).
+
+**Constitution.** I: spec, plan, tasks here, no `src/`. II: nothing vendor-specific. III: packs stay data; `notePaper` and `noteStyle` are validated (FR-055); the simulator flag exists only under `DURBAR_SIM`. IV: image runs only on the owner's written yes, simulator otherwise. V: 10.5 px, 15 agents at both sizes, no status by colour alone, reduced motion freezes everything. VI: no path or shell difference; packaged runs listed. VII: FR-297's table. VIII: the mock's limits are stated, numbers tagged as arithmetic or measured.
 
 ## Done when
 

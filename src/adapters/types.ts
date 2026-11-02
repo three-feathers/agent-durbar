@@ -9,6 +9,7 @@ import type { ElicitAction, ElicitAnswer, ElicitRequest } from '../shared/elicit
 import type { McpServerSpec } from '../shared/mcp';
 import type { AutoTier, CompactResult, ContextTier, ModelOption, ModelSwitchRequest, ModelSwitchResult } from '../shared/modelswitch';
 import type { AdapterCapabilities, PermissionMode } from './capabilities';
+import type { McpContextReport, McpContextServer } from '../shared/mcpcost';
 import type { OrgPolicy } from '../shared/orgpolicy';
 import type { HandoffResult } from './handoff';
 import type { HistoryResult, PreviousSession } from './history';
@@ -17,6 +18,7 @@ import type { EditInfo } from '../shared/edits';
 import type { AccountIdentity, AccountInfoOptions } from '../shared/account';
 import type { SandboxHostView, SandboxState } from '../shared/api';
 export type { EditInfo };
+export type { McpContextReport, McpContextServer };
 export type { ElicitAction, ElicitAnswer, ElicitRequest, McpServerSpec, CompactResult, ContextTier, ModelOption, ModelSwitchRequest, ModelSwitchResult, AdapterCapabilities, PermissionMode };
 
 export type AgentStatus = 'idle' | 'working' | 'needs-permission' | 'error' | 'stopped';
@@ -233,6 +235,8 @@ export interface ToolCallEvent extends BaseEvent {
   edit?: EditInfo;
   /** Spec 058 FR-063: this failed MCP tool call needs the user to sign in to `mcpServer` (set by the adapter, never carries vendor text). Only on `phase: 'failed'` with `mcpServer`. */
   mcpAuth?: true;
+  /** Spec 058 FR-193 (issue #841): set by `maskMcpEvent` (never by an adapter) on a failed MCP call whose masked output reads like an organization access policy refusal. A word only. */
+  mcpCall?: 'policy';
 }
 
 export interface SubagentEvent extends BaseEvent {
@@ -676,6 +680,12 @@ export interface AgentAdapter {
    * (`capabilities.mcpTools`). Rejects with a short, user-facing sentence when the session or the server is not running.
    */
   listMcpTools?(sessionId: string, name: string): Promise<McpToolInfo[]>;
+  /**
+   * Spec 100 FR-001: what the tool definitions of this session's MCP servers take in its context window, as the agent app reports them or
+   * as estimated (`capabilities.mcpContext`). Optional. Names and numbers only. Never starts a session or a server and makes no model call;
+   * what the app cannot say is a report with no figures, not a rejection.
+   */
+  mcpContext?(sessionId: string): Promise<McpContextReport>;
   /**
    * Spec 058 FR-064: start the agent app's own sign-in for one MCP server of a running session. Optional (`capabilities.mcpSignIn`).
    * `browser`: the user finishes in the browser at `url` (main keeps it, the window only gets the host); `connected`: already signed in.

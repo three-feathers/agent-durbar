@@ -68,7 +68,7 @@ module.exports = async (ctx) => {
     await watch(); await H.calm();
   };
   const panel = async (open) => { await js(`(()=>{const p=document.getElementById('floorsPop');if(p.hidden===${open})document.getElementById('floorsBtn').click();})()`); await until(`document.getElementById('floorsPop').hidden===${!open}`); };
-  const floorSw = async (id, want) => { await panel(true); const sel = `[data-fl="on"][data-floor="${id}"]`; const on = await js(`document.querySelector(${jsLiteral(sel)}).getAttribute('aria-pressed')==='true'`); if (on !== want) await js(`document.querySelector(${jsLiteral(sel)}).click()`); await until(`document.querySelector(${jsLiteral(sel)}).getAttribute('aria-pressed')===${jsLiteral(String(want))}`); await panel(false); await settle(); };
+  const floorSw = async (id, want) => { await panel(true); const sel = `[data-fl="on"][data-floor="${id}"]`; const on = await js(`document.querySelector(${jsLiteral(sel)}).getAttribute('aria-checked')==='true'`); if (on !== want) await js(`document.querySelector(${jsLiteral(sel)}).click()`); await until(`document.querySelector(${jsLiteral(sel)}).getAttribute('aria-checked')===${jsLiteral(String(want))}`); await panel(false); await settle(); };
   const only = async (id) => { await panel(true); await js(`document.querySelector(${jsLiteral(`[data-fl="only"][data-floor="${id}"]`)}).click()`); await until(`document.getElementById('floorsBtn').textContent.trim().startsWith('1/')`); await panel(false); await settle(); };
   const NAMES = ['Ground floor', 'Client A', 'Personal'];
 
