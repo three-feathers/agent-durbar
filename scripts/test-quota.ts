@@ -90,6 +90,13 @@ const facts = (v: QuotaView, now = NOW, i = 0): Record<string, string> => Object
   assert.strictEqual(quotaTimeMs(String(NOW)), NOW, 'digit strings');
   assert.strictEqual(quotaZoneOf('2026-11-01T00:00:00.000Z'), 'UTC');
   assert.strictEqual(quotaZoneOf('2026-11-01T00:00:00+02:00'), '+02:00');
+  // review (Paco's side): hostile `resetDate`s are read in linear time (`T.*` was quadratic on a long string)
+  for (const hostile of ['T'.repeat(200_000) + '+1', '2026-11-01T' + '0'.repeat(200_000), 'T'.repeat(60_000) + '!', '9'.repeat(200_000)]) {
+    const t0 = process.hrtime.bigint();
+    assert.strictEqual(quotaZoneOf(hostile), undefined);
+    assert.strictEqual(quotaTimeMs(hostile), undefined);
+    assert.ok(Number(process.hrtime.bigint() - t0) / 1e6 < 100, 'a hostile time string is cut before any matching');
+  }
   assert.strictEqual(quotaZoneOf('2026-11-01'), undefined);
 }
 
@@ -451,6 +458,25 @@ async function cacheTests(): Promise<void> {
   calls = 0;
   assert.strictEqual((await c.get('open')).a.buckets[0].used, 3);
   assert.strictEqual(calls, 1, 'asked at once after a sign-in');
+
+  // review (Paco's side): a read still running when the app signs out, or stops being ready, must not bring the old account's figures back
+  for (const state of ['not-signed-in', 'too-old']) {
+    c = make();
+    infos[0] = info('a');
+    now += QUOTA_OPEN_MS;
+    let held: (x: unknown) => void = () => undefined;
+    answer = () => new Promise((r) => { held = r; });
+    const running = c.get('open');
+    await new Promise((r) => setImmediate(r));
+    infos[0] = info('a', state);
+    await c.get('cached');
+    held(okRead([reqs({ used: 50 })]));
+    await running;
+    infos[0] = info('a');
+    assert.deepStrictEqual((await c.get('cached')).a.buckets, [], `${state}: the old account's figures stay gone after a new sign-in`);
+  }
+  answer = async () => okRead([reqs({ used: 5, limit: 10 })]);
+  c = make();
 
   // an app that stops being ready or signs out loses its figures; not installed is not listed; no read call: not reported
   infos[0] = info('a', 'not-signed-in');

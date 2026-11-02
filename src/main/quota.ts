@@ -56,6 +56,12 @@ export function createQuotaCache(deps: QuotaCacheDeps) {
     return run.done;
   };
 
+  /** A sign-in for this app ended, or it signed out or stopped being ready: its figures belonged to the account before; a read still running is ignored. */
+  const forget = (id: string): void => {
+    entries.delete(id);
+    gen.set(id, (gen.get(id) ?? 0) + 1);
+  };
+
   return {
     /** `{ [appId]: QuotaView }` for every installed app; `only` limits it to one. The modes are in `quotaShouldAsk`. */
     async get(mode: QuotaMode = 'cached', only?: string): Promise<Record<string, QuotaView>> {
@@ -65,12 +71,12 @@ export function createQuotaCache(deps: QuotaCacheDeps) {
         infos.map(async (i) => {
           if (only !== undefined && i.id !== only) return;
           if (i.state === 'not-signed-in') {
-            entries.delete(i.id); // no figures of an account that left
+            forget(i.id); // no figures of an account that left, and a read still running must not bring them back
             out[i.id] = quotaView(i.id, applyQuotaRead(undefined, { kind: 'failed', failure: 'signed-out' }, now()));
             return;
           }
           if (i.state !== 'ready') {
-            entries.delete(i.id);
+            forget(i.id);
             return;
           }
           const fn = deps.check(i.id);
@@ -88,11 +94,7 @@ export function createQuotaCache(deps: QuotaCacheDeps) {
       );
       return out;
     },
-    /** A sign-in for this app ended: its figures belonged to the account before; a read still running is ignored. */
-    forget(id: string): void {
-      entries.delete(id);
-      gen.set(id, (gen.get(id) ?? 0) + 1);
-    },
+    forget,
   };
 }
 

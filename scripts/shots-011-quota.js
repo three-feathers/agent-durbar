@@ -271,16 +271,18 @@ module.exports = async (ctx) => {
   // close Settings: no timer stays
   await load(w, h, 'copilot:current');
   assert.strictEqual(await js(`window.DurbarHarnesses.quotaTimerArmed()`), true);
+  // from here every timer the page registers is recorded with where it came from: closing Settings must register none for the quota path
+  await js(`(()=>{window.__tm=[];for(const k of ['setInterval','setTimeout']){const o=window[k];window[k]=function(f,ms,...a){window.__tm.push({k,ms,at:new Error().stack||''});return o.call(window,f,ms,...a);};}return 0;})()`);
   await js(`document.getElementById('scrClose').click();0`);
   assert.ok(await until(`!document.querySelector('.hs-quota')`), 'Settings closed');
   assert.strictEqual(await js(`window.DurbarHarnesses.quotaTimerArmed()`), false, 'the timer stops with Settings');
   assert.ok(readsAged >= 1);
   // nothing else is polling: reads do not grow while the clock runs
   const n0 = (await reads()).length;
-  await new Promise((r) => setTimeout(r, 2500));
-  assert.strictEqual((await reads()).length, n0, 'no polling');
-  await js(`0`);
   await settle();
+  const quotaTimers = await js(`window.__tm.filter(t=>t.k==='setInterval'||/quota|harness/i.test(t.at)).length`);
+  assert.strictEqual(quotaTimers, 0, 'closing Settings registers no interval and no timer from the quota or harness code');
+  assert.strictEqual((await reads()).length, n0, 'no read from closing Settings');
   /* sweep: Escape closes the session dialog first, then Settings under it (a stand-in dialog: the order is what is checked, not one route to it) */
   await load(1440, 900, '');
   await js(`document.getElementById('settingsBtn').click();0`);
@@ -288,7 +290,7 @@ module.exports = async (ctx) => {
   await js(`(()=>{const d=document.createElement('div');d.id='sessDlg';d.className='dlg-ov';document.body.appendChild(d);})();0`);
   await H.key('Escape');
   assert.ok(await until(`!document.getElementById('sessDlg')`, 2000), 'Escape closes the session dialog');
-  assert.ok(await js(`!!document.getElementById('scrClose')`), 'and leaves Settings open');
+  assert.ok(await until(`!!document.getElementById('scrClose')`), 'and leaves Settings open');
   await H.key('Escape');
   assert.ok(await until(`!document.getElementById('scrClose')`, 2000), 'a second Escape closes Settings');
 

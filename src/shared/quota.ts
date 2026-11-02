@@ -116,7 +116,10 @@ function qPercent(v: unknown): number | undefined {
 }
 
 /** A time as epoch ms: a number in seconds (below 1e12) or ms, a digit string, or a date string; undefined otherwise. Shared with `resetMs` (spec 068). */
+/** The longest time string read at all (an ISO 8601 time with fractions and an offset is under 40). */
+const Q_TIME_MAX = 64;
 export function quotaTimeMs(v: unknown): number | undefined {
+  if (typeof v === 'string' && v.length > Q_TIME_MAX) return undefined;
   const n = typeof v === 'number' ? v : typeof v === 'string' && /^\d{9,13}$/.test(v) ? Number(v) : typeof v === 'string' ? Date.parse(v) : NaN;
   if (!Number.isFinite(n) || n <= 0) return undefined;
   return n < 1e12 ? n * 1000 : n;
@@ -124,7 +127,7 @@ export function quotaTimeMs(v: unknown): number | undefined {
 
 /** The zone written in an ISO 8601 time: "UTC" or the offset; undefined when it names none. */
 export function quotaZoneOf(v: unknown): string | undefined {
-  if (typeof v !== 'string') return undefined;
+  if (typeof v !== 'string' || v.length > Q_TIME_MAX) return undefined; // an ISO time is about 30 characters; a longer one is hostile, and `T.*` below would be quadratic on it
   if (/\d[zZ]$/.test(v)) return 'UTC';
   const m = /T.*([+-]\d{2}:?\d{2})$/.exec(v);
   return m ? m[1] : undefined;
