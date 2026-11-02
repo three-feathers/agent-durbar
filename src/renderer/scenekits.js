@@ -7,10 +7,8 @@
   const api = factory();
   if (typeof module === 'object' && module.exports) module.exports = api; else root.DurbarScenes = api;
 })(typeof self !== 'undefined' ? self : this, function () {
-  const KITS = ['office', 'corporate', 'pixel', 'court-indian', 'court-european', 'court-japanese', 'crew'];
+  const KITS = ['office', 'pixel', 'crew'];
 
-  /* a small stable pick from a list, so each agent keeps its own turban or sash colour */
-  const pick = (seed, list) => { let h = 0; for (const ch of String(seed)) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return list[h % list.length]; };
   const R = (x, y, w, h, f, more) => `<rect x="${x}" y="${y}" width="${w}" height="${h}"${more || ''} fill="${f}"/>`;
 
   /* ---------- shared: the parts every kit keeps where they are ---------- */
@@ -146,35 +144,6 @@
 
   const KIT = {};
 
-  /* ---------- Corporate: suits and ties, an executive chair, a glass desk, a thin widescreen ---------- */
-  KIT.corporate = {
-    chair: (o) => `<rect x="49" y="34" width="50" height="64" rx="12" fill="${o.T('--chair')}"/><rect x="55" y="38" width="38" height="8" rx="4" fill="${o.shade(o.T('--chair'), 0.18)}"/><rect x="53" y="50" width="42" height="44" rx="9" fill="${o.shade(o.T('--chair'), 0.1)}"/>`,
-    hairBack: (o) => o.k.style === 'long' ? `<path d="M60 44a14 14 0 0 1 28 0v12q0 3-3 3H63q-3 0-3-3z" fill="${o.k.hair}"/>` : '',
-    body: (o) => {
-      const suit = o.shade(o.k.shirt, -0.55), w = wide(o);
-      return `<path d="${torso(o)}" fill="${suit}"/><path d="M68 63l6 12 6-12z" fill="#f8fafc"/><path d="M73 64.5h2l1.3 9.5-2.3 3.2-2.3-3.2z" fill="${o.k.shirt}"/><path d="M68 63l4 9-5 3M80 63l-4 9 5 3" fill="none" stroke="${o.shade(suit, 0.3)}" stroke-width="1.4"/><rect x="${w ? 85 : 83}" y="76" width="6" height="1.6" fill="#f8fafc" opacity=".9"/><rect x="70" y="53" width="8" height="10" rx="3" fill="${o.skinD}"/>`;
-    },
-    head: (o) => `<circle cx="74" cy="44" r="12.5" fill="${o.k.skin}"/>`,
-    hair: (o) => {
-      const c = o.k.hair, st = o.k.style;
-      const part = `<path d="M61.5 42C61 32 67 30 74 30C82 30 87.5 33 87 42C85 37 82 35.5 77 35.5L70 35.5C66 35.5 63 38 61.5 42Z" fill="${c}"/><path d="M70 35.6l3-4.6" stroke="${o.shade(c, 0.25)}" stroke-width="1"/>`;
-      if (st === 'bun') return part + `<ellipse cx="74" cy="29.5" rx="6" ry="4" fill="${c}"/>`;
-      if (st === 'curly') return `<path d="M61 41c-1-11 6-13 13-13s14 2 13 13c-2-4-5-6-13-6s-11 2-13 6z" fill="${c}"/><circle cx="66" cy="32" r="3.4" fill="${c}"/><circle cx="74" cy="29.6" r="3.6" fill="${c}"/><circle cx="82" cy="32" r="3.4" fill="${c}"/>`;
-      return part;
-    },
-    desk: (o) => {
-      const top = o.T('--desk');
-      return `<rect x="10" y="86" width="180" height="5" rx="1" fill="${top}" opacity=".75"/><rect x="10" y="86" width="180" height="1.4" fill="#ffffff" opacity=".7"/><rect x="10" y="91" width="180" height="1.2" fill="${o.shade(top, -0.3)}" opacity=".6"/><rect x="20" y="92" width="3" height="22" fill="${o.T('--monitor-stand')}"/><rect x="177" y="92" width="3" height="22" fill="${o.T('--monitor-stand')}"/><rect x="20" y="104" width="160" height="1.6" fill="${o.T('--monitor-stand')}" opacity=".5"/>`;
-    },
-    monitor: (o) => `<rect x="141.5" y="76" width="5" height="9" fill="${o.T('--monitor-stand')}"/><ellipse cx="144" cy="85.2" rx="11" ry="1.6" fill="${o.T('--monitor-stand')}"/><rect x="112.5" y="32.5" width="63" height="44" rx="2" fill="${o.T('--monitor-frame')}"/>`,
-    screenOver: () => `<path d="M116 36h22l-14 37h-8z" fill="#ffffff" opacity=".08"/>`,
-    keyboard: (o) => `<rect x="58" y="83.2" width="38" height="2.6" rx="1" fill="${o.T('--laptop')}"/>`,
-    cup: (o) => `<rect x="98" y="76" width="9" height="10" rx="1.5" fill="#ffffff" stroke="${o.T('--cup-line')}" stroke-width="1"/><rect x="98" y="79" width="9" height="2.5" fill="${o.T('--brand-bg')}"/>` + steam(o),
-    props: (o) => `<rect x="164" y="80" width="16" height="6" rx="2" fill="${o.T('--monitor-frame')}"/><rect x="166" y="77" width="12" height="3.4" rx="1.7" fill="${o.shade(o.T('--monitor-frame'), 0.2)}"/>`,
-    arm: (o, x1, y1, x2, y2) => roundArm(o, x1, y1, x2, y2, o.shade(o.k.shirt, -0.6)),
-    hand: (o, x, y) => `<rect x="${x - 4}" y="${y - 4.6}" width="8" height="2" fill="#f8fafc"/>` + roundHand(o, x, y),
-  };
-
   /* ---------- Pixel: everything on a 3px grid, a CRT, square hands ---------- */
   KIT.pixel = {
     crisp: true,
@@ -200,101 +169,6 @@
     props: (o) => R(164, 80, 12, 6, '#7e2553') + R(166, 77, 8, 3, '#ff77a8') + R(168, 74, 4, 3, '#ffec27'),
     arm: (o, x1, y1, x2, y2) => `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${o.arm}" stroke-width="8" stroke-linecap="square"/>`,
     hand: (o, x, y) => R(x - 3.5, y - 3.5, 7, 7, o.k.skin),
-  };
-
-  /* ---------- Durbar · Indian: an arched throne back, sherwani and turban, a carved low desk, a jharokha screen ---------- */
-  const GOLD = '#c9973a', GOLD_L = '#e7c27a';
-  KIT['court-indian'] = {
-    chair: (o) => `<path d="M48 98V60Q48 38 74 33Q100 38 100 60V98z" fill="${o.T('--chair')}" stroke="${GOLD}" stroke-width="2"/><path d="M54 96V62Q54 44 74 40Q94 44 94 62V96" fill="none" stroke="${GOLD_L}" stroke-width="1" opacity=".8"/><circle cx="74" cy="36.5" r="2.4" fill="${GOLD}"/>`,
-    hairBack: (o) => o.k.style === 'long' ? `<path d="M61 44a13 13 0 0 1 26 0v8q0 3-3 3H64q-3 0-3-3z" fill="${o.k.hair}"/><path d="M86 50q4 14 1 30" fill="none" stroke="${o.k.hair}" stroke-width="4.5" stroke-linecap="round"/>` : '',
-    body: (o) => {
-      const sh = o.k.shirt;
-      return `<path d="${torso(o)}" fill="${sh}"/><path d="M74 64v35" stroke="${o.shade(sh, -0.25)}" stroke-width="1"/><g fill="${GOLD}"><circle cx="76.5" cy="70" r="1.3"/><circle cx="76.5" cy="76" r="1.3"/><circle cx="76.5" cy="82" r="1.3"/></g><path d="M58 70Q74 86 92 74" fill="none" stroke="${GOLD_L}" stroke-width="3" opacity=".85"/><rect x="69" y="60" width="10" height="4.5" rx="1.5" fill="${o.shade(sh, -0.3)}" stroke="${GOLD}" stroke-width=".8"/><rect x="70" y="53" width="8" height="8" rx="3" fill="${o.skinD}"/>`;
-    },
-    head: (o) => `<circle cx="74" cy="44" r="12.5" fill="${o.k.skin}"/>`,
-    hair: (o) => {
-      const st = o.k.style, c = o.k.hair;
-      if (st === 'long' || st === 'bun') {
-        const s = `<path d="M61 43.5C61 33 67 30.5 74 30.5C81 30.5 87 33 87 43.5C84 38.5 80 37 74 37C68 37 64 38.5 61 43.5Z" fill="${c}"/><path d="M74 31v6" stroke="${o.shade(c, 0.3)}" stroke-width="1"/><circle cx="74" cy="38.6" r="1.5" fill="${GOLD}"/><circle cx="74" cy="41.5" r="1" fill="#b5302f"/>`;
-        return st === 'bun' ? s + `<circle cx="74" cy="28" r="5.5" fill="${c}"/><g fill="#fffaf0"><circle cx="69" cy="27" r="1.4"/><circle cx="71" cy="24" r="1.4"/><circle cx="74.5" cy="22.8" r="1.4"/><circle cx="78" cy="24" r="1.4"/><circle cx="79.5" cy="27" r="1.4"/></g>` : s;
-      }
-      const t = pick(o.seed, ['#e0892b', '#a8343f', '#0f6e6e', '#c2456b', '#d9b13b']);
-      return `<path d="M60 42C59 30 66 25.5 74 25.5C82 25.5 89 30 88 42C85 39.5 80 38.6 74 38.6C68 38.6 63 39.5 60 42Z" fill="${t}"/><path d="M61.5 37Q74 28 86.5 37M62.5 33Q74 25 85.5 33" fill="none" stroke="${o.shade(t, -0.22)}" stroke-width="1.2"/><circle cx="74" cy="30.5" r="2.4" fill="${GOLD}" stroke="#fffaf0" stroke-width=".7"/><path d="M74 28q3-6 7-7q-2 4-7 7z" fill="${o.shade(t, 0.35)}"/>`;
-    },
-    desk: (o) => {
-      const d = o.T('--desk'), f = o.T('--desk-front');
-      return `<rect x="10" y="86" width="180" height="6" rx="2" fill="${d}"/><rect x="10" y="91" width="180" height="1.4" fill="${GOLD}"/><path d="M16 92.5h168v6q-7 5-14 0q-7 5-14 0q-7 5-14 0q-7 5-14 0q-7 5-14 0q-7 5-14 0q-7 5-14 0q-7 5-14 0q-7 5-14 0q-7 5-14 0q-7 5-14 0q-7 5-14 0z" fill="${f}"/><path d="M20 98v16h7v-10q0-4 4-6zM180 98v16h-7v-10q0-4-4-6z" fill="${o.shade(f, -0.2)}"/>`;
-    },
-    monitor: (o) => `<rect x="138.5" y="76" width="11" height="9" fill="${GOLD}"/><rect x="128" y="83" width="32" height="3.5" rx="1.75" fill="${o.shade(o.T('--desk'), -0.15)}"/><path d="M110 78V40Q110 22 144 18Q178 22 178 40V78z" fill="${o.T('--monitor-frame')}" stroke="${GOLD}" stroke-width="1.6"/><path d="M144 13l3 5h-6zM139 18h10" fill="${GOLD}" stroke="${GOLD}" stroke-width="1"/><path d="M116 36q2-10 28-12q26 2 28 12" fill="none" stroke="${GOLD_L}" stroke-width="1"/>`,
-    keyboard: (o) => `<rect x="58" y="81.5" width="38" height="4.5" rx="1" fill="#f3e3c3" stroke="${GOLD}" stroke-width=".6"/><path d="M62 83.7h30" stroke="#8a5a2b" stroke-width=".8" stroke-dasharray="2 1.5"/>`,
-    cup: (o) => `<path d="M98 78h11l-1.5 8h-8z" fill="#b8862f"/><path d="M98 78h11" stroke="${GOLD_L}" stroke-width="1.4"/>` + steam(o),
-    props: (o) => `<path d="M163 86q0-5 8-5q8 0 8 5z" fill="#b8862f"/><path d="M171 81q-2.5-3 0-7q2.5 4 0 7z" fill="#f2a83a"/><path d="M171 80q-1-1.6 0-3.2q1 1.6 0 3.2z" fill="#fff1c2"/>`,
-    arm: (o, x1, y1, x2, y2) => roundArm(o, x1, y1, x2, y2),
-    hand: (o, x, y) => `<circle cx="${x}" cy="${y}" r="4.6" fill="none" stroke="${GOLD}" stroke-width="1.2" opacity=".9"/>` + roundHand(o, x, y),
-  };
-
-  /* ---------- Durbar · European: a gilt throne, ruff and sash, periwigs, a mahogany bureau, a picture frame ---------- */
-  const GILT = '#c9a24a', GILT_D = '#8f6d22';
-  KIT['court-european'] = {
-    chair: (o) => `<path d="M50 98V44Q50 30 58 27Q66 22 74 26Q82 22 90 27Q98 30 98 44V98z" fill="${GILT}"/><path d="M54 96V46Q54 34 62 31Q68 28 74 31Q80 28 86 31Q94 34 94 46V96z" fill="${o.T('--chair')}"/><circle cx="74" cy="24" r="3" fill="${GILT}"/><circle cx="58" cy="27.5" r="2" fill="${GILT}"/><circle cx="90" cy="27.5" r="2" fill="${GILT}"/>`,
-    hairBack: (o) => {
-      const st = o.k.style;
-      if (st === 'long') return `<path d="M60 44a14 14 0 0 1 28 0v16q0 5-5 5H65q-5 0-5-5z" fill="${o.k.hair}"/>`;
-      if (st === 'bun') return '';
-      const w = '#ece6da';
-      return `<g fill="${w}"><circle cx="61" cy="47" r="4.2"/><circle cx="61" cy="54" r="4"/><circle cx="87" cy="47" r="4.2"/><circle cx="87" cy="54" r="4"/></g><path d="M74 54q0 6 0 10" stroke="#1b2240" stroke-width="2.4" stroke-linecap="round"/>`;
-    },
-    body: (o) => {
-      const sh = o.k.shirt, sash = pick(o.seed, ['#2b4c9a', '#7a1f35', '#3f6b4f']);
-      return `<path d="${torso(o)}" fill="${sh}"/><path d="M60 66L90 96" stroke="${sash}" stroke-width="5"/><circle cx="84" cy="88" r="2.6" fill="${GILT}"/><g fill="${GILT}"><circle cx="71" cy="72" r="1.1"/><circle cx="71" cy="78" r="1.1"/></g><rect x="70" y="53" width="8" height="8" rx="3" fill="${o.skinD}"/><g fill="#fbf8f1" stroke="#d8d0bd" stroke-width=".6"><ellipse cx="66" cy="62" rx="5" ry="3"/><ellipse cx="74" cy="63.4" rx="5" ry="3"/><ellipse cx="82" cy="62" rx="5" ry="3"/></g>`;
-    },
-    head: (o) => `<circle cx="74" cy="44" r="12.5" fill="${o.k.skin}"/>`,
-    hair: (o) => {
-      const st = o.k.style, c = o.k.hair;
-      if (st === 'long') return `<path d="M61 43.5C61 33 67 30.5 74 30.5C81 30.5 87 33 87 43.5C84 38.5 80 37 74 37C68 37 64 38.5 61 43.5Z" fill="${c}"/><path d="M85 34q4 2 3 6" stroke="#2b4c9a" stroke-width="2" fill="none" stroke-linecap="round"/>`;
-      if (st === 'bun') return `<path d="M61 43.5C61 33 67 30.5 74 30.5C81 30.5 87 33 87 43.5C84 38.5 80 37 74 37C68 37 64 38.5 61 43.5Z" fill="${c}"/><circle cx="74" cy="28" r="5.5" fill="${c}"/><path d="M66 32.5l2.5-6 3 4.2 2.5-6 2.5 6 3-4.2 2.5 6z" fill="${GILT}" stroke="${GILT_D}" stroke-width=".5"/>`;
-      const w = '#ece6da';
-      return `<path d="M60.5 44C60 31 66 28.5 74 28.5C82 28.5 88 31 87.5 44C85 38 80 36 74 36C68 36 63 38 60.5 44Z" fill="${w}"/><g fill="${w}"><circle cx="62" cy="40" r="3.6"/><circle cx="86" cy="40" r="3.6"/></g><path d="M66 32q8-4 16 0" fill="none" stroke="#d6cdbb" stroke-width="1"/>`;
-    },
-    desk: (o) => {
-      const d = o.T('--desk'), f = o.T('--desk-front');
-      return `<rect x="10" y="86" width="180" height="7" rx="2" fill="${d}"/><rect x="10" y="86" width="180" height="1.4" fill="${GILT}"/><rect x="18" y="93" width="164" height="16" fill="${f}"/><g fill="none" stroke="${GILT}" stroke-width="1"><rect x="24" y="96" width="46" height="10" rx="2"/><rect x="130" y="96" width="46" height="10" rx="2"/></g><circle cx="47" cy="101" r="1.4" fill="${GILT}"/><circle cx="153" cy="101" r="1.4" fill="${GILT}"/><path d="M18 109q-2 3 1 5h5q-3-2-1-5zM182 109q2 3-1 5h-5q3-2 1-5z" fill="${o.shade(f, -0.25)}"/>`;
-    },
-    monitor: (o) => `<path d="M132 78l-6 8M156 78l6 8M144 78v8" stroke="${GILT_D}" stroke-width="2.2" stroke-linecap="round"/><rect x="108" y="28" width="72" height="53" rx="2" fill="${GILT}"/><rect x="111" y="31" width="66" height="47" fill="${GILT_D}"/><rect x="113" y="33" width="62" height="43" fill="${o.T('--monitor-frame')}"/><g fill="${GILT}"><circle cx="108" cy="28" r="3"/><circle cx="180" cy="28" r="3"/><circle cx="108" cy="81" r="3"/><circle cx="180" cy="81" r="3"/><path d="M138 28q6-7 12 0z"/></g>`,
-    keyboard: (o) => `<rect x="58" y="82" width="38" height="4" rx="1" fill="#f4ecd8" stroke="#cbbf9f" stroke-width=".6"/><path d="M90 82l6-9" stroke="#3a2a1a" stroke-width="1"/><path d="M96 73q2-1 1 2z" fill="#fbf8f1"/>`,
-    cup: (o) => `<path d="M98 78h10q0 6-5 8q-5-2-5-8z" fill="#fbf8f1" stroke="${GILT}" stroke-width=".8"/><path d="M108 79q3 0 2.5 3t-3 2" fill="none" stroke="${GILT}" stroke-width="1"/>` + steam(o),
-    props: (o) => `<rect x="168" y="84" width="10" height="2.5" rx="1" fill="${GILT}"/><rect x="171.5" y="70" width="3" height="14" fill="#fbf8f1"/><path d="M173 70q-2.4-3 0-6.5q2.4 3.5 0 6.5z" fill="#f2b33a"/>`,
-    arm: (o, x1, y1, x2, y2) => roundArm(o, x1, y1, x2, y2),
-    hand: (o, x, y) => `<circle cx="${x}" cy="${y}" r="4.4" fill="#fbf8f1" opacity=".95"/>` + roundHand(o, x, y),
-  };
-
-  /* ---------- Durbar · Japanese: a gold folding screen, kimono and obi, plain short hair or a bun with a kanzashi, a lacquer table ---------- */
-  const VERMILION = '#c23b22', LACQUER = '#1c1a17';
-  KIT['court-japanese'] = {
-    chair: (o) => `<g><rect x="40" y="30" width="22" height="66" fill="#d9b95c"/><rect x="62" y="28" width="24" height="68" fill="#e3c66e"/><rect x="86" y="30" width="22" height="66" fill="#d9b95c"/><g fill="none" stroke="${LACQUER}" stroke-width="1.2"><rect x="40" y="30" width="22" height="66"/><rect x="62" y="28" width="24" height="68"/><rect x="86" y="30" width="22" height="66"/></g><path d="M44 60q8-10 16-4q6-12 18-6q10-8 26 2" fill="none" stroke="#3f5a3a" stroke-width="2.4" opacity=".7"/><circle cx="96" cy="40" r="4" fill="${VERMILION}" opacity=".85"/></g>`,
-    hairBack: (o) => o.k.style === 'long' ? `<path d="M60.5 44a13.5 13.5 0 0 1 27 0v24h-27z" fill="${o.k.hair}"/><rect x="72" y="64" width="4" height="3" fill="${VERMILION}"/>` : '',
-    body: (o) => {
-      const sh = o.k.shirt, obi = pick(o.seed, ['#d9b95c', '#2c4a7e', VERMILION, '#6b7d4a']);
-      return `<path d="${torso(o)}" fill="${sh}"/><path d="M66 63L80 84M82 63L70 80" stroke="#f6f1e6" stroke-width="3.2"/><path d="M66 63L80 84" stroke="${o.shade(sh, -0.25)}" stroke-width="1"/><rect x="${wide(o) ? 52 : 55}" y="79" width="${wide(o) ? 44 : 38}" height="7" fill="${obi}"/><rect x="${wide(o) ? 52 : 55}" y="82" width="${wide(o) ? 44 : 38}" height="1.2" fill="${o.shade(obi, -0.3)}"/><rect x="70" y="53" width="8" height="10" rx="3" fill="${o.skinD}"/>`;
-    },
-    head: (o) => `<ellipse cx="74" cy="44.5" rx="12" ry="13" fill="${o.k.skin}"/>`,
-    hair: (o) => {
-      const st = o.k.style, c = o.k.hair;
-      const base = `<path d="M61.5 44C61 33 67 30 74 30C81 30 87 33 86.5 44C85 39 81 36.5 74 36.5C67 36.5 63 39 61.5 44Z" fill="${c}"/>`;
-      if (st === 'bun') return base + `<path d="M66 31q8-9 16 0q-2 4-8 4q-6 0-8-4z" fill="${c}"/><path d="M80 26l8-6" stroke="${o.shade(c, 0.5)}" stroke-width="1.2"/><circle cx="88.5" cy="19.5" r="2.4" fill="${VERMILION}"/><path d="M87 21.5l-1 4M90 21.5l1 4" stroke="#d9b95c" stroke-width=".8"/>`;
-      if (st === 'curly') return `<path d="M61 47C60 33 66 30 74 30C82 30 88 33 87 47L84 47L84 39L64 39L64 47Z" fill="${c}"/>`;
-      if (st === 'long') return base + `<path d="M62 40q12-6 24 0" fill="none" stroke="${o.shade(c, 0.25)}" stroke-width="1"/>`;
-      /* plain short hair (no topknot): the cap plus short sides at the temples */
-      return base + `<path d="M61.5 44L62 49.5H63.8V40.5Z M86.5 44L86 49.5H84.2V40.5Z" fill="${c}"/>`;
-    },
-    /* spec 052 FR-032: the table is warm lacquer from the theme's desk tokens, not near-black ink */
-    desk: (o) => { const d = o.T('--desk'), f = o.T('--desk-front'); return `<rect x="10" y="86" width="180" height="6" rx="1" fill="${d}"/><rect x="10" y="86" width="180" height="1.4" fill="${VERMILION}"/><rect x="10" y="92" width="180" height="2" fill="${f}"/><path d="M18 94h8v20h-8zM174 94h8v20h-8z" fill="${o.T('--desk-drawer')}"/><rect x="18" y="110" width="164" height="2" fill="${d}" opacity=".6"/>`; },
-    monitor: (o) => { const w = '#b48a5a'; return `<rect x="141" y="76" width="6" height="9" fill="${w}"/><rect x="130" y="84" width="28" height="2.4" fill="${LACQUER}"/><rect x="110" y="30" width="68" height="49" fill="${w}"/><rect x="108" y="27" width="72" height="4" fill="${LACQUER}"/><g fill="none" stroke="${o.shade(w, -0.25)}" stroke-width="1"><path d="M110 33h68M110 76h68M113 30v49M175 30v49"/></g>`; },
-    keyboard: (o) => `<rect x="58" y="82.4" width="38" height="3.6" fill="#f6f1e6" stroke="#cdbf9f" stroke-width=".5"/><path d="M88 82l7-8" stroke="${LACQUER}" stroke-width="1.4" stroke-linecap="round"/><rect x="62" y="82" width="10" height="4" fill="${LACQUER}" opacity=".85"/>`,
-    cup: (o) => `<path d="M98 79h11q-1 7-5.5 7q-4.5 0-5.5-7z" fill="#6b4b3a"/><path d="M98 79h11" stroke="#cdbf9f" stroke-width="1.2"/>` + steam(o),
-    props: (o) => `<path d="M165 86q0-6 6-6q6 0 6 6z" fill="${LACQUER}"/><path d="M171 80q-5-4-1-10q2 4 6 3q-1 5-5 7z" fill="#4f6b3f"/>`,
-    arm: (o, x1, y1, x2, y2) => `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${o.arm}" stroke-width="9.5" stroke-linecap="butt"/>`,
-    hand: (o, x, y) => roundHand(o, x, y),
   };
 
   /* ---------- Crew (spec 077): a playful desk for Characters = Cheeky (on any theme, FR-065); colours from tokens only, no literals ---------- */

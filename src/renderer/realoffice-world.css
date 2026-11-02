@@ -23,3 +23,5 @@ html[data-world] .app-tip{background:var(--wb-bg);color:var(--wb-ink);border-col
   html[data-world] :is(.more-menu,.mode-menu,.grants-pop,#defaultsPop,#foldersPop,#floorsPop,.ct-more-pop,.dlg,.toast){background:Canvas;color:CanvasText;-webkit-backdrop-filter:none;backdrop-filter:none;box-shadow:none;border-color:CanvasText}
 }
 html[data-world] :is(.more-it,.mode-menu button):focus-visible{background:var(--sel-ring)}
+/* spec 097 FR-121: the inbox from the Boss door: the world's surface (opaque, no blur; the id out-ranks the :is() list above) and a header with the door and the queue's faces (aria-hidden) */
+html[data-world] #inboxDlg .inbox-dlg{background:var(--surface);-webkit-backdrop-filter:none;backdrop-filter:none}
