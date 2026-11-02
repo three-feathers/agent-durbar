@@ -118,3 +118,7 @@ Real app driven by script (`DURBAR_DRIVER`), one real Copilot session in a throw
 The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
 
 > run 2026-10-19: C1-C7 pass on a real Copilot session (9 prompts, 0.31 AIU); several models, real cap, VS Code and macOS/Windows still open (2026-10-20: C8 still blocked, the login lists no models; C9 estimated and skipped); C8 and C9 run on Copilot Pro 2026-10-20 (C9: the runtime did not stop at the cap, see spec 011)
+
+## Changes 2026-11-02: removed page and tools (owner decision, PR #1054)
+
+`scripts/paid-models-real.ts` were removed on 2026-11-02 by owner decision (no caller; run dates and credit counts above stay valid history); the scripts are in git history at commit `1c75b5bee`.

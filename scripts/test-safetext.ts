@@ -1,5 +1,6 @@
 /** Agent text on the office floor (spec 041 FR-065, issue #541): mask first, then plain, then cut; fails closed. `npm run test:safetext`. No credits spent. */
 import assert from 'assert';
+import { assertLinearShape } from './redact-growth-lib';
 import fs from 'fs';
 import path from 'path';
 import { redact, maskSecretCommand, maskSecretUrl } from '../src/shared/redact';
@@ -68,9 +69,8 @@ eq(boom.mask(raw), '', 'a throwing redact: mask gives nothing');
 // time: 200k characters, generous limit
 {
   const big = ('word ' + ghp + ' ').repeat(5000);
-  const t0 = Date.now();
   const out = T.excerpt(big, 140);
-  ok(Date.now() - t0 < 5000, '200k characters in under 5 s');
+  assertLinearShape('excerpt', (x) => void T.excerpt(x, 140), (n) => big.slice(0, n), 200_000); // same shape, same run (spec 012 T138)
   ok(!hasSecret(out), 'big input masked');
 }
 

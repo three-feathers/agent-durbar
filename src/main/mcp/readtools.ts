@@ -232,7 +232,6 @@ export function createReadToolHandlers(deps: ReadToolsDeps): ToolHandlers {
         floor: f.floor ?? GROUND,
         floorOn: floorOn(on, f.floor),
         hidden: f.hidden === true,
-        door: f.closed ? 'closed' : 'open',
         adapter: adapterOf(f),
         mode: modeName(f.permMode),
         cap: f.maxAiCredits ?? null,
