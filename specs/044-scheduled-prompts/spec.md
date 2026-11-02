@@ -451,3 +451,7 @@ Owner (Paco, 2026-10-28): a schedule's prompt was limited to 2,000 characters (`
 - **FR-127** `[IMPLEMENTED]` **No door concept.** A due run is sent, or skipped, paused or held for the existing reasons only: Pause all, a schedule's pause, a limit, a busy agent, an ended session, an update lock, a coffee break. FR-110, FR-111 go, and FR-112's closed door falls away (a loop's hold keeps its other causes). The outcome `held` stays for update and break. `skipped-door-full` stays readable in old logs and is never written again. History's wording drops "closed door".
 - **FR-128** `[IMPLEMENTED]` **Migration** is spec 017 FR-031, FR-032: prompts already queued are not auto-sent and are asked about once; every schedule then runs as normal, with no door check anywhere, including those of a session that had a closed door.
 - `[KNOWN GAP]` No one-click way to hold prompts for one session. Remaining: Pause/Resume per schedule and Pause all, which skip runs rather than queue them.
+
+## Changes 2026-11-02: removed page and tools (owner decision, PR #1054)
+
+`scripts/mcp-readonly-copilot-real.ts` were removed on 2026-11-02 by owner decision (no caller; run dates and credit counts above stay valid history); the scripts are in git history at commit `1c75b5bee`.

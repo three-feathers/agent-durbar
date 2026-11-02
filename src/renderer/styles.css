@@ -16,7 +16,7 @@
   --pb-waiting:#fbefd6; --pc-waiting:#80530a; --pb-idle:#ece9e2; --pc-idle:#5c5f59;
   --pb-error:#f6e2df; --pc-error:#8e3a32; --pb-done:#e0eee6; --pc-done:#2f6a47;
   --m-bar:3.4s ease-in-out infinite alternate; --m-glow:3.6s ease-in-out infinite alternate;
-  --m-halo:3.6s ease-in-out infinite alternate; --m-wave:2.8s ease-in-out infinite; --m-cursor:1.6s ease-in-out infinite;
+  --m-wave:2.8s ease-in-out infinite; --m-cursor:1.6s ease-in-out infinite;
   --radius:16px;
   /* spec 052 FR-053: radius scale for controls and panels (rooms and desks keep their own) */
   --r-sm:6px; --r-md:10px; --r-lg:14px; --r-xl:18px;
@@ -547,8 +547,6 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 /* toast */
 /* spec 052 FR-004: bottom left, clear of the centred composer; a toast takes the pointer so it can be hovered (timer pauses) and closed */
 #toasts{position:fixed;left:16px;bottom:var(--toast-b,16px);display:flex;flex-direction:column;gap:8px;align-items:flex-start;z-index:50;pointer-events:none}
-/* spec 052 (2026-10-21, round 1): while a theme is being tried, toasts sit above its bar instead of on top of it (1280x800 overlap) */
-body:has(#aiTryBar) #toasts{bottom:100px}
 .toast{overflow-wrap:break-word;pointer-events:auto;background:#2f3a36;color:#f7f4ee;padding:10px 16px;border-radius:12px;font-size:13px;line-height:1.45;box-shadow:0 8px 24px rgba(40,35,25,.18);animation:pop .25s ease-out;max-width:420px}
 .toast.warn{border-left:4px solid var(--tone-warn-line)}
 .toast code{font-family:var(--font-mono);background:color-mix(in srgb,var(--raised) 14%,transparent);padding:1px 6px;border-radius:6px}
@@ -737,20 +735,16 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .stage[data-d="micro"] .helper.hc .hs{font-size:10.5px;line-height:12px}
 
 /* scene animation for compact scenes: CSS only, subtle */
-.sc-c .halo{animation:halo var(--m-halo,3.6s ease-in-out infinite alternate)}
-.sc-c .halo-waiting{animation-duration:2.6s}
-.sc-c .halo-error{animation:none}
-/* the halo pulses its fill-opacity, not its opacity (review of #554): an opacity animation runs on the compositor, so the chair and the figure drawn
-   over the halo go to a layer of their own, and where Chromium cannot merge that layer into the page (it depends on the desks around: the lounge's
-   two-row room did it) it draws them blurred. fill-opacity is painted with the scene, a few steps a second like the other compact animations. */
-@keyframes halo{from{fill-opacity:.5}to{fill-opacity:1}}
+/* the halo is a still glow (spec 001 FR-210, owner 2026-11-02): pulsing fill-opacity restyled the page 60 times a second, and pulsing opacity put the figure and the
+   desk on a layer that draws their edges a pixel soft (measured by check-001-halo; #554 saw the same). Nothing here may animate it again. */
+.sc-c .halo{opacity:.75}
+.sc-c .halo-error{opacity:1}
 .sc-c .wave{transform-origin:20% 90%;animation:wave var(--m-wave,2.8s ease-in-out infinite)}
 @keyframes wave{0%,100%{transform:rotate(-4deg)}50%{transform:rotate(6deg)}}
 .sc-c .cursor{animation:dotp var(--m-cursor,1.6s ease-in-out infinite)}
 .stage:not([data-d="full"]) .sc-c .head{animation:none}
 
 /* keep 15+ animated scenes cheap: compact scenes animate in coarse steps (a few repaints per second, not 60) */
-.sc-c .halo{animation-timing-function:steps(6)}
 .sc-c .wave{animation-timing-function:steps(8)}
 .sc-c .bar{animation-timing-function:steps(8)}
 .sc-c .hand-l,.sc-c .hand-r{animation-timing-function:steps(1)}
@@ -1421,12 +1415,6 @@ body:has(#aiTryBar) #toasts{bottom:100px}
 .lobby .place,.lobby .place-add{position:relative;z-index:1} /* spec 040 FR-030 (#903): the + button is above the art band too (a positioned art svg paints over a plain flex child) */
 .place .pic svg{display:block}
 .desk .scene,.helper .scene{z-index:1}
-/* spec 040 FR-014: AI theme maker preview */
-.ai-sws{display:flex;gap:6px;margin:4px 0 8px}.ai-sw{width:34px;height:34px;border-radius:8px;border:1px solid var(--line-2)}
-.ai-words{list-style:none;padding:0;margin:4px 0;display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:4px 12px;font-size:13px}.ai-words small{display:block;color:var(--muted);font-size:11px}
-.ai-ideas{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:2px 0 6px}.ai-ideas .btn{height:var(--h-ctl);padding:0 10px;font-size:12px;font-weight:500}.ai-ideas .ai-more{border-style:dashed}
-.ai-trybar{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:60;display:flex;align-items:center;gap:8px;flex-wrap:wrap;max-width:calc(100vw - 32px);padding:10px 12px 10px 16px;border-radius:14px;background:var(--surface);color:var(--ink);border:1px solid var(--line-2);box-shadow:0 12px 36px rgba(0,0,0,.28);font-size:13px}.ai-trybar span{margin-right:6px}
-
 /* spec 052 FR-001: the answer bar above the composer, while a waiting request is out of view */
 .answer-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:0 auto 8px;width:min(860px,calc(100% - 32px));padding:8px 10px 8px 14px;background:var(--warn-bg);border:1px solid var(--tone-warn-line);border-radius:12px;box-shadow:0 4px 14px rgba(40,35,25,.08)}
 .answer-bar[hidden]{display:none}
@@ -1761,7 +1749,7 @@ html:not([data-ui]) #topBtns button:not([aria-pressed="true"]):hover{background:
 @keyframes ringonce{0%{opacity:.8;transform:scale(.96)}100%{opacity:0;transform:scale(1.22)}}
 /* FR-069: Serious mode stops every looping animation (idle bob and nod, typing hands, steam, bars, halos, waving, thinking dots,
    carets, walking bob, mood signs). One-shot signals (the done tick, the waiting pings, the pops) stay. The busy spinner stays: it is a progress sign. */
-html[data-serious] :is(.bar,.glow,.hand-l,.hand-r,.head,.bubble-g,.td,.steam,.halo,.wave,.cursor,.tap,.dizzy,.amb-light,.siren-light,.live i,.typing i,.walker.walking .wk),
+html[data-serious] :is(.bar,.glow,.hand-l,.hand-r,.head,.bubble-g,.td,.steam,.wave,.cursor,.tap,.dizzy,.amb-light,.siren-light,.live i,.typing i,.walker.walking .wk),
 html[data-serious] :is(.caret,.bubble.caret.md>*:last-child)::after,
 html[data-serious] .subblk.running .sub-st::before{animation:none!important}
 
