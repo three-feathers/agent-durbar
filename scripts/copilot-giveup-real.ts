@@ -5,7 +5,7 @@
  * **Dry by default: the runtime starts and one session is created, no prompt, no credits.** `--spend` sends real prompts through
  * Durbar's own adapter (the owner's OK first, AGENTS.md), at most `MAX_PROMPTS`, stopping at `MAX_AIU`, and refuses under `CI`.
  *
- *   node dist-scripts/scripts/copilot-giveup-real.js <out.json> [--spend] [--phases p1,p2,...] [--repl <dir>] [--forge]
+ *   node dist-scripts/scripts/copilot-giveup-real.js <out.json> [--spend] [--phases p1,p2,...] [--repl <dir>]
  *
  * A real hang is made with SIGSTOP on the runtime process (Linux only), so the pipe stays open and calls wait, as a hung runtime's
  * would; SIGCONT brings it back. Ask first, and the permission gate approves only the exact fixed command of the step. Everything runs
@@ -18,17 +18,13 @@
  * `--repl <dir>` (issue #1028 question 3, the runtime's own limit, which needs at least 30 credits of real use): one session, kept alive so the
  * runtime's count stays, driven step by step by fixed commands in `<dir>/cmd` (see `runCommandLine`). `fill` reaches the cap on a dear model with
  * random words. No model call at `MAX_REPL_AIU` credits or over, by this script's own count. `history.truncate` resets the runtime's count (real
- * 2026-11-02), and a new exhaustion is another 30 credits, so `--forge` adds a local request handler: real model calls, and `bump <n>` adds n
- * credits to the usage figure of the next answer, inside this process, so the real runtime's own limit logic runs without paying for it. The
- * forged part is counted apart and never passes the upstream.
+ * 2026-11-02): do not use it on a session you paid to exhaust, a new exhaustion is another 30 credits.
  *
  * Output: event names and timings only, never prompts' answers, session ids, paths or tool output.
  */
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { CopilotClient, CopilotRequestHandler, CopilotWebSocketForwarder } from '@github/copilot-sdk';
-import type { CopilotRequestContext } from '@github/copilot-sdk';
 import { COPILOT_DESCRIPTOR } from '../src/adapters/copilot';
 import { EventMapper } from '../src/adapters/map';
 import type { AgentAdapter, AgentEvent } from '../src/adapters/types';
@@ -97,52 +93,6 @@ const numbers = (type: string, d: Record<string, unknown> | undefined): string =
   }
   return '';
 };
-/* --forge: the usage figure of an answer, seen and changed in this process only */
-let bumpNext = 0;
-let forged = 0;
-const usageCounters = /"([a-z_]*nano_aiu|prompt_tokens|input_tokens|completion_tokens|output_tokens)"\s*:\s*(\d+)/g;
-const rewriteFrame = (text: string): string => {
-  const seenCounts = [...text.matchAll(usageCounters)].map((m) => `${m[1]}=${m[2]}`);
-  if (seenCounts.length) mark(`model answer usage: ${seenCounts.join(',').slice(0, 160)}`);
-  if (!bumpNext || !/"total_nano_aiu"/.test(text)) return text;
-  const add = bumpNext;
-  bumpNext = 0;
-  forged += add;
-  mark(`usage figure raised by ${add} credits (forged, local)`);
-  return text.replace(/"total_nano_aiu"\s*:\s*(\d+)/, (_m, n: string) => `"total_nano_aiu":${Number(n) + add * 1e9}`);
-};
-const rewriteStream = (res: Response): Response => {
-  if (!res.body) return res;
-  let tail = '';
-  const body = res.body.pipeThrough(new TextDecoderStream()).pipeThrough(new TransformStream<string, string>({
-    transform(chunk, ctl) {
-      const lines = (tail + chunk).split('\n');
-      tail = lines.pop() ?? '';
-      if (lines.length) ctl.enqueue(`${lines.map(rewriteFrame).join('\n')}\n`);
-    },
-    flush(ctl) { if (tail) ctl.enqueue(rewriteFrame(tail)); },
-  })).pipeThrough(new TextEncoderStream());
-  return new Response(body, { status: res.status, statusText: res.statusText, headers: res.headers });
-};
-class ForgeSocket extends CopilotWebSocketForwarder {
-  override sendResponseMessage(data: string | Uint8Array): Promise<void> {
-    if (typeof data === 'string') return super.sendResponseMessage(rewriteFrame(data));
-    return super.sendResponseMessage(new TextEncoder().encode(rewriteFrame(new TextDecoder().decode(data))));
-  }
-}
-class ForgeHandler extends CopilotRequestHandler {
-  protected override async sendRequest(request: Request, ctx: CopilotRequestContext): Promise<Response> {
-    const route = clean(new URL(request.url).pathname, 40);
-    mark(`http ${request.method} ${route} (${ctx.interactionType ?? 'no type'})`);
-    const res = await super.sendRequest(request, ctx);
-    mark(`http ${route}: ${res.status}`);
-    return /responses|completions|messages/.test(route) ? rewriteStream(res) : res;
-  }
-  protected override async openWebSocket(ctx: CopilotRequestContext): Promise<ForgeSocket> {
-    mark(`websocket ${clean(new URL(ctx.url).pathname, 40)} (${ctx.interactionType ?? 'no type'})`);
-    return new ForgeSocket(ctx);
-  }
-}
 mapProto.map = function (this: unknown, x: unknown): void {
   const e = x as { type?: string; id?: unknown; data?: Record<string, unknown> };
   const type = String(e?.type);
@@ -203,7 +153,6 @@ async function main(): Promise<number> {
   const out: Record<string, unknown> = { date: new Date().toISOString(), os: `${process.platform} ${os.release()}`, node: process.version, dry: !spend };
   const ad: AgentAdapter = COPILOT_DESCRIPTOR.create();
   const inner = ad as unknown as Internals;
-  if (args.includes('--forge')) (ad as unknown as { createClient(): Promise<CopilotClient> }).createClient = async () => { const c = new CopilotClient({ requestHandler: new ForgeHandler() }); await c.start(); return c; };
   let sid = '';
   let prompts = 0;
   let approve = ''; // the one summary the gate approves now
@@ -251,7 +200,7 @@ async function main(): Promise<number> {
   const prompt = async (text: string, summary = ''): Promise<void> => {
     if (!spend) throw new Error('dry run: no prompt');
     if (prompts >= MAX_PROMPTS) throw new Error(`refused: ${MAX_PROMPTS} prompts used`);
-    if (aiu - forged >= MAX_AIU) throw new Error(`refused: ${aiu - forged} AI credits used`);
+    if (aiu >= MAX_AIU) throw new Error(`refused: ${aiu} AI credits used`);
     prompts++;
     approve = summary;
     mark(`send (prompt ${prompts})`);
@@ -318,7 +267,7 @@ async function main(): Promise<number> {
       beginPhase('repl');
       const ok = 'Reply with only: ok';
       const guard = (): void => {
-        if (aiu - forged >= MAX_AIU) throw new Error(`refused: ${round3(aiu - forged)} AI credits used`);
+        if (aiu >= MAX_AIU) throw new Error(`refused: ${round3(aiu)} AI credits used`);
         if (prompts >= MAX_PROMPTS) throw new Error(`refused: ${MAX_PROMPTS} prompts used`);
       };
       const direct = async (text: string, summary = ''): Promise<void> => {
@@ -372,10 +321,9 @@ async function main(): Promise<number> {
         switch (cmd) {
           case 'fill': await fill(a, Number(b)); break;
           case 'stop&': { const t = Date.now(); void ad.stop(sid).then(() => mark(`stop returned in ${Date.now() - t} ms`)); break; }
-          case 'bump': bumpNext = Number(a); mark(`next answer's usage figure: plus ${a}`); break;
           case 'model': await live().session.rpc.model.switchTo({ modelId: a }); mark('model switched'); break;
           case 'truncate': if (firstUserEvent) { const r = await live().session.rpc.history.truncate({ eventId: firstUserEvent }); mark(`truncate: ${numberOf(r.eventsRemoved)} events removed`); firstUserEvent = ''; } break;
-          case 'state': { const l = live(); mark(`state: real ${round3(aiu - forged)}, forged ${round3(forged)}, capNow ${l.capNow}, runtime request ${!!l.limitRequestId}, local limit ${l.localLimit ? (l.localLimit.held ? 'with a held message' : 'none held') : 'no'}, late calls ${l.lateCalls?.size ?? 0}, turn open ${!!l.turnOpen}, processing ${await processing()}`); break; }
+          case 'state': { const l = live(); mark(`state: count ${round3(aiu)}, capNow ${l.capNow}, runtime request ${!!l.limitRequestId}, local limit ${l.localLimit ? (l.localLimit.held ? 'with a held message' : 'none held') : 'no'}, late calls ${l.lateCalls?.size ?? 0}, turn open ${!!l.turnOpen}, processing ${await processing()}`); break; }
           case 'hang': hang(); break;
           case 'unhang': unhang(); break;
           case 'interrupt': { const t = Date.now(); await ad.interrupt?.(sid); mark(`interrupt returned in ${Date.now() - t} ms`); break; }
@@ -591,9 +539,9 @@ async function main(): Promise<number> {
     try { if (runtimePid) process.kill(runtimePid, 'SIGCONT'); } catch { /* gone */ }
     stopWatches.forEach((s) => s());
     for (const p of leftovers) { try { process.kill(p, 'SIGKILL'); } catch { /* gone */ } }
-    Object.assign(out, { prompts, aiu, forged, realAiu: aiu - forged, marks });
+    Object.assign(out, { prompts, aiu, marks });
     fs.writeFileSync(outFile as string, JSON.stringify(out, null, 2));
-    console.log(`prompts ${prompts}, about ${(aiu - forged).toFixed(3)} AI credits${forged ? ` (and ${forged} forged)` : ''}`);
+    console.log(`prompts ${prompts}, about ${aiu.toFixed(3)} AI credits`);
     if (sid) await ad.stop(sid).catch((e: unknown) => console.log(`stop failed: ${msg(e)}`));
     const del = (ad as unknown as { deleteSession?: (s: string) => Promise<void> }).deleteSession;
     if (sid && del) await del.call(ad, sid).catch((e: unknown) => console.log(`deleteSession failed (the session stays on disk): ${msg(e)}`));
