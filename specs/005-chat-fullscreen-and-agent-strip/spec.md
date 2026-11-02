@@ -107,6 +107,10 @@ Header actions: **Stop** (interrupt the turn; the agent stays ready), **End sess
 
 ## Changes
 
+### 2026-10-31: MCP context cost (spec 100)
+
+**FR-052**: the token summary adds an *MCP tools* bar when a report exists, labelled as estimated when it is; the MCP chip adds the tokens (FR-053). Owned by [spec 100](../100-mcp-context/spec.md) FR-010, FR-013.
+
 ### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
 
 The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
@@ -516,3 +520,6 @@ The chat's chrome takes 367 of 900 px today, 41% of the window, in five rows plu
 
   **What the gate decides, from the numbers it gets:** if the full zoom holds 60 fps, within `check:perf`'s budgets, on every machine tried, build it. **Otherwise the fallback, "chat grows, room still";** if that does not hold either, a plain cut stays, and the row is closed with its numbers. Without a GPU (virtual machines, remote desktops) it falls back to a cut by a measured check, never by guessing. Keeping the office painted behind a chat costs memory and must pause when hidden: the build measures that against 097 FR-178. Flat has no monitor, only a cabin picture on a card, so Flat may keep the cut. **There is no user need behind this, only character,** so it never makes the app feel slower. Motion rules: 052 FR-068.
 
+## Changes 2026-11-02: removed page and tools (owner decision, PR #1054)
+
+`scripts/edit-stream-real.ts` were removed on 2026-11-02 by owner decision (no caller; run dates and credit counts above stay valid history); the scripts are in git history at commit `1c75b5bee`.

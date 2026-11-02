@@ -127,6 +127,62 @@ P1 to P3 may merge before the gate with nothing visible as available; P4 to P6 r
 
 Reused: `realLayout`, FR-226's list, `WORLD_SETS`, `lightFor`, the live-screen masking of 097; the registry and matrix of spec 098. Public notes and changelogs name no unreleased world.
 
+## Monitor and arrangements (FR-220..FR-236)
+
+**Reuse (spec 021 FR-031).** `realLayout`, `FX_POSE`, the `Layout`, `ZoneBox` and `DeskBox` types (`src/shared/realoffice-layout.ts`, #921); `test:realoffice-layout`; `check-office-ops`, `check:office`, `world-matrix.js`; `worldpack.ts` and `test:worldpack` (FR-050, one validator); `ro-bezel` as the monitor's fallback; FR-061's lazy load in 097; `DurbarReorder` and the model's order (#987).
+
+**Looked at and not reused: `chooseLayout` and the room-by-room search (#984).** The brief named them, but they are the flat office's: DOM probes, densities, wrapping rooms. A world's office never runs them (097 keeps its own pure engine, "a Real office start, with no search"). An arrangement in that code would add a DOM search to a path that has none. FR-233 records this; no interplay beyond the shared gate.
+
+```text
+world.json  arrangement: "circle"
+   -> worldpack.ts          id in ARRANGEMENTS, focus.webp present
+   -> realoffice.js         rows? call as today. Otherwise load realoffice-arrangements once
+   -> realLayout(model, view, meta, signs, arrangement)
+        rows                exactly today's path
+        other, project      that layout, at every count up to 15
+        other, shared pack  arrangementFits -> fit: that layout; no fit: rows, Layout.arrangement = "rows"
+   -> realoffice.js         same drawing, plus focus at Layout.focus when present
+```
+
+- **`circle`:** split the floor round a centre `focus` rectangle, pack zones into left, top, right bands with the existing row maths per band, `u` the largest that fits, by bisection like FR-011. Bounded search: FR-019's 5 ms, fall-back attempt included.
+- **`facing-view`:** rows on a floor shortened by the `focus` band; the least code, since it calls the row path.
+- **`flanking`:** two desk blocks either side of a central aisle; fixtures in the aisle. **`aisles`:** staggered angled aisles, geometry open until the owner approves the mockup.
+- **Few agents:** each arrangement grows its screens inside itself at 4 or fewer (FR-230), so 097 FR-020's one shared row applies to `rows` only.
+- **Monitor in the engine:** `meta` gains an optional `monitor: {w, h, screenRect}`. Absent: today's `screen` and `glass`, byte for byte. A rows world with a monitor picture does pay for its picture: inside the part caps and the 097 FR-178 area row, and the same for every world; "no cost" (FR-231) is about the arrangement code.
+
+**Risks.**
+
+| Risk | Answer |
+|---|---|
+| 15 agents do not fit with a `focus` area at 24 px faces | T165 first, pure and free; redesign the arrangement (A5) |
+| A project world has no fall-back, and the beach's mockup is under 24 px at 15 | Redesign (FR-235); T165 first, measured in the app |
+| A lounger looks wrong with an upright seated frame | FR-224; art brief; the owner's look. No reclining poses |
+| Screens on small laptops | Same `screenRect` floor; bars under 150x60 (097 FR-032) |
+| Hostile `arrangement` | FR-226, fixtures in `test:worldpack` |
+| Conflict with 097's engine on open PRs | Build after #921 and #974; 097's text through T164 |
+| Fire as endless animation | Still picture; FR-227 |
+
+**Order:** after 102 P1 (validator) and #921. T165 and T166 can run first as they are pure and on the simulator.
+
+## Delta 2026-11-02: petrol garage, founders' garage and rooftop terrace (FR-280..FR-299)
+
+**Reused (spec 021 FR-031).** `layoutFor`, `ARRANGEMENTS`, `Layout`, `lobbyBand`, `lobbyWidths`, `stagger`, `lightFor` (#1016, 097); `WORLDS`, `WORLD_FLAGS`, `peopleFor`, `parseWorld`, `offeredWorlds` (`crew.js`); `worldflags`, `officeview`, `world` (simulator options); `NOTE_PAPER`, `NOTE_INK`, `notePaper` (#994); the 12-a-second grid and `check-097-motion` (#1046); `world-matrix.js`, `check-world-tools`, `test:surfaces` (098); T093, T094, `check-world-distinct`; `test:realoffice-assets`; FR-227's `focus.webp`; FR-223's `desk-back`; the moment rules of FR-271 on #1014. **New and shared, none per world:** the table-driven plan function, `focus` drawn, floor and wall from pack parts with no `world.css`, `notePaper`, `noteStyle`, `--moments`, `DURBAR_SIM_WORLDFLAGS`.
+
+**Order of work, by the named exception (decided, Q11).** Landed alone, because reachable today: T244 (the matrix fix and `--moments`), T247's scene, T248. On a branch, costing no credits: T240's cards, which land with T093's check because `test:world-catalogue` reads them, so they are not unreachable, T241, T242, T243, T245, T258, then the owner's look at grey boxes (T246). Art follows his written yes per image run, after checking the plan's usage (Q1), one pack at a time. **Then one PR per world, in the order petrol, founders', roof:** its table in `ARRANGEMENTS`, its pack (T250, T251, T252), its helpers (T253) when T235 has landed, its row and flag (T259) and its cells (T254). The first also brings T242, T243, T245, T249 and T258, unless Cave has brought T242. Per world after landing: T255, with the 30-day ask. T256 as its PRs land. T257 only when the store is on `main`.
+
+| Step | Gate | Cost |
+|---|---|---|
+| T244, T247's scene, T248 | The next built-in world's stack on `main` | 0 AI credits; about 3 shared PRs, landing alone |
+| T240..T243, T245, T249, T258 | T093 for T240; on a branch until the first world's art is approved | 0 AI credits; about 200 lines of plan code plus tests and small shared rules, inside the per-world PRs |
+| T246 | The plans pass T241 | The owner's look |
+| T250..T253, T259 | Q1, T240, T246 | 36 to 54 images on the owner's plan, check its usage first; about 0.75 MB a pack (estimate); 3 per-world PRs, each with its table, pack, flag and cells |
+| T254, T255 | FR-035, with 097 FR-179; T254 lands in its world's PR | Owner's look per world, `real:` run on a Mac; over 30 days behind the flag, the owner chooses: open or remove |
+| T257 | #955, #966, T043, T190 | Two PRs per world |
+
+**Risk: the plans are arithmetic.** `bays` has the tightest numbers, since 8 seats at 156 px have no room for a bust beside the screen; hence the stacked back bank. T241 comes before any art so that a plan can fail cheaply. **Risk: repo growth,** an estimated 2.25 MB that stays in history after T257 (Q2).
+
+**Constitution.** I: spec, plan, tasks here, no `src/`. II: nothing vendor-specific. III: packs stay data; `notePaper` and `noteStyle` are validated (FR-055); the simulator flag exists only under `DURBAR_SIM`. IV: image runs only on the owner's written yes, simulator otherwise. V: 10.5 px, 15 agents at both sizes, no status by colour alone, reduced motion freezes everything. VI: no path or shell difference; packaged runs listed. VII: FR-297's table. VIII: the mock's limits are stated, numbers tagged as arithmetic or measured.
+
 ## Done when
 
 Tasks ticked, `/speckit.converge` run, SC-001..SC-018 read, README *Safety model* lists the new connection, and `real:` rows recorded or left as `[KNOWN GAP]`.

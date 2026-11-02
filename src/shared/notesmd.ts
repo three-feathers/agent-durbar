@@ -1,5 +1,5 @@
 /**
- * The project notes file `.durbar/notes.md` (spec 083 FR-052, FR-054, SC-004, issue 699): its writer and its parser. Pure: no fs, no
+ * The project notes file `.durbar/notes/notes.md` (spec 083 FR-052, FR-054, SC-004, issue 699): its writer and its parser. Pure: no fs, no
  * process, no clock (times come in as data), so it is unit tested (`npm run test:notesmd`). The file lives in a project folder, so
  * anyone with write access to it (an agent, a teammate's commit, a cloned repository) may have written what `parseNotesMd` reads: it is
  * untrusted data. Parsing is linear in the input (no backtracking regex on a whole line), keys nothing by text from the file (no
@@ -20,7 +20,7 @@ export const NOTES_MD_HEADER = `# Notes\n\n${NOTES_MD_HEADER_COMMENT}\n`;
 /** FR-048 (T034b): the header of an *Export…* file, which nothing reads back; the body is FR-052's format, unchanged. */
 export const NOTES_EXPORT_HEADER = '# Notes\n\n<!-- Exported from Agent Durbar (spec 083). Notes are listed oldest first. Secrets are masked. -->\n';
 /** FR-054's message for a file with merge conflicts or one that cannot be read. */
-export const NOTES_MD_UNREADABLE = '.durbar/notes.md has merge conflicts or could not be read. Fix it in your editor; Durbar will not overwrite it until then.';
+export const NOTES_MD_UNREADABLE = '.durbar/notes/notes.md has merge conflicts or could not be read. Fix it in your editor; Durbar will not overwrite it until then.';
 /** The plan's message for text outside notes, shown once (FR-054). */
 export const NOTES_MD_STRAY = 'Text outside notes in notes.md is not kept';
 /** A marker line longer than this has its attributes ignored (it is still a marker: a new note). */
