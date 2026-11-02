@@ -5,7 +5,7 @@ import * as path from 'path';
 import { Worker } from 'worker_threads';
 import { MASK_INPUT_MAX, REDACT_MAX_CHARS, createDebugSink, _uncappedForTest, cut, maskSchemeSecrets, maskTokenShapes, maskTokenShapesUnguarded, maskSecretArgs, maskSecretCommand, maskHomePaths, maskSecretUrl, redact, shQuote, splitCommand } from '../src/shared/redact';
 
-import { cpuMs } from './redact-growth-lib';
+import { assertLinearShape, cpuMs } from './redact-growth-lib';
 // Growth and adversarial runs: `test-redact-growth.ts` (split by spec 012 T137, issue #1009; the helpers are in `redact-growth-lib.ts`).
 const GH = 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8';
 const env = {
@@ -139,13 +139,10 @@ assert.strictEqual(redact(`l1\n${planted.ghp}\r\nl3\n`, {}), 'l1\n[redacted]\r\n
 {
   const big = ('word '.repeat(19) + 'sk-' + 'a'.repeat(10) + '\n').repeat(12000); // > 1 MB
   assert.ok(big.length > REDACT_MAX_CHARS);
-  let out = '';
-  const ms = cpuMs(() => { out = redact(big, env); }, 1500);
-  assert.ok(ms < 1500, `1 MB redaction took ${ms} ms`);
-  assert.ok(out.length <= REDACT_MAX_CHARS + 20, 'input capped at 1 MB');
-  const pathological = 'a'.repeat(REDACT_MAX_CHARS);
-  const ms2 = cpuMs(() => { redact(pathological + ':' + pathological, env); }, 1500);
-  assert.ok(ms2 < 1500, `pathological single token is fast (${ms2} ms)`);
+  assert.ok(redact(big, env).length <= REDACT_MAX_CHARS + 20, 'input capped at 1 MB');
+  // linear, against the same shape in the same run (spec 012 T138), also past the cap
+  assertLinearShape('1 MB redaction', (x) => void redact(x, env), (n) => big.slice(0, n), 1_000_000);
+  assertLinearShape('pathological single token', (x) => void redact(x, env), (n) => 'a'.repeat(n / 2) + ':' + 'a'.repeat(n / 2), 900_000); // under the cap: past it, the cut would leave nothing to time
 }
 
 // 7. never throws
@@ -592,9 +589,7 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   assert.doesNotThrow(() => { maskSecretArgs([null as any, undefined as any, 5 as any]); maskSecretCommand(null); maskSecretUrl(null); });
   const big = 200_000;
   const shapes = ['--token ' + 'a '.repeat(big / 2), '{"a":"'.repeat(big / 6), 'a=b;'.repeat(big / 4), 'x://' + '@'.repeat(big), 'http://' + 'a:'.repeat(big / 2), '/bot1:'.repeat(big / 6), ';token='.repeat(big / 7), '"k": "'.repeat(big / 6), '['.repeat(big)];
-  const ms = cpuMs(() => { for (const x of shapes) { _uncappedForTest.maskSecretArgs([x]); maskSecretUrl(x); _uncappedForTest.maskSecretCommand(x); } }, 20000);
-  console.log(`redact: masking 200k-char adversarial inputs in ${ms} ms`);
-  assert.ok(ms < 20000, `masking 200k-char adversarial inputs took ${ms} ms`);
+  for (const x of shapes) assertLinearShape(`adversarial ${x.slice(0, 12)}`, (t) => { _uncappedForTest.maskSecretArgs([t]); maskSecretUrl(t); _uncappedForTest.maskSecretCommand(t); }, (n) => x.slice(0, n), 200_000);
 }
 
 // 14c. T064 masking follow-ups (spec 041 `## Changes` 2026-10-20, R1-R8). SEC is built at run time; no output may contain it.
@@ -1110,16 +1105,9 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   assert.strictEqual(redact('see ?codec=1&statement=2'), 'see ?codec=1&statement=2', 'a longer name is not one of them');
   assert.ok(!JSON.parse(lines[0]).stderr.includes('AUTHCODE'), 'the line stays valid JSON');
   // bounded and linear: long values and long runs of separators
-  // best of three runs: one GC pause or a busy core under a parallel `npm test` must not fail it; a quadratic rule is slow every run
-  const best3 = (f: () => void, cap: number): number => Math.min(cpuMs(f, cap), cpuMs(f, cap), cpuMs(f, cap));
-  const t1 = best3(() => void redact('?code=' + 'a'.repeat(200_000)), 2000);
-  const t2 = best3(() => void redact('?code=' + 'a'.repeat(800_000)), 2000);
-  const r1 = best3(() => void redact('&state='.repeat(30_000)), 2000);
-  const r2 = best3(() => void redact('&state='.repeat(120_000)), 2000);
-  const s1 = best3(() => void redact('%3F'.repeat(60_000)), 2000);
-  const s2 = best3(() => void redact('%3F'.repeat(240_000)), 2000);
-  console.log(`redact: oauth query linearity value ${t1.toFixed(0)}/${t2.toFixed(0)} ms, names ${r1.toFixed(0)}/${r2.toFixed(0)} ms, separators ${s1.toFixed(0)}/${s2.toFixed(0)} ms`);
-  for (const [a, b, what] of [[t1, t2, 'value'], [r1, r2, 'names'], [s1, s2, 'separators']] as const) assert.ok(b < Math.max(250, a * 10), `oauth query rule is linear (${what}: ${a} -> ${b} ms CPU for 4x input)`); // a floor well above Windows' ~16 ms timer step and CI load; backtracking would take seconds
+  assertLinearShape('oauth query value', (x) => void redact(x), (n) => '?code=' + 'a'.repeat(n));
+  assertLinearShape('oauth query names', (x) => void redact(x), (n) => '&state='.repeat(Math.ceil(n / 7)));
+  assertLinearShape('oauth query separators', (x) => void redact(x), (n) => '%3F'.repeat(Math.ceil(n / 3)));
 }
 
 // 14e. T072 (#502, R12): PowerShell hashtable literals `@{ Name = Value; ... }`. The value of a secret-looking member is hidden, quotes kept.

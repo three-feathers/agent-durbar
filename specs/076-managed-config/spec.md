@@ -1216,3 +1216,7 @@ The rule is built and tested (`requireOsSandboxFrom`, `src/main/sandboxpolicy.ts
 reachable in the app (`[KNOWN GAP]`, as `updatepolicy.ts`). FR-173's open point is answered by spec 087: Claude Code's and Copilot's
 OS sandboxes now hold their shell commands in Read-only and Ask first, and Settings > Agent apps shows each app's sandbox line (spec 087
 FR-012); there is no Organization page yet for the pointer FR-012 asks for.
+
+### 2026-10-31: the theme maker and Import are retired (spec 040 FR-031; spec 021 FR-067)
+
+- **FR-091** and **FR-158** change: `appearance.allowThemeMaker`, `features.themeMaker` and the Import part of `allowUserThemes` are **no-ops** (accepted, ignored, never an error), because *Make a theme with AI* and *Import a theme* no longer exist. `allowUserThemes: false` still hides the list of themes you saved and **Remove the active theme…**. A managed theme pack still goes through `checkUserManifest`. Spec 076 is a draft: nothing was built for these keys.
