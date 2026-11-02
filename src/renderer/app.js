@@ -1778,10 +1778,12 @@ function realModel(model){
 /* each pending card is one request: its id is made once and kept, so a slip's button names the request it shows, not "the agent's first pending card" (a double click, or a new request arriving, must never answer another one) */
 const CARD_REQ=new WeakMap(); let CARD_REQ_N=0;
 const reqOf=c=>{if(!CARD_REQ.has(c))CARD_REQ.set(c,'rq'+(++CARD_REQ_N));return CARD_REQ.get(c);};
+/* a card the inbox row shows details for ("Show the change", "Show the command"): the very selector the inbox row uses. A slip never offers Allow for such a card: a person must not approve blind (review on #994, 2026-11-02) */
+const cardHasDetail=card=>!!card&&!!card.querySelector(':scope > details.pdiff, :scope > details.pcmd');
 function realSlips(){
   const D=window.DurbarPlaces, out={queue:null,limit:null,elicit:[]};
-  const items=[];
-  for(const a of needsMeOrder()){
+  const items=[], all=needsMeOrder(); /* the pill, "+N more" and the label count the inbox's own set (every request, status and limit included) */
+  for(const a of all){
     const card=pendingCardOf(a); if(!card)continue;
     const who=a.profile?a.profile.name+' · '+a.role:a.role;
     if(card.classList.contains('limit')){
@@ -1797,11 +1799,12 @@ function realSlips(){
   if(items.length){
     const first=items[0], q=first.card.classList.contains('question');
     const what=q?'asks':'needs your OK';
-    out.queue={total:items.length,
+    out.queue={total:all.length,
       first:{id:first.a.id,req:reqOf(first.card),name:first.a.name,who:first.who,what,folder:roomOf(first.a).name,text:requestText(first.card),
-        actions:(q?[]:inboxActs(first.card).map((b,i)=>({idx:i,label:b.textContent,title:b.title||'',cls:(b.className.match(/\b(primary|danger|session)\b/)||[''])[0]}))).concat(q?[{idx:-1,k:'open',label:'Answer in chat',title:'',cls:'primary'}]:[])},
+        detail:!q&&cardHasDetail(first.card),
+        actions:(q||cardHasDetail(first.card)?[]:inboxActs(first.card).map((b,i)=>({idx:i,label:b.textContent,title:b.title||'',cls:(b.className.match(/\b(primary|danger|session)\b/)||[''])[0]}))).concat(q?[{idx:-1,k:'open',label:'Answer in chat',title:'',cls:'primary'}]:[])},
       folded:items.slice(1,3).map(x=>({id:x.a.id,text:x.a.name+' '+(x.card.classList.contains('question')?'asks: ':'needs your OK: ')+requestText(x.card).slice(0,60)})),
-      more:Math.max(0,items.length-3),door:D.BOSS};
+      more:Math.max(0,all.length-1-Math.min(2,items.length-1)),door:D.BOSS};
   }
   return out;
 }
@@ -1818,7 +1821,7 @@ document.addEventListener('click',e=>{
     return;
   }
   const card=[...getChat(a).el.querySelectorAll('.note.perm:not(.settled)')].find(n=>reqOf(n)===b.dataset.slipreq); if(!card)return; /* answered already or replaced: nothing is sent */
-  if(act==='perm'){const src=inboxActs(card)[Number(b.dataset.slipidx)];if(src)src.click();return;}
+  if(act==='perm'){if(cardHasDetail(card)){openInbox();return;} /* a change or command to read arrived since the slip was drawn: the inbox shows it */const src=inboxActs(card)[Number(b.dataset.slipidx)];if(src)src.click();return;}
   if(act==='limit'){
     const btns=[...card.querySelectorAll(':scope > .note-actions button')], src=btns[Number(b.dataset.slipidx)], inp=card.querySelector('.limit-amt'), mine=b.closest('.ro-slip')&&b.closest('.ro-slip').querySelector('.limit-amt');
     if(inp&&mine)inp.value=mine.value;
@@ -8595,7 +8598,7 @@ if(pendingOpen&&demoOn){openPanel(pendingOpen,false);pendingOpen=null;}
 const settleNow=()=>{if(!agentsListed||!window.__durbarSimReplayed||baselineQueued||baselineAsking)return false;if(renderQueued){renderQueued=false;renderAll();}return true;};
 /* simulator drivers load with simfreeze=1: the desk glow then holds still (FR-178: the geometry and screenshot checks measure boxes, so no zoom may be mid-way); the unread driver opts back in with hlmotion=1 to test the motion itself */
 if(SIM&&qs.get('simfreeze')==='1'&&qs.get('hlmotion')!=='1')document.documentElement.classList.add('hl-still');
-if(SIM)window.__durbarSimUi={agents:()=>agents,setLive:setLiveOn,setOfficeView,unread:{mark:id=>UNREAD.complete(id,false)==='marked',read:id=>markRead(byId(id))}, /* spec 097 (the moments driver): the New reply mark and Mark as read, as the app sets them */order:{get:()=>ORDER,saved:()=>bridge.getOrder?bridge.getOrder():null,reset:resetOrder,path:id=>(ROOMS.find(r=>'room:'+r.id===id)||{}).path||''}, /* issue 677 (check 033-order): the order held and saved, Reset, a room's key */
+if(SIM)window.__durbarSimUi={agents:()=>agents,setLive:setLiveOn,setOfficeView,needsCount:()=>needsMeOrder().length,clearDetail:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return false;c.querySelectorAll(':scope > details.pdiff, :scope > details.pcmd').forEach(x=>x.remove());scheduleRender();return true;},addDetail:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return false;const d=document.createElement('details');d.className='pdiff';d.innerHTML='<summary>Show the change (+1 \u22121)</summary><pre>- a\n+ b</pre>';c.insertBefore(d,c.querySelector(':scope > .note-actions'));scheduleRender();return true;},requestText:s=>{const n=document.createElement('div');n.className='note elicit';n.textContent=String(s);return requestText(n);},setSerious:v=>{SERIOUS=!!v;return SERIOUS;}, /* spec 097 (the moments driver): a change in the card, the card text's masking, Serious mode */unread:{mark:id=>UNREAD.complete(id,false)==='marked',read:id=>markRead(byId(id))}, /* spec 097 (the moments driver): the New reply mark and Mark as read, as the app sets them */order:{get:()=>ORDER,saved:()=>bridge.getOrder?bridge.getOrder():null,reset:resetOrder,path:id=>(ROOMS.find(r=>'room:'+r.id===id)||{}).path||''}, /* issue 677 (check 033-order): the order held and saved, Reset, a room's key */
   toast:(s,act)=>{const t=act?toastAction(esc(String(s)),String(act),()=>{},8000):toast(esc(String(s)),8000);return !!t;}, /* spec 097 FR-113: a toast for the world-chrome driver (simulator only) */realLayout:()=>RO_LAST, /* spec 097: the last Real office layout (check-office-overlap's Real office variant) */slips:()=>realSlips(), /* spec 097: what the world draws as slips (the moments driver; simulator only) */uncrowd:()=>{agents.forEach(x=>VISITS.unpin(x.id));scheduleRender();return true;},crowd:(pid,n,from)=>{const a=agents.filter(x=>!x.parent).slice(from||0,(from||0)+n);a.forEach(x=>VISITS.pin(x.id,pid,'test'));scheduleRender();return a.length;}, /* spec 097: n main agents stand at a place (a "+N" crowd for the driver; simulator only) */crew:{state:()=>({map:{...CREW_MAP},help:{...CREW_HELP},bad:[...CREW_BAD],hasModule:!!CREW}),renderAll:()=>{renderAll();return true;},probe:()=>{try{crewPreload();syncCrew();return {ok:true,of:agents.map(x=>crewOf(x)).filter(Boolean).length};}catch(e){return {ok:false,err:String(e&&e.message)};}},openInbox:()=>{openInbox();return true;},closeInbox:()=>{closeInbox();return true;},openPanel:id=>{openPanel(id);return true;},fall:c=>{const f0=CREW.file;CREW.file=(i,p)=>i===c?'crew/art/gone.webp':f0(i,p);crewLoaded.clear();crewPreload();CREW.file=f0;return true;}}, /* spec 077 (check-crew): the character map, a render, and one character's pictures failing to load */
   readAll:(quiet)=>{const n=UNREAD.size;UNREAD.ids().forEach(id=>{UNREAD.read(id);UNREAD_AT.delete(id);});if(!quiet)scheduleRender();return n;},notes:{all:()=>[...NT.by.values()].map(x=>x.notes||[]).flat(),saveMsg:btn=>{const a=byId(ui.selected);return notesSaveMsg(a,msgInfo(btn),btn);},noCommands:()=>{const x=agents.find(q=>q.live&&!q.parent&&!slashSupported(q));return x?x.name:'';},selNow:()=>{showSelButton();const b=document.getElementById('ntSelBtn');return !!b&&!b.hidden;},open:()=>openNotes(byId(ui.selected)),close:()=>closeNotes(false),search:q=>{const f=$('ntSearch');if(!f)return false;f.value=q;f.dispatchEvent(new Event('input'));return true;},marks:{clear:()=>{document.querySelectorAll('#chat .nt-mark').forEach(x=>x.remove());document.querySelectorAll('#chat .bubble').forEach(b=>{b._nd=undefined;});return true;},run:()=>notesMarkAll(byId(ui.selected))},change:(note,patch)=>notesChange(byId(ui.selected),note,patch),rename:note=>renameNote(byId(ui.selected),note,null),plant:n=>{const a=byId(ui.selected),st=a&&notesOf(a);if(!st||!st.ok)return false;st.notes.push(n);notesPaint();if(slashUi)slashUpdate();return true;}}, /* spec 083: the check-notes driver reads the window's notes and takes the paths a click cannot */
   sizingLounges:()=>lastSizing.reduce((n,m)=>n+(m.rolled||[]).length,0), sizingMains:()=>lastSizing.reduce((n,m)=>n+m.mains.length,0), /* FR-181: the desks it is sized for (a pill does not reshape the cards) */ /* spec 001 FR-180: the finished agents the office is sized for */
