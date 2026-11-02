@@ -55,7 +55,7 @@ module.exports = async (ctx) => {
     await watch(); await H.calm();
   };
   const panel = async (open) => { await js(`(()=>{const p=document.getElementById('floorsPop');if(p.hidden===${open})document.getElementById('floorsBtn').click();})()`); await until(`document.getElementById('floorsPop').hidden===${!open}`); };
-  const floorSw = async (id, want) => { await panel(true); const on = await js(`document.querySelector(${jsLiteral(`[data-fl="on"][data-floor="${id}"]`)}).getAttribute('aria-pressed')==='true'`); if (on !== want) await js(`document.querySelector(${jsLiteral(`[data-fl="on"][data-floor="${id}"]`)}).click()`); await until(`document.querySelector(${jsLiteral(`[data-fl="on"][data-floor="${id}"]`)}).getAttribute('aria-pressed')===${jsLiteral(want ? 'true' : 'false')}`); await panel(false); };
+  const floorSw = async (id, want) => { await panel(true); const on = await js(`document.querySelector(${jsLiteral(`[data-fl="on"][data-floor="${id}"]`)}).getAttribute('aria-checked')==='true'`); if (on !== want) await js(`document.querySelector(${jsLiteral(`[data-fl="on"][data-floor="${id}"]`)}).click()`); await until(`document.querySelector(${jsLiteral(`[data-fl="on"][data-floor="${id}"]`)}).getAttribute('aria-checked')===${jsLiteral(want ? 'true' : 'false')}`); await panel(false); };
   const only = async (id) => { await panel(true); await js(`document.querySelector(${jsLiteral(`[data-fl="only"][data-floor="${id}"]`)}).click()`); await until(`document.getElementById('floorsBtn').hidden||document.getElementById('floorsBtn').textContent.trim().startsWith('1/')`); await panel(false); };
   const pressUntilTag = async (k, name) => { await key(k); assert.ok(await onFloor(name), `${k} should show ${name}`); await settle(); };
 

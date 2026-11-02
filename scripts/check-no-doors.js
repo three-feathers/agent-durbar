@@ -59,9 +59,10 @@ module.exports = async (ctx) => {
     await js(`localStorage.setItem('durbar.doorsigns','off')`);
     await H.load({ w, h, ready: 'fit' });
     assert.strictEqual(await js(`localStorage.getItem('durbar.doorsigns')`), null, `${tag}: durbar.doorsigns is removed on a start`);
-    // Settings: no Office layout row
+    // Settings: the Office layout row (spec 097) offers Open office and Real office only, no cabins
     await openSched();
-    assert.strictEqual(await js(`/Office layout|Office with cabins|cabin/i.test(document.getElementById('screen').innerText)`), false, `${tag}: Settings has no Office layout row`);
+    assert.strictEqual(await js(`/Office with cabins|\\bcabins?\\b|\\bdoors?\\b/i.test(document.getElementById('screen').innerText)`), false, `${tag}: Settings mentions no cabins or doors`);
+    assert.strictEqual(await js(`[...document.querySelectorAll('[data-officelayout]')].map(b=>b.dataset.officelayout).join()`), 'open,real', `${tag}: Office layout offers Open office and Real office only`);
     assert.strictEqual(await js(`document.querySelectorAll('#schedSet #heldBefore').length`), 0, `${tag}: nothing held, no "Held from before the update" row`);
     await H.key('Escape');
     await shot('no-doors', w, h);

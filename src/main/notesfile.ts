@@ -20,6 +20,7 @@ import * as nodeFs from 'fs';
 import * as path from 'path';
 import { createHash, randomInt } from 'crypto';
 import { NOTES_LIMITS, cleanTitle, fitText } from '../shared/notes';
+import { readCapped, type CappedRead } from '../shared/cappedread';
 import type { Note, NotesFileState, NotesMirror } from '../shared/notes';
 import { NOTES_MD_UNREADABLE, parseNotesMd, writeNotesMd, type NotesMdSection } from '../shared/notesmd';
 import { isInsideRoots } from '../adapters/permissions';
@@ -44,7 +45,7 @@ export interface NotesFileOptions {
 }
 
 export type FileFail = { ok: false; code: 'refused' | 'missing' | 'conflict' | 'too-big' | 'changed' | 'write' | 'cap'; error: string };
-type Read = { ok: true; buf: Buffer } | { ok: false; code: 'missing' | 'link' | 'not-file' | 'links' | 'too-big' | 'changing' | 'error'; errno?: string };
+type Read = CappedRead;
 
 const errCode = (e: unknown): string => {
   const c = (e as { code?: unknown } | null)?.code;
@@ -62,41 +63,6 @@ const READ_WHY: Record<Exclude<Read, { ok: true }>['code'], string> = {
   missing: 'is not there', link: 'is a link', 'not-file': 'is not a regular file', links: 'has more than one link (a hard link)',
   'too-big': 'is too large', changing: 'changed while being read', error: 'could not be opened',
 };
-
-/**
- * Read a file that a project ships, at most `cap` bytes, never blocking and never following a final link: open `O_RDONLY | O_NONBLOCK
- * | O_NOFOLLOW` (where defined; a FIFO opens at once and fails the regular-file check), `fstat` must say a regular file with one link
- * and a size within `cap`, then at most `size + 1` bytes are read (a file that grows meanwhile is `changing`). The bytes are returned
- * undecoded, so the cap is checked before any decoding.
- */
-export function readCapped(fs: Pick<NotesFileFs, 'openSync' | 'fstatSync' | 'readSync' | 'closeSync'>, k: NotesFileFlags, file: string, cap: number): Read {
-  let fd: number;
-  try {
-    fd = fs.openSync(file, k.O_RDONLY | (k.O_NOFOLLOW ?? 0) | (k.O_NONBLOCK ?? 0));
-  } catch (e) {
-    const c = errCode(e);
-    return c === 'ENOENT' ? { ok: false, code: 'missing' } : c === 'ELOOP' || c === 'EMLINK' ? { ok: false, code: 'link' } : { ok: false, code: 'error', errno: c };
-  }
-  try {
-    const st = fs.fstatSync(fd);
-    if (!st.isFile()) return { ok: false, code: 'not-file' };
-    if (st.nlink > 1) return { ok: false, code: 'links' };
-    if (st.size > cap) return { ok: false, code: 'too-big' };
-    const buf = Buffer.alloc(st.size + 1);
-    let n = 0;
-    while (n < buf.length) {
-      const r = fs.readSync(fd, buf, n, buf.length - n, n);
-      if (r <= 0) break;
-      n += r;
-    }
-    if (n > st.size) return n > cap ? { ok: false, code: 'too-big' } : { ok: false, code: 'changing' };
-    return { ok: true, buf: buf.subarray(0, n) };
-  } catch (e) {
-    return { ok: false, code: 'error', errno: errCode(e) };
-  } finally {
-    try { fs.closeSync(fd); } catch { /* gone */ }
-  }
-}
 
 /** FR-051: one path segment with gitignore's specials escaped (`*`, `?`, `[`, `\`, a leading `!` or `#`, trailing spaces). */
 export function escapeGitSegment(seg: string): string {
