@@ -6,24 +6,23 @@ Each entry: **what** (bold), why, how to apply, evidence (`real:`, `read:`, `tes
 
 ## Shell, git and processes
 
-- **`pkill -f` / `pgrep -f` match their own shell**, `[c]har` is not enough when the plain name is elsewhere on the line. Kill in its own command, select by field (`ps -eo pid,args | awk ...`), or keep the PIDs you started (2026-10-20).
+- **`pkill -f` / `pgrep -f` match their own shell**. Select by field (`ps -eo pid,args | awk ...`) or keep the PIDs you started (2026-10-20).
 - **Plain Node 22.18+ can `require()` an erasable `src/shared/*.ts`** (no `enum`, `namespace`, parameter properties), so a no-build script can reuse `redact.ts`. Wrap it and fail closed when it throws; `process.features.typescript` tells a test (spec 008 FR-122, `real:` Node 22.23).
-- **`npm test -- --bail`** stops at the first failing suite (ignored under `CI`); for the loop only, the final run is without it (spec 008 FR-115).
+- **`npm test -- --bail`** stops at the first failing suite (ignored under `CI`); not for the final run (spec 008 FR-115).
 - **systemd user units do not sandbox on an Ubuntu 24.04 VPS** (`apparmor_restrict_unprivileged_userns=1`): `InaccessiblePaths`, `ProtectHome`, `PrivateUsers` are dropped silently. Probe a setting with `systemd-run --user --wait --pipe -p <x> cat <file>`; use a separate unix user for isolation (FR-058, `real:` systemd 255).
 - **The Write tool turns a ` ` escape into the raw character**, and `tsc` then fails. Write such escapes with a Python edit and check with `perl -ne 'print if /[^\x00-\x7f]/'` (2026-10-25, `real:`).
 - **A lock "check, then act" needs a short `wx` guard and an owner token**: re-check under the guard, write or unlink only while the token is yours, move a stale guard aside and check identity (never `lstat` then `unlink`). Test with an injected fs that swaps the lock between calls. It narrows the race, it does not close it (spec 083 FR-008, #723, `test:` `test-notesstore.ts`).
 - **Capture `child_process` functions at call time, not at load**: a function grabbed at module load bypasses the simulator's seal and test spies; pass a wrapper that reads `child_process.execFile` when called (spec 081, `test:simguard`).
-- **Sealing a Node built-in works only on the real module object**: patch `require('child_process')` (`import x = require(...)`, not `import * as`, which gives an `__importStar` copy); TS's CommonJS output reads `child_process_1.execFile` at call time, so the seal reaches the rest of `src/` (spec 010 FR-030, `test-simguard` §5). `test:ipcchannels` bans `ipcMain` and `.ipc` outside `ipcguard.ts`.
-- **`import * as fs` has getters only**: to fake an fs call in a test, patch `require('fs')` (PR #489).
+- **Sealing a Node built-in works only on the real module object**: patch `require('child_process')` (`import x = require(...)`, not `import * as`, which gives an `__importStar` copy with getters only, so patch `require('fs')` to fake an fs call, PR #489); TS's CommonJS output reads `child_process_1.execFile` at call time, so the seal reaches the rest of `src/` (spec 010 FR-030, `test-simguard` §5). `test:ipcchannels` bans `ipcMain` and `.ipc` outside `ipcguard.ts`.
 - **git rerere can replay a stale resolution and silently drop a rule** (no markers; it dropped `.mode-menu` from `styles.css` twice). After "Resolved ... using previous resolution", rebuild each file with `git merge-file -p ours base theirs` and diff it, or `git rerere forget <file>` during the conflict (PRs #488, #511, `real:`).
 - **Your branch against another open PR**: `diff <(git merge-tree --write-tree --name-only origin/main B | grep ^CONFLICT | sort) <(git merge-tree --write-tree --name-only HEAD B | grep ^CONFLICT | sort)`; empty means you add no conflict for them (spec 074, `real:`).
-- **Union-merged `CHANGELOG.md`, `README.md` or `tasks.md` conflicts can duplicate rows**: count rows per id after resolving. An old-style `specs/README.md` row moves into its spec with `npm run specs:index -- --import` (2026-10-20).
+- **Union-merged `CHANGELOG.md`, `README.md` or `tasks.md` conflicts can duplicate rows**: count rows per id after resolving.
 - **`scripts/changelog.js` acts on the repository it lives in**: running another checkout's copy edits *that* checkout. Pass `--root "$(git rev-parse --show-toplevel)"` and check `git status` after (#650, `real:`).
 - **Release refs: full names and `versionsort.suffix`**: `origin/main` can resolve to a tag `refs/tags/origin/main`; require `refs/...` and `git show-ref --verify`; sort tags with `git -c versionsort.suffix=- tag --sort=-v:refname` (#648, `test:changelog`).
 - **A workflow cannot usefully open the fold PR with `GITHUB_TOKEN`**: its pushes and PRs start no `pull_request`/`merge_group` runs, and Actions-created PRs need a repo setting. The fold PR is opened by hand from the tag (spec 008 FR-120, `read:` GitHub docs).
 - **macOS adds `__CF_USER_TEXT_ENCODING` to every child's env**: ignore it in env allow-list tests (`test-weekly-audit.ts`); only `main` CI shows it (FR-106) (#765, `real:`).
 - **A copy of `process.env` is a plain object**: on Windows its PATH key is `Path`, so `copy.PATH` is `undefined`; look keys up case-insensitively (#722, `real:` Windows CI).
-- **A GUI-launched macOS app has `PATH=/usr/bin:/bin:/usr/sbin:/sbin`**: an npm (nvm, fnm, Volta, Homebrew) starting `#!/usr/bin/env node` exits 127. Run npm children with `pathWithToolDir` from a `posixTrusted` folder, from the found path before `realpath`; map 127/ENOENT to an actionable message (spec 081 FR-042, `test:updatecheck`; not seen on a real Mac).
+- **A GUI-launched macOS app has `PATH=/usr/bin:/bin:/usr/sbin:/sbin`**: an npm (nvm, fnm, Volta, Homebrew) starting `#!/usr/bin/env node` exits 127. Run npm children with `pathWithToolDir` from a `posixTrusted` folder, from the found path before `realpath`; map 127/ENOENT to a clear message (spec 081 FR-042, `test:updatecheck`; not seen on a real Mac).
 - **winget.exe and Store apps are App Execution Aliases**: `fs.statSync` throws EACCES on them and `realpath` leads to an unrunnable folder. Use `statIsFile` and `isAppAlias` in `src/adapters/detect.ts` (spec 060 FR-010, `read:` node-which#157).
 
 ## Tests and timing
@@ -46,7 +45,7 @@ Each entry: **what** (bold), why, how to apply, evidence (`real:`, `read:`, `tes
 
 ## CI, review and merge
 
-- **GitHub logins differ by API**: GraphQL gives a bot without `[bot]` (`github-actions`, `__typename: "Bot"`), REST with it; `gh pr view --json author` says `app/dependabot`. The latest editor is GraphQL `editor` only. `who` in `scripts/trusted-lib.sh` handles it (FR-060, `test-trusted-content.ts`).
+- **GitHub logins differ by API**: GraphQL gives a bot without `[bot]` (`github-actions`, `__typename: "Bot"`), REST with it; `gh pr view --json author` says `app/dependabot`, and `gh pr list` and `gh issue list` show the Actions bot as `app/github-actions` (2026-11-02): the same account as `github-actions[bot]`. The latest editor is GraphQL `editor` only. `who` in `scripts/trusted-lib.sh` handles it (FR-060, `test-trusted-content.ts`).
 - **Wait until every check has settled**: some workflows add checks after the first set, so "none pending" right after a push can be a false green. Wait ~90 s quiet and require the CodeQL check itself (2026-10-20).
 - **Bot line comments and alerts drift apart**: GitHub carries a CodeQL line comment forward after the alert is fixed, and an empty alert list can hide a fresh comment. Gate on `code-scanning/alerts?ref=refs/pull/<N>/merge` and `/head`, compare a comment's `commit_id` with the head, read `alerts/<n>/instances` (PR #388).
 - **Every push dismisses approvals and `main` moves fast**: batch docs-only edits into one push, ask for re-approval only once CI is green on the new head (PRs #369, #377).
@@ -59,6 +58,7 @@ Each entry: **what** (bold), why, how to apply, evidence (`real:`, `read:`, `tes
 
 ## Simulator and drivers
 
+- **Side-panel checks need `density=full`** (2026-11-02, #542): few agents get grown desks, not the side panel (spec 001 FR-042); only a forced density never grows (`shots-001-live-activity.js`).
 - **`until()` returns `false` on timeout**: wrap every wait a check depends on in `assert.ok(await until(...), msg)` (checklist). A renderer that repaints with `await load()` right after `Promise.resolve().then(call)` reads stale state: start the call synchronously first (spec 058).
 - **`bridge` in a driver's `js()` is the real preload, not the simulator's**: under `DURBAR_SIM` main refuses every channel but those on `SIM_OPEN_CHANNELS` (`src/main/simguard.ts`, `test:simguard`), so drive the UI or call `window.__durbarSimUi.bridge()`. The frozen preload ignores plain assignment (spec 010 FR-022..FR-027, PR #505).
 - **`app.js` is one IIFE**: `ROOMS`, `SCHED`, `bridge` are unreachable from `ctx.js`. Read `window.__durbarSimUi.agents()` and the DOM, derive expectations from the simulator's seed, or move logic into a pure `src/main` function and unit-test it (spec 044 T067, spec 003 T030).
