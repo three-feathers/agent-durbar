@@ -126,7 +126,7 @@ module.exports = async (ctx) => {
       const geo = await js(`(()=>{const L=window.__durbarSimUi.realLayout(),D=L.zones.flatMap(z=>z.desks),a=D.filter(d=>d.state==='asleep'),full=d=>L.zones.find(z=>z.desks.includes(d)).desks.find(x=>!x.narrow&&!x.away);
         return {ratio:a.map(d=>d.slot.w/full(d).slot.w),pose:a.map(d=>d.person&&d.person.pose),shades:document.querySelectorAll('#stage .ro-lamp.lamp-off').length,asleep:a.length,screensOff:document.querySelectorAll('#stage .ro-screen.asleep.off').length,
           chair:a.filter(d=>d.away).length,small:[...document.querySelectorAll('#stage .ro-plate.asleep *,#stage .ro-zz')].filter(e=>parseFloat(getComputedStyle(e).fontSize)<10.5).length}})()`);
-      assert.ok(geo.ratio.every((r) => Math.abs(r - 0.62) < 0.02), `${tag}: an asleep desk is 0.62 wide: ${geo.ratio}`);
+      assert.ok(geo.ratio.every((r) => Math.abs(r - 1) < 0.02), `${tag}: an asleep desk keeps its full width (#979): ${geo.ratio}`);
       assert.deepStrictEqual(geo.pose, geo.pose.map(() => 'rest'), `${tag}: the person is in rest`);
       assert.strictEqual(geo.shades, geo.asleep, `${tag}: a shade over each asleep desk only`);
       assert.strictEqual(geo.screensOff, geo.asleep, `${tag}: their screens are off`);
