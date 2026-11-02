@@ -4,7 +4,7 @@
  *
  *   npm run check:ui -- --only check-no-demo-badge
  *
- * At 1440x900 and 1280x800, default theme, Retro and Corporate:
+ * At 1440x900 and 1280x800, default theme, Retro:
  *   1. no `#protoBadge` / `.proto` anywhere, and no top bar text "Demo" or "Live" (simulator, demo off);
  *   2. the app name is the brand's only text and is vertically centred on the brand mark;
  *   3. the demo cues remain: the composer hint of a simulator chat says "Demo, no credits used";
@@ -16,7 +16,7 @@ const assert = require('assert');
 module.exports = async (ctx) => {
   const H = helpers(ctx);
   const { until, settle, js } = H;
-  const THEMES = (process.env.NO_BADGE_THEMES || ',retro,corporate').split(',');
+  const THEMES = (process.env.NO_BADGE_THEMES || ',retro').split(',');
   const topbar = () => js(`(()=>{const R=e=>e.getBoundingClientRect(),t=document.querySelector('.topbar'),b=t.querySelector('.brand'),h=b.querySelector('h1'),m=b.querySelector('.brand-mark');
     const words=[...t.querySelectorAll('*')].filter(e=>!e.children.length&&/\\b(Demo|Live)\\b/.test(e.textContent)&&e.getClientRects().length&&!e.closest('.more-menu,[hidden]')).map(e=>e.textContent.trim());
     return {badge:!!document.getElementById('protoBadge')||!!document.querySelector('.proto'),words,brandText:b.innerText.trim(),

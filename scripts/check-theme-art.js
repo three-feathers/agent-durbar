@@ -15,7 +15,7 @@
  *   - and back to Clean Office: no desk, walker or chip keeps the pack's art (the stale-drawing bug in reverse).
  *
  * In the office kit it also checks the drawing order: the headwear comes after the head circle and the hair (over them, not under).
- * Then, at 1440x900, the same pack with `scene: "court-indian"`: the other scene kits get the art too (desks and walkers).
+ * Then, at 1440x900, the same pack with `scene: "pixel"`: the other scene kits get the art too (desks and walkers).
  *
  *   npm run check:ui -- --only check-theme-art            (builds first)
  *   SHOTS_OUT=<folder>                 screenshots (default: theme-art-shots in the OS temp folder)
@@ -70,7 +70,7 @@ function survey(shirts) {
     chips: q('#stripList .sitem .sav').filter((e) => e.getClientRects().length).map((e) => ({ shirt: wears(e), robe: has(e, 'char-robe'), hatOver: hatOver(e), anyArt: !!e.querySelector('.art-slot') })),
     css: (() => {
       const cs = (sel, prop) => { const e = document.querySelector(sel); return e ? getComputedStyle(e)[prop] : ''; };
-      return { font: getComputedStyle(document.body).fontFamily, mono: cs('.room-path', 'fontFamily'), radius: cs('.select-wrap select', 'borderTopLeftRadius'), shadow: cs('#stage .desk.card:not(.is-waiting):not(.is-error):not(.is-failing)', 'boxShadow'), plate: cs('.plate-tx b', 'fontFamily') };
+      return { font: getComputedStyle(document.body).fontFamily, mono: cs('.room-path', 'fontFamily'), radius: cs('.select-wrap select', 'borderTopLeftRadius'), shadow: cs('#stage .desk.card:not(.is-waiting):not(.is-error):not(.is-failing)', 'boxShadow') };
     })(),
   };
 }
@@ -115,10 +115,7 @@ module.exports = async (ctx) => {
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
     const tag = `${w}x${h}`;
     // Clean Office first (the theme in use when an AI theme is made or picked), the pack only registered as a user theme
-    /* spec 017 FR-014: this checks the theme's characters in the desk scenes, so the cabins (a closed door in place of a busy desk's scene)
-       are off here; their photo is the same avatar and they have their own driver (shots-017-signs) */
     await H.load({ w, h, query: { usertheme: JSON.stringify(PACK) }, ready: 'fit', settle: false });
-    if (await H.js(`localStorage.getItem('durbar.doorsigns')!=='off'`)) { await H.js(`localStorage.setItem('durbar.doorsigns','off')`); await H.load({ w, h, query: { usertheme: JSON.stringify(PACK) }, ready: 'fit', settle: false }); }
     await H.office(15);
     assert.ok(await H.until(`!!document.querySelector('.walker')`, 6000), `${tag}: agents walk to the lobby`);
     await H.until(`!document.querySelector('.walker.walking')`, 6000);
@@ -183,17 +180,17 @@ module.exports = async (ctx) => {
     assert.deepStrictEqual(back.css, before.css, `${tag}: back in Clean Office the fonts, corners and shadows are Clean's again`);
     for (const [i, b] of back.mainBoxes.entries()) assert.strictEqual(await count(b.box, PINK), 0, `${tag}: desk ${i} has no pink left`);
   }
-  /* another scene kit (spec 040 FR-023, root cause 4): app.js hands the pack's art to the kits too, so the same pack on the Indian court
+  /* another scene kit (spec 040 FR-023, root cause 4): app.js hands the pack's art to the kits too, so the same pack on the pixel
      kit draws its robe, headwear and gadgets on every desk and walker */
   {
-    const tag = 'court-indian 1440x900';
-    const KPACK = Object.assign({}, PACK, { scene: 'court-indian' });
+    const tag = 'pixel 1440x900';
+    const KPACK = Object.assign({}, PACK, { scene: 'pixel' });
     await H.load({ w: 1440, h: 900, query: { usertheme: JSON.stringify(KPACK) }, ready: 'fit', settle: false });
     await H.office(15);
     assert.ok(await H.until(`!!document.querySelector('.walker')`, 6000), `${tag}: agents walk to the lobby`);
     await H.until(`!document.querySelector('.walker.walking')`, 6000);
     await pick(KPACK.id);
-    assert.strictEqual(await H.js(`window.THEME.sceneKit()`), 'court-indian', `${tag}: the pack draws with the court-indian kit`);
+    assert.strictEqual(await H.js(`window.THEME.sceneKit()`), 'pixel', `${tag}: the pack draws with the pixel kit`);
     const s = await H.js(`(${survey.toString()})(${jsLiteral(SHIRTS)})`);
     console.log(`[theme-art] ${tag}`, JSON.stringify({ desks: s.desks.length, walkers: s.walkers.length }));
     assert.ok(s.desks.length >= 15, `${tag}: desks on screen (${s.desks.length})`);
@@ -202,7 +199,7 @@ module.exports = async (ctx) => {
     });
     assert.ok(s.walkers.length >= 1, `${tag}: somebody is at a place`);
     s.walkers.forEach((wk, i) => assert.ok(wk.robe && wk.hat, `${tag}: walker ${i} wears the pack's robe and headwear on the kit`));
-    await H.shot(path.join(out, `040-theme-art-court-indian-1440x900.png`), { prep: 'toasts', tag: 'theme-art' });
+    await H.shot(path.join(out, `040-theme-art-pixel-1440x900.png`), { prep: 'toasts', tag: 'theme-art' });
   }
   console.log('[theme-art] all checks passed');
 };

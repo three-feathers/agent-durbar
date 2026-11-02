@@ -4,6 +4,7 @@
  * returns a new `FakeClient` per runtime start): no runtime process, no account, no credits.
  */
 import * as assert from 'assert';
+import { McpContextTracker } from '../src/main/mcpcontextop';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -167,6 +168,45 @@ async function main(): Promise<void> {
       assert.deepStrictEqual([last('gh').source, last('gh').transport], ['builtin', 'http'], 'a re-read keeps source and transport');
       assert.deepStrictEqual([last('loc').source, last('loc').transport], ['user', 'stdio'], 'a stdio server stays stdio after a re-read');
       assert.strictEqual(last('web').source, 'workspace', 'a source the re-read names wins');
+    }
+
+    // ---- spec 100 T012: the owner's case. Copilot's own attribution; `null`, a failure or a missing method say "not reported", never an estimate
+    {
+      const ad = new RestartingFakeCopilot();
+      const sid = await ad.start({ workspace: dirs[0], quiet: true });
+      const s = ad.clients[0].sessions.get(sid)!;
+      const meta = s.rpc.metadata as { getContextAttribution?: () => Promise<unknown> };
+      assert.deepStrictEqual(await ad.mcpContext(sid), { servers: [] }, 'an older runtime without the method: no figures');
+      let answer: unknown = { contextAttribution: null };
+      let listed = 0;
+      meta.getContextAttribution = async () => { listed++; if (answer instanceof Error) throw answer; return answer; };
+      const tools = (): number => s.calls.filter((c) => c.name === 'mcp.listTools').length;
+      assert.deepStrictEqual(await ad.mcpContext(sid), { servers: [], failed: true }, 'null until the session has initialised: a failed read, not an empty list');
+      answer = new Error('method not enabled on this plan');
+      assert.deepStrictEqual(await ad.mcpContext(sid), { servers: [], failed: true }, 'a failure: a failed read, and its text goes nowhere');
+      answer = { contextAttribution: { limit: 200_000, categories: { mcpTools: 62_000 }, entries: [
+        { kind: 'mcpServer', id: 'mcpServer:github', label: 'GitHub (shown)', tokens: 41_000 },
+        { kind: 'mcpServer', id: 'mcpServer:jira', label: 'jira', tokens: 21_000 },
+        { kind: 'skill', id: 'skill:tmux', label: 'tmux', tokens: 900 },
+        { kind: 'brand-new-kind', id: 'x:y', label: 'y', tokens: 9 },
+      ] } };
+      assert.deepStrictEqual(await ad.mcpContext(sid), { servers: [{ name: 'github', tokens: 41_000, source: 'reported' }, { name: 'jira', tokens: 21_000, source: 'reported' }], window: 200_000, total: 62_000 });
+      assert.strictEqual(tools(), 0, 'never a listTools-based estimate (decided Q4)');
+      assert.strictEqual(listed, 3);
+      assert.deepStrictEqual(await ad.mcpContext('no-such'), { servers: [] }, 'no session: no figures');
+      assert.strictEqual(ad.capabilities.mcpContext, 'reported');
+      // finding 1, through the tracker: a failure after figures keeps them
+      {
+        let now = 0;
+        const t = new McpContextTracker({ agents: new Map([[sid, { id: sid } as never]]), router: { forAgent: () => ad } as never, secrets: () => [], live: () => [], off: () => new Set(), push: () => undefined, now: () => now });
+        const v1 = await t.get(sid, true);
+        assert.strictEqual(v1.report?.servers[0].tokens, 41_000);
+        for (const bad of [new Error('down'), { contextAttribution: null }]) {
+          answer = bad;
+          now += 61_000;
+          assert.strictEqual((await t.get(sid, true)).report?.servers[0].tokens, 41_000, 'the last figures stay');
+        }
+      }
     }
 
     // ---- FR-163: nothing Durbar does asks the runtime to connect a server that is not connected (each attempt can read the keychain)
