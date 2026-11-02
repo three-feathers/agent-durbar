@@ -93,7 +93,7 @@ A world is not finished until its chat and settings screens have been looked at 
 - People stand out from the background. A lighter room or a darker one is a choice to test against people, cards and labels, not a mood alone.
 - The light has one direction and temperature. Shadows agree with it.
 - **Light pools are pixels in the floor picture,** not extra layers, and never follow a person. No flicker and no moving water.
-- **A bright sky hurts labels by their edges, not their text.** A white chip on a pale sky measured 1.42:1 with the sky, and about 15:1 for its text: give it an edge at 3:1 and keep the sky below glare. Text never sits on the sky itself.
+- **A bright sky hurts labels by their edges, not their text.** A white chip on a pale sky measured 1.42:1 with the sky, and about 15:1 for its text: give it an edge at 3:1 against whatever is behind it, computed per world, since one edge passes a pale sky and fails a mid-grey floor, and keep the sky below glare. Text never sits on the sky itself.
 
 ## Performance
 
