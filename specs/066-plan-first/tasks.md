@@ -8,3 +8,4 @@
 - [x] T006 Renderer: menu entry, chip, plan card, attention [FR-006]
 - [x] T007 Simulator [FR-008]
 - [x] T008 Unit tests, driver and screenshots, real checks, docs [all]
+- [x] T009 The plan card does not take focus from typing [FR-064]; driver step in `scripts/check-answer-safety.js` (spec 052 T207)
