@@ -373,7 +373,8 @@ module.exports = async (ctx) => {
       await ok(`!document.body.classList.contains('panel-open')`, 'back to the office');
       await ok(`!!document.activeElement&&document.activeElement.dataset.id===${jsLiteral(A)}&&document.activeElement.classList.contains('ro-plate')`, 'FR-183: the focus on its plate');
       await ok(`!!document.querySelector(${jsLiteral(plate)}+'.is-followed')`, 'FR-183: its plate is marked');
-      assert.strictEqual(await js(`getComputedStyle(document.querySelector(${jsLiteral(plate)})).outlineStyle`), 'dashed', 'not colour alone');
+      await js(`document.activeElement.blur();0`); /* a focused plate shows the focus ring instead */
+      await ok(`getComputedStyle(document.querySelector(${jsLiteral(plate)})).outlineStyle==='dashed'`, 'not colour alone');
       await E(B, { type: 'status', status: 'working', intent: 'Another' }); /* a redraw must not take the mark away */
       await until(`document.querySelector(${jsLiteral(`#stage .ro-plate[data-id="${B}"]`)})&&document.querySelector(${jsLiteral(`#stage .ro-plate[data-id="${B}"]`)}).classList.contains('st-working')`, 4000);
       await ok(`!!document.querySelector(${jsLiteral(plate)}+'.is-followed')`, 'the mark survives a redraw');

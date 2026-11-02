@@ -99,7 +99,7 @@ ok(!/\.click\(\)|bridge\.(answer|resolve|allow|deny|setPermMode|respond)|settleP
 ok(!/openPanel\([^)]*,(true|false)\)/.test(afBlock), 'never focuses the message box or an answer button');
 ok(/AF\.holdReason\(afSnapshot\(\)/.test(afBlock) && /AFT\.due\(reason,afCanOpen\)/.test(afBlock), 'a delivery reads the guards and the hidden-folder rule first');
 ok(!/transition|animation|animate|motion\(/.test(afBlock) && !/is-followed[^}]*(animation|transition)/.test(fs.readFileSync(path.join(R, 'styles.css'), 'utf8').split('spec 052 FR-182..FR-190 (issue 686)')[1] || ''), 'no animation or transition');
-ok(/if\(r\.ok\)afOnAccepted\(a\)/.test(app), 'following starts from an accepted send only');
+ok(/if\(r\.ok&&!\(opts&&opts\.coffee\)\)afOnAccepted\(a\)/.test(app), 'following starts from an accepted send only');
 ok(/if\(!AF_ON\|\|AF_PAUSED\|\|!a0\|\|a0\.parent\)return/.test(afBlock), 'off, paused and helpers follow nothing');
 ok(!/UNREAD\.read|markRead|syncSeen/.test(afBlock), 'following never clears an unread marker itself');
 ok(/needsMeOrder\(\)\.map/.test(afBlock) && !/vis\(a\)==='waiting'/.test(afBlock), 'the queue reuses needsMeOrder, no second attention model');
