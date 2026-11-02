@@ -6,7 +6,7 @@
 import * as assert from 'assert';
 import { REDACT_MAX_CHARS, _uncappedForTest, redact } from '../src/shared/redact';
 import { spawnSync } from 'child_process';
-import { assertLinearGrowth, assertLinearShape, cpuMs, worstGrowth, workerRun } from './redact-growth-lib';
+import { assertLinearGrowth, assertLinearShape, assertWithinYardstick, cpuMs, worstGrowth, workerRun } from './redact-growth-lib';
 
 const part = process.argv[2];
 const BT = '`';
@@ -168,9 +168,7 @@ if (part === 'args') {
   // (n) timing: each shape linear in practice; doubling check on the shape the analyst suspected.
   const shapes: Array<[string, string]> = [['-c ', '-c '], ['"', '"'], ['"a ', '"a '], ["a 'b", "a 'b"], [', a=', ', a='], ['Cookie: ', 'Cookie: '], ['{"a":"x y ', '{"a":"x y '], ["'\"", "'\""], ['x ', 'x ']];
   const run = (x: string): void => { _uncappedForTest.maskSecretArgs([x]); _uncappedForTest.maskSecretArgs(['-c', x]); _uncappedForTest.maskSecretCommand(x); };
-  const total = cpuMs(() => { for (const [, unit] of shapes) run(unit.repeat(Math.ceil(200_000 / unit.length)).slice(0, 200_000)); }, 20000);
-  console.log(`redact: 14c masking 200k-char adversarial inputs in ${total} ms`);
-  assert.ok(total < 20000, `14c: masking 200k-char adversarial inputs took ${total} ms`);
+  for (const [name, unit] of shapes.filter(([n]) => !['{"a":"x y ', 'x ', '"a '].includes(n))) assertLinearShape(`14c 200k ${name}`, run, (n) => unit.repeat(Math.ceil(n / unit.length)).slice(0, n), 200_000);
   for (const unit of ['{"a":"x y ', 'x ', '"a ']) assertLinearShape(`14c linearity ${JSON.stringify(unit)}`, run, (n) => unit.repeat(Math.ceil(n / unit.length)).slice(0, n));
 }
 
@@ -244,20 +242,12 @@ if (part === 'hashtablegrowth') {
       strayQuotes: (n) => ('@{' + '"'.repeat(3000) + '}').repeat(n / 3003), quotedJunk: (n) => ('@{' + "'a b' ".repeat(500) + '}').repeat(n / 3503),
       commentOpeners: (n) => '@{<#'.repeat(n / 4), unclosedComment: (n) => '@{<#' + 'a'.repeat(n), pastBound: (n) => '@{' + 'p=1;'.repeat(n / 4), noEquals: (n) => '@{' + 'x;'.repeat(n / 2),
     };
-    for (const [k, mk] of Object.entries(shapes)) {
-      const time = (x: string): number => cpuMs(() => { _uncappedForTest.maskSecretCommand(x); _uncappedForTest.maskSecretArgs([x]); }, 5000);
-      let a = Infinity;
-      let b = Infinity;
-      for (let i = 0; i < 3; i++) { a = Math.min(a, time(mk(100_000))); b = Math.min(b, time(mk(400_000))); if (b < Math.max(80, a * 10)) break; }
-      console.log(`redact: R12 growth ${k} 100k=${Math.round(a)} ms 400k=${Math.round(b)} ms`);
-      assert.ok(b < Math.max(80, a * 10), `R12 growth ${k}: ${a.toFixed(0)} -> ${b.toFixed(0)} ms CPU for 4x the input`);
-    }
+    for (const [k, mk] of Object.entries(shapes)) assertLinearShape(`R12 growth ${k}`, (x) => { _uncappedForTest.maskSecretCommand(x); _uncappedForTest.maskSecretArgs([x]); }, mk);
   }
   // an unclosed quote or a long bare value of a secret member hides the rest of the text, so the pattern rules do not run over 1 MB again
-  // (they cost about 900 ms per MB on this path before; 46 ms on main without R12): a tighter limit than the 1 s above
+  // (they cost 25 times `redact` on this path before; about 1 time now), against `redact` on the same text in the same run (spec 012 T138)
   for (const [k, v] of [['unclosed double quote', '@{token="' + 'a'.repeat(MB)], ['unclosed single quote', "@{'api_key'='" + 'a'.repeat(MB)], ['long bare value', '@{ token = ' + 'a'.repeat(MB)]] as const) {
-    const ms = Math.min(...[0, 1, 2].map(() => cpuMs(() => { _uncappedForTest.maskSecretCommand(v); _uncappedForTest.maskSecretArgs([v]); }, 2000))); // best of 3, like the growth checks
-    assert.ok(ms < 300, `R12: ${k} on 1 MB took ${ms.toFixed(0)} ms CPU for the command and args paths, limit 300 ms`);
+    assertWithinYardstick(`R12: ${k} on 1 MB, command and args paths`, () => { _uncappedForTest.maskSecretCommand(v); _uncappedForTest.maskSecretArgs([v]); }, () => void redact(v, {}), 6);
   }
 }
 

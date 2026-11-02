@@ -28,7 +28,7 @@ On 2026-10-23 Vikram's agent grouped the ~1,100 *Required fixes* in reviews of ~
 - [ ] **Mergeable, and CI ran on this head.** A conflicting PR runs only CodeQL (no build, tests, gate or UI). Merge `origin/main`, push, read the checks of *that* sha (`scripts/pr-gate.sh <N>`). [#620](https://github.com/three-feathers/agent-durbar/pull/620), [#560](https://github.com/three-feathers/agent-durbar/pull/560)
 - [ ] **After merging `main`, `git diff --stat origin/main...HEAD` lists only your files**: a bad resolution dropped another PR's code and tests. [#560](https://github.com/three-feathers/agent-durbar/pull/560)
 - [ ] **No conflict markers**: `specs:check` covers `specs/`.
-- [ ] **`package.json` test lists: keep both sides** of a `test:serial` conflict, then `npm test`. [#565](https://github.com/three-feathers/agent-durbar/pull/565)
+- [ ] **Keep both sides** of a `scripts/test-suites.txt` conflict, then `npm test`. [#565](https://github.com/three-feathers/agent-durbar/pull/565)
 - [ ] **CI for the exact sha, never "green" from memory**: `gh pr checks <N>`, then post `checks run at <sha>: …`. [#630](https://github.com/three-feathers/agent-durbar/pull/630), [#588](https://github.com/three-feathers/agent-durbar/pull/588)
 - [ ] **New CodeQL alerts fixed at the cause**, test code included (or dismissed with a reason). [#598](https://github.com/three-feathers/agent-durbar/pull/598)
 
@@ -90,7 +90,7 @@ On 2026-10-23 Vikram's agent grouped the ~1,100 *Required fixes* in reviews of ~
 - [ ] **A test that accepts the failure path proves nothing** ("passes on 'Could not copy' too"). [#538](https://github.com/three-feathers/agent-durbar/pull/538)
 - [ ] **Office changes with floors on run every driver that loads `simfloors`** (`grep -l simfloors scripts/*.js`). Spec 092 phase 1
 - [ ] **Shared desk markup changes run the whole UI suite** (`node scripts/ui-suite.js`), keeping each feature's own wording. [#631](https://github.com/three-feathers/agent-durbar/pull/631)
-- [ ] **A setting that hides a feature also releases what it holds** (a closed door's prompts, a refused remote control): ask and release, or keep that piece visible. PR 631
+- [ ] **Removing a feature never sends or drops what it held** (queued prompts): ask once, and test with a send counter that stays 0. PR 631
 - [ ] **When the simulator bypasses main, test main's logic in a pure function**; never open a sim channel to main (spec 010 FR-022..FR-027). [#693](https://github.com/three-feathers/agent-durbar/pull/693)
 - [ ] **File identity = device, inode, birth time**: test delete and recreate, and the failure path. PR #931
 - [ ] **A destructive call behind a native confirmation has no side door**: another call deleting the same data asks the same way. Spec 083 T034b
