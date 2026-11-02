@@ -25,7 +25,7 @@ const IDS = ['1', '2', '3', '5'];
 const PLATE = { 1: '#10141E', 2: '#03183A', 3: '#061C4A', 5: '#07111F' };
 const rgb = (hex) => { const n = parseInt(hex.slice(1), 16); return `rgb(${n >> 16}, ${(n >> 8) & 255}, ${n & 255})`; };
 const WORLDS = { photo: { plate: '#5C3312', gold: '#FFD45E', bot: '#BFE0FF' }, cave: { plate: '#2A1710', gold: '#F2B46E', bot: '#A3AFC0' }, loft: { plate: '#2C0A5E', gold: '#FFE81F', bot: '#2EE6F2' } };
-const UI_THEMES = ['corporate', 'retro', 'durbar-indian', 'durbar-european', 'durbar-japanese'];
+const UI_THEMES = ['retro']; // the one other built-in UI style since spec 035 FR-017 removed Corporate and the courts; `GENERATED` below holds FR-034's "any other UI style"
 const GENERATED = { id: 'logo-gen-test', name: 'Logo generated test', extends: 'clean-office', ui: 'retro', tokens: { '--brand-mark': '#ffffff', '--brand-bg': '#7a1fa2' } };
 
 module.exports = async (ctx) => {
