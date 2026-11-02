@@ -62,9 +62,7 @@ export class SettingsStore {
     const next: AppSettings = { ...this.s };
     if (cap === undefined) delete next.defaultMaxAiCredits;
     else next.defaultMaxAiCredits = cap;
-    this.s = next;
-    this.save();
-    return cap;
+    return this.commit(next) ? cap : this.s.defaultMaxAiCredits;
   }
 
   /** Spec 093 FR-006: the parent of the last folder created from + Folder, when it is a valid absolute path. */
@@ -76,8 +74,7 @@ export class SettingsStore {
   setNewFolderParent(v: unknown): void {
     const p = parseNewFolderParent(v);
     if (!p || p === this.s.newFolderParent) return;
-    this.s = { ...this.s, newFolderParent: p };
-    this.save();
+    this.commit({ ...this.s, newFolderParent: p });
   }
 
   /** Spec 080 FR-025d (Q2): the session browser's one-time note was accepted. */
@@ -86,9 +83,8 @@ export class SettingsStore {
   }
 
   /** Remembers the acceptance for this app profile; never asked again. */
-  acceptBrowserNote(): void {
-    this.s = { ...this.s, browserNoteAccepted: true };
-    this.save();
+  acceptBrowserNote(): boolean {
+    return this.commit({ ...this.s, browserNoteAccepted: true });
   }
 
   /** Spec 080 FR-031: where a chat link opens on a plain click; the session browser unless the user chose the system browser. */
@@ -102,9 +98,7 @@ export class SettingsStore {
     const next: AppSettings = { ...this.s };
     if (v === 'system') next.chatLinksIn = 'system';
     else delete next.chatLinksIn;
-    this.s = next;
-    this.save();
-    return v;
+    return this.commit(next) ? v : this.chatLinksIn;
   }
 
   /** Spec 080 FR-123: *Open chat links in a new tab*, app-wide, off by default. */
@@ -118,9 +112,7 @@ export class SettingsStore {
     const next: AppSettings = { ...this.s };
     if (v) next.chatLinksNewTab = true;
     else delete next.chatLinksNewTab;
-    this.s = next;
-    this.save();
-    return v;
+    return this.commit(next) ? v : this.chatLinksNewTab;
   }
 
   /** Serious mode (spec 034): off by default. */
@@ -134,9 +126,7 @@ export class SettingsStore {
     const next: AppSettings = { ...this.s };
     if (v) next.seriousMode = true;
     else delete next.seriousMode;
-    this.s = next;
-    this.save();
-    return v;
+    return this.commit(next) ? v : this.seriousMode;
   }
 
   /** Spec 087 FR-007c: the apps with *Always continue on this computer* stored. */
@@ -154,9 +144,7 @@ export class SettingsStore {
     const list = parseSandboxAlways([...set]);
     if (list.length) next.sandboxAlwaysContinue = list;
     else delete next.sandboxAlwaysContinue;
-    this.s = next;
-    this.save();
-    return on;
+    return this.commit(next) ? on : this.sandboxAlwaysContinue(app);
   }
 
   /** OS notifications when an agent needs you (spec 052 FR-059): on by default; only `false` is written. */
@@ -170,9 +158,7 @@ export class SettingsStore {
     const next: AppSettings = { ...this.s };
     if (v) delete next.notifyNeedsMe;
     else next.notifyNeedsMe = false;
-    this.s = next;
-    this.save();
-    return v;
+    return this.commit(next) ? v : this.notifyNeedsMe;
   }
 
   /** Spec 068 FR-006: what happens when a coffee break ends: `auto` (default: resume by itself when it costs nothing extra) or `ask`. */
@@ -186,9 +172,7 @@ export class SettingsStore {
     const next: AppSettings = { ...this.s };
     if (v === 'ask') next.breakResume = 'ask';
     else delete next.breakResume;
-    this.s = next;
-    this.save();
-    return v;
+    return this.commit(next) ? v : this.breakResume;
   }
 
   /** Spec 081 FR-022 (Q6 = A): the agent-app update check at start is on by default; only `false` is written. */
@@ -202,9 +186,7 @@ export class SettingsStore {
     const next: AppSettings = { ...this.s };
     if (v) delete next.checkUpdatesAtStart;
     else next.checkUpdatesAtStart = false;
-    this.s = next;
-    this.save();
-    return v;
+    return this.commit(next) ? v : this.checkUpdatesAtStart;
   }
 
   /** Spec 081 FR-016: the last announced version per agent app, a copy. */
@@ -217,9 +199,7 @@ export class SettingsStore {
     if (typeof app !== 'string' || !(ANNOUNCE_APPS as readonly string[]).includes(app)) return false;
     const ver = parseAnnounced({ [app]: version })[app];
     if (typeof ver !== 'string') return false;
-    this.s = { ...this.s, announcedVersions: { ...(this.s.announcedVersions ?? {}), [app]: ver } };
-    this.save();
-    return true;
+    return this.commit({ ...this.s, announcedVersions: { ...(this.s.announcedVersions ?? {}), [app]: ver } });
   }
 
   /** Active theme id (spec 037). Undefined = Clean Office; the renderer resolves unknown ids itself. */
@@ -234,25 +214,20 @@ export class SettingsStore {
       // spec 077 FR-067: the old Cheeky Crew id is never stored: the same rule as at load (Clean Office plus Cheeky)
       const m = migrateLegacyTheme({ ...this.s, theme: id });
       if (m.changed) {
-        this.s = m.settings;
-        this.save();
+        if (!this.commit(m.settings)) return { ok: false, theme: this.s.theme };
         return { ok: true, theme: 'clean-office', characters: this.characters };
       }
     }
     if (v === null || v === undefined) {
       const next: AppSettings = { ...this.s };
       delete next.theme;
-      this.s = next;
-      this.save();
-      return { ok: true };
+      return this.commit(next) ? { ok: true } : { ok: false, theme: this.s.theme };
     }
     if (id === undefined) return { ok: false, theme: this.s.theme };
     const next: AppSettings = { ...this.s };
     if (id === 'clean-office') delete next.theme;
     else next.theme = id;
-    this.s = next;
-    this.save();
-    return { ok: true, theme: this.s.theme ?? 'clean-office' };
+    return this.commit(next) ? { ok: true, theme: this.s.theme ?? 'clean-office' } : { ok: false, theme: this.s.theme ?? 'clean-office' };
   }
 
   /** Spec 077 FR-064: who sits at the desks; `theme` (the theme's own) when nothing is stored. */
@@ -264,16 +239,10 @@ export class SettingsStore {
   setCharacters(v: unknown): { ok: boolean; characters: CharacterChoice } {
     const c = parseCharacters(v);
     if (c === undefined) return { ok: false, characters: this.characters };
-    const before = this.s;
     const next: AppSettings = { ...this.s };
     if (c === 'theme') delete next.characters;
     else next.characters = c;
-    this.s = next;
-    if (!this.save()) {
-      this.s = before;
-      return { ok: false, characters: this.characters };
-    }
-    return { ok: true, characters: c };
+    return this.commit(next) ? { ok: true, characters: c } : { ok: false, characters: this.characters };
   }
 
   /** Place mapping (spec 024): MCP server name -> place id or `desk`. A copy, never the stored object. */
@@ -296,16 +265,12 @@ export class SettingsStore {
 
   /** Store a new list and map in one write. If the write fails, memory goes back to what it was and the call is refused. */
   private commitPlaces(list: CustomPlace[], map: PlaceMap): boolean {
-    const before = this.s;
     const next: AppSettings = { ...this.s };
     if (list.length) next.customPlaces = list;
     else delete next.customPlaces;
     if (Object.keys(map).length) next.placeMap = map;
     else delete next.placeMap;
-    this.s = next;
-    if (this.save()) return true;
-    this.s = before;
-    return false;
+    return this.commit(next);
   }
 
   /** Add a custom place (spec 024 FR-020). The renderer is not trusted: everything is validated by the shared rules. */
@@ -339,10 +304,18 @@ export class SettingsStore {
       const next: AppSettings = { ...this.s };
       if (Object.keys(r.map).length) next.placeMap = r.map;
       else delete next.placeMap;
-      this.s = next;
-      this.save();
+      return { ok: this.commit(next), placeMap: { ...(this.s.placeMap ?? {}) } };
     }
     return { ok: r.ok, placeMap: { ...(this.s.placeMap ?? {}) } };
+  }
+
+  /** The one way a setter stores a change (issue #1023): memory takes `next` only when the file was written; else it stays as it was and this is false. */
+  private commit(next: AppSettings): boolean {
+    const before = this.s;
+    this.s = next;
+    if (this.save()) return true;
+    this.s = before;
+    return false;
   }
 
   private save(): boolean {

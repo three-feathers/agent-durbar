@@ -253,7 +253,91 @@ try {
     assert.ok(ghost.setDefaultMaxAiCredits(80) === 80);
     assert.deepStrictEqual(JSON.parse(fs.readFileSync(fb, 'utf8')).placeMap, { srv: 'c-aaaaaa' }, 'and is not written back');
   }
+  // issue #1023: every setter checks the save. On a path that cannot be written, nothing is stored in memory, the call says so,
+  // and the value in force is the old one (a file as the parent folder fails on every OS, with or without root).
+  {
+    const blocker = path.join(dir, 'a-file');
+    fs.writeFileSync(blocker, 'x');
+    const mk = (): SettingsStore => { const x = new SettingsStore(path.join(blocker, 'durbar-settings.json'), () => 'c-bbbbbb'); x.load(); return x; };
+    const s1 = mk();
+    assert.strictEqual(s1.setDefaultMaxAiCredits(75), undefined, 'cap: not saved, still none');
+    assert.strictEqual(s1.defaultMaxAiCredits, undefined);
+    assert.strictEqual(s1.setSeriousMode(true), false);
+    assert.strictEqual(s1.seriousMode, false, 'serious mode rolled back');
+    assert.strictEqual(s1.setChatLinksNewTab(true), false);
+    assert.strictEqual(s1.setChatLinksIn('system'), 'session');
+    assert.strictEqual(s1.setNotifyNeedsMe(false), true);
+    assert.strictEqual(s1.setBreakResume('ask'), 'auto');
+    assert.strictEqual(s1.setCheckUpdatesAtStart(false), true);
+    assert.strictEqual(s1.setSandboxAlwaysContinue('claude', true), false);
+    assert.strictEqual(s1.sandboxAlwaysContinue('claude'), false);
+    assert.strictEqual(s1.setAnnouncedVersion('codex', '0.164.0'), false, 'announced: false when not saved');
+    assert.deepStrictEqual(s1.announcedVersions, {});
+    assert.strictEqual(s1.acceptBrowserNote(), false);
+    assert.strictEqual(s1.browserNoteAccepted, false);
+    s1.setNewFolderParent('/home/u/code');
+    assert.strictEqual(s1.newFolderParent, undefined, 'new-folder parent rolled back');
+    assert.strictEqual(s1.setTheme('dark').ok, false, 'theme: not ok');
+    assert.strictEqual(s1.theme, undefined);
+    assert.strictEqual(s1.setTheme(null).ok, false);
+    assert.strictEqual(s1.setCharacters('cheeky').ok, false);
+    assert.strictEqual(s1.characters, 'theme');
+    assert.deepStrictEqual(s1.setPlace('srv', 'desk'), { ok: false, placeMap: {} }, 'place: not ok, map unchanged');
+    assert.strictEqual(s1.addPlace('Lab', 'star').ok, false);
+    assert.deepStrictEqual(s1.customPlaces, []);
+    // and a writable one still stores and reports each of them
+    const f9 = path.join(dir, 'ok9', 'durbar-settings.json');
+    const s2 = new SettingsStore(f9); s2.load();
+    assert.strictEqual(s2.setSeriousMode(true), true);
+    assert.strictEqual(s2.setBreakResume('ask'), 'ask');
+    assert.strictEqual(s2.setAnnouncedVersion('codex', '0.164.0'), true);
+    assert.strictEqual(s2.acceptBrowserNote(), true);
+    assert.deepStrictEqual(s2.setPlace('srv', 'desk'), { ok: true, placeMap: { srv: 'desk' } });
+    const again = new SettingsStore(f9).load();
+    assert.ok(again.seriousMode && again.breakResume === 'ask' && again.browserNoteAccepted, 'all of them are on disk');
+  }
 } finally {
   fs.rmSync(dir, { recursive: true, force: true });
 }
-console.log('credits: all checks passed');
+
+// issue #1023: the IPC replies with `ok` only when the value asked for is the one in force (main's own handler, a stand-in electron)
+async function ipcChecks(): Promise<void> {
+  const electronPath = require.resolve('electron');
+  const handlers = new Map<string, (e: unknown, ...a: unknown[]) => unknown>();
+  const fake = { ipcMain: { handle: (ch: string, fn: (e: unknown, ...a: unknown[]) => unknown) => handlers.set(ch, fn), on: () => undefined }, app: { getVersion: () => '0.0.0-test' } };
+  const saved = require.cache[electronPath];
+  require.cache[electronPath] = { id: electronPath, filename: electronPath, loaded: true, exports: fake } as unknown as NodeJS.Module;
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-setipc-'));
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    (require('../src/main/ipcguard') as typeof import('../src/main/ipcguard')).initSimGuard(false);
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { register } = require('../src/main/ipc/settings') as typeof import('../src/main/ipc/settings');
+    const frame = { url: require('url').pathToFileURL(path.join(__dirname, '..', 'src', 'renderer', 'index.html')).href };
+    const win = { senderFrame: frame, sender: { mainFrame: frame } };
+    const call = async (ch: string, ...a: unknown[]): Promise<Record<string, unknown>> => (await handlers.get(ch)!(win, ...a)) as Record<string, unknown>;
+    const run = async (store: SettingsStore | undefined, want: boolean): Promise<void> => {
+      handlers.clear();
+      register({ getSettingsStore: () => store, getRunTheme: () => undefined, clearRunTheme: () => undefined });
+      assert.strictEqual((await call('settings:setSeriousMode', true)).ok, want, 'serious mode');
+      assert.strictEqual((await call('settings:setNotifyNeedsMe', false)).ok, want, 'notifications');
+      assert.strictEqual((await call('settings:setCheckUpdatesAtStart', false)).ok, want, 'update check');
+      assert.strictEqual((await call('settings:setBreakResume', 'ask')).ok, want, 'break resume');
+      assert.strictEqual((await call('settings:setChatLinksIn', 'system')).ok, want, 'chat links');
+      assert.strictEqual((await call('settings:setDefaultCap', 75)).ok, want, 'default cap');
+    };
+    const good = new SettingsStore(path.join(d, 'g', 'durbar-settings.json')); good.load();
+    await run(good, true);
+    fs.writeFileSync(path.join(d, 'blocker'), 'x');
+    const bad = new SettingsStore(path.join(d, 'blocker', 'durbar-settings.json')); bad.load();
+    await run(bad, false);
+    assert.deepStrictEqual(await call('settings:setSeriousMode', true), { ok: false, seriousMode: false }, 'a failed save reports the value in force');
+    assert.deepStrictEqual(await call('settings:setDefaultCap', 75), { ok: false, defaultMaxAiCredits: undefined });
+    await run(undefined, false);
+  } finally {
+    if (saved) require.cache[electronPath] = saved;
+    else delete require.cache[electronPath];
+    fs.rmSync(d, { recursive: true, force: true });
+  }
+}
+ipcChecks().then(() => console.log('credits: all checks passed'), (e) => { console.error(e); process.exit(1); });

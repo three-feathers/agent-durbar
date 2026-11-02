@@ -2,6 +2,7 @@
 import { app } from 'electron';
 import { ipcHandle } from '../ipcguard';
 import { aboutView } from '../../shared/about';
+import { parseCap } from '../../shared/credits';
 import type { SettingsStore } from '../settings';
 
 export interface SettingsIpcDeps {
@@ -16,15 +17,21 @@ export function register(deps: SettingsIpcDeps): void {
   const { getRunTheme, clearRunTheme } = deps;
   const settingsStore = deps.getSettingsStore;
   ipcHandle('settings:get', () => ({ defaultMaxAiCredits: settingsStore()?.defaultMaxAiCredits, placeMap: settingsStore()?.placeMap ?? {}, customPlaces: settingsStore()?.customPlaces ?? [], seriousMode: settingsStore()?.seriousMode ?? false, notifyNeedsMe: settingsStore()?.notifyNeedsMe ?? true, breakResume: settingsStore()?.breakResume ?? 'auto', chatLinksIn: settingsStore()?.chatLinksIn ?? 'session', theme: getRunTheme() ?? settingsStore()?.theme ?? 'clean-office', characters: settingsStore()?.characters ?? 'theme', about: aboutView(app.getVersion()) }));
-  ipcHandle('settings:setSeriousMode', (_e, on: unknown) => ({ ok: true, seriousMode: settingsStore()?.setSeriousMode(on) ?? false }));
+  /* issue #1023: a setter returns the value now in force, so `ok` is true only when that is what was asked for (a failed save keeps the old value) */
+  const setting = <K extends string, T>(key: K, fallback: T, set: (st: SettingsStore, v: unknown) => T, want: (v: unknown) => unknown = (v) => v) => (_e: unknown, v: unknown) => {
+    const st = settingsStore();
+    const now = st ? set(st, v) : fallback;
+    return { ok: st !== undefined && now === want(v), [key]: now } as { ok: boolean } & Record<K, T>;
+  };
+  ipcHandle('settings:setSeriousMode', setting('seriousMode', false, (st, v) => st.setSeriousMode(v)));
   /* spec 052 FR-059: OS notifications when an agent needs you and the window is in the background (on unless turned off) */
-  ipcHandle('settings:setNotifyNeedsMe', (_e, on: unknown) => ({ ok: true, notifyNeedsMe: settingsStore()?.setNotifyNeedsMe(on) ?? true }));
+  ipcHandle('settings:setNotifyNeedsMe', setting('notifyNeedsMe', true, (st, v) => st.setNotifyNeedsMe(v)));
   /* spec 081 FR-022 (Q6 = A): the agent-app update check at start: on unless turned off */
-  ipcHandle('settings:setCheckUpdatesAtStart', (_e, on: unknown) => ({ ok: true, checkUpdatesAtStart: settingsStore()?.setCheckUpdatesAtStart(on) ?? true }));
+  ipcHandle('settings:setCheckUpdatesAtStart', setting('checkUpdatesAtStart', true, (st, v) => st.setCheckUpdatesAtStart(v)));
   /* spec 068 FR-006: what happens when a coffee break ends ('auto' or 'ask'; anything else keeps the setting) */
-  ipcHandle('settings:setBreakResume', (_e, v: unknown) => ({ ok: true, breakResume: settingsStore()?.setBreakResume(v) ?? 'auto' }));
+  ipcHandle('settings:setBreakResume', setting<'breakResume', 'auto' | 'ask'>('breakResume', 'auto', (st, v) => st.setBreakResume(v)));
   /* spec 080 FR-031: where a plain click on a chat link opens. A preference like the others here (the window's trust boundary); the URL of a click is checked in main whichever it is. */
-  ipcHandle('settings:setChatLinksIn', (_e, v: unknown) => ({ ok: true, chatLinksIn: settingsStore()?.setChatLinksIn(v) ?? 'session' }));
+  ipcHandle('settings:setChatLinksIn', setting<'chatLinksIn', 'session' | 'system'>('chatLinksIn', 'session', (st, v) => st.setChatLinksIn(v)));
   /* DURBAR_THEME (spec 040 FR-008): a theme for this run only, never saved; a pick in Settings replaces it and is saved as usual. */
   ipcHandle('settings:setTheme', (_e, id: unknown) => {
     clearRunTheme();
@@ -40,5 +47,5 @@ export function register(deps: SettingsIpcDeps): void {
   ipcHandle('settings:addPlace', (_e, name: unknown, icon: unknown) => settingsStore()?.addPlace(name, icon) ?? { ok: false, error: 'unknown', customPlaces: [], placeMap: {} });
   ipcHandle('settings:updatePlace', (_e, id: unknown, patch: unknown) => settingsStore()?.updatePlace(id, patch) ?? { ok: false, error: 'unknown', customPlaces: [], placeMap: {} });
   ipcHandle('settings:removePlace', (_e, id: unknown) => settingsStore()?.removePlace(id) ?? { ok: false, error: 'unknown', customPlaces: [], placeMap: {} });
-  ipcHandle('settings:setDefaultCap', (_e, credits: unknown) => ({ ok: true, defaultMaxAiCredits: settingsStore()?.setDefaultMaxAiCredits(credits) }));
+  ipcHandle('settings:setDefaultCap', setting<'defaultMaxAiCredits', number | undefined>('defaultMaxAiCredits', undefined, (st, v) => st.setDefaultMaxAiCredits(v), parseCap));
 }
