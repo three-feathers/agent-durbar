@@ -307,6 +307,8 @@ module.exports = async (ctx) => {
         assert.ok(/Still highlights/.test(await js(`document.getElementById('stillSw').getAttribute('aria-label')`)), `${tag}: it is labelled`);
         if ((await js(`document.getElementById('stillSw').getAttribute('aria-checked')==='true'`)) !== on) await H.click('#stillSw');
         await ok(`document.getElementById('stillSw').getAttribute('aria-checked')===${jsLiteral(String(on))}`, `${tag}: the switch is ${on ? 'on' : 'off'}`);
+        const fs = await js(`(()=>{let min=99,who='';document.querySelectorAll('.scr-sec[aria-labelledby=stillH], .scr-sec[aria-labelledby=stillH] *').forEach(e=>{if(!e.getClientRects().length)return;if(![...e.childNodes].some(n=>n.nodeType===3&&n.textContent.trim()))return;const f=parseFloat(getComputedStyle(e).fontSize);if(f<min){min=f;who=e.tagName+'.'+e.className;}});return {min,who};})()`);
+        assert.ok(fs.min >= 10.5, `${tag}: the Highlights section's text is at least 10.5px (${fs.min} ${fs.who})`);
         await H.click('#scrClose');
         await ok(`!document.getElementById('stillSw')||!document.getElementById('stillSw').getClientRects().length`, `${tag}: Settings closes`);
         assert.strictEqual(await js(`document.documentElement.hasAttribute('data-still-highlights')`), on, `${tag}: the generic attribute follows the switch`);
@@ -318,7 +320,7 @@ module.exports = async (ctx) => {
       await ok(`!!document.querySelector(${jsLiteral(sel(B) + ' .unread-mark')})`, `${tag}: the New badge is there`);
       const m = await sampleBadge(B);
       assert.deepStrictEqual(m, { fresh: false, anim: 'none', text: 'New' }, `${tag}: static badge, same words: ${JSON.stringify(m)}`);
-      await ctx.sleep(300);
+      await ok(`document.querySelector(${jsLiteral(sel(B))}).classList.contains('is-unread')`, `${tag}: the desk is drawn unread (the state the negatives below read)`);
       const st = await info(B);
       assert.ok(!/\bhl-in\b/.test(st.cls), `${tag}: no entry class: ${st.cls}`);
       assert.ok(st.glow !== 'none' && st.glow.includes(await glowOf('--desk-new')), `${tag}: the glow stays: ${st.glow}`);
@@ -338,12 +340,67 @@ module.exports = async (ctx) => {
       await H.calm({ blur: true });
       await turn(C, 'Maya, motion back.');
       await ok(`!!document.querySelector(${jsLiteral(sel(C) + ' .unread-mark')})`, `${tag}: a New badge with the switch off`);
-      await ctx.sleep(300);
+      await ok(`/hl-breathe|hl-enter/.test(getComputedStyle(document.querySelector(${jsLiteral(sel(C) + ' .pp')})).animationName)`, `${tag}: switched off, the person moves again`);
       const on = await info(C);
       assert.ok(/hl-breathe|hl-enter/.test(on.anim), `${tag}: switched off, the person moves again: ${on.anim}`);
       const nOff = await needsPerson();
       assert.ok(nOff && /hl-breathe|hl-enter/.test(nOff.anim) && /hl-glow/.test(nOff.gAnim), `${tag}: switched off, the needs-you person and glow move again: ${JSON.stringify(nOff)}`);
       console.log(`[unread] ${tag} ok`);
+      // WCAG 2.2.2 (review of 09aa0ac0): the waiting badge's three pings and the badge pulse are motion too. Off: they run; on: they do not.
+      // the badge exists only on the roomier desk densities, so the CSS rule is read on a probe badge in the page (same classes, same cascade)
+      const pingOf = () => js(`(()=>{const b=document.createElement('span');b.className='badge waiting';document.getElementById('stage').appendChild(b);const n=getComputedStyle(b,'::after').animationName;b.remove();return n;})()`);
+      assert.strictEqual(await pingOf(), 'ping', `${tag}: switch off: the waiting badge pings`);
+      await sw(true);
+      await ok(`(()=>{const b=document.createElement('span');b.className='badge waiting';document.getElementById('stage').appendChild(b);const n=getComputedStyle(b,'::after').animationName;b.remove();return n==='none';})()`, `${tag}: switch on: the waiting badge does not ping`);
+      // the badge's own pulse: a New badge forced to .fresh must not animate with the switch on (only that rule stops it)
+      assert.strictEqual(await js(`(()=>{const m=document.querySelector('#stage .unread-mark');if(!m)return 'no badge';m.classList.add('fresh');const n=getComputedStyle(m).animationName;m.classList.remove('fresh');return n;})()`), 'none', `${tag}: switch on: a fresh New badge does not pulse`);
+      await sw(false);
+      assert.strictEqual(await js(`(()=>{const m=document.querySelector('#stage .unread-mark');if(!m)return 'no badge';m.classList.add('fresh');const n=getComputedStyle(m).animationName;m.classList.remove('fresh');return n;})()`), 'unread-pulse', `${tag}: switch off: a fresh New badge pulses (the check can see the difference)`);
+      // a save that fails: the answer's value is what the switch and the words show (review of 09aa0ac0, 8)
+      await js(`(()=>{const b=window.__durbarSimUi.bridge();window.__stillOrig=window.__stillOrig||b.setStillHighlights;b.setStillHighlights=async()=>({ok:false,stillHighlights:true});})();0`);
+      await H.click('#settingsBtn');
+      await ok(`!!document.getElementById('stillSw')`, `${tag}: Settings for the failed save`);
+      assert.strictEqual(await js(`document.getElementById('stillSw').getAttribute('aria-checked')`), 'false', `${tag}: the switch starts off`);
+      await H.click('#stillSw');
+      await ok(`/Could not save/.test(document.getElementById('stillMsg').textContent)`, `${tag}: a failed save says so`);
+      assert.strictEqual(await js(`document.getElementById('stillSw').getAttribute('aria-checked')`), 'true', `${tag}: the switch shows what main says is in force (on)`);
+      assert.ok(/stays on/.test(await js(`document.getElementById('stillMsg').textContent`)), `${tag}: and the words say so`);
+      await js(`(()=>{const b=window.__durbarSimUi.bridge();b.setStillHighlights=window.__stillOrig;})();0`);
+      await H.click('#stillSw');
+      await ok(`document.getElementById('stillSw').getAttribute('aria-checked')==='false'`, `${tag}: the real answer turns it off again`);
+      await H.click('#scrClose');
+    } finally {
+      await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [] });
+    }
+  }
+  // Real office (review of 09aa0ac0, 2): the switch holds the whole room still, the call lights and the people with them (spec 097 FR-047, the shared
+  // `still`); nothing endless runs in it with the switch on, and it all comes back when the switch is off.
+  {
+    const dbg = ctx.win.webContents.debugger;
+    if (!dbg.isAttached()) dbg.attach('1.3');
+    try {
+      await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
+      await H.load({ w: 1440, h: 900, query: { officeview: 'real' }, ready: `!!document.querySelector('#stage .ro .ro-plate')&&document.getElementById('stage').dataset.d==='real'`, settle: false });
+      const endless = () => js(`(()=>{const ro=document.querySelector('#stage .ro');if(!ro)return -1;return ro.getAnimations({subtree:true}).filter(a=>{const t=a.effect&&a.effect.getComputedTiming();return t&&t.iterations===Infinity&&a.playState==='running';}).length;})()`);
+      await ok(`document.querySelectorAll('#stage .ro-call.pulse').length>0`, 'Real office: a pulsing call light with motion allowed', 60000);
+      assert.strictEqual(await js(`document.querySelector('#stage .ro').classList.contains('still')`), false, 'Real office: the room is not still');
+      assert.ok((await endless()) > 0, 'Real office: something endless runs while the switch is off');
+      await H.click('#settingsBtn');
+      await ok(`!!document.getElementById('stillSw')`, 'Real office: Settings shows the switch');
+      await H.click('#stillSw');
+      await ok(`document.getElementById('stillSw').getAttribute('aria-checked')==='true'`, 'Real office: the switch is on');
+      await H.click('#scrClose');
+      await ok(`document.querySelector('#stage .ro').classList.contains('still')`, 'Real office: the room is still with the switch on', 30000);
+      await ok(`document.querySelectorAll('#stage .ro-call.pulse').length===0&&document.querySelectorAll('#stage .ro-glow.breathe').length===0`, 'Real office: no call light pulses and no glow breathes');
+      await ok(`getComputedStyle(document.querySelector('#stage .ro-call')).animationName==='none'`, 'Real office: a call light has no animation');
+      assert.strictEqual(await endless(), 0, 'Real office: nothing endless runs with the switch on');
+      await H.click('#settingsBtn');
+      await ok(`!!document.getElementById('stillSw')`, 'Real office: Settings again');
+      await H.click('#stillSw');
+      await ok(`document.getElementById('stillSw').getAttribute('aria-checked')==='false'`, 'Real office: the switch is off again');
+      await H.click('#scrClose');
+      await ok(`!document.querySelector('#stage .ro').classList.contains('still')&&document.querySelectorAll('#stage .ro-call.pulse').length>0`, 'Real office: the motion is back with the switch off', 30000);
+      console.log('[unread] real office ok');
     } finally {
       await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [] });
     }
