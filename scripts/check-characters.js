@@ -119,7 +119,7 @@ module.exports = async (ctx) => {
       await close();
       assert.ok(await H.until(`(()=>{const sc=[...document.querySelectorAll('#stage .desk[data-id] svg.scene')].filter(s=>s.getClientRects().length);return sc.length>=12&&sc.every(s=>/\\|crew(\\||$)/.test(s.dataset.sig||'')&&s.querySelector('image[href*="crew/art/pirate-"]'));})()`, 10000), `${where}: Pirate: every desk draws the crew kit with a Pirate portrait`);
       assert.strictEqual(await H.js(`window.THEME.current().id`), theme, `${where}: the theme stays ${theme} under Pirate`);
-      assert.strictEqual(await H.js(`document.querySelectorAll('#stage image[href^="crew/art/"]:not([href*="pirate-"])').length`), 0, `${where}: no other crew's picture under Pirate`);
+      assert.ok(await H.until(`document.querySelectorAll('#stage image[href^="crew/art/"]:not([href*="pirate-"])').length===0`, 3000), `${where}: no other crew's picture under Pirate`); // waits like the Prehistoric line above: the desks repaint a moment after the pick
       // Minimalist on top of the theme
       await pickChars('minimalist');
       await close();
