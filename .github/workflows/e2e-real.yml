@@ -13,11 +13,9 @@ on:
         description: 'Run the one-line turn on macOS and Windows too (Linux always runs it)'
         type: boolean
         default: false
-  # PAUSED 2026-10-29 (owner, Vikram; spec 062 delta 2026-10-29, FR-009; tracking issue #856): red on every scheduled day since
-  # 2026-10-25, spending credits. Run it by hand (workflow_dispatch) while the cause is found. To re-enable: restore the block
-  # below and the cron check in scripts/test-platforms.ts (task T009).
-  # schedule:
-  #   - cron: '17 5 * * *' # daily, 05:17 UTC; Monday's run is the full one on every OS
+  # spec 062 FR-009 (delta 2026-11-02, issue #856): paused 2026-10-29..2026-11-02; the cause was found and fixed (see the spec).
+  schedule:
+    - cron: '17 5 * * *' # daily, 05:17 UTC; Monday's run is the full one on every OS
 
 permissions:
   contents: read
@@ -34,6 +32,8 @@ jobs:
       list: ${{ steps.p.outputs.list }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - id: p
         run: echo "list=$(jq -c . .github/platforms.json)" >> "$GITHUB_OUTPUT"
 
@@ -50,6 +50,8 @@ jobs:
         os: ${{ fromJSON(needs.platforms.outputs.list) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
@@ -61,6 +63,11 @@ jobs:
       - name: Allow unprivileged user namespaces (Linux)
         if: runner.os == 'Linux'
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+      # Claude Code's Linux OS sandbox (spec 087) needs bubblewrap and socat; without socat it cannot start and the turn would run
+      # without it. Installed so the sandboxed path is the one tested here (ubuntu-latest).
+      - name: Install the OS sandbox helpers (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends bubblewrap socat
       # FR-007: the turn on Linux every run; on macOS and Windows only on Monday's scheduled run or a manual run with full_turn
       - name: Turn or no turn
         id: mode

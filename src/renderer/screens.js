@@ -342,9 +342,9 @@
     const KIT_NAMES={office:'Minimalist',pixel:'Pixel',crew:'Cheeky'};
     /* the items are painted again after a theme pick: the theme's own figures and every preview follow the theme */
     const charItems=()=>{
-      const cur=window.THEME.characters(), own=window.THEME.themeKit(), crewN=window.DurbarCrew&&Array.isArray(window.DurbarCrew.IDS)?window.DurbarCrew.IDS.length:0; const preN=window.DurbarCrew&&Array.isArray(window.DurbarCrew.PREHISTORIC_IDS)?window.DurbarCrew.PREHISTORIC_IDS.length:0;
+      const cur=window.THEME.characters(), own=window.THEME.themeKit(), crewN=window.DurbarCrew&&Array.isArray(window.DurbarCrew.IDS)?window.DurbarCrew.IDS.length:0; const preN=window.DurbarCrew&&Array.isArray(window.DurbarCrew.PREHISTORIC_IDS)?window.DurbarCrew.PREHISTORIC_IDS.length:0,pirN=window.DurbarCrew&&Array.isArray(window.DurbarCrew.PIRATE_IDS)?window.DurbarCrew.PIRATE_IDS.length:0;
       const real=X.view&&X.view.get()==='real'&&X.view.world; /* FR-201: in Real office the first choice is the world's default set */
-      const list=[real?{id:'theme',name:'World\u2019s default ('+real.defaultSet()+')',sub:'People follow the world'}:{id:'theme',name:'The theme\u2019s own',sub:(KIT_NAMES[own]||own)+' figures'},{id:'minimalist',name:'Minimalist',sub:'The calm office figure'},{id:'cheeky',name:'Cheeky',sub:crewN?crewN+' cheeky characters':'Cheeky characters'},{id:'prehistoric',name:'Prehistoric',sub:preN?preN+' cave characters':'Cave characters'}];
+      const list=[real?{id:'theme',name:'World\u2019s default ('+real.defaultSet()+')',sub:'People follow the world'}:{id:'theme',name:'The theme\u2019s own',sub:(KIT_NAMES[own]||own)+' figures'},{id:'minimalist',name:'Minimalist',sub:'The calm office figure'},{id:'cheeky',name:'Cheeky',sub:crewN?crewN+' cheeky characters':'Cheeky characters'},{id:'prehistoric',name:'Prehistoric',sub:preN?preN+' cave characters':'Cave characters'},{id:'pirate',name:'Pirate',sub:pirN?pirN+' pirate characters':'Pirate characters'}];
       return list.map((c)=>`<li class="throw"><button class="thpick" type="button" data-characters="${esc(c.id)}" aria-pressed="${c.id===cur}" aria-label="Characters ${esc(c.name)}: ${esc(c.sub)}"><span class="chsw" aria-hidden="true">${X.charPreview?X.charPreview(c.id):''}</span><span class="thtx"><b title="${esc(c.name)}">${esc(c.name)}</b><small>${esc(c.sub)}</small></span></button></li>`).join('');
     };
     const charSec=window.THEME&&window.THEME.setCharacters&&X.applyCharacters?`<section class="scr-sec" aria-labelledby="chH"><h3 id="chH">Characters</h3>
@@ -721,8 +721,6 @@
     const on=!!X.shutters.get();
     return `<div class="scr-row"><span class="scr-row-l" id="shL">Finished agents rest in the lounge</span>${sw(on,'Finished agents rest in the lounge: in a room where others still work, finished agents move to a couch, then to a nap bed','id="shutSw" aria-describedby="shN"')}<span class="scr-note small" id="shN">In a room where others still work, finished agents rest on a couch, and after 10 minutes on a nap bed, so the busy desks get the space.</span></div>`;
   }
-  /* spec 017 FR-008, FR-014, FR-027 (owner 2026-10-24: "office with cabins vs open office modes in config to switch between old and this
-     new mode"): Office with cabins (default) or Open office (the desks exactly as before the cabins); kept per computer */
   /* spec 102 FR-201 (097 FR-114): the World row, a radio group, only with Real office on and more than one world offered (a flagged world is
      not offered, so with the flag off the Settings page is as before). Keyboard: arrows move and select; tokens only. */
   function worldRow(){

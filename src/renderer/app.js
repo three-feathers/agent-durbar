@@ -279,7 +279,7 @@ async function applyCharacters(v){
   else toast('Characters: <b>'+esc(CHARACTER_NAMES[applied]||applied)+'</b>.',2600);
   return applied;
 }
-const CHARACTER_NAMES={theme:'The theme\u2019s own',minimalist:'Minimalist',cheeky:'Cheeky',prehistoric:'Prehistoric'};
+const CHARACTER_NAMES={theme:'The theme\u2019s own',minimalist:'Minimalist',cheeky:'Cheeky',prehistoric:'Prehistoric',pirate:'Pirate'};
 /* FR-068: one figure per choice for its pick button: the kit that choice draws on the current theme, one Cheeky portrait for the crew */
 function charPreview(choice){
   const kit=THEME.kitFor(THEME.themeKit(),choice), a={id:'characters-preview',look:lookFor('characters-preview')};
@@ -1530,8 +1530,7 @@ function ringFolder(){if(reducedMotion())return;setTimeout(()=>{const b=$('addFo
 /* ---------------- Real office (spec 097 phase P1) ----------------
    A second renderer of the same office model (D1): Settings > Office layout > Real office (FR-001), kept in localStorage
    `durbar.officeview` (FR-003; any other value or a storage error is flat, the default). Its script, CSS, pure modules and art load
-   only on first use (FR-061): flat mode never requests them. `durbar.doorsigns` is untouched, so leaving Real office restores the
-   cabins or open choice. */
+   only on first use (FR-061): flat mode never requests them. Leaving Real office restores the flat office. */
 let OFFICE_VIEW=(()=>{try{return localStorage.getItem('durbar.officeview')==='real'?'real':'flat';}catch(e){return 'flat';}})();
 if(qs.has('sim')&&/^(real|flat)$/.test(qs.get('officeview')||''))OFFICE_VIEW=qs.get('officeview'); /* drivers: the simulator only */
 const officeView=()=>OFFICE_VIEW;
