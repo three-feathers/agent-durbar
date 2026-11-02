@@ -494,3 +494,7 @@ Proposed 2026-10-24 and reviewed by the owner. **Acceptance (FR-037):** Vikram (
 ### 2026-11-01: a pre-review bot on API credits (owner decision, FR-069; spec 103)
 
 - **FR-069** Owner decision of Vikram, 2026-11-01, relayed by his coordinating agent. A read-only bot on the Claude Agent SDK reads our PRs before other owners do and shows its results to his coordinating session first. It **never counts as an approval** and **posts nothing to GitHub in v1**; merge conditions, *One full review* (FR-056) and `pr-gate.sh` do not change. It runs on the server under `scripts/prereview/` with a key he creates and saves himself: no repo secret, no CI. Specified, nothing built: [spec 103](../103-prereview-bot/spec.md). Numbers taken: FR-069 (FR-066..FR-068 and FR-071..FR-072 are on main).
+
+### 2026-11-02: three more worlds, for testing lobbies together (owner decision, FR-077; spec 102)
+
+- **FR-077** Owner decision of Vikram, 2026-11-02, on #555: petrol garage, founders' garage and rooftop terrace are all built as worlds, so that all lobbies can be tested together; spec first, in spec 102 (FR-280..FR-299). No rule changes. Numbers taken: FR-077 (main, remote branches and open PRs reach FR-076 here).

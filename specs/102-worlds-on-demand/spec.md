@@ -625,3 +625,234 @@ Security: FR-083 scopes revocation by source and never touches a person's own wo
 ### 2026-11-01: downloadable art agrees with FR-240 (Paco's review of #937, item 8)
 
 D7, FR-085, FR-170, FR-181, US2 scenario 1, FR-205, FR-241, plan and T195 follow FR-240. New: `sourceCommit` and a CI job, so a catalogue PR's hash is still checked against reviewed files (FR-085's old guarantee). Downloadable sets follow FR-240 (an agent decision he can reverse), and T195 covers them.
+
+### 2026-11-02: petrol garage, founders' garage and rooftop terrace, three worlds (owner decision, Vikram, on #555; spec 021 FR-077; FR-280..FR-299, SC-030..SC-036, T240..T258)
+
+**Status: specified; nothing built, no image made for a pack, no flag exists.** The owner asked for all three to be built as worlds, so that all lobbies can be tested together (#555). The idea is Ruben's, from #555. **Numbers** checked against `main`, remote branches and open PRs: #1005 reaches FR-270, SC-027, T232; #1014 takes FR-271, FR-272, T233..T235. This delta is written against those open PRs: anything cited from #990, #994, #1001, #1005, #1014, #1016, #1025, #1030 or #1046 can still change. **No unreleased world is named in public notes or changelogs before it ships** (FR-272 on #1014).
+
+**What the mock shows and does not** (`read:` its code and pictures, outside the repo, made 2026-11-02 from 8 Codex images). It answers "is the idea attractive at 15 people", and is not a design to copy:
+
+- All three use the same seats, screens and lobby slots, drawn by hand. The two garages share wall, floor, desk and nine fixtures and differ in four to five props. By FR-014 and FR-015 that is a re-skin and a reuse of cutouts. **So every picture of the mock is replaced, and each world gets a seating plan of its own.**
+- Its labels are hand-placed and its words are its own (*Parts library*, *Parts shelves*, *Diagnostics*, *Ideas wall*, *Est. today*). FR-013 and FR-040 say the words are the app's (FR-286, FR-298).
+- It has a red pillar box on the roof, red postboxes, a red tool chest and a green sports car that looks too much like one real classic. FR-289 and FR-012 replace them.
+
+#### The worlds
+
+- **FR-280** **Three worlds, three packs.** Each is one row of FR-011 and one pack, picked in the World row like any other, and any set works in it (FR-200). None changes what an agent does, its session, permission mode, model, cap or MCP extras.
+
+  | World | Id | Arrangement | Default set | Delivery |
+  |---|---|---|---|---|
+  | Petrol garage | `garage-petrol` | `bays` | Office people | Closed flag, then FR-294 |
+  | Founders' garage | `garage-founders` | `columns` | Office people | Closed flag, then FR-294 |
+  | Rooftop terrace | `rooftop` | `terrace` | Office people | Closed flag, then FR-294 |
+
+  Office people ship already and have the back views and standing frames used here (097 FR-191), so **no adult person is drawn for these worlds**, and D4 holds.
+- **FR-281** **Frames, not code.** A pack holds `world.json` and the WebP parts of FR-041, and nothing else. **These three ship no `world.css`.** FR-254 on #1005 keeps `world.css` as an in-app file that never travels with a download, so a world that relied on it could not become a pack. No canvas, script, SVG, animation, position, size or word comes from a pack (D1, FR-033, FR-040). `[KNOWN GAP]` the built `world.json` files on the stack (`fixtures`, `fixtureTop`, `floorLine`, `desk`) and their file names (`fx-postbox`, `fx-other`) are not FR-040's and FR-041's; these packs follow what the validator #955 accepts when they are built.
+- **FR-282** **Where a world needs more than a pack can say, and how little.** No per-world code. All of it is shared, closed and tested; a sum of estimates, not measured:
+
+  | Need | Where it lives | Size |
+  |---|---|---|
+  | Three seating plans | `bays`, `columns`, `terrace` join `ARRANGEMENTS` (FR-226, OP-13). One table-driven plan function, three constant tables, one branch in `layoutFor` (#1016) | About 200 lines plus tests |
+  | The big still picture | FR-227's `focus.webp` is allowed with these three. Nothing draws `focus` on the stack yet: Cave's `circle` needs the same few lines, and whichever lands first builds them | About 10 lines |
+  | Floor, wall, desk and monitor from a pack with no `world.css` | Rules in `realoffice-world.css` reading custom properties the world seam sets from the pack's parts. `.ro` today falls back to Photo office's floor | About 15 rules |
+  | Paper per place | `notePaper` and `noteStyle` in `world.json`, checked values (FR-287) | One reader, three rules |
+  | Lobby order | One constant per arrangement in the arrangement table (FR-285), never in a pack | One line each |
+  | Rows and flags | `WORLDS` and `WORLD_FLAGS` in `crew.js`: three data rows, three keys, `peopleFor` and `parseWorld` unchanged | Data |
+
+  **Rejected:** a `world.css` per world (cannot travel), a pack-supplied layout (FR-236), sharing one plan between the two garages (OP-13 and the owner's "substantially different").
+
+#### Plan, monitor, material and mood
+
+- **FR-283** **Seating plans.** Each returns the one `Layout` through FR-228, keeps FR-022's status sort inside a zone and FR-232's saved order, and keeps its plan at every count (FR-230). A status change never moves a seat. Folder signs and `ZoneBox` parts work as on `aisles` (FR-256 on #1005).
+  - **`bays`, petrol garage: two banks and a lane.** A back bank stands at a wall bench, seen from behind, screen on the wall above them; a front bank sits on stools facing you, screen beside them. Between them runs a lane holding `focus.webp`: the parked car and motorbike. Seats fill the back bank, then the front; Tab follows.
+  - **`columns`, founders' garage: a tall wall and vertical teams.** `focus.webp` is a tall idea wall down the left side. Seats fill **column by column**, so a folder reads as a vertical team, not a row; portrait screens stress it. Tab goes down one column, then the next.
+  - **`terrace`, rooftop: rows that widen round a corner pool.** `focus.webp`, the pool under its sail, takes the top right corner. Rows widen towards you (4, 5, 6 at 15), so the seats form an L round it. Everyone faces you. Tab goes row by row.
+
+  At thumbnail size: a horizontal lane with half the room's backs to you; a tall wall with vertical stacks of portrait screens; a turquoise corner and an L of laptops.
+
+  | People | `bays` | `columns` | `terrace` |
+  |---|---|---|---|
+  | 1 to 4 | 2 + 2, big screens, lane under 20 % of the floor | 2 columns, big portrait screens, wall at most 30 % of the width | One row under the pool, big screens |
+  | 5 to 8 | 4 + 4 | 4 columns, 2 seats | 2, 3, 3 |
+  | 9 to 15 | 8 + 7 at 15 | 5 columns, 3 seats | 4, 5, 6 at 15 |
+  | Over 15 | More rows under the banks, no second lane; the floor scrolls inside itself | More rows of 5; the floor scrolls inside itself | More rows of 6; the floor scrolls inside itself |
+
+  The last row settles FR-230's `[KNOWN GAP]` for these three only, in the way 097 FR-012 and FR-256 do.
+- **FR-284** **Cards** (FR-016; every field differs from every other world's card, and T240 proves it before any image). Light temperatures are targets, away from 2000, 3500, 4100, 5600 and 7200 K, which other cards hold.
+
+  | | Petrol garage | Founders' garage | Rooftop terrace |
+  |---|---|---|---|
+  | Mood | Proud, low-key, late evening under work lights | Scrappy, excited, cluttered, an all-nighter | Open, easy, high summer noon |
+  | Light | 3000 K, warm pools from pendants, dark corners | 4600 K, flat cool tube light, a little daylight from the door | 6400 K, hard sun from the top left, soft shade under the sail |
+  | Wall | Dark painted block, pegboard, a long bench | Bare plasterboard and plywood, taped-up drawings of arrows and boxes, no words | Low white parapet, generic soft towers with no landmark, pale sky |
+  | Floor | Charcoal polished concrete, white bay lines, a faint oil stain, static light pools | Pale speckled concrete, offcuts of carpet, paint drips | Honey decking boards, mid-tone |
+  | Desk | Steel bench with a thick scarred top | A door laid on trestles | Teak garden table with white legs |
+  | Monitor | Wide screen in a rubber bumper on a steel swing arm | **Portrait** screen with gaffer tape on stacked books | Thin laptop with a three-sided fold-out sun hood |
+  | Fixture style | Heavy steel and old enamel | Salvaged and home-made | Teak, canvas, weathered copper |
+  | Plants | One dusty snake plant on a shelf | A cactus in a coffee tin | Climbing jasmine, a palm in terracotta, herbs |
+  | Signature | The lane with the parked car and bike | The tall wall of arrows, with a worn beanbag | The plunge pool under a white sail |
+  | View | None | A half-open door, plain daylight | Generic towers over the parapet |
+
+  Every monitor keeps an opaque dark face with real text from the app (FR-221), and the art holds no text. A monitor's hood or bumper is in `monitor.webp`, not drawn by CSS as in the mock.
+
+#### The lobby
+
+- **FR-285** **Nine places, the app's words, each world's own thing.** Same places and meaning (FR-013); `realHeight` fixed (FR-014); every fixture stands on the floor (FR-019); no cutout shared (FR-015), so the two garages have nothing in common. A custom place (097 FR-027) stays the app's kiosk with its icon and name, or `fx-kiosk` where drawn.
+
+  | Place | Petrol garage | Founders' garage | Rooftop terrace |
+  |---|---|---|---|
+  | **Library** | Steel shelves of plain workshop manuals | Planks on cinder blocks, full of paperbacks with blank spines | Teak outdoor bookcase with a potted herb |
+  | **Software library** | Wall of small-parts drawers | Milk crates of cables and bare circuit boards | Slatted shelf of wooden crates and seed trays |
+  | **Terminal** | Rolling diagnostics cart with a dark screen | Home-built kit computer on a stool | Teak post with a dark screen under a small canopy |
+  | **Web** | Fold-out road map on a stand, abstract lines, no place names | Desk telephone with a long coiled cord | Brass telescope on a tripod, pointing out |
+  | **Other tools** | Rolling tool chest, graphite grey, open drawers | Pegboard on a stand with a soldering iron and a multimeter | Potting bench with garden tools |
+  | **Boss** | Closed steel roller door in a frame | Plain painted door into the house | Glass and wood pavilion door |
+  | **Coffee corner** | Bench with a percolator and tin mugs | Camp stove, a moka pot, unprinted pizza boxes | Coffee cart under a striped awning |
+  | **Bank** | Heavy old floor safe in dull steel | Dented filing cabinet with a cash tin on top | Deck chest with a brass lock and a few plain coins |
+  | **Postbox** | Black enamel box on a steel post | Wooden box with a slot on a fence post | Weathered green copper box on a slim post |
+
+  **The lobby differs too.** The band stays on the back wall in all three for this first build: `lobbyBand` is horizontal, and moving it would cost more than the plan gains. What differs is the art, and the order, a constant per arrangement over 097 FR-023's order: `bays` keeps it, with the roller door on the right; `columns` puts Boss first, by the wall of arrows; `terrace` puts Boss in the middle, at the pavilion. `[KNOWN GAP]` whether Boss moving between worlds confuses anyone is for the owner's look.
+- **FR-286** **Labels: the crowding in the mock is the mock's, and the check stays.** The mock places its labels by hand, uses longer words than the app's, and lets props sit in the band, which is why labels collide near the Boss and over the Terminal. **The fix is to use what is built, with nothing new:** `lobbyWidths` (097 FR-025: closer steps, smaller fixtures, then `+N`), `stagger` in `realoffice.js` (a chip never covers a place plate; it takes the nearest free spot up to 64 px away and three levels up, then initials) and the app's words. **No decoration stands in the band**, as big props are `focus.webp` (FR-282), so the palm, the sail and the car cannot push a plate. **New is only a harder scene:** a crowded scene of the `lobby` moment in the matrix (FR-295), which fails on any overlap of plates, chips, `+N` and fixtures' labels at 15 agents with 5 at the Boss, and with 15 at the Boss, at both sizes, with 3 custom places too.
+- **FR-287** **Post-it paper per place** (the rule of #994: one paper colour per reason, the words always stay, and a pack may restyle the paper; `NOTE_PAPER`, `NOTE_INK`). `notePaper` is a map from place id to colour, checked by the same value rules as FR-055, with an unknown key refused. It must keep each reason's colour family, and it must reach 4.5:1 with `NOTE_INK`. `noteStyle` is one word from a closed list, as `rideStyle` is (FR-033): the app draws it, square and opaque, and a pack cannot. **Calculated against `#2a2205`; lowest in each world 7.87, 11.42 and 9.30 to 1.**
+
+  | Reason | Colour family | Petrol: `tag`, a shop card on a wire | Founders: `tape`, a paper square under masking tape | Rooftop: `plant-label`, a garden card |
+  |---|---|---|---|---|
+  | Boss | blue | `#a9c6e0` | `#d0e4f7` | `#b4d6f5` |
+  | Bank | green | `#a8d4a6` | `#d0efce` | `#b2ecae` |
+  | Coffee corner | peach | `#e8b98a` | `#ffdcb5` | `#ffc98f` |
+  | Library | canary | `#e2cf6c` | `#fbeea0` | `#fbe46a` |
+  | Software library | lavender | `#c4b2dc` | `#e6d9f5` | `#d4bdf2` |
+  | Terminal | aqua | `#a4d2cc` | `#cfeee9` | `#a6e8e0` |
+  | Web | pink | `#e0adc2` | `#f9d6e4` | `#f8b6d0` |
+  | Other tools | kraft | `#c8b58f` | `#e8dabb` | `#e2cc9c` |
+  | Postbox and a custom place | plain | `#d8d5cc` | `#f4f2eb` | `#f1eee4` |
+
+  Postbox has no colour of its own in #994's table and takes the plain one (Q9). Dark, pale and sunny, so the paper belongs to the room. Values are a start; the owner's look may move them inside the family.
+
+#### Calm, contrast and helpers
+
+- **FR-288** **Motion: none of their own.** Packs supply no motion (FR-033). People, screens and lights move as in every world, on the one grid of 12 changes a second (097 FR-229 on #1046; a pack cannot leave it), with no new loop and no new row in `check-office-ops`. **Reduced motion and Serious mode freeze everything:** people, helpers, lights and the post-it's easing. Forced colours may hide the art, and text stays (097 FR-051).
+- **FR-289** **Calm rules** (from the mock's notes, and each one a check where a machine can check it).
+  - **The car and the bike are decoration, never status.** They are part of a still `focus.webp`: never lit, tinted or changed by any state, with no headlights on, no click, no hover, no focus, no accessible name. So are the pool, the sail, the wall of arrows, the plants and the beanbag. No large prop is in a saturated status hue (blue, amber, green, red): a green car and a red chest read like *done* and *error* across a room. The mock's are replaced by a pale cream car, a black and steel bike and the graphite chest above; how a colour reads across a room is the owner's look.
+  - **No flicker, no moving water.** The pendants and tubes are steady, there are no sparks, the water is a still picture, and there is no splash, ripple, shimmer or seagull in flight. Nothing in the art layer of these worlds has an animation.
+  - **Static light pools.** Pools and shade are in the pixels of `floor.webp`, drawn `cover`, so no extra element, gradient layer or blend mode (097 FR-178). They never follow a person or a state; the status glow stays the app's.
+  - **No regional marks:** no red pillar box or any national post mark, no number plate, street sign, flag, national colours or road marking of a country (FR-010, FR-012). *Petrol* is the shown name and nothing more.
+  - **No real car brands or logos:** no badge, emblem, plate, lettering or trade-dress shape on a car or a bike, invented shapes only, and no model a person could name. No real company's garage, no real person's likeness and no story of one (#555 names some as inspiration only). A machine cannot prove this, so it is a line in `owner-check` per picture.
+- **FR-290** **Glare and contrast on the bright sky.** Measured on the mock's rooftop picture: four sky samples have relative luminance 0.60 to 0.78, white chip against that sky is 1.42:1, dark ink on a white chip about 15:1. **So text is not the problem; a label's edge is, and so is a screen washed out by its surroundings.**
+  - A label is never text on the sky: plates and chips stay opaque (FR-023), text 4.5:1 on its own surface (3:1 for large text), tested on the composited picture.
+  - Over the sky every plate and chip has a 1 px edge at 3:1 or more against the brightest sky; `#5a6470` gives 4.22 and 4.75:1 on the two palest samples. A token, also in the other two worlds, so no per-world rule.
+  - `wall.webp`'s brightest 5 % of pixels stay at relative luminance 0.80 or less, and `floor.webp`'s mean stays between 0.15 and 0.55 (`test:world-packs`, decoded). These numbers are a first bar from one picture; T097's rule applies, and they move only by evidence.
+  - Screens stay the app's opaque dark face under the hood, with no glare or reflection painted over text.
+  - The same pass runs for the two garages: charcoal floor against plates, and pale floor against the tape-style paper, whose edge the app draws.
+- **FR-291** **Helpers are clay-toy people** (FR-271 on #1014; #1014 makes `helpers` a required moment). These three worlds are photographic, and **no photorealistic child is ever drawn**: a helper is a small clay-toy figure, visibly a toy, with rounded plasticine shapes and thumb marks, no real child's likeness. Three shown per parent, then `+N`; four poses (playing, hand up, error, done); fully dressed in everyday clothes: overalls and a toy car with no badge in the petrol garage, a T-shirt and wooden blocks in the founders' garage, shorts, T-shirt and sun hat with a ball on the roof. **Never swimwear, never in or at the pool, never near a soldering iron or a car in the art:** they stand beside the parent's plate and nowhere else. One `helpers.webp` strip per world, one image, under FR-041's rules once FR-271 lands; D4 is unchanged for adults. `[KNOWN GAP]` FR-271 says "in that world's own drawing style": this delta reads clay as the style for photographic worlds, for the owner to confirm with Q5. Whether the moment lands here or waits is T235's order.
+
+#### Art and fit
+
+- **FR-292** **Art: 12 to 18 images per pack, one at a time.** A generation runs only after the world's card passes (FR-017), the owner has said yes (Q1) and the plan has passed in grey boxes (T246). One `codex exec` at a time, machine-wide. Each pack starts from these 10 images, and a fixture or part that reads badly gets its own image: **stop at 18 and ask**.
+
+  | # | Image | Pack files |
+  |---|---|---|
+  | 1 | Back wall | `wall.webp` |
+  | 2 | Floor, with its light pools | `floor.webp` |
+  | 3 | Welcome scene | `welcome.webp` |
+  | 4 | Signature (lane, wall of arrows, pool) | `focus.webp` |
+  | 5 | Desk | `desk.webp`, `desk-half.webp`; `desk-back.webp`, `desk-back-half.webp` for `bays` |
+  | 6 | Monitor | `monitor.webp`, `monitor-half.webp` |
+  | 7 | Fixtures, sheet 1 | `fx-library`, `fx-software`, `fx-terminal`, `fx-web`, `fx-other` |
+  | 8 | Fixtures, sheet 2 | `fx-boss`, `fx-coffee`, `fx-bank`, `fx-postbox`, `fx-kiosk` |
+  | 9 | Small parts | `lift`, `speech-bubble`, `slip`, `panel-frame` |
+  | 10 | Clay helpers | `helpers.webp` |
+
+  **Listed by file, tool and date** in `ASSETS.md` beside the pack (FR-170): file, tool and version (Codex image generation, codex-cli version), date, maker, approver Vikram, exact prompt with FR-010's clause plus "no car badge, no plate, no text", how it was cut, `owner-check` per picture, licence. Originals stay out of the repository. Nothing is listed yet because nothing is made; the mock's 8 images are not pack art.
+
+  **Size. Budget: at most 4 MB per pack (FR-042), and the brief's 2 to 4 MB looks high.** FR-041's part caps give about 2.5 MB at most. Measured by re-encoding the mock's art to WebP at 0.80, at most 300 px tall: a fixture averages 13 to 17 KB, a big prop at most 45 KB, a wall 33 to 34 KB, a desk 10 to 17 KB; a floor at 1408x704 is 47 to 56 KB, over FR-041's 40 KB, and 30 KB at 0.60. With the caps for `welcome` and `focus`, a pack is **about 0.75 MB, an estimate**; the built Photo office and Cave packs are about 0.09 and 0.18 MB on the stack. A pack under 2 MB is not a failure. `[KNOWN GAP]` if the owner's look finds a floor at 40 KB too soft, the fix is raising that part's cap in a delta, with the pack limit unchanged.
+- **FR-293** **15 agents fit at 1440x900 and 1280x800.** FR-229 applies whole, with no exception per world: text at least 10.5 px, no overlap, status readable, Tab sensible, op rows, no office scroll at 15. **Arithmetic only**, from a floor of about 1248 x 602 px at 1280x800 (FR-256's height; width from the mock) and with FR-257's reasoning for narrow glass (4 lines at 10.5 px and 15 characters):
+
+  | At 15, 1280x800 | `bays` | `columns` | `terrace` |
+  |---|---|---|---|
+  | Seat width | back 156, front 178 | about 211 after a 190 wall | 208 to 250 |
+  | Row height | about 250 each, plus a 100 lane | about 200 | about 200 |
+  | Glass | at least 112 x 64 | at least 112 x 118 | at least 120 x 66 |
+  | Smallest front face | about 28 to 33 | about 30 | about 30 |
+
+  **The face floor is 24 px, measured crown to chin in the app** (FR-229, owner 2026-11-01), only on a floor of 15; with fewer people faces grow, and hover and focus show them big. People seen from behind have no face and do not count (FR-256). `[KNOWN GAP]` none of this is measured. T241 measures in a pure test **before any image is made**. A plan that fails is redesigned, and it stays out of `ARRANGEMENTS` (SC-019): the first move is a smaller lane, wall or pool, since decoration gives way first. `[KNOWN GAP]` 097 FR-032's bar for real lines is at 150 x 60: T256 writes these three into 097 beside `aisles` (T232 on #1005). `[KNOWN GAP]` a back-bank person who is waiting or in error shows a back in `bays`: state reads from the light, plate and bubble, and the owner's look decides whether that is enough (Q6).
+
+#### Delivery, testing and order
+
+- **FR-294** **Delivery, by spec 102's state today: closed flag now, on demand later.** The destination is **on demand**: these are not in OP-10's and FR-213's short list of what ships, and the owner's note on #555 expected a world pack once worlds on demand are live. **That path does not exist yet:** the pack store #966 is held (`status:blocked`), the validator #955 is open, no catalogue exists, and T190 forbids any pack in the worlds repository until #955 merges. So, until then, and subject to Q2:
+  - Each pack sits at `src/renderer/realoffice/worlds/<id>/`, flag closed, drawn only by the simulator with `worldflags`. A closed flag means not offered and never chosen: a stored id means the first world, and nothing of it loads (`parseWorld`, `peopleFor`).
+  - **A closed flag does not keep bytes out of the installer:** `copy-assets.js` copies every world folder and `package.json` ships `dist/**/*`. So one exclusion in `build.files` plus a file-list test keep them out of packaged builds while their flags are closed. No release carries unapproved art.
+  - This is a temporary exception to FR-240's "this repository holds no downloadable art", the owner's to allow. The same folder, with no `world.css`, then moves to `three-feathers/agent-durbar-worlds` when the store lands (T257), and takes FR-243's two pull requests, a pinned hash and FR-035's gate. Git history keeps what was here, an estimated 2.25 MB.
+  - If the owner wants any of them offered before the store lands, that is a built-in, changing OP-10 and FR-213's list (Q3). The 30 MB test holds: 23.0 MB estimated for all planned shipped art (FR-253) plus about 2.25 MB fits; three packs at 4 MB each would be 35 MB and would not.
+- **FR-295** **Testing all lobbies together, on the world matrix** (098 FR-050..FR-052, FR-031 check: no new driver, no new switch in the UI).
+  - **By hand:** `DURBAR_SIM=15 DURBAR_SIM_WORLDFLAGS=garage-petrol,garage-founders,rooftop npm start` lists them in the World row beside the worlds already open, so one click switches. Main passes the value on as the existing `worldflags` option, under `DURBAR_SIM` only, as it does the other simulator options; a packaged app has no such path.
+  - **By script:** `node scripts/world-matrix.js --worlds photo,garage-petrol,garage-founders,rooftop --moments lobby,boss-bank-post-coffee`, at both sizes. `--moments` is new, and small; FR-286's scene is an extra scene of the `lobby` moment, so `--moments lobby` runs it and no new world moment is added. T094's contact sheet takes `matrix.json` and shows these on one page, world by world, at full width, as an artifact only (098 FR-054).
+  - **A real fault this finds:** on #994's and #1030's versions the driver passes `world` and not `worldflags`. A closed-flag world then quietly draws Photo office and passes (`parseWorld`), and that holds for Cave too. **T244 passes the flags and fails a cell whose drawn `data-world` is not the one asked for.**
+- **FR-296** **Order: after the next built-in world's stack lands** (#1005, #1016, #1022, #1025, #1030 and what follows them), since `layoutFor`, the flags' pattern and `aisles` come from it. **The owner's world order elsewhere stays:** nothing here moves any row of #1014's plan, Cave, Durbar hall, or the next built-in world. He can move these (Q4). The tasks with no art cost no credits and can start when `layoutFor` is on `main`. FR-039 applies, and nothing here counts as urgent.
+- **FR-297** **Before each is offered.** FR-035 with no exception: 097 FR-179 (T156..T159), `test:world-packs`, all moments, the matrix, provenance, FR-016, `distinct-check`, the default set. **The owner's look is required before each is offered, per world, separately:** one can open while another waits.
+
+  | Check | By whom | Tag |
+  |---|---|---|
+  | Grey-box plans side by side, before any image (T246) | Vikram | `read:` |
+  | Every picture's `owner-check`, including no brand, no likeness, no text | Vikram (project world art, FR-243) | `read:` in `ASSETS.md` |
+  | Look at 3, 4, 8 and 15, both sizes, room, chat and Settings, with a video of it moving (`docs/world-design.md`) | Vikram | `real:` his look, recorded per world |
+  | Ruben's look, as the idea's owner, asked for and not a gate | Ruben | `read:` |
+  | Real GPU: idle CPU in 4 mixes against Photo office in the same run (`check-perf --record`, 097 T162) | Whoever has the Mac | `real:` |
+  | Packaged Windows, macOS and Linux run with flags open | Whoever has each | `real:`, else `[KNOWN GAP]` |
+  | First real download, once on demand (T043) | Whoever has each OS | `real:`, 0 AI credits |
+
+  Everything else is `test:` and `sim:`, 0 AI credits. Image runs are real usage of the owner's plan, Q1.
+- **FR-298** **What #555 asked that does not carry over.** **A floor marked Basement or Rooftop** (B and R on the lift): replaced by the owner's decision to build worlds, and a world applies to the whole office as today. No per-floor world is specified. **The "Est. today" sign:** packs set no words and art holds no text (Q7). **The seagull:** would need motion, and the first build has none; a still gull is a prop inside `focus.webp`, if wanted. **An agent in sunglasses:** poses are the set's, not a world's (D4). **A night rooftop with fairy lights:** `lightSets` (FR-252 on #1005) could carry it; not in the first build (Q8).
+- **FR-299** **Other specs**, written by T256 once the PRs holding those lines land: 098 FR-030, FR-031 (`notePaper`, `noteStyle`, `helpers`), registry rows; 097 FR-032 and FR-023's lobby order; 024's and 001 FR-039's order stays their own, only the drawing changes.
+
+#### Acceptance, edge cases, success criteria
+
+**Acceptance scenarios**
+
+1. `test:` **Given** `bays`, `columns` or `terrace`, **When** 1..15 agents are laid out at both sizes, chat closed and open widths, **Then** no rectangles overlap, every front face at 15 is at least 24 px, faces grow with fewer people, and Tab's consecutive stops are neighbours.
+2. `test:` **Given** any status change, **When** the layout is computed again, **Then** every seat's rectangle is the same.
+3. `sim:` **Given** the flags closed and `durbar.world` naming one of these, **When** the app starts, **Then** Photo office draws, no file of it is requested, and the World row does not list it.
+4. `sim:` **Given** the three flags open, **When** a person picks each in the World row, **Then** each draws its own plan and monitor, only that world's files load, and leaving restores the other world.
+5. `sim:` **Given** the crowded lobby scene, **When** the matrix runs at both sizes, **Then** no label overlaps another, no text is under 10.5 px, every text pair reaches 4.5:1, and every chip on the sky has its edge.
+6. `sim:` **Given** reduced motion or Serious mode, **When** any world of these runs at 15, **Then** nothing in it animates.
+7. `read:` **Given** a pack at `available`, **When** its `ASSETS.md` is read, **Then** each file has its tool and date, and the owner's check says no brand, no likeness, no text; `test:` fails a missing field.
+
+**Edge cases**
+
+- **0 agents:** the empty-office moment; the signature picture still shows.
+- **1 agent:** its plan, big screen, the same world at a glance; no fall-back to `rows` (FR-230).
+- **16 and 40 agents:** rows and a scroll inside the floor (FR-283); `check-office-ops` holds its rows with no allowance.
+- **All 15 at the Boss, or 3 custom places too:** `lobbyWidths` and `stagger`; `+N` before anything overlaps.
+- **Everyone away:** every seat shows its post-it; the room does not move.
+- **A set other than the default, or one with no back views:** the back bank shows that set's fallback (FR-204); FR-208's matrix rotates sets through these worlds.
+- **Chat open:** a chat hides the office on this base (#1001), so layout widths are checked by the pure test only: `[KNOWN GAP]` as on `aisles`.
+- **Forced colours:** art and `focus` hidden, paper loses its colours and keeps its words.
+- **`focus.webp` fails to load:** the floor shows there, and no seat moves (097 FR-065's pattern).
+- **Moved to the store later:** same id, so a stored choice keeps working; a person without the pack gets the first world until they download it (`parseWorld`).
+- **A window too small:** FR-230's fall-back applies, as to any arrangement; the All floors view stays rows.
+- **Hostile `notePaper` or `noteStyle`:** `__proto__`, `url(`, an unknown word or a colour under 4.5:1 refuse the pack, in plain words (FR-055, FR-056).
+
+**Success criteria**
+
+- **SC-030** `bays`, `columns` and `terrace` each pass FR-229 at 15 agents at both sizes, measured in the app, or stay out of `ARRANGEMENTS` and the owner hears why.
+- **SC-031** A pack of these holds only `world.json` and FR-041's parts and no `world.css`; each draws fully in the simulator with its folder as the only world-specific input.
+- **SC-032** FR-016 and FR-017 pass for these three against every world with a card, in all pairs, and the two garages share no file and no card field.
+- **SC-033** Every pack is at most 4 MB and every part under its cap by committed files; a project pack's image count, file, tool and date are in `ASSETS.md`.
+- **SC-034** No state changes any pixel of the signature picture: a driver compares it across all eight states.
+- **SC-035** With flags closed, no packaged file holds these worlds' art, and no stored choice draws them.
+- **SC-036** The owner's look is recorded for a world before its flag opens, and the matrix cell of a closed-flag world draws that world and no other.
+
+#### Open questions for the owner
+
+Nothing is spent or decided by this delta; each has a recommendation. "ok" takes them all.
+
+- **Q1 Image runs (costs plan usage).** 12 to 18 images per pack, 36 to 54 in all, on your ChatGPT plan, one at a time. What that costs in plan limits is not known. *Recommended:* yes, after the grey boxes pass, one pack at a time, petrol first, then founders', then roof, and a stop at 18 each. **No run until your written yes.**
+- **Q2 Where the art sits until the store lands.** (a) In this repository, flag closed, left out of packaged builds; (b) the same, in packaged builds, as Cave and the next built-in world are; (c) wait for #955 and #966, and test nothing together until then. *Recommended:* (a): it is testable now, and no release carries unapproved art. It needs your exception to FR-240.
+- **Q3 Delivered how, in the end.** On demand, or built-in? *Recommended:* on demand, once the store lands, per your note on #555. Built-in would change OP-10's list, and is the only way to offer them before the store.
+- **Q4 Order.** *Recommended:* as FR-296: after the next built-in world's stack, nothing else moves, and these go after #1014's row unless you move them. Move them if testing lobbies together matters more.
+- **Q5 Clay for helpers in photographic worlds.** *Recommended:* yes, clay in these three, and read FR-271 that way for Photo office too. Art approval as for any picture.
+- **Q6 Half the petrol garage seen from behind.** It makes the plan distinct and shows screens best, and you said backs are fine; at 15, up to 8 people are read by light, plate and bubble rather than a face. *Recommended:* keep, judged on the grey boxes. The alternative is a front-facing back bank, closer to `rows`.
+- **Q7 "Est. today".** Ruben's sign breaks "packs set no words" and "no text in art". *Recommended:* drop it; the wall of arrows carries the idea. Ruben may want to say.
+- **Q8 Night and day.** *Recommended:* one light each in the first build; a night roof later as `lightSets`, with its own image cost.
+- **Q9 Postbox paper.** #994's table has no Postbox row. *Recommended:* the plain paper, as now.
+- **Q10 #555.** *Recommended:* stays open until all three are offered, or closed with what is not built (FR-298) if you prefer; the per-floor idea is dropped unless you bring it back.

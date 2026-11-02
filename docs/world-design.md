@@ -26,6 +26,8 @@ Between any two worlds, all of these differ, and you can tell them apart from a 
 
 **The side-by-side test:** put two worlds side by side at thumbnail size. If the seating plan and screen shapes match, it is not a new world. Plan a new world against the others before drawing it.
 
+**A mock with the same seats is a question about mood, not a plan.** The garage and rooftop mocks (2026-11-02) looked good and were one layout three times, and the two garages shared their fixtures: they showed the idea appeals, not that any of them is a world. Sketch the plan in grey boxes first, and look at it before spending an image.
+
 Be specific without being a cliche: no tourist symbols, stereotypes, or copied logos and postal marks. **Flags:** invented flags with our golden logo mark are fine, as in the Durbar hall; flags of countries are not. Arches appear only in a world drawn from a historical court that used them, such as the Durbar hall. Anything sacred stays out of decoration.
 
 ## State must be obvious
@@ -52,6 +54,8 @@ Be specific without being a cliche: no tourist symbols, stereotypes, or copied l
 - **No dead strips.** A view or window earns its place only if it costs no space and looks right: full height on wall that already exists, never a band above fixtures that shrinks them.
 - **Fixtures can live in the room.** A central cluster or an aisle frees the band and makes walking real.
 - **Scale tells the truth.** Fixtures, people and furniture agree: a bar is a building, a postbox is not. One scale per depth, and shrink everything together, not one thing.
+- **Big props are one still picture of their own,** never things standing in the lobby band: a car or a palm in the band pushes plates and crowds labels. The name chips and the band's own crowding rules do the rest; never place a label by hand.
+- **Decoration is never status.** A car, pool or palm never reacts to a state, is not clickable or focusable, and avoids saturated status colours: from across a room a green car reads as *done* and a red tool chest as *error*.
 - **Use the space near the edges and the horizon.** Empty sand or floor is waste when people could be bigger.
 - **Few people, big screens:** readable text in the room at 3 to 4. **Many people, small screens:** state by colour and marks, with text on hover or focus.
 - Numbering and movement are natural: floor 1 at the bottom, up is up.
@@ -88,6 +92,8 @@ A world is not finished until its chat and settings screens have been looked at 
 
 - People stand out from the background. A lighter room or a darker one is a choice to test against people, cards and labels, not a mood alone.
 - The light has one direction and temperature. Shadows agree with it.
+- **Light pools are pixels in the floor picture,** not extra layers, and never follow a person. No flicker and no moving water.
+- **A bright sky hurts labels by their edges, not their text.** A white chip on a pale sky measured 1.42:1 with the sky, and about 15:1 for its text: give it an edge at 3:1 and keep the sky below glare. Text never sits on the sky itself.
 
 ## Performance
 
