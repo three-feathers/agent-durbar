@@ -375,6 +375,13 @@ module.exports = async (ctx) => {
       await ctx.sleep(300); // a bound on a negative: the zoom by focus opens at once, the one by hover in 120 ms
       assert.strictEqual(await js(`!!document.getElementById('roZoom')`), false, 'FR-183: a keyboard send moves the focus, and opens no screen zoom');
       await ok(`!!document.querySelector(${jsLiteral(plate)}+'.is-followed')`, 'FR-183: its plate is marked');
+      { /* the pointer moving on a screen still opens its zoom: only the still pointer was quiet */
+        const r = await js(`(()=>{const b=document.querySelector('#stage .ro-screen[data-for="'+CSS.escape(${jsLiteral(A)})+'"]').getBoundingClientRect();return {x:Math.round(b.left+b.width/2),y:Math.round(b.top+b.height/3)};})()`);
+        wc.sendInputEvent({ type: 'mouseMove', x: r.x, y: r.y });
+        await ok(`(document.getElementById('roZoom')||{dataset:{}}).dataset.for===${jsLiteral(A)}`, 'a moved pointer opens the zoom');
+        wc.sendInputEvent({ type: 'mouseMove', x: 1, y: 1 });
+        await ok(`!document.getElementById('roZoom')`, 'it closes when the pointer leaves');
+      }
       await js(`document.activeElement.blur();0`); /* a focused plate shows the focus ring instead */
       await ok(`getComputedStyle(document.querySelector(${jsLiteral(plate)})).outlineStyle==='dashed'`, 'not colour alone');
       await E(B, { type: 'status', status: 'working', intent: 'Another' }); /* a redraw must not take the mark away */
