@@ -626,7 +626,7 @@ Security: FR-083 scopes revocation by source and never touches a person's own wo
 
 D7, FR-085, FR-170, FR-181, US2 scenario 1, FR-205, FR-241, plan and T195 follow FR-240. New: `sourceCommit` and a CI job, so a catalogue PR's hash is still checked against reviewed files (FR-085's old guarantee). Downloadable sets follow FR-240 (an agent decision he can reverse), and T195 covers them.
 
-### 2026-11-02: petrol garage, founders' garage and rooftop terrace, three worlds (owner decision, Vikram, on #555; spec 021 FR-077; FR-280..FR-299, SC-030..SC-036, T240..T258)
+### 2026-11-02: petrol garage, founders' garage and rooftop terrace, three worlds (owner decision, Vikram, on #555; spec 021 FR-077; FR-280..FR-299, SC-030..SC-036, T240..T259)
 
 **Status: specified, and the owner's answers are at the end of this entry; nothing built, no image made for a pack, no flag exists.** The owner asked for all three to be built as worlds, so that all lobbies can be tested together (#555). The idea is Ruben's, from #555. **Numbers** checked against `main`, remote branches and open PRs: #1005 reaches FR-270, SC-027, T232; #1014 takes FR-271, FR-272, T233..T235. This delta is written against those open PRs: anything cited from #990, #994, #1001, #1005, #1014, #1016, #1025, #1030 or #1046 can still change. **No unreleased world is named in public notes or changelogs before it ships** (FR-272 on #1014).
 
@@ -862,7 +862,7 @@ He answered "ok" to all ten, with the recommendations. These are decisions now, 
 - **Q11 Unreachable code: decided.** His new rule, on its way through the weekly retro: no unreachable code lands. These worlds are **a named exception, as written here, the 30-day ask included: each world lands whole behind its flag, and nothing lands before its pack exists.** Waiting for all three would have meant waiting for the held store (Q2, Q3), since no packaged build can reach them before it. The same exception applies to the next built-in world's stack; its plan carries that.
   - **Lands on its own, because it is reachable today:** T244's matrix fix and `--moments`, T247's crowded scene over the worlds that exist, T248. They serve every world, Cave included.
   - **Stays on a branch until that world's art is approved:** T241's plan and T246's grey boxes, shown from the branch. No id joins `ARRANGEMENTS` on `main` without its pack.
-  - **Lands in one PR per world:** that world's table in `ARRANGEMENTS`, its pack, its flag and T254's cells. The first world's PR also brings T242, T243, T245, T249 and T258, unless Cave has brought T242 first.
+  - **Lands in one PR per world:** that world's table in `ARRANGEMENTS`, its pack, its row and flag (T259) and T254's cells. The first world's PR also brings T242, T243, T245, T249 and T258, unless Cave has brought T242 first.
   - **Why this counts as reachable enough to name:** every path runs under `worldflags` in the simulator and in CI (T258, the matrix) from the day it lands.
   - **Its exit, per world:** the flag opens on the owner's look and the store (T255, T257), or the world's code and pack are removed. A world that waits **over 30 days** after landing goes back to him with that choice.
   - **Not chosen, three worlds at once:** a very large PR, and art held on a branch for an unknown time, reaching users no sooner.
