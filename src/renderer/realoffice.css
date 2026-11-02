@@ -78,7 +78,8 @@
 /* FR-040, FR-041: lamp, screen glow and call light per desk */
 .ro-lamp{border-radius:50%;background:radial-gradient(closest-side,rgba(var(--ro-warm),.55),rgba(var(--ro-warm),0));mix-blend-mode:screen;opacity:0}
 .ro-lamp.lamp-warm{opacity:.55}.ro-lamp.lamp-bright{opacity:.8}.ro-lamp.lamp-on{opacity:.42}.ro-lamp.lamp-low{opacity:.15}
-.ro-lamp.lamp-off{opacity:1;mix-blend-mode:multiply;background:radial-gradient(closest-side,rgba(20,14,8,.28),rgba(20,14,8,0))}
+.ro-lamp.lamp-off{opacity:1;background:none} /* review 2026-11-02: no dark oval over the room behind a sleeper: the person dims (below), not the room */
+.ro-person.asleep{filter:brightness(.72)} /* one still picture, no animation of its own */
 .ro-glow{border-radius:8px;opacity:0;box-shadow:0 0 18px 6px rgba(var(--ro-screen),.35)}
 .ro-glow.glow-on{opacity:.8}.ro-glow.glow-breathe{opacity:.7}.ro-glow.glow-low{opacity:.25}
 .ro-glow.glow-red{opacity:.9;box-shadow:0 0 14px 4px rgba(var(--ro-red),.4)}
@@ -156,8 +157,8 @@
 .ro-plate{display:flex;flex-direction:column;justify-content:center;gap:1px;padding:3px 7px;text-align:left;font:inherit;line-height:1.25;cursor:pointer;
   background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:6px;box-shadow:0 1px 2px rgba(0,0,0,.14);overflow:hidden}
 .ro-l1{display:flex;gap:5px;align-items:baseline;white-space:nowrap;overflow:hidden;min-width:0}
-.ro-l1 b{font-size:12px;overflow:hidden;text-overflow:ellipsis;flex:0 1 auto;min-width:2ch}
-.ro-role{font-size:10.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1 1 auto}
+.ro-l1 b{font-size:12px;overflow:hidden;text-overflow:ellipsis;flex:0 0 auto;max-width:100%;min-width:2ch} /* the name never gives way to the role; it is cut only when it alone is wider than the plate */
+.ro-role{font-size:10.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1 1000 auto} /* the name has priority: in a narrow plate the role shrinks first (review 2026-11-02), the name is cut only when it alone is wider than the plate */
 .ro-help{font-size:10.5px;color:var(--muted);margin-left:auto;flex:none;display:inline-flex;gap:2px;align-items:center}
 .ro-l2{font-size:10.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ro-plate:is(.st-waiting,.st-limit){background:var(--tone-warn-bg,#fff4e2);border:1.5px solid var(--c-waiting)}
@@ -192,6 +193,7 @@ button.ro-chip{font-family:inherit;margin:0}
   .ro-lights,.ro-amb{display:none}
   .ro-stext,.ro-sl,.ro-zl{color:CanvasText}.ro-glass,.ro-zb{background:Canvas!important}.ro-bars i{background:CanvasText}.ro-zoom{border:1px solid CanvasText}
   .ro-plate,.ro-sign,.ro-lplate,.ro-chip,.ro-away{border:1px solid CanvasText}
+  .ro-away{background:Canvas;color:CanvasText} /* the paper colours are not kept: the words and the border are */
 }
 /* FR-051: more contrast: steady lights, full ambient */
 @media (prefers-contrast:more){
@@ -208,6 +210,11 @@ button.ro-chip{font-family:inherit;margin:0}
 .ro-eplate{padding:9px 16px;border-radius:10px;font-size:13.5px;line-height:1.45;text-align:center;background:var(--surface);color:var(--ink);border:1px solid var(--line);box-shadow:0 6px 18px rgba(0,0,0,.28)}
 .ro-edesk{cursor:default}
 .ro-escreen{cursor:default}
+
+/* owner 2026-11-02: an asleep desk narrows once its message is read; its person then sits in front of its own dark screen, the desk in front of the person */
+.ro-screen.asleep{z-index:1}
+.ro-person.asleep{z-index:2}
+.ro-desk.asleep{z-index:3}
 
 /* spec 097 FR-121, FR-122, FR-124: the queue slip at the Boss door, the limit slip at the Bank and the MCP bubble at the desk. An opaque face
    (never text over a picture), the app's own tokens and button classes; the world's paper, tablet or note is in its world.css. Nothing moves. */
@@ -231,10 +238,6 @@ button.ro-chip{font-family:inherit;margin:0}
 .ro-slip.ro-limit,.ro-slip.ro-bubble{border-color:var(--c-waiting)}
 .ro-slip.ro-bubble{width:360px}
 @media (forced-colors:active){.ro-slip{border:2px solid CanvasText;background:Canvas;color:CanvasText}}
-/* spec 097 FR-123: the tent card on the empty desk of a coffee break (paper, folded: a darker edge); text and edge colour are the app's tokens */
-.ro-tent{transform:translateX(-50%);padding:1px 9px 2px;border-radius:3px 3px 0 0;font-size:11px;font-weight:700;line-height:1.35;white-space:nowrap;background:var(--surface);color:var(--ink);border:1px solid var(--line-2,var(--line));border-bottom:3px solid var(--c-waiting);box-shadow:0 2px 4px rgba(0,0,0,.25);pointer-events:none!important}
-@media (forced-colors:active){.ro-tent{border:1px solid CanvasText;border-bottom-width:3px}}
-
 /* spec 097 FR-125: the ride (two doors over the desk area, never the lobby; transform and opacity only). The world's doors are in its world.css. */
 .ro-ride{position:absolute;left:0;right:0;overflow:hidden;z-index:40;pointer-events:none}
 .ro-ride .rr-door{position:absolute;top:0;bottom:0;width:50%;background:#9aa0a6;border:1px solid rgba(0,0,0,.35)}

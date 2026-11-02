@@ -3,7 +3,7 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
-import { placeBox, portraitCrop, PORTRAIT_SIDE, slipAvoid, screenFit, screenFor, personMotion, zoomRect, realLayout, lobbyWidths, sortDesks, assignPeople, standPose, standHeight, POSE_FRAME_B, lobbyRange, PERSON_M, DOOR_M, FRONT_DEPTH, NEAR_SCALE, CHIP_H, U_MIN, U_MAX, U_MAX_BIG, FACE_U, PLATE_H, PLATE_H_ASK, STRIP,
+import { placeBox, portraitCrop, PORTRAIT_SIDE, slipAvoid, NOTE_PAPER, NOTE_PAPER_DEFAULT, NOTE_INK, notePaper, screenFit, screenFor, personMotion, zoomRect, realLayout, lobbyWidths, sortDesks, assignPeople, standPose, standHeight, POSE_FRAME_B, lobbyRange, PERSON_M, DOOR_M, FRONT_DEPTH, NEAR_SCALE, CHIP_H, U_MIN, U_MAX, U_MAX_BIG, FACE_U, PLATE_H, PLATE_H_ASK, STRIP,
   type RealModel, type RealMeta, type RealAgent, type RealState, type Rect, type Layout } from '../src/shared/realoffice-layout';
 import { lampWords, lightFor, lightState, LIGHT_TABLE, ambientFor, doneTick, fixtureLight, isActive, type LightState } from '../src/shared/lights';
 
@@ -51,10 +51,12 @@ function problems(L: Layout, W: number, H: number): string[] {
     signs.push(z.sign);
     if (!inside(z.sign, z.box, 3)) out.push(`sign of ${z.id} leaves its zone`);
     for (const d of z.desks) {
-      plates.push(d.plate); screens.push(d.screen); if (d.person) persons.push(d.person.vis);
+      plates.push(d.plate); screens.push(d.screen); if (d.person && d.state !== 'asleep') persons.push(d.person.vis);
+      /* an asleep person sits in front of its own, dark screen once the desk is narrow; it still touches no other screen */
+      if (d.person && d.state === 'asleep') for (const o of z.desks) if (o.id !== d.id && inter(d.person.vis, o.screen, 1)) out.push(`asleep person of ${d.id} under the screen of ${o.id}`);
       for (const [k, r] of [['plate', d.plate], ['screen', d.screen], ['desk', d.desk]] as [string, Rect][]) if (!inside(r, z.box, 2)) out.push(`${k} of ${d.id} leaves its zone ${JSON.stringify(r)} ${JSON.stringify(z.box)}`);
       if (d.plate.w < 40) out.push(`plate of ${d.id} is ${d.plate.w}px wide`);
-      if (d.person && inter(d.person.vis, d.screen, 1)) out.push(`person of ${d.id} under its screen`);
+      if (d.person && d.state !== 'asleep' && inter(d.person.vis, d.screen, 1)) out.push(`person of ${d.id} under its screen`);
       if (d.screen.y < z.box.y + STRIP - 1) out.push(`screen of ${d.id} in the sign strip`);
     }
   }
@@ -131,9 +133,18 @@ for (const [k, v] of Object.entries(faces)) assert.ok(v >= FACE_FLOOR - 1e-9, `S
   m.folders[0].agents[1].away = 'library'; m.folders[0].agents[2].state = 'asleep';
   const L = realLayout(m, { w: 1440, h: 848 }, META);
   const d = Object.fromEntries(L.zones[0].desks.map((x) => [x.id, x]));
-  assert.ok(d.a1.slot.w === d.a0.slot.w && d.a2.slot.w === d.a0.slot.w, 'away and asleep desks keep their width');
-  const m0 = model(6, 1, { away: false, states: ['working'] }), L0 = realLayout(m0, { w: 1440, h: 848 }, META), d0 = L0.zones[0].desks.find((x) => x.id === 'a1')!;
-  assert.deepStrictEqual([d.a1.slot, d.a1.screen, d.a1.plate, d.a1.desk], [d0.slot, d0.screen, d0.plate, d0.desk], 'someone leaving moves nothing: slot, screen, plate and desk as when they sat');
+  const mu = JSON.parse(JSON.stringify(m)) as RealModel; mu.folders[0].agents[2].state = 'done'; /* the same agent while its message is unread: a Done desk (shutters.js never lets an unread reply sleep) */
+  const Lu = realLayout(mu, { w: 1440, h: 848 }, META), du = Object.fromEntries(Lu.zones[0].desks.map((x) => [x.id, x]));
+  assert.ok(d.a1.slot.w === d.a0.slot.w && du.a2.slot.w === du.a0.slot.w, 'an away desk and a Done desk (the unread message) keep their width');
+  const m0 = model(6, 1, { away: false, states: ['working'] }); m0.folders[0].agents[2].state = 'done'; const L0 = realLayout(m0, { w: 1440, h: 848 }, META), d0 = L0.zones[0].desks.find((x) => x.id === 'a1')!;
+  assert.deepStrictEqual([du.a1.slot, du.a1.screen, du.a1.plate, du.a1.desk], [d0.slot, d0.screen, d0.plate, d0.desk], 'someone leaving moves nothing: slot, screen, plate and desk as when they sat');
+  /* owner ruling 2026-11-02: once the asleep desk's message is read, that desk (and only that desk) narrows to 0.62 and the others take the room at that moment */
+  assert.ok(Math.abs(d.a2.slot.w / d.a0.slot.w - 0.62) < 0.01 && d.a2.person && !d.a2.away, 'an asleep desk whose message is read is 0.62 wide, its person still resting at it');
+  assert.ok(Math.abs(du.a2.slot.w / du.a0.slot.w - 1) < 0.001 && du.a0.slot.w < d.a0.slot.w + 0.001, 'unread (Done): full width, and the others are no wider than after the read');
+  assert.ok(d.a0.slot.w > du.a0.slot.w + 0.5, 'the freed width goes to the other desks of the room when the message is read');
+  const keep = (l: ReturnType<typeof realLayout>): string => JSON.stringify(l.zones.flatMap((z) => z.desks.map((x) => [x.id, x.slot.w])).sort());
+  const lu2 = JSON.parse(JSON.stringify(mu)) as RealModel; lu2.folders[0].agents[1].away = null; 
+  assert.strictEqual(keep(realLayout(lu2, { w: 1440, h: 848 }, META)), keep(Lu), 'a person coming back or a state change moves no width: only the read does');
   assert.ok(!d.a1.person && d.a1.away && d.a2.person && !d.a2.away && d.a0.person, 'no person at an away desk, which says where; an asleep desk keeps its person (FR-129)');
   assert.strictEqual(d.a2.person!.pose, 'rest', 'an asleep person rests (FR-120, FR-129)');
   assert.strictEqual(d.a2.state, 'asleep');
@@ -487,6 +498,31 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
     }
     for (const z of L.zones) for (const d of z.desks) assert.ok(av.some((r) => r === d.plate) && (!d.face || av.includes(d.face)), 'plates and faces stay on the avoid list');
   }
+}
+
+// ---- review 2026-11-02: a narrow (asleep) plate keeps room for a name of nine characters at 12 px bold (about 70 px plus padding) ----
+for (const [W, H] of SIZES.slice(0, 2)) {
+  const m = model(15, 4, { away: false }); m.folders.forEach((f) => f.agents.forEach((a, i) => { if (i % 2 === 1) a.state = 'asleep'; }));
+  const L = realLayout(m, { w: W, h: H }, META), sl = L.zones.flatMap((z) => z.desks).filter((d) => d.state === 'asleep');
+  assert.ok(sl.length >= 4 && sl.every((d) => d.slot.w < 0.7 * Math.max(...L.zones.flatMap((z) => z.desks).map((x) => x.slot.w))), 'there are narrow desks');
+  for (const d of sl) assert.ok(d.plate.w >= 84, `the plate of a narrow desk is ${d.plate.w}px at ${W}x${H}: a name of nine characters needs 84`);
+}
+
+// ---- owner 2026-11-02: one post-it paper colour per place, dark ink at 4.5:1 or better on each, one default for a custom place ----
+{
+  const lum = (hex: string): number => { const c = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255).map((x) => (x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4))); return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; };
+  const ratio = (a: string, b: string): number => (Math.max(lum(a), lum(b)) + 0.05) / (Math.min(lum(a), lum(b)) + 0.05);
+  const places = ['boss', 'bank', 'coffee', 'library', 'software', 'terminal', 'web', 'other'];
+  assert.deepStrictEqual(Object.keys(NOTE_PAPER).sort(), places.slice().sort(), 'a colour for each place an agent goes to');
+  const all = [...places.map((p) => notePaper(p)), NOTE_PAPER_DEFAULT];
+  assert.strictEqual(new Set(all).size, all.length, 'every reason has its own colour, the default included');
+  for (const c of all) assert.ok(ratio(NOTE_INK, c) >= 4.5, `ink ${NOTE_INK} on ${c} is ${ratio(NOTE_INK, c).toFixed(2)}:1`);
+  assert.strictEqual(notePaper('c-000001'), NOTE_PAPER_DEFAULT, 'a custom place gets the default paper');
+  assert.strictEqual(notePaper('__proto__'), NOTE_PAPER_DEFAULT, 'a hostile id gets the default paper');
+  assert.strictEqual(notePaper(null), NOTE_PAPER_DEFAULT);
+  /* the Boss is not an alarm colour: its hue is blue, not red or orange (an ordinary visit) */
+  const rgb = (h: string): number[] => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+  const bs = rgb(notePaper('boss')); assert.ok(bs[2] > bs[0] && bs[2] >= bs[1], 'the Boss paper is blue-leaning');
 }
 
 // ---- spec 097 FR-110, FR-121: placeBox puts a slip on the free spot nearest its door, never on anything in the avoid list ----

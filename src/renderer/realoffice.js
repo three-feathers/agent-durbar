@@ -316,9 +316,7 @@
         if (d.bubble) { const b = el(chrome, 'b:' + k, 'div', 'ro-bub'); box(b, d.bubble); attr(b, 'aria-hidden', 'true'); text(b, '?'); }
         if (d.bang) { const b = el(chrome, 'x:' + k, 'div', 'ro-bang'); box(b, d.bang); attr(b, 'aria-hidden', 'true'); text(b, '!'); }
         if (d.dots) { const b = el(chrome, 't:' + k, 'div', 'ro-dots'); box(b, d.dots); attr(b, 'aria-hidden', 'true'); if (!b.firstChild) b.innerHTML = '<i></i><i></i><i></i>'; }
-        if (d.away && !a.tent) { const w = el(chrome, 'a:' + k, 'div', 'ro-away'); box(w, { x: d.away.x, y: d.away.y, w: d.away.s, h: d.away.s }); text(w, 'at ' + a.awayLabel); if (!w._in && CUR.drawn && moving() && !hiddenNow()) w.animate([{ transform: 'translateX(-50%) rotate(-2.5deg) scale(.7)', opacity: 0 }, { transform: 'translateX(-50%) rotate(-2.5deg)', opacity: 1 }], { duration: ZOOM_IN, delay: ZOOM_OUT - 40, easing: 'cubic-bezier(.2,.7,.3,1)', fill: 'backwards' }); w._in = true; }
-        /* FR-123: the tent card of a coffee break stands on the empty desk in place of the post-it (the two did not fit one desk: 2026-11-02 merge of #979); aria-hidden, the plate, the name and the chip say "at Coffee corner" */
-        if (a.tent && d.away) { const t = el(chrome, 'tn:' + k, 'div', 'ro-tent'); t.dataset.surface = 'coffee-bar'; box(t, { x: d.slot.x + d.slot.w / 2, y: d.plate.y - 21 }); attr(t, 'aria-hidden', 'true'); text(t, a.tent); }
+        if (d.away) { const w = el(chrome, 'a:' + k, 'div', 'ro-away'); w.dataset.place = a.away; if (a.away === 'coffee') w.dataset.surface = 'coffee-bar'; /* spec 098 FR-010: the moment's marker */ w.style.setProperty('--ro-note', L.notePaper(a.away)); w.style.setProperty('--ro-note-ink', L.NOTE_INK); box(w, { x: d.away.x, y: d.away.y, w: d.away.s, h: d.away.s }); text(w, 'at ' + a.awayLabel); if (!w._in && CUR.drawn && moving() && !hiddenNow()) w.animate([{ transform: 'translateX(-50%) rotate(-2.5deg) scale(.7)', opacity: 0 }, { transform: 'translateX(-50%) rotate(-2.5deg)', opacity: 1 }], { duration: ZOOM_IN, delay: ZOOM_OUT - 40, easing: 'cubic-bezier(.2,.7,.3,1)', fill: 'backwards' }); w._in = true; }
         /* FR-120: a static "z z" over a sleeping person (carved in the cave); aria-hidden, the plate and the name carry the meaning */
         if (a.asleep && d.person) { const z = el(chrome, 'z:' + k, 'div', 'ro-zz'); box(z, { x: d.person.x + d.person.w * 0.62, y: Math.max(d.slot.y + 2, d.person.y + d.person.h * 0.04) }); attr(z, 'aria-hidden', 'true'); text(z, 'z z'); }
         /* FR-016, FR-090: the name plate is the desk's one focusable button; the app's click handler opens the chat ([data-id]) */
@@ -383,6 +381,7 @@
     for (const id of WHERE.keys()) if (!CUR.agents.has(id)) WHERE.delete(id); /* a session gone: what stays is bounded by the sessions there are */
     watchBody(); wasHidden = hiddenNow();
     fitPlates(chrome, lay.width);
+    fitRoles(chrome);
     stagger(chrome, lay.width);
     /* a chip or plate does not travel: it fades in where it now is, so nothing passes over anything (owner 2026-11-01) */
     for (const e of chrome.querySelectorAll(':scope > .ro-chip, :scope > .ro-lplate')) {
@@ -752,6 +751,20 @@
      slot grows to the right, then to the left, into free space only (up to the next plate on the same rows or the band's edge); no
      fixture moves. Measured once per render, left to right, so a plate never covers another. Too little room keeps the ellipsis
      (the driver fails on it). */
+  /* review 2026-11-02: a role that has no room for about three characters is not shown (a one-letter sliver reads as a mistake). Done once per draw and only for a plate
+     whose width or words changed (not per frame): show every changed role, read all widths, then hide the ones that are too narrow. */
+  const ROLE_MIN = 20; /* px: about three characters of the 10.5 px role text */
+  function fitRoles(chrome) {
+    const todo = [];
+    for (const p of chrome.querySelectorAll(':scope > .ro-plate')) {
+      const r = p.querySelector('.ro-role'); if (!r) continue;
+      const key = p.style.width + '|' + p.style.height + '|' + p._sig;
+      if (p._rk === key) continue;
+      p._rk = key; r.hidden = false; todo.push(r);
+    }
+    const w = todo.map((r) => r.getBoundingClientRect().width);
+    todo.forEach((r, i) => { r.hidden = w[i] < ROLE_MIN; });
+  }
   function fitPlates(chrome, W) {
     const pl = [...chrome.querySelectorAll(':scope > .ro-lplate')].sort((a, b) => a.offsetLeft - b.offsetLeft);
     const done = [];
