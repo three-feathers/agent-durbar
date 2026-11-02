@@ -171,9 +171,11 @@ export class SettingsStore {
     const next: AppSettings = { ...this.s };
     if (v) next.autoFollowWork = true;
     else delete next.autoFollowWork;
+    const before = this.s;
     this.s = next;
-    this.save();
-    return v;
+    if (this.save()) return v;
+    this.s = before;
+    return this.autoFollowWork;
   }
 
   /** Spec 087 FR-007c: the apps with *Always continue on this computer* stored. */
@@ -199,7 +201,8 @@ export class SettingsStore {
   /** The answer of `settings:setAutoFollowWork` (FR-182): a real `ok`. A value that is not a boolean is refused, nothing is changed or saved. */
   autoFollowReply(v: unknown): { ok: boolean; autoFollowWork: boolean; error?: string } {
     if (typeof v !== 'boolean') return { ok: false, autoFollowWork: this.autoFollowWork, error: 'Auto-follow work takes on or off.' };
-    return { ok: true, autoFollowWork: this.setAutoFollowWork(v) };
+    const now = this.setAutoFollowWork(v);
+    return now === v ? { ok: true, autoFollowWork: now } : { ok: false, autoFollowWork: now, error: 'The setting could not be saved.' };
   }
 
   /** OS notifications when an agent needs you (spec 052 FR-059): on by default; only `false` is written. */

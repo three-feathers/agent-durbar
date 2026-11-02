@@ -7,6 +7,7 @@
 })(typeof self!=='undefined'?self:this, (function(){
   'use strict';
   const TYPED_MS=2000; /* FR-185: a key typed into a field this recently still counts as typing */
+  const POINTER_MS=600; /* FR-185: a press, a wheel turn or the window getting the focus this recently: a click may be on its way */
 
   /* FR-186: one queue. `needs` is needsMeOrder() as ids (unchanged); `unread` is [{id, at}] of unread finished main agents, `at` = when each
      became unread. Unread ones follow the needs-you ones, oldest first (a tie or no time keeps the given order); an agent is listed once. */
@@ -50,12 +51,13 @@
 
   /* FR-185: why a switch is held, '' when none is. s = what the page sees now:
      {editable (focus is in an editable field), editableText (that field has text), typedAgo (ms since a key was typed into a field, or null),
-      dialog, menu, screen (Settings or Tools open), readingOther (the open chat is another agent's and scrolled up), hidden, blurred}.
-     `office:true` is the return to the office right after a send: an empty field that just sent is not "typing". */
+      dialog, menu, screen (Settings or Tools open), readingOther (the open chat is of an agent not followed, and scrolled up), hidden, blurred}.
+     `office:true` is the return to the office right after a send: an empty field that just sent is not "typing", and the press on Send is not a click on its way. */
   function holdReason(s, o){
     s=s||{}; o=o||{};
     if(s.hidden)return 'the window is hidden';
     if(s.blurred)return 'the window is in the background';
+    if(!o.office&&(s.pointerDown||(Number.isFinite(s.pointerAgo)&&s.pointerAgo>=0&&s.pointerAgo<POINTER_MS)))return 'you are clicking';
     if(s.dialog)return 'a dialog is open';
     if(s.menu)return 'a menu is open';
     if(s.screen)return 'Settings or Tools is open';
@@ -120,9 +122,9 @@
     const n=Number(s.followed)||0;
     if(n===1&&s.hiddenName)return 'Auto-follow on. '+s.hiddenName+' is working in a hidden folder.';
     if(n>1)return 'Auto-follow on. '+n+' followed agents are working.';
-    if(n===1)return 'Auto-follow on. '+(s.name||'An agent')+' is working. Back to the office.';
+    if(n===1)return 'Auto-follow on. '+(s.name||'An agent')+' is working.'+(s.office?' Back to the office.':'');
     return 'Auto-follow on. It follows an agent after you send it a message.';
   }
 
-  return {TYPED_MS,KINDS,queue,withHeld,position,positionText,step,holdReason,createTracker,statusText};
+  return {TYPED_MS,POINTER_MS,KINDS,queue,withHeld,position,positionText,step,holdReason,createTracker,statusText};
 })());

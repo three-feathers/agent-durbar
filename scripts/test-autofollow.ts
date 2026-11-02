@@ -14,7 +14,7 @@ import { parseSettings } from '../src/shared/credits';
 const R = path.join(__dirname, '..', '..', 'src', 'renderer');
 type Tracker = { follow(id: string): void; has(id: string): boolean; ids(): string[]; size: number; drop(id: string): void; clear(): void; manualOpen(id: string): void; lastDesk(): string | null; setLast(id: string): void; arrive(id: string, kind: string, key?: unknown): boolean; retract(id: string, kinds?: string[]): void; pendingList(): { id: string; kind: string }[]; due(reason: string, can?: (id: string) => boolean): { id: string; kind: string } | null; acted(): void; isQuiet: boolean };
 const AF = require(path.join(R, 'autofollow.js')) as {
-  queue(n: unknown, u: unknown): string[]; withHeld(ids: string[], h: unknown): string[]; position(ids: string[], id: unknown): { index: number; count: number };
+  POINTER_MS: number; queue(n: unknown, u: unknown): string[]; withHeld(ids: string[], h: unknown): string[]; position(ids: string[], id: unknown): { index: number; count: number };
   positionText(p: unknown): string; step(ids: string[], cur: unknown, dir: number): string | null; holdReason(s: Record<string, unknown>, o?: Record<string, unknown>): string;
   createTracker(): Tracker; statusText(s: Record<string, unknown>): string;
 };
@@ -63,7 +63,7 @@ ok(AF.holdReason({ dialog: true }, { office: true }), 'a dialog holds the return
 }
 // 6. the strip's words: Durbar's own voice, no promise
 eq(AF.statusText({ paused: true }), 'Auto-follow is paused. Nothing moves by itself.', 'paused');
-eq(AF.statusText({ followed: 1, name: 'Priya' }), 'Auto-follow on. Priya is working. Back to the office.', 'one');
+eq(AF.statusText({ followed: 1, name: 'Priya', office: true }), 'Auto-follow on. Priya is working. Back to the office.', 'one');
 eq(AF.statusText({ followed: 3 }), 'Auto-follow on. 3 followed agents are working.', 'several');
 eq(AF.statusText({ followed: 1, name: 'Priya', hiddenName: 'Priya' }), 'Auto-follow on. Priya is working in a hidden folder.', 'hidden folder');
 ok(/^Held: you are typing\. 2 are waiting to open\.$/.test(AF.statusText({ held: 'you are typing', heldCount: 2 })), 'held');
@@ -86,22 +86,29 @@ for (const v of ['false', '"true"', '1', 'null', '[]']) eq(parseSettings('{"auto
   eq(ss.autoFollowReply(true), { ok: true, autoFollowWork: true }, 'on');
   const back = new SettingsStore(f); back.load(); eq(back.autoFollowWork, true, 'kept after a restart');
   eq(back.autoFollowReply('no').autoFollowWork, true, 'a refused value keeps the value in force');
+  { /* FR-182: a save that fails is said, and the value in force stays */
+    const blocked = path.join(dir, 'blocked'); fs.writeFileSync(blocked, 'a file, so nothing can be written under it');
+    const no = new SettingsStore(path.join(blocked, 's.json')); no.load();
+    const r = no.autoFollowReply(true);
+    eq([r.ok, r.autoFollowWork, typeof r.error], [false, false, 'string'], 'a failed save answers ok:false');
+    eq(no.autoFollowWork, false, 'and the value in force stays');
+  }
   eq(back.autoFollowReply(false), { ok: true, autoFollowWork: false }, 'off'); ok(!('autoFollowWork' in JSON.parse(fs.readFileSync(f, 'utf8'))), 'off is not written');
   fs.rmSync(dir, { recursive: true, force: true });
 }
-// 8. source checks: the page is wired the way the spec says
+// FR-185: a click on its way holds an arrival, not the return to the office after pressing Send
+eq(AF.holdReason({ pointerDown: true }), 'you are clicking', 'a button is down');
+eq(AF.holdReason({ pointerAgo: AF.POINTER_MS - 1 }), 'you are clicking', 'just pressed');
+eq(AF.holdReason({ pointerAgo: AF.POINTER_MS }), '', 'long enough ago');
+eq(AF.holdReason({ pointerDown: true, pointerAgo: 0 }, { office: true }), '', 'the press on Send does not hold the return');
+// FR-183: "Back to the office" only while the office is shown
+eq(AF.statusText({ followed: 1, name: 'Ada', office: true }), 'Auto-follow on. Ada is working. Back to the office.', 'in the office');
+eq(AF.statusText({ followed: 1, name: 'Ada', office: false }), 'Auto-follow on. Ada is working.', 'not in the office');
+// 8. what no behaviour test can prove: nothing in the block ever answers or marks read (the rest is held by check-auto-follow)
 const app = fs.readFileSync(path.join(R, 'app.js'), 'utf8');
 const afBlock = app.slice(app.indexOf('/* ---- spec 052 FR-182..FR-190'), app.indexOf('/* ---- spec 052 FR-042 / FR-043'));
 ok(afBlock.length > 3000, 'the Auto-follow block is found');
-ok(/let AF_ON=false/.test(afBlock), 'off by default in the page');
-ok(/openPanel\(d\.id,'title'\)/.test(afBlock) && /openPanel\(id,'title'\)/.test(afBlock), 'chats open with focus on the title');
 ok(!/\.click\(\)|bridge\.(answer|resolve|allow|deny|setPermMode|respond)|settlePerm|settleQuestion|answerBar/.test(afBlock), 'the block never clicks, answers or resolves');
-ok(!/openPanel\([^)]*,(true|false)\)/.test(afBlock), 'never focuses the message box or an answer button');
-ok(/AF\.holdReason\(afSnapshot\(\)/.test(afBlock) && /AFT\.due\(reason,afCanOpen\)/.test(afBlock), 'a delivery reads the guards and the hidden-folder rule first');
-ok(!/transition|animation|animate|motion\(/.test(afBlock) && !/is-followed[^}]*(animation|transition)/.test(fs.readFileSync(path.join(R, 'styles.css'), 'utf8').split('spec 052 FR-182..FR-190 (issue 686)')[1] || ''), 'no animation or transition');
-ok(/if\(r\.ok&&!\(opts&&opts\.coffee\)\)afOnAccepted\(a\)/.test(app), 'following starts from an accepted send only');
-ok(/if\(!AF_ON\|\|AF_PAUSED\|\|!a0\|\|a0\.parent\)return/.test(afBlock), 'off, paused and helpers follow nothing');
 ok(!/UNREAD\.read|markRead|syncSeen/.test(afBlock), 'following never clears an unread marker itself');
-ok(/needsMeOrder\(\)\.map/.test(afBlock) && !/vis\(a\)==='waiting'/.test(afBlock), 'the queue reuses needsMeOrder, no second attention model');
 
 console.log('test-autofollow: OK (' + n + ' checks)');

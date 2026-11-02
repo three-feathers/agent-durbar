@@ -4196,15 +4196,26 @@ function afSnapshot(){
   return {editable,editableText:editable&&String(ae.value!=null?ae.value:ae.textContent||'').length>0,
     typedAgo:AF_TYPED==null?null:Date.now()-AF_TYPED,
     dialog:modalOpen()||[...document.querySelectorAll('[role="dialog"]')].some(live),
-    menu:[...document.querySelectorAll('[role="menu"],#floorsPop,#foldersPop,[aria-haspopup][aria-expanded="true"]')].some(live),
+    menu:[...document.querySelectorAll(OVERLAY_SEL+',#floorsPop,#foldersPop,[aria-haspopup][aria-expanded="true"]')].some(n=>!n.closest('#toasts')&&live(n)),
+    pointerDown:AF_PTR_DOWN,pointerAgo:performance.now()-AF_PTR_AT,
     screen:document.body.classList.contains('screen-open')||!!(window.DurbarScreens&&window.DurbarScreens.isOpen()),
-    readingOther:!!open&&!!chat&&chat.dataset.pin==='0',
+    readingOther:!!open&&!AFT.has(open)&&!!chat&&chat.dataset.pin==='0',
     hidden:document.visibilityState==='hidden',blurred:!schedHasFocus()};
 }
 document.addEventListener('keydown',e=>{ /* FR-185: a key typed into a field counts as typing for 2 s (Enter does not: it is how a message is sent) */
   const t=e.target; if(!t||!t.matches||e.ctrlKey||e.metaKey||e.altKey)return;
   if(t.matches('input,textarea,select,[contenteditable]:not([contenteditable="false"])')&&(e.key.length===1||e.key==='Backspace'||e.key==='Delete'))AF_TYPED=Date.now();
 },true);
+/* FR-185: a click may be on its way */
+let AF_PTR_DOWN=false, AF_PTR_AT=-Infinity, AF_OPENED_AT=-Infinity;
+const afPtrNow=()=>{AF_PTR_AT=performance.now();};
+document.addEventListener('pointerdown',()=>{AF_PTR_DOWN=true;afPtrNow();},true);
+for(const t of ['pointerup','pointercancel'])document.addEventListener(t,()=>{AF_PTR_DOWN=false;afPtrNow();},true);
+document.addEventListener('wheel',afPtrNow,{capture:true,passive:true});
+window.addEventListener('blur',()=>{AF_PTR_DOWN=false;});
+/* FR-184: for 500 ms after an automatic open, a click on an answer control does nothing */
+const AF_ANSWER_SEL='#chat .note:not(.settled) button,#chat .note:not(.settled) input,#chat .note:not(.settled) label,.answer-bar button';
+document.addEventListener('click',e=>{if(performance.now()-AF_OPENED_AT<500&&e.target.closest&&e.target.closest(AF_ANSWER_SEL)){e.preventDefault();e.stopImmediatePropagation();}},true);
 const afCanOpen=id=>{const a=byId(id);return !!a&&roomShown(roomOf(a));}; /* FR-188: a hidden folder or an off floor is never opened by itself */
 function afFocusDesk(id){
   const d=document.querySelector(`#stage .desk[data-id="${CSS.escape(id)}"],#stage .ro-plate[data-id="${CSS.escape(id)}"]`)||document.querySelector(`#list button.lrow[data-id="${CSS.escape(id)}"]`);
@@ -4213,18 +4224,24 @@ function afFocusDesk(id){
 }
 /* FR-183: focus moved here is not the person asking for a screen's zoom */
 const afQuiet=fn=>{const R=window.DurbarRealOffice;if(R&&R.quietFocus)R.quietFocus(fn);else fn();};
-/* FR-183: an accepted message follows its agent and returns to the office */
-function afOnAccepted(a0){
-  if(!AF_ON||AF_PAUSED||!a0||a0.parent)return;
-  const a=liveRoot(a0); AFT.follow(a.id); AFT.acted();
+/* FR-183: back to the office with this desk marked; one announcement for the whole step */
+function afBackToOffice(a,what){
   const room=roomOf(a), drawn=!!room&&roomShown(room);
   if(drawn&&!AF.holdReason(afSnapshot(),{office:true})){
     let moved=false,fname='';
     const f=floorsLive()&&floorById(room.floor);
     if(f&&floorScreens()&&oneFloorView()&&f.id!==curFloorId()){moved=goToFloor(f.id,{announce:false});fname=f.name;} /* FR-188: no second floor announcement */
     afQuiet(()=>{if(afPanelId()){AFT.setLast(ui.selected);AF_AUTO=true;try{closePanel();}finally{AF_AUTO=false;}}afFocusDesk(a.id);});
-    announce(a.name+' is working'+(moved&&fname?' on '+fname:'')+'. Back to the office.');
+    announce(what+(moved&&fname?' on '+fname:'')+'. Back to the office.');
   }
+}
+/* FR-183: an accepted message follows its agent and returns to the office. `shown` = the chat shown before the send; `several` = one of a Send to several */
+function afOnAccepted(a,shown,several){
+  if(!AF_ON||AF_PAUSED||a.state==='idle'||a.state==='done')return; /* the app answered, and no turn is running */
+  const now=afPanelId();
+  if(now&&now!==shown)return; /* FR-183: you opened another chat while it was on its way */
+  AFT.follow(a.id); AFT.acted();
+  if(!several&&now===shown)afBackToOffice(a,a.name+' is working');
   afTick();
 }
 function afOnCompleted(a){
@@ -4248,6 +4265,7 @@ function afDeliver(){
   const a=byId(d.id);
   if(a&&!(afPanelId()===d.id)){ /* already shown: nothing moves */
     AF_AUTO=true; try{openPanel(d.id,'title');}finally{AF_AUTO=false;}
+    AF_OPENED_AT=performance.now();
     if(d.kind!=='ask')announce(a.name+(d.kind==='done'?' finished':d.kind==='error'?' has an error':' reached its limit')+'. Its chat is open.');
   }
   afTick();
@@ -4264,7 +4282,7 @@ function afRender(){
   }
   const ids=afLive(), cur=afPanelId(), pos=AF.position(ids,cur), pt=AF.positionText(pos);
   const fid=AFT.ids()[0], fa=fid&&byId(fid);
-  const text=AF.statusText({paused:AF_PAUSED,held:AF_HOLD,heldCount:AFT.pendingList().length,followed:AFT.size,name:fa&&fa.name,hiddenName:fa&&!afCanOpen(fid)?fa.name:''});
+  const text=AF.statusText({paused:AF_PAUSED,held:AF_HOLD,heldCount:AFT.pendingList().length,followed:AFT.size,office:!cur,name:fa&&fa.name,hiddenName:fa&&!afCanOpen(fid)?fa.name:''});
   const set=(id,t)=>{const n=$(id);if(n&&n.textContent!==t)n.textContent=t;};
   set('afText',text);set('afPos','Attention: '+pt);
   el.classList.toggle('paused',AF_PAUSED);
@@ -4310,7 +4328,7 @@ function afGo(dir){
   const a=byId(id); announce((a?a.name+', ':'')+(ids.indexOf(id)+1)+' of '+ids.length+'.');
   afTick();
 }
-window.addEventListener('focus',()=>{if(AF_ON)afTick();});
+window.addEventListener('focus',()=>{afPtrNow();if(AF_ON)afTick();});
 document.addEventListener('visibilitychange',()=>{if(AF_ON)afTick();});
 /* ---- spec 052 FR-042 / FR-043 (#316): command palette (Ctrl+K, ⌘K on a Mac) and keyboard shortcut sheet (?) ---- */
 let palBack=null, palItems=[], palActive=0;
@@ -4598,9 +4616,10 @@ async function sendToSeveral(anchor){
     buttons:[{label:'Cancel',value:null},{label:'Send',value:'send',cls:'primary'}],returnFocus:anchor});
   if(!r||r.value!=='send')return;
   const text=String(r.text||'').trim().slice(0,4000);if(!text||!r.picked||!r.picked.length)return;
-  const bad=[];let n=0;
+  const bad=[];let n=0,last=null;
   for(const id of r.picked){const a=byId(id);if(!a||!a.live){bad.push(a?a.name:id);continue;}
-    try{await sendLive(text,id,{fromComposer:false});n++;}catch(err){bad.push(a.name);}}
+    try{await sendLive(text,id,{fromComposer:false,several:true});n++;last=a;}catch(err){bad.push(a.name);}}
+  if(AF_ON&&!AF_PAUSED&&last&&AFT.has(last.id)){afBackToOffice(last,AFT.size>1?AFT.size+' followed agents are working':last.name+' is working');afTick();} /* spec 052 FR-183: one move and one announcement for the whole send */
   toast(bad.length?'Sent to '+n+'; could not send to '+esc(bad.join(', '))+'.':'Sent to '+n+' session'+(n===1?'':'s')+'.',3600).classList.add(bad.length?'err':'ok');
 }
 const folderOfAgentName=a=>{const r=roomOf(a);const p=r&&r.path?String(r.path).replace(/[\\/]+$/,''):'';return p.split(/[\\/]/).pop()||'';};
@@ -6507,8 +6526,9 @@ async function sendLive(text,forId,opts){
   const planFirst=!!a.planNext&&!!(capsFor(a)&&capsFor(a).planMode); /* spec 066: one message only */
   if(a.planNext){a.planNext=false;renderAttached();}
   if(planFirst)addNote(chat,'Asked for a plan first: nothing changes until you approve it.');
+  const afShown=afPanelId(); /* spec 052 FR-183: what you were looking at when you sent */
   const r=await bridge.send(a.id,text||'Please look at the attached file(s).',atts.map(x=>({path:x.path,name:x.name,kind:x.kind})),planFirst?{plan:true}:undefined);
-  if(r.ok&&!(opts&&opts.coffee))afOnAccepted(a); /* spec 052 FR-183: accepted by the agent app; a break resuming by itself is not the person's send */
+  if(r.ok&&!(opts&&opts.coffee))afOnAccepted(a,afShown,!!(opts&&opts.several)); /* spec 052 FR-183: accepted by the agent app; a break resuming by itself is not the person's send */
   if(!r.ok){closeTurn(a);const n=addNote(chat,'Send failed: '+esc((r.error&&safeMask(r.error))||'unknown error'),true); /* spec 041 FR-065 (delta 2026-10-23): the app's error is masked (shown whole, not cut); no mask: a neutral word */modeRefusalAction(a,n,r.error);setState(a,'error',null,'Send failed: '+safeExcerpt(r.error,100,'unknown error'));}
   else if(r.slash)addNote(chat,'Sent the text of <code>'+esc(DurbarCutText.cutText(safeMask(r.slash),160))+'</code> (the agent app does not load it in Durbar’s sessions).'+(r.slashNote?' '+esc(DurbarCutText.cutText(safeMask(r.slashNote),200)):'')); /* spec 073 FR-005; slashNote: masked, then cut (FR-013) */
   else if(r.slashNote)addNote(chat,esc(DurbarCutText.cutText(safeMask(r.slashNote),240))); /* spec 073 (review on PR 615): over the size cap, sent as typed; masked, then cut (FR-013) */
