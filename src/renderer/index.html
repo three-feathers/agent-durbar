@@ -48,11 +48,6 @@
     <div class="top-more">
       <button class="btn" id="topMoreBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="topMoreMenu" aria-label="More: folders, shortcuts and the demo" title="More: folders, shortcuts and the demo">⋯</button>
       <div class="more-menu" id="topMoreMenu" role="menu" aria-label="More" hidden>
-        <div id="doorBar" role="group" aria-label="Folders" hidden>
-          <button class="more-it" role="menuitem" tabindex="-1" id="closeAll" type="button" title="Collapse every folder to its door plate"><span class="mt">Collapse all folders<small>Rooms fold into name plates</small></span></button>
-          <button class="more-it" role="menuitem" tabindex="-1" id="openAll" type="button" title="Expand every folder to show its desks"><span class="mt">Expand all folders<small>Every room shows its desks</small></span></button>
-          <div class="more-sep" role="separator"></div>
-        </div>
         <button class="more-it" role="menuitem" tabindex="-1" id="kbdHelpBtn" type="button" data-keys-text title="Every keyboard shortcut (?)"><span class="mt">Keyboard shortcuts<small>Ctrl+K palette, I inbox, N next (?)</small></span></button>
         <!-- spec 064 FR-001: one message to several running sessions (a dialog; nothing is sent until you pick sessions) -->
         <button class="more-it" role="menuitem" tabindex="-1" id="sendSeveralBtn" type="button" title="Send one message to the running sessions you pick" hidden><span class="mt">Send to several sessions…<small>One message, several sessions</small></span></button>
@@ -117,7 +112,6 @@
 <script src="inlinename.js"></script>
 <script src="gitstatus.js"></script>
 <script src="sessionsummary.js"></script>
-<script src="roomsummary.js"></script>
 <script src="sessionsearch.js"></script>
 <script src="usagetotals.js"></script>
 <script src="costtable.js"></script>
@@ -176,6 +170,7 @@
 <script src="app.js"></script>
 <script src="../shared/profiletemplates.js"></script><!-- spec 043 FR-018: read at call time by profileeditor.js and the simulator -->
 <script src="../shared/quota.js"></script><!-- spec 011 FR-090: read at call time through window.exports by harnesses.js, app.js and the simulator, the same rules as main -->
+<script src="../shared/mcpcost.js"></script><!-- spec 100: the MCP figures' rules and words, read through window.exports at call time by app.js and screens.js -->
 <script src="../shared/mcphealth.js"></script><!-- spec 058 FR-092: the simulator reads mcpHealthUpdate at call time, the same rule as main -->
 <script src="renderer.js"></script>
 </body>

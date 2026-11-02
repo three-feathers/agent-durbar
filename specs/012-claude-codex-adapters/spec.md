@@ -158,6 +158,10 @@ Spec Kit says to ask the owner when something is ambiguous. The owner was not as
 
 ## Changes
 
+### 2026-11-02: timing checks over the mask are measured against the same run (FR-080 delta, T138)
+
+*Found:* the shared mask costs more per character since T137, so fixed limits over it went red on slow runners with no change in the code they check (Windows `test:runtime-mcp`: 406 ms against a limit from a 63 ms baseline). *Changed (tests only):* every ratio or fixed-limit timing check whose code reaches `redact` or `maskShapes` now uses `assertLinearShape` (the same shape, 1/16 the size, 16 repeats, same run) or the new `assertWithinYardstick` (for what is not growth: `maskMcpText`'s cut before the URL pass against `redact` plus the pass on the cut text, the R12 "hides the rest" limit against `redact` on the same text, the `durbar_mcp_state` budget against `redact` on 1 MB). Both read this thread's CPU where Node has it. `test:` `scripts/redact-growth-lib.ts` and the suites using it. Left, because they stop before the mask: `test-redact.ts` T065, `test-mcp-tools.ts` 12l(c0). Left, as catastrophe stops only: 10 s of CPU in `assertLinearGrowth`, the `shapes` part's 10 s run. `[KNOWN GAP]` not converted, not over the mask: other suites' fixed limits, such as `test-mcpcall.ts`, `test-mcpwords.ts`, the parser cases in `test-edits.ts`, and `test-mcp-tools.ts`'s seven read tools (little masking). `EditStreams` on a long run of spaces read 46-49x for 16x the input on Node 22 in CI (Ubuntu and macOS), so that case is not a growth check. The review of #1048 explains it (Node 22.23.3): `ArgStream` masks the whole text again at each 1/8 of growth, so the characters masked grow from 1.96x the input at 12.5k to 4.58x at 50k, 6.49x at 200k and 7.36x at 800k (the 1/8 rule caps it near 9x), at a flat 1.2 to 2.2 us per character: 55 ms at 12.5k, 2397 ms at 200k (43.6x for 16x), 9155 ms at 800k. Why Node 24 reads about 14x was not checked. It is checked against ordinary text through the same path, and what keeps the path linear is counted with no clock: twice the text adds at most 7 parses, and the characters parsed stay under 10 times the text. The stall itself (about 9 s on 800k spaces, on `main` too) needs a `src/` change: issue #1052. A slowdown only in the mask below the 100 ms floor of `assertLinearGrowth` still passes, as it did.
+
 ### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
 
 The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
@@ -1062,3 +1066,7 @@ The owner asked that sessions be shared between Durbar and the Claude Code CLI. 
 ### 2026-10-31: `accountQuota()`, the account's reported limits (spec 011 FR-080..FR-094, issue #690)
 
 Optional member behind `capabilities.accountQuota`: Copilot `account.getQuota`, Codex `account/rateLimits/read` (the calls of FR-156, whose answers were not read until now). Claude Code has none and shows "not reported". The contract and the research matrix are in spec 011; vendor shapes stay in `src/adapters/quotamap.ts`.
+
+## Changes 2026-11-02: removed page and tools (owner decision, PR #1054)
+
+`scripts/signin-real.ts`, `scripts/claude-repo-config-real.ts` were removed on 2026-11-02 by owner decision (no caller; run dates and credit counts above stay valid history); the scripts are in git history at commit `1c75b5bee`.
