@@ -3,7 +3,7 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Real office mode (owner request, Vikram 2026-10-30/31): a realistic front-facing open-plan office as a second office mode beside flat (default), live screens, animated people, status lights; folds in #692
-note: P1 (scene, lights) built; P2 (screens, motion), P3 (My characters, manual lighting) not; crews' worlds (FR-100/FR-114) not
+note: P1, P2 (screens, zoom, motion) and the world seam built, no second world offered; P3 (My characters, lighting) and crews' worlds not
 status: building
 -->
 
@@ -11,7 +11,7 @@ status: building
 
 **Created**: 2026-10-31
 
-**Status**: In progress (2026-10-31). Phase P1 (the scene and the lights) is built (see *Changes*); P2 and P3 are not. Q1-Q6 are answered (Q6: crews appear in Real office in their own art and their own world, Vikram and Paco 2026-10-31; FR-100, FR-114).
+**Status**: In progress (2026-10-31). Phases P1 (the scene and the lights) and P2 (live screens, the hover zoom, motion) are built (see *Changes*); P3 is not. Q1-Q6 are answered (Q6: crews appear in Real office in their own art and their own world, Vikram and Paco 2026-10-31; FR-100, FR-114).
 
 **Input**: Owner requests (Vikram, Telegram DMs, 2026-10-30 and 2026-10-31):
 - "lets make it realistic … it looks like a dashboard and not real office"; "quality is the key as it is visual".
@@ -330,6 +330,49 @@ Each has a recommendation (Q6 is for Paco, the crew owner). The build waits for 
 
 ## Changes
 
+### 2026-11-01: no walking; a person zooms out and zooms in, and the room stays still (Vikram, after watching; supersedes the walk, the head anchor and FR-017's narrower away and asleep desks)
+
+Vikram judged the walk and the head-anchored sit-down *not natural enough*: two bodies in the dissolves, a walker over the screens at a wrong scale, the room jumping when someone leaves. Replaced:
+- **A person going to or from a place zooms.** At the place they leave: eases smaller and fades, about 280 ms. Then, at the place they go to: eases up from small and fades in, about 320 ms, feet on the floor, with a soft glow at each end. Never two bodies at one place, nothing crosses the room. Walk frames are not in the pack, and the face table goes.
+- **The room does not reflow when someone leaves or sleeps.** A desk keeps its slot, its screen and its plate; only the number of sessions changes the rows, and then things slide to their new place. 
+- **An empty seat says where they went:** a post-it on the desk, square, 66 to 112 px with the desk's size, *at Library*: real text, 12 px, in Photo office yellow with a slight tilt, easing in with the zoom. Other worlds style it their own way later. It replaces the *at Library up-arrow* label.
+- A pose change at the desk fades the old one out before the new one in, so two big poses do not stand in each other.
+- **The cost:** with everyone in a full-width slot, a desk face at 15 agents is 31.9 px at 1280x800, where it was 35.2 with some desks narrow; SC-002's ratchet moves from 35 to 31 (30.5 in the office check, which measures 31.0 and 34.9 px), and FR-024's lobby estimate from 11 to 10.5. `[KNOWN GAP]` Owners to weigh this against the still room.
+- **What is shown follows at once:** turning Live activity off or on repaints every screen in view straight away, not at the next line and not at the repaint pace; a screen out of view catches up when it is back. An open zoom of a desk that goes to sleep closes (FR-035). A rig out of view stands still in the same frame as its person (FR-181).
+- **With the facing pictures (FR-191):** the two running pictures have their own canvases, so each has its own box with the feet on one spot, and changing picture moves no foot. The sip at the coffee corner is gone with the front-facing coffee pictures: someone at a counter breathes, as at the Bank, where a sip would be wrong.
+- **Lobby chips and plates never travel (owner 2026-11-01):** a chip or plate that moves fades in at its new place, so nothing passes over anything. A slide uses `translate`, so an element keeps its own transform (the post-it's tilt, a person's motion).
+- **A session count change eases (owner 2026-11-01):** what the layout makes bigger or smaller eases there on `translate` and `scale`, in the same 280 to 520 ms as a move, with no layout during it; the text inside takes its new size at once.
+- **The lobby's own widths still follow who is there,** and fade in place. `[KNOWN GAP]` Keeping them fixed would need a new lobby rule.
+- **FR-180, changed 2026-11-01:** besides `opacity` and `transform`, a move may animate the `translate` and `scale` properties. They are composited as `transform` is and need no layout, and they let an element keep its own transform while it moves (the post-it's tilt, a person's motion), which animating `transform` would override. The motion driver checks this on a forced layout change, so it does not depend on a slide happening to run while it looks.
+- **Leaving Real office tears it down (2026-11-01):** the open zoom and its key listener, the observers, the screens' timers and what it remembers about people go, so an Escape reaches the app. Opening or closing a chat pauses and resumes the room at once, not at the next draw.
+- **Frame rate and CPU, `real:` 2026-11-01 at 9ff1462f,** macOS, Apple M4, 1440x900, ratio 1, 15 agents, frozen simulator, alone, median of 3: flat 60.0 frames a second, 32.9 % of a core; Real with motion 59.9, 34.9 %; no frame over 33 ms in 20 s. A session count change: one first frame of 41 to 61 ms (24 to 33 with no easing), then median 16.7 ms. Not measured on a low-end machine.
+- `[KNOWN GAP]` **The zoom on a Windows hover.** `shots-097-screens` timed out twice on Windows CI waiting for a screen's zoom, at different desks, cause not found. Two later CI runs with the driver's retry removed opened every zoom at once on all systems, and the second counted no window blur, so the likely explanation (another window taking the focus) is not proven either. The driver tries again only after a counted blur, and any other miss fails and says what was under the pointer. `read:` not seen by hand on Windows.
+- **The typing rig is in the pack** for the 15 people: head and two hands as WebP, `rig` in `people.json`. Cut with on-device Apple Vision by a one-off script, not at app time.
+- This delta's own sections below on the walk and the head anchor are superseded by this one.
+
+### 2026-11-01: people move smoothly (Vikram's requirement on #979, relayed 2026-11-01)
+
+*"Animation must be smooth and look natural, with no lag; stepped frame swaps alone are not enough."* This replaces FR-070's stepped frames and periods, this delta's item 2 and item 3 below, and, for people only, FR-181's stepped timing and 2 changes a second. FR-180 stands: `transform` and `opacity` only, no layout, no `mix-blend-mode`. FR-071 and FR-074 stand: nothing moves under reduced motion or Serious mode, and hidden or off-screen desks pause.
+- **Frames cross-fade.** Two pictures of a pose fade with eased `opacity`, about 10 to 14 % of a cycle, the coming one first, so nothing pops and the figure never goes see-through.
+- **A small movement on top, on both pictures, on one clock:** breathing and a slow sway from the feet; a typing bob; the body following a wave; a running bounce. Each is eased and a per-person loop (`personMotion`'s `sway`, 5 to 8 s), so people are not in step.
+- **Rates, matched to the mockup clips Vikram judged good (2026-11-01):** typing pictures dissolve over 2.6 to 3.2 s a pair with a body bob of about 0.7 s, a wave 1.7 to 2.1 s, running 0.72 to 0.82 s; dissolves take about a quarter of a cycle.
+- **Going to and from a place glides:** a person who leaves a desk for a fixture, or comes back, moves with an eased `transform` from the old place, with a stride bounce and the stride's dissolve, 1400 to 3000 ms by distance, in place of FR-073's stepped fade alone. `[KNOWN GAP]` FR-075 stands: the pack has no side-view walk frames, so this is a person gliding in their pose, not a walk.
+- **Sitting down is anchored on the head (Vikram's note on #979, relayed 2026-11-01).** A seated picture stops at the waist, so it cannot cross the room: the standing picture walks back, passing behind the desk for the last part, and arrives with its head exactly on the seated head at the same size. Then both dissolve with a shared sit-down beat, about 420 ms, so the head flows on and the body changes around it. Standing up is the mirror. The face of every person picture is in `people.json` (`faces`: centre and height as fractions of the picture), made on the Mac with on-device Apple Vision by a one-off script (`read:` not run at app time, no new dependency). What the layout moves a little (a visitor's arrival moves the lobby) slides there on `transform` for 280 ms, not on a window resize.
+- FR-072's and FR-073's fades are eased, no longer stepped.
+- **Laptop proxy, `real:` 2026-11-01 on the same Mac, alone, 15 and 3 agents, percent of one core, no machine of that class was available.** Crossfade or rig, every case held 60 fps at p95 18.2 to 18.6 ms: DevTools CPU throttle 4x and 6x (the throttler itself holds the main thread at 75 and 84 %, and it does not load the compositor, so it says little here); software compositing with `--disable-gpu`, GPU process 39.6 and 41.2 at 15, 35.4 at 3; forced ratio 2 on this GPU, total 35.5 and 38.2 at 15, 22.1 and 24.3 at 3. With the rig, 1x: total 34.2 at 15, 23.4 at 3, against 35.4 and 22.7. `[KNOWN GAP]` A real low-end laptop, a weak integrated GPU, and the fewer-layers fallback firing: frames never dropped here, so it was not seen working.
+- **A side-view walk where the art has one** (`motion` in the art data, two pictures a person, on the owner's new frames, likeness pending): the person walks side on, facing the way they go, and turns to the front picture near the chair. The rig and the walk stay off until their art and data are in the pack.
+- **Typing as a cut-out rig, prototype (Vikram's note on #979, relayed 2026-11-01; go-ahead to bring it as close to natural as a normal laptop allows).** Where the art has `rig` data for a person, the typing picture stands still over its small body movement and a head and two hand layers, cut from that same picture, move on `transform` only: hands patter in bursts with a pause, out of step with each other, the head nods. Off under reduced motion, Serious mode and hidden, as all else. **Fewer layers when frames drop:** about every 20 s the page reads 40 frames; two low readings in a row turn the rig off, and two more the body movement; many good ones bring them back. Reading the frames is about 1 s in 20 of work on the main thread.
+- **Budget, `real:` 2026-11-01, macOS, Apple M4, GPU compositing, ratio 1, frozen simulator, `ps` CPU time by thread, percent of one core, 30 s, interleaved launches, medians of 2 or 3, none of my other jobs running:** 15 agents, stepped then smooth: renderer main thread 6.1 to 7.5, then 0.5; total 27 to 37, then 31 to 33 (the stepped runs vary by launch; smooth is GPU 22 to 23, up from 14 to 21). 3 agents: total 29.7, then 22.8. Page frames 59.8 fps at 15 agents, 60 at 3, p95 18.6 ms. `[KNOWN GAP]` Retina not measured (1080p monitors); a real agent not run. `[KNOWN GAP]` Look: a run's two pictures double the legs mid-dissolve; p03 and p15 raise the same leg in both frames; a walk is a run pose gliding, with no side view; a person returning crosses in front of screens; the wave pose was not on screen in the simulator, since a waiting person goes to the Boss.
+- **The compositor must really take them.** `real:` measured by thread on macOS: CSS animations started during a draw stayed on the renderer's main thread until restarted, at any timing. After a draw, at 3, 8, 15 and 30 s, each running one gets its own start time set again (`handOver`), so nobody's timing changes and `animation-play-state` still pauses it (pause and play would not). At 3 s alone it did not hold and at 15 s it did. `[KNOWN GAP]` why Chromium needs this was not found; it is measured, not explained. Transforms use px from `--ro-u` (1 % of the picture's height), since a transform in % of the box is not eligible for the compositor.
+- `test:` `npm run test:realoffice-layout` for the rates; `sim:` `scripts/check-097-motion.js`: both frames seen and in between, the figure never below 0.6, eased timing, nothing but `transform` and `opacity`, the glide, and what stops it. The budget and the owner's verdict on the look are in this delta's PR report; numbers below.
+### 2026-11-02: the Real office note names every crew (review on #991)
+
+The note's crew names come from `CREWS` in `crew.js` (plus Minimalist), not a hand list, so a new crew (Pirate, Monster) gets the line by construction; `realOfficeNote` is removed (one path: `peopleFor(...).note`). Wording unchanged. test: `test:realoffice-layout` (every crew without a `REAL_SETS` row, and a future crew).
+
+### 2026-11-01: the Office layout pick keeps keyboard focus (sweep finding)
+
+Choosing an Office layout repaints Settings; the pressed button is found again and refocused (only if it had focus). test: `scripts/test-realoffice-layout.ts` (source pin), `scripts/shots-097-realoffice.js` (driver: focus on the pressed button after the click).
+
 ### 2026-10-31: owner answers (Q1-Q6, lobby places) and the phase P1 build
 
 **Owner answers** (Telegram, relayed to the build agent by Vikram's coordinating agent; quoted as relayed):
@@ -361,6 +404,142 @@ Each has a recommendation (Q6 is for Paco, the crew owner). The build waits for 
 - **FR-091**: `OFFICE_VIEW=real node scripts/check-office-overlap.js` (a `check-parallel.js` job): SIM 12 and 15, 15 in one folder (`simrooms=1`) and in 15 folders (`simrooms=solo`), both sizes. "Chat open": the chat takes the window and hides the office (spec 001), so the check asserts no page overflow while it is open and the same office after it closes.
 - **FR-092**: `shots-097-realoffice.js` (in `ui-suite.js`; `DOC_SHOTS` for the Settings picture the docs page links): 15 agents ([1440x900](../../docs/screenshots/097-real-15-1440x900.png), [1280x800](../../docs/screenshots/097-real-15-1280x800.png)), 3 agents ([1440x900](../../docs/screenshots/097-real-3-1440x900.png), [1280x800](../../docs/screenshots/097-real-3-1280x800.png)), [the lights with 8 agents](../../docs/screenshots/097-real-lights-1440x900.png), [the Settings row](../../docs/screenshots/097-office-layout-1440x900.png). The photo-heavy pictures cannot be palette-compressed within the quality guard (mean error 1.3 to 1.4), so they are linked from this spec only, and the docs page links only the small Settings picture (a Real office photo is 0.5 to 0.9 MB; the website's 8 MB budget had 33.7 KB left, then main grew: with the 3-agent photo the site was 8.2 MB against 7.6 MB for `main`). A later change that links a photo-heavy picture from the docs must free that room first.
 - **Not in P1**: live screens, the hover zoom and motion (P2); My characters and manual lighting (P3); SC-008, the owner's look at the P1 pictures (T022). Not run on Windows or macOS (CI only).
+
+### 2026-10-31: performance budgets, measured (owner; FR-178..FR-190, SC-009..SC-011, T142..T164)
+
+Spec only; nothing here is built. A separate section from the P1 build's and the world moments' deltas (#921, #925), so they do not edit the same lines. Numbers taken: FR-178..FR-190, SC-009..SC-011, T142..T164; checked 2026-10-31 against `main`, the remote branches and open PRs (#921: FR-084, FR-130, T025..T029, T064; #925: FR-118..FR-129, T128..T141).
+
+**Source.** Owner request (Vikram, 2026-10-31 13:06 UTC): worlds must not perform badly, and everything in the app must be very fast. So the budgets cover the worlds and the flat app.
+
+**The surprise.** Flat is not the good baseline. At 15 agents Real office is already smoother than flat in everything the main thread does; flat has the long tasks, the slow start and the slow status update. Real office is worse only at 40 agents (one CSS rule, below), at idle on a software compositor, under a blurred dialog, and in memory. Spec 052 FR-145's "p95 16.8 ms" no longer holds for flat under 10x activity (58.9 ms).
+
+**How it was measured** (`sim:`, 0 AI credits). Commit `ac122ff1` (#921's head), a driver in the style of `check-perf.js` plus `contentTracing`, Electron 44.9.1 under `xvfb-run`, 4 cores, one Electron at a time, a fresh profile per launch, 1440x900, device pixel ratio 1, 3 launches per case, medians. The driver and raw results are not committed. Frames are `requestAnimationFrame` deltas (over 16.7 counted as over 17.5 ms, to leave out vsync jitter); status activity is `simspeed=10` as in `check-perf.js`, 20 s; "one update" is one status event through `__durbarSimEmit`, from the frame's first `requestAnimationFrame` callback to after paint (a `MessageChannel` message), 60 updates. Flat is Open office unless named. CPU is `/proc` ticks in % of one core, per process type (`app.getAppMetrics` `percentCPUUsage` read a quarter of that here: the same ticks over 4 cores). Memory is the PSS summed over the app's processes.
+
+`[KNOWN GAP]` **What these numbers cannot say.** `gpu_compositing` was `disabled_software`: the GPU process's CPU below is Skia drawing every frame in software. Blending, blur, raster and scrolling are therefore much worse here than on any machine with a GPU, by an unknown factor; rAF deltas do not see compositor-only jank at all. Device pixel ratio 1 hides Retina's fourfold pixels. So only the main-thread numbers (style, layout, script, long tasks) carry over, scaled by CPU speed; read everything else as a comparison, not a user's experience. A run on a real Mac and a real Windows GPU is required before the GPU rows bind (FR-189, T162).
+
+#### Measured: flat against Real office
+
+| Measure | Flat 15 | Real 15 | Flat 40 | Real 40 |
+|---|---|---|---|---|
+| Mode switch, first, to the first frame with all pictures decoded (ms) | n/a | 296 (DOM 160, decoded 291) | n/a | 385 |
+| Mode switch, repeat (ms) | n/a | 131 | n/a | 251 |
+| Back to flat from Real (ms; one long task) | 463 | n/a | 1016 | n/a |
+| Open office to cabins (ms; one long task) | 396 | n/a | 1053 | n/a |
+| App start, saved mode, process start to complete frame (ms) | 2465 (cabins 2234) | 1391 | 4738 | 1702 |
+| Frames at 10x activity: p50 / p95 / worst (ms) | 16.8 / 58.9 / 110.8 | 16.6 / 17.8 / 37.1 | 16.8 / 101.4 / 169.8 | 17.0 / 460.9 / 584.8 |
+| Same: frames over 16.7 / over 33 ms in 20 s; frames per second | 179 / 112; 46.4 | 95 / 1; 59.8 | 210 / 117; 35.7 | 54 / 48; 7.0 |
+| Frames at normal speed: p95 / worst; over 33 ms | 17.7 / 108.2; 14 | 17.5 / 27.8; 0 | 23.4 / 176.4; 14 | 17.8 / 118.1; 12 |
+| Chat open and close, 6 cycles: frame p95 / worst; over 33 ms | 23.9 / 347.1; 17 | 18.3 / 59.8; 10 | 25.4 / 174.3; 17 | 54.0 / 212.2; 17 |
+| Chat open / close, median (ms) | 58 / 111 | 60 / 43 | 63 / 145 | 80 / 205 |
+| Lobby visits, 24 in about 10 s: frame p95 / worst; over 33 ms | 28.9 / 409.1; 26 | 17.4 / 31.9; 0 | 41.0 / 866.4; 41 | 32.5 / 229.8; 20 |
+| Scrolling, 10 px a frame: p50 / p95 / worst | does not scroll | does not scroll | does not scroll | 19.8 / 26.2 / 38.1 (only 88 px to scroll, once 16 visitors are in the lobby) |
+| Long tasks at 10x activity in 20 s: count; longest (ms) | 81; 111 | 0 | 91; 168 | 47; 573 |
+| Long tasks with nothing changing | 0 | 0 | 0 | 0 |
+| One status update, main-thread cost p50 / p95 (ms) | 66.1 / 404.9 | 12.5 / 33.5 | 86.3 / 991.9 | 116.2 / 398.3 |
+| One update: layout reads; nodes added and removed; attribute writes | 335; 2, 2; 61 | 59; 5, 5; 170 | 552; 2, 1; 92 | 103; 5, 5; 525 |
+| Layout engine per render, p50 / max (ms) | n/a | 0.5 / 1.9 | n/a | 1.1 / 2.8 |
+| The office's whole render at 10x activity, p50 (ms) | not separable | 8.2 | not separable | 399.8 |
+| Renders a second at 10x activity | about 9.5 (a proxy) | 4.45 | about 9.1 (a proxy) | 2.45 (starved) |
+| Memory settled, PSS / private / working set (MB) | 374 / 254 / 649 | 422 / 283 / 721 | 461 / 335 / 740 | 506 / 357 / 813 |
+| JS heap after `gc()` (MB; noisy) | 8.4 | 12.3 | 12.7 | 11.0 |
+| Pictures: distinct, decoded MB, shown MB | none | 25; 14.7; 1.5 | none | 41; 24.1; 1.2 |
+| Idle, visible, 30 s: all / renderer / GPU process (% of a core) | 63 / 55 / 7 | 71 / 7 / 64 | 75 / 68 / 6 | 65 / 15 / 50 |
+| Idle, hidden, 30 s (% of a core; `visibilityState` hidden; no frames) | 0.7 | 0.2 | 1.0 | 0.3 |
+| Normal activity, hidden, 30 s (% of a core; no frames) | 0.9 | 0.3 | 1.3 | 0.9 |
+
+Blur, Real office at 15 agents with 10x activity beneath, 10 s, 2 runs of 2 alternating passes (flat has no blur: the same toggle changed nothing there):
+
+| Surface | Blur on: fps, frame p95, GPU process | Blur off: fps, frame p95, GPU process |
+|---|---|---|
+| Dialog (about 600x500 px) | 29.8, 51.4 ms, 96 % | 59.5, 19.0 ms, 67 % |
+| Top-bar menu | 50.7, 28.5 ms, 81 % | 59.4, 20.2 ms, 65 % |
+| Toast | 59.1, 19.4 ms, 70 % | 59.4, 19.5 ms, 65 % |
+
+#### Causes, from traces, A/B runs and patched copies of the built page (never `src/`)
+
+1. **One `:has()` rule makes any text change in the office recalculate the whole page.** `styles.css` `.is-idle svg:has(.crew-pic)>:not(.pp),.is-idle svg:has(.crew-pic) .pp>:not(.crew-pic){opacity:.7}` (spec 077 FR-061). Deleting the 17 `:has` rules one after the other from the live style sheets, a text change plus a layout read fell at exactly this rule, and a build without only this rule confirms it (the gains table): Real 40 from 7.3 to 0.3 ms, flat 15 from 9.0 to 0.8 ms. In the trace of Real 40 each of 1360 style recalculations in 10 s touched about 1314 elements (74 % of a core); the layout engine was innocent (1.1 ms). It hits both modes.
+2. **`stagger()` in `realoffice.js` reads layout after every chip write, on every render** (59 of the 65 reads per update at 15). With cause 1 that is a whole-page recalculation per chip.
+3. **Flat's layout search on every status change.** Stacks of the 335 reads per update: `headHolds`, `fitHead`, `nameCut`, `headsFitGiving` under `chooseLayout`, then `fitUsage` and `placePencils`. The same search gives the one-long-task layout switches and the start: `requestAnimationFrame` callbacks hold 932 ms of a flat page load at 15 and 3472 ms at 40, against 49 ms for Real office.
+4. **Flat's 75 running animations are mostly not composited.** SVG `transform` and `fill-opacity` (`bar`, `tap`, `halo`, `wave`, `steam`): `Layerize` runs 60 times a second, 25 % of a core on the main thread, on any machine. All animations off: 5-9 % against 38-64 %.
+5. **Real office's 4 animations cost a full-window redraw 60 times a second.** They are small (3 `ro-pulse`, 1 `ro-breathe`, transform and opacity only), but the `mix-blend-mode` lamps put 20 render passes in each frame (flat: 3). All off: 4-8 % against 71 %. Lamps without blending: the GPU process falls from 64 to 24 % (total 21-46 %, noisy). Glow off: 8 points less. No shadows in `.ro`: 10 points. Ambient off: none. Software-compositor numbers: on a GPU the gap is smaller, by an unknown amount (FR-189).
+6. **A render rewrites what did not change.** `box()` and `dataset` write on every desk on every render (170 attribute writes at 15), and a plate's text is rebuilt with new nodes when only its task changed.
+7. **Pictures decoded at up to 19 times what is shown.** The desk is 900x344 shown at 262x100; a person is about 450x620 shown at 130x175. WebP has no scaled decode, so the whole frame is decoded (411 ms of worker CPU in the first switch). Leaving Real office kept the memory in this session (433 MB PSS on flat again at 15, against 374 fresh).
+8. **`backdrop-filter`** costs half the frame rate behind a dialog and 15 % behind a menu here, because the lights and the office keep changing beneath it. It costs nothing visible on a toast.
+
+**Checked and not causes:** the layout engine (FR-019 holds in the app); 207 pictures (only the 25 or 41 shown are fetched, and flat fetches none: FR-061 holds); `will-change` (none in Real office); `content-visibility` (no scrolling at 15; at 40 the office scrolls only 88 px and only with a crowd in the lobby, and it would not fit four flat layers without a restructure); non-composited animation in Real office (none).
+
+**Measured gains on patched copies** (medians of 3; "remove rule" deleted the rule, so the idle look was not kept):
+
+| Patch | Real 15 | Real 40 | Flat 15 | Flat 40 |
+|---|---|---|---|---|
+| Remove the `:has` rule: update p50; fps at 10x; long tasks | 12.5 to 11.6 ms; 59.8; 0 | **116 to 21.6 ms; 7 to 55; 47 to 1** | 66 to 47 ms; 46 to 52; 81 to 32 | 86 to 72 ms; 36 to 42; 91 to 90 |
+| Plus chips measured only when they changed, plates in place: layout reads; update p50 / p95 | 59 to 3; 8.3 / 21.6 ms | 103 to 3; 11.4 / 53.1 ms | | |
+| Half-size people and desk: decoded MB; PSS; first switch | 14.7 to 4.9; -19 MB; 296 to 237 ms | 24.1 to 7.3; -57 MB (noisy); 385 to 334 ms | | |
+
+#### Requirements
+
+- **FR-178** **The budgets are the two tables below.** "Now" is what the table above measured. A row is either an **op budget** (a count, machine-independent, asserted in pull requests, FR-186) or a **recorded budget** (time or memory, recorded weekly and reported, never asserted in a driver, FR-187). Recorded budgets apply to the same simulator setup and are checked as a ratio to the same run's flat result where the table says so; absolute numbers are for this reference machine.
+
+**Real office (and every world)**
+
+| Budget | 15 agents (now) | 40 agents (now) | Kind |
+|---|---|---|---|
+| Renders per status update | 1 (1) | 1 (1) | op |
+| Layout reads per status update | ≤ 5 (59) | ≤ 5 (103) | op |
+| Nodes added or removed by a status-only update | 0 (5, 5) | 0 (5, 5) | op |
+| Attribute writes per status-only update | ≤ 10 (170) | ≤ 10 (525) | op |
+| Elements recalculated by one text change (`UpdateLayoutTree.elementCount`) | ≤ 50 (718) | ≤ 50 (1314) | op |
+| Decoded picture bytes: natural area over shown device-pixel area | ≤ 4 (9.6) | ≤ 4 (19.7) | op |
+| Running infinite animations with nothing needing attention | ≤ 1 per light that means something, 0 on people in P1 (4) | same | op |
+| Main-thread cost of a status update, p95 | ≤ 16.7 ms: never over one frame (33.5) | ≤ 33 ms (398) | recorded |
+| Frames at 10x activity: p95; worst; long tasks over 50 ms | ≤ 20 ms; ≤ 50 ms; 0 (17.8; 37.1; 0) | ≤ 34 ms; ≤ 100 ms; ≤ 2 in 20 s (461; 585; 47) | recorded |
+| Long tasks over 50 ms with nothing changing | 0 (0) | 0 (0) | recorded |
+| Mode switch, first: to the complete frame; longest task | ≤ 300 ms; ≤ 100 ms (296; 77) | ≤ 400 ms; ≤ 120 ms (385; 119) | recorded |
+| Mode switch, repeat | ≤ 150 ms (131) | ≤ 250 ms (251) | recorded |
+| App start, process start to complete frame, against flat | ≤ 1500 ms, ≤ 1.0 × flat (1391; 0.56) | ≤ 1800 ms, ≤ 1.0 × flat (1702; 0.36) | recorded |
+| Layout engine, each render (FR-019) | < 5 ms (1.9) | < 5 ms (2.8) | existing `test:` |
+| Memory: PSS over flat; JS heap over flat | ≤ 40 MB; ≤ 8 MB (48; 3.9) | ≤ 60 MB; ≤ 8 MB (46; -1.7) | recorded |
+| Memory after leaving Real office, over a fresh flat | ≤ 30 MB after 30 s (59) | ≤ 40 MB (57) | recorded |
+| Idle CPU, visible, software compositor | ≤ 15 % of a core (71) | ≤ 20 % (65) | recorded |
+| Idle CPU, visible, on a real GPU | ≤ 5 % of a core (unmeasured) | ≤ 8 % (unmeasured) | `real:` T162 |
+| Idle CPU, hidden; frames while hidden | ≤ 1 %; 0 (0.2; 0) | ≤ 1 %; 0 (0.3; 0) | recorded |
+| Scrolling, real GPU | not applicable | ≥ 55 fps (software: 49.7) | `real:` T162 |
+
+**The flat app** (everything else in the app inherits these rows in Real office too)
+
+| Budget | 15 agents (now) | 40 agents (now) | Kind |
+|---|---|---|---|
+| Renders per status update | 1 (2, by proxy) | 1 (2, by proxy) | op |
+| Layout reads per status update | ≤ 40 (335) | ≤ 60 (552) | op |
+| Elements recalculated by one text change | ≤ 50 (about 1870) | ≤ 50 (unmeasured, about 3000 nodes) | op |
+| Composited or stepped animation: main-thread frames a second with nothing changing | ≤ 10 (60) | ≤ 10 (60) | op, from the trace |
+| Main-thread cost of a status update, p95 | ≤ 16.7 ms (405) | ≤ 33 ms (992) | recorded |
+| Frames at 10x activity: p95; worst; long tasks over 50 ms | ≤ 20 ms; ≤ 50 ms; 0 (58.9; 110.8; 81) | ≤ 34 ms; ≤ 100 ms; ≤ 2 in 20 s (101; 170; 91) | recorded |
+| Long tasks over 50 ms with nothing changing | 0 (0) | 0 (0) | recorded |
+| Switching office layout (cabins, open), longest task | ≤ 100 ms (378) | ≤ 250 ms (1007) | recorded |
+| App start, process start to complete frame | ≤ 1500 ms (2465) | ≤ 2000 ms (4738) | recorded |
+| Chat open, close (052 FR-145's check stays) | ≤ 100 ms each (58; 111) | ≤ 150 ms each (63; 145) | recorded |
+| Idle CPU, visible, software compositor | ≤ 15 % of a core (63) | ≤ 20 % (75) | recorded |
+| Idle CPU, hidden; frames while hidden | ≤ 1 %; 0 (0.7; 0) | ≤ 1.5 %; 0 (1.0; 0) | recorded |
+
+- **FR-179** **The order of the work** (owner decision, 2026-10-31). The flat rows fail today, and they are not Real office's fault. A new world's first ship (cave, loft, a country, a user-made world) waits for the Real office table's op rows, the FR-180 and FR-182 rules, **and the flat tasks T156..T159**, so a new world never lands on a slow app. The photo world of the first Real office PR is not a new world under this rule: it is opt-in, flat stays the default, and it already beats flat at 15 agents on the main thread. The owner also decided FR-182 (dialogs lose their blur) and FR-180 (lamps lose `mix-blend-mode`, with the lights shown to him before and after, T150).
+- **FR-180** **Only `transform` and `opacity` animate, and nothing blends.** In world CSS (`realoffice*.css`, `realoffice/worlds/**`) every `@keyframes` and `transition` names only `transform` and `opacity` (extends FR-048); no `mix-blend-mode`, `filter`, `box-shadow` or layout property animates; no `mix-blend-mode` on anything at all, because it put 20 render passes in each frame (a lamp is a pre-tinted gradient); `will-change` only on an element that animates now. Reduced motion, Serious mode and a hidden window keep the FR-071 and FR-047 rules. **New worlds** cannot opt out: this is part of the block contract's check (spec 098 FR-030, T147).
+- **FR-181** **Motion that is not the point stops.** A light's pulse or breath runs only while its state asks for attention, in stepped timing (`steps()`, at most 8 changes a second: a stepped value causes damage only on a step, `[KNOWN GAP]` gain not measured); P2's two-frame people (FR-070) count: stepped, per-agent, at most 2 changes a second a desk.
+- **FR-182** **`backdrop-filter`: a hard rule.** Never on `.dlg`, on anything over 15 % of the window, or on anything under which a running animation can show. Dialogs in a world get the opaque token surface (this amends FR-113 for `.dlg` and the other large panels: the blurred dialog halves the frame rate here). Allowed list, in `test:theme-tokens` by selector: `.toast`, `.more-menu`, `.mode-menu`, `.grants-pop`, `.ct-more-pop`, `#defaultsPop`, `#foldersPop`, `#floorsPop`, and only while they fit the 15 %. `prefers-reduced-transparency`, `prefers-contrast: more` and forced colours keep turning it off. A menu's blur is reviewed against the real-GPU run (T162): if it costs more than 2 ms a frame there, the allow list loses it.
+- **FR-183** **Pictures are sized to what is shown.** Person and desk pictures come in two sizes, the 2x of today and a half-size set, chosen by `srcset`, so the natural area is at most 4 times the shown device-pixel area (the op row above). `decoding="async"` stays; a picture is decoded before it is shown so that nothing pops (FR-065's fallback stays). FR-062's per-world 10 MB cap holds: the half-size set adds about 2.6 MB to the photo pack (about 8.7 of 10 MB). At device pixel ratio 2 the full set is chosen, so Retina gains less: `[KNOWN GAP]` Retina memory not measured. Leaving Real office or a world drops its pictures (`src` removed, FR-115) and the row above checks the result.
+- **FR-184** **Nothing rewrites what did not change.** A Real office render writes an attribute or style only when its value differs; a status-only change updates a plate's existing nodes; chips and plates are measured only when a chip or plate rectangle or text changed, reads before writes, once per render. Flat: a status change that does not change a room's head text or the desk count does not rerun the layout search.
+- **FR-185** **No broad `:has()`.** A `:has()` whose subject is not one small, named element is not allowed in `styles.css` or a world's CSS: a class set by the code does the job. The op row (elements recalculated by one text change) is the test, since the harm cannot be read from a selector alone.
+- **FR-186** **Pull-request checks: operation counts only.** `scripts/check-office-ops.js` (in `ui-suite.js`; simulator; flat and Real office; 15 and 40 agents; under about 30 s, or split) emits one status event through `__durbarSimEmit`, waits with `until()` for the next frame, and asserts the op rows: renders, layout reads, nodes, attribute writes, elements recalculated (from one short `contentTracing` of a text change: a count, not a time), picture area ratio. **No timing assert, as AGENTS.md *Timing* (spec 021 FR-048b, FR-063) requires: no wall-clock ratio asserts in drivers.** Static checks: FR-180 and FR-182 in `test:theme-tokens` (no Electron, every OS). Unit: FR-019 stays CPU time, minimum of runs, as it is today.
+- **FR-187** **Times and memory: a weekly record, not an assert.** `scripts/check-perf.js` (spec 052; it reuses its instruments and stays out of the pull-request suite as `NOT_IN_SUITE` says) gains `--record <file>`: it writes every measure of the first table as JSON, flat and each shippable world, at 15 and 40 agents, 1 launch each, 3 runs, medians. It runs in the weekly `world-matrix.yml` job (spec 098 FR-057) only; its results are an artifact. A row over budget, or a ratio to flat worse by over 25 % against last week's artifact, becomes a line in the "World coverage" issue with its numbers. It never turns the job red: CI machines vary, and a red job for a noisy number would soon be ignored. Exit codes stay for what really broke (a crash, a timeout, the frozen frame and leak limits `check-perf.js` already has).
+- **FR-188** **Honest record.** Every recorded row names the machine and that it ran under software compositing. A number from a machine under load (load average above the core count) is flagged, not used for a ratio.
+- **FR-189** **A real GPU run decides the GPU rows.** Before Real office is the default anywhere or a world is shipped as finished: the same driver, simulator only, 0 AI credits, on a real Mac (ratio 2, integrated GPU) and a Windows or Linux laptop with an integrated GPU, by whoever has one. It confirms or replaces the rows marked `real:` and the FR-182 list. Until then `[KNOWN GAP]`: blur, blending, raster and scroll are unmeasured on real hardware.
+- **FR-190** **Budgets move by evidence.** A budget changes only in a dated delta with the measurement that justifies it. A new world moment or a new screen in a world adds its own row when it costs more than a status update (the lift ride, FR-102, is the first).
+
+#### Success criteria
+
+- **SC-009** With the fixes, `check-office-ops` passes every op row in flat and Real office at 15 and 40 agents on all three OS runners that run the suite.
+- **SC-010** Real office at 40 agents with 10x activity keeps at least 55 frames a second in the weekly record (today 7), and a status update never takes over one frame at 15 agents in the record.
+- **SC-011** Hidden, both modes draw no frames and stay at or under 1 % of a core (1.5 % for flat at 40), and it stays recorded weekly.
 
 ### 2026-10-31: worlds, the lift in the world, chat and answers in the world (experience inventory; branch `097-real-office-worlds`)
 
@@ -467,6 +646,35 @@ Numbers checked 2026-10-31 against `main`, the P1 branch and open PRs: 097 uses 
 - The driver waits with `until()` until every awake desk is a person, a visitor or an initials disc, then reads once (simulator visits run on the wall clock). `check-parallel.js` reads the Real office summary line.
 - Site: the docs page links no Real office photo any more (only the 61 KB Settings picture); see FR-092.
 
+### 2026-10-31 and 2026-11-01: phase P2, live screens, the hover zoom and motion (as built; branch `097-p2-screens`, tasks T030..T034)
+
+**Sources.** Tasks T030..T034; the owner's rule "screens look active, not placeholders" and the performance rules FR-180, FR-181, FR-182 of the budgets delta (`origin/097-performance-budgets`, spec only, not yet on this branch). Lamps, dialogs and half-size pictures (T149..T153) are another job: this delta does not touch `lights.ts`, the lamp and glow CSS or the world's blur.
+
+**Choices where the spec left room** (each the safer reading; **awaiting owner review**):
+1. **FR-032 "under 150x60"** is read as narrower *or* lower, so the 15-agent screens (61..127 px wide) are small: bars for older lines and the newest line as text. *Awaiting owner review:* the newest line wraps over as many rows as the glass holds, at 10.5 px, read from its start with an ellipsis, instead of one cut row, because one row of about 13 characters read as a placeholder. Whole rows only, never half a line at the top. `[KNOWN GAP]` with all 15 at their desks at 1280x800 the narrowest monitors are about 61 px of glass: one row of about 7 characters ("Next I…"); the zoom holds the rest. A larger monitor would take desk or person room, an owner's call.
+2. **FR-070's running stride** is 1 to 1.3 s a pair, not 0.55 s: FR-181 allows at most 2 changes a second a desk, and a 0.55 s pair is 3.6. *Awaiting owner review.*
+3. **FR-070's breath and the visitors' sip and knock** are small stepped transforms (4 changes a breath; a sip and a knock are a few steps of under 1 px), kept although they run at idle: FR-070 asks for them and they cost little (below). If the real-GPU run (T162) says otherwise, resting people stop first. *Awaiting owner review.*
+4. **FR-034's close on leaving**: the panel takes no pointer events and closes when the pointer leaves the screen, as FR-034 says; it cannot be hovered itself. It opens after 120 ms, so crossing the room opens nothing. An Esc holds it shut until the pointer has left that screen. *Awaiting owner review.*
+5. **A held-back word (FR-030, safer than the desk readout):** while a text streams, the word still arriving is not shown, since half a token matches no mask; a text cut at 1200 characters loses its first word for the same reason. The desk readout is unchanged.
+6. **The simulator feeds more in Real office** (FR-093): one live agent adds a line every 1.3 s, in turn, only when Real office is the view, so a demo looks like agents at work (in a real session they write all the time); flat's simulated run is unchanged.
+
+7. **The docs page no longer shows the 3-agent picture** (FR-092): with text on its monitors it grew from 547 to 651 KB, the quality guard refuses it, and the site went over its 8 MB budget; the page links this spec instead, and the budget is not raised. *Awaiting owner review:* the site can take a Real office picture again only if room is freed.
+
+8. **Redaction review of P2 (changed, also for flat):** `safetext.js` masks a copy without default-ignorable, line-separator and control characters, so none can hide a token, on the desk readout, titles and labels too; when that finds nothing the text shows as it was and joiners stay. An escape's letter may belong to a token, so a screen also reads the text with only the introducer removed. With Live activity off a working screen shows its status word and bars, and the last reply shows only when done or idle, as `grownShowsReply`. A question, approval or error is one line of at most 200 characters, also through the command and URL masks (`strict`). *Awaiting owner review.*
+
+**As built:**
+- **FR-030, FR-031, SC-005**: `liveact.js` keeps a monitor's lines (`screen(id)`, 24 lines of 200 characters) beside the readout, from the same events and the same masks: control codes stripped first (an escape inside a token must not hide it from the mask), then `DurbarSafeText.maskRaw`, `maskHomePaths`, then plain lines, `textContent` only. A finished turn keeps its lines. With no working mask: no lines (fail closed), and the screen shows the status word. Live activity off: no live lines, as in flat.
+- **FR-032, FR-035**: `screenFit` and `screenFor` (pure, `realoffice-layout.ts`): line colours by kind (`cmd`, `ok`, `err`, `ask`, `done`, `think`, `reply`), an amber frame, a red tint, dark glass and no text when asleep. With no lines of its own a screen shows the last reply, then the task, then the status word: never an empty glass.
+- **FR-033**: a monitor repaints on its own, only when its lines changed, at most once per 2 s (`plan`; the driver read gaps of 2.0 s and more under a line every 250 ms). No timer runs in an idle office. The slide is three transform steps. The caret shares its desk's clock.
+- **FR-044**: the text sits in the chrome layer above the lights (`.ro-stext`), the glass stays in the art.
+- **FR-034**: `zoomRect` (pure) and the panel; 270 placements in `test:realoffice-layout` (every plate needing the user among them), and every awake screen at both sizes by real pointer moves in `shots-097-screens`. No blur (FR-182).
+- **FR-020, SC-003, T032**: big screens show real lines; a neck no longer covers the last line.
+- **FR-070..FR-074**: the two frames are stacked pictures with inverse stepped opacity, one clock per desk, one composited change at a time, shown only once decoded. `.still`, `.hold` (simulator drivers, `romotion=1` opts back in; the 096 setting `characterMotion` when it exists), Serious mode and reduced motion leave the first frame. `.paused` for a hidden window or a covered office; `.ro-off` for a desk scrolled away or wholly under the zoom.
+- **P1 bug found and fixed**: a person coming back from the lobby was drawn over the desk (DOM order): z-indexes in `.ro-art`.
+- **Performance** (2026-11-01, macOS, a 10-core Mac, GPU compositing on, device pixel ratio 1, 1440x900, 15 agents, frozen simulator, whole app, Electron's cumulative CPU, 5 interleaved runs of 15 s, medians, percent of one core; Electron alone but load average 5 to 7 from other jobs, so **not a clean number**, ranges wide): flat 9.5 (8.2 to 28.2); Real office with people still 7.6 (6.8 to 18.9); with this delta's motion 16.0 (10.3 to 28.4); with the motion and the lamps' blending and light pulses switched off by an injected style, as T150 and T151 will do, 4.9 (4.3 to 10.4). So the motion costs about 8 points while the lamps blend, and the scene falls under flat after T150, T151: an estimate from a patched page, not those tasks' result. This is lower than the earlier 60 % flat figure of the same Mac (other conditions; that run was not repeated here). The T145 recorder (`origin/097-check-perf`) is not on this branch, so a small driver of the same measure was used and not committed. The FR-181 count is held by `check-097-motion` (periods, stepped timing, one clock per desk); T155 and `check-office-ops` come with the budgets branch.
+- **Pictures**: [zoom 1440x900](../../docs/screenshots/097-zoom-1440x900.png), [zoom 1280x800](../../docs/screenshots/097-zoom-1280x800.png), [3 agents with full screens 1440x900](../../docs/screenshots/097-real-big-1440x900.png), [1280x800](../../docs/screenshots/097-real-big-1280x800.png), and the retaken P1 pictures above, which now show text on the monitors.
+- **Limits**: `[KNOWN GAP]` a real window hide on macOS did not set `document.hidden` under the driver's flags, so FR-074 is proved through the document's own signal, not a real minimise. `[KNOWN GAP]` FR-071's `characterMotion` does not exist yet, so its branch is read, not run. `[KNOWN GAP]` p03 and p15 lift the same leg in both running frames (recorded with T064). `[KNOWN GAP]` Windows and Linux: renderer code only, CI not read; a real session not run.
+
 ### 2026-10-31: Paco's art review of #921 (fix round)
 
 - **FR-026 chips**: a crowded chip takes the nearest free spot (up to 64 px left or right, up to three levels up, inside the band) and shows its name there; only when none is free it shows the first letters and an ellipsis, then initials. `sim:` `shots-097-realoffice` asserts at most one chip with bare initials in the 15-agent office at both sizes (mutant: spots limited to the chip's own place, fails).
@@ -485,6 +693,23 @@ Numbers checked 2026-10-31 against `main`, the P1 branch and open PRs: 097 uses 
 - **No bare initials in the lobby (FR-026, Paco's request on #921)**: chips make room in this order: the nearest free spot (64 px, three levels), then the chips already placed on the row slide left (never onto a plate), then the name shortens (first 6 down to 2 letters and an ellipsis); chip padding is 4 px and the gap 1 px; text stays 10.5 px. `sim:` `shots-097-realoffice` asserts at 15, 12 and 8 agents, both sizes, in the default font and DejaVu Sans, that no chip is a bare initial, (`sim:` also a synthetic strip of fixed-width plates and chips: two chips between two plates keep whole names by the first sliding left, and three that cannot fit never become initials; mutants: no slide, initials back, both fail). **Measured limit [KNOWN GAP]**: at 1280x800 the pair beside the Software library plate (Elif, Rosa in the simulator) has about 60 px between two plates; in the default font both fit by sliding unless one carries a needs-you icon, and in DejaVu Sans (about 10 % wider) one of them shows its first letters and an ellipsis, a little away from its person (12 and 15 agents, one chip); text was not shrunk, and no chip is a bare initial. Listed in `docs/limits.md`.
 - The Shift+F10 and Menu-key tests block the native `contextmenu` event so only the keydown handler can open the card menu; Escape returns focus to the plate (and to the "+N" plate); the placement guards have deterministic checks (chips widened by a style after the drawing, and a chip put on a plate, no font needed); the 400 ms sleep is a second `until()` that sees the same placement twice. Each has a mutant.
 - Re-review at f941d25b, three more test gaps: `resolve` is proven as part of every placement (a render whose chip measure is 40 px stale inside `stagger` only is put right by `resolve`; mutant: the call removed); the observer test changes padding and the left border (the border box, not the content box; mutant: `observe(e)` fails); the observed set follows the elements (`sweep` unobserves what it removes; `_obs.size` equals the chips and plates drawn after a crowd leaves; mutant: no `unobserve`).
+
+### 2026-11-01: the world seam, following spec 102 where it differs (T100, T101, T102)
+
+Spec 102 FR-200..FR-213 are the owner's latest on worlds (two flat lists, any set in any world, a default set per world); where this spec says otherwise they win:
+- **FR-100, FR-114** ("crews pick their world", *Match my characters*) are replaced: `peopleFor(world, choice)` in `crew.js` (FR-202's order: an explicit choice with full poses, else the world's default set, else Office people). `realOfficeSet` is gone. Worlds and sets are data rows (`WORLDS`, `REAL_SETS`, `WORLD_FLAGS`): a row with a `flag` that is off is not offered. `[IMPLEMENTED]` `test:` `test:realoffice-layout` (every value x world x flag, plus a made-up third world added by rows alone).
+- **FR-115** (per-world packs) and spec 102 FR-205: `realoffice/worlds/<id>/` (room: desk, floor, fixtures, `world.json`, optional `world.css`) and `realoffice/sets/<id>/` (people, `set.json`), each lazy; `html[data-world]` is the shown world's id. `test:realoffice-assets` checks a world together with its default set under the 10 MB cap (spec 102 FR-213). `[IMPLEMENTED]` `test:` `test:realoffice-assets`.
+- **T102 / spec 102 FR-201**: a **World** radio row under Office layout, shown only when Real office is on and more than one world is offered (none is yet, so nothing shows); Characters' first choice reads *World's default (<set>)* in Real office. `[KNOWN GAP]` spec 102 FR-201 replaces the Office layout row and keeps `world` in `durbar-settings.json` through main; here the World choice is `localStorage` `durbar.world` and Real office is still the opt-in third layout button (the owner keeps it opt-in), because the main-process path and the layout migration (FR-207) are not built. `[KNOWN GAP]` an explicit Office people choice is not in the Characters list yet (the default is the way to get it).
+- A set with fewer people than agents repeats people (spread across folders by `assignPeople`).
+
+### 2026-11-01: the Prehistoric cave pack, behind a closed flag (T101, T103, T125 partly)
+
+- **What is built** `[IMPLEMENTED]` `test:` `sim:` `shots-097-cave`: `realoffice/worlds/cave/` (desk, floor tile, wall, nine fixtures, `monitor.webp` as the world's own monitor frame (spec 102 FR-220; the app's live text stays on the glass), `world.css`, `world.json`) and `realoffice/sets/prehistoric/` (six people x the 12 poses). Art: the 11 cave images, welcome backdrops and logo columns approved by Paco 2026-10-31/11-01 and the full-pose frames approved by Paco 2026-11-01, inventor and skater rows included. A world token set for the cave (`theme.js` `WORLD_SETS.cave`, every pair AA, `test:theme-tokens`). Measured: 0.18 MB world plus 1.6 MB set = 1.8 MB, far under the 10 MB per-pack cap.
+- **Behind a flag** (the owner keeps it closed): `WORLD_FLAGS.cave` is `false` in `crew.js`; a flagged world or set is not offered, never drawn, and a stored `durbar.world=cave` is the Photo office. The simulator's `worldflags=cave` opens it for the drivers only. The gate that opens it: spec 097 T156..T159 and spec 001's search (#984), the owner's say-so, and spec 098 FR-024. `test:realoffice-layout` fails if the flag is on.
+- **Performance** (FR-180, FR-182): the cave's own rules use no blend mode, no blur and no filter (lights are plain translucent gradients; `test:realoffice-assets` rejects any in a world's CSS; the driver counts zero blended elements); movement stays `transform` and `opacity`. `[KNOWN GAP]` the shared base rules still use `mix-blend-mode: screen` for lamps and the world chrome blurs dialogs: those are #969's, left alone. Picture area budget: not measured here (`[KNOWN GAP]`, #969).
+- **World moments for the cave** `[KNOWN GAP]`: the registry (`docs/experience/world-moments.json`) is unchanged; the cave keeps `shippable: false`. Nine moments are `missing` there (lounge, walk, empty-office, first-run, floor-jumps, inbox, limit-card, elicitation, coffee-bar) and have no cave design; the owner refused partly done UI, so the world does not ship and this PR marks nothing `designed` it has not designed. The welcome backdrops and logo columns Paco approved are not wired.
+- **Monitor** `[KNOWN GAP]` (#990, spec 102 FR-220..FR-223): the slate frame is drawn behind the CSS glass; `screenRect` as a fraction of the picture and the validator's minimum are not built, and big screens (FR-020) keep the stretch. The desk is one stretched picture (`desk` shape of the engine).
+- **Seat** `[KNOWN GAP]` `hand` (how far down the keyboard hands sit) is one measured-by-eye 0.88 for all six people, not per person.
 
 ### 2026-10-31: visitors face their fixture (facing poses; stacked on #921)
 

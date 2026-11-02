@@ -1,8 +1,8 @@
-# Real office art: provenance (spec 097 FR-062..FR-069)
+# Real office set: Office people: provenance (spec 097 FR-062..FR-069, spec 102 FR-205)
 
 Every picture in this folder, where it comes from, who made and approved it, the exact prompt, and how it was cut and re-encoded.
 Checked by `npm run test:realoffice-assets` (every file listed once, every section complete, the fictional-people clause and a
-`likeness-check` on every person sheet). Only the `.webp` files and `people.json` ship (as `realoffice/art/people.js`); this file stays
+`likeness-check` on every person sheet). Only the `.webp` files and `set.json` ship (as `realoffice/sets/office/set.js`); this file stays
 in the repository.
 
 - **Licence:** MIT, like the code and the crew art (spec 097 FR-064, Q4: Vikram, 2026-10-31).
@@ -43,19 +43,6 @@ in the repository.
 - fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (recorded by the build PR, 2026-10-31; the prompt above did not carry it)
 - likeness-check: Vikram, 2026-10-31 10:46 UTC (contact sheet of p01–p15 reviewed; none resembles a real or famous person)
 - cut: one picture per pose, re-encoded WebP 0.80 with alpha, no metadata, at most 640 px tall
-- licence: MIT
-
-### desk3
-
-- files: desk.webp
-- source: `room-art/v2/desk3/desk3.png` (not shipped), sliced by the mockup's slicer
-- tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
-- date: 2026-10-31
-- made by: Vikram's agent (Claude Code)
-- approved by: Vikram, 2026-10-31
-- reference: `room-art/b-desk2/b-desk-front-2.png` (an earlier generated desk; its prompt is under *References* below)
-- prompt: One office desk seen from the front, centred, on a fully TRANSPARENT background (PNG with alpha channel, no floor, no shadow plane). Light oak desktop, black steel legs, a light oak front modesty panel. The desktop is completely empty except a white mug at the far right end. No monitor, no chair, no person, no keyboard. Same look as the attached desk. Photoreal 3D render, front-facing camera about 20 degrees down, mild perspective, soft warm daylight, clean, calm, realistic, office-safe, no text, no logos.
-- cut: one picture per pose, re-encoded WebP 0.80 with alpha, no metadata
 - licence: MIT
 
 ### seat-p02
@@ -268,19 +255,6 @@ in the repository.
 - cut: one picture per pose, re-encoded WebP 0.80 with alpha, no metadata, at most 640 px tall
 - licence: MIT
 
-### b-backwall
-
-- files: fx-library.webp fx-software.webp fx-terminal.webp fx-web.webp fx-boss.webp fx-coffee.webp fx-bank.webp fx-postbox.webp fx-other.webp floor.webp
-- source: `room-art/b-backwall/b-backwall.png` (not shipped), one 1672x941 render of the whole back wall
-- tool: Codex image generation (`codex exec`), codex-cli 0.163.0 (its log names the model gpt-6.1-sol)
-- date: 2026-10-31
-- made by: Vikram's agent (Claude Code)
-- approved by: Vikram, 2026-10-31
-- reference: none
-- prompt: A wide 16:9 panoramic view of the back wall of the office, seen straight on from the front. From left to right along the wall: a library bookshelf, a software shelf, a wall-mounted terminal screen, a globe kiosk, double doors (the Boss office), a coffee bar, a bank counter with a glass panel, a blue postbox, and a red tool cart. High windows above the wall with daylight. The floor in the foreground is light oak and completely empty. No people. Photoreal 3D render, front-facing eye-level-from-slightly-above camera (about 20° down), mild perspective, modern open-plan software office, warm daylight, light oak, white walls, black steel, plants; clean, calm, realistic, no text, no logos.
-- cut: the build PR re-cropped every fixture from the wall at one top (y 192) and one floor line (y 468), so each is whole and all share a scale (FR-023); sides feathered over 14 px; the Terminal keeps the wall screen only (rows above y 331), the Web the globe only (rows from y 332); `floor.webp` is the floor band (y 470..600) at quality 0.70; WebP, no metadata
-- re-cut (#921 review, owner 2026-11-01): the Web globe's wall and floor patch showed in front of the wall (a feathered rectangle with the photo's floor at the bottom); the picture was cut out again with Pillow (background flood-filled from the edges, floor rows and a stray strip removed, the largest piece kept, edge softened 0.7 px), re-encoded as WebP quality 80, method 6, no metadata; same size and floor line. Other fixtures are photo bays and were looked at at both sizes (no change).
-- licence: MIT
 
 ## Facing poses (spec 097 FR-191..FR-194; added 2026-10-31)
 
@@ -1046,6 +1020,22 @@ The sections below are kept as the record of how those sheets were made, approve
 - fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named. (the prompt itself carries the clause)
 - likeness-check: Vikram, 2026-10-31 12:44 UTC (running-sheet contact sheet of p01–p15 reviewed; none resembles a real or famous person)
 - cut: two frames split at the widest empty gap, each centred on its torso on one shared canvas with the feet aligned, resized to at most 640 px tall, re-encoded WebP quality 0.80 method 6 with alpha, no metadata; `people.json` sizes are in the stand sheet's units, a runner 0.97 of the person's upright `letter` height (bent knees, an estimate)
+- licence: MIT
+
+### rig-layers
+
+- files: p01-righead.webp p01-rigl.webp p01-rigr.webp p02-righead.webp p02-rigl.webp p02-rigr.webp p03-righead.webp p03-rigl.webp p03-rigr.webp p04-righead.webp p04-rigl.webp p04-rigr.webp p05-righead.webp p05-rigl.webp p05-rigr.webp p06-righead.webp p06-rigl.webp p06-rigr.webp p07-righead.webp p07-rigl.webp p07-rigr.webp p08-righead.webp p08-rigl.webp p08-rigr.webp p09-righead.webp p09-rigl.webp p09-rigr.webp p10-righead.webp p10-rigl.webp p10-rigr.webp p11-righead.webp p11-rigl.webp p11-rigr.webp p12-righead.webp p12-rigl.webp p12-rigr.webp p13-righead.webp p13-rigl.webp p13-rigr.webp p14-righead.webp p14-rigl.webp p14-rigr.webp p15-righead.webp p15-rigl.webp p15-rigr.webp
+- source: each person's own `typeA` picture in this folder: a head and two hands, cut with soft edges
+- tool: on-device Apple Vision for the face and hand places, Core Graphics to cut, Chromium's WebP encoder at quality 0.85; a one-off script, no generated pixels
+- date: 2026-11-01
+- made by: Vikram's agent (Claude Code)
+- approved by: Vikram (owner), 2026-11-01, relayed: keep the typing rig
+- reference: none
+- prompt: none, no image generation
+- cut: `rig` in `people.json` has each layer's place and pivot as fractions of the picture
+- size in px per layer: p01 head 206x216, l 103x67, r 104x67; p02 head 215x226, l 93x80, r 93x79; p03 head 203x214, l 95x76, r 95x79; p04 head 260x273, l 112x75, r 107x74; p05 head 250x261, l 122x73, r 118x74; p06 head 212x222, l 112x92, r 111x95; p07 head 220x231, l 109x85, r 102x81; p08 head 225x236, l 92x85, r 89x81; p09 head 202x211, l 105x80, r 102x81; p10 head 198x206, l 103x74, r 98x72; p11 head 200x210, l 99x85, r 103x78; p12 head 251x263, l 111x88, r 110x93; p13 head 227x238, l 101x82, r 100x85; p14 head 216x226, l 105x88, r 101x91; p15 head 227x238, l 106x85, r 90x85; 0.31 MB in all
+- chunks: WebP with alpha, no EXIF, XMP or ICC chunk (all 45 checked by `test:realoffice-assets`)
+- likeness-check: nothing was generated: each layer is a piece of a person's own picture, so the likeness check of `seat-pNN` above holds
 - licence: MIT
 
 ## Removed

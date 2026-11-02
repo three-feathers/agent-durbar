@@ -168,7 +168,7 @@ the session goes back to **Allow all**. The chip and the chat say so (FR-050).
 - **Autopilot…** appears only for agent apps that report the capability (FR-001).
 - It is greyed out with the reason when the organization's policy blocks Allow all or the app's goal feature (FR-070).
 - In Read-only and Ask first it is offered with a warning: the dialog says the folder becomes Allow all (FR-002, D13).
-- It is never offered as a folder's default or when adding a folder (FR-004). On a schedule it is out of the first build (FR-084).
+- It is never offered as a folder's default or when adding a folder (FR-004). A schedule has no mode (*Changes*, 2026-11-01), so it is not offered on one.
 - After a restart or a resume, the session comes back in **Allow all**, never in Autopilot, and the chat says so (FR-005).
 
 ### Story 4 - Approve a plan and let it run (P2)
@@ -589,6 +589,15 @@ Each recommendation is the reviewer's (rubenlupi, review of PR #923 at `dfe6428e
 - **Q-C**: Should there be an office-wide limit on sessions on Autopilot at once, since spend grows with their number? *Reviewer's recommendation*: yes, a small default. *Vikram's answer*: no hard limit; a warning past a small number; an organization policy can set one (FR-072).
 
 ## Changes
+
+### 2026-11-01: a scheduled prompt runs in its session's mode, Autopilot included (owner decision, Vikram; replaces the entries of 2026-10-31 on schedules)
+
+Owner decision of Vikram, 2026-10-31 and restated 2026-11-01 (matching Paco; first written on PR #965's thread): **schedules take their session's mode, and a session can be in any mode, including Autopilot.** No per-schedule mode, no popup, no Allow all or Autopilot on a schedule.
+
+- **Void:** FR-083's 2026-10-31 18:56 wording (a prompt runs in its schedule's mode), FR-084 (Autopilot on a schedule, held), the 2026-10-31 19:02 ruling and its *What this changes* list, the 2026-10-31 entry *schedules out of the first build* with its *While T096 is held* choice, D13's Q-A line (nothing is set up on a schedule, so no schedule warning), and the plan's line on the scheduler (`plan.md`, "In the first build, while T096 is held ..."). T096 and T097 are dropped (`[-]`); T032 no longer holds.
+- **What stands:** D4 and FR-003 (confirmed each time) are not reversed for schedules after all: a schedule never starts Autopilot, a session does. FR-004's line that Autopilot is never offered as a folder default stands; its words "On a schedule it is out of the first build (FR-084)" now read "a schedule has no mode".
+- **A scheduled message to a session on Autopilot is sent**, in the session's mode (Autopilot), through the normal send path. `[KNOWN GAP]` Whether the app counts it as one of the goal loop's continuations, and what the continuation count and end card then show, is not decided here; the first build ties the answer to the adapter's behaviour and asks the owner if it is unclear. FR-083's first wording ("a message that is not a run must not reach the app in its goal mode") is **not** brought back by this delta.
+
 
 - **2026-10-31**: Owner answers to Q1-Q4 recorded as D8-D11 (quote under *Clarifications*). S4 changed from "no attachments on
   Autopilot" to attachments per app capability (FR-001 `attachments`, FR-058). Copilot caps below 30 are raised to 30 (FR-022,
