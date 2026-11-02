@@ -41,3 +41,7 @@ Backlog: capability flag (spec 012). (Office and per-folder totals: done 2026-10
 - [x] T040 Copilot adapter: used-credit tracking, hold before send, stop on crossing during a turn, local `resolveLimit`, Stop/End drop [FR-070..FR-074]
 - [x] T041 Unit tests on a fake session (`scripts/test-copilot-cap.ts`, in `npm test`) [FR-070..FR-074]
 - [x] T042 One real check on Copilot Pro (cheap model, under 3 credits), README *Costs and caps*, CHANGELOG [FR-071] Done 2026-10-20: 1.46 AIU (spec `## Changes`).
+
+## 2026-11-02: settings setters check the save (issue #1023)
+
+- [x] T070 `SettingsStore.commit()` shared by every setter (failed save: memory unchanged), `settings:*` replies `ok` only when the value asked for is in force; `scripts/test-credits.ts` unwritable-path and IPC cases [FR-012]
