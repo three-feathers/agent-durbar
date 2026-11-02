@@ -3,8 +3,8 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 035-040
 title: Durbar court styles: Indian, European, Japanese (head accessory slots, court words)
-status: superseded
-note: removed 2026-10-31 (spec 035 FR-017); replaced by the kingdom worlds of spec 102
+status: deprecated
+note: removed 2026-10-31 (spec 035 FR-017); its replacement, spec 102 kingdom worlds, was discarded 2026-11-01 (spec 021 FR-071)
 -->
 
 **Feature Branch**: `035-theme-foundation` (issue #129)
@@ -49,8 +49,4 @@ note: removed 2026-10-31 (spec 035 FR-017); replaced by the kingdom worlds of sp
 
 ### 2026-10-31: removed (owner decision, spec 021 FR-067; spec 035 FR-017, FR-018)
 
-- **Superseded by spec 102's kingdom worlds** (new art; none of this is reused). The built-in themes `durbar-indian`, `durbar-european`, `durbar-japanese`, their UI styles and scene kits `court-*`, the motion preset `court` and their pictures are gone. A stored `theme` with one of the ids becomes Clean Office once (spec 035 FR-018). Everything above is history.
-
-## Changes 2026-10-31: doors removed (pointer, spec 017 T024)
-
-Spec 017 FR-029 (owner decision, no doors) removed the Office with cabins layout, the desk door button, meeting-room signs, room door plates, **Close all** / **Open all**, door-held schedules and the door refusal of remote control, and `door-art`, `--door-*` and the door words of the theme contract. Any requirement in this spec about those (door plates, plate totals or siren, door signs, collapse, Close all / Open all, the `door` field) no longer applies and is kept as a record; Hide folder, floors and the plain status word stay. See spec 017's table of what was lost and what remains.
+- **Deprecated, no replacement.** Spec 102's kingdom worlds were to replace this; the owner discarded them on 2026-11-01 (spec 021 FR-071). The built-in themes `durbar-indian`, `durbar-european`, `durbar-japanese`, their UI styles and scene kits `court-*`, the motion preset `court` and their pictures are gone. A stored `theme` with one of the ids becomes Clean Office once (spec 035 FR-018). Everything above is history.
