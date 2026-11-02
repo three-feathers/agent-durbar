@@ -59,8 +59,6 @@
   const aiu=(t,d)=>(t.nano/1e9).toFixed(d)+' AIU';
   /* '1.23 AIU' | 'cost not reported' (every call lacked credits, never 0.00) | '' (no calls yet) */
   const fmtTotal=(t,digits=2)=>none(t)?'':allUnreported(t)?'cost not reported':aiu(t,digits);
-  /* Short form for the closed door plate: '0.42 AIU' | 'n/r' | '' */
-  const fmtShort=t=>none(t)?'':allUnreported(t)?'n/r':aiu(t,2);
   const fmtTokens=n=>n>=1e6?(n/1e6).toFixed(1)+'M':n>=1e3?(n/1e3).toFixed(n>=1e4?0:1)+'k':String(Math.round(n));
   const plural=(n,w)=>n+' '+w+(n===1?'':'s');
 
@@ -88,5 +86,5 @@
     return L.filter((x,i)=>keep[i]).map(x=>x[1]).join('\n');
   }
 
-  return {createLedger,validNano,fmtTotal,fmtShort,tooltip,fmtTokens,sum};
+  return {createLedger,validNano,fmtTotal,tooltip,fmtTokens,sum};
 })());

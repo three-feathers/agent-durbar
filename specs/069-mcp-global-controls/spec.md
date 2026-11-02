@@ -372,6 +372,10 @@ VS Code UI supports, as some people may want to give access to read email but no
 
 ## Changes
 
+### 2026-10-31: MCP context cost (spec 100)
+
+Settings > MCP servers adds the warning levels and each server's last figures; Codex's `mcpServerStatus/list` also feeds an estimate (schemas are not kept). Owned by [spec 100](../100-mcp-context/spec.md) FR-001, FR-012, FR-020.
+
 ### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
 
 The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
