@@ -27,5 +27,5 @@
 ## Phase 3: docs and checks
 
 - [x] T030 README (one line since FR-065 of spec 021), docs/features.md (*MCP servers*), docs/limits.md (*Known limits*), changelog fragment, specs index, dated pointers in 005, 058, 069 [FR-044]
-- [x] T031 `real:` 2026-11-02 (Copilot CLI 1.0.98, Claude Code 2.1.316, codex-cli 0.163.0, Linux, 9 prompts): answers and three fixes (Copilot `toolDefinition` entries, one more ask at the first turn's end, Claude category over `isLoaded`) in spec *Changes* 2026-11-02; Codex deferral stays an owner decision `[KNOWN GAP]` [FR-042, FR-044]
+- [x] T031 `real:` 2026-11-02 (Copilot CLI 1.0.98, Claude Code 2.1.316, codex-cli 0.163.0, Linux, 9 prompts): answers and three fixes (Copilot `toolDefinition` entries, one more ask at the first turn's end, Claude category over `isLoaded`) in spec *Changes* 2026-11-02; Codex ruled an upper bound, "at most", never warns (owner 2026-11-02); `[KNOWN GAP]` not seen: Copilot `deferTools: auto`, a mixed Claude list, Windows, macOS [FR-042, FR-044]
 - [ ] T032 Follow-up spec 069 delta (own PR, small): "Turn off for this folder" for global servers, a per-folder off list fed into `forSession`; then link it from the warning line's actions [decided Q6]

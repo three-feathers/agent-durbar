@@ -159,6 +159,7 @@ module.exports = async (ctx) => {
     await setFig(B, rep([['github', 40_000]], 200_000));
     await pressInLine('Dismiss');
     assert.ok(await until(`document.querySelectorAll('.mcp-line').length===0`), 'Dismiss takes it away');
+    assert.ok(await until(`document.activeElement&&document.activeElement.id==='msgInput'`), `${w}: focus goes back to the composer, not the page`);
     await setFig(B, rep([['github', 44_000]], 200_000));
     await until(`/44k/.test((document.querySelector('#mcpBtn .ct-mcpk')||{}).textContent||'')`);
     assert.deepStrictEqual(await lines(), [], `${w}: dismissed: not back at warn`);
@@ -219,8 +220,9 @@ module.exports = async (ctx) => {
     await settle();
     assert.strictEqual(await js(`document.querySelectorAll('.mcp-hint').length`), 1, `${w}: once, and it survives the next fold`);
     assert.match(await js(`document.querySelector('.mcp-hint').closest('.cline').textContent`), /Context compacted 5 times/);
-    await js(`[...document.querySelectorAll('.mcp-hint button')].find(x=>x.textContent==='Dismiss').click()`);
+    await js(`(()=>{const b=[...document.querySelectorAll('.mcp-hint button')].find(x=>x.textContent==='Dismiss');b.focus();b.click();return true})()`);
     await until(`document.querySelectorAll('.mcp-hint').length===0`);
+    assert.ok(await until(`document.activeElement&&document.activeElement.id==='msgInput'`), `${w}: the hint's Dismiss also returns focus to the composer`);
     await comp(5);
     await settle();
     assert.strictEqual(await js(`document.querySelectorAll('.mcp-hint').length`), 0, `${w}: dismissed, not back at this level`);

@@ -75,7 +75,7 @@ export const CODEX_CAPABILITIES: AdapterCapabilities = Object.freeze({
   mcpToggleApplies: 'next-message', // FR-147
   mcpToolFilter: true, // spec 069 FR-062: config.mcp_servers.<name>.disabled_tools (real: codex-cli 0.163.0 hides the tool, T060)
   mcpTools: true, // spec 069 FR-031: mcpServerStatus/list with serverName, the tools map (read: generated app-server schema, codex-cli 0.163.0; not run on a real account)
-  mcpContext: 'estimated', // spec 100 FR-001: Codex reports no figures; estimated from the same list's schemas (read: generated schema; not run on a real account, T031)
+  mcpContext: 'estimated', // spec 100 FR-001: Codex reports no figures; estimated from the same list's schemas (real: codex-cli 0.163.0, T031 2026-11-02: Codex loads definitions on demand, so the figure is an upper bound, shown "at most" and never a warning; not seen: Windows, macOS)
   mcpRestart: false, // spec 058 FR-012 (Q8): no per-server restart; Restart session with these servers instead
   handoff: true, // spec 030 FR-034: an ephemeral fork, the thread is not changed
   renameSession: 'any', // spec 059 FR-007: thread/name/set on the live child or a short-lived app-server (real 2026-10-20: codex resume lists the name once the thread has had a turn)

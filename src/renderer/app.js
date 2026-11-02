@@ -3478,7 +3478,7 @@ function mcpWarnLine(a){
   if(act==='show'){
     const chat=liveChat(a),el=document.createElement('div');el.className='note info cline mcp-line';el.setAttribute('role','status');
     const t=document.createElement('span');t.className='mcp-line-t';el.appendChild(t);
-    const dismiss=()=>{st.dismissed=st.shown;st.shown='none';el.remove();st.el=null;};
+    const dismiss=()=>{st.dismissed=st.shown;st.shown='none';el.remove();st.el=null;const i=$('msgInput');if(i)focusIn(i);}; /* the focused button goes with the line: back to the composer, as the fresh note does */
     el.appendChild(mcpActions(a,dismiss));
     chat.el.appendChild(el);st.el=el;
   }
@@ -3496,7 +3496,7 @@ function mcpCompactHint(a,R,now){
     st.shown[h.level]=true;if(st.el)st.el.remove();
     const el=document.createElement('span');el.className='mcp-hint';
     const t=document.createElement('span');t.textContent=' '+h.text+' ';el.appendChild(t);
-    el.appendChild(mcpActions(a,()=>{el.remove();st.el=null;st.run=null;}));
+    el.appendChild(mcpActions(a,()=>{el.remove();st.el=null;st.run=null;const i=$('msgInput');if(i)focusIn(i);}));
     st.el=el;st.run=R;
   }
   if(st.el&&st.run===R&&st.el.parentNode!==R.el)R.el.appendChild(st.el); /* the fold's textContent removes it on each new compaction */

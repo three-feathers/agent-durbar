@@ -90,7 +90,7 @@ export const CLAUDE_CAPABILITIES: AdapterCapabilities = Object.freeze({
   mcpToggleApplies: 'live', // FR-133 (a server that was off at launch: next message)
   mcpToolFilter: true, // spec 069 FR-062: --disallowedTools mcp__<server>__<tool> (read: CLI docs; not run on a real account)
   mcpTools: true, // spec 069 FR-031: the tools of a server in the mcp_status reply (read: docs McpServerStatus.tools; not run on a real account)
-  mcpContext: 'reported', // spec 100 FR-001: control request get_context_usage, detail summary (read: CLI 2.1.309 strings, 2.1.316 program; not run on a real account, T031)
+  mcpContext: 'reported', // spec 100 FR-001: control request get_context_usage, detail summary (real: Claude Code 2.1.316, T031 2026-11-02: tool `isLoaded` is no guide, the category decides; not seen: a mixed loaded and deferred list, Windows, macOS)
   mcpRestart: true, // spec 058 FR-012: control request mcp_reconnect (read: CLI 2.1.304 strings; not checked on a real account)
   mcpSignIn: true, // spec 058 FR-175: control request mcp_authenticate (undocumented; read: CLI 2.1.304 program only; not checked on a real account, T106)
   mcpSignInSteps: "If Sign in is not available, run `claude mcp login {name}` in a terminal and finish in your browser. This works only for a server in Claude Code's own settings. Then press Restart on this row.", // FR-181 (Q21 A)
