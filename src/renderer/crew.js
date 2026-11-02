@@ -16,11 +16,17 @@
   const PIRATE_IDS = ['captain', 'eyepatch', 'hook', 'cook', 'privateer', 'cabinboy'];
   /* spec 077 FR-075 (issue #815): the Monster crew, 6 characters, `crew/art/monster-<id>-<pose>.webp` */
   const MONSTER_IDS = ['frankenstein', 'ghost', 'mummy', 'seacreature', 'vampire', 'werewolf'];
-  const CREWS = { cheeky: IDS, prehistoric: PREHISTORIC_IDS, pirate: PIRATE_IDS, monster: MONSTER_IDS };
-  const ALL_IDS = IDS.concat(PREHISTORIC_IDS, PIRATE_IDS, MONSTER_IDS);
+  /* spec 077 FR-076 (issue #815): the Royal crew, 6 characters, `crew/art/royal-<id>-<pose>.webp` */
+  const ROYAL_IDS = ['alchemist', 'princess', 'knight', 'jester', 'queen', 'king'];
+  const CREWS = { cheeky: IDS, prehistoric: PREHISTORIC_IDS, pirate: PIRATE_IDS, monster: MONSTER_IDS, royal: ROYAL_IDS };
+  const ALL_IDS = Object.values(CREWS).flat();
+  /* the crew each character belongs to, from CREWS alone (ids are unique across crews), so a new crew is one CREWS entry: Cheeky keeps its old
+     unprefixed file names and store key, every later crew uses `crew/art/<crew>-<id>-<pose>.webp` and `durbar.crew.<crew>` */
+  const CREW_OF = new Map(Object.entries(CREWS).flatMap(([c, ids]) => ids.map((id) => [id, c])));
+  const LEGACY_CREW = 'cheeky';
   /* the characters of a Characters value (an unknown value or the theme's own: the Cheeky crew, as before) and the key the choice is stored under */
   const idsFor = (choice) => has(CREWS, choice) ? CREWS[choice] : IDS;
-  const storeKey = (choice) => (choice === 'prehistoric' || choice === 'pirate' || choice === 'monster') ? 'durbar.crew.' + choice : 'durbar.crew';
+  const storeKey = (choice) => has(CREWS, choice) && choice !== LEGACY_CREW ? 'durbar.crew.' + choice : 'durbar.crew';
   const MAX_ENTRIES = 500, MAX_ID = 200;
   /* the portraits (spec 077 FR-050..FR-055, FR-059, FR-060): three poses per character, `crew/art/<id>-<pose>.webp`, 352x352 and square, drawn
      in a fixed square box of the 200x124 stage: 88x88 units at x 24, y 22 (twice the first build's, owner 2026-10-23). Its right edge is the
@@ -69,6 +75,13 @@
     seacreature: { working: [205, 160], waiting: [178, 150], resting: [168, 160] },
     vampire: { working: [205, 160], waiting: [175, 150], resting: [180, 155] },
     werewolf: { working: [210, 160], waiting: [190, 150], resting: [186, 150] },
+    /* Royal (FR-076): read the same way, from a contact sheet of the three poses with a 50 px grid */
+    alchemist: { working: [205, 150], waiting: [197, 150], resting: [200, 152] },
+    princess: { working: [210, 160], waiting: [202, 160], resting: [195, 150] },
+    knight: { working: [200, 160], waiting: [200, 158], resting: [194, 152] },
+    jester: { working: [210, 172], waiting: [197, 168], resting: [200, 155] },
+    queen: { working: [210, 172], waiting: [202, 170], resting: [198, 163] },
+    king: { working: [200, 163], waiting: [197, 162], resting: [199, 148] },
   };
   const k = BOX.w / PIC;
   /* a face box or the avatar's crop, in stage units: [x, y, w, h]; null for an unknown picture */
@@ -86,7 +99,7 @@
   }
   /* the pose for a status: working and thinking type, waiting and error need the person, the rest rests */
   const poseFor = (st) => (st === 'working' || st === 'thinking' || st === 'avatar') ? 'working' : (st === 'waiting' || st === 'error') ? 'waiting' : 'resting';
-  const file = (id, pose) => 'crew/art/' + (PREHISTORIC_IDS.includes(id) ? 'prehistoric-' : PIRATE_IDS.includes(id) ? 'pirate-' : MONSTER_IDS.includes(id) ? 'monster-' : '') + id + '-' + pose + '.webp';
+  const file = (id, pose) => { const c = CREW_OF.get(id); return 'crew/art/' + (c && c !== LEGACY_CREW ? c + '-' : '') + id + '-' + pose + '.webp'; };
   const files = (ids) => (ids || IDS).reduce((a, id) => a.concat(POSES.map((p) => file(id, p))), []);
   /* FR-055: a character can be drawn when it is known and none of its pictures failed to load (`bad`: a Set of character ids) */
   const usable = (id, bad) => typeof id === 'string' && ALL_IDS.includes(id) && !(bad && bad.has && bad.has(id));
@@ -183,5 +196,5 @@
     const def = d && on(d, flags) ? d : REAL_SETS[0];
     return { world: w.id, set: def.id, setName: def.name, note: crewName(c) ? `Real office shows ${def.name} until ${crewName(c)} has Real office poses.` : '' };
   }
-  return { WORLD_FLAGS, WORLDS, REAL_SETS, offeredWorlds, parseWorld, peopleFor, CREWS, PREHISTORIC_IDS, PIRATE_IDS, MONSTER_IDS, ALL_IDS, idsFor, storeKey, POSES, BOX, PX_PER_UNIT, FACE, FACE_W, FACE_H, FACE_CROP, faceBox, viewBox, poseFor, file, files, usable, IDS, MAX_ENTRIES, MAX_ID, seeded, seededRand, pickCharacter, assignCrew, pruneCrew, loadCrew };
+  return { WORLD_FLAGS, WORLDS, REAL_SETS, offeredWorlds, parseWorld, peopleFor, CREWS, PREHISTORIC_IDS, PIRATE_IDS, MONSTER_IDS, ROYAL_IDS, ALL_IDS, idsFor, storeKey, POSES, BOX, PX_PER_UNIT, FACE, FACE_W, FACE_H, FACE_CROP, faceBox, viewBox, poseFor, file, files, usable, IDS, MAX_ENTRIES, MAX_ID, seeded, seededRand, pickCharacter, assignCrew, pruneCrew, loadCrew };
 })());
