@@ -32,13 +32,13 @@ module.exports = async (ctx) => {
   const MUTANTS = {
     off: '.chat-inner>*{content-visibility:visible!important}',
     hidden: '.chat-inner>*{content-visibility:hidden!important}',
-    nosize: '.chat-inner>*{contain-intrinsic-size:none!important}',
-    zero: '.chat-inner>*{contain-intrinsic-size:0 0!important}',
+    nosize: '.chat-inner>*{contain-intrinsic-block-size:none!important}',
+    zero: '.chat-inner>*{contain-intrinsic-block-size:0!important}',
   };
   assert.ok(!MUT || MUTANTS[MUT] || MUT === 'size', `known mutant: ${MUT}`);
   const N = 4000;
   const forceOff = (on) => js(`(()=>{let s=document.getElementById('cvOff');if(${jsLiteral(!!on)}){if(!s){s=document.createElement('style');s.id='cvOff';s.textContent=${jsLiteral(MUTANTS.off)};document.head.appendChild(s);}}else if(s)s.remove();})()`);
-  if (process.env.CVSIZE) MUTANTS.size = `.chat-inner>*{contain-intrinsic-size:auto ${Number(process.env.CVSIZE)}px!important}`;
+  if (process.env.CVSIZE) MUTANTS.size = `.chat-inner>*{contain-intrinsic-block-size:auto ${Number(process.env.CVSIZE)}px!important}`;
   const mutant = () => js(`(()=>{let s=document.getElementById('cvMut');if(s)s.remove();const css=${jsLiteral(MUT ? MUTANTS[MUT] : '')};if(css){s=document.createElement('style');s.id='cvMut';s.textContent=css;document.head.appendChild(s);}})()`);
   const gap = `(()=>{const c=document.getElementById('chat');return Math.round(c.scrollHeight-c.scrollTop-c.clientHeight)})()`;
 
@@ -88,6 +88,8 @@ module.exports = async (ctx) => {
     const sk = await js(`(()=>{const e=[...document.querySelectorAll('#chat .chat-inner>*')];const sk=e.filter(x=>!(x.firstElementChild||x).checkVisibility({contentVisibilityAuto:true}));return {n:e.length,skipped:sk.length,lastSkipped:!(e[e.length-1].firstElementChild).checkVisibility({contentVisibilityAuto:true})}})()`);
     if (!process.env.CVBASE && (!MUT || MUT === 'off')) assert.ok(sk.skipped > N * 0.9 && !sk.lastSkipped, `${tag}: most messages are skipped, the last one is not: ${JSON.stringify(sk)}`);
 
+    const ap = await js(`(()=>{const el=document.querySelector('#chat .chat-inner'),src=el.children[el.children.length-3];const t0=performance.now();for(let i=0;i<100;i++){const m=src.cloneNode(true);m.removeAttribute('id');el.appendChild(m);void m.getBoundingClientRect().height;}const t=performance.now()-t0;for(let i=0;i<100;i++)el.lastElementChild.remove();return Math.round(t)})()`);
+    console.log(`TIMING ${tag}: appending 100 messages one by one with a layout read each: ${ap} ms (rule ${MUT === 'off' || process.env.CVBASE ? 'off' : 'on'})`);
     /* 2. REOPEN: at the end, and it stays (the skipped heights settle) */
     await js(`document.getElementById('chat').scrollTop=3000`); await ctx.sleep(150);
     await reopen(id); await ctx.sleep(300);

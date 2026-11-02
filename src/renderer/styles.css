@@ -419,8 +419,8 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .btn svg{width:15px;height:15px;flex:none}
 #chat{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding:16px;display:flex;flex-direction:column;gap:12px}
 .chat-inner{display:flex;flex-direction:column;gap:12px;min-width:0}
-/* spec 005 FR-210: a long chat lays out and paints only the messages near the view; an unseen one keeps the height it last had (auto), 90px before it was ever seen */
-.chat-inner>*{content-visibility:auto;contain-intrinsic-size:auto 90px;overflow-clip-margin:14px}
+/* spec 005 FR-210: a long chat lays out and paints only the messages near the view; an unseen one keeps the height it last had (auto), 90px before it was ever seen; the newest 20 are always laid out, because the app measures a message the moment it adds it (answer bar, notes) and a skipped one reads as a 90px box */
+.chat-inner>:not(:nth-last-child(-n+20)){content-visibility:auto;contain-intrinsic-block-size:auto 90px;overflow-clip-margin:14px}
 .msg{display:flex;flex-direction:column;gap:8px;max-width:100%;min-width:0}
 .msg.user{align-items:flex-end}
 .msg .meta{font-size:var(--t5-size);color:var(--muted)}
