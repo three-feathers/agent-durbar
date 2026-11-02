@@ -671,3 +671,20 @@ Nothing here was run on a real session for this delta (0 credits); the `real:` e
   - **Honest limits:** `[KNOWN GAP]` checked on Linux under Xvfb only; not verified on Windows or macOS.
 
 **Tasks:** T163..T164 in `tasks.md`. Numbers taken here: FR-191, T163..T164 (checked against `main`, the remote branches and the open PRs on 2026-10-30).
+
+## Changes 2026-10-31: doors removed (pointer, spec 017 T024)
+
+Spec 017 FR-029 (owner decision, no doors) removed the Office with cabins layout, the desk door button, meeting-room signs, room door plates, **Close all** / **Open all**, door-held schedules and the door refusal of remote control, and `door-art`, `--door-*` and the door words of the theme contract. Any requirement in this spec about those (door plates, plate totals or siren, door signs, collapse, Close all / Open all, the `door` field) no longer applies and is kept as a record; Hide folder, floors and the plain status word stay. See spec 017's table of what was lost and what remains.
+
+## Changes 2026-11-02: removed page and tools (owner decision, PR #1054)
+
+`docs/feature-history.md` and the pictures only it linked (the m2..m8, 002 and 003 pictures that no driver writes) were removed on 2026-11-02 by owner decision; the old text above that cites them stays as written, and they are in git history at commit `1c75b5bee`. Pictures a driver still writes were kept.
+
+## Changes 2026-11-02: the Flat waiting halo is a still glow (owner decision, sweeper report row "still halo")
+
+- **FR-210** `[IMPLEMENTED]` `sim:` `check-001-halo` The glow behind a Flat desk's screen no longer pulses. `@keyframes halo` animated `fill-opacity`, which restyled the page 60 times a second (renderer CPU at 15 agents on the simulator under xvfb: 6.8 and 6.9 % of a core with it, 1.6 and 1.7 % with the still glow; the report measured about 30 % on its machine). The owner accepted the still glow on 2026-11-02 at 15:46 UTC. The owner's order was a cheaper fade first, a still glow if it blurs. A fade of `opacity` (compositor) brought CPU to 1.6 %, but the figure, chair and desk then drew their edges a pixel soft: 550 and 475 pixels differ from the no-animation picture inside the scenes at 1440x900 (normal, 2x zoom), 94 at 1280x800, 0 at 1280x800 2x (the same blur #554 left `opacity` for). So the halo is now `opacity: .75` (error `1`), no animation, no layer. `prefers-reduced-motion` already stopped it and still does; The theme `halo` motion preset, `--m-halo` and Serious mode's `.halo` entry had nothing left to drive and are removed.
+  - **Guard:** `scripts/check-001-halo.js` (in `ui-suite.js`) fails when any `@keyframes halo` exists or any animation runs on a `.halo` or inside one, or a halo is not drawn, at 1440x900 and 1280x800, normal and 2x zoom, and under emulated reduced motion. Mutation-checked: putting back the `fill-opacity` or the `opacity` animation fails it. It prints the renderer CPU over 6 s (a measurement, not a limit) and writes a picture per size and zoom.
+  - **Owner direction:** when Flat moves onto the world model, the halo goes the way of the worlds' lights, on the shared motion grid ([#1046](https://github.com/three-feathers/agent-durbar/pull/1046)); this still glow is the stop-gap until then.
+  - **Honest limits:** `[KNOWN GAP]` CPU measured on Linux under xvfb, software rendering, one machine, not on macOS or Windows; the blur measured by captured pixels on Linux only, not by eye on a Retina screen; the pulse on waiting desks is lost, so "Waiting" is told by its colour and its words only.
+
+**Tasks:** T190..T191 in `tasks.md`. Numbers taken here: FR-210, T190..T191 (checked against `main`, the remote branches and the open PRs on 2026-11-02).
