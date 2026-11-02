@@ -130,6 +130,12 @@ module.exports = async (ctx) => {
       assert.ok(await until(`document.getElementById('chat').scrollTop!==${jsLiteral(wheelFrom)}`, 3000), `${tag}: the wheel scrolled the chat`);
       await quiet('a wheel step'); await stepCheck(`wheel ${i}`, 0);
     }
+    /* a seen message keeps its height while it is skipped (contain-intrinsic-size auto): the mutants without it collapse to 0 */
+    await js(`document.querySelector('#chat .chat-inner>[data-cv="3500"]').scrollIntoView({block:'center'})`); await quiet('showing message 3500');
+    const h1 = await js(`document.querySelector('#chat .chat-inner>[data-cv="3500"]').getBoundingClientRect().height`);
+    await js(`document.getElementById('chat').scrollTop=0`); await quiet('leaving message 3500');
+    const kept = await js(`(()=>{const m=document.querySelector('#chat .chat-inner>[data-cv="3500"]');return {h:m.getBoundingClientRect().height,skipped:!m.firstElementChild.checkVisibility({contentVisibilityAuto:true})}})()`);
+    assert.ok(h1 > 0 && Math.abs(kept.h - h1) <= 0.6 && (kept.skipped || process.env.CVBASE || MUT === 'hidden'), `${tag}: a seen message keeps its height ${h1} while skipped: ${JSON.stringify(kept)}`);
     console.log(`KNOWN GAP ${tag}: ${bigJumps.filter((x) => x > 1).length} of ${bigJumps.length} jumps of 1500px into never-seen messages moved the view (largest ${Math.max(0, ...bigJumps)}px); steps of 380px and the wheel: none`);
     await js(`document.getElementById('chat').scrollTop=0`); await quiet('a scroll');
     await quiet('the jump to the start');
