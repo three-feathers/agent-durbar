@@ -69,13 +69,17 @@ export const CHIP_H = 17, CHIP_GAP = 2;
 /** FR-022: the order inside a zone. */
 export const STATE_ORDER: Record<RealState, number> = { waiting: 0, limit: 0, error: 1, working: 2, thinking: 2, done: 3, idle: 4, asleep: 4 };
 /** FR-036: the seated pose per state (the first frame; motion is phase P2). */
-export const SEAT_POSE: Record<RealState, string | null> = { working: 'typeA', thinking: 'think', waiting: 'waveA', limit: 'waveA', error: 'think', done: 'rest', idle: 'rest', asleep: null };
+export const SEAT_POSE: Record<RealState, string | null> = { working: 'typeA', thinking: 'think', waiting: 'waveA', limit: 'waveA', error: 'think', done: 'rest', idle: 'rest', asleep: 'rest' };
 
 const roOwn = (o: object, k: string): boolean => Object.prototype.hasOwnProperty.call(o, k);
 const roNeedsYou = (s: RealState): boolean => s === 'waiting' || s === 'limit';
-/** An agent without a person at its desk: away in the lobby, or asleep (Q5: lamp and screen off, a narrower desk). */
-const roNarrow = (a: RealAgent): boolean => !!a.away || a.state === 'asleep';
-const roWidthOf = (_a: RealAgent): number => 1; /* spec Changes 2026-11-01: an empty desk keeps its slot, so nothing moves when someone leaves */
+/** An empty seat: the agent is away in the lobby (a post-it says where). An asleep agent is not away: it rests at its desk in the dark (FR-120, FR-129). */
+const roNarrow = (a: RealAgent): boolean => !!a.away;
+/** Owner ruling 2026-11-02 (replaces #979's "asleep included" for this one case): an asleep desk narrows (0.62). Asleep is reached only once the last
+ *  message is read (an unread reply keeps its full desk, spec 001 FR-173, shutters.js), so the desk is full while unread and narrows when read. Every other desk keeps the still-room rule. */
+export const ASLEEP_W = 0.62;
+const roSlim = (a: RealAgent): boolean => a.state === 'asleep' && !a.away;
+const roWidthOf = (a: RealAgent): number => (roSlim(a) ? ASLEEP_W : 1);
 const roSeatOf = (meta: RealMeta, a: RealAgent): SeatMeta | null => (a.person && roOwn(meta.seat, a.person) ? meta.seat[a.person] : null);
 
 /** FR-022: a zone's desks in status order; ties keep the model's order. */
@@ -297,35 +301,36 @@ function roNote(px: number, sx: number, slotW: number, sl: number, deskY: number
 
 /** FR-013, FR-016, FR-017, FR-036, FR-038: one desk (roStation) in a slot. */
 function roStation(meta: RealMeta, a: RealAgent, sx: number, y: number, Sw: number, u: number, g: Geom, big: boolean, scrH: number): DeskBox {
-  const narrow = roNarrow(a);
+  const narrow = roNarrow(a), slim = roSlim(a);
   const slotW = Sw * roWidthOf(a);
   const deskY = y + g.deskBack, dw = slotW - 6, dh = g.dh;
   const m = roSeatOf(meta, a);
   const hand = m ? m.hand : DESK_AT;
   const headY = deskY - 0.015 * u - hand * u;
-  const px = big ? sx + slotW / 2 : sx + 0.05 * Sw + 0.42 * u;
+  const px = big || slim ? sx + slotW / 2 : sx + 0.05 * Sw + 0.42 * u;
   let person: DeskBox['person'] = null, face: Rect | null = null;
   const pose = SEAT_POSE[a.state];
   if (m && pose && !narrow) {
     const k = u / m.bodyH, w = m.w * k, h = m.h * k, top = headY - m.headTop * k;
     person = { x: px - w / 2, y: top, w, h, file: `${a.person}-${pose}.webp`, fileB: roOwn(POSE_FRAME_B, pose) ? `${a.person}-${POSE_FRAME_B[pose]}.webp` : null, pose, pid: String(a.person),
-      vis: { x: px - 0.3 * u, y: headY, w: 0.6 * u, h: Math.max(0, deskY - headY) } }; /* the head and shoulders: the monitor may cover a shoulder edge, never the face */
+      vis: { x: Math.max(sx, Math.min(px - 0.3 * u, sx + slotW - 0.6 * u)), y: headY, w: Math.min(0.6 * u, slotW), h: Math.max(0, deskY - headY) } }; /* the head and shoulders: the monitor may cover a shoulder edge, never the face */
     face = { x: px - FACE_U * u * 0.4, y: headY, w: FACE_U * u * 0.8, h: FACE_U * u };
   }
   let sl = px + 0.36 * u, sr = sx + slotW - 0.05 * Sw, sw = sr - sl;
   let foot = deskY + 0.13 * dh, neck = Math.max(6, 0.07 * u);
   let sh = Math.min(sw * (Sw > 300 ? 0.78 : 0.64), foot - neck - (y + STRIP + 3));
+  if (slim && !big) { sl = sx + 0.1 * slotW; sr = sx + 0.9 * slotW; sw = sr - sl; sh = Math.min(sw * 0.64, foot - neck - (y + STRIP + 3)); }
   if (big) { const top = 6; sl = sx + 0.04 * slotW; sr = sx + 0.96 * slotW; sw = sr - sl; sh = scrH - 4 - top; neck = 0; foot = y + STRIP + top + sh; }
   sh = Math.max(12, sh);
   const screen = { x: sl, y: foot - neck - sh, w: sw, h: sh + neck + 4 };
   const glass = { x: sl + 3, y: foot - neck - sh + 3, w: sw - 6, h: sh - 6 };
-  const plateH = roNeedsYou(a.state) ? PLATE_H_ASK : PLATE_H;
+  const plateH = roNeedsYou(a.state) || a.state === 'asleep' ? PLATE_H_ASK : PLATE_H; /* FR-120: the asleep plate's words take two lines in its narrower desk (the row already holds the room, FR-015) */
   const plate = { x: sx + 8, y: deskY + 0.22 * dh + 2, w: slotW - 16, h: plateH };
   /* the desk picture is dh tall; the row shows its top (desktop, front panel, the upper legs), so the box is cut at the row's bottom */
   const desk = { x: sx + 3, y: deskY, w: dw, h: Math.min(dh, g.bottom - g.deskBack - 2), full: dh };
   return {
-    id: a.id, state: a.state, narrow, slot: { x: sx, y, w: slotW, h: 0 }, desk, plate, screen, glass, person, face,
-    away: narrow && a.away ? roNote(px, sx, slotW, sl, deskY, u, big) : null, /* the note on the desk, where the person would sit */
+    id: a.id, state: a.state, narrow: narrow || slim, slot: { x: sx, y, w: slotW, h: 0 }, desk, plate, screen, glass, person, face,
+    away: a.away ? roNote(px, sx, slotW, sl, deskY, u, big) : null, /* the note on the desk, where the person would sit */
     lamp: { x: sx + 0.02 * slotW, y: Math.max(y + STRIP, headY - 0.35 * u), w: 0.96 * slotW, h: deskY + dh * 0.5 - Math.max(y + STRIP, headY - 0.35 * u) },
     bubble: person && roNeedsYou(a.state) ? { x: px + 0.2 * u - 6, y: headY - 0.04 * u } : null,
     bang: a.state === 'error' ? { x: sr - 10, y: screen.y - 8 } : null,
@@ -402,6 +407,59 @@ export function assignPeople(map: Record<string, string>, sessions: readonly { i
     const least = Math.min(...ids.map(key)), pool = ids.filter((p) => key(p) === least);
     const r = Number(rand(s.id));
     out[s.id] = pool[Math.floor((Number.isFinite(r) ? Math.min(Math.max(r, 0), 0.999999) : 0) * pool.length)];
+  }
+  return out;
+}
+
+/** Spec 097 FR-110, FR-121: where a slip, a bubble or a pill goes. The first free spot nearest `anchor` inside `bounds` that touches nothing in `avoid`
+ *  (a plate, a sign, a chair label, a chip), or null when there is none. Pure; a 10 px grid keeps it cheap (a few hundred thousand comparisons at most). */
+export function placeBox(size: { w: number; h: number }, avoid: readonly Rect[], bounds: Rect, anchor: { x: number; y: number }, step = 10): Rect | null {
+  const hit = (x: number, y: number): boolean => avoid.some((r) => x < r.x + r.w && r.x < x + size.w && y < r.y + r.h && r.y < y + size.h);
+  let best: { x: number; y: number; s: number } | null = null;
+  for (let y = bounds.y; y + size.h <= bounds.y + bounds.h + 0.01; y += step) {
+    for (let x = bounds.x; x + size.w <= bounds.x + bounds.w + 0.01; x += step) {
+      const s = Math.abs(x + size.w / 2 - anchor.x) + 0.6 * Math.abs(y - anchor.y);
+      if (best && s >= best.s) continue;
+      if (!hit(x, y)) best = { x, y, s };
+    }
+  }
+  return best ? { x: best.x, y: best.y, w: size.w, h: size.h } : null;
+}
+
+/** Spec 097 FR-106 (owner 2026-11-01: "too much space above head"): the square of a seated picture that the chat's round header portrait shows. The side is 0.72 of the
+ *  body height (the face, FACE_U of it, fills about 40 % of the circle), its top is 12 % of the side above the top of the head, and it stays inside the picture (moved down or
+ *  sideways, never smaller). Same data as the layout's face box (FACE_U, `headTop`, `bodyH`): one definition of where the face is. */
+export const PORTRAIT_SIDE = 0.72, PORTRAIT_AIR = 0.12;
+export function portraitCrop(seat: { w: number; h: number; headTop: number; bodyH: number }): { x: number; y: number; s: number } {
+  const s = Math.min(PORTRAIT_SIDE * seat.bodyH, seat.w, seat.h);
+  const y = Math.max(0, Math.min(seat.h - s, seat.headTop - PORTRAIT_AIR * s));
+  const x = Math.max(0, Math.min(seat.w - s, seat.w / 2 - s / 2));
+  return { x, y, s };
+}
+
+/** Owner ruling 2026-11-02: the post-it on an empty seat has one paper colour per reason (the place the agent went to), dark ink on every one (contrast 4.5:1 or more,
+ *  held by test:realoffice-layout); the words "at <place>" stay, so colour never carries the meaning alone. One default for a place the table does not know (a custom place).
+ *  The Boss is a calm blue, not an alarm colour: most visits to the Boss door are ordinary. No shadow or animation belongs to the colours. */
+export const NOTE_INK = '#2a2205';
+export const NOTE_PAPER: Record<string, string> = {
+  boss: '#bfd9f2', bank: '#bfe8bd', coffee: '#ffcf9e', library: '#f6e27f', software: '#d9c6f0', terminal: '#b8e6e0', web: '#f5c1d6', other: '#dcc9a3',
+};
+export const NOTE_PAPER_DEFAULT = '#ece9e0';
+export const notePaper = (place: string | null | undefined): string => (place && roOwn(NOTE_PAPER, place) ? NOTE_PAPER[place] : NOTE_PAPER_DEFAULT);
+
+/** Spec 097 FR-110, FR-121: what a slip, a bubble or a pill must never cover, from the drawn layout: signs, plates, faces (who needs you is read from them),
+ *  the post-it on an empty seat, a desk's `?` bubble and `!` mark. Pure, so a test holds it to the boxes the renderer really draws. */
+export function slipAvoid(lay: Layout): Rect[] {
+  const out: Rect[] = [];
+  for (const z of lay.zones) {
+    out.push({ x: z.sign.x, y: z.sign.y, w: z.sign.w, h: z.sign.h });
+    for (const d of z.desks) {
+      out.push(d.plate);
+      if (d.face) out.push(d.face);
+      if (d.away) out.push({ x: d.away.x - d.away.s / 2 - 4, y: d.away.y - 2, w: d.away.s + 8, h: d.away.s + 6 }); /* the note's own square, with a little for its tilt */
+      if (d.bubble) out.push({ x: d.bubble.x, y: d.bubble.y - 24, w: 24, h: 24 });
+      if (d.bang) out.push({ x: d.bang.x, y: d.bang.y, w: 20, h: 20 });
+    }
   }
   return out;
 }

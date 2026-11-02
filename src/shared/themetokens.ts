@@ -1,7 +1,7 @@
 /**
  * Typed theme tokens (spec 070 FR-001..FR-003): fonts from an allow-list of system fonts (no URL, no font file), the title weight,
  * radii and shadows. Pure, no imports. The renderer's `theme.js` has the same lists and grammar (it cannot import this file in the page
- * and main loads it for the AI maker); `test:theme-tokens` runs both on one corpus and fails if they differ.
+ * and main loads it); `test:theme-tokens` runs both on one corpus and fails if they differ.
  */
 export type TokenType = 'font' | 'weight' | 'radius' | 'shadow';
 export interface TypedToken { type: TokenType; def: string; generic?: string }

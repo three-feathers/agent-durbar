@@ -19,3 +19,4 @@
 - [x] T018 Simulator preview/apply fake, driver `scripts/shots-i7.js`, screenshots 1440x900 and 1280x800, `check:office` [FR-023, FR-031]
 - [x] T019 Docs: README MCP section, CHANGELOG Unreleased, docs, specs/README.md [AGENTS.md "Keep docs in sync"]
 - [x] T020 `/speckit.analyze` and `/speckit.converge`: spec, plan, tasks and code agree; statuses honest [FR-031]
+- [x] T021 Remove the old app-level server lists (code, IPC, dialog section, sim, tests, docs); an old file is ignored and kept; `legacyEnc` stays (folder servers) [FR-032]
