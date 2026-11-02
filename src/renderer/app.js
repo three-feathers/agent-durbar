@@ -6247,7 +6247,7 @@ function onLiveEvent(e){
       updateCtxChip(a);scheduleRender();
     } /* spec 015 FR-010: a stop or an error ends the mark even if the adapter sent no end */
     const gaveUp=e.status==='error'?a.gaveUp:null; a.gaveUp=null; /* spec 034 FR-019: the line of a turn that gave up after retries */
-    if(e.status==='idle'){refreshFolderStatus(a);refreshLoungeSummary(a,false);} /* spec 063 FR-005: a finished turn may have changed files; spec 085 FR-008: the lounge line */
+    if(e.status==='idle')refreshFolderStatus(a); /* spec 063 FR-005: a finished turn may have changed files. The lounge numbers are not read here: an agent still at its desk shows none, and one that rests is read once per reply by the office render (spec 085 FR-008) */
     /* spec 068: the turn that hit a usage limit ends quietly (the coffee break says why); working again, Stop or the end of the session end the break */
     if(a.coffee&&!a.limit){
       /* only the turn's closing status keeps the break (2026-10-22): the adapters' marker reason 'usage-limit' (never the words), then at most one plain idle of the same turn */
@@ -6504,7 +6504,7 @@ const LSUM=new Map();
 function refreshLoungeSummary(a0,onlyNew){
   const a=a0&&liveRoot(a0); if(!a||!a.live||a.parent||!SSUM||!bridge.sessionSummary)return;
   const c=LSUM.get(a.id)||{busy:false,words:'',brief:'',key:undefined,asked:false};LSUM.set(a.id,c);
-  if(c.busy||(onlyNew&&c.asked&&c.key===a.lastOutput))return; /* resting agents are read once per reply; a finished turn reads again */
+  if(c.busy||(onlyNew&&c.asked&&c.key===a.lastOutput))return; /* resting agents are read once per reply (a new reply changes lastOutput) */
   c.busy=true;c.asked=true;c.key=a.lastOutput;
   Promise.race([bridge.sessionSummary(a.id),new Promise(res=>setTimeout(()=>res(null),5000))])
     .then(s=>{c.words=s&&s.ok===true?SSUM.short(s):'';c.brief=s&&s.ok===true?SSUM.brief(s):'';},()=>{c.words='';c.brief='';})

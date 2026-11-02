@@ -69,6 +69,12 @@ module.exports = async (ctx) => {
     await H.load({ w, h, query: { simsummary: '1', simaway: '1' } });
     await H.calm();
     assert.ok(await until(`document.querySelectorAll('#stage .lounge .lg-t.sum').length>=1&&document.querySelectorAll('#stage .desk.shut').length===2`, 20000), `${w}: the lounge shows its lines`);
+    // review (Paco's side): one read per resting agent per reply, however often the office renders and the bubbles turn (each read costs git processes)
+    const before = await js(`JSON.stringify(window.__durbarSumReads||{})`);
+    for (let i = 0; i < 6; i++) { await js(`window.__durbarSimUi.render();window.__durbarSimUi.loungeTurn();0`); await H.calm(); }
+    const reads = JSON.parse(await js(`JSON.stringify(window.__durbarSumReads||{})`));
+    assert.strictEqual(JSON.stringify(reads), before, `${w}: more renders and ticks read nothing again: ${before} -> ${JSON.stringify(reads)}`);
+    assert.ok(reads['sim-4'] === 1 && reads['sim-15'] === 1, `${w}: each resting agent was read once: ${JSON.stringify(reads)}`);
     // the strip: one sentence from the rollup, labelled in its tooltip
     assert.ok(await until(`!!document.querySelector('#awayStrip .aw-brief')`, 10000), `${w}: the strip has the day's numbers`);
     const strip = await js(`(()=>{const e=document.querySelector('#awayStrip .aw-brief'),R=e.getBoundingClientRect(),S=document.getElementById('awayStrip').getBoundingClientRect();return {t:e.textContent,title:e.title,font:parseFloat(getComputedStyle(e).fontSize),inside:R.width>0&&R.left>=S.left-0.5&&R.right<=S.right+0.5&&R.top>=S.top-0.5&&R.bottom<=S.bottom+0.5,overflowX:document.documentElement.scrollWidth>document.documentElement.clientWidth+1}})()`);

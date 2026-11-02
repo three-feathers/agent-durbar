@@ -306,7 +306,7 @@ export interface SinceAwayInfo {
   awayMs: number;
   missed: Array<{ id: string; folderName: string; prompt: string; repeats: boolean }>;
   /** Spec 085 FR-009: yesterday's and today's ended sessions (counts and minutes only); missing = none. */
-  briefing?: { sessions: number; files: number; added: number; removed: number; commits: number; minutes: number };
+  briefing?: { sessions: number; files: number; added: number; removed: number; commits: number; minutes: number; uncounted?: number };
 }
 
 /** Spec 006 FR-040..FR-041 (issue #606): sessions the last run left in the middle of a turn, still resumable. Ids and folder names only. */

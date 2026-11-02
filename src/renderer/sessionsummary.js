@@ -74,8 +74,10 @@
   function briefing(b){
     if(!b||typeof b!=='object'||Array.isArray(b))return '';
     const s=n(own(b,'sessions'));if(!s)return '';
-    const f=n(own(b,'files')),c=n(own(b,'commits'));
-    return 'Sessions ended yesterday and today: '+s+', '+plural(f,'file','files')+' changed, +'+n(own(b,'added'))+' −'+n(own(b,'removed'))+', '+plural(c,'commit','commits')+', '+duration(n(own(b,'minutes'))*60000)+'.';
+    const f=n(own(b,'files')),c=n(own(b,'commits')),u=Math.min(n(own(b,'uncounted')),s),mins=duration(n(own(b,'minutes'))*60000);
+    /* sessions whose folder was not measured (not git, unreadable, no commit at the start) add no numbers: say so, never "0 files" (review of c0e6c872) */
+    if(u>=s)return 'Sessions ended yesterday and today: '+s+', '+mins+'. Files and commits not measured.';
+    return 'Sessions ended yesterday and today: '+s+', '+plural(f,'file','files')+' changed, +'+n(own(b,'added'))+' −'+n(own(b,'removed'))+', '+plural(c,'commit','commits')+', '+mins+'.'+(u?' Files and commits not measured for '+u+'.':'');
   }
   const briefingTip='Counted by Agent Durbar when you ended each session (git and its own clock; no names are kept). A file touched in two sessions counts twice. Only sessions ended with End session count.';
   /* the tooltip says where the numbers come from (Durbar’s own reading, not the agent app’s) */

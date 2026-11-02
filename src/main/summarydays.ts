@@ -8,7 +8,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { readCapped } from '../shared/cappedread';
 
-export interface DayTotals { day: string; sessions: number; files: number; added: number; removed: number; commits: number; minutes: number }
+export interface DayTotals { day: string; sessions: number; files: number; added: number; removed: number; commits: number; minutes: number; uncounted: number }
 export type DaySum = Omit<DayTotals, 'day'>;
 
 const MAX_FILE = 64 * 1024;
@@ -35,7 +35,7 @@ export function parseDays(text: string): DayTotals[] {
       if (!e || typeof e !== 'object' || Array.isArray(e)) continue;
       const o = e as Record<string, unknown>;
       if (typeof o.day !== 'string' || !DAY.test(o.day) || !Object.prototype.hasOwnProperty.call(o, 'sessions')) continue;
-      byDay.set(o.day, { day: o.day, sessions: n(o.sessions), files: n(o.files), added: n(o.added), removed: n(o.removed), commits: n(o.commits), minutes: n(o.minutes) });
+      byDay.set(o.day, { day: o.day, sessions: n(o.sessions), files: n(o.files), added: n(o.added), removed: n(o.removed), commits: n(o.commits), minutes: n(o.minutes), uncounted: n(o.uncounted) });
     }
     return [...byDay.values()].sort((a, b) => (a.day < b.day ? -1 : 1)).slice(-MAX_DAYS);
   } catch {
@@ -56,18 +56,18 @@ export class SummaryDays {
     }
   }
 
-  /** One ended session's numbers (counts the caller already bounded; clamped again here). */
+  /** One ended session's numbers (`uncounted: 1` = its files and commits were not measured; counts the caller already bounded; clamped again here). */
   add(s: Partial<DaySum>): void {
     const day = localDay(this.now());
     let e = this.days.find((x) => x.day === day);
     if (!e) {
-      e = { day, sessions: 0, files: 0, added: 0, removed: 0, commits: 0, minutes: 0 };
+      e = { day, sessions: 0, files: 0, added: 0, removed: 0, commits: 0, minutes: 0, uncounted: 0 };
       this.days.push(e);
       this.days.sort((a, b) => (a.day < b.day ? -1 : 1));
       this.days = this.days.slice(-MAX_DAYS);
     }
     e.sessions = Math.min(e.sessions + 1, MAX_N);
-    for (const k of ['files', 'added', 'removed', 'commits', 'minutes'] as const) e[k] = Math.min(e[k] + n(s[k]), MAX_N);
+    for (const k of ['files', 'added', 'removed', 'commits', 'minutes', 'uncounted'] as const) e[k] = Math.min(e[k] + n(s[k]), MAX_N);
     this.save();
   }
 
@@ -76,7 +76,7 @@ export class SummaryDays {
     const t = this.now();
     const y = new Date(t.getFullYear(), t.getMonth(), t.getDate() - 1);
     const keep = new Set([localDay(t), localDay(y)]);
-    const out: DaySum = { sessions: 0, files: 0, added: 0, removed: 0, commits: 0, minutes: 0 };
+    const out: DaySum = { sessions: 0, files: 0, added: 0, removed: 0, commits: 0, minutes: 0, uncounted: 0 };
     for (const e of this.days) if (keep.has(e.day)) for (const k of Object.keys(out) as (keyof DaySum)[]) out[k] = Math.min(out[k] + e[k], MAX_N);
     return out.sessions ? out : undefined;
   }

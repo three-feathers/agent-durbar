@@ -111,6 +111,12 @@ export class SessionStarts {
     this.starts.delete(id);
   }
 
+  /** Milliseconds since the first message of this run, or undefined when this session was never started here. */
+  elapsedMs(id: string): number | undefined {
+    const s = this.starts.get(id);
+    return s ? Math.max(0, Math.min(Math.round(this.now() - s.at), 366 * 24 * 3600 * 1000)) : undefined;
+  }
+
   async summarize(id: string, dir: string): Promise<SessionSummary> {
     const s = this.starts.get(id);
     if (!s) return { ok: false, error: 'This session has not been sent a message in this run.' };
@@ -172,10 +178,13 @@ export async function readReported(
   }
 }
 
-/** Durbar's own numbers of an ended session as the day rollup adds them (FR-009); a folder git could not read adds only the session and its minutes. */
+/**
+ * Durbar's own numbers of an ended session as the day rollup adds them (FR-009). A folder that is not git, could not be read, or had no commit
+ * at the start was not measured: it adds the session and its minutes and `uncounted: 1`, never zeros that read as "nothing changed" (review of c0e6c872).
+ */
 export function dayNumbers(sum: SessionSummary): Partial<DaySum> | undefined {
   if (!sum.ok) return undefined;
   const base = { minutes: Math.floor(sum.ms / 60000) };
   const g = sum.git;
-  return g.repo === true ? { ...base, files: g.files, added: g.added, removed: g.removed, commits: g.commits } : base;
+  return g.repo === true && g.noHead !== true ? { ...base, files: g.files, added: g.added, removed: g.removed, commits: g.commits } : { ...base, uncounted: 1 };
 }

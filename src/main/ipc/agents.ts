@@ -105,7 +105,9 @@ export function register(deps: AgentsIpcDeps): void {
     await endSession(id);
     const fin = finals.get(id);
     finals.delete(id);
-    const day = fin && Date.now() - fin.at < 60_000 ? dayNumbers(fin.sum) : undefined; // a card built a minute ago for an End that never came is not counted
+    const elapsed = sessionStarts.elapsedMs(id);
+    // a card built a minute ago for an End that never came is not counted; an End with no fresh card (the window gave up waiting) still ended a session: counted as not measured
+    const day = fin && Date.now() - fin.at < 60_000 ? dayNumbers(fin.sum) : elapsed !== undefined ? { minutes: Math.floor(elapsed / 60000), uncounted: 1 } : undefined;
     if (day) deps.getSummaryDays?.()?.add(day); // spec 085 FR-009: the user ended it
     sessionStarts.forget(id); // spec 085: the next session in this folder starts its own count
     deps.profileFreshness?.forget(id); // spec 043 FR-041
@@ -236,11 +238,11 @@ export function register(deps: AgentsIpcDeps): void {
     return a && a.cwd ? folderGitStatus(a.cwd) : { repo: false };
   });
   // spec 085 FR-002: what the session did (files, lines, commits, time), read from git; the window passes only the id
-  // FR-010: with the agent app's own totals when it reports them (bounded counts, its adapter id as the source); `final: true` only says the End follows
+  // FR-010: with the agent app's own totals when it reports them (bounded counts, its adapter id as the source), asked only when `final: true` (the End follows)
   ipcHandle('agents:sessionSummary', async (e, id: unknown, final?: unknown): Promise<SessionSummary> => {
     const a = fromApp(e) && typeof id === 'string' ? agents.get(id) : undefined;
     if (!a || !a.cwd) return { ok: false, error: 'unknown agent' };
-    const [sum, reported] = await Promise.all([sessionStarts.summarize(a.id, a.cwd), readReported(router.forAgent(a.id), a.id)]);
+    const [sum, reported] = await Promise.all([sessionStarts.summarize(a.id, a.cwd), final === true ? readReported(router.forAgent(a.id), a.id) : undefined]); // the app's own totals only at the End: the lounge never shows them
     if (final === true && sum.ok) finals.set(a.id, { sum, at: Date.now() });
     return sum.ok && reported ? { ...sum, reported } : sum;
   });

@@ -67,6 +67,7 @@ async function main(): Promise<void> {
   // a clean repository at the start; after the session: files changed, two new untracked files, three commits
   const g = fake({ status: '', 'rev-parse': REF + '\n', shortstat: ' 12 files changed, 340 insertions(+), 80 deletions(-)\n', numstat: '-\t-\ta.png\n1\t1\tb.ts\n', 'rev-list': '3\n', statusAll: Z(' M a.ts', '?? new1.ts', '?? new2.ts') });
   const S = new SessionStarts(g.exec, now);
+  assert.strictEqual(S.elapsedMs('nobody'), undefined, 'a session never started here has no elapsed time');
   assert.strictEqual((await S.summarize('s1', '/work')).ok, false, 'no start: no summary');
   await S.noteStart('s1', '/work');
   await S.noteStart('s1', '/work'); // the second message is not a second start
@@ -318,11 +319,17 @@ async function main(): Promise<void> {
   // FR-009: the briefing sentence and the rollup
   assert.strictEqual(W.briefing({ sessions: 3, files: 18, added: 400, removed: 90, commits: 2, minutes: 130 }), 'Sessions ended yesterday and today: 3, 18 files changed, +400 −90, 2 commits, 2 h 10 min.');
   assert.strictEqual(W.briefing({ sessions: 0 }), '');
+  assert.strictEqual(W.briefing({ sessions: 2, files: 0, added: 0, removed: 0, commits: 0, minutes: 45, uncounted: 2 }), 'Sessions ended yesterday and today: 2, 45 min. Files and commits not measured.', 'nothing measured: no "0 files changed"');
+  assert.strictEqual(W.briefing({ sessions: 3, files: 4, added: 10, removed: 2, commits: 1, minutes: 60, uncounted: 1 }), 'Sessions ended yesterday and today: 3, 4 files changed, +10 −2, 1 commit, 1 h. Files and commits not measured for 1.', 'part measured: said so');
+  assert.ok(!/not measured/.test(W.briefing({ sessions: 1, files: 0, added: 0, removed: 0, commits: 0, minutes: 5 })), 'a measured session with no change still reads "0 files"');
+  assert.ok(/not measured\.$/.test(W.briefing({ sessions: 1, minutes: 5, uncounted: 99 })), 'an uncounted figure above the sessions is cut to them');
   assert.strictEqual(W.briefing(undefined), '');
   assert.strictEqual(W.briefing({ sessions: '3', files: -4, added: 1e30, removed: NaN, commits: { x: 1 }, minutes: 'abc' }), '', 'a string for the session count is no count');
   assert.ok(!/NaN|Infinity|undefined|\[object/.test(W.briefing({ sessions: 2, files: -4, added: 1e30, removed: NaN, commits: { x: 1 }, minutes: 'abc' })));
-  assert.deepStrictEqual(dayNumbers({ ok: true, ms: 125000, git: { repo: true, files: 2, added: 3, removed: 1, binary: 0, newFiles: 0, commits: 1, dirtyAtStart: false } }), { minutes: 2, files: 2, added: 3, removed: 1, commits: 1 });
-  assert.deepStrictEqual(dayNumbers({ ok: true, ms: 60000, git: { repo: false } }), { minutes: 1 }, 'a non-git folder adds the session and its minutes only');
+  assert.deepStrictEqual(dayNumbers({ ok: true, ms: 125000, git: { repo: true, files: 2, added: 3, removed: 1, binary: 0, newFiles: 0, commits: 1, dirtyAtStart: false } }), { minutes: 2, files: 2, added: 3, removed: 1, commits: 1 }, 'a measured repository has no `uncounted`');
+  assert.deepStrictEqual(dayNumbers({ ok: true, ms: 60000, git: { repo: false } }), { minutes: 1, uncounted: 1 }, 'a non-git folder adds the session and its minutes, and is marked not measured');
+  assert.deepStrictEqual(dayNumbers({ ok: true, ms: 60000, git: { repo: false, unreadable: true } }), { minutes: 1, uncounted: 1 }, 'an unreadable folder: not measured');
+  assert.deepStrictEqual(dayNumbers({ ok: true, ms: 120000, git: { repo: true, files: 0, added: 0, removed: 0, binary: 0, newFiles: 0, commits: 0, dirtyAtStart: false, noHead: true } }), { minutes: 2, uncounted: 1 }, 'no commit at the start (noHead forces 0): not measured, never zeros');
   assert.strictEqual(dayNumbers({ ok: false, error: 'x' }), undefined);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-days-'));
   const file = path.join(dir, 'durbar-summary-days.json');
@@ -351,7 +358,18 @@ async function main(): Promise<void> {
   D.add({ files: 5, added: 50, removed: 5, commits: 1, minutes: 30 });
   dayNow = new Date(2026, 9, 31, 18, 0, 0);
   D.add({ files: 2, added: 10, removed: 0, commits: 0, minutes: 5 });
-  assert.deepStrictEqual(D.recent(), { sessions: 2, files: 7, added: 60, removed: 5, commits: 1, minutes: 35 });
+  assert.deepStrictEqual(D.recent(), { sessions: 2, files: 7, added: 60, removed: 5, commits: 1, minutes: 35, uncounted: 0 });
+  {
+    const U = new SummaryDays(path.join(dir, 'uncounted.json'), () => dayNow);
+    U.add({ files: 7, minutes: 3 });
+    U.add({ minutes: 4, uncounted: 1 });
+    assert.deepStrictEqual([U.recent()!.sessions, U.recent()!.uncounted, U.recent()!.files], [2, 1, 7], 'a not measured session counts as a session, adds no files, and is counted as such');
+    U.add({ minutes: 1, uncounted: 1e30 });
+    assert.ok(U.recent()!.uncounted <= 1_000_000_000, 'bounded');
+    const again = new SummaryDays(path.join(dir, 'uncounted.json'), () => dayNow);
+    again.load();
+    assert.strictEqual(again.recent()!.uncounted, U.recent()!.uncounted, 'kept across a restart');
+  }
   dayNow = new Date(2026, 10, 1, 9, 0, 0);
   assert.strictEqual(D.recent()!.sessions, 2, 'yesterday still counts');
   dayNow = new Date(2026, 10, 2, 9, 0, 0);
@@ -368,7 +386,7 @@ async function main(): Promise<void> {
   // a corrupt, hostile or oversized file is an empty rollup; only 7 days are kept
   for (const bad of ['', 'not json', '[]', '{"days":"x"}', '{"days":[null,1,"a",{"day":"../../etc","sessions":1},{"day":"2026-10-31"}]}', JSON.stringify({ days: [{ day: '2026-10-31', sessions: 1 }], pad: 'x'.repeat(70000) })]) assert.deepStrictEqual(parseDays(bad), [], bad.slice(0, 40));
   const odd = parseDays(JSON.stringify({ days: [{ day: '2026-10-31', sessions: 2, files: '9', added: -1, removed: 1e30, commits: NaN, minutes: 3.7, path: '/x', __proto__: { y: 1 } }] }));
-  assert.deepStrictEqual(odd, [{ day: '2026-10-31', sessions: 2, files: 0, added: 0, removed: 1e9, commits: 0, minutes: 3 }]);
+  assert.deepStrictEqual(odd, [{ day: '2026-10-31', sessions: 2, files: 0, added: 0, removed: 1e9, commits: 0, minutes: 3, uncounted: 0 }]);
   const many = parseDays(JSON.stringify({ days: Array.from({ length: 20 }, (_, i) => ({ day: `2026-10-${String(i + 1).padStart(2, '0')}`, sessions: 1 })) }));
   assert.strictEqual(many.length, 7);
   assert.strictEqual(many[6].day, '2026-10-20', 'the newest 7');

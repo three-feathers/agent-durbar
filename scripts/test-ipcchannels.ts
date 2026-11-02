@@ -136,8 +136,12 @@ for (const c of ['agents:end', 'agents:remove']) assert.ok(/profileFreshness\?\.
   assert.ok(/ipcHandle\('agents:sessionSummary', async \(e, id: unknown, final\?: unknown\)/.test(sum), '"agents:sessionSummary" takes only the id from the window');
   assert.ok(/agents\.get\(id\)/.test(sum) && /sessionStarts\.summarize\(a\.id, a\.cwd\)/.test(sum), '"agents:sessionSummary" summarizes main\'s own folder for the session, never one the window sends');
   assert.ok(/readReported\(router\.forAgent\(a\.id\), a\.id\)/.test(sum) && /final === true/.test(sum), '"agents:sessionSummary" asks the agent app\'s totals through the adapter of main\'s own agent, and only `final === true` marks an End');
+  // review (Paco's side): the lounge reads often and never shows the app's own totals, so only the End's read (`final: true`) asks the adapter (getMetrics)
+  const sumBlock = regs.get('agents:sessionSummary')?.[0]?.block ?? '';
+  assert.ok(/final === true \? readReported\(/.test(sumBlock) && !/Promise\.all\(\[[^\]]*,\s*readReported\(/.test(sumBlock), '"agents:sessionSummary" asks the adapter for its own totals only when final is true');
   const endBlock = regs.get('agents:end')?.[0]?.block ?? '';
   assert.ok(/finals\.get\(id\)/.test(endBlock) && /if \(day\) deps\.getSummaryDays\?\.\(\)\?\.add\(day\)/.test(endBlock) && /Date\.now\(\) - fin\.at < 60_000/.test(endBlock) && !/getSummaryDays[^;]*\.add\([^)]*id/.test(endBlock), '"agents:end" adds the numbers of a summary asked for this End to the day rollup (numbers only), after the session ended');
+  assert.ok(/sessionStarts\.elapsedMs\(id\)/.test(endBlock) && /uncounted: 1/.test(endBlock), '"agents:end" counts an End with no fresh card as a session that was not measured');
   assert.ok(!/getSummaryDays/.test(regs.get('agents:remove')?.[0]?.block ?? ''), '"agents:remove" adds nothing to the rollup (FR-009)');
   for (const c of ['agents:end', 'agents:remove']) assert.ok(/sessionStarts\.forget\(/.test(regs.get(c)?.[0]?.block ?? ''), `"${c}" must forget the session start`);
 }
