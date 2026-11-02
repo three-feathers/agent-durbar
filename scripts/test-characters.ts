@@ -161,6 +161,16 @@ async function main(): Promise<void> {
     }
     fs.writeFileSync(file, JSON.stringify({ version: 1, theme: 'retro' }));
     assert.strictEqual(new SettingsStore(file).load().theme, 'retro', 'Retro Pixel stays (FR-019)');
+    // review of #948: an unknown id and an already migrated file are left alone and nothing is written; setTheme of a removed id on a file with no theme stores nothing
+    for (const body of [{ version: 1, theme: 'not-a-theme', characters: 'cheeky' }, { version: 1, characters: 'cheeky' }]) {
+      fs.writeFileSync(file, JSON.stringify(body));
+      fs.utimesSync(file, new Date(0), new Date(0));
+      const sk = new SettingsStore(file);
+      assert.strictEqual(sk.load().theme, body.theme, 'an unknown or absent theme is kept as it is');
+      assert.strictEqual(fs.statSync(file).mtimeMs, 0, 'nothing is written for it');
+      assert.deepStrictEqual(sk.setTheme('corporate'), { ok: true, theme: 'clean-office' });
+      assert.ok(!('theme' in read()) && read().characters === 'cheeky', 'a removed id is never stored and Characters stays');
+    }
 
     // round trip through the handlers
     fs.rmSync(file);
