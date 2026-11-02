@@ -110,6 +110,26 @@ const facts = (v: QuotaView, now = NOW, i = 0): Record<string, string> => Object
     assert.deepStrictEqual([s.buckets[0].resetZone, s.buckets[0].resetEstimated, s.buckets[0].overageAllowed, s.buckets[0].resetsAt], ['UTC', undefined, true, Date.parse('2026-11-12T00:00:00.000Z')], 'only resetDate: the SDK has no epoch or estimated field');
     assert.ok(s.buckets[1].unlimited && !('limit' in s.buckets[1]) && !('remainingPercent' in s.buckets[1]), 'unlimited: no -1 and no percent');
   }
+  // owner 2026-11-02, `real:` Copilot CLI 1.0.98: a snapshot with tokenBasedBilling: true shows no request count; one without the flag keeps today's text
+  {
+    const snap = (flag: unknown) => ({ premium_interactions: { isUnlimitedEntitlement: false, entitlementRequests: 1500, usedRequests: 8, remainingPercentage: 99.5, resetDate: '2026-11-12T00:00:00.000Z', ...(flag === undefined ? {} : { tokenBasedBilling: flag }) }, chat: { isUnlimitedEntitlement: true, entitlementRequests: 0, usedRequests: 0, remainingPercentage: 100, ...(flag === undefined ? {} : { tokenBasedBilling: flag }) } });
+    const billed = sanitiseQuotaRead(copilotQuota({ quotaSnapshots: snap(true) }), NOW);
+    assert.ok(billed.kind === 'ok');
+    if (billed.kind === 'ok') {
+      const f = facts(viewOf(billed.buckets), NOW, 0);
+      assert.deepStrictEqual(f, { Billing: 'billed by usage, see GitHub', Resets: f.Resets }, 'usage billed: the sentence, no Used, Limit or Left');
+      assert.ok(!/requests/.test(JSON.stringify(billed.buckets)) || billed.buckets.every((b) => b.used === undefined && b.limit === undefined), 'no count kept');
+      assert.strictEqual(billed.buckets[0].label, 'Usage');
+      assert.ok(/^Account limits: Usage, billed by usage, see GitHub, resets /.test(quotaLine(viewOf(billed.buckets), NOW)) && !/requests/.test(quotaLine(viewOf(billed.buckets), NOW)), 'the short line too');
+      assert.strictEqual(quotaLevel(billed.buckets[0], NOW), '', 'never near or exhausted from a count it does not have');
+    }
+    for (const flag of [undefined, false, 'true', 1]) {
+      const plain = sanitiseQuotaRead(copilotQuota({ quotaSnapshots: snap(flag) }), NOW);
+      assert.ok(plain.kind === 'ok' && plain.buckets[0].billing === undefined && plain.buckets[0].used === 8 && plain.buckets[0].label === 'Premium requests', `flag ${String(flag)}: today's text`);
+    }
+    const hostile = sanitiseQuotaRead({ kind: 'ok', source: 's', buckets: [{ id: 'x', label: 'L', unit: 'requests', used: 5, limit: 9, billing: 'usage' }] }, NOW);
+    assert.ok(hostile.kind === 'ok' && hostile.buckets[0].used === undefined && hostile.buckets[0].billing === 'usage', 'the contract drops a count beside the flag');
+  }
   // FR-082: below zero left is used up, not absent
   const over = sanitiseQuotaRead(copilotQuota({ quotaSnapshots: { premium_interactions: { entitlementRequests: 100, usedRequests: 130, remainingPercentage: -30 } } }), NOW);
   assert.ok(over.kind === 'ok' && over.buckets[0].remainingPercent === 0 && quotaLevel(over.buckets[0], NOW) === 'exhausted');

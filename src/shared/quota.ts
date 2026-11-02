@@ -28,6 +28,8 @@ export interface QuotaBucket {
   resetEstimated?: boolean;
   windowMins?: number;
   overageAllowed?: boolean;
+  /** Owner 2026-11-02: the provider says this is billed by usage (Copilot `tokenBasedBilling: true`), so a request count means nothing: none is kept or shown. */
+  billing?: 'usage';
 }
 
 /** What an adapter answers. No vendor type and no vendor text: a failure is a fixed kind. */
@@ -151,12 +153,16 @@ function qSanitiseBucket(raw: unknown, now: number): QuotaBucket | undefined {
     if (qOwn(raw, 'resetEstimated') === true) b.resetEstimated = true;
   }
   if (qOwn(raw, 'overageAllowed') === true) b.overageAllowed = true;
+  if (qOwn(raw, 'billing') === 'usage') {
+    b.billing = 'usage';
+    for (const k of ['used', 'limit', 'remaining', 'usedPercent', 'remainingPercent'] as const) delete b[k];
+  }
   return b;
 }
 
 /** Whether a bucket has anything usable. One without stays as a row reading "not reported" (FR-082), unless no bucket has anything. */
 function qTold(b: QuotaBucket): boolean {
-  return b.used !== undefined || b.limit !== undefined || b.remaining !== undefined || b.usedPercent !== undefined || b.remainingPercent !== undefined || !!b.unlimited || b.resetsAt !== undefined;
+  return b.billing === 'usage' || b.used !== undefined || b.limit !== undefined || b.remaining !== undefined || b.usedPercent !== undefined || b.remainingPercent !== undefined || !!b.unlimited || b.resetsAt !== undefined;
 }
 
 /** FR-095: only the shape of a fingerprint passes; a raw id or login never does. */
@@ -258,6 +264,8 @@ export function quotaState(v: QuotaView, now: number): QuotaState {
   return 'current';
 }
 
+/** Owner 2026-11-02: what a bucket the provider bills by usage says instead of a request count. */
+export const QUOTA_USAGE_BILLED = 'billed by usage, see GitHub';
 const qNum = (n: number): string => (Number.isInteger(n) ? n : Math.round(n * 10) / 10).toLocaleString('en-US');
 /** A percent that never rounds into a state it is not in: 99.96 used is not "100%", 0.04 left is not "0%". */
 function qPct(n: number): string {
@@ -321,7 +329,10 @@ const Q_WORD: Readonly<Record<QuotaState, [string, QuotaDisplay['tone']]>> = {
 function qBucketFacts(b: QuotaBucket, now: number, tz?: string): QuotaFact[] {
   const facts: QuotaFact[] = [];
   const nr = QUOTA_NOT_REPORTED;
-  if (b.unit === 'requests') {
+  if (b.billing === 'usage') {
+    facts.push({ label: 'Billing', value: QUOTA_USAGE_BILLED });
+    if (b.unlimited) facts.push({ label: 'Limit', value: 'Unlimited' });
+  } else if (b.unit === 'requests') {
     facts.push({ label: 'Used', value: b.used !== undefined ? `${qNum(b.used)} requests` : nr });
     facts.push({ label: 'Limit', value: b.unlimited ? 'Unlimited' : b.limit !== undefined ? `${qNum(b.limit)} requests` : nr });
     if (!b.unlimited) facts.push({ label: 'Left', value: b.remaining !== undefined ? `${qNum(b.remaining)} requests` : b.remainingPercent !== undefined ? qPct(b.remainingPercent) : nr });
@@ -362,6 +373,7 @@ export function quotaDisplay(v: QuotaView, now: number, opts: { tz?: string } = 
 }
 
 function qShortFigures(b: QuotaBucket): string {
+  if (b.billing === 'usage') return QUOTA_USAGE_BILLED;
   if (b.unlimited) return 'unlimited';
   if (b.unit === 'percent') return b.usedPercent !== undefined ? `${qPct(b.usedPercent)} used` : 'figures not reported';
   if (b.used !== undefined && b.limit !== undefined) return `${qNum(b.used)} of ${qNum(b.limit)} requests used`;

@@ -207,6 +207,17 @@ module.exports = async (ctx) => {
     if (mode === 'resetpast') assert.deepStrictEqual([b.copilot.near, b.copilot.used, b.copilot.sug], [0, 0, false], 'a passed reset is no warning');
   }
 
+  // ---- owner 2026-11-02: a snapshot the provider bills by usage (tokenBasedBilling: true) shows no request count
+  for (const [w, h] of [[1440, 900], [1280, 800]]) {
+    await load(w, h, 'copilot:usagebilled');
+    const billed = await blocks();
+    assert.match(billed.copilot.text, /Usage Billing: billed by usage, see GitHub Resets: /);
+    assert.ok(!/\brequests\b|Used:|Left:/.test(billed.copilot.text), 'no request count, no Used or Left: ' + billed.copilot.text);
+    assert.ok(!/premium requests/i.test(billed.copilot.text), 'no premium requests');
+    await fit('usagebilled');
+    await shot(`690-usagebilled-${w}x${h}.png`);
+  }
+
   // ---- FR-082: a window with unusable figures stays, reading "not reported"; FR-095: another account, and none to compare
   await load(w, h, 'partial');
   let more = await blocks();

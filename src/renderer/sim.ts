@@ -1337,7 +1337,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       s.state = 'idle';
       closeOpen(s);
       if (kind === 'plan') emit({ type: 'usageLimit', sessionId: id, timestamp: now(), scope: 'plan', resetsAt: s.breakUntil, source: 'Simulated 5-hour window' });
-      else emit({ type: 'usageLimit', sessionId: id, timestamp: now(), scope: 'quota', paid: true, source: 'Simulated premium requests' });
+      else emit({ type: 'usageLimit', sessionId: id, timestamp: now(), scope: 'quota', paid: true, source: 'Simulated Copilot usage' });
       emit({ type: 'status', sessionId: id, timestamp: now(), status: 'idle', intent: 'Usage limit reached', reason: 'usage-limit' }); // spec 068: the marker, as the adapters' usageLimitClosing()
     };
     /* spec 034 FR-020 (simretry=1): Clara's agent app is retrying a model call (attempt 3 of 10, servers busy, HTTP 529) and stays so;
@@ -2657,6 +2657,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         case 'signedout': return fail('signed-out');
         case 'malformed': return { read: { kind: 'ok', source, buckets: 'nonsense' } };
         case 'notreported': return copilot ? ok([]) : { read: { kind: 'not-reported', reason: 'api-key' } };
+        case 'usagebilled': return ok([{ id: 'premium_interactions', label: 'Usage', unit: 'requests', billing: 'usage', resetsAt: new Date(now + 12 * D).toISOString(), resetZone: 'UTC' }, { ...chat, label: 'Chat', billing: 'usage' }]);
         case 'unlimited': return ok([chat]);
         case 'resetpast': return ok(copilot ? [reqs(1500, 1500, 0, { resetsAt: now - H })] : wins(100, 41, { resetsAt: now - H }));
         case 'hostile': return { read: { kind: 'ok', source: '<script>alert(1)</script> \u202eevil', buckets: [{ id: 'x', label: '<img src=x onerror="document.title=1"> ' + 'long'.repeat(60), unit: 'requests', used: 7, remaining: Infinity, limit: -5, remainingPercent: NaN, resetsAt: 1e300, resetZone: '<b>zone</b>' }, { id: '__proto__', label: '<b>bold</b>', unit: 'requests', used: 3, limit: 1e300 }, { id: 'bad', label: 'gone', unit: 'dollars', used: 1 }] } };

@@ -59,6 +59,9 @@ export function copilotQuota(result: unknown): QuotaRead {
     const raw = own(v, 'remainingPercentage');
     const left = typeof raw === 'number' && Number.isFinite(raw) && raw < 0 ? 0 : raw;
     const zone = quotaZoneOf(iso);
+    // owner 2026-11-02 (`real:` Copilot CLI 1.0.98: `tokenBasedBilling: true` on every snapshot): usage is billed in credits, so no request count is passed on
+    const byUsage = own(v, 'tokenBasedBilling') === true;
+    if (byUsage) return { id: k, label: k === 'premium_interactions' ? 'Usage' : k === 'chat' ? 'Chat' : Object.prototype.hasOwnProperty.call(COPILOT_LABEL, k) ? COPILOT_LABEL[k] : k.replace(/_+/g, ' '), unit: 'requests' as const, billing: 'usage' as const, ...(unlimited ? { unlimited } : {}), ...(at !== undefined ? { resetsAt: at } : {}), ...(zone ? { resetZone: zone } : {}) };
     return {
       id: k,
       label: Object.prototype.hasOwnProperty.call(COPILOT_LABEL, k) ? COPILOT_LABEL[k] : k.replace(/_+/g, ' '),
