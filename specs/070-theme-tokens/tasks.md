@@ -15,7 +15,7 @@
 
 ## Phase 2 (later PRs)
 
-- [ ] T020 Move the remaining colour literals of `styles.css`, `screens.css` and `themes.css` onto tokens, file by file, lowering the ratchet [FR-041]
+- [ ] T020 [PR A14, FR-065] Move the remaining colour literals of `styles.css`, `screens.css` and `themes.css` onto tokens, file by file, lowering the ratchet [FR-041]
 - [ ] T021 (owner decision) Bundled font files in a pack (D1)
 - [x] T011 Real check of the extended AI prompt on one model (owner's go-ahead 2026-10-22; Claude haiku, 1 prompt; `scripts/themegen-real.ts`; see spec Evidence)
 - [x] T012 Parser takes `transparent` and the space form `rgb(r g b / a)` the prompt's defaults show (found by T011) [FR-031]
@@ -33,9 +33,19 @@
 - [ ] T024 [PR A4] Tier 3 for the switch and buttons, `--accent` aliases; `check:perf`'s world switch row unchanged. Test: `test:theme-tokens`, `.swt.on` turns with the world in `check-ui-text` [FR-051, FR-057]
 - [ ] T025 [PR A7] Four pop values and the overlay become tokens, 34 shadows on screen to 4, dialog shadow per FR-001's note. Test: `check-ui-text`, `check:office` [FR-055]
 - [ ] T026 [PR A8] Type scale in the chrome: 14 sizes to 6, 8 weights to 3, `--t1`/`--t2` 650 to 600; design rules and FR-098 changed in place. 600 only where emphasis is meant, knowing 500 can read as 400 where a system has only Regular and Bold. Test: `check-ui-text` measured rule, `check:geometry`, screenshots at both sizes in Flat and Photo [FR-055, FR-058]
-- [ ] T027 [PR A9] Control heights: 7 to 32, 28, 24 icon, 22 switch (`.seg` 26, selects 19/26/30, inputs 28/30); design rule 1. Test: `check-ui-text`, top bar fit at 1280 [FR-055]
+- [ ] T027 [PR A9] Control heights other than buttons (A14 sets `--h-ctl` and buttons): selects, inputs and `.seg` to 28, 24 (`.seg` 26, selects 19/26/30, inputs 28/30), switch 22. Test: `check-ui-text`, top bar fit at 1280 [FR-055]
 - [ ] T028 [PR A10] Radii onto 6, 10, 14, 18, pill, circle, in the chrome; design rule 2. Test: `check-ui-text`, ratchet [FR-055]
 - [ ] T029 [PR A11] `src/renderer/ui.js` and first dialogs; `@layer` only after the literals settle, tried first. Test: drivers of the moved dialogs; ratchet on button class sets [FR-056]
 - [ ] T030 [PR A12] The owner accepted keeping the font (2026-11-01); this only settles smoothing. A real Mac at 2x and at 1x: `-webkit-font-smoothing` `antialiased` against `auto`; the Mac owner picks; one line in `styles.css`. Test: `test-macos` pins the choice; `real:` the owner's look, no AI credits [FR-058]
 - [x] T031 Font decision: compared in the simulator, keep the system stack, no bundled font, reasons and limits in the spec [FR-058, FR-059]
 - [ ] T032 With each surface's PR (spec 005 R1, spec 052 T224, spec 105 T003): the tier 1 tokens of FR-060, no new literal. Test: `test:theme-tokens` ratchet [FR-060]
+
+## Flat's modern look and one button scale (2026-11-02, owner, #524; FR-061..FR-067). All PR A14, which closes #495 and #524
+
+- [ ] T033 Measure first: re-run the button table on `main`, Send and Compact included; a colour snapshot of Real office, cave, Retro and a user pack as a fixture, new driver `check-flat-look`. No visual change. Test: the driver passes on `main` [FR-063, FR-066]
+- [ ] T034 FR-061's values and `--accent` as tokens in both pinned copies; a non-Clean pack's fallback keeps today's values; `test-theme.ts`, `shots-097-realoffice.js` pins updated, naming each. Test: `test:theme-tokens`, `check-flat-look` [FR-061, FR-065, FR-066]
+- [ ] T035 `--h-ctl` 28, `--btn-h-quiet`, padding and text; `.ib`, `.fl-ib`, `.ptab`; Compact 24; design rule 1 changed in place. Test: acceptance 2, `check:geometry`, `check:office`, top bar at 1280 [FR-063, FR-064]
+- [ ] T036 `--btn-primary-*`, Send, secondary outline, and the list of roles changed, in the PR description. Test: acceptance 1; mutant: a second primary in one dialog [FR-062]
+- [ ] T037 T020's literals, file by file, after #948 and #954; ratchet lowered. Test: acceptance 4, 5 [FR-065]
+- [ ] T038 Contrast pairs and mutants [FR-067]
+- [ ] T039 Pictures at 1440x900 and 1280x800, before and after: office, chat, Settings, a dialog, inbox, in Flat and Real office; `npm run shots:docs` retakes linked pictures. The owner looks and says yes before the merge; `real:` no AI credits [FR-061, FR-063, FR-066]

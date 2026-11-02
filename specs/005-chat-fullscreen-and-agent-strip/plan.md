@@ -206,11 +206,14 @@ specs/005-chat-fullscreen-and-agent-strip/
 | A6 | `052-info-notes` | 052 T218 | `check-ui-text` | `.note.info` not amber | No: small |
 | A7 | `070-shadows` | 070 T025 | `check-ui-text`, `check:office` | 34 shadows to 4 on screen | Yes |
 | A8 | `070-type-scale` | 070 T026 | `check-ui-text`, `check:geometry` | 14 sizes to 6, 8 weights to 3, chrome only | Yes |
-| A9 | `070-control-heights` | 070 T027 | `check-ui-text`, top bar fit | 7 heights to 4 | Yes |
+| A9 | `070-control-heights` | 070 T027 | `check-ui-text`, top bar fit | Non-button controls to 28, 24; `.seg` 26; switch 22 (buttons in A14) | Yes |
 | A10 | `070-radii` | 070 T028 | `check-ui-text` | 21 radii to 6 | Yes |
 | A11 | `070-ui-helpers` | 070 T029 | existing drivers | 99 button class sets falling | Yes over time; not its first PR |
 | A13 | `105-image-preview`, first of the files work, any time after row 2 | 105 T001 | unit tests, one simulator picture at both sizes | Name chip to thumbnail; no CSP change | No: about 250 lines (estimate), no dependency |
 | A12 | `070-font-smoothing`, no new font (FR-058 of spec 070) | 070 T030 | `test-macos` pins the choice | Real Mac at 2x and 1x: `antialiased` against `auto`; the Mac owner picks | No: one line either way |
+| A14 | `070-flat-modern`, **after #948 and #954 land**; closes #495 and #524 | 070 T033..T039, with T020 | new `check-flat-look`, `test:theme-tokens`, `check-ui-text`, `check:geometry`, `check:office` | White page, neutral lines, solid green primary (white text 5.95:1), neutral outlined secondary; buttons 34 and 32 to 28 px, Compact 24, floor 24; no colour change in worlds or other packs. Pictures at 1440x900 and 1280x800, before and after. **The owner must look: yes, before the merge** | Yes for literals; a driver added |
+
+**A14's conflicts (owner, 2026-11-02, #524).** It touches most of `styles.css`, `screens.css`, `themes.css` and many linked pictures. Wait for #948 and #954, which remove rules and retake the same pictures. Merge `main` and retake the counts right before it opens; other open PRs that change those files will need a merge after it, so land it in a quiet slot. A4, A5 and A9 may land either side: A14 carries `--accent` and the button tokens if A4 is not in; T217's `.send` line is done by whichever lands first; A9 reads the height from `--h-ctl`.
 
 **Risks.** `app.js` is shared with many open PRs: merge `main` first, and small PRs help. About 23 drivers read `.sitem` or `.strip`; R1 updates them in one go and keeps `data-sw` so most need only a selector. FR-198's order shows in the List only, an agent reading of the plan's fixed seats that Paco has not seen; R1 ships status order until T123. Numbers here come from a mock on one Linux machine: a measure-first run may disagree, which is why it comes first. The rail removes the Mac's drag strip, and no one here can test that: 052 FR-215.
 

@@ -4,7 +4,7 @@
 group: 046
 title: Full theme tokens: typed tokens for fonts (system allow-list, no downloads), title weight, radii and shadows; the people's clothes and hair; cup and laptop slots; per-value fallback with a note, pair-wise contrast fallback, hostile values refuse the pack; AI maker extended; a ratchet on the renderer's colour literals
 status: building
-note: phase 1 built; T020 remaining colour literals onto tokens open; phase 3 (tiers, closed world list, size lint, app font) specified
+note: phase 1 built; T020 remaining colour literals onto tokens open; phase 3 (tiers, world list, size lint) and Flat's modern look (#524) specified
 -->
 
 **Feature Branch**: `070-theme-tokens`
@@ -152,7 +152,7 @@ The `status:` of the specs-index block used to read (moved here unchanged; the b
   | Radius | 21 | 6 | 6, 10, 14, 18, pill, circle |
   | Shadow | 34 | 4 | none, card, pop, focus ring |
   | Space | 30 | 6 | 2, 4, 8, 12, 16, 24 |
-  | Button height | 7 | 4 | 32, 28, 24 icon, 22 switch |
+  | Button height | 7 | 3 | 28, 24 quiet, 22 switch (FR-063, 2026-11-02; was 32, 28, 24 icon, 22 switch) |
 
   Snapping the chrome to it in the running app changed 108 to 398 styles per screen, with nothing under 10.5 px and nothing clipped, and the office left alone. 46% of text is bold; `read:` the sweep thinks much of the heavy look comes from that. **It changes older text when built:** design rule 1 (2 heights), `--t1` and `--t2`'s 650 to 600 (FR-098 of 052), and the 8 px radius family. FR-002's `--t1-weight` grammar (500-800) stays while themes exist. The 10.5 px floor stays. It applies to chrome; desk cards, rooms and the lobby keep their sizes.
 - **FR-056** **Control helpers, no library.** One small `src/renderer/ui.js` (`Ui.btn`, `Ui.switch`, `Ui.chip`, `Ui.note`) returning escaped strings, as `sw()` in `screens.js` does. A site moves when it is touched. `@layer` is allowed once literals settle; neither `@layer` nor `@property` has been tried here.
@@ -187,3 +187,59 @@ The `status:` of the specs-index block used to read (moved here unchanged; the b
   **One property to test on a real Mac.** `body` sets `-webkit-font-smoothing:antialiased`, which only macOS honours and which thins strokes. T030 compares it with `auto` on a real Mac at 2x and on a 1x screen; the Mac owner picks. `[KNOWN GAP]` nobody could run it here.
 - **FR-059** **Not checked, for the font.** Source Sans at ratio 2 (no Electron slot was free; it was already behind on x-height at 10.5 px). Segoe UI and San Francisco themselves; any real Windows or macOS rendering, ClearType settings, or Windows display scaling; the proxies are FreeType, not DirectWrite or Core Text. Geist and Inter's `tnum` at every number site. Whether a font feels crisper to a person: a pixel share is a stand-in, and the pictures are for the owner's eye. Side-by-side pictures, for each of the four settings (specimen, 4x zoom, chat, cards, top bar), are in the sweep's working folder, not the repo; the owner has them on request.
 - **FR-060** **New surfaces take the tiers** (owner's mocks chosen 2026-11-02). Sizes that the rail, Your door and spec 105's drawer share are tier 1: `--rail-w` (220 px), `--rail-w-narrow` (52 px), `--door-w` (360 px), `--drawer-w` (600 px). Seat rings use the status tokens; a world sets none of these, and D2 holds. Spec 105's editor theme reads tier 2 only, in one object, so worlds carry it (FR-052). The list is added when each is built, and the ratchet (FR-054) holds no new literal.
+
+### 2026-11-02: Flat's modern look and one button scale (owner, #524; FR-061..FR-067)
+
+**Status: specified, not built.** Owner decision, Vikram, 2026-11-02: issue #524 is kept and handled as part of the design sweep: "change oversized buttons and implement cleaner colors as well - modern language". #524 is Paco's request of 2026-10-22. Built by one PR, [spec 005's plan row A14](../005-chat-fullscreen-and-agent-strip/plan.md), which also builds T020; it says `Closes #495` and `Closes #524`, and #495 stays open until then.
+
+*Reused, nothing new:* `CLEAN_TOKENS`, the two pinned copies (FR-001), `CONTRAST_PAIRS`, `test:theme-tokens`, `check-ui-text`, `check:geometry`, `check:office`, `.btn.primary`, Phase 3's `--accent` and `--btn-*` (FR-051, FR-052). *Not repeated:* T024 keeps the switch, T217 keeps `accent-color` and the focus halo, T027 keeps selects, inputs and `.seg`.
+
+- **FR-061** **Flat's colours.** With the Clean Office pack and no world, the page is white with neutral grey lines. These replace 052 FR-024's warm neutral. **The values are calculated, not yet seen in the app**; the owner's look (T039) can change them, and the contrast rule cannot.
+
+  | Token | `main` (measured) | Target | Contrast, calculated |
+  |---|---|---|---:|
+  | `--bg`, `--surface`, `--raised`, `--card` | `#f7f6f3`, `#fffdf9`, `#ffffff`, `#fffdf9` | `#ffffff` | `--ink` 12.34, `--ink-2` 6.52, `--muted` 7.09 |
+  | `--surface-2`, `--note` | `#faf7f1`, `#f4f0e6` | `#f6f7f7` | `--ink` 11.50, `--ink-2` 6.08, `--muted` 6.61 |
+  | `--line`, `--line-2` | `#e7e3dc`, `#d3cabb` | `#e4e6e8`, `#d3d6d9` | Hairlines, decoration only |
+  | `--line-ctl` | `#8a8272` | `#858b90` | 3.45 on white, 3.21 on `--surface-2` (control border, 3:1) |
+  | `--sage-ink`, alias `--accent` | `#3f6a54` | `#177245`; hover `#135f39` | White text 5.95, hover 7.71 |
+
+  Status colours, `--tone-*`, room and desk slots (`--tint-*`, `--wall-*`, `--c-*`) keep their values: 097 FR-002's "flat is unchanged" was about adding Real office, and this delta is the owner's deliberate change to its page colours. The floor under the rooms follows `--bg`; the layout does not move.
+- **FR-062** **Buttons.** Primary: solid `--btn-primary-bg` (`var(--accent)`) with `--btn-primary-ink` (`var(--surface)`, so white in Flat and readable in a world). Secondary: outlined in `--line-2` on `--raised`, ink text. Danger and warn stay as they are, and a button that widens permissions never turns green because of this change. Send moves off the `.send` literal `#5f8aa8` to the primary tokens; Stop stays red. At most one primary per dialog, screen or approval row. T036 lists each change of role: #524 names *Add schedule*, *Add…*, *Send* and *New…*, and on `main` *+ New* is secondary beside a primary *Open in VS Code*.
+- **FR-063** **One button scale.** Measured on `main` at 141e0c32c in the simulator, the same heights at 1440x900 and 1280x800, Comfortable density:
+
+  | Control | Height, px | Width, px | Text | Verdict |
+  |---|---:|---:|---|---|
+  | `.ib`, Stop in the composer; Send by CSS, it was hidden during the run | 34 | 34 | Icon 18 | Oversized |
+  | `.btn`: Settings (26), dialogs, top bar, *Office* | 32 | 55..212, side padding 14 | 13 px, weight 550 | Oversized |
+  | `.btn.primary` (*Save*, *Add existing folder…*) | 32 | 60..163 | 13 px, weight 600 | Oversized |
+  | `.fl-ib`, Settings floor icons (14 with the sim's floors) | 32 | 32 | Icon 16 | Oversized |
+  | `.ptab`, chat tabs | 30 | 52..70 | 12 px, weight 650 | Off scale |
+  | `.btn.sm`: Settings (22), chat header, inbox | 28 | 53..336 | 12 px | The right size |
+  | `.seg button` | 26 | 34..136 | 12.5 px | T027 |
+  | `.cp-btn`, `.nt-btn`, `.hs-reveal` | 24 | 24..45 | 11 px | Quiet size |
+
+  Nothing is huge: the excess is 32 and 34 px beside 28 px neighbours, wide padding and bold labels, which is what makes them look heavy. **Target (tier 1, FR-051, no pack sets it):** `--h-ctl` 28 px, so `--btn-h` and the `.sm` height are one and `.btn.sm` stops changing height; `--btn-h-quiet` 24 px for copy, message menu and small icons; `.ib`, `.fl-ib` and `.ptab` take 28 px; side padding 10 px; text `--t4-size` (12 px), weight 500, primary 600. Compact: `--h-ctl` 24 px. Icon buttons are square at their height. This replaces design rule 1's 32 and 28 and FR-055's first proposal.
+- **FR-064** **The minimum.** No standalone button is under 24 by 24 px (WCAG 2.5.8; 052 FR-029) in any density, and no text is under 10.5 px. Approval buttons never use the quiet size, so an Allow or Deny stays 28 px in Comfortable. Inline text links and tags (`.linkbtn` 16.5, `.by-chip` 18, `.ttl-btn` 20 measured) are not buttons in this scale and do not change here. Desk cards and rooms keep their computed sizes.
+- **FR-065** **Colours through the tiers, with T020 in the same PR.** Every value above is a token; no new literal, and the remaining literals of `styles.css` (125), `screens.css` (10) and `themes.css` (51) on `main` move onto tokens file by file, lowering the ratchet to what is truly left, each survivor with a reason. A moved literal keeps its colour in every set unless this delta names it. #948 removes many of the `themes.css` ones, so the count is taken after it lands.
+- **FR-066** **Nothing leaks.** Real office, every world and every other pack keep their colours. `read:` `WORLD_SETS.photo` and `.cave` set all the tokens FR-061 changes, so a world has no fallback to Clean for them, but a pack can: a missing token falls back to Clean Office (`test-theme.ts`), which would repaint Retro and user packs. So a non-Clean pack's fallback for each changed token keeps today's value, in both copies. **Named exceptions:** Send follows each set's accent (052 FR-224 already asks for that), and FR-063's sizes apply in every world because tier 1 is app-owned (D2); the owner sees that in T039.
+- **FR-067** **Contrast 4.5:1 for text, tested.** FR-061's pairs are in `CONTRAST_PAIRS` or the test (`--surface` on `--sage-ink` exists; the hover colour is new), 3:1 for `--line-ctl` and the focus ring on the green button. A failing value fails the test; `contrastFix` does not repair built-in packs.
+
+**Acceptance criteria**
+
+1. `sim:` Flat at 1440x900 and 1280x800: `--bg`, `--surface` are white; `.btn.primary` and `.send` are `#177245` or the owner's final value with white text; a secondary `.btn` has a neutral outline and no fill colour.
+2. `sim:` No visible `.btn`, `.ib`, `.fl-ib` or `.ptab` outside `#stage` measures other than 28 px, or 24 in Compact; quiet buttons 24; none under 24 in either density.
+3. `test:` Every text pair ≥ 4.5:1 and every control pair ≥ 3:1; a mutant with `--sage-ink` `#16a34a` (3.30 on white) fails.
+4. `sim:` A colour snapshot from `main` (computed colours per visible element, Real office, cave, Retro; a user pack without those tokens) equals the built page apart from FR-066's exceptions.
+5. `test:` The ratchet is lowered and a planted literal fails.
+6. `sim:` `check:geometry`, `check:office`, and 15 agents fit both sizes with no office scroll; the top bar fits at 1280.
+
+**Edge cases**
+
+- Disabled primary keeps today's disabled look, not a pale green that looks enabled. Hover and focus are visible on green, with the two-tone focus ring.
+- A long label (`Allow “write in src/tool…”`, 336 px today) keeps its truncation and tooltip at the smaller height; nothing wraps.
+- Flat with the Retro pack keeps Retro's colours; sizes change.
+- Forced colours are unchanged. Compact's chrome-only rule stays, and `#topMoreMenu`'s pinned sizes follow `--h-ctl`.
+- A dark user pack keeps its own colours, and any token it omits falls back as in FR-066.
+
+**Not verified:** every value in FR-061 is calculated, no mock was made; Send's size is from CSS; Compact was read, not measured; the role list of T036 is a start; no real macOS or Windows; the owner has not seen it.

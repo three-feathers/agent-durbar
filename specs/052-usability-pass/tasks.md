@@ -355,6 +355,6 @@
 - [ ] T214 [PR N2] Away and crash cards; `#restoreStrip`, `#awayStrip`, `#crashStrip` and `.notice-strip` removed; Mac notice rules removed; FR-015, FR-057's buttons, FR-089 changed in place. Test: `check-notices` (also the log at 700 and 600 px, 005 FR-195, 31 less on FR-199's fallback), `shots-006-crash`, `check:office` [FR-218]
 - [ ] T215 [After #1002's build, T197..T202, T224, T225] Notices as rows once the cards exist; the Your door control in the rail's rows once the rail exists. Test: `check-needs-panel` gains these steps [FR-216, FR-217]
 - [ ] T216 [PR K1] The toggle rule in `docs/design-rules.md` and `docs/review-checklist.md`; immediate checkboxes become `.swt` through `sw()`. Test: `check-ui-text`; existing screen drivers [FR-222]
-- [ ] T217 [PR K3] `accent-color`, `.inbox:focus-within`, `.send` from tokens, 3:1 and 4.5:1 in every set. Test: `check-ui-text`, ratchet lowered [FR-224]
+- [ ] T217 [PR K3] `accent-color`, `.inbox:focus-within`, `.send` from tokens (`.send` green in 070 A14, by whichever lands first), 3:1 and 4.5:1 in every set. Test: `check-ui-text`, ratchet lowered [FR-224]
 - [ ] T218 [PR K4] Information notes neutral, amber kept for what waits for you. Test: `check-ui-text` reads `.note.info` and a waiting card; mutant: amber default back [FR-225]
 - [ ] T219 [PR S, after spec 102 removes themes] Measure first, 7238 px and 22 headings. Section list and one row layout. Test: new `check-settings-nav` at both sizes, keyboard, jump to each section [FR-226]
