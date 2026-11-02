@@ -17,7 +17,6 @@
  * writes into a new temporary folder; only then are the files copied, so a failed run leaves the old pictures in place.
  * Every written picture is then palette-compressed in place (scripts/compress-shots.js, spec 050 FR-012; DURBAR_SHOTS_COMPRESS=off skips it).
  * Linked = `docs/screenshots/*.png` (or `screenshots/*.png` in a docs page) in README.md and the docs pages of docs/site/pages.json, `file` in docs/site/gallery.json, any `*.png` in docs/site/landing.json.
- * docs/feature-history.md and CHANGELOG.md keep their old pictures on purpose (a record, spec 025 FR-006).
  */
 const path = require('path');
 const fs = require('fs');
