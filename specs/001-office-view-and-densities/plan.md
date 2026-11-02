@@ -254,7 +254,7 @@ probe cleared; HX = 0
 
 ## Delta 2026-11-01: room-by-room layout search, and the renders (FR-193..FR-203)
 
-**Depends on.** PRs #941 and #950 (097 T156, T159, `check-office-ops`, `MDIRTY`) and #936 (spec 097's budgets); 097 T145 (`check-perf --record`, #959). #954 removes doors and cabins, which changes `stageParts` and the closed-room paths. Build after those land, and re-read `chooseLayout` then: line numbers and parts here are from `main` at `1afb2881`.
+**Depends on.** #941, #936, #954 and #994 are merged. Still open: #950 (097 T156, T159, `check-office-ops`, `MDIRTY`) and #959 (`check-perf --record`, 097 T145). #954 removed doors and cabins, so there are no closed-room paths or door plates in `stageParts` any more (only the cleanup of the old `durbar.doorsigns` key is left); T169's seed fields and the risk rows were re-read against `main` after it. Build after the open two land, and re-read `chooseLayout` then: line numbers and parts here are from `main` at `1afb2881`.
 
 ### A trial, before and after
 
@@ -291,7 +291,7 @@ after     parts = stageParts(...)                     memo per room signature (F
 | A stale key picks a wrong layout | Whole check FR-198 for false fits; property test both ways; `staleFits` row |
 | Two paths to keep | The old one is small and is the guard and the reference; deleting it is a later, separate decision |
 | Source-text tests in `test:probe` tie to `chooseLayout`'s text | Update them to behaviour in T171 |
-| Conflict with #950, #954, #921 in `app.js` | Build after them |
+| Conflict with #950 and #921 in `app.js` | Build after them (#954 has landed) |
 | Savings at 40 agents still miss 1500 ms | Owner question Q1; reported, not hidden |
 
 ### What measuring needs

@@ -239,7 +239,7 @@ Numbers checked against `main` (00d340eb) and every open PR on 2026-10-25: none 
 
 ## Delta 2026-11-01: room-by-room layout search, and the renders (FR-193..FR-203)
 
-Numbers taken: T167..T183. Each phase one small PR, after #941, #950, #954, #936 and #959 land. Test: 0 AI credits; no timing assert in a driver.
+Numbers taken: T167..T183. Each phase one small PR, after #950 and #959 land (#941, #954, #936 and #994 are on `main`). Test: 0 AI credits; no timing assert in a driver.
 
 **Phase 0: measure, then decide (nothing in `src/` changes)**
 
@@ -272,3 +272,6 @@ Numbers taken: T167..T183. Each phase one small PR, after #941, #950, #954, #936
 - [ ] T181 Real-machine run on the Mac, simulator only, 0 AI credits, before and after, by whoever has one. Test: `real:` numbers in a dated delta [FR-203, SC-007]
 - [ ] T182 Spec 097 once #950 lands: 097 T157's text names this delta, and 097 T156 and 097 T157 are ticked or moved by the owner's decision on T181; `/speckit.converge`. Test: `npm run specs:check` [FR-203]
 - [ ] T183 Docs: `docs/limits.md`, `docs/development.md` if commands change, a `changelog.d/` fragment in each phase's PR. Test: `npm run test:docsscripts`, `changelog:check` [FR-203]
+
+- [x] T190 (FR-210): `styles.css`: the halo is a still glow (`opacity: .75`, no `@keyframes halo`); `scripts/check-001-halo.js` registered in `ui-suite.js`, mutation-checked (`fill-opacity` and `opacity` animations put back both fail it)
+- [x] T191 (FR-210): docs: spec delta, `docs/agent-notes.md` line on the blur measured, `changelog.d/001-halo-cheap.md`; screenshots not retaken (a glow that no longer pulses)

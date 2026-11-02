@@ -56,7 +56,6 @@ const TONE_RULES = [
  "styles.css | .att.img",
  "styles.css | .send[aria-disabled=\"true\"]",
  "styles.css | .sitem.sel",
- "styles.css | .fl-sw[aria-pressed=\"true\"]",
  "styles.css | .nothink",
  "styles.css | .md code",
  "styles.css | .md th",
@@ -175,7 +174,6 @@ module.exports = async (ctx) => {
   add('settings-harnesses', 'screen', ['#screen'], async () => { await closeChat(); await js(`window.DurbarScreens&&window.DurbarScreens.openSettings('harnesses')`); return until(`!document.getElementById('screen').hidden`, 3000); });
   add('settings-mcp', 'screen', ['#screen'], async () => { await openSettingsAt(null); await js(`(()=>{const d=document.getElementById('advMcp');if(d&&d.tagName==='DETAILS')d.open=true;else{const b=document.querySelector('.scr-adv-h button,[aria-controls="advMcp"],#advMcpBtn');if(b)b.click();}})()`); await ctx.sleep(400); await js(`(()=>{const h=document.getElementById('mcpH')||document.querySelector('.scr-adv-h');if(!h)return;const sc=h.closest('.scr-body');if(sc)sc.scrollTop+=h.getBoundingClientRect().top-sc.getBoundingClientRect().top-12;})()`); return true; });
   add('place-dialog', 'dialog', ['#scrDlg .dlg'], async () => { await openSettingsAt('plH'); const ok = await js(`(()=>{const b=[...document.querySelectorAll('#screen button')].find(x=>/^\\+?\\s*(Add|New) (a )?place/i.test(x.textContent.trim()));if(!b)return false;b.click();return true})()`); return ok && until(`!!document.querySelector('#scrDlg .dlg')`, 3000); });
-  add('theme-maker', 'dialog', ['#scrDlg .dlg'], async () => { await openSettingsAt('themeH'); await H.click('#thAi'); return until(`!!document.querySelector('#scrDlg .dlg')`, 3000); });
   add('tools-screen', 'screen', ['#screen'], async () => { await closeChat(); await H.click('#toolsBtn'); return until(`!document.getElementById('screen').hidden`, 3000); });
   add('tools-agents-tab', 'screen', ['#screen'], async () => { await closeChat(); await js(`window.DurbarScreens.openTools(null,'agents')`); return until(`!document.getElementById('screen').hidden`, 3000); });
   add('tools-activity-tab', 'screen', ['#screen'], async () => { await closeChat(); await H.click('#toolsBtn'); await until(`!document.getElementById('screen').hidden`, 3000); return js(`(()=>{const b=[...document.querySelectorAll('#screen [role=tab],#screen .ttab-btn,#screen button')].find(x=>/^Activity/.test(x.textContent.trim()));if(!b)return false;b.click();return true})()`); });
@@ -333,7 +331,6 @@ module.exports = async (ctx) => {
   add('harness-cards', 'screen', ['#screen'], async () => { await closeChat(); await js(`window.DurbarScreens.openSettings('harnesses')`); await until(`document.querySelectorAll('.hs-card').length>=3&&[...document.querySelectorAll('.hs-card .hs-st')].every(s=>s.textContent&&!/Checking/i.test(s.textContent))`, 5000); return true; });
   add('revoke-all', 'dialog', ['#modeDlg .dlg', '.dlg-ov .dlg'], async () => { if (!(await openChatWhere(`document.querySelector('#grants button')`))) return false; await js(`(()=>{const b=[...document.querySelectorAll('#grants button')].find(x=>x.getAttribute('aria-haspopup'))||document.querySelector('#grants button');b.click();})()`); await until(`!!document.getElementById('grantsPop')`, 2000); const ok = await js(`(()=>{const b=[...document.querySelectorAll('#grantsPop button')].find(x=>/Revoke all/.test(x.textContent));if(!b)return false;b.click();return true})()`); return ok && until(`!!document.querySelector('.dlg-ov .dlg')`, 2000); });
   add('folder-screen', 'screen', ['#screen'], async () => { if (!(await openChat('Ada'))) return false; await H.click('#moreBtn'); await H.click('#mcpBtn'); await until(`!!document.querySelector('.dlg-ov .dlg')`, 3000); const ok = await js(`(()=>{const b=[...document.querySelectorAll('.dlg-ov .dlg button')].find(x=>/Folder extras/.test(x.textContent));if(!b)return false;b.click();return true})()`); return ok && until(`!document.getElementById('screen').hidden`, 3000); });
-  add('theme-maker-result', 'dialog', ['.dlg-ov .dlg'], async () => { await openSettingsAt('themeH'); await H.click('#thAi'); await until(`!!document.getElementById('aiDesc')`, 3000); await js(`(()=>{const t=document.getElementById('aiDesc');t.value='a night-shift newsroom';t.dispatchEvent(new Event('input'));})()`); await js(`[...document.querySelectorAll('#scrDlg .dbtn button')].find(b=>b.textContent==='Make the theme').click()`); return until(`!!document.querySelector('#scrDlg .dlg')&&/Try it|Save/.test(document.querySelector('#scrDlg .dlg').innerText)`, 5000); });
   for (const [n, h3] of [['settings-top', null], ['settings-theme', 'themeH'], ['settings-places', 'plH'], ['settings-floors', 'flH'], ['settings-schedules', 'schH'], ['settings-cap', 'capH'], ['settings-notify', 'ntfH'], ['settings-detail', 'detH'], ['settings-mood', 'moodH'], ['settings-notdo', 'notH'], ['settings-about', 'aboutH']]) add(n, 'screen', ['#screen'], () => openSettingsAt(h3));
   add('agent-strip', 'chat', ['#stripList'], async () => !!(await openChatWhere(`document.querySelector('#stripList .sitem.attn.st-error')`)));
 
@@ -397,7 +394,7 @@ module.exports = async (ctx) => {
     await closeChat();
   };
   const CONTRAST_SURFACES = ['tools-screen', 'settings-theme', 'settings-places', 'settings-cap', 'place-dialog', 'chat-waiting', 'agent-strip'];
-  const BUILTIN = ['clean-office', 'corporate', 'retro', 'durbar-indian', 'durbar-european', 'durbar-japanese']; // spec 077 FR-066: Cheeky Crew is a Characters choice now, not a theme
+  const BUILTIN = ['clean-office', 'retro']; // spec 077 FR-066: Cheeky Crew is a Characters choice now, not a theme
 
   const tones = async (id) => { // T152 round 2: the contrast of the rules that moved to the --tone-* tokens, in this theme
     const list = toneList();
@@ -456,8 +453,7 @@ module.exports = async (ctx) => {
     }
   }
 
-  // FR-169: the contrast of the controls that carried a light literal, in EVERY built-in theme (Clean Office, Corporate, Retro Pixel and
-  // the three courts), not only the dark fixture. 1280x800 only: a theme does not change a control's size.
+  // FR-169: the contrast of the controls that carried a light literal, in EVERY built-in theme (Clean Office and Retro Pixel), not only the dark fixture. 1280x800 only: a theme does not change a control's size.
   if (PART !== 'dark' && (!ONLY || ONLY.has('contrast'))) {
     W = 1280; Hh = 800; theme = 'light'; extraQuery = {};
     for (const id of BUILTIN) {
