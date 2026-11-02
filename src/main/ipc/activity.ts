@@ -5,8 +5,8 @@ import { activityCsv, activityJson } from '../../shared/activity';
 import { writeNotesExport } from '../notesexport';
 import type { ActivityStore } from '../activitystore';
 
-/** 5000 rows of at most a few hundred bytes each; far above that is not an activity log. */
-const ACTIVITY_EXPORT_MAX_BYTES = 16 * 1024 * 1024;
+/** 5000 rows of at most a few hundred bytes each (about 2 MB); the log file itself is read only up to 8 MB (`activitystore.ts`), so more than that is not an activity log. */
+export const ACTIVITY_EXPORT_MAX_BYTES = 8 * 1024 * 1024;
 
 export interface ActivityIpcDeps {
   /** Created when the app is ready: read when a handler runs. */

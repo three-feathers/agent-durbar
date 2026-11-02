@@ -181,6 +181,25 @@ try {
         assert.strictEqual((await exp(path.join(out, 'b.csv'), 'xml')).ok, false);
         pick = undefined;
         assert.strictEqual(((await handlers.get('activity:export')!(win, 'csv')) as { cancelled?: boolean }).cancelled, true);
+        // the size cap and the word in the refusal: an export above `maxBytes` is refused, says "activity" (not "notes") and writes nothing; one just under it works
+        {
+          const { ACTIVITY_EXPORT_MAX_BYTES } = require('../src/main/ipc/activity') as typeof import('../src/main/ipc/activity');
+          const big = { ...base, t: '2026-10-20T10:00:00Z' };
+          let rows: unknown[] = [{ ...big, action: 'x'.repeat(ACTIVITY_EXPORT_MAX_BYTES + 100) }];
+          handlers.clear();
+          register({ getActivityStore: () => ({ all: () => rows, list: () => [], clear: () => undefined }) as unknown as ActivityStore, getWin: () => undefined });
+          const f2 = path.join(out, 'big.json');
+          const r = await exp(f2, 'json');
+          assert.strictEqual(r.ok, false, 'over the cap: refused');
+          assert.match(String(r.error), /^Could not export the activity: .*too large/, 'the refusal says activity, not notes');
+          assert.ok(!fs.existsSync(f2), 'nothing written');
+          rows = [{ ...big, action: 'x'.repeat(ACTIVITY_EXPORT_MAX_BYTES - 1024) }];
+          assert.strictEqual((await exp(f2, 'json')).ok, true, 'just under the cap: written');
+          assert.ok(fs.statSync(f2).size > ACTIVITY_EXPORT_MAX_BYTES - 1100);
+          fs.rmSync(f2);
+          handlers.clear();
+          register({ getActivityStore: () => st, getWin: () => undefined });
+        }
         // a link at the chosen name is refused and the file it points to is not touched
         const victim = path.join(out, 'victim.txt');
         fs.writeFileSync(victim, 'keep me');
