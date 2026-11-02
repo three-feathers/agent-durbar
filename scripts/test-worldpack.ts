@@ -8,7 +8,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { PART_TABLE, PART_NAMES, readManifest, type PackOptions, validateWorldFiles, validateWorldZip, partProblem, pictureHeader, MANIFEST_BYTES, PACK_MAX_BYTES, hasDuplicateKeys, MAX_SIDE, LAMP_SHAPES, CALL_SHAPES, RIDE_STYLES } from '../src/shared/worldpack';
 import { MOMENT_BLOCKS, BLOCK_PARTS, MOMENT_EXTRAS, momentCoverage, uncoveredMoments, momentsNeeding } from '../src/shared/worldmoments';
-import { buildPartPrompt, buildPartTemplate, cleanPlaceIdea, EXCLUSION_CLAUSE, MARK_OPEN, MARK_CLOSE, MAX_PLACE_IDEA, MAX_PROMPT_CHARS, PROMPT_PARTS, WRAPPER_BEFORE } from '../src/shared/worldprompts';
+import { buildPartPrompt, buildPartTemplate, cleanPlaceIdea, EXCLUSION_CLAUSE, MAX_RAW_IDEA, MARK_OPEN, MARK_CLOSE, MAX_PLACE_IDEA, MAX_PROMPT_CHARS, PROMPT_PARTS, WRAPPER_BEFORE } from '../src/shared/worldprompts';
 import { goodPack, toStored, webp, webpOfSize, png, pngShaped, pngChunk, chunk, riff, vp8, vp8x, vp8l, goodTokens, SECRET_MARKER } from './fixtures/worlds/gen';
 
 process.exitCode = 1;
@@ -274,6 +274,10 @@ assert.deepStrictEqual(pictureHeader(png(600, 200)), { kind: 'png', width: 600, 
   okPic(riff([vp8(100, 100)]), 'lossy'); okPic(riff([vp8l(100, 100)]), 'lossless');
   okPic(riff([vp8x(100, 100, 0), vp8(100, 100)]), 'extended lossy without alpha'); okPic(riff([vp8x(100, 100, 0x10), vp8l(100, 100)]), 'extended lossless with alpha');
   okPic(riff([vp8x(100, 100, 0x10), chunk('ALPH', Buffer.alloc(7, 1)), vp8(100, 100)]), 'lossy with an alpha plane (odd length, zero pad)');
+  // pre-review of #955: the ALPH header byte and a raw plane's length are checked (no decoder needed)
+  okPic(riff([vp8x(100, 100, 0x10), chunk('ALPH', Buffer.concat([Buffer.from([0x00]), Buffer.alloc(100 * 100)])), vp8(100, 100)]), 'a raw alpha plane of exactly width x height');
+  for (const [why, body] of [['reserved bits set', Buffer.from([0xc1, 1, 2])], ['pre-processing 2', Buffer.from([0x21, 1, 2])], ['compression 2', Buffer.from([0x02, 1, 2])], ['raw plane too short', Buffer.from([0x00])], ['raw plane too long', Buffer.alloc(1 + 100 * 100 + 1)]] as [string, Buffer][])
+    assert.strictEqual(typeof pictureHeader(riff([vp8x(100, 100, 0x10), chunk('ALPH', body), vp8(100, 100)])), 'string', 'refused: ALPH ' + why);
   assert.ok(withManifest({}, undefined).ok);
 }
 for (const junk of [Buffer.alloc(0), Buffer.alloc(11), Buffer.from('RIFF'), Buffer.from('RIFF\0\0\0\0WEBP'), Buffer.from('<svg/>'), Buffer.from([0x89, 0x50])]) assert.strictEqual(typeof pictureHeader(junk), 'string', 'refused: ' + junk.length);
@@ -344,6 +348,7 @@ for (const junk of [Buffer.alloc(0), Buffer.alloc(11), Buffer.from('RIFF'), Buff
   assert.strictEqual(Array.from((cleanPlaceIdea('a'.repeat(1000)) as { text: string }).text).length, 300);
   const emoji = cleanPlaceIdea('\u{1F600}'.repeat(400)); assert.ok(emoji.ok && Array.from(emoji.text).length === 300 && !/[\ud800-\udbff](?![\udc00-\udfff])/.test(emoji.text), 'no cut surrogate pair');
   for (const bad of [undefined, null, 5, {}, '', 'ab', '   ', '<<<>>>']) assert.ok(!cleanPlaceIdea(bad).ok, 'idea ' + String(bad));
+  assert.ok(!cleanPlaceIdea('a'.repeat(MAX_RAW_IDEA + 1)).ok && cleanPlaceIdea('a'.repeat(MAX_RAW_IDEA)).ok, 'a raw idea over the bound is refused before any work, one at the bound is cut to 300');
   { // invisible and unassigned characters never reach a prompt (review of #955, item 12), and the longest prompt is far below its cap, so nothing is ever cut
     const inv = cleanPlaceIdea('a\u2065b\u{E0100}c\u034fd\u180be\u3164f\u200bg\u00adh\u0378i\u{10FFFF}j');
     assert.ok(inv.ok && inv.text === 'abcdefghij', 'invisible characters removed: ' + (inv.ok ? JSON.stringify(inv.text) : ''));

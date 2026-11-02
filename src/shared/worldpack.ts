@@ -408,6 +408,10 @@ function webpShape(buf: Uint8Array): PictureInfo | string {
   let hasAlph = false;
   if (list[i] && list[i].id === 'ALPH') {
     if (!alphaFlag || list[i].size < 1) return DAMAGED; // the flag is only ever set by a VP8X chunk
+    // the one header byte (libwebp's own checks): reserved bits 0, pre-processing 0 or 1, compression 0 (raw) or 1 (lossless); a raw plane is exactly width x height bytes after it
+    const ah = buf[list[i].start + 8];
+    if ((ah & 0xc0) !== 0 || ((ah >> 4) & 3) > 1 || (ah & 3) > 1) return DAMAGED;
+    if ((ah & 3) === 0 && list[i].size !== 1 + canvasW * canvasH) return DAMAGED;
     hasAlph = true; i++;
   }
   const c = list[i];
