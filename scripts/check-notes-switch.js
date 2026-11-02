@@ -14,7 +14,7 @@
  *   AC5  the simulator answers "Demo: no file written" and the switch stays off;
  *   AC6  an existing file: "4 notes in the existing file will be added, marked "From the project file"."; an unreadable one says so,
  *        offers only Close and sends nothing;
- *   AC7  in a repository the box (on) and the already-committed line; outside one neither;
+ *   AC7  in a repository the box "Keep these notes in git" (off) and the already-committed line; outside one neither;
  *   AC8  the warning says text outside notes is removed when Durbar writes the file.
  * Every state's layout: inside the window, no text under 10.5px, the dialog's buttons inside it. A screenshot of the warning at each size.
  * A miss is collected; the run fails at the end unless "all checks passed" is printed.
@@ -27,12 +27,13 @@ const OUT = process.env.OUT || process.env.SHOTS_OUT || require('os').tmpdir();
 const SIZES = process.env.NOTES_ONE_SIZE ? [[1440, 900]] : [[1440, 900], [1280, 800]];
 const MAC = process.platform === 'darwin';
 const MOD = MAC ? 'meta' : 'control';
-const WARN = 'Durbar will write every note of this folder to .durbar/notes.md in the project. Agents and anyone with the folder can read it, and it may get committed and pushed with your code. Secrets are masked, but private ideas are not. Durbar never adds it to git.';
+const WARN = 'Durbar will write every note of this folder to .durbar/notes/notes.md in the project. Agents and anyone with the folder can read it, and it may get committed and pushed with your code. Secrets are masked, but private ideas are not. Git ignores it unless you choose to keep it in git below.';
 const STRAY = 'Text outside notes in an existing notes.md is removed when Durbar writes the file.';
 const OWN = "This is Durbar's own write: it also happens in Read-only mode.";
-const COMMITTED = 'If .durbar/notes.md was already committed, this does not remove it from the repository.';
-const EXCLUDE = 'Keep it out of commits (adds .durbar/ to .git/info/exclude, local only)';
-const CONFLICT = '.durbar/notes.md has merge conflicts or could not be read. Fix it in your editor; Durbar will not overwrite it until then.';
+const COMMITTED = 'If .durbar/notes/notes.md was already committed, ignoring does not remove it from the repository.';
+const GIT = 'Keep these notes in git (Durbar will not ignore them, so they can be committed and pushed)';
+const TRACKED = 'This file is already in the project. If git tracks it, git keeps tracking it: the notes written to it will be committed, whatever is ignored.';
+const CONFLICT = '.durbar/notes/notes.md has merge conflicts or could not be read. Fix it in your editor; Durbar will not overwrite it until then.';
 
 module.exports = async (ctx) => {
   const H = helpers(ctx);
@@ -100,7 +101,7 @@ module.exports = async (ctx) => {
     await openScreen(tag);
     let s = await sw();
     check(s && s.role === 'switch' && s.checked === 'false' && !s.disabled, `${tag}: a switch, off by default (${JSON.stringify(s)})`);
-    check(s && s.label === 'Also keep these notes as .durbar/notes.md in the project' && /Off: nothing is written in the project\./.test(s.row), `${tag}: the switch's name and its off line (${s && s.row})`);
+    check(s && s.label === 'Also keep these notes as .durbar/notes/notes.md in the project' && /Off: nothing is written in the project\./.test(s.row), `${tag}: the switch's name and its off line (${s && s.row})`);
     let lay = await layout();
     check(!lay.length, `${tag}: the screen with the switch: ${lay.join('; ')}`);
     check(await openDialog(tag), `${tag}: turning it on asks first`);
@@ -110,7 +111,7 @@ module.exports = async (ctx) => {
     check(d && d.lines.includes(STRAY), `${tag}: AC8, the stray-text line (${d && d.lines.join(' | ')})`);
     check(d && d.lines.includes(OWN), `${tag}: the dialog says it also happens in Read-only`);
     check(d && !d.lines.some((l) => /of your text in the existing file will be removed/.test(l)), `${tag}: no file: no lost-text line`);
-    check(d && d.lines.includes(COMMITTED) && d.check && d.check.on === true && d.check.label === EXCLUDE, `${tag}: in a repository the box is there, on, with the already-committed line (${JSON.stringify(d && d.check)})`);
+    check(d && d.lines.includes(COMMITTED) && d.check && d.check.on === false && d.check.label === GIT, `${tag}: in a repository the box is there, off, with the already-committed line (${JSON.stringify(d && d.check)})`);
     check(d && !d.lines.some((l) => /will be added/.test(l)), `${tag}: no file in the folder: no count line`);
     check(d && d.buttons.join('|') === 'Cancel|Turn on', `${tag}: Cancel and Turn on (${d && d.buttons.join('|')})`);
     lay = await layout();
@@ -121,15 +122,14 @@ module.exports = async (ctx) => {
     check(JSON.stringify((await calls()).filter((c) => c[0] === 'notesSetFile')) === '[]', `${tag}: Esc sends nothing`);
     check((await sw()).checked === 'false', `${tag}: still off after Esc`);
     await openDialog(tag);
-    await js(`document.getElementById('mdChk').click()`); // the box off: the window sends exclude false
-    await js(`document.getElementById('mdChk').click()`); // and on again
+    await js(`document.getElementById('mdChk').click()`); // the box ticked: the window sends the choice for git
     check(await press('Turn on'), `${tag}: Turn on closes the warning`);
     check(await until(`(document.getElementById('nsFileMsg')||{}).textContent==='Demo: no file written'`, 4000), `${tag}: AC5, the simulator answers Demo: no file written (${(await sw()).msg})`);
     s = await sw();
     check(s.checked === 'false', `${tag}: the demo switch stays off`);
     check(await until(`document.activeElement&&document.activeElement.id==='nsFileSw'`, 2000), `${tag}: the focus is back on the switch after the answer`);
     const sent = (await calls()).filter((c) => c[0] === 'notesSetFile');
-    check(sent.length === 1 && sent[0][1] === true && JSON.stringify(sent[0][2]) === '{"exclude":true}', `${tag}: the window sends on and the box, no path (${JSON.stringify(sent)})`);
+    check(sent.length === 1 && sent[0][1] === true && JSON.stringify(sent[0][2]) === '{"git":true}', `${tag}: the window sends on and the box, no path (${JSON.stringify(sent)})`);
     check(!JSON.stringify(sent).includes('/'), `${tag}: nothing path-like is sent`);
     await closeScreen();
 
@@ -139,6 +139,7 @@ module.exports = async (ctx) => {
     await openDialog(tag);
     d = await dlg();
     check(d && d.lines[0] === '4 notes in the existing file will be added, marked "From the project file".', `${tag}: the count of an existing file (${d && d.lines[0]})`);
+    check(d && d.lines.includes(TRACKED) && !d.lines.includes(COMMITTED), `${tag}: an existing file in a repository: git keeps tracking it, said plainly`);
     await press('Cancel');
     await closeScreen();
     await load(w, h, 'stray');
@@ -148,20 +149,13 @@ module.exports = async (ctx) => {
     check(d && d.lines[0] === '3 lines of your text in the existing file will be removed.' && d.focus === 'Cancel', `${tag}: text outside notes is counted, Cancel focused (${d && d.lines[0]})`);
     await press('Cancel');
     await closeScreen();
-    /* the exclude line cannot be added: the switch stays off and the person chooses again */
-    await load(w, h, 'excludefail');
+    /* the box for git is off by default and only a ticked box sends the choice */
+    await load(w, h, 'existing');
     await openScreen(tag);
     await openDialog(tag);
     await press('Turn on');
-    check(await until(`!!document.querySelector('#modeDlg .dlg')&&document.getElementById('mdT').textContent==='Could not keep it out of commits'`, 4000), `${tag}: an exclude failure asks again`);
-    d = await dlg();
-    check(d && /no info folder\. The switch stays off\./.test(d.body) && d.buttons.join('|') === 'Cancel|Turn on without keeping it out of commits' && d.focus === 'Cancel', `${tag}: the second question, Cancel focused (${JSON.stringify(d)})`);
-    lay = await layout();
-    check(!lay.length, `${tag}: the second question's layout: ${lay.join('; ')}`);
-    await press('Turn on without keeping it out of commits');
-    check(await until(`(document.getElementById('nsFileMsg')||{}).textContent==='Demo: no file written'`, 4000), `${tag}: the explicit choice is sent`);
-    const ex = (await calls()).filter((c) => c[0] === 'notesSetFile').map((c) => JSON.stringify(c[2]));
-    check(ex.join('|') === '{"exclude":true}|{"exclude":false}', `${tag}: first with the box, then explicitly without (${ex.join('|')})`);
+    check(await until(`(document.getElementById('nsFileMsg')||{}).textContent==='Demo: no file written'`, 4000), `${tag}: turning on with the box off`);
+    check(JSON.stringify((await calls()).filter((c) => c[0] === 'notesSetFile').map((c) => c[2])) === '[null]', `${tag}: the box is off by default, so no choice is sent`);
     await closeScreen();
     await load(w, h, 'unreadable');
     await openScreen(tag);
@@ -182,14 +176,14 @@ module.exports = async (ctx) => {
     await press('Turn on');
     await until(`(document.getElementById('nsFileMsg')||{}).textContent==='Demo: no file written'`, 4000);
     const sent2 = (await calls()).filter((c) => c[0] === 'notesSetFile');
-    check(sent2.length === 1 && sent2[0][2] === null, `${tag}: outside a repository no exclude option is sent (${JSON.stringify(sent2)})`);
+    check(sent2.length === 1 && sent2[0][2] === null, `${tag}: outside a repository no git option is sent (${JSON.stringify(sent2)})`);
     await closeScreen();
 
     /* ===== AC2: greyed when the folder is missing; not offered for a .code-workspace ===== */
     await load(w, h, 'missing');
     await openScreen(tag);
     s = await sw();
-    check(s && s.disabled && s.why === 'The folder is not there, so Durbar cannot keep .durbar/notes.md in it.', `${tag}: greyed with its reason (${JSON.stringify(s)})`);
+    check(s && s.disabled && s.why === 'The folder is not there, so Durbar cannot keep .durbar/notes/notes.md in it.', `${tag}: greyed with its reason (${JSON.stringify(s)})`);
     check(await js(`document.getElementById('nsFileSw').getAttribute('aria-describedby')==='nsFileWhy'`), `${tag}: the reason names the switch`);
     await js(`document.getElementById('nsFileSw').click()`);
     await settle();
@@ -203,7 +197,7 @@ module.exports = async (ctx) => {
     await closeScreen();
 
     /* ===== AC3: the conflict and the write error, on the screen and in the drawer; AC4: turning off ===== */
-    for (const [mode, re] of [['conflict', CONFLICT], ['writefail', 'Could not write .durbar/notes.md: EACCES'], ['replaced', 'This folder looks replaced, or its drive was remounted. Turn the switch off and on again to write .durbar/notes.md here.']]) {
+    for (const [mode, re] of [['conflict', CONFLICT], ['writefail', 'Could not write .durbar/notes/notes.md: EACCES'], ['replaced', 'This folder looks replaced, or its drive was remounted. Turn the switch off and on again to write .durbar/notes/notes.md here.']]) {
       await load(w, h, mode);
       await openScreen(tag);
       const t = await js(`(()=>{const e=document.querySelector('#nsList .nt-file-err');return e?{text:e.textContent,role:e.getAttribute('role'),vis:e.getClientRects().length>0}:null})()`);
@@ -221,7 +215,7 @@ module.exports = async (ctx) => {
     check(s.checked === 'true' && /On: Durbar keeps the file in step/.test(s.row), `${tag}: on (${s.row})`);
     await openDialog(tag);
     d = await dlg();
-    check(d && d.title === 'Stop keeping .durbar/notes.md?' && d.buttons.join('|') === 'Cancel|Delete the file|Leave the file' && d.focus === 'Leave the file', `${tag}: turning off asks Leave or Delete, Leave focused (${JSON.stringify(d)})`);
+    check(d && d.title === 'Stop keeping .durbar/notes/notes.md?' && d.buttons.join('|') === 'Cancel|Delete the file|Leave the file' && d.focus === 'Leave the file', `${tag}: turning off asks Leave or Delete, Leave focused (${JSON.stringify(d)})`);
     check(d && /deletes it only when it holds exactly what Durbar would write/.test(d.body) && d.lines.includes('If the file is tracked in git, deleting it shows as a deletion.'), `${tag}: the delete rule and the git line are said (${d && d.body})`);
     lay = await layout();
     check(!lay.length, `${tag}: the turn-off dialog's layout: ${lay.join('; ')}`);

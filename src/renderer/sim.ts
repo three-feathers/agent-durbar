@@ -111,9 +111,9 @@ function simNotesApi(qs: URLSearchParams, folderOf: (id: string) => { key: strin
   /* spec 083 T042: the project-file switch is shown and answered, never turned on, and nothing is written (simnotesfile= picks a state for drivers) */
   const fileMode = qs.get('simnotesfile') || '';
   const fileSwitch = (): { on: boolean; disabled?: string } | undefined => (fileMode === 'workspace' ? undefined
-    : { on: fileMode === 'on' || fileMode === 'conflict' || fileMode === 'writefail' || fileMode === 'replaced', ...(fileMode === 'missing' ? { disabled: 'The folder is not there, so Durbar cannot keep .durbar/notes.md in it.' } : {}) });
-  const fileState = (): { error?: string; info?: string } | undefined => (fileMode === 'conflict' ? { error: '.durbar/notes.md has merge conflicts or could not be read. Fix it in your editor; Durbar will not overwrite it until then.' }
-    : fileMode === 'writefail' ? { error: 'Could not write .durbar/notes.md: EACCES' } : fileMode === 'replaced' ? { error: 'This folder looks replaced, or its drive was remounted. Turn the switch off and on again to write .durbar/notes.md here.' } : fileMode === 'on' ? { info: '2 lines of text outside notes in notes.md were removed.' } : undefined);
+    : { on: fileMode === 'on' || fileMode === 'conflict' || fileMode === 'writefail' || fileMode === 'replaced', ...(fileMode === 'missing' ? { disabled: 'The folder is not there, so Durbar cannot keep .durbar/notes/notes.md in it.' } : {}) });
+  const fileState = (): { error?: string; info?: string } | undefined => (fileMode === 'conflict' ? { error: '.durbar/notes/notes.md has merge conflicts or could not be read. Fix it in your editor; Durbar will not overwrite it until then.' }
+    : fileMode === 'writefail' ? { error: 'Could not write .durbar/notes/notes.md: EACCES' } : fileMode === 'replaced' ? { error: 'This folder looks replaced, or its drive was remounted. Turn the switch off and on again to write .durbar/notes/notes.md here.' } : fileMode === 'on' ? { info: '2 lines of text outside notes in notes.md were removed.' } : undefined);
   const noMask = { ok: false, code: 'invalid', error: 'Masking is not available.' } as const;
   const tell = (key: string): void => subs.slice().forEach((f) => f({ fingerprint: 'sim-' + key.length }));
   const titleOf = (text: string): string => (text.split('\n').find((l) => l.trim()) ?? 'Note').replace(/^[#>\-*\s]+/, '').replace(/(\*+|`+|~~)/g, '').replace(/\s+/g, ' ').trim().slice(0, 80) || 'Note';
@@ -207,9 +207,8 @@ function simNotesApi(qs: URLSearchParams, folderOf: (id: string) => { key: strin
       return { ok: true, count: fileMode === 'existing' ? 4 : 0, exists: fileMode === 'existing' || fileMode === 'stray', strayText: fileMode === 'stray' ? 3 : 0, repo: fileMode !== 'norepo' };
     },
     /* the demo never turns the switch: it answers its current position (off unless simnotesfile= says on) */
-    notesSetFile: async (id, on, opts) => (!folderOf(id) ? gone
-      : fileMode === 'excludefail' && on && opts && opts.exclude === true ? { ok: false, code: 'invalid', error: 'Could not add .durbar/ to .git/info/exclude: no info folder. The switch stays off.', excludeFailed: true }
-        : { ok: true, demo: true, on: !!fileSwitch()?.on, message: 'Demo: no file written' }),
+    notesSetFile: async (id) => (!folderOf(id) ? gone
+      : { ok: true, demo: true, on: !!fileSwitch()?.on, message: 'Demo: no file written' }),
     onNotesChanged: (cb) => { subs.push(cb); return () => { const i = subs.indexOf(cb); if (i >= 0) subs.splice(i, 1); }; },
   };
 }
@@ -737,9 +736,9 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     /* mcpcall:begin */
     const simCallClass = (text: unknown, mcpAuth?: boolean): 'auth' | 'policy' | undefined => {
       const t = typeof text === 'string' ? text.slice(0, 4000) : '';
-      if (/AADSTS53\d{4}|conditional access|device (?:is )?(?:required )?(?:to be )?managed|managed device|compliant device|device (?:is )?not (?:compliant|enrolled)/i.test(t)) return 'policy';
-      if (mcpAuth === true || /\b401\s+unauthori[sz]ed|\b(?:http(?:\/\d(?:\.\d)?)?|status(?: code)?|code|error|response)[\s:=(-]{0,4}401\b|unauthori[sz]ed|AADSTS(?:50058|50072|50074|50076|50078|50079|50132|50133|50173|70008|70043|70044|700082|65001)\b|invalid_grant|token (?:is |has )?(?:expired|invalid)|sign[- ]?in (?:is )?required|MCP OAuth challenge required/i.test(t)) return 'auth';
-      return undefined;
+      if (/\bAADSTS53(?:0\d\d|\d{4})\b|\binsufficient_claims\b|conditional access|device (?:is )?(?:required )?(?:to be )?managed|managed device|compliant device|device (?:is )?not (?:compliant|enrolled)/i.test(t)) return 'policy';
+      if (mcpAuth === true || /\b401\s+unauthori[sz]ed|\b(?:http(?:\/\d(?:\.\d)?)?|status(?: code)?|code|error|response)[\s:=(-]{0,4}401\b|unauthori[sz]ed|\bAADSTS(?:50058|50072|50074|50076|50078|50079|50132|50133|50173|70008|70043|70044|700082|65001)\b|invalid_grant|token (?:is |has )?(?:expired|invalid)|sign[- ]?in (?:is )?required|MCP OAuth challenge required/i.test(t)) return 'auth';
+      return /\binteraction_required\b/i.test(t) ? 'policy' : undefined;
     };
     /* mcpcall:end */
     const emit = (e: AgentEvent): void => {
@@ -753,6 +752,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         else if (q && e.phase === 'failed') { const c = simCallClass(e.output, e.mcpAuth === true); if (c) (q.mcpCalls ??= new Map()).set(e.mcpServer, c); else q.mcpCalls?.delete(e.mcpServer); }
       }
       if (e.type === 'status' && e.status === 'stopped') { const q = sims.find((x) => x.info.id === e.sessionId); if (q) q.mcpCalls = undefined; }
+      if (e.type === 'toolCall' && e.phase === 'failed' && e.mcpServer && simCallClass(e.output) === 'policy') e = { ...e, mcpCall: 'policy' }; // FR-193: like maskMcpEvent, the word only
       listeners.forEach((l) => l(e));
       simSchedHook?.(e);
       if (e.type === 'status' && e.status === 'idle') {
@@ -1407,6 +1407,21 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       }
     }
 
+    /* spec 097 FR-093: in Real office the monitors show what agents write, and a real agent writes all the time: one live agent adds a line of
+       thinking or reads a file, in turn. Only there, so flat's simulated run stays the same; no seeded random number is used. */
+    let screenTurn = 0;
+    function screenTick(): void {
+      let real = false;
+      try { real = new URLSearchParams(location.search).get('officeview') === 'real' || localStorage.getItem('durbar.officeview') === 'real'; } catch { /* no storage: flat */ }
+      if (!real) return;
+      const live = sims.filter((s) => (s.state === 'working' || s.state === 'thinking') && !s.limitReq && !s.retryHold && !s.compactHold);
+      if (!live.length) return;
+      const s = live[screenTurn++ % live.length];
+      if (screenTurn % 3) { think(s, 1); return; }
+      const id = sid(s) + '-scr' + screenTurn, file = s.files[screenTurn % s.files.length];
+      emit({ type: 'toolCall', sessionId: sid(s), timestamp: now(), callId: id, tool: 'read_file', phase: 'start', args: { path: file } });
+      emit({ type: 'toolCall', sessionId: sid(s), timestamp: now(), callId: id, tool: 'read_file', phase: 'complete', output: '120 lines' });
+    }
     // Slow, calm background activity: one agent advances every few seconds.
     let timer: number | undefined;
     function tick(): void {
@@ -2011,7 +2026,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     const capApi: Partial<DurbarApi> = {
       usageTotals: async () => ({ ok: true, since: savedSince, office: saved.office, folders: saved.folders }),
       usageResetTotals: async () => { savedSince = new Date().toISOString(); saved = { office: zero, folders: [] }; return { ok: true, since: savedSince, office: zero, folders: [] }; },
-      getSettings: async () => ({ defaultMaxAiCredits: defaultCap, placeMap: { ...placeMap }, customPlaces: customPlaces.map((p) => ({ ...p })), seriousMode, notifyNeedsMe, breakResume, chatLinksIn, ...(simTheme ? { theme: simTheme } : {}), characters: simCharacters, about: { name: 'Agent Durbar', version: '0.1.5 (simulator)', owner: 'Three Feathers', copyright: 'Copyright (c) 2026 Three Feathers contributors', website: 'https://github.com/three-feathers/agent-durbar', contributors: [{ label: 'vikramgorla', url: 'https://github.com/vikramgorla' }, { label: 'fjcabello', url: 'https://github.com/fjcabello' }, { label: 'rubenlupi', url: 'https://github.com/rubenlupi' }] } /* sample data, real values come from src/shared/about.ts */ }),
+      getSettings: async () => ({ defaultMaxAiCredits: defaultCap, placeMap: { ...placeMap }, customPlaces: customPlaces.map((p) => ({ ...p })), seriousMode, notifyNeedsMe, breakResume, chatLinksIn, ...(simTheme ? { theme: simTheme } : {}), characters: simCharacters, about: { name: 'Agent Durbar', version: '0.1.6 (simulator)', owner: 'Three Feathers', copyright: 'Copyright (c) 2026 Three Feathers contributors', website: 'https://github.com/three-feathers/agent-durbar', contributors: [{ label: 'vikramgorla', url: 'https://github.com/vikramgorla' }, { label: 'fjcabello', url: 'https://github.com/fjcabello' }, { label: 'rubenlupi', url: 'https://github.com/rubenlupi' }] } /* sample data, real values come from src/shared/about.ts */ }),
       setDefaultCap: async (c) => { defaultCap = c !== null && c >= 30 ? Math.round(c * 100) / 100 : undefined; return { ok: true, defaultMaxAiCredits: defaultCap }; },
       setSeriousMode: async (on) => { if (typeof on === 'boolean') seriousMode = on; return { ok: true, seriousMode }; },
       setNotifyNeedsMe: async (on) => { if (typeof on === 'boolean') notifyNeedsMe = on; return { ok: true, notifyNeedsMe }; },
@@ -2901,6 +2916,10 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
             // simspeed=N (perf checks, spec 052): background activity N times faster
             const speed = Math.max(1, Math.min(50, Number(typeof location !== 'undefined' ? new URLSearchParams(location.search).get('simspeed') : null) || 1));
             if (!opts.freeze) timer = window.setInterval(tick, Math.round(2600 / speed));
+            if (!opts.freeze) {
+              const screenTimer = window.setInterval(screenTick, Math.round(1300 / speed));
+              if (typeof window.addEventListener === 'function') window.addEventListener('pagehide', () => { window.clearInterval(screenTimer); if (timer) window.clearInterval(timer); }, { once: true });
+            }
           }, 0);
         }
         /* simresume=1 (spec 006 FR-021): Priya's folder came back after a restart as its last session, not started yet */

@@ -17,14 +17,16 @@ export interface StandMeta { figH: number; poses: Record<string, [number, number
 export interface RealMeta {
   seat: Record<string, SeatMeta>; stand: Record<string, StandMeta>;
   fixtures: Record<string, [number, number]>; fixtureTop?: Record<string, number>; floorLine: number;
+  /** per person: the typing rig's head and hands, as fractions of the picture, with their pivots (spec Changes 2026-11-01) */
+  rig?: Record<string, Record<string, { x: number; y: number; w: number; h: number; px: number; py: number }>>;
   /** the side every standing picture faces, baked into the files (spec 097 FR-191); the lobby puts visitors to the right of their fixture, so 'left' */
   facing?: 'left' | 'right';
 }
 export interface Rect { x: number; y: number; w: number; h: number }
 export interface DeskBox {
   id: string; state: RealState; slot: Rect; desk: Rect & { full: number }; plate: Rect; screen: Rect; glass: Rect;
-  person: (Rect & { file: string; pose: string; pid: string; vis: Rect }) | null;
-  face: Rect | null; away: { x: number; y: number } | null; narrow: boolean; lamp: Rect;
+  person: (Rect & { file: string; fileB: string | null; pose: string; pid: string; vis: Rect }) | null;
+  face: Rect | null; away: { x: number; y: number; s: number } | null; narrow: boolean; lamp: Rect;
   bubble: { x: number; y: number } | null; bang: { x: number; y: number } | null; dots: { x: number; y: number } | null;
   call: { x: number; y: number };
   /** `aisles` only (spec 102 FR-256..FR-259): the marquee, the standing person's box and the side the screen faces */
@@ -32,7 +34,7 @@ export interface DeskBox {
 }
 /** `id` is the folder's id; `part` is 1, or 2, 3... for the rest of a folder split over rows */
 export interface ZoneBox { id: string; part: number; box: Rect; sign: Rect; desks: DeskBox[]; /** `aisles`: the sign shows name, counts, + and menu only; path and cost go to its hover (FR-256) */ signShort?: boolean }
-export interface VisitorBox { id: string; fig: (Rect & { file: string; pose: string; feetY: number; faces: 'left' | 'right' }) | null; chip: { x: number; y: number }; face: Rect | null; shadow: Rect | null }
+export interface VisitorBox { id: string; fig: (Rect & { file: string; fileB: string | null; b: Rect | null; pose: string; feetY: number; faces: 'left' | 'right' }) | null; chip: { x: number; y: number }; face: Rect | null; shadow: Rect | null }
 export interface FixtureBox { id: string; custom: boolean; art: Rect | null; slot: Rect; plate: { x: number; y: number; w: number }; visitors: VisitorBox[]; more: number; light: Rect }
 export interface Layout {
   u: number; big: boolean; lobbyH: number; floorH: number; width: number; height: number; scroll: boolean; faceH: number;
@@ -42,7 +44,7 @@ export interface Layout {
 }
 
 /* FR-010 constants (b2.js) */
-export const PW = 0.80, SR = 0.66, STRIP = 22, PAD = 8, ZGAP = 8, DESK_AT = 0.76, AWAY_W = 0.62;
+export const PW = 0.80, SR = 0.66, STRIP = 22, PAD = 8, ZGAP = 8, DESK_AT = 0.76;
 /** A desk face's height (crown to chin) as a share of the body height `u`: measured on 6 of the 15 people with a grid over the art
  *  (p01 0.30, p02 0.41, p04 0.27, p08 0.33, p11 0.33, p13 0.30), rounded down to 0.30; per person it varies (spec 097 delta 2026-10-31). */
 export const FACE_U = 0.30;
@@ -57,9 +59,9 @@ export const BIG_MAX = 4;
 /** FR-024: visitors' activity pose per place, and the fallback when a person has no picture for it. */
 export const FX_POSE: Record<string, string> = { library: 'book', software: 'book', terminal: 'runA', web: 'type', boss: 'knock', coffee: 'counter', bank: 'counter', postbox: 'letter', other: 'type' };
 export const POSE_FALLBACK: Record<string, string> = { wait: 'letter', runA: 'letter' };
-/** Owner 2026-10-31 ("make a real running pose", replacing the treadmill): the Terminal visitor jogs in place. P1 draws stride A
- *  still; the second frame of each two-frame pose is recorded here for the stepped motion of phase P2. */
-export const POSE_FRAME_B: Record<string, string> = { runA: 'runB' };
+/** FR-070: the second frame of each two-frame pose. Owner 2026-10-31 ("make a real running pose", replacing the treadmill): the
+ *  Terminal visitor jogs in place, runA and runB. */
+export const POSE_FRAME_B: Record<string, string> = { typeA: 'typeB', waveA: 'waveB', runA: 'runB' };
 /** Owner 2026-10-31 10:19 ("it must be real"): people in the lobby are scaled against the Boss door: a door is about 2.1 m, a person 1.7 m. */
 export const DOOR_M = 2.1, PERSON_M = 1.7;
 /** Owner 2026-10-31 10:48 ("their feet are above the floor"): visitors stand IN FRONT of the fixtures, on the floor strip, not on the
@@ -77,7 +79,7 @@ const roOwn = (o: object, k: string): boolean => Object.prototype.hasOwnProperty
 const roNeedsYou = (s: RealState): boolean => s === 'waiting' || s === 'limit';
 /** An agent without a person at its desk: away in the lobby, or asleep (Q5: lamp and screen off, a narrower desk). */
 const roNarrow = (a: RealAgent): boolean => !!a.away || a.state === 'asleep';
-const roWidthOf = (a: RealAgent): number => (roNarrow(a) ? AWAY_W : 1);
+const roWidthOf = (_a: RealAgent): number => 1; /* spec Changes 2026-11-01: an empty desk keeps its slot, so nothing moves when someone leaves */
 const roSeatOf = (meta: RealMeta, a: RealAgent): SeatMeta | null => (a.person && roOwn(meta.seat, a.person) ? meta.seat[a.person] : null);
 
 /** FR-022: a zone's desks in status order; ties keep the model's order. */
@@ -120,7 +122,6 @@ function roZoneStats(meta: RealMeta, z: RealFolder): { seated: boolean; rise: nu
   if (!st) {
     st = { seated: false, rise: 0, hand: DESK_AT * 0.9 };
     for (const a of z.agents) {
-      if (roNarrow(a)) continue;
       const m = roSeatOf(meta, a);
       st.seated = true; st.rise = Math.max(st.rise, m ? m.headTop / m.bodyH : 0.3); st.hand = Math.max(st.hand, m ? m.hand : DESK_AT);
     }
@@ -182,7 +183,7 @@ function roPack(meta: RealMeta, folders: RealFolder[], W: number, Ho: number, lo
     if (fits) for (let k = 0; k < 16; k++) /* 16 halvings: u to within 0.005 px (b2.js used 30) */ { const m = (lo + hi) / 2; if (H(m) <= avail) lo = m; else hi = m; }
     const used = H(lo), spread = Math.max(...rows.map((r) => r.n)) - Math.min(...rows.map((r) => r.n));
     const wide = uW >= U_MIN; /* every desk at least as wide as a person and a screen at the smallest u */
-    const score = (fits ? 2e6 : wide ? 1e6 - used : -used) + lo - spread * 5 - 0.08 * Math.max(0, avail - used);
+    const score = (fits ? 2e6 : wide ? 1e6 - used : uW * 100 - used) + lo - spread * 5 - 0.08 * Math.max(0, avail - used); /* nothing wide enough: the widest desks, not the shortest page */
     if (!best || score > best.score + 0.5) best = { rows, u: lo, used, score, fits, wide };
   }
   return best as { rows: Row[]; u: number; used: number; fits: boolean; wide: boolean };
@@ -271,8 +272,10 @@ function roLobby(meta: RealMeta, places: RealPlace[], W: number, Lb: number): { 
         /* the feet (the picture's lowest opaque row) stand on the front floor plane, in front of the fixture; one scale per person,
            from its upright 'letter' pose, NEAR_SCALE larger than at the wall line. */
         const k = nearPx / standHeight(meta, String(v.person)), fw2 = sp.size[0] * k, fh2 = sp.size[1] * k;
-        const faces = meta.facing || 'left';
-        fig = { x: cx - sp.foot * fw2, y: frontY - sp.feet * fh2, w: fw2, h: fh2, file: `${v.person}-${sp.pose}.webp`, pose: sp.pose, feetY: frontY, faces };
+        const faces = meta.facing || 'left', st = meta.stand[String(v.person)], fb = roOwn(POSE_FRAME_B, sp.pose) && roOwn(st.poses, POSE_FRAME_B[sp.pose]) ? POSE_FRAME_B[sp.pose] : null;
+        /* the two running pictures have their own canvases: each in its own box, the feet on one spot, so changing picture moves no foot */
+        const b = fb ? (() => { const w = st.poses[fb][0] * k, h = st.poses[fb][1] * k; return { x: cx - (st.foot && roOwn(st.foot, fb) ? st.foot[fb] : sp.foot) * w, y: frontY - (st.feet && roOwn(st.feet, fb) ? st.feet[fb] : sp.feet) * h, w, h }; })() : null;
+        fig = { x: cx - sp.foot * fw2, y: frontY - sp.feet * fh2, w: fw2, h: fh2, file: `${v.person}-${sp.pose}.webp`, fileB: fb ? `${v.person}-${fb}.webp` : null, b, pose: sp.pose, feetY: frontY, faces };
         const headY = fig.y + sp.top * fh2;
         face = { x: cx - 0.065 * nearPx, y: headY, w: 0.13 * nearPx, h: 0.13 * nearPx };
         /* a soft elliptical contact shadow on the floor, centred on the foot line, a little wider than the stance */
@@ -289,28 +292,34 @@ function roLobby(meta: RealMeta, places: RealPlace[], W: number, Lb: number): { 
   return { fixtures, floorStrip: { x: 0, y: Lb - FLOOR, w: W, h: FLOOR } };
 }
 
+/** spec Changes 2026-11-01: an empty seat's note, square like a real one, standing on the desk where the person would sit, clear of the screen when there is room */
+function roNote(px: number, sx: number, slotW: number, sl: number, deskY: number, u: number, big: boolean): { x: number; y: number; s: number } {
+  const s = Math.round(Math.max(66, Math.min(112, 0.5 * u)));
+  const x = big ? px : Math.max(sx + s / 2 + 4, Math.min(px, sl - s / 2 - 4));
+  return { x: Math.min(x, sx + slotW - s / 2 - 2), y: deskY - s + 4, s };
+}
+
 /** FR-013, FR-016, FR-017, FR-036, FR-038: one desk (roStation) in a slot. */
 function roStation(meta: RealMeta, a: RealAgent, sx: number, y: number, Sw: number, u: number, g: Geom, big: boolean, scrH: number): DeskBox {
   const narrow = roNarrow(a);
   const slotW = Sw * roWidthOf(a);
   const deskY = y + g.deskBack, dw = slotW - 6, dh = g.dh;
-  const m = narrow ? null : roSeatOf(meta, a);
+  const m = roSeatOf(meta, a);
   const hand = m ? m.hand : DESK_AT;
   const headY = deskY - 0.015 * u - hand * u;
-  const px = big || narrow ? sx + slotW / 2 : sx + 0.05 * Sw + 0.42 * u;
+  const px = big ? sx + slotW / 2 : sx + 0.05 * Sw + 0.42 * u;
   let person: DeskBox['person'] = null, face: Rect | null = null;
   const pose = SEAT_POSE[a.state];
-  if (m && pose) {
+  if (m && pose && !narrow) {
     const k = u / m.bodyH, w = m.w * k, h = m.h * k, top = headY - m.headTop * k;
-    person = { x: px - w / 2, y: top, w, h, file: `${a.person}-${pose}.webp`, pose, pid: String(a.person),
+    person = { x: px - w / 2, y: top, w, h, file: `${a.person}-${pose}.webp`, fileB: roOwn(POSE_FRAME_B, pose) ? `${a.person}-${POSE_FRAME_B[pose]}.webp` : null, pose, pid: String(a.person),
       vis: { x: px - 0.3 * u, y: headY, w: 0.6 * u, h: Math.max(0, deskY - headY) } }; /* the head and shoulders: the monitor may cover a shoulder edge, never the face */
     face = { x: px - FACE_U * u * 0.4, y: headY, w: FACE_U * u * 0.8, h: FACE_U * u };
   }
   let sl = px + 0.36 * u, sr = sx + slotW - 0.05 * Sw, sw = sr - sl;
   let foot = deskY + 0.13 * dh, neck = Math.max(6, 0.07 * u);
   let sh = Math.min(sw * (Sw > 300 ? 0.78 : 0.64), foot - neck - (y + STRIP + 3));
-  if (narrow && !big) { sl = sx + 0.1 * slotW; sr = sx + 0.9 * slotW; sw = sr - sl; sh = Math.min(sw * 0.64, foot - neck - (y + STRIP + 22)); }
-  if (big) { const top = narrow ? 22 : 6; /* an away desk's "at <place>" label sits above its screen */ sl = sx + 0.04 * slotW; sr = sx + 0.96 * slotW; sw = sr - sl; sh = scrH - 4 - top; neck = 0; foot = y + STRIP + top + sh; }
+  if (big) { const top = 6; sl = sx + 0.04 * slotW; sr = sx + 0.96 * slotW; sw = sr - sl; sh = scrH - 4 - top; neck = 0; foot = y + STRIP + top + sh; }
   sh = Math.max(12, sh);
   const screen = { x: sl, y: foot - neck - sh, w: sw, h: sh + neck + 4 };
   const glass = { x: sl + 3, y: foot - neck - sh + 3, w: sw - 6, h: sh - 6 };
@@ -320,7 +329,7 @@ function roStation(meta: RealMeta, a: RealAgent, sx: number, y: number, Sw: numb
   const desk = { x: sx + 3, y: deskY, w: dw, h: Math.min(dh, g.bottom - g.deskBack - 2), full: dh };
   return {
     id: a.id, state: a.state, narrow, slot: { x: sx, y, w: slotW, h: 0 }, desk, plate, screen, glass, person, face,
-    away: narrow && a.away ? { x: sx + slotW / 2, y: y + STRIP + 2 } : null,
+    away: narrow && a.away ? roNote(px, sx, slotW, sl, deskY, u, big) : null, /* the note on the desk, where the person would sit */
     lamp: { x: sx + 0.02 * slotW, y: Math.max(y + STRIP, headY - 0.35 * u), w: 0.96 * slotW, h: deskY + dh * 0.5 - Math.max(y + STRIP, headY - 0.35 * u) },
     bubble: person && roNeedsYou(a.state) ? { x: px + 0.2 * u - 6, y: headY - 0.04 * u } : null,
     bang: a.state === 'error' ? { x: sr - 10, y: screen.y - 8 } : null,
@@ -403,3 +412,105 @@ export function assignPeople(map: Record<string, string>, sessions: readonly { i
 
 /** the lobby band (fixtures and their visitors), for arrangements other than `rows` (spec 102 FR-256: the arcade hall keeps today's band) */
 export { roLobby as lobbyBand };
+
+/* ---- Phase P2: live screens and motion (FR-030..FR-035, FR-070..FR-074) ---- */
+
+/** One line of a monitor: `n` stays with the line while it scrolls, `k` is its kind (FR-032's colours), `t` is masked text. */
+export interface ScreenLine { n: number; k: string; t: string }
+/** FR-032: a screen under this size shows line bars and the newest line; larger ones real lines, 13 px when taller than 200 px. */
+export const SCREEN_SMALL = { w: 150, h: 60 };
+export const SCREEN_PAD = 4;
+/** FR-032: how a glass of this size shows text: `rows` lines of text and `bars` line bars above them. */
+export function screenFit(glass: { w: number; h: number }): { small: boolean; font: number; lh: number; rows: number; bars: number; whole: number } {
+  const room = Math.max(0, glass.h - 2 * SCREEN_PAD);
+  if (glass.w < SCREEN_SMALL.w || glass.h < SCREEN_SMALL.h) {
+    const lh = 13;
+    /* the newest line wraps over the rows it needs, the bars show above it as far as room is left; `whole`: the height of whole text rows */
+    return { small: true, font: 10.5, lh, rows: 1, bars: Math.max(0, Math.floor((room - lh - 2) / 6)), whole: Math.max(lh, Math.floor(room / lh) * lh) };
+  }
+  const font = glass.h > 200 ? 13 : 11, lh = font === 13 ? 17 : 15;
+  const rows = Math.max(1, Math.floor(room / lh));
+  return { small: false, font, lh, rows, bars: 0, whole: rows * lh };
+}
+/**
+ * FR-030, FR-035: what a screen shows for a state. `log`: the agent's own lines, oldest first; `task` and `reply`: the same masked
+ * steps over its task and last reply, used when it has no lines; `word`: the status word, so that a screen never stands empty. Asleep:
+ * off, no text. `quiet`: Live activity is off while it works: only the word, with decorative bars. Needs-you and error: the question or the error is the newest line. Done: the newest line is marked done (green).
+ */
+export function screenFor(state: RealState, log: readonly ScreenLine[], task: readonly { k: string; t: string }[], reply: readonly { k: string; t: string }[], word: string, quiet = false): { off: boolean; caret: boolean; quiet: boolean; lines: ScreenLine[] } {
+  if (state === 'asleep') return { off: true, caret: false, quiet: false, lines: [] };
+  const lines: ScreenLine[] = log.map((l) => ({ ...l }));
+  const add = (src: readonly { k: string; t: string }[], k?: string) => { for (const l of src) { const last = lines[lines.length - 1]; if (!last || last.t !== l.t) lines.push({ n: last ? last.n + 1 : 0, k: k || l.k, t: l.t }); else if (k) last.k = k; } };
+  if (state === 'waiting' || state === 'limit') add(task, 'ask');
+  else if (state === 'error') add(task, 'err');
+  else if (!lines.length) { add(reply.length ? reply : task); }
+  if (!lines.length) lines.push({ n: 0, k: state === 'error' ? 'err' : state === 'waiting' || state === 'limit' ? 'ask' : 'plain', t: word });
+  if (state === 'done') lines[lines.length - 1].k = 'done';
+  return { off: false, caret: state === 'working', quiet, lines: lines.slice(-24) };
+}
+/** A stable number from a session id: the room does not move in step (FR-070). */
+function roHash(id: string): number { let h = 7; for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0; return h; }
+/**
+ * FR-070, FR-071, spec 097 FR-181 (at most 2 changes a second a desk): the motion of a seated or standing pose. `kind`: 'frames' (two
+ * pictures in step, with `period` s per pair), 'breathe', 'sip', 'knock', or null (a still pose: error, a person on hold). The period is
+ * per agent: 1.15-1.5 s for two frames, 4-5.5 s for a breath. `offset` is where its cycle starts, in ms.
+ */
+export function personMotion(id: string, pose: string, state: RealState | null): { kind: 'frames' | 'breathe' | 'knock' | null; period: number; offset: number; sway: number; style: 'type' | 'wave' | 'run' | null } {
+  const h = roHash(String(id)), share = (h % 1000) / 1000, share2 = ((h >>> 10) % 1000) / 1000;
+  const out = (kind: 'frames' | 'breathe' | 'knock' | null, period: number, style: 'type' | 'wave' | 'run' | null = null) => ({ kind, period: Math.round(period * 100) / 100, offset: Math.round(share * period * 1000), sway: Math.round((5 + 3 * share2) * 100) / 100, style });
+  if (state === 'error') return out(null, 0); /* FR-036: error is still */
+  if (pose === 'runA') return out('frames', 0.72 + 0.1 * share, 'run'); /* about 2.6 steps a second (spec Changes 2026-11-01) */
+  if (pose === 'waveA') return out('frames', 1.7 + 0.4 * share, 'wave');
+  if (roOwn(POSE_FRAME_B, pose)) return out('frames', 2.6 + 0.6 * share, 'type');
+  if (pose === 'knock') return out('knock', 2.6);
+  return out('breathe', 4 + 1.5 * share);
+}
+
+export interface ZoomPlace extends Rect { side: 'above' | 'below' | 'right' | 'left' | 'near' | 'covering'; covers: boolean }
+const roHits = (a: Rect, b: Rect, gap = 0) => a.x < b.x + b.w + gap && b.x < a.x + a.w + gap && a.y < b.y + b.h + gap && b.y < a.y + a.h + gap;
+/**
+ * FR-034: where the zoom panel goes. Above the target if that is free, then below, then beside; then the nearest free place; each at
+ * the wished height, then lower down to `minH`. Never leaves `view`; never covers `avoid` (the target's own plate, every needs-you
+ * plate and the target itself) unless no place at all is free: then the least covered, `covers` true. Pure.
+ */
+export function zoomRect(target: Rect, avoid: readonly Rect[], view: Rect, size: { w: number; h: number; minH: number; gap?: number }): ZoomPlace {
+  const gap = size.gap ?? 6, w = Math.min(size.w, view.w), maxH = Math.min(size.h, view.h), minH = Math.min(size.minH, maxH);
+  const free = (r: Rect) => !avoid.some((a) => roHits(r, a));
+  const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+  const cx = target.x + target.w / 2, cy = target.y + target.h / 2;
+  const heights: number[] = [];
+  for (let h = maxH; h > minH; h -= 28) heights.push(h);
+  heights.push(minH);
+  for (const h of heights) {
+    const X = clamp(cx - w / 2, view.x, view.x + view.w - w), Y = clamp(cy - h / 2, view.y, view.y + view.h - h);
+    const named: [ZoomPlace['side'], number, number][] = [
+      ['above', X, target.y - gap - h], ['below', X, target.y + target.h + gap],
+      ['right', target.x + target.w + gap, Y], ['left', target.x - gap - w, Y],
+    ];
+    for (const [side, x, y] of named) {
+      if (x < view.x || x + w > view.x + view.w || y < view.y || y + h > view.y + view.h) continue;
+      if (free({ x, y, w, h })) return { x, y, w, h, side, covers: false };
+    }
+    /* the nearest free place: its edges can only stand against an avoided box or the view */
+    const xs = new Set([X, view.x, view.x + view.w - w]), ys = new Set([Y, view.y, view.y + view.h - h]);
+    for (const a of avoid) { xs.add(a.x - w - gap); xs.add(a.x + a.w + gap); ys.add(a.y - h - gap); ys.add(a.y + a.h + gap); }
+    let best: ZoomPlace | null = null, bestD = Infinity;
+    for (const x of xs) {
+      if (x < view.x || x + w > view.x + view.w) continue;
+      for (const y of ys) {
+        if (y < view.y || y + h > view.y + view.h) continue;
+        const d = Math.hypot(x + w / 2 - cx, y + h / 2 - cy);
+        if (d < bestD && free({ x, y, w, h })) { best = { x, y, w, h, side: 'near', covers: false }; bestD = d; }
+      }
+    }
+    if (best) return best;
+  }
+  /* nothing is free (a window too small for it): the least covered place, still inside the view */
+  const h = minH, lap = (r: Rect) => avoid.reduce((s, a) => s + Math.max(0, Math.min(r.x + r.w, a.x + a.w) - Math.max(r.x, a.x)) * Math.max(0, Math.min(r.y + r.h, a.y + a.h) - Math.max(r.y, a.y)), 0);
+  let best: ZoomPlace = { x: clamp(cx - w / 2, view.x, view.x + view.w - w), y: view.y, w, h, side: 'covering', covers: true }, least = Infinity;
+  for (let i = 0; i <= 8; i++) for (let j = 0; j <= 8; j++) {
+    const r = { x: view.x + (view.w - w) * i / 8, y: view.y + (view.h - h) * j / 8, w, h }, l = lap(r);
+    if (l < least) { least = l; best = { ...r, side: 'covering', covers: true }; }
+  }
+  return best;
+}
