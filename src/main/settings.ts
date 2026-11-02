@@ -68,7 +68,7 @@ export class SettingsStore {
     if (cap === undefined) delete next.defaultMaxAiCredits;
     else next.defaultMaxAiCredits = cap;
     const tighter = cap !== undefined && (this.s.defaultMaxAiCredits === undefined || cap < this.s.defaultMaxAiCredits);
-    this.commit(next, tighter);
+    this.commit(next, tighter ? 'defaultMaxAiCredits' : undefined);
     return this.s.defaultMaxAiCredits;
   }
 
@@ -77,11 +77,11 @@ export class SettingsStore {
     return this.s.newFolderParent;
   }
 
-  /** Spec 093 FR-006: remembered after a successful create only (the caller's rule); an invalid path is not stored. */
+  /** Spec 093 FR-006: remembered after a successful create only (the caller's rule); an invalid path is not stored. A convenience: kept for this run when it cannot be saved. */
   setNewFolderParent(v: unknown): void {
     const p = parseNewFolderParent(v);
     if (!p || p === this.s.newFolderParent) return;
-    this.commit({ ...this.s, newFolderParent: p });
+    this.commit({ ...this.s, newFolderParent: p }, 'newFolderParent');
   }
 
   /** Spec 080 FR-025d (Q2): the session browser's one-time note was accepted. */
@@ -89,9 +89,10 @@ export class SettingsStore {
     return this.s.browserNoteAccepted === true;
   }
 
-  /** Remembers the acceptance for this app profile; never asked again. */
+  /** Remembers the acceptance for this app profile; never asked again. Kept for this run when it cannot be saved (else the session browser could never open on an unwritable profile); `isUnsaved('browserNoteAccepted')` says so. Returns true: it is in force. */
   acceptBrowserNote(): boolean {
-    return this.commit({ ...this.s, browserNoteAccepted: true });
+    this.commit({ ...this.s, browserNoteAccepted: true }, 'browserNoteAccepted');
+    return true;
   }
 
   /** Spec 080 FR-031: where a chat link opens on a plain click; the session browser unless the user chose the system browser. */
@@ -164,7 +165,7 @@ export class SettingsStore {
     const list = parseSandboxAlways([...set]);
     if (list.length) next.sandboxAlwaysContinue = list;
     else delete next.sandboxAlwaysContinue;
-    this.commit(next, !on); // turning the choice off is the safe direction: in force for this run even if it cannot be saved (`unsaved`); turning it on is rolled back
+    this.commit(next, !on ? 'sandboxAlwaysContinue' : undefined); // turning the choice off is the safe direction: in force for this run even if it cannot be saved (`isUnsaved`); turning it on is rolled back
     return this.sandboxAlwaysContinue(app);
   }
 
@@ -215,12 +216,13 @@ export class SettingsStore {
     return { ...(this.s.announcedVersions ?? {}) };
   }
 
-  /** Saves one announced version (an allowed app id and a valid version; anything else changes nothing). Returns true when it was saved. */
+  /** Remembers one announced version (an allowed app id and a valid version; anything else changes nothing). Bookkeeping: kept for this run when it cannot be saved, so an update is announced once (spec 081 FR-016). Returns true when it is in force. */
   setAnnouncedVersion(app: unknown, version: unknown): boolean {
     if (typeof app !== 'string' || !(ANNOUNCE_APPS as readonly string[]).includes(app)) return false;
     const ver = parseAnnounced({ [app]: version })[app];
     if (typeof ver !== 'string') return false;
-    return this.commit({ ...this.s, announcedVersions: { ...(this.s.announcedVersions ?? {}), [app]: ver } });
+    this.commit({ ...this.s, announcedVersions: { ...(this.s.announcedVersions ?? {}), [app]: ver } }, 'announcedVersions');
+    return true;
   }
 
   /** Active theme id (spec 037). Undefined = Clean Office; the renderer resolves unknown ids itself. */
@@ -228,32 +230,31 @@ export class SettingsStore {
     return this.s.theme;
   }
 
-  /** Only a valid id string changes it (or clears with null/undefined/'clean-office' handled by the caller). Returns {ok, theme}. */
+  /** Only a valid id string changes it (or clears with null/undefined/'clean-office' handled by the caller). Returns {ok, theme}. The window has already shown the theme, so it is kept for this run when it cannot be saved (`ok` false says so; the window warns). */
   setTheme(v: unknown): { ok: boolean; theme?: string; characters?: CharacterChoice } {
     const id = parseThemeId(v);
     if (id !== undefined) {
       // spec 077 FR-067: the old Cheeky Crew id is never stored: the same rule as at load (Clean Office plus Cheeky)
       const m = migrateLegacyTheme({ ...this.s, theme: id });
       if (m.changed) {
-        if (!this.commit(m.settings)) return { ok: false, theme: this.s.theme };
-        return { ok: true, theme: 'clean-office', characters: this.characters };
+        return { ok: this.commit(m.settings, 'theme'), theme: 'clean-office', characters: this.characters };
       }
     }
     if (v === null || v === undefined) {
       const next: AppSettings = { ...this.s };
       delete next.theme;
-      return this.commit(next) ? { ok: true } : { ok: false, theme: this.s.theme };
+      return { ok: this.commit(next, 'theme') };
     }
     if (id !== undefined && migrateRemovedTheme({ theme: id }).changed) { // spec 035 FR-018: a removed built-in is never stored: Clean Office
       const next: AppSettings = { ...this.s };
       delete next.theme;
-      return this.commit(next) ? { ok: true, theme: 'clean-office' } : { ok: false, theme: this.s.theme ?? 'clean-office' };
+      return { ok: this.commit(next, 'theme'), theme: 'clean-office' };
     }
     if (id === undefined) return { ok: false, theme: this.s.theme };
     const next: AppSettings = { ...this.s };
     if (id === 'clean-office') delete next.theme;
     else next.theme = id;
-    return this.commit(next) ? { ok: true, theme: this.s.theme ?? 'clean-office' } : { ok: false, theme: this.s.theme ?? 'clean-office' };
+    return { ok: this.commit(next, 'theme'), theme: this.s.theme ?? 'clean-office' };
   }
 
   /** Spec 077 FR-064: who sits at the desks; `theme` (the theme's own) when nothing is stored. */
@@ -335,23 +336,33 @@ export class SettingsStore {
     return { ok: r.ok, placeMap: { ...(this.s.placeMap ?? {}) } };
   }
 
-  /** The one way a setter stores a change (issue #1023): memory takes `next` only when the file was written; else it stays as it was and this is false. */
-  private commit(next: AppSettings, keepOnFail = false): boolean {
+  /**
+   * The one way a setter stores a change (issue #1023). A file that was written makes `next` the settings. When it cannot be written
+   * there are two rules (spec 011 FR-012): the default is that memory goes back to what it was, because the window shows what is
+   * in force (switches, lists, places); a change given a `keep` key stays in memory for this run and that key is listed by
+   * `isUnsaved`: a convenience or bookkeeping value that must not stop working (the browser note, an announced version, the new-folder
+   * parent, the theme the window already shows) and a change that makes things safer (the OS-sandbox choice off, a tighter cap).
+   */
+  private commit(next: AppSettings, keep?: string): boolean {
     const before = this.s;
     this.s = next;
     if (this.save()) {
-      this.kept = false;
+      this.kept.clear(); // the file now holds everything in memory
       return true;
     }
-    if (keepOnFail) this.kept = true; // a safer change takes effect for this run even though it cannot be stored (see `unsaved`)
+    if (keep) this.kept.add(keep);
     else this.s = before;
     return false;
   }
 
-  private kept = false;
-  /** True when the last change is in force for this run only because the file could not be written. Only safer changes are kept like that (the OS-sandbox choice turned off, a tighter default cap); the next successful save clears it. */
-  get unsaved(): boolean {
-    return this.kept;
+  private readonly kept = new Set<string>();
+  /** True when this setting is in force for this run only: its change could not be written and no later save has (a later successful save writes all of memory). Tied to the setting, never store-wide. */
+  isUnsaved(key: string): boolean {
+    return this.kept.has(key);
+  }
+  /** The settings in force for this run only, for Settings to say so again when it is reopened. */
+  get unsavedKeys(): string[] {
+    return [...this.kept];
   }
 
   private save(): boolean {

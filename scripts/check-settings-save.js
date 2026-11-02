@@ -1,8 +1,8 @@
 /*
  * Spec 011 FR-012, issue #1023: a Settings row whose save fails goes back to the value in force and says so, in the same words for every row
  * ("Could not save this setting. It stays on."). The simulator's bridge is made to answer `ok: false` (what main now answers when the
- * settings file cannot be written); then the row is changed and the control, the message and the stored value are read. With a working
- * bridge the normal text shows. Simulator only (no AI credits, no agent app).
+ * settings file cannot be written); then the row is changed and the control and the message are read (the bridge is a stand-in, so no stored
+ * value is read here: main's own handlers and store are tested in test-credits). With a working bridge the normal text shows. Simulator only (no AI credits, no agent app).
  *
  *   npm run check:ui -- --only check-settings-save
  *   OUT=docs/screenshots  (optional) also saves 011-settings-save-{1440x900,1280x800}.png
@@ -63,12 +63,22 @@ module.exports = async (ctx) => {
     assert.strictEqual(await checked('breakSw'), brk, `${w}: the switch is unchanged`);
     await working('setBreakResume');
 
-    // Chat links: the list goes back to the value in force
+    // Chat links: the list goes back to the value in force, from either value (a reset that always picks 'session' would fail the second)
+    await js(`(()=>{const s=document.getElementById('chatLinksSel');s.value='system';s.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+    await ok(`document.getElementById('chatLinksMsg').textContent.startsWith('Chat links open in your usual')`, `${w}: with a working save it changes`);
+    await failing('setChatLinksIn', { ok: false, chatLinksIn: 'system' });
+    await js(`(()=>{const s=document.getElementById('chatLinksSel');s.value='session';s.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+    await ok(`document.getElementById('chatLinksMsg').textContent.startsWith('Could not save')`, `${w}: chat links say it could not save`);
+    assert.strictEqual(await text('chatLinksMsg'), WORDS('in your usual browser'));
+    assert.strictEqual(await js(`document.getElementById('chatLinksSel').value`), 'system', `${w}: the list is back at the value in force (system)`);
+    await working('setChatLinksIn');
+    await js(`(()=>{const s=document.getElementById('chatLinksSel');s.value='session';s.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+    await ok(`document.getElementById('chatLinksMsg').textContent.startsWith('Chat links open in the session')`, `${w}: and back to the session browser`);
     await failing('setChatLinksIn', { ok: false, chatLinksIn: 'session' });
     await js(`(()=>{const s=document.getElementById('chatLinksSel');s.value='system';s.dispatchEvent(new Event('change',{bubbles:true}));})()`);
-    await ok(`document.getElementById('chatLinksMsg').textContent.startsWith('Could not save')`, `${w}: chat links say it could not save`);
+    await ok(`document.getElementById('chatLinksMsg').textContent.startsWith('Could not save')`, `${w}: chat links say it could not save again`);
     assert.strictEqual(await text('chatLinksMsg'), WORDS('in the session browser'));
-    assert.strictEqual(await js(`document.getElementById('chatLinksSel').value`), 'session', `${w}: the list is back at the value in force`);
+    assert.strictEqual(await js(`document.getElementById('chatLinksSel').value`), 'session', `${w}: the list is back at the value in force (session)`);
     await working('setChatLinksIn');
 
     // Spending limit: a failed save is not "Saved"
@@ -90,6 +100,44 @@ module.exports = async (ctx) => {
     await js(`document.getElementById('capDef').value='60';document.getElementById('capSave').click()`);
     await ok(`document.getElementById('capMsg').textContent.startsWith('Applied for this run only')`, `${w}: a kept limit says this run only`);
     await working('setDefaultCap');
+    // Agent apps: the checkbox and the sandbox undo, through the page's own click handler with stand-in elements (a real card needs a running app)
+    const toasts = () => js(`[...document.querySelectorAll('#toasts .toast')].map(t=>t.textContent).join(' | ')`);
+    const click = (kind, extra) => js(`(()=>{const b=Object.assign({dataset:{hs:${jsLiteral(kind)},kind:'claude'},closest:q=>q==='.hs-card'?{querySelector:()=>({textContent:'Claude Code'})}:null},${jsLiteral(extra || {})});window.__sbEl=b;return window.DurbarHarnesses.onClick({target:{closest:()=>b}});})()`);
+    await failing('setCheckUpdatesAtStart', { ok: false, checkUpdatesAtStart: false });
+    await click('startchk', { checked: false }); // the person unticked it (it is on in the simulator)
+    await ok(`[...document.querySelectorAll('#toasts .toast')].some(t=>t.textContent==='Could not save this setting. It stays on.')`, `${w}: the update-check checkbox says it could not save: ` + await toasts());
+    assert.strictEqual(await js(`window.__sbEl.checked`), true, `${w}: and goes back to the value in force (on)`);
+    await js(`(()=>{const b=window.__durbarSimUi.bridge();b.setCheckUpdatesAtStart=async()=>{throw new Error('ipc rejected');};})()`);
+    await js(`document.querySelectorAll('#toasts .toast').forEach(t=>t.remove())`);
+    await click('startchk', { checked: false });
+    await ok(`[...document.querySelectorAll('#toasts .toast')].some(t=>t.textContent==='Could not save this setting. It stays on.')`, `${w}: a rejected call says it too`);
+    assert.strictEqual(await js(`window.__sbEl.checked`), true, `${w}: and the box is back on`);
+    await working('setCheckUpdatesAtStart');
+    for (const [reply, want] of [[{ ok: false }, 'Could not turn this off for Claude Code.'], [{ ok: true, saved: false }, 'for this run only'], [{ ok: true }, 'The OS sandbox note shows again for Claude Code.']]) {
+      await js(`document.querySelectorAll('#toasts .toast').forEach(t=>t.remove())`);
+      await failing('sandboxAlwaysOff', reply);
+      await click('sbxundo');
+      await ok(`[...document.querySelectorAll('#toasts .toast')].some(t=>t.textContent.includes(${jsLiteral(want)}))`, `${w}: sandbox undo ${JSON.stringify(reply)} says "${want}": ` + (await toasts()));
+    }
+    await working('sandboxAlwaysOff');
+    // a limit kept for this run only is the one the new-session dialog starts with, and Settings says so again when it is reopened
+    await failing('setDefaultCap', { ok: false, unsaved: true, defaultMaxAiCredits: 60 });
+    await js(`document.getElementById('capDef').value='60';document.getElementById('capSave').click()`);
+    await ok(`document.getElementById('capMsg').textContent.startsWith('Applied for this run only')`, `${w}: kept limit: this run only`);
+    await js(`window.DurbarScreens.close();0`);
+    await js(`document.querySelector('#stage .desk').click()`);
+    await ok(`!!document.getElementById('newSessBtn')`, `${w}: the New session button`);
+    await js(`document.getElementById('newSessBtn').click()`);
+    await ok(`!!document.getElementById('sdCap')`, `${w}: the new-session dialog opened`);
+    assert.strictEqual(await js(`document.getElementById('sdCap').value`), '60', `${w}: the dialog starts with the kept limit`);
+    await js(`(document.querySelector('#scrDlg .dbtn .btn')||{click(){}}).click();0`);
+    await H.key('Escape');
+    await working('setDefaultCap');
+    // reopened: Settings says again that the limit is for this run only (main lists it in settings:get)
+    await js(`(()=>{const b=window.__durbarSimUi.bridge(),g=b.getSettings;b.__getOrig=g;b.getSettings=async()=>Object.assign({},await g(),{unsaved:['defaultMaxAiCredits']});})()`);
+    await js(`document.getElementById('settingsBtn').click()`);
+    await ok(`!!document.getElementById('capMsg')&&document.getElementById('capMsg').textContent.startsWith('This limit is in force for this run only')`, `${w}: reopened Settings says the limit is for this run only`);
+    await js(`(()=>{const b=window.__durbarSimUi.bridge();b.getSettings=b.__getOrig;})()`);
     await js(`window.DurbarScreens.close();0`);
   }
   console.log('[011] settings save checks passed');

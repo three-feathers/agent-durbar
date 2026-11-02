@@ -17,14 +17,15 @@ export interface SettingsIpcDeps {
 export function register(deps: SettingsIpcDeps): void {
   const { getRunTheme, clearRunTheme } = deps;
   const settingsStore = deps.getSettingsStore;
-  ipcHandle('settings:get', () => ({ defaultMaxAiCredits: settingsStore()?.defaultMaxAiCredits, placeMap: settingsStore()?.placeMap ?? {}, customPlaces: settingsStore()?.customPlaces ?? [], seriousMode: settingsStore()?.seriousMode ?? false, notifyNeedsMe: settingsStore()?.notifyNeedsMe ?? true, breakResume: settingsStore()?.breakResume ?? 'auto', chatLinksIn: settingsStore()?.chatLinksIn ?? 'session', mcpWarnLevels: settingsStore()?.mcpWarnLevels, theme: getRunTheme() ?? settingsStore()?.theme ?? 'clean-office', characters: settingsStore()?.characters ?? 'theme', about: aboutView(app.getVersion()) }));
+  ipcHandle('settings:get', () => ({ defaultMaxAiCredits: settingsStore()?.defaultMaxAiCredits, placeMap: settingsStore()?.placeMap ?? {}, customPlaces: settingsStore()?.customPlaces ?? [], seriousMode: settingsStore()?.seriousMode ?? false, notifyNeedsMe: settingsStore()?.notifyNeedsMe ?? true, breakResume: settingsStore()?.breakResume ?? 'auto', chatLinksIn: settingsStore()?.chatLinksIn ?? 'session', mcpWarnLevels: settingsStore()?.mcpWarnLevels, theme: getRunTheme() ?? settingsStore()?.theme ?? 'clean-office', characters: settingsStore()?.characters ?? 'theme', unsaved: settingsStore()?.unsavedKeys ?? [], about: aboutView(app.getVersion()) }));
   /* issue #1023: a setter returns the value now in force, so `ok` is true only when that is what was asked for (a failed save keeps the old value) */
-  const setting = <K extends string, T>(key: K, fallback: T, set: (st: SettingsStore, v: unknown) => T, want: (v: unknown) => unknown = (v) => v) => (_e: unknown, v: unknown) => {
+  const setting = <K extends string, T>(key: K, fallback: T, set: (st: SettingsStore, v: unknown) => T, want: (v: unknown) => unknown = (v) => v, unsavedKey?: string) => (_e: unknown, v: unknown) => {
     const st = settingsStore();
     const now = st ? set(st, v) : fallback;
     const same = st !== undefined && now === want(v);
     // a safer change kept for this run only (a tighter cap that could not be saved): in force, but not ok, and the window is told
-    return { ok: same && !st.unsaved, ...(same && st.unsaved ? { unsaved: true } : {}), [key]: now } as { ok: boolean; unsaved?: true } & Record<K, T>;
+    const kept = same && unsavedKey !== undefined && st.isUnsaved(unsavedKey); // this setting only, never another one's
+    return { ok: same && !kept, ...(kept ? { unsaved: true } : {}), [key]: now } as { ok: boolean; unsaved?: true } & Record<K, T>;
   };
   ipcHandle('settings:setSeriousMode', setting('seriousMode', false, (st, v) => st.setSeriousMode(v)));
   /* spec 052 FR-059: OS notifications when an agent needs you and the window is in the background (on unless turned off) */
@@ -54,5 +55,5 @@ export function register(deps: SettingsIpcDeps): void {
   ipcHandle('settings:addPlace', (_e, name: unknown, icon: unknown) => settingsStore()?.addPlace(name, icon) ?? { ok: false, error: 'unknown', customPlaces: [], placeMap: {} });
   ipcHandle('settings:updatePlace', (_e, id: unknown, patch: unknown) => settingsStore()?.updatePlace(id, patch) ?? { ok: false, error: 'unknown', customPlaces: [], placeMap: {} });
   ipcHandle('settings:removePlace', (_e, id: unknown) => settingsStore()?.removePlace(id) ?? { ok: false, error: 'unknown', customPlaces: [], placeMap: {} });
-  ipcHandle('settings:setDefaultCap', setting<'defaultMaxAiCredits', number | undefined>('defaultMaxAiCredits', undefined, (st, v) => st.setDefaultMaxAiCredits(v), parseCap));
+  ipcHandle('settings:setDefaultCap', setting<'defaultMaxAiCredits', number | undefined>('defaultMaxAiCredits', undefined, (st, v) => st.setDefaultMaxAiCredits(v), parseCap, 'defaultMaxAiCredits'));
 }

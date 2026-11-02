@@ -443,6 +443,7 @@
     /* spec 044 FR-030: the top-bar Schedules button, Ctrl+Shift+S and Ctrl+K open Settings at the Schedules heading (also when Settings is open already) */
     if(cur.section==='schedules'){cur.section=null;const h=$('schH');if(h){scrollInBody(h);h.focus({preventScroll:true});atSec=true;}}
     wireMcpLevels();
+    if($('capMsg')&&Array.isArray(app.unsaved)&&app.unsaved.includes('defaultMaxAiCredits'))$('capMsg').textContent='This limit is in force for this run only: it could not be saved and may be lost when Agent Durbar restarts.'; /* told again when Settings is reopened */
     if($('capSave'))$('capSave').onclick=async()=>{
       const v=parseFloat($('capDef').value),msg=$('capMsg');
       if($('capDef').value.trim()!==''&&!(v>=30&&v<=1e6)){msg.textContent='Enter a number from 30 (the runtime minimum), or leave it empty for no cap.';return;}

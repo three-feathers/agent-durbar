@@ -129,19 +129,23 @@ export function tabShortcut(e: KeyLike | null | undefined, mac: boolean): TabSho
 /** What the toggle needs of the settings store (`SettingsStore`). */
 export interface LinksToggleStore {
   readonly chatLinksNewTab: boolean;
-  setChatLinksNewTab(on: unknown): unknown;
+  setChatLinksNewTab(on: unknown): unknown; // the value in force
 }
 /**
  * FR-123: the app-wide *Open chat links in a new tab* toggle, read in main only. Off by default. The simulator keeps it in memory and writes
  * no user settings; the app reads and writes the settings store.
  */
-export function makeLinksToggle(simulator: boolean, store: () => LinksToggleStore | undefined): { get(): boolean; set(on: boolean): void } {
+export function makeLinksToggle(simulator: boolean, store: () => LinksToggleStore | undefined): { get(): boolean; set(on: boolean): boolean } {
   let simOn = false;
   return {
     get: () => (simulator ? simOn : store()?.chatLinksNewTab === true),
     set: (on) => {
-      if (simulator) simOn = on;
-      else store()?.setChatLinksNewTab(on);
+      if (simulator) {
+        simOn = on;
+        return true;
+      }
+      const st = store();
+      return st !== undefined && st.setChatLinksNewTab(on) === on; // false: no store, or the save failed and the old value is in force
     },
   };
 }

@@ -78,10 +78,18 @@ async function main(): Promise<void> {
   assert.deepStrictEqual(stored.pop(), ['claude', false]);
   // issue 1023: turning the choice off is the safe direction. It is off for this run even if the file could not be written, and the window is told it will not last; a store that still has it on is not "ok"
   {
-    const mk = (still: boolean, unsaved?: boolean) => createSandboxOps({ adapterOf: () => undefined, instance: () => ad, readyAdapterIds: async () => new Set(['claude']), store: () => ({ setSandboxAlwaysContinue: () => still, sandboxAlwaysContinue: () => still, unsaved }) });
+    const mk = (still: boolean, unsaved?: boolean) => createSandboxOps({ adapterOf: () => undefined, instance: () => ad, readyAdapterIds: async () => new Set(['claude']), store: () => ({ setSandboxAlwaysContinue: () => still, sandboxAlwaysContinue: () => still, isUnsaved: () => !!unsaved }) });
     assert.deepStrictEqual(mk(false, true).alwaysOff(true, 'claude'), { ok: true, saved: false }, 'off for this run, not saved: said');
     assert.deepStrictEqual(mk(false, false).alwaysOff(true, 'claude'), { ok: true }, 'saved: no extra word');
     assert.deepStrictEqual(mk(true, false).alwaysOff(true, 'claude'), { ok: false }, 'still on: not ok');
+    // Always continue ON that cannot be saved is rolled back: the person is told (the note comes back), the one-shot continue itself went through
+    const sess = (stored: boolean) => {
+      const o = createSandboxOps({ adapterOf: () => ad, instance: () => ad, readyAdapterIds: async () => new Set(['claude']), store: () => ({ setSandboxAlwaysContinue: () => stored, sandboxAlwaysContinue: () => stored }) });
+      o.onEvent(note('s9', ['continue', 'always']));
+      return o;
+    };
+    assert.deepStrictEqual(await sess(false).continueWithout(true, 's9', { always: true }), { ok: true, alwaysSaved: false }, 'always not saved: said');
+    assert.deepStrictEqual(await sess(true).continueWithout(true, 's9', { always: true }), { ok: true }, 'always saved: no extra word');
   }
   // review round 8 (4): the window always gets the cleaned sandbox event: the seam, and main.ts pinned to it
   const { toWindowEvent } = await import('../src/main/sandboxops');

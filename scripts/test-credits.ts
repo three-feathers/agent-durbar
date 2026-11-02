@@ -261,7 +261,8 @@ try {
     const mk = (): SettingsStore => { const x = new SettingsStore(path.join(blocker, 'durbar-settings.json'), () => 'c-bbbbbb'); x.load(); return x; };
     const s1 = mk();
     assert.strictEqual(s1.setDefaultMaxAiCredits(75), 75, 'cap: a first cap is the safe direction, in force for this run');
-    assert.strictEqual(s1.unsaved, true);
+    assert.strictEqual(s1.isUnsaved('defaultMaxAiCredits'), true);
+    assert.deepStrictEqual(s1.unsavedKeys, ['defaultMaxAiCredits'], 'only the cap is for this run only');
     assert.strictEqual(s1.setSeriousMode(true), false);
     assert.strictEqual(s1.seriousMode, false, 'serious mode rolled back');
     assert.strictEqual(s1.setChatLinksNewTab(true), false);
@@ -271,22 +272,26 @@ try {
     assert.strictEqual(s1.setCheckUpdatesAtStart(false), true);
     assert.strictEqual(s1.setSandboxAlwaysContinue('claude', true), false);
     assert.strictEqual(s1.sandboxAlwaysContinue('claude'), false);
-    assert.strictEqual(s1.setAnnouncedVersion('codex', '0.164.0'), false, 'announced: false when not saved');
-    assert.deepStrictEqual(s1.announcedVersions, {});
-    assert.strictEqual(s1.acceptBrowserNote(), false);
-    assert.strictEqual(s1.browserNoteAccepted, false);
+    // convenience and bookkeeping values stay in memory for the run (the rule in spec 011 FR-012): the browser must open, an update is announced once, + Folder remembers
+    assert.strictEqual(s1.setAnnouncedVersion('codex', '0.164.0'), true, 'announced: in force');
+    assert.deepStrictEqual(s1.announcedVersions, { codex: '0.164.0' }, 'announced once per run, not at every check');
+    assert.strictEqual(s1.acceptBrowserNote(), true);
+    assert.strictEqual(s1.browserNoteAccepted, true, 'the session browser opens for the run on an unwritable profile');
     s1.setNewFolderParent('/home/u/code');
-    assert.strictEqual(s1.newFolderParent, undefined, 'new-folder parent rolled back');
-    assert.strictEqual(s1.setTheme('dark').ok, false, 'theme: not ok');
-    assert.strictEqual(s1.theme, undefined);
-    assert.strictEqual(s1.setTheme('cheeky-crew').ok, false, 'the old Cheeky Crew id migrates and saves in one step: not ok when the save fails');
-    assert.strictEqual(s1.characters, 'theme', 'and nothing of it is kept');
+    assert.strictEqual(s1.newFolderParent, '/home/u/code', 'new-folder parent remembered for the run');
+    // the theme is shown by the window already, so main keeps it for the run and says it was not saved
+    assert.strictEqual(s1.setTheme('dark').ok, false, 'theme: not saved');
+    assert.strictEqual(s1.theme, 'dark', 'but the one in force is the one the window shows');
+    assert.strictEqual(s1.setTheme('cheeky-crew').ok, false, 'the old Cheeky Crew id migrates and saves in one step: not saved');
+    assert.strictEqual(s1.characters, 'cheeky', 'and the migration is in force for the run');
     assert.strictEqual(s1.setTheme(null).ok, false);
-    assert.strictEqual(s1.setTheme('corporate').ok, false, 'a removed built-in theme resolves to Clean Office and saves: not ok when the save fails');
+    assert.strictEqual(s1.theme, undefined);
+    assert.strictEqual(s1.setTheme('corporate').ok, false, 'a removed built-in theme resolves to Clean Office: not saved');
+    assert.deepStrictEqual([...s1.unsavedKeys].sort(), ['announcedVersions', 'browserNoteAccepted', 'defaultMaxAiCredits', 'newFolderParent', 'theme']);
     assert.strictEqual(s1.setMcpWarnLevels({ warn: 20, strong: 40 }).ok, false, 'MCP warning levels: not ok when the save fails');
     assert.notStrictEqual(s1.mcpWarnLevels.warn, 20, 'and not kept');
-    assert.strictEqual(s1.setCharacters('cheeky').ok, false);
-    assert.strictEqual(s1.characters, 'theme');
+    assert.strictEqual(s1.setCharacters('minimalist').ok, false, 'characters: shown with the saved value: rolled back');
+    assert.strictEqual(s1.characters, 'cheeky', 'to what was in force');
     assert.deepStrictEqual(s1.setPlace('srv', 'desk'), { ok: false, placeMap: {} }, 'place: not ok, map unchanged');
     assert.strictEqual(s1.addPlace('Lab', 'star').ok, false);
     assert.deepStrictEqual(s1.customPlaces, []);
@@ -297,22 +302,31 @@ try {
       const sb = new SettingsStore(f); sb.load();
       assert.strictEqual(sb.setSandboxAlwaysContinue('claude', true), true);
       assert.strictEqual(sb.setDefaultMaxAiCredits(100), 100);
-      assert.strictEqual(sb.unsaved, false, 'saved');
+      assert.strictEqual(sb.isUnsaved('defaultMaxAiCredits'), false, 'saved');
       fs.rmSync(root, { recursive: true, force: true });
       fs.writeFileSync(root, 'x'); // the folder is now a file: every save fails
       assert.strictEqual(sb.setSandboxAlwaysContinue('claude', false), false, 'off takes effect');
       assert.strictEqual(sb.sandboxAlwaysContinue('claude'), false, 'and stays off in memory');
-      assert.strictEqual(sb.unsaved, true, 'and says it was not saved');
+      assert.strictEqual(sb.isUnsaved('sandboxAlwaysContinue'), true, 'and says it was not saved');
+      // the flag belongs to its setting: the same cap saved again (not tighter, rolled back) is not "this run only" because the sandbox choice is
+      assert.strictEqual(sb.setDefaultMaxAiCredits(100), 100);
+      assert.strictEqual(sb.isUnsaved('defaultMaxAiCredits'), false, 'an unrelated unsaved change is not this one');
       assert.strictEqual(sb.setSandboxAlwaysContinue('codex', true), false, 'turning it on is rolled back');
       assert.strictEqual(sb.sandboxAlwaysContinue('codex'), false);
       assert.strictEqual(sb.setDefaultMaxAiCredits(60), 60, 'a lower cap is in force for this run');
       assert.strictEqual(sb.setDefaultMaxAiCredits(200), 60, 'a higher cap is rolled back');
       assert.strictEqual(sb.setDefaultMaxAiCredits(''), 60, 'no cap is rolled back');
       assert.strictEqual(sb.defaultMaxAiCredits, 60);
+      assert.deepStrictEqual([...sb.unsavedKeys].sort(), ['defaultMaxAiCredits', 'sandboxAlwaysContinue']);
+      // a later save that works writes all of memory, so nothing is "this run only" any more
+      fs.rmSync(root, { force: true });
+      assert.strictEqual(sb.setSeriousMode(true), true, 'the folder can be written again');
+      assert.deepStrictEqual(sb.unsavedKeys, [], 'a successful save clears the flags');
+      assert.strictEqual(new SettingsStore(f).load().defaultMaxAiCredits, 60, 'and the kept cap was written');
       const nb = new SettingsStore(path.join(dir, 'later-blocked2', 'x', 'durbar-settings.json')); nb.load();
       fs.mkdirSync(path.join(dir, 'later-blocked2'), { recursive: true }); fs.rmSync(path.join(dir, 'later-blocked2'), { recursive: true, force: true }); fs.writeFileSync(path.join(dir, 'later-blocked2'), 'x');
       assert.strictEqual(nb.setDefaultMaxAiCredits(60), 60, 'none -> a cap is tighter, in force');
-      assert.strictEqual(nb.unsaved, true);
+      assert.strictEqual(nb.isUnsaved('defaultMaxAiCredits'), true);
     }
     // and a writable one still stores and reports each of them
     const f9 = path.join(dir, 'ok9', 'durbar-settings.json');
@@ -372,10 +386,23 @@ async function ipcChecks(): Promise<void> {
     register({ getSettingsStore: () => fresh, getRunTheme: () => undefined, clearRunTheme: () => undefined });
     assert.deepStrictEqual(await call('settings:setDefaultCap', 60), { ok: false, unsaved: true, defaultMaxAiCredits: 60 });
     assert.deepStrictEqual(await call('settings:setDefaultCap', 500), { ok: false, defaultMaxAiCredits: 60 }, 'a looser one is not kept');
+    // the "this run only" flag belongs to its setting: another setting kept for the run does not turn the cap reply into one
+    {
+      const root = path.join(d, 'late');
+      const late = new SettingsStore(path.join(root, 'durbar-settings.json')); late.load();
+      assert.strictEqual(late.setDefaultMaxAiCredits(100), 100);
+      fs.rmSync(root, { recursive: true, force: true }); fs.writeFileSync(root, 'x');
+      late.setSandboxAlwaysContinue('claude', false); // kept for the run
+      handlers.clear();
+      register({ getSettingsStore: () => late, getRunTheme: () => undefined, clearRunTheme: () => undefined });
+      assert.deepStrictEqual(await call('settings:setDefaultCap', 100), { ok: true, defaultMaxAiCredits: 100 }, 'the cap saved again at the same value: no flag from the sandbox choice');
+      assert.deepStrictEqual((await call('settings:get')).unsaved, ['sandboxAlwaysContinue'], 'settings:get lists what is for this run only');
+    }
   } finally {
     if (saved) require.cache[electronPath] = saved;
     else delete require.cache[electronPath];
     fs.rmSync(d, { recursive: true, force: true });
   }
 }
-ipcChecks().then(() => console.log('credits: all checks passed'), (e) => { console.error(e); process.exit(1); });
+process.exitCode = 1; // 0 only after the last check: an async step that never settles must fail the run
+ipcChecks().then(() => { console.log('credits: all checks passed'); process.exitCode = 0; }, (e) => { console.error(e); process.exit(1); });

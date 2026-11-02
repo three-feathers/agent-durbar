@@ -74,10 +74,10 @@ export function register(deps: BrowserIpcDeps): BrowserController {
   // FR-123: only a real boolean changes it; every window is told, so every session's menu shows it the same
   ipcHandle('browser:setLinksNewTab', (e, on: unknown) => {
     if (!fromApp(e) || typeof on !== 'boolean') return { ok: false };
-    linksToggle.set(on);
+    const saved = linksToggle.set(on);
     const now = linksNewTab();
     deps.toRenderer('browser:linksNewTab', now);
-    return { ok: now === on, on: now };
+    return { ok: saved && now === on, on: now };
   });
   // the only way a browser link reaches another app: a mailto: link after the user's click, re-checked here
   ipcHandle('browser:openMail', (e, url: unknown) => (fromApp(e) ? ctl.openMail(url) : { ok: false }));

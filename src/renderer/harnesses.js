@@ -451,7 +451,7 @@
     else if (b.dataset.hs === 'checkall') checkNow();
     else if (b.dataset.hs === 'updcheck') checkNow(kind);
     else if (b.dataset.hs === 'cancelwait') { waitKinds.delete(kind); B.harnessRun(kind, 'update', 0, 'cancel').then(() => loadUpdates()); }
-    else if (b.dataset.hs === 'startchk') { if (B.setCheckUpdatesAtStart) B.setCheckUpdatesAtStart(!!b.checked).then((r) => { if (UPD && r && r.ok !== false) UPD.startCheck = r.checkUpdatesAtStart !== false; else { b.checked = !!(UPD && UPD.startCheck); const S = window.DurbarScreens; toastLike(S && S.saveFailText ? S.saveFailText(b.checked ? 'on' : 'off') : 'Could not save this setting.'); } }); return true; }
+    else if (b.dataset.hs === 'startchk') { if (B.setCheckUpdatesAtStart) B.setCheckUpdatesAtStart(!!b.checked).catch(() => null).then((r) => { if (UPD && r && r.ok !== false) UPD.startCheck = r.checkUpdatesAtStart !== false; else { b.checked = !!(UPD && UPD.startCheck); const S = window.DurbarScreens; toastLike(S && S.saveFailText ? S.saveFailText(b.checked ? 'on' : 'off') : 'Could not save this setting.'); } }); return true; }
     else if (b.dataset.hs === 'install' || b.dataset.hs === 'update') install(kind, b.dataset.hs, name);
     else if (b.dataset.hs === 'signin') signin(kind, name);
     return true;
