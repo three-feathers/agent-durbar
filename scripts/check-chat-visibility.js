@@ -27,6 +27,7 @@ const assert = require('assert');
 module.exports = async (ctx) => {
   const H = helpers(ctx);
   const { until, settle, js } = H;
+  const installFrames = () => js(`window.__cvF=n=>new Promise(r=>{let i=0;const f=()=>++i>=n?r():requestAnimationFrame(f);requestAnimationFrame(f)});true`);
   const MUT = process.env.DURBAR_CV_MUTANT || '';
   const MUTANTS = {
     off: '.chat-inner>*{content-visibility:visible!important}',
@@ -36,10 +37,9 @@ module.exports = async (ctx) => {
   };
   assert.ok(!MUT || MUTANTS[MUT] || MUT === 'size', `known mutant: ${MUT}`);
   const N = 4000;
-  const frames = (n = 2) => `await new Promise(r=>{let i=0;const f=()=>++i>=${n}?r():requestAnimationFrame(f);requestAnimationFrame(f)})`;
-  const forceOff = (on) => js(`(()=>{let s=document.getElementById('cvOff');if(${on}){if(!s){s=document.createElement('style');s.id='cvOff';s.textContent=${jsLiteral(MUTANTS.off)};document.head.appendChild(s);}}else if(s)s.remove();})()`);
+  const forceOff = (on) => js(`(()=>{let s=document.getElementById('cvOff');if(${jsLiteral(!!on)}){if(!s){s=document.createElement('style');s.id='cvOff';s.textContent=${jsLiteral(MUTANTS.off)};document.head.appendChild(s);}}else if(s)s.remove();})()`);
   if (process.env.CVSIZE) MUTANTS.size = `.chat-inner>*{contain-intrinsic-size:auto ${Number(process.env.CVSIZE)}px!important}`;
-  const mutant = () => js(`(()=>{let s=document.getElementById('cvMut');if(s)s.remove();${MUT ? `s=document.createElement('style');s.id='cvMut';s.textContent=${jsLiteral(MUTANTS[MUT] || '')};document.head.appendChild(s);` : ''}})()`);
+  const mutant = () => js(`(()=>{let s=document.getElementById('cvMut');if(s)s.remove();const css=${jsLiteral(MUT ? MUTANTS[MUT] : '')};if(css){s=document.createElement('style');s.id='cvMut';s.textContent=css;document.head.appendChild(s);}})()`);
   const gap = `(()=>{const c=document.getElementById('chat');return Math.round(c.scrollHeight-c.scrollTop-c.clientHeight)})()`;
 
   /* the chat of an agent, filled with N simulated messages of different heights */
@@ -57,12 +57,13 @@ module.exports = async (ctx) => {
         if(i%10===0){const f=document.createElement('button');f.type='button';f.className='btn sm cvfocus';f.textContent='Action '+i;m.appendChild(f);}
         frag.appendChild(m);}
       el.appendChild(frag);window.__cvId=${jsLiteral('')};})()`);
+    await installFrames();
     await mutant();
     return o.id;
   };
-  const reopen = (id, off) => js(`(async()=>{${off ? '' : ''}document.getElementById('backBtn').click();${frames(2)};
+  const reopen = (id, off) => js(`(async()=>{document.getElementById('backBtn').click();await __cvF(2);
     const d=document.querySelector('#stage .desk[data-id='+JSON.stringify(${jsLiteral(String(id))})+']');const t0=performance.now();d.click();
-    void document.getElementById('chat').scrollHeight;${frames(2)};return performance.now()-t0;})()`);
+    void document.getElementById('chat').scrollHeight;await __cvF(2);return performance.now()-t0;})()`);
   const pending = `window.__durbarSimUi&&document.body.classList.contains('panel-open')&&!!document.querySelector('#chat .chat-inner')`;
   const median = (a) => a.slice().sort((x, y) => x - y)[Math.floor(a.length / 2)];
 
@@ -97,14 +98,14 @@ module.exports = async (ctx) => {
        (what you look at moves by the scroll and nothing else); then, for every step, a message in view does not drift while the page settles. */
     const bigJumps = []; // jumps of 3 screens into messages never seen: the unseen ones are guessed (KNOWN GAP, printed, not asserted)
     const stepCheck = async (label, delta) => {
-      const r = await js(`(async()=>{const c=document.getElementById('chat'),cr=c.getBoundingClientRect(),D=${delta || 0};
+      const r = await js(`(async()=>{const c=document.getElementById('chat'),cr=c.getBoundingClientRect(),D=${jsLiteral(delta || 0)};
         const inView=()=>[...c.querySelectorAll('.chat-inner>.msg[data-cv]')].filter(e=>{const r=e.getBoundingClientRect();return r.bottom>cr.top+4&&r.top<cr.bottom-4;});
         let E=null,top0=0,applied=0;
         if(D&&D<c.clientHeight*0.6){E=inView().pop();if(E)top0=E.getBoundingClientRect().top;}
         if(D){const s0=c.scrollTop;c.scrollTop=Math.max(0,s0-D);applied=s0-c.scrollTop;}
-        ${frames(2)};
+        await __cvF(2);
         const v=inView();const e=v[0];if(!e)return {none:true};const snap=()=>{const o={};for(let k=+e.dataset.cv-45;k<=+e.dataset.cv+12;k++){const x=c.querySelector('.chat-inner>[data-cv="'+k+'"]');if(x)o[k]=Math.round(x.getBoundingClientRect().height)+(x.firstElementChild.checkVisibility({contentVisibilityAuto:true})?'v':'s');}return o;};const sn1=snap();const t1=e.getBoundingClientRect().top-cr.top,s1=Math.round(c.scrollTop),h1=c.scrollHeight;
-        ${frames(3)};await new Promise(r=>setTimeout(r,40));const t2=e.getBoundingClientRect().top-cr.top;
+        await __cvF(3);await new Promise(r=>setTimeout(r,40));const t2=e.getBoundingClientRect().top-cr.top;
         const sn2=snap();const chg=Object.keys(sn2).filter(k=>sn1[k]!==sn2[k]).map(k=>k+':'+sn1[k]+'>'+sn2[k]).join(' ');const place=E?Math.round((E.getBoundingClientRect().top-(top0+applied))*10)/10:0;
         return {chg,s1,s2:Math.round(c.scrollTop),h1,h2:c.scrollHeight,i:+e.dataset.cv,jump:Math.round((t2-t1)*10)/10,place,seen:inView().map(x=>[+x.dataset.cv,Math.round(x.getBoundingClientRect().height*10)/10])}})()`);
       if (process.env.CVLOG) { console.log('STEP', label, delta, r.i, r.jump, r.place, r.s1, r.s2, r.h1, r.h2, Math.abs(r.jump)>1?r.chg:''); return r; }
@@ -141,13 +142,13 @@ module.exports = async (ctx) => {
     const send = async (txt) => {
       await js(`(()=>{const i=document.getElementById('msgInput');i.value=${jsLiteral(txt)};i.dispatchEvent(new Event('input',{bubbles:true}));document.getElementById('sendBtn').click();})()`);
     };
-    const sample = (ms, scrolled) => js(`(async()=>{const c=document.getElementById('chat');const out={max:0,n:0,s0:c.scrollTop};const end=performance.now()+${ms};
+    const sample = (ms, scrolled) => js(`(async()=>{const c=document.getElementById('chat');const out={max:0,n:0,s0:c.scrollTop};const end=performance.now()+${jsLiteral(ms)};
       while(performance.now()<end){await new Promise(r=>requestAnimationFrame(r));await new Promise(r=>setTimeout(r,0));const g=c.scrollHeight-c.scrollTop-c.clientHeight;out.n++;
         const bad=${scrolled ? 'Math.abs(c.scrollTop-out.s0)>1' : 'g>60'};if(bad&&out.prev){out.max=Math.max(out.max,${scrolled ? 'Math.abs(c.scrollTop-out.s0)' : 'g'});}out.prev=bad;}
       out.busy=!!document.querySelector('#chat .typing');return out})()`);
     await js(`document.getElementById('chat').scrollTop=1e7`); await ctx.sleep(200);
     await send('quick links please');
-    assert.ok(await until(`!!document.querySelector('#chat .typing')||document.querySelectorAll('#chat .chat-inner>.msg').length>${N + 2}`, 8000), `${tag}: a turn starts`);
+    assert.ok(await until(`!!document.querySelector('#chat .typing')||document.querySelectorAll('#chat .chat-inner>.msg').length>${jsLiteral(N + 2)}`, 8000), `${tag}: a turn starts`);
     const s1 = await sample(2500, false);
     assert.ok(s1.max === 0 && s1.n > 20, `${tag}: a streaming turn stays pinned to the end of the chat (largest gap ${s1.max}px in ${s1.n} frames)`);
     assert.ok(await until(`!document.querySelector('#chat .typing')`, 30000), `${tag}: the turn ends`);
@@ -192,7 +193,7 @@ module.exports = async (ctx) => {
     await js(`document.getElementById('chat').scrollTop=0`); await ctx.sleep(250);
     const foc = await js(`(async()=>{const c=document.getElementById('chat');const t=document.querySelector('#chat .chat-inner>[data-cv="3000"]'),btn=t&&t.querySelector('.cvfocus');
       if(!btn)return {none:true};const was=t.firstElementChild.checkVisibility({contentVisibilityAuto:true});
-      btn.focus();${frames(3)};const cr=c.getBoundingClientRect(),r=btn.getBoundingClientRect();
+      btn.focus();await __cvF(3);const cr=c.getBoundingClientRect(),r=btn.getBoundingClientRect();
       return {was,active:document.activeElement===btn,inView:r.bottom>cr.top&&r.top<cr.bottom,top:c.scrollTop}})()`);
     assert.ok(!foc.none, `${tag}: message 3000 has a button`);
     assert.ok((foc.was === false || process.env.CVBASE) && foc.active && foc.inView, `${tag}: focus() on a button in a skipped message works and shows it: ${JSON.stringify(foc)}`);
