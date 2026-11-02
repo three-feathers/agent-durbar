@@ -3,9 +3,9 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
-import { placeBox, slipAvoid, NOTE_PAPER, NOTE_PAPER_DEFAULT, NOTE_INK, notePaper, screenFit, screenFor, personMotion, zoomRect, realLayout, lobbyWidths, sortDesks, assignPeople, standPose, standHeight, POSE_FRAME_B, lobbyRange, PERSON_M, DOOR_M, FRONT_DEPTH, NEAR_SCALE, CHIP_H, U_MIN, U_MAX, U_MAX_BIG, FACE_U, PLATE_H, PLATE_H_ASK, STRIP,
+import { placeBox, portraitCrop, PORTRAIT_SIDE, slipAvoid, NOTE_PAPER, NOTE_PAPER_DEFAULT, NOTE_INK, notePaper, screenFit, screenFor, personMotion, zoomRect, realLayout, lobbyWidths, sortDesks, assignPeople, standPose, standHeight, POSE_FRAME_B, lobbyRange, PERSON_M, DOOR_M, FRONT_DEPTH, NEAR_SCALE, CHIP_H, U_MIN, U_MAX, U_MAX_BIG, FACE_U, PLATE_H, PLATE_H_ASK, STRIP,
   type RealModel, type RealMeta, type RealAgent, type RealState, type Rect, type Layout } from '../src/shared/realoffice-layout';
-import { lightFor, lightState, LIGHT_TABLE, ambientFor, doneTick, fixtureLight, isActive, type LightState } from '../src/shared/lights';
+import { lampWords, lightFor, lightState, LIGHT_TABLE, ambientFor, doneTick, fixtureLight, isActive, type LightState } from '../src/shared/lights';
 
 process.exitCode = 1;
 const ROOT = (() => { let d = __dirname; while (!fs.existsSync(path.join(d, 'package.json'))) d = path.dirname(d); return d; })();
@@ -552,6 +552,46 @@ for (const [W, H] of SIZES.slice(0, 2)) {
   const scr = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'screens.js'), 'utf8');
   assert.ok(/const hadFocus=document\.activeElement===olb;\s*await paint\(\);[^\n]*\n\s*if\(hadFocus\)\{const nb=document\.querySelector\('\[data-officelayout="'\+k\+'"\]'\);if\(nb\)focusIn\(nb\);\}/.test(scr), 'the Office layout pick restores focus after the repaint');
 }
+// ---- FR-107: the lamp in words, one phrase per FR-041 row, the same for every world ----
+{
+  const W = Object.fromEntries((Object.keys(LIGHT_TABLE) as LightState[]).map((k) => [k, lampWords(lightFor(k))]));
+  assert.deepStrictEqual(W, { working: 'Lamp warm, steady', thinking: 'Lamp on, breathing', waiting: 'Lamp bright, amber call light', error: 'Lamp on, red error light', limit: 'Lamp on, orange call light', done: 'Lamp low', idle: 'Lamp low', asleep: 'Lamp off' }, 'a phrase per light row');
+  assert.strictEqual(lampWords(lightFor('waiting', { still: true })), W.waiting, 'reduced motion does not change the words');
+}
+
+// ---- FR-106 (owner 2026-11-01): the chat's round portrait is cropped tight on the face, for every person of every set ----
+{
+  let n = 0;
+  for (const set of ['office', 'prehistoric']) {
+    const seat = (readJson('sets', set, 'set.json') as { seat: Record<string, { w: number; h: number; headTop: number; bodyH: number }> }).seat;
+    for (const [id, m] of Object.entries(seat)) {
+      const c = portraitCrop(m);
+      assert.ok(c.x >= 0 && c.y >= 0 && c.x + c.s <= m.w + 1e-6 && c.y + c.s <= m.h + 1e-6, `${set}/${id}: the crop is inside the picture`);
+      const head = (m.headTop - c.y) / c.s, face = (FACE_U * m.bodyH) / c.s;
+      assert.ok(head >= 0 && head <= 0.15, `${set}/${id}: headroom ${head.toFixed(3)} of the circle is at most 15 %`);
+      assert.ok(face >= 0.30, `${set}/${id}: the face is at least 30 % of the circle (${face.toFixed(3)})`);
+      assert.ok(Math.abs(c.s - Math.min(PORTRAIT_SIDE * m.bodyH, m.w, m.h)) < 1e-6);
+      n++;
+    }
+  }
+  assert.ok(n >= 21, 'every person of both sets was checked');
+}
+
+// spec 097 FR-226: the chat's rules use tokens only, with no fallback; the world's tint is a token
+{
+  const R = path.join(__dirname, '..', '..', 'src', 'renderer');
+  const css = fs.readFileSync(path.join(R, 'realoffice.css'), 'utf8');
+  const from = css.indexOf('/* spec 097 FR-106, FR-224..FR-226:');
+  assert.ok(from >= 0, 'the chat rules are marked');
+  const end = css.indexOf('.ro-portrait>.rp-ini', from);
+  const block = css.slice(from, css.indexOf('\n', end)).replace(/\/\*[\s\S]*?\*\//g, '');
+  assert.ok(!/#[0-9a-f]{3,8}\b|rgba?\(|box-shadow|var\(--[\w-]+,/i.test(block), 'no colour literal, shadow or fallback in the chat rules: ' + block.slice(0, 200));
+  for (const w of ['photo', 'cave']) {
+    const rule = fs.readFileSync(path.join(R, 'realoffice', 'worlds', w, 'world.css'), 'utf8').split('\n').find((l) => l.includes('#panel'));
+    assert.ok(rule && rule.includes('var(--world-tint)') && !/#[0-9a-f]{3,8}\b/i.test(rule), w + ': the tint is a token');
+  }
+}
+
 // spec 097 phase P2. FR-032: how a glass shows text
 {
   const small = screenFit({ w: 90, h: 58 });

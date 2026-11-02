@@ -949,5 +949,5 @@
     wasHidden = false;
     CUR = null;
   }
-  root.DurbarRealOffice = { render, reset, leave, feed, resume, whereSize: () => WHERE.size, bad: () => [...BAD], resolve, stagger }; /* resolve: for the driver's deterministic check */
+  root.DurbarRealOffice = { render, reset, leave, feed, resume, whereSize: () => WHERE.size, bad: () => [...BAD], resolve, stagger, personOf: (id) => (PEOPLE && has(PEOPLE, id) ? PEOPLE[id] : null) /* the chat's header draws the same person (spec 097 FR-106) */ }; /* resolve: for the driver's deterministic check */
 })(typeof self !== 'undefined' ? self : this);
