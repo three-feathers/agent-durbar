@@ -73,15 +73,31 @@ export const workerRun = (label: string, code: string, data: Record<string, unkn
 };
 
 /**
+ * `cpuMs` for this thread alone where Node has it (22 and later; the adversarial workers read it too). Process CPU also counts the collector's helper threads, which a big input wakes and a small
+ * one does not: `EditStreams` read 45x on a macOS runner for 16x the input, linear in every size measured on Linux (spec 012 T138).
+ */
+const threadCpuMs = (f: () => void, capMs: number): number => {
+  const tc = (process as unknown as { threadCpuUsage?: (prev?: NodeJS.CpuUsage) => NodeJS.CpuUsage }).threadCpuUsage;
+  if (typeof tc !== 'function') return cpuMs(f, capMs);
+  const w = process.hrtime.bigint();
+  const c = tc.call(process);
+  f();
+  const d = tc.call(process, c);
+  const wall = Number(process.hrtime.bigint() - w) / 1e6;
+  assert.ok(wall < 10 * capMs, `wall-time backstop: ${wall.toFixed(1)} ms wall, limit ${10 * capMs} ms (a blocking wait in the timed code?)`);
+  return (d.user + d.system) / 1000;
+};
+
+/**
  * The growth of a function on one shape: `make(400k)` against 16 repeats of `make(25k)` in the same run, so both timings cover the same number of characters and neither sits near a timer tick.
  * A plain 50k-against-400k ratio with a limit of 24 failed linear code on Windows (spec 012 T137, review of #1015): 50k read 31 ms where its neighbours read 78 to 156, 2 ticks of 15.6 ms, and the
  * ratio was 24.7. CPU time, so load does not move it; a wall backstop of 10x stays only for a blocking wait (`cpuMs`). A quadratic shape fails fast on the first baseline.
  */
 export const assertLinearShape = (label: string, work: (x: string) => void, make: (n: number) => string, big = 400_000): void => {
   const small = make(Math.ceil(big / FACTOR));
-  const once = cpuMs(() => work(small), 3000);
+  const once = threadCpuMs(() => work(small), 3000);
   assert.ok(once < 3000, `${label}: ${once.toFixed(0)} ms CPU at ${small.length} characters (quadratic?)`);
-  const run = (x: string, reps = 1): { cpu: number; wall: number } => ({ cpu: cpuMs(() => { for (let i = 0; i < reps; i++) work(x); }, 8000) / reps, wall: 0 });
+  const run = (x: string, reps = 1): { cpu: number; wall: number } => ({ cpu: threadCpuMs(() => { for (let i = 0; i < reps; i++) work(x); }, 8000) / reps, wall: 0 });
   assertLinearGrowth(label, run, make(big), 100, FACTOR, small);
 };
 
@@ -93,8 +109,8 @@ export const assertWithinYardstick = (label: string, work: () => void, yardstick
   let cost = Infinity;
   let yard = Infinity;
   for (let i = 0; i < 3; i++) {
-    cost = Math.min(cost, cpuMs(() => work(), 20_000));
-    yard = Math.min(yard, cpuMs(() => yardstick(), 20_000));
+    cost = Math.min(cost, threadCpuMs(() => work(), 20_000));
+    yard = Math.min(yard, threadCpuMs(() => yardstick(), 20_000));
     if (cost < Math.max(yard, MIN_BASE_MS) * factor) break;
   }
   assert.ok(cost < Math.max(yard, MIN_BASE_MS) * factor, `${label}: ${cost.toFixed(1)} ms CPU, ${(cost / Math.max(yard, MIN_BASE_MS)).toFixed(1)}x the yardstick of ${yard.toFixed(1)} ms in the same run (limit ${factor}x)`);
