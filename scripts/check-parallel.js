@@ -90,9 +90,9 @@ async function waitForMemory(avail, min, maxMs, { now = Date.now, wait = sleep, 
 }
 
 const variants = themes
-  ? ['clean-office', 'corporate', 'retro', 'durbar-indian', 'durbar-european', 'durbar-japanese'].map((t) => ({ name: t, env: { DURBAR_THEME: t, OFFICE_THEME: t } }))
-      // spec 077 FR-070: Cheeky is a Characters choice, not a theme: measured on top of Retro Pixel and Corporate
-      .concat(['retro', 'corporate'].map((t) => ({ name: t + ' + cheeky', env: { DURBAR_THEME: t, OFFICE_THEME: t, OFFICE_CHARACTERS: 'cheeky' } })))
+  ? ['clean-office', 'retro'].map((t) => ({ name: t, env: { DURBAR_THEME: t, OFFICE_THEME: t } }))
+      // spec 077 FR-070: Cheeky is a Characters choice, not a theme: measured on top of Retro Pixel (the one built-in theme with a dark floor)
+      .concat(['retro'].map((t) => ({ name: t + ' + cheeky', env: { DURBAR_THEME: t, OFFICE_THEME: t, OFFICE_CHARACTERS: 'cheeky' } })))
       .concat([{ name: 'user theme', env: { OFFICE_USER_THEME: 'scripts/fixtures/themes/check-user.json' } }])
   : [{ name: 'default', env: {} }, { name: 'real office', env: { OFFICE_VIEW: 'real' } }, { name: 'real office wide font', env: { OFFICE_VIEW: 'real', OFFICE_FONT: 'DejaVu Sans' } }]; // spec 097 FR-091: the Real office variant of check-office-overlap.js
 const jobs = [];

@@ -9,9 +9,12 @@ import { randomInt } from 'crypto';
 import { parseNewFolderParent } from '../shared/newfolder';
 import { ANNOUNCE_APPS, parseAnnounced, parseCap, parseSandboxAlways, parseSettings, parseThemeId } from '../shared/credits';
 import type { AppSettings } from '../shared/credits';
+import { mcpWarnDefaults, parseWarnLevels } from '../shared/mcpcost';
+import type { McpWarnLevels } from '../shared/mcpcost';
 import { addCustomPlace, removeCustomPlace, setPlaceEntry, updateCustomPlace } from '../shared/places';
 import type { CustomPlace, PlaceError, PlaceMap } from '../shared/places';
 import { migrateLegacyTheme, parseCharacters } from '../shared/characters';
+import { migrateRemovedTheme } from '../shared/themes';
 import type { CharacterChoice } from '../shared/characters';
 
 /** Result of a custom-place call (spec 024 FR-020): the list and the map as they are now, whether the call worked or not. */
@@ -45,8 +48,10 @@ export class SettingsStore {
     }
     // spec 077 FR-067: the old Cheeky Crew theme becomes Clean Office with Characters = Cheeky, written at once, so it runs once
     const m = migrateLegacyTheme(this.s);
-    if (m.changed) {
-      this.s = m.settings;
+    // spec 035 FR-018: a removed built-in theme (Corporate, the courts) becomes Clean Office the same way; Characters is untouched
+    const r = migrateRemovedTheme(m.settings);
+    if (m.changed || r.changed) {
+      this.s = r.settings;
       this.save();
     }
     return { ...this.s };
@@ -105,6 +110,22 @@ export class SettingsStore {
     this.s = next;
     this.save();
     return v;
+  }
+
+  /** Spec 100 FR-020: the MCP warning levels. */
+  get mcpWarnLevels(): McpWarnLevels {
+    return this.s.mcpWarnLevels ?? mcpWarnDefaults();
+  }
+
+  /** Whole percents from 5 to 90, warn below strong. Refused or not written: `ok` false and the value stays as it was. Returns what is in force. */
+  setMcpWarnLevels(v: unknown): { ok: boolean; levels: McpWarnLevels } {
+    const levels = parseWarnLevels(v);
+    if (!levels) return { ok: false, levels: this.mcpWarnLevels };
+    const before = this.s;
+    this.s = { ...this.s, mcpWarnLevels: levels };
+    if (this.save()) return { ok: true, levels };
+    this.s = before;
+    return { ok: false, levels: this.mcpWarnLevels };
   }
 
   /** Spec 080 FR-123: *Open chat links in a new tab*, app-wide, off by default. */
@@ -262,6 +283,13 @@ export class SettingsStore {
       this.s = next;
       this.save();
       return { ok: true };
+    }
+    if (id !== undefined && migrateRemovedTheme({ theme: id }).changed) { // spec 035 FR-018: a removed built-in is never stored: Clean Office
+      const next: AppSettings = { ...this.s };
+      delete next.theme;
+      this.s = next;
+      this.save();
+      return { ok: true, theme: 'clean-office' };
     }
     if (id === undefined) return { ok: false, theme: this.s.theme };
     const next: AppSettings = { ...this.s };

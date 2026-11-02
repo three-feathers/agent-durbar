@@ -279,3 +279,10 @@ The `status:` of the specs-index block used to read (moved here unchanged; the b
 
 - `[IMPLEMENTED]` sim: 2026-11-01 (issue #1010): `scripts/shots-033.js` does a real mouse drag of a floor's handle (only a transform changes mid-drag), checks the persisted order, that a press on the name does not drag, the controls' names, 32x32 icon buttons and the Up/Down save; mutant: dropping the `reorderFloors` call in the drop fails it. Not run on macOS or Windows.
 - `[KNOWN GAP]` 2026-11-01 (issue #1010): the toggle switch's forced-colours rule (`screens.css`, Highlight track, HighlightText knob) and the floor row's pointer drag with a touch screen or pen were not seen in a real session; only a mouse drag in the simulator and the contrast numbers are tested. The icon buttons (Up, Down, Focus mode, Rename, Delete) and the drag handle were not used by hand with the keyboard beyond the simulator's focus and click checks, and nothing was run by hand on macOS or Windows (CI runs the suite there).
+## Changes 2026-10-31: doors removed (pointer, spec 017 T024)
+
+Spec 017 FR-029 (owner decision, no doors) removed the Office with cabins layout, the desk door button, meeting-room signs, room door plates, **Close all** / **Open all**, door-held schedules and the door refusal of remote control, and `door-art`, `--door-*` and the door words of the theme contract. Any requirement in this spec about those (door plates, plate totals or siren, door signs, collapse, Close all / Open all, the `door` field) no longer applies and is kept as a record; Hide folder, floors and the plain status word stay. See spec 017's table of what was lost and what remains.
+
+## Changes 2026-11-02: removed page and tools (owner decision, PR #1054)
+
+`docs/feature-history.md` and the pictures only it linked (the m2..m8, 002 and 003 pictures that no driver writes) were removed on 2026-11-02 by owner decision; the old text above that cites them stays as written, and they are in git history at commit `1c75b5bee`. Pictures a driver still writes were kept.
