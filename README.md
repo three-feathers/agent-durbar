@@ -11,7 +11,7 @@ Agent Durbar is an office-style desktop app to **see, chat with and coordinate A
 **Website:** <https://three-feathers.github.io/agent-durbar/>
 
 > **Status: first stable release.**
-> - The newest release is [`v0.1.5`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.5) (2026-11-01), after [`v0.1.4`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.4) (2026-10-31), [`v0.1.3`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.3) (2026-10-30), [`v0.1.2`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.2) (2026-10-29), [`v0.1.1`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.1) (2026-10-28) and [`v0.1.0`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0), the first stable one (2026-10-26). It is unsigned and not notarized, like every build so far; the known limits are in [docs/limits.md](docs/limits.md) and in the Settings.
+> - The newest release is [`v0.1.6`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.6) (2026-11-02), after [`v0.1.5`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.5) (2026-11-01), [`v0.1.4`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.4) (2026-10-31), [`v0.1.3`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.3) (2026-10-30), [`v0.1.2`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.2) (2026-10-29), [`v0.1.1`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.1) (2026-10-28) and [`v0.1.0`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0), the first stable one (2026-10-26). It is unsigned and not notarized, like every build so far; the known limits are in [docs/limits.md](docs/limits.md) and in the Settings.
 > - What changed in each release is in the [CHANGELOG](CHANGELOG.md).
 > - **Where it has been run:** Linux by hand every day; macOS by hand on two Macs (macOS 26, Apple Silicon); Windows by hand on one real PC, once (2026-10-21), with findings filed. CI builds and starts the packaged app and runs the UI checks on Linux, macOS and Windows. The detail, with the real-account runs, is in [docs/limits.md](docs/limits.md#where-it-has-been-run).
 > - Built by [Three Feathers](https://github.com/three-feathers), tracked on the [project board](https://github.com/orgs/three-feathers/projects/1).
@@ -27,8 +27,8 @@ Agent Durbar is an office-style desktop app to **see, chat with and coordinate A
 - **Three agent apps side by side:** Copilot, Claude Code and Codex, with one set of permission modes and model, context and spending controls.
 - **Needs you:** one inbox of every agent waiting for an answer or a permission, oldest first.
 - **Sessions that last:** resume after a restart or a crash, scheduled prompts, undo an agent's file changes, notes, continue in another app.
-- **MCP servers** shared across your agent apps, with health, sign-in and per-tool switches.
-- **Six themes** and a theme maker.
+- **MCP servers** shared across your agent apps, with health, sign-in and per-tool switches. When your organization's sign-in rules (Entra Conditional Access, for example a managed-device check) refuse a tool, the chat says so under the failed call and offers Sign in again….
+- **Two themes** (Clean Office and Retro Pixel) and a theme maker.
 
 ![Full-screen chat with the other agents in a slim strip, 1280x800](docs/screenshots/m6-fullchat-sim15-1280x800.png)
 
@@ -87,6 +87,6 @@ Agent Durbar is by **Three Feathers**. Key contributors: [vikramgorla](https://g
 
 The Cheeky, Prehistoric, Pirate and Monster Crew pictures (`src/renderer/crew/art/`) were made by Paco with ChatGPT image generation, and Paco did the final pass; [`ASSETS.md`](src/renderer/crew/art/ASSETS.md) gives the tool and date of each (spec 077). The app id is `io.github.three-feathers.agentdurbar` since 2026-10-16; a build from before then is a separate app to the OS.
 
-The Real office pictures (`src/renderer/realoffice/worlds/photo/` for the room, `src/renderer/realoffice/sets/office/` for the people) were made with Codex image generation on Vikram's plan and approved by Vikram, MIT like the code; the `ASSETS.md` in each folder ([room](src/renderer/realoffice/worlds/photo/ASSETS.md), [people](src/renderer/realoffice/sets/office/ASSETS.md)) gives each sheet's tool, date and prompt (spec 097). A world and a set of people are separate packs that load only when shown (the Photo office with the Office people: 6.1 MB).
+The Real office pictures (`src/renderer/realoffice/worlds/photo/` for the room, `src/renderer/realoffice/sets/office/` for the people) were made with Codex image generation on Vikram's plan and approved by Vikram, MIT like the code; the `ASSETS.md` in each folder ([room](src/renderer/realoffice/worlds/photo/ASSETS.md), [people](src/renderer/realoffice/sets/office/ASSETS.md)) gives each sheet's tool, date and prompt (spec 097). A world and a set of people are separate packs that load only when shown (the Photo office with the Office people: 6.1 MB; the Prehistoric cave with the Prehistoric people: 1.8 MB, off by default behind a switch until the owner opens it). The cave's pictures were made with Codex image generation on Vikram's plan and approved by Paco ([room](src/renderer/realoffice/worlds/cave/ASSETS.md), [people](src/renderer/realoffice/sets/prehistoric/ASSETS.md)).
 
 See also [SECURITY.md](SECURITY.md), [CONTRIBUTING.md](CONTRIBUTING.md) and the [CHANGELOG](CHANGELOG.md).
