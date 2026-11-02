@@ -638,7 +638,7 @@ D7, FR-085, FR-170, FR-181, US2 scenario 1, FR-205, FR-241, plan and T195 follow
 
 #### The worlds
 
-- **FR-280** **Three worlds, three packs.** Each is one row of FR-011, added when it lands (Q11), and one pack, picked in the World row like any other, and any set works in it (FR-200). None changes what an agent does, its session, permission mode, model, cap or MCP extras.
+- **FR-280** **Three worlds, three packs.** Each is one row of FR-011, added when it lands (decided, Q11), and one pack, picked in the World row like any other, and any set works in it (FR-200). None changes what an agent does, its session, permission mode, model, cap or MCP extras.
 
   | World | Id | Arrangement | Default set | Delivery |
   |---|---|---|---|---|
@@ -857,13 +857,13 @@ He answered "ok" to all ten, with the recommendations. These are decisions now, 
 - **Q9 Postbox paper: decided.** The plain paper.
 - **Q10 #555: decided.** It stays open until all three are offered. The per-floor idea is dropped.
 
-**Still open for the owner**
+**Q11 (Vikram, 2026-11-02, 16:03 UTC, relayed by his coordinating agent)**
 
-- **Q11 Unreachable code.** His new rule, on its way through the weekly retro: no unreachable code lands. These worlds either name themselves as the closed-flag exception, or wait to land whole. Waiting for all three means waiting for the held store (Q2, Q3), since no packaged build can reach them before it. *Recommended:* **the closed-flag exception, as narrow as it can be: each world lands whole behind its flag, and nothing lands before its pack exists.**
+- **Q11 Unreachable code: decided.** His new rule, on its way through the weekly retro: no unreachable code lands. These worlds are **a named exception, as written here, the 30-day ask included: each world lands whole behind its flag, and nothing lands before its pack exists.** Waiting for all three would have meant waiting for the held store (Q2, Q3), since no packaged build can reach them before it. The same exception applies to the next built-in world's stack; its plan carries that.
   - **Lands on its own, because it is reachable today:** T244's matrix fix and `--moments`, T247's crowded scene over the worlds that exist, T248. They serve every world, Cave included.
   - **Stays on a branch until that world's art is approved:** T241's plan and T246's grey boxes, shown from the branch. No id joins `ARRANGEMENTS` on `main` without its pack.
   - **Lands in one PR per world:** that world's table in `ARRANGEMENTS`, its pack, its flag and T254's cells. The first world's PR also brings T242, T243, T245, T249 and T258, unless Cave has brought T242 first.
   - **Why this counts as reachable enough to name:** every path runs under `worldflags` in the simulator and in CI (T258, the matrix) from the day it lands.
-  - **Its exit, per world:** the flag opens on the owner's look and the store (T255, T257), or the world's code and pack are removed. A world that waits **over 30 days** after landing goes back to him with that choice. The number is an agent's proposal.
-  - **The alternative, three worlds at once:** a very large PR, and art held on a branch for an unknown time. It reaches users no sooner.
+  - **Its exit, per world:** the flag opens on the owner's look and the store (T255, T257), or the world's code and pack are removed. A world that waits **over 30 days** after landing goes back to him with that choice.
+  - **Not chosen, three worlds at once:** a very large PR, and art held on a branch for an unknown time, reaching users no sooner.
   This delta does not write the rule itself: that is the weekly retro's and spec 021's.
