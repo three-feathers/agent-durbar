@@ -4,7 +4,7 @@
  *   npm run check:ui -- --only check-question-options
  *   OUT=docs/screenshots  (optional) also saves the screenshots
  *
- * `simquestion=long` asks a long question with long options. At 1440x900 and 1280x800, in Expert and in Simple, every option button
+ * `simquestion=long` asks a long question with long options. At 1440x900 and 1280x800, every option button
  * must show its full label (no ellipsis: scrollWidth <= clientWidth, text equals the label, title starts with the label), stay inside
  * the card, and the question text must not be clipped. The inbox row must show the question text in full. A miss prints
  * (spec 052 FR-160/FR-161) The 1,117-character question, the 284-character label and the 501-character description are in the card in full,

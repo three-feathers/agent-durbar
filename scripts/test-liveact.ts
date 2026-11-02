@@ -62,7 +62,7 @@ eq(L.lastSentences('', 50), '', 'empty');
   eq(f.onEvent('b', ev({ type: 'output', delta: '' })), false, 'an empty reply shows nothing');
   eq(f.of('b'), null, 'nothing to show');
 }
-// tools: verb phrases, Simple words, task tools skipped, phases other than start ignored
+// tools: verb phrases, task tools skipped, phases other than start ignored
 {
   const f = mk();
   f.onEvent('a', ev({ type: 'toolCall', callId: 'c', tool: 'view', phase: 'start' }), { kind: 'read', label: 'src/tools/registry.ts' });

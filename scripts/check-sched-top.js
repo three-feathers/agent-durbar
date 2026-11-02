@@ -12,7 +12,7 @@
  * says "all paused"; Ctrl+Shift+S opens the same place from the office, the list and a chat's message box, and does nothing under
  * a dialog; Ctrl+K "sched" Enter does too; the shortcut sheet lists it; the demo hides the button and the palette item; under
  * reduced motion the count does not roll. A miss prints DRIVER FAILED (Electron still exits 0), so the npm script exits non-zero
- * unless "all checks passed" is printed. Writes 044-topbar-<w>x<h>.png, 044-topbar-simple-<w>x<h>.png and 044-topbar-badge-<w>x<h>.png.
+ * unless "all checks passed" is printed. Writes 044-topbar-<w>x<h>.png and 044-topbar-badge-<w>x<h>.png.
  */
 const assert = require('assert');
 const path = require('path');

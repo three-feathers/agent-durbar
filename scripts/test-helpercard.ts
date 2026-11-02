@@ -111,8 +111,8 @@ eq(HC.HX_TIP, 200, 'the tooltip cut is the desk card\'s number');
 {
   const now = { kind: 'run', tool: 'bash', label: 'curl --api-key ' + sk + ' https://example.test/a' };
   const ex = C.view(helper({ task: 'T', now }), 1);
-  ok(textOf(ex, 'now').startsWith('bash curl'), 'Expert shows the tool and its (masked) command');
-  ok(!hasSecret(ex.aria + ex.title + ex.lines.map((l) => l.text).join('|')), 'the secret flag is masked in Expert');
+  ok(textOf(ex, 'now').startsWith('bash curl'), 'the card shows the tool and its (masked) command');
+  ok(!hasSecret(ex.aria + ex.title + ex.lines.map((l) => l.text).join('|')), 'the secret flag is masked');
   eq(textOf(C.view(helper({ task: 'T', now: { kind: 'thinking' } }), 1), 'now'), 'Thinking', 'thinking');
   eq(textOf(C.view(helper({ task: 'T', now: { kind: 'intent', text: 'Checking the **lint** rules' } }), 1), 'now'), 'Checking the lint rules', 'an intent, plain');
   // live off: no Now line; level 1 shows Task while it runs

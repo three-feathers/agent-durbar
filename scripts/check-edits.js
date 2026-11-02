@@ -106,7 +106,7 @@ module.exports = async (ctx) => {
     assert.strictEqual(stream.verb, 'Editing');
     assert.strictEqual(stream.dir, 'src/server', `${w}: folder relative to the agent's folder (FR-020)`);
     assert.match(stream.count, /^\+3\d−2$/, `${w}: counts ${stream.count}`);
-    assert.ok(stream.diff && stream.diff.open, `${w}: Expert shows the diff open (FR-021)`);
+    assert.ok(stream.diff && stream.diff.open, `${w}: the streamed diff is open (FR-021)`);
     assert.strictEqual(stream.diff.lines, 12, `${w}: 12 lines before Show all`);
     assert.match(stream.diff.all, /^Show all \(\d+ lines\)$/);
     assert.match(await typing(), /^Editing app\.js · \d+s$/, `${w}: the waiting line names the action (FR-022)`);

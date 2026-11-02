@@ -77,7 +77,7 @@ module.exports = async (ctx) => {
       assert.ok(ids.length >= 6, `${tag}: pencils on the desks: ${ids.length}`);
       const [A, B, C, D, E] = ids;
 
-      // the screenshots of the edit state, on the fresh page (no rename has happened yet, so no leftover names), Expert only
+      // the screenshots of the edit state, on the fresh page (no rename has happened yet, so no leftover names)
       {
         await openChat(A); await click('#panelTitleBtn', 1); await ctx.sleep(150); await type('Billing refactor'); await shot(`059-rename-inline-header-${w}x${h}.png`); await key('Escape'); await settle(); await closePanel();
         await click(`#stage .ren[data-ren="${C}"]`, 1); await ctx.sleep(150); await type('Billing refactor'); await shot(`059-rename-inline-card-${w}x${h}.png`); await key('Escape'); await settle();

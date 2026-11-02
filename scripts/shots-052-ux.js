@@ -197,6 +197,12 @@ module.exports = async (ctx) => {
     const sw = await js(`({sw:!!document.querySelector('[data-detail],[data-wl-level]'),text:/Detail level|Simple|Expert/.test(document.getElementById('screen').innerText)})`);
     assert.deepStrictEqual(sw, { sw: false, text: false }, 'Settings has no Simple / Expert switch: ' + JSON.stringify(sw));
     await js(`document.getElementById('scrClose')&&document.getElementById('scrClose').click()`); await office(15);
+    // FR-093 (kept plain words): a chat with no spending limit says "No spending limit", never "Limit: none"
+    { const jn = await deskId('Jonas'); await js(`document.querySelector(${jsLiteral(`#stage [data-id="${jn}"]`)}).click()`); await chatOf('Jonas');
+      const capTxt = await js(`(()=>{const c=document.getElementById('capChip');return c?c.textContent.trim():null})()`);
+      console.log('[052] cap chip:', JSON.stringify(capTxt));
+      assert.ok(capTxt === null || (!/Limit: none/.test(capTxt) && /No spending limit|\\d/.test(capTxt)), 'the limit chip uses the plain words: ' + capTxt);
+      await js(`document.getElementById('backBtn')&&document.getElementById('backBtn').click()`); await office(15); }
     // FR-042 (#316): Ctrl+K opens the palette; typing filters it; Enter opens the agent's chat
     await js(`document.activeElement&&document.activeElement.blur()`);
     H.key('K', [MOD], { char: 'never', pause: 0 }); await until(`!!document.getElementById('palDlg')&&document.activeElement&&document.activeElement.id==='palIn'`);

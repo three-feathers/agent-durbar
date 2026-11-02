@@ -4,7 +4,7 @@
   if(typeof module==='object'&&module.exports) module.exports=api; else root.DurbarEditView=api;
 })(typeof self!=='undefined'?self:this, (function(){
   'use strict';
-  /* FR-021: lines open in Expert before "Show all", and the most lines ever drawn for one call */
+  /* FR-021: lines open before "Show all", and the most lines ever drawn for one call */
   const OPEN_LINES=12, MAX_LINES=400;
   const VERB={edit:['Editing','Edited'],create:['Creating','Created'],write:['Writing','Wrote'],delete:['Deleting','Deleted'],move:['Moving','Moved']};
   /* a refused or failed call did not change the file: never the past tense of done (review on #463) */

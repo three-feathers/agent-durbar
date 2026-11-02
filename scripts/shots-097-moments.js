@@ -71,7 +71,7 @@ module.exports = async (ctx) => {
       assert.ok(!fr.err, fr.err);
       assert.strictEqual(fr.surface, 'first-run', `${tag}: the card is the first-run moment`);
       assert.strictEqual(fr.h, 'Welcome to Agent Durbar', `${tag}: heading word for word`);
-      assert.deepStrictEqual(fr.btns, ['Connect an AI account…', '+ Add a folder', 'Look around in the demo', 'Yes, show me the details', 'No, keep it simple'], `${tag}: buttons and order equal flat`);
+      assert.deepStrictEqual(fr.btns, ['Connect an AI account…', '+ Add a folder', 'Look around in the demo'], `${tag}: buttons and order equal flat`);
       assert.strictEqual(fr.lobby, false, `${tag}: no lobby on a first run`);
       assert.strictEqual(fr.counts, 'hidden', `${tag}: no counts in the top bar`);
       assert.strictEqual(fr.small, 0, `${tag}: no text under 10.5px`);
@@ -185,7 +185,7 @@ module.exports = async (ctx) => {
       assert.ok(/ib-h/.test(dlg.focus), `${tag}: focus lands on the first row's heading, never a button`);
       assert.strictEqual(dlg.bg, 'none', `${tag}: no blur behind the dialog text: ${dlg.bg}`);
       assert.strictEqual(dlg.small, 0, `${tag}: the dialog's text >= 10.5px`);
-      const rowDetail = await js(`!!document.querySelector('#inboxDlg .inbox-row details.pdiff, #inboxDlg .inbox-row details.pcmd')`);
+      const rowDetail = await js(`!!document.querySelector('#inboxDlg .inbox-row details.pdiff')`);
       if (sl.variant === 'full' && rowDetail) {
         /* the inbox row shows a change or a command to read: the slip offers no Allow, only the way to it (review on #994) */
         assert.deepStrictEqual(sl.act, ['Show in chat', 'Review in the inbox'], `${tag}: no Allow on a slip whose card has a change or command to read (the .sl-act buttons): ${JSON.stringify(sl.act)}`);
