@@ -16,7 +16,7 @@
   --pb-waiting:#fbefd6; --pc-waiting:#80530a; --pb-idle:#ece9e2; --pc-idle:#5c5f59;
   --pb-error:#f6e2df; --pc-error:#8e3a32; --pb-done:#e0eee6; --pc-done:#2f6a47;
   --m-bar:3.4s ease-in-out infinite alternate; --m-glow:3.6s ease-in-out infinite alternate;
-  --m-halo:3.6s ease-in-out infinite alternate; --m-wave:2.8s ease-in-out infinite; --m-cursor:1.6s ease-in-out infinite;
+  --m-wave:2.8s ease-in-out infinite; --m-cursor:1.6s ease-in-out infinite;
   --radius:16px;
   /* spec 052 FR-053: radius scale for controls and panels (rooms and desks keep their own) */
   --r-sm:6px; --r-md:10px; --r-lg:14px; --r-xl:18px;
@@ -1771,7 +1771,7 @@ html:not([data-ui]) #topBtns button:not([aria-pressed="true"]):hover{background:
 @keyframes ringonce{0%{opacity:.8;transform:scale(.96)}100%{opacity:0;transform:scale(1.22)}}
 /* FR-069: Serious mode stops every looping animation (idle bob and nod, typing hands, steam, bars, halos, waving, thinking dots,
    carets, walking bob, mood signs). One-shot signals (the done tick, the waiting pings, the pops) stay. The busy spinner stays: it is a progress sign. */
-html[data-serious] :is(.bar,.glow,.hand-l,.hand-r,.head,.bubble-g,.td,.steam,.halo,.wave,.cursor,.tap,.dizzy,.amb-light,.siren-light,.live i,.typing i,.walker.walking .wk),
+html[data-serious] :is(.bar,.glow,.hand-l,.hand-r,.head,.bubble-g,.td,.steam,.wave,.cursor,.tap,.dizzy,.amb-light,.siren-light,.live i,.typing i,.walker.walking .wk),
 html[data-serious] :is(.caret,.bubble.caret.md>*:last-child)::after,
 html[data-serious] .subblk.running .sub-st::before{animation:none!important}
 

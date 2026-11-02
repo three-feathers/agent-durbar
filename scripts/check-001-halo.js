@@ -24,6 +24,7 @@ module.exports = async (ctx) => {
   const dbg = () => { const d = wc().debugger; if (!d.isAttached()) d.attach('1.3'); return d; };
   const media = (v) => dbg().sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: v }] });
   const failures = [];
+  const frames = () => js(`new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(1))))`);
   const inspect = () => js(`(()=>{
     let kf=0;const walk=(rs)=>{for(const r of rs){if(r.type===7&&r.name==='halo')kf++;else if(r.cssRules)walk(r.cssRules);}};
     for(const s of document.styleSheets){try{walk(s.cssRules)}catch(e){}}
@@ -37,7 +38,8 @@ module.exports = async (ctx) => {
     for (const [w, h] of SIZES) for (const z of [1, 2]) {
       await H.load({ w, h });
       wc().setZoomFactor(z);
-      await ctx.sleep(400);
+      await H.until(`Math.abs(window.devicePixelRatio-${z})<0.01`);
+      await frames(); /* the zoomed layout is painted before the single read */
       const r = await inspect();
       const tag = `${w}x${h} zoom ${z}${reduced ? ' reduced motion' : ''}`;
       console.log(`[001-halo] ${tag}:`, JSON.stringify(r));
@@ -45,21 +47,21 @@ module.exports = async (ctx) => {
       if (r.anim) failures.push(`${tag}: ${r.anim} animations run on a halo`);
       if (!r.halos) failures.push(`${tag}: no halo at 15 agents`);
       if (r.drawn !== r.halos) failures.push(`${tag}: ${r.halos - r.drawn} halos are not drawn`);
-      if (!reduced) { await H.calm(); await ctx.sleep(150); await ctx.shot(path.join(OUT, `001-halo-${w}x${h}-${z}x.png`)); }
+      if (!reduced) { await H.calm(); await frames(); await ctx.shot(path.join(OUT, `001-halo-${w}x${h}-${z}x.png`)); }
       wc().setZoomFactor(1);
     }
   }
-  await media('no-preference');
-
   await H.load({ w: 1440, h: 900 });
   const { app } = require('electron');
   const cpu = () => app.getAppMetrics().filter((m) => m.type === 'Tab').reduce((s, m) => s + m.cpu.percentCPUUsage, 0);
   cpu();
-  await ctx.sleep(1500);
+  await ctx.sleep(1500); /* the measurement window itself, not a wait for a state */
   const samples = [];
   for (let i = 0; i < 6; i++) { await ctx.sleep(1000); samples.push(Math.round(cpu() * 10) / 10); }
   console.log('[001-halo] cpu: renderer % of a core, 6 one-second samples', samples.join(' '), 'mean', Math.round(samples.reduce((a, b) => a + b, 0) / samples.length * 10) / 10);
 
+  await media('no-preference'); // the machine's own setting is back, and the debugger is let go
+  try { wc().debugger.detach(); } catch { /* not attached */ }
   assert.strictEqual(failures.length, 0, failures.join('; '));
   console.log('[001-halo] ok');
 };
