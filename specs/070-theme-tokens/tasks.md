@@ -49,3 +49,11 @@
 - [ ] T037 T020's literals, file by file, after #948 and #954; ratchet lowered. Test: acceptance 4, 5 [FR-065]
 - [ ] T038 Contrast pairs and mutants [FR-067]
 - [ ] T039 Pictures at 1440x900 and 1280x800, before and after: office, chat, Settings, a dialog, inbox, in Flat and Real office; `npm run shots:docs` retakes linked pictures. The owner looks and says yes before the merge; `real:` no AI credits [FR-061, FR-063, FR-066]
+
+## World surfaces further from Flat (2026-11-02, owner; FR-068..FR-074). PRs A15..A17 of spec 005's plan
+
+- [ ] T040 [Gate] The owner picks a surface colour and button sizes from the second round of mocks; values go in FR-068 and FR-072 in the same day's spec change [FR-068, FR-072]
+- [ ] T041 [PR A15] FR-069's 29 names in the registry, both pinned copies, with Flat's values and the fallback; `--prose-lh`; no visual change. Test: `test:theme-tokens`, a fixture pack with the names imports with no drops; mutants: a tier 3 name in a pack, a hostile art value [FR-069, FR-073]
+- [ ] T042 [PR A15] FR-074's pairs in `WORLD_PAIRS`, in the shared check; the plate on art check. Test: `test:theme-tokens`; mutant: a failing pair [FR-074]
+- [ ] T043 [PR A16] Prose at 14 on 23 px in every set; 005 FR-203's table measured again. Test: `check-chat-density`, `check-ui-text`; mutant: 13 px back [FR-071]
+- [ ] T044 [PR A17] FR-072's chosen sizes and styles, if the pick lowers them: `--h-ctl`, design rule 1, FR-063's table. Test: `check-ui-text`, `check:geometry`, `check:office`, the top bar at 1280; mutant: a button at 23 px [FR-072]

@@ -491,7 +491,7 @@ The chat's chrome takes 367 of 900 px today, 41% of the window, in five rows plu
 
 #### Width (W)
 
-- **FR-206** **`--chat-prose`: the page is full width, prose is capped.** Needs no rail. Option D of four. The log and the composer use the whole width, with 24 px of padding; tool rows, diffs and code use all of it; text starts at the left edge; the person's bubble stays right. Paragraphs, lists and thinking are capped at `--chat-prose`, about 100ch (744 px in today's font). It replaces the 880 px centred column in `#chat` and `.composer`, and the 1240 px header rules go with it where they follow that column. A wider cap is one line. `--chat-prose` is an app-owned size and no pack may set it (070 D2).
+- **FR-206** **`--chat-prose`: the page is full width, prose is capped.** Needs no rail. Option D of four. The log and the composer use the whole width, with 24 px of padding; tool rows, diffs and code use all of it; text starts at the left edge; the person's bubble stays right. Paragraphs, lists and thinking are capped at `--chat-prose`, about 100ch (744 px in today's font). It replaces the 880 px centred column in `#chat` and `.composer`, and the 1240 px header rules go with it where they follow that column. A wider cap is one line. `--chat-prose` is an app-owned size and no pack may set it (070 D2). **Amended 2026-11-02 (070 FR-071):** prose is 14 px on 23 px lines everywhere; the cap stays 744 px, so about 116 letters a line. Code's width in a world is in 097 FR-233.
 
   | Letters per line, measured | 1440 | 1920 | 2560 |
   |---|---:|---:|---:|

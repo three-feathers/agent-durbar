@@ -165,3 +165,12 @@ Numbers: T165..T170; FR-191..FR-194.
 
 - [x] T175 [US1] Renderer: the render's focus keep covers a sign's + as well as its menu button. Test: `sim:` `shots-097-screens`, mutation-checked [FR-230]
 - [x] T176 [US1] Driver: the Tab step checks the window's focus before each Tab, as the hover step does. Test: `sim:` `shots-097-screens` with the focus taken by `win.blur()`, fails before, passes after [FR-230]
+
+## 2026-11-02 delta: the chat and Settings look like the room (FR-231..FR-235; PRs A16..A18 of spec 005's plan)
+
+- [ ] T177 [PR A16] FR-231: corners and the third shadow in `WORLD_SETS`, both worlds; leaving gives the theme back. Test: `test:theme-tokens`; `sim:` leave and re-enter; mutant: radii not removed on leaving [FR-231]
+- [ ] T178 [PR A16] Dark header and rail head, `--world-tint` rule removed; portrait checked on dark; 61 px measured at both sizes. Test: `sim:` `shots-097-chat`; mutant: 62 px [FR-232]
+- [ ] T179 [PR A16] Desk, floor, pad, monitor, post-it through tokens only, `.send`, `.inbox:focus-within`, `.msg.user .bubble`, `.md pre`, `.note .btn.session`, `.mode-chip.mode-ask` off their literals and status colours. Test: `sim:` `shots-097-chat`, no text node on art, memo apart from `NOTE_PAPER`; mutant: text on the desk [FR-233]
+- [ ] T180 [PR A17] Settings on the desk; unstyled selects and checkboxes on tokens; scrollbars. Test: `check-ui-text`, `sim:` both sizes, both worlds; mutant: a browser-default select [FR-234]
+- [ ] T181 [PR A18] `.dlg` out of the blur list, opaque. Test: as FR-235 [FR-235]
+- [ ] T182 [PR A16, A17] `realoffice.css`'s `.ro-glass`, `.ro-bezel`, `--ro-scr-*` read `--glass*`, last, since they are pixel-checked; the owner looks at the chat and Settings beside the room before each merges. Test: `check:office`, `check:geometry` [FR-233, FR-234]

@@ -106,3 +106,7 @@ Passes; see spec *Constitution check*. No new runtime dependency; no IPC; no ada
 ## The chat in the world inside the denser chat (delta 2026-11-01; FR-224..FR-227)
 
 Order: row 9 of [spec 005's plan table](../005-chat-fullscreen-and-agent-strip/plan.md). #1001's branch is changed in place on top of the chat PRs: CSS size for the portrait, `lampWords` moved in the header painter, tokens in place of literals. No new file. Constitution V: the header keeps its target with the world on. FR-113 and FR-130 stand.
+
+## The chat and Settings look like the room (delta 2026-11-02; FR-231..FR-235)
+
+Order: rows A15..A18 of [spec 005's plan table](../005-chat-fullscreen-and-agent-strip/plan.md). Tokens and the surface colour: [spec 070](../070-theme-tokens/spec.md) FR-068..FR-074. No new runtime dependency. Constitution V: no text on art, sizes unchanged but prose, contrast by test; art is one static background per surface, with no blur, blend or filter (FR-180, FR-182).
