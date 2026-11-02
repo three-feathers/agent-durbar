@@ -751,7 +751,7 @@
      slot grows to the right, then to the left, into free space only (up to the next plate on the same rows or the band's edge); no
      fixture moves. Measured once per render, left to right, so a plate never covers another. Too little room keeps the ellipsis
      (the driver fails on it). */
-  /* owner 2026-11-02: a role that has no room for about three characters is not shown (a one-letter sliver reads as a mistake). Done once per draw and only for a plate
+  /* review 2026-11-02: a role that has no room for about three characters is not shown (a one-letter sliver reads as a mistake). Done once per draw and only for a plate
      whose width or words changed (not per frame): show every changed role, read all widths, then hide the ones that are too narrow. */
   const ROLE_MIN = 20; /* px: about three characters of the 10.5 px role text */
   function fitRoles(chrome) {

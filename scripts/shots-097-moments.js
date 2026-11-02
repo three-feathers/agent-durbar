@@ -142,7 +142,7 @@ module.exports = async (ctx) => {
       assert.ok(geo.ratio.length >= 1 && geo.ratio.every((r) => Math.abs(r - 0.62) < 0.02), `${tag}: an asleep desk whose message is read is 0.62 wide: ${geo.ratio}`);
       assert.deepStrictEqual(geo.pose, geo.pose.map(() => 'rest'), `${tag}: the person is in rest`);
       assert.strictEqual(geo.shades, geo.asleep, `${tag}: a lamp-off marker on each asleep desk only`);
-      /* owner 2026-11-02: no dark oval over the room behind a sleeper; the person dims instead */
+      /* review 2026-11-02: no dark oval over the room behind a sleeper; the person dims instead */
       const dim = await js(`(()=>{const L=[...document.querySelectorAll('#stage .ro-lights .ro-lamp.lamp-off')].map(e=>{const c=getComputedStyle(e);return [c.backgroundImage,c.backgroundColor]});const P=[...document.querySelectorAll('#stage .ro-person.asleep')].map(e=>getComputedStyle(e).filter);const A=[...document.querySelectorAll('#stage .ro-person:not(.asleep)')].map(e=>getComputedStyle(e).filter);return {L,P,A}})()`);
       assert.ok(dim.L.length >= 1 && dim.L.every(([i, c]) => i === 'none' && /rgba\(0, 0, 0, 0\)|transparent/.test(c)), `${tag}: no shade over the room behind a sleeper: ${JSON.stringify(dim.L)}`);
       assert.ok(dim.P.length >= 1 && dim.P.every((f) => /brightness\(0\.7/.test(f)) && dim.A.every((f) => f === 'none'), `${tag}: the sleeping person dims, awake people do not: ${JSON.stringify([dim.P, dim.A])}`);
@@ -150,12 +150,12 @@ module.exports = async (ctx) => {
       assert.strictEqual(geo.chair + geo.small, 0, `${tag}: no empty-chair marker on an asleep desk; no text under 10.5px`);
       console.log('[moments] asleep ok', sl.length);
       await shot(world, 'asleep', w, h);
-      /* the name has priority in a narrow plate: no name is cut, at any desk (owner 2026-11-02) */
+      /* the name has priority in a narrow plate: no name is cut, at any desk (review 2026-11-02) */
       const CUT = `[...document.querySelectorAll('#stage .ro-plate .ro-l1 b')].filter(b=>{const r=document.createRange();r.selectNodeContents(b);return r.getBoundingClientRect().width>b.getBoundingClientRect().width+0.01}).map(b=>b.textContent)`;
       await H.until(CUT + '.length===0', 4000).catch(() => undefined); /* plates are fitted after the draw */
       const cut = await js(CUT);
       assert.deepStrictEqual(cut, [], `${tag}: a plate cuts a name: ${JSON.stringify(cut)}`);
-      /* a role with no room for about three characters is hidden, not shown as a sliver (owner 2026-11-02) */
+      /* a role with no room for about three characters is hidden, not shown as a sliver (review 2026-11-02) */
       const sliver = await js(`[...document.querySelectorAll('#stage .ro-plate .ro-role')].filter(r=>!r.hidden&&getComputedStyle(r).display!=='none'&&r.getBoundingClientRect().width<19).map(r=>[r.textContent,Math.round(r.getBoundingClientRect().width)])`);
       assert.deepStrictEqual(sliver, [], `${tag}: a role is shown as a sliver: ${JSON.stringify(sliver)}`);
     }

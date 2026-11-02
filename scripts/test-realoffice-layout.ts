@@ -500,7 +500,7 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
   }
 }
 
-// ---- owner 2026-11-02: a narrow (asleep) plate keeps room for a name of nine characters at 12 px bold (about 70 px plus padding) ----
+// ---- review 2026-11-02: a narrow (asleep) plate keeps room for a name of nine characters at 12 px bold (about 70 px plus padding) ----
 for (const [W, H] of SIZES.slice(0, 2)) {
   const m = model(15, 4, { away: false }); m.folders.forEach((f) => f.agents.forEach((a, i) => { if (i % 2 === 1) a.state = 'asleep'; }));
   const L = realLayout(m, { w: W, h: H }, META), sl = L.zones.flatMap((z) => z.desks).filter((d) => d.state === 'asleep');

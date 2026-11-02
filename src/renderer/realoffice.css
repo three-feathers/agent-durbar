@@ -78,7 +78,7 @@
 /* FR-040, FR-041: lamp, screen glow and call light per desk */
 .ro-lamp{border-radius:50%;background:radial-gradient(closest-side,rgba(var(--ro-warm),.55),rgba(var(--ro-warm),0));mix-blend-mode:screen;opacity:0}
 .ro-lamp.lamp-warm{opacity:.55}.ro-lamp.lamp-bright{opacity:.8}.ro-lamp.lamp-on{opacity:.42}.ro-lamp.lamp-low{opacity:.15}
-.ro-lamp.lamp-off{opacity:1;background:none} /* owner 2026-11-02: no dark oval over the room behind a sleeper: the person dims (below), not the room */
+.ro-lamp.lamp-off{opacity:1;background:none} /* review 2026-11-02: no dark oval over the room behind a sleeper: the person dims (below), not the room */
 .ro-person.asleep{filter:brightness(.72)} /* one still picture, no animation of its own */
 .ro-glow{border-radius:8px;opacity:0;box-shadow:0 0 18px 6px rgba(var(--ro-screen),.35)}
 .ro-glow.glow-on{opacity:.8}.ro-glow.glow-breathe{opacity:.7}.ro-glow.glow-low{opacity:.25}
@@ -158,7 +158,7 @@
   background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:6px;box-shadow:0 1px 2px rgba(0,0,0,.14);overflow:hidden}
 .ro-l1{display:flex;gap:5px;align-items:baseline;white-space:nowrap;overflow:hidden;min-width:0}
 .ro-l1 b{font-size:12px;overflow:hidden;text-overflow:ellipsis;flex:0 0 auto;max-width:100%;min-width:2ch} /* the name never gives way to the role; it is cut only when it alone is wider than the plate */
-.ro-role{font-size:10.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1 1000 auto} /* the name has priority: in a narrow plate the role shrinks first (owner 2026-11-02), the name is cut only when it alone is wider than the plate */
+.ro-role{font-size:10.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1 1000 auto} /* the name has priority: in a narrow plate the role shrinks first (review 2026-11-02), the name is cut only when it alone is wider than the plate */
 .ro-help{font-size:10.5px;color:var(--muted);margin-left:auto;flex:none;display:inline-flex;gap:2px;align-items:center}
 .ro-l2{font-size:10.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ro-plate:is(.st-waiting,.st-limit){background:var(--tone-warn-bg,#fff4e2);border:1.5px solid var(--c-waiting)}
