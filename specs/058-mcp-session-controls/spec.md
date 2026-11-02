@@ -388,6 +388,8 @@ All answered by the owner: option A for each (see *Clarifications*). The options
 
 ## Changes
 
+- 2026-11-01 (sweep of the build): **FR-194**: the policy line hides and comes back with its call when older calls collapse.
+
 ### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
 
 The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
@@ -955,6 +957,12 @@ server.
 
   It requires the runtime in each packed app on its own, and names the app in each problem (review on #625).
 
+  `real:` re-checked 2026-10-31 on a Mac (Apple Silicon, macOS 26, this branch, no account, no notarizing, no upload, app never launched): `electron-builder --mac --dir --arm64` (26.18.0, Electron 44.9.1, runtime package 1.0.24) with the ad-hoc identity;
+  - `check-runtime-signature` passed for the 4 runtime files;
+  - `codesign -dv` on `copilot-runtime` said `Identifier=copilot`, `TeamIdentifier=VEKTX9H2N7`, `Authority=Developer ID Application: GitHub (VEKTX9H2N7)`; the three libraries also had team VEKTX9H2N7;
+  - the app itself said `Signature=adhoc`, and `codesign --verify --deep --strict` passed;
+  - `read:` electron-builder 26.18.0 `MacTargetHelper.buildSignOptions`: each `signIgnore` entry is a `RegExp` tested against the file path inside the app, as the spec assumed.
+  Mutants (`test:runtimesign` failed on its own assertion each time): ad-hoc test off, team test off, `signIgnore` emptied. `test:copilotshared` with the failed-start reset removed failed at the retry assertion.
   `[KNOWN GAP]` Gatekeeper/`spctl` on a quarantined download.
 - **FR-161** **One Copilot runtime per app run.** Every session, sign-in check and one-shot uses the adapter's one client; a session end
   never stops it; only app exit (`dispose`) and a sign-in change (spec 012 FR-158) start or stop it. A start that failed is not cached:
@@ -976,6 +984,7 @@ server.
      reopening. Plus at most 1 for `agent-durbar Safe Storage` only if a server with saved secret values starts (unchanged).
   4. A Copilot session still opens and answers (the GitHub-signed runtime starts from inside the ad-hoc app; Gatekeeper accepts it).
   Report the counts before and after on #623. Until then the README says "not counted on a real Mac".
+  **Prompts, before vs after (summary of the `real:` results below):** alpha.13-style ad-hoc runtime: many per session (#525, #623); with FR-160: launch 1 about 25, launch 2 about 26, launch 3 **0** (two rounds of Always Allow); a fresh sign-in: 0. `[KNOWN GAP]` the same count with a second session in another folder, and with the `copilot` CLI in use (T134, T136, T138).
   **Results, `real:` (owner, macOS, test build `v0.1.0-alpha.14-mcptest.1` with this PR, Copilot, 10 MCP servers, 2026-10-23):**
   - CI (run 39954528774): the mac release job logged `check-runtime-signature: the Copilot runtime keeps GitHub's signature (team VEKTX9H2N7)` for arm64 and x64, so FR-160 held in a real package build.
   - First open: about **25** keychain prompts. The owner pressed **Always Allow**. After quitting and reopening, **the same ~26 prompts came back**, alternating between two kinds of dialog: one about "confidential information" and one about an "access token". That is consistent with two items per server (about 13 items).
@@ -1513,3 +1522,29 @@ only *Open log folder*, no log lines in the app) and #349's "Show logs"; *Open l
 **Honest limits**: not seen on a real agent app (see Status); the classifier knows the shapes listed in FR-187 and nothing else, so an
 unlisted wording stays plain *Running* (the tool card still has the text); Claude Code's `mcp_status` and Codex's list do not report a
 tool call's outcome, so for them the words come from the failed tool calls Agent Durbar saw in this session only.
+
+### 2026-11-01: explain an Entra Conditional Access refusal under the failed tool call (issue #841)
+
+**Numbers taken** (checked on `origin/main` and the remote branches, 2026-11-01): **FR-193..FR-194** and **T167**.
+
+**What is already built** (FR-187..FR-189, reused, no second status mechanism): the `policy` class word, `McpCallTracker`, and the
+*Running · last call blocked by your organization's access policy* row with its hint. **What is missing**: the line under the failed
+tool call in the chat, a code list that covers the claims challenge, and the hint naming the browser.
+
+- **FR-193** **The matcher knows the claims challenge, narrowly.** In `classifyMcpCall` the `policy` class also answers for
+  `AADSTS53000`..`AADSTS53099` (the five-digit Conditional Access codes, `AADSTS53000`, `53001`, `53003`, with the six-digit
+  `AADSTS53xxxx` such as `530003` already there), for `insufficient_claims` and for `interaction_required` (the claims-challenge pair),
+  each as a whole word, any case. `interaction_required` counts only when nothing says sign-in: Entra's normal MFA and re-sign-in answers carry it too (`AADSTS50076`, `AADSTS50173`), and those stay `auth`. `[KNOWN GAP]` a bare `interaction_required` is broader than Conditional Access, so the line says what it *usually* means. Nothing else is added. The match runs on text that has already passed through masking: `maskMcpEvent`
+  sets `mcpCall: 'policy'` on a failed `toolCall` of an MCP server from the **masked** output, a word and never any text; the
+  simulator's marked copy does the same. `mcpCall` is never stored and never carries the output, claims, `capolids`, IDs or tenant data.
+  [IMPLEMENTED] `test:` `test-mcpcall.ts` (matcher, fixtures with made-up ids, `maskMcpEvent`).
+- **FR-194** **One calm line and a button under the failed call.** A failed MCP tool chip with `mcpCall: 'policy'` shows, under it,
+  fixed text written in Durbar: "Your organization's sign-in rules refused this tool. This usually means a managed-device check. Sign
+  in again using a browser your organization allows." (neutral: Durbar does not choose the browser, and the browsers differ per system; the macOS detail is in `docs/agent-apps.md`) (said as what it *usually* means: the cause is
+  a guess from the code), with a **Sign in again…** `<button>`. The text is built from this fixed string only (set with `textContent`),
+  so hostile tool output cannot add markup, and the line never appears from anything but the word. The button **opens the existing
+  MCP servers dialog** (`DurbarScreens.agentMcp`) whose row already has the per-server **Sign in again…** (FR-164) with its confirmation;
+  nothing signs in until a person presses it there. No new sign-in path, channel or store. The dialog's `policy` hint (FR-189) gains
+  the same browser advice. A replayed history card (resumed session) has no server name and shows no line.
+  [IMPLEMENTED] `sim:` `scripts/shots-841-entra-explain.js` (1440x900, 1280x800). `[KNOWN GAP]` `real:` pending, owner's managed Mac with
+  a Microsoft-hosted MCP server through Copilot: not run against a real tenant.
