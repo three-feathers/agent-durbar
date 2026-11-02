@@ -1518,9 +1518,6 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         { name: 'docs-search', transport: 'http', url: 'https://docs.example.test/mcp', enabled: false, trusted: false, env: [], headers: [{ key: 'X-Api-Key', set: true }], needsSecrets: false },
       ],
     };
-    const fakeLegacy: FakeSrv[] = [
-      { name: 'old-fetch', transport: 'stdio', command: 'uvx', args: ['mcp-server-fetch'], enabled: false, trusted: false, env: [], headers: [], needsSecrets: false },
-    ];
     /* ---- spec 100 T017, T024: MCP figures as fixtures. Only with `simmcpctx=<scenario>` in the address (other pictures stay as they are), or a driver's `__durbarSimMcpCtx.set(id, report)`. Never an agent app call. ---- */
     const simMcpCtxParam = simQs?.get('simmcpctx') ?? '';
     const simMcpCostsOn = !!simMcpCtxParam;
@@ -1718,8 +1715,8 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       },
       mcpSetCli: async (name, enabled) => { const a = fakeCli.find((x) => x.name === name); if (a) a.enabled = enabled; return { ok: !!a }; },
       mcpFolderState: async (key) => !knownFolder(key)
-        ? { ok: false, error: 'Unknown folder.', key, name: '', servers: [], legacy: [], secretsPersist: true, skipped: [], cliNames: [] }
-        : { ok: true, key, name: folderName(key), servers: extrasOf(key).map(fakeView), legacy: fakeLegacy.map(fakeView), secretsPersist: true,
+        ? { ok: false, error: 'Unknown folder.', key, name: '', servers: [], secretsPersist: true, skipped: [], cliNames: [] }
+        : { ok: true, key, name: folderName(key), servers: extrasOf(key).map(fakeView), secretsPersist: true,
             skipped: extrasOf(key).filter((v) => v.enabled && !v.trusted).map((v) => ({ name: v.name, reason: 'not trusted' })), cliNames: fakeCli.map((a) => a.name) },
       mcpUpsert: async (key, input, orig) => {
         if (!knownFolder(key)) return { ok: false, error: 'Unknown folder.' };
@@ -1746,14 +1743,6 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         v.enabled = enabled;
         return { ok: true, server: fakeView(v) };
       },
-      mcpMoveLegacy: async (name, key) => {
-        const i = fakeLegacy.findIndex((x) => x.name === name);
-        if (i < 0 || !knownFolder(key)) return { ok: false, error: 'That old server no longer exists.' };
-        const [v] = fakeLegacy.splice(i, 1);
-        extrasOf(key).push({ ...v, enabled: false, trusted: false });
-        return { ok: true, server: fakeView(v) };
-      },
-      mcpRemoveLegacy: async (name) => { const i = fakeLegacy.findIndex((x) => x.name === name); if (i >= 0) fakeLegacy.splice(i, 1); return { ok: i >= 0 }; },
       // spec 061: a folder's own agent setup. `simfoldersetup=1`: the first agent's folder brings hooks, rules and servers (masked
       // like main does); decisions are kept in memory; the explanation is canned (no model). Without the flag no folder has any.
       folderSetupScan: async (key) => {

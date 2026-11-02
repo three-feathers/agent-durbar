@@ -174,7 +174,6 @@ body.has-bridge #topBtns{display:flex}
 .mtag.src{background:var(--tone-idea-bg);border-color:var(--tone-idea-line);color:var(--tone-idea-ink)}
 .scr-sub{margin:12px 0 4px;font-size:var(--t3-size);font-weight:650;color:var(--ink)}
 .scr-sub small{font-weight:500;color:var(--muted);margin-left:6px}
-.srv.legacy{opacity:.92;border-style:dashed}
 .cfgs{list-style:none;margin:6px 0;padding:0;display:flex;flex-direction:column;gap:6px}
 .cfg{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px}
 .cfg .cfg-n{margin-left:auto;color:var(--muted);font-variant-numeric:tabular-nums}
