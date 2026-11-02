@@ -29,6 +29,26 @@ module.exports = async (ctx) => {
   const T0 = Date.now(), mark = (m) => console.log(`[097-screens] ${Math.round((Date.now() - T0) / 1000)} s: ${m}`);
   const wc = () => ctx.win.webContents;
   const must = async (expr, what, ms = 15000) => assert.ok(await H.until(expr, ms), 'timed out waiting for ' + what);
+  /* FR-034 by real pointer moves. The zoom closes when the window loses the focus, and it does not open while the office is hidden; on CI drivers run side by side, so another window can take the focus or cover this one. That, and a move the page never got, are tried again: neither is the hover. A move it got that opens nothing is a failure, with what was under the pointer and the last move. A reload loses the listeners, so each use arms them */
+  const arm = () => js(`(()=>{if(window.__blurs!==undefined)return;window.__blurs=0;window.__mv='';addEventListener('blur',()=>{window.__blurs++;});document.addEventListener('visibilitychange',()=>{if(document.hidden)window.__blurs++;});addEventListener('mousemove',(e)=>{window.__mv=e.clientX+','+e.clientY;},true);})();0`);
+  const moveTo = async (x, y) => { await arm(); const X = Math.round(x), Y = Math.round(y); wc().sendInputEvent({ type: 'mouseMove', x: X, y: Y }); return H.until(`window.__mv===${jsLiteral(X + ',' + Y)}`, 3000); };
+  const OPENED = (i) => `(document.getElementById('roZoom')||{dataset:{}}).dataset.for===${jsLiteral(i)}`;
+  const blurs = () => js(`window.__blurs`);
+  const refocus = async () => { ctx.win.show(); ctx.win.focus(); wc().focus(); await must(`document.hasFocus()&&!document.hidden`, 'the window active again', 8000); };
+  const hover = async (i, p) => {
+    await arm();
+    for (let t = 0; t < 5; t++) {
+      const was = await blurs();
+      if (!(await moveTo(p.x, p.y))) { console.log('[097-screens] the page did not get the pointer move for', i, JSON.stringify(await js(`({got:window.__mv,focus:document.hasFocus(),hidden:document.hidden})`))); await refocus(); await moveTo(1, 1); continue; }
+      await H.until('(' + OPENED(i) + ')||window.__blurs!==' + jsLiteral(was), 15000);
+      if (await js(OPENED(i))) return;
+      if ((await blurs()) === was) break;
+      console.log('[097-screens] the window lost the focus or was covered during the hover of', i);
+      await refocus(); await moveTo(1, 1);
+      await must(`!document.getElementById('roZoom')`, 'closed before trying again');
+    }
+      assert.fail('the zoom of ' + i + ': ' + JSON.stringify(await js(`(()=>{const e=document.elementFromPoint(${jsLiteral(p.x)},${jsLiteral(p.y)}),a=document.activeElement;return {at:e&&(e.className||e.tagName),for:e&&e.dataset&&e.dataset.for,focus:document.hasFocus(),blurs:window.__blurs,hidden:document.hidden,zoom:(document.getElementById('roZoom')||{dataset:{}}).dataset.for,active:a&&a.className,moved:window.__mv,state:(window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks).find(d=>d.id===${jsLiteral(i)})||{}).state};})()`)));
+  };
   const REAL = `!!document.querySelector('#stage .ro .ro-plate')&&document.getElementById('stage').dataset.d==='real'`;
   const PICS = `[...document.querySelectorAll('#stage .ro img')].every(i=>i.complete)`;
   /* a frozen simulator (nothing changes but what the driver emits); romotion=1: the people move, as outside a driver */
@@ -117,24 +137,6 @@ module.exports = async (ctx) => {
     ctx.win.show(); ctx.win.focus(); wc().focus();
     await must(`document.hasFocus()`, 'the window active', 8000);
     const deskIds = await js(`window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks).filter(d=>d.state!=='asleep').map(d=>d.id)`);
-    const moveTo = async (x, y) => { wc().sendInputEvent({ type: 'mouseMove', x: Math.round(x), y: Math.round(y) }); await must(`true`, 'a tick'); };
-    const OPENED = (i) => `(document.getElementById('roZoom')||{dataset:{}}).dataset.for===${jsLiteral(i)}`;
-    /* the zoom closes when the window loses the focus (FR-034), and on CI drivers run side by side, so another window can take it. Only that is tried again; anything else is a failure, with what was under the pointer */
-    await js(`window.__blurs=0;addEventListener('blur',()=>{window.__blurs++;});0`);
-    const blurs = () => js(`window.__blurs`);
-    const refocus = async () => { ctx.win.show(); ctx.win.focus(); wc().focus(); await must(`document.hasFocus()`, 'the window active again', 8000); };
-    const hover = async (i, p) => {
-      for (let t = 0; t < 5; t++) {
-        const was = await blurs();
-        await moveTo(p.x, p.y);
-        if (await H.until(OPENED(i), 15000)) return;
-        if ((await blurs()) === was) break;
-        console.log('[097-screens] the window lost the focus during the hover of', i);
-        await refocus(); await moveTo(1, 1);
-        await must(`!document.getElementById('roZoom')`, 'closed before trying again');
-      }
-      assert.fail('the zoom of ' + i + ': ' + JSON.stringify(await js(`(()=>{const e=document.elementFromPoint(${jsLiteral(p.x)},${jsLiteral(p.y)}),a=document.activeElement;return {at:e&&(e.className||e.tagName),for:e&&e.dataset&&e.dataset.for,focus:document.hasFocus(),blurs:window.__blurs,hidden:document.hidden,zoom:(document.getElementById('roZoom')||{dataset:{}}).dataset.for,active:a&&a.className,state:(window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks).find(d=>d.id===${jsLiteral(i)})||{}).state};})()`)));
-    };
     await moveTo(1, 1);
     let placed = {};
     for (const i of deskIds) {
@@ -222,16 +224,13 @@ module.exports = async (ctx) => {
   {
     ctx.win.show(); ctx.win.focus(); wc().focus();
     await must(`document.hasFocus()`, 'the window active', 8000);
-    const moveToPoint = async (x, y) => { wc().sendInputEvent({ type: 'mouseMove', x: Math.round(x), y: Math.round(y) }); await must(`true`, 'a tick'); };
     const SECRET = 'A line the setting must hide ';
-    const ZFOR = (i) => `(document.getElementById('roZoom')||{dataset:{}}).dataset.for===${jsLiteral(i)}`;
     const at = (i) => js(`(()=>{const b=document.querySelector('#stage .ro-screen[data-for="'+CSS.escape(${jsLiteral(i)})+'"]').getBoundingClientRect();return {x:b.left+b.width/2,y:b.top+b.height/3};})()`);
     const wk = (await js(pickWorking))[0];
     await emit({ type: 'output', sessionId: wk, delta: SECRET });
     await must(`window.__scr(${jsLiteral(wk)}).textContent.includes(${jsLiteral(SECRET.trim().slice(0, 12))})`, 'the line on the screen');
     const w0 = await at(wk);
-    await moveToPoint(1, 1); await moveToPoint(w0.x, w0.y);
-    await must(ZFOR(wk), 'the zoom of the working desk');
+    await moveTo(1, 1); await hover(wk, w0);
     await js(`window.__durbarSimUi.setLive(false);0`);
     assert.ok(await H.until(`!window.__scr(${jsLiteral(wk)}).textContent.includes(${jsLiteral(SECRET.trim().slice(0, 12))})`, 1000), 'Live activity off takes the text off the screen at once');
     assert.ok(await H.until(`!document.getElementById('roZoom')||!document.getElementById('roZoom').textContent.includes(${jsLiteral(SECRET.trim().slice(0, 12))})`, 1000), 'and off the open zoom');
@@ -241,18 +240,17 @@ module.exports = async (ctx) => {
     const zs0 = await js(`document.querySelector('#roZoom .ro-zs').textContent`);
     await js(`(()=>{const a=window.__durbarSimUi.agents().find(x=>x.id===${jsLiteral(wk)});a.state='done';a.lastEventAt=Date.now();window.__durbarSimUi.setLive(true);})();0`);
     assert.ok(await H.until(`(()=>{const e=document.querySelector('#roZoom .ro-zs');return !!e&&e.textContent!==${jsLiteral(zs0)};})()`, 5000), 'the open zoom shows the new status: was ' + zs0);
-    await moveToPoint(1, 1);
+    await moveTo(1, 1);
     await must(`!document.getElementById('roZoom')`, 'the zoom closed when the pointer left');
     /* an open zoom of a desk that goes to sleep closes: an asleep screen is off (FR-035) */
     const sl = await js(`(()=>{const d=window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks).find(x=>(x.state==='done'||x.state==='idle')&&document.querySelector('#stage .ro-person[data-for="'+CSS.escape(x.id)+'"]'));return d&&d.id;})()`);
     assert.ok(sl, 'an idle desk to send to sleep');
     const s0 = await at(sl);
-    await moveToPoint(s0.x, s0.y);
-    await must(ZFOR(sl), 'the zoom of the desk about to sleep');
+    await hover(sl, s0);
     await js(`(()=>{const a=window.__durbarSimUi.agents().find(x=>x.id===${jsLiteral(sl)});a.state='done';a.lastOutput=a.lastOutput||'done';a.unread=false;a.lastEventAt=Date.now()-30*864e5;window.__durbarSimUi.setLive(true);})();0`);
     await must(`window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks).find(x=>x.id===${jsLiteral(sl)}).state==='asleep'`, 'the desk asleep');
     assert.ok(await H.until(`!document.getElementById('roZoom')`, 1000), 'the zoom of a desk gone to sleep closes');
-    await moveToPoint(1, 1);
+    await moveTo(1, 1);
   }
 
   /* Ruben's review of #979: a chat opening and closing pauses and resumes at once; leaving Real office leaves no key listener behind */
@@ -270,9 +268,7 @@ module.exports = async (ctx) => {
     /* opened by the pointer: its plate is not what holds it, and the pointer stays there when the office goes */
     const one = (await js(pickWorking))[0];
     const hp = await js(`(()=>{const b=document.querySelector('#stage .ro-screen[data-for="'+CSS.escape(${jsLiteral(one)})+'"]').getBoundingClientRect();return {x:Math.round(b.left+b.width/2),y:Math.round(b.top+b.height/3)};})()`);
-    wc().sendInputEvent({ type: 'mouseMove', x: 1, y: 1 });
-    wc().sendInputEvent({ type: 'mouseMove', x: hp.x, y: hp.y });
-    await must(`!!document.getElementById('roZoom')`, 'a zoom open by the pointer');
+    await moveTo(1, 1); await hover(one, hp);
     await js(`window.DurbarRealOffice.leave();0`); /* directly: leaving closes it, whatever the elements do */
     assert.strictEqual(await js(`!!document.getElementById('roZoom')`), false, 'leave closes the zoom');
     await js(`window.__durbarSimUi.setLive(true);0`);
