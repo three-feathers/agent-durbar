@@ -108,6 +108,10 @@ Four reviewers worked from 17 simulator screenshots: the office at 1440x900 and 
 
 ## Changes
 
+### 2026-11-02: the Needs you text ran words together (bug, FR-214 on the design-sweep branch)
+
+`sim:` In the inbox, the answer bar and notifications, a card's blocks were joined with no space: "(rename find_company to search_companies)Allow for this session covers ...". Cause: `requestText()` (`app.js`) reads `textContent` of the card's clone, which adds nothing between block elements. Fix: it puts one space before each block child (`p`, `div`, `pre`, `ul`, `ol`, `li`, `details`, headings) of the clone, then collapses whitespace as before; inline code gets none. Same removed parts (FR-080), masking and callers. `test:` driver `check-inbox-text` (`ui-suite.js`) reads the inbox row of a pending request with a session scope hint; it fails on the old code. This is the first step of FR-214 / T220 in `origin/005-design-sweep-specs` (the pure-helper test there is not built here).
+
 ### 2026-10-31: FR-145's numbers no longer hold for flat (measured for spec 097)
 
 `sim:` At `ac122ff1` under Xvfb, flat at 15 agents with 10x activity: frame p50 16.8 ms, p95 58.9 ms (FR-145: 16.8 on a quiet machine), 81 long tasks in 20 s. FR-142..FR-144 are not at fault: the causes are one `:has()` rule of spec 077 and the layout search on each status change. The budgets, causes and tasks are in [spec 097 *Changes*](../097-real-office/spec.md) (FR-178, T148, T156..T159); `check-perf.js` gains `--record` there (T145).

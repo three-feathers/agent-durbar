@@ -1,0 +1,1 @@
+- **Needs you text no longer runs words together** (spec 052 FR-214): the inbox, the answer bar and the notifications read "search_companies) Allow for this session ...", not "search_companies)Allow ...". Checked by the simulator driver `check-inbox-text`.
