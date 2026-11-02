@@ -4882,8 +4882,9 @@ function afterFloorsChange(){
   if(demoOn)return;
   /* the open agent is now on a floor that is off: back to the office (its pending requests stay pending, FR-010) */
   if(ui.selected){const a=byId(ui.selected);if(a&&!roomShown(roomOf(a)))closePanel();}
-  renderFilter(); renderFloorsPanel(); renderFloorsSettings();
-  floorSwitchTimed=performance.getEntriesByName(FLOOR_MARK,'mark').length>0; scheduleRender();
+  /* spec 033 FR-088 (issue 787): the office is drawn even when a side panel throws (the error still reaches the console); a floor change gets a full layout */
+  try{renderFilter(); renderFloorsPanel(); renderFloorsSettings();}
+  finally{layoutKey=''; floorSwitchTimed=performance.getEntriesByName(FLOOR_MARK,'mark').length>0; scheduleRender();}
 }
 /* ---------------- floors: top-bar button, "into" select, panel (spec 033) ---------------- */
 /* FR-007 (PR #124 review): only with two or more floors, and compact (icon + "2/3"), so the top bar fits at 1280x800 with
