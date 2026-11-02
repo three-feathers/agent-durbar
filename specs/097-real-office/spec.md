@@ -330,12 +330,16 @@ Each has a recommendation (Q6 is for Paco, the crew owner). The build waits for 
 
 ## Changes
 
+### 2026-11-02: 12 changes a second stays (Vikram, after the recording)
+
+Vikram watched the side-by-side recording of today against 12 changes a second and saw no visible difference, so FR-229 stays (15:14 UTC, recorded on #1046). The rule is now in `docs/world-design.md`.
+
 ### 2026-11-02: the room's motion starts when the room is ready, and runs at 12 changes a second (owner's choice A; FR-228, FR-229, T173, T174)
 
 *Found, measured on macOS at 15 agents:* the room's idle cost has two parts. Settled it is about 25 % of a core, and all of that is continuous redraw: one person swaying smoothly costs nearly as much as the whole room, and nothing moving costs 0.4 %. In the first seconds it is about 40 %, sometimes for 30 s or more, because Chromium refuses to run an animation on the compositor while the first draw is busy, with the reason "the target has incompatible animations", and it stays on the main thread (60 style recalculations a second). Starting it again later works only now and then, which is what `handOver` has been retrying.
 
 - **FR-228** `[IMPLEMENTED]` (T173; `sim:` `check-097-motion`) **Motion starts when the room is ready.** On a first draw the room stands still for 2 s, then its loops all start in one pass, with no fade or poof running. Nothing else changes in how it looks. Why a fixed time: 2 s and 3 s held in 4 of 4 launches; 0.7 s held 1 of 2; waiting for the pictures to decode, or for 30 quiet frames, held no better than today. What the first 2 s let finish is not known. `handOver` stays for what starts later.
-- **FR-229** `[IMPLEMENTED]` (T174; `sim:` `check-097-motion`; owner to judge a recording before this lands) **12 changes a second, on one clock.** Every endless loop of the room (sway, frames, rig, lights, caret) is sampled on one grid of 1/12 s: its whole effect takes `steps()`, its duration and start time snap to the grid, so all of them change on the same frames. Each still follows its own path and keeps its own timing and phase within 1/12 s; only how often it is drawn changes. This amends the "smooth" reading of the 2026-11-01 delta for the frame rate only. A pixel world keeps its own stepped timing.
+- **FR-229** `[IMPLEMENTED]` (T174; `sim:` `check-097-motion`; owner's decision below) **12 changes a second, on one clock.** Every endless loop of the room (sway, frames, rig, lights, caret) is sampled on one grid of 1/12 s: its whole effect takes `steps()`, its duration and start time snap to the grid, so all of them change on the same frames. Each still follows its own path and keeps its own timing and phase within 1/12 s; only how often it is drawn changes. This amends the "smooth" reading of the 2026-11-01 delta for the frame rate only. A pixel world keeps its own stepped timing.
 - **Measured** (`real:` macOS, Apple M4, real GPU, simulator, 15 agents, 1440x900, 3 rounds interleaved, % of a core, total (renderer), outside sampler):
 
   | | First 30 s | Settled |
