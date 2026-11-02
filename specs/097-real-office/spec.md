@@ -330,6 +330,11 @@ Each has a recommendation (Q6 is for Paco, the crew owner). The build waits for 
 
 ## Changes
 
+### 2026-11-02: a sign keeps the keyboard's place when it redraws (found looking into a Windows FLAKY on #1001)
+
+- **FR-230** When a folder sign redraws (its counts or cost changed) while its + or its room menu button has the focus, the same button of the redrawn sign takes the focus back, without scrolling. Before this the focus fell to the page, so Enter did nothing and the keyboard's place was lost. Test: `sim:` `shots-097-screens`, a rebuild proven by a marked element, for both buttons, mutation-checked (T175).
+- **The FLAKY itself was not this.** `shots-097-screens` failed at *Tab to a desk opens the zoom* with `focus:false`: the window had lost the OS focus, and a plate reached by Tab then is not `:focus-visible`, so no zoom opens, on purpose. Reproduced on macOS by taking the focus with a second window: the same failure form. The driver checked the focus once, before its Tabs; it now checks before each Tab, gets the focus back, starts again from the sign, and does not count those Tabs (T176). A Tab with the window focused that opens nothing still fails.
+
 ### 2026-11-01: no walking; a person zooms out and zooms in, and the room stays still (Vikram, after watching; supersedes the walk, the head anchor and FR-017's narrower away and asleep desks)
 
 Vikram judged the walk and the head-anchored sit-down *not natural enough*: two bodies in the dissolves, a walker over the screens at a wrong scale, the room jumping when someone leaves. Replaced:
