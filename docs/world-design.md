@@ -102,6 +102,7 @@ A world is not finished until its chat and settings screens have been looked at 
 Spec 097 FR-178 and after hold the budgets. In short:
 
 - Animate only `transform` and `opacity`. No `mix-blend-mode`. No blur on dialogs.
+- **Endless loops change 12 times a second, on one clock** (spec 097 FR-229). Each keeps its own path and timing, so nobody moves in sync; only how often it is drawn changes. The owner saw no difference in a side-by-side recording, and it uses about a third of the CPU. A pixel world keeps its own stepped timing.
 - Only the shown pictures load, at a size close to what is shown, without softening faces.
 - Measure on a real GPU as well as without one: they disagree a lot.
 

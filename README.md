@@ -76,7 +76,7 @@ All `npm run` commands, the repository layout and how we work (spec-driven with 
 ## More documentation
 
 - [Features](docs/features.md) · [Agent apps](docs/harnesses.md) · [Install](docs/install.md) · [Safety and costs](docs/safety.md) · [Themes](docs/themes.md)
-- [Known limits and roadmap](docs/limits.md) · [Development](docs/development.md) · [Feature history](docs/feature-history.md)
+- [Known limits and roadmap](docs/limits.md) · [Development](docs/development.md)
 - [Specs](specs/README.md) · [Constitution](.specify/memory/constitution.md) · [Collaboration](docs/collaboration.md) · [CHANGELOG](CHANGELOG.md)
 
 ## License and credits
