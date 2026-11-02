@@ -9,7 +9,7 @@ import { errText } from '../agentops';
 import type { DevEnv } from '../devhooks';
 import { copilotDir, copilotServerNames } from '../mcpfiles';
 import { UserThemeStore } from '../themes';
-import { REMOVED_THEMES } from '../../shared/themes';
+import { RESERVED_THEME_IDS } from '../../shared/themes';
 
 export interface ThemesIpcDeps {
   dev: DevEnv;
@@ -23,7 +23,7 @@ export function register(deps: ThemesIpcDeps): void {
   const userThemes = new UserThemeStore(path.join(app.getPath('userData'), 'themes'));
   // spec 077 FR-066: 'cheeky-crew' is no longer a theme but stays reserved, so no imported or AI pack can take the old id (FR-067 migrates it)
   // spec 035 FR-017: 'corporate' and the three 'durbar-*' ids were removed built-ins and stay reserved too (FR-018 migrates a stored one)
-  const BUILT_IN_THEME_IDS = ['clean-office', 'retro', 'cheeky-crew', ...REMOVED_THEMES];
+  const BUILT_IN_THEME_IDS = RESERVED_THEME_IDS;
   const pickFolder = async (title: string, create = false): Promise<string | null> => {
     if (dev.DURBAR_PICK) { const first = dev.DURBAR_PICK.split(path.delimiter)[0]; return first || null; } // path.delimiter keeps C:\ paths whole (spec 040 FR-008)
     // spec 040 FR-019: an export target may be a new folder (macOS shows "New Folder" only with createDirectory)
