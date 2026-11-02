@@ -9,5 +9,5 @@
   { "file": "033-floors-on-1440x900.png", "caption": "Floors group rooms, and one can be switched off.", "alt": "Office with floors" },
   { "file": "024-lobby-1440x900.png", "caption": "A shared lobby: agents walk to the place of the tool they use.", "alt": "Office lobby with places" },
   { "file": "035-retro-1440x900.png", "caption": "Themes: Clean Office and Retro Pixel, or your own.", "alt": "Retro Pixel theme" },
-  { "file": "040-theme-picker-1440x900.png", "caption": "Pick a look in Settings: a built-in theme (here Retro Pixel) applies at once; import one or make your own with AI.", "alt": "Settings with the theme picker, the Retro Pixel theme picked" }
+  { "file": "040-theme-picker-1440x900.png", "caption": "Pick a look in Settings: a built-in theme (here Retro Pixel) applies at once; export or remove the ones you saved.", "alt": "Settings with the theme picker, the Retro Pixel theme picked" }
 ]

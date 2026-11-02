@@ -126,3 +126,11 @@ Q2-Q8 are answered; **Q1 (art format) is open again** (2026-10-23). Tasks are ma
 - [x] T106 18 pictures `crew/art/royal-*.webp` and their `ASSETS.md` rows; the `test:crew-assets` total cap raised from 3 MiB to 4 MiB [FR-076, FR-050, FR-054]
 - [x] T107 Tests: `test:crew`, `test:characters`, `test:crew-assets`, `test:realoffice-layout`; `check-crew`, `check-characters` and `check-office-overlap` cover Royal [FR-076]
 - [x] T108 Docs: README, `docs/themes.md`, changelog fragment, the linked Settings screenshots retaken [FR-076]
+
+## The Animal Rebels Crew (delta 2026-11-02, issue #815, crew 5 of 5; FR-077)
+
+- [x] T109 Spec delta FR-077 [spec]
+- [x] T110 `crew.js` (`REBELS_IDS`, `CREWS.rebels`, `FACE` points; `storeKey` and `file()` come from `CREWS`; its Real office note comes from `peopleFor`, #991), `characters.ts`, `theme.js`, `api.ts`, `sim.ts`, `screens.js`, `app.js` and `simcrew.js` (Animal Rebels column) with the `rebels` value [FR-077, FR-073]
+- [x] T111 18 pictures `crew/art/rebels-*.webp` and their `ASSETS.md` rows; the `test:crew-assets` total cap raised from 4 MiB to 4.5 MiB [FR-077, FR-050, FR-054]
+- [x] T112 Tests: `test:crew`, `test:characters`, `test:crew-assets`, `test:realoffice-layout`; `check-crew`, `check-characters` and `check-office-overlap` cover Animal Rebels [FR-077]
+- [x] T113 Docs: README, `docs/themes.md`, changelog fragment, the linked Settings screenshots retaken; issue #815's five crews are all in [FR-077]

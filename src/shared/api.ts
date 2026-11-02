@@ -209,7 +209,7 @@ export interface AppSettingsView {
   /** Active theme id (specs 035-040). Omitted = Clean Office. */
   theme?: string;
   /** Spec 077 FR-064: who sits at the desks (`theme`: the theme's own). */
-  characters?: 'theme' | 'minimalist' | 'cheeky' | 'prehistoric' | 'pirate' | 'monster' | 'royal';
+  characters?: 'theme' | 'minimalist' | 'cheeky' | 'prehistoric' | 'pirate' | 'monster' | 'royal' | 'rebels';
   /** OS notifications when an agent needs you while the window is in the background (spec 052 FR-059). On unless turned off. */
   notifyNeedsMe?: boolean;
   /** Spec 068 FR-006: after a coffee break, `auto` resumes by itself when it costs nothing extra; `ask` always asks. */
@@ -535,8 +535,6 @@ export interface McpFolderState {
   /** Display name of the folder. */
   name: string;
   servers: McpServerView[];
-  /** Old app-level servers that are not applied; they can be moved into this folder or removed. */
-  legacy: McpServerView[];
   secretsPersist: boolean;
   /** Extras that are on but are not passed to new sessions, with the reason. */
   skipped: { name: string; reason: string }[];
@@ -895,18 +893,14 @@ export interface DurbarApi {
   /** Bring the window to the front (a click on a "needs you" notification, spec 052 FR-059). */
   focusWindow?(): Promise<{ ok: boolean }>;
   /** Set the theme (specs 037-040): a built-in id or an imported user theme id. */
-  setTheme?(id: string): Promise<{ ok: boolean; theme?: string; characters?: 'theme' | 'minimalist' | 'cheeky' | 'prehistoric' | 'pirate' | 'monster' | 'royal' }>;
+  setTheme?(id: string): Promise<{ ok: boolean; theme?: string; characters?: 'theme' | 'minimalist' | 'cheeky' | 'prehistoric' | 'pirate' | 'monster' | 'royal' | 'rebels' }>;
   /** Spec 077 FR-064: set who sits at the desks; main refuses anything not on the list (`ok: false`, the value in force). */
-  setCharacters?(v: string): Promise<{ ok: boolean; characters: 'theme' | 'minimalist' | 'cheeky' | 'prehistoric' | 'pirate' | 'monster' | 'royal' }>;
+  setCharacters?(v: string): Promise<{ ok: boolean; characters: 'theme' | 'minimalist' | 'cheeky' | 'prehistoric' | 'pirate' | 'monster' | 'royal' | 'rebels' }>;
   /** User themes (spec 040): scan userData/themes; each valid pack listed, each invalid one given back with a reason. */
   listUserThemes?(): Promise<Array<{ id: string; name?: string; ok: boolean; error?: string }>>;
   getUserTheme?(id: string): Promise<Record<string, unknown> | null>;
-  importTheme?(): Promise<{ ok: boolean; id?: string; name?: string; error?: string; cancelled?: boolean }>;
-  /** AI theme maker (spec 040 FR-014): one prompt to a harness with `oneShot`; returns a checked manifest (not saved). */
-  generateTheme?(description: string, adapterId: string): Promise<{ ok: boolean; manifest?: Record<string, unknown>; warnings?: string[]; passes?: number; costUsd?: number; nanoAiu?: number; error?: string }>;
-  saveGeneratedTheme?(manifest: Record<string, unknown>): Promise<{ ok: boolean; id?: string; name?: string; error?: string }>;
-  /** Example looks for the AI theme maker (spec 040 FR-021). */
-  themeIdeas?(): Promise<string[]>;
+  /** Spec 040 FR-032: remove one of your saved themes (the window asked first); built-in ids are refused. */
+  removeTheme?(id: string): Promise<{ ok: boolean; id?: string; error?: string }>;
   /* Spec 051: harness setup inside the app (install, update, sign in). Fixed commands only; the window never names a command. */
   harnessPlans?(kind: string, op: 'install' | 'update'): Promise<{ plans: Array<{ manager: string; display: string; note?: string; owner?: boolean; pinned?: string; own?: string; script?: unknown }>; page: string; name: string; blocked?: string }>;
   /** `gate` (spec 081 FR-013): the answer to the open-sessions dialog ('wait', 'end', or 'cancel' to release the update lock). A reply with `needsGate` asks the window to show that dialog. */
@@ -1014,7 +1008,6 @@ export interface DurbarApi {
   mcpUpsert?(key: string, input: McpServerInput, originalName?: string): Promise<McpResult>;
   mcpRemove?(key: string, name: string): Promise<{ ok: boolean }>;
   mcpSetEnabled?(key: string, name: string, enabled: boolean, trustAck?: boolean): Promise<McpResult>;
-  mcpMoveLegacy?(name: string, key: string): Promise<McpResult>;
   /** Per-folder import from VS Code's `.vscode/mcp.json` (spec 020 FR-020): a preview, then the ticked ids. Imported servers are off and untrusted. */
   mcpImportPreview?(key: string): Promise<McpImportPreview>;
   /** Spec 061: a folder's own agent setup (masked), the person's decision (window only, FR-013), and an AI explanation of a hook (FR-015). */
@@ -1022,7 +1015,6 @@ export interface DurbarApi {
   folderSetupDecide?(key: string, decision: FolderSetupDecision): Promise<{ ok: boolean; error?: string; view?: FolderSetupView; folderRules?: Record<string, boolean> }>;
   folderSetupExplain?(key: string, id: string): Promise<HookExplanation>;
   mcpImportApply?(key: string, ids: string[], digest: string): Promise<McpImportResult>;
-  mcpRemoveLegacy?(name: string): Promise<{ ok: boolean }>;
   /** Spec 069: the agent apps' user-level MCP lists (names only), read now. */
   mcpGlobalState?(): Promise<GlobalState>;
   /** Spec 069 FR-005: what adding `input` to the chosen apps' lists would write; nothing is written. */

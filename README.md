@@ -28,7 +28,7 @@ Agent Durbar is an office-style desktop app to **see, chat with and coordinate A
 - **Needs you:** one inbox of every agent waiting for an answer or a permission, oldest first.
 - **Sessions that last:** resume after a restart or a crash, scheduled prompts, undo an agent's file changes, notes, continue in another app.
 - **MCP servers** shared across your agent apps, with health, sign-in, per-tool switches and what each costs in context. When your organization's sign-in rules (Entra Conditional Access, for example a managed-device check) refuse a tool, the chat says so under the failed call and offers Sign in again….
-- **Two themes** (Clean Office and Retro Pixel) and a theme maker.
+- **Two themes** (Clean Office and Retro Pixel), and your own saved themes.
 
 ![Full-screen chat with the other agents in a slim strip, 1280x800](docs/screenshots/m6-fullchat-sim15-1280x800.png)
 
@@ -76,7 +76,7 @@ All `npm run` commands, the repository layout and how we work (spec-driven with 
 ## More documentation
 
 - [Features](docs/features.md) · [Agent apps](docs/harnesses.md) · [Install](docs/install.md) · [Safety and costs](docs/safety.md) · [Themes](docs/themes.md)
-- [Known limits and roadmap](docs/limits.md) · [Development](docs/development.md) · [Feature history](docs/feature-history.md)
+- [Known limits and roadmap](docs/limits.md) · [Development](docs/development.md)
 - [Specs](specs/README.md) · [Constitution](.specify/memory/constitution.md) · [Collaboration](docs/collaboration.md) · [CHANGELOG](CHANGELOG.md)
 
 ## License and credits
@@ -85,7 +85,7 @@ All `npm run` commands, the repository layout and how we work (spec-driven with 
 
 Agent Durbar is by **Three Feathers**. Key contributors: [vikramgorla](https://github.com/vikramgorla), [fjcabello](https://github.com/fjcabello) and [rubenlupi](https://github.com/rubenlupi) (GitHub handles are used as the names). The names live in [`src/shared/about.ts`](src/shared/about.ts) and are shown in the OS About panel and in Settings > About.
 
-The Cheeky, Prehistoric, Pirate, Monster and Royal Crew pictures (`src/renderer/crew/art/`) were made by Paco with ChatGPT image generation, and Paco did the final pass; [`ASSETS.md`](src/renderer/crew/art/ASSETS.md) gives the tool and date of each (spec 077). The app id is `io.github.three-feathers.agentdurbar` since 2026-10-16; a build from before then is a separate app to the OS.
+The Cheeky, Prehistoric, Pirate, Monster, Royal and Animal Rebels Crew pictures (`src/renderer/crew/art/`) were made by Paco with ChatGPT image generation, and Paco did the final pass; [`ASSETS.md`](src/renderer/crew/art/ASSETS.md) gives the tool and date of each (spec 077). The app id is `io.github.three-feathers.agentdurbar` since 2026-10-16; a build from before then is a separate app to the OS.
 
 The Real office pictures (`src/renderer/realoffice/worlds/photo/` for the room, `src/renderer/realoffice/sets/office/` for the people) were made with Codex image generation on Vikram's plan and approved by Vikram, MIT like the code; the `ASSETS.md` in each folder ([room](src/renderer/realoffice/worlds/photo/ASSETS.md), [people](src/renderer/realoffice/sets/office/ASSETS.md)) gives each sheet's tool, date and prompt (spec 097). A world and a set of people are separate packs that load only when shown (the Photo office with the Office people: 6.1 MB; the Prehistoric cave with the Prehistoric people: 1.8 MB, off by default behind a switch until the owner opens it). The cave's pictures were made with Codex image generation on Vikram's plan and approved by Paco ([room](src/renderer/realoffice/worlds/cave/ASSETS.md), [people](src/renderer/realoffice/sets/prehistoric/ASSETS.md)).
 

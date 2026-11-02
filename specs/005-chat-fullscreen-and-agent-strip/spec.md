@@ -412,3 +412,7 @@ The `status:` of the specs-index block used to read (moved here unchanged; the b
 *Honest limits:* `[KNOWN GAP]` Windows and macOS rendering and a real screen reader are not verified (simulator on Linux only); the order is per window and per computer; ids of real sessions are stable across a restart only as far as the existing `durbar.chatNo` already relies on (not re-verified here, `read:`); whether *End session* removes the agent from `agents` or leaves it labelled `Ended` is `unverified` and T101 reads it before the prune rule is coded (Q-strip-4).
 
 **Tasks:** T099..T112 in `tasks.md`. Numbers taken: FR-178..FR-189 and T099..T112 of this spec (checked against `main`, remote branches and open PRs on 2026-10-29; no open PR touches this spec).
+
+## Changes 2026-11-02: removed page and tools (owner decision, PR #1054)
+
+`scripts/edit-stream-real.ts` were removed on 2026-11-02 by owner decision (no caller; run dates and credit counts above stay valid history); the scripts are in git history at commit `1c75b5bee`.
