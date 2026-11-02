@@ -285,7 +285,7 @@ module.exports = async (ctx) => {
         await must(PICS, 'the pictures');
         await must(`!!document.querySelector('#lift:not([hidden]) [data-lift]')`, 'the lift');
         const floor0 = await H.shownFloor();
-        await H.key('PageDown', [], { pause: 30 });
+        await H.key('PageUp', [], { pause: 30 });
         await must(`!!document.querySelector('#stage .ro-ride')`, 'the ride');
         const rd = await js(`(()=>{const r=document.querySelector('#stage .ro-ride'),L=window.__durbarSimUi.realLayout();return {top:parseFloat(r.style.top),lobbyH:L.lobbyH,doors:r.querySelectorAll('.rr-door').length,disp:r.querySelector('.rr-disp').textContent,aria:r.getAttribute('aria-hidden'),
           glow:!!document.querySelector('#lift .ride-to'),size:parseFloat(getComputedStyle(r.querySelector('.rr-disp')).fontSize),tabbable:r.querySelectorAll('button,[tabindex]').length}})()`);
@@ -306,7 +306,7 @@ module.exports = async (ctx) => {
         await H.load({ w, h, query: q(world, { simfloors: '1' }), ready: REAL, settle: false, focus: true });
         await must(`!!document.querySelector('#lift:not([hidden]) [data-lift]')`, 'the lift');
         const f1 = await H.shownFloor();
-        await H.key('PageDown', [], { pause: 30 });
+        await H.key('PageUp', [], { pause: 30 });
         await must(`localStorage.getItem('durbar.floor')!==${jsLiteral(f1)}`, 'the floor changed');
         assert.strictEqual(await js(`document.querySelectorAll('.ro-ride').length`), 0, `${tag}: reduced motion: no ride, the floor changes at once`);
       });
@@ -363,7 +363,7 @@ module.exports = async (ctx) => {
       /* Serious mode: no ride */
       await js(`window.__durbarSimUi.setSerious(true)`);
       const f0 = await js(`localStorage.getItem('durbar.floor')`);
-      await H.key('PageDown', [], { pause: 30 });
+      await H.key('PageUp', [], { pause: 30 });
       await must(`localStorage.getItem('durbar.floor')!==${jsLiteral(f0)}`, 'the floor changed');
       assert.strictEqual(await js(`document.querySelectorAll('.ro-ride').length`), 0, `${tag}: no ride in Serious mode`);
       await js(`window.__durbarSimUi.setSerious(false)`);
