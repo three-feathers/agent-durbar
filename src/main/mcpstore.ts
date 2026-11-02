@@ -16,6 +16,7 @@
 import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
+import { redact } from '../shared/redact';
 import { MAX_SERVERS, MCP_TOOL_OFF_RE, NAME_RE, trustHash, validateInput } from '../shared/mcp';
 import type { McpSecretKey, McpServerInput, McpServerSpec, McpServerView, McpTransport, McpTrustInfo } from '../shared/mcp';
 
@@ -261,7 +262,7 @@ export class McpStore {
     }
     this.unreadable = false;
     safe(() => fs.chmodSync(dest, fs.statSync(dest).isDirectory() ? 0o700 : 0o600), undefined); // a folder needs its search bit to stay readable
-    console.warn(`MCP store: an unreadable file was moved aside as ${path.basename(dest)}`);
+    console.warn(redact(`MCP store: an unreadable file was moved aside as ${path.basename(dest)}`));
   }
 
   private save(): void {
