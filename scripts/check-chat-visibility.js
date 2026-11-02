@@ -242,7 +242,7 @@ module.exports = async (ctx) => {
     await js(`(()=>{document.querySelector('#stage .desk[data-id='+JSON.stringify(${jsLiteral(String(id))})+']').click()})()`);
     assert.ok(await until(`document.body.classList.contains('panel-open')&&!!document.querySelector('#chat .chat-inner')`, 15000), `${tag}: the chat is open again`);
     await quiet('the reopen at the new width');
-    assert.strictEqual(await js(`document.querySelectorAll('#chat .chat-inner>.cvo').length`), 0, `${tag}: a changed width drops the marks (${JSON.stringify(await js("(()=>{const e=document.querySelector('#chat > .chat-inner');return {cvw:e.dataset.cvw,now:e.clientWidth,win:innerWidth}})()"))})`);
+    assert.strictEqual(await js(`document.querySelectorAll('#chat .chat-inner>.cvo').length`), 0, `${tag}: a changed width drops the marks`);
     await forceOff(true); await js(`document.getElementById('chat').scrollTop=0`); await quiet('measuring');
     const hv2 = await js(`[...document.querySelectorAll('#chat .chat-inner>.msg[data-cv]')].map(x=>Math.round(x.getBoundingClientRect().height*10)/10)`);
     await forceOff(false);
