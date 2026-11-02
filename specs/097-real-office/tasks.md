@@ -154,4 +154,5 @@ Numbers: T165..T170; FR-191..FR-194.
 - [x] T168 [US1] Driver: visitors face their fixture, in both sizes, 15 agents, `until()` waits, feet on the floor plane, no overlap. Test: `sim:` `shots-097-realoffice`, mutation-checked [FR-194]
 - [x] T169 [US1] Docs: changelog fragment, `docs/limits.md` size and facing note, spec tags (the README states no pack size, so none to change). Test: `npm run changelog:check`, `specs:check` [FR-193]
 - [ ] T170 [US1] Owner look at the lobby screenshots; a real mirrored-picture check by pixels if a side ever changes. Test: `real:` owner verdict [FR-191]
-
+- [x] T175 [US1] Renderer: the render's focus keep covers a sign's + as well as its menu button. Test: `sim:` `shots-097-screens`, mutation-checked [FR-230]
+- [x] T176 [US1] Driver: the Tab step checks the window's focus before each Tab, as the hover step does. Test: `sim:` `shots-097-screens` with the focus taken by `win.blur()`, fails before, passes after [FR-230]

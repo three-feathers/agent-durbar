@@ -390,6 +390,7 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
   assert.strictEqual(note('pirate'), 'Real office shows Office people until Pirate has Real office poses.', 'spec 077 FR-074: the Pirate crew has its Real office note');
   assert.strictEqual(note('monster'), 'Real office shows Office people until Monster has Real office poses.', 'spec 077 FR-075: the Monster crew has its Real office note');
   assert.strictEqual(note('royal'), 'Real office shows Office people until Royal has Real office poses.', 'spec 077 FR-076: the Royal crew has its Real office note');
+  assert.strictEqual(note('rebels'), 'Real office shows Office people until Rebels has Real office poses.', 'spec 077 FR-077: the Animal Rebels crew has its Real office note (crewName capitalises the id)');
 }
 
 // ---- FR-037: who sits where ----

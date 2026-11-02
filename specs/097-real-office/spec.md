@@ -39,7 +39,7 @@ Spec 001 owns the office, its densities and the 15-agent fit rule; spec 017 owns
 - **Themes** (specs 035, 040, 070): token groups `--room-*`, `--agent-*`, `--status-*`, `--ui-*`, `--scene-*`; a theme may name a scene kit (035 FR-013) that the Characters setting overrides (035 FR-016); sizes are not themeable (070 D2); status colour meanings are fixed (070 FR-050). Forced colours and `prefers-contrast` are handled in `styles.css` (spec 052 FR-052).
 - **Serious mode** (spec 034 FR-004): removes the moods; spec 017 FR-022 also stops its animations in Serious mode.
 - **Live readout and masking** (spec 001 FR-028..FR-031, FR-043): desk readouts go through `src/shared/redact.ts` (`redact`, `maskSecretCommand`, `maskSecretUrl`, `maskHomePaths`) and `DurbarSafeText` (mask before cut, spec 041 FR-065); main masks MCP output with session secret values (`maskMcpEvent`, `src/main/mcpmask.ts`). The chat body itself is Markdown-sanitised (spec 016) but **not** secret-masked, so the screen reuses the **desk readout** path, which is the stricter one (FR-030).
-- **Package size**: no budget exists today (spec 008 has none, no size script). The crew art total cap is 4 MiB (`test:crew-assets`; 3 MiB until the Royal crew, spec 077 FR-076; 2.5 MiB until the Monster crew, FR-075).
+- **Package size**: no budget exists today (spec 008 has none, no size script). The crew art total cap is 4.5 MiB (`test:crew-assets`; 4 MiB until the Animal Rebels crew, spec 077 FR-077; 3 MiB until the Royal crew, FR-076; 2.5 MiB until the Monster crew, FR-075).
 
 ## Evidence: the mockup (outside the repo, not committed)
 
@@ -329,6 +329,11 @@ Each has a recommendation (Q6 is for Paco, the crew owner). The build waits for 
 - **VIII Honest limits**: lobby face size, walking and people repetition are written as gaps.
 
 ## Changes
+
+### 2026-11-02: a sign keeps the keyboard's place when it redraws (found looking into a Windows FLAKY on #1001)
+
+- **FR-230** When a folder sign redraws (its counts or cost changed) while its + or its room menu button has the focus, the same button of the redrawn sign takes the focus back. The render's focus keep already held the menu button; the + was missing from it, so the focus fell to the page and Enter did nothing. Test: `sim:` `shots-097-screens`, a rebuild proven by a marked element, for both buttons, mutation-checked (T175).
+- **The FLAKY itself was not this.** `shots-097-screens` failed at *Tab to a desk opens the zoom* with `focus:false`: the window had lost the OS focus, and a plate reached by Tab then is not `:focus-visible`, so no zoom opens, on purpose. Reproduced on macOS by taking the focus with `win.blur()`: the same failure form (`focus:false`, `fv:false`, no zoom), and the old driver fails where the new one recovers. What took the focus on the Windows runner is not known. The driver checked the focus once, before its Tabs; it now checks before each Tab, gets the focus back, starts again from the sign, and does not count those Tabs (T176). A Tab with the window focused that opens nothing still fails.
 
 ### 2026-11-01: no walking; a person zooms out and zooms in, and the room stays still (Vikram, after watching; supersedes the walk, the head anchor and FR-017's narrower away and asleep desks)
 

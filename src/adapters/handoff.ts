@@ -14,7 +14,7 @@ export const HANDOFF_PROMPT = [
 
 export const HANDOFF_MAX_CHARS = 8000;
 /**
- * The limit for a one-shot reply that is data, not a summary (spec 040 FR-024, issue #903): the AI theme maker's JSON holds up to 19 art
+ * The limit for a one-shot reply that is data, not a summary (spec 040 FR-024, issue #903): the retired AI theme maker's JSON held up to 19 art
  * slots of 4,000 characters (76,000) plus about 150 colours, fonts and words (under 10,000). 128,000 leaves room for that with
  * margin, and is still a hard bound (a runaway reply is cut, which then fails the JSON parse, not the app).
  */
