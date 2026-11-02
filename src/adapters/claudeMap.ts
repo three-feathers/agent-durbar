@@ -58,7 +58,7 @@ export const USAGE_IDS_CAP = 512;
 
 const num = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
 /** The CLI turns characters outside [A-Za-z0-9_-] in a server name into `_` when it builds `mcp__<server>__<tool>`. */
-const normalizeServer = (name: string): string => name.replace(/[^A-Za-z0-9_-]/g, '_');
+export const normalizeServer = (name: string): string => name.replace(/[^A-Za-z0-9_-]/g, '_');
 const isSubagentTool = (name: string): boolean => name === 'Agent' || name === 'Task';
 
 /**

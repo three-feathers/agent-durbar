@@ -41,7 +41,7 @@ for (const v of ['a --> b', 'a --!> b']) {
 
 // spec 021 FR-063: the status is one word from a fixed list, the note is short (planted bad values are refused)
 for (const w of si.STATUSES) assert.deepStrictEqual(si.parseBlock(blk(`group: g\ntitle: T\nstatus: ${w}`)).errors, [], `"${w}" is allowed`);
-assert.deepStrictEqual([...si.STATUSES], ['draft', 'specified', 'building', 'built', 'released', 'superseded']);
+assert.deepStrictEqual([...si.STATUSES], ['draft', 'specified', 'building', 'built', 'released', 'superseded', 'deprecated']);
 for (const bad of ['done', 'implemented', '**built**', 'Built', 'built; delta 2026-10-22: y', 'in progress']) {
   const r = si.parseBlock(blk(`group: g\ntitle: T\nstatus: ${bad}`));
   assert.ok(r.errors.some((e) => /"status" must be one of/.test(e)), `status "${bad}" is refused`);
