@@ -51,4 +51,4 @@ The short version is in the README's status block; this is the full record.
 - **Ideas being specified:** a global assistant chat across sessions, multiple profiles (personal/work accounts), and a morning briefing. See the [issues](https://github.com/three-feathers/agent-durbar/issues).
 - **Needs a purchase:** code signing and notarization ([spec 014](../specs/014-signing-and-notarization/spec.md)).
 
-What was built when, and how it was checked, is in the [feature history](feature-history.md) and the [CHANGELOG](../CHANGELOG.md).
+What was built when, and how it was checked, is in the [specs](../specs/README.md) and the [CHANGELOG](../CHANGELOG.md).
