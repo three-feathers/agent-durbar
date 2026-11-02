@@ -732,6 +732,9 @@ async function checkCli(): Promise<void> {
         const wfd = fs.openSync(fifo, fs.constants.O_RDWR); fs.writeSync(wfd, JSON.stringify({ ...rep0, sha: '9'.repeat(40) }));
         try { assert.strictEqual(await cli.main(['post', '7', '9'.repeat(40)], dep({ fetch: fakeFetch, env: penv })), 1); assert.ok(/no stored report/.test(err.join('')) && fetched.length === 0 && Date.now() - t0 < 20_000, 'a FIFO that holds a valid report: refused as not a plain file, not read: ' + err.join('')); }
         finally { fs.closeSync(wfd); fs.rmSync(fifo); } } else console.log('prereview: mkfifo is not available, the FIFO case is skipped'); }
+    { // and a FIFO nobody writes to: opening it for reading would wait forever without O_NONBLOCK
+      const lone = path.join(reports, `7-${'8'.repeat(40)}.json`); if (spawnSync('mkfifo', [lone]).status === 0) { const t0 = Date.now(); err.length = 0;
+        try { assert.strictEqual(await cli.main(['post', '7', '8'.repeat(40)], dep({ fetch: fakeFetch, env: penv })), 1); assert.ok(/no stored report/.test(err.join('')) && Date.now() - t0 < 20_000, 'a FIFO with no writer: refused at once, not waited on'); } finally { fs.rmSync(lone); } } }
     const repLink = path.join(reports, `7-${sha}.json`); const repKeep = fs.readFileSync(repLink, 'utf8'); fs.rmSync(repLink); const valid = path.join(mk('victimdir2'), 'x.json'); fs.writeFileSync(valid, repKeep); fs.symlinkSync(valid, repLink); err.length = 0;
     assert.strictEqual(await post0(sha), 1); assert.ok(/no stored report/.test(err.join('')) && fetched.length === 0, 'a report that is a link: not read'); fs.rmSync(repLink); fs.writeFileSync(repLink, repKeep); }
   err.length = 0; assert.strictEqual(await post0(sha), 0, err.join('')); assert.deepStrictEqual(fetched.map((x) => x.split(' ')[0]), ['GET', 'POST', 'POST'], 'the current head, all owners, the config in place: one comment (test config and fake fetch only)');
