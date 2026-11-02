@@ -462,6 +462,7 @@ export class CopilotAdapter implements AgentAdapter {
       live.broker.denyPending(); // the old runtime's requests and questions die with it
       this.cancelQuestions(live, 'reconnect');
       live.limitRequestId = undefined;
+      live.stoppedAtLimit = false; // spec 052 FR-233: the idle that would clear it dies with the old runtime
       live.lateCalls?.clear(); // spec 052 FR-230: the old runtime and its calls are gone
       this.emit(sid, { type: 'status', status: 'working', intent: 'Reconnecting Copilot…' });
     }
@@ -1690,13 +1691,22 @@ export class CopilotAdapter implements AgentAdapter {
   private async waitLateCalls(sid: string, live: Live): Promise<boolean> {
     if (!live.lateCalls?.size) return true;
     const stops = live.interrupts;
+    const stale = (): boolean => this.sessions.get(sid) !== live || live.interrupts !== stops;
     this.emit(sid, { type: 'status', status: 'working', intent: COPILOT_STOP_WAIT });
-    const landed = await this.capped(Promise.all([...live.lateCalls]).then(() => true), this.lateWaitMs);
-    if (landed) await this.turnEnded(live);
-    if (this.sessions.get(sid) !== live || live.interrupts !== stops) return false;
-    if (landed) return true;
-    this.emit(sid, { type: 'status', status: 'idle', intent: 'Not sent: Copilot has not answered Stop' });
-    throw new Error(COPILOT_STOP_NO_ANSWER);
+    try {
+      const end = Date.now() + this.lateWaitMs;
+      // again and again under one deadline: a call may start while the last ones are waited for
+      while (live.lateCalls?.size && !stale()) {
+        const left = end - Date.now();
+        const landed = left > 0 && (await this.capped(Promise.all([...live.lateCalls]).then(() => true), left));
+        if (!landed && !stale()) throw new Error(COPILOT_STOP_NO_ANSWER);
+      }
+      if (!stale()) await this.turnEnded(live);
+      return !stale();
+    } catch (e) {
+      if (!stale()) this.emit(sid, { type: 'status', status: 'idle', intent: 'Not sent: Copilot has not answered Stop' }); // never left on "working"
+      throw e;
+    }
   }
 
   /**
@@ -1706,8 +1716,7 @@ export class CopilotAdapter implements AgentAdapter {
   private async turnEnded(live: Live): Promise<void> {
     const end = Date.now() + this.turnEndWaitMs;
     while (Date.now() < end) {
-      const r = await this.capped(live.session.rpc.metadata.isProcessing(), this.turnEndWaitMs);
-      if (!r?.processing) break;
+      if (!(await this.capped(this.processing(live), this.turnEndWaitMs))) break; // an experimental call: `processing` says yes when it cannot tell, so this ends at the deadline
       await new Promise((res) => setTimeout(res, 50));
     }
     await new Promise((res) => setTimeout(res, 100));

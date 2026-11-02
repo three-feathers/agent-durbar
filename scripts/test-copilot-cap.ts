@@ -10,11 +10,13 @@ import * as path from 'path';
 import { FakeClient, FakeCopilot, RestartingFakeCopilot } from './fakes/copilot-sdk';
 import type { FakeSession } from './fakes/copilot-sdk';
 import type { AgentEvent } from '../src/adapters/types';
+import { ownSleepers, parseMaxPrompts, spendRefusal } from './copilot-giveup-gate';
 
 const NANO = 1e9;
 const usage = (credits: number) => ({ type: 'assistant.usage', data: { model: 'gpt-6-luna', inputTokens: 10, outputTokens: 1, copilotUsage: { totalNanoAiu: credits * NANO } } });
 const idle = (aborted = false) => ({ type: 'session.idle', data: aborted ? { aborted: true } : {} });
 const tick = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
+const until = async (ok: () => boolean, ms = 2000): Promise<void> => { const end = Date.now() + ms; while (!ok() && Date.now() < end) await new Promise((r) => setTimeout(r, 5)); };
 
 async function main(): Promise<void> {
   const watchdog = setTimeout(() => { console.error('copilot cap: stuck (a Stop that waits for the runtime for ever?)'); process.exit(1); }, 30000); // a hung await would let node exit 0 without the closing line
@@ -372,6 +374,110 @@ async function main(): Promise<void> {
   await re.stop(reId);
   await re.dispose();
   client.resumeOverCap = 0;
+
+  // review of #1038, FR-229: a send made while the cancel is still out does not go before the abort that follows it has landed
+  lateWait(5000);
+  (ad as unknown as { stopStepMs: number }).stopStepMs = 150;
+  const c1 = await ad.start({ workspace: ws, model: 'gpt-6-luna', quiet: true });
+  const c1s = client.last as FakeSession;
+  let landCancel: () => void = () => undefined;
+  let landStop: () => void = () => undefined;
+  let aborts = 0;
+  (c1s.rpc as Record<string, unknown>).ui = { handlePendingSessionLimitsExhausted: () => new Promise<void>((r) => { landCancel = r; }) } as never;
+  (c1s as unknown as { abort: () => Promise<void> }).abort = () => { aborts++; return new Promise<void>((r) => { landStop = r; }); };
+  c1s.fire('session_limits_exhausted.requested', { requestId: 'rt-both', maxAiCredits: 30, usedAiCredits: 31 });
+  const stop1 = ad.interrupt(c1);
+  await new Promise((r) => setTimeout(r, 10));
+  const next1b = ad.send(c1, { text: 'after both' });
+  await new Promise((r) => setTimeout(r, 10));
+  landCancel();
+  await until(() => aborts === 1);
+  await new Promise((r) => setTimeout(r, 200)); // past the wait's own grace: it must be the abort that holds it
+  assert.strictEqual(sends(c1s), 0, 'nothing goes while the abort is out');
+  landStop();
+  await stop1;
+  await next1b;
+  assert.strictEqual(sends(c1s), 1, 'it goes once the abort landed');
+  (ad as unknown as { stopStepMs: number }).stopStepMs = 80;
+  // ... also a send in the very same tick as the Stop, before the abort has gone out
+  const c2 = await hungSession();
+  const stop2 = ad.interrupt(c2.id);
+  const next2b = ad.send(c2.id, { text: 'same tick' });
+  await new Promise((r) => setTimeout(r, 40));
+  assert.strictEqual(sends(c2.s), 0, 'not before the abort');
+  await stop2;
+  c2.land();
+  await next2b;
+  assert.strictEqual(sends(c2.s), 1);
+
+  // review of #1038: `rpc.metadata` is experimental: without it the message still goes, and any failure leaves the row idle
+  const m1 = await hungSession();
+  await ad.interrupt(m1.id);
+  (m1.s.rpc as Record<string, unknown>).metadata = undefined;
+  const nextM = ad.send(m1.id, { text: 'no metadata' });
+  await tick();
+  m1.land();
+  (ad as unknown as { turnEndWaitMs: number }).turnEndWaitMs = 60;
+  await nextM;
+  assert.strictEqual(sends(m1.s), 1, 'the message goes without the metadata call');
+  const m2 = await hungSession();
+  await ad.interrupt(m2.id);
+  const adAny = ad as unknown as { turnEnded: unknown };
+  const realTurnEnded = adAny.turnEnded;
+  adAny.turnEnded = async () => { throw new Error('boom'); };
+  events.length = 0;
+  const nextM2 = ad.send(m2.id, { text: 'fails' });
+  await tick();
+  m2.land();
+  await assert.rejects(nextM2, /boom/);
+  assert.strictEqual((events.filter((e) => e.type === 'status' && e.sessionId === m2.id).pop() as { status?: string } | undefined)?.status, 'idle', 'never left on working');
+  adAny.turnEnded = realTurnEnded;
+  (ad as unknown as { turnEndWaitMs: number }).turnEndWaitMs = 2000;
+
+  // review of #1038: a reconnect drops what belonged to the old runtime
+  const rc = new RestartingFakeCopilot();
+  const rcEvents: AgentEvent[] = [];
+  rc.onEvent((e) => rcEvents.push(e));
+  (rc as unknown as { stopStepMs: number }).stopStepMs = 30;
+  const rcErr = await rc.start({ workspace: ws, model: 'gpt-6-luna', quiet: true, maxAiCredits: 30 });
+  let rcSess = (await rc.currentClient()).last as FakeSession;
+  (rcSess.rpc as Record<string, unknown>).ui = { handlePendingSessionLimitsExhausted: async () => ({ success: true }) } as never;
+  rcSess.fire('session_limits_exhausted.requested', { requestId: 'rt-rc', maxAiCredits: 30, usedAiCredits: 31 });
+  await rc.interrupt(rcErr);
+  await rc.refreshAuth();
+  rcSess = (await rc.currentClient()).last as FakeSession;
+  rcEvents.length = 0;
+  rcSess.fire('session.error', { errorType: 'query', message: 'a real one' });
+  assert.strictEqual(rcEvents.filter((e) => e.type === 'status' && e.status === 'error').length, 1, 'FR-233: the new runtime\'s error shows');
+  // ... a Stop given up on, then the sign-in: the next message does not wait for the dead runtime
+  (rcSess as unknown as { abort: () => Promise<void> }).abort = () => new Promise<void>(() => undefined);
+  await rc.interrupt(rcErr);
+  await rc.refreshAuth();
+  rcSess = (await rc.currentClient()).last as FakeSession;
+  const quick = await Promise.race([rc.send(rcErr, { text: 'after the sign-in' }).then(() => true), new Promise<boolean>((r) => setTimeout(() => r(false), 1000))]);
+  assert.ok(quick && sends(rcSess) === 1, 'FR-230: the send goes at once');
+  // ... and an End given up on: the start does not wait for it
+  (rcSess as unknown as { disconnect: () => Promise<void> }).disconnect = () => new Promise<void>(() => undefined);
+  await rc.stop(rcErr);
+  await rc.refreshAuth();
+  const quickStart = await Promise.race([rc.start({ workspace: ws, model: 'gpt-6-luna', quiet: true, resumeSessionId: rcErr }).then(() => true), new Promise<boolean>((r) => setTimeout(() => r(false), 1000))]);
+  assert.ok(quickStart, 'FR-230: the start goes at once');
+  await rc.stop(rcErr);
+  await rc.dispose();
+
+  // review of #1038: the probe's own gates
+  for (const bad of ['x', '', '0', '-1', '1.5', 'NaN', '1e3', undefined]) assert.throws(() => parseMaxPrompts(bad), /positive integer/, `--max-prompts ${bad}`);
+  assert.strictEqual(parseMaxPrompts('7'), 7);
+  const gate = { prompts: 1, maxPrompts: 2, aiu: 1, maxAiu: 6 };
+  assert.strictEqual(spendRefusal(gate), null);
+  assert.match(String(spendRefusal({ ...gate, prompts: 2 })), /prompts used/);
+  assert.match(String(spendRefusal({ ...gate, aiu: 6 })), /credits used/);
+  assert.match(String(spendRefusal({ ...gate, maxPrompts: NaN })), /refused/, 'NaN refuses');
+  assert.match(String(spendRefusal({ ...gate, aiu: NaN })), /refused/, 'NaN refuses');
+  const ps = ['100 1 copilot-runtime', '101 100 /bin/sh -c sleep 62', '102 101 sleep 62', '103 100 sleep 62', '200 1 sleep 62', '201 200 sleep 62', '300 102 sleep 620', '301 1 x sleep 62'].join('\n');
+  assert.deepStrictEqual(ownSleepers(ps, 100, 62), [102, 103], 'only the runtime\'s own, at any depth, exact argv');
+  const probe = fs.readFileSync(path.join(__dirname, '..', '..', 'scripts', 'copilot-giveup-real.ts'), 'utf8');
+  assert.strictEqual((probe.match(/prompts\+\+/g) ?? []).length, 1, 'every real send of the probe goes through the one gate');
 
   await ad.stop(sid).catch(() => undefined);
   fs.rmSync(ws, { recursive: true, force: true });

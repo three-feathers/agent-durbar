@@ -29,6 +29,7 @@ import { COPILOT_DESCRIPTOR } from '../src/adapters/copilot';
 import { EventMapper } from '../src/adapters/map';
 import type { AgentAdapter, AgentEvent } from '../src/adapters/types';
 import { redact } from '../src/shared/redact';
+import { ownSleepers, parseMaxPrompts, spendRefusal } from './copilot-giveup-gate';
 import { maskIds } from './sandbox-real-mask';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const cp = require('child_process') as typeof import('child_process');
@@ -45,7 +46,7 @@ if (process.platform !== 'linux') throw new Error('refused: Linux only (SIGSTOP 
 const replArg = args.indexOf('--repl');
 const replDir = replArg >= 0 ? args[replArg + 1] : '';
 const maxArg = args.indexOf('--max-prompts');
-const MAX_PROMPTS = maxArg >= 0 ? Number(args[maxArg + 1]) : replDir ? 80 : 7; // baseline, term, hang, next send + stop, question, limit, and one send after a limit if the runtime raised one
+const MAX_PROMPTS = maxArg >= 0 ? parseMaxPrompts(args[maxArg + 1]) : replDir ? 80 : 7; // baseline, term, hang, next send + stop, question, limit, and one send after a limit if the runtime raised one
 const MAX_REPL_AIU = 43; // the owner's ceiling for this run is 45; one small call may still be on its way
 const MAX_AIU = replDir ? MAX_REPL_AIU : 6;
 const GIVE_UP_MS = 5000;
@@ -117,8 +118,8 @@ const unhang = (): void => { process.kill(runtimePid, 'SIGCONT'); mark('SIGCONT 
 process.on('exit', () => { try { if (runtimePid) process.kill(runtimePid, 'SIGCONT'); } catch { /* gone */ } });
 for (const sig of ['SIGINT', 'SIGTERM'] as const) process.on(sig, () => process.exit(3)); // a hung runtime never stays behind
 const leftovers = new Set<number>();
-/** The pids of a `sleep <n>` the fixed command started (exact argv, this user), remembered so the run can kill what an abort left. */
-const sleepers = (n: number): number[] => cp.execFileSync('ps', ['-eo', 'pid=,args=', '-u', String(process.getuid?.())], { encoding: 'utf8' }).split('\n').map((l) => l.trim()).filter((l) => l.endsWith(` sleep ${n}`) && l.split(/\s+/).length === 3).map((l) => Number(l.split(/\s+/)[0]));
+/** The pids of a `sleep <n>` the fixed command started: the runtime's descendants only, remembered so the run can kill what an abort left. */
+const sleepers = (n: number): number[] => ownSleepers(cp.execFileSync('ps', ['-e', '-o', 'pid=,ppid=,args='], { encoding: 'utf8' }), runtimePid, n);
 /** Marks when a tool's process first shows and when it goes. */
 function watch(n: number): () => void {
   let was = false;
@@ -197,11 +198,15 @@ async function main(): Promise<number> {
     sid = await ad.start({ ...base, ...(resume ? { resumeSessionId: sid } : {}) } as never);
     instrument(live());
   };
+  /** The one gate before every real send (review of #1038). */
+  const nextPrompt = (): void => {
+    const refused = spendRefusal({ prompts, maxPrompts: MAX_PROMPTS, aiu, maxAiu: MAX_AIU });
+    if (refused) throw new Error(refused);
+    prompts++;
+  };
   const prompt = async (text: string, summary = ''): Promise<void> => {
     if (!spend) throw new Error('dry run: no prompt');
-    if (prompts >= MAX_PROMPTS) throw new Error(`refused: ${MAX_PROMPTS} prompts used`);
-    if (aiu >= MAX_AIU) throw new Error(`refused: ${aiu} AI credits used`);
-    prompts++;
+    nextPrompt();
     approve = summary;
     mark(`send (prompt ${prompts})`);
     await ad.send(sid, { text });
@@ -266,13 +271,8 @@ async function main(): Promise<number> {
     if (spend && replDir) {
       beginPhase('repl');
       const ok = 'Reply with only: ok';
-      const guard = (): void => {
-        if (aiu >= MAX_AIU) throw new Error(`refused: ${round3(aiu)} AI credits used`);
-        if (prompts >= MAX_PROMPTS) throw new Error(`refused: ${MAX_PROMPTS} prompts used`);
-      };
       const direct = async (text: string, summary = ''): Promise<void> => {
-        guard();
-        prompts++;
+        nextPrompt();
         approve = summary;
         mark(`direct send (prompt ${prompts})`);
         await live().session.send({ prompt: text });
@@ -496,8 +496,7 @@ async function main(): Promise<number> {
       mark(`asked after the update: ${asked()}`);
       if (!asked()) {
         // past the adapter's own cap, which would hold the message: the runtime's is what is measured here
-        if (prompts >= MAX_PROMPTS) throw new Error('refused: prompt budget');
-        prompts++;
+        nextPrompt();
         mark(`send past the adapter (prompt ${prompts})`);
         await live().session.send({ prompt: 'Reply with only: ok' });
         await until(() => asked() || seen('raw:session.idle', from), 60_000);
@@ -520,8 +519,8 @@ async function main(): Promise<number> {
         await until(() => marks.slice(from).some((m) => m.name.startsWith('raw:session_limits_exhausted.completed')), 10_000);
         await pollProcessing(3000);
         await live().session.rpc.options.update({ sessionLimits: null }).catch((e: unknown) => mark(`cap removal failed: ${msg(e)}`));
-        if (prompts < MAX_PROMPTS) {
-          prompts++;
+        if (!spendRefusal({ prompts, maxPrompts: MAX_PROMPTS, aiu, maxAiu: MAX_AIU })) {
+          nextPrompt();
           mark(`next send (prompt ${prompts})`);
           const f2 = marks.length;
           await live().session.send({ prompt: 'Reply with only: ok' });
