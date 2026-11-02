@@ -716,6 +716,14 @@ async function checkCli(): Promise<void> {
   fs.writeFileSync(pcfg, JSON.stringify({ ...cfgAll, confirmations: { vikramgorla: '2026-10-30', rubenlupi: '2026-10-30' } }), { mode: 0o600 }); assert.strictEqual(await post0(sha), 1); assert.ok(fetched.length === 0, 'Paco has not confirmed');
   fs.writeFileSync(pcfg, JSON.stringify(cfgAll), { mode: 0o600 }); fs.chmodSync(opdir, 0o777); err.length = 0; assert.strictEqual(await post0(sha), 1); assert.ok(/folder/.test(err.join('')) && fetched.length === 0, 'a config in a folder others can write'); fs.chmodSync(opdir, 0o700);
   assert.strictEqual(await post0(sha, { me: process.getuid!() + 1 }), 1); assert.ok(fetched.length === 0, 'a config not owned by the operating user');
+  { // readPlainFile judges the opened handle: a handle that is not a plain file is refused even when reading it would give valid JSON (a FIFO cannot hold that still: the second read of a nonblocking FIFO fails by itself)
+    const good = path.join(mk('plainread'), 'r.json'); fs.writeFileSync(good, JSON.stringify(rep0)); const real = fs;
+    assert.strictEqual(cli.readPlainFile(good, 1_000_000), JSON.stringify(rep0), 'a plain file is read');
+    const asFifo: any = { openSync: real.openSync, closeSync: real.closeSync, readFileSync: real.readFileSync, constants: real.constants, fstatSync: (fd: number) => ({ ...real.fstatSync(fd), isFile: () => false, size: 5 }) };
+    assert.throws(() => cli.readPlainFile(good, 1_000_000, asFifo), /not a plain file/, 'a handle that fstat says is not a plain file: refused, whatever it would read');
+    const big: any = { ...asFifo, fstatSync: (fd: number) => ({ isFile: () => true, size: 10_000_000 }) }; assert.throws(() => cli.readPlainFile(good, 1_000_000, big), /not a plain file/, 'over the cap: refused');
+    const ln = path.join(path.dirname(good), 'ln.json'); fs.symlinkSync(good, ln); assert.throws(() => cli.readPlainFile(ln, 1_000_000), (e: any) => e && e.code === 'ELOOP', 'a link is not followed');
+  }
   { // the posted-marker is the operator's, beside its config; a link planted in the bot's folder is never followed, and a report that is a link is not read
     victimFile = path.join(mk('victimdir'), 'victim.txt'); const victim = victimFile; fs.writeFileSync(victim, 'KEEP\n'); try { fs.symlinkSync(victim, path.join(base, 'state', 'posted.jsonl')); } catch { /* already there */ }
     { // a FIFO in the bot's folder must not hang the operator's post, nor be read

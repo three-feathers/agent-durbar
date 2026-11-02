@@ -242,14 +242,14 @@ export async function main(argv: string[], d: CliDeps): Promise<number> {
 }
 
 /** A file of the bot's folder, read by the operator: a plain file only (a link there could name any file the operator can read), size-capped. */
-function readPlainFile(file: string, max: number): string {
+export function readPlainFile(file: string, max: number, ops: Pick<typeof fs, 'openSync' | 'fstatSync' | 'readFileSync' | 'closeSync' | 'constants'> = fs): string {
   // one open that never follows a link and never waits for a writer (a FIFO planted there would hang this process), then judge the handle, not the name
-  const fd = fs.openSync(file, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
+  const fd = ops.openSync(file, ops.constants.O_RDONLY | ops.constants.O_NOFOLLOW | ops.constants.O_NONBLOCK);
   try {
-    const st = fs.fstatSync(fd);
+    const st = ops.fstatSync(fd);
     if (!st.isFile() || st.size > max) throw new Error('not a plain file');
-    return fs.readFileSync(fd, 'utf8');
-  } finally { fs.closeSync(fd); }
+    return ops.readFileSync(fd, 'utf8');
+  } finally { ops.closeSync(fd); }
 }
 /** `post`: only past the gate of FR-027. Re-checks FR-004 on the PR first (a PR that became untrusted gets nothing). */
 async function postStage(d: CliDeps, a: Args): Promise<number> {
