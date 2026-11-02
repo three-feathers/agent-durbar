@@ -142,3 +142,8 @@
 - [x] T055 `app.js`: `roomsInOrder`, desk sort and `lobbyPlaces` read the order; drag wiring; Alt and Alt+Shift arrows, folder menu Move earlier / later, palette Reset, keyboard help, no repaint under a drag (FR-081..FR-084, FR-087).
 - [x] T056 `scripts/test-roomorder.ts` (`npm run test:roomorder`): rules, equal parse in renderer and main, file round trip, corrupt and older files, source checks (FR-081, FR-083, FR-085).
 - [x] T057 `scripts/shots-033-order.js` (in `check:ui`): real mouse and keys at both sizes, Open office and cabins; screenshots; README, changelog fragment, spec Verification.
+
+## Phase 17: Change 2026-11-01 (floor switch looks like the MCP toggle, issue #1010)
+
+- [x] T058 Floor on/off uses the shared `.swt` switch (`role=switch`, `aria-checked`) in the panel and Settings; `.fl-sw` removed (its leftover Delete-dialog return focus fixed, review of #1011); drivers read `aria-checked`; `shots-033.js` asserts it [FR-007, FR-023]; screenshots, changelog fragment, docs
+- [x] T059 Floors panel row: **Focus mode** icon button, icon buttons for Up, Down, Rename and Delete, a drag handle with reorder by drag (`reorder.js` attach for floors, depends on PR #987), `shots-033.js` drag and name checks, retaken linked pictures [FR-004, FR-022]
