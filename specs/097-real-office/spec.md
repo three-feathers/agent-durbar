@@ -336,6 +336,18 @@ Each has a recommendation (Q6 is for Paco, the crew owner). The build waits for 
 
 - **FR-228** `[IMPLEMENTED]` (T173; `sim:` `check-097-motion`) **Motion starts when the room is ready.** On a first draw the room stands still for 2 s, then its loops all start in one pass, with no fade or poof running. Nothing else changes in how it looks. Why a fixed time: 2 s and 3 s held in 4 of 4 launches; 0.7 s held 1 of 2; waiting for the pictures to decode, or for 30 quiet frames, held no better than today. What the first 2 s let finish is not known. `handOver` stays for what starts later.
 - **FR-229** `[IMPLEMENTED]` (T174; `sim:` `check-097-motion`; owner to judge a recording before this lands) **12 changes a second, on one clock.** Every endless loop of the room (sway, frames, rig, lights, caret) is sampled on one grid of 1/12 s: its whole effect takes `steps()`, its duration and start time snap to the grid, so all of them change on the same frames. Each still follows its own path and keeps its own timing and phase within 1/12 s; only how often it is drawn changes. This amends the "smooth" reading of the 2026-11-01 delta for the frame rate only. A pixel world keeps its own stepped timing.
+- **Measured** (`real:` macOS, Apple M4, real GPU, simulator, 15 agents, 1440x900, 3 rounds interleaved, % of a core, total (renderer), outside sampler):
+
+  | | First 30 s | Settled |
+  |---|---|---|
+  | Today, mixed | 33.6 (14.6) | 26.1 (8.5) |
+  | FR-228 only, mixed | 26.2 (8.7) | 26.0 (8.5) |
+  | FR-228 and FR-229, mixed | 9.7 (3.9) | 8.4 (3.4) |
+  | Today, all asleep | 29.1 (15.6) | 19.4 (7.9) |
+  | FR-228 and FR-229, all asleep | 7.1 (2.8) | 5.3 (1.8) |
+
+  Today's first 30 s is a median of launches that clear at about 10 s and at over 30 s, up to about 47 % while stuck; with FR-228 no launch of 12 got stuck. **The grid is real:** the trace counts 60.2 drawn frames a second today and 12.2 with FR-229, gaps of one step, also after a chat and back. A `filter: brightness(.72)` on every person, as a stand-in for #994's sleeper, costs nothing measurable (5.1 against 5.3).
+- `[KNOWN GAP]` The owner's look at 12 is by a recording. Only this Mac and this GPU; no software compositor, Windows or Linux. The room stands still for its first 2 s, which is a small look change. What the first 2 s let finish is not known.
 
 ### 2026-11-01: no walking; a person zooms out and zooms in, and the room stays still (Vikram, after watching; supersedes the walk, the head anchor and FR-017's narrower away and asleep desks)
 
