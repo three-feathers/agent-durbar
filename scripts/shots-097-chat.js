@@ -7,7 +7,7 @@
  *
  * For the Photo office and the cave (MOMENTS_WORLDS, default photo) at 1440x900 and 1280x800 it fails (exit 1) when:
  *   - a desk-side column exists (the owner removed it on 2026-11-01) or the chat is not the whole window's width;
- *   - the header has no 32 px portrait with its lamp ring, dot and a cropped picture, is taller than the flat office's, or the lamp words ("Lamp warm, steady", ...) are not on the task line alone, whole beside a long task;
+ *   - the header has no 32 px portrait with its lamp ring, dot and a cropped picture, or the lamp words ("Lamp warm, steady", ...) are not on the task line alone, whole beside a long task;
  *   - the tab order of the panel is not the flat office's (the same agent, same elements);
  *   - the panel surface is under 78 % opaque, or any text pair (title, lamp words, cards, hint) is under 4.5:1 against the composited surface (3:1 for large text);
  *   - text under 10.5 px.

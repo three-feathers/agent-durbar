@@ -705,6 +705,7 @@
     if(!own(WORLD_SETS,id))return null;
     const w=WORLD_SETS[id], t=Object.assign({},CLEAN_TOKENS,w.page,w.bar);
     for(const [k] of WORLD_BAR_MAP)t['--wp-'+k.slice(2)]=t[k];
+    t['--wb-bar-shadow']='inset 0 1px 0 color-mix(in srgb,var(--wb-ink) 9%,transparent),0 6px 18px -8px color-mix(in srgb,var(--wb-bg-2) 85%,transparent)'; /* FR-226: the top bar's one shadow */
     return t;
   }
   function glassOver(v,over){const a=hex6(v),b=hex6(over);return '#'+[0,2,4].map(i=>Math.round(parseInt(a.slice(i,i+2),16)*WORLD_GLASS+parseInt(b.slice(i,i+2),16)*(1-WORLD_GLASS)).toString(16).padStart(2,'0')).join('');}
