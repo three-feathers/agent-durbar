@@ -5,7 +5,7 @@
  * **Dry by default: the runtime starts and one session is created, no prompt, no credits.** `--spend` sends real prompts through
  * Durbar's own adapter (the owner's OK first, AGENTS.md), at most `MAX_PROMPTS`, stopping at `MAX_AIU`, and refuses under `CI`.
  *
- *   node dist-scripts/scripts/copilot-giveup-real.js <out.json> [--spend] [--phases p1,p2,...]
+ *   node dist-scripts/scripts/copilot-giveup-real.js <out.json> [--spend] [--phases p1,p2,...] [--repl <dir>] [--forge]
  *
  * A real hang is made with SIGSTOP on the runtime process (Linux only), so the pipe stays open and calls wait, as a hung runtime's
  * would; SIGCONT brings it back. Ask first, and the permission gate approves only the exact fixed command of the step. Everything runs
@@ -15,11 +15,20 @@
  * resume under a hang), `question` (an answer under a hang), `late` (a close held back, then a resume), `limit` (can the runtime's limit be
  * provoked; `options.update` refuses a cap under 30, so it was not, real 2026-11-02). A run of them all is at most 7 prompts.
  *
+ * `--repl <dir>` (issue #1028 question 3, the runtime's own limit, which needs at least 30 credits of real use): one session, kept alive so the
+ * runtime's count stays, driven step by step by fixed commands in `<dir>/cmd` (see `runCommandLine`). `fill` reaches the cap on a dear model with
+ * random words. No model call at `MAX_REPL_AIU` credits or over, by this script's own count. `history.truncate` resets the runtime's count (real
+ * 2026-11-02), and a new exhaustion is another 30 credits, so `--forge` adds a local request handler: real model calls, and `bump <n>` adds n
+ * credits to the usage figure of the next answer, inside this process, so the real runtime's own limit logic runs without paying for it. The
+ * forged part is counted apart and never passes the upstream.
+ *
  * Output: event names and timings only, never prompts' answers, session ids, paths or tool output.
  */
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { CopilotClient, CopilotRequestHandler, CopilotWebSocketForwarder } from '@github/copilot-sdk';
+import type { CopilotRequestContext } from '@github/copilot-sdk';
 import { COPILOT_DESCRIPTOR } from '../src/adapters/copilot';
 import { EventMapper } from '../src/adapters/map';
 import type { AgentAdapter, AgentEvent } from '../src/adapters/types';
@@ -32,14 +41,17 @@ const args = process.argv.slice(2);
 const spend = args.includes('--spend');
 const phaseArg = args.indexOf('--phases');
 const wanted = phaseArg >= 0 ? (args[phaseArg + 1] ?? '').split(',') : ['baseline', 'term', 'hang', 'stop', 'question', 'late', 'limit'];
-const outFile = args.find((a, i) => !a.startsWith('--') && !(i > 0 && (args[i - 1] === '--phases' || args[i - 1] === '--max-prompts')));
+const outFile = args.find((a, i) => !a.startsWith('--') && !(i > 0 && (args[i - 1] === '--phases' || args[i - 1] === '--max-prompts' || args[i - 1] === '--repl')));
 if (!outFile) throw new Error('usage: copilot-giveup-real.js <out.json> [--spend] [--phases p1,p2,...]');
 if (spend && process.env.CI) throw new Error('refused: --spend never runs under CI');
 if (process.platform !== 'linux') throw new Error('refused: Linux only (SIGSTOP and `ps --ppid`)');
 
+const replArg = args.indexOf('--repl');
+const replDir = replArg >= 0 ? args[replArg + 1] : '';
 const maxArg = args.indexOf('--max-prompts');
-const MAX_PROMPTS = maxArg >= 0 ? Number(args[maxArg + 1]) : 7; // baseline, term, hang, next send + stop, question, limit, and one send after a limit if the runtime raised one
-const MAX_AIU = 6;
+const MAX_PROMPTS = maxArg >= 0 ? Number(args[maxArg + 1]) : replDir ? 80 : 7; // baseline, term, hang, next send + stop, question, limit, and one send after a limit if the runtime raised one
+const MAX_REPL_AIU = 43; // the owner's ceiling for this run is 45; one small call may still be on its way
+const MAX_AIU = replDir ? MAX_REPL_AIU : 6;
 const GIVE_UP_MS = 5000;
 const HOME = os.homedir();
 const clean = (s: unknown, max = 200): string => maskIds(redact(String(s ?? '')).split(HOME).join('~')).slice(0, max);
@@ -64,16 +76,84 @@ const until = async (ok: () => boolean, ms: number): Promise<boolean> => {
 
 /* Copilot's own stream, names and bounded words only */
 const bounded = (v: unknown): string => (typeof v === 'string' && /^[A-Za-z][A-Za-z0-9_.-]{0,40}$/.test(v) ? v : '');
-const NOISY = /delta$|^assistant\.(streaming|reasoning|intent)|^session\.usage_info|^tool\.execution_(partial|progress)|^sandbox\.|^permission\.|^hook\.|^user\.message$|^session\.indexed_search$/;
+const NOISY = /delta$|^assistant\.(streaming|reasoning|intent)|^session\.usage_info|^tool\.execution_(partial|progress)|^sandbox\.|^permission\.|^hook\.|^session\.indexed_search$/;
 const mapProto = (EventMapper as unknown as { prototype: { map(x: unknown): void } }).prototype;
 const origMap = mapProto.map;
 let aiu = 0;
+let lastUsage = { input: 0, cacheRead: 0, output: 0, aiu: 0 };
+let firstUserEvent = ''; // the event a truncate goes back to (never printed)
+const numberOf = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+const round3 = (n: number): number => Math.round(n * 1000) / 1000;
+/** The numbers of a limit or usage event: counts only. */
+const numbers = (type: string, d: Record<string, unknown> | undefined): string => {
+  if (type === 'assistant.usage') return `:in=${numberOf(d?.inputTokens)},read=${numberOf(d?.cacheReadTokens)},write=${numberOf(d?.cacheWriteTokens)},out=${numberOf(d?.outputTokens)},aiu=${round3(numberOf((d?.copilotUsage as { totalNanoAiu?: unknown } | undefined)?.totalNanoAiu) / 1e9)},total=${round3(aiu)}`;
+  if (type === 'session_limits_exhausted.requested') return `:used=${round3(numberOf(d?.usedAiCredits))},max=${round3(numberOf(d?.maxAiCredits))}`;
+  if (type === 'session_limits_exhausted.completed') return `:${bounded((d?.response as { action?: unknown } | undefined)?.action)}`;
+  if (type === 'session.session_limits_changed') return `:max=${round3(numberOf((d?.sessionLimits as { maxAiCredits?: unknown } | undefined)?.maxAiCredits))}`;
+  if (type === 'session.usage_checkpoint') return `:total=${round3(numberOf(d?.totalNanoAiu) / 1e9)}`;
+  if (type === 'session.info' || type === 'session.warning' || type === 'session.error') {
+    const text = String(d?.message ?? '');
+    return `:${bounded(d?.infoType) || bounded(d?.warningType) || bounded(d?.errorType)}${/^(Session limit|Tool execution was skipped)/.test(text) || type === 'session.error' ? `:${clean(text, 110)}` : ''}`;
+  }
+  return '';
+};
+/* --forge: the usage figure of an answer, seen and changed in this process only */
+let bumpNext = 0;
+let forged = 0;
+const usageCounters = /"([a-z_]*nano_aiu|prompt_tokens|input_tokens|completion_tokens|output_tokens)"\s*:\s*(\d+)/g;
+const rewriteFrame = (text: string): string => {
+  const seenCounts = [...text.matchAll(usageCounters)].map((m) => `${m[1]}=${m[2]}`);
+  if (seenCounts.length) mark(`model answer usage: ${seenCounts.join(',').slice(0, 160)}`);
+  if (!bumpNext || !/"total_nano_aiu"/.test(text)) return text;
+  const add = bumpNext;
+  bumpNext = 0;
+  forged += add;
+  mark(`usage figure raised by ${add} credits (forged, local)`);
+  return text.replace(/"total_nano_aiu"\s*:\s*(\d+)/, (_m, n: string) => `"total_nano_aiu":${Number(n) + add * 1e9}`);
+};
+const rewriteStream = (res: Response): Response => {
+  if (!res.body) return res;
+  let tail = '';
+  const body = res.body.pipeThrough(new TextDecoderStream()).pipeThrough(new TransformStream<string, string>({
+    transform(chunk, ctl) {
+      const lines = (tail + chunk).split('\n');
+      tail = lines.pop() ?? '';
+      if (lines.length) ctl.enqueue(`${lines.map(rewriteFrame).join('\n')}\n`);
+    },
+    flush(ctl) { if (tail) ctl.enqueue(rewriteFrame(tail)); },
+  })).pipeThrough(new TextEncoderStream());
+  return new Response(body, { status: res.status, statusText: res.statusText, headers: res.headers });
+};
+class ForgeSocket extends CopilotWebSocketForwarder {
+  override sendResponseMessage(data: string | Uint8Array): Promise<void> {
+    if (typeof data === 'string') return super.sendResponseMessage(rewriteFrame(data));
+    return super.sendResponseMessage(new TextEncoder().encode(rewriteFrame(new TextDecoder().decode(data))));
+  }
+}
+class ForgeHandler extends CopilotRequestHandler {
+  protected override async sendRequest(request: Request, ctx: CopilotRequestContext): Promise<Response> {
+    const route = clean(new URL(request.url).pathname, 40);
+    mark(`http ${request.method} ${route} (${ctx.interactionType ?? 'no type'})`);
+    const res = await super.sendRequest(request, ctx);
+    mark(`http ${route}: ${res.status}`);
+    return /responses|completions|messages/.test(route) ? rewriteStream(res) : res;
+  }
+  protected override async openWebSocket(ctx: CopilotRequestContext): Promise<ForgeSocket> {
+    mark(`websocket ${clean(new URL(ctx.url).pathname, 40)} (${ctx.interactionType ?? 'no type'})`);
+    return new ForgeSocket(ctx);
+  }
+}
 mapProto.map = function (this: unknown, x: unknown): void {
-  const e = x as { type?: string; data?: Record<string, unknown> };
+  const e = x as { type?: string; id?: unknown; data?: Record<string, unknown> };
   const type = String(e?.type);
-  if (type === 'assistant.usage') aiu += Number((e.data?.copilotUsage as { totalNanoAiu?: unknown } | undefined)?.totalNanoAiu ?? 0) / 1e9 || 0;
+  if (type === 'assistant.usage') {
+    const n = Number((e.data?.copilotUsage as { totalNanoAiu?: unknown } | undefined)?.totalNanoAiu ?? 0) / 1e9 || 0;
+    aiu += n;
+    lastUsage = { input: numberOf(e.data?.inputTokens), cacheRead: numberOf(e.data?.cacheReadTokens), output: numberOf(e.data?.outputTokens), aiu: n };
+  }
+  if (type === 'user.message' && !firstUserEvent && typeof e.id === 'string') firstUserEvent = e.id;
   if (!NOISY.test(type)) {
-    const extra = bounded(e.data?.toolName) || bounded(e.data?.reason) || bounded(e.data?.errorType) || (typeof e.data?.success === 'boolean' ? String(e.data.success) : '');
+    const extra = numbers(type, e.data).slice(1) || bounded(e.data?.toolName) || bounded(e.data?.reason) || bounded(e.data?.errorType) || (typeof e.data?.success === 'boolean' ? String(e.data.success) : '');
     mark(`raw:${type}${extra ? `:${extra}` : ''}`);
   }
   return origMap.call(this, x);
@@ -85,6 +165,7 @@ let runtimePid = 0;
 const hang = (): void => { process.kill(runtimePid, 'SIGSTOP'); mark('SIGSTOP runtime'); };
 const unhang = (): void => { process.kill(runtimePid, 'SIGCONT'); mark('SIGCONT runtime'); };
 process.on('exit', () => { try { if (runtimePid) process.kill(runtimePid, 'SIGCONT'); } catch { /* gone */ } });
+for (const sig of ['SIGINT', 'SIGTERM'] as const) process.on(sig, () => process.exit(3)); // a hung runtime never stays behind
 const leftovers = new Set<number>();
 /** The pids of a `sleep <n>` the fixed command started (exact argv, this user), remembered so the run can kill what an abort left. */
 const sleepers = (n: number): number[] => cp.execFileSync('ps', ['-eo', 'pid=,args=', '-u', String(process.getuid?.())], { encoding: 'utf8' }).split('\n').map((l) => l.trim()).filter((l) => l.endsWith(` sleep ${n}`) && l.split(/\s+/).length === 3).map((l) => Number(l.split(/\s+/)[0]));
@@ -106,13 +187,14 @@ type RpcSession = {
   disconnect(): Promise<unknown>;
   send(p: unknown): Promise<unknown>;
   rpc: {
+    history: { truncate(p: { eventId: string }): Promise<{ eventsRemoved?: unknown }> };
     metadata: { isProcessing(): Promise<{ processing?: unknown }> };
     options: { update(p: unknown): Promise<unknown> };
     model: { getCurrent(): Promise<{ modelId?: string }>; switchTo(p: unknown): Promise<unknown> };
     ui: { handlePendingSessionLimitsExhausted(p: unknown): Promise<unknown> };
   };
 };
-type LiveLike = { session: RpcSession; limitRequestId?: string; capNow?: number | null };
+type LiveLike = { session: RpcSession; limitRequestId?: string; capNow?: number | null; localLimit?: { requestId: string; held?: unknown }; lateCalls?: Set<unknown>; turnOpen?: boolean };
 type Internals = { getClient(): Promise<{ listModels(): Promise<Array<{ id?: string; billing?: { multiplier?: number } }>> }>; sessions: Map<string, LiveLike> };
 
 async function main(): Promise<number> {
@@ -121,16 +203,18 @@ async function main(): Promise<number> {
   const out: Record<string, unknown> = { date: new Date().toISOString(), os: `${process.platform} ${os.release()}`, node: process.version, dry: !spend };
   const ad: AgentAdapter = COPILOT_DESCRIPTOR.create();
   const inner = ad as unknown as Internals;
+  if (args.includes('--forge')) (ad as unknown as { createClient(): Promise<CopilotClient> }).createClient = async () => { const c = new CopilotClient({ requestHandler: new ForgeHandler() }); await c.start(); return c; };
   let sid = '';
   let prompts = 0;
   let approve = ''; // the one summary the gate approves now
   const live = (): LiveLike => { const l = inner.sessions.get(sid); if (!l) throw new Error('no live session'); return l; };
   let lastQuestion = '';
+  let lastLimit = '';
 
   ad.onEvent((e: AgentEvent) => {
     if (sid && e.sessionId !== sid) return;
     if (e.type === 'status') {
-      const intent = /^(Aborted|Thinking|Answered|Waiting for your answer)$/.test(String(e.intent)) ? `:${e.intent}` : '';
+      const intent = /^(Aborted|Thinking|Answered|Ready|Waiting for your answer|Stop sent: .*|Waiting for Copilot to stop .*|Not sent: .*|Stopped at the spending limit)$/.test(String(e.intent)) ? `:${e.intent}` : '';
       mark(`adapter:status:${e.status}${intent}`);
       const p = e.status === 'needs-permission' ? e.permission : undefined;
       if (p && p.state === 'pending') {
@@ -141,7 +225,12 @@ async function main(): Promise<number> {
     } else if (e.type === 'question') {
       if (e.phase === 'asked') lastQuestion = e.requestId;
       mark(`adapter:question:${e.phase}`);
-    } else if (e.type === 'limit') mark(`adapter:limit:${e.phase}`);
+    } else if (e.type === 'limit') {
+      const l = e as unknown as { phase: string; requestId?: string; maxAiCredits?: unknown; usedAiCredits?: unknown; action?: unknown };
+      if (l.phase === 'exhausted' && l.requestId) lastLimit = l.requestId;
+      const whose = l.requestId ? (l.requestId.startsWith('durbar-cap') ? ':durbar' : ':runtime') : '';
+      mark(`adapter:limit:${l.phase}${whose}${l.phase === 'exhausted' ? `:used=${round3(numberOf(l.usedAiCredits))},max=${round3(numberOf(l.maxAiCredits))}` : ''}${l.phase === 'resolved' ? `:${bounded(l.action)}` : ''}${l.phase === 'changed' ? `:max=${round3(numberOf(l.maxAiCredits))}` : ''}`);
+    }
   });
 
   /** Times the session's calls, so a give-up and the late answer both show. `hold` keeps a disconnect back until the returned function is called. */
@@ -154,15 +243,15 @@ async function main(): Promise<number> {
     const u = s.rpc.ui.handlePendingSessionLimitsExhausted.bind(s.rpc.ui);
     s.rpc.ui.handlePendingSessionLimitsExhausted = (p) => { mark('limit cancel: call'); return u(p).then((r) => { mark(`limit cancel: answered ${JSON.stringify(r).slice(0, 80)}`); return r; }, (e: unknown) => { mark(`limit cancel: failed: ${msg(e)}`); throw e; }); };
   };
-  const startSession = async (resume: boolean): Promise<void> => {
-    const base = { workspace: scratch, quiet: true, permissionMode: 'ask' as const, model: 'auto', autoTier: 'efficiency', maxAiCredits: resume ? undefined : 30 };
+  const startSession = async (resume: boolean, cap?: number): Promise<void> => {
+    const base = { workspace: scratch, quiet: true, permissionMode: 'ask' as const, model: replDir ? 'gpt-6-luna' : 'auto', ...(replDir ? {} : { autoTier: 'efficiency' }), maxAiCredits: resume ? cap : 30 };
     sid = await ad.start({ ...base, ...(resume ? { resumeSessionId: sid } : {}) } as never);
     instrument(live());
   };
   const prompt = async (text: string, summary = ''): Promise<void> => {
     if (!spend) throw new Error('dry run: no prompt');
     if (prompts >= MAX_PROMPTS) throw new Error(`refused: ${MAX_PROMPTS} prompts used`);
-    if (aiu >= MAX_AIU) throw new Error(`refused: ${aiu} AI credits used`);
+    if (aiu - forged >= MAX_AIU) throw new Error(`refused: ${aiu - forged} AI credits used`);
     prompts++;
     approve = summary;
     mark(`send (prompt ${prompts})`);
@@ -212,6 +301,11 @@ async function main(): Promise<number> {
 
     if (!spend) {
       beginPhase('dry');
+      if (args.includes('--prices')) {
+        const models = await client.listModels() as unknown as Array<Record<string, unknown>>;
+        out.models = models.map((m) => ({ id: m.id, billing: m.billing, limits: (m.capabilities as { limits?: unknown } | undefined)?.limits }));
+        console.log(JSON.stringify(out.models, null, 1));
+      }
       mark(`events reach: ${await eventsReach()}`);
       const a0 = Date.now(); await ad.interrupt?.(sid); mark(`interrupt with no turn: ${Date.now() - a0} ms`);
       hang();
@@ -220,7 +314,126 @@ async function main(): Promise<number> {
       await pollProcessing(1500);
     }
 
-    if (spend && wanted.includes('baseline')) {
+    if (spend && replDir) {
+      beginPhase('repl');
+      const ok = 'Reply with only: ok';
+      const guard = (): void => {
+        if (aiu - forged >= MAX_AIU) throw new Error(`refused: ${round3(aiu - forged)} AI credits used`);
+        if (prompts >= MAX_PROMPTS) throw new Error(`refused: ${MAX_PROMPTS} prompts used`);
+      };
+      const direct = async (text: string, summary = ''): Promise<void> => {
+        guard();
+        prompts++;
+        approve = summary;
+        mark(`direct send (prompt ${prompts})`);
+        await live().session.send({ prompt: text });
+        mark('direct send answered');
+      };
+      const adapterSend = (text: string, summary = ''): Promise<void> => prompt(text, summary).then(() => mark('send answered'), (e: unknown) => { mark(`send failed: ${msg(e)}`); });
+      const runText = (n: number): [string, string] => [`Run this exact shell command once with your shell tool, exactly as written, and nothing else: sleep ${n}`, `run sleep ${n}`];
+      const noise = (chars: number): string => {
+        const letters = 'bcdfghjklmnprstvwz', vowels = 'aeiou';
+        let t = '';
+        while (t.length < chars) {
+          let w = '';
+          for (let i = 0; i < 3; i++) w += letters[Math.floor(Math.random() * letters.length)] + vowels[Math.floor(Math.random() * vowels.length)];
+          t += `${w} `;
+        }
+        return t;
+      };
+      /** Reaches `target` credits on a dear model: 30k characters, then 75% of the rest, then the rest, by the real tokens per character. */
+      const fill = async (model: string, target: number): Promise<void> => {
+        const models = await (await inner.getClient()).listModels() as unknown as Array<{ id?: string; billing?: { tokenPrices?: { inputPrice?: number; cacheReadPrice?: number; batchSize?: number } } }>;
+        const prices = models.find((m) => m.id === model)?.billing?.tokenPrices;
+        if (!prices?.inputPrice || !prices.batchSize) throw new Error('no price for that model');
+        const per = prices.inputPrice / prices.batchSize;
+        const perRead = (prices.cacheReadPrice ?? prices.inputPrice) / prices.batchSize;
+        await live().session.rpc.model.switchTo({ modelId: model });
+        let charsPerToken = 3.5;
+        let context = 0;
+        for (let step = 0; step < 6 && aiu < target; step++) {
+          const left = target - aiu;
+          const fresh = (left - context * perRead) / per;
+          const chars = step === 0 ? 30_000 : Math.max(500, Math.round(Math.max(fresh, 0) * (step === 1 ? 0.75 : 1) * charsPerToken));
+          const from = marks.length;
+          mark(`fill step ${step}: ${chars} chars, ${round3(aiu)} used`);
+          await prompt(`${ok}. The text below is a test of nothing: ignore it, use no tools.\n\n${noise(chars)}`);
+          await until(() => seen('raw:session.idle', from) || seen('adapter:limit:exhausted', from), 240_000);
+          await until(() => !live().turnOpen, 8000);
+          const inTotal = lastUsage.input + lastUsage.cacheRead;
+          if (context && inTotal > context) charsPerToken = chars / (inTotal - context);
+          context = inTotal;
+          mark(`fill step ${step} done: ${round3(aiu)} used, context ${context}, ${charsPerToken.toFixed(2)} chars per token`);
+          if (seen('adapter:limit:exhausted', from)) break;
+        }
+      };
+      const runLine = async (line: string): Promise<void> => {
+        const [cmd, a, b, c] = line.trim().split(/\s+/);
+        switch (cmd) {
+          case 'fill': await fill(a, Number(b)); break;
+          case 'stop&': { const t = Date.now(); void ad.stop(sid).then(() => mark(`stop returned in ${Date.now() - t} ms`)); break; }
+          case 'bump': bumpNext = Number(a); mark(`next answer's usage figure: plus ${a}`); break;
+          case 'model': await live().session.rpc.model.switchTo({ modelId: a }); mark('model switched'); break;
+          case 'truncate': if (firstUserEvent) { const r = await live().session.rpc.history.truncate({ eventId: firstUserEvent }); mark(`truncate: ${numberOf(r.eventsRemoved)} events removed`); firstUserEvent = ''; } break;
+          case 'state': { const l = live(); mark(`state: real ${round3(aiu - forged)}, forged ${round3(forged)}, capNow ${l.capNow}, runtime request ${!!l.limitRequestId}, local limit ${l.localLimit ? (l.localLimit.held ? 'with a held message' : 'none held') : 'no'}, late calls ${l.lateCalls?.size ?? 0}, turn open ${!!l.turnOpen}, processing ${await processing()}`); break; }
+          case 'hang': hang(); break;
+          case 'unhang': unhang(); break;
+          case 'interrupt': { const t = Date.now(); await ad.interrupt?.(sid); mark(`interrupt returned in ${Date.now() - t} ms`); break; }
+          case 'interrupt&': { const t = Date.now(); void Promise.resolve(ad.interrupt?.(sid)).then(() => mark(`interrupt returned in ${Date.now() - t} ms`)); break; }
+          case 'stop': { const t = Date.now(); await ad.stop(sid); mark(`stop returned in ${Date.now() - t} ms`); break; }
+          case 'resume': await startSession(true, a ? Number(a) : undefined).then(() => mark('resume answered'), (e: unknown) => mark(`resume failed: ${msg(e)}`)); break;
+          case 'send': await adapterSend(ok); break;
+          case 'send&': void adapterSend(ok); break;
+          case 'cmd': { const [t, q] = runText(Number(a)); watchN(Number(a)); await adapterSend(t, q); break; }
+          case 'dsend': await direct(ok); break;
+          case 'dsend&': void direct(ok).catch((e: unknown) => mark(`direct send failed: ${msg(e)}`)); break;
+          case 'dcmd': { const [t, q] = runText(Number(a)); watchN(Number(a)); await direct(t, q); break; }
+          case 'cap': { const t = Date.now(); await ad.setCap?.(sid, a === 'null' ? null : Number(a)); mark(`setCap ${a} answered in ${Date.now() - t} ms`); break; }
+          case 'cap&': { const t = Date.now(); void Promise.resolve(ad.setCap?.(sid, a === 'null' ? null : Number(a))).then(() => mark(`setCap ${a} answered in ${Date.now() - t} ms`), (e: unknown) => mark(`setCap ${a} failed: ${msg(e)}`)); break; }
+          case 'rawcap': await live().session.rpc.options.update({ sessionLimits: { maxAiCredits: Number(a) } }).then(() => mark(`raw cap ${a}: accepted`), (e: unknown) => mark(`raw cap ${a}: refused: ${msg(e)}`)); break;
+          case 'limit': { // limit <add|set|unset|cancel> [credits]: the answer of the card shown last
+            const action = (a === 'add' || a === 'set' ? { kind: a, credits: Number(b) } : { kind: a }) as never;
+            const t = Date.now();
+            await ad.resolveLimit?.(sid, lastLimit, action).then(() => mark(`limit ${a} answered in ${Date.now() - t} ms`), (e: unknown) => mark(`limit ${a} failed: ${msg(e)}`));
+            break;
+          }
+          case 'limit&': {
+            const action = (a === 'add' || a === 'set' ? { kind: a, credits: Number(b) } : { kind: a }) as never;
+            const t = Date.now();
+            void ad.resolveLimit?.(sid, lastLimit, action).then(() => mark(`limit ${a} answered in ${Date.now() - t} ms`), (e: unknown) => mark(`limit ${a} failed: ${msg(e)}`));
+            break;
+          }
+          case 'limitlocal': { // the same, for Durbar's own card
+            const action = (a === 'add' || a === 'set' ? { kind: a, credits: Number(b) } : { kind: a }) as never;
+            const t = Date.now();
+            await ad.resolveLimit?.(sid, live().localLimit?.requestId ?? 'none', action).then(() => mark(`local limit ${a} answered in ${Date.now() - t} ms`), (e: unknown) => mark(`local limit ${a} failed: ${msg(e)}`));
+            break;
+          }
+          case 'adaptercapoff': live().capNow = null; mark('adapter cap forgotten (the runtime keeps its own)'); break;
+          case 'poll': await pollProcessing(Number(a)); break;
+          case 'wait': await sleep(Number(a)); break;
+          case 'idle': { const from = Number(b ?? marks.length); await until(() => seen('raw:session.idle', from), Number(a)); break; }
+          case 'procs': mark(`runtime stat: ${cp.execFileSync('ps', ['-o', 'stat=', '-p', String(runtimePid)], { encoding: 'utf8' }).trim()}`); break;
+          case 'note': mark(`--- ${line.trim().slice(5, 90)}`); break;
+          default: mark(`unknown command: ${cmd} ${c ?? ''}`);
+        }
+      };
+      const inbox = path.join(replDir, 'cmd');
+      const done = path.join(replDir, 'done');
+      let seq = 0;
+      mark(`repl ready`);
+      for (;;) {
+        if (!fs.existsSync(inbox)) { await sleep(100); continue; }
+        const lines = fs.readFileSync(inbox, 'utf8').split('\n').filter((l) => l.trim());
+        fs.unlinkSync(inbox);
+        if (lines.some((l) => l.trim() === 'quit')) break;
+        for (const line of lines) await runLine(line).catch((e: unknown) => { mark(`command failed: ${msg(e)}`); });
+        fs.appendFileSync(done, `${++seq}\n`);
+        fs.writeFileSync(outFile as string, JSON.stringify({ ...out, prompts, aiu, marks }, null, 2));
+      }
+    }
+
+    if (spend && !replDir && wanted.includes('baseline')) {
       beginPhase('baseline');
       watchN(61);
       await runCommand('sleep 61');
@@ -232,7 +445,7 @@ async function main(): Promise<number> {
       await pollProcessing(6000);
     }
 
-    if (spend && wanted.includes('term')) {
+    if (spend && !replDir && wanted.includes('term')) {
       beginPhase('term');
       watchN(62);
       await runCommand(`sh -c 'trap "" TERM INT HUP; sleep 62'`);
@@ -244,7 +457,7 @@ async function main(): Promise<number> {
       await pollProcessing(15_000);
     }
 
-    if (spend && wanted.includes('hang')) {
+    if (spend && !replDir && wanted.includes('hang')) {
       beginPhase('hang');
       watchN(63);
       await runCommand('sleep 63');
@@ -265,7 +478,7 @@ async function main(): Promise<number> {
       mark(`next send's command ran: ${out.nextSendRan}`);
     }
 
-    if (spend && wanted.includes('stop')) {
+    if (spend && !replDir && wanted.includes('stop')) {
       beginPhase('stop');
       if (!sleepers(64).length) {
         watchN(64);
@@ -286,7 +499,7 @@ async function main(): Promise<number> {
       await pollProcessing(1500);
     }
 
-    if (spend && wanted.includes('question')) {
+    if (spend && !replDir && wanted.includes('question')) {
       beginPhase('question');
       const from = marks.length;
       await prompt('Use your ask_user tool to ask me this one question with the choices red and blue: "Pick one". Then reply with only my answer.');
@@ -305,7 +518,7 @@ async function main(): Promise<number> {
       mark(`turn ended after the hang: ${done}`);
     }
 
-    if (spend && wanted.includes('late')) {
+    if (spend && !replDir && wanted.includes('late')) {
       beginPhase('late');
       // the worst order a slow runtime could give: the old object's detach reaches the runtime after a resume of the same id. Before
       // FR-230 the resume went first and the late detach killed it; now the resume is refused until the close has landed.
@@ -325,7 +538,7 @@ async function main(): Promise<number> {
       await pollProcessing(1000);
     }
 
-    if (spend && wanted.includes('limit')) {
+    if (spend && !replDir && wanted.includes('limit')) {
       beginPhase('limit');
       // the runtime's minimum is checked when a session is created; does an update take less, and does it ask?
       const from = marks.length;
@@ -378,9 +591,9 @@ async function main(): Promise<number> {
     try { if (runtimePid) process.kill(runtimePid, 'SIGCONT'); } catch { /* gone */ }
     stopWatches.forEach((s) => s());
     for (const p of leftovers) { try { process.kill(p, 'SIGKILL'); } catch { /* gone */ } }
-    Object.assign(out, { prompts, aiu, marks });
+    Object.assign(out, { prompts, aiu, forged, realAiu: aiu - forged, marks });
     fs.writeFileSync(outFile as string, JSON.stringify(out, null, 2));
-    console.log(`prompts ${prompts}, about ${aiu.toFixed(3)} AI credits`);
+    console.log(`prompts ${prompts}, about ${(aiu - forged).toFixed(3)} AI credits${forged ? ` (and ${forged} forged)` : ''}`);
     if (sid) await ad.stop(sid).catch((e: unknown) => console.log(`stop failed: ${msg(e)}`));
     const del = (ad as unknown as { deleteSession?: (s: string) => Promise<void> }).deleteSession;
     if (sid && del) await del.call(ad, sid).catch((e: unknown) => console.log(`deleteSession failed (the session stays on disk): ${msg(e)}`));
@@ -389,5 +602,5 @@ async function main(): Promise<number> {
   }
 }
 
-const watchdog = setTimeout(() => { console.error('watchdog: 15 minutes'); process.exit(2); }, 15 * 60_000);
+const watchdog = setTimeout(() => { console.error('watchdog'); process.exit(2); }, (replDir ? 90 : 15) * 60_000);
 void main().then((code) => { clearTimeout(watchdog); process.exit(code); });
