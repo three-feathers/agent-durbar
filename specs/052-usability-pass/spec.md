@@ -144,6 +144,8 @@ Owner approval 2026-11-02 (ceiling 45 AI credits, 32.05 spent). `real:` Linux 7.
 
 - **Delta 2026-11-02 (Paco's review of #1038):** a send waits for every Stop call under one deadline (the abort follows the cancel), a missing `rpc.metadata` or any failure leaves the row idle, a reconnect clears `stoppedAtLimit`, and the probe kills only the runtime's descendants and passes every send through one gate (`test:copilotcap`, no real prompts). All `real:` here is on SDK 1.0.24 / runtime 1.0.101; 1.0.26 has the same refusal text (`read:`), behaviour not re-run.
 
+- **Delta 2026-11-03 (Paco's second review of #1038):** a Stop or End holds a send from its first line (one promise for the whole sequence in `lateCalls`), not from when each call starts, so no await can reopen FR-229 (`test:copilotcap`, mutation-checked, no real prompts).
+
 ### 2026-11-02: Copilot stop and interrupt after the 5 s give-up, measured on a real runtime (FR-228..FR-230, issue #1028)
 
 Owner approval 2026-11-02. `real:` Linux 7.0, SDK 1.0.24, runtime 1.0.101 (the SDK's bundled runtime as a child process), model `auto` (efficiency tier), Ask first, `scripts/copilot-giveup-real.ts` through Durbar's own adapter, in a scratch folder. 9 prompts (7 to measure, 2 to check the fixes; one of the 7 was the message the late abort cleared), about 0.42 AI credits. A hang is a real SIGSTOP on the runtime process: the pipe stays open and calls wait. Not run on macOS or Windows.

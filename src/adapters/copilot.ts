@@ -1092,14 +1092,19 @@ export class CopilotAdapter implements AgentAdapter {
   async interrupt(sessionId: string): Promise<void> {
     const live = this.sessions.get(sessionId);
     if (!live) return;
-    live.interrupts = (live.interrupts ?? 0) + 1;
-    live.broker.denyPending();
-    this.cancelQuestions(live, 'interrupt');
-    if (live.limitRequestId) live.stoppedAtLimit = true;
-    await this.cancelLimit(live);
-    const answered = await this.within(live, live.session.abort(), this.stopStepMs).catch(() => true); // a failure: nothing running; no answer: a hung runtime, given up on after stopStepMs, the interrupt goes on
-    this.emit(sessionId, { type: 'status', status: 'idle', intent: 'Aborted' }); // the window settles its cards on this word
-    if (!answered) this.emit(sessionId, { type: 'status', status: 'idle', intent: COPILOT_STOP_SENT }); // spec 052 FR-229: not aborted yet, real 2026-11-02
+    const stopDone = this.stopSequence(live);
+    try {
+      live.interrupts = (live.interrupts ?? 0) + 1;
+      live.broker.denyPending();
+      this.cancelQuestions(live, 'interrupt');
+      if (live.limitRequestId) live.stoppedAtLimit = true;
+      await this.cancelLimit(live);
+      const answered = await this.within(live, live.session.abort(), this.stopStepMs).catch(() => true); // a failure: nothing running; no answer: a hung runtime, given up on after stopStepMs, the interrupt goes on
+      this.emit(sessionId, { type: 'status', status: 'idle', intent: 'Aborted' }); // the window settles its cards on this word
+      if (!answered) this.emit(sessionId, { type: 'status', status: 'idle', intent: COPILOT_STOP_SENT }); // spec 052 FR-229: not aborted yet, real 2026-11-02
+    } finally {
+      stopDone();
+    }
   }
 
   /** End the session: frees the runtime session. Its history stays on disk and sending again resumes it. */
@@ -1107,22 +1112,27 @@ export class CopilotAdapter implements AgentAdapter {
     await this.refreshing?.catch(() => undefined);
     const live = this.sessions.get(sessionId);
     if (!live) return;
-    await this.cancelLimit(live);
-    live.broker.stop(); // pending permissions are denied cleanly (renderer clears Approve/Deny) and grants are dropped
-    this.cancelQuestions(live, 'stop');
-    await this.within(live, live.session.abort(), this.stopStepMs).catch(() => undefined); // nothing running, or hung: given up on after stopStepMs
-    live.unsubscribe();
+    const stopDone = this.stopSequence(live);
     try {
-      await this.within(live, live.session.disconnect(), this.stopStepMs); // a hung disconnect is given up on; a failing one still throws (after the hook folder is removed)
+      await this.cancelLimit(live);
+      live.broker.stop(); // pending permissions are denied cleanly (renderer clears Approve/Deny) and grants are dropped
+      this.cancelQuestions(live, 'stop');
+      await this.within(live, live.session.abort(), this.stopStepMs).catch(() => undefined); // nothing running, or hung: given up on after stopStepMs
+      live.unsubscribe();
+      try {
+        await this.within(live, live.session.disconnect(), this.stopStepMs); // a hung disconnect is given up on; a failing one still throws (after the hook folder is removed)
+      } finally {
+        // spec 061: the accepted folder hooks' private copy, removed even when disconnect() throws (re-review #424)
+        if (live.hookDir) fs.rmSync(live.hookDir, { recursive: true, force: true });
+      }
+      this.keepLateClose(sessionId, live);
+      this.sessions.delete(sessionId);
+      this.mappers.delete(sessionId);
+      this.endKeptFloor(sessionId, live);
+      this.emit(sessionId, { type: 'status', status: 'stopped' });
     } finally {
-      // spec 061: the accepted folder hooks' private copy, removed even when disconnect() throws (re-review #424)
-      if (live.hookDir) fs.rmSync(live.hookDir, { recursive: true, force: true });
+      stopDone();
     }
-    this.keepLateClose(sessionId, live);
-    this.sessions.delete(sessionId);
-    this.mappers.delete(sessionId);
-    this.endKeptFloor(sessionId, live);
-    this.emit(sessionId, { type: 'status', status: 'stopped' });
   }
 
   /** Spec 087 (review on PR 823): a floor kept in Allow all ends with its session; the next one starts with the mode's own state (none in Allow all). */
@@ -1663,6 +1673,18 @@ export class CopilotAdapter implements AgentAdapter {
     } catch {
       /* already answered elsewhere */
     }
+  }
+
+  /**
+   * Spec 052 FR-229: the whole Stop counts as a late call from its first line, so a send cannot slip in between two of its calls (the abort
+   * is only tracked once the cancel is done). Returns what ends it.
+   */
+  private stopSequence(live: Live): () => void {
+    const calls = (live.lateCalls ??= new Set());
+    let finished: () => void = () => undefined;
+    const running = new Promise<void>((res) => { finished = res; });
+    calls.add(running);
+    return () => { calls.delete(running); finished(); };
   }
 
   /** Spec 052 FR-229: remembers a Stop's runtime call until it settles, whoever waits for it. */

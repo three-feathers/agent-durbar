@@ -410,6 +410,58 @@ async function main(): Promise<void> {
   await next2b;
   assert.strictEqual(sends(c2.s), 1);
 
+  // second review of #1038, FR-229: the Stop holds a send from its first line, however long its cancel step takes to hand over to the abort
+  const slowCancel = (): (() => void) => {
+    const at = ad as unknown as { cancelLimit: (l: unknown) => Promise<void> };
+    const real = at.cancelLimit;
+    at.cancelLimit = async function (this: unknown, l: unknown): Promise<void> { await real.call(this, l); await new Promise((r) => setTimeout(r, 60)); };
+    return () => { delete (at as { cancelLimit?: unknown }).cancelLimit; };
+  };
+  const g1 = await ad.start({ workspace: ws, model: 'gpt-6-luna', quiet: true });
+  const g1s = client.last as FakeSession;
+  let g1Land: () => void = () => undefined;
+  let g1Aborts = 0;
+  (g1s as unknown as { abort: () => Promise<void> }).abort = () => { g1Aborts++; return new Promise<void>((r) => { g1Land = r; }); };
+  (ad as unknown as { stopStepMs: number }).stopStepMs = 400;
+  let undoSlow = slowCancel();
+  const g1Stop = ad.interrupt(g1);
+  await tick();
+  const g1Next = ad.send(g1, { text: 'in the gap' });
+  await new Promise((r) => setTimeout(r, 20));
+  assert.ok(g1Aborts === 0 && sends(g1s) === 0, 'in the gap between cancel and abort nothing goes');
+  await until(() => g1Aborts === 1);
+  await new Promise((r) => setTimeout(r, 150));
+  assert.strictEqual(sends(g1s), 0, 'nor before the abort has landed');
+  g1Land();
+  await g1Stop;
+  await g1Next;
+  assert.strictEqual(sends(g1s), 1, 'then it goes');
+  undoSlow();
+  // End session the same: a send in the gap is dropped with the session, never sent into it
+  const g2 = await ad.start({ workspace: ws, model: 'gpt-6-luna', quiet: true });
+  const g2s = client.last as FakeSession;
+  undoSlow = slowCancel();
+  const g2Stop = ad.stop(g2);
+  await tick();
+  const g2Next = ad.send(g2, { text: 'into the end' });
+  await g2Stop;
+  await g2Next;
+  assert.strictEqual(sends(g2s), 0, 'End holds it from its first line');
+  undoSlow();
+  (ad as unknown as { stopStepMs: number }).stopStepMs = 80;
+  // a Stop or an End that throws leaves nothing behind: the next message goes at once
+  for (const end of ['interrupt', 'stop'] as const) {
+    const g3 = await ad.start({ workspace: ws, model: 'gpt-6-luna', quiet: true });
+    const g3s = client.last as FakeSession;
+    const abort = g3s.abort;
+    (g3s as unknown as { abort: () => Promise<void> }).abort = () => { throw new Error('thrown at once'); };
+    await assert.rejects(ad[end](g3), /thrown at once/);
+    (g3s as unknown as { abort: () => Promise<void> }).abort = abort;
+    const quickNext = await Promise.race([ad.send(g3, { text: 'next' }).then(() => true), new Promise<boolean>((r) => setTimeout(() => r(false), 150))]);
+    assert.ok(quickNext && sends(g3s) === 1, `after a ${end} that threw the send does not wait`);
+    await ad.stop(g3);
+  }
+
   // review of #1038: `rpc.metadata` is experimental: without it the message still goes, and any failure leaves the row idle
   const m1 = await hungSession();
   await ad.interrupt(m1.id);
