@@ -24,6 +24,7 @@ type AdapterInfo = import('../shared/api').AdapterInfo;
 type McpServerInput = import('../shared/mcp').McpServerInput;
 type McpSourceTag = import('../shared/api').McpSourceTag;
 type FloorsState = import('../shared/api').FloorsState;
+type OrderDoc = import('../shared/roomorder').OrderDoc;
 type FloorsResult = import('../shared/api').FloorsResult;
 type ScheduleInfo = import('../shared/api').ScheduleInfo;
 type SchedulesInfo = import('../shared/api').SchedulesInfo;
@@ -71,7 +72,7 @@ type SimNotesView = import('../shared/notes').NotesView;
  * message saved twice makes one note. Page address `simnotes=some|many|long|secret` seeds each folder the first time it is asked.
  * Fake tokens are built at run time (push protection).
  */
-function simNotesApi(qs: URLSearchParams, folderOf: (id: string) => { key: string; name: string; session: string } | undefined): Pick<DurbarApi, 'notesList' | 'notesSave' | 'notesAdd' | 'notesUpdate' | 'notesDelete' | 'notesDeleteAll' | 'notesStartOver' | 'notesSetFile' | 'onNotesChanged'> {
+function simNotesApi(qs: URLSearchParams, folderOf: (id: string) => { key: string; name: string; session: string } | undefined): Pick<DurbarApi, 'notesList' | 'notesSave' | 'notesAdd' | 'notesUpdate' | 'notesDelete' | 'notesDeleteAll' | 'notesStartOver' | 'notesSetFile' | 'notesFileCount' | 'notesExport' | 'onNotesChanged'> & { forgetFolder(key: string): void } {
   const MAX = 300;
   const store = new Map<string, SimNote[]>();
   const subs: Array<(v: { fingerprint: string }) => void> = [];
@@ -107,6 +108,12 @@ function simNotesApi(qs: URLSearchParams, folderOf: (id: string) => { key: strin
     return l;
   };
   const gone = { ok: false, code: 'invalid', error: 'That chat is not open.' } as const;
+  /* spec 083 T042: the project-file switch is shown and answered, never turned on, and nothing is written (simnotesfile= picks a state for drivers) */
+  const fileMode = qs.get('simnotesfile') || '';
+  const fileSwitch = (): { on: boolean; disabled?: string } | undefined => (fileMode === 'workspace' ? undefined
+    : { on: fileMode === 'on' || fileMode === 'conflict' || fileMode === 'writefail' || fileMode === 'replaced', ...(fileMode === 'missing' ? { disabled: 'The folder is not there, so Durbar cannot keep .durbar/notes.md in it.' } : {}) });
+  const fileState = (): { error?: string; info?: string } | undefined => (fileMode === 'conflict' ? { error: '.durbar/notes.md has merge conflicts or could not be read. Fix it in your editor; Durbar will not overwrite it until then.' }
+    : fileMode === 'writefail' ? { error: 'Could not write .durbar/notes.md: EACCES' } : fileMode === 'replaced' ? { error: 'This folder looks replaced, or its drive was remounted. Turn the switch off and on again to write .durbar/notes.md here.' } : fileMode === 'on' ? { info: '2 lines of text outside notes in notes.md were removed.' } : undefined);
   const noMask = { ok: false, code: 'invalid', error: 'Masking is not available.' } as const;
   const tell = (key: string): void => subs.slice().forEach((f) => f({ fingerprint: 'sim-' + key.length }));
   const titleOf = (text: string): string => (text.split('\n').find((l) => l.trim()) ?? 'Note').replace(/^[#>\-*\s]+/, '').replace(/(\*+|`+|~~)/g, '').replace(/\s+/g, ' ').trim().slice(0, 80) || 'Note';
@@ -132,7 +139,8 @@ function simNotesApi(qs: URLSearchParams, folderOf: (id: string) => { key: strin
     notesList: async (id): Promise<SimNotesView> => {
       const f = folderOf(id);
       if (!f) return gone;
-      return { ok: true, fingerprint: 'sim-' + f.key.length, folderName: f.name, notes: list(f.key, f.session).map((n) => ({ ...n })), max: MAX, session: f.session };
+      const sw = fileSwitch(), fs0 = sw && sw.on ? fileState() : undefined;
+      return { ok: true, fingerprint: 'sim-' + f.key.length, folderName: f.name, notes: list(f.key, f.session).map((n) => ({ ...n })), max: MAX, session: f.session, ...(sw ? { fileSwitch: sw } : {}), ...(fs0 ? { file: fs0 } : {}) };
     },
     notesSave: async (id, input) => {
       const f = folderOf(id);
@@ -188,7 +196,20 @@ function simNotesApi(qs: URLSearchParams, folderOf: (id: string) => { key: strin
       return { ok: true, fingerprint: 'sim' };
     },
     notesStartOver: async (id) => (folderOf(id) ? { ok: true, fingerprint: 'sim' } : gone),
-    notesSetFile: async () => ({ ok: true, demo: true, message: 'Demo: no file written' }),
+    /* spec 083 T034b: the demo never shows a save dialog and writes nothing */
+    notesExport: async (id) => (!folderOf(id) ? gone : { ok: true, demo: true, message: 'Demo: nothing written' }),
+    /* spec 083 T034b: Remove folder with Also delete its notes drops the in-memory demo notes of that folder (not a bridge call) */
+    forgetFolder: (key: string) => { store.delete(key); tell(key); },
+    notesFileCount: async (id) => {
+      if (!folderOf(id)) return gone;
+      if (fileMode === 'workspace') return { ok: false, code: 'invalid', error: 'The project file is not offered for a VS Code workspace.' };
+      if (fileMode === 'unreadable') return { ok: false, code: 'invalid', error: 'The existing file cannot be read; Durbar will not change it.' };
+      return { ok: true, count: fileMode === 'existing' ? 4 : 0, exists: fileMode === 'existing' || fileMode === 'stray', strayText: fileMode === 'stray' ? 3 : 0, repo: fileMode !== 'norepo' };
+    },
+    /* the demo never turns the switch: it answers its current position (off unless simnotesfile= says on) */
+    notesSetFile: async (id, on, opts) => (!folderOf(id) ? gone
+      : fileMode === 'excludefail' && on && opts && opts.exclude === true ? { ok: false, code: 'invalid', error: 'Could not add .durbar/ to .git/info/exclude: no info folder. The switch stays off.', excludeFailed: true }
+        : { ok: true, demo: true, on: !!fileSwitch()?.on, message: 'Demo: no file written' }),
     onNotesChanged: (cb) => { subs.push(cb); return () => { const i = subs.indexOf(cb); if (i >= 0) subs.splice(i, 1); }; },
   };
 }
@@ -320,6 +341,14 @@ const SIM_CLAUDE_MODELS: ModelChoice[] = [
   { id: 'sonnet', name: 'Sim Sonnet', efforts: ['low', 'medium', 'high'] },
   { id: 'haiku', name: 'Sim Haiku', efforts: [] },
 ];
+/* spec 030 FR-064 (`simmodels=rich`, driver check-model-choice only, so every other roster and picture stays as it is): a second Copilot model with a long
+   tier, a Claude long-context alias (the real list names them `...[1m]`) and a Codex list. A simulation, not any app's real list. */
+const SIM_RICH_MODELS: Record<string, ModelChoice[]> = {
+  copilot: [{ id: 'sim-wide', name: 'Sim Wide', multiplier: 1, efforts: ['low', 'medium', 'high'], defaultEffort: 'medium', contextWindow: 272000, priceClass: 'medium', contextTiers: ['default', 'long'], longWindow: 872000, pricing: { inputPerMTok: 80, outputPerMTok: 400, cachedPerMTok: 8, long: { inputPerMTok: 160, outputPerMTok: 600 } } }],
+  claude: [{ id: 'sonnet[1m]', name: 'Sim Sonnet (1M context)', efforts: ['low', 'medium', 'high'] }],
+  codex: [{ id: 'sim-codex-a', name: 'Sim Codex A', efforts: ['low', 'medium', 'high'] }, { id: 'sim-codex-b', name: 'Sim Codex B', efforts: ['low', 'high'] }, { id: 'sim-codex-c', name: 'Sim Codex C', efforts: [] }],
+};
+const simRichModels = (kind: string): ModelChoice[] => (typeof location !== 'undefined' && new URLSearchParams(location.search).get('simmodels') === 'rich' ? SIM_RICH_MODELS[kind] ?? [] : []);
 /* spec 043: what a session's custom agents look like (made up; no real agent files) */
 /** Spec 073 FR-011: canned "/" entries per agent app (folder, user, and Claude Code's built-ins); nothing is read from disk. */
 type SimSlash = { name: string; description?: string; argumentHint?: string; source: 'folder' | 'user' | 'app'; kind: 'skill' | 'command' | 'prompt' | 'builtin'; where?: string; note?: string };
@@ -708,9 +737,9 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     /* mcpcall:begin */
     const simCallClass = (text: unknown, mcpAuth?: boolean): 'auth' | 'policy' | undefined => {
       const t = typeof text === 'string' ? text.slice(0, 4000) : '';
-      if (/AADSTS53\d{4}|conditional access|device (?:is )?(?:required )?(?:to be )?managed|managed device|compliant device|device (?:is )?not (?:compliant|enrolled)/i.test(t)) return 'policy';
-      if (mcpAuth === true || /\b401\s+unauthori[sz]ed|\b(?:http(?:\/\d(?:\.\d)?)?|status(?: code)?|code|error|response)[\s:=(-]{0,4}401\b|unauthori[sz]ed|AADSTS(?:50058|50072|50074|50076|50078|50079|50132|50133|50173|70008|70043|70044|700082|65001)\b|invalid_grant|token (?:is |has )?(?:expired|invalid)|sign[- ]?in (?:is )?required|MCP OAuth challenge required/i.test(t)) return 'auth';
-      return undefined;
+      if (/\bAADSTS53(?:0\d\d|\d{4})\b|\binsufficient_claims\b|conditional access|device (?:is )?(?:required )?(?:to be )?managed|managed device|compliant device|device (?:is )?not (?:compliant|enrolled)/i.test(t)) return 'policy';
+      if (mcpAuth === true || /\b401\s+unauthori[sz]ed|\b(?:http(?:\/\d(?:\.\d)?)?|status(?: code)?|code|error|response)[\s:=(-]{0,4}401\b|unauthori[sz]ed|\bAADSTS(?:50058|50072|50074|50076|50078|50079|50132|50133|50173|70008|70043|70044|700082|65001)\b|invalid_grant|token (?:is |has )?(?:expired|invalid)|sign[- ]?in (?:is )?required|MCP OAuth challenge required/i.test(t)) return 'auth';
+      return /\binteraction_required\b/i.test(t) ? 'policy' : undefined;
     };
     /* mcpcall:end */
     const emit = (e: AgentEvent): void => {
@@ -724,6 +753,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         else if (q && e.phase === 'failed') { const c = simCallClass(e.output, e.mcpAuth === true); if (c) (q.mcpCalls ??= new Map()).set(e.mcpServer, c); else q.mcpCalls?.delete(e.mcpServer); }
       }
       if (e.type === 'status' && e.status === 'stopped') { const q = sims.find((x) => x.info.id === e.sessionId); if (q) q.mcpCalls = undefined; }
+      if (e.type === 'toolCall' && e.phase === 'failed' && e.mcpServer && simCallClass(e.output) === 'policy') e = { ...e, mcpCall: 'policy' }; // FR-193: like maskMcpEvent, the word only
       listeners.forEach((l) => l(e));
       simSchedHook?.(e);
       if (e.type === 'status' && e.status === 'idle') {
@@ -1378,6 +1408,21 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       }
     }
 
+    /* spec 097 FR-093: in Real office the monitors show what agents write, and a real agent writes all the time: one live agent adds a line of
+       thinking or reads a file, in turn. Only there, so flat's simulated run stays the same; no seeded random number is used. */
+    let screenTurn = 0;
+    function screenTick(): void {
+      let real = false;
+      try { real = new URLSearchParams(location.search).get('officeview') === 'real' || localStorage.getItem('durbar.officeview') === 'real'; } catch { /* no storage: flat */ }
+      if (!real) return;
+      const live = sims.filter((s) => (s.state === 'working' || s.state === 'thinking') && !s.limitReq && !s.retryHold && !s.compactHold);
+      if (!live.length) return;
+      const s = live[screenTurn++ % live.length];
+      if (screenTurn % 3) { think(s, 1); return; }
+      const id = sid(s) + '-scr' + screenTurn, file = s.files[screenTurn % s.files.length];
+      emit({ type: 'toolCall', sessionId: sid(s), timestamp: now(), callId: id, tool: 'read_file', phase: 'start', args: { path: file } });
+      emit({ type: 'toolCall', sessionId: sid(s), timestamp: now(), callId: id, tool: 'read_file', phase: 'complete', output: '120 lines' });
+    }
     // Slow, calm background activity: one agent advances every few seconds.
     let timer: number | undefined;
     function tick(): void {
@@ -1976,11 +2021,11 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     } catch {
       /* no saved theme */
     }
-    const simNotesBridge = simNotesApi(simQuery, (id) => { const s = sims.find((x) => x.info.id === id); return s ? { key: s.info.workspaceFile || s.info.cwd, name: (s.info as AgentInfo & { roomName?: string }).roomName ?? s.info.name, session: s.info.id } : undefined; }); // spec 083 FR-060
+    const { forgetFolder: simNotesForget, ...simNotesCalls } = simNotesApi(simQuery, (id) => { const s = sims.find((x) => x.info.id === id); return s ? { key: s.info.workspaceFile || s.info.cwd, name: (s.info as AgentInfo & { roomName?: string }).roomName ?? s.info.name, session: s.info.id } : undefined; }); // spec 083 FR-060
     const capApi: Partial<DurbarApi> = {
       usageTotals: async () => ({ ok: true, since: savedSince, office: saved.office, folders: saved.folders }),
       usageResetTotals: async () => { savedSince = new Date().toISOString(); saved = { office: zero, folders: [] }; return { ok: true, since: savedSince, office: zero, folders: [] }; },
-      getSettings: async () => ({ defaultMaxAiCredits: defaultCap, placeMap: { ...placeMap }, customPlaces: customPlaces.map((p) => ({ ...p })), seriousMode, notifyNeedsMe, breakResume, chatLinksIn, ...(simTheme ? { theme: simTheme } : {}), characters: simCharacters, about: { name: 'Agent Durbar', version: '0.1.4 (simulator)', owner: 'Three Feathers', copyright: 'Copyright (c) 2026 Three Feathers contributors', website: 'https://github.com/three-feathers/agent-durbar', contributors: [{ label: 'vikramgorla', url: 'https://github.com/vikramgorla' }, { label: 'fjcabello', url: 'https://github.com/fjcabello' }, { label: 'rubenlupi', url: 'https://github.com/rubenlupi' }] } /* sample data, real values come from src/shared/about.ts */ }),
+      getSettings: async () => ({ defaultMaxAiCredits: defaultCap, placeMap: { ...placeMap }, customPlaces: customPlaces.map((p) => ({ ...p })), seriousMode, notifyNeedsMe, breakResume, chatLinksIn, ...(simTheme ? { theme: simTheme } : {}), characters: simCharacters, about: { name: 'Agent Durbar', version: '0.1.5 (simulator)', owner: 'Three Feathers', copyright: 'Copyright (c) 2026 Three Feathers contributors', website: 'https://github.com/three-feathers/agent-durbar', contributors: [{ label: 'vikramgorla', url: 'https://github.com/vikramgorla' }, { label: 'fjcabello', url: 'https://github.com/fjcabello' }, { label: 'rubenlupi', url: 'https://github.com/rubenlupi' }] } /* sample data, real values come from src/shared/about.ts */ }),
       setDefaultCap: async (c) => { defaultCap = c !== null && c >= 30 ? Math.round(c * 100) / 100 : undefined; return { ok: true, defaultMaxAiCredits: defaultCap }; },
       setSeriousMode: async (on) => { if (typeof on === 'boolean') seriousMode = on; return { ok: true, seriousMode }; },
       setNotifyNeedsMe: async (on) => { if (typeof on === 'boolean') notifyNeedsMe = on; return { ok: true, notifyNeedsMe }; },
@@ -2052,7 +2097,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         // come first, for check-ui-text's long-text pass; simslash=secret: fake token shapes (FR-014, issue #608)
         return { ok: true, entries: simSlashFor(s.info.adapterId ?? 'copilot', simQuery).map((e) => { const c = { ...e }; delete c.note; return c; }) }; // the note is the send's, not the list's
       },
-      ...simNotesBridge, // spec 083 FR-060
+      ...simNotesCalls, // spec 083 FR-060
       listProfiles: async (id) => {
         const s = sims.find((x) => x.info.id === id);
         if (!s || (s.info.adapterId && s.info.adapterId !== 'copilot')) return { ok: false, error: 'This agent app has no profiles.', profiles: [] };
@@ -2276,17 +2321,23 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     const tierQ = typeof location !== 'undefined' ? new URLSearchParams(location.search) : new URLSearchParams();
     const simTierLock = (() => { const v = tierQ.get('simtierlock'); return v === 'efficiency' || v === 'balance' || v === 'intelligence' || v === 'other' ? v : undefined; })();
     const simTierFail = tierQ.get('simtierfail') === '1';
-    const simModelList = (): ModelChoice[] => SIM_MODELS.map((m) => ({ ...m, ...(m.id === 'auto' && simTierLock ? { autoTierManaged: simTierLock === 'other' ? { locked: true } : { tier: simTierLock, locked: true } } : {}) }));
-    const simModel = (id: string | undefined): ModelChoice | undefined => simModelList().find((m) => m.id === id);
+    const simModelList = (): ModelChoice[] => [...SIM_MODELS, ...simRichModels('copilot')].map((m) => ({ ...m, ...(m.id === 'auto' && simTierLock ? { autoTierManaged: simTierLock === 'other' ? { locked: true } : { tier: simTierLock, locked: true } } : {}) }));
+    /** Spec 030 FR-063, as main checks it: each agent app's own list; `auto` is that app's own default even when its list does not name it. */
+    const simKindModels = (kind: string): ModelChoice[] => (kind === 'claude' ? [...SIM_CLAUDE_MODELS, ...simRichModels('claude')] : kind === 'copilot' ? simModelList() : simRichModels(kind));
+    const simModel = (id: string | undefined, kind = 'copilot'): ModelChoice | undefined => {
+      const list = simKindModels(kind);
+      return list.find((m) => m.id === id) ?? (id === 'auto' && kind !== 'copilot' ? { id: 'auto', name: 'Auto', efforts: list.find((m) => m.id === 'default')?.efforts ?? [] } : undefined);
+    };
+    const kindOfSim = (s: SimAgent): string => s.info.adapterId ?? 'copilot';
     const windowFor = (m: ModelChoice | undefined, tier: ContextTier | undefined): number => (tier === 'long' && m?.longWindow ? m.longWindow : m?.contextWindow ?? 0);
     const isBusy = (s: SimAgent): boolean => s.state === 'working' || s.state === 'thinking' || s.state === 'waiting' || !!s.compacting;
     const needsCompaction = (s: SimAgent, req: ModelSwitchRequest): boolean => {
-      const w = windowFor(simModel(req.model), req.contextTier === 'long' ? 'long' : undefined);
+      const w = windowFor(simModel(req.model, kindOfSim(s)), req.contextTier === 'long' ? 'long' : undefined);
       return w > 0 && !!s.ctx && s.ctx.tokens > w;
     };
 
     function applyModel(s: SimAgent, req: ModelSwitchRequest, cause: 'user' | 'runtime' | 'rate-limit' | 'fallback'): void {
-      const m = simModel(req.model);
+      const m = simModel(req.model, kindOfSim(s));
       if (!m) return;
       const previousModel = s.info.model, previousEffort = s.info.effort;
       s.info.model = m.id;
@@ -2308,6 +2359,14 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         window.setTimeout(() => emit({ type: 'autoTierFailed', sessionId: sid(s), timestamp: now(), requested: req.autoTier ?? undefined, effective: ownBefore ?? 'efficiency', reason: 'request-failed' }), 0);
       }
     }
+
+    /* Spec 030 FR-064: a driver ends a frozen reply, so a queued switch is always in play when the reply ends (simulator only) */
+    (window as unknown as { __simFinishTurn?: (id: string) => void }).__simFinishTurn = (id) => {
+      const s = sims.find((x) => x.info.id === id);
+      if (!s) return;
+      s.state = 'idle';
+      emit({ type: 'status', sessionId: sid(s), timestamp: now(), status: 'idle' });
+    };
 
     async function applyPending(s: SimAgent): Promise<void> {
       const p = s.pendingModel;
@@ -2352,7 +2411,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         const s = sims.find((x) => x.info.id === id);
         if (!s) return { ok: false, error: 'unknown agent' };
         if (s.info.modelControl?.switch === 'none') return { ok: false, error: 'This agent cannot change its model in place. Start a new session with the model you want.' };
-        const m = simModel(req?.model);
+        const m = simModel(req?.model, kindOfSim(s));
         if (!m) return { ok: false, error: 'That model is not in the list your account offers.' };
         if (req.effort && !m.efforts.includes(req.effort)) return { ok: false, error: 'That model does not offer this reasoning effort.' };
         if (req.contextTier === 'long' && !m.contextTiers?.includes('long')) return { ok: false, error: 'That model has no long-context tier.' };
@@ -2365,7 +2424,8 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
           if (!req.confirm?.compaction) return { ok: true, result: { status: 'needs-confirmation', model: m.id, confirmation: { targetName: m.name, currentTokens: s.ctx?.tokens ?? 0, targetLimit: windowFor(m, tier) } } };
           if (req.confirm.compaction === 'decline') return { ok: true, result: { status: 'rejected', message: 'The model was not changed.' } };
         }
-        if (isBusy(s)) {
+        // Spec 030 FR-038/FR-039: Claude Code and Codex take the choice at once and use it from the next message; only Copilot's runtime queues during a turn
+        if (isBusy(s) && kindOfSim(s) === 'copilot') {
           const queueId = 'q-' + sid(s) + '-' + ++queueN;
           s.pendingModel = { req, queueId };
           return { ok: true, result: { status: 'queued', model: m.id, queueId } };
@@ -2456,6 +2516,14 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       if (nm.length > 40 || /[\u0000-\u001f\u007f-\u009f\u00ad\u034f\u115f\u180e\u200b\u2028\u2029\u202a-\u202e\u2060-\u2064\u2066-\u2069\u3164\ufeff\ufff9-\ufffb]/.test(nm)) return 'Use 1 to 40 characters, without control or hidden characters.';
       return floorsList.some((f) => f.id !== except && f.name.toLowerCase() === nm.toLowerCase()) ? 'A floor with that name exists.' : '';
     };
+    // Manual order of rooms, desks and places (issue #677): kept for the page's session (a reload keeps it), cleaned by the same rules the app uses.
+    const clean = (d: unknown): OrderDoc => ((window as unknown as { DurbarReorder?: { sanitize(x: unknown): OrderDoc } }).DurbarReorder?.sanitize(d) ?? { rooms: [], desks: {}, places: [] });
+    let simOrder: OrderDoc = clean(null);
+    try {
+      simOrder = clean(JSON.parse(sessionStorage.getItem('durbar.simorder') || 'null'));
+    } catch {
+      /* no storage: the order lasts until the next reload */
+    }
     let floorSeq = 0;
     const floorApi: Partial<DurbarApi> = {
       floorsState: async () => floorState(),
@@ -2506,6 +2574,16 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         if (!x || !floorsList.some((f) => f.id === floorId)) return fres('Unknown folder or floor.');
         folderFloor.set(x.info.cwd, floorId);
         return fres();
+      },
+      getOrder: async (): Promise<OrderDoc> => clean(simOrder),
+      setOrder: async (doc: OrderDoc): Promise<OrderDoc> => {
+        simOrder = clean(doc);
+        try {
+          sessionStorage.setItem('durbar.simorder', JSON.stringify(simOrder));
+        } catch {
+          /* ignore */
+        }
+        return clean(simOrder);
       },
     };
 
@@ -2830,6 +2908,10 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
             // simspeed=N (perf checks, spec 052): background activity N times faster
             const speed = Math.max(1, Math.min(50, Number(typeof location !== 'undefined' ? new URLSearchParams(location.search).get('simspeed') : null) || 1));
             if (!opts.freeze) timer = window.setInterval(tick, Math.round(2600 / speed));
+            if (!opts.freeze) {
+              const screenTimer = window.setInterval(screenTick, Math.round(1300 / speed));
+              if (typeof window.addEventListener === 'function') window.addEventListener('pagehide', () => { window.clearInterval(screenTimer); if (timer) window.clearInterval(timer); }, { once: true });
+            }
           }, 0);
         }
         /* simresume=1 (spec 006 FR-021): Priya's folder came back after a restart as its last session, not started yet */
@@ -3025,7 +3107,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         if (opts.grants !== 'stuck' && s && s.grants.delete(key)) grantsEvent(s);
       },
       // No disk, no account: canned answers so the new folder / session / history UI can be exercised without credits.
-      listModels: async (kind) => ({ ok: true, models: (kind === 'claude' ? SIM_CLAUDE_MODELS : !kind || kind === 'copilot' ? simModelList() : []).map((m) => { const ob = simOrgModel(kind, m.id); return ob ? { ...m, orgBlocked: ob } : { ...m }; }) }),
+      listModels: async (kind) => ({ ok: true, models: (simKindModels(kind || 'copilot')).map((m) => { const ob = simOrgModel(kind, m.id); return ob ? { ...m, orgBlocked: ob } : { ...m }; }) }),
       /* spec 076 FR-205/FR-207: main's view of the canned policy (no values) */
       orgPolicyView: async (): Promise<Record<string, import('../shared/orgpolicy').OrgPolicyAppView>> => {
         if (!SIM_ORG) return {};
@@ -3111,9 +3193,11 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         }
         return { ok: true, mode, pending };
       },
-      removeFolder: async (id) => {
+      removeFolder: async (id, opts) => {
         const src = sims.find((x) => x.info.id === id);
         const gone = src ? sims.filter((x) => x.info.cwd === src.info.cwd).map((x) => x.info.id) : [];
+        // spec 083 T034b: Also delete its notes (no native confirmation in the demo; nothing on disk)
+        if (src && opts && opts.deleteNotes === true) { simNotesForget(src.info.workspaceFile || src.info.cwd); for (const g of gone) sims.splice(sims.findIndex((x) => x.info.id === g), 1); return { ok: true, removedIds: gone, notesDeleted: true }; }
         for (const g of gone) sims.splice(sims.findIndex((x) => x.info.id === g), 1);
         return { ok: true, removedIds: gone };
       },

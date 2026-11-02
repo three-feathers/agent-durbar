@@ -1,0 +1,1 @@
+- **`specs:check` refuses conflict markers** (spec 025 FR-018): a merge left in a spec now fails the check, naming the file and line. Development only; `test:specsindex`.

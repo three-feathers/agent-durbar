@@ -56,7 +56,6 @@ const TONE_RULES = [
  "styles.css | .att.img",
  "styles.css | .send[aria-disabled=\"true\"]",
  "styles.css | .sitem.sel",
- "styles.css | .fl-sw[aria-pressed=\"true\"]",
  "styles.css | .nothink",
  "styles.css | .md code",
  "styles.css | .md th",

@@ -6,7 +6,7 @@ name: Nightly watch
 # workflow_run always uses this file from main, it does not check anything out, and it reads only job names and links.
 on:
   workflow_run:
-    workflows: [CI, UI on three OSes, Installed app, Packaged check, Install check]
+    workflows: [CI, UI on three OSes, Installed app, Packaged check, Install check, World matrix]
     types: [completed]
     # Only runs of main (scheduled and push): PR and merge-queue runs (gh-readonly-queue/...) never start this workflow.
     branches: [main]

@@ -1,5 +1,7 @@
 # Design rules
 
+For Real office worlds, see also the [world design guide](world-design.md).
+
 Ten house rules for the Agent Durbar window (plain HTML, CSS and JS in `src/renderer`). They came from a design-systems audit in the usability pass (spec 052, round 7, FR-076..FR-079). Follow them in new UI and when you touch old UI; a theme changes only colours, borders, art and words, never these rules.
 
 1. Controls are `--h-ctl` (32px) or `.btn.sm` (28px). No other heights. (Compact makes `--h-ctl` 28px in the chrome only.)

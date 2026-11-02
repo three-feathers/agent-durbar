@@ -1,1 +1,0 @@
-- **The top bar has no Demo / Live badge** (spec 052 FR-181): the pill under the app name is gone. It was a label only. A demo is still marked by the checked "Turn off demo" item in the ⋯ menu and by the composer hint ("Demo, no credits used" or "Demo: sample data").

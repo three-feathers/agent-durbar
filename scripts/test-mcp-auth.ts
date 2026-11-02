@@ -4,6 +4,7 @@ import * as crypto from 'crypto';
 import * as fsReal from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { execFileSync } from 'child_process';
 import { nodeMcpFs } from '../src/main/mcp/auth';
 import {
   createBridgeHandshake, createKeyFile, createServerHandshake, deleteKeyFile, readKeyFile, rotateKeyFile, sanitizeParent,
@@ -11,7 +12,7 @@ import {
 import type { AuthStat, HandshakeResult, KeyFileDeps, McpFs } from '../src/main/mcp/auth';
 
 // ---- fake fs --------------------------------------------------------------------------------
-interface Node { kind: 'file' | 'dir' | 'link' | 'fifo'; mode: number; uid: number; data: string }
+interface Node { kind: 'file' | 'dir' | 'link' | 'fifo'; mode: number; uid: number; data: string; nlink?: number }
 function makeFs(uid = 501) {
   const nodes = new Map<string, Node>();
   const fail: { writeAfter?: number; rename?: boolean } = {};
@@ -33,14 +34,17 @@ function makeFs(uid = 501) {
       nodes.set(f, { kind: 'file', mode, uid, data });
     },
     rename(a, b) { if (fail.rename) throw err('EXDEV'); const n = nodes.get(a); if (!n) throw err('ENOENT'); nodes.delete(a); nodes.set(b, n); },
-    open(f) {
-      const n = nodes.get(f); if (!n) throw err('ENOENT');
-      if (n.kind === 'link') throw err('ELOOP'); // O_NOFOLLOW
-      const fd = nextFd++; fds.set(fd, n); return fd; // a FIFO opens without blocking (O_NONBLOCK) and is refused by fstat
+    io: {
+      openSync(f) {
+        const n = nodes.get(f); if (!n) throw err('ENOENT');
+        if (n.kind === 'link') throw err('ELOOP'); // O_NOFOLLOW
+        const fd = nextFd++; fds.set(fd, n); return fd; // a FIFO opens without blocking (O_NONBLOCK) and is refused by fstat
+      },
+      fstatSync(fd) { const n = fds.get(fd); if (!n) throw err('EBADF'); return { ...stat(n), nlink: n.nlink ?? 1 }; },
+      readSync(fd, buf, off, len, pos) { const n = fds.get(fd); if (!n) throw err('EBADF'); return buf.write(n.data.slice(pos, pos + len), off); },
+      closeSync(fd) { fds.delete(fd); },
     },
-    fstat(fd) { const n = fds.get(fd); if (!n) throw err('EBADF'); return stat(n); },
-    readFd(fd, max) { const n = fds.get(fd); if (!n) throw err('EBADF'); return n.data.slice(0, max); },
-    close(fd) { fds.delete(fd); },
+    flags: { O_RDONLY: 0 },
     lstat(p) { const n = nodes.get(p); if (!n) throw err('ENOENT'); const st = stat(n); hook.afterLstat?.(p); return st; },
     readdir(dir) { return [...nodes.keys()].filter((k) => k.startsWith(dir + '/')).map((k) => k.slice(dir.length + 1)); },
     unlink(p) { if (!nodes.delete(p)) throw err('ENOENT'); },
@@ -99,6 +103,8 @@ function deps(f: ReturnType<typeof makeFs>, over: Partial<KeyFileDeps> = {}): Ke
   f = mk(); f.nodes.get(FILE)!.uid = 0; refused(f);
   f = mk(); f.nodes.get(FILE)!.kind = 'link'; refused(f);
   f = mk(); f.nodes.get(FILE)!.kind = 'dir'; refused(f);
+  // issue #917: the shared read also refuses a key file with a second link (new for this caller)
+  f = mk(); f.nodes.get(FILE)!.nlink = 2; { const r = refused(f); assert.match(r.message, /more than one link/); }
   f = mk(); f.nodes.get(DIR)!.mode = 0o755; refused(f);
   f = mk(); f.nodes.get(DIR)!.kind = 'link'; refused(f);
   f = mk(); f.nodes.get(DIR)!.uid = 7; refused(f);
@@ -607,6 +613,26 @@ function pair(serverKey: Buffer, bridgeKey: Buffer, opts: { marker?: boolean; pa
       } } };
       const race = readKeyFile(racing); assert.ok(!race.ok && race.reason === 'unsafe', 'real symlink swapped after lstat');
       fsReal.unlinkSync(file); fsReal.renameSync(target, file);
+      // a FIFO swapped in after the lstat must not block the open (O_NONBLOCK in nodeMcpFs): a child process with a time limit, so a
+      // regression fails the test in 8 s instead of hanging the suite (execFileSync kills the child on the timeout)
+      assert.ok(real.flags.O_NONBLOCK !== 0 && real.flags.O_NONBLOCK === fsReal.constants.O_NONBLOCK, 'nodeMcpFs opens with O_NONBLOCK');
+      const fifo = path.join(dir, 'fifo.json');
+      execFileSync('mkfifo', [fifo]);
+      try {
+        const mod = path.join(__dirname, '..', 'src', 'main', 'mcp', 'auth.js');
+        const child = `const A = require(${JSON.stringify(mod)}); const real = A.nodeMcpFs(); const uid = process.getuid();
+          const fake = { isSymbolicLink: () => false, isFile: () => true, isDirectory: () => false, uid, mode: 0o600, size: 0 };
+          const d = { fs: Object.assign({}, real, { lstat: (p) => (p === ${JSON.stringify(fifo)} ? fake : real.lstat(p)) }), mcpDir: ${JSON.stringify(dir)}, keyFile: ${JSON.stringify(fifo)}, uid, platform: process.platform };
+          const r = A.readKeyFile(d); process.stdout.write(JSON.stringify([r.ok, r.reason]));`;
+        const out = execFileSync(process.execPath, ['-e', child], { timeout: 8000, encoding: 'utf8' });
+        assert.deepStrictEqual(JSON.parse(out), [false, 'unsafe'], 'a FIFO is refused at once, not waited for: ' + out);
+      } finally { fsReal.unlinkSync(fifo); }
+      // an unexpected read error names the code only: no folder, no file path (this is the secrets module)
+      const eio: KeyFileDeps = { ...d, fs: { ...real, io: { ...fsReal, readSync: () => { throw Object.assign(new Error(`EIO at ${file}`), { code: 'EIO' }); } } as never } };
+      const bad = readKeyFile(eio);
+      assert.ok(!bad.ok && bad.reason === 'invalid' && bad.message === 'The connection key file cannot be read (EIO).', JSON.stringify(bad));
+      const noCode = readKeyFile({ ...eio, fs: { ...real, io: { ...fsReal, openSync: () => { throw new Error(`boom ${file}`); } } as never } });
+      assert.ok(!noCode.ok && noCode.message === 'The connection key file cannot be read (ERROR).' && !noCode.message.includes(root), JSON.stringify(noCode));
       // padded past the cap on the real fs
       const keep = fsReal.readFileSync(file, 'utf8');
       fsReal.writeFileSync(file, keep.trimEnd() + ' '.repeat(5000), { mode: 0o600 });
