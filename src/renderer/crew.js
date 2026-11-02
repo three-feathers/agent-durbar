@@ -133,5 +133,37 @@
     return out;
   }
 
-  return { CREWS, PREHISTORIC_IDS, ALL_IDS, idsFor, storeKey, POSES, BOX, PX_PER_UNIT, FACE, FACE_W, FACE_H, FACE_CROP, faceBox, viewBox, poseFor, file, files, usable, IDS, MAX_ENTRIES, MAX_ID, seeded, seededRand, pickCharacter, assignCrew, pruneCrew, loadCrew };
+  /* Spec 102 FR-200..FR-202 (owner's latest, replaces 097 FR-100/FR-114's "crews pick their world"): worlds and character sets are two
+     flat lists of DATA, any set in any world, each world names a default set. Add a row to add a world or a set (a Pirate crew and world
+     later change nothing else). `flag` names a switch in WORLD_FLAGS: a row whose flag is off is not offered and never chosen (owner's
+     gate, 2026-11-01: a world such as the cave stays closed until spec 097 T156..T159 and spec 001's search land). `choice` is the Characters value that
+     picks a set. A set listed here has the full Real office pose set (FR-204); Minimalist and Cheeky are not listed yet. */
+  const WORLD_FLAGS = { cave: false };
+  const WORLDS = [
+    { id: 'photo', name: 'Photo office', defaultSet: 'office' },
+    { id: 'cave', name: 'Prehistoric cave', defaultSet: 'prehistoric', flag: 'cave' },
+  ];
+  const REAL_SETS = [
+    { id: 'office', name: 'Office people', choice: '' },
+    { id: 'prehistoric', name: 'Prehistoric', choice: 'prehistoric', flag: 'cave' },
+  ];
+  /* the Characters choices that name a crew (Minimalist has none), from CREWS: a new crew gets its note by construction */
+  const crewName = (c) => (c === 'minimalist' || has(CREWS, c)) ? c[0].toUpperCase() + c.slice(1) : '';
+  const on = (row, flags) => !row.flag || !!(flags || WORLD_FLAGS)[row.flag];
+  const rowOf = (list, id) => list.find((r) => r.id === id) || null;
+  /* the worlds offered now (Photo office first, always) */
+  function offeredWorlds(flags) { return WORLDS.filter((w) => on(w, flags)); }
+  /* FR-114: a stored value that is not an offered world id is the first world */
+  function parseWorld(v, flags) { const w = offeredWorlds(flags).find((x) => x.id === String(v)); return w ? w.id : WORLDS[0].id; }
+  /* FR-202: an explicit choice that has full poses and is on, else the world's default set, else Office people. `note` says why a
+     choice could not be drawn (the choice is kept). */
+  function peopleFor(world, choice, flags) {
+    const w = rowOf(WORLDS, parseWorld(world, flags)), c = String(choice || '');
+    const byChoice = c && c !== 'theme' ? REAL_SETS.find((s) => s.choice === c && on(s, flags)) : null;
+    if (byChoice) return { world: w.id, set: byChoice.id, setName: byChoice.name, note: '' };
+    const d = rowOf(REAL_SETS, w.defaultSet);
+    const def = d && on(d, flags) ? d : REAL_SETS[0];
+    return { world: w.id, set: def.id, setName: def.name, note: crewName(c) ? `Real office shows ${def.name} until ${crewName(c)} has Real office poses.` : '' };
+  }
+  return { WORLD_FLAGS, WORLDS, REAL_SETS, offeredWorlds, parseWorld, peopleFor, CREWS, PREHISTORIC_IDS, ALL_IDS, idsFor, storeKey, POSES, BOX, PX_PER_UNIT, FACE, FACE_W, FACE_H, FACE_CROP, faceBox, viewBox, poseFor, file, files, usable, IDS, MAX_ENTRIES, MAX_ID, seeded, seededRand, pickCharacter, assignCrew, pruneCrew, loadCrew };
 })());

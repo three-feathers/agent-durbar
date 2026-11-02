@@ -39,8 +39,12 @@ async function main(): Promise<void> {
     const a = agents[0];
     const sameFolder = agents.find((x: AgentInfo) => x.id !== a.id && x.cwd === a.cwd);
     const elsewhere = agents.find((x: AgentInfo) => x.cwd !== a.cwd)!;
-    const N = sim as Required<Pick<DurbarApi, 'notesList' | 'notesSave' | 'notesAdd' | 'notesUpdate' | 'notesDelete' | 'notesDeleteAll' | 'notesStartOver' | 'notesSetFile' | 'notesFileCount' | 'onNotesChanged'>>;
+    const N = sim as Required<Pick<DurbarApi, 'notesList' | 'notesSave' | 'notesAdd' | 'notesUpdate' | 'notesDelete' | 'notesDeleteAll' | 'notesStartOver' | 'notesSetFile' | 'notesFileCount' | 'notesExport' | 'onNotesChanged'>>;
     assert.ok(Object.values(N).every((f) => typeof f === 'function'), 'every notes call exists on the simulator bridge');
+    // spec 083 T034b: the demo shows no save dialog and writes nothing; Remove folder's helper is not on the bridge
+    assert.deepStrictEqual(await N.notesExport(a.id), { ok: true, demo: true, message: 'Demo: nothing written' });
+    assert.ok(!(await N.notesExport('nobody')).ok, 'an unknown chat is refused');
+    assert.ok(!('forgetFolder' in sim), 'the demo\'s forget helper is not a bridge call');
     const events: string[] = [];
     const off = N.onNotesChanged((v) => events.push(v.fingerprint));
     assert.strictEqual(view(await N.notesList(a.id)).notes.length, 0);

@@ -66,7 +66,7 @@ async function written(file = new NotesFile({ now: tickClock })): Promise<{ fold
 }
 
 /** NotesOps on real stores: a folder list file, the notes store, the mirror. */
-type RigOpts = { repo?: 'dir' | 'noinfo'; confirm?: (kind: 'on' | 'delete') => boolean; pending?: () => boolean; session?: Record<string, string[]>; folderValues?: string[] };
+type RigOpts = { repo?: 'dir' | 'noinfo'; confirm?: (kind: string) => boolean; pending?: () => boolean; session?: Record<string, string[]>; folderValues?: string[] };
 const asked: string[] = [];
 function rig(opts: RigOpts = {}): { ops: NotesOps; folders: FolderStore; foldersFile: string; store: NotesStore; folder: string; ws: string; gone: string; timers: (() => void)[]; file: NotesFile } {
   const base = fresh('base');
@@ -799,7 +799,7 @@ async function main(): Promise<void> {
     assert.ok(/fileOn: \(key\) => folderStore\?\.get\(key\)\?\.notesFile === true/.test(mainSrc), 'fileOn reads notesFile');
     assert.ok(/setFileOn: \(key, on\) => folderStore\?\.setNotesFile\(key, on\) === true/.test(mainSrc), 'setFileOn saves it');
     assert.ok(!/fileOn: \(\) => false/.test(mainSrc), 'no longer off for every folder');
-    assert.ok(/confirmNative: \(kind, name\) => nativeConfirm\(win, /.test(mainSrc), 'main asks with the native box (not the page)');
+    assert.ok(/confirmNative: \(kind, name, count\) => nativeConfirm\(win, /.test(mainSrc), 'main asks with the native box (not the page)');
     assert.ok(/valuesPending: \(\) => !!mcpStore && !mcpStore\.noPrompt\(\)/.test(mainSrc), 'a locked vault holds the file back');
     const nc = nodeFs.readFileSync(path.join(ROOT, 'src', 'main', 'nativeconfirm.ts'), 'utf8');
     assert.ok(/defaultId: 0, cancelId: 0/.test(nc) && /response === 1/.test(nc), 'Cancel is the default and the Escape answer');

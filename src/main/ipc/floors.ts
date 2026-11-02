@@ -4,6 +4,7 @@ import type { AgentInfo, FloorsResult, FloorsState } from '../../shared/api';
 import { GROUND } from '../../shared/floors';
 import type { FloorOp } from '../../shared/floors';
 import type { FolderStore } from '../folders';
+import { emptyOrder } from '../../shared/roomorder';
 
 export interface FloorsIpcDeps {
   agents: Map<string, AgentInfo>;
@@ -29,6 +30,9 @@ export function register(deps: FloorsIpcDeps): void {
     return r && r.ok ? { ok: true, state: floorsState() } : { ok: false, error: r && !r.ok ? r.error : 'Floors are not available.', state: floorsState() };
   };
   ipcHandle('floors:state', () => floorsState());
+  // Manual order of rooms, desks and places (issue #677): sequencing only, kept in the same file as the floors.
+  ipcHandle('floors:order', () => folderStore()?.order() ?? emptyOrder());
+  ipcHandle('floors:setOrder', (_e, doc: unknown) => folderStore()?.setOrder(doc) ?? emptyOrder());
   ipcHandle('floors:create', (_e, name: unknown) => floorsResult(folderStore()?.createFloor(name)));
   ipcHandle('floors:rename', (_e, id: unknown, name: unknown) => floorsResult(folderStore()?.renameFloor(id, name)));
   ipcHandle('floors:reorder', (_e, ids: unknown) => floorsResult(folderStore()?.reorderFloors(ids)));

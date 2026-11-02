@@ -13,7 +13,8 @@ import { execFileSync } from 'child_process';
 import type { AgentInfo } from '../src/shared/api';
 import { CUT_LINE, NOTES_LIMITS, type Note } from '../src/shared/notes';
 import { NOTES_MD_UNREADABLE, parseNotesMd, writeNotesMd } from '../src/shared/notesmd';
-import { COUNT_UNREADABLE, EXCLUDE_UNSAFE_NAME, NotesFile, escapeGitSegment, excludeLine, readCapped, syncNotesFile, type NotesFileFs } from '../src/main/notesfile';
+import { readCapped } from '../src/shared/cappedread';
+import { COUNT_UNREADABLE, EXCLUDE_UNSAFE_NAME, NotesFile, escapeGitSegment, excludeLine, syncNotesFile, type NotesFileFs } from '../src/main/notesfile';
 import { NotesStore } from '../src/main/notesstore';
 import { NotesOps } from '../src/main/notesops';
 
@@ -287,8 +288,8 @@ async function main(): Promise<void> {
     // a FIFO swapped in between the lstat and the open: the open itself must not block
     const mod = path.join(__dirname, '..', 'src', 'main', 'notesfile.js');
     const code = `
-      const fs = require('fs'); const F = require(${JSON.stringify(mod)});
-      const a = F.readCapped(fs, fs.constants, ${JSON.stringify(md(r.folder))}, 1000);
+      const fs = require('fs'); const F = require(${JSON.stringify(mod)}); const C = require(${JSON.stringify(path.join(__dirname, '..', 'src', 'shared', 'cappedread.js'))});
+      const a = C.readCapped(fs, fs.constants, ${JSON.stringify(md(r.folder))}, 1000);
       const real = fs.lstatSync;
       const lying = Object.assign({}, fs, { lstatSync: (p, o) => p === ${JSON.stringify(md(r.folder))} ? Object.assign(real(process.execPath), { isFile: () => true, isSymbolicLink: () => false, size: 10 }) : real(p, o) });
       const b = new F.NotesFile({ fs: lying }).readBack(${JSON.stringify(r.folder)}, undefined);
