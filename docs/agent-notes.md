@@ -2,7 +2,7 @@
 
 Pitfalls agents on this repo learned the hard way. Rules live in [AGENTS.md](../AGENTS.md); the review checklist is [review-checklist.md](review-checklist.md); checked facts about Copilot, Claude Code, Codex and `git` are in [agent-apps.md](agent-apps.md). This file is guidance and never overrides AGENTS.md.
 
-Each entry: **what** (bold), why, how to apply, evidence (`real:`, `read:`, `test:`, `sim:`, a PR or issue), at most three lines. Add one in the PR where you learned it; fix or delete one that turns out wrong; delete one a script or test now enforces. **Never** secrets, tokens, personal data or chat contents. Entries pruned on 2026-10-29 (retro #854 B2): those enforced by a script or already in AGENTS.md or the checklist were removed; the full old text is in git history (`git log -p docs/agent-notes.md`).
+Each entry: **what** (bold), why, how to apply, evidence (`real:`, `read:`, `test:`, `sim:`, a PR or issue), at most three lines. Add one in the PR where you learned it; fix or delete one that turns out wrong; delete one a script or test now enforces. **Never** secrets, tokens, personal data or chat contents. Entries pruned 2026-10-29 (retro #854 B2); old text: `git log -p docs/agent-notes.md`.
 
 ## Shell, git and processes
 
@@ -65,6 +65,7 @@ Each entry: **what** (bold), why, how to apply, evidence (`real:`, `read:`, `tes
 - **When the simulator bypasses main, test main's logic itself**: put the handler in a pure function a unit test drives, and prove a setting survives restart by driving main's IPC handler on a stand-in `electron` with a real store (`test-characters.ts`, `test-newfolderipc.ts`); a reload in the simulator forgets picks (#814, #693).
 - **Rules the simulator copies go in a marked block with an equality test**: `sim.ts` cannot import, so `/* simrecord:begin */`, `/* mcpcall:begin */` blocks are cut out, transpiled and compared (`test-schedules-runs.ts`, `test-mcpcall.ts`); keep them free of closure variables (spec 044 T066, spec 058 FR-187).
 - **The scheduler harness's `advance(ms)` is one tick**: step by the interval in a loop when counting runs; pass `mono: () => harness.now` (spec 044 T061).
+- **The simulator's start-up replay runs while `app.js` loads**: guard handlers that read a later script's `window.exports` (spec 100, `sim:`).
 - **A new renderer script needs a line in `scripts/copy-assets.js`** and its `<script>` tag, or the page silently runs without it (`window.DurbarX` undefined); check `ls dist/renderer` and let a driver assert something it draws (#605, spec 087 T030).
 - **One window global per renderer script** (`root.DurbarX`): a duplicate silently replaces the first; `npm run test:globals` fails on it. A screen no driver opens can break unseen (#474).
 - **A new optional `AgentAdapter` member touches four lists**: `types.ts`, a capability flag plus its C2 line and `NOT_IN_FAKE` in `test-adapter-contract.ts`, and `SIM_OPTIONAL_MEMBERS` in `simguard.ts`; a new event type also needs `EVENT_TYPES` in `eventguard.ts` and the contract's `TYPES` (spec 087).
