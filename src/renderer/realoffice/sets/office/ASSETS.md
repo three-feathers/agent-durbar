@@ -1022,6 +1022,22 @@ The sections below are kept as the record of how those sheets were made, approve
 - cut: two frames split at the widest empty gap, each centred on its torso on one shared canvas with the feet aligned, resized to at most 640 px tall, re-encoded WebP quality 0.80 method 6 with alpha, no metadata; `people.json` sizes are in the stand sheet's units, a runner 0.97 of the person's upright `letter` height (bent knees, an estimate)
 - licence: MIT
 
+### rig-layers
+
+- files: p01-righead.webp p01-rigl.webp p01-rigr.webp p02-righead.webp p02-rigl.webp p02-rigr.webp p03-righead.webp p03-rigl.webp p03-rigr.webp p04-righead.webp p04-rigl.webp p04-rigr.webp p05-righead.webp p05-rigl.webp p05-rigr.webp p06-righead.webp p06-rigl.webp p06-rigr.webp p07-righead.webp p07-rigl.webp p07-rigr.webp p08-righead.webp p08-rigl.webp p08-rigr.webp p09-righead.webp p09-rigl.webp p09-rigr.webp p10-righead.webp p10-rigl.webp p10-rigr.webp p11-righead.webp p11-rigl.webp p11-rigr.webp p12-righead.webp p12-rigl.webp p12-rigr.webp p13-righead.webp p13-rigl.webp p13-rigr.webp p14-righead.webp p14-rigl.webp p14-rigr.webp p15-righead.webp p15-rigl.webp p15-rigr.webp
+- source: each person's own `typeA` picture in this folder: a head and two hands, cut with soft edges
+- tool: on-device Apple Vision for the face and hand places, Core Graphics to cut, Chromium's WebP encoder at quality 0.85; a one-off script, no generated pixels
+- date: 2026-11-01
+- made by: Vikram's agent (Claude Code)
+- approved by: Vikram (owner), 2026-11-01, relayed: keep the typing rig
+- reference: none
+- prompt: none, no image generation
+- cut: `rig` in `people.json` has each layer's place and pivot as fractions of the picture
+- size in px per layer: p01 head 206x216, l 103x67, r 104x67; p02 head 215x226, l 93x80, r 93x79; p03 head 203x214, l 95x76, r 95x79; p04 head 260x273, l 112x75, r 107x74; p05 head 250x261, l 122x73, r 118x74; p06 head 212x222, l 112x92, r 111x95; p07 head 220x231, l 109x85, r 102x81; p08 head 225x236, l 92x85, r 89x81; p09 head 202x211, l 105x80, r 102x81; p10 head 198x206, l 103x74, r 98x72; p11 head 200x210, l 99x85, r 103x78; p12 head 251x263, l 111x88, r 110x93; p13 head 227x238, l 101x82, r 100x85; p14 head 216x226, l 105x88, r 101x91; p15 head 227x238, l 106x85, r 90x85; 0.31 MB in all
+- chunks: WebP with alpha, no EXIF, XMP or ICC chunk (all 45 checked by `test:realoffice-assets`)
+- likeness-check: nothing was generated: each layer is a piece of a person's own picture, so the likeness check of `seat-pNN` above holds
+- licence: MIT
+
 ## Removed
 
 - p01..p15 `-coffee.webp`, and the `-box`, `-touch`, `-tool`, `-wait` pictures of p02, p05, p06, p12: removed 2026-10-31, reported by Vikram (owner: the lobby people must face their fixture), replaced by `p01-counter.webp` and the facing frames of the same person.

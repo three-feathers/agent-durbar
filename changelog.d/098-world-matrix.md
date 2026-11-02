@@ -1,0 +1,1 @@
+- **A weekly check of the office worlds** (spec 098, for contributors): `scripts/world-matrix.js` and a weekly workflow take one picture and run the page checks per world moment and world, on the simulator. Nothing in the app changes. A failed weekly run opens the nightly issue.
