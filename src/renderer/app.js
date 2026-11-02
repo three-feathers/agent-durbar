@@ -1778,7 +1778,7 @@ function realModel(model){
 /* each pending card is one request: its id is made once and kept, so a slip's button names the request it shows, not "the agent's first pending card" (a double click, or a new request arriving, must never answer another one) */
 const CARD_REQ=new WeakMap(); let CARD_REQ_N=0;
 const reqOf=c=>{if(!CARD_REQ.has(c))CARD_REQ.set(c,'rq'+(++CARD_REQ_N));return CARD_REQ.get(c);};
-/* a card the inbox row shows details for ("Show the change", "Show the command"): the very selector the inbox row uses. A slip never offers Allow for such a card: a person must not approve blind (review on #994, 2026-11-02) */
+/* a card the inbox row shows details for ("Show the change", "Show the command"): the very selector the inbox row uses. A slip never offers Allow for such a card: a person must not approve blind (review on PR 994, 2026-11-02) */
 const cardHasDetail=card=>!!card&&!!card.querySelector(':scope > details.pdiff, :scope > details.pcmd');
 function realSlips(){
   const D=window.DurbarPlaces, out={queue:null,limit:null,elicit:[]};

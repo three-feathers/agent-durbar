@@ -176,7 +176,7 @@ module.exports = async (ctx) => {
         focus:document.activeElement&&document.activeElement.className,header:!!h,aria:h&&h.getAttribute('aria-hidden'),door:h&&h.querySelector('img.ibw-door').getAttribute('src'),faces:h&&h.querySelectorAll('.ibw-face').length,bg:getComputedStyle(document.querySelector('#inboxDlg .inbox-dlg')).backdropFilter,
         small:[...document.querySelectorAll('#inboxDlg *')].filter(x=>x.children.length===0&&x.textContent.trim()&&parseFloat(getComputedStyle(x).fontSize)<10.5).length}})()`);
       assert.strictEqual(dlg.title, 'Needs you', `${tag}: the dialog keeps its heading`);
-            const rowsN = await js(`document.querySelectorAll('#inboxDlg .inbox-row').length`); assert.strictEqual(sl.total, rowsN, `${tag}: the slip count (${sl.total}) is the inbox's row count (${rowsN}; needsMe ${await js('window.__durbarSimUi.needsCount()')})`);
+            const rowsN = await js(`document.querySelectorAll('#inboxDlg .inbox-row').length`); assert.strictEqual(sl.total, rowsN, tag + ': the slip count (' + sl.total + ') is the inbox row count (' + rowsN + '; needsMe ' + (await js('window.__durbarSimUi.needsCount()')) + ')');
       assert.ok(dlg.header && dlg.aria === 'true' && dlg.faces >= 1 && dlg.door === `realoffice/worlds/${world}/fx-boss.webp`, `${tag}: the header with the world's Boss door and the queue's faces, aria-hidden: ${JSON.stringify(dlg)}`);
       assert.ok(/ib-h/.test(dlg.focus), `${tag}: focus lands on the first row's heading, never a button`);
       assert.strictEqual(dlg.bg, 'none', `${tag}: no blur behind the dialog text: ${dlg.bg}`);
