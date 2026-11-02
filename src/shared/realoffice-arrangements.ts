@@ -91,7 +91,7 @@ export function aislesLayout(model: RealModel, view: { w: number; h: number }, m
           id: a.id, state: a.state as RealState, narrow: false, slot: b.slot, desk: { ...b.cab, full: cabH },
           plate: { x: b.cab.x, y: plateY, w: cabW, h: AISLE_PLATE_H }, screen: { x: gl.x - 4 * g, y: gl.y - 4 * g, w: gl.w + 8 * g, h: gl.h + 8 * g }, glass: gl,
           person: null, face: { x: px + Math.floor((pw - faceS) / 2), y: py + 4 * g, w: faceS, h: faceS },
-          away: a.away ? { x: b.slot.x + b.slot.w / 2, y: b.cab.y } : null,
+          away: a.away ? { x: b.slot.x + b.slot.w / 2, y: b.cab.y, s: 33 * g } : null,
           lamp: { x: b.cab.x - 4 * g, y: b.cab.y - 4 * g, w: cabW + 8 * g, h: cabH + 8 * g },
           bubble: needs ? { x: px + pw / 2, y: py - 8 * g } : null, bang: a.state === 'error' ? { x: gl.x + gl.w - 4 * g, y: gl.y - 4 * g } : null,
           dots: a.state === 'thinking' ? { x: px + pw / 2, y: py - 4 * g } : null, call: { x: b.cab.x + cabW - 16, y: plateY + 4 },
