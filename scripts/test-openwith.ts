@@ -179,7 +179,7 @@ fs.writeFileSync(wsFile, '{}');
   { const r = rec(); const res = await openWith({ cwd: dir }, 'folder', mk(launchEnv('linux', []), r)); assert.deepStrictEqual(r.revealed, [], 'a plain folder is opened'); assert.deepStrictEqual(r.opened, [dir]); assert.strictEqual(res.note, undefined); }
   for (const n of ['x.APP', 'x.bundle', 'x.workflow', 'x.command', 'x.kext']) {
     const p = path.join(root, n); fs.mkdirSync(p);
-    const r = rec(); assert.strictEqual((await openWith({ cwd: p }, 'folder', mk(launchEnv('linux', []), r))).ok, false, n); assert.deepStrictEqual(r.opened, []);
+    const r = rec(); assert.strictEqual((await openWith({ cwd: p }, 'folder', mk(launchEnv('linux', []), r))).ok, true, n); assert.deepStrictEqual(r.opened, [], n + ': never opened'); assert.deepStrictEqual(r.revealed, [p], n + ': revealed');
   }
   { const res = await openWith({ cwd: dir }, 'folder', mk(launchEnv('linux', []), rec(), { openPath: async () => 'Failed to open path' })); assert.deepStrictEqual([res.ok, res.error], [false, 'Failed to open path']); }
   { const res = await openWith({ cwd: dir }, 'folder', mk(launchEnv('linux', []), rec(), { openPath: async () => { throw new Error('boom'); } })); assert.deepStrictEqual([res.ok, res.error], [false, 'boom']); }
