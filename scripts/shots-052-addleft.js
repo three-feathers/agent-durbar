@@ -100,11 +100,11 @@ module.exports = async (ctx) => {
     if (!file) { fail('no File menu'); return; }
     const items = file.submenu.items.map((m) => (m.type === 'separator' ? '-' : m.role === 'close' ? 'close' : `${m.label} ${m.accelerator}`));
     if (items.join('|') !== 'Add Folder… CommandOrControl+O|Add VS Code Workspace… CommandOrControl+Shift+O|New Folder… null|-|close') fail('File menu: ' + items.join(' | ')); // spec 093 FR-001a: New Folder…, no key
-    const rooms = () => ctx.js(`document.querySelectorAll('#stage .room-name, #stage .plate-tx b').length`);
+    const rooms = () => ctx.js(`document.querySelectorAll('#stage .room-name').length`);
     await ctx.js(`window.__wsClicks=0;document.getElementById('addWs').addEventListener('click',()=>{window.__wsClicks++});true`);
     const r0 = await rooms();
     file.submenu.items[0].click();
-    await ctx.waitFor(`[...document.querySelectorAll('#stage .room-name, #stage .plate-tx b')].some((n)=>/^new-folder-/.test(n.textContent.trim()))`, 5000).catch(() => undefined);
+    await ctx.waitFor(`[...document.querySelectorAll('#stage .room-name')].some((n)=>/^new-folder-/.test(n.textContent.trim()))`, 5000).catch(() => undefined);
     const r1 = await rooms();
     total++;
     if (r1 !== r0 + 1) fail(`File > Add Folder… did not add a room (${r0} -> ${r1})`);

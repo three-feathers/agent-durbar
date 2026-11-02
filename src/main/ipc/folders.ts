@@ -49,14 +49,6 @@ export function register(deps: FoldersIpcDeps): void {
     folderStore()?.setHidden(key, hidden === true);
     return { ok: true };
   });
-  ipcHandle('folders:setClosed', (_e, id: unknown, closed: unknown) => {
-    const a = typeof id === 'string' ? agents.get(id) : undefined;
-    if (!a) return { ok: false };
-    const key = wsKey(a);
-    for (const x of agents.values()) if (wsKey(x) === key) x.closed = closed === true;
-    folderStore()?.setClosed(key, closed === true);
-    return { ok: true };
-  });
   ipcHandle('folders:remove', async (e, id: unknown, opts: unknown) => {
     if (!fromApp(e)) return { ok: false, removedIds: [] as string[] };
     const o = removeOpts(opts);
