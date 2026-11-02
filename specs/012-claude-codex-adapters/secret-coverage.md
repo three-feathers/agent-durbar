@@ -26,6 +26,18 @@ GitHub's list, by reading: 64 providers covered, 23 in part, 121 by name only. T
 
 The sweep's claim, checked by running it on `main`: `npm_`, `AIza`, `sk_live_` and `aws_secret_access_key=` passed both masks; a URL password passed `maskTokenShapes` only. `npm_` in `redact.ts` was only an env *name* on the "long but harmless" list. PEM and PGP blocks passed both, which the sweep had not said. The two masks were not copies: `redact` ran `PATTERNS` and then `maskTokenShapes`, so `maskTokenShapes` alone lacked `Authorization:`, URL credentials, `tid=` and OAuth values. There is now one mask.
 
+## What can and cannot be repeated offline
+
+**Can**, with no download, on any machine (`npm run test:runtime-redact`, `npm run test:redact-growth-shapes`): one sample per family; seeded samples of everything the mask hid before this change, in the contexts it hid them (`scripts/redact-held-lib.ts`); each digit-guarded prefix with a letters-only body, pinned as a limit; the false-positive list; the adversarial runs.
+
+**Cannot**: the counts above (120, 105, 101, 7, 87), every `after` cell in the gitleaks table, and the GitHub and TruffleHog counts. The lists are not in this repository and the generator was not committed, so these are a dated snapshot that a later regex change does not update, and CI does not check them. Repeating them means downloading the lists again and writing the generator again.
+
+**It was wrong once.** This page said `gitlab-pat` "yes" while that rule required a digit in the body, which left about 3% of 20-character random bodies visible; `main` had masked them (review of #1015). It went unseen because 12 samples per rule meet a 3% hole only about a third of the time, the table was not regenerated after the guard was added, and every committed sample holds a digit. The rule is fixed, and the 22 rows below that still pass through the guard now say `partial`, so 83 of the 105 fixed shapes counted above read `yes` for every body. The headline counts stay as measured.
+
+**Digit guard.** A shape added here whose body may hold `_`, `-` or `.`, and some others, needs a digit in its first 128 characters, so that `cfut_cross_validation_results_v2` is not taken for a key. A real token with no digit therefore passes. For random letters and digits that is about 3% at 20 characters, 0.1% at 40, and far less at 100; real lengths are often longer than the minimum, which we did not measure. Guarded: `bedrock-api-key-`, `ya29.`, `GOCSPX-`, `cfut_`, `cfat_`, `cfk_`, `vcc_`, `nfp_`, `nfc_`, `nfu_`, `nfb_`, `rnd_`, `xai-`, `nvapi-`, `csk-`, `pcsk_`, `fw_`, `BBDC-`, `CFPAT-`, `unkey_`, `bkua_`, `lin_oauth_`, `sk.eyJ`, `HRKU-`, `sbp_`, `sb_secret_`, `pscale_`, `hvs.`, `hvb.`, `hvr.`, `dp.`, `tskey-`, GitLab's `gldt-` and the others beside it, `GR1348941`, `ATATT3`, `CCIPAT_`, `CCIPRJ_`, `sgp_`, `tvly-`, `lsv2_`, `pypi-Ag`, `dckr_pat_`, `SG.`, `sq0atp-`, `sq0csp-`, `pdl_`, `glc_`, `glsa_`, `NRAK-`, `NRII-`, `NRJS-`, `sl.`, `1//0`, `AKLT`, `oy2`, `cio`, `ATBB`. None of these was masked before this change. `glpat-` and the other shapes of before carry no guard.
+
+**Compared with the old mask.** On 2026-11-02 a scratch fuzz (not committed; needs the old code beside the new) drew 1,000,000 samples from every old rule's own character classes, under nine profiles (no digit, one case, digits only, hex, words and others), in about 70 contexts, through `redact`, `maskTokenShapes`, `maskBareTokenShapes`, `maskSecretCommand`, `maskSecretUrl`, `maskSecretArgs`, `maskNoteText`, `redactMarkdown` and the debug sink, against `main` at 997ec2a8. Nothing `main` hid shows now, except the `tid=` tail listed under *What no list fixes*. A fuzz finds what it draws: this says nothing about a live token or a context not tried. The committed part is `scripts/redact-held-lib.ts`, each sample of which was checked hidden on the old code.
+
 ## Prefixes that are not in gitleaks
 
 These came from outside the list. **Each one kept is shown on the vendor's own page, read on 2026-11-01** (fetched as data, the prefix searched for). An example on a page confirms the prefix, not its length or characters, so the body rules are ours and may be wrong for a real token.
@@ -88,8 +100,9 @@ A shape goes in only with a prefix distinctive enough to stand beside normal tex
 - `-u user:pass` of a tool other than curl: `-u` alone is too common (`git push -u origin:main`).
 - PuTTY `.ppk` bodies, XML pairs such as `nuget.config`. `.netrc` is hidden only in the `machine … password …` form, not a lone `password x` line.
 - Vendors change formats; a new prefix passes until it is added. Comparing again is a matter of rerunning this method.
-- A token encoded more than 8 times (`%25` repeated) does not count as starting after an escape: 8 is the bound that keeps a `2525…` run cheap.
-- Over-masking is accepted (a `next_page_token=…`, a `key-<32 hex>` that is a cache key at the start of a word, `pass: 12345678`, `auth: oauth2-proxy-config`, and a whole line after `Cookie: a=b`).
+- A shape added by this change, encoded more than 8 times (`%25` repeated) or glued to a literal `25XX`, does not count as starting after an escape. The shapes of before keep the wider start.
+- **The one thing `main` hid that now shows**: text after `|`, `&`, `<`, `>` or a backtick in a `tid=` value (`tid=abcdef12;a|sh` keeps `|sh`), the stop rule above, so an agent cannot hide a command behind it. Whether a real Copilot token can hold one of these was not checked.
+- Over-masking is accepted (a `glpat-cross-validation-results-v2-final`, a `next_page_token=…`, a `key-<32 hex>` that is a cache key at the start of a word, `pass: 12345678`, `auth: oauth2-proxy-config`, and a whole line after `Cookie: a=b`).
 
 ## Where the mask does and does not apply
 
@@ -144,7 +157,7 @@ Checked by reading the code on 2026-11-01 (`read:`), not by a run.
 | `authress-service-client-access-key` | shape | no | yes |  |
 | `aws-access-token` | shape | partial | yes |  |
 | `aws-amazon-bedrock-api-key-long-lived` | shape | no | yes |  |
-| `aws-amazon-bedrock-api-key-short-lived` | shape | no | yes |  |
+| `aws-amazon-bedrock-api-key-short-lived` | shape | no | partial | A body with no digit passes (see *Digit guard*). |
 | `azure-ad-client-secret` | shape | no | yes |  |
 | `beamer-api-token` | context | no | by name | No fixed prefix: needs a secret name next to it. |
 | `bitbucket-client-id` | context | no | by name | No fixed prefix: needs a secret name next to it. |
@@ -174,7 +187,7 @@ Checked by reading the code on 2026-11-01 (`read:`), not by a run.
 | `discord-api-token` | context | no | by name | No fixed prefix: needs a secret name next to it. |
 | `discord-client-id` | context | no | by name | No fixed prefix: needs a secret name next to it. |
 | `discord-client-secret` | context | no | by name | No fixed prefix: needs a secret name next to it. |
-| `doppler-api-token` | shape | no | yes |  |
+| `doppler-api-token` | shape | no | partial | A body with no digit passes (see *Digit guard*). |
 | `droneci-access-token` | context | no | by name | No fixed prefix: needs a secret name next to it. |
 | `dropbox-api-token` | context | no | by name | No fixed prefix: needs a secret name next to it. |
 | `dropbox-long-lived-api-token` | context | no | by name | No fixed prefix: needs a secret name next to it. |
@@ -207,30 +220,30 @@ Checked by reading the code on 2026-11-01 (`read:`), not by a run.
 | `github-pat` | shape | yes | yes |  |
 | `github-refresh-token` | shape | yes | yes |  |
 | `gitlab-cicd-job-token` | shape | no | partial | Sample at the list's minimum length: shorter than our form accepts, or no safe prefix. |
-| `gitlab-deploy-token` | shape | no | yes |  |
-| `gitlab-feature-flag-client-token` | shape | no | yes |  |
-| `gitlab-feed-token` | shape | no | yes |  |
-| `gitlab-incoming-mail-token` | shape | no | yes |  |
-| `gitlab-kubernetes-agent-token` | shape | no | yes |  |
-| `gitlab-oauth-app-secret` | shape | no | yes |  |
+| `gitlab-deploy-token` | shape | no | partial | A body with no digit passes (see *Digit guard*). |
+| `gitlab-feature-flag-client-token` | shape | no | partial | A body with no digit passes (see *Digit guard*). |
+| `gitlab-feed-token` | shape | no | partial | A body with no digit passes (see *Digit guard*). |
+| `gitlab-incoming-mail-token` | shape | no | partial | A body with no digit passes (see *Digit guard*). |
+| `gitlab-kubernetes-agent-token` | shape | no | partial | A body with no digit passes (see *Digit guard*). |
+| `gitlab-oauth-app-secret` | shape | no | partial | A body with no digit passes (see *Digit guard*). |
 | `gitlab-pat` | shape | yes | yes |  |
 | `gitlab-pat-routable` | shape | yes | yes |  |
-| `gitlab-ptt` | shape | no | yes |  |
-| `gitlab-rrt` | shape | no | yes |  |
-| `gitlab-runner-authentication-token` | shape | no | yes |  |
-| `gitlab-runner-authentication-token-routable` | shape | no | yes |  |
-| `gitlab-scim-token` | shape | no | yes |  |
+| `gitlab-ptt` | shape | no | partial | A body with no digit passes (see *Digit guard*). |
+| `gitlab-rrt` | shape | no | partial | A body with no digit passes (see *Digit guard*). |
+| `gitlab-runner-authentication-token` | shape | no | partial | A body with no digit passes (see *Digit guard*). |
+| `gitlab-runner-authentication-token-routable` | shape | no | partial | A body with no digit passes (see *Digit guard*). |
+| `gitlab-scim-token` | shape | no | partial | A body with no digit passes (see *Digit guard*). |
 | `gitlab-session-cookie` | shape | no | yes |  |
 | `gitter-access-token` | context | no | by name | No fixed prefix: needs a secret name next to it. |
 | `gocardless-api-token` | context | no | by name | No fixed prefix: needs a secret name next to it. |
 | `grafana-api-key` | shape | no | yes |  |
-| `grafana-cloud-api-token` | shape | no | yes |  |
-| `grafana-service-account-token` | shape | no | yes |  |
+| `grafana-cloud-api-token` | shape | no | partial | A body with no digit passes (see *Digit guard*). |
+| `grafana-service-account-token` | shape | no | partial | A body with no digit passes (see *Digit guard*). |
 | `harness-api-key` | shape | no | yes |  |
 | `hashicorp-tf-api-token` | shape | no | yes |  |
 | `hashicorp-tf-password` | context | no | partial | Covered for a name next to a value that qualifies; a value with no digit and under 20 characters stays. |
 | `heroku-api-key` | context | no | by name | No fixed prefix: needs a secret name next to it. |
-| `heroku-api-key-v2` | shape | no | yes |  |
+| `heroku-api-key-v2` | shape | no | partial | A body with no digit passes (see *Digit guard*). |
 | `hubspot-api-key` | context | no | by name | No fixed prefix: needs a secret name next to it. |
 | `huggingface-access-token` | shape | no | yes |  |
 | `huggingface-organization-api-token` | shape | no | yes |  |
@@ -282,22 +295,22 @@ Checked by reading the code on 2026-11-01 (`read:`), not by a run.
 | `plaid-api-token` | context | no | yes |  |
 | `plaid-client-id` | context | no | by name | No fixed prefix: needs a secret name next to it. |
 | `plaid-secret-key` | context | no | by name | No fixed prefix: needs a secret name next to it. |
-| `planetscale-api-token` | shape | no | yes |  |
-| `planetscale-oauth-token` | shape | no | yes |  |
-| `planetscale-password` | shape | no | yes |  |
+| `planetscale-api-token` | shape | no | partial | A body with no digit passes (see *Digit guard*). |
+| `planetscale-oauth-token` | shape | no | partial | A body with no digit passes (see *Digit guard*). |
+| `planetscale-password` | shape | no | partial | A body with no digit passes (see *Digit guard*). |
 | `postman-api-token` | shape | no | yes |  |
 | `prefect-api-token` | shape | no | yes |  |
 | `private-key` | shape | no | yes |  |
 | `privateai-api-token` | context | no | by name | No fixed prefix: needs a secret name next to it. |
 | `pulumi-api-token` | shape | no | yes |  |
-| `pypi-upload-token` | shape | no | yes |  |
+| `pypi-upload-token` | shape | no | partial | A body with no digit passes (see *Digit guard*). |
 | `rapidapi-access-token` | context | no | by name | No fixed prefix: needs a secret name next to it. |
 | `readme-api-token` | shape | no | yes |  |
 | `rubygems-api-token` | shape | no | yes |  |
 | `scalingo-api-token` | shape | no | yes |  |
 | `sendbird-access-id` | context | no | by name | No fixed prefix: needs a secret name next to it. |
 | `sendbird-access-token` | context | no | by name | No fixed prefix: needs a secret name next to it. |
-| `sendgrid-api-token` | shape | no | yes |  |
+| `sendgrid-api-token` | shape | no | partial | A body with no digit passes (see *Digit guard*). |
 | `sendinblue-api-token` | shape | no | yes |  |
 | `sentry-access-token` | context | no | by name | No fixed prefix: needs a secret name next to it. |
 | `sentry-org-token` | shape | no | yes |  |
@@ -339,7 +352,7 @@ Checked by reading the code on 2026-11-01 (`read:`), not by a run.
 | `twitter-api-secret` | context | no | by name | No fixed prefix: needs a secret name next to it. |
 | `twitter-bearer-token` | context | no | by name | No fixed prefix: needs a secret name next to it. |
 | `typeform-api-token` | context | no | by name | No fixed prefix: needs a secret name next to it. |
-| `vault-batch-token` | shape | no | yes |  |
+| `vault-batch-token` | shape | no | partial | A body with no digit passes (see *Digit guard*). |
 | `vault-service-token` | shape | no | partial | `hvs.` is hidden; the legacy `s.` + 24 characters is too short a prefix (matches ordinary dotted words). |
 | `yandex-access-token` | context | no | by name | No fixed prefix: needs a secret name next to it. |
 | `yandex-api-key` | context | no | by name | No fixed prefix: needs a secret name next to it. |
