@@ -53,4 +53,4 @@ Backlog: capability flag (spec 012). (Office and per-folder totals: done 2026-10
 - [x] T056 `scripts/shots-011-quota.js`, pictures at both sizes [FR-093]
 - [x] T057 Docs, agent-apps, changelog fragment, specs 012 and 051 cross-references
 - [x] T058 Review of 7a179ce4: unusable windows read "not reported", `resetDate` only, below-zero percent, the account fingerprint and its label; tests, mutants [FR-082, FR-095]
-- [ ] T059 `needs-owner-approval`: check the real shapes of `account.getQuota` and `account/rateLimits/read`, field names and printing nothing personal; free calls, no prompt, cost limit 0 credits [issue #690]
+- [x] T059 `real:` 2026-11-02 (owner's OK): check the real shapes of `account.getQuota` and `account/rateLimits/read`, field names and printing nothing personal; free calls, no prompt, cost limit 0 credits [issue #690] Result: free, shapes as mapped, `tokenBasedBilling` finding in spec *Changes* 2026-11-02
