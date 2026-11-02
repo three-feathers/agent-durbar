@@ -115,7 +115,7 @@ for (const n of landing.featuresExclude) assert.ok(!docs.includes(`<small>Spec $
 for (const c of landing.cards) assert.ok(docs.includes(`id="${c.readmeAnchor}"`), `card anchor ${c.readmeAnchor} exists on the docs page`);
 
 // visitor rounds 2026-10-20 (spec 050): screenshots open full size, a FAQ for leads and skeptics, honest safety lines, phones
-for (const f of [landing.hero.image, ...landing.themes.map((t) => t.screenshot), landing.aiTheme.screenshot]) assert.ok(index.includes(`<a class="zoom" href="screenshots/${f}"`), `${f} opens full size`);
+for (const f of [landing.hero.image, ...landing.themes.map((t) => t.screenshot)]) assert.ok(index.includes(`<a class="zoom" href="screenshots/${f}"`), `${f} opens full size`);
 assert.match(index, /<figure class="shot"><a class="zoom" href="screenshots\/051-harnesses-1440x900\.png"[^>]*><span class="crop"/, 'the how-it-works shot is cropped to what matters and opens full size');
 assert.ok(index.includes('id="faq"') && landing.faq.length >= 5 && landing.faq.every((f) => index.includes(esc(f.q))), 'FAQ section with every question');
 for (const f of landing.faq) if (f.readmeAnchor) assert.ok(docs.includes(`id="${f.readmeAnchor}"`), `FAQ anchor ${f.readmeAnchor} exists`);

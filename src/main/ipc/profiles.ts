@@ -22,7 +22,7 @@ export interface ProfilesIpcDeps {
   getAgentTrust(): AgentTrustStore | undefined;
   wsKey(a: AgentInfo): string;
   ensureLive: EnsureLive;
-  /** Spec 043 FR-028: an app's one-shot text call (the theme maker's path: no tools, no session), or undefined. */
+  /** Spec 043 FR-028: an app's one-shot text call (one prompt, no tools, no session), or undefined. */
   oneShot(id: string): OneShot | undefined;
   /** Spec 043 FR-041: shared with ipc/agents.ts, which forgets a session when it ends or is removed. */
   profileFreshness?: ProfileFreshness;
