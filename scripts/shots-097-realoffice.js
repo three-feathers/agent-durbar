@@ -72,7 +72,7 @@ module.exports = async (ctx) => {
         short:C.filter(c=>/\u2026$/.test((c.querySelector('.ro-cn')||{}).textContent||'')).map(c=>c.dataset.name),initials:C.filter(c=>{const t=(c.querySelector('.ro-cn')||{}).textContent;return t!==c.dataset.name&&!/\u2026$/.test(t)}).map(c=>c.dataset.name),far:C.filter(c=>{const v=document.querySelector('#stage .ro-visitor[data-for="'+CSS.escape(c.dataset.for||c.dataset.pvopen||'')+'"]');if(!v)return false;const a=c.getBoundingClientRect(),b=v.getBoundingClientRect();return Math.abs((a.left+a.right)/2-(b.left+b.right)/2)>70}).map(c=>c.dataset.name),shortened:C.filter(c=>/\u2026$/.test((c.querySelector('.ro-cn')||{}).textContent||'')).length,chips:C.length,labels:P.map(p=>p.textContent)}})()`;
 
   // ---- FR-002, SC-004: flat is the default and loads nothing of Real office ----
-  await H.load({ w: 1440, h: 900 });
+  await H.load({ w: 1440, h: 900 }); await js(`localStorage.removeItem('durbar.officeview')`); await H.load({ w: 1440, h: 900 });
   assert.strictEqual(await js(`!!document.querySelector('.ro')`), false, 'flat by default');
   assert.strictEqual(await realFiles(), 0, 'flat mode requested a Real office file');
   assert.strictEqual(await js(`!!window.DurbarRealOffice`), false, 'flat mode loaded realoffice.js');
@@ -86,12 +86,27 @@ module.exports = async (ctx) => {
   assert.strictEqual(seg, 'cabins:false open:true real:false', 'three buttons, Open office pressed: ' + seg);
   await js(`document.querySelector('[data-officelayout="real"]').scrollIntoView({block:'center'})`);
   await H.shot(path.join(OUT, '097-office-layout-1440x900.png'), { prep: 'calm' });
-  await js(`document.querySelector('[data-officelayout="real"]').click()`);
+  await js(`document.querySelector('[data-officelayout="real"]').focus();document.querySelector('[data-officelayout="real"]').click()`);
   await must(`document.querySelector('[data-officelayout="real"]').getAttribute('aria-pressed')==='true'`, 'Real office pressed');
+  await must(`document.activeElement&&document.activeElement.dataset&&document.activeElement.dataset.officelayout==='real'`, 'the keyboard focus stays on the Real office button after the repaint');
   assert.strictEqual(await js(`localStorage.getItem('durbar.officeview')`), 'real', 'stored as real');
   assert.strictEqual(await js(`localStorage.getItem('durbar.doorsigns')`), 'off', 'durbar.doorsigns untouched');
   await js(`document.getElementById('scrClose').click()`);
   await must(REAL, 'the Real office after the Settings choice');
+  /* spec 097 FR-115, spec 102 FR-201, FR-205: html[data-world] is the shown world; only that world's and that set's packs were asked for; no World row while one world is offered */
+  assert.strictEqual(await js(`document.documentElement.dataset.world`), 'photo', 'html[data-world] is photo in Real office');
+  assert.strictEqual(await js(`document.querySelector('#stage .ro').dataset.world+'/'+document.querySelector('#stage .ro').dataset.set`), 'photo/office', 'the room draws the Photo office with the Office people');
+  const packFiles = await js(`[...new Set([...document.querySelectorAll('script[src],link[href],#stage img[src]')].map(e=>e.getAttribute('src')||e.getAttribute('href')).filter(n=>/realoffice\\/(worlds|sets)\\//.test(n)).map(n=>n.replace(/^.*realoffice\\/(worlds|sets)\\/([^/]+)\\/.*$/,'$1/$2')))].sort().join(' ')`);
+  assert.strictEqual(packFiles, 'sets/office worlds/photo', 'Real office asked for the Photo office and the Office people only: ' + packFiles);
+  await js(`window.DurbarScreens.openSettings()`);
+  await must(`!!document.querySelector('[data-officelayout="real"]')`, 'Settings');
+  assert.strictEqual(await js(`!!document.querySelector('#wrGroup')`), false, 'no World row while only one world is offered');
+  assert.ok(/World\u2019s default \(Office people\)/.test(await js(`document.querySelector('#chList [data-characters="theme"]').getAttribute('aria-label')`)), 'Characters starts with the world\u2019s default set');
+  await js(`document.querySelector('#chList [data-characters="cheeky"]').click()`);
+  await must(`document.getElementById('dsR').textContent==='Real office shows Office people until Cheeky has Real office poses.'`, 'Cheeky has no Real office poses: Settings says so under Office layout');
+  await js(`document.querySelector('#chList [data-characters="theme"]').click()`);
+  await must(`document.getElementById('dsR').textContent===''`, 'the line goes with the default');
+  await js(`document.getElementById('scrClose').click()`);
   await js(`window.DurbarScreens.openSettings()`);
   await must(`!!document.querySelector('[data-officelayout="open"]')`, 'the Office layout row');
   await js(`document.querySelector('[data-officelayout="open"]').click()`);
@@ -174,7 +189,7 @@ module.exports = async (ctx) => {
     assert.deepStrictEqual(d.bare, [], 'no awake desk is empty without a visit');
     assert.ok(d.persons + d.visitors >= 8, `people sit at their desks or stand in the lobby on a visit: ${d.persons} + ${d.visitors}`);
     assert.ok(d.fixtures >= 8, 'the lobby fixtures are drawn: ' + d.fixtures);
-    const aw = await js(`[...document.querySelectorAll('#stage .ro-away')].every(e=>/^at .+ ↑$/.test(e.textContent))`);
+    const aw = await js(`[...document.querySelectorAll('#stage .ro-away')].every(e=>/^at .+$/.test(e.textContent))`);
     assert.ok(aw, 'away desks say where');
     // ---- FR-038, FR-041, FR-046: cues and lights by status ----
     const cues = await js(`(()=>{const o={};for(const p of document.querySelectorAll('#stage .ro-plate')){const id=p.dataset.id,st=p.dataset.state;
@@ -188,11 +203,11 @@ module.exports = async (ctx) => {
     assert.strictEqual(bub.x, bub.e, 'one "!" per error desk');
     // ---- owner 2026-10-31 10:19 and 10:48: every visitor's feet (its measured foot line) on the FRONT floor plane (in front of the
     //      fixtures, FRONT_DEPTH of the strip below the wall line) within 2 px, with a contact shadow there; no chip over a figure's lower 25 % ----
-    const FEET = `(()=>{const A=self.DurbarRealOfficeArt,sr=document.querySelector('#stage .ro-strip').getBoundingClientRect(),wl=sr.top+3,fl=wl+self.exports.FRONT_DEPTH*(sr.bottom-wl),out=[];
+    const FEET = `(()=>{const A=Object.assign({},self.DurbarRealOfficeWorlds.photo,self.DurbarRealOfficeSets.office),sr=document.querySelector('#stage .ro-strip').getBoundingClientRect(),wl=sr.top+3,fl=wl+self.exports.FRONT_DEPTH*(sr.bottom-wl),out=[];
       const chips=[...document.querySelectorAll('#stage .ro-chip')].map(c=>c.getBoundingClientRect());
-      for(const im of document.querySelectorAll('#stage .ro-visitor')){const m=/(p\\d\\d)-(\\w+)\\.webp$/.exec(im.getAttribute('src'));const f=A.stand[m[1]].feet[m[2]],t=A.stand[m[1]].top[m[2]];
-        const r=im.getBoundingClientRect(),y=r.top+r.height*f,cx=r.left+r.width/2,lo=r.top+r.height*(f-0.25*(f-t));
-        const sh=[...document.querySelectorAll('#stage .ro-shadow')].some(s=>{const q=s.getBoundingClientRect();return q.left<cx&&q.right>cx&&Math.abs((q.top+q.bottom)/2-fl)<=2;});
+      for(const im of document.querySelectorAll('#stage .ro-visitor')){const m=/(p\\d\\d)-(\\w+)\\.webp$/.exec(im.getAttribute('src'));const f=A.stand[m[1]].feet[m[2]],t=A.stand[m[1]].top[m[2]],fc=A.stand[m[1]].foot[m[2]];
+        const r=im.getBoundingClientRect(),y=r.top+r.height*f,cx=r.left+r.width*fc,lo=r.top+r.height*(f-0.25*(f-t));
+        const sh=[...document.querySelectorAll('#stage .ro-shadow')].some(s=>{const q=s.getBoundingClientRect();return Math.abs((q.left+q.right)/2-cx)<=2&&Math.abs((q.top+q.bottom)/2-fl)<=2;});
         const legs=chips.filter(q=>q.left<r.left+r.width*0.8&&q.right>r.left+r.width*0.2&&q.top<y&&q.bottom>lo).length;
         out.push({who:im.dataset.for,pose:m[2],off:Math.round((y-fl)*10)/10,wall:Math.round((y-wl)*10)/10,sh,legs});}
       return out;})()`;
@@ -204,6 +219,41 @@ module.exports = async (ctx) => {
       assert.ok(f.wall >= 6, `${f.who} stands in front of the fixtures, not on the wall's base line (${f.wall} px below it)`);
       assert.ok(f.sh, `${f.who} has a contact shadow`);
       assert.strictEqual(f.legs, 0, `${f.who}: no name chip covers the feet or legs`);
+    }
+    // ---- spec 097 FR-191, FR-194 (owner 2026-10-31): every visitor faces the fixture it uses. The truth is the geometry in the page:
+    //      the fixture's picture is on the visitor's left, so the visitor must face left (the pictures are baked facing left), the pose is its
+    //      place's facing pose (or its fallback), and the feet stand where the shadow is. One synchronous read of a settled lobby. ----
+    const SETTLED = `(()=>{const v=[...document.querySelectorAll('#stage .ro-visitor')];return v.length>=3&&v.every(i=>i.complete&&i.naturalWidth>0)})()`;
+    /* written out here, not read from FX_POSE: a driver that asks the code what to expect cannot catch the code being wrong */
+    const WANT_POSE = ({ library: 'book', software: 'book', terminal: 'runA', web: 'type', boss: 'knock', coffee: 'counter', bank: 'counter', postbox: 'letter', other: 'type' });
+    const FACING = `(()=>{const A=Object.assign({},self.DurbarRealOfficeWorlds.photo,self.DurbarRealOfficeSets.office),WANT=${jsLiteral(WANT_POSE)},out=[],vs=[...document.querySelectorAll('#stage .ro-visitor')];
+      for(const im of vs){const m=/(p\\d\\d)-(\\w+)\\.webp$/.exec(im.getAttribute('src')),pl=im.dataset.place,fx=document.querySelector('#stage .ro-fx[data-place="'+pl+'"],#stage .ro-kiosk[data-place="'+pl+'"]');
+        const r=im.getBoundingClientRect(),footX=r.left+r.width*A.stand[m[1]].foot[m[2]],q=fx&&fx.getBoundingClientRect(),want=WANT[pl]||'letter';
+        out.push({who:im.dataset.for,place:pl,pose:m[2],ok:m[2]===want||(m[2]==='letter'&&want==='runA'),faces:im.dataset.faces,meta:A.facing,side:q?(footX>q.left+q.width/2?'left':'right'):'none',footX,h:r.height,
+          anim:im.getAnimations().length,tf:getComputedStyle(im).transform,bm:getComputedStyle(im).mixBlendMode});}
+      return {n:vs.length,agents:window.__durbarSimUi.agents().filter(a=>!a.parent).length,out};})()`;
+    await must(SETTLED, 'three visitors with decoded pictures', 40000);
+    /* simulator visits come and go on the wall clock: read the settled lobby again and again (in one page task each) until visitors at five different places were seen, or the time is up (then what was seen is checked) */
+    const SEEN = '(()=>{const r=' + FACING + `;window.__fs=window.__fs||new Map();for(const x of r.out)window.__fs.set(x.place+':'+x.pose+':'+x.who,x);return new Set([...window.__fs.values()].map(x=>x.place)).size>=5})()`;
+    await js('window.__fs=null');
+    const manyPlaces = await H.until(SEEN, 45000);
+    const fc = await js(FACING);
+    const seen = JSON.parse(await js(`JSON.stringify([...(window.__fs||new Map()).values()])`));
+    const places = [...new Set(seen.map((x) => x.place))];
+    console.log('[097] facing', w, JSON.stringify(seen.map((x) => x.place + ':' + x.pose + ':' + x.faces)), manyPlaces ? 'five places' : 'fewer than five places in 45 s: ' + places.join(','));
+    assert.strictEqual(fc.agents, 15, '15 agents');
+    assert.ok(seen.length >= 3 && places.length >= 2, `visitors at two places or more are in the lobby (${seen.length} seen at ${places.join(',')})`);
+    for (const x of seen) {
+      assert.notStrictEqual(x.side, 'none', `${x.who}: its fixture's picture is drawn (${x.place})`);
+      assert.strictEqual(x.side, 'left', `${x.who} at ${x.place} stands to the right of its fixture (the pictures face left)`);
+      assert.strictEqual(x.faces, x.side, `${x.who} at ${x.place} faces ${x.side}, toward its fixture (data-faces ${x.faces})`);
+      assert.strictEqual(x.meta, x.side, 'people.json facing matches the side');
+      assert.ok(x.ok, `${x.who} at ${x.place} has the facing pose of its place, not ${x.pose}`);
+      assert.ok(x.anim === 0 && x.tf === 'none' && x.bm === 'normal', `${x.who}: a still picture, no transform, no blend mode (${x.anim} animations, ${x.tf}, ${x.bm})`);
+    }
+    for (let i = 0; i < fc.out.length; i++) for (let j = i + 1; j < fc.out.length; j++) {
+      const a = fc.out[i], b = fc.out[j];
+      assert.ok(Math.abs(a.footX - b.footX) >= 0.1 * Math.min(a.h, b.h), `${a.who} and ${b.who} do not stand on each other (${Math.abs(a.footX - b.footX).toFixed(1)} px apart)`);
     }
     // ---- FR-026 (as the flat lobby), constitution V: a go-place chip is a button (the flat lobby's data-pvopen) with a name; no emoji; the needs-you mark is the app's alert icon ----
     await must(`!!document.querySelector('#stage .ro-chip[data-pvopen]')`, 'a visitor chip at the Boss, Bank or Coffee', 40000);
@@ -232,6 +282,9 @@ module.exports = async (ctx) => {
     assert.deepStrictEqual(pl.cp, [], 'no chip covers a place plate');
     assert.deepStrictEqual(pl.cc, [], 'no two chips overlap');
     assert.deepStrictEqual(pl.initials, [], `no bare initial in the lobby (names, or their first letters and an ellipsis): ${JSON.stringify(pl.initials)} of ${pl.chips}`);
+    /* going back from the chat above leaves the focus on a plate, and a focused plate has its zoom open (FR-034): not in the picture */
+    await js(`document.activeElement&&document.activeElement.blur&&document.activeElement.blur();0`);
+    await must(`!document.getElementById('roZoom')`, 'no zoom in the picture');
     await H.shot(path.join(OUT, `097-real-15-${w}x${h}.png`), { prep: 'calm' });
     // ---- owner 2026-10-31 ("make a real running pose"): someone at the Terminal jogs in place (stride A in P1), no treadmill; a
     //      close crop of the lobby band shows it ----
@@ -317,6 +370,18 @@ module.exports = async (ctx) => {
     await H.key('Escape');
     await must("!document.getElementById('modeMenu')&&(" + FOCUSED + ')', 'the right-click menu closed and focus is back on the plate');
   }
+
+  // ---- owner 2026-11-01: with motion on, a chip and a plate never touch, in any frame while a crowd changes: they fade in place, they do not travel ----
+  await loadReal(1280, 800, { sim: '15', romotion: '1' });
+  await must(`!!document.querySelector('#stage .ro-lplate')`, 'the lobby plates');
+  await js(`document.querySelector('style#roNoAnim')&&document.querySelector('style#roNoAnim').remove();0`);
+  for (const [pid, n, from] of [['terminal', 4, 0], ['software', 3, 2], ['boss', 5, 6], ['terminal', 2, 9]]) {
+    const look = "const look=()=>{const r=" + PLATES + ";n++;for(const x of r.cp)bad.add(x);if(performance.now()-t0<1500)requestAnimationFrame(look);else done({n,bad:[...bad]});};requestAnimationFrame(look);";
+    const frames = await js(`new Promise((done)=>{const bad=new Set();let n=0;const t0=performance.now();window.__durbarSimUi.uncrowd();window.__durbarSimUi.crowd(${jsLiteral(pid)},${jsLiteral(n)},${jsLiteral(from)});` + look + '})');
+    assert.ok(frames.n > 5, 'frames were looked at: ' + JSON.stringify(frames));
+    assert.deepStrictEqual(frames.bad, [], `no chip on a plate in any frame (${pid} ${n}): ${JSON.stringify(frames)}`);
+  }
+  await js(`window.__durbarSimUi.uncrowd();0`);
 
   // ---- the guards of the chip placement, deterministically (no font needed): chips widened after the drawing are placed again by the
   //      ResizeObserver (settle), and a chip that sits on a plate is moved off it (resolve) ----
@@ -447,7 +512,7 @@ module.exports = async (ctx) => {
   /* a simulator visit can take the chosen person to the lobby before its picture fails (then no disc is drawn at its desk): try another person, up to six times */
   let discOk = false;
   for (let t = 0; t < 6 && !discOk; t++) {
-    const victim = await js(`(()=>{const i=document.querySelector('#stage .ro-person');if(!i)return '';const f=i.dataset.for;i.src='realoffice/art/missing.webp';return f})()`);
+    const victim = await js(`(()=>{const i=document.querySelector('#stage .ro-person');if(!i)return '';const f=i.dataset.for;i.src='realoffice/sets/office/missing.webp';return f})()`);
     if (victim) discOk = await H.until(`!!document.querySelector('#stage .ro-initials[data-for="'+CSS.escape(${jsLiteral(victim)})+'"]')`, 5000);
   }
   assert.ok(discOk, 'the initials disc after a failed picture');
@@ -510,6 +575,11 @@ module.exports = async (ctx) => {
     assert.strictEqual(set.sec, RGB(W['--surface']), 'Settings sections are the world surface');
     assert.strictEqual(set.ink, RGB(W['--ink']), 'Settings text is the world ink');
     await H.shot(path.join(OUT, `097-world-settings-${w}x${h}.png`), { prep: 'calm' });
+    // 2026-11-01 (spec 033 delta, issue 1010): the toggle switch follows the world: an on switch is the world's --sage-ink, its knob the world's surface
+    const sw = await js(`(()=>{const b=document.querySelector('#screen .swt.on');if(!b)return null;b.scrollIntoView({block:'center'});const cs=getComputedStyle(b),k=getComputedStyle(b.querySelector('i'));return {bg:cs.backgroundColor,knob:k.backgroundColor}})()`);
+    assert.ok(sw, 'Settings has an on switch');
+    assert.deepStrictEqual(sw, { bg: RGB(W['--sage-ink']), knob: RGB(W['--surface']) }, 'the on switch follows the world');
+    await H.shot(path.join(OUT, `097-world-switch-${w}x${h}.png`), { prep: 'calm' });
     await js(`document.getElementById('scrClose').click()`);
     // a dialog: the keyboard shortcuts sheet, frosted glass on a warm scrim
     await js(`document.getElementById('kbdHelpBtn').click()`);

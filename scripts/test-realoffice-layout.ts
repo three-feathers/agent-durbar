@@ -3,13 +3,16 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
-import { realLayout, lobbyWidths, sortDesks, assignPeople, standPose, standHeight, POSE_FRAME_B, lobbyRange, PERSON_M, DOOR_M, FRONT_DEPTH, NEAR_SCALE, CHIP_H, U_MIN, U_MAX, U_MAX_BIG, FACE_U, PLATE_H, PLATE_H_ASK, STRIP,
+import { screenFit, screenFor, personMotion, zoomRect, realLayout, lobbyWidths, sortDesks, assignPeople, standPose, standHeight, POSE_FRAME_B, lobbyRange, PERSON_M, DOOR_M, FRONT_DEPTH, NEAR_SCALE, CHIP_H, U_MIN, U_MAX, U_MAX_BIG, FACE_U, PLATE_H, PLATE_H_ASK, STRIP,
   type RealModel, type RealMeta, type RealAgent, type RealState, type Rect, type Layout } from '../src/shared/realoffice-layout';
 import { lightFor, lightState, LIGHT_TABLE, ambientFor, doneTick, fixtureLight, isActive, type LightState } from '../src/shared/lights';
 
 process.exitCode = 1;
 const ROOT = (() => { let d = __dirname; while (!fs.existsSync(path.join(d, 'package.json'))) d = path.dirname(d); return d; })();
-const META = JSON.parse(fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'realoffice', 'art', 'people.json'), 'utf8')) as RealMeta;
+const RO = path.join(ROOT, 'src', 'renderer', 'realoffice');
+const readJson = (...p: string[]): Record<string, unknown> => JSON.parse(fs.readFileSync(path.join(RO, ...p), 'utf8'));
+/** what realoffice.js hands the engine: a world's furniture numbers with a set's people numbers */
+const META = { ...readJson('worlds', 'photo', 'world.json'), ...readJson('sets', 'office', 'set.json') } as unknown as RealMeta;
 const PEOPLE = Object.keys(META.seat).sort();
 assert.strictEqual(PEOPLE.length, 15, 'the art has 15 seated people');
 
@@ -55,10 +58,10 @@ function problems(L: Layout, W: number, H: number): string[] {
       if (d.screen.y < z.box.y + STRIP - 1) out.push(`screen of ${d.id} in the sign strip`);
     }
   }
-  const aways: Rect[] = L.zones.flatMap((z) => z.desks.filter((d) => d.away).map((d) => ({ x: d.away!.x - 40, y: d.away!.y, w: 80, h: 17 })));
+  const aways: Rect[] = L.zones.flatMap((z) => z.desks.filter((d) => d.away).map((d) => ({ x: d.away!.x - d.away!.s / 2, y: d.away!.y, w: d.away!.s, h: d.away!.s })));
   const all: [string, Rect[]][] = [['plate', plates], ['sign', signs], ['screen', screens], ['person', persons], ['away label', aways]];
   for (let i = 0; i < all.length; i++) for (let j = i; j < all.length; j++) for (let p = 0; p < all[i][1].length; p++) for (let q = i === j ? p + 1 : 0; q < all[j][1].length; q++)
-    if (inter(all[i][1][p], all[j][1][q], 1)) out.push(`${all[i][0]} ${p} overlaps ${all[j][0]} ${q}`);
+    if (!(all[j][0] === 'away label' && (all[i][0] === 'screen' || all[i][0] === 'sign')) && inter(all[i][1][p], all[j][1][q], 1)) out.push(`${all[i][0]} ${p} overlaps ${all[j][0]} ${q}`); /* a note may lie on a screen's edge or under a sign, as a note does (spec Changes 2026-11-01) */
   for (const f of L.fixtures) {
     if (f.slot.x < -0.5 || f.slot.x + f.slot.w > W + 0.5) out.push(`fixture ${f.id} leaves the band`);
     if (f.art && (f.art.y < -0.5 || f.art.y + f.art.h > L.lobbyH + 0.5)) out.push(`fixture ${f.id} cut by the band (FR-023)`);
@@ -89,8 +92,8 @@ for (const [W, H] of SIZES.slice(0, 2)) {
   faces[`${W}x${H + 52}`] = Math.round(L.faceH * 10) / 10;
 }
 console.log('desk face px with 15 agents:', JSON.stringify(faces));
-/* SC-002's 40 px is not met (35.2 px at 1280x800, 38.1 at 1440x900): a [KNOWN GAP] in spec 097; this is a ratchet so it never gets worse */
-const FACE_FLOOR = Number(process.env.REALOFFICE_FACE_MIN || 35);
+/* SC-002's 40 px is not met: a [KNOWN GAP] in spec 097; this is a ratchet so it never gets worse. Lowered 2026-11-01 from 35: an empty desk keeps its slot, so this is what everyone at a desk gets, owner decision for a room that stays still */
+const FACE_FLOOR = Number(process.env.REALOFFICE_FACE_MIN || 31);
 for (const [k, v] of Object.entries(faces)) assert.ok(v >= FACE_FLOOR - 1e-9, `SC-002 ratchet: desk face ${v} px at ${k}, at least ${FACE_FLOOR}`);
 
 // ---- FR-020: big screens: each at least 170 px tall and wider than tall-ish; text size rule is the renderer's ----
@@ -121,13 +124,15 @@ for (const [k, v] of Object.entries(faces)) assert.ok(v >= FACE_FLOOR - 1e-9, `S
   }
 }
 
-// ---- FR-017, Q5: away and asleep desks are narrower, with no person; away ones say where ----
+// ---- spec Changes 2026-11-01: an away or asleep desk keeps its slot and its screen, with no person; an away one says where ----
 {
   const m = model(6, 1, { away: false, states: ['working'] });
   m.folders[0].agents[1].away = 'library'; m.folders[0].agents[2].state = 'asleep';
   const L = realLayout(m, { w: 1440, h: 848 }, META);
   const d = Object.fromEntries(L.zones[0].desks.map((x) => [x.id, x]));
-  assert.ok(Math.abs(d.a1.slot.w / d.a0.slot.w - 0.62) < 0.01 && Math.abs(d.a2.slot.w / d.a0.slot.w - 0.62) < 0.01, 'away and asleep desks are 0.62 wide');
+  assert.ok(d.a1.slot.w === d.a0.slot.w && d.a2.slot.w === d.a0.slot.w, 'away and asleep desks keep their width');
+  const m0 = model(6, 1, { away: false, states: ['working'] }), L0 = realLayout(m0, { w: 1440, h: 848 }, META), d0 = L0.zones[0].desks.find((x) => x.id === 'a1')!;
+  assert.deepStrictEqual([d.a1.slot, d.a1.screen, d.a1.plate, d.a1.desk], [d0.slot, d0.screen, d0.plate, d0.desk], 'someone leaving moves nothing: slot, screen, plate and desk as when they sat');
   assert.ok(!d.a1.person && d.a1.away && !d.a2.person && !d.a2.away && d.a0.person, 'no person at an away or asleep desk; the away one says where');
 }
 
@@ -157,7 +162,7 @@ for (const [k, v] of Object.entries(faces)) assert.ok(v >= FACE_FLOOR - 1e-9, `S
   const lobbyFace = Math.min(...vs.map((v) => (v.face as Rect).h));
   console.log('lobby face px with 15 agents at 1280x800:', Math.round(lobbyFace * 10) / 10);
   /* FR-024's 18 px is a [KNOWN GAP] since the owner's realism rule (people 1.7 m against the 2.1 m door): a ratchet keeps the estimate */
-  assert.ok(lobbyFace >= 11, `FR-024 ratchet: lobby faces (estimate: 0.13 of a 1.7 m person) ${lobbyFace}`);
+  assert.ok(lobbyFace >= 10.5 /* from 11, 2026-11-01: full-width desks leave the lobby a little less */, `FR-024 ratchet: lobby faces (estimate: 0.13 of a 1.7 m person) ${lobbyFace}`);
   // owner 2026-10-31 09:03: one fixture per place; a crowd widens its place, empty places shrink; +N only past what fits
   for (const [W, H] of [[1440, 848], [1280, 748]] as [number, number][]) {
     const widths: number[] = [];
@@ -248,35 +253,64 @@ for (const [W, H] of SIZES) {
   const term = L.fixtures.find((f) => f.id === 'terminal')!.visitors[0];
   assert.strictEqual(term.fig!.pose, 'runA', 'the Terminal visitor runs (stride A), no treadmill');
   assert.strictEqual(term.fig!.file, 'p03-runA.webp', 'the running picture of that person');
+  { const f = term.fig!, b = f.b!, st = META.stand.p03; const footA = f.x + st.foot!.runA * f.w, footB = b.x + st.foot!.runB * b.w, feetA = f.y + st.feet!.runA * f.h, feetB = b.y + st.feet!.runB * b.h;
+    assert.ok(Math.abs(footA - footB) < 0.01 && Math.abs(feetA - feetB) < 0.01, `changing picture moves no foot: ${footA} ${footB}, ${feetA} ${feetB}`); }
   assert.ok(Math.abs(term.fig!.feetY - front) <= 0.5, 'the Terminal visitor stands on the front floor plane');
   const sr = META.stand.p03, tf = (sr.feet as Record<string, number>).runA, tt = (sr.top as Record<string, number>).runA;
   assert.ok(Math.abs(term.fig!.y + term.fig!.h * tf - front) <= 2, `the runner's lowest foot is on the front floor plane at ${W} (within 2 px)`);
   const runTall = term.fig!.h * (tf - tt), upTall = (L.fixtures.find((f) => f.id === 'terminal')!.visitors[0].fig!.h / sr.poses.runA[1]) * standHeight(META, 'p03');
   assert.ok(runTall / upTall > 0.9 && runTall / upTall < 1.0, `a runner is a little shorter than upright (bent knees): ${(runTall / upTall).toFixed(3)}`);
 }
-// ---- the running pose: every person has both strides, measured, the same canvas for both (no jump when P2 steps them) ----
-assert.strictEqual(POSE_FRAME_B.runA, 'runB', 'stride B is recorded for P2');
+// ---- the running pose: every person has both strides, measured, at one scale, each picture in its own box with the feet in one place ----
+assert.strictEqual(POSE_FRAME_B.runA, 'runB', 'stride B of the running pose');
 for (const pid of PEOPLE) {
   const st = META.stand[pid];
   for (const p of ['runA', 'runB']) assert.ok(Array.isArray(st.poses[p]) && st.feet && st.feet[p] > 0.9 && st.top && st.top[p] < 0.1, `${pid} has a measured ${p}`);
-  assert.deepStrictEqual(st.poses.runA, st.poses.runB, `${pid}: both strides share one canvas`);
+  const a = st.poses.runA, b = st.poses.runB, fa = st.feet!.runA, fb = st.feet!.runB;
+  assert.ok(Math.abs(a[1] * fa - b[1] * fb) / (a[1] * fa) < 0.03, `${pid}: both strides stand as tall (${a[1] * fa} and ${b[1] * fb}), so P2's swap does not jump`);
   assert.strictEqual(standPose(META, pid, 'terminal', false)!.pose, 'runA', `${pid} runs at the Terminal`);
 }
 {
   const noRun = JSON.parse(JSON.stringify(META)) as RealMeta; delete noRun.stand.p01.poses.runA;
   assert.strictEqual(standPose(noRun, 'p01', 'terminal', false)!.pose, 'letter', 'a person without the running picture stands (letter)');
 }
-// the anchor uses the measured foot line, not the picture's box: the mockup's art had up to 6 % empty rows under the feet
-assert.ok(Object.values(META.stand).some((s) => Object.values(s.feet as Record<string, number>).some((f) => f < 0.97)), 'some sprite has empty rows under its feet (so a box anchor would float)');
+// the anchor uses the measured foot line and foot centre, not the picture's box: a three-quarter view has its feet well off the box's middle
+assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<string, number>).some((f) => Math.abs(f - 0.5) > 0.2)), 'some picture has its feet far off the middle (so a box-centred anchor would be wrong)');
 
-// ---- FR-024: stand poses and fallbacks ----
+// ---- FR-024, FR-191: stand poses and fallbacks ----
 {
-  assert.strictEqual(standPose(META, 'p01', 'library', false)!.pose, 'book');
-  assert.strictEqual(standPose(META, 'p02', 'software', false)!.pose, 'box', 'p02 has the extra poses');
-  assert.strictEqual(standPose(META, 'p01', 'software', false)!.pose, 'letter', 'box falls back to letter');
+  for (const [place, pose] of Object.entries({ library: 'book', software: 'book', terminal: 'runA', web: 'type', boss: 'knock', coffee: 'counter', bank: 'counter', postbox: 'letter', other: 'type' })) assert.strictEqual(standPose(META, 'p01', place, false)!.pose, pose, `${place}: ${pose}`);
   assert.strictEqual(standPose(META, 'p01', 'c-abc', true)!.pose, 'letter', 'a custom place: wait, else letter');
+  const noBook = JSON.parse(JSON.stringify(META)) as RealMeta; delete noBook.stand.p01.poses.book;
+  assert.strictEqual(standPose(noBook, 'p01', 'library', false), null, 'a pose with no fallback and no picture: no figure (the initials disc stays)');
   assert.strictEqual(standPose(META, 'nobody', 'library', false), null);
   assert.strictEqual(standPose(META, '__proto__', 'library', false), null, 'own keys only');
+}
+
+// ---- FR-191: visitors face their fixture; the pictures face left, so every visitor stands to the right of its fixture ----
+{
+  assert.strictEqual(META.facing, 'left', 'the pictures are baked facing left');
+  for (const pid of PEOPLE) for (const [p, f] of Object.entries(META.stand[pid].foot || {})) assert.ok(f > 0.2 && f < 0.9, `${pid} ${p}: the foot centre is inside the picture (${f})`);
+  for (const pid of PEOPLE) for (const p of Object.keys(META.stand[pid].poses)) assert.ok(META.stand[pid].foot && p in (META.stand[pid].foot as object), `${pid} ${p} has a measured foot centre`);
+  for (const [W, H] of [[1440, 900], [1280, 800]]) {
+    const m = model(15, 4);
+    m.places = ['library', 'software', 'terminal', 'web', 'boss', 'coffee', 'bank', 'postbox', 'other'].map((id, i) => ({ id, visitors: [{ id: 'v' + i, person: PEOPLE[i] }, { id: 'w' + i, person: PEOPLE[(i + 5) % 15] }] }));
+    const L = realLayout(m, { w: W, h: H }, META);
+    let n = 0;
+    for (const f of L.fixtures) for (const v of f.visitors) if (v.fig && f.art) {
+      n++;
+      assert.strictEqual(v.fig.faces, 'left', `${v.id} at ${f.id} faces left`);
+      assert.ok(Math.abs(v.fig.x + (META.stand[String(m.places.flatMap((p) => p.visitors).find((x) => x.id === v.id)!.person)].foot as Record<string, number>)[v.fig.pose] * v.fig.w - v.chip.x) < 0.5, `${v.id}: the planted feet are where its chip and shadow are, not the middle of the picture`);
+      const feetX = v.fig.x + (META.stand[String(m.places.flatMap((p) => p.visitors).find((x) => x.id === v.id)!.person)].foot as Record<string, number>)[v.fig.pose] * v.fig.w;
+      assert.ok(feetX > f.art.x + f.art.w / 2, `${v.id} at ${f.id} stands to the right of the fixture's middle (${feetX.toFixed(0)} vs ${(f.art.x + f.art.w / 2).toFixed(0)}), so facing left faces the fixture`);
+    }
+    assert.ok(n >= 12, `visitors checked at ${W}: ${n}`);
+  }
+  /* a picture set that faced right would be wrong for every visitor: the check reads the meta, not the code path */
+  const flipped = JSON.parse(JSON.stringify(META)) as RealMeta; flipped.facing = 'right';
+  const bare = JSON.parse(JSON.stringify(META)) as RealMeta; delete bare.facing;
+  assert.strictEqual(realLayout(model(15, 4), { w: 1440, h: 900 }, bare).fixtures.flatMap((f) => f.visitors).find((v) => v.fig)!.fig!.faces, 'left', 'no `facing` in people.json: the shipped pictures face left');
+  assert.strictEqual(realLayout(model(15, 4), { w: 1440, h: 900 }, flipped).fixtures.flatMap((f) => f.visitors).find((v) => v.fig)!.fig!.faces, 'right', 'red: the side follows the meta');
 }
 
 // ---- SC-007: under 5 ms for 40 agents in 8 folders (CPU time, minimum of runs, agent-notes "Timing checks") ----
@@ -294,22 +328,51 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.feet as Record<s
   assert.ok(best6 < 15, `7 folders with the full search: ${best6.toFixed(2)} ms (3.5 ms on the dev machine)`);
 }
 
-// ---- FR-084: the Characters setting in Real office (the seam in crew.js) ----
+// ---- spec 102 FR-200..FR-202: the world and set seam in crew.js (two flat lists of data, any set in any world) ----
 {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const C = require(path.join(ROOT, 'src', 'renderer', 'crew.js')) as { realOfficeSet: (c: string) => { set: string; scene: string; coming: boolean }; realOfficeNote: (c: string, v: string) => string; REAL_OFFICE_SETS: string[] };
-  assert.deepStrictEqual(C.REAL_OFFICE_SETS, ['office'], 'only the Office people have Real office pictures today');
-  for (const c of ['theme', 'minimalist', '', 'mine', '__proto__']) assert.deepStrictEqual(C.realOfficeSet(c), { set: 'office', scene: 'office', coming: false }, `${c || '(none)'}: the Office people, no note`);
-  for (const c of ['cheeky', 'prehistoric']) assert.deepStrictEqual(C.realOfficeSet(c), { set: 'office', scene: 'office', coming: true }, `${c}: a crew without Real office pictures shows the Office people, and Settings says so`);
-  // FR-083: the Settings line, for a crew only and only with Real office chosen
-  assert.strictEqual(C.realOfficeNote('cheeky', 'real'), 'Real office shows the Office people until the Cheeky loft is ready.', 'Cheeky: the note names its world');
-  assert.strictEqual(C.realOfficeNote('prehistoric', 'real'), 'Real office shows the Office people until the Prehistoric cave is ready.', 'Prehistoric: the note names its world');
-  for (const c of ['theme', 'minimalist', '', 'mine', '__proto__', 'office']) assert.strictEqual(C.realOfficeNote(c, 'real'), '', `${c || '(none)'}: the Office people, no note`);
-  for (const v of ['cabins', 'open', '']) assert.strictEqual(C.realOfficeNote('cheeky', v), '', `${v || '(none)'}: no note outside Real office`);
-  C.REAL_OFFICE_SETS.push('cheeky');
-  assert.deepStrictEqual(C.realOfficeSet('cheeky'), { set: 'cheeky', scene: 'office', coming: false }, 'a crew with pictures is drawn (the seam)');
-  assert.strictEqual(C.realOfficeNote('cheeky', 'real'), '', 'a crew whose world shipped has no note');
-  C.REAL_OFFICE_SETS.pop();
+  const C = require(path.join(ROOT, 'src', 'renderer', 'crew.js')) as unknown as { WORLD_FLAGS: Record<string, boolean>;  WORLDS: { id: string; name: string; defaultSet: string; flag?: string }[]; REAL_SETS: { id: string; name: string; choice: string; flag?: string }[]; offeredWorlds: (f?: Record<string, boolean>) => { id: string }[]; parseWorld: (v: unknown, f?: Record<string, boolean>) => string; peopleFor: (w: unknown, c: unknown, f?: Record<string, boolean>) => { world: string; set: string; setName: string; note: string }; CREWS: Record<string, unknown> };
+  assert.deepStrictEqual(C.WORLD_FLAGS, { cave: false }, 'the cave is behind an off-by-default flag until the owner opens it (spec 097 phase 4 gate)');
+  assert.deepStrictEqual(C.offeredWorlds().map((w) => w.id), ['photo'], 'flag off: only Photo office is offered');
+  assert.deepStrictEqual(C.offeredWorlds({ cave: true }).map((w) => w.id), ['photo', 'cave'], 'flag on: Photo office first, then the cave');
+  assert.deepStrictEqual(C.REAL_SETS.map((s) => s.id), ['office', 'prehistoric'], 'Office people and Prehistoric have Real office poses');
+  assert.deepStrictEqual(C.peopleFor('cave', 'theme', { cave: true }), { world: 'cave', set: 'prehistoric', setName: 'Prehistoric', note: '' }, "the cave's default set is Prehistoric");
+  assert.deepStrictEqual(C.peopleFor('cave', 'theme', { cave: false }), { world: 'photo', set: 'office', setName: 'Office people', note: '' }, 'flag off: the cave is not drawn');
+  assert.strictEqual(C.peopleFor('photo', 'prehistoric', { cave: true }).set, 'prehistoric', 'any set in any world: Prehistoric in the Photo office');
+  assert.strictEqual(C.peopleFor('photo', 'prehistoric', { cave: false }).set, 'office', 'flag off: the set is not drawn either');
+  // the lists are data: a flagged world with its own default set is added by rows alone (a Pirate world later changes no code)
+  C.WORLDS.push({ id: 'pirate', name: 'Pirate ship', defaultSet: 'pirates', flag: 'pirate' });
+  C.REAL_SETS.push({ id: 'pirates', name: 'Pirates', choice: 'pirates', flag: 'pirate' });
+  (C.WORLD_FLAGS as Record<string, boolean>).pirate = false;
+  const ON: Record<string, boolean> = { pirate: true }, OFF: Record<string, boolean> = { pirate: false };
+  try {
+    assert.deepStrictEqual(C.offeredWorlds(OFF).map((w) => w.id), ['photo'], 'flag off: only Photo office is offered');
+    assert.deepStrictEqual(C.offeredWorlds(ON).map((w) => w.id), ['photo', 'pirate'], 'flag on: both, Photo office first');
+    for (const w of C.WORLDS) assert.ok(C.REAL_SETS.some((s) => s.id === w.defaultSet), `${w.id}: its default set is in the list of sets`);
+    for (const r of [...C.WORLDS, ...C.REAL_SETS]) if (r.flag) assert.ok(r.flag in C.WORLD_FLAGS, `${r.id}: its flag exists`);
+    for (const v of ['pirate', 'loft', '', null, undefined, 3, '__proto__', 'match']) assert.strictEqual(C.parseWorld(v, OFF), 'photo', `${String(v)}: Photo office while the flag is off`);
+    assert.strictEqual(C.parseWorld('pirate', ON), 'pirate');
+    for (const v of ['', null, '__proto__', 'constructor', 'toString']) assert.strictEqual(C.parseWorld(v, ON), 'photo');
+    for (const f of [OFF, ON]) for (const w of ['photo', 'pirate', 'bogus', '']) for (const c of ['theme', 'minimalist', 'cheeky', 'pirates', 'prehistoric', 'mine', '', '__proto__', 'office']) {
+      const r = C.peopleFor(w, c, f), world = C.parseWorld(w, f), row = C.WORLDS.find((x) => x.id === world)!;
+      assert.strictEqual(r.world, world, 'the world is the parsed one');
+      assert.ok(C.REAL_SETS.some((s) => s.id === r.set && (!s.flag || f[s.flag])), `${w}/${c}: only an installed set is drawn`);
+      const explicit = C.REAL_SETS.find((s) => s.choice === c && c && (!s.flag || f[s.flag]));
+      const defRow = C.REAL_SETS.find((s) => s.id === row.defaultSet)!, def = !defRow.flag || f[defRow.flag] ? defRow.id : 'office';
+      assert.strictEqual(r.set, explicit ? explicit.id : def, `${w}/${c}: an explicit full set wins in any world, else the world's default, else Office people`);
+    }
+    assert.deepStrictEqual(C.peopleFor('photo', 'theme', OFF), { world: 'photo', set: 'office', setName: 'Office people', note: '' });
+    assert.deepStrictEqual(C.peopleFor('pirate', 'theme', ON), { world: 'pirate', set: 'pirates', setName: 'Pirates', note: '' }, "a world's default set");
+    assert.strictEqual(C.peopleFor('photo', 'pirates', ON).set, 'pirates', 'any set in any world');
+    assert.strictEqual(C.peopleFor('photo', 'pirates', OFF).set, 'office', 'flag off: the set is not drawn');
+  } finally { C.WORLDS.pop(); C.REAL_SETS.pop(); delete (C.WORLD_FLAGS as Record<string, boolean>).pirate; }
+  // FR-083 / FR-202: the note (peopleFor's), for a crew choice with no Real office poses; the names come from CREWS, so every crew without a REAL_SETS row has one
+  const note = (c: string): string => C.peopleFor('photo', c).note;
+  for (const c of ['minimalist', ...Object.keys(C.CREWS)]) if (!C.REAL_SETS.some((s) => s.choice === c)) assert.strictEqual(note(c), `Real office shows Office people until ${c[0].toUpperCase() + c.slice(1)} has Real office poses.`, `${c}: has its note`);
+  for (const c of ['theme', 'mine', '', '__proto__', 'constructor', 'office']) assert.strictEqual(note(c), '', `${c || '(none)'}: no note`);
+  assert.strictEqual(note('prehistoric'), 'Real office shows Office people until Prehistoric has Real office poses.', 'flag off: Prehistoric has no poses yet (the flag is what is closed)');
+  C.CREWS.pirate = []; // a future crew (mutant check: a hand list of names would miss it)
+  try { assert.strictEqual(note('pirate'), 'Real office shows Office people until Pirate has Real office poses.', 'a new crew gets its note by construction'); } finally { delete C.CREWS.pirate; }
 }
 
 // ---- FR-037: who sits where ----
@@ -389,8 +452,96 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.feet as Record<s
     vm.runInContext('var exports=self.exports;', ctx);
     for (const f of page) vm.runInContext(fs.readFileSync(path.join(DIST, f + '.js'), 'utf8'), ctx, { filename: f + '.js' });
     const ex = vm.runInContext('exports', ctx) as Record<string, unknown>;
-    for (const k of ['realLayout', 'lobbyWidths', 'assignPeople', 'lightFor', 'lightState', 'ambientFor', 'doneTick', 'fixtureLight', 'redact']) assert.strictEqual(typeof ex[k], 'function', `${k} is on the page's exports with every shared module loaded`);
+    for (const k of ['screenFor', 'screenFit', 'personMotion', 'zoomRect', 'realLayout', 'lobbyWidths', 'assignPeople', 'lightFor', 'lightState', 'ambientFor', 'doneTick', 'fixtureLight', 'redact']) assert.strictEqual(typeof ex[k], 'function', `${k} is on the page's exports with every shared module loaded`);
   } else console.log('(dist/shared not built: the page-load check is skipped; npm test builds first)');
+}
+
+{
+  // sweep 2026-11-01: choosing an Office layout repaints Settings; the pressed button keeps the keyboard focus
+  const scr = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'screens.js'), 'utf8');
+  assert.ok(/const hadFocus=document\.activeElement===olb;\s*await paint\(\);[^\n]*\n\s*if\(hadFocus\)\{const nb=document\.querySelector\('\[data-officelayout="'\+k\+'"\]'\);if\(nb\)focusIn\(nb\);\}/.test(scr), 'the Office layout pick restores focus after the repaint');
+}
+// spec 097 phase P2. FR-032: how a glass shows text
+{
+  const small = screenFit({ w: 90, h: 58 });
+  assert.ok(small.small && small.rows === 1 && small.font >= 10.5, 'a small screen: bars and the newest line, at least 10.5 px');
+  assert.ok(small.bars >= 2, 'bars fill it');
+  assert.ok(screenFit({ w: 149, h: 200 }).small && screenFit({ w: 300, h: 59 }).small, 'under 150x60 is small on either side');
+  assert.deepStrictEqual([screenFit({ w: 150, h: 60 }).small, screenFit({ w: 150, h: 60 }).font], [false, 11], 'real lines at 11 px');
+  assert.strictEqual(screenFit({ w: 300, h: 200 }).font, 11, '200 px tall is not over 200');
+  assert.strictEqual(screenFit({ w: 300, h: 201 }).font, 13, 'over 200 px: 13 px');
+  assert.ok(screenFit({ w: 300, h: 170 }).rows >= 8 && screenFit({ w: 300, h: 150 }).rows >= 8, 'SC-003: a big screen holds at least 8 lines');
+  assert.strictEqual(screenFit({ w: 4, h: 4 }).bars, 0, 'no room: no bars, no negative');
+  // FR-030, FR-035: what a state shows
+  const log = [{ n: 3, k: 'cmd', t: 'Running x' }, { n: 4, k: 'ok', t: 'Reading y' }];
+  const q = [{ k: 'plain', t: 'Allow this?' }], rep = [{ k: 'reply', t: 'All done.' }];
+  assert.deepStrictEqual(screenFor('asleep', log, q, rep, 'Asleep'), { off: true, caret: false, quiet: false, lines: [] }, 'asleep: off, no text');
+  assert.strictEqual(screenFor('working', log, q, rep, 'Working').caret, true, 'a caret only on working screens');
+  for (const st of ['thinking', 'waiting', 'error', 'limit', 'done', 'idle'] as RealState[]) assert.strictEqual(screenFor(st, log, q, rep, 'W').caret, false, 'no caret: ' + st);
+  assert.deepStrictEqual(screenFor('working', log, q, rep, 'W').lines, log, 'the agent\'s own lines win');
+  const ask = screenFor('waiting', log, q, rep, 'W').lines;
+  assert.deepStrictEqual(ask[ask.length - 1], { n: 5, k: 'ask', t: 'Allow this?' }, 'needs-you: the question is the newest line, next number');
+  assert.strictEqual(screenFor('limit', log, q, rep, 'W').lines[2].k, 'ask', 'limit: the same');
+  assert.strictEqual(screenFor('error', log, q, rep, 'W').lines[2].k, 'err', 'error: its error is the newest line');
+  assert.strictEqual(screenFor('done', log, [], rep, 'W').lines[1].k, 'done', 'done: the newest line marked green');
+  assert.strictEqual(log[1].k, 'ok', 'the log itself is not changed');
+  assert.strictEqual(screenFor('done', [], [], rep, 'W').lines[0].t, 'All done.', 'no lines: the last reply');
+  assert.strictEqual(screenFor('working', [], q, [], 'W').lines[0].t, 'Allow this?', 'no reply: the task');
+  assert.strictEqual(screenFor('idle', [], [], [], 'Ready').lines[0].t, 'Ready', 'nothing at all: the status word, never an empty screen');
+  assert.deepStrictEqual(screenFor('working', [], [], [], 'Working', true), { off: false, caret: true, quiet: true, lines: [{ n: 0, k: 'plain', t: 'Working' }] }, 'Live activity off: the word, nothing else');
+  assert.strictEqual(screenFor('working', Array.from({ length: 30 }, (_, i) => ({ n: i, k: 'cmd', t: 'l' + i })), [], [], 'W').lines.length, 24, 'at most 24');
+  // FR-070, FR-071, FR-181: the frames, their pace, per agent
+  assert.deepStrictEqual([POSE_FRAME_B.typeA, POSE_FRAME_B.waveA, POSE_FRAME_B.runA], ['typeB', 'waveB', 'runB'], 'the two-frame poses');
+  const periods = new Set<number>();
+  for (let i = 0; i < 200; i++) {
+    const id = 'sess-' + i;
+    for (const pose of ['typeA', 'waveA', 'runA']) { const m = personMotion(id, pose, pose === 'runA' ? null : 'working'); assert.strictEqual(m.kind, 'frames'); assert.ok(m.period >= 0.72 && m.period <= 3.2, 'a natural rate: ' + m.period); assert.ok(m.sway >= 5 && m.sway <= 8, 'its own sway: ' + m.sway); assert.strictEqual(m.style, ({ typeA: 'type', waveA: 'wave', runA: 'run' } as Record<string, string>)[pose]); assert.ok(m.offset >= 0 && m.offset < m.period * 1000); }
+    const t = personMotion(id, 'typeA', 'working'); assert.ok(t.period >= 2.6 && t.period <= 3.2, 'typing 2.6-3.2 s a pair: ' + t.period); periods.add(t.period); const r = personMotion(id, 'runA', null); assert.ok(r.period >= 0.72 && r.period <= 0.82, 'running: ' + r.period);
+    for (const st of ['thinking', 'done', 'idle'] as RealState[]) { const b = personMotion(id, st === 'thinking' ? 'think' : 'rest', st); assert.strictEqual(b.kind, 'breathe'); assert.ok(b.period >= 4 && b.period <= 5.5, 'breath: ' + b.period); assert.ok(4 / b.period <= 2); }
+  }
+  assert.ok(periods.size > 15, 'the room does not move in step: ' + periods.size);
+  assert.strictEqual(personMotion('a', 'think', 'error').kind, null, 'FR-036: error is still');
+  assert.strictEqual(personMotion('a', 'counter', null).kind, 'breathe', 'at a counter: a breath');
+  assert.strictEqual(personMotion('a', 'knock', null).kind, 'knock');
+  assert.strictEqual(personMotion('a', 'book', null).kind, 'breathe');
+  // the layout names the second frame; every file it names exists in the pack and shares the first frame's canvas
+  const L3 = realLayout(model(15, 4, { states: ['working', 'waiting', 'thinking', 'error', 'done'] }), { w: 1280, h: 740 }, META);
+  for (const d of L3.zones.flatMap((z) => z.desks)) if (d.person) {
+    assert.strictEqual(d.person.fileB, POSE_FRAME_B[d.person.pose] ? d.person.file.replace(d.person.pose, POSE_FRAME_B[d.person.pose]) : null, 'frame B of ' + d.person.file);
+    if (d.person.fileB) assert.ok(fs.existsSync(path.join(ROOT, 'src', 'renderer', 'realoffice', 'sets', 'office', d.person.fileB)), 'frame B exists: ' + d.person.fileB);
+  }
+  // FR-034: zoomRect
+  const view = { x: 0, y: 0, w: 1280, h: 740 }, size = { w: 420, h: 248, minH: 124 };
+  const inside = (r: Rect) => r.x >= view.x && r.y >= view.y && r.x + r.w <= view.x + view.w && r.y + r.h <= view.y + view.h;
+  const clear = (r: Rect, av: Rect[]) => av.every((a) => r.x >= a.x + a.w || a.x >= r.x + r.w || r.y >= a.y + a.h || a.y >= r.y + r.h);
+  const T = { x: 500, y: 400, w: 90, h: 58 }, own = { x: 480, y: 500, w: 160, h: 36 };
+  let z = zoomRect(T, [T, own], view, size);
+  assert.strictEqual(z.side, 'above', 'first above');
+  assert.ok(z.y + z.h <= T.y, 'really above');
+  z = zoomRect({ ...T, y: 60 }, [{ ...T, y: 60 }, { ...own, x: 1000, y: 130 }], view, size);
+  assert.strictEqual(z.side, 'below', 'then below');
+  z = zoomRect({ ...T, y: 250 }, [{ ...T, y: 250 }, { x: 0, y: 0, w: 1280, h: 200 }, { x: 0, y: 350, w: 1280, h: 390 }], view, { w: 420, h: 124, minH: 124 });
+  assert.ok(z.side === 'right' || z.side === 'left', 'then beside: ' + z.side);
+  // every desk of a full office with every plate needing the user, both sizes, the corners included
+  let zoomCases = 0;
+  for (const [w, h] of [[1440, 830], [1280, 730]]) for (const states of [['waiting'], ['working', 'waiting', 'idle'], ['idle']] as RealState[][]) for (const f of [1, 4, 7]) {
+    const lay = realLayout(model(15, f, { states, away: false }), { w, h }, META), desks = lay.zones.flatMap((zz) => zz.desks), V = { x: 0, y: 0, w: lay.width, h: lay.height };
+    const needs = desks.filter((d) => d.state === 'waiting').map((d) => d.plate);
+    for (const d of desks) {
+      const av = [d.screen, d.plate, ...needs], r = zoomRect(d.screen, av, V, { w: 420, h: 248, minH: 124 });
+      zoomCases++;
+      assert.ok(r.x >= 0 && r.y >= 0 && r.x + r.w <= V.w + 1e-6 && r.y + r.h <= V.h + 1e-6, 'stays in the view');
+      assert.ok(!r.covers && clear(r, av), `covers nothing it must not: ${w}x${h} ${states} ${f} ${JSON.stringify(r)}`);
+      assert.ok(r.w >= 380 && r.w <= 480, 'FR-034 width');
+    }
+  }
+  // a window too small: stays in the view, says it covers, covers the least
+  z = zoomRect({ x: 10, y: 10, w: 80, h: 40 }, [{ x: 0, y: 0, w: 300, h: 300 }], { x: 0, y: 0, w: 300, h: 300 }, size);
+  assert.ok(z.covers && z.x === 0 && z.y === 0 && z.w === 300 && z.h <= 300, 'no room: inside, flagged');
+  z = zoomRect(T, [], { x: 40, y: 900, w: 1000, h: 300 }, size);
+  assert.ok(z.y >= 900 && z.y + z.h <= 1200, 'a scrolled view: its own coordinates');
+  assert.ok(inside({ ...zoomRect(T, [T], view, size) }), 'inside');
+  console.log(`zoom: ${zoomCases} placements`);
 }
 
 console.log(`realoffice layout and lights tests passed (${cases} layouts, faces ${JSON.stringify(faces)})`);

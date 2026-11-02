@@ -220,6 +220,16 @@ const dh = require(path.join(ROOT, 'scripts', 'driver-helpers.js'));
   await assert.rejects(() => H.js('NOPE'), /boom/);
   // shot: prepares, waits, then takes the picture
   codes.length = 0; shots.length = 0; await H.shot('/tmp/x.png', { prep: 'calm', blur: true, settle: false, delay: 7 }); assert.deepStrictEqual(shots, ['/tmp/x.png']); assert.ok(codes[0].includes("shotCalm") && codes[0].includes('blur()')); assert.ok(sleeps.includes(7));
+  // focus emulation is never turned on by H.key, only by focusPage({ emulate: true }), and releaseFocus turns it off again (a blur check after it tests something)
+  const cmds: any[] = []; let attached = false;
+  const dbgCtx = { ...ctx, win: { ...ctx.win, show: () => undefined, focus: () => undefined, blur: () => undefined, webContents: { ...ctx.win.webContents, debugger: { isAttached: () => attached, attach: () => { attached = true; }, detach: () => { attached = false; }, sendCommand: async (m: string, p: any) => { cmds.push([m, p && p.enabled]); } } } }, js: async (c: string) => { codes.push(c); return !c.includes('hasFocus'); } };
+  const D = dh.helpers(dbgCtx);
+  await D.key('Tab'); assert.deepStrictEqual(cmds, [], 'H.key never turns focus emulation on');
+  assert.strictEqual(await D.focusPage({ ms: 50 }), false, 'without emulate, a page that never gets the focus is reported');
+  assert.deepStrictEqual(cmds, [], 'and nothing is emulated');
+  dbgCtx.js = async (c: string) => (c.includes('!document.hasFocus') ? cmds.length > 0 && cmds[cmds.length - 1][1] === false : !c.includes('hasFocus') || (cmds.length > 0 && cmds[cmds.length - 1][1] === true));
+  assert.strictEqual(await D.focusPage({ ms: 50, emulate: true }), true, 'emulate: true falls back to the emulation'); assert.deepStrictEqual(cmds[0], ['Emulation.setFocusEmulationEnabled', true]);
+  await D.releaseFocus(); assert.deepStrictEqual(cmds[cmds.length - 1], ['Emulation.setFocusEmulationEnabled', false], 'releaseFocus turns it off'); assert.strictEqual(attached, false, 'and detaches the debugger');
   console.log('driver-helpers: key, load, escaping and shot behave');
 })().catch((e) => { console.error(e); process.exit(1); });
 
