@@ -45,3 +45,4 @@ Backlog: capability flag (spec 012). (Office and per-folder totals: done 2026-10
 ## 2026-11-02: settings setters check the save (issue #1023)
 
 - [x] T070 `SettingsStore.commit()` shared by every setter (failed save: memory unchanged), `settings:*` replies `ok` only when the value asked for is in force; `scripts/test-credits.ts` unwritable-path and IPC cases [FR-012]
+- [x] T071 Window side of #1023: one `saveFailed` helper in `screens.js` (and the Agent apps checkbox) for every settings row; `scripts/check-settings-save.js` in the UI suite [FR-012]
