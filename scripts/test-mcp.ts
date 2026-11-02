@@ -644,4 +644,138 @@ const codec = (available = true): SecretCodec => ({
   assert.deepStrictEqual(r.forSession(K1).mcpServers.b.env, { Z: 'vc' }, 'the off server\'s value was migrated too');
   assert.strictEqual(dec, 1, 'after the migration a session decrypts once');
 }
+
+// Spec 019 change 2026-10-31: an unreadable store is moved aside before the first write, its bytes intact, the vault never unlocked.
+{
+  const fsMut = require('fs') as { renameSync: typeof fs.renameSync }; // the module object the store's `fs` reads through
+  const asides = (f: string): string[] => fs.readdirSync(path.dirname(f)).filter((n) => n.startsWith(`${path.basename(f)}.unreadable-`)).map((n) => path.join(path.dirname(f), n));
+  const good = { version: 3, folders: { [K1]: [{ name: 'kept', transport: 'stdio', command: 'node', args: ['k.js'], enabled: false, env: [{ key: 'K', ref: 'r1' }] }] }, legacy: [], disabledAmbient: [], vault: 'ENC1:the-only-copy' };
+  const whole = JSON.stringify(good);
+  const truncated = whole.slice(0, Math.floor(whole.length / 2));
+  const oversize = whole + ' '.repeat(2 * 1024 * 1024);
+  const counting = (): { c: SecretCodec; dec: () => number } => {
+    let n = 0;
+    const base = codec();
+    return { c: { ...base, decrypt: (b) => (n++, base.decrypt(b)) }, dec: () => n };
+  };
+  const NEW = { name: 'fresh', transport: 'stdio', command: 'node', args: ['f.js'] };
+  const actions: [string, (s: McpStore) => unknown][] = [
+    ['add a server', (s) => assert.ok(s.upsert(K1, { ...NEW, env: [{ key: 'E', value: SECRET }] }).ok)],
+    ['switch a list server off', (s) => s.setAmbientDisabled('a', true)],
+    ['turn a tool off', (s) => assert.ok(s.setToolsOff(K1, 'a', ['t1']).ok)],
+  ];
+  const warned: string[] = [];
+  const warn = console.warn;
+  console.warn = (...a: unknown[]): void => void warned.push(a.join(' '));
+  for (const [label, bytes] of [['truncated', truncated], ['oversize', oversize], ['JSON null', 'null'], ['JSON array', '[1]'], ['JSON number', '5']] as const) {
+    for (const [what, act] of actions) {
+      const f = tmp();
+      fs.writeFileSync(f, bytes, { mode: 0o644 });
+      const { c, dec } = counting();
+      const s = new McpStore(f, c);
+      s.load();
+      assert.deepStrictEqual(s.list(K1), [], `${label}: loads as empty`);
+      assert.strictEqual(fs.readFileSync(f, 'utf8'), bytes, `${label}: loading alone changes nothing`);
+      assert.deepStrictEqual(asides(f), [], `${label}: loading alone moves nothing`);
+      act(s);
+      s.setAmbientDisabled('second', true);
+      const moved = asides(f);
+      assert.strictEqual(moved.length, 1, `${label}, ${what}: moved aside once`);
+      assert.strictEqual(fs.readFileSync(moved[0], 'utf8'), bytes, `${label}, ${what}: the original bytes survive`);
+      if (process.platform !== 'win32') assert.strictEqual(fs.statSync(moved[0]).mode & 0o777, 0o600, `${label}: the moved file is private`);
+      assert.strictEqual(dec(), 0, `${label}, ${what}: the vault is not unlocked`);
+      assert.ok(!fs.readFileSync(f, 'utf8').includes('the-only-copy'), `${label}: the new file is a clean store`);
+      const again = new McpStore(f, codec());
+      again.load();
+      if (what === 'add a server') assert.deepStrictEqual(again.list(K1).map((v) => v.name), ['fresh'], `${label}: the action is what is saved`);
+      if (what === 'switch a list server off') assert.deepStrictEqual(again.ambientDisabled(), ['a', 'second']);
+      if (what === 'turn a tool off') assert.deepStrictEqual(again.toolsOffFor(K1), { a: ['t1'] });
+      again.setAmbientDisabled('later', true);
+      assert.strictEqual(asides(f).length, 1, `${label}: a readable file is not moved again`);
+    }
+  }
+  assert.ok(warned.length && warned.every((l) => !l.includes('the-only-copy') && !l.includes('kept') && !l.includes(os.tmpdir())), 'the log names the file only, no contents and no folder');
+  // Two moves in the same instant never overwrite one another.
+  {
+    const f = tmp();
+    const iso = Date.prototype.toISOString;
+    Date.prototype.toISOString = function (): string { return '2026-10-31T00:00:00.000Z'; };
+    try {
+      for (const b of ['{first', '{second', '{third']) {
+        fs.writeFileSync(f, b);
+        const s = new McpStore(f);
+        s.load();
+        s.setAmbientDisabled('a', true);
+      }
+    } finally {
+      Date.prototype.toISOString = iso;
+    }
+    assert.deepStrictEqual(asides(f).map((m) => fs.readFileSync(m, 'utf8')).sort(), ['{first', '{second', '{third']);
+    assert.ok(asides(f).every((m) => !path.basename(m).includes(':')), 'no ":" in a file name (Windows)');
+  }
+  // It cannot be moved (a Windows lock): the action fails, the file stays as it was, and a later action tries again.
+  {
+    const f = tmp();
+    fs.writeFileSync(f, truncated);
+    const s = new McpStore(f, codec());
+    s.load();
+    const real = fsMut.renameSync;
+    fsMut.renameSync = ((a: fs.PathLike, b: fs.PathLike) => {
+      if (a === f) throw Object.assign(new Error('locked'), { code: 'EBUSY' });
+      return real(a, b);
+    }) as typeof fs.renameSync;
+    try {
+      assert.throws(() => s.upsert(K1, NEW), /locked/, 'the save is refused, the IPC handler says so');
+    } finally {
+      fsMut.renameSync = real;
+    }
+    assert.strictEqual(fs.readFileSync(f, 'utf8'), truncated, 'a refused save leaves the file as it was');
+    assert.deepStrictEqual(asides(f), []);
+    s.setAmbientDisabled('a', true);
+    assert.strictEqual(fs.readFileSync(asides(f)[0], 'utf8'), truncated, 'the next action moves it');
+    assert.deepStrictEqual(JSON.parse(fs.readFileSync(f, 'utf8')).folders[K1][0].name, 'fresh', 'and keeps the refused action');
+  }
+  // A read error that is not "missing" (here a folder in its place) is unreadable too, and nothing inside it is lost.
+  {
+    const f = tmp();
+    fs.mkdirSync(f);
+    fs.writeFileSync(path.join(f, 'inside'), 'x');
+    const s = new McpStore(f);
+    s.load();
+    s.setAmbientDisabled('a', true);
+    assert.strictEqual(fs.readFileSync(path.join(asides(f)[0], 'inside'), 'utf8'), 'x');
+    assert.ok(fs.statSync(f).isFile());
+  }
+  // The file vanished between the load and the action: the action goes on.
+  {
+    const f = tmp();
+    fs.writeFileSync(f, truncated);
+    const s = new McpStore(f);
+    s.load();
+    fs.unlinkSync(f);
+    s.setAmbientDisabled('a', true);
+    s.setAmbientDisabled('b', true);
+    assert.deepStrictEqual(asides(f), [], 'the file it just wrote is not moved');
+    assert.deepStrictEqual(JSON.parse(fs.readFileSync(f, 'utf8')).disabledAmbient, ['a', 'b']);
+  }
+  // A missing file and a good file stay normal: nothing moved, nothing lost.
+  {
+    const f = tmp();
+    const s = new McpStore(f, codec());
+    s.load();
+    s.setAmbientDisabled('a', true);
+    assert.deepStrictEqual(asides(f), [], 'a missing file is normal');
+    const g = tmp();
+    fs.writeFileSync(g, whole);
+    const { c, dec } = counting();
+    const r = new McpStore(g, c);
+    r.load();
+    r.setAmbientDisabled('a', true);
+    assert.deepStrictEqual(asides(g), [], 'a good file is not moved');
+    assert.strictEqual(JSON.parse(fs.readFileSync(g, 'utf8')).vault, good.vault, 'and keeps its vault');
+    assert.strictEqual(r.list(K1)[0].name, 'kept');
+    assert.strictEqual(dec(), 0);
+  }
+  console.warn = warn;
+}
 console.log('mcp tests passed');

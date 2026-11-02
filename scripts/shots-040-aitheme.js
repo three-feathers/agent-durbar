@@ -24,9 +24,9 @@ module.exports = async (ctx) => {
     await ctx.waitFor(`!!document.getElementById('thAi')`, 6000);
     // the theme picker with a built-in theme picked (website gallery, issue #573): the same click as a person's, then back to Clean Office
     const pick = (id) => js(`(()=>{const b=document.querySelector('#thList [data-theme='+${jsLiteral(JSON.stringify(id))}+']');if(!b)return false;b.click();return true})()`);
-    assert.ok(await pick('durbar-indian'), 'the picker lists the built-in Indian Court');
-    await H.until(`window.THEME.current().id==='durbar-indian'&&document.querySelector('#thList [data-theme="durbar-indian"]').getAttribute('aria-pressed')==='true'`, 3000);
-    assert.strictEqual(await js(`window.THEME.current().id`), 'durbar-indian', 'a click in the picker applies the theme at once');
+    assert.ok(await pick('retro'), 'the picker lists the built-in Retro Pixel');
+    await H.until(`window.THEME.current().id==='retro'&&document.querySelector('#thList [data-theme="retro"]').getAttribute('aria-pressed')==='true'`, 3000);
+    assert.strictEqual(await js(`window.THEME.current().id`), 'retro', 'a click in the picker applies the theme at once');
     await js(`(()=>{const l=document.getElementById('thList'),sec=l.closest('section')||l;let p=sec.parentElement;while(p&&p.scrollHeight<=p.clientHeight+1)p=p.parentElement;if(p)p.scrollTop+=sec.getBoundingClientRect().top-p.getBoundingClientRect().top-12;return true})()`);
     await H.until(`(()=>{const r=document.getElementById('thList').getBoundingClientRect();return r.top>=0&&r.bottom<=innerHeight})()`, 3000);
     await H.shot(path.join(OUT, `040-theme-picker-${w}x${h}.png`), { prep: 'toasts', delay: 300 });
@@ -48,6 +48,7 @@ module.exports = async (ctx) => {
     await js(`(()=>{const t=document.getElementById('aiDesc');t.value='a night-shift newsroom';t.dispatchEvent(new Event('input'));return true})()`);
     await js(`[...document.querySelectorAll('#scrDlg .dbtn button')].find(b=>b.textContent==='Make the theme').click()`);
     await ctx.waitFor(`!!document.querySelector('#scrDlg .ai-sws')`, 8000); await ctx.sleep(200);
+    await ctx.waitFor(`(()=>{const d=document.querySelector('#scrDlg .dlg');return !!d&&getComputedStyle(d).opacity==='1'})()`, 5000); // fully opened before the picture (a loaded machine shot it mid-fade)
     const pv = await js(`({title:document.getElementById('scrDlgT').textContent,sw:document.querySelectorAll('#scrDlg .ai-sw').length,words:document.querySelectorAll('#scrDlg .ai-words li').length})`);
     console.log('[040-ai]', w, JSON.stringify(pv));
     assert.match(pv.title, /^Theme: Night-shift newsroom/);
