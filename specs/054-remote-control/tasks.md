@@ -49,3 +49,7 @@ Not done and not planned here: the owner moved Claude channels to idea #485 ("Fo
 
 ## 2026-10-28 delta (SDK 1.0.26 drops `remoteSession`)
 - [x] T055 `remoteSession: 'off'` kept as a 1.0.22-only hint with a comment; tests stop presenting it as a control; `test:remote` pins that `remote.enable` is reached only by `setRemote(id, true)` from `remoteops.ts`; "SDK 1.0.22" comments refreshed; real 1.0.103 check stays a KNOWN GAP [FR-070, FR-071]
+
+## Changes 2026-10-31 (owner decision, spec 021 FR-067): no door
+
+- [ ] T056 In spec 017's removal PR: `doorClosed`, `DOOR_CLOSED` and the refusal toast out; Allow all refusal and confirmation unchanged. Test: `test-remote`: on still needs confirmation, off still works, no call to `setRemote(id, true)` from start or resume; a mutant turning it on at start fails [FR-065]

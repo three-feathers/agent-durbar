@@ -106,7 +106,7 @@ for (const [what, re] of [['card', /desk card is-\$\{st\}\$\{isUnread\(a\)/], ['
 ok((app.match(/\$\{unreadWords\(/g) || []).length === 4, 'card, desk, list row and strip item names say it');
 ok((app.match(/unreadHTML\([ax]\)/g) || []).length === 4, "the badge is on the card, the desk, the list row and the strip item");
 ok(/data-op="read" class="mm-read"/.test(app) && /if\(op==='read'\)\{markRead\(a\);return;\}/.test(app), 'the card menu has Mark as read');
-ok(/e\.key==='F10'&&e\.shiftKey\)\|\|e\.key==='ContextMenu'\)\)return;\s*const d=e\.target&&e\.target\.closest&&e\.target\.closest\('\.desk\[data-id\], \.lrow\[data-id\]'\)/.test(app), 'Shift+F10 on a desk opens the card menu');
+ok(/e\.key==='F10'&&e\.shiftKey\)\|\|e\.key==='ContextMenu'\)\)return;\s*const d=e\.target&&e\.target\.closest&&e\.target\.closest\('\.desk\[data-id\], \.lrow\[data-id\], \.ro-plate\[data-id\]'\)/.test(app), 'Shift+F10 on a desk (or a Real office plate) opens the card menu');
 ok(/\.unread-mark\{[^}]*font-size:11px/.test(css), 'the badge text is 11px (never under 10.5px)');
 ok(/\.unread-mark i\{/.test(css) && /\.desk\.is-waiting::after[^{]*\{[^}]*box-shadow:[^}]*var\(--hl\)/.test(css) && /--hl:var\(--desk-new\)/.test(css) && /--hl:var\(--desk-needs\)/.test(css) && !/\.desk[^{]*\{outline:\d/.test(css), 'a dot and a glow (no outline) besides the colour');
 ok(/@media \(prefers-reduced-motion:no-preference\)\{\.unread-mark\.fresh\{animation:unread-pulse/.test(css), 'the pulse only when motion is allowed');

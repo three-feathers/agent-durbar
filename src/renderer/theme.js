@@ -646,14 +646,113 @@
     for(const k of ['bar','glow','halo','wave','cursor']){
       if(typeof document!=='undefined'&&document.documentElement)document.documentElement.style.setProperty('--m-'+k,motion(k));
     }
+    paintWorld(); /* spec 097 FR-113: a theme chosen while Real office is shown applies on leaving it; the world's set stays on top */
     listeners.forEach(fn=>{ try{fn(currentId, manifest);}catch(e){console.warn('[theme] listener error',e);} });
     return id;
   }
+
+  /* ---------- spec 097 FR-100, FR-113: a Real office world's chrome token set ----------
+     While Real office is shown, its world's token set replaces the theme's COLOURS and its two shadows on the whole page (the top
+     bar, menus, popovers, dialogs, toasts, Settings, the List view and every other tool surface), so nothing keeps the old flat look
+     next to the photo office (owner, 2026-10-31 10:46). The theme's fonts, title weight and radii stay (070 D2: same fonts, same
+     sizes); leaving Real office applies the user's theme again, exactly as before. Colours: the Clean Office set with the world's
+     `page` values on top, so the set is complete and its contrast does not depend on the user's theme. `bar` is the top bar's dark
+     glass: themes.css gives the .topbar subtree these values as its own --surface, --ink, ... (custom properties cascade), and the
+     bar's own menu gets the page values back through the --wp-* copies. Panels and the bar are glass: their fill is the token mixed
+     WORLD_GLASS with what is behind (themes.css, color-mix), so contrast is checked on that fill over black (panels, dark text) and
+     over white (the bar, light text), the worst backdrops. Status colours never change (070 FR-050). */
+  const WORLD_GLASS=0.9; /* the opaque share of a glass fill; themes.css uses the same 90% (test:theme-tokens pins it) */
+  const WORLD_SETS={
+    photo:{
+      name:'Photo office',
+      /* warm neutrals of the photo office: cream panels, greige page, espresso ink; oak and amber for the primary button, focus and selection */
+      page:{'--bg':'#ece4d8','--surface':'#fbf7f0','--surface-2':'#f3ece1','--raised':'#fffcf6','--card':'#fbf7f0','--soft':'#f8f2e8','--note':'#f3ece1',
+        '--line':'#e0d4c2','--line-2':'#c9b79c','--line-ctl':'#8e7a60','--ink':'#2b231d','--ink-2':'#54473b','--muted':'#5c4f43',
+        '--sage':'#c4934f','--sage-ink':'#7b4a1e','--focus':'#9a5b12','--sel-border':'#b07a3c','--sel-ring':'#f0e0c8','--sel-ring-2':'#f3e6d2',
+        '--stat-sel-border':'#b07a3c','--stat-sel-ring':'#f0e0c8','--brand-mark':'#fff6e8','--brand-bg':'#8a5a28','--avatar-bg':'#efe3d0'},
+      /* the top bar: dark wood / charcoal glass with light warm text and an amber focus ring */
+      bar:{'--wb-bg':'#2a231e','--wb-bg-2':'#1f1a16','--wb-surface':'#3a3029','--wb-surface-2':'#463a31','--wb-ink':'#f7efe4','--wb-ink-2':'#e6d6c2',
+        '--wb-muted':'#dccab4','--wb-line':'#5c4d40','--wb-line-2':'#6e5c4c','--wb-line-ctl':'#a8927a','--wb-focus':'#f2b35c',
+        '--wb-warn-bg':'#4e3618','--wb-warn-ink':'#f7cf8a'}, /* a counter or the inbox that needs you: amber glass with amber text */
+      shadow:{'--shadow-card':'0 1px 3px rgba(46,32,18,.10)','--shadow-pop':'0 18px 48px rgba(46,32,18,.30), 0 2px 6px rgba(46,32,18,.12)'},
+    },
+    /* the cave: parchment-and-stone page, a bar of dark cave brown with torchlight gold (the logo's cave palette, spec 101 FR-033) */
+    cave:{
+      name:'Prehistoric cave',
+      page:{'--bg':'#e4d6bf','--surface':'#f7efe0','--surface-2':'#efe3cc','--raised':'#fbf5e8','--card':'#f7efe0','--soft':'#f3e9d6','--note':'#efe3cc',
+        '--line':'#d9c6a6','--line-2':'#c2a87f','--line-ctl':'#86704f','--ink':'#2a1a10','--ink-2':'#4f3a28','--muted':'#5a4430',
+        '--sage':'#b8793a','--sage-ink':'#7a3f14','--focus':'#8f4a10','--sel-border':'#a8672c','--sel-ring':'#efd9bb','--sel-ring-2':'#f1dfc4',
+        '--stat-sel-border':'#a8672c','--stat-sel-ring':'#efd9bb','--brand-mark':'#fff1dc','--brand-bg':'#7a4420','--avatar-bg':'#ecdcc0'},
+      bar:{'--wb-bg':'#2a1710','--wb-bg-2':'#1c0f0a','--wb-surface':'#3b2418','--wb-surface-2':'#4a2f20','--wb-ink':'#f6e3c4','--wb-ink-2':'#e8cfa6',
+        '--wb-muted':'#dcc29a','--wb-line':'#5c4030','--wb-line-2':'#6e4e3a','--wb-line-ctl':'#b08e6c','--wb-focus':'#f2b46e',
+        '--wb-warn-bg':'#4e3010','--wb-warn-ink':'#f7cf8a'},
+      shadow:{'--shadow-card':'0 1px 3px rgba(40,22,10,.12)','--shadow-pop':'0 18px 48px rgba(40,22,10,.34), 0 2px 6px rgba(40,22,10,.14)'},
+    },
+  };
+  /* the tokens themes.css re-scopes inside the top bar ([--x, --wb-x]); the bar's menu gets the page values back as --wp-x */
+  const WORLD_BAR_MAP=[['--bg','--wb-bg'],['--surface','--wb-surface'],['--surface-2','--wb-surface-2'],['--raised','--wb-surface'],['--ink','--wb-ink'],['--ink-2','--wb-ink-2'],
+    ['--muted','--wb-muted'],['--line','--wb-line'],['--line-2','--wb-line-2'],['--line-ctl','--wb-line-ctl'],['--focus','--wb-focus'],
+    ['--warn-bg','--wb-warn-bg'],['--amber-ink','--wb-warn-ink']];
+  /* the text and mark pairs a world adds to 070 D4's (CONTRAST_PAIRS, and themegen's UI_PAIRS in the test): [fg, bg, minimum, over] where
+     `over` composites the background as glass over black (panels) or white (the bar) */
+  const WORLD_PAIRS=[['--wb-ink','--wb-bg',4.5,'#ffffff'],['--wb-ink','--wb-bg-2',4.5,'#ffffff'],['--wb-ink','--wb-surface',4.5,'#ffffff'],['--wb-ink','--wb-surface-2',4.5,'#ffffff'],
+    ['--wb-ink-2','--wb-bg',4.5,'#ffffff'],['--wb-ink-2','--wb-surface',4.5,'#ffffff'],['--wb-muted','--wb-bg',4.5,'#ffffff'],['--wb-muted','--wb-surface',4.5,'#ffffff'],['--wb-muted','--wb-surface-2',4.5,'#ffffff'],
+    ['--wb-line-ctl','--wb-surface',3,'#ffffff'],['--wb-warn-ink','--wb-warn-bg',4.5,'#ffffff'],['--wb-ink','--wb-warn-bg',4.5,'#ffffff'],['--wb-focus','--wb-bg',3,'#ffffff'],['--wb-focus','--wb-surface',3,'#ffffff'],
+    ['--ink','--surface',4.5,'#000000'],['--ink-2','--surface',4.5,'#000000'],['--muted','--surface',4.5,'#000000'],['--ink','--surface-2',4.5,'#000000'],['--muted','--surface-2',4.5,'#000000'],
+    ['--line-ctl','--surface',3,'#000000'],['--focus','--surface',3,null],['--focus','--bg',3,null],['--brand-bg','--wb-bg',1.5,null]];
+  let currentWorld=null, worldResolved=null;
+  function worldTokens(id){
+    if(!own(WORLD_SETS,id))return null;
+    const w=WORLD_SETS[id], t=Object.assign({},CLEAN_TOKENS,w.page,w.bar);
+    for(const [k] of WORLD_BAR_MAP)t['--wp-'+k.slice(2)]=t[k];
+    return t;
+  }
+  function glassOver(v,over){const a=hex6(v),b=hex6(over);return '#'+[0,2,4].map(i=>Math.round(parseInt(a.slice(i,i+2),16)*WORLD_GLASS+parseInt(b.slice(i,i+2),16)*(1-WORLD_GLASS)).toString(16).padStart(2,'0')).join('');}
+  /* every pair of a world's set with its ratio: 070 D4's pairs on the resolved set, then the world's own (glass composited) */
+  function worldContrast(id){
+    const t=worldTokens(id); if(!t)return null;
+    const out=[];
+    for(const [fg,bg,min] of CONTRAST_PAIRS){const a=t[fg],b=t[bg];if(HEX_ANY.test(String(a||''))&&HEX_ANY.test(String(b||'')))out.push({fg,bg,min,ratio:ratio(a,b)});}
+    for(const [fg,bg,min,over] of WORLD_PAIRS){const a=t[fg],b=over?glassOver(t[bg],over):t[bg];out.push({fg,bg:bg+(over?' (glass over '+over+')':''),min,ratio:ratio(a,b)});}
+    return out;
+  }
+  function paintWorld(){
+    if(typeof document==='undefined'||!document.documentElement)return;
+    const el=document.documentElement;
+    if(currentWorld){
+      applyTokens(worldResolved);
+      for(const [k,v] of Object.entries(WORLD_SETS[currentWorld].shadow))el.style.setProperty(k,v);
+      el.dataset.world=currentWorld;
+      delete el.dataset.dark; /* the world's page is light (its bar is dark by its own rules) */
+    }
+  }
+  /* FR-100: Real office shows `id`'s world (null: flat, the user's theme again). Unknown ids are null. Returns the world shown. */
+  function setWorld(id){
+    const want=id!=null&&own(WORLD_SETS,id)?id:null;
+    if(want===currentWorld)return currentWorld;
+    const was=currentWorld;
+    currentWorld=want; worldResolved=want?worldTokens(want):null;
+    if(want)paintWorld();
+    else if(was&&typeof document!=='undefined'&&document.documentElement){
+      const el=document.documentElement;
+      for(const k of Object.keys(worldTokens(was)))if(!own(CLEAN_TOKENS,k))el.style.removeProperty(k);
+      delete el.dataset.world;
+      applyTokens(currentResolved||resolveTokens(currentManifest));
+      for(const k of Object.keys(WORLD_SETS[was].shadow)){const m=currentManifest&&currentManifest.tokens;if(own(m,k))el.style.setProperty(k,m[k]);else el.style.removeProperty(k);}
+      if(isDarkColor((currentResolved||{})['--surface']))el.dataset.dark='';else delete el.dataset.dark;
+    }
+    themeRev++;
+    listeners.forEach(fn=>{ try{fn(currentId, currentManifest);}catch(e){console.warn('[theme] listener error',e);} });
+    return currentWorld;
+  }
+  function world(){return currentWorld;}
+  function worldName(id){return own(WORLD_SETS,id)?WORLD_SETS[id].name:'';}
 
   function current(){return {id:currentId, manifest:currentManifest};}
   function token(name){
     const key=name.startsWith('--')?name:'--'+name;
     /* the resolved map: the pack's values after the contrast fallback (spec 070 FR-021), so the scenes draw what the CSS shows */
+    if(worldResolved&&Object.prototype.hasOwnProperty.call(worldResolved,key))return worldResolved[key]; /* spec 097 FR-113: Real office's world set */
     if(currentResolved&&Object.prototype.hasOwnProperty.call(currentResolved,key))return currentResolved[key];
     return own(CLEAN_TOKENS,key)?CLEAN_TOKENS[key]:(own(TYPED_TOKENS,key)?TYPED_TOKENS[key].def:null);
   }
@@ -1038,6 +1137,14 @@
     figures,
     fallbacks,
     contrastCheck,
+    setWorld,
+    world,
+    worldName,
+    worldTokens,
+    worldContrast,
+    WORLD_IDS:Object.keys(WORLD_SETS),
+    WORLD_GLASS,
+    WORLD_BAR_MAP:WORLD_BAR_MAP.map(p=>p.slice()),
     TYPED_TOKENS:JSON.parse(JSON.stringify(TYPED_TOKENS)),
     FONT_ALLOW:FONT_ALLOW.slice(),
     CONTRAST_PAIRS:CONTRAST_PAIRS.map(p=>p.slice()),

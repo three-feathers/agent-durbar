@@ -4,7 +4,7 @@
     "fonts": 0
   },
   "screens.css": {
-    "colors": 14,
+    "colors": 10,
     "fonts": 0
   },
   "themes.css": {
@@ -25,6 +25,10 @@
   },
   "index.html": {
     "colors": 4,
+    "fonts": 0
+  },
+  "realoffice-world.css": {
+    "colors": 0,
     "fonts": 0
   }
 }

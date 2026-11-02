@@ -37,12 +37,21 @@
     found.sort((a,b)=>b.length-a.length);
     for(const r of found)m=m.replace(new RegExp(reEsc(r)+'[A-Za-z0-9_-]*','g'),()=>'[redacted]');
     return m;};
-  const maskPlain=(raw,redact,codeWord)=>{if(typeof redact!=='function')return null;try{
+  /* spec 097 FR-030 (review of P2): what can sit invisibly inside a token and hide it from every shape: default-ignorable characters (soft hyphen, zero-width,
+     bidi marks, joiners, tag characters), line separators and control characters. The masks read a copy without them; when they find nothing the text is
+     shown as it was, so the joiners real scripts need stay. */
+  const HIDDEN=/\p{Default_Ignorable_Code_Point}|[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u2028\u2029]/gu;
+  const unhide=t=>String(t==null?'':t).replace(HIDDEN,'');
+  const unhid=(raw,run,bare)=>{const s=String(raw==null?'':raw),c=unhide(s);if(c===s)return run(s);const m=run(c);return m===null||m===bare(c)?run(s):m;};
+  const maskPlain0=(raw,redact,codeWord)=>{try{
     const u=unesc(raw),m=both(u,plainKeep(u,codeWord),redact);
     return m.replace(/_/g,'');}catch(e){return null;}};
+  const maskPlain=(raw,redact,codeWord)=>{if(typeof redact!=='function')return null;
+    return unhid(raw,t=>maskPlain0(t,redact,codeWord),c=>plainKeep(unesc(c),codeWord).replace(/_/g,''));};
   /* the masked text, not made plain or cut: masked as it is, and again on the plain-kept text when Markdown that can split a token is
      present (otherwise the text is shown as it is). '' when masking is not possible. */
-  const maskRaw=(raw,redact)=>{if(typeof redact!=='function')return '';try{const u=unesc(raw),m1=redact(u);if(typeof m1!=='string')return '';
+  const maskRaw=(raw,redact)=>{if(typeof redact!=='function')return '';return unhid(raw,t=>maskRaw0(t,redact),c=>unesc(c));};
+  const maskRaw0=(raw,redact)=>{try{const u=unesc(raw),m1=redact(u);if(typeof m1!=='string')return '';
     if(!SPLIT.test(u))return m1; /* no Markdown that can split a token: one pass is enough (and keeps the live readout cheap) */
     const k=plainKeep(u),m2=both(u,k,redact);return m2!==k?m2:m1;}catch(e){return '';}}; /* m2 holds what either pass found (both) */
   /* raw agent text -> masked, plain, at most n characters (no n: not cut). '' when masking is not possible. */
@@ -52,7 +61,7 @@
   const isUrl=s=>/^[a-z][a-z0-9+.-]{1,20}:\/\//i.test(s);
   const maskLabel=(raw,kind,mask)=>{const s=String(raw==null?'':raw).trim();if(!s)return '';const m=mask||{};
     const f=kind==='run'?m.cmd:isUrl(s)?m.url:m.redact;if(typeof f!=='function')return '';
-    try{const r=f(s);return typeof r==='string'?r:'';}catch(e){return '';}};
+    try{const one=t=>{const r=f(t);return typeof r==='string'?r:'';};return unhid(s,one,c=>c);}catch(e){return '';}};
   /* the wrapper the page uses: fallback words and the "is masking possible" flag */
   function create(o){
     const red=o&&typeof o.redact==='function'?o.redact:null, cut=o&&typeof o.cut==='function'?o.cut:cutter;
@@ -64,5 +73,5 @@
       const p=maskPlain(String(t),red,true);if(p===null)return fb;return n==null?p:cut(p,n);};
     return {mask,excerpt:ex,plain,ready:!!red};
   }
-  return {create,plain,plainKeep,unesc,maskRaw,excerpt,maskLabel};
+  return {create,plain,plainKeep,unesc,unhide,maskRaw,excerpt,maskLabel};
 });
