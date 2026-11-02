@@ -36,7 +36,7 @@
 - [ ] T027 [PR A9] Control heights other than buttons (A14 sets `--h-ctl` and buttons): selects, inputs and `.seg` to 24 (`.seg` 26, selects 19/26/30, inputs 28/30), switch drawn 18 in a 24 target (FR-075). Test: `check-ui-text`, top bar fit at 1280 [FR-055]
 - [ ] T028 [PR A10] Radii onto 6, 10, 14, 18, pill, circle, in the chrome; design rule 2. Test: `check-ui-text`, ratchet [FR-055]
 - [ ] T029 [PR A11] `src/renderer/ui.js` and first dialogs; `@layer` only after the literals settle, tried first. Test: drivers of the moved dialogs; ratchet on button class sets [FR-056]
-- [ ] T030 [PR A12] The owner accepted keeping the font (2026-11-01); this only settles smoothing. A real Mac at 2x and at 1x: `-webkit-font-smoothing` `antialiased` against `auto`; the Mac owner picks; one line in `styles.css`. Test: `test-macos` pins the choice; `real:` the owner's look, no AI credits [FR-058]
+- [x] T030 Done by #1021: the owner picked `auto`. A unit test pins it. `[KNOWN GAP]` a real Retina panel [FR-058]
 - [x] T031 Font decision: compared in the simulator, keep the system stack, no bundled font, reasons and limits in the spec [FR-058, FR-059]
 - [ ] T032 With each surface's PR (spec 005 R1, spec 052 T224, spec 105 T003): the tier 1 tokens of FR-060, no new literal. Test: `test:theme-tokens` ratchet [FR-060]
 

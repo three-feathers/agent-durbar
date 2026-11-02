@@ -137,8 +137,9 @@ PRs, gates and line-count goals: `plan.md`. Each PR measures on `main` first and
 - [ ] T119 [PR C2] Measure first, targets 575 to 442, 649 to 509, 1358 to 1167 px. Then plain answers; the person's bubble stays; agent meta clipped, not removed. Test: heights within 16 px, accessible text unchanged, Compact and Simple [FR-201, FR-203, FR-205]
 - [ ] T120 [PR C2] Quiet tool rows and thinking with a left rule; failed, waiting and open states keep a box. Test: `check-chat-density`, `check-edits`, tool chip keyboard; mutant: a failed call with no box [FR-202]
 - [ ] T121 [PR C2] Copy and message menu on hover and focus, always in the tab order, visible for `hover:none` and an open menu; FR-173 and 052 FR-010 rewritten. Test: real pointer and Tab; `check-notes`; mutant: `display:none` [FR-204]
-- [ ] T122 [PR W] Measure first, targets 126 letters a line at 1440, 1920 and 2560 (146, 149 and 149 today). Then `--chat-prose`; 880 px and following 1240 px rules go. Test: new `check-chat-width`; `check-ui-text`; mutant: cap removed [FR-206]
-- [ ] T123 With Paco's yes of 2026-11-01 recorded in FR-198: rewrite FR-178, FR-180, FR-182, FR-185..FR-188 and T099..T112 for the List view [FR-198]
+- [ ] T122 [PR W] Measure first, target 116 letters a line within 4 at 1440, 1920 and 2560, at 14 px (070 FR-071; 146, 149 and 149 today at 13 px). Then `--chat-prose`; 880 px and following 1240 px rules go. Test: new `check-chat-width`; `check-ui-text`; mutant: cap removed [FR-206]
+- [ ] T133 [Gate] Paco confirms or changes the "List only" reading, then the plan gets a row for favourites and manual order, or says none is scheduled [FR-198]
+- [ ] T123 After T133, with Paco's yes of 2026-11-01 recorded in FR-198: rewrite FR-178, FR-180, FR-182, FR-185..FR-188 and T099..T112 for the List view [FR-198]
 - [ ] T124 [PR W] Last chat PR: `check-chat-density` asserts the log without a rail, 669 and 569 px (638 and 538 on FR-199's fallback) within 8 px with the restore bar still there (calculated; measure first), Flat and Real; pictures retaken at both sizes (`npm run shots:docs`), docs (`features.md`, README), older FRs changed in place [FR-195, FR-208]
 
 ### The rail: a floor plan with a List switch (owner's second, after Your door)
@@ -149,7 +150,7 @@ PRs, gates and line-count goals: `plan.md`. Each PR measures on `main` first and
 - [ ] T115 [PR R1] Two heights and age in words; try tall rows at 52 px, else 60 px and 34 px of scroll at 1280; measure contrast on tall rows and set the tint to 4.5:1. Test: `check-rail` heights by clock, contrast; mutants: a third height, a wait-driven height [FR-194, FR-197]
 - [ ] T126 [PR R2] Pure `planLayout`: seat sizes by fit, for 1 to 40 agents, floors, long folder names. Test first: `test-plan-layout`, the FR-195 table's seats at both sizes; a status change gives equal rectangles [FR-191, FR-192, FR-195]
 - [ ] T127 [PR R2] Plan view and the Plan | List switch: seats keyed, lights with shapes, no seat change, head-and-shoulders crop, lift, hover and focus card, arrow keys. Measure first the head and seat at 4, 15 and 40; pictures for the owner's look at the crop. Test: `check-rail` plan steps, `check:perf`; mutants: a seat moved by status, a colour-only state [FR-190..FR-193, FR-195, FR-197]
-- [ ] T116 [PR R3] Collapse for both rails, *Full-screen chat*, state kept; the narrow form under about 1100 px; controls move to the header when collapsed. Test: `check-rail` at 1024x768, reload keeps state, keyboard route, names kept; mutants: the state not saved, collapsing drops the door's count [FR-196]
+- [ ] T116 [PR R3] Collapse for both rails, *Full-screen chat*, state kept; the narrow form when the chat beside a full rail would be under 620 px (FR-196); controls move to the header when collapsed. Test: `check-rail` at 1024x768 (full rail), 800x600 (narrow), 1280x800 with the drawer (narrow), reload keeps state, keyboard route, names kept; mutants: the state not saved, collapsing drops the door's count [FR-196]
 
 ### Going to the desk (owner's fourth): nothing is built before T128
 

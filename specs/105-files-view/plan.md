@@ -26,4 +26,4 @@ I: spec first. II: no adapter types; `EditInfo` is normalized. III: safe by defa
 
 ## Risks
 
-A write path from the window (FR-019, FR-020, FR-023); a dependency family and a build step (pinned, reviewed, `test:supplychain`); image bombs (FR-002); a 547 KB parse at first open, unmeasured in Electron; Windows path cases; forced colours in a contenteditable editor.
+A write path from the window (FR-019, FR-020, FR-023, FR-027, FR-028; a compromised renderer is assumed); opening a file with the system (FR-007); a dependency family and a build step (pinned, reviewed, `test:supplychain`); image bombs (FR-002); a 547 KB parse at first open, unmeasured in Electron; Windows path cases; forced colours in a contenteditable editor.

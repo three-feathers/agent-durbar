@@ -160,8 +160,8 @@ Numbers: T165..T170; FR-191..FR-194.
 
 ## 2026-11-01 delta: the chat in the world inside the denser chat (design sweep, FR-224..FR-227; PR #1001)
 
-- [ ] T171 On #1001's branch, after spec 005's chat PRs: measure, then 32 px portrait, header 61 px, lamp words on the task line. Test: `sim:` `shots-097-chat` at both sizes, both worlds; mutants: 64 px, words back on the meta line [FR-224, FR-225, FR-227]
-- [ ] T172 No literals in `realoffice-world.css` or #1001's chat rules; the art rules in `realoffice.css` under spec 070's ratchet. Test: `test:theme-tokens` (T022 of spec 070) [FR-226]
+- [x] T171 Built by #1001: 32 px portrait, lamp words on the task line. Test: `sim:` `shots-097-chat` at both sizes, both worlds. **Left, with spec 005's chat PRs (005 T117, T122):** the header at 61 px and `--chat-prose` [FR-224, FR-225, FR-227]
+- [x] T172 Built by #1001: no literals in `realoffice-world.css` or the chat rules; `test:realoffice-layout` holds them. The art rules in `realoffice.css` wait for spec 070's ratchet (T022) [FR-226]
 
 - [x] T175 [US1] Renderer: the render's focus keep covers a sign's + as well as its menu button. Test: `sim:` `shots-097-screens`, mutation-checked [FR-230]
 - [x] T176 [US1] Driver: the Tab step checks the window's focus before each Tab, as the hover step does. Test: `sim:` `shots-097-screens` with the focus taken by `win.blur()`, fails before, passes after [FR-230]
