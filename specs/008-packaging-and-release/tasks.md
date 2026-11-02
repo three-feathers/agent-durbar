@@ -148,3 +148,4 @@
 
 - [x] T116: `.github/workflows/macos-pr.yml` (real macOS build and test, `paths:` filter, not required), `test-ui-suite.ts` guards, README/AGENTS wording [FR-135]
 - [x] T117: `guardWindow` in `scripts/driver-helpers.js` (armed by `waits(ctx)`), unit-tested in `test-ui-suite.ts`; `check-browser-tabs` drops its own copy [FR-136] (#922)
+- [x] T118: `scripts/test-suites.txt` (one suite per line) read by `run-tests.js` instead of the `test:serial` line; `test:serial` runs it with `--serial`; the audit helper, `test:checknames`, `test-run-tests.ts` and the review checklist follow [FR-137]

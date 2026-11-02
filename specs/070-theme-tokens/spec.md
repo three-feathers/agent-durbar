@@ -88,6 +88,8 @@ A pack with a script in an SVG, a font that is not on the allow-list, a 2px font
 
 ## Changes
 
+- **2026-11-01** (owner pick, Vikram; #1014's T030): the app's text uses `-webkit-font-smoothing: auto`, not `antialiased`, which thinned strokes on macOS. Compared in the chat and on cards at 1x on a real screen and at 2x as rendered by Chromium: `auto` is a little heavier and darker, and easier to read in grey text. Only macOS honours this property. `read:` not seen on a real Retina panel.
+
 ### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
 
 The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
@@ -120,3 +122,7 @@ The `status:` of the specs-index block used to read (moved here unchanged; the b
 
 - **D3 delta.** In the `crew` scene kit only, a character's skin tone comes from its portrait and its cast entry (`CAST` in `crew.js`), not from the agent's hash: skin tones stay varied across the cast (spec 077 Q1.2). Every other kit and the plain fallback figure keep D3.
 - **FR-040 delta.** The ratchet counts code, not bitmaps: the portraits under `src/renderer/crew/` are fixed-colour pictures governed by spec 077 FR-050..FR-056 (`test:crew-assets`) instead. `crew.js` holds the cast's hand and sleeve colours and is outside the scanned files; `scenekits.js` gains no colour literal.
+
+## Changes 2026-10-31: doors removed (pointer, spec 017 T024)
+
+Spec 017 FR-029 (owner decision, no doors) removed the Office with cabins layout, the desk door button, meeting-room signs, room door plates, **Close all** / **Open all**, door-held schedules and the door refusal of remote control, and `door-art`, `--door-*` and the door words of the theme contract. Any requirement in this spec about those (door plates, plate totals or siren, door signs, collapse, Close all / Open all, the `door` field) no longer applies and is kept as a record; Hide folder, floors and the plain status word stay. See spec 017's table of what was lost and what remains.
