@@ -81,10 +81,10 @@ const svgRules = 'Each art value is an SVG fragment (no <svg> wrapper) using onl
  * and themes.css). A token in no group goes to the last one. Every token is still listed as `--name=value`.
  */
 export const TOKEN_GROUPS: Array<{ title: string; keys: Array<string | RegExp> }> = [
-  { title: 'Surfaces. --bg is the page; --surface panels, dialogs, menus and (UI "clean", "court-japanese") the top bar; --raised buttons, chips and the lobby tiles (lifted above --bg); --card the desk cards, --card-waiting and --card-error their states; --soft, --note, --surface-2 and the two tinted notes are quiet blocks. ALL carry --ink text at 4.5:1', keys: ['--bg', '--surface', '--surface-2', '--raised', '--card', '--card-waiting', '--card-error', '--soft', '--note', '--warn-bg', '--bad-bg'] },
+  { title: 'Surfaces. --bg is the page; --surface panels, dialogs, menus and (UI "clean") the top bar; --raised buttons, chips and the lobby tiles (lifted above --bg); --card the desk cards, --card-waiting and --card-error their states; --soft, --note, --surface-2 and the two tinted notes are quiet blocks. ALL carry --ink text at 4.5:1', keys: ['--bg', '--surface', '--surface-2', '--raised', '--card', '--card-waiting', '--card-error', '--soft', '--note', '--warn-bg', '--bad-bg'] },
   { title: 'Text. --ink is body text, --ink-2 secondary text, --muted hints and counts (4.5:1 on --surface), --room-path the folder path in each room header, which sits on the room tints below (4.5:1 on each tint, not only on --bg)', keys: ['--ink', '--ink-2', '--muted', '--room-path'] },
   { title: 'Room tints. Rooms cycle through four backgrounds (--tint-X) with a wall line (--wall-X, and --cwall-X when the office is crowded). Text sits on the tints: in a dark theme they must be dark, in a light one light', keys: [/^--(tint|wall|cwall)-/] },
-  { title: 'Brand. --brand-bg fills the lobby tile icons and the primary buttons in the UI styles "corporate", "retro", "court-*" (and the top bar of the Indian and European courts), so it must stand out from --raised and --bg (3:1 or more: a mid or dark saturated colour on a light theme, a bright one on a dark theme, never a pastel). --brand-mark is the text on it (4.5:1)', keys: ['--brand-bg', '--brand-mark'] },
+  { title: 'Brand. --brand-bg fills the lobby tile icons and the primary buttons in the UI style "retro", so it must stand out from --raised and --bg (3:1 or more: a mid or dark saturated colour on a light theme, a bright one on a dark theme, never a pastel). --brand-mark is the text on it (4.5:1)', keys: ['--brand-bg', '--brand-mark'] },
   { title: 'Button and accent inks. --sage-ink, --red-ink and --amber-ink fill the primary, danger and warn buttons under --surface text (4.5:1); --sage, --blue, --amber, --red, --green, --gray and --blue-ink are accents and chips', keys: ['--sage', '--sage-ink', '--blue', '--blue-ink', '--amber', '--amber-ink', '--red', '--red-ink', '--green', '--gray'] },
   { title: 'Lines and focus. Borders and dividers (--line soft, --line-2 stronger, --line-ctl the border of buttons and inputs), the keyboard focus ring, the selected-desk ring and the links between rooms', keys: ['--line', '--line-2', '--line-ctl', '--card-waiting-line', '--card-error-line', '--focus', '--focus-halo', '--sel-border', '--sel-ring', '--sel-ring-2', '--stat-sel-border', '--stat-sel-ring', '--proto-line', '--place-busy', '--link'] },
   { title: 'Status. The six states (working blue-ish, thinking violet-ish, waiting amber, error red, done green, idle grey): --c-X and --halo-X the dot and glow, --pb-X the pill background and --pc-X its text (4.5:1), --screen-X the monitor screen; --desk-new and --desk-needs the glow of a new desk and of a desk that needs you (3:1 on the card)', keys: [/^--(c|halo|pb|pc|screen)-/, '--desk-new', '--desk-needs', '--badge-idle', '--idle-stub', '--idle-stub-ink', '--wait-dot', '--drop', '--drop-bg', '--drop-ink'] },
@@ -123,7 +123,7 @@ export function buildThemePrompt(description: string, clean: Record<string, stri
     `The look the user wants: "${d}".`,
     'Reply with ONE JSON object and nothing else (no code fence, no explanation). Fields:',
     '- "name": a short theme name, at most 40 characters.',
-    `- "ui": one of ${UI_STYLES.map((u) => JSON.stringify(u)).join(', ')} (the shape of buttons and panels; "retro" suits pixel and arcade looks, the court styles suit palaces).`,
+    `- "ui": one of ${UI_STYLES.map((u) => JSON.stringify(u)).join(', ')} (the shape of buttons and panels; "retro" suits pixel and arcade looks).`,
     `- "scene": one of ${SCENE_KITS.map((u) => JSON.stringify(u)).join(', ')} (how people and furniture are drawn; your character, desk and monitor art is drawn over any of them, and "office" is the plainest base for it).`,
     '- "tokens": colours as hex like "#1a2b3c", for ALL of these keys, in groups with what they paint. The value after each key is the default light theme:',
     ...tokenGroupLines(clean),
@@ -140,7 +140,7 @@ export function buildThemePrompt(description: string, clean: Record<string, stri
     ...Object.entries(GEN_ART).map(([k, v]) => `  ${k}: ${v}`),
     svgRules,
     ART_STYLE,
-    'The UI style matters for the top bar: "corporate" and "retro" fill it with --ink and "court-indian"/"court-european" with --brand-bg, under FIXED light text, so those tokens must be dark there; "clean" and "court-japanese" use --surface and --ink. For a dark page, "clean" or "court-japanese" is the safe choice.',
+    'The UI style matters for the top bar: "retro" fills it with --ink under FIXED light text, so that token must be dark there; "clean" uses --surface and --ink. For a dark page, "clean" is the safe choice.',
     'Rules: light or dark are both fine, but be consistent: for a dark look set EVERY token, so nothing of the light default remains. Text must read well: --ink on --bg and --surface at least 4.5:1, --ink-2 on --surface 4.5:1, --muted on --surface 4.5:1, and each status pill text --pc-X on its background --pb-X at least 4.5:1. Keep the status meaning: working is blue-ish, thinking violet-ish, waiting amber, error red, done green, idle grey. Keep it calm: no neon on neon.',
   ].join('\n');
 }
@@ -307,10 +307,10 @@ export type GenResult =
   | { ok: false; error: string };
 
 /**
- * The top bar of some UI styles has fixed light text on a theme colour (themes.css): corporate and retro paint it with --ink,
- * the Indian and European courts with --brand-bg. [token behind the text, the fixed text colour].
+ * The top bar of some UI styles has fixed light text on a theme colour (themes.css): retro paints it with --ink.
+ * [token behind the text, the fixed text colour].
  */
-export const TOP_BAR: Record<string, [string, string]> = { corporate: ['--ink', '#ffffff'], retro: ['--ink', '#ffec27'], 'court-indian': ['--brand-bg', '#f6d58a'], 'court-european': ['--brand-bg', '#e8c873'] };
+export const TOP_BAR: Record<string, [string, string]> = { retro: ['--ink', '#ffec27'] };
 export const TOP_BAR_ISSUE = 'the top bar';
 
 /** The problems a fix pass should solve (contrast, the top bar of the UI style, a dark page with light leftovers). Empty = good. */
@@ -336,7 +336,7 @@ export function themeIssues(tokens: Record<string, string>, clean: Record<string
   }
   const tb = TOP_BAR[ui];
   const tbBg = tb ? c(tb[0]) : undefined;
-  if (tb && tbBg && contrast(tb[1], tbBg) < 4.5) out.push(`${TOP_BAR_ISSUE}: with ui "${ui}" it is filled with ${tb[0]} (${tbBg}) under fixed light text ${tb[1]} (contrast ${contrast(tb[1], tbBg).toFixed(1)}:1, needs 4.5:1); make ${tb[0]} darker, or use ui "clean" or "court-japanese", whose top bar follows --surface and --ink`);
+  if (tb && tbBg && contrast(tb[1], tbBg) < 4.5) out.push(`${TOP_BAR_ISSUE}: with ui "${ui}" it is filled with ${tb[0]} (${tbBg}) under fixed light text ${tb[1]} (contrast ${contrast(tb[1], tbBg).toFixed(1)}:1, needs 4.5:1); make ${tb[0]} darker, or use ui "clean", whose top bar follows --surface and --ink`);
   const bg = c('--bg');
   if (bg && luminance(bg) < 0.2) {
     const missing = Object.keys(clean).filter((k) => !(k in tokens) && HEX.test(clean[k]) && luminance(clean[k]) > 0.6);

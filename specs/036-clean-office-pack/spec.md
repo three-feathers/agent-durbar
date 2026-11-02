@@ -71,3 +71,7 @@ note: T008 stage D check ran as a one-off harness, not a script
 
 **Corrected wording.**
 - **FR-005** `[IMPLEMENTED]` In simulator runs the theme travels as the page address parameter `theme=<id>` (main adds `DURBAR_THEME` to it next to `sim=`); the simulator bridge returns it as the saved theme, so the normal start-up path applies it. `check-office-overlap.js` adds `theme=$OFFICE_THEME` to every combination and **fails** when the theme on screen (`THEME.current().id` and `data-ui`) is not the one asked for, so a check can never again pass on the wrong theme. A user theme for the check travels as `usertheme=<manifest JSON>` (simulator only) and goes through the same validation as an imported pack (spec 040 T005).
+
+### 2026-10-31: fewer built-in packs (spec 035 FR-017)
+
+- The built-in packs are now Clean Office and Retro Pixel; the motion preset `court` is gone (a user theme that names it gets `default`, the rule for an unknown preset). Everything else here stands. Specs 037 and 039 are marked `deprecated` and `superseded`.

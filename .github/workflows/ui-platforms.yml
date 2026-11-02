@@ -55,7 +55,8 @@ jobs:
       # fast checks: drivers in parallel (measured 2026-10-20 on Linux: 18/18 in 222 s at 3, against about 560 s one by one)
       # macOS runners are slow: one driver at a time and one retry, reported as FLAKY (until the drivers wait instead of sleeping)
       UI_SUITE_JOBS: ${{ matrix.os == 'macos-latest' && '1' || '3' }}
-      UI_SUITE_RETRY: ${{ matrix.os == 'macos-latest' && '1' || '0' }}
+      # Windows: 3 drivers on one shared desktop lose real input now and then (spec 008 FR-138): one retry, alone, reported as FLAKY; a second failure stays a failure
+      UI_SUITE_RETRY: ${{ matrix.os != 'ubuntu-latest' && '1' || '0' }}
       # FR-111 (owner decision 2026-10-22): theme geometry and shots-052-addleft check Clean Office and Retro on pull requests,
       # every built-in theme on main, nightly and by hand
       CHECK_ALL_THEMES: ${{ github.event_name == 'pull_request' && '0' || '1' }}
