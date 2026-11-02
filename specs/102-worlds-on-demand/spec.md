@@ -867,6 +867,30 @@ Security: FR-083 scopes revocation by source and never touches a person's own wo
 
 D7, FR-085, FR-170, FR-181, US2 scenario 1, FR-205, FR-241, plan and T195 follow FR-240. New: `sourceCommit` and a CI job, so a catalogue PR's hash is still checked against reviewed files (FR-085's old guarantee). Downloadable sets follow FR-240 (an agent decision he can reverse), and T195 covers them.
 
+### 2026-11-02: Retro arcade, status and motion (RA4, T213..T216), behind its closed flag
+
+Written with the build. Night is RA5.
+
+- **FR-260, the cue:** one element per cabinet, always there, holds the bubble: dots, `?`, `!`, tick or `z z`; hidden when a state has none. The thinking dots are one opacity step a second on that element, not a strip. Limit shows `?`, as today's card asks for attention.
+- **FR-260, idle:** the cabinet dims by its own `opacity`, not a shade element: a shade would also darken the floor showing through the picture's transparent pixels.
+- **FR-261, the flash:** on the marquee's own `::after`, so it adds no node and moves with the marquee during a slide (a separate element was left behind in one). It is an outline, so the text's contrast never changes. Only marquees flash; glows are steady.
+- **FR-261, no node:** a pose change swaps the frame here, with no second picture to fade. A sign's count chip for a status its folder did not have is the sign's own, in every world, and is not counted.
+- **FR-261, phases:** a person's bob and a flash start from the timeline's zero, so someone who starts working later keeps the 4 phases. A helper at the door stands still here: the room's sway rotates, off the grid.
+- **FR-262, measured (T215):** masks, not the fallback. At an exaggerated rate (6 people every 600 ms), real GPU: equal to a stepped fade; software compositor: about 3 points of a core more; 60 fps in all. A real move is rare. Reduced motion: none. All the masks are static, only `opacity` animates; copies come from a pool of at most 12 and are removed at the end. One redraw can move several people at once, so several dissolves can run together.
+- **T216, recorded, never asserted (097 FR-187):** % of a core, total (renderer, GPU), macOS on a real GPU, 15 agents, 1440x900, medians of 3 rounds in one run, sampled from outside about 5 s after load, about 60 fps in every case:
+
+  | Mix | Photo office | This world |
+  |---|---|---|
+  | mixed | 41.1 (20.6, 20.4) | 5.5 (2.2, 3.2) |
+  | all working | 46.4 (22.4, 24.0) | 8.1 (3.4, 4.6) |
+  | all flashing | 40.2 (18.6, 21.7) | 4.2 (2.1, 2.0) |
+  | all idle | 40.9 (19.3, 21.5) | 0.6 (0.3, 0.2) |
+
+  Settled 35 s after load, 2 rounds: Photo office mixed 23.5 and 27.1, this world mixed 3.5 and 4.0. RA3's hall, with the room's smooth motion, measured 54.5 in the first table's run. The ≤ 5 % real GPU row holds for all idle and all flashing, and settled mixed, and not for mixed or all working in the first seconds.
+  **Chase (Q2):** 15 stepped strips cost 7.7 against 5.5; none is built, as held.
+- `[KNOWN GAP]` **T216's routes:** `check-perf --record` is not on `main`, so this is an outside sampler in a scratch script, not repeatable from the repo. Software compositor, Windows and Linux are not measured. **Night** is the night art put in by a style override (5.2), since RA5 wires it. No recording of the dissolve has been judged by eye (T215's `read:`).
+- `[KNOWN GAP]` **Asleep:** the `rest` frame is drawn large behind a dark cabinet and the console (FR-259) is not there; it reads, and it looks odd. For RA5 and the owner's look.
+
 ### 2026-11-02: Retro arcade, the hall drawn (RA3, T209..T212), behind its closed flag
 
 Written with the build. Motion, status light and night are RA4 and RA5.

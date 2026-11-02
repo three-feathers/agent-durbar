@@ -188,10 +188,10 @@ The new fields go into `worldpack.ts` (T171's list) when #955 lands; until then 
 
 ### RA4: status and motion (one PR)
 
-- [ ] T213 Marquee, glow, bubble and flourish per FR-260's table, from `lightFor`. Test: `test:realoffice-layout` for the pure table over every state and flag, with `lampWords` unchanged; `shots-102-arcade`: reduced motion, Serious mode and forced colours: `document.getAnimations()` empty, states still differ, words remain; error's glow inside its own slot [FR-260].
-- [ ] T214 Shared beat and 4 people phases, `steps()`, `opacity` and `transform` only. Test: `test:realoffice-assets` on `@keyframes`; `shots-102-arcade`: all flashes report one phase from `getAnimations()`; flashes under 3 a second; hidden window: 0 frames; a mutant with its own delay per marquee fails [FR-260, FR-261, SC-024].
-- [ ] T215 **Measure first.** Pixel dissolve by static masks; a plain stepped fade beside it, frames and idle CPU, then the one that holds. Test: `shots-102-arcade`: only `opacity` and `transform` animate; no node added by a status update; no ghost, one body at a time; none under reduced motion; `read:` a recording, as #979 was judged [FR-262].
-- [ ] T216 **Measure first.** `check-perf --record` for `retro`, 4 mixes, day and night, against Photo office on the same machine, plus chase on and off for Q2. Test: `sim:` the record (never an assert, 097 FR-187); `real:` by T231 [FR-261, SC-024].
+- [x] T213 Marquee, glow, bubble and flourish per FR-260's table, from `lightFor`. Test: `test:realoffice-layout` for the pure table over every state and flag, with `lampWords` unchanged; `shots-102-arcade`: reduced motion, Serious mode and forced colours: `document.getAnimations()` empty, states still differ, words remain; error's glow inside its own slot [FR-260].
+- [x] T214 Shared beat and 4 people phases, `steps()`, `opacity` and `transform` only. Test: `test:realoffice-assets` on `@keyframes`; `shots-102-arcade`: all flashes report one phase from `getAnimations()`; flashes under 3 a second; hidden window: 0 frames; a mutant with its own delay per marquee fails [FR-260, FR-261, SC-024].
+- [x] T215 (the recording's `read:` is left; see the spec's RA4 note) **Measure first.** Pixel dissolve by static masks; a plain stepped fade beside it, frames and idle CPU, then the one that holds. Test: `shots-102-arcade`: only `opacity` and `transform` animate; no node added by a status update; no ghost, one body at a time; none under reduced motion; `read:` a recording, as #979 was judged [FR-262].
+- [x] T216 (a scratch sampler, macOS only; `real:` by T231; see the spec's RA4 note) **Measure first.** `check-perf --record` for `retro`, 4 mixes, day and night, against Photo office on the same machine, plus chase on and off for Q2. Test: `sim:` the record (never an assert, 097 FR-187); `real:` by T231 [FR-261, SC-024].
 
 ### RA5: Light (one PR)
 
