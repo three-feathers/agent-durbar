@@ -24,6 +24,7 @@ type AdapterInfo = import('../shared/api').AdapterInfo;
 type McpServerInput = import('../shared/mcp').McpServerInput;
 type McpSourceTag = import('../shared/api').McpSourceTag;
 type FloorsState = import('../shared/api').FloorsState;
+type OrderDoc = import('../shared/roomorder').OrderDoc;
 type FloorsResult = import('../shared/api').FloorsResult;
 type ScheduleInfo = import('../shared/api').ScheduleInfo;
 type SchedulesInfo = import('../shared/api').SchedulesInfo;
@@ -736,9 +737,9 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     /* mcpcall:begin */
     const simCallClass = (text: unknown, mcpAuth?: boolean): 'auth' | 'policy' | undefined => {
       const t = typeof text === 'string' ? text.slice(0, 4000) : '';
-      if (/AADSTS53\d{4}|conditional access|device (?:is )?(?:required )?(?:to be )?managed|managed device|compliant device|device (?:is )?not (?:compliant|enrolled)/i.test(t)) return 'policy';
-      if (mcpAuth === true || /\b401\s+unauthori[sz]ed|\b(?:http(?:\/\d(?:\.\d)?)?|status(?: code)?|code|error|response)[\s:=(-]{0,4}401\b|unauthori[sz]ed|AADSTS(?:50058|50072|50074|50076|50078|50079|50132|50133|50173|70008|70043|70044|700082|65001)\b|invalid_grant|token (?:is |has )?(?:expired|invalid)|sign[- ]?in (?:is )?required|MCP OAuth challenge required/i.test(t)) return 'auth';
-      return undefined;
+      if (/\bAADSTS53(?:0\d\d|\d{4})\b|\binsufficient_claims\b|conditional access|device (?:is )?(?:required )?(?:to be )?managed|managed device|compliant device|device (?:is )?not (?:compliant|enrolled)/i.test(t)) return 'policy';
+      if (mcpAuth === true || /\b401\s+unauthori[sz]ed|\b(?:http(?:\/\d(?:\.\d)?)?|status(?: code)?|code|error|response)[\s:=(-]{0,4}401\b|unauthori[sz]ed|\bAADSTS(?:50058|50072|50074|50076|50078|50079|50132|50133|50173|70008|70043|70044|700082|65001)\b|invalid_grant|token (?:is |has )?(?:expired|invalid)|sign[- ]?in (?:is )?required|MCP OAuth challenge required/i.test(t)) return 'auth';
+      return /\binteraction_required\b/i.test(t) ? 'policy' : undefined;
     };
     /* mcpcall:end */
     const emit = (e: AgentEvent): void => {
@@ -752,6 +753,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         else if (q && e.phase === 'failed') { const c = simCallClass(e.output, e.mcpAuth === true); if (c) (q.mcpCalls ??= new Map()).set(e.mcpServer, c); else q.mcpCalls?.delete(e.mcpServer); }
       }
       if (e.type === 'status' && e.status === 'stopped') { const q = sims.find((x) => x.info.id === e.sessionId); if (q) q.mcpCalls = undefined; }
+      if (e.type === 'toolCall' && e.phase === 'failed' && e.mcpServer && simCallClass(e.output) === 'policy') e = { ...e, mcpCall: 'policy' }; // FR-193: like maskMcpEvent, the word only
       listeners.forEach((l) => l(e));
       simSchedHook?.(e);
       if (e.type === 'status' && e.status === 'idle') {
@@ -1406,6 +1408,21 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       }
     }
 
+    /* spec 097 FR-093: in Real office the monitors show what agents write, and a real agent writes all the time: one live agent adds a line of
+       thinking or reads a file, in turn. Only there, so flat's simulated run stays the same; no seeded random number is used. */
+    let screenTurn = 0;
+    function screenTick(): void {
+      let real = false;
+      try { real = new URLSearchParams(location.search).get('officeview') === 'real' || localStorage.getItem('durbar.officeview') === 'real'; } catch { /* no storage: flat */ }
+      if (!real) return;
+      const live = sims.filter((s) => (s.state === 'working' || s.state === 'thinking') && !s.limitReq && !s.retryHold && !s.compactHold);
+      if (!live.length) return;
+      const s = live[screenTurn++ % live.length];
+      if (screenTurn % 3) { think(s, 1); return; }
+      const id = sid(s) + '-scr' + screenTurn, file = s.files[screenTurn % s.files.length];
+      emit({ type: 'toolCall', sessionId: sid(s), timestamp: now(), callId: id, tool: 'read_file', phase: 'start', args: { path: file } });
+      emit({ type: 'toolCall', sessionId: sid(s), timestamp: now(), callId: id, tool: 'read_file', phase: 'complete', output: '120 lines' });
+    }
     // Slow, calm background activity: one agent advances every few seconds.
     let timer: number | undefined;
     function tick(): void {
@@ -2510,6 +2527,14 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       if (nm.length > 40 || /[\u0000-\u001f\u007f-\u009f\u00ad\u034f\u115f\u180e\u200b\u2028\u2029\u202a-\u202e\u2060-\u2064\u2066-\u2069\u3164\ufeff\ufff9-\ufffb]/.test(nm)) return 'Use 1 to 40 characters, without control or hidden characters.';
       return floorsList.some((f) => f.id !== except && f.name.toLowerCase() === nm.toLowerCase()) ? 'A floor with that name exists.' : '';
     };
+    // Manual order of rooms, desks and places (issue #677): kept for the page's session (a reload keeps it), cleaned by the same rules the app uses.
+    const clean = (d: unknown): OrderDoc => ((window as unknown as { DurbarReorder?: { sanitize(x: unknown): OrderDoc } }).DurbarReorder?.sanitize(d) ?? { rooms: [], desks: {}, places: [] });
+    let simOrder: OrderDoc = clean(null);
+    try {
+      simOrder = clean(JSON.parse(sessionStorage.getItem('durbar.simorder') || 'null'));
+    } catch {
+      /* no storage: the order lasts until the next reload */
+    }
     let floorSeq = 0;
     const floorApi: Partial<DurbarApi> = {
       floorsState: async () => floorState(),
@@ -2560,6 +2585,16 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
         if (!x || !floorsList.some((f) => f.id === floorId)) return fres('Unknown folder or floor.');
         folderFloor.set(x.info.cwd, floorId);
         return fres();
+      },
+      getOrder: async (): Promise<OrderDoc> => clean(simOrder),
+      setOrder: async (doc: OrderDoc): Promise<OrderDoc> => {
+        simOrder = clean(doc);
+        try {
+          sessionStorage.setItem('durbar.simorder', JSON.stringify(simOrder));
+        } catch {
+          /* ignore */
+        }
+        return clean(simOrder);
       },
     };
 
@@ -2884,6 +2919,10 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
             // simspeed=N (perf checks, spec 052): background activity N times faster
             const speed = Math.max(1, Math.min(50, Number(typeof location !== 'undefined' ? new URLSearchParams(location.search).get('simspeed') : null) || 1));
             if (!opts.freeze) timer = window.setInterval(tick, Math.round(2600 / speed));
+            if (!opts.freeze) {
+              const screenTimer = window.setInterval(screenTick, Math.round(1300 / speed));
+              if (typeof window.addEventListener === 'function') window.addEventListener('pagehide', () => { window.clearInterval(screenTimer); if (timer) window.clearInterval(timer); }, { once: true });
+            }
           }, 0);
         }
         /* simresume=1 (spec 006 FR-021): Priya's folder came back after a restart as its last session, not started yet */

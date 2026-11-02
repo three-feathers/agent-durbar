@@ -429,3 +429,7 @@ The `status:` of the specs-index block used to read (moved here unchanged; the b
   - **FR-056** The dialog shows **how** the request connected: the bridge's parent process name, when the OS gives it cheaply, labelled as reported by the bridge (see the consistency pass, item 7). `[KNOWN GAP]` (planned task): refusing a peer whose process is a descendant of one of Durbar's own runtime processes (Linux `SO_PEERCRED`, macOS `LOCAL_PEERPID`, Windows named-pipe client PID). That is stronger than the env marker of FR-034, which an agent can unset. It is left out of v1 and needs its own task.
   - **Related:** #130 (Global Assistant Chat): Durbar's read tools plus the user's own MCP client already give phase 1 of #130 without a built-in assistant; mobile access stays out (loopback only, FR-002). #131 (profiles): the server, socket and secret would be per profile.
 - **2026-10-18**: first draft (analyst, for the coordinator). Not reviewed by the owner.
+
+### 2026-10-31: no `door` in list folders (spec 017 FR-034; planned, not built)
+
+- **FR-066** `durbar_list_folders` drops its `door` field with spec 017's removal PR (spec 017 T024). A change for MCP clients, said in the changelog.

@@ -1,6 +1,7 @@
 /** Masking of MCP server status text before it leaves main (spec 019 FR-021). Pure: no Electron, so it is unit tested. */
 import type { AgentEvent, McpServerStatus } from '../adapters/types';
 import type { McpServerSpec } from '../shared/mcp';
+import { classifyMcpCall } from '../shared/mcpcall';
 import type { EditInfo } from '../shared/edits';
 import { cut, maskHomePaths, maskSecretUrl, redact, secretFlag } from '../shared/redact';
 
@@ -77,6 +78,7 @@ export function maskMcpEvent<E extends AgentEvent>(e: E, values: readonly string
   if (e.type !== 'toolCall') return e;
   let out = e;
   if (e.phase !== 'start' && e.mcpServer && e.output !== undefined) out = { ...out, output: maskMcpText(e.output, values, MCP_CARD_MAX_CHARS) };
+  if (e.phase === 'failed' && e.mcpServer && out.type === 'toolCall' && classifyMcpCall(out.output) === 'policy') out = { ...out, mcpCall: 'policy' }; // FR-193: from the masked text; the word only
   if (e.edit && values.length) out = { ...out, edit: maskEditInfo(e.edit, values) };
   return out;
 }
