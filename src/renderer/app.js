@@ -2100,7 +2100,7 @@ function refreshChips(box){
   const chips=[...box.children].filter(c=>c.classList.contains('chip'));
   let more=box.querySelector('.chips-more');
   const expanded=box.dataset.exp==='1', hide=Math.max(0,chips.length-CHIPS_SHOWN);
-  chips.forEach((c,i)=>{c.hidden=!expanded&&i<hide;const d=c._ed&&c._ed.diffEl;if(d)d.hidden=c.hidden;}); /* spec 005: an edit's diff hides with its row */
+  chips.forEach((c,i)=>{c.hidden=!expanded&&i<hide;const d=c._ed&&c._ed.diffEl;if(d)d.hidden=c.hidden;const w=c.nextElementSibling;if(w&&w.classList.contains('mcpwhy'))w.hidden=c.hidden;}); /* spec 005: an edit's diff hides with its row; spec 058 FR-194: and the policy line under a call */
   if(hide>0){
     if(!more){more=document.createElement('button');more.type='button';more.className='chips-more';box.prepend(more);}
     more.textContent=expanded?'Show fewer':'+'+hide+' earlier';more.setAttribute('aria-expanded',String(expanded));
@@ -5042,9 +5042,22 @@ function tTool(T,e){
       if(done&&T.actId===e.callId)tActNext(T);}
     if(c.edit)edQueue(c);
     else if(e.phase!=='update'||e.output!=null||e.args!==undefined)chipRepaint(c);
+    if(e.phase==='failed'&&e.mcpCall==='policy'&&e.mcpServer&&!c.mcpNote)mcpPolicyNote(c); /* spec 058 FR-194 (issue 841): main's word, never the text */
     if(c.edit&&T.actId===e.callId)tAct(T,e.callId,c);}}
   tScroll(T);
 }
+/* spec 058 FR-194 (issue 841): under a failed MCP call that main marked `policy` (an Entra Conditional Access refusal, from the masked text),
+   one fixed line and a Sign in again... button. The words are written here: nothing of the tool's output reaches them, they are set as
+   text (no markup), and only a person's press opens the existing MCP servers dialog, where the row's own Sign in again... is. */
+const MCP_POLICY_LINE='Your organization\u2019s sign-in rules refused this tool. This usually means a managed-device check. Sign in again using a browser your organization allows.';
+function mcpPolicyNote(c){
+  const n=document.createElement('div');n.className='mcpwhy';n.setAttribute('role','note');
+  const t=document.createElement('span');t.textContent=MCP_POLICY_LINE;
+  const b=document.createElement('button');b.type='button';b.className='btn sm mcpwhy-btn';b.textContent='Sign in again\u2026';
+  b.setAttribute('aria-label','Sign in again: open the MCP servers');
+  n.append(t,b);c.el.after(n);c.mcpNote=n;
+}
+document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest('.mcpwhy-btn');if(!b)return;e.stopPropagation();const a=byId(ui.selected),r=a&&liveRoot(a);if(r&&window.DurbarScreens)Promise.resolve(window.DurbarScreens.agentMcp(r,mcpOpts(r))).finally(()=>refreshMcpCount(r));});
 function chipRepaint(c){
   const el=makeChip({tool:c.tool,label:c.label,full:c.cmd,ms:c.ms,res:c.res,output:c.output,state:c.state});
   el.style.animation='none'; /* a repaint is not a new call: no pop (FR-021, no jank while the arguments stream) */
