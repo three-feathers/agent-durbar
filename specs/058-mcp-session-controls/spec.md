@@ -955,6 +955,12 @@ server.
 
   It requires the runtime in each packed app on its own, and names the app in each problem (review on #625).
 
+  `real:` re-checked 2026-10-31 on a Mac (Apple Silicon, macOS 26, this branch, no account, no notarizing, no upload, app never launched): `electron-builder --mac --dir --arm64` (26.18.0, Electron 44.9.1, runtime package 1.0.24) with the ad-hoc identity;
+  - `check-runtime-signature` passed for the 4 runtime files;
+  - `codesign -dv` on `copilot-runtime` said `Identifier=copilot`, `TeamIdentifier=VEKTX9H2N7`, `Authority=Developer ID Application: GitHub (VEKTX9H2N7)`; the three libraries also had team VEKTX9H2N7;
+  - the app itself said `Signature=adhoc`, and `codesign --verify --deep --strict` passed;
+  - `read:` electron-builder 26.18.0 `MacTargetHelper.buildSignOptions`: each `signIgnore` entry is a `RegExp` tested against the file path inside the app, as the spec assumed.
+  Mutants (`test:runtimesign` failed on its own assertion each time): ad-hoc test off, team test off, `signIgnore` emptied. `test:copilotshared` with the failed-start reset removed failed at the retry assertion.
   `[KNOWN GAP]` Gatekeeper/`spctl` on a quarantined download.
 - **FR-161** **One Copilot runtime per app run.** Every session, sign-in check and one-shot uses the adapter's one client; a session end
   never stops it; only app exit (`dispose`) and a sign-in change (spec 012 FR-158) start or stop it. A start that failed is not cached:
@@ -976,6 +982,7 @@ server.
      reopening. Plus at most 1 for `agent-durbar Safe Storage` only if a server with saved secret values starts (unchanged).
   4. A Copilot session still opens and answers (the GitHub-signed runtime starts from inside the ad-hoc app; Gatekeeper accepts it).
   Report the counts before and after on #623. Until then the README says "not counted on a real Mac".
+  **Prompts, before vs after (summary of the `real:` results below):** alpha.13-style ad-hoc runtime: many per session (#525, #623); with FR-160: launch 1 about 25, launch 2 about 26, launch 3 **0** (two rounds of Always Allow); a fresh sign-in: 0. `[KNOWN GAP]` the same count with a second session in another folder, and with the `copilot` CLI in use (T134, T136, T138).
   **Results, `real:` (owner, macOS, test build `v0.1.0-alpha.14-mcptest.1` with this PR, Copilot, 10 MCP servers, 2026-10-23):**
   - CI (run 39954528774): the mac release job logged `check-runtime-signature: the Copilot runtime keeps GitHub's signature (team VEKTX9H2N7)` for arm64 and x64, so FR-160 held in a real package build.
   - First open: about **25** keychain prompts. The owner pressed **Always Allow**. After quitting and reopening, **the same ~26 prompts came back**, alternating between two kinds of dialog: one about "confidential information" and one about an "access token". That is consistent with two items per server (about 13 items).

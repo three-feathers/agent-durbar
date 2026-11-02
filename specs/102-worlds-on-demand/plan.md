@@ -10,7 +10,7 @@ A world pack becomes a validated, code-free data file that can arrive from outsi
 
 - **Language**: TypeScript in `src/main`, `src/shared`; plain JS in the renderer; plain Node for scripts.
 - **Dependencies**: none new. Node `crypto` (SHA-256, Ed25519), `zlib` (`inflateRawSync` with `maxOutputLength`); Electron `net.request` through `netget.ts`.
-- **Storage**: `userData/worlds/<key>/`; `worlds/catalogue.json` and `worlds/<id>/` in the repo; `durbar.world` in `localStorage` (097 FR-114).
+- **Storage**: `userData/worlds/<key>/`; `worlds/catalogue.json` and shipped worlds in this repo, downloadable worlds in the worlds repository (FR-240); `durbar.world` in `localStorage` (097 FR-114).
 - **Testing**: Node tests with fixtures and an injected request layer; simulator drivers through `ui-suite.js`; world matrix (098).
 - **Performance**: 097 FR-178's rows (op rows asserted, times recorded). Hash re-check of a few MB at load is async.
 - **Constraints**: no network in `npm test`; no AI credits; 10 MB a pack; three OSes (a closed list of names means Windows rules are tested on every OS).
@@ -58,7 +58,7 @@ Facts below were read in the repo or checked on 2026-10-31; the web sources are 
    worldprompts.ts       prompts per part (exclusion clause), wrapper for a description
    worldsource.ts        hop rules, Ed25519 verify inputs, catalogue parser, worldsPolicyFrom
  repo
-   worlds/catalogue.json  copied into the app; worlds/<id>/ {world.json, parts, card.json, ASSETS.md} not copied
+   worlds/catalogue.json  copied into the app; downloadable worlds/<id>/ {world.json, parts, card.json, ASSETS.md} in the worlds repository
    scripts/world-pack.js  reproducible zip
 ```
 
@@ -72,9 +72,9 @@ Facts below were read in the repo or checked on 2026-10-31; the web sources are 
 
 **A source's label comes only from main.** Main stores origin and source when it stores a world, and sends the words the UI shows. Nothing in a pack or catalogue reaches that field, so a pack cannot claim to be ours by construction, not by a filter.
 
-**Registry.** `docs/experience/world-moments.json` gets one row per downloadable world (`pack: worlds/<id>`, `crews: []`, `shippable: false`), and every moment gets a cell (098 FR-011). Own worlds never enter the registry; for them `momentCoverage` is the check.
+**Registry.** `docs/experience/world-moments.json` gets one row per downloadable world (`pack: worlds/<id>` in the worlds repository, `crews: []`, `shippable: false`), and every moment gets a cell (098 FR-011). Own worlds never enter the registry; for them `momentCoverage` is the check.
 
-**World matrix.** The driver mounts a pack from `worlds/<id>` by a dev hook in the simulator (same `world:part` shape), with no network.
+**World matrix.** The driver mounts a pack from `worlds/<id>`, at `sourceCommit` for a downloadable world (FR-085), by a dev hook in the simulator (same `world:part` shape), with no network.
 
 ## Code paths reused (spec 021 FR-031)
 

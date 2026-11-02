@@ -44,7 +44,7 @@ Depends on #921 and T010..T016.
 
 ## Phase 3: Download from the project (PR P3) - US1, US5 first slice, US6 part
 
-- [ ] T035 Catalogue format and seed: a `coming` row for each downloadable world (`worlds/catalogue.json`, `scripts/copy-assets.js`, `src/shared/worldsource.ts`). Test: `test:worldsource`; a file-list test: the app has the catalogue and no `worlds/` art [FR-002, FR-080, FR-085, SC-007].
+- [ ] T035 Catalogue format and seed: a `coming` row for each downloadable world (`worlds/catalogue.json`, `scripts/copy-assets.js`, `src/shared/worldsource.ts`). Test: `test:worldsource`; a file-list test: the app has the catalogue and no downloadable art [FR-002, FR-080, FR-085, FR-240, SC-007].
 - [ ] T036 Reproducible packer and catalogue test (`scripts/world-pack.js`, `scripts/test-world-catalogue.js`). Lands after #936, which brings T156..T159. The test reads their ticks (split on `/\r?\n/`, all four must be found, a missing task or file counts as not met, a mutant through `npm run test:world-catalogue` must fail) and refuses `available` without them, without a shippable registry row, and without provenance. Test: `test:world-catalogue` with fixtures for each failure [FR-035, FR-085, FR-170].
 - [ ] T037 Hop rules, hash first, length cap, `makeDownloadGet` error words (`src/main/worlds/download.ts`, `netget.ts`). Test: `test:worldsource`, injected layer: off-list redirect not asked for, more than 3 hops, `http:`, longer and shorter than declared, one byte different, HTML answer, a deflated entry, a part over its cap, a pack over 10 MB; temp gone each time [FR-073, FR-074, FR-081, SC-003].
 - [ ] T038 Notice token in main: one use, 5 minutes, names the URL's real host. Test: `test:worldipc`: each of `world:download`, `world:sourceAdd`, `world:sourceCheck` and a catalogue fetch, without a token, or with a stale, reused or other action's one, makes no request; a test clock proves the monotonic timer is the one used [FR-070, FR-072, SC-001].
@@ -117,6 +117,15 @@ Needs spec 096's adapter capability and probes.
 - [ ] T111 Retro pixel people, new, with provenance and likeness fields. Test: `test:world-packs`, asset test; `read:` the owner's look [FR-200, FR-209].
 - [ ] T122 Retro pixel people as the `pixel` Characters value in Flat, with a dated delta in spec 077 (its FR number taken at build): the Settings pick, heads by FR-203, in the same release as spec 035 T089 and not after it. Needs T111. Test: `test:characters`, `test:crew`, `test:crew-assets`, `check-characters`; a mutant that drops the value fails [FR-214]
 - [ ] T112 My characters: level per character, 096's Real office frames. Test: `test:world-packs` on 096's fixture; `test:charstore` [FR-206].
+
+## Worlds repository (delta 2026-11-01)
+
+- [ ] T190 No world pack merges in the worlds repository before this is done (the pin must not point at a squashed or deleted branch, or the gate cannot check anything). Repin `APP_SHA` in `three-feathers/agent-durbar-worlds` `.github/workflows/validate.yml` from the head of #955 to a commit on this repository's `main`, once #955 is merged. Test: `real:` that repository's `Validate worlds` check green on the new sha [FR-240].
+- [ ] T191 Catalogue entries carry `bytes` and `sha256` for downloadable packs; a pack without a hash is not offered or loaded. Test: `test:worldsource`, a mutant that offers a hashless pack fails [FR-241].
+- [ ] T192 Download rejects what is not a stored zip of `world.json` and the closed `.webp` list at the expected size. Test: `test:worldsource` hostile bodies (HTML, executable, other archive, wrong length) store nothing [FR-242].
+- [ ] T193 Point FR-073, FR-085 and FR-086 and `docs/worlds-source.md` at the worlds repository; the first `worlds-*` release is made there. Test: `real:` T043 reads from that release, 0 AI credits [FR-243].
+- [ ] T194 `--repo owner/name` for `scripts/gh-trusted.sh`, `scripts/pr-gate.sh`, `scripts/claim.sh` with the trusted list read from this repository; `pr-gate.sh`'s `src/` rule skipped for a repository without `src/`. Test: `test:trustedcontent`, `test:claim`, `test:prgatenotes` with a second repository name [FR-244].
+- [ ] T195 `sourceCommit` in the catalogue, and a CI job on a catalogue change: fetch that commit of the worlds repository, rebuild each world and set, compare `sha256` and `bytes`, compare cards, run the world matrix. No secret; 0 AI credits; not in `npm test`. Test: `read:` the job on a planted wrong hash fails, `real:` once on the first world [FR-085, FR-016].
 
 ## Final
 

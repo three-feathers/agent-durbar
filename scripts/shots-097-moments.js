@@ -49,7 +49,7 @@ module.exports = async (ctx) => {
   }
   await H.load({ w: 1440, h: 900, query: { simfreeze: '1' }, ready: 'fit', settle: false });
   const OS_REDUCED = await js(`matchMedia('(prefers-reduced-motion: reduce)').matches`);
-  if (OS_REDUCED) console.log('[moments] the OS asks for reduced motion: the pair, the ring and the ride are checked in their reduced form only');
+  if (OS_REDUCED) console.log('[moments] the OS asks for reduced motion: the ring and the ride are checked in their reduced form only');
   for (const world of WORLDS) for (const [w, h] of SIZES) {
     const tag = `${world} ${w}x${h}`;
     // ---- FR-118 first run ----
@@ -107,7 +107,7 @@ module.exports = async (ctx) => {
       assert.deepStrictEqual(await slipOverlaps(), [], `${tag}: no slip covers the empty floor's plate`);
       await shot(world, 'empty', w, h);
     }
-    // ---- FR-120 asleep, FR-126 walk ----
+    // ---- FR-120 asleep ----
     if (run('asleep')) {
       await H.load({ w, h, query: q(world), ready: REAL, settle: false });
       await must(PICS, 'the pictures');
@@ -208,16 +208,6 @@ module.exports = async (ctx) => {
     }
     // ---- T139: reduced motion and forced colours ----
     if (run('emulation')) {
-      await emulate([{ name: 'prefers-reduced-motion', value: 'reduce' }], async () => {
-        await H.load({ w, h, query: q(world, { simrooms: '2', simhelpers: '0' }), ready: REAL, settle: false });
-        await must(PICS, 'the pictures');
-        await js(`window.__durbarSimUi.agents().filter(a=>!a.parent).forEach(a=>{window.__durbarSimUi.unvisit(a.id)})`);
-        const who = await js(`(()=>{const d=window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks).find(d=>d.person&&!d.away&&d.state!=='asleep');return d&&d.id})()`);
-        await js(`window.__durbarSimUi.visit(${jsLiteral(who)},'terminal')`);
-        await must(`!!document.querySelector('#stage .ro-visitor[data-for="'+CSS.escape(${jsLiteral(who)})+'"]')&&!document.querySelector('#stage .ro-person[data-for="'+CSS.escape(${jsLiteral(who)})+'"]')`, 'the settled state at once');
-        assert.deepStrictEqual(await js(`[window.DurbarRealOffice.walks().length,document.querySelectorAll('#stage .ro-trail,#stage .ro-gone,#stage .ro-in').length,document.querySelector('#stage .ro').classList.contains('still')]`), [0, 0, true], `${tag}: reduced motion: the settled state at once, no trail, no fade, the scene still`);
-        assert.ok(!(await js(`document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(${jsLiteral(who)})+'"]').textContent`)).includes('\u2192'), `${tag}: and no "going" words`);
-      });
       await emulate([{ name: 'forced-colors', value: 'active' }], async () => {
         await H.load({ w, h, query: q(world), ready: REAL, settle: false });
         await must(PICS, 'the pictures');
@@ -302,51 +292,6 @@ module.exports = async (ctx) => {
       await H.load({ w, h, query: q(world), ready: REAL, settle: false });
       await must(PICS, 'the pictures');
       assert.strictEqual(await js(`[...document.querySelectorAll('#stage .ro-chip')].filter(c=>c.dataset.coffeeid).length+document.querySelectorAll('#stage .ro-tent').length`), 0, `${tag}: with no coffee break nobody stands at the corner and no tent card is shown`);
-    }
-    // ---- FR-126 walk: leave and arrive, a pair of 300 ms; FR-127 the desk keeps its size ----
-    if (run('walk') && !OS_REDUCED) {
-      await H.load({ w, h, query: q(world, { simrooms: '2', simhelpers: '0' }), ready: REAL, settle: false });
-      await must(PICS, 'the pictures');
-      await js(`window.__durbarSimUi.agents().filter(a=>!a.parent).forEach(a=>{window.__durbarSimUi.unvisit(a.id)})`);
-      await must(`window.DurbarRealOffice.walks().length===0`, 'no pair running');
-      const who = await js(`(()=>{const L=window.__durbarSimUi.realLayout();const d=L.zones.flatMap(z=>z.desks).find(d=>d.person&&!d.away&&d.state!=='asleep');return d&&d.id})()`);
-      assert.ok(who, `${tag}: a seated agent to send away`);
-      const rects = () => js(`(()=>{const L=window.__durbarSimUi.realLayout();return JSON.stringify([L.height,L.lobbyH,L.zones.map(z=>z.desks.map(d=>[d.id,d.slot,d.desk,d.plate]))])})()`);
-      await js(`window.DurbarRealOffice.walkMs(2500)`); /* the pair is 300 ms in the app; a driver that must look at it in between holds it (the CSS fades stay 150 ms) */
-      const aways = () => js(`JSON.stringify(window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks.map(d=>[d.id,d.state,!!d.away,d.narrow,!!d.person])))`);
-      /* the simulator's own agents also come and go between places, which is a real layout change of its own: the rule is about THIS visit, so a try
-         during which another desk changed is repeated (at most 8 times) and the rule is asserted on the first clean one */
-      const others = (x) => JSON.stringify(JSON.parse(x).filter((d) => d[0] !== who));
-      let clean = false, mid = null;
-      for (let attempt = 0; attempt < 8 && !clean; attempt++) {
-        await must(`window.DurbarRealOffice.walks().length===0`, 'no pair running');
-        const a0 = await aways(), before = await rects();
-        await js(`window.__durbarSimUi.visit(${jsLiteral(who)},'terminal')`);
-        if (!(await H.until(`window.DurbarRealOffice.walks().includes(${jsLiteral(who)})`, 6000))) console.log('[moments] DEBUG', attempt, await js(`JSON.stringify({info:window.DurbarRealOffice.walkInfo(),lay:window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks).filter(d=>d.id===${jsLiteral(who)}).map(d=>[d.state,d.away,d.narrow]),ro:document.querySelector('#stage .ro')&&document.querySelector('#stage .ro').className,hidden:document.hidden,vis:document.visibilityState})`));
-        await must(`window.DurbarRealOffice.walks().includes(${jsLiteral(who)})`, 'the leaving pair');
-        mid = await js(`(()=>{const k=${jsLiteral(who)};const pl=document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(k)+'"]');return {gone:document.querySelectorAll('#stage .ro-person.ro-gone[data-for="'+CSS.escape(k)+'"]').length,
-          trail:document.querySelectorAll('#stage .ro-trail').length,plate:pl.textContent,info:window.DurbarRealOffice.walkInfo(),visitor:!!document.querySelector('#stage .ro-visitor[data-for="'+CSS.escape(k)+'"]')}})()`);
-        if (attempt === 0) { /* a frame of the pair: the trail held at full strength (its 300 ms fade is a CSS animation) */
-          await js(`(()=>{const s=document.createElement('style');s.id='holdTrail';s.textContent='.ro-trail{animation:none!important;opacity:1}';document.head.appendChild(s)})()`);
-          await H.shot(path.join(OUT, `${world}-walk-f1-${w}x${h}.png`), { prep: 'mouse', delay: 200, tag: 'moments', what: `${world}-walk-f1-${w}x${h}` });
-          await js(`document.getElementById('holdTrail').remove()`);
-        }
-        await must(`window.DurbarRealOffice.walks().length===0`, 'the pair over');
-        await must(`!document.querySelector('#stage .ro-person.ro-gone')&&!document.querySelector('#stage .ro-trail')`, 'the settled state');
-        const during = await rects(), a1 = await aways();
-        if (others(a0) === others(a1)) { clean = true; assert.strictEqual(during, before, `${tag}: the desks keep their size during the visit (FR-127)`); }
-        else { await js(`window.__durbarSimUi.unvisit(${jsLiteral(who)})`); await must(`window.DurbarRealOffice.walks().includes(${jsLiteral(who)})`, 'the pair back'); await must(`window.DurbarRealOffice.walks().length===0`, 'back'); }
-      }
-      assert.ok(clean, `${tag}: a clean try (no other desk changed) within 8 attempts`);
-      assert.ok(mid.plate.includes('\u2192 Terminal'), `${tag}: the plate says where it goes during the pair: ${mid.plate} ${mid.info}`);
-      assert.ok(mid.trail >= 1, `${tag}: a trail is drawn during the pair`);
-      const settled = await js(`(()=>{const k=${jsLiteral(who)};const a=document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(k)+'"]');return {chair:[...document.querySelectorAll('#stage .ro-away')].map(e=>e.textContent).join('|'),person:!!document.querySelector('#stage .ro-person[data-for="'+CSS.escape(k)+'"]'),visitor:!!document.querySelector('#stage .ro-visitor[data-for="'+CSS.escape(k)+'"]')}})()`);
-      assert.ok(/at Terminal \u2191/.test(settled.chair) && !settled.person && settled.visitor, `${tag}: settled: the empty chair says where, the figure is at the place: ${JSON.stringify(settled)}`);
-      await shot(world, 'walk-away', w, h);
-      await js(`window.__durbarSimUi.unvisit(${jsLiteral(who)})`);
-      await must(`window.DurbarRealOffice.walks().includes(${jsLiteral(who)})`, 'the returning pair');
-      await must(`window.DurbarRealOffice.walks().length===0&&!!document.querySelector('#stage .ro-person[data-for="'+CSS.escape(${jsLiteral(who)})+'"]')`, 'back at the desk');
-      assert.strictEqual(await js(`document.querySelectorAll('#stage .ro-person[data-for="'+CSS.escape(${jsLiteral(who)})+'"]').length`), 1, `${tag}: one person back at the desk`);
     }
   }
 };

@@ -133,3 +133,12 @@
 ## Phase 15: Change 2026-10-26 (SC-003 as a ratio to a same-run yardstick, issue #454)
 
 - [x] T051 `scripts/shots-033.js`: time a fixed DOM + layout workload in the same page (best of 3, floor 2 ms) and assert switch-off own time < 16x it, plus a 2000 ms sanity cap, instead of a fixed 500 ms; logs both and the ratio. Measured unloaded and under 6 niced busy loops (5 runs each); two mutants (per-agent delay, repeated layout search) fail [SC-003]
+
+## Phase 16: Change 2026-11-01 (rearrange rooms, desks and places, issue #677)
+
+- [x] T052 Spec delta (FR-080..FR-087) with the owner's answers and open questions Q1..Q5 (`specs/033-floors/spec.md` *Changes*).
+- [x] T053 `src/shared/roomorder.ts` (tolerant parse, caps), `FolderStore.order()/setOrder()` and the `order` key in the folder file, IPC `floors:order` / `floors:setOrder`, preload, `DurbarApi.getOrder/setOrder`, simulator handlers (FR-085).
+- [x] T054 `src/renderer/reorder.js`: sort, move, step, merge, preview rules and the pointer drag (transform and opacity only, one layout read; FR-082, FR-083); styles `.reo-*`.
+- [x] T055 `app.js`: `roomsInOrder`, desk sort and `lobbyPlaces` read the order; drag wiring; Alt and Alt+Shift arrows, folder menu Move earlier / later, palette Reset, keyboard help, no repaint under a drag (FR-081..FR-084, FR-087).
+- [x] T056 `scripts/test-roomorder.ts` (`npm run test:roomorder`): rules, equal parse in renderer and main, file round trip, corrupt and older files, source checks (FR-081, FR-083, FR-085).
+- [x] T057 `scripts/shots-033-order.js` (in `check:ui`): real mouse and keys at both sizes, Open office and cabins; screenshots; README, changelog fragment, spec Verification.

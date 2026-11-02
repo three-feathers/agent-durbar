@@ -7,7 +7,7 @@
  *
  * For the Photo office and the cave (MOMENTS_WORLDS, default photo) at 1440x900 and 1280x800 it fails (exit 1) when:
  *   - a desk-side column exists (the owner removed it on 2026-11-01) or the chat is not the whole window's width;
- *   - the header has no 64 px portrait with its lamp ring, dot and a cropped picture, or no lamp words ("Lamp warm, steady", ...) in its meta line;
+ *   - the header has no 32 px portrait with its lamp ring, dot and a cropped picture, is taller than the flat office's, or the lamp words ("Lamp warm, steady", ...) are not on the task line alone, whole beside a long task;
  *   - the tab order of the panel is not the flat office's (the same agent, same elements);
  *   - the panel surface is under 78 % opaque, or any text pair (title, lamp words, cards, hint) is under 4.5:1 against the composited surface (3:1 for large text);
  *   - text under 10.5 px.
@@ -53,10 +53,15 @@ module.exports = async (ctx) => {
     await must(`[...document.querySelectorAll('#stage .ro img')].every(i=>i.complete)`, 'the pictures');
     await open('Mira');
     const st = await js(`(()=>{const pi=document.querySelector('.panel-in'),port=document.getElementById('roPortrait'),im=port&&port.querySelector('img');return {col:!!document.querySelector('.ro-col,.rc-stage'),chat:pi.getBoundingClientRect().width,iw:innerWidth,
-      port:port&&[port.getBoundingClientRect().width,port.getBoundingClientRect().height],ring:port&&getComputedStyle(port).boxShadow!=='none',dot:!!(port&&port.querySelector('.dot')),img:!!im,crop:!!(im&&im.style.left&&im.style.top),lamp:(document.querySelector('.ro-lampwords')||{}).textContent}})()`);
+      port:port&&[port.getBoundingClientRect().width,port.getBoundingClientRect().height],ring:port&&getComputedStyle(port).outlineStyle==='solid',dot:!!(port&&port.querySelector('.dot')),img:!!im,crop:!!(im&&im.style.left&&im.style.top),lamp:(document.querySelector('.ro-lampwords')||{}).textContent,where:[...document.querySelectorAll('.ro-lampwords')].map(e=>e.parentElement.className+'/'+(e.previousElementSibling||{}).className),headH:document.querySelector('.ph').getBoundingClientRect().height}})()`);
     assert.strictEqual(st.col, false, `${tag}: no desk-side column`);
     assert.strictEqual(Math.round(st.chat), st.iw, `${tag}: the chat has the whole window's width (${st.chat})`);
-    assert.deepStrictEqual(st.port, [64, 64], `${tag}: a 64 px portrait`);
+    assert.deepStrictEqual(st.port, [32, 32], `${tag}: a 32 px portrait`);
+    assert.deepStrictEqual(st.where, ['ph-line/ptask'], `${tag}: the lamp words on the task line, after the task, and nowhere else`);
+    console.log('[097-chat]', tag, 'header', st.headH);
+    /* a task too long for the line is cut; the lamp words stay whole */
+    const cut = await js(`(()=>{const t=document.querySelector('.ph-line .ptask'),w=document.querySelector('.ro-lampwords'),was=t.textContent;t.textContent='A very long task '.repeat(40);const a=t.getBoundingClientRect(),b=w.getBoundingClientRect(),l=t.parentElement.getBoundingClientRect(),r={cut:t.scrollWidth>t.clientWidth,whole:w.scrollWidth<=w.clientWidth+1,inside:b.right<=l.right+1,after:b.left>=a.right-1};t.textContent=was;return r;})()`);
+    assert.deepStrictEqual(cut, { cut: true, whole: true, inside: true, after: true }, `${tag}: a long task never hides the lamp words`);
     assert.ok(st.ring && st.dot && st.img && st.crop, `${tag}: portrait with lamp ring, dot and the cropped person: ${JSON.stringify(st)}`);
     assert.ok(/^Lamp (warm, steady|on, breathing|bright, amber call light|on, red error light|on, orange call light|low|off)/.test(st.lamp), `${tag}: lamp words in the header: ${st.lamp}`);
     const ct = await js(CONTRAST);
