@@ -311,7 +311,7 @@
       "name": "Jump to an agent's floor",
       "spec": "092 FR-018/019/027 (phase 4)",
       "where": "goToFloor (jumps not built)",
-      "code": "present",
+      "code": "planned",
       "blocks": [
         "lift"
       ],
