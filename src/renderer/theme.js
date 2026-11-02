@@ -200,10 +200,10 @@
   /* Motion presets (036 FR-006): fixed per theme, `reduced` is forced when prefers-reduced-motion matches. */
   const CLEAN_MOTION={preset:'default'};
   const MOTION_PRESETS={
-    'default':{bar:'3.4s ease-in-out infinite alternate',glow:'3.6s ease-in-out infinite alternate',halo:'3.6s ease-in-out infinite alternate',wave:'2.8s ease-in-out infinite',cursor:'1.6s ease-in-out infinite'},
-    'calm':{bar:'6s ease-in-out infinite alternate',glow:'8s ease-in-out infinite alternate',halo:'7s ease-in-out infinite alternate',wave:'4.5s ease-in-out infinite',cursor:'2.4s ease-in-out infinite'},
-    'arcade':{bar:'1.7s steps(4) infinite alternate',glow:'2.4s steps(2) infinite alternate',halo:'2.4s steps(3) infinite alternate',wave:'1.8s steps(2) infinite',cursor:'1.2s steps(2) infinite'},
-    'reduced':{bar:'none',glow:'none',halo:'none',wave:'none',cursor:'none'},
+    'default':{bar:'3.4s ease-in-out infinite alternate',glow:'3.6s ease-in-out infinite alternate',wave:'2.8s ease-in-out infinite',cursor:'1.6s ease-in-out infinite'},
+    'calm':{bar:'6s ease-in-out infinite alternate',glow:'8s ease-in-out infinite alternate',wave:'4.5s ease-in-out infinite',cursor:'2.4s ease-in-out infinite'},
+    'arcade':{bar:'1.7s steps(4) infinite alternate',glow:'2.4s steps(2) infinite alternate',wave:'1.8s steps(2) infinite',cursor:'1.2s steps(2) infinite'},
+    'reduced':{bar:'none',glow:'none',wave:'none',cursor:'none'},
   };
 
   /* ---------- Manifest validation ---------- */
@@ -637,7 +637,7 @@
       if(dark)document.documentElement.dataset.dark='';else delete document.documentElement.dataset.dark;
     }
     /* motion presets (036 FR-006): re-applied on every switch, reduced motion wins */
-    for(const k of ['bar','glow','halo','wave','cursor']){
+    for(const k of ['bar','glow','wave','cursor']){
       if(typeof document!=='undefined'&&document.documentElement)document.documentElement.style.setProperty('--m-'+k,motion(k));
     }
     paintWorld(); /* spec 097 FR-113: a theme chosen while Real office is shown applies on leaving it; the world's set stays on top */
