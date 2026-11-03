@@ -11,7 +11,7 @@ note: simulator and fakes; real checks on macOS and Windows open (T061, T062)
 
 **Created**: 2026-10-25
 
-**Status**: Built (2026-10-25) on the simulator and with fakes; Linux checked on a real session 2026-10-25 (T060: Claude Code verified in Read-only; Copilot Ask first let an approved write outside the folder through, K15) and 2026-10-28 (T066: a Copilot floor cleared in place and put back, K16); macOS and Windows not verified (T061, T062 open). See *Changes*.
+**Status**: Built (2026-10-25) on the simulator and with fakes; Linux checked on a real session 2026-10-25 (T060: Claude Code verified in Read-only; Copilot Ask first let an approved write outside the folder through, K15) and 2026-10-28 (T066: a Copilot floor cleared in place and put back, K16); macOS checked for that switch only 2026-11-01 (#834), otherwise macOS and Windows not verified (T061, T062 open). See *Changes*.
 
 **Input**: Issue #611, owner decision (Vikram, 2026-10-23, *go*): "Today Read-only / Ask first are enforced by Durbar's permission
 checks. Turn on each agent app's real OS sandbox underneath, so writes outside the folder or network calls are blocked by the OS
@@ -381,6 +381,21 @@ The `status:` of the specs-index block used to read (moved here unchanged; the b
 > Built 2026-10-25 (simulator and fakes only): Claude Code and Copilot floors, Codex state and card line, the chip, tooltips, the sandbox note with Continue / Always / Change mode…, Settings > Agent apps line, the policy rule; real check on Linux 2026-10-25 (T060): Claude Code's sandbox refused a Read-only write (verified for Linux Read-only only); Copilot's floor was on, Durbar refused the Read-only command first, and in Ask first an approved write outside the folder was not refused (K15, cause unknown); macOS and Windows not verified (T061, T062 open); the policy key is not reachable until spec 076 has a reader. 2026-10-27 delta (issue #806): Restart without the sandbox built 2026-10-27 (FR-022, simulator and fakes only, not on a real session); 2026-10-28 T066 real run on Linux (CLI 1.0.98): verdict A, a running Copilot floor can be cleared in place (K16 resolved for Linux), so FR-022c is built (fakes and simulator): a switch to Allow all lowers the floor and Restart without the sandbox stays only as the fallback after a refused or unanswered lowering; macOS and Windows not verified
 
 
+### 2026-11-01: the same switch probe on macOS: verdict A, K16 cleared in place on macOS too (Refs #834)
+
+**The run** (`real:` 2026-11-01 06:05 UTC, approved by Vikram himself in the Mac session on his Copilot account). Host: macOS, Darwin 25.0.0, Apple M4, Node 22.16.0; the floor's mechanism `seatbelt`. Runtime: Copilot CLI 1.0.101, SDK 1.0.24. Script: `scripts/sandbox-floor-real.js copilot out.json switch --spend` from `main` at 479d961c, after a dry run (0 prompts) that passed. **Cost: 3 prompts, 0.156 AIU** (6 priced calls).
+
+| Step | What | Result |
+|---|---|---|
+| 1 | Control: Ask first, floor on, the card approved only for exactly C | both blocked: `touch` exit 1, *Operation not permitted*, no file; `curl` exit 6 |
+| 2 | `setPermMode(allow)`, then `options.update({ sandboxConfig: { enabled: false }, sandboxConfigSource: 'session_disabled' })` | resolved |
+| 3 | C in Allow all, same session | both worked: `touch` exit 0, the file there; `curl` exit 0 |
+| 4 | Back to Ask first, C again | both blocked again: `touch` exit 1, no file; `curl` exit 6 |
+
+**K16 is resolved for macOS too** on these versions. `[KNOWN GAP]` Windows is still not run (the probe refuses it by design); Linux has not been re-run on a runtime newer than 1.0.98; Durbar's own switch in the app was not run on a real session here (the probe calls the adapter, without the window).
+
+**Side finding:** on macOS the floor leaves `.git/hooks` and `.git/config` in the session folder as **two empty folders**; on Linux `config` was a file. The probe's cleanup refused the folder and exited 1 after a verdict it had already written; `gitPlaceholders` now accepts an empty `config` folder too. `[KNOWN GAP]`, not looked into: the same placeholders in a person's own folder with no `.git` of its own.
+
 ### 2026-10-28: T066 run on a real session: verdict A, K16 cleared in place on Linux; FR-022c built (T072; Refs #806)
 
 **The run** (`real:` 2026-10-28 05:35 UTC, by Vikram's agent with Vikram's OK on his Copilot account; the record is
@@ -556,7 +571,7 @@ the runtime does; nothing was run):
 - `read:` the default of the local sandbox when nothing is sent is not stated in the typings (the "Default: true" lines are for the
   sub-flags). The owner's own report is that a **new** Allow all session has no sandbox; T066 records it as a control.
 
-**New gap K16** (resolved for Linux 2026-10-28, `real:` T066, verdict A: cleared in place on CLI 1.0.98 / SDK 1.0.22; see *Changes* 2026-10-28; macOS and Windows `[KNOWN GAP]`): whether `options.update({ sandboxConfig: { enabled: false }, sandboxConfigSource: 'session_disabled' })` (or any
+**New gap K16** (resolved for Linux 2026-10-28 and macOS 2026-11-01, `real:` verdict A both: cleared in place on CLI 1.0.98 / SDK 1.0.22 and CLI 1.0.101 / SDK 1.0.24; see *Changes*; Windows `[KNOWN GAP]`): whether `options.update({ sandboxConfig: { enabled: false }, sandboxConfigSource: 'session_disabled' })` (or any
 other documented value) clears a floor that is already running in a Copilot session, with CLI 1.0.101 / SDK 1.0.22, and whether a later
 `enabled: true` update puts it back. Unverified; T066 settles it. (2026-10-28: the probe is built but could not run, the owner's VPS has no bubblewrap, so Copilot reports no sandbox
 support there; *Changes* 2026-10-28.)
@@ -666,7 +681,7 @@ default on the switch and B is offered only after an A refusal; if it fails, B i
   - *Claude Code and Codex unaffected, and why:* Claude's floor lives in argv and is rebuilt at the next launch, which a mode change already
     forces (spec 012 FR-116); Codex applies its profile per message (FR-144). Neither ever sets `untilNewSession`, so neither sees the
     action; a test pins that no Claude or Codex state produces it.
-- **FR-022c** `[IMPLEMENTED]` (outcome A; K16 cleared, `real:` T066 2026-10-28, Linux, CLI 1.0.98; test: `scripts/test-copilot-sandbox.ts` T072, `scripts/test-sandbox-floor.ts`; sim: `scripts/check-sandbox-floor.js`; the app's own switch not run on a real session; macOS and Windows not verified) **Clear the floor on the switch.** On a switch to Allow all the Copilot
+- **FR-022c** `[IMPLEMENTED]` (outcome A; K16 cleared, `real:` T066 2026-10-28, Linux, CLI 1.0.98; test: `scripts/test-copilot-sandbox.ts` T072, `scripts/test-sandbox-floor.ts`; sim: `scripts/check-sandbox-floor.js`; the app's own switch not run on a real session; macOS `real:` 2026-11-01, the probe, CLI 1.0.101; Windows not verified) **Clear the floor on the switch.** On a switch to Allow all the Copilot
   adapter sends `options.update({ sandboxConfig: { enabled: false }, sandboxConfigSource: 'session_disabled' })` (the exact payload T066 proved;
   no other field, never `allowBypass`), with the same 15 s limit as FR-004. The state follows the update: **resolved** → `null` (as a fresh
   Allow all session); **refused or no answer** → the floor is still assumed in force, the state keeps `untilNewSession: true` and FR-022

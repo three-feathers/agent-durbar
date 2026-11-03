@@ -4492,6 +4492,46 @@ async function renderAwayStrip(){
   });
   scheduleRender();
 }
+/* spec 058 FR-199..FR-202: MCP servers that need attention since the app started. Part 1 reads only the agent apps' lists (main looked
+   their commands up, FR-198); part 2 only what connecting chats report anyway. Nothing is started, switched or sent; fixes are pressed by the person. */
+const mcpL={on:false,t0:0,closed:false,open:false,items:new Map()};
+const mcpLW=()=>window.DurbarMcpWords;
+async function mcpLaunchStart(){
+  if(mcpL.on||demoOn||!bridge||!mcpLW()||(sim&&qs.get('simmcplaunch')!=='1'))return;
+  mcpL.on=true;mcpL.t0=performance.now(); /* a monotonic clock: the 10-minute window (launchYoung) ignores wall-clock changes */
+  let g=null;try{g=bridge.mcpGlobalState?await bridge.mcpGlobalState():null;}catch(e){g=null;}
+  mcpL.items=new Map([...mcpLW().fileFindings(g).map(f=>[f.key,f]),...mcpL.items]); /* the lists first, then the chats that reported meanwhile */
+  paintMcpStrip();
+}
+/* an `mcp` report, a failed MCP tool call with the policy word, or a successful MCP call: DurbarMcpWords.launchUpdate decides (pure, tested) */
+function mcpLaunchSeen(a,e){
+  if(!mcpL.on||mcpL.closed||!a||e.agentId)return;
+  const r=liveRoot(a)||a, W=mcpLW();
+  if(W.launchUpdate(mcpL.items,e,{id:r.id,name:r.name,app:mcpOpts(r).appName},W.launchYoung(mcpL.t0,performance.now())))paintMcpStrip();
+}
+function paintMcpStrip(){
+  const el=$('mcpStrip');if(!el)return;
+  const list=[...mcpL.items.values()];
+  if(mcpL.closed||!list.length){if(!el.hidden){el.hidden=true;el.innerHTML='';scheduleRender();}return;}
+  const shown=list.slice(0,5), more=list.length-shown.length, n=list.length;
+  const names=[...new Set(list.map(f=>f.name))], few=names.slice(0,3).join(', ')+(names.length>3?' and others':'');
+  /* FR-200: one line by default (the office keeps its room); List… opens the reasons and fixes */
+  el.innerHTML='<span class="ns-ic" aria-hidden="true">i</span><span class="ns-t"><b>'+(n===1?'1 MCP problem needs':n+' MCP problems need')+' attention</b> (found since the app started): '+esc(few)+'. Nothing was changed; each fix is yours to press.</span>'+
+    '<span class="ns-act"><button class="btn" type="button" data-ml="list" aria-expanded="'+(mcpL.open?'true':'false')+'" aria-controls="mcpList">'+(mcpL.open?'Hide list':'List…')+'</button><button class="btn" type="button" data-ml="settings">Open MCP settings</button><button class="btn" type="button" data-ml="close">Dismiss</button></span>'+
+    (mcpL.open?'<span class="aw-list ml-list" id="mcpList" role="list" aria-label="MCP servers that need attention">'+shown.map(f=>'<span class="aw-it" role="listitem" data-mlk="'+esc(f.key)+'"><span class="aw-w ml-w"><b>'+esc(f.name)+'</b> <small>'+esc(f.where||'')+'</small>: '+esc(f.reason)+'. '+esc(f.fix)+'</span><button class="btn" type="button" data-mlshow="'+esc(f.key)+'" aria-label="'+esc('Show '+f.name+(f.where?' ('+f.where+')':''))+'">Show</button></span>').join('')+
+    (more?'<span class="aw-it" role="listitem"><span class="aw-w">and '+more+' more in Settings &gt; MCP servers.</span></span>':'')+'</span>':'');
+  el.hidden=false;
+  el.querySelector('[data-ml="close"]').onclick=()=>{mcpL.closed=true;paintMcpStrip();};
+  el.querySelector('[data-ml="list"]').onclick=()=>{mcpL.open=!mcpL.open;paintMcpStrip();const b=el.querySelector('[data-ml="list"]');if(b)focusIn(b,{reveal:false});};
+  el.querySelector('[data-ml="settings"]').onclick=()=>window.DurbarScreens.openSettings('mcp');
+  el.querySelectorAll('[data-mlshow]').forEach(b=>b.onclick=()=>{
+    const f=mcpL.items.get(b.dataset.mlshow);if(!f)return;
+    const r=f.kind==='chat'&&liveById(f.chatId);
+    if(r&&r.live){openPanel(r.id,false);Promise.resolve(window.DurbarScreens.agentMcp(r,mcpOpts(r))).finally(()=>refreshMcpCount(r));}
+    else window.DurbarScreens.openSettings('mcp');
+  });
+  scheduleRender();
+}
 $('endAllBtn').onclick=()=>endAllSessions($('topMoreBtn'));
 if($('sendSeveralBtn'))$('sendSeveralBtn').onclick=()=>sendToSeveral($('topMoreBtn'));
 const DESK_NAV='#stage .desk, #stage .helper, #stage .plate, #stage .ro-plate'; /* spec 097 FR-090: the Real office plates are the focusable cards there */
@@ -6074,6 +6114,7 @@ let statsRefresh=0;
 function feedStats(a,e){
   /* spec 058 FR-083: Settings' live MCP list follows a chat that stops or becomes ready again */
   if(e.type==='status'&&(e.status==='stopped'||e.status==='idle')&&!e.agentId&&window.DurbarScreens.liveEvent)window.DurbarScreens.liveEvent(a.id);
+  if(e.type==='mcp'||(e.type==='toolCall'&&(e.phase==='failed'||e.phase==='complete')&&e.mcpServer))mcpLaunchSeen(a,e); /* spec 058 FR-199 part 2 */
   /* sub-agent events are counted for the agent that owns them (a.id is the session) */
   if(e.type==='toolCall')STATS.recordTool(a.id,e);
   else if(e.type==='usage')STATS.recordModel(a.id,e.model);
@@ -8481,6 +8522,7 @@ if(bridge){
   bridge.listAgents().then(l=>{l.forEach(addLiveAgent);agentsListed=true;renderFilter();if(bridge.floorsState)bridge.floorsState().then(applyFloors).catch(()=>{});renderRestoreStrip();
     restoreUi();renderAwayStrip(); /* spec 052 FR-087 / FR-089 */
     renderCrashStrip(); /* spec 006 FR-041 */
+    void mcpLaunchStart(); /* spec 058 FR-199 */
     /* spec 052 FR-059: what already needs you a few seconds after start is remembered, not notified */
     setTimeout(()=>{renderInboxBtn();ATT_ARMED=true;},3000);});
   loadModels();
