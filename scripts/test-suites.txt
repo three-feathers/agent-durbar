@@ -29,6 +29,7 @@ test:site
 test:compressshots
 test:changelog
 test:specsindex
+test:orgwords
 test:handoff
 test:toolusage
 test:usagestore

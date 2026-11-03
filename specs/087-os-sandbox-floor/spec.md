@@ -273,9 +273,9 @@ Allow all keeps the app's default. When the vendor's managed policy forces a san
   `src/shared/api.ts` and holds no vendor name or vendor setting key; the vendor keys stay in `src/adapters/` (constitution II).
   `reason` is masked by the existing redaction and clipped to 200 characters. An adapter without the field shows nothing (the UI
   degrades, constitution II).
-- **FR-012** `[IMPLEMENTED]` (sim: `scripts/check-sandbox-floor.js`; `[KNOWN GAP]` there is no Organization page yet for the FR-173 pointer) Settings > Agent apps (spec 081) shows one line per installed app: *OS sandbox: available (macOS sandbox)*, or
+- **FR-012** `[IMPLEMENTED]` (sim: `scripts/check-sandbox-floor.js`; `[KNOWN GAP]` Settings > Organization exists (spec 076 FR-208) but has no FR-173 pointer yet) Settings > Agent apps (spec 081) shows one line per installed app: *OS sandbox: available (macOS sandbox)*, or
   *not available: <reason>* with the fix (Linux packages, the Ubuntu AppArmor note already in the README for Codex, the Windows
-  build Copilot needs). The Organization page's FR-173 note (spec 076) points to this line.
+  build Copilot needs). The Organization page's FR-173 note (spec 076) is meant to point to this line; it is not on the page yet.
 - **FR-013** `[IMPLEMENTED]` (test: `scripts/test-claude-sandbox.ts`, `scripts/test-copilot-sandbox.ts` AC2) Mode switch (spec 018): the chip shows the floor in force, not the one asked for. Claude Code applies a new floor at the
   next spawn (the existing relaunch with `--resume` at the next message, spec 012 FR-116; until then the hook keeps the stricter of
   the launched and current mode, FR-115), Copilot through `options.update` at the switch, Codex as today (FR-144).

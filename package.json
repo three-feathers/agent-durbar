@@ -218,6 +218,7 @@
     "test:copilotoneshot": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-copilot-oneshot.js",
     "test:copilotcap": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-copilot-cap.js",
     "test:orgwiring": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-orgwiring.js",
+    "test:orgwords": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-orgwords.js",
     "test:mcpwords": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-mcpwords.js",
     "test:orgpolicy": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-orgpolicy.js",
     "test:mcphealth": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-mcphealth.js",
