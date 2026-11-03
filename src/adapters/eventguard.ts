@@ -68,6 +68,7 @@ function editProblems(x: unknown): string[] {
  */
 function autopilotProblems(e: Record<string, unknown>): string[] {
   const out: string[] = [];
+  if (e.agentId !== undefined) out.push('autopilot.agentId: a helper never has Autopilot state (FR-008)');
   const phase = e.phase;
   if (!oneOf(phase, ['started', 'continued', 'ended'])) out.push(`autopilot.phase ${String(phase)}`);
   if (!validRunId(e.runId)) out.push('autopilot.runId missing, too long or not plain');

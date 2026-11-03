@@ -10,6 +10,7 @@ import {
   AUTOPILOT_ANSWER, AUTOPILOT_ENDS, AutopilotRun, DEFAULT_HOURS, DEFAULT_LIMIT, codexGoalEnd, goalText, hoursOrDefault, isClaudeContinuation, limitOrDefault,
 } from '../src/adapters/autopilot';
 import * as core from '../src/adapters/autopilot';
+import { claudeHistoryFromText, parseSessionHead } from '../src/adapters/claudeHistory';
 import type { AutopilotRunEvent } from '../src/adapters/autopilot';
 import { CLAUDE_DESCRIPTOR } from '../src/adapters/claude';
 import { CODEX_DESCRIPTOR } from '../src/adapters/codex';
@@ -34,7 +35,7 @@ assert.strictEqual(validMode('autopilot'), 'read-only', 'autopilot is not a mode
 assert.strictEqual(validMode(undefined), 'read-only');
 assert.strictEqual(validMode('allow'), 'allow');
 
-// ---- 2. never saved or defaulted ----
+// ---- 2. never saved or defaulted (a source-text check: two files do not mention autopilot; it shows no behaviour, section 3 pins the file list) ----
 for (const f of ['src/main/folders.ts', 'src/shared/credits.ts']) assert.ok(!/autopilot/i.test(src(f)), `${f} never mentions autopilot (nothing is saved or defaulted)`);
 {
   const file = path.join(ROOT, 'src/adapters/types.ts');
@@ -54,9 +55,9 @@ for (const d of [COPILOT_DESCRIPTOR, CLAUDE_DESCRIPTOR, CODEX_DESCRIPTOR]) asser
   const hits = (re: RegExp): string[] => files.filter((f) => re.test(src(f))).map((f) => f.split(path.sep).join('/')).sort();
   assert.deepStrictEqual(hits(/agents:setAutopilot/), [], 'no agents:setAutopilot channel in src/');
   assert.deepStrictEqual(hits(/setAutopilot/), ['src/adapters/types.ts', 'src/main/simguard.ts'], 'setAutopilot appears only in the interface and the simulator guard list: no adapter, no main caller');
-  assert.deepStrictEqual(hits(/autopilot/i), ['src/adapters/autopilot.ts', 'src/adapters/capabilities.ts', 'src/adapters/eventguard.ts', 'src/adapters/types.ts', 'src/main/simguard.ts', 'src/shared/api.ts'], 'Phase 1 touches only the types, the core, the event guard and the simulator guard list: no renderer, no main, no adapter');
+  assert.deepStrictEqual(hits(/autopilot/i), ['src/adapters/autopilot.ts', 'src/adapters/capabilities.ts', 'src/adapters/claudeHistory.ts', 'src/adapters/eventguard.ts', 'src/adapters/types.ts', 'src/main/simguard.ts', 'src/shared/api.ts'], 'Phase 1 touches only the types, the core, the event guard, the Claude history reader (one filter) and the simulator guard list: no renderer, no main, no adapter');
   // nothing outside the types, the core and the event guard imports the core
-  assert.deepStrictEqual(hits(/from '(\.\/|\.\.\/adapters\/)autopilot'/), ['src/adapters/eventguard.ts'], 'only the event guard imports the core in Phase 1');
+  assert.deepStrictEqual(hits(/from '(\.\/|\.\.\/adapters\/)autopilot'/), ['src/adapters/claudeHistory.ts', 'src/adapters/eventguard.ts'], 'only the event guard and the Claude history reader import the core in Phase 1');
 }
 
 // ---- helper: a run with a recording halt and emit ----
@@ -469,7 +470,8 @@ process.on('exit', () => { if (!finished) { console.error('autopilot test did no
     // over 4000 trimmed characters: Claude Code's own limit, refused with a reason there only
     const L4000 = 'x'.repeat(4000);
     assert.deepStrictEqual(t(L4000, 'claude'), { ok: true, text: L4000 }, 'exactly 4000 is fine');
-    assert.deepStrictEqual(t(`  ${L4000}  \n`, 'claude'), { ok: true, text: `  ${L4000}  \n` }, 'the count is the trimmed length');
+    assert.deepStrictEqual(t(`  ${L4000}  \n`, 'claude'), { ok: true, text: L4000 }, 'the count is the trimmed length, and the trimmed text is what is sent');
+    assert.strictEqual((t(L4000 + '\n'.repeat(100000), 'claude') as { text: string }).text.length, 4000, 'no unbounded padding is sent');
     assert.deepStrictEqual(t(L4000 + 'y', 'claude'), { ok: false, reason: 'too-long' });
     assert.deepStrictEqual(t(L4000 + 'y'), { ok: false, reason: 'too-long' }, 'no app: the strictest rules');
     assert.deepStrictEqual(t(L4000 + 'y', 'codex'), { ok: true, text: L4000 + 'y' }, 'Codex has no such limit here');
@@ -535,6 +537,158 @@ process.on('exit', () => { if (!finished) { console.error('autopilot test did no
     assert.strictEqual(isClaudeContinuation(msg({ message: { role: 'user', content: [{ type: 'text', text: 'note' }, { type: 'text', text: fb }] } })), true, 'a marker in a later text block counts');
     assert.strictEqual(isClaudeContinuation(msg({ message: { role: 'user', content: [{ type: 'text', text: 'note' }, { type: 'image' }] } })), false);
     for (const v of [undefined, null, 'Stop hook feedback:', 5, [], {}, { type: 'user', isSynthetic: true }, msg({ message: null }), msg({ message: { content: [] } })]) assert.strictEqual(isClaudeContinuation(v), false, `junk ${JSON.stringify(v)}`);
+  }
+
+  // ---- 14. review of e6b78258: each mutant below survived before, with the test that kills it ----
+  {
+    const manual = (): { p: Promise<void>; ok: () => void; no: () => void } => {
+      let ok!: () => void; let no!: () => void;
+      const p = new Promise<void>((res, rej) => { ok = res; no = () => rej(new Error('x')); });
+      return { p, ok, no };
+    };
+    const tick = (): Promise<void> => new Promise((res) => setImmediate(res));
+    // M1 `this.armed = true` in guard(): after a confirmed stop, a continuation arms the guard at once, while its repeated halt is pending
+    {
+      const pend = manual();
+      let calls = 0;
+      const r = rig(1, { halt: () => (++calls === 1 ? undefined : pend.p) });
+      r.run.end('done');
+      await r.run.whenStopped();
+      assert.strictEqual(r.run.guardArmed, false);
+      assert.strictEqual(r.run.continuation(), 'interrupted');
+      assert.strictEqual(r.run.guardArmed, true, 'M1: armed while the repeated halt is pending');
+      pend.ok();
+      await tick();
+      assert.strictEqual(r.run.guardArmed, false);
+    }
+    // M2 the spend value checks in end(): a bad value is dropped, 0 is kept
+    for (const bad of [-1, NaN, Infinity, -Infinity, '1', null, undefined]) {
+      const r = rig(5);
+      r.run.end('cap', { unit: 'usd', value: bad as number });
+      assert.strictEqual(ended(r)[0].spend, undefined, `M2: spend value ${String(bad)} is dropped`);
+      assert.deepStrictEqual(eventProblems({ type: 'autopilot', sessionId: 's', timestamp: 1, ...ended(r)[0] }), []);
+    }
+    { const r = rig(5); r.run.end('cap', { unit: 'tokens', value: 0 }); assert.deepStrictEqual(ended(r)[0].spend, { unit: 'tokens', value: 0 }, 'zero spend is kept'); }
+    // M3 the runHalt reject handler: a clear confirmed while the halt is pending, then the halt rejects: armed again
+    {
+      const pend = manual();
+      const r = rig(5, { halt: () => pend.p });
+      r.run.end('stopped');
+      r.run.confirmCleared();
+      assert.strictEqual(r.run.guardArmed, false);
+      pend.no();
+      await r.run.whenStopped();
+      assert.strictEqual(r.run.guardArmed, true, 'M3: a rejection keeps (or puts back) the guard armed');
+    }
+    // M4 confirmCleared() resets failedClear: after clearFailed, confirmCleared, a later repeated halt that resolves disarms
+    {
+      const r = rig(5);
+      r.run.end('done');
+      r.run.clearFailed();
+      await r.run.whenStopped();
+      r.run.confirmCleared();
+      assert.strictEqual(r.run.continuation(), 'interrupted');
+      await tick();
+      assert.strictEqual(r.run.guardArmed, false, 'M4: failedClear was reset');
+    }
+    // M5 the constructor TypeError for halt and emit
+    for (const bad of [undefined, null, 'x', 5, {}]) {
+      assert.throws(() => new AutopilotRun({ limit: 5, runId: 'r', halt: bad as never, emit: () => undefined }), TypeError, `M5: halt ${String(bad)}`);
+      assert.throws(() => new AutopilotRun({ limit: 5, runId: 'r', halt: () => undefined, emit: bad as never }), TypeError, `M5: emit ${String(bad)}`);
+    }
+    // M6 invisible-only goals
+    for (const v of ['\u2800', '\uffa0', '\ufe0f', '\ufe00\ufe0f', '\u180b\u180d', '\u3164', '\u115f\u1160', '\u{e0100}', ' \u2800 \n', '\u00a0', '\u2003', '\u200c']) {
+      for (const app of [undefined, 'claude', 'codex', 'copilot'] as const) assert.deepStrictEqual(goalText(v, app), { ok: false, reason: 'empty' }, `M6: ${JSON.stringify(v)}`);
+    }
+    assert.deepStrictEqual(goalText('a\u2800'), { ok: true, text: 'a\u2800' }, 'a blank next to a visible character stays');
+    // continuation() says 'ended' when a listener ended the run while handling `continued`
+    {
+      const events: string[] = [];
+      let run!: AutopilotRun;
+      run = new AutopilotRun({ limit: 5, runId: 'r', halt: () => undefined, emit: (e) => { events.push(`${e.phase}:${e.n}`); if (e.phase === 'continued') run.end('cap'); } });
+      assert.strictEqual(run.continuation(), 'ended');
+      assert.strictEqual(run.ended, true);
+      assert.deepStrictEqual(events, ['started:0', 'continued:1', 'ended:1']);
+    }
+    // the backstop clock starts at start(), not at construction
+    {
+      const r = rig(5);
+      r.clock.t += 5 * 3_600_000;
+      r.run.start();
+      assert.strictEqual(r.run.checkElapsed(), false, 'idle time before start() does not count');
+      assert.strictEqual(r.run.deadlineMs, r.clock.t + 2 * 3_600_000);
+      assert.strictEqual(r.run.continuation(), 'counted');
+      r.clock.t += 2 * 3_600_000;
+      assert.strictEqual(r.run.checkElapsed(), true);
+      // time sampled before start() does not count either
+      const e = rig(5);
+      e.clock.t += 1.5 * 3_600_000;
+      assert.strictEqual(e.run.checkElapsed(), false);
+      e.run.start();
+      e.clock.t += 0.6 * 3_600_000;
+      assert.strictEqual(e.run.checkElapsed(), false, 'elapsed time restarts at start()');
+      // a clock that was fine at construction and bad at start() fails closed
+      const c = { t: 1 as number };
+      const events: string[] = [];
+      const bad = new AutopilotRun({ limit: 5, runId: 'r', now: () => c.t, halt: () => undefined, emit: (e) => events.push(e.phase) });
+      c.t = NaN;
+      bad.start();
+      assert.strictEqual(bad.checkElapsed(), true);
+      assert.strictEqual(bad.reason, 'error');
+    }
+    // whenStopped() is resolved before the end (it settles a halt that was never called); after the end it follows the halt
+    {
+      const pend = manual();
+      const r = rig(5, { halt: () => pend.p });
+      let done = false;
+      void r.run.whenStopped().then(() => { done = true; });
+      await tick();
+      assert.strictEqual(done, true, 'before end() there is no halt to wait for');
+      r.run.end('done');
+      let after = false;
+      void r.run.whenStopped().then(() => { after = true; });
+      await tick();
+      assert.strictEqual(after, false, 'after end() it waits for halt');
+      pend.ok();
+      await r.run.whenStopped();
+    }
+    // end() before start() emits started first; halt is called before ended is emitted
+    {
+      const order: string[] = [];
+      const run = new AutopilotRun({ limit: 5, runId: 'r', halt: () => { order.push('halt'); }, emit: (e) => order.push(e.phase) });
+      run.end('stopped');
+      assert.deepStrictEqual(order, ['started', 'halt', 'ended'], 'started, then the stop in flight, then ended');
+      const q = rig(5);
+      q.run.noteProgress(false);
+      q.run.noteProgress(false);
+      assert.deepStrictEqual(q.events.map((e) => e.phase), ['started', 'ended']);
+    }
+    // the event guard: an autopilot event never carries an agentId (FR-008)
+    {
+      const base = { type: 'autopilot', sessionId: 's', timestamp: 1, phase: 'started', runId: 'r', n: 0, limit: 5 };
+      assert.deepStrictEqual(eventProblems(base), []);
+      assert.ok(eventProblems({ ...base, agentId: 'h1' }).some((x) => /agentId/.test(x)), 'a helper-tagged autopilot event is refused');
+    }
+    // isClaudeContinuation uses the mapper's helper rule: snake_case agent_id too
+    {
+      const m = { type: 'user', isSynthetic: true, message: { role: 'user', content: 'Stop hook feedback: x' } };
+      assert.strictEqual(isClaudeContinuation(m), true);
+      assert.strictEqual(isClaudeContinuation({ ...m, agent_id: 't1', parent_tool_use_id: null }), false, 'agent_id marks a helper');
+      assert.strictEqual(isClaudeContinuation({ ...m, agent_id: '', parent_tool_use_id: '' }), true, 'empty ids are the mapper\'s main stream');
+      assert.strictEqual(isClaudeContinuation({ ...m, parent_tool_use_id: 'toolu_1' }), false);
+    }
+    // the history reader does not show a synthetic continuation as a typed prompt, and keeps a typed one
+    {
+      const line = (o: object): string => JSON.stringify({ type: 'user', timestamp: '2026-01-01T00:00:00Z', cwd: '/w', ...o });
+      const text = [
+        line({ isSynthetic: true, message: { role: 'user', content: 'Stop hook feedback:\nnot met' } }),
+        line({ message: { role: 'user', content: 'Stop hook feedback: typed by the person' } }),
+        line({ message: { role: 'user', content: 'real prompt' } }),
+      ].join('\n');
+      const users = claudeHistoryFromText(text).items.filter((i) => i.type === 'user').map((i) => (i as { text: string }).text);
+      assert.deepStrictEqual(users, ['Stop hook feedback: typed by the person', 'real prompt']);
+      assert.strictEqual(parseSessionHead(line({ isSynthetic: true, message: { role: 'user', content: 'Stop hook feedback: x' } })).title, undefined, 'and it is no session title');
+    }
   }
 
   finished = true;

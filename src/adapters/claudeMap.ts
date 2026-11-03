@@ -15,6 +15,9 @@ import type { McpServerStatus } from './types';
 import { nonEmptyStr as str } from '../shared/guards';
 import { EditStreams, editOf } from './edits';
 
+/** Whether a stream message is a helper's (a sub-agent's): the one rule `who()` uses, shared so no other reader decides it differently. */
+export const claudeHelperRef = (m: { parent_tool_use_id?: unknown; agent_id?: unknown }): string | undefined => str(m.parent_tool_use_id) || str(m.agent_id);
+
 /** Fields of the SDK messages this mapper reads (structural subset; shapes from the SDK docs, unverified on a real account). */
 export interface ClaudeContentBlock {
   type: string;
@@ -204,10 +207,9 @@ export class ClaudeMapper {
 
   /** `agentId` of a normalized event: the spawning tool_use id, undefined for the main agent. */
   private who(m: ClaudeMessage): string | undefined {
-    const p = str(m.parent_tool_use_id);
-    if (p) return p;
-    const a = str(m.agent_id);
-    return a ? this.tasks.get(a) ?? a : undefined;
+    const ref = claudeHelperRef(m);
+    if (!ref) return undefined;
+    return str(m.parent_tool_use_id) ? ref : this.tasks.get(ref) ?? ref;
   }
 
   /** Map one SDK message. Never throws on unknown or malformed input. */

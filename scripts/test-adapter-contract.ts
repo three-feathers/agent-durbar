@@ -52,7 +52,7 @@ export interface ContractReport {
 }
 
 const ID_RE = /^[a-z][a-z0-9-]{0,31}$/;
-const TYPES = new Set(['user', 'status', 'permission', 'grants', 'thinking', 'output', 'toolCall', 'subagent', 'usage', 'context', 'model', 'compaction', 'mcp', 'limit', 'sandbox', 'autopilot']); // spec 087; spec 099: the OS sandbox state
+const TYPES = new Set(['user', 'status', 'permission', 'grants', 'thinking', 'output', 'toolCall', 'subagent', 'usage', 'context', 'model', 'compaction', 'mcp', 'limit', 'sandbox', 'autopilot']); // spec 087 added `sandbox` (the OS sandbox state); spec 099 added `autopilot`
 const ALL_MODES: PermissionMode[] = ['read-only', 'ask', 'allow'];
 
 /** Waits (a few event-loop turns at most) for something that must already be on its way. */
