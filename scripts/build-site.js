@@ -181,7 +181,8 @@ function features(index, exclude = []) {
     const [, num, link, title, status] = m;
     if (/^Release /i.test(title.trim()) || exclude.includes(num)) continue;
     const s = status.toLowerCase();
-    const built = /\b(built|implemented|published)\b/.test(s) && !/^\*{0,2}draft/.test(s.trim());
+    // spec 021 FR-068: a removed (deprecated) or replaced (superseded) feature is no built feature, even when its note says "built"
+    const built = /\b(built|implemented|published)\b/.test(s) && !/^\*{0,2}(draft|deprecated|superseded)\b/.test(s.trim());
     if (!built) continue;
     rows.push({ num, title: title.trim().replace(/\s*\(.*?issue.*?\)\s*$/i, ''), href: `${GH}/blob/main/specs/${link}` });
   }
@@ -271,7 +272,6 @@ function validateLanding(landing, { readme, shotExists = (f) => fs.existsSync(pa
     shot(t.screenshot, `themes[${i}]`);
     if (!/^#[0-9a-f]{6}$/i.test(t.swatch || '')) errs.push(`themes[${i}].swatch is not a #rrggbb colour`);
   });
-  if (landing.aiTheme) shot(landing.aiTheme.screenshot, 'aiTheme');
   (landing.harnesses || []).forEach((h, i) => {
     if (!names.has(h.name)) errs.push(`harnesses[${i}].name "${h.name}" is not in the README's Harnesses table`);
     need(h.verified, `harnesses[${i}].verified`);
@@ -377,11 +377,10 @@ h1,h2,h3{text-wrap:balance}
 .proof{margin-top:var(--s3);color:var(--ink-2);max-width:68ch}
 @media (max-width:640px){.hero .os{display:none}}
 .os span{white-space:nowrap}
-.themes{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:var(--s3);margin:0;padding:0;list-style:none}
+.themes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));max-width:480px;gap:var(--s3);margin:0;padding:0;list-style:none}
 .themes figure{margin:0}.themes .tz{aspect-ratio:16/10;overflow:hidden;border-radius:12px;border:1px solid var(--line);background:var(--surface)}.themes .tz img{display:block;width:230%;max-width:none;height:auto;border:0;border-radius:0}
 .themes figcaption{display:flex;align-items:center;gap:8px;margin-top:var(--s2);font-size:13.5px;color:var(--ink-2);line-height:1.3}
 .sw{flex:none;width:12px;height:12px;border-radius:50%;box-shadow:0 0 0 2px var(--surface),0 0 0 3px var(--line)}
-.ai{display:flex;align-items:center;gap:var(--s3);margin-top:var(--s4);color:var(--ink-2)}.ai img{width:180px;aspect-ratio:16/10;object-fit:cover;object-position:left top;border-radius:8px;border:1px solid var(--line)}
 .apps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--s3)}
 .app{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:var(--s4)}.app h3{font-size:18px;margin-bottom:var(--s2)}
 .app p{margin:0 0 var(--s2);font-size:15px}.app .ok{color:var(--ink-2)}.app .ok::before{content:"✓ ";color:var(--accent);font-weight:700}
@@ -503,9 +502,8 @@ function landingHtml({ landing, readme, rel, changes }) {
 
 <div class="durbar" role="presentation"></div>
 
-<section class="sec flush" id="themes"><div class="head"><p class="eyebrow">Themes</p><h2>Make the office yours</h2><p class="lead">Six built-in looks change the whole app live: colours, frames, people and furniture. Status and permission words stay the same in every one.</p></div>
+<section class="sec flush" id="themes"><div class="head"><p class="eyebrow">Themes</p><h2>Make the office yours</h2><p class="lead">Two built-in looks change the whole app live: colours, frames, people and furniture. Status and permission words stay the same in every one.</p></div>
 <ul class="themes">${landing.themes.map((t) => `<li><figure><div class="tz">${zoom(t.screenshot, img(t.screenshot, `The office in the ${t.name} theme`), `The ${t.name} theme`)}</div><figcaption><span class="sw" style="background:${esc(t.swatch)}"></span>${esc(t.name)}</figcaption></figure></li>`).join('')}</ul>
-${landing.aiTheme ? `<p class="ai">${zoom(landing.aiTheme.screenshot, img(landing.aiTheme.screenshot, landing.aiTheme.alt || ''), 'A theme made with AI')}<span>${esc(landing.aiTheme.text)}</span></p>` : ''}
 </section>
 
 <section class="sec" id="apps"><div class="head"><p class="eyebrow">Agent apps</p><h2>Works with the agents you already use</h2><p>Durbar drives the agent apps you installed and signed in to yourself. What we checked, and what we have not yet:</p></div>

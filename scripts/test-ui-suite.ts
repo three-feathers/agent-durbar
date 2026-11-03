@@ -169,12 +169,12 @@ const watch = fs.readFileSync(path.join(WF, 'nightly-watch.yml'), 'utf8');
 assert.ok(!/pull_request/.test(watch) && !/actions\/checkout/.test(watch) && watch.includes(`github.event.workflow_run.event == 'schedule'`), 'nightly-watch.yml: only scheduled runs, never PR code');
 const watched = ((/workflows: \[(.*)\]/.exec(watch) || [])[1] || '').split(',').map((x) => x.trim());
 const wfNames = new Set(fs.readdirSync(WF).filter((f) => f.endsWith('.yml')).map((f) => (/^name: (.*)$/m.exec(fs.readFileSync(path.join(WF, f), 'utf8')) || [])[1]));
-for (const w of ['CI', 'UI on three OSes', 'Installed app', 'Packaged check', 'Install check']) assert.ok(watched.includes(w) && wfNames.has(w), `nightly-watch.yml watches "${w}" (a real workflow name)`);
+for (const w of ['CI', 'UI on three OSes', 'Installed app', 'Packaged check', 'Install check', 'E2E real accounts']) assert.ok(watched.includes(w) && wfNames.has(w), `nightly-watch.yml watches "${w}" (a real workflow name)`);
 // FR-111 (owner decision 2026-10-22): theme layout checks run Clean Office and Retro on pull requests, every theme elsewhere
 assert.ok(office.includes(`CHECK_ALL_THEMES: \${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && '0' || '1' }}`) && wf.includes(`CHECK_ALL_THEMES: \${{ github.event_name == 'pull_request' && '0' || '1' }}`), 'every theme on main, nightly and by hand');
 const geo = fs.readFileSync(path.join(ROOT, 'scripts', 'check-theme-geometry.js'), 'utf8');
-assert.ok(/process\.env\.CHECK_ALL_THEMES === '1' \? ALL_THEMES : 'retro'/.test(geo) && /const ALL_THEMES = 'corporate,retro,durbar-indian,durbar-european,durbar-japanese,user,pink-studio'/.test(geo), 'check-theme-geometry: Retro by default, all with CHECK_ALL_THEMES=1');
-assert.ok(/CHECK_ALL_THEMES === '1' \? \[[^\]]*durbar-japanese[^\]]*\] : \['clean', 'retro'\]/.test(fs.readFileSync(path.join(ROOT, 'scripts', 'shots-052-addleft.js'), 'utf8')), 'shots-052-addleft: Clean and Retro by default');
+assert.ok(/process\.env\.CHECK_ALL_THEMES === '1' \? ALL_THEMES : 'retro'/.test(geo) && /const ALL_THEMES = 'retro,user,pink-studio'/.test(geo), 'check-theme-geometry: Retro by default, all with CHECK_ALL_THEMES=1');
+assert.ok(/const THEMES = \['clean', 'retro'\];/.test(fs.readFileSync(path.join(ROOT, 'scripts', 'shots-052-addleft.js'), 'utf8')), 'shots-052-addleft: Clean and Retro, the built-in themes (spec 035 FR-017)');
 // FR-110: every job of every workflow has a time limit
 for (const f of fs.readdirSync(WF).filter((x) => x.endsWith('.yml'))) for (const [id, body] of Object.entries(jobsOf(fs.readFileSync(path.join(WF, f), 'utf8')))) assert.ok(/^ {4}timeout-minutes: /m.test(body), `${f} ${id} has timeout-minutes`);
 // ---- scripts/driver-helpers.js (spec 008 FR-097): the shared plumbing behaves as the drivers' own copies did ----
@@ -261,7 +261,7 @@ function templates(line: string): { text: string; exprs: string[] }[] {
 }
 /* Allowed raw splices into page code: jsLiteral (or its alias q), and these typed numbers, booleans and ready-made code strings. */
 // box(n) (check-question-options) and the scrollHeight choice (check-question-visible) are ready-made page expressions, not values.
-const RAW_OK = /^(w|h|n|i|width|n - 1|before|sim|expanded|expectPlaces|SECONDS|SPEED|open|!open|iconClick|left|box\(\d\)|where === 'top' \? 0 : 'c\.scrollHeight'|tags|level === 'simple'|[\w.]+\.toString\(\))$/;
+const RAW_OK = /^(w|h|n|i|width|n - 1|before|sim|expanded|expectPlaces|SECONDS|SPEED|open|!open|iconClick|left|box\(\d\)|where === 'top' \? 0 : 'c\.scrollHeight'|tags|[\w.]+\.toString\(\))$/;
 const PAGE = /\b(document|window)\.|localStorage|getComputedStyle|querySelector/;
 const drivers = fs.readdirSync(path.join(ROOT, 'scripts')).filter((x) => /^(shots|check)-.*\.js$/.test(x) && !SKIP.has(x));
 assert.ok(drivers.length >= 45, `${drivers.length} page drivers are checked`);
@@ -347,5 +347,48 @@ process.on('exit', () => { if (!fr114Done) { console.error('FR-114 checks did no
     fs.rmSync(outDir, { recursive: true, force: true });
   }
   fr114Done = true;
-  console.log('ui-suite: check-parallel and ui-suite install Electron once before their parallel jobs (FR-114)');
+  // spec 008 FR-095, FR-138: one retry, alone; a repeated failure stays a failure, a pass on retry is FLAKY in the log and the job summary
+async function retries(): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { main, DRIVERS } = require(SUITE) as { main: (o: unknown) => Promise<void>; DRIVERS: Array<{ name: string; label?: string }> };
+  const name = DRIVERS[0].label || DRIVERS[0].name;
+  const tmp = fs.mkdtempSync(path.join(require('os').tmpdir(), 'ui-suite-retry-'));
+  const summary = path.join(tmp, 'summary.md');
+  const env = { ...process.env }, log = console.log, was = process.exitCode;
+  const go = async (results: boolean[], retry: string): Promise<{ code: unknown; out: string; runs: number; sum: string }> => {
+    fs.writeFileSync(summary, '');
+    process.env.UI_SUITE_RETRY = retry; process.env.UI_SUITE_JOBS = '1'; process.env.UI_SUITE_OUT = tmp; process.env.GITHUB_STEP_SUMMARY = summary;
+    process.exitCode = 0;
+    const lines: string[] = []; console.log = (...a: unknown[]) => { lines.push(a.join(' ')); };
+    let runs = 0;
+    try {
+      await main({ ensure: () => true, argv: ['--only', DRIVERS[0].name], run: async () => { const ok = results[runs++]; return { ok, secs: 0, why: ok ? '' : 'broken', log: '' }; } });
+    } finally { console.log = log; }
+    const code = process.exitCode; process.exitCode = was;
+    return { code, out: lines.join('\n'), runs, sum: fs.readFileSync(summary, 'utf8') };
+  };
+  try {
+    const twice = await go([false, false], '1');
+    assert.strictEqual(twice.code, 1, 'FR-138: failing twice fails the job');
+    assert.strictEqual(twice.runs, 2, 'one retry, not more');
+    assert.ok(!/FLAKY/.test(twice.out + twice.sum), 'failing twice is not FLAKY');
+    assert.ok(new RegExp('failed: ' + name).test(twice.out), 'and it is named: ' + twice.out.slice(-200));
+    const once = await go([false, true], '1');
+    assert.strictEqual(once.code, 0, 'a pass on retry passes the job');
+    assert.ok(/FLAKY \(passed only on retry\)/.test(once.out), 'FLAKY on the final line');
+    assert.ok(/Flaky drivers/.test(once.sum) && once.sum.includes(name), 'FLAKY in the job summary: ' + once.sum);
+    const off = await go([false, true], '0');
+    assert.strictEqual(off.code, 1, 'no retry where it is off'); assert.strictEqual(off.runs, 1);
+    const clean = await go([true], '1');
+    assert.strictEqual(clean.code, 0); assert.strictEqual(clean.runs, 1, 'a pass is not run again');
+    assert.ok(!/FLAKY/.test(clean.out + clean.sum));
+  } finally {
+    for (const k of ['UI_SUITE_RETRY', 'UI_SUITE_JOBS', 'UI_SUITE_OUT', 'GITHUB_STEP_SUMMARY']) { if (env[k] === undefined) delete process.env[k]; else process.env[k] = env[k]; }
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+  const yml = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'ui-platforms.yml'), 'utf8');
+  assert.ok(/UI_SUITE_RETRY: \$\{\{ matrix\.os != 'ubuntu-latest' && '1' \|\| '0' \}\}/.test(yml), 'FR-138: macOS and Windows retry once, Linux does not');
+}
+await retries();
+console.log('ui-suite: check-parallel and ui-suite install Electron once before their parallel jobs (FR-114)');
 })().catch((e) => { console.error(e); process.exitCode = 1; });

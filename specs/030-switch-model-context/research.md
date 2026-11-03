@@ -82,8 +82,8 @@ Everything below is **types / source / docs** unless it says otherwise. Nothing 
 
 | Agent | Switch | Window | Compact | Status |
 | --- | --- | --- | --- | --- |
-| Claude Code (Agent SDK) | `Query.setModel()` in streaming-input mode; effort via options or `applyFlagSettings({effortLevel})` | `getContextUsage().maxTokens`, `modelUsage[].contextWindow` | `PreCompact` hook, `compact_boundary` message; a manual compact command is **unverified** | docs (012 research) |
-| Codex (app-server) | `model` and `effort` on `turn/start` become the defaults for later turns: **from the next message** | `tokenUsage.modelContextWindow` (nullable) | `contextCompaction` item; a manual trigger is **unverified** | docs (012 research) |
+| Claude Code (Agent SDK) | `Query.setModel()` in streaming-input mode; effort via options or `applyFlagSettings({effortLevel})` | `getContextUsage().maxTokens`, `modelUsage[].contextWindow` | `PreCompact` hook, `compact_boundary` message; a manual `/compact` in `-p` **checked** (`real:` 2026-11-02, spec 015, #731: `status null` with `compact_result` before the boundary) | docs (012 research); real |
+| Codex (app-server) | `model` and `effort` on `turn/start` become the defaults for later turns: **from the next message** | `tokenUsage.modelContextWindow` (nullable) | `contextCompaction` item; manual `thread/compact/start` **checked** (`real:` 2026-11-02, spec 015, #731: its own turn, empty result) | docs (012 research); real |
 
 So the neutral contract is: a switch may be `immediate`, `next-message` or unavailable; the window may be unknown; compaction may be automatic only. Copilot is the only adapter where all of it is declared in types.
 

@@ -15,6 +15,8 @@ export interface StandMeta { figH: number; poses: Record<string, [number, number
 /* `foot`: per pose, the horizontal centre of the planted feet as a share of the picture's width (spec 097 FR-191): the figure stands on it,
    not on the middle of its box, because a three-quarter view has its feet off the box's centre. */
 export interface RealMeta {
+  /** spec 102 FR-255: a pixel world's art (one integer scale); its lobby keeps people apart */
+  pixelArt?: boolean;
   seat: Record<string, SeatMeta>; stand: Record<string, StandMeta>;
   fixtures: Record<string, [number, number]>; fixtureTop?: Record<string, number>; floorLine: number;
   /** per person: the typing rig's head and hands, as fractions of the picture, with their pivots (spec Changes 2026-11-01) */
@@ -29,14 +31,20 @@ export interface DeskBox {
   face: Rect | null; away: { x: number; y: number; s: number } | null; narrow: boolean; lamp: Rect;
   bubble: { x: number; y: number } | null; bang: { x: number; y: number } | null; dots: { x: number; y: number } | null;
   call: { x: number; y: number };
+  /** `aisles` only (spec 102 FR-256..FR-259): the marquee, the standing person's box and the side the screen faces */
+  marquee?: Rect; stand?: Rect; facing?: 'left' | 'right'; body?: number /* spec 102 FR-306: the cabinet's body, 0..3: the seat with 4 agents or fewer, else (column + 2 x row) mod 4, so a seat differs from its neighbours on the grid */; cue?: { x: number; y: number };
 }
 /** `id` is the folder's id; `part` is 1, or 2, 3... for the rest of a folder split over rows */
-export interface ZoneBox { id: string; part: number; box: Rect; sign: Rect; desks: DeskBox[] }
+export interface ZoneBox { id: string; part: number; box: Rect; sign: Rect; desks: DeskBox[]; /** `aisles`: the sign shows name, counts, + and menu only; path and cost go to its hover (FR-256) */ signShort?: boolean }
 export interface VisitorBox { id: string; fig: (Rect & { file: string; fileB: string | null; b: Rect | null; pose: string; feetY: number; faces: 'left' | 'right' }) | null; chip: { x: number; y: number }; face: Rect | null; shadow: Rect | null }
 export interface FixtureBox { id: string; custom: boolean; art: Rect | null; slot: Rect; plate: { x: number; y: number; w: number }; visitors: VisitorBox[]; more: number; light: Rect }
 export interface Layout {
   u: number; big: boolean; lobbyH: number; floorH: number; width: number; height: number; scroll: boolean; faceH: number;
   zones: ZoneBox[]; fixtures: FixtureBox[]; floorStrip: Rect;
+  /** `aisles` only: the free strip under the lobby where one-line pills go first */
+  lane?: Rect;
+  /** `aisles` only: the pixel scale (CSS px per art pixel) and the cabinet's size */
+  g?: number; cabinet?: { w: number; h: number; gw: number; gh: number; cols: number; rows: number };
 }
 
 /* FR-010 constants (b2.js) */
@@ -69,13 +77,17 @@ export const CHIP_H = 17, CHIP_GAP = 2;
 /** FR-022: the order inside a zone. */
 export const STATE_ORDER: Record<RealState, number> = { waiting: 0, limit: 0, error: 1, working: 2, thinking: 2, done: 3, idle: 4, asleep: 4 };
 /** FR-036: the seated pose per state (the first frame; motion is phase P2). */
-export const SEAT_POSE: Record<RealState, string | null> = { working: 'typeA', thinking: 'think', waiting: 'waveA', limit: 'waveA', error: 'think', done: 'rest', idle: 'rest', asleep: null };
+export const SEAT_POSE: Record<RealState, string | null> = { working: 'typeA', thinking: 'think', waiting: 'waveA', limit: 'waveA', error: 'think', done: 'rest', idle: 'rest', asleep: 'rest' };
 
 const roOwn = (o: object, k: string): boolean => Object.prototype.hasOwnProperty.call(o, k);
 const roNeedsYou = (s: RealState): boolean => s === 'waiting' || s === 'limit';
-/** An agent without a person at its desk: away in the lobby, or asleep (Q5: lamp and screen off, a narrower desk). */
-const roNarrow = (a: RealAgent): boolean => !!a.away || a.state === 'asleep';
-const roWidthOf = (_a: RealAgent): number => 1; /* spec Changes 2026-11-01: an empty desk keeps its slot, so nothing moves when someone leaves */
+/** An empty seat: the agent is away in the lobby (a post-it says where). An asleep agent is not away: it rests at its desk in the dark (FR-120, FR-129). */
+const roNarrow = (a: RealAgent): boolean => !!a.away;
+/** Owner ruling 2026-11-02 (replaces #979's "asleep included" for this one case): an asleep desk narrows (0.62). Asleep is reached only once the last
+ *  message is read (an unread reply keeps its full desk, spec 001 FR-173, shutters.js), so the desk is full while unread and narrows when read. Every other desk keeps the still-room rule. */
+export const ASLEEP_W = 0.62;
+const roSlim = (a: RealAgent): boolean => a.state === 'asleep' && !a.away;
+const roWidthOf = (a: RealAgent): number => (roSlim(a) ? ASLEEP_W : 1);
 const roSeatOf = (meta: RealMeta, a: RealAgent): SeatMeta | null => (a.person && roOwn(meta.seat, a.person) ? meta.seat[a.person] : null);
 
 /** FR-022: a zone's desks in status order; ties keep the model's order. */
@@ -208,11 +220,11 @@ export function standHeight(meta: RealMeta, person: string): number {
  *  to 0.6; (4) the biggest crowds show fewer people and a "+N"; (5) empty places become a plate-only slot, from the right; (6) every
  *  fixture gets smaller still (down to 0.2); (7) plate-only slots narrow (their label ellipsed). An occupied place always keeps its
  *  fixture and at least one person. `scale` is each fixture's own scale. */
-export function lobbyWidths(fixtures: readonly number[], counts: readonly number[], W: number, vw: number): { x: number[]; w: number[]; fw: number[]; scale: number[]; step: number; shown: number[]; compact: boolean[]; gap: number } {
+export function lobbyWidths(fixtures: readonly number[], counts: readonly number[], W: number, vw: number, minStep = 0): { x: number[]; w: number[]; fw: number[]; scale: number[]; step: number; shown: number[]; compact: boolean[]; gap: number } {
   const n = fixtures.length, GAP = 4;
   const compact = fixtures.map(() => false), shown = counts.map((c) => Math.max(0, c | 0));
   const busy = (i: number): boolean => counts[i] > 0;
-  let step = 0.8 * vw, se = 1, sb = 1, cw = COMPACT_W;
+  let step = Math.max(0.8 * vw, minStep), se = 1, sb = 1, cw = COMPACT_W;
   const scaleOf = (i: number): number => (busy(i) ? sb : Math.min(se, sb));
   const fwOf = (i: number): number => (compact[i] ? cw : fixtures[i] * scaleOf(i));
   const wOf = (i: number): number => fwOf(i) + (shown[i] && !compact[i] ? 0.7 * vw + (shown[i] - 1) * step : 0);
@@ -221,7 +233,7 @@ export function lobbyWidths(fixtures: readonly number[], counts: readonly number
   let art = artOf((i) => !busy(i));
   if (total() > W && art) se = Math.max(0.55, 1 - (total() - W) / art);
   const many = shown.reduce((s0, c) => s0 + Math.max(0, c - 1), 0);
-  if (total() > W && many) step = Math.max(0.45 * vw, step - (total() - W) / many);
+  if (total() > W && many) step = Math.max(0.45 * vw, minStep, step - (total() - W) / many);
   art = artOf(busy);
   if (total() > W && art) sb = Math.max(0.6, 1 - (total() - W) / art);
   while (total() > W) {
@@ -253,7 +265,7 @@ function roLobby(meta: RealMeta, places: RealPlace[], W: number, Lb: number): { 
   const frontY = floorY + FRONT_DEPTH * (Lb - floorY); /* owner 10:48: the front floor plane, inside the floor strip */
   const webW = (meta.fixtures.web || [100, meta.floorLine])[0] * fs0;
   const full = places.map((p) => (!p.custom && roOwn(meta.fixtures, p.id) ? meta.fixtures[p.id][0] * fs0 : webW)); /* FR-027: a custom place is a kiosk the size of the Web fixture */
-  const al = lobbyWidths(full, places.map((p) => p.visitors.length), W, vw);
+  const al = lobbyWidths(full, places.map((p) => p.visitors.length), W, vw, meta.pixelArt ? 1.6 * vw : 0); /* spec 102, owner 2026-11-03: in a pixel world nobody stands half behind another; who does not fit is counted on the plate */
   const fixtures: FixtureBox[] = places.map((p, i) => {
     const x = al.x[i], fw = al.fw[i], compact = al.compact[i];
     const fs = fs0 * al.scale[i], fh = wallH * al.scale[i];
@@ -297,35 +309,36 @@ function roNote(px: number, sx: number, slotW: number, sl: number, deskY: number
 
 /** FR-013, FR-016, FR-017, FR-036, FR-038: one desk (roStation) in a slot. */
 function roStation(meta: RealMeta, a: RealAgent, sx: number, y: number, Sw: number, u: number, g: Geom, big: boolean, scrH: number): DeskBox {
-  const narrow = roNarrow(a);
+  const narrow = roNarrow(a), slim = roSlim(a);
   const slotW = Sw * roWidthOf(a);
   const deskY = y + g.deskBack, dw = slotW - 6, dh = g.dh;
   const m = roSeatOf(meta, a);
   const hand = m ? m.hand : DESK_AT;
   const headY = deskY - 0.015 * u - hand * u;
-  const px = big ? sx + slotW / 2 : sx + 0.05 * Sw + 0.42 * u;
+  const px = big || slim ? sx + slotW / 2 : sx + 0.05 * Sw + 0.42 * u;
   let person: DeskBox['person'] = null, face: Rect | null = null;
   const pose = SEAT_POSE[a.state];
   if (m && pose && !narrow) {
     const k = u / m.bodyH, w = m.w * k, h = m.h * k, top = headY - m.headTop * k;
     person = { x: px - w / 2, y: top, w, h, file: `${a.person}-${pose}.webp`, fileB: roOwn(POSE_FRAME_B, pose) ? `${a.person}-${POSE_FRAME_B[pose]}.webp` : null, pose, pid: String(a.person),
-      vis: { x: px - 0.3 * u, y: headY, w: 0.6 * u, h: Math.max(0, deskY - headY) } }; /* the head and shoulders: the monitor may cover a shoulder edge, never the face */
+      vis: { x: Math.max(sx, Math.min(px - 0.3 * u, sx + slotW - 0.6 * u)), y: headY, w: Math.min(0.6 * u, slotW), h: Math.max(0, deskY - headY) } }; /* the head and shoulders: the monitor may cover a shoulder edge, never the face */
     face = { x: px - FACE_U * u * 0.4, y: headY, w: FACE_U * u * 0.8, h: FACE_U * u };
   }
   let sl = px + 0.36 * u, sr = sx + slotW - 0.05 * Sw, sw = sr - sl;
   let foot = deskY + 0.13 * dh, neck = Math.max(6, 0.07 * u);
   let sh = Math.min(sw * (Sw > 300 ? 0.78 : 0.64), foot - neck - (y + STRIP + 3));
+  if (slim && !big) { sl = sx + 0.1 * slotW; sr = sx + 0.9 * slotW; sw = sr - sl; sh = Math.min(sw * 0.64, foot - neck - (y + STRIP + 3)); }
   if (big) { const top = 6; sl = sx + 0.04 * slotW; sr = sx + 0.96 * slotW; sw = sr - sl; sh = scrH - 4 - top; neck = 0; foot = y + STRIP + top + sh; }
   sh = Math.max(12, sh);
   const screen = { x: sl, y: foot - neck - sh, w: sw, h: sh + neck + 4 };
   const glass = { x: sl + 3, y: foot - neck - sh + 3, w: sw - 6, h: sh - 6 };
-  const plateH = roNeedsYou(a.state) ? PLATE_H_ASK : PLATE_H;
+  const plateH = roNeedsYou(a.state) || a.state === 'asleep' ? PLATE_H_ASK : PLATE_H; /* FR-120: the asleep plate's words take two lines in its narrower desk (the row already holds the room, FR-015) */
   const plate = { x: sx + 8, y: deskY + 0.22 * dh + 2, w: slotW - 16, h: plateH };
   /* the desk picture is dh tall; the row shows its top (desktop, front panel, the upper legs), so the box is cut at the row's bottom */
   const desk = { x: sx + 3, y: deskY, w: dw, h: Math.min(dh, g.bottom - g.deskBack - 2), full: dh };
   return {
-    id: a.id, state: a.state, narrow, slot: { x: sx, y, w: slotW, h: 0 }, desk, plate, screen, glass, person, face,
-    away: narrow && a.away ? roNote(px, sx, slotW, sl, deskY, u, big) : null, /* the note on the desk, where the person would sit */
+    id: a.id, state: a.state, narrow: narrow || slim, slot: { x: sx, y, w: slotW, h: 0 }, desk, plate, screen, glass, person, face,
+    away: a.away ? roNote(px, sx, slotW, sl, deskY, u, big) : null, /* the note on the desk, where the person would sit */
     lamp: { x: sx + 0.02 * slotW, y: Math.max(y + STRIP, headY - 0.35 * u), w: 0.96 * slotW, h: deskY + dh * 0.5 - Math.max(y + STRIP, headY - 0.35 * u) },
     bubble: person && roNeedsYou(a.state) ? { x: px + 0.2 * u - 6, y: headY - 0.04 * u } : null,
     bang: a.state === 'error' ? { x: sr - 10, y: screen.y - 8 } : null,
@@ -406,6 +419,62 @@ export function assignPeople(map: Record<string, string>, sessions: readonly { i
   return out;
 }
 
+/** the lobby band (fixtures and their visitors), for arrangements other than `rows` (spec 102 FR-256: the arcade hall keeps today's band) */
+export { roLobby as lobbyBand };
+
+/** Spec 097 FR-110, FR-121: where a slip, a bubble or a pill goes. The first free spot nearest `anchor` inside `bounds` that touches nothing in `avoid`
+ *  (a plate, a sign, a chair label, a chip), or null when there is none. Pure; a 10 px grid keeps it cheap (a few hundred thousand comparisons at most). */
+export function placeBox(size: { w: number; h: number }, avoid: readonly Rect[], bounds: Rect, anchor: { x: number; y: number }, step = 10): Rect | null {
+  const hit = (x: number, y: number): boolean => avoid.some((r) => x < r.x + r.w && r.x < x + size.w && y < r.y + r.h && r.y < y + size.h);
+  let best: { x: number; y: number; s: number } | null = null;
+  for (let y = bounds.y; y + size.h <= bounds.y + bounds.h + 0.01; y += step) {
+    for (let x = bounds.x; x + size.w <= bounds.x + bounds.w + 0.01; x += step) {
+      const s = Math.abs(x + size.w / 2 - anchor.x) + 0.6 * Math.abs(y - anchor.y);
+      if (best && s >= best.s) continue;
+      if (!hit(x, y)) best = { x, y, s };
+    }
+  }
+  return best ? { x: best.x, y: best.y, w: size.w, h: size.h } : null;
+}
+
+/** Spec 097 FR-106 (owner 2026-11-01: "too much space above head"): the square of a seated picture that the chat's round header portrait shows. The side is 0.72 of the
+ *  body height (the face, FACE_U of it, fills about 40 % of the circle), its top is 12 % of the side above the top of the head, and it stays inside the picture (moved down or
+ *  sideways, never smaller). Same data as the layout's face box (FACE_U, `headTop`, `bodyH`): one definition of where the face is. */
+export const PORTRAIT_SIDE = 0.72, PORTRAIT_AIR = 0.12;
+export function portraitCrop(seat: { w: number; h: number; headTop: number; bodyH: number }): { x: number; y: number; s: number } {
+  const s = Math.min(PORTRAIT_SIDE * seat.bodyH, seat.w, seat.h);
+  const y = Math.max(0, Math.min(seat.h - s, seat.headTop - PORTRAIT_AIR * s));
+  const x = Math.max(0, Math.min(seat.w - s, seat.w / 2 - s / 2));
+  return { x, y, s };
+}
+
+/** Owner ruling 2026-11-02: the post-it on an empty seat has one paper colour per reason (the place the agent went to), dark ink on every one (contrast 4.5:1 or more,
+ *  held by test:realoffice-layout); the words "at <place>" stay, so colour never carries the meaning alone. One default for a place the table does not know (a custom place).
+ *  The Boss is a calm blue, not an alarm colour: most visits to the Boss door are ordinary. No shadow or animation belongs to the colours. */
+export const NOTE_INK = '#2a2205';
+export const NOTE_PAPER: Record<string, string> = {
+  boss: '#bfd9f2', bank: '#bfe8bd', coffee: '#ffcf9e', library: '#f6e27f', software: '#d9c6f0', terminal: '#b8e6e0', web: '#f5c1d6', other: '#dcc9a3',
+};
+export const NOTE_PAPER_DEFAULT = '#ece9e0';
+export const notePaper = (place: string | null | undefined): string => (place && roOwn(NOTE_PAPER, place) ? NOTE_PAPER[place] : NOTE_PAPER_DEFAULT);
+
+/** Spec 097 FR-110, FR-121: what a slip, a bubble or a pill must never cover, from the drawn layout: signs, plates, faces (who needs you is read from them),
+ *  the post-it on an empty seat, a desk's `?` bubble and `!` mark. Pure, so a test holds it to the boxes the renderer really draws. */
+export function slipAvoid(lay: Layout): Rect[] {
+  const out: Rect[] = [];
+  for (const z of lay.zones) {
+    out.push({ x: z.sign.x, y: z.sign.y, w: z.sign.w, h: z.sign.h });
+    for (const d of z.desks) {
+      out.push(d.plate);
+      if (d.face) out.push(d.face);
+      if (d.away) out.push({ x: d.away.x - d.away.s / 2 - 4, y: d.away.y - 2, w: d.away.s + 8, h: d.away.s + 6 }); /* the note's own square, with a little for its tilt */
+      if (d.bubble) out.push({ x: d.bubble.x, y: d.bubble.y - 24, w: 24, h: 24 });
+      if (d.bang) out.push({ x: d.bang.x, y: d.bang.y, w: 20, h: 20 });
+    }
+  }
+  return out;
+}
+
 /* ---- Phase P2: live screens and motion (FR-030..FR-035, FR-070..FR-074) ---- */
 
 /** One line of a monitor: `n` stays with the line while it scrolls, `k` is its kind (FR-032's colours), `t` is masked text. */
@@ -414,14 +483,15 @@ export interface ScreenLine { n: number; k: string; t: string }
 export const SCREEN_SMALL = { w: 150, h: 60 };
 export const SCREEN_PAD = 4;
 /** FR-032: how a glass of this size shows text: `rows` lines of text and `bars` line bars above them. */
-export function screenFit(glass: { w: number; h: number }): { small: boolean; font: number; lh: number; rows: number; bars: number; whole: number } {
+export function screenFit(glass: { w: number; h: number }, g = 0): { small: boolean; font: number; lh: number; rows: number; bars: number; whole: number } {
   const room = Math.max(0, glass.h - 2 * SCREEN_PAD);
   if (glass.w < SCREEN_SMALL.w || glass.h < SCREEN_SMALL.h) {
     const lh = 13;
     /* the newest line wraps over the rows it needs, the bars show above it as far as room is left; `whole`: the height of whole text rows */
     return { small: true, font: 10.5, lh, rows: 1, bars: Math.max(0, Math.floor((room - lh - 2) / 6)), whole: Math.max(lh, Math.floor(room / lh) * lh) };
   }
-  const font = glass.h > 200 ? 13 : 11, lh = font === 13 ? 17 : 15;
+  /* spec 102 (relayed, 2026-11-03): in the arcade above g = 3 the text grows with the art, 11 px at g = 3 */
+  const font = g > 3 ? Math.round(11 * g / 3 * 2) / 2 : glass.h > 200 ? 13 : 11, lh = g > 3 ? Math.round(font * 1.36) : font === 13 ? 17 : 15;
   const rows = Math.max(1, Math.floor(room / lh));
   return { small: false, font, lh, rows, bars: 0, whole: rows * lh };
 }

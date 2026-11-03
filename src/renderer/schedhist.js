@@ -16,8 +16,8 @@
     'skipped-ended':{word:'not sent: the session has ended',kind:'stop'},
     missed:{word:'missed: the app was closed',kind:'miss'},
     failed:{word:'could not send',kind:'fail'},
-    held:{word:'held: not sent yet (closed door, update or break)',kind:'hold'},
-    'skipped-door-full':{word:'not kept: the closed door already holds as many prompts as it can',kind:'stop'},
+    held:{word:'held: not sent yet (update or break)',kind:'hold'},
+    'skipped-door-full':{word:'not kept: an older version of Durbar could not hold more prompts (an old record)',kind:'stop'},
     'skipped-review':{word:'not sent: the prompt is over 10,000 characters, shorten it with Edit',kind:'stop'},
     ended:{word:'loop ended',kind:'end'}
   };

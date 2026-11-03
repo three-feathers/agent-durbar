@@ -196,13 +196,29 @@ module.exports = async (ctx) => {
     await moveTo(1, 1);
     await must(`true`, 'a tick');
     await js(`document.activeElement&&document.activeElement.blur&&document.activeElement.blur();0`);
-    /* this can be a machine in use: another window can have taken the focus since the hover step, and then Tab goes nowhere */
-    ctx.win.show(); ctx.win.focus(); wc().focus();
-    await must(`document.hasFocus()`, 'the window active for the keyboard', 8000);
+    await refocus();
+    /* FR-230: a sign redrawing under the keyboard gives the focus back to the same button. A marked button proves the redraw happened */
+    {
+      const zone = (await js(`window.__durbarSimUi.realLayout().zones.filter(z=>z.desks.some(d=>d.state==='working')).map(z=>({id:z.id,desk:z.desks.find(d=>d.state==='working').id}))[0]`));
+      const SIGN = `.ro-sign[data-folder=${JSON.stringify(zone.id)}]`;
+      const counts = () => js(`document.querySelector(${jsLiteral(SIGN + ' .ro-sc')}).textContent`);
+      const c0 = await counts();
+      for (const [i, attr] of ['newsess', 'foldermenu'].entries()) {
+        await js(`(()=>{const b=document.querySelector(${jsLiteral(SIGN + ' [data-' + attr + ']')});b.__marked=1;b.focus();})();0`);
+        const was = await counts();
+        await emit({ type: 'status', sessionId: zone.desk, status: i ? 'working' : 'idle', intent: 'Driver work' });
+        await must(`document.querySelector(${jsLiteral(SIGN + ' .ro-sc')}).textContent!==${jsLiteral(was)}`, 'the sign redrawn');
+        await must(`(()=>{const a=document.activeElement;return a.dataset[${jsLiteral(attr)}]===${jsLiteral(zone.id)}&&!a.__marked;})()`, 'the focus on the redrawn sign\'s ' + attr + ' button');
+      }
+      assert.strictEqual(await counts(), c0, 'the desk back as it was');
+    }
     // keyboard parity: real Tab presses reach a plate; the same zoom opens; Esc closes it and keeps the focus; the next Tab moves on and opens the next
-    await js(`(()=>{const s=document.querySelector('.ro-sign .ro-sb');s&&s.focus();})()`);
-    let got = false;
+    const toSign = () => js(`(()=>{const s=document.querySelector('.ro-sign .ro-sb');s&&s.focus();})()`);
+    await toSign();
+    let got = false, lost = 0;
     for (let t = 0; t < 12 && !got; t++) {
+      /* this can be a machine in use: without the window's focus a plate reached by Tab is not focus-visible and opens nothing, so those Tabs prove nothing */
+      if (!(await js(`document.hasFocus()`)) && lost++ < 5) { console.log('[097-screens] the window lost the focus before a Tab'); await refocus(); await toSign(); t = 0; }
       wc().sendInputEvent({ type: 'keyDown', keyCode: 'Tab' }); wc().sendInputEvent({ type: 'keyUp', keyCode: 'Tab' });
       got = await H.until(`!!document.getElementById('roZoom')&&document.activeElement&&document.activeElement.classList.contains('ro-plate')`, 500);
     }

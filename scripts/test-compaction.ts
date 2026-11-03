@@ -1,7 +1,8 @@
 /**
  * Spec 015 FR-006..FR-013 (issue #601): compaction for every agent app, the "Compacting" rule and the gauge maths. `npm run test:compaction`. No credits.
- * The Claude and Codex shapes are synthetic, written from the sources named in the spec (`read:` only, no real compaction seen); Copilot's
- * `session.truncation` follows the SDK's generated types.
+ * The orders of the Claude and Codex cases marked "real order" were recorded on real sessions (2026-11-02, issue #731, manual compaction,
+ * `docs/agent-apps.md`); the other shapes (automatic compaction, `compact_result: 'failed'`, hostile values) are synthetic, from the sources
+ * named in the spec. Copilot's `session.truncation` follows the SDK's generated types (`read:`).
  */
 import * as assert from 'assert';
 import * as path from 'path';
@@ -36,6 +37,27 @@ const comp = (o: EventBody[]): string[] => o.filter((e) => e.type === 'compactio
   let o = run([status('compacting'), boundary({ trigger: 'auto', pre_tokens: 167000 }), status(null)]);
   assert.deepStrictEqual(comp(o), ['start:unknown', 'complete:auto:b167000']);
   valid(o);
+  // real order (Claude Code 2.1.316, `/compact`): compacting, status null + compact_result success, system/init, compact_boundary, result
+  {
+    const init = { type: 'system', subtype: 'init', session_id: 's1', cwd: '/w', model: 'm', claude_code_version: '2.1.316', apiKeySource: 'none', mcp_servers: [{ name: 'srv', status: 'connected' }] };
+    const real = [status('compacting'), status(null, { compact_result: 'success' }), init, boundary({ trigger: 'manual', pre_tokens: 90000, post_tokens: 12000, duration_ms: 5000, cumulative_dropped_tokens: 78000 }), { type: 'result', subtype: 'success', is_error: false, result: '' }];
+    o = run(real);
+    assert.deepStrictEqual(comp(o), ['start:unknown', 'complete:manual:b90000'], 'the real order: one start, one complete, no failure at the result');
+    assert.ok(!JSON.stringify(o).includes('"failed"'));
+    valid(o);
+    const ce = o.find((e) => e.type === 'compaction' && e.phase === 'complete');
+    assert.ok(ce && ce.type === 'compaction' && ce.tokensAfter === 12000 && ce.tokensRemoved === 78000);
+    // a status:null with a success (or any non-failed result) never ends or fails an open compaction; the mid-turn init leaves it open
+    o = run([status('compacting'), status(null, { compact_result: 'success' }), init]);
+    assert.deepStrictEqual(comp(o), ['start:unknown'], 'still open after status null and init');
+    const q: EventBody[] = [];
+    const mq = new ClaudeMapper((b) => q.push(b), { quiet: true });
+    for (const x of real.slice(0, 3)) mq.map(x as never);
+    assert.ok(!q.some((e) => e.type === 'status'), 'quiet: the mid-turn init sets no status, the desk stays on Compacting');
+    mq.map(real[3] as never);
+    mq.map(real[4] as never);
+    assert.deepStrictEqual(comp(q), ['start:unknown', 'complete:manual:b90000'], 'and the compaction still ends once');
+  }
   assert.deepStrictEqual(comp(run([status('compacting'), boundary({ trigger: 'manual', pre_tokens: 90 })])), ['start:unknown', 'complete:manual:b90']);
   // post_tokens (optional in the SDK): the real size after; hostile values are dropped like pre_tokens
   o = run([boundary({ trigger: 'auto', pre_tokens: 167000, post_tokens: 31000 })]);
@@ -98,6 +120,23 @@ const comp = (o: EventBody[]): string[] => o.filter((e) => e.type === 'compactio
   assert.deepStrictEqual(comp(run([turnDone])), [], 'nothing open: nothing said');
   assert.deepStrictEqual(comp(run([item('item/started', 'userMessage'), item('item/started', 'contextCompactionX'), item('item/started', '__proto__')])), [], 'other item types are not compactions');
   assert.deepStrictEqual(comp(run([{ method: 'item/started', params: { threadId: 'th', item: { type: 'contextCompaction' } } }])), [], 'an item with no id is dropped, as every item');
+  // real order (codex-cli 0.163.0, thread/compact/start): its own turn: turn/started, item started, item completed, tokenUsage, turn/completed
+  {
+    const usageMsg = (input: number): Record<string, unknown> => ({ method: 'thread/tokenUsage/updated', params: { threadId: 'th', turnId: 't1', tokenUsage: { modelContextWindow: 200000, total: { inputTokens: 9, outputTokens: 1, cachedInputTokens: 0, totalTokens: 10 }, last: { inputTokens: input, outputTokens: 500, cachedInputTokens: 0, totalTokens: input + 500 } } } });
+    const turnStart = { method: 'turn/started', params: { threadId: 'th', turn: { id: 't1', status: 'inProgress' } } };
+    o = run([turnStart, item('item/started'), item('item/completed'), usageMsg(150000), turnDone]);
+    assert.deepStrictEqual(comp(o), ['start:unknown', 'complete:unknown'], 'no failure at the turn end');
+    assert.ok(!o.some((e) => e.type === 'compaction' && e.phase === 'failed'));
+    assert.ok(o.some((e) => e.type === 'usage'), "the compaction's tokens still count as usage");
+    assert.ok(!o.some((e) => e.type === 'context'), "the update after the compaction gives no context figure (the old size must not bring back the ring)");
+    assert.ok(o.some((e) => e.type === 'status' && e.status === 'idle'), 'the turn end idles the desk');
+    valid(o);
+    // the next turn reports its context again
+    o = run([turnStart, item('item/started'), item('item/completed'), usageMsg(150000), turnDone, turnStart, usageMsg(20000), turnDone]);
+    assert.deepStrictEqual(o.filter((e) => e.type === 'context').map((e) => (e.type === 'context' ? e.tokens : 0)), [20000], 'the next turn gives the new size');
+    // an ordinary turn is untouched
+    assert.deepStrictEqual(run([turnStart, usageMsg(1234), turnDone]).filter((e) => e.type === 'context').length, 1);
+  }
   // a child thread (a helper) is not the main agent's compaction
   const child = [
     { method: 'item/started', params: { threadId: 'th', turnId: 't1', item: { type: 'collabAgentToolCall', id: 'spawn1', tool: 'spawn_agent', receiverThreadIds: ['kid'], prompt: 'p' } } },

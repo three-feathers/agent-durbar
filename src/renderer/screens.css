@@ -50,7 +50,7 @@ body.screen-open .workspace{display:none}
 .mst-w{font-weight:500}
 .mst-call{font-weight:400;overflow-wrap:anywhere}
 .srv-hint{display:block;font-size:11px;color:var(--ink-2);overflow-wrap:anywhere}
-.srv-hint.srv-org,.mcp-tlist .srv-org{color:var(--tone-warn-ink)} /* spec 076 FR-202: blocked by the agent app's organization policy */
+.srv-hint.srv-org,.srv-hint.srv-miss,.mcp-tlist .srv-org{color:var(--tone-warn-ink)} /* spec 076 FR-202: blocked by the agent app's organization policy; spec 058 FR-198: a command Agent Durbar did not find */
 .mcp-org code{color:var(--muted)}
 .srv-detbtn{align-self:flex-start;margin-top:2px}
 /* spec 058 FR-090/FR-093 (issue 603): the reason line and the Details / Copy diagnostics buttons side by side */
@@ -174,7 +174,6 @@ body.has-bridge #topBtns{display:flex}
 .mtag.src{background:var(--tone-idea-bg);border-color:var(--tone-idea-line);color:var(--tone-idea-ink)}
 .scr-sub{margin:12px 0 4px;font-size:var(--t3-size);font-weight:650;color:var(--ink)}
 .scr-sub small{font-weight:500;color:var(--muted);margin-left:6px}
-.srv.legacy{opacity:.92;border-style:dashed}
 .cfgs{list-style:none;margin:6px 0;padding:0;display:flex;flex-direction:column;gap:6px}
 .cfg{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px}
 .cfg .cfg-n{margin-left:auto;color:var(--muted);font-variant-numeric:tabular-nums}
@@ -223,7 +222,6 @@ body.has-bridge #topBtns{display:flex}
 .chsw svg{display:block;width:58px;height:58px;margin:0 auto}
 .thtx{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 6px;min-width:0;padding:0 2px}
 .thtx b{flex:0 1 auto;font-size:12px;font-weight:600;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis} /* spec 052 FR-053: one line */
-.thover{flex-basis:100%;font-size:11px;font-weight:600;letter-spacing:.04em;color:var(--muted);line-height:1.2}
 .thtx small{flex-basis:100%;font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* FR-030: lead sentence, the rest behind More; MCP under a closed Advanced group */
 .scr-more{margin:2px 0 6px}
@@ -314,7 +312,7 @@ body.has-bridge #topBtns{display:flex}
 /* spec 052 FR-049: install plan cards: radio beside its command (".dlg label" stacks them), the chosen card is outlined */
 .dlg .hs-plan{flex-direction:row;align-items:flex-start;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;cursor:pointer}
 .dlg .hs-plan:has(:checked){border-color:var(--focus);background:var(--pb-working)}
-/* spec 052 FR-099 (round 10): Settings > Detail level > Spacing, a second labelled segment under the first */
+/* spec 052 FR-099 (round 10): Settings > Display > Spacing, a second labelled segment under the first */
 .scr-row{display:flex;align-items:center;gap:12px;margin-top:8px}
 .scr-row-l{font-size:var(--t4-size);font-weight:600;color:var(--ink-2)}
 .mcp-rsess{display:flex;align-items:center;gap:6px 10px;flex-wrap:wrap;margin:10px 0 2px}
@@ -376,19 +374,24 @@ body.has-bridge #topBtns{display:flex}
 .mcp-tg:focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:4px}
 .mcp-car{font-size:11px;color:var(--muted);width:10px}
 .srv.sm.open{flex-wrap:wrap}
-.mcp-tools{flex:1 0 100%;margin:6px 0 0 14px;font-size:12px;color:var(--ink-2)}
+.mcp-tools{flex:1 1 calc(100% - 14px);min-width:0;box-sizing:border-box;margin:6px 0 0 14px;font-size:12px;color:var(--ink-2)}
 .mcp-tcount{margin:0 0 4px;font-size:11px;font-weight:650;color:var(--muted)}
-.mcp-tlist{list-style:none;margin:0;padding:0;max-height:180px;overflow:auto;display:flex;flex-direction:column;gap:3px}
-.mcp-tlist li{display:flex;gap:8px;align-items:baseline;min-width:0}
-.mcp-tlist code{flex:none;font-size:11.5px}
-.mcp-tlist span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;font-size:11.5px}
+.mcp-tlist{list-style:none;margin:0;padding:0;max-height:240px;overflow-y:auto;overflow-x:hidden;display:flex;flex-direction:column;gap:5px;min-width:0}
+/* spec 069 FR-067: a tool row stays inside the card: the name on one line, the description under it clamped to 2 lines (full text in the title) */
+.mcp-tlist li{display:flex;flex-direction:column;gap:1px;align-items:stretch;min-width:0;max-width:100%}
+.mcp-tlist code{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11.5px}
+.mcp-tlist span{min-width:0;font-size:11.5px;overflow-wrap:anywhere}
+.mcp-tlist .mcp-tdesc{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden;padding-left:22px;color:var(--ink-2)}
+.mcp-tlist .mcp-tnote{padding-left:22px}
+.mcp-tlist .mcp-ttok{flex:none;margin-left:auto;font-size:11px;color:var(--muted);white-space:nowrap}
+.mcp-tbtn svg{width:14px;height:14px}
 /* spec 069 part 4: single tools on and off */
 .mcp-thead{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:center;margin:0 0 4px}
 .mcp-all{display:inline-flex;align-items:center;gap:6px;background:none;border:0;padding:0;font:inherit;font-size:11.5px;font-weight:650;color:var(--ink-2);cursor:pointer}
 .mcp-all[disabled]{cursor:not-allowed;opacity:.7}
 .mcp-box{display:inline-flex;align-items:center;justify-content:center;width:13px;height:13px;border:1px solid var(--line-ctl);border-radius:3px;font-size:10.5px;line-height:1}
 .mcp-tnote{font-size:11px;color:var(--muted)}
-.mcp-tlist label{display:inline-flex;flex-direction:row;align-items:center;gap:6px;flex:none;font-weight:500;margin:0}
+.mcp-tlist label{display:flex;flex-direction:row;align-items:center;gap:6px;min-width:0;font-weight:500;margin:0}
 .mcp-tlist input{margin:0}
 /* spec 060 FR-012: a tall setup dialog (three routes and the vendor's commands) scrolls inside its body, so the rows never slide under Cancel/Install */
 #hsDlg .dlg .dbody{overflow:auto;padding-right:2px}
@@ -498,5 +501,6 @@ body.has-bridge #topBtns{display:flex}
 .ns-done{margin:10px 0 0}
 .ns-done>summary{cursor:pointer;margin:0 0 6px;padding:4px 2px;font-size:12px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;color:var(--ink-2);border-radius:6px}
 .ns-done>summary:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
+.orgrows{list-style:none;margin:0;padding:0}.orgrow{padding:6px 0;border-top:1px solid var(--line);display:flex;flex-direction:column;align-items:flex-start;gap:2px;font-size:var(--t3-size,12px)}.orgrow small{font-size:11px;color:var(--muted,inherit);overflow-wrap:anywhere}.orgrow small.warn{color:var(--amber-ink)}.orgrow ul{margin:2px 0 0;padding-left:18px}
 
 @media (forced-colors:active){.swt{border-color:ButtonText;forced-color-adjust:none;background:Canvas}.swt i{background:ButtonText;box-shadow:none}.swt.on{background:Highlight;border-color:Highlight}.swt.on i{background:HighlightText}} /* on and off differ by the knob's place and by colour: both survive */

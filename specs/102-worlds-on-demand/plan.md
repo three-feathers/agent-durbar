@@ -115,7 +115,169 @@ P1 to P3 may merge before the gate with nothing visible as available; P4 to P6 r
 - **Weekly matrix growth** with each picture world; shard per world.
 - **Art backlog**: crews to full poses, Retro pixel people and each new world are much art; each gate in FR-035 keeps them from shipping half done, and `coming` keeps the list honest.
 - **Repo growth** from art (OP-3); about 2.5 MB per world version, and redos count.
-- **App size**: about 22.6 MB of shipped art, then about 26.8 MB with Retro game (estimates, FR-213); the 30 MB budget test stops growth.
+- **App size**: about 22.6 MB of shipped art, then about 26.8 MB with Retro arcade (estimates, FR-213; about 23.0 MB by FR-253); the 30 MB budget test stops growth.
+
+## Delta 2026-11-02: world order rows and helpers (FR-271, FR-272)
+
+| Order | Row | Tasks | Gate | Size |
+|---|---|---|---|---|
+| Next built-in | Retro game | this plan's Retro arcade section | The Retro arcade plan and FR-213 | As planned |
+| After it | **Terminal world**, arrangement `panes`, shades as tokens | T233, T234 | The next built-in world has shipped; #990's `ARRANGEMENTS` is on `main`; the owner's look | One arrangement in the engine and token sets; less art than a picture world |
+| With each world | Helpers as kids | T235 | One moment in the registry, then a cell per world | Art per world |
+
+Reused: `realLayout`, FR-226's list, `WORLD_SETS`, `lightFor`, the live-screen masking of 097; the registry and matrix of spec 098. Public notes and changelogs name no unreleased world.
+
+## Monitor and arrangements (FR-220..FR-236)
+
+**Reuse (spec 021 FR-031).** `realLayout`, `FX_POSE`, the `Layout`, `ZoneBox` and `DeskBox` types (`src/shared/realoffice-layout.ts`, #921); `test:realoffice-layout`; `check-office-ops`, `check:office`, `world-matrix.js`; `worldpack.ts` and `test:worldpack` (FR-050, one validator); `ro-bezel` as the monitor's fallback; FR-061's lazy load in 097; `DurbarReorder` and the model's order (#987).
+
+**Looked at and not reused: `chooseLayout` and the room-by-room search (#984).** The brief named them, but they are the flat office's: DOM probes, densities, wrapping rooms. A world's office never runs them (097 keeps its own pure engine, "a Real office start, with no search"). An arrangement in that code would add a DOM search to a path that has none. FR-233 records this; no interplay beyond the shared gate.
+
+```text
+world.json  arrangement: "circle"
+   -> worldpack.ts          id in ARRANGEMENTS, focus.webp present
+   -> realoffice.js         rows? call as today. Otherwise load realoffice-arrangements once
+   -> realLayout(model, view, meta, signs, arrangement)
+        rows                exactly today's path
+        other, project      that layout, at every count up to 15
+        other, shared pack  arrangementFits -> fit: that layout; no fit: rows, Layout.arrangement = "rows"
+   -> realoffice.js         same drawing, plus focus at Layout.focus when present
+```
+
+- **`circle`:** split the floor round a centre `focus` rectangle, pack zones into left, top, right bands with the existing row maths per band, `u` the largest that fits, by bisection like FR-011. Bounded search: FR-019's 5 ms, fall-back attempt included.
+- **`facing-view`:** rows on a floor shortened by the `focus` band; the least code, since it calls the row path.
+- **`flanking`:** two desk blocks either side of a central aisle; fixtures in the aisle. **`aisles`:** staggered aisles, in an integer scale `g`, from the mockup (FR-256; [*Retro arcade*](#retro-arcade-fr-250fr-270)).
+- **Few agents:** each arrangement grows its screens inside itself at 4 or fewer (FR-230), so 097 FR-020's one shared row applies to `rows` only.
+- **Monitor in the engine:** `meta` gains an optional `monitor: {w, h, screenRect}`. Absent: today's `screen` and `glass`, byte for byte. A rows world with a monitor picture does pay for its picture: inside the part caps and the 097 FR-178 area row, and the same for every world; "no cost" (FR-231) is about the arrangement code.
+
+**Risks.**
+
+| Risk | Answer |
+|---|---|
+| 15 agents do not fit with a `focus` area at 24 px faces | T165 first, pure and free; redesign the arrangement (A5) |
+| A project world has no fall-back, and the beach's mockup is under 24 px at 15 | Redesign (FR-235); T165 first, measured in the app |
+| A lounger looks wrong with an upright seated frame | FR-224; art brief; the owner's look. No reclining poses |
+| Screens on small laptops | Same `screenRect` floor; bars under 150x60 (097 FR-032) |
+| Hostile `arrangement` | FR-226, fixtures in `test:worldpack` |
+| Conflict with 097's engine on open PRs | Build after #921 and #974; 097's text through T164 |
+| Fire as endless animation | Still picture; FR-227 |
+
+**Order:** after 102 P1 (validator) and #921. T165 and T166 can run first as they are pure and on the simulator.
+
+## Retro arcade (FR-250..FR-270)
+
+**Base for the build: `097-chat-in-world` (#1001)**, the top of the world stack: `main` <- #991 world seam <- #993 cave <- #994 moments <- #1001 chat. It has `world.json`, `set.json`, `world.css`, `WORLD_FLAGS`, `WORLD_SETS`, the World row, the moments and the chat this world follows. New branches `102-arcade-pN-slug`, each off the previous, each merged forward by merge commit as a base lands (no force-push, FR-061; unstack as FR-040 says). #979 is **not** in that stack and is its first need: phases that draw (RA3 on) start after #979 lands and is merged in, because this world follows its still room and replaces its poof. RA0, RA1 and RA2 can start now.
+
+**Reuse (spec 021 FR-031).**
+
+| Need | Existing | Note |
+|---|---|---|
+| Pack layout, lazy load, closed flag | #991, #993: `realoffice/worlds/<id>/`, `sets/<id>/`, `copy-assets.js`, `WORLD_FLAGS` | Same pattern; `WORLD_FLAGS.retro` |
+| Build script | `build-cave-pack.py` (#993) | `build-arcade-pack.py`, same tools |
+| Rectangles | `realLayout`, `Layout`, `ZoneBox`, `DeskBox`, `signWidth`, `sortDesks`, `assignPeople`, `placeBox` | Through FR-228's one seam |
+| Status | `lightFor`, `lampWords` | No new status logic; FR-260 only draws |
+| UI style | `html[data-ui="retro"]`, `themes.css` (41 rules) | The rules the arcade's chrome needs stay; the rest go in T230 (FR-263) |
+| Day tokens | `registerBuiltIn({id:'retro'})`'s tokens | Moved to `WORLD_SETS.retro` |
+| Token check | `worldContrast`, `test:theme-tokens` | Takes the light |
+| Light group | #991's World radios, `focusIn` | Same radios |
+| Moments | #994's slips, plates, ride, tent; world CSS per world | Arcade's looks, same structure |
+| Chat | #1001: surface, column, portrait, tails | Arcade's looks |
+| Checks | `check-office-ops`, `check-perf --record`, `check:office`, `test:realoffice-assets`, `shots-097-cave`'s driver | World id parameter; new `shots-102-arcade` |
+| Heads in Flat | FR-203, 077's kit path | T122 |
+
+```text
+scripts/build-arcade-pack.py (dev only: drawing, grid, lossless) -> committed WebP
+world.json  arrangement "aisles", pixelArt, lightSets, ui "retro", monitor {cells, screenRect, marqueeRect}
+  -> realLayout(model, view, meta, signs, "aisles")   pure; returns g; no light parameter
+  -> realoffice.js   same drawing; adds marquee and glow per desk; picks parts by light
+  -> world.css       .ro[data-world="retro"]: image-rendering, marquee, beat; no filter, no blend (test)
+  -> theme.js        setWorld("retro", light): tokens; data-ui = "retro"
+crew.js  peopleFor; AISLE_POSE with fallback
+```
+
+**The hard questions, in one place.**
+
+| Question | Answer | Where |
+|---|---|---|
+| Canvas or data? | WebP frames at the real grid: 0.3 MB of people, 3 KB of room | FR-254 |
+| Slanted text? | No. Level glass and text on a redrawn cabinet | FR-258 |
+| Day and night vs. the cap? | Night is about 3 KB plus its `welcome`; at most 0.31 MB. About 0.4 MB in all, 4.5 MB at the worst | FR-253 |
+| 60 fps and idle CPU? | Transform and opacity, shared beat, 4 phases, no chase, no canvas; recorded by T216 | FR-261 |
+| Blocked? | Build no; ship yes | FR-269 |
+
+**Measure first**, in this order; each can change what follows, and each costs 0 AI credits:
+
+1. **T200** the owner's look at a level cabinet beside the slanted one. Done: he chose level, 2026-11-01.
+2. **T202** pure fit: signs, plates, faces at 1..15 and 40, both sizes, chat closed and open (FR-021); the sign's room is the one most likely to fail.
+3. **T204** even pixels at ratio 1.25 and 1.5.
+4. **T208** real sizes on committed files.
+5. **T215** masks against a plain fade.
+6. **T216** idle CPU in 4 mixes, day and night, then the same on one real GPU.
+
+**Moments** (FR-264; from #994's nine, words and buttons unchanged):
+
+| Moment | In the arcade |
+|---|---|
+| first-run | The hall with its cabinets dark, the flat card word for word on a plate (dark since 2026-11-03: night only) |
+| empty-office | The flat sentence on a plate over three dark cabinets |
+| lounge | Cabinet off, shade, the person on their drawn `sit` frame beside it (2026-11-03; was `rest` behind the console), `z z`, FR-120's plate |
+| walk | Pixel dissolve (FR-262); a note at the cabinet, an arcade ticket since 2026-11-03: a dark card with a neon edge |
+| inbox | Slips at the big attract-mode cabinet (Boss) |
+| limit-card | A slip or pill at the Bank's coin vault; chat card in tokens |
+| elicitation | A pixel bubble with exactly **Answer in chat** / **Show in chat** |
+| coffee-bar | Only the agent on a break at the change machine; tent card as a plate (dark since 2026-11-03) |
+| floor-jumps | The ride in hard steps; the lift as the plain panel of the mockup; instant under reduced motion |
+
+The other 17 cells are the same shared code, in tokens, or a `person`, `fixture` or `desk-screen` block already drawn; each is looked at and marked in the registry, not assumed.
+
+**Phases, one reviewer each.** Nothing is visible until RA10: `WORLD_FLAGS.retro` is closed, and a simulator flag opens it for drivers only.
+
+| Phase | PR holds | Depends on | About |
+|---|---|---|---|
+| RA0 | Art in the cache, no repo code | nothing | T200, T201 |
+| RA1 | `aisles`, pure | #1001's base; #955's `ARRANGEMENTS` or its own constant moved later | T202..T205 |
+| RA2 | Frames, packs, asset tests; nothing draws them | RA0 | T206..T208 |
+| RA3 | Draw the hall: pixel scale, cabinet, marquee, CRT, signs, plates, fixtures | RA1, RA2, #979 | T209..T212 |
+| RA4 | Status, beat, flourish, dissolve | RA3 | T213..T216 |
+| RA5 | Light: night parts, tokens, the group | RA3 | T217..T219 |
+| RA6 | UI style, chat, Settings | RA5, #1001 | T220, T221 |
+| RA7 | Nine moments and the registry | RA4, #994 | T222, T223 |
+| RA8 | Set contract and interoperation; `pixel` in Flat, closed | RA2, T111 | T224, T225, T122 |
+| RA9 | Coverage moves off the theme; no behaviour change | nothing | T226 |
+| RA10 | Migration, looks, then **the flip**: the flag, `pixel` value, automatic move, theme removed, code and docs | all, FR-269's gate | T227..T232, T115, spec 035 T089 |
+
+**Risks.**
+
+| Risk | Answer |
+|---|---|
+| Folder signs do not fit at 15 at 1280x800 | T202 first; name and controls stay; path and cost to hover; FR-265 names it |
+| An integer scale leaves dead space between sizes | Stagger and rows take it up (T202); the guide's "no dead strips" is looked at |
+| Pixels uneven at 125 % scale | T204; `g x ratio` whole, where the floor fits |
+| The flip is large for one reviewer | Everything else lands first; the flip is mostly deletions, one flag and the Characters value |
+| A release is cut mid-way | T230 is one PR; the flag stays closed until then |
+| The gate takes long | Retro Pixel stays until it opens, so its daily user loses nothing while waiting |
+| Removing the theme shrinks CI coverage | T226 before T230 |
+| A user moved with no notice looks for Flat | The changelog says it; Flat is in Settings, one click (FR-266) |
+| The art agent is still changing frames | RA2 reads a dated copy; T208's test holds the result |
+
+## Delta 2026-11-02: petrol garage, founders' garage and rooftop terrace (FR-280..FR-299)
+
+**Reused (spec 021 FR-031).** `layoutFor`, `ARRANGEMENTS`, `Layout`, `lobbyBand`, `lobbyWidths`, `stagger`, `lightFor` (#1016, 097); `WORLDS`, `WORLD_FLAGS`, `peopleFor`, `parseWorld`, `offeredWorlds` (`crew.js`); `worldflags`, `officeview`, `world` (simulator options); `NOTE_PAPER`, `NOTE_INK`, `notePaper` (#994); the 12-a-second grid and `check-097-motion` (#1046); `world-matrix.js`, `check-world-tools`, `test:surfaces` (098); T093, T094, `check-world-distinct`; `test:realoffice-assets`; FR-227's `focus.webp`; FR-223's `desk-back`; the moment rules of FR-271 on #1014. **New and shared, none per world:** the table-driven plan function, `focus` drawn, floor and wall from pack parts with no `world.css`, `notePaper`, `noteStyle`, `--moments`, `DURBAR_SIM_WORLDFLAGS`.
+
+**Order of work, by the named exception (decided, Q11).** Landed alone, because reachable today: T244 (the matrix fix and `--moments`), T247's scene, T248. On a branch, costing no credits: T240's cards, which land with T093's check because `test:world-catalogue` reads them, so they are not unreachable, T241, T242, T243, T245, T258, then the owner's look at grey boxes (T246). Art follows his written yes per image run, after checking the plan's usage (Q1), one pack at a time. **Then one PR per world, in the order petrol, founders', roof:** its table in `ARRANGEMENTS`, its pack (T250, T251, T252), its helpers (T253) when T235 has landed, its row and flag (T259) and its cells (T254). The first also brings T242, T243, T245, T249 and T258, unless Cave has brought T242. Per world after landing: T255, with the 30-day ask. T256 as its PRs land. T257 only when the store is on `main`.
+
+| Step | Gate | Cost |
+|---|---|---|
+| T244, T247's scene, T248 | The next built-in world's stack on `main` | 0 AI credits; about 3 shared PRs, landing alone |
+| T240..T243, T245, T249, T258 | T093 for T240; on a branch until the first world's art is approved | 0 AI credits; about 200 lines of plan code plus tests and small shared rules, inside the per-world PRs |
+| T246 | The plans pass T241 | The owner's look |
+| T250..T253, T259 | Q1, T240, T246 | 36 to 54 images on the owner's plan, check its usage first; about 0.75 MB a pack (estimate); 3 per-world PRs, each with its table, pack, flag and cells |
+| T254, T255 | FR-035, with 097 FR-179; T254 lands in its world's PR | Owner's look per world, `real:` run on a Mac; over 30 days behind the flag, the owner chooses: open or remove |
+| T257 | #955, #966, T043, T190 | Two PRs per world |
+
+**Risk: the plans are arithmetic.** `bays` has the tightest numbers, since 8 seats at 156 px have no room for a bust beside the screen; hence the stacked back bank. T241 comes before any art so that a plan can fail cheaply. **Risk: repo growth,** an estimated 2.25 MB that stays in history after T257 (Q2).
+
+**Constitution.** I: spec, plan, tasks here, no `src/`. II: nothing vendor-specific. III: packs stay data; `notePaper` and `noteStyle` are validated (FR-055); the simulator flag exists only under `DURBAR_SIM`. IV: image runs only on the owner's written yes, simulator otherwise. V: 10.5 px, 15 agents at both sizes, no status by colour alone, reduced motion freezes everything. VI: no path or shell difference; packaged runs listed. VII: FR-297's table. VIII: the mock's limits are stated, numbers tagged as arithmetic or measured.
 
 ## Done when
 

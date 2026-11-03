@@ -37,12 +37,11 @@ const SECRET_ENV = /^(GH_|GITHUB_|DURBAR_AUDIT_GH_TOKEN|ANTHROPIC_|OPENAI_|COPIL
 
 export type Result = { command: string; test: string; file?: string; result: 'pass' | 'fail' | 'killed' | 'survived' | 'compile-error' | 'timeout' | 'refused'; reason?: string; exit?: number | null; output?: string };
 
-/** The `node <file>` steps of a `test:*` suite that `test:serial` runs, or an error. */
-export function suiteSteps(pkg: { scripts?: Record<string, string> }, test: string): string[][] | string {
+/** The `node <file>` steps of a `test:*` suite that `npm test` runs (the names of scripts/test-suites.txt, passed as `list`), or an error. */
+export function suiteSteps(pkg: { scripts?: Record<string, string> }, test: string, list: readonly string[]): string[][] | string {
   if (!/^test:[a-z0-9-]{1,40}$/.test(test)) return 'the test must be a test:* script name';
   const scripts = pkg.scripts || {};
-  const serial = String(scripts['test:serial'] || '').split('&&').map((s) => s.trim().replace(/^npm run /, ''));
-  if (!serial.includes(test) || typeof scripts[test] !== 'string') return `${test} is not in test:serial`;
+  if (!list.includes(test) || typeof scripts[test] !== 'string') return `${test} is not in test-suites.txt`;
   const steps = scripts[test].replace(TSC_PREFIX, '').split('&&').map((s) => s.trim().split(/\s+/));
   for (const s of steps) {
     if (s[0] !== 'node' || s.length !== 2 || !/^(dist-scripts\/scripts|scripts)\/[A-Za-z0-9._-]+\.js$/.test(s[1])) return `${test} has a step that is not "node <file>"`;
@@ -102,7 +101,9 @@ export function run(argv: string[], env: NodeJS.ProcessEnv, timeoutMs = 300_000)
   if (!path.isAbsolute(root) || !fs.existsSync(path.join(root, 'package.json'))) return refuse('DURBAR_AUDIT_WORKTREE is not the audit worktree');
   let pkg: { scripts?: Record<string, string> };
   try { pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')); } catch { return refuse('cannot read package.json'); }
-  const steps = suiteSteps(pkg, test);
+  let list: string[];
+  try { list = fs.readFileSync(path.join(root, 'scripts', 'test-suites.txt'), 'utf8').split(/\r?\n/).map((l) => l.replace(/#.*$/, '').trim()).filter(Boolean); } catch { return refuse('cannot read scripts/test-suites.txt'); }
+  const steps = suiteSteps(pkg, test, list);
   if (typeof steps === 'string') return refuse(steps);
   let target: { abs: string } | undefined;
   let find = '', replace = '', rel = '';

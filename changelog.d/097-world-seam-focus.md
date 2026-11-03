@@ -1,1 +1,0 @@
-- **Office layout** (spec 097): choosing an Office layout in Settings keeps keyboard focus on the button you pressed.

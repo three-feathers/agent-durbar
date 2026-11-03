@@ -14,6 +14,7 @@
 import { codexEdit } from './edits';
 import type { EventBody } from './map';
 import type { EditInfo } from './types';
+import { appApprovedPermission } from './types';
 import { resetMs, usageLimitClosing } from './usagelimit';
 import { isObj, nonEmptyStr as str } from '../shared/guards';
 import { isMcpAuthChallenge } from './mcpauth';
@@ -119,6 +120,7 @@ export class CodexMapper {
 
   reset(): void {
     this.compacting = false;
+    this.compactedTurn = false;
     this.main = this.cwd = undefined;
     this.children.clear();
     this.tools.clear();
@@ -181,6 +183,16 @@ export class CodexMapper {
     if (!agentId && method.startsWith('item/')) this.retries.progress(); // not usage: a failed turn can report tokens too
 
     switch (method) {
+      case 'item/autoApprovalReview/completed': {
+        // spec 003 FR-110 ([UNSTABLE] in the app-server schema): only an `approved` review of a named item; the rationale text is never read
+        // one-to-one only: a stdin review names its parent command and an execve review is one of many for one item, so an approved
+        // child must not tag a parent whose other review may be denied; the source must be the app's own reviewer
+        const id = ownStr(params, 'targetItemId');
+        const kind = ownStr(own(params, 'action'), 'type');
+        if (!id || ownStr(params, 'decisionSource') !== 'agent' || ownStr(own(params, 'review'), 'status') !== 'approved') return;
+        if (kind !== 'command' && kind !== 'applyPatch' && kind !== 'mcpToolCall') return;
+        return this.emit({ type: 'permission', permission: appApprovedPermission(id), agentId });
+      }
       case 'error': {
         // spec 034 FR-017: Codex retries the request by itself (`willRetry: true`); a fixed reason and the status only, never the message
         const info = agentId ? null : codexRetry(params);
@@ -247,6 +259,7 @@ export class CodexMapper {
 
   private turnCompleted(params: Obj, agentId: string | undefined): void {
     if (agentId === undefined) {
+      this.compactedTurn = false;
       if (this.compacting) {
         this.compacting = false;
         this.emit({ type: 'compaction', phase: 'failed', trigger: 'unknown' }); // an open compaction at the turn's end did not finish
@@ -294,7 +307,7 @@ export class CodexMapper {
     if (input === undefined && output === undefined && cached === undefined) return; // nothing countable: not a model call
     // Codex reports tokens only: no credits (nanoAiu) and no money (costUsd).
     this.emit({ type: 'usage', agentId, inputTokens: input, outputTokens: output, cacheReadTokens: cached });
-    if (input !== undefined) this.emit({ type: 'context', agentId, tokens: input, limit: num(own(tu, 'modelContextWindow')) ?? 0 });
+    if (input !== undefined && !(this.compactedTurn && agentId === undefined)) this.emit({ type: 'context', agentId, tokens: input, limit: num(own(tu, 'modelContextWindow')) ?? 0 });
   }
 
   private item(item: unknown, phase: 'started' | 'completed', agentId: string | undefined): void {
@@ -387,7 +400,7 @@ export class CodexMapper {
         return;
       }
       case 'contextCompaction': {
-        // spec 015 FR-008 (issue #601, `read:`): the app-server summarises the thread; the main agent only. The item has no numbers.
+        // spec 015 FR-008 (issue #601, `real:` 2026-11-02, #731): the app-server summarises the thread; the main agent only. The item has no numbers.
         if (agentId) return;
         if (!done) {
           if (this.compacting) return;
@@ -395,6 +408,7 @@ export class CodexMapper {
           return this.emit({ type: 'compaction', phase: 'start', trigger: 'unknown' });
         }
         this.compacting = false;
+        this.compactedTurn = true; // the token update that follows in this same turn may describe the summarising call, not the new size
         return this.emit({ type: 'compaction', phase: 'complete', trigger: 'unknown' });
       }
       default:
@@ -404,6 +418,8 @@ export class CodexMapper {
 
   /** Spec 015 FR-008: a context compaction of the main thread is open (ended by its completed item, or failed at the turn's end). */
   private compacting = false;
+  /** Spec 015 FR-012: a compaction finished in this turn: its `thread/tokenUsage/updated` (real order: item, usage, turn end) counts its tokens but gives no context figure (`last` was not recorded; the old size would defeat the "waiting" ring). */
+  private compactedTurn = false;
 
   /** FR-149: helper threads already announced as started / ended (bounded by the session). */
   private helpersStarted = new Set<string>();

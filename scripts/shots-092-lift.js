@@ -6,7 +6,7 @@
  *     DURBAR_DRIVER=$PWD/scripts/shots-092-lift.js npx electron .        (xvfb-run -a ... --no-sandbox on Linux)
  *
  * Real clicks and key presses (sendInputEvent), at 1440x900 and 1280x800; every wait is a condition (until), and the driver exits non-zero on a miss:
- *   FR-006/FR-007  three floors on: a vertical toolbar "Floors" with All and one button per floor in floor order, labelled 1..3, each at least 28x28 px with
+ *   FR-006/FR-007  three floors on: a vertical toolbar "Floors" with All and one button per floor, floor 3 at the top and floor 1 at the bottom (Q-D), labelled by number, each at least 28x28 px with
  *                  text at least 10.5 px; names "<floor>, floor n of m[: words]"; aria-current on the floor shown; the lift is not inside the office area.
  *   FR-014..FR-016 SC-004: the badges equal the agents that need the user on the other floors (an oracle from the desks of the All floors view and the
  *                  simulator's agents); none on the floor shown; a New reply on another floor adds a badge at once and clears exactly when its chat is shown.
@@ -80,13 +80,14 @@ module.exports = async (ctx) => {
     let L = await lift();
     assert.ok(L.shown && L.role === 'toolbar' && L.label === 'Floors' && L.orient === 'vertical', `${tag}: a vertical toolbar named Floors: ${JSON.stringify(L).slice(0, 200)}`);
     assert.ok(!L.inFloor, `${tag}: the lift is outside the office area, so its width comes out of it (FR-008)`);
-    assert.deepStrictEqual(L.b.map((b) => b.text), ['All', '1', '2', '3'], `${tag}: All, then the floors by position (Q-B)`);
+    assert.deepStrictEqual(L.b.map((b) => b.text), ['All', '3', '2', '1'], `${tag}: All, then the floors from the top down (Q-B, Q-D)`);
+    assert.ok(await js(`(()=>{const y=id=>document.querySelector('#lift [data-lift="'+id+'"]').getBoundingClientRect().top;return y('*all')<y('f-personal')&&y('f-personal')<y('f-clienta0')&&y('f-clienta0')<y('ground');})()`), `${tag}: floor 1 is drawn at the bottom (Q-D)`);
     for (const b of L.b) assert.ok(b.w >= 28 && b.h >= 28 && b.font >= 10.5 && b.bfont >= 10.5, `${tag}: button ${b.text} ${b.w}x${b.h}, text ${b.font}px, badge ${b.bfont}px`);
-    assert.deepStrictEqual(L.b.slice(1).map((b) => b.name.split(':')[0]), NAMES.map((n, i) => `${n}, floor ${i + 1} of 3`), `${tag}: accessible names`);
-    assert.deepStrictEqual(L.b.slice(1).map((b) => b.title.split('\n')[0]), NAMES, `${tag}: the tooltip names the floor`);
+    assert.deepStrictEqual(L.b.slice(1).map((b) => b.name.split(':')[0]), NAMES.map((n, i) => `${n}, floor ${i + 1} of 3`).reverse(), `${tag}: accessible names are unchanged, in the new order`);
+    assert.deepStrictEqual(L.b.slice(1).map((b) => b.title.split('\n')[0]), [...NAMES].reverse(), `${tag}: the tooltip names the floor`);
     assert.strictEqual(L.b[0].name, 'All floors, 3 floors', `${tag}: All's name`);
-    assert.deepStrictEqual(L.b.map((b) => b.cur), [null, 'true', null, null], `${tag}: aria-current on the floor shown`);
-    assert.deepStrictEqual(L.b.map((b) => b.tab), ['-1', '0', '-1', '-1'], `${tag}: one tab stop, on the floor shown (FR-013)`);
+    assert.deepStrictEqual(L.b.map((b) => b.cur), [null, null, null, 'true'], `${tag}: aria-current on the floor shown`);
+    assert.deepStrictEqual(L.b.map((b) => b.tab), ['-1', '-1', '-1', '0'], `${tag}: one tab stop, on the floor shown (FR-013)`);
     await shot('one', w, h);
 
     // ---- FR-014..FR-016, SC-004: badges match the agents that need the user on the other floors ----
@@ -121,10 +122,10 @@ module.exports = async (ctx) => {
       const d=r&&[...r.querySelectorAll('.desk[data-id]')].find(d=>!d.closest('.helpers')&&!['waiting','error'].includes(d.dataset.state)&&!d.classList.contains('is-unread')&&!ag.get(d.dataset.id).limit&&!ag.get(d.dataset.id).coffee);return d?d.dataset.id:null;})()`);
     assert.ok(quiet, `${tag}: precondition: a Personal agent that does not need the user`);
     await clickBtn('ground'); assert.ok(await onFloor('Ground floor'));
-    const before = (await lift()).b[3].badge;
+    const before = (await lift()).b[1].badge;
     await js(`(()=>{const E=e=>window.__durbarSimEmit(Object.assign({timestamp:Date.now(),sessionId:${jsLiteral(quiet)}},e));E({type:'status',status:'working',intent:'Working'});E({type:'output',final:true,text:'Done.'});E({type:'status',status:'idle'});})()`);
     assert.ok(await until(`(document.querySelector(${jsLiteral(btn('f-personal') + ' .lift-badge')})||{}).textContent===${jsLiteral(String((+before || 0) + 1))}`), `${tag}: a New reply on Personal adds to its badge (${before} before)`);
-    assert.ok(/new reply/.test((await lift()).b[3].name), `${tag}: the name says new reply`);
+    assert.ok(/new reply/.test((await lift()).b[1].name), `${tag}: the name says new reply`);
     await js(`window.__durbarSimUi.crew.openPanel(${jsLiteral(quiet)})`);
     assert.ok(await until(`document.body.classList.contains('panel-open')`), `${tag}: the chat opens`);
     await js(`document.getElementById('backBtn').click()`);
@@ -135,9 +136,9 @@ module.exports = async (ctx) => {
     await reset(w, h, { simfloors: '1' });
     await js(`document.querySelector('#lift .lift-b[tabindex="0"]').focus()`);
     assert.strictEqual((await lift()).focus, 'ground', `${tag}: the tab stop is the floor shown`);
-    await key('Down'); assert.ok(await until(`document.activeElement.dataset.lift==='f-clienta0'`), `${tag}: Down moves the focus`);
-    await key('End'); assert.ok(await until(`document.activeElement.dataset.lift==='f-personal'`), `${tag}: End`);
-    await key('Down'); assert.ok(await until(`document.activeElement.dataset.lift==='f-personal'`), `${tag}: Down at the end stays`);
+    await key('Up'); assert.ok(await until(`document.activeElement.dataset.lift==='f-clienta0'`), `${tag}: Up moves the focus to the button drawn above (Q-D)`);
+    await key('End'); assert.ok(await until(`document.activeElement.dataset.lift==='ground'`), `${tag}: End goes to floor 1, the bottom button`);
+    await key('Down'); assert.ok(await until(`document.activeElement.dataset.lift==='ground'`), `${tag}: Down at the bottom stays`);
     await key('Home'); assert.ok(await until(`document.activeElement.dataset.lift==='*all'`), `${tag}: Home goes to All (FR-032)`);
     await key('Up'); assert.ok(await until(`document.activeElement.dataset.lift==='*all'`), `${tag}: Up at the top stays`);
     assert.ok(await onFloor('Ground floor'), `${tag}: moving the focus changes nothing`);
@@ -155,6 +156,9 @@ module.exports = async (ctx) => {
     assert.ok(v.desks === 15 && v.tags.length === 3 && !v.empty && v.view === 'all', `${tag}: the whole building on one screen, remembered: ${JSON.stringify(v)}`);
     const labels = await js(`[...document.querySelectorAll('.lobby .place')].map(p=>p.getAttribute('aria-label')||'').join(' | ')`);
     assert.ok(!/\((?:[^()]*, )(?:Ground floor|Client A|Personal)\)/.test(labels), `${tag}: no lobby label names a floor in All (FR-035): ${labels.slice(0, 200)}`);
+    assert.deepStrictEqual(v.tags, ['Personal', 'Client A', 'Ground floor'], `${tag}: All floors from the top down, floor 1 last (Q-D)`);
+    const heads = await js(`(()=>{const top=n=>Math.min(...[...document.querySelectorAll('#stage .room-head .floor-tag')].filter(t=>t.textContent.trim()===n).map(t=>t.getBoundingClientRect().top));return {p:top('Personal'),g:top('Ground floor')};})()`);
+    assert.ok(heads.p < heads.g, `${tag}: floor 1 is drawn below the top floor (Q-D): ${JSON.stringify(heads)}`);
     await clickBtn('*all', true); await annEq(['All floors, 3 floors'], `${tag}: choosing the view shown again says nothing`);
     await shot('all', w, h);
     await js(`document.body.focus()`);

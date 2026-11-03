@@ -1,6 +1,6 @@
 {
   "styles.css": {
-    "colors": 125,
+    "colors": 113,
     "fonts": 0
   },
   "screens.css": {
@@ -8,19 +8,19 @@
     "fonts": 0
   },
   "themes.css": {
-    "colors": 51,
+    "colors": 10,
     "fonts": 0
   },
   "app.js": {
-    "colors": 17,
+    "colors": 15,
     "fonts": 0
   },
   "screens.js": {
-    "colors": 3,
+    "colors": 2,
     "fonts": 0
   },
   "scenekits.js": {
-    "colors": 70,
+    "colors": 11,
     "fonts": 0
   },
   "index.html": {

@@ -9,6 +9,7 @@ import type { ElicitAction, ElicitAnswer, ElicitRequest } from '../shared/elicit
 import type { McpServerSpec } from '../shared/mcp';
 import type { AutoTier, CompactResult, ContextTier, ModelOption, ModelSwitchRequest, ModelSwitchResult } from '../shared/modelswitch';
 import type { AdapterCapabilities, PermissionMode } from './capabilities';
+import type { McpContextReport, McpContextServer } from '../shared/mcpcost';
 import type { OrgPolicy } from '../shared/orgpolicy';
 import type { HandoffResult } from './handoff';
 import type { HistoryResult, PreviousSession } from './history';
@@ -17,6 +18,7 @@ import type { EditInfo } from '../shared/edits';
 import type { AccountIdentity, AccountInfoOptions } from '../shared/account';
 import type { SandboxHostView, SandboxState } from '../shared/api';
 export type { EditInfo };
+export type { McpContextReport, McpContextServer };
 export type { ElicitAction, ElicitAnswer, ElicitRequest, McpServerSpec, CompactResult, ContextTier, ModelOption, ModelSwitchRequest, ModelSwitchResult, AdapterCapabilities, PermissionMode };
 
 export type AgentStatus = 'idle' | 'working' | 'needs-permission' | 'error' | 'stopped';
@@ -168,8 +170,8 @@ export interface PermissionInfo {
 
 /**
  * Spec 003 FR-099: the reason a request ran without a question. `session-grant`: the user's "Approve for this session" rule(s) (`key` is the first,
- * `keys` every rule that allowed it: a write in several folders needs one rule per folder; all can be revoked); `allow-all`: the mode; `in-folder`: a read that Durbar checked to be inside the session's folders; `attachment`: a read of a file the user attached; `app`: reserved for an adapter that really
- * reports the agent app's own decision (no adapter sets it yet, FR-106).
+ * `keys` every rule that allowed it: a write in several folders needs one rule per folder; all can be revoked); `allow-all`: the mode; `in-folder`: a read that Durbar checked to be inside the session's folders; `attachment`: a read of a file the user attached; `app`: set only by an adapter that really
+ * reports the agent app's own decision (`classifier`: Codex auto-review and Copilot assisted approval, FR-109..FR-111; Claude Code reports none, FR-106).
  */
 /** Spec 003 FR-102: most rule keys one `allowedBy` lists. The broker, `eventguard` and the window (`whyallowed.js` `KEYS_MAX`, same number, checked by test:permissions) all use it; more rules are counted in `more`, not dropped silently. */
 export const ALLOWED_BY_KEYS_MAX = 50;
@@ -179,6 +181,14 @@ export type AllowedBy =
   | { kind: 'in-folder' }
   | { kind: 'attachment' }
   | { kind: 'app'; source: 'config' | 'hook' | 'classifier' };
+
+/**
+ * Spec 003 FR-109: the quiet note for a call the agent app's own automatic reviewer approved (Codex auto-review, Copilot assisted approval),
+ * built only from an app's report, never from its text. The one place that makes it, so adapters cannot disagree.
+ */
+export function appApprovedPermission(callId: string): PermissionInfo {
+  return { requestId: callId, kind: 'app-review', summary: 'Approved by the agent app', state: 'approved', via: 'quiet', allowedBy: { kind: 'app', source: 'classifier' } };
+}
 
 /** A remembered "Approve for this session" permission; can be revoked. */
 export interface SessionGrant {
@@ -671,13 +681,22 @@ export interface AgentAdapter {
    * Spec 058 FR-012: restart one MCP server of a running session, only that one, with the configuration it already has. Optional
    * (`capabilities.mcpRestart`). Rejects with a short, user-facing sentence when the session is not running or the server cannot be
    * restarted now; never starts a session and never restarts the others. The new state follows as an `mcp` event.
+   * `opts.auto` (spec 058 FR-207, FR-214): main's automatic reconnect before a message: only the app's own reconnect call, never a
+   * fallback that switches the server off and on, never a sign-in call; the adapter reads the server list again afterwards when the
+   * call's own answer is not the outcome (Copilot). Only adapters with `capabilities.mcpSignInReconnect` are called with it.
    */
-  restartMcpServer?(sessionId: string, name: string): Promise<void>;
+  restartMcpServer?(sessionId: string, name: string, opts?: { auto?: boolean }): Promise<void>;
   /**
    * Spec 069 FR-031: the tools one MCP server of a running session offers, as the agent app reports them now. Optional
    * (`capabilities.mcpTools`). Rejects with a short, user-facing sentence when the session or the server is not running.
    */
   listMcpTools?(sessionId: string, name: string): Promise<McpToolInfo[]>;
+  /**
+   * Spec 100 FR-001: what the tool definitions of this session's MCP servers take in its context window, as the agent app reports them or
+   * as estimated (`capabilities.mcpContext`). Optional. Names and numbers only. Never starts a session or a server and makes no model call;
+   * what the app cannot say is a report with no figures, not a rejection.
+   */
+  mcpContext?(sessionId: string): Promise<McpContextReport>;
   /**
    * Spec 058 FR-064: start the agent app's own sign-in for one MCP server of a running session. Optional (`capabilities.mcpSignIn`).
    * `browser`: the user finishes in the browser at `url` (main keeps it, the window only gets the host); `connected`: already signed in.

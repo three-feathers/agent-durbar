@@ -46,6 +46,14 @@ const SCENES = {
   walk: { query: { sim: '15' } },
   'lift-panel': { query: { sim: '15', simfloors: '1' } },
   'all-floors': { query: { sim: '15', simfloors: '1' } },
+  /* spec 097 FR-118..FR-124 (the nine world moments): Real office on, the simulator's own requests, asleep agents, break and floors */
+  lounge: { query: { sim: '15', officeview: 'real' }, act: `window.__durbarSimUi.agents().filter(a=>!a.parent&&a.state==='done').forEach(a=>{a.lastEventAt=Date.now()-34*60000});window.__durbarSimUi.crew.renderAll()` }, /* a finished agent that finished 34 minutes ago sleeps at its desk */
+  'empty-office': { query: { sim: '15', officeview: 'real', simfloors: 'ground' }, act: `document.dispatchEvent(new KeyboardEvent('keydown',{key:'PageUp',bubbles:true}))` }, /* the second floor is empty */
+  'first-run': { query: { sim: '15', officeview: 'real' }, act: 'window.__durbarSimUi.agents().splice(0);window.__durbarSimUi.crew.renderAll()' },
+  inbox: { query: { sim: '15', officeview: 'real' } },
+  'limit-card': { query: { sim: '15', officeview: 'real' } },
+  elicitation: { query: { sim: '3', officeview: 'real', simelicit: '1' } }, /* with big screens there is room for the bubble */
+  'coffee-bar': { query: { sim: '15', officeview: 'real', simbreak: '600' } },
 };
 
 /* Runs inside the page: the checks on one moment root. Returns { found, problems }. Self-contained (it is sent as source). */
@@ -165,7 +173,7 @@ async function driver(ctx) {
           const scene = SCENES[c.moment];
           if (!scene) verdictInto(rec, { noScene: true });
           else {
-            await H.load({ w, h, query: { ...scene.query, simfreeze: '1', world: c.world }, ready: 'fit', settle: false });
+            await H.load({ w, h, query: { ...scene.query, simfreeze: '1', world: c.world, worldflags: c.world }, ready: 'fit', settle: false });
             if (scene.act) await ctx.js(scene.act);
             const sel = `[data-surface="${c.moment}"]`; /* ids are kebab-case (registry schema, FR-011) */
             await H.until(`(()=>{const e=document.querySelector(${jsLiteral(sel)});return !!e&&e.getClientRects().length>0;})()`, 10000);
