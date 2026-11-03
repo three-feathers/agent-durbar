@@ -121,6 +121,17 @@ assert.ok(windows > 600, `enough windows (${windows})`);
   const raw = 'Cookie: ' + pairs + '; x9=Zx81kq0PLm2RtY\ninvoice total is due';
   const w = M.maskedWindow(raw, raw.indexOf(HIT), raw.indexOf(HIT) + 7, []);
   assert.ok(!w.text.includes('Zx81kq0PLm2RtY') && !w.text.includes('v119'), `no cookie value: ${JSON.stringify(w.text.slice(-80))}`);
+  // re-check of the review (probe 14): a multi-line value inside a long Cookie line moves the edge to the value; replacing it joins the
+  // lines, so the line rule must run again from the value's line or the header falls outside the window
+  {
+    const V = 'OPEN\nsesame\nVALUE-4242x';
+    let ps = '';
+    for (let i = 0; ps.length < 800; i++) ps += `k${i}=v${i}; `;
+    const raw14 = filler(900) + '\nCookie: a=b; t=' + V + '; ' + ps + 'x9=Zx81kq0PLm2RtY; invoice=due\n' + filler(900);
+    const at = raw14.indexOf('invoice=due');
+    const w14 = M.maskedWindow(raw14, at, at + 7, [V]);
+    assert.ok(!w14.text.includes('Zx81kq0PLm2RtY'), `the header of a value-joined line stays in the window: ${JSON.stringify(w14.text.slice(0, 80))}`);
+  }
   // the header on the line before its pairs, and a named secret whose value is lines below its name
   const raw2 = filler(900) + '\nSet-Cookie:\n' + Array.from({ length: 70 }, (_, i) => `c${i}=val${i}x`).join('; ') + '; sid=Qp9xW2mZ7rT5\n' + filler(400) + ' ' + HIT + ' ' + filler(300);
   const w2 = M.maskedWindow(raw2, raw2.indexOf(HIT), raw2.indexOf(HIT) + 7, []);
