@@ -161,7 +161,11 @@ for (const wid of worldIds) {
     const css = fs.readFileSync(path.join(RO, 'worlds', wid, 'world.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
     assert.ok(!/mix-blend-mode\s*:\s*(?!normal)/.test(css) && !/backdrop-filter|[^-]filter\s*:/.test(css), `${wid}: world.css has no blend mode, blur or filter (FR-180)`);
     assert.ok(!/url\(\s*['"]?(?:https?:|\/|\.\.|data:)/i.test(css), `${wid}: world.css loads only files of its own folder`);
-    for (const sel of css.split('}').map((r) => r.split('{')[0].trim()).filter((x) => x && !x.startsWith('@') && !x.startsWith(')'))) assert.ok(sel.includes(`[data-world="${wid}"]`), `${wid}: every rule is scoped to the world: ${sel.slice(0, 60)}`);
+    /* spec 102 T214, FR-260: a world's own motion: keyframes move transform and opacity only, and a loop is stepped */
+    const frames = [...css.matchAll(/@keyframes\s+[\w-]+\s*\{((?:[^{}]*\{[^{}]*\})*)\s*\}/g)];
+    for (const f of frames) for (const d of f[1].matchAll(/\{([^{}]*)\}/g)) for (const prop of d[1].split(';').map((x) => x.split(':')[0].trim()).filter(Boolean)) assert.ok(prop === 'transform' || prop === 'opacity', `${wid}: @keyframes move only transform and opacity: ${prop}`);
+    for (const m of css.matchAll(/animation:\s*([^;}]+)/g)) if (!/^none/.test(m[1])) assert.ok(/steps\(/.test(m[1]), `${wid}: a world's loop is stepped: ${m[1]}`);
+    for (const sel of css.replace(/@keyframes\s+[\w-]+\s*\{(?:[^{}]*\{[^{}]*\})*\s*\}/g, '').split('}').map((r) => r.split('{')[0].trim()).filter((x) => x && !x.startsWith('@') && !x.startsWith(')'))) assert.ok(sel.includes(`[data-world="${wid}"]`), `${wid}: every rule is scoped to the world: ${sel.slice(0, 60)}`);
     for (const m of css.matchAll(/url\(\s*([\w.-]+)\s*\)/g)) assert.ok(w.files.has(m[1]), `${wid}: world.css names ${m[1]}, which is in the folder`);
   }
   const st = readPack('sets', wj.defaultSet), sj = st.json as { id: string; level: string };

@@ -51,6 +51,25 @@ function planFor(k: number, W: number, F: number): Plan {
 }
 
 /** FR-256, T202, T203: the hall. `view` is the floor the app passes (its width and height). Day and night give the same object (FR-251). */
+/** FR-260: how this arrangement draws a status: `lightFor` stays the source of what a state means; this is only its look. `still`: reduced motion or Serious mode: a flash is steady and differs from `lit`, nothing moves. */
+export type AisleMarquee = 'lit' | 'flash' | 'alert' | 'flash-red' | 'alert-red' | 'orange' | 'green' | 'dim' | 'off';
+export interface AisleStatus { marquee: AisleMarquee; glow: 'faint' | 'strong' | 'small' | 'very-faint' | 'none'; cue: 'none' | 'dots' | 'ask' | 'bang' | 'tick' | 'zz'; bob: boolean; flourish: boolean }
+export function aisleStatus(state: RealState, still = false): AisleStatus {
+  const t: Record<RealState, AisleStatus> = {
+    working: { marquee: 'lit', glow: 'faint', cue: 'none', bob: true, flourish: false },
+    thinking: { marquee: 'lit', glow: 'faint', cue: 'dots', bob: false, flourish: false },
+    waiting: { marquee: 'flash', glow: 'strong', cue: 'ask', bob: false, flourish: false },
+    limit: { marquee: 'orange', glow: 'strong', cue: 'ask', bob: false, flourish: false },
+    error: { marquee: 'flash-red', glow: 'small', cue: 'bang', bob: false, flourish: false },
+    done: { marquee: 'green', glow: 'faint', cue: 'tick', bob: false, flourish: true },
+    idle: { marquee: 'dim', glow: 'very-faint', cue: 'zz', bob: false, flourish: false },
+    asleep: { marquee: 'off', glow: 'none', cue: 'zz', bob: false, flourish: false },
+  };
+  const r = t[state] ?? t.idle;
+  if (!still) return r;
+  return { ...r, bob: false, flourish: false, marquee: r.marquee === 'flash' ? 'alert' : r.marquee === 'flash-red' ? 'alert-red' : r.marquee };
+}
+
 /** FR-259: what someone at a cabinet shows, per state. `face-*` are front frames, an optional group: each falls back to its view-a pose, so any full set works. Asleep: the seated frame. */
 export const AISLE_POSE: Record<RealState, string> = { working: 'type', thinking: 'book', error: 'knock', waiting: 'face-knock', limit: 'face-knock', done: 'face-coffee', idle: 'face-book', asleep: 'rest' };
 const AISLE_FALLBACK: Record<string, string> = { 'face-knock': 'knock', 'face-coffee': 'counter', 'face-book': 'book' };
@@ -108,7 +127,6 @@ export function aislesLayout(model: RealModel, view: { w: number; h: number }, m
         const mirrored = b.face === 'right'; /* the art's side panel is on its right, so it faces left; the other way is the picture mirrored, and its glass and marquee with it */
         const faceS = FACE_GRID * g, gl = { x: b.cab.x + (mirrored ? cab.w - 5 - plan.gw : 5) * g, y: b.cab.y + 18 * g, w: plan.gw * g, h: plan.gh * g };
         const fr = a.person != null && !a.away ? aislePose(meta, String(a.person), a.state as RealState) : null;
-        const needs = a.state === 'waiting' || a.state === 'limit';
         const d: DeskBox = {
           id: a.id, state: a.state as RealState, narrow: false, slot: b.slot, desk: { ...b.cab, full: cabH },
           plate: { x: b.cab.x, y: plateY, w: cabW, h: AISLE_PLATE_H }, screen: { x: gl.x - 4 * g, y: gl.y - 4 * g, w: gl.w + 8 * g, h: gl.h + 8 * g }, glass: gl,
@@ -116,8 +134,8 @@ export function aislesLayout(model: RealModel, view: { w: number; h: number }, m
           face: { x: px + Math.floor((pw - faceS) / 2), y: py + 4 * g, w: faceS, h: faceS },
           away: a.away ? aisleNote(gl, b.face, g) : null,
           lamp: { x: b.cab.x - 4 * g, y: b.cab.y - 4 * g, w: cabW + 8 * g, h: cabH + 8 * g },
-          bubble: needs ? (a.away ? { x: gl.x + gl.w - 8 * g, y: gl.y - 4 * g } : { x: px + pw / 2, y: py + 2 * g }) : null, bang: a.state === 'error' ? { x: gl.x + gl.w - 4 * g, y: gl.y - 4 * g } : null, /* inside the cabinet's height: a sign may lie above it */
-          dots: a.state === 'thinking' ? { x: px + pw / 2, y: py } : null, call: { x: b.cab.x + cabW - 16, y: plateY + 4 },
+          cue: a.away || a.state === 'error' ? { x: gl.x + gl.w - 4 * g, y: gl.y - 4 * g } : { x: px + pw / 2, y: Math.max(py + 2 * g, b.cab.y + 12 * g) }, bubble: null, bang: null, /* inside the cabinet's height: a sign may lie above it */
+          dots: null, call: { x: b.cab.x + cabW - 16, y: plateY + 4 },
           marquee: { x: b.cab.x + (mirrored ? cab.w - 3 - (cab.w - 17 + 10 - 6) : 3) * g, y: b.cab.y + 2 * g, w: (cab.w - 17 + 10 - 6) * g, h: 9 * g }, stand: { x: px, y: py, w: pw, h: ph }, facing: b.face,
         };
         return d;

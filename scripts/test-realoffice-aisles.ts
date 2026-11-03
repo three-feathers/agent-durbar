@@ -4,7 +4,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { realLayout, sortDesks, type RealMeta, type RealModel, type RealAgent, type RealState, type Rect, type Layout } from '../src/shared/realoffice-layout';
-import { aislesLayout, layoutFor, aisleTabOrder, aisleFace, FACE_FLOOR, AISLE_SIGN_MIN_W, ARRANGEMENTS } from '../src/shared/realoffice-arrangements';
+import { aisleStatus, aislesLayout, layoutFor, aisleTabOrder, aisleFace, FACE_FLOOR, AISLE_SIGN_MIN_W, ARRANGEMENTS } from '../src/shared/realoffice-arrangements';
 
 process.exitCode = 1;
 const ROOT = (() => { let d = __dirname; while (!fs.existsSync(path.join(d, 'package.json'))) d = path.dirname(d); return d; })();
@@ -68,6 +68,22 @@ function problems(L: Layout, W: number, k: number): string[] {
   for (const f of L.fixtures) for (const d of ds) if (inter(f.slot, d.desk, 1) && f.slot.y + f.slot.h > d.desk.y) out.push(`fixture ${f.id} and cabinet ${d.id} overlap`);
   if (!L.scroll && L.height !== floor.y + floor.h) out.push('height');
   return out;
+}
+
+// ---- T213, FR-260: the status table, over every state, moving and still ----
+{
+  const want: Record<string, [string, string, string, boolean, boolean]> = {
+    working: ['lit', 'faint', 'none', true, false], thinking: ['lit', 'faint', 'dots', false, false], waiting: ['flash', 'strong', 'ask', false, false], limit: ['orange', 'strong', 'ask', false, false],
+    error: ['flash-red', 'small', 'bang', false, false], done: ['green', 'faint', 'tick', false, true], idle: ['dim', 'very-faint', 'zz', false, false], asleep: ['off', 'none', 'zz', false, false],
+  };
+  for (const [st, w] of Object.entries(want)) {
+    const a = aisleStatus(st as never), still = aisleStatus(st as never, true);
+    assert.deepStrictEqual([a.marquee, a.glow, a.cue, a.bob, a.flourish], w, st);
+    assert.ok(!still.bob && !still.flourish, st + ': still: nothing moves');
+    assert.ok(!/flash/.test(still.marquee), st + ': still: no flash');
+    if (/flash/.test(a.marquee)) assert.notStrictEqual(still.marquee, 'lit', st + ': still: steady, and different from lit');
+    assert.strictEqual(still.glow, a.glow, st + ': still: the same glow');
+  }
 }
 
 // ---- measure first (T202): what fits, at 1..15 and 40 agents in 1..8 folders, four floors ----
