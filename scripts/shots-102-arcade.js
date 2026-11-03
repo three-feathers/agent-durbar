@@ -72,6 +72,8 @@ module.exports = async (ctx) => {
     if (n <= 15) { assert.strictEqual(art.scroll, false, tag + ': no office scroll'); assert.ok(art.fh <= 1, tag + ': the floor does not scroll: ' + art.fh); }
     await H.until(`${OVER}.length===0`, 5000); /* a font face can arrive after the first drawing */
     assert.deepStrictEqual(await js(OVER), [], tag + ': no overlap');
+    /* the person stands behind the glass and the glass is opaque, so nothing lies under the screen's text; a sign stays inside the floor */
+    assert.deepStrictEqual(await js(`(()=>{const out=[],ro=document.querySelector('#stage .ro').getBoundingClientRect(),z=e=>Number(getComputedStyle(e).zIndex),P=document.querySelector('#stage .ro-person'),S=document.querySelector('#stage .ro-screen'),G=document.querySelector('#stage .ro-glass');if(P&&S&&(P.parentElement!==S.parentElement||!(z(P)<z(S))))out.push('a person is not behind the screen');if(G&&(c=>c.startsWith('rgba')&&!c.endsWith(', 1)'))(getComputedStyle(G).backgroundColor))out.push('the glass is not opaque');for(const s of document.querySelectorAll('#stage .ro-sign')){const b=s.getBoundingClientRect();if(b.left<ro.left-0.5||b.right>ro.right+0.5)out.push('a sign leaves the floor: '+s.textContent.slice(0,14));}return out;})()`), [], tag + ': people behind the glass, signs on the floor');
     assert.deepStrictEqual(await js(TEXT), { small: [], low: [] }, tag + ': text size and contrast');
     const seats = await js(`(()=>{const L=window.__durbarSimUi.realLayout(),T=window.exports.aisleTabOrder(L),P=[...document.querySelectorAll('#stage .ro-plate')].map(p=>p.dataset.id);return {tab:T,dom:P};})()`);
     assert.deepStrictEqual(seats.dom, seats.tab, tag + ': Tab follows the seats');
