@@ -3,8 +3,8 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Worlds and character sets as two flat lists of untrusted data packs (owner decisions, Vikram 2026-10-31; #932, #933): any set in any world, downloaded on demand with a plain internet notice from an extensible source, made in the app or by a prompt pack, and shared; one validator for all
-note: spec, plan, tasks only; nothing built; first ship waits for spec 097 FR-179; monitor part and arrangements specified; next built-in world (FR-250..FR-270)
-status: draft
+note: phase 1 built (zip reader, pack validator; no caller, UI or network yet); phases 2 to 8 not built; arcade FR-250..FR-270; ship waits for 097 FR-179
+status: building
 -->
 
 **Feature Branch**: `102-worlds` (spec); code branches `102-pN-slug`, one per phase
@@ -281,7 +281,7 @@ I choose a world, and its people come with it. If I pick characters myself, they
 
 #### Pack format
 
-- **FR-040** **`world.json`** (at most 64 KB, `v: 1`): `formatVersion`, `id`, `name` (1-40 code points, plain text), `version` (integer, up to 9 digits), `defaultSet` (a built-in set's id, or a set from the same source; FR-202), `tokens` (070 types only), `lights` (shape per slot), `rideStyle`, `parts` (part name to anchors and, for downloaded packs, sha256 and bytes), optional `arrangement` (FR-226), optional `description` (at most 200 code points, plain text), optional `licence` (at most 40 code points). A field not listed is refused; 098 FR-031's refusal of position, size and layout values stands. Parsed with own-property readers. Packs set no words: tool and scene words are the app's.
+- **FR-040** **`world.json`** (at most 64 KB, `v: 1`): `formatVersion`, `id`, `name` (1-40 code points, plain text), `version` (integer, up to 9 digits), `defaultSet` (a built-in set's id, or a set from the same source; FR-202), `tokens` (070 types only), `lights` (shape per slot), `rideStyle`, `parts` (part name to anchors and, for downloaded packs, sha256 and bytes), optional `arrangement` (FR-226), optional `description` (at most 200 code points, plain text), optional `licence` (at most 40 code points). A field not listed is refused; 098 FR-031's refusal of position, size and layout values stands. Parsed with own-property readers, as UTF-8; one leading byte order mark (U+FEFF, which Windows Notepad writes) is skipped, a second one or a UTF-16 file is refused. Packs set no words: tool and scene words are the app's.
 - **FR-041** **Parts: the closed file list.** Fixed names under 098's blocks, plus one new block `room`:
   - `room`: `wall.webp` (repeating, at most 120 KB), `floor.webp` (at most 40 KB, 097 FR-062), `welcome.webp` (at most 150 KB), optional `window-1.webp`..`window-3.webp` (at most 60 KB each, opaque rectangles, drawn at band height, each with a minimum width);
   - `fixture`: `fx-library`, `fx-software`, `fx-terminal`, `fx-web`, `fx-boss`, `fx-coffee`, `fx-bank`, `fx-post`, `fx-tools`, `fx-kiosk` (`.webp`, at most 120 KB each);
@@ -299,7 +299,8 @@ I choose a world, and its people come with it. If I pick characters myself, they
   - file over the cap, by `lstat` before reading (upload 64 MB, download FR-081);
   - a name not on the list, after no normalisation at all: `../`, `..\`, absolute paths, drive letters, `:` streams, backslashes, nested folders, a NUL, control characters, trailing dots or spaces, Windows reserved names, case or Unicode variants, duplicates; a single top-level folder is the one allowance for hand-made zips;
   - symlink or any non-regular file by its external attributes; encrypted entries; ZIP64; multi-disk; any method other than store and deflate;
-  - central directory and local header disagreeing (name, sizes, method); entries that overlap; bytes before the first entry or after the end record (polyglots);
+  - a "version needed to extract" over 2.0 (the whole 16-bit field over 20; store needs 1.0, deflate 2.0) in the central directory or the local header, or the two headers giving different values. "Version made by" is not judged: it only names the tool and host, and the external attributes are judged the same whatever host it names;
+  - central directory and local header disagreeing (name, sizes, method, flags, version needed); entries that overlap; bytes before the first entry or after the end record (polyglots);
   - more than 96 raw entries, or more than FR-042's 40 kept parts (one named constant each); one image over 20 MB (096 FR-020), or over 128 MB in all, by declared size and enforced by `maxOutputLength` while inflating, so a zip bomb stops at the cap.
   - **A download, from any source, is narrower:** stored entries only, each within its part cap (FR-041; FR-204 for a set's frames), and 10 MB in all (FR-081). The 20 MB and 128 MB limits and deflate are for uploads, which may hold PNG.
   - **What real tools add is allowed and ignored, by exact shape**: folder entries; `.DS_Store`, `Thumbs.db` and `__MACOSX/._<name>` where `<name>` passes the same name rules. They count toward the 96, and are never inflated, decoded or written. A streaming flag (local sizes 0, then a data descriptor, as macOS's archiver may write) is accepted when the central directory and descriptor agree. A person using their OS's own Compress command must not be refused. `[KNOWN GAP]` until samples from macOS Archive Utility, Windows Explorer and Linux `zip` are in the fixtures (T018).
@@ -822,6 +823,10 @@ Vikram looked at the arcade on `main` twice (relayed). 03:39 UTC: "Fix those wea
 - **Idle is awake** (amends FR-260's table): an idle agent stands with no cue; *z z* belongs to asleep only, who sits, so nobody sleeps standing (relayed review of the third pictures). `test:` the status table; `sim:` the driver's table.
 - **A dark notice strip.** In a dark world the notice strips under the top bar take the bar's dark colour, with the mark's yellow on the icon. `[KNOWN GAP]` no check holds the strip's colour: a driver check passed with the rule removed and was dropped; pictures only.
 
+### 2026-11-01: a missing screenRect is refused (sweep finding)
+
+FR-032: a pack whose `desk-half.webp` entry has no `screenRect` is refused ("The small desk needs a screenRect in world.json, so its screen can be checked."), not skipped. test: `scripts/test-worldpack.ts`, fixture `manifest-screen-missing`.
+
 ### 2026-10-31: every world looks different (owner decision)
 
 Replaces the earlier decision that places may share a Mediterranean feel. New FR-014..FR-019, SC-011..SC-013, a rewritten FR-011 and FR-021, FR-035 (g). Written before this spec's first PR, so no build is affected.
@@ -841,6 +846,41 @@ D4, OP-7, OP-9 and the crew edge case are replaced; FR-010, FR-011, FR-035 (h), 
 ### 2026-10-31: owner's answers on OP-10, OP-11, OP-12 (spec 021 FR-067)
 
 Shipped worlds and their cost (FR-213, D7, SC-007); Minimalist to full poses; Retro game ships when the theme goes; `worlds-*` releases at any time. OP-1, OP-5 and OP-6 are marked as agent decisions.
+
+### 2026-10-31: phase 1 built, and the choices it had to make (PR `102-pack-validator`, tasks T010..T012, T014..T016)
+
+`src/shared/worldzip.ts`, `worldpack.ts`, `worldmoments.ts`, `worldprompts.ts` and `scripts/fixtures/worlds/gen.ts` exist, with `test:worldzip`, `test:worldpack` and `test:world-packs` in `npm test`. Pure code: nothing calls it yet, so no user sees any change. `[IMPLEMENTED]` FR-050, FR-051, FR-052 (header, not decode), FR-040, FR-041, FR-042, FR-043, FR-030, FR-031, FR-034, FR-056, FR-131 (the text), FR-152 (cleaning), `test:` the three suites. `[KNOWN GAP]` FR-053 and FR-054 (decode in the sandboxed encoder window) and FR-019, T017 (floor line from alpha) are phase 5; T013 and T018 are partly done (see `tasks.md`).
+
+Where the spec was silent or ambiguous the code chose the strict side, listed here for the owners to change in one line each (all in the `PART_TABLE` and constants of `worldpack.ts` and `worldzip.ts`):
+- **File names and limits not given by 098 FR-030**: `lift-shaft.webp` (60 KB, at most 180 px wide), `lift-cover.webp` (150 KB), `lift-cutaway.webp` (200 KB, optional), `speech-bubble.webp` and `slip.webp` (24 KB), `panel-frame.webp` (60 KB), `panel-backdrop.webp` (150 KB, optional). Picture-size limits where FR-042 gave none: `floor.webp` and the desk, lift cover, cut-away, panel and backdrop pictures at most 1920x1200; the bubble 720x720, the slip 840x840; a window at least 48x8 px; every part at most 4096 px a side.
+- **A pack needs only `world.json` to be valid**; missing parts make it `unfinished` (FR-034), they are not errors. The listed-and-present rule of 098 FR-032 holds both ways.
+- **`world.json` has no `v` field**; FR-040's "`v: 1`" is read as `formatVersion: 1`, and a field not on the list is refused.
+- **Half-size desk screen**: `screenRect` must be at least 40x20 px at `desk-half.webp`'s own size (FR-032 gives no number; 097 FR-032's bars need room). Anchors: `standX`, `plateAnchor`, `lightAnchor`, `floorLine` per fixture, `doorRect` on the Boss only, and `surfaceY`, `screenRect`, `plateRect`, `lampAnchor`, `callAnchor` on the two desk pictures.
+- **Zip names are ASCII only** (letters, digits, `.`, `_`, `-`, space; at most 64 bytes), which refuses control, bidi, NUL and Unicode look-alike or normalisation variants in one rule. A zip comment is refused. Kept entries are the closed list only; `README.txt` and any other file are refused.
+- **PNG is accepted by magic** as well as WebP (FR-052), under a `.webp` name; a PNG may hold only `IHDR PLTE tRNS gAMA cHRM sRGB pHYs IDAT IEND`, with correct CRCs and nothing after `IEND`, because project packs are not re-encoded.
+- **Tokens** (rewritten after the review of #955, see below): only names the app knows (Clean Office's colours, or a typed token of spec 070), each value of the right kind, colours measurable and opaque, status colours inside their hue bands, unreadable body text refused, other contrast problems reported.
+- **`webpcheck.ts`** is copied from #938 byte for byte; `imagecheck.ts` is not (its 512 px floor is for characters). `worldprompts.ts` has its own small description cleaner (`cleanPlaceIdea`) because #938's `cleanDescription` is not on `main`; once it is, both should use one helper (follow-up in the phase 5 PR).
+
+### 2026-10-31: review round on the phase 1 PR (#955); decisions of the coordinator and what each finding changed
+
+- **Duplicate JSON keys are refused** (`hasDuplicateKeys`, iterative, linear): a field has one value, so no other reader can see a different one. **`knownSets` and `requireHashes` are required arguments** of `PackOptions` (and the options argument itself), so a caller that forgets them gets a compile error, not the permissive path; `test:worldpack` holds `@ts-expect-error` lines that stop compiling if they become optional again.
+- **Tokens (items 1 to 3).** A name must be Clean Office's or a typed token of 070; a colour name needs a colour that can be measured: `#rgb`, `#rrggbb`, `#rrggbbaa` or `rgb()`/`rgba()` (`toHex`); hsl, `#rgba`, 7-digit hex, words, sizes and times are refused. Alpha must be opaque, except for names whose Clean value has alpha (`--drop-bg`, `--focus-halo`), and a name used in a contrast pair needs alpha of at least .9. Colours come back normalised to `#rrggbb`, which is what contrast measured. Body, secondary and muted text that fail contrast (`isBlocking`, the retired AI maker's own rule) refuse the pack, as FR-055 says "still unreadable"; other pairs are only reported and the renderer repairs them. **Status meaning stays fixed**: for working, waiting, error and done, every token of the family (`--c-*`, `--halo-*`, `--pb-*`, `--pc-*`, `--card-waiting*`, `--card-error*`) must sit in a hue band (working 185..260 degrees, waiting 20..65, error 340..22, done 95..170) with saturation at least .2; thinking and idle have no fixed meaning in 070 FR-050. All of Clean Office's own tokens pass (tested).
+- **`theme.js` `contrastFix` and user themes** skip any value that is not 3, 6 or 8 digit hex, the same weakness. **Not fixed here**: it is renderer behaviour for user themes (spec 040, 070, `test:theme-tokens`), this PR changes no renderer file, and worlds are safe without it because the validator hands the renderer only normalised hex. `[KNOWN GAP]` for user themes; a separate change with its own spec delta.
+- **Pictures (item 4).** PNG and WebP are accepted only in exact shapes (see the doc comments of `pngInfo` and `webpShape`): fixed chunk lengths, order and counts, a single `IHDR` with a valid depth, colour type and interlace, `IDAT` together, `VP8X` of exactly 10 bytes with only the alpha flag, one optional `ALPH` before a lossy bitstream, key frames without scaling, lossless version 0, zero pad bytes. `[KNOWN GAP]` bytes inside the compressed bitstream (`IDAT`, `VP8 `, `VP8L`, `ALPH` payload) cannot be judged without decoding: the encoder window (phase 5) decodes them, and a project pack's bytes are reviewed and hash-pinned (FR-054).
+- **Folder upload (item 5)** ignores `.DS_Store` and `Thumbs.db` by exact name, uninspected and not kept, counted toward 96. **Coverage (item 6)**: FR-031's extras now also name the room: `office-floor` needs `wall.webp` and `floor.webp`, `lobby` needs `wall.webp`; windows, the cut-away and the backdrop stay optional. **Zip (items 7 to 9, 13)**: an entry comment in the directory is refused; a deflate stream must use all of the entry's packed bytes; the Info-ZIP Unicode path and comment extras are refused; the reparse bit is refused from any host; a folder entry may not carry a regular-file mode, nor a file a folder mode or the DOS folder bit; folders named by any entry (folder entries, kept files, junk files) are judged together, so the order of entries cannot matter; `COM0` and `LPT0` are device names. **`readManifest` never throws (item 10)**; **a name with no visible character is refused (item 11)**; **the idea cleaner removes unassigned and default-ignorable code points and the silent cut is gone (item 12)**: the longest prompt is under half the cap.
+
+### 2026-11-03: review of #955 at 62f98c19 (rubenlupi), what each point changed
+
+- **The three suites stay in `npm test`**: `main` now lists suites in `scripts/test-suites.txt`, so `test:worldzip`, `test:worldpack` and `test:world-packs` are listed there (they were only in the old `test:serial` chain).
+- **"Version needed to extract" (FR-051)**: over 2.0 in either header, or different in the two, is refused, as Python's `zipfile` and `unzip -t` refuse 11.3, 20.5 and 22.9. The whole field is compared, so a host byte in its upper half is refused too (`[KNOWN GAP]` no zip from a real tool that writes one is in the fixtures, T018). "Version made by" stays unjudged, now said in FR-051. `test:` `test:worldzip` (0, 1.0 and 2.0 accepted) and eleven fixtures in `test:world-packs`.
+- **One WebP walker (FR-031)**: `scripts/webpinfo.ts` wraps `src/shared/webpcheck.ts` (T013).
+- **The merge with `main`**: spec 040 FR-031 removed the AI theme maker's half of `themegen.ts`, with `toHex` and `isBlocking`, which the colour checks used; the two small functions now live in `worldpack.ts`, unchanged, as its own helpers (their only user), and `themeIssues` and the contrast pairs still come from `themegen.ts`.
+- **A BOM in `world.json` (FR-040)**: one leading U+FEFF is skipped, since Windows Notepad writes it; two, one after a space and UTF-16 are refused. `test:` `test:worldpack`, three fixtures.
+
+### 2026-11-02: pre-review of #955 (two findings from a read-only pass, both reproduced and fixed)
+
+- **`cleanPlaceIdea` refuses a raw idea over `MAX_RAW_IDEA` (20,000 UTF-16 units) before any work**: the cleaning is linear in its input, so a 30-million-character string cost half a second and 300 MB for 300 characters of output. `test:worldpack` holds the bound and a mutant that drops it fails.
+- **An `ALPH` chunk's header byte is checked** (FR-052, no decoder needed): reserved bits zero, pre-processing 0 or 1, compression 0 or 1 (libwebp's own rules), and a raw plane (compression 0) is exactly `1 + width x height` bytes. `[KNOWN GAP]` the compressed plane itself is still judged only by the phase 5 decoder. Three mutants fail.
 
 ### 2026-11-01: a monitor per world, and layout by world in two stages (owner decisions; spec 021 FR-070)
 

@@ -127,6 +127,12 @@ IDs start after T083.
 - [ ] T110 Persistence: simulator-only `stripstore=1` option; reload keeps order and favourites; an ended agent's id is gone from the saved key. Test: driver step with `until()` after reload [FR-184, FR-185]
 - [ ] T111 15 agents with 4 favourites at 1440x900 and 1280x800: favourites are the first four, no overlap, the office/chat/header boxes equal the baseline, reduced motion has no drag animation, the six themes alike (`check:geometry` stays as is). Test: driver + `check:office` unchanged [FR-187]
 - [ ] T112 Docs and shots: README (feature + shortcut), changelog fragment, retake `m6-fullchat-sim15-*.png` with `npm run shots:docs`, tick tasks, spec status and `[IMPLEMENTED]` tags, `npm run specs:check` and `changelog:check` [FR-178..FR-189]
+- [x] T130 `.chat-inner>.cvo{content-visibility:auto;contain-intrinsic-block-size:auto 90px;overflow-clip-margin:14px}` in `styles.css`; `cvMark` in `app.js` marks all but the newest 4 when a chat is taken off screen, each with its measured height as fallback size [FR-210]
+- [x] T131 `openPanel` follows the end for four frames after the first layout [FR-211]
+- [x] T132 Driver `check-chat-visibility` (4,000 messages, both sizes, timing off against on, scroll, heights, stream, copy, find, focus, mutants), registered in `ui-suite.js` [FR-210, FR-211]
+- [x] T197 `cvUnmarkIfResized`: drop the marks when the chat's width changed since `cvMark`; driver case 8 (resize between close and reopen) [FR-213]
+- [x] T198 `onscroll`: the pin goes off only on a move up from the previous scroll event, whoever wrote the last position [FR-214]
+- [x] T199 `cvKey` (layout settings) beside the width, `cvSoon` for live changes, `cvMark` skips the Browser tab, a `MutationObserver` for messages that changed while closed, `openPanel` marks only after the agent check, `restick` skips its 400 px guard at the frame that dropped the marks; driver cases 9 and 10, `noclip` mutant, no pass with a debug switch [FR-213, FR-214, FR-215]
 
 ## 2026-11-01 delta: the agent rail, chat density and width (design sweep, FR-190..FR-209)
 
