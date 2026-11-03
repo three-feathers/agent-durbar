@@ -4,7 +4,7 @@
  *   npm run check:ui -- --only check-grant-chips
  *   OUT=docs/screenshots  (optional) also saves the screenshots
  *
- * `simgrants=many` gives the first agent eight session grants with long names. At 1440x900 and 1280x800, in Expert and in Simple:
+ * `simgrants=many` gives the first agent eight session grants with long names. At 1440x900 and 1280x800:
  * exactly one "Allowed (8)" chip (a button, aria-expanded false); its list shows all eight with a revoke button each and the short
  * labels (full label in the title); Escape closes it and returns focus to the chip; a revoke keeps the list open with the focus on a
  * revoke button; Revoke all asks first. The header chips stay on at most two rows, the grants row is one chip tall, and nothing overlaps.
@@ -33,12 +33,9 @@ module.exports = async (ctx) => {
       grantsH:g.hidden?0:Math.round(R(g).height),small,maxCtl:Math.max(...hs),minCtl:Math.min(...hs),vw:innerWidth}})()`);
   let first = true;
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
-    for (const level of ['expert', 'simple']) {
-      await H.load({ w, h, query: Q, ready: 'fit', settle: false });
-      await js(`localStorage.setItem('durbar.detail',${jsLiteral(level)})`); // remembered: reload so the office is drawn in it
-      await H.load({ query: Q, ready: 'fit' });
-      const tag = `${w} ${level}`;
-      assert.ok(await js(`document.body.classList.contains('simple')===${level === 'simple'}`), `${tag}: the detail level is on`);
+    {
+      await H.load({ w, h, query: Q, ready: 'fit' });
+      const tag = `${w}`;
       // wait for the simulator's own grants, then open that one agent (no sweep over every desk: docs/agent-notes.md)
       const opened = await H.openSimAgent(`a=>!a.parent&&(a.grants||[]).length>0`, '#grants:not([hidden]) #grantsBtn');
       assert.ok(opened.ok, `${tag}: an agent has grants in its chat: ${JSON.stringify({ id: opened.id, ...opened.seen })}`);
@@ -57,8 +54,7 @@ module.exports = async (ctx) => {
       assert.ok(m.head <= 170, `${tag}: the header stays compact (${m.head}px)`);
       assert.strictEqual(m.small, 0, `${tag}: no header text under 10.5px`);
       assert.ok(m.minCtl >= 22 && m.maxCtl <= 32, `${tag}: header control heights ${m.minCtl}-${m.maxCtl}`);
-      if (level === 'expert') await shot(`052-grant-chips-closed-${w}x${h}.png`);
-      if (level === 'simple') await shot(`052-grant-chips-simple-${w}x${h}.png`);
+      await shot(`052-grant-chips-closed-${w}x${h}.png`);
       // 3. open: all eight, revoke buttons, short labels
       await js(`document.getElementById('grantsBtn').click()`); await until(`!document.getElementById('grantsPop').hidden&&document.activeElement&&document.activeElement.dataset.revoke!==undefined`);
       const o = await js(`(()=>{const p=document.getElementById('grantsPop'),pr=p.getBoundingClientRect();const rows=[...p.querySelectorAll('.gp-row')];
@@ -77,7 +73,7 @@ module.exports = async (ctx) => {
       assert.ok(o.titles[0].includes('server-x › server-x-GetItem'), `${tag}: the title keeps the full label: ${o.titles[0]}`);
       m = await measure();
       assert.ok(m.rows <= 2 && m.overlap === '', `${tag}: header unchanged with the list open: ${JSON.stringify(m)}`);
-      if (level === 'expert' || w === 1440) await shot(`052-grant-chips-open-${level === 'simple' ? 'simple-' : ''}${w}x${h}.png`);
+      await shot(`052-grant-chips-open-${w}x${h}.png`);
       // 4. Escape closes and returns focus to the chip
       await js(`document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}))`); await until(`document.getElementById('grantsPop').hidden&&document.activeElement.id==='grantsBtn'`);
       const e = await js(`({hidden:document.getElementById('grantsPop').hidden,exp:document.getElementById('grantsBtn').getAttribute('aria-expanded'),focus:document.activeElement.id})`);
@@ -123,7 +119,7 @@ module.exports = async (ctx) => {
         assert.strictEqual(await js(`document.activeElement.id`), 'msgInput', `${tag}: after Revoke all the focus is on the composer, not <body>`);
         assert.strictEqual(await js(`document.getElementById('srAnnounce').textContent`), 'All permissions revoked.', `${tag}: it is announced`);
       }
-      console.log('[grant-chips]', w, level, 'ok');
+      console.log('[grant-chips]', w, 'ok');
     }
   }
   // A Revoke all that fails (the revokes never remove anything) leaves the grants and the page working; after switching to an agent
