@@ -211,7 +211,7 @@ for (const f of FILES) {
 
 // ---- 6. spec 097 FR-100, FR-113: a Real office world's token set (owner 2026-10-31 10:46: the top bar and menus follow the world) ----
 {
-  assert.deepStrictEqual(T.WORLD_IDS, ['photo', 'cave'], 'the photo office and the cave (the cave is behind its flag, spec 097 phase 4)');
+  assert.deepStrictEqual(T.WORLD_IDS, ['photo', 'retro', 'cave'], 'the photo office, the arcade and the cave (the arcade and the cave are behind their flags)');
   const t = T.worldTokens('photo') as Record<string, string>;
   assert.strictEqual(T.worldTokens('loft'), null, 'a world that is not built has no set');
   assert.strictEqual(T.worldTokens('__proto__'), null, 'own keys only');
@@ -239,6 +239,22 @@ for (const f of FILES) {
   for (const [fg, bg, min, why] of UI_PAIRS) assert.ok(contrast(t[fg], t[bg]) >= min, `${fg} on ${bg} (${why}): ${contrast(t[fg], t[bg]).toFixed(2)}:1`);
   for (const ui of ['clean', ...BRAND_UIS]) assert.deepStrictEqual(themeIssues(t, clean, ui).filter((x) => !/the top bar/.test(x)), [], `no contrast issue with ui ${ui}`);
   const worst = Math.min(...rows.map((r) => r.ratio / r.min));
+  // spec 102 FR-263: the arcade's set, day and night: complete, status colours unchanged, every text pair AA; the only pairs left out are the
+  // three on `--bg`, which carries no text in this world; night keeps the cream surfaces and darkens the page and the bar
+  for (const light of ['day', 'night']) {
+    const r = T.worldTokens('retro', light) as Record<string, string>, rr = T.worldContrast('retro', light) as Array<{ fg: string; bg: string; min: number; ratio: number; skipped?: boolean }>;
+    for (const k of Object.keys(T._builtins()[T.CLEAN_ID].tokens).concat(Object.keys(T._tokens()))) assert.ok(r[k] !== undefined, `retro ${light} has ${k}`);
+    for (const k of Object.keys(clean).filter((x) => /^--(c|pb|pc|halo)-|^--(amber|red|green|blue)(-ink)?$|^--desk-(new|needs)$/.test(x))) assert.strictEqual(r[k], clean[k], `retro ${light}: status colour ${k} is unchanged`);
+    assert.deepStrictEqual(rr.filter((x) => !x.skipped && !(x.ratio >= x.min)).map((x) => `${x.fg} on ${x.bg} ${x.ratio.toFixed(2)}:1 < ${x.min}`), [], `every text pair of the arcade passes WCAG AA by ${light}`);
+    assert.deepStrictEqual(rr.filter((x) => x.skipped).map((x) => x.fg + ' on ' + x.bg), ['--ink on --bg', '--room-path on --bg', '--focus on --bg'], `retro ${light}: only the page colour's pairs are left out`);
+  }
+  {
+    const d = T.worldTokens('retro', 'day') as Record<string, string>, n = T.worldTokens('retro', 'night') as Record<string, string>;
+    assert.ok(luminance(n['--bg']) < luminance(d['--bg']) && luminance(n['--wb-bg']) < luminance(d['--wb-bg']), 'night: a darker page and bar');
+    for (const k of ['--surface', '--card', '--raised', '--ink']) assert.strictEqual(n[k], d[k], `night keeps ${k} (038 FR-001)`);
+    assert.deepStrictEqual(T.worldTokens('photo', 'night'), T.worldTokens('photo'), 'a world with no night is its day');
+    assert.ok(!T.worldContrast('photo').some((x: { skipped?: boolean }) => x.skipped), 'only a world with bgFill leaves pairs out');
+  }
   // the cave's set: complete, status colours unchanged, every pair AA with the glass composited (the same checks as the photo set)
   {
     const c = T.worldTokens('cave') as Record<string, string>, cr = T.worldContrast('cave') as Array<{ fg: string; bg: string; min: number; ratio: number }>;
@@ -309,6 +325,13 @@ for (const f of FILES) {
   // dark theme again, round trip twice
   W.setTheme(dark); W.setWorld('photo'); W.setWorld(null); W.setWorld('photo'); W.setWorld(null);
   assert.strictEqual(snap(doc), want, 'round trips leave the theme exactly as it was');
+  // spec 102 FR-263: the arcade shows its own chrome style and light, and leaving gives the theme's back
+  W.setWorld('retro', 'night');
+  assert.deepStrictEqual([doc.documentElement.dataset.ui, doc.documentElement.dataset.worldLight, st.get('--bg')], ['retro', 'night', W.worldTokens('retro', 'night')['--bg']], 'the arcade at night');
+  W.setWorld('retro', 'day');
+  assert.deepStrictEqual([doc.documentElement.dataset.worldLight, st.get('--bg')], [undefined, W.worldTokens('retro', 'day')['--bg']], 'the light changes alone');
+  W.setWorld(null);
+  assert.strictEqual(snap(doc), want, 'leaving the arcade restores the theme, its UI style too');
   g.document = undefined;
 }
 console.log(`theme tokens guard passed (${n} corpus checks, ${FILES.length} files under the ratchet)`);

@@ -1505,7 +1505,7 @@ const officeView=()=>OFFICE_VIEW;
 const syncWorld=()=>{
   const on=OFFICE_VIEW==='real'&&RO_LOAD!=='failed';
   if(on&&!document.getElementById('roWorldCss')){const l=document.createElement('link');l.id='roWorldCss';l.rel='stylesheet';l.href='realoffice-world.css';document.head.appendChild(l);} /* its rules, also in the List view (FR-061: only once Real office is chosen) */
-  if(THEME&&THEME.setWorld)THEME.setWorld(on?roPeople().world:null); /* html[data-world] is the shown world's id (spec 101 FR-033 reads it) */
+  if(THEME&&THEME.setWorld)THEME.setWorld(on?roPeople().world:null,RO_LIGHT); /* html[data-world] is the shown world's id (spec 101 FR-033 reads it) */
 };
 /* spec 097 FR-001: Real office is a separate preference (durbar.officeview); the doors, and the question about them, are gone (spec 017 FR-029) */
 async function setOfficeView(v){
@@ -1522,9 +1522,11 @@ async function setOfficeView(v){
    world); `[KNOWN GAP]` spec 102 FR-201 keeps it in durbar-settings.json through main, which needs an IPC channel and is not built yet.
    A pack that failed to load is skipped: the first world and Office people, which always ship. */
 let RO_WORLD=(()=>{try{return localStorage.getItem('durbar.world')||'';}catch(e){return '';}})();
+let RO_LIGHT='day'; /* spec 102 FR-251: the Light choice comes with the next PR; drivers set it with `worldlight` */
 if(qs.has('sim')&&CREW&&CREW.WORLD_FLAGS){ /* drivers: the simulator only; switches a flagged world on and picks a world */
   for(const f of (qs.get('worldflags')||'').split(',').filter(Boolean))if(Object.prototype.hasOwnProperty.call(CREW.WORLD_FLAGS,f))CREW.WORLD_FLAGS[f]=true;
   if(qs.get('world'))RO_WORLD=qs.get('world');
+  if(qs.get('worldlight'))RO_LIGHT=qs.get('worldlight');
 }
 const PACKS={}; /* 'worlds/<id>' or 'sets/<id>' -> 'loading' | 'ready' | 'failed' (spec 097 FR-115, spec 102 FR-205: only the shown ones load) */
 const roPeople=()=>{

@@ -34,7 +34,7 @@ function problems(L: Layout, W: number, k: number): string[] {
   if (!Number.isInteger(g) || g < 1) out.push(`g ${g} is not an integer`);
   L.zones.forEach((z, i) => {
     if (!inside(z.box, floor)) out.push(`zone ${i} ${JSON.stringify(z.box)} leaves the floor ${JSON.stringify(floor)}`);
-    if (!inside(z.sign, z.box, 1)) out.push(`sign of ${z.id} leaves its zone`);
+    if (!inside(z.sign, floor, 1)) out.push(`sign of ${z.id} leaves the floor`);
     if (z.sign.w < AISLE_SIGN_MIN_W - 0.5 && z.box.w >= AISLE_SIGN_MIN_W) out.push(`sign of ${z.id} is ${z.sign.w}px, under its shortest form`);
     if (z.sign.w < AISLE_SIGN_MIN_W - 0.5) out.push(`sign of ${z.id} has no room for name, counts, + and menu (${z.sign.w}px)`);
     L.zones.forEach((o, j) => { if (j > i && inter(z.box, o.box, 0.5)) out.push(`zone ${i} overlaps zone ${j}`); });

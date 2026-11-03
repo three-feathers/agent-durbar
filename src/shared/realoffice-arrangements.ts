@@ -148,6 +148,14 @@ export function aislesLayout(model: RealModel, view: { w: number; h: number }, m
     }
     i += f.agents.length;
   }
+  /* review of the arcade, 2026-11-03: a sign may run on over the free floor after its zone, up to the next zone on its row or the floor's
+     edge, so the last folder on a row is not cut to one letter; it never covers another zone */
+  for (const z of zones) {
+    const next = zones.filter((o) => o !== z && o.sign.y === z.sign.y && o.box.x >= z.box.x + z.box.w - 1).reduce((m, o) => Math.min(m, o.box.x), W - AISLE_PAD);
+    const s0 = signs && Object.prototype.hasOwnProperty.call(signs, z.id) ? signs[z.id] : { name: z.id, path: '', counts: 1 };
+    const need = signWidth(s0.name, s0.path, s0.counts, 4000), room = Math.max(z.box.w, next - 4 - z.sign.x);
+    z.sign.w = Math.min(room, Math.max(AISLE_SIGN_MIN_W, need)); z.signShort = need > room;
+  }
   const lb = lobbyBand(meta, model.places, W, Lb);
   const height = plan.fits ? Ho : Math.ceil(Lb + used + AISLE_PAD);
   return { u: AISLE_PERSON.h * g, g, big: plan.big, lobbyH: Lb, floorH: height - Lb, width: W, height, scroll: !plan.fits, faceH: FACE_GRID * g, zones, fixtures: lb.fixtures, floorStrip: lb.floorStrip, cabinet: { w: cabW, h: cabH, gw: plan.gw, gh: plan.gh, cols, rows } };

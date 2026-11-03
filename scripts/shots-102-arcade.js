@@ -78,6 +78,12 @@ module.exports = async (ctx) => {
     assert.deepStrictEqual(await js(OVER), [], tag + ': no overlap');
     /* the person stands behind the glass and the glass is opaque, so nothing lies under the screen's text; a sign stays inside the floor */
     assert.deepStrictEqual(await js(`(()=>{const out=[],ro=document.querySelector('#stage .ro').getBoundingClientRect(),z=e=>Number(getComputedStyle(e).zIndex),P=document.querySelector('#stage .ro-person'),S=document.querySelector('#stage .ro-screen'),G=document.querySelector('#stage .ro-glass');if(P&&S&&(P.parentElement!==S.parentElement||!(z(P)<z(S))))out.push('a person is not behind the screen');if(G&&(c=>c.startsWith('rgba')&&!c.endsWith(', 1)'))(getComputedStyle(G).backgroundColor))out.push('the glass is not opaque');for(const s of document.querySelectorAll('#stage .ro-sign')){const b=s.getBoundingClientRect();if(b.left<ro.left-0.5||b.right>ro.right+0.5)out.push('a sign leaves the floor: '+s.textContent.slice(0,14));}return out;})()`), [], tag + ': people behind the glass, signs on the floor');
+    /* review of 2026-11-03: no slip, pill or bubble on a screen, and none hidden; a folder name keeps 8 characters (or all of it) */
+    assert.deepStrictEqual(await js(`(()=>{const out=[],R=e=>e.getBoundingClientRect(),hit=(a,b)=>a.left<b.right-0.5&&b.left<a.right-0.5&&a.top<b.bottom-0.5&&b.top<a.bottom-0.5,S=[...document.querySelectorAll('#stage .ro-screen')].map(R);
+      for(const e of document.querySelectorAll('#stage .ro-slip')){if(e.hidden){out.push('hidden: '+e.className);continue;}if(S.some(q=>hit(R(e),q)))out.push('on a screen: '+e.textContent.slice(0,24));}
+      const c=document.createElement('canvas').getContext('2d');
+      for(const b of document.querySelectorAll('#stage .ro-sign>b')){if(b.scrollWidth<=b.clientWidth+0.5)continue;c.font=getComputedStyle(b).font;const t=b.textContent,need=c.measureText(t.slice(0,Math.min(8,t.length))+'\u2026').width;if(b.clientWidth+0.5<need)out.push('a folder name cut to '+Math.round(b.clientWidth)+' px: '+t);}
+      return out;})()`), [], tag + ': nothing on a screen, every slip shown, folder names readable');
     assert.deepStrictEqual(await js(TEXT), { small: [], low: [] }, tag + ': text size and contrast');
     const seats = await js(`(()=>{const L=window.__durbarSimUi.realLayout(),T=window.exports.aisleTabOrder(L),P=[...document.querySelectorAll('#stage .ro-plate')].map(p=>p.dataset.id);return {tab:T,dom:P};})()`);
     assert.deepStrictEqual(seats.dom, seats.tab, tag + ': Tab follows the seats');
