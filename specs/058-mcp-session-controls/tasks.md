@@ -487,3 +487,19 @@ shared parts; PR B = Codex (Q23 A).
 - Part C of #779 (per-server logs in the app) is not a task: it waits for an owner decision (it reverses Q5 / FR-025).
 - [ ] T156 `/speckit-converge` for this delta after PR B; tick T099, T100 and Phase 11; FR-184 gaps updated from T106/T107
 - [x] T167 (issue #841) `classifyMcpCall` claims-challenge codes; `mcpCall` word set by `maskMcpEvent` from masked text (and in `sim.ts`); the line and **Sign in again…** button under a failed MCP chip (opens the MCP dialog); `callHint` browser advice; `scripts/shots-841-entra-explain.js` in `ui-suite.js`; README line; `changelog.d/058-entra-explain.md`. Mutations: matcher widened/narrowed, output echoed in the line [FR-193, FR-194]
+
+## 2026-11-03: the chat's MCP actions in Settings, and a health check at launch (FR-195..FR-203)
+
+- [x] T168 FR-198: `src/main/mcpcmdcheck.ts` `commandFound` (absolute, bare name over `candidates()` folders, Windows `PATHEXT`,
+  references and relative paths not judged) and `withMissing(state)`; `mcp:globalState` awaits the login PATH and adds `missing`;
+  `GlobalEntryView.missing`; tests in `scripts/test-mcp-cmdcheck.ts` [FR-198]
+- [x] T169 FR-201, FR-199: `DurbarMcpWords.fixFor`, `fileFindings` and `chatFinding` (pure); tests in `scripts/test-mcpwords.ts` [FR-199, FR-201]
+- [x] T170 FR-195, FR-196: Settings live rows: **Sign in** / **Sign in again…** open the chat's dialog with `o.signIn` and run its own
+  action; **Restart where it failed (N)** on the server row through `mcpRestartCall` [FR-195, FR-196]
+- [x] T171 FR-198: the configured list rows say "Agent Durbar did not find this command" with the fix [FR-198, FR-201]
+- [x] T172 FR-199, FR-200, FR-202: the launch strip in `index.html` / `app.js` (file findings at start, live findings for 10 minutes,
+  Show / Open MCP settings / Dismiss, resolved findings leave) [FR-199, FR-200, FR-202]
+- [x] T173 Simulator `simmcplaunch=1` (a missing command and an unreadable list) and `scripts/shots-058-mcp-launch.js` at 1440x900 and
+  1280x800 (strip, Show, Dismiss, Settings Sign in / Sign in again / Restart where it failed, 10.5px, fits); the mutants that fail it are listed in the spec delta's Status [FR-195..FR-203]
+- [x] T175 Review on #1073: problem count, list capped in the window, (N of M) with the reason, one wording per failure kind (FR-006 = FR-201), Show column; `launchYoung`/`launchUpdate`/`restartTargets` pure and tested, own policy key, wiring test `scripts/test-mcp-globalwiring.ts`, PATHEXT for dotted names, the hint on the row's own entry, Sign in again on sign-in rows, escaping, feature inventory [FR-195..FR-203]
+- [x] T174 README / `docs/features.md` MCP lines, `changelog.d/058-mcp-settings-health.md` [FR-195..FR-203]

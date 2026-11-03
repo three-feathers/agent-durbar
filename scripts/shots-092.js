@@ -8,8 +8,8 @@
  * Real key presses (sendInputEvent) and clicks, at 1440x900 and 1280x800; every wait is a condition (until), and the driver exits non-zero on a miss:
  *   US1 / FR-001  three floors on: the office shows one floor's rooms (every floor tag the same), the three floors together hold the 15 agents once,
  *                 and the shared lobby is there. The pills keep counting the whole building (FR-017).
- *   FR-011/FR-012 PageDown / PageUp (the keys of this platform: none are modified) change the floor at once, skipping nothing that is on, with exactly one
- *                 announcement "Floor <name>, <n> of <m>" per change; at the first or last floor nothing happens and nothing is announced.
+ *   FR-011/FR-012 PageUp / PageDown, floor 1 at the bottom (Q-D) (the keys of this platform: none are modified) change the floor at once, skipping nothing that is on, with exactly one
+ *                 announcement "Floor <name>, <n> of <m>" per change; at the top or bottom floor nothing happens and nothing is announced.
  *   FR-011        the key keeps its own meaning in a select, in the composer of an open chat and under a dialog (the palette): the floor does not change.
  *   T038          a floor screen that scrolls (15 agents on one floor, a short window) scrolls on PageDown and changes floor only from the edge:
  *                 a press that reaches the bottom does not also change floor.
@@ -74,18 +74,18 @@ module.exports = async (ctx) => {
     await shot('ground', w, h);
 
     lap(`${tag} one floor at a time done`);
-    // ---- FR-011, FR-012: PageDown / PageUp, one announcement per change, nothing at the ends ----
-    await pressUntilTag('PageDown', 'Client A'); seen['Client A'] = await view();
+    // ---- FR-011, FR-012: PageUp / PageDown, one announcement per change, nothing at the ends ----
+    await pressUntilTag('PageUp', 'Client A'); seen['Client A'] = await view();
     assert.ok(seen['Client A'].lobby && seen['Client A'].pills === 15, `${tag}: lobby and whole-building pills on Client A`);
     await shot('clienta', w, h);
-    await pressUntilTag('PageDown', 'Personal'); seen.Personal = await view();
+    await pressUntilTag('PageUp', 'Personal'); seen.Personal = await view();
     await shot('personal', w, h);
     await annEq(['Floor Client A, 2 of 3', 'Floor Personal, 3 of 3'], `${tag}: one announcement per change`);
-    await key('PageDown'); // the last floor: nothing
-    await key('PageUp'); assert.ok(await onFloor('Client A'), `${tag}: PageUp from the last floor`); await settle();
-    await pressUntilTag('PageUp', 'Ground floor');
-    await key('PageUp'); // the first floor: nothing
-    await key('PageDown'); assert.ok(await onFloor('Client A'), `${tag}: PageDown after a no-op PageUp`); await settle();
+    await key('PageUp'); // the top floor: nothing
+    await key('PageDown'); assert.ok(await onFloor('Client A'), `${tag}: PageDown from the top floor`); await settle();
+    await pressUntilTag('PageDown', 'Ground floor');
+    await key('PageDown'); // floor 1: nothing
+    await key('PageUp'); assert.ok(await onFloor('Client A'), `${tag}: PageUp after a no-op PageDown`); await settle();
     await annEq(['Floor Client A, 2 of 3', 'Floor Personal, 3 of 3', 'Floor Client A, 2 of 3', 'Floor Ground floor, 1 of 3', 'Floor Client A, 2 of 3'], `${tag}: nothing was announced at the ends`);
     const all = Object.values(seen).flatMap((s) => s.desks);
     assert.strictEqual(new Set(all).size, 15, `${tag}: the three floors hold the 15 agents once (${all.length} desks, ${new Set(all).size} distinct)`);
@@ -103,6 +103,8 @@ module.exports = async (ctx) => {
     lap(`${tag} reload done`);
     // ---- FR-011: the key keeps its meaning where text or a choice is edited ----
     await reset(w, h, { simfloors: '1' });
+    // on Client A, so a PageDown that got through would change the floor (on floor 1 it would do nothing and these steps would prove nothing)
+    await pressUntilTag('PageUp', 'Client A'); await settle(); await js(`window.__ann.length=0`);
     const pref0 = (await view()).pref;
     assert.ok(pref0, `${tag}: precondition: a current floor is saved`);
     // the select takes the key for its own choice (the folder filter moves to the next folder); the floor stays and nothing is announced.
@@ -129,11 +131,11 @@ module.exports = async (ctx) => {
     assert.strictEqual((await view()).pref, pref0, `${tag}: PageDown in the folder select does not change the floor`);
     await annEq([], `${tag}: and nothing was announced`);
     await js(`(()=>{const s=document.getElementById('wsFilter');s.value='all';s.dispatchEvent(new Event('change',{bubbles:true}));s.blur();})()`);
-    assert.ok(await onFloor('Ground floor'), `${tag}: the floor is the same`);
+    assert.ok(await onFloor('Client A'), `${tag}: the floor is the same`);
     await key('K', [MOD], { char: 'never' }); assert.ok(await until(`!!document.getElementById('palDlg')`), `${tag}: the palette opens`);
     await key('PageDown'); await settle();
     await key('Escape'); assert.ok(await until(`!document.getElementById('palDlg')`));
-    assert.ok(await onFloor('Ground floor'), `${tag}: PageDown under the palette does not change the floor`);
+    assert.ok(await onFloor('Client A'), `${tag}: PageDown under the palette does not change the floor`);
     await annEq([], `${tag}: and nothing was announced`);
     await js(`document.querySelector('#stage .desk[data-id]').click()`);
     assert.ok(await until(`document.body.classList.contains('panel-open')&&!!document.getElementById('msgInput')`), `${tag}: the chat opens`);
@@ -142,13 +144,13 @@ module.exports = async (ctx) => {
     await annEq([], `${tag}: nothing announced for the composer`);
     await js(`document.getElementById('backBtn').click()`);
     assert.ok(await until(`!document.body.classList.contains('panel-open')`), `${tag}: back to the office`);
-    assert.ok(await onFloor('Ground floor'), `${tag}: PageDown in the composer does not change the floor`);
+    assert.ok(await onFloor('Client A'), `${tag}: PageDown in the composer does not change the floor`);
     await annEq([], `${tag}: and nothing was announced on the way back`);
 
     lap(`${tag} text and dialogs done`);
     // ---- FR-023: floors going off and on ----
     await reset(w, h, { simfloors: '1' });
-    await pressUntilTag('PageDown', 'Client A');
+    await pressUntilTag('PageUp', 'Client A');
     await js(`window.__ann.length=0`);
     await floorSw('f-clienta0', false); // the current floor goes off: the next floor that is on
     assert.ok(await onFloor('Personal'), `${tag}: the current floor went off: Personal`);
@@ -172,10 +174,10 @@ module.exports = async (ctx) => {
     assert.ok(await until(`document.querySelectorAll('#stage .floor-tag').length===0&&document.querySelectorAll('#stage .desk[data-id]').length>0`), `${tag}: Show only: one floor, no tags`);
     await floorSw('ground', true); // Personal stays the current floor
     assert.ok(await onFloor('Personal'), `${tag}: after Show only, the chosen floor is the current one`);
-    // a floor between: Client A off, Ground floor current, PageDown skips it
+    // a floor between: Client A off, Ground floor current, PageUp skips it
     await reset(w, h, { simfloors: '1', floorsoff: 'Client A' });
     assert.ok(await onFloor('Ground floor'));
-    await key('PageDown'); assert.ok(await onFloor('Personal'), `${tag}: PageDown skips a floor that is off`);
+    await key('PageUp'); assert.ok(await onFloor('Personal'), `${tag}: PageUp skips a floor that is off`);
     await annEq(['Floor Personal, 2 of 2'], `${tag}: announced as 2 of 2`);
 
     lap(`${tag} floors off and on done`);
@@ -191,7 +193,7 @@ module.exports = async (ctx) => {
     v = await view();
     assert.strictEqual(v.btn, '3/3', `${tag}: precondition: three floors on`);
     assert.strictEqual(v.desks.length, 15, `${tag}: every agent is on the Ground floor`);
-    await key('PageDown');
+    await key('PageUp');
     assert.ok(await emptyOn('Client A'), `${tag}: an empty floor says so`);
     v = await view();
     assert.ok(v.lobby && v.desks.length === 0 && /Move a folder here/.test(v.empty), `${tag}: the empty floor keeps the lobby: ${JSON.stringify({ lobby: v.lobby, desks: v.desks.length, empty: v.empty })}`);
@@ -224,17 +226,32 @@ module.exports = async (ctx) => {
     assert.ok(presses >= 1 && v.top >= v.max - 1, `${tag}: the screen was scrolled to its bottom edge in ${presses} presses`);
     assert.ok(v.desks.length > 0 && !v.empty, `${tag}: the press that reached the bottom did not also change floor`);
     await annEq([], `${tag}: and announced nothing`);
-    await key('PageDown'); // from the edge: the next floor
-    assert.ok(await emptyOn('Client A'), `${tag}: from the bottom edge PageDown goes to the next floor`);
+    await key('PageDown'); await settle(); // floor 1, at its bottom edge: there is no floor below
+    assert.strictEqual((await view()).pref, v.pref, `${tag}: PageDown at the bottom edge of floor 1 goes nowhere`);
+    await annEq([], `${tag}: and says nothing`);
+    // PageUp scrolls back up first, and changes floor only from the top edge
+    presses = 0;
+    for (; presses < 40; presses++) {
+      v = await view();
+      if (v.top <= 1) break;
+      const before = v.top;
+      await key('PageUp');
+      assert.ok(await until(`document.getElementById('floor').scrollTop<${jsLiteral(before)}`), `${tag}: PageUp scrolls up inside the floor first (at ${before})`);
+      await settle();
+      assert.strictEqual((await view()).pref, v.pref, `${tag}: a PageUp that scrolls does not change the floor`);
+    }
+    assert.ok(presses >= 1 && !(await view()).empty, `${tag}: the press that reached the top did not also change floor`);
+    await annEq([], `${tag}: and announced nothing`);
+    await key('PageUp'); // from the top edge: the next number up
+    assert.ok(await emptyOn('Client A'), `${tag}: from the top edge PageUp goes to the floor above`);
     await annEq(['Floor Client A, 2 of 3'], `${tag}: once`);
-    await key('PageUp'); // up the building: the floor above, at its bottom edge
-    assert.ok(await until(`!document.querySelector('#stage .floor-empty')&&document.querySelectorAll('#stage .desk[data-id]').length>0`), `${tag}: PageUp goes back to the Ground floor`);
+    await key('PageDown'); // down the building: the floor below, at its top edge (floornav.arriveEdge has the other way: only the Ground floor scrolls here)
+    assert.ok(await until(`!document.querySelector('#stage .floor-empty')&&document.querySelectorAll('#stage .desk[data-id]').length>0`), `${tag}: PageDown goes back to the Ground floor`);
     v = await view();
-    assert.ok(v.top >= v.max - 1, `${tag}: arriving from below lands at the bottom edge (${v.top} of ${v.max})`);
-    const top1 = v.top;
-    await key('PageUp');
-    assert.ok(await until(`document.getElementById('floor').scrollTop<${jsLiteral(top1)}`), `${tag}: PageUp scrolls up inside the floor first`);
-    assert.ok(!(await view()).empty, `${tag}: PageUp inside a scrolling floor stays on the floor`);
+    assert.ok(v.top <= 1, `${tag}: arriving from above lands at the top edge (${v.top} of ${v.max})`);
+    await key('PageDown');
+    assert.ok(await until(`document.getElementById('floor').scrollTop>1`), `${tag}: PageDown scrolls down inside the floor first`);
+    assert.ok(!(await view()).empty, `${tag}: PageDown inside a scrolling floor stays on the floor`);
   }
 
   // ---- FR-020, FR-021: a visitor of a floor that is not on screen is in the lobby, with its floor in the label, without a walk ----
@@ -256,12 +273,12 @@ module.exports = async (ctx) => {
       assert.strictEqual(i0.walking, 0, `${tag}: no walk is drawn for them`);
       // The lobby's visitors are drawn from the agents' state by a render that may still be queued (a frame on a busy runner), so a set read from the DOM can be older than the
       // model, and the render that a floor change does at once then shows the newer set: that is not the lobby changing with the floor. So everything runs in one page task, where
-      // nothing can be queued in between: a floor change and back (each renders at once from the model), then the set, a PageDown and the set again.
+      // nothing can be queued in between: a floor change and back (each renders at once from the model), then the set, a PageUp and the set again.
       const same = await js(`(()=>{const ids=()=>[...document.querySelectorAll('.lobby .pv[data-visitor]')].map(e=>e.dataset.visitor).sort().join();
         const press=k=>document.dispatchEvent(new KeyboardEvent('keydown',{key:k,bubbles:true,cancelable:true}));
-        press('PageDown');press('PageUp');const a=ids();
-        press('PageDown');return {a,b:ids(),walking:document.querySelectorAll('#walkers .walker.walking').length};})()`);
-      assert.ok(await onFloor('Client A'), `${tag}: PageDown went to Client A`); await settle();
+        press('PageUp');press('PageDown');const a=ids();
+        press('PageUp');return {a,b:ids(),walking:document.querySelectorAll('#walkers .walker.walking').length};})()`);
+      assert.ok(await onFloor('Client A'), `${tag}: PageUp went to Client A`); await settle();
       assert.ok(same.a, `${tag}: precondition: visitors at the moment of the change`);
       assert.strictEqual(same.b, same.a, `${tag}: the lobby keeps the same visitors on every floor`);
       assert.strictEqual(same.walking, 0, `${tag}: no figure walks across a floor change`);

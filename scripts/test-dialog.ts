@@ -219,5 +219,59 @@ const setup = () => {
     assert.ok(t.dlg(), 'Enter does not press a primary button that `need` keeps disabled');
     t.key('Escape'); assert.strictEqual(await r, null);
   }
+  // spec 052 FR-237: a popup closes only on a press that starts (and, for a backdrop, ends) outside it
+  {
+    type Press = { down: unknown; up: unknown } | null;
+    const D = create as unknown as {
+      trackPress: (d: Document) => void; pressOf: (e: Event) => Press;
+      isBackdropClick: (e: Event, ov: Element) => boolean; isOutsideClick: (e: Event, roots: Element[]) => boolean;
+    };
+    const { window } = new JSDOM('<!doctype html><body><div id="ov"><div class="dlg"><input id="f"></div></div><div id="pop"><input id="pf"></div><button id="out">out</button></body>');
+    const doc = window.document as Document;
+    D.trackPress(doc);
+    const $ = (id: string) => doc.getElementById(id) as HTMLElement;
+    const ov = $('ov'), f = $('f'), pop = $('pop'), pf = $('pf'), out = $('out');
+    const stamp = (e: Event, t?: number) => { if (t !== undefined) Object.defineProperty(e, 'timeStamp', { value: t }); return e; };
+    let now = 1e6; /* every event gets an explicit time, so the 1 s rule is tested without waiting */
+    const mouse = (type: string, el: HTMLElement, button = 0, t = (now += 10)) => el.dispatchEvent(stamp(new window.MouseEvent(type, { bubbles: true, button }), t));
+    const press = (down: HTMLElement, up: HTMLElement, button = 0) => { mouse('mousedown', down, button); mouse('mouseup', up, button); };
+    const click = (el: HTMLElement, t = now + 5) => { const e = stamp(new window.MouseEvent('click', { bubbles: true }), t); el.dispatchEvent(e); return e; };
+    // the bug: a drag from the field that ends on the backdrop sends its click to the backdrop; it does not close
+    press(f, ov); assert.strictEqual(D.isBackdropClick(click(ov), ov), false, 'a drag from the field ending on the backdrop is not a backdrop click');
+    // a press and release on the backdrop closes
+    press(ov, ov); assert.strictEqual(D.isBackdropClick(click(ov), ov), true, 'a click on the backdrop is a backdrop click');
+    // a press on the backdrop released inside the dialog (its click also goes to the backdrop) does not close
+    press(ov, f); assert.strictEqual(D.isBackdropClick(click(ov), ov), false, 'a press on the backdrop released in the dialog is not a backdrop click');
+    // a click more than 1 s after the last release has no press: judged by its target (a keyboard or script click on the backdrop)
+    press(f, f); assert.strictEqual(D.isBackdropClick(click(ov, now + 1500), ov), true, 'a stale press is ignored: the click on the backdrop closes');
+    // a new press whose release never came (it ended outside the window) clears the old release: the click is judged by its target
+    press(f, f); mouse('mousedown', ov); assert.strictEqual(D.pressOf(click(ov)), null, 'a press with no release yet has no press record');
+    assert.strictEqual(D.isBackdropClick(click(ov), ov), true, 'so a click on the backdrop then is judged by its target');
+    // only the primary button counts: a right-button press in the field does not replace the backdrop press
+    press(ov, ov); press(f, f, 2); assert.strictEqual(D.isBackdropClick(click(ov), ov), true, 'a secondary-button press is not recorded');
+    // isOutsideClick: a drag from the popover's field that ends outside keeps it; a press outside closes it
+    press(pf, out); assert.strictEqual(D.isOutsideClick(click(doc.body), [pop]), false, 'a drag from the popover field ending outside is not outside');
+    press(out, out); assert.strictEqual(D.isOutsideClick(click(out), [pop]), true, 'a click outside is outside');
+    // a keyboard or script click inside the popover (no fresh press) is not outside
+    press(out, out); assert.strictEqual(D.isOutsideClick(click(pf, now + 5000), [pop]), false, 'a keyboard click inside the popover is not outside');
+    assert.strictEqual(D.isOutsideClick(click(out, now + 5000), [pop]), true, 'a keyboard click outside is outside');
+    // askDialog: the drag that ends on the backdrop keeps the dialog; a press and release there closes it
+    const t = setup(); t.chip.focus();
+    (create as unknown as { trackPress: (d: Document) => void }).trackPress(t.doc);
+    const p = t.ask(t.opts({ input: { label: 'Name', value: 'Client A', focus: true, select: true } }));
+    const inp = t.doc.getElementById('mdIn') as HTMLInputElement, dov = t.dlg() as HTMLElement;
+    const tm = (type: string, el: HTMLElement) => el.dispatchEvent(stamp(new t.window.MouseEvent(type, { bubbles: true, button: 0 }), (now += 10)));
+    tm('mousedown', inp); tm('mouseup', dov); dov.dispatchEvent(stamp(new t.window.MouseEvent('click', { bubbles: true }), now + 5));
+    assert.ok(t.dlg(), 'askDialog stays open after a drag from its field that ends on the backdrop');
+    // the focus trap: a stray focus behind the dialog goes back to the field, with its selection
+    inp.focus(); inp.setSelectionRange(2, 6); t.chip.focus();
+    assert.strictEqual(t.doc.activeElement, inp, 'a stray focus comes back to the field that had it');
+    assert.deepStrictEqual([inp.selectionStart, inp.selectionEnd], [2, 6], 'with its selection');
+    // the field that last had the focus was removed: the focus goes to a control that is still in the dialog
+    inp.parentNode!.removeChild(inp); t.chip.focus();
+    assert.ok(t.inDlg(), 'a removed last-focused control: the focus still goes into the dialog');
+    tm('mousedown', dov); tm('mouseup', dov); dov.dispatchEvent(stamp(new t.window.MouseEvent('click', { bubbles: true }), now + 5));
+    assert.strictEqual(await p, null, 'a press and release on the backdrop closes it');
+  }
   console.log('dialog tests passed');
 })().catch((e) => { console.error(e); process.exit(1); });
