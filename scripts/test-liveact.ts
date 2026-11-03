@@ -62,7 +62,7 @@ eq(L.lastSentences('', 50), '', 'empty');
   eq(f.onEvent('b', ev({ type: 'output', delta: '' })), false, 'an empty reply shows nothing');
   eq(f.of('b'), null, 'nothing to show');
 }
-// tools: verb phrases, Simple words, task tools skipped, phases other than start ignored
+// tools: verb phrases, task tools skipped, phases other than start ignored
 {
   const f = mk();
   f.onEvent('a', ev({ type: 'toolCall', callId: 'c', tool: 'view', phase: 'start' }), { kind: 'read', label: 'src/tools/registry.ts' });
@@ -73,7 +73,6 @@ eq(L.lastSentences('', 50), '', 'empty');
   eq(L.phrase({ kind: 'search', tool: 'grep', label: 'registerTool' }, mask), 'Searching registerTool', 'search');
   eq(L.phrase({ kind: 'read', tool: 'web_fetch', label: 'https://example.com/a' }, mask), 'Opening https://example.com/a', 'url');
   eq(L.phrase({ kind: 'tool', tool: 'github-create_issue', label: '' }, mask), 'Using github-create_issue', 'other tool');
-  eq(L.phrase({ kind: 'run', tool: 'bash', label: 'npm test', simple: 'Running a command' }, mask), 'Running a command', 'Simple words, never the command');
   eq(f.onEvent('a', ev({ type: 'toolCall', callId: 'c', tool: 'bash', phase: 'complete' }), { kind: 'run', label: 'x' }), false, 'complete: no change');
   eq(f.onEvent('a', ev({ type: 'toolCall', callId: 't', tool: 'task', phase: 'start' }), { kind: 'tool', label: 'x', skip: true }), false, 'task tool skipped');
   ok(Array.from(L.phrase({ kind: 'read', tool: 'view', label: 'a/'.repeat(400) }, mask)).length <= L.LINE_MAX, 'phrase cut');

@@ -147,3 +147,4 @@
 
 - [x] T058 Floor on/off uses the shared `.swt` switch (`role=switch`, `aria-checked`) in the panel and Settings; `.fl-sw` removed (its leftover Delete-dialog return focus fixed, review of #1011); drivers read `aria-checked`; `shots-033.js` asserts it [FR-007, FR-023]; screenshots, changelog fragment, docs
 - [x] T059 Floors panel row: **Focus mode** icon button, icon buttons for Up, Down, Rename and Delete, a drag handle with reorder by drag (`reorder.js` attach for floors, depends on PR #987), `shots-033.js` drag and name checks, retaken linked pictures [FR-004, FR-022]
+- [x] T060 `afterFloorsChange` schedules the office render in a `finally` and resets `layoutKey`; `scripts/check-floor-repaint.js` (issue #787, FR-088); mutation: without the `finally` it fails [FR-088]

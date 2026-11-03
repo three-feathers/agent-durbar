@@ -1,0 +1,27 @@
+/* The Retro arcade world (spec 102 FR-254..FR-258): the room's own rules, loaded only when it is shown, all scoped by .ro[data-world="retro"].
+   Pictures are lossless frames at one integer scale, --ro-g, nearest pixel. Performance rules (097 FR-180, FR-182): no blend mode, no blur, no filter.
+   Colours here belong to the art; a plate's text is the app's token. No text is inside a mirrored element. */
+.ro[data-world="retro"]{--ro-g:2;background:#1a1426 url(floor.webp) 0 0/calc(24px*var(--ro-g)) calc(24px*var(--ro-g)) repeat;image-rendering:pixelated}
+.ro[data-world="retro"] img{image-rendering:pixelated}
+.ro[data-world="retro"] .ro-lobby{background:#241a38 url(wall.webp) 0 0/auto 100% repeat-x;image-rendering:pixelated;border-bottom-color:rgba(0,0,0,.5)}
+.ro[data-world="retro"] .ro-strip{background:#1a1426 url(floor.webp) 0 0/calc(24px*var(--ro-g)) calc(24px*var(--ro-g)) repeat}
+.ro[data-world="retro"] .ro-zone{background:none;box-shadow:none}
+.ro[data-world="retro"] .ro-ambient{background:#0c0816}
+/* the cabinet: a picture; mirrored as a whole picture, static (FR-256), on `scale`, so a motion on `transform` does not flip it back */
+.ro[data-world="retro"] .ro-cab{background-repeat:no-repeat;image-rendering:pixelated;overflow:visible}
+.ro[data-world="retro"] .ro-cab.mir,.ro[data-world="retro"] .ro-person.mir{scale:-1 1}
+/* the person stands beside the cabinet, in front of its body and behind its glass: nothing lies under the screen's text */
+.ro[data-world="retro"] .ro-person{z-index:3}
+.ro[data-world="retro"] .ro-screen{z-index:4}
+/* the CRT: level glass (FR-258), scanlines under the text; the text is the app's, in the chrome layer */
+.ro[data-world="retro"] .ro-screen .ro-neck,.ro[data-world="retro"] .ro-screen .ro-foot{display:none}
+.ro[data-world="retro"] .ro-screen .ro-bezel{position:absolute;inset:calc(4px*var(--ro-g));height:auto!important;background:none;border:0;border-radius:0;box-shadow:none}
+.ro[data-world="retro"] .ro-screen .ro-glass{position:absolute;inset:0;border-radius:0;background:#0d1320 repeating-linear-gradient(0deg,rgba(255,255,255,.035) 0 1px,transparent 1px calc(2px*var(--ro-g)))}
+.ro[data-world="retro"] .ro-screen:is(.st-waiting,.st-limit) .ro-bezel,.ro[data-world="retro"] .ro-screen:hover .ro-bezel{box-shadow:none}
+/* the marquee: real text, at least 12 px, one line, level (FR-257) */
+.ro[data-world="retro"] .ro-marquee{display:block;box-sizing:border-box;text-align:center;background:#150f24;color:#ffd166;font:700 12px/calc(9px*var(--ro-g)) ui-monospace,Menlo,Consolas,monospace;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;padding:0 4px}
+/* the plate: the status, one line: the name is on the marquee and in the button's label */
+.ro[data-world="retro"] .ro-plate .ro-l1{display:none}
+.ro[data-world="retro"] .ro-plate .ro-l2{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
+/* the sign's shortest form: name, counts, + and menu; path and cost on its hover (FR-256) */
+.ro[data-world="retro"] .ro-sign.short :is(.ro-path,.ro-cost){display:none}

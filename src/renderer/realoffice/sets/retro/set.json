@@ -1,0 +1,1574 @@
+{
+ "faceBox": {
+  "p01": {
+   "box": [
+    0,
+    0,
+    32,
+    23
+   ],
+   "pose": "face-book"
+  },
+  "p02": {
+   "box": [
+    0,
+    0,
+    34,
+    24
+   ],
+   "pose": "face-book"
+  },
+  "p03": {
+   "box": [
+    0,
+    0,
+    34,
+    26
+   ],
+   "pose": "face-book"
+  },
+  "p04": {
+   "box": [
+    0,
+    0,
+    36,
+    29
+   ],
+   "pose": "face-book"
+  },
+  "p05": {
+   "box": [
+    0,
+    0,
+    30,
+    29
+   ],
+   "pose": "face-book"
+  },
+  "p06": {
+   "box": [
+    0,
+    0,
+    29,
+    28
+   ],
+   "pose": "face-book"
+  },
+  "p07": {
+   "box": [
+    1,
+    0,
+    34,
+    24
+   ],
+   "pose": "face-book"
+  },
+  "p08": {
+   "box": [
+    3,
+    0,
+    29,
+    24
+   ],
+   "pose": "face-book"
+  },
+  "p09": {
+   "box": [
+    0,
+    0,
+    34,
+    24
+   ],
+   "pose": "face-book"
+  },
+  "p10": {
+   "box": [
+    0,
+    0,
+    41,
+    19
+   ],
+   "pose": "face-book"
+  },
+  "p11": {
+   "box": [
+    0,
+    0,
+    32,
+    24
+   ],
+   "pose": "face-book"
+  },
+  "p12": {
+   "box": [
+    5,
+    0,
+    32,
+    24
+   ],
+   "pose": "face-book"
+  },
+  "p13": {
+   "box": [
+    0,
+    0,
+    22,
+    25
+   ],
+   "pose": "face-book"
+  },
+  "p14": {
+   "box": [
+    0,
+    0,
+    29,
+    24
+   ],
+   "pose": "face-book"
+  },
+  "p15": {
+   "box": [
+    0,
+    0,
+    30,
+    22
+   ],
+   "pose": "face-book"
+  }
+ },
+ "facing": "left",
+ "formatVersion": 1,
+ "id": "retro",
+ "level": "full",
+ "name": "Retro pixel people",
+ "pixelArt": true,
+ "seat": {
+  "p01": {
+   "bodyH": 77,
+   "h": 79,
+   "hand": 0.88,
+   "headTop": 2,
+   "w": 80
+  },
+  "p02": {
+   "bodyH": 78,
+   "h": 80,
+   "hand": 0.88,
+   "headTop": 2,
+   "w": 79
+  },
+  "p03": {
+   "bodyH": 79,
+   "h": 79,
+   "hand": 0.88,
+   "headTop": 0,
+   "w": 78
+  },
+  "p04": {
+   "bodyH": 77,
+   "h": 80,
+   "hand": 0.88,
+   "headTop": 3,
+   "w": 80
+  },
+  "p05": {
+   "bodyH": 78,
+   "h": 78,
+   "hand": 0.88,
+   "headTop": 0,
+   "w": 64
+  },
+  "p06": {
+   "bodyH": 77,
+   "h": 79,
+   "hand": 0.88,
+   "headTop": 2,
+   "w": 65
+  },
+  "p07": {
+   "bodyH": 80,
+   "h": 80,
+   "hand": 0.88,
+   "headTop": 0,
+   "w": 72
+  },
+  "p08": {
+   "bodyH": 77,
+   "h": 80,
+   "hand": 0.88,
+   "headTop": 3,
+   "w": 78
+  },
+  "p09": {
+   "bodyH": 78,
+   "h": 86,
+   "hand": 0.88,
+   "headTop": 8,
+   "w": 87
+  },
+  "p10": {
+   "bodyH": 78,
+   "h": 79,
+   "hand": 0.88,
+   "headTop": 1,
+   "w": 66
+  },
+  "p11": {
+   "bodyH": 77,
+   "h": 80,
+   "hand": 0.88,
+   "headTop": 3,
+   "w": 83
+  },
+  "p12": {
+   "bodyH": 77,
+   "h": 89,
+   "hand": 0.88,
+   "headTop": 12,
+   "w": 88
+  },
+  "p13": {
+   "bodyH": 79,
+   "h": 79,
+   "hand": 0.88,
+   "headTop": 0,
+   "w": 61
+  },
+  "p14": {
+   "bodyH": 77,
+   "h": 79,
+   "hand": 0.88,
+   "headTop": 2,
+   "w": 80
+  },
+  "p15": {
+   "bodyH": 78,
+   "h": 81,
+   "hand": 0.88,
+   "headTop": 3,
+   "w": 71
+  }
+ },
+ "stand": {
+  "p01": {
+   "feet": {
+    "book": 1.0,
+    "counter": 1.0,
+    "face-book": 1.0,
+    "face-coffee": 1.0,
+    "face-knock": 1.0,
+    "face-letter": 1.0,
+    "face-runA": 1.0,
+    "face-runB": 1.0,
+    "knock": 1.0,
+    "letter": 1.0,
+    "type": 1.0
+   },
+   "figH": 72,
+   "foot": {
+    "book": 0.4595,
+    "counter": 0.4189,
+    "face-book": 0.5312,
+    "face-coffee": 0.6061,
+    "face-knock": 0.6143,
+    "face-letter": 0.5645,
+    "face-runA": 0.5429,
+    "face-runB": 0.5571,
+    "knock": 0.4444,
+    "letter": 0.3846,
+    "type": 0.4412
+   },
+   "poses": {
+    "book": [
+     37,
+     72
+    ],
+    "counter": [
+     37,
+     72
+    ],
+    "face-book": [
+     32,
+     71
+    ],
+    "face-coffee": [
+     33,
+     71
+    ],
+    "face-knock": [
+     35,
+     71
+    ],
+    "face-letter": [
+     31,
+     71
+    ],
+    "face-runA": [
+     35,
+     71
+    ],
+    "face-runB": [
+     35,
+     71
+    ],
+    "knock": [
+     36,
+     72
+    ],
+    "letter": [
+     39,
+     72
+    ],
+    "type": [
+     34,
+     72
+    ]
+   },
+   "top": {
+    "book": 0.0,
+    "counter": 0.0,
+    "face-book": 0.0,
+    "face-coffee": 0.0,
+    "face-knock": 0.0,
+    "face-letter": 0.0,
+    "face-runA": 0.0,
+    "face-runB": 0.0,
+    "knock": 0.0,
+    "letter": 0.0,
+    "type": 0.0
+   }
+  },
+  "p02": {
+   "feet": {
+    "book": 1.0,
+    "counter": 1.0,
+    "face-book": 1.0,
+    "face-coffee": 1.0,
+    "face-knock": 1.0,
+    "face-letter": 1.0,
+    "face-runA": 1.0,
+    "face-runB": 1.0,
+    "knock": 1.0,
+    "letter": 1.0,
+    "type": 1.0
+   },
+   "figH": 72,
+   "foot": {
+    "book": 0.4595,
+    "counter": 0.4615,
+    "face-book": 0.5147,
+    "face-coffee": 0.5441,
+    "face-knock": 0.5417,
+    "face-letter": 0.5526,
+    "face-runA": 0.5735,
+    "face-runB": 0.3382,
+    "knock": 0.5143,
+    "letter": 0.4419,
+    "type": 0.5
+   },
+   "poses": {
+    "book": [
+     37,
+     72
+    ],
+    "counter": [
+     39,
+     72
+    ],
+    "face-book": [
+     34,
+     71
+    ],
+    "face-coffee": [
+     34,
+     71
+    ],
+    "face-knock": [
+     36,
+     71
+    ],
+    "face-letter": [
+     38,
+     71
+    ],
+    "face-runA": [
+     34,
+     71
+    ],
+    "face-runB": [
+     34,
+     71
+    ],
+    "knock": [
+     35,
+     72
+    ],
+    "letter": [
+     43,
+     72
+    ],
+    "type": [
+     36,
+     72
+    ]
+   },
+   "top": {
+    "book": 0.0,
+    "counter": 0.0,
+    "face-book": 0.0,
+    "face-coffee": 0.0,
+    "face-knock": 0.0,
+    "face-letter": 0.0,
+    "face-runA": 0.0,
+    "face-runB": 0.0,
+    "knock": 0.0,
+    "letter": 0.0,
+    "type": 0.0
+   }
+  },
+  "p03": {
+   "feet": {
+    "book": 1.0,
+    "counter": 1.0,
+    "face-book": 1.0,
+    "face-coffee": 1.0,
+    "face-knock": 1.0,
+    "face-letter": 1.0,
+    "face-runA": 1.0,
+    "face-runB": 1.0,
+    "knock": 1.0,
+    "letter": 1.0,
+    "type": 1.0
+   },
+   "figH": 72,
+   "foot": {
+    "book": 0.3684,
+    "counter": 0.4444,
+    "face-book": 0.5441,
+    "face-coffee": 0.5143,
+    "face-knock": 0.6053,
+    "face-letter": 0.5541,
+    "face-runA": 0.5,
+    "face-runB": 0.5,
+    "knock": 0.4429,
+    "letter": 0.3452,
+    "type": 0.4265
+   },
+   "poses": {
+    "book": [
+     38,
+     72
+    ],
+    "counter": [
+     36,
+     72
+    ],
+    "face-book": [
+     34,
+     71
+    ],
+    "face-coffee": [
+     35,
+     71
+    ],
+    "face-knock": [
+     38,
+     71
+    ],
+    "face-letter": [
+     37,
+     71
+    ],
+    "face-runA": [
+     36,
+     71
+    ],
+    "face-runB": [
+     34,
+     71
+    ],
+    "knock": [
+     35,
+     72
+    ],
+    "letter": [
+     42,
+     72
+    ],
+    "type": [
+     34,
+     72
+    ]
+   },
+   "top": {
+    "book": 0.0,
+    "counter": 0.0,
+    "face-book": 0.0,
+    "face-coffee": 0.0,
+    "face-knock": 0.0,
+    "face-letter": 0.0,
+    "face-runA": 0.0,
+    "face-runB": 0.0,
+    "knock": 0.0,
+    "letter": 0.0,
+    "type": 0.0
+   }
+  },
+  "p04": {
+   "feet": {
+    "book": 1.0,
+    "counter": 1.0,
+    "face-book": 1.0,
+    "face-coffee": 1.0,
+    "face-knock": 1.0,
+    "face-letter": 1.0,
+    "face-runA": 1.0,
+    "face-runB": 1.0,
+    "knock": 1.0,
+    "letter": 1.0,
+    "type": 1.0
+   },
+   "figH": 71,
+   "foot": {
+    "book": 0.4429,
+    "counter": 0.4189,
+    "face-book": 0.4722,
+    "face-coffee": 0.4559,
+    "face-knock": 0.4583,
+    "face-letter": 0.5256,
+    "face-runA": 0.5,
+    "face-runB": 0.4857,
+    "knock": 0.5,
+    "letter": 0.4146,
+    "type": 0.4306
+   },
+   "poses": {
+    "book": [
+     35,
+     71
+    ],
+    "counter": [
+     37,
+     71
+    ],
+    "face-book": [
+     36,
+     71
+    ],
+    "face-coffee": [
+     34,
+     71
+    ],
+    "face-knock": [
+     36,
+     71
+    ],
+    "face-letter": [
+     39,
+     72
+    ],
+    "face-runA": [
+     37,
+     72
+    ],
+    "face-runB": [
+     35,
+     71
+    ],
+    "knock": [
+     34,
+     71
+    ],
+    "letter": [
+     41,
+     71
+    ],
+    "type": [
+     36,
+     71
+    ]
+   },
+   "top": {
+    "book": 0.0,
+    "counter": 0.0,
+    "face-book": 0.0,
+    "face-coffee": 0.0,
+    "face-knock": 0.0,
+    "face-letter": 0.0,
+    "face-runA": 0.0,
+    "face-runB": 0.0,
+    "knock": 0.0,
+    "letter": 0.0,
+    "type": 0.0
+   }
+  },
+  "p05": {
+   "feet": {
+    "book": 1.0,
+    "counter": 1.0,
+    "face-book": 1.0,
+    "face-coffee": 1.0,
+    "face-knock": 1.0,
+    "face-letter": 1.0,
+    "face-runA": 1.0,
+    "face-runB": 1.0,
+    "knock": 1.0,
+    "letter": 1.0,
+    "type": 1.0
+   },
+   "figH": 71,
+   "foot": {
+    "book": 0.3788,
+    "counter": 0.375,
+    "face-book": 0.4833,
+    "face-coffee": 0.5,
+    "face-knock": 0.5676,
+    "face-letter": 0.5526,
+    "face-runA": 0.5909,
+    "face-runB": 0.6714,
+    "knock": 0.4194,
+    "letter": 0.3553,
+    "type": 0.3906
+   },
+   "poses": {
+    "book": [
+     33,
+     72
+    ],
+    "counter": [
+     32,
+     71
+    ],
+    "face-book": [
+     30,
+     71
+    ],
+    "face-coffee": [
+     31,
+     72
+    ],
+    "face-knock": [
+     37,
+     71
+    ],
+    "face-letter": [
+     38,
+     70
+    ],
+    "face-runA": [
+     33,
+     70
+    ],
+    "face-runB": [
+     35,
+     70
+    ],
+    "knock": [
+     31,
+     72
+    ],
+    "letter": [
+     38,
+     71
+    ],
+    "type": [
+     32,
+     71
+    ]
+   },
+   "top": {
+    "book": 0.0,
+    "counter": 0.0,
+    "face-book": 0.0,
+    "face-coffee": 0.0,
+    "face-knock": 0.0,
+    "face-letter": 0.0,
+    "face-runA": 0.0,
+    "face-runB": 0.0,
+    "knock": 0.0,
+    "letter": 0.0,
+    "type": 0.0
+   }
+  },
+  "p06": {
+   "feet": {
+    "book": 1.0,
+    "counter": 1.0,
+    "face-book": 1.0,
+    "face-coffee": 1.0,
+    "face-knock": 1.0,
+    "face-letter": 1.0,
+    "face-runA": 1.0,
+    "face-runB": 1.0,
+    "knock": 1.0,
+    "letter": 1.0,
+    "type": 1.0
+   },
+   "figH": 72,
+   "foot": {
+    "book": 0.3611,
+    "counter": 0.4412,
+    "face-book": 0.5172,
+    "face-coffee": 0.5172,
+    "face-knock": 0.5758,
+    "face-letter": 0.5179,
+    "face-runA": 0.6207,
+    "face-runB": 0.4821,
+    "knock": 0.4848,
+    "letter": 0.3718,
+    "type": 0.4412
+   },
+   "poses": {
+    "book": [
+     36,
+     71
+    ],
+    "counter": [
+     34,
+     71
+    ],
+    "face-book": [
+     29,
+     71
+    ],
+    "face-coffee": [
+     29,
+     71
+    ],
+    "face-knock": [
+     33,
+     71
+    ],
+    "face-letter": [
+     28,
+     71
+    ],
+    "face-runA": [
+     29,
+     71
+    ],
+    "face-runB": [
+     28,
+     71
+    ],
+    "knock": [
+     33,
+     72
+    ],
+    "letter": [
+     39,
+     72
+    ],
+    "type": [
+     34,
+     72
+    ]
+   },
+   "top": {
+    "book": 0.0,
+    "counter": 0.0,
+    "face-book": 0.0,
+    "face-coffee": 0.0,
+    "face-knock": 0.0,
+    "face-letter": 0.0,
+    "face-runA": 0.0,
+    "face-runB": 0.0,
+    "knock": 0.0,
+    "letter": 0.0,
+    "type": 0.0
+   }
+  },
+  "p07": {
+   "feet": {
+    "book": 1.0,
+    "counter": 1.0,
+    "face-book": 1.0,
+    "face-coffee": 1.0,
+    "face-knock": 1.0,
+    "face-letter": 1.0,
+    "face-runA": 1.0,
+    "face-runB": 1.0,
+    "knock": 1.0,
+    "letter": 1.0,
+    "type": 1.0
+   },
+   "figH": 72,
+   "foot": {
+    "book": 0.4143,
+    "counter": 0.4571,
+    "face-book": 0.4865,
+    "face-coffee": 0.5,
+    "face-knock": 0.5132,
+    "face-letter": 0.5,
+    "face-runA": 0.5263,
+    "face-runB": 0.5694,
+    "knock": 0.4844,
+    "letter": 0.3625,
+    "type": 0.4375
+   },
+   "poses": {
+    "book": [
+     35,
+     72
+    ],
+    "counter": [
+     35,
+     72
+    ],
+    "face-book": [
+     37,
+     71
+    ],
+    "face-coffee": [
+     38,
+     71
+    ],
+    "face-knock": [
+     38,
+     71
+    ],
+    "face-letter": [
+     37,
+     71
+    ],
+    "face-runA": [
+     38,
+     71
+    ],
+    "face-runB": [
+     36,
+     71
+    ],
+    "knock": [
+     32,
+     72
+    ],
+    "letter": [
+     40,
+     72
+    ],
+    "type": [
+     32,
+     72
+    ]
+   },
+   "top": {
+    "book": 0.0,
+    "counter": 0.0,
+    "face-book": 0.0,
+    "face-coffee": 0.0,
+    "face-knock": 0.0,
+    "face-letter": 0.0,
+    "face-runA": 0.0,
+    "face-runB": 0.0,
+    "knock": 0.0,
+    "letter": 0.0,
+    "type": 0.0
+   }
+  },
+  "p08": {
+   "feet": {
+    "book": 1.0,
+    "counter": 1.0,
+    "face-book": 1.0,
+    "face-coffee": 1.0,
+    "face-knock": 1.0,
+    "face-letter": 1.0,
+    "face-runA": 1.0,
+    "face-runB": 1.0,
+    "knock": 1.0,
+    "letter": 1.0,
+    "type": 1.0
+   },
+   "figH": 71,
+   "foot": {
+    "book": 0.3871,
+    "counter": 0.3594,
+    "face-book": 0.5147,
+    "face-coffee": 0.5882,
+    "face-knock": 0.6026,
+    "face-letter": 0.5323,
+    "face-runA": 0.6143,
+    "face-runB": 0.5625,
+    "knock": 0.4118,
+    "letter": 0.3421,
+    "type": 0.3485
+   },
+   "poses": {
+    "book": [
+     31,
+     71
+    ],
+    "counter": [
+     32,
+     71
+    ],
+    "face-book": [
+     34,
+     71
+    ],
+    "face-coffee": [
+     34,
+     71
+    ],
+    "face-knock": [
+     39,
+     71
+    ],
+    "face-letter": [
+     31,
+     70
+    ],
+    "face-runA": [
+     35,
+     71
+    ],
+    "face-runB": [
+     32,
+     71
+    ],
+    "knock": [
+     34,
+     71
+    ],
+    "letter": [
+     38,
+     71
+    ],
+    "type": [
+     33,
+     71
+    ]
+   },
+   "top": {
+    "book": 0.0,
+    "counter": 0.0,
+    "face-book": 0.0,
+    "face-coffee": 0.0,
+    "face-knock": 0.0,
+    "face-letter": 0.0,
+    "face-runA": 0.0,
+    "face-runB": 0.0,
+    "knock": 0.0,
+    "letter": 0.0,
+    "type": 0.0
+   }
+  },
+  "p09": {
+   "feet": {
+    "book": 1.0,
+    "counter": 1.0,
+    "face-book": 1.0,
+    "face-coffee": 1.0,
+    "face-knock": 1.0,
+    "face-letter": 1.0,
+    "face-runA": 1.0,
+    "face-runB": 1.0,
+    "knock": 1.0,
+    "letter": 1.0,
+    "type": 1.0
+   },
+   "figH": 71,
+   "foot": {
+    "book": 0.4306,
+    "counter": 0.473,
+    "face-book": 0.5294,
+    "face-coffee": 0.5441,
+    "face-knock": 0.5556,
+    "face-letter": 0.4848,
+    "face-runA": 0.4714,
+    "face-runB": 0.3636,
+    "knock": 0.4571,
+    "letter": 0.4103,
+    "type": 0.4583
+   },
+   "poses": {
+    "book": [
+     36,
+     72
+    ],
+    "counter": [
+     37,
+     71
+    ],
+    "face-book": [
+     34,
+     71
+    ],
+    "face-coffee": [
+     34,
+     71
+    ],
+    "face-knock": [
+     36,
+     71
+    ],
+    "face-letter": [
+     33,
+     71
+    ],
+    "face-runA": [
+     35,
+     71
+    ],
+    "face-runB": [
+     33,
+     71
+    ],
+    "knock": [
+     35,
+     71
+    ],
+    "letter": [
+     39,
+     71
+    ],
+    "type": [
+     36,
+     71
+    ]
+   },
+   "top": {
+    "book": 0.0,
+    "counter": 0.0,
+    "face-book": 0.0,
+    "face-coffee": 0.0,
+    "face-knock": 0.0,
+    "face-letter": 0.0,
+    "face-runA": 0.0,
+    "face-runB": 0.0,
+    "knock": 0.0,
+    "letter": 0.0,
+    "type": 0.0
+   }
+  },
+  "p10": {
+   "feet": {
+    "book": 1.0,
+    "counter": 1.0,
+    "face-book": 1.0,
+    "face-coffee": 1.0,
+    "face-knock": 1.0,
+    "face-letter": 1.0,
+    "face-runA": 1.0,
+    "face-runB": 1.0,
+    "knock": 1.0,
+    "letter": 1.0,
+    "type": 1.0
+   },
+   "figH": 72,
+   "foot": {
+    "book": 0.4342,
+    "counter": 0.4079,
+    "face-book": 0.5,
+    "face-coffee": 0.4868,
+    "face-knock": 0.4487,
+    "face-letter": 0.4615,
+    "face-runA": 0.4028,
+    "face-runB": 0.5857,
+    "knock": 0.4459,
+    "letter": 0.3864,
+    "type": 0.4714
+   },
+   "poses": {
+    "book": [
+     38,
+     72
+    ],
+    "counter": [
+     38,
+     72
+    ],
+    "face-book": [
+     41,
+     71
+    ],
+    "face-coffee": [
+     38,
+     71
+    ],
+    "face-knock": [
+     39,
+     71
+    ],
+    "face-letter": [
+     39,
+     71
+    ],
+    "face-runA": [
+     36,
+     70
+    ],
+    "face-runB": [
+     35,
+     70
+    ],
+    "knock": [
+     37,
+     72
+    ],
+    "letter": [
+     44,
+     72
+    ],
+    "type": [
+     35,
+     72
+    ]
+   },
+   "top": {
+    "book": 0.0,
+    "counter": 0.0,
+    "face-book": 0.0,
+    "face-coffee": 0.0,
+    "face-knock": 0.0,
+    "face-letter": 0.0,
+    "face-runA": 0.0,
+    "face-runB": 0.0,
+    "knock": 0.0,
+    "letter": 0.0,
+    "type": 0.0
+   }
+  },
+  "p11": {
+   "feet": {
+    "book": 1.0,
+    "counter": 1.0,
+    "face-book": 1.0,
+    "face-coffee": 1.0,
+    "face-knock": 1.0,
+    "face-letter": 1.0,
+    "face-runA": 1.0,
+    "face-runB": 1.0,
+    "knock": 1.0,
+    "letter": 1.0,
+    "type": 1.0
+   },
+   "figH": 71,
+   "foot": {
+    "book": 0.375,
+    "counter": 0.3857,
+    "face-book": 0.4394,
+    "face-coffee": 0.5147,
+    "face-knock": 0.5854,
+    "face-letter": 0.5,
+    "face-runA": 0.5972,
+    "face-runB": 0.5571,
+    "knock": 0.3939,
+    "letter": 0.3049,
+    "type": 0.4219
+   },
+   "poses": {
+    "book": [
+     36,
+     71
+    ],
+    "counter": [
+     35,
+     71
+    ],
+    "face-book": [
+     33,
+     71
+    ],
+    "face-coffee": [
+     34,
+     71
+    ],
+    "face-knock": [
+     41,
+     71
+    ],
+    "face-letter": [
+     31,
+     71
+    ],
+    "face-runA": [
+     36,
+     72
+    ],
+    "face-runB": [
+     35,
+     71
+    ],
+    "knock": [
+     33,
+     71
+    ],
+    "letter": [
+     41,
+     71
+    ],
+    "type": [
+     32,
+     71
+    ]
+   },
+   "top": {
+    "book": 0.0,
+    "counter": 0.0,
+    "face-book": 0.0,
+    "face-coffee": 0.0,
+    "face-knock": 0.0,
+    "face-letter": 0.0,
+    "face-runA": 0.0,
+    "face-runB": 0.0,
+    "knock": 0.0,
+    "letter": 0.0,
+    "type": 0.0
+   }
+  },
+  "p12": {
+   "feet": {
+    "book": 1.0,
+    "counter": 1.0,
+    "face-book": 1.0,
+    "face-coffee": 1.0,
+    "face-knock": 1.0,
+    "face-letter": 1.0,
+    "face-runA": 1.0,
+    "face-runB": 1.0,
+    "knock": 1.0,
+    "letter": 1.0,
+    "type": 1.0
+   },
+   "figH": 72,
+   "foot": {
+    "book": 0.3649,
+    "counter": 0.359,
+    "face-book": 0.4878,
+    "face-coffee": 0.4767,
+    "face-knock": 0.4884,
+    "face-letter": 0.4878,
+    "face-runA": 0.6098,
+    "face-runB": 0.65,
+    "knock": 0.3784,
+    "letter": 0.3478,
+    "type": 0.3649
+   },
+   "poses": {
+    "book": [
+     37,
+     71
+    ],
+    "counter": [
+     39,
+     72
+    ],
+    "face-book": [
+     41,
+     71
+    ],
+    "face-coffee": [
+     43,
+     72
+    ],
+    "face-knock": [
+     43,
+     72
+    ],
+    "face-letter": [
+     41,
+     72
+    ],
+    "face-runA": [
+     41,
+     72
+    ],
+    "face-runB": [
+     40,
+     72
+    ],
+    "knock": [
+     37,
+     72
+    ],
+    "letter": [
+     46,
+     72
+    ],
+    "type": [
+     37,
+     72
+    ]
+   },
+   "top": {
+    "book": 0.0,
+    "counter": 0.0,
+    "face-book": 0.0,
+    "face-coffee": 0.0,
+    "face-knock": 0.0,
+    "face-letter": 0.0,
+    "face-runA": 0.0,
+    "face-runB": 0.0,
+    "knock": 0.0,
+    "letter": 0.0,
+    "type": 0.0
+   }
+  },
+  "p13": {
+   "feet": {
+    "book": 1.0,
+    "counter": 1.0,
+    "face-book": 1.0,
+    "face-coffee": 1.0,
+    "face-knock": 1.0,
+    "face-letter": 1.0,
+    "face-runA": 1.0,
+    "face-runB": 1.0,
+    "knock": 1.0,
+    "letter": 1.0,
+    "type": 1.0
+   },
+   "figH": 71,
+   "foot": {
+    "book": 0.3519,
+    "counter": 0.3393,
+    "face-book": 0.5455,
+    "face-coffee": 0.5962,
+    "face-knock": 0.5645,
+    "face-letter": 0.4545,
+    "face-runA": 0.5,
+    "face-runB": 0.5769,
+    "knock": 0.3654,
+    "letter": 0.3065,
+    "type": 0.3519
+   },
+   "poses": {
+    "book": [
+     27,
+     71
+    ],
+    "counter": [
+     28,
+     71
+    ],
+    "face-book": [
+     22,
+     71
+    ],
+    "face-coffee": [
+     26,
+     71
+    ],
+    "face-knock": [
+     31,
+     71
+    ],
+    "face-letter": [
+     22,
+     71
+    ],
+    "face-runA": [
+     28,
+     71
+    ],
+    "face-runB": [
+     26,
+     71
+    ],
+    "knock": [
+     26,
+     71
+    ],
+    "letter": [
+     31,
+     71
+    ],
+    "type": [
+     27,
+     71
+    ]
+   },
+   "top": {
+    "book": 0.0,
+    "counter": 0.0,
+    "face-book": 0.0,
+    "face-coffee": 0.0,
+    "face-knock": 0.0,
+    "face-letter": 0.0,
+    "face-runA": 0.0,
+    "face-runB": 0.0,
+    "knock": 0.0,
+    "letter": 0.0,
+    "type": 0.0
+   }
+  },
+  "p14": {
+   "feet": {
+    "book": 1.0,
+    "counter": 1.0,
+    "face-book": 1.0,
+    "face-coffee": 1.0,
+    "face-knock": 1.0,
+    "face-letter": 1.0,
+    "face-runA": 1.0,
+    "face-runB": 1.0,
+    "knock": 1.0,
+    "letter": 1.0,
+    "type": 1.0
+   },
+   "figH": 72,
+   "foot": {
+    "book": 0.3837,
+    "counter": 0.4474,
+    "face-book": 0.5,
+    "face-coffee": 0.5167,
+    "face-knock": 0.5286,
+    "face-letter": 0.5571,
+    "face-runA": 0.5938,
+    "face-runB": 0.4032,
+    "knock": 0.4474,
+    "letter": 0.4205,
+    "type": 0.4286
+   },
+   "poses": {
+    "book": [
+     43,
+     72
+    ],
+    "counter": [
+     38,
+     72
+    ],
+    "face-book": [
+     29,
+     71
+    ],
+    "face-coffee": [
+     30,
+     71
+    ],
+    "face-knock": [
+     35,
+     71
+    ],
+    "face-letter": [
+     35,
+     71
+    ],
+    "face-runA": [
+     32,
+     72
+    ],
+    "face-runB": [
+     31,
+     71
+    ],
+    "knock": [
+     38,
+     72
+    ],
+    "letter": [
+     44,
+     72
+    ],
+    "type": [
+     42,
+     72
+    ]
+   },
+   "top": {
+    "book": 0.0,
+    "counter": 0.0,
+    "face-book": 0.0,
+    "face-coffee": 0.0,
+    "face-knock": 0.0,
+    "face-letter": 0.0,
+    "face-runA": 0.0,
+    "face-runB": 0.0,
+    "knock": 0.0,
+    "letter": 0.0,
+    "type": 0.0
+   }
+  },
+  "p15": {
+   "feet": {
+    "book": 1.0,
+    "counter": 1.0,
+    "face-book": 1.0,
+    "face-coffee": 1.0,
+    "face-knock": 1.0,
+    "face-letter": 1.0,
+    "face-runA": 1.0,
+    "face-runB": 1.0,
+    "knock": 1.0,
+    "letter": 1.0,
+    "type": 1.0
+   },
+   "figH": 72,
+   "foot": {
+    "book": 0.4118,
+    "counter": 0.3784,
+    "face-book": 0.5167,
+    "face-coffee": 0.5167,
+    "face-knock": 0.5571,
+    "face-letter": 0.5167,
+    "face-runA": 0.55,
+    "face-runB": 0.4833,
+    "knock": 0.4394,
+    "letter": 0.3553,
+    "type": 0.4394
+   },
+   "poses": {
+    "book": [
+     34,
+     72
+    ],
+    "counter": [
+     37,
+     72
+    ],
+    "face-book": [
+     30,
+     71
+    ],
+    "face-coffee": [
+     30,
+     71
+    ],
+    "face-knock": [
+     35,
+     71
+    ],
+    "face-letter": [
+     30,
+     71
+    ],
+    "face-runA": [
+     30,
+     71
+    ],
+    "face-runB": [
+     30,
+     71
+    ],
+    "knock": [
+     33,
+     72
+    ],
+    "letter": [
+     38,
+     72
+    ],
+    "type": [
+     33,
+     72
+    ]
+   },
+   "top": {
+    "book": 0.0,
+    "counter": 0.0,
+    "face-book": 0.0,
+    "face-coffee": 0.0,
+    "face-knock": 0.0,
+    "face-letter": 0.0,
+    "face-runA": 0.0,
+    "face-runB": 0.0,
+    "knock": 0.0,
+    "letter": 0.0,
+    "type": 0.0
+   }
+  }
+ }
+}
