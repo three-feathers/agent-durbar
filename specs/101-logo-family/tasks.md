@@ -22,7 +22,7 @@
 - [x] T015 [US1] `scripts/check-logo-family.js`, flat part: Clean, every built-in theme, a generated theme, forced colours, 1440x900 and 1280x800; no `<img>` in the tile, tile size and `h1` position unchanged [FR-072]. Test: the driver in `ui-suite.js`; mutation: a raised tile size goes red.
 - [x] T016 [US1] Linux window icon unchanged in code, new in picture; no `setIcon` call added [FR-037]. Test: driver asserts the call site; `read:` on a real desktop by an owner of each OS (`[KNOWN GAP]` until then).
 - [x] T017 [P] [US1] README alt text; site favicon and brand, `pages.yml` filter [FR-050, FR-051]. Test: `test:site` under 8 MB.
-- [ ] T018 [US1] (the last step before merge, after the owner accepts the icons; only the two heroes so far) Retake linked pictures, `npm run shots:docs`, both sizes, looked at [FR-052]. Test: `shots-docs` coverage check, `test:site`.
+- [x] T018 [US1] (the owner accepted the icons 2026-11-03; 88 of the 93 linked pictures retaken on this Mac; `001-live-activity-*`, `001-unread-1440x900` and `080-browser-tabs-*` were not: their drivers fail on this Mac on `main` too, so they wait for a run that passes) Retake linked pictures, `npm run shots:docs`, both sizes, looked at [FR-052]. Test: `shots-docs` coverage check, `test:site`.
 - [x] T019 [P] [US1] Changelog fragment, README Settings text, docs pages [FR-053, FR-054]. Test: `npm run changelog:check`, *Docs check*.
 
 ## Phase 2: Picker (PR P2) - US2
