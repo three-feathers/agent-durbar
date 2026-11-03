@@ -46,8 +46,8 @@ module.exports = async (ctx) => {
   /* a "the popup did NOT close" check has no event to wait for: give the click or key the time it needs to act, then read once */
   const SETTLE = 350;
   /* wait until the field meets `cond` (page code over i = the field, f = it has the focus); the field's state for the message */
-  const fieldUntil = async (sel, cond, ms = 3000) => { const ok = await until(`(()=>{const i=document.querySelector(${jsLiteral(sel)});if(!i||!i.getClientRects().length)return false;const f=document.activeElement===i;return !!(${cond})})()`, ms); return { ok, f: await field(sel) }; };
-  const pageSel = (sel, a, b) => js(`(()=>{const i=document.querySelector(${jsLiteral(sel)});i.setSelectionRange(${a === null ? 'i.value.length' : a},${b === null ? 'i.value.length' : b});return true})()`);
+  const fieldUntil = async (sel, cond, ms = 3000) => { const ok = await until('(()=>{const i=document.querySelector(' + jsLiteral(sel) + ');if(!i||!i.getClientRects().length)return false;const f=document.activeElement===i;return !!(' + cond + ')})()', ms); return { ok, f: await field(sel) }; }; /* cond is this driver's own page code, never data */
+  const pageSel = (sel, a, b) => js(`(()=>{const i=document.querySelector(${jsLiteral(sel)}),a=${jsLiteral(a)},b=${jsLiteral(b)};i.setSelectionRange(a===null?i.value.length:a,b===null?i.value.length:b);return true})()`); /* null: the end of the text */
   /* the point just outside the popup's box: to its left on the field's line when there is room, else above it */
   const outside = (box, fy) => (box.l > 40 ? { x: box.l - 24, y: fy } : { x: (box.l + box.r) / 2, y: box.t > 40 ? box.t - 20 : box.b + 20 });
   const reset = async () => {
