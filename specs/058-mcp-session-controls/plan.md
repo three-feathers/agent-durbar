@@ -371,3 +371,38 @@ that show without the in-app call, and an honest note per app. Never spawn a log
 - PR A also carries the FR-185 fix (T157).
 - PR A also carries FR-186 (Q22 B: the allow-listed Claude `oauth` fields in Durbar's `--mcp-config`; T158), with a dated pointer in
   spec 069 *Changes*.
+
+## Delta: keep MCP sign-ins fresh (FR-204..FR-217, owner request 2026-11-03)
+
+### Summary
+
+Before the first message of a session and before the first message after 60 minutes without a reply (monotonic clock; a wake from
+sleep counts), main asks the chat's agent app to reconnect its remote MCP servers so the app renews their sign-in with its own refresh
+token; the send waits at most 5 s. A 30-minute status read of running chats, a launch check for apps that can answer without a chat,
+and one Settings switch (default on). Builds on PR #1073's launch strip and Settings rows.
+
+### Constitution check (delta)
+
+- I: spec delta and tasks first; implementation after PR #1073.
+- II: one optional adapter member each (`checkMcpSignIns`, `reconnectMcpForSignIn`) with capabilities; main stays vendor-free.
+- III: no token, credential file or keychain item is read, stored, logged or passed; the agent app refreshes. Only names and fixed words
+  reach the window and logs; no shell.
+- IV: pure planner with an injected clock, fakes and the simulator; T176/T177 only with the owner's OK.
+- V: two one-line status texts, no modal, 10.5px, both sizes with 15 agents.
+- VI: monotonic clock plus `powerMonitor` `resume` (sleep behaviour differs per OS); no paths or shell.
+- VIII: per-app `[KNOWN GAP]`s kept in the spec table until T176/T177.
+
+### Design
+
+- `src/main/mcpsigninrefresh.ts`: `planMcpSignInRefresh(input)` (pure) and the attempt record; constants for 60 min, 5 s, 30 min.
+- Send path (`src/main/ipc/agents.ts` `agents:send`, the schedule send): plan -> `reconnectMcpForSignIn` (Copilot/Claude through
+  `mcpRestartOp`, Codex relaunch flag) -> `Promise.race` with the 5 s bound -> `sendOp`.
+- Turn end (`main.ts` status handler) sets the last-response mark and clears the attempt record; `powerMonitor` `resume` marks every chat.
+- Recheck: one main timer over `mcpRefreshOp(..., startNothing)`.
+- Launch: after detection, `checkMcpSignIns` per capable, signed-in app, into PR #1073's `launchUpdate`.
+- Settings: one boolean in the settings store and `AppSettingsView`.
+
+### Order
+
+T176 (owner's OK) any time; T178 -> T179 -> T180 -> T181 -> T184 -> T185 -> T183 -> T186 -> T187; T182 after T176; T177 (owner's OK)
+before the docs claim a refresh works; T188, T189 last.
