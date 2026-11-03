@@ -2967,7 +2967,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
           const finish = (extra: Record<string, unknown>, ok: boolean) => {
             if (ok) { const r = simUpdResults.get(kind); if (r) simUpdResults.set(kind, { ...r, state: 'up-to-date', installed: r.stable ?? r.latest ?? r.installed }); }
             simUpdEmit();
-            simHarness.done.forEach((cb) => cb({ kind, op, ok, exitCode: ok ? 0 : 1, lines: ['(simulated)'], ...extra } as never));
+            simHarness.done.forEach((cb) => cb({ kind, op, ok, exitCode: ok || extra.failure === 'managed' ? 0 : 1, lines: ['(simulated)'], ...extra } as never)); // a Managed run is the recorded shape: ok:false with exit 0
           };
           const FAIL: Record<string, Record<string, unknown>> = { admin: { failure: 'admin' }, inuse: { failure: 'in-use' }, managed: { failure: 'managed' }, network: { failure: 'network' }, other: { failure: 'other' }, fallback: { failure: 'other', fallback: 'official' } };
           setTimeout(() => prog({ lines: ['Updating (simulated)…'] }), 300);
