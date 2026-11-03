@@ -15,6 +15,8 @@ export interface StandMeta { figH: number; poses: Record<string, [number, number
 /* `foot`: per pose, the horizontal centre of the planted feet as a share of the picture's width (spec 097 FR-191): the figure stands on it,
    not on the middle of its box, because a three-quarter view has its feet off the box's centre. */
 export interface RealMeta {
+  /** spec 102 FR-255: a pixel world's art (one integer scale); its lobby keeps people apart */
+  pixelArt?: boolean;
   seat: Record<string, SeatMeta>; stand: Record<string, StandMeta>;
   fixtures: Record<string, [number, number]>; fixtureTop?: Record<string, number>; floorLine: number;
   /** per person: the typing rig's head and hands, as fractions of the picture, with their pivots (spec Changes 2026-11-01) */
@@ -29,14 +31,20 @@ export interface DeskBox {
   face: Rect | null; away: { x: number; y: number; s: number } | null; narrow: boolean; lamp: Rect;
   bubble: { x: number; y: number } | null; bang: { x: number; y: number } | null; dots: { x: number; y: number } | null;
   call: { x: number; y: number };
+  /** `aisles` only (spec 102 FR-256..FR-259): the marquee, the standing person's box and the side the screen faces */
+  marquee?: Rect; stand?: Rect; facing?: 'left' | 'right'; body?: number /* spec 102 FR-306: the cabinet's body, 0..3: the seat with 4 agents or fewer, else (column + 2 x row) mod 4, so a seat differs from its neighbours on the grid */; cue?: { x: number; y: number };
 }
 /** `id` is the folder's id; `part` is 1, or 2, 3... for the rest of a folder split over rows */
-export interface ZoneBox { id: string; part: number; box: Rect; sign: Rect; desks: DeskBox[] }
+export interface ZoneBox { id: string; part: number; box: Rect; sign: Rect; desks: DeskBox[]; /** `aisles`: the sign shows name, counts, + and menu only; path and cost go to its hover (FR-256) */ signShort?: boolean }
 export interface VisitorBox { id: string; fig: (Rect & { file: string; fileB: string | null; b: Rect | null; pose: string; feetY: number; faces: 'left' | 'right' }) | null; chip: { x: number; y: number }; face: Rect | null; shadow: Rect | null }
 export interface FixtureBox { id: string; custom: boolean; art: Rect | null; slot: Rect; plate: { x: number; y: number; w: number }; visitors: VisitorBox[]; more: number; light: Rect }
 export interface Layout {
   u: number; big: boolean; lobbyH: number; floorH: number; width: number; height: number; scroll: boolean; faceH: number;
   zones: ZoneBox[]; fixtures: FixtureBox[]; floorStrip: Rect;
+  /** `aisles` only: the free strip under the lobby where one-line pills go first */
+  lane?: Rect;
+  /** `aisles` only: the pixel scale (CSS px per art pixel) and the cabinet's size */
+  g?: number; cabinet?: { w: number; h: number; gw: number; gh: number; cols: number; rows: number };
 }
 
 /* FR-010 constants (b2.js) */
@@ -212,11 +220,11 @@ export function standHeight(meta: RealMeta, person: string): number {
  *  to 0.6; (4) the biggest crowds show fewer people and a "+N"; (5) empty places become a plate-only slot, from the right; (6) every
  *  fixture gets smaller still (down to 0.2); (7) plate-only slots narrow (their label ellipsed). An occupied place always keeps its
  *  fixture and at least one person. `scale` is each fixture's own scale. */
-export function lobbyWidths(fixtures: readonly number[], counts: readonly number[], W: number, vw: number): { x: number[]; w: number[]; fw: number[]; scale: number[]; step: number; shown: number[]; compact: boolean[]; gap: number } {
+export function lobbyWidths(fixtures: readonly number[], counts: readonly number[], W: number, vw: number, minStep = 0): { x: number[]; w: number[]; fw: number[]; scale: number[]; step: number; shown: number[]; compact: boolean[]; gap: number } {
   const n = fixtures.length, GAP = 4;
   const compact = fixtures.map(() => false), shown = counts.map((c) => Math.max(0, c | 0));
   const busy = (i: number): boolean => counts[i] > 0;
-  let step = 0.8 * vw, se = 1, sb = 1, cw = COMPACT_W;
+  let step = Math.max(0.8 * vw, minStep), se = 1, sb = 1, cw = COMPACT_W;
   const scaleOf = (i: number): number => (busy(i) ? sb : Math.min(se, sb));
   const fwOf = (i: number): number => (compact[i] ? cw : fixtures[i] * scaleOf(i));
   const wOf = (i: number): number => fwOf(i) + (shown[i] && !compact[i] ? 0.7 * vw + (shown[i] - 1) * step : 0);
@@ -225,7 +233,7 @@ export function lobbyWidths(fixtures: readonly number[], counts: readonly number
   let art = artOf((i) => !busy(i));
   if (total() > W && art) se = Math.max(0.55, 1 - (total() - W) / art);
   const many = shown.reduce((s0, c) => s0 + Math.max(0, c - 1), 0);
-  if (total() > W && many) step = Math.max(0.45 * vw, step - (total() - W) / many);
+  if (total() > W && many) step = Math.max(0.45 * vw, minStep, step - (total() - W) / many);
   art = artOf(busy);
   if (total() > W && art) sb = Math.max(0.6, 1 - (total() - W) / art);
   while (total() > W) {
@@ -257,7 +265,7 @@ function roLobby(meta: RealMeta, places: RealPlace[], W: number, Lb: number): { 
   const frontY = floorY + FRONT_DEPTH * (Lb - floorY); /* owner 10:48: the front floor plane, inside the floor strip */
   const webW = (meta.fixtures.web || [100, meta.floorLine])[0] * fs0;
   const full = places.map((p) => (!p.custom && roOwn(meta.fixtures, p.id) ? meta.fixtures[p.id][0] * fs0 : webW)); /* FR-027: a custom place is a kiosk the size of the Web fixture */
-  const al = lobbyWidths(full, places.map((p) => p.visitors.length), W, vw);
+  const al = lobbyWidths(full, places.map((p) => p.visitors.length), W, vw, meta.pixelArt ? 1.6 * vw : 0); /* spec 102, owner 2026-11-03: in a pixel world nobody stands half behind another; who does not fit is counted on the plate */
   const fixtures: FixtureBox[] = places.map((p, i) => {
     const x = al.x[i], fw = al.fw[i], compact = al.compact[i];
     const fs = fs0 * al.scale[i], fh = wallH * al.scale[i];
@@ -411,6 +419,9 @@ export function assignPeople(map: Record<string, string>, sessions: readonly { i
   return out;
 }
 
+/** the lobby band (fixtures and their visitors), for arrangements other than `rows` (spec 102 FR-256: the arcade hall keeps today's band) */
+export { roLobby as lobbyBand };
+
 /** Spec 097 FR-110, FR-121: where a slip, a bubble or a pill goes. The first free spot nearest `anchor` inside `bounds` that touches nothing in `avoid`
  *  (a plate, a sign, a chair label, a chip), or null when there is none. Pure; a 10 px grid keeps it cheap (a few hundred thousand comparisons at most). */
 export function placeBox(size: { w: number; h: number }, avoid: readonly Rect[], bounds: Rect, anchor: { x: number; y: number }, step = 10): Rect | null {
@@ -472,14 +483,15 @@ export interface ScreenLine { n: number; k: string; t: string }
 export const SCREEN_SMALL = { w: 150, h: 60 };
 export const SCREEN_PAD = 4;
 /** FR-032: how a glass of this size shows text: `rows` lines of text and `bars` line bars above them. */
-export function screenFit(glass: { w: number; h: number }): { small: boolean; font: number; lh: number; rows: number; bars: number; whole: number } {
+export function screenFit(glass: { w: number; h: number }, g = 0): { small: boolean; font: number; lh: number; rows: number; bars: number; whole: number } {
   const room = Math.max(0, glass.h - 2 * SCREEN_PAD);
   if (glass.w < SCREEN_SMALL.w || glass.h < SCREEN_SMALL.h) {
     const lh = 13;
     /* the newest line wraps over the rows it needs, the bars show above it as far as room is left; `whole`: the height of whole text rows */
     return { small: true, font: 10.5, lh, rows: 1, bars: Math.max(0, Math.floor((room - lh - 2) / 6)), whole: Math.max(lh, Math.floor(room / lh) * lh) };
   }
-  const font = glass.h > 200 ? 13 : 11, lh = font === 13 ? 17 : 15;
+  /* spec 102 (relayed, 2026-11-03): in the arcade above g = 3 the text grows with the art, 11 px at g = 3 */
+  const font = g > 3 ? Math.round(11 * g / 3 * 2) / 2 : glass.h > 200 ? 13 : 11, lh = g > 3 ? Math.round(font * 1.36) : font === 13 ? 17 : 15;
   const rows = Math.max(1, Math.floor(room / lh));
   return { small: false, font, lh, rows, bars: 0, whole: rows * lh };
 }

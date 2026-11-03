@@ -1,1 +1,0 @@
-- **Photo office keyboard:** a folder sign that redraws while its + or room menu button has the focus keeps the focus on that button (spec 097 FR-230).

@@ -169,30 +169,42 @@ export interface RestartDeps {
   log?(a: AgentInfo, action: string): void;
 }
 
-/** `agents:mcpRestart(id, name)` (FR-021). `running` holds `<agent id>\0<server>` while a restart runs: a second press is refused. */
-export async function mcpRestartOp(d: RestartDeps, running: Set<string>, id: unknown, name: unknown): Promise<McpRestartResult> {
+/**
+ * `agents:mcpRestart(id, name)` (FR-021). `running` holds, per `<agent id>\0<server>`, the restart that runs (spec 058 FR-209: a promise map):
+ * a second caller (the person's Restart, a send's automatic reconnect, the recheck) awaits the same restart instead of starting another.
+ * `opts.auto` (FR-207, FR-214): the automatic reconnect: the adapter's automatic form (Copilot: `restartServer` only, never disable/enable)
+ * and no "restarted" activity row (the refresher writes its own row instead).
+ */
+export function mcpRestartOp(d: RestartDeps, running: Map<string, Promise<McpRestartResult>>, id: unknown, name: unknown, opts: { auto?: boolean } = {}): Promise<McpRestartResult> {
   const a = typeof id === 'string' ? d.agents.get(id) : undefined;
-  if (!a || !validServerName(name)) return { ok: false, error: 'Unknown agent or server.' };
+  if (!a || !validServerName(name)) return Promise.resolve({ ok: false, error: 'Unknown agent or server.' });
   const ad = d.router.forAgent(a.id);
-  if (!ad) return { ok: false, error: 'Unknown agent or server.' };
-  if (typeof ad.restartMcpServer !== 'function') return { ok: false, error: `${ad.displayName} cannot restart one MCP server. Use Restart session with these servers.` };
-  if (!ad.isLive(a.id)) return { ok: false, error: NOT_RUNNING };
+  if (!ad) return Promise.resolve({ ok: false, error: 'Unknown agent or server.' });
+  if (typeof ad.restartMcpServer !== 'function') return Promise.resolve({ ok: false, error: `${ad.displayName} cannot restart one MCP server. Use Restart session with these servers.` });
+  if (!ad.isLive(a.id)) return Promise.resolve({ ok: false, error: NOT_RUNNING });
   const st = d.live(a.id).find((x) => x.name === name);
-  if (!st) return { ok: false, error: `${name} is not running in this session.` };
+  if (!st) return Promise.resolve({ ok: false, error: `${name} is not running in this session.` });
   // a server that is off (for this agent, in Settings, or as the runtime reports it) is never started by a Restart
-  if (d.off(a.id).has(name) || st.status === 'disabled') return { ok: false, error: 'Switch it on first.' };
+  if (d.off(a.id).has(name) || st.status === 'disabled') return Promise.resolve({ ok: false, error: 'Switch it on first.' });
   const key = `${a.id}\0${name}`;
-  if (running.has(key)) return { ok: false, error: `${name} is already restarting.` };
-  running.add(key);
-  try {
-    await ad.restartMcpServer(a.id, name);
-    d.log?.(a, `MCP server ${name} restarted`);
-    return { ok: true };
-  } catch (err) {
-    return { ok: false, error: maskMcpError(errText(err), d.secrets(a.id)) ?? 'Could not restart it.' };
-  } finally {
-    running.delete(key);
-  }
+  const runningNow = running.get(key);
+  if (runningNow) return runningNow;
+  const restart = ad.restartMcpServer.bind(ad);
+  const p = (async (): Promise<McpRestartResult> => {
+    try {
+      await (opts.auto === true ? restart(a.id, name, { auto: true }) : restart(a.id, name));
+      if (opts.auto !== true) d.log?.(a, `MCP server ${name} restarted`);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: maskMcpError(errText(err), d.secrets(a.id)) ?? 'Could not restart it.' };
+    }
+  })();
+  running.set(key, p);
+  const clear = (): void => {
+    if (running.get(key) === p) running.delete(key);
+  };
+  p.then(clear, clear);
+  return p;
 }
 
 /** How long a re-read of the agent app's server list may take before the dialog is told it could not be read (FR-191). */

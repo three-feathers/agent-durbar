@@ -346,6 +346,19 @@
 ## FR-181: no Demo / Live badge in the top bar (2026-10-31, owner)
 - [x] T193 `check-no-demo-badge.js` first (fails with the badge), then `#protoBadge`, `.proto` and `setBadge` removed; UI-suite entry; the cues that remain are listed in the spec delta [FR-181]
 
+## FR-214..FR-227: design sweep (2026-11-01, owner). PRs, gates and line-count goals: spec 005 `plan.md`
+- [ ] T220 [PR D1, first] `requestText()` puts a space between blocks. Test first: a pure-helper test and a driver that fail on `main` with the run-together words; mutant: old `textContent` [FR-214]
+- [ ] T221 [K2, PR #1011] `.swt.on` from a token: 2.47:1 to 6.08:1 and 6.92:1, in spec 033's delta and its driver. Tick when #1011 lands [FR-223]
+- [ ] T222 [PR R1, with spec 005] Mac rules on the rail's top row and chat header, also collapsed and hidden; `test-macos`. `[KNOWN GAP]` real Mac asked of its owner [FR-215]
+- [ ] T223 [PR N1] Measure first: 93 px and moving desks with three bars. Card kind and stay-open action in `toastActions()`; restore card, Change…, Dismiss, red lock, asks on every start. Test: new `check-notices`; desks unchanged with cards; a second start asks again; mutant: dismiss clears the lock [FR-218, FR-219, FR-220, FR-227]
+- [ ] T252 [PR N1] Flat at 15: shrink to the lock after 8 s unless hovered or focused, by injected clock; Photo top right clear. Test: `check-notices`; mutant: timer ignores hover [FR-221]
+- [ ] T214 [PR N2] Away and crash cards; `#restoreStrip`, `#awayStrip`, `#crashStrip` and `.notice-strip` removed; Mac notice rules removed; FR-015, FR-057's buttons, FR-089 changed in place. Test: `check-notices` (also the log at 700 and 600 px, 005 FR-195, 31 less on FR-199's fallback), `shots-006-crash`, `check:office` [FR-218]
+- [ ] T215 [After #1002's build, T197..T202, T224, T225] Notices as rows once the cards exist; the Your door control in the rail's rows once the rail exists. Test: `check-needs-panel` gains these steps [FR-216, FR-217]
+- [ ] T216 [PR K1] The toggle rule in `docs/design-rules.md` and `docs/review-checklist.md`; immediate checkboxes become `.swt` through `sw()`. Test: `check-ui-text`; existing screen drivers [FR-222]
+- [ ] T217 [PR K3] `accent-color`, `.inbox:focus-within`, `.send` from tokens (`.send` green in 070 A14, by whichever lands first), 3:1 and 4.5:1 in every set. Test: `check-ui-text`, ratchet lowered [FR-224]
+- [ ] T218 [PR K4] Information notes neutral, amber kept for what waits for you. Test: `check-ui-text` reads `.note.info` and a waiting card; mutant: amber default back [FR-225]
+- [ ] T219 [PR S, after spec 102 removes themes] Measure first, 7238 px and 22 headings. Section list and one row layout. Test: new `check-settings-nav` at both sizes, keyboard, jump to each section [FR-226]
+
 ## FR-206..FR-208: the Needs you inbox cannot answer a request by accident (2026-11-01)
 - [x] T203 `check-inbox-safety.js` first (on `main` it fails: a stale button re-answers a request, a held A answers, key A sends a limit's hidden amount), then `reqOf` and the live-card check in `paintInbox` [FR-206]; UI-suite entry
 - [x] T204 Limit row: the amount field in the row, no letter keys, own words, empty amount sends nothing, typing is not a command [FR-207]
@@ -358,3 +371,17 @@
 - [x] T211 Answer bar same-card rule by position (agent-supplied option labels cannot catch focus); late limit reply skips a settled card; `inboxKey` row guard, Space guard and `live.contains(src)` kept and tested; question answers locked in flight [FR-209, FR-210, FR-206, FR-208]
 - [x] T212 Third review of #1004: typing on a plan goes to the box; a hung limit answer (Sending…, 30 s unlock, "Still waiting", Copilot `cancelLimit` time limit); Space guard step; bar ignores locked cards; repaint keeps focus in the amount; tests for the question unlock and the amount's repeat check [FR-209, FR-210, FR-212, FR-213]
 - [x] T213 Fourth review of #1004: a settled limit card keeps its status (timer and late failure), `stop`/`interrupt` give up on cancel, abort and disconnect after 5 s (`test:copilotcap` with all three hanging), paste on the plan goes to the box [FR-209, FR-212]
+- [x] T226 Measure stop and interrupt after the 5 s give-up on a real Copilot runtime (issue #1028): `scripts/copilot-giveup-real.ts`, 7 prompts plus 2 to check the fixes [FR-228]
+- [x] T227 The row says Stop was sent; `send` waits for calls given up on (`test:copilotcap`, mutation-checked; `real:` the next message runs) [FR-229]
+- [x] T228 `start` and rename of the same id wait for a late close (`test:copilotcap`, mutation-checked; `real:` the resumed session lives) [FR-230]
+- [x] T246 Measure the runtime's own limit after a give-up on a real Copilot runtime (issue #1028 question 3): `--repl`, 32.05 AI credits [FR-231]
+- [x] T247 A send after a give-up waits for the end of the stopped turn (`test:copilotcap`, mutation-checked; `real:`) [FR-232]
+- [x] T248 Stop at a limit shows no error (`test:copilotcap`, mutation-checked; `real:`) [FR-233]
+- [x] T249 A raise under what was used keeps the card and the message (`test:copilotcap`, mutation-checked; `real:`) [FR-234]
+- [x] T250 A session over its cap opens again (`test:copilotcap`, mutation-checked; `real:`) [FR-235]
+- [x] T251 Remove the Simple / Expert switch: Expert is the only behaviour, "No spending limit" kept, the welcome question and the Settings control gone, a stored `durbar.detail` dropped once; 11 drivers lose the second dimension, `shots-052-ux` checks nothing renders the switch; docs and `*-simple-*` pictures removed [FR-236]
+- [x] T253 A text popup closes only on a press that starts outside it: one press tracker in `dialog.js` (`onBackdrop`, `isOutsideClick`) for every backdrop and the floors and Folders popovers, the focus trap returns to the last focused control; `scripts/check-edit-popups.js` (12 kinds with a field plus the inbox and keyboard sheet, both sizes, real input) and `test-dialog.ts`, each guard mutation-checked [FR-237]
+
+
+## 2026-11-02: activity export, atomic no-follow write (issue #973)
+- [x] T260 `activity:export` through `writeNotesExport` (new `what` and `maxBytes` options); `test-activity` cases for a link target, hard link, FIFO, folder, replace and mode [FR-071]
