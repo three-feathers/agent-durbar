@@ -58,7 +58,6 @@ module.exports = async (ctx) => {
     await send(id, text);
     await ok(`!document.body.classList.contains('panel-open')`, 'back in the office after the send');
     await js(`(()=>{const b=window.__durbarSimUi.bridge();b.send=b.__send;})();0`);
-    await E(id, { type: 'status', status: 'working', intent: 'Working' });
   };
   const setting = async (want) => {
     await mclick('#settingsBtn');
@@ -74,8 +73,6 @@ module.exports = async (ctx) => {
 
   const nameOf = (id) => js(`((window.__durbarSimUi.agents().find(a=>a.id===${jsLiteral(id)}))||{}).name||''`);
   const idByName = (n) => js(`((window.__durbarSimUi.agents().find(a=>a.name===${jsLiteral(n)}))||{}).id||''`);
-  const sampler = () => js(`(()=>{window.__s=[];clearInterval(window.__si);window.__si=setInterval(()=>{const a=document.activeElement,d=document.querySelector('#stage .desk.is-followed'),cs=d?getComputedStyle(d):null;window.__s.push({panel:document.body.classList.contains('panel-open'),f:[...document.querySelectorAll('.is-followed')].map(n=>n.dataset.id).join(','),act:(a&&a.dataset&&a.dataset.id)||(a&&a.id)||'',ol:cs?cs.outlineStyle+' '+cs.outlineWidth:'',tx:(document.getElementById('afText')||{}).textContent||''});},30);})()`);
-  const samples = () => js(`window.__s.slice()`);
   const inboxIds = async () => {
     await H.key('i', [], { char: 'always' });
     await ok(`!!document.getElementById('inboxDlg')`, 'the inbox opens');
@@ -126,23 +123,21 @@ module.exports = async (ctx) => {
     await shotTo(`052-auto-follow-idle-${tag}.png`);
 
     // ---- send -> office and desk -> completion opens the chat on its title
-    await sampler();
-    await send(A, 'hello follow');
+    await sendQuiet(A, 'hello follow');
     const nameA = await nameOf(A);
-    await ok(`document.body.classList.contains('panel-open')&&document.getElementById('panelTitle')&&document.getElementById('panelTitle').textContent===${jsLiteral(nameA)}&&window.__s.some(x=>!x.panel&&x.f===${jsLiteral(A)})`, `${tag}: back to the office with ${nameA} followed, then its chat opens when it finishes`, 25000);
-    let ss = await samples();
-    const off = ss.find((x) => !x.panel && x.f === A);
-    assert.ok(off, `${tag}: a moment in the office with the desk marked`);
-    assert.strictEqual(off.act, A, `${tag}: the focus was on the followed desk: ${off.act}`);
+    await ok(`!document.body.classList.contains('panel-open')&&!!document.querySelector(${jsLiteral(sel(A) + '.is-followed')})&&document.activeElement&&document.activeElement.dataset.id===${jsLiteral(A)}`, `${tag}: back to the office with ${nameA} followed and focused`);
+    const off = await js(`(()=>{const c=getComputedStyle(document.querySelector(${jsLiteral(sel(A))}));return {ol:c.outlineStyle+' '+c.outlineWidth,tx:document.getElementById('afText').textContent};})()`);
     assert.strictEqual(off.ol, 'dashed 2px', `${tag}: the marker is a dashed 2px outline (not colour alone): ${off.ol}`);
     assert.ok(new RegExp(nameA + ' is working\\. Back to the office\\.').test(off.tx), `${tag}: honest status: ${off.tx}`);
     assert.ok(!/done|finished/i.test(off.tx), `${tag}: the status promises nothing`);
+    await ok(`window.__ann.includes(${jsLiteral(nameA + ' is working. Back to the office.')})`, `${tag}: said`);
+    await finish(A, 'All done.');
+    await ok(`document.body.classList.contains('panel-open')&&document.getElementById('panelTitle').textContent===${jsLiteral(nameA)}`, `${tag}: its chat opens when it finishes`, 25000);
     let ac = await active();
     assert.strictEqual(ac.id, 'panelTitle', `${tag}: focus is on the chat title: ${JSON.stringify(ac)}`);
     assert.strictEqual(await followed(), '', `${tag}: no longer followed once shown`);
     assert.strictEqual((await anns()).filter((t) => t.includes('Back to the office')).length, 1, `${tag}: announced once`);
     await ok(`window.__ann.includes(${jsLiteral(nameA + ' finished. Its chat is open.')})`, `${tag}: the arrival was the completion`);
-    await js(`clearInterval(window.__si)`);
     await shotTo(`052-auto-follow-chat-${tag}.png`);
     await settled(A); await backToOffice();
     await ok(`!document.querySelector(${jsLiteral(sel(A) + ' .unread-mark')})`, `${tag}: the reply was shown, so it is not marked New`);
@@ -237,7 +232,6 @@ module.exports = async (ctx) => {
     const S1 = A, S2 = B, S3 = C;
 
     // a dialog holds the switch; closing it delivers
-    await sampler();
     await send(S1, 'hello dialog');
     await H.key('k', MOD, { char: 'never' });
     await ok(`!!document.getElementById('palDlg')`, `${tag}: the palette (a dialog) is open`);
@@ -248,7 +242,6 @@ module.exports = async (ctx) => {
     await H.key('Escape');
     await ok(`document.body.classList.contains('panel-open')&&document.getElementById('panelTitle').textContent===${jsLiteral(await nameOf(S1))}`, `${tag}: closing the dialog delivers it`, 8000);
     assert.strictEqual((await active()).id, 'panelTitle', `${tag}: focus on the title`);
-    await js(`clearInterval(window.__si)`);
     await backToOffice();
 
     // a menu holds it
@@ -542,12 +535,10 @@ module.exports = async (ctx) => {
       await H.load({ w: 1440, h: 900 });
       assert.ok(await js(`matchMedia('(prefers-reduced-motion: reduce)').matches`), 'reduced motion is on');
       await setting(true);
-      await sampler();
-      await send(A, 'hello reduced');
-      await ok(`window.__s.some(x=>!x.panel&&x.f===${jsLiteral(A)})`, 'reduced motion: still followed', 15000);
+      await sendQuiet(A, 'hello reduced');
+      await ok(`!!document.querySelector(${jsLiteral(sel(A) + '.is-followed')})`, 'reduced motion: still followed');
       const m = await js(`(()=>{const d=document.querySelector('#stage .desk[data-id=${jsLiteral(B)}]');const f=document.querySelector('#stage .desk.is-followed')||document.querySelector('#stage .desk[data-id=${jsLiteral(A)}]');const s=document.getElementById('followStrip');const a=getComputedStyle(f),b=getComputedStyle(d);return {anim:a.animationName,sameTr:a.transitionProperty===b.transitionProperty&&a.transitionDuration===b.transitionDuration,strip:getComputedStyle(s).animationName,stripTr:getComputedStyle(s).transitionDuration}})()`);
       assert.deepStrictEqual(m, { anim: 'none', sameTr: true, strip: 'none', stripTr: '0s' }, 'reduced motion: the marker adds no animation or transition: ' + JSON.stringify(m));
-      await js(`clearInterval(window.__si)`);
     } finally {
       await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [] });
     }
