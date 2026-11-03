@@ -13,6 +13,10 @@ html[data-world] :is(.more-menu,.mode-menu,.grants-pop,#defaultsPop,#foldersPop,
 html[data-world] .dlg-ov{background:color-mix(in srgb,var(--wb-bg-2) 34%,transparent)}
 html[data-world] .dlg.wide>.dbtn{background:transparent}
 html[data-world] .toast{color:var(--ink);background:color-mix(in srgb,var(--wb-bg) 90%,transparent);-webkit-backdrop-filter:blur(14px) saturate(1.2);backdrop-filter:blur(14px) saturate(1.2);box-shadow:var(--shadow-pop)}
+html[data-world][data-ui="retro"] .topbar .seg button[aria-pressed="true"]{color:var(--brand-mark)} /* spec 102 FR-263: the yellow of the pressed button takes the mark's dark ink, not the bar's light one */
+html[data-world][data-dark] .ro-plate:is(.st-waiting,.st-limit){background:var(--surface);color:var(--amber-ink);border-color:var(--c-waiting)} /* spec 102, owner 2026-11-03: a dark plate with a status-yellow edge and ink, no light block (070 FR-050: the status hue is kept) */
+html[data-world][data-dark][data-ui] .notice-strip{background:var(--wb-bg);color:var(--wb-ink);border-bottom-color:var(--wb-line)} /* spec 102, owner 2026-11-03: a dark world's notice strip is its dark bar, with the mark's yellow */
+html[data-world][data-dark][data-ui] .notice-strip .ns-ic{background:var(--brand-bg);color:var(--brand-mark);box-shadow:none}
 html[data-world] .app-tip{background:var(--wb-bg);color:var(--wb-ink);border-color:var(--wb-line)}
 @media (prefers-reduced-transparency:reduce),(prefers-contrast:more){
   html[data-world] :is(.more-menu,.mode-menu,.grants-pop,#defaultsPop,#foldersPop,#floorsPop,.ct-more-pop,.dlg){background:var(--surface);-webkit-backdrop-filter:none;backdrop-filter:none}

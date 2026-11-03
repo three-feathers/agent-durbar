@@ -186,7 +186,7 @@
           if (r.state === 'up-to-date' && r.installedNewer) out.push('<p class="scr-note small">Installed is newer than the source\'s latest.</p>');
           if (r.newerOnLatest) out.push(`<p class="scr-note small hs-quiet">A newer latest-channel build exists (${esc(r.newerOnLatest)}).</p>`);
         }
-        if (r.state === 'could-not-check') out.push(`<p class="scr-note small">Could not check: ${esc(r.reason || 'unexpected answer')}${r.reason === 'winget needs its terms accepted' ? '. Check for update asks you whether to accept them.' : /^npm or node was not found/.test(r.reason || '') ? ". Durbar could not run npm with a node beside it: install Node.js (it brings npm), or start Durbar from a terminal where npm works, then choose Check for update." : ''}</p>`);
+        if (r.state === 'could-not-check') out.push(`<p class="scr-note small">Could not check: ${esc(r.reason || 'unexpected answer')}${r.reason === 'winget needs its terms accepted' ? '. Check for update asks you whether to accept them.' : /^npm or node was not found/.test(r.reason || '') ? ". Durbar could not run npm with a node beside it: install Node.js (it brings npm), or start Durbar from a terminal where npm works, then choose Check for update." : ''}</p>${r.detail ? `<p class="scr-note small hs-detail">Details: ${esc(r.detail)}</p>` : ''}`);
         if (r.checkedAt) out.push(`<p class="scr-note small hs-when">Checked ${esc(timeOf(r.checkedAt))}</p>`);
       }
     } else if (busy) out.push(`<p class="scr-note small" aria-busy="true">${chip('checking')}</p>`);
@@ -300,9 +300,8 @@
         [{ label: 'Close', cancel: true, onClick: (c) => c() }, { label: 'Open the official page', cls: 'primary', onClick: (c) => { B.harnessOpenPage(kind); c(); } }]);
       return;
     }
-    /* spec 052 FR-056: one plain sentence per way; the exact commands sit in a <details>, closed in Simple and open in Expert.
+    /* spec 052 FR-056: one plain sentence per way; the exact commands sit in an open <details>.
        Main still shows the exact command in its native confirmation before anything runs (spec 051 FR-004b). */
-    const simple = document.body.classList.contains('simple');
     /* spec 052 FR-077: each option leads with what differs (the manager); the shared words are in the lead sentence */
     const many = p.plans.length > 1;
     const tag = (pl, i) => (op === 'update' && pl.owner ? ' (installed this copy)' : many && i === 0 ? ' (recommended)' : many && i === p.plans.length - 1 && pl.manager === 'npm' ? ' (last resort)' : '');
@@ -312,7 +311,7 @@
     const opts = ownerFirst
       ? radio(p.plans[0], 0) + (p.plans.length > 1 ? `<details class="hs-cmds hs-other"><summary>Show other ways</summary><p class="scr-note small">Another way would install a second copy next to the one Durbar uses.</p>${p.plans.slice(1).map((pl, j) => radio(pl, j + 1)).join('')}</details>` : '')
       : p.plans.map(radio).join('');
-    const cmds = `<details class="hs-cmds"${simple ? '' : ' open'}><summary>Show the exact command</summary>${p.plans.map((pl) => `<p class="scr-note small">${esc(mgr(pl))}: <code>${esc(pl.display)}</code></p>`).join('')}</details>`;
+    const cmds = `<details class="hs-cmds" open><summary>Show the exact command</summary>${p.plans.map((pl) => `<p class="scr-note small">${esc(mgr(pl))}: <code>${esc(pl.display)}</code></p>`).join('')}</details>`;
     const choice = await new Promise((res) => {
       const md = modal((op === 'update' ? 'Update ' : 'Install ') + p.name, `<p class="scr-note">Durbar ${op === 'update' ? 'updates' : 'installs'} ${esc(p.name)} for you. Choose how:</p>${opts}${cmds}<p class="scr-note small">It runs on your computer, as you, and asks once more before it starts. Prefer to do it yourself? <button type="button" class="linkbtn" id="hsPage">Open the official page</button></p>${op === 'install' ? manualHTML(p, false) : ''}`,
         [{ label: 'Cancel', cancel: true, onClick: (c) => { c(); res(null); } }, { label: op === 'update' ? 'Update' : 'Install', cls: 'primary', onClick: (c) => { const v = document.querySelector('#hsDlg input[name="hsPlan"]:checked'); const i = v ? Number(v.value) : 0; c(); res(i); } }]);
@@ -446,12 +445,12 @@
     const b = e.target.closest && e.target.closest('[data-hs]'); if (!b) return false;
     const kind = b.dataset.kind, card = b.closest('.hs-card'), name = card ? card.querySelector('b').textContent : kind;
     if (b.dataset.hs === 'reveal') reveal(b);
-    else if (b.dataset.hs === 'sbxundo') { if (B.sandboxAlwaysOff) B.sandboxAlwaysOff(kind).then(() => loadSandbox()).then(() => toastLike('The OS sandbox note shows again for ' + name + '.')); }
+    else if (b.dataset.hs === 'sbxundo') { if (B.sandboxAlwaysOff) B.sandboxAlwaysOff(kind).then((r) => loadSandbox().then(() => toastLike(r && r.ok === false ? 'Could not turn this off for ' + name + '.' : r && r.saved === false ? 'The OS sandbox note shows again for ' + name + ' for this run only: it could not be saved, so after a restart Durbar may continue without the sandbox again.' : 'The OS sandbox note shows again for ' + name + '.'))); }
     else if (b.dataset.hs === 'check') onChange(true);
     else if (b.dataset.hs === 'checkall') checkNow();
     else if (b.dataset.hs === 'updcheck') checkNow(kind);
     else if (b.dataset.hs === 'cancelwait') { waitKinds.delete(kind); B.harnessRun(kind, 'update', 0, 'cancel').then(() => loadUpdates()); }
-    else if (b.dataset.hs === 'startchk') { if (B.setCheckUpdatesAtStart) B.setCheckUpdatesAtStart(!!b.checked).then((r) => { if (UPD && r) UPD.startCheck = r.checkUpdatesAtStart !== false; }); return true; }
+    else if (b.dataset.hs === 'startchk') { if (B.setCheckUpdatesAtStart) B.setCheckUpdatesAtStart(!!b.checked).catch(() => null).then((r) => { if (UPD && r && r.ok !== false) UPD.startCheck = r.checkUpdatesAtStart !== false; else { b.checked = !!(UPD && UPD.startCheck); const S = window.DurbarScreens; toastLike(S && S.saveFailText ? S.saveFailText(b.checked ? 'on' : 'off') : 'Could not save this setting.'); } }); return true; }
     else if (b.dataset.hs === 'install' || b.dataset.hs === 'update') install(kind, b.dataset.hs, name);
     else if (b.dataset.hs === 'signin') signin(kind, name);
     return true;

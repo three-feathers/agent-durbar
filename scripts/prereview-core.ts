@@ -66,7 +66,8 @@ export function factsFromGraphql(json: any): PrFacts {
     author: who(pr.author),
     editor: pr.editor ? who(pr.editor) ?? 'unknown' : null,
     titleActors: titles.map((t) => who(t && t.actor)),
-    titleTotal: Number(pr.timelineItems && pr.timelineItems.totalCount),
+    // filteredCount, not totalCount: with itemTypes the connection's totalCount still counts EVERY timeline item (16 on a PR with no rename at all)
+    titleTotal: Number(pr.timelineItems && pr.timelineItems.filteredCount),
     headSha: pr.headRefOid,
     commits: nodes.map((n) => ({ oid: String(n && n.commit && n.commit.oid), author: n && n.commit && n.commit.author && n.commit.author.user ? who(n.commit.author.user) : null })),
     commitsTotal: Number(pr.commits && pr.commits.totalCount),
@@ -76,7 +77,7 @@ export function factsFromGraphql(json: any): PrFacts {
 export const GATE_QUERY = (owner: string, name: string, n: number): string =>
   `query{repository(owner:"${owner}",name:"${name}"){pullRequest(number:${n}){number url state isCrossRepository headRefOid ` +
   `author{__typename login} editor{__typename login} ` +
-  `timelineItems(first:100,itemTypes:[RENAMED_TITLE_EVENT]){totalCount nodes{... on RenamedTitleEvent{actor{__typename login}}}} ` +
+  `timelineItems(first:100,itemTypes:[RENAMED_TITLE_EVENT]){filteredCount nodes{... on RenamedTitleEvent{actor{__typename login}}}} ` +
   `commits(first:100){totalCount nodes{commit{oid author{user{__typename login}}}}}}}}`;
 
 /**
@@ -90,7 +91,7 @@ export function refusal(pr: PrFacts, trusted: readonly string[], opts: { replay?
   if (pr.author === 'dependabot[bot]') return outside('dependabot: its text is upstream text, a human decides');
   if (!isTrusted(pr.author, trusted)) return outside('author is outside the trusted list');
   if (pr.editor !== null && !isTrusted(pr.editor, trusted)) return outside('title or body last edited by an outside account');
-  if (!Number.isInteger(pr.titleTotal) || pr.titleTotal > pr.titleActors.length) return outside('more title renames than can be checked');
+  if (!Number.isInteger(pr.titleTotal) || pr.titleTotal < 0 || pr.titleTotal > pr.titleActors.length) return outside('more title renames than can be checked');
   if (pr.titleActors.some((a) => !isTrusted(a, trusted))) return outside('title renamed by an outside account');
   if (pr.commitsTotal > pr.commits.length || !Number.isInteger(pr.commitsTotal)) return outside('more commits than can be checked');
   if (pr.commits.some((c) => c.author === null)) return outside('a commit has no linked account');
