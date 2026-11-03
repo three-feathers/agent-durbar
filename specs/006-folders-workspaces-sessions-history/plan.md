@@ -107,3 +107,7 @@ sessions:delete(agentId, sessionId)  -> { ok } | { ok:false, error, code?: 'in-o
 - **Simulator:** `simcrash=N` in `sim.ts` marks the first N main agents lazy + `resumeLast` and answers `interrupted()`; `DURBAR_SIM_CRASH` in main puts it on the page address. Under `simcrash` the bridge keeps `window.__durbarSimCrash` (wakes, how many at once with a 150 ms wake, prompts sent, mode changes, each session's mode and lazy flags) for the driver.
 - **Constitution.** I: no adapter specifics (ids only, `resumeLast` is the existing flag). III: ids only in the marker, mode 0600. V: one strip, text >= 10.5px, no scrolling the office. VI: no platform code. VIII: honest limits in FR-045/FR-046.
 
+
+## Delta 2026-11-01: design sweep
+
+No own PR: T065 goes with spec 052 T214 and T066 with spec 005 T117; the order is [spec 005's plan table](../005-chat-fullscreen-and-agent-strip/plan.md). The crash card keeps `#crashStrip`'s logic and moves only its paint onto the shared card.

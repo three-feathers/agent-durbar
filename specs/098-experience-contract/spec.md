@@ -35,7 +35,7 @@ The contract is used by spec 097 (Real office and its worlds) and by every later
 
 ## Context: what exists today
 
-- **Theme tokens** (spec 070): typed tokens for colours, fonts, weight, radii and shadows; sizes, spacing and density are not themeable (070 D2); contrast per pair (070 D4). `test:theme-tokens` (070 FR-040) counts colour literals and `font-family` declarations per renderer file against a ratchet (`scripts/fixtures/theme-literals.json`) that only goes down. It reads `styles.css`, `screens.css`, `themes.css`, `app.js`, `screens.js`, `scenekits.js` and `index.html`; it does not read the Real office CSS of spec 097 P1, and it counts no size literals.
+- **Theme tokens** (spec 070): typed tokens for colours, fonts, weight, radii and shadows; sizes, spacing and density are not themeable (070 D2; a pack sets no size, and 097 FR-233's fixed mat, binding and bezel, amended 2026-11-02, are app-owned); contrast per pair (070 D4). `test:theme-tokens` (070 FR-040) counts colour literals and `font-family` declarations per renderer file against a ratchet (`scripts/fixtures/theme-literals.json`) that only goes down. It reads `styles.css`, `screens.css`, `themes.css`, `app.js`, `screens.js`, `scenekits.js` and `index.html`; it does not read the Real office CSS of spec 097 P1, and it counts no size literals.
 - **Real office** (spec 097): one photoreal world in P1 (the *Office people*, on branch `097-real-office-p1`, not merged); crews appear in their own art and world (097 Q6, answered 2026-10-31). The 097 worlds delta (branch `097-real-office-worlds`) adds worlds, the lift as the world's shaft, chat and questions in the world, and requires this spec's registry for shipping a world.
 - **Screenshots**: `shots:docs` and `DOC_SHOTS` (`scripts/shots-docs.js`) keep the pictures linked from the README, the site and specs, committed under `docs/screenshots/`; the site has an 8 MB budget (spec 050 FR-012). Drivers run through `scripts/ui-suite.js` with the simulator.
 - **Scheduled workflows**: `nightly-watch.yml` opens or updates an issue when a listed scheduled workflow fails; `weekly-retro.yml` with `scripts/weekly-retro.js` finds its one issue by title and author `github-actions[bot]` before creating one.
@@ -74,7 +74,7 @@ A maintainer adds a world (for example the cave). The registry lists each world 
 
 ### User Story 2 - Tool surfaces follow the world without drawing (Priority: P1)
 
-Settings, dialogs, lists, the composer and every other tool surface take the world's tokens (colours, fonts, radii, shadows) and nothing else: no art behind text, no size changes.
+Settings, dialogs, lists, the composer and every other tool surface take the world's tokens (colours, fonts, radii, shadows) and nothing else: no art behind text, no size changes (amended 2026-11-02 by 097 FR-231 and FR-233: a built-in world sets radii and no fonts, and only the app's fixed mat, binding and bezel change a size).
 
 **Independent Test**: the token lint (extended `test:theme-tokens`) and the tool-surface driver.
 
