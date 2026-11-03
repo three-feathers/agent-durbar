@@ -123,7 +123,7 @@ and "Off". Kept in Durbar's settings.
   - Claude Code: control request `get_context_usage` with `detail: 'summary'` (no extra network requests; decided Q2); `mcpTools` grouped by
     `serverName` (normalised names matched to `mcp_status` names as `claudeMap.ts` does), `isLoaded === false` counted as deferred;
     the window from `rawMaxTokens`, else `maxTokens`, else `modelUsage.contextWindow`. Labelled "reported by Claude Code".
-  - Codex: `mcpServerStatus/list {threadId, detail: 'toolsAndAuthOnly'}` (the spec 069 call) and the estimate of FR-002;
+  - Codex: `mcpServerStatus/list {threadId, serverName, detail: 'toolsAndAuthOnly'}`, one request per known server that is not switched off (the spec 069 call; spec 012 FR-164: a list without `serverName` starts a copy of every local server) and the estimate of FR-002;
     `source: 'estimated'`.
 - **FR-002** Estimate (pure, `src/shared/mcpcost.ts`): per tool `ceil((name + description + JSON.stringify(inputSchema)).length / 4) +
   8`; per server the sum. No tokenizer dependency. Unit-tested on fixtures, including a 500-tool server and non-ASCII descriptions.
