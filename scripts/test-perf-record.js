@@ -159,6 +159,13 @@ const all = (f) => Object.fromEntries(['flat-15', 'flat-40', 'real-15', 'real-40
   assert.strictEqual(scrub('Error at /home/alice/work/agent-durbar/scripts/a.js:3 in /tmp/x/ud/f', dirs), 'Error at <app>/scripts/a.js:3 in <tmp>/ud/f');
   assert.strictEqual(scrub('open /home/alice/.config/x', dirs), 'open <home>/.config/x');
   assert.strictEqual(scrub('read /home/bob/notes and /Users/carol/a and C:\\Users\\Dan\\b and C:/Users/eve/c', dirs), 'read <home>/notes and <home>/a and <home>\\b and <home>/c', 'another user name goes too');
+  // another user's folder, one OS form at a time, with this machine's own folders as the defaults (each form fails when its rule is removed)
+  const other = { home: '/home/zed', app: '/opt/app', tmp: '/var/t' };
+  assert.strictEqual(scrub('read /home/bob/x', other), 'read <home>/x', 'Linux: /home/<other user>');
+  assert.strictEqual(scrub('read /Users/carol/x', other), 'read <home>/x', 'macOS: /Users/<other user>');
+  assert.strictEqual(scrub('read C:\\Users\\Dan\\x', other), 'read <home>\\x', 'Windows: C:\\Users\\<other user>');
+  assert.strictEqual(scrub('read D:/Users/eve/x', other), 'read <home>/x', 'Windows with forward slashes');
+  assert.ok(!/bob|carol|Dan/.test(scrub('/home/bob /Users/carol C:\\Users\\Dan')), 'with the default folders too');
   assert.strictEqual(scrub('plain text', dirs), 'plain text');
   assert.ok(!/alice|bob|carol|Dan|eve/.test(oneLine('DRIVER FAILED Error: no /home/alice/x\n    at /home/alice/work/agent-durbar/y.js', 200, dirs)), 'the first line only, scrubbed');
   assert.strictEqual(oneLine('a\nb'), 'a');

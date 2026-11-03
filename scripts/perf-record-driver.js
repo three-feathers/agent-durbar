@@ -297,7 +297,7 @@ module.exports = async (ctx) => {
     /* background activity: 10x, and normal speed */
     for (const speed of ['10', '1']) {
       await loadAndInstrument({ simspeed: speed, simfreeze: undefined });
-      await ctx.sleep(2000);
+      await settle(4000); // the page has stopped changing, bounded: the simulator at 10x may never be quiet
       await js(`window.__P.start()`);
       const cpu = await cpuOver(ctx, SEC(20));
       R['activity' + speed] = { ...(await js(`window.__P.stop()`)), cpu };
@@ -322,12 +322,13 @@ module.exports = async (ctx) => {
     const setV = (css) => js(`(()=>{let s=document.getElementById('perfVar');if(!s){s=document.createElement('style');s.id='perfVar';document.head.append(s);}s.textContent=${jsLiteral(css)};})()`);
     out.ab = { idle: {}, dialog: {} };
     await loadAndInstrument();
-    for (const [k, css] of Object.entries(V)) { await setV(css); await ctx.sleep(1500); out.ab.idle[k] = await cpuOver(ctx, SEC(10)); }
+    for (const [k, css] of Object.entries(V)) { await setV(css); if (!(await until(`(document.getElementById('perfVar')||{}).textContent===${jsLiteral(css)}`, 5000))) throw new Error('the A/B style was not applied'); await settle(3000); out.ab.idle[k] = await cpuOver(ctx, SEC(10)); }
     await loadAndInstrument({ simspeed: '10', simfreeze: undefined });
     for (const [k, css] of [['base', V.base], ['noBlur', V.noBlur], ['base', V.base], ['noBlur', V.noBlur]]) {
       await setV(css);
       await js(`(()=>{const o=document.createElement('div');o.id='perfDlg';o.className='dlg-ov';o.innerHTML='<div class="dlg wide"><h3>Perf</h3><p class="dsub">A dialog the size of a real one.</p><div style="height:380px;width:560px"></div></div>';document.body.append(o);})()`);
-      await ctx.sleep(500);
+      if (!(await until(`!!document.getElementById('perfDlg')&&document.getElementById('perfDlg').getClientRects().length>0`, 5000))) throw new Error('the A/B dialog was not shown');
+      await settle(2000);
       await js(`window.__P.start()`);
       const cpu = await cpuOver(ctx, SEC(10));
       const fr = await js(`window.__P.stop()`);
