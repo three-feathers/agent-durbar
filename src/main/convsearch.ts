@@ -12,7 +12,7 @@
  */
 import * as path from 'path';
 import type { HistoryItem } from '../adapters/history';
-import { normDir } from '../adapters/history';
+import { SEARCH_MAX_TEXT_CHARS, normDir } from '../adapters/history';
 import { MASK_CALL_WORK, MaskBudgetError } from './convmask';
 import type { MaskedWindow, Masker } from './convmask';
 
@@ -23,7 +23,8 @@ export const BUDGET = {
   batchHits: 20,
   maxSessions: 400,
   perFolder: 200,
-  maxChars: 20_000,
+  /** The readers' cap (`SEARCH_MAX_TEXT_CHARS`, one constant). */
+  maxChars: SEARCH_MAX_TEXT_CHARS,
   maxMs: 60_000,
   maxResults: 200,
   excerptTarget: 140,
@@ -141,6 +142,8 @@ export interface ScanNotes {
   cut: number;
   /** Review finding 4: messages whose masks would cost more than `messageWork`: nothing of them is shown (fail closed). */
   bounded: number;
+  /** Review of PR 1098, finding 5: messages (and titles) whose masking failed: nothing of them is shown (fail closed, and said). */
+  maskFailed: number;
 }
 
 export interface ScanEnd {
@@ -215,6 +218,14 @@ function cutIn(search: SessionSearchApi, m: string, atStart: boolean, atEnd: boo
   let near = false;
   for (const r of search.locate(m, query)) {
     if (r.term !== term) continue;
+    if (r.end - r.start >= BUDGET.excerptChars - 2) {
+      // a match longer than an excerpt (review of PR 1098): its start, cut on a code point, marked to the cut, then `…`
+      if (!atEnd && r.start + BUDGET.excerptChars > m.length - BUDGET.edgeGuard) { near = true; continue; }
+      const [s, e] = bounds(m, r.start, r.end);
+      const lead = s > 0 ? '…' : '';
+      const body = m.slice(s, e); // at most excerptChars - 2, on a code point (`bounds`): with both marks, within excerptChars
+      return { text: lead + body + '…', marks: [[lead.length, lead.length + body.length]], terms: new Set([term]) };
+    }
     const [s, e] = bounds(m, r.start, r.end);
     if ((!atStart && s < BUDGET.edgeGuard) || (!atEnd && e > m.length - BUDGET.edgeGuard)) { near = true; continue; }
     return excerptOf(search, m, s, e, query);
@@ -286,7 +297,7 @@ export function orderPlan(plan: ScanPlan): { list: PlanSession[]; notes: ScanNot
   const platform = plan.platform ?? process.platform;
   const notes: ScanNotes = {
     searched: 0, folders: 0, notInstalled: [...new Set((plan.unavailable ?? []).map(String))], tooLarge: 0, unreadable: 0,
-    titleOnly: { count: 0, apps: [] }, hidden: 0, floorsOff: 0, capped: { sessions: false, perFolder: false, results: false }, timedOut: false, cut: 0, bounded: 0,
+    titleOnly: { count: 0, apps: [] }, hidden: 0, floorsOff: 0, capped: { sessions: false, perFolder: false, results: false }, timedOut: false, cut: 0, bounded: 0, maskFailed: 0,
   };
   const seen = new Set<string>();
   const folderOrder: string[] = [];
@@ -365,7 +376,11 @@ export function startScan(plan: ScanPlan, query: string, deps: ScanDeps): { canc
       lastFlush = deps.now();
       dirty = queue.length > 0;
     };
-    const halt = (): boolean => cancelled || stopped;
+    // review of PR 1098, finding 7: the 60 s stop also holds during a read (a reader asks `halt` between its lines)
+    const halt = (): boolean => {
+      if (!cancelled && !stopped && deps.now() - started >= BUDGET.maxMs) { notes.timedOut = true; stopped = true; }
+      return cancelled || stopped;
+    };
     const tick = async (): Promise<void> => {
       const t = deps.now();
       if (t - started >= BUDGET.maxMs) { notes.timedOut = true; stopped = true; }
@@ -415,6 +430,7 @@ export function startScan(plan: ScanPlan, query: string, deps: ScanDeps): { canc
         title = deps.masker.maskText(String(s.title ?? ''), values);
       } catch {
         title = undefined;
+        notes.maskFailed++;
       }
       const titleMarks: Array<[number, number]> = [];
       const confirmed = new Set<number>();
@@ -425,7 +441,13 @@ export function startScan(plan: ScanPlan, query: string, deps: ScanDeps): { canc
       });
       if (confirmed.size === words.length) return hit([], 0); // a title hit at once, before its messages are read
       if (s.content === 'title') return undefined;
-      const r = await deps.read(s, halt);
+      // review of PR 1098, finding 4: a reader that throws costs this session only (counted as unreadable), not the scan
+      let r: ReadOutcome;
+      try {
+        r = await deps.read(s, halt);
+      } catch {
+        r = { ok: false, reason: 'unreadable' };
+      }
       sliceStart = deps.now(); // the read awaited I/O: the loop had its turns
       if (cancelled) return undefined;
       if (!r.ok) {
@@ -445,9 +467,10 @@ export function startScan(plan: ScanPlan, query: string, deps: ScanDeps): { canc
         await tick();
         if (halt()) break;
         let text = typeof it.text === 'string' ? it.text : '';
-        const cutEnd = text.length > BUDGET.maxChars;
+        // a reader cut it (with or without a `…`; finding 6: a text at the cap counts as cut): drop the token the cut may have split
+        // (mask before cut), back to the last whitespace
+        const cutEnd = text.length >= BUDGET.maxChars;
         if (cutEnd) {
-          // the reader cut it: drop the token the cut may have split (mask before cut), back to the last whitespace
           let k = BUDGET.maxChars;
           while (k > 0 && !isWs(text.charCodeAt(k - 1))) k--;
           text = text.slice(0, k);
@@ -458,7 +481,8 @@ export function startScan(plan: ScanPlan, query: string, deps: ScanDeps): { canc
           m = messageExcerpts(text, query, { n, speaker: it.type === 'user' ? 'you' : 'agent', values, masker: deps.masker, search: deps.search, cutEnd });
         } catch (e) {
           if (e instanceof MaskBudgetError) notes.bounded++;
-          continue; // masking failed or would cost too much: no hit from this message (fail closed)
+          else notes.maskFailed++;
+          continue; // masking failed or would cost too much: no hit from this message (fail closed, counted)
         }
         if (!m) continue;
         for (const x of m.confirmed) confirmed.add(x);

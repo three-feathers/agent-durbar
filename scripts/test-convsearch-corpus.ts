@@ -75,7 +75,7 @@ function write(): { bytes: number; sessions: PlanSession[]; needles: Set<string>
   const dense: string[] = [];
   for (let k = 0; k < 6; k++) {
     let t = '**x** ';
-    for (let i = 0; t.length < 19_900; i++) t += tok(i + k * 1000) + ' needle ';
+    for (let i = 0; t.length < 19_900; i++) t += '**' + tok(i + k * 1000) + '** needle '; // every token next to a mark: the costly case
     dense.push(line('assistant', [{ type: 'text', text: t.slice(0, 19_990) }]));
   }
   dense.push(line('user', 'and the needle once in plain words'));

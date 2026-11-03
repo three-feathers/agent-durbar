@@ -7,7 +7,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type { HistoryItem } from '../src/adapters/history';
 import { MaskBudgetError, createMasker } from '../src/main/convmask';
-import { cut as readerCut } from '../src/adapters/history';
+import { SEARCH_HISTORY_LIMITS, SEARCH_MAX_TEXT_CHARS, cut as readerCut } from '../src/adapters/history';
 import type { Masker } from '../src/main/convmask';
 import { BUDGET, createReadGate, messageExcerpts, orderPlan, rendererScript, startScan } from '../src/main/convsearch';
 import type { PlanSession, ReadOutcome, ScanBatch, ScanDeps, ScanEnd, SessionSearchApi } from '../src/main/convsearch';
@@ -128,8 +128,13 @@ async function main(): Promise<void> {
     const r3 = messageExcerpts(far, 'invoice export', o)!;
     assert.strictEqual(r3.excerpts.length, 2);
     // a long match: still at most 180 characters, cut on a code point boundary
-    const longWord = '\u{1F600}'.repeat(150);
-    const r4 = messageExcerpts(`x ${longWord} y`, longWord, o)!;
+    // review of PR 1098 (the isLow survivor): a match over 178 characters whose cut falls between the two halves of a surrogate pair
+    const longWord = 'x' + '\u{1F600}'.repeat(150);
+    const r4 = messageExcerpts(`ab ${longWord} y`, longWord, o)!;
+    assert.strictEqual(r4.excerpts.length, 1, 'a long match gives an excerpt');
+    const t4 = r4.excerpts[0].text;
+    assert.ok(t4.length <= BUDGET.excerptChars && t4.endsWith('…') && !/[\uD800-\uDBFF]…$/.test(t4), `cut on a code point: ${JSON.stringify(t4.slice(-4))}`);
+    assert.deepStrictEqual(r4.excerpts[0].marks, [[1, t4.length - 1]], 'the visible part of the match is marked');
     assert.ok(r4.excerpts.every((x) => x.text.length <= BUDGET.excerptChars && !/[\uD800-\uDBFF]$/.test(x.text.replace(/…$/, ''))), 'a long match is cut on a code point boundary');
     // a secret next to the hit, glued to Markdown, at the edge of the excerpt: never shown, the hit still is
     for (let pad = 0; pad < 140; pad += 7) {
@@ -336,7 +341,7 @@ async function main(): Promise<void> {
   {
     const tok = (i: number) => 'gh' + 'p_' + (String(i).padStart(6, '0') + 'a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6').slice(0, 36);
     let dense = '**x** ';
-    for (let i = 0; dense.length < 19_900; i++) dense += tok(i) + ' invoice ';
+    for (let i = 0; dense.length < 19_900; i++) dense += '**' + tok(i) + '** invoice '; // every token next to a mark: the costly case
     let dense2 = '';
     for (let i = 0; dense2.length < 19_900; i++) dense2 += '**' + tok(i) + '** ';
     for (const [msg, q] of [[dense, 'invoice'], [dense2, 'a1b2c3d4']] as const) {
@@ -352,6 +357,73 @@ async function main(): Promise<void> {
     const e = await run(h, [sess({ sessionId: 'dense' })], 'invoice');
     assert.deepStrictEqual([e.notes.bounded, hitsOf(h).length, hitsOf(h)[0]?.excerpts.map((x) => x.anchor.n)], [1, 1, [1]], 'the dense message is counted and shows nothing; the next message still matches');
     walk(h, 'dense');
+  }
+
+  // ---- review of PR 1098, finding 4: a reader that throws costs its session only (unreadable), the scan goes on
+  {
+    sid = 0;
+    const h = harness({ good1: [u('deploy now')], good2: [a('the deploy is done')] });
+    const real = h.deps.read;
+    h.deps.read = async (s, stop) => { if (s.sessionId === 'bad') throw Object.assign(new Error('EIO'), { code: 'EIO' }); return real(s, stop); };
+    const e = await run(h, [sess({ sessionId: 'bad', time: 30 }), sess({ sessionId: 'good1', time: 20 }), sess({ sessionId: 'good2', time: 10 })], 'deploy');
+    assert.deepStrictEqual([e.failed, e.notes.unreadable, e.progress.done, hitsOf(h).map((x) => x.sessionId)], [false, 1, 3, ['good1', 'good2']]);
+  }
+
+  // ---- review of PR 1098, finding 5: masking that fails (not the budget) is counted, and nothing of it is shown
+  {
+    sid = 0;
+    const broken = createMasker({ unhide: () => { throw new Error('safetext missing'); } });
+    const h = harness({ m1: [u('deploy one'), a('deploy two')] }, { masker: broken });
+    const e = await run(h, [sess({ sessionId: 'm1', title: 'deploy' })], 'deploy');
+    assert.deepStrictEqual([e.failed, hitsOf(h).length, e.notes.maskFailed, e.notes.bounded], [false, 0, 3, 0], 'the title and both messages counted as mask failures, none shown');
+  }
+
+  // ---- review of PR 1098, finding 6: one cap for the readers and the scan, and a text cut at the cap without a `…` counts as cut
+  {
+    assert.strictEqual(SEARCH_HISTORY_LIMITS.maxTextChars, BUDGET.maxChars);
+    assert.strictEqual(SEARCH_MAX_TEXT_CHARS, BUDGET.maxChars);
+    sid = 0;
+    const V = 'Tr0ub4dorXYZ99 correcthorsebattery';
+    const fill = (n: number): string => { let t = ''; for (let i = 0; t.length < n; i++) t += 'w' + (i % 97) + ' '; return t.slice(0, n); };
+    const pre = fill(20_000 - 24);
+    const rawMsg = pre.slice(0, pre.length - 40) + ' invoice ' + pre.slice(pre.length - 31) + ' ' + V + ' tail';
+    const h = harness({ bare: [u(rawMsg.slice(0, BUDGET.maxChars))] }, { values: () => [V] });
+    await run(h, [sess({ sessionId: 'bare' })], 'invoice');
+    assert.ok(!JSON.stringify(h.batches).includes('Tr0ub4dor'), 'a bare slice at the cap keeps the guard at its end');
+  }
+
+  // ---- review of PR 1098, finding 7: the 60 s stop holds during a read (the reader asks `stop` between its lines)
+  {
+    sid = 0;
+    const h = harness({});
+    let sawStop = false;
+    let linesRead = 0;
+    h.deps.read = async (_s, stop) => {
+      for (let i = 0; i < 1000; i++) { h.clock.t += 100; linesRead++; if (stop()) { sawStop = true; break; } await Promise.resolve(); }
+      return { ok: true, items: [u('match')] };
+    };
+    const e = await run(h, [sess({ sessionId: 'slow' }), sess({ sessionId: 'next' })], 'match');
+    assert.ok(sawStop && e.notes.timedOut && linesRead <= 601, `the read stopped at 60 s (${linesRead} lines of 100 ms)`);
+  }
+
+  // ---- review of PR 1098, finding 8: cancel stops a read in progress (the reader's `stop` turns true)
+  {
+    sid = 0;
+    const h = harness({});
+    let stopSeen = false;
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((r) => { release = r; });
+    let started!: () => void;
+    const inRead = new Promise<void>((r) => { started = r; });
+    h.deps.read = async (_s, stop) => { started(); await gate; stopSeen = stop(); return { ok: true, items: [u('match')] }; };
+    const scan = startScan({ sessions: [sess({ sessionId: 'r1' })] }, 'match', h.deps);
+    await inRead;
+    scan.cancel();
+    release();
+    const e = await scan.done;
+    assert.ok(e.cancelled && stopSeen, 'the reader is told to stop after a cancel');
+    // (no case for the `cancelled` check in `flush`: every flush follows a cancel check with no await between, so a cancel, which arrives
+    // only during an await, never reaches it; the check stays as defence. The `nothing emitted after cancel` case below covers the outcome.)
   }
 
   // ---- cancel between sessions and between messages; nothing emitted after it; no transcript kept (each read once, no cache across scans)
@@ -444,7 +516,7 @@ async function main(): Promise<void> {
       assert.ok(!/\b(?:https?|net|tls|dgram|dns|http2|child_process|electron|undici)\b['"]/.test(code), `${f}: no network or process module`);
       assert.ok(!/\bfetch\s*\(|XMLHttpRequest|WebSocket/.test(code), `${f}: no network call`);
       assert.ok(!/\b\w+Sync\s*\(/.test(code), `${f}: no *Sync call`);
-      assert.ok(!/\b(?:writeFile|appendFile|createWriteStream|mkdir|rmdir|unlink|rename|copyFile|truncate|chmod|symlink|open)\w*\s*\(/.test(code.replace(/fs\.promises\.stat|createReadStream|createInterface/g, '')), `${f}: no fs write`);
+      assert.ok(!/\b(?:writeFile|appendFile|createWriteStream|mkdir|rmdir|unlink|rename|copyFile|truncate|chmod|symlink)\w*\s*\(|\bfs\.(?:promises\.)?open\w*\s*\(|\bopen\s*\(/.test(code.replace(/fs\.promises\.stat|createReadStream|createInterface/g, '')), `${f}: no fs write`);
       assert.ok(!/\bconsole\.|\blog\w*\s*\(|debugSink|DURBAR_LOG/.test(code), `${f}: no log call (the query is never logged)`);
       assert.ok(!/\bspawn|exec(?:File)?\s*\(/.test(code), `${f}: no process`);
     }
