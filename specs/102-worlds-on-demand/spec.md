@@ -765,6 +765,9 @@ Vikram looked at the arcade on `main` twice (relayed). 03:39 UTC: "Fix those wea
 - **Nothing covers a screen (T265).** In the arcade every cabinet screen and every person is a place no slip, pill or bubble may take (a pill on a person's legs is a cut body too); one-line pills (the queue, a limit) go first to a 20 px lane under the lobby that the layout keeps free (taken from the lobby's height, so 15 still fit), never on a cabinet or a person, never hidden; in the arcade they are one line only. `sim:` `shots-102-arcade`; the old placement fails it.
 - **A folder name is readable (T266).** A sign may run on over the free floor after its zone, up to the next zone on its row or the floor's edge; a cut name keeps 8 characters. `test:` and `sim:` as for T265.
 - **The pressed top-bar button** takes the mark's dark ink on its yellow (`sim:` the bar's buttons at 4.5:1).
+- **The lobby: nobody half behind another** (owner, relayed review of the second pictures). In a pixel world visitors at a place keep at least one body width apart (`lobbyWidths`' step is at least 1.6 times the visitor width estimate); whoever does not fit is counted on the place's plate (its *+N*), never drawn behind someone. Every name chip reads in full and no two touch. `sim:` `shots-102-arcade` measures visitors' painted pixels against each other and fails on a cut or overlapping chip; with the spacing off it fails.
+- **Up to four people stand in one row** when it fits (the big cabinet, `g = 3` or `2`), so a small folder is not split over two rows. `sim:` `shots-102-arcade`; the old two-column plan fails it.
+- **A dark notice strip.** In a dark world the notice strips under the top bar take the bar's dark colour, with the mark's yellow on the icon. `[KNOWN GAP]` no check holds the strip's colour: a driver check passed with the rule removed and was dropped; pictures only.
 
 ### 2026-10-31: every world looks different (owner decision)
 
