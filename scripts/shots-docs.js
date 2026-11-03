@@ -17,7 +17,6 @@
  * writes into a new temporary folder; only then are the files copied, so a failed run leaves the old pictures in place.
  * Every written picture is then palette-compressed in place (scripts/compress-shots.js, spec 050 FR-012; DURBAR_SHOTS_COMPRESS=off skips it).
  * Linked = `docs/screenshots/*.png` (or `screenshots/*.png` in a docs page) in README.md and the docs pages of docs/site/pages.json, `file` in docs/site/gallery.json, any `*.png` in docs/site/landing.json.
- * docs/feature-history.md and CHANGELOG.md keep their old pictures on purpose (a record, spec 025 FR-006).
  */
 const path = require('path');
 const fs = require('fs');
@@ -28,11 +27,10 @@ const SHOTS = path.join(ROOT, 'docs', 'screenshots');
 const CLOCK = '2026-10-20T09:30:00Z';
 
 /** `f`: a file the driver writes under the same name; `{ to, from }`: the linked name and the name the driver writes. */
-const THEMES = [['clean-office', 'clean'], ['corporate'], ['durbar-european'], ['durbar-indian'], ['durbar-japanese'], ['retro']];
+const THEMES = [['clean-office', 'clean'], ['retro']];
 const DOC_SHOTS = [
   { name: 'shots-hero', files: ['m5-sim15-1440x900-closed.png', 'm6-fullchat-sim15-1280x800.png'] },
   { name: 'shots-003-011', files: ['m6-fullchat-sim15-1440x900.png', '003-allow-all-menu-1440x900.png'] },
-  { name: 'shots-017-signs', files: ['017-signs-1440x900.png', '017-held-dialog-1440x900.png', '017-open-office-1440x900.png', '017-open-office-1280x800.png', '017-office-layout-1440x900.png'] }, // spec 017 FR-004: meeting-room door signs on the desks
   { name: 'check-office-fill', files: ['001-helpers-2-1440x900.png', '001-helpers-2-1280x800.png', '001-helpers-3-1440x900.png', '001-helpers-3-1280x800.png', '001-fill-1-1440x900.png', '001-fill-1-1920x1080.png', '001-fill-4-1440x900.png', '001-fill-6-1440x900.png', '001-shutters-1440x900.png'] },
   { name: 'shots-001-live-activity', freeze: false, files: ['001-live-activity-dense-1440x900.png', '001-live-activity-side-1440x900.png'] },
   { name: 'shots-001-lobby', files: ['001-lobby-15-1280x800.png', '001-lobby-15-1440x900.png', '001-lobby-15-1440x900-retro.png', '001-lobby-3-1440x900.png'] },
@@ -52,9 +50,10 @@ const DOC_SHOTS = [
   { name: 'shots-015-compact', files: ['015-compacting-office-1440x900.png', '015-compacting-office-1280x800.png', '015-compacting-chat-1440x900.png', '015-compacting-chat-1280x800.png'] },
   { name: 'shots-017', files: [{ to: '012-harness-picker-1440x900.png', from: '012-picker-1440x900.png' }] },
   { name: 'shots-024', files: ['024-lobby-1440x900.png'] },
+  { name: 'shots-097-realoffice', files: ['097-office-layout-1440x900.png'] }, // spec 097 P1: Real office mode (its photo-heavy 15-agent pictures stay out of the site budget: linked from the spec only, retaken with SHOTS_OUT=docs/screenshots)
   { name: 'shots-030-handoff', files: ['handoff-review-1440x900.png'] },
   { name: 'shots-033', files: ['033-floors-on-1440x900.png'] },
-  { name: 'shots-040-aitheme', env: { DURBAR_SIM_KINDS: 'mixed' }, files: ['040-theme-picker-1440x900.png', '040-aitheme-preview-1440x900.png'] },
+  { name: 'shots-040-picker', files: ['040-theme-picker-1440x900.png'] }, // spec 040 FR-032: the theme picker, Export and Remove
   { name: 'shots-043-ai', files: ['043-ai-questionnaire-1440x900.png'] },
   { name: 'shots-043-manage', files: ['043-profile-delete-confirm-1440x900.png'] },
   { name: 'shots-043-editor', files: ['043-editor-new-asp-split-1440x900.png', '043-editor-split-clean-1440x900.png'] },
@@ -71,17 +70,21 @@ const DOC_SHOTS = [
   { name: 'check-notes', files: ['083-notes-drawer-1440x900.png', '083-notes-drawer-1280x800.png', '083-notes-slash-1440x900.png', '083-notes-slash-1280x800.png', '083-notes-selection-1440x900.png', '083-notes-selection-1280x800.png'] }, // spec 083: the Notes drawer and the notes in the "/" list
   { name: 'check-notes-count', files: ['083-notes-count-1440x900.png', '083-notes-count-1280x800.png', '083-notes-marker-1440x900.png', '083-notes-marker-1280x800.png'] }, // spec 083 T030, T031: the header count and the marker
   { name: 'check-notes-screen', files: ['083-notes-screen-1440x900.png', '083-notes-screen-1280x800.png'] }, // spec 083 T034a: the per-folder Notes screen
+  { name: 'check-notes-switch', files: ['083-notes-switch-1440x900.png', '083-notes-switch-1280x800.png'] }, // spec 083 T042: the project-file switch's warning
+  { name: 'check-notes-export', files: ['083-notes-export-1440x900.png', '083-notes-export-1280x800.png', '083-notes-remove-1440x900.png', '083-notes-remove-1280x800.png'] }, // spec 083 T034b: Delete all… and Remove folder's Also delete its notes
   { name: 'shots-074-navigator', files: ['074-navigator-start-1440x900.png'] },
   { name: 'check-browser-tabs', files: ['080-browser-tabs-1440x900.png'] }, // spec 080 FR-122 (US6): the page tab strip with 10 tabs
   { label: 'check-browser-tabs 1280', name: 'check-browser-tabs', env: { BROWSER_TABS_SIZE: '1280x800' }, files: ['080-browser-tabs-1280x800.png'] },
   { name: 'shots-058-mcp-settings', files: ['058-mcp-settings-1440x900.png'] },
-  { name: 'shots-076-orgpolicy', files: ['076-orgpolicy-mode-1440x900.png', '076-orgpolicy-server-1440x900.png'] },
+  { name: 'shots-076-orgpolicy', files: ['076-orgpolicy-mode-1440x900.png', '076-orgpolicy-server-1440x900.png', '076-orgpolicy-organization-1440x900.png'] },
   { name: 'shots-058-mcp-health', files: ['058-mcp-health-1440x900.png'] },
+  { name: 'shots-058-mcp-launch', files: ['058-mcp-launch-closed-1440x900.png', '058-mcp-launch-closed-1280x800.png', '058-mcp-launch-settings-1440x900.png', '058-mcp-launch-settings-1280x800.png'] }, // spec 058 FR-195..FR-203
+  { name: 'shots-058-mcp-signin-refresh', files: ['058-mcp-refresh-waiting-1440x900.png', '058-mcp-refresh-waiting-1280x800.png', '058-mcp-refresh-signin-1440x900.png', '058-mcp-refresh-signin-1280x800.png', '058-mcp-refresh-settings-1440x900.png', '058-mcp-refresh-settings-1280x800.png'] }, // spec 058 FR-208..FR-216
   // one office per theme (shots-themes.js, the Settings path); the README (035-*) and the landing page (site-theme-*) show the same
   ...THEMES.map(([id, short]) => ({
     label: `shots-themes ${id}`, name: 'shots-themes', env: { DURBAR_THEME: id, SHOTS_SIZE: '1440x900', SHOTS_PREFIX: '' },
     files: [{ to: `site-theme-${short || id}-1440x900.png`, from: `${id}-1440x900.png` }]
-      .concat(['corporate', 'durbar-indian', 'retro'].includes(id) ? [{ to: `035-${id}-1440x900.png`, from: `${id}-1440x900.png` }] : []),
+      .concat(['retro'].includes(id) ? [{ to: `035-${id}-1440x900.png`, from: `${id}-1440x900.png` }] : []),
   })),
 ];
 

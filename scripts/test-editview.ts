@@ -25,16 +25,13 @@ assert.strictEqual(V.displayPath(null, null).name, '');
 const one = { files: [{ path: '/p/src/app.js', kind: 'edit', diff: '@@\n-a\n+b\n+c', added: 2, removed: 1 }] };
 assert.deepStrictEqual(V.summary(one, { running: true, folder: '/p' }), { verb: 'Editing', name: 'app.js', dir: 'src', count: '+2 −1', text: 'Editing app.js', title: '/p/src/app.js', to: '' });
 assert.strictEqual(V.summary(one, { folder: '/p' }).text, 'Edited app.js');
-assert.strictEqual(V.summary(one, { running: true, simple: true }).text, 'Changing app.js');
 assert.strictEqual(V.summary({ files: [{ path: 'n.md', kind: 'create' }] }, { running: true }).text, 'Creating n.md');
 assert.strictEqual(V.summary({ files: [{ path: 'n.md', kind: 'create' }] }, {}).count, '', 'no diff, no counts');
 assert.strictEqual(V.summary({ files: [{ path: 'w.md', kind: 'write', diff: '@@\n+x', added: 1, removed: 0 }] }, {}).text, 'Wrote w.md');
-assert.strictEqual(V.summary({ files: [{ path: 'w.md', kind: 'write' }] }, { simple: true, running: true }).text, 'Changing w.md');
 assert.strictEqual(V.summary({ files: [{ path: 'o.ts', kind: 'move', movedTo: 'p.ts' }] }, { running: true }).text, 'Moving o.ts → p.ts');
 assert.strictEqual(V.summary({ files: [{ path: 'gone.ts', kind: 'delete' }] }, {}).text, 'Deleted gone.ts');
 const two = { files: [{ path: 'a.ts', kind: 'edit', diff: '@@\n+a', added: 1, removed: 0 }, { path: 'b.ts', kind: 'create', diff: '@@\n+b\n+c', added: 2, removed: 0 }] };
 assert.strictEqual(V.summary(two, { running: true }).text, 'Editing 2 files');
-assert.strictEqual(V.summary(two, { running: true, simple: true }).text, 'Changing 2 files');
 assert.strictEqual(V.summary(two, {}).count, '+3 −0');
 assert.strictEqual(V.summary({ files: [{ path: 'a', kind: 'create' }, { path: 'b', kind: 'create' }], more: 3 }, { running: true }).text, 'Creating 5 files');
 assert.strictEqual(V.summary({ files: [] }, {}).text, '');
@@ -43,9 +40,7 @@ assert.strictEqual(V.summary({ files: [{ path: 'x', kind: 'weird' }] }, { runnin
 
 // review on #463: a refused or failed edit never reads as done
 assert.strictEqual(V.summary(one, { failed: true, folder: '/p' }).text, 'Could not edit app.js');
-assert.strictEqual(V.summary(one, { failed: true, simple: true }).text, 'Not changed app.js');
 assert.strictEqual(V.summary({ files: [{ path: 'c.ts', kind: 'delete' }] }, { failed: true }).text, 'Could not delete c.ts');
-assert.strictEqual(V.summary({ files: [{ path: 'n.md', kind: 'create' }] }, { failed: true, simple: true }).text, 'Not created n.md');
 assert.strictEqual(V.summary({ files: [{ path: 'o.ts', kind: 'move', movedTo: 'p.ts' }] }, { failed: true }).text, 'Could not move o.ts → p.ts');
 assert.strictEqual(V.summary(two, { failed: true }).text, 'Could not edit 2 files');
 assert.strictEqual(V.summary(one, { failed: true, running: true }).text, 'Editing app.js', 'running wins over a stale failed flag');

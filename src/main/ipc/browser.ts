@@ -74,10 +74,10 @@ export function register(deps: BrowserIpcDeps): BrowserController {
   // FR-123: only a real boolean changes it; every window is told, so every session's menu shows it the same
   ipcHandle('browser:setLinksNewTab', (e, on: unknown) => {
     if (!fromApp(e) || typeof on !== 'boolean') return { ok: false };
-    linksToggle.set(on);
+    const saved = linksToggle.set(on);
     const now = linksNewTab();
     deps.toRenderer('browser:linksNewTab', now);
-    return { ok: true, on: now };
+    return { ok: saved && now === on, on: now };
   });
   // the only way a browser link reaches another app: a mailto: link after the user's click, re-checked here
   ipcHandle('browser:openMail', (e, url: unknown) => (fromApp(e) ? ctl.openMail(url) : { ok: false }));
@@ -95,8 +95,7 @@ export function register(deps: BrowserIpcDeps): BrowserController {
   // records the consent with no proof the dialog was shown (any code in the app window can call it): inside the window's trust boundary, like the other settings channels
   ipcHandle('browser:consentAccept', (e) => {
     if (!fromApp(e)) return { ok: false };
-    deps.getSettingsStore()?.acceptBrowserNote();
-    return { ok: true };
+    return { ok: deps.getSettingsStore()?.acceptBrowserNote() ?? false };
   });
   ipcHandle('browser:snapshot', (e, id: unknown) => (fromApp(e) ? ctl.snapshot(id) : { ok: false }));
   ipcHandle('browser:leaveAnswer', (e, req: unknown, leave: unknown) => {

@@ -5,7 +5,7 @@
  *
  *   npm run check:ui -- --only check-sim-guard          (also in scripts/ui-suite.js, so CI runs it on Linux, macOS and Windows)
  *
- * Asserts: the one-shot prompts (theme maker, folder-setup explainer), new folders and sessions, creating a folder (spec 093), send, resume, deleting a previous session,
+ * Asserts: the one-shot prompt (folder-setup explainer), new folders and sessions, creating a folder (spec 093), send, resume, deleting a previous session,
  * listing the agent apps and their models, installs and the CLI sign-in are all refused with the simulator message; `harnessPlans`
  * (an open channel, like `app:version`) still answers; main has created no real adapter (`ctx.createdAdapters()`); the simulator itself still works.
  * FR-030 (review on #514): a driver's `ctx.addMany(..., { adapterId: 'claude' })`, which reaches detection without IPC, starts no
@@ -17,7 +17,6 @@ const { helpers, jsLiteral } = require('./driver-helpers'); /* shared plumbing; 
 
 /** Each call on the real preload API, as page code (the arguments are fixed, made-up values; none of them is ever used). */
 const CALLS = {
-  'theme:generate': "window.agentDurbar.generateTheme('a calm blue office','claude')",
   'folderSetup:explain': "window.agentDurbar.folderSetupExplain('/tmp/x','claude')",
   'agents:addFolder': "window.agentDurbar.addFolder('read-only',{})",
   'agents:newSession': "window.agentDurbar.newSession('sim-1',{})",

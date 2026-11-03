@@ -372,6 +372,10 @@ VS Code UI supports, as some people may want to give access to read email but no
 
 ## Changes
 
+### 2026-10-31: MCP context cost (spec 100)
+
+Settings > MCP servers adds the warning levels and each server's last figures; Codex's `mcpServerStatus/list` also feeds an estimate (schemas are not kept). Owned by [spec 100](../100-mcp-context/spec.md) FR-001, FR-012, FR-020.
+
 ### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
 
 The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
@@ -496,6 +500,24 @@ The `status:` of the specs-index block used to read (moved here unchanged; the b
   other key, and nothing from it is logged. The copy between apps (FR-021, FR-023) is unchanged: `oauth` is still a field the other
   apps' writers do not carry, and Durbar never writes `oauth` into an app's file. Requirement, tests and evidence:
   [spec 058 FR-186](../058-mcp-session-controls/spec.md) (task T158 there).
+- **2026-11-03 (owner Vikram, Telegram; FR-067, FR-068, T069, T070):** two UI faults and one figure in the chat's tools list.
+  - **FR-067, a visible control and a list that fits.** The tiny ▸ before the name was the only way in. Each row now has a *Tools*
+    button in its button row (the row's `btn sm` look, with a wrench icon; reused: `.btn.sm`, the row's `srv-act` group, the same
+    `data-tools` toggle and focus-keeping repaint). It says "Tools" until the list is loaded, then "Tools (24)", or "Tools: 20 of 24 on" when some
+    are off; `aria-expanded`, `aria-controls`, Enter and Space. The name still toggles (`data-tn`). Settings > MCP servers has no tools list
+    (checked: the list exists only in this dialog). Each tool row stays inside the card: the name on one line (cut with an ellipsis), the
+    description under it clamped to 2 lines with the full text in its `title` (the tooltip the dialog already uses), `min-width: 0` and
+    `overflow-wrap: anywhere`; the list never scrolls sideways; text stays at 10.5 px or more.
+  - **FR-068, the figure counts the ticked tools.** Spec 100's row figure ("19k tokens, largest") is a total per server: no agent app reports
+    one per tool, and the tools list carries no schema. So each tool gets a share of the server's figure in proportion to spec 100's
+    estimator (FR-002) over its name and description, shown as "about N tokens" next to the name. Unticking tools lowers the row's figure
+    by their shares, live: "about 35k tokens (with 4 of 5 tools; applies after Restart session)". The agent app's report is of the running
+    session, so the shares are against the off list that session started with (as the dialog opened, or after *Restart session* succeeded);
+    with nothing changed the reported figure is shown untouched. Nothing is shown without a report, a loaded list or a figure.
+    `[KNOWN GAP]` the baseline is the off list when the dialog opened: tools turned off in an earlier dialog and not yet restarted count as
+    already off. Spec 100 owns the figure; its *Changes* point here.
+  `sim:` `shots-069-mcp-tools` (25 tools with very long names and descriptions, both sizes, Clean Office and Retro Pixel; mutations: no clamp,
+  no `min-width`, off list ignored each fail it). The Stone look is not on main. Not verified on macOS or Windows.
 
 ## Relationship to other specs
 

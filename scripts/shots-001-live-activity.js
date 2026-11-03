@@ -124,12 +124,6 @@ module.exports = async (ctx) => {
     await feed();
     assert.ok(!/^Thinking:/.test((await line('sim-2')).t), `${w}: off: dense text is today's`);
     await js(`localStorage.removeItem('durbar.liveActivity')`);
-    /* Simple (spec 052 FR-081): the tool in plain words, never the command */
-    await js(`localStorage.setItem('durbar.detail','simple')`);
-    await load(15, w, h);
-    await feed();
-    assert.strictEqual((await line('sim-1')).t, 'Running a command', `${w}: Simple: plain words`);
-    await js(`localStorage.removeItem('durbar.detail')`);
   }
   /* the Settings switch (default on) turns it off and on */
   await load(3, 1440, 900);

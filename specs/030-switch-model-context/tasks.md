@@ -84,3 +84,9 @@ One task = one issue = one pull request. Tick the task in the same pull request.
 - [x] T081 More menu and palette entry, dialog preset, review step with provenance; hand-off prompt wording [FR-042..FR-044]
 - [x] T082 Simulator: mixed kinds hand over; driver and screenshots at both sizes [FR-045]
 - [x] T083 One real check: Copilot → Claude Code, Claude Code → Codex; README and CHANGELOG [FR-045]
+
+## 2026-10-31: choices stay together (owner report)
+
+- [x] T090 Merge on what comes next, one change at a time, replace the queued switch, say what a model cannot keep [FR-060..FR-062, FR-066]
+- [x] T091 `agents:setModel` checks the session's own app's list; an app's own default [FR-063, FR-065]
+- [x] T092 Simulator as main; `test-model-choice`, adapter tests, driver `check-model-choice` at both sizes; mutation checks [FR-064]

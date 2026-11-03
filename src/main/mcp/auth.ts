@@ -8,6 +8,7 @@
  */
 import { createHmac, randomBytes, timingSafeEqual } from 'crypto';
 import { MCP_LIMITS } from '../../shared/mcpserver';
+import { readCapped, type CappedFlags, type CappedFs } from '../../shared/cappedread';
 
 // ---------------------------------------------------------------------------------------------
 // Key file
@@ -30,6 +31,10 @@ export interface AuthStat {
   isDirectory(): boolean;
 }
 
+/** `fstat` of an open descriptor as the key file checks need it. */
+export type AuthFstat = AuthStat & { size: number; nlink: number };
+export interface AuthIo extends CappedFs { fstatSync(fd: number): AuthFstat }
+
 /** Injected file system (synchronous; the key file is tiny). `lstat` and `read` throw errors with a `code` like Node's. */
 export interface McpFs {
   mkdirp(dir: string, mode: number): void;
@@ -37,13 +42,10 @@ export interface McpFs {
   /** Exclusive create (flag `wx`) with the given mode. */
   writeNew(file: string, data: string, mode: number): void;
   rename(from: string, to: string): void;
-  /** Opens read-only without following a final symlink and without blocking on a FIFO (`O_NOFOLLOW|O_NONBLOCK` where the OS has them). Throws on a link. */
-  open(file: string): number;
-  /** `fstat` of an open descriptor, with the size in bytes. */
-  fstat(fd: number): AuthStat & { size: number };
-  /** Reads at most `max` bytes from the descriptor, as UTF-8 text. */
-  readFd(fd: number, max: number): string;
-  close(fd: number): void;
+  /** The descriptor calls the shared capped read uses (`node:fs` fits; tests pass a fake). */
+  io: AuthIo;
+  /** The open flags it uses (`fs.constants`; `O_NOFOLLOW` and `O_NONBLOCK` are missing on Windows). */
+  flags: CappedFlags;
   lstat(p: string): AuthStat;
   /** File names (not paths) in a folder. */
   readdir(dir: string): string[];
@@ -201,28 +203,26 @@ export function readKeyFile(d: KeyFileDeps): KeyReadResult {
   if (st.isSymbolicLink()) return unsafe('The connection key file is a symbolic link, so it is not used.');
   if (!st.isFile()) return unsafe('The connection key file is not a regular file, so it is not used.');
 
-  // The checks above are a fast path. What counts is the descriptor: open without following a link or blocking on a
-  // FIFO, then fstat the descriptor, so a file swapped in after the lstat is refused.
-  let fd: number;
-  try { fd = d.fs.open(d.keyFile); } catch (e) {
-    const c = errCode(e);
-    if (c === 'ENOENT') return missing;
-    if (c === 'ELOOP' || c === 'EMLINK') return unsafe('The connection key file is a symbolic link, so it is not used.');
-    return cannot('connection key file', e);
+  // The checks above are a fast path. What counts is the descriptor: the shared read (issue #917) opens without following a link or
+  // blocking on a FIFO, then fstats the descriptor (regular file, one link), so a file swapped in after the lstat is refused.
+  const vet = (fst: AuthFstat): string | undefined => {
+    if (!owned(d, fst)) return 'The connection key file belongs to another user, so it is not used.';
+    if (posix && (fst.mode & 0o077) !== 0) return 'The connection key file is open to other users (it must be mode 0600), so it is not used.';
+    return undefined;
+  };
+  const got = readCapped(d.fs.io, d.fs.flags, d.keyFile, MAX_KEY_FILE_BYTES, vet);
+  if (!got.ok) {
+    switch (got.code) {
+      case 'missing': return missing;
+      case 'link': return unsafe('The connection key file is a symbolic link, so it is not used.');
+      case 'not-file': return unsafe('The connection key file is not a regular file, so it is not used.');
+      case 'links': return unsafe('The connection key file has more than one link, so it is not used.');
+      case 'vetoed': return unsafe(got.why);
+      case 'too-big': case 'changing': return { ok: false, reason: 'invalid', message: 'The connection key file is damaged.' };
+      default: return cannot('connection key file', { code: got.errno });
+    }
   }
-  let text: string;
-  try {
-    const fst = d.fs.fstat(fd);
-    if (fst.isSymbolicLink() || !fst.isFile()) return unsafe('The connection key file is not a regular file, so it is not used.');
-    if (!owned(d, fst)) return unsafe('The connection key file belongs to another user, so it is not used.');
-    if (posix && (fst.mode & 0o077) !== 0) return unsafe('The connection key file is open to other users (it must be mode 0600), so it is not used.');
-    if (!(fst.size >= 0) || fst.size > MAX_KEY_FILE_BYTES) return { ok: false, reason: 'invalid', message: 'The connection key file is damaged.' };
-    text = d.fs.readFd(fd, MAX_KEY_FILE_BYTES);
-  } catch (e) {
-    return cannot('connection key file', e);
-  } finally {
-    try { d.fs.close(fd); } catch { /* nothing more to do */ }
-  }
+  const text = got.buf.toString('utf8');
   const bad: KeyReadResult = { ok: false, reason: 'invalid', message: 'The connection key file is damaged.' };
   let o: unknown;
   try { o = JSON.parse(text); } catch { return bad; }
@@ -242,19 +242,8 @@ export function nodeMcpFs(): McpFs {
     chmod: (p, mode) => fs.chmodSync(p, mode),
     writeNew: (file, data, mode) => fs.writeFileSync(file, data, { flag: 'wx', mode }),
     rename: (a, b) => fs.renameSync(a, b),
-    open: (file) => fs.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0) | (fs.constants.O_NONBLOCK ?? 0)),
-    fstat: (fd) => fs.fstatSync(fd),
-    readFd: (fd, max) => {
-      const buf = Buffer.alloc(max);
-      let n = 0;
-      while (n < max) {
-        const got = fs.readSync(fd, buf, n, max - n, null);
-        if (got === 0) break;
-        n += got;
-      }
-      return buf.subarray(0, n).toString('utf8');
-    },
-    close: (fd) => fs.closeSync(fd),
+    io: fs,
+    flags: fs.constants,
     lstat: (p) => fs.lstatSync(p),
     readdir: (dir) => fs.readdirSync(dir),
     unlink: (p) => fs.unlinkSync(p),

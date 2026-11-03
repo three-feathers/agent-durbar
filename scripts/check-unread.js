@@ -156,7 +156,7 @@ module.exports = async (ctx) => {
     await H.key('Return');
     await ok(`!document.getElementById('modeMenu')&&!document.querySelector(${jsLiteral(sel(B) + ' .unread-mark')})`, `${tag}: Mark as read clears the marker`);
     assert.ok(!(await js(`document.body.classList.contains('panel-open')`)), `${tag}: without opening the chat`);
-    assert.ok(await js(`window.__ann.some(t=>/Hugo: marked as read/.test(t))`), `${tag}: announced`);
+    await ok(`window.__ann.some(t=>/Hugo: marked as read/.test(t))`, `${tag}: announced`); /* announce() writes 60 ms later (FR-048b) */
     await ok(`!!document.querySelector(${jsLiteral(sel(B) + '.shut')})`, `${tag}: Hugo, read, follows the couch rule`);
     assert.strictEqual(await marks(), '', `${tag}: nothing is unread`);
 

@@ -8,7 +8,7 @@
     "caption": "Simulator demo data: names, costs and tasks are invented.",
     "nameNote": "Why “Durbar”? A durbar is a royal court where everyone gets a hearing. Here your agents are the court, and you decide who gets your attention."
   },
-  "status": "Stable v0.1.4 · unsigned · used by hand on Linux and on real Macs; on Windows it was tried once by hand on a real PC (2026-10-21) and is checked in CI (builds start on all three, and real-account end-to-end runs passed on all three, 9 of 9, 2026-10-20).",
+  "status": "Stable v0.1.8 · unsigned · used by hand on Linux and on real Macs; on Windows it was tried once by hand on a real PC (2026-10-21) and is checked in CI (builds start on all three, and real-account end-to-end runs passed on all three, 9 of 9, 2026-10-20).",
   "cards": [
     {
       "title": "Never miss a waiting agent",
@@ -65,36 +65,11 @@
       "swatch": "#3f6a54"
     },
     {
-      "name": "Corporate",
-      "screenshot": "site-theme-corporate-1440x900.png",
-      "swatch": "#2c5468"
-    },
-    {
       "name": "Retro Pixel",
       "screenshot": "site-theme-retro-1440x900.png",
       "swatch": "#1d2b53"
-    },
-    {
-      "name": "Durbar · Indian Court",
-      "screenshot": "site-theme-durbar-indian-1440x900.png",
-      "swatch": "#d9962b"
-    },
-    {
-      "name": "Durbar · European Court",
-      "screenshot": "site-theme-durbar-european-1440x900.png",
-      "swatch": "#2c4a78"
-    },
-    {
-      "name": "Durbar · Japanese Court",
-      "screenshot": "site-theme-durbar-japanese-1440x900.png",
-      "swatch": "#c24a42"
     }
   ],
-  "aiTheme": {
-    "text": "…or describe your own and let AI make it.",
-    "screenshot": "040-aitheme-preview-1440x900.png",
-    "alt": "The AI theme maker's result for \"a night-shift newsroom\": colour swatches, style and place names, with Try it and Save"
-  },
   "harnesses": [
     {
       "name": "GitHub Copilot",

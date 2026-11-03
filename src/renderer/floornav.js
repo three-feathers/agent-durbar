@@ -1,6 +1,6 @@
 /* Floors as places (spec 092): the rules for moving between floor screens. Pure: no DOM, no timers, no storage. Same pattern as places.js.
    In the page: window.DurbarFloorNav; in Node: module.exports.
-   A "floor" here is {id, name, on}; the list is in floor order (spec 033), the first floor is the top of the building (spec 092 Q-A). */
+   A "floor" here is {id, name, on}; the list is in floor order (spec 033), the first floor is floor 1, the bottom of the building (spec 092 Q-D). */
 (function(root, api){
   if(typeof module==='object'&&module.exports) module.exports=api; else root.DurbarFloorNav=api;
 })(typeof self!=='undefined'?self:this, (function(){
@@ -9,7 +9,7 @@
   const onList=f=>list(f).filter(x=>x.on);
   /* Floor screens exist only with two or more floors on (FR-001, FR-004). */
   const screens=f=>onList(f).length>=2;
-  /* The next floor that is on after `cur` in direction `dir` ('next' = down the list, PageDown; 'prev' = up, PageUp), skipping floors that are off
+  /* The next floor that is on after `cur` in direction `dir` ('next' = on down the list, the next number up the building, PageUp; 'prev' = back up the list, the next number down, PageDown), skipping floors that are off
      (FR-011). No wrap: at the last (first) floor, or when `cur` is not in the list, null. */
   function nextOn(floors,cur,dir){
     const all=list(floors),i=all.findIndex(x=>x.id===cur);
@@ -56,12 +56,18 @@
     const o=open||{};
     if(o.office===false||o.dialog||o.menu)return null;
     if(inText(target))return null;
-    const dir=e.key==='PageDown'?'next':'prev',s=scroll||{};
-    if(s.scrolls&&(dir==='next'?!s.atBottom:!s.atTop))return {scroll:dir==='next'?1:-1};
+    const down=e.key==='PageDown',s=scroll||{};
+    if(s.scrolls&&(down?!s.atBottom:!s.atTop))return {scroll:down?1:-1};
     if(o.all)return null; /* FR-034: in the All floors view the keys only scroll; they never change the floor or the view */
-    return {go:dir};
+    return {go:down?'prev':'next'}; /* Q-D: PageUp is the next number up, which is the next floor of the list */
   }
-  /* Does this key press change the floor? 'next' (PageDown), 'prev' (PageUp) or null (it scrolls the floor screen first, or keeps its own meaning). */
+  /* Where a floor that scrolls starts after a key (FR-011): going up the building ('next') you arrive at the floor's bottom edge, going down at its top. */
+  const arriveEdge=go=>go==='next'?'bottom':'top';
+  /* The building from the top down (Q-D, like spec 097 FR-116): the floors that are on, the highest number first, each with its number from the bottom ({f, n}). */
+  const topDown=floors=>list(floors).map((f,i)=>({f,n:i+1})).reverse();
+  /* The rooms of the All floors view from the top down (Q-D): the highest floor first; inside a floor the given order is kept. rank(room) = the room's floor in the list. */
+  const storeysTopDown=(rooms,rank)=>(Array.isArray(rooms)?rooms:[]).map((r,i)=>[r,i,rank(r)]).sort((x,y)=>y[2]-x[2]||x[1]-y[1]).map(p=>p[0]);
+  /* Does this key press change the floor? 'next' (PageUp), 'prev' (PageDown) or null (it scrolls the floor screen first, or keeps its own meaning). */
   function keyEligible(e,target,scroll,open){const a=keyAction(e,target,scroll,open);return a&&a.go?a.go:null;}
   /* What a screen reader hears after a floor change (FR-012): "Floor Client B, 2 of 3". `floor` = the floor object or its name; n = its place among
      the floors that are on (from 1), m = how many are on. */
@@ -123,5 +129,5 @@
     }
     return {up:sum.above,down:sum.below};
   }
-  return {screens,nextOn,nearestOn,keyAction,keyEligible,announceText,place,TEXT_SEL,viewOf,readView,writeView,VIEW_KEY,announceAll,badgeCounts,badgeText,badgeNum,edgeSummary,KINDS};
+  return {screens,nextOn,nearestOn,keyAction,arriveEdge,topDown,storeysTopDown,keyEligible,announceText,place,TEXT_SEL,viewOf,readView,writeView,VIEW_KEY,announceAll,badgeCounts,badgeText,badgeNum,edgeSummary,KINDS};
 })());

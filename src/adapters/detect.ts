@@ -10,6 +10,7 @@ import type { ChildProcess, ExecFileOptionsWithStringEncoding } from 'child_proc
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { redact } from '../shared/redact';
 import type { AdapterDescriptor, DetectResult } from './capabilities';
 import { MAX_VERSION_LENGTH, VERSION_TOKEN_SOURCE } from '../shared/versionfield';
 import { pathDirs } from '../shared/pathdirs';
@@ -397,7 +398,7 @@ let devClaudePath: string | undefined;
 export function configureDevClaudeBin(dev: Readonly<Record<string, string | undefined>>, env: Pick<DetectEnv, 'platform' | 'isFile'> = nodeDetectEnv()): void {
   const r = devClaudeBin(dev, env);
   devClaudePath = r.path;
-  if (r.warning) console.warn(`Agent Durbar: ${r.warning}`);
+  if (r.warning) console.warn(redact(`Agent Durbar: ${r.warning}`));
 }
 /** The configured path every Claude detection passes to `candidates()` (undefined: none). */
 export const claudeConfiguredPath = (): string | undefined => devClaudePath;

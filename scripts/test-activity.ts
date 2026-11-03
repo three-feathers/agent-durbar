@@ -146,6 +146,129 @@ try {
     assert.ok(!html.includes('<img') && !html.includes('<script>'), 'escaped');
     assert.ok(html.includes('Automatic (Allow all)') && html.includes('Allow all'));
     assert.deepStrictEqual(Object.values(T.DECISION_WORDS), ['Allowed once by you', 'Allowed for the session', 'Denied', 'Automatic (Allow all)', 'Automatic (session permission)', 'Mode changed', 'Limit changed', 'Remote control on', 'Remote control off', 'Session deleted', 'MCP restart']);
+
+    // issue #973: the export is the notes export's atomic, no-follow write (main's own handler on a stand-in `electron`, a fake save dialog)
+    {
+      const electronPath = require.resolve('electron');
+      let pick: string | undefined;
+      let lastOpts: unknown;
+      const handlers = new Map<string, (e: unknown, ...a: unknown[]) => unknown>();
+      const fake = { ipcMain: { handle: (ch: string, fn: (e: unknown, ...a: unknown[]) => unknown) => handlers.set(ch, fn), on: () => undefined }, app: { getVersion: () => '0.0.0-test' }, dialog: { showSaveDialog: async (o: unknown) => { lastOpts = o; return pick ? { canceled: false, filePath: pick } : { canceled: true }; } } };
+      const saved = require.cache[electronPath];
+      require.cache[electronPath] = { id: electronPath, filename: electronPath, loaded: true, exports: fake } as unknown as NodeJS.Module;
+      const out = fs.realpathSync(fs.mkdtempSync(path.join(dir, 'exp-')));
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        (require('../src/main/ipcguard') as typeof import('../src/main/ipcguard')).initSimGuard(false);
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const { register } = require('../src/main/ipc/activity') as typeof import('../src/main/ipc/activity');
+        const st = new ActivityStore(path.join(out, 'activity.json'), { ...noTimer, env: {} });
+        st.record({ ...base });
+        register({ getActivityStore: () => st, getWin: () => undefined });
+        const frame = { url: require('url').pathToFileURL(path.join(__dirname, '..', 'src', 'renderer', 'index.html')).href };
+        const win = { senderFrame: frame, sender: { mainFrame: frame } };
+        const exp = async (to: string, fmt = 'csv'): Promise<Record<string, unknown>> => { pick = to; return (await handlers.get('activity:export')!(win, fmt)) as Record<string, unknown>; };
+        const leftovers = (d: string): string[] => fs.readdirSync(d).filter((n) => n.endsWith('.tmp'));
+        const posix = process.platform !== 'win32';
+        // a new file: exact content, 0600 where modes apply, no temp file left
+        const f1 = path.join(out, 'a.csv');
+        assert.deepStrictEqual(await exp(f1), { ok: true, count: 1, to: 'a.csv' });
+        assert.strictEqual(fs.readFileSync(f1, 'utf8'), activityCsv(st.all()));
+        if (posix) assert.strictEqual(fs.statSync(f1).mode & 0o777, 0o600, 'mode 0600');
+        assert.deepStrictEqual(leftovers(out), []);
+        // the Linux dialog asks before replacing a file, as the notes export's does (Windows and macOS always ask)
+        assert.ok(((lastOpts as { properties?: string[] }).properties ?? []).includes('showOverwriteConfirmation'), 'the save dialog asks before replacing');
+        // a plain file is replaced; a bad format and a cancelled dialog write nothing
+        assert.strictEqual((await exp(f1, 'json')).ok, true);
+        assert.strictEqual(JSON.parse(fs.readFileSync(f1, 'utf8')).length, 1, 'replaced');
+        assert.strictEqual((await exp(path.join(out, 'b.csv'), 'xml')).ok, false);
+        pick = undefined;
+        assert.strictEqual(((await handlers.get('activity:export')!(win, 'csv')) as { cancelled?: boolean }).cancelled, true);
+        // the size cap and the word in the refusal: above `maxBytes` is refused, says "activity" (not "notes") and writes nothing
+        {
+          const { ACTIVITY_EXPORT_MAX_BYTES } = require('../src/main/ipc/activity') as typeof import('../src/main/ipc/activity');
+          const big = { ...base, t: '2026-10-20T10:00:00Z' };
+          handlers.clear();
+          register({ getActivityStore: () => ({ all: () => [{ ...big, action: 'x'.repeat(ACTIVITY_EXPORT_MAX_BYTES + 100) }], list: () => [], clear: () => undefined }) as unknown as ActivityStore, getWin: () => undefined });
+          const f2 = path.join(out, 'big.json');
+          const r = await exp(f2, 'json');
+          assert.strictEqual(r.ok, false, 'over the cap: refused');
+          assert.match(String(r.error), /^Could not export the activity: .*too large/, 'the refusal says activity, not notes');
+          assert.ok(!fs.existsSync(f2), 'nothing written');
+          // just under the cap works through the handler, above the notes' own limit (about 14.8 MB): without `maxBytes` the notes default would refuse it
+          {
+            const { NOTES_LIMITS } = require('../src/shared/notes') as typeof import('../src/shared/notes');
+            handlers.clear();
+            register({ getActivityStore: () => ({ all: () => [{ ...big, action: 'x'.repeat(15 * 1024 * 1024) }], list: () => [], clear: () => undefined }) as unknown as ActivityStore, getWin: () => undefined });
+            const f3 = path.join(out, 'under.json');
+            const u = await exp(f3, 'json');
+            assert.deepStrictEqual([u.ok, u.count], [true, 1], 'between the notes limit and the cap: written');
+            assert.ok(fs.statSync(f3).size > NOTES_LIMITS.mdBytes && fs.statSync(f3).size < ACTIVITY_EXPORT_MAX_BYTES, 'the file is above the notes limit and under the activity cap');
+            fs.rmSync(f3);
+          }
+          // the cap is not self-referential: the worst possible full log, 5000 rows through the real store with every field at its cap and
+          // the costliest characters (a lone surrogate is 6 bytes in JSON; a quote is doubled in CSV), is under it in both formats and exports
+          for (const ch of ['\ud800', '"', '\u20ac']) {
+            const wst = new ActivityStore(path.join(out, 'worst.json'), { ...noTimer, env: {} });
+            const w = { ...base, agent: ch.repeat(80), folder: ch.repeat(80), app: ch.repeat(80), mode: ch.repeat(16), action: ch.repeat(160), t: '2026-10-20T10:00:00Z' };
+            for (let i = 0; i < ACTIVITY_MAX_ROWS + 5; i++) wst.record({ ...w });
+            const all = wst.all();
+            assert.strictEqual(all.length, ACTIVITY_MAX_ROWS, 'the real store holds the newest 5000');
+            assert.strictEqual(all[0].action.length, 160, 'the action is at its cap');
+            const sizes = [Buffer.byteLength(activityCsv(all)), Buffer.byteLength(activityJson(all))];
+            assert.ok(Math.max(...sizes) < ACTIVITY_EXPORT_MAX_BYTES, `worst-case log (${JSON.stringify(ch)}) ${sizes.join('/')} bytes is under the cap ${ACTIVITY_EXPORT_MAX_BYTES}`);
+            assert.ok(Math.max(...sizes) > 1024 * 1024, 'and it is a real, large log (not a tiny test row)');
+            handlers.clear();
+            register({ getActivityStore: () => wst, getWin: () => undefined });
+            for (const [fmt, ext] of [['csv', 'csv'], ['json', 'json']] as const) {
+              const ok = await exp(path.join(out, 'worst.' + ext), fmt);
+              assert.deepStrictEqual([ok.ok, ok.count], [true, ACTIVITY_MAX_ROWS], 'the worst-case log exports in ' + fmt);
+              fs.rmSync(path.join(out, 'worst.' + ext));
+            }
+            fs.rmSync(path.join(out, 'worst.json'), { force: true });
+          }
+          handlers.clear();
+          register({ getActivityStore: () => st, getWin: () => undefined });
+        }
+        // a link at the chosen name is refused and the file it points to is not touched
+        const victim = path.join(out, 'victim.txt');
+        fs.writeFileSync(victim, 'keep me');
+        let linked = true;
+        const lnk = path.join(out, 'link.csv');
+        try { fs.symlinkSync(victim, lnk, 'file'); } catch { linked = false; }
+        if (linked) {
+          const r = await exp(lnk);
+          assert.strictEqual(r.ok, false);
+          assert.match(String(r.error), /^Could not export the activity: .*the chosen file is a link/);
+          assert.strictEqual(fs.readFileSync(victim, 'utf8'), 'keep me', 'the link target is untouched');
+          assert.ok(fs.lstatSync(lnk).isSymbolicLink(), 'the link is still a link');
+        } else console.log('skip: symlinks are not allowed here');
+        // a hard link is refused (it would write through to the other name)
+        const hard = path.join(out, 'hard.csv');
+        let hardOk = true;
+        try { fs.linkSync(victim, hard); } catch { hardOk = false; }
+        if (hardOk) {
+          assert.match(String((await exp(hard)).error), /^Could not export the activity: .*hard link/);
+          assert.strictEqual(fs.readFileSync(victim, 'utf8'), 'keep me');
+        } else console.log('skip: hard links are not allowed here');
+        // a folder, a missing folder and a FIFO
+        assert.match(String((await exp(out)).error), /^Could not export the activity: .*(chosen name is a folder|is not a regular file)/);
+        assert.match(String((await exp(path.join(out, 'nope', 'x.csv'))).error), /^Could not export the activity: .*chosen folder is not there/);
+        if (posix) {
+          const fifo = path.join(out, 'pipe.csv');
+          if (require('child_process').spawnSync('mkfifo', [fifo], { stdio: 'ignore' }).status === 0) assert.match(String((await exp(fifo)).error), /^Could not export the activity: .*not a regular file/);
+          else console.log('skip: mkfifo is not available');
+        } else console.log('skip: FIFOs are POSIX only');
+        // the toast shows the reason as main wrote it, with no second prefix (the notes export does the same)
+        const scr = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'screens.js'), 'utf8');
+        const fn = scr.slice(scr.indexOf('async function exportActivity'), scr.indexOf('async function clearActivity'));
+        assert.ok(fn.includes("esc((r&&r.error)||") && !/Could not save the activity log/.test(fn), 'exportActivity shows r.error alone');
+        assert.deepStrictEqual(leftovers(out), [], 'no temp file after a refusal');
+      } finally {
+        if (saved) require.cache[electronPath] = saved;
+        else delete require.cache[electronPath];
+      }
+    }
     fs.rmSync(dir, { recursive: true, force: true });
     console.log('activity tests passed');
   })().catch((e) => { console.error(e); process.exit(1); });

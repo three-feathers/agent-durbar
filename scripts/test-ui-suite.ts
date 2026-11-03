@@ -74,6 +74,31 @@ assert.ok(/require\('electron'\)/.test(src), 'it starts the Electron binary dire
   assert.ok(!/shell: true|execSync\(|exec\(/.test(dsrc) && /suite\.runOne/.test(dsrc), 'shots-docs starts drivers through ui-suite runOne, never a shell');
   assert.ok(/DURBAR_SIM_CLOCK: clock/.test(dsrc), 'shots-docs pins the page clock (FR-084)');
 }
+// spec 008 FR-136 (issue #922): a driver's window that closes fails the run, once per window; allow() is for a deliberate close; a normal end closes nothing
+{
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { guardWindow } = require(path.join(ROOT, 'scripts', 'driver-helpers.js')) as { guardWindow: (w: unknown, fail: (m: string) => void, app?: unknown) => { allow: () => void } };
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { EventEmitter } = require('events') as typeof import('events');
+  type Setup = (w: InstanceType<typeof EventEmitter>, a: InstanceType<typeof EventEmitter>, g: { allow: () => void }) => void;
+  const run = (setup: Setup): string[] => {
+    const w = new EventEmitter(), a = new EventEmitter(), fails: string[] = [];
+    setup(w, a, guardWindow(w, (m) => fails.push(m), a));
+    return fails;
+  };
+  assert.strictEqual(run(() => undefined).length, 0, 'a driver that ends normally (no close) is not a failure');
+  assert.strictEqual(run((w) => w.emit('closed')).length, 0, 'the window closing alone (the normal end: app.exit) is not a failure; the quit-less exit never emits window-all-closed');
+  const closed = run((w, a) => { w.emit('closed'); a.emit('window-all-closed'); });
+  assert.ok(closed.length === 1 && /DRIVER FAILED/.test(closed[0]) && /window closed/.test(closed[0]), 'a closed window that ends the app fails with a clear DRIVER FAILED message');
+  assert.strictEqual(run((w, a, g) => { g.allow(); w.emit('closed'); a.emit('window-all-closed'); }).length, 0, 'allow() before a deliberate close: no failure');
+  assert.strictEqual(run((w, a) => { a.emit('window-all-closed'); w.emit('closed'); }).length, 0, 'window-all-closed from another window is not this one closing');
+  { const w = new EventEmitter(), a = new EventEmitter(), fails: string[] = []; guardWindow(w, (m) => fails.push(m), a); guardWindow(w, (m) => fails.push(m), a); w.emit('closed'); a.emit('window-all-closed'); assert.strictEqual(fails.length, 1, 'helpers() twice on one window reports once'); }
+  assert.doesNotThrow(() => guardWindow(undefined, () => undefined), 'no window, no guard');
+  const dh = fs.readFileSync(path.join(ROOT, 'scripts', 'driver-helpers.js'), 'utf8');
+  assert.ok(/function waits\(ctx\) \{\s*guardWindow\(ctx\.win\)/.test(dh), 'waits(ctx) arms the guard, so every driver (helpers() calls waits) is covered');
+  // every ui-suite driver takes its waits from the shared helpers, so none escapes the guard
+  for (const n of new Set(names.map((x) => x.split(' ')[0]))) assert.ok(/driver-helpers/.test(fs.readFileSync(path.join(ROOT, 'scripts', n + '.js'), 'utf8')), `driver ${n} uses the shared helpers (and so the window guard)`);
+}
 const main = fs.readFileSync(path.join(ROOT, 'src', 'main', 'main.ts'), 'utf8');
 assert.ok(/app\.exit\(failed \? 1 : 0\)/.test(main), 'a failing driver exits 1 (FR-090)');
 assert.ok(/dev\.DURBAR_DRIVER \|\| dev\.DURBAR_SHOT \? \{ enableLargerThanScreen: true \}/.test(main), 'test windows may be larger than the screen (FR-093, macOS runners)');
@@ -144,12 +169,12 @@ const watch = fs.readFileSync(path.join(WF, 'nightly-watch.yml'), 'utf8');
 assert.ok(!/pull_request/.test(watch) && !/actions\/checkout/.test(watch) && watch.includes(`github.event.workflow_run.event == 'schedule'`), 'nightly-watch.yml: only scheduled runs, never PR code');
 const watched = ((/workflows: \[(.*)\]/.exec(watch) || [])[1] || '').split(',').map((x) => x.trim());
 const wfNames = new Set(fs.readdirSync(WF).filter((f) => f.endsWith('.yml')).map((f) => (/^name: (.*)$/m.exec(fs.readFileSync(path.join(WF, f), 'utf8')) || [])[1]));
-for (const w of ['CI', 'UI on three OSes', 'Installed app', 'Packaged check', 'Install check']) assert.ok(watched.includes(w) && wfNames.has(w), `nightly-watch.yml watches "${w}" (a real workflow name)`);
+for (const w of ['CI', 'UI on three OSes', 'Installed app', 'Packaged check', 'Install check', 'E2E real accounts']) assert.ok(watched.includes(w) && wfNames.has(w), `nightly-watch.yml watches "${w}" (a real workflow name)`);
 // FR-111 (owner decision 2026-10-22): theme layout checks run Clean Office and Retro on pull requests, every theme elsewhere
 assert.ok(office.includes(`CHECK_ALL_THEMES: \${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && '0' || '1' }}`) && wf.includes(`CHECK_ALL_THEMES: \${{ github.event_name == 'pull_request' && '0' || '1' }}`), 'every theme on main, nightly and by hand');
 const geo = fs.readFileSync(path.join(ROOT, 'scripts', 'check-theme-geometry.js'), 'utf8');
-assert.ok(/process\.env\.CHECK_ALL_THEMES === '1' \? ALL_THEMES : 'retro'/.test(geo) && /const ALL_THEMES = 'corporate,retro,durbar-indian,durbar-european,durbar-japanese,user,pink-studio'/.test(geo), 'check-theme-geometry: Retro by default, all with CHECK_ALL_THEMES=1');
-assert.ok(/CHECK_ALL_THEMES === '1' \? \[[^\]]*durbar-japanese[^\]]*\] : \['clean', 'retro'\]/.test(fs.readFileSync(path.join(ROOT, 'scripts', 'shots-052-addleft.js'), 'utf8')), 'shots-052-addleft: Clean and Retro by default');
+assert.ok(/process\.env\.CHECK_ALL_THEMES === '1' \? ALL_THEMES : 'retro'/.test(geo) && /const ALL_THEMES = 'retro,user,pink-studio'/.test(geo), 'check-theme-geometry: Retro by default, all with CHECK_ALL_THEMES=1');
+assert.ok(/const THEMES = \['clean', 'retro'\];/.test(fs.readFileSync(path.join(ROOT, 'scripts', 'shots-052-addleft.js'), 'utf8')), 'shots-052-addleft: Clean and Retro, the built-in themes (spec 035 FR-017)');
 // FR-110: every job of every workflow has a time limit
 for (const f of fs.readdirSync(WF).filter((x) => x.endsWith('.yml'))) for (const [id, body] of Object.entries(jobsOf(fs.readFileSync(path.join(WF, f), 'utf8')))) assert.ok(/^ {4}timeout-minutes: /m.test(body), `${f} ${id} has timeout-minutes`);
 // ---- scripts/driver-helpers.js (spec 008 FR-097): the shared plumbing behaves as the drivers' own copies did ----
@@ -195,6 +220,16 @@ const dh = require(path.join(ROOT, 'scripts', 'driver-helpers.js'));
   await assert.rejects(() => H.js('NOPE'), /boom/);
   // shot: prepares, waits, then takes the picture
   codes.length = 0; shots.length = 0; await H.shot('/tmp/x.png', { prep: 'calm', blur: true, settle: false, delay: 7 }); assert.deepStrictEqual(shots, ['/tmp/x.png']); assert.ok(codes[0].includes("shotCalm") && codes[0].includes('blur()')); assert.ok(sleeps.includes(7));
+  // focus emulation is never turned on by H.key, only by focusPage({ emulate: true }), and releaseFocus turns it off again (a blur check after it tests something)
+  const cmds: any[] = []; let attached = false;
+  const dbgCtx = { ...ctx, win: { ...ctx.win, show: () => undefined, focus: () => undefined, blur: () => undefined, webContents: { ...ctx.win.webContents, debugger: { isAttached: () => attached, attach: () => { attached = true; }, detach: () => { attached = false; }, sendCommand: async (m: string, p: any) => { cmds.push([m, p && p.enabled]); } } } }, js: async (c: string) => { codes.push(c); return !c.includes('hasFocus'); } };
+  const D = dh.helpers(dbgCtx);
+  await D.key('Tab'); assert.deepStrictEqual(cmds, [], 'H.key never turns focus emulation on');
+  assert.strictEqual(await D.focusPage({ ms: 50 }), false, 'without emulate, a page that never gets the focus is reported');
+  assert.deepStrictEqual(cmds, [], 'and nothing is emulated');
+  dbgCtx.js = async (c: string) => (c.includes('!document.hasFocus') ? cmds.length > 0 && cmds[cmds.length - 1][1] === false : !c.includes('hasFocus') || (cmds.length > 0 && cmds[cmds.length - 1][1] === true));
+  assert.strictEqual(await D.focusPage({ ms: 50, emulate: true }), true, 'emulate: true falls back to the emulation'); assert.deepStrictEqual(cmds[0], ['Emulation.setFocusEmulationEnabled', true]);
+  await D.releaseFocus(); assert.deepStrictEqual(cmds[cmds.length - 1], ['Emulation.setFocusEmulationEnabled', false], 'releaseFocus turns it off'); assert.strictEqual(attached, false, 'and detaches the debugger');
   console.log('driver-helpers: key, load, escaping and shot behave');
 })().catch((e) => { console.error(e); process.exit(1); });
 
@@ -226,7 +261,7 @@ function templates(line: string): { text: string; exprs: string[] }[] {
 }
 /* Allowed raw splices into page code: jsLiteral (or its alias q), and these typed numbers, booleans and ready-made code strings. */
 // box(n) (check-question-options) and the scrollHeight choice (check-question-visible) are ready-made page expressions, not values.
-const RAW_OK = /^(w|h|n|i|width|n - 1|before|sim|expanded|expectPlaces|SECONDS|SPEED|open|!open|iconClick|left|box\(\d\)|where === 'top' \? 0 : 'c\.scrollHeight'|tags|level === 'simple'|[\w.]+\.toString\(\))$/;
+const RAW_OK = /^(w|h|n|i|width|n - 1|before|sim|expanded|expectPlaces|SECONDS|SPEED|open|!open|iconClick|left|box\(\d\)|where === 'top' \? 0 : 'c\.scrollHeight'|tags|[\w.]+\.toString\(\))$/;
 const PAGE = /\b(document|window)\.|localStorage|getComputedStyle|querySelector/;
 const drivers = fs.readdirSync(path.join(ROOT, 'scripts')).filter((x) => /^(shots|check)-.*\.js$/.test(x) && !SKIP.has(x));
 assert.ok(drivers.length >= 45, `${drivers.length} page drivers are checked`);
@@ -312,5 +347,48 @@ process.on('exit', () => { if (!fr114Done) { console.error('FR-114 checks did no
     fs.rmSync(outDir, { recursive: true, force: true });
   }
   fr114Done = true;
-  console.log('ui-suite: check-parallel and ui-suite install Electron once before their parallel jobs (FR-114)');
+  // spec 008 FR-095, FR-138: one retry, alone; a repeated failure stays a failure, a pass on retry is FLAKY in the log and the job summary
+async function retries(): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { main, DRIVERS } = require(SUITE) as { main: (o: unknown) => Promise<void>; DRIVERS: Array<{ name: string; label?: string }> };
+  const name = DRIVERS[0].label || DRIVERS[0].name;
+  const tmp = fs.mkdtempSync(path.join(require('os').tmpdir(), 'ui-suite-retry-'));
+  const summary = path.join(tmp, 'summary.md');
+  const env = { ...process.env }, log = console.log, was = process.exitCode;
+  const go = async (results: boolean[], retry: string): Promise<{ code: unknown; out: string; runs: number; sum: string }> => {
+    fs.writeFileSync(summary, '');
+    process.env.UI_SUITE_RETRY = retry; process.env.UI_SUITE_JOBS = '1'; process.env.UI_SUITE_OUT = tmp; process.env.GITHUB_STEP_SUMMARY = summary;
+    process.exitCode = 0;
+    const lines: string[] = []; console.log = (...a: unknown[]) => { lines.push(a.join(' ')); };
+    let runs = 0;
+    try {
+      await main({ ensure: () => true, argv: ['--only', DRIVERS[0].name], run: async () => { const ok = results[runs++]; return { ok, secs: 0, why: ok ? '' : 'broken', log: '' }; } });
+    } finally { console.log = log; }
+    const code = process.exitCode; process.exitCode = was;
+    return { code, out: lines.join('\n'), runs, sum: fs.readFileSync(summary, 'utf8') };
+  };
+  try {
+    const twice = await go([false, false], '1');
+    assert.strictEqual(twice.code, 1, 'FR-138: failing twice fails the job');
+    assert.strictEqual(twice.runs, 2, 'one retry, not more');
+    assert.ok(!/FLAKY/.test(twice.out + twice.sum), 'failing twice is not FLAKY');
+    assert.ok(new RegExp('failed: ' + name).test(twice.out), 'and it is named: ' + twice.out.slice(-200));
+    const once = await go([false, true], '1');
+    assert.strictEqual(once.code, 0, 'a pass on retry passes the job');
+    assert.ok(/FLAKY \(passed only on retry\)/.test(once.out), 'FLAKY on the final line');
+    assert.ok(/Flaky drivers/.test(once.sum) && once.sum.includes(name), 'FLAKY in the job summary: ' + once.sum);
+    const off = await go([false, true], '0');
+    assert.strictEqual(off.code, 1, 'no retry where it is off'); assert.strictEqual(off.runs, 1);
+    const clean = await go([true], '1');
+    assert.strictEqual(clean.code, 0); assert.strictEqual(clean.runs, 1, 'a pass is not run again');
+    assert.ok(!/FLAKY/.test(clean.out + clean.sum));
+  } finally {
+    for (const k of ['UI_SUITE_RETRY', 'UI_SUITE_JOBS', 'UI_SUITE_OUT', 'GITHUB_STEP_SUMMARY']) { if (env[k] === undefined) delete process.env[k]; else process.env[k] = env[k]; }
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+  const yml = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'ui-platforms.yml'), 'utf8');
+  assert.ok(/UI_SUITE_RETRY: \$\{\{ matrix\.os != 'ubuntu-latest' && '1' \|\| '0' \}\}/.test(yml), 'FR-138: macOS and Windows retry once, Linux does not');
+}
+await retries();
+console.log('ui-suite: check-parallel and ui-suite install Electron once before their parallel jobs (FR-114)');
 })().catch((e) => { console.error(e); process.exitCode = 1; });

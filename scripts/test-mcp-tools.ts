@@ -7,7 +7,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { MASK_BUDGET_NOTE, MASK_CHARS, MASK_MAX_ENTRIES, SIM_NOTE, createReadToolHandlers, makePathReducer } from '../src/main/mcp/readtools';
-import { MASK_INPUT_MAX } from '../src/shared/redact';
+import { MASK_INPUT_MAX, redact } from '../src/shared/redact';
 import type { ReadToolsDeps } from '../src/main/mcp/readtools';
 import { AgentStateTracker } from '../src/main/mcp/agentstate';
 import { UsageTotalsStore } from '../src/main/usagetotalsstore';
@@ -15,6 +15,8 @@ import type { AgentInfo, McpAmbientView } from '../src/shared/api';
 import type { McpServerView } from '../src/shared/mcp';
 import type { SavedFolder } from '../src/main/folders';
 import { officeTotals } from '../src/shared/usagedoc';
+/** CPU time of this process (user + system) in ms: the cost budgets below use it, never the wall clock, so a loaded machine cannot fail them (AGENTS.md, Timing; issue #940). */
+const cpuMs = (): number => { const c = process.cpuUsage(); return (c.user + c.system) / 1000; };
 
 const text = (t: string) => ({ content: [{ type: 'text' as const, text: t }] });
 const stubs = (): ToolHandlers => {
@@ -279,7 +281,7 @@ async function main(): Promise<void> {
       secretValue: SECRETS.extraPart,
     } as any;
     const mk = (n: number, nf: number, over: Partial<ReadToolsDeps> = {}) => {
-      const folders = Array.from({ length: nf }, (_, i) => folder(i, i === 1 ? { hidden: true, closed: true, label: 'Nice room', floor: 'f-aaaaaaaa', maxAiCredits: 120 } : {}));
+      const folders = Array.from({ length: nf }, (_, i) => folder(i, i === 1 ? { hidden: true, label: 'Nice room', floor: 'f-aaaaaaaa', maxAiCredits: 120 } : {}));
       const agents = Array.from({ length: n }, (_, i) => agentOf(folders[i % nf], i, i === 0 ? { lazy: true } : i === 1 ? { floor: 'f-aaaaaaaa', maxAiCredits: 120, permMode: 'allow' } : {}));
       const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-t016-'));
       const usage = new UsageTotalsStore(path.join(dir, 'u.json'), { delayMs: 1e9, setTimer: () => 0, clearTimer: () => undefined });
@@ -336,9 +338,9 @@ async function main(): Promise<void> {
       const { call, folders } = mk(15, 40);
       const f = (await call('durbar_list_folders')).data.folders;
       assert.strictEqual(f.length, 40);
-      assert.deepStrictEqual(Object.keys(f[1]).sort(), ['adapter', 'agents', 'cap', 'door', 'floor', 'floorOn', 'hidden', 'key', 'mode', 'name']);
+      assert.deepStrictEqual(Object.keys(f[1]).sort(), ['adapter', 'agents', 'cap', 'floor', 'floorOn', 'hidden', 'key', 'mode', 'name']);
       assert.strictEqual(f[1].name, 'Nice room');
-      assert.strictEqual(f[1].door, 'closed');
+      assert.ok(!('door' in f[1]), 'spec 041 FR-066: no door field');
       assert.strictEqual(f[1].hidden, true);
       assert.strictEqual(f[1].cap, 120);
       assert.strictEqual(f[1].floorOn, false, 'the attic is off');
@@ -578,12 +580,12 @@ async function main(): Promise<void> {
         assert.deepStrictEqual(run(pf, ['C:\\Program Files\\nodejs\\node.exe', '/Users/me/Library/Application Support/x/s.js']), ['…/node.exe', '…/s.js'], `${pf}: an arg that starts with a path keeps the whole-arg rule`);
         assert.deepStrictEqual(run(pf, ['type=bind,src=/x/y']), ['type=bind,src=/x/y'], `${pf}: comma pairs stay (documented gap)`);
       }
-      const t0 = Date.now();
+      const t0 = cpuMs();
       const big = makePathReducer(saved, 'linux');
       for (const x of ['/a/'.repeat(70000), '--x='.repeat(40000), 'A=/'.repeat(70000), '"a '.repeat(66000), 'x /a/b '.repeat(28000)]) big(x);
-      const ms = Date.now() - t0;
+      const ms = cpuMs() - t0;
       console.log(`mcp read tools: path reducer on 200k-character inputs in ${ms} ms`);
-      assert.ok(ms < 10000, `path reducer on 200k-character inputs took ${ms} ms`);
+      assert.ok(ms < 10000, `path reducer on 200k-character inputs took ${ms.toFixed(0)} ms of CPU`);
     }
 
     // 12f3. T064 (n): `durbar_mcp_state` with a shell-string CLI entry and a quoted `command`
@@ -656,14 +658,20 @@ async function main(): Promise<void> {
       }
     }
 
-    // 12i. FR-013: 15 agents and 40 folders, every tool, under 200 ms
+    // 12i. FR-013: 15 agents and 40 folders, every tool, under 200 ms. CPU time (user + system), the least of 5 rounds: a busy machine
+    // stretches the wall clock (267 ms seen under load, issue #940) but not the work done, and a tool that does too much work (or a loop) still fails.
     {
       const { call } = mk(15, 40, {});
-      const t0 = process.hrtime.bigint();
-      for (const t of READ_TOOLS) await call(t.name, t.name === 'durbar_request_status' ? { requestId: 'x' } : {});
-      const ms = Number(process.hrtime.bigint() - t0) / 1e6;
-      assert.ok(ms < 200, `all seven read tools took ${ms.toFixed(1)} ms`);
-      console.log(`mcp read tools: 15 agents + 40 folders, all seven tools in ${ms.toFixed(1)} ms`);
+      const round = async (): Promise<number> => {
+        const c0 = process.cpuUsage();
+        for (const t of READ_TOOLS) await call(t.name, t.name === 'durbar_request_status' ? { requestId: 'x' } : {});
+        const c = process.cpuUsage(c0);
+        return (c.user + c.system) / 1000;
+      };
+      let ms = Infinity;
+      for (let r = 0; r < 5; r++) ms = Math.min(ms, await round());
+      assert.ok(ms < 200, `all seven read tools used ${ms.toFixed(1)} ms of CPU (least of 5 rounds)`);
+      console.log(`mcp read tools: 15 agents + 40 folders, all seven tools in ${ms.toFixed(1)} ms of CPU`);
     }
 
     // 12k. T054: the per-string cap (4096 chars, token boundary, ` [truncated]`), applied after the masking
@@ -711,9 +719,9 @@ async function main(): Promise<void> {
       const state = async (entries: Array<Partial<McpAmbientView>>) => {
         // the handler is called directly: a result of megabytes is refused by the session, which is not what is timed here
         const h = createReadToolHandlers(cli(entries).deps);
-        const t0 = process.hrtime.bigint();
+        const t0 = cpuMs();
         const res = await h.durbar_mcp_state({});
-        const ms = Number(process.hrtime.bigint() - t0) / 1e6;
+        const ms = cpuMs() - t0;
         const raw = (res.content[0] as { text: string }).text;
         return { raw, data: JSON.parse(raw), ms };
       };
@@ -776,6 +784,12 @@ async function main(): Promise<void> {
         assert.ok(best < 30, `12l(c0): the over-limit command cost ${best.toFixed(1)} ms (is the scheme pre-pass before the length check?)`);
       }
 
+      // The limit of the budget cases, in this run's terms (spec 012 T138): 20 times `redact` on 1 MB of ordinary text, measured here (about 2 s on the dev machine, as the limit was); uncharged key names took about 70 times, these cases at most about 1.5
+      let budgetYard = 0;
+      const budgetMs = (): number => {
+        if (!budgetYard) { const text = 'word '.repeat(200_000); budgetYard = Infinity; for (let i = 0; i < 3; i++) { const c0 = cpuMs(); redact(text); budgetYard = Math.min(budgetYard, cpuMs() - c0); } }
+        return budgetYard * 20;
+      };
       // (c) cost: a 1 MB CLI file built at run time, three shapes, each answered quickly and with no secret
       {
         const MB = 1_000_000;
@@ -792,7 +806,7 @@ async function main(): Promise<void> {
         for (const [label, entries] of cases) {
           const r = await state(entries);
           console.log(`mcp read tools: 12l ${label}: ${r.ms.toFixed(1)} ms`);
-          assert.ok(r.ms < 2000, `12l(c): ${label} took ${r.ms.toFixed(1)} ms`);
+          assert.ok(r.ms < budgetMs(), `12l(c): ${label} took ${r.ms.toFixed(1)} ms, limit ${budgetMs().toFixed(0)} ms`);
           assert.ok(!r.raw.includes(sec), `12l(c): ${label}: no planted secret`);
           if (label.startsWith('(vi)')) assert.ok(r.data.copilotCli.servers.length <= 400, `12l(c): (vi) lists ${r.data.copilotCli.servers.length} of 25000 entries; a command costs about 0.4 ms, so about 260 is the aim`);
         }
@@ -803,12 +817,12 @@ async function main(): Promise<void> {
         const sv = (n: number): McpServerView => ({ name: `s${n}`, transport: 'stdio', enabled: true, trusted: true, needsSecrets: false, command: 'n', args: Array.from({ length: 64 }, () => 'a') } as any);
         const servers = Array.from({ length: 100 }, (_, n) => sv(n));
         const h = createReadToolHandlers(mk(1, 50, { mcpExtras: () => servers }).deps);
-        const t0 = process.hrtime.bigint();
+        const t0 = cpuMs();
         const res = await h.durbar_mcp_state({});
-        const ms = Number(process.hrtime.bigint() - t0) / 1e6;
+        const ms = cpuMs() - t0;
         const r = { data: JSON.parse((res.content[0] as { text: string }).text) };
         console.log(`mcp read tools: 12l (vii) extras 50 folders x 100 servers x 64 tiny args: ${ms.toFixed(1)} ms`);
-        assert.ok(ms < 2000, `12l(c): extras took ${ms.toFixed(1)} ms`);
+        assert.ok(ms < budgetMs(), `12l(c): extras took ${ms.toFixed(1)} ms, limit ${budgetMs().toFixed(0)} ms`);
         assert.strictEqual(r.data.masking, MASK_BUDGET_NOTE, '12l(c): the budget note is there');
       }
 
@@ -820,13 +834,13 @@ async function main(): Promise<void> {
         const extraList = (k: number): McpServerView[] => Array.from({ length: 10 }, (_, n) => ({ ...typical(1000 + k * 10 + n), transport: 'stdio', enabled: true, trusted: true, needsSecrets: false, env: [{ key: 'API_KEY', set: true }, { key: 'REGION', set: true }], headers: [] }) as any);
         const mkFolders: string[] = [];
         const h = createReadToolHandlers(mk(1, 10, { folders: () => { if (!mkFolders.length) for (let i = 0; i < 10; i++) mkFolders.push(`/work/folder-${i}`); return mkFolders.map((w) => ({ workspace: w, permMode: 'read-only', hidden: false }) as SavedFolder); }, mcpExtras: (k) => extraList(Math.max(0, mkFolders.indexOf(k))), mcpCli: () => ({ cli: cliList.map((e) => ({ ...e, origin: 'copilot-config', transport: 'stdio', enabled: true }) as McpAmbientView), file: { label: 'f', found: true, skipped: 0 }, secretsPersist: false }) }).deps);
-        const t0 = process.hrtime.bigint();
+        const t0 = cpuMs();
         const res = await h.durbar_mcp_state({}); // called directly: the answer is far bigger than the session's frame limit
-        const ms = Number(process.hrtime.bigint() - t0) / 1e6;
+        const ms = cpuMs() - t0;
         const r = { raw: (res.content[0] as { text: string }).text, data: JSON.parse((res.content[0] as { text: string }).text) };
         const nExtra = (r.data.extras as Array<{ servers: unknown[] }>).reduce((n, e) => n + e.servers.length, 0);
         console.log(`mcp read tools: 12l (viii) 200 typical servers: ${ms.toFixed(1)} ms, ${r.raw.length} bytes`);
-        assert.ok(ms < 2000, `12l(d): 200 typical servers took ${ms.toFixed(1)} ms`);
+        assert.ok(ms < budgetMs(), `12l(d): 200 typical servers took ${ms.toFixed(1)} ms, limit ${budgetMs().toFixed(0)} ms`);
         assert.ok(!('masking' in r.data), '12l(d): 200 typical servers fit with no note');
         assert.strictEqual(r.data.copilotCli.servers.length + nExtra, 200, '12l(d): every server is listed');
         assert.ok(!r.raw.includes(R), '12l(d): nothing is hidden');
@@ -837,13 +851,13 @@ async function main(): Promise<void> {
         const keys = Array.from({ length: 128 }, (_, i) => ({ key: `ENV_KEY_NUMBER_${i}`, set: true }));
         const servers = Array.from({ length: 100 }, (_, n) => ({ name: `s${n}`, transport: 'stdio', enabled: true, trusted: true, needsSecrets: false, command: 'n', env: keys, headers: [] }) as any as McpServerView);
         const h = createReadToolHandlers(mk(1, 10, { mcpExtras: () => servers }).deps);
-        const t0 = process.hrtime.bigint();
+        const t0 = cpuMs();
         const res = await h.durbar_mcp_state({});
-        const ms = Number(process.hrtime.bigint() - t0) / 1e6;
+        const ms = cpuMs() - t0;
         const data = JSON.parse((res.content[0] as { text: string }).text);
         const shown = (data.extras as Array<{ servers: Array<{ envKeys: unknown[] }> }>).reduce((n, e) => n + e.servers.reduce((m, v) => m + v.envKeys.length, 0), 0);
         console.log(`mcp read tools: 12l (ix) 10 folders x 100 servers x 128 env key names: ${ms.toFixed(1)} ms, ${shown} key names shown`);
-        assert.ok(ms < 2000, `12l(c): key names took ${ms.toFixed(1)} ms`);
+        assert.ok(ms < budgetMs(), `12l(c): key names took ${ms.toFixed(1)} ms, limit ${budgetMs().toFixed(0)} ms`);
         // each key costs MASK_PER_KEY (100) of the 90 000 units, minus what the servers themselves cost: about 880 are shown
         assert.ok(shown >= 800 && shown <= 900, `12l(c): key names are charged to the budget (${shown} shown of 128000, expected 800-900)`);
         assert.strictEqual(data.masking, MASK_BUDGET_NOTE, '12l(c): the note is there when key names were left out');

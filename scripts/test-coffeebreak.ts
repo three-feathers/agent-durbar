@@ -166,6 +166,15 @@ const mk = (o: Record<string, unknown> = {}): Breaks => C.createBreaks({ now, ..
       }
     }
     assert.ok(!clock.test('1 Nov') && !clock.test('soon'));
+    // shots-097-moments' plate pattern (a run just before midnight UTC read "resumes Tue 12:08 AM" and failed on "resumes at ")
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const mom = require(path.join(__dirname, '..', '..', 'scripts', 'shots-097-moments.js')) as { RESUMES: string };
+    const resumes = new RegExp('^' + mom.RESUMES + '$');
+    for (const loc of ['en-US', 'en-GB']) {
+      const lo = { locale: loc, timeZone: 'UTC' };
+      assert.ok(resumes.test(C.untilText(bn, true, late, lo)), `${loc} after midnight: ${C.untilText(bn, true, late, lo)}`);
+      assert.ok(resumes.test(C.untilText({ ...bn, resetsAt: Date.UTC(2026, 9, 23, 23, 59) }, true, late, lo)), `${loc} same day: ${C.untilText({ ...bn, resetsAt: Date.UTC(2026, 9, 23, 23, 59) }, true, late, lo)}`);
+    }
   }
   const b = { id: 'a', kind: 'provider', phase: 'on', resetsAt: Date.UTC(2026, 9, 21, 14, 30), estimated: false, paid: false, source: '', noAuto: false };
   assert.strictEqual(C.untilText(b, true, n, o), 'resumes at 14:30');
