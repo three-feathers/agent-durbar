@@ -503,7 +503,9 @@ apps, as T176 allows) after them.
   homes, a local 401 OAuth server, 0 credits). `real:` (a) `serverName` with no thread starts only that server; `reload` with no thread
   starts nothing, with a thread it retries the failed remote server and leaves connected local ones running; (b) no server starts until
   `list`, which starts every server that is on (local too) unless they are in `disabledMcpServers`; remote = `needs-auth`; (c) the CLI
-  starts every `--mcp-config` server at process start and answers `mcp_status` before any message. Details: the spec table, agent-apps.
+  starts every `--mcp-config` server at process start and answers `mcp_status` before any message. Round 2 (after the review at
+  69f68ab5): Codex `reload` keeps per-thread overrides but re-runs a failed local server (so no automatic Codex reconnect); Copilot
+  `client.rpc.mcp.config.list` lists the user's servers without starting them. Details: the spec table, agent-apps.
 - [x] T177 **Real expiry check (owner's OK; may need a few prompts, say the cost first)**: a remote OAuth MCP server with a short-lived
   access token and a refresh token, per app: after expiry, does the reconnect of FR-207 renew it without a browser? Results replace the
   table's `[KNOWN GAP]` cells and `docs/limits.md` [FR-207, FR-214]
@@ -521,27 +523,32 @@ apps, as T176 allows) after them.
   FR-206, FR-209, FR-210, FR-216]
 - [ ] T179 Main: the per-chat last-response mark on the turn-end status (`main.ts`, beside `scheduler.turnEnded`), `performance.now()`
   as `now`, `powerMonitor` `resume` marking every chat; forgotten on End session [FR-205]
-- [ ] T180 Adapters: Codex-only `reloadMcpServers` + capability `mcpReload` (`config/mcpServer/reload`, then a list with `threadId` and
-  `serverName`); Copilot's automatic path: `restartServer` only, MethodNotFound = `failed`, no disable/enable, result from `list` 1.5 s
-  later; Copilot's `startNothing` rule accepts a server that last reported `needs-auth`; the Claude SDK transport gets nothing. Fakes that
-  fail if the automatic path calls `startMcpSignIn`, `oauth.login`, `handlePendingRequest`, `complete`, `prepareLogin`,
-  `mcp_authenticate`, `mcp_oauth_callback_url`, `mcp_clear_auth`, `mcpServer/oauth/login`, `account/read` with `refreshToken: true` or
-  `openExternal`; no vendor text in results; a policy-classified error reads `policy` [FR-207, FR-212, FR-214]
+- [ ] T180 Adapters: capability `mcpSignInReconnect` (Copilot and the Claude CLI true; Codex and the Claude SDK transport false, so
+  Codex gets no automatic reconnect, round 2); Copilot's automatic path: `restartServer` only, MethodNotFound = `failed`, no
+  disable/enable, result from `list` 1.5 s later; Copilot's `startNothing` rule accepts a server that last reported `needs-auth` only when
+  it is neither blocked nor in flight. Fakes that fail if the automatic path calls `startMcpSignIn`, `oauth.login`,
+  `handlePendingRequest`, `complete`, `prepareLogin`, `mcp_authenticate`, `mcp_oauth_callback_url`, `mcp_clear_auth`,
+  `mcpServer/oauth/login`, `config/mcpServer/reload`, `account/read` with `refreshToken: true` or `openExternal`; no vendor text in
+  results; a policy-classified error reads `policy` [FR-207, FR-212, FR-214]
 - [ ] T181 Main and the send path: the per-chat `reconnecting` promise awaited by every send path (window, scheduler, queued release); the
   `refreshFlight` map (one reconnect per adapter, server name and URL across chats); `mcpRestartOp`'s `running` Set as a promise map; wait
   at most 5 s, then send; Stop during the wait = *Not sent* with the text back; status events for the two lines; the automatic activity
   row replaces "MCP server X restarted"; an elicitation during an automatic reconnect declined. Tests with fake timers: a reconnect that
   never ends, a failing one, nothing to do (no wait), 15 chats on one server after `resume` = one call, the scheduler waiting [FR-208,
   FR-209, FR-210, FR-214, FR-215]
-- [ ] T182 Launch check `checkMcpSignIns(names)` (names only, never `globalState` entries) for Codex (`serverName` per remote server, no
-  thread), Claude Code (`--mcp-config` with only the remote servers, `--no-session-persistence`, `mcp_status`, no user message) and Copilot
-  (a no-message session with every local server in `disabledMcpServers`, one `list`, then deleted); 20 s per app, closed after; findings
-  into PR #1073's `launchUpdate` with the `auth` key; tests with fakes (timeout, a child that never exits, an unknown status = `unknown`, a
-  local server never started) [FR-204]
+- [ ] T182 Launch check `checkMcpSignIns(names)` (names only, never `globalState` entries; not on macOS; an empty temp working folder;
+  holding each asked server's `refreshFlight`) for Codex (`serverName` per remote server, no thread), Claude Code (the existing private
+  `--mcp-config` launch path, the session builder's map filtered to remote servers, `--no-session-persistence`, `mcp_status`, no user
+  message) and Copilot (`client.rpc.mcp.config.list`, every non-remote entry in `disabledMcpServers`, a no-message session, one `list`,
+  then deleted; any local server not `disabled` = close at once, all `unknown`, check off for Copilot for the run); 20 s per app, closed
+  after; findings into PR #1073's `launchUpdate` with the `auth` key; tests with fakes (timeout, a child that never exits, an unknown
+  status = `unknown`, a local server never started, Copilot's fail-closed stop, a chat waiting on the check's flight, macOS skipped)
+  [FR-204]
 - [ ] T183 The 30-minute recheck: one timer in main, running and idle chats one after the other and awaited, a tick skipped while the
-  last runs, one reconnect on a new `needs-auth` that is not blocked, once at `resume`; stopped when the switch goes off; tests with fake
-  timers [FR-212]
-- [ ] T184 Settings: "Refresh MCP sign-ins automatically" (default on per G5, a stored non-boolean reads as on; FR-213's line) in the settings store, the IPC view
+  last runs; a Copilot chat read only when its needs-auth servers are neither blocked nor in flight, holding their flight while it reads;
+  one reconnect on a new `needs-auth` that is not blocked (adapters with `mcpSignInReconnect` only), once at `resume`; stopped when the
+  switch goes off; tests with fake timers, including 15 Copilot chats with one blocked server that is never contacted [FR-212]
+- [ ] T184 Settings: "Refresh MCP sign-ins automatically" (the default one constant pending G5; a present non-boolean reads off; FR-213's line) in the settings store, the IPC view
   and *Settings > MCP servers*, with its line; off stops T181's plan, T182 and T183; tests [FR-213]
 - [ ] T185 Renderer: the status line "Reconnecting MCP sign-ins (N servers)…", the bound note, the "<name> needs you to sign in again."
   line with **Sign in…** (opens the chat's MCP dialog on that row, FR-194's path), *Not sent* with the text back; `role="status"`, no

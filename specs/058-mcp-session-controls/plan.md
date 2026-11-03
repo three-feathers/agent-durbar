@@ -384,7 +384,7 @@ and one Settings switch (default on). Builds on PR #1073's launch strip and Sett
 ### Constitution check (delta)
 
 - I: spec delta and tasks first; implementation after PR #1073.
-- II: two optional adapter members (`checkMcpSignIns`, Codex-only `reloadMcpServers`) with capabilities; main stays vendor-free.
+- II: one optional adapter member (`checkMcpSignIns`) and the capability flags `mcpSignInCheck`, `mcpSignInReconnect`; main stays vendor-free.
 - III: no token, credential file or keychain item is read, stored, logged or passed; the agent app refreshes. Only names and fixed words
   reach the window and logs; no shell.
 - IV: pure planner with an injected clock, fakes and the simulator; T176/T177 ran 2026-11-03 with the owner's OK (0 AI credits).
@@ -401,17 +401,22 @@ and one Settings switch (default on). Builds on PR #1073's launch strip and Sett
   map keyed by adapter, server name and URL so one reconnect runs per server across chats (FR-210); `mcpRestartOp`'s `running` Set becomes a
   promise map so a second caller awaits the same restart.
 - Send path (`src/main/ipc/agents.ts` `agents:send`, the schedule send): plan -> per server, the flight's promise or a new one
-  (Copilot/Claude `restartMcpServer` through `mcpRestartOp`, then a re-read; Codex the new `reloadMcpServers`) -> `Promise.race` with the
-  5 s bound -> `sendOp`.
+  (Copilot/Claude `restartMcpServer` through `mcpRestartOp`, then a re-read; Codex nothing, round 2) -> `Promise.race` with the 5 s
+  bound -> `sendOp`.
 - Copilot's automatic path calls `restartServer` only (no disable/enable fallback) and reads the result from `list` 1.5 s later (T177).
 - Turn end (`main.ts` status handler) sets the last-response mark; `powerMonitor` `resume` marks every chat.
 - Recheck: one main timer, chats one after the other and awaited, a tick skipped while the last runs, over `mcpRefreshOp(..., startNothing)`;
-  Copilot's `startNothing` rule also accepts a server that last reported `needs-auth`.
-- Launch: after detection, `checkMcpSignIns(names)` per capable, signed-in app (Codex `serverName` list, Claude `mcp_status` with only remote
-  servers in its `--mcp-config`, Copilot a no-message session with local servers disabled), into PR #1073's `launchUpdate`.
-- Settings: one boolean in the settings store and `AppSettingsView`; the wording of FR-213.
+  Copilot's `startNothing` rule also accepts a server that last reported `needs-auth` when it is neither blocked nor in flight, and the
+  read holds that server's flight.
+- Launch (not on macOS): after detection, `checkMcpSignIns(names)` per capable, signed-in app, holding each server's flight, in an empty
+  temp folder (Codex `serverName` list; Claude through the existing private `--mcp-config` launch path with the session builder's map
+  filtered to remote servers; Copilot `mcp.config.list` -> every non-remote entry disabled -> a no-message session -> `list`, stopping and
+  switching the check off for the run if a local server is not disabled), into PR #1073's `launchUpdate`.
+- Settings: one boolean in the settings store and `AppSettingsView`; a present non-boolean reads off; the default is one constant pending
+  G5; the wording of FR-213.
 
 ### Order
 
 T176 and T177 done (2026-11-03). T178 -> T179 -> T180 -> T181 -> T184 -> T185 -> T183 -> T182 -> T186 -> T187; T188, T189 last. G5
-(Paco's answer) and G6 may change one planner input or FR-207's Copilot line; G3 waits for a Mac check.
+(Paco's answer) and G6 may change one constant or FR-207's Copilot line; G3 (and the macOS launch check) waits for a Mac check; G7 is a
+later delta.
