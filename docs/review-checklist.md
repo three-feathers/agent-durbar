@@ -104,7 +104,7 @@ On 2026-10-23 Vikram's agent grouped the ~1,100 *Required fixes* in reviews of ~
 
 ## UI and accessibility
 
-- [ ] **Dialog semantics**: `role="dialog"`/`alertdialog` with `aria-modal`, the guard (focus trap, keys) tested, menus with consistent `menu`/`menuitem`. [#597](https://github.com/three-feathers/agent-durbar/pull/597), [#632](https://github.com/three-feathers/agent-durbar/pull/632)
+- [ ] **Dialog semantics**: `role="dialog"`/`alertdialog`, `aria-modal`, guard (focus trap, keys) tested, consistent `menu`/`menuitem`; outside clicks: `DurbarDialog.onBackdrop`/`isOutsideClick` (FR-237). [#597](https://github.com/three-feathers/agent-durbar/pull/597), [#632](https://github.com/three-feathers/agent-durbar/pull/632)
 - [ ] **A refusable action says so**: the handler returns whether it acted, the UI announces success only then, the button is disabled with the reason. [#640](https://github.com/three-feathers/agent-durbar/pull/640)
 - [ ] **Announcements reach a screen reader** (live region used and tested); focus lands sensibly after Escape. [#622](https://github.com/three-feathers/agent-durbar/pull/622)
 - [ ] **Theme tokens, not literals**; check one dark and one non-default theme. [#530](https://github.com/three-feathers/agent-durbar/pull/530), [#588](https://github.com/three-feathers/agent-durbar/pull/588)
@@ -122,7 +122,7 @@ On 2026-10-23 Vikram's agent grouped the ~1,100 *Required fixes* in reviews of ~
 ## Reuse and docs
 
 - [ ] **Search for an existing helper, predicate, dialog or matcher** first (`git grep` the concept) and name it in the PR. [#628](https://github.com/three-feathers/agent-durbar/pull/628)
-- [ ] **Docs in the same PR**: `changelog.d/` fragment, `specs-index` status, task ticked, README and notes. [#535](https://github.com/three-feathers/agent-durbar/pull/535)
+- [ ] **Docs in the same PR**: `changelog.d/` fragment, `specs-index` status, task ticked, README, notes, `feature-inventory.md` row. [#535](https://github.com/three-feathers/agent-durbar/pull/535)
 
 ## How we review
 

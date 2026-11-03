@@ -46,6 +46,7 @@ const DRIVERS = [
   { name: 'check-status-tooltip' }, // spec 001 FR-187 (issue #875): the instant tooltip on the status counts: hover, keyboard focus, Escape, wording with the filter on and off, inside the window, clear of the pill, every theme, Serious mode
   { name: 'check-list-columns' }, // spec 001 FR-182..FR-184 (issues #812, #813): List columns follow their content and every cut cell keeps its text; the room's whole bottom wall; the header pencil without a tile
   { name: 'check-rename-inline' }, // spec 059 FR-027 (issue #636): rename in place on every surface, both sizes
+  { name: 'check-edit-popups' }, // spec 052 FR-237: every text popup stays open through a drag that ends outside, Ctrl/Cmd+A and live events, both sizes
   { name: 'check-session-summary' }, // spec 085 FR-003/FR-007: the card shown in the chat when a session ends (simsummary=1), both sizes
   { name: 'shots-044-everywhere' },
   { name: 'shots-044-templates' },
@@ -67,6 +68,7 @@ const DRIVERS = [
   { name: 'shots-058-mcp-signin' }, // spec 058 T102/T104: Sign in for a Copilot server that needs it (simmcpauth), the two-step open, the steps
   { name: 'shots-058-mcp-words' }, // spec 058 T113-T115: state words, hints, Details and live refresh in the MCP dialog
   { name: 'shots-058-mcp-settings' }, // spec 058 FR-080..FR-086 (#596): live MCP state over the running chats in Settings
+  { name: 'shots-058-mcp-launch' }, // spec 058 FR-195..FR-203: MCP health strip at launch; Sign in, Sign in again and Restart where it failed in Settings
   { name: 'shots-076-orgpolicy' }, // spec 076 FR-202..FR-205 (#602): what the agent app's own organization policy blocks, greyed with the reason
   { name: 'shots-058-mcp-health' }, // spec 058 FR-090..FR-096 (#603): failure reason, when, Copy diagnostics (masked), the MCP chip dot
   { name: 'shots-058-mcp-refresh' }, // spec 058 FR-187..FR-192 (#779): the last call's outcome on a Running row, Refresh and the re-read on open

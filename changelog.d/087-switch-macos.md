@@ -1,0 +1,1 @@
+- **Copilot's sandbox switch checked on macOS** (spec 087 K16, issue 834): a real probe shows the OS sandbox clears in place on a switch to Allow all and comes back on the way out, as on Linux. The probe's own cleanup now handles what macOS leaves behind. No change in the app.

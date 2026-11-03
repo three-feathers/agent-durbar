@@ -4024,7 +4024,7 @@ function openInbox(focusId){
       const dl=d.querySelector('.inbox-dlg');dl.insertBefore(hd,dl.firstChild);
     }}
   document.body.appendChild(d);
-  d.addEventListener('click',e=>{if(e.target===d)closeInbox();});
+  DurbarDialog.onBackdrop(d,closeInbox); /* spec 052 FR-237: a drag that only ends on the backdrop keeps it */
   d.addEventListener('keydown',inboxKey);
   $('inboxClose').onclick=closeInbox;
   /* FR-059: a notification opens the inbox on its agent's row */
@@ -4196,7 +4196,8 @@ function openPalette(opts){
   d.innerHTML='<div class="dlg pal-dlg" role="dialog" aria-modal="true" aria-label="Command palette"><div class="pal-top"><p class="pal-crumb" id="palCrumb" hidden></p><input id="palIn" type="text" role="combobox" aria-expanded="true" aria-controls="palList" aria-autocomplete="list" aria-activedescendant="" aria-label="Search agents, folders and actions" placeholder="Search agents, folders and actions…" autocomplete="off" spellcheck="false"></div><div class="pal-list" id="palList" role="listbox" aria-label="Results"></div><p class="pal-foot" id="palFoot" aria-hidden="true">'+PAL_FOOT+'</p></div>';
   document.body.appendChild(d);
   const inp=$('palIn');
-  d.addEventListener('click',e=>{if(e.target===d){closePalette();return;}const o=e.target.closest('[role="option"]');if(o)palRun(+o.dataset.i);});
+  DurbarDialog.onBackdrop(d,closePalette); /* spec 052 FR-237: a drag from the search field that ends on the backdrop keeps it */
+  d.addEventListener('click',e=>{if(e.target===d)return;const o=e.target.closest('[role="option"]');if(o)palRun(+o.dataset.i);});
   d.addEventListener('mousemove',e=>{const o=e.target.closest('[role="option"]');if(o&&+o.dataset.i!==palActive)palSetActive(+o.dataset.i);});
   d.addEventListener('keydown',e=>{
     /* spec 074 FR-002: the navigator shortcut closes the navigator, or turns Ctrl+K's search into the navigator */
@@ -4339,7 +4340,7 @@ function openKbdHelp(back){
   const d=document.createElement('div');d.id='kbdDlg';d.className='dlg-ov';
   d.innerHTML='<div class="dlg kbd-dlg" role="dialog" aria-modal="true" aria-labelledby="kbdT"><h3 id="kbdT">Keyboard shortcuts</h3><div class="kb-cols"><div class="kb-col"><table class="kb-t"><tbody>'+rows.map(r=>row(r[0],r[1],r[2])).join('')+'</tbody></table><h4 class="kb-h">In the list view</h4><table class="kb-t"><tbody>'+inList.map(r=>r.length===3?row(r[0],r[2],r[1]):row(r[0],r[1])).join('')+'</tbody></table><h4 class="kb-h">In Go to (the navigator)</h4><table class="kb-t"><tbody>'+inNav.map(r=>row(r[0],r[1])).join('')+'</tbody></table></div><div class="kb-col"><h4 class="kb-h">In the Needs you inbox</h4><table class="kb-t"><tbody>'+inbox.map(r=>r.length===3?row(r[0],r[2],r[1]):row(r[0],r[1])).join('')+'</tbody></table><h4 class="kb-h">In a chat that waits for you</h4><table class="kb-t"><tbody>'+inChat.map(r=>row(r[0],r[1])).join('')+'</tbody></table><h4 class="kb-h">In the Browser tab</h4><table class="kb-t"><tbody>'+inBrowser.map(r=>row(r[0],r[1])).join('')+'</tbody></table></div></div><div class="dbtn"><button class="btn" type="button" id="kbdClose">Close</button></div></div>';
   document.body.appendChild(d);
-  d.addEventListener('click',e=>{if(e.target===d)closeKbdHelp();});
+  DurbarDialog.onBackdrop(d,closeKbdHelp); /* spec 052 FR-237 */
   d.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();closeKbdHelp();}else if(e.key==='Tab'){e.preventDefault();focusIn($('kbdClose'));}});
   $('kbdClose').onclick=closeKbdHelp;
   /* spec 052 (2026-10-21, round 1): focusing Close must not scroll the sheet to its end (the title and Ctrl K were hidden at 1280x800) */
@@ -4488,6 +4489,46 @@ async function renderAwayStrip(){
     try{r=await bridge.runScheduleNow(b.dataset.awrun);}catch(err){r={ok:false,error:String(err&&err.message||err)};}finally{done();}
     if(r&&r.ok){const it=b.closest('.aw-it');b.remove();if(it)it.insertAdjacentHTML('beforeend','<span class="aw-ok">Sent</span>');toast('Sent the scheduled prompt now.',3200).classList.add('ok');}
     else toast('Could not run it: '+esc((r&&r.error)||'unknown error'),5000).classList.add('err');
+  });
+  scheduleRender();
+}
+/* spec 058 FR-199..FR-202: MCP servers that need attention since the app started. Part 1 reads only the agent apps' lists (main looked
+   their commands up, FR-198); part 2 only what connecting chats report anyway. Nothing is started, switched or sent; fixes are pressed by the person. */
+const mcpL={on:false,t0:0,closed:false,open:false,items:new Map()};
+const mcpLW=()=>window.DurbarMcpWords;
+async function mcpLaunchStart(){
+  if(mcpL.on||demoOn||!bridge||!mcpLW()||(sim&&qs.get('simmcplaunch')!=='1'))return;
+  mcpL.on=true;mcpL.t0=performance.now(); /* a monotonic clock: the 10-minute window (launchYoung) ignores wall-clock changes */
+  let g=null;try{g=bridge.mcpGlobalState?await bridge.mcpGlobalState():null;}catch(e){g=null;}
+  mcpL.items=new Map([...mcpLW().fileFindings(g).map(f=>[f.key,f]),...mcpL.items]); /* the lists first, then the chats that reported meanwhile */
+  paintMcpStrip();
+}
+/* an `mcp` report, a failed MCP tool call with the policy word, or a successful MCP call: DurbarMcpWords.launchUpdate decides (pure, tested) */
+function mcpLaunchSeen(a,e){
+  if(!mcpL.on||mcpL.closed||!a||e.agentId)return;
+  const r=liveRoot(a)||a, W=mcpLW();
+  if(W.launchUpdate(mcpL.items,e,{id:r.id,name:r.name,app:mcpOpts(r).appName},W.launchYoung(mcpL.t0,performance.now())))paintMcpStrip();
+}
+function paintMcpStrip(){
+  const el=$('mcpStrip');if(!el)return;
+  const list=[...mcpL.items.values()];
+  if(mcpL.closed||!list.length){if(!el.hidden){el.hidden=true;el.innerHTML='';scheduleRender();}return;}
+  const shown=list.slice(0,5), more=list.length-shown.length, n=list.length;
+  const names=[...new Set(list.map(f=>f.name))], few=names.slice(0,3).join(', ')+(names.length>3?' and others':'');
+  /* FR-200: one line by default (the office keeps its room); List… opens the reasons and fixes */
+  el.innerHTML='<span class="ns-ic" aria-hidden="true">i</span><span class="ns-t"><b>'+(n===1?'1 MCP problem needs':n+' MCP problems need')+' attention</b> (found since the app started): '+esc(few)+'. Nothing was changed; each fix is yours to press.</span>'+
+    '<span class="ns-act"><button class="btn" type="button" data-ml="list" aria-expanded="'+(mcpL.open?'true':'false')+'" aria-controls="mcpList">'+(mcpL.open?'Hide list':'List…')+'</button><button class="btn" type="button" data-ml="settings">Open MCP settings</button><button class="btn" type="button" data-ml="close">Dismiss</button></span>'+
+    (mcpL.open?'<span class="aw-list ml-list" id="mcpList" role="list" aria-label="MCP servers that need attention">'+shown.map(f=>'<span class="aw-it" role="listitem" data-mlk="'+esc(f.key)+'"><span class="aw-w ml-w"><b>'+esc(f.name)+'</b> <small>'+esc(f.where||'')+'</small>: '+esc(f.reason)+'. '+esc(f.fix)+'</span><button class="btn" type="button" data-mlshow="'+esc(f.key)+'" aria-label="'+esc('Show '+f.name+(f.where?' ('+f.where+')':''))+'">Show</button></span>').join('')+
+    (more?'<span class="aw-it" role="listitem"><span class="aw-w">and '+more+' more in Settings &gt; MCP servers.</span></span>':'')+'</span>':'');
+  el.hidden=false;
+  el.querySelector('[data-ml="close"]').onclick=()=>{mcpL.closed=true;paintMcpStrip();};
+  el.querySelector('[data-ml="list"]').onclick=()=>{mcpL.open=!mcpL.open;paintMcpStrip();const b=el.querySelector('[data-ml="list"]');if(b)focusIn(b,{reveal:false});};
+  el.querySelector('[data-ml="settings"]').onclick=()=>window.DurbarScreens.openSettings('mcp');
+  el.querySelectorAll('[data-mlshow]').forEach(b=>b.onclick=()=>{
+    const f=mcpL.items.get(b.dataset.mlshow);if(!f)return;
+    const r=f.kind==='chat'&&liveById(f.chatId);
+    if(r&&r.live){openPanel(r.id,false);Promise.resolve(window.DurbarScreens.agentMcp(r,mcpOpts(r))).finally(()=>refreshMcpCount(r));}
+    else window.DurbarScreens.openSettings('mcp');
   });
   scheduleRender();
 }
@@ -5136,11 +5177,11 @@ function chipRepaint(c){
    shows nothing. Undo is the grant chips' own revoke (bridge.revokeGrant). The words come from DurbarWhyAllowed. ---- */
 const WHY=window.DurbarWhyAllowed, WHY_KEEP=400;
 function whyNote(a,p){
-  if(!p||!p.allowedBy||typeof p.requestId!=='string'||!p.requestId||!WHY||!WHY.describe(p.allowedBy,null))return;
-  const m=a.why||(a.why=new Map());m.set(p.requestId,p.allowedBy);
+  if(!p||!p.allowedBy||typeof p.requestId!=='string'||!p.requestId||!WHY||p.requestId.length>WHY.ID_MAX||!WHY.describe(p.allowedBy,null))return;
+  const m=a.why||(a.why=new Map());const by=WHY.keep(m.get(p.requestId),p.allowedBy);m.set(p.requestId,by);
   while(m.size>WHY_KEEP)m.delete(m.keys().next().value);
   const c=a.turn&&a.turn.T.chipEls[p.requestId];
-  if(c)whySet(a,c,p.allowedBy,p.requestId);
+  if(c)whySet(a,c,by,p.requestId);
 }
 function whyAttach(a,T,callId){const by=a.why&&a.why.get(callId),c=T.chipEls[callId];if(by&&c)whySet(a,c,by,callId);}
 function whySet(a,c,by,callId){
@@ -5533,7 +5574,7 @@ function openCapDialog(a){
   };
   $('cdCancel').onclick=closeCapDlg;$('cdNone').onclick=()=>apply(null);
   $('cdSave').onclick=()=>{const v=parseFloat($('cdVal').value);if(!(v>=min)||v>(usd?1e4:1e6)){const er=$('cdErr');er.textContent=usd?'Enter an amount from $'+MIN_USD_CAP+' to $10,000, or use Remove limit.':'Enter a number from '+MIN_CAP+' (the runtime minimum), or use Remove limit.';er.hidden=false;return;}apply(Math.round(v*100)/100);};
-  d.addEventListener('click',e=>{if(e.target===d)closeCapDlg();});
+  DurbarDialog.onBackdrop(d,closeCapDlg); /* spec 052 FR-237: a drag from the amount that ends on the backdrop keeps it */
   d.addEventListener('keydown',e=>{if(e.key==='Escape'){e.stopPropagation();closeCapDlg();}if(e.key==='Enter'&&e.target.id==='cdVal')$('cdSave').click();});
   focusIn($('cdVal'));
 }
@@ -6073,6 +6114,7 @@ let statsRefresh=0;
 function feedStats(a,e){
   /* spec 058 FR-083: Settings' live MCP list follows a chat that stops or becomes ready again */
   if(e.type==='status'&&(e.status==='stopped'||e.status==='idle')&&!e.agentId&&window.DurbarScreens.liveEvent)window.DurbarScreens.liveEvent(a.id);
+  if(e.type==='mcp'||(e.type==='toolCall'&&(e.phase==='failed'||e.phase==='complete')&&e.mcpServer))mcpLaunchSeen(a,e); /* spec 058 FR-199 part 2 */
   /* sub-agent events are counted for the agent that owns them (a.id is the session) */
   if(e.type==='toolCall')STATS.recordTool(a.id,e);
   else if(e.type==='usage')STATS.recordModel(a.id,e.model);
@@ -7411,7 +7453,7 @@ function newSession(a0,o){
     if($('sdAgentDef'))$('sdAgent').onchange=()=>{$('sdAgentDef').checked=!!$('sdAgent').value&&$('sdAgent').value===a.info.defaultAgent;};
     $('sdAgentL').dataset.ready='1';agentRow();
   }).catch(()=>undefined);
-  d.addEventListener('click',e=>{if(e.target===d)closeSessDlg();});
+  DurbarDialog.onBackdrop(d,closeSessDlg); /* spec 052 FR-237 */
   $('sdCancel').onclick=closeSessDlg;
   $('sdGo').onclick=async()=>{
     if($('sdPerm').value==='allow'&&!(await confirmAllow(roomOf(a).name)))return;
@@ -7719,7 +7761,7 @@ function openSchedules(r,from,opts){
     return input;
   };
   d.addEventListener('click',async e=>{
-    if(e.target===d){closeSchedDlg();return;}
+    if(e.target===d)return; /* the backdrop: DurbarDialog.onBackdrop below (spec 052 FR-237) */
     const b=e.target.closest('button');if(!b)return;
     if(b.id==='scClose'){closeSchedDlg();return;}
     if(b.id==='scCancel'){stopEdit();return;}
@@ -7744,6 +7786,7 @@ function openSchedules(r,from,opts){
   $('scTarget').addEventListener('change',()=>{$('scToHint').hidden=!$('scTarget').value;syncCap();});
   applyTgt();
   if(opts&&opts.edit){const s=SCHED.schedules.find(x=>x.id===opts.edit);if(s)startEdit(s);}
+  DurbarDialog.onBackdrop(d,closeSchedDlg); /* spec 052 FR-237: a drag from the prompt that ends on the backdrop keeps the dialog */
   d.addEventListener('keydown',e=>{if(e.key==='Escape'){e.stopPropagation();closeSchedDlg();}});
   /* spec 044 FR-006: a template fills the form (prompt and when); nothing is saved until Add schedule */
   const tpl=$('scTpl');if(tpl)tpl.addEventListener('change',()=>{
@@ -8353,7 +8396,7 @@ document.addEventListener('click',e=>{
   const fb=e.target.closest('.floors-ui [data-fl]');
   if(fb&&fb.tagName==='BUTTON'){floorAction(fb);return;}
   const fpop=$('floorsPop');
-  if(fpop&&!fpop.hidden&&!e.target.closest('#floorsPop')&&!e.target.closest('#floorsBtn')&&!e.target.closest('#modeDlg'))toggleFloors(false);
+  if(fpop&&!fpop.hidden&&!e.target.closest('#modeDlg')&&DurbarDialog.isOutsideClick(e,[fpop,$('floorsBtn')]))toggleFloors(false); /* spec 052 FR-237: a drag from the new floor name that ends outside keeps it */
   const f=e.target.closest('[data-fp]');
   if(f){const r=ROOMS.find(x=>x.id===f.dataset.room);if(!r)return;
     if(f.dataset.fp==='new'){const ag=agents.find(x=>!x.parent&&x.room===r.id);toggleFolders(false);if(ag)newSession(ag);}
@@ -8363,7 +8406,7 @@ document.addEventListener('click',e=>{
     else if(f.dataset.fp==='sched')openSchedules(r);
     return;}
   const pop=$('foldersPop');
-  if(!pop.hidden&&!e.target.closest('#foldersPop')&&!e.target.closest('#foldersBtn'))toggleFolders(false);
+  if(!pop.hidden&&DurbarDialog.isOutsideClick(e,[pop,$('foldersBtn'),document.querySelector('.inl-layer')]))toggleFolders(false); /* spec 052 FR-237: a click in a folder's rename-in-place field (its own layer over the panel), or a drag from it that ends outside, keeps the panel */
 });
 
 /* After adding a folder: if it already has earlier Copilot sessions or VS Code chats, say so and show them. */
@@ -8479,6 +8522,7 @@ if(bridge){
   bridge.listAgents().then(l=>{l.forEach(addLiveAgent);agentsListed=true;renderFilter();if(bridge.floorsState)bridge.floorsState().then(applyFloors).catch(()=>{});renderRestoreStrip();
     restoreUi();renderAwayStrip(); /* spec 052 FR-087 / FR-089 */
     renderCrashStrip(); /* spec 006 FR-041 */
+    void mcpLaunchStart(); /* spec 058 FR-199 */
     /* spec 052 FR-059: what already needs you a few seconds after start is remembered, not notified */
     setTimeout(()=>{renderInboxBtn();ATT_ARMED=true;},3000);});
   loadModels();

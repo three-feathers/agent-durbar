@@ -49,7 +49,8 @@ import * as path from 'path';
 import { PRODUCTION_DESCRIPTORS } from '../adapters/descriptors';
 import { offeredDescriptors } from '../adapters/experimental';
 import { createRegistry, detectAll } from '../adapters/registry';
-import { configureDevClaudeBin, detectorFor, setLoginPath } from '../adapters/detect';
+import { configureDevClaudeBin, detectorFor, nodeDetectEnv, setLoginPath } from '../adapters/detect';
+import { missingChecker } from './mcpcmdcheck';
 import { mergeLoginPath, nodeLoginPathDeps, readLoginShellPath } from './loginpath';
 import { renameOp, titleSyncOf } from './sessionnames';
 import { adapterForAdd, createRouter, previousSessionsOf } from '../adapters/router';
@@ -205,7 +206,18 @@ const mcp = registerMcpIpc({
   costs: () => mcpCostStore,
   globalList: (app) => { const a = globalLists.state(() => []).apps.find((x) => x.app === app); return a && !a.error ? a.servers.map((v) => v.name) : undefined; }, // spec 100 FR-012
 });
-registerMcpGlobalIpc({ lists: () => globalLists, offList: () => mcpStore?.ambientDisabled() ?? [], setOff: (k, off) => mcpStore?.setAmbientDisabled(k, off) });
+// spec 058 FR-198: each searched folder read once (async readdir, 10 s cache), names looked up in sets; network paths never read
+const mcpMissing = missingChecker(nodeDetectEnv, (dir) => fs.promises.readdir(dir, { withFileTypes: true }).then((l) => l.filter((d) => d.isFile() || d.isSymbolicLink()).map((d) => d.name)));
+registerMcpGlobalIpc({
+  lists: () => globalLists,
+  offList: () => mcpStore?.ambientDisabled() ?? [],
+  setOff: (k, off) => mcpStore?.setAmbientDisabled(k, off),
+  // spec 058 FR-198: after the login shell's PATH was read (once, at most 3 s)
+  check: async (s) => {
+    await loginPathReady();
+    return mcpMissing(s);
+  },
+});
 /** Files the user picked through the native dialog; only these can be attached. */
 const pickedFiles = new Set<string>();
 /** Private folder for pasted / dropped files (removed on quit). */

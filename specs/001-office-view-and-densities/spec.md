@@ -143,6 +143,10 @@ Animations are subtle, CSS-only in compact densities and stop under reduced-moti
 
 ## Changes
 
+### 2026-11-03: `check-unread` waits for the announcement (spec 021 FR-048b)
+
+`sim:` The driver read the screen-reader announcement of *Mark as read* once, right after the marker cleared; `announce()` writes its text 60 ms later, so the read could come first (1 of 2 runs failed on a Mac on `main`). It now waits with `until()`, and still fails when nothing is announced. Nothing in the app changes.
+
 ### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
 
 The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):

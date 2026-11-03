@@ -247,6 +247,12 @@ Other specs: #921 (097 P1), #936 and 097 T156..T159 (gate), 098's checks, 096 (P
 
 **Parallel**: T010, T011 in P1; worlds in P4 (limited by art batches and the owner's looks, not by code); T055, T058 in P5.
 
+## Delta 2026-11-02: helpers as kids and the Terminal world's row (FR-271, FR-272)
+
+- [ ] T233 The `panes` arrangement: pure layouts (groups, main, tiled) for 1 to 15 agents, joining FR-226's list. Test: `test:realoffice-layout`; a status change gives equal rectangles; mutant: reorder on status [FR-272]
+- [ ] T234 Terminal world's build after the next built-in world: shades as token sets (Green, Amber, White, Paper), each through 070 D4. Test: `test:theme-tokens`, `check:office` at both sizes, owner's look; nothing in public notes before it ships [FR-272]
+- [ ] T235 `helpers` as a registered moment, required in each world's cell; kids in Flat and the Photo office first, then each world's art. Test: spec 098's registry check fails a missing cell, a simulator driver for 15 agents with helpers, 3 kids and `+N`; mutant: no `+N` [FR-271]
+
 ## Delta 2026-11-02: petrol garage, founders' garage and rooftop terrace (FR-280..FR-299)
 
 Starts after the next built-in world's stack lands (FR-296, decided Q4). All behind closed flags (FR-294, decided Q2). 0 AI credits except T250..T253: each image run waits for the owner's written yes, after checking the plan's usage (Q1). **How they land (decided, Q11, the named exception):** T244, T247's scene and T248 alone; T241, T246 on a branch; one PR per world with its table, pack, flag and cells (T259, T254); the first also brings T242, T243, T245, T249, T258. A world over 30 days behind its flag after landing goes back to the owner: open it or remove its code and pack. Each new rule gets a planted mutation; driver waits use `until()`.
@@ -279,3 +285,8 @@ Starts after the next built-in world's stack lands (FR-296, decided Q4). All beh
 - [ ] T255 Per world, separately: `check-perf --record` against Photo office in the same run; the owner's look at 3, 4, 8, 15 at both sizes with a video; `distinct-check`; the flag opens only then, and the PR that opens it brings README and `docs/features.md`, a `changelog.d` fragment and any linked screenshots, since nothing names the world publicly before it ships. Ruben's look asked for. Test: `real:` recorded by whoever has the Mac, and the owner's look in `ASSETS.md`; `test:world-catalogue` fails without it [FR-017, FR-035, FR-297, SC-036]
 - [ ] T256 Lines in 097 and 098 (FR-299) and FR-271's clay reading, Photo office included (Q5), once the PRs holding them land; real lines at narrow glass beside `aisles`; world design guide read again. Test: `npm run specs:check`, `read:` [FR-293, FR-299]
 - [ ] T257 On demand, when the store lands (decided, Q3): move each folder to `three-feathers/agent-durbar-worlds`, two pull requests by FR-243, a pinned hash, T249's line removed, a `coming` row, then `available`. Test: `test:world-catalogue`, T195's job, `real:` T043's download; a file-list test: no such art in this repository [FR-240, FR-241, FR-243, FR-294]
+
+## 2026-11-03: Settings shows worlds as pictures (FR-300..FR-305)
+
+- [ ] T265 Previews: `simscene=preview` in the simulator; a driver takes one per built-in world with its zoom origin, under 48 KB each, and the character groups by a pure script from shipped pictures, under 64 KB each; `shots:docs` retakes them. Test: the driver at 1440x900 finds three people at desks and no slip, notice or bubble in each; `test:realoffice-assets` lists them [FR-302, FR-303]
+- [ ] T266 The World section, Characters under it, Theme and Office layout removed, the migration; with or after T230. Test first: the migration table once and twice; `check-settings-worlds` at both sizes, keyboard, focus against choice, forced colours, a flagged world absent, a catalogue world greyed with no fetch on opening Settings; zoom by `transform` with no layout shift and none under Reduced motion, the catalogue thumbnail or the placeholder, character cards as big as world cards with no face under 24 px, the changelog line; mutants: a fetch on open, focus drawn like choice, a zoom that moves the grid [FR-300, FR-301, FR-303..FR-305]

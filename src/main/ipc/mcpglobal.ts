@@ -3,7 +3,7 @@
  * with the single-use token), and nothing is written before the user confirmed the per-file review in the window (FR-005).
  */
 import { ipcHandle } from '../ipcguard';
-import type { GlobalApp } from '../../shared/api';
+import type { GlobalApp, GlobalState } from '../../shared/api';
 import { claudeOffKey, GLOBAL_APPS, offOf } from '../mcpglobal';
 import type { GlobalLists } from '../mcpglobalio';
 
@@ -12,10 +12,16 @@ export interface McpGlobalIpcDeps {
   /** The Settings off-list (`McpStore.ambientDisabled`). */
   offList(): string[];
   setOff(key: string, off: boolean): void;
+  /** Spec 058 FR-198: marks the stdio servers whose command is not found (a file lookup only). */
+  check?(state: GlobalState): Promise<GlobalState>;
 }
 
 export function register(deps: McpGlobalIpcDeps): void {
-  ipcHandle('mcp:globalState', () => deps.lists().state((app) => offOf(app, deps.offList())));
+  ipcHandle('mcp:globalState', async () => {
+    const s = deps.lists().state((app) => offOf(app, deps.offList()));
+    if (!deps.check) return s;
+    try { return await deps.check(s); } catch { return s; } // the lookup never hides the lists
+  });
   ipcHandle('mcp:globalPreview', (_e, input: unknown, apps: unknown, mode: unknown) => deps.lists().preview(input, apps, mode));
   ipcHandle('mcp:globalApply', (_e, token: unknown, replace: unknown) => deps.lists().apply(token, replace));
   ipcHandle('mcp:globalRemovePreview', (_e, name: unknown, apps: unknown) => deps.lists().removePreview(name, apps));
