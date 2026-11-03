@@ -1,6 +1,7 @@
 /**
  * Spec 099 (Autopilot), the shared core: pure, no SDK, no I/O, no timers. All three adapters use it, so the rules are written once.
- * Phase 1 only: nothing in the adapters or in main calls this yet, and no descriptor reports `capabilities.autopilot`.
+ * Phase 1 only: no adapter and no main code starts a run, and no descriptor reports `capabilities.autopilot`. One live use: `claudeHistory.ts`
+ * (`typedPrompt`, the Previous-sessions list and chat history) calls `isClaudeContinuation` to hide a synthetic `Stop hook feedback:` message.
  */
 
 import { isObj } from '../shared/guards';
@@ -290,8 +291,8 @@ export type GoalTextResult = { ok: true; text: string } | { ok: false; reason: '
 
 /** Hidden characters removed from a goal: `HIDDEN_ALL_RE` plus the bidi marks it leaves (LRM, RLM, ALM, the deprecated U+206A-F) and the tag characters. ZWNJ and ZWJ stay: real scripts need them. */
 const GOAL_HIDDEN_RE = /[\u200e\u200f\u061c\u206a-\u206f]|[\u{e0000}-\u{e007f}]/gu;
-/** A visible character: not white space, a joiner, a control, a format character or a blank-looking one (braille blank, Hangul fillers, variation selectors, Mongolian free variation selectors). */
-const VISIBLE_RE = /[^\s\p{Z}\p{Cc}\p{Cf}\u200c\u200d\u2800\u115f\u1160\u3164\uffa0\ufe00-\ufe0f\u180b-\u180f\u{e0100}-\u{e01ef}]/u;
+/** A visible character: not white space, a control, a format, surrogate, private-use or noncharacter, a combining mark on its own, a Default_Ignorable character (joiners, Hangul fillers, variation selectors, Khmer inherent vowels, reserved ranges) or the braille blank. */
+const VISIBLE_RE = /[^\s\p{Z}\p{Cc}\p{Cf}\p{Cs}\p{Co}\p{M}\p{Default_Ignorable_Code_Point}\p{Noncharacter_Code_Point}\u2800]/u;
 /** A slash command: the line starts with `/word`, and that first word holds no further `/` (so `/usr/bin/env` and `/ foo` are not one). */
 const SLASH_COMMAND_RE = /^\/[^\s/]+(?:\s|$)/;
 
@@ -307,6 +308,7 @@ export function goalText(text: unknown, app?: 'claude' | 'codex' | 'copilot'): G
   if (typeof text !== 'string') return { ok: false, reason: 'empty' };
   // eslint-disable-next-line no-control-regex
   const clean = text.replace(/[\u2028\u2029]/g, '\n').replace(HIDDEN_ALL_RE, '').replace(GOAL_HIDDEN_RE, '').replace(/[\u0000-\u0009\u000b-\u001f\u007f-\u009f]+/g, ' ');
+  if (/\p{Cs}/u.test(clean)) return { ok: false, reason: 'empty' }; // ill-formed text (a lone surrogate) is never sent
   const t = clean.trim();
   if (!t || !VISIBLE_RE.test(t)) return { ok: false, reason: 'empty' };
   if (app === undefined || app === 'claude') {

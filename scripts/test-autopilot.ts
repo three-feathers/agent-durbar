@@ -600,6 +600,12 @@ process.on('exit', () => { if (!finished) { console.error('autopilot test did no
     for (const v of ['\u2800', '\uffa0', '\ufe0f', '\ufe00\ufe0f', '\u180b\u180d', '\u3164', '\u115f\u1160', '\u{e0100}', ' \u2800 \n', '\u00a0', '\u2003', '\u200c']) {
       for (const app of [undefined, 'claude', 'codex', 'copilot'] as const) assert.deepStrictEqual(goalText(v, app), { ok: false, reason: 'empty' }, `M6: ${JSON.stringify(v)}`);
     }
+    // round 2: Default_Ignorable, Cf outside the removed lists, ill-formed, private-use, noncharacter, a lone mark
+    for (const v of ['\u17b4', '\u17b5', '\u17b4\u17b5', '\ufff0', '\ufff8', '\u{e0080}', '\u{e0200}', '\u{e0fff}', '\u{1d173}', '\u0600', '\u06dd', '\u{110bd}', '\ud800', '\udc00', '\ud800a', 'a\ud800', '\uffff', '\ue000', '\u{f0000}', '\u0300', '\u0300\u0301', '\u0e31', ' \u0300 ']) {
+      for (const app of [undefined, 'claude', 'codex', 'copilot'] as const) assert.deepStrictEqual(goalText(v, app), { ok: false, reason: 'empty' }, `M6b: ${JSON.stringify(v)}`);
+    }
+    assert.deepStrictEqual(goalText('a\u0300'), { ok: true, text: 'a\u0300' }, 'a mark on a letter stays');
+    assert.deepStrictEqual(goalText('e\u0301 \u{1f600}'), { ok: true, text: 'e\u0301 \u{1f600}' }, 'letters, marks and emoji stay');
     assert.deepStrictEqual(goalText('a\u2800'), { ok: true, text: 'a\u2800' }, 'a blank next to a visible character stays');
     // continuation() says 'ended' when a listener ended the run while handling `continued`
     {
