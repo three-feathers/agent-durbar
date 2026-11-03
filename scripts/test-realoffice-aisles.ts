@@ -89,7 +89,7 @@ function problems(L: Layout, W: number, k: number): string[] {
   }
 }
 
-// ---- measure first (T202): what fits, at 1..15 and 40 agents in 1..8 folders, four floors ----
+// ---- measure first (T202): what fits, at 1..15 and 40 agents in 1..8 folders, the two floors the app shows ----
 const faces: Record<string, Record<number, number>> = {}, report: string[] = [];
 let cases = 0;
 for (let s = 0; s < SIZES.length; s++) {
@@ -108,7 +108,7 @@ for (let s = 0; s < SIZES.length; s++) {
     }
   }
 }
-// no scroll up to 15 on any of the four floors: not asserted as a fact of nature; a failure names the floor so the design is changed, not the test
+// no scroll up to 15 on either floor: not asserted as a fact of nature; a failure names the floor so the design is changed, not the test
 assert.deepStrictEqual(report.filter((r) => / scrolls$/.test(r)), [], 'up to 15 agents the hall fits without scrolling');
 console.log(report.filter((r) => r.startsWith('15 in 4')).join('\n'));
 
@@ -251,13 +251,15 @@ for (const n of [3, 8, 15]) for (const dh of [0, 31]) {
 console.log(`a folder of 4 or fewer still split (five columns cannot hold it whole): ${split.join('; ') || 'none'}`);
 /* owner, 2026-11-03 ("still waste a lot of space"): with 4 or fewer the scale goes up to 5 and the plan covering the most floor wins. Measured on the
    floors the app really gives (1408x817 and 1248x717, the window less the frame): cabinets and people over the floor, at least what whole scales
-   allow, with the lower lobby of option A (owner, 06:59 UTC) where it lets the cabinets grow: 3 and 4 at 1408 go to g = 4 under a 128 px lobby. At
+   allow, with the lower lobby of option A (owner, 06:59 UTC) where it lets the cabinets grow: 3 and 4 at 1408 go to g = 4 under a 124 px lobby (asserted below). At
    1248, 2 + 1 at g = 4 would need a lobby of about 27 px, under its minimum: 3 and 4 stay at g = 3 there */
 const covs: string[] = [];
 for (const [W, H] of [[1408, 817], [1248, 717]] as const) for (const n of [1, 2, 3, 4]) {
   const L = aislesLayout(model(n, 1), { w: W, h: H }, META, SIGNS(1)), dk = L.zones.flatMap((z) => z.desks);
   const cov = dk.reduce((a, d) => a + d.desk.w * d.desk.h + (d.stand ? d.stand.w * d.stand.h : 0), 0) / (W * (L.height - L.lobbyH));
   covs.push(`${n} at ${W}: g ${L.g}, ${Math.round(cov * 100)} %`);
+  const lobby = ({ 1408: { 1: 170, 2: 170, 3: 124, 4: 124 }, 1248: { 1: 170, 2: 170, 3: 168, 4: 168 } } as Record<number, Record<number, number>>)[W][n];
+  assert.strictEqual(L.lobbyH, lobby, `${n} at ${W}x${H}: the lobby is ${L.lobbyH} px, the figures below are for ${lobby}`);
   const want = ({ 1408: { 1: 0.31, 2: 0.46, 3: 0.42, 4: 0.56 }, 1248: { 1: 0.42, 2: 0.62, 3: 0.33, 4: 0.44 } } as Record<number, Record<number, number>>)[W][n];
   assert.ok(cov >= want, `${n} at ${W}x${H}: cabinets and people cover ${Math.round(cov * 100)} % of the floor, under ${want * 100} %`);
 }

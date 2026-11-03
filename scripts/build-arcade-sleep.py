@@ -5,8 +5,9 @@
   python3 -I scripts/build-arcade-sleep.py --assets [<repo>]      write the ASSETS.md entries (the note and one `sit` line per person)
 
   <drawn.png>  the image-generation result: the person on a flat magenta (#FF00FF) background.
-What it does (no art is invented here): keys the magenta out, crops to the figure, shrinks it to the pack's grid (BOX average, then each pixel
-snapped to the nearest colour of that person's own palette, the colours of their other frames), binary alpha, closes any gap in a dark outline
+What it does (no art is invented here): keys the magenta out, crops to the figure, shrinks it to the pack's grid (a LANCZOS resize to 8 x 8
+fine pixels per grid pixel, each fine pixel snapped to the nearest colour of that person's own palette, the colours of their other frames, then
+each grid pixel takes the commonest colour of its 64, with the face's skin, a closed eye's line and the dark outline favoured), binary alpha, closes any gap in a dark outline
 (a dark pixel outside every opaque edge pixel that is not already dark), and writes `pNN-sit.webp` (lossless, one file pixel per grid pixel) and
 the pose's numbers into set.json (`poses`, `feet`, `top`, `foot`). Needs Pillow. Same input, same bytes."""
 import importlib.util, io, json, os, sys
@@ -36,7 +37,7 @@ SKIN = {'p08': (186, 106, 59), 'p10': (251, 197, 154)}
 
 def head_info(S, pid):
     """from the person's own standing `face-book` frame: the colours of the head (faceBox) and the skin colour (commonest light-enough colour of the
-    cheeks: the middle half of the box, from 45 % to 90 % of its height)"""
+    cheeks below the eyes: 62 % to 80 % of the box's height, 32 % to 68 % of its width)"""
     meta = json.load(open(os.path.join(S, 'set.json'))); x, y, w, h = meta['faceBox'][pid]['box']; im = Image.open(os.path.join(S, pid + '-face-book.webp')).convert('RGBA'); px = im.load()
     head = {px[i, j][:3] for j in range(y, y + h) for i in range(x, x + w) if px[i, j][3]}
     cnt = {}
@@ -52,8 +53,8 @@ def dist(a, b): return sum((x - y) ** 2 for x, y in zip(a, b)) ** .5
 def convert(drawn, pal, height, info=None):
     im = key_magenta(drawn); bb = im.getbbox(); im = im.crop(bb)
     w = max(1, round(im.width * height / im.height)); F = 8; Q = F * F // 16; big = im.resize((w * F, height * F), Image.LANCZOS)   # F fine pixels per grid pixel; thresholds below are for 16 and scaled by Q
-    # every fine pixel snapped to the palette first, then the commonest colour of each 4x4 block wins (crisp, no blended colours); a dark
-    # outline colour wins from 8 of 16 so thin lines survive the shrink
+    # every fine pixel snapped to the palette first, then the commonest colour of each grid pixel's 8x8 fine block wins (crisp, no blended
+    # colours); a dark outline colour wins from half the block so thin lines survive the shrink (thresholds written for 16 and scaled by Q)
     cache = {}; dark = min(pal, key=sum); headpal, skin = info if info else (None, None)
     # the drawn skin tone: the commonest colour of the upper part within reach of the standing skin colour; it is mapped straight to the standing skin
     gskin = None

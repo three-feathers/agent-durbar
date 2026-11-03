@@ -534,6 +534,25 @@ def write_notes(repo, meta, sections, prompts):
          '### console', '', '- files: desk.webp', '- source: a low console and stool for a person who is asleep (spec 102 FR-259): a **placeholder**, nobody has looked at it', '- tool: `scripts/build-arcade-pack.py` (Pillow)', '- date: 2026-11-01', "- made by: Vikram's agent (Claude Code)", '- approved by: pending', '- reference: none', '- prompt: none, drawn in code', '- cut: 40 x 22 grid pixels', '- licence: MIT', '', '## Removed', '', 'None.', '']
     open(Wn, 'w').write('\n'.join(w))
 
+def keep_sit_selftest():
+    """keep_sit, with no art cache: the committed set, stripped of what a full build loses (the `sit` numbers in set.json, the note, the files
+    names and the `- sit:` lines in ASSETS.md), comes back byte for byte"""
+    import shutil, tempfile
+    repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__))); rel = 'src/renderer/realoffice/sets/retro'
+    with tempfile.TemporaryDirectory() as t:
+        S = os.path.join(t, rel); shutil.copytree(os.path.join(repo, rel), S)
+        jp, ap = os.path.join(S, 'set.json'), os.path.join(S, 'ASSETS.md'); want_j, want_a = open(jp).read(), open(ap, encoding='utf8').read()
+        meta = json.loads(want_j)
+        for st in meta['stand'].values():
+            for k in ('poses', 'feet', 'top', 'foot'): st[k].pop('sit', None)
+        with open(jp, 'w') as f: f.write(json.dumps(meta, indent=1, sort_keys=True) + '\n')
+        txt = re.sub(r' p\d\d-sit\.webp', '', want_a); txt = re.sub(r'\n- sit: [^\n]*', '', txt); txt = re.sub(r'- \*\*Seated on a stool\*\*[^\n]*\n', '', txt)
+        assert txt != want_a and 'sit' not in json.dumps([s['poses'] for s in meta['stand'].values()]), 'the strip removed nothing'
+        with open(ap, 'w', encoding='utf8') as f: f.write(txt)
+        keep_sit(t)
+        assert open(jp).read() == want_j, 'keep_sit: set.json differs from the committed one'
+        assert open(ap, encoding='utf8').read() == want_a, 'keep_sit: ASSETS.md differs from the committed one'
+
 def selftest():
     # a frame off the grid is refused, a clean one passes, and one file pixel per block comes out
     good = Image.new('RGBA', (16, 16), (10, 20, 30, 255)); ImageDraw.Draw(good).rectangle([8, 0, 15, 15], fill=(200, 0, 0, 255))
@@ -546,6 +565,7 @@ def selftest():
     assert hashlib.sha256(w1.getvalue()).digest() == hashlib.sha256(w2.getvalue()).digest(), 'two runs differ'
     c, g = cabinet(56, 32, 0); assert c.w == 73 and c.h == 73 and g['glass'] == [5, 18, 56, 32], g
     assert c.im.getpixel((10, 25))[3] == 0, 'the glass is a hole'
+    keep_sit_selftest()
     print('build-arcade-pack selftest ok')
 
 if __name__ == '__main__':
