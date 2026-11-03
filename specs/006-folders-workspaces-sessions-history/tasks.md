@@ -77,3 +77,9 @@
 - [x] T063 Docs: README, changelog fragment, `docs/agent-notes.md`, spec index status, `[IMPLEMENTED]`/`[KNOWN GAP]` tags
 - [x] T064 Review of #720: per-process marker with a liveness check (two Durbar processes on one profile), size checked before reading, `installCrashMarker` and its `main.ts` call tested, simulator probe and driver checks for no prompt / no mode change / modes kept / one at a time / Dismiss wakes nothing, focus to the first session's desk, wrapping Pick list (no badge over a name at 1280x800), FR-042 aligned with the code; round 2: a marker from before this boot is dead whatever its pid (round 3: judged by recorded uptime, not the wall clock; round 4: last-seen uptime at every write, refreshed every 2 min while busy; a live pid is never offered otherwise; negative temp names), injectable kill for `pidAlive` (EPERM alive, ESRCH dead), negative file names, dead runs' temp files swept (bounded), the Pick picture waits for the open list [FR-038, FR-039, FR-042..FR-044]
 
+
+## 2026-11-01 delta: design sweep
+
+- [ ] T065 With spec 052 T214: the crash card on the floating surface, `shots-006-crash` follows, the lounge rule of FR-041 removed with `#crashStrip`, FR-041 changed in place [FR-041]
+- [ ] T066 With spec 005 T117: FR-033's row joins the header's row (or the fallback's tabs row); `shots-006-prevmarks` follows [FR-033]
+- [x] T067 The left-sidebar owner question closed in the spec delta (no sidebar of chats; the rail lists running agents) [FR-033]

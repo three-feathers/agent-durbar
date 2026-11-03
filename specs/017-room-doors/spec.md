@@ -143,3 +143,7 @@ Owner decision: no doors in any world or in flat, including the safety behaviour
 
 - **FR-035** `[IMPLEMENTED]` **Status.** At the removal PR, this spec's status becomes `deprecated` (needs spec 021 T053 first), with the note "removed, owner decision 2026-10-31: no doors". Its requirements stay as a record.
 - `[KNOWN GAP]` The default office's look changes for everyone, and CPU and memory with more portraits on screen are read only after T021 (097 FR-187's record covers flat).
+
+### 2026-11-03: the Office layout setting goes too (pointer, spec 102 FR-304)
+
+FR-027's *Office layout* setting, this spec's last control, goes with spec 102 FR-304: worlds are chosen in Settings' World section, and a stored *open* or *cabins* becomes the world Plain (FR-305).
