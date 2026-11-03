@@ -92,6 +92,7 @@ import { UsageStore } from './usagestore';
 import { AgentTrustStore } from './agenttrust';
 import { Scheduler, loadSchedules, publicDoc, saveSchedules, scheduleBusy } from './schedules';
 import type { SchedulerDeps } from './schedules';
+import { loopActivity, loopPrompt, loopPush, loopWaitOf, routeLoopEvent } from './loopwiring';
 import { UsageTotalsStore } from './usagetotalsstore';
 import { ActivityStore } from './activitystore';
 import { decisionOf } from '../shared/activity';
@@ -277,9 +278,9 @@ router.onEvent((e) => {
 const lastStatus = new Map<string, string>();
 router.onEvent((e) => {
   if (e.type === 'status' && !e.agentId) lastStatus.set(e.sessionId, e.status);
-  // spec 044 FR-015: usage between a scheduled send and the end of that turn counts toward the schedule's own limit
-  if (e.type === 'usage') scheduler?.noteUsage(e.sessionId, e);
-  else if (e.type === 'status' && !e.agentId && (e.status === 'idle' || e.status === 'error' || e.status === 'stopped')) scheduler?.turnEnded(e.sessionId);
+  // spec 044 FR-015: usage between a scheduled send and the end of that turn counts toward the schedule's own limit; spec 072: a loop
+  // pass's final text, its end and its holds (after agentState and lastStatus above have taken the event)
+  routeLoopEvent(e, scheduler);
 });
 /** Key an agent's all-time counts are kept under: "<agent name> · <folder name>" (base name only, spec 020). */
 const usageLabel = (a: AgentInfo): string => agentLabel(a.name, a.workspaceFile ? path.basename(a.workspaceFile).replace(/\.code-workspace$/i, '') : a.cwd);
@@ -604,7 +605,18 @@ const scheduleDeps = (file: string): SchedulerDeps => ({
   send: async (_folder, prompt, s) => {
     const a = scheduleAgent(s);
     // spec 058 FR-209: the scheduler's send awaits the same per-chat MCP sign-in gate as the window's send
-    return scheduledSendOp({ agent: a, adapter: a ? router.forAgent(a.id) : undefined, agentState, gate: (id) => mcp.signInRefresh.beforeSend(id), ensureLive: (x) => ensureLive(x), toWindow: toRenderer, noteLastSession, now: () => Date.now() }, prompt, s);
+    // spec 072 FR-006, FR-009: a loop pass is the user's own send path in the session's mode, plus Durbar's footer (loops only)
+    return scheduledSendOp({ agent: a, adapter: a ? router.forAgent(a.id) : undefined, agentState, gate: (id) => mcp.signInRefresh.beforeSend(id), ensureLive: (x) => ensureLive(x), toWindow: toRenderer, noteLastSession, now: () => Date.now() }, loopPrompt(prompt, s), s);
+  },
+  /* spec 072 FR-015/FR-017: holds from main's own state of the session (agentState flags, the last status) */
+  waitOf: (session) => loopWaitOf(session, { status: (id) => lastStatus.get(id), waits: (id) => agentState.waitsOf(id) }),
+  /* spec 072 FR-023/FR-024: one activity row per loop start, pass, skip, hold and end, and the window's chat note; never the prompt or reply */
+  loopNote: (s, n) => {
+    const a = s.target ? agents.get(s.target.session) : undefined;
+    const row = loopActivity(n, s);
+    if (a && row) logActivity(a, row.decision, row.action);
+    const push = loopPush(n, s);
+    if (push) toRenderer('loop:pass', push);
   },
   setTimer: (ms, fn) => setTimeout(fn, ms),
   clearTimer: (t) => clearTimeout(t as NodeJS.Timeout),
@@ -785,6 +797,7 @@ const harnessIpc = registerHarnessIpc({
     // each running turn is interrupted first (stopTurnOp), then the session ends and stays resumable (endSessionOp does not interrupt by itself)
     endAll: async (kind) => {
       for (const a of liveSessionsOf(kind)) {
+        scheduler?.stopLoopFor(a.id, 'session'); // spec 072 FR-007: ending the session ends its loop
         await stopTurnOp(opsDeps, a.id);
         await endSessionOp({ release: (k) => remoteOps.release(k), router }, a.id);
       }
