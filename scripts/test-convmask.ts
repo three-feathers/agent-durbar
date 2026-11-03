@@ -143,7 +143,27 @@ assert.ok(windows > 600, `enough windows (${windows})`);
 // review finding 4: the work of a mask is estimated before it runs, and a mask over its budget throws (fail closed)
 {
   assert.strictEqual(maskWork('a'.repeat(1000)), 550, 'linear passes: 0.55 per character');
-  assert.strictEqual(maskWork('**' + 'abcdefghijklmn '.repeat(10)), Math.ceil((2 + 150) * 0.55 + 10 * 300), 'with Markdown marks: 300 per token-like run');
+  assert.strictEqual(maskWork('**' + 'abcdefghijklmn '.repeat(10)), Math.ceil((2 + 150) * 1.1 + 10 * 300), 'with Markdown marks: twice the linear cost, and 300 per token-like run');
+  assert.strictEqual(maskWork('x'.repeat(1000), false, 10), Math.ceil(550 + 10 * 1000 * 0.002), 'each MCP secret value: 0.002 per character');
+  // re-check of the review (probes 11, 12): many MCP values make every pass slower; a value-heavy mask is over budget too (fail closed)
+  {
+    let plain = '';
+    for (let i = 0; plain.length < 19_990; i++) plain += 'word' + i + ' invoice ';
+    plain = plain.slice(0, 19_990);
+    const many = Array.from({ length: 2000 }, (_, i) => 'val' + i + '-qq');
+    assert.throws(() => M.maskText(plain, many), MaskBudgetError, '2 000 values over 20 000 characters: over budget');
+    assert.throws(() => M.maskedWindow(plain, 9000, 9007, many), MaskBudgetError, 'and as a window of a long line (masked whole)');
+    assert.doesNotThrow(() => M.maskText(plain, many.slice(0, 50)), 'a usual number of values still fits');
+    assert.ok(M.maskedWindow('the invoice ' + many[7] + ' here', 4, 11, many).text.includes('[redacted]'), 'values are still masked in a short window');
+    // a value over several lines across the left edge: the line-start rule takes only the line before, the value search takes it whole
+    const V3 = 'first-part-AAAA\nsecond-part-BBBB\nthird-part-CCCC\nfourth-part-DDDD';
+    for (let shift = 0; shift < 60; shift += 4) {
+      const t = filler(400) + '\n' + V3 + ' ' + 'x '.repeat(270 + shift) + 'invoice ' + filler(600);
+      const at = t.indexOf('invoice');
+      const w = M.maskedWindow(t, at, at + 7, [V3]);
+      assert.ok(!/(?:first|second|third|fourth)-part/.test(w.text), `a value over 4 lines at the edge (shift ${shift}): ${JSON.stringify(w.text.slice(0, 50))}`);
+    }
+  }
   assert.strictEqual(maskWork('abcdefghijklmn '.repeat(10)), Math.ceil(150 * 0.55), 'no marks: runs cost nothing extra');
   assert.strictEqual(maskWork('x'.repeat(100), true), Math.ceil(100 * 0.55 * 2), 'hidden characters: two passes');
   const tok = (i: number) => 'gh' + 'p_' + (String(i).padStart(6, '0') + 'a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6').slice(0, 36);

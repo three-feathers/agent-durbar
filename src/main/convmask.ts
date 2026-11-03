@@ -60,15 +60,18 @@ export interface MaskedWindow {
 }
 
 /**
- * Review of phase 1, finding 4 (FR-022, SC-003): the cost of one mask, estimated before it runs, in microseconds of a mid-range machine
- * (measured 2026-11-03 on the VPS): about 0.55 per character for the linear passes, plus, when Markdown marks are present, 150 to 300 per
- * token-like run (12 or more token characters), since `redactMarkdown` calls `redact` on each run and scans the text once more for each run
- * it masks (300 is counted, the cost seen under load). Every run counts (an upper bound: plain code with long identifiers is overestimated). Hidden characters double it.
+ * Review of phase 1, finding 4 (FR-022, SC-003): the cost of one mask, estimated before it runs, in microseconds of the VPS (measured
+ * 2026-11-03): about 0.55 per character for the linear passes, twice that when Markdown marks are present (the text is masked with and
+ * without them); plus 300 per token-like run (12 or more token characters) when marks are present, since `redactMarkdown` calls `redact` on
+ * each run and scans the text once more for each run it masks (300 is the cost seen under load; every run counts, so plain code is
+ * overestimated); plus 0.002 per character for each MCP secret value, which every pass looks for (re-check of the review: 2 000 values on
+ * 20 000 characters took 50-90 ms). Hidden characters double it (two passes).
  */
 const RUN = /[A-Za-z0-9_\-.+/=:@%]{12,}/g;
-export function maskWork(s: string, hidden = false): number {
-  const runs = HAS_MARK.test(s) ? (s.match(RUN)?.length ?? 0) : 0;
-  return Math.ceil((s.length * 0.55 + runs * 300) * (hidden ? 2 : 1));
+export function maskWork(s: string, hidden = false, values = 0): number {
+  const marks = HAS_MARK.test(s);
+  const runs = marks ? (s.match(RUN)?.length ?? 0) : 0;
+  return Math.ceil((s.length * (marks ? 1.1 : 0.55) + runs * 300 + values * s.length * 0.002) * (hidden ? 2 : 1));
 }
 /** The most one mask may cost (estimated, about 15 ms); a message's masks together get `messageWork` (convsearch.ts). */
 export const MASK_CALL_WORK = 15_000;
@@ -111,7 +114,7 @@ export function createMasker(libs: MaskLibs): Masker {
     const s = String(raw);
     const vals = cleanValues(values);
     const c = unhide(s);
-    if (maskWork(s, c !== s) > budget) throw new MaskBudgetError();
+    if (maskWork(s, c !== s, vals.length) > budget) throw new MaskBudgetError();
     if (c === s) return maskOnce(s, vals);
     const m = maskOnce(c, vals);
     return m === c ? maskOnce(s, vals) : m; // the copy without hidden characters is shown only when it hid something (as DurbarSafeText's unhid)
@@ -128,40 +131,60 @@ export function createMasker(libs: MaskLibs): Masker {
       ws = Math.max(0, Math.min(n, from) - radius);
       we = Math.min(n, Math.max(from, to) + radius);
       const vals = cleanValues(values);
-      // a known secret value across an edge comes in whole (it may hold spaces)
+      /** A known secret value across `at` (it may hold spaces and line ends): where it starts, else `at`. Looked for only around `at`. */
+      const valueStart = (at: number): number => {
+        let out = at;
+        for (const v of vals) {
+          const a0 = Math.max(0, at - v.length + 1);
+          const a = s.slice(a0, at + v.length - 1).indexOf(v);
+          if (a >= 0 && a0 + a < out) out = a0 + a;
+        }
+        return out;
+      };
       for (const v of vals) {
-        const a = s.indexOf(v, Math.max(0, ws - v.length + 1));
-        if (a >= 0 && a < ws && a + v.length > ws) ws = a;
-        const b = s.indexOf(v, Math.max(0, we - v.length + 1));
-        if (b >= 0 && b < we && b + v.length > we) we = b + v.length;
+        const b0 = Math.max(0, we - v.length + 1);
+        const b = s.slice(b0, we + v.length - 1).indexOf(v);
+        if (b >= 0 && b0 + b < we && b0 + b + v.length > we) we = b0 + b + v.length;
       }
-      // Review finding 1: some `redact` rules read their context to the left on the same line (a `Cookie:` header masks its pairs to the
-      // line's end, the JSON `"Cookie": "` form to its quote, `curl ... -u user:pass`, a `.netrc` `machine ... password`), and some let up to
-      // 8 whitespace characters, line ends too, sit between a name and its value (`password:`, `Authorization:`, `Cookie:`). So the left edge
-      // goes back to the start of its line, and over the line before it (and blank lines): every such context is then inside the window.
-      if (ws > 0) {
-        let p = lineStart(s, ws);
+      // The left edge moves back until no rule moves it any more (each rule can bring in text another rule needs; at most 4 rounds, else
+      // the whole message is masked):
+      // - Review finding 1: some `redact` rules read their context to the left on the same line (a `Cookie:` header masks its pairs to the
+      //   line's end, the JSON `"Cookie": "` form to its quote, `curl ... -u user:pass`, a `.netrc` `machine ... password`), and some let up
+      //   to 8 whitespace characters, line ends too, sit between a name and its value (`password:`, `Authorization:`, `Cookie:`). So the edge
+      //   goes back to the start of its line, and over the line before it (and blank lines). A line start more than twice the window back:
+      //   the whole message is masked.
+      // - A known secret value across the edge comes in whole (re-check of the review: the line rule could bring in only a value's tail).
+      // - Review finding 2: a private key block opened before the edge is masked from its BEGIN line (its body has no shape of its own).
+      //   The check reads the text without hidden characters, as the masks do (a zero-width space inside BEGIN is still a BEGIN to them);
+      //   when hidden characters are there the offset cannot be mapped back, so the whole message is masked.
+      /** The start of the line holding `at`, then of the line before it (over blank lines); -1 when that is too far back for context. */
+      const lineRule = (at: number): number => {
+        if (at <= 0) return 0;
+        let p = lineStart(s, at);
         for (let k = 0; k < 9 && p > 0; k++) {
           const q = lineStart(s, p - 1);
           const blank = s.slice(q, p).trim() === '';
           p = q;
           if (!blank) break;
         }
-        // a line far longer than the window: its start is too far to take as context; the whole message is masked (inside the budget)
-        if (ws - p > 2 * WINDOW_CHARS) whole = true;
-        else ws = p;
+        return at - p > 2 * WINDOW_CHARS ? -1 : p;
+      };
+      let settled = false;
+      ws = lineRule(ws);
+      for (let round = 0; round < 4 && ws > 0; round++) {
+        let c = valueStart(ws);
+        const before = s.slice(0, c);
+        const plain = unhide(before);
+        const low = plain.toLowerCase();
+        const bi = low.lastIndexOf('-----begin');
+        if (bi >= 0 && bi > low.lastIndexOf('-----end')) {
+          if (plain !== before) { ws = -1; break; }
+          c = Math.min(c, bi);
+        }
+        if (c === ws) { settled = true; break; }
+        ws = lineRule(c); // a value or a BEGIN moved the edge: its own line's context comes in too
       }
-      // Review finding 2: a private key block opened before the window is masked from its BEGIN line (its body has no shape of its own).
-      // The check reads the text without hidden characters, as the masks do (`-----BEG​IN` is a BEGIN to them); when hidden
-      // characters are there the offset cannot be mapped back, so the whole message is masked.
-      const before = s.slice(0, ws);
-      const plain = unhide(before);
-      const low = plain.toLowerCase();
-      const bi = low.lastIndexOf('-----begin');
-      if (bi >= 0 && bi > low.lastIndexOf('-----end')) {
-        if (plain === before) ws = lineStart(s, bi);
-        else whole = true;
-      }
+      if (ws < 0 || (ws > 0 && !settled)) whole = true; // a line too long, hidden characters before a BEGIN, or no settling in 4 rounds
       if (!whole) {
         while (ws > 0 && !isWs(s.charCodeAt(ws - 1))) ws--;
         while (we < n && !isWs(s.charCodeAt(we))) we++;
@@ -169,7 +192,7 @@ export function createMasker(libs: MaskLibs): Masker {
       if (whole) { ws = 0; we = n; }
     }
     const piece = s.slice(ws, we);
-    const work = maskWork(piece, unhide(piece) !== piece);
+    const work = maskWork(piece, unhide(piece) !== piece, cleanValues(values).length);
     if (work > budget) throw new MaskBudgetError();
     return { text: maskText(piece, values, Infinity), atStart: ws === 0, atEnd: we === n, work };
   };
