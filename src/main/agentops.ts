@@ -222,3 +222,44 @@ export async function startGuardOp(d: StartGuardDeps, ad: Pick<AgentAdapter, 'id
   if (note) d.onNote?.(note, result);
   return note ? { result, note } : { result };
 }
+
+/** What a scheduled prompt's send needs from main (spec 044); `gate` is spec 058 FR-209's per-chat MCP sign-in gate. */
+export interface ScheduledSendDeps {
+  agent: AgentInfo | undefined;
+  adapter: AgentAdapter | undefined;
+  agentState: { ensure(id: string, lazy?: boolean): void; noteSend(id: string): void; noteSendFailed(id: string): void; noteNotSent?(id: string): void };
+  /** Spec 058 FR-208/FR-209: awaited before the session starts or the prompt goes; `stopped` = Stop during the wait. */
+  gate?(id: string): Promise<'go' | 'stopped'>;
+  ensureLive(a: AgentInfo): Promise<void>;
+  toWindow(channel: string, payload: unknown): void;
+  noteLastSession(a: AgentInfo): void;
+  now(): number;
+}
+
+/**
+ * Spec 044: a scheduled prompt goes through the user's own send path: Thinking at once, the session started or resumed, the prompt shown
+ * and sent. Spec 058 FR-209: the chat's MCP sign-in gate is awaited first, as for the window's send; a Stop during that wait sends nothing
+ * (the run is logged as a send error). Returns the session id, or false when there is no agent.
+ */
+export async function scheduledSendOp(d: ScheduledSendDeps, prompt: string, s: { id: string; every?: unknown; at?: unknown; rule?: unknown }): Promise<false | string> {
+  const a = d.agent;
+  const ad = d.adapter;
+  if (!a || !ad) return false;
+  d.agentState.ensure(a.id, a.lazy);
+  d.agentState.noteSend(a.id); // same as the interactive send: the window shows Thinking from the moment a prompt goes out
+  if (d.gate && (await d.gate(a.id)) === 'stopped') {
+    d.agentState.noteNotSent?.(a.id);
+    throw new Error('Not sent: stopped while MCP sign-ins were reconnecting.');
+  }
+  try {
+    await d.ensureLive(a);
+    d.toWindow('agent:event', { type: 'user', sessionId: a.id, timestamp: d.now(), text: prompt });
+    d.toWindow('schedule:ran', { agentId: a.id, scheduleId: s.id, every: s.every, at: s.at, rule: s.rule });
+    await ad.send(a.id, { text: prompt });
+    d.noteLastSession(a);
+  } catch (err) {
+    d.agentState.noteSendFailed(a.id);
+    throw err;
+  }
+  return a.id;
+}

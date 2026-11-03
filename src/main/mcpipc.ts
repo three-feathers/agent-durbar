@@ -15,6 +15,10 @@ import { mcpSecretValues } from './mcpmask';
 import { claudeOffKey, mergeSessionServers, offOf } from './mcpglobal';
 import { agentMcpReply, mcpRefreshOp, mcpRestartOp } from './mcpsession';
 import { McpCallTracker } from './mcpcall';
+import { classifyMcpCall } from '../shared/mcpcall';
+import { McpSignInRefresher, signInKey } from './mcpsigninrefresh';
+import type { SignInRefreshPush, SignInTimers } from './mcpsigninrefresh';
+import type { McpRestartResult } from '../shared/api';
 import { mcpToolsOp } from './mcptoolsop';
 import { cleanName, McpContextTracker, serverKey } from './mcpcontextop';
 import type { McpCostStore } from './mcpcosts';
@@ -86,7 +90,21 @@ export function registerMcpIpc(deps: {
   costs?(): McpCostStore | undefined;
   /** Spec 100 FR-012: the names of one agent app's own user list, or undefined when that list could not be read. */
   globalList?(app: GlobalApp): string[] | undefined;
-}): { optionsFor(agentId: string): { mcpServers: Record<string, McpServerSpec>; disabledMcpServers: string[]; disabledMcpTools?: Record<string, string[]> }; secretValuesFor(agentId: string): string[] } {
+  /** Spec 058 FR-205..FR-215: the automatic sign-in refresh (missing: it never runs). */
+  signInRefresh?: {
+    /** Monotonic clock (`performance.now()`), never the wall clock. */
+    now(): number;
+    /** The Settings switch (FR-213). */
+    on(): boolean;
+    platform: string;
+    /** Main's own busy state of the chat (a turn runs or waits for the person; spec 041), not the window's Thinking. */
+    busy(agentId: string): boolean;
+    push(p: SignInRefreshPush): void;
+    waitMs?: number;
+    timers?: SignInTimers;
+    allowReadOnly?: boolean;
+  };
+}): { optionsFor(agentId: string): { mcpServers: Record<string, McpServerSpec>; disabledMcpServers: string[]; disabledMcpTools?: Record<string, string[]> }; secretValuesFor(agentId: string): string[]; signInRefresh: McpSignInRefresher; hidesEvent(e: { type: string; requestId?: unknown }): boolean } {
   const { agents, router, dev } = deps;
   const store = deps.store;
   /** Per agent id, this run only: servers the user switched off for that agent. */
@@ -132,6 +150,74 @@ export function registerMcpIpc(deps: {
   };
   /** Spec 058 FR-187: the class of each server's last failed tool call (a word only; the text is classified and dropped here). */
   const calls = new McpCallTracker();
+  /** Spec 058 FR-207: how many `mcp` reports each session sent (a reconnect's result is read from a report that came after it). */
+  const reports = new Map<string, number>();
+  /** Spec 058 FR-215: elicitation requests main declined during an automatic reconnect (never shown to the window). */
+  const hidden = new Set<string>();
+  /**
+   * Spec 058 FR-205..FR-215: the automatic sign-in refresh. Built from this module's own maps (the chat's last report, its off list, the
+   * open sign-ins, the restarts, the call classes and the organization verdicts) and the existing per-server restart; no vendor here.
+   */
+  const policyOf = (agentId: string, name: string): boolean => {
+    if (calls.get(agentId, name) === 'policy') return true;
+    try {
+      return deps.orgMcpNow?.(agentId, serverDefOf(agentId, name))?.refuse === true;
+    } catch {
+      return false;
+    }
+  };
+  const rd = deps.signInRefresh;
+  const refresher = new McpSignInRefresher({
+    now: rd ? () => rd.now() : () => 0,
+    on: rd ? () => rd.on() : () => false,
+    platform: rd?.platform ?? process.platform,
+    allowReadOnly: rd?.allowReadOnly,
+    waitMs: rd?.waitMs,
+    timers: rd?.timers,
+    view: (agentId) => {
+      const a = agents.get(agentId);
+      const ad = a ? router.forAgent(a.id) : undefined;
+      if (!a || !ad || !rd) return undefined;
+      const offNow = offFor(a.id);
+      return {
+        adapterId: ad.id,
+        takesPart: typeof ad.restartMcpServer === 'function' && ad.capabilities.mcpSignInReconnect === true,
+        live: ad.isLive(a.id),
+        busy: rd.busy(a.id),
+        readOnly: a.permMode === 'read-only',
+        servers: (live.get(a.id) ?? []).map((x) => {
+          const url = serverUrlOf(a.id, x.name);
+          // the transport the app reported; else (`real:` 2026-11-03, Copilot's `list` names no transport) http when Durbar knows the
+          // server by an http(s) address (a folder extra, a list Durbar passes, the Copilot CLI list); unknown = not remote (FR-206)
+          const transport = x.transport ?? (typeof url === 'string' && /^https?:\/\//i.test(url) ? 'http' : undefined);
+          return {
+          name: x.name,
+          status: x.status,
+          ...(transport ? { transport } : {}),
+          key: signInKey(ad.id, x.name, url),
+          ...(offNow.has(x.name) ? { off: true } : {}),
+          ...(signIns.has(a.id, x.name) ? { signInOpen: true } : {}),
+          ...(restarting.has(`${a.id}\0${x.name}`) ? { restarting: true } : {}),
+          ...(policyOf(a.id, x.name) ? { policy: true } : {}),
+          };
+        }),
+      };
+    },
+    reconnect: async (agentId, name) => {
+      const before = reports.get(agentId) ?? 0;
+      const r = await mcpRestartOp(restartDeps, restarting, agentId, name, { auto: true });
+      return { ...r, fresh: (reports.get(agentId) ?? 0) !== before };
+    },
+    after: (agentId, name, error) => {
+      const st = (live.get(agentId) ?? []).find((x) => x.name === name);
+      return { status: st?.status, errorClass: st?.errorClass, policy: classifyMcpCall(error) === 'policy' || policyOf(agentId, name) };
+    },
+    push: (p) => rd?.push(p),
+    log: (agentId, line) => {
+      const a = agents.get(agentId);
+      if (a) deps.log?.(a, line);
+    },
+  });
   /** Spec 100: what each session's MCP tool definitions take in its window (FR-003, FR-004). */
   const contexts = new McpContextTracker({
     agents,
@@ -159,6 +245,7 @@ export function registerMcpIpc(deps: {
     calls.onEvent(e);
     if (e.type === 'mcp') {
       live.set(e.sessionId, e.servers);
+      reports.set(e.sessionId, (reports.get(e.sessionId) ?? 0) + 1); // spec 058 FR-207: a report after a reconnect is a fresh one
       calls.onServers(e.sessionId, e.servers); // FR-188: a server that came back to connected drops its call class
       health.set(e.sessionId, mcpHealthUpdate(health.get(e.sessionId), e.servers, Date.now()));
       signIns.onServers(e.sessionId, e.servers); // connected: the sign-in is finished
@@ -166,6 +253,22 @@ export function registerMcpIpc(deps: {
       live.delete(e.sessionId);
       health.delete(e.sessionId);
       signIns.dropAgent(e.sessionId); // End session, Restart session (it ends the session first), a failed reconnect
+    }
+    // spec 058 FR-205: the chat's last response ended (the turn-end signal the scheduler also reads)
+    if (e.type === 'status' && !e.agentId && (e.status === 'idle' || e.status === 'error' || e.status === 'stopped')) refresher.turnEnded(e.sessionId);
+    // spec 058 FR-215: an elicitation from a server under Durbar's automatic reconnect, while no turn runs, is declined (no card unasked)
+    if (e.type === 'question' && e.phase === 'asked' && e.elicitation && !e.agentId) {
+      const src = e.elicitation.source;
+      const rd = deps.signInRefresh;
+      if (typeof src === 'string' && rd && refresher.underAuto(e.sessionId, src) && !rd.busy(e.sessionId)) {
+        try {
+          router.forAgent(e.sessionId)?.answerElicitation?.(e.sessionId, e.requestId, { action: 'decline' });
+        } catch {
+          /* the request ends with the reconnect anyway */
+        }
+        refresher.noteDeclined(e.sessionId, src);
+        hidden.add(e.requestId);
+      }
     }
     contexts.onEvent(e); // after `live` is current
   });
@@ -207,6 +310,7 @@ export function registerMcpIpc(deps: {
   ipcHandle('mcp:setCli', (_e, name: unknown, enabled: unknown) => {
     if (typeof name !== 'string' || !name || name.length > 64) return { ok: false };
     store().setAmbientDisabled(name, enabled !== true);
+    refresher.clearBlock(undefined, name); // spec 058 FR-210: a switch change
     return { ok: true };
   });
   ipcHandle('mcp:folderState', (_e, key: unknown): McpFolderState | { ok: false; error: string } => (knownKey(key) ? folderState(key) : bad));
@@ -284,10 +388,17 @@ export function registerMcpIpc(deps: {
   const refreshing = new Map<string, Promise<void>>();
   const lastRead = new Map<string, number>();
   ipcHandle('agents:mcpRefresh', (e, id: unknown, manual?: unknown) => (fromApp(e) ? mcpRefreshOp({ agents, router, lastRead, now: deps.now }, refreshing, id, manual) : { ok: false, supported: false, error: 'invalid request' }));
-  /** Spec 058 FR-021: restart one server of this agent's running session; one at a time per server. */
-  const restarting = new Set<string>();
-  ipcHandle('agents:mcpRestart', (_e, id: unknown, name: unknown) =>
-    mcpRestartOp({ agents, router, live: (k) => live.get(k) ?? [], off: (k) => new Set([...(off.get(k) ?? []), ...store().ambientDisabled(), ...offOf('claude', store().ambientDisabled())]), secrets: secretValuesFor, log: deps.log }, restarting, id, name));
+  /** Spec 058 FR-021, FR-209: restart one server of this agent's running session; one at a time per server, a second caller shares it. */
+  const restarting = new Map<string, Promise<McpRestartResult>>();
+  const offFor = (k: string): Set<string> => new Set([...(off.get(k) ?? []), ...store().ambientDisabled(), ...offOf('claude', store().ambientDisabled())]);
+  const restartDeps = { agents, router, live: (k: string) => live.get(k) ?? [], off: offFor, secrets: secretValuesFor, log: deps.log };
+  ipcHandle('agents:mcpRestart', async (_e, id: unknown, name: unknown) => {
+    const r = await mcpRestartOp(restartDeps, restarting, id, name);
+    // FR-210: the person's own Restart lets automatic reconnects try this server again
+    const ad = typeof id === 'string' ? router.forAgent(id) : undefined;
+    if (r.ok && ad && typeof name === 'string') refresher.clearBlock(ad.id, name);
+    return r;
+  });
   /** Spec 058 FR-075/FR-185: the server's own address, for the "different site" line, from the lists this agent's app uses (`serverUrlFor`). */
   const serverUrlOf = (agentId: string, name: string): string | undefined => {
     const a = agents.get(agentId);
@@ -316,8 +427,14 @@ export function registerMcpIpc(deps: {
     }
   };
   /** Spec 058 FR-065: Sign in, Open sign-in page, Cancel. Window only; main holds the address, the window gets the host. */
-  ipcHandle('agents:mcpSignIn', (e, id: unknown, name: unknown, again?: unknown) =>
-    fromApp(e) ? mcpSignInOp({ agents, router, live: (k) => live.get(k) ?? [], secrets: secretValuesFor, serverUrl: serverUrlOf }, signIns, id, name, again) : { ok: false, error: 'invalid request' });
+  ipcHandle('agents:mcpSignIn', async (e, id: unknown, name: unknown, again?: unknown) => {
+    if (!fromApp(e)) return { ok: false, error: 'invalid request' };
+    const r = await mcpSignInOp({ agents, router, live: (k) => live.get(k) ?? [], secrets: secretValuesFor, serverUrl: serverUrlOf }, signIns, id, name, again);
+    // FR-210: the person signs in: automatic reconnects may try this server again
+    const ad = typeof id === 'string' ? router.forAgent(id) : undefined;
+    if (r.ok && ad && typeof name === 'string') refresher.clearBlock(ad.id, name);
+    return r;
+  });
   ipcHandle('agents:mcpOpenSignIn', (e, id: unknown, name: unknown, host: unknown) => (fromApp(e) ? mcpOpenSignInOp(signIns, agents, id, name, host) : { ok: false, error: 'invalid request' }));
   ipcHandle('agents:mcpCancelSignIn', (e, id: unknown, name: unknown) => (fromApp(e) ? mcpCancelSignInOp({ agents, router }, signIns, id, name) : { ok: false, error: 'invalid request' }));
   /** Spec 069 FR-061: the tools turned off for one server in this agent's folder (applies to new sessions and after Restart session). */
@@ -346,11 +463,19 @@ export function registerMcpIpc(deps: {
   ipcHandle('agents:setMcp', async (_e, id: unknown, name: unknown, enabled: unknown) => {
     const r = await setMcpOp({ agents, router, wsKey: keyOf, orgMcpRefusal: async (a, n) => { const v = await deps.orgMcp?.(a.id, serverDefOf(a.id, n)); return v?.refuse ? `${v.why}: it cannot be switched on.` : undefined; } }, off, id, name, enabled);
     if (r.ok && typeof id === 'string' && typeof name === 'string') { const t = touched.get(id) ?? new Set<string>(); t.add(name); touched.set(id, t); }
+    const ad = typeof id === 'string' ? router.forAgent(id) : undefined;
+    if (r.ok && ad && typeof name === 'string') refresher.clearBlock(ad.id, name); // spec 058 FR-210: a switch change
     return r;
   });
 
   return {
     secretValuesFor,
+    signInRefresh: refresher,
+    /** Spec 058 FR-215: an elicitation main declined during an automatic reconnect is not passed to the window. */
+    hidesEvent(e) {
+      if (e.type !== 'question' || typeof e.requestId !== 'string' || !hidden.has(e.requestId)) return false;
+      return true;
+    },
     optionsFor(agentId: string) {
       const a = agents.get(agentId);
       if (!a) return { mcpServers: {}, disabledMcpServers: [...(off.get(agentId) ?? [])] };

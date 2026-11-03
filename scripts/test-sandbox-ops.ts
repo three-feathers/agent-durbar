@@ -87,7 +87,7 @@ async function main(): Promise<void> {
   toWindowEvent({ type: 'output', sessionId: 's', timestamp: 1, delta: 'x' } as AgentEvent, (e) => { outwardCalled++; return e; });
   assert.strictEqual(outwardCalled, 1, 'and still applies outward()');
   const mainSrc = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'main.ts'), 'utf8');
-  const fwd = mainSrc.match(/router\.onEvent\(\(e\) => toRenderer\('agent:event',[^\n]*/g) ?? [];
+  const fwd = mainSrc.match(/router\.onEvent\(\(e\) => (?:\{ if \(!mcp\.hidesEvent\(e\)\) )?toRenderer\('agent:event',[^\n]*/g) ?? []; // spec 058 FR-215: a declined elicitation is held back first
   assert.deepStrictEqual(fwd.map((l) => /toRenderer\('agent:event', toWindowEvent\(e, outward\)\)/.test(l)), [true], 'main.ts forwards adapter events to the window only through toWindowEvent: ' + fwd.join(' | '));
   done = true;
   console.log('sandbox ops (spec 087): all checks passed');

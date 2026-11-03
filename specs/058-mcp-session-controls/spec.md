@@ -1677,7 +1677,11 @@ unit tests on Linux).
 **Numbers taken** (checked on `origin/main`, every remote branch and the open PRs, 2026-11-03; PR #1073 holds FR-195..FR-203 and
 T168..T175): **FR-204..FR-217** and **T176..T189**.
 
-**Status**: specified 2026-11-03, not built. T176 and T177 ran the same day (Linux, 0 AI credits; results in the table below and in
+**Status**: part 1 built 2026-11-03 (T178..T181, T184..T186: the reconnect before the first message and after a quiet hour, the
+5 s wait with Stop, the lines, the Settings switch; simulator, fakes and unit tests only, `test:` `test-mcp-signinrefresh.ts`,
+`test-mcp-signinwiring.ts`, `sim:` `shots-058-mcp-signin-refresh.js`; mutants in `tasks.md`). Part 2 not built: the 30-minute recheck
+(FR-212, T183, with Copilot's `startNothing` rule) and the launch check (FR-204, T182); until then the Settings line names only the
+reconnect before a message (FR-213's full line comes with part 2). Specified 2026-11-03. T176 and T177 ran the same day (Linux, 0 AI credits; results in the table below and in
 `docs/agent-apps.md`), and the design was revised with them and with the review on PR #1076 (fjcabello, 12 items). Implementation
 starts after PR #1073 (FR-195..FR-203) merges: this delta extends its launch strip (FR-199, FR-200) and its Settings rows (FR-195).
 

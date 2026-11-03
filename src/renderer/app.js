@@ -5165,6 +5165,49 @@ function mcpPolicyNote(c){
   n.append(t,b);c.el.after(n);c.mcpNote=n;
 }
 document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest('.mcpwhy-btn');if(!b)return;e.stopPropagation();const a=byId(ui.selected),r=a&&liveRoot(a);if(r&&window.DurbarScreens)Promise.resolve(window.DurbarScreens.agentMcp(r,mcpOpts(r))).finally(()=>refreshMcpCount(r));});
+/* ---- spec 058 FR-208, FR-211, FR-215: the automatic MCP sign-in refresh, as main reports it (names and fixed kinds only). One quiet
+   status line under the sent message while the send waits (at most 5 s), gone when every reconnect is done; the late line when the
+   message went anyway; one line per server that needs a new sign-in, whose Sign in… opens this chat's MCP dialog on that row (the
+   browser opens only from there, after the person's press). Text only (no markup), role="status", no focus moved, no dialog. ---- */
+const MCPRE_NAME=n=>DurbarCutText.cutText(safeMask(String(n||'')),64);
+function mcpReLine(p){
+  if(!p||typeof p.id!=='string')return;
+  const a0=byId(p.id);if(!a0)return;const a=liveRoot(a0),chat=liveChat(a);
+  const drop=()=>{if(a.mcpReNote){a.mcpReNote.remove();a.mcpReNote=null;}};
+  if(p.kind==='waiting'){
+    const n=Math.max(1,Math.min(99,Number(p.count)|0||1));
+    if(!a.mcpReNote||!chat.el.contains(a.mcpReNote)){a.mcpReNote=addNote(chat,'');a.mcpReNote.classList.add('mcpre');a.mcpReNote.setAttribute('role','status');}
+    a.mcpReNote.textContent='Reconnecting MCP sign-ins ('+n+' server'+(n===1?'':'s')+')…';
+  }else if(p.kind==='late'){
+    const names=(Array.isArray(p.names)?p.names:[]).slice(0,5).map(MCPRE_NAME).filter(Boolean);
+    if(!a.mcpReNote||!chat.el.contains(a.mcpReNote)){a.mcpReNote=addNote(chat,'');a.mcpReNote.classList.add('mcpre');a.mcpReNote.setAttribute('role','status');}
+    a.mcpReNote.textContent='MCP sign-ins are still reconnecting'+(names.length?': '+names.join(', '):'')+'. Sent anyway; a tool from those servers may wait or fail.';
+    a.mcpReNote=null; /* it stays as said; the next line is a new one */
+  }else if(p.kind==='done'||p.kind==='not-sent')drop();
+  else if(p.kind==='needs-sign-in'){
+    const name=MCPRE_NAME(p.name);if(!name)return;
+    const lastUser=[...chat.el.querySelectorAll('.msg.user')].pop();
+    for(const x of chat.el.querySelectorAll('.note.mcpre-sign'))if(x.dataset.n===String(p.name)&&(!lastUser||(lastUser.compareDocumentPosition(x)&Node.DOCUMENT_POSITION_FOLLOWING)))return; /* once per message */
+    const n=addNote(chat,'');n.classList.add('mcpre','mcpre-sign');n.setAttribute('role','status');n.dataset.n=String(p.name);
+    const t=document.createElement('span');t.textContent=name+' needs you to sign in again.';
+    const b=document.createElement('button');b.type='button';b.className='btn sm mcpre-btn';b.textContent='Sign in…';b.dataset.n=String(p.name);
+    b.setAttribute('aria-label','Sign in to '+name+' again: open the MCP servers');
+    n.append(t,b);
+  }
+  if(ui.selected===a.id)stickyScroll(chat);
+}
+document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest('.mcpre-btn');if(!b)return;e.stopPropagation();const a=byId(ui.selected),r=a&&liveRoot(a);if(r&&window.DurbarScreens)Promise.resolve(window.DurbarScreens.agentMcp(r,{...mcpOpts(r),focusServer:{name:b.dataset.n||''}})).finally(()=>refreshMcpCount(r));});
+/* FR-208: Stop during the wait: the message is marked Not sent and its text goes back to the composer (when it is empty) */
+function mcpNotSent(a,chat,text,fromComposer){
+  closeTurn(a);
+  if(a.mcpReNote){a.mcpReNote.remove();a.mcpReNote=null;}
+  const last=[...chat.el.querySelectorAll('.msg.user')].pop();
+  if(last&&!last.querySelector('.unsent')){last.classList.add('not-sent');const u=document.createElement('div');u.className='unsent';u.textContent='Not sent';last.appendChild(u);}
+  const input=$('msgInput');
+  if(fromComposer&&input&&ui.selected&&liveRoot(byId(ui.selected)||a)===a&&!input.value.trim()){input.value=text;autoGrow();}
+  setState(a,'idle',null,'Not sent: stopped while MCP sign-ins were reconnecting');
+  scheduleRender();
+}
 function chipRepaint(c){
   const el=makeChip({tool:c.tool,label:c.label,full:c.cmd,ms:c.ms,res:c.res,output:c.output,state:c.state});
   el.style.animation='none'; /* a repaint is not a new call: no pop (FR-021, no jank while the arguments stream) */
@@ -6334,6 +6377,7 @@ async function sendLive(text,forId,opts){
   if(a.planNext){a.planNext=false;renderAttached();}
   if(planFirst)addNote(chat,'Asked for a plan first: nothing changes until you approve it.');
   const r=await bridge.send(a.id,text||'Please look at the attached file(s).',atts.map(x=>({path:x.path,name:x.name,kind:x.kind})),planFirst?{plan:true}:undefined);
+  if(r&&r.notSent){mcpNotSent(a,chat,text,fromComposer);return;} /* spec 058 FR-208: Stop during the MCP sign-in wait: nothing was sent */
   if(!r.ok){closeTurn(a);const n=addNote(chat,'Send failed: '+esc((r.error&&safeMask(r.error))||'unknown error'),true); /* spec 041 FR-065 (delta 2026-10-23): the app's error is masked (shown whole, not cut); no mask: a neutral word */modeRefusalAction(a,n,r.error);setState(a,'error',null,'Send failed: '+safeExcerpt(r.error,100,'unknown error'));}
   else if(r.slash)addNote(chat,'Sent the text of <code>'+esc(DurbarCutText.cutText(safeMask(r.slash),160))+'</code> (the agent app does not load it in Durbar’s sessions).'+(r.slashNote?' '+esc(DurbarCutText.cutText(safeMask(r.slashNote),200)):'')); /* spec 073 FR-005; slashNote: masked, then cut (FR-013) */
   else if(r.slashNote)addNote(chat,esc(DurbarCutText.cutText(safeMask(r.slashNote),240))); /* spec 073 (review on PR 615): over the size cap, sent as typed; masked, then cut (FR-013) */
@@ -7878,6 +7922,7 @@ if(bridge&&bridge.heldList){
   if(bridge.onHeldStopped)bridge.onHeldStopped(p=>{const a=p&&p.id&&byId(p.id);const t=(a?esc(a.name)+': ':'')+'Send stopped because '+esc(HELD_STOP_WHY[p&&p.why]||'it could not go now')+'. The rest stay held in Settings > Schedules.';toast(t,6000).classList.add('err');});
 }
 /* spec 076 FR-203: a session started while Durbar could not read all of its agent app's organization policy: the advice, once */
+if(bridge&&bridge.onMcpSignInRefresh){bridge.onMcpSignInRefresh(p=>{try{mcpReLine(p);}catch(e){}});} /* spec 058 FR-208, FR-211 */
 if(bridge&&bridge.onOrgNote){bridge.onOrgNote(p=>{if(p&&typeof p.text==='string'&&p.text)toast(esc(p.text.slice(0,300)),7000);});}
 if(bridge&&bridge.onRemoteOff){bridge.onRemoteOff(p=>{const id=typeof p==='string'?p:p&&p.id;const a=liveById(id);if(!a||!a.remote)return;a.remote=null;updateRemoteUi(a);
   /* spec 054 FR-062: the adapter's own reason when it has one; otherwise the sign-in reconnect (spec 012 FR-158) */

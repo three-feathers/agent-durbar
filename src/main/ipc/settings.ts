@@ -4,6 +4,7 @@ import { ipcHandle } from '../ipcguard';
 import { aboutView } from '../../shared/about';
 import { mcpWarnDefaults } from '../../shared/mcpcost';
 import type { SettingsStore } from '../settings';
+import { MCP_SIGNIN_REFRESH_DEFAULT } from '../mcpsigninrefresh';
 
 export interface SettingsIpcDeps {
   /** Created when the app is ready: read when a handler runs. */
@@ -16,12 +17,14 @@ export interface SettingsIpcDeps {
 export function register(deps: SettingsIpcDeps): void {
   const { getRunTheme, clearRunTheme } = deps;
   const settingsStore = deps.getSettingsStore;
-  ipcHandle('settings:get', () => ({ defaultMaxAiCredits: settingsStore()?.defaultMaxAiCredits, placeMap: settingsStore()?.placeMap ?? {}, customPlaces: settingsStore()?.customPlaces ?? [], seriousMode: settingsStore()?.seriousMode ?? false, notifyNeedsMe: settingsStore()?.notifyNeedsMe ?? true, breakResume: settingsStore()?.breakResume ?? 'auto', chatLinksIn: settingsStore()?.chatLinksIn ?? 'session', mcpWarnLevels: settingsStore()?.mcpWarnLevels, theme: getRunTheme() ?? settingsStore()?.theme ?? 'clean-office', characters: settingsStore()?.characters ?? 'theme', about: aboutView(app.getVersion()) }));
+  ipcHandle('settings:get', () => ({ defaultMaxAiCredits: settingsStore()?.defaultMaxAiCredits, placeMap: settingsStore()?.placeMap ?? {}, customPlaces: settingsStore()?.customPlaces ?? [], seriousMode: settingsStore()?.seriousMode ?? false, notifyNeedsMe: settingsStore()?.notifyNeedsMe ?? true, breakResume: settingsStore()?.breakResume ?? 'auto', chatLinksIn: settingsStore()?.chatLinksIn ?? 'session', mcpSignInRefresh: settingsStore()?.mcpSignInRefresh ?? MCP_SIGNIN_REFRESH_DEFAULT, mcpWarnLevels: settingsStore()?.mcpWarnLevels, theme: getRunTheme() ?? settingsStore()?.theme ?? 'clean-office', characters: settingsStore()?.characters ?? 'theme', about: aboutView(app.getVersion()) }));
   ipcHandle('settings:setSeriousMode', (_e, on: unknown) => ({ ok: true, seriousMode: settingsStore()?.setSeriousMode(on) ?? false }));
   /* spec 052 FR-059: OS notifications when an agent needs you and the window is in the background (on unless turned off) */
   ipcHandle('settings:setNotifyNeedsMe', (_e, on: unknown) => ({ ok: true, notifyNeedsMe: settingsStore()?.setNotifyNeedsMe(on) ?? true }));
   /* spec 081 FR-022 (Q6 = A): the agent-app update check at start: on unless turned off */
   ipcHandle('settings:setCheckUpdatesAtStart', (_e, on: unknown) => ({ ok: true, checkUpdatesAtStart: settingsStore()?.setCheckUpdatesAtStart(on) ?? true }));
+  /* spec 058 FR-213: Refresh MCP sign-ins automatically (on unless turned off); a non-boolean keeps the setting */
+  ipcHandle('settings:setMcpSignInRefresh', (_e, on: unknown) => ({ ok: true, mcpSignInRefresh: settingsStore()?.setMcpSignInRefresh(on) ?? MCP_SIGNIN_REFRESH_DEFAULT }));
   /* spec 068 FR-006: what happens when a coffee break ends ('auto' or 'ask'; anything else keeps the setting) */
   ipcHandle('settings:setBreakResume', (_e, v: unknown) => ({ ok: true, breakResume: settingsStore()?.setBreakResume(v) ?? 'auto' }));
   /* spec 080 FR-031: where a plain click on a chat link opens. A preference like the others here (the window's trust boundary); the URL of a click is checked in main whichever it is. */

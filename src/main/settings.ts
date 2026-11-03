@@ -11,6 +11,7 @@ import { ANNOUNCE_APPS, parseAnnounced, parseCap, parseSandboxAlways, parseSetti
 import type { AppSettings } from '../shared/credits';
 import { mcpWarnDefaults, parseWarnLevels } from '../shared/mcpcost';
 import type { McpWarnLevels } from '../shared/mcpcost';
+import { MCP_SIGNIN_REFRESH_DEFAULT } from './mcpsigninrefresh';
 import { addCustomPlace, removeCustomPlace, setPlaceEntry, updateCustomPlace } from '../shared/places';
 import type { CustomPlace, PlaceError, PlaceMap } from '../shared/places';
 import { migrateLegacyTheme, parseCharacters } from '../shared/characters';
@@ -224,6 +225,20 @@ export class SettingsStore {
     if (v) delete next.checkUpdatesAtStart;
     else next.checkUpdatesAtStart = false;
     this.s = next;
+    this.save();
+    return v;
+  }
+
+  /** Spec 058 FR-213: *Refresh MCP sign-ins automatically*: the stored choice, or the default (one constant) when none is stored. */
+  get mcpSignInRefresh(): boolean {
+    const v = this.s.mcpSignInRefresh;
+    return v === undefined ? MCP_SIGNIN_REFRESH_DEFAULT : v === true;
+  }
+
+  /** Only a real boolean changes it and is written as chosen (so a later change of the default keeps the person's choice). Returns the value now in force. */
+  setMcpSignInRefresh(v: unknown): boolean {
+    if (typeof v !== 'boolean') return this.mcpSignInRefresh;
+    this.s = { ...this.s, mcpSignInRefresh: v };
     this.save();
     return v;
   }
