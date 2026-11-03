@@ -183,6 +183,7 @@
     "test:trustedcontent": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-trusted-content.js",
     "test:runtestsreal": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-run-tests-real.js",
     "test:runtests": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-run-tests.js",
+    "test:officeops": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-office-ops.js",
     "test:uisuite": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-ui-suite.js",
     "test:activity": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-activity.js",
     "test:globals": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-renderer-globals.js",

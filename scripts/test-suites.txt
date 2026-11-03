@@ -89,6 +89,7 @@ test:checkfuses
 test:runtimesign
 test:copilotshared
 test:gitstatus
+test:officeops
 test:uisuite
 test:pathdirs
 test:officialinstall
