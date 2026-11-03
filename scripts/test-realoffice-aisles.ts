@@ -10,7 +10,7 @@ process.exitCode = 1;
 const ROOT = (() => { let d = __dirname; while (!fs.existsSync(path.join(d, 'package.json'))) d = path.dirname(d); return d; })();
 const RO = path.join(ROOT, 'src', 'renderer', 'realoffice');
 const readJson = (...p: string[]): Record<string, unknown> => JSON.parse(fs.readFileSync(path.join(RO, ...p), 'utf8'));
-const META = { ...readJson('worlds', 'photo', 'world.json'), ...readJson('sets', 'office', 'set.json') } as unknown as RealMeta;
+const META = { ...readJson('worlds', 'retro', 'world.json'), ...readJson('sets', 'retro', 'set.json') } as unknown as RealMeta; // the arcade's own people: the place beside a cabinet is measured on them
 const PEOPLE = Object.keys(META.seat).sort();
 const STATES: RealState[] = ['working', 'thinking', 'waiting', 'error', 'limit', 'done', 'idle', 'asleep'];
 function model(n: number, f: number, states: RealState[] = STATES): RealModel {
@@ -21,9 +21,9 @@ function model(n: number, f: number, states: RealState[] = STATES): RealModel {
 const SIGNS = (f: number): Record<string, { name: string; path: string; counts: number }> => Object.fromEntries(Array.from({ length: f }, (_, i) => ['f' + i, { name: 'project-' + i, path: '~/work/long/path/to/project-' + i, counts: 3 }]));
 const inter = (a: Rect, b: Rect, t = 0.5): boolean => a.x + t < b.x + b.w && b.x + t < a.x + a.w && a.y + t < b.y + b.h && b.y + t < a.y + a.h;
 const inside = (a: Rect, b: Rect, t = 0.5): boolean => a.x >= b.x - t && a.y >= b.y - t && a.x + a.w <= b.x + b.w + t && a.y + a.h <= b.y + b.h + t;
-/** the floors the app passes: closed and open chat, at both sizes (the same numbers as test-realoffice-layout) */
-const SIZES: [number, number][] = [[1440, 848], [1280, 748], [1440 - 470, 848], [1280 - 470, 748]];
-const NAMES = ['1440x900', '1280x800', '1440x900 chat open', '1280x800 chat open'];
+/** the floors the app shows: both sizes with the chat closed; an open chat hides the office (#1001), so no office floor has a chat beside it */
+const SIZES: [number, number][] = [[1440, 848], [1280, 748]];
+const NAMES = ['1440x900', '1280x800'];
 
 /** FR-229, FR-255, FR-256: every rule the renderer will rely on, as sentences */
 function problems(L: Layout, W: number, k: number): string[] {
@@ -50,6 +50,8 @@ function problems(L: Layout, W: number, k: number): string[] {
     if (!inside(d.face as Rect, d.stand as Rect, 0.5)) out.push(`face of ${d.id} leaves its person`);
     if ((d.face as Rect).w < FACE_FLOOR && k >= 9) out.push(`face of ${d.id} is ${(d.face as Rect).w}px`);
   }
+  /* owner, 2026-11-03: no person is cut by a cabinet or a screen: the whole picture, not only the stand, is clear of every cabinet and screen */
+  for (const d of ds) for (const o of ds) for (const r of [o.desk, o.screen as Rect]) for (const [nm, p] of [['person', d.stand], ['picture', d.person]] as [string, Rect | null][]) if (p && r && inter(p, r, 0.5)) out.push(`${nm} of ${d.id} is on the cabinet or screen of ${o.id}`);
   for (let i = 0; i < ds.length; i++) for (let j = 0; j < ds.length; j++) {
     if (i === j) continue;
     const a = items[i], b = items[j];
@@ -113,9 +115,9 @@ console.log(report.filter((r) => r.startsWith('15 in 4')).join('\n'));
 for (const nm of NAMES) {
   const F = faces[nm];
   assert.ok(F[15] >= FACE_FLOOR, `${nm}: face at 15 is ${F[15]}px`);
-  /* MEASURED (T202): at 1280x800 with the chat open the floor is 810 px wide; an integer g = 3 needs 270 px a column, so 8 people stay at g = 2.
-     This is a named gap, not a pass: the day the pure search finds more, this line fails and must be turned into the real assertion. */
-  if (nm === '1280x800 chat open') assert.strictEqual(F[8], F[15], `${nm}: KNOWN GAP, faces at 8 and 15 are both ${F[15]}px`);
+  /* MEASURED (2026-11-03): with the whole person beside each cabinet, g = 3 at 8 people needs 363 px a column; 1280x800 has 316 at four columns,
+     so 8 stay at g = 2 there. A named gap, not a pass: the day more fits, this line fails and turns into the real assertion. */
+  if (nm === '1280x800') assert.strictEqual(F[8], F[15], `${nm}: KNOWN GAP, faces at 8 and 15 are both ${F[15]}px`);
   else assert.ok(F[8] > F[15], `${nm}: face at 8 (${F[8]}) is larger than at 15 (${F[15]})`);
   for (let n = 1; n <= 14; n++) assert.ok(F[n] >= F[15], `${nm}: face at ${n} (${F[n]}) is not smaller than at 15`);
 }

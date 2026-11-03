@@ -211,7 +211,7 @@ for (const f of FILES) {
 
 // ---- 6. spec 097 FR-100, FR-113: a Real office world's token set (owner 2026-10-31 10:46: the top bar and menus follow the world) ----
 {
-  assert.deepStrictEqual(T.WORLD_IDS, ['photo', 'cave'], 'the photo office and the cave (the cave is behind its flag, spec 097 phase 4)');
+  assert.deepStrictEqual(T.WORLD_IDS, ['photo', 'retro', 'cave'], 'the photo office, the arcade and the cave (the arcade and the cave are behind their flags)');
   const t = T.worldTokens('photo') as Record<string, string>;
   assert.strictEqual(T.worldTokens('loft'), null, 'a world that is not built has no set');
   assert.strictEqual(T.worldTokens('__proto__'), null, 'own keys only');
@@ -239,6 +239,19 @@ for (const f of FILES) {
   for (const [fg, bg, min, why] of UI_PAIRS) assert.ok(contrast(t[fg], t[bg]) >= min, `${fg} on ${bg} (${why}): ${contrast(t[fg], t[bg]).toFixed(2)}:1`);
   for (const ui of ['clean', ...BRAND_UIS]) assert.deepStrictEqual(themeIssues(t, clean, ui).filter((x) => !/the top bar/.test(x)), [], `no contrast issue with ui ${ui}`);
   const worst = Math.min(...rows.map((r) => r.ratio / r.min));
+  // spec 102 FR-263 (owner, 2026-11-03): the arcade is dark everywhere. Complete; every status hue unchanged; the three status -ink shades
+  // lightened in the same hue (070 FR-050, amended for dark worlds); every pair AA, panels' glass composited over white
+  {
+    const r = T.worldTokens('retro') as Record<string, string>, rr = T.worldContrast('retro') as Array<{ fg: string; bg: string; min: number; ratio: number }>;
+    for (const k of Object.keys(T._builtins()[T.CLEAN_ID].tokens).concat(Object.keys(T._tokens()))) assert.ok(r[k] !== undefined, `retro has ${k}`);
+    const INKS = ['--red-ink', '--amber-ink', '--blue-ink'];
+    for (const k of Object.keys(clean).filter((x) => /^--(c|pb|pc|halo)-|^--(amber|red|green|blue)(-ink)?$|^--desk-(new|needs)$/.test(x) && !INKS.includes(x))) assert.strictEqual(r[k], clean[k], `retro: status colour ${k} is unchanged`);
+    const hue = (h: string): number => { const [R, G, B] = [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255), mx = Math.max(R, G, B), mn = Math.min(R, G, B), d = mx - mn; if (!d) return 0; const x = mx === R ? ((G - B) / d) % 6 : mx === G ? (B - R) / d + 2 : (R - G) / d + 4; return (x * 60 + 360) % 360; };
+    for (const k of INKS) { assert.ok(luminance(r[k]) > luminance(clean[k]), `retro: ${k} is lighter`); const dh = Math.abs(hue(r[k]) - hue(clean[k])); assert.ok(Math.min(dh, 360 - dh) <= 12, `retro: ${k} keeps its hue (${dh.toFixed(1)} degrees)`); }
+    assert.ok(luminance(r['--surface']) < 0.05 && luminance(r['--bg']) < 0.05 && luminance(r['--card']) < 0.05 && luminance(r['--wb-bg']) < 0.05, 'retro: page, cards and bar are dark');
+    assert.deepStrictEqual(rr.filter((x) => !(x.ratio >= x.min)).map((x) => `${x.fg} on ${x.bg} ${x.ratio.toFixed(2)}:1 < ${x.min}`), [], 'every pair of the arcade passes WCAG AA');
+    assert.ok(rr.some((x) => / \(glass over #ffffff\)$/.test(x.bg) && x.fg === '--ink'), 'a dark panel is checked over white');
+  }
   // the cave's set: complete, status colours unchanged, every pair AA with the glass composited (the same checks as the photo set)
   {
     const c = T.worldTokens('cave') as Record<string, string>, cr = T.worldContrast('cave') as Array<{ fg: string; bg: string; min: number; ratio: number }>;
@@ -309,6 +322,12 @@ for (const f of FILES) {
   // dark theme again, round trip twice
   W.setTheme(dark); W.setWorld('photo'); W.setWorld(null); W.setWorld('photo'); W.setWorld(null);
   assert.strictEqual(snap(doc), want, 'round trips leave the theme exactly as it was');
+  // the arcade: its own chrome style and a dark page while shown; leaving gives the theme back, its UI style and darkness too
+  W.setTheme(other); const want3 = snap(doc);
+  W.setWorld('retro');
+  assert.deepStrictEqual([doc.documentElement.dataset.ui, 'dark' in doc.documentElement.dataset, st.get('--surface')], ['retro', true, W.worldTokens('retro')['--surface']], 'the arcade shown');
+  W.setWorld(null);
+  assert.strictEqual(snap(doc), want3, 'leaving the arcade restores the theme exactly');
   g.document = undefined;
 }
 console.log(`theme tokens guard passed (${n} corpus checks, ${FILES.length} files under the ratchet)`);

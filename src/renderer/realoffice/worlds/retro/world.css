@@ -1,10 +1,10 @@
 /* The Retro arcade world (spec 102 FR-254..FR-258): the room's own rules, loaded only when it is shown, all scoped by .ro[data-world="retro"].
    Pictures are lossless frames at one integer scale, --ro-g, nearest pixel. Performance rules (097 FR-180, FR-182): no blend mode, no blur, no filter.
    Colours here belong to the art; a plate's text is the app's token. No text is inside a mirrored element. */
-.ro[data-world="retro"]{--ro-g:2;background:#1a1426 url(floor.webp) 0 0/calc(24px*var(--ro-g)) calc(24px*var(--ro-g)) repeat;image-rendering:pixelated}
+.ro[data-world="retro"]{--ro-g:2;background:#1a1426 url(floor-night.webp) 0 0/calc(24px*var(--ro-g)) calc(24px*var(--ro-g)) repeat;image-rendering:pixelated}
 .ro[data-world="retro"] img{image-rendering:pixelated}
-.ro[data-world="retro"] .ro-lobby{background:#241a38 url(wall.webp) 0 0/auto 100% repeat-x;image-rendering:pixelated;border-bottom-color:rgba(0,0,0,.5)}
-.ro[data-world="retro"] .ro-strip{background:#1a1426 url(floor.webp) 0 0/calc(24px*var(--ro-g)) calc(24px*var(--ro-g)) repeat}
+.ro[data-world="retro"] .ro-lobby{background:#241a38 url(wall-night.webp) 0 0/auto 100% repeat-x;image-rendering:pixelated;border-bottom-color:rgba(0,0,0,.5)}
+.ro[data-world="retro"] .ro-strip{background:#1a1426 url(floor-night.webp) 0 0/calc(24px*var(--ro-g)) calc(24px*var(--ro-g)) repeat}
 .ro[data-world="retro"] .ro-zone{background:none;box-shadow:none}
 .ro[data-world="retro"] .ro-ambient{background:#0c0816}
 /* the cabinet: a picture; mirrored as a whole picture, static (FR-256), on `scale`, so a motion on `transform` does not flip it back */

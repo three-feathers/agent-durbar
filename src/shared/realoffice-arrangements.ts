@@ -9,6 +9,8 @@ export const isArrangement = (v: unknown): v is Arrangement => typeof v === 'str
 
 /** FR-256: a person at their cabinet is 72 grid pixels tall and 34 wide (provisional: the art's reduced size), the face 19 from crown to chin (the smallest of the 15 people, measured by `build-arcade-pack.py` into `faceBox`; RA1 had 24 by eye) */
 export const AISLE_PERSON = { w: 34, h: 72 } as const;
+/** the floor between a cabinet and the person beside it, in grid px: no person is ever cut by a cabinet or a screen (owner, 2026-11-03) */
+export const AISLE_GAP = 2;
 export const FACE_GRID = 19;
 /** FR-229: the face floor, crown to chin, only on a floor of 15 */
 export const FACE_FLOOR = 24;
@@ -30,10 +32,10 @@ interface Plan { g: number; gw: number; gh: number; cols: number; rows: number; 
 
 /** FR-256: the choices in order of preference (biggest picture first) and the first one that fits the floor. Past what fits, rows are added at the
  *  smallest choice and the floor scrolls inside itself (T203). */
-function planFor(k: number, W: number, F: number): Plan {
+function planFor(k: number, W: number, F: number, PW: number = AISLE_PERSON.w): Plan {
   const rowCost = (gh: number, g: number): number => AISLE_SIGN_H + cabGrid(0, gh).h * g + AISLE_PLATE_H;
   const tryPlan = (g: number, gw: number, gh: number, cols: number, big: boolean): Plan | null => {
-    const rows = Math.max(1, Math.ceil(k / cols)), cab = cabGrid(gw, gh), slotW = cab.w * g + Math.ceil((AISLE_PERSON.w * g) / 2);
+    const rows = Math.max(1, Math.ceil(k / cols)), cab = cabGrid(gw, gh), slotW = (cab.w + PW + AISLE_GAP) * g;
     const cw = (W - 2 * AISLE_PAD) / cols, spareY = F - rows * rowCost(gh, g);
     if (slotW + g > cw || slotW < AISLE_SIGN_MIN_W || spareY < 0) return null;
     return { g, gw, gh, cols, rows, big, sl: Math.min(13, Math.floor(spareY / (2 * rows + 2))), /* the bend flattens before anything scrolls: a banner over the floor takes the last px */ rowH: rowCost(gh, g), slotW, fits: true };
@@ -47,7 +49,7 @@ function planFor(k: number, W: number, F: number): Plan {
   }
   /* it does not fit: five columns of the smallest cabinet, as many rows as it takes, and the floor scrolls */
   const g = 2, gw = CABINETS.narrow.gw, gh = CABINETS.narrow.gh, cols = k <= 4 ? 2 : AISLE_COLS, cab = cabGrid(gw, gh), rows = Math.max(1, Math.ceil(k / cols));
-  return { g, gw, gh, cols, rows, big: false, sl: 3, rowH: rowCost(gh, g), slotW: cab.w * g + Math.ceil((AISLE_PERSON.w * g) / 2), fits: false };
+  return { g, gw, gh, cols, rows, big: false, sl: 3, rowH: rowCost(gh, g), slotW: (cab.w + PW + AISLE_GAP) * g, fits: false };
 }
 
 /** FR-256, T202, T203: the hall. `view` is the floor the app passes (its width and height). Day and night give the same object (FR-251). */
@@ -71,7 +73,7 @@ export function aisleStatus(state: RealState, still = false): AisleStatus {
 }
 
 /** FR-259: what someone at a cabinet shows, per state. `face-*` are front frames, an optional group: each falls back to its view-a pose, so any full set works. Asleep: the seated frame. */
-export const AISLE_POSE: Record<RealState, string> = { working: 'type', thinking: 'book', error: 'knock', waiting: 'face-knock', limit: 'face-knock', done: 'face-coffee', idle: 'face-book', asleep: 'rest' };
+export const AISLE_POSE: Record<RealState, string> = { working: 'type', thinking: 'book', error: 'knock', waiting: 'face-knock', limit: 'face-knock', done: 'face-coffee', idle: 'face-book', asleep: 'face-book' }; /* asleep stands too (owner, 2026-11-03: no body behind a cabinet; the seated picture is wider than any place beside one); its marquee is off and it shows z z */
 const AISLE_FALLBACK: Record<string, string> = { 'face-knock': 'knock', 'face-coffee': 'counter', 'face-book': 'book' };
 const own = (o: object, k: string): boolean => Object.prototype.hasOwnProperty.call(o, k);
 /** the frame a person shows at a cabinet and its size in grid pixels, or null when the set has neither (then the initials, FR-065) */
@@ -96,8 +98,10 @@ export function aislesLayout(model: RealModel, view: { w: number; h: number }, m
   const seats = folders.flatMap((f) => f.agents.map((a) => ({ a, f: f.id })));
   const k = seats.length;
   const [lobbyMin, lobbyMax] = lobbyRange(Ho);
-  const plan = planFor(k, W, Ho - lobbyMin - AISLE_PAD);
-  const { g, cols, rows, sl } = plan, cab = cabGrid(plan.gw, plan.gh), cabW = cab.w * g, cabH = cab.h * g, pw = AISLE_PERSON.w * g, ph = AISLE_PERSON.h * g;
+  /* the place beside a cabinet is as wide as the widest standing picture of the set, so a picture centred in it never reaches a cabinet */
+  const PW = Math.min(48, Math.max(AISLE_PERSON.w, ...Object.values(meta.stand || {}).flatMap((s) => Object.values(s.poses || {}).map((p) => p[0])))); /* grid px; a set drawn at another scale is not an arcade set */
+  const plan = planFor(k, W, Ho - lobbyMin - AISLE_PAD, PW);
+  const { g, cols, rows, sl } = plan, cab = cabGrid(plan.gw, plan.gh), cabW = cab.w * g, cabH = cab.h * g, pw = PW * g, ph = AISLE_PERSON.h * g;
   const bend = 2 * sl, used = rows * (plan.rowH + bend);
   const Lb0 = Math.round(plan.fits ? Math.max(lobbyMin, Math.min(Ho - used - AISLE_PAD, lobbyMax)) : lobbyMin);
   const Lb = Math.ceil(Lb0 / g) * g;
@@ -111,7 +115,7 @@ export function aislesLayout(model: RealModel, view: { w: number; h: number }, m
     const top = Lb + extra * (r + 1) + r * (plan.rowH + bend);                      /* the row's top: its sign strip */
     const cabY = top + AISLE_SIGN_H + (Math.floor(cols / 2) - Math.abs(c - (cols - 1) / 2) > 0 ? Math.round((Math.floor(cols / 2) - Math.abs(c - (cols - 1) / 2)) * sl) : 0);
     /* the art sits on the grid: the cabinet's corner is a multiple of g (FR-255) and the slot follows it */
-    const cx0 = snap(cx - plan.slotW / 2 + (face === 'right' ? 0 : pw / 2)), sx = face === 'right' ? cx0 : cx0 - Math.ceil(pw / 2);
+    const gp = AISLE_GAP * g, s0 = cx - plan.slotW / 2, cx0 = snap(face === 'right' ? s0 : s0 + pw + gp), sx = face === 'right' ? cx0 : cx0 - pw - gp; /* the person beside the cabinet, never over it */
     return { slot: { x: sx, y: top, w: plan.slotW, h: plan.rowH + bend }, cab: { x: cx0, y: Math.ceil(cabY / g) * g, w: cabW, h: cabH }, top, face };
   };
   const zones: ZoneBox[] = [];
@@ -123,7 +127,7 @@ export function aislesLayout(model: RealModel, view: { w: number; h: number }, m
     for (const idx of parts.values()) {
       const desks: DeskBox[] = idx.map((n) => {
         const a = seats[n].a, b = slotBox(n), plateY = b.cab.y + cabH;
-        const px = b.face === 'right' ? b.cab.x + cabW - Math.floor(pw / 2) : b.cab.x - Math.ceil(pw / 2), py = plateY - ph;
+        const px = b.face === 'right' ? b.cab.x + cabW + AISLE_GAP * g : b.cab.x - pw - AISLE_GAP * g, py = plateY - ph;
         const mirrored = b.face === 'right'; /* the art's side panel is on its right, so it faces left; the other way is the picture mirrored, and its glass and marquee with it */
         const faceS = FACE_GRID * g, gl = { x: b.cab.x + (mirrored ? cab.w - 5 - plan.gw : 5) * g, y: b.cab.y + 18 * g, w: plan.gw * g, h: plan.gh * g };
         const fr = a.person != null && !a.away ? aislePose(meta, String(a.person), a.state as RealState) : null;
