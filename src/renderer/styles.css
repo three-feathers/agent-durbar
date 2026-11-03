@@ -114,6 +114,8 @@ body.has-bridge #liveBar{display:flex}
 .note{font-size:var(--t3-size);color:var(--ink-2);background:var(--pb-waiting,#fbefd6);border:1px solid var(--tone-warn-line);border-radius:12px;padding:8px 12px;max-width:92%;align-self:flex-start;overflow-wrap:break-word}
 .note.err{background:var(--pb-error,#f6e2df);border-color:var(--tone-bad-line);color:var(--red-ink)}
 .note .btn{height:28px;margin:0;padding:0 10px}
+.note.mcpre{background:var(--tone-info-soft);border-color:var(--tone-info-line);color:var(--ink-2);font-size:var(--t4-size)} /* spec 058 FR-208, FR-211: one quiet line (12px, over the 10.5px floor) */
+.note.mcpre-sign{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
 .note-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
 .note .ro-done{margin:6px 0 0;color:var(--ink-2)} /* spec 003 FR-096: after a switch from a Read-only denial; inherits the note's size (10.5px floor) */
 /* spec 012 FR-157: the chat's sign-in card; the raw error only in a small, closed Details */
@@ -565,10 +567,10 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
   .stats>.stat:not(.stat-aiu) span.l{display:none}
   .stats>.stat:not(.stat-aiu){padding:0 4px 0 3px}
   .topbar #defaultsBtn{max-width:200px}
-  body:not(.simple) .sched-top .st-word{display:none} /* spec 044 FR-027: like the counters' words, the word shows from 1920px (2040px on a Mac, below); it moves to the name and the title. Simple has room for it */
+  .sched-top .st-word{display:none} /* spec 044 FR-027: like the counters' words, the word shows from 1920px (2040px on a Mac, below); it moves to the name and the title */
   .topbar .sched-top{padding:0 10px}
 }
-@media (max-width:2039px){html[data-platform="darwin"]:not([data-fullscreen]) body:not(.simple) .sched-top .st-word{display:none}}
+@media (max-width:2039px){html[data-platform="darwin"]:not([data-fullscreen]) .sched-top .st-word{display:none}}
 @media (max-width:1599px){
   .inbox-btn .ib-word{display:none}
   .inbox-btn{padding:0 10px}
@@ -589,7 +591,7 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
   .topbar #liveBar .top-add .btn{padding:0 8px}
   .topbar .seg button{padding:0 7px}
   .topbar #liveBar{gap:4px}
-  /* spec 044 FR-034: room for Schedules at 1280x800 in Expert, measured in DejaVu Sans with floors and mixed agent apps, in the documented
+  /* spec 044 FR-034: room for Schedules at 1280x800, measured in DejaVu Sans with floors and mixed agent apps, in the documented
      order: the chip's cap (not binding there: the chip is 106px), the folder filter (to 80px; its full text is in its title), the gaps */
   .topbar .sched-top{gap:4px}
 }
@@ -1354,8 +1356,7 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 /* ---- switch model and context, compact (spec 030) ---- */
 .mchip-btn{cursor:pointer;font-family:inherit;gap:5px}
 .mchip-btn:hover{background:var(--surface-2)}
-/* spec 054 FR-007: the Remote chip says the session can be steered from GitHub, so it shows in Simple too */
-body.simple #remoteChip:not([hidden]){display:inline-flex!important}
+/* spec 054 FR-007: the Remote chip says the session can be steered from GitHub */
 #remoteChip[hidden]{display:none!important}
 .mchip-btn[aria-disabled=true]{color:var(--muted);border-style:dashed;cursor:not-allowed} /* spec 052 FR-076: disabled is muted and dashed, never opacity */
 .mchip .chev{flex:none;opacity:.75}
@@ -1483,8 +1484,8 @@ html:not([data-ui]) .seg button{border-radius:6px}
 .folder-ctl{display:flex;align-items:center}
 .folder-ctl #foldersBtn{width:32px;padding:0;justify-content:center}
 body:not(.has-bridge) .folder-ctl #foldersBtn{display:none}
-body.has-bridge:not(.simple) .folder-ctl #wsFilter{border-top-right-radius:0;border-bottom-right-radius:0}
-body.has-bridge:not(.simple) .folder-ctl #foldersBtn{border-top-left-radius:0;border-bottom-left-radius:0;border-left-width:0}
+body.has-bridge .folder-ctl #wsFilter{border-top-right-radius:0;border-bottom-right-radius:0}
+body.has-bridge .folder-ctl #foldersBtn{border-top-left-radius:0;border-bottom-left-radius:0;border-left-width:0}
 .top-more{position:relative}
 #topMoreBtn{width:34px;padding:0;justify-content:center;font-size:16px;letter-spacing:.05em}
 #topMoreMenu{right:0;left:auto}
@@ -1499,7 +1500,7 @@ body.has-bridge:not(.simple) .folder-ctl #foldersBtn{border-top-left-radius:0;bo
 .sched-top:not([hidden])+.inbox-btn,.sched-top:not([hidden])+.inbox-btn[hidden]+.stats{margin-left:0}
 .inbox-btn b{font-variant-numeric:tabular-nums}
 .inbox-btn.attn{background:var(--warn-bg);border-color:var(--tone-warn-line);color:var(--amber-ink)}
-/* spec 044 FR-027..FR-029: a calm ghost button; the clock, the word (from 1920px, 2040px on a Mac, and in Simple) and the count of active schedules.
+/* spec 044 FR-027..FR-029: a calm ghost button; the clock, the word (from 1920px, 2040px on a Mac) and the count of active schedules.
    Pause all: dimmed with a pause glyph; a run that did not happen: a warning mark with a "!" (drawn, so it is never colour alone) */
 .sched-top{font-variant-numeric:tabular-nums}
 .sched-top .st-ico{position:relative;display:inline-flex;flex:none}
@@ -1531,25 +1532,12 @@ body.has-bridge:not(.simple) .folder-ctl #foldersBtn{border-top-left-radius:0;bo
 .inbox-row .ib-ans>.btn.session{flex:0 1 auto;min-width:0;display:block;line-height:26px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .inbox-empty{color:var(--muted);font-size:13px;max-width:60ch}
 
-/* spec 052 FR-031 (#306): Simple hides the developer details; status, permissions and answering are the same */
-body.simple #modelChip,body.simple .mchip,body.simple #agentChip,body.simple #ctxChip,body.simple #compactBtn,body.simple .ph .folder,
-body.simple .room-path,body.simple .room-mcp,body.simple #vscodeBtn,body.simple #copyResBtn,body.simple #mcpBtn,body.simple #toolsHdrBtn,
-body.simple .pusage,body.simple .defaults-grp #modelSel,body.simple .defaults-grp #effortSel,body.simple .defaults-grp .dp-l:is([for="modelSel"],[for="effortSel"]){display:none!important}
-body.simple .lrow .lfold{visibility:hidden} /* spec 052 FR-064: the folder column stays in the grid (display:none moved the next cells under the wrong headers) */
-
 /* spec 052 FR-033: the inbox heading takes focus (a row, not a button) */
 .inbox-row .ib-h{margin:0;font-size:var(--t2-size);font-weight:400;border-radius:var(--r-sm)}
 .inbox-row .ib-h:focus{outline:2px solid var(--focus);outline-offset:3px}
 .inbox-row:focus-within{border-color:var(--focus)}
 .inbox-keys{margin:0;font-size:var(--t5-size);color:var(--muted)}
 
-/* spec 052 FR-037: Simple goes further: tool rows fold into one line, Thinking stays folded, fewer top-bar controls */
-/* spec 052 FR-081 (round 7): the tool rows stay, in plain words ("Read companies.ts", "Ran a command"); Expert shows the tool name and argument */
-#chat .chip>.plain{display:none}
-body.simple #chat .chip>.plain{display:inline;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;color:var(--ink)}
-body.simple #chat .chip>b,body.simple #chat .chip>code,body.simple #chat .chip:not(.fail)>.res{display:none}
-body.simple #chat .think .think-body{display:none}
-body.simple #addWs,body.simple #foldersBtn,body.simple #vList{display:none!important}
 /* spec 052 R3 design polish (Clean Office only unless noted; colour, border colour, background, shadow, radius, weight and
    letter-spacing only, so every size stays and check:geometry holds) */
 /* primary action: solid sage ink, now the base `.btn.primary` rule in every theme (spec 052 FR-053) */
@@ -1590,6 +1578,9 @@ html .notice-strip.info .ns-ic{background:transparent;color:var(--ink-2);box-sha
 .notice-strip .aw-it{display:flex;align-items:center;gap:10px;min-width:0}
 .notice-strip .aw-w{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .notice-strip .aw-w small{color:var(--ink-2);font-size:11px}
+.notice-strip .ml-list{max-height:min(34vh,210px);overflow-y:auto;overscroll-behavior:contain;gap:5px} /* spec 058 FR-200: the open list scrolls inside itself; the window never scrolls */
+.notice-strip .ml-list .aw-it{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start} /* Show stays in one right column when a line wraps */
+.notice-strip .ml-w{white-space:normal} /* spec 058 FR-200: the fix wraps, never cut */
 .notice-strip .aw-ok{color:var(--green-ink,var(--ink-2));font-weight:600}
 /* spec 006 FR-041/FR-042: the crash card reuses the Since you were away strip; its Pick… list scrolls from five rows */
 /* spec 006 FR-042 (review of PR 720): the sessions flow on one line and wrap, so an open list costs the office one row, not one row per session; past two lines it scrolls */
@@ -1778,22 +1769,6 @@ html[data-serious] .subblk.running .sub-st::before{animation:none!important}
 :is(.pdiff,.hs-cmds,.scr-more,.scr-adv)[open]>summary::before{transform:rotate(90deg)}
 @media (prefers-reduced-motion:reduce){:is(.pdiff,.hs-cmds,.scr-more,.scr-adv)>summary::before{transition:none}}
 @media (forced-colors:active){:is(.pdiff,.hs-cmds,.scr-more,.scr-adv)>summary::before{forced-color-adjust:none;background:CanvasText}}
-/* spec 052 FR-080..FR-082 (round 7, plain words): Simple shows the memory chip and Tidy up memory, the cost line (money only), the
-   request's folder and its collapsed command; it hides Control from GitHub unless remote control is on (the chip shows then) */
-body.simple .ctxgrp>#ctxChip,body.simple .ctxgrp>#compactBtn{display:inline-flex!important}
-body.simple .ctxgrp>#ctxChip.mem-low{display:none!important} /* spec 052 FR-093: in Simple the memory chip shows from 70% full */
-body.simple p.pusage:not(:empty){display:block!important}
-body.simple #remoteBtn:not(.on){display:none!important}
-.note.perm .pfold{display:none;font-size:11px;color:var(--muted)}
-body.simple .note.perm .pfold:not([hidden]){display:inline} /* FR-092: only next to the plain words */
-details.pcmd{display:none;margin:6px 0 0}
-body.simple details.pcmd{display:block}
-details.pcmd>summary{cursor:pointer;font-size:12px;color:var(--ink-2)}
-details.pcmd>pre{margin:4px 0 0;padding:6px 8px;border-radius:6px;background:var(--surface-2,#f4f4f2);font-family:var(--font-mono);font-size:11.5px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:160px;overflow:auto}
-.wl-level{margin:14px 0 0;font-size:13px;color:var(--ink-2)}
-.wl-level p{margin:0 0 8px}
-.wl-lv-btns{display:flex;flex-wrap:wrap;gap:8px}
-.wl-level .btn[aria-pressed="true"]{border-color:var(--focus);box-shadow:inset 0 0 0 1px var(--focus)}
 
 /* spec 052 FR-085: native controls and scrollbars follow the theme: light by default, dark for a dark theme (theme.js sets data-dark) */
 :root{color-scheme:light}
@@ -1820,12 +1795,12 @@ html[data-platform="darwin"] .notice-strip:not([hidden]) ~ .workspace .strip{pad
 html[data-platform="darwin"]:not([data-fullscreen]) .topbar::before{content:"";flex:none;order:-1;width:58px;margin-right:-14px}
 @media (max-width:1440px){html[data-platform="darwin"]:not([data-fullscreen]) .topbar::before{margin-right:-8px}} /* spec 044 FR-034: the bar's column gap is 8px up to 1440px; the traffic-light room stays 78px */
 @media (max-width:1320px){html[data-platform="darwin"]:not([data-fullscreen]) .topbar::before{width:64px;margin-right:-8px}}
-/* spec 044 FR-034: with the traffic-light room and the Schedules button, Expert at 1280..1400px was 54px short (the counters wrapped, measured in DejaVu Sans with floors and mixed agent apps): the buttons' side padding gives it back, after the room itself (above). Simple has room. */
+/* spec 044 FR-034: with the traffic-light room and the Schedules button, 1280..1400px was 54px short (the counters wrapped, measured in DejaVu Sans with floors and mixed agent apps): the buttons' side padding gives it back, after the room itself (above). Simple has room. */
 @media (max-width:1439px){
-  html[data-platform="darwin"]:not([data-fullscreen]) body:not(.simple) .topbar :is(.sched-top,.inbox-btn){padding:0 6px}
-  html[data-platform="darwin"]:not([data-fullscreen]) body:not(.simple) .topbar .top-add .btn{padding:0 5px}
-  html[data-platform="darwin"]:not([data-fullscreen]) body:not(.simple) .topbar .seg button{padding:0 4px}
-  html[data-platform="darwin"]:not([data-fullscreen]) body:not(.simple) .stats>.stat:not(.stat-aiu){padding:0 2px}
+  html[data-platform="darwin"]:not([data-fullscreen]) .topbar :is(.sched-top,.inbox-btn){padding:0 6px}
+  html[data-platform="darwin"]:not([data-fullscreen]) .topbar .top-add .btn{padding:0 5px}
+  html[data-platform="darwin"]:not([data-fullscreen]) .topbar .seg button{padding:0 4px}
+  html[data-platform="darwin"]:not([data-fullscreen]) .stats>.stat:not(.stat-aiu){padding:0 2px}
 }
 /* spec 052 FR-164: on a Mac the traffic lights take 58px more, so the counters keep their words only from 2040px and the defaults chip is
    narrower from 1600 to 1799px (the brand name gives way by measurement, .tb-tight) */
@@ -1923,7 +1898,6 @@ h2,h3,h4{text-wrap:balance}
 .ctx-sum .cb-l{font-size:var(--t4-size);color:var(--ink-2)}
 .ctx-sum .cb-n{font-size:var(--t4-size);color:var(--muted);font-variant-numeric:tabular-nums}
 .ctx-sum .cb-bar{grid-column:1 / -1;height:5px}
-body.simple #ctxMenu #compactBtn{display:flex!important} /* spec 005 FR-041: Tidy up memory lives in the memory chip's menu */
 /* spec 052 FR-167 (T149): what is typed or chosen in a dialog field is regular weight; a bold label does not pass its weight on. The last rule of the file, so it wins over the fields' own `font:inherit`. */
 .dlg :is(input,select,textarea):not([type=checkbox]):not([type=radio]){font-weight:400}
 .dlg :is(input,textarea)::placeholder{font-weight:400}

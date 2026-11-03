@@ -13,7 +13,9 @@
  *                                                        change nothing; a version already in CHANGELOG.md prints its section
  *
  * Fragment format: one or more top-level bullets ("- text"), each optionally followed by indented lines ("  more" or "  - sub");
- * blank lines between bullets are fine; nothing else (no headings, no unindented prose). File names are lower case
+ * blank lines between bullets are fine; nothing else (no headings, no unindented prose). Spec 008 FR-173: a fragment may end with
+ * the indented field lines "  Highlight: <one line>" and "  Scene: <scene id>" (the release clip, scripts/release-video.js); they are
+ * metadata, dropped from the folded text, and a fragment without them is fine. File names are lower case
  * (`[a-z0-9][a-z0-9._-]*.md`) so two names never clash on a case-insensitive disk (Windows, macOS); changelog.d/README.md
  * explains the folder and is not a fragment.
  *
@@ -58,15 +60,54 @@ function bulletBlocks(lines) {
   return { bullets: bullets.map((b) => b.join('\n')), other };
 }
 
-/* Parse one fragment's text: { bullets, errors }. */
-function parseFragment(text) {
+/* Spec 008 FR-173: the fragment fields, the scene ids a `Scene:` may name (the clip's catalogue without its title and end cards). */
+const FIELD_RE = /^[ \t]+(Highlight|Scene):[ \t]*(.*)$/;
+const HIGHLIGHT_MAX = 100;
+const HIGHLIGHTS_MAX = 5;
+function sceneIds() {
+  try { return Object.keys(require('./release-video.js').SCENES).filter((k) => k !== 'intro' && k !== 'outro'); } catch { return []; }
+}
+
+/*
+ * Spec 008 FR-173 (review on #1083): a Highlight goes unattended into public release notes, so it is plain text from an allow-list:
+ * letters, digits, spaces and . , ; : ' - / + % ?, and `*` only as balanced **bold**. No link, image, mention, issue reference,
+ * HTML, code span, table pipe, URL, or control or invisible (bidi, zero-width) character. Returns what is wrong, or ''.
+ */
+const HIGHLIGHT_CHARS = /^[\p{L}\p{N} .,;:'\-/+%?*]+$/u;
+function highlightProblem(v) {
+  const bad = [...new Set([...String(v)].filter((c) => !HIGHLIGHT_CHARS.test(c)))];
+  if (bad.length) return `may use only letters, digits, spaces, . , ; : ' - / + % ? and **bold**; not ${bad.map((c) => (/[\p{Cc}\p{Cf}\p{Z}]/u.test(c) && c !== ' ' ? `U+${c.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')}` : JSON.stringify(c))).join(' ')}`;
+  if (/:\/\//.test(v) || /\bwww\./i.test(v)) return 'may not hold a web address';
+  if (/\bgh-\d/i.test(v) || /\b[0-9a-f]{7,40}\b/i.test(v)) return 'may not hold an issue or commit reference (GitHub links GH-1 and commit hashes)';
+  if (/\*/.test(String(v).replace(/\*\*[^*]+\*\*/g, ''))) return 'may use * only as balanced **bold**';
+  return '';
+}
+
+/* Parse one fragment's text: { bullets, fields: { highlight?, scene? }, errors }. Field lines are not part of any bullet. */
+function parseFragment(text, { scenes = sceneIds() } = {}) {
   const errors = [];
   const lines = norm(text).split('\n');
   let inBullet = false;
   const bullets = [];
+  const fields = {};
+  let fieldAt = 0; // the line of the first field: after it only fields (or blank lines) may follow
   lines.forEach((l, i) => {
     const n = i + 1;
     if (!l.trim()) { return; }
+    const f = inBullet ? FIELD_RE.exec(l) : null;
+    if (f) {
+      const name = f[1].toLowerCase();
+      const value = f[2].trim();
+      if (!fieldAt) fieldAt = n;
+      if (Object.prototype.hasOwnProperty.call(fields, name)) errors.push(`line ${n}: a second "${f[1]}:" (one per fragment)`);
+      else if (!value) errors.push(`line ${n}: "${f[1]}:" needs a value`);
+      else if (name === 'highlight' && value.length > HIGHLIGHT_MAX) errors.push(`line ${n}: "Highlight:" is ${value.length} characters (at most ${HIGHLIGHT_MAX})`);
+      else if (name === 'highlight' && highlightProblem(value)) errors.push(`line ${n}: "Highlight:" ${highlightProblem(value)}`);
+      else if (name === 'scene' && !scenes.includes(value)) errors.push(`line ${n}: "Scene: ${value}" is not in the clip's scene catalogue (${scenes.join(', ') || 'none found'}; scripts/release-video.js)`);
+      else fields[name] = value;
+      return;
+    }
+    if (fieldAt) { errors.push(`line ${n}: "Highlight:" and "Scene:" go at the end of the fragment (line ${fieldAt} is one)`); return; }
     if (/^-[ \t]+\S/.test(l)) { bullets.push([l.replace(/\s+$/, '')]); inBullet = true; return; }
     if (/^\s+\S/.test(l) && inBullet) { bullets[bullets.length - 1].push(l.replace(/\s+$/, '')); return; }
     if (/^#/.test(l)) errors.push(`line ${n}: no headings in a fragment (the release adds them)`);
@@ -75,7 +116,21 @@ function parseFragment(text) {
   });
   if (!bullets.length && !errors.length) errors.push('empty: write at least one "- " bullet');
   if (/<!--|--!?>/.test(text)) errors.push('no HTML comments in a fragment');
-  return { bullets: bullets.map((b) => b.join('\n')), errors };
+  return { bullets: bullets.map((b) => b.join('\n')), fields, errors };
+}
+
+/*
+ * Spec 008 FR-173: the Highlights of the fragments (file-name order, those with a Scene first), at most five, or [] when none has a
+ * `Highlight:`. Returns [{ file, text, scene }]. The scenes of the clip are the `scene`s of these, in this order.
+ */
+function highlights(frs) {
+  const withH = frs.filter((f) => f.fields && f.fields.highlight);
+  const ordered = [...withH.filter((f) => f.fields.scene), ...withH.filter((f) => !f.fields.scene)];
+  return ordered.slice(0, HIGHLIGHTS_MAX).map((f) => ({ file: f.file, text: f.fields.highlight, scene: f.fields.scene || null }));
+}
+/* The Markdown block (empty when there is nothing to show). */
+function highlightsBlock(list) {
+  return list.length ? ['### Highlights', '', ...list.map((h) => `- ${h.text}`)].join('\n') : '';
 }
 
 /* Read changelog.d/: [{ file, bullets, errors }] sorted by file name (the order a release lists them). */
@@ -88,8 +143,8 @@ function readFragments(root = ROOT) {
     .sort()
     .map((f) => {
       const full = path.join(dir, f);
-      if (!fs.statSync(full).isFile()) return { file: f, bullets: [], errors: ['not a file'] };
-      if (!NAME_RE.test(f)) return { file: f, bullets: [], errors: ['name must be lower case letters, digits, ".", "_" or "-", ending in .md'] };
+      if (!fs.statSync(full).isFile()) return { file: f, bullets: [], fields: {}, errors: ['not a file'] };
+      if (!NAME_RE.test(f)) return { file: f, bullets: [], fields: {}, errors: ['name must be lower case letters, digits, ".", "_" or "-", ending in .md'] };
       return { file: f, ...parseFragment(fs.readFileSync(full, 'utf8')) };
     });
 }
@@ -206,7 +261,7 @@ function notes(root = ROOT, { release, previous } = {}) {
   return { section: r.section, source: 'fragments' };
 }
 
-module.exports = { MARKER, INTRO, splitChangelog, bulletBlocks, parseFragment, readFragments, check, pending, build, notes };
+module.exports = { highlightProblem, MARKER, INTRO, splitChangelog, bulletBlocks, parseFragment, readFragments, check, pending, build, notes, highlights, highlightsBlock, sceneIds, HIGHLIGHT_MAX };
 
 if (require.main === module) {
   const [cmd, ...args] = process.argv.slice(2);
@@ -221,8 +276,9 @@ if (require.main === module) {
       console.log(errors.length ? `changelog:check failed (${errors.length} error(s))` : `changelog:check ok (${n} fragment(s))`);
       process.exit(errors.length ? 1 : 0);
     } else if (cmd === 'preview') {
-      const { bullets } = pending(root);
-      console.log(bullets.length ? bullets.join('\n') : '(nothing pending)');
+      const { bullets, frs } = pending(root);
+      const block = highlightsBlock(highlights(frs)); // spec 008 FR-173: what the Highlights would be (not in the release notes yet)
+      console.log(`${block ? `${block}\n\n` : ''}${bullets.length ? bullets.join('\n') : '(nothing pending)'}`);
     } else if (cmd === 'build' && args.includes('--stdout')) {
       process.stdout.write(`${notes(root, { release: opt('--release'), previous: opt('--previous') }).section}\n`);
     } else if (cmd === 'build') {

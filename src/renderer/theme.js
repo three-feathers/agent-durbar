@@ -670,6 +670,25 @@
         '--wb-warn-bg':'#4e3618','--wb-warn-ink':'#f7cf8a'}, /* a counter or the inbox that needs you: amber glass with amber text */
       shadow:{'--shadow-card':'0 1px 3px rgba(46,32,18,.10)','--shadow-pop':'0 18px 48px rgba(46,32,18,.30), 0 2px 6px rgba(46,32,18,.12)'},
     },
+    /* spec 102 FR-263, owner 2026-11-03: the arcade is night only and dark everywhere (page, bar, cards, plates, Settings), plainly not
+       Flat. A dark world keeps every status hue and lightens only the status `-ink` shades, same hue, so they read at AA on its dark
+       surfaces (070 FR-050, amended 2026-11-03). `ui`: the arcade's chrome style while it is shown; `dark`: the page is dark */
+    retro:{
+      name:'Retro arcade', ui:'retro', dark:true,
+      page:{'--bg':'#0b0a1a','--surface':'#17142b','--surface-2':'#1e1a36','--raised':'#221d3d','--card':'#17142b','--soft':'#1b1731','--note':'#262044',
+        '--warn-bg':'#2e2410','--card-waiting':'#2a2112','--card-waiting-line':'#7a5a1e','--card-error':'#2c1518','--card-error-line':'#7a3a38',
+        '--line':'#3a3360','--line-2':'#4f4680','--line-ctl':'#8c84c0','--ink':'#f4eefc','--ink-2':'#d8d0ec','--muted':'#bdb5d6','--room-path':'#bdb5d6',
+        '--sage':'#3d7a55','--sage-ink':'#ff77a8','--focus':'#ffec27','--focus-halo':'#ff004d','--sel-border':'#ff77a8','--sel-ring':'#3a2350','--sel-ring-2':'#33204a',
+        '--stat-sel-border':'#ff77a8','--stat-sel-ring':'#3a2350','--brand-mark':'#111122','--brand-bg':'#ffec27','--avatar-bg':'#262044',
+        '--idle-stub':'#221d3d','--idle-stub-ink':'#bdb5d6','--drop':'#29adff','--drop-ink':'#cfe3ff',
+        '--tint-sage':'#162420','--wall-sage':'#2c4a3c','--tint-blue':'#141d30','--wall-blue':'#2c3f66','--tint-sand':'#241f14','--wall-sand':'#4d4128','--tint-clay':'#291a1a','--wall-clay':'#55332f',
+        '--cwall-sage':'#3c6a54','--cwall-blue':'#3c5a92','--cwall-sand':'#6e5c36','--cwall-clay':'#7a4842',
+        '--red-ink':'#ff9a8f','--amber-ink':'#ffc35c','--blue-ink':'#8fc3ff'},
+      bar:{'--world-tint':'#ff77a8','--wb-bg':'#07060f','--wb-bg-2':'#000000','--wb-surface':'#16132b','--wb-surface-2':'#201b3c','--wb-ink':'#f4eefc','--wb-ink-2':'#d8d0ec',
+        '--wb-muted':'#bdb5d6','--wb-line':'#2e2850','--wb-line-2':'#3f3768','--wb-line-ctl':'#8c84c0','--wb-focus':'#ffec27',
+        '--wb-warn-bg':'#3a2a08','--wb-warn-ink':'#ffd166'},
+      shadow:{'--shadow-card':'0 2px 0 rgba(0,0,0,.5)','--shadow-pop':'4px 4px 0 rgba(0,0,0,.6)'},
+    },
     /* the cave: parchment-and-stone page, a bar of dark cave brown with torchlight gold (the logo's cave palette, spec 101 FR-033) */
     cave:{
       name:'Prehistoric cave',
@@ -708,8 +727,17 @@
     const t=worldTokens(id); if(!t)return null;
     const out=[];
     for(const [fg,bg,min] of CONTRAST_PAIRS){const a=t[fg],b=t[bg];if(HEX_ANY.test(String(a||''))&&HEX_ANY.test(String(b||'')))out.push({fg,bg,min,ratio:ratio(a,b)});}
-    for(const [fg,bg,min,over] of WORLD_PAIRS){const a=t[fg],b=over?glassOver(t[bg],over):t[bg];out.push({fg,bg:bg+(over?' (glass over '+over+')':''),min,ratio:ratio(a,b)});}
+    const dark=!!WORLD_SETS[id].dark; /* a dark world's panels hold light ink: their worst backdrop is white, not black */
+    for(const [fg,bg,min,o] of WORLD_PAIRS)for(const over of dark&&o==='#000000'?['#000000','#ffffff']:[o]){const a=t[fg],b=over?glassOver(t[bg],over):t[bg];out.push({fg,bg:bg+(over?' (glass over '+over+')':''),min,ratio:ratio(a,b)});} /* a dark world: over black and over white, both (pre-review of #1079) */
     return out;
+  }
+  /* the UI style while a world is shown: the world's own, else the theme's (as setTheme sets it) */
+  function uiNow(){
+    if(typeof document==='undefined'||!document.documentElement)return;
+    const el=document.documentElement, w=currentWorld&&WORLD_SETS[currentWorld].ui;
+    if(w)el.dataset.ui=w;
+    else if(currentId===CLEAN_ID||!currentManifest)delete el.dataset.ui;
+    else el.dataset.ui=currentManifest.ui||'clean';
   }
   function paintWorld(){
     if(typeof document==='undefined'||!document.documentElement)return;
@@ -718,7 +746,8 @@
       applyTokens(worldResolved);
       for(const [k,v] of Object.entries(WORLD_SETS[currentWorld].shadow))el.style.setProperty(k,v);
       el.dataset.world=currentWorld;
-      delete el.dataset.dark; /* the world's page is light (its bar is dark by its own rules) */
+      if(WORLD_SETS[currentWorld].dark)el.dataset.dark='';else delete el.dataset.dark; /* a light world's bar is dark by its own rules */
+      uiNow();
     }
   }
   /* FR-100: Real office shows `id`'s world (null: flat, the user's theme again). Unknown ids are null. Returns the world shown. */
@@ -732,6 +761,7 @@
       const el=document.documentElement;
       for(const k of Object.keys(worldTokens(was)))if(!own(CLEAN_TOKENS,k))el.style.removeProperty(k);
       delete el.dataset.world;
+      uiNow();
       applyTokens(currentResolved||resolveTokens(currentManifest));
       for(const k of Object.keys(WORLD_SETS[was].shadow)){const m=currentManifest&&currentManifest.tokens;if(own(m,k))el.style.setProperty(k,m[k]);else el.style.removeProperty(k);}
       if(isDarkColor((currentResolved||{})['--surface']))el.dataset.dark='';else delete el.dataset.dark;

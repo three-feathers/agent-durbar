@@ -149,7 +149,7 @@
 /* the chrome: theme tokens only, at least 10.5px (FR-016, FR-044) */
 .ro-sign{display:flex;align-items:center;gap:7px;height:20px;padding:0 6px;border-radius:6px;background:var(--surface);color:var(--ink);border:1px solid var(--line);white-space:nowrap;overflow:hidden;box-shadow:0 1px 2px rgba(0,0,0,.18);font-size:11px}
 .ro-sign b{font-size:12px;overflow:hidden;text-overflow:ellipsis;flex:0 1 auto;min-width:3ch}
-.ro-sign .ro-path{font:10.5px ui-monospace,"Cascadia Mono",Menlo,Consolas,monospace;color:var(--muted);overflow:hidden;text-overflow:ellipsis;min-width:0;flex:0 1 auto}
+.ro-sign .ro-path{font:10.5px ui-monospace,"Cascadia Mono",Menlo,Consolas,monospace;color:var(--muted);overflow:hidden;text-overflow:ellipsis;min-width:0;flex:0 1000 auto} /* the path gives way long before the name (a font wider than measured, #1079 on Linux) */
 .ro-sc{display:flex;gap:6px;align-items:center;flex:none}
 .ro-cnt{display:inline-flex;gap:3px;align-items:center}
 .ro-cost{font-weight:600}
