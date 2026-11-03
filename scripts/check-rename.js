@@ -4,7 +4,7 @@
  *   npm run check:rename
  *   OUT=docs/screenshots  (optional) also saves the screenshots
  *
- * At 1440x900 and 1280x800, in Expert and in Simple: Rename… from the chat header's More menu and from the card menu; the dialog
+ * At 1440x900 and 1280x800: Rename… from the chat header's More menu and from the card menu; the dialog
  * words per kind (Copilot/Codex "Also saved in", Claude Code "at your next message", none "Only in Agent Durbar"); the field is
  * prefilled and selected; Enter saves, Escape changes nothing and returns focus, an empty name resets, a refused name keeps the
  * dialog open with the reason; an HTML-looking name shows as text on every surface (card, list row, header, strip, Schedules, Previous
@@ -36,14 +36,11 @@ module.exports = async (ctx) => {
   const names = (id) => js(`(()=>{const a=__durbarSimUi.agents().find(x=>x.id===${jsLiteral(id)});const d=document.querySelector(${jsLiteral(`#stage .desk[data-id="${id}"] .name`)});return {name:a.name,alias:a.alias||'',card:d?d.textContent:null,cardTip:d?d.getAttribute('title')||'':null}})()`);
 
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
-    for (const level of ['expert', 'simple']) {
+    {
       await H.load({ w, h, query: Q, ready: 'fit', settle: false });
-      await js(`localStorage.setItem('durbar.detail',${jsLiteral(level)})`);
-      await H.load({ query: Q, ready: 'fit', settle: false });
       await ctx.sleep(1800);
-      const tag = `${w} ${level}`;
+      const tag = `${w}`;
       ctx.win.show(); ctx.win.focus(); ctx.win.webContents.focus();
-      assert.ok(await js(`document.body.classList.contains('simple')===${level === 'simple'}`), `${tag}: the detail level is on`);
       assert.strictEqual(await js(`window.__xss===undefined`), true);
 
       // 1. the dialog words per kind (sim-1 Claude, sim-5 Codex, sim-2 Copilot, sim-7 has no rename); Escape changes nothing
@@ -59,8 +56,7 @@ module.exports = async (ctx) => {
         assert.strictEqual(d.max, 60);
         assert.ok(d.focus && d.sel[0] === 0 && d.sel[1] === d.value.length, `${tag}: ${kind}: the field is focused and fully selected: ${jsLiteral(d)}`);
         assert.deepStrictEqual(d.btns, ['Cancel', 'Rename*']);
-        if (id === 'sim-1' && w === 1440 && level === 'expert') await shot('059-rename-dialog-1440x900.png');
-        if (id === 'sim-1' && w === 1280 && level === 'simple') await shot('059-rename-dialog-simple-1280x800.png');
+        if (id === 'sim-1' && w === 1440) await shot('059-rename-dialog-1440x900.png');
         await type('Not saved');
         await key('Escape'); await ctx.sleep(250);
         assert.strictEqual(await js(`!document.getElementById('modeDlg')`), true, `${tag}: Escape closes`);
@@ -115,7 +111,7 @@ module.exports = async (ctx) => {
       // nothing came from the markup
       const bad = await js(`({img:document.querySelectorAll('img[src="x"]').length,xss:window.__xss!==undefined})`);
       assert.deepStrictEqual(bad, { img: 0, xss: false }, `${tag}: the name made no element and ran nothing`);
-      if (level === 'expert') await shot(`059-rename-done-${w}x${h}.png`);
+      await shot(`059-rename-done-${w}x${h}.png`);
 
       // 4. an empty name resets to the runtime's title; a 60-character name fits the header
       await openFromMore('sim-1');

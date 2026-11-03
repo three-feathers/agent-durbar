@@ -12,7 +12,7 @@
    - Masked once per field change: the cut lines are kept per helper, field and raw value, so a repaint with unchanged fields masks nothing.
    - The tooltip is built from the already masked, cut parts and then cut to HX_TIP (the number the desk card's tooltip uses).
    deps: { excerpt(text, n, fallback) masked+plain+cut, mask(text) masked, toolLabel(tool, label, n) masked and cut ('' when masking is
-   not possible), plain(kind, tool, label, running) the plain chat words of Simple, cut(text, n), fmtTok(n) }. */
+   not possible), cut(text, n), fmtTok(n) }. */
 (function(root, api){
   if(typeof module==='object'&&module.exports) module.exports=api; else root.DurbarHelperCard=api;
 })(typeof self!=='undefined'?self:this, (function(){
@@ -34,7 +34,7 @@
     const D=deps||{};
     /* every dependency answers a string or nothing: a throwing one, or one that answers something else, is an empty answer (fail closed) */
     const wrap=f=>typeof f==='function'?(...a)=>{try{const r=f(...a);return typeof r==='string'?r:'';}catch(e){return '';}}:()=>'';
-    const excerpt=wrap(D.excerpt), mask=wrap(D.mask), toolLabel=wrap(D.toolLabel), plain=wrap(D.plain), cut0=wrap(D.cut);
+    const excerpt=wrap(D.excerpt), mask=wrap(D.mask), toolLabel=wrap(D.toolLabel), cut0=wrap(D.cut);
     const cut=(t,n)=>cut0(t,n)||(typeof D.cut==='function'?'':String(t).slice(0,n));
     const fmtTok=typeof D.fmtTok==='function'?D.fmtTok:n=>String(n);
     /* ---- the memo: per holder (the helper's record, else its card), field and raw value ---- */
@@ -55,15 +55,14 @@
       return out||SAFE_WORD[word||key]||'';
     }
     /* what the helper does now: from its last activity (s.now), else null */
-    function nowField(holder,now,simple){
+    function nowField(holder,now){
       if(!now||typeof now!=='object')return null;
       if(now.kind==='thinking')return 'Thinking';
       if(now.kind==='intent')return textField(holder,'now:intent',now.text,'now');
       if(!has(now.tool))return null;
-      const raw=[simple?'s':'e',now.kind||'',now.tool,now.label==null?'':now.label].join('\u0001');
+      const raw=['e',now.kind||'',now.tool,now.label==null?'':now.label].join('\u0001');
       const out=cached(holder,'now:tool',raw,()=>{
         const tool=cut(mask(now.tool),40)||'tool', ml=has(now.label)?toolLabel(now.tool,now.label,HX_CHARS):'';
-        if(simple)return plain(now.kind,now.tool,ml,true);
         return tool+(ml?' '+ml:'');
       });
       return out||SAFE_WORD.now;
@@ -81,14 +80,14 @@
       ? {key,label:'',text:NOT_REPORTED[key],reported:false,tip:NR_TIP}
       : {key,label:LABEL[key],text,reported:true,tip:''};
     /* h: { holder (a stable object for the memo when there is no record: the helper's card), name, parent, status: 'running'|'done'|'failed', word (Durbar's status word), sub: the record or null, task: the card's task line }
-       o: { simple, live }. Returns { name, lines: [{key, label, text, reported, tip}], aria, title }. */
+       o: { live }. Returns { name, lines: [{key, label, text, reported, tip}], aria, title }. */
     function view(h,level,o){
-      const lv=level===1?1:2, simple=!!(o&&o.simple), live=!(o&&o.live===false), rec=h.sub||null, holder=rec||h.holder||h;
+      const lv=level===1?1:2, live=!(o&&o.live===false), rec=h.sub||null, holder=rec||h.holder||h;
       const st=h.status==='failed'?'failed':h.status==='done'?'done':'running';
       const task=rec?textField(rec,'task',rec.task):null;
       let now=null;
       if(st==='running'&&live){
-        now=rec?nowField(rec,rec.now,simple):textField(holder,'now:line',h.task,'now'); /* a helper with no record (demo): its card line is its activity */
+        now=rec?nowField(rec,rec.now):textField(holder,'now:line',h.task,'now'); /* a helper with no record (demo): its card line is its activity */
       }
       const end=st==='done'?line('result',rec?textField(rec,'result',has(rec.result)?rec.result:rec.lastFinal):null)
         :st==='failed'?line('failed',rec?textField(rec,'failed',rec.error):null):null;
