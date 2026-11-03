@@ -1,1 +1,0 @@
-- **The Real office uses far less CPU when nothing changes** (spec 097 FR-228, FR-229): its motion starts on the graphics side from the first moment, and redraws 12 times a second, all on one clock.
