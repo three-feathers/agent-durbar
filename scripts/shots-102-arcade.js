@@ -160,7 +160,7 @@ module.exports = async (ctx) => {
   await H.shot(path.join(OUT, '102-arcade-status-1440x900.png'), { prep: 'calm' });
   await must(`document.querySelector('#stage .ro')._ready===true`, 'the room ready to move (097 FR-228)', 6000);
   await setStates(['working', 'thinking', 'waiting', 'thinking', 'error', 'working']);
-  await js(`new Promise(r=>setTimeout(r,130))`); /* a bound, on purpose: people who start later keep the same 4 phases */
+  await must(`${ROOM}.some(a=>a.animationName==='ro-arc-bob')`, 'the first people bob'); /* then more start later, and must keep the same 4 phases */
   await setStates(['working', 'working', 'waiting', 'working', 'error', 'working']);
   await must(`${ROOM}.filter(a=>!a.animationName).length===0`, 'a sort over: its slide is on translate and scale, as FR-180 allows, and it ends');
   await must(`${ROOM}.filter(a=>a.animationName==='ro-arc-flash').length>=2`, 'flashes running');
@@ -203,6 +203,15 @@ module.exports = async (ctx) => {
   await must(`document.querySelector('#stage .ro').classList.contains('paused')`, 'the scene paused when hidden');
   assert.deepStrictEqual(await running(), [], 'FR-074: nothing runs while hidden');
   ctx.win.show(); ctx.win.focus();
+
+  /* FR-260: reduced motion turned on while the arcade moves stops its loops at once, before any redraw */
+  await loadArcade(1440, 900, 15, { romotion: '1', simfreeze: '1' });
+  await must(`document.querySelector('#stage .ro')._ready===true`, 'the room ready to move (097 FR-228)', 6000);
+  await setStates(['working', 'thinking', 'waiting', 'working', 'error', 'working']);
+  await must(`${ROOM}.filter(a=>/^ro-arc-/.test(a.animationName)).length>=3`, 'the loops run');
+  await media(MOTION('reduce'));
+  await must(`${ROOM}.filter(a=>/^ro-arc-/.test(a.animationName)).length===0`, 'reduced motion mid-session: no loop of this world, had ' + JSON.stringify(await running()), 4000);
+  await media(MOTION('no-preference'));
 
   /* FR-260: reduced motion, Serious mode, forced colours */
   await media(MOTION('reduce'));

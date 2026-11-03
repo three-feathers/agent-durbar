@@ -58,6 +58,9 @@
 .ro[data-world="retro"] .ro-dis.d0{mask:repeating-conic-gradient(#000 0 25%,transparent 0 50%) 0 0/calc(2px*var(--ro-g)) calc(2px*var(--ro-g))}
 .ro[data-world="retro"] .ro-dis.d1{mask:repeating-conic-gradient(#000 0 25%,transparent 0 50%) 0 0/calc(4px*var(--ro-g)) calc(4px*var(--ro-g))}
 .ro[data-world="retro"] .ro-dis.d2{mask:repeating-conic-gradient(#000 0 25%,transparent 0 50%) 0 0/calc(8px*var(--ro-g)) calc(8px*var(--ro-g))}
+/* reduced motion turned on while the room is shown: `.still` comes with the next draw, these loops stop at once (FR-260) */
+@media (prefers-reduced-motion:reduce){.ro[data-world="retro"] :is(.ro-marquee::after,.ro-cue.cue-dots,.ro-person.bob){animation:none}}
+.ro[data-world="retro"].still .ro-marquee::after{animation:none}
 @media (forced-colors:active){.ro[data-world="retro"] .ro-marquee:is(.mq-flash,.mq-flash-red)::after{animation:none;opacity:1}.ro[data-world="retro"] :is(.ro-person.bob,.ro-cue.cue-dots){animation:none}.ro[data-world="retro"] :is(.ro-coin,.ro-fglow){display:none}}
 /* the plate: the status, one line: the name is on the marquee and in the button's label */
 .ro[data-world="retro"] .ro-plate .ro-l1{display:none}
