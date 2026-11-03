@@ -365,7 +365,7 @@
           if(r==='done'){ov.remove();resolve('ai');}else if($('peNName'))focusIn($('peNName'));};}ov.querySelector('#peNCancel').onclick=()=>done(null);
       ov.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();done(null);}else if(e.key==='Enter'&&e.target.id==='peNName'){e.preventDefault();go();}
         else if(e.key==='Tab'){const it=[...ov.querySelectorAll('select,input:not([type=radio]),input[type=radio]:checked,button')];const i=it.indexOf(doc.activeElement);if(e.shiftKey&&i<=0){e.preventDefault();focusIn(it[it.length-1]);}else if(!e.shiftKey&&i===it.length-1){e.preventDefault();focusIn(it[0]);}}});
-      ov.addEventListener('click',e=>{if(e.target===ov)done(null);});
+      window.DurbarDialog.onBackdrop(ov,()=>done(null)); /* spec 052 FR-237 */
       focusIn($('peNName'));
     });
   }

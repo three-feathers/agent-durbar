@@ -380,3 +380,4 @@
 - [x] T249 A raise under what was used keeps the card and the message (`test:copilotcap`, mutation-checked; `real:`) [FR-234]
 - [x] T250 A session over its cap opens again (`test:copilotcap`, mutation-checked; `real:`) [FR-235]
 - [x] T251 Remove the Simple / Expert switch: Expert is the only behaviour, "No spending limit" kept, the welcome question and the Settings control gone, a stored `durbar.detail` dropped once; 11 drivers lose the second dimension, `shots-052-ux` checks nothing renders the switch; docs and `*-simple-*` pictures removed [FR-236]
+- [x] T253 A text popup closes only on a press that starts outside it: one press tracker in `dialog.js` (`onBackdrop`, `isOutsideClick`) for every backdrop and the floors and Folders popovers, the focus trap returns to the last focused control; `scripts/check-edit-popups.js` (12 kinds with a field plus the inbox and keyboard sheet, both sizes, real input) and `test-dialog.ts`, each guard mutation-checked [FR-237]
