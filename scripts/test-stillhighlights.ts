@@ -66,6 +66,29 @@ async function main(): Promise<void> {
       register({ getSettingsStore: () => stuck, getRunTheme: () => undefined, clearRunTheme: () => undefined });
       assert.deepStrictEqual(await call('settings:setStillHighlights', true), { ok: false, stillHighlights: false }, 'a failed save: not ok, and the value in force');
       assert.strictEqual(stuck.stillHighlights, false, 'rolled back in memory too');
+      // a failed write that asks for the value already in force is not ok either (pre-review of #968: `ok = inForce === on` said ok)
+      assert.deepStrictEqual(await call('settings:setStillHighlights', false), { ok: false, stillHighlights: false }, 'a failed save of the value already in force: not ok');
+      handlers.clear();
+      register({ getSettingsStore: () => store, getRunTheme: () => undefined, clearRunTheme: () => undefined });
+    }
+    // the store's own guard (the handler's guard hides it when called through the handler): a non-boolean is refused and changes nothing
+    {
+      const own = new SettingsStore(path.join(dir, 'own.json'));
+      own.load();
+      assert.deepStrictEqual(own.setStillHighlights(true), { ok: true, stillHighlights: true });
+      for (const junk of ['yes', 1, null, undefined, {}]) assert.deepStrictEqual(own.setStillHighlights(junk), { ok: false, stillHighlights: true }, 'the store refuses ' + JSON.stringify(junk));
+      assert.strictEqual(own.stillHighlights, true, 'and keeps the value');
+    }
+    // the handler's own guard: a store that records calls never sees a non-boolean
+    {
+      const seen: unknown[] = [];
+      const spy = { stillHighlights: false, setStillHighlights: (v: unknown) => { seen.push(v); return { ok: true, stillHighlights: v === true }; } };
+      handlers.clear();
+      register({ getSettingsStore: () => spy as never, getRunTheme: () => undefined, clearRunTheme: () => undefined });
+      for (const junk of ['yes', 1, null, undefined, {}]) assert.deepStrictEqual(await call('settings:setStillHighlights', junk), { ok: false, stillHighlights: false }, 'the handler refuses ' + JSON.stringify(junk));
+      assert.deepStrictEqual(seen, [], 'a non-boolean never reaches the store');
+      assert.deepStrictEqual(await call('settings:setStillHighlights', true), { ok: true, stillHighlights: true });
+      assert.deepStrictEqual(seen, [true], 'a boolean does');
       handlers.clear();
       register({ getSettingsStore: () => store, getRunTheme: () => undefined, clearRunTheme: () => undefined });
     }

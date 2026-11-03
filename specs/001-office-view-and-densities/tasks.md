@@ -238,6 +238,7 @@ Numbers checked against `main` (00d340eb) and every open PR on 2026-10-25: none 
 - [x] T164 (FR-191): docs: spec delta, `changelog.d/001-office-browser-waits.md`; no screenshots (driver only)
 - [x] T165 Issue #780 (FR-192): `still-highlights` setting: `credits.ts` parse, `settings.ts` store, `ipc/settings.ts` channel, `preload.ts`, `api.ts`, `sim.ts`; `app.js` (`data-still-highlights`, `hlIn`, `unreadFresh`), `styles.css`, `screens.js` Highlights section; `test-stillhighlights.ts`, `check-unread.js`
 - [x] T166 Issue #780 (FR-192): docs: spec delta, `docs/features.md`, `changelog.d/001-still-highlights.md`; pictures retaken (`shots-040-picker`, `shots-058-mcp-settings`, 2026-11-02; `cost-cap` shows a chat, not Settings, and stays); Real office, waiting-badge ping, failed-save message and `until()` waits in `check-unread` (review of 09aa0ac0)
+- [x] T185 Issue #780 (FR-192, pre-review of #968): the switch also stops the compact `.wave` and `.tap`, the theme kits' wave and an already drawn desk (`stillSig`); the row shows the saved value; a press while saving is ignored; `setStillHighlights` returns `{ok, stillHighlights}`; `durbar_settings` reports it; tests for each guard, the failed save both ways, the boot read, the double press and the drawn wave (`check-unread`, `test-stillhighlights`); docs no longer say "same as reduced motion"
 
 ## Delta 2026-11-01: room-by-room layout search, and the renders (FR-193..FR-203)
 

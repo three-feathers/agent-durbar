@@ -413,9 +413,12 @@
         <p class="scr-note">Who sits at the desks, on top of any theme; the choice applies at once and is kept on this computer.</p>
         <ul class="thlist" id="chList">${charItems()}</ul></section>`:'';
     /* spec 001 FR-192 (WCAG 2.2.2): the way to stop the moving person at a desk that needs you or has a New reply; the glow and the badge stay */
+    /* the row shows what main saved (settings:get), and the window follows it when its own read at start failed or is behind */
+    const stillOn=X.isStillHl?(typeof app.stillHighlights==='boolean'?app.stillHighlights:!!X.isStillHl()):false;
+    if(X.isStillHl&&X.setStillHl&&typeof app.stillHighlights==='boolean'&&app.stillHighlights!==!!X.isStillHl())X.setStillHl(app.stillHighlights);
     const stillSec=X.bridge.setStillHighlights&&X.isStillHl?`<section class="scr-sec" aria-labelledby="stillH"><h3 id="stillH">Highlights</h3>
-        <p class="scr-note">A desk that needs you or has a New reply glows, and its person jumps and then keeps pulsing until you answer. Turn this on to keep the glow and the New badge but stop all that movement (the same as your system's reduced motion setting, for this only). In Real office the whole room stands still.</p>
-        <div class="scr-tools"><span class="swrow" style="display:flex;align-items:center;gap:10px"><b>Still highlights</b> <small>(no motion)</small>${sw(!!X.isStillHl(),'Still highlights (no motion): desks keep the glow and the New badge, the person does not move','id="stillSw"')}</span><span class="scr-note small" id="stillMsg" role="status"></span></div></section>`:'';
+        <p class="scr-note">A desk that needs you or has a New reply glows, and its person jumps and then keeps pulsing until you answer. Turn this on to keep the glow and the New badge but stop that movement: the pulsing, the waving hand, the tapping and the badge's pings. In Real office the whole room stands still. Some other small animations still follow your system's reduced motion setting.</p>
+        <div class="scr-tools"><span class="swrow" style="display:flex;align-items:center;gap:10px"><b>Still highlights</b> <small>(no motion)</small>${sw(stillOn,'Still highlights (no motion): desks keep the glow and the New badge, the person does not move','id="stillSw"')}</span><span class="scr-note small" id="stillMsg" role="status"></span></div></section>`:'';
     const ab=app.about;
     const aboutSec=ab?`<section class="scr-sec" aria-labelledby="aboutH"><h3 id="aboutH">About</h3>
         <p class="scr-note"><b>${esc(ab.name)}</b> ${esc(ab.version)} · by <b>${esc(ab.owner)}</b></p>
@@ -855,14 +858,18 @@
     }
     const st=e.target.closest('#stillSw');
     if(st&&X.bridge.setStillHighlights){
+      if(st.dataset.busy==='1')return; /* a save is in flight: a second press would send the same value again */
+      st.dataset.busy='1';
       const on=st.getAttribute('aria-checked')!=='true';
       let res=null; try{res=await X.bridge.setStillHighlights(on);}catch(err){res=null;}
+      delete st.dataset.busy;
+      const m=$('stillMsg'), isBool=!!res&&typeof res.stillHighlights==='boolean';
+      if(isBool)X.setStillHl(res.stillHighlights); /* what main says is in force, saved or not (a failed save keeps the old value) */
       if(!res||!res.ok){ /* not saved: the switch and the window show what main says is in force (a boolean), else what they showed */
-        const inForce=res&&typeof res.stillHighlights==='boolean'?res.stillHighlights:st.getAttribute('aria-checked')==='true';
-        if(res&&typeof res.stillHighlights==='boolean')X.setStillHl(inForce);
+        const inForce=isBool?res.stillHighlights:st.getAttribute('aria-checked')==='true';
         st.classList.toggle('on',inForce);st.setAttribute('aria-checked',inForce?'true':'false');
-        const m=$('stillMsg');if(m)m.textContent='Could not save this setting. It stays '+(inForce?'on':'off')+'.';return;}
-      if(res&&res.ok){X.setStillHl(!!res.stillHighlights);st.classList.toggle('on',!!res.stillHighlights);st.setAttribute('aria-checked',res.stillHighlights?'true':'false');const m=$('stillMsg');if(m)m.textContent=res.stillHighlights?'Still highlights is on: the glow stays, nothing moves.':'Still highlights is off.';}
+        if(m)m.textContent='Could not save this setting. It stays '+(inForce?'on':'off')+'.';return;}
+      st.classList.toggle('on',res.stillHighlights);st.setAttribute('aria-checked',res.stillHighlights?'true':'false');if(m)m.textContent=res.stillHighlights?'Still highlights is on: the glow stays, nothing moves.':'Still highlights is off.';
       return;
     }
     const wb=e.target.closest('#wrGroup [data-world]');

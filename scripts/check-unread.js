@@ -309,6 +309,7 @@ module.exports = async (ctx) => {
         await ok(`document.getElementById('stillSw').getAttribute('aria-checked')===${jsLiteral(String(on))}`, `${tag}: the switch is ${on ? 'on' : 'off'}`);
         const fs = await js(`(()=>{let min=99,who='';document.querySelectorAll('.scr-sec[aria-labelledby=stillH], .scr-sec[aria-labelledby=stillH] *').forEach(e=>{if(!e.getClientRects().length)return;if(![...e.childNodes].some(n=>n.nodeType===3&&n.textContent.trim()))return;const f=parseFloat(getComputedStyle(e).fontSize);if(f<min){min=f;who=e.tagName+'.'+e.className;}});return {min,who};})()`);
         assert.ok(fs.min >= 10.5, `${tag}: the Highlights section's text is at least 10.5px (${fs.min} ${fs.who})`);
+        if (process.env.OUT && on) { await js(`document.getElementById('stillH').scrollIntoView({block:'center'})`); await H.shot(path.join(OUT, `780-still-highlights-settings-${w}x${h}.png`), { prep: 'calm', blur: true, settle: true }); }
         await H.click('#scrClose');
         await ok(`!document.getElementById('stillSw')||!document.getElementById('stillSw').getClientRects().length`, `${tag}: Settings closes`);
         assert.strictEqual(await js(`document.documentElement.hasAttribute('data-still-highlights')`), on, `${tag}: the generic attribute follows the switch`);
@@ -352,26 +353,70 @@ module.exports = async (ctx) => {
       assert.strictEqual(await pingOf(), 'ping', `${tag}: switch off: the waiting badge pings`);
       await sw(true);
       await ok(`(()=>{const b=document.createElement('span');b.className='badge waiting';document.getElementById('stage').appendChild(b);const n=getComputedStyle(b,'::after').animationName;b.remove();return n==='none';})()`, `${tag}: switch on: the waiting badge does not ping`);
+      // the waiting person's own motion (pre-review of #968): the compact CSS wave and the 60 s desk tap stop with the switch (a probe with the same classes and cascade)
+      const handsOf = () => js(`(()=>{const s=document.createElementNS('http://www.w3.org/2000/svg','svg');s.setAttribute('class','scene sc-c');s.innerHTML='<g class="wave"></g><g class="tap"></g>';document.getElementById('stage').appendChild(s);const r=[...s.querySelectorAll('g')].map(g=>getComputedStyle(g).animationName);s.remove();return r;})()`);
+      assert.deepStrictEqual(await handsOf(), ['none', 'none'], `${tag}: switch on: the compact wave and the desk tap do not move`);
+      // the full-size waving hand is SMIL, which CSS cannot stop: the scene is drawn without it, and with a different signature so an already drawn desk is redrawn
+      const waving = (kit) => js(`(()=>{let v,a;const T=window.THEME,o=T.sceneKit;if(${jsLiteral(kit||'')})T.sceneKit=()=>${jsLiteral(kit||'')};try{const U=window.__durbarSimUi;a=Object.assign({},U.agents()[0],{state:'waiting',paused:false,live:true});v=U.scene(a,false,false);}catch(e){return {err:String(e&&e.stack||e)};}finally{T.sceneKit=o;}return {smil:/animateTransform/.test(v),sig:(v.match(/data-sig="([^"]*)"/)||[])[1]};})()`);
+      const wOn = await waving();
+      assert.ok(!wOn.err, `${tag}: scene() ran: ${wOn.err}`);
+      assert.strictEqual(wOn.smil, false, `${tag}: switch on: a waiting person is drawn without the SMIL wave`);
+      const kOn = await waving('pixel');
+      assert.ok(!kOn.err && kOn.smil === false, `${tag}: switch on: a theme kit's waiting person is drawn without the SMIL wave ${kOn.err || ''}`);
       // the badge's own pulse: a New badge forced to .fresh must not animate with the switch on (only that rule stops it)
       assert.strictEqual(await js(`(()=>{const m=document.querySelector('#stage .unread-mark');if(!m)return 'no badge';m.classList.add('fresh');const n=getComputedStyle(m).animationName;m.classList.remove('fresh');return n;})()`), 'none', `${tag}: switch on: a fresh New badge does not pulse`);
       await sw(false);
+      assert.deepStrictEqual(await handsOf(), ['wave', 'tapdesk'], `${tag}: switch off: the compact wave and the desk tap move (the check can see the difference)`);
+      const wOff = await waving();
+      assert.strictEqual(wOff.smil, true, `${tag}: switch off: the waiting person waves (the check can see the difference)`);
+      const kOff = await waving('pixel');
+      assert.ok(!kOff.err && kOff.smil === true && kOff.sig !== kOn.sig, `${tag}: switch off: the theme kit's waiting person waves, and the signature differs (the check can see the difference) ${kOff.err || ''}`);
+      assert.notStrictEqual(wOff.sig, wOn.sig, `${tag}: the switch changes the scene's signature, so a desk already drawn is redrawn`);
       assert.strictEqual(await js(`(()=>{const m=document.querySelector('#stage .unread-mark');if(!m)return 'no badge';m.classList.add('fresh');const n=getComputedStyle(m).animationName;m.classList.remove('fresh');return n;})()`), 'unread-pulse', `${tag}: switch off: a fresh New badge pulses (the check can see the difference)`);
-      // a save that fails: the answer's value is what the switch and the words show (review of 09aa0ac0, 8)
-      await js(`(()=>{const b=window.__durbarSimUi.bridge();window.__stillOrig=window.__stillOrig||b.setStillHighlights;b.setStillHighlights=async()=>({ok:false,stillHighlights:true});})();0`);
+      // a save that fails: the page and the switch show the value main says is in force (review of 09aa0ac0, 8; pre-review of #968)
+      const failWith = (v) => js(`(()=>{const b=window.__durbarSimUi.bridge();window.__stillOrig=window.__stillOrig||b.setStillHighlights;b.setStillHighlights=async()=>({ok:false,stillHighlights:${jsLiteral(v)}});})();0`);
+      const restore = () => js(`(()=>{const b=window.__durbarSimUi.bridge();b.setStillHighlights=window.__stillOrig;})();0`);
+      // A: asked for on, main says it stays off: the words and the page say off (a mutant that shows the asked value says on)
+      await failWith(false);
       await H.click('#settingsBtn');
       await ok(`!!document.getElementById('stillSw')`, `${tag}: Settings for the failed save`);
       assert.strictEqual(await js(`document.getElementById('stillSw').getAttribute('aria-checked')`), 'false', `${tag}: the switch starts off`);
       await H.click('#stillSw');
       await ok(`/Could not save/.test(document.getElementById('stillMsg').textContent)`, `${tag}: a failed save says so`);
-      assert.strictEqual(await js(`document.getElementById('stillSw').getAttribute('aria-checked')`), 'true', `${tag}: the switch shows what main says is in force (on)`);
+      assert.strictEqual(await js(`document.getElementById('stillSw').getAttribute('aria-checked')`), 'false', `${tag}: asked on, main kept it off: the switch stays off`);
+      assert.ok(/stays off/.test(await js(`document.getElementById('stillMsg').textContent`)), `${tag}: and the words say off`);
+      assert.strictEqual(await js(`document.documentElement.hasAttribute('data-still-highlights')`), false, `${tag}: and the page keeps its motion`);
+      // B: main says it is on (the page was behind): the page applies main's value (a mutant that drops setStillHl leaves the attribute off)
+      await failWith(true);
+      await H.click('#stillSw');
+      await ok(`document.getElementById('stillSw').getAttribute('aria-checked')==='true'`, `${tag}: the switch shows what main says is in force (on)`);
       assert.ok(/stays on/.test(await js(`document.getElementById('stillMsg').textContent`)), `${tag}: and the words say so`);
-      await js(`(()=>{const b=window.__durbarSimUi.bridge();b.setStillHighlights=window.__stillOrig;})();0`);
+      assert.strictEqual(await js(`document.documentElement.hasAttribute('data-still-highlights')`), true, `${tag}: the page applies main's value, not only the switch`);
+      await restore();
       await H.click('#stillSw');
       await ok(`document.getElementById('stillSw').getAttribute('aria-checked')==='false'`, `${tag}: the real answer turns it off again`);
+      // a double press sends one save, not two (the second press arrives while the first is in flight)
+      await js(`(()=>{const b=window.__durbarSimUi.bridge();window.__stillOrig=window.__stillOrig||b.setStillHighlights;window.__stillCalls=[];b.setStillHighlights=async(on)=>{window.__stillCalls.push(on);await new Promise(r=>setTimeout(r,150));return window.__stillOrig(on);};})();0`);
+      await js(`(()=>{const e=document.getElementById('stillSw');e.click();e.click();})()`);
+      await ok(`document.getElementById('stillSw').getAttribute('aria-checked')==='true'&&!document.getElementById('stillSw').dataset.busy`, `${tag}: the double press ends on`);
+      assert.deepStrictEqual(await js(`window.__stillCalls`), [true], `${tag}: one save for a double press`);
+      await restore();
+      await H.click('#stillSw');
+      await ok(`document.getElementById('stillSw').getAttribute('aria-checked')==='false'`, `${tag}: and off again`);
       await H.click('#scrClose');
     } finally {
       await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [] });
     }
+  }
+  // the boot read (pre-review of #968): a setting saved on is applied when the window starts, with no visit to Settings (the simulator starts it on with simstillhl=1)
+  {
+    await H.load({ w: 1440, h: 900, query: { hlmotion: '1', simstillhl: '1' } });
+    await ok(`document.documentElement.hasAttribute('data-still-highlights')`, 'boot: a saved Still highlights is applied at start');
+    await H.click('#settingsBtn');
+    await ok(`!!document.getElementById('stillSw')&&document.getElementById('stillSw').getAttribute('aria-checked')==='true'`, 'boot: and Settings shows it on');
+    await H.click('#scrClose');
+    await H.load({ w: 1440, h: 900, query: { hlmotion: '1' } });
+    assert.strictEqual(await js(`document.documentElement.hasAttribute('data-still-highlights')`), false, 'boot: not saved, not applied');
   }
   // Real office (review of 09aa0ac0, 2): the switch holds the whole room still, the call lights and the people with them (spec 097 FR-047, the shared
   // `still`); nothing endless runs in it with the switch on, and it all comes back when the switch is off.

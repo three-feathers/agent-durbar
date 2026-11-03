@@ -142,16 +142,17 @@ export class SettingsStore {
     return this.s.stillHighlights === true;
   }
 
-  /** Only a real boolean changes it; the default (off) is not written. Returns the value now in force. */
-  setStillHighlights(v: unknown): boolean {
-    if (typeof v !== 'boolean') return this.stillHighlights;
+  /** Only a real boolean changes it; the default (off) is not written. `ok` is true only when the value asked for is now in force and was saved (a failed write is not ok even when the value did not change); `stillHighlights` is the value in force. */
+  setStillHighlights(v: unknown): { ok: boolean; stillHighlights: boolean } {
+    if (typeof v !== 'boolean') return { ok: false, stillHighlights: this.stillHighlights };
     const next: AppSettings = { ...this.s };
     if (v) next.stillHighlights = true;
     else delete next.stillHighlights;
     const was = this.s;
     this.s = next;
-    if (!this.save()) this.s = was; /* not saved: back to what it was, so the switch and the next start agree */
-    return this.stillHighlights;
+    const saved = this.save();
+    if (!saved) this.s = was; /* not saved: back to what it was, so the switch and the next start agree */
+    return { ok: saved, stillHighlights: this.stillHighlights };
   }
 
   /** Serious mode (spec 034): off by default. */

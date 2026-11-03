@@ -2094,7 +2094,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
     /* spec 024: place mapping kept in memory (plain script: no imports, so the ids are listed here) */
     const placeMap: Record<string, string> = {};
     let seriousMode = false; /* spec 034 */
-    let stillHighlights = false; /* spec 001 FR-192 */
+    let stillHighlights = typeof location !== 'undefined' && new URLSearchParams(location.search).get('simstillhl') === '1'; /* spec 001 FR-192; ?simstillhl=1 starts it saved on (the boot read) */
     let notifyNeedsMe = false; /* spec 052 FR-059: off in the demo until you turn it on */
     let breakResume: 'auto' | 'ask' = 'auto'; /* spec 068 FR-006 */
     let chatLinksIn: 'session' | 'system' = 'session'; /* spec 080 FR-031 */
