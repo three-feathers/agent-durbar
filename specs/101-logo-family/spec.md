@@ -229,6 +229,10 @@ Tool surface (spec 098): the picker is a Settings section and the top-bar icon t
 
 ## Changes
 
+### 2026-11-03: pictures without the macOS traffic-light room (owner's look at #988)
+
+Vikram accepted the icons (03:33 UTC, relayed): "placement can be a little more towards left". Measured on this Mac: the mark starts 78 px from the window's left edge, after the room kept for the traffic lights (`styles.css`, macOS only, not in full screen); Windows and Linux keep no room (20 px, the bar's padding). A picture has no window controls, so that room showed as an empty gap. `driver-helpers.js`'s `shot()` now closes the room for the moment of the picture when `npm run shots:docs` takes it (`DURBAR_DOC_SHOTS=1`), by the app's own full-screen state, which has no room, so every picture shows the bar as Windows and Linux do; the app is unchanged. `[KNOWN GAP]` the room's own width against the real traffic lights is not measured (a screen capture of the window is refused on this Mac); it waits for a screenshot of the window's top-left.
+
 ### 2026-11-03: the generator and its checks fail loudly (review of #988)
 
 - `build-icons` refuses a capture that is not exactly the size asked for, in both directions, instead of resampling it: a clamped window would have written a squashed icon. `test:`
