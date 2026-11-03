@@ -773,7 +773,8 @@ Vikram, 06:16 UTC (relayed): "B and be creative, may be zigzag positioning for m
   - 3 agents: 43 % (`g = 4`, 2 + 1, lobby 124 px) / 34 % (`g = 3`, 2 + 1).
   - 4 agents: 57 % (`g = 4`, lobby 124 px) / 45 % (`g = 3`).
   `[KNOWN GAP]` At 1248, 2 + 1 at `g = 4` would need a lobby of about 27 px, so 3 and 4 agents stay at `g = 3` there. Half the floor is out of reach for 1 agent, for 2 at 1408 and for 3 at 1248: a cabinet needs its person place beside it. `test:` `test-realoffice-aisles` holds each figure; a scale cap of 3, a plan order without coverage and the full lobby each fail it. `sim:` `shots-102-arcade` fails at 4 agents at 1440x900 without the snap allowance (a plate on a sign).
-- **Sleeping art** comes from a separate branch (`102-arcade-sleep-art`); the `sit` frames here are unchanged.
+- **Sleeping art** came from a separate branch (`102-arcade-sleep-art`, merged): the 15 `sit` frames are drawn (Codex, `scripts/build-arcade-sleep.py`). The full pack build keeps them: it no longer deletes them or draws a stool frame over them, it measures them into `set.json` and has `build-arcade-sleep.py --assets` write their ASSETS.md lines. `read:` a full build needs the art cache and was not run; `keep_sit` alone, run on the merged tree, changes nothing.
+- **A plate never says "undefined"** (relayed, 2026-11-03: a driver that forced everyone asleep showed "undefined · At Terminal"). The status words have `limit` (*Limit reached*) and `asleep` (*Asleep*). A state with no word shows none, and the plate joins only what it has. `sim:` `shots-102-arcade` sets every state with no label of its own, waits for an asleep plate and finds none saying "undefined"; without the fix it fails.
 
 ### 2026-11-03: Retro arcade: night only, dark everywhere, and nobody cut by a cabinet (owner's looks), behind its closed flag
 
