@@ -8,8 +8,9 @@
  */
 import { isMcpAuthChallenge } from './mcpauth';
 import type { AgentEvent, CompactionEvent, ContextTier, McpServerStatus } from './types';
+import { appApprovedPermission } from './types';
 import { cleanSessionTitle } from './history';
-import { nonEmptyStr as str } from '../shared/guards';
+import { isObj, nonEmptyStr as str } from '../shared/guards';
 import { parseAutoTier } from '../shared/modelswitch';
 import { EditStreams, editOf } from './edits';
 import { usageLimitClosing } from './usagelimit';
@@ -161,6 +162,12 @@ export class EventMapper {
         if (this.reasoningSeen.delete(d.reasoningId)) return;
         if (d.content) this.emit({ type: 'thinking', delta: d.content, reasoningId: d.reasoningId, agentId });
         return;
+      case 'permission.completed': {
+        // spec 003 FR-111 (`decisionSource` is experimental in the SDK): only the app's own assisted-approval judge, with an approved result
+        const kind = isObj(d.result) ? d.result.kind : undefined;
+        if (d.decisionSource !== 'assisted_approval' || typeof kind !== 'string' || !kind.startsWith('approved') || !str(d.toolCallId)) return;
+        return this.emit({ type: 'permission', permission: appApprovedPermission(d.toolCallId), agentId });
+      }
       case 'assistant.message_delta':
         return this.emit({ type: 'output', delta: d.deltaContent, agentId });
       case 'assistant.message':

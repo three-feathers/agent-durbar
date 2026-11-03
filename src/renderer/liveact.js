@@ -37,11 +37,9 @@
     for(let i=pool.length-2;i>=0&&!one;i--){const next=pool[i]+' '+out;if(Array.from(next).length>max)break;out=next;}
     return cutOf(out,max);
   }
-  /* A tool start as a verb phrase. kind: read | edit | run | search | tool (the chat's toolKind); label: the chat's toolLabel.
-     simple: the plain chat words (spec 052 FR-081) given by the caller, so Simple never shows a command. */
+  /* A tool start as a verb phrase. kind: read | edit | run | search | tool (the chat's toolKind); label: the chat's toolLabel. */
   function phrase(o,mask){
     const m=mask||{}, kind=o&&o.kind||'tool', tool=String(o&&o.tool||'tool'), raw=String(o&&o.label||'').trim();
-    if(o&&o.simple)return cutOf(o.simple,LINE_MAX);
     const isUrl=/^[a-z][a-z0-9+.-]{1,20}:\/\//i.test(raw);
     const lab=ST.maskLabel(raw,kind,m);
     const t=tool.toLowerCase();
@@ -135,8 +133,8 @@
         if(e.phase!=='start'||x.skip)return false;
         commit(s);
         s.buf='';
-        const p=phrase({kind:x.kind,tool:e.tool,label:x.label,simple:x.simple},mask);
-        if(mask.redact){const l=home(phrase({kind:x.kind,tool:clear(e.tool),label:clear(x.label),simple:x.simple?clear(x.simple):x.simple},mask));if(l)logPush(s,'cmd',l,e.callId);}
+        const p=phrase({kind:x.kind,tool:e.tool,label:x.label},mask);
+        if(mask.redact){const l=home(phrase({kind:x.kind,tool:clear(e.tool),label:clear(x.label)},mask));if(l)logPush(s,'cmd',l,e.callId);}
         s.tool=p; /* spec 001 FR-047: the last tool of this turn stays for a wide grown desk while the agent thinks or replies */
         return set(s,'tool',p,p);}
       case 'user':commit(s);s.buf='';s.tool='';return set(s,'','','');

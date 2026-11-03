@@ -16,4 +16,4 @@ Status, permission and credit wording, and the layout, are the same in every the
 
 ![Retro Pixel theme](screenshots/035-retro-1440x900.png)
 
-**Settings > Detail level > Spacing** picks *Comfortable* (the default) or *Compact*, which tightens the chat, Settings, Tools, dialogs and the inbox; the office and the top bar keep their sizes.
+**Settings > Display > Spacing** picks *Comfortable* (the default) or *Compact*, which tightens the chat, Settings, Tools, dialogs and the inbox; the office and the top bar keep their sizes.

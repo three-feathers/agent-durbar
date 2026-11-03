@@ -103,3 +103,6 @@ At most 5 files per message and 10 MB per file; I get a plain message saying wha
 
 FR-009, FR-010, FR-012, FR-013 and FR-015 are closed (texts above; tasks T020, T021, T022, T024). `test:` `test:attachments` (kind from bytes, the sweep of stale folders). The size cap per message (FR-014, T023) still needs a number from the owner.
 
+### 2026-11-02: image preview (spec 105 FR-001..FR-005, T001)
+
+Chips stay this spec's. A chip for an image attached in the running app may become a thumbnail, with a large view on a click, by spec 105's first small PR, under this spec's limits (`sniffImage`, `MAX_ATTACH_BYTES`, SVG refused). A name-only chip stays the honest fallback after a restart and in history. No code here; spec 016's images-in-markdown limit is unchanged.

@@ -300,9 +300,8 @@
         [{ label: 'Close', cancel: true, onClick: (c) => c() }, { label: 'Open the official page', cls: 'primary', onClick: (c) => { B.harnessOpenPage(kind); c(); } }]);
       return;
     }
-    /* spec 052 FR-056: one plain sentence per way; the exact commands sit in a <details>, closed in Simple and open in Expert.
+    /* spec 052 FR-056: one plain sentence per way; the exact commands sit in an open <details>.
        Main still shows the exact command in its native confirmation before anything runs (spec 051 FR-004b). */
-    const simple = document.body.classList.contains('simple');
     /* spec 052 FR-077: each option leads with what differs (the manager); the shared words are in the lead sentence */
     const many = p.plans.length > 1;
     const tag = (pl, i) => (op === 'update' && pl.owner ? ' (installed this copy)' : many && i === 0 ? ' (recommended)' : many && i === p.plans.length - 1 && pl.manager === 'npm' ? ' (last resort)' : '');
@@ -312,7 +311,7 @@
     const opts = ownerFirst
       ? radio(p.plans[0], 0) + (p.plans.length > 1 ? `<details class="hs-cmds hs-other"><summary>Show other ways</summary><p class="scr-note small">Another way would install a second copy next to the one Durbar uses.</p>${p.plans.slice(1).map((pl, j) => radio(pl, j + 1)).join('')}</details>` : '')
       : p.plans.map(radio).join('');
-    const cmds = `<details class="hs-cmds"${simple ? '' : ' open'}><summary>Show the exact command</summary>${p.plans.map((pl) => `<p class="scr-note small">${esc(mgr(pl))}: <code>${esc(pl.display)}</code></p>`).join('')}</details>`;
+    const cmds = `<details class="hs-cmds" open><summary>Show the exact command</summary>${p.plans.map((pl) => `<p class="scr-note small">${esc(mgr(pl))}: <code>${esc(pl.display)}</code></p>`).join('')}</details>`;
     const choice = await new Promise((res) => {
       const md = modal((op === 'update' ? 'Update ' : 'Install ') + p.name, `<p class="scr-note">Durbar ${op === 'update' ? 'updates' : 'installs'} ${esc(p.name)} for you. Choose how:</p>${opts}${cmds}<p class="scr-note small">It runs on your computer, as you, and asks once more before it starts. Prefer to do it yourself? <button type="button" class="linkbtn" id="hsPage">Open the official page</button></p>${op === 'install' ? manualHTML(p, false) : ''}`,
         [{ label: 'Cancel', cancel: true, onClick: (c) => { c(); res(null); } }, { label: op === 'update' ? 'Update' : 'Install', cls: 'primary', onClick: (c) => { const v = document.querySelector('#hsDlg input[name="hsPlan"]:checked'); const i = v ? Number(v.value) : 0; c(); res(i); } }]);

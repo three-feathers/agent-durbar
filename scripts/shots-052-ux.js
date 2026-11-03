@@ -188,48 +188,21 @@ module.exports = async (ctx) => {
     key('N'); await until(`(document.getElementById('panelTitle')||{}).textContent!==${jsLiteral(first)}`); await settle();
     const second = await js(`(document.getElementById('panelTitle')||{}).textContent||''`);
     assert.ok(first && second && first !== second, `N moves between agents that need you: ${first} -> ${second}`);
-    // FR-031 (#306): Simple hides the developer details, keeps answering; plain verbs on cards
+    // FR-031 (removed 2026-11-02): nothing renders the Simple / Expert switch, and a value the old switch stored is dropped once
     await js(`document.getElementById('backBtn')&&document.getElementById('backBtn').click()`); await office(15);
-    await js(`document.getElementById('settingsBtn').click()`); await until(`!!document.querySelector('[data-detail="simple"]')`);
-    await js(`document.querySelector('[data-detail="simple"]').click()`); await until(`document.body.classList.contains('simple')`);
-    assert.ok(await js(`document.body.classList.contains('simple')`), 'Simple is on');
-    await js(`document.getElementById('scrClose')&&document.getElementById('scrClose').click()`); await office(15);
-    const simpleOffice = await js(`({paths:[...document.querySelectorAll('#stage .room-path')].filter(e=>e.getClientRects().length).length,at:[...document.querySelectorAll('#stage .desk')].some(t=>/\bAt [^:]{1,40}: /.test(t.innerText)),verb:[...document.querySelectorAll('#stage .desk')].some(t=>/(Running a command|Searching (files|code|the web)|Reading notes|Using a tool) · /.test(t.innerText))})`);
-    assert.ok(simpleOffice.paths === 0 && !simpleOffice.at, 'Simple office: no paths, no "At <place>: <tool>": ' + JSON.stringify(simpleOffice));
-    console.log('[052] simple verbs on cards now:', simpleOffice.verb);
-    await shot(`052-simple-office-${w}x${h}.png`);
-    // a fresh office in Simple (the level is remembered): Jonas's request is drawn in Simple from the start (round 7 FR-080)
+    await js(`localStorage.setItem('durbar.detail','simple');true`);
     ctx.win.webContents.reload(); await ctx.waitFor(`document.getElementById('stage')&&document.getElementById('stage').dataset.fit`, 15000); await office(15);
-    assert.ok(await js(`document.body.classList.contains('simple')`), 'Simple is remembered after a reload');
-    const jonasS = await deskId('Jonas'); await js(`document.querySelector(${jsLiteral(`#stage [data-id="${jonasS}"]`)}).click()`); await chatOf('Jonas');
-    const simpleChat = await js(`({hidden:['modelChip','vscodeBtn','copyResBtn','mcpBtn','toolsHdrBtn'].every(i=>{const e=document.getElementById(i);return !e||!e.getClientRects().length}),answer:!!document.querySelector('#chat .note.perm .note-actions button, #chat .note.perm.settled'),mode:!!document.getElementById('modeChip')&&document.getElementById('modeChip').getClientRects().length>0})`);
-    assert.ok(simpleChat.hidden && simpleChat.answer && simpleChat.mode, 'Simple chat: developer chips gone, mode and answering kept: ' + JSON.stringify(simpleChat));
-    // round 7 FR-081: the memory chip stays in Simple, in plain words
-    assert.match(await js(`(document.getElementById('ctxChip')||{}).textContent||''`), /Memory \d+% full/, 'Simple: the context chip reads Memory N% full');
-    // round 9 FR-093: in Simple it shows only from 70% full
-    { const m = await js(`(()=>{const e=document.getElementById('ctxChip');if(!e)return null;const p=/Memory (\\d+)% full/.exec(e.textContent);return {pct:p?+p[1]:-1,vis:e.getClientRects().length>0};})()`);
-      assert.ok(!m || m.vis === (m.pct >= 70), 'Simple: the memory chip shows only from 70% full: ' + JSON.stringify(m)); }
-    // FR-080/FR-081 (round 7): the request in plain words, the folder in small text, "See what changes"; memory chip, no tokens, no remote item
-    const plainChat = await js(`(()=>{const cs=[...document.querySelectorAll('#chat .note.perm:not(.limit):not(.question)')],c=cs.find(x=>!x.classList.contains('settled'))||cs[cs.length-1],v=e=>!!e&&e.getClientRects().length>0,cc=document.getElementById('ctxChip'),cb=document.getElementById('compactBtn'),ph=document.querySelector('#panel .ph');
-      return {sum:c?c.querySelector('.psum').textContent:'',fold:c&&v(c.querySelector('.pfold'))?c.querySelector('.pfold').textContent:'',diff:c&&c.querySelector('.pdiff>summary')?c.querySelector('.pdiff>summary').textContent:'',
-        ctx:v(cc)?cc.textContent.trim():null,compact:v(cb)?cb.textContent.trim():null,tok:/\btok(ens)?\b/.test(ph?ph.innerText:''),remote:v(document.getElementById('remoteBtn'))&&!document.getElementById('remoteBtn').classList.contains('on'),
-        chips:[...document.querySelectorAll('#chat .chip')].filter(v).map(x=>x.innerText.trim()).slice(-4),code:[...document.querySelectorAll('#chat .chip>code')].some(v)};})()`);
-    assert.ok(/^Jonas wants to change companies\.ts$/.test(plainChat.sum) && /^\s*in tools$/.test(plainChat.fold) && /^See what changes/.test(plainChat.diff), 'Simple request in plain words: ' + JSON.stringify(plainChat));
-    assert.ok((plainChat.ctx === null || /^Memory /.test(plainChat.ctx)) && (plainChat.compact === null || plainChat.compact === 'Tidy up memory') && !plainChat.tok && !plainChat.remote && !plainChat.code, 'Simple header and tool rows: ' + JSON.stringify(plainChat));
-    console.log('[052] simple tool rows:', plainChat.chips.join(' | '));
-    await shot(`052-simple-chat-${w}x${h}.png`);
-    const kenjiS = await deskId('Kenji');
-    if (kenjiS) {
-      await js(`document.getElementById('backBtn').click()`); await office(15);
-      await js(`document.querySelector(${jsLiteral(`#stage [data-id="${kenjiS}"]`)}).click()`); await chatOf('Kenji');
-      const k = await js(`(()=>{const c=document.querySelector('#chat .note.perm:not(.settled)');if(!c)return null;const d=c.querySelector('details.pcmd');return {sum:c.querySelector('.psum').textContent,open:d?d.open:null,cmd:d?d.querySelector('pre').textContent:'',vis:!!d&&d.getClientRects().length>0}})()`);
-      if (k) assert.ok(k.sum === 'Kenji wants to run a command' && k.vis && k.open === false && /baseline\.py/.test(k.cmd), 'Simple shell request: the command under a collapsed "Show the command": ' + JSON.stringify(k));
-    }
-    await js(`document.getElementById('backBtn').click()`); await office(15);
-    await js(`document.getElementById('settingsBtn').click()`); await until(`!!document.querySelector('[data-detail="expert"]')`);
-    await js(`document.querySelector('[data-detail="expert"]').click()`); await until(`!document.body.classList.contains('simple')`);
+    assert.deepStrictEqual(await js(`({kept:localStorage.getItem('durbar.detail'),cls:document.body.classList.contains('simple'),mem:/Memory \\d+% full/.test(document.body.innerText)})`), { kept: null, cls: false, mem: false }, 'a stored "simple" is dropped and Expert shows');
+    await js(`document.getElementById('settingsBtn').click()`); await until(`!!document.getElementById('detH')`);
+    const sw = await js(`({sw:!!document.querySelector('[data-detail],[data-wl-level]'),text:/Detail level|Simple|Expert/.test(document.getElementById('screen').innerText)})`);
+    assert.deepStrictEqual(sw, { sw: false, text: false }, 'Settings has no Simple / Expert switch: ' + JSON.stringify(sw));
     await js(`document.getElementById('scrClose')&&document.getElementById('scrClose').click()`); await office(15);
-    assert.ok(await js(`!document.body.classList.contains('simple')`), 'back to Expert');
+    // FR-093 (kept plain words): a chat with no spending limit says "No spending limit", never "Limit: none"
+    { const jn = await deskId('Jonas'); await js(`document.querySelector(${jsLiteral(`#stage [data-id="${jn}"]`)}).click()`); await chatOf('Jonas');
+      const capTxt = await js(`(()=>{const c=document.getElementById('capChip');return c?c.textContent.trim():null})()`);
+      console.log('[052] cap chip:', JSON.stringify(capTxt));
+      assert.ok(capTxt === null || (!/Limit: none/.test(capTxt) && /No spending limit|\\d/.test(capTxt)), 'the limit chip uses the plain words: ' + capTxt);
+      await js(`document.getElementById('backBtn')&&document.getElementById('backBtn').click()`); await office(15); }
     // FR-042 (#316): Ctrl+K opens the palette; typing filters it; Enter opens the agent's chat
     await js(`document.activeElement&&document.activeElement.blur()`);
     H.key('K', [MOD], { char: 'never', pause: 0 }); await until(`!!document.getElementById('palDlg')&&document.activeElement&&document.activeElement.id==='palIn'`);

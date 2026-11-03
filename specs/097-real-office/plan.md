@@ -102,3 +102,11 @@ Passes; see spec *Constitution check*. No new runtime dependency; no IPC; no ada
 - **Bubble and slip**: the inbox/answer-bar component renders into a bubble or slip frame (098 blocks); placement through `zoomRect` (FR-034) with plates, chips and the lift in the avoid list (FR-108..FR-110).
 - **Grounding**: `realLayout`'s lobby step places standing frames by `floorLine` and scales them by fixture px-per-metre (FR-117); the contact shadow is a CSS ellipse in the same rect.
 - **Checks**: spec 098's `test:surfaces`, `test:world-packs`, token lint and world matrix hold the worlds; 097's `check:office` Real office variant runs per world for the fit, grounding and contrast checks.
+
+## The chat in the world inside the denser chat (delta 2026-11-01; FR-224..FR-227)
+
+Order: row 9 of [spec 005's plan table](../005-chat-fullscreen-and-agent-strip/plan.md). #1001 built the portrait's size, `lampWords` in the header painter and tokens in place of literals, and has landed; the 61 px header and `--chat-prose` come with spec 005's chat PRs. No new file. Constitution V: the header keeps its target with the world on. FR-113 and FR-130 stand.
+
+## The chat and Settings look like the room (delta 2026-11-02; FR-231..FR-235)
+
+Order: rows A15..A18 of [spec 005's plan table](../005-chat-fullscreen-and-agent-strip/plan.md). Tokens and the surface colour: [spec 070](../070-theme-tokens/spec.md) FR-068..FR-074. No new runtime dependency. Constitution V: no text on art, sizes unchanged but prose, contrast by test; art is one static background per surface, with no blur, blend or filter (FR-180, FR-182).

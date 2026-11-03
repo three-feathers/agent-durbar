@@ -114,7 +114,7 @@ Each fix is its own small PR. "Expected" is what a patched copy of the built pag
 - [ ] T142 `scripts/check-office-ops.js`: op rows of FR-178 in flat and Real office, 15 and 40 agents, in `ui-suite.js`; `until()`, no timing assert; a table of today's known failures, each naming its fix task. Test: `sim:` the driver passes with the table; a mutant re-adding a layout read in `stagger()` fails it [FR-186]
 - [ ] T143 [P] `test:theme-tokens` gains FR-180 (keyframes and transitions name only `transform`, `opacity`; no `mix-blend-mode`; `will-change` list) and FR-182 (the `backdrop-filter` allow list). Test: unit with bad fixtures for each rule; known failures named until T150 and T151 [FR-180, FR-182]
 - [ ] T144 [P] `test:realoffice-assets`: every person and desk has both sizes, and the half-size set stays inside FR-062's cap. Test: unit; a missing variant fails [FR-183]
-- [ ] T145 `scripts/check-perf.js --record <file>`: every measure of the first table as JSON, with machine, load average and the GPU feature status; no new asserts. Test: `test:` schema of the output on a fixture; `sim:` one run; `read:` it stays in `NOT_IN_SUITE` [FR-187, FR-188]
+- [x] T145 `scripts/check-perf.js --record <file>`: every measure of the first table as JSON, with machine, load average and the GPU feature status; no new asserts. Test: `test:` schema of the output on a fixture; `sim:` one run; `read:` it stays in `NOT_IN_SUITE` [FR-187, FR-188] `[IMPLEMENTED]` (2026-10-31: `scripts/perf-record.js` and `perf-record-driver.js`, `npm run check:perf -- --record f.json [--gpu] [--quick] [--runs N] [--only real-15]`, `test:perfrecord`; `sim:` one 3-run record on `main`'s code and on #921's head under Xvfb, whose layout-read, attribute-write and picture counts equal the table's; `[KNOWN GAP]` times from that run were under load average 10 on 4 cores, flagged in the record, so they are not new baselines)
 - [ ] T146 Weekly: `world-matrix.yml` runs T145 (spec 098 T044); `world-coverage.js` adds the over-budget lines. Test: `test:` the lines from a fixture record, a 25 % regression against last week's artifact, a flagged loaded machine; `real:` the first scheduled run [FR-187]
 - [ ] T147 [P] Block contract: `test:world-packs` applies FR-180 to each world's CSS. Test: unit with a bad fixture pack [FR-180]
 
@@ -143,6 +143,7 @@ Each fix is its own small PR. "Expected" is what a patched copy of the built pag
 - [ ] T160 README: *Development* (`check-perf --record`, where the record is); limits (what is unmeasured on real GPUs). Test: `npm run test:docsscripts` [FR-187]
 - [ ] T161 Spec 052 FR-145's numbers are corrected with the first weekly record. Test: `read:` [FR-178]
 - [ ] T162 Real-GPU run, simulator only, 0 AI credits: a real Mac (device pixel ratio 2) and a Windows or Linux laptop with an integrated GPU. Records idle CPU, blur on and off, lamps on and off, raster, scroll, Retina memory. Test: `real:` numbers in a dated delta, and the `real:` rows and FR-182's list confirmed or moved [FR-189]
+  Run: `npm run build && npm run check:perf -- --record perf-<os>.json --gpu` (T145's driver; the record names OS, pixel ratio and `gpu_compositing`).
 - [ ] T163 The world budgets recorded for the cave and loft worlds when they exist. Test: `check-perf --record` includes each shippable world [FR-187]
 - [ ] T164 Review after the first fixes: `/speckit.converge` against FR-178's tables. Test: `npm run specs:check` [FR-190]
 
@@ -156,5 +157,21 @@ Numbers: T165..T170; FR-191..FR-194.
 - [x] T168 [US1] Driver: visitors face their fixture, in both sizes, 15 agents, `until()` waits, feet on the floor plane, no overlap. Test: `sim:` `shots-097-realoffice`, mutation-checked [FR-194]
 - [x] T169 [US1] Docs: changelog fragment, `docs/limits.md` size and facing note, spec tags (the README states no pack size, so none to change). Test: `npm run changelog:check`, `specs:check` [FR-193]
 - [ ] T170 [US1] Owner look at the lobby screenshots; a real mirrored-picture check by pixels if a side ever changes. Test: `real:` owner verdict [FR-191]
+
+
+## 2026-11-01 delta: the chat in the world inside the denser chat (design sweep, FR-224..FR-227; PR #1001)
+
+- [x] T171 Built by #1001: 32 px portrait, lamp words on the task line. Test: `sim:` `shots-097-chat` at both sizes, both worlds. **Left, with spec 005's chat PRs (005 T117, T122):** the header at 61 px and `--chat-prose` [FR-224, FR-225, FR-227]
+- [x] T172 Built by #1001: no literals in `realoffice-world.css` or the chat rules; `test:realoffice-layout` holds them. The art rules in `realoffice.css` wait for spec 070's ratchet (T022) [FR-226]
+
 - [x] T175 [US1] Renderer: the render's focus keep covers a sign's + as well as its menu button. Test: `sim:` `shots-097-screens`, mutation-checked [FR-230]
 - [x] T176 [US1] Driver: the Tab step checks the window's focus before each Tab, as the hover step does. Test: `sim:` `shots-097-screens` with the focus taken by `win.blur()`, fails before, passes after [FR-230]
+
+## 2026-11-02 delta: the chat and Settings look like the room (FR-231..FR-235; PRs A16..A18 of spec 005's plan)
+
+- [ ] T177 [PR A16] FR-231: corners and the third shadow in `WORLD_SETS`, both worlds; leaving gives the theme back. Test: `test:theme-tokens`; `sim:` leave and re-enter; mutant: radii not removed on leaving [FR-231]
+- [ ] T178 [PR A16] Dark header and rail head, `--world-tint` rule removed; portrait checked on dark; 61 px measured at both sizes. Test: `sim:` `shots-097-chat`; mutant: 62 px [FR-232]
+- [ ] T179 [PR A16] Desk, floor, pad, monitor, post-it through tokens only, `.send`, `.inbox:focus-within`, `.msg.user .bubble`, `.md pre`, `.note .btn.session`, `.mode-chip.mode-ask` off their literals and status colours. Test: `sim:` `shots-097-chat`, no text node on art, memo apart from `NOTE_PAPER`; mutant: text on the desk [FR-233]
+- [ ] T180 [PR A17] Settings on the desk; unstyled selects and checkboxes on tokens; scrollbars. Test: `check-ui-text`, `sim:` both sizes, both worlds; mutant: a browser-default select [FR-234]
+- [ ] T181 [PR A18] `.dlg` out of the blur list, opaque. Test: as FR-235 [FR-235]
+- [ ] T182 [PR A16, A17] `realoffice.css`'s `.ro-glass`, `.ro-bezel`, `--ro-scr-*` read `--glass*`, last, since they are pixel-checked; the owner looks at the chat and Settings beside the room before each merges. Test: `check:office`, `check:geometry` [FR-233, FR-234]
