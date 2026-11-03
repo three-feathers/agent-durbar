@@ -505,7 +505,8 @@ apps, as T176 allows) after them.
   `list`, which starts every server that is on (local too) unless they are in `disabledMcpServers`; remote = `needs-auth`; (c) the CLI
   starts every `--mcp-config` server at process start and answers `mcp_status` before any message. Round 2 (after the review at
   69f68ab5): Codex `reload` keeps per-thread overrides but re-runs a failed local server (so no automatic Codex reconnect); Copilot
-  `client.rpc.mcp.config.list` lists the user's servers without starting them. Details: the spec table, agent-apps.
+  `client.rpc.mcp.config.list` lists the user's servers without starting them. Round 3: a Codex list with `threadId` and no `serverName`
+  starts a short-lived copy of every local server per call (markers 1 -> 4 over three calls). Details: the spec table, agent-apps.
 - [x] T177 **Real expiry check (owner's OK; may need a few prompts, say the cost first)**: a remote OAuth MCP server with a short-lived
   access token and a refresh token, per app: after expiry, does the reconnect of FR-207 renew it without a browser? Results replace the
   table's `[KNOWN GAP]` cells and `docs/limits.md` [FR-207, FR-214]
@@ -546,7 +547,8 @@ apps, as T176 allows) after them.
   [FR-204]
 - [ ] T183 The 30-minute recheck: one timer in main, running and idle chats one after the other and awaited, a tick skipped while the
   last runs; a Copilot chat read only when its needs-auth servers are neither blocked nor in flight, holding their flight while it reads;
-  one reconnect on a new `needs-auth` that is not blocked (adapters with `mcpSignInReconnect` only), once at `resume`; stopped when the
+  Codex chats never read (a list without `serverName` starts copies of local servers, round 3); one reconnect on a new `needs-auth` that
+  is not blocked (adapters with `mcpSignInReconnect` only), once at `resume`; stopped when the
   switch goes off; tests with fake timers, including 15 Copilot chats with one blocked server that is never contacted [FR-212]
 - [ ] T184 Settings: "Refresh MCP sign-ins automatically" (the default one constant pending G5; a present non-boolean reads off; FR-213's line) in the settings store, the IPC view
   and *Settings > MCP servers*, with its line; off stops T181's plan, T182 and T183; tests [FR-213]

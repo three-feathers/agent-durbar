@@ -1608,7 +1608,8 @@ and serves dummy OAuth metadata, dynamic registration, an auto-approving `/autho
 dummy access tokens expiring after 20-30 s with refresh tokens. The server logged only the method, path and whether a token was absent,
 valid, expired or unknown, never a value. **No prompt and no user message was sent: 0 AI credits, 0 tokens**. A second round the same
 day (after the review at 69f68ab5, under the owner's standing OK for free probes) checked Codex `reload` against per-thread config and
-Copilot's `mcp.config.list` with a launch-style session, the same way. One app process at a time,
+Copilot's `mcp.config.list` with a launch-style session, and a third (after 61e51fbb) a Codex list with a loaded thread and no
+`serverName`, the same way. One app process at a time,
 each in `timeout`, all killed after (`ps` checked). No token, credential file or keychain item was read or printed; the real configs were
 not touched. Once, with the session bus reachable, the Copilot runtime used the machine's own GitHub sign-in (`authType: gh-cli`) despite
 the scratch home; nothing was read by the probe, and the later runs blocked the bus.
@@ -1624,7 +1625,10 @@ the scratch home; nothing was read by the probe, and the later runs blocked the 
 
 Also seen (`real:` T176): Codex `thread/start` (no turn) starts every server and, when the app is not signed in, tries the model's
 websocket once (401); `mcpServerStatus/list` with a `threadId` and **no** `serverName` started new instances of the local servers, with a
-`threadId` **and** `serverName` it reused the thread's connection. A Copilot session with no message left a `session-state/<id>` folder in
+`threadId` **and** `serverName` it reused the thread's connection. Round 3 (`real:`, Codex 0.163.0, a thread with one user and one
+Durbar-only stdio server): `{threadId, detail: 'toolsAndAuthOnly', limit: 100}` raised each server's start marker by one per call (1, 2,
+3, 4), and `{threadId}` with the full detail did the same (5); the live server processes stayed at 2, so each copy is started, listed and
+closed; `{threadId, serverName}` left the counts unchanged. A Copilot session with no message left a `session-state/<id>` folder in
 the scratch home. Claude's `mcp_authenticate` and Copilot's and Codex's login calls each made a new dynamic client registration.
 
 So the honest promise is: Durbar makes the agent app reconnect at the moments a token has most likely expired, the app refreshes with its
@@ -1754,15 +1758,23 @@ before the message needs the server. For Copilot, **Sign in** itself finishes wi
   `refreshMcpStatus`), and a `needs-auth` server has none, so it would read nothing. For the recheck the rule becomes "every server that is
   on has a client **or last reported `needs-auth`** and that needs-auth server is **neither blocked (FR-210) nor in flight**"; a `list`
   retries those servers (`real:` T176), so the read **holds their `refreshFlight`** for its run, exactly like a reconnect, and a blocked
-  server keeps that chat unread (round 2, item B; a test: a blocked server is never contacted by a recheck in 15 Copilot chats). Codex
-  chats are read but never reconnected (FR-207). `[KNOWN GAP]` a status read does not test a token: all three apps kept `connected` after expiry until a call or reconnect (`real:`
+  server keeps that chat unread (round 2, item B; a test: a blocked server is never contacted by a recheck in 15 Copilot chats). **Codex
+  chats are not read by the recheck** (round 3): they are never reconnected (FR-207), and `mcpServerStatus/list` with a `threadId` but no
+  `serverName` starts a short-lived second instance of **every local server** of the thread on each call (`real:` round 3: marker counts
+  1 -> 2 -> 3 -> 4 over three calls, while the live server processes stayed at 2; with `serverName` the count did not move). The only
+  Codex list call this delta allows is `{threadId, serverName}` for one remote server (FR-207 has none). `[KNOWN GAP]` outside this delta:
+  Durbar's existing Codex status reads (`codex.ts` `mcpServerStatus/list` with `threadId` and no `serverName`, at session start, the
+  first message and an MCP switch, and `refreshMcpStatus`) start such copies today; reported for a separate bug issue. `[KNOWN GAP]` a status read does not test a token: all three apps kept `connected` after expiry until a call or reconnect (`real:`
   T177), so the recheck finds what the app already knows, and the gap reconnect (FR-205 moment 2) is what catches a token that expired
   quietly.
 - **FR-213** **One Settings switch.** *Settings > MCP servers*: "Refresh MCP sign-ins automatically". Its default is **pending G5**
-  (Vikram answered A, default on in every mode; Paco's answer is pending); the planner reads the default from one constant. The line under it says plainly (review item 10): "Agent Durbar asks the
-  agent app to reconnect remote MCP servers on its own: once at launch, before your first message, after an hour without a reply and
-  every 30 minutes, in every mode including Read-only. Only the app's own sign-in is renewed; Agent Durbar never sees it. Local servers
-  are never started by this. Codex chats are not reconnected; they renew with their next session." Off: no launch question to the apps (FR-204), no automatic reconnect (FR-205) and no recheck (FR-212); PR
+  (Vikram answered A, default on in every mode; Paco's answer is pending); the planner reads the default from one constant. The line under it says plainly (review item 10), and its words follow the spec, not more (round 3): "Agent Durbar asks the
+  agent app to check and reconnect remote MCP servers on its own: once at launch (not on macOS), before a message after an hour without a
+  reply, and every 30 minutes. <MODE PART> Only the app's own sign-in is renewed; Agent Durbar never sees it. A reconnect never starts a
+  local server; the launch check can start one unknown to Agent Durbar at most once per run for Copilot, and then stops. Codex chats are
+  not reconnected; they renew with their next session." `<MODE PART>` is one fixed sentence chosen by G5's answer: A "This happens in
+  every permission mode, Read-only included."; B "In Read-only it only tells you when a sign-in is needed." Until G5 is settled, no
+  build ships the line. Off: no launch question to the apps (FR-204), no automatic reconnect (FR-205) and no recheck (FR-212); PR
   #1073's file check, the live reports and every button stay. Stored like the other app settings; a stored value that is present but
   not a boolean reads as **off** (fail closed, round 2); only a missing value takes the default. The planner takes one input `allowReadOnly` (G5) so that either answer is a one-line switch:
   `true` = every mode (Vikram's A), `false` = in Read-only only the sign-in line, no reconnect (B). In the simulator's demo mode nothing
@@ -1797,7 +1809,7 @@ before the message needs the server. For Copilot, **Sign in** itself finishes wi
   reconnect that never ends (fake timers, no real wait); Stop during the wait; switch off; `allowReadOnly` false; macOS `connected`
   skipped; the 30-minute recheck single-flight, only for running, idle chats; Copilot's MethodNotFound = `failed` with no
   disable/enable; no Codex reconnect at all (no `reload`, no relaunch); a Copilot recheck that never contacts a blocked or in-flight
-  server and holds the flight while it reads; the launch check holding the flight, not run on macOS, and Copilot's fail-closed stop when
+  server and holds the flight while it reads; no Codex list call by the recheck; the launch check holding the flight, not run on macOS, and Copilot's fail-closed stop when
   a local server is not disabled; a malformed stored switch reading off; an elicitation during a reconnect declined; no vendor text and no token-shaped value
   in a log line or event; the FR-214 forbidden calls. A simulator driver (`scripts/shots-058-mcp-signin-refresh.js`, `simclock`) shows: a
   send after a simulated hour reconnects a remote server (the line, then nothing), one that stays expired (the sign-in line, Sign in opens
