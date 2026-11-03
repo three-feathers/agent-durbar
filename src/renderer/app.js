@@ -2447,8 +2447,8 @@ function paintPanelTitle(a,h){
 let PANEL_OPENED_AT=0; /* the click guard of FR-020 item 1: the second click of a double-click on a desk lands on the header of the chat it opened */
 /* spec 005 FR-210: before a chat is taken off screen, mark all but its newest 4 messages .cvo (styles.css), so the next open lays out only those near the view. Each marked message also keeps the height it has now as its fallback size, so a message that is skipped is not a 90px guess but its real height and a scroll through it does not shift the view */
 const CV_OBS=new WeakMap(); /* chat element -> the MutationObserver that watches its marked messages while the chat is off screen */
-/* what a message's height depends on besides the width: the root's attributes (density, theme tokens and fonts, world), Simple/Expert and the chat's own font */
-function cvKey(el){const cs=getComputedStyle(el); return [...document.documentElement.attributes].map(x=>x.name+'='+x.value).join(';')+'|'+document.body.classList.contains('simple')+'|'+cs.fontFamily+'|'+cs.fontSize+'|'+cs.lineHeight;}
+/* what a message's height depends on besides the width: the root's attributes (density, theme tokens and fonts, world) and the chat's own font */
+function cvKey(el){const cs=getComputedStyle(el); return [...document.documentElement.attributes].map(x=>x.name+'='+x.value).join(';')+'|'+cs.fontFamily+'|'+cs.fontSize+'|'+cs.lineHeight;}
 function cvDrop(el){delete el.dataset.cvw; delete el.dataset.cvk; for(const e of el.children){e.classList.remove('cvo');e.style.containIntrinsicBlockSize='';}}
 /* FR-215: a marked message that changed while its chat was off screen keeps no stored size: it lays out for real on the next open */
 function cvGrown(el,recs){for(const r of recs){let n=r.target; if(n===el)continue; while(n&&n.parentNode!==el)n=n.parentNode; if(n&&n.classList&&n.classList.contains('cvo')){n.classList.remove('cvo');n.style.containIntrinsicBlockSize='';}}}
@@ -2462,11 +2462,11 @@ function cvMark(){const el=document.querySelector('#chat > .chat-inner'); if(!el
 function cvStale(el){const w0=+el.dataset.cvw; return !!w0&&(Math.abs(el.clientWidth-w0)>1||cvKey(el)!==el.dataset.cvk);}
 function cvUnmarkIfResized(el){cvRelease(el); if(!cvStale(el))return false; cvDrop(el); return true;}
 
-/* spec 005 FR-213: the same check while the chat is open (a live resize, or a density, theme or Simple/Expert change: root or body attributes): once per frame, keep the end if the chat was at it, and the message in view where it is */
+/* spec 005 FR-213: the same check while the chat is open (a live resize, or a density or theme change: root attributes): once per frame, keep the end if the chat was at it, and the message in view where it is */
 let cvRz=0; const cvSoon=()=>{if(cvRz)return; cvRz=requestAnimationFrame(()=>{cvRz=0; const c=$('chat'), el=c&&c.querySelector(':scope > .chat-inner'); if(!el||!el.dataset.cvw||!cvStale(el))return;
   const cr=c.getBoundingClientRect(), pinned=c.dataset.pin!=='0', a=[...el.children].find(e=>{const r=e.getBoundingClientRect();return r.bottom>cr.top+1;}), top=a?a.getBoundingClientRect().top:0;
   cvDrop(el); if(pinned)c.scrollTop=c.scrollHeight; else if(a)c.scrollTop+=a.getBoundingClientRect().top-top;});};
-addEventListener('resize',cvSoon); new MutationObserver(cvSoon).observe(document.documentElement,{attributes:true}); new MutationObserver(cvSoon).observe(document.body,{attributes:true,attributeFilter:['class']});
+addEventListener('resize',cvSoon); new MutationObserver(cvSoon).observe(document.documentElement,{attributes:true});
 function openPanel(id,focus){
   const a=byId(id); if(!a)return; if(ui.selected!==id||!document.body.classList.contains('panel-open'))cvMark(); /* after the check: an unknown id leaves the chat on screen unmarked */ if(!pulling)PULLED.delete(id); /* the user came back: this session may bring its chat forward again */
   if(ui.selected!==id||!document.body.classList.contains('panel-open'))PANEL_OPENED_AT=performance.now(); closeSlash(); keepDraft(); ui.selected=id; attached=(DRAFTS.get(id)||{att:[]}).att.slice();
