@@ -22,6 +22,7 @@
   const REPAINT_MS = 2000; /* FR-033 */
   const SCR = new Map(); /* desk id -> {box, last, timer, dirty, away, fit, sig} */
   const OFF = new Set(); /* keys of desks whose motion stands still: scrolled away or under the zoom */
+  let LAY_G = 0; const CUR_G = () => LAY_G; /* the arcade's scale, for its screen text (0 in other worlds) */
   let CUR = null; /* {ro, screenOf, still, hold, desks: Map id -> desk, agents: Map id -> model agent, folders: Map, drawn} */
   let ZOOM = null; /* {id, hover, focus, panel, plate} */
   let IO = null, DISMISSED = '';
@@ -298,6 +299,7 @@
     let ro = stage.querySelector(':scope > .ro');
     if (!ro) { stage.textContent = ''; ro = document.createElement('div'); ro.className = 'ro'; stage.appendChild(ro); ro.addEventListener('click', forward); wireZoom(ro); }
     ro.style.width = px(lay.width); ro.style.height = px(lay.height);
+    LAY_G = lay.cabinet ? lay.g || 0 : 0;
     if (lay.g) setVar(ro, '--ro-g', String(lay.g)); /* spec 102 FR-255: one integer scale for the world's art */
     ro.dataset.set = set; ro.dataset.world = world; ro.dataset.u = String(Math.round(lay.u)); ro.dataset.face = String(Math.round(lay.faceH * 10) / 10); ro.dataset.big = lay.big ? '1' : '0';
     ro.classList.toggle('still', !!opts.still);
@@ -668,7 +670,7 @@
 
   /* ---- FR-030..FR-035: the monitors ---- */
   function screenBox(chrome, d, k) {
-    const L = X(), f = L.screenFit(d.glass), box2 = el(chrome, 'st:' + k, 'div', 'ro-stext st-' + d.state + (f.small ? ' small' : '') + (d.state === 'asleep' ? ' off' : '') + (OFF.has(k) ? ' ro-off' : '')); box(box2, d.glass); attr(box2, 'aria-hidden', 'true');
+    const L = X(), f = L.screenFit(d.glass, CUR_G()), box2 = el(chrome, 'st:' + k, 'div', 'ro-stext st-' + d.state + (f.small ? ' small' : '') + (d.state === 'asleep' ? ' off' : '') + (OFF.has(k) ? ' ro-off' : '')); box(box2, d.glass); attr(box2, 'aria-hidden', 'true');
     let s = SCR.get(k);
     if (!s || s.box !== box2) { if (s) clearTimeout(s.timer); s = { box: box2, last: -Infinity, timer: 0, dirty: true, away: false, sig: '', fit: '' }; SCR.set(k, s); }
     const fit = JSON.stringify(f);
@@ -706,7 +708,7 @@
   function paintScreen(id) {
     const s = SCR.get(id), d = CUR && CUR.desks.get(id), a = CUR && CUR.agents.get(id);
     if (!s || !d || !a || !CUR.screenOf) return;
-    const L = X(), data = CUR.screenOf(id, d.state, a.word), f = L.screenFit(d.glass);
+    const L = X(), data = CUR.screenOf(id, d.state, a.word), f = L.screenFit(d.glass, CUR_G());
     if (data.off) { if (s.painted) { s.box.textContent = ''; s.painted = false; s.lines = null; s.bars = null; s.caret = null; } s.sig = ''; return; }
     const sig = JSON.stringify([data.lines, data.caret, s.fit]);
     if (sig === s.sig) return;

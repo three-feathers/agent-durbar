@@ -126,13 +126,13 @@ for (const nm of NAMES) {
 // ---- owner, 2026-11-03 ("bigger cabinets ... zigzag positioning for max usage"): from 2 people on, no band of bare floor over a quarter of its
 // height (above, between or below the rows); a folder's seats stay one group: its sign over its own first cabinet, no row interleaves two folders
 const split: string[] = [];
-for (const [W, H] of SIZES) for (const dh of [0, 31]) for (const n of [2, 3, 4, 5, 6, 8, 10, 12, 15]) for (const f of [1, 3, 4].filter((x) => x <= n)) {
+for (const [W, H] of SIZES) for (const dh of [0, 31]) for (const n of [1, 2, 3, 4, 5, 6, 8, 10, 12, 15]) for (const f of [1, 3, 4].filter((x) => x <= n)) {
   const L = aislesLayout(model(n, f), { w: W, h: H - dh }, META, SIGNS(f)), floorH = L.height - L.lobbyH;
   const ys = L.zones.flatMap((z) => [[z.sign.y, z.box.y + z.box.h]]).sort((a, b) => a[0] - b[0]);
   let at = L.lobbyH + (L.lane ? L.lane.h : 0), worst = 0;
   for (const [y0, y1] of ys) { worst = Math.max(worst, y0 - at); at = Math.max(at, y1); }
   worst = Math.max(worst, L.height - at);
-  assert.ok(worst <= floorH / 4, `${n} in ${f} at ${W}x${H - dh}: a bare band of ${Math.round(worst)} px on a floor of ${floorH}`);
+  assert.ok(n < 2 || worst <= floorH / 4, `${n} in ${f} at ${W}x${H - dh}: a bare band of ${Math.round(worst)} px on a floor of ${floorH}`);
   for (const z of L.zones) {
     const first = z.desks.reduce((m, d) => (d.slot.x < m.slot.x ? d : m), z.desks[0]);
     assert.ok(Math.abs(z.sign.x - first.slot.x) <= 1, `${z.id}: its sign starts over its own first cabinet`);
@@ -150,11 +150,12 @@ for (const [W, H] of SIZES) for (const dh of [0, 31]) for (const n of [2, 3, 4, 
     const gap = b.slot.x - (a.slot.x + a.slot.w);
     if (!L.zones.flatMap((z) => z.desks).some((c) => Math.abs(c.slot.y - a.slot.y) < 1 && c.slot.x > a.slot.x && c.slot.x < b.slot.x)) assert.ok(gap <= a.slot.w / 4, `${n} in ${f} at ${W}x${H - dh}: a gap of ${Math.round(gap)} px in a small room`);
   }
-  /* and its cabinets stand together in the middle, the people outside: two cabinets on a row at most a quarter of a slot apart */
+  /* and its cabinets stand together, the people outside: two cabinets on a row at most one person place and a quarter of a slot apart (in a row of
+     three the middle person stands between two cabinets) */
   const dk = L.zones.flatMap((z) => z.desks);
   if (n <= 4) for (const row of [...new Set(dk.map((d) => Math.round(d.slot.y)))]) {
     const cs = dk.filter((d) => Math.round(d.slot.y) === row).map((d) => d.desk).sort((a, b) => a.x - b.x);
-    for (let j = 1; j < cs.length; j++) assert.ok(cs[j].x - (cs[j - 1].x + cs[j - 1].w) <= dk[0].slot.w / 4, `${n} in ${f} at ${W}x${H - dh}: cabinets ${Math.round(cs[j].x - cs[j - 1].x - cs[j - 1].w)} px apart in a small room`);
+    for (let j = 1; j < cs.length; j++) assert.ok(cs[j].x - (cs[j - 1].x + cs[j - 1].w) <= (dk[0].stand ? dk[0].stand.w : 0) + dk[0].slot.w / 4, `${n} in ${f} at ${W}x${H - dh}: cabinets ${Math.round(cs[j].x - cs[j - 1].x - cs[j - 1].w)} px apart in a small room`);
   }
   /* FR-306: the bodies vary: at up to 4 people all differ, from 8 on all four are on the floor */
   const bodies = new Set(L.zones.flatMap((z) => z.desks.map((d) => d.body)));
@@ -235,5 +236,17 @@ for (const n of [3, 8, 15]) for (const dh of [0, 31]) {
 }
 
 console.log(`a folder of 4 or fewer still split (five columns cannot hold it whole): ${split.join('; ') || 'none'}`);
+/* owner, 2026-11-03 ("still waste a lot of space"): with 4 or fewer the scale goes up to 5 and the plan covering the most floor wins. Measured on the
+   floors the app really gives (1408x817 and 1248x717, the window less the frame): cabinets and people over the floor, at least what whole scales
+   allow. Half the floor at 3 or 4 is out of reach even at a free scale: each cabinet needs its person place beside it and the lobby keeps its height */
+const covs: string[] = [];
+for (const [W, H] of [[1408, 817], [1248, 717]] as const) for (const n of [1, 2, 3, 4]) {
+  const L = aislesLayout(model(n, 1), { w: W, h: H }, META, SIGNS(1)), dk = L.zones.flatMap((z) => z.desks);
+  const cov = dk.reduce((a, d) => a + d.desk.w * d.desk.h + (d.stand ? d.stand.w * d.stand.h : 0), 0) / (W * (L.height - L.lobbyH));
+  covs.push(`${n} at ${W}: g ${L.g}, ${Math.round(cov * 100)} %`);
+  const want = ({ 1408: { 1: 0.31, 2: 0.46, 3: 0.40, 4: 0.33 }, 1248: { 1: 0.42, 2: 0.62, 3: 0.33, 4: 0.44 } } as Record<number, Record<number, number>>)[W][n];
+  assert.ok(cov >= want, `${n} at ${W}x${H}: cabinets and people cover ${Math.round(cov * 100)} % of the floor, under ${want * 100} %`);
+}
+console.log(`floor covered with 4 or fewer: ${covs.join('; ')}`);
 console.log(`aisles tests passed (${cases} layouts)`);
 process.exitCode = 0;

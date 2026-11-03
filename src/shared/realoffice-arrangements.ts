@@ -20,7 +20,7 @@ export const AISLE_LOBBY_FEW = 168;
 export const FACE_GRID = 19;
 /** FR-229: the face floor, crown to chin, only on a floor of 15 */
 export const FACE_FLOOR = 24;
-export const AISLE_PLATE_H = 21, AISLE_SIGN_H = 18, AISLE_PAD = 8, AISLE_COLS = 5, AISLE_STAGGER = 0.08, AISLE_CLOSE = 1.1;
+export const AISLE_PLATE_H = 21, AISLE_SIGN_H = 18, AISLE_PAD = 8, AISLE_COLS = 5, AISLE_STAGGER = 0.08, AISLE_CLOSE = 1.1, AISLE_G_FEW = [5, 4, 3, 2];
 /** the sign's shortest form: a name cut to about 30 px, counts, **+** and the room menu (FR-256); path and cost go to its hover and focus */
 export const AISLE_SIGN_MIN_W = 120;
 /** the three cabinet drawings the pack ships (`monitor.webp` big, `monitor-half.webp` small, `monitor-narrow.webp`): CRT size in grid pixels. The plan picks among these only (spec 102 FR-257). */
@@ -60,7 +60,7 @@ function planFor(sizes: number[], W: number, F: number, PW: number = AISLE_PERSO
   const k = sizes.reduce((a, b) => a + b, 0);
   const rowCost = (gh: number, g: number): number => AISLE_SIGN_H + cabGrid(0, gh).h * g + AISLE_PLATE_H;
   const plans: Plan[] = [];
-  for (const keep of [true, false]) for (const g of [3, 2]) for (const [name, c] of Object.entries(CABINETS)) for (let cols = 1; cols <= AISLE_COLS; cols++) for (const zig of [false, true]) {
+  for (const keep of [true, false]) for (const g of k <= 4 ? AISLE_G_FEW : [3, 2]) for (const [name, c] of Object.entries(CABINETS)) for (let cols = 1; cols <= AISLE_COLS; cols++) for (const zig of [false, true]) {
     const rows = packSeats(sizes, cols, keep).rows, cab = cabGrid(c.gw, c.gh), slotW = (cab.w + PW + AISLE_GAP) * g;
     if (zig && rows < 2) continue;
     const cw = (W - 2 * AISLE_PAD) / (cols + (zig ? 0.5 : 0)), spareY = F - rows * rowCost(c.gh, g);
@@ -68,7 +68,9 @@ function planFor(sizes: number[], W: number, F: number, PW: number = AISLE_PERSO
     plans.push({ keep, g, gw: c.gw, gh: c.gh, cols, rows, big: name === 'big', zig, sl: Math.min(13, Math.floor(spareY / (2 * rows + 2))), /* the bend flattens before anything scrolls */ rowH: rowCost(c.gh, g), slotW, fits: true });
   }
   const bare = (p: Plan): number => F - p.rows * (p.rowH + 2 * p.sl);
-  plans.sort((a, b) => Number(b.keep) - Number(a.keep) || Number(bare(a) > F / 4) - Number(bare(b) > F / 4) || b.g - a.g || b.gw * b.gh - a.gw * a.gh || bare(a) - bare(b) || a.rows - b.rows);
+  /* 4 or fewer (owner, 2026-11-03: "still waste a lot of space"): the plan whose cabinets and people cover the most floor */
+  const cover = (p: Plan): number => k <= 4 ? k * p.g * p.g * (cabGrid(p.gw, p.gh).w * cabGrid(p.gw, p.gh).h + PW * AISLE_PERSON.h) : 0;
+  plans.sort((a, b) => Number(b.keep) - Number(a.keep) || cover(b) - cover(a) || Number(bare(a) > F / 4) - Number(bare(b) > F / 4) || b.g - a.g || b.gw * b.gh - a.gw * a.gh || bare(a) - bare(b) || a.rows - b.rows);
   if (plans.length) return plans[0];
   /* it does not fit: five columns of the smallest cabinet, as many rows as it takes, and the floor scrolls */
   const g = 2, gw = CABINETS.narrow.gw, gh = CABINETS.narrow.gh, cols = k <= 4 ? 2 : AISLE_COLS, cab = cabGrid(gw, gh), rows = packSeats(sizes, cols, false).rows;
@@ -111,7 +113,7 @@ function aislePose(meta: RealMeta, pid: string, state: RealState): { pose: strin
 
 /** an empty place's note stands where the person would, beside the glass and never over its text: `x` is the note's centre */
 function aisleNote(gl: Rect, face: 'left' | 'right', g: number): { x: number; y: number; s: number } {
-  const s = 33 * Math.min(g, 2); /* a note no bigger at g = 3 than at 2 (relayed review: outsized tickets) */
+  const s = g <= 3 ? 66 : 22 * g; /* 66 px up to g = 3 (relayed review: outsized tickets); above, it grows with the art (relayed, 2026-11-03) */
   return { x: face === 'right' ? gl.x + gl.w + s / 2 + 3 * g : gl.x - s / 2 - 3 * g, y: gl.y + 6 * g, s }; /* 3 grid px: its tilt stays off the text */
 }
 

@@ -483,14 +483,15 @@ export interface ScreenLine { n: number; k: string; t: string }
 export const SCREEN_SMALL = { w: 150, h: 60 };
 export const SCREEN_PAD = 4;
 /** FR-032: how a glass of this size shows text: `rows` lines of text and `bars` line bars above them. */
-export function screenFit(glass: { w: number; h: number }): { small: boolean; font: number; lh: number; rows: number; bars: number; whole: number } {
+export function screenFit(glass: { w: number; h: number }, g = 0): { small: boolean; font: number; lh: number; rows: number; bars: number; whole: number } {
   const room = Math.max(0, glass.h - 2 * SCREEN_PAD);
   if (glass.w < SCREEN_SMALL.w || glass.h < SCREEN_SMALL.h) {
     const lh = 13;
     /* the newest line wraps over the rows it needs, the bars show above it as far as room is left; `whole`: the height of whole text rows */
     return { small: true, font: 10.5, lh, rows: 1, bars: Math.max(0, Math.floor((room - lh - 2) / 6)), whole: Math.max(lh, Math.floor(room / lh) * lh) };
   }
-  const font = glass.h > 200 ? 13 : 11, lh = font === 13 ? 17 : 15;
+  /* spec 102 (relayed, 2026-11-03): in the arcade above g = 3 the text grows with the art, 11 px at g = 3 */
+  const font = g > 3 ? Math.round(11 * g / 3 * 2) / 2 : glass.h > 200 ? 13 : 11, lh = g > 3 ? Math.round(font * 1.36) : font === 13 ? 17 : 15;
   const rows = Math.max(1, Math.floor(room / lh));
   return { small: false, font, lh, rows, bars: 0, whole: rows * lh };
 }
