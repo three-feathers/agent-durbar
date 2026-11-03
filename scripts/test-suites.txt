@@ -188,3 +188,4 @@ test:prereview
 test:mcpcost
 test:mcpcontextop
 test:mcpcontextipc
+test:featureinventory
