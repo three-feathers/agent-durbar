@@ -426,7 +426,7 @@
           if (a.helpers.length) { const h = document.createElement('span'); h.className = 'ro-help'; h.textContent = '+' + a.helpers.length + ' '; a.helpers.slice(0, 3).forEach((s) => h.insertAdjacentHTML('beforeend', dotHTML(s))); l1.appendChild(h); }
           const l2 = document.createElement('span'); l2.className = 'ro-l2';
           l2.insertAdjacentHTML('beforeend', dotHTML(d.state));
-          l2.appendChild(document.createTextNode(' ' + (a.word + (a.task ? ' · ' + a.task : ''))));
+          l2.appendChild(document.createTextNode(' ' + [a.word, a.task].filter(Boolean).join(' · ')));
           pl.appendChild(l1); pl.appendChild(l2);
         }
       }

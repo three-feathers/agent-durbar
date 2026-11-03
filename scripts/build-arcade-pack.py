@@ -11,7 +11,7 @@
 What it makes (dev only, not run in CI, output committed and checked by `npm run test:realoffice-assets`):
   world: wall and floor in a day and a night light (drawn here, a few flat colours, from the mockup's code), three cabinet strips
          (four bodies in four colours each; level glass, side panel, stepped top: spec 102 FR-258), nine fixtures, a glow strip, a console.
-  set:   15 people x 17 frames, ONE FILE PIXEL PER GRID PIXEL, lossless (VP8L, no alpha-quality loss), drawn on screen at an integer scale.
+  set:   15 people x 17 frames (and each drawn `sit` frame, kept: build-arcade-sleep.py), ONE FILE PIXEL PER GRID PIXEL, lossless (VP8L, no alpha-quality loss), drawn on screen at an integer scale.
 Every picture is lossless WebP; two runs give the same bytes. A frame whose 8x blocks are not uniform is refused (T201), except the
 three listed in RESAMPLED, which are shrunk by a block vote and recorded as such in ASSETS.md. Needs Pillow."""
 import hashlib, io, json, os, re, sys
@@ -407,38 +407,25 @@ def measure(im):
     span = max(1, round((bot - top + 1) * .06)); xs = [x for y in range(bot - span + 1, bot + 1) for x in range(w) if px[x, y][3]]
     return top, bot, (min(xs) + max(xs) + 1) / 2 / w
 
-def sit_frame(im):
-    """spec 102 FR-259 (owner 2026-11-03: asleep sits, whole, beside the cabinet): a person seated on a stool, made from their own front
-    standing frame: head, torso and hips kept, a stool drawn under the hips, the shins and feet in front of it. Narrower than the seated
-    busts, so it fits the place beside a cabinet. No new colour but the stool's three browns; one file pixel per grid pixel."""
-    im = im.convert('RGBA'); w, _ = im.size; bb = im.getbbox(); top, bot = bb[1], bb[3]; H = bot - top
-    hip, shin0, seat = top + round(0.60 * H), top + round(0.80 * H), 3
-    shins = im.crop((0, shin0, w, bot)); sh = bot - shin0; out_h = (hip - top) + seat + max(sh, 10)
-    o = Image.new('RGBA', (w, out_h), (0, 0, 0, 0)); o.paste(im.crop((0, top, w, hip)), (0, 0))
-    xs = [x for x in range(w) if any(im.getpixel((x, y))[3] > 32 for y in range(hip - 4, hip))]
-    x0, x1 = (min(xs), max(xs)) if xs else (w // 4, 3 * w // 4)
-    d = ImageDraw.Draw(o); sy = hip - top
-    d.rectangle([x0 - 1, sy, x1 + 1, sy + seat - 1], fill=(122, 72, 40, 255)); d.line([x0 - 1, sy + seat - 1, x1 + 1, sy + seat - 1], fill=(84, 48, 26, 255))
-    for lx in (x0, x1 - 1): d.rectangle([lx, sy + seat, lx + 1, out_h - 1], fill=(62, 36, 20, 255))
-    o.alpha_composite(shins, (0, out_h - sh))
-    return o
-
-def add_sit(repo):
-    """`--sit`: makes `pNN-sit.webp` from the committed `pNN-face-book.webp` and adds its pose to set.json (no art cache needed)"""
-    S = os.path.join(repo, 'src/renderer/realoffice/sets/retro'); jp = os.path.join(S, 'set.json')
-    meta = json.load(open(jp))
+def keep_sit(repo):
+    """the asleep `sit` frames are drawn (Codex, `scripts/build-arcade-sleep.py`), not built here: a full build keeps the committed files, measures
+    them into set.json, names them in each person's files line and has build-arcade-sleep.py write their ASSETS.md lines"""
+    S = os.path.join(repo, 'src/renderer/realoffice/sets/retro'); jp = os.path.join(S, 'set.json'); meta = json.load(open(jp))
     for pid, st in meta['stand'].items():
-        im = sit_frame(Image.open(os.path.join(S, f'{pid}-face-book.webp'))); save(im, os.path.join(S, f'{pid}-sit.webp'))
-        tp, bt, fc = measure(im)
+        f = os.path.join(S, f'{pid}-sit.webp')
+        if not os.path.exists(f): continue
+        im = Image.open(f); tp, bt, fc = measure(im)
         st['poses']['sit'] = [im.width, im.height]; st['feet']['sit'] = round((bt + 1) / im.height, 4); st['top']['sit'] = round(tp / im.height, 4); st['foot']['sit'] = round(fc, 4)
     with open(jp, 'w') as f: f.write(json.dumps(meta, indent=1, sort_keys=True) + '\n')
-    # ASSETS.md: each person's files line names the seated frame, and one line says how it is made
     ap = os.path.join(S, 'ASSETS.md'); txt = open(ap, encoding='utf8').read()
     for pid in meta['stand']:
         txt = re.sub(r'(### set-' + pid + r'\n\n- files: [^\n]*?)(?: ' + pid + r'-sit\.webp)?\n', lambda m: m.group(1) + ' ' + pid + '-sit.webp\n', txt, count=1)
-    note = '- **Seated on a stool** (`sit`, the asleep pose, spec 102 FR-259, owner 2026-11-03): made by `scripts/build-arcade-pack.py --sit` from the person\'s own `face-book` frame (head, torso and hips kept, a stool of three browns drawn under the hips, shins and feet in front); no image tool. Made by Vikram\'s agent (Claude Code), 2026-11-03; waits for the owner\'s look.\n'
-    if note not in txt: txt = txt.replace('- **Licence:**', note + '- **Licence:**', 1)
+    if '- **Seated on a stool**' not in txt: txt = txt.replace('- **Licence:**', '- **Seated on a stool**\n- **Licence:**', 1)
     with open(ap, 'w', encoding='utf8') as f: f.write(txt)
+    import importlib.util
+    sp = importlib.util.spec_from_file_location('sleep', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'build-arcade-sleep.py')); sl = importlib.util.module_from_spec(sp)
+    argv = sys.argv; sys.argv = argv[:1]; sp.loader.exec_module(sl); sys.argv = argv
+    sl.assets(repo)
 
 def face_box(im):
     """crown to chin of the head in a front standing frame, found from the width of the figure row by row: the head is the first wide part, the neck is
@@ -480,7 +467,7 @@ def build_person(idx, src_final, src_new7):
 def write_set(repo, src_final, src_new7, prompts):
     S = os.path.join(repo, 'src/renderer/realoffice/sets/retro'); os.makedirs(S, exist_ok=True)
     for f in os.listdir(S):
-        if f.endswith('.webp'): os.remove(os.path.join(S, f))
+        if f.endswith('.webp') and not f.endswith('-sit.webp'): os.remove(os.path.join(S, f))   # the drawn asleep frames stay (keep_sit)
     seat, stand, fbox, total, sections = {}, {}, {}, 0, []
     for idx in PEOPLE:
         pid, frames = build_person(idx, src_final, src_new7)
@@ -586,12 +573,11 @@ def selftest():
 if __name__ == '__main__':
     if len(sys.argv) > 1 and sys.argv[1] == '--selftest': selftest(); sys.exit(0)
     if len(sys.argv) > 1 and sys.argv[1] == '--world': write_world(sys.argv[2] if len(sys.argv) > 2 else os.getcwd()); sys.exit(0)
-    if len(sys.argv) > 1 and sys.argv[1] == '--sit': add_sit(sys.argv[2] if len(sys.argv) > 2 else os.getcwd()); sys.exit(0)
     if len(sys.argv) < 2: raise SystemExit(__doc__)
     I = sys.argv[1].rstrip('/'); REPO = sys.argv[2] if len(sys.argv) > 2 else os.getcwd()
     prompts = [I + '/prompts', I + '/new7/prompts']
     smeta, sections, stotal = write_set(REPO, I + '/final/retro', I + '/new7/final', prompts)
     wmeta, wtotal = write_world(REPO)
     write_notes(REPO, smeta, sections, prompts)
-    add_sit(REPO)
+    keep_sit(REPO)
     print(f'set: {len(sections)} people, {stotal} bytes; world: {wtotal} bytes')

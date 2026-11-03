@@ -152,7 +152,7 @@ module.exports = async (ctx) => {
   const media = (features) => { const d = ctx.win.webContents.debugger; if (!d.isAttached()) d.attach('1.3'); return d.sendCommand('Emulation.setEmulatedMedia', { features }); };
   const MOTION = (v) => [{ name: 'prefers-reduced-motion', value: v }];
   const STATES = ['working', 'thinking', 'waiting', 'limit', 'error', 'done', 'idle', 'asleep'];
-  const setStates = (list) => js(`(()=>{const U=window.__durbarSimUi,S=JSON.parse(${jsLiteral(JSON.stringify(list))});U.agents().filter(a=>!a.parent).forEach((a,i)=>{a.state=S[i%S.length];});U.render();})();0`);
+  const setStates = (list) => js(`(()=>{const U=window.__durbarSimUi,S=JSON.parse(${jsLiteral(JSON.stringify(list))});U.agents().filter(a=>!a.parent).forEach((a,i)=>{a.state=S[i%S.length];delete a.label;});U.render();})();0`); /* the state's own word, no label left over from the simulator */
   const ROOM = `document.getAnimations().filter(a=>a.playState==='running'&&a.effect&&a.effect.target&&a.effect.target.closest&&a.effect.target.closest('#stage .ro'))`;
   const running = () => js(`${ROOM}.map(a=>(a.animationName||'waapi')+':'+a.effect.target.className)`);
   const DRAWN = `(()=>{const by=(s,id)=>document.querySelector('#stage '+s+'[data-for="'+CSS.escape(id)+'"]');return window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks).filter(d=>d.marquee).map(d=>{const m=by('.ro-marquee',d.id),f=by('.ro-fglow',d.id),c=by('.ro-cue',d.id),r=f.getBoundingClientRect(),ro=document.querySelector('#stage .ro').getBoundingClientRect();return {id:d.id,state:d.state,mq:[...m.classList].find(x=>x.startsWith('mq-')),glow:[...f.classList].find(x=>x.startsWith('g-')),cue:c?c.textContent:'',word:(document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(d.id)+'"] .ro-l2')||{}).textContent||'',out:m.classList.contains('mq-alert')||m.classList.contains('mq-alert-red')?getComputedStyle(m).outlineStyle:'none',inSlot:r.left-ro.left>=d.slot.x-0.5&&r.right-ro.left<=d.slot.x+d.slot.w+0.5&&r.top-ro.top>=d.slot.y-0.5&&r.bottom-ro.top<=d.slot.y+d.slot.h+0.5};});})()`;
@@ -166,6 +166,9 @@ module.exports = async (ctx) => {
   const stillChecks = async (tag) => {
     await must(`${ROOM}.filter(a=>!a.animationName).length===0`, tag + ': nothing left of the load');
     await setStates(STATES);
+    /* relayed, 2026-11-03: an agent asleep with no label of its own showed "undefined · At Terminal" on its plate */
+    await must(`!!document.querySelector('#stage .ro-plate[data-state="asleep"]')`, tag + ': an asleep plate drawn');
+    assert.deepStrictEqual(await js(`[...document.querySelectorAll('#stage .ro-plate')].map(p=>p.textContent).filter(t=>/undefined/.test(t))`), [], tag + ': no plate says undefined');
     await must(`${ROOM}.length===0`, tag + ': nothing runs, had ' + JSON.stringify(await running()), 4000);
     for (const d of await js(DRAWN)) {
       const want = TABLE[d.state]; assert.ok(want, tag + ': a state in the table: ' + d.state);
