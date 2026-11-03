@@ -38,6 +38,12 @@ const MP4_MAX = 20 * 1024 * 1024;
 const LEN_MIN = 25, LEN_MAX = 75;    // seconds; FR-172 aims at 30-60, the bounds fail a broken run
 const VERSION_RE = /^v\d+\.\d+\.\d+(?:-(?:alpha|beta|rc)\.\d+)?$/;
 const CLOCK = '2026-10-20T09:30:00Z'; // the same pinned page clock as shots-docs
+const RECORD_MS = 5 * 60 * 1000;     // FR-175: time limits, so a hang never holds a release (the whole tree is killed)
+const FFMPEG_MS = 3 * 60 * 1000;
+const PROBE_MS = 30 * 1000;
+/* FR-176 (review on #1083): the only variables Electron and ffmpeg get (runOne adds the simulator's own); never a token. */
+const ENV_ALLOW = ['PATH', 'HOME', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA', 'TEMP', 'TMP', 'TMPDIR', 'SYSTEMROOT', 'WINDIR', 'SYSTEMDRIVE',
+  'DISPLAY', 'WAYLAND_DISPLAY', 'XAUTHORITY', 'XDG_RUNTIME_DIR', 'FONTCONFIG_PATH', 'FONTCONFIG_FILE', 'LANG', 'LC_ALL', 'UI_SUITE_XVFB'];
 
 /* ---------------------------------------------------------------- the scene catalogue (FR-173) ----------------------------------------------------------------
  * id -> { title, sub, play(S) }. `title` names the change (the caption, at least 22 px on a 1440 px frame), `sub` says where to find it.
@@ -146,11 +152,22 @@ function fill(text, vars) {
  * FR-176: what in the page's text must never be in a frame. Values shorter than 4 characters are left out (a 3-letter user name
  * would match ordinary words); the home folder and the checkout path are matched as written and with the other slash.
  */
-function forbiddenValues({ home = os.homedir(), user = safeUser(), host = os.hostname(), root = ROOT } = {}) {
+function forbiddenValues({ home = os.homedir(), user = safeUser(), host = os.hostname(), root = ROOT, email = gitEmail() } = {}) {
   const out = new Set();
+  if (email && /^[^\s@]+@[^\s@]+$/.test(email)) out.add(email); // the git identity (review on #1083)
   for (const v of [home, root]) if (v && v.length >= 4) { out.add(v); out.add(v.replace(/\\/g, '/')); out.add(v.replace(/\//g, '\\')); }
   for (const v of [user, host]) if (v && v.length >= 4) out.add(v);
   return [...out];
+}
+/** `git config user.email` of this checkout ('' when unset or git is missing): no shell, a time limit. */
+function gitEmail(run = require('child_process').execFileSync) {
+  try { return String(run('git', ['config', 'user.email'], { cwd: ROOT, encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true, shell: false }) || '').trim(); } catch { return ''; }
+}
+/** The allow-listed part of an environment (names matched case-insensitively: Windows has `Path`, `SystemRoot`). */
+function childEnv(env = process.env) {
+  const out = {};
+  for (const [k, v] of Object.entries(env)) if (ENV_ALLOW.includes(k.toUpperCase()) && typeof v === 'string') out[k] = v;
+  return out;
 }
 function safeUser() { try { return os.userInfo().username; } catch { return process.env.USER || process.env.USERNAME || ''; } }
 
@@ -163,6 +180,7 @@ function privacyProblems(text, forbidden, redact) {
   const lower = t.toLowerCase();
   const hits = [];
   for (const v of forbidden) {
+    if (v.includes('@')) { if (lower.includes(v.toLowerCase())) hits.push('the git email'); continue; }
     const isPath = /[\\/]/.test(v);
     if (isPath ? t.includes(v) : new RegExp(`(^|[^a-z0-9_.-])${v.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^a-z0-9_-])`).test(lower)) hits.push(isPath ? 'a local path' : 'the user or host name');
   }
@@ -213,7 +231,7 @@ body{font-family:system-ui,"Segoe UI",Roboto,"DejaVu Sans",sans-serif;color:#fff
 body.card #band{display:none}body.card #app{height:${FRAME_H}px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}
 #ct{font-weight:650;font-size:64px}#cs{margin-top:18px;font-size:30px;color:#d5dce7}body:not(.card) #ct,body:not(.card) #cs{display:none}</style>
 <div id="app"><div id="ct"></div><div id="cs"></div></div><div id="band"><div id="t"></div><div id="s"></div></div>
-<script>window.setBand=(t,s,card)=>{for(const id of ['t','ct'])document.getElementById(id).textContent=t;for(const id of ['s','cs'])document.getElementById(id).textContent=s;document.body.classList.toggle('card',!!card);return true;};</script>`;
+<script>window.setBand=(t,s,card)=>{for(const id of ['t','ct'])document.getElementById(id).textContent=t;for(const id of ['s','cs'])document.getElementById(id).textContent=s;document.body.classList.toggle('card',!!card);return new Promise((r)=>requestAnimationFrame(()=>requestAnimationFrame(()=>r(true))));};</script>`;
 
 /** ffmpeg argument lists (no shell). `list` and the outputs are names in the working folder or absolute paths. */
 function mp4Args(list, out) {
@@ -235,16 +253,17 @@ function lengthOk(seconds) { return seconds >= LEN_MIN && seconds <= LEN_MAX; }
 /* ---------------------------------------------------------------- the command (plain Node) ---------------------------------------------------------------- */
 
 function ffmpegPath() { return process.env.FFMPEG || 'ffmpeg'; }
+/** A child (ffmpeg, ffprobe) with no shell, the allow-listed environment and a time limit: at the limit it is killed and this throws (FR-175). */
 function run(file, args, opts = {}) {
   const { execFileSync } = require('child_process');
-  return execFileSync(file, args, { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, shell: false, maxBuffer: 16 * 1024 * 1024, ...opts });
+  return execFileSync(file, args, { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, shell: false, maxBuffer: 16 * 1024 * 1024, env: childEnv(), timeout: FFMPEG_MS, killSignal: 'SIGKILL', ...opts });
 }
 function hasFfmpeg() {
-  try { return /ffmpeg version/.test(String(run(ffmpegPath(), ['-hide_banner', '-version']))); } catch { return false; }
+  try { return /ffmpeg version/.test(String(run(ffmpegPath(), ['-hide_banner', '-version'], { timeout: PROBE_MS }))); } catch { return false; }
 }
 function seconds(file) {
   const probe = process.env.FFPROBE || (process.env.FFMPEG ? path.join(path.dirname(process.env.FFMPEG), path.basename(process.env.FFMPEG).replace(/ffmpeg/i, 'ffprobe')) : 'ffprobe');
-  try { return Number(String(run(probe, ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=nw=1:nk=1', file])).trim()); } catch { return NaN; }
+  try { return Number(String(run(probe, ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=nw=1:nk=1', file], { timeout: PROBE_MS })).trim()); } catch { return NaN; }
 }
 
 async function main(argv = process.argv.slice(2), deps = {}) {
@@ -262,17 +281,17 @@ async function main(argv = process.argv.slice(2), deps = {}) {
   try {
     console.log(`release-video: ${a.version}, scenes ${a.scenes.join(', ')}, frames in ${frames}`);
     const runOne = deps.runOne || require('./ui-suite').runOne;
-    const r = await runOne({ name: 'release-video', env: { DURBAR_SIM_CLOCK: CLOCK, TZ: 'UTC', LANG: 'en_US.UTF-8', RV_VERSION: a.version, RV_SCENES: a.scenes.join(','), RV_COUNT: a.count === null ? '' : String(a.count) } }, frames);
+    const r = await runOne({ name: 'release-video', baseEnv: childEnv(), timeoutMs: RECORD_MS, killTree: true, env: { DURBAR_SIM_CLOCK: CLOCK, TZ: 'UTC', LANG: 'en_US.UTF-8', RV_VERSION: a.version, RV_SCENES: a.scenes.join(','), RV_COUNT: a.count === null ? '' : String(a.count) } }, frames);
     if (!r.ok) throw new Error(`the recording failed (${r.why || 'exit ' + r.code}):\n${r.log.split(/\r?\n/).filter((l) => l.trim()).slice(-20).join('\n')}`);
     const shot = JSON.parse(fs.readFileSync(path.join(frames, 'frames.json'), 'utf8'));
     fs.writeFileSync(path.join(frames, 'list.ffconcat'), concatList(shot.frames));
     const enc = deps.run || run;
     const mp4Part = path.join(out, base + '.part.mp4');
-    enc(ffmpegPath(), mp4Args('list.ffconcat', mp4Part), { cwd: frames });
+    enc(ffmpegPath(), mp4Args('list.ffconcat', mp4Part), { cwd: frames, timeout: FFMPEG_MS });
     let gif = null;
     for (const t of gifTries()) {
       const part = path.join(out, base + '.part.gif');
-      enc(ffmpegPath(), gifArgs('list.ffconcat', part, t.width, t.colors), { cwd: frames });
+      enc(ffmpegPath(), gifArgs('list.ffconcat', part, t.width, t.colors), { cwd: frames, timeout: FFMPEG_MS });
       const bytes = fs.statSync(part).size;
       console.log(`release-video: GIF ${t.width} px, ${t.colors} colours: ${(bytes / 1048576).toFixed(2)} MB`);
       if (bytes <= GIF_MAX) { gif = { ...t, bytes, part }; break; }
@@ -326,9 +345,19 @@ async function driver(ctx) {
   await band.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(BAND_HTML));
   let bandBmp = null, cardOn = false, capTitle = '', capSub = '';
   const paintBand = async () => {
+    // the page resolves after two animation frames with the new text; then poll (50 ms, as `until` does) until two captures agree (FR-048b)
     await band.webContents.executeJavaScript(`window.setBand(${jsLiteral(capTitle)},${jsLiteral(capSub)},${cardOn})`);
-    for (let i = 0; i < 3; i++) { band.webContents.invalidate(); await ctx.sleep(120); } // offscreen: let it paint the new text
-    const img = await band.webContents.capturePage();
+    let img = null, prev = null;
+    const end = Date.now() + 5000;
+    for (;;) {
+      band.webContents.invalidate();
+      img = await band.webContents.capturePage();
+      const bmp = img.toBitmap();
+      if (prev && bmp.length === prev.length && bmp.equals(prev)) break;
+      if (Date.now() > end) throw new Error('the caption band never settled');
+      prev = bmp;
+      await ctx.sleep(50);
+    }
     const sz = img.getSize();
     if (!bandBmp) console.log(`[release-video] caption band window ${sz.width}x${sz.height} (${JSON.stringify(await band.webContents.executeJavaScript('[innerWidth,innerHeight,devicePixelRatio]'))})`);
     if (sz.width !== W || sz.height < FRAME_H) throw new Error(`the caption band window is ${sz.width}x${sz.height}, not ${W}x${FRAME_H}`);
@@ -453,5 +482,5 @@ async function driver(ctx) {
 }
 
 module.exports = driver;
-Object.assign(module.exports, { W, H_, BAND, FRAME_H, composeFrame, SCENES, DEFAULT_SCENES, VERSION_RE, FPS, GIF_MAX, MP4_MAX, parseArgs, fill, forbiddenValues, privacyProblems, concatList, mp4Args, gifArgs, gifTries, lengthOk, main });
+Object.assign(module.exports, { ENV_ALLOW, RECORD_MS, FFMPEG_MS, childEnv, gitEmail, run, W, H_, BAND, FRAME_H, composeFrame, SCENES, DEFAULT_SCENES, VERSION_RE, FPS, GIF_MAX, MP4_MAX, parseArgs, fill, forbiddenValues, privacyProblems, concatList, mp4Args, gifArgs, gifTries, lengthOk, main });
 if (require.main === module) main().catch((e) => { console.error('release-video:', e.message); process.exitCode = 1; });

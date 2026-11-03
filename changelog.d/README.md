@@ -14,13 +14,14 @@ Rules (checked by `npm run changelog:check`, part of `npm test`):
 - the file name is lower case: letters, digits, `.`, `_`, `-`, ending in `.md` (use your branch name);
 - the same entry may not be in another fragment or already in `CHANGELOG.md`.
 - optional, at the end of the fragment (spec 008 FR-173): `  Highlight: <one line>` puts the change in the release's
-  five-line *Highlights* block (its bold name and one short clause, at most 100 characters, no spec numbers), and
+  five-line *Highlights* block (its bold name and one short clause, at most 100 characters, no spec numbers; plain text only:
+  letters, digits, spaces, `. , ; : ' - / + % ?` and `**bold**`, so no link, mention, `#` reference, code or HTML), and
   `  Scene: <id>` shows it in the release clip (`node scripts/release-video.js --list` names the scenes). Both are indented,
   one of each at most, after the last bullet; the fold drops them from the text. Most fragments have neither:
 
   ```markdown
   - **Monster Crew** (spec 077 FR-075): a fourth crew in Settings, Characters ...
-    Highlight: **Four new character crews**: Pirate, Monster, Royal and Animal Rebels, in Settings > Characters.
+    Highlight: **Four new character crews**: Pirate, Monster, Royal and Animal Rebels, in Settings, Characters.
     Scene: crews
   ```
 

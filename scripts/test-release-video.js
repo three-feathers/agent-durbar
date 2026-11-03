@@ -36,10 +36,10 @@ assert.strictEqual(RV.fill('{count} changes in {version}', { version: 'v0.1.7', 
 assert.strictEqual(RV.fill('{count} in {version}', { version: 'v1.0.0', count: null }), ' in v1.0.0');
 
 // ---- the privacy check (FR-176) ----
-const forbidden = RV.forbiddenValues({ home: '/home/alice', user: 'alice', host: 'alice-laptop', root: '/home/alice/src/agent-durbar' });
+const forbidden = RV.forbiddenValues({ home: '/home/alice', user: 'alice', host: 'alice-laptop', root: '/home/alice/src/agent-durbar', email: '' });
 assert.ok(forbidden.includes('/home/alice') && forbidden.includes('\\home\\alice'), 'the home folder, both slashes');
 assert.ok(forbidden.includes('alice-laptop') && forbidden.includes('alice'));
-assert.deepStrictEqual(RV.forbiddenValues({ home: '/h', user: 'bob', host: 'x', root: '/r' }), [], 'values under 4 characters are not matched');
+assert.deepStrictEqual(RV.forbiddenValues({ home: '/h', user: 'bob', host: 'x', root: '/r', email: '' }), [], 'values under 4 characters are not matched');
 const P = (t, red) => RV.privacyProblems(t, forbidden, red);
 const id = (s) => s;
 assert.deepStrictEqual(P('~/work/mcp-swiss  Agent Durbar  /etc/codex/requirements.toml', id), [], 'simulator text is clean');
@@ -55,6 +55,18 @@ let realRedact = null;
 try { realRedact = require(path.join(__dirname, '..', 'dist', 'shared', 'redact.js')).redact; } catch { /* no build */ }
 if (realRedact) assert.deepStrictEqual(P('ghp_' + 'a'.repeat(36), realRedact), ['text that redact masks (token-shaped)'], 'the app redact catches a token');
 else console.log('release-video: dist/shared/redact.js not built, real-redact case skipped');
+
+// ---- review on #1083: the git email, the environment allow-list ----
+{
+  const fv = RV.forbiddenValues({ home: '/home/alice', user: 'alice', host: 'box1', root: '/r/x', email: 'Alice.W@Example.org' });
+  assert.ok(fv.includes('Alice.W@Example.org'), 'the git email is forbidden');
+  assert.deepStrictEqual(RV.privacyProblems('by alice.w@example.org', fv, (x) => x).filter((h) => h === 'the git email'), ['the git email'], 'any case');
+  assert.ok(!RV.forbiddenValues({ home: '/h', user: 'bob', host: 'x', root: '/r', email: 'not an email' }).some((v) => v.includes('@')), 'a malformed value is not used');
+  assert.strictEqual(RV.gitEmail(() => { throw new Error('no git'); }), '', 'no git, no email');
+  assert.strictEqual(RV.gitEmail(() => ' a@b.example\n'), 'a@b.example');
+  const env = RV.childEnv({ PATH: '/bin', Path: 'C:\\x', SystemRoot: 'C:\\Windows', HOME: '/h', DISPLAY: ':1', LANG: 'C', GITHUB_TOKEN: 'ghp_x', GH_TOKEN: 'x', ANTHROPIC_API_KEY: 'k', OPENAI_API_KEY: 'k', COPILOT_TOKEN: 'k', AWS_SECRET_ACCESS_KEY: 'k', NODE_OPTIONS: '--require x', ELECTRON_RUN_AS_NODE: '1', DURBAR_OPEN: '/x' });
+  assert.deepStrictEqual(Object.keys(env).sort(), ['DISPLAY', 'HOME', 'LANG', 'PATH', 'Path', 'SystemRoot'], 'only the allow-list, names in any case');
+}
 
 // ---- the concat list: each frame lasts until the next was taken; the last is repeated ----
 const list = RV.concatList([{ file: 'f00000.png', t: 0 }, { file: 'f00001.png', t: 125 }, { file: 'f00002.png', t: 400 }]);
@@ -92,6 +104,26 @@ const src = fs.readFileSync(path.join(__dirname, 'release-video.js'), 'utf8');
 assert.ok(!/shell:\s*true/.test(src) && /shell: false/.test(src), 'ffmpeg runs without a shell');
 assert.ok(!/gh release|releases\/|--notes/.test(src.replace(/^\s*\*.*$/gm, '')), 'the script never touches a release');
 
+// ---- review on #1083: a hung child is killed at its limit (FR-175) ----
+{
+  const t0 = Date.now();
+  assert.throws(() => RV.run(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { timeout: 400 }), (e) => e.code === 'ETIMEDOUT' || /ETIMEDOUT|timed out/i.test(String(e.message)), 'a child over its limit throws');
+  assert.ok(Date.now() - t0 < 10000, 'and is killed at the limit');
+  process.env.RV_TEST_SECRET_TOKEN = 'ghp_' + 'z'.repeat(36);
+  const keys = JSON.parse(String(RV.run(process.execPath, ['-e', 'process.stdout.write(JSON.stringify(Object.keys(process.env)))'], { timeout: 10000 })));
+  delete process.env.RV_TEST_SECRET_TOKEN;
+  assert.ok(!keys.includes('RV_TEST_SECRET_TOKEN') && keys.every((k) => RV.ENV_ALLOW.includes(k.toUpperCase()) || k === 'SystemRoot' || /^(PWD|SHLVL|_)$/.test(k)), `ffmpeg gets the allow-listed environment only: ${keys.join(',')}`);
+  const src2 = fs.readFileSync(path.join(__dirname, 'release-video.js'), 'utf8');
+  assert.ok(/timeout: FFMPEG_MS, killSignal: 'SIGKILL'/.test(src2), 'every ffmpeg call has a limit and a hard kill');
+}
+// killTree: the whole tree goes, not only the wrapper (xvfb-run on Linux)
+const { killTree } = require('./ui-suite');
+{
+  const calls = [];
+  killTree({ pid: 42 }, { platform: 'win32', run: (f, a) => calls.push([f, ...a]) });
+  assert.deepStrictEqual(calls, [['taskkill', '/pid', '42', '/T', '/F']], 'Windows: taskkill /T /F, no shell');
+}
+
 // ---- the command's failure paths (FR-175): no ffmpeg, a failed recording; nothing is left behind ----
 (async () => {
   const out = fs.mkdtempSync(path.join(os.tmpdir(), 'rv-test-'));
@@ -108,6 +140,36 @@ assert.ok(!/gh release|releases\/|--notes/.test(src.replace(/^\s*\*.*$/gm, '')),
       assert.ok(!fs.existsSync(path.join(out, 'release-v0.1.7.gif')), 'an old clip is removed when a new run fails');
       assert.deepStrictEqual(fs.readdirSync(out).filter((f) => f.startsWith('release-')), [], 'no release-* file after a failure');
     } else console.log('release-video: no build, failed-recording case skipped');
+    // the options main gives the recording and ffmpeg: allow-listed env, limits, the tree kill
+    if (distOk) {
+      let seen = null;
+      const opts = [];
+      const fakeRun = (file, args, o) => { opts.push(o); fs.writeFileSync(args[args.length - 1], 'x'); return ''; };
+      const rec = async (d, dir) => {
+        seen = d;
+        fs.writeFileSync(path.join(dir, 'f00000.png'), 'x');
+        fs.writeFileSync(path.join(dir, 'frames.json'), JSON.stringify({ seconds: 30, frames: [{ file: 'f00000.png', t: 0 }], scenes: [{ n: '01', id: 'intro', title: 't', sub: 's', from: 0, to: 30, still: 'f00000.png' }], privacy: {} }));
+        return { ok: true, code: 0, log: '' };
+      };
+      process.env.RV_TEST_SECRET_TOKEN = 'x';
+      const m2 = await RV.main(['--version', 'v0.1.7', '--out', out], { hasFfmpeg: () => true, ensure: () => true, runOne: rec, run: fakeRun });
+      delete process.env.RV_TEST_SECRET_TOKEN;
+      assert.ok(m2 && m2.gif.bytes === 1);
+      assert.ok(seen.killTree === true && seen.timeoutMs === RV.RECORD_MS && seen.timeoutMs <= 10 * 60 * 1000, 'the recording has a limit and kills its tree');
+      assert.ok(seen.baseEnv && !('RV_TEST_SECRET_TOKEN' in seen.baseEnv) && Object.keys(seen.baseEnv).every((k) => RV.ENV_ALLOW.includes(k.toUpperCase())), 'Electron gets the allow-listed environment');
+      assert.ok(opts.length >= 2 && opts.every((o) => o.timeout === RV.FFMPEG_MS), 'every encode has a limit');
+    }
   } finally { fs.rmSync(out, { recursive: true, force: true }); }
+  // POSIX: a real tree (a child that starts a grandchild) is gone after killTree
+  if (process.platform !== 'win32') {
+    const { spawn } = require('child_process');
+    const child = spawn(process.execPath, ['-e', "const c=require('child_process').spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'});console.log(c.pid);setInterval(()=>{},1000)"], { detached: true, stdio: ['ignore', 'pipe', 'ignore'] });
+    const grand = await new Promise((r) => child.stdout.once('data', (b) => r(Number(String(b).trim()))));
+    killTree(child);
+    const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+    let gone = false;
+    for (let i = 0; i < 100 && !gone; i++) { if (!alive(grand) && !alive(child.pid)) gone = true; else await new Promise((r) => setTimeout(r, 50)); }
+    assert.ok(gone, 'killTree ends the child and its grandchild');
+  } else console.log('release-video: POSIX tree-kill case skipped on Windows');
   console.log('release-video: tests passed');
 })().catch((e) => { console.error(e); process.exitCode = 1; });

@@ -55,10 +55,10 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
 // spec 008 FR-173: the Highlight: and Scene: fields, at the end of a fragment, dropped from the folded text; a fragment without them is fine
 {
   const sc = { scenes: ['crews', 'mcp'] };
-  const f = cl.parseFragment('- **Crews** (spec 077): more.\n  Continued.\n  Highlight: **Four new crews**: Settings > Characters.\n  Scene: crews\n', sc);
+  const f = cl.parseFragment('- **Crews** (spec 077): more.\n  Continued.\n  Highlight: **Four new crews**: Settings, Characters.\n  Scene: crews\n', sc);
   assert.deepStrictEqual(f.errors, []);
   assert.deepStrictEqual(f.bullets, ['- **Crews** (spec 077): more.\n  Continued.'], 'the fields are not part of the bullet');
-  assert.deepStrictEqual(f.fields, { highlight: '**Four new crews**: Settings > Characters.', scene: 'crews' });
+  assert.deepStrictEqual(f.fields, { highlight: '**Four new crews**: Settings, Characters.', scene: 'crews' });
   assert.deepStrictEqual(cl.parseFragment('- Plain.\n', sc).fields, {}, 'no fields: fine');
   assert.deepStrictEqual(cl.parseFragment('- A\n  Note: prose that looks like a field\n', sc).errors, [], 'only Highlight and Scene are fields');
   assert.deepStrictEqual(cl.parseFragment('- A\n  Note: x\n', sc).bullets, ['- A\n  Note: x']);
@@ -67,7 +67,37 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
   bad('- A\n  Scene: crews\n  Scene: mcp\n', /a second "Scene:"/, 'two scenes');
   bad('- A\n  Highlight: ' + 'x'.repeat(101) + '\n', /101 characters/, 'a long highlight');
   bad('- A\n  Highlight:   \n', /needs a value/, 'an empty highlight');
-  bad('- A\n  Highlight: a <img src=x> b\n', /no HTML/, 'HTML in a highlight');
+  // review on #1083: a Highlight is pasted unattended into public notes, so only plain text passes (an allow-list)
+  for (const [why, v, re] of [
+    ['a link', '[click](https://evil.example/x)', /not "\[" "\]" "\(" "\)"/],
+    ['an image beacon', '![i](https://evil.example/x.png)', /not "!"/],
+    ['@everyone', 'hello @everyone', /not "@"/],
+    ['a mention', 'thanks @octocat', /not "@"/],
+    ['an email (autolinked)', 'mail a@b.example', /not "@"/],
+    ['an issue reference', 'fix #1 closes #2', /not "#"/],
+    ['a GH- reference', 'fixes GH-12 now', /issue or commit reference/],
+    ['a commit hash', 'reverts 3aa0b48', /issue or commit reference/],
+    ['a bidi override', 'safe‮exe.txt', /U\+202E/],
+    ['a zero-width space', 'ever​yone', /U\+200B/],
+    ['a soft hyphen', 'a­b', /U\+00AD/],
+    ['a no-break space', 'a b', /U\+00A0/],
+    ['a control character', 'a\u0007b', /U\+0007/],
+    ['backticks', '```js', /not "`"/],
+    ['a code span', 'run `rm`', /not "`"/],
+    ['a table pipe', 'a | b', /not "\|"/],
+    ['HTML', 'a <img src=x> b', /not "<" "=" ">"/],
+    ['an entity', 'a &lt; b', /not "&"/],
+    ['a URL', 'see https://evil.example', /web address/],
+    ['a bare www address', 'see www.evil.example', /web address/],
+    ['underscore emphasis', '_x_', /not "_"/],
+    ['a strike', '~~x~~', /not "~"/],
+    ['a lone star', '*x*', /balanced \*\*bold\*\*/],
+    ['unbalanced bold', '**x', /balanced \*\*bold\*\*/],
+    ['triple stars', '***x***', /balanced \*\*bold\*\*/],
+    ['a backslash escape', 'a \\[b', /not "\\\\"/],
+  ]) bad(`- A\n  Highlight: ${v}\n`, re, `highlight refuses ${why}`);
+  for (const v of ['**Four new character crews**: Pirate, Monster, Royal and Animal Rebels.', 'MCP cost: a warning above 15 % or 30 %.', "Floors count up; PageUp goes up, not down?", 'Clean Office/Retro Pixel + less CPU', 'Évite les accès: ça marche'])
+    assert.deepStrictEqual(cl.parseFragment(`- A\n  Highlight: ${v}\n`, sc).errors, [], `plain text passes: ${v}`);
   bad('- A\n  Scene: intro\n', /not in the clip's scene catalogue/, 'a scene outside the catalogue');
   bad('- A\n  Scene: toString\n', /not in the clip's scene catalogue/, 'a prototype name');
   bad('- A\n  Highlight: x\n- B\n', /go at the end/, 'a bullet after the fields');

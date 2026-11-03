@@ -68,6 +68,21 @@ function sceneIds() {
   try { return Object.keys(require('./release-video.js').SCENES).filter((k) => k !== 'intro' && k !== 'outro'); } catch { return []; }
 }
 
+/*
+ * Spec 008 FR-173 (review on #1083): a Highlight goes unattended into public release notes, so it is plain text from an allow-list:
+ * letters, digits, spaces and . , ; : ' - / + % ?, and `*` only as balanced **bold**. No link, image, mention, issue reference,
+ * HTML, code span, table pipe, URL, or control or invisible (bidi, zero-width) character. Returns what is wrong, or ''.
+ */
+const HIGHLIGHT_CHARS = /^[\p{L}\p{N} .,;:'\-/+%?*]+$/u;
+function highlightProblem(v) {
+  const bad = [...new Set([...String(v)].filter((c) => !HIGHLIGHT_CHARS.test(c)))];
+  if (bad.length) return `may use only letters, digits, spaces, . , ; : ' - / + % ? and **bold**; not ${bad.map((c) => (/[\p{Cc}\p{Cf}\p{Z}]/u.test(c) && c !== ' ' ? `U+${c.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')}` : JSON.stringify(c))).join(' ')}`;
+  if (/:\/\//.test(v) || /\bwww\./i.test(v)) return 'may not hold a web address';
+  if (/\bgh-\d/i.test(v) || /\b[0-9a-f]{7,40}\b/i.test(v)) return 'may not hold an issue or commit reference (GitHub links GH-1 and commit hashes)';
+  if (/\*/.test(String(v).replace(/\*\*[^*]+\*\*/g, ''))) return 'may use * only as balanced **bold**';
+  return '';
+}
+
 /* Parse one fragment's text: { bullets, fields: { highlight?, scene? }, errors }. Field lines are not part of any bullet. */
 function parseFragment(text, { scenes = sceneIds() } = {}) {
   const errors = [];
@@ -87,7 +102,7 @@ function parseFragment(text, { scenes = sceneIds() } = {}) {
       if (Object.prototype.hasOwnProperty.call(fields, name)) errors.push(`line ${n}: a second "${f[1]}:" (one per fragment)`);
       else if (!value) errors.push(`line ${n}: "${f[1]}:" needs a value`);
       else if (name === 'highlight' && value.length > HIGHLIGHT_MAX) errors.push(`line ${n}: "Highlight:" is ${value.length} characters (at most ${HIGHLIGHT_MAX})`);
-      else if (name === 'highlight' && /<[a-zA-Z!/?]/.test(value)) errors.push(`line ${n}: "Highlight:" is one line of Markdown, no HTML`);
+      else if (name === 'highlight' && highlightProblem(value)) errors.push(`line ${n}: "Highlight:" ${highlightProblem(value)}`);
       else if (name === 'scene' && !scenes.includes(value)) errors.push(`line ${n}: "Scene: ${value}" is not in the clip's scene catalogue (${scenes.join(', ') || 'none found'}; scripts/release-video.js)`);
       else fields[name] = value;
       return;
@@ -246,7 +261,7 @@ function notes(root = ROOT, { release, previous } = {}) {
   return { section: r.section, source: 'fragments' };
 }
 
-module.exports = { MARKER, INTRO, splitChangelog, bulletBlocks, parseFragment, readFragments, check, pending, build, notes, highlights, highlightsBlock, sceneIds, HIGHLIGHT_MAX };
+module.exports = { highlightProblem, MARKER, INTRO, splitChangelog, bulletBlocks, parseFragment, readFragments, check, pending, build, notes, highlights, highlightsBlock, sceneIds, HIGHLIGHT_MAX };
 
 if (require.main === module) {
   const [cmd, ...args] = process.argv.slice(2);
