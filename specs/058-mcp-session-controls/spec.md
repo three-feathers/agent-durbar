@@ -2010,3 +2010,15 @@ keyring, no prompt and no real provider (Entra, Okta, GitHub). Not run: macOS (k
 server in the launch check. **Merge
 order** (review item 12): this delta lands **after PR #1073**, whose FR-195..FR-203 it cites; both append at the end of `spec.md` and
 `tasks.md`.
+
+- **2026-11-03: pin `@github/copilot-sdk` back to 1.0.24 (issue #1084, regression since v0.1.7).** `[IMPLEMENTED]` Since v0.1.7 Copilot's **Sign in** on an
+  MCP server that uses Microsoft Entra fails with "Microsoft Entra authentication requires the host to configure an Entra client ID". Cause:
+  `read:` the Dependabot bump d83e9e49d (2026-11-02) took the SDK from 1.0.24 to 1.0.26; the error text is absent from runtime 1.0.98/1.0.101
+  (SDK 1.0.22/1.0.24) and present in 1.0.103 (SDK 1.0.26) and 1.0.105 (SDK 1.0.28); SDK 1.0.26 adds the `@experimental` client option
+  `entra: { clientId }`, "Required for built-in Entra sign-in and token renewal", and the runtime has no default. `real:` the exact error was
+  reproduced with SDK 1.0.26 against a local server whose metadata names login.microsoftonline.com (no account). In-app Sign in worked on the
+  owner's Mac with SDK 1.0.22 (FR-074). The owner chose: exact pin to 1.0.24 (`package.json` with no caret, lock resolves the 1.0.24 SDK and
+  platform runtimes), a Dependabot `ignore` above 1.0.24, and a patch release. Typecheck against the 1.0.24 types is clean; no code used a
+  1.0.26-only API (`rpc.mcp.config.list()` is only in the `docs/agent-apps.md` probe note). Probes written with 1.0.26 stay as dated history.
+  `[KNOWN GAP]` A real Entra sign-in is not run here; the owner checks it on his Mac after the patch release. Follow-ups, both owner decisions:
+  sign in through the Copilot CLI route, or Durbar's own Entra app registration (`entra.clientId`); the Dependabot hold is lifted once one exists.

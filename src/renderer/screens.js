@@ -1209,6 +1209,23 @@
     /* spec 100 FR-003, FR-011: the MCP figures; opening asks (main: at most once a minute), the answer repaints through mcpEvent */
     const mc=window.exports||{}, ctxOf=()=>X.mcpCtx?X.mcpCtx(a.id):null;
     if(X.bridge.agentMcpContext&&X.mcpCtxSet)void Promise.resolve(X.bridge.agentMcpContext(a.id,true)).then(v=>{if(v&&v.ok)X.mcpCtxSet(a.id,v);}).catch(()=>0);
+    /* spec 069 FR-068 (owner 2026-11-03): the server's token figure counts only the ticked tools. The agent apps report a total per server, never
+       one per tool, so each tool gets a share of the figure in proportion to spec 100's estimator (FR-002) over its name and description: "about".
+       The report is of the running session; `offAtOpen` is the off list that session started with (as the dialog opened, or after Restart session). */
+    const offAtOpen=new Map();
+    const costBasis=x=>{
+      const r=toolsOf.get(x.name),rep=ctxOf()&&ctxOf().view&&ctxOf().view.report,srv=rep&&mc.serverOf(rep,x);
+      if(!r||!r.ok||!r.tools||!r.tools.length||!srv||srv.source==='unknown'||typeof mc.safeTokens!=='function'||typeof mc.estimateTool!=='function')return null;
+      const tok=mc.safeTokens(srv.tokens);if(tok===undefined)return null;
+      if(!offAtOpen.has(x.name))offAtOpen.set(x.name,new Set(x.toolsOff||[]));
+      const was=offAtOpen.get(x.name),now=new Set(x.toolsOff||[]),w=new Map(r.tools.map(t=>[t.name,mc.estimateTool({name:t.name,description:t.description})]));
+      const sum=set=>r.tools.reduce((n,t)=>n+(set.has(t.name)?0:w.get(t.name)),0),sWas=sum(was),sNow=sum(now);
+      if(!sWas)return null;
+      const per=tok/sWas, M=r.tools.length, on=r.tools.filter(t=>!now.has(t.name)).length;
+      let changed=false;for(const t of r.tools)if(was.has(t.name)!==now.has(t.name))changed=true;
+      return {srv,tok:Math.round(tok*sNow/sWas),perOf:t=>Math.round(per*w.get(t.name)),on,M,changed};
+    };
+    const fmtTok=n=>n>=1000&&mc.fmtK?mc.fmtK(n):String(n);
     const restarting=new Set(); /* server names whose Restart is under way (FR-031: the button stays disabled) */
     const openDet=new Set(); /* server names whose Details are open (kept over a repaint) */
     let sessBusy=false;
@@ -1287,16 +1304,24 @@
         /* spec 069 FR-030/FR-033 on spec 058's row: the name opens the tools list; Remove for entries of an agent app's list or this folder */
         const open=expanded.has(x.name), canTools=!!(s.canListTools&&X.bridge.agentMcpTools);
         const nameB=`<b class="srv-name" title="${esc(W.plain(x.name,120))}">${esc(x.name)}</b>`;
-        const nameEl=canTools?`<button class="mcp-tg" type="button" data-tools="${esc(x.name)}" aria-expanded="${open}" aria-controls="mt-${esc(x.name)}" aria-label="${esc((open?'Hide':'Show')+' the tools of '+x.name)}"><span class="mcp-car" aria-hidden="true">${open?'▾':'▸'}</span>${nameB}</button>`:nameB;
+        /* spec 069 FR-067: the name still opens the list (data-tn); the Tools button in the row's buttons is the visible control */
+        const nameEl=canTools?`<button class="mcp-tg" type="button" data-tn="${esc(x.name)}" aria-expanded="${open}" aria-controls="mt-${esc(x.name)}" aria-label="${esc((open?'Hide':'Show')+' the tools of '+x.name)}"><span class="mcp-car" aria-hidden="true">${open?'▾':'▸'}</span>${nameB}</button>`:nameB;
+        const tr=toolsOf.get(x.name), tOff=new Set(x.toolsOff||[]);
+        const tLbl=!tr||!tr.ok||!Array.isArray(tr.tools)||!tr.tools.length?'Tools':(()=>{const free=tr.tools.filter(t=>!t.orgBlocked),on=free.filter(t=>!tOff.has(t.name)).length;return on===free.length?'Tools ('+tr.total+')':'Tools: '+on+' of '+free.length+' on';})();
+        const toolsB=canTools?`<button class="btn sm mcp-tbtn" type="button" data-tools="${esc(x.name)}" aria-expanded="${open}" aria-controls="mt-${esc(x.name)}" aria-label="${esc((open?'Hide':'Show')+' the tools of '+x.name)}" title="${esc((open?'Hide':'Show')+' the tools of this server and turn single tools off')}"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M10.5 2.2a3.3 3.3 0 0 0-3 4.4L2.4 11.7a1.3 1.3 0 0 0 1.9 1.9l5.1-5.1a3.3 3.3 0 0 0 4.4-3l-2 2-1.8-.4-.4-1.8z"/></svg>${esc(tLbl)}</button>`:'';
         const srcs=Array.isArray(x.sources)?x.sources:[];
         const removable=srcs.some(t=>t==='copilot'||t==='claude'||t==='codex'||t==='folder');
         const rmb=removable&&(X.bridge.mcpGlobalRemovePreview||X.bridge.mcpRemove)?`<button class="btn sm" type="button" data-mrm="${esc(x.name)}" aria-label="${esc('Remove '+x.name+'…')}" title="Remove it from the list it comes from (you review the change first)">Remove…</button>`:'';
         const why=removable?'':srcs.includes('builtin')?'Built into the agent app':'Reported by the running session; managed by the agent app';
         const sg=x.canSignIn||x.signInSteps||x.signIn?signHTML(x,s):'';
         /* spec 100 FR-011: this row's tokens and label */
-        const costW=mcRep&&s.live?mc.rowFigure(mc.serverOf(mcRep,x),{off:x.off||!x.defaultOn,status:x.status,hasReport:true,largest:!!mcTop&&mc.serverOf({servers:[mcTop]},x)===mcTop}):'';
+        const cb=mcRep&&s.live?costBasis(x):null;
+        let costW=mcRep&&s.live?mc.rowFigure(mc.serverOf(mcRep,x),{off:x.off||!x.defaultOn,status:x.status,hasReport:true,largest:!!mcTop&&mc.serverOf({servers:[mcTop]},x)===mcTop}):'';
+        if(cb&&cb.changed&&!x.off&&x.defaultOn&&/ tokens/.test(costW)){ /* FR-068: only the ticked tools, until the session restarts */
+          const adj=mc.rowFigure({...cb.srv,tokens:cb.tok,source:'reported',capped:false},{off:false,status:x.status,hasReport:true,largest:!!mcTop&&mc.serverOf({servers:[mcTop]},x)===mcTop});
+          costW='about '+adj+' (with '+cb.on+' of '+cb.M+' tools; applies after Restart session)';}
         return `<li class="srv sm${open||sg?' open':''}" data-n="${esc(x.name)}"${why?` title="${esc(why)}"`:''}><div class="srv-main"><div class="srv-top">${nameEl}${srcChips(x)}${stat}${org?'<span class="mtag warn org-tag">Blocked by your organization</span>':''}${!x.defaultOn&&by!=='settings'?`<span class="mtag">${x.origin==='folder'?'off in folder extras':'off in Settings'}</span>`:''}${costW?`<span class="mcp-cost">${esc(costW)}</span>`:''}</div>${hh.why}${org?`<span class="srv-hint srv-org" id="${orgId}">${esc(org)}.</span>`:orgMay?`<span class="srv-hint srv-org">${esc(orgMay)}.</span>`:''}${hint?`<span class="srv-hint">${esc(hint)}</span>`:''}${btnRow(det,hh.diag)}${detBox}</div>
-          <div class="srv-act">${rs}${againB(x)}${rmb}${sw(eff,(appOff?x.name+' is off in '+(app?W.plain(app,40):'the agent app'):(eff?'Switch off ':'Switch on ')+x.name+' for '+a.name+(s.live?' in this session':' when its session starts')),'data-n="'+esc(x.name)+'"'+(!x.defaultOn||fixed||appOff||org?' disabled':'')+(org?' aria-describedby="'+orgId+'"':''))}</div>${sg}${open?toolsHTML(x.name):''}</li>`;}).join('');
+          <div class="srv-act">${toolsB}${rs}${againB(x)}${rmb}${sw(eff,(appOff?x.name+' is off in '+(app?W.plain(app,40):'the agent app'):(eff?'Switch off ':'Switch on ')+x.name+' for '+a.name+(s.live?' in this session':' when its session starts')),'data-n="'+esc(x.name)+'"'+(!x.defaultOn||fixed||appOff||org?' disabled':'')+(org?' aria-describedby="'+orgId+'"':''))}</div>${sg}${open?toolsHTML(x.name):''}</li>`;}).join('');
       /* FR-022 / FR-030 / FR-032: Restart session lives only here (Q10) */
       const rsess=s.canRestartSession&&X.bridge.agentMcpRestartSession?`<div class="mcp-rsess"><button class="btn sm" type="button" id="mcpRestartSess"${sessBusy?' disabled':''}>${sessBusy?'Restarting session…':'Restart session with these servers'}</button><span class="dsub small">${noServerRestart?esc(o.appName||'This agent app')+' cannot restart one server; use this instead. ':''}Ends this session and resumes it with the servers in Settings and the folder's extras. The conversation is kept.${s.start==='next-message'?' The servers start with your next message.':''}</span></div>`:'';
       /* spec 058 FR-164 (owner 2026-10-23): sign in again to every server Copilot can redo, so the signed runtime writes each sign-in anew */
@@ -1320,7 +1345,7 @@
       const okName=t=>/^[A-Za-z0-9_.-]{1,128}$/.test(t.name), free=t=>okName(t)&&!t.orgBlocked, nOff=r.tools.filter(t=>off.has(t.name)&&free(t)).length, nFree=r.tools.filter(free).length, all=nOff===0?'true':nOff===nFree?'false':'mixed'; /* spec 076: a tool the organization blocks is left out of the count and the tri-state */
       /* FR-063/FR-064 (change 2026-10-22, review on PR 503): a box that cannot change is aria-disabled, not disabled: it stays in the Tab
          order, a click or Space does nothing (the click handler), and aria-describedby points to the reason, which is visible */
-      const noteId='mtn-'+(++uid);
+      const noteId='mtn-'+(++uid), cbs=costBasis(x);
       const dis=can?'':` aria-disabled="true" aria-describedby="${noteId}"`;
       /* FR-063 (change 2026-10-22): a tool name the agent apps' filters cannot carry (copy of MCP_TOOL_OFF_RE in src/shared/mcp.ts) cannot be turned off */
       const odd=t=>!okName(t);
@@ -1329,7 +1354,7 @@
         <span class="mcp-tnote" id="${noteId}">${can?'Turning tools on or off applies to new sessions and after Restart session with these servers.':'This app can\'t turn off single tools.'}${can&&nOdd?` ${nOdd} tool${nOdd===1?'':'s'} with other characters in the name cannot be turned off.`:''}</span></div>`;
       /* spec 076 FR-202: a tool the agent app's organization policy blocks: unticked, aria-disabled, the reason visible next to it */
       const row=t=>{const ob=typeof t.orgBlocked==='string'?t.orgBlocked:'',may=!ob&&typeof t.orgDoubt==='string'?t.orgDoubt:'',why=ob||(can&&odd(t))?'mtw-'+(++uid):'';
-        return `<li${ob?' class="mcp-org"':''}><label><input type="checkbox" data-tool="${esc(t.name)}" data-tsrv="${esc(n)}"${ob||(off.has(t.name)&&!odd(t))?'':' checked'}${ob?` aria-disabled="true" aria-describedby="${why}"`:dis||(why?` aria-disabled="true" aria-describedby="${why}"`:'')} aria-label="${esc(t.name+' of '+n)}"><code>${esc(t.name)}</code></label>${ob?`<span class="mcp-tnote srv-org" id="${why}"${t.description?` title="${esc(t.description)}"`:''}>${esc(ob)}</span>`:why?`<span class="mcp-tnote" id="${why}">can't be turned off: the name has other characters</span>`:''}${may?`<span class="mcp-tnote srv-org">${esc(may)}</span>`:''}${t.description&&!ob?`<span>${esc(t.description)}</span>`:''}</li>`;};
+        return `<li${ob?' class="mcp-org"':''}><label><input type="checkbox" data-tool="${esc(t.name)}" data-tsrv="${esc(n)}"${ob||(off.has(t.name)&&!odd(t))?'':' checked'}${ob?` aria-disabled="true" aria-describedby="${why}"`:dis||(why?` aria-disabled="true" aria-describedby="${why}"`:'')} aria-label="${esc(t.name+' of '+n)}"><code title="${esc(t.name)}">${esc(t.name)}</code>${cbs?`<span class="mcp-ttok">about ${esc(fmtTok(cbs.perOf(t)))} tokens</span>`:''}</label>${ob?`<span class="mcp-tnote srv-org" id="${why}"${t.description?` title="${esc(t.description)}"`:''}>${esc(ob)}</span>`:why?`<span class="mcp-tnote" id="${why}">can't be turned off: the name has other characters</span>`:''}${may?`<span class="mcp-tnote srv-org">${esc(may)}</span>`:''}${t.description&&!ob?`<span class="mcp-tdesc" title="${esc(t.description)}">${esc(t.description)}</span>`:''}</li>`;};
       return `<div class="mcp-tools" id="${id}">${head}<ul class="mcp-tlist">${r.tools.map(row).join('')}</ul></div>`;
     }
     const toggleTools=async n=>{
@@ -1376,7 +1401,7 @@
         else if(x&&(x.status==='needs-auth'||(x.status==='failed'&&x.errorClass==='auth')))signNote.set(n,notFinished(x));}
       for(const x of st.servers)if(x.status==='connected')signNote.delete(x.name);
       const f=document.activeElement,inside=f&&dlg.contains(f);
-      const key=!inside?null:f.dataset.restart!==undefined?['restart',f.dataset.restart]:f.dataset.tools!==undefined?['tools',f.dataset.tools]:f.dataset.tool!==undefined?['tool',f.dataset.tool,f.dataset.tsrv]:f.dataset.tall!==undefined?['tall',f.dataset.tall]:f.dataset.det!==undefined?['det',f.dataset.det]:f.dataset.copy!==undefined?['copy',f.dataset.copy]:f.dataset.diag!==undefined?['diag',f.dataset.diag]:f.dataset.signagain!==undefined?['signagain',f.dataset.signagain]:f.dataset.signin!==undefined?['signin',f.dataset.signin]:f.dataset.signopen!==undefined?['signopen',f.dataset.signopen]:f.dataset.signcancel!==undefined?['signcancel',f.dataset.signcancel]:f.dataset.swoff!==undefined?['swoff',f.dataset.swoff]:f.dataset.steps!==undefined?['steps',f.dataset.steps]:f.dataset.copysteps!==undefined?['copysteps',f.dataset.copysteps]:f.dataset.err!==undefined?['err',f.dataset.err]:f.dataset.n!==undefined?['n',f.dataset.n]:f.id?['id',f.id]:null;
+      const key=!inside?null:f.dataset.restart!==undefined?['restart',f.dataset.restart]:f.dataset.tools!==undefined?['tools',f.dataset.tools]:f.dataset.tn!==undefined?['tn',f.dataset.tn]:f.dataset.tool!==undefined?['tool',f.dataset.tool,f.dataset.tsrv]:f.dataset.tall!==undefined?['tall',f.dataset.tall]:f.dataset.det!==undefined?['det',f.dataset.det]:f.dataset.copy!==undefined?['copy',f.dataset.copy]:f.dataset.diag!==undefined?['diag',f.dataset.diag]:f.dataset.signagain!==undefined?['signagain',f.dataset.signagain]:f.dataset.signin!==undefined?['signin',f.dataset.signin]:f.dataset.signopen!==undefined?['signopen',f.dataset.signopen]:f.dataset.signcancel!==undefined?['signcancel',f.dataset.signcancel]:f.dataset.swoff!==undefined?['swoff',f.dataset.swoff]:f.dataset.steps!==undefined?['steps',f.dataset.steps]:f.dataset.copysteps!==undefined?['copysteps',f.dataset.copysteps]:f.dataset.err!==undefined?['err',f.dataset.err]:f.dataset.n!==undefined?['n',f.dataset.n]:f.id?['id',f.id]:null;
       const errTop=key&&key[0]==='err'?f.scrollTop:0;
       const bodyEl=dlg.querySelector('.dbody'),top=bodyEl.scrollTop;
       bodyEl.innerHTML=body(st);bodyEl.scrollTop=top; /* FR-004: the scroll position stays */
@@ -1499,7 +1524,8 @@
     };
     const restartSession=async()=>{
       if(sessBusy)return;
-      await mcpRestartSessionFlow(a,st.start,{returnFocus:()=>dlg&&dlg.querySelector('#mcpRestartSess'),busy:async v=>{sessBusy=v;await repaint();},onAuth:()=>{if(dlg&&dlg._ov)dlg._ov._close();}});
+      const rr=await mcpRestartSessionFlow(a,st.start,{returnFocus:()=>dlg&&dlg.querySelector('#mcpRestartSess'),busy:async v=>{sessBusy=v;await repaint();},onAuth:()=>{if(dlg&&dlg._ov)dlg._ov._close();}});
+      if(rr&&rr.ok)offAtOpen.clear(); /* the restarted session has the off list as it is now */
       await repaint();
     };
     const d0=dialog({title:'MCP servers for '+a.name,wide:true,html:body(st),buttons:[{label:'Settings',value:'settings'},{label:'Folder extras…',value:'folder'},{label:'Done',value:'ok',cls:'primary'}],
@@ -1509,7 +1535,7 @@
         /* spec 058 FR-195: from Settings: start this row's own Sign in / Sign in again, exactly as its button here would (only when the row offers it) */
         if(o&&o.signIn)setTimeout(()=>{const n=o.signIn.name,ag=o.signIn.again===true,b=[...d.querySelectorAll(ag?'button[data-signagain]':'button[data-signin]')].find(y=>(ag?y.dataset.signagain:y.dataset.signin)===n&&!y.disabled);if(!b)return;focusIn(b);if(ag)void signAgain([n],b);else void signIn(n);},0);
         if(st.canRefresh)setTimeout(()=>{void refresh(false);},0); /* FR-190: every open reads the states again */d.addEventListener('click',async e=>{
-        const tg=e.target.closest('button[data-tools]');if(tg){void toggleTools(tg.dataset.tools);return;}
+        const tg=e.target.closest('button[data-tools],button[data-tn]');if(tg){void toggleTools(tg.dataset.tools||tg.dataset.tn);return;}
         const ad=e.target.closest('[data-tall][aria-disabled="true"],input[data-tool][aria-disabled="true"]');if(ad){e.preventDefault();return;} /* FR-064: focusable, never changed */
         const ta=e.target.closest('button[data-tall]');if(ta&&!ta.disabled){const n=ta.dataset.tall,r=toolsOf.get(n);if(r&&r.ok){void saveOff(n,ta.getAttribute('aria-checked')==='true'?r.tools.filter(t=>!t.orgBlocked).map(t=>t.name).filter(t=>/^[A-Za-z0-9_.-]{1,128}$/.test(t)):[]);}return;}
         const tc=e.target.closest('input[data-tool]');if(tc&&!tc.disabled){const n=tc.dataset.tsrv,x=(st.servers||[]).find(y=>y.name===n)||{},off=new Set(x.toolsOff||[]);if(tc.checked)off.delete(tc.dataset.tool);else off.add(tc.dataset.tool);void saveOff(n,[...off]);return;}
