@@ -1110,19 +1110,7 @@ async function driver(ctx) {
         rows.push({ label: `browser tab ${w}x${h}`, d: 'chat', h: '-', rooms: '-', desks: ids.length, stageH: 0, floorH: 0, minFont: '-', problems: badB });
       }
       if (q === 'sim=15&simfreeze=1') {
-        /* Simple hides the developer details (VS Code, model chips); the header must still fit and keep + New */
-        await ctx.js(`(()=>{localStorage.setItem('durbar.detail','simple');return true})()`);
-        await load(q, w, h);
-        let badS = 0;
-        for (const id of ids) {
-          await ctx.js(`(async()=>{const d=document.querySelector(${jsLiteral(`#stage .desk[data-id="${id}"]`)});if(d)d.click();await new Promise(r=>setTimeout(r,250));return true})()`);
-          const ps = await ctx.js(`(${chatCheck.toString()})()`);
-          total++;
-          if (ps.length) { failed++; badS++; if (badS <= 3) console.log(`FAIL chat ${w}x${h} ${q} agent ${id} (Simple): ${ps.slice(0, 4).join('; ')}`); }
-          await ctx.js(`(async()=>{const b=document.getElementById('backBtn');if(b)b.click();await new Promise(r=>setTimeout(r,120));return true})()`);
-        }
         await newBtnFlow(w, h);
-        await ctx.js(`(()=>{localStorage.setItem('durbar.detail','expert');return true})()`);
         await load(q, w, h);
       }
       rows.push({ label: `chat ${w}x${h} ${q}`, d: 'chat', h: '-', rooms: '-', desks: ids.length, stageH: 0, floorH: 0, minFont: '-', problems: bad });

@@ -631,7 +631,7 @@ Why, and what it replaces, is under *Changes*. Plan: [*Retro arcade*](plan.md#re
   | Latest output | Real lines on the CRT; zoom on hover or focus | **Kept** |
   | Lobby: who is where, boss, bank, post | Fixtures, visitors, slips (#994) | **Kept** |
   | Per-agent tokens and cost on the card | Chat header; `[KNOWN GAP]` not on the plate. 097 FR-016 has no such field, and T202 sees if it fits | **Moved, named** |
-  | **Flat's whole layout:** rooms as coloured folder blocks, densities, Detail level, wrapping | The arcade replaces it, automatically (FR-266). Flat is one click away in Settings, in Flat's normal colours | **Named loss as the default** |
+  | **Flat's whole layout:** rooms as coloured folder blocks, densities, Display, wrapping | The arcade replaces it, automatically (FR-266). Flat is one click away in Settings, in Flat's normal colours | **Named loss as the default** |
   | **Flat in retro colours** | Gone: Flat with Characters `pixel` uses Flat's normal colours | **Named loss** |
   | Pixel desks and CRTs in Flat, floppy rim, pixel plant, brick wall, `arcade` motion preset | Gone with the `pixel` kit; the arcade has its own art | **Named loss** |
   | Theme words: Arcade, Snack bar, Boss level, Coin bank, Mailbox, Cartridge Bay, Console, Modem | Gone: the app's words everywhere (FR-013, FR-040; the mockup shows them) | **Named loss** |
