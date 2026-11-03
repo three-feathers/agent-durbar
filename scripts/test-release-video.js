@@ -66,7 +66,23 @@ assert.ok(RV.concatList([{ file: 'f1.png', t: 5 }, { file: 'f2.png', t: 5 }]).in
 // ---- ffmpeg arguments: arrays, no shell; the sizes ----
 const m = RV.mp4Args('list.ffconcat', 'o.mp4');
 assert.ok(Array.isArray(m) && m.includes('libx264') && m.includes('+faststart') && m[m.length - 1] === 'o.mp4');
-assert.ok(m.join(' ').includes('scale=1440:900') && m.join(' ').includes('format=yuv420p'), 'the MP4 keeps the 1440x900 source, plays everywhere');
+assert.ok(m.join(' ').includes('scale=1440:1028') && m.join(' ').includes('format=yuv420p'), 'the MP4 is the 1440x900 app plus the 128 px band, plays everywhere');
+assert.strictEqual(RV.FRAME_H, RV.H_ + RV.BAND);
+
+// ---- the frame: the app's rows unchanged, the caption band only under them (owner review: no caption covers the app) ----
+{
+  const w = 4, h = 3, bandH = 2, row = w * 4;
+  const app = Buffer.alloc(row * h, 7);
+  const band = Buffer.alloc(row * (h + bandH));
+  for (let i = 0; i < band.length; i++) band[i] = i < row * h ? 200 : 100; // the band window's top part must never reach the frame
+  const f = RV.composeFrame(app, band, { w, h, bandH });
+  assert.strictEqual(f.length, row * (h + bandH));
+  assert.ok(f.subarray(0, row * h).equals(app), 'every app pixel is kept as captured');
+  assert.ok(f.subarray(row * h).every((b) => b === 100), 'the band rows come from the bottom of the band window');
+  assert.ok(RV.composeFrame(null, band, { w, h, bandH, card: true }).equals(band), 'a title card is the band window whole');
+  assert.throws(() => RV.composeFrame(Buffer.alloc(row * (h - 1)), band, { w, h, bandH }), /app bitmap/);
+  assert.throws(() => RV.composeFrame(app, Buffer.alloc(row), { w, h, bandH }), /band bitmap/);
+}
 const g = RV.gifArgs('list.ffconcat', 'o.gif', 720, 128);
 assert.ok(g.join(' ').includes('scale=720:-2') && g.join(' ').includes('max_colors=128') && g.join(' ').includes(`fps=${RV.FPS}`));
 assert.deepStrictEqual(RV.gifTries().map((t) => t.width), [800, 720, 640, 640], 'tries 800, 720, 640 px, then fewer colours');
