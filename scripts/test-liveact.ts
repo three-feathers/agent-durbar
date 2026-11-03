@@ -1,6 +1,7 @@
 /** Live activity on the desks (spec 001 FR-028..FR-032): readout rules, masking through the shared redact module, the paint throttle,
  * and the page wiring. `npm run test:liveact`. No credits spent. */
 import assert from 'assert';
+import { assertLinearShape } from './redact-growth-lib';
 import fs from 'fs';
 import path from 'path';
 import { redact, maskSecretCommand, maskSecretUrl, maskHomePaths } from '../src/shared/redact';
@@ -61,7 +62,7 @@ eq(L.lastSentences('', 50), '', 'empty');
   eq(f.onEvent('b', ev({ type: 'output', delta: '' })), false, 'an empty reply shows nothing');
   eq(f.of('b'), null, 'nothing to show');
 }
-// tools: verb phrases, Simple words, task tools skipped, phases other than start ignored
+// tools: verb phrases, task tools skipped, phases other than start ignored
 {
   const f = mk();
   f.onEvent('a', ev({ type: 'toolCall', callId: 'c', tool: 'view', phase: 'start' }), { kind: 'read', label: 'src/tools/registry.ts' });
@@ -72,7 +73,6 @@ eq(L.lastSentences('', 50), '', 'empty');
   eq(L.phrase({ kind: 'search', tool: 'grep', label: 'registerTool' }, mask), 'Searching registerTool', 'search');
   eq(L.phrase({ kind: 'read', tool: 'web_fetch', label: 'https://example.com/a' }, mask), 'Opening https://example.com/a', 'url');
   eq(L.phrase({ kind: 'tool', tool: 'github-create_issue', label: '' }, mask), 'Using github-create_issue', 'other tool');
-  eq(L.phrase({ kind: 'run', tool: 'bash', label: 'npm test', simple: 'Running a command' }, mask), 'Running a command', 'Simple words, never the command');
   eq(f.onEvent('a', ev({ type: 'toolCall', callId: 'c', tool: 'bash', phase: 'complete' }), { kind: 'run', label: 'x' }), false, 'complete: no change');
   eq(f.onEvent('a', ev({ type: 'toolCall', callId: 't', tool: 'task', phase: 'start' }), { kind: 'tool', label: 'x', skip: true }), false, 'task tool skipped');
   ok(Array.from(L.phrase({ kind: 'read', tool: 'view', label: 'a/'.repeat(400) }, mask)).length <= L.LINE_MAX, 'phrase cut');
@@ -179,16 +179,10 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
 // long, fast thinking stays cheap (the block keeps its newest 1200 characters)
 {
   const f = mk();
-  // CPU time, not wall time, so a loaded machine cannot fail it; wall time only has a loose 10x backstop for a blocking wait
-  // (spec 041 T068, review of PR #527)
-  const w0 = process.hrtime.bigint();
-  const c0 = process.cpuUsage();
-  for (let i = 0; i < 4000; i++) f.onEvent('a', ev({ type: 'thinking', reasoningId: 'r', delta: 'Word '.repeat(10) + 'end. ' }));
-  const cpu = process.cpuUsage(c0);
-  const ms = (cpu.user + cpu.system) / 1000;
-  const wall = Number(process.hrtime.bigint() - w0) / 1e6;
-  ok(ms < 3000, '4000 deltas in under 3 s of CPU (' + ms + ' ms)');
-  ok(wall < 30000, '4000 deltas: wall-time backstop (' + wall.toFixed(1) + ' ms wall, limit 30000 ms)');
+  // 16 times the deltas against a fresh feed in the same run, by CPU time (spec 012 T138): the length of the string is the number of deltas
+  const deltas = (feed: ReturnType<typeof mk>, n: number): void => { for (let i = 0; i < n; i++) feed.onEvent('a', ev({ type: 'thinking', reasoningId: 'r', delta: 'Word '.repeat(10) + 'end. ' })); };
+  deltas(f, 4000);
+  assertLinearShape('4000 deltas', (x) => deltas(mk(), x.length), (n) => '.'.repeat(n), 4000);
   ok(Array.from(f.of('a')!.lines).length <= L.PANEL_MAX, 'panel text bounded');
   ok(Array.from(f.of('a')!.long).length <= L.STREAM_MAX, 'grown desk text bounded');
 }

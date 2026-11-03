@@ -97,4 +97,8 @@
 
 ## Changes 2026-10-31 (owner decision, spec 021 FR-067): no door
 
-- [ ] T128 In spec 017's removal PR: `hold` and `door` paths out of the scheduler; old outcomes readable; history words. Test: `test-schedules`, `test:schedhist`; an old log with `skipped-door-full` loads; `check:sched-history` at both sizes [FR-127, FR-128]
+- [x] T128 In spec 017's removal PR: `hold` and `door` paths out of the scheduler; old outcomes readable; history words. Test: `test-schedules`, `test:schedhist`; an old log with `skipped-door-full` loads; `check:sched-history` at both sizes [FR-127, FR-128]
+
+## Delta 2026-11-02: two older scheduler bugs
+
+- [x] T144 `Scheduler.tick`: a once schedule edited during its run is marked done on the stored object; a schedule deleted during an earlier run does not fire. Test: `test:schedules`, two cases, each failing without its fix

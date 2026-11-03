@@ -77,8 +77,8 @@ here is `read:`; none was run on a real account.
   and `JSON.stringify(inputSchema)`, plus a fixed per-tool overhead. This is a rough figure: tokenizers differ per model (the
   Anthropic docs warn that counts measured on a model before Claude Opus 4.7 should not be reused), and schemas tokenize differently
   from prose. It is always labelled "estimated" and "≈".
-- With Copilot's `listTools` (no schema) a local estimate would undercount badly; it is used only when the attribution call fails,
-  and labelled "at least".
+- With Copilot's `listTools` (no schema) a local estimate would undercount badly, so it is not used: when the attribution call fails
+  the size reads "not reported by Copilot" (decided Q4).
 
 ## 6. Compaction rate
 

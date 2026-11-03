@@ -402,6 +402,8 @@ export interface CheckResult {
   hint?: OutsideHint;
   /** A short, masked reason for `could-not-check` and `not-checked`. */
   reason?: string;
+  /** For `could-not-check`: the last line of the tool's stderr, home folder as ~, secrets masked, at most 120 characters (#1081). */
+  detail?: string;
   /** Wall time (ms since the epoch) of the check, for the card. */
   checkedAt?: number;
   /** Homebrew answers from its local data (the card says so). */
@@ -489,6 +491,9 @@ export interface FailureInput {
   sourceKind?: UpdateSource['kind'];
   timedOut?: boolean;
 }
+
+/** The one recorded exit-0 refusal: `claude update` with updates disabled (spec 081 T040, 2026-11-02). Only this text turns a successful `claude update` into a Managed failure. */
+export const CLAUDE_UPDATE_DISABLED = /\bupdates are disabled by your administrator\b/i;
 
 /** Patterns run on masked text, case-insensitively. `managed` matches Durbar's policy, winget and Group Policy, and recorded vendor text only. */
 export function classifyFailure(i: FailureInput): FailureClass {

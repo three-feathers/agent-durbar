@@ -4,14 +4,14 @@
 group: 046
 title: Agent-app updates (owner request, issue #662): Settings > Agent apps shows "installed X, latest Y" per app, checked in the background at every Durbar start and on "Check for updates" (owner decision Q1 = C; organization policy can turn it off); a new version gets a badge and one toast; Update runs the updater of the source that installed the copy Durbar uses (no shell, argv, native confirmation, masked output); open sessions are warned about, ended or waited for; failures (admin rights, managed machines, locked files on Windows) say what to do
 status: building
-note: built on the simulator; T037 final run and real-machine checks T040-T043 open
+note: built on the simulator; Linux real check T040 done; Windows T041, macOS T042 and the Mac PATH check T043 open
 -->
 
 **Feature Branch**: `081-cli-updates` (extends 051 harness setup, 060 platform parity and 012 detection; reads 076 managed config)
 
 **Created**: 2026-10-23
 
-**Status**: Built (2026-10-25) on the simulator and with fake tools, branch `081-cli-updates-build`. Q1-Q7 are answered by the owner. Requirements are `[IMPLEMENTED]` where tagged below and `sim:`/`test:` checked; **FR-005 for the detection path is in PR #698 (T008; `test:` `scripts/test-detect.ts`)** and every real-machine statement is `[KNOWN GAP]` until T040-T042 run (nothing was run on a real Mac, Windows PC or against a real source).
+**Status**: Built (2026-10-25) on the simulator and with fake tools, branch `081-cli-updates-build`. Q1-Q7 are answered by the owner. Requirements are `[IMPLEMENTED]` where tagged below and `sim:`/`test:` checked; **FR-005 for the detection path is in PR #698 (T008; `test:` `scripts/test-detect.ts`)** and Linux facts for `claude update` and `npm view` are `real:` (T040, 2026-11-02); every Windows and macOS statement is `[KNOWN GAP]` until T041 and T042 run, and no newer-version update was run on any machine.
 
 **Input**: Issue #662, owner request (Vikram, 2026-10-23, DM): "lets add support to check updates on cli and upgrade it". The CLIs are the agent apps Durbar drives: Codex CLI, Claude Code and the GitHub Copilot CLI. The trigger was a Codex 0.163.0 sandbox bug on macOS (Homebrew cask, `/opt/homebrew/bin/codex`): today the only way to get a fixed Codex is to leave Durbar and update it by hand, and Durbar does not even say that a newer version exists.
 
@@ -273,13 +273,13 @@ When the start check finds a new version, the Settings entry and the card get a 
   - ***End N sessions and update*** uses the wording of the existing *End all sessions?* dialog (`askDialog` in `src/renderer/app.js` `endAllSessions`: "N sessions end and free their places (M still working: their replies stop). The chats stay; send a message to pick up where you left off."). It adds, when there are any, the number of pending permission requests (they are denied) and of queued or scheduled prompts for those sessions (they are not sent once the sessions have ended; one that would resume them is held, as above). Each session's running turn is interrupted first (`stopTurnOp`), then the session ends (`endSessionOp`, which does not interrupt by itself), and it stays resumable.
   - **Count again after the native confirmation.** If a session is open by then (one the lock could not stop, such as a session started from outside Durbar's own start path), the update does not start and the gate dialog comes back.
   - Durbar does not offer "update now anyway" while sessions are open.
-- **FR-014** `[IMPLEMENTED]` for the classes and the advice; `[KNOWN GAP]` for the vendor texts: `claude-update-disabled`, `claude-update-uptodate`, `win-uac-cancelled` and the three `winget-*` fixtures are PLACEHOLDER shapes, not recorded output, until T040/T041 record them (review on #721). **Failure advice** (US4). A failed check or update is classified from the exit code, the error code and the masked output, by a pure function with fixtures per source and OS:
+- **FR-014** `[IMPLEMENTED]` for the classes and the advice; `[KNOWN GAP]` for the Windows vendor texts: `win-uac-cancelled` and the three `winget-*` fixtures are PLACEHOLDER shapes, not recorded output, until T041 records them (review on #721). `claude-update-disabled` and `claude-update-uptodate` are `real:` Linux recordings (2026-11-02, T040). **Failure advice** (US4). A failed check or update is classified from the exit code, the error code and the masked output, by a pure function with fixtures per source and OS:
   - *Needs administrator rights* (`EACCES`, `EPERM` on a folder Durbar does not own, Homebrew owned by another account): the command to copy, never an offer to elevate.
   - *File in use* (Windows `EBUSY`, `EPERM` on the binary, "being used by another process", winget's in-use result): name the app and ask to close it. Inside Durbar, FR-013 already prevents this.
   - *Managed by your organization*:
     - Durbar's own policy (spec 076);
     - a winget or Group Policy refusal;
-    - **only on the vendor's own text that updates are disabled** (for example Claude Code's message when `DISABLE_UPDATES` or a managed setting blocks it), matched against a fixture of the documented shape (`[KNOWN GAP]`: not yet a recorded one, T040).
+    - **only on the vendor's own text that updates are disabled** (for example Claude Code's message when `DISABLE_UPDATES` or a managed setting blocks it), matched against a fixture of the recorded shape (`real:` Linux, Claude Code 2.1.316, T040: exit code 0 and "Updates are disabled by your administrator."; macOS and Windows not recorded).
 
     `claude update` saying "up to date" is **not** *Managed*. It follows the user's channel (FR-004, Q7 = C), so the card says *Claude Code says it is up to date on its channel* and shows no toast. No retry is offered for *Managed*.
   - *Cancelled at the administrator prompt* (UAC refused).
@@ -388,7 +388,7 @@ When the start check finds a new version, the Settings entry and the card get a 
 
 ## Known limits
 
-- `[KNOWN GAP]` Not run on a real machine yet for any source; the parsers rely on documented output (`read:` in research.md) until a recorded run.
+- `[KNOWN GAP]` Only Linux `claude update` (up to date, disabled) and `npm view` are recorded (T040). Windows (T041) and macOS (T042), and every update that installs a newer version, are not run; those parsers rely on documented output (`read:` in research.md) until a recorded run.
 - `[KNOWN GAP]` Homebrew's "latest" is as fresh as its local data (Q4 = A: no `brew update`).
 - `[KNOWN GAP]` `codex update` is **undocumented** and downloads and runs a script Durbar cannot see or check (Q3 = C, limited to the official standalone Codex CLI; FR-009, FR-024). The command shown is a snapshot of `update_action.rs` @970111f6; a later Codex can change what it runs. `sh`, `curl` and `powershell` are found by Codex on the fixed system `PATH`, not as absolute paths given by Durbar, and Windows runs with `-ExecutionPolicy Bypass`. The *official* check is by install path, file trust and the version label, not by a code signature (not verified on macOS or Windows).
 - `[KNOWN GAP]` The Claude channel files (`downloads.claude.ai/claude-code-releases/stable|latest`) are not a documented API; a change shows as *Could not check*.
@@ -499,6 +499,21 @@ When the start check finds a new version, the Settings entry and the card get a 
 - **`features.agentAppUpdateCheck: false` and `updates.mode: "off"`** hide the check entirely (076 FR-158); `allowInAppInstall: false` keeps the read-only button (FR-022). T036 updates 076 FR-174.
 
 ## Changes
+
+### 2026-11-02: Linux real check (T040): a vendor "updates are disabled" answer exits 0 (issue #662)
+
+- **Found (`real:` Linux, Claude Code 2.1.316, isolated HOME, no credentials, no model call):** `claude update` with `DISABLE_UPDATES=1` prints "Updates are disabled by your administrator. Contact your IT team to get the latest version." and exits **0**. `claude update` on the latest version prints "Claude Code is up to date (2.1.316)" and exits 0. `npm view <pkg> version --json --no-update-notifier` answered with the version JSON (`real:`). `[KNOWN GAP]` The one-request claim is argued from the command (a single `view`), with no proxy log or trace to count requests.
+- **npm update:** `[KNOWN GAP]` no real update that installs a newer version was run for any app (nothing newer existed on the copy used; the real CLIs were untouched). An earlier draft of this entry claimed an npm scratch-prefix update with `real:`; it had no recorded output and is withdrawn.
+- **Bug:** a successful exit hid the *Managed* class, so the card could show an update that did nothing as done.
+- **FR-014 (changed):** for an `update` run, text classified *Managed* is a failed run (`ok: false`, failure `managed`, no "updated" note) also when the exit code is 0, so the window shows the advice, never "is updated". No retry, as before. Test: `scripts/test-harnesssetup.ts`. The exit-0 rule applies only to `claude update` and only to the recorded text; no `claude update` newer-version, `codex update` or `copilot update` run exists.
+- The two Claude fixtures are now recorded shapes. Windows and macOS texts stay `[KNOWN GAP]` (T041 Windows, T042 macOS; T043 is the Mac PATH check).
+
+### 2026-11-03: `brew outdated` exit 1 is an update, not a failure; a failed check shows a masked detail (#1081)
+
+- **Cause (`read:` code, not yet run on a Mac):** `brew outdated` exits 1 when something is outdated and still prints its JSON; `tool()` threw on any non-zero exit, so an available update showed as "Could not check: exit 1" (owner's Mac, Homebrew Copilot CLI). Homebrew's source sets it on purpose: `Library/Homebrew/cmd/outdated.rb:97`, `Homebrew.failed = args.named.present? && outdated.present?` (`read:` Homebrew 7.0.11, from the Mac session). The Copilot cask token is `copilot-cli` (`auto_updates` true, so the second `--greedy` call always runs). Not run: exit 1 on a really installed outdated cask. `brew info` has no such documented exit (it exits non-zero for an unknown cask, a real failure), so it stays strict.
+- **FR-190:** for `brew outdated` only, exit code 1 with stdout that `parseBrewOutdated` reads and that names the cask (an entry for it with a version) is a success; exit 1 with an empty list or unreadable output is a failure; every other code, exit 1 with unreadable output, a signal or spawn error stays a failure with the existing network/admin classes. The stdout cap is unchanged.
+- **FR-191:** a `could-not-check` result may carry `detail`: the last non-empty line of the tool's stderr, secrets masked (`redact`), home folders as `~` (`maskHomePaths`), control characters removed, at most 120 characters. The card shows it as "Details: ..." under "Could not check". Nothing is logged or saved.
+- Tests: `scripts/test-updatecheck.ts` (exit 1 with JSON, with junk, exit 0 with `[]`, exit 2, `brew info` exit 1, masked and capped detail). T046. Mac check pending (T043).
 
 ### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
 

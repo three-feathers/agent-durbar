@@ -50,7 +50,7 @@ case "$1 $2" in
 esac
 case $ep in
   user) f=user;;
-  graphql) case "$*" in *editor*isResolved*|*isResolved*editor*) f=bad;; *issueOrPullRequest*) f=item;; *editor*) f=edits;; *isResolved*) f=threads;; *) f=bad;; esac;;
+  graphql) case "$*" in *"pullRequest(number:1){url title body"*) f=prtext;; *editor*isResolved*|*isResolved*editor*) f=bad;; *issueOrPullRequest*) f=item;; *editor*) f=edits;; *isResolved*) f=threads;; *) f=bad;; esac;;
   repos/o/r/code-scanning/*) f=empty;;
   repos/o/r/pulls/1) f=pull;;
   repos/o/r/pulls/1/reviews) f=reviews;;
@@ -164,6 +164,18 @@ try {
   assert.ok(t.stdout.includes('last edited by mallory: not shown'), 'an outside edit hides a teammate\'s comment');
   assert.ok(t.stdout.includes(`outside comment by github-actions: not shown, for a human: ${url('issuecomment-5')}`), 'a user named like our bot is not our bot');
   assert.strictEqual(spawnSync('bash', [path.join(ROOT, 'scripts', 'gh-trusted.sh'), '1;id'], { env, encoding: 'utf8' }).status, 2, 'gh-trusted.sh refuses a non-number');
+  // 5. spec 103 FR-005: --pr-text prints only the title and body, never a comment; an outside author, editor or fork hides both
+  const ptext = (author: string, editor: object | null, fork = false): object => ({ data: { repository: { pullRequest: { url: url('x').split('#')[0], title: `TITLE ${INJ(11)}`, body: `BODY ${INJ(12)}`, isCrossRepository: fork, author: actor(author), editor, comments: { nodes: [{ body: INJ(13) }] } } } } });
+  const prt = (): { status: number | null; stdout: string } => spawnSync('bash', [path.join(ROOT, 'scripts', 'gh-trusted.sh'), '1', '--pr-text'], { env, encoding: 'utf8', timeout: 60000 });
+  put('prtext', ptext('vikramgorla', null));
+  let pt = prt(); assert.strictEqual(pt.status, 0);
+  assert.ok(pt.stdout.includes('title: TITLE') && pt.stdout.includes('BODY') && !pt.stdout.includes('PLANTED13'), 'a trusted PR\'s title and body, and no comment text');
+  for (const [a, e, f] of [['mallory', null, false], ['vikramgorla', actor('mallory'), false], ['vikramgorla', null, true], ['dependabot', null, false]] as Array<[string, object | null, boolean]>) {
+    put('prtext', ptext(a, e, f)); pt = prt(); assert.ok(!/PLANTED|TITLE|BODY/.test(pt.stdout), `no outside PR text: ${a}`); assert.ok(pt.stdout.includes('not shown, for a human'), pt.stdout);
+  }
+  for (const bad of ['../x', 'a/b/c', '/x', 'x/', 'a b/c', '']) assert.strictEqual(spawnSync('bash', [path.join(ROOT, 'scripts', 'gh-trusted.sh'), '1', '--pr-text', '--repo', bad], { env, encoding: 'utf8' }).status, 2, `--repo ${bad} refused`);
+  put('prtext', ptext('vikramgorla', null)); assert.ok(spawnSync('bash', [path.join(ROOT, 'scripts', 'gh-trusted.sh'), '1', '--pr-text', '--repo', 'o/r'], { env, encoding: 'utf8' }).stdout.includes('title: TITLE'), '--repo names the repository itself');
+  assert.strictEqual(spawnSync('bash', [path.join(ROOT, 'scripts', 'gh-trusted.sh'), '1', '--other'], { env, encoding: 'utf8' }).status, 2, 'an unknown mode is refused');
 } finally {
   fs.rmSync(dir, { recursive: true, force: true });
 }

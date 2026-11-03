@@ -3,8 +3,8 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 035-040
 title: Corporate theme (glass/steel) + Settings theme picker with live switch
-status: built
-note: T004 optional: themes check and screenshots
+status: deprecated
+note: built-in Corporate removed 2026-10-31 (spec 035 FR-017), no replacement; saved choices moved to Clean Office
 -->
 
 **Feature Branch**: `035-theme-foundation` (builds on 035/036, issue #129)
@@ -56,3 +56,7 @@ note: T004 optional: themes check and screenshots
 *Corrected:*
 - **FR-014** `[IMPLEMENTED]` `THEME.preview(id)` returns up to three colours of that theme (its `--bg`, `--tint-sage` and `--wall-blue` tokens after validation, falling back to Clean Office's), and the picker paints each swatch with its own theme's colours (CSSOM, no inline CSS text; only validated colour values). User themes get theirs the same way. `test:` `test:theme`; `sim:` screenshots at 1440x900 and 1280x800.
 
+
+### 2026-10-31: removed (owner decision, spec 021 FR-067; spec 035 FR-017, FR-018)
+
+- **Deprecated.** The built-in Corporate theme, its UI style `corporate`, its scene kit `corporate` and its pictures are gone, with no replacement. A stored `theme` of `corporate` becomes Clean Office once (spec 035 FR-018). What is left of this spec is the **theme picker** (FR for the Settings list and the live switch), which spec 035 and later specs keep. Everything above about Corporate is history.
