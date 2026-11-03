@@ -42,7 +42,6 @@ Each entry: **what** (bold), why, how to apply, evidence (`real:`, `read:`, `tes
 - **A lookup table keyed by event or adapter text needs `hasOwnProperty`** (`'__proto__'`, `toString`), and number helpers need `Number.isFinite` (`Infinity` printed `InfinityM`) (spec 015, #601; spec 007 T038).
 - **A test server that never reads a socket never sees it close**: call `s.resume()` on every accepted socket when the test waits for `close`; list processes before blaming the product. It blocked v0.1.1 on macOS (PR #847, `real:` test builds).
 - **Install Electron once before parallel Electrons** (`ensureElectron()` from `scripts/ensure-electron.js`), or first runs race on `node_modules/electron/dist` (`ETXTBSY`, "Could not find sentinel") (spec 008 FR-114, `sim:`).
-- **A heap sampler cannot see a synchronous read**: its timer never fires while `readFileSync` blocks; assert `process.resourceUsage().maxRSS` growth too (spec 095 T016, `test:convsearch`).
 - **Electron checks are heavy**: at most two drivers at once under `nice -n 10`; keep the limits in `run-tests.js` and `check-parallel.js`.
 
 ## CI, review and merge
@@ -69,6 +68,7 @@ Each entry: **what** (bold), why, how to apply, evidence (`real:`, `read:`, `tes
 - **The scheduler harness's `advance(ms)` is one tick**: step by the interval in a loop when counting runs; pass `mono: () => harness.now` (spec 044 T061).
 - **The simulator's start-up replay runs while `app.js` loads**: guard handlers that read a later script's `window.exports` (spec 100, `sim:`).
 - **A new renderer script needs a line in `scripts/copy-assets.js`** and its `<script>` tag, or the page silently runs without it (`window.DurbarX` undefined); check `ls dist/renderer` and let a driver assert something it draws (#605, spec 087 T030).
+- **One window global per renderer script** (`root.DurbarX`): a duplicate silently replaces the first; `npm run test:globals` fails on it. A screen no driver opens can break unseen (#474).
 - **A new optional `AgentAdapter` member touches four lists**: `types.ts`, a capability flag plus its C2 line and `NOT_IN_FAKE` in `test-adapter-contract.ts`, and `SIM_OPTIONAL_MEMBERS` in `simguard.ts`; a new event type also needs `EVENT_TYPES` in `eventguard.ts` and the contract's `TYPES` (spec 087).
 - **An issue number in a renderer comment is a colour literal**: `test:theme-tokens` counts `#` + 3-8 hex digits in `app.js`, `screens.js`, `scenekits.js`, `index.html`, comments included. Write "PR 642" / "issue 619"; "N literals, ratchet allows N-1" after a merge is often this (PRs #498, #511, #535, #642).
 - **Theme values: two copies, one corpus**: the typed-token grammar lives in `theme.js` and `src/shared/themetokens.ts`; change both and run `test:theme-tokens` (`THEME_LITERALS_WRITE=1` lowers the ratchet). An inline custom property beats `html[data-ui=...]` in `themes.css` (spec 070).
