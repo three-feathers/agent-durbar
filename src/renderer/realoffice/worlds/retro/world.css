@@ -62,5 +62,7 @@
 /* the plate: the status, one line: the name is on the marquee and in the button's label */
 .ro[data-world="retro"] .ro-plate .ro-l1{display:none}
 .ro[data-world="retro"] .ro-plate .ro-l2{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
+/* a one-line pill is as tall as a sign, so it fits the free part of a sign row: in the arcade it never covers a screen or a person (owner, 2026-11-03) */
+.ro[data-world="retro"] .ro-slip[data-variant="pill"]{padding:0 10px;line-height:16px;border-radius:4px}
 /* the sign's shortest form: name, counts, + and menu; path and cost on its hover (FR-256) */
 .ro[data-world="retro"] .ro-sign.short :is(.ro-path,.ro-cost){display:none}

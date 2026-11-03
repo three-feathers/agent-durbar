@@ -535,7 +535,7 @@
     if (EMPTY_BOX) avoid.push(EMPTY_BOX);
     /* with more than four agents the monitors are read from afar: a slip takes a spot clear of them, else a smaller variant (the pill); with big screens (four or fewer) it may sit over one */
     const screens = lay.zones.flatMap((z) => z.desks.map((d) => d.screen));
-    if (lay.cabinet) avoid.push(...screens); /* spec 102, review 2026-11-03: in the arcade nothing covers a screen */
+    if (lay.cabinet) avoid.push(...screens, ...lay.zones.flatMap((z) => z.desks.map((d) => d.person).filter(Boolean))); /* spec 102, owner 2026-11-03: in the arcade nothing covers a screen or a person */
     const softAvoid = lay.big || lay.cabinet ? [] : screens;
     const bounds = { x: 4, y: lay.lobbyH + 4, w: lay.width - 8, h: lay.height - lay.lobbyH - 8 };
     const door = (id) => { const f = lay.fixtures.find((x) => x.id === id); return f ? { x: f.slot.x + f.slot.w / 2, y: lay.lobbyH } : { x: lay.width / 2, y: lay.lobbyH }; };
