@@ -2,6 +2,7 @@
 """Builds the Retro arcade world pack and the Retro pixel people set (spec 102 FR-250..FR-259, T201, T206, T207).
 
   python3 -I scripts/build-arcade-pack.py <interop-dir> [<repo>]       build into src/renderer/realoffice/{worlds,sets}/retro
+  python3 -I scripts/build-arcade-pack.py --world [<repo>]              the world only (no art cache): wall, floor, cabinets, fixtures
   python3 -I scripts/build-arcade-pack.py --selftest                    the checks that need no art (a frame off the grid is refused, same bytes twice)
 
   <interop-dir>  the art cache's crew/interop folder: final/retro (people r1..r8) and new7/final (r9..r15), 8x frames, and prompts/
@@ -9,8 +10,8 @@
 
 What it makes (dev only, not run in CI, output committed and checked by `npm run test:realoffice-assets`):
   world: wall and floor in a day and a night light (drawn here, a few flat colours, from the mockup's code), three cabinet strips
-         (four colours each; level glass, side panel, stepped top: spec 102 FR-258), nine fixtures, a glow strip, a console.
-  set:   15 people x 17 frames, ONE FILE PIXEL PER GRID PIXEL, lossless (VP8L, no alpha-quality loss), drawn on screen at an integer scale.
+         (four bodies in four colours each; level glass, side panel, stepped top: spec 102 FR-258), nine fixtures, a glow strip, a console.
+  set:   15 people x 18 frames (17 built here; each drawn `sit` frame is kept, build-arcade-sleep.py), ONE FILE PIXEL PER GRID PIXEL, lossless (VP8L, no alpha-quality loss), drawn on screen at an integer scale.
 Every picture is lossless WebP; two runs give the same bytes. A frame whose 8x blocks are not uniform is refused (T201), except the
 three listed in RESAMPLED, which are shrunk by a block vote and recorded as such in ASSETS.md. Needs Pillow."""
 import hashlib, io, json, os, re, sys
@@ -99,49 +100,120 @@ P = dict(k='#0b0b1a', navy='#1d2b53', plum='#7e2553', green='#008751', brown='#a
 BODY = ['#2a2142', '#1f2a52', '#34223a', '#22303d']; TRIM = ['#c2467f', '#2a8fc9', '#d98a12', '#1fae5a']
 
 # ---------------------------------------------------------------------------------------------------------------- cabinet (level: FR-258)
-def cab_front(Fw, Hf, gw, gh, body, trim):
+BODIES = ['upright', 'cocktail', 'racer', 'pinball']   # spec 102 FR-306 (owner 2026-11-03: "make arcade look different"): one cell rectangle, four bodies
+
+def marquee_trim(c, Fw, trim, m):
+    """the frame around the marquee hole: a neon line, bulbs, a checker or three stripes (the hole itself stays for the app's name)"""
+    R = c.R
+    if m == 0: R(trim, 3, 2, Fw - 6, 1); R(trim, 3, 10, Fw - 6, 1)
+    elif m == 1:
+        for x in range(3, Fw - 3, 2): R(P['yellow'] if x % 4 == 3 else P['cream'], x, 1, 1, 1); R(P['yellow'] if x % 4 == 1 else P['cream'], x, 11, 1, 1)
+    elif m == 2:
+        for x in range(2, Fw - 2): R(trim if x % 2 else P['k'], x, 1, 1, 1); R(P['k'] if x % 2 else trim, x, 2, 1, 1); R(trim if x % 2 else P['k'], x, 10, 1, 1); R(P['k'] if x % 2 else trim, x, 11, 1, 1)
+    else: R(P['pink'], 2, 1, Fw - 4, 1); R(P['blue'], 2, 2, Fw - 4, 1); R(P['blue'], 2, 10, Fw - 4, 1); R(P['yellow'], 2, 11, Fw - 4, 1)
+
+def cab_front(Fw, Hf, gw, gh, body, trim, m=0):
+    """the upright's front; the other bodies keep only its marquee and screen (above the panel) and draw their own lower part (cabinet())"""
     c = C(Fw, Hf); R = c.R
     R(P['k'], 0, 0, Fw, Hf); R(body, 1, 1, Fw - 2, Hf - 2); R(trim, 1, 1, 1, Hf - 2)
-    R(P['k'], 2, 1, Fw - 4, 11); R('#3a3158', 2, 1, Fw - 4, 1); c.clear(4, 3, Fw - 8, 7)           # marquee: a hole the app's HTML fills
+    R(P['k'], 2, 1, Fw - 4, 11); R('#3a3158', 2, 1, Fw - 4, 1); marquee_trim(c, Fw, trim, m); c.clear(4, 3, Fw - 8, 7)   # marquee: a hole the app's HTML fills
     by, bh = 13, gh + 10
     R('#3b3354', 2, by, Fw - 4, bh); R(P['lav'], 2, by, Fw - 4, 1); R(P['lav'], 2, by, 1, bh); R('#17142a', 2, by + bh - 1, Fw - 4, 1); R('#17142a', Fw - 3, by, 1, bh)
-    c.clear(5, by + 5, gw, gh)                                                                      # glass: a hole
+    c.clear(5, by + 5, gw, gh)                                                                      # glass: a hole, the same place in every body
     for a, b in ((5, by + 5), (5 + gw - 1, by + 5), (5, by + 5 + gh - 1), (5 + gw - 1, by + 5 + gh - 1)): R('#3b3354', a, b, 1, 1)
-    R(P['k'], 3, by + bh - 3, 2, 1)
-    yd = by + bh
+    yd, yl = by + bh, by + bh + 10
     R(P['k'], 0, yd, Fw, 10); R('#4a4068', 1, yd + 1, Fw - 2, 2); R('#2f2750', 1, yd + 3, Fw - 2, 6)
-    R(P['dg'], round(Fw * .2), yd + 5, 1, 3); R(P['red'], round(Fw * .2) - 1, yd + 3, 3, 2)
-    for f, col in ((.44, P['red']), (.54, P['yellow']), (.64, P['blue']), (.76, P['lime'])):
-        R(P['k'], round(Fw * f), yd + 3, 4, 4); R(col, round(Fw * f) + 1, yd + 3, 2, 2)
-    yl = yd + 10
+    R(P['k'], 3, by + bh - 3, 2, 1); R(P['dg'], round(Fw * .2), yd + 5, 1, 3); R(P['red'], round(Fw * .2) - 1, yd + 3, 3, 2)   # one stick, four buttons
+    for f, col in ((.44, P['red']), (.54, P['yellow']), (.64, P['blue']), (.76, P['lime'])): R(P['k'], round(Fw * f), yd + 3, 4, 4); R(col, round(Fw * f) + 1, yd + 3, 2, 2)
     R('#1a1530', 2, yl, Fw - 4, Hf - yl - 1)
     cx0 = round(Fw / 2) - 8; R(P['k'], cx0, yl, 16, 4); R(P['yellow'], cx0 + 3, yl + 1, 2, 2); R(P['yellow'], cx0 + 11, yl + 1, 2, 2)
     R(P['k'], 1, Hf - 2, Fw - 2, 1)
     return c
 
-def cab_side(Sd, Hf, trim):
+def cab_side(Sd, Hf, trim, art=0):
+    """the side panel's art: stripes, a zigzag, stars or chevrons in the trim colour"""
     c = C(Sd, Hf); R = c.R
     R(P['k'], 0, 0, Sd, Hf); R('#16122a', 1, 1, Sd - 2, Hf - 2)
-    for y in range(18, 62, 6): R(trim, 2, y, 1, 2); R(trim, 3, y + 2, 1, 2); R(trim, 4, y + 4, 1, 2)
+    for y in range(18, Hf - 10, 6):
+        if art == 0: R(trim, 2, y, 1, 2); R(trim, 3, y + 2, 1, 2); R(trim, 4, y + 4, 1, 2)
+        elif art == 1:
+            for i, x in enumerate((1, 2, 3, 4, 5, 4)): R(trim, x, y + i, 1, 1)
+        elif art == 2:
+            if (y // 6) % 2: R(trim, 3, y, 1, 3); R(trim, 2, y + 1, 3, 1)
+            else: R(P['cream'], 2 if (y // 12) % 2 else 4, y + 1, 1, 1)
+        else: R(trim, 2, y, 1, 1); R(trim, 3, y + 1, 1, 1); R(trim, 4, y + 2, 1, 1); R(trim, 3, y + 3, 1, 1); R(trim, 2, y + 4, 1, 1)
     R('#3a3158', 1, 1, Sd - 2, 1)
     return c
 
-def cabinet(gw, gh, variant):
-    """one level cabinet, the screen on the left and the side panel on the right (the app mirrors it, with a static transform, for the other side)"""
+SIDE_TOP = [2, 3, 3, 4, 4, 5, 5]   # the upright's side panel: one step per column from the front
+
+def cabinet(gw, gh, variant, kind=0):
+    """one cabinet, the screen on the left and the side panel on the right (the app mirrors it, with a static transform, for the other side).
+    Four silhouettes in one cell (spec 102 FR-306): an upright with its tall stepped side; a cocktail table (the screen on a wide low table
+    with a glass edge and four legs, no side above it); a racer (a wide low body, a big wheel and a seat shell on the side); a pinball (a
+    framed backbox, then a sloped playfield flaring out below it, on legs). The glass and the marquee stay in one place, nothing leaves the
+    cell, so nothing reaches the person beside it or the plate."""
     Fw, Sd = gw + 10, 7; Hf = gh + 38; CW, CH = Fw + Sd, max(Hf + 3, 73)
-    f, s = cab_front(Fw, Hf, gw, gh, BODY[variant % 4], TRIM[variant % 4]), cab_side(Sd, Hf, TRIM[variant % 4])
-    c = C(CW, CH); oy = CH - Hf - 3
-    c.R('#000000', 0, oy + Hf, CW, 2, .38)
-    c.draw(f, 0, oy)
-    c.clear(0, oy, 3, 1); c.clear(Fw - 3, oy, 3, 1); c.clear(0, oy + 1, 1, 1); c.clear(Fw - 1, oy + 1, 1, 1)   # stepped crown
-    for i, off in enumerate([2, 3, 3, 4, 4, 5, 5]):                                                         # side panel, stepped top
-        c.im.alpha_composite(s.im.crop((i, 0, i + 1, Hf)).resize((1, Hf - off), Image.NEAREST), (Fw + i, oy + off))
-    c.R('#3a3158', Fw, oy + 2, Sd, 1)
+    trim, body = TRIM[variant % 4], BODY[variant % 4]
+    f = cab_front(Fw, Hf, gw, gh, body, trim, variant % 4)
+    c = C(CW, CH); oy = CH - Hf - 3; R = c.R
+    yd, yb = oy + gh + 23, oy + Hf                                                                         # the panel's top, the floor line
+    R('#000000', 0, yb, CW, 2, .38)
+    if kind == 0:
+        c.draw(f, 0, oy)
+        c.clear(0, oy, 3, 1); c.clear(Fw - 3, oy, 3, 1); c.clear(0, oy + 1, 1, 1); c.clear(Fw - 1, oy + 1, 1, 1)   # stepped crown
+        s = cab_side(Sd, Hf, trim, variant % 4)                                                                    # side art: the upright's only
+        for i, off in enumerate(SIDE_TOP): c.im.alpha_composite(s.im.crop((i, 0, i + 1, Hf)).resize((1, Hf - off), Image.NEAREST), (Fw + i, oy + off))
+        R('#3a3158', Fw, oy + 2, Sd, 1)
+    else:
+        top = C(Fw, yd - oy); top.im.alpha_composite(f.im.crop((0, 0, Fw, yd - oy)), (0, 0)); c.draw(top, 0, oy)   # marquee and screen only
+    def stick(x, y, col): R(P['dg'], x, y + 2, 1, 2); R(col, x - 1, y, 3, 2)
+    if kind == 1:                                                                                          # cocktail table
+        for i, n in enumerate((3, 2, 1)): c.clear(0, oy + i, n, 1); c.clear(Fw - n, oy + i, n, 1)
+        t = yd                                                                                             # the table top, across the whole cell
+        R(P['k'], 0, t, CW, 6); R(P['cream'], 1, t, CW - 2, 1); R(P['lav'], 1, t + 1, CW - 2, 1); R(trim, 1, t + 2, CW - 2, 1); R(body, 1, t + 3, CW - 2, 2)
+        stick(4, t - 3, P['blue']); stick(CW - 5, t - 3, P['pink'])
+        R(P['k'], 3, t + 6, CW - 6, 3); R('#2f2750', 4, t + 6, CW - 8, 2)                                  # the apron
+        for x in (3, round(CW * .3), round(CW * .7) - 2, CW - 6):                                          # four legs, floor between them
+            R(P['k'], x, t + 9, 3, yb - t - 9); R(trim, x + 1, t + 9, 1, yb - t - 10)
+    if kind == 2:                                                                                          # racer
+        for i, n in enumerate((4, 2, 1)): c.clear(0, oy + i, n, 1); c.clear(Fw - n, oy + i, n, 1)
+        R(trim, 1, oy + 12, 1, yd - oy - 12); R(trim, Fw - 2, oy + 12, 1, yd - oy - 12)
+        sx = Fw - 1                                                                                        # the seat shell on the side, rising above the body
+        R(P['k'], sx, yd - 34, CW - sx, 35); R(trim, sx + 1, yd - 33, CW - sx - 2, 33); R('#0e0b1c', sx + 2, yd - 31, CW - sx - 4, 30); R(trim, sx + 2, yd - 14, CW - sx - 4, 1)
+        c.clear(sx, yd - 34, 1, 1); c.clear(CW - 1, yd - 34, 1, 1)
+        b = yd                                                                                             # a wide low body
+        R(P['k'], 0, b, CW, yb - b); R(body, 1, b + 1, CW - 2, yb - b - 2); R(trim, 1, b + 1, CW - 2, 1); R(trim, 1, yb - 4, CW - 2, 1)
+        R(P['k'], 1, yb - 2, CW - 2, 1)
+        cx, cy, r = round(Fw / 2), b + 3, 5                                                                # a big wheel at the base of the screen
+        for dx in range(-r, r + 1):
+            for dy in range(-r, r + 1):
+                d = (dx * dx + dy * dy) ** .5
+                if r - 1.2 <= d <= r + .3 and cy + dy > oy + 18 + gh: R(P['lg'] if dy < 0 else P['dg'], cx + dx, cy + dy, 1, 1)
+        R(trim, cx - r + 1, cy, 2 * r - 1, 1); R(P['k'], cx, cy, 1, r)
+        R(P['dg'], round(Fw * .84), b + 2, 1, 5); R(P['cream'], round(Fw * .84) - 1, b + 1, 3, 2)
+    if kind == 3:                                                                                          # pinball
+        c.clear(0, oy, 2, yd - oy); c.clear(Fw - 2, oy, 2, yd - oy)                                        # a backbox, framed in lights
+        R(trim, 2, oy, Fw - 4, 1); R(trim, 2, oy, 1, yd - oy); R(trim, Fw - 3, oy, 1, yd - oy)
+        for x in range(4, Fw - 4, 3): R(P['yellow'] if (x // 3) % 2 else P['red'], x, oy, 1, 1)
+        for y in range(oy + 4, yd - 2, 4): R(P['yellow'], 2, y, 1, 1); R(P['yellow'], Fw - 3, y, 1, 1)
+        p0, p1 = oy + 18 + gh + 1, yb - 4                                                                  # the playfield flares out towards us, from under the glass
+        for y in range(p0, p1):
+            k = (y - p0) / max(1, p1 - p0 - 1); l = round(2 - 2 * k); r = round(Fw - 3 + (CW - Fw + 2) * k)
+            R(P['k'], l, y, r - l + 1, 1); R('#16507e' if (y - p0) % 4 else '#1b5f93', l + 1, y, r - l - 1, 1)
+        R(trim, 2, p0, Fw - 4, 1)
+        mid = round(CW / 2)
+        for f_, col in ((.28, P['red']), (.5, P['lime']), (.72, P['blue'])): R(col, round(CW * f_) - 1, p0 + 2, 3, 2); R(P['cream'], round(CW * f_), p0 + 2, 1, 1)
+        for i in range(5): R(P['yellow'], mid - 7 + i, p1 - 4 + i // 2, 1, 1); R(P['yellow'], mid + 6 - i, p1 - 4 + i // 2, 1, 1)
+        for x in range(4, CW - 4, 4): R(P['pink'] if (x // 4) % 2 else P['orange'], x, p1 - 1, 2, 1)
+        R(P['lg'], 1, p1, CW - 2, 1); R(P['cream'], CW - 4, p1 - 5, 1, 4)                                  # lockdown bar, plunger
+        for x in (2, CW - 5): R(P['k'], x, p1 + 1, 3, yb - p1 - 1); R(trim, x + 1, p1 + 1, 1, yb - p1 - 2)
     return c, dict(cell=[CW, CH], glass=[5, oy + 18, gw, gh], marquee=[4, oy + 3, Fw - 8, 7], oy=oy)
 
 def cab_strip(gw, gh):
-    cells = [cabinet(gw, gh, v) for v in range(4)]; cw, ch = cells[0][0].w, cells[0][0].h
-    strip = C(cw * 4, ch)
+    """16 cells: cell = body * 4 + colour (spec 102 FR-306)"""
+    cells = [cabinet(gw, gh, v, b) for b in range(4) for v in range(4)]; cw, ch = cells[0][0].w, cells[0][0].h
+    strip = C(cw * len(cells), ch)
     for i, (c, _) in enumerate(cells): strip.draw(c, i * cw, 0)
     return strip, cells[0][1]
 
@@ -313,6 +385,26 @@ def measure(im):
     span = max(1, round((bot - top + 1) * .06)); xs = [x for y in range(bot - span + 1, bot + 1) for x in range(w) if px[x, y][3]]
     return top, bot, (min(xs) + max(xs) + 1) / 2 / w
 
+def keep_sit(repo):
+    """the asleep `sit` frames are drawn (Codex, `scripts/build-arcade-sleep.py`), not built here: a full build keeps the committed files, measures
+    them into set.json, names them in each person's files line and has build-arcade-sleep.py write their ASSETS.md lines"""
+    S = os.path.join(repo, 'src/renderer/realoffice/sets/retro'); jp = os.path.join(S, 'set.json'); meta = json.load(open(jp))
+    for pid, st in meta['stand'].items():
+        f = os.path.join(S, f'{pid}-sit.webp')
+        if not os.path.exists(f): continue
+        im = Image.open(f); tp, bt, fc = measure(im)
+        st['poses']['sit'] = [im.width, im.height]; st['feet']['sit'] = round((bt + 1) / im.height, 4); st['top']['sit'] = round(tp / im.height, 4); st['foot']['sit'] = round(fc, 4)
+    with open(jp, 'w') as f: f.write(json.dumps(meta, indent=1, sort_keys=True) + '\n')
+    ap = os.path.join(S, 'ASSETS.md'); txt = open(ap, encoding='utf8').read()
+    for pid in meta['stand']:
+        txt = re.sub(r'(### set-' + pid + r'\n\n- files: [^\n]*?)(?: ' + pid + r'-sit\.webp)?\n', lambda m: m.group(1) + ' ' + pid + '-sit.webp\n', txt, count=1)
+    if '- **Seated on a stool**' not in txt: txt = txt.replace('- **Licence:**', '- **Seated on a stool**\n- **Licence:**', 1)
+    with open(ap, 'w', encoding='utf8') as f: f.write(txt)
+    import importlib.util
+    sp = importlib.util.spec_from_file_location('sleep', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'build-arcade-sleep.py')); sl = importlib.util.module_from_spec(sp)
+    argv = sys.argv; sys.argv = argv[:1]; sp.loader.exec_module(sl); sys.argv = argv
+    sl.assets(repo)
+
 def face_box(im):
     """crown to chin of the head in a front standing frame, found from the width of the figure row by row: the head is the first wide part, the neck is
     where the width falls back (and the shoulders where it grows again); read once on a contact sheet (T201), not trusted blindly"""
@@ -353,7 +445,7 @@ def build_person(idx, src_final, src_new7):
 def write_set(repo, src_final, src_new7, prompts):
     S = os.path.join(repo, 'src/renderer/realoffice/sets/retro'); os.makedirs(S, exist_ok=True)
     for f in os.listdir(S):
-        if f.endswith('.webp'): os.remove(os.path.join(S, f))
+        if f.endswith('.webp') and not f.endswith('-sit.webp'): os.remove(os.path.join(S, f))   # the drawn asleep frames stay (keep_sit)
     seat, stand, fbox, total, sections = {}, {}, {}, 0, []
     for idx in PEOPLE:
         pid, frames = build_person(idx, src_final, src_new7)
@@ -388,10 +480,10 @@ def write_world(repo):
     mon = {}
     for key, (name, gw, gh) in dict(big=('monitor.webp', 75, 50), small=('monitor-half.webp', 56, 32), narrow=('monitor-narrow.webp', 44, 32)).items():
         strip, g = cab_strip(gw, gh); total += save(strip.im, f'{W}/{name}'); cw, chh = g['cell']
-        mon[key] = dict(file=name, cells=4, cell=[cw, chh], screenRect=[round(v, 4) for v in (g['glass'][0] / cw, g['glass'][1] / chh, g['glass'][2] / cw, g['glass'][3] / chh)],
+        mon[key] = dict(file=name, cells=16, bodies=4, cell=[cw, chh], screenRect=[round(v, 4) for v in (g['glass'][0] / cw, g['glass'][1] / chh, g['glass'][2] / cw, g['glass'][3] / chh)],
                         marqueeRect=[round(v, 4) for v in (g['marquee'][0] / cw, g['marquee'][1] / chh, g['marquee'][2] / cw, g['marquee'][3] / chh)], glass=g['glass'], marquee=g['marquee'])
     total += save(glow().im, f'{W}/glow.webp'); total += save(console().im, f'{W}/desk.webp')
-    meta = dict(formatVersion=1, id='retro', name='Retro arcade', defaultSet='retro', pixelArt=True, arrangement='aisles', wall='wall.webp', floorTile=[24, 24],
+    meta = dict(formatVersion=1, id='retro', name='Retro arcade', defaultSet='retro', pixelArt=True, arrangement='aisles', css='world.css', wall='wall.webp', floorTile=[24, 24],
                 night=dict(wall='wall-night.webp', floor='floor-night.webp'), monitor=mon, glow=dict(file='glow.webp', cells=STATES, cell=[56, 15]),
                 desk=[40, 22], fixtures=fx, fixtureTop=ftop, floorLine=FL, wallSize=[WALL_W, WALL_H + SHADOW], bandRows=WALL_H)
     with open(os.path.join(W, 'world.json'), 'w') as f: f.write(json.dumps(meta, indent=1, sort_keys=True) + '\n')
@@ -410,7 +502,7 @@ def write_notes(repo, meta, sections, prompts):
     snapped sheets; it is Codex sheets, snapped), approval is the owner's (097 Q6, 102 Q11)"""
     S = os.path.join(repo, 'src/renderer/realoffice/sets/retro/ASSETS.md')
     out = ['# Real office set: Retro pixel people (provenance, spec 097 FR-062..FR-069, spec 102 FR-205, FR-254, T201, T207)', '',
-           'Fifteen invented pixel-art people, each with 17 Real office frames: six seated busts (`typeA`, `typeB`, `waveA`, `waveB`, `think`, `rest`), five standing seen from behind (`type`, `book`, `knock`, `letter`, `counter`) and six standing facing us (`face-book`, `face-coffee`, `face-knock`, `face-letter`, `face-runA`, `face-runB`). **One file pixel is one grid pixel**: the app draws it at an integer scale with `image-rendering: pixelated`. Only the `.webp` files and `set.json` (as `realoffice/sets/retro/set.js`) ship; this file stays in the repository.', '',
+           'Fifteen invented pixel-art people, each with 18 Real office frames: six seated busts (`typeA`, `typeB`, `waveA`, `waveB`, `think`, `rest`), five standing seen from behind (`type`, `book`, `knock`, `letter`, `counter`), six standing facing us (`face-book`, `face-coffee`, `face-knock`, `face-letter`, `face-runA`, `face-runB`) and one seated asleep on a stool (`sit`, drawn separately: `scripts/build-arcade-sleep.py`). **One file pixel is one grid pixel**: the app draws it at an integer scale with `image-rendering: pixelated`. Only the `.webp` files and `set.json` (as `realoffice/sets/retro/set.js`) ship; this file stays in the repository.', '',
            '- **Licence:** MIT, like the code and the crew art.',
            '- **What the art is (corrects the art cache\'s notes, which said "NOT generated by an AI image tool. Drawn by code" and also listed the pictures as `snapped` sheets):** every frame comes from a Codex image-generation sheet (`codex exec`, four sheets per person: `S` seated, `F` front, `A` and `B` from behind), then cut, **snapped to a pixel grid** (resized to a logical size, binary alpha, one 32-colour palette per person, exact 8x nearest-neighbour; the cache\'s `retro_snap.py` for r1..r8 and `new7/process7.py` for r9..r15). The code-drawn people (`retro-code`, `rig.py`) are an earlier, rejected fallback and are not used here.',
            '- **Shrunk to the grid** by `scripts/build-arcade-pack.py`: each 8x frame becomes one pixel per block and is saved as lossless WebP (`VP8L`). A frame whose blocks are not uniform stops the build. Three frames of the cache were not on the 8x grid (`r4-waveA`, `r4-waveB`, `r8-waveA`, found 2026-11-01) and were shrunk by a block vote instead (no new colour), then looked at; the owner may ask for them to be redrawn.',
@@ -436,11 +528,30 @@ def write_notes(repo, meta, sections, prompts):
          '### room-day', '', '- files: wall.webp floor.webp', '- source: `drawBackdrop` of the mockup (`layouts/mock/arcade.js`), day palette: brick wall with a stepped rim and three floppy disks, a diamond lattice floor tile (24 x 24, repeats), a soft dithered shadow under the wall (6 rows, partly transparent)',
          '- tool: `scripts/build-arcade-pack.py` (Pillow)', '- date: 2026-11-01', "- made by: Vikram's agent (Claude Code)", '- approved by: Vikram, 2026-11-01 (the mockup\'s look; the rebuilt pictures have not been looked at by him)', '- reference: the mockup', '- prompt: none, drawn in code', '- cut: the wall is 720 x 118 grid pixels, its four neon signs in the middle so a crop at another scale keeps them', '- licence: MIT', '',
          '### room-night', '', '- files: wall-night.webp floor-night.webp', '- source: as room-day, the night palette: dark navy brick, neon tubes with a dithered halo', '- tool: `scripts/build-arcade-pack.py` (Pillow)', '- date: 2026-11-01', "- made by: Vikram's agent (Claude Code)", '- approved by: Vikram, 2026-11-01 (the mockup\'s look)', '- reference: the mockup', '- prompt: none, drawn in code', '- cut: as room-day; not listed in `lightSets` yet because its `welcome-night` part is not drawn (spec 102 FR-252: all three or none)', '- licence: MIT', '',
-         '### cabinets', '', '- files: monitor.webp monitor-half.webp monitor-narrow.webp', '- source: the mockup\'s cabinet, **redrawn level** (spec 102 FR-258): level front, level glass and marquee (both holes the app fills), a side panel and a stepped top; four colours per strip, screen on the left (the app mirrors it with a static transform)', '- tool: `scripts/build-arcade-pack.py` (Pillow)', '- date: 2026-11-01', "- made by: Vikram's agent (Claude Code)", '- approved by: pending (the owner has not yet looked at the level cabinet, T200)', '- reference: the mockup and `layouts/mock/arcade-level-compare.png` (art cache)', '- prompt: none, drawn in code', '- cut: `monitor.webp` is the big cabinet for 1 to 4 people (glass 75 x 50), `monitor-half.webp` the small one (56 x 32) and `monitor-narrow.webp` a narrower one (44 x 32) for a floor too narrow for the small one with the chat open', '- licence: MIT', '',
+         '### cabinets', '', '- files: monitor.webp monitor-half.webp monitor-narrow.webp', '- source: the mockup\'s cabinet, **redrawn level** (spec 102 FR-258): level front, level glass and marquee (both holes the app fills), a side panel and a stepped top; four bodies with their own silhouettes (upright with a tall side; cocktail table on four legs; racer with a seat shell and a wheel; pinball with a backbox and a flared playfield; spec 102 FR-306, owner 2026-11-03) in four colours per strip, each colour with its own marquee trim and side art, all in one cell size with the glass in one place; screen on the left (the app mirrors it with a static transform). Redrawn with `--world`, 2026-11-03', '- tool: `scripts/build-arcade-pack.py` (Pillow)', '- date: 2026-11-01', "- made by: Vikram's agent (Claude Code)", '- approved by: pending (the owner has not yet looked at the level cabinet, T200)', '- reference: the mockup and `layouts/mock/arcade-level-compare.png` (art cache)', '- prompt: none, drawn in code', '- cut: `monitor.webp` is the big cabinet for 1 to 4 people (glass 75 x 50), `monitor-half.webp` the small one (56 x 32) and `monitor-narrow.webp` a narrower one (44 x 32) for a floor too narrow for the small one with the chat open', '- licence: MIT', '',
          '### fixtures', '', '- files: ' + ' '.join(f'fx-{f}.webp' for f in FIXTURES), '- source: the mockup\'s nine arcade things: prize counter, cartridge wall, service panel, pinball table, attract-mode cabinet, change machine, coin vault, ticket dispenser, repair bench; drawn at the mockup\'s size (34 to 48 grid pixels tall, a person is 72: spec 102 Q6 asks whether to redraw them taller)', '- tool: `scripts/build-arcade-pack.py` (Pillow)', '- date: 2026-11-01', "- made by: Vikram's agent (Claude Code)", '- approved by: Vikram, 2026-11-01 (the mockup\'s look)', '- reference: the mockup', '- prompt: none, drawn in code', '- cut: every fixture on one canvas as tall as the tallest (48), standing on the bottom row', '- licence: MIT', '',
          '### glow', '', '- files: glow.webp', '- source: the mockup\'s dithered pool of light, one cell (56 x 15) per state in the app\'s day status colours', '- tool: `scripts/build-arcade-pack.py` (Pillow)', '- date: 2026-11-01', "- made by: Vikram's agent (Claude Code)", '- approved by: pending', '- reference: the mockup', '- prompt: none, drawn in code', '- cut: seven cells: working, thinking, waiting, error, limit, done, idle', '- licence: MIT', '',
          '### console', '', '- files: desk.webp', '- source: a low console and stool for a person who is asleep (spec 102 FR-259): a **placeholder**, nobody has looked at it', '- tool: `scripts/build-arcade-pack.py` (Pillow)', '- date: 2026-11-01', "- made by: Vikram's agent (Claude Code)", '- approved by: pending', '- reference: none', '- prompt: none, drawn in code', '- cut: 40 x 22 grid pixels', '- licence: MIT', '', '## Removed', '', 'None.', '']
     open(Wn, 'w').write('\n'.join(w))
+
+def keep_sit_selftest():
+    """keep_sit, with no art cache: the committed set, stripped of what a full build loses (the `sit` numbers in set.json, the note, the files
+    names and the `- sit:` lines in ASSETS.md), comes back byte for byte"""
+    import shutil, tempfile
+    repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__))); rel = 'src/renderer/realoffice/sets/retro'
+    with tempfile.TemporaryDirectory() as t:
+        S = os.path.join(t, rel); shutil.copytree(os.path.join(repo, rel), S)
+        jp, ap = os.path.join(S, 'set.json'), os.path.join(S, 'ASSETS.md'); want_j, want_a = open(jp).read(), open(ap, encoding='utf8').read()
+        meta = json.loads(want_j)
+        for st in meta['stand'].values():
+            for k in ('poses', 'feet', 'top', 'foot'): st[k].pop('sit', None)
+        with open(jp, 'w') as f: f.write(json.dumps(meta, indent=1, sort_keys=True) + '\n')
+        txt = re.sub(r' p\d\d-sit\.webp', '', want_a); txt = re.sub(r'\n- sit: [^\n]*', '', txt); txt = re.sub(r'- \*\*Seated on a stool\*\*[^\n]*\n', '', txt)
+        assert txt != want_a and 'sit' not in json.dumps([s['poses'] for s in meta['stand'].values()]), 'the strip removed nothing'
+        with open(ap, 'w', encoding='utf8') as f: f.write(txt)
+        keep_sit(t)
+        assert open(jp).read() == want_j, 'keep_sit: set.json differs from the committed one'
+        assert open(ap, encoding='utf8').read() == want_a, 'keep_sit: ASSETS.md differs from the committed one'
 
 def selftest():
     # a frame off the grid is refused, a clean one passes, and one file pixel per block comes out
@@ -454,14 +565,45 @@ def selftest():
     assert hashlib.sha256(w1.getvalue()).digest() == hashlib.sha256(w2.getvalue()).digest(), 'two runs differ'
     c, g = cabinet(56, 32, 0); assert c.w == 73 and c.h == 73 and g['glass'] == [5, 18, 56, 32], g
     assert c.im.getpixel((10, 25))[3] == 0, 'the glass is a hole'
+    keep_sit_selftest()
+    args_selftest()
     print('build-arcade-pack selftest ok')
 
+def parse_args(argv):
+    """the command line, checked before anything is read or deleted (#1079 review: `--help` was taken for the art folder and the build
+    deleted the set's pictures). Returns ('selftest',) / ('world', repo) / ('build', interop, repo); anything else exits with the usage."""
+    a = list(argv)
+    if any(x.startswith('-') for x in a) and not (a and a[0] in ('--selftest', '--world') and not any(x.startswith('-') for x in a[1:])):
+        raise SystemExit(__doc__)
+    if a[:1] == ['--selftest'] and len(a) == 1: return ('selftest',)
+    def repo_ok(r):
+        if not (os.path.isfile(os.path.join(r, 'package.json')) and os.path.isdir(os.path.join(r, 'src', 'renderer', 'realoffice'))): raise SystemExit(f'not the repository: {r}\n' + __doc__)
+        return r
+    if a[:1] == ['--world'] and len(a) <= 2: return ('world', repo_ok(a[1] if len(a) > 1 else os.getcwd()))
+    if len(a) not in (1, 2): raise SystemExit(__doc__)
+    I = a[0].rstrip('/')
+    if not all(os.path.isdir(os.path.join(I, d)) for d in ('final/retro', 'new7/final')): raise SystemExit(f'not the art cache\'s interop folder (no final/retro and new7/final): {I}\n' + __doc__)
+    return ('build', I, repo_ok(a[1] if len(a) > 1 else os.getcwd()))
+
+def args_selftest():
+    """a wrong command line exits before it deletes anything: `--help`, an unknown flag, a folder that is not the art cache, a repo that is not one"""
+    import subprocess, tempfile
+    with tempfile.TemporaryDirectory() as t:
+        S = os.path.join(t, 'src/renderer/realoffice/sets/retro'); os.makedirs(S); keep = os.path.join(S, 'p01-book.webp'); open(keep, 'wb').write(b'x')
+        open(os.path.join(t, 'package.json'), 'w').write('{}')
+        for args in (['--help'], ['-h'], ['--world', '--force'], ['--sit'], [t], [os.path.join(t, 'nowhere')], ['--world', os.path.join(t, 'src')]):
+            r = subprocess.run([sys.executable, '-I', os.path.abspath(__file__)] + args, cwd=t, capture_output=True)
+            assert r.returncode != 0, f'not refused: {args}'
+            assert os.path.exists(keep), f'deleted a picture: {args}'
+
 if __name__ == '__main__':
-    if len(sys.argv) > 1 and sys.argv[1] == '--selftest': selftest(); sys.exit(0)
-    if len(sys.argv) < 2: raise SystemExit(__doc__)
-    I = sys.argv[1].rstrip('/'); REPO = sys.argv[2] if len(sys.argv) > 2 else os.getcwd()
+    cmd = parse_args(sys.argv[1:])
+    if cmd[0] == 'selftest': selftest(); sys.exit(0)
+    if cmd[0] == 'world': write_world(cmd[1]); sys.exit(0)
+    _, I, REPO = cmd
     prompts = [I + '/prompts', I + '/new7/prompts']
     smeta, sections, stotal = write_set(REPO, I + '/final/retro', I + '/new7/final', prompts)
     wmeta, wtotal = write_world(REPO)
     write_notes(REPO, smeta, sections, prompts)
+    keep_sit(REPO)
     print(f'set: {len(sections)} people, {stotal} bytes; world: {wtotal} bytes')

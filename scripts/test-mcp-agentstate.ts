@@ -60,7 +60,7 @@ const ROWS: Row[] = [
   { rule: 'question answered after a Stop set it Idle: stays Idle (only when waiting)', events: [asked, status('idle', { intent: 'Aborted' }), ev({ type: 'question', phase: 'answered', requestId: 'q1', answers: {} })], word: 'Idle', sub: null, renderer: [] },
   { rule: 'helper status/output/thinking/tool events are ignored', events: [out, ev({ type: 'status', status: 'error', agentId: 'sub1' }), ev({ type: 'thinking', agentId: 'sub1' }), ev({ type: 'toolCall', phase: 'start', tool: 'x', callId: 'z', agentId: 'sub1' }), ev({ type: 'status', status: 'idle', agentId: 'sub1' })], word: 'Working', sub: null, renderer: ["if(e.agentId&&e.type!=='permission'&&e.type!=='grants'&&e.type!=='limit')return onSubEvent(a,e);"] },
   { rule: 'subagent, usage, context, model, title, mcp events change nothing', events: [out, ev({ type: 'subagent', phase: 'started', subagentId: 's' }), ev({ type: 'usage' }), ev({ type: 'context', tokens: 1, limit: 2 }), ev({ type: 'model', model: 'm', cause: 'user' }), ev({ type: 'title', title: 't' }), ev({ type: 'mcp', servers: [] }), ev({ type: 'permission', permission: {} }), ev({ type: 'grants', grants: [] })], word: 'Working', sub: null, renderer: [] },
-  { rule: 'paused hides the state: Paused, no sub-label', events: [out], word: 'Paused', sub: null, paused: true, renderer: ["const vis = a => a.paused ? 'idle' : a.state;", "a.paused ? 'Paused' : (a.label || LABELS[a.state])"] },
+  { rule: 'paused hides the state: Paused, no sub-label', events: [out], word: 'Paused', sub: null, paused: true, renderer: ["const vis = a => a.paused ? 'idle' : a.state;", "a.paused ? 'Paused' : (a.label || LABELS[a.state] || '')"] },
   { rule: 'user send while Idle: Thinking, sub-label cleared', events: [send], word: 'Thinking', sub: null, renderer: ["a.worked=true; a.intent=''; closeTurn(a); ensureTurn(a); setState(a,'thinking',null,'Thinking');"] },
   { rule: 'user send on a not-started folder: Thinking', lazy: true, events: [send], word: 'Thinking', sub: null, renderer: [] },
   { rule: 'user send, then status working: Thinking stays (already thinking)', events: [send, working], word: 'Thinking', sub: null, renderer: [] },
@@ -84,7 +84,7 @@ const ROWS: Row[] = [
   { rule: 'usageLimit then working: the break ends', events: [ev({ type: 'usageLimit', scope: 'plan', source: 'x' }), working], word: 'Working', sub: null, renderer: ["if(e.status==='working'||e.status==='stopped'||e.status==='idle'||e.status==='error'){endCoffee(a,"] },
   { rule: 'usageLimit then Stop: Idle', events: [ev({ type: 'usageLimit', scope: 'plan', source: 'x' }), status('idle', { intent: 'Aborted' })], word: 'Idle', sub: null, renderer: [] },
   { rule: 'usageLimit then a send: Thinking', events: [ev({ type: 'usageLimit', scope: 'plan', source: 'x' }), send], word: 'Thinking', sub: null, renderer: ["if(a.coffee&&!(opts&&opts.coffee))endCoffee(a,"] },
-  { rule: 'words', events: [], word: 'Idle', sub: null, renderer: ["const LABELS={working:'Working',thinking:'Thinking',waiting:'Waiting',idle:'Idle',error:'Error',done:'Done'};"] },
+  { rule: 'words', events: [], word: 'Idle', sub: null, renderer: ["const LABELS={working:'Working',thinking:'Thinking',waiting:'Waiting',idle:'Idle',error:'Error',done:'Done',limit:'Limit reached',asleep:'Asleep'};"] },
 ];
 
 for (const r of ROWS) {

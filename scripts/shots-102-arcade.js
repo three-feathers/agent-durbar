@@ -56,7 +56,7 @@ module.exports = async (ctx) => {
     const groups=[['.ro-plate','.ro-plate'],['.ro-sign','.ro-sign'],['.ro-plate','.ro-sign'],['.ro-marquee','.ro-marquee'],['.ro-marquee','.ro-sign'],['.ro-marquee','.ro-plate'],['.ro-cue:not(.cue-none)','.ro-plate'],['.ro-cue:not(.cue-none)','.ro-marquee'],['.ro-cue:not(.cue-none)','.ro-cue:not(.cue-none)'],['.ro-cue:not(.cue-none)','.ro-sign'],['.ro-bub','.ro-sign'],['.ro-bub','.ro-plate'],['.ro-bub','.ro-marquee'],['.ro-bang','.ro-sign'],['.ro-bang','.ro-plate'],['.ro-dots','.ro-sign'],['.ro-chip','.ro-lplate'],['.ro-chip','.ro-chip'],['.ro-lplate','.ro-lplate'],['.ro-away','.ro-marquee'],['.ro-away','.ro-plate'],['.ro-away','.ro-stext'],['.ro-away','.ro-sign'],['.ro-visitor','.ro-sign'],['.ro-cab','.ro-cab'],['.ro-cab','.ro-fx'],['.ro-person','.ro-sign'],['.ro-stext','.ro-sign'],['.ro-stext','.ro-plate']];
     const out=[];for(const [p,q] of groups){const P=seen(p),Q=seen(q);for(const a of P)for(const b of Q)if(a!==b&&!(p===q&&P.indexOf(a)>P.indexOf(b))&&hit(R(a),R(b)))out.push(name(a)+' on '+name(b));}return out;})()`;
   const LUM = `const lum=(c)=>{const m=c.match(/[\\d.]+/g).map(Number),f=(v)=>{v/=255;return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4);};return 0.2126*f(m[0])+0.7152*f(m[1])+0.0722*f(m[2]);};const bgOf=(e)=>{for(let x=e;x;x=x.parentElement){const c=getComputedStyle(x).backgroundColor,m=c.match(/[\\d.]+/g).map(Number);if(m.length<4||m[3]>0.5)return c;}return 'rgb(255,255,255)';};const ratio=(a,b)=>{const l=[lum(a),lum(b)].sort((x,y)=>y-x);return (l[0]+0.05)/(l[1]+0.05);};`;
-  const TEXT = '(()=>{' + LUM + `const small=[],low=[];for(const e of document.querySelectorAll('#stage .ro-plate .ro-l2,#stage .ro-marquee,#stage .ro-sign b,#stage .ro-stext .ro-sl')){if(!e.getClientRects().length||!e.textContent.trim())continue;const c=getComputedStyle(e),px=parseFloat(c.fontSize);if(px<(e.classList.contains('ro-marquee')?12:10.5))small.push(e.className+' '+px);const r=ratio(c.color,bgOf(e));if(r<4.5)low.push(e.className+' '+r.toFixed(2)+' '+c.color);}return {small,low};})()`;
+  const TEXT = '(()=>{' + LUM + `const small=[],low=[];for(const e of document.querySelectorAll('#stage .ro-plate .ro-l2,#stage .ro-marquee,#stage .ro-sign b,#stage .ro-stext .ro-sl,#stage .ro-away')){if(!e.getClientRects().length||!e.textContent.trim())continue;const c=getComputedStyle(e),px=parseFloat(c.fontSize);if(px<(e.classList.contains('ro-marquee')?12:10.5))small.push(e.className+' '+px);const r=ratio(c.color,bgOf(e));if(r<4.5)low.push(e.className+' '+r.toFixed(2)+' '+c.color);}return {small,low};})()`;
 
   for (const [w, h] of SIZES) for (const n of [3, 4, 8, 15]) {
     const tag = `${n} agents at ${w}x${h}`;
@@ -76,8 +76,50 @@ module.exports = async (ctx) => {
     if (n <= 15) { assert.strictEqual(art.scroll, false, tag + ': no office scroll'); assert.ok(art.fh <= 1, tag + ': the floor does not scroll: ' + art.fh); }
     await H.until(`${OVER}.length===0`, 5000); /* a font face can arrive after the first drawing */
     assert.deepStrictEqual(await js(OVER), [], tag + ': no overlap');
-    /* the person stands behind the glass and the glass is opaque, so nothing lies under the screen's text; a sign stays inside the floor */
-    assert.deepStrictEqual(await js(`(()=>{const out=[],ro=document.querySelector('#stage .ro').getBoundingClientRect(),z=e=>Number(getComputedStyle(e).zIndex),P=document.querySelector('#stage .ro-person'),S=document.querySelector('#stage .ro-screen'),G=document.querySelector('#stage .ro-glass');if(P&&S&&(P.parentElement!==S.parentElement||!(z(P)<z(S))))out.push('a person is not behind the screen');if(G&&(c=>c.startsWith('rgba')&&!c.endsWith(', 1)'))(getComputedStyle(G).backgroundColor))out.push('the glass is not opaque');for(const s of document.querySelectorAll('#stage .ro-sign')){const b=s.getBoundingClientRect();if(b.left<ro.left-0.5||b.right>ro.right+0.5)out.push('a sign leaves the floor: '+s.textContent.slice(0,14));}return out;})()`), [], tag + ': people behind the glass, signs on the floor');
+    /* owner, 2026-11-03: no person is cut by a cabinet or a screen: none of a person's painted pixels lies on one; a sign stays on the floor */
+    assert.deepStrictEqual(await js(`(async()=>{const out=[],ro=document.querySelector('#stage .ro').getBoundingClientRect(),B=[...document.querySelectorAll('#stage .ro-cab,#stage .ro-screen')].map(e=>e.getBoundingClientRect());
+      for(const p of document.querySelectorAll('#stage .ro-person')){if(p.hidden||!p.getClientRects().length)continue;await p.decode().catch(()=>{});const b=p.getBoundingClientRect(),c=document.createElement('canvas');c.width=Math.round(b.width);c.height=Math.round(b.height);const x=c.getContext('2d');x.imageSmoothingEnabled=false;x.drawImage(p,0,0,c.width,c.height);const d=x.getImageData(0,0,c.width,c.height).data,mir=getComputedStyle(p).scale.startsWith('-');let n=0;
+        for(const r of B){const L=Math.max(r.left,b.left),R=Math.min(r.right,b.right),T=Math.max(r.top,b.top),Bt=Math.min(r.bottom,b.bottom);for(let yy=Math.floor(T);yy<Bt;yy++)for(let xx=Math.floor(L);xx<R;xx++){const u=Math.floor(xx-b.left),ux=mir?c.width-1-u:u,v=Math.floor(yy-b.top);if(ux>=0&&ux<c.width&&v>=0&&v<c.height&&d[4*(v*c.width+ux)+3]>32)n++;}}
+        if(n)out.push(p.dataset.for+': '+n+' px on a cabinet or screen');}
+      for(const s of document.querySelectorAll('#stage .ro-sign')){const b=s.getBoundingClientRect();if(b.left<ro.left-0.5||b.right>ro.right+0.5)out.push('a sign leaves the floor: '+s.textContent.slice(0,14));}
+      return out;})()`), [], tag + ': every person whole beside the cabinet, signs on the floor');
+    /* owner, 2026-11-03: in the lobby nobody stands half behind another (painted pixels), every name chip reads in full, no two chips touch;
+       */
+    assert.deepStrictEqual(await js(`(async()=>{const out=[],boxes=[];
+      for(const v of document.querySelectorAll('#stage .ro-visitor')){if(v.hidden||!v.getClientRects().length||v.tagName!=='IMG')continue;await v.decode().catch(()=>{});const b=v.getBoundingClientRect(),c=document.createElement('canvas');c.width=Math.max(1,Math.round(b.width));c.height=Math.max(1,Math.round(b.height));const x=c.getContext('2d');x.imageSmoothingEnabled=false;x.drawImage(v,0,0,c.width,c.height);const d=x.getImageData(0,0,c.width,c.height).data;let L=1e9,R=-1;for(let yy=0;yy<c.height;yy++)for(let xx=0;xx<c.width;xx++)if(d[4*(yy*c.width+xx)+3]>32){if(xx<L)L=xx;if(xx>R)R=xx;}if(R<0)continue;const mir=getComputedStyle(v).scale.startsWith('-');const l=mir?b.left+(c.width-1-R):b.left+L,r=mir?b.left+(c.width-1-L):b.left+R;boxes.push({l,r,t:b.top,bt:b.bottom,who:v.dataset.for||''});}
+      for(let i=0;i<boxes.length;i++)for(let j=i+1;j<boxes.length;j++){const a=boxes[i],b=boxes[j];if(a.l<b.r-1&&b.l<a.r-1&&a.t<b.bt&&b.t<a.bt)out.push('visitors overlap: '+a.who+' and '+b.who);}
+      const ch=[...document.querySelectorAll('#stage .ro-chip')].filter(c=>c.getClientRects().length);
+      for(const c of ch)if(c.dataset.full)out.push('a cut name chip: '+c.dataset.full);
+      for(let i=0;i<ch.length;i++)for(let j=i+1;j<ch.length;j++){const a=ch[i].getBoundingClientRect(),b=ch[j].getBoundingClientRect();if(a.left<b.right-0.5&&b.left<a.right-0.5&&a.top<b.bottom-0.5&&b.top<a.bottom-0.5)out.push('chips overlap: '+ch[i].textContent+' / '+ch[j].textContent);}
+      return out;})()`), [], tag + ': the lobby: everyone whole, every name in full');
+    /* owner, 2026-11-03: no light block: a waiting or limit plate and an away ticket are dark; up to four people stand in the middle */
+    assert.deepStrictEqual(await js('(()=>{' + LUM + `const out=[];for(const e of document.querySelectorAll('#stage .ro-plate.st-waiting,#stage .ro-plate.st-limit,#stage .ro-away')){if(!e.getClientRects().length)continue;const bg=getComputedStyle(e).backgroundColor;if(lum(bg)>=0.05)out.push(e.className+' '+bg);}
+      const ds=window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks),W=window.__durbarSimUi.realLayout().width;if(ds.length<=4){const sl=ds.map(d=>d.slot).sort((a,b)=>a.x-b.x),l=sl[0].x,r=sl[sl.length-1].x+sl[sl.length-1].w;if(Math.abs((l+r)/2-W/2)>W*0.05)out.push('a small group is not in the middle: '+Math.round(l)+'..'+Math.round(r)+' of '+W);}return out;})()`), [], tag + ': dark plates and tickets; a small group in the middle');
+    /* owner, 2026-11-03 ("make arcade look different"): the painted cabinets show different bodies, all different up to 4, at least 3 from 8 on */
+    /* the painted cabinets show different bodies: their silhouettes, read from the pixels of the cell each one paints (pre-review of #1079: the
+       body number alone would pass with sixteen uprights drawn); all different up to 4, at least 3 from 8 on */
+    { const SIL = `(async()=>{const cs=[...document.querySelectorAll('#stage .ro-cab')].filter(e=>e.getClientRects().length&&getComputedStyle(e).backgroundImage.includes('monitor'));if(!cs.length)return null;
+        const st=getComputedStyle(cs[0]),url=st.backgroundImage.slice(5,-2),n=Math.round(parseFloat(st.backgroundSize)/100),im=new Image();im.src=url;await im.decode();
+        const cw=im.naturalWidth/n,c=document.createElement('canvas');c.width=im.naturalWidth;c.height=im.naturalHeight;const x=c.getContext('2d');x.drawImage(im,0,0);
+        return cs.map(e=>{const p=parseFloat(getComputedStyle(e).backgroundPositionX),cell=Math.round(p/100*(n-1)),d=x.getImageData(Math.round(cell*cw),0,Math.round(cw),im.naturalHeight).data;let h=0;for(let i=3;i<d.length;i+=4)h=(h*33+(d[i]>0?1:2))>>>0;return h;});})()`;
+      await H.until(`[...document.querySelectorAll('#stage .ro-cab')].some(e=>e.getClientRects().length&&getComputedStyle(e).backgroundImage.includes('monitor'))`, 5000);
+      const bs = await js(SIL); assert.ok(bs && bs.length > 0 && new Set(bs).size >= Math.min(bs.length, bs.length >= 8 ? 3 : 4), tag + ': cabinet silhouettes ' + JSON.stringify(bs)); }
+    /* owner, 2026-11-03 ("zigzag positioning for max usage"): from 2 people on, no band of bare floor over a quarter of its height */
+    assert.ok(await js(`(()=>{const L=window.__durbarSimUi.realLayout();if(L.zones.flatMap(z=>z.desks).length<2)return true;const ys=L.zones.map(z=>[z.sign.y,z.box.y+z.box.h]).sort((a,b)=>a[0]-b[0]);let at=L.lobbyH+(L.lane?L.lane.h:0),w=0;for(const [a,b] of ys){w=Math.max(w,a-at);at=Math.max(at,b);}w=Math.max(w,L.height-at);return w<=(L.height-L.lobbyH)/4;})()`), tag + ': no band of bare floor over a quarter of it');
+    /* review of 2026-11-03: no slip, pill or bubble on a screen, and none hidden; a folder name keeps 8 characters (or all of it) */
+    const SLIPS = `(()=>{const out=[],R=e=>e.getBoundingClientRect(),hit=(a,b)=>a.left<b.right-0.5&&b.left<a.right-0.5&&a.top<b.bottom-0.5&&b.top<a.bottom-0.5,S=[...document.querySelectorAll('#stage .ro-screen,#stage .ro-person')].filter(e=>!e.hidden&&e.getClientRects().length).map(R);
+      for(const e of document.querySelectorAll('#stage .ro-slip')){if(e.hidden){out.push('hidden: '+e.className);continue;}if(S.some(q=>hit(R(e),q)))out.push('on a screen or a person: '+e.textContent.slice(0,24));}
+      const c=document.createElement('canvas').getContext('2d');
+      for(const b of document.querySelectorAll('#stage .ro-sign>b')){if(b.scrollWidth<=b.clientWidth+0.5)continue;c.font=getComputedStyle(b).font;const t=b.textContent,need=c.measureText(t.slice(0,Math.min(8,t.length))+'\u2026').width;if(b.clientWidth+0.5<need)out.push('a folder name cut to '+Math.round(b.clientWidth)+' px: '+t);}
+      return out;})()`;
+    await H.until(`${SLIPS}.length===0`, 4000); /* a slip is placed again once its font has loaded */
+    assert.deepStrictEqual(await js(SLIPS), [], tag + ': nothing on a screen or a person, every slip shown, folder names readable');
+    /* the pills sit in the lane the layout keeps under the lobby */
+    const LANE = `(()=>{const L=window.__durbarSimUi.realLayout().lane,ro=document.querySelector('#stage .ro').getBoundingClientRect();return [...document.querySelectorAll('#stage .ro-slip[data-variant="pill"]')].filter(e=>!e.hidden).filter(e=>{const b=e.getBoundingClientRect(),t=b.top-ro.top;return !L||t<L.y-0.5||t+b.height>L.y+L.h+0.5;}).map(e=>e.textContent.slice(0,24));})()`;
+    await H.until(`${LANE}.length===0`, 4000);
+    assert.deepStrictEqual(await js(LANE), [], tag + ': the pills in their lane');
+    /* FR-263: the top bar's text keeps 4.5:1 on its own button fill in the arcade's style (the pressed one is yellow) */
+    assert.deepStrictEqual(await js('(()=>{' + LUM + `const out=[];for(const b of document.querySelectorAll('.topbar .seg button')){const c=getComputedStyle(b).color,f=getComputedStyle(b).backgroundColor;if(/rgba\\([^)]*, 0\\)|transparent/.test(f))continue;const r=(Math.max(lum(c),lum(f))+0.05)/(Math.min(lum(c),lum(f))+0.05);if(r<4.5)out.push(b.textContent.trim()+' '+r.toFixed(2));}return out;})()`), [], tag + ': top bar buttons readable');
     assert.deepStrictEqual(await js(TEXT), { small: [], low: [] }, tag + ': text size and contrast');
     const seats = await js(`(()=>{const L=window.__durbarSimUi.realLayout(),T=window.exports.aisleTabOrder(L),P=[...document.querySelectorAll('#stage .ro-plate')].map(p=>p.dataset.id);return {tab:T,dom:P};})()`);
     assert.deepStrictEqual(seats.dom, seats.tab, tag + ': Tab follows the seats');
@@ -86,7 +128,7 @@ module.exports = async (ctx) => {
 
   // ---- FR-259: the frame by state; FR-257: hostile text stays text ----
   await loadArcade(1440, 900, 15);
-  const pose = await js(`(()=>{const T={working:'type',thinking:'book',error:'knock',waiting:'face-knock',limit:'face-knock',done:'face-coffee',idle:'face-book',asleep:'rest'}/* FR-259's table, written out: not read from the code it checks */,L=window.__durbarSimUi.realLayout(),bad=[];let n=0;for(const d of L.zones.flatMap(z=>z.desks)){if(!d.person)continue;n++;const want=T[d.state],got=d.person.pose;if(got!==want&&got!=={'face-knock':'knock','face-coffee':'counter','face-book':'book'}[want])bad.push(d.id+' '+d.state+' '+got);const e=document.querySelector('#stage .ro-person[data-for="'+CSS.escape(d.id)+'"]');if(!e||e.dataset.pose!==got)bad.push(d.id+' not drawn');}return {n,bad};})()`);
+  const pose = await js(`(()=>{const T={working:'type',thinking:'book',error:'knock',waiting:'face-knock',limit:'face-knock',done:'face-coffee',idle:'face-book',asleep:'sit'}/* FR-259's table, written out: not read from the code it checks */,L=window.__durbarSimUi.realLayout(),bad=[];let n=0;for(const d of L.zones.flatMap(z=>z.desks)){if(!d.person)continue;n++;const want=T[d.state],got=d.person.pose;if(got!==want&&got!=={'face-knock':'knock','face-coffee':'counter','face-book':'book'}[want])bad.push(d.id+' '+d.state+' '+got);const e=document.querySelector('#stage .ro-person[data-for="'+CSS.escape(d.id)+'"]');if(!e||e.dataset.pose!==got)bad.push(d.id+' not drawn');}return {n,bad};})()`);
   assert.ok(pose.n >= 5, 'people at cabinets: ' + pose.n);
   assert.deepStrictEqual(pose.bad, [], 'the frame by state');
 
@@ -115,12 +157,12 @@ module.exports = async (ctx) => {
   const media = (features) => { const d = ctx.win.webContents.debugger; if (!d.isAttached()) d.attach('1.3'); return d.sendCommand('Emulation.setEmulatedMedia', { features }); };
   const MOTION = (v) => [{ name: 'prefers-reduced-motion', value: v }];
   const STATES = ['working', 'thinking', 'waiting', 'limit', 'error', 'done', 'idle', 'asleep'];
-  const setStates = (list) => js(`(()=>{const U=window.__durbarSimUi,S=JSON.parse(${jsLiteral(JSON.stringify(list))});U.agents().filter(a=>!a.parent).forEach((a,i)=>{a.state=S[i%S.length];});U.render();})();0`);
+  const setStates = (list) => js(`(()=>{const U=window.__durbarSimUi,S=JSON.parse(${jsLiteral(JSON.stringify(list))});U.agents().filter(a=>!a.parent).forEach((a,i)=>{a.state=S[i%S.length];delete a.label;});U.render();})();0`); /* the state's own word, no label left over from the simulator */
   const ROOM = `document.getAnimations().filter(a=>a.playState==='running'&&a.effect&&a.effect.target&&a.effect.target.closest&&a.effect.target.closest('#stage .ro'))`;
   const running = () => js(`${ROOM}.map(a=>(a.animationName||'waapi')+':'+a.effect.target.className)`);
   const DRAWN = `(()=>{const by=(s,id)=>document.querySelector('#stage '+s+'[data-for="'+CSS.escape(id)+'"]');return window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks).filter(d=>d.marquee).map(d=>{const m=by('.ro-marquee',d.id),f=by('.ro-fglow',d.id),c=by('.ro-cue',d.id),r=f.getBoundingClientRect(),ro=document.querySelector('#stage .ro').getBoundingClientRect();return {id:d.id,state:d.state,mq:[...m.classList].find(x=>x.startsWith('mq-')),glow:[...f.classList].find(x=>x.startsWith('g-')),cue:c?c.textContent:'',word:(document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(d.id)+'"] .ro-l2')||{}).textContent||'',out:m.classList.contains('mq-alert')||m.classList.contains('mq-alert-red')?getComputedStyle(m).outlineStyle:'none',inSlot:r.left-ro.left>=d.slot.x-0.5&&r.right-ro.left<=d.slot.x+d.slot.w+0.5&&r.top-ro.top>=d.slot.y-0.5&&r.bottom-ro.top<=d.slot.y+d.slot.h+0.5};});})()`;
   /* FR-260's table, written out: not read from the code it checks */
-  const TABLE = { working: ['mq-lit', 'g-faint', ''], thinking: ['mq-lit', 'g-faint', '•••'], waiting: ['mq-flash', 'g-strong', '?'], limit: ['mq-orange', 'g-strong', '?'], error: ['mq-flash-red', 'g-small', '!'], done: ['mq-green', 'g-faint', '✓'], idle: ['mq-dim', 'g-very-faint', 'z z'], asleep: ['mq-off', 'g-none', 'z z'] };
+  const TABLE = { working: ['mq-lit', 'g-faint', ''], thinking: ['mq-lit', 'g-faint', '•••'], waiting: ['mq-flash', 'g-strong', '?'], limit: ['mq-orange', 'g-strong', '?'], error: ['mq-flash-red', 'g-small', '!'], done: ['mq-green', 'g-faint', '✓'], idle: ['mq-dim', 'g-very-faint', ''], asleep: ['mq-off', 'g-none', 'z z'] };
   const STILL = { 'mq-flash': 'mq-alert', 'mq-flash-red': 'mq-alert-red' };
   const moveOf = async (who, n) => { /* a real move: to a place and back, frames sampled */
     await js(`window.__durbarSimUi.emit({type:'toolCall',sessionId:${jsLiteral(who)},callId:'drv-mv${n}',tool:'bash',phase:'start',args:{command:'npm run a-long-one'}});0`);
@@ -129,6 +171,9 @@ module.exports = async (ctx) => {
   const stillChecks = async (tag) => {
     await must(`${ROOM}.filter(a=>!a.animationName).length===0`, tag + ': nothing left of the load');
     await setStates(STATES);
+    /* relayed, 2026-11-03: an agent asleep with no label of its own showed "undefined · At Terminal" on its plate */
+    await must(`!!document.querySelector('#stage .ro-plate[data-state="asleep"]')`, tag + ': an asleep plate drawn');
+    assert.deepStrictEqual(await js(`[...document.querySelectorAll('#stage .ro-plate')].map(p=>p.textContent).filter(t=>/undefined/.test(t))`), [], tag + ': no plate says undefined');
     await must(`${ROOM}.length===0`, tag + ': nothing runs, had ' + JSON.stringify(await running()), 4000);
     for (const d of await js(DRAWN)) {
       const want = TABLE[d.state]; assert.ok(want, tag + ': a state in the table: ' + d.state);

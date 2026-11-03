@@ -22,6 +22,7 @@
   const REPAINT_MS = 2000; /* FR-033 */
   const SCR = new Map(); /* desk id -> {box, last, timer, dirty, away, fit, sig} */
   const OFF = new Set(); /* keys of desks whose motion stands still: scrolled away or under the zoom */
+  let LAY_G = 0; const CUR_G = () => LAY_G; /* the arcade's scale, for its screen text (0 in other worlds) */
   let CUR = null; /* {ro, screenOf, still, hold, desks: Map id -> desk, agents: Map id -> model agent, folders: Map, drawn} */
   let ZOOM = null; /* {id, hover, focus, panel, plate} */
   let IO = null, DISMISSED = '';
@@ -204,12 +205,15 @@
   function clock(e, ms) { for (const a of e.getAnimations()) if (a.animationName) a.startTime = onStep(ms); } /* the CSS loops only: a walk under way keeps its own time */
 
   /* the typing rig: a wrapper with the body's movement on the body's clock, over it a head and two hands cut from the same picture (spec Changes 2026-11-01) */
-  /* spec 102 FR-257: the cabinet: one of the world's drawings, a strip of colour variants; the colour stays with the session */
-  function cabinetOf(dc, meta, cab, k, state) {
+  /* spec 102 FR-257, FR-306: the cabinet: one of the world's drawings, a strip of bodies in colour variants; the colour (with its marquee
+     trim and side art) stays with the session, the body follows the seat order, so neighbours differ */
+  function cabinetOf(dc, meta, cab, k, state, body) {
     dc.classList.toggle('st-idle', state === 'idle'); /* FR-260: dim by opacity: a shade would darken the floor beside it too */
     const kind = cab.gw === meta.monitor.big.glass[2] ? 'big' : cab.gw === meta.monitor.small.glass[2] ? 'small' : 'narrow', m = meta.monitor[kind];
     let h = 0; for (const c of k) h = (h * 31 + c.charCodeAt(0)) >>> 0;
-    const url = 'url("' + WD + m.file + '")', size = m.cells * 100 + '% 100%', pos = ((h % m.cells) / Math.max(1, m.cells - 1)) * 100 + '% 0';
+    const nb = m.bodies || 1, cell = ((body || 0) % nb) * (m.cells / nb) + (h % (m.cells / nb));
+    const url = 'url("' + WD + m.file + '")', size = m.cells * 100 + '% 100%', pos = (cell / Math.max(1, m.cells - 1)) * 100 + '% 0';
+    dc.dataset.body = String(cell / (m.cells / nb) | 0);
     if (dc.style.backgroundImage !== url) dc.style.backgroundImage = url;
     if (dc.style.backgroundSize !== size) dc.style.backgroundSize = size;
     if (dc.style.backgroundPosition !== pos) dc.style.backgroundPosition = pos;
@@ -295,6 +299,7 @@
     let ro = stage.querySelector(':scope > .ro');
     if (!ro) { stage.textContent = ''; ro = document.createElement('div'); ro.className = 'ro'; stage.appendChild(ro); ro.addEventListener('click', forward); wireZoom(ro); }
     ro.style.width = px(lay.width); ro.style.height = px(lay.height);
+    LAY_G = lay.cabinet ? lay.g || 0 : 0;
     if (lay.g) setVar(ro, '--ro-g', String(lay.g)); /* spec 102 FR-255: one integer scale for the world's art */
     ro.dataset.set = set; ro.dataset.world = world; ro.dataset.u = String(Math.round(lay.u)); ro.dataset.face = String(Math.round(lay.faceH * 10) / 10); ro.dataset.big = lay.big ? '1' : '0';
     ro.classList.toggle('still', !!opts.still);
@@ -373,7 +378,7 @@
           const ini = el(art, 'i:' + k, 'div', 'ro-initials'); const r = 0.5 * lay.u; box(ini, { x: d.slot.x + 0.05 * d.slot.w + 0.42 * lay.u - r / 2, y: d.desk.y - r - 6, w: r, h: r }); ini.dataset.for = k; text(ini, initials(a.name));
         }
         const dc = el(art, 'd:' + k, 'div', 'ro-desk' + (d.narrow ? ' narrow' : '') + (a.asleep ? ' asleep' : '') + (lay.cabinet ? ' ro-cab' + (d.facing === 'right' ? ' mir' : '') : '')); box(dc, d.desk); dc.dataset.for = k;
-        if (lay.cabinet) cabinetOf(dc, meta, lay.cabinet, k, d.state);
+        if (lay.cabinet) cabinetOf(dc, meta, lay.cabinet, k, d.state, d.body);
         else { const dk = dc.firstChild || dc.appendChild(document.createElement('img')); dk.style.height = px(d.desk.full); img(dk, 'desk.webp'); }
         /* the monitor: the glass in the art; its text sits with the chrome, above the lights (FR-044), and repaints on its own (FR-033) */
         const sc = el(art, 'm:' + k, 'div', 'ro-screen st-' + d.state + (lt.glow === 'off' ? ' off' : '') + (a.asleep ? ' asleep' : '')); box(sc, d.screen); sc.dataset.for = k;
@@ -421,7 +426,7 @@
           if (a.helpers.length) { const h = document.createElement('span'); h.className = 'ro-help'; h.textContent = '+' + a.helpers.length + ' '; a.helpers.slice(0, 3).forEach((s) => h.insertAdjacentHTML('beforeend', dotHTML(s))); l1.appendChild(h); }
           const l2 = document.createElement('span'); l2.className = 'ro-l2';
           l2.insertAdjacentHTML('beforeend', dotHTML(d.state));
-          l2.appendChild(document.createTextNode(' ' + (a.word + (a.task ? ' · ' + a.task : ''))));
+          l2.appendChild(document.createTextNode(' ' + [a.word, a.task].filter(Boolean).join(' · ')));
           pl.appendChild(l1); pl.appendChild(l2);
         }
       }
@@ -534,7 +539,10 @@
     const avoid = A(lay);
     if (EMPTY_BOX) avoid.push(EMPTY_BOX);
     /* with more than four agents the monitors are read from afar: a slip takes a spot clear of them, else a smaller variant (the pill); with big screens (four or fewer) it may sit over one */
-    const softAvoid = lay.big ? [] : lay.zones.flatMap((z) => z.desks.map((d) => d.screen));
+    const screens = lay.zones.flatMap((z) => z.desks.map((d) => d.screen));
+    const HARD = lay.cabinet ? [...screens, ...lay.zones.flatMap((z) => z.desks.flatMap((d) => [d.desk, d.person]).filter(Boolean))] : []; /* what no slip may ever cover in the arcade */
+    if (lay.cabinet) avoid.push(...HARD); /* spec 102, owner 2026-11-03: in the arcade nothing covers a cabinet or a person */
+    const softAvoid = lay.big || lay.cabinet ? [] : screens;
     const bounds = { x: 4, y: lay.lobbyH + 4, w: lay.width - 8, h: lay.height - lay.lobbyH - 8 };
     const door = (id) => { const f = lay.fixtures.find((x) => x.id === id); return f ? { x: f.slot.x + f.slot.w / 2, y: lay.lobbyH } : { x: lay.width / 2, y: lay.lobbyH }; };
     const hits = (r) => avoid.some((q) => r.x < q.x + q.w && q.x < r.x + r.w && r.y < q.y + q.h && q.y < r.y + r.h);
@@ -556,9 +564,11 @@
         e.style.width = ''; e.style.height = '';
         const size = () => ({ w: Math.ceil(e.offsetWidth) + 2, h: Math.ceil(e.offsetHeight) + 2 });
         let r = size();
-        if (e._at && e._v === v && e._at.w >= r.w && e._at.h >= r.h && !hits({ x: e._at.x, y: e._at.y, w: r.w, h: r.h }) && e._at.x + r.w <= bounds.x + bounds.w && e._at.y + r.h <= bounds.y + bounds.h) { avoid.push({ x: e._at.x, y: e._at.y, w: r.w, h: r.h }); e.dataset.variant = v; return true; }
+        const laneFree = () => lay.lane && v === 'pill' && !(e._at.y >= lay.lane.y && e._at.y + r.h <= lay.lane.y + lay.lane.h + 0.01) && P(r, avoid, lay.lane, anchor); /* a pill docked before its font loaded goes back to the lane */
+        if (e._at && e._v === v && e._at.w >= r.w && e._at.h >= r.h && !hits({ x: e._at.x, y: e._at.y, w: r.w, h: r.h }) && !laneFree() && e._at.x + r.w <= bounds.x + bounds.w && e._at.y + r.h <= bounds.y + bounds.h) { avoid.push({ x: e._at.x, y: e._at.y, w: r.w, h: r.h }); e.dataset.variant = v; return true; }
         for (let pass = 0; pass < 2; pass++) { /* the second pass re-places with the box it really has (a late font can widen the text) */
-          const at = P(r, avoid.concat(softAvoid), bounds, anchor) || (lay.big || v === 'pill' ? P(r, avoid, bounds, anchor) : null); /* a one-line pill may sit over a monitor when there is no other spot */
+          const dock = () => P(r, avoid, { x: bounds.x, y: bounds.y + bounds.h - r.h, w: bounds.w, h: r.h }, anchor) || (lay.lane && P(r, HARD, lay.lane, anchor)) || P(r, HARD, bounds, anchor, 4) || { x: bounds.x + bounds.w - r.w, y: bounds.y + bounds.h - r.h, w: r.w, h: r.h }; /* last: over another slip or a sign, never a cabinet, screen or person while any such spot exists (pre-review of #1079) */
+          const at = (lay.lane && v === 'pill' ? P(r, avoid, lay.lane, anchor) : null) || P(r, avoid.concat(softAvoid), bounds, anchor) || (lay.big || v === 'pill' ? P(r, avoid, bounds, anchor) : null) || (lay.cabinet && v === 'pill' ? dock() : null); /* a one-line pill may sit over a monitor when there is no other spot; in the arcade it docks at the floor's bottom edge, never hidden */
           if (!at) break;
           e.style.left = px(at.x); e.style.top = px(at.y);
           const r2 = size();
@@ -589,7 +599,7 @@
           for (const g of Q.folded) { const b = btn(g.text, '', 'sl-fold', { slipact: 'open', slipid: g.id }); e.appendChild(b); }
           if (Q.more > 0) e.appendChild(btn('+' + Q.more + ' more \u00B7 Open the inbox', '', 'sl-more', { slipact: 'inbox' }));
         },
-      }, door('boss'), ['full', 'pill'], 'inbox');
+      }, door('boss'), lay.cabinet ? ['pill'] : ['full', 'pill'], 'inbox'); /* the arcade: one line, the inbox holds the rest */
     }
     if (slips.limit) {
       const L = slips.limit;
@@ -605,7 +615,7 @@
           row.appendChild(btn('Show in chat', 'Open the chat', 'link', { slipact: 'open', slipid: L.id, slipfocus: 'limit' }));
           e.appendChild(row);
         },
-      }, door('bank'), ['full', 'pill'], 'limit-card');
+      }, door('bank'), lay.cabinet ? ['pill'] : ['full', 'pill'], 'limit-card');
     }
     for (const B of slips.elicit || []) {
       const d = lay.zones.flatMap((z) => z.desks).find((x) => x.id === B.id);
@@ -661,7 +671,7 @@
 
   /* ---- FR-030..FR-035: the monitors ---- */
   function screenBox(chrome, d, k) {
-    const L = X(), f = L.screenFit(d.glass), box2 = el(chrome, 'st:' + k, 'div', 'ro-stext st-' + d.state + (f.small ? ' small' : '') + (d.state === 'asleep' ? ' off' : '') + (OFF.has(k) ? ' ro-off' : '')); box(box2, d.glass); attr(box2, 'aria-hidden', 'true');
+    const L = X(), f = L.screenFit(d.glass, CUR_G()), box2 = el(chrome, 'st:' + k, 'div', 'ro-stext st-' + d.state + (f.small ? ' small' : '') + (d.state === 'asleep' ? ' off' : '') + (OFF.has(k) ? ' ro-off' : '')); box(box2, d.glass); attr(box2, 'aria-hidden', 'true');
     let s = SCR.get(k);
     if (!s || s.box !== box2) { if (s) clearTimeout(s.timer); s = { box: box2, last: -Infinity, timer: 0, dirty: true, away: false, sig: '', fit: '' }; SCR.set(k, s); }
     const fit = JSON.stringify(f);
@@ -699,7 +709,7 @@
   function paintScreen(id) {
     const s = SCR.get(id), d = CUR && CUR.desks.get(id), a = CUR && CUR.agents.get(id);
     if (!s || !d || !a || !CUR.screenOf) return;
-    const L = X(), data = CUR.screenOf(id, d.state, a.word), f = L.screenFit(d.glass);
+    const L = X(), data = CUR.screenOf(id, d.state, a.word), f = L.screenFit(d.glass, CUR_G());
     if (data.off) { if (s.painted) { s.box.textContent = ''; s.painted = false; s.lines = null; s.bars = null; s.caret = null; } s.sig = ''; return; }
     const sig = JSON.stringify([data.lines, data.caret, s.fit]);
     if (sig === s.sig) return;

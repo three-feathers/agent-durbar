@@ -199,7 +199,15 @@ The new fields go into `worldpack.ts` (T171's list) when #955 lands; until then 
 
 ### RA5: Light (one PR)
 
-- [ ] T217 `WORLD_SETS.retro` with day (Retro Pixel's values, moved) and night; `setWorld` and `worldContrast` take the light. Test: `test:theme-tokens`: every pair at AA in both lights and forced colours; a mutant dimming night's ink fails; cream surfaces at night [FR-263, SC-023].
+- [x] T273 Nothing covers a screen in the arcade; a pill with nowhere to go docks at the floor's bottom edge. Test: `shots-102-arcade` [FR-256, owner's look 2026-11-03].
+- [x] T274 A folder sign runs on over the free floor after its zone; a name keeps 8 characters. Test: `test-realoffice-aisles`, `shots-102-arcade` [FR-256].
+- [x] T267 Nobody cut by a cabinet: the place beside a cabinet fits the widest standing picture; asleep stands (replaced the same day: asleep sits, T272). Test: `test-realoffice-aisles`, `shots-102-arcade` painted pixels [FR-256, owner 2026-11-03].
+- [x] T268 The floor is used: a best-fill plan in staggered rows (a zigzag was tried and removed, see the spec), a short last row in the middle, never two folders mixed. Test: `test-realoffice-aisles`, `shots-102-arcade` [FR-256, owner 2026-11-03].
+- [x] T269 Four cabinet bodies in four colours, with marquee trim and side art; the body follows the seat order. Test: `test-realoffice-assets`, `test-realoffice-aisles`, `shots-102-arcade` [FR-306].
+- [x] T270 A folder of 4 or fewer is one group under one sign; a small room stands close and centred, people outside; the bodies' silhouettes differ. Test: `test-realoffice-aisles`, `shots-102-arcade` [FR-256, FR-306, relayed review 2026-11-03].
+- [x] T271 A small room is drawn bigger: scale up to 5 with 4 agents or fewer, the plan covering the most floor, text and tickets growing with the scale. With 4 or fewer the lobby may come down to 116 px, chosen with the plan by coverage (option A). Test: `test-realoffice-aisles` [FR-256, owner 2026-11-03].
+- [x] T272 The drawn asleep frames merged and kept by the full build; no plate says "undefined". Test: `shots-102-arcade` [FR-259, relayed 2026-11-03].
+- [ ] T217 (withdrawn in part, owner 2026-11-03: night only; one dark `WORLD_SETS.retro`, `data-ui`, built; no light choice) `WORLD_SETS.retro` with day (Retro Pixel's values, moved) and night; `setWorld` and `worldContrast` take the light. Test: `test:theme-tokens`: every pair at AA in both lights and forced colours; a mutant dimming night's ink fails; cream surfaces at night [FR-263, SC-023].
 - [ ] T218 `wall-night`, `floor-night`, `welcome-night` in the drawing; only the shown light fetched; switching drops the other. Test: `shots-102-arcade` request log; memory row with `check-perf --record` [FR-252, SC-023].
 - [ ] T219 **Light** group under the entry: radios, keyboard, screen reader, tokens; stored beside `world`; hidden for any other world with no tab stop; default Day; bad value Day; never follows the system (`prefers-color-scheme` emulated dark changes nothing). Test: `shots-102-arcade` at both sizes; `Layout` byte-equal in both; `test:realoffice-layout` for parsing `__proto__`, numbers, long strings; a mutant following the system fails [FR-251, SC-023].
 

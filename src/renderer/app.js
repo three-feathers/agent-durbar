@@ -592,9 +592,9 @@ function syncWalkers(){
 function roomAiu(r){const f=folderOfRoom(r.id),t=LEDGER.room(r.id,f&&f.key),usd=usdEstimates(r.id),m=t.calls&&!(t.unreported>=t.calls&&!usd)?approx(t.nano/1e9*AIU_USD+usd):'';return t.calls&&!demoOn?{long:m||window.DurbarUsage.fmtTotal(t),tip:window.DurbarUsage.tooltip(t,{scope:'folder',since:LEDGER.since(),run:LEDGER.roomRun(r.id)})}:null;}
 
 /* spec 052 FR-076: one word per status on every screen (pills, list, header, palette, counters); longer phrases only in sentences */
-const LABELS={working:'Working',thinking:'Thinking',waiting:'Waiting',idle:'Idle',error:'Error',done:'Done'};
+const LABELS={working:'Working',thinking:'Thinking',waiting:'Waiting',idle:'Idle',error:'Error',done:'Done',limit:'Limit reached',asleep:'Asleep'}; /* limit and asleep too: a state with no label of its own never reads "undefined" (relayed, 2026-11-03) */
 const vis = a => a.paused ? 'idle' : a.state;
-const label = (a,short) => a.paused ? 'Paused' : (a.label || LABELS[a.state]);
+const label = (a,short) => a.paused ? 'Paused' : (a.label || LABELS[a.state] || '');
 /* spec 052 FR-062: Working (or Thinking) while its recent tool calls failed in a row (the mood's "dizzy" streak) reads "Failing", in the waiting
    colours (.st-failing); the card keeps its is-working look and its place in the status filters. Main agents only (the tracker's scope). */
 const isFailing = a => !!a&&!a.parent&&!!a.live&&!a.paused&&(a.state==='working'||a.state==='thinking')&&MOOD.failStreak(a.id)>=MOODS.DIZZY_STREAK;

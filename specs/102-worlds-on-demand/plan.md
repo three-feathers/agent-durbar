@@ -218,14 +218,14 @@ crew.js  peopleFor; AISLE_POSE with fallback
 
 | Moment | In the arcade |
 |---|---|
-| first-run | The hall with its cabinets dark, the flat card word for word on a cream plate |
+| first-run | The hall with its cabinets dark, the flat card word for word on a plate (dark since 2026-11-03: night only) |
 | empty-office | The flat sentence on a plate over three dark cabinets |
-| lounge | Cabinet off, shade, `rest` behind the console, `z z`, FR-120's plate |
-| walk | Pixel dissolve (FR-262); a post-it at the cabinet, square, in the world's cream |
+| lounge | Cabinet off, shade, the person on their drawn `sit` frame beside it (2026-11-03; was `rest` behind the console), `z z`, FR-120's plate |
+| walk | Pixel dissolve (FR-262); a note at the cabinet, an arcade ticket since 2026-11-03: a dark card with a neon edge |
 | inbox | Slips at the big attract-mode cabinet (Boss) |
 | limit-card | A slip or pill at the Bank's coin vault; chat card in tokens |
 | elicitation | A pixel bubble with exactly **Answer in chat** / **Show in chat** |
-| coffee-bar | Only the agent on a break at the change machine; tent card as a cream plate |
+| coffee-bar | Only the agent on a break at the change machine; tent card as a plate (dark since 2026-11-03) |
 | floor-jumps | The ride in hard steps; the lift as the plain panel of the mockup; instant under reduced motion |
 
 The other 17 cells are the same shared code, in tokens, or a `person`, `fixture` or `desk-screen` block already drawn; each is looked at and marked in the registry, not assumed.

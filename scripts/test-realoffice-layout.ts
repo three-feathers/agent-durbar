@@ -610,6 +610,11 @@ for (const [W, H] of SIZES.slice(0, 2)) {
   assert.strictEqual(screenFit({ w: 300, h: 201 }).font, 13, 'over 200 px: 13 px');
   assert.ok(screenFit({ w: 300, h: 170 }).rows >= 8 && screenFit({ w: 300, h: 150 }).rows >= 8, 'SC-003: a big screen holds at least 8 lines');
   assert.strictEqual(screenFit({ w: 4, h: 4 }).bars, 0, 'no room: no bars, no negative');
+  /* spec 102 (owner, 2026-11-03: a small room drawn bigger): in the arcade above g = 3 the screen text grows with the art, never under 10.5 px;
+     at g = 3 or none, the size rule above holds unchanged (pre-review of #1079: untested) */
+  assert.deepStrictEqual([screenFit({ w: 300, h: 200 }, 4).font, screenFit({ w: 375, h: 250 }, 5).font], [14.5, 18.5], 'g 4: 14.5 px, g 5: 18.5 px');
+  assert.deepStrictEqual([screenFit({ w: 300, h: 201 }, 3).font, screenFit({ w: 300, h: 201 }, 0).font], [13, 13], 'g 3 and no g: the size rule');
+  for (const g of [4, 5]) { const f = screenFit({ w: 75 * g, h: 50 * g }, g); assert.ok(f.font >= 10.5 && f.lh > f.font && f.rows >= 1, `g ${g}: readable, one row at least`); }
   // FR-030, FR-035: what a state shows
   const log = [{ n: 3, k: 'cmd', t: 'Running x' }, { n: 4, k: 'ok', t: 'Reading y' }];
   const q = [{ k: 'plain', t: 'Allow this?' }], rep = [{ k: 'reply', t: 'All done.' }];
