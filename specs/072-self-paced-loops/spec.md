@@ -57,7 +57,7 @@ Phase 1 needs neither spec 041 nor any MCP server. The agent paces the loop with
 - **R2 Off by default.** A loop starts only from a user action, or after the user's explicit OK. Its passes keep the session's permission mode and never raise it.
 - **R3 Pauses, never wakes into a wait.** A loop holds while the agent waits for a person (a question or a permission), during a coffee break (a usage limit, spec 068) and at Durbar's spending cap. It never sends a pass into any of these.
 - **R4 Visible and ends cleanly.** Every wake shows its reason on the desk and in Schedules. Quitting the app or pressing Stop ends the loop. It does not come back after a restart unless the user says so.
-- **R5 Durbar holds the limits.** Durbar enforces the minimum delay, maximum delay, maximum passes and a credit cap. The agent can only ask within them.
+- **R5 Durbar holds the limits.** *(Replaced 2026-11-01, owner: warn, do not limit; see *Changes*.)* Durbar enforces the minimum delay, maximum delay, maximum passes and a credit cap. The agent can only ask within them.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -156,7 +156,7 @@ The agent gets two tools, `schedule_next(minutes, reason)` and `stop_loop(reason
 
 - **FR-001** `[PLANNED]` A loop is a `Schedule` (spec 044) with a `loop` field. It needs a session `target` (FR-014) and a `prompt` (at most 2,000 characters). It is stored in `durbar-schedules.json`, counts toward `MAX_SCHEDULES`, and uses the same `Scheduler`, its single timer and its `send` path. No second scheduler, timer list or store.
 - **FR-002** `[IMPLEMENTED]` (test: `scripts/test-schedules.ts`) `loop` holds the user's limits: `minDelay`, `maxDelay`, `defaultDelay` (minutes), `maxPasses`, `endAt` (epoch ms), and the optional `cap` that 044 FR-015 already defines. It also holds main's own state, which is never taken from the renderer: `passes`, `inPass`, `lastAsk` {`minutes`, `reason`, `source`: `agent` | `default` | `clamped`}, `noPaceStreak`, `hold` (not saved), and `ended` {`at`, `reason`}.
-- **FR-003** `[IMPLEMENTED]` (test: `scripts/test-schedules.ts`) Limits, checked in main:
+- **FR-003** `[IMPLEMENTED]` (as written below, in today's code; **changed by the owner rule of 2026-11-01, see *Changes* 2026-11-01 and 2026-11-03: these ranges become default warning thresholds, except `minDelay` ≥ 5 and `maxPasses` ≥ 1; the change is T042, not built**) (test: `scripts/test-schedules.ts`) Limits, checked in main:
   - `minDelay` is at least 5 (the 044 floor);
   - `maxDelay` is at most 1440;
   - `minDelay` ≤ `defaultDelay` ≤ `maxDelay`;
@@ -296,7 +296,7 @@ The agent gets two tools, `schedule_next(minutes, reason)` and `stop_loop(reason
 
 ## Owner answers (Paco, 2026-10-22)
 
-- **Q1 Delays (default / min / max):** (a) 30 / 5 / 60 min; the user may raise the max up to 1440 per loop.
+- **Q1 Delays (default / min / max):** (a) 30 / 5 / 60 min; the user may raise the max up to 1440 per loop. *(Owner rule 2026-11-01: 1440 is no longer a ceiling, only a warning threshold; see *Changes*.)*
 - **Q2 Passes, end time, cap:** (a) 12 passes, end 8 h after the start, cap 50 AI credits or $0.50, all required and editable within FR-003.
 - **Q3 A pass with no pace request:** (a) wait the default delay once; two passes in a row with no request end the loop (FR-012).
 - **Q4 Apps that report no spend in the cap's unit:** (a) allow the loop, bounded by passes and end time, with a clear note in the form and the row.
@@ -307,6 +307,24 @@ The agent gets two tools, `schedule_next(minutes, reason)` and `stop_loop(reason
 - **Q9 Where "Loop this…" lives, and quiet hours:** (a) the session's card/mode menu (beside *Plan first*) and the chat's Schedules dialog, one shared form; quiet hours later.
 
 ## Changes
+
+### 2026-11-03: the code to change for "warn, do not limit" is T042
+
+The 2026-11-01 entry above says the user may raise a loop's limits after a warning, and records that the code still refuses. This entry names that code as of `main` on 2026-11-03, so the work is not lost now that the PR that first recorded the conflict (#965, closed) is not read again. The defaults are `LOOP_DEFAULTS` (`src/shared/looppace.ts:9`: `maxDelay` 60, `maxPasses` 12, `endHours` 8); the hard bounds are `looppace.ts:11-13` (`LOOP_MAX_DELAY` 1440, `LOOP_MAX_PASSES` 100, `LOOP_MAX_HOURS` 24). **T042** makes **1440 / 100 / 24 h the warning thresholds** (the user is warned above the defaults' former ceilings and may go past them; no number above them is refused), and leaves the defaults in `LOOP_DEFAULTS` as what the form starts with. Places: `src/main/schedules.ts` `cleanLoopLimits` (about `:184-194`, drops a loop past the bounds), the `endAt` check at save (about `:1005`, refuses past `LOOP_MAX_HOURS`) and `restartLoop` (about `:765`, which **clamps** the new span to `LOOP_MAX_HOURS`; it refuses nothing, but would silently cut a 48 h loop on *Start again*). `minDelay` of at least 5, `maxPasses` of at least 1, a pass limit and an end time on every loop stay.
+
+`cleanLoopLimits` is also how a stored schedule is read (`cleanLoop` from `cleanSchedule`, about `:200` and `:236`): relaxing it must keep reading files saved before the change, and a build older than T042 drops a loop saved with raised limits when it opens the file (a downgrade loses that row; accepted, say so in the release notes of T042). The stored `passes` counter is separately capped (`count`, at most 1,000,000). T042 depends on T006 (`loopSupport.enabled`, else `save` refuses every loop) and on T010 (the loop form that shows the warning).
+
+`[KNOWN GAP]` Nothing here is built; today's code still refuses all of the above, and the loop's own cap (FR-018, spec 011) is unchanged. No organization limit on loops exists: spec 076 does not mention loops, so loop limits are not enforced by it.
+
+### 2026-11-01: loop limits are defaults the user can raise, never a refusal; a run limit cannot be off (owner decision, Vikram: warn, do not limit)
+
+Owner rule of Vikram, restated 2026-11-01 (matching Paco): Durbar warns and lets the user override; it does not cap a person's use. Replaces R5 ("Durbar holds the limits"), FR-003's refusals, and the *Open* conflict that PR #965's table recorded.
+
+- **R5, new wording:** Durbar sets **defaults** (FR-003's list) and the agent can only ask within the limits the user set for that loop. The **user** may raise the defaults and the run limit (passes, end time, cap) per loop, after a warning that says what it could cost (the cap, or "no cap" stated plainly if none). A number above FR-003's former ceilings (1440 min, 100 passes, 24 h) is warned about, not refused. `[KNOWN GAP]` Reading the owner's rule as reaching those ceilings is the author's; the owner has not said it in those words.
+- **A run limit cannot be switched off:** a loop always carries a pass limit (and an end time) that the user can raise but not remove, so a loop never has "no limit at all". This is the continuation rule (spec 099 S1) applied to loops; the agent still cannot change any limit (the *Prompt injection* paragraph stands).
+- **FR-003:** the ranges are the **default warning thresholds**, no longer refusals, except `minDelay` of at least 5 (the spec 044 floor) and `maxPasses` of at least 1.
+- **`[KNOWN GAP]`** The code still refuses: `src/shared/looppace.ts:11-13` (`LOOP_MAX_DELAY`, `LOOP_MAX_PASSES`, `LOOP_MAX_HOURS` as hard bounds), `src/main/schedules.ts` at the `loop` validation (the `LOOP_MAX_DELAY`/`LOOP_MAX_PASSES` check) and at the `endAt` check (`LOOP_MAX_HOURS`). Changing them is task **T042**, with the warning in the loop form and tests that a raised number is accepted and that a loop with no pass limit is not.
+- Loops no longer carry a per-pass mode: a pass runs in the session's mode (R2, FR-006 stand; spec 044 *Changes*, 2026-11-01).
 
 ### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
 

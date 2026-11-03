@@ -3,7 +3,7 @@
   "name": "Check User Theme",
   "author": "Agent Durbar tests",
   "version": "1.0",
-  "ui": "court-japanese",
+  "ui": "retro",
   "scene": "office",
   "tokens": { "--bg": "#efe9dc", "--surface": "#fffdf7", "--tint-sage": "#e6eedf", "--wall-sage": "#6b7d4a", "--chair": "#83769c" },
   "words": { "place-terminal": "Terminal room", "lobby-label": "Hall: the places where agents work" },

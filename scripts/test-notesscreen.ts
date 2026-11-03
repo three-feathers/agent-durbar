@@ -4,6 +4,7 @@
  * No credits, no disk.
  */
 import * as assert from 'assert';
+import { assertLinearShape } from './redact-growth-lib';
 import * as path from 'path';
 import { redact } from '../src/shared/redact';
 import type { Note } from '../src/shared/notes';
@@ -104,13 +105,12 @@ assert.deepStrictEqual(NSX.neighbours(null, 'a'), { next: '', prev: '' });
 // ---- a folder at the cap: 300 notes of 16,000 characters, grouped and searched well under a second (generous: CI machines vary) ----
 {
   const big = Array.from({ length: 300 }, (_, i) => mk(String(i), { title: 'Title ' + i + ' ünï', text: ('word ' + i + ' ').repeat(2000).slice(0, 16000), done: i % 3 === 0 }, i));
-  const t0 = Date.now();
   const g = NSX.groups(big);
   const r = NSX.filter(g, 'word 299', DN.search, rank, mask);
-  const ms = Date.now() - t0;
   assert.strictEqual(g.open.length + g.done.length, 300);
   assert.ok(r.open.length + r.done.length >= 1, 'the search finds the note');
-  assert.ok(ms < 5000, 'grouped and searched 300 full notes in ' + ms + ' ms');
+  // 16 times the notes against the same run (spec 012 T138): the length of the string is the number of notes
+  assertLinearShape('group and search notes', (x) => void NSX.filter(NSX.groups(big.slice(0, x.length)), 'word 299', DN.search, rank, mask), (n) => '.'.repeat(n), 300);
 }
 
 // ---- the wiring the screen relies on (static: the drawer's paths, no new popup, no path sent) ----

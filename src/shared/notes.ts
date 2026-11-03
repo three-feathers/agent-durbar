@@ -36,10 +36,7 @@ export const NOTES_LIMITS = (() => {
    */
   const noteMdBytes = 3 * (textChars + titleChars) + Math.ceil(textChars / 17) + 1 + 256;
   const mdBytes = notesPerFolder * noteMdBytes + 1_024;
-  /** FR-051: the most read of a worktree's or submodule's `.git` file and of its `commondir` file, and of `info/exclude` (files Durbar did not write). */
-  const gitFileBytes = 4_096;
-  const excludeBytes = 1_048_576;
-  return { textChars, titleChars, notesPerFolder, tombstones, folderNameChars, inputChars, titleInputChars, ordMax, noteExtraBytes, tombstoneBytes, docExtraBytes, noteJsonBytes, storeBytes, noteMdBytes, mdBytes, gitFileBytes, excludeBytes } as const;
+  return { textChars, titleChars, notesPerFolder, tombstones, folderNameChars, inputChars, titleInputChars, ordMax, noteExtraBytes, tombstoneBytes, docExtraBytes, noteJsonBytes, storeBytes, noteMdBytes, mdBytes } as const;
 })();
 
 export type NoteFrom = 'agent' | 'user' | 'selection' | 'typed' | 'file';
@@ -425,7 +422,7 @@ export interface NotesFileSwitch { on: boolean; disabled?: string }
 /** `notes:fileCount` (FR-050, only while turning on): notes the existing file would add, whether it exists, whether the folder is in a git repository. */
 export type NotesFileCount = { ok: true; count: number; exists: boolean; strayText: number; repo: boolean } | NotesFail;
 /** `notes:setFile` (FR-050, FR-055): the switch's new position, the mirror's state after turning on, and a short line for the screen. */
-export type NotesSetFile = { ok: true; on: boolean; file?: NotesFileState; message?: string; demo?: boolean } | (NotesFail & { excludeFailed?: true });
+export type NotesSetFile = { ok: true; on: boolean; file?: NotesFileState; message?: string; demo?: boolean } | NotesFail;
 export type NotesView = { ok: true; fingerprint: string; folderName: string; notes: Note[]; max: number; readOnly?: string; session?: string; file?: NotesFileState; fileSwitch?: NotesFileSwitch } | NotesFail;
 export type NotesWrote = { ok: true; fingerprint: string; note?: Note; existing?: boolean; count?: number } | NotesFail;
 /** FR-048 (T034b): what *Export…* did: the count and the chosen file's base name (never its folder), a cancel, or the demo's answer. */

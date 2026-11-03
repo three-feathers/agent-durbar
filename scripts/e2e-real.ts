@@ -32,7 +32,7 @@ import type { ModelOption } from '../src/shared/modelswitch';
 type Step = 'install' | 'detect' | 'sign-in' | 'models' | 'turn';
 interface Row { app: SetupKind; os: string; ok: boolean; failedAt?: Step; route?: string; version?: string; signIn?: string; models?: number; sampleModels?: string; readOnly?: string; model?: string; answer?: string; usage?: string; secs: number; detail?: string }
 
-const APPS: { kind: SetupKind; model?: string; descriptor: { create(): AgentAdapter } }[] = [
+export const APPS: { kind: SetupKind; model?: string; descriptor: { create(): AgentAdapter } }[] = [
   { kind: 'copilot', model: 'auto', descriptor: COPILOT_DESCRIPTOR },
   { kind: 'claude', model: 'haiku', descriptor: CLAUDE_DESCRIPTOR },
   { kind: 'codex', descriptor: CODEX_DESCRIPTOR },
@@ -55,6 +55,11 @@ export function cheapCodex(models: ModelOption[], env: NodeJS.ProcessEnv = proce
   const effort = envEffort && EFFORT_SHAPE.test(envEffort) ? envEffort
     : pick?.efforts.includes(CHEAP_EFFORT) ? CHEAP_EFFORT : pick?.efforts[0];
   return { ...(pick ? { model: pick.id } : {}), ...(effort ? { effort } : {}) };
+}
+
+/** Spec 062 delta 2026-11-02: only where the spec records that the runner cannot have the app's OS sandbox (Windows: Claude Code has none, Copilot needs BaseContainer) may the check take "Continue without the OS sandbox". Elsewhere a sandbox that cannot start is a regression and the row fails. */
+export function mayContinueWithoutSandbox(platform: string, kind: SetupKind): boolean {
+  return platform === 'win32' && (kind === 'claude' || kind === 'copilot');
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
@@ -159,6 +164,7 @@ async function check(app: (typeof APPS)[number], noTurn: boolean): Promise<Row> 
     row.readOnly = ro.ok ? 'ok' : ro.detail;
     const t = ro.ok || app.kind !== 'codex' ? ro : await turn(ad, app, events, 'allow', pick);
     row.answer = t.answer;
+    if (t.sandboxNote) row.readOnly = `${row.readOnly}; OS sandbox could not start, continued without it: ${t.sandboxNote}`;
     row.usage = t.usage;
     if (!t.ok) return fail('turn', t.detail);
   } catch (e) {
@@ -169,14 +175,38 @@ async function check(app: (typeof APPS)[number], noTurn: boolean): Promise<Row> 
   return { ...row, ok: true, secs: Math.round((Date.now() - t0) / 1000) };
 }
 
-async function turn(ad: AgentAdapter, app: (typeof APPS)[number], events: AgentEvent[], mode: 'read-only' | 'allow', pick: { model?: string; effort?: string }): Promise<{ ok: boolean; detail?: string; answer?: string; usage?: string }> {
+/** Spec 062 delta 2026-11-02: what happened in a turn that gave no answer, in a fixed vocabulary (event types and counts, status words, sandbox on/off), never message text. */
+function trace(events: AgentEvent[], sid: string): string {
+  const mine = events.filter((e) => e.sessionId === sid);
+  const counts = new Map<string, number>();
+  for (const e of mine) counts.set(e.type, (counts.get(e.type) ?? 0) + 1);
+  const statuses = mine.filter((e): e is Extract<AgentEvent, { type: 'status' }> => e.type === 'status').map((e) => e.status).join('>');
+  const sandbox = mine.filter((e) => e.type === 'sandbox').map((e) => ((e as { sandbox: unknown }).sandbox ? 'on' : 'off')).join('>');
+  return `events ${[...counts].map(([k, n]) => `${k}:${n}`).join(',') || 'none'}; status ${statuses || 'none'}${sandbox ? `; sandbox ${sandbox}` : ''}`;
+}
+
+export async function turn(ad: AgentAdapter, app: (typeof APPS)[number], events: AgentEvent[], mode: 'read-only' | 'allow', pick: { model?: string; effort?: string }, platform: string = process.platform): Promise<{ ok: boolean; detail?: string; answer?: string; usage?: string; sandboxNote?: string }> {
   {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), `durbar-e2e-${app.kind}-`));
     try {
+      let sandboxNote: string | undefined;
       const sid = await ad.start({ workspace: dir, permissionMode: mode, ...(pick.model ? { model: pick.model } : {}), ...(pick.effort ? { reasoningEffort: pick.effort } : {}), quiet: true });
+      const closed = (from: number): boolean => events.slice(from).some((e) => e.type === 'status' && (e.status === 'idle' || e.status === 'error') && e.sessionId === sid);
+      let from = events.length;
       await ad.send(sid, { text: 'Reply with only the word ok.' });
       const deadline = Date.now() + 180_000;
-      while (Date.now() < deadline && !events.some((e) => e.type === 'status' && (e.status === 'idle' || e.status === 'error') && e.sessionId === sid)) await sleep(250);
+      while (Date.now() < deadline && !closed(from)) await sleep(250);
+      // Spec 087 (delta 2026-11-02): when the app's OS sandbox cannot start on this runner, Durbar sends nothing and offers "Continue
+      // without the OS sandbox". The check takes that offer like a person would, records the reason in the row, and sends again, so
+      // the account and the turn are still proved.
+      const note = [...events].reverse().find((e) => e.type === 'sandbox' && e.sessionId === sid && e.notice?.actions.includes('continue')) as { notice?: { text: string } } | undefined;
+      if (note?.notice && !events.some((e) => e.type === 'output' && e.sessionId === sid)) sandboxNote = clean(note.notice.text);
+      if (sandboxNote && mayContinueWithoutSandbox(platform, app.kind) && ad.continueWithoutSandbox) {
+        await ad.continueWithoutSandbox(sid);
+        from = events.length;
+        await ad.send(sid, { text: 'Reply with only the word ok.' });
+        while (Date.now() < deadline && !closed(from)) await sleep(250);
+      }
       // the closing event of each message holds its full text; without one, the deltas are joined
       const outs = events.filter((e) => e.type === 'output' && e.sessionId === sid) as Array<{ delta?: string; final?: boolean; text?: string }>;
       const finals = outs.filter((e) => e.final && typeof e.text === 'string');
@@ -187,8 +217,8 @@ async function turn(ad: AgentAdapter, app: (typeof APPS)[number], events: AgentE
       const usage = use.length ? `${use.reduce((s, u) => s + (u.inputTokens ?? 0), 0)} in / ${use.reduce((s, u) => s + (u.outputTokens ?? 0), 0)} out${use.some((u) => u.nanoAiu) ? `, ${(use.reduce((s, u) => s + (u.nanoAiu ?? 0), 0) / 1e9).toFixed(3)} AIU` : ''}${use.some((u) => u.costUsd) ? `, ≈ $${use.reduce((s, u) => s + (u.costUsd ?? 0), 0).toFixed(4)}` : ''}` : 'none reported';
       await ad.stop(sid).catch(() => undefined);
       if (err) return { ok: false, detail: clean(err.intent ?? 'error'), answer, usage };
-      if (!/\bok\b/i.test(out)) return { ok: false, detail: clean(`no "ok" in the answer: ${out.slice(0, 80) || '(empty)'}`), answer, usage };
-      return { ok: true, answer, usage };
+      if (!/\bok\b/i.test(out)) return { ok: false, detail: clean(`no "ok" in the answer: ${out.slice(0, 80) || '(empty)'}; ${trace(events, sid)}${sandboxNote ? `; sandbox note: ${sandboxNote}` : ''}`), answer, usage };
+      return { ok: true, answer, usage, ...(sandboxNote ? { sandboxNote } : {}) };
     } catch (e) {
       return { ok: false, detail: clean(e instanceof Error ? e.message : e) };
     } finally {
