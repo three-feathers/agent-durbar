@@ -1602,7 +1602,7 @@
     const r=await X.bridge.activityExport(format).catch(e=>({ok:false,error:String(e&&e.message||e)}));
     if(r&&r.cancelled)return;
     if(r&&r.ok)X.toast('Saved '+(r.count||0)+' row'+(r.count===1?'':'s')+(r.to?' to '+esc(r.to):'')+'.',2800).classList.add('ok');
-    else X.toast('Could not save the activity log: '+esc((r&&r.error)||'unknown error'),4200).classList.add('err');
+    else X.toast(esc((r&&r.error)||'Could not export the activity log.'),4200).classList.add('err'); /* the reason already starts "Could not export the activity: " (main), like the notes export */
   }
   async function clearActivity(){
     if(!X.bridge.activityClear)return;
