@@ -384,25 +384,34 @@ and one Settings switch (default on). Builds on PR #1073's launch strip and Sett
 ### Constitution check (delta)
 
 - I: spec delta and tasks first; implementation after PR #1073.
-- II: one optional adapter member each (`checkMcpSignIns`, `reconnectMcpForSignIn`) with capabilities; main stays vendor-free.
+- II: two optional adapter members (`checkMcpSignIns`, Codex-only `reloadMcpServers`) with capabilities; main stays vendor-free.
 - III: no token, credential file or keychain item is read, stored, logged or passed; the agent app refreshes. Only names and fixed words
   reach the window and logs; no shell.
-- IV: pure planner with an injected clock, fakes and the simulator; T176/T177 only with the owner's OK.
+- IV: pure planner with an injected clock, fakes and the simulator; T176/T177 ran 2026-11-03 with the owner's OK (0 AI credits).
 - V: two one-line status texts, no modal, 10.5px, both sizes with 15 agents.
 - VI: monotonic clock plus `powerMonitor` `resume` (sleep behaviour differs per OS); no paths or shell.
-- VIII: per-app `[KNOWN GAP]`s kept in the spec table until T176/T177.
+- VIII: the spec table carries T176/T177's `real:` results and the `[KNOWN GAP]`s they left (macOS, rotation, Windows).
 
 ### Design
 
-- `src/main/mcpsigninrefresh.ts`: `planMcpSignInRefresh(input)` (pure) and the attempt record; constants for 60 min, 5 s, 30 min.
-- Send path (`src/main/ipc/agents.ts` `agents:send`, the schedule send): plan -> `reconnectMcpForSignIn` (Copilot/Claude through
-  `mcpRestartOp`, Codex relaunch flag) -> `Promise.race` with the 5 s bound -> `sendOp`.
-- Turn end (`main.ts` status handler) sets the last-response mark and clears the attempt record; `powerMonitor` `resume` marks every chat.
-- Recheck: one main timer over `mcpRefreshOp(..., startNothing)`.
-- Launch: after detection, `checkMcpSignIns` per capable, signed-in app, into PR #1073's `launchUpdate`.
-- Settings: one boolean in the settings store and `AppSettingsView`.
+- `src/main/mcpsigninrefresh.ts`: `planMcpSignInRefresh(input)` (pure) with the attempt record, the per-server block (FR-210: cleared
+  by Sign in, Restart, a URL or switch change, never by a turn end), `allowReadOnly` (G5) and the macOS rule (G3); constants for 60 min,
+  5 s, 30 min.
+- Main: a per-chat `reconnecting` promise map that every send path awaits (window, scheduler, queued release; FR-209); a `refreshFlight`
+  map keyed by adapter, server name and URL so one reconnect runs per server across chats (FR-210); `mcpRestartOp`'s `running` Set becomes a
+  promise map so a second caller awaits the same restart.
+- Send path (`src/main/ipc/agents.ts` `agents:send`, the schedule send): plan -> per server, the flight's promise or a new one
+  (Copilot/Claude `restartMcpServer` through `mcpRestartOp`, then a re-read; Codex the new `reloadMcpServers`) -> `Promise.race` with the
+  5 s bound -> `sendOp`.
+- Copilot's automatic path calls `restartServer` only (no disable/enable fallback) and reads the result from `list` 1.5 s later (T177).
+- Turn end (`main.ts` status handler) sets the last-response mark; `powerMonitor` `resume` marks every chat.
+- Recheck: one main timer, chats one after the other and awaited, a tick skipped while the last runs, over `mcpRefreshOp(..., startNothing)`;
+  Copilot's `startNothing` rule also accepts a server that last reported `needs-auth`.
+- Launch: after detection, `checkMcpSignIns(names)` per capable, signed-in app (Codex `serverName` list, Claude `mcp_status` with only remote
+  servers in its `--mcp-config`, Copilot a no-message session with local servers disabled), into PR #1073's `launchUpdate`.
+- Settings: one boolean in the settings store and `AppSettingsView`; the wording of FR-213.
 
 ### Order
 
-T176 (owner's OK) any time; T178 -> T179 -> T180 -> T181 -> T184 -> T185 -> T183 -> T186 -> T187; T182 after T176; T177 (owner's OK)
-before the docs claim a refresh works; T188, T189 last.
+T176 and T177 done (2026-11-03). T178 -> T179 -> T180 -> T181 -> T184 -> T185 -> T183 -> T182 -> T186 -> T187; T188, T189 last. G5
+(Paco's answer) and G6 may change one planner input or FR-207's Copilot line; G3 waits for a Mac check.
