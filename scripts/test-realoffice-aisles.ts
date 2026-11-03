@@ -69,6 +69,7 @@ function problems(L: Layout, W: number, k: number): string[] {
   for (const z of L.zones) for (const d of z.desks) for (const r of [d.desk, d.stand as Rect, d.plate]) if (inter(z.sign, r, 1)) out.push(`sign of ${z.id} covers ${d.id}`);
   for (const f of L.fixtures) for (const d of ds) if (inter(f.slot, d.desk, 1) && f.slot.y + f.slot.h > d.desk.y) out.push(`fixture ${f.id} and cabinet ${d.id} overlap`);
   if (!L.scroll && L.height !== floor.y + floor.h) out.push('height');
+  if (L.lane) for (const z of L.zones) for (const r of [z.sign, ...z.desks.flatMap((d) => [d.desk, d.plate, d.stand as Rect])]) if (inter(r, L.lane, 0.5)) out.push(`the pill lane is not free: ${z.id}`); /* owner, 2026-11-03 */
   return out;
 }
 

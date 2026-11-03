@@ -15,6 +15,8 @@ export interface StandMeta { figH: number; poses: Record<string, [number, number
 /* `foot`: per pose, the horizontal centre of the planted feet as a share of the picture's width (spec 097 FR-191): the figure stands on it,
    not on the middle of its box, because a three-quarter view has its feet off the box's centre. */
 export interface RealMeta {
+  /** spec 102 FR-255: a pixel world's art (one integer scale); its lobby keeps people apart */
+  pixelArt?: boolean;
   seat: Record<string, SeatMeta>; stand: Record<string, StandMeta>;
   fixtures: Record<string, [number, number]>; fixtureTop?: Record<string, number>; floorLine: number;
   /** per person: the typing rig's head and hands, as fractions of the picture, with their pivots (spec Changes 2026-11-01) */
@@ -39,6 +41,8 @@ export interface FixtureBox { id: string; custom: boolean; art: Rect | null; slo
 export interface Layout {
   u: number; big: boolean; lobbyH: number; floorH: number; width: number; height: number; scroll: boolean; faceH: number;
   zones: ZoneBox[]; fixtures: FixtureBox[]; floorStrip: Rect;
+  /** `aisles` only: the free strip under the lobby where one-line pills go first */
+  lane?: Rect;
   /** `aisles` only: the pixel scale (CSS px per art pixel) and the cabinet's size */
   g?: number; cabinet?: { w: number; h: number; gw: number; gh: number; cols: number; rows: number };
 }
@@ -216,11 +220,11 @@ export function standHeight(meta: RealMeta, person: string): number {
  *  to 0.6; (4) the biggest crowds show fewer people and a "+N"; (5) empty places become a plate-only slot, from the right; (6) every
  *  fixture gets smaller still (down to 0.2); (7) plate-only slots narrow (their label ellipsed). An occupied place always keeps its
  *  fixture and at least one person. `scale` is each fixture's own scale. */
-export function lobbyWidths(fixtures: readonly number[], counts: readonly number[], W: number, vw: number): { x: number[]; w: number[]; fw: number[]; scale: number[]; step: number; shown: number[]; compact: boolean[]; gap: number } {
+export function lobbyWidths(fixtures: readonly number[], counts: readonly number[], W: number, vw: number, minStep = 0): { x: number[]; w: number[]; fw: number[]; scale: number[]; step: number; shown: number[]; compact: boolean[]; gap: number } {
   const n = fixtures.length, GAP = 4;
   const compact = fixtures.map(() => false), shown = counts.map((c) => Math.max(0, c | 0));
   const busy = (i: number): boolean => counts[i] > 0;
-  let step = 0.8 * vw, se = 1, sb = 1, cw = COMPACT_W;
+  let step = Math.max(0.8 * vw, minStep), se = 1, sb = 1, cw = COMPACT_W;
   const scaleOf = (i: number): number => (busy(i) ? sb : Math.min(se, sb));
   const fwOf = (i: number): number => (compact[i] ? cw : fixtures[i] * scaleOf(i));
   const wOf = (i: number): number => fwOf(i) + (shown[i] && !compact[i] ? 0.7 * vw + (shown[i] - 1) * step : 0);
@@ -229,7 +233,7 @@ export function lobbyWidths(fixtures: readonly number[], counts: readonly number
   let art = artOf((i) => !busy(i));
   if (total() > W && art) se = Math.max(0.55, 1 - (total() - W) / art);
   const many = shown.reduce((s0, c) => s0 + Math.max(0, c - 1), 0);
-  if (total() > W && many) step = Math.max(0.45 * vw, step - (total() - W) / many);
+  if (total() > W && many) step = Math.max(0.45 * vw, minStep, step - (total() - W) / many);
   art = artOf(busy);
   if (total() > W && art) sb = Math.max(0.6, 1 - (total() - W) / art);
   while (total() > W) {
@@ -261,7 +265,7 @@ function roLobby(meta: RealMeta, places: RealPlace[], W: number, Lb: number): { 
   const frontY = floorY + FRONT_DEPTH * (Lb - floorY); /* owner 10:48: the front floor plane, inside the floor strip */
   const webW = (meta.fixtures.web || [100, meta.floorLine])[0] * fs0;
   const full = places.map((p) => (!p.custom && roOwn(meta.fixtures, p.id) ? meta.fixtures[p.id][0] * fs0 : webW)); /* FR-027: a custom place is a kiosk the size of the Web fixture */
-  const al = lobbyWidths(full, places.map((p) => p.visitors.length), W, vw);
+  const al = lobbyWidths(full, places.map((p) => p.visitors.length), W, vw, meta.pixelArt ? 1.6 * vw : 0); /* spec 102, owner 2026-11-03: in a pixel world nobody stands half behind another; who does not fit is counted on the plate */
   const fixtures: FixtureBox[] = places.map((p, i) => {
     const x = al.x[i], fw = al.fw[i], compact = al.compact[i];
     const fs = fs0 * al.scale[i], fh = wallH * al.scale[i];

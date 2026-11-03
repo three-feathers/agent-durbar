@@ -83,12 +83,26 @@ module.exports = async (ctx) => {
         if(n)out.push(p.dataset.for+': '+n+' px on a cabinet or screen');}
       for(const s of document.querySelectorAll('#stage .ro-sign')){const b=s.getBoundingClientRect();if(b.left<ro.left-0.5||b.right>ro.right+0.5)out.push('a sign leaves the floor: '+s.textContent.slice(0,14));}
       return out;})()`), [], tag + ': every person whole beside the cabinet, signs on the floor');
+    /* owner, 2026-11-03: in the lobby nobody stands half behind another (painted pixels), every name chip reads in full, no two chips touch;
+       up to four people stand in one row */
+    assert.deepStrictEqual(await js(`(async()=>{const out=[],boxes=[];
+      for(const v of document.querySelectorAll('#stage .ro-visitor')){if(v.hidden||!v.getClientRects().length||v.tagName!=='IMG')continue;await v.decode().catch(()=>{});const b=v.getBoundingClientRect(),c=document.createElement('canvas');c.width=Math.max(1,Math.round(b.width));c.height=Math.max(1,Math.round(b.height));const x=c.getContext('2d');x.imageSmoothingEnabled=false;x.drawImage(v,0,0,c.width,c.height);const d=x.getImageData(0,0,c.width,c.height).data;let L=1e9,R=-1;for(let yy=0;yy<c.height;yy++)for(let xx=0;xx<c.width;xx++)if(d[4*(yy*c.width+xx)+3]>32){if(xx<L)L=xx;if(xx>R)R=xx;}if(R<0)continue;const mir=getComputedStyle(v).scale.startsWith('-');const l=mir?b.left+(c.width-1-R):b.left+L,r=mir?b.left+(c.width-1-L):b.left+R;boxes.push({l,r,t:b.top,bt:b.bottom,who:v.dataset.for||''});}
+      for(let i=0;i<boxes.length;i++)for(let j=i+1;j<boxes.length;j++){const a=boxes[i],b=boxes[j];if(a.l<b.r-1&&b.l<a.r-1&&a.t<b.bt&&b.t<a.bt)out.push('visitors overlap: '+a.who+' and '+b.who);}
+      const ch=[...document.querySelectorAll('#stage .ro-chip')].filter(c=>c.getClientRects().length);
+      for(const c of ch)if(c.dataset.full)out.push('a cut name chip: '+c.dataset.full);
+      for(let i=0;i<ch.length;i++)for(let j=i+1;j<ch.length;j++){const a=ch[i].getBoundingClientRect(),b=ch[j].getBoundingClientRect();if(a.left<b.right-0.5&&b.left<a.right-0.5&&a.top<b.bottom-0.5&&b.top<a.bottom-0.5)out.push('chips overlap: '+ch[i].textContent+' / '+ch[j].textContent);}
+      const ds=window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks);if(ds.length<=4&&new Set(ds.map(d=>Math.round(d.slot.y))).size>1)out.push('up to four people are not in one row');
+      return out;})()`), [], tag + ': the lobby: everyone whole, every name in full; up to four in one row');
     /* review of 2026-11-03: no slip, pill or bubble on a screen, and none hidden; a folder name keeps 8 characters (or all of it) */
-    assert.deepStrictEqual(await js(`(()=>{const out=[],R=e=>e.getBoundingClientRect(),hit=(a,b)=>a.left<b.right-0.5&&b.left<a.right-0.5&&a.top<b.bottom-0.5&&b.top<a.bottom-0.5,S=[...document.querySelectorAll('#stage .ro-screen,#stage .ro-person')].filter(e=>!e.hidden&&e.getClientRects().length).map(R);
+    const SLIPS = `(()=>{const out=[],R=e=>e.getBoundingClientRect(),hit=(a,b)=>a.left<b.right-0.5&&b.left<a.right-0.5&&a.top<b.bottom-0.5&&b.top<a.bottom-0.5,S=[...document.querySelectorAll('#stage .ro-screen,#stage .ro-person')].filter(e=>!e.hidden&&e.getClientRects().length).map(R);
       for(const e of document.querySelectorAll('#stage .ro-slip')){if(e.hidden){out.push('hidden: '+e.className);continue;}if(S.some(q=>hit(R(e),q)))out.push('on a screen or a person: '+e.textContent.slice(0,24));}
       const c=document.createElement('canvas').getContext('2d');
       for(const b of document.querySelectorAll('#stage .ro-sign>b')){if(b.scrollWidth<=b.clientWidth+0.5)continue;c.font=getComputedStyle(b).font;const t=b.textContent,need=c.measureText(t.slice(0,Math.min(8,t.length))+'\u2026').width;if(b.clientWidth+0.5<need)out.push('a folder name cut to '+Math.round(b.clientWidth)+' px: '+t);}
-      return out;})()`), [], tag + ': nothing on a screen or a person, every slip shown, folder names readable');
+      return out;})()`;
+    await H.until(`${SLIPS}.length===0`, 4000); /* a slip is placed again once its font has loaded */
+    assert.deepStrictEqual(await js(SLIPS), [], tag + ': nothing on a screen or a person, every slip shown, folder names readable');
+    /* the pills sit in the lane the layout keeps under the lobby */
+    assert.deepStrictEqual(await js(`(()=>{const L=window.__durbarSimUi.realLayout().lane,ro=document.querySelector('#stage .ro').getBoundingClientRect();return [...document.querySelectorAll('#stage .ro-slip[data-variant="pill"]')].filter(e=>!e.hidden).filter(e=>{const b=e.getBoundingClientRect(),t=b.top-ro.top;return !L||t<L.y-0.5||t+b.height>L.y+L.h+0.5;}).map(e=>e.textContent.slice(0,24));})()`), [], tag + ': the pills in their lane');
     /* FR-263: the top bar's text keeps 4.5:1 on its own button fill in the arcade's style (the pressed one is yellow) */
     assert.deepStrictEqual(await js('(()=>{' + LUM + `const out=[];for(const b of document.querySelectorAll('.topbar .seg button')){const c=getComputedStyle(b).color,f=getComputedStyle(b).backgroundColor;if(/rgba\\([^)]*, 0\\)|transparent/.test(f))continue;const r=(Math.max(lum(c),lum(f))+0.05)/(Math.min(lum(c),lum(f))+0.05);if(r<4.5)out.push(b.textContent.trim()+' '+r.toFixed(2));}return out;})()`), [], tag + ': top bar buttons readable');
     assert.deepStrictEqual(await js(TEXT), { small: [], low: [] }, tag + ': text size and contrast');

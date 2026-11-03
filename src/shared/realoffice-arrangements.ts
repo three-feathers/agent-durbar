@@ -11,6 +11,8 @@ export const isArrangement = (v: unknown): v is Arrangement => typeof v === 'str
 export const AISLE_PERSON = { w: 34, h: 72 } as const;
 /** the floor between a cabinet and the person beside it, in grid px: no person is ever cut by a cabinet or a screen (owner, 2026-11-03) */
 export const AISLE_GAP = 2;
+/** px of floor under the lobby kept for one-line pills (the queue, a limit): always free, so a pill never covers a cabinet or a person; taken from the lobby's height (owner, 2026-11-03) */
+export const AISLE_LANE = 20;
 export const FACE_GRID = 19;
 /** FR-229: the face floor, crown to chin, only on a floor of 15 */
 export const FACE_FLOOR = 24;
@@ -42,7 +44,7 @@ function planFor(k: number, W: number, F: number, PW: number = AISLE_PERSON.w): 
   };
   if (k <= 4) {
     /* one or two columns of the big cabinet: g = 3 where the floor is tall enough, else 2 (the mockup's own choice at both sizes) */
-    for (const g of [3, 2]) { const p = tryPlan(g, CABINETS.big.gw, CABINETS.big.gh, 2, true); if (p) return p; }
+    for (const cols of [Math.max(2, k), 2]) for (const g of [3, 2]) { const p = tryPlan(g, CABINETS.big.gw, CABINETS.big.gh, cols, true); if (p) return p; } /* one row when it fits (owner, 2026-11-03: three people are not split over two rows) */
   } else {
     /* 5 to 8: g = 3 wherever it fits; 9 to 15: five columns, three rows, g = 2; the narrow drawing where the chat leaves little width */
     for (const g of [3, 2]) for (const c of [CABINETS.small, CABINETS.narrow]) for (const cols of [5, 4, 3, 2]) { const p = tryPlan(g, c.gw, c.gh, cols, false); if (p) return p; }
@@ -97,22 +99,22 @@ export function aislesLayout(model: RealModel, view: { w: number; h: number }, m
   const folders = model.folders.filter((f) => f.agents.length).map((f) => ({ id: f.id, agents: sortDesks(f.agents) }));
   const seats = folders.flatMap((f) => f.agents.map((a) => ({ a, f: f.id })));
   const k = seats.length;
-  const [lobbyMin, lobbyMax] = lobbyRange(Ho);
+  const [lobbyMin0, lobbyMax] = lobbyRange(Ho), lobbyMin = lobbyMin0 - AISLE_LANE;
   /* the place beside a cabinet is as wide as the widest standing picture of the set, so a picture centred in it never reaches a cabinet */
   const PW = Math.min(48, Math.max(AISLE_PERSON.w, ...Object.values(meta.stand || {}).flatMap((s) => Object.values(s.poses || {}).map((p) => p[0])))); /* grid px; a set drawn at another scale is not an arcade set */
-  const plan = planFor(k, W, Ho - lobbyMin - AISLE_PAD, PW);
+  const plan = planFor(k, W, Ho - lobbyMin - AISLE_LANE - AISLE_PAD, PW);
   const { g, cols, rows, sl } = plan, cab = cabGrid(plan.gw, plan.gh), cabW = cab.w * g, cabH = cab.h * g, pw = PW * g, ph = AISLE_PERSON.h * g;
   const bend = 2 * sl, used = rows * (plan.rowH + bend);
-  const Lb0 = Math.round(plan.fits ? Math.max(lobbyMin, Math.min(Ho - used - AISLE_PAD, lobbyMax)) : lobbyMin);
+  const Lb0 = Math.round(plan.fits ? Math.max(lobbyMin, Math.min(Ho - used - AISLE_PAD - AISLE_LANE, lobbyMax)) : lobbyMin);
   const Lb = Math.ceil(Lb0 / g) * g;
-  const spare = plan.fits ? Math.max(0, Ho - Lb - used - AISLE_PAD) : 0, extra = spare / (rows + 1);
+  const spare = plan.fits ? Math.max(0, Ho - Lb - AISLE_LANE - used - AISLE_PAD) : 0, extra = spare / (rows + 1);
   const cw = (W - 2 * AISLE_PAD) / cols, snap = (v: number): number => Math.round(v / g) * g;
   /* the stagger is 8 % of a column, less where the floor is narrow: the row must stay inside it */
   const shift = Math.max(0, Math.min(cw * AISLE_STAGGER, (cw - plan.slotW - g) / 2));
   const slotBox = (i: number): { slot: Rect; cab: Rect; top: number; face: 'left' | 'right' } => {
     const r = Math.floor(i / cols), c = i % cols, face = aisleFace(c, cols, r);
     const cx = AISLE_PAD + (c + 0.5) * cw + (r % 2 ? 1 : -1) * shift;
-    const top = Lb + extra * (r + 1) + r * (plan.rowH + bend);                      /* the row's top: its sign strip */
+    const top = Lb + AISLE_LANE + extra * (r + 1) + r * (plan.rowH + bend);                      /* the row's top: its sign strip */
     const cabY = top + AISLE_SIGN_H + (Math.floor(cols / 2) - Math.abs(c - (cols - 1) / 2) > 0 ? Math.round((Math.floor(cols / 2) - Math.abs(c - (cols - 1) / 2)) * sl) : 0);
     /* the art sits on the grid: the cabinet's corner is a multiple of g (FR-255) and the slot follows it */
     const gp = AISLE_GAP * g, s0 = cx - plan.slotW / 2, cx0 = snap(face === 'right' ? s0 : s0 + pw + gp), sx = face === 'right' ? cx0 : cx0 - pw - gp; /* the person beside the cabinet, never over it */
@@ -161,8 +163,8 @@ export function aislesLayout(model: RealModel, view: { w: number; h: number }, m
     z.sign.w = Math.min(room, Math.max(AISLE_SIGN_MIN_W, need)); z.signShort = need > room;
   }
   const lb = lobbyBand(meta, model.places, W, Lb);
-  const height = plan.fits ? Ho : Math.ceil(Lb + used + AISLE_PAD);
-  return { u: AISLE_PERSON.h * g, g, big: plan.big, lobbyH: Lb, floorH: height - Lb, width: W, height, scroll: !plan.fits, faceH: FACE_GRID * g, zones, fixtures: lb.fixtures, floorStrip: lb.floorStrip, cabinet: { w: cabW, h: cabH, gw: plan.gw, gh: plan.gh, cols, rows } };
+  const height = plan.fits ? Ho : Math.ceil(Lb + AISLE_LANE + used + AISLE_PAD);
+  return { lane: { x: AISLE_PAD, y: Lb, w: W - 2 * AISLE_PAD, h: AISLE_LANE }, u: AISLE_PERSON.h * g, g, big: plan.big, lobbyH: Lb, floorH: height - Lb, width: W, height, scroll: !plan.fits, faceH: FACE_GRID * g, zones, fixtures: lb.fixtures, floorStrip: lb.floorStrip, cabinet: { w: cabW, h: cabH, gw: plan.gw, gh: plan.gh, cols, rows } };
 }
 
 /** FR-228's one seam: the arrangement a world names picks the function. `rows` is `realLayout` and nothing else (T167: byte-identical). */

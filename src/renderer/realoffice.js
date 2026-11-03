@@ -535,7 +535,7 @@
     if (EMPTY_BOX) avoid.push(EMPTY_BOX);
     /* with more than four agents the monitors are read from afar: a slip takes a spot clear of them, else a smaller variant (the pill); with big screens (four or fewer) it may sit over one */
     const screens = lay.zones.flatMap((z) => z.desks.map((d) => d.screen));
-    if (lay.cabinet) avoid.push(...screens, ...lay.zones.flatMap((z) => z.desks.map((d) => d.person).filter(Boolean))); /* spec 102, owner 2026-11-03: in the arcade nothing covers a screen or a person */
+    if (lay.cabinet) avoid.push(...screens, ...lay.zones.flatMap((z) => z.desks.flatMap((d) => [d.desk, d.person]).filter(Boolean))); /* spec 102, owner 2026-11-03: in the arcade nothing covers a cabinet or a person */
     const softAvoid = lay.big || lay.cabinet ? [] : screens;
     const bounds = { x: 4, y: lay.lobbyH + 4, w: lay.width - 8, h: lay.height - lay.lobbyH - 8 };
     const door = (id) => { const f = lay.fixtures.find((x) => x.id === id); return f ? { x: f.slot.x + f.slot.w / 2, y: lay.lobbyH } : { x: lay.width / 2, y: lay.lobbyH }; };
@@ -561,7 +561,7 @@
         if (e._at && e._v === v && e._at.w >= r.w && e._at.h >= r.h && !hits({ x: e._at.x, y: e._at.y, w: r.w, h: r.h }) && e._at.x + r.w <= bounds.x + bounds.w && e._at.y + r.h <= bounds.y + bounds.h) { avoid.push({ x: e._at.x, y: e._at.y, w: r.w, h: r.h }); e.dataset.variant = v; return true; }
         for (let pass = 0; pass < 2; pass++) { /* the second pass re-places with the box it really has (a late font can widen the text) */
           const dock = () => P(r, avoid, { x: bounds.x, y: bounds.y + bounds.h - r.h, w: bounds.w, h: r.h }, anchor) || { x: bounds.x + bounds.w - r.w, y: bounds.y + bounds.h - r.h, w: r.w, h: r.h };
-          const at = P(r, avoid.concat(softAvoid), bounds, anchor) || (lay.big || v === 'pill' ? P(r, avoid, bounds, anchor) : null) || (lay.cabinet && v === 'pill' ? dock() : null); /* a one-line pill may sit over a monitor when there is no other spot; in the arcade it docks at the floor's bottom edge, never hidden */
+          const at = (lay.lane && v === 'pill' ? P(r, avoid, lay.lane, anchor) : null) || P(r, avoid.concat(softAvoid), bounds, anchor) || (lay.big || v === 'pill' ? P(r, avoid, bounds, anchor) : null) || (lay.cabinet && v === 'pill' ? dock() : null); /* a one-line pill may sit over a monitor when there is no other spot; in the arcade it docks at the floor's bottom edge, never hidden */
           if (!at) break;
           e.style.left = px(at.x); e.style.top = px(at.y);
           const r2 = size();
@@ -592,7 +592,7 @@
           for (const g of Q.folded) { const b = btn(g.text, '', 'sl-fold', { slipact: 'open', slipid: g.id }); e.appendChild(b); }
           if (Q.more > 0) e.appendChild(btn('+' + Q.more + ' more \u00B7 Open the inbox', '', 'sl-more', { slipact: 'inbox' }));
         },
-      }, door('boss'), ['full', 'pill'], 'inbox');
+      }, door('boss'), lay.cabinet ? ['pill'] : ['full', 'pill'], 'inbox'); /* the arcade: one line, the inbox holds the rest */
     }
     if (slips.limit) {
       const L = slips.limit;
@@ -608,7 +608,7 @@
           row.appendChild(btn('Show in chat', 'Open the chat', 'link', { slipact: 'open', slipid: L.id, slipfocus: 'limit' }));
           e.appendChild(row);
         },
-      }, door('bank'), ['full', 'pill'], 'limit-card');
+      }, door('bank'), lay.cabinet ? ['pill'] : ['full', 'pill'], 'limit-card');
     }
     for (const B of slips.elicit || []) {
       const d = lay.zones.flatMap((z) => z.desks).find((x) => x.id === B.id);
