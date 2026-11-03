@@ -123,6 +123,19 @@ for (const nm of NAMES) {
   for (let n = 1; n <= 14; n++) assert.ok(F[n] >= F[15], `${nm}: face at ${n} (${F[n]}) is not smaller than at 15`);
 }
 
+// ---- owner, 2026-11-03: asleep sits on a stool, whole beside the cabinet (the seated frame `sit`, not a standing one)
+{
+  const L = aislesLayout(model(8, 1, ['asleep']), { w: 1440, h: 848 }, META);
+  const people = L.zones.flatMap((z) => z.desks).map((d) => d.person).filter(Boolean) as { pose: string; file: string }[];
+  assert.ok(people.length > 0 && people.every((p) => p.pose === 'sit' && /-sit\.webp$/.test(p.file)), 'asleep sits: ' + people.map((p) => p.pose).join(','));
+}
+
+// ---- owner, 2026-11-03: the lobby is no smaller at 1280x800 than at 1440x900 (the notice strip shown or not), so its people are the same size
+for (const n of [3, 8, 15]) for (const dh of [0, 31]) {
+  const a = aislesLayout(model(n, 4), { w: 1280, h: 748 - dh }, META, SIGNS(4)), b = aislesLayout(model(n, 4), { w: 1440, h: 848 - dh }, META, SIGNS(4));
+  assert.ok(!a.scroll && a.lobbyH >= b.lobbyH - 1, `${n} agents${dh ? ', notice strip shown' : ''}: lobby ${a.lobbyH} px at 1280x800 against ${b.lobbyH} at 1440x900`);
+}
+
 // ---- T203, FR-230, FR-256: past 15 more rows, the floor scrolls inside itself; a status change moves no zone, sign or cabinet ----
 {
   const strip = (L: Layout): string => JSON.stringify([L.g, L.height, L.scroll, L.zones.map((z) => [z.id, z.part, z.box, z.sign, z.signShort, z.desks.map((d) => d.slot).sort((a, b) => a.x - b.x || a.y - b.y)])]);

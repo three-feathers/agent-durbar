@@ -313,6 +313,39 @@ def measure(im):
     span = max(1, round((bot - top + 1) * .06)); xs = [x for y in range(bot - span + 1, bot + 1) for x in range(w) if px[x, y][3]]
     return top, bot, (min(xs) + max(xs) + 1) / 2 / w
 
+def sit_frame(im):
+    """spec 102 FR-259 (owner 2026-11-03: asleep sits, whole, beside the cabinet): a person seated on a stool, made from their own front
+    standing frame: head, torso and hips kept, a stool drawn under the hips, the shins and feet in front of it. Narrower than the seated
+    busts, so it fits the place beside a cabinet. No new colour but the stool's three browns; one file pixel per grid pixel."""
+    im = im.convert('RGBA'); w, _ = im.size; bb = im.getbbox(); top, bot = bb[1], bb[3]; H = bot - top
+    hip, shin0, seat = top + round(0.60 * H), top + round(0.80 * H), 3
+    shins = im.crop((0, shin0, w, bot)); sh = bot - shin0; out_h = (hip - top) + seat + max(sh, 10)
+    o = Image.new('RGBA', (w, out_h), (0, 0, 0, 0)); o.paste(im.crop((0, top, w, hip)), (0, 0))
+    xs = [x for x in range(w) if any(im.getpixel((x, y))[3] > 32 for y in range(hip - 4, hip))]
+    x0, x1 = (min(xs), max(xs)) if xs else (w // 4, 3 * w // 4)
+    d = ImageDraw.Draw(o); sy = hip - top
+    d.rectangle([x0 - 1, sy, x1 + 1, sy + seat - 1], fill=(122, 72, 40, 255)); d.line([x0 - 1, sy + seat - 1, x1 + 1, sy + seat - 1], fill=(84, 48, 26, 255))
+    for lx in (x0, x1 - 1): d.rectangle([lx, sy + seat, lx + 1, out_h - 1], fill=(62, 36, 20, 255))
+    o.alpha_composite(shins, (0, out_h - sh))
+    return o
+
+def add_sit(repo):
+    """`--sit`: makes `pNN-sit.webp` from the committed `pNN-face-book.webp` and adds its pose to set.json (no art cache needed)"""
+    S = os.path.join(repo, 'src/renderer/realoffice/sets/retro'); jp = os.path.join(S, 'set.json')
+    meta = json.load(open(jp))
+    for pid, st in meta['stand'].items():
+        im = sit_frame(Image.open(os.path.join(S, f'{pid}-face-book.webp'))); save(im, os.path.join(S, f'{pid}-sit.webp'))
+        tp, bt, fc = measure(im)
+        st['poses']['sit'] = [im.width, im.height]; st['feet']['sit'] = round((bt + 1) / im.height, 4); st['top']['sit'] = round(tp / im.height, 4); st['foot']['sit'] = round(fc, 4)
+    with open(jp, 'w') as f: f.write(json.dumps(meta, indent=1, sort_keys=True) + '\n')
+    # ASSETS.md: each person's files line names the seated frame, and one line says how it is made
+    ap = os.path.join(S, 'ASSETS.md'); txt = open(ap, encoding='utf8').read()
+    for pid in meta['stand']:
+        txt = re.sub(r'(### set-' + pid + r'\n\n- files: [^\n]*?)(?: ' + pid + r'-sit\.webp)?\n', lambda m: m.group(1) + ' ' + pid + '-sit.webp\n', txt, count=1)
+    note = '- **Seated on a stool** (`sit`, the asleep pose, spec 102 FR-259, owner 2026-11-03): made by `scripts/build-arcade-pack.py --sit` from the person\'s own `face-book` frame (head, torso and hips kept, a stool of three browns drawn under the hips, shins and feet in front); no image tool. Made by Vikram\'s agent (Claude Code), 2026-11-03; waits for the owner\'s look.\n'
+    if note not in txt: txt = txt.replace('- **Licence:**', note + '- **Licence:**', 1)
+    with open(ap, 'w', encoding='utf8') as f: f.write(txt)
+
 def face_box(im):
     """crown to chin of the head in a front standing frame, found from the width of the figure row by row: the head is the first wide part, the neck is
     where the width falls back (and the shoulders where it grows again); read once on a contact sheet (T201), not trusted blindly"""
@@ -458,10 +491,12 @@ def selftest():
 
 if __name__ == '__main__':
     if len(sys.argv) > 1 and sys.argv[1] == '--selftest': selftest(); sys.exit(0)
+    if len(sys.argv) > 1 and sys.argv[1] == '--sit': add_sit(sys.argv[2] if len(sys.argv) > 2 else os.getcwd()); sys.exit(0)
     if len(sys.argv) < 2: raise SystemExit(__doc__)
     I = sys.argv[1].rstrip('/'); REPO = sys.argv[2] if len(sys.argv) > 2 else os.getcwd()
     prompts = [I + '/prompts', I + '/new7/prompts']
     smeta, sections, stotal = write_set(REPO, I + '/final/retro', I + '/new7/final', prompts)
     wmeta, wtotal = write_world(REPO)
     write_notes(REPO, smeta, sections, prompts)
+    add_sit(REPO)
     print(f'set: {len(sections)} people, {stotal} bytes; world: {wtotal} bytes')
