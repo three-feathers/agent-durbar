@@ -7298,6 +7298,8 @@ function onAutoTierFailed(a,e){
   updateModelChip(a);scheduleRender();
 }
 function onCompaction(a,e){
+  /* spec 015 FR-009b: the 1.5 s fallback of compactDialog already said this manual compaction ended; the real Copilot complete that comes late is the same compaction: ignored once */
+  if(a.endedByAnswer){const x=a.endedByAnswer;a.endedByAnswer=null;if(e.phase==='complete'&&e.trigger==='manual'&&!a.compacting&&Date.now()-x<60000)return;}
   const chat=liveChat(a), at=()=>new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
   /* spec 052 FR-163 (owner, 2026-10-21): compactions in a row (nothing else added to the chat in between) are one line that updates in
      place: "Context compacted 4 times · last 10:21: …". Its tooltip lists each one. The line is found by its place in the chat, not by
@@ -7349,13 +7351,18 @@ async function compactDialog(a,anchor){
   const r=await askDialog({title:'Compact the context of '+a.name+'?',body:'Older messages are replaced by a summary; the agent keeps working in the same session.',lines,input:{label:'Focus (optional)',hint:'What the summary should keep',placeholder:'e.g. the API decisions',max:200},returnFocus:anchor,
     buttons:[{label:'Cancel',value:null},{label:'Compact',value:'ok',cls:'primary'}]});
   if(!r)return;
+  const before=a.compactions||0; /* counted before the call: the runtime may send the complete event before it answers */
   const res=await bridge.compact(a.id,(r.text||'').trim()||undefined).catch(e=>({ok:false,error:String(e&&e.message||e)}));
   if(!res||!res.ok)toast('Could not compact: '+esc((res&&res.error)||'unknown error'),6000);
   else if(res.result&&res.result.success===false)toast('Not compacted: '+esc(res.result.message||'the runtime declined.'),6000);
-  else if(res.result&&res.result.success===true){
-    /* the line normally comes from the compaction events; if the runtime sent none for a manual compaction, say it from the result */
-    const before=a.compactions||0,rr=res.result;
-    setTimeout(()=>{if((a.compactions||0)===before&&!a.compacting)onCompaction(a,{phase:'complete',trigger:'manual',tokensRemoved:rr.tokensRemoved,tokensAfter:rr.tokensAfter});},1500);
+  /* spec 015 FR-009b: Copilot's start of a manual compaction comes after the turn's last idle, so nothing else would end the desk mark if its complete never came:
+     the answer is the end. The line normally comes from the compaction events; if none came (or only a start), say it from the result. */
+  if(res&&res.ok&&res.result&&typeof res.result.success==='boolean'){
+    const rr=res.result;
+    setTimeout(()=>{
+      if(rr.success===true){if((a.compactions||0)===before){onCompaction(a,{phase:'complete',trigger:'manual',tokensRemoved:rr.tokensRemoved,tokensAfter:rr.tokensAfter});a.endedByAnswer=Date.now();}}
+      else if(a.compacting)onCompaction(a,{phase:'failed',trigger:'manual'});
+    },1500);
   }
   refocusAnchor(anchor);
 }

@@ -314,7 +314,7 @@ export class ClaudeMapper {
         });
       }
       case 'status': {
-        // spec 015 FR-007 (issue #601, `read:`): the CLI says `compacting` while it summarises the conversation; the main agent only
+        // spec 015 FR-007 (issue #601, `real:` 2026-11-02, #731): the CLI says `compacting` while it summarises, then `status: null` with `compact_result: 'success'` BEFORE `compact_boundary` (a `system/init` comes in between); the main agent only
         if (this.who(m)) return;
         if (m.status === 'compacting') return this.compactionStart();
         if (m.compact_result === 'failed') return this.compactionFailed();
@@ -325,7 +325,7 @@ export class ClaudeMapper {
         const meta = m.compact_metadata && typeof m.compact_metadata === 'object' ? (m.compact_metadata as Record<string, unknown>) : {};
         const size = (v: unknown): number | undefined => { const n = num(v); const r = n === undefined ? undefined : Math.round(n); return r !== undefined && r >= 0 && r < 1e9 ? r : undefined; };
         const pre = size(meta.pre_tokens);
-        const post = size(meta.post_tokens); // optional in the SDK (`read:` sdk.d.ts 0.3.310): the real size after, so the ring need not wait
+        const post = size(meta.post_tokens); // seen `real:` (2.1.316), optional in the SDK types: the real size after, so the ring need not wait
         this.compacting = false;
         this.lastCtx = undefined; // the size it held before is gone; the next message's usage gives the new one
         return this.emit({
