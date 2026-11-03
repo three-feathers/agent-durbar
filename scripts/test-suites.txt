@@ -29,6 +29,7 @@ test:credits
 test:site
 test:compressshots
 test:changelog
+test:releasevideo
 test:specsindex
 test:orgwords
 test:handoff
