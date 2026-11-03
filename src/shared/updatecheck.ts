@@ -492,6 +492,9 @@ export interface FailureInput {
   timedOut?: boolean;
 }
 
+/** The one recorded exit-0 refusal: `claude update` with updates disabled (spec 081 T040, 2026-11-02). Only this text turns a successful `claude update` into a Managed failure. */
+export const CLAUDE_UPDATE_DISABLED = /\bupdates are disabled by your administrator\b/i;
+
 /** Patterns run on masked text, case-insensitively. `managed` matches Durbar's policy, winget and Group Policy, and recorded vendor text only. */
 export function classifyFailure(i: FailureInput): FailureClass {
   const t = String(i.text ?? '').slice(-4000);

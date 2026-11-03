@@ -22,7 +22,7 @@ import { FIXED_HEADERS, makeDownloadGet, makeLookupGet } from '../src/main/netge
 import type { NetRequestFactory, NetRequestLike, NetRequestOptions } from '../src/main/netget';
 import { UpdateChecker, failureDetail } from '../src/main/updatecheck';
 import type { CheckerDeps, UpdatesView } from '../src/main/updatecheck';
-import { wingetTermsQuestion } from '../src/shared/updatecheck';
+import { wingetTermsQuestion, CLAUDE_UPDATE_DISABLED } from '../src/shared/updatecheck';
 import { ASK_LIMIT_MS, UpdateGate, startHeldBy, updateRunRefusal } from '../src/main/updategate';
 import type { RunReply, SessionCount } from '../src/main/updategate';
 import { SettingsStore } from '../src/main/settings';
@@ -262,6 +262,9 @@ const senv = (env: Record<string, string | undefined> = {}, homedir = HOME) => (
   assert.strictEqual(classifyFailure({ platform: 'win32', code: 1, text: "EPERM: operation not permitted, unlink 'C:\\x\\codex.exe'" }), 'in-use', 'the Windows EPERM on the binary');
   assert.strictEqual(c('win-uac-cancelled', { platform: 'win32', code: 1223 }), 'uac-cancelled');
   assert.strictEqual(c('claude-update-disabled'), 'managed');
+  assert.strictEqual(c('claude-update-disabled', { code: 0 }), 'managed', 'the real recording exits 0; the up-to-date branch must not take it');
+  assert.strictEqual(classifyFailure({ platform: 'linux', code: 1, text: 'updates are blocked (DISABLE_UPDATES is set)' }), 'managed', 'the DISABLE_UPDATES alternative (not recorded; kept for a failed run only)');
+  assert.ok(CLAUDE_UPDATE_DISABLED.test(fx('claude-update-disabled')) && !CLAUDE_UPDATE_DISABLED.test('Note: DISABLE_UPDATES is set, auto-updates are disabled'), 'the exit-0 rule is the recorded text only');
   assert.strictEqual(classifyFailure({ platform: 'win32', code: 1, text: 'This operation is disabled by Group Policy' }), 'managed');
   assert.strictEqual(c('claude-update-uptodate', { code: 0 }), 'vendor-up-to-date', '"up to date" is its own non-error result');
   assert.notStrictEqual(c('claude-update-uptodate', { code: 0 }), 'managed', 'claude update saying up to date is not Managed');

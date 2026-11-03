@@ -24,10 +24,11 @@ On 2026-10-23 Vikram's agent grouped the ~1,100 *Required fixes* in reviews of ~
 
 ## The branch and CI
 
-- [ ] **Mergeable, and CI ran on this head.** A conflicting PR runs only CodeQL (no build, tests, gate or UI). Merge `origin/main`, push, read the checks of *that* sha (`scripts/pr-gate.sh <N>`). [#620](https://github.com/three-feathers/agent-durbar/pull/620), [#560](https://github.com/three-feathers/agent-durbar/pull/560)
-- [ ] **After merging `main`, `git diff --stat origin/main...HEAD` lists only your files**: a bad resolution dropped another PR's code and tests. [#560](https://github.com/three-feathers/agent-durbar/pull/560)
-- [ ] **No conflict markers or broken syntax**: `specs:check` covers `specs/`; after a conflict in renderer JS run `npm run test:rendersyntax` (merge agents: before claiming checks passed). **Keep both sides** of a `scripts/test-suites.txt` conflict, then `npm test`. [#565](https://github.com/three-feathers/agent-durbar/pull/565)
-- [ ] **CI for the exact sha, never "green" from memory**: `gh pr checks <N>`, then post `checks run at <sha>: …`. [#630](https://github.com/three-feathers/agent-durbar/pull/630), [#588](https://github.com/three-feathers/agent-durbar/pull/588)
+- [ ] **Branch `NNN` = spec number, not issue number**: `src/` changes fail the gate; renaming closes PRs. [#1095](https://github.com/three-feathers/agent-durbar/pull/1095)
+- [ ] **Mergeable, and CI ran on this head.** Conflicting PRs run only CodeQL. Merge `origin/main`, push, read the checks of *that* sha (`scripts/pr-gate.sh <N>`). [#620](https://github.com/three-feathers/agent-durbar/pull/620), [#560](https://github.com/three-feathers/agent-durbar/pull/560)
+- [ ] **After merging `main`, `git diff --stat origin/main...HEAD` lists only your files**, or a resolution dropped others' code. [#560](https://github.com/three-feathers/agent-durbar/pull/560)
+- [ ] **No conflict markers or broken syntax**: `specs:check` covers `specs/`; after a conflict in renderer JS run `npm run test:rendersyntax`. **Keep both sides** of a `scripts/test-suites.txt` conflict, then `npm test`. [#565](https://github.com/three-feathers/agent-durbar/pull/565)
+- [ ] **CI for the exact sha**: `gh pr checks <N>`, then post `checks run at <sha>: …`. [#630](https://github.com/three-feathers/agent-durbar/pull/630), [#588](https://github.com/three-feathers/agent-durbar/pull/588)
 - [ ] **New CodeQL alerts fixed at the cause**, test code included (or dismissed with a reason). [#598](https://github.com/three-feathers/agent-durbar/pull/598)
 
 ## Spec, numbers and text
