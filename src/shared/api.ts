@@ -198,6 +198,8 @@ export interface AppSettingsView {
   mcpWarnLevels?: McpWarnLevels;
   /** Owner, version and contributors for Settings > About (spec 008 FR-018). */
   about?: AboutView;
+  /** Settings in force for this run only because the file could not be written (issue 1023), e.g. `defaultMaxAiCredits`. */
+  unsaved?: string[];
   /** Default cap (AIU) applied to new sessions; unset = none. */
   defaultMaxAiCredits?: number;
   /** Places in the office (spec 024): MCP server name -> place id or `desk`; unmapped servers use the built-in rules. */
@@ -830,11 +832,11 @@ export interface DurbarApi {
   /** Change the permission mode of agent `id` now (applies to the next request). `clearGrants`: forget "Approve for this session"; `approvePending`: approve what is waiting. */
   setPermMode?(id: string, mode: PermMode, opts?: { clearGrants?: boolean; approvePending?: boolean }): Promise<{ ok: boolean; error?: string; mode?: PermMode; pending?: number }>;
   /** Spec 087 FR-007a/FR-007c: *Continue without the OS sandbox* for this session (`always`: on this computer, where offered). Nothing is sent. */
-  sandboxContinue?(id: string, opts?: { always?: boolean }): Promise<{ ok: boolean; error?: string }>;
+  sandboxContinue?(id: string, opts?: { always?: boolean }): Promise<{ ok: boolean; error?: string; alwaysSaved?: false }>;
   /** Spec 087 FR-012: per ready agent app, whether its OS sandbox can run here (Settings > Agent apps). */
   sandboxHosts?(): Promise<Record<string, SandboxHostView>>;
   /** Spec 087 FR-007c: undo *Always continue on this computer* for an app. */
-  sandboxAlwaysOff?(app: string): Promise<{ ok: boolean }>;
+  sandboxAlwaysOff?(app: string): Promise<{ ok: boolean; saved?: false }>;
   /** Change the model, effort or context tier of agent `id` (spec 030). Validated in main; saved with the folder entry once applied. */
   setModel?(id: string, request: ModelSwitchRequest): Promise<{ ok: boolean; error?: string; result?: ModelSwitchResult }>;
   /** Remove a queued model switch (spec 030). */

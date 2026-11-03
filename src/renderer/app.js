@@ -4582,7 +4582,7 @@ function openBrowserMenu(anchor,items,pick){
   focusIn(m.querySelector('button'));
 }
 if(SIM&&window.DurbarMD&&window.DurbarMD.allowSimLinks)window.DurbarMD.allowSimLinks(); /* the simulator's test pages can be printed as links (spec 080 FR-091); never in the app */
-BP.init({ bridge: window.agentDurbar,
+BP.init({ bridge: window.agentDurbar, toast:(t,ms)=>toast(esc(t),ms).classList.add('err'),
   ask:o=>askDialog(o),
   say:d=>{const a=byId(d.id);toast('A page in <b>'+esc(a?a.name:'a session')+'</b> is asking: <span class="pagetext">\u201c'+esc(d.text)+'\u201d</span> <span class="sr-only">(page text)</span>',6500);},
   nameOf:id=>{const a=byId(id);return a?a.name:'another session';},
@@ -6436,7 +6436,7 @@ async function continueWithoutSandbox(a,note,btn,always){
   const r=await bridge.sandboxContinue(a.id,always?{always:true}:{}).catch(e=>({ok:false,error:String(e&&e.message||e)}));
   if(!r||!r.ok){toast('Could not continue: '+esc(safeMask((r&&r.error)||'unknown error')),6000).classList.add('err');return;} /* the refusal says why (policy, not offered) */
   const row=note.querySelector('.note-actions');if(row)row.remove();
-  const p=document.createElement('p');p.className='sbx-done';p.textContent=always?'Continuing without the OS sandbox on this computer. Send your message again.':'Continuing without the OS sandbox for this session. Send your message again.';note.appendChild(p);
+  const p=document.createElement('p');p.className='sbx-done';p.textContent=always?(r.alwaysSaved===false?'Continuing without the OS sandbox for this session only: Always continue could not be saved, so this note comes back. Send your message again.':'Continuing without the OS sandbox on this computer. Send your message again.'):'Continuing without the OS sandbox for this session. Send your message again.';note.appendChild(p);
   announce(p.textContent);
   const mi=$('msgInput');if(mi)focusIn(mi);
 }

@@ -1,0 +1,1 @@
+- Settings > Agent apps: a Homebrew app with an update waiting no longer shows "Could not check: exit 1" (`brew outdated` exits 1 when it finds one). A failed check now also shows a short, masked detail line. (#1081)
