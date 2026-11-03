@@ -1,6 +1,6 @@
 /**
  * Expanded helper cards on the office floor (spec 001 FR-089..FR-093, FR-097, issue 697): which lines a helper shows at level 1 and 2,
- * "not reported" and never another field, Simple's plain words, the fail-closed path, masking before the cut (tokens across every cut
+ * "not reported" and never another field, the fail-closed path, masking before the cut (tokens across every cut
  * point, with the real src/shared/redact.ts), the one character cap HX_CHARS, the tooltip cut HX_TIP, one mask per field change and a
  * CPU-time ratio for repaints, plus the source checks that keep the page wired to the module. `npm run test:helpercard`. No credits spent.
  */
@@ -18,7 +18,7 @@ type Rec = { task?: string; prompt?: string; status?: string; result?: string; l
 type H = { holder?: object; name: string; parent: string; status: string; word: string; sub: Rec | null; task?: string };
 type Line = { key: string; label: string; text: string; reported: boolean; tip: string };
 type View = { name: string; lines: Line[]; aria: string; title: string };
-type Card = { view: (h: H, level: number, o?: { simple?: boolean; live?: boolean }) => View; html: (v: View, esc: (t: unknown) => string) => string };
+type Card = { view: (h: H, level: number, o?: { live?: boolean }) => View; html: (v: View, esc: (t: unknown) => string) => string };
 const HC = require(path.join(R, 'helpercard.js')) as {
   HX_MIN_F: number; HX_CHARS: number; HX_TIP: number; NOT_REPORTED: Record<string, string>; NR_TIP: string;
   create: (deps: Record<string, unknown>) => Card;
@@ -36,10 +36,8 @@ const hasSecret = (t: string) => tokens.some((x) => t.includes(x) || t.includes(
 
 const SAFE = ST.create({ redact: (s) => redact(s, {}), cut: cutText });
 const tooLabel = (tool: string, label: string, max: number): string => { const m = redact(label, {}); return typeof m === 'string' ? cutText(m, max) : ''; };
-/* the page's plainChip, reduced to what the card needs: a command never shows */
-const plainWords = (k: string, _t: string, _l: string, running: boolean): string => (k === 'run' ? (running ? 'Running a command' : 'Ran a command') : k === 'read' ? 'Reading a file' : 'Using a tool');
 const deps = (over?: Record<string, unknown>) => ({
-  excerpt: (t: string, m: number, fb: string) => SAFE.excerpt(t, m, fb), mask: (t: string) => SAFE.mask(t), toolLabel: tooLabel, plain: plainWords, cut: cutText,
+  excerpt: (t: string, m: number, fb: string) => SAFE.excerpt(t, m, fb), mask: (t: string) => SAFE.mask(t), toolLabel: tooLabel, cut: cutText,
   fmtTok: (x: number) => (x >= 1000 ? (x / 1000).toFixed(1) + 'k' : String(x)), ...over,
 });
 const card = (over?: Record<string, unknown>): Card => HC.create(deps(over));
@@ -109,15 +107,12 @@ eq(HC.HX_TIP, 200, 'the tooltip cut is the desk card\'s number');
   eq(textOf(v, 'result'), 'Result not reported', 'no record, done');
 }
 
-// ---- Simple: plain chat words, never a command; live activity off drops Now ----
+// ---- live activity off drops Now ----
 {
   const now = { kind: 'run', tool: 'bash', label: 'curl --api-key ' + sk + ' https://example.test/a' };
   const ex = C.view(helper({ task: 'T', now }), 1);
-  ok(textOf(ex, 'now').startsWith('bash curl'), 'Expert shows the tool and its (masked) command');
-  ok(!hasSecret(ex.aria + ex.title + ex.lines.map((l) => l.text).join('|')), 'the secret flag is masked in Expert');
-  const sim = C.view(helper({ task: 'T', now }), 1, { simple: true });
-  eq(textOf(sim, 'now'), 'Running a command', 'Simple: plain words');
-  ok(!/curl|bash|example\.test|api-key/.test(sim.aria + sim.title + sim.lines.map((l) => l.text).join('|')), 'Simple never shows the command');
+  ok(textOf(ex, 'now').startsWith('bash curl'), 'the card shows the tool and its (masked) command');
+  ok(!hasSecret(ex.aria + ex.title + ex.lines.map((l) => l.text).join('|')), 'the secret flag is masked');
   eq(textOf(C.view(helper({ task: 'T', now: { kind: 'thinking' } }), 1), 'now'), 'Thinking', 'thinking');
   eq(textOf(C.view(helper({ task: 'T', now: { kind: 'intent', text: 'Checking the **lint** rules' } }), 1), 'now'), 'Checking the lint rules', 'an intent, plain');
   // live off: no Now line; level 1 shows Task while it runs
@@ -161,8 +156,8 @@ eq(HC.HX_TIP, 200, 'the tooltip cut is the desk card\'s number');
         for (const md of ['', '**', '`']) {
           const t = 'a'.repeat(p) + ' ' + md + tok + md;
           const st = f === 'result' ? 'done' : f === 'error' ? 'failed' : 'running';
-          for (const level of [1, 2]) for (const simple of [false, true]) {
-            const x = mk(t), v = C.view(helper(x.rec, st, x.over), level, { simple, live: true });
+          for (const level of [1, 2]) {
+            const x = mk(t), v = C.view(helper(x.rec, st, x.over), level, { live: true });
             const all = v.aria + '\n' + v.title + '\n' + v.lines.map((l) => l.text).join('\n') + '\n' + v.name;
             if (hasSecret(all)) assert.fail(`${f} ${tok.slice(0, 6)} at ${p} (${md}) level ${level}: a token or a piece of one is shown: ${all.slice(-120)}`);
           }
@@ -196,10 +191,10 @@ eq(HC.HX_TIP, 200, 'the tooltip cut is the desk card\'s number');
     const out = C.html(v, bad as never);
     ok(!/<img|<script/.test(out) && out.includes('&lt;img'), `html with esc=${String(bad)} escapes by itself: ${out.slice(0, 80)}`);
   }
-  for (const level of [1, 2]) for (const simple of [false, true]) {
-    const t = C.view(helper({ task: 'T', now: { kind: 'search', tool: ghp, label: 'x' } }), level, { simple });
-    ok(!hasSecret(t.aria + t.title + t.lines.map((l) => l.text).join('|')), `a tool name that is a token is masked (level ${level}, simple ${simple})`);
-    const t2 = C.view(helper({ task: 'T', now: { kind: 'search', tool: 'a'.repeat(20) + ' ' + pat, label: '' } }), level, { simple });
+  for (const level of [1, 2]) {
+    const t = C.view(helper({ task: 'T', now: { kind: 'search', tool: ghp, label: 'x' } }), level);
+    ok(!hasSecret(t.aria + t.title + t.lines.map((l) => l.text).join('|')), `a tool name that is a token is masked (level ${level})`);
+    const t2 = C.view(helper({ task: 'T', now: { kind: 'search', tool: 'a'.repeat(20) + ' ' + pat, label: '' } }), level);
     ok(!hasSecret(t2.aria + t2.title + t2.lines.map((l) => l.text).join('|')), 'a long tool name with a token is masked before the cut');
   }
 }
@@ -246,24 +241,23 @@ eq(HC.HX_TIP, 200, 'the tooltip cut is the desk card\'s number');
 
 // ---- masked once per field change, never on a repaint with unchanged fields ----
 {
-  const calls = { excerpt: 0, mask: 0, label: 0, plain: 0 };
+  const calls = { excerpt: 0, mask: 0, label: 0 };
   const C2 = card({
     excerpt: (t: string, m: number, fb: string) => { calls.excerpt++; return SAFE.excerpt(t, m, fb); }, mask: (t: string) => { calls.mask++; return SAFE.mask(t); },
-    toolLabel: (a: string, b: string, c: number) => { calls.label++; return tooLabel(a, b, c); }, plain: (...a: unknown[]) => { calls.plain++; return (plainWords as (...x: unknown[]) => string)(...a); },
+    toolLabel: (a: string, b: string, c: number) => { calls.label++; return tooLabel(a, b, c); },
   });
   const rec: Rec = { task: 'Run the tests', result: 'All pass', error: 'oops', model: 'm1', now: { kind: 'run', tool: 'bash', label: 'npm test' } };
   const h = helper(rec, 'running');
-  const total = () => calls.excerpt + calls.mask + calls.label + calls.plain;
+  const total = () => calls.excerpt + calls.mask + calls.label;
   C2.view(h, 2); const first = total();
   ok(first > 0, 'the first view masks');
-  for (let i = 0; i < 100; i++) { C2.view(h, 2); C2.view(h, 1); C2.view(h, 2, { simple: false, live: true }); }
+  for (let i = 0; i < 100; i++) { C2.view(h, 2); C2.view(h, 1); C2.view(h, 2, { live: true }); }
   eq(total(), first, 'zero mask calls over 100 repaints with unchanged fields');
   const before = total();
   rec.task = 'Run all the tests'; C2.view(h, 2);
   eq(total(), before + 1, 'a changed field is masked once');
   rec.now = { kind: 'run', tool: 'bash', label: 'npm run lint' }; const b2 = total(); C2.view(h, 2); C2.view(h, 2);
   ok(total() - b2 <= 2, 'a changed activity is masked once (tool + label)');
-  const b3 = total(); C2.view(h, 2, { simple: true }); ok(total() > b3, 'Simple is another value (its own words)'); const b4 = total(); C2.view(h, 2, { simple: true }); eq(total(), b4, 'and kept too');
   // two helpers do not share a memo
   const other = helper({ task: 'Run the tests', now: rec.now }, 'running'); const b5 = total(); C2.view(other, 2); ok(total() > b5, 'another helper has its own memo');
   // a helper with no record keeps its memo on its holder

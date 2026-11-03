@@ -455,3 +455,12 @@ Owner (Paco, 2026-10-28): a schedule's prompt was limited to 2,000 characters (`
 ## Changes 2026-11-02: removed page and tools (owner decision, PR #1054)
 
 `scripts/mcp-readonly-copilot-real.ts` were removed on 2026-11-02 by owner decision (no caller; run dates and credit counts above stay valid history); the scripts are in git history at commit `1c75b5bee`.
+
+## Changes 2026-11-02: two older scheduler bugs, found in review of #965 (T144)
+
+`[IMPLEMENTED]` `test:` `test:schedules` Both are in `Scheduler.tick` and are older than the per-schedule mode work, which the owner overruled on 2026-11-01 (a schedule takes its session's mode; see *Changes* above). A run's send is awaited, and `save` and `remove` can change the list meanwhile:
+
+- **A once schedule edited while its run is going out ran again.** `save` replaces the stored object, so `done` was set on the old one and the stored schedule stayed due. After the send, `tick` now reads the stored schedule by id and updates that one.
+- **A schedule deleted while an earlier run is going out still fired.** `tick` walked the list as it was when the tick started. It now walks the ids and looks each schedule up when its turn comes; one deleted during the send is skipped, and one deleted during its own send is neither logged nor updated.
+
+**Outcome of an edit during a run:** the run's result (`done`, or the next time) is applied to the edited schedule, so a once schedule is done after the run and the edit stays. A third case covers a schedule deleted during its own send (no log entry, not brought back); two guards each keep that true (`tick`'s skip and `record`'s check that the schedule still exists), so the case fails only when both are removed. Cases 1 and 2 in `scripts/test-schedules.ts` fail without their fix (mutation-checked, one fix removed at a time); case 3 passes on main, because `record` already holds, and is a regression pin. `[KNOWN GAP]` Not run against a real agent app: both are timing in the scheduler core, tested with a fake clock and sender. Loop passes (`tickLoop`) needed no change: it already re-reads the schedule by id after its send (`schedules.ts`, the `cur` lookup after `sendRun`) and returns when it is gone.
