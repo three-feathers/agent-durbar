@@ -6,7 +6,8 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import type { HistoryItem } from '../src/adapters/history';
-import { createMasker } from '../src/main/convmask';
+import { MaskBudgetError, createMasker } from '../src/main/convmask';
+import { cut as readerCut } from '../src/adapters/history';
 import type { Masker } from '../src/main/convmask';
 import { BUDGET, createReadGate, messageExcerpts, orderPlan, rendererScript, startScan } from '../src/main/convsearch';
 import type { PlanSession, ReadOutcome, ScanBatch, ScanDeps, ScanEnd, SessionSearchApi } from '../src/main/convsearch';
@@ -308,6 +309,49 @@ async function main(): Promise<void> {
     const h4 = harness({ L: [u(long.slice(0, 20_001))] });
     await run(h4, [sess({ sessionId: 'L' })], 'xxxxxxxx');
     assert.deepStrictEqual(hitsOf(h4), [], 'the run the cut split is dropped, not searched half');
+  }
+
+  // ---- review finding 3: a spaced MCP value cut by the reader's 20 000-character limit (the reviewer's probe 5): the cut end is not the
+  // message's own edge, so the edge guard holds there and the value's first word never shows
+  {
+    sid = 0;
+    const V = 'Tr0ub4dorXYZ99 correcthorsebattery';
+    const fill = (n: number): string => { let t = ''; for (let i = 0; t.length < n; i++) t += 'w' + (i % 97) + ' '; return t.slice(0, n); };
+    for (const tail of [31, 60, 120, 190]) {
+      const pre = fill(20_000 - 24);
+      const rawMsg = pre.slice(0, pre.length - tail - 9) + ' invoice ' + pre.slice(pre.length - tail) + ' ' + V + ' tail';
+      const h = harness({ cutv: [u(readerCut(rawMsg, 20_000))] }, { values: () => [V] });
+      await run(h, [sess({ sessionId: 'cutv' })], 'invoice');
+      assert.ok(!JSON.stringify(h.batches).includes('Tr0ub4dor'), `no first word of a cut value (tail ${tail}): ${JSON.stringify(hitsOf(h).map((x) => x.excerpts.map((e) => e.text)))}`);
+    }
+    // and a hit far from the cut is still found
+    const pre = fill(20_000 - 24);
+    const early = pre.slice(0, 5_000) + ' invoice ' + pre.slice(5_000) + ' ' + V + ' tail';
+    const h2 = harness({ early: [u(readerCut(early, 20_000))] }, { values: () => [V] });
+    await run(h2, [sess({ sessionId: 'early' })], 'invoice');
+    assert.strictEqual(hitsOf(h2).length, 1, 'a hit far from the cut is found');
+  }
+
+  // ---- review finding 4: a token-dense 20 000-character message: its masks stop at the message budget, it shows nothing and is counted
+  {
+    const tok = (i: number) => 'gh' + 'p_' + (String(i).padStart(6, '0') + 'a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6').slice(0, 36);
+    let dense = '**x** ';
+    for (let i = 0; dense.length < 19_900; i++) dense += tok(i) + ' invoice ';
+    let dense2 = '';
+    for (let i = 0; dense2.length < 19_900; i++) dense2 += '**' + tok(i) + '** ';
+    for (const [msg, q] of [[dense, 'invoice'], [dense2, 'a1b2c3d4']] as const) {
+      let work = 0;
+      const counting: Masker = { maskText: (r, v, b) => MASKER.maskText(r, v, b), maskedWindow: (r, f, t, v, w) => { const x = MASKER.maskedWindow(r, f, t, v, w); work += x.work; return x; } };
+      let threw: unknown;
+      try { messageExcerpts(msg.slice(0, 19_990), q, { n: 0, speaker: 'you', values: [], masker: counting, search: S }); } catch (e) { threw = e; }
+      assert.ok(work <= BUDGET.messageWork, `the masks of one message stay within its budget (${work} <= ${BUDGET.messageWork})`);
+      if (q === 'invoice') assert.ok(threw instanceof MaskBudgetError, 'over budget: MaskBudgetError, not an unmasked excerpt');
+    }
+    sid = 0;
+    const h = harness({ dense: [u(dense.slice(0, 19_990)), a('the invoice is fine')] });
+    const e = await run(h, [sess({ sessionId: 'dense' })], 'invoice');
+    assert.deepStrictEqual([e.notes.bounded, hitsOf(h).length, hitsOf(h)[0]?.excerpts.map((x) => x.anchor.n)], [1, 1, [1]], 'the dense message is counted and shows nothing; the next message still matches');
+    walk(h, 'dense');
   }
 
   // ---- cancel between sessions and between messages; nothing emitted after it; no transcript kept (each read once, no cache across scans)

@@ -70,14 +70,29 @@ function write(): { bytes: number; sessions: PlanSession[]; needles: Set<string>
     sessions.push({ adapter: 'claude', app: 'Claude Code', folderKey: WS, folderName: 'work folder', sessionId: id(i), group: 'earlier', title: `Session ${i}`, time: 100 - i, content: 'read' });
     if (i % 3 === 0) needles.add(id(i));
   }
+  // review finding 4: a secret-dense session (Markdown and a token every 46 characters, 20 000-character messages) and one plain match
+  const tok = (k: number): string => 'gh' + 'p_' + (String(k).padStart(6, '0') + 'a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6').slice(0, 36);
+  const dense: string[] = [];
+  for (let k = 0; k < 6; k++) {
+    let t = '**x** ';
+    for (let i = 0; t.length < 19_900; i++) t += tok(i + k * 1000) + ' needle ';
+    dense.push(line('assistant', [{ type: 'text', text: t.slice(0, 19_990) }]));
+  }
+  dense.push(line('user', 'and the needle once in plain words'));
+  const dtext = dense.join('\n') + '\n';
+  bytes += Buffer.byteLength(dtext);
+  fs.writeFileSync(path.join(dir, `${id(99)}.jsonl`), dtext);
+  sessions.push({ adapter: 'claude', app: 'Claude Code', folderKey: WS, folderName: 'work folder', sessionId: id(99), group: 'earlier', title: 'Dense', time: 1, content: 'read' });
+  needles.add(id(99));
   return { bytes, sessions, needles };
 }
 
-interface Run { slices: number[]; batches: ScanBatch[]; peak: number; clock: { t: number }; deps: ScanDeps; reads: number }
+interface Run { slices: number[]; real: number[]; batches: ScanBatch[]; peak: number; clock: { t: number }; deps: ScanDeps; reads: number }
 function harness(base: number, onYield?: (n: number) => void): Run {
   const clock = { t: 0 };
-  const r: Run = { slices: [], batches: [], peak: 0, clock, deps: undefined as unknown as ScanDeps, reads: 0 };
+  const r: Run = { slices: [], real: [], batches: [], peak: 0, clock, deps: undefined as unknown as ScanDeps, reads: 0 };
   let last = 0;
+  let lastReal = process.hrtime.bigint();
   let yields = 0;
   const sample = (): void => { gc(); r.peak = Math.max(r.peak, process.memoryUsage().heapUsed - base); };
   const masker: Masker = {
@@ -88,10 +103,12 @@ function harness(base: number, onYield?: (n: number) => void): Run {
     now: () => (clock.t += 0.2),
     yieldNow: async () => {
       r.slices.push(clock.t - last);
+      r.real.push(Number(process.hrtime.bigint() - lastReal) / 1e6);
       if (++yields % 25 === 0) sample();
       onYield?.(yields);
       await new Promise<void>((res) => setImmediate(res));
       last = clock.t;
+      lastReal = process.hrtime.bigint();
     },
     sleep: async (ms) => { clock.t += ms; last = clock.t; },
     read: async (s, stop) => {
@@ -105,6 +122,7 @@ function harness(base: number, onYield?: (n: number) => void): Run {
         clearInterval(timer);
         sample();
         last = clock.t;
+        lastReal = process.hrtime.bigint();
       }
     },
     values: () => [],
@@ -133,6 +151,11 @@ async function main(): Promise<void> {
   const longest = Math.max(...r.slices);
   assert.ok(r.slices.length > 20, `it yields (${r.slices.length} slices)`);
   assert.ok(longest < 50, `longest slice ${longest.toFixed(1)} ms of the fake clock, under 50`);
+  // review finding 4: the dense messages stop at the per-message mask budget (counted, nothing shown), so no slice blocks the loop for
+  // long on a real clock either. An absolute ceiling, generous for a slow CI machine (here: about 40 ms; unbounded, one message took 75-260 ms).
+  assert.ok(end.notes.bounded >= 6, `the dense messages are counted (${end.notes.bounded})`);
+  const longestReal = Math.max(...r.real);
+  assert.ok(longestReal < 250, `longest real slice ${longestReal.toFixed(1)} ms, under 250`);
   assert.ok(r.peak < 64 * 1024 * 1024, `live heap at most ${(r.peak / 1048576).toFixed(1)} MB above the start, under 64 MB`);
   for (const h of hits) for (const e of h.excerpts) assert.ok(!e.text.includes('Qw3Er4Ty') && !e.text.includes('/home/'), `masked: ${e.text}`);
   const big = hits.find((h) => h.sessionId === id(0))!;
@@ -156,7 +179,7 @@ async function main(): Promise<void> {
   assert.strictEqual(c.reads, readsAt, 'no read starts after the cancel');
   assert.ok(c.clock.t - at < 50, `ended ${(c.clock.t - at).toFixed(1)} ms of the fake clock after the cancel`);
 
-  console.log(`convsearch corpus: ${(bytes / 1048576).toFixed(1)} MB, ${r.slices.length} slices, longest ${longest.toFixed(1)} ms (fake clock), peak live heap ${(r.peak / 1048576).toFixed(1)} MB above start, peak RSS +${(rssGrowth / 1048576).toFixed(1)} MB`);
+  console.log(`convsearch corpus: ${(bytes / 1048576).toFixed(1)} MB, ${r.slices.length} slices, longest ${longest.toFixed(1)} ms (fake clock), ${Math.max(...r.real).toFixed(1)} ms (real), peak live heap ${(r.peak / 1048576).toFixed(1)} MB above start, peak RSS +${(rssGrowth / 1048576).toFixed(1)} MB`);
   console.log('convsearch corpus tests passed');
   process.exitCode = 0;
 }

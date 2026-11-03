@@ -5,7 +5,7 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
-import { WINDOW_CHARS, cleanValues, createMasker, scanSecretValues } from '../src/main/convmask';
+import { MASK_CALL_WORK, MaskBudgetError, WINDOW_CHARS, cleanValues, createMasker, maskWork, scanSecretValues } from '../src/main/convmask';
 import { rendererScript } from '../src/main/convsearch';
 
 process.exitCode = 1;
@@ -69,7 +69,8 @@ assert.strictEqual(M.maskText(`**note** the ${MCPV} here`, VALS), 'note the [red
 assert.strictEqual(M.maskText('Team \u{1F469}\u200D\u{1F4BB} ok', []), 'Team \u{1F469}\u200D\u{1F4BB} ok', 'a joiner stays when it hides nothing');
 
 // 2. the window: ±600 around the hit, widened to whitespace; a secret at, across or near either edge never survives in the window
-const filler = (n: number): string => { let s = ''; for (let i = 0; s.length < n; i++) s += `word${i % 97} `; return s.slice(0, n); };
+// lines of about 70 characters, so window edges fall inside lines (a line far longer than the window is masked whole, see below)
+const filler = (n: number): string => { let s = ''; for (let i = 0; s.length < n; i++) s += `word${i % 97}` + (i % 10 === 9 ? '\n' : ' '); return s.slice(0, n); };
 const HIT = 'invoice';
 let windows = 0;
 for (const secret of [GHP, `x**${GHP}**`, `https://bob:${URLPW}@example.test/a`, MCPV, MCPV_SPACE, `/home/${USER}/p`, `C:\\Users\\${USER}\\p`, `${GHP.slice(0, 18)}**${GHP.slice(18)}`]) {
@@ -96,9 +97,13 @@ assert.ok(windows > 600, `enough windows (${windows})`);
   const raw2 = filler(3000) + HIT + filler(3000);
   const at2 = raw2.indexOf(HIT);
   const w2 = M.maskedWindow(raw2, at2, at2 + HIT.length, []);
-  assert.ok(!w2.atStart && !w2.atEnd && w2.text.length >= 2 * WINDOW_CHARS && w2.text.length < 2 * WINDOW_CHARS + 40, `a ±600 window (${w2.text.length})`);
-  assert.ok(raw2.includes(' ' + w2.text.trim() + ' ') || raw2.startsWith(w2.text), 'cut at whitespace on both sides');
-  assert.strictEqual(M.maskedWindow(raw2, at2, at2, [], true).text, raw2, 'whole: the whole message');
+  assert.ok(!w2.atStart && !w2.atEnd && w2.text.length >= 2 * WINDOW_CHARS && w2.text.length < 2 * WINDOW_CHARS + 200, `a ±600 window, from the start of the line before its edge (${w2.text.length})`);
+  assert.ok(w2.text.startsWith('word') && raw2.includes('\n' + w2.text.slice(0, 40)), 'the left edge is a line start');
+  assert.ok(raw2.includes(w2.text) && /\s/.test(raw2[raw2.indexOf(w2.text) + w2.text.length]), 'cut at whitespace on the right');
+  assert.strictEqual(M.maskedWindow(raw2, at2, at2, [], { whole: true }).text, raw2, 'whole: the whole message');
+  const one = 'x '.repeat(2000) + HIT + ' y'.repeat(2000);
+  const w3 = M.maskedWindow(one, one.indexOf(HIT), one.indexOf(HIT) + 7, []);
+  assert.deepStrictEqual([w3.atStart, w3.atEnd], [true, true], 'a line far longer than the window: the whole message is masked');
 }
 // a private key block opened before the window: its body is masked from the BEGIN line
 {
@@ -107,6 +112,48 @@ assert.ok(windows > 600, `enough windows (${windows})`);
   const at = raw.indexOf(HIT);
   const w = M.maskedWindow(raw, at, at + HIT.length, []);
   assert.ok(!w.text.includes('MIIEvQIBADANBgkq'), `no key body in the window: ${JSON.stringify(w.text.slice(0, 120))}`);
+}
+
+// review of phase 1, finding 1: rules that read context to the left on the same line, or across up to 8 line ends
+{
+  // a Cookie header longer than the window (the reviewer's probe 3): its pairs are masked to the end of its line
+  const pairs = Array.from({ length: 120 }, (_, i) => `k${i}=v${i}`).join('; ');
+  const raw = 'Cookie: ' + pairs + '; x9=Zx81kq0PLm2RtY\ninvoice total is due';
+  const w = M.maskedWindow(raw, raw.indexOf(HIT), raw.indexOf(HIT) + 7, []);
+  assert.ok(!w.text.includes('Zx81kq0PLm2RtY') && !w.text.includes('v119'), `no cookie value: ${JSON.stringify(w.text.slice(-80))}`);
+  // the header on the line before its pairs, and a named secret whose value is lines below its name
+  const raw2 = filler(900) + '\nSet-Cookie:\n' + Array.from({ length: 70 }, (_, i) => `c${i}=val${i}x`).join('; ') + '; sid=Qp9xW2mZ7rT5\n' + filler(400) + ' ' + HIT + ' ' + filler(300);
+  const w2 = M.maskedWindow(raw2, raw2.indexOf(HIT), raw2.indexOf(HIT) + 7, []);
+  assert.ok(!w2.text.includes('Qp9xW2mZ7rT5'), 'a header on the line before');
+  for (let blank = 0; blank <= 3; blank++) {
+    const raw3 = filler(900) + '\npassword:' + '\n'.repeat(blank) + '\n  hunter2Valu3x ' + filler(560) + ' ' + HIT + ' ' + filler(300);
+    const w3 = M.maskedWindow(raw3, raw3.indexOf(HIT), raw3.indexOf(HIT) + 7, []);
+    if (w3.text.includes('hunter2Valu3x') && !w3.text.includes('password')) assert.fail(`a name lines above its value (${blank} blank): ${JSON.stringify(w3.text.slice(0, 60))}`);
+  }
+}
+// review finding 2: a BEGIN line with a hidden character opens a key block too (the masks read the text without it)
+{
+  const body = Array.from({ length: 40 }, (_, i) => 'MIIEvQIBADANBgkqhkiG9w0BAQEFAASC' + String(i).padStart(32, 'Q')).join('\n');
+  for (const begin of ['-----BEG​IN PRIVATE KEY-----', '-----BEGIN­ PRIVATE KEY-----', '-----⁠BEGIN PRIVATE KEY-----']) {
+    const raw = 'key: ' + begin + '\n' + body + '\n-----END PRIVATE KEY----- invoice here ' + filler(900);
+    const w = M.maskedWindow(raw, raw.indexOf(HIT), raw.indexOf(HIT) + 7, []);
+    assert.ok(!w.text.includes('MIIEvQIBADANBgkq'), `no key body after ${JSON.stringify(begin)}: ${JSON.stringify(w.text.slice(0, 80))}`);
+  }
+}
+// review finding 4: the work of a mask is estimated before it runs, and a mask over its budget throws (fail closed)
+{
+  assert.strictEqual(maskWork('a'.repeat(1000)), 550, 'linear passes: 0.55 per character');
+  assert.strictEqual(maskWork('**' + 'abcdefghijklmn '.repeat(10)), Math.ceil((2 + 150) * 0.55 + 10 * 300), 'with Markdown marks: 300 per token-like run');
+  assert.strictEqual(maskWork('abcdefghijklmn '.repeat(10)), Math.ceil(150 * 0.55), 'no marks: runs cost nothing extra');
+  assert.strictEqual(maskWork('x'.repeat(100), true), Math.ceil(100 * 0.55 * 2), 'hidden characters: two passes');
+  const tok = (i: number) => 'gh' + 'p_' + (String(i).padStart(6, '0') + 'a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6').slice(0, 36);
+  let dense = '**x** ';
+  for (let i = 0; dense.length < 19_900; i++) dense += tok(i) + ' invoice ';
+  assert.ok(maskWork(dense) > MASK_CALL_WORK);
+  assert.throws(() => M.maskedWindow(dense, 0, dense.length, [], { whole: true }), MaskBudgetError, 'a token-dense whole message is over budget');
+  assert.throws(() => M.maskText(dense, []), MaskBudgetError);
+  assert.throws(() => M.maskedWindow('the invoice', 4, 11, [], { budget: 1 }), MaskBudgetError, 'the caller\'s budget holds');
+  assert.ok(M.maskedWindow(dense, 50, 57, []).work <= MASK_CALL_WORK, 'a window of it fits');
 }
 
 // 3. fail closed

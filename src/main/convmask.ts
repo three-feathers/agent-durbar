@@ -55,49 +55,123 @@ export interface MaskedWindow {
   /** The window starts at the message's start / ends at its end (no raw context was left out on that side). */
   atStart: boolean;
   atEnd: boolean;
+  /** The work this mask cost (`maskWork` units), for the per-message budget. */
+  work: number;
+}
+
+/**
+ * Review of phase 1, finding 4 (FR-022, SC-003): the cost of one mask, estimated before it runs, in microseconds of a mid-range machine
+ * (measured 2026-11-03 on the VPS): about 0.55 per character for the linear passes, plus, when Markdown marks are present, 150 to 300 per
+ * token-like run (12 or more token characters), since `redactMarkdown` calls `redact` on each run and scans the text once more for each run
+ * it masks (300 is counted, the cost seen under load). Every run counts (an upper bound: plain code with long identifiers is overestimated). Hidden characters double it.
+ */
+const RUN = /[A-Za-z0-9_\-.+/=:@%]{12,}/g;
+export function maskWork(s: string, hidden = false): number {
+  const runs = HAS_MARK.test(s) ? (s.match(RUN)?.length ?? 0) : 0;
+  return Math.ceil((s.length * 0.55 + runs * 300) * (hidden ? 2 : 1));
+}
+/** The most one mask may cost (estimated, about 15 ms); a message's masks together get `messageWork` (convsearch.ts). */
+export const MASK_CALL_WORK = 15_000;
+
+/** Thrown when a mask would cost more than its budget: the caller shows nothing of that message and counts it (fail closed). */
+export class MaskBudgetError extends Error {
+  constructor() {
+    super('mask budget');
+  }
+}
+
+export interface WindowOptions {
+  /** Mask the whole message. */
+  whole?: boolean;
+  /** Characters of context on each side (default `WINDOW_CHARS`). */
+  radius?: number;
+  /** The most this mask may cost (default `MASK_CALL_WORK`). */
+  budget?: number;
 }
 
 export interface Masker {
-  /** The whole text masked (a title, or a whole message). Throws when masking is not possible. */
-  maskText(raw: string, values: readonly string[]): string;
-  /** The window around raw[from, to) masked; `whole` masks the whole message. Throws when masking is not possible. */
-  maskedWindow(raw: string, from: number, to: number, values: readonly string[], whole?: boolean): MaskedWindow;
+  /** The whole text masked (a title, or a whole message). Throws when masking is not possible or would cost more than `budget`. */
+  maskText(raw: string, values: readonly string[], budget?: number): string;
+  /** The window around raw[from, to) masked. Throws when masking is not possible; `MaskBudgetError` when it would cost too much. */
+  maskedWindow(raw: string, from: number, to: number, values: readonly string[], o?: WindowOptions): MaskedWindow;
 }
 
 const isWs = (c: number): boolean => c === 32 || (c >= 9 && c <= 13) || c === 0xa0 || c === 0x2028 || c === 0x2029 || c === 0x3000 || c === 0xfeff || (c >= 0x2000 && c <= 0x200a);
+/** The start of the line holding position i. */
+const lineStart = (s: string, i: number): number => (i <= 0 ? 0 : s.lastIndexOf('\n', i - 1) + 1);
 
 export function createMasker(libs: MaskLibs): Masker {
   if (!libs || typeof libs.unhide !== 'function') throw new Error('no unhide');
-  const maskText = (raw: string, values: readonly string[]): string => {
+  const unhide = (t: string): string => {
+    const c = libs.unhide(t);
+    if (typeof c !== 'string') throw new Error('mask failed');
+    return c;
+  };
+  const maskText = (raw: string, values: readonly string[], budget = MASK_CALL_WORK): string => {
     const s = String(raw);
     const vals = cleanValues(values);
-    const c = libs.unhide(s);
-    if (typeof c !== 'string') throw new Error('mask failed');
+    const c = unhide(s);
+    if (maskWork(s, c !== s) > budget) throw new MaskBudgetError();
     if (c === s) return maskOnce(s, vals);
     const m = maskOnce(c, vals);
     return m === c ? maskOnce(s, vals) : m; // the copy without hidden characters is shown only when it hid something (as DurbarSafeText's unhid)
   };
-  const maskedWindow = (raw: string, from: number, to: number, values: readonly string[], whole = false): MaskedWindow => {
+  const maskedWindow = (raw: string, from: number, to: number, values: readonly string[], o: WindowOptions = {}): MaskedWindow => {
     const s = String(raw);
     const n = s.length;
-    let ws = whole ? 0 : Math.max(0, Math.min(n, from) - WINDOW_CHARS);
-    let we = whole ? n : Math.min(n, Math.max(from, to) + WINDOW_CHARS);
+    const radius = o.radius ?? WINDOW_CHARS;
+    const budget = o.budget ?? MASK_CALL_WORK;
+    let ws = 0;
+    let we = n;
+    let whole = o.whole === true;
     if (!whole) {
+      ws = Math.max(0, Math.min(n, from) - radius);
+      we = Math.min(n, Math.max(from, to) + radius);
+      const vals = cleanValues(values);
       // a known secret value across an edge comes in whole (it may hold spaces)
-      for (const v of cleanValues(values)) {
+      for (const v of vals) {
         const a = s.indexOf(v, Math.max(0, ws - v.length + 1));
         if (a >= 0 && a < ws && a + v.length > ws) ws = a;
         const b = s.indexOf(v, Math.max(0, we - v.length + 1));
         if (b >= 0 && b < we && b + v.length > we) we = b + v.length;
       }
-      // a private key block opened before the window is masked from its BEGIN line (its body has no shape of its own)
-      const before = s.slice(0, ws).toLowerCase();
-      const bi = before.lastIndexOf('-----begin');
-      if (bi >= 0 && bi > before.lastIndexOf('-----end')) ws = bi;
-      while (ws > 0 && !isWs(s.charCodeAt(ws - 1))) ws--;
-      while (we < n && !isWs(s.charCodeAt(we))) we++;
+      // Review finding 1: some `redact` rules read their context to the left on the same line (a `Cookie:` header masks its pairs to the
+      // line's end, the JSON `"Cookie": "` form to its quote, `curl ... -u user:pass`, a `.netrc` `machine ... password`), and some let up to
+      // 8 whitespace characters, line ends too, sit between a name and its value (`password:`, `Authorization:`, `Cookie:`). So the left edge
+      // goes back to the start of its line, and over the line before it (and blank lines): every such context is then inside the window.
+      if (ws > 0) {
+        let p = lineStart(s, ws);
+        for (let k = 0; k < 9 && p > 0; k++) {
+          const q = lineStart(s, p - 1);
+          const blank = s.slice(q, p).trim() === '';
+          p = q;
+          if (!blank) break;
+        }
+        // a line far longer than the window: its start is too far to take as context; the whole message is masked (inside the budget)
+        if (ws - p > 2 * WINDOW_CHARS) whole = true;
+        else ws = p;
+      }
+      // Review finding 2: a private key block opened before the window is masked from its BEGIN line (its body has no shape of its own).
+      // The check reads the text without hidden characters, as the masks do (`-----BEG​IN` is a BEGIN to them); when hidden
+      // characters are there the offset cannot be mapped back, so the whole message is masked.
+      const before = s.slice(0, ws);
+      const plain = unhide(before);
+      const low = plain.toLowerCase();
+      const bi = low.lastIndexOf('-----begin');
+      if (bi >= 0 && bi > low.lastIndexOf('-----end')) {
+        if (plain === before) ws = lineStart(s, bi);
+        else whole = true;
+      }
+      if (!whole) {
+        while (ws > 0 && !isWs(s.charCodeAt(ws - 1))) ws--;
+        while (we < n && !isWs(s.charCodeAt(we))) we++;
+      }
+      if (whole) { ws = 0; we = n; }
     }
-    return { text: maskText(s.slice(ws, we), values), atStart: ws === 0, atEnd: we === n };
+    const piece = s.slice(ws, we);
+    const work = maskWork(piece, unhide(piece) !== piece);
+    if (work > budget) throw new MaskBudgetError();
+    return { text: maskText(piece, values, Infinity), atStart: ws === 0, atEnd: we === n, work };
   };
   return { maskText, maskedWindow };
 }

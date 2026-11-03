@@ -13,7 +13,8 @@
 import * as path from 'path';
 import type { HistoryItem } from '../adapters/history';
 import { normDir } from '../adapters/history';
-import type { Masker } from './convmask';
+import { MASK_CALL_WORK, MaskBudgetError } from './convmask';
+import type { MaskedWindow, Masker } from './convmask';
 
 /** FR-022 budgets and FR-011 / FR-013 / FR-031 sizes: the one place for them. */
 export const BUDGET = {
@@ -31,6 +32,10 @@ export const BUDGET = {
   edgeGuard: 200,
   headChars: 60,
   triesPerWord: 8,
+  /** Window radii tried in turn around a hit (then the whole message), so a window grows only as far as the edge guard needs. */
+  radii: [600, 1_800],
+  /** Review finding 4: the most the masks of one message may cost together (`maskWork`, estimated microseconds). Over it, the message shows nothing and is counted. */
+  messageWork: 25_000,
 } as const;
 
 /** The parts of DurbarSessionSearch (`src/renderer/sessionsearch.js`) the scan uses. */
@@ -134,6 +139,8 @@ export interface ScanNotes {
   timedOut: boolean;
   /** Messages searched only in their first 20 000 characters, in sessions that did not match. */
   cut: number;
+  /** Review finding 4: messages whose masks would cost more than `messageWork`: nothing of them is shown (fail closed). */
+  bounded: number;
 }
 
 export interface ScanEnd {
@@ -204,27 +211,30 @@ function excerptOf(search: SessionSearchApi, m: string, s: number, e: number, qu
 }
 
 /** An excerpt of the masked text `m` for word `term`, cut at least `edgeGuard` characters inside an edge where raw context was left out. */
-function cutIn(search: SessionSearchApi, m: string, atStart: boolean, atEnd: boolean, term: number, query: string): ReturnType<typeof excerptOf> | undefined {
+function cutIn(search: SessionSearchApi, m: string, atStart: boolean, atEnd: boolean, term: number, query: string): ReturnType<typeof excerptOf> | 'grow' | undefined {
+  let near = false;
   for (const r of search.locate(m, query)) {
     if (r.term !== term) continue;
     const [s, e] = bounds(m, r.start, r.end);
-    if ((!atStart && s < BUDGET.edgeGuard) || (!atEnd && e > m.length - BUDGET.edgeGuard)) continue;
+    if ((!atStart && s < BUDGET.edgeGuard) || (!atEnd && e > m.length - BUDGET.edgeGuard)) { near = true; continue; }
     return excerptOf(search, m, s, e, query);
   }
-  return undefined;
+  return near ? 'grow' : undefined; // 'grow': found only near an edge, a wider window may do; undefined: masked away (A2)
 }
 
 const headOf = (search: SessionSearchApi, masked: string): string => [...search.anchorKey(masked)].slice(0, BUDGET.headChars).join('');
 
 /**
  * T014: the excerpts of one message for `query`, from masked text only. Raw hits (on the folded raw text) only choose where to mask; each
- * word is confirmed in the masked window (A2) or not at all. Undefined when no word is in the raw text; throws when masking fails (the
- * caller drops the message: fail closed).
+ * word is confirmed in the masked window (A2) or not at all. A window grows (`radii`, then the whole message) only while the edge guard
+ * fails. `cutEnd`: the reader cut the message, so its end is not the message's own edge (review finding 3: the guard holds there too).
+ * Undefined when no word is in the raw text. Throws when masking fails, and `MaskBudgetError` when the message's masks would cost more than
+ * `messageWork`: the caller then drops the whole message (fail closed).
  */
 export function messageExcerpts(
   raw: string,
   query: string,
-  o: { n: number; speaker: Speaker; values: readonly string[]; masker: Masker; search: SessionSearchApi },
+  o: { n: number; speaker: Speaker; values: readonly string[]; masker: Masker; search: SessionSearchApi; cutEnd?: boolean },
 ): { excerpts: Array<Excerpt & { terms: Set<number> }>; confirmed: Set<number> } | undefined {
   const { search, masker } = o;
   const words = [...new Set(search.terms(query))];
@@ -233,28 +243,38 @@ export function messageExcerpts(
   const confirmed = new Set<number>();
   const out: Array<Excerpt & { terms: Set<number> }> = [];
   const tries = new Map<number, number>();
-  let whole: string | undefined;
-  const wholeText = (): string => (whole ??= masker.maskedWindow(raw, 0, raw.length, o.values, true).text);
+  let spent = 0;
+  const mask = (from: number, to: number, opt: { whole?: boolean; radius?: number }): MaskedWindow => {
+    const left = BUDGET.messageWork - spent;
+    if (left <= 0) throw new MaskBudgetError();
+    const w = masker.maskedWindow(raw, from, to, o.values, { ...opt, budget: Math.min(MASK_CALL_WORK, left) });
+    spent += w.work;
+    return { ...w, atEnd: w.atEnd && !o.cutEnd };
+  };
+  let whole: MaskedWindow | undefined;
+  const wholeOf = (): MaskedWindow => (whole ??= mask(0, raw.length, { whole: true }));
+  /** The masked windows around [from, to), smallest first, while `ok` says 'grow' (the edge guard failed); then the whole message. */
+  const grow = <T>(from: number, to: number, ok: (w: MaskedWindow) => T | 'grow' | undefined): T | undefined => {
+    const done = (r: T | 'grow' | undefined): T | undefined => (r === 'grow' ? undefined : r);
+    if (whole) return done(ok(whole));
+    for (const radius of BUDGET.radii) {
+      const w = mask(from, to, { radius });
+      const r = ok(w);
+      if (r !== 'grow' || (w.atStart && w.atEnd)) return done(r);
+    }
+    return done(ok(wholeOf()));
+  };
   let head: string | undefined;
   for (const r of search.locate(raw, query, 64)) {
     if (confirmed.has(r.term)) continue;
     const t = tries.get(r.term) ?? 0;
     if (t >= BUDGET.triesPerWord) continue;
     tries.set(r.term, t + 1);
-    let ex = whole !== undefined ? cutIn(search, whole, true, true, r.term, query) : undefined;
-    if (!ex && whole === undefined) {
-      const w = masker.maskedWindow(raw, r.start, r.end, o.values);
-      ex = cutIn(search, w.text, w.atStart, w.atEnd, r.term, query);
-      if (!ex && !(w.atStart && w.atEnd)) ex = cutIn(search, wholeText(), true, true, r.term, query);
-    }
+    const ex = grow(r.start, r.end, (w) => cutIn(search, w.text, w.atStart, w.atEnd, r.term, query));
+    // cutIn picked an occurrence of this word in the masked text, so `terms` holds it; the check stays as the A2 rule in one line (the excerpt's own marks must show the word)
     if (!ex || !ex.terms.has(r.term)) continue; // the mask removed this occurrence (A2)
-    if (head === undefined) {
-      if (whole !== undefined) head = headOf(search, whole);
-      else {
-        const w0 = masker.maskedWindow(raw, 0, 0, o.values);
-        head = w0.atEnd || w0.text.length >= BUDGET.headChars + BUDGET.edgeGuard ? headOf(search, w0.text) : headOf(search, wholeText());
-      }
-    }
+    // the head: the first 60 characters of the masked message's key, from a start window that reaches well past them (masks shrink text)
+    head ??= grow(0, 0, (w) => (w.atEnd || w.text.length >= BUDGET.headChars + BUDGET.edgeGuard ? headOf(search, w.text) : 'grow')) ?? headOf(search, wholeOf().text); // a cut message: its start is far from the cut
     for (const x of ex.terms) confirmed.add(x);
     out.push({ text: ex.text, marks: ex.marks, speaker: o.speaker, anchor: { n: o.n, head }, terms: ex.terms });
   }
@@ -266,7 +286,7 @@ export function orderPlan(plan: ScanPlan): { list: PlanSession[]; notes: ScanNot
   const platform = plan.platform ?? process.platform;
   const notes: ScanNotes = {
     searched: 0, folders: 0, notInstalled: [...new Set((plan.unavailable ?? []).map(String))], tooLarge: 0, unreadable: 0,
-    titleOnly: { count: 0, apps: [] }, hidden: 0, floorsOff: 0, capped: { sessions: false, perFolder: false, results: false }, timedOut: false, cut: 0,
+    titleOnly: { count: 0, apps: [] }, hidden: 0, floorsOff: 0, capped: { sessions: false, perFolder: false, results: false }, timedOut: false, cut: 0, bounded: 0,
   };
   const seen = new Set<string>();
   const folderOrder: string[] = [];
@@ -425,7 +445,8 @@ export function startScan(plan: ScanPlan, query: string, deps: ScanDeps): { canc
         await tick();
         if (halt()) break;
         let text = typeof it.text === 'string' ? it.text : '';
-        if (text.length > BUDGET.maxChars) {
+        const cutEnd = text.length > BUDGET.maxChars;
+        if (cutEnd) {
           // the reader cut it: drop the token the cut may have split (mask before cut), back to the last whitespace
           let k = BUDGET.maxChars;
           while (k > 0 && !isWs(text.charCodeAt(k - 1))) k--;
@@ -434,9 +455,10 @@ export function startScan(plan: ScanPlan, query: string, deps: ScanDeps): { canc
         }
         let m: ReturnType<typeof messageExcerpts>;
         try {
-          m = messageExcerpts(text, query, { n, speaker: it.type === 'user' ? 'you' : 'agent', values, masker: deps.masker, search: deps.search });
-        } catch {
-          continue; // masking failed: no hit from this message (fail closed)
+          m = messageExcerpts(text, query, { n, speaker: it.type === 'user' ? 'you' : 'agent', values, masker: deps.masker, search: deps.search, cutEnd });
+        } catch (e) {
+          if (e instanceof MaskBudgetError) notes.bounded++;
+          continue; // masking failed or would cost too much: no hit from this message (fail closed)
         }
         if (!m) continue;
         for (const x of m.confirmed) confirmed.add(x);
