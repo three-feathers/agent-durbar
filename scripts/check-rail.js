@@ -195,7 +195,7 @@ module.exports = async (ctx) => {
     assert.strictEqual(await expanded(needG.key), 'false', `${tag}: the folder stays collapsed after a chat switch`);
     await emit(otherId, { type: 'status', status: 'working', intent: 'Still working' });
     await emit(otherId, { type: 'status', status: 'idle' });
-    await ok(`!!document.querySelector('#stripList .sitem[data-sw="${otherId}"].st-idle,#stripList .sitem[data-sw="${otherId}"].st-done')`, `${tag}: a status change repaints the rail`);
+    await ok(`(()=>{const r=__rail.row(${jsLiteral(otherId)});return !!r&&(r.classList.contains('st-idle')||r.classList.contains('st-done'))})()`, `${tag}: a status change repaints the rail`);
     assert.strictEqual(await expanded(needG.key), 'false', `${tag}: and the folder stays collapsed`);
     assert.strictEqual(await js(`localStorage.getItem('durbar.railFolds')`), null, `${tag}: nothing saved while rememberOn() is off`);
     // opening a chat in a collapsed folder, from the office, expands it and shows its row
