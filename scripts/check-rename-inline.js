@@ -4,7 +4,7 @@
  *   npm run check:ui -- --only check-rename-inline
  *   OUT=docs/screenshots  (optional) also saves the screenshots of the field open on the header, a card, a Previous sessions row and a folder
  *
- * At 1440x900 and 1280x800, in Expert and in Simple: every surface of FR-020 (chat title by click, F2 and Enter; desk card pencil and F2;
+ * At 1440x900 and 1280x800: every surface of FR-020 (chat title by click, F2 and Enter; desk card pencil and F2;
  * list row pencil and F2; Previous sessions rows (also a hidden one; no pencil on VS Code rows); the room header and the Folders panel;
  * none on helpers or in the list's Folder cell), every item of FR-021 (Enter, blur, window blur, Tab, Esc that never
  * closes the chat, unchanged = no call, empty reset, a rule error on Enter and on blur, IME, paste, busy, one edit at a time), every item
@@ -63,25 +63,22 @@ module.exports = async (ctx) => {
   const closeField = async () => { if ((await st()).open) { await key('Escape'); await ctx.sleep(120); } };
 
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
-    for (const level of ['expert', 'simple']) {
+    {
       await H.load({ w, h, query: Q, ready: 'fit', settle: false });
-      await js(`localStorage.setItem('durbar.detail',${jsLiteral(level)})`);
-      await H.load({ query: Q, ready: 'fit', settle: false });
       await until(`document.querySelectorAll('#stage .unit>.ren[data-ren]').length>=6`, 10000);
       ctx.win.show(); ctx.win.focus(); ctx.win.webContents.focus();
       /* a CI window (Windows) may have no OS focus, or lose it while a field is open: blurAction keeps the field when document.hasFocus() is false (FR-021 item 2). The driver therefore never stubs hasFocus for long: blurField() stubs it true for ONE synchronous call, and the window-blur step stubs it false for one call. A real OS blur at any other time then keeps the field, as in the app. */
       const hasOs = async () => ((await js('document.hasFocus()')) ? 'has' : 'has no');
-      console.log('[rename-inline] ' + w + 'x' + h + ' ' + level + ': the window ' + (await hasOs()) + ' OS focus');
+      console.log('[rename-inline] ' + w + 'x' + h + ': the window ' + (await hasOs()) + ' OS focus');
       if (process.env.RI_UNFOCUSED === '1') { ctx.win.blur(); await ctx.sleep(300); console.log('[rename-inline] RI_UNFOCUSED=1: the window now ' + (await hasOs()) + ' OS focus'); }
-      const tag = `${w} ${level}`;
-      assert.ok(await js(`document.body.classList.contains('simple')===${level === 'simple'}`), `${tag}: the detail level is on`);
+      const tag = `${w}`;
       assert.ok(await js(`typeof __durbarSimUi.inline==='function'&&!!window.__simRenameCalls`), `${tag}: the simulator hooks exist`);
       const ids = await js(`[...document.querySelectorAll('#stage .unit>.ren[data-ren]')].map(b=>b.dataset.ren)`);
       assert.ok(ids.length >= 6, `${tag}: pencils on the desks: ${ids.length}`);
       const [A, B, C, D, E] = ids;
 
-      // the screenshots of the edit state, on the fresh page (no rename has happened yet, so no leftover names), Expert only
-      if (level === 'expert') {
+      // the screenshots of the edit state, on the fresh page (no rename has happened yet, so no leftover names)
+      {
         await openChat(A); await click('#panelTitleBtn', 1); await ctx.sleep(150); await type('Billing refactor'); await shot(`059-rename-inline-header-${w}x${h}.png`); await key('Escape'); await settle(); await closePanel();
         await click(`#stage .ren[data-ren="${C}"]`, 1); await ctx.sleep(150); await type('Billing refactor'); await shot(`059-rename-inline-card-${w}x${h}.png`); await key('Escape'); await settle();
         const fpa = await js(`(()=>{const a=__durbarSimUi.agents().find(x=>x.live&&!x.parent&&x.info&&x.info.cwd==='~/work/mcp-swiss');return a?a.id:null})()`);

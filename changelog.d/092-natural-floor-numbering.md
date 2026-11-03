@@ -1,0 +1,1 @@
+- **Floors count up from the bottom** (spec 092 Q-D): the lift and All floors now show floor 1 at the bottom, and PageUp goes to the next number up, as in a real building. Floor names, numbers, badges and what a screen reader hears are unchanged. Checked with unit tests and the simulator; not tried on a real keyboard's PageUp key or with a screen reader.

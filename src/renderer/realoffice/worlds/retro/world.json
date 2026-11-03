@@ -1,0 +1,190 @@
+{
+ "arrangement": "aisles",
+ "bandRows": 112,
+ "defaultSet": "retro",
+ "desk": [
+  40,
+  22
+ ],
+ "fixtureTop": {
+  "bank": 10,
+  "boss": 0,
+  "coffee": 2,
+  "library": 8,
+  "other": 12,
+  "postbox": 4,
+  "software": 6,
+  "terminal": 4,
+  "web": 4
+ },
+ "fixtures": {
+  "bank": [
+   40,
+   48
+  ],
+  "boss": [
+   66,
+   48
+  ],
+  "coffee": [
+   34,
+   48
+  ],
+  "library": [
+   44,
+   48
+  ],
+  "other": [
+   40,
+   48
+  ],
+  "postbox": [
+   32,
+   48
+  ],
+  "software": [
+   40,
+   48
+  ],
+  "terminal": [
+   36,
+   48
+  ],
+  "web": [
+   44,
+   48
+  ]
+ },
+ "floorLine": 48,
+ "floorTile": [
+  24,
+  24
+ ],
+ "formatVersion": 1,
+ "glow": {
+  "cell": [
+   56,
+   15
+  ],
+  "cells": [
+   "working",
+   "thinking",
+   "waiting",
+   "error",
+   "limit",
+   "done",
+   "idle"
+  ],
+  "file": "glow.webp"
+ },
+ "id": "retro",
+ "monitor": {
+  "big": {
+   "cell": [
+    92,
+    91
+   ],
+   "cells": 4,
+   "file": "monitor.webp",
+   "glass": [
+    5,
+    18,
+    75,
+    50
+   ],
+   "marquee": [
+    4,
+    3,
+    77,
+    7
+   ],
+   "marqueeRect": [
+    0.0435,
+    0.033,
+    0.837,
+    0.0769
+   ],
+   "screenRect": [
+    0.0543,
+    0.1978,
+    0.8152,
+    0.5495
+   ]
+  },
+  "narrow": {
+   "cell": [
+    61,
+    73
+   ],
+   "cells": 4,
+   "file": "monitor-narrow.webp",
+   "glass": [
+    5,
+    18,
+    44,
+    32
+   ],
+   "marquee": [
+    4,
+    3,
+    46,
+    7
+   ],
+   "marqueeRect": [
+    0.0656,
+    0.0411,
+    0.7541,
+    0.0959
+   ],
+   "screenRect": [
+    0.082,
+    0.2466,
+    0.7213,
+    0.4384
+   ]
+  },
+  "small": {
+   "cell": [
+    73,
+    73
+   ],
+   "cells": 4,
+   "file": "monitor-half.webp",
+   "glass": [
+    5,
+    18,
+    56,
+    32
+   ],
+   "marquee": [
+    4,
+    3,
+    58,
+    7
+   ],
+   "marqueeRect": [
+    0.0548,
+    0.0411,
+    0.7945,
+    0.0959
+   ],
+   "screenRect": [
+    0.0685,
+    0.2466,
+    0.7671,
+    0.4384
+   ]
+  }
+ },
+ "name": "Retro arcade",
+ "night": {
+  "floor": "floor-night.webp",
+  "wall": "wall-night.webp"
+ },
+ "pixelArt": true,
+ "wall": "wall.webp",
+ "wallSize": [
+  720,
+  118
+ ]
+}
