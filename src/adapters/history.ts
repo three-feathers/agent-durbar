@@ -124,9 +124,13 @@ export interface HistoryLimits {
   maxItems: number;
   maxTextChars: number;
   maxToolOutputChars: number;
+  /** Spec 095 FR-024 (search only): tool items are dropped before they are stored; the replay never sets it. */
+  textOnly?: boolean;
 }
 
 export const DEFAULT_HISTORY_LIMITS: HistoryLimits = { maxItems: 300, maxTextChars: 20_000, maxToolOutputChars: 2_000 };
+/** Spec 095 FR-024: what the conversation search reads: text items only, no 300-item cap (the byte caps of each reader still hold), 20 000 characters per message. */
+export const SEARCH_HISTORY_LIMITS: Partial<HistoryLimits> = { textOnly: true, maxItems: Infinity, maxTextChars: 20_000 };
 
 export const cut = (s: string, n: number): string => (s.length > n ? s.slice(0, n) + '…' : s);
 
@@ -178,6 +182,7 @@ export function eventsToHistory(events: readonly unknown[], limits: Partial<Hist
         break;
       }
       case 'tool.execution_start': {
+        if (lim.textOnly) break; // spec 095 D2: tool output is never searched
         if (d.parentToolCallId || typeof d.toolCallId !== 'string' || typeof d.toolName !== 'string') break;
         toolIdx.set(d.toolCallId, items.length);
         items.push({ type: 'tool', callId: d.toolCallId, tool: d.toolName, label: toolLabel(d.arguments), ts: tsOf(raw) });
