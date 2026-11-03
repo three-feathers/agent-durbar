@@ -1557,7 +1557,7 @@ tool call in the chat, a code list that covers the claims challenge, and the hin
 
 **Numbers taken** (checked on `origin/main`, the remote branches and the open PRs, 2026-11-03): **FR-195..FR-203** and **T168..T174**.
 
-**Status**: built 2026-11-03 (T168..T174), simulator, fakes and unit tests only; `sim:` `scripts/shots-058-mcp-launch.js` (1440x900, 1280x800), `test:` `test-mcp-cmdcheck.ts`, `test-mcpwords.ts`. Mutation-checked.
+**Status**: built 2026-11-03 (T168..T174), simulator, fakes and unit tests only; `sim:` `scripts/shots-058-mcp-launch.js` (1440x900, 1280x800), `test:` `test-mcp-cmdcheck.ts`, `test-mcpwords.ts`. Mutation-checked. Pictures: [the strip at launch](../../docs/screenshots/058-mcp-launch-closed-1440x900.png) ([1280x800](../../docs/screenshots/058-mcp-launch-closed-1280x800.png)), [Settings with Restart where it failed and the list open](../../docs/screenshots/058-mcp-launch-settings-1440x900.png) ([1280x800](../../docs/screenshots/058-mcp-launch-settings-1280x800.png)).
 
 **Input**: owner (Vikram, 2026-11-03): restart MCP servers from Settings, with their status and signing in again, as in the chat; and
 when the app starts, highlight the servers that have problems and suggest a fix.
