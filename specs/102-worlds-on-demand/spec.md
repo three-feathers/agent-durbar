@@ -755,6 +755,17 @@ Agent decisions stand until the owner changes them.
 
 ## Changes
 
+### 2026-11-03: Retro arcade, its own colours by day and by night, and three weak spots (owner's look, RA5 in part), behind its closed flag
+
+Vikram looked at the arcade on `main` (relayed, 03:39 UTC): "Fix those weak spots and also colors as it looks similar to flat world. I hope you are also supporting dark retro."
+
+- **Colours (FR-263, T217 in part).** `WORLD_SETS.retro` in `theme.js`, the first world with a light: **day** is Retro Pixel's own values, moved (the navy page under the room, cream cards, the yellow mark), with a navy bar; **night** keeps the cream surfaces (038 FR-001) and darkens the page and the bar. While the arcade is shown, `data-ui` is `retro` (FR-263's first point), and `html[data-world-light="night"]` marks night; leaving gives the theme back, its UI style too. `setWorld` and `worldContrast` take the light; a world with no night is its day. **The page colour carries no text in this world** (the room covers the office, panels are cream), so the three pairs on `--bg` (`--ink`, `--room-path`, `--focus`) are not text pairs here, as for the Retro Pixel theme: `worldContrast` lists them as skipped, only for a set with `bgFill`. Every other pair passes AA in both lights. `test:` `test:theme-tokens`; a night ink dimmed fails it.
+- **What waits on #1014's build PRs** (070 FR-068..FR-079, 097 FR-231..FR-235, specified there, not built): corners per world, the 29 tier-2 names, the dark chat header, the materials around the chat and Settings on the desk. The arcade's values file takes each when it lands; today it carries only 070 FR-052's closed list.
+- **What waits on the next PR:** FR-251's Day/Night choice in Settings and T218's night pictures (`wall-night`, `floor-night`, `welcome-night`). Until then the night tokens are reached only by the simulator's `worldlight=night`.
+- **Nothing covers a screen (T265).** In the arcade every cabinet screen is a place no slip, pill or bubble may take (it was a soft one, which a one-line pill could take when nothing else was free: "5 need you" and "Omar: limit" sat on Mira's and Rosa's text at 1280x800). A pill with no free spot docks at the floor's bottom edge, at the free spot there nearest its anchor, else its right end: never hidden, since a hidden status is worse than a moved one. `sim:` `shots-102-arcade`: no slip on a screen and none hidden, at 3, 4, 8 and 15 agents at both sizes; the old placement fails it.
+- **A folder name is readable (T266).** A sign may run on over the free floor after its zone, up to the next zone on its row or the floor's edge, so the last folder on a row is not cut to one letter ("s…"). It never covers another zone. `test:` the aisles test keeps every sign on the floor; `sim:` `shots-102-arcade`: every cut folder name shows at least 8 characters (measured on its own font); the old signs fail it.
+
+
 ### 2026-10-31: every world looks different (owner decision)
 
 Replaces the earlier decision that places may share a Mediterranean feel. New FR-014..FR-019, SC-011..SC-013, a rewritten FR-011 and FR-021, FR-035 (g). Written before this spec's first PR, so no build is affected.
