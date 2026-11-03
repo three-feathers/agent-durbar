@@ -765,6 +765,18 @@ void (async () => {
       u.child().emit('close', 0); await tick(); await tick();
       assert.deepStrictEqual([u.done[0].ok, u.done[0].failure, u.done[0].note], [false, 'managed', undefined], 'exit 0 with the disabled text is a failed Managed run, so the window never says "updated"');
       assert.strictEqual(u.done[0].exitCode, 0, 'the real shape: ok:false with exit 0');
+      // the window side (fjcabello's review of #1045): the done event main really sends goes through the window's own result() and adviceHTML()
+      const src = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'harnesses.js'), 'utf8');
+      const code = src.slice(src.indexOf('function adviceHTML'), src.indexOf('let toastLike'));
+      assert.ok(code.includes('function result('), 'the window functions were found');
+      const shown: { modals: string[]; toasts: string[] } = { modals: [], toasts: [] };
+      const run = new Function('esc', 'PLAN_SHOWN', 'onChange', 'modal', 'toastLike', code + '\nreturn result;');
+      const result = run((x: unknown) => String(x), {}, () => undefined, (title: string, body: string) => { shown.modals.push(title + ' | ' + body); }, (t: string) => { shown.toasts.push(t); });
+      result(u.done[0], 'Claude Code', 'claude');
+      assert.deepStrictEqual(shown.toasts, [], 'a Managed run never toasts "is updated"');
+      assert.strictEqual(shown.modals.length, 1);
+      assert.match(shown.modals[0], /^That did not finish \| .*managed by your organization/, 'the Managed advice from adviceHTML');
+      assert.ok(!/was updated|is updated/.test(shown.modals[0]), 'no "was updated"');
     }
     // the exit-0 rule is scoped to claude update with the recorded text; the note guard is real (a snapshot is given, a plain success has a note)
     {
