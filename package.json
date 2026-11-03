@@ -217,6 +217,7 @@
     "test:newfolderipc": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-newfolderipc.js",
     "test:newfoldergit": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-newfolder-git.js",
     "test:platforms": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-platforms.js",
+    "test:autopilot": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-autopilot.js",
     "test:planmode": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-plan-mode.js",
     "test:copilotoneshot": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-copilot-oneshot.js",
     "test:copilotcap": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-copilot-cap.js",
