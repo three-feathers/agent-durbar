@@ -728,7 +728,7 @@
     const out=[];
     for(const [fg,bg,min] of CONTRAST_PAIRS){const a=t[fg],b=t[bg];if(HEX_ANY.test(String(a||''))&&HEX_ANY.test(String(b||'')))out.push({fg,bg,min,ratio:ratio(a,b)});}
     const dark=!!WORLD_SETS[id].dark; /* a dark world's panels hold light ink: their worst backdrop is white, not black */
-    for(const [fg,bg,min,o] of WORLD_PAIRS){const over=dark&&o==='#000000'?'#ffffff':o,a=t[fg],b=over?glassOver(t[bg],over):t[bg];out.push({fg,bg:bg+(over?' (glass over '+over+')':''),min,ratio:ratio(a,b)});}
+    for(const [fg,bg,min,o] of WORLD_PAIRS)for(const over of dark&&o==='#000000'?['#000000','#ffffff']:[o]){const a=t[fg],b=over?glassOver(t[bg],over):t[bg];out.push({fg,bg:bg+(over?' (glass over '+over+')':''),min,ratio:ratio(a,b)});} /* a dark world: over black and over white, both (pre-review of #1079) */
     return out;
   }
   /* the UI style while a world is shown: the world's own, else the theme's (as setTheme sets it) */

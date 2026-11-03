@@ -128,12 +128,14 @@ PROMPT = ('Use your image generation tool to create ONE image and save it in the
 
 def assets(repo):
     S = os.path.join(repo, 'src/renderer/realoffice/sets/retro'); ap = os.path.join(S, 'ASSETS.md'); txt = open(ap, encoding='utf8').read()
+    sizes = {pid: tuple(st['poses']['sit']) for pid, st in json.load(open(os.path.join(S, 'set.json')))['stand'].items() if 'sit' in st['poses']}   # the height each frame was built at
     a = txt.index('- **Seated on a stool**'); b = txt.index('\n', a) + 1
     txt = txt[:a] + ('- **Seated on a stool** (`sit`, the asleep pose, spec 102 FR-259, owner 2026-11-03): drawn by Codex image generation (`codex exec`, one run per person, reference = the person\'s own `face-book` frame at 8x, prompt in each person\'s `sit` line), '
       'then converted by `scripts/build-arcade-sleep.py` (magenta keyed out, cropped, shrunk to the grid with a block vote, head pixels snapped to the colours of the person\'s own standing head, the drawn skin tone replaced by the standing frame\'s skin tone so a face is never shaded to a dark blob, closed-eye lines kept, outline closed, lossless WebP; it refuses a frame whose mean skin colour is more than 25 off the standing frame\'s). Replaces the code-made frame of the same day. Each person\'s own standing frame was attached as the reference image of their run (a first batch of 2026-11-03 without it was thrown away). Made by Vikram\'s agent (Claude Code), 2026-11-03; waits for the owner\'s look.\n') + txt[b:]
     for pid in sorted(HINTS):
         ref = ''
-        line = f'- sit: `{pid}-sit.webp`, tool Codex image generation (`codex exec`) then `scripts/build-arcade-sleep.py`, 2026-11-03, reference `{pid}-face-book.webp` at 8x,' + ref + ' prompt: "' + PROMPT.format(h=HINTS[pid]) + '"\n'
+        w, h = sizes.get(pid, (0, 0))
+        line = f'- sit: `{pid}-sit.webp` ({w} x {h} grid px, `--height {h}`), tool Codex image generation (`codex exec`) then `scripts/build-arcade-sleep.py`, 2026-11-03, reference `{pid}-face-book.webp` at 8x,' + ref + ' prompt: "' + PROMPT.format(h=HINTS[pid]) + '"\n'
         head = f'### set-{pid}\n'; i = txt.index(head); js = [x for x in (txt.find('\n### ', i + 1), txt.find('\n## ', i + 1)) if x >= 0]; j = min(js) if js else len(txt)
         sec = txt[i:j]; k = sec.find('\n- sit: ')
         if k >= 0: e = sec.index('\n', k + 1); sec = sec[:k + 1] + line.rstrip('\n') + sec[e:]
@@ -149,16 +151,17 @@ def main():
     pid, src = a[0], a[1]; repo = a[2] if len(a) > 2 else os.getcwd()
     S = os.path.join(repo, 'src/renderer/realoffice/sets/retro'); pal = palette_of(S, pid)
     info = head_info(S, pid); im = outline(convert(Image.open(src), pal, height, info), pal); im = pack.binary_alpha(im)
-    if prev: im.save(prev)
-    else:
-        pack.save(im, os.path.join(S, f'{pid}-sit.webp')); jp = os.path.join(S, 'set.json'); meta = json.load(open(jp)); st = meta['stand'][pid]
-        tp, bt, fc = pack.measure(im)
-        st['poses']['sit'] = [im.width, im.height]; st['feet']['sit'] = round((bt + 1) / im.height, 4); st['top']['sit'] = round(tp / im.height, 4); st['foot']['sit'] = round(fc, 4)
-        with open(jp, 'w') as f: f.write(json.dumps(meta, indent=1, sort_keys=True) + '\n')
+    if prev: im.save(prev)                                                    # a preview is written even when the check below refuses it
     # the check: the mean colour of the skin pixels of the new frame against the standing frame's skin colour
     px = im.load(); sk = info[1]; near = [px[i, j][:3] for j in range(im.height) for i in range(im.width) if px[i, j][3] and dist(px[i, j][:3], sk) < 40]
     mean = tuple(sum(c[k] for c in near) / max(1, len(near)) for k in range(3))
     print(pid, im.size, 'skin pixels', len(near), 'mean-skin delta %.1f' % dist(mean, sk))
     if len(near) < 25 or dist(mean, sk) > 25: raise SystemExit(pid + ': the face skin is not the standing frame\'s skin tone (a dark blob?)')
+    # the check runs before the pack is written: a refused frame leaves the pack as it was
+    if not prev:
+        pack.save(im, os.path.join(S, f'{pid}-sit.webp')); jp = os.path.join(S, 'set.json'); meta = json.load(open(jp)); st = meta['stand'][pid]
+        tp, bt, fc = pack.measure(im)
+        st['poses']['sit'] = [im.width, im.height]; st['feet']['sit'] = round((bt + 1) / im.height, 4); st['top']['sit'] = round(tp / im.height, 4); st['foot']['sit'] = round(fc, 4)
+        with open(jp, 'w') as f: f.write(json.dumps(meta, indent=1, sort_keys=True) + '\n')
 
 if __name__ == '__main__': main()

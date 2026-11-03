@@ -134,8 +134,10 @@ for (const [W, H] of SIZES) for (const dh of [0, 31]) for (const n of [1, 2, 3, 
   worst = Math.max(worst, L.height - at);
   assert.ok(n < 2 || worst <= floorH / 4, `${n} in ${f} at ${W}x${H - dh}: a bare band of ${Math.round(worst)} px on a floor of ${floorH}`);
   for (const z of L.zones) {
-    const first = z.desks.reduce((m, d) => (d.slot.x < m.slot.x ? d : m), z.desks[0]);
-    assert.ok(Math.abs(z.sign.x - first.slot.x) <= 1, `${z.id}: its sign starts over its own first cabinet`);
+    /* the sign stands over its own cabinets and over no other folder's (pre-review of #1079: the old "starts at its first slot" was true by construction) */
+    const across = (d: { desk: Rect }): boolean => d.desk.x < z.sign.x + z.sign.w && z.sign.x < d.desk.x + d.desk.w, row = (d: { slot: Rect }): boolean => Math.abs(d.slot.y - z.sign.y) < 1;
+    assert.ok(z.desks.some((d) => row(d) && across(d)), `${n} in ${f} at ${W}x${H - dh}: ${z.id}'s sign is over none of its own cabinets`);
+    for (const o of L.zones) if (o !== z) for (const d of o.desks) assert.ok(!(row(d) && across(d)), `${n} in ${f} at ${W}x${H - dh}: ${z.id}'s sign is over ${o.id}'s cabinet ${d.id}`);
     for (const o of L.zones) if (o !== z && Math.abs(o.box.y - z.box.y) < 1) for (const d of o.desks) assert.ok(d.slot.x + d.slot.w <= z.box.x + 1 || d.slot.x >= z.box.x + z.box.w - 1, `${o.id}'s seat ${d.id} inside ${z.id}'s row part`);
   }
   /* owner, 2026-11-03 (relayed): a folder of 4 or fewer is one group under one sign, never "(continued)", wherever five columns can hold it
@@ -160,6 +162,17 @@ for (const [W, H] of SIZES) for (const dh of [0, 31]) for (const n of [1, 2, 3, 
   /* FR-306: the bodies vary: at up to 4 people all differ, from 8 on all four are on the floor */
   const bodies = new Set(L.zones.flatMap((z) => z.desks.map((d) => d.body)));
   assert.strictEqual(bodies.size, Math.min(4, n), `${n} in ${f} at ${W}x${H - dh}: ${bodies.size} cabinet bodies`);
+  /* and neighbours on the grid differ (pre-review of #1079: seat order alone stacks seat n over seat n + 4): beside on a row, or in the next row
+     less than a slot to the side (above, below, or diagonal in a zigzag) */
+  {
+    const all = L.zones.flatMap((z) => z.desks), cx = (d: typeof all[number]): number => d.desk.x + d.desk.w / 2, ys = [...new Set(all.map((d) => Math.round(d.slot.y)))].sort((a, b) => a - b);
+    for (const a of all) for (const b of all) {
+      if (a === b) continue;
+      const ra = ys.indexOf(Math.round(a.slot.y)), rb = ys.indexOf(Math.round(b.slot.y)), dx = Math.abs(cx(a) - cx(b));
+      const beside = ra === rb && dx < 1.6 * a.slot.w && !all.some((c) => c !== a && c !== b && Math.round(c.slot.y) === Math.round(a.slot.y) && (cx(c) - cx(a)) * (cx(c) - cx(b)) < 0);
+      if (beside || (rb === ra + 1 && dx < a.slot.w)) assert.notStrictEqual(a.body, b.body, `${n} in ${f} at ${W}x${H - dh}: neighbours ${a.id} and ${b.id} have one body`);
+    }
+  }
   /* a short last row stands in the middle (3 is a triangle, not an L) */
   const ds = L.zones.flatMap((z) => z.desks), lastY = Math.max(...ds.map((d) => d.slot.y)), last = ds.filter((d) => Math.abs(d.slot.y - lastY) < 1);
   if (last.length < ds.filter((d) => Math.abs(d.slot.y - ds[0].slot.y) < 1).length) {

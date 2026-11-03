@@ -11,7 +11,7 @@
 What it makes (dev only, not run in CI, output committed and checked by `npm run test:realoffice-assets`):
   world: wall and floor in a day and a night light (drawn here, a few flat colours, from the mockup's code), three cabinet strips
          (four bodies in four colours each; level glass, side panel, stepped top: spec 102 FR-258), nine fixtures, a glow strip, a console.
-  set:   15 people x 17 frames (and each drawn `sit` frame, kept: build-arcade-sleep.py), ONE FILE PIXEL PER GRID PIXEL, lossless (VP8L, no alpha-quality loss), drawn on screen at an integer scale.
+  set:   15 people x 18 frames (17 built here; each drawn `sit` frame is kept, build-arcade-sleep.py), ONE FILE PIXEL PER GRID PIXEL, lossless (VP8L, no alpha-quality loss), drawn on screen at an integer scale.
 Every picture is lossless WebP; two runs give the same bytes. A frame whose 8x blocks are not uniform is refused (T201), except the
 three listed in RESAMPLED, which are shrunk by a block vote and recorded as such in ASSETS.md. Needs Pillow."""
 import hashlib, io, json, os, re, sys
@@ -112,44 +112,22 @@ def marquee_trim(c, Fw, trim, m):
         for x in range(2, Fw - 2): R(trim if x % 2 else P['k'], x, 1, 1, 1); R(P['k'] if x % 2 else trim, x, 2, 1, 1); R(trim if x % 2 else P['k'], x, 10, 1, 1); R(P['k'] if x % 2 else trim, x, 11, 1, 1)
     else: R(P['pink'], 2, 1, Fw - 4, 1); R(P['blue'], 2, 2, Fw - 4, 1); R(P['blue'], 2, 10, Fw - 4, 1); R(P['yellow'], 2, 11, Fw - 4, 1)
 
-def cab_front(Fw, Hf, gw, gh, body, trim, kind=0, m=0):
+def cab_front(Fw, Hf, gw, gh, body, trim, m=0):
+    """the upright's front; the other bodies keep only its marquee and screen (above the panel) and draw their own lower part (cabinet())"""
     c = C(Fw, Hf); R = c.R
     R(P['k'], 0, 0, Fw, Hf); R(body, 1, 1, Fw - 2, Hf - 2); R(trim, 1, 1, 1, Hf - 2)
     R(P['k'], 2, 1, Fw - 4, 11); R('#3a3158', 2, 1, Fw - 4, 1); marquee_trim(c, Fw, trim, m); c.clear(4, 3, Fw - 8, 7)   # marquee: a hole the app's HTML fills
     by, bh = 13, gh + 10
     R('#3b3354', 2, by, Fw - 4, bh); R(P['lav'], 2, by, Fw - 4, 1); R(P['lav'], 2, by, 1, bh); R('#17142a', 2, by + bh - 1, Fw - 4, 1); R('#17142a', Fw - 3, by, 1, bh)
-    if kind == 1:                                                                                   # cocktail table: a thick round bezel in the trim colour
-        R(trim, 3, by + 1, Fw - 6, 1); R(trim, 3, by + bh - 2, Fw - 6, 1); R(trim, 3, by + 1, 1, bh - 2); R(trim, Fw - 4, by + 1, 1, bh - 2)
     c.clear(5, by + 5, gw, gh)                                                                      # glass: a hole, the same place in every body
     for a, b in ((5, by + 5), (5 + gw - 1, by + 5), (5, by + 5 + gh - 1), (5 + gw - 1, by + 5 + gh - 1)): R('#3b3354', a, b, 1, 1)
     yd, yl = by + bh, by + bh + 10
     R(P['k'], 0, yd, Fw, 10); R('#4a4068', 1, yd + 1, Fw - 2, 2); R('#2f2750', 1, yd + 3, Fw - 2, 6)
-    def stick(x, y, col): R(P['dg'], x, y + 2, 1, 3); R(col, x - 1, y, 3, 2)
-    def button(x, y, col): R(P['k'], x, y, 4, 4); R(col, x + 1, y, 2, 2)
-    if kind == 0:                                                                                   # upright: one stick, four buttons
-        R(P['k'], 3, by + bh - 3, 2, 1); stick(round(Fw * .2), yd + 3, P['red'])
-        for f, col in ((.44, P['red']), (.54, P['yellow']), (.64, P['blue']), (.76, P['lime'])): button(round(Fw * f), yd + 3, col)
-    elif kind == 1:                                                                                 # cocktail: a stick and a button for each of two players
-        for x0, col in ((round(Fw * .14), P['blue']), (round(Fw * .62), P['pink'])): stick(x0 + 1, yd + 3, col); button(x0 + 5, yd + 3, P['yellow'])
-    elif kind == 2:                                                                                 # racer: a wheel and a gear lever
-        cx, cy = round(Fw / 2), yd + 5
-        for dx, dy in ((-3, -1), (-3, 0), (-3, 1), (3, -1), (3, 0), (3, 1), (-2, -2), (-1, -3), (0, -3), (1, -3), (2, -2), (-2, 2), (-1, 3), (0, 3), (1, 3), (2, 2)): R(P['lg'], cx + dx, cy + dy, 1, 1)
-        R(trim, cx - 2, cy, 5, 1); R(P['k'], cx, cy, 1, 3)
-        R(P['dg'], round(Fw * .82), yd + 4, 1, 5); R(P['cream'], round(Fw * .82) - 1, yd + 3, 3, 2); stick(round(Fw * .16), yd + 3, P['red'])
-    else:                                                                                           # pinball: a playfield with two flippers and three bumpers
-        R('#14324a', 1, yd + 1, Fw - 2, 8); R(trim, 1, yd + 1, Fw - 2, 1)
-        for f, col in ((.3, P['red']), (.5, P['blue']), (.7, P['lime'])): R(col, round(Fw * f) - 1, yd + 3, 3, 2)
-        cx = round(Fw / 2)
-        for i in range(4): R(P['yellow'], cx - 7 + i, yd + 6 + i // 2, 1, 1); R(P['yellow'], cx + 6 - i, yd + 6 + i // 2, 1, 1)
-        R(P['cream'], Fw - 4, yd + 4, 1, 4)
+    R(P['k'], 3, by + bh - 3, 2, 1); R(P['dg'], round(Fw * .2), yd + 5, 1, 3); R(P['red'], round(Fw * .2) - 1, yd + 3, 3, 2)   # one stick, four buttons
+    for f, col in ((.44, P['red']), (.54, P['yellow']), (.64, P['blue']), (.76, P['lime'])): R(P['k'], round(Fw * f), yd + 3, 4, 4); R(col, round(Fw * f) + 1, yd + 3, 2, 2)
     R('#1a1530', 2, yl, Fw - 4, Hf - yl - 1)
     cx0 = round(Fw / 2) - 8; R(P['k'], cx0, yl, 16, 4); R(P['yellow'], cx0 + 3, yl + 1, 2, 2); R(P['yellow'], cx0 + 11, yl + 1, 2, 2)
     R(P['k'], 1, Hf - 2, Fw - 2, 1)
-    if kind in (1, 3):                                                                              # legs: a pedestal (cocktail) or two legs (pinball) under the panel
-        c.clear(1, yl, Fw - 2, Hf - yl - 1)
-        if kind == 1: R(P['k'], cx0 + 2, yl, 12, Hf - yl); R(body, cx0 + 3, yl, 10, Hf - yl - 1); R(trim, cx0 + 3, yl, 1, Hf - yl - 1); R(trim, cx0 + 12, yl, 1, Hf - yl - 1)
-        else:
-            for x in (3, Fw - 6): R(P['k'], x, yl, 3, Hf - yl); R(trim, x + 1, yl, 1, Hf - yl - 1)
     return c
 
 def cab_side(Sd, Hf, trim, art=0):
@@ -167,8 +145,7 @@ def cab_side(Sd, Hf, trim, art=0):
     R('#3a3158', 1, 1, Sd - 2, 1)
     return c
 
-# the top of the side panel, one step per column from the front: an upright's stepped top, a table's low edge, a racer's seat back, a pinball's slope
-SIDE_TOP = {0: [2, 3, 3, 4, 4, 5, 5], 1: [13, 13, 13, 13, 13, 13, 13], 2: [8, 6, 5, 5, 6, 8, 11], 3: [13, 15, 17, 19, 21, 23, 25]}
+SIDE_TOP = [2, 3, 3, 4, 4, 5, 5]   # the upright's side panel: one step per column from the front
 
 def cabinet(gw, gh, variant, kind=0):
     """one cabinet, the screen on the left and the side panel on the right (the app mirrors it, with a static transform, for the other side).
@@ -178,14 +155,15 @@ def cabinet(gw, gh, variant, kind=0):
     cell, so nothing reaches the person beside it or the plate."""
     Fw, Sd = gw + 10, 7; Hf = gh + 38; CW, CH = Fw + Sd, max(Hf + 3, 73)
     trim, body = TRIM[variant % 4], BODY[variant % 4]
-    f, s = cab_front(Fw, Hf, gw, gh, body, trim, 0 if kind else 0, variant % 4), cab_side(Sd, Hf, trim, (variant + kind) % 4)
+    f = cab_front(Fw, Hf, gw, gh, body, trim, variant % 4)
     c = C(CW, CH); oy = CH - Hf - 3; R = c.R
     yd, yb = oy + gh + 23, oy + Hf                                                                         # the panel's top, the floor line
     R('#000000', 0, yb, CW, 2, .38)
     if kind == 0:
         c.draw(f, 0, oy)
         c.clear(0, oy, 3, 1); c.clear(Fw - 3, oy, 3, 1); c.clear(0, oy + 1, 1, 1); c.clear(Fw - 1, oy + 1, 1, 1)   # stepped crown
-        for i, off in enumerate(SIDE_TOP[0]): c.im.alpha_composite(s.im.crop((i, 0, i + 1, Hf)).resize((1, Hf - off), Image.NEAREST), (Fw + i, oy + off))
+        s = cab_side(Sd, Hf, trim, variant % 4)                                                                    # side art: the upright's only
+        for i, off in enumerate(SIDE_TOP): c.im.alpha_composite(s.im.crop((i, 0, i + 1, Hf)).resize((1, Hf - off), Image.NEAREST), (Fw + i, oy + off))
         R('#3a3158', Fw, oy + 2, Sd, 1)
     else:
         top = C(Fw, yd - oy); top.im.alpha_composite(f.im.crop((0, 0, Fw, yd - oy)), (0, 0)); c.draw(top, 0, oy)   # marquee and screen only
@@ -524,7 +502,7 @@ def write_notes(repo, meta, sections, prompts):
     snapped sheets; it is Codex sheets, snapped), approval is the owner's (097 Q6, 102 Q11)"""
     S = os.path.join(repo, 'src/renderer/realoffice/sets/retro/ASSETS.md')
     out = ['# Real office set: Retro pixel people (provenance, spec 097 FR-062..FR-069, spec 102 FR-205, FR-254, T201, T207)', '',
-           'Fifteen invented pixel-art people, each with 17 Real office frames: six seated busts (`typeA`, `typeB`, `waveA`, `waveB`, `think`, `rest`), five standing seen from behind (`type`, `book`, `knock`, `letter`, `counter`) and six standing facing us (`face-book`, `face-coffee`, `face-knock`, `face-letter`, `face-runA`, `face-runB`). **One file pixel is one grid pixel**: the app draws it at an integer scale with `image-rendering: pixelated`. Only the `.webp` files and `set.json` (as `realoffice/sets/retro/set.js`) ship; this file stays in the repository.', '',
+           'Fifteen invented pixel-art people, each with 18 Real office frames: six seated busts (`typeA`, `typeB`, `waveA`, `waveB`, `think`, `rest`), five standing seen from behind (`type`, `book`, `knock`, `letter`, `counter`), six standing facing us (`face-book`, `face-coffee`, `face-knock`, `face-letter`, `face-runA`, `face-runB`) and one seated asleep on a stool (`sit`, drawn separately: `scripts/build-arcade-sleep.py`). **One file pixel is one grid pixel**: the app draws it at an integer scale with `image-rendering: pixelated`. Only the `.webp` files and `set.json` (as `realoffice/sets/retro/set.js`) ship; this file stays in the repository.', '',
            '- **Licence:** MIT, like the code and the crew art.',
            '- **What the art is (corrects the art cache\'s notes, which said "NOT generated by an AI image tool. Drawn by code" and also listed the pictures as `snapped` sheets):** every frame comes from a Codex image-generation sheet (`codex exec`, four sheets per person: `S` seated, `F` front, `A` and `B` from behind), then cut, **snapped to a pixel grid** (resized to a logical size, binary alpha, one 32-colour palette per person, exact 8x nearest-neighbour; the cache\'s `retro_snap.py` for r1..r8 and `new7/process7.py` for r9..r15). The code-drawn people (`retro-code`, `rig.py`) are an earlier, rejected fallback and are not used here.',
            '- **Shrunk to the grid** by `scripts/build-arcade-pack.py`: each 8x frame becomes one pixel per block and is saved as lossless WebP (`VP8L`). A frame whose blocks are not uniform stops the build. Three frames of the cache were not on the 8x grid (`r4-waveA`, `r4-waveB`, `r8-waveA`, found 2026-11-01) and were shrunk by a block vote instead (no new colour), then looked at; the owner may ask for them to be redrawn.',

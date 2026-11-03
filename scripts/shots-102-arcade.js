@@ -96,9 +96,14 @@ module.exports = async (ctx) => {
     assert.deepStrictEqual(await js('(()=>{' + LUM + `const out=[];for(const e of document.querySelectorAll('#stage .ro-plate.st-waiting,#stage .ro-plate.st-limit,#stage .ro-away')){if(!e.getClientRects().length)continue;const bg=getComputedStyle(e).backgroundColor;if(lum(bg)>=0.05)out.push(e.className+' '+bg);}
       const ds=window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks),W=window.__durbarSimUi.realLayout().width;if(ds.length<=4){const sl=ds.map(d=>d.slot).sort((a,b)=>a.x-b.x),l=sl[0].x,r=sl[sl.length-1].x+sl[sl.length-1].w;if(Math.abs((l+r)/2-W/2)>W*0.05)out.push('a small group is not in the middle: '+Math.round(l)+'..'+Math.round(r)+' of '+W);}return out;})()`), [], tag + ': dark plates and tickets; a small group in the middle');
     /* owner, 2026-11-03 ("make arcade look different"): the painted cabinets show different bodies, all different up to 4, at least 3 from 8 on */
-    { const BODIES = `[...document.querySelectorAll('#stage .ro-cab')].filter(e=>e.getClientRects().length&&getComputedStyle(e).backgroundImage.includes('monitor')).map(e=>e.dataset.body)`;
-      await H.until(`(b=>b.length>0&&new Set(b).size>=Math.min(b.length,b.length>=8?3:4))(${BODIES})`, 5000);
-      const bs = await js(BODIES); assert.ok(bs.length > 0 && new Set(bs).size >= Math.min(bs.length, bs.length >= 8 ? 3 : 4), tag + ': cabinet bodies ' + JSON.stringify(bs)); }
+    /* the painted cabinets show different bodies: their silhouettes, read from the pixels of the cell each one paints (pre-review of #1079: the
+       body number alone would pass with sixteen uprights drawn); all different up to 4, at least 3 from 8 on */
+    { const SIL = `(async()=>{const cs=[...document.querySelectorAll('#stage .ro-cab')].filter(e=>e.getClientRects().length&&getComputedStyle(e).backgroundImage.includes('monitor'));if(!cs.length)return null;
+        const st=getComputedStyle(cs[0]),url=st.backgroundImage.slice(5,-2),n=Math.round(parseFloat(st.backgroundSize)/100),im=new Image();im.src=url;await im.decode();
+        const cw=im.naturalWidth/n,c=document.createElement('canvas');c.width=im.naturalWidth;c.height=im.naturalHeight;const x=c.getContext('2d');x.drawImage(im,0,0);
+        return cs.map(e=>{const p=parseFloat(getComputedStyle(e).backgroundPositionX),cell=Math.round(p/100*(n-1)),d=x.getImageData(Math.round(cell*cw),0,Math.round(cw),im.naturalHeight).data;let h=0;for(let i=3;i<d.length;i+=4)h=(h*33+(d[i]>0?1:2))>>>0;return h;});})()`;
+      await H.until(`[...document.querySelectorAll('#stage .ro-cab')].some(e=>e.getClientRects().length&&getComputedStyle(e).backgroundImage.includes('monitor'))`, 5000);
+      const bs = await js(SIL); assert.ok(bs && bs.length > 0 && new Set(bs).size >= Math.min(bs.length, bs.length >= 8 ? 3 : 4), tag + ': cabinet silhouettes ' + JSON.stringify(bs)); }
     /* owner, 2026-11-03 ("zigzag positioning for max usage"): from 2 people on, no band of bare floor over a quarter of its height */
     assert.ok(await js(`(()=>{const L=window.__durbarSimUi.realLayout();if(L.zones.flatMap(z=>z.desks).length<2)return true;const ys=L.zones.map(z=>[z.sign.y,z.box.y+z.box.h]).sort((a,b)=>a[0]-b[0]);let at=L.lobbyH+(L.lane?L.lane.h:0),w=0;for(const [a,b] of ys){w=Math.max(w,a-at);at=Math.max(at,b);}w=Math.max(w,L.height-at);return w<=(L.height-L.lobbyH)/4;})()`), tag + ': no band of bare floor over a quarter of it');
     /* review of 2026-11-03: no slip, pill or bubble on a screen, and none hidden; a folder name keeps 8 characters (or all of it) */
