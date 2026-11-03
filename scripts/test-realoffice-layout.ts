@@ -366,6 +366,13 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
     for (const r of [...C.WORLDS, ...C.REAL_SETS]) if (r.flag) assert.ok(r.flag in C.WORLD_FLAGS, `${r.id}: its flag exists`);
     for (const v of ['pirate', 'loft', '', null, undefined, 3, '__proto__', 'match']) assert.strictEqual(C.parseWorld(v, OFF), 'photo', `${String(v)}: Photo office while the flag is off`);
     assert.strictEqual(C.parseWorld('pirate', ON), 'pirate');
+    /* spec 102: a stored `retro` is the Photo office and its people while the flag is closed */
+    assert.strictEqual(C.parseWorld('retro'), 'photo', 'retro falls back while its flag is closed');
+    assert.ok(!C.offeredWorlds().some((w) => w.id === 'retro'), 'retro is not offered while its flag is closed');
+    assert.strictEqual(C.peopleFor('retro', 'match').world, 'photo', 'and its people follow the Photo office');
+    assert.strictEqual(C.parseWorld('retro', { retro: true }), 'retro', 'open flag: retro');
+    assert.ok(C.offeredWorlds({ retro: true }).some((w) => w.id === 'retro'), 'open flag: offered');
+    assert.strictEqual(C.peopleFor('retro', 'match', { retro: true }).world, 'retro', 'open flag: its own people');
     for (const v of ['', null, '__proto__', 'constructor', 'toString']) assert.strictEqual(C.parseWorld(v, ON), 'photo');
     for (const f of [OFF, ON]) for (const w of ['photo', 'pirate', 'bogus', '']) for (const c of ['theme', 'minimalist', 'cheeky', 'pirates', 'prehistoric', 'mine', '', '__proto__', 'office']) {
       const r = C.peopleFor(w, c, f), world = C.parseWorld(w, f), row = C.WORLDS.find((x) => x.id === world)!;
