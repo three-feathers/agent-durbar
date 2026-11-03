@@ -195,6 +195,17 @@ try {
           assert.strictEqual(r.ok, false, 'over the cap: refused');
           assert.match(String(r.error), /^Could not export the activity: .*too large/, 'the refusal says activity, not notes');
           assert.ok(!fs.existsSync(f2), 'nothing written');
+          // just under the cap works through the handler, above the notes' own limit (about 14.8 MB): without `maxBytes` the notes default would refuse it
+          {
+            const { NOTES_LIMITS } = require('../src/shared/notes') as typeof import('../src/shared/notes');
+            handlers.clear();
+            register({ getActivityStore: () => ({ all: () => [{ ...big, action: 'x'.repeat(15 * 1024 * 1024) }], list: () => [], clear: () => undefined }) as unknown as ActivityStore, getWin: () => undefined });
+            const f3 = path.join(out, 'under.json');
+            const u = await exp(f3, 'json');
+            assert.deepStrictEqual([u.ok, u.count], [true, 1], 'between the notes limit and the cap: written');
+            assert.ok(fs.statSync(f3).size > NOTES_LIMITS.mdBytes && fs.statSync(f3).size < ACTIVITY_EXPORT_MAX_BYTES, 'the file is above the notes limit and under the activity cap');
+            fs.rmSync(f3);
+          }
           // the cap is not self-referential: the worst possible full log, 5000 rows through the real store with every field at its cap and
           // the costliest characters (a lone surrogate is 6 bytes in JSON; a quote is doubled in CSV), is under it in both formats and exports
           for (const ch of ['\ud800', '"', '\u20ac']) {
