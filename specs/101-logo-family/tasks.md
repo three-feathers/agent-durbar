@@ -4,7 +4,7 @@
 
 **Tests**: required (constitution VII; SC-001..SC-005). Node tests and the simulator only; 0 AI credits. Driver waits use `until()`, never a fixed sleep.
 
-**Format**: `- [ ] Tnnn [P?] [USn?] description (file) [requirements]`, then a `Test:` line. A phase = one PR. Numbers taken: spec 101, FR-010..FR-102 (sparse by group), T001..T043 and T024 (checked 2026-11-03 against `main`, #988 and open PRs).
+**Format**: `- [ ] Tnnn [P?] [USn?] description (file) [requirements]`, then a `Test:` line. A phase = one PR. Numbers taken: spec 101, FR-010..FR-102 (sparse by group), T001..T043 (checked 2026-11-03 against `main`, #988 and open PRs).
 
 ## Phase 0: Spec (this PR)
 
@@ -44,5 +44,5 @@
 
 - [ ] T040 Photo previews: mask, resize, WebP, rows [FR-024, FR-060, FR-063], after Q4 (regeneration reported, not `read:` yet). Test: `test:logo-assets` caps, alpha, no metadata, `webpInfo`.
 - [ ] T041 Picker shows painted, falls back to vector [FR-023]. Test: driver with one file missing.
-- [ ] T042 Cave and loft previews, **only after Paco's approval** (Q6). Test: as T040, with the approval rule.
+- [ ] T042 Cave and loft previews, **only after Paco's approval** (Q6) [FR-062, FR-102]. Test: as T040, with the approval rule.
 - [ ] T043 `/speckit.converge`; status and index updated. Test: `npm run specs:check`.
