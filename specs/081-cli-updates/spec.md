@@ -508,6 +508,13 @@ When the start check finds a new version, the Settings entry and the card get a 
 - **FR-014 (changed):** for an `update` run, text classified *Managed* is a failed run (`ok: false`, failure `managed`, no "updated" note) also when the exit code is 0, so the window shows the advice, never "is updated". No retry, as before. Test: `scripts/test-harnesssetup.ts`. The exit-0 rule applies only to `claude update` and only to the recorded text; no `claude update` newer-version, `codex update` or `copilot update` run exists.
 - The two Claude fixtures are now recorded shapes. Windows and macOS texts stay `[KNOWN GAP]` (T041 Windows, T042 macOS; T043 is the Mac PATH check).
 
+### 2026-11-03: `brew outdated` exit 1 is an update, not a failure; a failed check shows a masked detail (#1081)
+
+- **Cause (`read:` code, not yet run on a Mac):** `brew outdated` exits 1 when something is outdated and still prints its JSON; `tool()` threw on any non-zero exit, so an available update showed as "Could not check: exit 1" (owner's Mac, Homebrew Copilot CLI). Homebrew's source sets it on purpose: `Library/Homebrew/cmd/outdated.rb:97`, `Homebrew.failed = args.named.present? && outdated.present?` (`read:` Homebrew 7.0.11, from the Mac session). The Copilot cask token is `copilot-cli` (`auto_updates` true, so the second `--greedy` call always runs). Not run: exit 1 on a really installed outdated cask. `brew info` has no such documented exit (it exits non-zero for an unknown cask, a real failure), so it stays strict.
+- **FR-190:** for `brew outdated` only, exit code 1 with stdout that `parseBrewOutdated` reads and that names the cask (an entry for it with a version) is a success; exit 1 with an empty list or unreadable output is a failure; every other code, exit 1 with unreadable output, a signal or spawn error stays a failure with the existing network/admin classes. The stdout cap is unchanged.
+- **FR-191:** a `could-not-check` result may carry `detail`: the last non-empty line of the tool's stderr, secrets masked (`redact`), home folders as `~` (`maskHomePaths`), control characters removed, at most 120 characters. The card shows it as "Details: ..." under "Could not check". Nothing is logged or saved.
+- Tests: `scripts/test-updatecheck.ts` (exit 1 with JSON, with junk, exit 0 with `[]`, exit 2, `brew info` exit 1, masked and capped detail). T046. Mac check pending (T043).
+
 ### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
 
 The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):

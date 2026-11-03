@@ -402,6 +402,8 @@ export interface CheckResult {
   hint?: OutsideHint;
   /** A short, masked reason for `could-not-check` and `not-checked`. */
   reason?: string;
+  /** For `could-not-check`: the last line of the tool's stderr, home folder as ~, secrets masked, at most 120 characters (#1081). */
+  detail?: string;
   /** Wall time (ms since the epoch) of the check, for the card. */
   checkedAt?: number;
   /** Homebrew answers from its local data (the card says so). */

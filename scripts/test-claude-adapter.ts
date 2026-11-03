@@ -691,6 +691,18 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(reqs, [{ subtype: 'mcp_reconnect', serverName: 'notes' }, { subtype: 'mcp_status' }], 'one mcp_reconnect for that server, then the new list');
     const last = [...ev].reverse().find((e) => e.type === 'mcp') as { servers: { name: string; status: string }[] };
     assert.strictEqual(last.servers.find((x) => x.name === 'notes')?.status, 'connected', 'the new state from mcp_status');
+    // spec 058 FR-207, FR-214 (review of PR #1080, item 3): the automatic reconnect is the same mcp_reconnect + mcp_status and nothing
+    // else: never mcp_authenticate, mcp_oauth_callback_url or mcp_clear_auth; also when the server still needs a sign-in
+    assert.strictEqual(ad.capabilities.mcpSignInReconnect, true);
+    reqs.length = 0;
+    await ad.restartMcpServer(sid, 'notes', { auto: true });
+    assert.deepStrictEqual(reqs, [{ subtype: 'mcp_reconnect', serverName: 'notes' }, { subtype: 'mcp_status' }], 'automatic: mcp_reconnect, then mcp_status, nothing more');
+    servers = servers.map((x) => (x.name === 'notes' ? { name: 'notes', status: 'needs-auth' } : x));
+    reqs.length = 0;
+    await ad.restartMcpServer(sid, 'notes', { auto: true }).catch(() => undefined);
+    assert.ok(reqs.every((r) => r.subtype === 'mcp_reconnect' || r.subtype === 'mcp_status'), 'needs-auth: still only mcp_reconnect / mcp_status: ' + JSON.stringify(reqs));
+    assert.ok(!reqs.some((r) => /authenticate|oauth|clear_auth/.test(String(r.subtype))), 'never a sign-in request');
+    servers = servers.map((x) => (x.name === 'notes' ? { name: 'notes', status: 'connected' } : x));
     await assert.rejects(ad.restartMcpServer('no-such', 'notes'), /not running/);
     // spec 069 FR-031: a server's tools come from the same mcp_status reply (documented McpServerStatus.tools)
     servers = servers.map((x) => (x.name === 'web' ? { ...x, tools: [{ name: 'fetch', description: 'Fetch a URL' }, { name: 'search' }] } : x)) as typeof servers;

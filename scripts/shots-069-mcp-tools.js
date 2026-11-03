@@ -18,6 +18,8 @@
  * - sim-6's failed my-notes keeps spec 058's state word and Details next to the tools toggle (one row, no second repaint path).
  * - Remove… is on github (in the Copilot and Claude Code lists) and opens the remove choice; built-in github-mcp-server has none.
  * - An idle agent with no running session: "Start the session to see its tools."
+ * - FR-067: a Tools button (icon, "Tools (25)" / "Tools: 24 of 25 on", >= 24px, contrast >= 4.5) opens the list by Enter; the name still
+ *   toggles; with 25 long-described tools every row stays inside the card and the dialog, descriptions clamp at 2 lines.
  * - Text >= 10.5px, the dialog fits. Shots: 069-mcp-tools-<w>x<h>.png. Prints "[069t] PASS".
  */
 const assert = require('assert');
@@ -47,6 +49,8 @@ module.exports = async (ctx) => {
 
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
     await H.load({ w, h, ready: 'fit', focus: true });
+    // FR-068: spec 100's report (the owner's case, fixture figures) so the rows carry a token figure
+    await js(`window.__durbarSimMcpCtx.set('sim-1',{window:200000,servers:[{name:'github',tokens:41000,source:'reported'},{name:'playwright',tokens:20000,source:'reported'},{name:'my-notes',tokens:12000,source:'reported'},{name:'github-mcp-server',tokens:9000,source:'reported'}]})`);
     await openMcp('sim-1');
     const toggles = await js(`[...document.querySelectorAll('#agMcp li.srv')].map(li=>{const b=li.querySelector('button[data-tools]');return b?b.getAttribute('aria-expanded'):'none'})`);
     assert.ok(toggles.every((x) => x === 'false'), 'every row has a closed tools toggle: ' + JSON.stringify(toggles));
@@ -56,7 +60,7 @@ module.exports = async (ctx) => {
     assert.ok(!(await js(`!!document.querySelector('#agMcp li[data-n="github-mcp-server"] [data-mrm]')`)), 'no Remove on the built-in server');
     await press('github');
     assert.ok(await until(`/5 tools/.test((document.querySelector('#agMcp li[data-n="github"] .mcp-tools')||{}).textContent||'')`), 'github lists its tools');
-    assert.match(await toolsText('github'), /search_issues\s*Search issues and pull requests/);
+    assert.match(await toolsText('github'), /search_issues.*Search issues and pull requests/s);
     assert.strictEqual(await js(`document.activeElement&&document.activeElement.dataset.tools`), 'github', 'the focus stays on the toggle');
     assert.strictEqual(await js(`document.querySelector('#agMcp button[data-tools="github"]').getAttribute('aria-expanded')`), 'true');
     assert.ok(await fits(), `${w}: the dialog fits`);
@@ -66,9 +70,27 @@ module.exports = async (ctx) => {
     // ---- part 4: single tools off, tri-state, kept per folder ----
     assert.strictEqual(await js(`document.querySelector('#agMcp li[data-n="github"] [data-tall]').getAttribute('aria-checked')`), 'true', 'all tools on at first');
     assert.match(await toolsText('github'), /applies to new sessions and after Restart session/);
+    // FR-068: the server's token figure counts the ticked tools only, each tool shows its share, "about"
+    const costOf = () => js(`(()=>{const c=document.querySelector('#agMcp li[data-n="github"] .mcp-cost');return c?c.textContent:''})()`);
+    const num = (t) => { const m = /([\d.]+)(k?) tokens/.exec(t); return m ? parseFloat(m[1]) * (m[2] ? 1000 : 1) : NaN; };
+    const per = () => js(`[...document.querySelectorAll('#agMcp li[data-n="github"] .mcp-ttok')].map(e=>e.textContent)`);
+    const cost0 = await costOf();
+    assert.ok(num(cost0) > 0, 'github shows a token figure: ' + cost0);
+    assert.doesNotMatch(cost0, /applies after/, 'nothing changed yet');
+    assert.strictEqual((await per()).length, 5, 'each tool shows its size');
+    assert.ok((await per()).every((x) => /^about [\d.]+k? tokens$/.test(x)), 'sizes are "about": ' + JSON.stringify(await per()));
     await js(`document.querySelector('#agMcp input[data-tool="create_issue"]').click()`);
     assert.ok(await until(`document.querySelector('#agMcp li[data-n="github"] [data-tall]').getAttribute('aria-checked')==='mixed'`), 'some tools on: mixed');
     assert.strictEqual(await js(`document.querySelector('#agMcp input[data-tool="create_issue"]').checked`), false);
+    assert.ok(await until(`/with 4 of 5 tools; applies after Restart session/.test((document.querySelector('#agMcp li[data-n="github"] .mcp-cost')||{}).textContent||'')`), 'the figure counts the ticked tools: ' + await costOf());
+    const cost1 = await costOf();
+    assert.ok(num(cost1) < num(cost0), `unticking a tool lowers the figure: ${cost0} -> ${cost1}`);
+    assert.match(cost1, /^about /);
+    await js(`document.querySelector('#agMcp [data-tall="github"]').click()`); // mixed -> all on: back to the first figure
+    assert.ok(await until(`!/applies after/.test((document.querySelector('#agMcp li[data-n="github"] .mcp-cost')||{}).textContent||'x')`), 'all ticked again: the reported figure');
+    assert.strictEqual(await costOf(), cost0, 'the same figure as before');
+    await js(`document.querySelector('#agMcp input[data-tool="create_issue"]').click()`);
+    assert.ok(await until(`/applies after/.test((document.querySelector('#agMcp li[data-n="github"] .mcp-cost')||{}).textContent||'')`));
     assert.match(await toolsText('github'), /5 tools, 1 off/);
     await shot(`069-mcp-tool-toggles-${w}x${h}.png`);
     await closeDlg();
@@ -91,6 +113,57 @@ module.exports = async (ctx) => {
     assert.ok(await until(`/Remove "github" from/.test((document.querySelector('#scrDlg h3')||{}).textContent||'')`), 'Remove… asks which lists');
     await closeDlg();
     await closePanel();
+
+    // ---- spec 069 FR-067 (Vikram 2026-11-03): a visible Tools button; long tool descriptions stay inside the card ----
+    {
+      await openMcp('sim-1');
+      const BIG = 'playwright';
+      const q = (sel) => `document.querySelector(${jsLiteral(`#agMcp li[data-n="${BIG}"] ${sel}`)})`;
+      assert.ok(await js(`!!${q('button.btn.mcp-tbtn[data-tools]')}`), 'playwright has a Tools button');
+      const b0 = await js(`(()=>{const b=${q('button.mcp-tbtn')};const r=b.getBoundingClientRect();const lum=c=>{const m=c.match(/[\\d.]+/g).map(Number);const f=v=>{v/=255;return v<=.03928?v/12.92:Math.pow((v+.055)/1.055,2.4)};return .2126*f(m[0])+.7152*f(m[1])+.0722*f(m[2])};
+        let bg='rgba(0,0,0,0)',e=b;while(e&&/rgba\\(.*, ?0\\)$|transparent/.test(bg)){bg=getComputedStyle(e).backgroundColor;e=e.parentElement;}
+        const a=lum(getComputedStyle(b).color),c=lum(bg),hi=Math.max(a,c),lo=Math.min(a,c);return {w:r.width,h:r.height,vis:r.width>0&&r.height>0&&getComputedStyle(b).visibility==='visible',contrast:(hi+.05)/(lo+.05),text:b.textContent.trim(),svg:!!b.querySelector('svg'),exp:b.getAttribute('aria-expanded')}})()`);
+      assert.ok(b0.vis && b0.w >= 24 && b0.h >= 24, `${w}: Tools button is visible and >= 24px ${JSON.stringify(b0)}`);
+      assert.ok(b0.contrast >= 4.5, `${w}: Tools button contrast >= 4.5 ${JSON.stringify(b0)}`);
+      assert.ok(b0.svg && /^Tools$/.test(b0.text) && b0.exp === 'false', 'icon, label "Tools" before the list is loaded, closed: ' + JSON.stringify(b0));
+      // keyboard: Enter opens, Space closes, the focus stays on the button
+      await js(`${q('button.mcp-tbtn')}.focus()`);
+      await H.key('Enter');
+      assert.ok(await until(`!!${q('.mcp-tlist')}`), 'Enter on the Tools button opens the list');
+      assert.strictEqual(await js(`${q('button.mcp-tbtn')}.getAttribute('aria-expanded')`), 'true');
+      assert.strictEqual(await js(`${q('button.mcp-tbtn')}.textContent.trim()`), 'Tools (25)', 'the label shows the count');
+      assert.ok(await until(`document.activeElement===${q('button.mcp-tbtn')}`), 'the focus stays on the Tools button');
+      // the name still toggles
+      await js(`${q('button.mcp-tg')}.click()`);
+      assert.ok(await until(`!${q('.mcp-tlist')}`), 'the name closes it');
+      await js(`${q('button.mcp-tg')}.click()`);
+      assert.ok(await until(`!!${q('.mcp-tlist')}`), 'and opens it');
+      await js(`${q('.mcp-tlist input[data-tool="browser_action_2"]')}.click()`);
+      assert.ok(await until(`${q('button.mcp-tbtn')}.textContent.trim()==='Tools: 24 of 25 on'`), 'a tool off: "Tools: 24 of 25 on"');
+      await js(`${q('.mcp-tlist input[data-tool="browser_action_2"]')}.click()`);
+      assert.ok(await until(`${q('button.mcp-tbtn')}.textContent.trim()==='Tools (25)'`), 'back to the count');
+      await settle();
+      const geo = await js(`(()=>{const card=${q("")};const c=card.getBoundingClientRect(),d=document.querySelector('#scrDlg .dlg').getBoundingClientRect();
+        const rows=[...card.querySelectorAll('.mcp-tlist li')];const bad=[];
+        for(const r of rows)for(const e of [r,...r.querySelectorAll('*')]){const x=e.getBoundingClientRect();if(x.width&&x.right>c.right+0.5)bad.push((e.tagName+'.'+e.className+' '+(e.textContent||'').slice(0,20)).trim()+' '+Math.round(x.right-c.right));}
+        const dlgBad=[...document.querySelectorAll('#scrDlg .dlg *')].filter(e=>e.getClientRects().length&&e.closest('.mcp-tlist')===null&&e.getBoundingClientRect().right>d.right+0.5).map(e=>e.tagName+'.'+e.className);
+        const tl=card.querySelector('.mcp-tlist'),tools=card.querySelector('.mcp-tools').getBoundingClientRect();
+        const ds=[...card.querySelectorAll('.mcp-tdesc')];const lh=parseFloat(getComputedStyle(ds[0]).lineHeight)||parseFloat(getComputedStyle(ds[0]).fontSize)*1.25;
+        return {rows:rows.length,bad,dlgBad,toolsRight:Math.round(tools.right-c.right),tlScroll:tl.scrollWidth-tl.clientWidth,bodyScroll:[...document.querySelectorAll('#scrDlg .dbody, #scrDlg .dlg')].map(e=>e.scrollWidth-e.clientWidth),docScroll:document.documentElement.scrollWidth-innerWidth,
+          clamp:getComputedStyle(ds[0]).webkitLineClamp,maxH:Math.max(...ds.map(e=>e.getBoundingClientRect().height)),lh,truncated:ds.filter(e=>e.scrollHeight>e.clientHeight+1).length,titles:ds.every(e=>e.title&&e.title===e.textContent),codeOne:[...card.querySelectorAll('.mcp-tlist code')].every(e=>e.getBoundingClientRect().height<=lh*1.6)}})()`);
+      assert.strictEqual(geo.rows, 25, 'all 25 tool rows');
+      assert.deepStrictEqual(geo.bad, [], `${w}: every tool row is inside the card ${JSON.stringify(geo)}`);
+      assert.deepStrictEqual(geo.dlgBad, [], `${w}: nothing sticks out of the dialog ${JSON.stringify(geo)}`);
+      assert.ok(geo.toolsRight <= 0.5 && geo.tlScroll <= 0 && geo.docScroll <= 0 && geo.bodyScroll.every((x) => x <= 0), `${w}: no horizontal overflow ${JSON.stringify(geo)}`);
+      assert.strictEqual(geo.clamp, '2', 'the description is clamped to 2 lines');
+      assert.ok(geo.maxH <= geo.lh * 2 + 1.5 && geo.truncated > 0, `${w}: a long description is cut at 2 lines ${JSON.stringify(geo)}`);
+      assert.ok(geo.titles && geo.codeOne, `${w}: full text in the title, the name on one line ${JSON.stringify(geo)}`);
+      const mf2 = await minFont();
+      assert.ok(mf2.min >= 10.5, `${w}: text >= 10.5px with 25 tools ${JSON.stringify(mf2)}`);
+      await shot(`069-mcp-tools-many-${w}x${h}.png`);
+      await closeDlg();
+      await closePanel();
+    }
 
     // ---- a failed server ----
     await openMcp('sim-6');

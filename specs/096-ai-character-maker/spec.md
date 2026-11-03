@@ -3,7 +3,7 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: AI character maker (owner request, Vikram 2026-10-30): make realistic crew characters with Codex image generation (3 poses + blink), My characters, folder pins, light portrait motion
-note: spec, plan, tasks drafted; Q1-Q5 answered 2026-10-31; Q1b (built-in crew motion) answered yes by Paco 2026-10-31; probes P1-P8 not run; nothing built
+note: spec, plan, tasks drafted; Q1-Q5 and Q1b answered; probes run on Linux 2026-11-02 (see Changes); nothing built
 status: draft
 -->
 
@@ -11,7 +11,7 @@ status: draft
 
 **Created**: 2026-10-31
 
-**Status**: Draft (2026-10-31). Spec, plan and tasks only; nothing is built. Q1-Q5 are answered by the owner (*Clarifications*); Paco answered Q1b (yes, built-in crews move too, 2026-10-31; *Changes*). Probes P1-P8 (plan.md) are OK'd by the owner on his ChatGPT plan and not yet run; they come before the adapter phase.
+**Status**: Draft (2026-10-31). Spec, plan and tasks only; nothing is built. Q1-Q5 are answered by the owner (*Clarifications*); Paco answered Q1b (yes, built-in crews move too, 2026-10-31; *Changes*). Probes P1-P8 (plan.md) were run on Linux on 2026-11-02 (*Changes*); Windows and macOS are not run. They come before the adapter phase.
 
 **Input**: Owner requests (Vikram, Telegram DMs, 2026-10-30 and 2026-10-31):
 - "for characters, add ai character maker";
@@ -379,3 +379,18 @@ Q1-Q5 are answered (*Clarifications*, owner decisions, 2026-10-31). Their text a
 - **Decision**: Paco (owner of spec 077, the crews) answered Q1b: yes. The built-in Cheeky and Prehistoric crews get the same v1 motion as My characters: the breathing bob, the pose cross-fade, the typing cue and the status glow. No art change, and no blink until he adds eyes-closed frames.
 - **Source**: Paco, relayed by his agent in the team chat on 2026-10-31 07:02 UTC and noted on PR #912.
 - **Changed**: Q1b moved out of *Open questions*; D5, FR-058, FR-061 and FR-062 (motion scope), T051..T054, T061 and plan R11 updated from "My characters only" to "My characters plus the built-in crews, no blink for crews without eyes-closed frames". FR-062 asked for this follow-up delta and for a line in spec 077 `## Changes`; both are done. No FR or task number added.
+
+### 2026-11-02: probes P1-P8 run on Linux (Codex 0.163.0, ChatGPT login)
+
+- **Decision**: Vikram, 2026-11-02, ordered the Codex image checks to run now. Run by an agent on Linux, `real:` codex-cli 0.163.0, signed in with ChatGPT (`account/read`: type `chatgpt`), through `codex app-server`, one process at a time, no `codex exec`, no API key. 5 images in all. Windows and macOS: steps are in `docs/agent-apps.md`, not run.
+- **P1 (route A works), `real:`**: `thread/start { ephemeral: true, approvalPolicy: 'never', sandbox: 'workspace-write', cwd: <empty temp> }` then `turn/start` gets the image tool. It reports it as an `item/completed` whose `item.type` is `imageGeneration` with `status`, `savedPath` (absolute, under `~/.codex/generated_images/<thread>/`), `transparentBackground` (bool), `revisedPrompt`, `failure` (null) and `result` (the picture as base64, about 1-2 MB of text; do not log it). Route B is not needed. Items before it: `userMessage`, `agentMessage`, a `commandExecution` that reads the imagegen skill. A turn took about 1-3 minutes. In every run the file also appeared in the `cwd` under the name asked for, although Codex's own `cp` from `~/.codex` ended `failed` (exit 127) in the sandbox: take the file in `cwd` and treat `savedPath` as a hint only (D3 and FR-035 unchanged).
+- **P2 (partly), `read:` + `real:`**: `thread/start` accepts `config` (schema). This machine's `config.toml` has no MCP servers, so "user servers load in the child" and "`config.mcp_servers` switches them off" are **not proven**: `mcpServerStatus/list` with no thread id lists only the built-in `codex_apps`, with or without the override (2026-11-03, spec 012 FR-164, `real:`: with a thread id it also starts and lists the thread's own stdio servers). `generateImage` stays off until a machine with a user MCP server confirms (`[KNOWN GAP]`, steps in agent-apps).
+- **P3 (transparency honoured), `real:`**: asking for a transparent background gave a PNG with alpha (RGBA 1312x1199, 66% of pixels fully transparent, corner alpha 0), and `transparentBackground: true`; the same with a reference image (P5, 69%). A sheet that asked only for a plain colour gave `transparentBackground: false` and an opaque, uniform background (edge pixels within colour distance 13 of the corner, so the FR-024 key-out threshold of 18 holds). Transparent sheets were not tried.
+- **P4 (2x2 sheets keep one person), `real:`, 3 sheets**: all three came back as one 1254x1254 PNG, four figures (standing, typing, thinking, waving), the same person in each (hair, glasses or beard, clothes, face), clear empty gutters, no text or borders, none bleeding across a panel. The seated panel is wider (desk and chair) and gets within about 3% of the sheet's right edge in two sheets; the poses are not centred identically between panels. One described detail (freckles) was dropped. Not measured with the FR-025 rule, and the owner's verdict is still to be quoted. D2 (one sheet, main slices it) holds on this evidence.
+- **P5 (reference image), `real:`, 1 image**: `turn/start` input `{ type: 'localImage', path }` after the text item works; the output kept face, hair, glasses and jacket in a new pose, with alpha. The fallback of D2 is available. A missing reference file did not fail the turn: Codex answered "Unavailable" and the turn completed, so Durbar must check the file itself first.
+- **P6 (login kind), `read:` + `real:`**: `account/read` returns `account.type`: `apiKey`, `chatgpt` (with `planType`, `email`) or `amazonBedrock`, so FR-034 can refuse `apiKey` and treat anything else but `chatgpt` as unknown. With a fake `OPENAI_API_KEY` in the child's environment the account stayed `chatgpt` and the turn ran on it. Not proven: whether a real key there would be billed (not tried, it could cost money): keep removing it for image runs.
+- **P7 (Codex keeps a copy), `real:`**: yes. With `ephemeral: true`, 1 new file appeared under `~/.codex/generated_images/` per image (names compared before and after, no contents read). FR-035 stays a `[KNOWN GAP]`.
+- **P8 (network off), `real:`**: under `workspace-write` with default network, a `curl` in the turn failed with exit 6 (name lookup), while the image call itself worked in the other turns.
+- **Errors, `real:`**: a rejected request (a model the ChatGPT account cannot use) gives `turn/completed` with `turn.status: 'failed'`, `turn.error.message` a JSON string with `status`, `error.type`, `error.message` and `error.code` (here `model_not_found`), plus a preceding `error` notification. No image failure was provoked; an `imageGeneration` item carries `failure` for that case (schema), shape unseen.
+- **Limits**: the account reports usage windows through `account/rateLimits/read` (percent used of a 5-hour and a 7-day window, credits). Durbar can show that instead of guessing a cost. Numbers for this account are not recorded here.
+- **Changed**: T010, T014, T014a ticked; T011, T014b stay open for P2; T012, T013 wait for the owner's look; T015 waits for the D2 and FR-002 wording. No FR or task number added.
