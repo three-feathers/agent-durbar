@@ -102,7 +102,9 @@ module.exports = async (ctx) => {
     await H.until(`${SLIPS}.length===0`, 4000); /* a slip is placed again once its font has loaded */
     assert.deepStrictEqual(await js(SLIPS), [], tag + ': nothing on a screen or a person, every slip shown, folder names readable');
     /* the pills sit in the lane the layout keeps under the lobby */
-    assert.deepStrictEqual(await js(`(()=>{const L=window.__durbarSimUi.realLayout().lane,ro=document.querySelector('#stage .ro').getBoundingClientRect();return [...document.querySelectorAll('#stage .ro-slip[data-variant="pill"]')].filter(e=>!e.hidden).filter(e=>{const b=e.getBoundingClientRect(),t=b.top-ro.top;return !L||t<L.y-0.5||t+b.height>L.y+L.h+0.5;}).map(e=>e.textContent.slice(0,24));})()`), [], tag + ': the pills in their lane');
+    const LANE = `(()=>{const L=window.__durbarSimUi.realLayout().lane,ro=document.querySelector('#stage .ro').getBoundingClientRect();return [...document.querySelectorAll('#stage .ro-slip[data-variant="pill"]')].filter(e=>!e.hidden).filter(e=>{const b=e.getBoundingClientRect(),t=b.top-ro.top;return !L||t<L.y-0.5||t+b.height>L.y+L.h+0.5;}).map(e=>e.textContent.slice(0,24));})()`;
+    await H.until(`${LANE}.length===0`, 4000);
+    assert.deepStrictEqual(await js(LANE), [], tag + ': the pills in their lane');
     /* FR-263: the top bar's text keeps 4.5:1 on its own button fill in the arcade's style (the pressed one is yellow) */
     assert.deepStrictEqual(await js('(()=>{' + LUM + `const out=[];for(const b of document.querySelectorAll('.topbar .seg button')){const c=getComputedStyle(b).color,f=getComputedStyle(b).backgroundColor;if(/rgba\\([^)]*, 0\\)|transparent/.test(f))continue;const r=(Math.max(lum(c),lum(f))+0.05)/(Math.min(lum(c),lum(f))+0.05);if(r<4.5)out.push(b.textContent.trim()+' '+r.toFixed(2));}return out;})()`), [], tag + ': top bar buttons readable');
     assert.deepStrictEqual(await js(TEXT), { small: [], low: [] }, tag + ': text size and contrast');
