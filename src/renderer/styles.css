@@ -1574,6 +1574,9 @@ html .notice-strip.info .ns-ic{background:transparent;color:var(--ink-2);box-sha
 .notice-strip .aw-it{display:flex;align-items:center;gap:10px;min-width:0}
 .notice-strip .aw-w{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .notice-strip .aw-w small{color:var(--ink-2);font-size:11px}
+.notice-strip .ml-list{max-height:min(34vh,210px);overflow-y:auto;overscroll-behavior:contain;gap:5px} /* spec 058 FR-200: the open list scrolls inside itself; the window never scrolls */
+.notice-strip .ml-list .aw-it{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start} /* Show stays in one right column when a line wraps */
+.notice-strip .ml-w{white-space:normal} /* spec 058 FR-200: the fix wraps, never cut */
 .notice-strip .aw-ok{color:var(--green-ink,var(--ink-2));font-weight:600}
 /* spec 006 FR-041/FR-042: the crash card reuses the Since you were away strip; its Pick… list scrolls from five rows */
 /* spec 006 FR-042 (review of PR 720): the sessions flow on one line and wrap, so an open list costs the office one row, not one row per session; past two lines it scrolls */

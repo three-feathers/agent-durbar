@@ -161,7 +161,7 @@ module.exports = async (ctx) => {
     await openMcp('sim-6');
     n = await row('my-notes');
     assert.strictEqual(n.word, 'Failed', JSON.stringify(n));
-    assert.match(n.hint, /command was not found/);
+    assert.match(n.hint, /Install the command, or put its full path/);
     await js(`document.getElementById('srAnnounce').textContent=''`);
     await js(`document.querySelector('#agMcp li[data-n="github"] button.swt').click()`);
     assert.ok(await until(`(()=>{const li=document.querySelector('#agMcp li[data-n="github"]');return !!li&&(li.querySelector('.mst-w')||{}).textContent==='Off for this session'})()`), 'a switched-off server reads "Off for this session"');

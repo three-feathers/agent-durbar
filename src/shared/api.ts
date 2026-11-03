@@ -446,6 +446,8 @@ export interface GlobalEntryView {
   headerKeys: string[];
   /** Some value is a `${NAME}` reference (or Codex `env_vars` / `env_http_headers`). */
   refs?: boolean;
+  /** Spec 058 FR-198: a stdio command Agent Durbar looked up and did not find on this computer (a file lookup, nothing run). */
+  missing?: boolean;
 }
 
 /** One app's list as read now (spec 069 FR-002, FR-008). */
