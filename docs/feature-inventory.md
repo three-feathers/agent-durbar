@@ -29,7 +29,7 @@ One row per thing a user can do or see. [features.md](features.md) stays the use
 | Simple / Expert switch and the "Do you write code?" question | missing, removed by owner decision (#1060) | missing, removed | none | 052 | driver:shots-052-ux |
 | Old app-level MCP servers in the folder extras dialog | missing, removed (#1058) | missing, removed | none | 020 | driver:shots-m10 |
 | Room menu: New session, Schedules, Rename, Cost, Move | works | works on the folder sign | none | 001 006 | driver:shots-005-cardmenu read:src/renderer/realoffice.js |
-| Full-screen chat, other agents in a strip | works | works, in PR 097-chat-in-world for the world's own frame | mock+planned (chat-open) | 005 | test:innerscroll driver:shots-005-cardmenu |
+| Full-screen chat, other agents in the rail (List, folders collapse) | works | works, in PR 097-chat-in-world for the world's own frame (rail not checked there) | mock+planned (chat-open) | 005 | test:innerscroll test:railorder driver:check-rail driver:shots-005-cardmenu |
 | Thinking, tool calls, Markdown | works | works | mock+planned (chat-shell) | 015 016 | test:markdown test:events |
 | File edits as they happen, Undo these changes | works | works | none | 065 | test:edits test:checkpoints |
 | Attachments (pick, drop, paste) | works | works | none | 004 | test:attachments |
