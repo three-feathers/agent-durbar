@@ -1878,7 +1878,10 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
           github: [['search_issues', 'Search issues and pull requests in a repository'], ['get_pull_request', 'Get one pull request with its files and checks'], ['create_issue', 'Open a new issue'], ['list_commits', 'List the commits of a branch'], ['get_file_contents', 'Read a file at a ref']],
           // `search` is also a tool of my-notes (two servers, one tool name: spec 069 review on PR 503); `run query` cannot be turned off (FR-063)
           'github-mcp-server': [['get_me', 'Your GitHub account'], ['search_code', 'Search code on GitHub'], ['search', 'Search GitHub'], ['run query', 'A tool name with a space']],
-          playwright: [['browser_navigate', 'Open a URL in the browser'], ['browser_click', 'Click an element'], ['browser_snapshot', 'Accessibility snapshot of the page'], ['browser_take_screenshot']],
+          // spec 069 FR-067: 25 tools, the later ones with very long names and descriptions (the overflow check of shots-069-mcp-tools)
+          playwright: [['browser_navigate', 'Open a URL in the browser'], ['browser_click', 'Click an element'], ['browser_snapshot', 'Accessibility snapshot of the page'], ['browser_take_screenshot'],
+            ...Array.from({ length: 21 }, (_, i): [string, string] => [i % 4 === 0 ? 'browser_extremely_long_tool_name_for_the_overflow_check_' + (i + 1) : 'browser_action_' + (i + 1),
+              'Performs a long, wordy browser action number ' + (i + 1) + ' on the current page: it waits for the network to be idle, scrolls the target into view, retries when the element moves, and returns an accessibility snapshot https://example.test/a/very/long/unbroken/address/that/does/not/wrap/at/all/' + i])],
           'docs-search': [],
         };
         /* the same state the row shows (spec 058's canned failures; a Restart fixes them): only a running server lists tools */
