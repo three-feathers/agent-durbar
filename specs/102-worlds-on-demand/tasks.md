@@ -199,9 +199,10 @@ The new fields go into `worldpack.ts` (T171's list) when #955 lands; until then 
 
 ### RA5: Light (one PR)
 
-- [ ] T265 Nothing covers a screen in the arcade; a pill with nowhere to go docks at the floor's bottom edge. Test: `shots-102-arcade` [FR-256, owner's look 2026-11-03].
-- [ ] T266 A folder sign runs on over the free floor after its zone; a name keeps 8 characters. Test: `test-realoffice-aisles`, `shots-102-arcade` [FR-256].
-- [ ] T217 (tokens of both lights, `setWorld` and `worldContrast` with the light, `data-ui` built in this round; the Light choice is FR-251's, next PR) `WORLD_SETS.retro` with day (Retro Pixel's values, moved) and night; `setWorld` and `worldContrast` take the light. Test: `test:theme-tokens`: every pair at AA in both lights and forced colours; a mutant dimming night's ink fails; cream surfaces at night [FR-263, SC-023].
+- [x] T265 Nothing covers a screen in the arcade; a pill with nowhere to go docks at the floor's bottom edge. Test: `shots-102-arcade` [FR-256, owner's look 2026-11-03].
+- [x] T266 A folder sign runs on over the free floor after its zone; a name keeps 8 characters. Test: `test-realoffice-aisles`, `shots-102-arcade` [FR-256].
+- [x] T267 Nobody cut by a cabinet: the place beside a cabinet fits the widest standing picture; asleep stands. Test: `test-realoffice-aisles`, `shots-102-arcade` painted pixels [FR-256, owner 2026-11-03].
+- [ ] T217 (withdrawn in part, owner 2026-11-03: night only; one dark `WORLD_SETS.retro`, `data-ui`, built; no light choice) `WORLD_SETS.retro` with day (Retro Pixel's values, moved) and night; `setWorld` and `worldContrast` take the light. Test: `test:theme-tokens`: every pair at AA in both lights and forced colours; a mutant dimming night's ink fails; cream surfaces at night [FR-263, SC-023].
 - [ ] T218 `wall-night`, `floor-night`, `welcome-night` in the drawing; only the shown light fetched; switching drops the other. Test: `shots-102-arcade` request log; memory row with `check-perf --record` [FR-252, SC-023].
 - [ ] T219 **Light** group under the entry: radios, keyboard, screen reader, tokens; stored beside `world`; hidden for any other world with no tab stop; default Day; bad value Day; never follows the system (`prefers-color-scheme` emulated dark changes nothing). Test: `shots-102-arcade` at both sizes; `Layout` byte-equal in both; `test:realoffice-layout` for parsing `__proto__`, numbers, long strings; a mutant following the system fails [FR-251, SC-023].
 

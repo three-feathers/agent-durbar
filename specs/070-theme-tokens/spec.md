@@ -88,6 +88,10 @@ A pack with a script in an SVG, a font that is not on the allow-list, a 2px font
 
 ## Changes
 
+### 2026-11-03: FR-050 amended for dark worlds (owner's look at the arcade, decided by his coordinating agent)
+
+- **FR-050, amended for a dark world.** A world whose page is dark (`dark: true` in `WORLD_SETS`, today only the Retro arcade, spec 102) keeps every status hue (`--c-*`, `--pb-*`, `--pc-*`, `--halo-*`, `--red`, `--amber`, `--green`, `--blue`, `--desk-new`, `--desk-needs`) and lightens only the status ink shades `--red-ink`, `--amber-ink` and `--blue-ink`, in the same hue (within 12 degrees), so a status word or a danger or warn fill reads at AA on its dark surfaces. Contrast wins over the token rule. A light world changes none of them, as before. `test:` `test:theme-tokens` (the hue, the lightness, every pair AA).
+
 - **2026-11-01** (owner pick, Vikram; #1014's T030): the app's text uses `-webkit-font-smoothing: auto`, not `antialiased`, which thinned strokes on macOS. Compared in the chat and on cards at 1x on a real screen and at 2x as rendered by Chromium: `auto` is a little heavier and darker, and easier to read in grey text. Only macOS honours this property. `read:` not seen on a real Retina panel.
 
 ### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)

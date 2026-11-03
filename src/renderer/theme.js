@@ -670,26 +670,6 @@
         '--wb-warn-bg':'#4e3618','--wb-warn-ink':'#f7cf8a'}, /* a counter or the inbox that needs you: amber glass with amber text */
       shadow:{'--shadow-card':'0 1px 3px rgba(46,32,18,.10)','--shadow-pop':'0 18px 48px rgba(46,32,18,.30), 0 2px 6px rgba(46,32,18,.12)'},
     },
-    /* spec 102 FR-263: the arcade. Day is Retro Pixel's own values, moved (a navy page under the room, cream cards, the yellow mark);
-       night keeps the cream surfaces (038 FR-001: no small text on a dark surface) and darkens the page and the bar. `ui` is the arcade's
-       chrome style while it is shown; `bgFill`: the page colour carries no text here (the room covers the office, panels are cream), as
-       for the Retro Pixel theme, so the pairs on `--bg` are not text pairs in this world (listed by worldContrast as skipped) */
-    retro:{
-      name:'Retro arcade', ui:'retro', bgFill:true,
-      page:{'--bg':'#1d2b53','--surface':'#fff1e8','--surface-2':'#f7e2cf','--raised':'#fff8f1','--card':'#fff1e8','--soft':'#fbe9db','--note':'#f7e2cf',
-        '--line':'#111122','--line-2':'#111122','--line-ctl':'#111122','--ink':'#111122','--ink-2':'#2b2b44','--muted':'#46465f',
-        '--sage':'#5fae76','--sage-ink':'#2c6b40','--focus':'#111122','--focus-halo':'#ffec27','--sel-border':'#ff004d','--sel-ring':'#ffccaa','--sel-ring-2':'#ffccaa',
-        '--stat-sel-border':'#ff004d','--stat-sel-ring':'#ffccaa','--brand-mark':'#111122','--brand-bg':'#ffec27','--avatar-bg':'#e0ead2'},
-      bar:{'--world-tint':'#29adff','--wb-bg':'#1d2b53','--wb-bg-2':'#111a36','--wb-surface':'#2a3a6a','--wb-surface-2':'#34467c','--wb-ink':'#fff1e8','--wb-ink-2':'#ece2d8',
-        '--wb-muted':'#d6d2e4','--wb-line':'#3e4f85','--wb-line-2':'#53639a','--wb-line-ctl':'#a3acd2','--wb-focus':'#ffec27',
-        '--wb-warn-bg':'#5a3a10','--wb-warn-ink':'#ffd166'},
-      shadow:{'--shadow-card':'0 2px 0 rgba(17,17,34,.28)','--shadow-pop':'4px 4px 0 rgba(17,17,34,.5)'},
-      night:{
-        page:{'--bg':'#0b1028','--surface-2':'#efdccb','--soft':'#f3e2d4','--note':'#efdccb','--avatar-bg':'#d6e0c8'},
-        bar:{'--world-tint':'#ff77a8','--wb-bg':'#0a0f24','--wb-bg-2':'#05081a','--wb-surface':'#161d40','--wb-surface-2':'#1f2852','--wb-line':'#2c3768','--wb-line-2':'#3b4780','--wb-line-ctl':'#8d97c4'},
-        shadow:{'--shadow-card':'0 2px 0 rgba(5,8,26,.45)','--shadow-pop':'4px 4px 0 rgba(5,8,26,.7)'},
-      },
-    },
     /* the cave: parchment-and-stone page, a bar of dark cave brown with torchlight gold (the logo's cave palette, spec 101 FR-033) */
     cave:{
       name:'Prehistoric cave',
@@ -714,60 +694,46 @@
     ['--wb-line-ctl','--wb-surface',3,'#ffffff'],['--wb-warn-ink','--wb-warn-bg',4.5,'#ffffff'],['--wb-ink','--wb-warn-bg',4.5,'#ffffff'],['--wb-focus','--wb-bg',3,'#ffffff'],['--wb-focus','--wb-surface',3,'#ffffff'],
     ['--ink','--surface',4.5,'#000000'],['--ink-2','--surface',4.5,'#000000'],['--muted','--surface',4.5,'#000000'],['--ink','--surface-2',4.5,'#000000'],['--muted','--surface-2',4.5,'#000000'],
     ['--line-ctl','--surface',3,'#000000'],['--focus','--surface',3,null],['--focus','--bg',3,null],['--brand-bg','--wb-bg',1.5,null]];
-  let currentWorld=null, currentLight='day', worldResolved=null;
-  /* spec 102 FR-252, FR-263: a world's set in a light; only a world with a `night` part has one, any other light is its day */
-  const lightOf=(id,light)=>light==='night'&&own(WORLD_SETS,id)&&WORLD_SETS[id].night?'night':'day';
-  const partOf=(id,light,k)=>Object.assign({},WORLD_SETS[id][k],lightOf(id,light)==='night'?WORLD_SETS[id].night[k]:null);
-  function worldTokens(id,light){
+  let currentWorld=null, worldResolved=null;
+  function worldTokens(id){
     if(!own(WORLD_SETS,id))return null;
-    const t=Object.assign({},CLEAN_TOKENS,partOf(id,light,'page'),partOf(id,light,'bar'));
+    const w=WORLD_SETS[id], t=Object.assign({},CLEAN_TOKENS,w.page,w.bar);
     for(const [k] of WORLD_BAR_MAP)t['--wp-'+k.slice(2)]=t[k];
     t['--wb-bar-shadow']='inset 0 1px 0 color-mix(in srgb,var(--wb-ink) 9%,transparent),0 6px 18px -8px color-mix(in srgb,var(--wb-bg-2) 85%,transparent)'; /* FR-226: the top bar's one shadow */
     return t;
   }
   function glassOver(v,over){const a=hex6(v),b=hex6(over);return '#'+[0,2,4].map(i=>Math.round(parseInt(a.slice(i,i+2),16)*WORLD_GLASS+parseInt(b.slice(i,i+2),16)*(1-WORLD_GLASS)).toString(16).padStart(2,'0')).join('');}
   /* every pair of a world's set with its ratio: 070 D4's pairs on the resolved set, then the world's own (glass composited) */
-  function worldContrast(id,light){
-    const t=worldTokens(id,light); if(!t)return null;
-    const out=[], fill=!!WORLD_SETS[id].bgFill, onPage=bg=>fill&&bg==='--bg'; /* FR-263: a page colour that carries no text */
-    for(const [fg,bg,min] of CONTRAST_PAIRS){const a=t[fg],b=t[bg];if(HEX_ANY.test(String(a||''))&&HEX_ANY.test(String(b||'')))out.push({fg,bg,min,ratio:ratio(a,b),...(onPage(bg)?{skipped:true}:{})});}
-    for(const [fg,bg,min,over] of WORLD_PAIRS){const a=t[fg],b=over?glassOver(t[bg],over):t[bg];out.push({fg,bg:bg+(over?' (glass over '+over+')':''),min,ratio:ratio(a,b),...(onPage(bg)?{skipped:true}:{})});}
+  function worldContrast(id){
+    const t=worldTokens(id); if(!t)return null;
+    const out=[];
+    for(const [fg,bg,min] of CONTRAST_PAIRS){const a=t[fg],b=t[bg];if(HEX_ANY.test(String(a||''))&&HEX_ANY.test(String(b||'')))out.push({fg,bg,min,ratio:ratio(a,b)});}
+    for(const [fg,bg,min,over] of WORLD_PAIRS){const a=t[fg],b=over?glassOver(t[bg],over):t[bg];out.push({fg,bg:bg+(over?' (glass over '+over+')':''),min,ratio:ratio(a,b)});}
     return out;
-  }
-  /* the UI style while a world is shown: the world's own, else the theme's (as setTheme sets it) */
-  function uiNow(){
-    if(typeof document==='undefined'||!document.documentElement)return;
-    const el=document.documentElement, w=currentWorld&&WORLD_SETS[currentWorld].ui;
-    if(w)el.dataset.ui=w;
-    else if(currentId===CLEAN_ID||!currentManifest)delete el.dataset.ui;
-    else el.dataset.ui=currentManifest.ui||'clean';
   }
   function paintWorld(){
     if(typeof document==='undefined'||!document.documentElement)return;
     const el=document.documentElement;
     if(currentWorld){
       applyTokens(worldResolved);
-      for(const [k,v] of Object.entries(partOf(currentWorld,currentLight,'shadow')))el.style.setProperty(k,v);
+      for(const [k,v] of Object.entries(WORLD_SETS[currentWorld].shadow))el.style.setProperty(k,v);
       el.dataset.world=currentWorld;
-      if(lightOf(currentWorld,currentLight)==='night')el.dataset.worldLight='night';else delete el.dataset.worldLight;
-      uiNow();
       delete el.dataset.dark; /* the world's page is light (its bar is dark by its own rules) */
     }
   }
   /* FR-100: Real office shows `id`'s world (null: flat, the user's theme again). Unknown ids are null. Returns the world shown. */
-  function setWorld(id,light){
-    const want=id!=null&&own(WORLD_SETS,id)?id:null, lt=lightOf(want,light);
-    if(want===currentWorld&&lt===currentLight)return currentWorld;
-    const was=currentWorld, wasLight=currentLight;
-    currentWorld=want; currentLight=lt; worldResolved=want?worldTokens(want,lt):null;
+  function setWorld(id){
+    const want=id!=null&&own(WORLD_SETS,id)?id:null;
+    if(want===currentWorld)return currentWorld;
+    const was=currentWorld;
+    currentWorld=want; worldResolved=want?worldTokens(want):null;
     if(want)paintWorld();
     else if(was&&typeof document!=='undefined'&&document.documentElement){
       const el=document.documentElement;
-      for(const k of Object.keys(worldTokens(was,wasLight)))if(!own(CLEAN_TOKENS,k))el.style.removeProperty(k);
-      delete el.dataset.world; delete el.dataset.worldLight;
-      uiNow();
+      for(const k of Object.keys(worldTokens(was)))if(!own(CLEAN_TOKENS,k))el.style.removeProperty(k);
+      delete el.dataset.world;
       applyTokens(currentResolved||resolveTokens(currentManifest));
-      for(const k of Object.keys(partOf(was,wasLight,'shadow'))){const m=currentManifest&&currentManifest.tokens;if(own(m,k))el.style.setProperty(k,m[k]);else el.style.removeProperty(k);}
+      for(const k of Object.keys(WORLD_SETS[was].shadow)){const m=currentManifest&&currentManifest.tokens;if(own(m,k))el.style.setProperty(k,m[k]);else el.style.removeProperty(k);}
       if(isDarkColor((currentResolved||{})['--surface']))el.dataset.dark='';else delete el.dataset.dark;
     }
     themeRev++;
