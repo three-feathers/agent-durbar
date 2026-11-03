@@ -27,8 +27,7 @@ One row per thing a user can do or see. [features.md](features.md) stays the use
 | Room doors (cabin signs) | missing, removed by owner decision (#954) | missing, removed | none | 017 | driver:check-no-doors |
 | Waiting desk halo (a still glow behind the screen) | works, still since #1057 | missing, the worlds have their own lights | none | 001 | driver:check-001-halo |
 | Simple / Expert switch and the "Do you write code?" question | missing, removed by owner decision (#1060) | missing, removed | none | 052 | driver:shots-052-ux |
-| Old app-level MCP servers in the folder extras dialog | missing, removed (#1058) | missing, removed | none | 020 | read:specs/020-tools-all-time-and-mcp-cli-primary/spec.md |
-| Long chats stay fast (one scroll read per frame) | works | works | none | 052 | driver:shots-052-ux |
+| Old app-level MCP servers in the folder extras dialog | missing, removed (#1058) | missing, removed | none | 020 | driver:shots-m10 |
 | Room menu: New session, Schedules, Rename, Cost, Move | works | works on the folder sign | none | 001 006 | driver:shots-005-cardmenu read:src/renderer/realoffice.js |
 | Full-screen chat, other agents in a strip | works | works, in PR 097-chat-in-world for the world's own frame | mock+planned (chat-open) | 005 | test:innerscroll driver:shots-005-cardmenu |
 | Thinking, tool calls, Markdown | works | works | mock+planned (chat-shell) | 015 016 | test:markdown test:events |
