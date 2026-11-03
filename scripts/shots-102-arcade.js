@@ -204,7 +204,7 @@ module.exports = async (ctx) => {
   assert.deepStrictEqual(await running(), [], 'FR-074: nothing runs while hidden');
   ctx.win.show(); ctx.win.focus();
 
-  /* FR-260: reduced motion turned on while the arcade moves stops its loops at once, before any redraw */
+  /* FR-260: reduced motion turned on while the arcade moves stops its loops at once, before any redraw (styles.css's rule for every element and pseudo-element) */
   await loadArcade(1440, 900, 15, { romotion: '1', simfreeze: '1' });
   await must(`document.querySelector('#stage .ro')._ready===true`, 'the room ready to move (097 FR-228)', 6000);
   await setStates(['working', 'thinking', 'waiting', 'working', 'error', 'working']);
