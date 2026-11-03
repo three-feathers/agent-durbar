@@ -20,6 +20,7 @@
  *   6. FIND: Chromium's find-in-page (the app has no Find box and no Print) finds a token in a skipped message and scrolls to it.
  *   7. FOCUS: focus() and Tab reach a button in a skipped message and bring it into view.
  *   8. RESIZE: close, narrow the window to 820px, reopen: the marks are dropped (spec 005 FR-213); after one more close the new heights are stored.
+ *      Live: widen and narrow with the chat open: marks dropped, the end stays the end, a message in view stays put, the next close measures anew.
  * Mutants caught on 2026-11-02: off (1), hidden (3, real heights), nosize and zero (1, the 90px and measured sizes).
  * A miss prints DRIVER FAILED (Electron still exits 0), so the npm script exits non-zero unless "all checks passed" is printed.
  */
@@ -252,6 +253,35 @@ module.exports = async (ctx) => {
     [1500, 2500, 3000].forEach((i, k) => assert.ok(Math.abs(est2[k] - hv2[i]) <= 0.6, `${tag}: after the resize message ${i} is skipped with its new height ${hv2[i]}, not ${est2[k]}`));
     await js(`document.getElementById('chat').scrollTop=1e7`); await quiet('the end');
     for (let i = 0; i < 12; i++) await stepCheck(`resized step ${i}`, chat_h * 3);
+    /* 8b. LIVE RESIZE: the window changes while the chat is open (marked at the old width): the marks are dropped within a frame or two, a chat at its end stays at its end, a chat scrolled away keeps its message where it was */
+    const cvoCount = `document.querySelectorAll('#chat .chat-inner>.cvo').length`;
+    await reopen(id); await quiet('a reopen at 820');
+    assert.ok((await js(cvoCount)) > N * 0.9, `${tag}: marked at 820 before the live widening`);
+    ctx.win.setContentSize(w, h);
+    assert.ok(await until(`innerWidth>=${jsLiteral(w - 10)}`, 5000), `${tag}: the window is wide again`);
+    assert.ok(await until(`${cvoCount}===0`, 15000), `${tag}: a live resize drops the marks`);
+    await quiet('the live widening');
+    assert.ok(await until(`${gap}<=1`, 4000), `${tag}: a chat at its end stays at its end through a live resize: ${await js(gap)}`);
+    await reopen(id); await quiet('a reopen at the full width');
+    await js(`(()=>{const c=document.getElementById('chat');c.scrollTop=c.scrollHeight*0.4})()`); await quiet('scrolling to the middle');
+    const mid = () => js(`(()=>{const c=document.getElementById('chat'),cr=c.getBoundingClientRect(),e=[...c.querySelectorAll('.chat-inner>.msg[data-cv]')].find(x=>x.getBoundingClientRect().bottom>cr.top+1);return {i:+e.dataset.cv,top:Math.round((e.getBoundingClientRect().top-cr.top)*10)/10}})()`);
+    const m0 = await mid();
+    // the narrowing itself rewraps the messages in view and moves what follows; only what the unmarking adds is the app's to keep, so take the place at the resize event (layout of the new width, marks still on)
+    await js(`(()=>{window.__rz=null;const i=${jsLiteral(m0.i)};addEventListener('resize',function f(){const c=document.getElementById('chat'),cr=c.getBoundingClientRect(),e=document.querySelector('#chat .chat-inner>[data-cv="'+i+'"]');if(window.__rz===null)window.__rz=Math.round((e.getBoundingClientRect().top-cr.top)*10)/10;});})()`);
+    ctx.win.setContentSize(820, h);
+    assert.ok(await until(`innerWidth<=830`, 5000), `${tag}: the window is narrow again`);
+    assert.ok(await until(`${cvoCount}===0`, 15000), `${tag}: a live narrowing drops the marks`);
+    await quiet('the live narrowing');
+    const m1 = await js(`(()=>{const c=document.getElementById('chat'),cr=c.getBoundingClientRect(),e=document.querySelector('#chat .chat-inner>[data-cv="'+${jsLiteral(m0.i)}+'"]');return Math.round((e.getBoundingClientRect().top-cr.top)*10)/10})()`);
+    const rz = await js(`window.__rz`);
+    assert.ok(rz !== null && Math.abs(m1 - rz) <= 2, `${tag}: unmarking after a live resize leaves message ${m0.i} where the resize put it (${rz} then ${m1})`);
+    // resized before closing: the next close measures at the new width
+    await forceOff(true); await js(`document.getElementById('chat').scrollTop=0`); await quiet('measuring');
+    const hv3 = await js(`[...document.querySelectorAll('#chat .chat-inner>.msg[data-cv]')].map(x=>Math.round(x.getBoundingClientRect().height*10)/10)`);
+    await forceOff(false);
+    await reopen(id); await quiet('the reopen after the live resize');
+    const est3 = await js(`[1500,2500,3000].map(i=>document.querySelector('#chat .chat-inner>[data-cv="'+i+'"]').getBoundingClientRect().height)`);
+    [1500, 2500, 3000].forEach((i, k) => assert.ok(Math.abs(est3[k] - hv3[i]) <= 0.6, `${tag}: after a live resize message ${i} is skipped with its height at the new width ${hv3[i]}, not ${est3[k]}`));
     ctx.win.setContentSize(w, h);
     console.log(`OK ${tag}: ${steps} scroll steps, ${N} messages, ${sk.skipped} skipped on reopen`);
   }

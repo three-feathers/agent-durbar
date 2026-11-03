@@ -2487,7 +2487,11 @@ function cvMark(){const el=document.querySelector('#chat > .chat-inner'); if(!el
   for(let i=0;i<n;i++){const e=k[i], old=i<n-4; e.classList.toggle('cvo',old); e.style.containIntrinsicBlockSize=(old&&h[i]>0)?'auto '+Math.round(h[i]*100)/100+'px':'';}}
 /* spec 005 FR-213: the stored heights are for the width they were measured at; if the chat is wider or narrower now, drop the marks (the chat lays out in full once, then the next close measures again) */
 function cvUnmarkIfResized(el){const w0=+el.dataset.cvw; if(!w0||Math.abs(el.clientWidth-w0)<=1)return; delete el.dataset.cvw; for(const e of el.children){e.classList.remove('cvo');e.style.containIntrinsicBlockSize='';}}
-function openPanel(id,focus){
+
+/* spec 005 FR-213: the same check while the chat is open (a live resize): once per frame, keep the end if the chat was at it, and the message in view where it is */
+let cvRz=0; addEventListener('resize',()=>{if(cvRz)return; cvRz=requestAnimationFrame(()=>{cvRz=0; const c=$('chat'), el=c&&c.querySelector(':scope > .chat-inner'); if(!el||!el.dataset.cvw||Math.abs(el.clientWidth-(+el.dataset.cvw))<=1)return;
+  const cr=c.getBoundingClientRect(), pinned=c.dataset.pin!=='0', a=[...el.children].find(e=>{const r=e.getBoundingClientRect();return r.bottom>cr.top+1;}), top=a?a.getBoundingClientRect().top:0;
+  cvUnmarkIfResized(el); if(pinned)c.scrollTop=c.scrollHeight; else if(a)c.scrollTop+=a.getBoundingClientRect().top-top;});});function openPanel(id,focus){
   if(ui.selected!==id||!document.body.classList.contains('panel-open'))cvMark();
   const a=byId(id); if(!a)return; if(!pulling)PULLED.delete(id); /* the user came back: this session may bring its chat forward again */
   if(ui.selected!==id||!document.body.classList.contains('panel-open'))PANEL_OPENED_AT=performance.now(); closeSlash(); keepDraft(); ui.selected=id; attached=(DRAFTS.get(id)||{att:[]}).att.slice();
