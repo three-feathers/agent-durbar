@@ -131,4 +131,5 @@ IDs start after T083.
 - [x] T131 `openPanel` follows the end for four frames after the first layout [FR-211]
 - [x] T132 Driver `check-chat-visibility` (4,000 messages, both sizes, timing off against on, scroll, heights, stream, copy, find, focus, mutants), registered in `ui-suite.js` [FR-210, FR-211]
 - [x] T133 `cvUnmarkIfResized`: drop the marks when the chat's width changed since `cvMark`; driver case 8 (resize between close and reopen) [FR-213]
-- [x] T134 `_stuck`: the pin goes off only on a move up from the app's last stick-to-bottom write [FR-214]
+- [x] T134 `onscroll`: the pin goes off only on a move up from the previous scroll event, whoever wrote the last position [FR-214]
+- [x] T135 `cvKey` (layout settings) beside the width, `cvSoon` for live changes, `cvMark` skips the Browser tab, a `MutationObserver` for messages that changed while closed, `openPanel` marks only after the agent check, `restick` skips its 400 px guard at the frame that dropped the marks; driver cases 9 and 10, `noclip` mutant, no pass with a debug switch [FR-213, FR-214, FR-215]

@@ -9,7 +9,7 @@
  * At 1440x900 and 1280x800 the first agent's chat is filled with 4000 simulated messages (copies of its own with 1 to 9 sentences, a
  * unique token each and a button on every tenth, so heights differ), then, waiting on state (until(), two frames after a scroll, the chat's
  * scroll position and height unchanged for three frames), never on a fixed sleep:
- *   1. SKIPPED: 3993+ of 4004 are skipped and the newest is not; reopen time with the rule off and on in the same page is printed, not asserted.
+ *   1. SKIPPED: more than 90% of the 4,004 messages are skipped (the count is printed) and the newest is not; reopen time with the rule off and on in the same page is printed, not asserted.
  *      A fresh copy skipped from its first layout is 90px; a skipped message has the height it was measured at (the size guess mutants fail here).
  *   2. REOPEN: lands at the end and stays there.
  *   3. SCROLL: 70 steps from the end, every third three screens, then the wheel: the message in view never moves by itself, a message that
@@ -21,7 +21,12 @@
  *   7. FOCUS: focus() and Tab reach a button in a skipped message and bring it into view.
  *   8. RESIZE: close, narrow the window to 820px, reopen: the marks are dropped (spec 005 FR-213); after one more close the new heights are stored.
  *      Live: widen and narrow with the chat open: marks dropped, the end stays the end, a message in view stays put, the next close measures anew.
- * Mutants caught on 2026-11-02: off (1), hidden (3, real heights), nosize and zero (1, the 90px and measured sizes).
+ * Mutants caught: off (1), hidden (3, real heights), nosize and zero (1, the 90px and measured sizes), noclip (3, the copy button). Mutants of
+ * app.js (hand-edited, each must FAIL) and the case that catches each are listed in spec 005 FR-210..FR-215.
+ * 9. PIN and 10. MARKING: a late scroll event and a small scroll up after a live resize, a turn that streams: the view is not pulled back
+ *    (FR-214); thresholds (40 messages, newest 4); marking when another agent's chat is opened; an unknown id marks nothing; a close from the
+ *    Browser tab marks nothing; a message that grew while its chat was closed is laid out for real; density changes drop the marks (FR-213, FR-215).
+ * CVLOG, CVBASE, CVSKIP, CVWH and DURBAR_CV_MUTANT are debug switches: with any of them set the run prints its numbers but never reports a pass.
  * A miss prints DRIVER FAILED (Electron still exits 0), so the npm script exits non-zero unless "all checks passed" is printed.
  */
 const { helpers, jsLiteral } = require('./driver-helpers');
@@ -33,11 +38,13 @@ module.exports = async (ctx) => {
   /* waits on state, not time: two frames after a scroll, then until the chat's scroll position and height stop changing for three frames */
   const quiet = async (what) => assert.ok(await js('window.__cvQ()'), `the chat settles after ${what}`);
   const MUT = process.env.DURBAR_CV_MUTANT || '';
+  const DEBUG = !!(process.env.CVLOG || process.env.CVBASE || process.env.CVSKIP || process.env.CVWH || process.env.CVSIZE || MUT);
   const MUTANTS = {
     off: '.chat-inner>*{content-visibility:visible!important}',
     hidden: '.chat-inner>*{content-visibility:hidden!important}',
     nosize: '.chat-inner>*{contain-intrinsic-block-size:none!important}',
     zero: '.chat-inner>*{contain-intrinsic-block-size:0!important}',
+    noclip: '.chat-inner>.cvo{overflow-clip-margin:0px!important}',
   };
   assert.ok(!MUT || MUTANTS[MUT] || MUT === 'size', `known mutant: ${MUT}`);
   const N = 4000;
@@ -90,6 +97,7 @@ module.exports = async (ctx) => {
     console.log(`TIMING ${tag}: reopen of a ${N}-message chat, rule off ${JSON.stringify(t.off)} ms (median ${median(t.off)}), rule on ${JSON.stringify(t.on)} ms (median ${median(t.on)})`);
     assert.ok(await until(`${gap}<=1`, 4000), `${tag}: the reopened chat is at its end: ${await js(gap)}`);
     const sk = await js(`(()=>{const e=[...document.querySelectorAll('#chat .chat-inner>*')];const sk=e.filter(x=>!(x.firstElementChild||x).checkVisibility({contentVisibilityAuto:true}));return {n:e.length,skipped:sk.length,lastSkipped:!(e[e.length-1].firstElementChild).checkVisibility({contentVisibilityAuto:true})}})()`);
+    console.log(`SKIPPED ${tag}: ${sk.skipped} of ${sk.n} messages are skipped on reopen (asserted: more than ${Math.round(N * 0.9)}, and the last one is laid out)`);
     if (!process.env.CVBASE && (!MUT || MUT === 'off')) assert.ok(sk.skipped > N * 0.9 && !sk.lastSkipped, `${tag}: most messages are skipped, the last one is not: ${JSON.stringify(sk)}`);
 
     const ap = await js(`(()=>{const el=document.querySelector('#chat .chat-inner'),src=el.children[el.children.length-3];const t0=performance.now();for(let i=0;i<100;i++){const m=src.cloneNode(true);m.removeAttribute('id');el.appendChild(m);void m.getBoundingClientRect().height;}const t=performance.now()-t0;for(let i=0;i<100;i++)el.lastElementChild.remove();return Math.round(t)})()`);
@@ -155,8 +163,9 @@ module.exports = async (ctx) => {
     assert.ok(Math.abs(tot - hv.total) <= 2, `${tag}: after one pass the chat is as tall as with the rule off: ${tot} against ${hv.total}`);
     // the copy button hangs under the bubble (bottom:-11px): it must not be cut off by the skipped box
     const cut = await js(`(()=>{const c=document.getElementById('chat');const b=[...c.querySelectorAll('.msg.agent .bubble>.cp-msg')][0];if(!b)return {none:true};b.scrollIntoView({block:'center'});
-      const r=b.getBoundingClientRect(),el=document.elementFromPoint(r.left+r.width/2,r.bottom-2);return {hit:!!el&&(el===b||b.contains(el)),box:Math.round(r.height)}})()`);
-    assert.ok(cut.none || cut.hit, `${tag}: the copy button under a reply is not cut off: ${JSON.stringify(cut)}`);
+      const r=b.getBoundingClientRect(),el=document.elementFromPoint(r.left+r.width/2,r.bottom-2);const m=b.closest('.chat-inner>*');return {hit:!!el&&(el===b||b.contains(el)),box:Math.round(r.height),skippedBox:!!m&&m.classList.contains('cvo')}})()`);
+    assert.ok(!cut.none, `${tag}: a reply with a copy button exists to test with`);
+    assert.ok(cut.hit && cut.skippedBox, `${tag}: the copy button under a reply, in a skipped message, is not cut off: ${JSON.stringify(cut)}`);
 
     /* 4. STREAM: a turn keeps the end pinned; a chat scrolled up stays where it is */
     const send = async (txt) => {
@@ -240,10 +249,13 @@ module.exports = async (ctx) => {
     await js(`document.getElementById('backBtn').click()`);
     ctx.win.setContentSize(820, h); // the chat is capped at 865px, so only a window below that changes its width
     assert.ok(await until(`innerWidth<=830`, 5000), `${tag}: the window is narrower`);
+    await js(`(()=>{const st=document.createElement('style');st.id='cvNoAnchor';st.textContent='#chat{overflow-anchor:none!important}';document.head.appendChild(st)})()`); // Chromium's scroll anchoring would keep the end by itself: the app's own follow has to do it
     await js(`(()=>{document.querySelector('#stage .desk[data-id='+JSON.stringify(${jsLiteral(String(id))})+']').click()})()`);
     assert.ok(await until(`document.body.classList.contains('panel-open')&&!!document.querySelector('#chat .chat-inner')`, 15000), `${tag}: the chat is open again`);
     await quiet('the reopen at the new width');
     assert.strictEqual(await js(`document.querySelectorAll('#chat .chat-inner>.cvo').length`), 0, `${tag}: a changed width drops the marks`);
+    assert.ok(await until(`${gap}<=1`, 4000), `${tag}: a chat reopened at another width follows its end (laid out in full): ${await js(gap)}`);
+    await js(`document.getElementById('cvNoAnchor').remove()`);
     await forceOff(true); await js(`document.getElementById('chat').scrollTop=0`); await quiet('measuring');
     const hv2 = await js(`[...document.querySelectorAll('#chat .chat-inner>.msg[data-cv]')].map(x=>Math.round(x.getBoundingClientRect().height*10)/10)`);
     await forceOff(false);
@@ -268,11 +280,13 @@ module.exports = async (ctx) => {
     const m0 = await mid();
     // the narrowing itself rewraps the messages in view and moves what follows; only what the unmarking adds is the app's to keep, so take the place at the resize event (layout of the new width, marks still on)
     await js(`(()=>{window.__rz=null;const i=${jsLiteral(m0.i)};addEventListener('resize',function f(){const c=document.getElementById('chat'),cr=c.getBoundingClientRect(),e=document.querySelector('#chat .chat-inner>[data-cv="'+i+'"]');if(window.__rz===null)window.__rz=Math.round((e.getBoundingClientRect().top-cr.top)*10)/10;});})()`);
+    await js(`document.getElementById('chat').style.overflowAnchor='none'`); // Chromium's scroll anchoring would hide a missing correction: the app's own code has to keep the place
     ctx.win.setContentSize(820, h);
     assert.ok(await until(`innerWidth<=830`, 5000), `${tag}: the window is narrow again`);
     assert.ok(await until(`${cvoCount}===0`, 15000), `${tag}: a live narrowing drops the marks`);
     await quiet('the live narrowing');
     const m1 = await js(`(()=>{const c=document.getElementById('chat'),cr=c.getBoundingClientRect(),e=document.querySelector('#chat .chat-inner>[data-cv="'+${jsLiteral(m0.i)}+'"]');return Math.round((e.getBoundingClientRect().top-cr.top)*10)/10})()`);
+    await js(`document.getElementById('chat').style.overflowAnchor=''`);
     const rz = await js(`window.__rz`);
     assert.ok(rz !== null && Math.abs(m1 - rz) <= 2, `${tag}: unmarking after a live resize leaves message ${m0.i} where the resize put it (${rz} then ${m1})`);
     // resized before closing: the next close measures at the new width
@@ -283,7 +297,102 @@ module.exports = async (ctx) => {
     const est3 = await js(`[1500,2500,3000].map(i=>document.querySelector('#chat .chat-inner>[data-cv="'+i+'"]').getBoundingClientRect().height)`);
     [1500, 2500, 3000].forEach((i, k) => assert.ok(Math.abs(est3[k] - hv3[i]) <= 0.6, `${tag}: after a live resize message ${i} is skipped with its height at the new width ${hv3[i]}, not ${est3[k]}`));
     ctx.win.setContentSize(w, h);
+    assert.ok(await until(`innerWidth>=${jsLiteral(w - 10)}`, 5000), `${tag}: the window is wide again`);
+
+    /* 9. PIN (FR-214): the pin goes off on any move up, whoever wrote the last position. A stream, a live narrowing that moves the end under a pinned chat, a small
+       scroll up, a turn: the view must stay where the person put it. */
+    await reopen(id); await quiet('a reopen');
+    await send('a turn that writes the end');
+    assert.ok(await until(`!!document.querySelector('#chat .typing')`, 8000), `${tag}: a turn starts (pin)`);
+    assert.ok(await until(`!document.querySelector('#chat .typing')`, 30000), `${tag}: the turn ends (pin)`);
+    await quiet('the turn');
+    assert.ok(await until(`${gap}<=1`, 4000), `${tag}: the end stays in view after the turn (pin): ${await js(gap)}`);
+    await js(`document.getElementById('chat').style.overflowAnchor='none'`);
+    ctx.win.setContentSize(820, h); // the chat is taller now: the app moves a pinned chat to its end itself (no stream, no stickyFlush)
+    assert.ok(await until(`innerWidth<=830`, 5000), `${tag}: the window is narrow (pin)`);
+    await quiet('the narrowing');
+    assert.ok(await until(`${gap}<=1`, 4000), `${tag}: a pinned chat stays at its end through a live narrowing: ${await js(gap)}`);
+    await js(`document.getElementById('chat').style.overflowAnchor=''`);
+    await js(`document.getElementById('chat').scrollTop-=200`); await quiet('a small scroll up');
+    assert.ok((await js(gap)) > 80, `${tag}: the small scroll up left the end by more than 80px: ${await js(gap)}`);
+    await send('and a turn after the small scroll up');
+    assert.ok(await until(`!!document.querySelector('#chat .typing')`, 8000), `${tag}: a turn starts (pin 2)`);
+    const s3 = await sample(2000, true);
+    assert.ok(s3.max === 0 && s3.n > 5, `${tag}: a chat moved up a little after the end moved by itself is not pulled back by a turn (moved ${s3.max}px in ${s3.n} frames)`);
+    assert.ok(await until(`!document.querySelector('#chat .typing')`, 30000), `${tag}: the turn ends (pin 2)`);
+    ctx.win.setContentSize(w, h);
+    assert.ok(await until(`innerWidth>=${jsLiteral(w - 10)}`, 5000), `${tag}: the window is wide again (pin)`);
+    // the late scroll event (the first version of FR-214): the app writes the end, a block grows the page before the event arrives; the event reads a big gap, but the move was down
+    await reopen(id); await quiet('a reopen');
+    assert.ok(await until(`${gap}<=1`, 4000), `${tag}: at the end before the late event: ${await js(gap)}`);
+    const late = await js(`(async()=>{const c=document.getElementById('chat'),el=c.querySelector('.chat-inner');c.scrollTop-=30;await __cvF(3);const p0=c.dataset.pin;
+      c.scrollTop=c.scrollHeight;const b=document.createElement('div');b.style.height='400px';b.className='msg';b.dataset.late='1';el.appendChild(b);await __cvF(3);const p1=c.dataset.pin;b.remove();return {p0,p1}})()`);
+    assert.deepStrictEqual(late, { p0: '1', p1: '1' }, `${tag}: a scroll event that arrives after the page grew, for a move down, keeps the pin: ${JSON.stringify(late)}`);
+    // FR-211: the open follows the end for four frames: the page grows after the second frame, the view still ends at the end
+    const follow = await js(`(async()=>{document.getElementById('backBtn').click();await __cvF(2);const d=document.querySelector('#stage .desk[data-id='+JSON.stringify(${jsLiteral(String(id))})+']');d.click();await __cvF(2);
+      const c=document.getElementById('chat'),b=document.createElement('div');b.style.height='200px';b.className='msg';b.dataset.late='1';c.querySelector('.chat-inner').appendChild(b);await __cvF(6);const g=c.scrollHeight-c.scrollTop-c.clientHeight;b.remove();return Math.round(g)})()`);
+    assert.ok(follow <= 1, `${tag}: an open follows the end for four frames (the page grew after frame two, ${follow}px short)`);
+    // a scroll before any scroll event of this open: the chat has not "stuck" yet, so the move counts
+    const early = await js(`(async()=>{document.getElementById('backBtn').click();await __cvF(2);const d=document.querySelector('#stage .desk[data-id='+JSON.stringify(${jsLiteral(String(id))})+']');d.click();const c=document.getElementById('chat');c.scrollTop=0;await __cvF(3);return c.dataset.pin})()`);
+    assert.strictEqual(early, '0', `${tag}: a scroll up in the first frames of an open drops the pin`);
+
+    /* 10. MARKING */
+    const marked = () => js(`document.querySelectorAll('#chat .chat-inner>.cvo').length`);
+    const OPEN = `document.body.classList.contains('panel-open')&&!!document.querySelector('#chat .chat-inner')`;
+    const clearMarks = () => js(`(()=>{const U=__durbarSimUi.cv,el=document.querySelector('#chat > .chat-inner');U.release(el);U.drop(el)})()`);
+    // thresholds: 40 messages or fewer are not marked; above that all but the newest 4 are
+    await reopen(id); await quiet('a reopen'); await clearMarks();
+    const thr = await js(`(()=>{const U=__durbarSimUi.cv,el=document.querySelector('#chat > .chat-inner'),all=[...el.children],keep=document.createDocumentFragment();
+      for(let i=40;i<all.length;i++)keep.appendChild(all[i]);U.mark();const at40=el.querySelectorAll(':scope>.cvo').length;U.release(el);U.drop(el);
+      el.appendChild(all[40]);U.mark();const k=[...el.children],at41=k.filter(e=>e.classList.contains('cvo')).length,flags=[k[0],k[35],k[36],k[37],k[40]].map(e=>e.classList.contains('cvo'));U.release(el);U.drop(el);
+      el.appendChild(keep);return {at40,at41,flags,n:el.children.length}})()`);
+    assert.strictEqual(thr.at40, 0, `${tag}: a chat of 40 messages is not marked: ${JSON.stringify(thr)}`);
+    assert.strictEqual(thr.at41, 37, `${tag}: a chat of 41 messages is marked but for the newest 4: ${JSON.stringify(thr)}`);
+    assert.deepStrictEqual(thr.flags, [true, true, true, false, false], `${tag}: the message at 37 and the last are not marked, 36 is: ${JSON.stringify(thr)}`);
+    // leaving a chat for another agent's chat (panel stays open) marks it, without closePanel
+    await js(`document.getElementById('backBtn').click()`);
+    const other = await js(`(()=>{const d=[...document.querySelectorAll('#stage .desk[data-id]')].map(x=>x.dataset.id).filter(x=>x!==${jsLiteral(String(id))});return d[0]||null})()`);
+    assert.ok(other, `${tag}: another agent exists to switch to`);
+    await js(`document.querySelector('#stage .desk[data-id='+JSON.stringify(${jsLiteral(String(id))})+']').click()`);
+    assert.ok(await until(OPEN, 15000), `${tag}: the chat is open`); await quiet('the open'); await clearMarks();
+    assert.strictEqual(await marked(), 0, `${tag}: nothing is marked while a chat is open`);
+    // an id that does not exist marks nothing and leaves the open (long) chat as it is
+    await js(`window.__cvEl=document.querySelector('#chat > .chat-inner');__durbarSimUi.cv.openPanel('no-such-agent',false)`);
+    assert.strictEqual(await js(`window.__cvEl.querySelectorAll(':scope>.cvo').length`), 0, `${tag}: an unknown id marks nothing`);
+    await js(`window.__cvEl=document.querySelector('#chat > .chat-inner');__durbarSimUi.cv.openPanel(${jsLiteral(String(other))},false)`);
+    assert.ok(await until(`document.querySelector('#chat > .chat-inner')!==window.__cvEl`, 5000), `${tag}: the other agent's chat is open`);
+    assert.ok((await js(`window.__cvEl.querySelectorAll(':scope>.cvo').length`)) > N * 0.9, `${tag}: switching to another agent's chat marks the one left`);
+    await js(`document.getElementById('backBtn').click()`);
+    // a close from the Browser tab (the chat is 0 high with no padding there) measures at the wrong width: nothing is marked
+    await js(`document.querySelector('#stage .desk[data-id='+JSON.stringify(${jsLiteral(String(id))})+']').click()`);
+    assert.ok(await until(OPEN, 15000), `${tag}: the chat is open (browser)`); await quiet('the open'); await clearMarks();
+    await js(`window.__cvEl=document.querySelector('#chat > .chat-inner');document.querySelector('.panel-in').classList.add('on-browser');document.getElementById('backBtn').click()`);
+    assert.strictEqual(await js(`window.__cvEl.querySelectorAll(':scope>.cvo').length+(window.__cvEl.dataset.cvw||'')`), '0', `${tag}: a close from the Browser tab marks nothing`);
+    // a message marked at close that grows while the chat is closed is not skipped with its old size
+    const DESK = `document.querySelector('#stage .desk[data-id='+JSON.stringify(${jsLiteral(String(id))})+']').click()`;
+    await js(DESK);
+    assert.ok(await until(OPEN, 15000), `${tag}: the chat is open (growth)`); await quiet('the open');
+    await js(`window.__cvM=document.querySelector('#chat > .chat-inner [data-cv="1500"]');document.getElementById('backBtn').click()`); // closed: 4,004 messages are marked
+    assert.ok(await js(`window.__cvM.classList.contains('cvo')`), `${tag}: message 1500 is marked while the chat is closed`);
+    await js(`window.__cvM.querySelector('.bubble').appendChild(document.createTextNode(' '+'Grown while closed. '.repeat(80)))`);
+    await js(DESK);
+    assert.ok(await until(OPEN, 15000), `${tag}: the chat is open (grown)`); await quiet('the open');
+    assert.strictEqual(await js(`window.__cvM.classList.contains('cvo')+'/'+window.__cvM.style.containIntrinsicBlockSize`), 'false/', `${tag}: a message that grew while the chat was closed is laid out for real`);
+    // layout settings other than the width: density, closed and open
+    await reopen(id); await quiet('a reopen');
+    assert.ok((await marked()) > N * 0.9, `${tag}: marked before the density change`);
+    await js(`document.getElementById('backBtn').click()`);
+    await js(`__durbarSimUi.cv.setDensity('compact')`);
+    await js(DESK);
+    assert.ok(await until(OPEN, 15000), `${tag}: the chat is open (density)`); await quiet('the open');
+    assert.strictEqual(await marked(), 0, `${tag}: a density change while the chat was closed drops the marks`);
+    await reopen(id); await quiet('a reopen');
+    assert.ok((await marked()) > N * 0.9, `${tag}: marked again at the new density`);
+    await js(`__durbarSimUi.cv.setDensity('comfortable')`);
+    assert.ok(await until(`document.querySelectorAll('#chat .chat-inner>.cvo').length===0`, 15000), `${tag}: a density change while the chat is open drops the marks`);
+    await quiet('the density change');
     console.log(`OK ${tag}: ${steps} scroll steps, ${N} messages, ${sk.skipped} skipped on reopen`);
   }
+  if (DEBUG) throw new Error('a debug switch or mutant is set (CVLOG, CVBASE, CVSKIP, CVWH, CVSIZE or DURBAR_CV_MUTANT): this run is not a pass');
   console.log('all checks passed');
 };
