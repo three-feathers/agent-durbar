@@ -500,5 +500,6 @@ shared parts; PR B = Codex (Q23 A).
 - [x] T172 FR-199, FR-200, FR-202: the launch strip in `index.html` / `app.js` (file findings at start, live findings for 10 minutes,
   Show / Open MCP settings / Dismiss, resolved findings leave) [FR-199, FR-200, FR-202]
 - [x] T173 Simulator `simmcplaunch=1` (a missing command and an unreadable list) and `scripts/shots-058-mcp-launch.js` at 1440x900 and
-  1280x800 (strip, Show, Dismiss, Settings Sign in / Sign in again / Restart where it failed, 10.5px, fits); mutation-checked [FR-195..FR-203]
+  1280x800 (strip, Show, Dismiss, Settings Sign in / Sign in again / Restart where it failed, 10.5px, fits); the mutants that fail it are listed in the spec delta's Status [FR-195..FR-203]
+- [x] T175 Review on #1073: problem count, list capped in the window, (N of M) with the reason, one wording per failure kind (FR-006 = FR-201), Show column; `launchYoung`/`launchUpdate`/`restartTargets` pure and tested, own policy key, wiring test `scripts/test-mcp-globalwiring.ts`, PATHEXT for dotted names, the hint on the row's own entry, Sign in again on sign-in rows, escaping, feature inventory [FR-195..FR-203]
 - [x] T174 README / `docs/features.md` MCP lines, `changelog.d/058-mcp-settings-health.md` [FR-195..FR-203]

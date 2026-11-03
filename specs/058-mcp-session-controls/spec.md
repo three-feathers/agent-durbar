@@ -877,9 +877,9 @@ spec 069's lists, and changes nothing in them.
   - **Open in chat**: closes Settings and opens that chat with its MCP dialog, so the per-chat dialog can be found from Settings.
   - **Needs-sign-in rows** (review on #609, fjcabello; `needs-auth`, or `failed` with `errorClass: 'auth'`): a Restart does not fix a
     missing sign-in, so the main action is **Open in chat** (a primary button), with the chat dialog's sign-in hint and "Sign in from the
-    chat's MCP list"; Restart and Restart session sit behind a closed **More** (kept open over a repaint). When #598 (issue #364's *Sign
-    in*, FR-064, Paco's) lands, its button is added to this row through the same row code, reusing it; this delta builds no sign-in of
-    its own. Until then the chat's MCP list shows the same hint (the sign-in itself runs in the agent app).
+    chat's MCP list"; Restart and Restart session sit behind a closed **More** (kept open over a repaint). *Changed 2026-11-03 by
+    FR-195*: when the chat's reply offers it, **Sign in** (primary) and **Sign in again…** are on this row and *Open in chat* becomes a
+    secondary button; both open the chat's MCP dialog and start its own sign-in there (no sign-in code in Settings).
 - **FR-083** `[IMPLEMENTED]` (`sim:`) **Live refresh.** While Settings is open, an `mcp` event of any running chat (and a chat that
   stops or is ready again) reloads the list (throttled to one reload per 150 ms) without repainting the rest of Settings; each load has a sequence number and
   the replies of an older load that ends after a newer one are dropped (review on #609); while the list is hidden (*Advanced* collapsed)
@@ -1555,9 +1555,17 @@ tool call in the chat, a code list that covers the claims challenge, and the hin
 
 ### 2026-11-03: the chat's MCP actions in Settings, and a calm health check at launch (owner request)
 
-**Numbers taken** (checked on `origin/main`, the remote branches and the open PRs, 2026-11-03): **FR-195..FR-203** and **T168..T174**.
+**Numbers taken** (checked on `origin/main`, the remote branches and the open PRs, 2026-11-03): **FR-195..FR-203** and **T168..T175**.
 
-**Status**: built 2026-11-03 (T168..T174), simulator, fakes and unit tests only; `sim:` `scripts/shots-058-mcp-launch.js` (1440x900, 1280x800), `test:` `test-mcp-cmdcheck.ts`, `test-mcpwords.ts`. Mutation-checked. Pictures: [the strip at launch](../../docs/screenshots/058-mcp-launch-closed-1440x900.png) ([1280x800](../../docs/screenshots/058-mcp-launch-closed-1280x800.png)), [Settings with Restart where it failed and the list open](../../docs/screenshots/058-mcp-launch-settings-1440x900.png) ([1280x800](../../docs/screenshots/058-mcp-launch-settings-1280x800.png)).
+**Status**: built 2026-11-03 (T168..T174), simulator, fakes and unit tests only; `sim:` `scripts/shots-058-mcp-launch.js` (1440x900, 1280x800), `test:` `test-mcp-cmdcheck.ts`, `test-mcpwords.ts`. Mutants that fail the tests (2026-11-03): unit, `commandFound`/`withMissing`: no relative-path guard, no PATHEXT names, PATHEXT
+ignored, `missing` on a found command, http servers checked, references judged, a dotted name taken as an extension; `mcp:globalState`
+returning the lists without the check, or without its fallback; helpers: switched-off servers kept, prototype keys in `fixFor`, one
+finding per app, no policy word, a null reason kept, `launchYoung` without its upper bound, a shared status/policy key, a successful call
+not dropping a policy finding, nothing new outside the window ignored, the `exited` hint not FR-201's, sign-in failures restarted; driver: no live feed, no sign-in start, Codex counted, a fixed server kept, `esc` removed
+from a name, `nf>1` as `nf>0`, the button never disabled, the policy line's words emptied, the list not capped, the headline
+counting names instead of problems; and `main.ts` handing a check that skips `withMissing`. Second round (review by fjcabello):
+a remote command judged, a network PATH folder read, no 10 s index, PATHEXT not limited to runnable extensions, macOS `/net` read,
+`C:x` judged; driver: Cancel signing in, a report removing the policy line. Pictures: [the strip at launch](../../docs/screenshots/058-mcp-launch-closed-1440x900.png) ([1280x800](../../docs/screenshots/058-mcp-launch-closed-1280x800.png)), [Settings with Restart where it failed and the list open](../../docs/screenshots/058-mcp-launch-settings-1440x900.png) ([1280x800](../../docs/screenshots/058-mcp-launch-settings-1280x800.png)).
 
 **Input**: owner (Vikram, 2026-11-03): restart MCP servers from Settings, with their status and signing in again, as in the chat; and
 when the app starts, highlight the servers that have problems and suggest a fix.
@@ -1582,45 +1590,59 @@ Codex) starts the servers inside one chat's session (FR-002). There is no app-wi
 #### Requirements (delta)
 
 - **FR-195** **Sign in and Sign in again from Settings.** On a chat's row under a server (FR-082), when that chat's reply offers it:
-  **Sign in** (a needs-sign-in row with `canSignIn` and no sign-in open; the primary button) or **Sign in again…** (`canSignInAgain`,
-  FR-164). Pressing it closes Settings, opens that chat and its MCP dialog (as *Open in chat*), and starts that row's own action there:
+  **Sign in** (a needs-sign-in row with `canSignIn` and no sign-in open; the primary button) and **Sign in again…** (`canSignInAgain`,
+  FR-164, on any row that has it, a needs-sign-in row included, as the chat dialog shows it). Pressing it closes Settings, opens that chat and its MCP dialog (as *Open in chat*), and starts that row's own action there:
   Sign in (FR-064/FR-065, then *Open sign-in page*) or Sign in again (FR-164, with its confirmation). Settings holds no sign-in code and
   no new channel; the chat dialog's flow runs. A row the agent app cannot sign in keeps *Open in chat* as its main action (the dialog
   shows the terminal steps). *Open in chat* stays as a secondary button.
 - **FR-196** **Restart where it failed (N).** A server row that is *Failed* in two or more running chats whose agent app can restart one
-  server (`canRestart`) has **Restart where it failed (N)**: it restarts that server in those chats one after the other through the
+  server (`canRestart`) has **Restart where it failed (N)**, or **(N of M)** when M chats failed and some are left out, with one line
+  saying why ("Codex can only restart the whole session: use Restart session with these servers in that chat."; "A chat that needs a
+  sign-in is left out: a restart does not sign in."). The choice is `DurbarMcpWords.restartTargets` (pure). It restarts that server in those chats one after the other through the
   shared `mcpRestartCall` (one toast per chat, as today), then reloads the list. Needs-sign-in chats are not included (a Restart does not
   fix a sign-in, review on #609), nor chats where it runs. The button is disabled while it runs.
 - **FR-197** **"Show log".** No log lines are shown in the app (Q5, FR-025: only *Open log folder*, tasks T050-T053, not built in the
   chat dialog either). Settings shows what the chat shows: *Details* (the masked error text) and *Copy diagnostics*. `[KNOWN GAP]`
   *Open log folder*, in both places: T050-T053, issue #349.
-- **FR-198** **The command check: a file lookup, nothing started.** Main adds `missing: true` to a server of the agent apps' own lists
-  (spec 069, `mcp:globalState`) whose stdio command is not found: an absolute path that is not a file, or a bare name that is in none of
-  the folders Agent Durbar searches for agent apps (PATH, the login shell's PATH and the usual install folders: `candidates()`, spec 060
-  FR-003; on Windows each `PATHEXT` extension, or the name as written when it has one). Only file existence is read; nothing is run,
-  opened or sent. A command with a `$`, `%` or `` ` `` reference, a relative path with a folder in it, or anything over 1024 characters is
-  not judged (no flag). The lookup waits for the login shell's PATH (read once, at most 3 s). In Settings the row of such a server says
-  "Agent Durbar did not find this command on this computer." with FR-201's fix. `[KNOWN GAP]` an agent app may find a command through
-  a PATH of its own; the line says *Agent Durbar did not find*, not that the app cannot.
+- **FR-198** **The command check: folder listings, nothing started, main never blocked.** Main adds `missing: true` to a server of the
+  agent apps' own lists (spec 069, `mcp:globalState`) whose stdio command is not found: an absolute path whose folder lists no such name,
+  or a bare name that is in none of the folders Agent Durbar searches for agent apps (PATH, the login shell's PATH and the usual install
+  folders: `candidates()`, spec 060 FR-003). Each folder is read once with an async `readdir` into a set of names (lowercased on Windows),
+  kept 10 s and shared by calls at once; the commands are looked up in those sets (no `stat`, no file call per command; review on
+  PR 1073: thousands of synchronous stats before). On Windows a name without a runnable extension gets each of PATHEXT ∩ {.exe, .cmd,
+  .bat, .com} (`python3.11` -> `python3.11.exe`); a `.py` or `.js` never counts as found. Nothing is run, opened or sent.
+  **Never touched** (review on PR 1073, fjcabello): a network or device path, as a command or as a PATH folder (`\\host\share`,
+  `//host/...`, `\\?\...`, `\\.\pipe\...`, macOS `/net/` and `/Network/`): reading one can open an SMB connection, which leaks an NTLM
+  response and can freeze; such a command is *not judged*, never *missing*. Also not judged: a `$`, `%` or `` ` `` reference, a relative
+  path with a folder in it, a drive-relative `C:x`, anything over 1024 characters, and an absolute path whose folder could not be read.
+  The lookup waits for the login shell's PATH (read once, at most 3 s). In Settings the row of such a server says "Agent Durbar did not
+  find this command on this computer." with FR-201's fix, on the entry that row shows (never another app's entry of the same name).
+  `[KNOWN GAP]` an agent app may find a command through a PATH of its own; the line says *Agent Durbar did not find*, not that the app
+  cannot. Building the folder list reads a few version-manager folders synchronously (nvm, fnm: `candidates()`), once per 10 s.
 - **FR-199** **The health pass at launch.** Once per app run, when the window starts (in the simulator only with `simmcplaunch=1`; never
   in the demo):
   1. *before any session*: the agent apps' lists that could not be read (`error`), and the servers with `missing` (FR-198) that new
      sessions would start (not switched off in Settings);
   2. *while chats connect* (the first 10 minutes of the run): each `mcp` report of a running chat with a *Failed* or *Needs sign-in*
-     server, and a failed MCP tool call with the `policy` word (FR-193).
+     server, and a failed MCP tool call with the `policy` word (FR-193). The window is measured on a monotonic clock
+     (`performance.now()`; `DurbarMcpWords.launchYoung`), and each event goes through `DurbarMcpWords.launchUpdate` (pure). A status
+     finding and a policy finding of the same server have their own keys: a server's reports never change a policy finding, and a later
+     successful call of that server removes it.
   It starts no session, asks no agent app, sends no prompt and opens no connection: (1) reads files, (2) uses only what connecting chats
   report anyway. A finding that is fixed later (the server reports *Running*) leaves the strip.
 - **FR-200** **One calm strip, no modal.** The findings show in one information strip above the office (the strips of spec 052 FR-089
-  and spec 006 FR-041; `role="status"`, it takes no focus), one line high by default so the office keeps its room: "**N MCP servers
-  need attention** (found since the app started): <up to 3 names> and N more" (N counts server names; an unreadable list
-  counts as one). **List…** (`aria-expanded`) opens one line per finding, at most 5
-  then "and N more": the server's name, where (the agent app's list, or the chat), the reason word (`reasonOf`, FR-090) and the
+  and spec 006 FR-041; `role="status"`, it takes no focus), one line high by default so the office keeps its room: "**N MCP problems
+  need attention** (found since the app started): <up to 3 names> and others". N counts the findings, the same as the list's lines plus
+  its "and N more" (review on #1073). **List…** (`aria-expanded`) opens one line per finding, at most 5
+  then "and N more"; the list scrolls inside itself (at most a third of the window) and each **Show** sits in one right column, so the
+  window never scrolls: the server's name, where (the agent app's list, or the chat), the reason word (`reasonOf`, FR-090) and the
   suggested fix (FR-201). Buttons: **Show** per line (a chat's line opens that chat's MCP dialog, where Sign
   in and Restart are; a list's line opens Settings at MCP servers), **Open MCP settings**, and **Dismiss**. Dismiss hides it for this run
   and nothing new appears after that (the chip's dot, FR-094, and the Settings count, FR-084, stay). Each server shows once per list or
   chat. The state is in words, never colour alone.
 - **FR-201** **Suggested fixes, fixed text, never run by Agent Durbar** (`DurbarMcpWords.fixFor(key, ctx)`): the person presses the
-  fix in the chat's MCP dialog or in Settings.
+  fix in the chat's MCP dialog or in Settings. One wording per failure kind (review on #1073): FR-006's row hint for `not-found`,
+  `timeout`, `exited` (crashed), `permission`, `refused` and `disconnected` is this same text, in the chat dialog and in Settings.
   - sign-in needed or expired (`auth`): "Sign in again: Show opens the chat's MCP list, with Sign in (or the steps to sign in from a terminal)."
   - command not found (`not-found`, live or FR-198): "Install the command, or put its full path in the server's entry. Then restart the
     server, or start a new chat."
@@ -1643,5 +1665,6 @@ Codex) starts the servers inside one chat's session (FR-002). There is no app-wi
 **What cannot be checked without a session** (honest limits): an expired sign-in, an organization policy, a time-out, a refused address
 or port, a crash, and whether a remote (http) server answers are known only when a chat's agent app connects; the strip shows them
 then (FR-199 part 2). Durbar's own folder extras (spec 019) and the servers built into an agent app are not in the launch file check;
-they are checked when a chat that uses them starts. `[KNOWN GAP]` not run on a real agent app or on macOS and Windows (simulator and
+they are checked when a chat that uses them starts. The strip is window chrome above the office: checked in Flat and the Real office
+(driver), `[KNOWN GAP]` not checked with an arrangement world on. `[KNOWN GAP]` not run on a real agent app or on macOS and Windows (simulator and
 unit tests on Linux).

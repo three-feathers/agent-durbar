@@ -136,8 +136,8 @@
     return true;
   }
   const liveKey=(n,id)=>n+'\0'+id;
-  /* FR-196: the chats where a server failed (not for a sign-in) and its agent app can restart one server */
-  const failedHere=r=>r.chats.filter(c=>c.entry.status==='failed'&&c.entry.canRestart&&(window.DurbarMcpWords.reasonOf(c.entry)||{}).key!=='auth'&&X.mcpSession&&X.mcpSession(c.id));
+  /* FR-196: the chats where a server failed (not for a sign-in) and its agent app can restart one server: DurbarMcpWords.restartTargets */
+  const failedHere=r=>window.DurbarMcpWords.restartTargets(r.chats,c=>!!(X.mcpSession&&X.mcpSession(c.id)));
   function liveChatHTML(r,c){
     const W=window.DurbarMcpWords, x=c.entry, rp=live.replies.get(c.id)||{}, m=X.mcpSession?X.mcpSession(c.id):null;
     const k=liveKey(r.name,c.id), who=c.name+(c.folder?' in '+c.folder:'');
@@ -163,7 +163,7 @@
     const signB=canSign&&auth&&x.canSignIn?`<button class="btn sm primary" type="button" data-lvsign="1" aria-label="${esc('Sign in to '+r.name+' for '+c.name+' (opens its chat)')}" title="Opens this chat's MCP list and starts the sign-in there">Sign in</button>`:'';
     const againB=canSign&&x.canSignInAgain?`<button class="btn sm" type="button" data-lvagain="1" aria-label="${esc('Sign in again to '+r.name+' for '+c.name+'… (opens its chat)')}" title="Opens this chat's MCP list; it asks before it forgets the saved sign-in">Sign in again…</button>`:'';
     const oc=m?`<button class="btn sm${auth&&!signB?' primary':''}" type="button" data-lvopen="1" aria-label="${esc('Open the MCP servers of '+c.name+' in its chat')}">Open in chat</button>`:'';
-    const acts=auth?(signB+oc+(rs||rsess?`<details class="scr-more lv-more" data-lvk="${esc(k)}"${liveMore.has(k)?' open':''}><summary data-lvmore="1">More</summary><div class="lv-act">${rs}${rsess}</div></details>`:'')):rs+rsess+againB+oc;
+    const acts=auth?(signB+againB+oc+(rs||rsess?`<details class="scr-more lv-more" data-lvk="${esc(k)}"${liveMore.has(k)?' open':''}><summary data-lvmore="1">More</summary><div class="lv-act">${rs}${rsess}</div></details>`:'')):rs+rsess+againB+oc;
     const authNote=auth&&m?`<span class="srv-hint lv-auth">${signB?'Sign in opens the chat\'s MCP list and starts the sign-in there.':'Sign in from the chat\'s MCP list: Open in chat.'}</span>`:'';
     return `<li class="lv-chat${auth?' auth':''}" data-lvs="${esc(r.name)}" data-lvc="${esc(c.id)}"><div class="lv-top"><b class="lv-who" title="${esc(who)}">${esc(c.name)}</b>${c.folder?`<span class="mtag">${esc(c.folder)}</span>`:''}${stat}</div>${hh.why}${typeof x.orgBlocked==='string'?`<span class="srv-hint srv-org">${esc(x.orgBlocked)}.</span>`:typeof x.orgDoubt==='string'?`<span class="srv-hint srv-org">${esc(x.orgDoubt)}.</span>`:''}${hint?`<span class="srv-hint">${esc(hint)}</span>`:''}${authNote}${noOne}${btnRow(det,hh.diag)}${detBox}${acts?`<div class="lv-act">${acts}</div>`:''}</li>`;
   }
@@ -176,8 +176,12 @@
       const nameEl=n?`<button class="mcp-tg" type="button" data-lv="${esc(r.name)}" aria-expanded="${open}" aria-label="${esc((open?'Hide':'Show')+' the chats that use '+r.name)}"><span class="mcp-car" aria-hidden="true">${open?'▾':'▸'}</span>${nameB}</button>`:nameB;
       const stat=`<span class="mst ${esc(r.cls)}">${W.iconSvg(r.icon)}<span class="mst-w">${esc(r.summary)}</span></span>`;
       /* FR-196: one Restart for the chats where this server failed (never a sign-in, never where it runs) */
-      const nf=failedHere(r).length, allBusy=liveBusy.has(liveKey(r.name,'*'));
-      const all=nf>1&&X.bridge.agentMcpRestart?`<div class="lv-act"><button class="btn sm" type="button" data-lvall="${esc(r.name)}"${allBusy?' disabled':''} aria-label="${esc((allBusy?'Restarting ':'Restart ')+r.name+' in the '+nf+' chats where it failed')}">${allBusy?'Restarting…':'Restart where it failed ('+nf+')'}</button></div>`:'';
+      const RT=failedHere(r), nf=RT.targets.length, tot=RT.failed.length, allBusy=liveBusy.has(liveKey(r.name,'*'));
+      const cnt=nf<tot?nf+' of '+tot:String(nf);
+      /* review on PR 1073: say why some failed chats are left out (the app can only restart its whole session, or it needs a sign-in) */
+      const apps=[...new Set(RT.skipped.filter(k=>k.why==='session').map(k=>{const m=X.mcpSession&&X.mcpSession(k.chat.id);return (m&&m.o.appName)||'Its agent app';}))];
+      const why=nf<tot?[apps.length?apps.join(' and ')+' can only restart the whole session: use Restart session with these servers in that chat.':'',RT.skipped.some(k=>k.why==='auth')?'A chat that needs a sign-in is left out: a restart does not sign in.':''].filter(Boolean).join(' '):'';
+      const all=nf>1&&X.bridge.agentMcpRestart?`<div class="lv-act"><button class="btn sm" type="button" data-lvall="${esc(r.name)}"${allBusy?' disabled':''} aria-label="${esc((allBusy?'Restarting ':'Restart ')+r.name+' in '+cnt+' chats where it failed')}">${allBusy?'Restarting…':'Restart where it failed ('+cnt+')'}</button>${why?`<span class="srv-hint lv-allwhy">${esc(why)}</span>`:''}</div>`:'';
       return `<li class="srv lv${open?' open':''}" data-lvn="${esc(r.name)}"><div class="srv-main"><div class="srv-top">${nameEl}${stat}</div>${all}${n?'':'<span class="srv-hint">No running chat uses it.</span>'}${open?`<ul class="lv-chats">${r.chats.map(c=>liveChatHTML(r,c)).join('')}</ul>`:''}</div></li>`;
     }).join('');
     return rows?`<ul class="srvs" id="liveList">${rows}</ul>`:'<p class="scr-note small" id="liveNone" role="status">No MCP servers in the running chats.</p>';
@@ -232,7 +236,7 @@
       const n=ra.dataset.lvall, ak=liveKey(n,'*'), row=live&&live.agg.servers.find(x=>x.name===n);
       if(ra.disabled||liveBusy.has(ak)||!row)return;
       liveBusy.add(ak);await repaintLive(false);
-      for(const c of failedHere(row)){const m=X.mcpSession(c.id);if(m)await mcpRestartCall(m.a,n);} /* one after the other, the chat's own Restart */
+      for(const c of failedHere(row).targets){const m=X.mcpSession(c.id);if(m)await mcpRestartCall(m.a,n);} /* one after the other, the chat's own Restart */
       liveBusy.delete(ak);await repaintLive(true);return;
     }
     if(!li)return;
@@ -560,7 +564,7 @@
     const also=a.origin==='builtin'?[]:appsWith(a.name).filter(x=>x!=='copilot');
     const rm=a.origin!=='builtin'&&appsWith(a.name).length?`<button class="btn sm" type="button" data-act="grm" data-g="${esc(a.name)}" aria-label="Remove ${esc(a.name)} from your agent apps' lists">Remove…</button>`:'';
     return `<li class="srv amb" data-amb="${esc(a.name)}"><div class="srv-main"><div class="srv-top"><b class="srv-name">${esc(a.name)}</b><span class="mtag src">${a.origin==='builtin'?'built-in':'Copilot CLI list'}</span>${also.map(x=>`<span class="mtag src">${esc(APPN[x])}</span>`).join('')}${a.transport?`<span class="mtag">${esc(a.transport)}</span>`:''}</div>
-      ${run?`<code class="srv-cmd" title="${esc(run)}">${esc(cap(run,180))}</code>`:''}${a.origin==='builtin'?'':missHTML(a.name)}</div>
+      ${run?`<code class="srv-cmd" title="${esc(run)}">${esc(cap(run,180))}</code>`:''}${a.origin==='builtin'||!glob||!glob.ok?'':missHTML(((glob.apps.find(x=>x.app==='copilot')||{servers:[]}).servers).find(y=>y.name===a.name))}</div>
       <div class="srv-act">${rm}${sw(a.enabled,(a.enabled?'Switch off ':'Switch on ')+a.name+' for new sessions','data-act="amb"')}</div></li>`;
   }
   /* ---------------- spec 069: the agent apps' own lists (global) ---------------- */
@@ -570,7 +574,8 @@
   const entryOf=name=>{if(!glob||!glob.ok)return null;for(const x of glob.apps){const v=x.servers.find(y=>y.name===name);if(v)return v;}return null;};
   const runOf=v=>v.command?[v.command].concat(v.args||[]).join(' '):(v.url||'');
   /* spec 058 FR-198/FR-201: main looked the command up (a file lookup) and did not find it */
-  const missHTML=name=>glob&&glob.ok&&glob.apps.some(x=>x.servers.some(v=>v.name===name&&v.missing===true))?`<span class="srv-hint srv-miss" data-miss="1">Agent Durbar did not find this command on this computer. ${esc(window.DurbarMcpWords?window.DurbarMcpWords.fixFor('not-found'):'')}</span>`:'';
+  /* review on PR 1073: the entry the row shows (its app's own), never another app's entry of the same name */
+  const missHTML=v=>v&&v.missing===true?`<span class="srv-hint srv-miss" data-miss="1">Agent Durbar did not find this command on this computer. ${esc(window.DurbarMcpWords?window.DurbarMcpWords.fixFor('not-found'):'')}</span>`:'';
   /* Servers of Claude Code's and Codex's lists that the Copilot CLI list above does not have */
   function globalSection(){
     if(!glob||!glob.ok)return '';
@@ -580,7 +585,7 @@
     const rows=names.map(n=>{const v=entryOf(n),apps=appsWith(n),run=runOf(v);
       const clSw=apps.includes('claude')?sw(!clOff.has(n),(clOff.has(n)?'Switch on ':'Switch off ')+n+' for new Claude Code sessions in Agent Durbar','data-act="gcl" data-g="'+esc(n)+'"'):'';
       return `<li class="srv glob" data-g="${esc(n)}"><div class="srv-main"><div class="srv-top"><b class="srv-name">${esc(n)}</b>${apps.map(x=>`<span class="mtag src">${esc(APPN[x])}</span>`).join('')}${v.transport!=='other'?`<span class="mtag">${esc(v.transport)}</span>`:'<span class="mtag">managed by the app</span>'}</div>
-        ${run?`<code class="srv-cmd" title="${esc(run)}">${esc(cap(run,180))}</code>`:''}${missHTML(n)}</div>
+        ${run?`<code class="srv-cmd" title="${esc(run)}">${esc(cap(run,180))}</code>`:''}${missHTML(v)}</div>
         <div class="srv-act">${v.transport!=='other'?`<button class="btn sm" type="button" data-act="grm" data-g="${esc(n)}" aria-label="Remove ${esc(n)} from your agent apps' lists">Remove…</button>`:''}${clSw}</div></li>`;}).join('');
     const files=glob.apps.map(x=>`<li><b>${esc(x.label)}</b>: <code>${esc(x.file)}</code> ${x.error?`<span class="warn">${esc(x.error)}</span>`:x.found?`(${x.servers.length} server${x.servers.length===1?'':'s'})`:'(no file yet)'}</li>`).join('');
     return `<h4 class="scr-sub">From Claude Code and Codex <small>their own lists</small></h4>

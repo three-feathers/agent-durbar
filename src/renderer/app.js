@@ -4493,40 +4493,29 @@ async function renderAwayStrip(){
 }
 /* spec 058 FR-199..FR-202: MCP servers that need attention since the app started. Part 1 reads only the agent apps' lists (main looked
    their commands up, FR-198); part 2 only what connecting chats report anyway. Nothing is started, switched or sent; fixes are pressed by the person. */
-const MCPL_MS=10*60*1000;
 const mcpL={on:false,t0:0,closed:false,open:false,items:new Map()};
 const mcpLW=()=>window.DurbarMcpWords;
 async function mcpLaunchStart(){
   if(mcpL.on||demoOn||!bridge||!mcpLW()||(sim&&qs.get('simmcplaunch')!=='1'))return;
-  mcpL.on=true;mcpL.t0=Date.now();
+  mcpL.on=true;mcpL.t0=performance.now(); /* a monotonic clock: the 10-minute window (launchYoung) ignores wall-clock changes */
   let g=null;try{g=bridge.mcpGlobalState?await bridge.mcpGlobalState():null;}catch(e){g=null;}
   mcpL.items=new Map([...mcpLW().fileFindings(g).map(f=>[f.key,f]),...mcpL.items]); /* the lists first, then the chats that reported meanwhile */
   paintMcpStrip();
 }
-/* an `mcp` report (servers) or a failed MCP tool call with the policy word: new findings only in the first 10 minutes; a server that runs again leaves */
+/* an `mcp` report, a failed MCP tool call with the policy word, or a successful MCP call: DurbarMcpWords.launchUpdate decides (pure, tested) */
 function mcpLaunchSeen(a,e){
   if(!mcpL.on||mcpL.closed||!a||e.agentId)return;
-  const r=liveRoot(a)||a, chat={id:r.id,name:r.name,app:mcpOpts(r).appName}, young=Date.now()-mcpL.t0<=MCPL_MS;
-  let ch=false;
-  const put=f=>{if(f&&young){mcpL.items.set(f.key,f);ch=true;}};
-  if(e.type==='mcp')for(const x of Array.isArray(e.servers)?e.servers:[]){
-    if(!x||typeof x.name!=='string')continue;
-    const k='chat:'+JSON.stringify([r.id,x.name]), had=mcpL.items.get(k);
-    if(x.status==='connected'){if(had&&had.rkey!=='policy'){mcpL.items.delete(k);ch=true;}continue;}
-    if(x.status==='failed'||x.status==='needs-auth')put(mcpLW().chatFinding(x,chat));
-    else if(had){mcpL.items.delete(k);ch=true;}
-  }
-  else if(e.type==='toolCall'&&e.phase==='failed'&&e.mcpCall==='policy'&&typeof e.mcpServer==='string')put(mcpLW().chatFinding({name:e.mcpServer},chat,true));
-  if(ch)paintMcpStrip();
+  const r=liveRoot(a)||a, W=mcpLW();
+  if(W.launchUpdate(mcpL.items,e,{id:r.id,name:r.name,app:mcpOpts(r).appName},W.launchYoung(mcpL.t0,performance.now())))paintMcpStrip();
 }
 function paintMcpStrip(){
   const el=$('mcpStrip');if(!el)return;
   const list=[...mcpL.items.values()];
   if(mcpL.closed||!list.length){if(!el.hidden){el.hidden=true;el.innerHTML='';scheduleRender();}return;}
   const shown=list.slice(0,5), more=list.length-shown.length, n=list.length;
-  const names=[...new Set(list.map(f=>f.name))], few=names.slice(0,3).join(', ')+(names.length>3?' and '+(names.length-3)+' more':''), nn=names.length;
+  const names=[...new Set(list.map(f=>f.name))], few=names.slice(0,3).join(', ')+(names.length>3?' and others':'');
   /* FR-200: one line by default (the office keeps its room); List… opens the reasons and fixes */
-  el.innerHTML='<span class="ns-ic" aria-hidden="true">i</span><span class="ns-t"><b>'+(nn===1?'1 MCP server needs':nn+' MCP servers need')+' attention</b> (found since the app started): '+esc(few)+'. Nothing was changed; each fix is yours to press.</span>'+
+  el.innerHTML='<span class="ns-ic" aria-hidden="true">i</span><span class="ns-t"><b>'+(n===1?'1 MCP problem needs':n+' MCP problems need')+' attention</b> (found since the app started): '+esc(few)+'. Nothing was changed; each fix is yours to press.</span>'+
     '<span class="ns-act"><button class="btn" type="button" data-ml="list" aria-expanded="'+(mcpL.open?'true':'false')+'" aria-controls="mcpList">'+(mcpL.open?'Hide list':'List…')+'</button><button class="btn" type="button" data-ml="settings">Open MCP settings</button><button class="btn" type="button" data-ml="close">Dismiss</button></span>'+
     (mcpL.open?'<span class="aw-list ml-list" id="mcpList" role="list" aria-label="MCP servers that need attention">'+shown.map(f=>'<span class="aw-it" role="listitem" data-mlk="'+esc(f.key)+'"><span class="aw-w ml-w"><b>'+esc(f.name)+'</b> <small>'+esc(f.where||'')+'</small>: '+esc(f.reason)+'. '+esc(f.fix)+'</span><button class="btn" type="button" data-mlshow="'+esc(f.key)+'" aria-label="'+esc('Show '+f.name+(f.where?' ('+f.where+')':''))+'">Show</button></span>').join('')+
     (more?'<span class="aw-it" role="listitem"><span class="aw-w">and '+more+' more in Settings &gt; MCP servers.</span></span>':'')+'</span>':'');
@@ -6124,7 +6113,7 @@ let statsRefresh=0;
 function feedStats(a,e){
   /* spec 058 FR-083: Settings' live MCP list follows a chat that stops or becomes ready again */
   if(e.type==='status'&&(e.status==='stopped'||e.status==='idle')&&!e.agentId&&window.DurbarScreens.liveEvent)window.DurbarScreens.liveEvent(a.id);
-  if(e.type==='mcp'||(e.type==='toolCall'&&e.phase==='failed'))mcpLaunchSeen(a,e); /* spec 058 FR-199 part 2 */
+  if(e.type==='mcp'||(e.type==='toolCall'&&(e.phase==='failed'||e.phase==='complete')&&e.mcpServer))mcpLaunchSeen(a,e); /* spec 058 FR-199 part 2 */
   /* sub-agent events are counted for the agent that owns them (a.id is the session) */
   if(e.type==='toolCall')STATS.recordTool(a.id,e);
   else if(e.type==='usage')STATS.recordModel(a.id,e.model);

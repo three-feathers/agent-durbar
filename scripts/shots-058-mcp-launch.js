@@ -8,17 +8,21 @@
  *
  * Checks, at 1440x900 and 1280x800 (simkinds=mixed, simmcplaunch=1: a Claude Code server whose command main did not find, a Codex list
  * that cannot be read; simmcpauth=1: "my-notes" asks Copilot and Claude Code chats for a sign-in):
- * - the strip shows the file findings and the chats' failed and needs-sign-in servers with a reason and a fix, never an error text, at
- *   most 5 lines; it takes its own room (the office starts below it), text >= 10.5px, no page overflow (FR-199, FR-200, FR-202, FR-203);
- * - a chat's server that runs again leaves the strip; a new failure and a policy-refused tool call join it (FR-199 part 2);
- * - Show on a chat's line opens that chat's MCP dialog; Show on a list's line opens Settings at MCP servers, where the row says the
- *   command was not found (FR-198);
- * - Settings: a needs-sign-in chat row has Sign in, which opens the chat's dialog with that row's sign-in started (Open sign-in page);
- *   Restart where it failed (2) restarts the two chats where the server failed and no other (FR-195, FR-196);
+ * - the strip is one line, takes no focus, and the office does not scroll; its headline counts exactly the problems the list holds;
+ *   it also shows in the Real office look; List… opens the findings with a reason and a fix each, never an error text, at most 5
+ *   lines, the list scrolls inside itself, Show stays in one right column, text >= 10.5px, the window never scrolls (FR-199..FR-203);
+ * - a chat's server that runs again leaves the strip; a new failure and a policy-refused tool call join it (the policy line checked
+ *   on its own item); a hostile server name and chat name render as text, nothing is injected (FR-202);
+ * - Show on a chat's line opens that chat's MCP dialog; Show on a list's line opens Settings at MCP servers, with the top bar in view
+ *   and no window scroll, where the row says the command was not found with FR-201's words (FR-198);
+ * - Settings: no Restart where it failed for one failed chat; "(2 of 4)" with the reason for the Codex chat and the sign-in chat left
+ *   out; the button is disabled while it runs; it restarts exactly the two chats (FR-196);
+ * - a needs-sign-in chat row has Sign in, which opens the chat's dialog with that row's sign-in started (FR-195);
  * - Dismiss hides the strip and a later failure does not bring it back;
  * - simmcpauth=again: Sign in again in Settings opens the chat's dialog with its own confirmation (Cancel signs nothing in);
  * - without simmcplaunch the simulator shows no strip.
- * Shots: 058-mcp-launch-<w>x<h>.png (the strip over the office), 058-mcp-launch-settings-<w>x<h>.png (Settings with Restart where it failed).
+ * Shots (in DOC_SHOTS): 058-mcp-launch-closed-<w>x<h>.png (the one-line strip over the office), 058-mcp-launch-settings-<w>x<h>.png
+ * (the list open over Settings, Restart where it failed (2 of 4)). Not linked: 058-mcp-launch-<w>x<h>.png (the list open over the office).
  * Prints "[058] launch PASS".
  */
 const assert = require('assert');
@@ -49,19 +53,30 @@ module.exports = async (ctx) => {
     const A = byKind('copilot')[0], B = byKind('claude')[0], C = byKind('codex')[0];
     assert.ok(A && B && C, 'Copilot, Claude Code and Codex chats run: ' + JSON.stringify(chats));
     await emit(A.id, [{ name: 'browser', status: 'connected' }, { name: 'my-notes', status: 'needs-auth', error: 'The server answered 401 Unauthorized: sign in to use its tools.', errorClass: 'auth' }]);
+    assert.ok(await until(`!document.getElementById('mcpStrip').hidden`, 6000), 'the strip shows');
+    for (const c of chats) if (c.id !== A.id) await emit(c.id, [{ name: 'my-notes', status: 'connected' }]); // the other chats sign in: they leave the strip
 
     // ---- FR-199/FR-200: the strip, its findings, no error text ----
     assert.ok(await until(`!document.getElementById('mcpStrip').hidden`, 6000), 'the strip shows');
     // one line by default: the office keeps its room (no office scroll with 15 agents)
     const closed = await js(`(()=>{const s=document.getElementById('mcpStrip'),f=document.getElementById('floor');return {h:s.getBoundingClientRect().height,list:!!s.querySelector('[data-mlk]'),exp:s.querySelector('[data-ml="list"]').getAttribute('aria-expanded'),t:s.querySelector('.ns-t').textContent,fits:f.scrollHeight<=f.clientHeight+1}})()`);
     assert.ok(closed.h <= 40 && !closed.list && closed.exp === 'false', `${w}: one line, list closed: ` + JSON.stringify(closed));
-    assert.match(closed.t, /^3 MCP servers need attention \(found since the app started\): Codex.s MCP list, playwright, my-notes\. Nothing was changed/, 'distinct names are counted');
+    const head = /^(\d+) MCP problems need attention \(found since the app started\): Codex.s MCP list, github, playwright and others\. Nothing was changed/.exec(closed.t);
+    assert.ok(head, 'the headline: ' + closed.t);
     assert.ok(closed.fits, `${w}: the office does not scroll with the strip closed`);
     assert.ok(!(await js(`document.getElementById('mcpStrip').contains(document.activeElement)`)), 'it took no focus');
     await shot(`058-mcp-launch-closed-${w}x${h}.png`);
+    // the strip is window chrome, outside the office: it shows in the Real office look too (feature inventory)
+    await js(`window.__durbarSimUi.setOfficeView('real');0`);
+    await settle();
+    assert.ok(await js(`(()=>{const s=document.getElementById('mcpStrip'),f=document.getElementById('floor');return !s.hidden&&s.getBoundingClientRect().height>0&&f.getBoundingClientRect().top>=s.getBoundingClientRect().bottom-1&&document.scrollingElement.scrollTop===0})()`), `${w}: the strip shows above the Real office`);
+    await js(`window.__durbarSimUi.setOfficeView('flat');0`);
+    await settle();
     await js(`document.querySelector('#mcpStrip [data-ml="list"]').click()`);
     assert.ok(await until(`!!document.querySelector('#mcpStrip [data-mlk]')&&document.activeElement===document.querySelector('#mcpStrip [data-ml="list"]')&&document.activeElement.getAttribute('aria-expanded')==='true'`), 'List… opens the list and keeps the focus');
     let it = await items();
+    const moreN = await js(`(()=>{const m=/and (\\d+) more in Settings/.exec(document.getElementById('mcpStrip').textContent);return m?Number(m[1]):0})()`);
+    assert.strictEqual(it.length + moreN, Number(head[1]), 'the headline counts what the list counts (lines + "and N more")');
     const keys = it.map((x) => x.k);
     assert.ok(keys.includes('list:codex'), 'the unreadable Codex list: ' + JSON.stringify(keys));
     assert.ok(keys.includes('cmd:playwright'), 'the missing command: ' + JSON.stringify(keys));
@@ -72,22 +87,41 @@ module.exports = async (ctx) => {
     const mn = it.find((x) => x.k === 'chat:' + JSON.stringify([A.id, 'my-notes'])).t;
     assert.ok(mn.startsWith('my-notes ' + A.name + ' (') && /: Refused: needs sign-in\. Sign in again: Show opens the chat.s MCP list/.test(mn), 'name, chat and app, reason, fix: ' + mn);
     const all = await stripText();
-    assert.match(all, /MCP servers need attention/);
+    assert.match(all, /MCP problems need attention/);
     assert.ok(!/401|Unauthorized|ENOENT|could not be read\./.test(all), 'no error text in the strip: ' + all);
     assert.strictEqual(await js(`document.getElementById('mcpStrip').getAttribute('role')`), 'status', 'a status strip, not an alert or a modal');
     // FR-203: its own room, 10.5px, no page overflow
-    const lay = await js(`(()=>{const s=document.getElementById('mcpStrip').getBoundingClientRect(),f=document.getElementById('floor').getBoundingClientRect();let min=99;document.querySelectorAll('#mcpStrip, #mcpStrip *').forEach(e=>{if(!e.getClientRects().length)return;if(![...e.childNodes].some(n=>n.nodeType===3&&n.textContent.trim()))return;min=Math.min(min,parseFloat(getComputedStyle(e).fontSize));});return {below:f.top>=s.bottom-1,min,pageX:document.documentElement.scrollWidth<=innerWidth,pageY:document.documentElement.scrollHeight<=innerHeight+1}})()`);
-    assert.ok(lay.below && lay.min >= 10.5 && lay.pageX && lay.pageY, `${w}: the strip takes its own room, 10.5px, no page scroll: ` + JSON.stringify(lay));
+    const lay = await js(`(()=>{const s=document.getElementById('mcpStrip').getBoundingClientRect(),f=document.getElementById('floor').getBoundingClientRect(),l=document.getElementById('mcpList');const cols=[...document.querySelectorAll('#mcpStrip [data-mlshow]')].map(b=>Math.round(b.getBoundingClientRect().right));let min=99;document.querySelectorAll('#mcpStrip, #mcpStrip *').forEach(e=>{if(!e.getClientRects().length)return;if(![...e.childNodes].some(n=>n.nodeType===3&&n.textContent.trim()))return;min=Math.min(min,parseFloat(getComputedStyle(e).fontSize));});return {below:f.top>=s.bottom-1,min,pageX:document.documentElement.scrollWidth<=innerWidth,pageY:document.documentElement.scrollHeight<=innerHeight+1&&document.scrollingElement.scrollTop===0,capped:getComputedStyle(l).overflowY==='auto'&&l.getBoundingClientRect().height<=Math.min(innerHeight*0.34,210)+1,col:new Set(cols).size===1}})()`);
+    assert.ok(lay.below && lay.min >= 10.5 && lay.pageX && lay.pageY && lay.capped && lay.col, `${w}: the strip takes its own room, 10.5px, no page scroll: ` + JSON.stringify(lay));
     await shot(`058-mcp-launch-${w}x${h}.png`);
 
     // ---- FR-199 part 2: a server that runs again leaves; a new failure and a policy refusal join ----
-    for (const c of chats) if (c.id !== A.id) await emit(c.id, [{ name: 'my-notes', status: 'connected' }]); // the other chats sign in: room in the strip
     await emit(A.id, [{ name: 'browser', status: 'connected' }, { name: 'my-notes', status: 'connected' }]);
     assert.ok(await until(`![...document.querySelectorAll('#mcpStrip [data-mlk]')].some(x=>x.dataset.mlk===${jsLiteral('chat:' + JSON.stringify([A.id, 'my-notes']))})`), 'my-notes left the strip when it ran');
     await emit(A.id, [{ name: 'browser', status: 'failed', error: 'connect ECONNREFUSED 127.0.0.1:3000' }, { name: 'my-notes', status: 'connected' }]);
     assert.ok(await until(`[...document.querySelectorAll('#mcpStrip [data-mlk]')].some(x=>x.dataset.mlk===${jsLiteral('chat:' + JSON.stringify([A.id, 'browser']))}&&/Refused the connection\\. Check the server.s address or port/.test(x.textContent))`), 'a refused server joins with the port fix');
+    // FR-202: a hostile server name and chat name render as text
+    const D = chats.find((c) => c.id !== A.id && c.id !== B.id && (c.kind === 'copilot' || c.kind === 'claude'));
+    assert.ok(D, 'a fourth Copilot or Claude Code chat');
+    const EVIL = '<img src=x onerror="window.__pwn=1"><b>x</b>';
+    await js(`(()=>{const a=window.__durbarSimUi.agents().find(a=>a.id===${jsLiteral(D.id)});window.__dName=a.name;a.name=${jsLiteral('Evil ' + EVIL)};})()`);
+    await emit(D.id, [{ name: EVIL, status: 'failed', error: 'x' }]);
+    const evilKey = 'chat:' + JSON.stringify([D.id, EVIL]);
+    assert.ok(await until(`[...document.querySelectorAll('#mcpStrip [data-mlk]')].some(x=>x.dataset.mlk===${jsLiteral(evilKey)})`), 'the hostile line shows');
+    const ev = await js(`(()=>{const x=[...document.querySelectorAll('#mcpStrip [data-mlk]')].find(x=>x.dataset.mlk===${jsLiteral(evilKey)});return {t:x.textContent,img:document.querySelectorAll('#mcpStrip img').length,bs:x.querySelectorAll('b').length,pwn:window.__pwn===1}})()`);
+    assert.ok(ev.t.startsWith(EVIL + ' Evil ' + EVIL) && ev.img === 0 && ev.bs === 1 && !ev.pwn, 'the names render literally, nothing injected: ' + JSON.stringify(ev));
+    await emit(D.id, [{ name: EVIL, status: 'connected' }]);
+    assert.ok(await until(`![...document.querySelectorAll('#mcpStrip [data-mlk]')].some(x=>x.dataset.mlk===${jsLiteral(evilKey)})`), 'the hostile line left');
+    await js(`(()=>{const a=window.__durbarSimUi.agents().find(a=>a.id===${jsLiteral(D.id)});a.name=window.__dName;})()`);
     await js(`window.__durbarSimEmit({type:'toolCall',sessionId:${jsLiteral(B.id)},timestamp:Date.now(),callId:'pc1',tool:'teams_send',mcpServer:'agent365-teams',phase:'failed',output:'AADSTS530003: Your device is required to be managed to access this resource.'})`);
-    assert.ok(await until(`/Blocked by your organization.s access policy\\. Your organization.s sign-in rules refused it/.test(document.getElementById('mcpStrip').textContent)||/and \\d+ more/.test(document.getElementById('mcpStrip').textContent)`), 'a policy refusal joins (or is counted in "more")');
+    const polKey = 'policy:' + JSON.stringify([B.id, 'agent365-teams']);
+    assert.ok(await until(`[...document.querySelectorAll('#mcpStrip [data-mlk]')].some(x=>x.dataset.mlk===${jsLiteral(polKey)}&&/^agent365-teams .*: Blocked by your organization.s access policy\\. Your organization.s sign-in rules refused it, usually a managed-device check\\./.test(x.textContent))`), 'the policy line, on its own item');
+    // a later report of that server, with a marker in the same report: once the window holds the marker, the report was handled
+    await emit(B.id, [{ name: 'agent365-teams', status: 'pending' }, { name: 'marker', status: 'failed', error: 'x' }]);
+    assert.ok(await until(`(window.__durbarSimUi.agents().find(a=>a.id===${jsLiteral(B.id)}).mcp||[]).some(x=>x.name==='marker')`), 'the window handled the report after the policy refusal');
+    assert.ok(await js(`[...document.querySelectorAll('#mcpStrip [data-mlk]')].some(x=>x.dataset.mlk===${jsLiteral(polKey)})`), 'a later report of the server keeps the policy line');
+    await emit(B.id, [{ name: 'marker', status: 'connected' }]);
+    assert.ok(await until(`(window.__durbarSimUi.agents().find(a=>a.id===${jsLiteral(B.id)}).mcp||[]).some(x=>x.name==='marker'&&x.status==='connected')`), 'the marker runs again (it leaves the strip)');
     assert.ok(!/AADSTS|managed to access/.test(await stripText()), 'the policy line has no vendor text');
 
     // ---- Show: a chat's line opens its MCP dialog; a list's line opens Settings, where the row says the command was not found ----
@@ -95,41 +129,56 @@ module.exports = async (ctx) => {
     assert.ok(await until(`document.querySelectorAll('#agMcp li.srv').length>0`), 'Show opened the chat MCP dialog');
     assert.ok((await js(`document.getElementById('scrDlgT').textContent`)).endsWith(A.name), 'that chat\'s dialog');
     await done();
-    await until(`!document.getElementById('scrDlg')`);
+    assert.ok(await until(`!document.getElementById('scrDlg')`), 'the dialog closed');
+    // the chat stays open after its dialog (that view hides the top bar by design); leave it, as a person going to Settings would
+    await js(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`);
+    assert.ok(await until(`!document.body.classList.contains('panel-open')`), 'the chat closed');
     await js(`document.querySelector('#mcpStrip [data-mlshow="cmd:playwright"]').click()`);
     assert.ok(await until(`!!document.getElementById('liveList')&&document.getElementById('advMcp').open`), 'Show on a list line opened Settings at MCP servers');
-    assert.match(await js(`(document.querySelector('#globList li[data-g="playwright"] [data-miss]')||{}).textContent||''`), /^Agent Durbar did not find this command on this computer\. Install the command/, 'the list row says so');
+    await settle();
+    /* the window's own scroll (documentElement.scrollHeight also counts Settings' off-screen measuring nodes, which html clips) */
+    const noScroll = `(()=>{const t=document.querySelector('.topbar').getBoundingClientRect(),sc=document.getElementById('screen').getBoundingClientRect();return {top:t.top>=0&&t.height>0,win:document.scrollingElement.scrollTop===0&&scrollY===0&&document.body.scrollHeight<=innerHeight+1&&sc.bottom<=innerHeight+1,st:document.scrollingElement.scrollTop,bh:document.body.scrollHeight,ih:innerHeight,scrBottom:Math.round(sc.bottom)}})()`;
+    const ns = await js(noScroll);
+    assert.ok(ns.top && ns.win, `${w}: Settings with the list open: the top bar is in view and the window does not scroll ` + JSON.stringify(ns));
+    assert.strictEqual(await js(`(document.querySelector('#globList li[data-g="playwright"] [data-miss]')||{}).textContent||''`), 'Agent Durbar did not find this command on this computer. ' + (await js(`window.DurbarMcpWords.fixFor('not-found')`)), 'the list row says so, with FR-201\'s words');
+    assert.ok(!(await js(`!!document.querySelector('#liveList [data-lvall="browser"]')`)), 'one failed chat: no Restart where it failed');
     assert.ok(!(await js(`!!document.querySelector('#globList li[data-g="sentry"] [data-miss]')`)), 'an http server has no such line');
+    assert.ok(await js(`!!document.querySelector('#ambList li[data-amb="github"]')&&!document.querySelector('#ambList li[data-amb="github"] [data-miss]')`), 'the Copilot row of "github" (found there) has no not-found line, though Claude Code\'s "github" is missing');
 
     // ---- FR-196: Restart where it failed (2) restarts exactly the two failed chats ----
     await emit(B.id, [{ name: 'browser', status: 'failed', error: 'spawn browser-mcp ENOENT', errorClass: 'not-found' }, { name: 'my-notes', status: 'connected' }]);
     await emit(C.id, [{ name: 'browser', status: 'failed', error: 'spawn browser-mcp ENOENT', errorClass: 'not-found' }]);
-    await js(`(()=>{const b=window.__durbarSimUi.bridge();window.__lvCalls=[];if(!b.__lvWrapped){b.__lvWrapped=true;const r=b.agentMcpRestart;b.agentMcpRestart=(id,n)=>{window.__lvCalls.push([id,n]);return r(id,n);};}})()`);
-    assert.ok(await until(`/Restart where it failed \\(2\\)/.test((document.querySelector('#liveList [data-lvall="browser"]')||{}).textContent||'')`), 'Restart where it failed (2): Copilot and Claude Code, not Codex');
+    await emit(D.id, [{ name: 'browser', status: 'failed', error: 'SSE stream terminated: 401', errorClass: 'auth' }]);
+    await js(`(()=>{const b=window.__durbarSimUi.bridge();window.__lvCalls=[];if(!b.__lvWrapped){b.__lvWrapped=true;const r=b.agentMcpRestart;b.agentMcpRestart=async(id,n)=>{window.__lvCalls.push([id,n]);await new Promise(z=>setTimeout(z,400));return r(id,n);};}})()`);
+    assert.ok(await until(`/^Restart where it failed \\(2 of 4\\)$/.test((document.querySelector('#liveList [data-lvall="browser"]')||{}).textContent||'')`), 'Restart where it failed (2 of 4): not Codex, not the sign-in');
+    assert.match(await js(`(document.querySelector('#liveList li[data-lvn="browser"] .lv-allwhy')||{}).textContent||''`), /^Codex can only restart the whole session: use Restart session with these servers in that chat\. A chat that needs a sign-in is left out: a restart does not sign in\.$/, 'it says why');
     await toggle('browser');
     await settle();
     await shot(`058-mcp-launch-settings-${w}x${h}.png`);
     await js(`document.querySelector('#liveList [data-lvall="browser"]').click()`);
+    assert.ok(await until(`!!document.querySelector('#liveList [data-lvall="browser"][disabled]')`, 2000), 'disabled while it runs');
     assert.ok(await until(`window.__lvCalls.length===2&&!document.querySelector('#liveList [data-lvall="browser"][disabled]')`, 8000), 'two restarts, then the button is free');
     assert.deepStrictEqual((await js(`window.__lvCalls`)).map((c) => c[0]).sort(), [A.id, B.id].sort(), 'only the failed chats that can restart one server');
 
     // ---- FR-195: Sign in from Settings starts the chat's own sign-in ----
-    const signRow = await js(`(()=>{const b=document.querySelector('#liveList li.lv-chat [data-lvsign]');return b?b.closest('li.lv-chat').dataset.lvc:null})()`)
-      || (await toggle('my-notes'), await until(`!!document.querySelector('#liveList li.lv-chat [data-lvsign]')`), await js(`document.querySelector('#liveList li.lv-chat [data-lvsign]').closest('li.lv-chat').dataset.lvc`));
-    assert.ok(signRow, 'a needs-sign-in chat row has Sign in');
-    const sr = await js(`(()=>{const c=[...document.querySelectorAll('#liveList li.lv-chat')].find(x=>x.dataset.lvc===${jsLiteral(signRow)}&&x.querySelector('[data-lvsign]'));const b=c.querySelector('.lv-act > button');return {first:b&&b.dataset.lvsign!==undefined,primary:b&&b.classList.contains('primary'),open:!!c.querySelector('[data-lvopen]:not(.primary)'),note:(c.querySelector('.lv-auth')||{}).textContent}})()`);
+    /* a Needs sign-in row (the simulator's sign-in, like main, starts only for a server that waits for one) */
+    const pick = `[...document.querySelectorAll('#liveList li.lv-chat')].find(c=>c.querySelector('[data-lvsign]')&&c.querySelector('.mst-w').textContent==='Needs sign-in')`;
+    if (!(await js(`!!${pick}`))) await toggle('my-notes');
+    assert.ok(await until(`!!${pick}`), 'a needs-sign-in chat row has Sign in');
+    const [signSrv, signRow] = await js(`(()=>{const c=${pick};return [c.dataset.lvs,c.dataset.lvc]})()`);
+    const sr = await js(`(()=>{const c=[...document.querySelectorAll('#liveList li.lv-chat')].find(x=>x.dataset.lvc===${jsLiteral(signRow)}&&x.dataset.lvs===${jsLiteral(signSrv)});const b=c.querySelector('.lv-act > button');return {first:b&&b.dataset.lvsign!==undefined,primary:b&&b.classList.contains('primary'),open:!!c.querySelector('[data-lvopen]:not(.primary)'),note:(c.querySelector('.lv-auth')||{}).textContent}})()`);
     assert.ok(sr.first && sr.primary && sr.open, 'Sign in leads, Open in chat stays as a secondary button: ' + JSON.stringify(sr));
     assert.match(sr.note, /Sign in opens the chat's MCP list and starts the sign-in there/);
-    await press('my-notes', signRow, 'lvsign');
-    assert.ok(await until(`!document.body.classList.contains('screen-open')&&!!document.querySelector('#agMcp button[data-signopen="my-notes"]')`, 6000), 'Settings closed; the chat dialog started its own sign-in (Open sign-in page)');
+    await press(signSrv, signRow, 'lvsign');
+    assert.ok(await until(`!document.body.classList.contains('screen-open')&&[...document.querySelectorAll('#agMcp button[data-signopen]')].some(b=>b.dataset.signopen===${jsLiteral(signSrv)})`, 6000), 'Settings closed; the chat dialog started its own sign-in (Open sign-in page)');
     await done();
-    await until(`!document.getElementById('scrDlg')`);
+    assert.ok(await until(`!document.getElementById('scrDlg')`), 'the dialog closed');
 
     // ---- Dismiss: gone for this run; a later failure does not bring it back ----
     await js(`document.querySelector('#mcpStrip [data-ml="close"]').click()`);
     assert.ok(await until(`document.getElementById('mcpStrip').hidden`), 'Dismiss hides the strip');
     await emit(A.id, [{ name: 'late', status: 'failed', error: 'x' }]);
-    await ctx.sleep(400);
+    assert.ok(await until(`(window.__durbarSimUi.agents().find(a=>a.id===${jsLiteral(A.id)}).mcp||[]).some(x=>x.name==='late'&&x.status==='failed')`), 'the window got the later failure');
     assert.ok(await js(`document.getElementById('mcpStrip').hidden`), 'nothing new shows after Dismiss');
   }
 
@@ -144,9 +193,10 @@ module.exports = async (ctx) => {
     assert.ok(await until(`[...document.querySelectorAll('#liveList li.lv-chat')].some(x=>x.dataset.lvs==='team-wiki'&&x.dataset.lvc===${jsLiteral(id)}&&x.querySelector('[data-lvagain]'))`), 'Sign in again is on the row');
     await press('team-wiki', id, 'lvagain');
     assert.ok(await until(`!!document.getElementById('modeDlg')&&/Sign in again to team-wiki\\?/.test(document.getElementById('modeDlg').textContent)`, 6000), 'the chat dialog asks its own question');
+    /* the dialog repaints once Sign in again has finished (its `finally`): count its reads, then Cancel */
+    await js(`(()=>{const b=window.__durbarSimUi.bridge();window.__reads=0;const o=b.agentMcp;b.agentMcp=(...a)=>{window.__reads++;return o(...a);};})()`);
     await js(`[...document.querySelectorAll('#modeDlg .btn')].find(b=>b.textContent==='Cancel').click()`);
-    await until(`!document.getElementById('modeDlg')`);
-    await ctx.sleep(300);
+    assert.ok(await until(`!document.getElementById('modeDlg')&&window.__reads>0`), 'Cancel closed the question and Sign in again finished (the dialog read the list again)');
     assert.deepStrictEqual(await js(`window.__sign`), [], 'Cancel: nothing signed in');
     assert.ok(await js(`document.getElementById('mcpStrip').hidden`), 'no strip without simmcplaunch');
     await done();

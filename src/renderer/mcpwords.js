@@ -62,15 +62,31 @@
 
   /* The hint (FR-006): failed and needs-auth rows only, one short sentence with what to check. `errorClass` (FR-011) wins; otherwise
      the already-masked text decides. Returns '' when there is nothing useful to say. `app` is the agent app's name. */
-  const CLASS_HINT={
-    'not-found':'The command was not found. Check that it is installed and that its name is right in Settings or the folder\'s extras.',
-    'timeout':'The server took too long to answer. Restart it, or check that it is reachable.',
-    'exited':'The server stopped on its own. Restart it, and check its command and arguments.',
-    'config':'The server\'s settings look wrong. Check them in Settings or the folder\'s extras.',
-    'permission':'Permission was denied. Check that the command is allowed to run and that its folder can be read.',
-    'refused':'The server could not be reached. Check its address and your network.',
-    'disconnected':'The connection to the server closed. Restart it, and check that it is still running or reachable.'
+  /* Spec 058 FR-201: the suggested fix per reason key, fixed text; Agent Durbar never runs it (the person presses it where it is).
+     ctx = {file} (a list's file label, `~/...`, for `config`). Unknown keys get the `unknown` fix. */
+  const FIXES={
+    'auth':'Sign in again: Show opens the chat’s MCP list, with Sign in (or the steps to sign in from a terminal).',
+    'not-found':'Install the command, or put its full path in the server’s entry. Then restart the server, or start a new chat.',
+    'policy':'Your organization’s sign-in rules refused it, usually a managed-device check. Sign in again using a browser your organization allows, or ask your administrator.',
+    'refused':'Check the server’s address or port and that the server is running; another program may use the port. Then press Restart.',
+    'crashed':'Open Details for the server’s own error, fix its command or settings, then press Restart.',
+    'timeout':'Press Restart. If it times out again, check your network or how long the server takes to start.',
+    'permission':'Allow the command to run (its file permissions), then press Restart.',
+    'disconnected':'Press Restart, and check that the server still runs or can be reached.',
+    'unknown':'Open Details or Copy diagnostics to see what the agent app reported.'
   };
+  /* FR-006 hints; since FR-201 (2026-11-03, one wording per failure kind) the fix text of the strip, so the chat dialog, Settings and the
+     launch strip say the same. `config` stays its own: a wrong entry, not an unreadable list. */
+  const CLASS_HINT={
+    'not-found':FIXES['not-found'],
+    'timeout':FIXES.timeout,
+    'exited':FIXES.crashed,
+    'config':'The server\'s settings look wrong. Check them in Settings or the folder\'s extras.',
+    'permission':FIXES.permission,
+    'refused':FIXES.refused,
+    'disconnected':FIXES.disconnected
+  };
+
   const own=(o,k)=>Object.prototype.hasOwnProperty.call(o,k);
   /* Spec 058 FR-006 / FR-090: the one text classifier, shared by the hint and the reason (they never disagree). Reads the already-masked
      text, cut first (linear on hostile input); returns a class word or '' (nothing guessed). */
@@ -199,19 +215,6 @@
     for(const r of servers)if(r.attention)attention++;
     return {servers,attention,chats};
   }
-  /* Spec 058 FR-201: the suggested fix per reason key, fixed text; Agent Durbar never runs it (the person presses it where it is).
-     ctx = {file} (a list's file label, `~/...`, for `config`). Unknown keys get the `unknown` fix. */
-  const FIXES={
-    'auth':'Sign in again: Show opens the chat’s MCP list, with Sign in (or the steps to sign in from a terminal).',
-    'not-found':'Install the command, or put its full path in the server’s entry. Then restart the server, or start a new chat.',
-    'policy':'Your organization’s sign-in rules refused it, usually a managed-device check. Sign in again using a browser your organization allows, or ask your administrator.',
-    'refused':'Check the server’s address or port and that the server is running; another program may use the port. Then press Restart.',
-    'crashed':'Open Details for the server’s own error, fix its command or settings, then press Restart.',
-    'timeout':'Press Restart. If it times out again, check your network or how long the server takes to start.',
-    'permission':'Allow the command to run (its file permissions), then press Restart.',
-    'disconnected':'Press Restart, and check that the server still runs or can be reached.',
-    'unknown':'Open Details or Copy diagnostics to see what the agent app reported.'
-  };
   function fixFor(key,ctx){
     if(key==='config'){const f=ctx&&ctx.file?plain(ctx.file,120):'';return 'Fix the entry in '+(f||'the agent app’s MCP list')+'. Agent Durbar reads it again when Settings opens.';}
     return typeof key==='string'&&own(FIXES,key)?FIXES[key]:FIXES.unknown;
@@ -244,7 +247,45 @@
     if(!x||!okName(x.name)||!chat)return null;
     const r=policy===true?{key:'policy',word:'Blocked by your organization’s access policy'}:reasonOf(x);
     if(!r)return null;
-    return {key:'chat:'+JSON.stringify([String(chat.id),x.name]),kind:'chat',chatId:String(chat.id),name:plain(x.name,80),where:plain(chat.name,80)+(chat.app?' ('+plain(chat.app,40)+')':''),reason:r.word,rkey:r.key,fix:fixFor(r.key)};
+    return {key:(policy===true?'policy:':'chat:')+JSON.stringify([String(chat.id),x.name]),kind:'chat',chatId:String(chat.id),name:plain(x.name,80),where:plain(chat.name,80)+(chat.app?' ('+plain(chat.app,40)+')':''),reason:r.word,rkey:r.key,fix:fixFor(r.key)};
   }
-  return {stateOf,offBy,iconSvg,hintFor,callWord,callHint,signInHint,plain,aggregate,reasonOf,whenText,diagnostics,fixFor,fileFindings,chatFinding,RANK:RANK.slice(),ICON_NAMES:Object.keys(ICONS)};
+  /* Spec 058 FR-199 part 2: the 10-minute window, on a monotonic clock (`performance.now()` in the page); a clock that went back, or a bad
+     value, counts as outside (nothing new is added). */
+  const LAUNCH_MS=10*60*1000;
+  function launchYoung(t0,now){return typeof t0==='number'&&typeof now==='number'&&isFinite(t0)&&isFinite(now)&&now>=t0&&now-t0<=LAUNCH_MS;}
+  /* One event of a running chat against the strip's findings (a Map key -> finding, changed in place); returns true when it changed.
+     A status finding (`chat:` key) follows the server's reports: Failed / Needs sign-in set it (only while `young`), anything else drops it.
+     A policy finding (`policy:` key, FR-193) is not a server state: reports never touch it; a later successful call of that server drops it. */
+  function launchUpdate(items,e,chat,young){
+    if(!(items instanceof Map)||!e||!chat)return false;
+    let ch=false;
+    const put=f=>{if(f&&young===true){items.set(f.key,f);ch=true;}};
+    const drop=k=>{if(items.delete(k))ch=true;};
+    if(e.type==='mcp'){
+      for(const x of Array.isArray(e.servers)?e.servers:[]){
+        if(!x||!okName(x.name))continue;
+        if(x.status==='failed'||x.status==='needs-auth')put(chatFinding(x,chat));
+        else drop('chat:'+JSON.stringify([String(chat.id),x.name]));
+      }
+    }else if(e.type==='toolCall'&&typeof e.mcpServer==='string'){
+      if(e.phase==='failed'&&e.mcpCall==='policy')put(chatFinding({name:e.mcpServer},chat,true));
+      else if(e.phase==='complete')drop('policy:'+JSON.stringify([String(chat.id),e.mcpServer]));
+    }
+    return ch;
+  }
+  /* Spec 058 FR-196: which chats "Restart where it failed" restarts. `chats` = an aggregate row's chats; `usable(c)` = the window can reach
+     that chat. Failed rows only; a sign-in failure is skipped ('auth', a restart does not fix it), and so is an app without a per-server
+     restart ('session', e.g. Codex). Returns {targets, failed (all failed rows), skipped:[{chat, why}]}. */
+  function restartTargets(chats,usable){
+    const failed=(Array.isArray(chats)?chats:[]).filter(c=>c&&c.entry&&c.entry.status==='failed');
+    const targets=[],skipped=[];
+    for(const c of failed){
+      const r=reasonOf(c.entry);
+      if(r&&r.key==='auth')skipped.push({chat:c,why:'auth'});
+      else if(c.entry.canRestart!==true)skipped.push({chat:c,why:'session'});
+      else if(typeof usable!=='function'||usable(c))targets.push(c);
+    }
+    return {targets,failed,skipped};
+  }
+  return {stateOf,offBy,iconSvg,hintFor,callWord,callHint,signInHint,plain,aggregate,reasonOf,whenText,diagnostics,fixFor,fileFindings,chatFinding,launchYoung,launchUpdate,restartTargets,LAUNCH_MS,RANK:RANK.slice(),ICON_NAMES:Object.keys(ICONS)};
 })());

@@ -19,6 +19,10 @@ interface Words {
   fixFor: (key: unknown, ctx?: { file?: string }) => string;
   fileFindings: (g: unknown) => Finding[];
   chatFinding: (x: unknown, chat: unknown, policy?: boolean) => Finding;
+  launchYoung: (t0: unknown, now: unknown) => boolean;
+  launchUpdate: (items: unknown, e: unknown, chat: unknown, young: boolean) => boolean;
+  restartTargets: (chats: unknown, usable?: (c: { id: string }) => boolean) => { targets: { id: string }[]; failed: unknown[]; skipped: { chat: { id: string }; why: string }[] };
+  LAUNCH_MS: number;
 }
 interface Finding { key: string; kind: string; name: string; where: string; reason: string; rkey: string; fix: string; chatId?: string }
 interface AggChat { id: string; name: string; folder: string; entry: { name: string; status?: string; error?: string }; state: { key: string; word: string } }
@@ -88,18 +92,20 @@ assert.strictEqual(h({ status: 'needs-auth', app: 'Copilot' }), 'This server nee
 for (const app of ['GitHub Copilot', 'Claude Code', 'OpenAI Codex']) assert.strictEqual(h({ status: 'needs-auth', app }), `This server needs you to sign in. ${app} keeps the sign-in; Agent Durbar never sees it.`);
 assert.match(h({ status: 'needs-auth' }), /^This server needs you to sign in\. Your agent app keeps the sign-in/);
 assert.match(h({ status: 'failed', errorClass: 'auth', app: 'Codex' }), /Codex keeps the sign-in/, 'a failed server the adapter classed as auth');
-assert.match(h({ status: 'failed', errorClass: 'not-found' }), /command was not found/);
-assert.match(h({ status: 'failed', errorClass: 'timeout' }), /too long/);
-assert.match(h({ status: 'failed', errorClass: 'exited' }), /stopped on its own/);
+assert.match(h({ status: 'failed', errorClass: 'not-found' }), /^Install the command, or put its full path/);
+assert.match(h({ status: 'failed', errorClass: 'timeout' }), /times out again/);
+// review on #1073 item 4: one wording per failure kind: the row's hint is the strip's fix (FR-201)
+for (const [cls, key] of [['not-found', 'not-found'], ['timeout', 'timeout'], ['exited', 'crashed'], ['permission', 'permission'], ['refused', 'refused'], ['disconnected', 'disconnected']]) assert.strictEqual(h({ status: 'failed', errorClass: cls }), W.fixFor(key), cls);
+assert.match(h({ status: 'failed', errorClass: 'exited' }), /^Open Details for the server.s own error/);
 assert.match(h({ status: 'failed', errorClass: 'config' }), /settings look wrong/);
-assert.match(h({ status: 'failed', error: 'spawn npx ENOENT' }), /command was not found/);
-assert.match(h({ status: 'failed', error: 'sh: foo: command not found' }), /command was not found/);
-assert.match(h({ status: 'failed', error: "'x' is not recognized as an internal or external command" }), /command was not found/);
-assert.match(h({ status: 'failed', error: 'spawn /bin/x EACCES' }), /Permission was denied/);
-assert.match(h({ status: 'failed', error: 'request timed out after 30s' }), /too long/);
-assert.match(h({ status: 'failed', error: 'connect ECONNREFUSED 127.0.0.1:9' }), /could not be reached/);
-assert.match(h({ status: 'failed', error: 'getaddrinfo ENOTFOUND mcp.example.test' }), /could not be reached/);
-assert.match(h({ status: 'failed', error: 'process exited with code 1' }), /stopped on its own/);
+assert.match(h({ status: 'failed', error: 'spawn npx ENOENT' }), /^Install the command, or put its full path/);
+assert.match(h({ status: 'failed', error: 'sh: foo: command not found' }), /^Install the command, or put its full path/);
+assert.match(h({ status: 'failed', error: "'x' is not recognized as an internal or external command" }), /^Install the command, or put its full path/);
+assert.match(h({ status: 'failed', error: 'spawn /bin/x EACCES' }), /^Allow the command to run/);
+assert.match(h({ status: 'failed', error: 'request timed out after 30s' }), /times out again/);
+assert.match(h({ status: 'failed', error: 'connect ECONNREFUSED 127.0.0.1:9' }), /address or port/);
+assert.match(h({ status: 'failed', error: 'getaddrinfo ENOTFOUND mcp.example.test' }), /address or port/);
+assert.match(h({ status: 'failed', error: 'process exited with code 1' }), /^Open Details for the server.s own error/);
 assert.strictEqual(h({ status: 'failed', error: 'something odd' }), '', 'no guess: no hint');
 assert.strictEqual(h({ status: 'failed' }), '');
 assert.strictEqual(h({ status: 'connected', error: 'ENOENT' }), '', 'only failed and needs-auth rows get a hint');
@@ -215,9 +221,9 @@ assert.ok(Date.now() - t0 < 500, 'a long text is read in linear time');
   for (const st of ['connected', 'pending', 'disabled', 'stopped', '', undefined]) assert.strictEqual(W.reasonOf({ status: st, error: 'ENOENT', errorClass: 'not-found' }), null, 'no reason for ' + st);
   assert.strictEqual(W.reasonOf(null), null);
   // hints for the new classes
-  assert.match(W.hintFor({ status: 'failed', errorClass: 'refused' }), /could not be reached/);
-  assert.match(W.hintFor({ status: 'failed', errorClass: 'permission' }), /Permission was denied/);
-  assert.match(W.hintFor({ status: 'failed', errorClass: 'disconnected' }), /connection .*closed/i);
+  assert.match(W.hintFor({ status: 'failed', errorClass: 'refused' }), /address or port/);
+  assert.match(W.hintFor({ status: 'failed', errorClass: 'permission' }), /^Allow the command to run/);
+  assert.match(W.hintFor({ status: 'failed', errorClass: 'disconnected' }), /still runs or can be reached/);
 }
 // ---- FR-092: when (local time; the date when not today) ----
 {
@@ -329,5 +335,60 @@ assert.ok(Date.now() - t0 < 500, 'a long text is read in linear time');
   assert.strictEqual(W.chatFinding({ name: 'b' }, chat, true).rkey, 'policy');
   assert.strictEqual(W.chatFinding({ name: '', status: 'failed' }, chat), null);
   assert.strictEqual(W.chatFinding({ name: 'b', status: 'failed' }, null), null);
+}
+// review on #1073 item 7: the 10-minute window, monotonic clock injected
+{
+  assert.strictEqual(W.LAUNCH_MS, 600000);
+  assert.strictEqual(W.launchYoung(1000, 1000), true);
+  assert.strictEqual(W.launchYoung(1000, 1000 + 600000), true, 'the edge is inside');
+  assert.strictEqual(W.launchYoung(1000, 1001 + 600000), false, 'past 10 minutes');
+  assert.strictEqual(W.launchYoung(1000, 999), false, 'a clock that went back adds nothing');
+  for (const [a, b] of [[NaN, 1], [1, Infinity], ['1', 2], [undefined, 2]]) assert.strictEqual(W.launchYoung(a, b), false, String([a, b]));
+}
+// review on #1073 item 8: status and policy findings have their own keys; reports never touch a policy finding; a successful call drops it
+{
+  const chat = { id: 'B', name: 'Bo', app: 'Claude Code' };
+  const m = new Map<string, Finding>();
+  const pol = { type: 'toolCall', phase: 'failed', mcpCall: 'policy', mcpServer: 'teams' };
+  assert.strictEqual(W.launchUpdate(m, pol, chat, true), true);
+  const pk = 'policy:' + JSON.stringify(['B', 'teams']);
+  assert.ok(m.has(pk), 'the policy finding');
+  for (const st of ['pending', 'starting', 'disabled', 'connected']) {
+    W.launchUpdate(m, { type: 'mcp', servers: [{ name: 'teams', status: st }] }, chat, true);
+    assert.ok(m.has(pk), 'a ' + st + ' report keeps the policy finding');
+  }
+  W.launchUpdate(m, { type: 'mcp', servers: [{ name: 'teams', status: 'failed', errorClass: 'timeout' }] }, chat, true);
+  assert.strictEqual(m.get(pk)!.rkey, 'policy', 'a failed report does not overwrite it');
+  const sk = 'chat:' + JSON.stringify(['B', 'teams']);
+  assert.strictEqual(m.get(sk)!.rkey, 'timeout', 'the failed report is its own finding');
+  W.launchUpdate(m, { type: 'mcp', servers: [{ name: 'teams', status: 'connected' }] }, chat, true);
+  assert.ok(!m.has(sk) && m.has(pk), 'running again drops the status finding only');
+  assert.strictEqual(W.launchUpdate(m, { type: 'toolCall', phase: 'complete', mcpServer: 'other' }, chat, true), false, 'another server\'s call changes nothing');
+  assert.strictEqual(W.launchUpdate(m, { type: 'toolCall', phase: 'complete', mcpServer: 'teams' }, chat, true), true);
+  assert.ok(!m.has(pk), 'a successful call of that server drops the policy finding');
+  // outside the window: nothing new, but a fixed server still leaves
+  const old = new Map<string, Finding>();
+  assert.strictEqual(W.launchUpdate(old, { type: 'mcp', servers: [{ name: 'x', status: 'failed' }] }, chat, false), false, 'nothing new after 10 minutes');
+  W.launchUpdate(old, { type: 'mcp', servers: [{ name: 'x', status: 'failed' }] }, chat, true);
+  assert.strictEqual(W.launchUpdate(old, { type: 'mcp', servers: [{ name: 'x', status: 'connected' }] }, chat, false), true, 'a fixed server leaves after 10 minutes too');
+  assert.strictEqual(W.launchUpdate(null, pol, chat, true), false);
+}
+// review on #1073 item 10: Restart where it failed leaves out sign-in failures and apps without a per-server restart
+{
+  const row = (id: string, entry: Record<string, unknown>) => ({ id, entry });
+  const r = W.restartTargets([
+    row('a', { status: 'failed', errorClass: 'not-found', canRestart: true }),
+    row('b', { status: 'failed', error: 'ECONNREFUSED', canRestart: true }),
+    row('c', { status: 'failed', errorClass: 'not-found' }),
+    row('d', { status: 'failed', errorClass: 'auth', canRestart: true }),
+    row('e', { status: 'failed', error: 'SSE stream terminated: 401', canRestart: true }),
+    row('f', { status: 'connected', canRestart: true }),
+    row('g', { status: 'needs-auth', canRestart: true }),
+  ]);
+  assert.deepStrictEqual(r.targets.map((c) => c.id), ['a', 'b']);
+  assert.strictEqual(r.failed.length, 5, 'every failed row is counted');
+  assert.deepStrictEqual(r.skipped.map((k) => k.chat.id + ':' + k.why), ['c:session', 'd:auth', 'e:auth']);
+  assert.deepStrictEqual(W.restartTargets([row('a', { status: 'failed', canRestart: true })], () => false).targets, [], 'a chat the window cannot reach');
+  assert.deepStrictEqual(W.restartTargets(null).targets, []);
 }
 console.log('[058] mcpwords: PASS');

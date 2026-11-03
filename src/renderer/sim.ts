@@ -1587,6 +1587,8 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     /* spec 058 FR-198/FR-199: `simmcplaunch=1` = a Claude Code server whose command main did not find, and a Codex list that cannot be read */
     const simLaunch = simQs?.get('simmcplaunch') === '1';
     if (simLaunch) gLists.claude.push({ name: 'playwright', transport: 'stdio', command: 'playwright-mcp', args: [], envKeys: [], headerKeys: [], missing: true });
+    /* review on PR 1073: "github" is found in the Copilot CLI list but Claude Code's entry is missing: only the entry a row shows counts */
+    if (simLaunch) { const g = gLists.claude.find((x) => x.name === 'github'); if (g) g.missing = true; }
     const gOff = new Set<string>();
     const simToolsOff: Record<string, Record<string, string[]>> = {};
     let gSeq = 0;
