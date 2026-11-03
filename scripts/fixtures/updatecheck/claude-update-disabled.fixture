@@ -1,2 +1,2 @@
-# source: real: 2026-11-02, Claude Code 2.1.316 on Linux, `claude update` with DISABLE_UPDATES=1 in an isolated HOME (tasks.md T040); the exit code is 0, not an error.
+# source: real: 2026-11-02, Claude Code 2.1.316 on Linux, `claude update` with DISABLE_UPDATES=1 on a copied binary in a scratch HOME (tasks.md T040); the exit code is 0, not an error.
 Updates are disabled by your administrator. Contact your IT team to get the latest version.

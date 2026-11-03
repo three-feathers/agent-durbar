@@ -4,14 +4,14 @@
 group: 046
 title: Agent-app updates (owner request, issue #662): Settings > Agent apps shows "installed X, latest Y" per app, checked in the background at every Durbar start and on "Check for updates" (owner decision Q1 = C; organization policy can turn it off); a new version gets a badge and one toast; Update runs the updater of the source that installed the copy Durbar uses (no shell, argv, native confirmation, masked output); open sessions are warned about, ended or waited for; failures (admin rights, managed machines, locked files on Windows) say what to do
 status: building
-note: built on the simulator; T037 final run and real-machine checks T040-T043 open
+note: built on the simulator; Linux real check T040 done; Windows T041, macOS T042 and the Mac PATH check T043 open
 -->
 
 **Feature Branch**: `081-cli-updates` (extends 051 harness setup, 060 platform parity and 012 detection; reads 076 managed config)
 
 **Created**: 2026-10-23
 
-**Status**: Built (2026-10-25) on the simulator and with fake tools, branch `081-cli-updates-build`. Q1-Q7 are answered by the owner. Requirements are `[IMPLEMENTED]` where tagged below and `sim:`/`test:` checked; **FR-005 for the detection path is in PR #698 (T008; `test:` `scripts/test-detect.ts`)** and every real-machine statement is `[KNOWN GAP]` until T040-T042 run (nothing was run on a real Mac, Windows PC or against a real source).
+**Status**: Built (2026-10-25) on the simulator and with fake tools, branch `081-cli-updates-build`. Q1-Q7 are answered by the owner. Requirements are `[IMPLEMENTED]` where tagged below and `sim:`/`test:` checked; **FR-005 for the detection path is in PR #698 (T008; `test:` `scripts/test-detect.ts`)** and Linux facts for `claude update` and `npm view` are `real:` (T040, 2026-11-02); every Windows and macOS statement is `[KNOWN GAP]` until T041 and T042 run, and no newer-version update was run on any machine.
 
 **Input**: Issue #662, owner request (Vikram, 2026-10-23, DM): "lets add support to check updates on cli and upgrade it". The CLIs are the agent apps Durbar drives: Codex CLI, Claude Code and the GitHub Copilot CLI. The trigger was a Codex 0.163.0 sandbox bug on macOS (Homebrew cask, `/opt/homebrew/bin/codex`): today the only way to get a fixed Codex is to leave Durbar and update it by hand, and Durbar does not even say that a newer version exists.
 
@@ -388,7 +388,7 @@ When the start check finds a new version, the Settings entry and the card get a 
 
 ## Known limits
 
-- `[KNOWN GAP]` Not run on a real machine yet for any source; the parsers rely on documented output (`read:` in research.md) until a recorded run.
+- `[KNOWN GAP]` Only Linux `claude update` (up to date, disabled) and `npm view` are recorded (T040). Windows (T041) and macOS (T042), and every update that installs a newer version, are not run; those parsers rely on documented output (`read:` in research.md) until a recorded run.
 - `[KNOWN GAP]` Homebrew's "latest" is as fresh as its local data (Q4 = A: no `brew update`).
 - `[KNOWN GAP]` `codex update` is **undocumented** and downloads and runs a script Durbar cannot see or check (Q3 = C, limited to the official standalone Codex CLI; FR-009, FR-024). The command shown is a snapshot of `update_action.rs` @970111f6; a later Codex can change what it runs. `sh`, `curl` and `powershell` are found by Codex on the fixed system `PATH`, not as absolute paths given by Durbar, and Windows runs with `-ExecutionPolicy Bypass`. The *official* check is by install path, file trust and the version label, not by a code signature (not verified on macOS or Windows).
 - `[KNOWN GAP]` The Claude channel files (`downloads.claude.ai/claude-code-releases/stable|latest`) are not a documented API; a change shows as *Could not check*.
@@ -502,11 +502,11 @@ When the start check finds a new version, the Settings entry and the card get a 
 
 ### 2026-11-02: Linux real check (T040): a vendor "updates are disabled" answer exits 0 (issue #662)
 
-- **Found (`real:` Linux, Claude Code 2.1.316, isolated HOME, no credentials, no model call):** `claude update` with `DISABLE_UPDATES=1` prints "Updates are disabled by your administrator. Contact your IT team to get the latest version." and exits **0**. `claude update` on the latest version prints "Claude Code is up to date (2.1.316)" and exits 0. One `npm view <pkg> version --json --no-update-notifier` makes one request (`GET registry.npmjs.org/<pkg>`).
-- **npm update, `real:` Linux, scratch prefix:** `install -g <pkg>@latest` moved codex 0.163.0 to 0.166.0, copilot 1.0.101 to 1.0.105 and claude-code 2.1.304 to 2.1.316, exit 0 each; no change needed. npm 12 warns about uncovered install scripts for claude-code (warning only).
+- **Found (`real:` Linux, Claude Code 2.1.316, isolated HOME, no credentials, no model call):** `claude update` with `DISABLE_UPDATES=1` prints "Updates are disabled by your administrator. Contact your IT team to get the latest version." and exits **0**. `claude update` on the latest version prints "Claude Code is up to date (2.1.316)" and exits 0. `npm view <pkg> version --json --no-update-notifier` answered with the version JSON (`real:`). `[KNOWN GAP]` The one-request claim is argued from the command (a single `view`), with no proxy log or trace to count requests.
+- **npm update:** `[KNOWN GAP]` no real update that installs a newer version was run for any app (nothing newer existed on the copy used; the real CLIs were untouched). An earlier draft of this entry claimed an npm scratch-prefix update with `real:`; it had no recorded output and is withdrawn.
 - **Bug:** a successful exit hid the *Managed* class, so the card could show an update that did nothing as done.
-- **FR-014 (changed):** for an `update` run, text classified *Managed* is a failed run (`ok: false`, failure `managed`, no "updated" note) also when the exit code is 0, so the window shows the advice, never "is updated". No retry, as before. Test: `scripts/test-harnesssetup.ts`. Extra on the npm run: npm 12.2.0 / Node 24.22.0 output is only `added|changed N packages`; no `claude update` newer-version, `codex update` or `copilot update` run.
-- The two Claude fixtures are now recorded shapes. Windows and macOS texts stay `[KNOWN GAP]` (T041, T042).
+- **FR-014 (changed):** for an `update` run, text classified *Managed* is a failed run (`ok: false`, failure `managed`, no "updated" note) also when the exit code is 0, so the window shows the advice, never "is updated". No retry, as before. Test: `scripts/test-harnesssetup.ts`. The exit-0 rule applies only to `claude update` and only to the recorded text; no `claude update` newer-version, `codex update` or `copilot update` run exists.
+- The two Claude fixtures are now recorded shapes. Windows and macOS texts stay `[KNOWN GAP]` (T041 Windows, T042 macOS; T043 is the Mac PATH check).
 
 ### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
 

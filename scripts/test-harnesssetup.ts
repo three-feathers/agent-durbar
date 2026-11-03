@@ -764,6 +764,29 @@ void (async () => {
       u.child().out.emit('data', fx081('claude-update-disabled'));
       u.child().emit('close', 0); await tick(); await tick();
       assert.deepStrictEqual([u.done[0].ok, u.done[0].failure, u.done[0].note], [false, 'managed', undefined], 'exit 0 with the disabled text is a failed Managed run, so the window never says "updated"');
+      assert.strictEqual(u.done[0].exitCode, 0, 'the real shape: ok:false with exit 0');
+    }
+    // the exit-0 rule is scoped to claude update with the recorded text; the note guard is real (a snapshot is given, a plain success has a note)
+    {
+      const run = async (kind: 'claude' | 'codex', op: 'update' | 'install', text: string) => {
+        const bin = `/home/u/.local/bin/${kind}`;
+        const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-081-m-'));
+        const u = mkU('linux', [bin, '/usr/bin/bash'], { [bin]: '/home/u/.local/share/claude/versions/2.1.309' }, { snapshot: async () => ({ [kind]: { version: '2.1.309', where: bin } }), checked: () => '2.1.316', httpGet: async () => ({ status: 200, body: Buffer.from('#!/bin/sh\necho hi\n') }), tmpdir: tmp });
+        const p = u.setup.prepare(kind, op, 0);
+        assert.ok(p.ok);
+        const j = op === 'install' ? await u.setup.withScript((p as unknown as { job: never }).job) : p;
+        assert.ok(u.setup.start((j as unknown as { job: never }).job).ok);
+        u.child().out.emit('data', text);
+        u.child().emit('close', 0); await tick(); await tick(); await tick();
+        fs.rmSync(tmp, { recursive: true, force: true });
+        return u.done[0];
+      };
+      const disabled = fx081('claude-update-disabled');
+      assert.match((await run('claude', 'update', 'Successfully updated\n')).note ?? '', /Updated, but Durbar still finds 2\.1\.309/, 'control: a plain success has a note');
+      assert.strictEqual((await run('claude', 'update', disabled)).note, undefined, 'Managed carries no "updated" note');
+      assert.strictEqual((await run('codex', 'update', disabled)).ok, true, 'another app is not flipped');
+      assert.strictEqual((await run('claude', 'update', 'Updated.\nNote: DISABLE_UPDATES is set; auto-updates are disabled')).ok, true, 'managed words alone do not flip an exit-0 update');
+      assert.strictEqual((await run('claude', 'install', disabled)).ok, true, 'an install is not flipped');
     }
     // FR-011: after an update the done event says when Durbar still finds the old version, or another copy first
     {
@@ -792,6 +815,11 @@ void (async () => {
       assert.deepStrictEqual([over.plans.length, /above the version your organization allows/.test(over.blocked ?? '')], [0, true]);
       const brew = mkU('darwin', ['/opt/homebrew/bin/codex', '/opt/homebrew/bin/brew'], { '/opt/homebrew/bin/codex': '/opt/homebrew/Caskroom/codex/0.163.0/codex' }, pol('0.170.0'), '/opt/homebrew/bin:/usr/bin').setup.plans('codex', 'update');
       assert.deepStrictEqual([brew.plans.length, /cannot install a chosen version/.test(brew.blocked ?? '')], [0, true]);
+    }
+    // a Managed run never drops the card's result (checker.afterUpdate would delete the unchanged 'Update available')
+    {
+      const ipc = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'ipc', 'harness.ts'), 'utf8');
+      assert.match(ipc, /done\.failure !== 'managed'\) void checker\.afterUpdate/, 'afterUpdate is skipped for a Managed run');
     }
     // SC-003: every path to start passes the native confirmation (main's handler; the waiting update goes through the same step)
     {

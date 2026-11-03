@@ -12,7 +12,7 @@ import { CMD_UNSAFE, windowsCmd } from '../shared/wincmd';
 import { redact } from '../shared/redact';
 import { SIGN_IN, installPlans, integrityLine, lastLines, managersFor, manualCommands, parseSignIn, stripAnsi, updatePlans, validPaste, OFFICIAL_PAGES, SETUP_NAMES } from '../shared/harnesssetup';
 import type { ManualCommand, OfficialScript, PackageManager, SetupKind, SetupPlan, SignInView, UpdatePlanOpts } from '../shared/harnesssetup';
-import { CODEX_UPDATE_COMMAND, classifyFailure, codexNeedsFallback, codexUpdateEnv, isOfficialCodex, npmOwns, pathWithToolDir, sourceOf, updateDecision, updateOutcomeNote, versionLabel } from '../shared/updatecheck';
+import { CLAUDE_UPDATE_DISABLED, CODEX_UPDATE_COMMAND, classifyFailure, codexNeedsFallback, codexUpdateEnv, isOfficialCodex, npmOwns, pathWithToolDir, sourceOf, updateDecision, updateOutcomeNote, versionLabel } from '../shared/updatecheck';
 import type { FailureClass, UpdatePolicy, UpdateSource } from '../shared/updatecheck';
 import * as fs from 'fs';
 import { downloadScript } from './officialinstall';
@@ -440,7 +440,7 @@ export class HarnessSetup {
       if (!ok) failure = cls;
       else if (cls === 'vendor-up-to-date') failure = cls;
       // real: `claude update` with updates disabled exits 0 and says so (T040); a success exit must not hide that
-      else if (cls === 'managed' && r.op === 'update') { failure = cls; managedExit0 = true; }
+      else if (cls === 'managed' && r.op === 'update' && r.kind === 'claude' && CLAUDE_UPDATE_DISABLED.test(text)) { failure = cls; managedExit0 = true; }
       if (r.codexUpdate && codexNeedsFallback({ ok, reason: r.reason, cls })) fallback = 'official';
       if (ok && !managedExit0 && r.op === 'update' && this.deps.snapshot) {
         try {

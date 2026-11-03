@@ -1,4 +1,4 @@
-# source: real: 2026-11-02, Claude Code 2.1.316 native install on Linux, `claude update` in an isolated HOME (tasks.md T040); exit 0. The two middle lines appear when the config has no install method yet.
+# source: real: 2026-11-02, Claude Code 2.1.316 on Linux, `claude update` on a copied binary in a scratch HOME (not the installed install) (tasks.md T040); exit 0. The two middle lines appear when the config has no install method yet.
 Current version: 2.1.316
 Checking for updates to latest version...
 
