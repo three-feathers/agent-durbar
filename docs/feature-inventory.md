@@ -47,7 +47,8 @@ One row per thing a user can do or see. [features.md](features.md) stays the use
 | Scheduled prompts, loops | works | works | none | 044 072 | test:schedules test:loops |
 | Custom agents and profile files | works | works | none | 043 | test:agentprofiles test:profileeditor |
 | Folder status (branch, changes), session summary | works | works | none | 063 085 | test:gitstatus test:sessionsummary |
-| Continue in another app, VS Code open and history | works | works | none | 009 030 | test:handoff test:vscodechat |
+| Continue in another app, VS Code chat history | works | works | none | 009 030 | test:handoff test:vscodechat |
+| Open with menu (installed VS Code editions, Show in folder) and Open in editor | in PR 009-open-with | in PR 009-open-with, same chat header | none | 009 | test:openwith driver:shots-009-openwith |
 | Keyboard navigator, Ctrl+K palette | works | works | none | 074 | test:navigator driver:shots-074-navigator |
 | Model, effort and Auto routing | works | works | none | 007 030 | test:modelchoice test:modelswitch |
 | Context ring and Compact | works | works | none | 019 034 | test:compaction test:ctxbreakdown |

@@ -3516,7 +3516,12 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
         { id: 'vscodium', label: 'VSCodium', hint: 'Opens this folder in VSCodium' },
         { id: 'folder', label: 'Show in folder', hint: 'Opens it in Finder' },
       ],
-      openWith: async (_id: string, target: string) => ({ ok: true, edition: target === 'folder' ? 'the file manager' : target === 'vscodium' ? 'VSCodium' : 'VS Code' }),
+      /* sim-2's folder stands for a link to a folder with & in its name (review of PR 976): its answers carry main's link note, and
+         VSCodium, found as a .cmd only, gives main's refusal, so the toast's note and error paths are drawn */
+      openWith: async (id: string, target: string) =>
+        id === 'sim-2' && target === 'vscodium'
+          ? { ok: false, edition: 'VSCodium', error: 'VSCodium is installed, but it cannot open this folder safely (its path has &, which cmd.exe could misread). Rename the folder, or open it from VSCodium itself.' }
+          : { ok: true, edition: target === 'folder' ? 'the file manager' : target === 'vscodium' ? 'VSCodium' : 'VS Code', ...(id === 'sim-2' ? { note: 'This folder is a link, so its real folder was opened.' } : {}) },
       // spec 063 FR-006: a fixed git status per agent (no git repository needed): branch, 0-4 changed files, one non-repository folder
       gitStatus: async (id: string) => {
         const n = Number(String(id).replace(/\D/g, '')) || 0;

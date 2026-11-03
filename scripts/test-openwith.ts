@@ -6,7 +6,8 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { checkFolder, listTargets, openInFirstEditor, openWith, ownedAgent, LINK_NOTE } from '../src/main/openwith';
+import { pathToFileURL } from 'url';
+import { checkFolder, fileManagerHint, listTargets, openInFirstEditor, openWith, ownedAgent, realDeps, LINK_NOTE } from '../src/main/openwith';
 import type { Deps, OwnedAgent } from '../src/main/openwith';
 import type { LaunchEnv, LaunchPlan } from '../src/main/vscode';
 import { EDITIONS, EDITOR_NOT_FOUND, planEdition, spawnPlan } from '../src/main/vscode';
@@ -23,7 +24,7 @@ const mk = (le: LaunchEnv, rec: Rec, over: Partial<Deps> = {}): Deps => ({
   platform: le.platform, // the platform under test, so the Windows branches of abs() and planCmd really run
   launchEnv: le,
   lstat: (p) => (p.startsWith(root) ? fs.lstatSync(p) : fakeLstat(p)),
-  realpath: (p) => fs.realpathSync(p),
+  realpath: (p) => (p.startsWith(root) ? fs.realpathSync(p) : p), // other platforms' made-up paths have no links
   openPath: async (p) => (rec.opened.push(p), ''),
   reveal: (p) => { rec.revealed.push(p); },
   start: async (plan) => (rec.started.push(plan), { ok: true, edition: plan.edition }),
@@ -53,6 +54,7 @@ try { fs.symlinkSync(dir, link, 'dir'); } catch { linkOk = false; }
 const wsFile = path.join(root, 'x.code-workspace');
 fs.writeFileSync(wsFile, '{}');
 
+process.exitCode = 1; // a promise that never settles must not pass (checklist); 0 only after the PASS line
 (async () => {
   // ---- the path comes from main, by agent id (FR-020) ----
   const agents = new Map<string, OwnedAgent>([['a1', { cwd: dir }], ['a2', { cwd: dir, workspaceFile: wsFile }]]);
@@ -123,7 +125,7 @@ fs.writeFileSync(wsFile, '{}');
     assert.deepStrictEqual(listTargets({ cwd: 'C:\\proj & calc' }, mk(le, rec())).map((x) => x.id), ['vscode', 'folder'], 'still listed');
     for (const bad of ['C:\\a & b', 'C:\\a%x%', 'C:\\a(1)', 'C:\\a,b', 'C:\\a;b', 'C:\\a=b', 'C:\\a!b']) {
       const r = rec(); const res = await openWith({ cwd: bad }, 'vscode', mk(le, r));
-      assert.strictEqual(res.ok, false, bad); assert.match(res.error!, /installed, but it cannot open a folder with this name/, bad); assert.deepStrictEqual(r.started, []);
+      assert.strictEqual(res.ok, false, bad); assert.match(res.error!, /installed, but it cannot open this folder safely \(its path has /, bad); assert.deepStrictEqual(r.started, []);
     }
     const r = rec(); const ok = await openWith({ cwd: 'C:\\ok\\proj' }, 'vscode', mk(le, r)); assert.strictEqual(ok.ok, true); assert.strictEqual(r.started[0].args[0], '/d');
     // Windows absolute check: a drive path is absolute, a dash name is not
@@ -207,11 +209,11 @@ fs.writeFileSync(wsFile, '{}');
     for (const t of ['C:\\a & calc', 'C:\\%PATH%', 'C:\\a"b', 'C:\\a^b']) {
       assert.strictEqual(planEdition(ed, t, le), undefined, t + ' plans nothing');
       const r = rec(); const res = await openWith({ cwd: t }, 'vscodium', mk(le, r));
-      assert.strictEqual(res.ok, false, t); assert.deepStrictEqual(r.started, [], t + ' starts nothing'); assert.match(res.error!, /cannot open a folder with this name safely/);
+      assert.strictEqual(res.ok, false, t); assert.deepStrictEqual(r.started, [], t + ' starts nothing'); assert.match(res.error!, /cannot open this folder safely/);
     }
     assert.strictEqual(planEdition(ed, 'C:\\work\\proj', onPath('C:\\a&b\\bin', 'C:\\a&b\\bin\\codium.cmd')), undefined, 'a PATH folder with & plans nothing');
   }
-  // FR-027: the old route is the menu's route: the first installed edition, through the same checks
+  // FR-027: the old route is the menu's route: the first edition that can open the folder, through the same checks
   {
     { const r = rec(); const res = await openInFirstEditor({ cwd: dir }, mk(HOST(), r)); assert.strictEqual(res.edition, 'VS Code'); assert.deepStrictEqual(r.started[0].args, [dir]); }
     { const r = rec(); const le = ON_WIN ? launchEnv('win32', [WIN_ALL[2]], { LOCALAPPDATA: 'C:\\L' }, 'C:\\Users\\a') : launchEnv('linux', ['/usr/bin/codium']); assert.strictEqual((await openInFirstEditor({ cwd: dir }, mk(le, r))).edition, 'VSCodium', 'the next edition when the first is missing'); }
@@ -223,6 +225,113 @@ fs.writeFileSync(wsFile, '{}');
   }
   { const res = await openWith({ cwd: dir }, 'folder', mk(NONE(), rec(), { openPath: async () => 'Failed to open path' })); assert.deepStrictEqual([res.ok, res.error], [false, 'Failed to open path']); }
   { const res = await openWith({ cwd: dir }, 'folder', mk(NONE(), rec(), { openPath: async () => { throw new Error('boom'); } })); assert.deepStrictEqual([res.ok, res.error], [false, 'boom']); }
+
+  // ---- review of #976 (2026-11-03): guards each with a test that fails when the guard goes ----
+  // the NUL guard answers itself (without it the real lstat throws and the answer is "no longer exists"; a made-up path would pass)
+  assert.strictEqual((checkFolder(dir + '\0x', d0) as { error: string }).error, 'This agent has no usable folder.', 'NUL: refused by its own guard');
+  assert.strictEqual((checkFolder('/w/a\0b', mk(launchEnv('linux', LINUX_ALL), rec())) as { error: string }).error, 'This agent has no usable folder.', 'NUL in a made-up path');
+  // the path handed on is realpath's answer, also when the folder itself is no link (a link higher up), and without the link note
+  {
+    const viaParent = (le: LaunchEnv) => mk(le, rec(), { realpath: (p) => (p === '/w/via-parent' ? '/w/real-proj' : p) });
+    const r1 = rec(); const d1 = { ...viaParent(launchEnv('linux', LINUX_ALL)), openPath: async (p: string) => (r1.opened.push(p), '') };
+    const fm = await openWith({ cwd: '/w/via-parent' }, 'folder', d1);
+    assert.deepStrictEqual([fm.ok, fm.note, r1.opened], [true, undefined, ['/w/real-proj']], 'the file manager gets the resolved path');
+    const r2 = rec(); const d2 = { ...viaParent(launchEnv('linux', LINUX_ALL)), start: async (plan: LaunchPlan) => (r2.started.push(plan), { ok: true }) };
+    await openWith({ cwd: '/w/via-parent' }, 'vscode', d2);
+    assert.deepStrictEqual(r2.started[0].args, ['/w/real-proj'], 'the editor gets the resolved path');
+    // something put at the real path after realpath is checked as it is: a link there is no directory and is refused
+    const swapped = mk(launchEnv('linux', LINUX_ALL), rec(), { lstat: (p) => (p === '/w/swapped' ? { isDirectory: () => false, isFile: () => false, isSymbolicLink: () => true } : fakeLstat(p)), realpath: (p) => (p === '/w/x' ? '/w/swapped' : p) });
+    assert.strictEqual((checkFolder('/w/x', swapped) as { error: string }).error, 'This is not a folder, so it was not opened.');
+  }
+  // the workspace file's own guards: NUL, not absolute, flag-like, not a .code-workspace, a folder of that name
+  {
+    const le = launchEnv('linux', LINUX_ALL);
+    for (const w of ['/w/a\0b.code-workspace', 'rel.code-workspace', '--foo.code-workspace', '-x/y.code-workspace', '', '/w/x.json', 7]) {
+      const r = rec(); const res = await openWith({ cwd: '/w/proj', workspaceFile: w as string }, 'vscode', mk(le, r));
+      assert.deepStrictEqual([res.ok, res.error, r.started], [false, 'This workspace file is not usable.', []], `workspace ${JSON.stringify(w)}: refused by its guard, nothing started`);
+      const r2 = rec(); assert.strictEqual((await openInFirstEditor({ cwd: '/w/proj', workspaceFile: w as string }, mk(le, r2))).ok, false); assert.deepStrictEqual(r2.started, []);
+    }
+    const wsDir = path.join(root, 'dir.code-workspace'); fs.mkdirSync(wsDir);
+    const r = rec(); const res = await openWith({ cwd: dir, workspaceFile: wsDir }, 'vscode', mk(HOST(), r));
+    assert.deepStrictEqual([res.error, r.started], ['This workspace file is not a regular file, so it was not opened.', []], 'a folder named like a workspace file');
+    // the hint says what an editor opens
+    assert.deepStrictEqual(listTargets({ cwd: dir, workspaceFile: wsFile }, mk(HOST(), rec())).map((x) => x.hint).slice(0, 1), ['Opens this workspace in VS Code']);
+    assert.deepStrictEqual(listTargets({ cwd: dir }, mk(HOST(), rec())).map((x) => x.hint).slice(0, 1), ['Opens this folder in VS Code']);
+  }
+  // FR-019: Show in folder names the OS's file manager
+  assert.deepStrictEqual(['darwin', 'win32', 'linux', 'freebsd'].map((p) => fileManagerHint(p as NodeJS.Platform)), ['Finder', 'File Explorer', 'File manager', 'File manager']);
+  for (const [p, want] of [['darwin', 'Opens it in Finder'], ['win32', 'Opens it in File Explorer'], ['linux', 'Opens it in File manager']] as const) {
+    assert.strictEqual(listTargets({ cwd: p === 'win32' ? 'C:\\w' : '/w' }, mk(launchEnv(p, []), rec())).find((x) => x.id === 'folder')?.hint, want, p);
+  }
+  // FR-022: the .cmd refusal names the characters in the path, every one CMD_UNSAFE refuses, and the right thing
+  {
+    const cmd = 'C:\\L\\Programs\\Microsoft VS Code\\bin\\code.cmd';
+    const le = launchEnv('win32', [cmd], { LOCALAPPDATA: 'C:\\L', ComSpec: 'C:\\Windows\\System32\\cmd.exe' }, 'C:\\Users\\a');
+    const err = async (a: OwnedAgent) => (await openWith(a, 'vscode', mk(le, rec()))).error!;
+    assert.strictEqual(await err({ cwd: 'C:\\a & b' }), 'VS Code is installed, but it cannot open this folder safely (its path has &, which cmd.exe could misread). Rename the folder, or open it from VS Code itself.');
+    for (const c of ['"', '&', '|', '<', '>', '^', '%', '!', '`', '(', ')', ',', ';', '=']) assert.match(await err({ cwd: 'C:\\a' + c + 'b' }), new RegExp('its path has \\' + c + ', which'), `the text names ${c}`);
+    assert.match(await err({ cwd: 'C:\\a\nb\rc' }), /its path has a line break, which/);
+    assert.match(await err({ cwd: 'C:\\a(1)%' }), /its path has \( \) %, which/, 'each character once, in order');
+    assert.match(await err({ cwd: 'C:\\ok', workspaceFile: 'C:\\w & x\\p.code-workspace' }), /cannot open this workspace file safely \(its path has &.*Rename the workspace file or its folder/, 'a workspace file is named as one');
+    // FR-027: Open in editor falls through to the next edition that can open it, as planVSCodeLaunch did
+    const le2 = launchEnv('win32', [cmd, WIN_ALL[2]], { LOCALAPPDATA: 'C:\\L', ComSpec: 'C:\\Windows\\System32\\cmd.exe' }, 'C:\\Users\\a');
+    { const r = rec(); const res = await openInFirstEditor({ cwd: 'C:\\a & b' }, mk(le2, r)); assert.deepStrictEqual([res.ok, res.edition, r.started.map((p) => p.args)], [true, 'VSCodium', [['C:\\a & b']]], 'VS Code as a .cmd only cannot: VSCodium.exe opens it'); }
+    { const r = rec(); const res = await openInFirstEditor({ cwd: 'C:\\ok' }, mk(le2, r)); assert.deepStrictEqual([res.edition, r.started[0].args[0]], ['VS Code', '/d'], 'a safe folder still goes to the first edition'); }
+    { const r = rec(); const res = await openInFirstEditor({ cwd: 'C:\\a & b' }, mk(le, r)); assert.deepStrictEqual([res.ok, r.started], [false, []]); assert.match(res.error!, /^VS Code is installed, but it cannot open this folder safely \(its path has &/, 'none can: the refusal, not "not found"'); }
+  }
+  // the real Deps: Electron's two calls in their places, an lstat that does not follow links, and the IPC channels wired to them
+  {
+    const op: string[] = [], rv: string[] = [];
+    const rd = realDeps(async (p) => (op.push(p), ''), (p) => { rv.push(p); });
+    await rd.openPath('x'); rd.reveal('y');
+    assert.deepStrictEqual([op, rv, rd.platform], [['x'], ['y'], process.platform], 'realDeps keeps openPath and reveal apart');
+    if (linkOk) { assert.strictEqual(rd.lstat(link).isSymbolicLink(), true, 'realDeps.lstat does not follow a link'); assert.strictEqual(rd.realpath(link), fs.realpathSync(dir)); }
+    const electronPath = require.resolve('electron');
+    const handlers = new Map<string, (e: unknown, ...a: unknown[]) => unknown>();
+    const shellCalls: string[] = [];
+    const fake = {
+      ipcMain: { handle: (ch: string, fn: (e: unknown, ...a: unknown[]) => unknown) => handlers.set(ch, fn), on: () => undefined },
+      app: { getVersion: () => '0.0.0', getPath: () => os.tmpdir() },
+      dialog: { showOpenDialog: async () => ({ canceled: true, filePaths: [] }) },
+      shell: { openPath: async (p: string) => (shellCalls.push('open ' + p), ''), showItemInFolder: (p: string) => { shellCalls.push('show ' + p); }, openExternal: async () => assert.fail('no browser') },
+      safeStorage: { isEncryptionAvailable: () => false },
+    };
+    const saved = require.cache[electronPath];
+    require.cache[electronPath] = { id: electronPath, filename: electronPath, loaded: true, exports: fake } as unknown as NodeJS.Module;
+    const plat = Object.getOwnPropertyDescriptor(process, 'platform')!;
+    try {
+      /* eslint-disable @typescript-eslint/no-require-imports */
+      (require('../src/main/ipcguard') as typeof import('../src/main/ipcguard')).initSimGuard(false);
+      const agentsIpc = require('../src/main/ipc/agents') as typeof import('../src/main/ipc/agents');
+      /* eslint-enable @typescript-eslint/no-require-imports */
+      const agents = new Map([['p', { id: 'p', cwd: dir, name: 'p', permMode: 'ask' }], ['app', { id: 'app', cwd: appDir, name: 'a', permMode: 'ask' }], ['l', { id: 'l', cwd: linkOk ? link : dir, name: 'l', permMode: 'ask' }]]) as never;
+      agentsIpc.register({
+        agents, router: { onEvent: () => () => undefined, forAgent: () => undefined, instance: () => undefined } as never, agentState: {} as never, opsDeps: {} as never,
+        remoteOps: { release: async () => undefined, has: () => false } as never, getScheduler: () => undefined, getCheckpointStore: () => undefined, vsChatRefs: new Map(), continued: new Map(), wsKey: () => dir, asEffort: () => undefined,
+        addMany: async () => ({ ok: true, agents: [] }) as never, addWorkspace: (async () => undefined) as never, ensureLive: async () => undefined, readyAdapterIds: async () => new Set<string>(), forgetOpenSession: () => undefined,
+        maskHistory: (_id, h) => h, mcpSecrets: () => [], logMcp: () => undefined, sendOp: async () => ({ ok: true }) as never,
+      });
+      const frame = { url: pathToFileURL(path.join(__dirname, '..', 'src', 'renderer', 'index.html')).href }; // ipcguard's APP_INDEX, as test-mcp-signinwiring builds it
+      const win = { senderFrame: frame, sender: { mainFrame: frame } };
+      const other = { senderFrame: { url: 'https://example.com/' }, sender: { mainFrame: {} } };
+      const call = async (e: unknown, ch: string, ...a: unknown[]) => (await handlers.get(ch)!(e, ...a)) as { ok: boolean; note?: string; error?: string };
+      assert.deepStrictEqual(await call(win, 'agents:openWith', 'p', 'folder'), { ok: true }); assert.deepStrictEqual(shellCalls, ['open ' + dir], 'a plain folder: shell.openPath');
+      if (linkOk) { shellCalls.length = 0; assert.strictEqual((await call(win, 'agents:openWith', 'l', 'folder')).note, LINK_NOTE, 'the IPC route sees the link (lstat, not stat)'); assert.deepStrictEqual(shellCalls, ['open ' + fs.realpathSync(dir)]); }
+      // a package is shown, never opened: on this OS's own kind (Windows), or as macOS sees Thing.app
+      if (!ON_WIN && process.platform !== 'darwin') Object.defineProperty(process, 'platform', { ...plat, value: 'darwin' });
+      shellCalls.length = 0;
+      const pk = await call(win, 'agents:openWith', 'app', 'folder');
+      Object.defineProperty(process, 'platform', plat);
+      assert.deepStrictEqual([pk.ok, shellCalls], [true, ['show ' + appDir]], 'a package through the IPC route: shell.showItemInFolder, not openPath');
+      shellCalls.length = 0;
+      await assert.rejects(call(other, 'agents:openWith', 'p', 'folder'), /did not come from its own window/); assert.deepStrictEqual(shellCalls, [], 'another frame opens nothing');
+      assert.deepStrictEqual(((await call(win, 'agents:openWithTargets', 'p')) as unknown as { id: string }[]).slice(-1).map((x) => x.id), ['folder']);
+      assert.deepStrictEqual(await call(win, 'agents:openWith', '/etc', 'folder'), { ok: false, error: 'unknown agent' });
+    } finally {
+      Object.defineProperty(process, 'platform', plat);
+      if (saved) require.cache[electronPath] = saved; else delete require.cache[electronPath];
+    }
+  }
 
   // ---- spawnPlan: no shell, detached; the spawner here is a fake (FR-022) ----
   { let seen: { cmd: string; args: readonly string[]; opts: Record<string, unknown> } | undefined;
@@ -240,4 +349,5 @@ fs.writeFileSync(wsFile, '{}');
 
   fs.rmSync(root, { recursive: true, force: true });
   console.log('test:openwith PASS');
+  process.exitCode = 0;
 })().catch((e) => { try { fs.rmSync(root, { recursive: true, force: true }); } catch { /* ignore */ } console.error(e); process.exit(1); });
