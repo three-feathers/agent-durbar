@@ -52,37 +52,46 @@ module.exports = async (ctx) => {
 
     // ---- FR-199/FR-200: the strip, its findings, no error text ----
     assert.ok(await until(`!document.getElementById('mcpStrip').hidden`, 6000), 'the strip shows');
+    // one line by default: the office keeps its room (no office scroll with 15 agents)
+    const closed = await js(`(()=>{const s=document.getElementById('mcpStrip'),f=document.getElementById('floor');return {h:s.getBoundingClientRect().height,list:!!s.querySelector('[data-mlk]'),exp:s.querySelector('[data-ml="list"]').getAttribute('aria-expanded'),t:s.querySelector('.ns-t').textContent,fits:f.scrollHeight<=f.clientHeight+1}})()`);
+    assert.ok(closed.h <= 40 && !closed.list && closed.exp === 'false', `${w}: one line, list closed: ` + JSON.stringify(closed));
+    assert.match(closed.t, /^3 MCP servers need attention \(found since the app started\): Codex.s MCP list, playwright, my-notes\. Nothing was changed/, 'distinct names are counted');
+    assert.ok(closed.fits, `${w}: the office does not scroll with the strip closed`);
+    assert.ok(!(await js(`document.getElementById('mcpStrip').contains(document.activeElement)`)), 'it took no focus');
+    await shot(`058-mcp-launch-closed-${w}x${h}.png`);
+    await js(`document.querySelector('#mcpStrip [data-ml="list"]').click()`);
+    assert.ok(await until(`!!document.querySelector('#mcpStrip [data-mlk]')&&document.activeElement===document.querySelector('#mcpStrip [data-ml="list"]')&&document.activeElement.getAttribute('aria-expanded')==='true'`), 'List… opens the list and keeps the focus');
     let it = await items();
     const keys = it.map((x) => x.k);
     assert.ok(keys.includes('list:codex'), 'the unreadable Codex list: ' + JSON.stringify(keys));
     assert.ok(keys.includes('cmd:playwright'), 'the missing command: ' + JSON.stringify(keys));
-    assert.ok(keys.some((k) => k === 'chat:' + A.id + '\0my-notes'), 'the chat\'s needs-sign-in server: ' + JSON.stringify(keys));
+    assert.ok(keys.some((k) => k === 'chat:' + JSON.stringify([A.id, 'my-notes'])), 'the chat\'s needs-sign-in server: ' + JSON.stringify(keys));
     assert.ok(it.length <= 5, 'at most 5 lines');
     const pw = it.find((x) => x.k === 'cmd:playwright').t;
     assert.match(pw, /playwright.*Claude Code list.*Not installed \(command not found\)\. Install the command, or put its full path/);
-    const mn = it.find((x) => x.k === 'chat:' + A.id + '\0my-notes').t;
+    const mn = it.find((x) => x.k === 'chat:' + JSON.stringify([A.id, 'my-notes'])).t;
     assert.ok(mn.startsWith('my-notes ' + A.name + ' (') && /: Refused: needs sign-in\. Sign in again: Show opens the chat.s MCP list/.test(mn), 'name, chat and app, reason, fix: ' + mn);
     const all = await stripText();
     assert.match(all, /MCP servers need attention/);
     assert.ok(!/401|Unauthorized|ENOENT|could not be read\./.test(all), 'no error text in the strip: ' + all);
     assert.strictEqual(await js(`document.getElementById('mcpStrip').getAttribute('role')`), 'status', 'a status strip, not an alert or a modal');
-    assert.ok(!(await js(`document.getElementById('mcpStrip').contains(document.activeElement)`)), 'it took no focus');
     // FR-203: its own room, 10.5px, no page overflow
     const lay = await js(`(()=>{const s=document.getElementById('mcpStrip').getBoundingClientRect(),f=document.getElementById('floor').getBoundingClientRect();let min=99;document.querySelectorAll('#mcpStrip, #mcpStrip *').forEach(e=>{if(!e.getClientRects().length)return;if(![...e.childNodes].some(n=>n.nodeType===3&&n.textContent.trim()))return;min=Math.min(min,parseFloat(getComputedStyle(e).fontSize));});return {below:f.top>=s.bottom-1,min,pageX:document.documentElement.scrollWidth<=innerWidth,pageY:document.documentElement.scrollHeight<=innerHeight+1}})()`);
     assert.ok(lay.below && lay.min >= 10.5 && lay.pageX && lay.pageY, `${w}: the strip takes its own room, 10.5px, no page scroll: ` + JSON.stringify(lay));
     await shot(`058-mcp-launch-${w}x${h}.png`);
 
     // ---- FR-199 part 2: a server that runs again leaves; a new failure and a policy refusal join ----
+    for (const c of chats) if (c.id !== A.id) await emit(c.id, [{ name: 'my-notes', status: 'connected' }]); // the other chats sign in: room in the strip
     await emit(A.id, [{ name: 'browser', status: 'connected' }, { name: 'my-notes', status: 'connected' }]);
-    assert.ok(await until(`![...document.querySelectorAll('#mcpStrip [data-mlk]')].some(x=>x.dataset.mlk===${jsLiteral('chat:' + A.id + '\0my-notes')})`), 'my-notes left the strip when it ran');
+    assert.ok(await until(`![...document.querySelectorAll('#mcpStrip [data-mlk]')].some(x=>x.dataset.mlk===${jsLiteral('chat:' + JSON.stringify([A.id, 'my-notes']))})`), 'my-notes left the strip when it ran');
     await emit(A.id, [{ name: 'browser', status: 'failed', error: 'connect ECONNREFUSED 127.0.0.1:3000' }, { name: 'my-notes', status: 'connected' }]);
-    assert.ok(await until(`[...document.querySelectorAll('#mcpStrip [data-mlk]')].some(x=>x.dataset.mlk===${jsLiteral('chat:' + A.id + '\0browser')}&&/Refused the connection\\. Check the server.s address or port/.test(x.textContent))`), 'a refused server joins with the port fix');
+    assert.ok(await until(`[...document.querySelectorAll('#mcpStrip [data-mlk]')].some(x=>x.dataset.mlk===${jsLiteral('chat:' + JSON.stringify([A.id, 'browser']))}&&/Refused the connection\\. Check the server.s address or port/.test(x.textContent))`), 'a refused server joins with the port fix');
     await js(`window.__durbarSimEmit({type:'toolCall',sessionId:${jsLiteral(B.id)},timestamp:Date.now(),callId:'pc1',tool:'teams_send',mcpServer:'agent365-teams',phase:'failed',output:'AADSTS530003: Your device is required to be managed to access this resource.'})`);
     assert.ok(await until(`/Blocked by your organization.s access policy\\. Your organization.s sign-in rules refused it/.test(document.getElementById('mcpStrip').textContent)||/and \\d+ more/.test(document.getElementById('mcpStrip').textContent)`), 'a policy refusal joins (or is counted in "more")');
     assert.ok(!/AADSTS|managed to access/.test(await stripText()), 'the policy line has no vendor text');
 
     // ---- Show: a chat's line opens its MCP dialog; a list's line opens Settings, where the row says the command was not found ----
-    await js(`document.querySelector(${jsLiteral(`#mcpStrip [data-mlshow="chat:${A.id}\u0000browser"]`)}).click()`);
+    await js(`[...document.querySelectorAll('#mcpStrip [data-mlshow]')].find(b=>b.dataset.mlshow===${jsLiteral('chat:' + JSON.stringify([A.id, 'browser']))}).click()`);
     assert.ok(await until(`document.querySelectorAll('#agMcp li.srv').length>0`), 'Show opened the chat MCP dialog');
     assert.ok((await js(`document.getElementById('scrDlgT').textContent`)).endsWith(A.name), 'that chat\'s dialog');
     await done();

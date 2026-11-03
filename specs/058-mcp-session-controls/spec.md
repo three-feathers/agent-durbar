@@ -1609,9 +1609,11 @@ Codex) starts the servers inside one chat's session (FR-002). There is no app-wi
   It starts no session, asks no agent app, sends no prompt and opens no connection: (1) reads files, (2) uses only what connecting chats
   report anyway. A finding that is fixed later (the server reports *Running*) leaves the strip.
 - **FR-200** **One calm strip, no modal.** The findings show in one information strip above the office (the strips of spec 052 FR-089
-  and spec 006 FR-041; `role="status"`, it takes no focus): "**MCP servers need attention** (found since the app started)" and one line
-  per finding, at most 5 then "and N more": the server's name, where (the agent app's list, or the chat), the reason word
-  (`reasonOf`, FR-090) and the suggested fix (FR-201). Buttons: **Show** per line (a chat's line opens that chat's MCP dialog, where Sign
+  and spec 006 FR-041; `role="status"`, it takes no focus), one line high by default so the office keeps its room: "**N MCP servers
+  need attention** (found since the app started): <up to 3 names> and N more" (N counts server names; an unreadable list
+  counts as one). **List…** (`aria-expanded`) opens one line per finding, at most 5
+  then "and N more": the server's name, where (the agent app's list, or the chat), the reason word (`reasonOf`, FR-090) and the
+  suggested fix (FR-201). Buttons: **Show** per line (a chat's line opens that chat's MCP dialog, where Sign
   in and Restart are; a list's line opens Settings at MCP servers), **Open MCP settings**, and **Dismiss**. Dismiss hides it for this run
   and nothing new appears after that (the chip's dot, FR-094, and the Settings count, FR-084, stay). Each server shows once per list or
   chat. The state is in words, never colour alone.

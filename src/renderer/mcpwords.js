@@ -244,7 +244,7 @@
     if(!x||!okName(x.name)||!chat)return null;
     const r=policy===true?{key:'policy',word:'Blocked by your organization’s access policy'}:reasonOf(x);
     if(!r)return null;
-    return {key:'chat:'+String(chat.id)+'\0'+x.name,kind:'chat',chatId:String(chat.id),name:plain(x.name,80),where:plain(chat.name,80)+(chat.app?' ('+plain(chat.app,40)+')':''),reason:r.word,rkey:r.key,fix:fixFor(r.key)};
+    return {key:'chat:'+JSON.stringify([String(chat.id),x.name]),kind:'chat',chatId:String(chat.id),name:plain(x.name,80),where:plain(chat.name,80)+(chat.app?' ('+plain(chat.app,40)+')':''),reason:r.word,rkey:r.key,fix:fixFor(r.key)};
   }
   return {stateOf,offBy,iconSvg,hintFor,callWord,callHint,signInHint,plain,aggregate,reasonOf,whenText,diagnostics,fixFor,fileFindings,chatFinding,RANK:RANK.slice(),ICON_NAMES:Object.keys(ICONS)};
 })());
