@@ -50,22 +50,22 @@ export function packSeats(sizes: number[], cols: number, keep = true): { at: Arr
   return { at, rows, inRow };
 }
 
-interface Plan { keep: boolean; g: number; gw: number; gh: number; cols: number; rows: number; big: boolean; zig: boolean; sl: number; rowH: number; slotW: number; fits: boolean }
+interface Plan { keep: boolean; g: number; gw: number; gh: number; cols: number; rows: number; big: boolean; sl: number; rowH: number; slotW: number; fits: boolean }
 
-/** FR-256 (owner, 2026-11-03: "bigger cabinets ... zigzag positioning for max usage"): every plan that fits, straight rows or a zigzag (odd rows
- *  shifted half a column, like bricks, so fewer columns hold a bigger cabinet), and the one that uses the floor best: no bare band over a quarter of
+/** FR-256 (owner, 2026-11-03: "bigger cabinets ... zigzag positioning for max usage"): every plan that fits (scale, cabinet, columns), and the
+ *  one that uses the floor best. A brick zigzag (odd rows half a column over) was tried and removed (review of #1079): it needs more width than the
+ *  straight plan of the same scale, cabinet and rows and covers the same floor, so it never won; the rows stagger instead. The order: no bare band over a quarter of
  *  the floor if any plan manages that, then the biggest scale, then the biggest cabinet, then the least bare floor. Past what fits, rows are added
  *  at the smallest choice and the floor scrolls inside itself (T203). */
 function planFor(sizes: number[], W: number, F: number, PW: number = AISLE_PERSON.w): Plan {
   const k = sizes.reduce((a, b) => a + b, 0);
   const rowCost = (gh: number, g: number): number => AISLE_SIGN_H + cabGrid(0, gh).h * g + AISLE_PLATE_H + g - 1; /* g - 1: the cabinet snaps down to the grid */
   const plans: Plan[] = [];
-  for (const keep of [true, false]) for (const g of k <= 4 ? AISLE_G_FEW : [3, 2]) for (const [name, c] of Object.entries(CABINETS)) for (let cols = 1; cols <= AISLE_COLS; cols++) for (const zig of [false, true]) {
+  for (const keep of [true, false]) for (const g of k <= 4 ? AISLE_G_FEW : [3, 2]) for (const [name, c] of Object.entries(CABINETS)) for (let cols = 1; cols <= AISLE_COLS; cols++) {
     const rows = packSeats(sizes, cols, keep).rows, cab = cabGrid(c.gw, c.gh), slotW = (cab.w + PW + AISLE_GAP) * g;
-    if (zig && rows < 2) continue;
-    const cw = (W - 2 * AISLE_PAD) / (cols + (zig ? 0.5 : 0)), spareY = F - rows * rowCost(c.gh, g);
+    const cw = (W - 2 * AISLE_PAD) / cols, spareY = F - rows * rowCost(c.gh, g);
     if (slotW > cw || slotW < AISLE_SIGN_MIN_W || spareY < 0 || cols > k) continue;
-    plans.push({ keep, g, gw: c.gw, gh: c.gh, cols, rows, big: name === 'big', zig, sl: Math.min(13, Math.floor(spareY / (2 * rows + 2))), /* the bend flattens before anything scrolls */ rowH: rowCost(c.gh, g), slotW, fits: true });
+    plans.push({ keep, g, gw: c.gw, gh: c.gh, cols, rows, big: name === 'big', sl: Math.min(13, Math.floor(spareY / (2 * rows + 2))), /* the bend flattens before anything scrolls */ rowH: rowCost(c.gh, g), slotW, fits: true });
   }
   const bare = (p: Plan): number => F - p.rows * (p.rowH + 2 * p.sl);
   /* 4 or fewer (owner, 2026-11-03: "still waste a lot of space"): the plan whose cabinets and people cover the most floor */
@@ -74,7 +74,7 @@ function planFor(sizes: number[], W: number, F: number, PW: number = AISLE_PERSO
   if (plans.length) return plans[0];
   /* it does not fit: five columns of the smallest cabinet, as many rows as it takes, and the floor scrolls */
   const g = 2, gw = CABINETS.narrow.gw, gh = CABINETS.narrow.gh, cols = k <= 4 ? 2 : AISLE_COLS, cab = cabGrid(gw, gh), rows = packSeats(sizes, cols, false).rows;
-  return { keep: false, g, gw, gh, cols, rows, big: false, zig: false, sl: 3, rowH: rowCost(gh, g), slotW: (cab.w + PW + AISLE_GAP) * g, fits: false };
+  return { keep: false, g, gw, gh, cols, rows, big: false, sl: 3, rowH: rowCost(gh, g), slotW: (cab.w + PW + AISLE_GAP) * g, fits: false };
 }
 
 /** FR-256, T202, T203: the hall. `view` is the floor the app passes (its width and height). Day and night give the same object (FR-251). */
@@ -139,14 +139,19 @@ export function aislesLayout(model: RealModel, view: { w: number; h: number }, m
   const Lb0 = Math.round(plan.fits ? Math.max(lobbyMin, Math.min(Ho - used - AISLE_PAD - AISLE_LANE, lobbyT)) : lobbyMin);
   const Lb = Math.ceil(Lb0 / g) * g;
   const spare = plan.fits ? Math.max(0, Ho - Lb - AISLE_LANE - used - AISLE_PAD) : 0, extra = spare / (rows + 1);
-  /* a zigzag: odd rows half a column to the right; straight rows stagger by 8 % of a column, less where the floor is narrow */
+  /* rows stagger by 8 % of a column, less where the floor is narrow */
   /* columns no wider than 1.1 slots, the grid in the middle: a small group stands close together */
-  const span = cols + (plan.zig ? 0.5 : 0), cw = Math.min((W - 2 * AISLE_PAD) / span, plan.slotW * AISLE_CLOSE), x0g = (W - span * cw) / 2, snap = (v: number): number => Math.round(v / g) * g;
-  const shift = plan.zig ? 0 : Math.max(0, Math.min(cw * AISLE_STAGGER, (cw - plan.slotW - g) / 2));
+  const cw = Math.min((W - 2 * AISLE_PAD) / cols, plan.slotW * AISLE_CLOSE), x0g = (W - cols * cw) / 2, snap = (v: number): number => Math.round(v / g) * g;
+  const shift = rows < 2 ? 0 : Math.max(0, /* one row has nothing to stagger against: it stands in the middle */ Math.min(cw * AISLE_STAGGER, (cw - plan.slotW - g) / 2));
+  const cxOf = (i: number): number => {
+    const [r, c] = pk.at[i], n = pk.inRow[r]; /* a short row stands in the middle, so 3 is a triangle, not an L */
+    return n < cols ? x0g + (c + 0.5 + (cols - n) / 2) * cw : x0g + (c + 0.5) * cw + (r % 2 ? 1 : -1) * shift;
+  };
+  /* the whole group in the middle of the floor: a staggered full row over a centred short one leans otherwise (review of #1079) */
+  const cxs = pk.at.map((_, i) => cxOf(i)), lean = cxs.length ? W / 2 - (Math.min(...cxs) + Math.max(...cxs)) / 2 : 0;
   const slotBox = (i: number): { slot: Rect; cab: Rect; top: number; face: 'left' | 'right' } => {
     const [r, c] = pk.at[i], f0 = aisleFace(c, cols, r), face = k <= 4 ? (f0 === 'right' ? 'left' : 'right') : f0; /* a small room: the cabinets together in the middle, the people outside */
-    const n = pk.inRow[r]; /* a short row stands in the middle, so 3 is a triangle, not an L */
-    const cx = n < cols ? x0g + (c + 0.5 + (cols - n) / 2 + (plan.zig ? 0.25 : 0)) * cw : x0g + (c + 0.5 + (plan.zig && r % 2 ? 0.5 : 0)) * cw + (r % 2 ? 1 : -1) * shift;
+    const cx = cxs[i] + lean;
     const top = Lb + AISLE_LANE + extra * (r + 1) + r * (plan.rowH + bend);                      /* the row's top: its sign strip */
     const cabY = top + AISLE_SIGN_H + (Math.floor(cols / 2) - Math.abs(c - (cols - 1) / 2) > 0 ? Math.round((Math.floor(cols / 2) - Math.abs(c - (cols - 1) / 2)) * sl) : 0);
     /* the art sits on the grid: the cabinet's corner is a multiple of g (FR-255) and the slot follows it */

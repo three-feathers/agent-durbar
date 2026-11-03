@@ -566,13 +566,41 @@ def selftest():
     c, g = cabinet(56, 32, 0); assert c.w == 73 and c.h == 73 and g['glass'] == [5, 18, 56, 32], g
     assert c.im.getpixel((10, 25))[3] == 0, 'the glass is a hole'
     keep_sit_selftest()
+    args_selftest()
     print('build-arcade-pack selftest ok')
 
+def parse_args(argv):
+    """the command line, checked before anything is read or deleted (#1079 review: `--help` was taken for the art folder and the build
+    deleted the set's pictures). Returns ('selftest',) / ('world', repo) / ('build', interop, repo); anything else exits with the usage."""
+    a = list(argv)
+    if any(x.startswith('-') for x in a) and not (a and a[0] in ('--selftest', '--world') and not any(x.startswith('-') for x in a[1:])):
+        raise SystemExit(__doc__)
+    if a[:1] == ['--selftest'] and len(a) == 1: return ('selftest',)
+    def repo_ok(r):
+        if not (os.path.isfile(os.path.join(r, 'package.json')) and os.path.isdir(os.path.join(r, 'src', 'renderer', 'realoffice'))): raise SystemExit(f'not the repository: {r}\n' + __doc__)
+        return r
+    if a[:1] == ['--world'] and len(a) <= 2: return ('world', repo_ok(a[1] if len(a) > 1 else os.getcwd()))
+    if len(a) not in (1, 2): raise SystemExit(__doc__)
+    I = a[0].rstrip('/')
+    if not all(os.path.isdir(os.path.join(I, d)) for d in ('final/retro', 'new7/final')): raise SystemExit(f'not the art cache\'s interop folder (no final/retro and new7/final): {I}\n' + __doc__)
+    return ('build', I, repo_ok(a[1] if len(a) > 1 else os.getcwd()))
+
+def args_selftest():
+    """a wrong command line exits before it deletes anything: `--help`, an unknown flag, a folder that is not the art cache, a repo that is not one"""
+    import subprocess, tempfile
+    with tempfile.TemporaryDirectory() as t:
+        S = os.path.join(t, 'src/renderer/realoffice/sets/retro'); os.makedirs(S); keep = os.path.join(S, 'p01-book.webp'); open(keep, 'wb').write(b'x')
+        open(os.path.join(t, 'package.json'), 'w').write('{}')
+        for args in (['--help'], ['-h'], ['--world', '--force'], ['--sit'], [t], [os.path.join(t, 'nowhere')], ['--world', os.path.join(t, 'src')]):
+            r = subprocess.run([sys.executable, '-I', os.path.abspath(__file__)] + args, cwd=t, capture_output=True)
+            assert r.returncode != 0, f'not refused: {args}'
+            assert os.path.exists(keep), f'deleted a picture: {args}'
+
 if __name__ == '__main__':
-    if len(sys.argv) > 1 and sys.argv[1] == '--selftest': selftest(); sys.exit(0)
-    if len(sys.argv) > 1 and sys.argv[1] == '--world': write_world(sys.argv[2] if len(sys.argv) > 2 else os.getcwd()); sys.exit(0)
-    if len(sys.argv) < 2: raise SystemExit(__doc__)
-    I = sys.argv[1].rstrip('/'); REPO = sys.argv[2] if len(sys.argv) > 2 else os.getcwd()
+    cmd = parse_args(sys.argv[1:])
+    if cmd[0] == 'selftest': selftest(); sys.exit(0)
+    if cmd[0] == 'world': write_world(cmd[1]); sys.exit(0)
+    _, I, REPO = cmd
     prompts = [I + '/prompts', I + '/new7/prompts']
     smeta, sections, stotal = write_set(REPO, I + '/final/retro', I + '/new7/final', prompts)
     wmeta, wtotal = write_world(REPO)

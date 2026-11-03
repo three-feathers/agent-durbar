@@ -163,7 +163,7 @@ for (const [W, H] of SIZES) for (const dh of [0, 31]) for (const n of [1, 2, 3, 
   const bodies = new Set(L.zones.flatMap((z) => z.desks.map((d) => d.body)));
   assert.strictEqual(bodies.size, Math.min(4, n), `${n} in ${f} at ${W}x${H - dh}: ${bodies.size} cabinet bodies`);
   /* and neighbours on the grid differ (pre-review of #1079: seat order alone stacks seat n over seat n + 4): beside on a row, or in the next row
-     less than a slot to the side (above, below, or diagonal in a zigzag) */
+     less than a slot to the side (above, below, or diagonal where rows stagger) */
   {
     const all = L.zones.flatMap((z) => z.desks), cx = (d: typeof all[number]): number => d.desk.x + d.desk.w / 2, ys = [...new Set(all.map((d) => Math.round(d.slot.y)))].sort((a, b) => a - b);
     for (const a of all) for (const b of all) {
@@ -249,6 +249,55 @@ for (const n of [3, 8, 15]) for (const dh of [0, 31]) {
 }
 
 console.log(`a folder of 4 or fewer still split (five columns cannot hold it whole): ${split.join('; ') || 'none'}`);
+/* review of #1079 (rubenlupi): the mutants that survived, each with a check that fails without its rule */
+{
+  const sizesModel = (sizes: number[]): RealModel => {
+    let i = 0; const m = model(0, 1); m.folders = sizes.map((k, f) => ({ id: 'f' + f, agents: Array.from({ length: k }, () => ({ id: 'a' + i, state: STATES[i % 7], person: PEOPLE[i++ % 15], away: null }) as RealAgent) }));
+    return m;
+  };
+  for (const [W, H] of [[1408, 817], [1248, 717], ...SIZES] as const) {
+    /* nobody cut by a cabinet (owner, 04:34 UTC): two grid px of floor between a person's place and the cabinet, both inside the slot */
+    for (const n of [1, 3, 4, 8, 15]) {
+      const L = aislesLayout(model(n, Math.min(3, n)), { w: W, h: H }, META, SIGNS(Math.min(3, n))), g = L.g as number;
+      for (const d of L.zones.flatMap((z) => z.desks)) {
+        const st = d.stand!, gap = st.x >= d.desk.x + d.desk.w ? st.x - (d.desk.x + d.desk.w) : d.desk.x - (st.x + st.w);
+        assert.ok(gap >= 2 * g - 0.5, `${n} at ${W}x${H}: ${d.id}'s place is ${gap} px from its cabinet, under 2 grid px (${2 * g})`);
+        assert.ok(inside(st, d.slot) && inside(d.desk, d.slot), `${n} at ${W}x${H}: ${d.id}'s place or cabinet leaves its slot`);
+      }
+      /* the grid stands in the middle of the floor (a staggered full row over a centred short one leaned before) */
+      const ds = L.zones.flatMap((z) => z.desks), mid = (Math.min(...ds.map((d) => d.slot.x)) + Math.max(...ds.map((d) => d.slot.x + d.slot.w))) / 2;
+      assert.ok(Math.abs(mid - W / 2) <= 2 * g + 1, `${n} at ${W}x${H}: the grid's middle is ${Math.round(mid)}, the floor's ${W / 2}`);
+    }
+    /* 4 or fewer: every cabinet its own body, whatever the folders (3 + 1 put two equal bodies on the floor with the grid rule alone) */
+    for (const sz of [[3, 1], [1, 3], [2, 2], [2, 1, 1], [1, 2, 1], [1, 1, 2], [1, 1, 1, 1], [4]]) {
+      const L = aislesLayout(sizesModel(sz), { w: W, h: H }, META, SIGNS(sz.length)), b = L.zones.flatMap((z) => z.desks.map((d) => d.body));
+      assert.strictEqual(new Set(b).size, b.length, `${sz.join(' + ')} at ${W}x${H}: bodies ${JSON.stringify(b)}`);
+    }
+  }
+  /* every width, not only the two the app shows: a slot never leaves the floor and two slots of a row never overlap, also where the floor's
+     width, not the column cap, sets the column */
+  const swept = [0, 0];
+  for (let W = 900; W <= 1500; W += 7) for (const n of [5, 6, 8, 10, 12, 15]) {
+    const L = aislesLayout(model(n, 3), { w: W, h: 817 }, META, SIGNS(3)), ds = L.zones.flatMap((z) => z.desks);
+    if (L.scroll) { swept[1]++; continue; } /* a floor too small for its people scrolls (T203); its width is not this check's */
+    swept[0]++;
+    for (const d of ds) assert.ok(d.slot.x >= -0.5 && d.slot.x + d.slot.w <= W + 0.5, `${n} at ${W}x817: ${d.id}'s slot ${Math.round(d.slot.x)}..${Math.round(d.slot.x + d.slot.w)} leaves the floor`);
+    for (const a2 of ds) for (const b of ds) if (a2 !== b && Math.abs(a2.slot.y - b.slot.y) < 1) assert.ok(!inter(a2.slot, b.slot), `${n} at ${W}x817: slots ${a2.id} and ${b.id} overlap`);
+  }
+  console.log(`floor-width sweep: ${swept[0]} layouts that fit checked, ${swept[1]} that scroll left out`);
+  /* a pixel world's lobby: visitors at one place stand twice as far apart as in a flat world (1.6 against 0.8 of a body width), so none is
+     half behind another (owner, 2026-11-03) */
+  const lobby = (pixelArt: boolean): number => {
+    const m = model(2, 1); m.places = m.places.map((p) => (p.id === 'boss' ? { ...p, visitors: [PEOPLE[0], PEOPLE[1], PEOPLE[2]].map((person, i) => ({ id: 'v' + i, person }) as never) } : p));
+    const L = aislesLayout(m, { w: 1408, h: 817 }, { ...META, pixelArt } as RealMeta, SIGNS(1)), f = (L.fixtures as Array<{ id: string; visitors: Array<{ face: Rect | null }> }>).find((x) => x.id === 'boss')!;
+    const xs = f.visitors.map((v) => v.face!.x);
+    assert.ok(xs.length >= 2, 'two visitors shown at the Boss');
+    return xs[1] - xs[0];
+  };
+  const px = lobby(true), flat = lobby(false);
+  assert.ok(px >= 1.9 * flat, `the lobby: a pixel world's visitors ${px.toFixed(1)} px apart, a flat world's ${flat.toFixed(1)}`);
+}
+
 /* owner, 2026-11-03 ("still waste a lot of space"): with 4 or fewer the scale goes up to 5 and the plan covering the most floor wins. Measured on the
    floors the app really gives (1408x817 and 1248x717, the window less the frame): cabinets and people over the floor, at least what whole scales
    allow, with the lower lobby of option A (owner, 06:59 UTC) where it lets the cabinets grow: 3 and 4 at 1408 go to g = 4 under a 124 px lobby (asserted below). At
