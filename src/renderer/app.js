@@ -2270,7 +2270,7 @@ function wireMenu(btnId,menuId){
    of view, a bar above the composer shows it with the same choices; its buttons press the card's own buttons, so there is one code
    path. A question is answered in its card (options and text): the bar takes you there. */
 /* the words of a request card (permission, question, limit), in full: the answer bar and the inbox show exactly this (FR-016, FR-027) */
-function requestText(n){const c=n.cloneNode(true);c.querySelectorAll('.note-actions,.q-opts,.q-form,.q-urlbox,.pstate,.pdiff').forEach(x=>x.remove()); /* spec 052 FR-080: the command never (notifications use this text) */const q=n.querySelector('.q-text');return safeMask((q?q.textContent:c.textContent).replace(/\s+/g,' ').trim().replace(/^(Needs your OK|Permission|Question from the agent|Questions from the agent):?\s*/,''));} /* spec 041 FR-065: the question is agent text; the answer bar, the inbox and announcements read it from here */let answerObs=null;
+function requestText(n){const c=n.cloneNode(true);c.querySelectorAll('.note-actions,.q-opts,.q-form,.q-urlbox,.pstate,.pdiff').forEach(x=>x.remove()); /* spec 052 FR-080: the command never (notifications use this text) */c.querySelectorAll('p,div,pre,ul,ol,li,details,h1,h2,h3,h4,h5,h6').forEach(x=>x.before(' ')); /* FR-214: a space between blocks, textContent joins them ("(search_companies)Allow"); inline code gets none */const qs=[...c.querySelectorAll('.q-text')]; /* a card with 2-4 questions has one .q-text each: read them all */return safeMask((qs.length?qs.map(x=>x.textContent).join(' '):c.textContent).replace(/\s+/g,' ').trim().replace(/^(Needs your OK|Permission|Question from the agent|Questions from the agent):?\s*/,''));} /* spec 041 FR-065: the question is agent text; the answer bar, the inbox and announcements read it from here */let answerObs=null;
 /* spec 052 FR-060: the key of a permission card's button, and the one click path the bar and the keys share */
 const answerKeyOf=b=>b.dataset.act==='session'?'S':/\bdanger\b/.test(b.className)?'D':/\bprimary\b/.test(b.className)?'A':'';
 const chatKeyText=k=>keyText(KEYS.chatParts(k,IS_MAC)), chatKeyAria=k=>ariaKeys(KEYS.chatParts(k,IS_MAC)); /* FR-084: Alt+A elsewhere, ⌥⌘A on a Mac */
@@ -2446,8 +2446,30 @@ function paintPanelTitle(a,h){
 }
 let PANEL_OPENED_AT=0; /* the click guard of FR-020 item 1: the second click of a double-click on a desk lands on the header of the chat it opened */
 const CODE_SVG='<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 4.5L2 8l3.5 3.5M10.5 4.5L14 8l-3.5 3.5M9 3l-2 10"/></svg>'; /* the header's editor button icon */
+/* spec 005 FR-210: before a chat is taken off screen, mark all but its newest 4 messages .cvo (styles.css), so the next open lays out only those near the view. Each marked message also keeps the height it has now as its fallback size, so a message that is skipped is not a 90px guess but its real height and a scroll through it does not shift the view */
+const CV_OBS=new WeakMap(); /* chat element -> the MutationObserver that watches its marked messages while the chat is off screen */
+/* what a message's height depends on besides the width: the root's attributes (density, theme tokens and fonts, world) and the chat's own font */
+function cvKey(el){const cs=getComputedStyle(el); return [...document.documentElement.attributes].map(x=>x.name+'='+x.value).join(';')+'|'+cs.fontFamily+'|'+cs.fontSize+'|'+cs.lineHeight;}
+function cvDrop(el){delete el.dataset.cvw; delete el.dataset.cvk; for(const e of el.children){e.classList.remove('cvo');e.style.containIntrinsicBlockSize='';}}
+/* FR-215: a marked message that changed while its chat was off screen keeps no stored size: it lays out for real on the next open */
+function cvGrown(el,recs){for(const r of recs){let n=r.target; if(n===el)continue; while(n&&n.parentNode!==el)n=n.parentNode; if(n&&n.classList&&n.classList.contains('cvo')){n.classList.remove('cvo');n.style.containIntrinsicBlockSize='';}}}
+function cvRelease(el){const mo=CV_OBS.get(el); if(!mo)return; cvGrown(el,mo.takeRecords()); mo.disconnect(); CV_OBS.delete(el);}
+function cvMark(){const el=document.querySelector('#chat > .chat-inner'); if(!el||el.closest('.on-browser')||!el.clientWidth)return; /* on the Browser tab the chat is 0 high with no padding: its messages would be measured at the wrong width, so nothing is marked and the older marks stay */
+  const k=el.children, n=k.length; if(n<=40)return; cvRelease(el); el.dataset.cvw=el.clientWidth; el.dataset.cvk=cvKey(el);
+  const h=[]; for(let i=0;i<n-4;i++)h.push(k[i].getBoundingClientRect().height);
+  for(let i=0;i<n;i++){const e=k[i], old=i<n-4; e.classList.toggle('cvo',old); e.style.containIntrinsicBlockSize=(old&&h[i]>0)?'auto '+Math.round(h[i]*100)/100+'px':'';}
+  const mo=new MutationObserver(r=>cvGrown(el,r)); mo.observe(el,{childList:true,characterData:true,attributes:true,subtree:true}); CV_OBS.set(el,mo);}
+/* spec 005 FR-213: the stored heights are for the width and layout settings they were measured at (cvKey); if either differs now, drop the marks (the chat lays out in full once, then the next close measures again) */
+function cvStale(el){const w0=+el.dataset.cvw; return !!w0&&(Math.abs(el.clientWidth-w0)>1||cvKey(el)!==el.dataset.cvk);}
+function cvUnmarkIfResized(el){cvRelease(el); if(!cvStale(el))return false; cvDrop(el); return true;}
+
+/* spec 005 FR-213: the same check while the chat is open (a live resize, or a density or theme change: root attributes): once per frame, keep the end if the chat was at it, and the message in view where it is */
+let cvRz=0; const cvSoon=()=>{if(cvRz)return; cvRz=requestAnimationFrame(()=>{cvRz=0; const c=$('chat'), el=c&&c.querySelector(':scope > .chat-inner'); if(!el||!el.dataset.cvw||!cvStale(el))return;
+  const cr=c.getBoundingClientRect(), pinned=c.dataset.pin!=='0', a=[...el.children].find(e=>{const r=e.getBoundingClientRect();return r.bottom>cr.top+1;}), top=a?a.getBoundingClientRect().top:0;
+  cvDrop(el); if(pinned)c.scrollTop=c.scrollHeight; else if(a)c.scrollTop+=a.getBoundingClientRect().top-top;});};
+addEventListener('resize',cvSoon); new MutationObserver(cvSoon).observe(document.documentElement,{attributes:true});
 function openPanel(id,focus){
-  const a=byId(id); if(!a)return; if(!pulling)PULLED.delete(id); /* the user came back: this session may bring its chat forward again */
+  const a=byId(id); if(!a)return; if(ui.selected!==id||!document.body.classList.contains('panel-open'))cvMark(); /* after the check: an unknown id leaves the chat on screen unmarked */ if(!pulling)PULLED.delete(id); /* the user came back: this session may bring its chat forward again */
   if(ui.selected!==id||!document.body.classList.contains('panel-open'))PANEL_OPENED_AT=performance.now(); closeSlash(); keepDraft(); ui.selected=id; attached=(DRAFTS.get(id)||{att:[]}).att.slice();
   noteRecentChat(a); rememberUi();
   document.body.classList.add('panel-open');
@@ -2484,8 +2506,9 @@ function openPanel(id,focus){
   renderStrip(); const sl=$('stripList'); if(sl)sl.scrollLeft=stripScroll;
   const chat=getChat(a); $('chat').appendChild(chat.el);
   updatePanelHeader(); renderGrants();
-  const chatEl=$('chat'); chatEl.dataset.pin='1'; chatEl.scrollTop=1e6;
-  chatEl.onscroll=()=>{chatEl.dataset.pin=(chatEl.scrollHeight-chatEl.scrollTop-chatEl.clientHeight<80)?'1':'0';};
+  const chatEl=$('chat'); chatEl.dataset.pin='1'; chatEl._lastTop=undefined; chatEl.scrollTop=1e6;
+  let rs=0; const restick=()=>{if(ui.selected!==a.id)return; const un=rs===0&&cvUnmarkIfResized(chat.el); /* marks dropped at this frame (another width or layout): the end moved by what that laid out, not by the person */ if(!un&&chatEl.scrollHeight-chatEl.scrollTop-chatEl.clientHeight>400)return; chatEl.scrollTop=chatEl.scrollHeight; if(++rs<4)requestAnimationFrame(restick); else chatEl.onscroll();}; if(chat.el.childElementCount>4)requestAnimationFrame(restick); /* spec 005 FR-210: the messages at the end get their real height a frame after the first layout, so the end moves; follow it for 4 frames, then read the pin again; a chat of 4 or fewer messages has no skipped one and is left alone */
+  chatEl.onscroll=()=>{const t=chatEl.scrollTop; if(chatEl.scrollHeight-t-chatEl.clientHeight<80)chatEl.dataset.pin='1'; else if(chatEl._lastTop===undefined||t<chatEl._lastTop-1)chatEl.dataset.pin='0'; chatEl._lastTop=t;}; /* spec 005 FR-214: the scroll event of the app's own stick-to-bottom write arrives a frame later, when a new block may already have grown the page; that is not the person leaving the end. Only a move up from the position of the last scroll event is (whoever wrote the last position, so no writer has to record it) */
   $('panel').querySelector('.panel-in').classList.toggle('ro',!!(a.live&&a.parent));
   $('backBtn').onclick=closePanel;
   refreshFolderStatus(a); /* spec 063: branch and changed files on the folder chip */
@@ -3573,7 +3596,7 @@ function wireToolbar(){
   fitToolbar();
 }
 function closePanel(){closeSlash();keepDraft();
-  BP.hide(); hideSelButton(); /* spec 080 FR-009: the browser view comes off the window; the page stays loaded */
+  BP.hide(); hideSelButton(); cvMark(); /* spec 080 FR-009: the browser view comes off the window; the page stays loaded */
   if(ctObs){ctObs.res.disconnect();ctObs.mut.disconnect();ctObs=null;} closeCtMore(false); closeCtxMenu();
   const id=ui.selected; ui.selected=null; document.body.classList.remove('panel-open'); $('panel').innerHTML='';
   renderAll();
@@ -7339,6 +7362,8 @@ function onAutoTierFailed(a,e){
   updateModelChip(a);scheduleRender();
 }
 function onCompaction(a,e){
+  /* spec 015 FR-009b: the 1.5 s fallback of compactDialog already said this manual compaction ended; the real Copilot complete that comes late is the same compaction: ignored once */
+  if(a.endedByAnswer){const x=a.endedByAnswer;a.endedByAnswer=null;if(e.phase==='complete'&&e.trigger==='manual'&&!a.compacting&&Date.now()-x<60000)return;}
   const chat=liveChat(a), at=()=>new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
   /* spec 052 FR-163 (owner, 2026-10-21): compactions in a row (nothing else added to the chat in between) are one line that updates in
      place: "Context compacted 4 times · last 10:21: …". Its tooltip lists each one. The line is found by its place in the chat, not by
@@ -7390,13 +7415,18 @@ async function compactDialog(a,anchor){
   const r=await askDialog({title:'Compact the context of '+a.name+'?',body:'Older messages are replaced by a summary; the agent keeps working in the same session.',lines,input:{label:'Focus (optional)',hint:'What the summary should keep',placeholder:'e.g. the API decisions',max:200},returnFocus:anchor,
     buttons:[{label:'Cancel',value:null},{label:'Compact',value:'ok',cls:'primary'}]});
   if(!r)return;
+  const before=a.compactions||0; /* counted before the call: the runtime may send the complete event before it answers */
   const res=await bridge.compact(a.id,(r.text||'').trim()||undefined).catch(e=>({ok:false,error:String(e&&e.message||e)}));
   if(!res||!res.ok)toast('Could not compact: '+esc((res&&res.error)||'unknown error'),6000);
   else if(res.result&&res.result.success===false)toast('Not compacted: '+esc(res.result.message||'the runtime declined.'),6000);
-  else if(res.result&&res.result.success===true){
-    /* the line normally comes from the compaction events; if the runtime sent none for a manual compaction, say it from the result */
-    const before=a.compactions||0,rr=res.result;
-    setTimeout(()=>{if((a.compactions||0)===before&&!a.compacting)onCompaction(a,{phase:'complete',trigger:'manual',tokensRemoved:rr.tokensRemoved,tokensAfter:rr.tokensAfter});},1500);
+  /* spec 015 FR-009b: Copilot's start of a manual compaction comes after the turn's last idle, so nothing else would end the desk mark if its complete never came:
+     the answer is the end. The line normally comes from the compaction events; if none came (or only a start), say it from the result. */
+  if(res&&res.ok&&res.result&&typeof res.result.success==='boolean'){
+    const rr=res.result;
+    setTimeout(()=>{
+      if(rr.success===true){if((a.compactions||0)===before){onCompaction(a,{phase:'complete',trigger:'manual',tokensRemoved:rr.tokensRemoved,tokensAfter:rr.tokensAfter});a.endedByAnswer=Date.now();}}
+      else if(a.compacting)onCompaction(a,{phase:'failed',trigger:'manual'});
+    },1500);
   }
   refocusAnchor(anchor);
 }
@@ -8647,7 +8677,7 @@ if(pendingOpen&&demoOn){openPanel(pendingOpen,false);pendingOpen=null;}
 const settleNow=()=>{if(!agentsListed||!window.__durbarSimReplayed||baselineQueued||baselineAsking)return false;if(renderQueued){renderQueued=false;renderAll();}return true;};
 /* simulator drivers load with simfreeze=1: the desk glow then holds still (FR-178: the geometry and screenshot checks measure boxes, so no zoom may be mid-way); the unread driver opts back in with hlmotion=1 to test the motion itself */
 if(SIM&&qs.get('simfreeze')==='1'&&qs.get('hlmotion')!=='1')document.documentElement.classList.add('hl-still');
-if(SIM)window.__durbarSimUi={agents:()=>agents,setLive:setLiveOn,setOfficeView,needsCount:()=>needsMeOrder().length,clearDetail:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return false;c.querySelectorAll(':scope > details.pdiff').forEach(x=>x.remove());scheduleRender();return true;},addDetail:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return false;const d=document.createElement('details');d.className='pdiff';d.innerHTML='<summary>Show the change (+1 \u22121)</summary><pre>- a\n+ b</pre>';c.insertBefore(d,c.querySelector(':scope > .note-actions'));scheduleRender();return true;},requestText:s=>{const n=document.createElement('div');n.className='note elicit';n.textContent=String(s);return requestText(n);},setSerious:v=>{SERIOUS=!!v;return SERIOUS;}, /* spec 097 (the moments driver): a change in the card, the card text's masking, Serious mode */unread:{mark:id=>UNREAD.complete(id,false)==='marked',read:id=>markRead(byId(id))}, /* spec 097 (the moments driver): the New reply mark and Mark as read, as the app sets them */order:{get:()=>ORDER,saved:()=>bridge.getOrder?bridge.getOrder():null,reset:resetOrder,path:id=>(ROOMS.find(r=>'room:'+r.id===id)||{}).path||''}, /* issue 677 (check 033-order): the order held and saved, Reset, a room's key */
+if(SIM)window.__durbarSimUi={agents:()=>agents,cv:{mark:cvMark,release:cvRelease,drop:cvDrop,openPanel,setDensity},setLive:setLiveOn,setOfficeView,needsCount:()=>needsMeOrder().length,clearDetail:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return false;c.querySelectorAll(':scope > details.pdiff').forEach(x=>x.remove());scheduleRender();return true;},addDetail:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return false;const d=document.createElement('details');d.className='pdiff';d.innerHTML='<summary>Show the change (+1 \u22121)</summary><pre>- a\n+ b</pre>';c.insertBefore(d,c.querySelector(':scope > .note-actions'));scheduleRender();return true;},requestText:s=>{const n=document.createElement('div');n.className='note elicit';n.textContent=String(s);return requestText(n);},setSerious:v=>{SERIOUS=!!v;return SERIOUS;}, /* spec 097 (the moments driver): a change in the card, the card text's masking, Serious mode */unread:{mark:id=>UNREAD.complete(id,false)==='marked',read:id=>markRead(byId(id))}, /* spec 097 (the moments driver): the New reply mark and Mark as read, as the app sets them */order:{get:()=>ORDER,saved:()=>bridge.getOrder?bridge.getOrder():null,reset:resetOrder,path:id=>(ROOMS.find(r=>'room:'+r.id===id)||{}).path||''}, /* issue 677 (check 033-order): the order held and saved, Reset, a room's key */
   toast:(s,act)=>{const t=act?toastAction(esc(String(s)),String(act),()=>{},8000):toast(esc(String(s)),8000);return !!t;}, /* spec 097 FR-113: a toast for the world-chrome driver (simulator only) */realLayout:()=>RO_LAST, /* spec 097: the last Real office layout (check-office-overlap's Real office variant) */slips:()=>realSlips(), /* spec 097: what the world draws as slips (the moments driver; simulator only) */uncrowd:()=>{agents.forEach(x=>VISITS.unpin(x.id));scheduleRender();return true;},crowd:(pid,n,from)=>{const a=agents.filter(x=>!x.parent).slice(from||0,(from||0)+n);a.forEach(x=>VISITS.pin(x.id,pid,'test'));scheduleRender();return a.length;}, /* spec 097: n main agents stand at a place (a "+N" crowd for the driver; simulator only) */crew:{state:()=>({map:{...CREW_MAP},help:{...CREW_HELP},bad:[...CREW_BAD],hasModule:!!CREW}),renderAll:()=>{renderAll();return true;},probe:()=>{try{crewPreload();syncCrew();return {ok:true,of:agents.map(x=>crewOf(x)).filter(Boolean).length};}catch(e){return {ok:false,err:String(e&&e.message)};}},openInbox:()=>{openInbox();return true;},closeInbox:()=>{closeInbox();return true;},openPanel:id=>{openPanel(id);return true;},fall:c=>{const f0=CREW.file;CREW.file=(i,p)=>i===c?'crew/art/gone.webp':f0(i,p);crewLoaded.clear();crewPreload();CREW.file=f0;return true;}}, /* spec 077 (check-crew): the character map, a render, and one character's pictures failing to load */
   readAll:(quiet)=>{const n=UNREAD.size;UNREAD.ids().forEach(id=>{UNREAD.read(id);UNREAD_AT.delete(id);});if(!quiet)scheduleRender();return n;},notes:{all:()=>[...NT.by.values()].map(x=>x.notes||[]).flat(),saveMsg:btn=>{const a=byId(ui.selected);return notesSaveMsg(a,msgInfo(btn),btn);},noCommands:()=>{const x=agents.find(q=>q.live&&!q.parent&&!slashSupported(q));return x?x.name:'';},selNow:()=>{showSelButton();const b=document.getElementById('ntSelBtn');return !!b&&!b.hidden;},open:()=>openNotes(byId(ui.selected)),close:()=>closeNotes(false),search:q=>{const f=$('ntSearch');if(!f)return false;f.value=q;f.dispatchEvent(new Event('input'));return true;},marks:{clear:()=>{document.querySelectorAll('#chat .nt-mark').forEach(x=>x.remove());document.querySelectorAll('#chat .bubble').forEach(b=>{b._nd=undefined;});return true;},run:()=>notesMarkAll(byId(ui.selected))},change:(note,patch)=>notesChange(byId(ui.selected),note,patch),rename:note=>renameNote(byId(ui.selected),note,null),plant:n=>{const a=byId(ui.selected),st=a&&notesOf(a);if(!st||!st.ok)return false;st.notes.push(n);notesPaint();if(slashUi)slashUpdate();return true;}}, /* spec 083: the check-notes driver reads the window's notes and takes the paths a click cannot */
   sizingLounges:()=>lastSizing.reduce((n,m)=>n+(m.rolled||[]).length,0), sizingMains:()=>lastSizing.reduce((n,m)=>n+m.mains.length,0), /* FR-181: the desks it is sized for (a pill does not reshape the cards) */ /* spec 001 FR-180: the finished agents the office is sized for */
