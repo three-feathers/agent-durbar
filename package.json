@@ -268,7 +268,7 @@
   "dependencies": {
     "@github/copilot-sdk": "1.0.24",
     "dompurify": "3.4.17",
-    "marked": "18.1.1"
+    "marked": "18.1.2"
   },
   "overrides": {
     "zod": "4.6.6"
