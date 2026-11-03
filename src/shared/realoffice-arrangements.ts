@@ -20,7 +20,7 @@ export const AISLE_LOBBY_FEW = 168;
 export const FACE_GRID = 19;
 /** FR-229: the face floor, crown to chin, only on a floor of 15 */
 export const FACE_FLOOR = 24;
-export const AISLE_PLATE_H = 21, AISLE_SIGN_H = 18, AISLE_PAD = 8, AISLE_COLS = 5, AISLE_STAGGER = 0.08, AISLE_CLOSE = 1.1, AISLE_G_FEW = [5, 4, 3, 2];
+export const AISLE_PLATE_H = 21, AISLE_SIGN_H = 18, AISLE_PAD = 8, AISLE_COLS = 5, AISLE_STAGGER = 0.08, AISLE_CLOSE = 1.1, AISLE_G_FEW = [5, 4, 3, 2], AISLE_LOW_LOBBY = true, AISLE_LOBBY_LOW = 116; /* the lowest lobby: lobbyRange's own floor, where every visitor stands whole and every name chip reads in full (shots-102-arcade) */
 /** the sign's shortest form: a name cut to about 30 px, counts, **+** and the room menu (FR-256); path and cost go to its hover and focus */
 export const AISLE_SIGN_MIN_W = 120;
 /** the three cabinet drawings the pack ships (`monitor.webp` big, `monitor-half.webp` small, `monitor-narrow.webp`): CRT size in grid pixels. The plan picks among these only (spec 102 FR-257). */
@@ -58,7 +58,7 @@ interface Plan { keep: boolean; g: number; gw: number; gh: number; cols: number;
  *  at the smallest choice and the floor scrolls inside itself (T203). */
 function planFor(sizes: number[], W: number, F: number, PW: number = AISLE_PERSON.w): Plan {
   const k = sizes.reduce((a, b) => a + b, 0);
-  const rowCost = (gh: number, g: number): number => AISLE_SIGN_H + cabGrid(0, gh).h * g + AISLE_PLATE_H;
+  const rowCost = (gh: number, g: number): number => AISLE_SIGN_H + cabGrid(0, gh).h * g + AISLE_PLATE_H + g - 1; /* g - 1: the cabinet snaps down to the grid */
   const plans: Plan[] = [];
   for (const keep of [true, false]) for (const g of k <= 4 ? AISLE_G_FEW : [3, 2]) for (const [name, c] of Object.entries(CABINETS)) for (let cols = 1; cols <= AISLE_COLS; cols++) for (const zig of [false, true]) {
     const rows = packSeats(sizes, cols, keep).rows, cab = cabGrid(c.gw, c.gh), slotW = (cab.w + PW + AISLE_GAP) * g;
@@ -126,8 +126,14 @@ export function aislesLayout(model: RealModel, view: { w: number; h: number }, m
   /* the place beside a cabinet is as wide as the widest standing picture of the set, so a picture centred in it never reaches a cabinet */
   const PW = Math.min(48, Math.max(AISLE_PERSON.w, ...Object.values(meta.stand || {}).flatMap((s) => Object.values(s.poses || {}).map((p) => p[0])))); /* grid px; a set drawn at another scale is not an arcade set */
   /* the lobby first: the rows bend only with what is left once it has its height */
-  const lobbyT = Math.min(k <= 4 ? AISLE_LOBBY_FEW : AISLE_LOBBY, lobbyMax), first = planFor(folders.map((f) => f.agents.length), W, Ho - lobbyT - AISLE_LANE - AISLE_PAD, PW);
-  const plan = first.fits ? first : planFor(folders.map((f) => f.agents.length), W, Ho - lobbyMin - AISLE_LANE - AISLE_PAD, PW);
+  const sizes = folders.map((f) => f.agents.length), lobbyT = Math.min(k <= 4 ? AISLE_LOBBY_FEW : AISLE_LOBBY, lobbyMax);
+  /* owner, 2026-11-03 06:59 UTC (option A): with 4 or fewer the lobby may be lower, down to its minimum, when that lets the cabinets grow; the
+     lobby height and the plan are chosen together, by the floor the cabinets and people cover (the same height on a tie keeps the higher lobby);
+     what the larger plan leaves goes back to the lobby */
+  const covered = (p: Plan): number => p.fits ? p.g * p.g * (cabGrid(p.gw, p.gh).w * cabGrid(p.gw, p.gh).h + PW * AISLE_PERSON.h) : -1;
+  let first = planFor(sizes, W, Ho - lobbyT - AISLE_LANE - AISLE_PAD, PW);
+  if (k <= 4 && AISLE_LOW_LOBBY) for (let L = lobbyT - 4; L >= Math.min(lobbyMin + AISLE_LANE, AISLE_LOBBY_LOW); L -= 2) { const p = planFor(sizes, W, Ho - L - AISLE_LANE - AISLE_PAD, PW); if (covered(p) > covered(first)) first = p; }
+  const plan = first.fits ? first : planFor(sizes, W, Ho - lobbyMin - AISLE_LANE - AISLE_PAD, PW);
   const { g, cols, rows, sl } = plan, pk = packSeats(folders.map((f) => f.agents.length), cols, plan.keep), cab = cabGrid(plan.gw, plan.gh), cabW = cab.w * g, cabH = cab.h * g, pw = PW * g, ph = AISLE_PERSON.h * g;
   const bend = 2 * sl, used = rows * (plan.rowH + bend);
   const Lb0 = Math.round(plan.fits ? Math.max(lobbyMin, Math.min(Ho - used - AISLE_PAD - AISLE_LANE, lobbyT)) : lobbyMin);
