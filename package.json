@@ -222,7 +222,7 @@
     "test:orgwords": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-orgwords.js",
     "test:mcpwords": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-mcpwords.js",
     "test:orgpolicy": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-orgpolicy.js",
-    "test:mcphealth": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-mcphealth.js",
+    "test:mcphealth": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-mcphealth.js && node dist-scripts/scripts/test-mcp-cmdcheck.js",
     "test:mcpcost": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-mcp-cost.js",
     "test:mcpcontextop": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-mcp-contextop.js",
     "test:mcpcontextipc": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-mcp-contextipc.js",

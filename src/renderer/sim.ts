@@ -1569,7 +1569,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     ];
     // ---- Fake agent-app lists (spec 069 FR-040): in memory; previews masked like main's; nothing is written anywhere ----
     type GApp = 'copilot' | 'claude' | 'codex';
-    type GView = { name: string; transport: 'stdio' | 'http' | 'sse' | 'other'; command?: string; args?: string[]; url?: string; envKeys: string[]; headerKeys: string[]; refs?: boolean };
+    type GView = { name: string; transport: 'stdio' | 'http' | 'sse' | 'other'; command?: string; args?: string[]; url?: string; envKeys: string[]; headerKeys: string[]; refs?: boolean; missing?: boolean };
     const G_LABEL: Record<GApp, string> = { copilot: 'Copilot CLI', claude: 'Claude Code', codex: 'Codex' };
     const G_FILE: Record<GApp, string> = { copilot: '~/.copilot/mcp-config.json', claude: '~/.claude.json', codex: '~/.codex/config.toml' };
     const gLists: Record<GApp, GView[]> = {
@@ -1584,6 +1584,9 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       ],
       codex: [{ name: 'context7', transport: 'stdio', command: 'npx', args: ['-y', '@upstash/context7-mcp'], envKeys: [], headerKeys: [] }],
     };
+    /* spec 058 FR-198/FR-199: `simmcplaunch=1` = a Claude Code server whose command main did not find, and a Codex list that cannot be read */
+    const simLaunch = simQs?.get('simmcplaunch') === '1';
+    if (simLaunch) gLists.claude.push({ name: 'playwright', transport: 'stdio', command: 'playwright-mcp', args: [], envKeys: [], headerKeys: [], missing: true });
     const gOff = new Set<string>();
     const simToolsOff: Record<string, Record<string, string[]>> = {};
     let gSeq = 0;
@@ -1605,7 +1608,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       return `${JSON.stringify(i.name)}: {\n${Object.entries(e).map(([k, v]) => `  ${JSON.stringify(k)}: ${v && typeof v === 'object' ? one(v) : JSON.stringify(v)}`).join(',\n')}\n}`;
     };
     const globalApi: Partial<DurbarApi> = {
-      mcpGlobalState: async () => ({ ok: true, apps: G_APPS.map((app) => ({ app, label: G_LABEL[app], file: G_FILE[app], found: true, servers: gLists[app].map((x) => ({ ...x })), off: app === 'claude' ? [...gOff] : [] })) }),
+      mcpGlobalState: async () => ({ ok: true, apps: G_APPS.map((app) => ({ app, label: G_LABEL[app], file: G_FILE[app], found: true, ...(simLaunch && app === 'codex' ? { error: 'The file could not be read.' } : {}), servers: simLaunch && app === 'codex' ? [] : gLists[app].map((x) => ({ ...x })), off: app === 'claude' ? [...gOff] : [] })) }),
       mcpGlobalPreview: async (input, apps, mode) => {
         const i = input as McpServerInput;
         const list = gApps(apps);

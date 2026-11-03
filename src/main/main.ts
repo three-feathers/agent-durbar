@@ -49,7 +49,8 @@ import * as path from 'path';
 import { PRODUCTION_DESCRIPTORS } from '../adapters/descriptors';
 import { offeredDescriptors } from '../adapters/experimental';
 import { createRegistry, detectAll } from '../adapters/registry';
-import { configureDevClaudeBin, detectorFor, setLoginPath } from '../adapters/detect';
+import { configureDevClaudeBin, detectorFor, nodeDetectEnv, setLoginPath } from '../adapters/detect';
+import { commandFound, withMissing } from './mcpcmdcheck';
 import { mergeLoginPath, nodeLoginPathDeps, readLoginShellPath } from './loginpath';
 import { renameOp, titleSyncOf } from './sessionnames';
 import { adapterForAdd, createRouter, previousSessionsOf } from '../adapters/router';
@@ -205,7 +206,17 @@ const mcp = registerMcpIpc({
   costs: () => mcpCostStore,
   globalList: (app) => { const a = globalLists.state(() => []).apps.find((x) => x.app === app); return a && !a.error ? a.servers.map((v) => v.name) : undefined; }, // spec 100 FR-012
 });
-registerMcpGlobalIpc({ lists: () => globalLists, offList: () => mcpStore?.ambientDisabled() ?? [], setOff: (k, off) => mcpStore?.setAmbientDisabled(k, off) });
+registerMcpGlobalIpc({
+  lists: () => globalLists,
+  offList: () => mcpStore?.ambientDisabled() ?? [],
+  setOff: (k, off) => mcpStore?.setAmbientDisabled(k, off),
+  // spec 058 FR-198: a file lookup over the folders detection searches, after the login shell's PATH was read (once, at most 3 s)
+  check: async (s) => {
+    await loginPathReady();
+    const env = nodeDetectEnv();
+    return withMissing(s, (c) => commandFound(c, env));
+  },
+});
 /** Files the user picked through the native dialog; only these can be attached. */
 const pickedFiles = new Set<string>();
 /** Private folder for pasted / dropped files (removed on quit). */

@@ -199,5 +199,52 @@
     for(const r of servers)if(r.attention)attention++;
     return {servers,attention,chats};
   }
-  return {stateOf,offBy,iconSvg,hintFor,callWord,callHint,signInHint,plain,aggregate,reasonOf,whenText,diagnostics,RANK:RANK.slice(),ICON_NAMES:Object.keys(ICONS)};
+  /* Spec 058 FR-201: the suggested fix per reason key, fixed text; Agent Durbar never runs it (the person presses it where it is).
+     ctx = {file} (a list's file label, `~/...`, for `config`). Unknown keys get the `unknown` fix. */
+  const FIXES={
+    'auth':'Sign in again: Show opens the chat’s MCP list, with Sign in (or the steps to sign in from a terminal).',
+    'not-found':'Install the command, or put its full path in the server’s entry. Then restart the server, or start a new chat.',
+    'policy':'Your organization’s sign-in rules refused it, usually a managed-device check. Sign in again using a browser your organization allows, or ask your administrator.',
+    'refused':'Check the server’s address or port and that the server is running; another program may use the port. Then press Restart.',
+    'crashed':'Open Details for the server’s own error, fix its command or settings, then press Restart.',
+    'timeout':'Press Restart. If it times out again, check your network or how long the server takes to start.',
+    'permission':'Allow the command to run (its file permissions), then press Restart.',
+    'disconnected':'Press Restart, and check that the server still runs or can be reached.',
+    'unknown':'Open Details or Copy diagnostics to see what the agent app reported.'
+  };
+  function fixFor(key,ctx){
+    if(key==='config'){const f=ctx&&ctx.file?plain(ctx.file,120):'';return 'Fix the entry in '+(f||'the agent app’s MCP list')+'. Agent Durbar reads it again when Settings opens.';}
+    return typeof key==='string'&&own(FIXES,key)?FIXES[key]:FIXES.unknown;
+  }
+  /* Spec 058 FR-199 part 1: findings from `mcp:globalState` alone (no session): a list that could not be read, and a stdio server whose
+     command main did not find (FR-198) that new sessions would start. One finding per server name over the apps' lists.
+     Returns [{key, kind:'list', name, where, reason, rkey, fix}]; names and labels are plain text (the caller escapes). */
+  function fileFindings(g){
+    const out=[];
+    if(!g||g.ok!==true||!Array.isArray(g.apps))return out;
+    const byName=new Map();
+    for(const a of g.apps){
+      if(!a||typeof a!=='object')continue;
+      const label=plain(a.label||a.app,40), file=plain(a.file,120);
+      if(typeof a.error==='string'&&a.error){out.push({key:'list:'+String(a.app),kind:'list',name:label+'’s MCP list',where:file,reason:'Could not be read',rkey:'config',fix:fixFor('config',{file})});continue;}
+      const off=new Set(Array.isArray(a.off)?a.off:[]);
+      for(const v of Array.isArray(a.servers)?a.servers:[]){
+        if(!v||v.missing!==true||!okName(v.name)||off.has(v.name))continue;
+        const f=byName.get(v.name);
+        if(f){if(!f.apps.includes(label))f.apps.push(label);continue;}
+        byName.set(v.name,{key:'cmd:'+v.name,kind:'list',name:plain(v.name,80),apps:[label],reason:REASONS['not-found'],rkey:'not-found',fix:fixFor('not-found')});
+      }
+    }
+    for(const f of byName.values()){f.where=f.apps.join(', ')+(f.apps.length>1?' lists':' list');delete f.apps;out.push(f);}
+    return out;
+  }
+  /* Spec 058 FR-199 part 2: one finding for a running chat's server from its `mcp` report entry (FR-090's reason), or for a failed tool
+     call with the `policy` word (FR-193); null when the entry needs nothing. chat = {id, name, app}. */
+  function chatFinding(x,chat,policy){
+    if(!x||!okName(x.name)||!chat)return null;
+    const r=policy===true?{key:'policy',word:'Blocked by your organization’s access policy'}:reasonOf(x);
+    if(!r)return null;
+    return {key:'chat:'+String(chat.id)+'\0'+x.name,kind:'chat',chatId:String(chat.id),name:plain(x.name,80),where:plain(chat.name,80)+(chat.app?' ('+plain(chat.app,40)+')':''),reason:r.word,rkey:r.key,fix:fixFor(r.key)};
+  }
+  return {stateOf,offBy,iconSvg,hintFor,callWord,callHint,signInHint,plain,aggregate,reasonOf,whenText,diagnostics,fixFor,fileFindings,chatFinding,RANK:RANK.slice(),ICON_NAMES:Object.keys(ICONS)};
 })());

@@ -16,7 +16,11 @@ interface Words {
   reasonOf: (x: unknown) => { key: string; word: string } | null;
   whenText: (since: unknown, now?: number) => string;
   diagnostics: (o: unknown, redact: unknown) => string;
+  fixFor: (key: unknown, ctx?: { file?: string }) => string;
+  fileFindings: (g: unknown) => Finding[];
+  chatFinding: (x: unknown, chat: unknown, policy?: boolean) => Finding;
 }
+interface Finding { key: string; kind: string; name: string; where: string; reason: string; rkey: string; fix: string; chatId?: string }
 interface AggChat { id: string; name: string; folder: string; entry: { name: string; status?: string; error?: string }; state: { key: string; word: string } }
 interface AggRow { name: string; chats: AggChat[]; parts: { key: string; word: string; n: number }[]; summary: string; icon: string; cls: string; attention: boolean }
 interface Agg { servers: AggRow[]; attention: number; chats: number }
@@ -287,5 +291,43 @@ assert.ok(Date.now() - t0 < 500, 'a long text is read in linear time');
     assert.strictEqual(W.reasonOf({ status: 'failed', error: t })?.word, 'Refused: needs sign-in', t);
     assert.match(W.hintFor({ status: 'failed', error: t, app: 'X' }), /needs you to sign in/, t);
   }
+}
+// spec 058 FR-201 (T169): a fix per reason key, fixed text; unknown and prototype keys get the "unknown" fix; config names the file
+{
+  for (const k of ['auth', 'not-found', 'policy', 'refused', 'crashed', 'timeout', 'permission', 'disconnected', 'unknown']) assert.ok(W.fixFor(k).length > 20, k);
+  assert.match(W.fixFor('policy'), /organization/);
+  assert.match(W.fixFor('not-found'), /full path/);
+  for (const k of ['__proto__', 'constructor', 'toString', 'nope', undefined]) assert.strictEqual(W.fixFor(k), W.fixFor('unknown'), String(k));
+  assert.match(W.fixFor('config', { file: '~/.codex/config.toml' }), /Fix the entry in ~\/\.codex\/config\.toml\./);
+  assert.ok(!/‮/.test(W.fixFor('config', { file: 'a‮b' })), 'the file label is flattened');
+}
+// FR-199 part 1 (T169): file findings: an unreadable list, a missing command once per name over the lists, switched-off servers skipped
+{
+  const g = { ok: true, apps: [
+    { app: 'copilot', label: 'Copilot CLI', file: '~/.copilot/mcp-config.json', servers: [{ name: 'pw', missing: true }, { name: 'off-one', missing: true }], off: ['off-one'] },
+    { app: 'claude', label: 'Claude Code', file: '~/.claude.json', servers: [{ name: 'pw', missing: true }, { name: 'ok' }, { name: '', missing: true }], off: [] },
+    { app: 'codex', label: 'Codex', file: '~/.codex/config.toml', error: 'The file could not be read.', servers: [{ name: 'hidden', missing: true }], off: [] },
+  ] };
+  const f = W.fileFindings(g);
+  assert.deepStrictEqual(f.map((x: { key: string }) => x.key), ['list:codex', 'cmd:pw']);
+  assert.strictEqual(f[1].where, 'Copilot CLI, Claude Code lists');
+  assert.strictEqual(f[1].reason, 'Not installed (command not found)');
+  assert.strictEqual(f[0].rkey, 'config');
+  assert.ok(!JSON.stringify(f).includes('could not be read.'), 'the list\'s own error text is not shown, only the fixed words');
+  for (const bad of [null, {}, { ok: false, apps: [] }, { ok: true, apps: 'x' }, { ok: true, apps: [null, 3] }]) assert.deepStrictEqual(W.fileFindings(bad), []);
+}
+// FR-199 part 2 (T169): chat findings: failed / needs-sign-in with FR-090's reason, the policy word, nothing for a running server; no error text
+{
+  const chat = { id: 'a1', name: 'Ada', app: 'Claude Code' };
+  const t = W.chatFinding({ name: 'linear', status: 'needs-auth', error: 'token ghp_secret expired' }, chat);
+  assert.strictEqual(t.rkey, 'auth');
+  assert.strictEqual(t.where, 'Ada (Claude Code)');
+  assert.ok(!JSON.stringify(t).includes('ghp_'), 'never the error text');
+  assert.strictEqual(W.chatFinding({ name: 'b', status: 'failed', errorClass: 'not-found' }, chat).rkey, 'not-found');
+  assert.strictEqual(W.chatFinding({ name: 'b', status: 'failed', error: 'connect ECONNREFUSED 127.0.0.1:3000' }, chat).rkey, 'refused');
+  assert.strictEqual(W.chatFinding({ name: 'b', status: 'connected' }, chat), null);
+  assert.strictEqual(W.chatFinding({ name: 'b' }, chat, true).rkey, 'policy');
+  assert.strictEqual(W.chatFinding({ name: '', status: 'failed' }, chat), null);
+  assert.strictEqual(W.chatFinding({ name: 'b', status: 'failed' }, null), null);
 }
 console.log('[058] mcpwords: PASS');

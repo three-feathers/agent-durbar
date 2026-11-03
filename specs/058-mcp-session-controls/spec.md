@@ -1617,7 +1617,7 @@ Codex) starts the servers inside one chat's session (FR-002). There is no app-wi
   chat. The state is in words, never colour alone.
 - **FR-201** **Suggested fixes, fixed text, never run by Agent Durbar** (`DurbarMcpWords.fixFor(key, ctx)`): the person presses the
   fix in the chat's MCP dialog or in Settings.
-  - sign-in needed or expired (`auth`): "Sign in again: Show opens the chat's MCP list; press Sign in there."
+  - sign-in needed or expired (`auth`): "Sign in again: Show opens the chat's MCP list, with Sign in (or the steps to sign in from a terminal)."
   - command not found (`not-found`, live or FR-198): "Install the command, or put its full path in the server's entry. Then restart the
     server, or start a new chat."
   - Entra Conditional Access (`policy`): FR-194's words: "Your organization's sign-in rules refused it, usually a managed-device check.
