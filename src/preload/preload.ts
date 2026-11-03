@@ -80,6 +80,7 @@ const api: DurbarApi = {
   onHarnessUpdates: (cb) => sub('harness:updatesChanged', cb),
   harnessVisible: (on) => ipcRenderer.invoke('harness:visible', on === true),
   setCheckUpdatesAtStart: (on) => ipcRenderer.invoke('settings:setCheckUpdatesAtStart', on),
+  setMcpSignInRefresh: (on) => ipcRenderer.invoke('settings:setMcpSignInRefresh', on === true), // spec 058 FR-213
   harnessPaste: (text) => ipcRenderer.invoke('harness:paste', text),
   harnessCancel: () => ipcRenderer.invoke('harness:cancel'),
   harnessOpenPage: (kind) => ipcRenderer.invoke('harness:openPage', kind),
@@ -98,6 +99,7 @@ const api: DurbarApi = {
   onHeldChanged: (cb) => sub('heldmig:changed', cb),
   onHeldStopped: (cb) => sub('heldmig:stopped', cb),
   onOrgNote: (cb) => sub('agents:orgNote', cb),
+  onMcpSignInRefresh: (cb) => sub('agents:mcpSignInRefresh', cb), // spec 058 FR-208, FR-211
   onRemoteUrl: (cb) => sub('agents:remoteUrl', cb),
   exportTheme: (id) => ipcRenderer.invoke('theme:export', id),
   setCap: (id, credits) => ipcRenderer.invoke('agents:setCap', id, credits),

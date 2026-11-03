@@ -15,6 +15,7 @@ import {
   MAX_TOOL_OUTPUT, announceRule, brewInfoCmd, brewOutdatedCmd, classifyFailure, copilotVersionFromPath, decide, decideClaudeChannels, lookupLatest, npmCheck, npmOwns, pathWithToolDir, parseBrewInfo, parseBrewOutdated,
   parseNpmView, parseVersionField, parseWingetList, pathFor, policyView, sourceLabel, sourceOf, startCheckAllowed, versionFromCaskroom, versionFromPackageJson, versionFromWingetPath, wingetCheck, WINGET_IDS, WINGET_TERMS_REASON,
 } from '../shared/updatecheck';
+import { maskHomePaths, redact } from '../shared/redact';
 import type { Announced, CheckCmd, CheckResult, LookupGet, PolicyView, UpdatePolicy, UpdateSource } from '../shared/updatecheck';
 
 export const APPS: readonly SetupKind[] = ['claude', 'codex', 'copilot'];
@@ -210,7 +211,8 @@ export class UpdateChecker {
     try {
       return { ...base, ...(await this.compare(app, src, installed, opts)), installed, checkedAt: this.d.wall() };
     } catch (e) {
-      return this.fail(app, src, shortReason(e), installed);
+      const detail = e instanceof ToolFailure ? e.detail : undefined;
+      return { ...this.fail(app, src, shortReason(e), installed), ...(detail ? { detail } : {}) };
     }
   }
 
@@ -234,7 +236,7 @@ export class UpdateChecker {
   }
 
   /** Runs one tool command with the owning tool's path (a missing tool is a short reason, never a guess). */
-  private async tool(c: CheckCmd, file: string): Promise<string> {
+  private async tool(c: CheckCmd, file: string, acceptExit1?: (stdout: string) => boolean): Promise<string> {
     const env = this.d.detectEnv;
     // npm starts `node` through `env`: the folder of that npm (and the login shell's folders) go on this child's PATH (FR-042)
     const trusted = c.tool !== 'npm' || this.d.trustedPath(file);
@@ -243,9 +245,11 @@ export class UpdateChecker {
     if (r.timedOut) throw new Error('timed out');
     // 127 = the shell could not find a program, ENOENT = the file itself is gone: say what to do, not a bare number (FR-042)
     if (r.errorCode === 'ENOENT' || r.code === 127) throw new Error(`${c.tool === 'npm' ? 'npm or node' : c.tool} was not found${trusted ? '' : ', and the npm folder is not trusted'}`);
+    // `brew outdated` exits 1 when something IS outdated, and still prints its JSON (#1081): only that command, only code 1, only JSON that names the cask
+    if (acceptExit1 && !r.errorCode && r.code === 1 && acceptExit1(r.stdout)) return r.stdout;
     if (r.errorCode || r.code !== 0) {
       const cls = classifyFailure({ code: r.code, errorCode: r.errorCode, text: `${r.stderr}\n${r.stdout}`.slice(-2000), platform: this.d.detectEnv.platform });
-      throw new Error(cls === 'network' ? 'network problem' : cls === 'admin' ? 'not allowed' : `exit ${r.code ?? r.errorCode ?? '?'}`);
+      throw new ToolFailure(cls === 'network' ? 'network problem' : cls === 'admin' ? 'not allowed' : `exit ${r.code ?? r.errorCode ?? '?'}`, failureDetail(r.stderr));
     }
     return r.stdout;
   }
@@ -275,7 +279,7 @@ export class UpdateChecker {
         let flagged = info.outdated === true;
         if (info.outdated === undefined || info.autoUpdates) {
           // the first answer has no usable `outdated` (or the cask updates itself): the second run, with --greedy only for a self-updating cask
-          const o = parseBrewOutdated(await this.tool(brewOutdatedCmd(src.cask, info.autoUpdates), file), src.cask);
+          const o = parseBrewOutdated(await this.tool(brewOutdatedCmd(src.cask, info.autoUpdates), file, (out) => { const o = parseBrewOutdated(out, src.cask); return o !== undefined && o !== null; }), src.cask);
           if (o === undefined) throw new Error('unexpected answer');
           flagged = o !== null;
           if (o) latest = o.current;
@@ -319,6 +323,23 @@ export class UpdateChecker {
     if (r.code !== 0 && !/source agreements|terms of transaction|no installed package found|no applicable upgrade|no newer package versions/i.test(text)) throw new Error(`exit ${r.code ?? '?'}`);
     return text;
   }
+}
+
+/** A failed tool run: the short reason is the message; `detail` is the masked last line of its stderr (#1081). */
+class ToolFailure extends Error {
+  constructor(message: string, readonly detail?: string) { super(message); }
+}
+export const DETAIL_MAX = 120;
+/** The last non-empty line of stderr for the card: home folders as ~, secrets masked, at most DETAIL_MAX characters. Never throws. */
+export function failureDetail(stderr: string | undefined): string | undefined {
+  try {
+    const lines = String(stderr ?? '').slice(-2000).split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    const last = lines[lines.length - 1];
+    if (!last) return undefined;
+    // mask first, then cut: a secret straddling the cut is already gone
+    const m = maskHomePaths(redact(last)).replace(/[\u0000-\u001f\u007f]/g, ' ');
+    return m.length > DETAIL_MAX ? `${m.slice(0, DETAIL_MAX - 1)}…` : m;
+  } catch { return undefined; }
 }
 
 /** A short reason for the card: a known short word, else a generic one. Raw output is never used. */

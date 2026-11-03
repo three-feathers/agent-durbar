@@ -2,6 +2,7 @@
 # Add a new suite on its own line in the middle of the list, not at the end (two PRs appending at the end conflict). Blank lines and # comments are ignored.
 test:safetext
 test:rendersyntax
+test:perfrecord
 test:permissions
 test:attachments
 test:vscode
@@ -28,8 +29,10 @@ test:credits
 test:site
 test:compressshots
 test:changelog
+test:releasevideo
 test:specsindex
 test:stillhighlights
+test:orgwords
 test:handoff
 test:toolusage
 test:usagestore
@@ -49,6 +52,7 @@ test:copilotcap
 test:mcpsession
 test:mcpcall
 test:mcpsignin
+test:mcpsigninrefresh
 test:places
 test:floornav
 test:cuttext
@@ -188,3 +192,4 @@ test:prereview
 test:mcpcost
 test:mcpcontextop
 test:mcpcontextipc
+test:featureinventory

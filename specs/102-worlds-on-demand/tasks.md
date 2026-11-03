@@ -190,14 +190,24 @@ The new fields go into `worldpack.ts` (T171's list) when #955 lands; until then 
 
 ### RA4: status and motion (one PR)
 
-- [ ] T213 Marquee, glow, bubble and flourish per FR-260's table, from `lightFor`. Test: `test:realoffice-layout` for the pure table over every state and flag, with `lampWords` unchanged; `shots-102-arcade`: reduced motion, Serious mode and forced colours: `document.getAnimations()` empty, states still differ, words remain; error's glow inside its own slot [FR-260].
-- [ ] T214 Shared beat and 4 people phases, `steps()`, `opacity` and `transform` only. Test: `test:realoffice-assets` on `@keyframes`; `shots-102-arcade`: all flashes report one phase from `getAnimations()`; flashes under 3 a second; hidden window: 0 frames; a mutant with its own delay per marquee fails [FR-260, FR-261, SC-024].
-- [ ] T215 **Measure first.** Pixel dissolve by static masks; a plain stepped fade beside it, frames and idle CPU, then the one that holds. Test: `shots-102-arcade`: only `opacity` and `transform` animate; no node added by a status update; no ghost, one body at a time; none under reduced motion; `read:` a recording, as #979 was judged [FR-262].
-- [ ] T216 **Measure first.** `check-perf --record` for `retro`, 4 mixes, day and night, against Photo office on the same machine, plus chase on and off for Q2. Test: `sim:` the record (never an assert, 097 FR-187); `real:` by T231 [FR-261, SC-024].
+- [x] T213 Marquee, glow, bubble and flourish per FR-260's table, from `lightFor`. Test: `test:realoffice-layout` for the pure table over every state and flag, with `lampWords` unchanged; `shots-102-arcade`: reduced motion, Serious mode and forced colours: `document.getAnimations()` empty, states still differ, words remain; error's glow inside its own slot [FR-260].
+- [x] T214 Shared beat and 4 people phases, `steps()`, `opacity` and `transform` only. Test: `test:realoffice-assets` on `@keyframes`; `shots-102-arcade`: all flashes report one phase from `getAnimations()`; flashes under 3 a second; hidden window: 0 frames; a mutant with its own delay per marquee fails [FR-260, FR-261, SC-024].
+- [ ] T263 What T215 leaves: `read:` a recording of the dissolve, judged as #979 was [FR-262].
+- [x] T215 (the rest is T263) **Measure first.** Pixel dissolve by static masks; a plain stepped fade beside it, frames and idle CPU, then the one that holds. Test: `shots-102-arcade`: only `opacity` and `transform` animate; no node added by a status update; no ghost, one body at a time; none under reduced motion; `read:` a recording, as #979 was judged [FR-262].
+- [ ] T264 What T216 leaves: the `real:` measure, by T231 [FR-261, SC-024].
+- [x] T216 (a scratch sampler, macOS only; the rest is T264) **Measure first.** `check-perf --record` for `retro`, 4 mixes, day and night, against Photo office on the same machine, plus chase on and off for Q2. Test: `sim:` the record (never an assert, 097 FR-187); `real:` by T231 [FR-261, SC-024].
 
 ### RA5: Light (one PR)
 
-- [ ] T217 `WORLD_SETS.retro` with day (Retro Pixel's values, moved) and night; `setWorld` and `worldContrast` take the light. Test: `test:theme-tokens`: every pair at AA in both lights and forced colours; a mutant dimming night's ink fails; cream surfaces at night [FR-263, SC-023].
+- [x] T273 Nothing covers a screen in the arcade; a pill with nowhere to go docks at the floor's bottom edge. Test: `shots-102-arcade` [FR-256, owner's look 2026-11-03].
+- [x] T274 A folder sign runs on over the free floor after its zone; a name keeps 8 characters. Test: `test-realoffice-aisles`, `shots-102-arcade` [FR-256].
+- [x] T267 Nobody cut by a cabinet: the place beside a cabinet fits the widest standing picture; asleep stands (replaced the same day: asleep sits, T272). Test: `test-realoffice-aisles`, `shots-102-arcade` painted pixels [FR-256, owner 2026-11-03].
+- [x] T268 The floor is used: a best-fill plan in staggered rows (a zigzag was tried and removed, see the spec), a short last row in the middle, never two folders mixed. Test: `test-realoffice-aisles`, `shots-102-arcade` [FR-256, owner 2026-11-03].
+- [x] T269 Four cabinet bodies in four colours, with marquee trim and side art; the body follows the seat order. Test: `test-realoffice-assets`, `test-realoffice-aisles`, `shots-102-arcade` [FR-306].
+- [x] T270 A folder of 4 or fewer is one group under one sign; a small room stands close and centred, people outside; the bodies' silhouettes differ. Test: `test-realoffice-aisles`, `shots-102-arcade` [FR-256, FR-306, relayed review 2026-11-03].
+- [x] T271 A small room is drawn bigger: scale up to 5 with 4 agents or fewer, the plan covering the most floor, text and tickets growing with the scale. With 4 or fewer the lobby may come down to 116 px, chosen with the plan by coverage (option A). Test: `test-realoffice-aisles` [FR-256, owner 2026-11-03].
+- [x] T272 The drawn asleep frames merged and kept by the full build; no plate says "undefined". Test: `shots-102-arcade` [FR-259, relayed 2026-11-03].
+- [ ] T217 (withdrawn in part, owner 2026-11-03: night only; one dark `WORLD_SETS.retro`, `data-ui`, built; no light choice) `WORLD_SETS.retro` with day (Retro Pixel's values, moved) and night; `setWorld` and `worldContrast` take the light. Test: `test:theme-tokens`: every pair at AA in both lights and forced colours; a mutant dimming night's ink fails; cream surfaces at night [FR-263, SC-023].
 - [ ] T218 `wall-night`, `floor-night`, `welcome-night` in the drawing; only the shown light fetched; switching drops the other. Test: `shots-102-arcade` request log; memory row with `check-perf --record` [FR-252, SC-023].
 - [ ] T219 **Light** group under the entry: radios, keyboard, screen reader, tokens; stored beside `world`; hidden for any other world with no tab stop; default Day; bad value Day; never follows the system (`prefers-color-scheme` emulated dark changes nothing). Test: `shots-102-arcade` at both sizes; `Layout` byte-equal in both; `test:realoffice-layout` for parsing `__proto__`, numbers, long strings; a mutant following the system fails [FR-251, SC-023].
 
@@ -237,6 +247,12 @@ Other specs: #921 (097 P1), #936 and 097 T156..T159 (gate), 098's checks, 096 (P
 
 **Parallel**: T010, T011 in P1; worlds in P4 (limited by art batches and the owner's looks, not by code); T055, T058 in P5.
 
+## Delta 2026-11-02: helpers as kids and the Terminal world's row (FR-271, FR-272)
+
+- [ ] T233 The `panes` arrangement: pure layouts (groups, main, tiled) for 1 to 15 agents, joining FR-226's list. Test: `test:realoffice-layout`; a status change gives equal rectangles; mutant: reorder on status [FR-272]
+- [ ] T234 Terminal world's build after the next built-in world: shades as token sets (Green, Amber, White, Paper), each through 070 D4. Test: `test:theme-tokens`, `check:office` at both sizes, owner's look; nothing in public notes before it ships [FR-272]
+- [ ] T235 `helpers` as a registered moment, required in each world's cell; kids in Flat and the Photo office first, then each world's art. Test: spec 098's registry check fails a missing cell, a simulator driver for 15 agents with helpers, 3 kids and `+N`; mutant: no `+N` [FR-271]
+
 ## Delta 2026-11-02: petrol garage, founders' garage and rooftop terrace (FR-280..FR-299)
 
 Starts after the next built-in world's stack lands (FR-296, decided Q4). All behind closed flags (FR-294, decided Q2). 0 AI credits except T250..T253: each image run waits for the owner's written yes, after checking the plan's usage (Q1). **How they land (decided, Q11, the named exception):** T244, T247's scene and T248 alone; T241, T246 on a branch; one PR per world with its table, pack, flag and cells (T259, T254); the first also brings T242, T243, T245, T249, T258. A world over 30 days behind its flag after landing goes back to the owner: open it or remove its code and pack. Each new rule gets a planted mutation; driver waits use `until()`.
@@ -269,3 +285,8 @@ Starts after the next built-in world's stack lands (FR-296, decided Q4). All beh
 - [ ] T255 Per world, separately: `check-perf --record` against Photo office in the same run; the owner's look at 3, 4, 8, 15 at both sizes with a video; `distinct-check`; the flag opens only then, and the PR that opens it brings README and `docs/features.md`, a `changelog.d` fragment and any linked screenshots, since nothing names the world publicly before it ships. Ruben's look asked for. Test: `real:` recorded by whoever has the Mac, and the owner's look in `ASSETS.md`; `test:world-catalogue` fails without it [FR-017, FR-035, FR-297, SC-036]
 - [ ] T256 Lines in 097 and 098 (FR-299) and FR-271's clay reading, Photo office included (Q5), once the PRs holding them land; real lines at narrow glass beside `aisles`; world design guide read again. Test: `npm run specs:check`, `read:` [FR-293, FR-299]
 - [ ] T257 On demand, when the store lands (decided, Q3): move each folder to `three-feathers/agent-durbar-worlds`, two pull requests by FR-243, a pinned hash, T249's line removed, a `coming` row, then `available`. Test: `test:world-catalogue`, T195's job, `real:` T043's download; a file-list test: no such art in this repository [FR-240, FR-241, FR-243, FR-294]
+
+## 2026-11-03: Settings shows worlds as pictures (FR-300..FR-305)
+
+- [ ] T265 Previews: `simscene=preview` in the simulator; a driver takes one per built-in world with its zoom origin, under 48 KB each, and the character groups by a pure script from shipped pictures, under 64 KB each; `shots:docs` retakes them. Test: the driver at 1440x900 finds three people at desks and no slip, notice or bubble in each; `test:realoffice-assets` lists them [FR-302, FR-303]
+- [ ] T266 The World section, Characters under it, Theme and Office layout removed, the migration; with or after T230. Test first: the migration table once and twice; `check-settings-worlds` at both sizes, keyboard, focus against choice, forced colours, a flagged world absent, a catalogue world greyed with no fetch on opening Settings; zoom by `transform` with no layout shift and none under Reduced motion, the catalogue thumbnail or the placeholder, character cards as big as world cards with no face under 24 px, the changelog line; mutants: a fetch on open, focus drawn like choice, a zoom that moves the grid [FR-300, FR-301, FR-303..FR-305]

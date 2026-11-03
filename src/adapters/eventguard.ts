@@ -19,6 +19,9 @@ export const SIGN_IN_ENDS = ['next-message', 'failed'] as const;
 /** Spec 058 FR-180: a `signInEnd` main accepts (anything else is ignored, as if missing). */
 export const validSignInEnd = (v: unknown): v is (typeof SIGN_IN_ENDS)[number] => oneOf(v, SIGN_IN_ENDS);
 
+/** Spec 003 FR-110: longest permission `requestId` (a tool call id); the window keeps it as a map key. */
+export const REQUEST_ID_MAX = 256;
+
 /** Spec 003 FR-102: the optional `allowedBy` of a permission (display only): a known kind and string fields, else the event is refused. */
 function allowedByProblems(a: unknown, where: string): string[] {
   if (!isObj(a)) return [`${where}: not an object`];
@@ -38,6 +41,7 @@ function permissionProblems(p: unknown, where: string): string[] {
   if (!isObj(p)) return [`${where}: not an object`];
   const out: string[] = [];
   if (!str(p.requestId) || !p.requestId) out.push(`${where}.requestId missing`);
+  else if ((p.requestId as string).length > REQUEST_ID_MAX) out.push(`${where}.requestId too long`);
   if (!str(p.kind)) out.push(`${where}.kind missing`);
   if (!str(p.summary)) out.push(`${where}.summary missing`);
   if (!oneOf(p.state, ['pending', 'approved', 'denied'])) out.push(`${where}.state is ${String(p.state)}`);

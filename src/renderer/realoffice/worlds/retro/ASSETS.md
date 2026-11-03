@@ -34,7 +34,7 @@ A hall of arcade cabinets, drawn **in code** (`scripts/build-arcade-pack.py`, fr
 ### cabinets
 
 - files: monitor.webp monitor-half.webp monitor-narrow.webp
-- source: the mockup's cabinet, **redrawn level** (spec 102 FR-258): level front, level glass and marquee (both holes the app fills), a side panel and a stepped top; four colours per strip, screen on the left (the app mirrors it with a static transform)
+- source: the mockup's cabinet, **redrawn level** (spec 102 FR-258): level front, level glass and marquee (both holes the app fills), a side panel and a stepped top; four bodies with their own silhouettes (upright with a tall side; cocktail table on four legs; racer with a seat shell and a wheel; pinball with a backbox and a flared playfield; spec 102 FR-306, owner 2026-11-03) in four colours per strip, each colour with its own marquee trim and side art, all in one cell size with the glass in one place; screen on the left (the app mirrors it with a static transform). Redrawn with `--world`, 2026-11-03
 - tool: `scripts/build-arcade-pack.py` (Pillow)
 - date: 2026-11-01
 - made by: Vikram's agent (Claude Code)

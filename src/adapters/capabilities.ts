@@ -61,6 +61,12 @@ export interface AdapterCapabilities {
    * one through its own flow (Copilot `forceReauth`), so the agent app writes the sign-in again itself. Only with `mcpSignIn`; missing = false.
    */
   readonly mcpSignInAgain?: boolean;
+  /**
+   * Spec 058 FR-207: main may call `restartMcpServer(id, name, { auto: true })` by itself, before a message after a quiet hour, so the
+   * agent app renews a remote server's sign-in with its own stored refresh token. Only with `mcpRestart`; missing = false (Codex, the
+   * Claude SDK transport: no automatic reconnect).
+   */
+  readonly mcpSignInReconnect?: boolean;
   /** `handoffSummary()` exists (spec 030 FR-034); missing = false. */
   readonly handoff?: boolean;
   /** `generateText()` exists: one prompt, no tools, no session kept (spec 040 FR-015); missing = false. */

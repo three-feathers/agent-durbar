@@ -20,7 +20,7 @@ import {
 import type { CheckResult, LookupGet, UpdatePolicy } from '../src/shared/updatecheck';
 import { FIXED_HEADERS, makeDownloadGet, makeLookupGet } from '../src/main/netget';
 import type { NetRequestFactory, NetRequestLike, NetRequestOptions } from '../src/main/netget';
-import { UpdateChecker } from '../src/main/updatecheck';
+import { UpdateChecker, failureDetail } from '../src/main/updatecheck';
 import type { CheckerDeps, UpdatesView } from '../src/main/updatecheck';
 import { wingetTermsQuestion } from '../src/shared/updatecheck';
 import { ASK_LIMIT_MS, UpdateGate, startHeldBy, updateRunRefusal } from '../src/main/updategate';
@@ -459,6 +459,39 @@ const bodyOf = (text: string | Buffer, status = 200) => (r: FakeReq) => { const 
     await d.checker.checkAll();
     assert.strictEqual(d.checker.result('codex')?.state, 'up-to-date');
     assert.strictEqual(d.checker.result('codex')?.installedNewer, true);
+  }
+  {
+    // #1081 (FR-190): `brew outdated` exits 1 when the cask IS outdated and still prints JSON; only that command and only code 1 with readable output
+    const outdated = (code: number, out: string, err = '') => checkerWith({ real: { codex: brewReal }, copies: { codex: { state: 'ready', version: '0.163.0' } }, tools: brewTools, answers: (c) => c.args[0] === 'info' ? { code: 0, stdout: fx('brew-info-codex-nooutdated'), stderr: '' } : { code, stdout: out, stderr: err } });
+    const a = outdated(1, fx('brew-outdated-codex'));
+    await a.checker.checkAll();
+    assert.deepStrictEqual([a.checker.result('codex')?.state, a.checker.result('codex')?.latest], ['update-available', '0.164.0'], 'exit 1 with JSON is an update');
+    const b = outdated(1, 'Error: something odd', 'Error: boom');
+    await b.checker.checkAll();
+    assert.deepStrictEqual([b.checker.result('codex')?.state, b.checker.result('codex')?.reason], ['could-not-check', 'exit 1'], 'exit 1 with junk stays a failure');
+    const e1 = outdated(1, fx('brew-outdated-empty'));
+    await e1.checker.checkAll();
+    assert.strictEqual(e1.checker.result('codex')?.state, 'could-not-check', 'exit 1 with an empty list does not name the cask');
+    const c0 = outdated(0, fx('brew-outdated-empty'));
+    await c0.checker.checkAll();
+    assert.strictEqual(c0.checker.result('codex')?.state, 'up-to-date', 'exit 0 with [] is up to date');
+    const c2 = outdated(2, fx('brew-outdated-codex'));
+    await c2.checker.checkAll();
+    assert.deepStrictEqual([c2.checker.result('codex')?.state, c2.checker.result('codex')?.reason], ['could-not-check', 'exit 2'], 'exit 2 stays a failure even with JSON');
+    // `brew info` exit 1 is never accepted
+    const ci = checkerWith({ real: { codex: brewReal }, copies: { codex: { state: 'ready', version: '0.163.0' } }, tools: brewTools, answers: () => ({ code: 1, stdout: fx('brew-info-codex-outdated'), stderr: '' }) });
+    await ci.checker.checkAll();
+    assert.strictEqual(ci.checker.result('codex')?.state, 'could-not-check', 'brew info exit 1 stays a failure');
+    // the detail: last stderr line, home folder as ~, token masked, capped
+    const home = '/Users/vikram';
+    const d = outdated(2, '', `first\nError: cannot read ${home}/Library/x ghp_${'a'.repeat(36)} ${'z'.repeat(300)}\n\n`);
+    await d.checker.checkAll();
+    const det = d.checker.result('codex')?.detail ?? '';
+    assert.ok(det.startsWith('Error: cannot read ~/Library/x'), det);
+    assert.ok(!det.includes('vikram') && !det.includes('ghp_'), det);
+    assert.ok(det.length <= 120, String(det.length));
+    assert.strictEqual(d.checker.result('codex')?.reason, 'exit 2');
+    assert.strictEqual(failureDetail(''), undefined);
   }
   {
     // npm: the npm that owns the copy, update notifier off for that child only
