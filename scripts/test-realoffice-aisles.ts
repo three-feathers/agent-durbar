@@ -123,9 +123,33 @@ for (const nm of NAMES) {
   for (let n = 1; n <= 14; n++) assert.ok(F[n] >= F[15], `${nm}: face at ${n} (${F[n]}) is not smaller than at 15`);
 }
 
-// ---- owner, 2026-11-03: z z is for asleep only (who sits); idle stands awake with no cue; a small group stands right under the lobby
+// ---- owner, 2026-11-03 ("bigger cabinets ... zigzag positioning for max usage"): from 2 people on, no band of bare floor over a quarter of its
+// height (above, between or below the rows); a folder's seats stay one group: its sign over its own first cabinet, no row interleaves two folders
+for (const [W, H] of SIZES) for (const dh of [0, 31]) for (const n of [2, 3, 4, 5, 6, 8, 10, 12, 15]) for (const f of [1, 3, 4].filter((x) => x <= n)) {
+  const L = aislesLayout(model(n, f), { w: W, h: H - dh }, META, SIGNS(f)), floorH = L.height - L.lobbyH;
+  const ys = L.zones.flatMap((z) => [[z.sign.y, z.box.y + z.box.h]]).sort((a, b) => a[0] - b[0]);
+  let at = L.lobbyH + (L.lane ? L.lane.h : 0), worst = 0;
+  for (const [y0, y1] of ys) { worst = Math.max(worst, y0 - at); at = Math.max(at, y1); }
+  worst = Math.max(worst, L.height - at);
+  assert.ok(worst <= floorH / 4, `${n} in ${f} at ${W}x${H - dh}: a bare band of ${Math.round(worst)} px on a floor of ${floorH}`);
+  for (const z of L.zones) {
+    const first = z.desks.reduce((m, d) => (d.slot.x < m.slot.x ? d : m), z.desks[0]);
+    assert.ok(Math.abs(z.sign.x - first.slot.x) <= 1, `${z.id}: its sign starts over its own first cabinet`);
+    for (const o of L.zones) if (o !== z && Math.abs(o.box.y - z.box.y) < 1) for (const d of o.desks) assert.ok(d.slot.x + d.slot.w <= z.box.x + 1 || d.slot.x >= z.box.x + z.box.w - 1, `${o.id}'s seat ${d.id} inside ${z.id}'s row part`);
+  }
+  /* FR-306: the bodies vary: at up to 4 people all differ, from 8 on all four are on the floor */
+  const bodies = new Set(L.zones.flatMap((z) => z.desks.map((d) => d.body)));
+  assert.strictEqual(bodies.size, Math.min(4, n), `${n} in ${f} at ${W}x${H - dh}: ${bodies.size} cabinet bodies`);
+  /* a short last row stands in the middle (3 is a triangle, not an L) */
+  const ds = L.zones.flatMap((z) => z.desks), lastY = Math.max(...ds.map((d) => d.slot.y)), last = ds.filter((d) => Math.abs(d.slot.y - lastY) < 1);
+  if (last.length < ds.filter((d) => Math.abs(d.slot.y - ds[0].slot.y) < 1).length) {
+    const mid = (Math.min(...last.map((d) => d.slot.x)) + Math.max(...last.map((d) => d.slot.x + d.slot.w))) / 2;
+    assert.ok(Math.abs(mid - W / 2) <= 0.05 * W, `${n} in ${f} at ${W}x${H - dh}: the short last row is not in the middle (${Math.round(mid)} of ${W})`);
+  }
+}
+
+// ---- owner, 2026-11-03: z z is for asleep only (who sits); idle stands awake with no cue
 assert.deepStrictEqual([aisleStatus('idle', false).cue, aisleStatus('asleep', false).cue], ['none', 'zz']);
-for (const [W, H] of SIZES) for (const n of [1, 3, 4]) { const L = aislesLayout(model(n, 1), { w: W, h: H }, META); const top = Math.min(...L.zones.map((z) => z.sign.y)); assert.ok(top - (L.lobbyH + (L.lane ? L.lane.h : 0)) <= 24, `${n} at ${W}: the row starts ${top - L.lobbyH} px under the lobby`); }
 
 // ---- owner, 2026-11-03: asleep sits on a stool, whole beside the cabinet (the seated frame `sit`, not a standing one)
 {

@@ -204,12 +204,15 @@
   function clock(e, ms) { for (const a of e.getAnimations()) if (a.animationName) a.startTime = onStep(ms); } /* the CSS loops only: a walk under way keeps its own time */
 
   /* the typing rig: a wrapper with the body's movement on the body's clock, over it a head and two hands cut from the same picture (spec Changes 2026-11-01) */
-  /* spec 102 FR-257: the cabinet: one of the world's drawings, a strip of colour variants; the colour stays with the session */
-  function cabinetOf(dc, meta, cab, k, state) {
+  /* spec 102 FR-257, FR-306: the cabinet: one of the world's drawings, a strip of bodies in colour variants; the colour (with its marquee
+     trim and side art) stays with the session, the body follows the seat order, so neighbours differ */
+  function cabinetOf(dc, meta, cab, k, state, body) {
     dc.classList.toggle('st-idle', state === 'idle'); /* FR-260: dim by opacity: a shade would darken the floor beside it too */
     const kind = cab.gw === meta.monitor.big.glass[2] ? 'big' : cab.gw === meta.monitor.small.glass[2] ? 'small' : 'narrow', m = meta.monitor[kind];
     let h = 0; for (const c of k) h = (h * 31 + c.charCodeAt(0)) >>> 0;
-    const url = 'url("' + WD + m.file + '")', size = m.cells * 100 + '% 100%', pos = ((h % m.cells) / Math.max(1, m.cells - 1)) * 100 + '% 0';
+    const nb = m.bodies || 1, cell = ((body || 0) % nb) * (m.cells / nb) + (h % (m.cells / nb));
+    const url = 'url("' + WD + m.file + '")', size = m.cells * 100 + '% 100%', pos = (cell / Math.max(1, m.cells - 1)) * 100 + '% 0';
+    dc.dataset.body = String(cell / (m.cells / nb) | 0);
     if (dc.style.backgroundImage !== url) dc.style.backgroundImage = url;
     if (dc.style.backgroundSize !== size) dc.style.backgroundSize = size;
     if (dc.style.backgroundPosition !== pos) dc.style.backgroundPosition = pos;
@@ -373,7 +376,7 @@
           const ini = el(art, 'i:' + k, 'div', 'ro-initials'); const r = 0.5 * lay.u; box(ini, { x: d.slot.x + 0.05 * d.slot.w + 0.42 * lay.u - r / 2, y: d.desk.y - r - 6, w: r, h: r }); ini.dataset.for = k; text(ini, initials(a.name));
         }
         const dc = el(art, 'd:' + k, 'div', 'ro-desk' + (d.narrow ? ' narrow' : '') + (a.asleep ? ' asleep' : '') + (lay.cabinet ? ' ro-cab' + (d.facing === 'right' ? ' mir' : '') : '')); box(dc, d.desk); dc.dataset.for = k;
-        if (lay.cabinet) cabinetOf(dc, meta, lay.cabinet, k, d.state);
+        if (lay.cabinet) cabinetOf(dc, meta, lay.cabinet, k, d.state, d.body);
         else { const dk = dc.firstChild || dc.appendChild(document.createElement('img')); dk.style.height = px(d.desk.full); img(dk, 'desk.webp'); }
         /* the monitor: the glass in the art; its text sits with the chrome, above the lights (FR-044), and repaints on its own (FR-033) */
         const sc = el(art, 'm:' + k, 'div', 'ro-screen st-' + d.state + (lt.glow === 'off' ? ' off' : '') + (a.asleep ? ' asleep' : '')); box(sc, d.screen); sc.dataset.for = k;

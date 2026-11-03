@@ -2,6 +2,7 @@
 """Builds the Retro arcade world pack and the Retro pixel people set (spec 102 FR-250..FR-259, T201, T206, T207).
 
   python3 -I scripts/build-arcade-pack.py <interop-dir> [<repo>]       build into src/renderer/realoffice/{worlds,sets}/retro
+  python3 -I scripts/build-arcade-pack.py --world [<repo>]              the world only (no art cache): wall, floor, cabinets, fixtures
   python3 -I scripts/build-arcade-pack.py --selftest                    the checks that need no art (a frame off the grid is refused, same bytes twice)
 
   <interop-dir>  the art cache's crew/interop folder: final/retro (people r1..r8) and new7/final (r9..r15), 8x frames, and prompts/
@@ -9,7 +10,7 @@
 
 What it makes (dev only, not run in CI, output committed and checked by `npm run test:realoffice-assets`):
   world: wall and floor in a day and a night light (drawn here, a few flat colours, from the mockup's code), three cabinet strips
-         (four colours each; level glass, side panel, stepped top: spec 102 FR-258), nine fixtures, a glow strip, a console.
+         (four bodies in four colours each; level glass, side panel, stepped top: spec 102 FR-258), nine fixtures, a glow strip, a console.
   set:   15 people x 17 frames, ONE FILE PIXEL PER GRID PIXEL, lossless (VP8L, no alpha-quality loss), drawn on screen at an integer scale.
 Every picture is lossless WebP; two runs give the same bytes. A frame whose 8x blocks are not uniform is refused (T201), except the
 three listed in RESAMPLED, which are shrunk by a block vote and recorded as such in ASSETS.md. Needs Pillow."""
@@ -99,49 +100,111 @@ P = dict(k='#0b0b1a', navy='#1d2b53', plum='#7e2553', green='#008751', brown='#a
 BODY = ['#2a2142', '#1f2a52', '#34223a', '#22303d']; TRIM = ['#c2467f', '#2a8fc9', '#d98a12', '#1fae5a']
 
 # ---------------------------------------------------------------------------------------------------------------- cabinet (level: FR-258)
-def cab_front(Fw, Hf, gw, gh, body, trim):
+BODIES = ['upright', 'cocktail', 'racer', 'pinball']   # spec 102 FR-306 (owner 2026-11-03: "make arcade look different"): one cell rectangle, four bodies
+
+def marquee_trim(c, Fw, trim, m):
+    """the frame around the marquee hole: a neon line, bulbs, a checker or three stripes (the hole itself stays for the app's name)"""
+    R = c.R
+    if m == 0: R(trim, 3, 2, Fw - 6, 1); R(trim, 3, 10, Fw - 6, 1)
+    elif m == 1:
+        for x in range(3, Fw - 3, 2): R(P['yellow'] if x % 4 == 3 else P['cream'], x, 1, 1, 1); R(P['yellow'] if x % 4 == 1 else P['cream'], x, 11, 1, 1)
+    elif m == 2:
+        for x in range(2, Fw - 2): R(trim if x % 2 else P['k'], x, 1, 1, 1); R(P['k'] if x % 2 else trim, x, 2, 1, 1); R(trim if x % 2 else P['k'], x, 10, 1, 1); R(P['k'] if x % 2 else trim, x, 11, 1, 1)
+    else: R(P['pink'], 2, 1, Fw - 4, 1); R(P['blue'], 2, 2, Fw - 4, 1); R(P['blue'], 2, 10, Fw - 4, 1); R(P['yellow'], 2, 11, Fw - 4, 1)
+
+def cab_front(Fw, Hf, gw, gh, body, trim, kind=0, m=0):
     c = C(Fw, Hf); R = c.R
     R(P['k'], 0, 0, Fw, Hf); R(body, 1, 1, Fw - 2, Hf - 2); R(trim, 1, 1, 1, Hf - 2)
-    R(P['k'], 2, 1, Fw - 4, 11); R('#3a3158', 2, 1, Fw - 4, 1); c.clear(4, 3, Fw - 8, 7)           # marquee: a hole the app's HTML fills
+    R(P['k'], 2, 1, Fw - 4, 11); R('#3a3158', 2, 1, Fw - 4, 1); marquee_trim(c, Fw, trim, m); c.clear(4, 3, Fw - 8, 7)   # marquee: a hole the app's HTML fills
     by, bh = 13, gh + 10
     R('#3b3354', 2, by, Fw - 4, bh); R(P['lav'], 2, by, Fw - 4, 1); R(P['lav'], 2, by, 1, bh); R('#17142a', 2, by + bh - 1, Fw - 4, 1); R('#17142a', Fw - 3, by, 1, bh)
-    c.clear(5, by + 5, gw, gh)                                                                      # glass: a hole
+    if kind == 1:                                                                                   # cocktail table: a thick round bezel in the trim colour
+        R(trim, 3, by + 1, Fw - 6, 1); R(trim, 3, by + bh - 2, Fw - 6, 1); R(trim, 3, by + 1, 1, bh - 2); R(trim, Fw - 4, by + 1, 1, bh - 2)
+    c.clear(5, by + 5, gw, gh)                                                                      # glass: a hole, the same place in every body
     for a, b in ((5, by + 5), (5 + gw - 1, by + 5), (5, by + 5 + gh - 1), (5 + gw - 1, by + 5 + gh - 1)): R('#3b3354', a, b, 1, 1)
-    R(P['k'], 3, by + bh - 3, 2, 1)
-    yd = by + bh
+    yd, yl = by + bh, by + bh + 10
     R(P['k'], 0, yd, Fw, 10); R('#4a4068', 1, yd + 1, Fw - 2, 2); R('#2f2750', 1, yd + 3, Fw - 2, 6)
-    R(P['dg'], round(Fw * .2), yd + 5, 1, 3); R(P['red'], round(Fw * .2) - 1, yd + 3, 3, 2)
-    for f, col in ((.44, P['red']), (.54, P['yellow']), (.64, P['blue']), (.76, P['lime'])):
-        R(P['k'], round(Fw * f), yd + 3, 4, 4); R(col, round(Fw * f) + 1, yd + 3, 2, 2)
-    yl = yd + 10
+    def stick(x, y, col): R(P['dg'], x, y + 2, 1, 3); R(col, x - 1, y, 3, 2)
+    def button(x, y, col): R(P['k'], x, y, 4, 4); R(col, x + 1, y, 2, 2)
+    if kind == 0:                                                                                   # upright: one stick, four buttons
+        R(P['k'], 3, by + bh - 3, 2, 1); stick(round(Fw * .2), yd + 3, P['red'])
+        for f, col in ((.44, P['red']), (.54, P['yellow']), (.64, P['blue']), (.76, P['lime'])): button(round(Fw * f), yd + 3, col)
+    elif kind == 1:                                                                                 # cocktail: a stick and a button for each of two players
+        for x0, col in ((round(Fw * .14), P['blue']), (round(Fw * .62), P['pink'])): stick(x0 + 1, yd + 3, col); button(x0 + 5, yd + 3, P['yellow'])
+    elif kind == 2:                                                                                 # racer: a wheel and a gear lever
+        cx, cy = round(Fw / 2), yd + 5
+        for dx, dy in ((-3, -1), (-3, 0), (-3, 1), (3, -1), (3, 0), (3, 1), (-2, -2), (-1, -3), (0, -3), (1, -3), (2, -2), (-2, 2), (-1, 3), (0, 3), (1, 3), (2, 2)): R(P['lg'], cx + dx, cy + dy, 1, 1)
+        R(trim, cx - 2, cy, 5, 1); R(P['k'], cx, cy, 1, 3)
+        R(P['dg'], round(Fw * .82), yd + 4, 1, 5); R(P['cream'], round(Fw * .82) - 1, yd + 3, 3, 2); stick(round(Fw * .16), yd + 3, P['red'])
+    else:                                                                                           # pinball: a playfield with two flippers and three bumpers
+        R('#14324a', 1, yd + 1, Fw - 2, 8); R(trim, 1, yd + 1, Fw - 2, 1)
+        for f, col in ((.3, P['red']), (.5, P['blue']), (.7, P['lime'])): R(col, round(Fw * f) - 1, yd + 3, 3, 2)
+        cx = round(Fw / 2)
+        for i in range(4): R(P['yellow'], cx - 7 + i, yd + 6 + i // 2, 1, 1); R(P['yellow'], cx + 6 - i, yd + 6 + i // 2, 1, 1)
+        R(P['cream'], Fw - 4, yd + 4, 1, 4)
     R('#1a1530', 2, yl, Fw - 4, Hf - yl - 1)
     cx0 = round(Fw / 2) - 8; R(P['k'], cx0, yl, 16, 4); R(P['yellow'], cx0 + 3, yl + 1, 2, 2); R(P['yellow'], cx0 + 11, yl + 1, 2, 2)
     R(P['k'], 1, Hf - 2, Fw - 2, 1)
+    if kind in (1, 3):                                                                              # legs: a pedestal (cocktail) or two legs (pinball) under the panel
+        c.clear(1, yl, Fw - 2, Hf - yl - 1)
+        if kind == 1: R(P['k'], cx0 + 2, yl, 12, Hf - yl); R(body, cx0 + 3, yl, 10, Hf - yl - 1); R(trim, cx0 + 3, yl, 1, Hf - yl - 1); R(trim, cx0 + 12, yl, 1, Hf - yl - 1)
+        else:
+            for x in (3, Fw - 6): R(P['k'], x, yl, 3, Hf - yl); R(trim, x + 1, yl, 1, Hf - yl - 1)
     return c
 
-def cab_side(Sd, Hf, trim):
+def cab_side(Sd, Hf, trim, art=0):
+    """the side panel's art: stripes, a zigzag, stars or chevrons in the trim colour"""
     c = C(Sd, Hf); R = c.R
     R(P['k'], 0, 0, Sd, Hf); R('#16122a', 1, 1, Sd - 2, Hf - 2)
-    for y in range(18, 62, 6): R(trim, 2, y, 1, 2); R(trim, 3, y + 2, 1, 2); R(trim, 4, y + 4, 1, 2)
+    for y in range(18, Hf - 10, 6):
+        if art == 0: R(trim, 2, y, 1, 2); R(trim, 3, y + 2, 1, 2); R(trim, 4, y + 4, 1, 2)
+        elif art == 1:
+            for i, x in enumerate((1, 2, 3, 4, 5, 4)): R(trim, x, y + i, 1, 1)
+        elif art == 2:
+            if (y // 6) % 2: R(trim, 3, y, 1, 3); R(trim, 2, y + 1, 3, 1)
+            else: R(P['cream'], 2 if (y // 12) % 2 else 4, y + 1, 1, 1)
+        else: R(trim, 2, y, 1, 1); R(trim, 3, y + 1, 1, 1); R(trim, 4, y + 2, 1, 1); R(trim, 3, y + 3, 1, 1); R(trim, 2, y + 4, 1, 1)
     R('#3a3158', 1, 1, Sd - 2, 1)
     return c
 
-def cabinet(gw, gh, variant):
-    """one level cabinet, the screen on the left and the side panel on the right (the app mirrors it, with a static transform, for the other side)"""
+# the top of the side panel, one step per column from the front: an upright's stepped top, a table's low edge, a racer's seat back, a pinball's slope
+SIDE_TOP = {0: [2, 3, 3, 4, 4, 5, 5], 1: [13, 13, 13, 13, 13, 13, 13], 2: [8, 6, 5, 5, 6, 8, 11], 3: [13, 15, 17, 19, 21, 23, 25]}
+
+def cabinet(gw, gh, variant, kind=0):
+    """one level cabinet, the screen on the left and the side panel on the right (the app mirrors it, with a static transform, for the other side).
+    Every body fills the same cell with its glass and marquee in the same place, so nothing of it reaches the person beside it or the plate."""
     Fw, Sd = gw + 10, 7; Hf = gh + 38; CW, CH = Fw + Sd, max(Hf + 3, 73)
-    f, s = cab_front(Fw, Hf, gw, gh, BODY[variant % 4], TRIM[variant % 4]), cab_side(Sd, Hf, TRIM[variant % 4])
+    trim = TRIM[variant % 4]
+    f, s = cab_front(Fw, Hf, gw, gh, BODY[variant % 4], trim, kind, variant % 4), cab_side(Sd, Hf, trim, (variant + kind) % 4)
     c = C(CW, CH); oy = CH - Hf - 3
     c.R('#000000', 0, oy + Hf, CW, 2, .38)
     c.draw(f, 0, oy)
     c.clear(0, oy, 3, 1); c.clear(Fw - 3, oy, 3, 1); c.clear(0, oy + 1, 1, 1); c.clear(Fw - 1, oy + 1, 1, 1)   # stepped crown
-    for i, off in enumerate([2, 3, 3, 4, 4, 5, 5]):                                                         # side panel, stepped top
+    yd = oy + gh + 23                                                                                      # the panel's top
+    if kind == 1:                                                                                           # cocktail: round corners, a glossy black top
+        for i, n in enumerate((5, 3, 2, 1, 1)): c.clear(0, oy + i, n, 1); c.clear(Fw - n, oy + i, n, 1)
+        c.R('#0e0b1c', 1, oy + 12, 1, yd - oy - 12); c.R('#0e0b1c', Fw - 2, oy + 12, 1, yd - oy - 12)
+    if kind == 2:                                                                                           # racer: a hood and painted flanks
+        for i, n in enumerate((4, 2, 1)): c.clear(0, oy + i, n, 1); c.clear(Fw - n, oy + i, n, 1)
+        c.R(trim, 1, oy + 3, 1, yd - oy - 3); c.R(trim, Fw - 2, oy + 3, 1, yd - oy - 3); c.R(P['k'], 0, oy + 3, 1, yd - oy - 3); c.R(P['k'], Fw - 1, oy + 3, 1, yd - oy - 3)
+    if kind == 3:                                                                                           # pinball: a backbox narrower than the playfield under it
+        c.clear(0, oy, 2, yd - oy); c.clear(Fw - 2, oy, 2, yd - oy)
+        c.R(P['k'], 2, oy, 1, yd - oy); c.R(P['k'], Fw - 3, oy, 1, yd - oy); c.R(trim, 3, oy + 12, 1, yd - oy - 12)
+    if kind == 2: c.R(trim, 3, oy + 12, Fw - 6, 1)                                                          # racer: a stripe under the marquee
+    if kind == 3:                                                                                           # pinball: lights along the backbox top
+        for x in range(4, Fw - 4, 3): c.R(P['red'] if x % 2 else P['yellow'], x, oy, 1, 1)
+    for i, off in enumerate(SIDE_TOP[kind]):
+        if kind == 2: off = max(off, 2)
         c.im.alpha_composite(s.im.crop((i, 0, i + 1, Hf)).resize((1, Hf - off), Image.NEAREST), (Fw + i, oy + off))
-    c.R('#3a3158', Fw, oy + 2, Sd, 1)
+        if kind == 2 and i in (1, 2, 3, 4, 5):                                                              # racer: the seat, outlined in the trim colour
+            c.R(trim, Fw + i, oy + Hf - 30, 1, 20); c.R('#0e0b1c', Fw + i, oy + Hf - 29, 1, 18) if i in (2, 3, 4) else None
+    c.R('#3a3158', Fw, oy + SIDE_TOP[kind][0], Sd, 1)
     return c, dict(cell=[CW, CH], glass=[5, oy + 18, gw, gh], marquee=[4, oy + 3, Fw - 8, 7], oy=oy)
 
 def cab_strip(gw, gh):
-    cells = [cabinet(gw, gh, v) for v in range(4)]; cw, ch = cells[0][0].w, cells[0][0].h
-    strip = C(cw * 4, ch)
+    """16 cells: cell = body * 4 + colour (spec 102 FR-306)"""
+    cells = [cabinet(gw, gh, v, b) for b in range(4) for v in range(4)]; cw, ch = cells[0][0].w, cells[0][0].h
+    strip = C(cw * len(cells), ch)
     for i, (c, _) in enumerate(cells): strip.draw(c, i * cw, 0)
     return strip, cells[0][1]
 
@@ -421,10 +484,10 @@ def write_world(repo):
     mon = {}
     for key, (name, gw, gh) in dict(big=('monitor.webp', 75, 50), small=('monitor-half.webp', 56, 32), narrow=('monitor-narrow.webp', 44, 32)).items():
         strip, g = cab_strip(gw, gh); total += save(strip.im, f'{W}/{name}'); cw, chh = g['cell']
-        mon[key] = dict(file=name, cells=4, cell=[cw, chh], screenRect=[round(v, 4) for v in (g['glass'][0] / cw, g['glass'][1] / chh, g['glass'][2] / cw, g['glass'][3] / chh)],
+        mon[key] = dict(file=name, cells=16, bodies=4, cell=[cw, chh], screenRect=[round(v, 4) for v in (g['glass'][0] / cw, g['glass'][1] / chh, g['glass'][2] / cw, g['glass'][3] / chh)],
                         marqueeRect=[round(v, 4) for v in (g['marquee'][0] / cw, g['marquee'][1] / chh, g['marquee'][2] / cw, g['marquee'][3] / chh)], glass=g['glass'], marquee=g['marquee'])
     total += save(glow().im, f'{W}/glow.webp'); total += save(console().im, f'{W}/desk.webp')
-    meta = dict(formatVersion=1, id='retro', name='Retro arcade', defaultSet='retro', pixelArt=True, arrangement='aisles', wall='wall.webp', floorTile=[24, 24],
+    meta = dict(formatVersion=1, id='retro', name='Retro arcade', defaultSet='retro', pixelArt=True, arrangement='aisles', css='world.css', wall='wall.webp', floorTile=[24, 24],
                 night=dict(wall='wall-night.webp', floor='floor-night.webp'), monitor=mon, glow=dict(file='glow.webp', cells=STATES, cell=[56, 15]),
                 desk=[40, 22], fixtures=fx, fixtureTop=ftop, floorLine=FL, wallSize=[WALL_W, WALL_H + SHADOW], bandRows=WALL_H)
     with open(os.path.join(W, 'world.json'), 'w') as f: f.write(json.dumps(meta, indent=1, sort_keys=True) + '\n')
@@ -469,7 +532,7 @@ def write_notes(repo, meta, sections, prompts):
          '### room-day', '', '- files: wall.webp floor.webp', '- source: `drawBackdrop` of the mockup (`layouts/mock/arcade.js`), day palette: brick wall with a stepped rim and three floppy disks, a diamond lattice floor tile (24 x 24, repeats), a soft dithered shadow under the wall (6 rows, partly transparent)',
          '- tool: `scripts/build-arcade-pack.py` (Pillow)', '- date: 2026-11-01', "- made by: Vikram's agent (Claude Code)", '- approved by: Vikram, 2026-11-01 (the mockup\'s look; the rebuilt pictures have not been looked at by him)', '- reference: the mockup', '- prompt: none, drawn in code', '- cut: the wall is 720 x 118 grid pixels, its four neon signs in the middle so a crop at another scale keeps them', '- licence: MIT', '',
          '### room-night', '', '- files: wall-night.webp floor-night.webp', '- source: as room-day, the night palette: dark navy brick, neon tubes with a dithered halo', '- tool: `scripts/build-arcade-pack.py` (Pillow)', '- date: 2026-11-01', "- made by: Vikram's agent (Claude Code)", '- approved by: Vikram, 2026-11-01 (the mockup\'s look)', '- reference: the mockup', '- prompt: none, drawn in code', '- cut: as room-day; not listed in `lightSets` yet because its `welcome-night` part is not drawn (spec 102 FR-252: all three or none)', '- licence: MIT', '',
-         '### cabinets', '', '- files: monitor.webp monitor-half.webp monitor-narrow.webp', '- source: the mockup\'s cabinet, **redrawn level** (spec 102 FR-258): level front, level glass and marquee (both holes the app fills), a side panel and a stepped top; four colours per strip, screen on the left (the app mirrors it with a static transform)', '- tool: `scripts/build-arcade-pack.py` (Pillow)', '- date: 2026-11-01', "- made by: Vikram's agent (Claude Code)", '- approved by: pending (the owner has not yet looked at the level cabinet, T200)', '- reference: the mockup and `layouts/mock/arcade-level-compare.png` (art cache)', '- prompt: none, drawn in code', '- cut: `monitor.webp` is the big cabinet for 1 to 4 people (glass 75 x 50), `monitor-half.webp` the small one (56 x 32) and `monitor-narrow.webp` a narrower one (44 x 32) for a floor too narrow for the small one with the chat open', '- licence: MIT', '',
+         '### cabinets', '', '- files: monitor.webp monitor-half.webp monitor-narrow.webp', '- source: the mockup\'s cabinet, **redrawn level** (spec 102 FR-258): level front, level glass and marquee (both holes the app fills), a side panel and a stepped top; four bodies (upright, cocktail table, sit-down racer, pinball; spec 102 FR-306, owner 2026-11-03) in four colours per strip, each colour with its own marquee trim and side art, all in one cell size with the glass in one place; screen on the left (the app mirrors it with a static transform). Redrawn with `--world`, 2026-11-03', '- tool: `scripts/build-arcade-pack.py` (Pillow)', '- date: 2026-11-01', "- made by: Vikram's agent (Claude Code)", '- approved by: pending (the owner has not yet looked at the level cabinet, T200)', '- reference: the mockup and `layouts/mock/arcade-level-compare.png` (art cache)', '- prompt: none, drawn in code', '- cut: `monitor.webp` is the big cabinet for 1 to 4 people (glass 75 x 50), `monitor-half.webp` the small one (56 x 32) and `monitor-narrow.webp` a narrower one (44 x 32) for a floor too narrow for the small one with the chat open', '- licence: MIT', '',
          '### fixtures', '', '- files: ' + ' '.join(f'fx-{f}.webp' for f in FIXTURES), '- source: the mockup\'s nine arcade things: prize counter, cartridge wall, service panel, pinball table, attract-mode cabinet, change machine, coin vault, ticket dispenser, repair bench; drawn at the mockup\'s size (34 to 48 grid pixels tall, a person is 72: spec 102 Q6 asks whether to redraw them taller)', '- tool: `scripts/build-arcade-pack.py` (Pillow)', '- date: 2026-11-01', "- made by: Vikram's agent (Claude Code)", '- approved by: Vikram, 2026-11-01 (the mockup\'s look)', '- reference: the mockup', '- prompt: none, drawn in code', '- cut: every fixture on one canvas as tall as the tallest (48), standing on the bottom row', '- licence: MIT', '',
          '### glow', '', '- files: glow.webp', '- source: the mockup\'s dithered pool of light, one cell (56 x 15) per state in the app\'s day status colours', '- tool: `scripts/build-arcade-pack.py` (Pillow)', '- date: 2026-11-01', "- made by: Vikram's agent (Claude Code)", '- approved by: pending', '- reference: the mockup', '- prompt: none, drawn in code', '- cut: seven cells: working, thinking, waiting, error, limit, done, idle', '- licence: MIT', '',
          '### console', '', '- files: desk.webp', '- source: a low console and stool for a person who is asleep (spec 102 FR-259): a **placeholder**, nobody has looked at it', '- tool: `scripts/build-arcade-pack.py` (Pillow)', '- date: 2026-11-01', "- made by: Vikram's agent (Claude Code)", '- approved by: pending', '- reference: none', '- prompt: none, drawn in code', '- cut: 40 x 22 grid pixels', '- licence: MIT', '', '## Removed', '', 'None.', '']
@@ -491,6 +554,7 @@ def selftest():
 
 if __name__ == '__main__':
     if len(sys.argv) > 1 and sys.argv[1] == '--selftest': selftest(); sys.exit(0)
+    if len(sys.argv) > 1 and sys.argv[1] == '--world': write_world(sys.argv[2] if len(sys.argv) > 2 else os.getcwd()); sys.exit(0)
     if len(sys.argv) > 1 and sys.argv[1] == '--sit': add_sit(sys.argv[2] if len(sys.argv) > 2 else os.getcwd()); sys.exit(0)
     if len(sys.argv) < 2: raise SystemExit(__doc__)
     I = sys.argv[1].rstrip('/'); REPO = sys.argv[2] if len(sys.argv) > 2 else os.getcwd()

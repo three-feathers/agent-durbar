@@ -119,11 +119,11 @@ export function problems(files: Map<string, Buffer>, peopleJson: string, md: str
   for (const [pid, parts] of Object.entries((meta as { rig?: Record<string, Record<string, unknown>> }).rig || {})) for (const key of Object.keys(parts)) want.add(`${pid}-rig${key}.webp`); /* spec Changes 2026-11-01 */
   for (const k of ['wall', 'monitor'] as const) { const v = (meta as Record<string, unknown>)[k]; if (typeof v === 'string') want.add(v); } // optional parts a world names (spec 102 FR-220)
   /* the arcade names its parts in objects (spec 102 FR-252, FR-257, FR-260): three cabinets, the night room, the glow strip */
-  const objs = meta as unknown as { monitor?: Record<string, { file: string; cells: number; screenRect: number[]; marqueeRect: number[] }>; night?: { wall: string; floor: string }; glow?: { file: string; cells: string[] } };
+  const objs = meta as unknown as { monitor?: Record<string, { file: string; cells: number; bodies?: number; screenRect: number[]; marqueeRect: number[] }>; night?: { wall: string; floor: string }; glow?: { file: string; cells: string[] } };
   if (objs.monitor && typeof objs.monitor === 'object') for (const [k, mv] of Object.entries(objs.monitor)) {
     want.add(mv.file);
     const inUnit = (a: number[]): boolean => Array.isArray(a) && a.length === 4 && a.every((v) => v >= 0 && v <= 1) && a[0] + a[2] <= 1.0001 && a[1] + a[3] <= 1.0001 && a[2] > 0 && a[3] > 0;
-    if (!inUnit(mv.screenRect) || !inUnit(mv.marqueeRect) || mv.cells !== 4) out.push(`monitor ${k}: screenRect, marqueeRect (fractions of a cell) and 4 cells needed (spec 102 FR-221, FR-257)`);
+    if (!inUnit(mv.screenRect) || !inUnit(mv.marqueeRect) || mv.cells !== 4 * (mv.bodies || 1)) out.push(`monitor ${k}: screenRect, marqueeRect (fractions of a cell) and 4 cells per body needed (spec 102 FR-221, FR-257, FR-306)`);
   }
   if (objs.night) { want.add(objs.night.wall); want.add(objs.night.floor); }
   if (objs.glow) want.add(objs.glow.file);
@@ -246,7 +246,7 @@ if (worldIds.includes('retro')) {
     assert.deepStrictEqual(m.cell, [cab.w, cab.h], `the ${k} cabinet's drawing is ${cab.w} x ${cab.h}, as the plan assumes`);
     assert.deepStrictEqual(m.glass.slice(2), [CABINETS[k].gw, CABINETS[k].gh], `the ${k} glass is the plan's`);
     const info = webpInfo(w.files.get(k === 'big' ? 'monitor.webp' : k === 'small' ? 'monitor-half.webp' : 'monitor-narrow.webp') as Buffer);
-    assert.deepStrictEqual([info.width, info.height], [cab.w * 4, cab.h], `${k}: four cells in a strip`);
+    assert.deepStrictEqual([info.width, info.height], [cab.w * 16, cab.h], `${k}: four bodies in four colours in a strip`);
   }
   // the set: 15 people x 18 frames (17 and the seated `sit` of 2026-11-03), no more, no fewer; a person missing a required frame fails (T207)
   const SEATED = ['typeA', 'typeB', 'waveA', 'waveB', 'think', 'rest'], VIEWA = ['type', 'book', 'knock', 'letter', 'counter'], FACE = ['face-book', 'face-coffee', 'face-knock', 'face-letter', 'face-runA', 'face-runB', 'sit'];
