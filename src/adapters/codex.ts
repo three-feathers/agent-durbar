@@ -1232,13 +1232,55 @@ export class CodexAdapter implements AgentAdapter {
     return { result: { answers: out } };
   }
 
-  /** FR-147: the session's MCP servers from `mcpServerStatus/list`; a failure leaves the list as it was. */
+  /**
+   * Spec 012 FR-164: the names a status read asks about, one `mcpServerStatus/list` each. Codex 0.163.0 starts a short-lived copy of
+   * every local server for a list without `serverName` (`real:` 2026-11-03, issue #1077), so the names come from what Durbar already
+   * knows: the servers it sent with the thread and the ones Codex announced (`mcpServer/startupStatus/updated`, the user's own and
+   * `codex_apps` included). A server Codex has not announced yet appears with its notification.
+   */
+  private mcpNames(live: Live): string[] {
+    return [...new Set([...Object.keys(live.options.mcpServers ?? {}), ...live.mcp.keys()])].filter((n) => n.length > 0 && n.length <= 64);
+  }
+
+  /**
+   * Spec 012 FR-164, FR-031 of spec 069: one server's `mcpServerStatus/list` item on the thread's own connection (it starts nothing),
+   * or undefined when Codex does not list it. If Codex ignores `serverName` the server may be on a later page: follow `nextCursor`
+   * (change 2026-10-22, review on #499). A request failure throws.
+   */
+  private async readMcpServer(live: { rpc?: { request(method: string, params: unknown): Promise<unknown> }; threadId?: string }, name: string, deadline?: Promise<'expired'>): Promise<unknown | 'expired'> {
+    let cursor: string | undefined;
+    for (let page = 0; page < 20; page++) {
+      const req = live.rpc?.request('mcpServerStatus/list', { threadId: live.threadId, serverName: name, detail: 'toolsAndAuthOnly', limit: 100, ...(cursor ? { cursor } : {}) });
+      const res = deadline ? await Promise.race([req, deadline]) : await req;
+      if (res === 'expired') return 'expired';
+      const data: unknown[] = isObj(res) && Array.isArray(res.data) ? res.data : [];
+      const srv = data.find((x) => isObj(x) && x.name === name);
+      if (srv !== undefined) return srv;
+      const next = isObj(res) && typeof res.nextCursor === 'string' && res.nextCursor ? res.nextCursor : undefined;
+      if (!next || next === cursor) break;
+      cursor = next;
+    }
+    return undefined;
+  }
+
+  /** FR-147, FR-164: the session's MCP servers, one `mcpServerStatus/list` with `serverName` each; a failure leaves the list as it was. */
   private async refreshMcp(live: Live): Promise<void> {
     live.mcpRead = true;
     try {
-      const res = await live.rpc.request('mcpServerStatus/list', { threadId: live.threadId, detail: 'toolsAndAuthOnly', limit: 100 });
+      const off = live.options.disabledMcpServers ?? [];
+      const items: unknown[] = [];
+      const names = this.mcpNames(live);
+      if (!names.length) return; // nothing is known yet: the startup notifications bring the servers (FR-164)
+      for (const name of names) {
+        if (off.includes(name)) continue; // switched off in Durbar: nothing to ask, it reads `disabled`
+        const item = await this.readMcpServer(live, name);
+        if (item !== undefined) items.push(item);
+      }
       if (this.sessions.get(live.sid) !== live) return;
-      live.mcp = new Map(codexMcpServers(isObj(res) ? res.data : undefined, live.options.disabledMcpServers ?? []).map((s) => [s.name, s]));
+      const next = new Map(live.mcp);
+      for (const n of off) if (names.includes(n)) next.set(n, { ...(next.get(n) ?? { name: n }), status: 'disabled' }); // known to Durbar and switched off
+      for (const s of codexMcpServers(items, off)) next.set(s.name, s);
+      live.mcp = next;
       for (const n of live.mcpAuthSeen ?? []) { // a re-read that still says connected does not clear a challenge seen in this session
         const s = live.mcp.get(n);
         if (s?.status === 'connected') live.mcp.set(n, { ...s, status: 'needs-auth', errorClass: 'auth' });
@@ -1271,19 +1313,10 @@ export class CodexAdapter implements AgentAdapter {
   async listMcpTools(sessionId: string, name: string): Promise<McpToolInfo[]> {
     const live = this.sessions.get(sessionId);
     if (!live || !live.rpc || !live.threadId) throw new Error('This session is not running. Send a message to start it.');
-    // change 2026-10-22 (review on #499): if Codex ignores `serverName`, the server may be on a later page: follow `nextCursor`
-    let cursor: string | undefined;
-    for (let page = 0; page < 20; page++) {
-      const res = await live.rpc.request('mcpServerStatus/list', { threadId: live.threadId, serverName: name, detail: 'toolsAndAuthOnly', limit: 100, ...(cursor ? { cursor } : {}) });
-      const data: unknown[] = isObj(res) && Array.isArray(res.data) ? res.data : [];
-      const srv = data.find((x) => isObj(x) && x.name === name);
-      if (isObj(srv)) {
-        if (typeof srv.toolsError === 'string' && srv.toolsError) throw new Error(srv.toolsError);
-        return normMcpTools(srv.tools);
-      }
-      const next = isObj(res) && typeof res.nextCursor === 'string' && res.nextCursor ? res.nextCursor : undefined;
-      if (!next || next === cursor) break;
-      cursor = next;
+    const srv = await this.readMcpServer(live, name);
+    if (isObj(srv)) {
+      if (typeof srv.toolsError === 'string' && srv.toolsError) throw new Error(srv.toolsError);
+      return normMcpTools(srv.tools);
     }
     throw new Error(`${name} is not running in this session.`);
   }
@@ -1297,25 +1330,22 @@ export class CodexAdapter implements AgentAdapter {
     if (!live || !live.rpc || !live.threadId) return Promise.resolve({ servers: [], failed: true });
     const running = this.mcpContextReads.get(sessionId);
     if (running) return running;
-    const read = this.readMcpContext(live).finally(() => this.mcpContextReads.delete(sessionId));
+    const read = this.readMcpContext(live, this.mcpNames(live).filter((n) => !(live.options.disabledMcpServers ?? []).includes(n))).finally(() => this.mcpContextReads.delete(sessionId));
     this.mcpContextReads.set(sessionId, read);
     return read;
   }
 
-  private async readMcpContext(live: { rpc?: { request(method: string, params: unknown): Promise<unknown> }; threadId?: string }): Promise<McpContextReport> {
+  private async readMcpContext(live: { rpc?: { request(method: string, params: unknown): Promise<unknown> }; threadId?: string }, names: readonly string[]): Promise<McpContextReport> {
     const limit = this.mcpContextLimitMs;
     const all: unknown[] = [];
     let timer: ReturnType<typeof setTimeout> | undefined;
     const expired = new Promise<'expired'>((r) => { timer = setTimeout(() => r('expired'), limit); });
     try {
-      let cursor: string | undefined;
-      for (let page = 0; page < 20; page++) {
-        const res = await Promise.race([live.rpc?.request('mcpServerStatus/list', { threadId: live.threadId, detail: 'toolsAndAuthOnly', limit: 100, ...(cursor ? { cursor } : {}) }), expired]);
-        if (res === 'expired') return { servers: [], failed: true };
-        if (isObj(res) && Array.isArray(res.data)) all.push(...res.data);
-        const next = isObj(res) && typeof res.nextCursor === 'string' && res.nextCursor ? res.nextCursor : undefined;
-        if (!next || next === cursor) break;
-        cursor = next;
+      // FR-164: one read per server, with `serverName` (a list without it starts a copy of every local server)
+      for (const name of names) {
+        const srv = await this.readMcpServer(live, name, expired);
+        if (srv === 'expired') return { servers: [], failed: true };
+        if (srv !== undefined) all.push(srv);
       }
     } catch {
       return { servers: [], failed: true };

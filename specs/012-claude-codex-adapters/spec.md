@@ -158,6 +158,26 @@ Spec Kit says to ask the owner when something is ambiguous. The owner was not as
 
 ## Changes
 
+### 2026-11-03: a Codex status read lists one server at a time (FR-147 amendment, FR-164, T139, issue #1077)
+
+*Found (`real:` 2026-11-03, codex-cli 0.163.0, Linux, scratch `CODEX_HOME`, 0 prompts, spec 058 T176 on #1076):* `mcpServerStatus/list` with `threadId` and no `serverName` starts a short-lived copy of **every** local (stdio) MCP server of the thread, the user's and Durbar's per-thread ones, lists it and closes it. Each such call ran every local server's command once more, in every permission mode, Read-only included (start markers per server: 1 after `thread/start`, then 2, 3, 4, 5 after four reads). A call with `serverName` reuses the thread's connection and starts nothing (markers stayed at 1).
+
+*Call sites traced (all in `src/adapters/codex.ts`; before the change every one but the fourth sent no `serverName`):*
+1. `refreshMcp` after a **loud start** (`start`, not `quiet`).
+2. `refreshMcp` with the **first message** after a quiet start (`send`, `!live.mcpRead`); a **mode or MCP switch** (`setMcpEnabled`, `relaunch`) restarts the child through `start({quiet: true})`, so its next message is this same path.
+3. `refreshMcp` after a **sign-in challenge** in an MCP tool call (`mcpAuth`), one at a time.
+4. `listMcpTools` (spec 069 FR-031): already sent `serverName`.
+5. `mcpContext` / `readMcpContext` (spec 100 FR-001): the dialog's figures, paged without `serverName`.
+6. The dialog refresh `refreshMcpStatus` (spec 058, PR #1076, not on `main` yet) calls `refreshMcp`; it needs no change of its own and inherits FR-164.
+
+**FR-164** `[IMPLEMENTED]` No Codex status read sends `mcpServerStatus/list` without `serverName`. One shared helper (`readMcpServer`, the paging of `listMcpTools` moved into it) reads one server and follows `nextCursor` (at most 20 pages, a repeated cursor ends it); `refreshMcp`, `listMcpTools` and `mcpContext` use it.
+  - The names are what Durbar already knows: the servers it sent with the thread (`mcpServers`) plus every name Codex announced with `mcpServer/startupStatus/updated` (the user's own and the built-in `codex_apps` too; `real:` both user and Durbar-only servers were announced). A server switched off in Durbar is not asked about and reads `disabled`. A server not announced yet shows when its notification arrives; with no name known a read asks nothing and emits nothing.
+  - Failure behaviour is as FR-147 says: one failed request leaves the list as it was; the sign-in marks of a challenge survive a re-read; `mcpContext` keeps one limit over all its reads and gives up with nothing when it runs out (spec 100 FR-004).
+  - The tools map for spec 069 FR-031 is unchanged (`detail: 'toolsAndAuthOnly'`).
+  - `test:` `scripts/test-codex-adapter.ts` counts the lists without `serverName` on each path above (none), builds the status list, and fails on a restored bare call (mutation-checked). `real:` the same probe with one request per server kept the markers at 1 over four reads (below). `[KNOWN GAP]` not run on macOS or Windows; not run with a signed-in account (a read of an announced server was not compared with a full list for `authStatus` of a server Codex never announced).
+
+*Probe (`real:` 2026-11-03, `DBUS_SESSION_BUS_ADDRESS` blocked, one user stdio server and one Durbar-only stdio server, start marker per server):* old call, markers after `thread/start` 1/1, after four reads 5/5; one request per server with `serverName`, 1/1 after four reads; no process left over.
+
 ### 2026-11-02: timing checks over the mask are measured against the same run (FR-080 delta, T138)
 
 *Found:* the shared mask costs more per character since T137, so fixed limits over it went red on slow runners with no change in the code they check (Windows `test:runtime-mcp`: 406 ms against a limit from a 63 ms baseline). *Changed (tests only):* every ratio or fixed-limit timing check whose code reaches `redact` or `maskShapes` now uses `assertLinearShape` (the same shape, 1/16 the size, 16 repeats, same run) or the new `assertWithinYardstick` (for what is not growth: `maskMcpText`'s cut before the URL pass against `redact` plus the pass on the cut text, the R12 "hides the rest" limit against `redact` on the same text, the `durbar_mcp_state` budget against `redact` on 1 MB). Both read this thread's CPU where Node has it. `test:` `scripts/redact-growth-lib.ts` and the suites using it. Left, because they stop before the mask: `test-redact.ts` T065, `test-mcp-tools.ts` 12l(c0). Left, as catastrophe stops only: 10 s of CPU in `assertLinearGrowth`, the `shapes` part's 10 s run. `[KNOWN GAP]` not converted, not over the mask: other suites' fixed limits, such as `test-mcpcall.ts`, `test-mcpwords.ts`, the parser cases in `test-edits.ts`, and `test-mcp-tools.ts`'s seven read tools (little masking). `EditStreams` on a long run of spaces read 46-49x for 16x the input on Node 22 in CI (Ubuntu and macOS), so that case is not a growth check. The review of #1048 explains it (Node 22.23.3): `ArgStream` masks the whole text again at each 1/8 of growth, so the characters masked grow from 1.96x the input at 12.5k to 4.58x at 50k, 6.49x at 200k and 7.36x at 800k (the 1/8 rule caps it near 9x), at a flat 1.2 to 2.2 us per character: 55 ms at 12.5k, 2397 ms at 200k (43.6x for 16x), 9155 ms at 800k. Why Node 24 reads about 14x was not checked. It is checked against ordinary text through the same path, and what keeps the path linear is counted with no clock: twice the text adds at most 7 parses, and the characters parsed stay under 10 times the text. The stall itself (about 9 s on 800k spaces, on `main` too) needs a `src/` change: issue #1052. A slowdown only in the mask below the 100 ms floor of `assertLinearGrowth` still passes, as it did.
@@ -804,7 +824,7 @@ The owner handed the Codex track to this agent ("ruben does not have chatgpt acc
   - names are checked.
   
   Codex's own servers (from its `config.toml`, and the built-in `codex_apps`) still run. State:
-  - `mcpServerStatus/list` runs at a loud start, or with the first message after a quiet start (contract C3: a quiet start emits nothing);
+  - `mcpServerStatus/list` runs at a loud start, or with the first message after a quiet start (contract C3: a quiet start emits nothing), one server at a time with `serverName` (FR-164: a list without it starts a copy of every local server);
   - `mcpServer/startupStatus/updated` notifications follow;
   - both become Durbar's `mcp` event (connected, pending, failed, needs-auth, disabled).
   
