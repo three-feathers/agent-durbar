@@ -3,3 +3,4 @@
   A small room stands close and centred, drawn up to five times bigger with 4 agents or fewer, over a lower lobby when that lets it grow, its text growing with it. Cabinets come in four bodies (upright, cocktail table, racer, pinball) and four colours. Everything is dark at night, and nobody is cut by a cabinet.
   An asleep agent sits on a stool, while an idle agent stands awake. Waiting and limit plates and away notes are dark. The "needs you" pills keep to a lane under the lobby.
   Checked by `test-realoffice-aisles`, `test-realoffice-assets` and the `shots-102-arcade` driver at 1440x900 and 1280x800.
+- **No "undefined" status** (spec 102, every world, not only behind the flag): an agent at its limit or asleep with no label of its own showed "undefined"; it now says *Limit reached* or *Asleep*, the words spec 052 FR-076 and 097 FR-120 already use. A folder sign's path now gives way before the folder's name when the font is wider than expected (seen on Linux).
