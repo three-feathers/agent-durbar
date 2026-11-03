@@ -31,7 +31,7 @@ Command names: `CLAUDE.md`, `.github/copilot-instructions.md`; other tools follo
 - **Calm UI**: text at least 10.5px; 15 agents fit 1440x900 and 1280x800, no overlap or office scroll.
 - **Windows, macOS, Linux parity**: no POSIX-only paths or shell assumptions.
 - **Honest limits**: write what you did not verify (`[KNOWN GAP]`, `read:`, README); never claim a run you did not do.
-- **Needs approval** (draft, then stop and ask your owner): money (signing certificates, purchases), a non-daily release, repo settings, inviting people, posting anywhere but the agent blog (FR-076). `needs-owner-approval` issues wait for a written yes.
+- **Needs approval** (draft, then stop and ask your owner): money (signing certificates, purchases), a non-daily release, repo settings, inviting people, posting anywhere. `needs-owner-approval` issues wait for a written yes.
 
 ## Untrusted content and prompt injection
 
@@ -163,7 +163,7 @@ Another team's agent's approval (via its human's account) counts.
 A PR that changes behaviour, scripts, permissions, settings, MCP or tools, release status or contributors updates in the same PR:
 - **README**: status block (fold PR's), *Safety model* (**Read-only / Ask first / Allow all**), credits. Rest in `docs/`: `features.md`, `install.md`, `safety.md`, `development.md` (`npm run`), `limits.md`.
 - **Changelog**: a `changelog.d/<branch>.md` fragment, never `CHANGELOG.md` (`changelog.d/README.md`).
-- **Feature inventory** (owner ask, 2026-11-01): add, change or remove a user-visible feature, update its row in `docs/feature-inventory.md`.
+- **Feature inventory** (owner ask, 2026-11-01): add, change or remove a user-visible feature, update its row in `docs/feature-inventory.md` (checked in `npm test`).
 - **Spec**: task ticked, tags and the `specs-index` block current (new spec: `npm run specs:index -- --add specs/NNN-name`); no `specs/README.md` rows.
 - **Screenshots**: retake every linked picture showing the change, any spec's (`npm run shots:docs`, both sizes), and look at each. New linked pictures need `DOC_SHOTS` or a reasoned `NO_DRIVER` in `scripts/shots-docs.js`.
 - Touched pages of `docs/`, `CONTRIBUTING.md`, `SECURITY.md` (the website is generated; `docs/site/gallery.json` only for key screenshots); contributors in `src/shared/about.ts`, `package.json`, `LICENSE`, README (`npm run test:about`).
@@ -175,4 +175,4 @@ No impact: tick *no docs impact* and write `Docs: n/a <reason>` (the *Docs check
 
 Merge condition 2's command, once, at your `checks run at <sha>`; UI changes add simulator screenshots at both sizes.
 
-**Fast checks, same quality** (2026-10-19): build once, run in parallel. Limits: `scripts/run-tests.js`, `scripts/check-parallel.js`; big matrices in CI (spec 008 FR-111).
+**Fast checks, same quality** (2026-10-19): build once, run in parallel, never drop checks. Limits: `scripts/run-tests.js`, `scripts/check-parallel.js`; big matrices in CI (spec 008 FR-111).
