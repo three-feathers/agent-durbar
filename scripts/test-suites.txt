@@ -129,6 +129,7 @@ test:crew-assets
 test:realoffice-layout
 test:realoffice-assets
 test:roomorder
+test:railorder
 test:composersize
 test:innerscroll
 test:ctxbreakdown

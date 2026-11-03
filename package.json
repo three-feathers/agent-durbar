@@ -145,6 +145,7 @@
     "test:grantlabel": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-grant-label.js",
     "test:places": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-places.js",
     "test:roomorder": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-roomorder.js",
+    "test:railorder": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-railorder.js",
     "test:floornav": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-floornav.js",
     "test:floors": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-floors.js",
     "test:renameadapters": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-rename-adapters.js",
