@@ -65,7 +65,23 @@ const shapes = [
 for (const s of shapes) clean(M.maskText(s, VALS), `maskText(${JSON.stringify(s.slice(0, 30))})`);
 assert.strictEqual(M.maskText('Fix the invoice export', VALS), 'Fix the invoice export', 'plain text is unchanged');
 assert.strictEqual(M.maskText('use **bold** here', []), 'use **bold** here', 'Markdown is kept when nothing is masked');
-assert.strictEqual(M.maskText(`**note** the ${MCPV} here`, VALS), 'note the [redacted] here', 'a value\'s mask keeps its brackets when Markdown marks are present');
+assert.strictEqual(M.maskText(`**note** the ${MCPV} here`, VALS), '**note** the [redacted] here', 'a value\'s mask keeps its brackets, and the Markdown stays as written');
+// review of PR 1098, finding 1: an MCP value that holds a Markdown mark, or is written with a Markdown escape, with a second secret in the
+// same text (so the old pass showed the mark-stripped text): never shown, with or without its mark
+for (const v of ['p@ss*w0rd!!77', 'hunter~2secret', 'abc[123]xyzQ', 'Pa`ss`word99', 'brkt]Close99x', 'esc_aped_v4lue']) {
+  const plainV = v.replace(/[*`~[\]]/g, '');
+  for (const written of [v, v.replace(/_/g, '\\_')]) {
+    for (const second of [GHP, MCPV]) {
+      const t = `the db password is ${written} ok and token ${second} end`;
+      const out = M.maskText(t, [v, MCPV]);
+      assert.ok(!out.includes(v) && !out.includes(plainV) && !out.includes(v.replace(/_/g, '')), `value ${JSON.stringify(v)} written ${JSON.stringify(written)}: ${JSON.stringify(out)}`);
+      const pad = 'word '.repeat(180);
+      const w = M.maskedWindow(pad + t + ' ' + pad, pad.length + 4, pad.length + 6, [v, MCPV]);
+      assert.ok(!w.text.includes(plainV) && !w.text.includes(v.replace(/_/g, '')), `in a window: ${JSON.stringify(v)}`);
+    }
+  }
+}
+assert.strictEqual(M.maskText('db pass abc\\_def1234 here', ['abc_def1234']), 'db pass [redacted] here', 'a value written with a Markdown escape (review: the u = u0 survivor)');
 assert.strictEqual(M.maskText('Team \u{1F469}\u200D\u{1F4BB} ok', []), 'Team \u{1F469}\u200D\u{1F4BB} ok', 'a joiner stays when it hides nothing');
 
 // 2. the window: ±600 around the hit, widened to whitespace; a secret at, across or near either edge never survives in the window
@@ -151,11 +167,23 @@ assert.ok(windows > 600, `enough windows (${windows})`);
     assert.ok(!w.text.includes('MIIEvQIBADANBgkq'), `no key body after ${JSON.stringify(begin)}: ${JSON.stringify(w.text.slice(0, 80))}`);
   }
 }
+// review of PR 1098, finding 2: the open key-block check uses KEY_BLOCK's own END grammar; an END CERTIFICATE line does not close it
+{
+  const b64 = (n: number) => Array.from({ length: n }, (_, i) => 'MIIEvQIBADANBgkqhkiG9w0BAQEFAASC' + String(i).padStart(32, 'Q')).join('\n');
+  const raw = 'key: -----BEGIN RSA PRIVATE KEY-----\n' + b64(3) + '\n-----END CERTIFICATE-----\n' + b64(40) + '\ntail findme\n' + b64(5);
+  assert.strictEqual(M.maskText(raw, []), 'key: [redacted]', 'the whole-text mask: to the end');
+  const w = M.maskedWindow(raw, raw.indexOf('findme'), raw.indexOf('findme') + 6, []);
+  assert.ok(!w.text.includes('MIIEvQIBADANBgkq'), `no key body around the hit: ${JSON.stringify(w.text.slice(0, 80))}`);
+  const closed = 'key: -----BEGIN RSA PRIVATE KEY-----\n' + b64(3) + '\n-----END RSA PRIVATE KEY-----\n' + filler(1500) + ' findme ' + filler(300);
+  const w2 = M.maskedWindow(closed, closed.indexOf('findme'), closed.indexOf('findme') + 6, []);
+  assert.ok(!w2.atStart, 'a closed block does not pull the window back');
+}
 // review finding 4: the work of a mask is estimated before it runs, and a mask over its budget throws (fail closed)
 {
   assert.strictEqual(maskWork('a'.repeat(1000)), 550, 'linear passes: 0.55 per character');
-  assert.strictEqual(maskWork('**' + 'abcdefghijklmn '.repeat(10)), Math.ceil((2 + 150) * 1.1 + 10 * 300), 'with Markdown marks: twice the linear cost, and 300 per token-like run');
-  assert.strictEqual(maskWork('x'.repeat(1000), false, 10), Math.ceil(550 + 10 * 1000 * 0.002), 'each MCP secret value: 0.002 per character');
+  assert.strictEqual(maskWork('**' + 'abcdefghijklmn '.repeat(10)), Math.ceil(152 * 2.5 + 1 * 250), 'with a split mark: 2.5 per character, and 250 per token-like run next to a mark (one here)');
+  assert.strictEqual(maskWork('**abcdefghijklmn** '.repeat(10)), Math.ceil(190 * 2.5 + 10 * 250), 'every run next to a mark counts');
+  assert.strictEqual(maskWork('x'.repeat(1000), false, 10), Math.ceil(550 + 10 * 1000 * 0.003), 'each MCP secret value: 0.003 per character');
   // re-check of the review (probes 11, 12): many MCP values make every pass slower; a value-heavy mask is over budget too (fail closed)
   {
     let plain = '';

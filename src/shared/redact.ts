@@ -191,6 +191,21 @@ const TOKEN_SHAPES: Array<RegExp | Guarded> = [
 
 /** A private key block in any spelling (PEM, OpenSSH, encrypted, PGP; lower case, runs of spaces): to its END line or, cut off, to the end of the text (the first match takes the rest, so no rescan). A PUBLIC block does not match. */
 const KEY_BLOCK = /-----BEGIN[\sA-Z0-9_-]{0,100}?PRIVATE\s{1,8}KEY(?:\s{1,8}BLOCK)?-----[\s\S]*?(?:-----END[\sA-Z0-9_-]{0,100}?PRIVATE\s{1,8}KEY(?:\s{1,8}BLOCK)?-----|$)/gi;
+/**
+ * Spec 095 (review of PR 1098, finding 2): where a private key block that `KEY_BLOCK` would mask to the end of `text` starts (its BEGIN is
+ * in `text` and no matching `-----END ... PRIVATE KEY-----` follows), else -1. The same grammar as `KEY_BLOCK`, so a `-----END CERTIFICATE-----`
+ * does not close it. Used by the conversation search to take such a block's BEGIN into a window that starts inside its body.
+ */
+export function openKeyBlockStart(text: string): number {
+  const re = new RegExp(KEY_BLOCK.source, KEY_BLOCK.flags);
+  const end = /-----END[\sA-Z0-9_-]{0,100}?PRIVATE\s{1,8}KEY(?:\s{1,8}BLOCK)?-----$/i;
+  let open = -1;
+  for (let m = re.exec(text); m; m = re.exec(text)) {
+    open = m.index + m[0].length === text.length && !end.test(m[0]) ? m.index : -1;
+    if (m[0].length === 0) re.lastIndex++;
+  }
+  return open;
+}
 /** A name that holds a secret, right before its separator (checked backwards from the separator, so `max_tokens` and `token_count` are not it). */
 const SECRET_NAMES = `(?:${['secret_?access_?key', 'session_?token', 'client_?secret', 'api_?secret', 'app_?secret', 'consumer_?secret', 'shared_?secret', 'secret_?key', 'api[_-]?key', 'access[_-]?key', 'auth[_-]?key', 'account_?key', 'sharedaccesskey', 'private[_-]?key', 'priv_?key', 'signing_?key', 'encryption_?key', 'master_?key', 'license_?key', 'service_?key', 'token', 'secret', 'password', 'passwd', 'passphrase', 'contrase(?:n|ñ)a', '_gitlab_session'].map(ci).join('|')}|(?<![A-Za-z])(?:${['pwd', 'pass', 'auth'].map(ci).join('|')}))`;
 /**
@@ -1495,9 +1510,9 @@ export function createDebugSink(file: string, env: Env, append: (file: string, d
 // ---- Notes (spec 083 FR-005, issue 699) ----
 
 /** Characters that can sit inside a token without being part of it: emphasis, code, strike, link brackets, a Markdown escape's backslash, zero-width characters. */
-const NOTE_MARK = /[*`~[\]\\​-‍﻿]/;
+export const NOTE_MARK = /[*`~[\]\\​-‍﻿]/;
 const NOTE_ESCAPABLE = '\\`*_{}[]()#+-.!~|<>';
-const NOTE_RUN = /[A-Za-z0-9_\-.+/=:@%]{12,}/g;
+export const NOTE_RUN = /[A-Za-z0-9_\-.+/=:@%]{12,}/g;
 
 /** `s` without its split marks, and for each kept character its index in `s` (plus a final entry, `s.length`). */
 function withoutMarks(s: string): { k: string; at: number[] } {

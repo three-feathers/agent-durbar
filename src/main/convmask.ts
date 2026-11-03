@@ -1,19 +1,17 @@
 /**
  * Spec 095 FR-030 (T013): the masking of the conversation search, in main, BEFORE anything is matched or cut. It is the replayed-history
- * masking, composed from the existing helpers (no copy of a rule): the MCP secret values replaced as `maskMcpText` does (spec 058 FR-067),
- * then `redactMarkdown` (spec 073 FR-014: a token split or glued by Markdown, `x**ghp_...**`), then `maskHomePaths`. Like DurbarSafeText
+ * masking, composed from the existing helpers (no copy of a rule): `maskNoteText` (spec 083 FR-005: the MCP secret values, also when a
+ * Markdown mark splits one or sits inside one, every token Markdown splits or glues, `x**ghp_...**`, then `redact`; the Markdown is kept as
+ * written; review of PR 1098, finding 1: a value holding `*`, `~`, a backtick or brackets leaked with the mark stripped), then
+ * `maskHomePaths`. Like DurbarSafeText
  * (spec 097 FR-030) the masks also read a copy without hidden characters (`unhide`, the window's own function), so a zero-width space
  * cannot hide a token. Pure: no fs, no network, no process, no log. Any failure throws, and the caller drops the hit (fail closed).
  */
-import { maskHomePaths, redact, redactMarkdown } from '../shared/redact';
+import { NOTE_MARK, NOTE_RUN, maskHomePaths, maskNoteText, openKeyBlockStart } from '../shared/redact';
 
 /** Characters of context on each side of a raw hit; the window is then widened to whitespace (never cut inside a token). */
 export const WINDOW_CHARS = 600;
-const MASK = '[redacted]';
 const FAILED = '[redaction failed]';
-const MD_ESC = /\\([\\`*_{}[\]()#+\-.!~|<>])/g;
-const MD_MARKS = /[*`~[\]]/g;
-const HAS_MARK = /[*`~[\]]/;
 
 export interface MaskLibs {
   /** DurbarSafeText.unhide (`src/renderer/safetext.js`): the text without default-ignorable and control characters (tab and line ends kept). */
@@ -27,24 +25,9 @@ export function cleanValues(values: readonly unknown[] | undefined): string[] {
   return [...out].sort((a, b) => b.length - a.length);
 }
 
-const replaceValues = (s: string, vals: readonly string[]): string => {
-  for (const v of vals) if (s.includes(v)) s = s.split(v).join(MASK);
-  return s;
-};
-
-/** One pass: values, then the Markdown-aware redact (the values also on the text without marks, where a mark may have split one), then home paths. */
+/** One pass: `maskNoteText` (values, Markdown-split and glued tokens, `redact`), then home paths. Throws when a mask failed. */
 function maskOnce(raw: string, vals: readonly string[]): string {
-  const u0 = replaceValues(raw, vals).replace(MD_ESC, '$1');
-  const u = replaceValues(u0, vals);
-  let m: string;
-  if (!HAS_MARK.test(raw.replace(MD_ESC, '$1'))) m = redact(u);
-  else {
-    // the marks come off the text as written (so a value's own `[redacted]` keeps its brackets), then the values go on that text too
-    const k0 = raw.replace(MD_ESC, '$1').replace(MD_MARKS, '');
-    const r = redactMarkdown(u, replaceValues(k0, vals));
-    m = r !== k0 ? r : redact(u); // nothing found once the marks are gone: the text keeps its Markdown
-  }
-  m = maskHomePaths(m);
+  const m = maskHomePaths(maskNoteText(raw, vals).text);
   if (typeof m !== 'string' || m.includes(FAILED)) throw new Error('mask failed');
   return m;
 }
@@ -61,20 +44,24 @@ export interface MaskedWindow {
 
 /**
  * Review of phase 1, finding 4 (FR-022, SC-003): the cost of one mask, estimated before it runs, in microseconds of the VPS (measured
- * 2026-11-03): about 0.55 per character for the linear passes, twice that when Markdown marks are present (the text is masked with and
- * without them); plus 300 per token-like run (12 or more token characters) when marks are present, since `redactMarkdown` calls `redact` on
- * each run and scans the text once more for each run it masks (300 is the cost seen under load; every run counts, so plain code is
- * overestimated); plus 0.002 per character for each MCP secret value, which every pass looks for (re-check of the review: 2 000 values on
- * 20 000 characters took 50-90 ms). Hidden characters double it (two passes).
+ * 2026-11-04 for `maskNoteText`): 0.55 per character for the linear passes; 2.5 per character when a split mark (`NOTE_MARK`) is present,
+ * plus 250 for each token-like run (`NOTE_RUN`) next to a mark, which `maskNoteText` checks with `redact` on its own; plus 0.003 per
+ * character for each MCP secret value (re-check of the review: 1 000-2 000 values over 20 000 characters took 50-108 ms). Hidden characters
+ * double it (two passes). Measured under load, so it overestimates on an idle machine.
  */
-const RUN = /[A-Za-z0-9_\-.+/=:@%]{12,}/g;
 export function maskWork(s: string, hidden = false, values = 0): number {
-  const marks = HAS_MARK.test(s);
-  const runs = marks ? (s.match(RUN)?.length ?? 0) : 0;
-  return Math.ceil((s.length * (marks ? 1.1 : 0.55) + runs * 300 + values * s.length * 0.002) * (hidden ? 2 : 1));
+  const marks = NOTE_MARK.test(s);
+  let runs = 0;
+  if (marks) {
+    for (const m of s.matchAll(new RegExp(NOTE_RUN.source, 'g'))) {
+      const i = m.index ?? 0;
+      if ((i > 0 && NOTE_MARK.test(s[i - 1])) || (i + m[0].length < s.length && NOTE_MARK.test(s[i + m[0].length]))) runs++;
+    }
+  }
+  return Math.ceil((s.length * (marks ? 2.5 : 0.55) + runs * 250 + values * s.length * 0.003) * (hidden ? 2 : 1));
 }
-/** The most one mask may cost (estimated, about 15 ms); a message's masks together get `messageWork` (convsearch.ts). */
-export const MASK_CALL_WORK = 15_000;
+/** The most one mask may cost (estimated, about 25 ms): the same as a message's whole budget (`BUDGET.messageWork`), which is what bounds a slice; a lower cap refused whole masks of mid-size texts the message budget allows (review of PR 1098). */
+export const MASK_CALL_WORK = 25_000;
 
 /** Thrown when a mask would cost more than its budget: the caller shows nothing of that message and counts it (fail closed). */
 export class MaskBudgetError extends Error {
@@ -175,9 +162,9 @@ export function createMasker(libs: MaskLibs): Masker {
         let c = valueStart(ws);
         const before = s.slice(0, c);
         const plain = unhide(before);
-        const low = plain.toLowerCase();
-        const bi = low.lastIndexOf('-----begin');
-        if (bi >= 0 && bi > low.lastIndexOf('-----end')) {
+        // review of PR 1098, finding 2: open by KEY_BLOCK's own grammar (only an END ... PRIVATE KEY closes it, not END CERTIFICATE)
+        const bi = openKeyBlockStart(plain);
+        if (bi >= 0) {
           if (plain !== before) { ws = -1; break; }
           c = Math.min(c, bi);
         }
