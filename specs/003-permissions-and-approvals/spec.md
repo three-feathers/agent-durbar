@@ -303,3 +303,7 @@ model* says the same. `[KNOWN GAP]` FR-013 itself: the scope is still not narrow
 
 - Docs only; no behaviour changes. The README *Safety model* now says each of these in plain words. The spending-limit sentence of the same PR is owned by spec 052 FR-179.
 
+
+### 2026-11-01: FR-026 stays; the restart prompt only changes place (design sweep; spec 052 FR-218..FR-221)
+
+The sweep asked whether the prompt about folders restored in Allow all should ask only once. **Owner decision (Vikram, 2026-11-01): the recommendation, keep asking on every start.** Asking once would weaken this safety rule. So FR-012's supersession, FR-025, FR-026, FR-030 and FR-091 stand as written, with the *restored* note, the mode chip and its tooltip unchanged. **Two things change besides its look.** The bar under the top bar becomes the calm floating card, with **Change…** and **Dismiss** replacing *Make it ask me first* and **Keep as it is** (spec 052 FR-219). And in Flat with 15 agents the card shrinks by itself to the lock after 8 seconds unless hovered or holding focus (052 FR-221), so a person may not read it at that start. **The compensating controls:** a red lock with the folder count stays until no folder is in Allow all, its name says so, and pressing it reopens the card; and a driver asserts that the next start asks again. "One toast at startup" in FR-026 stays a toast or becomes that card when the build shows the two say the same; the PR says which. No task here: T223, T252 and T214 of spec 052 carry it.

@@ -48,3 +48,5 @@
 - [x] T064 Review on #503 (change 2026-10-22): `excludedTools` form checked in the SDK (`read:`); Codex user-server merge `[KNOWN GAP]`; tool names outside `[A-Za-z0-9_.-]` cannot be turned off (UI disabled, main refuses) [FR-062, FR-063]
 - [x] T068 Review on #503 (Paco's agent, change 2026-10-22): repaint focus keyed on server + tool with fallback to the server's tools toggle; driver focus + Space with a shared tool name; unchangeable boxes `aria-disabled` + visible reason [FR-060, FR-063, FR-064]
 - [x] T066 Second review on #492 (Paco's agent, change 2026-10-22): copies refuse unknown fields and non-string values (named), Codex `env` numbers and multi-line strings not copyable, copy into a 0644 file leaves it 0600 (via T065), copy review wording; mutation-checked [FR-006, FR-023]
+- [x] T069 FR-067 (change 2026-11-03): a *Tools* button with icon and count per row; tool rows inside the card, description clamped to 2 lines; driver `shots-069-mcp-tools` (25 long tools, contrast, size, keyboard, overflow)
+- [x] T070 FR-068 (change 2026-11-03): per-tool "about" sizes and the row figure over the ticked tools; driver step and mutations

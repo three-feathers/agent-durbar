@@ -236,6 +236,7 @@ export const COPILOT_CAPABILITIES: AdapterCapabilities = Object.freeze({
   mcpTools: true, // spec 069 FR-031: rpc.mcp.listTools (@experimental; read: SDK 1.0.22-1.0.26 rpc.d.ts; not run on a real account)
   mcpContext: 'reported', // spec 100 FR-001: rpc.metadata.getContextAttribution (@experimental; real: Copilot CLI 1.0.98 / SDK 1.0.22, T031 2026-11-02: `toolDefinition:<server>-<tool>` entries, `null` through the first turn; not seen: `deferTools: auto`, a plan without the call, Windows, macOS)
   mcpRestart: true, // spec 058 FR-012: rpc.mcp.restartServer (@experimental; real 2026-10-21, runtime 1.0.22), else disable then enable (fallback read: only)
+  mcpSignInReconnect: true, // spec 058 FR-207: the automatic reconnect calls rpc.mcp.restartServer only and re-reads `list` 1.5 s later (real: T176/T177, runtime 1.0.103)
   mcpSignInAgain: true, // spec 058 FR-164: oauth.login forceReauth ("clears any cached OAuth token for the server and runs a full new authorization", read: SDK 1.0.22-1.0.26 rpc.d.ts; not run on a real account)
   mcpSignIn: true, // spec 058 FR-064: rpc.mcp.oauth.login (@experimental; read: SDK 1.0.22-1.0.26 rpc.d.ts; real: worked once, macOS 2026-10-23, one server; the rest in T105)
   mcpSignInSteps: 'If Sign in is not available, sign in from the Copilot CLI: run `copilot`, type `/mcp auth {name}` and finish in your browser. Then use Restart session with these servers. This may not carry over to this session (seen on 2026-10-23).', // FR-068
@@ -1793,10 +1794,11 @@ export class CopilotAdapter implements AgentAdapter {
    * 1.0.22, @experimental) when the runtime has it; otherwise that one server off, then on (Q3). Never `stopServer` (it acts on the
    * session's host, Q2) and never `reload` (every server). The new state follows as `session.mcp_server_status_changed`.
    */
-  async restartMcpServer(sessionId: string, name: string): Promise<void> {
+  async restartMcpServer(sessionId: string, name: string, opts: { auto?: boolean } = {}): Promise<void> {
     const live = this.sessions.get(sessionId);
     if (!live) throw new Error('This session is not running. Send a message to start it.');
     const mcp = live.session.rpc.mcp as unknown as { restartServer?: (p: { serverName: string }) => Promise<void>; enable(p: { serverName: string }): Promise<void>; disable(p: { serverName: string }): Promise<void> };
+    if (opts.auto === true) return this.autoReconnect(sessionId, live, name);
     if (typeof mcp.restartServer === 'function') {
       try {
         await mcp.restartServer({ serverName: name });
@@ -1810,6 +1812,39 @@ export class CopilotAdapter implements AgentAdapter {
     }
     await mcp.disable({ serverName: name });
     await mcp.enable({ serverName: name });
+  }
+
+  /** Spec 058 FR-207: how long the automatic reconnect waits before it reads the list again (`real:` T177: `connected` 1.5 s after). */
+  private autoReadDelayMs = 1500;
+
+  /**
+   * Spec 058 FR-207, FR-214 (review item 2): main's automatic reconnect. `rpc.mcp.restartServer` **only**: a runtime without it (or that
+   * answers MethodNotFound) rejects, so an automatic reconnect never switches a server off and on. `real:` T177 (runtime 1.0.103): the call
+   * rejects "requires authentication" even when the runtime refreshed the sign-in, so its answer is not the outcome: the list is read once
+   * 1.5 s later and that report (the usual `mcp` event) decides. Never `oauth.login` (G6), never a disable/enable.
+   */
+  private async autoReconnect(sessionId: string, live: { session: { rpc: { mcp: unknown } } }, name: string): Promise<void> {
+    const mcp = live.session.rpc.mcp as { restartServer?: (p: { serverName: string }) => Promise<void>; list?: () => Promise<{ servers?: unknown }> };
+    if (typeof mcp.restartServer !== 'function') throw new Error('This Copilot version cannot reconnect one MCP server by itself.');
+    let failure: unknown;
+    try {
+      await mcp.restartServer({ serverName: name });
+    } catch (err) {
+      if (isMethodNotFound(err)) throw new Error('This Copilot version cannot reconnect one MCP server by itself.');
+      failure = err;
+    }
+    await new Promise<void>((r) => setTimeout(r, this.autoReadDelayMs));
+    if (this.sessions.get(sessionId) !== live || typeof mcp.list !== 'function') {
+      if (failure !== undefined) throw new Error(sdkErrorText(failure));
+      return;
+    }
+    try {
+      const r = await mcp.list();
+      if (this.sessions.get(sessionId) === live && Array.isArray(r?.servers)) this.mapperFor(sessionId).reread(r.servers);
+    } catch {
+      /* the earlier report stays; main reads what the session last said */
+    }
+    if (failure !== undefined) throw new Error(sdkErrorText(failure));
   }
 
   /**

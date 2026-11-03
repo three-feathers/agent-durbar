@@ -78,6 +78,8 @@ const DOC_SHOTS = [
   { name: 'shots-058-mcp-settings', files: ['058-mcp-settings-1440x900.png'] },
   { name: 'shots-076-orgpolicy', files: ['076-orgpolicy-mode-1440x900.png', '076-orgpolicy-server-1440x900.png', '076-orgpolicy-organization-1440x900.png'] },
   { name: 'shots-058-mcp-health', files: ['058-mcp-health-1440x900.png'] },
+  { name: 'shots-058-mcp-launch', files: ['058-mcp-launch-closed-1440x900.png', '058-mcp-launch-closed-1280x800.png', '058-mcp-launch-settings-1440x900.png', '058-mcp-launch-settings-1280x800.png'] }, // spec 058 FR-195..FR-203
+  { name: 'shots-058-mcp-signin-refresh', files: ['058-mcp-refresh-waiting-1440x900.png', '058-mcp-refresh-waiting-1280x800.png', '058-mcp-refresh-signin-1440x900.png', '058-mcp-refresh-signin-1280x800.png', '058-mcp-refresh-settings-1440x900.png', '058-mcp-refresh-settings-1280x800.png'] }, // spec 058 FR-208..FR-216
   // one office per theme (shots-themes.js, the Settings path); the README (035-*) and the landing page (site-theme-*) show the same
   ...THEMES.map(([id, short]) => ({
     label: `shots-themes ${id}`, name: 'shots-themes', env: { DURBAR_THEME: id, SHOTS_SIZE: '1440x900', SHOTS_PREFIX: '' },

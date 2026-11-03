@@ -120,6 +120,7 @@ export class CodexMapper {
 
   reset(): void {
     this.compacting = false;
+    this.compactedTurn = false;
     this.main = this.cwd = undefined;
     this.children.clear();
     this.tools.clear();
@@ -258,6 +259,7 @@ export class CodexMapper {
 
   private turnCompleted(params: Obj, agentId: string | undefined): void {
     if (agentId === undefined) {
+      this.compactedTurn = false;
       if (this.compacting) {
         this.compacting = false;
         this.emit({ type: 'compaction', phase: 'failed', trigger: 'unknown' }); // an open compaction at the turn's end did not finish
@@ -305,7 +307,9 @@ export class CodexMapper {
     if (input === undefined && output === undefined && cached === undefined) return; // nothing countable: not a model call
     // Codex reports tokens only: no credits (nanoAiu) and no money (costUsd).
     this.emit({ type: 'usage', agentId, inputTokens: input, outputTokens: output, cacheReadTokens: cached });
-    if (input !== undefined) this.emit({ type: 'context', agentId, tokens: input, limit: num(own(tu, 'modelContextWindow')) ?? 0 });
+    const skipContext = this.compactedTurn && agentId === undefined; // only the first update after a compaction: later model calls of the turn (an automatic compaction mid-turn) have a real size
+    if (skipContext) this.compactedTurn = false;
+    if (input !== undefined && !skipContext) this.emit({ type: 'context', agentId, tokens: input, limit: num(own(tu, 'modelContextWindow')) ?? 0 });
   }
 
   private item(item: unknown, phase: 'started' | 'completed', agentId: string | undefined): void {
@@ -398,7 +402,7 @@ export class CodexMapper {
         return;
       }
       case 'contextCompaction': {
-        // spec 015 FR-008 (issue #601, `read:`): the app-server summarises the thread; the main agent only. The item has no numbers.
+        // spec 015 FR-008 (issue #601, `real:` 2026-11-02, #731): the app-server summarises the thread; the main agent only. The item has no numbers.
         if (agentId) return;
         if (!done) {
           if (this.compacting) return;
@@ -406,6 +410,7 @@ export class CodexMapper {
           return this.emit({ type: 'compaction', phase: 'start', trigger: 'unknown' });
         }
         this.compacting = false;
+        this.compactedTurn = true; // the token update that follows in this same turn may describe the summarising call, not the new size
         return this.emit({ type: 'compaction', phase: 'complete', trigger: 'unknown' });
       }
       default:
@@ -415,6 +420,8 @@ export class CodexMapper {
 
   /** Spec 015 FR-008: a context compaction of the main thread is open (ended by its completed item, or failed at the turn's end). */
   private compacting = false;
+  /** Spec 015 FR-012: a compaction finished: the FIRST main `thread/tokenUsage/updated` after it (real order: item, usage, turn end) counts its tokens but gives no context figure; the flag is cleared when consumed, at the turn end and on reset (`last` was not recorded; the old size would defeat the "waiting" ring). */
+  private compactedTurn = false;
 
   /** FR-149: helper threads already announced as started / ended (bounded by the session). */
   private helpersStarted = new Set<string>();

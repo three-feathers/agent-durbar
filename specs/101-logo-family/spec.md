@@ -36,17 +36,17 @@ Ids stay 1, 2, 3, 5, the numbers the owner chose; there is no icon 4.
 
 ## Why a new spec
 
-Grep for `icon.svg`, `build/icon` and `brand-mark` (2026-10-31): spec 008 has FR-025 (the Linux window icon) and a release-table row for the old icon; spec 050 uses the favicon; spec 040 and 070 own `--brand-mark`/`--brand-bg` as theme tokens. None owns branding, and this feature adds a setting, a world-driven top bar, a build script and an asset test, too much for a delta of any of them. So a new spec. **Number 101**: `origin/main` has specs up to 098, open branches and PRs take 099 and 100 (checked 2026-10-31 at `25250017`).
+Grep for `icon.svg`, `build/icon` and `brand-mark` (2026-10-31): spec 008 has FR-025 (the Linux window icon) and a release-table row for the old icon; spec 050 uses the favicon; spec 040 and 070 own `--brand-mark`/`--brand-bg` as theme tokens. None owns branding, and this feature adds a setting, a world-driven top bar, a build script and an asset test, too much for a delta of any of them. So a new spec. **Number 101**: free on `origin/main` and in open PRs (rechecked 2026-11-03 at `9c871494`; main holds 099, 100, 102, 103 and 105, and 101 only here and in #988). It was first taken 2026-10-31, when `origin/main` had specs up to 098.
 
 **One rule in, one rule out** (spec 021 FR-063): the checkable rule "no cave or loft logo in the repo without Paco's approval" gets a test (FR-071); no `AGENTS.md` line.
 
-**Existing capabilities reused** (spec 021 FR-031): the Characters picker pattern in `screens.js` (`.thlist`, `.thpick`, `aria-pressed`); `durbar.*` `localStorage` read in a `try`; `assetRows` and `webpInfo` from `scripts/test-crew-assets.ts`; the `--brand-mark`/`--brand-bg` contrast pair in `theme.js`; `.brand-mark` tile and its per-theme shapes in `themes.css`; `DOC_SHOTS`; the world seam of spec 097 (FR-084, FR-100).
+**Existing capabilities reused** (spec 021 FR-031): the Characters picker pattern in `screens.js` (`.thlist`, `.thpick`, `aria-pressed`); `durbar.*` `localStorage` read in a `try`; `assetRows` and `webpInfo` from `scripts/test-crew-assets.ts`; the `--brand-mark`/`--brand-bg` contrast pair in `theme.js`; `.brand-mark` tile and its one remaining shape rule, `retro`, in `themes.css`; `DOC_SHOTS`; the world seam of spec 097 (FR-084, FR-100).
 
 ## Context: what exists today
 
 - **Build icon**: `build/icon.svg` (a lead and a working team, spec-less, PR #246), `build/icon.png` (1024), `build/icon.ico` (16, 24, 32, 48, 64, 128, 256), `build/icon.icns` (`icp4`, `icp5`, `ic07`..`ic14`). They were built by hand with `rsvg-convert`, Pillow and `icnsutil`, none of which the repo has.
 - **`build/icon-16.svg`**: no code or config reads it. Its own comment says it was the source of the 16 px ICO and ICNS entries, packed by hand.
-- **Top bar**: an inline 20 px stroked SVG (`src/renderer/index.html`) in a 32 px `.brand-mark` tile with `--brand-bg`. Corporate, retro and the courts shape the tile in `themes.css` (radius, ring, shadow).
+- **Top bar**: an inline 20 px stroked SVG (`src/renderer/index.html`) in a 32 px `.brand-mark` tile with `--brand-bg`. Only the `retro` UI style shapes the tile in `themes.css` (square, offset shadow). Corporate and the courts went in v0.1.7. Built-in themes: Clean Office only (no `data-ui`). Spec 040 retired the AI theme maker and Import; saved themes still work and carry a `ui` style (`clean` or `retro`). A world can also set `data-ui` (`theme.js` `uiNow`).
 - **Other users of the icon**: `README.md` (96 px, with alt text about a lead and a team); `scripts/build-site.js` (favicon and header brand, copied from `build/icon.svg`; `pages.yml` path filter); `scripts/copy-assets.js` and `main.ts` (Linux window icon, 008 FR-025).
 - **About**: Settings > About is text only, and `aboutPanelOptions` sets no icon, so neither needs a code change. The OS panels show the app's own icon.
 - **Worlds** (spec 097 FR-100, FR-114): `photo`, `cave`, `loft`, with a chrome token set per world; P1 is on an open PR, the cave and loft worlds are not shippable yet.
@@ -129,10 +129,10 @@ Someone installs Agent Durbar and sees the new icon in the installer, Finder or 
 ### The top bar
 
 - **FR-030** **SVG only.** The top bar never shows a picture: it is inline SVG, the 20 px drawing of the chosen icon, with no decoded painting, no extra request and no layout change. It sits in today's 32 px `.brand-mark` tile, `aria-hidden`, next to the `h1`.
-- **FR-031** **Tile as plate.** The tile's background is the plate colour and the drawing's `plate` slot is hidden, so per-theme tile shapes (`themes.css`) keep working. A glyph is never drawn without its tile.
+- **FR-031** **Tile as plate.** The tile's background is the plate colour and the drawing's `plate` slot is hidden, so the `retro` tile shape (`themes.css`) keeps working. A glyph is never drawn without its tile.
 - **FR-032** **Tokens.** Six tokens paint the slots: `--logo-plate`, `--logo-gold`, `--logo-bot`, `--logo-eye`, `--logo-cream`, `--logo-screen` (`badge` uses the plate). CSS sets `fill` per `[data-slot]` inside the top bar only. No tool-surface literal is added outside the token block (spec 070 FR-040's ratchet stays down).
 - **FR-033** **World palette.** When Real office draws a world (spec 097 FR-100's resolved world), the six tokens come from that world's chrome token set (097 FR-113). Painted art is never used here. A world with no approved palette falls back to the base palette (FR-014). The palette follows the **resolved** world, including *Match my characters*.
-- **FR-034** **Flat office.** On the Clean UI style: base palette, plate per `data-logo`. On any other UI style, built-in or generated: `--logo-plate`, `--logo-eye` and `--logo-screen` take `--brand-bg`; `--logo-gold`, `--logo-bot` and `--logo-cream` take `--brand-mark`. A generated theme keeps working with no new token. The world wins over the theme while Real office is on.
+- **FR-034** **Flat office.** On the Clean UI style: base palette, plate per `data-logo`. On any other UI style (`data-ui` set: a saved theme with `ui` `retro`, or a world's own): `--logo-plate`, `--logo-eye` and `--logo-screen` take `--brand-bg`; `--logo-gold`, `--logo-bot` and `--logo-cream` take `--brand-mark`. A saved theme keeps working with no new token. The world wins over the theme while Real office is on.
 - **FR-035** **Contrast.** For every palette: gold, bot and cream on plate; eye on bot; cream on screen; all at least 3:1 (WCAG non-text), checked by test. The theme pair is held by the existing `--brand-mark` on `--brand-bg` check.
 - **FR-036** **Forced colours.** In `@media (forced-colors:active)` the tile is `Canvas` with a `CanvasText` line; gold, bot and cream are `CanvasText`; eye, screen and badge are `Canvas`. Added to the existing block in `styles.css`.
 - **FR-037** **The running icon stays.** No `app.dock.setIcon`, `win.setIcon` or `setOverlayIcon` follows the choice or the world. 008 FR-025 keeps icon 1 on the Linux window.
@@ -175,7 +175,7 @@ Someone installs Agent Durbar and sees the new icon in the installer, Finder or 
 
 - **FR-070** **Performance.** Nothing decoded in the top bar; picking an icon replaces one SVG; all drawings together are at most 24 KB of renderer JS; painted previews load only with Settings open. Zero added cost to the office's render loop.
 - **FR-071** **`test:logo-assets`** (in `npm test`, plain Node): the four icons at the four sizes; viewBox matches the name; FR-010's forbidden list (no `<image>`, `href`, `data:`, gradient, filter, `stroke`, `style`, `script`, `text`); every shape has a known `data-slot`; `src/renderer` drawings match `build/logo`; palette contrast (FR-035); ICO and ICNS entries decode at FR-041's sizes; `icons.json` hashes current; provenance row for each file; the approval rule of FR-062 with fixtures proving it goes red (a cave row with no `Paco`, a file with no row); `build/icon-16.svg` gone; WebP caps (FR-024).
-- **FR-072** **`scripts/check-logo-family.js`** (a `ui-suite.js` driver, simulator, 0 credits, `until()` waits): the picker in Settings (keyboard, screen-reader names, persistence over reload, a bad stored value); the top bar for each icon in flat Clean, a generated theme, each built-in theme, forced colours, and each shippable world, at 1440x900 and 1280x800; asserts no `<img>` in `.brand-mark`, unchanged tile size and `h1` position, no change to the window icon call, text at least 10.5 px; writes pictures to `out/`.
+- **FR-072** **`scripts/check-logo-family.js`** (a `ui-suite.js` driver, simulator, 0 credits, `until()` waits): the picker in Settings (keyboard, screen-reader names, persistence over reload, a bad stored value); the top bar for each icon in flat Clean, a saved theme with `ui` `retro`, a saved theme with `ui` `clean`, forced colours, and each shippable world, at 1440x900 and 1280x800; asserts no `<img>` in `.brand-mark`, unchanged tile size and `h1` position, no change to the window icon call, text at least 10.5 px; writes pictures to `out/`.
 
 ### Experience
 
@@ -193,6 +193,8 @@ Tool surface (spec 098): the picker is a Settings section and the top-bar icon t
 
 - **Read at real size, on Linux only.** The drawings were checked in headless Chromium. Not on a real macOS or Windows desktop, Dock, Finder or Explorer, a 1.25x or 1.5x Windows scale, or an installer: `[KNOWN GAP]` until a phase's real check. The D3 Mac padding is unverified until then.
 - **The flat palettes are new.** Vikram approved the painted photo set; the photo flat palette (FR-101) and the vectors were approved by him 2026-10-31 (Q2).
+- **AI-generated concepts and licence.** The concept images were made with an AI image tool (Codex image generation); the repo's MIT licence terms apply to the files committed here (FR-061). Nothing more is claimed about the copyright status of AI-generated images.
+- **Offscreen Electron icon build not tried.** FR-042's build is planned; the drawings so far were rendered with headless Chromium.
 - The photo flat plate is darker walnut than the painted honey oak: 3:1 for the gold is not possible on honey oak. That is a deliberate difference.
 - Worlds depend on spec 097 P1 and its worlds delta; flat works without them.
 - Trademark: a quick web search only, no registry search, not legal advice (Q5).
@@ -206,11 +208,13 @@ Tool surface (spec 098): the picker is a Settings section and the top-bar icon t
 
 ## Decided (owner, 2026-10-31 13:41 UTC, answer "Ok" to the recommendations)
 
+Who: the owner's "Ok" is recorded as Vikram's (the spec's decision source is Vikram; PR #930's trusted comment of 2026-10-31 13:49 UTC by vikramgorla records Q1-Q5 and Q7 as decided). The chat message itself is not in the repo, so the sender check of spec 021 FR-033 is: decision source not recorded beyond that comment, for each of Q1, Q2, Q3, Q4, Q5 and Q7.
+
 - **Q1 choice**: four icons in Settings, the world form follows the world (D1).
 - **Q2 drawings**: the vector drawings and the walnut flat palette for the photo world are approved.
 - **Q3 licence**: MIT (FR-061 is no longer pending).
-- **Q4 crowns**: regenerate painted icons 2 and 3 with a plain three-point crown. Done 2026-10-31 for photo, cave and loft (6 images, `*-v1.png` kept); the new photo 2 and 3 are `Vikram: pending` (his earlier approval was for the old pictures), cave and loft `Paco: pending`.
-- **Q5 trademark**: a quick web search, not legal advice. Done 2026-10-31 (3 queries): no similar crowned ">_" mark, "Agent Durbar" or Durbar software mark found; not a full search; notes in the art folder, not committed.
+- **Q4 crowns**: regenerate painted icons 2 and 3 with a plain three-point crown. Reported done 2026-10-31 by the author for photo, cave and loft (6 images, `*-v1.png` kept; `codex exec` ran after the owner's OK, constitution IV). `[KNOWN GAP]` no `read:` evidence: the images are outside the repo; the new photo 2 and 3 are `Vikram: pending` (his earlier approval was for the old pictures), cave and loft `Paco: pending`.
+- **Q5 trademark**: a quick web search, not legal advice. Reported done 2026-10-31 by the author (3 queries): no similar crowned ">_" mark, "Agent Durbar" or Durbar software mark found; not a full search; notes in the art folder, not committed.
 - **Q7 Clean palette**: the default Clean top bar uses the new base palette (D2).
 
 ## Open questions

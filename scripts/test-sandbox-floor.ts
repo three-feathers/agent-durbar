@@ -444,7 +444,7 @@ ok('SC-001: 27 app × OS × mode cells match FR-001..FR-005; no auto-approve, by
     const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-cleanup-test-')));
     const show = (v: unknown): string => String(v);
     let n = 0;
-    const mkF = (o: { readme?: boolean; git?: boolean; hooks?: 'empty' | 'file' | 'full' | 'none' | 'link'; config?: 'empty' | 'full' | 'dir' | 'none' | 'link'; extraGit?: string; extraTop?: string; gitLink?: boolean } = {}): string => {
+    const mkF = (o: { readme?: boolean; git?: boolean; hooks?: 'empty' | 'file' | 'full' | 'none' | 'link'; config?: 'empty' | 'full' | 'dir' | 'fulldir' | 'none' | 'link'; extraGit?: string; extraTop?: string; gitLink?: boolean } = {}): string => {
       const F = path.join(root, `durbar-t066-session-${n++}`);
       fs.mkdirSync(F);
       if (o.readme !== false) fs.writeFileSync(path.join(F, 'README.txt'), 'probe\n');
@@ -461,6 +461,7 @@ ok('SC-001: 27 app × OS × mode cells match FR-001..FR-005; no auto-approve, by
       if (config === 'empty') fs.writeFileSync(path.join(g, 'config'), '');
       if (config === 'full') fs.writeFileSync(path.join(g, 'config'), '[core]\n');
       if (config === 'dir') fs.mkdirSync(path.join(g, 'config'));
+      if (config === 'fulldir') { fs.mkdirSync(path.join(g, 'config')); fs.writeFileSync(path.join(g, 'config', 'x'), 'x'); }
       if (config === 'link') { fs.writeFileSync(path.join(root, `config-${n}`), ''); fs.symlinkSync(path.join(root, `config-${n}`), path.join(g, 'config')); }
       if (o.extraGit) fs.writeFileSync(path.join(g, o.extraGit), 'ref: x\n');
       if (o.extraTop) fs.writeFileSync(path.join(F, o.extraTop), 'x');
@@ -471,6 +472,9 @@ ok('SC-001: 27 app × OS × mode cells match FR-001..FR-005; no auto-approve, by
     assert.strictEqual(C.gitPlaceholders(path.join(ph, '.git')), true, 'an empty hooks/ and an empty config: the placeholders');
     assert.match(rm(ph), /^removed .*placeholders/, 'F with the placeholders is removed');
     assert.ok(!fs.existsSync(ph), 'F is gone');
+    const phMac = mkF({ config: 'dir' });
+    assert.strictEqual(C.gitPlaceholders(path.join(phMac, '.git')), true, 'macOS: config is an empty folder (real: 2026-11-01)');
+    assert.match(rm(phMac), /^removed .*placeholders/, 'and F is removed');
     const bare = mkF({ git: false });
     assert.match(rm(bare), /^removed /, 'F with no .git is removed as before');
     for (const [o, why] of [
@@ -479,7 +483,7 @@ ok('SC-001: 27 app × OS × mode cells match FR-001..FR-005; no auto-approve, by
       [{ hooks: 'none' }, 'no hooks/'],
       [{ hooks: 'link' }, 'hooks is a link'],
       [{ config: 'full' }, 'a config with content'],
-      [{ config: 'dir' }, 'config is a folder'],
+      [{ config: 'fulldir' }, 'config is a folder with something in it'],
       [{ config: 'none' }, 'no config'],
       [{ config: 'link' }, 'config is a link'],
       [{ extraGit: 'HEAD' }, 'anything else inside .git'],

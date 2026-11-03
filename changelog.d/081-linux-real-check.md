@@ -1,0 +1,1 @@
+- **Agent-app updates: a vendor "updates are disabled" answer is no longer shown as done** (spec 081, #662): on Linux, `claude update` with updates disabled exits 0, and Durbar now reports it as *Managed by your organization*. The two Claude fixtures are recorded shapes; checked on Linux with an isolated copy, macOS and Windows still open.
