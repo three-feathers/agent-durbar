@@ -50,12 +50,16 @@ EYE = (1, 2, 3)   # stands for a closed eye's line until the block vote is done
 
 def dist(a, b): return sum((x - y) ** 2 for x, y in zip(a, b)) ** .5
 
-def convert(drawn, pal, height, info=None):
+def convert(drawn, pal, height, info=None, lilac=False):
     im = key_magenta(drawn); bb = im.getbbox(); im = im.crop(bb)
     w = max(1, round(im.width * height / im.height)); F = 8; Q = F * F // 16; big = im.resize((w * F, height * F), Image.LANCZOS)   # F fine pixels per grid pixel; thresholds below are for 16 and scaled by Q
     # every fine pixel snapped to the palette first, then the commonest colour of each grid pixel's 8x8 fine block wins (crisp, no blended
     # colours); a dark outline colour wins from half the block so thin lines survive the shrink (thresholds written for 16 and scaled by Q)
     cache = {}; dark = min(pal, key=sum); headpal, skin = info if info else (None, None)
+    import colorsys; hair = None
+    if lilac and headpal:      # p15: the standing hair is the commonest lilac of the standing head
+        li = [c for c in headpal if .68 < colorsys.rgb_to_hsv(*[v / 255 for v in c])[0] < .93 and colorsys.rgb_to_hsv(*[v / 255 for v in c])[1] > .12]
+        hair = max(li, key=sum) if li else None
     # the drawn skin tone: the commonest colour of the upper part within reach of the standing skin colour; it is mapped straight to the standing skin
     gskin = None
     if skin:
@@ -83,6 +87,7 @@ def convert(drawn, pal, height, info=None):
                         key = (k, head)
                         if key not in cache:
                             if gskin and head and dist(k, gskin) < 32: cache[key] = skin
+                            elif hair and head and .68 < colorsys.rgb_to_hsv(*[v / 255 for v in k])[0] < .93 and colorsys.rgb_to_hsv(*[v / 255 for v in k])[1] > .12: cache[key] = hair   # a drawn lilac hair keeps the standing lilac, not a pale colour
                             elif gskin and head and 22 < dist(k, gskin) < 60 and sum(k) > sum(gskin) + 20: cache[key] = EYE      # lighter than the face and close to it: a closed eye's line
                             else: cache[key] = nearest(k, headpal if (headpal and head) else pal)
                         c = cache[key]; cnt[c] = cnt.get(c, 0) + 1
@@ -120,7 +125,7 @@ HINTS = {'p01': 'same face, glasses, brown hair, orange hoodie, blue jeans, shoe
  'p09': 'same face, yellow raincoat with hood up, dark skin, navy trousers, dark boots', 'p10': 'same face, brown hair in two pigtails with red ties, teal jacket, grey shorts, white socks',
  'p11': 'same face, long black braid, mustard yellow shawl, brown trousers', 'p12': 'same face, bald with ginger beard, green apron over cream shirt, brown trousers',
  'p13': 'same face, warm medium-brown skin (never grey), silver-grey hair in a bun, teal top, white trousers', 'p14': 'same face, orange cap, brown hair, light blue shirt with a satchel bag, khaki shorts, sneakers',
- 'p15': 'same face, pale lavender hair, round glasses, cream knit sweater, grey trousers'}
+ 'p15': 'same face, pale lavender hair with a clear dark outline, the face skin in the same pale peach tone, round glasses drawn as dark thin lines, a warm beige knit sweater that is a shade darker than the hair with a clear dark outline, grey trousers; strong contrast between hair, face and sweater'}
 PROMPT = ('Use your image generation tool to create ONE image and save it in the current folder as sit.png. Image: the same character as the reference pixel-art picture ({h}), now fast asleep while sitting on a small plain brown wooden arcade stool: '
  'whole body visible, front three-quarter view, same chibi proportions (big head), same clothes, hair and skin colours exactly as in the reference (do not make hair redder or lighter, do not darken the skin). '
  'Keep the face easy to read: the head tilted down only slightly, the face fully visible and evenly lit in the same skin tone as the reference (no dark shading, no shadow over the face), the closed eyes drawn as clear light-coloured curved lines, '
@@ -151,7 +156,7 @@ def main():
     if '--preview' in sys.argv: prev = sys.argv[sys.argv.index('--preview') + 1]; a = [x for x in a if x != prev]
     pid, src = a[0], a[1]; repo = a[2] if len(a) > 2 else os.getcwd()
     S = os.path.join(repo, 'src/renderer/realoffice/sets/retro'); pal = palette_of(S, pid)
-    info = head_info(S, pid); im = outline(convert(Image.open(src), pal, height, info), pal); im = pack.binary_alpha(im)
+    info = head_info(S, pid); im = outline(convert(Image.open(src), pal, height, info, pid == 'p15'), pal); im = pack.binary_alpha(im)
     if prev: im.save(prev)                                                    # a preview is written even when the check below refuses it
     # the check: the mean colour of the skin pixels of the new frame against the standing frame's skin colour
     px = im.load(); sk = info[1]; near = [px[i, j][:3] for j in range(im.height) for i in range(im.width) if px[i, j][3] and dist(px[i, j][:3], sk) < 40]
