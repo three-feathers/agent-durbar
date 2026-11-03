@@ -64,6 +64,13 @@ module.exports = async (ctx) => {
   const { js } = H;
   const { until } = waits(ctx);
   const rows = {};
+  /* motion allowed: the Windows runner reports prefers-reduced-motion: reduce by itself, which sets every animation to none (styles.css) so no desk animates and the tapping hand below
+     is missing there (CI run 41721270320: 0 infinite animations); emulated before each load, as check-unread does (agent-notes: reduced motion takes other code paths) */
+  {
+    const dbg = ctx.win.webContents.debugger;
+    if (!dbg.isAttached()) dbg.attach('1.3');
+    await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
+  }
   const med = (a) => [...a].sort((x, y) => x - y)[Math.floor(a.length / 2)];
   /* run `action` (page code) and wait until the office has drawn at least one more render, then two frames */
   const drawn = async (action, ms = 8000) => {
