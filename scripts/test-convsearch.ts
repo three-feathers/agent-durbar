@@ -47,19 +47,20 @@ const tool = (output: string): HistoryItem => ({ type: 'tool', callId: 'c' + out
 let sid = 0;
 const sess = (o: Partial<PlanSession>): PlanSession => ({ adapter: 'claude', app: 'Claude Code', folderKey: '/home/' + USER + '/proj', folderName: 'proj', sessionId: `s${++sid}`, group: 'earlier', title: 'Untitled', time: 1000 - sid, content: 'read', ...o });
 
-interface Harness { deps: ScanDeps; batches: ScanBatch[]; reads: string[]; slices: number[]; clock: { t: number } }
+interface Harness { deps: ScanDeps; batches: ScanBatch[]; reads: string[]; slices: number[]; clock: { t: number }; work: { masks: number } }
 function harness(items: Record<string, readonly HistoryItem[] | ReadOutcome>, o: { masker?: Masker; cost?: number; onYield?: () => void; values?: (s: PlanSession) => readonly string[] } = {}): Harness {
   const clock = { t: 0 };
   const batches: ScanBatch[] = [];
   const reads: string[] = [];
   const slices: number[] = [];
+  const work = { masks: 0 };
   let last = 0;
   const cost = o.cost ?? 1;
   const base = o.masker ?? MASKER;
   // the fake clock: masking costs `cost` ms per 1 000 characters, a message 0.2 ms
   const masker: Masker = {
-    maskText: (raw, v) => { clock.t += (cost * raw.length) / 1000; return base.maskText(raw, v); },
-    maskedWindow: (raw, f, t, v, w) => { const r = base.maskedWindow(raw, f, t, v, w); clock.t += (cost * r.text.length) / 1000; return r; },
+    maskText: (raw, v) => { work.masks++; clock.t += (cost * raw.length) / 1000; return base.maskText(raw, v); },
+    maskedWindow: (raw, f, t, v, w) => { work.masks++; const r = base.maskedWindow(raw, f, t, v, w); clock.t += (cost * r.text.length) / 1000; return r; },
   };
   const deps: ScanDeps = {
     now: () => (clock.t += 0.2),
@@ -78,7 +79,7 @@ function harness(items: Record<string, readonly HistoryItem[] | ReadOutcome>, o:
     search: S,
     emit: (b) => batches.push(JSON.parse(JSON.stringify(b)) as ScanBatch),
   };
-  return { deps, batches, reads, slices, clock };
+  return { deps, batches, reads, slices, clock, work };
 }
 const hitsOf = (h: Harness) => h.batches.flatMap((b) => b.hits);
 /** SC-002: walk every string of every batch: no secret, no piece of one, no home path, no full path, no raw message over 180 characters. */
@@ -136,6 +137,18 @@ async function main(): Promise<void> {
       assert.strictEqual(ex.length, 1);
       assert.ok(!ex[0].text.includes('Zx9Yw8') && !ex[0].text.includes('gh' + 'p_'), `no secret at pad ${pad}: ${ex[0].text}`);
     }
+    // the edge guard: a secret whose mask needs context outside the window (`password:` before its edge), with masks between it and the hit
+    // that shrink the text, so a cut around the hit would reach it: the excerpt is then cut from the whole masked message
+    let guarded = 0;
+    for (let pad = 0; pad < 40; pad++) {
+      const toks = 'eyJ' + 'hbGciOiJIUzI1NiJ9' + '.' + 'eyJ' + 'a'.repeat(300) + '.' + 'b'.repeat(240); // a 565-character token: masked to 10
+      const t = 'lead words '.repeat(150) + ' password: hunter2value ' + 'w '.repeat(pad) + toks + ' invoice ' + 'tail words '.repeat(150);
+      for (const ex of messageExcerpts(t, 'invoice', o)!.excerpts) {
+        assert.ok(!ex.text.includes('hunter2value'), `no context-masked secret at the excerpt edge (pad ${pad}): ${ex.text}`);
+        guarded++;
+      }
+    }
+    assert.strictEqual(guarded, 40);
     // the mask throws: the caller gets the throw (and drops the message)
     const bad = createMasker({ unhide: () => { throw new Error('x'); } });
     assert.throws(() => messageExcerpts('the invoice', 'invoice', { ...o, masker: bad }));
@@ -305,13 +318,15 @@ async function main(): Promise<void> {
     let handle: { cancel(): void } | undefined;
     let yields = 0;
     let readsAtCancel = -1;
-    const h = harness(items, { onYield: () => { if (++yields === 5) { readsAtCancel = h.reads.length; handle!.cancel(); } } });
+    let masksAtCancel = -1;
+    const h = harness(items, { onYield: () => { if (++yields === 5) { readsAtCancel = h.reads.length; masksAtCancel = h.work.masks; handle!.cancel(); } } });
     const scan = startScan({ sessions: list }, 'word', h.deps);
     handle = scan;
     const batchesAtStart = h.batches.length;
     const e = await scan.done;
     assert.ok(e.cancelled, 'cancelled');
-    assert.strictEqual(h.reads.length, readsAtCancel, 'cancel between messages: no further read');
+    assert.strictEqual(h.reads.length, readsAtCancel, 'cancel between sessions: no further read');
+    assert.ok(masksAtCancel > 0 && h.work.masks === masksAtCancel, `cancel between messages: no message of the session being read is matched after it (${masksAtCancel} -> ${h.work.masks})`);
     assert.ok(e.progress.done < list.length);
     const n = h.batches.length;
     await new Promise<void>((r) => setImmediate(r));
@@ -352,21 +367,22 @@ async function main(): Promise<void> {
       return { ok: true, items: [u('codex invoice')] };
     });
     sid = 0;
-    const mk = () => harness({});
-    const h1 = mk();
-    const h2 = mk();
-    h1.deps.read = (s) => codexRead(s.sessionId);
-    h2.deps.read = (s) => codexRead(s.sessionId);
-    const plan = [sess({ sessionId: 'cx1', adapter: 'codex', group: 'office' }), sess({ sessionId: 'cx2', adapter: 'codex', group: 'office' })];
-    const s1 = startScan({ sessions: plan }, 'invoice', h1.deps);
-    const s2 = startScan({ sessions: plan }, 'invoice', h2.deps); // a second scan right away (typing again)
+    const hs = [harness({}), harness({}), harness({})];
+    for (const h of hs) h.deps.read = (s) => codexRead(s.sessionId);
+    const cx = (id: string) => sess({ sessionId: id, adapter: 'codex', group: 'office' });
+    const s1 = startScan({ sessions: [cx('cx1'), cx('cx2')] }, 'invoice', hs[0].deps);
+    // wait (bounded, on a condition) until the first scan's read is in flight, then type again: two new scans, the first is cancelled
+    for (let i = 0; i < 1000 && !started.length; i++) await new Promise<void>((r) => setImmediate(r));
+    assert.deepStrictEqual(started, ['cx1'], 'the first read is in flight');
+    const s2 = startScan({ sessions: [cx('cx2'), cx('cx1')] }, 'invoice', hs[1].deps); // another session: must wait for the read in flight
+    const s3 = startScan({ sessions: [cx('cx1')] }, 'invoice', hs[2].deps); // the same session: must reuse it
     s1.cancel();
-    await Promise.all([s1.done, s2.done]);
-    assert.strictEqual(maxLive, 1, 'never two Codex reads at once');
-    assert.ok(started.filter((x) => x === 'cx1').length === 1, `the read in flight was reused, not started twice (${started.join(',')})`);
+    await Promise.all([s1.done, s2.done, s3.done]);
+    assert.strictEqual(maxLive, 1, 'never two Codex reads at once, across scans');
+    assert.deepStrictEqual(started, ['cx1', 'cx2', 'cx1'], `the read in flight was reused by the third scan, not started again (${started.join(',')})`);
     assert.strictEqual(gate.inFlight(), 0, 'no read result kept after it settled');
-    assert.strictEqual(hitsOf(h2).length, 2);
-    assert.strictEqual(h1.batches.filter((b) => b.hits.length).length, 0, 'the cancelled scan emitted no hits');
+    assert.deepStrictEqual([hitsOf(hs[1]).length, hitsOf(hs[2]).length], [2, 1]);
+    assert.strictEqual(hitsOf(hs[0]).length, 0, 'the cancelled scan emitted no hits');
   }
 
   // ---- T017: the scan path's sources import no network API, no child_process, write nothing, call no *Sync fs function, log nothing

@@ -32,7 +32,8 @@ function clean(s: string, what: string): void {
   for (const x of SECRETS) {
     for (let i = 0; i + 8 <= x.length; i++) {
       const piece = x.slice(i, i + 8);
-      if (x === USER || x === MCPV_SPACE) { if (s.includes(x)) assert.fail(`${what}: "${x}" in ${JSON.stringify(s.slice(0, 300))}`); break; }
+      if (x === USER) { if (s.includes(x)) assert.fail(`${what}: "${x}" in ${JSON.stringify(s.slice(0, 300))}`); break; }
+      if (x === MCPV_SPACE) { for (const tail of ['sesame value', 'value 4242']) if (s.includes(tail)) assert.fail(`${what}: part of a spaced value ("${tail}") in ${JSON.stringify(s.slice(0, 300))}`); break; }
       if (s.includes(piece)) assert.fail(`${what}: a piece of a secret (${piece}) in ${JSON.stringify(s.slice(0, 300))}`);
     }
   }

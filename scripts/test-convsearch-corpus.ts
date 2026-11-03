@@ -3,7 +3,7 @@
  * streamed reader (`claudeStream.ts`) and the real masker, on a fake clock (masking costs 1 ms per 1 000 characters, every clock read
  * 0.2 ms). Checks: the longest slice between yields stays under 50 ms of that clock; a cancel lands within one slice; the live heap (after
  * a forced GC) stays under 64 MB above the start, also while the 45 MB file is read, so the file is never held whole; nothing is kept after
- * the scan. Part of `npm run test:convsearch`. No credits, no network; the temp folder is removed at the end.
+ * the scan (and the process's peak resident memory grows less than 64 MB, which a synchronous whole-file read would break). Part of `npm run test:convsearch`. No credits, no network; the temp folder is removed at the end.
  */
 import * as assert from 'assert';
 import * as fs from 'fs';
@@ -120,10 +120,13 @@ async function main(): Promise<void> {
   assert.ok(bytes > 40 * 1024 * 1024, `a corpus over 40 MB (${(bytes / 1048576).toFixed(1)} MB)`);
   gc();
   const base = process.memoryUsage().heapUsed;
+  const rss0 = process.resourceUsage().maxRSS; // KB, the process's peak so far (a synchronous whole-file read would raise it; the heap sampler cannot run during one)
 
   // the whole scan
   const r = harness(base);
   const end = await startScan({ sessions, platform: process.platform }, 'needle', r.deps).done;
+  const rssGrowth = (process.resourceUsage().maxRSS - rss0) * 1024;
+  assert.ok(rssGrowth < 64 * 1024 * 1024, `peak resident memory grew ${(rssGrowth / 1048576).toFixed(1)} MB during the scan, under 64 MB`);
   const hits = r.batches.flatMap((b) => b.hits);
   assert.deepStrictEqual(new Set(hits.map((h) => h.sessionId)), needles, 'every session with the word, and only those');
   assert.ok(!end.cancelled && !end.failed && end.progress.done === sessions.length);
@@ -153,7 +156,7 @@ async function main(): Promise<void> {
   assert.strictEqual(c.reads, readsAt, 'no read starts after the cancel');
   assert.ok(c.clock.t - at < 50, `ended ${(c.clock.t - at).toFixed(1)} ms of the fake clock after the cancel`);
 
-  console.log(`convsearch corpus: ${(bytes / 1048576).toFixed(1)} MB, ${r.slices.length} slices, longest ${longest.toFixed(1)} ms (fake clock), peak live heap ${(r.peak / 1048576).toFixed(1)} MB above start`);
+  console.log(`convsearch corpus: ${(bytes / 1048576).toFixed(1)} MB, ${r.slices.length} slices, longest ${longest.toFixed(1)} ms (fake clock), peak live heap ${(r.peak / 1048576).toFixed(1)} MB above start, peak RSS +${(rssGrowth / 1048576).toFixed(1)} MB`);
   console.log('convsearch corpus tests passed');
   process.exitCode = 0;
 }
