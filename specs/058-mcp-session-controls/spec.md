@@ -1989,7 +1989,11 @@ before the message needs the server. For Copilot, **Sign in** itself finishes wi
   then reconnected with it; (c) after the access token expired, the automatic reconnect under the floor sent the expired token and made
   **no refresh** (the server read `needs-auth`), while the same steps in Allow all refreshed (`refresh_token` grant, `connected`). So where
   the app's OS sandbox covers its MCP servers and is not off, main plans no reconnect and shows only FR-211's sign-in line (the planner's
-  `renews` input, from the chat's sandbox state; vendor-free). G5 stays A in intent. `[KNOWN GAP]` a Read-only session after a real first
+  `renews` input, from the chat's sandbox state; vendor-free). **Repeated on SDK 1.0.24** (`real:` 2026-11-03, the version PR #1087 pins
+  after incident #1084; same scratch setup, 0 prompts): the same results in all four cases (Allow all: one reconnect, one
+  `refresh_token` grant, *reconnected*; Read-only from the start: no MCP host before a message; Allow all switched to Read-only or Ask
+  first: the floor left the server `failed`, a reconnect brought it back, and after expiry the reconnect made no refresh and read
+  `needs-auth`), and with the chat's sandbox state kept as main keeps it, the gate planned no reconnect. G5 stays A in intent. `[KNOWN GAP]` a Read-only session after a real first
   message was not run (it needs a prompt); Claude Code's sandbox covers shell commands only, so its chats are reconnected in every mode.
 - **G6** Copilot: may the automatic path call `rpc.mcp.oauth.login` (no `forceReauth`) when a server reads `needs-auth`? `real:` T177: in
   a second session it is the only call that refreshed (no browser, no URL). If it returns an `authorizationUrl` the URL would be dropped,

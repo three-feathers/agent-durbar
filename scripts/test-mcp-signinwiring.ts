@@ -105,15 +105,19 @@ async function main(): Promise<void> {
     const sent: string[] = [];
     const order: string[] = [];
     const interrupts: string[] = [];
+    /* like Claude Code's adapter: after an interrupt it expects the turn's abort and swallows the next error_during_execution */
+    let abortExpected = false;
+    const nextErrorSurfaces = (): boolean => { const swallowed = abortExpected; abortExpected = false; return !swallowed; };
     const agentState = new AgentStateTracker();
     agentsIpc.register({
-      agents, router: router as never, agentState, opsDeps: { agents, router: { forAgent: () => ({ isLive: () => true, interrupt: async (id: string) => { interrupts.push(id); }, capabilities: { interrupt: true } }) } } as never,
+      agents, router: router as never, agentState, opsDeps: { agents, router: { forAgent: () => ({ isLive: () => true, interrupt: async (id: string) => { interrupts.push(id); abortExpected = true; }, capabilities: { interrupt: true } }) } } as never,
       remoteOps: { release: async () => undefined, has: () => false } as never, getScheduler: () => undefined, getCheckpointStore: () => undefined, vsChatRefs: new Map(), continued: new Map(), wsKey: () => ws, asEffort: () => undefined,
       addMany: async () => ({ ok: true, agents: [] }) as never, addWorkspace: (async () => undefined) as never, ensureLive: async () => undefined, readyAdapterIds: async () => new Set<string>(), forgetOpenSession: () => undefined,
       maskHistory: (_id, h) => h, mcpSecrets: () => [], logMcp: () => undefined,
       sendOp: async (id: string) => { sent.push(id); return { ok: true }; },
       mcpGate: (id) => mcp.signInRefresh.beforeSend(id),
       mcpStopWait: (id) => mcp.signInRefresh.stopWait(id),
+      mcpBusy: () => busy,
       mcpForget: (id) => { order.push(`forget ${id}`); mcp.signInRefresh.forget(id); },
     });
     listeners.push((e) => { if (e.type === 'status' && e.status === 'stopped') order.push(`stopped ${e.sessionId}`); });
@@ -170,17 +174,19 @@ async function main(): Promise<void> {
     await tick();
     assert.strictEqual(ad.restartCalls.length, 4, 'after the Restart: tried again');
 
-    // ---- Stop during the wait: nothing sent, no turn interrupted ----
+    // ---- Stop during the wait on an idle chat: nothing sent, no interrupt (third review of PR #1080) ----
     const sentBefore = sent.length;
     assert.strictEqual(await call('agents:stop', sid), undefined);
     assert.deepStrictEqual(await s4, { ok: false, notSent: true, error: 'Not sent: you stopped it while MCP sign-ins were reconnecting.' });
     assert.strictEqual(sent.length, sentBefore, 'nothing was sent');
-    assert.deepStrictEqual(interrupts, [sid], 'Stop also interrupts the turn (review of PR #1080, item 2: a turn that runs is never missed)');
-    interrupts.length = 0;
+    assert.deepStrictEqual(interrupts, [], 'an idle chat whose wait Stop ended is not interrupted');
+    assert.ok(nextErrorSurfaces(), 'so the next real error of the app still surfaces (no abort expected)');
     assert.strictEqual(agentState.get(sid)?.state, 'idle', 'the agent is ready again, not an error');
     assert.deepStrictEqual(pushes[pushes.length - 1], { id: sid, kind: 'not-sent' });
     await call('agents:stop', sid);
     assert.deepStrictEqual(interrupts, [sid], 'with no wait, Stop interrupts the turn as before');
+    abortExpected = false;
+    interrupts.length = 0;
 
     // ---- review of PR #1080, item 4: a gate that throws never holds a message or loses a scheduled run ----
     {
@@ -205,6 +211,31 @@ async function main(): Promise<void> {
     pending.shift()!('connected');
     await tick();
     assert.deepStrictEqual(pushes[pushes.length - 1], { id: sid, kind: 'needs-sign-in', name: 'docs' }, 'a declined elicitation: needs a sign-in, even though it reads connected');
+
+    // a wait Stop ends while a turn runs anyway (a turn started another way, spec 054): the turn is interrupted too (review item 2)
+    {
+      const realRestart = ad.restartMcpServer;
+      pending.length = 0;
+      ad.restartMcpServer = async (s2, n, o) => { ad.restartCalls.push({ sessionId: s2, name: n, ...(o?.auto ? { auto: true } : {}) }); await new Promise<string>((res) => pending.push(res)); };
+      mcp.signInRefresh.clearBlock(undefined, 'docs');
+      emit(sid, { type: 'mcp', servers: list('needs-auth') });
+      emit(sid, { type: 'status', status: 'idle' });
+      clock.now += 2 * H;
+      const s5 = call('agents:send', sid, 'busy stop', []);
+      await tick();
+      assert.ok(pushes[pushes.length - 1].kind === 'waiting', 'waiting');
+      busy = true; // a turn started meanwhile
+      await call('agents:stop', sid);
+      assert.deepStrictEqual(interrupts, [sid], 'a busy chat: Stop ends the wait and interrupts the turn');
+      assert.strictEqual(((await s5) as { notSent?: boolean }).notSent, true);
+      busy = false;
+      interrupts.length = 0;
+      abortExpected = false;
+      pending.shift()!('connected');
+      await tick();
+      ad.restartMcpServer = realRestart;
+      clock.now += 2 * H;
+    }
 
     // ---- a reconnect that fails with no new report: the old `connected` is not taken as a success (FR-207) ----
     {
@@ -332,7 +363,7 @@ async function main(): Promise<void> {
   // ---- main.ts hands the gate, the clock, the resume and the window filter over (pinned by text) ----
   const mainSrc = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'main.ts'), 'utf8').replace(/\r/g, '');
   const pins: Array<[RegExp, string]> = [
-    [/mcpGate: \(id\) => mcp\.signInRefresh\.beforeSend\(id\), mcpStopWait: \(id\) => mcp\.signInRefresh\.stopWait\(id\), mcpForget: \(id\) => mcp\.signInRefresh\.forget\(id\)/, 'the window send path gets the gate, Stop and forget'],
+    [/mcpGate: \(id\) => mcp\.signInRefresh\.beforeSend\(id\), mcpStopWait: \(id\) => mcp\.signInRefresh\.stopWait\(id\), mcpBusy: \(id\) => chatBusy\(id\), mcpForget: \(id\) => mcp\.signInRefresh\.forget\(id\)/, 'the window send path gets the gate, Stop and forget'],
     [/return scheduledSendOp\(\{ agent: a, adapter: a \? router\.forAgent\(a\.id\) : undefined, agentState, gate: \(id\) => mcp\.signInRefresh\.beforeSend\(id\),/, 'the scheduler send goes through scheduledSendOp with the gate'],
     [/powerMonitor\.on\('resume', \(\) => mcp\.signInRefresh\.resumed\(\)\)/, 'a wake from sleep marks every chat'],
     [/now: \(\) => performance\.now\(\),\n\s+on: \(\) => !SIMULATOR && \(settingsStore\?\.mcpSignInRefresh \?\? MCP_SIGNIN_REFRESH_DEFAULT\),/, 'the monotonic clock and the switch (never under the simulator)'],

@@ -211,7 +211,7 @@ const mcp = registerMcpIpc({
     now: () => performance.now(),
     on: () => !SIMULATOR && (settingsStore?.mcpSignInRefresh ?? MCP_SIGNIN_REFRESH_DEFAULT),
     platform: process.platform,
-    busy: (id) => busyStatus(id) || agentState.get(id)?.state === 'waiting',
+    busy: (id) => chatBusy(id),
     push: (p) => toRenderer('agents:mcpSignInRefresh', p),
   },
 });
@@ -576,6 +576,8 @@ const scheduleAgent = (s: { folder: string; target?: { session: string } }): Age
 /** Spec 081 FR-013: the sessions of one app's adapter that are open (live) now. */
 const liveSessionsOf = (kind: string): AgentInfo[] => [...agents.values()].filter((a) => router.adapterIdOf(a.id) === kind && router.forAgent(a.id)?.isLive(a.id) === true);
 const busyStatus = (id: string): boolean => ['working', 'needs-permission'].includes(lastStatus.get(id) ?? '');
+/** Spec 058 FR-209: a turn runs or waits for the person, by the adapter's own status (not the window's Thinking after a send). */
+const chatBusy = (id: string): boolean => busyStatus(id) || agentState.get(id)?.state === 'waiting';
 /** Spec 006 FR-039: the main sessions that are busy, as the running marker lists them (ids and agent app only). */
 router.onEvent((e) => {
   if (!crashMarker || e.type !== 'status' || e.agentId) return;
@@ -757,7 +759,7 @@ const browser = registerBrowserIpc({ agents, getWin: () => win, toRenderer, simu
 const browserGone = (id: string): void => void browser.destroy(id).catch(() => undefined);
 /** Spec 043 FR-041: which profile file changes each session has seen (shared by ipc/agents.ts and ipc/profiles.ts). */
 const profileFreshness = createProfileFreshness();
-registerAgentsIpc({ browserGone, agents, router, agentState, opsDeps, remoteOps, mcpGate: (id) => mcp.signInRefresh.beforeSend(id), mcpStopWait: (id) => mcp.signInRefresh.stopWait(id), mcpForget: (id) => mcp.signInRefresh.forget(id), mcpSecrets: (id) => mcp.secretValuesFor(id), logMcp: (a, action) => logActivity(a, 'mcp-restart', action), getScheduler: () => scheduler, getCheckpointStore: () => checkpointStore, profileFreshness, vsChatRefs, continued, wsKey, asEffort, addMany, addWorkspace, sendOp, ensureLive, readyAdapterIds, forgetOpenSession, maskHistory, forgetSandboxNote: (id) => sandboxOps.forget(id) }); // spec 087: sandboxOps is set below, before any IPC call
+registerAgentsIpc({ browserGone, agents, router, agentState, opsDeps, remoteOps, mcpGate: (id) => mcp.signInRefresh.beforeSend(id), mcpStopWait: (id) => mcp.signInRefresh.stopWait(id), mcpBusy: (id) => chatBusy(id), mcpForget: (id) => mcp.signInRefresh.forget(id), mcpSecrets: (id) => mcp.secretValuesFor(id), logMcp: (a, action) => logActivity(a, 'mcp-restart', action), getScheduler: () => scheduler, getCheckpointStore: () => checkpointStore, profileFreshness, vsChatRefs, continued, wsKey, asEffort, addMany, addWorkspace, sendOp, ensureLive, readyAdapterIds, forgetOpenSession, maskHistory, forgetSandboxNote: (id) => sandboxOps.forget(id) }); // spec 087: sandboxOps is set below, before any IPC call
 registerAttachmentsIpc({ dev, pickedFiles, getStageDir, sizeOf });
 registerPreviousIpc({ browserGone, renameSessionOpFor, dev, agents, router, registry, agentState, getFolderStore: () => folderStore, getScheduler: () => scheduler, wsKey, resumeIdFor, forgetOpenSession, logActivity, addWorkspace, vsChatRefs, maskHistory });
 registerCheckpointsIpc({ agents, getCheckpointStore: () => checkpointStore, busyStatus });

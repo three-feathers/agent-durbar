@@ -56,8 +56,10 @@ export interface AgentsIpcDeps {
   logMcp(a: AgentInfo, action: string): void;
   /** Spec 058 FR-208, FR-209: the per-chat MCP sign-in gate every send path awaits first (`stopped` = Stop during the wait). */
   mcpGate?(id: string): Promise<'go' | 'stopped'>;
-  /** Spec 058 FR-208: Stop ends a running gate wait; true when there was one (then no turn runs to interrupt). */
+  /** Spec 058 FR-208: Stop ends a running gate wait; true when there was one. */
   mcpStopWait?(id: string): boolean;
+  /** Spec 058 FR-209: main's own busy state of the chat (a turn runs or waits for the person), not the window's Thinking. */
+  mcpBusy?(id: string): boolean;
   /** Spec 058 T179: the session ended (End session, Restart session, removed): its next message is a first message again. */
   mcpForget?(id: string): void;
 }
@@ -104,9 +106,12 @@ export function register(deps: AgentsIpcDeps): void {
     return r;
   });
   // Stop only interrupts the running turn (the agent returns to Ready); End session frees the runtime session.
-  // spec 058 FR-208: Stop ends a sign-in wait, and (review of PR #1080, item 2) always interrupts the turn too, so a turn that runs is never missed
+  // spec 058 FR-208: Stop ends a sign-in wait. It interrupts the turn when no wait was ended, or when a turn runs anyway (review of PR
+  // #1080, item 2). A wait ended on an idle chat is not interrupted: an interrupt with no turn would leave the app expecting an abort
+  // (Claude Code's abortExpected) and swallow the next real error (third review of PR #1080).
   ipcHandle('agents:stop', (_e, id: string) => {
-    if (typeof id === 'string') deps.mcpStopWait?.(id);
+    const ended = typeof id === 'string' && deps.mcpStopWait?.(id) === true;
+    if (ended && !(deps.mcpBusy?.(id) ?? false)) return undefined;
     return stopTurnOp(opsDeps, id);
   });
 
