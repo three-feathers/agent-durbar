@@ -126,6 +126,7 @@ const { killTree } = require('./ui-suite');
 
 // ---- the command's failure paths (FR-175): no ffmpeg, a failed recording; nothing is left behind ----
 (async () => {
+  setTimeout(() => { console.error('release-video: the test hung (90 s)'); process.exit(1); }, 90000).unref(); // a stuck child fails instead of hanging
   const out = fs.mkdtempSync(path.join(os.tmpdir(), 'rv-test-'));
   try {
     fs.writeFileSync(path.join(out, 'release-v0.1.7.gif'), 'old');
@@ -170,6 +171,48 @@ const { killTree } = require('./ui-suite');
     let gone = false;
     for (let i = 0; i < 100 && !gone; i++) { if (!alive(grand) && !alive(child.pid)) gone = true; else await new Promise((r) => setTimeout(r, 50)); }
     assert.ok(gone, 'killTree ends the child and its grandchild');
-  } else console.log('release-video: POSIX tree-kill case skipped on Windows');
+    // review on #1083: SIGTERM to the parent during a long run ends the detached tree too, and the parent still dies of SIGTERM
+    const ui = path.join(__dirname, 'ui-suite.js');
+    const parentCode = `const {spawn}=require('child_process');const {guardTree}=require(${JSON.stringify(ui)});
+      const c=spawn(process.execPath,['-e',"const g=require('child_process').spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'});console.log(g.pid);setInterval(()=>{},1000)"],{detached:true,stdio:['ignore','pipe','ignore']});
+      guardTree(c);c.stdout.once('data',(b)=>console.log(c.pid+' '+String(b).trim()));setInterval(()=>{},1000);`;
+    const parent = spawn(process.execPath, ['-e', parentCode], { stdio: ['ignore', 'pipe', 'inherit'] });
+    const [cpid, gpid] = await new Promise((r) => parent.stdout.once('data', (b) => r(String(b).trim().split(' ').map(Number))));
+    const ended = new Promise((r) => parent.on('exit', (code, signal) => r({ code, signal })));
+    parent.kill('SIGTERM');
+    // bounded (agent-notes: a promise that never settles passes silently): a parent that does not die fails here, and is cleaned up
+    const how = await Promise.race([ended, new Promise((r) => setTimeout(() => r({ timedOut: true }), 10000))]);
+    if (how.timedOut) { for (const p of [parent.pid, cpid, gpid]) { try { process.kill(p, 'SIGKILL'); } catch { /* gone */ } } try { process.kill(-cpid, 'SIGKILL'); } catch { /* gone */ } }
+    assert.strictEqual(how.signal, 'SIGTERM', `the parent is re-raised with SIGTERM (${JSON.stringify(how)})`);
+    let gone2 = false;
+    for (let i = 0; i < 100 && !gone2; i++) { if (!alive(cpid) && !alive(gpid)) gone2 = true; else await new Promise((r) => setTimeout(r, 50)); }
+    if (!gone2) { try { process.kill(-cpid, 'SIGKILL'); } catch { /* gone */ } try { process.kill(gpid, 'SIGKILL'); } catch { /* gone */ } }
+    assert.ok(gone2, 'SIGTERM on the parent ends the detached child and grandchild');
+  } else console.log('release-video: POSIX tree-kill cases skipped on Windows');
+  // guardTree on any OS (a fake process): each signal and exit kill the tree, release() removes every handler
+  {
+    const { EventEmitter } = require('events');
+    const { guardTree } = require('./ui-suite');
+    for (const ev of ['SIGINT', 'SIGTERM', 'exit']) {
+      const proc = new EventEmitter(); proc.pid = 7; const raised = []; proc.kill = (pid, sig) => raised.push([pid, sig]);
+      const killed = [];
+      guardTree({ pid: 9 }, { proc, kill: (c, o) => killed.push([c.pid, o.sync]) });
+      proc.emit(ev, ev);
+      assert.deepStrictEqual(killed, [[9, true]], `${ev}: the tree is killed (synchronously)`);
+      assert.deepStrictEqual(raised, ev === 'exit' ? [] : [[7, ev]], `${ev}: a signal is raised again with its default action`);
+      if (ev !== 'exit') assert.strictEqual(proc.listenerCount('SIGINT') + proc.listenerCount('SIGTERM') + proc.listenerCount('exit'), 0, `${ev}: handlers removed before re-raising`);
+    }
+    const proc = new EventEmitter(); proc.pid = 7; proc.kill = () => {};
+    const release = guardTree({ pid: 9 }, { proc, kill: () => { throw new Error('must not kill after release'); } });
+    release();
+    assert.strictEqual(proc.listenerCount('SIGINT') + proc.listenerCount('SIGTERM') + proc.listenerCount('exit'), 0, 'release() removes the handlers');
+    proc.emit('exit');
+    const calls = [];
+    const { killTree: kt } = require('./ui-suite');
+    kt({ pid: 5 }, { platform: 'win32', run: (f, a) => calls.push([f, ...a]) });
+    assert.deepStrictEqual(calls, [['taskkill', '/pid', '5', '/T', '/F']], 'Windows: the arguments');
+    const uisrc = fs.readFileSync(path.join(__dirname, 'ui-suite.js'), 'utf8');
+    assert.ok(/const releaseGuard = d\.killTree \? guardTree\(child\)/.test(uisrc) && /clearTimeout\(timer\);\s*releaseGuard\(\);/.test(uisrc), 'runOne guards a killTree run and releases when it closes');
+  }
   console.log('release-video: tests passed');
 })().catch((e) => { console.error(e); process.exitCode = 1; });

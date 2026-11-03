@@ -201,12 +201,35 @@ function syntaxErrors(files) {
  * Spec 008 FR-175 (review on #1083): end a child and everything it started. On POSIX the child must lead its own process group
  * (`detached: true`), which the whole group gets SIGKILL; on Windows `taskkill /T /F` (no shell) ends the tree. Falls back to `child.kill()`.
  */
-function killTree(child, { platform = process.platform, run = require('child_process').execFile } = {}) {
+function killTree(child, { platform = process.platform, run = require('child_process').execFile, sync = false } = {}) {
   if (!child || !child.pid) return;
   try {
-    if (platform === 'win32') run('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true, shell: false }, () => {});
+    if (platform === 'win32' && sync) require('child_process').execFileSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true, shell: false, stdio: 'ignore', timeout: 10000 });
+    else if (platform === 'win32') run('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true, shell: false }, () => {});
     else process.kill(-child.pid, 'SIGKILL');
   } catch { try { child.kill('SIGKILL'); } catch { /* gone */ } }
+}
+
+/**
+ * Spec 008 FR-175 (review on #1083): a detached tree does not get the terminal's Ctrl-C, so while it runs, SIGINT, SIGTERM and the
+ * parent's exit end it with `killTree`; a signal is then raised again with its default action (exit 130 / 143, as without the
+ * handler). Returns `release()`, called when the run ends, which removes the handlers. `proc` and `kill` are for tests.
+ */
+function guardTree(child, { proc = process, kill = killTree } = {}) {
+  let done = false;
+  const onSignal = (sig) => { kill(child, { sync: true }); release(); proc.kill(proc.pid, sig); };
+  const onExit = () => kill(child, { sync: true });
+  const release = () => {
+    if (done) return;
+    done = true;
+    proc.removeListener('SIGINT', onSignal);
+    proc.removeListener('SIGTERM', onSignal);
+    proc.removeListener('exit', onExit);
+  };
+  proc.on('SIGINT', onSignal);
+  proc.on('SIGTERM', onSignal);
+  proc.on('exit', onExit);
+  return release;
 }
 
 /**
@@ -231,9 +254,11 @@ function runOne(d, outDir) {
     const keep = (b) => { log += b.toString(); if (log.length > 400_000) log = log.slice(-200_000); };
     child.stdout.on('data', keep);
     child.stderr.on('data', keep);
+    const releaseGuard = d.killTree ? guardTree(child) : () => {};
     const timer = setTimeout(() => { log += '\n[ui-suite] time limit reached'; if (d.killTree) killTree(child); else child.kill(); }, d.timeoutMs || TIMEOUT_MS);
     child.on('close', (code) => {
       clearTimeout(timer);
+      releaseGuard();
       fs.rmSync(user, { recursive: true, force: true });
       const failedLine = log.split(/\r?\n/).find((l) => l.includes('DRIVER FAILED') || l.includes('[ui-suite] time limit'));
       resolve({ ok: code === 0 && !failedLine, code, secs: Math.round((Date.now() - started) / 1000), why: failedLine || (code !== 0 ? `exit ${code}` : ''), log });
@@ -291,5 +316,5 @@ async function main({ ensure = ensureElectron, run = runOne, argv } = {}) {
   if (failed.length) process.exitCode = 1;
 }
 
-module.exports = { syntaxErrors, main, runOne, killTree, DRIVERS, NOT_IN_SUITE }; // runOne: also spec 001 FR-082 (scripts/shots-docs.js)
+module.exports = { syntaxErrors, main, runOne, killTree, guardTree, DRIVERS, NOT_IN_SUITE }; // runOne: also spec 001 FR-082 (scripts/shots-docs.js)
 if (require.main === module) main().catch((e) => { console.error('ui-suite:', e.message); process.exitCode = 1; });
