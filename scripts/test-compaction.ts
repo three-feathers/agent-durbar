@@ -134,6 +134,10 @@ const comp = (o: EventBody[]): string[] => o.filter((e) => e.type === 'compactio
     // the next turn reports its context again
     o = run([turnStart, item('item/started'), item('item/completed'), usageMsg(150000), turnDone, turnStart, usageMsg(20000), turnDone]);
     assert.deepStrictEqual(o.filter((e) => e.type === 'context').map((e) => (e.type === 'context' ? e.tokens : 0)), [20000], 'the next turn gives the new size');
+    // an automatic compaction mid-turn: only the first update after it is skipped, later model calls of the same turn give the context (FR-012)
+    o = run([turnStart, item('item/started'), item('item/completed'), usageMsg(150000), usageMsg(30000), turnDone]);
+    assert.deepStrictEqual(o.filter((e) => e.type === 'context').map((e) => (e.type === 'context' ? e.tokens : 0)), [30000], 'the second update in the same turn gives the context');
+    assert.strictEqual(o.filter((e) => e.type === 'usage').length, 2);
     // an ordinary turn is untouched
     assert.deepStrictEqual(run([turnStart, usageMsg(1234), turnDone]).filter((e) => e.type === 'context').length, 1);
   }

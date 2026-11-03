@@ -307,7 +307,9 @@ export class CodexMapper {
     if (input === undefined && output === undefined && cached === undefined) return; // nothing countable: not a model call
     // Codex reports tokens only: no credits (nanoAiu) and no money (costUsd).
     this.emit({ type: 'usage', agentId, inputTokens: input, outputTokens: output, cacheReadTokens: cached });
-    if (input !== undefined && !(this.compactedTurn && agentId === undefined)) this.emit({ type: 'context', agentId, tokens: input, limit: num(own(tu, 'modelContextWindow')) ?? 0 });
+    const skipContext = this.compactedTurn && agentId === undefined; // only the first update after a compaction: later model calls of the turn (an automatic compaction mid-turn) have a real size
+    if (skipContext) this.compactedTurn = false;
+    if (input !== undefined && !skipContext) this.emit({ type: 'context', agentId, tokens: input, limit: num(own(tu, 'modelContextWindow')) ?? 0 });
   }
 
   private item(item: unknown, phase: 'started' | 'completed', agentId: string | undefined): void {
@@ -418,7 +420,7 @@ export class CodexMapper {
 
   /** Spec 015 FR-008: a context compaction of the main thread is open (ended by its completed item, or failed at the turn's end). */
   private compacting = false;
-  /** Spec 015 FR-012: a compaction finished in this turn: its `thread/tokenUsage/updated` (real order: item, usage, turn end) counts its tokens but gives no context figure (`last` was not recorded; the old size would defeat the "waiting" ring). */
+  /** Spec 015 FR-012: a compaction finished: the FIRST main `thread/tokenUsage/updated` after it (real order: item, usage, turn end) counts its tokens but gives no context figure; the flag is cleared when consumed, at the turn end and on reset (`last` was not recorded; the old size would defeat the "waiting" ring). */
   private compactedTurn = false;
 
   /** FR-149: helper threads already announced as started / ended (bounded by the session). */
