@@ -13,6 +13,9 @@ const fs = require('fs');
 const path = require('path');
 const assert = require('assert');
 const { helpers, jsLiteral } = require('./driver-helpers');
+const { AT_CLOCK } = require('./shots-068-coffee');
+/* the plate's words after "Coffee break — ": "resumes at 14:30" today, "resumes Tue 12:08 AM" when the reset is on the next day (a run just before midnight UTC); test-coffeebreak checks it against untilText */
+const RESUMES = `resumes ${AT_CLOCK}`;
 
 const OUT = process.env.SHOTS_OUT || fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-097-moments-'));
 const SIZES = [[1440, 900], [1280, 800]];
@@ -318,7 +321,7 @@ module.exports = async (ctx) => {
       if (process.env.MOMENTS_FONT) { await js(`(()=>{const s=document.createElement('style');s.textContent='#stage .ro *{font-family:'+${jsLiteral(process.env.MOMENTS_FONT)}+' !important}';document.head.appendChild(s);window.__durbarSimUi.crew.renderAll();})()`); await H.until(PICS, 10000); } /* a developer aid: another font's widths (CI's Linux fonts are wider) */
       const cf = await js(`(()=>{const p=[...document.querySelectorAll('#stage .ro-plate')].find(p=>/Tomas/.test(p.textContent));return {plate:p.textContent,label:p.getAttribute('aria-label'),title:p.getAttribute('title'),state:p.dataset.state,away:[...document.querySelectorAll('#stage .ro-away')].map(e=>e.textContent),
         chips:[...document.querySelectorAll('#stage .ro-chip')].filter(c=>c.dataset.coffeeid).map(c=>[c.textContent,c.getAttribute('aria-label')])}})()`);
-      assert.ok(/^TomasPrompt tuner Coffee break \u00B7 Coffee break \u2014 resumes at /.test(cf.plate) && cf.state === 'waiting', `${tag}: the plate and the status (Waiting, never Error): ${cf.plate} ${cf.state}`);
+      assert.ok(new RegExp(`^TomasPrompt tuner Coffee break \\u00B7 Coffee break \\u2014 ${RESUMES}`).test(cf.plate) && cf.state === 'waiting', `${tag}: the plate and the status (Waiting, never Error): ${cf.plate} ${cf.state}`);
       assert.ok(/^Tomas, Prompt tuner, Coffee break, .*at Coffee corner\. Open chat panel\.$/.test(cf.label), `${tag}: the name: ${cf.label}`);
       assert.ok(cf.away.some((t) => /^at Coffee corner until /.test(t)), `${tag}: the coffee-break post-it says where and until when (owner 2026-11-02): ${JSON.stringify(cf.away)}`);
       assert.strictEqual(await js(`document.querySelectorAll('#stage .ro-tent').length`), 0, `${tag}: no tent card (replaced by the post-it)`);
@@ -393,3 +396,4 @@ module.exports = async (ctx) => {
     }
   }
 };
+module.exports.RESUMES = RESUMES;
