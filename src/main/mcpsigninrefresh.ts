@@ -169,7 +169,8 @@ export interface SignInChatView {
   readOnly: boolean;
   /** See `SignInPlanInput.renews`. */
   renews?: boolean;
-  servers: SignInServerView[];
+  /** The chat's last report, built only when the cheap checks (switch, app, running, busy, moment) let a plan go on. */
+  servers(): SignInServerView[];
 }
 
 export interface SignInTimers {
@@ -283,13 +284,17 @@ export class McpSignInRefresher {
 
   /** The plan for one chat now (the same input every caller builds). */
   plan(agentId: string, moment: 'send' | 'recheck'): { plan: SignInPlan; view?: SignInChatView } {
-    const v = this.d.view(agentId);
     const empty: SignInPlan = { why: 'not-live', reconnect: [], join: [], signInOnly: [] };
-    if (!v) return { plan: empty };
-    const records: Record<string, SignInRecordView> = {};
-    for (const s of v.servers) {
-      const r = this.records.get(s.key);
-      if (r) records[s.key] = r;
+    this.prune();
+    let v: SignInChatView | undefined;
+    try {
+      v = this.d.view(agentId);
+    } catch {
+      v = undefined;
+    }
+    if (!v) {
+      this.lastResponse.delete(agentId); // a chat main no longer knows (removed): its mark goes
+      return { plan: empty };
     }
     let on = false;
     try {
@@ -297,7 +302,7 @@ export class McpSignInRefresher {
     } catch {
       on = false; // fail closed
     }
-    const plan = planMcpSignInRefresh({
+    const input: SignInPlanInput = {
       moment,
       now: this.d.now(),
       lastResponseAt: this.lastResponse.get(agentId),
@@ -310,11 +315,36 @@ export class McpSignInRefresher {
       ...(v.renews === false ? { renews: false } : {}),
       live: v.live,
       busy: v.busy,
-      servers: v.servers,
-      records,
+      servers: [],
+      records: {},
       inFlight: [...this.flights.keys()],
-    });
-    return { plan, view: v };
+    };
+    // review of PR #1080 (item 7): the same planner first with no servers; only a plan that would go on builds the chat's server list
+    const pre = planMcpSignInRefresh(input);
+    if (pre.why === 'off' || pre.why === 'no-part' || pre.why === 'not-live' || pre.why === 'busy' || pre.why === 'no-moment') return { plan: pre, view: v };
+    let servers: SignInServerView[] = [];
+    try {
+      servers = v.servers();
+    } catch {
+      servers = [];
+    }
+    const records: Record<string, SignInRecordView> = {};
+    for (const s of servers) {
+      const r = this.records.get(s.key);
+      if (r) records[s.key] = r;
+    }
+    return { plan: planMcpSignInRefresh({ ...input, servers, records }), view: v };
+  }
+
+  /** Review of PR #1080 (item 7): records that can no longer change a plan go (an attempt older than the gap, not blocked). */
+  private prune(): void {
+    const now = this.d.now();
+    for (const [k, r] of this.records) if (!r.blocked && typeof r.at === 'number' && !(now - r.at >= 0 && now - r.at < MCP_SIGNIN_GAP_MS)) this.records.delete(k);
+  }
+
+  /** Test view: how many server records main keeps. */
+  recordCount(): number {
+    return this.records.size;
   }
 
   /** Start (or join) the reconnects of a plan; resolves when all of them settled. Sign-in lines go to the window as results come. */
@@ -350,8 +380,19 @@ export class McpSignInRefresher {
    * reconnect of this chat already running (a recheck's), at most `waitMs` in total. `stopped` = Stop during the wait: nothing is sent.
    */
   async beforeSend(agentId: string): Promise<'go' | 'stopped'> {
+    try {
+      return await this.gate(agentId);
+    } catch {
+      return 'go'; // review of PR #1080 (item 4): a gate that fails never holds a message: it goes as if there were nothing to wait for
+    }
+  }
+
+  private async gate(agentId: string): Promise<'go' | 'stopped'> {
     const prior = this.reconnecting.get(agentId);
     const { plan } = this.plan(agentId, 'send');
+    // review of PR #1080 (item 2): a message while a turn runs (a steer, a queued message) goes at once: no wait, not even for an earlier
+    // reconnect, so Stop never ends a wait while that turn runs on
+    if (plan.why === 'busy') return 'go';
     const started = this.run(agentId, plan);
     const waitFor = this.reconnecting.get(agentId) ?? prior;
     if (!waitFor) return 'go'; // nothing to wait for: no line

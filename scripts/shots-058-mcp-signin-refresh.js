@@ -50,15 +50,18 @@ module.exports = async (ctx) => {
     const servers = (crm, docs) => [{ name: 'docs', status: docs, transport: 'http' }, { name: EVIL, status: crm, transport: 'http' }, { name: 'files', status: 'connected', transport: 'stdio' }];
     await emit({ type: 'mcp', sessionId: id, servers: servers('connected', 'connected') });
     await js(`window.__durbarSimSignIn.fate('docs','ok');window.__durbarSimSignIn.fate(${jsLiteral(EVIL)},'expired');window.__durbarSimSignIn.fate('files','ok');0`);
-    await emit({ type: 'status', sessionId: id, status: 'idle' });
-    assert.ok(await until(`window.__durbarSimSignIn.lastResponse(${jsLiteral(id)})!==undefined`), 'the turn end set the last-response mark');
     const opened = await H.openSimAgent(`a=>a.id===${jsLiteral(id)}`, '#msgInput');
     assert.ok(opened.ok, 'the chat opened: ' + JSON.stringify(opened.seen));
     // count the reconnects through the bridge's own reply path: the simulator emits an mcp event per reconnect
     await js(`(()=>{window.__mcpEv=[];window.__durbarSimUi.bridge().onEvent(e=>{if(e.type==='mcp'&&e.sessionId===${jsLiteral(id)})window.__mcpEv.push(e.servers.map(s=>s.name+':'+s.status).join(','));});})()`);
 
+    // every send's answer, recorded (the window's own bridge object)
+    await js(`(()=>{const b=window.__durbarSimUi.bridge();window.__sendRes=[];if(!b.__srs){b.__srs=1;const o=b.send;b.send=async(...a)=>{const r=await o(...a);window.__sendRes.push(r);return r;};}})()`);
     // ---- within the hour: nothing ----
-    await js(`window.__durbarSimSignIn.advance(${jsLiteral(HOUR - 1000)});0`);
+    // (review of PR 1080: the mark is set right before the clock moves, with a minute to spare, so a slow machine never crosses the hour)
+    await emit({ type: 'status', sessionId: id, status: 'idle' });
+    assert.ok(await until(`window.__durbarSimSignIn.lastResponse(${jsLiteral(id)})!==undefined`), 'the turn end set the last-response mark');
+    await js(`window.__durbarSimSignIn.advance(${jsLiteral(HOUR - 60000)});0`);
     await send('within the hour');
     assert.ok(await until(`[...document.querySelectorAll('#chat .msg.user')].some(m=>m.textContent.includes('within the hour'))`), 'sent');
     await settle();
@@ -126,7 +129,8 @@ module.exports = async (ctx) => {
     assert.ok(await until(`(()=>{const m=[...document.querySelectorAll('#chat .msg.user')].pop();return !!m&&m.textContent.includes('stop me')&&!!m.querySelector('.unsent')&&m.querySelector('.unsent').textContent==='Not sent'})()`, 3000), 'Not sent');
     assert.strictEqual(await js(`document.getElementById('msgInput').value`), 'stop me', 'the text is back in the composer');
     assert.ok(!(await js(`[...document.querySelectorAll('#chat .note.mcpre')].some(n=>/^Reconnecting/.test(n.textContent))`)), 'the waiting line is gone');
-    await new Promise((r) => setTimeout(r, 1200)); // a reply would have started 400 ms after a send (simulator): none comes
+    // the send itself answered "not sent" (the simulator starts a reply only after a send that went), and no turn started
+    assert.ok(await until(`window.__sendRes.some(r=>r&&r.notSent===true)`, 3000), 'the send answered not sent');
     assert.strictEqual(await js(`window.__work`), 0, 'no reply: nothing was sent');
     await js(`(()=>{const i=document.getElementById('msgInput');i.value='';i.dispatchEvent(new Event('input',{bubbles:true}));})()`);
 
@@ -150,6 +154,8 @@ module.exports = async (ctx) => {
     await emit({ type: 'status', sessionId: id, status: 'idle' });
     await js(`window.__durbarSimSignIn.advance(${jsLiteral(2 * HOUR)});0`);
     const evOff = (await js(`window.__mcpEv`)).length;
+    // the simulator's own turn end for this direct send (the window never shows Thinking for it): count idle events from here
+    await js(`(()=>{window.__idleN=0;if(!window.__idleOn){window.__idleOn=1;window.__durbarSimUi.bridge().onEvent(e=>{if(e.type==='status'&&e.status==='idle'&&e.sessionId===${jsLiteral(id)})window.__idleN++;});}})()`);
     const r = await js(`window.__durbarSimUi.bridge().send(${jsLiteral(id)},'switched off',[])`);
     assert.ok(r && r.ok, 'sent at once');
     assert.strictEqual((await js(`window.__mcpEv`)).length, evOff, 'off: no reconnect after a quiet hour');
@@ -159,7 +165,7 @@ module.exports = async (ctx) => {
     const BAD = '<img src=x onerror="window.__pwn=1"><b>x</b>';
     await emit({ type: 'mcp', sessionId: id, servers: [{ name: BAD, status: 'needs-auth', transport: 'http' }] });
     await js(`window.__durbarSimSignIn.fate(${jsLiteral(BAD)},'expired');0`);
-    assert.ok(await until(`window.__durbarSimUi.agents().find(a=>a.id===${jsLiteral(id)}).state!=='thinking'&&window.__durbarSimUi.agents().find(a=>a.id===${jsLiteral(id)}).state!=='working'`, 15000), 'the last reply ended');
+    assert.ok(await until(`window.__idleN>0`, 15000), 'the reply to that send ended (the simulator said idle)');
     await emit({ type: 'status', sessionId: id, status: 'idle' });
     await js(`window.__durbarSimSignIn.advance(${jsLiteral(2 * HOUR)});0`);
     await H.openSimAgent(`a=>a.id===${jsLiteral(id)}`, '#msgInput');

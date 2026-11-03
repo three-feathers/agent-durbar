@@ -188,7 +188,7 @@ export function registerMcpIpc(deps: {
         // FR-207 (`real:` 2026-11-03, Copilot, Linux): under an OS sandbox that covers the app's MCP servers the reconnect renewed nothing,
         // so there only the sign-in line shows; a sandbox in any state but off counts (fail closed)
         ...(a.sandbox && a.sandbox.state !== 'off' && Array.isArray(a.sandbox.covers) && a.sandbox.covers.includes('mcp') ? { renews: false } : {}),
-        servers: (live.get(a.id) ?? []).map((x) => {
+        servers: () => (live.get(a.id) ?? []).map((x) => {
           const url = serverUrlOf(a.id, x.name);
           // the transport the app reported; else (`real:` 2026-11-03, Copilot's `list` names no transport) http when Durbar knows the
           // server by an http(s) address (a folder extra, a list Durbar passes, the Copilot CLI list); unknown = not remote (FR-206)
@@ -254,6 +254,7 @@ export function registerMcpIpc(deps: {
       signIns.onServers(e.sessionId, e.servers); // connected: the sign-in is finished
     } else if (e.type === 'status' && e.status === 'stopped') {
       live.delete(e.sessionId);
+      reports.delete(e.sessionId);
       health.delete(e.sessionId);
       signIns.dropAgent(e.sessionId); // End session, Restart session (it ends the session first), a failed reconnect
     }
@@ -270,6 +271,7 @@ export function registerMcpIpc(deps: {
           /* the request ends with the reconnect anyway */
         }
         refresher.noteDeclined(e.sessionId, src);
+        if (hidden.size >= 200) hidden.delete(hidden.values().next().value as string); // bounded
         hidden.add(e.requestId);
       }
     }
@@ -477,6 +479,7 @@ export function registerMcpIpc(deps: {
     /** Spec 058 FR-215: an elicitation main declined during an automatic reconnect is not passed to the window. */
     hidesEvent(e) {
       if (e.type !== 'question' || typeof e.requestId !== 'string' || !hidden.has(e.requestId)) return false;
+      if ((e as { phase?: unknown }).phase !== 'asked') hidden.delete(e.requestId); // its answer or cancel ends it (review of #1080, item 7)
       return true;
     },
     optionsFor(agentId: string) {

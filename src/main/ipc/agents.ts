@@ -94,7 +94,8 @@ export function register(deps: AgentsIpcDeps): void {
     agentState.ensure(id, agents.get(id)?.lazy);
     agentState.noteSend(id); // the window shows Thinking from the moment the user sends (app.js sendLive)
     // spec 058 FR-208/FR-209: the chat's MCP sign-in reconnects first, at most 5 s; Stop meanwhile = nothing is sent
-    if (deps.mcpGate && (await deps.mcpGate(id)) === 'stopped') {
+    // (review of PR #1080, item 4: a gate that throws never holds the message: it goes)
+    if (deps.mcpGate && (await Promise.resolve().then(() => deps.mcpGate?.(id)).catch(() => 'go' as const)) === 'stopped') {
       agentState.noteNotSent(id);
       return { ok: false, notSent: true, error: 'Not sent: you stopped it while MCP sign-ins were reconnecting.' };
     }
@@ -103,7 +104,11 @@ export function register(deps: AgentsIpcDeps): void {
     return r;
   });
   // Stop only interrupts the running turn (the agent returns to Ready); End session frees the runtime session.
-  ipcHandle('agents:stop', (_e, id: string) => (typeof id === 'string' && deps.mcpStopWait?.(id) ? undefined : stopTurnOp(opsDeps, id))); // spec 058 FR-208: Stop during the sign-in wait ends the wait
+  // spec 058 FR-208: Stop ends a sign-in wait, and (review of PR #1080, item 2) always interrupts the turn too, so a turn that runs is never missed
+  ipcHandle('agents:stop', (_e, id: string) => {
+    if (typeof id === 'string') deps.mcpStopWait?.(id);
+    return stopTurnOp(opsDeps, id);
+  });
 
   /** End session (spec 005): remote control off first (spec 054 FR-011: off on GitHub too), then the adapter frees the session. Also Restart session's first step (spec 058 FR-022). */
   const endSession = async (id: string): Promise<void> => {

@@ -1801,8 +1801,12 @@ before the message needs the server. For Copilot, **Sign in** itself finishes wi
 - **FR-205** **When Durbar reconnects: two moments per chat.**
   1. **The first message of a session** (a new chat, a resumed chat, after *Restart session*): Claude Code and Codex start their MCP
      servers with a fresh process or thread and refresh an expired stored sign-in themselves (`real:` T177), so Durbar adds nothing for
-     them. **Copilot**: a session that is not the runtime's first did not refresh at start (`real:` T177), so a remote server that reads
-     `needs-auth` within that send's wait is handled as in FR-207. (The draft's Codex case "needs-auth before the first message" is
+     them. **Copilot**: a session that is not the runtime's first did not refresh at start (`real:` T177). *Narrowed 2026-11-03 (review
+     of PR #1080, item 5)*: Durbar acts at this moment only in a session that is **running and already reported** its servers (for
+     example a chat whose servers started and that has had no reply yet), on servers that read `needs-auth`. A session that is resumed or
+     not started yet has no report before the message (Copilot and Claude Code start their servers with it, FR-010), and Durbar does not
+     start servers early to get one (each start can read the keychain, #623); there the server's own start does what the app does, and a
+     `needs-auth` server shows *Needs sign-in* and, from the next send on, FR-211's line. (The draft's Codex case "needs-auth before the first message" is
      dropped: review item 11.)
   2. **The first message after a gap**: the chat's last response ended (`status` `idle`, `error` or `stopped` from the adapter) **60
      minutes** or more before this send. Measured on a **monotonic clock** (main's injected `now()`, `performance.now()` in the app;

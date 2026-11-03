@@ -182,7 +182,8 @@ async function main(): Promise<void> {
     };
     return { d, t, pushes, logs, calls, timers, chats, finish, status, on };
   };
-  const chat = (servers: SignInServerView[], more: Partial<SignInChatView> = {}): SignInChatView => ({ adapterId: 'copilot', takesPart: true, live: true, busy: false, readOnly: false, servers, ...more });
+  let built = 0; // how often a chat's server list was built (review of PR #1080, item 7: only when a plan can go on)
+  const chat = (servers: SignInServerView[], more: Partial<SignInChatView> = {}): SignInChatView => ({ adapterId: 'copilot', takesPart: true, live: true, busy: false, readOnly: false, servers: () => { built++; return servers; }, ...more });
 
   // nothing to do: no wait, no line; the clock is the injected one, never Date.now
   {
@@ -375,6 +376,52 @@ async function main(): Promise<void> {
     await p;
     assert.deepStrictEqual(f.pushes.filter((x) => x.kind === 'needs-sign-in'), [{ id: 'a', kind: 'needs-sign-in', name: 'n' }], 'a declined elicitation makes it a needs-sign-in, even when the app then reads connected');
     assert.ok(!r.underAuto('a', 'n'), 'the mark ends with the reconnect');
+  }
+
+  // ---- review of PR #1080: a busy chat goes at once (item 2), a failing gate sends (item 4), lazy lists and pruning (item 7) ----
+  {
+    const f = fake({ hang: true });
+    const r = new McpSignInRefresher(f.d);
+    f.chats.set('a', chat([srv('n', 'needs-auth')]));
+    const first = r.beforeSend('a');
+    await tick();
+    assert.deepStrictEqual(f.calls, ['a:n'], 'a reconnect runs');
+    f.chats.set('a', chat([srv('n', 'needs-auth')], { busy: true }));
+    assert.strictEqual(await r.beforeSend('a'), 'go', 'a steer while the turn runs: sent at once, not held by the earlier reconnect');
+    assert.strictEqual(f.timers.length, 1, 'no second wait was started');
+    f.finish.get('a:n')!('connected');
+    await first;
+    // a view that throws, and a clock that throws: the message goes
+    const g = fake();
+    const r2 = new McpSignInRefresher({ ...g.d, view: () => { throw new Error('boom'); } });
+    assert.strictEqual(await r2.beforeSend('x'), 'go', 'a view that throws: go');
+    const r3 = new McpSignInRefresher({ ...g.d, now: () => { throw new Error('clock'); } });
+    g.chats.set('a', chat([srv('n', 'needs-auth')]));
+    assert.strictEqual(await r3.beforeSend('a'), 'go', 'a gate that throws inside: go');
+    // the server list is built only when a plan can go on
+    const h = fake();
+    const r4 = new McpSignInRefresher(h.d);
+    h.chats.set('a', chat([srv('c', 'connected')]));
+    r4.turnEnded('a');
+    built = 0;
+    await r4.beforeSend('a');
+    assert.strictEqual(built, 0, 'no gap: the list is not built');
+    h.on.v = false;
+    h.t.now += 2 * H;
+    await r4.beforeSend('a');
+    assert.strictEqual(built, 0, 'switch off: not built');
+    h.on.v = true;
+    await r4.beforeSend('a');
+    assert.strictEqual(built, 1, 'at the gap: built once');
+    // pruning: an attempt older than the gap goes, a block stays
+    h.chats.set('b', chat([srv('p', 'needs-auth')]));
+    h.status.set('p', 'needs-auth');
+    await r4.beforeSend('b');
+    assert.strictEqual(r4.recordCount(), 2, 'two records');
+    h.t.now += H;
+    await r4.beforeSend('zzz');
+    assert.strictEqual(r4.recordCount(), 1, 'the old attempt is pruned, the block is kept');
+    r4.forget('zzz');
   }
 
   // ---- the Copilot adapter's automatic form (FR-207, FR-214) ----

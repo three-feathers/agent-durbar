@@ -5194,7 +5194,10 @@ function mcpReLine(p){
     b.setAttribute('aria-label','Sign in to '+name+' again: open the MCP servers');
     n.append(t,b);
   }
-  if(ui.selected===a.id)stickyScroll(chat);
+  /* review of PR 1080: the line is what the person's own send caused, so in the open chat it is brought into view (the chat's own scroller
+     only, after layout), also when the chat was scrolled up and does not follow new text */
+  const shown=p.kind==='needs-sign-in'?[...chat.el.querySelectorAll('.note.mcpre-sign')].pop():p.kind==='late'?[...chat.el.querySelectorAll('.note.mcpre')].pop():a.mcpReNote;
+  if(shown&&ui.selected&&liveRoot(byId(ui.selected)||a)===a&&SCROLL)requestAnimationFrame(()=>SCROLL.reveal(shown,{margin:8}));
 }
 document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest('.mcpre-btn');if(!b)return;e.stopPropagation();const a=byId(ui.selected),r=a&&liveRoot(a);if(r&&window.DurbarScreens)Promise.resolve(window.DurbarScreens.agentMcp(r,{...mcpOpts(r),focusServer:{name:b.dataset.n||''}})).finally(()=>refreshMcpCount(r));});
 /* FR-208: Stop during the wait: the message is marked Not sent and its text goes back to the composer (when it is empty) */

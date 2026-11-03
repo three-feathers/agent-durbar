@@ -247,7 +247,8 @@ export async function scheduledSendOp(d: ScheduledSendDeps, prompt: string, s: {
   if (!a || !ad) return false;
   d.agentState.ensure(a.id, a.lazy);
   d.agentState.noteSend(a.id); // same as the interactive send: the window shows Thinking from the moment a prompt goes out
-  if (d.gate && (await d.gate(a.id)) === 'stopped') {
+  // review of PR #1080 (item 4): a gate that throws never loses the run: the prompt goes
+  if (d.gate && (await Promise.resolve().then(() => d.gate?.(a.id)).catch(() => 'go' as const)) === 'stopped') {
     d.agentState.noteNotSent?.(a.id);
     throw new Error('Not sent: stopped while MCP sign-ins were reconnecting.');
   }

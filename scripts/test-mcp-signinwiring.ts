@@ -175,11 +175,25 @@ async function main(): Promise<void> {
     assert.strictEqual(await call('agents:stop', sid), undefined);
     assert.deepStrictEqual(await s4, { ok: false, notSent: true, error: 'Not sent: you stopped it while MCP sign-ins were reconnecting.' });
     assert.strictEqual(sent.length, sentBefore, 'nothing was sent');
-    assert.deepStrictEqual(interrupts, [], 'no turn was interrupted (none ran)');
+    assert.deepStrictEqual(interrupts, [sid], 'Stop also interrupts the turn (review of PR #1080, item 2: a turn that runs is never missed)');
+    interrupts.length = 0;
     assert.strictEqual(agentState.get(sid)?.state, 'idle', 'the agent is ready again, not an error');
     assert.deepStrictEqual(pushes[pushes.length - 1], { id: sid, kind: 'not-sent' });
     await call('agents:stop', sid);
     assert.deepStrictEqual(interrupts, [sid], 'with no wait, Stop interrupts the turn as before');
+
+    // ---- review of PR #1080, item 4: a gate that throws never holds a message or loses a scheduled run ----
+    {
+      const sentB = sent.length;
+      const realGate = mcp.signInRefresh.beforeSend.bind(mcp.signInRefresh);
+      (mcp.signInRefresh as unknown as { beforeSend: unknown }).beforeSend = () => { throw new Error('gate broke'); };
+      assert.deepStrictEqual(await call('agents:send', sid, 'gate broke', []), { ok: true }, 'the window send goes');
+      assert.strictEqual(sent.length, sentB + 1, 'sendOp was called');
+      const out: string[] = [];
+      const r = await scheduledSendOp({ agent: agents.get(sid), adapter: { send: async (x: string) => { out.push(x); } } as never, agentState, gate: () => Promise.reject(new Error('gate broke')), ensureLive: async () => undefined, toWindow: () => undefined, noteLastSession: () => undefined, now: () => 0 }, 'nightly', { id: 's9' });
+      assert.deepStrictEqual([r, out], [sid, [sid]], 'the scheduled run goes, it is not lost');
+      (mcp.signInRefresh as unknown as { beforeSend: unknown }).beforeSend = realGate;
+    }
 
     // ---- an elicitation from the server under the automatic reconnect is declined and hidden (FR-215) ----
     emit(sid, { type: 'question', phase: 'asked', requestId: 'el-1', elicitation: { message: 'Pick a tenant', source: 'docs' } });
