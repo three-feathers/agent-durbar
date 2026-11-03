@@ -366,3 +366,4 @@
 - [x] T248 Stop at a limit shows no error (`test:copilotcap`, mutation-checked; `real:`) [FR-233]
 - [x] T249 A raise under what was used keeps the card and the message (`test:copilotcap`, mutation-checked; `real:`) [FR-234]
 - [x] T250 A session over its cap opens again (`test:copilotcap`, mutation-checked; `real:`) [FR-235]
+- [x] T251 Remove the Simple / Expert switch: Expert is the only behaviour, "No spending limit" kept, the welcome question and the Settings control gone, a stored `durbar.detail` dropped once; 11 drivers lose the second dimension, `shots-052-ux` checks nothing renders the switch; docs and `*-simple-*` pictures removed [FR-236]
