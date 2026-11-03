@@ -1,6 +1,7 @@
 /** Title search of Previous sessions (spec 006 FR-023, issue #252): `npm run test:sessionsearch`. Pure matcher, no credits. */
 import * as assert from 'assert';
 import * as path from 'path';
+import { assertLinearShape } from './redact-growth-lib';
 type S = { id: string; title: string };
 const { fold, locate, anchorKey, filterSessions, terms, arrangeSessions, applyMark, visibleCount, deleteDialogText, refusalDialogText, noDeleteReason } = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'sessionsearch.js')) as {
   filterSessions: (l: S[], q: string) => S[]; terms: (q: string) => string[]; fold: (s: unknown) => string;
@@ -161,6 +162,15 @@ console.log('sessionsearch pin/hide tests passed');
   assert.strictEqual(anchorKey(null), '');
   assert.strictEqual(anchorKey('**a**'), anchorKey('a'), 'the rendered text and the source give the same key');
   assert.strictEqual(anchorKey('x'.repeat(20_000)).length, 20_000);
+}
+// review of PR 1098, finding 3: anchorKey is linear (a run of `[` scanned to the line end at every `[`: 489 ms at 20 000 characters). CPU-time
+// growth against a 1/16 baseline of the same shape (redact-growth-lib), so load does not decide it
+{
+  assertLinearShape('anchorKey: a run of [', (x) => anchorKey(x), (n) => '['.repeat(n), 160_000);
+  assertLinearShape('anchorKey: repeated [a](', (x) => anchorKey(x), (n) => '[a]('.repeat(Math.ceil(n / 4)), 160_000);
+  assertLinearShape('anchorKey: [ then (', (x) => anchorKey(x), (n) => '[x](' + '('.repeat(n), 160_000);
+  assert.strictEqual(anchorKey('see [the link](https://x.test/a) and [b](c)'), 'see the link and b', 'links still give their text');
+  assert.strictEqual(anchorKey('[nested [b] text](u)'), anchorKey('[nested [b] text](u)'), 'nested brackets: left as they are, the same on both sides');
 }
 console.log('sessionsearch locate/anchorKey tests passed');
 

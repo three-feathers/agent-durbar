@@ -42,8 +42,9 @@
   }
   /* Spec 095 FR-013: the one comparison key of a message for the jump to it, used by main (on the masked text) and by the window (on the
      rendered message): Markdown marks stripped (code fences, links and images to their text, heading, quote and list marks, * _ ~ `),
-     whitespace collapsed, then `fold`. The code inside a fence is kept, since the chat shows it. */
-  const anchorKey=t=>fold(String(t==null?'':t).replace(/```[^\n]*\n?/g,' ').replace(/!?\[([^\]\n]*)\]\([^)\n]*\)/g,'$1').replace(/^[ \t]*(?:#{1,6}|>|[-*+]|\d{1,9}[.)])[ \t]+/gm,'').replace(/[*_~`]/g,'').replace(/\s+/g,' ').trim());
+     whitespace collapsed, then `fold`. The code inside a fence is kept, since the chat shows it. Linear (review of PR 1098: a link's text and
+     address are bounded and cannot hold the bracket or parenthesis that starts another try, so a run of `[` costs one pass). */
+  const anchorKey=t=>fold(String(t==null?'':t).replace(/```[^\n]*\n?/g,' ').replace(/!?\[([^[\]\n]{0,300})\]\([^()\s]{0,2000}\)/g,'$1').replace(/^[ \t]*(?:#{1,6}|>|[-*+]|\d{1,9}[.)])[ \t]+/gm,'').replace(/[*_~`]/g,'').replace(/\s+/g,' ').trim());
   /* sessions whose title holds every word of the query (any order); the input order (newest first) is kept; a blank query keeps all */
   function filterSessions(list, query){
     const arr=Array.isArray(list)?list:[], t=terms(query);
