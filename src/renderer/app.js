@@ -8060,7 +8060,7 @@ async function renamePrevRow(a0,id,opener){
   const x=prevRenameArgs(a0,id,'.prev-more'); if(!x)return;
   await renameSessionUi(x.a,x.prev,{opener,onDone:x.onDone});
 }
-/* spec 006 FR-035: open or closed is one display preference of this computer (localStorage, like the detail level; no session data) */
+/* spec 006 FR-035: open or closed is one display preference of this computer (localStorage, like the Display settings; no session data) */
 const PREV_PREF='durbar.prevOpen';
 function prevPref(){try{const v=localStorage.getItem(PREV_PREF);return v==='open'?true:v==='closed'?false:null;}catch(e){return null;}}
 function setPrevPref(open){try{localStorage.setItem(PREV_PREF,open?'open':'closed');}catch(e){}}
