@@ -1256,7 +1256,7 @@ adapter sets it). The owners asked to treat MCP as a priority.
   - `success: false`: the server stays Needs sign-in, its `error` is Codex's `error` text (main masks it, FR-067), and it carries
     `signInEnd: 'failed'`, which ends the entry under the rule above ("Sign-in did not finish: <masked reason>. Press Sign in to try again.").
   - `CodexAdapter.refreshMcpStatus(sessionId, name)` (the 5 s poll) reads `mcpServerStatus/list` with `serverName` and **merges** that one
-    server into `live.mcp` (today's `refreshMcp` replaces the whole map; a one-server page must not drop the others), keeping the
+    server into `live.mcp` (`refreshMcp` now reads each known server by name and merges; since spec 012 FR-164 it drops only a name Codex stopped listing that Durbar did not send; a one-server page must not drop the others), keeping the
     challenge mark as `refreshMcp` does.
 - **FR-179** **Durbar never runs a sign-in command.** No `claude mcp login`, `claude mcp logout`, `codex mcp login` or `codex mcp logout`
   subprocess, and no terminal window opened for one: Claude's needs a TTY (it stops without one) and neither knows Durbar's own servers;
