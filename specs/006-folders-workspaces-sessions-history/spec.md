@@ -126,6 +126,10 @@ For a folder that has not been used yet in this run, a "Previous sessions" panel
 
 ## Changes
 
+### 2026-11-03: `shots-006-continue` waits for the status line (spec 021 FR-048b)
+
+`sim:` The driver read the chat header's status once, right after the "Continued after restart" text appeared; the header is painted on the next render, so on a busy runner it could still say *Starting* (Linux UI job on #981, a PR that does not touch this). It now waits with `until()` for *Idle*, and still fails when the status never gets there. Nothing in the app changes.
+
 ### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
 
 The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):

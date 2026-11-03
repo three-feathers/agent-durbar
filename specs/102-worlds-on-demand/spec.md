@@ -564,8 +564,8 @@ Why, and what it replaces, is under *Changes*. Plan: [*Retro arcade*](plan.md#re
 **The hall**
 
 - **FR-256** **`aisles`, geometry from the mockup.** Replaces FR-227's and FR-238's "concept". `realLayout` returns it through FR-228's one seam, with zones and desks as for any arrangement.
-  - **9 to 15 people:** 5 columns, 3 rows, `g = 2`, cabinet about 146 x 164 px; rows stagger by 8 % of a column and bend down towards the middle. Screens face inwards: the two left columns face right, the two right columns face left, the middle column alternates. Each person stands on the screen side. Mirroring is a static `transform: scaleX(-1)` on the picture only, and no text is inside a mirrored element.
-  - **5 to 8 people:** the mockup keeps the size of 15, so faces do not grow, against the owner's words. These counts take `g = 3` wherever T202's pure test finds it fits, at both sizes.
+  - **9 to 15 people:** 5 columns, 3 rows, `g = 2`, cabinet 146 x 146 px, 122 x 146 at 1280x800 with the chat open (*measured*, T202; the mockup's 164 px height was an estimate); rows stagger by 8 % of a column and bend down towards the middle. Screens face inwards: the two left columns face right, the two right columns face left, the middle column alternates. Each person stands on the screen side. Mirroring is a static `transform: scaleX(-1)` on the picture only, and no text is inside a mirrored element.
+  - **5 to 8 people:** the mockup keeps the size of 15, so faces do not grow, against the owner's words. These counts take `g = 3` wherever T202's pure test finds it fits, at both sizes. `[KNOWN GAP]` at 1280x800 with the chat open they stay at `g = 2` (*measured*, T202: the floor is 810 px wide and `g = 3` needs 270 px a column), so 8 people's faces are the size of 15's there; `test-realoffice-aisles` pins this and fails the day more fits.
   - **1 to 4 people:** 2 columns with the big cabinet (FR-230): `g = 3` at 1440x900 and `g = 2` at 1280x800 in the mockup, CRT 231x156 and 184x124 px (*measured* on the mockup).
   - **Past 15 on one floor:** more rows at `g = 2`, and the floor scrolls inside itself as in 097 FR-012. This closes FR-230's gap for this world, pending Q9.
   - **Folder signs, the mockup's largest omission.** The mockup has no zones: it seats by index, with no name, path, counts, cost, **+** or room menu per folder. FR-018 and today's flat rooms have them, and they are daily use (FR-265). Seats go folder by folder in the model's sequence, a zone's first seat carries its sign, and the sign shares the plate line of its row. At 1280x800, 15 people leave about 12 px of height per row (*arithmetic*: 602 px under the band, 3 rows, cabinet 164 and plate 24), so a sign cannot have its own 22 px strip. **Measure first (T202):** if the sign does not fit in full, it shows name, counts, **+** and menu, and the path and cost go to its hover and focus, and the loss is named in FR-265.
@@ -631,7 +631,7 @@ Why, and what it replaces, is under *Changes*. Plan: [*Retro arcade*](plan.md#re
   | Latest output | Real lines on the CRT; zoom on hover or focus | **Kept** |
   | Lobby: who is where, boss, bank, post | Fixtures, visitors, slips (#994) | **Kept** |
   | Per-agent tokens and cost on the card | Chat header; `[KNOWN GAP]` not on the plate. 097 FR-016 has no such field, and T202 sees if it fits | **Moved, named** |
-  | **Flat's whole layout:** rooms as coloured folder blocks, densities, Detail level, wrapping | The arcade replaces it, automatically (FR-266). Flat is one click away in Settings, in Flat's normal colours | **Named loss as the default** |
+  | **Flat's whole layout:** rooms as coloured folder blocks, densities, Display, wrapping | The arcade replaces it, automatically (FR-266). Flat is one click away in Settings, in Flat's normal colours | **Named loss as the default** |
   | **Flat in retro colours** | Gone: Flat with Characters `pixel` uses Flat's normal colours | **Named loss** |
   | Pixel desks and CRTs in Flat, floppy rim, pixel plant, brick wall, `arcade` motion preset | Gone with the `pixel` kit; the arcade has its own art | **Named loss** |
   | Theme words: Arcade, Snack bar, Boss level, Coin bank, Mailbox, Cartridge Bay, Console, Modem | Gone: the app's words everywhere (FR-013, FR-040; the mockup shows them) | **Named loss** |
@@ -866,6 +866,56 @@ Security: FR-083 scopes revocation by source and never touches a person's own wo
 ### 2026-11-01: downloadable art agrees with FR-240 (Paco's review of #937, item 8)
 
 D7, FR-085, FR-170, FR-181, US2 scenario 1, FR-205, FR-241, plan and T195 follow FR-240. New: `sourceCommit` and a CI job, so a catalogue PR's hash is still checked against reviewed files (FR-085's old guarantee). Downloadable sets follow FR-240 (an agent decision he can reverse), and T195 covers them.
+
+### 2026-11-02: Retro arcade, status and motion (RA4, T213..T216), behind its closed flag
+
+Written with the build. Night is RA5.
+
+- **FR-260, the cue:** one element per cabinet, always there, holds the bubble: dots, `?`, `!`, tick or `z z`; hidden when a state has none. The thinking dots are one opacity step a second on that element, not a strip. Limit shows `?`, as today's card asks for attention.
+- **FR-260, idle:** the cabinet dims by its own `opacity`, not a shade element: a shade would also darken the floor showing through the picture's transparent pixels.
+- **FR-261, the flash:** on the marquee's own `::after`, so it adds no node and moves with the marquee during a slide (a separate element was left behind in one). It is an outline, so the text's contrast never changes. Only marquees flash; glows are steady.
+- **FR-261, no node:** a pose change swaps the frame here, with no second picture to fade. A sign's count chip for a status its folder did not have is the sign's own, in every world, and is not counted.
+- **FR-261, phases:** a person's bob and a flash start from the timeline's zero, so someone who starts working later keeps the 4 phases. A helper at the door stands still here: the room's sway rotates, off the grid.
+- **FR-262, measured (T215):** masks, not the fallback. At an exaggerated rate (6 people every 600 ms), real GPU: equal to a stepped fade; software compositor: about 3 points of a core more; 60 fps in all. A real move is rare. Rechecked on the build, settled, 3 rounds: 3 people moving every 600 ms cost 8.5 % of a core against 4.2 with nobody moving, 60 fps, worst frame under 19 ms at the 99th percentile; far above real use. Reduced motion: none. All the masks are static, only `opacity` animates; copies come from a pool of at most 12 and are removed at the end. One redraw can move several people at once, so several dissolves can run together.
+- **T216, recorded, never asserted (097 FR-187):** % of a core, total (renderer, GPU), macOS on a real GPU, 15 agents, 1440x900, medians of 3 rounds in one run, sampled from outside about 5 s after load, about 60 fps in every case:
+
+  | Mix | Photo office | This world |
+  |---|---|---|
+  | mixed | 41.1 (20.6, 20.4) | 5.5 (2.2, 3.2) |
+  | all working | 46.4 (22.4, 24.0) | 8.1 (3.4, 4.6) |
+  | all flashing | 40.2 (18.6, 21.7) | 4.2 (2.1, 2.0) |
+  | all idle | 40.9 (19.3, 21.5) | 0.6 (0.3, 0.2) |
+
+  Settled 35 s after load, 2 rounds: Photo office mixed 23.5 and 27.1, this world mixed 3.5 and 4.0. RA3's hall, with the room's smooth motion, measured 54.5 in the first table's run. The ≤ 5 % real GPU row holds for all idle and all flashing, and settled mixed, and not for mixed or all working in the first seconds.
+  **Chase (Q2):** 15 stepped strips cost 7.7 against 5.5; none is built, as held.
+- `[KNOWN GAP]` **T216's routes:** `check-perf --record` is not on `main`, so this is an outside sampler in a scratch script, not repeatable from the repo. Software compositor, Windows and Linux are not measured. **Night** is the night art put in by a style override (5.2), since RA5 wires it. No recording of the dissolve has been judged by eye (T215's `read:`).
+- `[KNOWN GAP]` **Asleep:** the `rest` frame is drawn large behind a dark cabinet and the console (FR-259) is not there; it reads, and it looks odd. For RA5 and the owner's look.
+
+### 2026-11-02: Retro arcade, the hall drawn (RA3, T209..T212), behind its closed flag
+
+Written with the build. Motion, status light and night are RA4 and RA5.
+
+- **FR-256, mirroring:** on the `scale` property, not `transform`: a motion on `transform` (a breath, a zoom) would flip the picture back. A count change's easing keeps the flip. No text is in a mirrored element.
+- **FR-257:** the art's side panel is on its right, so it faces left. A cabinet facing right is the picture mirrored, and its glass and marquee rectangles move with it.
+- **The person and the glass:** at the small and narrow cabinets someone standing beside it reaches about 12 grid px over the glass. They stand in front of the cabinet's body and behind its glass, which is opaque, so nothing lies under the screen's text; `shots-102-arcade` holds the order and the opaque glass. The glass cuts the figure, by up to about 5 grid px of a face beside it. Moving them out would not leave room for 15 at the narrowest floor. Whether that looks right is for the owner's look (review of #1025).
+- **An empty place (097's still room):** the note stands where the person would, beside the glass, never over its text.
+- **FR-256, the bend:** it flattens to nothing before anything scrolls: at 1280x800 with a banner over the floor, 15 people have 3 px to spare.
+- **FR-229, op row:** `check-office-ops` has the row for this world at 15 and 40, with no allowance of its own. Measured: 0 elements for one text change on a marquee at both (1 before main removed its last `:has()` rule, #949), the least of 4 traces: the room's own render lands inside one trace in some runs.
+- **The page's `require`:** it answers only `./realoffice-layout`. A shim answering everything broke the office when `crew.js` could not load (`check-crew`).
+- `[KNOWN GAP]` **Chat open is not drawn yet:** on this base a chat hides the office, so `aislesLayout` is checked at those widths only by `test-realoffice-aisles`; the driver checks chat closed. It comes with #1001.
+- `[KNOWN GAP]` T212 asks for a mutant adding a node on a status update: `check-office-ops` on `main` has no such row yet (#950 brings it). `check:office` has no world id yet; `shots-102-arcade` carries the overlap checks instead.
+- `[KNOWN GAP]` **Lobby people are not on the grid:** `lobbyBand` scales them by the door, as in other worlds, so their pixels can be uneven (FR-255). The asleep console (FR-259) is not drawn, and a screen's own text is not pixel type. Windows at 125 % and 150 % are not looked at (T204).
+
+### 2026-11-01: Retro arcade, frames and packs built (RA2, T201, T207, T208); numbers measured
+
+Nothing draws these files; `WORLD_FLAGS.retro` stays closed. Written with the build, so the spec says what was built.
+
+- **FR-253 measured (T208):** the committed Retro arcade world is **7.2 KB** (18 files) and Retro pixel people **300.7 KB** (255 files), **307.9 KB** together (FR-253 expected about 0.4 MB); all shipped art in the repo was about 8 MB of 30 when written (`test:realoffice-assets` prints it: 8.20 MB on 2026-11-03). Every file is lossless (`VP8L`, no animation); `test:realoffice-assets` holds it and plants a file over each cap. Not yet built, so not in the sum: `welcome` and `welcome-night`, lift, bubble, slip and panel frame (FR-253's estimate of about 60 KB).
+- **FR-254 / FR-257, three cabinet drawings, not two:** `monitor.webp` (big, glass 75 x 50 grid px, 1 to 4 people), `monitor-half.webp` (small, 56 x 32) and **`monitor-narrow.webp`** (44 x 32), a third drawing for a floor too narrow for the small cabinet with the chat open (810 px at 1280x800): without it 15 do not fit in five columns at `g = 2`. `aislesLayout` (T202) chooses among exactly these (`CABINETS`).
+- **FR-259 frame names:** a person has 17 frames: `typeA`, `typeB`, `waveA`, `waveB`, `think`, `rest` (seated, on one canvas); `type`, `book`, `knock`, `letter`, `counter` (standing, seen from behind: the plain names are view a, as `AISLE_POSE` says); `face-book`, `face-coffee`, `face-knock`, `face-letter`, `face-runA`, `face-runB` (front standing). No `coffee` or `tread` view a exists in the art, so FR-204's required `coffee` and `tread` come from `face-coffee` and `face-runA` only by the fallback the spec allows the other way round; the validator of #955 must accept this or the art needs two more frames. `[KNOWN GAP]`.
+- **`faceBox` measured (T201):** crown to chin in `face-book`, 19 to 29 grid px (the hooded person is the smallest); `FACE_GRID` is 19, not the 24 by eye, so at `g = 2` the smallest face is 38 px, over FR-229's 24 px floor.
+- **T201, the art:** three frames of the cache were off the 8x grid (`r8-waveA`, `r4-waveA`, `r4-waveB`; the plan named two): shrunk by a block vote (no new colour) and looked at. The cache's note called the art "drawn by code" and also `snapped` sheets: it is Codex sheets, snapped; the repo's `ASSETS.md` says so. Approval is the owner's, not Paco's (Q11).
+- **Night is not complete:** `wall-night.webp` and `floor-night.webp` ship under `night` in `world.json`; `lightSets` and `nightTokens` wait for `welcome-night` and the tokens (RA5), since FR-252 says all three or none.
 
 ### 2026-11-02: helpers as kids per world; the Terminal world's row (FR-271, FR-272; T233..T235)
 

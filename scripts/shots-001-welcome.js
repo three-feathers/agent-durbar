@@ -5,8 +5,8 @@
  *   npm run build
  *   OUT=docs/screenshots DURBAR_USER_DATA=$(mktemp -d) DURBAR_DRIVER=$PWD/scripts/shots-001-welcome.js xvfb-run -a npx electron . --no-sandbox
  *
- * Checks the multi-harness wording (FR-027), the "Do you write code?" choice (spec 052 FR-082) and writes 001-welcome-1440x900.png and
- * 001-welcome-1280x800.png. After the pictures it presses both answers and checks the detail level follows and is remembered.
+ * Checks the multi-harness wording (FR-027), that the card has no "Do you write code?" question (spec 052, Simple / Expert removed 2026-11-02)
+ * and writes 001-welcome-1440x900.png and 001-welcome-1280x800.png.
  */
 const assert = require('assert');
 const path = require('path');
@@ -17,24 +17,16 @@ module.exports = async (ctx) => {
   const { until, settle } = waits(ctx); // spec 008 FR-096: wait for the page, not a fixed time
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
     ctx.win.setContentSize(w, h);
-    await until(`!!document.querySelector('.welcome')&&/Do you write code\?/.test(document.querySelector('.welcome').innerText)`, 15000); await settle();
+    await until(`!!document.querySelector('.welcome')`, 15000); await settle();
     const t = await ctx.js(`(document.querySelector('.welcome')||{}).innerText||''`);
     assert.ok(t, 'the welcome card is shown');
     for (const need of ['Your AI agents in one office', 'GitHub Copilot', 'Claude Code', 'Add a folder', 'your own plan']) assert.ok(t.includes(need), `welcome says "${need}"`);
     assert.ok(!/coding agent/i.test(t), 'no "coding agents" wording');
-    for (const need of ['Do you write code?', 'Yes, show me the details', 'No, keep it simple']) assert.ok(t.includes(need), `welcome asks "${need}"`);
-    assert.ok(await ctx.js(`!document.body.classList.contains('simple')&&[...document.querySelectorAll('[data-wl-level]')].every(b=>b.getAttribute('aria-pressed')==='false')`), 'nothing chosen yet: Expert, no answer pressed');
+    assert.ok(!/Do you write code|keep it simple|show me the details/i.test(t) && !(await ctx.js(`!!document.querySelector('[data-wl-level]')`)), 'the welcome card asks no detail-level question');
     const overflow = await ctx.js(`(()=>{const c=document.querySelector('.welcome').getBoundingClientRect();return c.right>innerWidth+1||c.bottom>innerHeight+1})()`);
     assert.ok(!overflow, 'the card fits the window');
     await ctx.shot(path.join(OUT, `001-welcome-${w}x${h}.png`));
     console.log('[001-welcome]', w, 'ok');
   }
-  // spec 052 FR-082: the answer sets the detail level and is remembered like the Settings choice
-  await ctx.js(`document.querySelector('[data-wl-level="simple"]').click()`); await until(`document.body.classList.contains('simple')&&localStorage.getItem('durbar.detail')==='simple'`);
-  const simple = await ctx.js(`({on:document.body.classList.contains('simple'),kept:localStorage.getItem('durbar.detail'),pressed:(document.querySelector('[data-wl-level="simple"]')||{}).getAttribute?document.querySelector('[data-wl-level="simple"]').getAttribute('aria-pressed'):null})`);
-  assert.deepStrictEqual(simple, { on: true, kept: 'simple', pressed: 'true' }, 'No, keep it simple: Simple, remembered');
-  await ctx.js(`document.querySelector('[data-wl-level="expert"]').click()`); await until(`!document.body.classList.contains('simple')&&localStorage.getItem('durbar.detail')==='expert'`);
-  assert.ok(await ctx.js(`!document.body.classList.contains('simple')&&localStorage.getItem('durbar.detail')==='expert'`), 'Yes, show me the details: Expert, remembered');
-  await ctx.js(`localStorage.removeItem('durbar.detail')`); /* leave the fresh profile as it was */
   console.log('[001-welcome] PASS');
 };
