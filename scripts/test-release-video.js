@@ -112,7 +112,23 @@ assert.ok(!/gh release|releases\/|--notes/.test(src.replace(/^\s*\*.*$/gm, '')),
   process.env.RV_TEST_SECRET_TOKEN = 'ghp_' + 'z'.repeat(36);
   const keys = JSON.parse(String(RV.run(process.execPath, ['-e', 'process.stdout.write(JSON.stringify(Object.keys(process.env)))'], { timeout: 10000 })));
   delete process.env.RV_TEST_SECRET_TOKEN;
-  assert.ok(!keys.includes('RV_TEST_SECRET_TOKEN') && keys.every((k) => RV.ENV_ALLOW.includes(k.toUpperCase()) || k === 'SystemRoot' || /^(PWD|SHLVL|_)$/.test(k)), `ffmpeg gets the allow-listed environment only: ${keys.join(',')}`);
+  assert.ok(!keys.some((k) => k.toUpperCase() === 'RV_TEST_SECRET_TOKEN'), `the planted token does not reach ffmpeg: ${keys.join(',')}`);
+  assert.deepStrictEqual(RV.unexpectedEnvKeys(keys), [], `ffmpeg gets the allow-list plus what ${process.platform} itself adds: ${keys.join(',')}`);
+  // the check on each OS, with the key sets CI saw on #1083 (Windows: libuv adds its required variables; macOS: __CF_USER_TEXT_ENCODING)
+  const seenOn = {
+    win32: ['APPDATA', 'HOME', 'HOMEDRIVE', 'HOMEPATH', 'LOCALAPPDATA', 'LOGONSERVER', 'Path', 'SystemDrive', 'SystemRoot', 'TEMP', 'TMP', 'USERDOMAIN', 'USERNAME', 'USERPROFILE', 'windir'],
+    darwin: ['TMPDIR', 'LC_ALL', 'PATH', 'LANG', 'HOME', '__CF_USER_TEXT_ENCODING'],
+    linux: ['PATH', 'HOME', 'DISPLAY', 'LANG', 'TMPDIR'],
+  };
+  for (const [platform, ks] of Object.entries(seenOn)) {
+    assert.deepStrictEqual(RV.unexpectedEnvKeys(ks, platform), [], `${platform}: what CI saw is expected`);
+    for (const leak of ['GITHUB_TOKEN', 'gh_token', 'RV_TEST_SECRET_TOKEN', 'NODE_OPTIONS', 'AWS_SECRET_ACCESS_KEY'])
+      assert.deepStrictEqual(RV.unexpectedEnvKeys([...ks, leak], platform), [leak], `${platform}: ${leak} would be reported`);
+  }
+  assert.deepStrictEqual(RV.unexpectedEnvKeys(['LOGONSERVER', '__CF_USER_TEXT_ENCODING'], 'linux'), ['LOGONSERVER', '__CF_USER_TEXT_ENCODING'], 'another OS\'s added keys are not expected on Linux');
+  assert.deepStrictEqual(RV.unexpectedEnvKeys(['__CF_USER_TEXT_ENCODING'], 'win32'), ['__CF_USER_TEXT_ENCODING'], 'nor macOS\'s on Windows');
+  assert.deepStrictEqual(RV.unexpectedEnvKeys(['path', 'Path', 'PATH', 'SystemRoot'], 'win32'), [], 'names in any case');
+  assert.ok(!Object.keys(RV.childEnv({ LOGONSERVER: 'x', USERDOMAIN: 'y', USERNAME: 'z' })).length, 'what we pass leaves them out (only libuv adds them on Windows)');
   const src2 = fs.readFileSync(path.join(__dirname, 'release-video.js'), 'utf8');
   assert.ok(/timeout: FFMPEG_MS, killSignal: 'SIGKILL'/.test(src2), 'every ffmpeg call has a limit and a hard kill');
 }

@@ -163,6 +163,21 @@ function forbiddenValues({ home = os.homedir(), user = safeUser(), host = os.hos
 function gitEmail(run = require('child_process').execFileSync) {
   try { return String(run('git', ['config', 'user.email'], { cwd: ROOT, encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true, shell: false }) || '').trim(); } catch { return ''; }
 }
+/**
+ * Keys the OS or runtime puts into a child's environment whatever we pass, so they are expected there (not a leak):
+ * on Windows libuv copies its "required" variables from the parent when the given block lacks them (`required_vars` in
+ * libuv src/win/process.c: HOMEDRIVE, HOMEPATH, LOGONSERVER, PATH, SYSTEMDRIVE, SYSTEMROOT, TEMP, USERDOMAIN, USERNAME,
+ * USERPROFILE, WINDIR); macOS adds __CF_USER_TEXT_ENCODING to every process. None holds a secret; they cannot be dropped.
+ */
+const PLATFORM_ADDED = {
+  win32: ['HOMEDRIVE', 'HOMEPATH', 'LOGONSERVER', 'PATH', 'SYSTEMDRIVE', 'SYSTEMROOT', 'TEMP', 'USERDOMAIN', 'USERNAME', 'USERPROFILE', 'WINDIR'],
+  darwin: ['__CF_USER_TEXT_ENCODING'],
+};
+/** FR-176: the keys of a child's environment that are neither allow-listed nor added by the platform (names case-insensitive). */
+function unexpectedEnvKeys(keys, platform = process.platform) {
+  const ok = new Set([...ENV_ALLOW, ...(PLATFORM_ADDED[platform] || [])]);
+  return keys.filter((k) => !ok.has(String(k).toUpperCase()));
+}
 /** The allow-listed part of an environment (names matched case-insensitively: Windows has `Path`, `SystemRoot`). */
 function childEnv(env = process.env) {
   const out = {};
@@ -482,5 +497,5 @@ async function driver(ctx) {
 }
 
 module.exports = driver;
-Object.assign(module.exports, { ENV_ALLOW, RECORD_MS, FFMPEG_MS, childEnv, gitEmail, run, W, H_, BAND, FRAME_H, composeFrame, SCENES, DEFAULT_SCENES, VERSION_RE, FPS, GIF_MAX, MP4_MAX, parseArgs, fill, forbiddenValues, privacyProblems, concatList, mp4Args, gifArgs, gifTries, lengthOk, main });
+Object.assign(module.exports, { PLATFORM_ADDED, unexpectedEnvKeys, ENV_ALLOW, RECORD_MS, FFMPEG_MS, childEnv, gitEmail, run, W, H_, BAND, FRAME_H, composeFrame, SCENES, DEFAULT_SCENES, VERSION_RE, FPS, GIF_MAX, MP4_MAX, parseArgs, fill, forbiddenValues, privacyProblems, concatList, mp4Args, gifArgs, gifTries, lengthOk, main });
 if (require.main === module) main().catch((e) => { console.error('release-video:', e.message); process.exitCode = 1; });
