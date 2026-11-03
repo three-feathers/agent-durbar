@@ -18,8 +18,8 @@ export const INDEX_TTL_MS = 10_000;
 
 /** A network or device path: never read. */
 export function remotePath(p: string, platform: NodeJS.Platform): boolean {
-  if (/^[\\/]{2}/.test(p)) return true; // \\host\share, //host/share, \\?\UNC\..., \\.\pipe\...
-  if (platform === 'darwin' && /^\/(net|Network)(\/|$)/.test(p)) return true; // the automounter and the network volumes
+  if (/^[\\/]{2}/.test(p)) return true; // \\host\share, //host/share, \\?\UNC\..., \\.\pipe\..., mixed \/host and /\host
+  if (platform === 'darwin' && /^\/(net|network)(\/|$)/i.test(p)) return true; // the automounter and the network volumes (any case: APFS ignores it)
   return false;
 }
 

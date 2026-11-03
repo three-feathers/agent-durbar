@@ -9,7 +9,7 @@ import type { DetectEnv } from '../src/adapters/detect';
 import type { GlobalState } from '../src/shared/api';
 
 /** A fake computer: files by full path; readdir lists a folder's names and is counted; isFile must never be needed. */
-function computer(platform: NodeJS.Platform, files: string[], env: Record<string, string> = {}, loginPath: string[] = []) {
+function computer(platform: NodeJS.Platform, files: string[], env: Record<string, string> = {}, loginPath: string[] = [], locked: string[] = []) {
   const p = platform === 'win32' ? path.win32 : path.posix;
   const k = (s: string) => (platform === 'win32' ? s.toLowerCase() : s);
   const reads: string[] = [];
@@ -17,6 +17,7 @@ function computer(platform: NodeJS.Platform, files: string[], env: Record<string
   const de: DetectEnv = { platform, env, homedir: platform === 'win32' ? 'C:\\Users\\u' : '/home/u', isFile: () => { stats++; return false; }, listDir: () => [], loginPath };
   const readdir = async (dir: string): Promise<string[]> => {
     reads.push(dir);
+    if (locked.some((l) => k(l) === k(dir))) throw Object.assign(new Error('EACCES'), { code: 'EACCES' });
     const ns = files.filter((f) => k(p.dirname(f)) === k(dir)).map((f) => p.basename(f));
     if (!ns.length) throw new Error('ENOENT');
     return ns;
@@ -43,6 +44,14 @@ async function main(): Promise<void> {
     assert.strictEqual(f(' npx '), true, 'spaces around the name');
     assert.strictEqual(c.stats(), 0, 'no stat');
   }
+  // review on PR 1073 (D): a folder that cannot be read (EACCES) is not judged, never "missing"; a readable empty-of-it folder is "missing"
+  {
+    const c = computer('linux', ['/srv/open/other'], { PATH: '/usr/bin' }, [], ['/srv/locked']);
+    const f = await look(c, ['/srv/locked/x', '/srv/open/x']);
+    assert.ok(c.reads.includes('/srv/locked'), 'the locked folder was tried');
+    assert.strictEqual(f('/srv/locked/x'), undefined, 'an unreadable folder: not judged');
+    assert.strictEqual(f('/srv/open/x'), false, 'a readable folder without it: missing');
+  }
   // not judged: references, relative paths with a folder, odd values
   {
     const c = computer('linux', ['/usr/bin/x'], { PATH: '/usr/bin' });
@@ -53,8 +62,8 @@ async function main(): Promise<void> {
   }
   // review on PR 1073 item 1: network and device paths are never read, never "missing"
   {
-    const remote = ['\\\\host\\share\\x.exe', '//host/share/x', '\\\\?\\UNC\\host\\s\\x.exe', '\\\\.\\pipe\\x', '\\\\?\\C:\\tools\\x.exe', '//?/c:/x'];
-    const c = computer('win32', ['C:\\tools\\x.exe'], { PATH: 'C:\\tools;\\\\fileserver\\bin;//nas/tools' });
+    const remote = ['\\/host/share/x.exe', '/\\host\\share\\x.exe', '\\\\host\\share\\x.exe', '//host/share/x', '\\\\?\\UNC\\host\\s\\x.exe', '\\\\.\\pipe\\x', '\\\\?\\C:\\tools\\x.exe', '//?/c:/x'];
+    const c = computer('win32', ['C:\\tools\\x.exe'], { PATH: 'C:\\tools;\\\\fileserver\\bin;//nas/tools;\\/mixed/bin;/\\mixed\\bin' });
     const dirs = foldersFor(remote, c.de);
     assert.ok(dirs.every((d) => !remotePath(d, 'win32')), 'no network folder is read: ' + JSON.stringify(dirs));
     const f = await look(c, remote);
@@ -66,11 +75,14 @@ async function main(): Promise<void> {
     assert.strictEqual(f('C:\\tools\\x.exe'), true, 'an absolute path with a drive letter');
     assert.strictEqual(f('C:/tools/x.exe'), true, 'forward slashes');
     assert.strictEqual(f('C:x.exe'), undefined, 'drive-relative: not judged');
-    const mac = computer('darwin', ['/usr/local/bin/x'], { PATH: '/usr/local/bin:/net/host/bin:/Network/Servers/s/bin' });
-    const fm = await look(mac, ['/net/host/tools/x', '/Network/Servers/s/x']);
+    const mac = computer('darwin', ['/usr/local/bin/x'], { PATH: '/usr/local/bin:/net/host/bin:/Network/Servers/s/bin:/NET/h/bin:/network/s/bin' });
+    const fm = await look(mac, ['/net/host/tools/x', '/Network/Servers/s/x', '/NET/h/x', '/network/s/x']);
+    assert.strictEqual(fm('/NET/h/x'), undefined, 'macOS /NET (any case): not judged');
+    assert.strictEqual(fm('/network/s/x'), undefined, 'macOS /network (any case): not judged');
+    assert.strictEqual(notJudged('/NeT/h/x', 'darwin'), 'remote');
     assert.strictEqual(fm('/net/host/tools/x'), undefined, 'macOS /net: not judged');
     assert.strictEqual(fm('/Network/Servers/s/x'), undefined, 'macOS /Network: not judged');
-    assert.ok(mac.reads.every((d) => !/^\/(net|Network)\//.test(d)), 'no macOS network folder read: ' + JSON.stringify(mac.reads));
+    assert.ok(mac.reads.every((d) => !/^\/(net|network)\//i.test(d)), 'no macOS network folder read, in any case: ' + JSON.stringify(mac.reads));
   }
   // Windows: PATHEXT limited to runnable extensions, a name with its own extension, case, dotted names, absolute without extension
   {
@@ -87,6 +99,13 @@ async function main(): Promise<void> {
     assert.strictEqual(f('tool'), false, 'a .py in PATHEXT does not count as runnable');
     assert.strictEqual(f('tool2'), false, 'nor a .js');
     assert.strictEqual(f('uvx'), false, 'not found');
+    // review on PR 1073 (C): Windows names and folders in any case
+    const mixed = computer('win32', ['C:\\Program Files\\NodeJS\\NPX.CMD', 'C:\\Tools\\Docker.EXE', 'D:\\Apps\\Server.Bat'], { PATH: 'C:\\Program Files\\NodeJS;C:\\Tools', PATHEXT: '.EXE;.CMD;.BAT' });
+    const fx = await look(mixed, ['d:\\apps\\server']);
+    assert.strictEqual(fx('npx'), true, 'NPX.CMD from a lowercase command');
+    assert.strictEqual(fx('DOCKER'), true, 'Docker.EXE from an uppercase command');
+    assert.strictEqual(fx('Docker.exe'), true, 'its own extension in another case');
+    assert.strictEqual(fx('d:\\apps\\server'), true, 'an absolute path in another case than the folder');
     const noExt = computer('win32', ['C:\\tools\\srv.bat'], { PATH: 'C:\\tools' });
     assert.strictEqual((await look(noExt, []))('srv'), true, 'without PATHEXT the usual extensions');
   }

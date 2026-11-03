@@ -103,7 +103,8 @@ A failed server shows "Failed", a one-line hint ("The command was not found", "N
 1. **Given** an error text that contains a header value of one of the folder's MCP extras, **When** the dialog shows it, **Then** the
    value is replaced by `[redacted]` (main masks before the renderer gets it).
 2. **Given** an error "spawn npx ENOENT", **Then** the hint says the command was not found and suggests checking it in Settings or the
-   folder's extras.
+   folder's extras. *Superseded 2026-11-03 by FR-201*: the hint is now FR-201's fix ("Install the command, or put its full path
+   in the server's entry. Then restart the server, or start a new chat."); the reason line still says "Not installed (command not found)".
 
 ### User Story 3 - Restart one server (Priority: P2)
 
@@ -1565,7 +1566,8 @@ not dropping a policy finding, nothing new outside the window ignored, the `exit
 from a name, `nf>1` as `nf>0`, the button never disabled, the policy line's words emptied, the list not capped, the headline
 counting names instead of problems; and `main.ts` handing a check that skips `withMissing`. Second round (review by fjcabello):
 a remote command judged, a network PATH folder read, no 10 s index, PATHEXT not limited to runnable extensions, macOS `/net` read,
-`C:x` judged; driver: Cancel signing in, a report removing the policy line. Pictures: [the strip at launch](../../docs/screenshots/058-mcp-launch-closed-1440x900.png) ([1280x800](../../docs/screenshots/058-mcp-launch-closed-1280x800.png)), [Settings with Restart where it failed and the list open](../../docs/screenshots/058-mcp-launch-settings-1440x900.png) ([1280x800](../../docs/screenshots/058-mcp-launch-settings-1280x800.png)).
+`C:x` judged; driver: Cancel signing in, a report removing the policy line. Third round (fjcabello): the network regex narrowed to
+`\\` and `//`, macOS `/net` case-sensitive, Windows names not lowercased, an unreadable folder stored as empty. Pictures: [the strip at launch](../../docs/screenshots/058-mcp-launch-closed-1440x900.png) ([1280x800](../../docs/screenshots/058-mcp-launch-closed-1280x800.png)), [Settings with Restart where it failed and the list open](../../docs/screenshots/058-mcp-launch-settings-1440x900.png) ([1280x800](../../docs/screenshots/058-mcp-launch-settings-1280x800.png)).
 
 **Input**: owner (Vikram, 2026-11-03): restart MCP servers from Settings, with their status and signing in again, as in the chat; and
 when the app starts, highlight the servers that have problems and suggest a fix.
@@ -1612,9 +1614,10 @@ Codex) starts the servers inside one chat's session (FR-002). There is no app-wi
   PR 1073: thousands of synchronous stats before). On Windows a name without a runnable extension gets each of PATHEXT ∩ {.exe, .cmd,
   .bat, .com} (`python3.11` -> `python3.11.exe`); a `.py` or `.js` never counts as found. Nothing is run, opened or sent.
   **Never touched** (review on PR 1073, fjcabello): a network or device path, as a command or as a PATH folder (`\\host\share`,
-  `//host/...`, `\\?\...`, `\\.\pipe\...`, macOS `/net/` and `/Network/`): reading one can open an SMB connection, which leaks an NTLM
+  `//host/...`, `\\?\...`, `\\.\pipe\...`, macOS `/net/` and `/Network/` in any case, mixed `\/host` and `/\host` too): reading one can open an SMB connection, which leaks an NTLM
   response and can freeze; such a command is *not judged*, never *missing*. Also not judged: a `$`, `%` or `` ` `` reference, a relative
-  path with a folder in it, a drive-relative `C:x`, anything over 1024 characters, and an absolute path whose folder could not be read.
+  path with a folder in it, a drive-relative `C:x`, anything over 1024 characters, and an absolute path whose folder could not be read
+  (EACCES or gone: never "missing"). Windows names and folders match in any case.
   The lookup waits for the login shell's PATH (read once, at most 3 s). In Settings the row of such a server says "Agent Durbar did not
   find this command on this computer." with FR-201's fix, on the entry that row shows (never another app's entry of the same name).
   `[KNOWN GAP]` an agent app may find a command through a PATH of its own; the line says *Agent Durbar did not find*, not that the app
