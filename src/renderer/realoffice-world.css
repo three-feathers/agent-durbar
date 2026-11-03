@@ -7,12 +7,16 @@
    token fill at 90% (theme.js WORLD_GLASS; its contrast is checked over black) with a blur behind. No size, padding or font changes
    (070 D2). Under forced colours the system colours win; with reduced transparency or more contrast the glass is opaque. */
 html[data-world] .topbar,html[data-world] .toast{--bg:var(--wb-bg);--surface:var(--wb-surface);--surface-2:var(--wb-surface-2);--raised:var(--wb-surface);--ink:var(--wb-ink);--ink-2:var(--wb-ink-2);--muted:var(--wb-muted);--line:var(--wb-line);--line-2:var(--wb-line-2);--line-ctl:var(--wb-line-ctl);--focus:var(--wb-focus);--warn-bg:var(--wb-warn-bg);--amber-ink:var(--wb-warn-ink);--tone-warn-soft:var(--wb-warn-bg)}
-html[data-world] .topbar{color:var(--ink);background:linear-gradient(180deg,var(--wb-surface) 0%,var(--wb-bg) 55%,var(--wb-bg-2) 100%);border-bottom-color:var(--wb-bg-2);box-shadow:inset 0 1px 0 color-mix(in srgb,var(--wb-ink) 9%,transparent),0 6px 18px -8px color-mix(in srgb,var(--wb-bg-2) 85%,transparent)}
+html[data-world] .topbar{color:var(--ink);background:linear-gradient(180deg,var(--wb-surface) 0%,var(--wb-bg) 55%,var(--wb-bg-2) 100%);border-bottom-color:var(--wb-bg-2);box-shadow:var(--wb-bar-shadow)}
 html[data-world] .topbar .more-menu{--bg:var(--wp-bg);--surface:var(--wp-surface);--surface-2:var(--wp-surface-2);--raised:var(--wp-raised);--ink:var(--wp-ink);--ink-2:var(--wp-ink-2);--muted:var(--wp-muted);--line:var(--wp-line);--line-2:var(--wp-line-2);--line-ctl:var(--wp-line-ctl);--focus:var(--wp-focus);--warn-bg:var(--wp-warn-bg);--amber-ink:var(--wp-amber-ink);color:var(--ink)}
 html[data-world] :is(.more-menu,.mode-menu,.grants-pop,#defaultsPop,#foldersPop,#floorsPop,.ct-more-pop,.dlg){background:color-mix(in srgb,var(--surface) 90%,transparent);-webkit-backdrop-filter:blur(18px) saturate(1.25);backdrop-filter:blur(18px) saturate(1.25);border-color:color-mix(in srgb,var(--line-2) 75%,transparent);box-shadow:var(--shadow-pop)}
 html[data-world] .dlg-ov{background:color-mix(in srgb,var(--wb-bg-2) 34%,transparent)}
 html[data-world] .dlg.wide>.dbtn{background:transparent}
 html[data-world] .toast{color:var(--ink);background:color-mix(in srgb,var(--wb-bg) 90%,transparent);-webkit-backdrop-filter:blur(14px) saturate(1.2);backdrop-filter:blur(14px) saturate(1.2);box-shadow:var(--shadow-pop)}
+html[data-world][data-ui="retro"] .topbar .seg button[aria-pressed="true"]{color:var(--brand-mark)} /* spec 102 FR-263: the yellow of the pressed button takes the mark's dark ink, not the bar's light one */
+html[data-world][data-dark] .ro-plate:is(.st-waiting,.st-limit){background:var(--surface);color:var(--amber-ink);border-color:var(--c-waiting)} /* spec 102, owner 2026-11-03: a dark plate with a status-yellow edge and ink, no light block (070 FR-050: the status hue is kept) */
+html[data-world][data-dark][data-ui] .notice-strip{background:var(--wb-bg);color:var(--wb-ink);border-bottom-color:var(--wb-line)} /* spec 102, owner 2026-11-03: a dark world's notice strip is its dark bar, with the mark's yellow */
+html[data-world][data-dark][data-ui] .notice-strip .ns-ic{background:var(--brand-bg);color:var(--brand-mark);box-shadow:none}
 html[data-world] .app-tip{background:var(--wb-bg);color:var(--wb-ink);border-color:var(--wb-line)}
 @media (prefers-reduced-transparency:reduce),(prefers-contrast:more){
   html[data-world] :is(.more-menu,.mode-menu,.grants-pop,#defaultsPop,#foldersPop,#floorsPop,.ct-more-pop,.dlg){background:var(--surface);-webkit-backdrop-filter:none;backdrop-filter:none}
@@ -23,3 +27,5 @@ html[data-world] .app-tip{background:var(--wb-bg);color:var(--wb-ink);border-col
   html[data-world] :is(.more-menu,.mode-menu,.grants-pop,#defaultsPop,#foldersPop,#floorsPop,.ct-more-pop,.dlg,.toast){background:Canvas;color:CanvasText;-webkit-backdrop-filter:none;backdrop-filter:none;box-shadow:none;border-color:CanvasText}
 }
 html[data-world] :is(.more-it,.mode-menu button):focus-visible{background:var(--sel-ring)}
+/* spec 097 FR-121: the inbox from the Boss door: the world's surface (opaque, no blur; the id out-ranks the :is() list above) and a header with the door and the queue's faces (aria-hidden) */
+html[data-world] #inboxDlg .inbox-dlg{background:var(--surface);-webkit-backdrop-filter:none;backdrop-filter:none}

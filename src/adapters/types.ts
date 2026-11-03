@@ -9,6 +9,7 @@ import type { ElicitAction, ElicitAnswer, ElicitRequest } from '../shared/elicit
 import type { McpServerSpec } from '../shared/mcp';
 import type { AutoTier, CompactResult, ContextTier, ModelOption, ModelSwitchRequest, ModelSwitchResult } from '../shared/modelswitch';
 import type { AdapterCapabilities, PermissionMode } from './capabilities';
+import type { McpContextReport, McpContextServer } from '../shared/mcpcost';
 import type { OrgPolicy } from '../shared/orgpolicy';
 import type { HandoffResult } from './handoff';
 import type { HistoryResult, PreviousSession } from './history';
@@ -17,6 +18,7 @@ import type { EditInfo } from '../shared/edits';
 import type { AccountIdentity, AccountInfoOptions } from '../shared/account';
 import type { SandboxHostView, SandboxState } from '../shared/api';
 export type { EditInfo };
+export type { McpContextReport, McpContextServer };
 export type { ElicitAction, ElicitAnswer, ElicitRequest, McpServerSpec, CompactResult, ContextTier, ModelOption, ModelSwitchRequest, ModelSwitchResult, AdapterCapabilities, PermissionMode };
 
 export type AgentStatus = 'idle' | 'working' | 'needs-permission' | 'error' | 'stopped';
@@ -168,8 +170,8 @@ export interface PermissionInfo {
 
 /**
  * Spec 003 FR-099: the reason a request ran without a question. `session-grant`: the user's "Approve for this session" rule(s) (`key` is the first,
- * `keys` every rule that allowed it: a write in several folders needs one rule per folder; all can be revoked); `allow-all`: the mode; `in-folder`: a read that Durbar checked to be inside the session's folders; `attachment`: a read of a file the user attached; `app`: reserved for an adapter that really
- * reports the agent app's own decision (no adapter sets it yet, FR-106).
+ * `keys` every rule that allowed it: a write in several folders needs one rule per folder; all can be revoked); `allow-all`: the mode; `in-folder`: a read that Durbar checked to be inside the session's folders; `attachment`: a read of a file the user attached; `app`: set only by an adapter that really
+ * reports the agent app's own decision (`classifier`: Codex auto-review and Copilot assisted approval, FR-109..FR-111; Claude Code reports none, FR-106).
  */
 /** Spec 003 FR-102: most rule keys one `allowedBy` lists. The broker, `eventguard` and the window (`whyallowed.js` `KEYS_MAX`, same number, checked by test:permissions) all use it; more rules are counted in `more`, not dropped silently. */
 export const ALLOWED_BY_KEYS_MAX = 50;
@@ -179,6 +181,14 @@ export type AllowedBy =
   | { kind: 'in-folder' }
   | { kind: 'attachment' }
   | { kind: 'app'; source: 'config' | 'hook' | 'classifier' };
+
+/**
+ * Spec 003 FR-109: the quiet note for a call the agent app's own automatic reviewer approved (Codex auto-review, Copilot assisted approval),
+ * built only from an app's report, never from its text. The one place that makes it, so adapters cannot disagree.
+ */
+export function appApprovedPermission(callId: string): PermissionInfo {
+  return { requestId: callId, kind: 'app-review', summary: 'Approved by the agent app', state: 'approved', via: 'quiet', allowedBy: { kind: 'app', source: 'classifier' } };
+}
 
 /** A remembered "Approve for this session" permission; can be revoked. */
 export interface SessionGrant {
@@ -233,6 +243,8 @@ export interface ToolCallEvent extends BaseEvent {
   edit?: EditInfo;
   /** Spec 058 FR-063: this failed MCP tool call needs the user to sign in to `mcpServer` (set by the adapter, never carries vendor text). Only on `phase: 'failed'` with `mcpServer`. */
   mcpAuth?: true;
+  /** Spec 058 FR-193 (issue #841): set by `maskMcpEvent` (never by an adapter) on a failed MCP call whose masked output reads like an organization access policy refusal. A word only. */
+  mcpCall?: 'policy';
 }
 
 export interface SubagentEvent extends BaseEvent {
@@ -464,6 +476,8 @@ export interface QuestionEvent extends BaseEvent {
   elicitAction?: ElicitAction;
   /** `cancelled` only (spec 052 FR-178): why the question ended unanswered. */
   reason?: QuestionSkipReason;
+  /** Spec 099 FR-030, FR-081: the question was answered at once with the fixed Autopilot sentence; only ever `true`. */
+  autoAnswered?: true;
 }
 
 /** A custom agent the user can select for a session (spec 043 FR-001); generic across adapters. */
@@ -575,10 +589,33 @@ export interface SandboxEvent extends BaseEvent {
   notLowered?: boolean;
 }
 
+/** Spec 099 FR-040: why an Autopilot run ended; exactly one per run. */
+export type AutopilotEnd = 'done' | 'cap' | 'limit' | 'no-progress' | 'blocked' | 'stopped' | 'error';
+
+/** Spec 099 FR-021, FR-022: what a person chose for a run. `limit`: extra turns, 1-1000 (default 5, always on); `hours`: backstop time, 1-168 (default 2); `cap`: optional, in the capability's unit. */
+export interface AutopilotSettings {
+  limit: number;
+  cap?: number;
+  hours?: number;
+}
+
+/** Spec 099 FR-081: a run started, a continuation began, or the run ended (with exactly one `reason`). `n` counts continuations; never above `limit` as emitted by `AutopilotRun`. */
+export interface AutopilotEvent extends BaseEvent {
+  type: 'autopilot';
+  phase: 'started' | 'continued' | 'ended';
+  runId: string;
+  n: number;
+  limit: number;
+  /** `ended` only. */
+  reason?: AutopilotEnd;
+  spend?: { unit: 'aiu' | 'usd' | 'tokens'; value: number };
+}
+
 /** Spec 066 FR-002: the user's answer to a proposed plan. */
 export type PlanAnswer = { kind: 'approve' } | { kind: 'reject' } | { kind: 'revise'; feedback: string };
 
 export type AgentEvent =
+  | AutopilotEvent
   | SandboxEvent
   | PlanEvent
   | RemoteEvent
@@ -669,13 +706,22 @@ export interface AgentAdapter {
    * Spec 058 FR-012: restart one MCP server of a running session, only that one, with the configuration it already has. Optional
    * (`capabilities.mcpRestart`). Rejects with a short, user-facing sentence when the session is not running or the server cannot be
    * restarted now; never starts a session and never restarts the others. The new state follows as an `mcp` event.
+   * `opts.auto` (spec 058 FR-207, FR-214): main's automatic reconnect before a message: only the app's own reconnect call, never a
+   * fallback that switches the server off and on, never a sign-in call; the adapter reads the server list again afterwards when the
+   * call's own answer is not the outcome (Copilot). Only adapters with `capabilities.mcpSignInReconnect` are called with it.
    */
-  restartMcpServer?(sessionId: string, name: string): Promise<void>;
+  restartMcpServer?(sessionId: string, name: string, opts?: { auto?: boolean }): Promise<void>;
   /**
    * Spec 069 FR-031: the tools one MCP server of a running session offers, as the agent app reports them now. Optional
    * (`capabilities.mcpTools`). Rejects with a short, user-facing sentence when the session or the server is not running.
    */
   listMcpTools?(sessionId: string, name: string): Promise<McpToolInfo[]>;
+  /**
+   * Spec 100 FR-001: what the tool definitions of this session's MCP servers take in its context window, as the agent app reports them or
+   * as estimated (`capabilities.mcpContext`). Optional. Names and numbers only. Never starts a session or a server and makes no model call;
+   * what the app cannot say is a report with no figures, not a rejection.
+   */
+  mcpContext?(sessionId: string): Promise<McpContextReport>;
   /**
    * Spec 058 FR-064: start the agent app's own sign-in for one MCP server of a running session. Optional (`capabilities.mcpSignIn`).
    * `browser`: the user finishes in the browser at `url` (main keeps it, the window only gets the host); `connected`: already signed in.
@@ -708,6 +754,11 @@ export interface AgentAdapter {
   generateText?(prompt: string, opts?: GenerateTextOptions): Promise<GenerateTextResult>;
   /** Spec 054 FR-001: turn remote control (follow and steer from the vendor's web or mobile app) on or off for a live session. Optional (`capabilities.remote`). Never on by default. */
   setRemote?(sessionId: string, on: boolean): Promise<RemoteState>;
+  /**
+   * Spec 099 FR-002, FR-050: turn Autopilot on (settings) or off (`null`; a run in progress is stopped, FR-050) for the session's **next** messages;
+   * `reason` is why it ends (default `stopped`). Optional (`capabilities.autopilot`). Never saved, never a default; only main's confirmed path calls it.
+   */
+  setAutopilot?(sessionId: string, settings: AutopilotSettings | null, reason?: AutopilotEnd): Promise<void>;
   /**
    * Spec 059 FR-007: store the user's name for a session in the agent app. Optional (`capabilities.renameSession`). `sessionId` is the
    * vendor's own id (also of a stored session that is not live). `name` already passed Durbar's name rule. Throws when the app refuses

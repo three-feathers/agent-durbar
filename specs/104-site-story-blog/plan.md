@@ -9,7 +9,7 @@ Keep the generator: `scripts/build-site.js` gets new tokens, new pages and a pos
 ## Technical context
 
 - **Stack**: plain Node 22, `marked` (present), `ffmpeg` on authors' machines (6.1.1 here), Electron drivers (`scripts/shots-docs.js`, `H.shot`). No new npm dependency.
-- **Existing capabilities reused** (FR-031 of spec 021): `build-site.js` (`page`, `makeMd`, `copyTalks` for copying), `test-site.js`, `compress-shots.js` (README poster), `shots-docs.js` drivers, `src/shared/redact.ts` (loads in plain Node, agent-notes), `scripts/trusted-lib.sh` and `gh-trusted.sh`, `scripts/weekly-retro.js` (digest facts), `specs-index.js`, `pages.yml`, the asset-only release pattern of spec 021 FR-066.
+- **Existing capabilities reused** (FR-031 of spec 021): `build-site.js` (`page`, `makeMd`, `copyTalks` for copying), `test-site.js`, `compress-shots.js` (README poster), `shots-docs.js` drivers, `src/shared/redact.ts` (tokens and secrets only; loads in plain Node through the fail-closed wrapper, agent-notes), `scripts/trusted-lib.sh` and `gh-trusted.sh`, `scripts/weekly-retro.js` (digest facts; exports `buildFacts` only, so T017 adds an export of `gather`), `specs-index.js`, `pages.yml`, the asset-only release pattern of spec 021 FR-066.
 - **Site today** (`read:` local build 2026-11-01): 7.9 MB without `talk/` (budget 8 MB), 7.7 MB of it screenshots; `index.html` 32 KB, 9.7 KB compressed; `docs.html` 249 KB; `talk/` 48 MB, in git.
 
 ## Video storage
@@ -57,7 +57,7 @@ Git gains text only: post, captions and manifest entry, an estimated 4 KB a post
 | YouTube or Vimeo as the site's player | None | Theirs | Third-party embed and tracking, breaks FR-004 | No: the channel (FR-029) is separate, and the site embeds nothing |
 | Paid object storage or CDN | None | Theirs | Money and an account (needs approval), a second host | No: not needed at this size |
 
-**Pick** (YouTube below is a second place to publish, FR-029, not the site's source): `media-library` release as the store, fetched and hash-checked into `_site/media/` by `pages.yml`, cached per file with `actions/cache`. Immutable releases are off on this repository (`read:` API, 2026-11-01), so assets can be added to one release. A clip, its poster and a Short are three assets, so the 1,000-asset limit is about 330 posts; then a new `media-library-2` follows the same pattern.
+**Pick** (YouTube below is a second place to publish, FR-029, not the site's source): `media-library` release as the store, fetched and hash-checked into `_site/media/` by `pages.yml`, cached per file with `actions/cache` (the run is daily, so the cache avoids downloading about 73 MB each day). `pages.yml` stays as it is today in what matters: top-level `permissions: contents: read`, every action pinned to a full SHA (a pinned SHA for `actions/cache` too), no `pull_request_target`, no `${{ }}` in `run:`; fetching a public release needs no token. Immutable releases are off on this repository (`read:` API, 2026-11-01), so assets can be added to one release. A clip, its poster and a Short are three assets, so the 1,000-asset limit is about 330 posts; then a new `media-library-2` follows the same pattern.
 
 Measure first: a deploy with the start set (T008) confirms fetch and deploy fit the 10-minute limit; `pages.yml` ran about 4 minutes on 2026-11-01, queue included. If a much larger artifact is too slow, lower the ceiling.
 

@@ -15,7 +15,7 @@
 
 ## Phase 2 (later PRs)
 
-- [ ] T020 Move the remaining colour literals of `styles.css`, `screens.css` and `themes.css` onto tokens, file by file, lowering the ratchet [FR-041]
+- [ ] T020 [PR A14, FR-065] Move the remaining colour literals of `styles.css`, `screens.css` and `themes.css` onto tokens, file by file, lowering the ratchet [FR-041]
 - [ ] T021 (owner decision) Bundled font files in a pack (D1)
 - [x] T011 Real check of the extended AI prompt on one model (owner's go-ahead 2026-10-22; Claude haiku, 1 prompt; `scripts/themegen-real.ts`; see spec Evidence)
 - [x] T012 Parser takes `transparent` and the space form `rgb(r g b / a)` the prompt's defaults show (found by T011) [FR-031]
@@ -25,3 +25,37 @@
 - [x] T016 Review on #500: AI dialog counts colours apart from fonts and shapes, and its preview shows the adjusted count; Settings note wording [FR-022, FR-024, FR-025]
 - [x] T017 Merge of main (with #530, #508 popovers) on 2026-10-22: the remaining `#e5be78` border literals in `styles.css` and `screens.css` (toast, mode-chip restored tag, warn button, mode-menu why, answer bar, notice strip, inbox button, setup dialog tags) use `var(--tone-warn-line)`, as #530 did for `#e3bdb7` (Ruben on #530); the ratchet is regenerated: styles.css 156 -> 127, screens.css 16 -> 14, themes.css 52 -> 51; app.js 15 -> 17 (main's two literals since the last count, not this PR's); `check:geometry` keeps Pink Studio in its every-theme list (nightly, `CHECK_ALL_THEMES=1`; pull requests run Retro only, spec 008 FR-111, owner decision) [FR-041]
 - [x] T018 Review on #500 (Paco's agent): allow-lists looked up by own property in both copies (`constructor`, `__proto__`, `toString`, `hasOwnProperty` as fonts and keys); one test per part of `HOSTILE_RE` and the renderer's rule pinned to main's; spec wording (Story 1 `--shadow-pop` covers menus and popovers, Story 3, SC-002, FR-020 unknown `--names`) [FR-020]
+
+## Phase 3 (2026-11-01, design sweep; FR-051..FR-060). PRs, gates and line-count goals: spec 005 `plan.md`
+
+- [ ] T022 [PR A1] `tools/inventory.js` to `scripts/inventory.js`, baseline fixture, `--check` in `test:theme-tokens`; office selectors counted apart; no visual change. Measure first: commit real counts against 386, 114, 221; 570, 291, 344; 305; 127; 99. Test: a planted literal of each kind fails; a lower count fails until lowered [FR-054]
+- [ ] T023 [PR A2] `--wb-*` and the closed list in the registry, both copies; `WORLD_PAIRS` in the shared contrast check. Measure first: a fixture pack proves the drop on `main`. Test: 0 dropped, repaired pair, tier 3 name in a pack refused. Coordinate with spec 102 [FR-052, FR-053]
+- [ ] T024 [PR A4] Tier 3 for the switch and buttons, `--accent` aliases; `check:perf`'s world switch row unchanged. Test: `test:theme-tokens`, `.swt.on` turns with the world in `check-ui-text` [FR-051, FR-057]
+- [ ] T025 [PR A7] Four pop values and the overlay become tokens, 34 shadows on screen to 4, dialog shadow per FR-001's note. Test: `check-ui-text`, `check:office` [FR-055]
+- [ ] T026 [PR A8] Type scale in the chrome: 14 sizes to 6, 8 weights to 3, `--t1`/`--t2` 650 to 600; design rules and FR-098 changed in place. 600 only where emphasis is meant, knowing 500 can read as 400 where a system has only Regular and Bold. Test: `check-ui-text` measured rule, `check:geometry`, screenshots at both sizes in Flat and Photo [FR-055, FR-058]
+- [ ] T027 [PR A9] Control heights other than buttons (A14 sets `--h-ctl` and buttons): selects, inputs and `.seg` to 24 (`.seg` 26, selects 19/26/30, inputs 28/30), switch drawn 18 in a 24 target (FR-075). Test: `check-ui-text`, top bar fit at 1280 [FR-055]
+- [ ] T028 [PR A10] Radii onto 6, 10, 14, 18, pill, circle, in the chrome; design rule 2. Test: `check-ui-text`, ratchet [FR-055]
+- [ ] T029 [PR A11] `src/renderer/ui.js` and first dialogs; `@layer` only after the literals settle, tried first. Test: drivers of the moved dialogs; ratchet on button class sets [FR-056]
+- [x] T030 Done by #1021: the owner picked `auto`. A unit test pins it. `[KNOWN GAP]` a real Retina panel [FR-058]
+- [x] T031 Font decision: compared in the simulator, keep the system stack, no bundled font, reasons and limits in the spec [FR-058, FR-059]
+- [ ] T032 With each surface's PR (spec 005 R1, spec 052 T224, spec 105 T003): the tier 1 tokens of FR-060, no new literal. Test: `test:theme-tokens` ratchet [FR-060]
+
+## Flat's modern look and one button scale (2026-11-02, owner, #524; FR-061..FR-067). All PR A14, which closes #495 and #524
+
+- [ ] T033 Measure first: re-run the button table on `main`, Send and Compact included; a colour snapshot of Real office, cave, Retro and a user pack as a fixture, new driver `check-flat-look`. No visual change. Test: the driver passes on `main` [FR-063, FR-066]
+- [ ] T034 FR-061's values and `--accent` as tokens in both pinned copies; a non-Clean pack's fallback keeps today's values; `test-theme.ts`, `shots-097-realoffice.js` pins updated, naming each. Test: `test:theme-tokens`, `check-flat-look` [FR-061, FR-065, FR-066]
+- [ ] T035 `--h-ctl` 24 (FR-075), padding and text; `.ib`, `.fl-ib`, `.ptab`; approvals 28; design rule 1 changed in place. Test: acceptance 2, `check:geometry`, `check:office`, top bar at 1280 [FR-063, FR-064]
+- [ ] T036 `--btn-primary-*`, Send, secondary outline, and the list of roles changed, in the PR description. Test: acceptance 1; mutant: a second primary in one dialog [FR-062]
+- [ ] T037 T020's literals, file by file, after #948 and #954; ratchet lowered. Test: acceptance 4, 5 [FR-065]
+- [ ] T038 Contrast pairs and mutants [FR-067]
+- [ ] T039 Pictures at 1440x900 and 1280x800, before and after: office, chat, Settings, a dialog, inbox, in Flat and Real office; `npm run shots:docs` retakes linked pictures. The owner looks and says yes before the merge; `real:` no AI credits [FR-061, FR-063, FR-066]
+
+## World surfaces further from Flat (2026-11-02, owner; FR-068..FR-074). PRs A15..A17 of spec 005's plan
+
+- [x] T040 [Gate] The owner picked Stone and 24 px on 2026-11-02, from the mocks; values in FR-075 [FR-068, FR-072, FR-075]
+- [ ] T041 [PR A15] FR-069's 29 names in the registry, both pinned copies, with Flat's values and the fallback; `--prose-lh`; no visual change. Test: `test:theme-tokens`, a fixture pack with the names imports with no drops; mutants: a tier 3 name in a pack, a hostile art value [FR-069, FR-073]
+- [ ] T042 [PR A15] FR-074's pairs in `WORLD_PAIRS`, in the shared check; the plate on art check. Test: `test:theme-tokens`; mutant: a failing pair [FR-074]
+- [ ] T043 [PR A16] Prose at 14 on 23 px in every set; 005 FR-203's table measured again. Test: `check-chat-density`, `check-ui-text`; mutant: 13 px back [FR-071]
+- [ ] T044 [PR A14] FR-075's sizes in tier 1, with T035; FR-076's edges on every control; `check-ui-text` walks them. Design rule 1 changed in place. Test: acceptance 2, `check-ui-text`, `check:geometry`, `check:office`, the top bar at 1280; mutants: a button at 23 px, a ghost with no edge [FR-075, FR-076]
+- [ ] T045 [PR A16] `NOTE_PAPER`'s rule gains "you"; `--memo` kept ΔE 10 or more from every reason. Test: `test:realoffice-layout`; mutant: canary [FR-077]
+- [ ] T046 [PR with Compact's owner, after A14] FR-079's Compact: what shrinks, measured on the same content. Test: `check-chat-density`; mutant: a control under 24 [FR-079]

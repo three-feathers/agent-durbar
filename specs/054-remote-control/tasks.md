@@ -52,4 +52,4 @@ Not done and not planned here: the owner moved Claude channels to idea #485 ("Fo
 
 ## Changes 2026-10-31 (owner decision, spec 021 FR-067): no door
 
-- [ ] T056 In spec 017's removal PR: `doorClosed`, `DOOR_CLOSED` and the refusal toast out; Allow all refusal and confirmation unchanged. Test: `test-remote`: on still needs confirmation, off still works, no call to `setRemote(id, true)` from start or resume; a mutant turning it on at start fails [FR-065]
+- [x] T056 In spec 017's removal PR: `doorClosed`, `DOOR_CLOSED` and the refusal toast out; Allow all refusal and confirmation unchanged. Test: `test-remote`: on still needs confirmation, off still works, no call to `setRemote(id, true)` from start or resume; a mutant turning it on at start fails [FR-065]

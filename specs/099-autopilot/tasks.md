@@ -16,14 +16,14 @@ Numbers taken: spec 099, FR-001..FR-090 (sparse by group; FR-007, FR-008, FR-009
 
 ## Phase 1: Core and types (PR `099-p1-core`)
 
-- [ ] T010 `AdapterCapabilities.autopilot` (with `attachments`, D10), `AutopilotSettings`, `setAutopilot?`, the `autopilot` event, `question.autoAnswered`,
+- [x] T010 `AdapterCapabilities.autopilot` (with `attachments`, D10), `AutopilotSettings`, `setAutopilot?`, the `autopilot` event, `question.autoAnswered`,
   `AgentInfo.autopilot` (`capabilities.ts`, `types.ts`, `src/shared/api.ts`) [FR-001, FR-002, FR-081]
-- [ ] T011 `eventguard` accepts and bounds the `autopilot` event (`n` 0-1000, `limit` 1-1000, the technical bound of FR-021, a known reason) + test [FR-081]
-- [ ] T012 `src/adapters/autopilot.ts`: `AutopilotRun` (count, limit, end once, no-progress counter), `AUTOPILOT_ANSWER`,
+- [x] T011 `eventguard` accepts and bounds the `autopilot` event (`limit` 1-1000, the technical bound of FR-021, `n` 0 to `limit` as the run emits it, a known reason, a plain `runId`) + test [FR-081]
+- [x] T012 `src/adapters/autopilot.ts`: `AutopilotRun` (count, limit, end once, no-progress counter), `AUTOPILOT_ANSWER`,
   `goalText`, `isClaudeContinuation`, `codexGoalEnd` + `scripts/test-autopilot.ts`. Test lines: stop at exactly
-  `limit + 1`; a second end is ignored; a limit of 21 and of 1000 accepted, 0 and 1001 refused, none means the default of 5, and it cannot be turned off; control characters; over 4000 characters flagged, not refused; every Codex status [FR-020, FR-021, FR-030, FR-040]
-- [ ] T013 `package.json`: `test:autopilot` in the `npm test` list
-- [ ] T014 `AutopilotRun`: the backstop (a second counter and elapsed time from an injected clock, 2 hours by default, raisable, 1-168 hours, ending with `error`), and the guard that stays armed after a failed stop or clear + `scripts/test-autopilot.ts`. Test lines: the marker never comes and the run still ends; exactly at each bound; the guard interrupts a later continuation [FR-021, FR-054, SC-003]
+  `limit + 1`; a second end is ignored; a limit of 21 and of 1000 accepted, 0 and 1001 refused, none means the default of 5, and it cannot be turned off; control characters; over 4000 characters on Claude Code refused with a reason, with `clear`, `stop`, `off`, `reset`, `none`, `cancel` and a line shaped like a slash command (`/word`, no further `/` in that word; `/usr/bin/env is broken` passes); every Codex status [FR-020, FR-021, FR-030, FR-040]
+- [x] T013 `package.json` and `scripts/test-suites.txt`: `test:autopilot` in the `npm test` list
+- [x] T014 `AutopilotRun`: the backstop (a second counter and elapsed time from an injected clock, 2 hours by default, raisable, 1-168 hours, ending with `error`), and the guard that stays armed after a failed stop or clear + `scripts/test-autopilot.ts`. Test lines: the marker never comes and the run still ends; exactly at each bound; the guard interrupts a later continuation [FR-021, FR-054, SC-003]
 
 ## Phase 2: Adapters (PR `099-p2-adapters`)
 
@@ -39,15 +39,15 @@ Numbers taken: spec 099, FR-001..FR-090 (sparse by group; FR-007, FR-008, FR-009
   elicitation declined, `task_complete` and objective mapping, a cap below 30 raised to 30 and `cancel` on exhausted, Stop
   order, attachments sent with `agentMode`, the broker still answering permissions (no `setApproveAll`); capability
   `{capUnit: 'aiu', attachments: true, planApproval: true, verified: false}`. Continuations counted from `isAutopilotContinuation` behind a small
-  function (T090)
-  [FR-010, FR-020-FR-022, FR-030, FR-040, FR-050]
+  function (T090). `halt('done')` keeps Copilot's mode (D8), so a repeated halt would not stop it: the adapter's `halt` does a real stop (`mode.set interactive`, `abort`) for a continuation after done. [FR-010, FR-020-FR-022, FR-030, FR-040, FR-050]
 - [ ] T023 [P] FR-006: an app entering its own autopilot or goal without Durbar is switched back and said in the chat, for each
   adapter + tests [FR-006]
 - [ ] T024 Clear first on every resume and relaunch (Codex mode-switch relaunch and Claude `--resume` included), before anything is sent. Fake adapter tests per app: the clear comes first in the recorded order; a failed clear sends nothing [FR-005, FR-052, FR-053]
-- [ ] T025 A stop or clear that fails: RPC error, dead child, `/goal clear` not acknowledged. Fake adapter tests per app: the guard interrupts a later continuation, the session is ended after the wait, the chat says so, the next message clears first [FR-041, FR-050, FR-054]
-- [ ] T026 Feed the backstop per app, and tell a typed Codex message from a continuation by its `turn/start` id. Fake adapter tests per app with the marker removed: the run ends with `error`; Claude's `num_turns` over the bound reports `error`, not done; Codex: a typed message is not counted, a `turn/started` before its reply is held, a failed reply counts [FR-020, FR-021, FR-040, FR-058]
+- [ ] T025 A stop or clear that fails: RPC error, dead child, `/goal clear` not acknowledged. Fake adapter tests per app: the guard interrupts a later continuation, the session is ended after the wait, the chat says so, the next message clears first. The core repeats `halt` for every continuation after an end, so each adapter's `halt` must really stop the app when repeated after `done` (Copilot: not just keep its mode). [FR-041, FR-050, FR-054]
+- [ ] T026 Feed the backstop per app, and tell a typed Codex message from a continuation by its `turn/start` id. Fake adapter tests per app with the marker removed: the run ends with `error`; Claude's `num_turns` over the bound reports `error`, not done; Codex: a typed message is not counted, a `turn/started` before its reply is held, a failed reply counts. Codex passes `backstopPer: 1` to `AutopilotRun` (an omitted value gives 100, which is Copilot's and Claude Code's); every adapter calls `checkElapsed()` at least every `CLOCK_SAMPLE_MS` from its own timer (the core owns none; a step back between two samples can delay the end by up to one sample interval, a `[KNOWN GAP]`). [FR-020, FR-021, FR-040, FR-058]
 - [ ] T027 Cap scope per app: the lower wins, a higher value never loosens, a value at or below what was spent is refused, restored after every end (a failed restore leaves the tighter cap), a cap change during a run follows FR-022, nothing reaches `store.setMaxAiCredits`. Fake adapter tests [FR-022]
 - [ ] T028 Helpers: helper and sub-agent events do not count toward either bound, a helper gets no goal and no `autopilot` state, a new session opened from this one is not on Autopilot. Fake adapter test [FR-008]
+- [ ] T029 `question.autoAnswered` has a consumer before any adapter emits it: `AgentStateTracker` (`agentstate.ts`) does not set `waiting` for it, the renderer's question card, live region and needs-me count skip it, and `shared/elicit.ts` does not track it as open. Tests in main and the renderer driver [FR-030, FR-081]
 
 ## Phase 3: Main and window (PR `099-p3-ui`)
 
@@ -56,7 +56,7 @@ Numbers taken: spec 099, FR-001..FR-090 (sparse by group; FR-007, FR-008, FR-009
   refused, from Read-only and Ask first the dialog says the folder becomes Allow all and the folder is unchanged until it is accepted, a limit above 20 or hours above 2 carry the warning, Cancel changes nothing, the MCP tools and remote control have no path, a restart or resume comes back in `allow` [FR-002-FR-005, FR-051, FR-052, FR-055, FR-070, D12]
 - [ ] T031 No progress: the fingerprint at each continuation through the spec 063 runner (read-only), and the end after two
   unchanged ones + tests with a fake runner [FR-023]
-- [ ] T032 While T096 is held: a scheduled prompt or a loop's pass that is due for a session on Autopilot is not sent, and the run log says why; a stored `autopilot` on a schedule is refused + test [FR-004, FR-083, FR-084]
+- [-] T032 DROPPED (owner, 2026-11-01: a scheduled prompt for a session on Autopilot is sent in its mode; spec *Changes*): While T096 is held: a scheduled prompt or a loop's pass that is due for a session on Autopilot is not sent, and the run log says why; a stored `autopilot` on a schedule is refused + test [FR-004, FR-083, FR-084]
 - [ ] T033 Renderer: the mode-menu item (in every mode), the settings form (limit field with its warning above 20, hours field with its warning above 2, optional cap, what the cap counts, no-cap sentence), the remembered `autopilotLimit` setting. The native dialog itself is T030 [FR-002, FR-003, FR-022, FR-055, S1]
 - [ ] T034 Renderer: the chip with its glyph and `n/limit`, the desk line, the List column, the needs-me sorting after a
   non-done end [FR-056]
@@ -72,8 +72,8 @@ Numbers taken: spec 099, FR-001..FR-090 (sparse by group; FR-007, FR-008, FR-009
 - [ ] T095 Main validates every `autopilot` event and `question.autoAnswered` with `eventguard` before use, and drops a bad one with a masked log line; test on a stand-in with a bad event from a fake adapter [FR-082]
 - [ ] T098 Stop, and only Stop, from remote or phone controls: a Stop-only path to FR-050, nothing else accepted from it, the window's Stop unchanged; IPC tests. No such control exists today, so its shape needs its own design first [FR-009, D13]
 - [ ] T099 The native dialog warns past 3 sessions on Autopilot at once (proposed), and can always be accepted; IPC test with an injected `confirm` [FR-072, D13]
-- [ ] T096 **Held** for the three owners' decision (Vikram's ruling, 2026-10-31 19:02 UTC, pending the other two owners, because it reverses D4 and constitution III; spec *Changes*); until then T032 applies. A scheduled prompt runs in its schedule's mode, leaving the goal mode for that turn and returning after; where the adapter cannot switch, not sent, with a visible reason and a `[KNOWN GAP]`. Fake adapter test for both outcomes after a done ending. Needs spec 044 T140 [FR-083]
-- [ ] T097 **Held** for the three owners' decision (Vikram's ruling, 2026-10-31 19:02 UTC, pending the other two owners, because it reverses D4 and constitution III; spec *Changes*, Q-A; D13 for the warning that shows the cap or "no cap" and the end reason on the row). Autopilot on a schedule: one run per due time with the limit, optional cap, visible state and Stop; `skipped-busy` while one runs; the session returns to what it was; not offered without the capability, refused when stored. Fake adapter and simulator tests; 0 credits; a real run is `real:` to do, `[KNOWN GAP]`. Needs spec 044 T140, T141 [FR-084]
+- [-] T096 DROPPED (owner, 2026-11-01: schedules take their session's mode; spec *Changes*): **Held** for the three owners' decision (Vikram's ruling, 2026-10-31 19:02 UTC, pending the other two owners, because it reverses D4 and constitution III; spec *Changes*); until then T032 applies. A scheduled prompt runs in its schedule's mode, leaving the goal mode for that turn and returning after; where the adapter cannot switch, not sent, with a visible reason and a `[KNOWN GAP]`. Fake adapter test for both outcomes after a done ending. Needs spec 044 T140 [FR-083]
+- [-] T097 DROPPED (owner, 2026-11-01: schedules take their session's mode; spec *Changes*): **Held** for the three owners' decision (Vikram's ruling, 2026-10-31 19:02 UTC, pending the other two owners, because it reverses D4 and constitution III; spec *Changes*, Q-A; D13 for the warning that shows the cap or "no cap" and the end reason on the row). Autopilot on a schedule: one run per due time with the limit, optional cap, visible state and Stop; `skipped-busy` while one runs; the session returns to what it was; not offered without the capability, refused when stored. Fake adapter and simulator tests; 0 credits; a real run is `real:` to do, `[KNOWN GAP]`. Needs spec 044 T140, T141 [FR-084]
 
 ## Phase 4: Plan first (PR `099-p4-plan`)
 
