@@ -91,5 +91,5 @@ for (const s of ['pack:dir', 'dist', 'dist:mac:arm64', 'dist:mac:x64', 'dist:win
   assert.ok(/check-fuses\.js && node scripts\/check-names\.js$/.test(pkg.scripts[s]), `${s} runs check-names.js after check-fuses.js`);
 }
 assert.deepStrictEqual(pkg.build.appImage.executableArgs, [], 'FR-041: no forced --no-sandbox in the desktop entry');
-assert.ok(pkg.scripts['test:serial'].includes('npm run test:checknames'));
+assert.ok(fs.readFileSync(path.join(root, 'scripts', 'test-suites.txt'), 'utf8').split(/\r?\n/).includes('test:checknames'));
 console.log('checknames ok');

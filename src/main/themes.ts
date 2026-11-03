@@ -1,11 +1,11 @@
 /**
  * User theme packs (spec 040): folders under `userData/themes/<id>/manifest.json`.
- * Import = copy a picked folder in (validated); export = copy a pack's folder out.
+ * Export = copy a pack's folder out; remove = delete it (spec 040 FR-032; Import and the AI maker were retired, FR-031).
  * No network, no zip, no symlinks. The renderer re-validates everything again (theme.js).
  */
 import * as fs from 'fs';
 import * as path from 'path';
-import { checkUserManifest, USER_THEME_LIMITS } from '../shared/themes';
+import { checkUserManifest } from '../shared/themes';
 
 export interface UserThemeEntry {
   id: string;
@@ -69,88 +69,6 @@ export class UserThemeStore {
     return e && e.manifest ? e.manifest : null;
   }
 
-  /** Copy a picked folder into the store. The folder name may differ from the id; it lands under the manifest id. */
-  importFolder(from: string, isBuiltIn: (id: string) => boolean): { ok: boolean; id?: string; name?: string; error?: string } {
-    let st: fs.Stats;
-    try {
-      st = fs.lstatSync(from);
-    } catch {
-      return { ok: false, error: 'that folder does not exist' };
-    }
-    if (!st.isDirectory() || st.isSymbolicLink()) return { ok: false, error: 'pick a plain folder with a manifest.json' };
-    let text = '';
-    try {
-      text = fs.readFileSync(path.join(from, 'manifest.json'), 'utf8');
-    } catch {
-      return { ok: false, error: 'no manifest.json in that folder' };
-    }
-    const v = checkUserManifest(text);
-    if (!v.ok || !v.id) return { ok: false, error: v.error || 'invalid manifest' };
-    if (isBuiltIn(v.id)) return { ok: false, error: '"' + v.id + '" is a built-in theme id' };
-    let files: fs.Dirent[];
-    try {
-      files = fs.readdirSync(from, { withFileTypes: true });
-    } catch {
-      return { ok: false, error: 'that folder cannot be read' };
-    }
-    if (files.filter((f) => f.isFile()).length > USER_THEME_LIMITS.maxFiles) return { ok: false, error: 'a pack may carry at most ' + USER_THEME_LIMITS.maxFiles + ' files' };
-    for (const f of files) {
-      if (!f.isFile()) continue;
-      let s: fs.Stats;
-      try {
-        s = fs.lstatSync(path.join(from, f.name));
-      } catch {
-        return { ok: false, error: f.name + ' cannot be read' };
-      }
-      if (s.isSymbolicLink()) return { ok: false, error: 'no links inside a pack, please' };
-      if (s.size > USER_THEME_LIMITS.maxFileBytes) return { ok: false, error: f.name + ' is over 64 KB' };
-    }
-    const dest = this.dir(v.id);
-    if (fs.existsSync(dest)) return { ok: false, error: 'a theme with this id is already installed' };
-    const tmp = this.dir('.' + v.id + '.tmp-' + process.pid);
-    try {
-      fs.mkdirSync(this.root, { recursive: true });
-      fs.rmSync(tmp, { recursive: true, force: true });
-      fs.mkdirSync(tmp, { recursive: true });
-      for (const f of files) {
-        if (!f.isFile()) continue;
-        const src = path.join(from, f.name);
-        if (fs.lstatSync(src).isSymbolicLink()) continue;
-        fs.copyFileSync(src, path.join(tmp, f.name));
-      }
-      fs.renameSync(tmp, dest);
-    } catch {
-      // a failed copy leaves nothing behind (spec 040 FR-008)
-      try {
-        fs.rmSync(tmp, { recursive: true, force: true });
-      } catch {
-        /* nothing more to do */
-      }
-      return { ok: false, error: 'the theme could not be copied in' };
-    }
-    return { ok: true, id: v.id, name: v.name };
-  }
-
-  /** Spec 040 FR-014: store a generated (already checked) manifest as `<root>/<id>/manifest.json`, through a dot folder and a rename. */
-  saveManifest(manifest: Record<string, unknown>, isBuiltIn: (id: string) => boolean): { ok: boolean; id?: string; name?: string; error?: string } {
-    const text = JSON.stringify(manifest, null, 2);
-    const v = checkUserManifest(text);
-    if (!v.ok || !v.id) return { ok: false, error: v.error || 'invalid theme' };
-    if (isBuiltIn(v.id)) return { ok: false, error: '"' + v.id + '" is a built-in theme id' };
-    const dest = this.dir(v.id);
-    if (fs.existsSync(dest)) return { ok: false, error: 'a theme "' + v.id + '" already exists' };
-    const tmp = this.dir('.' + v.id + '.tmp-' + process.pid);
-    try {
-      fs.mkdirSync(tmp, { recursive: true });
-      fs.writeFileSync(path.join(tmp, 'manifest.json'), text);
-      fs.renameSync(tmp, dest);
-    } catch (e) {
-      fs.rmSync(tmp, { recursive: true, force: true });
-      return { ok: false, error: 'could not save the theme: ' + (e instanceof Error ? e.message : String(e)) };
-    }
-    return { ok: true, id: v.id, name: v.name || v.id };
-  }
-
   /** Copy an installed pack's folder to a picked directory. */
   exportFolder(id: string, to: string): { ok: boolean; to?: string; error?: string } {
     const e = this.list().find((x) => x.id === id && x.ok);
@@ -165,6 +83,21 @@ export class UserThemeStore {
       fs.copyFileSync(src, path.join(dest, f.name));
     }
     return { ok: true, to: dest };
+  }
+
+  /**
+   * Spec 040 FR-032: delete one saved theme's folder. The id must be a plain folder `list()` shows (never a link, never a path); links
+   * inside it are removed as links and never followed, so nothing outside the store is touched.
+   */
+  remove(id: string): { ok: boolean; id?: string; error?: string } {
+    if (!/^[a-z0-9][a-z0-9_-]{0,63}$/i.test(id) || !this.list().some((x) => x.id === id)) return { ok: false, error: 'no saved theme with this id' };
+    const dir = this.dir(id);
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+    } catch {
+      return { ok: false, error: 'the theme could not be removed' };
+    }
+    return { ok: true, id };
   }
 }
 

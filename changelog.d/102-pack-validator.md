@@ -1,0 +1,1 @@
+- **World packs, phase 1** (spec 102): a strict zip reader and a world-pack validator for packs from outside the app (zip layout, names, sizes, picture headers, `world.json` and its colours), with a hostile fixture set in `npm test`. Nothing in the app calls them yet, so no user sees a change.

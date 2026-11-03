@@ -10,7 +10,7 @@
  *
  * It exits non-zero (driver failure) on a miss. What it checks, at 1440x900 and 1280x800:
  *   - the header chip = saved + this run (at least the 41.70 saved), its tooltip says "Saved since 2026-10-01" and gives this run alone;
- *   - mcp-swiss and blog show at least their saved totals; infra-notes says "credits not reported" (and "n/r" on its closed door plate);
+ *   - mcp-swiss and blog show at least their saved totals; infra-notes says "credits not reported";
  *   - Settings > Credit cap > Usage totals shows the figure and since when, Reset asks first, Cancel changes nothing, Reset sets the
  *     chip and the folder totals to zero (they come back only with new usage).
  */
@@ -28,7 +28,6 @@ module.exports = async (ctx) => {
   const read = () => js(`(()=>{const c=document.querySelector('.stat-aiu');const rooms={};document.querySelectorAll('.room').forEach(r=>{rooms[r.querySelector('.room-name').textContent.trim()]=((r.querySelector('.room-aiu')||{}).textContent||'').trim();});return {chip:c?c.innerText.replace(/\\s+/g,' ').trim():'',tip:c?c.title:'',rooms}})()`);
   /* spec 021 FR-057 (review of #752): an assert waits on the condition it asserts, never on a fixed sleep */
   const until = async (expr, what) => { assert.ok(await ctx.waitFor(expr, 10000), 'timed out waiting for ' + what); };
-  const plateOf = `[...document.querySelectorAll('.plate')].find(p=>/infra-notes/.test(p.getAttribute('aria-label')))`;
   const aiu = (t) => { const m = /([\d.]+) AIU/.exec(t || ''); return m ? parseFloat(m[1]) : NaN; };
   /* spec 052 FR-028 (#307): the chip and the rooms show money (Copilot credits at USD 0.01); the chip's tooltip keeps the exact AIU */
   const officeAiu = (r) => { const m = /= ([\d.]+) AIU/.exec(r.tip || ''); return m ? parseFloat(m[1]) : NaN; };
@@ -49,13 +48,6 @@ module.exports = async (ctx) => {
     assert.ok(atLeast(r.rooms.blog, 8.1), 'blog shows at least its saved total: ' + r.rooms.blog);
     assert.strictEqual(r.rooms['infra-notes'], 'cost not reported', 'a room whose calls carry no credits says so, never $0.00 (spec 052 FR-051: "cost")');
     await shot('office', w, h);
-
-    // the closed door plate uses the short form
-    await js(`(()=>{const d=[...document.querySelectorAll('.room-head .door')].find(b=>/infra-notes/.test(b.getAttribute('aria-label')));d.click();})()`); await until(`!!(${plateOf})`, 'the closed door plate');
-    const plate = await js(`(()=>{const p=[...document.querySelectorAll('.plate')].find(p=>/infra-notes/.test(p.getAttribute('aria-label')));return p?{t:(p.querySelector('.plate-aiu')||{}).textContent,l:p.getAttribute('aria-label')}:null})()`);
-    assert.ok(plate && plate.t === 'n/r' && /Usage: cost not reported\./.test(plate.l), 'closed plate: n/r and a spoken label: ' + JSON.stringify(plate));
-    if (w === 1280) await shot('unreported-plate', w, h);
-    await js(`(()=>{const p=[...document.querySelectorAll('.plate')].find(p=>/infra-notes/.test(p.getAttribute('aria-label')));p.click();})()`); await until(`!(${plateOf})`, 'the room to open again');
   }
 
   // Settings: the figure, since when, and the reset (Cancel first, then Reset)

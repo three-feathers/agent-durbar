@@ -8,7 +8,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { PART_TABLE, PART_NAMES, readManifest, type PackOptions, validateWorldFiles, validateWorldZip, partProblem, pictureHeader, MANIFEST_BYTES, PACK_MAX_BYTES, hasDuplicateKeys, MAX_SIDE, LAMP_SHAPES, CALL_SHAPES, RIDE_STYLES } from '../src/shared/worldpack';
 import { MOMENT_BLOCKS, BLOCK_PARTS, MOMENT_EXTRAS, momentCoverage, uncoveredMoments, momentsNeeding } from '../src/shared/worldmoments';
-import { buildPartPrompt, buildPartTemplate, cleanPlaceIdea, EXCLUSION_CLAUSE, MARK_OPEN, MARK_CLOSE, MAX_PLACE_IDEA, MAX_PROMPT_CHARS, PROMPT_PARTS, WRAPPER_BEFORE } from '../src/shared/worldprompts';
+import { buildPartPrompt, buildPartTemplate, cleanPlaceIdea, EXCLUSION_CLAUSE, MAX_RAW_IDEA, MARK_OPEN, MARK_CLOSE, MAX_PLACE_IDEA, MAX_PROMPT_CHARS, PROMPT_PARTS, WRAPPER_BEFORE } from '../src/shared/worldprompts';
 import { goodPack, toStored, webp, webpOfSize, png, pngShaped, pngChunk, chunk, riff, vp8, vp8x, vp8l, goodTokens, SECRET_MARKER } from './fixtures/worlds/gen';
 
 process.exitCode = 1;
@@ -124,6 +124,7 @@ for (const k of ['x', 'y', 'left', 'top', 'width', 'height', 'position', 'size',
   assert.ok(set((m) => { m.parts['desk-half.webp'].anchors.screenRect = { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }; }).ok, 'exactly the minimum screen');
   assert.ok(!set((m) => { m.parts['desk-half.webp'].anchors.screenRect = { x: 0.1, y: 0.1, w: 0.19, h: 0.2 }; }).ok, 'one step too narrow');
   assert.ok(!set((m) => { m.parts['desk-half.webp'].anchors.screenRect = { x: 0.1, y: 0.1, w: 0.2, h: 0.19 }; }).ok, 'one step too short');
+  { const r = set((m) => { delete m.parts['desk-half.webp'].anchors.screenRect; }); assert.ok(!r.ok && /needs a screenRect/.test(r.reason), 'no screenRect is refused, not skipped: ' + r.reason); }
 }
 // hashes: downloaded packs carry them and they must match
 {
@@ -134,6 +135,17 @@ for (const k of ['x', 'y', 'left', 'top', 'width', 'height', 'position', 'size',
   assert.ok(check(f, { ...opts, requireHashes: true }).ok, 'matching hashes pass');
   assert.ok(!check(goodPack(), { ...opts, requireHashes: true }).ok, 'a downloaded pack without hashes is refused');
   const g = { ...f }; g['wall.webp'] = webp(601, 200); assert.ok(!check(g, { ...opts, requireHashes: true }).ok, 'one changed picture fails its hash');
+}
+
+{ // one leading UTF-8 BOM is accepted, as Windows Notepad saves one (review of #955); the parsed manifest is the same as without it
+  const plain = goodPack()['world.json'];
+  const withBom = Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), plain]);
+  const a = readManifest(plain, Object.keys(goodPack()), opts), b = readManifest(withBom, Object.keys(goodPack()), opts);
+  assert.ok(a.ok && b.ok, 'a world.json with one BOM is read: ' + (b.ok ? '' : b.reason));
+  assert.deepStrictEqual(b, a, 'the BOM changes nothing');
+  assert.ok(check({ ...goodPack(), 'world.json': withBom }, opts).ok, 'a pack whose world.json has a BOM is valid');
+  const two = readManifest(Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), withBom]), Object.keys(goodPack()), opts);
+  assert.ok(!two.ok && /not valid JSON/.test(two.reason), 'only one BOM is stripped');
 }
 
 // readManifest on its own: the 64 KB cap holds even when called directly, and a part's declared bytes are bounded by that part's cap
@@ -273,6 +285,10 @@ assert.deepStrictEqual(pictureHeader(png(600, 200)), { kind: 'png', width: 600, 
   okPic(riff([vp8(100, 100)]), 'lossy'); okPic(riff([vp8l(100, 100)]), 'lossless');
   okPic(riff([vp8x(100, 100, 0), vp8(100, 100)]), 'extended lossy without alpha'); okPic(riff([vp8x(100, 100, 0x10), vp8l(100, 100)]), 'extended lossless with alpha');
   okPic(riff([vp8x(100, 100, 0x10), chunk('ALPH', Buffer.alloc(7, 1)), vp8(100, 100)]), 'lossy with an alpha plane (odd length, zero pad)');
+  // pre-review of #955: the ALPH header byte and a raw plane's length are checked (no decoder needed)
+  okPic(riff([vp8x(100, 100, 0x10), chunk('ALPH', Buffer.concat([Buffer.from([0x00]), Buffer.alloc(100 * 100)])), vp8(100, 100)]), 'a raw alpha plane of exactly width x height');
+  for (const [why, body] of [['reserved bits set', Buffer.from([0xc1, 1, 2])], ['pre-processing 2', Buffer.from([0x21, 1, 2])], ['compression 2', Buffer.from([0x02, 1, 2])], ['raw plane too short', Buffer.from([0x00])], ['raw plane too long', Buffer.alloc(1 + 100 * 100 + 1)]] as [string, Buffer][])
+    assert.strictEqual(typeof pictureHeader(riff([vp8x(100, 100, 0x10), chunk('ALPH', body), vp8(100, 100)])), 'string', 'refused: ALPH ' + why);
   assert.ok(withManifest({}, undefined).ok);
 }
 for (const junk of [Buffer.alloc(0), Buffer.alloc(11), Buffer.from('RIFF'), Buffer.from('RIFF\0\0\0\0WEBP'), Buffer.from('<svg/>'), Buffer.from([0x89, 0x50])]) assert.strictEqual(typeof pictureHeader(junk), 'string', 'refused: ' + junk.length);
@@ -343,6 +359,7 @@ for (const junk of [Buffer.alloc(0), Buffer.alloc(11), Buffer.from('RIFF'), Buff
   assert.strictEqual(Array.from((cleanPlaceIdea('a'.repeat(1000)) as { text: string }).text).length, 300);
   const emoji = cleanPlaceIdea('\u{1F600}'.repeat(400)); assert.ok(emoji.ok && Array.from(emoji.text).length === 300 && !/[\ud800-\udbff](?![\udc00-\udfff])/.test(emoji.text), 'no cut surrogate pair');
   for (const bad of [undefined, null, 5, {}, '', 'ab', '   ', '<<<>>>']) assert.ok(!cleanPlaceIdea(bad).ok, 'idea ' + String(bad));
+  assert.ok(!cleanPlaceIdea('a'.repeat(MAX_RAW_IDEA + 1)).ok && cleanPlaceIdea('a'.repeat(MAX_RAW_IDEA)).ok, 'a raw idea over the bound is refused before any work, one at the bound is cut to 300');
   { // invisible and unassigned characters never reach a prompt (review of #955, item 12), and the longest prompt is far below its cap, so nothing is ever cut
     const inv = cleanPlaceIdea('a\u2065b\u{E0100}c\u034fd\u180be\u3164f\u200bg\u00adh\u0378i\u{10FFFF}j');
     assert.ok(inv.ok && inv.text === 'abcdefghij', 'invisible characters removed: ' + (inv.ok ? JSON.stringify(inv.text) : ''));

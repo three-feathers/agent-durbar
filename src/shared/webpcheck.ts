@@ -1,6 +1,6 @@
 /**
- * WebP files, read as bytes with no decoder (spec 096 FR-023, spec 077 FR-050). The chunk walker moved here from
- * `scripts/test-crew-assets.ts` (spec 021 FR-031: one walker for the shipped art test and for main's check of the encoder's output).
+ * WebP files, read as bytes with no decoder (spec 096 FR-023, spec 077 FR-050). The one RIFF chunk walker (spec 021 FR-031): the world pack
+ * validator (`worldpack.ts`) uses it, and `scripts/webpinfo.ts` wraps it for the shipped-art tests (`test-crew-assets.ts`, `test-realoffice-assets.ts`).
  * Every read is bounds-checked: a hostile or truncated file gives `null` or a problem sentence, never an exception or a long loop
  * (each chunk is at least 8 bytes, so the walk is linear in the file size).
  */
@@ -20,7 +20,7 @@ export interface WebpInfo {
   width: number;
   height: number;
   alpha: boolean;
-  /** the RIFF size or a chunk size reaches past the end of the file */
+  /** the RIFF size or a chunk (with an odd chunk's pad byte) reaches past the end of the file */
   truncated: boolean;
   /** bytes after the end the RIFF header declares */
   trailing: number;
@@ -41,7 +41,7 @@ export function webpInfo(buf: Uint8Array): WebpInfo | null {
   while (p + 8 <= limit) {
     const id = ascii(buf, p, 4), size = u32(buf, p + 4), d = p + 8;
     const padded = d + size + (size & 1);
-    if (d + size > limit) info.truncated = true;
+    if (padded > limit) info.truncated = true; // an odd chunk's pad byte counts: RIFF always has it
     info.chunks.push(id);
     info.list.push({ id, start: p, size, end: Math.min(padded, limit) });
     if (d + size <= limit) {
@@ -87,7 +87,7 @@ export function stripChunks(buf: Uint8Array): Uint8Array | null {
   const keep = info.list.filter((c) => !METADATA_CHUNKS.includes(c.id));
   const parts: Uint8Array[] = [];
   let len = 12;
-  for (const c of keep) { const part = buf.slice(c.start, c.end); if (c.id === 'VP8X' && part.length > 8) part[8] &= ~(0x20 | 0x08 | 0x04); parts.push(part); len += part.length; }
+  for (const c of keep) { const part = new Uint8Array(buf.subarray(c.start, c.end)); /* a copy: a Buffer's `slice` shares memory and the flags below would change the caller's bytes */ if (c.id === 'VP8X' && part.length > 8) part[8] &= ~(0x20 | 0x08 | 0x04); parts.push(part); len += part.length; }
   const out = new Uint8Array(len);
   out.set(buf.subarray(0, 12), 0);
   let o = 12;

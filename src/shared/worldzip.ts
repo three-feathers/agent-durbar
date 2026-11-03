@@ -19,6 +19,8 @@ export const MAX_TOTAL_BYTES = 128 * 1024 * 1024;
 export const MAX_RATIO = 100;
 export const MAX_NAME_BYTES = 64;
 export const MAX_EXTRA_BYTES = 1024;
+/** "Version needed to extract" may be at most 2.0 (store needs 1.0, deflate 2.0), the whole 16-bit field, in both headers, and the two must agree. */
+export const MAX_NEEDED_VERSION = 20;
 
 export interface ZipLimits { maxZipBytes?: number; maxRawEntries?: number; maxKeptEntries?: number; maxEntryBytes?: number; maxTotalBytes?: number }
 export interface ZipEntry { name: string; data: Buffer }
@@ -55,7 +57,7 @@ export function segmentProblem(seg: string): string {
 }
 
 const IGNORED_FILES = ['.ds_store', 'thumbs.db']; // lower case, for folder names that must not look like them
-interface Parsed { name: string; dir: boolean; method: number; flags: number; crc: number; csize: number; size: number; off: number; descriptor: boolean; made: number; attr: number; nameBytes: Buffer; extra: Buffer; ignore: boolean; keep: string }
+interface Parsed { name: string; dir: boolean; method: number; flags: number; crc: number; csize: number; size: number; off: number; descriptor: boolean; need: number; attr: number; nameBytes: Buffer; extra: Buffer; ignore: boolean; keep: string }
 
 const u16 = (b: Buffer, p: number): number => b.readUInt16LE(p);
 const u32 = (b: Buffer, p: number): number => b.readUInt32LE(p);
@@ -106,7 +108,8 @@ function openZipInner(buf: Buffer, limits: ZipLimits): ZipOpen {
   let p = cdOff;
   for (let i = 0; i < total; i++) {
     if (p + 46 > eocd || u32(buf, p) !== 0x02014b50) return fail('The zip directory is damaged.');
-    const made = u16(buf, p + 4), flags = u16(buf, p + 8), method = u16(buf, p + 10);
+    // "Version made by" (p + 4) is not judged: it only names the tool and host; the attributes below are judged the same whatever host it names.
+    const need = u16(buf, p + 6), flags = u16(buf, p + 8), method = u16(buf, p + 10);
     const crc = u32(buf, p + 16), csize = u32(buf, p + 20), size = u32(buf, p + 24);
     const nl = u16(buf, p + 28), el = u16(buf, p + 30), cl = u16(buf, p + 32), dn = u16(buf, p + 34);
     const attr = u32(buf, p + 38), off = u32(buf, p + 42);
@@ -120,6 +123,7 @@ function openZipInner(buf: Buffer, limits: ZipLimits): ZipOpen {
     const ep = extraProblem(extra);
     if (ep) return fail(ep.includes('ZIP64') ? 'The zip uses ZIP64, which is not supported.' : 'The zip directory is damaged.');
     if (flags & 0x0001 || flags & 0x0040) return fail('An encrypted zip is not supported.');
+    if (need > MAX_NEEDED_VERSION) return fail('An entry needs a newer zip reader than this one.');
     if (flags & ~(0x0002 | 0x0004 | 0x0008 | 0x0800)) return fail('An entry uses a zip feature that is not supported.');
     if (method !== 0 && method !== 8) return fail('An entry uses a compression method that is not supported.');
     // Not a regular file: a unix mode in the high half of the attributes (symlink, device, pipe, socket) or a DOS reparse-point bit.
@@ -129,7 +133,7 @@ function openZipInner(buf: Buffer, limits: ZipLimits): ZipOpen {
     if (cl !== 0) return fail('An entry has a comment, which is not supported.'); // bytes a reader would never show
     let name = '';
     for (const b of nameBytes) { if (b < 0x20 || b > 0x7e) return fail('An entry name is not on the list of allowed names.'); name += String.fromCharCode(b); }
-    list.push({ name, dir: name.endsWith('/'), method, flags, crc, csize, size, off, descriptor: (flags & 0x0008) !== 0, made, attr, nameBytes, extra, ignore: false, keep: '' });
+    list.push({ name, dir: name.endsWith('/'), method, flags, crc, csize, size, off, descriptor: (flags & 0x0008) !== 0, need, attr, nameBytes, extra, ignore: false, keep: '' });
     p += 46 + nl + el + cl;
   }
   if (p !== eocd) return fail('The zip directory is damaged.');
@@ -204,13 +208,14 @@ function openZipInner(buf: Buffer, limits: ZipLimits): ZipOpen {
     if (e.method === 8 && e.size > 4096 && e.size / Math.max(1, e.csize) > MAX_RATIO) return fail('A file in the zip is packed far smaller than a picture can be.');
     if (e.method === 8 && e.size > 0 && e.csize === 0) return fail('A file in the zip is packed far smaller than a picture can be.');
     if (e.off + 30 > cdOff || u32(buf, e.off) !== 0x04034b50) return fail('A file header in the zip is damaged.');
-    const lflags = u16(buf, e.off + 6), lmethod = u16(buf, e.off + 8), lcrc = u32(buf, e.off + 14), lcs = u32(buf, e.off + 18), lsz = u32(buf, e.off + 22);
+    const lneed = u16(buf, e.off + 4), lflags = u16(buf, e.off + 6), lmethod = u16(buf, e.off + 8), lcrc = u32(buf, e.off + 14), lcs = u32(buf, e.off + 18), lsz = u32(buf, e.off + 22);
     const lnl = u16(buf, e.off + 26), lel = u16(buf, e.off + 28);
     if (lnl !== e.nameBytes.length || lel > MAX_EXTRA_BYTES) return fail('A file header and the zip directory disagree.');
     const hdrEnd = e.off + 30 + lnl + lel;
     if (hdrEnd > cdOff) return fail('A file header in the zip is damaged.');
     if (!buf.subarray(e.off + 30, e.off + 30 + lnl).equals(e.nameBytes)) return fail('A file header and the zip directory disagree.');
-    if (lflags !== e.flags || lmethod !== e.method) return fail('A file header and the zip directory disagree.');
+    if (lneed > MAX_NEEDED_VERSION) return fail('An entry needs a newer zip reader than this one.');
+    if (lneed !== e.need || lflags !== e.flags || lmethod !== e.method) return fail('A file header and the zip directory disagree.');
     if (extraProblem(Buffer.from(buf.subarray(e.off + 30 + lnl, hdrEnd)))) return fail('The zip uses ZIP64, which is not supported, or a header is damaged.');
     if (!e.descriptor) {
       if (lcrc !== e.crc || lcs !== e.csize || lsz !== e.size) return fail('A file header and the zip directory disagree.');

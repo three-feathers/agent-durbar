@@ -238,4 +238,10 @@ assert.ok(/platform==='darwin'&&window\.agentDurbar\.titleDoubleClick\)document\
 assert.ok(/handleTitleDoubleClick\(\{[\s\S]*?process\.platform[\s\S]*?liveWin\(\)[\s\S]*?e\.sender[\s\S]*?AppleActionOnDoubleClick/.test(appIpc), 'main hands the handler the platform, the live window, the sender and the system setting');
 assert.ok(/w\.on\('maximize', \(\) => noteWindowZoom/.test(main) && /w\.on\('unmaximize', \(\) => noteWindowZoom/.test(main), 'main notes the system\'s own zoom');
 
+// spec 070, the owner's pick 2026-11-01: text is not thinned on macOS; one rule, on body
+{
+  const css = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'styles.css'), 'utf8');
+  assert.deepStrictEqual(css.match(/-webkit-font-smoothing:\s*[\w-]+/g), ['-webkit-font-smoothing:auto'], 'font smoothing is auto, once');
+}
+
 console.log('macos tests passed');

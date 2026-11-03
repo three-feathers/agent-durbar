@@ -33,6 +33,30 @@
   }
   const hasLong=m=>!!(m&&Array.isArray(m.contextTiers)&&m.contextTiers.includes('long'));
 
+  /* Spec 030 FR-060, FR-061: one change (a model, an effort or a window) on top of the whole choice, so the others are kept in any order.
+     base: {model, effort (string, null = the model's default, undefined = none chosen), tier}; change: {model?, effort?, tier?}; modelOf(id) gives the model's entry.
+     What the target model cannot do is dropped and named in `dropped`, never sent: the runtime would refuse the switch.
+     Returns {req:{model, contextTier, effort?}, dropped:{effort?, tier?}}: a request describes the whole state. */
+  function mergeChoice(base,change,modelOf){
+    const tgt=modelOf(change.model!==undefined?change.model:base.model)||{id:change.model!==undefined?change.model:base.model,efforts:[]};
+    const dropped={};
+    let effort=change.effort!==undefined?change.effort:base.effort;
+    if(typeof effort==='string'&&effort&&!(tgt.efforts||[]).includes(effort)){dropped.effort=effort;effort=null;}
+    if(effort==='')effort=null;
+    let tier=change.tier||base.tier||'default';
+    if(tier==='long'&&!hasLong(tgt)){dropped.tier='long';tier='default';}
+    return {req:Object.assign({model:tgt.id,contextTier:tier==='long'?'long':'default'},effort!==undefined?{effort}:{}),dropped};
+  }
+  /* The request changes nothing on top of `base` (FR-061): no call, no toast. */
+  const sameChoice=(base,req)=>req.model===base.model&&(req.contextTier||'default')===(base.tier||'default')&&(req.effort||'')===(base.effort||'');
+  /* The words of a whole choice, for the queued line and the toast: "high effort, long context" ('' when there is nothing to add). */
+  const choiceWords=req=>[req&&req.effort?req.effort+' effort':'',req&&req.contextTier==='long'?'long context':''].filter(Boolean).join(', ');
+  /* FR-062: what a new model could not keep, said in the toast or the dialog instead of silently lost. */
+  function droppedText(dropped,name){
+    const w=[dropped&&dropped.effort?dropped.effort+' effort':'',dropped&&dropped.tier?'long context':''].filter(Boolean);
+    return w.length?name+' does not offer '+w.join(' or ')+', so '+(w.length>1?'they are':'it is')+' not kept.':'';
+  }
+
   /* How the target compares with the current model: {direction:'cheaper'|'equal'|'pricier'|'unknown', input, output, basis}.
      input/output are ratios (target / current) when both prices are reported. Fallbacks: price class, then the legacy multiplier. */
   function relativePrice(cur,tgt,tierFrom,tierTo){
@@ -304,5 +328,5 @@
     return m.includes(cur)?cur:'read-only';
   }
 
-  return {compactingNow,COMPACTING_LINE,AUTO_TIERS,AUTO_TIER_HINT,autoTiersOf,autoTierOf,autoTierLocked,autoTierConfirm,autoTierName,autoTierFailText,handoverTargets,provenanceLine,modesFor,fallbackMode,pricingFromBatch,priceOf,windowOf,hasLong,relativePrice,estimateInputCredits,confirmFor,suggestFresh,compactionText,compactionFoldText,modelChangeText,fmtCredits,fmtRatio,fmtTokens,priceLine,hasPrice,capsOf,kindChoices,showsKindPicker,shows,cardMenuActions};
+  return {mergeChoice,sameChoice,choiceWords,droppedText,compactingNow,COMPACTING_LINE,AUTO_TIERS,AUTO_TIER_HINT,autoTiersOf,autoTierOf,autoTierLocked,autoTierConfirm,autoTierName,autoTierFailText,handoverTargets,provenanceLine,modesFor,fallbackMode,pricingFromBatch,priceOf,windowOf,hasLong,relativePrice,estimateInputCredits,confirmFor,suggestFresh,compactionText,compactionFoldText,modelChangeText,fmtCredits,fmtRatio,fmtTokens,priceLine,hasPrice,capsOf,kindChoices,showsKindPicker,shows,cardMenuActions};
 })());

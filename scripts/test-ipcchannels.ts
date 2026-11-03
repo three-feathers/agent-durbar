@@ -61,7 +61,7 @@ for (const f of srcFiles) {
   for (const [re, what] of BYPASS) assert.ok(!re.test(src), `${rel} uses ${what}: register through ipcHandle / ipcOn (ipcguard.ts), the only file that may touch ipcMain or webContents.ipc`);
 }
 // the scan is not vacuous: each pattern catches the bypass it is for (mutations M8, M9 of the review on #514)
-for (const [sample, n] of [["win.webContents.ipc.handle('theme:generate', h)", 1], ["ipcMain.on('agents:setPaused', h)", 0], ["ipcMain.handleOnce('x', h)", 0], ["wc['ipc'].on('x', h)", 2], ["const { ipc } = win.webContents;", 3], ["const { ipc: x, id } = w;", 3]] as const) {
+for (const [sample, n] of [["win.webContents.ipc.handle('theme:remove', h)", 1], ["ipcMain.on('agents:setPaused', h)", 0], ["ipcMain.handleOnce('x', h)", 0], ["wc['ipc'].on('x', h)", 2], ["const { ipc } = win.webContents;", 3], ["const { ipc: x, id } = w;", 3]] as const) {
   assert.ok(BYPASS[n][0].test(sample), `the bypass scan catches: ${sample}`);
 }
 assert.ok(BYPASS.every(([re]) => !re.test("ipcHandle('a', (e) => ipcRenderer.invoke('b'))") && !re.test('const { ipcHandle, ipcOn } = g;')), 'the scan leaves ipcHandle, ipcOn and ipcRenderer alone');
@@ -113,11 +113,12 @@ const FROM_APP = [
   'activity:clear', 'activity:export', 'activity:list',
   'adapters:sandboxAlwaysOff', 'adapters:sandboxHosts', 'agents:sandboxContinue', // spec 087: the OS sandbox choices and the Settings line
   'agents:checkpointPreview', 'agents:checkpointUndo', 'agents:gitStatus', 'agents:mcpCancelSignIn', 'agents:mcpOpenSignIn', 'agents:mcpRefresh', 'agents:mcpSignIn', 'agents:openRemote', 'agents:resolvePlan', 'agents:send', 'agents:sessionSummary', 'agents:setMode', 'agents:setRemote',
-  'app:dismissInterrupted', 'app:dismissSinceAway', 'app:interrupted', 'app:sinceAway', 'doors:held', 'doors:list', 'doors:release', 'doors:set', // 'app:interrupted': spec 006 FR-041, ids and folder names of the sessions a crash left mid-turn
+  'app:dismissInterrupted', 'app:dismissSinceAway', 'app:interrupted', 'app:sinceAway', 'heldmig:discard', 'heldmig:discardBad', 'heldmig:list', 'heldmig:noticed', 'heldmig:send', // 'app:interrupted': spec 006 FR-041, ids and folder names of the sessions a crash left mid-turn
   'folders:create', 'folders:createCancel', 'folders:createCheck', 'folders:createPickParent', // spec 093 FR-080: create a folder (writes to the disk, runs git), and end its clone
+  'folders:remove', // spec 083 FR-048 (T034b): with {deleteNotes} it deletes the folder's notes file
   'browser:back', 'browser:bounds', 'browser:openLink', 'browser:openMail', 'browser:consentAccept', 'browser:leaveAnswer', 'browser:snapshot', 'browser:forward', 'browser:mute', 'browser:navigate', 'browser:open', 'browser:openSystem', 'browser:overlay', 'browser:reload', 'browser:state', 'browser:stop', 'browser:visible', 'browser:newTab', 'browser:selectTab', 'browser:closeTab', 'browser:setLinksNewTab', // spec 080 T014 FR-003, T023 FR-127: the session browser answers the app's own page only
   'harness:accounts', 'harness:cancel', 'harness:copilotAuth', 'harness:openPage', 'harness:openSignIn', 'harness:paste', 'harness:plans', 'harness:run', 'harness:updates', 'harness:visible',
-  'notes:add', 'notes:delete', 'notes:deleteAll', 'notes:fileCount', 'notes:list', 'notes:save', 'notes:setFile', 'notes:startOver', 'notes:update', // spec 083 FR-062: the folder's notes, by agent id; T042: the project-file switch (writes and deletes in the project)
+  'notes:add', 'notes:delete', 'notes:deleteAll', 'notes:export', 'notes:fileCount', 'notes:list', 'notes:save', 'notes:setFile', 'notes:startOver', 'notes:update', // spec 083 FR-062: the folder's notes, by agent id; T042: the project-file switch (writes and deletes in the project)
   'profiles:create', 'profiles:delete', 'profiles:generate', 'profiles:save', // spec 043 FR-011, FR-040: writes to (or deletes) profile files
   'world:list', 'world:part', 'world:remove', // spec 102 FR-064: installed worlds, by key and part name; never open to the simulator
   'schedules:remove', 'schedules:runNow', 'schedules:runs', 'schedules:save',

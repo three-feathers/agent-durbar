@@ -10,6 +10,7 @@ import * as path from 'path';
 import { DEFAULT_HISTORY_LIMITS, cleanSessionTitle, cut, sameDir, toolLabel } from './history';
 import type { HistoryItem, HistoryLimits, HistoryResult, PreviousSession } from './history';
 import { isObj } from '../shared/guards';
+import { isClaudeContinuation } from './autopilot';
 
 export const HEAD_BYTES = 256 * 1024;
 export const MAX_FILE_BYTES = 50 * 1024 * 1024;
@@ -45,6 +46,7 @@ const tsOf = (o: Record<string, unknown>): number | undefined => {
 /** A prompt the user typed (not a command wrapper, a system reminder or the interrupt marker). */
 const typedPrompt = (o: Record<string, unknown>): string | undefined => {
   if (o.type !== 'user' || o.isSidechain === true || o.isMeta === true || !isObj(o.message)) return undefined;
+  if (isClaudeContinuation(o)) return undefined; // spec 099 FR-020: a synthetic `Stop hook feedback:` message is the app's, not the person's
   const c = o.message.content;
   const text = typeof c === 'string' ? c : Array.isArray(c) && c.every((b) => isObj(b) && b.type === 'text') ? c.map((b) => String((b as { text?: unknown }).text ?? '')).join('\n') : undefined;
   const t = text?.trim();

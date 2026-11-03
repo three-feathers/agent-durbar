@@ -27,8 +27,8 @@ module.exports = async (ctx) => {
     assert.ok(/clause_type column/.test(chat), 'the earlier prompt is shown');
     assert.ok(/0007_clause_type\.sql/.test(chat), 'the earlier reply is shown');
     assert.ok(/Continued after restart: Add the clause-type column migration\. New messages continue this session\./.test(chat), 'the note names the session');
-    const status = await ctx.js(`document.querySelector('#panelHead [data-f="status"]').innerText`);
-    assert.ok(/Idle/.test(status), `the agent is idle (${status})`);
+    const status = `document.querySelector('#panelHead [data-f="status"]').innerText`;
+    assert.ok(await H.until(`/Idle/.test(${status})`, 5000), `the agent is idle (${await ctx.js(status)})`); /* the header is painted on the next render (FR-048b) */
     await H.calm();
     await ctx.sleep(300);
     await ctx.shot(path.join(OUT, `continue-last-${w}x${h}.png`));

@@ -28,6 +28,7 @@ const ops = new NotesOps({
   folderValues: () => { calls.push('folder'); return [FOLDER_SECRET]; },
   sessionValues: (id) => { calls.push('session:' + id); return [SESSION_SECRET]; },
   now: () => new Date('2026-10-24T10:00:00.000Z'),
+  confirmNative: async () => true, // T034b: Delete all asks natively (refused without it: test-notesexport.ts)
 });
 const must = <T extends { ok: boolean }>(r: T): Extract<T, { ok: true }> => { assert.ok(r.ok, JSON.stringify(r)); return r as Extract<T, { ok: true }>; };
 const refused = (r: { ok: boolean; error?: string; code?: string }, why: string): void => { assert.ok(!r.ok && typeof r.error === 'string' && r.error.length > 0 && r.error.length < 90, `${why}: ${JSON.stringify(r)}`); };
@@ -153,7 +154,7 @@ async function main(): Promise<void> {
   // AC1, AC5 and "nothing logged": the channels, the sender check, the change event, no logging, no Electron in the testable part
   const ipc = src('src/main/ipc/notes.ts');
   const chans = [...ipc.matchAll(/ipcHandle\('(notes:[A-Za-z]+)'/g)].map((x) => x[1]).sort();
-  assert.deepStrictEqual(chans, ['notes:add', 'notes:delete', 'notes:deleteAll', 'notes:fileCount', 'notes:list', 'notes:save', 'notes:setFile', 'notes:startOver', 'notes:update']);
+  assert.deepStrictEqual(chans, ['notes:add', 'notes:delete', 'notes:deleteAll', 'notes:export', 'notes:fileCount', 'notes:list', 'notes:save', 'notes:setFile', 'notes:startOver', 'notes:update']);
   for (const c of chans) {
     const line = ipc.split('\n').find((x) => x.includes(`ipcHandle('${c}'`))!;
     assert.ok(/\(!fromApp\(e\) \? NO :/.test(line), `${c} checks fromApp(e) first`);

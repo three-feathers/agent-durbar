@@ -37,6 +37,20 @@ const names = Object.keys(good);
     if (r.ok) assert.ok(r.entries.every((e) => e.data.equals(good[e.name])), 'inflated bytes equal');
   }
 }
+{ // "version needed to extract": 2.0 or lower in both headers, and the same in both (review of #955); 1.0 and 0 (some writers) pass
+  for (const need of [0, 10, 20]) {
+    const r = readZip(rawZip(rawFrom(good).map((e) => ({ ...e, need, method: need === 20 ? 8 : 0 }))));
+    assert.ok(r.ok, 'version needed ' + need + ' is accepted: ' + (r.ok ? '' : r.reason));
+  }
+  for (const [need, lneed] of [[113, 113], [205, 205], [229, 229], [21, 21], [229, 20], [20, 229], [0x0314, 0x0314]]) {
+    const r = readZip(rawZip(rawFrom(good).map((e) => (e.name === 'world.json' ? { ...e, need, lneed } : e))));
+    assert.ok(!r.ok && /newer zip reader/.test(r.reason), 'version needed ' + need + '/' + lneed + ' is refused');
+  }
+  const d = readZip(rawZip(rawFrom(good).map((e) => (e.name === 'world.json' ? { ...e, need: 20, lneed: 10 } : e))));
+  assert.ok(!d.ok && /disagree/.test(d.reason), 'the two headers must agree on the version needed');
+  const w = toStored(good);
+  assert.strictEqual(w.readUInt16LE(4), 20, 'the writer says 2.0 in the local header');
+}
 { // a single top-level folder (hand-made zip), folder entries and what Finder and Explorer add are ignored and never opened
   const junk = Buffer.alloc(300, 0xff); // not a deflate stream: inflating it would fail the read
   const es = [

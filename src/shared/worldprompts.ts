@@ -7,6 +7,8 @@
 import { PART_TABLE, type PartSpec } from './worldpack';
 
 export const MAX_PLACE_IDEA = 300;
+/** A longer raw idea is refused before any work: the cleaning below is linear in what it is given, and the cut to 300 comes last. */
+export const MAX_RAW_IDEA = 20_000;
 export const MAX_PROMPT_CHARS = 4000;
 export const MARK_OPEN = '<<<PLACE';
 export const MARK_CLOSE = 'PLACE>>>';
@@ -22,6 +24,7 @@ export type IdeaResult = { ok: true; text: string } | { ok: false; reason: strin
 /** The person's idea as safe text: never throws, never returns a marker. Cut at a code point, not inside a pair. */
 export function cleanPlaceIdea(raw: unknown): IdeaResult {
   if (typeof raw !== 'string') return { ok: false, reason: 'Describe the place in a few words.' };
+  if (raw.length > MAX_RAW_IDEA) return { ok: false, reason: 'Describe the place in fewer words.' };
   const s = raw.replace(CONTROL_RE, ' ').replace(FORMAT_RE, '').replace(/`/g, '').replace(ANGLE_RE, ' ').replace(/\s+/g, ' ').trim();
   const text = Array.from(s).slice(0, MAX_PLACE_IDEA).join('').trim();
   if (Array.from(text).length < 3) return { ok: false, reason: 'Describe the place in at least 3 characters.' };
