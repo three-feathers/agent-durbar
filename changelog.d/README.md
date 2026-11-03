@@ -61,7 +61,17 @@ Branch names must match the Spec Kit gate (lowercase letters, digits and hyphens
    (`git rm changelog.d/<file>`): the tag's text is what was released. If the edit added something genuinely new, put that in
    a new fragment for the next release.
 
-4. Check the draft, then publish it by hand as a **pre-release**, not *latest* (a stable tag: next section).
+4. **The release clip** (spec 008 FR-174, FR-175; a stable or pre-release tag, never a `-test.M` build), after `release.yml` has made the draft and before you publish. It never holds a release.
+   **First clip: show the owner before publishing** (owner decision 2026-11-03, v0.1.9 is the first; after his look this line goes). Not added to older releases.
+   1. Record, on a checkout of the tag (needs ffmpeg; about 2 minutes; no AI credits): `npm run release:video -- --version <tag> --out <dir>`.
+   2. Look at the stills in `<dir>` (FR-176: simulator data only, no path, name, token or chat text; captions in the band, nothing broken). For the first clip, send the GIF to the owner and wait for his written OK.
+   3. Upload to the draft: `gh release upload <tag> <dir>/release-<tag>.mp4 <dir>/release-<tag>.gif`.
+   4. Add the image line at the very top of the draft's notes (the Highlights block is already in them, built from the fragments' `Highlight:` fields by `scripts/release-notes.js`):
+      `[![<tag> in <N> seconds](https://github.com/three-feathers/agent-durbar/releases/download/<tag>/release-<tag>.gif)](https://github.com/three-feathers/agent-durbar/releases/download/<tag>/release-<tag>.mp4)`
+   5. On any failure (no ffmpeg, a check or size refused, the upload failed) publish **without** the image line, keep the Highlights block, and say so in the team chat.
+   6. After publishing the first release with a clip, open its page and check the GIF renders inline and the MP4 link works; else use the fallback in FR-174 (T124).
+   The site gets the clip later through spec 104; no YouTube.
+5. Check the draft, then publish it by hand as a **pre-release**, not *latest* (a stable tag: next section).
 
 ## A stable release (spec 008 FR-129)
 

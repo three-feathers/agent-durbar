@@ -174,7 +174,11 @@ function releaseNotes(root, { tag, repo, mainRef = MAIN_REF }) {
   const stable = !releaseKind(tag).prerelease;
   const heading = `${tag} ([${stable ? 'release' : 'pre-release'}](https://github.com/${repo}/releases/tag/${tag}), ${date})`;
   const { section, source } = cl.notes(root, { release: heading, previous });
-  return { kind, title: `Agent Durbar ${tag}`, heading, previous, source, notes: `${stable ? STABLE_PREAMBLE : PREAMBLE}\n\n${section}\n` };
+  // spec 008 FR-173 (T125): the Highlights block above the long list, from the fragments' `Highlight:` fields. Only while the notes
+  // come from fragments (a section already in CHANGELOG.md has had its fields dropped by the fold); none, no block.
+  const block = source === 'fragments' ? cl.highlightsBlock(cl.highlights(cl.readFragments(root))) : '';
+  const withBlock = block ? section.replace(/^(## [^\n]*\n)\n?/, `$1\n${block}\n\n### All changes\n\n`) : section;
+  return { kind, title: `Agent Durbar ${tag}`, heading, previous, source, highlights: block, notes: `${stable ? STABLE_PREAMBLE : PREAMBLE}\n\n${withBlock}\n` };
 }
 
 /* The job summary: what was checked and the fold PR's commands with the exact heading (changelog.d/README.md). */
