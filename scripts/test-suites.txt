@@ -172,6 +172,9 @@ test:rules
 test:weeklyretro
 test:docsscripts
 test:worldmatrix
+test:worldzip
+test:worldpack
+test:world-packs
 test:consolemask
 test:redact-growth-tokens
 test:redact-growth-adversarial
