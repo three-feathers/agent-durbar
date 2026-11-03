@@ -3,7 +3,8 @@ import * as assert from 'assert';
 import { LOOP_DEFAULTS, clampPace, cleanReason, loopFooter, parsePace } from '../src/shared/looppace';
 import { Scheduler, loopSupport, parseSchedules, saveSchedules } from '../src/main/schedules';
 import type { LoopSpec, LoopWait, Schedule, SchedulesDoc } from '../src/main/schedules';
-import { loopActivity, loopPrompt, loopPush, loopWaitOf, routeLoopEvent } from '../src/main/loopwiring';
+import { loopActivity, loopPrompt, loopPush, loopStillWanted, loopWaitOf, routeLoopEvent } from '../src/main/loopwiring';
+import { scheduledSendOp } from '../src/main/agentops';
 import type { LoopPassPush } from '../src/main/loopwiring';
 import { AgentStateTracker } from '../src/main/mcp/agentstate';
 import { ACTIVITY_DECISIONS } from '../src/shared/activity';
@@ -646,6 +647,22 @@ async function main(): Promise<void> {
     // a paused loop is ended at start too; one loop per session blocks a second restart
     void s;
   }
+  // review of the T006 PR (3): an ended loop's edit may not set an end time more than 24 h from now, and Start again never runs more than
+  // 24 h, even when the edited end is far from the old start
+  {
+    const h = harness();
+    const s = await h.loop({}, { endAt: T0 + 3 * 60 * MIN });
+    h.sch.stopLoop(s.id);
+    await h.advance(20 * 60 * MIN); // 20 h after the start
+    const edit = (endAt: number) => h.sch.save({ id: s.id, edit: true, folder: '/w', prompt: 'check CI', target: { session: 's1', agent: 'copilot' }, cap: { amount: 50, unit: 'aiu' }, loop: { minDelay: 5, maxDelay: 60, defaultDelay: 30, maxPasses: 12, endAt } }, () => true);
+    assert.deepStrictEqual(edit(h.now + 25 * 60 * MIN), { ok: false, error: 'A loop may run at most 24 hours.' }, 'an ended loop\'s edit is bounded from now');
+    assert.ok(edit(h.now + 23 * 60 * MIN).ok, 'within 24 h of now');
+    const cur = h.sch.doc.schedules.find((x) => x.id === s.id) as Schedule;
+    assert.ok((cur.loop?.endAt ?? 0) - (cur.loop?.startedAt ?? 0) > 24 * 60 * MIN, 'the edited span from the old start is over 24 h');
+    assert.ok(h.sch.restartLoop(s.id).ok);
+    const span = (cur.loop?.endAt ?? 0) - (cur.loop?.startedAt ?? 0);
+    assert.ok(span <= 24 * 60 * MIN && span > 0, `Start again clamps the span to 24 h (${span / MIN} min)`);
+  }
   {
     const h = harness();
     const a = await h.loop();
@@ -975,6 +992,75 @@ async function wiring(): Promise<void> {
   assert.deepStrictEqual(pushes[0], { agentId: 's1', scheduleId: s.id, maxPasses: 12, phase: 'sent', pass: 1 });
   assert.deepStrictEqual(pushes[1], { agentId: 's1', scheduleId: s.id, maxPasses: 12, phase: 'next', pass: 1, next: T0 + 25 * MIN, reason: 'waiting for CI' });
   assert.ok(pushes.some((p) => p.phase === 'end' && p.ended === 'Stopped by you'));
+  // review of the T006 PR (1): Durbar's cap met mid-pass and cancelled before the pass ends still pauses the loop (FR-017, Q5)
+  {
+    lastStatus.clear();
+    for (const q of [...sch.doc.schedules]) sch.remove(q.id);
+    const r = sch.save({ folder: '/w', prompt: SECRET, target: { session: 's1', agent: 'copilot' }, cap: { amount: 50, unit: 'aiu' }, loop: { minDelay: 5, maxDelay: 60, defaultDelay: 30, maxPasses: 12, endAt: now + 8 * 60 * MIN } }, () => true);
+    assert.ok(r.ok, JSON.stringify(r));
+    await advance(0);
+    const c = sch.doc.schedules[0];
+    const before = sent.length;
+    assert.ok(c.loop?.inPass);
+    ev({ type: 'status', status: 'working' });
+    ev({ type: 'limit', phase: 'exhausted', requestId: 'l9' });
+    ev({ type: 'limit', phase: 'resolved', requestId: 'l9', action: 'cancel' });
+    reply('LOOP: next 5 min - more to do');
+    idle('Stopped at the spending limit');
+    const c2 = sch.doc.schedules[0];
+    assert.deepStrictEqual([c2.paused, c2.pausedReason, !!c2.loop?.ended], [true, 'cap', false], 'the pass met the cap: paused, needs Resume');
+    await advance(3 * 60 * MIN);
+    assert.strictEqual(sent.length, before, 'no pass after the cap, though the request was cancelled');
+    sch.remove(c2.id);
+  }
+  // review of the T006 PR (2): Stop, Stop loop or End while the session starts: the pass's prompt is never sent, and not a failed pass
+  for (const how of ['stop', 'stopLoop', 'end', 'none'] as const) {
+    const out: string[] = [];
+    let release: () => void = () => undefined;
+    const live = new Promise<void>((res) => { release = res; });
+    const st = new AgentStateTracker();
+    const agent = { id: 's1', lazy: false } as never;
+    const box: { sch?: Scheduler } = {};
+    const sch3 = new Scheduler({ pausedAll: false, schedules: [] }, {
+      now: () => now, mono: () => now, isBusy: () => false, hasSession: (id) => id === 's1', capUnitOf: () => 'aiu',
+      send: (_f, p, s) => scheduledSendOp({ agent, adapter: { send: async (_id: string, m: { text: string }) => { out.push(m.text); } } as never, agentState: st, ensureLive: () => live, toWindow: () => undefined, noteLastSession: () => undefined, now: () => now, stillWanted: loopStillWanted(box.sch, s) }, loopPrompt(p, s), s),
+      setTimer: (ms, fn) => { const t = { at: now + ms, fn }; timers.push(t); return t; }, clearTimer: (t) => { const i = timers.indexOf(t as never); if (i >= 0) timers.splice(i, 1); }, save: () => undefined,
+    });
+    box.sch = sch3;
+    const r = sch3.save({ folder: '/w', prompt: 'p', target: { session: 's1', agent: 'copilot' }, cap: { amount: 5, unit: 'aiu' }, loop: { minDelay: 5, maxDelay: 60, defaultDelay: 30, maxPasses: 3, endAt: now + 60 * MIN } }, () => true);
+    assert.ok(r.ok);
+    const pending = sch3.tick();
+    await new Promise((res) => setImmediate(res));
+    const l3 = sch3.doc.schedules[0];
+    assert.ok(l3.loop?.inPass, `${how}: the pass is being sent`);
+    if (how === 'stop') sch3.stopPassFor('s1');
+    else if (how === 'stopLoop') sch3.stopLoop(l3.id);
+    else if (how === 'end') sch3.stopLoopFor('s1', 'session');
+    release();
+    await pending;
+    sch3.stop();
+    if (how === 'none') {
+      assert.strictEqual(out.length, 1, 'control: a live pass is sent');
+      continue;
+    }
+    assert.deepStrictEqual(out, [], `${how}: nothing reaches the app after the loop ended`);
+    assert.ok(l3.loop?.ended && !l3.loop.errorStreak, `${how}: the loop ended and the stop is not a failed pass`);
+    assert.ok(!sch3.runsOf(l3.id).some((x) => x.outcome === 'failed'), `${how}: no failed run`);
+    assert.notStrictEqual(st.get('s1')?.state, 'error', `${how}: the desk is not left on Error`);
+  }
+  // review of the T006 PR (4): a `stopped` status is the session ending, not the user's Stop: "the session has ended", in a pass and between passes
+  for (const inPass of [true, false]) {
+    for (const q of [...sch.doc.schedules]) sch.remove(q.id);
+    const r = sch.save({ folder: '/w', prompt: 'p', target: { session: 's2', agent: 'copilot' }, cap: { amount: 5, unit: 'aiu' }, loop: { minDelay: 5, maxDelay: 60, defaultDelay: 30, maxPasses: 3, endAt: now + 60 * MIN } }, () => true);
+    assert.ok(r.ok);
+    await advance(0);
+    if (!inPass) ev({ sessionId: 's2', type: 'status', status: 'idle' });
+    ev({ sessionId: 's2', type: 'status', status: 'stopped' });
+    const e = sch.doc.schedules[0].loop?.ended;
+    assert.deepStrictEqual([e?.reason, e?.text], ['session', 'Stopped: the session has ended'], `a stopped status ${inPass ? 'in' : 'between'} passes`);
+    now += 10 * MIN;
+  }
+
   // the activity text of every note kind: clamped asks, failed passes, review skips, holds, the cap-less start
   const L = { minDelay: 5, maxDelay: 60, defaultDelay: 30, maxPasses: 12, endAt: 1 };
   assert.strictEqual(loopActivity({ kind: 'pass', pass: 3, minutes: 5, source: 'clamped', asked: 2, next: 1 }, { loop: L })?.action, 'Loop pass 3 of 12 · next in 5 min: asked 2 min (minimum)');
@@ -1061,7 +1147,7 @@ async function wiring(): Promise<void> {
   {
     const mainSrc = fs.readFileSync(path.join(repoRoot(), 'src', 'main', 'main.ts'), 'utf8').replace(/\r\n/g, '\n');
     assert.ok(/^\s*routeLoopEvent\(e, scheduler\);$/m.test(mainSrc), 'main.ts routes every event to the scheduler through routeLoopEvent');
-    assert.ok(/ensureLive: \(x\) => ensureLive\(x\), toWindow: toRenderer, noteLastSession, now: \(\) => Date\.now\(\) \}, loopPrompt\(prompt, s\), s\);/.test(mainSrc), 'main.ts sends loopPrompt(prompt, s) through scheduledSendOp');
+    assert.ok(/ensureLive: \(x\) => ensureLive\(x\), toWindow: toRenderer, noteLastSession, now: \(\) => Date\.now\(\), stillWanted: loopStillWanted\(scheduler, s\) \}, loopPrompt\(prompt, s\), s\);/.test(mainSrc), 'main.ts sends loopPrompt(prompt, s) through scheduledSendOp, with the pass still-wanted check');
     assert.ok(/waitOf: \(session\) => loopWaitOf\(session, \{ status: \(id\) => lastStatus\.get\(id\), waits: \(id\) => agentState\.waitsOf\(id\) \}\)/.test(mainSrc), 'main.ts computes holds from lastStatus and agentState');
     assert.ok(/loopNote: \(s, n\) => \{[\s\S]{0,400}logActivity\(a, row\.decision, row\.action\)[\s\S]{0,200}toRenderer\('loop:pass', push\)/.test(mainSrc), 'main.ts logs loop rows and pushes loop:pass');
     assert.ok(/scheduler\?\.stopLoopFor\(a\.id, 'session'\);/.test(mainSrc), 'the update gate ends the loops of the sessions it ends');

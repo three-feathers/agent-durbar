@@ -8,14 +8,25 @@ import type { ActivityDecision } from '../shared/activity';
 import { loopFooter } from '../shared/looppace';
 import type { LoopNote, LoopWait, Schedule, Scheduler } from './schedules';
 
-export type LoopSink = Pick<Scheduler, 'noteUsage' | 'noteFinalText' | 'turnEnded' | 'holdsChanged'>;
+export type LoopSink = Pick<Scheduler, 'noteUsage' | 'noteFinalText' | 'turnEnded' | 'holdsChanged' | 'stopLoopFor'>;
+
+/**
+ * Spec 072 FR-007: the `stillWanted` check of a loop pass's send (`scheduledSendOp`): true while the same pass is still live (not ended,
+ * same pass number and run). A Stop, Stop loop or End while the session starts makes it false, and nothing is sent. Undefined for other schedules.
+ */
+export function loopStillWanted(sch: Pick<Scheduler, 'passLive'> | undefined, s: Pick<Schedule, 'id' | 'loop'>): (() => boolean) | undefined {
+  if (!s.loop) return undefined;
+  const pass = s.loop.passes;
+  const started = s.loop.startedAt;
+  return () => !!sch?.passLive(s.id, pass, started);
+}
 
 /**
  * The scheduler's share of `router.onEvent` (spec 044 FR-015, spec 072 FR-010, FR-015). Call it after `agentState` and the last status
  * have taken the event, so a hold reads the new state.
  * - every `usage` event of the session, a helper's too and one after `idle`, goes to `noteUsage` (the run or loop in progress there);
  * - only the main agent's (no `agentId`) final `output` is a pass's text; a sub-agent's never is;
- * - the main agent's `idle`, `error` or `stopped` ends the turn; `stopped` and an `Aborted` idle (Stop) say the pass was stopped;
+ * - the main agent's `idle`, `error` or `stopped` ends the turn; an `Aborted` idle is the user's Stop, `stopped` the session ending;
  * - a status, question, limit or usage-limit event may start or clear a hold.
  */
 export function routeLoopEvent(e: AgentEvent, sch: LoopSink | undefined): void {
@@ -28,7 +39,9 @@ export function routeLoopEvent(e: AgentEvent, sch: LoopSink | undefined): void {
     return;
   }
   if (e.type === 'status' && (e.status === 'idle' || e.status === 'error' || e.status === 'stopped')) {
-    sch.turnEnded(e.sessionId, { error: e.status === 'error', stopped: e.status === 'stopped' || e.intent === 'Aborted' });
+    // only an Aborted idle is the user's Stop; a `stopped` status is the session itself ending (reconnect failure, folder or session removed)
+    sch.turnEnded(e.sessionId, { error: e.status === 'error', stopped: e.intent === 'Aborted', sessionEnded: e.status === 'stopped' });
+    if (e.status === 'stopped') sch.stopLoopFor(e.sessionId, 'session'); // a loop between passes ends too
   }
   if (e.type === 'status' || e.type === 'question' || e.type === 'usageLimit') sch.holdsChanged(e.sessionId);
 }

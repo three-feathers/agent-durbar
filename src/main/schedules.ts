@@ -436,6 +436,15 @@ export type LoopNote =
   | { kind: 'hold'; why: LoopHold | 'cap' }
   | { kind: 'end'; reason: LoopEndReason; text: string };
 
+/** How a loop pass ended (main's `turnEnded`, or the scheduler itself): `stopped` = the user's Stop; `sessionEnded` = the session stopped. */
+interface PassEnd {
+  finalText?: string;
+  error?: boolean;
+  stopped?: boolean;
+  sessionEnded?: boolean;
+  unsent?: boolean;
+}
+
 /** Spec 081: how long a held run waits before it is looked at again (a release also brings it forward at once). */
 export const HOLD_RETRY_MS = 5000;
 
@@ -454,6 +463,8 @@ export class Scheduler {
   private flushTimer: unknown;
   /** Spec 072 FR-010: session id -> the last final assistant message seen during a loop pass (memory only, never saved or logged). */
   private finalText = new Map<string, string>();
+  /** Spec 072 FR-017: loops whose pass met Durbar's cap (a `limit` request) while it ran; paused at the pass's end even if the request has cleared. Memory only. */
+  private capInPass = new Set<string>();
   /** Spec 072 FR-024: loop notes waiting for the next commit, so a pass row comes before the end row it caused. */
   private notes: { s: Schedule; n: LoopNote }[] = [];
   constructor(public doc: SchedulesDoc, private readonly deps: SchedulerDeps) {}
@@ -574,7 +585,7 @@ export class Scheduler {
    * Spec 072: for a loop whose pass is in progress this is the end of the pass. `end` carries what main collected: the last final
    * assistant message of the pass (`finalText`, read for the `LOOP:` line), or `error` / `stopped` for how the turn ended.
    */
-  turnEnded(session: string, end?: { finalText?: string; error?: boolean; stopped?: boolean }): void {
+  turnEnded(session: string, end?: { finalText?: string; error?: boolean; stopped?: boolean; sessionEnded?: boolean }): void {
     // spec 072: a running loop keeps the session's spend until its next pass starts (a `usage` event may come after `idle`); a plain schedule does not
     const owner = this.doc.schedules.find((x) => x.id === this.attrib.get(session));
     if (!(owner?.loop && !owner.loop.ended)) this.attrib.delete(session);
@@ -584,6 +595,12 @@ export class Scheduler {
     if (!s?.loop) return;
     this.passEnded(s, { ...(end ?? {}), finalText: end?.finalText ?? text }, this.deps.now());
     this.commit();
+  }
+
+  /** Spec 072 FR-007: the loop `id` is still in the pass that was sent (not ended, same pass number and run), so its prompt may still go out. */
+  passLive(id: string, pass: number | undefined, startedAt: number | undefined): boolean {
+    const l = this.doc.schedules.find((x) => x.id === id)?.loop;
+    return !!l && !l.ended && !!l.inPass && l.passes === pass && l.startedAt === startedAt;
   }
 
   /** The loop whose pass is running in this session, if any. */
@@ -628,6 +645,7 @@ export class Scheduler {
     this.record(s, 'ended', now, { session: s.target?.session, reason });
     if (s.target && this.attrib.get(s.target.session) === s.id) this.attrib.delete(s.target.session);
     if (s.target) this.finalText.delete(s.target.session);
+    this.capInPass.delete(s.id);
     this.note(s, { kind: 'end', reason, text: l.ended.text });
   }
 
@@ -677,12 +695,17 @@ export class Scheduler {
   holdsChanged(session: string): void {
     const now = this.deps.now();
     let changed = false;
-    for (const s of this.doc.schedules) if (s.loop && s.target?.session === session && this.settle(s, now)) changed = true;
+    for (const s of this.doc.schedules) {
+      if (!s.loop || s.target?.session !== session) continue;
+      // FR-017: the cap met during a pass is remembered; the request may clear (cancel) before the pass ends
+      if (s.loop.inPass && !s.loop.ended && this.deps.waitOf?.(session) === 'cap') this.capInPass.add(s.id);
+      if (this.settle(s, now)) changed = true;
+    }
     if (changed) this.commit();
   }
 
   /** The end of a loop pass (FR-010..FR-013, FR-018): reads the pace request and sets the next wake or ends the loop. */
-  private passEnded(s: Schedule, end: { finalText?: string; error?: boolean; stopped?: boolean; unsent?: boolean }, now: number): void {
+  private passEnded(s: Schedule, end: PassEnd, now: number): void {
     const l = s.loop as LoopSpec;
     // FR-024: the pass's row is queued first and filled below, so it comes before the end row this pass may cause
     const n: LoopNote & { kind: 'pass' } = { kind: 'pass', pass: l.passes ?? 0 };
@@ -693,10 +716,12 @@ export class Scheduler {
     else if (s.next !== undefined && l.lastAsk) Object.assign(n, { next: s.next, minutes: l.lastAsk.minutes, reason: l.lastAsk.reason, source: l.lastAsk.source }, l.lastAsk.asked !== undefined ? { asked: l.lastAsk.asked } : {});
   }
 
-  private passEndedInner(s: Schedule, end: { finalText?: string; error?: boolean; stopped?: boolean; unsent?: boolean }, now: number): void {
+  private passEndedInner(s: Schedule, end: PassEnd, now: number): void {
     const l = s.loop as LoopSpec;
     l.inPass = false;
+    const capped = this.capInPass.delete(s.id);
     this.lastSent.set(s.id, this.mono()); // FR-011: the minimum between two passes runs from the END of this one
+    if (end.sessionEnded) return this.endLoop(s, 'session', now); // the session itself stopped (not the user's Stop)
     if (end.stopped) return this.endLoop(s, 'user', now);
     let delay = l.defaultDelay;
     if (end.error) {
@@ -724,6 +749,15 @@ export class Scheduler {
     // a wake after the end time would never be sent: end now. Passes and the loop's cap are checked with the same clock.
     if (this.limitReached(s, now) || s.next >= l.endAt) {
       if (!l.ended) this.endLoop(s, 'time', now);
+      return;
+    }
+    if (capped && !s.paused) {
+      // FR-017, Q5: the pass met Durbar's cap: the loop pauses and needs Resume, also when the request was cancelled before the pass ended
+      s.paused = true;
+      s.pausedReason = 'cap';
+      delete l.hold;
+      this.real = true;
+      this.note(s, { kind: 'hold', why: 'cap' });
       return;
     }
     this.settle(s, now);
@@ -772,6 +806,7 @@ export class Scheduler {
     delete s.next;
     this.attrib.set(session, s.id);
     this.finalText.delete(session); // FR-010: only a message of this pass counts
+    this.capInPass.delete(s.id);
     const pass = l.passes;
     const started = l.startedAt; // restartLoop edits this object in place, so keep the value from before the await
     const { r, reason } = await this.sendRun(s, s.prompt);
@@ -1075,6 +1110,9 @@ export class Scheduler {
         const started = prev?.loop?.startedAt ?? now;
         if (s.loop.endAt <= now) return { ok: false, error: 'The loop must end in the future.' };
         if (s.loop.endAt > started + LOOP_MAX_HOURS * 3_600_000) return { ok: false, error: `A loop may run at most ${LOOP_MAX_HOURS} hours.` };
+      } else if (edit && prev?.loop?.ended && s.loop.endAt > now + LOOP_MAX_HOURS * 3_600_000) {
+        // an ended loop's edit is not bounded by its old start, but never by more than LOOP_MAX_HOURS from now (Start again then clamps the span)
+        return { ok: false, error: `A loop may run at most ${LOOP_MAX_HOURS} hours.` };
       }
     }
     if (edit && prev) {

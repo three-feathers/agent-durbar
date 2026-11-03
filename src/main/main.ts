@@ -92,7 +92,7 @@ import { UsageStore } from './usagestore';
 import { AgentTrustStore } from './agenttrust';
 import { Scheduler, loadSchedules, publicDoc, saveSchedules, scheduleBusy } from './schedules';
 import type { SchedulerDeps } from './schedules';
-import { loopActivity, loopPrompt, loopPush, loopWaitOf, routeLoopEvent } from './loopwiring';
+import { loopActivity, loopPrompt, loopPush, loopStillWanted, loopWaitOf, routeLoopEvent } from './loopwiring';
 import { UsageTotalsStore } from './usagetotalsstore';
 import { ActivityStore } from './activitystore';
 import { decisionOf } from '../shared/activity';
@@ -606,7 +606,7 @@ const scheduleDeps = (file: string): SchedulerDeps => ({
     const a = scheduleAgent(s);
     // spec 058 FR-209: the scheduler's send awaits the same per-chat MCP sign-in gate as the window's send
     // spec 072 FR-006, FR-009: a loop pass is the user's own send path in the session's mode, plus Durbar's footer (loops only)
-    return scheduledSendOp({ agent: a, adapter: a ? router.forAgent(a.id) : undefined, agentState, gate: (id) => mcp.signInRefresh.beforeSend(id), ensureLive: (x) => ensureLive(x), toWindow: toRenderer, noteLastSession, now: () => Date.now() }, loopPrompt(prompt, s), s);
+    return scheduledSendOp({ agent: a, adapter: a ? router.forAgent(a.id) : undefined, agentState, gate: (id) => mcp.signInRefresh.beforeSend(id), ensureLive: (x) => ensureLive(x), toWindow: toRenderer, noteLastSession, now: () => Date.now(), stillWanted: loopStillWanted(scheduler, s) }, loopPrompt(prompt, s), s);
   },
   /* spec 072 FR-015/FR-017: holds from main's own state of the session (agentState flags, the last status) */
   waitOf: (session) => loopWaitOf(session, { status: (id) => lastStatus.get(id), waits: (id) => agentState.waitsOf(id) }),
