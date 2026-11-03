@@ -171,34 +171,65 @@ def cab_side(Sd, Hf, trim, art=0):
 SIDE_TOP = {0: [2, 3, 3, 4, 4, 5, 5], 1: [13, 13, 13, 13, 13, 13, 13], 2: [8, 6, 5, 5, 6, 8, 11], 3: [13, 15, 17, 19, 21, 23, 25]}
 
 def cabinet(gw, gh, variant, kind=0):
-    """one level cabinet, the screen on the left and the side panel on the right (the app mirrors it, with a static transform, for the other side).
-    Every body fills the same cell with its glass and marquee in the same place, so nothing of it reaches the person beside it or the plate."""
+    """one cabinet, the screen on the left and the side panel on the right (the app mirrors it, with a static transform, for the other side).
+    Four silhouettes in one cell (spec 102 FR-306): an upright with its tall stepped side; a cocktail table (the screen on a wide low table
+    with a glass edge and four legs, no side above it); a racer (a wide low body, a big wheel and a seat shell on the side); a pinball (a
+    framed backbox, then a sloped playfield flaring out below it, on legs). The glass and the marquee stay in one place, nothing leaves the
+    cell, so nothing reaches the person beside it or the plate."""
     Fw, Sd = gw + 10, 7; Hf = gh + 38; CW, CH = Fw + Sd, max(Hf + 3, 73)
-    trim = TRIM[variant % 4]
-    f, s = cab_front(Fw, Hf, gw, gh, BODY[variant % 4], trim, kind, variant % 4), cab_side(Sd, Hf, trim, (variant + kind) % 4)
-    c = C(CW, CH); oy = CH - Hf - 3
-    c.R('#000000', 0, oy + Hf, CW, 2, .38)
-    c.draw(f, 0, oy)
-    c.clear(0, oy, 3, 1); c.clear(Fw - 3, oy, 3, 1); c.clear(0, oy + 1, 1, 1); c.clear(Fw - 1, oy + 1, 1, 1)   # stepped crown
-    yd = oy + gh + 23                                                                                      # the panel's top
-    if kind == 1:                                                                                           # cocktail: round corners, a glossy black top
-        for i, n in enumerate((5, 3, 2, 1, 1)): c.clear(0, oy + i, n, 1); c.clear(Fw - n, oy + i, n, 1)
-        c.R('#0e0b1c', 1, oy + 12, 1, yd - oy - 12); c.R('#0e0b1c', Fw - 2, oy + 12, 1, yd - oy - 12)
-    if kind == 2:                                                                                           # racer: a hood and painted flanks
+    trim, body = TRIM[variant % 4], BODY[variant % 4]
+    f, s = cab_front(Fw, Hf, gw, gh, body, trim, 0 if kind else 0, variant % 4), cab_side(Sd, Hf, trim, (variant + kind) % 4)
+    c = C(CW, CH); oy = CH - Hf - 3; R = c.R
+    yd, yb = oy + gh + 23, oy + Hf                                                                         # the panel's top, the floor line
+    R('#000000', 0, yb, CW, 2, .38)
+    if kind == 0:
+        c.draw(f, 0, oy)
+        c.clear(0, oy, 3, 1); c.clear(Fw - 3, oy, 3, 1); c.clear(0, oy + 1, 1, 1); c.clear(Fw - 1, oy + 1, 1, 1)   # stepped crown
+        for i, off in enumerate(SIDE_TOP[0]): c.im.alpha_composite(s.im.crop((i, 0, i + 1, Hf)).resize((1, Hf - off), Image.NEAREST), (Fw + i, oy + off))
+        R('#3a3158', Fw, oy + 2, Sd, 1)
+    else:
+        top = C(Fw, yd - oy); top.im.alpha_composite(f.im.crop((0, 0, Fw, yd - oy)), (0, 0)); c.draw(top, 0, oy)   # marquee and screen only
+    def stick(x, y, col): R(P['dg'], x, y + 2, 1, 2); R(col, x - 1, y, 3, 2)
+    if kind == 1:                                                                                          # cocktail table
+        for i, n in enumerate((3, 2, 1)): c.clear(0, oy + i, n, 1); c.clear(Fw - n, oy + i, n, 1)
+        t = yd                                                                                             # the table top, across the whole cell
+        R(P['k'], 0, t, CW, 6); R(P['cream'], 1, t, CW - 2, 1); R(P['lav'], 1, t + 1, CW - 2, 1); R(trim, 1, t + 2, CW - 2, 1); R(body, 1, t + 3, CW - 2, 2)
+        stick(4, t - 3, P['blue']); stick(CW - 5, t - 3, P['pink'])
+        R(P['k'], 3, t + 6, CW - 6, 3); R('#2f2750', 4, t + 6, CW - 8, 2)                                  # the apron
+        for x in (3, round(CW * .3), round(CW * .7) - 2, CW - 6):                                          # four legs, floor between them
+            R(P['k'], x, t + 9, 3, yb - t - 9); R(trim, x + 1, t + 9, 1, yb - t - 10)
+    if kind == 2:                                                                                          # racer
         for i, n in enumerate((4, 2, 1)): c.clear(0, oy + i, n, 1); c.clear(Fw - n, oy + i, n, 1)
-        c.R(trim, 1, oy + 3, 1, yd - oy - 3); c.R(trim, Fw - 2, oy + 3, 1, yd - oy - 3); c.R(P['k'], 0, oy + 3, 1, yd - oy - 3); c.R(P['k'], Fw - 1, oy + 3, 1, yd - oy - 3)
-    if kind == 3:                                                                                           # pinball: a backbox narrower than the playfield under it
-        c.clear(0, oy, 2, yd - oy); c.clear(Fw - 2, oy, 2, yd - oy)
-        c.R(P['k'], 2, oy, 1, yd - oy); c.R(P['k'], Fw - 3, oy, 1, yd - oy); c.R(trim, 3, oy + 12, 1, yd - oy - 12)
-    if kind == 2: c.R(trim, 3, oy + 12, Fw - 6, 1)                                                          # racer: a stripe under the marquee
-    if kind == 3:                                                                                           # pinball: lights along the backbox top
-        for x in range(4, Fw - 4, 3): c.R(P['red'] if x % 2 else P['yellow'], x, oy, 1, 1)
-    for i, off in enumerate(SIDE_TOP[kind]):
-        if kind == 2: off = max(off, 2)
-        c.im.alpha_composite(s.im.crop((i, 0, i + 1, Hf)).resize((1, Hf - off), Image.NEAREST), (Fw + i, oy + off))
-        if kind == 2 and i in (1, 2, 3, 4, 5):                                                              # racer: the seat, outlined in the trim colour
-            c.R(trim, Fw + i, oy + Hf - 30, 1, 20); c.R('#0e0b1c', Fw + i, oy + Hf - 29, 1, 18) if i in (2, 3, 4) else None
-    c.R('#3a3158', Fw, oy + SIDE_TOP[kind][0], Sd, 1)
+        R(trim, 1, oy + 12, 1, yd - oy - 12); R(trim, Fw - 2, oy + 12, 1, yd - oy - 12)
+        sx = Fw - 1                                                                                        # the seat shell on the side, rising above the body
+        R(P['k'], sx, yd - 34, CW - sx, 35); R(trim, sx + 1, yd - 33, CW - sx - 2, 33); R('#0e0b1c', sx + 2, yd - 31, CW - sx - 4, 30); R(trim, sx + 2, yd - 14, CW - sx - 4, 1)
+        c.clear(sx, yd - 34, 1, 1); c.clear(CW - 1, yd - 34, 1, 1)
+        b = yd                                                                                             # a wide low body
+        R(P['k'], 0, b, CW, yb - b); R(body, 1, b + 1, CW - 2, yb - b - 2); R(trim, 1, b + 1, CW - 2, 1); R(trim, 1, yb - 4, CW - 2, 1)
+        R(P['k'], 1, yb - 2, CW - 2, 1)
+        cx, cy, r = round(Fw / 2), b + 3, 5                                                                # a big wheel at the base of the screen
+        for dx in range(-r, r + 1):
+            for dy in range(-r, r + 1):
+                d = (dx * dx + dy * dy) ** .5
+                if r - 1.2 <= d <= r + .3 and cy + dy > oy + 18 + gh: R(P['lg'] if dy < 0 else P['dg'], cx + dx, cy + dy, 1, 1)
+        R(trim, cx - r + 1, cy, 2 * r - 1, 1); R(P['k'], cx, cy, 1, r)
+        R(P['dg'], round(Fw * .84), b + 2, 1, 5); R(P['cream'], round(Fw * .84) - 1, b + 1, 3, 2)
+    if kind == 3:                                                                                          # pinball
+        c.clear(0, oy, 2, yd - oy); c.clear(Fw - 2, oy, 2, yd - oy)                                        # a backbox, framed in lights
+        R(trim, 2, oy, Fw - 4, 1); R(trim, 2, oy, 1, yd - oy); R(trim, Fw - 3, oy, 1, yd - oy)
+        for x in range(4, Fw - 4, 3): R(P['yellow'] if (x // 3) % 2 else P['red'], x, oy, 1, 1)
+        for y in range(oy + 4, yd - 2, 4): R(P['yellow'], 2, y, 1, 1); R(P['yellow'], Fw - 3, y, 1, 1)
+        p0, p1 = oy + 18 + gh + 1, yb - 4                                                                  # the playfield flares out towards us, from under the glass
+        for y in range(p0, p1):
+            k = (y - p0) / max(1, p1 - p0 - 1); l = round(2 - 2 * k); r = round(Fw - 3 + (CW - Fw + 2) * k)
+            R(P['k'], l, y, r - l + 1, 1); R('#16507e' if (y - p0) % 4 else '#1b5f93', l + 1, y, r - l - 1, 1)
+        R(trim, 2, p0, Fw - 4, 1)
+        mid = round(CW / 2)
+        for f_, col in ((.28, P['red']), (.5, P['lime']), (.72, P['blue'])): R(col, round(CW * f_) - 1, p0 + 2, 3, 2); R(P['cream'], round(CW * f_), p0 + 2, 1, 1)
+        for i in range(5): R(P['yellow'], mid - 7 + i, p1 - 4 + i // 2, 1, 1); R(P['yellow'], mid + 6 - i, p1 - 4 + i // 2, 1, 1)
+        for x in range(4, CW - 4, 4): R(P['pink'] if (x // 4) % 2 else P['orange'], x, p1 - 1, 2, 1)
+        R(P['lg'], 1, p1, CW - 2, 1); R(P['cream'], CW - 4, p1 - 5, 1, 4)                                  # lockdown bar, plunger
+        for x in (2, CW - 5): R(P['k'], x, p1 + 1, 3, yb - p1 - 1); R(trim, x + 1, p1 + 1, 1, yb - p1 - 2)
     return c, dict(cell=[CW, CH], glass=[5, oy + 18, gw, gh], marquee=[4, oy + 3, Fw - 8, 7], oy=oy)
 
 def cab_strip(gw, gh):
@@ -532,7 +563,7 @@ def write_notes(repo, meta, sections, prompts):
          '### room-day', '', '- files: wall.webp floor.webp', '- source: `drawBackdrop` of the mockup (`layouts/mock/arcade.js`), day palette: brick wall with a stepped rim and three floppy disks, a diamond lattice floor tile (24 x 24, repeats), a soft dithered shadow under the wall (6 rows, partly transparent)',
          '- tool: `scripts/build-arcade-pack.py` (Pillow)', '- date: 2026-11-01', "- made by: Vikram's agent (Claude Code)", '- approved by: Vikram, 2026-11-01 (the mockup\'s look; the rebuilt pictures have not been looked at by him)', '- reference: the mockup', '- prompt: none, drawn in code', '- cut: the wall is 720 x 118 grid pixels, its four neon signs in the middle so a crop at another scale keeps them', '- licence: MIT', '',
          '### room-night', '', '- files: wall-night.webp floor-night.webp', '- source: as room-day, the night palette: dark navy brick, neon tubes with a dithered halo', '- tool: `scripts/build-arcade-pack.py` (Pillow)', '- date: 2026-11-01', "- made by: Vikram's agent (Claude Code)", '- approved by: Vikram, 2026-11-01 (the mockup\'s look)', '- reference: the mockup', '- prompt: none, drawn in code', '- cut: as room-day; not listed in `lightSets` yet because its `welcome-night` part is not drawn (spec 102 FR-252: all three or none)', '- licence: MIT', '',
-         '### cabinets', '', '- files: monitor.webp monitor-half.webp monitor-narrow.webp', '- source: the mockup\'s cabinet, **redrawn level** (spec 102 FR-258): level front, level glass and marquee (both holes the app fills), a side panel and a stepped top; four bodies (upright, cocktail table, sit-down racer, pinball; spec 102 FR-306, owner 2026-11-03) in four colours per strip, each colour with its own marquee trim and side art, all in one cell size with the glass in one place; screen on the left (the app mirrors it with a static transform). Redrawn with `--world`, 2026-11-03', '- tool: `scripts/build-arcade-pack.py` (Pillow)', '- date: 2026-11-01', "- made by: Vikram's agent (Claude Code)", '- approved by: pending (the owner has not yet looked at the level cabinet, T200)', '- reference: the mockup and `layouts/mock/arcade-level-compare.png` (art cache)', '- prompt: none, drawn in code', '- cut: `monitor.webp` is the big cabinet for 1 to 4 people (glass 75 x 50), `monitor-half.webp` the small one (56 x 32) and `monitor-narrow.webp` a narrower one (44 x 32) for a floor too narrow for the small one with the chat open', '- licence: MIT', '',
+         '### cabinets', '', '- files: monitor.webp monitor-half.webp monitor-narrow.webp', '- source: the mockup\'s cabinet, **redrawn level** (spec 102 FR-258): level front, level glass and marquee (both holes the app fills), a side panel and a stepped top; four bodies with their own silhouettes (upright with a tall side; cocktail table on four legs; racer with a seat shell and a wheel; pinball with a backbox and a flared playfield; spec 102 FR-306, owner 2026-11-03) in four colours per strip, each colour with its own marquee trim and side art, all in one cell size with the glass in one place; screen on the left (the app mirrors it with a static transform). Redrawn with `--world`, 2026-11-03', '- tool: `scripts/build-arcade-pack.py` (Pillow)', '- date: 2026-11-01', "- made by: Vikram's agent (Claude Code)", '- approved by: pending (the owner has not yet looked at the level cabinet, T200)', '- reference: the mockup and `layouts/mock/arcade-level-compare.png` (art cache)', '- prompt: none, drawn in code', '- cut: `monitor.webp` is the big cabinet for 1 to 4 people (glass 75 x 50), `monitor-half.webp` the small one (56 x 32) and `monitor-narrow.webp` a narrower one (44 x 32) for a floor too narrow for the small one with the chat open', '- licence: MIT', '',
          '### fixtures', '', '- files: ' + ' '.join(f'fx-{f}.webp' for f in FIXTURES), '- source: the mockup\'s nine arcade things: prize counter, cartridge wall, service panel, pinball table, attract-mode cabinet, change machine, coin vault, ticket dispenser, repair bench; drawn at the mockup\'s size (34 to 48 grid pixels tall, a person is 72: spec 102 Q6 asks whether to redraw them taller)', '- tool: `scripts/build-arcade-pack.py` (Pillow)', '- date: 2026-11-01', "- made by: Vikram's agent (Claude Code)", '- approved by: Vikram, 2026-11-01 (the mockup\'s look)', '- reference: the mockup', '- prompt: none, drawn in code', '- cut: every fixture on one canvas as tall as the tallest (48), standing on the bottom row', '- licence: MIT', '',
          '### glow', '', '- files: glow.webp', '- source: the mockup\'s dithered pool of light, one cell (56 x 15) per state in the app\'s day status colours', '- tool: `scripts/build-arcade-pack.py` (Pillow)', '- date: 2026-11-01', "- made by: Vikram's agent (Claude Code)", '- approved by: pending', '- reference: the mockup', '- prompt: none, drawn in code', '- cut: seven cells: working, thinking, waiting, error, limit, done, idle', '- licence: MIT', '',
          '### console', '', '- files: desk.webp', '- source: a low console and stool for a person who is asleep (spec 102 FR-259): a **placeholder**, nobody has looked at it', '- tool: `scripts/build-arcade-pack.py` (Pillow)', '- date: 2026-11-01', "- made by: Vikram's agent (Claude Code)", '- approved by: pending', '- reference: none', '- prompt: none, drawn in code', '- cut: 40 x 22 grid pixels', '- licence: MIT', '', '## Removed', '', 'None.', '']

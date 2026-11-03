@@ -561,7 +561,8 @@
         e.style.width = ''; e.style.height = '';
         const size = () => ({ w: Math.ceil(e.offsetWidth) + 2, h: Math.ceil(e.offsetHeight) + 2 });
         let r = size();
-        if (e._at && e._v === v && e._at.w >= r.w && e._at.h >= r.h && !hits({ x: e._at.x, y: e._at.y, w: r.w, h: r.h }) && e._at.x + r.w <= bounds.x + bounds.w && e._at.y + r.h <= bounds.y + bounds.h) { avoid.push({ x: e._at.x, y: e._at.y, w: r.w, h: r.h }); e.dataset.variant = v; return true; }
+        const laneFree = () => lay.lane && v === 'pill' && !(e._at.y >= lay.lane.y && e._at.y + r.h <= lay.lane.y + lay.lane.h + 0.01) && P(r, avoid, lay.lane, anchor); /* a pill docked before its font loaded goes back to the lane */
+        if (e._at && e._v === v && e._at.w >= r.w && e._at.h >= r.h && !hits({ x: e._at.x, y: e._at.y, w: r.w, h: r.h }) && !laneFree() && e._at.x + r.w <= bounds.x + bounds.w && e._at.y + r.h <= bounds.y + bounds.h) { avoid.push({ x: e._at.x, y: e._at.y, w: r.w, h: r.h }); e.dataset.variant = v; return true; }
         for (let pass = 0; pass < 2; pass++) { /* the second pass re-places with the box it really has (a late font can widen the text) */
           const dock = () => P(r, avoid, { x: bounds.x, y: bounds.y + bounds.h - r.h, w: bounds.w, h: r.h }, anchor) || { x: bounds.x + bounds.w - r.w, y: bounds.y + bounds.h - r.h, w: r.w, h: r.h };
           const at = (lay.lane && v === 'pill' ? P(r, avoid, lay.lane, anchor) : null) || P(r, avoid.concat(softAvoid), bounds, anchor) || (lay.big || v === 'pill' ? P(r, avoid, bounds, anchor) : null) || (lay.cabinet && v === 'pill' ? dock() : null); /* a one-line pill may sit over a monitor when there is no other spot; in the arcade it docks at the floor's bottom edge, never hidden */

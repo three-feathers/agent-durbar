@@ -125,6 +125,7 @@ for (const nm of NAMES) {
 
 // ---- owner, 2026-11-03 ("bigger cabinets ... zigzag positioning for max usage"): from 2 people on, no band of bare floor over a quarter of its
 // height (above, between or below the rows); a folder's seats stay one group: its sign over its own first cabinet, no row interleaves two folders
+const split: string[] = [];
 for (const [W, H] of SIZES) for (const dh of [0, 31]) for (const n of [2, 3, 4, 5, 6, 8, 10, 12, 15]) for (const f of [1, 3, 4].filter((x) => x <= n)) {
   const L = aislesLayout(model(n, f), { w: W, h: H - dh }, META, SIGNS(f)), floorH = L.height - L.lobbyH;
   const ys = L.zones.flatMap((z) => [[z.sign.y, z.box.y + z.box.h]]).sort((a, b) => a[0] - b[0]);
@@ -136,6 +137,24 @@ for (const [W, H] of SIZES) for (const dh of [0, 31]) for (const n of [2, 3, 4, 
     const first = z.desks.reduce((m, d) => (d.slot.x < m.slot.x ? d : m), z.desks[0]);
     assert.ok(Math.abs(z.sign.x - first.slot.x) <= 1, `${z.id}: its sign starts over its own first cabinet`);
     for (const o of L.zones) if (o !== z && Math.abs(o.box.y - z.box.y) < 1) for (const d of o.desks) assert.ok(d.slot.x + d.slot.w <= z.box.x + 1 || d.slot.x >= z.box.x + z.box.w - 1, `${o.id}'s seat ${d.id} inside ${z.id}'s row part`);
+  }
+  /* owner, 2026-11-03 (relayed): a folder of 4 or fewer is one group under one sign, never "(continued)", wherever five columns can hold it
+     (15 in 4 folders cannot: 4 + 4 + 4 + 3 needs four rows of five; there the folders flow on and `split` lists it) */
+  const parts = new Map<string, number>(), sizes = new Map<string, number>();
+  for (const z of L.zones) { parts.set(z.id, (parts.get(z.id) || 0) + 1); sizes.set(z.id, (sizes.get(z.id) || 0) + z.desks.length); }
+  const cut = [...parts].filter(([id, c]) => c > 1 && (sizes.get(id) || 0) <= 4);
+  if (cut.length) split.push(`${n} in ${f} at ${W}x${H - dh}`);
+  if (n <= 10) assert.deepStrictEqual(cut, [], `${n} in ${f} at ${W}x${H - dh}: a folder of 4 or fewer is split`);
+  /* a small room stands close together: neighbours on a row at most a quarter of a slot apart (1.1 slots a column) */
+  if (n <= 4) for (const a of L.zones.flatMap((z) => z.desks)) for (const b of L.zones.flatMap((z) => z.desks)) if (a !== b && Math.abs(a.slot.y - b.slot.y) < 1 && b.slot.x > a.slot.x) {
+    const gap = b.slot.x - (a.slot.x + a.slot.w);
+    if (!L.zones.flatMap((z) => z.desks).some((c) => Math.abs(c.slot.y - a.slot.y) < 1 && c.slot.x > a.slot.x && c.slot.x < b.slot.x)) assert.ok(gap <= a.slot.w / 4, `${n} in ${f} at ${W}x${H - dh}: a gap of ${Math.round(gap)} px in a small room`);
+  }
+  /* and its cabinets stand together in the middle, the people outside: two cabinets on a row at most a quarter of a slot apart */
+  const dk = L.zones.flatMap((z) => z.desks);
+  if (n <= 4) for (const row of [...new Set(dk.map((d) => Math.round(d.slot.y)))]) {
+    const cs = dk.filter((d) => Math.round(d.slot.y) === row).map((d) => d.desk).sort((a, b) => a.x - b.x);
+    for (let j = 1; j < cs.length; j++) assert.ok(cs[j].x - (cs[j - 1].x + cs[j - 1].w) <= dk[0].slot.w / 4, `${n} in ${f} at ${W}x${H - dh}: cabinets ${Math.round(cs[j].x - cs[j - 1].x - cs[j - 1].w)} px apart in a small room`);
   }
   /* FR-306: the bodies vary: at up to 4 people all differ, from 8 on all four are on the floor */
   const bodies = new Set(L.zones.flatMap((z) => z.desks.map((d) => d.body)));
@@ -215,5 +234,6 @@ for (const n of [3, 8, 15]) for (const dh of [0, 31]) {
   assert.deepStrictEqual(aislesLayout({ folders: [], places: [] }, v, META).zones, [], 'no agents, no zones');
 }
 
+console.log(`a folder of 4 or fewer still split (five columns cannot hold it whole): ${split.join('; ') || 'none'}`);
 console.log(`aisles tests passed (${cases} layouts)`);
 process.exitCode = 0;
