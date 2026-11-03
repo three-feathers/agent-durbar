@@ -77,7 +77,7 @@ function problems(L: Layout, W: number, k: number): string[] {
 {
   const want: Record<string, [string, string, string, boolean, boolean]> = {
     working: ['lit', 'faint', 'none', true, false], thinking: ['lit', 'faint', 'dots', false, false], waiting: ['flash', 'strong', 'ask', false, false], limit: ['orange', 'strong', 'ask', false, false],
-    error: ['flash-red', 'small', 'bang', false, false], done: ['green', 'faint', 'tick', false, true], idle: ['dim', 'very-faint', 'zz', false, false], asleep: ['off', 'none', 'zz', false, false],
+    error: ['flash-red', 'small', 'bang', false, false], done: ['green', 'faint', 'tick', false, true], idle: ['dim', 'very-faint', 'none', false, false], asleep: ['off', 'none', 'zz', false, false],
   };
   for (const [st, w] of Object.entries(want)) {
     const a = aisleStatus(st as never), still = aisleStatus(st as never, true);
@@ -122,6 +122,10 @@ for (const nm of NAMES) {
   else assert.ok(F[8] > F[15], `${nm}: face at 8 (${F[8]}) is larger than at 15 (${F[15]})`);
   for (let n = 1; n <= 14; n++) assert.ok(F[n] >= F[15], `${nm}: face at ${n} (${F[n]}) is not smaller than at 15`);
 }
+
+// ---- owner, 2026-11-03: z z is for asleep only (who sits); idle stands awake with no cue; a small group stands right under the lobby
+assert.deepStrictEqual([aisleStatus('idle', false).cue, aisleStatus('asleep', false).cue], ['none', 'zz']);
+for (const [W, H] of SIZES) for (const n of [1, 3, 4]) { const L = aislesLayout(model(n, 1), { w: W, h: H }, META); const top = Math.min(...L.zones.map((z) => z.sign.y)); assert.ok(top - (L.lobbyH + (L.lane ? L.lane.h : 0)) <= 24, `${n} at ${W}: the row starts ${top - L.lobbyH} px under the lobby`); }
 
 // ---- owner, 2026-11-03: asleep sits on a stool, whole beside the cabinet (the seated frame `sit`, not a standing one)
 {

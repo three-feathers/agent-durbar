@@ -70,7 +70,7 @@ export function aisleStatus(state: RealState, still = false): AisleStatus {
     limit: { marquee: 'orange', glow: 'strong', cue: 'ask', bob: false, flourish: false },
     error: { marquee: 'flash-red', glow: 'small', cue: 'bang', bob: false, flourish: false },
     done: { marquee: 'green', glow: 'faint', cue: 'tick', bob: false, flourish: true },
-    idle: { marquee: 'dim', glow: 'very-faint', cue: 'zz', bob: false, flourish: false },
+    idle: { marquee: 'dim', glow: 'very-faint', cue: 'none', bob: false, flourish: false }, /* awake and standing: z z is for asleep only, who sits (owner, 2026-11-03) */
     asleep: { marquee: 'off', glow: 'none', cue: 'zz', bob: false, flourish: false },
   };
   const r = t[state] ?? t.idle;
@@ -113,7 +113,7 @@ export function aislesLayout(model: RealModel, view: { w: number; h: number }, m
   const bend = 2 * sl, used = rows * (plan.rowH + bend);
   const Lb0 = Math.round(plan.fits ? Math.max(lobbyMin, Math.min(Ho - used - AISLE_PAD - AISLE_LANE, lobbyT)) : lobbyMin);
   const Lb = Math.ceil(Lb0 / g) * g;
-  const spare = plan.fits ? Math.max(0, Ho - Lb - AISLE_LANE - used - AISLE_PAD) : 0, extra = spare / (rows + 1);
+  const spare = plan.fits ? Math.max(0, Ho - Lb - AISLE_LANE - used - AISLE_PAD) : 0, extra = plan.big ? 0 : spare / (rows + 1); /* a small group stands right under the lobby, not in the middle of bare floor (owner, 2026-11-03) */
   /* up to four people stand as one group in the middle, not spread over the whole width (owner, 2026-11-03: a room, not a sparse grid) */
   const cw = plan.big ? Math.min((W - 2 * AISLE_PAD) / cols, plan.slotW * 1.3) : (W - 2 * AISLE_PAD) / cols, x0g = (W - cols * cw) / 2, snap = (v: number): number => Math.round(v / g) * g;
   /* the stagger is 8 % of a column, less where the floor is narrow: the row must stay inside it */
