@@ -102,7 +102,7 @@ module.exports = async (ctx) => {
     assert.strictEqual(await js(`document.getElementById('followStrip').getClientRects().length`), 0, `${tag}: the strip takes no room`);
     await send(A, 'hello off');
     await ok(`[...document.querySelectorAll('#chat .msg.user')].some(m=>/hello off/.test(m.textContent))`, `${tag}: the message was sent`);
-    await stays(`${OPEN}&&!document.querySelector('.is-followed')`, `${tag}: off: a send leaves the chat open and marks nothing`);
+    await stays(`document.body.classList.contains('panel-open')&&!document.querySelector('.is-followed')`, `${tag}: off: a send leaves the chat open and marks nothing`);
     const t0 = await title();
     await H.key(']', [], { char: 'always' });
     await stays(`(document.getElementById('panelTitle')||{}).textContent===${jsLiteral(t0)}`, `${tag}: off: ] does not move to another chat`);
@@ -333,7 +333,7 @@ module.exports = async (ctx) => {
     await js(`(()=>{const b=window.__durbarSimUi.bridge();b.__send=b.send;b.send=async()=>({ok:false,error:'refused'});})();0`);
     await mclick('#msgInput'); await type('hello refused'); await H.key('Return');
     await ok(`[...document.querySelectorAll('.toast,#toasts *')].some(n=>/refused/.test(n.textContent))||!!document.querySelector('#chat .err,#chat .msg.failed')||document.getElementById('msgInput').value===''`, `${tag}: the send was answered`);
-    await stays(`${OPEN}&&!document.querySelector('.is-followed')`, `${tag}: a failed send leaves the chat open and follows nothing`);
+    await stays(`document.body.classList.contains('panel-open')&&!document.querySelector('.is-followed')`, `${tag}: a failed send leaves the chat open and follows nothing`);
     await js(`(()=>{const b=window.__durbarSimUi.bridge();b.send=b.__send;const m=document.getElementById('msgInput');m.value='';})();0`);
     await backToOffice();
 
@@ -346,7 +346,7 @@ module.exports = async (ctx) => {
       await ok(`(document.getElementById('afText').textContent||'').startsWith('Held: you are clicking')`, `${tag}: a button down holds it, and it says so`);
       await js(`(()=>{window.__upAt=0;window.__openAt=0;document.addEventListener('pointerup',()=>{window.__upAt=Date.now();},{capture:true,once:true});clearInterval(window.__op);window.__op=setInterval(()=>{if(!window.__openAt&&document.body.classList.contains('panel-open'))window.__openAt=Date.now();},20);})();0`);
       wc.sendInputEvent({ type: 'mouseUp', x: p.x, y: p.y, button: 'left', clickCount: 1 });
-      await ok(`${OPEN}&&window.__openAt>0&&window.__upAt>0`, `${tag}: after the release it comes`);
+      await ok(`document.body.classList.contains('panel-open')&&window.__openAt>0&&window.__upAt>0`, `${tag}: after the release it comes`);
       const gap = await js(`clearInterval(window.__op);window.__openAt-window.__upAt`);
       assert.ok(gap >= 550, `${tag}: not before the 600 ms: ${gap} ms`);
       await mclick('#backBtn'); await ok(`!document.body.classList.contains('panel-open')`, `${tag}: back`);
@@ -396,7 +396,7 @@ module.exports = async (ctx) => {
       await js(`(()=>{const b=window.__durbarSimUi.bridge();b.__send=b.send;b.send=async(id)=>{window.__durbarSimEmit({timestamp:Date.now(),sessionId:id,type:'status',status:'idle',intent:'Not sent'});return {ok:true};};})();0`);
       await mclick('#msgInput'); await type('hello not sent'); await H.key('Return');
       await ok(`['idle','done'].includes(((window.__durbarSimUi.agents().find(a=>a.id===${jsLiteral(S1)}))||{}).state)`, `${tag}: no turn is running`);
-      await stays(`${OPEN}&&!document.querySelector('.is-followed')`, `${tag}: no turn started: the chat stays, nothing is followed`);
+      await stays(`document.body.classList.contains('panel-open')&&!document.querySelector('.is-followed')`, `${tag}: no turn started: the chat stays, nothing is followed`);
       await js(`(()=>{const b=window.__durbarSimUi.bridge();b.send=b.__send;})();0`);
       await mclick('#backBtn'); await ok(`!document.body.classList.contains('panel-open')`, `${tag}: back`);
     }
@@ -421,7 +421,7 @@ module.exports = async (ctx) => {
     await ok(`document.getElementById('afPause').textContent==='Resume'`, `${tag}: paused`);
     assert.strictEqual((await strip()).text, 'Auto-follow is paused. Nothing moves by itself.', `${tag}: paused words`);
     await send(S3, 'hello paused');
-    await stays(`${OPEN}&&!document.querySelector('.is-followed')`, `${tag}: paused: a send leaves the chat open and follows nothing`);
+    await stays(`document.body.classList.contains('panel-open')&&!document.querySelector('.is-followed')`, `${tag}: paused: a send leaves the chat open and follows nothing`);
     await settled(S3);
     await stays(`(document.getElementById('panelTitle')||{}).textContent===${jsLiteral(await nameOf(S3))}`, `${tag}: paused: nothing moved`);
     await shotTo(`052-auto-follow-paused-${w}x${h}.png`);
@@ -491,7 +491,7 @@ module.exports = async (ctx) => {
       await openChat(A);
       await ok(`(window.__durbarSimUi.agents().find(a=>a.id===${jsLiteral(tomas)})||{}).coffee===true`, 'Tomas is on a break', 12000);
       await ok(`(window.__durbarSimUi.agents().find(a=>a.id===${jsLiteral(tomas)})||{}).coffee===false`, 'Tomas resumed by itself', 20000);
-      await stays(`${OPEN}&&!document.querySelector('.is-followed')`, 'FR-183: the chat being read stays open when another agent resumes by itself, and an automatic send follows nothing');
+      await stays(`document.body.classList.contains('panel-open')&&!document.querySelector('.is-followed')`, 'FR-183: the chat being read stays open when another agent resumes by itself, and an automatic send follows nothing');
     }],
     ['the keys behind Settings', async () => {
       await H.load({ w: 1440, h: 900 });
