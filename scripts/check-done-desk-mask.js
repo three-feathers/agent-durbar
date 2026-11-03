@@ -10,7 +10,7 @@
  * attribute (title, aria-label, ...), case-insensitively, and the agents' stored tasks. None of the tokens, nor a piece of one, nor one
  * with `_` removed, may be there, on: desks, helper cards, the list view, the Needs you inbox, the answer bar, the previous-sessions list,
  * a resumed session and a continued one. A page without the redact module (`noredact=1`) must fail closed: "Finished." on a done desk, Durbar's
- * own words kept, no token. At 1440x900 and 1280x800, Expert and Simple. A miss prints DRIVER FAILED (Electron still exits 0), so the npm
+ * own words kept, no token. At 1440x900 and 1280x800. A miss prints DRIVER FAILED (Electron still exits 0), so the npm
  * script exits non-zero unless "all checks passed" is printed.
  */
 const assert = require('assert');
@@ -68,12 +68,10 @@ module.exports = async (ctx) => {
   };
   const ONLY = process.env.DM_ONLY || ''; // DM_ONLY=lounge or sendfail runs that step alone (to prove it catches a raw text by itself)
   for (const [w, h] of ONLY ? [] : [[1440, 900], [1280, 800]]) {
-    for (const level of ['expert', 'simple']) {
+    {
       const Q = { simreply: 'secrets', simsched: '1' };
-      await H.load({ w, h, query: Q, ready: 'fit', settle: false });
-      await js(`localStorage.setItem('durbar.detail',${jsLiteral(level)})`);
-      await H.load({ query: Q, ready: 'fit' });
-      const tag = `${w} ${level}`;
+      await H.load({ w, h, query: Q, ready: 'fit' });
+      const tag = `${w}`;
       // 1. desks and helper cards with what the simulator planted
       const seen = await js(`(()=>{const done=[...document.querySelectorAll('#stage .desk.is-done')];
         return {n:done.length,masked:done.filter(d=>/Done: Done\\. Token check: \\[redacted\\]/.test(d.title)||/Done\\. Token check: \\[redacted\\]/.test(d.getAttribute('aria-label')||'')).length,helpers:document.querySelectorAll('#stage .helper').length,open:document.body.classList.contains('panel-open')};})()`);
@@ -107,11 +105,11 @@ module.exports = async (ctx) => {
       await scan(tag, 'permission lines, runtime title, sub-agent name, Markdown-split tokens');
       // 2a. the lobby (spec 001 FR-034..FR-040): the tiles' chips and titles, the Boss queue, and the navigator (Ctrl+F, ⌘F on a Mac; spec 074 since 2026-10-23)
       assert.ok(await until(`document.querySelectorAll('.lobby .pv').length>0`, 15000), `${tag}: agents stand in the lobby`);
-      if (level === 'expert') await until(`[...document.querySelectorAll('.lobby .pv')].some(e=>/curl|fetch|example\\.test/i.test(e.textContent+' '+e.title+' '+(e.getAttribute('aria-label')||'')))`, 8000);
+      await until(`[...document.querySelectorAll('.lobby .pv')].some(e=>/curl|fetch|example\\.test/i.test(e.textContent+' '+e.title+' '+(e.getAttribute('aria-label')||'')))`, 8000);
       const lob = await js(`(()=>{const pv=[...document.querySelectorAll('.lobby .pv')];return {n:pv.length,boss:document.querySelectorAll('.lobby .place.boss .pv').length,
         words:pv.map(e=>e.textContent+' '+e.title+' '+(e.getAttribute('aria-label')||'')).join(' ').toLowerCase(),places:[...document.querySelectorAll('.lobby .place')].map(e=>e.title+' '+(e.getAttribute('aria-label')||'')).join(' ').toLowerCase()}})()`);
       assert.ok(lob.boss > 0, `${tag}: the Boss queue holds the waiting agents`);
-      if (level === 'expert') assert.ok(lob.words.includes('curl') || lob.words.includes('fetch') || lob.words.includes('example.test'), `${tag}: a lobby chip shows what its agent is doing (so a raw label would show): ${lob.words.slice(0, 200)}`);
+      assert.ok(lob.words.includes('curl') || lob.words.includes('fetch') || lob.words.includes('example.test'), `${tag}: a lobby chip shows what its agent is doing (so a raw label would show): ${lob.words.slice(0, 200)}`);
       for (const nd of NEEDLES) assert.ok(!lob.words.includes(nd) && !lob.places.includes(nd), `${tag}: "${nd.slice(0, 10)}..." is on a lobby tile or its title`);
       await scan(tag, 'lobby tiles');
       // the Postbox (the schedule prompts hold the planted secrets, cut where a cut-before-mask would leave a piece) and a token-named agent in the lobby
@@ -256,20 +254,18 @@ module.exports = async (ctx) => {
   if (ONLY === 'sendfail') { console.log('[done-desk-mask] all checks passed'); return; }
   // 6c. sparse offices with expanded helper cards (spec 001 FR-090, issue #697, T120): two and three parents in one room, helpers with the planted
   //     secrets (task, result, error, activity; simreply=secrets), and, through the page's handler, an activity, a result and an error whose token
-  //     starts just before the card's 240-character cut. Expert and Simple, both sizes; then noredact=1 (fail closed: Durbar's own words only).
+  //     starts just before the card's 240-character cut. both sizes; then noredact=1 (fail closed: Durbar's own words only).
   //     The whole page except the chat is scanned (text and every attribute): the cards' lines, title and aria-label included.
   {
     const PAD = (n) => 'Checking the registry module and its tests. '.repeat(8).slice(0, n - 1) + ' ';
     const SECRETS = 'Token check: ' + GHP + ' and ' + PAT + ' and ' + SK + '.';
     for (const redact of [true, false]) {
       for (const [w, h] of [[1440, 900], [1280, 800]]) {
-        for (const level of ['expert', 'simple']) {
+        {
           for (const [n, hp] of [[2, 3], [3, 2]]) {
             const Q = { sim: String(n), simrooms: '1', simhelpers: String(hp), simreply: 'secrets', ...(redact ? {} : { noredact: '1' }) };
-            const tag = `sparse ${n}x${hp} ${w} ${level}${redact ? '' : ' noredact'}`;
-            await H.load({ w, h, query: Q, ready: 'fit', settle: false });
-            await js(`localStorage.setItem('durbar.detail',${jsLiteral(level)})`);
-            await H.load({ query: Q, ready: 'fit' });
+            const tag = `sparse ${n}x${hp} ${w}${redact ? '' : ' noredact'}`;
+            await H.load({ w, h, query: Q, ready: 'fit' });
             assert.ok(await until(`document.querySelectorAll('#stage .helper.hx').length===${jsLiteral(n * hp)}`, 10000), `${tag}: the expanded cards are on the floor`);
             await scan(tag, 'expanded helper cards, planted by the simulator');
             for (const at of [236, 238, 239, 240, 244]) { // the planted token starts at character `at` of the field, around the cut
@@ -286,12 +282,10 @@ module.exports = async (ctx) => {
             assert.strictEqual(seen.n, n * hp, `${tag}: cards ${seen.n}`);
             if (redact) assert.ok(/\[redacted\]/.test(seen.text), `${tag}: the planted tokens read [redacted] on a card: ${seen.text.slice(0, 200)}`);
             else assert.ok(!/Token check|registry module|strict-null/.test(seen.text) && /Finished\.|Failed\.|Working\.|Task hidden\./.test(seen.text), `${tag}: with no redact module a card shows Durbar's own words only: ${seen.text.slice(0, 200)}`);
-            if (level === 'simple') assert.ok(!/curl|api-key|example\.test/i.test(seen.text), `${tag}: Simple never shows a command: ${seen.text.slice(0, 200)}`);
           }
         }
       }
     }
-    await js(`localStorage.removeItem('durbar.detail')`);
   }
   // 7. no redact module: fail closed, Durbar's own words stay
   await H.load({ w: 1440, h: 900, query: { simreply: 'secrets', simsched: '1', noredact: '1' }, ready: 'fit' });

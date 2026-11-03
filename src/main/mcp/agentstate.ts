@@ -83,6 +83,14 @@ export class AgentStateTracker {
   }
 
   /** The send was refused or failed (app.js:1710): Error, sub-label cleared. */
+  /** Spec 058 FR-208: Stop during the MCP sign-in wait: nothing was sent, the agent is ready again (not an error). */
+  noteNotSent(id: string): void {
+    const a = this.agents.get(id);
+    if (!a) return;
+    a.state = 'idle';
+    a.label = null;
+  }
+
   noteSendFailed(id: string): void {
     const a = this.agents.get(id);
     if (!a) return;

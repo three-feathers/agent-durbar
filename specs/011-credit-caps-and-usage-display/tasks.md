@@ -41,3 +41,8 @@ Backlog: capability flag (spec 012). (Office and per-folder totals: done 2026-10
 - [x] T040 Copilot adapter: used-credit tracking, hold before send, stop on crossing during a turn, local `resolveLimit`, Stop/End drop [FR-070..FR-074]
 - [x] T041 Unit tests on a fake session (`scripts/test-copilot-cap.ts`, in `npm test`) [FR-070..FR-074]
 - [x] T042 One real check on Copilot Pro (cheap model, under 3 credits), README *Costs and caps*, CHANGELOG [FR-071] Done 2026-10-20: 1.46 AIU (spec `## Changes`).
+
+## 2026-11-02: settings setters check the save (issue #1023)
+
+- [x] T070 `SettingsStore.commit(next, keep?)` shared by every setter: truth values roll back, convenience and safer changes stay for the run and are listed per setting (`isUnsaved`); `settings:*` replies `ok` only when the value asked for is in force; `scripts/test-credits.ts` unwritable-path and IPC cases [FR-012]
+- [x] T071 Window side of #1023: one `saveFailed` helper in `screens.js` (and the Agent apps checkbox) for every settings row; `scripts/check-settings-save.js` in the UI suite [FR-012]

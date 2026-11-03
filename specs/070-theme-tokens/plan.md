@@ -25,3 +25,11 @@
 
 - A body font with wider glyphs could clip desk text: covered by `check:geometry`'s real-font pass on the fixture.
 - Inline custom properties on `<html>` beat `html[data-ui=...]` rules: non-colour tokens are only set when the pack gives them.
+
+## Phase 3 (delta 2026-11-01; design sweep, FR-051..FR-059)
+
+Order: [spec 005's plan table](../005-chat-fullscreen-and-agent-strip/plan.md), rows A1..A12. No new dependency, no build tool. Reused: the registry and its pin test, `checkUserManifest`, `themeIssues`, `contrastFix`, `setWorld`, `sw()`; the ratchet's fixture style (`scripts/fixtures/theme-literals.json`). `inventory.js` is 386 lines of plain Node, moved as it is and trimmed to what `--check` needs. Risk: a ratchet stops growth and not a backlog (T020), so migrations start where the owner looks. Constitution: V, sizes stay out of packs (D2); III, no CSS in packs and no new network.
+
+## Flat's modern look (delta 2026-11-02; #524, FR-061..FR-067)
+
+One PR, row A14 of [spec 005's plan table](../005-chat-fullscreen-and-agent-strip/plan.md). Tokens first, then sizes, then T020 file by file, each its own commit, so a mistake bisects. Risk: it is large, against the small-PR habit, because the owner wants colours and T020 together; a snapshot rather than review protects the worlds. Constitution: V, text never under 10.5 px, targets never under 24 px; VIII, FR-061's values are calculated until T039.

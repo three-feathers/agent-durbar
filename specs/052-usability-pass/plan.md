@@ -104,3 +104,12 @@ The renderer only: `src/renderer/app.js`, `screens.js`, `index.html`, `styles.cs
 - **Drivers to follow.** `check-question-options`, `check-ro-ask`, `check-ui-text` and `ui-text-page`, `check-crew`, `shots-001-lobby`, `shots-052-ux`, `shots-059-long-url`, `shots-074-navigator`. A simulator-only switch keeps simulated events from opening the panel in drivers that do not test it. Linked pictures of the inbox are retaken (`npm run shots:docs`).
 - **Docs at build.** README and `docs/features.md`, the `?` sheet and button tooltip if a word changes, `changelog.d/` fragment. Spec-only until then.
 - **Windows, macOS, Linux.** Renderer only; `Ctrl`/`⌘` through the existing key helpers.
+
+## FR-214..FR-227 (2026-11-01): design sweep
+
+- **Order and gates:** one table in [spec 005's plan](../005-chat-fullscreen-and-agent-strip/plan.md); D1 goes first.
+- **D1:** `requestText()` only; a small pure helper so a unit test can reach it without a page.
+- **Notices:** extend `toastActions()` with a card kind and a stay-open action; `mountToast()`, `holdTimer()` and `#toasts` stay; the top-right stack is a child of `#toasts`. `renderRestoreStrip()` and the away and crash painters become card painters, with the same words, then the three elements and `.notice-strip` go. Reused: the `setPermMode` loop of the restore strip for lowering all.
+- **Mac (with the rail):** the existing darwin-only rule set moves from `.strip` to the rail's top row and `.ph`; the 78 px room moves into `.ph` when the rail is narrower or collapsed.
+- **Your door:** #1002 T224 and T225 carry the door and its push, by a layout class on `body`; over the office nothing changes. T215 is only what needs N1 or the rail.
+- **Constitution.** III: the safety prompt still asks every start and stays findable by the lock. V: no desk moves; cards never left over seats in Flat at 15. VI: `test-macos`, and a real Mac is a `[KNOWN GAP]`. VIII: mock numbers are marked as such.
