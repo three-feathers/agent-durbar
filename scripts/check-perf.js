@@ -25,8 +25,8 @@ const SECONDS = Number(process.env.PERF_SECONDS || 20);
 const SPEED = String(process.env.PERF_SPEED || 10);
 
 module.exports = async (ctx) => {
-  // spec 097 T145: `--record` (scripts/perf-record.js) starts this file as the driver with PERF_PHASE set; it only records, it asserts nothing
-  if (process.env.PERF_PHASE) return require('./perf-record-driver.js')(ctx);
+  // spec 097 T145: `--record` (scripts/perf-record.js) starts this file as the driver with DURBAR_PERF_RECORD_PHASE set (only recordAll sets it); it only records, it asserts nothing
+  if (process.env[require('./perf-record.js').PHASE_ENV]) return require('./perf-record-driver.js')(ctx);
   const H = helpers(ctx); // spec 008 FR-097: shared plumbing
   const { js } = H;
   await H.load({ w: 1440, h: 900, query: { simspeed: SPEED, simfreeze: undefined }, settle: false }); // not frozen: the page never stops changing, so no settling wait
@@ -83,7 +83,8 @@ if (require.main === module) {
   const rec = require('./perf-record.js').parseArgs(process.argv.slice(2));
   if (process.argv.includes('--record')) {
     if (!rec.record) { console.error('--record needs a file'); process.exit(2); }
-    process.exit(require('./perf-record.js').recordAll(rec));
+    require('./perf-record.js').recordAll(rec).then((code) => process.exit(code), (e) => { console.error('perf-record:', String(e && e.message || e).split('\n')[0]); process.exit(1); });
+    return;
   }
   const fs = require('fs');
   const os = require('os');

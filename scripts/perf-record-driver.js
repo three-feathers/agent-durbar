@@ -1,7 +1,7 @@
 /*
  * The Electron half of `check-perf.js --record` (spec 097 FR-187, T145): flat or Real office, 15 or 40 agents, simulator only, 0 AI
- * credits, no assert on any time. Started by `scripts/perf-record.js` through check-perf.js (DURBAR_DRIVER); env: PERF_PHASE
- * (seed | start | main), PERF_MODE (flat | real), PERF_OUT (the JSON file), PERF_RUNS, PERF_SECONDS_SCALE (quick | full), PERF_GPU (1 adds the T162 A/B rows).
+ * credits, no assert on any time. Started by `scripts/perf-record.js` through check-perf.js (DURBAR_DRIVER); env: DURBAR_PERF_RECORD_PHASE
+ * (seed | start | main; the variable is DURBAR_PERF_RECORD_PHASE), PERF_MODE (flat | real), PERF_OUT (the JSON file), PERF_RUNS, PERF_SECONDS_SCALE (quick | full), PERF_GPU (1 adds the T162 A/B rows).
  *
  * Honest limits (the record repeats them in `limits`):
  *  - Frames are requestAnimationFrame deltas. They see the main thread and a late frame. They do NOT see compositor-only jank,
@@ -22,7 +22,8 @@ const os = require('os');
 const { app } = require('electron');
 const { helpers, waits, jsLiteral } = require('./driver-helpers.js');
 
-const PHASE = process.env.PERF_PHASE || 'main';
+const { median, medianOf, PHASE_ENV } = require('./perf-record.js');
+const PHASE = process.env[PHASE_ENV] || 'main';
 const MODE = process.env.PERF_MODE === 'real' ? 'real' : 'flat';
 const N = String(process.env.DURBAR_SIM || 15);
 const RUNS = Math.max(1, Math.min(9, Number(process.env.PERF_RUNS) || 3));
@@ -142,7 +143,7 @@ module.exports = async (ctx) => {
   };
   const loadAndInstrument = async (x) => {
     await load(x);
-    await until(picsDone(isReal), 30000);
+    if (!(await until(picsDone(isReal), 30000))) throw new Error('the office pictures did not finish loading');
     await js(decodeAll);
     await js(`(${AFTER_PAINT})()`);
     await js(INST);
@@ -158,21 +159,22 @@ module.exports = async (ctx) => {
     if (!isReal) await H.load({ w: W, h: HH, query: query(), ready: FLAT, readyMs: 30000, settle: false });
     await js(`localStorage.setItem('durbar.officeview',${jsLiteral(MODE)})`);
     if (MODE !== 'cabins') await setDoors();
-    await js(`new Promise(r=>setTimeout(r,800))`);
+    // the saved state is read back, not waited for: a profile that did not keep it would record a start in the wrong mode
+    if (!(await until(`localStorage.getItem('durbar.officeview')===${jsLiteral(MODE)}&&localStorage.getItem('durbar.doorsigns')==='off'`, 5000))) return done({ meta: meta(), error: 'the seed was not kept in the profile' });
     return done({ meta: meta(), available: true });
   }
 
   if (PHASE === 'start') {
     /* the page was loaded by main with the saved mode; from process start to the first complete frame */
     const procStart = Date.now() - process.uptime() * 1000;
-    await until(ready, 30000);
+    if (!(await until(ready, 30000))) return done({ meta: meta(), error: `the saved ${MODE} office was not shown at start` });
     const domReady = await js(`performance.now()`);
-    await until(picsDone(isReal), 30000);
+    if (!(await until(picsDone(isReal), 30000))) return done({ meta: meta(), error: 'the pictures did not finish loading at start' });
     await js(decodeAll);
     const painted = await js(`(${AFTER_PAINT})()`);
     const nav = await js(`(()=>{const n=performance.getEntriesByType('navigation')[0];return {timeOrigin:performance.timeOrigin,dcl:n.domContentLoadedEventEnd,real:!!document.querySelector('#stage .ro')}})()`);
     const start = { fromProcessStartMs: Math.round(nav.timeOrigin + painted - procStart), officeDrawnMs: Math.round(domReady), domContentLoadedMs: Math.round(nav.dcl), completeFrameMs: Math.round(painted), savedModeShown: nav.real ? 'real' : 'flat' };
-    await ctx.sleep(1500);
+    await settle(3000); // the page has stopped changing before memory is read (bounded: the simulator may never be quiet)
     return done({ meta: meta(), start, memoryAtStart: await memory(js) });
   }
 
@@ -214,12 +216,12 @@ module.exports = async (ctx) => {
       sw.openToCabins = []; sw.cabinsToOpen = [];
       for (let i = 0; i < RUNS; i++) { sw.openToCabins.push(await oneSwitch('cabins')); sw.cabinsToOpen.push(await oneSwitch('open')); }
     }
-    const med = (arr, k) => { const v = arr.filter((x) => x && typeof x[k] === 'number').map((x) => x[k]).sort((a, b) => a - b); return v.length ? v[v.length >> 1] : null; };
+    const med = (arr, k) => median(arr.map((x) => (x && typeof x[k] === 'number' ? x[k] : undefined)));
     out.switches = isReal
       ? { firstFrameMs: sw.first.frameMs ?? null, first: sw.first, repeatFrameMs: med(sw.repeat, 'frameMs'), backToFlatFrameMs: med(sw.backToFlat, 'frameMs'), backToFlatLongestLongTask: med(sw.backToFlat, 'longestLongTask') }
       : { openToCabinsFrameMs: med(sw.openToCabins, 'frameMs'), cabinsToOpenFrameMs: med(sw.cabinsToOpen, 'frameMs'), openToCabinsLongestLongTask: med(sw.openToCabins, 'longestLongTask') };
   } catch (e) {
-    out.switches = { error: String(e && e.message || e).slice(0, 200) };
+    out.switches = { error: String(e && e.message || e).split('\n')[0].slice(0, 200) };
   }
 
   const oneRun = async () => {
@@ -227,7 +229,7 @@ module.exports = async (ctx) => {
     await H.load({ w: W, h: HH, query: query(), ready, readyMs: 30000, settle: false });
     await setDoors();
     await loadAndInstrument();
-    await ctx.sleep(3000);
+    await settle(4000);
     R.counts = await js(`({scrolls:document.getElementById('floor').scrollHeight>document.getElementById('floor').clientHeight+1,animationsRunning:document.getAnimations().filter(a=>a.playState==='running').length,animationsTotal:document.getAnimations().length})`);
     R.counts.scrolls = R.counts.scrolls ? 1 : 0;
     if (isReal) R.images = await js(IMAGES);
@@ -237,12 +239,14 @@ module.exports = async (ctx) => {
     R.idleVisible = await cpuOver(ctx, SEC(15));
     ctx.win.webContents.setBackgroundThrottling(true); // as in production: drivers switch it off (spec 097 FR-103)
     ctx.win.hide();
-    await ctx.sleep(1500);
-    R.hiddenState = await js(`document.visibilityState`) === 'hidden' ? 1 : 0;
+    // the page says it is hidden (checked, not assumed): a hidden window that never reported it makes the row a failure of the run, not a number
+    if (!(await until(`document.visibilityState==='hidden'`, 5000))) throw new Error('the window never reported hidden');
+    R.hiddenState = 1;
     R.idleHidden = await cpuOver(ctx, SEC(15));
     ctx.win.show();
     ctx.win.webContents.setBackgroundThrottling(false);
-    await ctx.sleep(1500);
+    if (!(await until(`document.visibilityState==='visible'`, 5000))) throw new Error('the window never reported visible again');
+    await settle(3000);
 
     /* controlled status changes */
     await js(`window.__P.start()`);
@@ -251,23 +255,36 @@ module.exports = async (ctx) => {
 
     /* chat open and close, 6 cycles */
     await js(`window.__P.start()`);
-    R.chat = await js(`(async()=>{const ids=window.__durbarSimUi.agents().filter(a=>!a.parent).map(a=>a.id);const open=[],close=[];const after=${AFTER_PAINT};
+    {
+      const c = await js(`(async()=>{const ids=window.__durbarSimUi.agents().filter(a=>!a.parent).map(a=>a.id);const open=[],close=[];let timeouts=0;const after=${AFTER_PAINT};
       const sel=id=>document.querySelector('#stage .ro-plate[data-id="'+id+'"],#stage .desk[data-id="'+id+'"]');
-      const wait=async f=>{for(let i=0;i<400&&!f();i++)await new Promise(r=>requestAnimationFrame(r));};
-      for(let i=0;i<${QUICK ? 2 : 6};i++){const id=ids[(i*3)%ids.length];let t=performance.now();const s=sel(id);if(!s)continue;s.click();await wait(()=>document.body.classList.contains('panel-open')&&document.querySelector('#panel .panel-in'));open.push((await after())-t);await new Promise(r=>setTimeout(r,500));
-        t=performance.now();document.getElementById('backBtn').click();await wait(()=>!document.body.classList.contains('panel-open'));close.push((await after())-t);await new Promise(r=>setTimeout(r,500));}
-      const m=a=>{const s=[...a].sort((x,y)=>x-y);return s.length?Math.round(s[Math.floor(s.length/2)]):null;};return {openMedianMs:m(open),closeMedianMs:m(close)};})()`);
+      const wait=async f=>{for(let i=0;i<400;i++){if(f())return true;await new Promise(r=>requestAnimationFrame(r));}return false;};
+      for(let i=0;i<${QUICK ? 2 : 6};i++){const id=ids[(i*3)%ids.length];let t=performance.now();const s=sel(id);if(!s)continue;s.click();
+        if(await wait(()=>document.body.classList.contains('panel-open')&&document.querySelector('#panel .panel-in')))open.push((await after())-t);else timeouts++;
+        await new Promise(r=>setTimeout(r,500));
+        t=performance.now();document.getElementById('backBtn').click();
+        if(await wait(()=>!document.body.classList.contains('panel-open')))close.push((await after())-t);else timeouts++;
+        await new Promise(r=>setTimeout(r,500));}
+      return {open,close,timeouts};})()`);
+      // a cycle whose panel never came is a timeout, never a time; the medians are the shared helper's (the mean of the middle two when even)
+      const rd = (x) => (x === null ? null : Math.round(x));
+      R.chat = { openMedianMs: rd(median(c.open)), closeMedianMs: rd(median(c.close)), timeouts: c.timeouts };
+    }
     R.chatFrames = await js(`window.__P.stop()`);
 
     /* lobby visits: tool calls through the normal event path */
     await js(`window.__P.start()`);
     R.visits = await js(`(async()=>{const e=window.__durbarSimEmit;const ids=window.__durbarSimUi.agents().filter(a=>!a.parent).map(a=>a.id);let maxV=0;
-      for(let i=0;i<${QUICK ? 6 : 24};i++){const id=ids[(i*2+1)%ids.length];const c='perf'+i;
+      const count=()=>document.querySelectorAll('#stage .ro-visitor,#stage .walker').length;
+      /* sampled every frame until a visitor shows (at most ~1 s: a mode with none ends the wait), so the number is the most seen, not one read at a fixed time */
+      const seen=async(from)=>{const end=performance.now()+1000;for(;;){maxV=Math.max(maxV,count());if(count()>from||performance.now()>end)return;await new Promise(r=>requestAnimationFrame(r));}};
+      for(let i=0;i<${QUICK ? 6 : 24};i++){const id=ids[(i*2+1)%ids.length];const c='perf'+i;const before=count();
         e({type:'status',sessionId:id,timestamp:Date.now(),status:'working'});
         e({type:'toolCall',sessionId:id,timestamp:Date.now(),callId:c,tool:'web_fetch',phase:'start',args:{url:'https://example.test/'}});
-        await new Promise(r=>setTimeout(r,350));maxV=Math.max(maxV,document.querySelectorAll('#stage .ro-visitor,#stage .walker').length);
+        await seen(before);
         e({type:'toolCall',sessionId:id,timestamp:Date.now(),callId:c,tool:'web_fetch',phase:'complete',output:'ok'});}
-      await new Promise(r=>setTimeout(r,1500));return {maxVisitorsSeen:maxV};})()`);
+      const end=performance.now()+3000;while(count()>0&&performance.now()<end)await new Promise(r=>requestAnimationFrame(r));
+      return {maxVisitorsSeen:maxV};})()`);
     R.visitFrames = await js(`window.__P.stop()`);
 
     /* scrolling, only when the office scrolls (past the 15-agent scale) */
@@ -295,7 +312,6 @@ module.exports = async (ctx) => {
   }
   if (!runs.length) { out.available = false; out.reason = 'every run failed in the page (see the log)'; return done(out); }
   /* medians over the runs (kept here so a Mac session needs no second tool) */
-  const { medianOf } = require('./perf-record.js');
   out.rows = medianOf(runs);
   out.runsDone = runs.length;
   out.raw = runs;
