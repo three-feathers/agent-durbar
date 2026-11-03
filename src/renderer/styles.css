@@ -548,7 +548,7 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 
 /* toast */
 /* spec 052 FR-004: bottom left, clear of the centred composer; a toast takes the pointer so it can be hovered (timer pauses) and closed */
-#toasts{position:fixed;left:16px;bottom:var(--toast-b,16px);display:flex;flex-direction:column;gap:8px;align-items:flex-start;z-index:50;pointer-events:none}
+#toasts{position:fixed;left:var(--toast-l,16px);bottom:var(--toast-b,16px);display:flex;flex-direction:column;gap:8px;align-items:flex-start;z-index:50;pointer-events:none}
 .toast{overflow-wrap:break-word;pointer-events:auto;background:#2f3a36;color:#f7f4ee;padding:10px 16px;border-radius:12px;font-size:13px;line-height:1.45;box-shadow:0 8px 24px rgba(40,35,25,.18);animation:pop .25s ease-out;max-width:420px}
 .toast.warn{border-left:4px solid var(--tone-warn-line)}
 .toast code{font-family:var(--font-mono);background:color-mix(in srgb,var(--raised) 14%,transparent);padding:1px 6px;border-radius:6px}

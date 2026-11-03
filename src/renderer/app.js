@@ -796,7 +796,10 @@ function holdTimer(t,ms,kill){
 /* spec 052 FR-170: with a chat open the toasts end above the composer (they sat on its left end); the bottom edge is read when a toast arrives */
 function placeToasts(){const box=$('toasts');if(!box)return;let top=innerHeight; /* the highest box a toast must stay above: the answer bar when it shows, else the composer */
   if(document.body.classList.contains('panel-open'))for(const e of [document.querySelector('#panel .composer'),$('answerBar')])if(e&&!e.hidden&&e.getClientRects().length)top=Math.min(top,e.getBoundingClientRect().top);
-  box.style.setProperty('--toast-b',(top<innerHeight?Math.ceil(innerHeight-top+12):16)+'px');}
+  box.style.setProperty('--toast-b',(top<innerHeight?Math.ceil(innerHeight-top+12):16)+'px');
+  /* spec 005 FR-190: and they start in the chat column, so they never cover the agent rail's rows */
+  const pi=document.body.classList.contains('panel-open')&&document.querySelector('#panel>.panel-in'),pl=pi&&pi.getClientRects().length?Math.round(pi.getBoundingClientRect().left):0;
+  box.style.setProperty('--toast-l',(pl+16)+'px');}
 let toastRO=null;
 function mountToast(t){const box=$('toasts');placeToasts();box.appendChild(t);
   if(window.ResizeObserver){if(!toastRO)toastRO=new ResizeObserver(placeToasts);toastRO.disconnect();for(const e of [document.querySelector('#panel .composer'),$('answerBar'),$('panel')])if(e)toastRO.observe(e);} /* the composer grows with a long message, the answer bar appears and goes */}
@@ -2545,7 +2548,7 @@ function openPanel(id,focus){
   $('sendBtn').onclick=()=>{if($('sendBtn').getAttribute('aria-disabled')!=='true')sendMessage(input.value);};
   setSend(); wireToolbar(); /* spec 005 FR-037..FR-040 */
   wireComposerGrip(); /* spec 005 FR-044..FR-048 */
-  renderAll(); const cur=document.querySelector('#stripList .sitem.sel'); if(cur)SCROLL.reveal(cur,{block:'nearest'});
+  renderAll(); placeToasts(); const cur=document.querySelector('#stripList .sitem.sel'); if(cur)SCROLL.reveal(cur,{block:'nearest'});
   /* spec 074 FR-022 (issue 587): this chat's unsent text comes back */
   {const m=$('msgInput'),dr=DRAFTS.get(id);if(m&&dr){m.value=dr.t;autoGrow();}if(dr&&dr.att.length){renderAttached();setSend();}}
   /* spec 074 FR-019: a chat the user opened gets the cursor in its message box (the title when it has none) */
@@ -3576,7 +3579,7 @@ function closePanel(){closeSlash();keepDraft();
   BP.hide(); hideSelButton(); /* spec 080 FR-009: the browser view comes off the window; the page stays loaded */
   if(ctObs){ctObs.res.disconnect();ctObs.mut.disconnect();ctObs=null;} closeCtMore(false); closeCtxMenu();
   const id=ui.selected; ui.selected=null; document.body.classList.remove('panel-open'); $('panel').innerHTML='';
-  renderAll();
+  renderAll(); placeToasts();
   const n=id&&document.querySelector(`[data-id="${CSS.escape(id)}"]`); if(n)focusIn(n);
 }
 
@@ -6574,7 +6577,7 @@ function railRow(x,root,now){
   const head=`<span class="sav">${avatar(x)}</span>`, name=`<b>${esc(x.name)}${draftHTML(x)}${unreadHTML(x)}${dialogHTML(x)}</b>`;
   const cls=`sitem st-${st}${attn?' attn':''}${tall?' tall':''}${sel?' sel':''}`, key=`data-sw="${esc(x.id)}" data-key="sw:${esc(x.id)}" aria-current="${sel}"`;
   if(!tall)return `<button class="${cls}" type="button" ${key} title="${chatNoOf(x)?'C'+chatNoOf(x)+' · ':''}${esc(x.name)} · ${esc(stWord(x,true))}: ${esc(taskText(x))}" aria-label="${esc(x.name)}${chatNoWords(x)}${draftWords(x)}${unreadWords(x)}, ${esc(stWord(x,true))}. Open chat.">${head}<span class="stx">${name}</span><span class="sst"><span class="dot ${st}"></span><span class="sw">${esc(stWord(x,true))}</span></span></button>`;
-  const req=railReq(x);
+  const req=SHORT(railReq(x),200); /* masked first (requestText), then cut: tooltips stay within 300 characters (spec 052 FR-171) */
   return `<button class="${cls}" type="button" ${key} title="${chatNoOf(x)?'C'+chatNoOf(x)+' · ':''}${esc(x.name)} · ${esc(railAge(x,now))}: ${esc(req)}" aria-label="${esc(x.name)}${chatNoWords(x)}${draftWords(x)}${unreadWords(x)}, ${esc(railAgeSaid(x,now))}: ${esc(req)}. Open chat.">${head}<span class="stx"><span class="stop">${name}<span class="sage">${esc(railAge(x,now))}</span></span><span class="sreq">${esc(req)}</span></span></button>`;
 }
 function renderRailDoor(){
