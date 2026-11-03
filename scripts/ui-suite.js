@@ -123,6 +123,7 @@ const DRIVERS = [
   { name: 'check-097-motion' }, // spec 097 P2: the people's motion and what stops it
   { name: 'check-001-halo' }, // spec 001 FR-210: the waiting halo is a still glow, nothing animates it
   { name: 'shots-097-realoffice' }, // spec 097 P1: Real office mode (the switch, the scene, the lights, flat loads none of it)
+  { name: 'shots-102-arcade' }, // spec 102 RA3: the Retro arcade behind its flag: only its files, cabinets, marquee, no overlap at 3, 4, 8 and 15 at both sizes
   { name: 'shots-097-moments' }, // spec 097 FR-118..FR-129: the nine world moments (first run, empty office, asleep at the desk, walk, inbox, limit, elicitation, coffee, jumps) in the Photo office and the cave
   { name: 'shots-097-moments', label: 'shots-097-moments cave', env: { MOMENTS_WORLDS: 'cave' } }, // the same nine moments in the Prehistoric cave (its flag is the simulator's page address)
   { name: 'shots-097-chat' }, // spec 097 FR-106 (T120): the chat in the world: desk-side column, portrait, lamp words, surface and contrast, card tails
