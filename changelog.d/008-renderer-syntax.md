@@ -1,1 +1,0 @@
-- **A merge can no longer leave a renderer script unparsable unnoticed** (spec 008): `npm test` now includes a fast check that every `src/renderer/*.js` parses, with a stray-quote self-check. Syntax only; run on Linux.

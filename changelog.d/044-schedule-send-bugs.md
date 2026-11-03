@@ -1,1 +1,0 @@
-- **Scheduled prompts: two fixes** (spec 044): a one-time schedule you edit while its run is going out no longer runs a second time, and a schedule you delete while another run is going out no longer fires. Checked with two scheduler tests that fail without the fixes; not run against a real agent app.

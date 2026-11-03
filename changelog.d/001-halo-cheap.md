@@ -1,1 +1,0 @@
-- **Waiting desks no longer pulse** (spec 001 FR-210): the glow behind a Flat desk's screen is still, which gives back most of the renderer's CPU with many agents in view (1.6 % of a core against 6.8 % at 15 agents on the simulator under Linux). Checked by `check-001-halo`; not measured on macOS or Windows.
