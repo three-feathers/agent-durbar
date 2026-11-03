@@ -84,6 +84,8 @@ module.exports = async (ctx) => {
       const c=document.createElement('canvas').getContext('2d');
       for(const b of document.querySelectorAll('#stage .ro-sign>b')){if(b.scrollWidth<=b.clientWidth+0.5)continue;c.font=getComputedStyle(b).font;const t=b.textContent,need=c.measureText(t.slice(0,Math.min(8,t.length))+'\u2026').width;if(b.clientWidth+0.5<need)out.push('a folder name cut to '+Math.round(b.clientWidth)+' px: '+t);}
       return out;})()`), [], tag + ': nothing on a screen, every slip shown, folder names readable');
+    /* FR-263: the top bar's text keeps 4.5:1 on its own button fill in the arcade's style (the pressed one is yellow) */
+    assert.deepStrictEqual(await js('(()=>{' + LUM + `const out=[];for(const b of document.querySelectorAll('.topbar .seg button')){const c=getComputedStyle(b).color,f=getComputedStyle(b).backgroundColor;if(/rgba\\([^)]*, 0\\)|transparent/.test(f))continue;const r=(Math.max(lum(c),lum(f))+0.05)/(Math.min(lum(c),lum(f))+0.05);if(r<4.5)out.push(b.textContent.trim()+' '+r.toFixed(2));}return out;})()`), [], tag + ': top bar buttons readable');
     assert.deepStrictEqual(await js(TEXT), { small: [], low: [] }, tag + ': text size and contrast');
     const seats = await js(`(()=>{const L=window.__durbarSimUi.realLayout(),T=window.exports.aisleTabOrder(L),P=[...document.querySelectorAll('#stage .ro-plate')].map(p=>p.dataset.id);return {tab:T,dom:P};})()`);
     assert.deepStrictEqual(seats.dom, seats.tab, tag + ': Tab follows the seats');
