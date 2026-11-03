@@ -185,6 +185,9 @@ export function registerMcpIpc(deps: {
         live: ad.isLive(a.id),
         busy: rd.busy(a.id),
         readOnly: a.permMode === 'read-only',
+        // FR-207 (`real:` 2026-11-03, Copilot, Linux): under an OS sandbox that covers the app's MCP servers the reconnect renewed nothing,
+        // so there only the sign-in line shows; a sandbox in any state but off counts (fail closed)
+        ...(a.sandbox && a.sandbox.state !== 'off' && Array.isArray(a.sandbox.covers) && a.sandbox.covers.includes('mcp') ? { renews: false } : {}),
         servers: (live.get(a.id) ?? []).map((x) => {
           const url = serverUrlOf(a.id, x.name);
           // the transport the app reported; else (`real:` 2026-11-03, Copilot's `list` names no transport) http when Durbar knows the

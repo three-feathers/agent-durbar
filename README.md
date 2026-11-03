@@ -27,7 +27,7 @@ Agent Durbar is an office-style desktop app to **see, chat with and coordinate A
 - **Three agent apps side by side:** Copilot, Claude Code and Codex, with one set of permission modes and model, context and spending controls.
 - **Needs you:** one inbox of every agent waiting for an answer or a permission, oldest first.
 - **Sessions that last:** resume after a restart or a crash, scheduled prompts, undo an agent's file changes, notes, continue in another app.
-- **MCP servers** shared across your agent apps, with health (checked at launch too), sign-in and restart from a chat or Settings, sign-ins the agent app renews by itself before a message after a quiet hour (on by default, every mode; Durbar never sees a token), per-tool switches and what each costs in context. When your organization's sign-in rules (Entra Conditional Access, for example a managed-device check) refuse a tool, the chat says so under the failed call and offers Sign in again….
+- **MCP servers** shared across your agent apps, with health (checked at launch too), sign-in and restart from a chat or Settings, sign-ins the agent app renews by itself before a message after a quiet hour (on by default; Durbar never sees a token), per-tool switches and what each costs in context. When your organization's sign-in rules (Entra Conditional Access, for example a managed-device check) refuse a tool, the chat says so under the failed call and offers Sign in again….
 - **Two themes** (Clean Office and Retro Pixel), and your own saved themes.
 
 ![Full-screen chat with the other agents in a slim strip, 1280x800](docs/screenshots/m6-fullchat-sim15-1280x800.png)
@@ -53,7 +53,7 @@ Agents run **locally, on your machine, as you**, in the folders you add. Every a
 - **Ask first**: writes, shell commands, URLs and tools wait for *Allow once*, *Allow for this session* or *Deny*.
 - **Allow all**: no prompts. Use it only in folders you trust; it asks once to confirm.
 
-Durbar never sees, stores or sends your tokens (each agent app reads its own sign-in) and has no accounts, servers or telemetry. In every mode, Read-only included, it may ask Copilot or Claude Code to reconnect a chat's remote MCP servers before a message after a quiet hour, so the app renews its own sign-in (switch: *Settings > MCP servers*). Usage bills against **your** plans; a per-session spending limit is a soft limit. Details and spending caps: [docs/safety.md](docs/safety.md). Report a problem: [SECURITY.md](SECURITY.md).
+Durbar never sees, stores or sends your tokens (each agent app reads its own sign-in) and has no accounts, servers or telemetry. It may ask Copilot or Claude Code to reconnect a chat's remote MCP servers before a message after a quiet hour, so the app renews its own sign-in; in Copilot's sandboxed modes (Read-only, Ask first) it only says when you need to sign in again (switch: *Settings > MCP servers*). Usage bills against **your** plans; a per-session spending limit is a soft limit. Details and spending caps: [docs/safety.md](docs/safety.md). Report a problem: [SECURITY.md](SECURITY.md).
 
 ## Quick start
 

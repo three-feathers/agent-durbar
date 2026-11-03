@@ -1893,9 +1893,9 @@ before the message needs the server. For Copilot, **Sign in** itself finishes wi
 - **FR-213** **One Settings switch.** *Settings > MCP servers*: "Refresh MCP sign-ins automatically". Its default is **on**
   (G5 settled: A, both owners); the planner reads the default from one constant. The line under it says plainly (review item 10), and its words follow the spec, not more (round 3): "Agent Durbar asks the
   agent app to check and reconnect remote MCP servers on its own: once at launch (not on macOS), before a message after an hour without a
-  reply, and every 30 minutes. This happens in every permission mode, Read-only included. Only the app's own sign-in is renewed; Agent Durbar never sees it. A reconnect never starts a
+  reply, and every 30 minutes. This happens in every permission mode. Where the agent app runs its MCP servers in its own OS sandbox (Copilot in Read-only and Ask first), a reconnect did not renew the sign-in, so there Agent Durbar only tells you when a server needs you to sign in again. Only the app's own sign-in is renewed; Agent Durbar never sees it. A reconnect never starts a
   local server; the launch check can start one unknown to Agent Durbar at most once per run for Copilot, and then stops. Codex chats are
-  not reconnected; they renew with their next session." The mode sentence follows G5 (A). Off: no launch question to the apps (FR-204), no automatic reconnect (FR-205) and no recheck (FR-212); PR
+  not reconnected; they renew with their next session." The mode sentence follows G5 (A) and the `real:` limit found on 2026-11-03 (*Changed 2026-11-03, review of PR #1080*: Copilot's OS sandbox, below and under G5). Off: no launch question to the apps (FR-204), no automatic reconnect (FR-205) and no recheck (FR-212); PR
   #1073's file check, the live reports and every button stay. Stored like the other app settings; a stored value that is present but
   not a boolean reads as **off** (fail closed, round 2); only a missing value takes the default. The planner keeps one input `allowReadOnly` (G5), `true`
   as decided; `false` (only the sign-in line in Read-only) stays testable. In the simulator's demo mode nothing
@@ -1912,7 +1912,7 @@ before the message needs the server. For Copilot, **Sign in** itself finishes wi
   row of an automatic reconnect **replaces** `mcpRestartOp`'s "MCP server <name> restarted" (no second row): "MCP server <name>
   reconnected before your message (automatic)" or "… needs a new sign-in"; no error text; the debug log the same names and results.
   Errors pass through `maskMcpError` as today. A reconnect is not an MCP tool call, so it runs in every permission mode (G5), as the
-  person's own Restart does.
+  person's own Restart does. Where the app's OS sandbox covers its MCP servers and is not off (Copilot in Read-only and Ask first), main plans no reconnect and shows only FR-211's line (`real:`, see G5).
 - **FR-215** **Calm UI.** No modal, no dialog, no focus moved, no sound. The status line and the sign-in line are one text line each
   (`role="status"`), text at least 10.5px, words not colour alone; they never cover the office or the composer, and 15 agents still fit
   1440x900 and 1280x800. A reconnect that succeeds leaves no trace in the chat after the message is sent (only the activity log row).
@@ -1937,7 +1937,7 @@ before the message needs the server. For Copilot, **Sign in** itself finishes wi
   the dialog), the 5 s note, and the Settings switch with its line, at 1440x900 and 1280x800 with 15 agents, text sizes and no overlap
   checked.
 - **FR-217** **Docs.** README *MCP servers* line; `docs/features.md` (MCP), `docs/safety.md` (review item 10: Durbar acts on the network
-  on its own at launch (not on macOS), before messages and every 30 minutes, in every mode including Read-only; it starts no local server
+  on its own at launch (not on macOS), before messages and every 30 minutes, in every mode (where the app's OS sandbox covers its MCP servers, only the sign-in line; see G5); it starts no local server
   by a reconnect; Codex chats are not reconnected; where to turn it off; Durbar never sees a token), `docs/limits.md` (no exact expiry; the per-app gaps above), `docs/agent-apps.md` (the T176/T177
   entry, added 2026-11-03), a `changelog.d/` fragment, and the screenshots of FR-216.
 
@@ -1978,7 +1978,15 @@ before the message needs the server. For Copilot, **Sign in** itself finishes wi
   sign in again" line, no reconnect. Vikram: **A** (owner decision, Vikram, 2026-11-03 06:49 UTC, Telegram; reason given with the
   question: the reconnect only restarts the chat's own remote MCP connection and changes no files). Paco: **A** (owner decision, Paco,
   2026-11-03, relayed by his agent in the team chat and on PR #1076). **Settled: A**, default on in every mode, Read-only included
-  (constitution III: no file change, no tool call; FR-214 holds).
+  (constitution III: no file change, no tool call; FR-214 holds). **Technical limit** (`real:` 2026-11-03, review of PR #1080; Linux, Copilot SDK 1.0.26 with its default runtime, the T177 local
+  OAuth server, scratch home, 0 prompts): with Copilot's OS sandbox floor on (Read-only and Ask first, spec 087), (a) before any message
+  `rpc.mcp.list` answered `[]` and `oauth.login` "MCP host is not available on this session"; (b) applying the floor to a session whose
+  server was connected restarted the MCP host, which reconnected without the stored sign-in (the server read `failed`); a `restartServer`
+  then reconnected with it; (c) after the access token expired, the automatic reconnect under the floor sent the expired token and made
+  **no refresh** (the server read `needs-auth`), while the same steps in Allow all refreshed (`refresh_token` grant, `connected`). So where
+  the app's OS sandbox covers its MCP servers and is not off, main plans no reconnect and shows only FR-211's sign-in line (the planner's
+  `renews` input, from the chat's sandbox state; vendor-free). G5 stays A in intent. `[KNOWN GAP]` a Read-only session after a real first
+  message was not run (it needs a prompt); Claude Code's sandbox covers shell commands only, so its chats are reconnected in every mode.
 - **G6** Copilot: may the automatic path call `rpc.mcp.oauth.login` (no `forceReauth`) when a server reads `needs-auth`? `real:` T177: in
   a second session it is the only call that refreshed (no browser, no URL). If it returns an `authorizationUrl` the URL would be dropped,
   never opened, and the row shows Sign in; but the call starts the runtime's loopback listener and a dynamic client registration each

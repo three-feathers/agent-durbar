@@ -93,6 +93,12 @@ async function main(): Promise<void> {
     const roNo = plan('read-only not allowed', base({ readOnly: true, allowReadOnly: false, now: 11 * H, servers: [...s, srv('c', 'connected')] }));
     assert.deepStrictEqual([names(roNo), roNo.signInOnly], [[], ['n']], 'allowReadOnly false: no reconnect, only the sign-in line for needs-auth');
     assert.deepStrictEqual(names(plan('ask mode', base({ readOnly: false, allowReadOnly: false, now: 11 * H, servers: s }))), ['n'], 'allowReadOnly only limits Read-only');
+    // real 2026-11-03 (Copilot, Linux): under an OS sandbox that covers MCP the reconnect renewed nothing: only the sign-in line
+    const boxed = plan('sandbox covers mcp', base({ renews: false, now: 11 * H, servers: [...s, srv('c', 'connected')] }));
+    assert.deepStrictEqual([names(boxed), boxed.join, boxed.signInOnly], [[], [], ['n']], 'renews false: no reconnect, the sign-in line for needs-auth only');
+    const boxedAsk = plan('sandbox in ask', base({ renews: false, readOnly: false, now: 11 * H, servers: s }));
+    assert.deepStrictEqual([names(boxedAsk), boxedAsk.signInOnly], [[], ['n']], 'also outside Read-only (Ask first has the sandbox too)');
+    assert.deepStrictEqual(names(plan('renews true', base({ renews: true, now: 11 * H, servers: s }))), ['n'], 'renews true: as before');
   }
 
   // ---- records: one attempt per gap, blocks, flights (FR-210) ----

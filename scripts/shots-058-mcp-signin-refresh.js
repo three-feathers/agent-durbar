@@ -16,7 +16,8 @@
  * - a slow server: at the bound the message goes with "MCP sign-ins are still reconnecting: <name>. Sent anyway; …";
  * - Stop during the wait: the message reads Not sent, its text is back in the composer, no reply comes;
  * - Settings > MCP servers: the switch "Refresh MCP sign-ins automatically" (on) with its line; off, a quiet hour reconnects nothing;
- * - a hostile server name renders as text (checked after the pictures, on a first message).
+ * - a hostile server name renders as text (checked after the pictures, on a first message);
+ * - a Copilot chat whose OS sandbox covers its MCP servers (Read-only, Ask first) is not reconnected: only the sign-in line.
  * Shots (DOC_SHOTS): 058-mcp-refresh-waiting-<w>x<h>.png (the waiting line), 058-mcp-refresh-signin-<w>x<h>.png (the sign-in line),
  * 058-mcp-refresh-settings-<w>x<h>.png (the switch and its line). Prints "[058] sign-in refresh PASS".
  */
@@ -42,8 +43,9 @@ module.exports = async (ctx) => {
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
     await H.load({ w, h, ready: 'fit', focus: true, query: { simkinds: 'mixed', simsigninrefresh: '1', simsigninwait: '1500' } });
     // a Copilot chat that is not busy (the simulator's own state)
-    const id = await js(`((window.__durbarSimUi.agents().find(a=>!a.parent&&a.live&&(a.info&&a.info.adapterId||'copilot')==='copilot'&&(a.state==='idle'||a.state==='done')))||{}).id||''`);
-    assert.ok(id, 'an idle Copilot chat');
+    // a Claude Code chat (its OS sandbox covers shell commands only, so it is reconnected in Read-only too)
+    const id = await js(`((window.__durbarSimUi.agents().find(a=>!a.parent&&a.live&&(a.info&&a.info.adapterId)==='claude'&&(a.state==='idle'||a.state==='done')&&!(a.info.sandbox&&a.info.sandbox.covers.includes('mcp'))))||{}).id||''`);
+    assert.ok(id, 'an idle Claude Code chat');
     const EVIL = 'crm'; // the pictures show a plain name; a hostile one is checked at the end
     const servers = (crm, docs) => [{ name: 'docs', status: docs, transport: 'http' }, { name: EVIL, status: crm, transport: 'http' }, { name: 'files', status: 'connected', transport: 'stdio' }];
     await emit({ type: 'mcp', sessionId: id, servers: servers('connected', 'connected') });
@@ -135,7 +137,7 @@ module.exports = async (ctx) => {
     assert.ok(await until(`!!document.getElementById('mcpRefreshSw')&&document.getElementById('advMcp').open`), 'Settings at MCP servers, with the switch');
     const st = await js(`(()=>{const s=document.getElementById('mcpRefreshSw'),l=document.getElementById('mcpRefreshLine');l.scrollIntoView({block:'center'});return {on:s.getAttribute('aria-checked'),role:s.getAttribute('role'),label:s.getAttribute('aria-label'),line:l.textContent,fs:Math.min(parseFloat(getComputedStyle(l).fontSize),parseFloat(getComputedStyle(s.closest('.swrow')).fontSize)),pageX:document.documentElement.scrollWidth<=innerWidth}})()`);
     assert.ok(st.on === 'true' && st.role === 'switch' && st.label === 'Refresh MCP sign-ins automatically' && st.fs >= 10.5 && st.pageX, 'the switch is on by default: ' + JSON.stringify(st));
-    assert.match(st.line, /^Agent Durbar asks the agent app to reconnect remote MCP servers on its own before a message after an hour without a reply\. This happens in every permission mode, Read-only included\. Only the app.s own sign-in is renewed; Agent Durbar never sees it\. A reconnect never starts a local server\. Codex chats are not reconnected; they renew with their next session\.$/);
+    assert.strictEqual(st.line, 'Agent Durbar asks the agent app to reconnect remote MCP servers on its own before a message after an hour without a reply. This happens in every permission mode. Where the agent app runs its MCP servers in its own OS sandbox (Copilot in Read-only and Ask first), a reconnect did not renew the sign-in, so there Agent Durbar only tells you when a server needs you to sign in again. Only the app\u2019s own sign-in is renewed; Agent Durbar never sees it. A reconnect never starts a local server. Codex chats are not reconnected; they renew with their next session.', 'the Settings line, word for word');
     await settle();
     await H.clearToasts();
     await shot(`058-mcp-refresh-settings-${w}x${h}.png`);
@@ -165,6 +167,20 @@ module.exports = async (ctx) => {
     assert.ok(await until(`[...document.querySelectorAll('#chat .note.mcpre-sign')].some(n=>n.dataset.n===${jsLiteral(BAD)})`, 5000), 'the hostile line shows');
     const ev2 = await js(`(()=>{const n=[...document.querySelectorAll('#chat .note.mcpre-sign')].find(n=>n.dataset.n===${jsLiteral(BAD)});return {t:n.querySelector('span').textContent,img:n.querySelectorAll('img,b').length,pwn:window.__pwn===1}})()`);
     assert.ok(ev2.t === BAD + ' needs you to sign in again.' && ev2.img === 0 && !ev2.pwn, 'the name renders literally, nothing injected: ' + JSON.stringify(ev2));
+
+    // ---- a Copilot chat whose OS sandbox covers its MCP servers (Read-only): no reconnect, no wait, only the sign-in line (real: 2026-11-03) ----
+    const cid = await js(`((window.__durbarSimUi.agents().find(a=>!a.parent&&a.live&&(a.info&&a.info.adapterId||'copilot')==='copilot'&&(a.state==='idle'||a.state==='done')&&a.info.sandbox&&a.info.sandbox.state!=='off'&&a.info.sandbox.covers.includes('mcp')))||{}).id||''`);
+    assert.ok(cid, 'an idle Copilot chat with its sandbox over MCP');
+    await emit({ type: 'mcp', sessionId: cid, servers: [{ name: 'wiki', status: 'needs-auth', transport: 'http' }] });
+    await emit({ type: 'status', sessionId: cid, status: 'idle' });
+    await js(`window.__durbarSimSignIn.advance(${jsLiteral(2 * HOUR)});0`);
+    await js(`(()=>{window.__cpEv=0;window.__durbarSimUi.bridge().onEvent(e=>{if(e.type==='mcp'&&e.sessionId===${jsLiteral(cid)})window.__cpEv++;});})()`);
+    const o2 = await H.openSimAgent(`a=>a.id===${jsLiteral(cid)}`, '#msgInput');
+    assert.ok(o2.ok, 'the Copilot chat opened');
+    await send('sandboxed');
+    assert.ok(await until(`[...document.querySelectorAll('#chat .note.mcpre-sign')].some(n=>n.dataset.n==='wiki')`, 3000), 'the sign-in line');
+    assert.ok(!(await js(`[...document.querySelectorAll('#chat .note.mcpre')].some(n=>/^Reconnecting/.test(n.textContent))`)), 'no waiting line: nothing was reconnected');
+    assert.strictEqual(await js(`window.__cpEv`), 0, 'no reconnect report');
   }
   console.log('[058] sign-in refresh PASS');
 };

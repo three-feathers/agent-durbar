@@ -273,7 +273,7 @@
      no more than what runs ---------------- */
   /* this delta's first part (PR 1, T178..T181, T184..T186): the reconnect before a message; the launch check and the 30-minute recheck
      (T182, T183) come with the second part, which brings FR-213's full line */
-  const SIGNIN_REFRESH_LINE='Agent Durbar asks the agent app to reconnect remote MCP servers on its own before a message after an hour without a reply. This happens in every permission mode, Read-only included. Only the app\u2019s own sign-in is renewed; Agent Durbar never sees it. A reconnect never starts a local server. Codex chats are not reconnected; they renew with their next session.';
+  const SIGNIN_REFRESH_LINE='Agent Durbar asks the agent app to reconnect remote MCP servers on its own before a message after an hour without a reply. This happens in every permission mode. Where the agent app runs its MCP servers in its own OS sandbox (Copilot in Read-only and Ask first), a reconnect did not renew the sign-in, so there Agent Durbar only tells you when a server needs you to sign in again. Only the app\u2019s own sign-in is renewed; Agent Durbar never sees it. A reconnect never starts a local server. Codex chats are not reconnected; they renew with their next session.';
   function signInRefreshRow(app){
     if(!X.bridge.setMcpSignInRefresh)return '';
     const on=!app||app.mcpSignInRefresh!==false;

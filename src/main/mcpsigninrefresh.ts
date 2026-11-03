@@ -67,6 +67,12 @@ export interface SignInPlanInput {
   platform: string;
   /** The adapter has `restartMcpServer` and `capabilities.mcpSignInReconnect` (FR-207). */
   takesPart: boolean;
+  /**
+   * False when a reconnect cannot renew a sign-in in this chat now: the agent app's OS sandbox covers its MCP servers and is not off
+   * (`real:` 2026-11-03, Copilot on Linux, Read-only and Ask first: under its sandbox the reconnect ran but no refresh was made). Then only
+   * the sign-in line, as with `allowReadOnly` false. Missing = true.
+   */
+  renews?: boolean;
   live: boolean;
   /** A turn runs, starts, or waits for the person (spec 041 busy states). */
   busy: boolean;
@@ -82,7 +88,7 @@ export interface SignInPlan {
   reconnect: { name: string; key: string }[];
   /** Another chat's reconnect of the same server runs: wait for its result and take it as this chat's own. */
   join: { name: string; key: string }[];
-  /** `allowReadOnly` false in Read-only: no reconnect, only the sign-in line for these names. */
+  /** `allowReadOnly` false in Read-only, or `renews` false: no reconnect, only the sign-in line for these names. */
   signInOnly: string[];
 }
 
@@ -121,7 +127,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
       continue;
     }
     if (rec && typeof rec.at === 'number' && i.now - rec.at >= 0 && i.now - rec.at < GAP) continue; // one attempt per server per gap, app-wide
-    if (i.readOnly && !i.allowReadOnly) {
+    if ((i.readOnly && !i.allowReadOnly) || i.renews === false) {
       if (s.status === 'needs-auth') out.signInOnly.push(s.name);
       continue;
     }
@@ -161,6 +167,8 @@ export interface SignInChatView {
   live: boolean;
   busy: boolean;
   readOnly: boolean;
+  /** See `SignInPlanInput.renews`. */
+  renews?: boolean;
   servers: SignInServerView[];
 }
 
@@ -299,6 +307,7 @@ export class McpSignInRefresher {
       readOnly: v.readOnly,
       platform: this.d.platform,
       takesPart: v.takesPart,
+      ...(v.renews === false ? { renews: false } : {}),
       live: v.live,
       busy: v.busy,
       servers: v.servers,

@@ -264,18 +264,47 @@ async function main(): Promise<void> {
       ad.restartMcpServer = real;
     }
 
+    // ---- the app's OS sandbox covers its MCP servers (Copilot in Read-only and Ask first): no reconnect, only the sign-in line ----
+    {
+      const info = agents.get(sid3) as unknown as { sandbox?: unknown };
+      for (const st of ['on', 'unknown']) {
+        info.sandbox = { state: st, covers: ['shell', 'mcp'], verified: false };
+        emit(sid3, { type: 'mcp', servers: list('needs-auth') });
+        mcp.signInRefresh.clearBlock(undefined, 'docs');
+        emit(sid3, { type: 'status', status: 'idle' });
+        clock.now += 2 * H;
+        const n0: number = ad.restartCalls.length;
+        const p0: number = pushes.length;
+        assert.strictEqual(await mcp.signInRefresh.beforeSend(sid3), 'go');
+        assert.strictEqual(ad.restartCalls.length, n0, `sandbox ${st} covering mcp: no reconnect`);
+        assert.deepStrictEqual(pushes.slice(p0), [{ id: sid3, kind: 'needs-sign-in', name: 'docs' }], 'only the sign-in line, no wait');
+      }
+      info.sandbox = { state: 'on', covers: ['shell'], verified: false }; // Claude Code's sandbox: shell only
+      emit(sid3, { type: 'status', status: 'idle' });
+      clock.now += 2 * H;
+      const n1 = ad.restartCalls.length;
+      const p1 = mcp.signInRefresh.beforeSend(sid3);
+      await tick();
+      assert.strictEqual(ad.restartCalls.length, n1 + 1, 'a sandbox that does not cover MCP: reconnected');
+      pending.shift()!('connected');
+      await p1;
+      delete info.sandbox;
+      clock.now += 2 * H;
+    }
+
     // ---- an adapter without `mcpSignInReconnect` (Codex, the Claude SDK transport) gets nothing, even with restartMcpServer ----
     emit(sid3, { type: 'mcp', servers: list('needs-auth') });
     mcp.signInRefresh.clearBlock(undefined, 'docs');
     clock.now += 2 * H;
+    const base2 = ad.restartCalls.length;
     const caps = ad.capabilities;
     (ad as unknown as { capabilities: unknown }).capabilities = { ...caps, mcpSignInReconnect: undefined };
     assert.strictEqual(await mcp.signInRefresh.beforeSend(sid3), 'go');
-    assert.strictEqual(ad.restartCalls.length, before, 'no capability: no automatic reconnect');
+    assert.strictEqual(ad.restartCalls.length, base2, 'no capability: no automatic reconnect');
     (ad as unknown as { capabilities: unknown }).capabilities = caps;
     const p3 = mcp.signInRefresh.beforeSend(sid3);
     await tick();
-    assert.strictEqual(ad.restartCalls.length, before + 1, 'with it (the same chat, first message, needs-auth): one reconnect');
+    assert.strictEqual(ad.restartCalls.length, base2 + 1, 'with it (the same chat, needs-auth): one reconnect');
     pending.shift()!('connected');
     await p3;
 

@@ -499,7 +499,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
 /* spec 058 FR-216: the shapes of src/main/mcpsigninrefresh.ts's planner (this file cannot import); the block below is a copy of the planner itself, compared by test:mcpsigninrefresh */
 interface SignInServerView { name: string; status: string; transport?: string; key: string; off?: boolean; signInOpen?: boolean; restarting?: boolean; policy?: boolean }
 interface SignInRecordView { at?: number; blocked?: 'sign-in' | 'policy' }
-interface SignInPlanInput { moment: 'send' | 'recheck'; now: number; lastResponseAt?: number; resumedAt?: number; on: boolean; allowReadOnly: boolean; readOnly: boolean; platform: string; takesPart: boolean; live: boolean; busy: boolean; servers: readonly SignInServerView[]; records: Readonly<Record<string, SignInRecordView>>; inFlight: readonly string[] }
+interface SignInPlanInput { moment: 'send' | 'recheck'; now: number; lastResponseAt?: number; resumedAt?: number; on: boolean; allowReadOnly: boolean; readOnly: boolean; platform: string; takesPart: boolean; renews?: boolean; live: boolean; busy: boolean; servers: readonly SignInServerView[]; records: Readonly<Record<string, SignInRecordView>>; inFlight: readonly string[] }
 interface SignInPlan { why: 'off' | 'no-part' | 'not-live' | 'busy' | 'no-moment' | 'first' | 'gap' | 'recheck'; reconnect: { name: string; key: string }[]; join: { name: string; key: string }[]; signInOnly: string[] }
 /* mcpsigninrefresh:begin */
 const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
@@ -536,7 +536,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
       continue;
     }
     if (rec && typeof rec.at === 'number' && i.now - rec.at >= 0 && i.now - rec.at < GAP) continue; // one attempt per server per gap, app-wide
-    if (i.readOnly && !i.allowReadOnly) {
+    if ((i.readOnly && !i.allowReadOnly) || i.renews === false) {
       if (s.status === 'needs-auth') out.signInOnly.push(s.name);
       continue;
     }
@@ -848,7 +848,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
       const id = s.info.id;
       const kc = caps(s.info.adapterId ?? 'copilot');
       const servers = (s.mcpLive ?? []).map((m) => ({ name: m.name, status: s.mcpOff?.has(m.name) ? 'disabled' : m.status, ...(m.transport ? { transport: m.transport } : {}), key: (s.info.adapterId ?? 'copilot') + '\0' + m.name + '\0' }));
-      const plan = planMcpSignInRefresh({ moment: 'send', now: simSignIn.mono(), lastResponseAt: simSignIn.last.get(id), on: simSignIn.on, allowReadOnly: true, readOnly: s.info.permMode === 'read-only', platform: 'sim', takesPart: kc.mcpRestart === true && (kc as { mcpSignInReconnect?: boolean }).mcpSignInReconnect === true, live: s.state !== 'idle' || !!s.ctx || !!s.mcpLive, busy: s.state === 'working' || s.state === 'waiting', servers, records: simSignIn.records, inFlight: [...simSignIn.flights.keys()] });
+      const plan = planMcpSignInRefresh({ moment: 'send', now: simSignIn.mono(), lastResponseAt: simSignIn.last.get(id), on: simSignIn.on, allowReadOnly: true, readOnly: s.info.permMode === 'read-only', platform: 'sim', takesPart: kc.mcpRestart === true && (kc as { mcpSignInReconnect?: boolean }).mcpSignInReconnect === true, ...(s.info.sandbox && s.info.sandbox.state !== 'off' && s.info.sandbox.covers.includes('mcp') ? { renews: false } : {}), live: s.state !== 'idle' || !!s.ctx || !!s.mcpLive, busy: s.state === 'working' || s.state === 'waiting', servers, records: simSignIn.records, inFlight: [...simSignIn.flights.keys()] });
       const fly = (name: string, key: string): Promise<string> => {
         const running = simSignIn.flights.get(key);
         if (running) return running;
@@ -867,6 +867,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
       };
       const items = [...plan.reconnect.map((r) => ({ name: r.name, f: fly(r.name, r.key) })), ...plan.join.map((j) => ({ name: j.name, f: simSignIn.flights.get(j.key) as Promise<string> })).filter((x) => !!x.f)];
       for (const x of items) void x.f.then((r) => { if (r === 'needs-sign-in') simSignIn.push({ id, kind: 'needs-sign-in', name: x.name }); });
+      for (const n of plan.signInOnly) simSignIn.push({ id, kind: 'needs-sign-in', name: n }); // like main: no reconnect, only the line
       if (!items.length) return 'go';
       const pending = new Set(items.map((x) => x.name));
       for (const x of items) void x.f.then(() => pending.delete(x.name));
