@@ -4024,7 +4024,7 @@ function openInbox(focusId){
       const dl=d.querySelector('.inbox-dlg');dl.insertBefore(hd,dl.firstChild);
     }}
   document.body.appendChild(d);
-  d.addEventListener('click',e=>{if(e.target===d)closeInbox();});
+  DurbarDialog.onBackdrop(d,closeInbox); /* spec 052 FR-237: a drag that only ends on the backdrop keeps it */
   d.addEventListener('keydown',inboxKey);
   $('inboxClose').onclick=closeInbox;
   /* FR-059: a notification opens the inbox on its agent's row */
@@ -4196,7 +4196,8 @@ function openPalette(opts){
   d.innerHTML='<div class="dlg pal-dlg" role="dialog" aria-modal="true" aria-label="Command palette"><div class="pal-top"><p class="pal-crumb" id="palCrumb" hidden></p><input id="palIn" type="text" role="combobox" aria-expanded="true" aria-controls="palList" aria-autocomplete="list" aria-activedescendant="" aria-label="Search agents, folders and actions" placeholder="Search agents, folders and actions…" autocomplete="off" spellcheck="false"></div><div class="pal-list" id="palList" role="listbox" aria-label="Results"></div><p class="pal-foot" id="palFoot" aria-hidden="true">'+PAL_FOOT+'</p></div>';
   document.body.appendChild(d);
   const inp=$('palIn');
-  d.addEventListener('click',e=>{if(e.target===d){closePalette();return;}const o=e.target.closest('[role="option"]');if(o)palRun(+o.dataset.i);});
+  DurbarDialog.onBackdrop(d,closePalette); /* spec 052 FR-237: a drag from the search field that ends on the backdrop keeps it */
+  d.addEventListener('click',e=>{if(e.target===d)return;const o=e.target.closest('[role="option"]');if(o)palRun(+o.dataset.i);});
   d.addEventListener('mousemove',e=>{const o=e.target.closest('[role="option"]');if(o&&+o.dataset.i!==palActive)palSetActive(+o.dataset.i);});
   d.addEventListener('keydown',e=>{
     /* spec 074 FR-002: the navigator shortcut closes the navigator, or turns Ctrl+K's search into the navigator */
@@ -4339,7 +4340,7 @@ function openKbdHelp(back){
   const d=document.createElement('div');d.id='kbdDlg';d.className='dlg-ov';
   d.innerHTML='<div class="dlg kbd-dlg" role="dialog" aria-modal="true" aria-labelledby="kbdT"><h3 id="kbdT">Keyboard shortcuts</h3><div class="kb-cols"><div class="kb-col"><table class="kb-t"><tbody>'+rows.map(r=>row(r[0],r[1],r[2])).join('')+'</tbody></table><h4 class="kb-h">In the list view</h4><table class="kb-t"><tbody>'+inList.map(r=>r.length===3?row(r[0],r[2],r[1]):row(r[0],r[1])).join('')+'</tbody></table><h4 class="kb-h">In Go to (the navigator)</h4><table class="kb-t"><tbody>'+inNav.map(r=>row(r[0],r[1])).join('')+'</tbody></table></div><div class="kb-col"><h4 class="kb-h">In the Needs you inbox</h4><table class="kb-t"><tbody>'+inbox.map(r=>r.length===3?row(r[0],r[2],r[1]):row(r[0],r[1])).join('')+'</tbody></table><h4 class="kb-h">In a chat that waits for you</h4><table class="kb-t"><tbody>'+inChat.map(r=>row(r[0],r[1])).join('')+'</tbody></table><h4 class="kb-h">In the Browser tab</h4><table class="kb-t"><tbody>'+inBrowser.map(r=>row(r[0],r[1])).join('')+'</tbody></table></div></div><div class="dbtn"><button class="btn" type="button" id="kbdClose">Close</button></div></div>';
   document.body.appendChild(d);
-  d.addEventListener('click',e=>{if(e.target===d)closeKbdHelp();});
+  DurbarDialog.onBackdrop(d,closeKbdHelp); /* spec 052 FR-237 */
   d.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();closeKbdHelp();}else if(e.key==='Tab'){e.preventDefault();focusIn($('kbdClose'));}});
   $('kbdClose').onclick=closeKbdHelp;
   /* spec 052 (2026-10-21, round 1): focusing Close must not scroll the sheet to its end (the title and Ctrl K were hidden at 1280x800) */
@@ -5533,7 +5534,7 @@ function openCapDialog(a){
   };
   $('cdCancel').onclick=closeCapDlg;$('cdNone').onclick=()=>apply(null);
   $('cdSave').onclick=()=>{const v=parseFloat($('cdVal').value);if(!(v>=min)||v>(usd?1e4:1e6)){const er=$('cdErr');er.textContent=usd?'Enter an amount from $'+MIN_USD_CAP+' to $10,000, or use Remove limit.':'Enter a number from '+MIN_CAP+' (the runtime minimum), or use Remove limit.';er.hidden=false;return;}apply(Math.round(v*100)/100);};
-  d.addEventListener('click',e=>{if(e.target===d)closeCapDlg();});
+  DurbarDialog.onBackdrop(d,closeCapDlg); /* spec 052 FR-237: a drag from the amount that ends on the backdrop keeps it */
   d.addEventListener('keydown',e=>{if(e.key==='Escape'){e.stopPropagation();closeCapDlg();}if(e.key==='Enter'&&e.target.id==='cdVal')$('cdSave').click();});
   focusIn($('cdVal'));
 }
@@ -7411,7 +7412,7 @@ function newSession(a0,o){
     if($('sdAgentDef'))$('sdAgent').onchange=()=>{$('sdAgentDef').checked=!!$('sdAgent').value&&$('sdAgent').value===a.info.defaultAgent;};
     $('sdAgentL').dataset.ready='1';agentRow();
   }).catch(()=>undefined);
-  d.addEventListener('click',e=>{if(e.target===d)closeSessDlg();});
+  DurbarDialog.onBackdrop(d,closeSessDlg); /* spec 052 FR-237 */
   $('sdCancel').onclick=closeSessDlg;
   $('sdGo').onclick=async()=>{
     if($('sdPerm').value==='allow'&&!(await confirmAllow(roomOf(a).name)))return;
@@ -7719,7 +7720,7 @@ function openSchedules(r,from,opts){
     return input;
   };
   d.addEventListener('click',async e=>{
-    if(e.target===d){closeSchedDlg();return;}
+    if(e.target===d)return; /* the backdrop: DurbarDialog.onBackdrop below (spec 052 FR-237) */
     const b=e.target.closest('button');if(!b)return;
     if(b.id==='scClose'){closeSchedDlg();return;}
     if(b.id==='scCancel'){stopEdit();return;}
@@ -7744,6 +7745,7 @@ function openSchedules(r,from,opts){
   $('scTarget').addEventListener('change',()=>{$('scToHint').hidden=!$('scTarget').value;syncCap();});
   applyTgt();
   if(opts&&opts.edit){const s=SCHED.schedules.find(x=>x.id===opts.edit);if(s)startEdit(s);}
+  DurbarDialog.onBackdrop(d,closeSchedDlg); /* spec 052 FR-237: a drag from the prompt that ends on the backdrop keeps the dialog */
   d.addEventListener('keydown',e=>{if(e.key==='Escape'){e.stopPropagation();closeSchedDlg();}});
   /* spec 044 FR-006: a template fills the form (prompt and when); nothing is saved until Add schedule */
   const tpl=$('scTpl');if(tpl)tpl.addEventListener('change',()=>{
@@ -8353,7 +8355,7 @@ document.addEventListener('click',e=>{
   const fb=e.target.closest('.floors-ui [data-fl]');
   if(fb&&fb.tagName==='BUTTON'){floorAction(fb);return;}
   const fpop=$('floorsPop');
-  if(fpop&&!fpop.hidden&&!e.target.closest('#floorsPop')&&!e.target.closest('#floorsBtn')&&!e.target.closest('#modeDlg'))toggleFloors(false);
+  if(fpop&&!fpop.hidden&&!e.target.closest('#modeDlg')&&DurbarDialog.isOutsideClick(e,[fpop,$('floorsBtn')]))toggleFloors(false); /* spec 052 FR-237: a drag from the new floor name that ends outside keeps it */
   const f=e.target.closest('[data-fp]');
   if(f){const r=ROOMS.find(x=>x.id===f.dataset.room);if(!r)return;
     if(f.dataset.fp==='new'){const ag=agents.find(x=>!x.parent&&x.room===r.id);toggleFolders(false);if(ag)newSession(ag);}
@@ -8363,7 +8365,7 @@ document.addEventListener('click',e=>{
     else if(f.dataset.fp==='sched')openSchedules(r);
     return;}
   const pop=$('foldersPop');
-  if(!pop.hidden&&!e.target.closest('#foldersPop')&&!e.target.closest('#foldersBtn'))toggleFolders(false);
+  if(!pop.hidden&&DurbarDialog.isOutsideClick(e,[pop,$('foldersBtn'),document.querySelector('.inl-layer')]))toggleFolders(false); /* spec 052 FR-237: a click in a folder's rename-in-place field (its own layer over the panel), or a drag from it that ends outside, keeps the panel */
 });
 
 /* After adding a folder: if it already has earlier Copilot sessions or VS Code chats, say so and show them. */

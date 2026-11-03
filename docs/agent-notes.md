@@ -113,6 +113,7 @@ Each entry: **what** (bold), why, how to apply, evidence (`real:`, `read:`, `tes
 - **Windows runners take the window's focus at random** (2026-10-30 #891, 2026-11-01 #995): three drivers share one desktop, so `document.hasFocus()` goes false mid-driver (`:focus-visible` missing; `check-status-tooltip` failed at 3 steps). A step needing focus retries only when a blur came (`osRetry` there), else fails naming what it saw. `H.focusPage()` / `H.focusWc()` ask for the real one; `{emulate: true}` (CDP focus emulation) hides blurs: `H.releaseFocus()` in a finally.
 
 - **A driver whose window closes passes silently** (PR #915): `window-all-closed` exits 0 off a Mac; guard such a step with `win.once('closed', ...)` printing `DRIVER FAILED` and `app.exit(1)`. Windows CI reports `isVisible()` false: check `isDestroyed()`.
+- **Drive a text drag with real input** (2026-11-03, spec 052 FR-237): a synthetic click misses it. `sendInputEvent`: `mouseDown`, `mouseMove` with `modifiers: ['leftButtonDown']`, `mouseUp` (`scripts/check-edit-popups.js`).
 
 ## Electron and platform
 

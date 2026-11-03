@@ -56,7 +56,7 @@
       const done=v=>{d.remove();resolve(v);};
       buttons.forEach(b=>{const el=document.createElement('button');el.type='button';el.className='btn'+(b.cls?' '+b.cls:'');el.textContent=b.label;if(b.value===null)el.dataset.cancel='1';
         el.onclick=async()=>{if(b.value!==null&&validate){el.disabled=true;let err;try{err=await validate(d);}finally{el.disabled=false;}if(err){if(typeof err==='string'){const e=d.querySelector('#scrDlgErr');e.textContent=err;e.hidden=false;}return;}}done(b.value===null?null:{value:b.value,root:d});};row.appendChild(el);});
-      d.addEventListener('click',e=>{if(e.target===d)done(null);});
+      window.DurbarDialog.onBackdrop(d,()=>done(null)); /* spec 052 FR-237: not on a drag that only ends on the backdrop */
       d.addEventListener('keydown',e=>{if(e.key==='Escape'){e.stopPropagation();done(null);}});
       document.body.appendChild(d);
       if(onOpen)onOpen(d);

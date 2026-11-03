@@ -104,7 +104,7 @@ On 2026-10-23 Vikram's agent grouped the ~1,100 *Required fixes* in reviews of ~
 
 ## UI and accessibility
 
-- [ ] **Dialog semantics**: `role="dialog"`/`alertdialog` with `aria-modal`, the guard (focus trap, keys) tested, menus with consistent `menu`/`menuitem`. [#597](https://github.com/three-feathers/agent-durbar/pull/597), [#632](https://github.com/three-feathers/agent-durbar/pull/632)
+- [ ] **Dialog semantics**: `role="dialog"`/`alertdialog`, `aria-modal`, guard (focus trap, keys) tested, `menu`/`menuitem`; outside clicks via `DurbarDialog.onBackdrop`/`isOutsideClick` (FR-237). [#597](https://github.com/three-feathers/agent-durbar/pull/597), [#632](https://github.com/three-feathers/agent-durbar/pull/632)
 - [ ] **A refusable action says so**: the handler returns whether it acted, the UI announces success only then, the button is disabled with the reason. [#640](https://github.com/three-feathers/agent-durbar/pull/640)
 - [ ] **Announcements reach a screen reader** (live region used and tested); focus lands sensibly after Escape. [#622](https://github.com/three-feathers/agent-durbar/pull/622)
 - [ ] **Theme tokens, not literals**; check one dark and one non-default theme. [#530](https://github.com/three-feathers/agent-durbar/pull/530), [#588](https://github.com/three-feathers/agent-durbar/pull/588)
