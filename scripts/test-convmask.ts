@@ -1,0 +1,140 @@
+/**
+ * Spec 095 T013 (FR-030, SC-002): the conversation search's masking, `npm run test:convmask`. Synthetic secrets only (built from parts, so
+ * no real-looking token sits in the repo); no credits, no network, no fs write.
+ */
+import * as assert from 'assert';
+import * as fs from 'fs';
+import * as path from 'path';
+import { WINDOW_CHARS, cleanValues, createMasker, scanSecretValues } from '../src/main/convmask';
+import { rendererScript } from '../src/main/convsearch';
+
+process.exitCode = 1;
+const ROOT = ((): string => {
+  for (let d = __dirname; ; d = path.dirname(d)) {
+    if (fs.existsSync(path.join(d, 'package.json')) && fs.existsSync(path.join(d, 'src', 'renderer'))) return d;
+    if (path.dirname(d) === d) throw new Error('repo root not found');
+  }
+})();
+const ST = rendererScript<{ unhide(s: string): string }>('safetext.js', path.join(ROOT, 'src', 'main'));
+const M = createMasker({ unhide: (s) => ST.unhide(s) });
+
+// the planted secrets (every class the search must hide), and the fragments that must never show
+const GHP = 'gh' + 'p_' + 'a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8';
+const ANT = 'sk-' + 'ant-api03-' + 'Zq9'.repeat(14);
+const AWS = 'AK' + 'IA' + 'QWERTYUIOPASDFGH';
+const MCPV = 'mcp-secret-VALUE-77fa';
+const MCPV_SPACE = 'open sesame value 4242';
+const URLPW = 'hunter2Pass99';
+const USER = 'alicewonder';
+const SECRETS = [GHP, ANT, AWS, MCPV, MCPV_SPACE, URLPW, USER];
+/** No secret, and no 8-character piece of one (a cut or late split would leave a piece), anywhere in `s`. */
+function clean(s: string, what: string): void {
+  for (const x of SECRETS) {
+    for (let i = 0; i + 8 <= x.length; i++) {
+      const piece = x.slice(i, i + 8);
+      if (x === USER || x === MCPV_SPACE) { if (s.includes(x)) assert.fail(`${what}: "${x}" in ${JSON.stringify(s.slice(0, 300))}`); break; }
+      if (s.includes(piece)) assert.fail(`${what}: a piece of a secret (${piece}) in ${JSON.stringify(s.slice(0, 300))}`);
+    }
+  }
+  assert.ok(!/\/home\/|\/Users\/|[A-Za-z]:\\+Users/i.test(s), `${what}: no home path: ${JSON.stringify(s.slice(0, 300))}`);
+}
+const VALS = [MCPV, MCPV_SPACE];
+
+// 1. the whole-text mask (titles): every class, Markdown glue, URL userinfo, home paths on three systems, hidden characters
+const shapes = [
+  `plain ${GHP} end`,
+  `glued x**${GHP}**`,
+  `split ${GHP.slice(0, 20)}**${GHP.slice(20)}**`,
+  `code gh\`${GHP.slice(2)}\``,
+  `escaped ${GHP.replace('_', '\\_')}`,
+  `zero width ${GHP.slice(0, 10)}\u200B${GHP.slice(10)}`,
+  `soft hyphen ${ANT.slice(0, 9)}\u00AD${ANT.slice(9)}`,
+  `aws ${AWS} key`,
+  `url https://bob:${URLPW}@example.test/repo.git`,
+  `url glued (https://bob:${URLPW}@example.test)`,
+  `mcp ${MCPV} value`,
+  `mcp split mcp-secret-**VALUE**-77fa marks`,
+  `mcp with spaces: ${MCPV_SPACE}!`,
+  `linux /home/${USER}/proj/a.ts`,
+  `mac /Users/${USER}/proj/a.ts`,
+  `windows C:\\Users\\${USER}\\proj\\a.ts`,
+  `json "C:\\\\Users\\\\${USER}\\\\proj"`,
+  `forward C:/Users/${USER}/proj`,
+];
+for (const s of shapes) clean(M.maskText(s, VALS), `maskText(${JSON.stringify(s.slice(0, 30))})`);
+assert.strictEqual(M.maskText('Fix the invoice export', VALS), 'Fix the invoice export', 'plain text is unchanged');
+assert.strictEqual(M.maskText('use **bold** here', []), 'use **bold** here', 'Markdown is kept when nothing is masked');
+assert.strictEqual(M.maskText(`**note** the ${MCPV} here`, VALS), 'note the [redacted] here', 'a value\'s mask keeps its brackets when Markdown marks are present');
+assert.strictEqual(M.maskText('Team \u{1F469}\u200D\u{1F4BB} ok', []), 'Team \u{1F469}\u200D\u{1F4BB} ok', 'a joiner stays when it hides nothing');
+
+// 2. the window: ±600 around the hit, widened to whitespace; a secret at, across or near either edge never survives in the window
+const filler = (n: number): string => { let s = ''; for (let i = 0; s.length < n; i++) s += `word${i % 97} `; return s.slice(0, n); };
+const HIT = 'invoice';
+let windows = 0;
+for (const secret of [GHP, `x**${GHP}**`, `https://bob:${URLPW}@example.test/a`, MCPV, MCPV_SPACE, `/home/${USER}/p`, `C:\\Users\\${USER}\\p`, `${GHP.slice(0, 18)}**${GHP.slice(18)}`]) {
+  for (const side of ['before', 'after'] as const) {
+    for (let d = WINDOW_CHARS - 60; d <= WINDOW_CHARS + 60; d += 3) {
+      // the secret's start sits d characters from the hit (so the raw window edge falls before, inside or after it)
+      const pre = side === 'before' ? filler(1000 - d) + ' ' + secret + ' ' + filler(Math.max(1, d - secret.length)) + ' ' : filler(1000) + ' ';
+      const raw = side === 'before' ? pre + HIT + ' ' + filler(1000) : pre + HIT + ' ' + filler(d) + ' ' + secret + ' ' + filler(800);
+      const at = raw.indexOf(HIT);
+      const w = M.maskedWindow(raw, at, at + HIT.length, VALS);
+      clean(w.text, `window ${side} d=${d} ${JSON.stringify(secret.slice(0, 12))}`);
+      assert.ok(w.text.includes(HIT), 'the hit is in its window');
+      windows++;
+    }
+  }
+}
+assert.ok(windows > 600, `enough windows (${windows})`);
+// the window never starts or ends inside a token
+{
+  const raw = 'a'.repeat(700) + ' ' + HIT + ' ' + 'b'.repeat(700);
+  const at = raw.indexOf(HIT);
+  const w = M.maskedWindow(raw, at, at + HIT.length, []);
+  assert.deepStrictEqual([w.atStart, w.atEnd, w.text.length], [true, true, raw.length], 'a long run is taken whole, not cut');
+  const raw2 = filler(3000) + HIT + filler(3000);
+  const at2 = raw2.indexOf(HIT);
+  const w2 = M.maskedWindow(raw2, at2, at2 + HIT.length, []);
+  assert.ok(!w2.atStart && !w2.atEnd && w2.text.length >= 2 * WINDOW_CHARS && w2.text.length < 2 * WINDOW_CHARS + 40, `a ±600 window (${w2.text.length})`);
+  assert.ok(raw2.includes(' ' + w2.text.trim() + ' ') || raw2.startsWith(w2.text), 'cut at whitespace on both sides');
+  assert.strictEqual(M.maskedWindow(raw2, at2, at2, [], true).text, raw2, 'whole: the whole message');
+}
+// a private key block opened before the window: its body is masked from the BEGIN line
+{
+  const body = Array.from({ length: 40 }, (_, i) => 'MIIEvQIBADANBgkqhkiG9w0BAQEFAASC' + String(i).padStart(32, 'Q')).join('\n');
+  const raw = 'see this: -----BEGIN PRIVATE KEY-----\n' + body + '\n-----END PRIVATE KEY----- and the ' + HIT + ' here ' + filler(900);
+  const at = raw.indexOf(HIT);
+  const w = M.maskedWindow(raw, at, at + HIT.length, []);
+  assert.ok(!w.text.includes('MIIEvQIBADANBgkq'), `no key body in the window: ${JSON.stringify(w.text.slice(0, 120))}`);
+}
+
+// 3. fail closed
+assert.throws(() => createMasker({} as never), /unhide/, 'no unhide, no masker');
+const bad = createMasker({ unhide: () => { throw new Error('boom'); } });
+assert.throws(() => bad.maskText('x', []), 'a throwing unhide throws');
+assert.throws(() => bad.maskedWindow('some text', 0, 4, []));
+assert.throws(() => createMasker({ unhide: () => 42 as unknown as string }).maskText('x', []), 'a non-string throws');
+assert.throws(() => M.maskText('already [redaction failed] here', []), 'a failed redaction is never shown');
+
+// 4. FR-030: the values come without any keychain prompt
+{
+  const calls: string[] = [];
+  const src = (noPrompt: boolean) => ({
+    knownSecretValues: (k: string) => { calls.push(`known:${k}`); return ['abc', 'folder-value-1']; },
+    noPrompt: () => { calls.push('noPrompt'); return noPrompt; },
+    secretValuesFor: (id: string) => { calls.push(`session:${id}`); return ['session-value-22']; },
+  });
+  assert.deepStrictEqual(scanSecretValues(src(false), { folderKey: 'F', agentId: 'a1', open: true }), ['folder-value-1'], 'locked vault: the folder values only (under 4 characters skipped)');
+  assert.deepStrictEqual(calls, ['known:F', 'noPrompt'], 'secretValuesFor is never called while it could prompt');
+  calls.length = 0;
+  assert.deepStrictEqual(scanSecretValues(src(true), { folderKey: 'F', agentId: 'a1', open: true }), ['session-value-22', 'folder-value-1'], 'no prompt possible: the session values too, longest first');
+  assert.deepStrictEqual(calls, ['known:F', 'noPrompt', 'session:a1']);
+  calls.length = 0;
+  assert.deepStrictEqual(scanSecretValues(src(true), { folderKey: 'F', agentId: 'a1', open: false }), ['folder-value-1'], 'an earlier session: its folder values only');
+  assert.ok(!calls.some((c) => c.startsWith('session:')));
+  assert.throws(() => scanSecretValues({ ...src(true), knownSecretValues: () => { throw new Error('store'); } }, { folderKey: 'F', open: false }), 'a failing store throws (the scan then searches nothing of it)');
+  assert.deepStrictEqual(cleanValues(['abcd', 'abcd', 7, 'xyz', 'longer-one']), ['longer-one', 'abcd']);
+}
+
+console.log('convmask tests passed');
+process.exitCode = 0;
