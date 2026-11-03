@@ -4532,7 +4532,7 @@ function paintMcpStrip(){
     (more?'<span class="aw-it" role="listitem"><span class="aw-w">and '+more+' more in Settings &gt; MCP servers.</span></span>':'')+'</span>':'');
   el.hidden=false;
   el.querySelector('[data-ml="close"]').onclick=()=>{mcpL.closed=true;paintMcpStrip();};
-  el.querySelector('[data-ml="list"]').onclick=()=>{mcpL.open=!mcpL.open;paintMcpStrip();const b=el.querySelector('[data-ml="list"]');if(b)b.focus();};
+  el.querySelector('[data-ml="list"]').onclick=()=>{mcpL.open=!mcpL.open;paintMcpStrip();const b=el.querySelector('[data-ml="list"]');if(b)focusIn(b,{reveal:false});};
   el.querySelector('[data-ml="settings"]').onclick=()=>window.DurbarScreens.openSettings('mcp');
   el.querySelectorAll('[data-mlshow]').forEach(b=>b.onclick=()=>{
     const f=mcpL.items.get(b.dataset.mlshow);if(!f)return;

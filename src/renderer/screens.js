@@ -156,7 +156,7 @@
     const sessBusy=liveBusy.has(liveKey('',c.id));
     const rsess=rp.canRestartSession&&X.bridge.agentMcpRestartSession&&m?`<button class="btn sm" type="button" data-lvsess="1"${sessBusy?' disabled':''} aria-label="${esc((sessBusy?'Restarting the session of ':'Restart the session of ')+c.name+' with these servers')}">${sessBusy?'Restarting session…':'Restart session with these servers'}</button>`:'';
     /* review on PR 609: a server that needs a sign-in is not fixed by a Restart, so the chat (where the sign-in is) is the main action and
-       Restart waits behind More. Sign in itself joins this row when PR 598 (spec 058 FR-064) lands, reusing its button: no second sign-in. */
+       Restart waits behind More. */
     const auth=x.status==='needs-auth'||(x.status==='failed'&&x.errorClass==='auth');
     /* FR-195: Sign in / Sign in again open the chat's own MCP dialog and start that row's action there (no sign-in code here) */
     const canSign=!!m&&!!X.bridge.agentMcpSignIn&&!x.signIn;

@@ -490,15 +490,15 @@ shared parts; PR B = Codex (Q23 A).
 
 ## 2026-11-03: the chat's MCP actions in Settings, and a health check at launch (FR-195..FR-203)
 
-- [ ] T168 FR-198: `src/main/mcpcmdcheck.ts` `commandFound` (absolute, bare name over `candidates()` folders, Windows `PATHEXT`,
+- [x] T168 FR-198: `src/main/mcpcmdcheck.ts` `commandFound` (absolute, bare name over `candidates()` folders, Windows `PATHEXT`,
   references and relative paths not judged) and `withMissing(state)`; `mcp:globalState` awaits the login PATH and adds `missing`;
   `GlobalEntryView.missing`; tests in `scripts/test-mcp-cmdcheck.ts` [FR-198]
-- [ ] T169 FR-201, FR-199: `DurbarMcpWords.fixFor` and `launchFindings` (pure); tests in `scripts/test-mcpwords.ts` [FR-199, FR-201]
-- [ ] T170 FR-195, FR-196: Settings live rows: **Sign in** / **Sign in again…** open the chat's dialog with `o.signIn` and run its own
+- [x] T169 FR-201, FR-199: `DurbarMcpWords.fixFor`, `fileFindings` and `chatFinding` (pure); tests in `scripts/test-mcpwords.ts` [FR-199, FR-201]
+- [x] T170 FR-195, FR-196: Settings live rows: **Sign in** / **Sign in again…** open the chat's dialog with `o.signIn` and run its own
   action; **Restart where it failed (N)** on the server row through `mcpRestartCall` [FR-195, FR-196]
-- [ ] T171 FR-198: the configured list rows say "Agent Durbar did not find this command" with the fix [FR-198, FR-201]
-- [ ] T172 FR-199, FR-200, FR-202: the launch strip in `index.html` / `app.js` (file findings at start, live findings for 10 minutes,
+- [x] T171 FR-198: the configured list rows say "Agent Durbar did not find this command" with the fix [FR-198, FR-201]
+- [x] T172 FR-199, FR-200, FR-202: the launch strip in `index.html` / `app.js` (file findings at start, live findings for 10 minutes,
   Show / Open MCP settings / Dismiss, resolved findings leave) [FR-199, FR-200, FR-202]
-- [ ] T173 Simulator `simmcplaunch=1` (a missing command and an unreadable list) and `scripts/shots-058-mcp-launch.js` at 1440x900 and
+- [x] T173 Simulator `simmcplaunch=1` (a missing command and an unreadable list) and `scripts/shots-058-mcp-launch.js` at 1440x900 and
   1280x800 (strip, Show, Dismiss, Settings Sign in / Sign in again / Restart where it failed, 10.5px, fits); mutation-checked [FR-195..FR-203]
-- [ ] T174 README / `docs/features.md` MCP lines, `changelog.d/058-mcp-settings-health.md` [FR-195..FR-203]
+- [x] T174 README / `docs/features.md` MCP lines, `changelog.d/058-mcp-settings-health.md` [FR-195..FR-203]
