@@ -41,6 +41,8 @@ export interface AdapterCapabilities {
   readonly mcpRestart?: boolean;
   /** Spec 069 FR-031: `listMcpTools()` exists: the tools of one server of a running session can be listed; missing = false. */
   readonly mcpTools?: boolean;
+  /** Spec 100 FR-001: `mcpContext()` exists and how its figures come: the agent app's own, or estimated from the tool definitions; missing = no figures. */
+  readonly mcpContext?: 'reported' | 'estimated';
   /** Spec 069 FR-062/FR-064: the adapter passes `StartOptions.disabledMcpTools` to its agent app's own filter; missing = single tools cannot be turned off. */
   readonly mcpToolFilter?: boolean;
   /** Spec 058 FR-064: `startMcpSignIn()` (and `cancelMcpSignIn()`) exist: the agent app's own sign-in for an MCP server can be started; missing = false. */
@@ -59,6 +61,12 @@ export interface AdapterCapabilities {
    * one through its own flow (Copilot `forceReauth`), so the agent app writes the sign-in again itself. Only with `mcpSignIn`; missing = false.
    */
   readonly mcpSignInAgain?: boolean;
+  /**
+   * Spec 058 FR-207: main may call `restartMcpServer(id, name, { auto: true })` by itself, before a message after a quiet hour, so the
+   * agent app renews a remote server's sign-in with its own stored refresh token. Only with `mcpRestart`; missing = false (Codex, the
+   * Claude SDK transport: no automatic reconnect).
+   */
+  readonly mcpSignInReconnect?: boolean;
   /** `handoffSummary()` exists (spec 030 FR-034); missing = false. */
   readonly handoff?: boolean;
   /** `generateText()` exists: one prompt, no tools, no session kept (spec 040 FR-015); missing = false. */

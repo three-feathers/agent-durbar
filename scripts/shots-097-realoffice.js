@@ -9,8 +9,8 @@
  *
  * At 1440x900 and 1280x800 it fails (exit 1) when:
  *   - flat is not the default (no Real office element, no Real office file requested: FR-002, SC-004);
- *   - Settings > Office layout has no third button, or choosing it does not draw the Real office, or Open office / Office with cabins do
- *     not bring the flat office back (FR-001, FR-003; durbar.doorsigns untouched), or a broken stored value is not flat;
+ *   - Settings > Office layout has no Real office button, or choosing it does not draw the Real office, or Open office does not bring
+ *     the flat office back (FR-001, FR-003), or a broken stored value is not flat;
  *   - with 15 agents: a main agent without its one focusable plate (button, accessible name with the status word, FR-090), a plate
  *     without a status word, a desk without a person that is not away or asleep, an away desk without "at <place>" (FR-017);
  *   - a status cue is missing: a waiting agent without its "?" and amber call light, an error agent without "!" and its red call light,
@@ -21,9 +21,8 @@
  *   - a place plate (Other tools, Postbox, ...; also at 12 and 8 agents and in a wider font) is cut by an ellipsis, is under 10.5 px or overlaps a plate or chip, or a chip shows bare initials or sits away from its person (Paco's review of #921);
  *   - a lobby chip at the Boss, Bank or Coffee is not a button with a name, or Enter on it does not open the chat, or a chip has an
  *     emoji or a needs-you chip lacks the alert icon (FR-026, constitution V);
- *   - a failed Discard or Send all of a held prompt still switches to Real office; the "+N" plate of a crowd does not open the flat list;
+ *   - the "+N" plate of a crowd does not open the flat list;
  *     a plate does not take the arrow keys, Shift+F10 or a right-click (a card menu) (Codex pass on #921);
- *   - choosing Real office from the cabins with a door you closed does not ask first, or Keep cabins does not keep them (FR-004);
  *   - a click on a person or a plate does not open that agent's chat (FR-006);
  *   - a picture that fails to load leaves a broken image instead of the initials disc (FR-065).
  *   - the world chrome (FR-113): in Real office the top bar, More menu, a toast, Settings and a dialog do not use the photo world's
@@ -78,19 +77,17 @@ module.exports = async (ctx) => {
   assert.strictEqual(await js(`!!window.DurbarRealOffice`), false, 'flat mode loaded realoffice.js');
 
   // ---- FR-001, FR-003, FR-004: the Settings button and the stored choice ----
-  await js(`localStorage.setItem('durbar.doorsigns','off')`);
   await H.load({ w: 1440, h: 900 });
   await js(`window.DurbarScreens.openSettings()`);
   await must(`!!document.querySelector('[data-officelayout="real"]')`, 'the Real office button');
   const seg = await js(`[...document.querySelectorAll('[data-officelayout]')].map(b=>b.dataset.officelayout+':'+b.getAttribute('aria-pressed')).join(' ')`);
-  assert.strictEqual(seg, 'cabins:false open:true real:false', 'three buttons, Open office pressed: ' + seg);
+  assert.strictEqual(seg, 'open:true real:false', 'two buttons, Open office pressed: ' + seg);
   await js(`document.querySelector('[data-officelayout="real"]').scrollIntoView({block:'center'})`);
   await H.shot(path.join(OUT, '097-office-layout-1440x900.png'), { prep: 'calm' });
   await js(`document.querySelector('[data-officelayout="real"]').focus();document.querySelector('[data-officelayout="real"]').click()`);
   await must(`document.querySelector('[data-officelayout="real"]').getAttribute('aria-pressed')==='true'`, 'Real office pressed');
   await must(`document.activeElement&&document.activeElement.dataset&&document.activeElement.dataset.officelayout==='real'`, 'the keyboard focus stays on the Real office button after the repaint');
   assert.strictEqual(await js(`localStorage.getItem('durbar.officeview')`), 'real', 'stored as real');
-  assert.strictEqual(await js(`localStorage.getItem('durbar.doorsigns')`), 'off', 'durbar.doorsigns untouched');
   await js(`document.getElementById('scrClose').click()`);
   await must(REAL, 'the Real office after the Settings choice');
   /* spec 097 FR-115, spec 102 FR-201, FR-205: html[data-world] is the shown world; only that world's and that set's packs were asked for; no World row while one world is offered */
@@ -117,55 +114,6 @@ module.exports = async (ctx) => {
   await H.load({ w: 1440, h: 900 });
   assert.strictEqual(await js(`!!document.querySelector('.ro')`), false, 'a broken stored value means flat');
 
-  // ---- FR-004: from the cabins, with a door you closed, Real office asks the open-office question first ----
-  /* spec 017's cabins and doors are removed in a later change (spec 017 delta, PR 937); this test goes with them */
-  await js(`localStorage.setItem('durbar.officeview','flat');localStorage.setItem('durbar.doorsigns','on')`);
-  await H.load({ w: 1440, h: 900 });
-  const DOOR = `document.querySelector('#stage .unit [data-doorset][aria-pressed="false"]')`;
-  await must(`!!${DOOR}`, 'a cabin door button');
-  const doorId = await js(`${DOOR}.dataset.doorset`);
-  await js(`${DOOR}.click()`);
-  await must(`document.querySelector('#stage [data-doorset="'+CSS.escape(${jsLiteral(doorId)})+'"]').getAttribute('aria-pressed')==='true'`, 'the door closed');
-  const chooseReal = async () => { await js(`window.DurbarScreens.openSettings()`); await must(`!!document.querySelector('[data-officelayout="real"]')`, 'the Real office button'); await js(`document.querySelector('[data-officelayout="real"]').click()`); };
-  const DLG = `[...document.querySelectorAll('#modeDlg .dbtn button')].map((x)=>x.textContent)`;
-  await chooseReal();
-  await must(`!!document.getElementById('modeDlg')`, 'the question about the closed door');
-  assert.strictEqual(await js(`document.querySelector('#modeDlg h3').textContent`), 'Switch to an open office?', 'the open-office question');
-  assert.ok((await js(DLG)).includes('Keep cabins'), 'the dialog offers Keep cabins');
-  await js(`[...document.querySelectorAll('#modeDlg .dbtn button')].find((x)=>x.textContent==='Keep cabins').click()`);
-  await must(`!document.getElementById('modeDlg')`, 'the dialog closed');
-  assert.notStrictEqual(await js(`localStorage.getItem('durbar.officeview')`), 'real', 'Keep cabins keeps the cabins');
-  await chooseReal();
-  await must(`!!document.getElementById('modeDlg')`, 'the question again');
-  await js(`[...document.querySelectorAll('#modeDlg .dbtn button')].find((x)=>/^(Open the doors|Discard)$/.test(x.textContent)).click()`);
-  await must(`localStorage.getItem('durbar.officeview')==='real'`, 'Real office chosen after the doors opened');
-  await js(`localStorage.setItem('durbar.officeview','flat');localStorage.setItem('durbar.doorsigns','off')`);
-
-  // ---- Codex pass on #921: a failed Discard or Send all must not switch to Real office (the held prompts keep their door) ----
-  /* spec 017's cabins and doors go in a later change (PR 954); this test goes with them */
-  await js(`localStorage.setItem('durbar.officeview','flat');localStorage.setItem('durbar.doorsigns','on')`);
-  await H.load({ w: 1440, h: 900, query: { simschedfire: '25' } }); /* the simulator's one-off schedule fires in 25 s: a door closed before that holds the run (a loaded machine closes it late) */
-  const target = await js(`window.__durbarSimUi.bridge().listSchedules().then((d)=>{const s=d.schedules.find((x)=>x.id==='sched-fire');return s&&s.target?s.target.session:null})`);
-  assert.ok(target, 'the simulator has a scheduled prompt for an agent');
-  const TBTN = `document.querySelector('#stage .unit [data-doorset="'+CSS.escape(${jsLiteral(target)})+'"]')`;
-  await must(`!!${TBTN}`, 'the target\'s door button');
-  if ((await js(`${TBTN}.getAttribute('aria-pressed')`)) !== 'true') await js(`${TBTN}.click()`);
-  await must(`window.__durbarSimUi.bridge().doorsList().then((d)=>((d[${jsLiteral(target)}]||{}).held||0)>=1)`, 'a held prompt at the closed door', 60000);
-  await must(`[...document.querySelectorAll('#stage .desk[data-id="'+CSS.escape(${jsLiteral(target)})+'"] .cb-sign')].some((e)=>/1 held/.test(e.getAttribute('title')||''))`, 'the door sign says 1 held', 60000);
-  await chooseReal();
-  await must(`!!document.getElementById('modeDlg')`, 'the question with a held prompt');
-  await js(`window.__roRel=window.__durbarSimUi.bridge().releaseHeld;window.__durbarSimUi.bridge().releaseHeld=async()=>({ok:false,error:'stubbed'});true`);
-  await js(`[...document.querySelectorAll('#modeDlg .dbtn button')].find((x)=>/^Discard$/.test(x.textContent)).click()`);
-  await must(`[...document.querySelectorAll('#toasts .toast')].some((t)=>/held prompts are still there/.test(t.textContent))`, 'the failed release says so');
-  assert.notStrictEqual(await js(`localStorage.getItem('durbar.officeview')`), 'real', 'a failed Discard does not switch to Real office');
-  assert.ok(await js(`window.__durbarSimUi.bridge().doorsList().then((d)=>((d[${jsLiteral(target)}]||{}).held||0)>=1)`), 'the held prompt is still held');
-  await js(`window.__durbarSimUi.bridge().releaseHeld=window.__roRel;true`);
-  await chooseReal();
-  await must(`!!document.getElementById('modeDlg')`, 'the question again');
-  await js(`[...document.querySelectorAll('#modeDlg .dbtn button')].find((x)=>/^Discard$/.test(x.textContent)).click()`);
-  await must(`localStorage.getItem('durbar.officeview')==='real'`, 'Real office after a Discard that worked');
-  await js(`localStorage.setItem('durbar.officeview','flat');localStorage.setItem('durbar.doorsigns','off')`);
-
   for (const [w, h] of SIZES) {
     await loadReal(w, h);
     // ---- FR-090, FR-016, FR-017, FR-036: plates, people, away desks ----
@@ -189,7 +137,7 @@ module.exports = async (ctx) => {
     assert.deepStrictEqual(d.bare, [], 'no awake desk is empty without a visit');
     assert.ok(d.persons + d.visitors >= 8, `people sit at their desks or stand in the lobby on a visit: ${d.persons} + ${d.visitors}`);
     assert.ok(d.fixtures >= 8, 'the lobby fixtures are drawn: ' + d.fixtures);
-    const aw = await js(`[...document.querySelectorAll('#stage .ro-away')].every(e=>/^at .+ ↑$/.test(e.textContent))`);
+    const aw = await js(`[...document.querySelectorAll('#stage .ro-away')].every(e=>/^at .+$/.test(e.textContent))`);
     assert.ok(aw, 'away desks say where');
     // ---- FR-038, FR-041, FR-046: cues and lights by status ----
     const cues = await js(`(()=>{const o={};for(const p of document.querySelectorAll('#stage .ro-plate')){const id=p.dataset.id,st=p.dataset.state;
@@ -282,6 +230,9 @@ module.exports = async (ctx) => {
     assert.deepStrictEqual(pl.cp, [], 'no chip covers a place plate');
     assert.deepStrictEqual(pl.cc, [], 'no two chips overlap');
     assert.deepStrictEqual(pl.initials, [], `no bare initial in the lobby (names, or their first letters and an ellipsis): ${JSON.stringify(pl.initials)} of ${pl.chips}`);
+    /* going back from the chat above leaves the focus on a plate, and a focused plate has its zoom open (FR-034): not in the picture */
+    await js(`document.activeElement&&document.activeElement.blur&&document.activeElement.blur();0`);
+    await must(`!document.getElementById('roZoom')`, 'no zoom in the picture');
     await H.shot(path.join(OUT, `097-real-15-${w}x${h}.png`), { prep: 'calm' });
     // ---- owner 2026-10-31 ("make a real running pose"): someone at the Terminal jogs in place (stride A in P1), no treadmill; a
     //      close crop of the lobby band shows it ----
@@ -367,6 +318,18 @@ module.exports = async (ctx) => {
     await H.key('Escape');
     await must("!document.getElementById('modeMenu')&&(" + FOCUSED + ')', 'the right-click menu closed and focus is back on the plate');
   }
+
+  // ---- owner 2026-11-01: with motion on, a chip and a plate never touch, in any frame while a crowd changes: they fade in place, they do not travel ----
+  await loadReal(1280, 800, { sim: '15', romotion: '1' });
+  await must(`!!document.querySelector('#stage .ro-lplate')`, 'the lobby plates');
+  await js(`document.querySelector('style#roNoAnim')&&document.querySelector('style#roNoAnim').remove();0`);
+  for (const [pid, n, from] of [['terminal', 4, 0], ['software', 3, 2], ['boss', 5, 6], ['terminal', 2, 9]]) {
+    const look = "const look=()=>{const r=" + PLATES + ";n++;for(const x of r.cp)bad.add(x);if(performance.now()-t0<1500)requestAnimationFrame(look);else done({n,bad:[...bad]});};requestAnimationFrame(look);";
+    const frames = await js(`new Promise((done)=>{const bad=new Set();let n=0;const t0=performance.now();window.__durbarSimUi.uncrowd();window.__durbarSimUi.crowd(${jsLiteral(pid)},${jsLiteral(n)},${jsLiteral(from)});` + look + '})');
+    assert.ok(frames.n > 5, 'frames were looked at: ' + JSON.stringify(frames));
+    assert.deepStrictEqual(frames.bad, [], `no chip on a plate in any frame (${pid} ${n}): ${JSON.stringify(frames)}`);
+  }
+  await js(`window.__durbarSimUi.uncrowd();0`);
 
   // ---- the guards of the chip placement, deterministically (no font needed): chips widened after the drawing are placed again by the
   //      ResizeObserver (settle), and a chip that sits on a plate is moved off it (resolve) ----
@@ -560,6 +523,11 @@ module.exports = async (ctx) => {
     assert.strictEqual(set.sec, RGB(W['--surface']), 'Settings sections are the world surface');
     assert.strictEqual(set.ink, RGB(W['--ink']), 'Settings text is the world ink');
     await H.shot(path.join(OUT, `097-world-settings-${w}x${h}.png`), { prep: 'calm' });
+    // 2026-11-01 (spec 033 delta, issue 1010): the toggle switch follows the world: an on switch is the world's --sage-ink, its knob the world's surface
+    const sw = await js(`(()=>{const b=document.querySelector('#screen .swt.on');if(!b)return null;b.scrollIntoView({block:'center'});const cs=getComputedStyle(b),k=getComputedStyle(b.querySelector('i'));return {bg:cs.backgroundColor,knob:k.backgroundColor}})()`);
+    assert.ok(sw, 'Settings has an on switch');
+    assert.deepStrictEqual(sw, { bg: RGB(W['--sage-ink']), knob: RGB(W['--surface']) }, 'the on switch follows the world');
+    await H.shot(path.join(OUT, `097-world-switch-${w}x${h}.png`), { prep: 'calm' });
     await js(`document.getElementById('scrClose').click()`);
     // a dialog: the keyboard shortcuts sheet, frosted glass on a warm scrim
     await js(`document.getElementById('kbdHelpBtn').click()`);

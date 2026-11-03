@@ -4,6 +4,7 @@
  * `npm run test:edits`.
  */
 import * as assert from 'assert';
+import { assertLinearShape, assertWithinYardstick } from './redact-growth-lib';
 import { countDiff, editFile, finishEdit, partialJson, patchFiles, EDIT_FILES_MAX } from '../src/shared/edits';
 import { DIFF_MAX } from '../src/shared/diff';
 import { ArgStream, EditStreams, codexEdit, editOf, editPath, isEditTool, ARG_STREAM_MAX } from '../src/adapters/edits';
@@ -306,19 +307,48 @@ const TOKEN = 'ghp_abcdefghijklmnopqrstuvwxyz0123456789';
   timed('partialJson deep nesting', () => partialJson('['.repeat(N)));
   timed('partialJson deep objects', () => partialJson('{"a":'.repeat(N / 2)));
   // a streamed Write whose content is a long run of spaces, through the whole stream path
-  timed('EditStreams Write of spaces', () => {
+  // This reaches `redact`, so spec 012 T138 measures it in the same run: spaces against ordinary text through the same path, which is the old bug (regexes retrying at each blank took seconds to a minute).
+  // Not a growth check: the whole text is masked again at each 1/8 of growth, so at this size CPU grows faster than the input until the 1/8 rule caps it (`[KNOWN GAP]` in the spec, issue 1052).
+  const write = (x: string): void => {
     const st = new EditStreams();
     st.begin('w', 'Write');
-    const args = '{"file_path":"/tmp/d/a.txt","content":"' + ' '.repeat(N) + 'x' + ' '.repeat(N);
+    const args = '{"file_path":"/tmp/d/a.txt","content":"' + x;
     for (let i = 0; i < args.length; i += 4096) st.delta('w', args.slice(i, i + 4096));
-  });
+  };
+  assertWithinYardstick('EditStreams Write of spaces', () => write(' '.repeat(N) + 'x' + ' '.repeat(N)), () => write('word '.repeat(2 * N / 5)), 10);
+  // That compares the path with itself, so what keeps the path linear is counted, with no clock (review of #1048): a parse at each 1/8 of growth, so twice the text adds at most 7 parses (log 2 / log 1.125 is 5.9)
+  // and the characters parsed stay under 10 times the text. Parsing every 128 characters makes 6000 parses of 800k.
+  const parses = (total: number, chunk: number): { n: number; chars: number } => {
+    const st = new ArgStream('Write');
+    let n = 0;
+    let chars = 0;
+    for (let seen = 0; seen < total; seen += chunk) if (st.append('x'.repeat(chunk))) { n++; chars += st.length; }
+    return { n, chars };
+  };
+  for (const chunk of [64, 512, 4096]) {
+    for (const total of [100_000, 200_000, 400_000]) {
+      const one = parses(total, chunk);
+      const two = parses(2 * total, chunk);
+      assert.ok(two.n - one.n <= 7, `parses at ${chunk}-character fragments: ${one.n} for ${total} characters, ${two.n} for twice that`);
+      assert.ok(two.chars < 10 * 2 * total, `characters parsed at ${chunk}-character fragments: ${two.chars} for ${2 * total}`);
+    }
+  }
+  // ... and the stream parses only when `append` says so
+  const updates = (chunk: number): number => {
+    const es2 = new EditStreams();
+    const args = '{"file_path":"/tmp/d/a.txt","content":"' + 'word '.repeat(40_000);
+    let n = 0;
+    for (let i = 0; i < args.length; i += chunk) n += es2.delta('w', args.slice(i, i + chunk), i === 0 ? 'Write' : undefined).filter((x) => x.phase === 'update').length;
+    return n;
+  };
+  assert.ok(updates(512) <= parses(200_100, 512).n + 1, `updates of a 200k Write at 512-character fragments: ${updates(512)}`);
   // a Codex/plain diff whose `--- ` line ends in a long run of spaces followed by text (the lazy capture retried every position)
   timed('patchFiles long --- line', () => patchFiles('--- a/x.ts' + ' '.repeat(N) + 'y\n+++ b/x.ts\n@@\n+1\n'));
   timed('patchFiles long +++ line', () => patchFiles('--- a/x.ts\n+++ b/x.ts' + ' '.repeat(N) + 'y\n@@\n+1\n'));
   // many blank lines inside a diff body (the trailing-newline regex retried at each one)
-  timed('codexEdit many blank lines', () => codexEdit([{ path: 'a.ts', kind: { type: 'update' }, diff: '@@\n+a' + '\n'.repeat(N) + '+b' }]));
+  assertLinearShape('codexEdit many blank lines', (x) => void codexEdit([{ path: 'a.ts', kind: { type: 'update' }, diff: x }]), (n) => '@@\n+a' + '\n'.repeat(n) + '+b', N);
   // the cut at REDACT_MAX_CHARS (1 MB) keeps a long run of blanks before the last word (the trailing-blank regex retried each one)
-  timed('finishEdit blanks before the cut', () => finishEdit([{ path: 'a.ts', kind: 'write', diff: '@@\n+' + ' '.repeat(600_000) + 'x' + ' '.repeat(600_000) }]));
+  assertLinearShape('finishEdit blanks before the cut', (x) => void finishEdit([{ path: 'a.ts', kind: 'write', diff: x }]), (n) => '@@\n+' + ' '.repeat(n / 2) + 'x' + ' '.repeat(n / 2), 1_200_000);
   // results stay right
   assert.deepStrictEqual(partialJson('{"a": [1, 2,   '), { a: [1, 2] });
   assert.deepStrictEqual(partialJson('{"a":   '), { a: null });
@@ -375,14 +405,10 @@ const TOKEN = 'ghp_abcdefghijklmnopqrstuvwxyz0123456789';
   // cost: 20 files of 20,000 characters, the most one update carries, with several values: linear steps only.
   // Linearity against a baseline from the same run (20 files of 5,000 characters, a quarter of the input; the diff length is what a quadratic step would punish) in CPU time, with a floor; never a bare wall-clock bound.
   const vals = [HDR, 'another-secret-value', 'third-value-xyz'];
-  const mkBig = (chars: number) => ({ files: Array.from({ length: 20 }, (_, i) => ({ path: `/w/${i}.ts`, kind: 'edit' as const, diff: '@@\n' + ('+a=1&b=2?c=3 ' + HDR + '\n').repeat(700).slice(0, chars) })) });
-  const cpuMs = (f: () => void): number => { const c = process.cpuUsage(); f(); const d = process.cpuUsage(c); return (d.user + d.system) / 1000; };
-  const small = mkBig(5000), big = mkBig(20000);
-  maskEditInfo(small, vals); // warm the regexes
-  // best (minimum) CPU time of 5 interleaved runs per size, so one GC pause or busy core cannot fail it; linear code measures 2.3-3.4x for 4x input (seen across runs, including under load), so the 5x limit keeps a margin; a quadratic step would be ~16x
-  let a = Infinity, b = Infinity;
-  for (let i = 0; i < 5; i++) { a = Math.min(a, cpuMs(() => void maskEditInfo(small, vals))); b = Math.min(b, cpuMs(() => void maskEditInfo(big, vals))); }
-  assert.ok(b < Math.max(100, a * 5), `maskEditInfo is linear (100,000 -> 400,000 characters, 4x per diff: ${a} -> ${b} ms CPU)`); // a quadratic step would be 16x
+  // the same run's shape as the baseline (spec 012 T138): 20 files of a diff each, 1/16 of the text against all of it
+  const diff = (n: number): string => '@@\n' + ('+a=1&b=2?c=3 ' + HDR + '\n').repeat(Math.ceil(n / 60)).slice(0, n);
+  const work = (x: string): void => void maskEditInfo({ files: Array.from({ length: 20 }, (_, i) => ({ path: `/w/${i}.ts`, kind: 'edit' as const, diff: x.slice(0, Math.ceil(x.length / 20)) })) }, vals);
+  assertLinearShape('maskEditInfo', work, diff);
 }
 
 console.log('edits: ok');

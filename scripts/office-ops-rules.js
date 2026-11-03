@@ -19,16 +19,13 @@ const LIMITS = {
   'animationsRunning@40': 260, // measured 250
   animatedOtherProperties: 0, // FR-180: only transform and opacity animate
   leakedPlaced: 0, // a `data-placed` mark on anything but a role or a pencil
-  staleFits: 0, // header and usage-line classes that a full fit would change, after a status filter and after Simple to Expert
+  staleFits: 0, // header and usage-line classes that a full fit would change, after a status filter and a body-class change
 };
 const MINIMUMS = {
   handPositions: 2, // T158: a compact desk's tapping hand shows at least two positions over its cycle (it is alive)
 };
 /* A row over its limit today: `{ task, max }` names the open task that fixes it and the most it may reach meanwhile. The task's PR deletes the entry. */
-const KNOWN_FAILURES = {
-  'animatedOtherProperties@15': { task: 'T158', max: 13 }, // the 13 halos animate fill-opacity; opacity would be on the compositor, but is the thing #554 turned down: needs a real-GPU look
-  'animatedOtherProperties@40': { task: 'T158', max: 40 },
-};
+const KNOWN_FAILURES = {}; // none now: the halo no longer animates (spec 001 FR-210), so the animations that animated fill-opacity (13 at 15 agents) are gone
 
 const rowOf = (key) => key.split('@')[0];
 const limitOf = (key, limits = LIMITS) => (key in limits ? limits[key] : limits[rowOf(key)]);

@@ -5,11 +5,11 @@
  *   - at start: renders, layout searches and probes (a probe is one trial office laid out into the hidden #probe, a forced layout) the page made by the time the office is drawn;
  *   - animations: the infinite ones running, how many animate a property other than transform and opacity (FR-180), and the positions a compact desk's tapping hand shows;
  *   - elements recalculated by one replaced text node (the `elementCount` of every UpdateLayoutTree on the main thread in a short contentTracing, animations
- *     off; a trace with none fails the row, so a renamed thread cannot read as 0);
+ *     off; a calibration (a new element in a desk) must show at least one event, so a renamed thread or category cannot read as 0 and pass; the text change itself may recalculate 0);
  *   - one status event of one agent, 8 times, each a real change (every sample must draw, none may search; renders, style reads of the floor and layout reads are the median): renders and searches are the app's own counters (`__durbarSimUi.ops()`), reads are offset*, client*, scroll*, getBoundingClientRect and
  *     getClientRects calls. The first proxy for renders, `getComputedStyle(#floor)`, was read twice per render and showed two where there was one;
  *   - after each of those status updates no `data-placed` mark sits on anything but a role or a pencil (a finished turn marks the desk unread and shifts keyless spans);
- *   - at 15 agents, 1280x800: after each status pill's filter and its clearing, after Simple to Expert and back, after an agent starts or stops matching a status filter (a neighbour room's width changes while its HTML does not; its header is made tight by a spacer) and after a body class changes with no room changing (the fit key), the header and usage-line fit classes equal what a
+ *   - at 15 agents, 1280x800: after each status pill's filter and its clearing, after an agent starts or stops matching a status filter (a neighbour room's width changes while its HTML does not; its header is made tight by a spacer) and after a body class changes with no room changing (the fit key), the header and usage-line fit classes equal what a
  *     full fit gives (stale fits).
  * A row over its limit today is a KNOWN_FAILURE with its open task and a ceiling.
  *
@@ -103,14 +103,20 @@ module.exports = async (ctx) => {
 
     /* one replaced text node, animations off so that only the change counts */
     await js(`(()=>{const s=document.createElement('style');s.textContent='*,*::before,*::after{animation:none!important;transition:none!important}';document.head.append(s);})()`);
-    const change = (i) => js(`(()=>{document.querySelector('#stage .desk[data-id] .name').textContent=${jsLiteral('Op ')}+${i};return document.body.offsetHeight;})()`);
-    await change(0);
-    await H.settle();
-    const counts = [];
-    for (let i = 1; i <= 4; i++) counts.push(elementsRecalculated(await trace(() => change(i))));
-    assert.ok(counts.every((c) => c > 0), `${n} agents: a replaced text node must recalculate some element; a trace with none means the trace's thread or event name changed (${counts})`);
-    rows[`elementsRecalculated@${n}`] = Math.min(...counts); // the least of 4: a render that lands inside one trace by itself (a timer) only adds, and the `:has()` cost shows in all 4
-    console.log('[ops]', n, 'agents: elements recalculated by one text change', counts.join(' '));
+    /* one text change in `text` (a text node replaced: a child-list change, which is what a render does and what `:has()` watches), then a layout read so that the style is recalculated inside the trace */
+    const measure = async (host, text, key, label) => {
+      const change = (i) => js(`(()=>{document.querySelector(${jsLiteral(text)}).textContent=${jsLiteral('Op ')}+${i};return document.body.offsetHeight;})()`);
+      await change(0);
+      await H.settle();
+      /* calibration (pre-review of #949): a new element always has its style computed, so a trace with no UpdateLayoutTree event at all means the thread or event name changed. A text change itself may recalculate 0 elements when no stylesheet rule watches it (the AI maker's \`body:has()\` rule used to), and that is a pass */
+      const probe = elementsRecalculated(await trace(() => js(`(()=>{const d=document.querySelector(${jsLiteral(host)});const s=document.createElement('i');s.className='ops-probe';d.appendChild(s);const h=document.body.offsetHeight;s.remove();return h;})()`)));
+      assert.ok(probe > 0, `${label}: a new element must recalculate some element; a trace with none means the trace's thread or event name changed (${probe})`);
+      const counts = [];
+      for (let i = 1; i <= 4; i++) counts.push(elementsRecalculated(await trace(() => change(i))));
+      rows[key] = Math.min(...counts); // the least of 4: a render that lands inside one trace by itself (a timer) only adds, and the `:has()` cost shows in all 4
+      console.log(`[ops] ${label}: elements recalculated by one text change`, counts.join(' '));
+    };
+    await measure('#stage .desk[data-id]', '#stage .desk[data-id] .name', `elementsRecalculated@${n}`, `${n} agents`);
 
     /* one status event of one agent, each a real change; every sample must be one render, no search, one style read of the floor */
     await js(INSTRUMENT);
@@ -138,7 +144,7 @@ module.exports = async (ctx) => {
     rows[`readsPerStatus@${n}`] = med(per.reads);
 
     if (n === 15) {
-      /* stale fits (T156): what an incremental fit leaves must equal a full fit, after a status filter and its clearing, and across Simple and Expert, at 1280x800 */
+      /* stale fits (T156): what an incremental fit leaves must equal a full fit, after a status filter and its clearing, at 1280x800 */
       const stale = [];
       await load(1280, 800);
       await js(INSTRUMENT);
@@ -154,8 +160,6 @@ module.exports = async (ctx) => {
         await drawn(pill(k)); await compare(`status filter ${k} on`);
         await drawn(pill(k)); await compare(`status filter ${k} cleared`);
       }
-      await drawn(`window.__durbarSimUi.setDetail('simple')`); await compare('Expert to Simple');
-      await drawn(`window.__durbarSimUi.setDetail('expert')`); await compare('Simple to Expert');
 
       /* A neighbour's width (the widthMoved guard): rooms share a line by --w. A status filter is on, so the rooms draw only the matching desks while the layout key (sized on every
          agent) does not change: when an agent starts to match, its room gains a desk and a wider --w, the layout is reused, and a neighbour whose HTML does not change gets narrower.
@@ -198,11 +202,16 @@ module.exports = async (ctx) => {
          the office is drawn again with the same rooms and the headers must be fitted to it. */
       await js(`(()=>{const s=document.createElement('style');s.id='ops-key';s.textContent='body.ops-squeeze #stage .room-name{padding-right:4000px!important}';document.head.append(s);})()`);
       await js(`window.DurbarFit()`);
-      await drawn(`document.body.classList.add('ops-squeeze');window.__durbarSimUi.setDetail('expert')`); await compare('a body class changes, no room does');
-      await drawn(`document.body.classList.remove('ops-squeeze');window.__durbarSimUi.setDetail('expert')`); await compare('the body class goes, no room changes');
+      await drawn(`document.body.classList.add('ops-squeeze');window.__durbarSimUi.paint()`); await compare('a body class changes, no room does');
+      await drawn(`document.body.classList.remove('ops-squeeze');window.__durbarSimUi.paint()`); await compare('the body class goes, no room changes');
       rows[`staleFits@${n}`] = stale.length;
       if (stale.length) console.log('[ops] stale fits after:', stale.join(', '));
     }
+
+    /* spec 102 T212: a world's arrangement has the same row and no allowance of its own: the arcade, one text change on a marquee. */
+    await H.load({ w: 1440, h: 900, index: process.env.OPS_INDEX || undefined, query: { sim: String(n), officeview: 'real', worldflags: 'retro', world: 'retro' }, ready: `!!document.querySelector('#stage .ro .ro-marquee')`, readyMs: 30000 });
+    await js(`(()=>{const s=document.createElement('style');s.textContent='*,*::before,*::after{animation:none!important;transition:none!important}';document.head.appendChild(s);})();0`);
+    await measure('#stage .ro-marquee', '#stage .ro-marquee', `elementsRecalculated@retro${n}`, `${n} agents, arcade`);
   }
   const { failed, notes } = judge(rows);
   for (const l of notes) console.log('[ops]', l);

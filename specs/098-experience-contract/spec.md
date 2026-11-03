@@ -3,15 +3,15 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Experience contract (team decision 2026-10-31, all three sides): a small registry of world moments only, three surface kinds (world moment, tool surface, outside the world), a world matrix run weekly and as a small path-filtered PR subset, one rolling world-coverage issue, a block contract for world packs; enforced by tests, not rule text
-note: spec, plan, tasks drafted; registry seeded (26 world moments, 9 missing per world); nothing built
-status: draft
+note: registry seeded (26 world moments, 9 missing per world); world matrix built, every moment still planned, so it checks no cell yet
+status: building
 -->
 
 **Feature Branch**: `098-experience-contract` (spec); code branches `098-pN-slug`, one per phase
 
 **Created**: 2026-10-31
 
-**Status**: Draft (2026-10-31). Spec, plan, tasks and the seeded registry only; no check, driver or workflow is built.
+**Status**: Building (2026-11-01). Spec, plan, tasks and the seeded registry; the world matrix (`scripts/world-matrix.js`, `world-matrix.yml`) is built; every moment is still `planned`, so it checks no cell until T011; no other check or driver is built.
 
 **Input**: Owner question (Vikram, Telegram, 2026-10-31 09:56 UTC): floors and the lift, moving between floors, the chat window, the question and answer experience, and "the full app adapts" in Real office (spec 097). Vikram's agent answered it with an experience inventory and mockups in three worlds (outside the repo, described under *Evidence*). How to keep that inventory honest as the app grows was then agreed in the team chat.
 
@@ -35,7 +35,7 @@ The contract is used by spec 097 (Real office and its worlds) and by every later
 
 ## Context: what exists today
 
-- **Theme tokens** (spec 070): typed tokens for colours, fonts, weight, radii and shadows; sizes, spacing and density are not themeable (070 D2); contrast per pair (070 D4). `test:theme-tokens` (070 FR-040) counts colour literals and `font-family` declarations per renderer file against a ratchet (`scripts/fixtures/theme-literals.json`) that only goes down. It reads `styles.css`, `screens.css`, `themes.css`, `app.js`, `screens.js`, `scenekits.js` and `index.html`; it does not read the Real office CSS of spec 097 P1, and it counts no size literals.
+- **Theme tokens** (spec 070): typed tokens for colours, fonts, weight, radii and shadows; sizes, spacing and density are not themeable (070 D2; a pack sets no size, and 097 FR-233's fixed mat, binding and bezel, amended 2026-11-02, are app-owned); contrast per pair (070 D4). `test:theme-tokens` (070 FR-040) counts colour literals and `font-family` declarations per renderer file against a ratchet (`scripts/fixtures/theme-literals.json`) that only goes down. It reads `styles.css`, `screens.css`, `themes.css`, `app.js`, `screens.js`, `scenekits.js` and `index.html`; it does not read the Real office CSS of spec 097 P1, and it counts no size literals.
 - **Real office** (spec 097): one photoreal world in P1 (the *Office people*, on branch `097-real-office-p1`, not merged); crews appear in their own art and world (097 Q6, answered 2026-10-31). The 097 worlds delta (branch `097-real-office-worlds`) adds worlds, the lift as the world's shaft, chat and questions in the world, and requires this spec's registry for shipping a world.
 - **Screenshots**: `shots:docs` and `DOC_SHOTS` (`scripts/shots-docs.js`) keep the pictures linked from the README, the site and specs, committed under `docs/screenshots/`; the site has an 8 MB budget (spec 050 FR-012). Drivers run through `scripts/ui-suite.js` with the simulator.
 - **Scheduled workflows**: `nightly-watch.yml` opens or updates an issue when a listed scheduled workflow fails; `weekly-retro.yml` with `scripts/weekly-retro.js` finds its one issue by title and author `github-actions[bot]` before creating one.
@@ -74,7 +74,7 @@ A maintainer adds a world (for example the cave). The registry lists each world 
 
 ### User Story 2 - Tool surfaces follow the world without drawing (Priority: P1)
 
-Settings, dialogs, lists, the composer and every other tool surface take the world's tokens (colours, fonts, radii, shadows) and nothing else: no art behind text, no size changes.
+Settings, dialogs, lists, the composer and every other tool surface take the world's tokens (colours, fonts, radii, shadows) and nothing else: no art behind text, no size changes (amended 2026-11-02 by 097 FR-231 and FR-233: a built-in world sets radii and no fonts, and only the app's fixed mat, binding and bezel change a size).
 
 **Independent Test**: the token lint (extended `test:theme-tokens`) and the tool-surface driver.
 
@@ -179,7 +179,7 @@ A spec author fills the template's *Experience* line: "tool surface", or "world 
 - **FR-053** **Shared files.** Changes to shared renderer files (`app.js`, `styles.css`, `screens.js`, ...) do not start the PR subset (D5); the weekly run covers them.
 - **FR-054** **Artifacts only.** Both runs upload `out/world-matrix/` as a workflow artifact (14 days); nothing is committed, the matrix is not in `DOC_SHOTS`, `NO_DRIVER` or `shots:docs`, and `docs/screenshots/` and the site budget (spec 050 FR-012) are untouched. `test:surfaces` asserts that no matrix or tool-surface driver is named in `scripts/shots-docs.js` and that `out/` is git-ignored.
 - **FR-055** **Red means owned.** `world-matrix.yml` is added to the workflow list of `nightly-watch.yml`, so a failed scheduled run opens or updates its issue (spec 021 FR-063); the owner of that issue fixes or pauses within 24 h.
-- **FR-056** **A cell's check fails the run only for `built` and `fallback-flat` cells**; `designed` and `missing` cells are shot and reported, not failed (they show the flat rendering by D3).
+- **FR-056** **A cell's check fails the run only for `built` and `fallback-flat` cells**; `designed` and `missing` cells are shot and reported, not failed (they show the flat rendering by D3). A root that is on the page but hidden (`display:none`, also from a parent, or `visibility:hidden`) counts as not found, so it always fails.
 
 #### Coverage issue
 
@@ -240,6 +240,7 @@ A spec author fills the template's *Experience* line: "tool surface", or "world 
 
 ## Changes
 
+- 2026-11-01 (sweep of the build): **FR-056**: a moment's root that is on the page but hidden (`display:none`, also from a parent, or `visibility:hidden`) counts as not found, so it always fails: with nothing visible to check it passed as clean. **FR-063**: the weekly job gets `issues: write` with T043, the step that uses it, and not before. CI runs the page checks' selftest in both jobs.
 - **2026-11-01** (owner request, Vikram): `docs/world-design.md` writes down the visual principles learnt from reviewing real world mockups. It is guidance for making worlds: this spec and spec 102 stay the contract. `read:` no code changes.
 
 ### 2026-10-31: the weekly performance record (spec 097 FR-187)
@@ -249,3 +250,10 @@ A spec author fills the template's *Experience* line: "tool surface", or "world 
 ### 2026-10-31: strict release gate (owner decision, Q1)
 
 Vikram (Telegram DM, 2026-10-31 10:27 UTC): "design all 9, I don't want partly done ui". Real office ships only when every registered world moment is `designed` in each world that ships; `fallback-flat` is not allowed for a shipping world. FR-024, D3, US1, SC-001, Q1 and tasks T010, T032, T033 updated. No code yet.
+
+### 2026-11-01: a monitor part in `desk-screen`, and a named arrangement in `world.json` (owner decisions; spec 102 FR-220..FR-236)
+
+Owner's decisions, Vikram, 2026-11-01, relayed by his coordinating agent. Stacked on #937. Numbers taken: FR-081, FR-082, T147, T148.
+
+- **FR-081** **Amends FR-030, FR-031.** `desk-screen` gains an optional monitor picture with the same `screenRect` rules: app text as `textContent` on an opaque token surface, contrast from tokens, no text in art, the 097 FR-032 floor (spec 102 FR-220..FR-222). `screenRect` is then on the monitor, not the desk. The block count of FR-033 does not change. **FR-031's refusal of a layout value stands, with one exception:** `arrangement`, one id from a closed list checked by the validator (spec 102 FR-226). "Positions come from the layout engine" still holds: arrangements are engine code with tests, never a pack's positions. `room` also gains `focus`, a still picture placed by the engine (spec 102 FR-227).
+- **FR-082** **Block test.** FR-032's test covers the monitor and `arrangement` through the shared validator; a world's matrix row runs in the arrangement it names (spec 102 FR-229); a project world has no fall-back to rows at high counts (spec 102 FR-230).

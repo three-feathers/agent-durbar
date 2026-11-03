@@ -5,7 +5,7 @@
  *   SHOTS_033=docs/screenshots DURBAR_USER_DATA=$(mktemp -d) DURBAR_SIM=15 DURBAR_SIM_FREEZE=1 \
  *     DURBAR_DRIVER=$PWD/scripts/shots-033-order.js xvfb-run -a npx electron . --no-sandbox
  *
- * Real mouse and key events (sendInputEvent), at 1440x900 and 1280x800, in the Open office and with cabins; exits non-zero on a miss:
+ * Real mouse and key events (sendInputEvent), at 1440x900 and 1280x800, in the Open office; exits non-zero on a miss:
  *   - dragging a room's header onto another room swaps them; during the drag nothing in the layout moves (only transform), the press-drag-release does
  *     not open a chat; the saved order (bridge.getOrder) lists the rooms; a reload keeps the order;
  *   - dragging a desk inside a room; Escape in the middle of a drag leaves everything as it was;
@@ -64,12 +64,11 @@ module.exports = async (ctx) => {
   };
 
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
-    for (const signs of ['off', 'on']) {
-      await js(`try{localStorage.setItem('durbar.doorsigns',${jsLiteral(signs)})}catch(e){}`);
+    {
       await js(`try{sessionStorage.removeItem('durbar.simorder')}catch(e){}`);
       await H.load({ w, h, query: { simrooms: '3' }, focus: true });
       await H.clearToasts();
-      const tag = `${w} ${signs === 'off' ? 'open' : 'cabins'}`;
+      const tag = `${w} open`;
       let rs = await rooms();
       assert.ok(rs.length >= 3, `three rooms: ${rs.length}`);
       const first = rs.map((r) => r.name);
@@ -87,7 +86,7 @@ module.exports = async (ctx) => {
           during = await js(`(()=>{const l=document.querySelector('#stage .reo-lift');return {lift:!!l,tf:l&&l.style.transform,body:document.body.classList.contains('reo-dragging'),
             opened:document.body.classList.contains('panel-open')}})()`);
           during.same = (await layoutSig()) === before;
-          if (signs === 'off') await shot('order-drag', w, h); // the lifted room and the sliding neighbour, button still down
+          await shot('order-drag', w, h); // the lifted room and the sliding neighbour, button still down
         },
       });
       assert.ok(during && during.lift && during.body && /translate/.test(during.tf), `a lifted room follows the pointer by transform: ${JSON.stringify(during)}`);
@@ -117,7 +116,6 @@ module.exports = async (ctx) => {
       assert.deepStrictEqual(await names(), first, 'Escape cancels the drag');
       assert.strictEqual(await js(`document.querySelectorAll('.reo-lift,.reo-slot').length`), 0);
 
-      if (signs === 'on') continue; // the rest once per size, in the Open office
 
       // ---- a desk inside a room: drag the first desk onto the third ----
       rs = await rooms();

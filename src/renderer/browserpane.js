@@ -322,7 +322,8 @@
     host.menu(btn,[{act:'newtab',label:'Open chat links in a new tab',sub:'A link the session already shows goes to its tab',checked:linksNewTab}],async act=>{
       if(act!=='newtab'||!bridge.browserSetLinksNewTab)return;
       const r=await bridge.browserSetLinksNewTab(!linksNewTab).catch(()=>null);
-      if(r&&r.ok&&typeof r.on==='boolean')linksNewTab=r.on;
+      if(r&&typeof r.on==='boolean')linksNewTab=r.on;
+      if(!r||!r.ok){if(host.toast)host.toast('Could not save this setting. It stays '+(linksNewTab?'on':'off')+'.',4200);} /* issue 1023: same words as the Settings rows */
       if(cur&&cur.id===id)announce(linksNewTab?'Chat links open in a new tab.':'Chat links open in the current tab.');
     });
   }

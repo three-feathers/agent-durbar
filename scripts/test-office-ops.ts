@@ -33,10 +33,10 @@ assert.strictEqual(j({ 'w@15': 13 }).notes.length, 1, 'and says so');
 assert.strictEqual(j({ 'w@15': 14 }).failed.length, 1, 'a known failure over its max fails');
 assert.strictEqual(j({ 'w@15': 3 }).failed.length, 1, 'a known failure within its limit must lose its entry');
 
-// the real tables: every limit row is sane and a mutant (the halo's 13 animations) fails today's table unless it is the named known failure
+// the real tables: every limit row is sane and a mutant (a halo that animates fill-opacity again) fails today's table
 for (const [k, v] of Object.entries(R.LIMITS)) assert.ok(Number.isInteger(v) && v >= 0, `limit ${k} is a count`);
-assert.ok(R.judge({ 'animatedOtherProperties@15': 14 }).failed.length === 1, 'one more animation of another property than the known 13 fails');
-assert.ok(R.judge({ 'animatedOtherProperties@15': 13 }).failed.length === 0, 'the 13 halos are the known failure');
+assert.ok(R.judge({ 'animatedOtherProperties@15': 1 }).failed.length === 1, 'one animation of a property other than transform and opacity fails (the halos no longer animate, so there is no known failure)');
+assert.ok(R.judge({ 'animatedOtherProperties@15': 0 }).failed.length === 0, 'none passes');
 assert.ok(R.judge({ 'searchesPerStatus@15': 1 }).failed.length === 1, 'a layout search per status change fails');
 assert.ok(R.judge({ 'elementsRecalculated@15': 1401 }).failed.length === 1, 'the :has() rule (1401 elements) fails');
 assert.ok(R.judge({ 'handPositions@15': 1 }).failed.length === 1, 'a hand that never moves fails');
