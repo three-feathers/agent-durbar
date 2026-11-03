@@ -61,15 +61,15 @@ export class SettingsStore {
     return this.s.defaultMaxAiCredits;
   }
 
-  /** `undefined`/invalid clears the default. Returns the stored value. */
+  /** `undefined`/invalid clears the default. Returns the value in force. A tighter cap (none -> a cap, or a lower one) stays in force for this run even when it cannot be saved (`unsaved`); a looser one or none is rolled back. */
   setDefaultMaxAiCredits(v: unknown): number | undefined {
     const cap = parseCap(v);
     const next: AppSettings = { ...this.s };
     if (cap === undefined) delete next.defaultMaxAiCredits;
     else next.defaultMaxAiCredits = cap;
-    this.s = next;
-    this.save();
-    return cap;
+    const tighter = cap !== undefined && (this.s.defaultMaxAiCredits === undefined || cap < this.s.defaultMaxAiCredits);
+    this.commit(next, tighter ? 'defaultMaxAiCredits' : undefined);
+    return this.s.defaultMaxAiCredits;
   }
 
   /** Spec 093 FR-006: the parent of the last folder created from + Folder, when it is a valid absolute path. */
@@ -77,12 +77,11 @@ export class SettingsStore {
     return this.s.newFolderParent;
   }
 
-  /** Spec 093 FR-006: remembered after a successful create only (the caller's rule); an invalid path is not stored. */
+  /** Spec 093 FR-006: remembered after a successful create only (the caller's rule); an invalid path is not stored. A convenience: kept for this run when it cannot be saved. */
   setNewFolderParent(v: unknown): void {
     const p = parseNewFolderParent(v);
     if (!p || p === this.s.newFolderParent) return;
-    this.s = { ...this.s, newFolderParent: p };
-    this.save();
+    this.commit({ ...this.s, newFolderParent: p }, 'newFolderParent');
   }
 
   /** Spec 080 FR-025d (Q2): the session browser's one-time note was accepted. */
@@ -90,10 +89,10 @@ export class SettingsStore {
     return this.s.browserNoteAccepted === true;
   }
 
-  /** Remembers the acceptance for this app profile; never asked again. */
-  acceptBrowserNote(): void {
-    this.s = { ...this.s, browserNoteAccepted: true };
-    this.save();
+  /** Remembers the acceptance for this app profile; never asked again. Kept for this run when it cannot be saved (else the session browser could never open on an unwritable profile); `isUnsaved('browserNoteAccepted')` says so. Returns true: it is in force. */
+  acceptBrowserNote(): boolean {
+    this.commit({ ...this.s, browserNoteAccepted: true }, 'browserNoteAccepted');
+    return true;
   }
 
   /** Spec 080 FR-031: where a chat link opens on a plain click; the session browser unless the user chose the system browser. */
@@ -107,9 +106,7 @@ export class SettingsStore {
     const next: AppSettings = { ...this.s };
     if (v === 'system') next.chatLinksIn = 'system';
     else delete next.chatLinksIn;
-    this.s = next;
-    this.save();
-    return v;
+    return this.commit(next) ? v : this.chatLinksIn;
   }
 
   /** Spec 100 FR-020: the MCP warning levels. */
@@ -121,10 +118,7 @@ export class SettingsStore {
   setMcpWarnLevels(v: unknown): { ok: boolean; levels: McpWarnLevels } {
     const levels = parseWarnLevels(v);
     if (!levels) return { ok: false, levels: this.mcpWarnLevels };
-    const before = this.s;
-    this.s = { ...this.s, mcpWarnLevels: levels };
-    if (this.save()) return { ok: true, levels };
-    this.s = before;
+    if (this.commit({ ...this.s, mcpWarnLevels: levels })) return { ok: true, levels };
     return { ok: false, levels: this.mcpWarnLevels };
   }
 
@@ -139,9 +133,7 @@ export class SettingsStore {
     const next: AppSettings = { ...this.s };
     if (v) next.chatLinksNewTab = true;
     else delete next.chatLinksNewTab;
-    this.s = next;
-    this.save();
-    return v;
+    return this.commit(next) ? v : this.chatLinksNewTab;
   }
 
   /** Serious mode (spec 034): off by default. */
@@ -155,9 +147,7 @@ export class SettingsStore {
     const next: AppSettings = { ...this.s };
     if (v) next.seriousMode = true;
     else delete next.seriousMode;
-    this.s = next;
-    this.save();
-    return v;
+    return this.commit(next) ? v : this.seriousMode;
   }
 
   /** Spec 087 FR-007c: the apps with *Always continue on this computer* stored. */
@@ -175,9 +165,8 @@ export class SettingsStore {
     const list = parseSandboxAlways([...set]);
     if (list.length) next.sandboxAlwaysContinue = list;
     else delete next.sandboxAlwaysContinue;
-    this.s = next;
-    this.save();
-    return on;
+    this.commit(next, !on ? 'sandboxAlwaysContinue' : undefined); // turning the choice off is the safe direction: in force for this run even if it cannot be saved (`isUnsaved`); turning it on is rolled back
+    return this.sandboxAlwaysContinue(app);
   }
 
   /** OS notifications when an agent needs you (spec 052 FR-059): on by default; only `false` is written. */
@@ -191,9 +180,7 @@ export class SettingsStore {
     const next: AppSettings = { ...this.s };
     if (v) delete next.notifyNeedsMe;
     else next.notifyNeedsMe = false;
-    this.s = next;
-    this.save();
-    return v;
+    return this.commit(next) ? v : this.notifyNeedsMe;
   }
 
   /** Spec 068 FR-006: what happens when a coffee break ends: `auto` (default: resume by itself when it costs nothing extra) or `ask`. */
@@ -207,9 +194,7 @@ export class SettingsStore {
     const next: AppSettings = { ...this.s };
     if (v === 'ask') next.breakResume = 'ask';
     else delete next.breakResume;
-    this.s = next;
-    this.save();
-    return v;
+    return this.commit(next) ? v : this.breakResume;
   }
 
   /** Spec 081 FR-022 (Q6 = A): the agent-app update check at start is on by default; only `false` is written. */
@@ -223,9 +208,7 @@ export class SettingsStore {
     const next: AppSettings = { ...this.s };
     if (v) delete next.checkUpdatesAtStart;
     else next.checkUpdatesAtStart = false;
-    this.s = next;
-    this.save();
-    return v;
+    return this.commit(next) ? v : this.checkUpdatesAtStart;
   }
 
   /** Spec 081 FR-016: the last announced version per agent app, a copy. */
@@ -233,13 +216,12 @@ export class SettingsStore {
     return { ...(this.s.announcedVersions ?? {}) };
   }
 
-  /** Saves one announced version (an allowed app id and a valid version; anything else changes nothing). Returns true when it was saved. */
+  /** Remembers one announced version (an allowed app id and a valid version; anything else changes nothing). Bookkeeping: kept for this run when it cannot be saved, so an update is announced once (spec 081 FR-016). Returns true when it is in force. */
   setAnnouncedVersion(app: unknown, version: unknown): boolean {
     if (typeof app !== 'string' || !(ANNOUNCE_APPS as readonly string[]).includes(app)) return false;
     const ver = parseAnnounced({ [app]: version })[app];
     if (typeof ver !== 'string') return false;
-    this.s = { ...this.s, announcedVersions: { ...(this.s.announcedVersions ?? {}), [app]: ver } };
-    this.save();
+    this.commit({ ...this.s, announcedVersions: { ...(this.s.announcedVersions ?? {}), [app]: ver } }, 'announcedVersions');
     return true;
   }
 
@@ -248,39 +230,31 @@ export class SettingsStore {
     return this.s.theme;
   }
 
-  /** Only a valid id string changes it (or clears with null/undefined/'clean-office' handled by the caller). Returns {ok, theme}. */
+  /** Only a valid id string changes it (or clears with null/undefined/'clean-office' handled by the caller). Returns {ok, theme}. The window has already shown the theme, so it is kept for this run when it cannot be saved (`ok` false says so; the window warns). */
   setTheme(v: unknown): { ok: boolean; theme?: string; characters?: CharacterChoice } {
     const id = parseThemeId(v);
     if (id !== undefined) {
       // spec 077 FR-067: the old Cheeky Crew id is never stored: the same rule as at load (Clean Office plus Cheeky)
       const m = migrateLegacyTheme({ ...this.s, theme: id });
       if (m.changed) {
-        this.s = m.settings;
-        this.save();
-        return { ok: true, theme: 'clean-office', characters: this.characters };
+        return { ok: this.commit(m.settings, 'theme'), theme: 'clean-office', characters: this.characters };
       }
     }
     if (v === null || v === undefined) {
       const next: AppSettings = { ...this.s };
       delete next.theme;
-      this.s = next;
-      this.save();
-      return { ok: true };
+      return { ok: this.commit(next, 'theme') };
     }
     if (id !== undefined && migrateRemovedTheme({ theme: id }).changed) { // spec 035 FR-018: a removed built-in is never stored: Clean Office
       const next: AppSettings = { ...this.s };
       delete next.theme;
-      this.s = next;
-      this.save();
-      return { ok: true, theme: 'clean-office' };
+      return { ok: this.commit(next, 'theme'), theme: 'clean-office' };
     }
     if (id === undefined) return { ok: false, theme: this.s.theme };
     const next: AppSettings = { ...this.s };
     if (id === 'clean-office') delete next.theme;
     else next.theme = id;
-    this.s = next;
-    this.save();
-    return { ok: true, theme: this.s.theme ?? 'clean-office' };
+    return { ok: this.commit(next, 'theme'), theme: this.s.theme ?? 'clean-office' };
   }
 
   /** Spec 077 FR-064: who sits at the desks; `theme` (the theme's own) when nothing is stored. */
@@ -292,16 +266,10 @@ export class SettingsStore {
   setCharacters(v: unknown): { ok: boolean; characters: CharacterChoice } {
     const c = parseCharacters(v);
     if (c === undefined) return { ok: false, characters: this.characters };
-    const before = this.s;
     const next: AppSettings = { ...this.s };
     if (c === 'theme') delete next.characters;
     else next.characters = c;
-    this.s = next;
-    if (!this.save()) {
-      this.s = before;
-      return { ok: false, characters: this.characters };
-    }
-    return { ok: true, characters: c };
+    return this.commit(next) ? { ok: true, characters: c } : { ok: false, characters: this.characters };
   }
 
   /** Place mapping (spec 024): MCP server name -> place id or `desk`. A copy, never the stored object. */
@@ -324,16 +292,12 @@ export class SettingsStore {
 
   /** Store a new list and map in one write. If the write fails, memory goes back to what it was and the call is refused. */
   private commitPlaces(list: CustomPlace[], map: PlaceMap): boolean {
-    const before = this.s;
     const next: AppSettings = { ...this.s };
     if (list.length) next.customPlaces = list;
     else delete next.customPlaces;
     if (Object.keys(map).length) next.placeMap = map;
     else delete next.placeMap;
-    this.s = next;
-    if (this.save()) return true;
-    this.s = before;
-    return false;
+    return this.commit(next);
   }
 
   /** Add a custom place (spec 024 FR-020). The renderer is not trusted: everything is validated by the shared rules. */
@@ -367,10 +331,38 @@ export class SettingsStore {
       const next: AppSettings = { ...this.s };
       if (Object.keys(r.map).length) next.placeMap = r.map;
       else delete next.placeMap;
-      this.s = next;
-      this.save();
+      return { ok: this.commit(next), placeMap: { ...(this.s.placeMap ?? {}) } };
     }
     return { ok: r.ok, placeMap: { ...(this.s.placeMap ?? {}) } };
+  }
+
+  /**
+   * The one way a setter stores a change (issue #1023). A file that was written makes `next` the settings. When it cannot be written
+   * there are two rules (spec 011 FR-012): the default is that memory goes back to what it was, because the window shows what is
+   * in force (switches, lists, places); a change given a `keep` key stays in memory for this run and that key is listed by
+   * `isUnsaved`: a convenience or bookkeeping value that must not stop working (the browser note, an announced version, the new-folder
+   * parent, the theme the window already shows) and a change that makes things safer (the OS-sandbox choice off, a tighter cap).
+   */
+  private commit(next: AppSettings, keep?: string): boolean {
+    const before = this.s;
+    this.s = next;
+    if (this.save()) {
+      this.kept.clear(); // the file now holds everything in memory
+      return true;
+    }
+    if (keep) this.kept.add(keep);
+    else this.s = before;
+    return false;
+  }
+
+  private readonly kept = new Set<string>();
+  /** True when this setting is in force for this run only: its change could not be written and no later save has (a later successful save writes all of memory). Tied to the setting, never store-wide. */
+  isUnsaved(key: string): boolean {
+    return this.kept.has(key);
+  }
+  /** The settings in force for this run only, for Settings to say so again when it is reopened. */
+  get unsavedKeys(): string[] {
+    return [...this.kept];
   }
 
   private save(): boolean {

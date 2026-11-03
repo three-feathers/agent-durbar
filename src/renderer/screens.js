@@ -478,10 +478,14 @@
     /* spec 044 FR-030: the top-bar Schedules button, Ctrl+Shift+S and Ctrl+K open Settings at the Schedules heading (also when Settings is open already) */
     if(cur.section==='schedules'){cur.section=null;const h=$('schH');if(h){scrollInBody(h);h.focus({preventScroll:true});atSec=true;}}
     wireMcpLevels();
+    if($('capMsg')&&Array.isArray(app.unsaved)&&app.unsaved.includes('defaultMaxAiCredits'))$('capMsg').textContent='This limit is in force for this run only: it could not be saved and may be lost when Agent Durbar restarts.'; /* told again when Settings is reopened */
     if($('capSave'))$('capSave').onclick=async()=>{
       const v=parseFloat($('capDef').value),msg=$('capMsg');
       if($('capDef').value.trim()!==''&&!(v>=30&&v<=1e6)){msg.textContent='Enter a number from 30 (the runtime minimum), or leave it empty for no cap.';return;}
-      const res=await X.bridge.setDefaultCap($('capDef').value.trim()===''?null:Math.round(v*100)/100);
+      let res=null; try{res=await X.bridge.setDefaultCap($('capDef').value.trim()===''?null:Math.round(v*100)/100);}catch(err){res=null;}
+      if(res&&res.unsaved){app.defaultMaxAiCredits=res.defaultMaxAiCredits;if(X.onSettings)X.onSettings({defaultMaxAiCredits:res.defaultMaxAiCredits});msg.textContent='Applied for this run only: the limit of '+res.defaultMaxAiCredits+' AIU could not be saved and may be lost when Agent Durbar restarts.';return;} /* a tighter limit stays in force even when it cannot be saved */
+      if(saveFailed(res,'capMsg','as it was')){$('capDef').value=app.defaultMaxAiCredits||'';return;} /* the value the window already holds, also when the call itself failed */
+      app.defaultMaxAiCredits=res.defaultMaxAiCredits;
       if(X.onSettings)X.onSettings({defaultMaxAiCredits:res&&res.defaultMaxAiCredits});
       msg.textContent=res&&res.defaultMaxAiCredits?'Saved: new sessions start with a cap of '+res.defaultMaxAiCredits+' AIU.':'Saved: new sessions start without a cap.';
     };
@@ -720,12 +724,17 @@
   }
   function wireHead(){const c=$('scrClose');if(c)c.onclick=close;}
 
+  /* issue 1023: a settings reply that is not ok means nothing was saved: the caller leaves the control at the value in force, and the row says so in its message line (the words for every row, and for Agent apps) */
+  const saveFailText=(stays)=>'Could not save this setting. It stays '+stays+'.';
+  function saveFailed(res,msgId,stays){if(res&&res.ok)return false;const m=$(msgId);if(m)m.textContent=saveFailText(stays);return true;}
+  const onOff=(el)=>el.getAttribute('aria-checked')==='true'?'on':'off';
+
   async function onChatLinksChange(e){
     if(!X.bridge.setChatLinksIn)return;
     let res=null; try{res=await X.bridge.setChatLinksIn(e.target.value==='system'?'system':'session');}catch(err){res=null;}
     const m=$('chatLinksMsg');
     if(res&&res.ok){const v=res.chatLinksIn==='system'?'system':'session';if(X.setChatLinksIn)X.setChatLinksIn(v);e.target.value=v;if(m)m.textContent=v==='system'?'Chat links open in your usual browser.':'Chat links open in the session\'s Browser tab.';}
-    else if(m)m.textContent='Could not save this.';
+    else{e.target.value=X.chatLinksIn&&X.chatLinksIn()==='system'?'system':'session';saveFailed(res,'chatLinksMsg',e.target.value==='system'?'in your usual browser':'in the session browser');}
   }
   async function onPlaceChange(e){
     const sel=e.target.closest('select[data-place-sel]'); if(!sel||!X.bridge.setPlace)return;
@@ -824,6 +833,7 @@
     if(ss&&X.bridge.setSeriousMode){
       const on=ss.getAttribute('aria-checked')!=='true';
       let res=null; try{res=await X.bridge.setSeriousMode(on);}catch(err){res=null;}
+      if(saveFailed(res,'seriousMsg',onOff(ss)))return;
       if(res&&res.ok){X.setSerious(!!res.seriousMode);ss.classList.toggle('on',!!res.seriousMode);ss.setAttribute('aria-checked',res.seriousMode?'true':'false');const m=$('seriousMsg');if(m)m.textContent=res.seriousMode?'Serious mode is on: no mood drawings.':'Serious mode is off.';}
       return;
     }
@@ -848,6 +858,7 @@
     if(bs&&X.bridge.setBreakResume){
       const want=bs.getAttribute('aria-checked')==='true'?'ask':'auto';
       let res=null; try{res=await X.bridge.setBreakResume(want);}catch(err){res=null;}
+      if(saveFailed(res,'breakMsg',onOff(bs)))return;
       if(res&&res.ok){const v=res.breakResume==='ask'?'ask':'auto';if(X.setBreakResume)X.setBreakResume(v);bs.classList.toggle('on',v==='auto');bs.setAttribute('aria-checked',v==='auto'?'true':'false');const m=$('breakMsg');if(m)m.textContent=v==='auto'?'Agents come back by themselves when it costs nothing extra.':'Agents ask you before going on after a coffee break.';}
       return;
     }
@@ -857,6 +868,7 @@
     if(ns&&X.bridge.setNotifyNeedsMe){
       const on=ns.getAttribute('aria-checked')!=='true';
       let res=null; try{res=await X.bridge.setNotifyNeedsMe(on);}catch(err){res=null;}
+      if(saveFailed(res,'notifyMsg',onOff(ns)))return;
       if(res&&res.ok){const v=!!res.notifyNeedsMe;if(X.setNotify)X.setNotify(v);ns.classList.toggle('on',v);ns.setAttribute('aria-checked',v?'true':'false');const m=$('notifyMsg');if(m)m.textContent=v?'Notifications are on.':'Notifications are off.';}
       return;
     }
@@ -1710,7 +1722,7 @@
     b.title='Settings: '+n+' agent app update'+(n===1?'':'s')+' available';
   }
 
-  window.DurbarScreens={oneShotCostLine,aiCredits,
+  window.DurbarScreens={saveFailText,oneShotCostLine,aiCredits,
     init(ctx){X=ctx;if(window.DurbarHarnesses)window.DurbarHarnesses.init({bridge:ctx.bridge,mask:ctx.mask,toast:(t)=>ctx.toast(ctx.esc(t),3600),onAccounts:(a)=>{if(ctx.setAccounts)ctx.setAccounts(a);},onBadge:setUpdBadge,onChange:(again)=>{X._hsRefresh=true;X._acctRefresh='check';if(ctx.refreshKinds)ctx.refreshKinds();if(cur&&cur.kind==='settings')paint();}});},
     folderMcp:openFolder,
     folderNotes:openNotes, /* spec 083 T034a: {key, name, render(focus), onClose()} */

@@ -445,12 +445,12 @@
     const b = e.target.closest && e.target.closest('[data-hs]'); if (!b) return false;
     const kind = b.dataset.kind, card = b.closest('.hs-card'), name = card ? card.querySelector('b').textContent : kind;
     if (b.dataset.hs === 'reveal') reveal(b);
-    else if (b.dataset.hs === 'sbxundo') { if (B.sandboxAlwaysOff) B.sandboxAlwaysOff(kind).then(() => loadSandbox()).then(() => toastLike('The OS sandbox note shows again for ' + name + '.')); }
+    else if (b.dataset.hs === 'sbxundo') { if (B.sandboxAlwaysOff) B.sandboxAlwaysOff(kind).then((r) => loadSandbox().then(() => toastLike(r && r.ok === false ? 'Could not turn this off for ' + name + '.' : r && r.saved === false ? 'The OS sandbox note shows again for ' + name + ' for this run only: it could not be saved, so after a restart Durbar may continue without the sandbox again.' : 'The OS sandbox note shows again for ' + name + '.'))); }
     else if (b.dataset.hs === 'check') onChange(true);
     else if (b.dataset.hs === 'checkall') checkNow();
     else if (b.dataset.hs === 'updcheck') checkNow(kind);
     else if (b.dataset.hs === 'cancelwait') { waitKinds.delete(kind); B.harnessRun(kind, 'update', 0, 'cancel').then(() => loadUpdates()); }
-    else if (b.dataset.hs === 'startchk') { if (B.setCheckUpdatesAtStart) B.setCheckUpdatesAtStart(!!b.checked).then((r) => { if (UPD && r) UPD.startCheck = r.checkUpdatesAtStart !== false; }); return true; }
+    else if (b.dataset.hs === 'startchk') { if (B.setCheckUpdatesAtStart) B.setCheckUpdatesAtStart(!!b.checked).catch(() => null).then((r) => { if (UPD && r && r.ok !== false) UPD.startCheck = r.checkUpdatesAtStart !== false; else { b.checked = !!(UPD && UPD.startCheck); const S = window.DurbarScreens; toastLike(S && S.saveFailText ? S.saveFailText(b.checked ? 'on' : 'off') : 'Could not save this setting.'); } }); return true; }
     else if (b.dataset.hs === 'install' || b.dataset.hs === 'update') install(kind, b.dataset.hs, name);
     else if (b.dataset.hs === 'signin') signin(kind, name);
     return true;
