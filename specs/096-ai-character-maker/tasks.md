@@ -12,14 +12,14 @@
 - [x] T002 Checked Codex image-generation fact recorded in `docs/agent-apps.md` (Codex, 2026-10-31). Test: read-through; no secret or private path.
 - [x] T003 Owner answers Q1-Q5 recorded under *Clarifications* (Vikram, 2026-10-31, "ok and go with your pick"), and posted on the PR (AGENTS.md: chat feedback goes on GitHub too). Q1b (built-in crew motion) was answered yes by Paco on 2026-10-31 (*Changes*). Test: the spec has no open question.
 
-## Phase 1: Probes (real; owner's go; about 5 images)
+## Phase 1: Probes (real; run on Linux 2026-11-02, 5 images, results in spec `## Changes`)
 
-- [ ] T010 P1: read `codex app-server generate-json-schema` (free) for image-generation items, then 1 real turn on an app-server thread with `workspace-write` in an empty temp folder. Test: `real:` the file appears in the folder and the notification shape is recorded [FR-002]
+- [x] T010 P1: read `codex app-server generate-json-schema` (free) for image-generation items, then 1 real turn on an app-server thread with `workspace-write` in an empty temp folder. Test: `real:` the file appears in the folder and the notification shape is recorded [FR-002]
 - [ ] T011 P2: do user MCP servers load in that child, and how to turn them off. Test: `read:` docs and `real:` observation in T010 [FR-002]
 - [ ] T012 P3 + P4: transparency and the 2x2 sheet, 3 descriptions, owner looks at them. Test: `real:` 3 sheets, alpha present or not, gutters measured, the owner's verdict quoted [D2, FR-024, FR-026]
 - [ ] T013 P5: reference-image turn (fallback of D2). Test: `real:` 1 image, owner's verdict [D2]
-- [ ] T014 P6: ChatGPT login vs API key in `account/read`, and the effect of a set `OPENAI_API_KEY` in the child env. Test: `read:` schema field named, or `[KNOWN GAP]` kept; result sets the `unknown`/`chatgpt`/`apikey` rule of FR-034 [FR-034; Edge cases]
-- [ ] T014a P7: does `--ephemeral` or the app-server `ephemeral: true` leave a copy under `~/.codex/generated_images/`? Test: `real:` file names before and after, no contents read; result in agent-apps and FR-035 [FR-035]
+- [x] T014 P6: ChatGPT login vs API key in `account/read`, and the effect of a set `OPENAI_API_KEY` in the child env. Test: `read:` schema field named, or `[KNOWN GAP]` kept; result sets the `unknown`/`chatgpt`/`apikey` rule of FR-034 [FR-034; Edge cases]
+- [x] T014a P7: does `--ephemeral` or the app-server `ephemeral: true` leave a copy under `~/.codex/generated_images/`? Test: `real:` file names before and after, no contents read; result in agent-apps and FR-035 [FR-035]
 - [ ] T014b P8: network off under `workspace-write` (no `network_access`) while the image call works; P2: all MCP servers off for this child. Test: `real:` exit status of a network command, no servers started [FR-002]
 - [ ] T015 Record P1-P8 in `docs/agent-apps.md` and the spec's `## Changes`; adjust D2 and FR-002 to the results. Test: `npm run specs:check`
 

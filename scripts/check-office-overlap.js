@@ -23,7 +23,7 @@
  *     a 40-character floor name (renamed through the panel) breaking a room header or the top bar; a floor that is off with agents
  *     waiting for you that does not say so on its row in the Floors panel, or that shows it anywhere else (pills, button) (FR-010, issue #122).
  *
- *   - floor screens (spec 092, `simfloors=1`, `simfloors=ground`): with two or more floors on, each floor screen (reached with PageDown) is checked like the whole office
+ *   - floor screens (spec 092, `simfloors=1`, `simfloors=ground`): with two or more floors on, each floor screen (reached with PageUp) is checked like the whole office
  *     (the same checks, floor tags on every header), with 15 agents spread over the floors and with all 15 on one floor; the lift panel (phase 2) is on
  *     screen and its width is counted; the per-floor density is compared with the same agents alone with the panel and tag hidden (FR-002, FR-008).
  *   - the All floors view (spec 092 FR-033): every floor that is on in one screen with the lift panel shown, 15 agents spread and 15 on one floor.
@@ -718,8 +718,8 @@ async function driver(ctx) {
         if (await ctx.js(`!document.getElementById('floorsPop').hidden`)) await ctx.js(`document.getElementById('floorsBtn').click()`);
         await must(`document.getElementById('floorsPop').hidden`, 'the Floors panel to close');
         await stable('after renaming the floor');
-        /* spec 092: the office shows one floor at a time: go to the floor that was renamed (Client A, the second one) with PageDown, so its long name is on screen */
-        await ctx.js(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'PageDown',bubbles:true,cancelable:true}))`);
+        /* spec 092: the office shows one floor at a time: go to the floor that was renamed (Client A, the second one) with PageUp, so its long name is on screen */
+        await ctx.js(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'PageUp',bubbles:true,cancelable:true}))`);
         try { await ctx.waitFor(`[...document.querySelectorAll('#stage .floor-tag')].some(t=>t.textContent.length===40)`, 5000); } catch (e) { /* reported below */ }
         await stable('on the renamed floor');
         const r1 = await measure(false); total++;
@@ -752,7 +752,7 @@ async function driver(ctx) {
     }
   }
   /* spec 092 FR-001, FR-002, SC-001 (phase 1, floor screens): with two or more floors on the office shows one floor at a time, so every floor screen is checked
-     like any other office: 15 agents spread over three floors, and all 15 on one floor (the other floors empty), each floor reached with PageDown, both sizes.
+     like any other office: 15 agents spread over three floors, and all 15 on one floor (the other floors empty), each floor reached with PageUp, both sizes.
      The density is chosen per floor screen, so the 15-agent rule has to hold on each of them. The single-floor cases above are unchanged (SC-006). */
   for (const [w, h] of SIZES) {
     if (!mineScreens()) continue;
@@ -777,9 +777,9 @@ async function driver(ctx) {
         const tag = `floor screen ${i + 1}/${on} ${w}x${h} ${label}`;
         if (i > 0) {
           const was = await ctx.js(`localStorage.getItem('durbar.floor')`);
-          await ctx.js(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'PageDown',bubbles:true,cancelable:true}))`);
-          try { await ctx.waitFor(`localStorage.getItem('durbar.floor')!==${jsLiteral(was)}`, 5000); } catch (e) { failed++; total++; console.log(`FAIL ${tag}: PageDown did not change the floor`); break; }
-          await stable(`${tag} after PageDown`);
+          await ctx.js(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'PageUp',bubbles:true,cancelable:true}))`);
+          try { await ctx.waitFor(`localStorage.getItem('durbar.floor')!==${jsLiteral(was)}`, 5000); } catch (e) { failed++; total++; console.log(`FAIL ${tag}: PageUp did not change the floor`); break; }
+          await stable(`${tag} after PageUp`);
         }
         const res = await measure(false);
         total++;
@@ -1110,19 +1110,7 @@ async function driver(ctx) {
         rows.push({ label: `browser tab ${w}x${h}`, d: 'chat', h: '-', rooms: '-', desks: ids.length, stageH: 0, floorH: 0, minFont: '-', problems: badB });
       }
       if (q === 'sim=15&simfreeze=1') {
-        /* Simple hides the developer details (VS Code, model chips); the header must still fit and keep + New */
-        await ctx.js(`(()=>{localStorage.setItem('durbar.detail','simple');return true})()`);
-        await load(q, w, h);
-        let badS = 0;
-        for (const id of ids) {
-          await ctx.js(`(async()=>{const d=document.querySelector(${jsLiteral(`#stage .desk[data-id="${id}"]`)});if(d)d.click();await new Promise(r=>setTimeout(r,250));return true})()`);
-          const ps = await ctx.js(`(${chatCheck.toString()})()`);
-          total++;
-          if (ps.length) { failed++; badS++; if (badS <= 3) console.log(`FAIL chat ${w}x${h} ${q} agent ${id} (Simple): ${ps.slice(0, 4).join('; ')}`); }
-          await ctx.js(`(async()=>{const b=document.getElementById('backBtn');if(b)b.click();await new Promise(r=>setTimeout(r,120));return true})()`);
-        }
         await newBtnFlow(w, h);
-        await ctx.js(`(()=>{localStorage.setItem('durbar.detail','expert');return true})()`);
         await load(q, w, h);
       }
       rows.push({ label: `chat ${w}x${h} ${q}`, d: 'chat', h: '-', rooms: '-', desks: ids.length, stageH: 0, floorH: 0, minFont: '-', problems: bad });
