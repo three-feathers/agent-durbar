@@ -1,6 +1,6 @@
 # Review checklist: first time right
 
-Run this on your own diff **before you ask for review**, as a reviewer who assumes it is wrong: read the real diff (`git diff origin/main...HEAD`). Rules: [AGENTS.md](../AGENTS.md) (*First time right*). Add a line for a new mistake (reason, one evidence link); fix or delete a wrong one. Guidance only: nothing here overrides AGENTS.md, the constitution or the safety rules. Tool pitfalls: [agent-notes.md](agent-notes.md).
+**Before asking for review**, read your real diff (`git diff origin/main...HEAD`) as a reviewer who assumes it is wrong. Rules: [AGENTS.md](../AGENTS.md) (*First time right*). Add a line for a new mistake (reason, one evidence link); fix or delete a wrong one. Guidance only: nothing here overrides AGENTS.md, the constitution or the safety rules. Tool pitfalls: [agent-notes.md](agent-notes.md).
 
 ## Where the list comes from
 
@@ -65,9 +65,9 @@ On 2026-10-23 Vikram's agent grouped the ~1,100 *Required fixes* in reviews of ~
 - [ ] **Timers use a monotonic clock; a bad value falls back to the most restrictive choice.** [#635](https://github.com/three-feathers/agent-durbar/pull/635)
 - [ ] **A tool run inside the user's folder obeys that folder's config**: run git only through `nodeGitExec`, test with a planted marker command ([agent-apps.md](agent-apps.md)). [#718](https://github.com/three-feathers/agent-durbar/pull/718), [#719](https://github.com/three-feathers/agent-durbar/issues/719)
 - [ ] **Text guards that emulate a parser** (YAML, shell) use its whitespace (`[ \t]`, not JS `\s`, which matches NBSP) and refuse non-ASCII. [#700](https://github.com/three-feathers/agent-durbar/pull/700)
-- [ ] **One limit, end to end**: every layer that accepts or keys a value (renderer, IPC, adapter) uses the same named constant; a smaller middle cap refuses loudly, never drops silently. Display-only cuts are fine. Grep the old number; test just over the smallest cap. [#693](https://github.com/three-feathers/agent-durbar/pull/693)
+- [ ] **One limit, end to end**: every layer that accepts or keys a value (renderer, IPC, adapter) uses the same named constant; a smaller middle cap refuses loudly. Display-only cuts are fine. Grep the old number; test just over the smallest cap. [#693](https://github.com/three-feathers/agent-durbar/pull/693)
 - [ ] **Unusable input never gets a permissive default**: unreadable IPC input is refused with a reason; a security decision on a bad value fails closed; untrusted files are still parsed tolerantly (constitution III). [#693](https://github.com/three-feathers/agent-durbar/pull/693)
-- [ ] **Outside and Dependabot PRs: a human decides** (FR-062) on lockfile changes (new packages, `resolved`, `integrity`) and binaries; a new dependency only when a spec or plan names it. Never widen `test:supplychain`'s allow-list without an owner decision.
+- [ ] **Outside and Dependabot PRs: a human decides** (FR-062) on lockfile changes (new packages, `resolved`, `integrity`) and binaries; new dependencies only as a spec or plan names them; `test:supplychain`'s allow-list widens only by owner decision. Agent-runtime SDK bumps need a free `real:` MCP sign-in probe (#1084).
 
 ## Tests
 
