@@ -8,7 +8,7 @@
  * encoder window (spec 096 FR-022, built later). Unknown by this file: whether a picture is good, or shows something it should not (FR-135).
  */
 import { checkUserManifest, USER_THEME_LIMITS } from './themes';
-import { themeIssues, isBlocking, toHex, CONTRAST_PAIRS, UI_PAIRS } from './themegen';
+import { themeIssues, CONTRAST_PAIRS, UI_PAIRS } from './themegen';
 import { TYPED_TOKENS, typedValue } from './themetokens';
 import { THEME_ID_RE } from './credits';
 import { ALLOWED_CHUNKS, webpInfo } from './webpcheck';
@@ -193,7 +193,24 @@ function hueSat(hex: string): { h: number; s: number } {
 }
 const inBand = (h: number, [lo, hi]: [number, number]): boolean => (lo <= hi ? h >= lo && h <= hi : h >= lo || h <= hi);
 
-/** `#rrggbb` and the alpha byte of a colour in hex or rgb() form (via themegen's `toHex`); anything else (hsl, `#rgba`, a word) is undefined. */
+// `toHex` and `isBlocking` came from the AI theme maker's half of themegen.ts; spec 040 FR-031 retired that half, and the world validator is now their only user.
+const HEX_COLOUR = /^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
+/** A colour as lower-case hex: hex as is, rgb()/rgba() converted (alpha kept), `transparent` as `#00000000`; anything else undefined. */
+function toHex(v: string): string | undefined {
+  if (HEX_COLOUR.test(v)) return v.toLowerCase();
+  if (/^transparent$/i.test(v)) return '#00000000';
+  const m = /^rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*(?:,\s*(0|1|0?\.\d+)\s*)?\)$/i.exec(v)
+    ?? /^rgba?\(\s*(\d{1,3})\s+(\d{1,3})\s+(\d{1,3})\s*(?:\/\s*(0|1|0?\.\d+)\s*)?\)$/i.exec(v);
+  if (!m) return undefined;
+  const ch = [m[1], m[2], m[3]].map(Number);
+  if (ch.some((x) => x > 255)) return undefined;
+  const a = m[4] !== undefined ? Math.round(Number(m[4]) * 255) : undefined;
+  return '#' + [...ch, ...(a !== undefined && a < 255 ? [a] : [])].map((x) => x.toString(16).padStart(2, '0')).join('');
+}
+/** Issues of `themeIssues` that make a theme unusable (body, secondary or muted text you cannot read). */
+const isBlocking = (issue: string): boolean => /^--(ink|ink-2|muted) /.test(issue);
+
+/** `#rrggbb` and the alpha byte of a colour in hex or rgb() form (via `toHex`); anything else (hsl, `#rgba`, a word) is undefined. */
 function colourBytes(v: string): { hex: string; alpha: number } | undefined {
   const h = toHex(v.trim());
   if (!h) return undefined;
@@ -243,7 +260,7 @@ function readManifestInner(data: Uint8Array, present: readonly string[], opts: P
   if (data.length > MANIFEST_BYTES) return bad('world.json is over 64 KB.');
   let doc: unknown;
   let text = '';
-  try { text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(data); doc = JSON.parse(text); } catch { return bad('world.json is not valid JSON.'); }
+  try { text = new TextDecoder('utf-8', { fatal: true }).decode(data); doc = JSON.parse(text); } catch { return bad('world.json is not valid JSON.'); }
   if (hasDuplicateKeys(text)) return bad('world.json repeats a field name.');
   if (!isObj(doc)) return bad('world.json is not an object.');
   for (const k of Object.keys(doc)) {
@@ -290,7 +307,7 @@ function readManifestInner(data: Uint8Array, present: readonly string[], opts: P
     Object.assign(tokens, tc.tokens);
     if (Object.keys(tokens).length && opts.clean) {
       const issues = themeIssues(tokens, opts.clean, 'clean');
-      // the AI maker's own rule (themegen `isBlocking`): body text, secondary text and muted text that cannot be read on their backgrounds refuse the pack (FR-055, "still unreadable");
+      // the retired AI maker's own rule (`isBlocking`): body text, secondary text and muted text that cannot be read on their backgrounds refuse the pack (FR-055, "still unreadable");
       // every other pair is only reported, and the renderer's contrast repair fixes it when the world is applied
       if (issues.some(isBlocking)) return bad('Text colours in world.json cannot be read on the colours behind them.');
       contrast = issues.length;

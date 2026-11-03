@@ -1,1 +1,0 @@
-- **Pack validator** (spec 102): a pack whose small desk has no `screenRect` is refused instead of skipping the screen-readability check.

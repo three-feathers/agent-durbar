@@ -137,6 +137,17 @@ for (const k of ['x', 'y', 'left', 'top', 'width', 'height', 'position', 'size',
   const g = { ...f }; g['wall.webp'] = webp(601, 200); assert.ok(!check(g, { ...opts, requireHashes: true }).ok, 'one changed picture fails its hash');
 }
 
+{ // one leading UTF-8 BOM is accepted, as Windows Notepad saves one (review of #955); the parsed manifest is the same as without it
+  const plain = goodPack()['world.json'];
+  const withBom = Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), plain]);
+  const a = readManifest(plain, Object.keys(goodPack()), opts), b = readManifest(withBom, Object.keys(goodPack()), opts);
+  assert.ok(a.ok && b.ok, 'a world.json with one BOM is read: ' + (b.ok ? '' : b.reason));
+  assert.deepStrictEqual(b, a, 'the BOM changes nothing');
+  assert.ok(check({ ...goodPack(), 'world.json': withBom }, opts).ok, 'a pack whose world.json has a BOM is valid');
+  const two = readManifest(Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), withBom]), Object.keys(goodPack()), opts);
+  assert.ok(!two.ok && /not valid JSON/.test(two.reason), 'only one BOM is stripped');
+}
+
 // readManifest on its own: the 64 KB cap holds even when called directly, and a part's declared bytes are bounded by that part's cap
 assert.ok(!readManifest(Buffer.alloc(MANIFEST_BYTES + 1, 0x20), ['world.json'], opts).ok && /over 64 KB/.test((readManifest(Buffer.alloc(MANIFEST_BYTES + 1, 0x20), ['world.json'], opts) as { reason: string }).reason), 'manifest over 64 KB');
 {

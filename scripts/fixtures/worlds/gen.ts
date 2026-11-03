@@ -67,6 +67,7 @@ export const toStored = (f: Files): Buffer => writeStoredZip(Object.keys(f).map(
 // ---- raw zips: every field of the format open to abuse ----
 export interface RawEntry {
   name: string | Buffer; data?: Buffer; method?: number; flags?: number; attr?: number; made?: number;
+  /** "version needed to extract" in the directory and in the local header (default 20 both) */ need?: number; lneed?: number;
   cextra?: Buffer; lextra?: Buffer; lname?: Buffer; lflags?: number; lmethod?: number;
   /** what the directory claims (default: the real values) */ size?: number; csize?: number; crc?: number;
   /** what the local header claims */ lsize?: number; lcsize?: number; lcrc?: number;
@@ -85,11 +86,11 @@ export function rawZip(entries: RawEntry[], o: RawOpts = {}): Buffer {
     const packed = e.packed ?? (method === 8 ? zlib.deflateRawSync(data) : data);
     const crc = e.crc ?? crc32(data), size = e.size ?? data.length, csize = e.csize ?? packed.length;
     const flags = e.flags ?? (e.descriptor ? 0x0008 : 0);
-    const lh = Buffer.concat([le32(0x04034b50), le16(20), le16(e.lflags ?? flags), le16(e.lmethod ?? method), le16(0), le16(0x21),
+    const lh = Buffer.concat([le32(0x04034b50), le16(e.lneed ?? e.need ?? 20), le16(e.lflags ?? flags), le16(e.lmethod ?? method), le16(0), le16(0x21),
       le32(e.descriptor ? (e.lcrc ?? 0) : (e.lcrc ?? crc)), le32(e.descriptor ? (e.lcsize ?? 0) : (e.lcsize ?? csize)), le32(e.descriptor ? (e.lsize ?? 0) : (e.lsize ?? size)),
       le16((e.lname || name).length), le16((e.lextra || Buffer.alloc(0)).length), e.lname || name, e.lextra || Buffer.alloc(0)]);
     const here = e.offset ?? off;
-    const ch = Buffer.concat([le32(0x02014b50), le16(e.made ?? ((3 << 8) | 20)), le16(20), le16(flags), le16(method), le16(0), le16(0x21), le32(crc), le32(csize), le32(size),
+    const ch = Buffer.concat([le32(0x02014b50), le16(e.made ?? ((3 << 8) | 20)), le16(e.need ?? 20), le16(flags), le16(method), le16(0), le16(0x21), le32(crc), le32(csize), le32(size),
       le16(name.length), le16((e.cextra || Buffer.alloc(0)).length), le16((e.ccomment || Buffer.alloc(0)).length), le16(e.diskStart ?? 0), le16(0), le32(e.attr ?? ((((name[name.length - 1] === 0x2f) ? ((0o040755 << 16) | 0x10) : (0o100644 << 16)) >>> 0))), le32(here + (o.shiftOffsets ? prefix.length : 0)), name, e.cextra || Buffer.alloc(0), e.ccomment || Buffer.alloc(0)]);
     parts.push(lh, packed);
     let len = lh.length + packed.length;
@@ -325,7 +326,10 @@ export function hostileSet(): Hostile[] {
   add('manifest-not-json', mf(Buffer.from('{not json')));
   add('manifest-array', mf(Buffer.from('[]')));
   add('manifest-null', mf(Buffer.from('null')));
-  add('manifest-bom', mf(Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), goodPack()['world.json']])));
+  // one leading UTF-8 BOM is accepted (Windows Notepad writes one); a second, a BOM after a space and a UTF-16 BOM are not
+  add('manifest-two-boms', mf(Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf, 0xef, 0xbb, 0xbf]), goodPack()['world.json']])));
+  add('manifest-bom-after-space', mf(Buffer.concat([Buffer.from([0x20, 0xef, 0xbb, 0xbf]), goodPack()['world.json']])));
+  add('manifest-utf16-bom', mf(Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(goodPack()['world.json'].toString(), 'utf16le')])));
   add('manifest-invalid-utf8', mf(Buffer.concat([Buffer.from('{"formatVersion":1,"name":"'), Buffer.from([0xff, 0xfe]), Buffer.from('"}')])));
   add('manifest-too-big', mf(Buffer.from(JSON.stringify({ ...JSON.parse(goodPack()['world.json'].toString()), description: 'x'.repeat(70000) }))));
   add('manifest-deep-nesting', mf(Buffer.from('['.repeat(30000) + ']'.repeat(30000))));
@@ -395,6 +399,19 @@ export function hostileSet(): Hostile[] {
   add('unicode-path-extra-cd', plus({ name: 'a.bin', data: Buffer.from('x'), cextra: uniExtra(0x7075) }));
   add('unicode-comment-extra-cd', plus({ name: 'a.bin', data: Buffer.from('x'), cextra: uniExtra(0x6375) }));
   add('unicode-path-extra-local', plus({ name: 'a.bin', data: Buffer.from('x'), lextra: uniExtra(0x7075) }));
+  // version needed to extract (review of #955 at 62f98c19): Python's zipfile and `unzip -t` refuse these, so must the reader
+  const needs = (need: number, lneed = need): Buffer => rawZip(rawFrom(good).map((e) => (e.name === 'wall.webp' ? { ...e, need, lneed } : e)));
+  add('version-needed-11.3', needs(113));
+  add('version-needed-20.5', needs(205));
+  add('version-needed-22.9', needs(229));
+  add('version-needed-21', needs(21));
+  add('version-needed-45-zip64', needs(45));
+  add('version-needed-host-byte', needs((3 << 8) | 20));
+  add('version-needed-host-byte-directory', needs((3 << 8) | 20, 20));
+  add('version-needed-host-byte-local', needs(20, (3 << 8) | 20));
+  add('version-needed-local-only', needs(20, 229));
+  add('version-needed-directory-only', needs(229, 20));
+  add('version-needed-headers-differ', needs(20, 10));
   // item 8: attributes
   add('reparse-bit-ntfs-host', plus({ name: 'rp', data: Buffer.alloc(0), made: (10 << 8) | 20, attr: 0x400 }));
   add('reparse-bit-unix-host', plus({ name: 'rp', data: Buffer.alloc(0), made: (3 << 8) | 20, attr: ((0o100644 << 16) | 0x400) >>> 0 }));
