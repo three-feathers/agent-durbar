@@ -2,12 +2,12 @@
  * Check for spec 005 FR-020..FR-026: file edits stream into the chat. Simulator only (`simedits=1`), no agent app, no AI credits.
  *
  *   npm run check:ui -- --only check-edits
- *   OUT=docs/screenshots  (optional) also saves the screenshots 005-edit-{expert,simple}-{1440x900,1280x800}.png
+ *   OUT=docs/screenshots  (optional) also saves the screenshots 005-edit-expert-{1440x900,1280x800}.png
  *
  * The first agent (sim-1) applies a two-file patch, creates a file that holds a token-shaped value (the page must mask it), then starts an Edit whose
- * arguments stream in and stay open. At 1440x900 and 1280x800, in Expert and in Simple: the streamed edit has its row while it
+ * arguments stream in and stay open. At 1440x900 and 1280x800: the streamed edit has its row while it
  * runs (not only at completion), with the file name, its folder relative to the agent's folder and "+N −M"; its diff shows 12 lines
- * and "Show all"; the waiting line names the action; the patch row lists both files; the token is masked by the page; Simple uses plain words and keeps the diff closed; nothing overflows and text is >= 10.5px.
+ * and "Show all"; the waiting line names the action; the patch row lists both files; the token is masked by the page; nothing overflows and text is >= 10.5px.
  * A miss prints DRIVER FAILED (Electron still exits 0), so the npm script exits non-zero unless "all checks passed" is printed.
  */
 const path = require('path');
@@ -24,8 +24,6 @@ module.exports = async (ctx) => {
       verb:(c.querySelector('.ed-verb')||{}).textContent||'',name:(c.querySelector('.ed-name')||{}).textContent||'',dir:(c.querySelector('.ed-dir')||{}).textContent||'',
       count:(c.querySelector('.ed-head>.ed-count')||{}).textContent||'',run:c.classList.contains('run'),
       diff:d?{open:d.open,summary:d.querySelector('summary').textContent,lines:d.querySelectorAll('pre>.dl').length,files:[...d.querySelectorAll('pre>.dl.file')].map(x=>x.textContent),all:(d.querySelector('.xall')||{}).textContent||'',text:d.textContent}:null}})}catch(e){return 'ERR '+e.message+' '+e.stack}})()`);
-  /* the detail level switched live, through the same click handler as the welcome screen's level buttons */
-  const level = (l) => js(`(()=>{const b=document.createElement('button');b.dataset.wlLevel=${jsLiteral(l)};document.body.appendChild(b);b.click();b.remove();return document.body.classList.contains('simple')})()`);
   const typing = () => js(`(document.querySelector('#chat .typing .t-l')||{}).textContent||''`);
   const layout = () => js(`(()=>{const ch=document.getElementById('chat'),R=ch.getBoundingClientRect(),bad=[];
       if(ch.scrollWidth>ch.clientWidth+1)bad.push('chat scrolls sideways');
@@ -97,7 +95,6 @@ module.exports = async (ctx) => {
   };
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
     await H.load({ w, h, query: Q, settle: false });
-    await level('expert');
     await js(`document.querySelector('#stage .desk[data-id="sim-1"]').click()`);
     await until(`document.querySelectorAll('#chat .chip.editchip').length>=4&&[...document.querySelectorAll('#chat .chip.editchip .ed-name')].some(n=>n.textContent==='app.js')`, 10000);
     await until(`(()=>{const c=[...document.querySelectorAll('#chat .chip.editchip')].find(c=>c.querySelector('.ed-name').textContent==='app.js');return c&&/\\+3[0-9]/.test(c.querySelector('.ed-count').textContent)})()`, 6000);
@@ -109,7 +106,7 @@ module.exports = async (ctx) => {
     assert.strictEqual(stream.verb, 'Editing');
     assert.strictEqual(stream.dir, 'src/server', `${w}: folder relative to the agent's folder (FR-020)`);
     assert.match(stream.count, /^\+3\d−2$/, `${w}: counts ${stream.count}`);
-    assert.ok(stream.diff && stream.diff.open, `${w}: Expert shows the diff open (FR-021)`);
+    assert.ok(stream.diff && stream.diff.open, `${w}: the streamed diff is open (FR-021)`);
     assert.strictEqual(stream.diff.lines, 12, `${w}: 12 lines before Show all`);
     assert.match(stream.diff.all, /^Show all \(\d+ lines\)$/);
     assert.match(await typing(), /^Editing app\.js · \d+s$/, `${w}: the waiting line names the action (FR-022)`);
@@ -132,27 +129,6 @@ module.exports = async (ctx) => {
     await until(`[...document.querySelectorAll('#chat .ediff')].pop().querySelectorAll('pre>.dl').length>12`, 3000);
     r = await rows();
     assert.ok(r.find((x) => x.name === 'app.js').diff.lines > 12 && !r.find((x) => x.name === 'app.js').diff.all, `${w}: Show all opens every line`);
-    // Simple: plain words, diff behind a toggle (FR-023)
-    await js(`window.__errs=[];window.addEventListener('error',x=>window.__errs.push(String(x.message)))`);
-    assert.strictEqual(await level('simple'), true, `${w}: Simple is on`);
-    assert.deepStrictEqual(await js(`window.__errs`), [], `${w}: no page error while switching`);
-    await settle();
-    r = await rows();
-    const s2 = r.find((x) => x.name === 'app.js');
-    assert.strictEqual(s2.verb, 'Changing', `${w}: plain verb`);
-    assert.strictEqual(s2.diff.open, false, `${w}: Simple keeps the diff closed`);
-    assert.match(s2.diff.summary, /^See what changes \(\+3\d −2\)$/);
-    assert.strictEqual(r.find((x) => x.name === '2 files').verb, 'Changed');
-    assert.strictEqual(r.find((x) => x.name === 'old-routes.js').verb, 'Not deleted', `${w}: the refused delete in plain words`);
-    assert.match(await typing(), /^Changing app\.js · \d+s$/);
-    assert.deepStrictEqual(await layout(), [], `${w}: layout in Simple`);
-    await shot(`005-edit-simple-${w}x${h}.png`);
-    // a diff the user opened stays open when the level switches back and forth
-    await js(`(()=>{const d=[...document.querySelectorAll('#chat .ediff')].pop();d.open=true;})()`);
-    await ctx.sleep(50);
-    await level('expert'); await level('simple');
-    assert.strictEqual((await rows()).find((x) => x.name === 'app.js').diff.open, true, `${w}: the user's choice is kept`);
-    await level('expert');
     if (w === 1440) await scrollPin(); // FR-021: a growing diff follows the chat only while it is pinned at the bottom (review on #463)
     if (w === 1440) await waitingLine(); // a second tool and a permission card: once (it does not depend on the size), after the pictures
   }

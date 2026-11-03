@@ -12,11 +12,23 @@
   /* spec 077 FR-072 (issue #815): more crews as more Characters values. `IDS` stays the Cheeky crew (its ids, order and saved choices never change);
      the Prehistoric crew has 6 characters, shown as `crew/art/prehistoric-<id>-<pose>.webp` so a name can never clash with Cheeky's. Every id is unique across crews. */
   const PREHISTORIC_IDS = ['youngbeard', 'braids', 'bigbeard', 'ponytail', 'inventor', 'shaman'];
-  const CREWS = { cheeky: IDS, prehistoric: PREHISTORIC_IDS };
-  const ALL_IDS = IDS.concat(PREHISTORIC_IDS);
+  /* spec 077 FR-074 (issue #815): the Pirate crew, 6 characters, `crew/art/pirate-<id>-<pose>.webp` */
+  const PIRATE_IDS = ['captain', 'eyepatch', 'hook', 'cook', 'privateer', 'cabinboy'];
+  /* spec 077 FR-075 (issue #815): the Monster crew, 6 characters, `crew/art/monster-<id>-<pose>.webp` */
+  const MONSTER_IDS = ['frankenstein', 'ghost', 'mummy', 'seacreature', 'vampire', 'werewolf'];
+  /* spec 077 FR-076 (issue #815): the Royal crew, 6 characters, `crew/art/royal-<id>-<pose>.webp` */
+  const ROYAL_IDS = ['alchemist', 'princess', 'knight', 'jester', 'queen', 'king'];
+  /* spec 077 FR-077 (issue #815): the Animal Rebels crew, 6 characters, `crew/art/rebels-<id>-<pose>.webp` */
+  const REBELS_IDS = ['bulldog', 'fox', 'owl', 'panda', 'punkcat', 'raccoon'];
+  const CREWS = { cheeky: IDS, prehistoric: PREHISTORIC_IDS, pirate: PIRATE_IDS, monster: MONSTER_IDS, royal: ROYAL_IDS, rebels: REBELS_IDS };
+  const ALL_IDS = Object.values(CREWS).flat();
+  /* the crew each character belongs to, from CREWS alone (ids are unique across crews), so a new crew is one CREWS entry: Cheeky keeps its old
+     unprefixed file names and store key, every later crew uses `crew/art/<crew>-<id>-<pose>.webp` and `durbar.crew.<crew>` */
+  const CREW_OF = new Map(Object.entries(CREWS).flatMap(([c, ids]) => ids.map((id) => [id, c])));
+  const LEGACY_CREW = 'cheeky';
   /* the characters of a Characters value (an unknown value or the theme's own: the Cheeky crew, as before) and the key the choice is stored under */
   const idsFor = (choice) => has(CREWS, choice) ? CREWS[choice] : IDS;
-  const storeKey = (choice) => choice === 'prehistoric' ? 'durbar.crew.prehistoric' : 'durbar.crew';
+  const storeKey = (choice) => has(CREWS, choice) && choice !== LEGACY_CREW ? 'durbar.crew.' + choice : 'durbar.crew';
   const MAX_ENTRIES = 500, MAX_ID = 200;
   /* the portraits (spec 077 FR-050..FR-055, FR-059, FR-060): three poses per character, `crew/art/<id>-<pose>.webp`, 352x352 and square, drawn
      in a fixed square box of the 200x124 stage: 88x88 units at x 24, y 22 (twice the first build's, owner 2026-10-23). Its right edge is the
@@ -51,6 +63,34 @@
     ponytail: { working: [200, 160], waiting: [210, 160], resting: [216, 160] },
     inventor: { working: [195, 170], waiting: [185, 170], resting: [205, 170] },
     shaman: { working: [198, 160], waiting: [190, 160], resting: [211, 160] },
+    /* Pirate (FR-074): read the same way, from a contact sheet of the three poses with a 50 px grid */
+    captain: { working: [192, 160], waiting: [185, 155], resting: [172, 160] },
+    eyepatch: { working: [210, 160], waiting: [183, 155], resting: [196, 160] },
+    hook: { working: [190, 140], waiting: [170, 135], resting: [180, 140] },
+    cook: { working: [185, 150], waiting: [192, 150], resting: [181, 150] },
+    privateer: { working: [230, 150], waiting: [208, 150], resting: [223, 150] },
+    cabinboy: { working: [202, 150], waiting: [188, 150], resting: [170, 150] },
+    /* Monster (FR-075): read the same way, from a contact sheet of the three poses with a 50 px grid */
+    frankenstein: { working: [210, 145], waiting: [180, 140], resting: [178, 145] },
+    ghost: { working: [195, 175], waiting: [190, 170], resting: [180, 175] },
+    mummy: { working: [190, 170], waiting: [170, 175], resting: [180, 180] },
+    seacreature: { working: [205, 160], waiting: [178, 150], resting: [168, 160] },
+    vampire: { working: [205, 160], waiting: [175, 150], resting: [180, 155] },
+    werewolf: { working: [210, 160], waiting: [190, 150], resting: [186, 150] },
+    /* Royal (FR-076): read the same way, from a contact sheet of the three poses with a 50 px grid */
+    alchemist: { working: [205, 150], waiting: [197, 150], resting: [200, 152] },
+    princess: { working: [210, 160], waiting: [202, 160], resting: [195, 150] },
+    knight: { working: [200, 160], waiting: [200, 158], resting: [194, 152] },
+    jester: { working: [210, 172], waiting: [197, 168], resting: [200, 155] },
+    queen: { working: [210, 172], waiting: [202, 170], resting: [198, 163] },
+    king: { working: [200, 163], waiting: [197, 162], resting: [199, 148] },
+    /* Animal Rebels (FR-077): read the same way, from a contact sheet of the three poses with a 50 px grid */
+    bulldog: { working: [195, 150], waiting: [190, 150], resting: [185, 150] },
+    fox: { working: [190, 165], waiting: [205, 165], resting: [205, 170] },
+    owl: { working: [190, 150], waiting: [215, 150], resting: [192, 150] },
+    panda: { working: [200, 150], waiting: [198, 150], resting: [185, 150] },
+    punkcat: { working: [185, 150], waiting: [208, 150], resting: [195, 155] },
+    raccoon: { working: [190, 155], waiting: [208, 150], resting: [185, 155] },
   };
   const k = BOX.w / PIC;
   /* a face box or the avatar's crop, in stage units: [x, y, w, h]; null for an unknown picture */
@@ -68,7 +108,7 @@
   }
   /* the pose for a status: working and thinking type, waiting and error need the person, the rest rests */
   const poseFor = (st) => (st === 'working' || st === 'thinking' || st === 'avatar') ? 'working' : (st === 'waiting' || st === 'error') ? 'waiting' : 'resting';
-  const file = (id, pose) => 'crew/art/' + (PREHISTORIC_IDS.includes(id) ? 'prehistoric-' : '') + id + '-' + pose + '.webp';
+  const file = (id, pose) => { const c = CREW_OF.get(id); return 'crew/art/' + (c && c !== LEGACY_CREW ? c + '-' : '') + id + '-' + pose + '.webp'; };
   const files = (ids) => (ids || IDS).reduce((a, id) => a.concat(POSES.map((p) => file(id, p))), []);
   /* FR-055: a character can be drawn when it is known and none of its pictures failed to load (`bad`: a Set of character ids) */
   const usable = (id, bad) => typeof id === 'string' && ALL_IDS.includes(id) && !(bad && bad.has && bad.has(id));
@@ -133,5 +173,39 @@
     return out;
   }
 
-  return { CREWS, PREHISTORIC_IDS, ALL_IDS, idsFor, storeKey, POSES, BOX, PX_PER_UNIT, FACE, FACE_W, FACE_H, FACE_CROP, faceBox, viewBox, poseFor, file, files, usable, IDS, MAX_ENTRIES, MAX_ID, seeded, seededRand, pickCharacter, assignCrew, pruneCrew, loadCrew };
+  /* Spec 102 FR-200..FR-202 (owner's latest, replaces 097 FR-100/FR-114's "crews pick their world"): worlds and character sets are two
+     flat lists of DATA, any set in any world, each world names a default set. Add a row to add a world or a set (a Pirate crew and world
+     later change nothing else). `flag` names a switch in WORLD_FLAGS: a row whose flag is off is not offered and never chosen (owner's
+     gate, 2026-11-01: a world such as the cave stays closed until spec 097 T156..T159 and spec 001's search land). `choice` is the Characters value that
+     picks a set. A set listed here has the full Real office pose set (FR-204); Minimalist and Cheeky are not listed yet. */
+  const WORLD_FLAGS = { cave: false, retro: false };
+  const WORLDS = [
+    { id: 'photo', name: 'Photo office', defaultSet: 'office' },
+    { id: 'cave', name: 'Prehistoric cave', defaultSet: 'prehistoric', flag: 'cave' },
+    { id: 'retro', name: 'Retro arcade', defaultSet: 'retro', flag: 'retro' },
+  ];
+  const REAL_SETS = [
+    { id: 'office', name: 'Office people', choice: '' },
+    { id: 'prehistoric', name: 'Prehistoric', choice: 'prehistoric', flag: 'cave' },
+    { id: 'retro', name: 'Retro pixel', choice: 'retro', flag: 'retro' },
+  ];
+  /* the Characters choices that name a crew (Minimalist has none), from CREWS: a new crew gets its note by construction */
+  const crewName = (c) => (c === 'minimalist' || has(CREWS, c)) ? c[0].toUpperCase() + c.slice(1) : '';
+  const on = (row, flags) => !row.flag || !!(flags || WORLD_FLAGS)[row.flag];
+  const rowOf = (list, id) => list.find((r) => r.id === id) || null;
+  /* the worlds offered now (Photo office first, always) */
+  function offeredWorlds(flags) { return WORLDS.filter((w) => on(w, flags)); }
+  /* FR-114: a stored value that is not an offered world id is the first world */
+  function parseWorld(v, flags) { const w = offeredWorlds(flags).find((x) => x.id === String(v)); return w ? w.id : WORLDS[0].id; }
+  /* FR-202: an explicit choice that has full poses and is on, else the world's default set, else Office people. `note` says why a
+     choice could not be drawn (the choice is kept). */
+  function peopleFor(world, choice, flags) {
+    const w = rowOf(WORLDS, parseWorld(world, flags)), c = String(choice || '');
+    const byChoice = c && c !== 'theme' ? REAL_SETS.find((s) => s.choice === c && on(s, flags)) : null;
+    if (byChoice) return { world: w.id, set: byChoice.id, setName: byChoice.name, note: '' };
+    const d = rowOf(REAL_SETS, w.defaultSet);
+    const def = d && on(d, flags) ? d : REAL_SETS[0];
+    return { world: w.id, set: def.id, setName: def.name, note: crewName(c) ? `Real office shows ${def.name} until ${crewName(c)} has Real office poses.` : '' };
+  }
+  return { WORLD_FLAGS, WORLDS, REAL_SETS, offeredWorlds, parseWorld, peopleFor, CREWS, PREHISTORIC_IDS, PIRATE_IDS, MONSTER_IDS, ROYAL_IDS, REBELS_IDS, ALL_IDS, idsFor, storeKey, POSES, BOX, PX_PER_UNIT, FACE, FACE_W, FACE_H, FACE_CROP, faceBox, viewBox, poseFor, file, files, usable, IDS, MAX_ENTRIES, MAX_ID, seeded, seededRand, pickCharacter, assignCrew, pruneCrew, loadCrew };
 })());

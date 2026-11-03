@@ -11,6 +11,8 @@
   let usage=null; /* last all-time view {doc,labels,error} from main */
   const $=id=>document.getElementById(id);
   const esc=s=>X.esc(s);
+  /* spec 097 FR-113: while Real office is shown, its world's colours paint the chrome, so a theme picked in Settings shows in the flat office */
+  const worldWords=()=>{const T=window.THEME,w=T&&T.world?T.world():null;return w?`Real office uses the colours of its world (${T.worldName(w)}); the theme you pick here shows in the flat office.`:'';};
   const root=()=>$('screen');
   const fmt=n=>S.fmtTokens(n);
   const cap=(s,n)=>{s=String(s==null?'':s);return s.length>n?s.slice(0,n-1)+'…':s;};
@@ -38,8 +40,10 @@
   const isOpen=()=>!!cur;
   function paint(focus){
     if(!cur)return;
-    if(cur.kind==='tools')paintTools(focus);else if(cur.kind==='folder')paintFolder(focus);else if(cur.kind==='notes')paintNotes(focus);else paintSettings(focus);
+    let done;
+    if(cur.kind==='tools')paintTools(focus);else if(cur.kind==='folder')paintFolder(focus);else if(cur.kind==='notes')paintNotes(focus);else done=paintSettings(focus);
     if(cur.kind!=='settings'&&window.DurbarHarnesses&&window.DurbarHarnesses.shown)window.DurbarHarnesses.shown(false);
+    return done; /* a promise for Settings (async): a caller may wait for the new page */
   }
   /* modal: body is an element or html; buttons [{label,value,cls}]; resolves value (or null when dismissed). `validate(root)` may return an error text (keeps it open and shows it), `true` (keeps it open; the caller already showed the error) or a promise of either. */
   function dialog({title,html,buttons,wide,size,cls,validate,onOpen}){
@@ -117,6 +121,7 @@
   const liveBusy=new Set(); /* `<server>\0<chat>`: a Restart under way; `\0<chat>`: a Restart session under way */
   let liveSeen=new Map(); /* server -> the summary last shown (state changes are announced, FR-083) */
   const liveMore=new Set(); /* `<server>\0<chat>` whose More (Restart behind a needs-sign-in row) is open */
+  let orgSeq=0;
   let liveSeq=0; /* review on PR 609: each load has a number; a reply of an older load that ends later is dropped */
   let liveStale=false; /* an event came while the list was hidden (Advanced collapsed): reload when it opens */
   function onLiveToggle(e){const d=e.target;if(!d||!d.matches||!d.matches('details.lv-more'))return;if(d.open)liveMore.add(d.dataset.lvk);else liveMore.delete(d.dataset.lvk);}
@@ -242,6 +247,29 @@
       void agentMcp(m.a,m.o);
     }
   }
+  /* ---------------- spec 100 FR-012, FR-020: Settings > MCP servers: the warning levels and the last figures (never measured: nothing; Durbar starts no server for it) ---------------- */
+  let mcpCosts=null;
+  function mcpCostSection(){
+    if(!X.bridge.setMcpWarnLevels||!X.mcpLevels)return '';
+    const L=X.mcpLevels(), mc=window.exports||{};
+    const per={};for(const [app,m] of Object.entries(mcpCosts||{}))for(const [n,e] of Object.entries(m||{}))(Object.prototype.hasOwnProperty.call(per,n)?per[n]:(per[n]={}))[app]=e;
+    const now=Date.now(), clock=at=>mc.costWhen(at,now); /* FR-012: a month-old figure does not read as today's */
+    const rows=Object.keys(per).sort((a,b)=>a.localeCompare(b)).map(n=>{const t=mc.costLine(per[n],clock);return t?`<li><b>${esc(n)}</b> <span>${esc(t)}</span></li>`:'';}).join('');
+    return `<h4 class="scr-sub" id="mcpWarnH">Tool definitions in the context window</h4>
+        <div class="scr-tools mcp-levels"><label class="capf">Warn when MCP tool definitions take more than <input id="mcpWarnPct" type="number" min="5" max="90" step="1" value="${L.warn}"> % of a session's window</label><label class="capf">strongly above <input id="mcpStrongPct" type="number" min="5" max="90" step="1" value="${L.strong}"> %</label><label class="mcp-off"><input id="mcpWarnOff" type="checkbox"${L.off?' checked':''}> Off</label><button class="btn" type="button" id="mcpWarnSave">Save</button><span class="scr-note small" id="mcpWarnMsg" role="status"></span></div>
+        <p class="scr-note small">The warning never changes anything by itself.</p>
+        ${rows?`<ul class="mcp-costs" id="mcpCosts" aria-label="Last measured size of each server's tool definitions">${rows}</ul>`:''}`;
+  }
+  function wireMcpLevels(){
+    const save=$('mcpWarnSave');if(!save)return;
+    save.onclick=async()=>{
+      const v={warn:Number($('mcpWarnPct').value),strong:Number($('mcpStrongPct').value),off:$('mcpWarnOff').checked}, msg=$('mcpWarnMsg');
+      if(!(window.exports||{}).parseWarnLevels(v)){msg.textContent='Use whole percents from 5 to 90, the first below the second.';return;}
+      let r=null;try{r=await X.bridge.setMcpWarnLevels(v);}catch(e){r=null;}
+      if(r&&r.levels)X.setMcpLevels(r.levels);
+      msg.textContent=r&&r.ok?'Saved.':'Not saved.';
+    };
+  }
   async function paintSettings(focus){
     const first=!mcp;
     if(first)root().innerHTML=head('Settings')+'<div class="scr-body"><p class="scr-note">Loading…</p></div>';
@@ -249,6 +277,7 @@
     if(!cur||cur.kind!=='settings')return;
     const r=root();
     if(!mcp){r.innerHTML=head('Settings')+'<div class="scr-body"><p class="scr-note">MCP settings are not available in this build.</p></div>';wireHead();return;}
+    if(X.bridge.mcpCosts){try{const c=await X.bridge.mcpCosts();mcpCosts=c&&c.ok?c.costs:null;}catch(e){mcpCosts=null;}}
     const amb=mcp.cli.map(cliRow).join('');
     const globSec=globalSection();
     let app={};
@@ -317,6 +346,10 @@
         <p class="scr-note">Prompts sent to a folder's agent at a time, every day or at an interval, <b>only while Agent Durbar is open</b>.</p>
         <details class="scr-more"><summary>More</summary><p class="scr-note small">A run is skipped when the agent is busy or waiting for you; the agent's own permission mode and cap apply. The Schedules button in the top bar (Ctrl+Shift+S) opens this list. A folder's ⋯ menu, its clock in the room header and the Schedules button in its chat open the same list for that folder, with a starter kit of templates.</p></details>
         <div class="sched-set" id="schedSet"></div></section>`:'';
+    /* Organization (spec 076 FR-208, issue 602): what each agent app's own organization policy blocks, read-only, painted after the paint into #orgSet */
+    const orgSec=X.bridge.orgPolicyView&&window.DurbarOrgWords?`<section class="scr-sec" aria-labelledby="orgH" id="orgSec"><h3 id="orgH" tabindex="-1">Organization</h3>
+        <p class="scr-note">What your organization's own policy for each agent app blocks. Agent Durbar only reads it, never changes it.</p>
+        <div id="orgSet"><p class="scr-note small">Reading…</p></div></section>`:'';
     /* Theme (specs 037-040): pick a built-in or imported pack; applies live, no restart. */
     const curTheme=(app.theme||'clean-office');
     let userThemes=[];
@@ -324,19 +357,23 @@
     const themes=(window.THEME?window.THEME.list():[{id:'clean-office',name:'Clean Office'}]).map((t)=>({...t,own:false})).concat(userThemes.filter((u)=>u.ok!==false).map((u)=>({id:u.id,name:u.name||u.id,author:typeof u.author==='string'?u.author:'',own:true})));
     const baseAuthor=(themes.find((t)=>t.id==='clean-office')||{}).author||'Three Feathers'; /* FR-030: a card names its author only when it is not the built-in one */
     const badThemes=userThemes.filter((u)=>u.ok===false);
+    /* spec 097 FR-113: while Real office is shown, its world's colours paint the chrome, so a theme picked here shows in the flat office */
+    const worldNote=()=>`<p class="scr-note small" id="thWorld"${worldWords()?'':' hidden'}>${esc(worldWords())}</p>`;
     const themeSec=`<section class="scr-sec" aria-labelledby="themeH"><h3 id="themeH">Theme</h3>
         <p class="scr-note">The look of the office; the choice applies at once and is kept on this computer.</p>
-        <details class="scr-more"><summary>More</summary><p class="scr-note small">Colours, fonts (system fonts only), corner radii, shadows, the people's clothes and hair, small art (desk gadgets too) and scene words (places, lobby, doors). Status, permission and credit wording never change, and the layout always fits 15 agents at 1280×800. A theme is a folder with a data-only manifest.json (no scripts, no CSS).</p></details>
-        <ul class="thlist" id="thList">${themes.map((t)=>{const by=t.author&&t.author!==baseAuthor?t.author:'';const dm=/^Durbar · (.+)$/.exec(t.name||'');return `<li class="throw"><button class="thpick" type="button" data-theme="${esc(t.id)}" aria-pressed="${t.id===curTheme}" aria-label="Theme ${esc(t.name)}${t.own?', yours':''}${by?esc(', by '+by):''}"><span class="thsw" data-theme-sw="${esc(t.id)}" aria-hidden="true"><i class="thsw-wall"></i><i class="thsw-desk"></i><i class="thsw-chair"></i><i class="thsw-ag"></i></span><span class="thtx">${dm?'<span class="thover">Durbar</span>':''}<b title="${esc(t.name)}">${esc(dm?dm[1]:t.name)}</b>${t.own?'<span class="mtag">yours</span>':''}${by?`<small>${esc(by)}</small>`:''}</span></button></li>`;}).join('')}</ul>
+        ${worldNote()}
+        <details class="scr-more"><summary>More</summary><p class="scr-note small">Colours, fonts (system fonts only), corner radii, shadows, the people's clothes and hair, small art (desk gadgets too) and scene words (places, lobby). Status, permission and credit wording never change, and the layout always fits 15 agents at 1280×800. A theme is a folder with a data-only manifest.json (no scripts, no CSS).</p></details>
+        <ul class="thlist" id="thList">${themes.map((t)=>{const by=t.author&&t.author!==baseAuthor?t.author:'';return `<li class="throw"><button class="thpick" type="button" data-theme="${esc(t.id)}" aria-pressed="${t.id===curTheme}" aria-label="Theme ${esc(t.name)}${t.own?', yours':''}${by?esc(', by '+by):''}"><span class="thsw" data-theme-sw="${esc(t.id)}" aria-hidden="true"><i class="thsw-wall"></i><i class="thsw-desk"></i><i class="thsw-chair"></i><i class="thsw-ag"></i></span><span class="thtx"><b title="${esc(t.name)}">${esc(t.name)}</b>${t.own?'<span class="mtag">yours</span>':''}${by?`<small>${esc(by)}</small>`:''}</span></button></li>`;}).join('')}</ul>
         ${themeFallbackNote(themes)}
         ${badThemes.length?`<p class="scr-note warn" role="status">${badThemes.length} theme folder${badThemes.length>1?'s were':' was'} ignored: ${esc(badThemes.map((b)=>b.id+': '+(b.error||'invalid')).join('; '))}</p>`:''}
-        <div class="scr-tools">${X.bridge.generateTheme?'<button class="btn" type="button" id="thAi">Make a theme with AI…</button>':''}<button class="btn" type="button" id="thImport">Import a theme…</button><button class="btn" type="button" id="thExport" title="Copy the active theme's folder (one of your own themes) to a folder you pick">Export the active theme…</button></div></section>`;
+        <div class="scr-tools"><button class="btn" type="button" id="thExport" title="Copy the active theme's folder (one of your own themes) to a folder you pick">Export the active theme…</button>${userThemes.some((u)=>u.ok!==false)&&X.bridge.removeTheme?'<button class="btn" type="button" id="thRemove" title="Delete the active theme (one of your own themes) from this computer">Remove the active theme…</button>':''}</div></section>`;
     /* Characters (spec 077 FR-064, FR-068): who sits at the desks, on top of any theme; the theme picker's pattern, one figure per choice */
-    const KIT_NAMES={office:'Minimalist',corporate:'Corporate',pixel:'Pixel','court-indian':'Indian court','court-european':'European court','court-japanese':'Japanese court',crew:'Cheeky'};
+    const KIT_NAMES={office:'Minimalist',pixel:'Pixel',crew:'Cheeky'};
     /* the items are painted again after a theme pick: the theme's own figures and every preview follow the theme */
     const charItems=()=>{
-      const cur=window.THEME.characters(), own=window.THEME.themeKit(), crewN=window.DurbarCrew&&Array.isArray(window.DurbarCrew.IDS)?window.DurbarCrew.IDS.length:0; const preN=window.DurbarCrew&&Array.isArray(window.DurbarCrew.PREHISTORIC_IDS)?window.DurbarCrew.PREHISTORIC_IDS.length:0;
-      const list=[{id:'theme',name:'The theme\u2019s own',sub:(KIT_NAMES[own]||own)+' figures'},{id:'minimalist',name:'Minimalist',sub:'The calm office figure'},{id:'cheeky',name:'Cheeky',sub:crewN?crewN+' cheeky characters':'Cheeky characters'},{id:'prehistoric',name:'Prehistoric',sub:preN?preN+' cave characters':'Cave characters'}];
+      const cur=window.THEME.characters(), own=window.THEME.themeKit(), crewN=window.DurbarCrew&&Array.isArray(window.DurbarCrew.IDS)?window.DurbarCrew.IDS.length:0; const preN=window.DurbarCrew&&Array.isArray(window.DurbarCrew.PREHISTORIC_IDS)?window.DurbarCrew.PREHISTORIC_IDS.length:0,pirN=window.DurbarCrew&&Array.isArray(window.DurbarCrew.PIRATE_IDS)?window.DurbarCrew.PIRATE_IDS.length:0,monN=window.DurbarCrew&&Array.isArray(window.DurbarCrew.MONSTER_IDS)?window.DurbarCrew.MONSTER_IDS.length:0,royN=window.DurbarCrew&&Array.isArray(window.DurbarCrew.ROYAL_IDS)?window.DurbarCrew.ROYAL_IDS.length:0,rebN=window.DurbarCrew&&Array.isArray(window.DurbarCrew.REBELS_IDS)?window.DurbarCrew.REBELS_IDS.length:0;
+      const real=X.view&&X.view.get()==='real'&&X.view.world; /* FR-201: in Real office the first choice is the world's default set */
+      const list=[real?{id:'theme',name:'World\u2019s default ('+real.defaultSet()+')',sub:'People follow the world'}:{id:'theme',name:'The theme\u2019s own',sub:(KIT_NAMES[own]||own)+' figures'},{id:'minimalist',name:'Minimalist',sub:'The calm office figure'},{id:'cheeky',name:'Cheeky',sub:crewN?crewN+' cheeky characters':'Cheeky characters'},{id:'prehistoric',name:'Prehistoric',sub:preN?preN+' cave characters':'Cave characters'},{id:'pirate',name:'Pirate',sub:pirN?pirN+' pirate characters':'Pirate characters'},{id:'monster',name:'Monster',sub:monN?monN+' monster characters':'Monster characters'},{id:'royal',name:'Royal',sub:royN?royN+' royal characters':'Royal characters'},{id:'rebels',name:'Animal Rebels',sub:rebN?rebN+' animal characters':'Animal characters'}];
       return list.map((c)=>`<li class="throw"><button class="thpick" type="button" data-characters="${esc(c.id)}" aria-pressed="${c.id===cur}" aria-label="Characters ${esc(c.name)}: ${esc(c.sub)}"><span class="chsw" aria-hidden="true">${X.charPreview?X.charPreview(c.id):''}</span><span class="thtx"><b title="${esc(c.name)}">${esc(c.name)}</b><small>${esc(c.sub)}</small></span></button></li>`).join('');
     };
     const charSec=window.THEME&&window.THEME.setCharacters&&X.applyCharacters?`<section class="scr-sec" aria-labelledby="chH"><h3 id="chH">Characters</h3>
@@ -359,11 +396,9 @@
     }
     /* spec 043 FR-010, FR-019: Settings > Agent Success Profiles (custom agents): the profile files of the office's folders and yours */
     const pfSec=profilesOn()?`<section class="scr-sec" id="pfSec" aria-labelledby="pfH">${await profilesInner()}</section>`:'';
-    /* spec 052 FR-031 (#306): Simple or Expert */
-    const dl=X.detail?X.detail.get():'expert';
-    const detailSec=X.detail?`<section class="scr-sec" aria-labelledby="detH"><h3 id="detH">Detail level</h3>
-        <p class="scr-note">Expert adds tokens, models, context and paths. Permissions work the same in both.</p>
-        <div class="seg" role="group" aria-label="Detail level"><button type="button" data-detail="simple" aria-pressed="${dl==='simple'}">Simple</button><button type="button" data-detail="expert" aria-pressed="${dl!=='simple'}">Expert</button></div>${X.density?densityRow():''}${X.liveAct&&X.liveAct.usable()?liveActRow():''}${X.shutters&&X.shutters.usable()?shuttersRow():''}${X.signs&&X.signs.usable()?signsRow():''}</section>`:'';
+    const detailSec=`<section class="scr-sec" aria-labelledby="detH"><h3 id="detH">Display</h3>
+        <p class="scr-note">How the office and the windows look and behave on this computer.</p>
+        ${X.density?densityRow():''}${X.liveAct&&X.liveAct.usable()?liveActRow():''}${X.shutters&&X.shutters.usable()?shuttersRow():''}${X.view?officeRow()+worldRow():''}</section>`;
     /* spec 074 FR-013 (issue 548): the navigator shortcut, recorded here, checked for clashes, kept for this window */
     const keySec=X.navKey?`<section class="scr-sec" aria-labelledby="keyH"><h3 id="keyH">Keyboard</h3>
         <p class="scr-note">Go to (the navigator) opens from anywhere: a floor, a folder, an agent, or a chat by its number (C and the number).</p>
@@ -377,7 +412,7 @@
         <li>It does not see your bill; costs are estimates.</li>
         <li>It sends nothing to any server of its own.</li>
         <li>Rooms you hide or switch off still run and cost money.</li></ul></section>`;
-    r.innerHTML=head('Settings')+`<div class="scr-body">${hsSec}${pfSec}${detailSec}${keySec}${notSec}${themeSec}${charSec}${capSec}${moodSec}${breakSec}${linksSec}${notifySec}${schedSec}${floorsSec}${placesSec}
+    r.innerHTML=head('Settings')+`<div class="scr-body">${hsSec}${pfSec}${detailSec}${keySec}${notSec}${themeSec}${charSec}${capSec}${moodSec}${breakSec}${linksSec}${notifySec}${schedSec}${floorsSec}${orgSec}${placesSec}
       <details class="scr-adv" id="advMcp"${advOpen?' open':''}><summary><h3 class="scr-adv-h">Advanced: MCP servers (extra tools for agents)</h3><span class="mtag warn" id="advMcpAtt"${live&&live.agg.attention?'':' hidden'}>${esc(attText(live?live.agg.attention:0))}</span></summary>
       <section class="scr-sec" aria-labelledby="mcpH"><h3 id="mcpH" tabindex="-1">MCP servers</h3>
         ${liveSection()}
@@ -385,6 +420,7 @@
         <details class="scr-more"><summary>More</summary><p class="scr-note small">There is nothing to configure or import here. Each agent can switch single servers off from its own header (MCP button). Claude Code and Codex read their own MCP settings; each agent's <b>MCP</b> item (in its chat's More menu) shows what it uses.</p></details>
         <p class="scr-warn" role="note"><b>MCP servers run local commands with your user rights.</b> The Copilot runtime starts the servers of your CLI list in every session, exactly as the CLI does. Read-only MCP tools can run without asking even in Read-only mode.</p>
         ${fileNote}
+        ${mcpCostSection()}
         <h4 class="scr-sub">From the Copilot CLI list <small>all agents</small></h4>
         <ul class="srvs" id="ambList">${amb}</ul>
         <p class="scr-note small">${glob&&glob.ok?'<b>Remove…</b> edits':'You cannot edit these here: change'} <code>${esc(f.label)}</code>${glob&&glob.ok?' after you confirm, with a backup next to it.':' with the Copilot CLI or an editor.'} The switch only controls whether <b>new</b> sessions started by this app start a server; a running session keeps its servers until it ends, or until you switch one in that agent's MCP menu.</p>
@@ -396,6 +432,16 @@
       </section></details>${aboutSec}</div>`;
     if(window.DurbarHarnesses&&window.DurbarHarnesses.shown)window.DurbarHarnesses.shown(!!hsSec); /* spec 081 FR-016: the card is the announcement while it is on screen */
     if(hsSec)window.DurbarHarnesses.loadAccounts(acctAgain); /* spec 051 FR-014: the account lines fill in after the paint (Codex takes about 2 s) */
+    if(orgSec){(async()=>{ /* FR-208: a failed read is "unknown", never "no policy"; an empty view hides the section */
+      const seq=++orgSeq; /* as liveSeq: only the newest paint's reply counts */
+      let v=null,failed=false;try{v=await X.bridge.orgPolicyView();}catch(e){failed=true;}
+      if(seq!==orgSeq)return;
+      const box=$('orgSet');if(!box||!(cur&&cur.kind==='settings'))return;
+      const sec=window.DurbarOrgWords.sectionOf(v,failed);
+      if(!sec.failed&&!sec.rows.length){const w=$('orgSec');if(w)w.remove();return;}
+      const e=X.esc;
+      box.innerHTML=sec.failed?`<p class="scr-note warn" role="status">${e(sec.failText)}</p>`:`<ul class="orgrows">${sec.rows.map(r=>`<li class="orgrow" data-org="${e(r.id)}" data-state="${r.state}"><b>${e(r.app)}</b> <span class="mtag${r.state==='unknown'?' warn':''}">${e(r.status)}</span>${r.note?`<small>${e(r.note)}</small>`:''}${r.paths.length?`<small>From: ${r.paths.map(x=>`<code>${e(x)}</code>`).join(', ')}</small>`:''}${r.modes.length?`<ul>${r.modes.map(m=>`<li>${e(m.mode)}: ${e(m.why)}${m.advice?' (advice only)':''}</li>`).join('')}</ul>`:''}${r.noMode?`<small>${e(r.noMode)}</small>`:''}${r.counts.length?`<small>${e(r.counts.join(' · '))}</small>`:''}${r.problems.map(x=>`<small class="warn">${e(x)}</small>`).join('')}</li>`).join('')}</ul>`;
+    })();}
     if(hsSec&&window.DurbarHarnesses.loadSandbox)window.DurbarHarnesses.loadSandbox(); /* spec 087 FR-012: the OS sandbox line per app, after the paint */
     wireHead();
     /* spec 051 FR-008: entry points open Settings at Agent apps */
@@ -409,6 +455,7 @@
     if(X.sched&&$('schedSet'))X.sched.render();
     /* spec 044 FR-030: the top-bar Schedules button, Ctrl+Shift+S and Ctrl+K open Settings at the Schedules heading (also when Settings is open already) */
     if(cur.section==='schedules'){cur.section=null;const h=$('schH');if(h){scrollInBody(h);h.focus({preventScroll:true});atSec=true;}}
+    wireMcpLevels();
     if($('capSave'))$('capSave').onclick=async()=>{
       const v=parseFloat($('capDef').value),msg=$('capMsg');
       if($('capDef').value.trim()!==''&&!(v>=30&&v<=1e6)){msg.textContent='Enter a number from 30 (the runtime minimum), or leave it empty for no cap.';return;}
@@ -423,7 +470,7 @@
       if(v&&v.ok){X.onUsageReset(v);X.toast('Usage totals were reset.',2600);paintSettings();}
       else{const m=$('usageTotalsMsg');if(m)m.textContent='Could not reset the totals.';}
     };
-    r.onclick=onSettingsClick;
+    r.onclick=onSettingsClick;r.onkeydown=worldKeys;
     r.onchange=e=>{if(e.target&&e.target.id==='chatLinksSel')return onChatLinksChange(e);return onPlaceChange(e);};
     /* theme picker (spec 037): click applies live through app.js's applyTheme; no restart */
     /* spec 037 FR-014: each swatch shows its own theme's colours (validated colour values set through CSSOM) */
@@ -442,18 +489,12 @@
     /* spec 077 FR-068: a Characters pick applies live through app.js's applyCharacters and shows the new choice at once */
     if($('chList'))$('chList').addEventListener('click',(e)=>{
       const b=e.target.closest&&e.target.closest('[data-characters]');if(!b||!X.applyCharacters)return;
-      X.applyCharacters(b.dataset.characters);
+      const done=X.applyCharacters(b.dataset.characters);
+      Promise.resolve(done).then(()=>{const n=$('dsR'),V=X.view;if(n&&V)n.textContent=V.note();}); /* spec 102 FR-202: the one line saying a choice has no Real office poses follows the pick */
       $('chList').querySelectorAll('[data-characters]').forEach((x)=>x.setAttribute('aria-pressed',String(x===b)));
+      /* a repaint of the list that a theme pick started earlier can land between this click and the change itself and show the old choice (check-characters on CI): once the change is applied, the buttons say what is applied */
+      Promise.resolve(done).then(()=>{const l=$('chList');if(l&&window.THEME&&window.THEME.characters){const cur=window.THEME.characters();l.querySelectorAll('[data-characters]').forEach((x)=>x.setAttribute('aria-pressed',String(x.dataset.characters===cur)));}});
     });
-    if($('thImport'))$('thImport').onclick=async()=>{
-      if(!X.bridge.importTheme)return;
-      const res=await X.bridge.importTheme().catch(()=>null);
-      if(!res||!res.ok){X.toast(esc(res&&res.error||'The theme folder could not be imported (cancelled or not a valid pack).'),4200);return;}
-      X.toast('Theme <b>'+esc(res.name||res.id)+'</b> imported.',3200);
-      if(X.applyTheme)X.applyTheme(res.id);
-      paintSettings();
-    };
-    if($('thAi'))$('thAi').onclick=()=>aiTheme(curTheme);
     if($('thExport'))$('thExport').onclick=async()=>{
       if(!X.bridge.exportTheme)return;
       /* spec 040 FR-019: the theme active NOW, not the one when Settings was painted; a built-in one says why it cannot be exported */
@@ -465,10 +506,22 @@
       if(!res||!res.ok){X.toast(esc(res&&res.error||'Export did not work (cancelled, or only your own themes can be exported).'),4200);return;}
       X.toast('Theme copied to <b>'+esc(res.to)+'</b>.',4200);
     };
+    if($('thRemove'))$('thRemove').onclick=async()=>{
+      /* spec 040 FR-032: remove one of the themes you saved, after a question; the theme in use goes to Clean Office. A built-in one says why it stays */
+      const active=(window.THEME&&window.THEME.current&&window.THEME.current().id)||curTheme;
+      const mine=themes.find((t)=>t.id===active&&t.own);
+      if(!mine){X.toast(esc((themes.find((t)=>t.id===active)||{name:active}).name)+' is built into the app, so it cannot be removed. Pick one of your own themes (marked "yours") first.',6000);return;}
+      const ask=await dialog({title:'Remove this theme?',html:`<p class="dsub"><b>${esc(mine.name)}</b> is deleted from this computer, and Clean Office is used instead. This cannot be undone: export it first if you want a copy.</p>`,buttons:[{label:'Cancel',value:null},{label:'Remove theme',value:'rm',cls:'danger'}]});
+      if(!ask||ask.value!=='rm')return;
+      const res=await X.bridge.removeTheme(mine.id).catch(()=>null);
+      if(!res||!res.ok){X.toast(esc(res&&res.error||'The theme could not be removed.'),4200);return;}
+      if(window.THEME&&window.THEME.forgetUser)window.THEME.forgetUser(mine.id);
+      if(X.applyTheme)await X.applyTheme('clean-office'); /* saved before the list is painted again */
+      X.toast('Theme <b>'+esc(mine.name)+'</b> removed. Clean Office is on.',3600);
+      paintSettings();
+    };
     if(focus&&!atSec){const h=r.querySelector('h2');if(h){h.tabIndex=-1;h.focus({preventScroll:true});}}
   }
-  /* spec 040 FR-014..FR-018: AI theme maker. Describe -> one prompt to a harness with `oneShot` -> a checked manifest ->
-     preview (Try it, live, not saved) -> Save as my theme, Try again or Discard (back to the theme that was active). User text is never logged. */
   /* spec 040 FR-015 / spec 052 FR-093: what one one-shot request costs, in the words of the app's plan (also used by spec 043 FR-028) */
   function oneShotCostLine(k){const n=k.displayName||k.id;
     return 'Uses your own '+n+' account: '+(k.id==='claude'?'a small cost (at most $0.25, usually about a cent).':k.id==='copilot'?'a few AI credits from your plan.':k.id==='codex'?'a small part of your ChatGPT plan\'s usage.':'a small cost on your own plan.');}
@@ -482,108 +535,6 @@
       const parts=[d?d+' value'+(d>1?'s use':' uses')+' the defaults (not usable)':'',c?c+' colour'+(c>1?'s':'')+' adjusted so text stays readable':''].filter(Boolean);
       return parts.length?esc(t.name)+': '+parts.join('; '):'';}).filter(Boolean);
     return lines.length?`<p class="scr-note small" role="status" id="thFallbacks">${lines.join('; ')}.</p>`:'';
-  }
-  async function aiTheme(){
-    const before=(window.THEME&&window.THEME.current&&window.THEME.current().id)||'clean-office';
-    let kinds=[];
-    if(X.bridge.listAdapters){try{kinds=((await X.bridge.listAdapters())||[]).filter((k)=>k&&k.state==='ready'&&k.capabilities&&k.capabilities.oneShot);}catch(e){kinds=[];}}
-    if(!kinds.length){await dialog({title:'Make a theme with AI',html:'<p class="dsub">This needs Claude Code, OpenAI Codex or GitHub Copilot, installed and signed in on this computer.</p>',buttons:[{label:'Close',value:'ok',cls:'primary'}]});return;}
-    let desc='',kind=kinds[0].id;
-    /* spec 052 FR-093: the cost line names only the app picked in "Made by", and follows the selection */
-    const aiCostLine=(id)=>oneShotCostLine(kinds.find((x)=>x.id===id)||kinds[0]);
-    /* spec 040 FR-021: a few example looks at random, so people see how to describe one */
-    let ideas=[];
-    if(X.bridge.themeIdeas){try{ideas=(await X.bridge.themeIdeas())||[];}catch(e){ideas=[];}}
-    const pick=()=>{const p=ideas.slice(),o=[];while(o.length<4&&p.length)o.push(p.splice(Math.floor(Math.random()*p.length),1)[0]);return o;};
-    const ideaHtml=()=>ideas.length?`<div class="ai-ideas" id="aiIdeas"><span class="scr-note small">Ideas:</span>${pick().map((i)=>`<button class="btn ai-idea" type="button" data-idea="${esc(i)}">${esc(i)}</button>`).join('')}<button class="btn ai-more" type="button" id="aiMore" title="Show other ideas">More ideas</button></div>`:'';
-    for(;;){
-      const r=await dialog({title:'Make a theme with AI',size:'m',html:`<p class="dsub">Describe a look in a few words, for example “a night-shift newsroom” or “a ship's bridge at dawn”.</p>
-        <ul class="dlist ai-pts"><li>One request, small cost</li><li>No tools, nothing kept</li><li>Preview before saving</li></ul>
-        <p class="scr-note small">The agent app you pick designs a light or dark theme. Durbar keeps only safe values and checks that text stays readable.</p>
-        <label>Look<textarea id="aiDesc" rows="3" maxlength="300" placeholder="A calm library at night">${esc(desc)}</textarea></label>
-        ${ideaHtml()}
-        <label>Made by<select id="aiKind">${kinds.map((k)=>`<option value="${esc(k.id)}"${k.id===kind?' selected':''}>${esc(k.displayName||k.id)}</option>`).join('')}</select></label>
-        <p class="scr-note small" id="aiCost">${esc(aiCostLine(kind))}</p>`,
-        buttons:[{label:'Cancel',value:null},{label:'Make the theme',value:'go',cls:'primary'}],
-        validate:(d)=>{const v=d.querySelector('#aiDesc').value.trim();return v.length<3?'Describe the look in a few words.':false;},
-        onOpen:(d)=>{const t=d.querySelector('#aiDesc');t.addEventListener('input',()=>{desc=t.value;});
-          d.addEventListener('click',(e)=>{const b=e.target.closest&&e.target.closest('.ai-idea');if(b){t.value=b.dataset.idea;desc=t.value;focusIn(t);return;}
-            if(e.target.closest&&e.target.closest('#aiMore')){const box=d.querySelector('#aiIdeas');if(box)box.outerHTML=ideaHtml();}});d.querySelector('#aiKind').addEventListener('change',(e)=>{kind=e.target.value;const c=d.querySelector('#aiCost');if(c)c.textContent=aiCostLine(kind);});}});
-      if(!r||r.value!=='go')return;
-      const busy=X.toast?X.toast('Making the theme… this can take up to a minute.',60000):null;
-      let g=null;
-      try{g=await X.bridge.generateTheme(desc.trim(),kind);}catch(e){g={ok:false,error:String(e&&e.message||e)};}
-      if(busy&&busy.remove)busy.remove();
-      if(!g||!g.ok){
-        const again=await dialog({title:'No theme this time',html:`<p class="dsub">${esc((g&&g.error)||'Unknown error.')}</p>${g&&g.costUsd?`<p class="scr-note small">Cost: about $${esc(g.costUsd.toFixed(4))} (estimate).</p>`:''}${g&&g.nanoAiu?`<p class="scr-note small">Used ${esc(aiCredits(g.nanoAiu))} AI credits (as reported by Copilot).</p>`:''}`,buttons:[{label:'Close',value:null},{label:'Try again',value:'again',cls:'primary'}]});
-        if(again&&again.value==='again')continue;return;
-      }
-      const m=g.manifest, toks=m.tokens||{}, hex=/^#[0-9a-f]{3,6}$/i;
-      /* spec 070 FR-025: colours apart from fonts and shapes; FR-024: what the contrast fix adjusts when the theme is applied */
-      const typed=(window.THEME&&window.THEME.TYPED_TOKENS)||{}, nShape=Object.keys(toks).filter((k)=>Object.prototype.hasOwnProperty.call(typed,k)).length, nCol=Object.keys(toks).length-nShape;
-      const tokenLine=nCol+' colour'+(nCol===1?'':'s')+(nShape?', '+nShape+(nShape===1?' font or shape':' fonts and shapes'):'');
-      const adjusted=(window.THEME&&window.THEME.contrastCheck?window.THEME.contrastCheck(m):[]).length;
-      const swatches=['--bg','--surface','--ink','--sage','--blue','--amber','--brand-bg','--desk'].filter((k)=>hex.test(toks[k]||'')).map((k)=>`<span class="ai-sw" title="${esc(k)}" data-col="${esc(toks[k])}"></span>`).join('');
-      /* spec 052 (2026-10-21, round 1): say what each word renames (the Clean Office word), never the internal key such as place-library */
-      const plain=(k)=>String(window.THEME&&window.THEME.plainWord?window.THEME.plainWord(k):k).split(':')[0];
-      const words=Object.entries(m.words||{}).map(([k,v])=>`<li><small>${esc(plain(k))}</small> ${esc(v)}</li>`).join('');
-      const lookId=(id)=>id==='clean'||id==='office'?'clean-office':id==='pixel'?'retro':/^court-/.test(String(id))?'durbar-'+String(id).slice(6):id; /* style / scene kit -> the built-in theme it comes from */
-      const lookName=(id)=>{const t=window.THEME&&window.THEME.list?window.THEME.list().find((x)=>x.id===lookId(id)):null;return t?t.name:String(id||'');};
-      for(;;){
-        const pick=await dialog({title:'Theme: '+m.name,wide:true,html:`<div class="ai-sws" aria-hidden="true">${swatches}</div>
-          <p class="dsub">Built on the <b>${esc(lookName(m.ui))}</b> look, with <b>${esc(lookName(m.scene))}</b> people and furniture; ${esc(tokenLine)}.${g.costUsd?` Made for about $${esc(g.costUsd.toFixed(4))} (estimate).`:''}${g.nanoAiu?` Used ${esc(aiCredits(g.nanoAiu))} AI credits (as reported by Copilot).`:''}</p>
-          ${words?`<ul class="ai-words">${words}</ul>`:''}
-          ${g.warnings&&g.warnings.length?`<p class="scr-note small">${esc(g.warnings.join('; '))}.</p>`:''}
-          ${adjusted?`<p class="scr-note small">${adjusted} colour${adjusted>1?'s':''} adjusted so text stays readable.</p>`:''}
-          <p class="scr-note small">Try it shows it now without saving. Discard goes back to the theme you had.</p>`,
-          buttons:[{label:'Discard',value:null},{label:'Try again',value:'again'},{label:'Try it',value:'try'},{label:'Save as my theme',value:'save',cls:'primary'}],
-          onOpen:(d)=>d.querySelectorAll('[data-col]').forEach((el)=>{if(hex.test(el.dataset.col))el.style.background=el.dataset.col;})}); /* CSSOM, validated hex only */
-        const choice=pick&&pick.value;
-        if(choice==='try'){
-          /* spec 040 FR-021: look at it in the real office: Settings closes, a small bar offers Save / Details / Try again / Discard */
-          if(X.previewTheme)X.previewTheme(m);
-          close();
-          const next=await tryBar(m.name);
-          if(next==='save'||next==='details'){open('settings');await new Promise((r)=>setTimeout(r,60));}
-          if(next==='details')continue;
-          if(next==='save'){
-            const res=await X.bridge.saveGeneratedTheme(m).catch(()=>null);
-            if(!res||!res.ok){X.toast(esc((res&&res.error)||'The theme could not be saved.'),5000);if(X.previewTheme)X.previewTheme(before);return;}
-            if(X.applyTheme)X.applyTheme(res.id);
-            X.toast('Theme <b>'+esc(res.name||res.id)+'</b> saved. It is in the list as one of yours.',3600);
-            paintSettings();return;
-          }
-          if(X.previewTheme)X.previewTheme(before);
-          if(next==='again'){open('settings');await new Promise((r)=>setTimeout(r,60));break;}
-          return;
-        }
-        if(choice==='save'){
-          const res=await X.bridge.saveGeneratedTheme(m).catch(()=>null);
-          if(!res||!res.ok){X.toast(esc((res&&res.error)||'The theme could not be saved.'),5000);continue;}
-          if(X.applyTheme)X.applyTheme(res.id);
-          X.toast('Theme <b>'+esc(res.name||res.id)+'</b> saved. It is in the list as one of yours.',3600);
-          paintSettings();return;
-        }
-        if(X.previewTheme)X.previewTheme(before); /* Discard or Try again: back to the theme that was active */
-        if(choice==='again')break;
-        return;
-      }
-    }
-  }
-  /* the "trying a theme" bar over the live office; resolves 'save' | 'details' | 'again' | 'discard' (Escape) */
-  function tryBar(name){
-    return new Promise((resolve)=>{
-      const old=document.getElementById('aiTryBar');if(old)old.remove();
-      const b=document.createElement('div');b.id='aiTryBar';b.className='ai-trybar';b.setAttribute('role','dialog');b.setAttribute('aria-label','Trying a theme');
-      b.innerHTML=`<span>Trying <b></b>. Nothing is saved yet.</span><button class="btn" type="button" data-t="discard">Discard</button><button class="btn" type="button" data-t="again">Try again</button><button class="btn" type="button" data-t="details">Details</button><button class="btn primary" type="button" data-t="save">Save as my theme</button>`;
-      b.querySelector('b').textContent=name;
-      const done=(v)=>{b.remove();document.removeEventListener('keydown',onKey,true);resolve(v);};
-      const onKey=(e)=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();done('discard');}};
-      b.addEventListener('click',(e)=>{const t=e.target.closest&&e.target.closest('[data-t]');if(t)done(t.dataset.t);});
-      document.addEventListener('keydown',onKey,true);
-      document.body.appendChild(b);
-      focusIn(b.querySelector('[data-t="save"]'));
-    });
   }
   /* one server of the Copilot CLI list (or the built-in one): read-only, with its exact command/URL and a switch for new sessions */
   function cliRow(a){
@@ -699,7 +650,7 @@
   }
   const FOLDER_RM_NOTE='The server and its stored secret values are deleted from this folder in Agent Durbar.';
   const secretChip=(kind,s)=>`<span class="sec" title="${kind==='env'?'Environment variable':'Header'}: ${s.set?'value stored, hidden':'no value'}">${esc(s.key)}<i>${s.set?'••••••':'not set'}</i></span>`;
-  /* spec 052 FR-099 (round 10): Spacing, under Detail level; Compact tightens the chat, screens, dialogs and inbox (never the office) */
+  /* spec 052 FR-099 (round 10): Spacing, under Display; Compact tightens the chat, screens, dialogs and inbox (never the office) */
   function densityRow(){
     const d=X.density.get();
     return `<div class="scr-row"><span class="scr-row-l" id="denL">Spacing</span><div class="seg" role="group" aria-labelledby="denL"><button type="button" data-density="comfortable" aria-pressed="${d!=='compact'}">Comfortable</button><button type="button" data-density="compact" aria-pressed="${d==='compact'}" title="Tighter chat, screens, dialogs and inbox. The office and the top bar keep their sizes.">Compact</button></div></div>`;
@@ -710,11 +661,29 @@
     const on=!!X.shutters.get();
     return `<div class="scr-row"><span class="scr-row-l" id="shL">Finished agents rest in the lounge</span>${sw(on,'Finished agents rest in the lounge: in a room where others still work, finished agents move to a couch, then to a nap bed','id="shutSw" aria-describedby="shN"')}<span class="scr-note small" id="shN">In a room where others still work, finished agents rest on a couch, and after 10 minutes on a nap bed, so the busy desks get the space.</span></div>`;
   }
-  /* spec 017 FR-008, FR-014, FR-027 (owner 2026-10-24: "office with cabins vs open office modes in config to switch between old and this
-     new mode"): Office with cabins (default) or Open office (the desks exactly as before the cabins); kept per computer */
-  function signsRow(){
-    const on=!!X.signs.get();
-    return `<div class="scr-row"><span class="scr-row-l" id="dsL">Office layout</span><div class="seg" role="group" aria-labelledby="dsL" aria-describedby="dsN"><button type="button" data-officelayout="cabins" aria-pressed="${on}">Office with cabins</button><button type="button" data-officelayout="open" aria-pressed="${!on}">Open office</button></div><span class="scr-note small" id="dsN">Office with cabins: each session is a cabin. While the agent works, waits or must not be disturbed, its door is closed with its photo and a sign (Busy, In a meeting, Waiting for you, Do not disturb, Away); when it is done or free, the door stands open (Done, Available), and you can close a door yourself. Open office: the plain desks and status words, with no doors; doors you closed are opened first.</span></div>`;
+  /* spec 102 FR-201 (097 FR-114): the World row, a radio group, only with Real office on and more than one world offered (a flagged world is
+     not offered, so with the flag off the Settings page is as before). Keyboard: arrows move and select; tokens only. */
+  function worldRow(){
+    const V=X.view, W=V&&V.world, list=W?W.list():[];
+    if(!W||V.get()!=='real'||list.length<2)return '';
+    const cur=W.get();
+    return `<div class="scr-row" id="wrRow"><span class="scr-row-l" id="wrL">World</span><div class="seg" role="radiogroup" aria-labelledby="wrL" aria-describedby="wrN" id="wrGroup">${list.map(w=>`<button type="button" role="radio" data-world="${esc(w.id)}" aria-checked="${w.id===cur}" tabindex="${w.id===cur?'0':'-1'}">${esc(w.name)}</button>`).join('')}</div><span class="scr-note small" id="wrN">The room Real office draws. Its people follow the world unless you pick a set under Characters.</span></div>`;
+  }
+  /* the pick applies at once; the page is painted again (Characters names the new default) and focus returns to the radio */
+  async function pickWorld(b){
+    const id=b.dataset.world;X.view.world.set(id);await paintSettings();
+    const nb=document.querySelector('#wrGroup [data-world="'+CSS.escape(id)+'"]');if(nb)focusIn(nb);
+  }
+  function worldKeys(e){
+    const b=e.target.closest&&e.target.closest('#wrGroup [data-world]');if(!b)return;
+    const all=[...b.parentElement.querySelectorAll('[data-world]')], i=all.indexOf(b), k=e.key;
+    const to=k==='ArrowRight'||k==='ArrowDown'?all[(i+1)%all.length]:k==='ArrowLeft'||k==='ArrowUp'?all[(i-1+all.length)%all.length]:k==='Home'?all[0]:k==='End'?all[all.length-1]:null;
+    if(to){e.preventDefault();pickWorld(to);}
+  }
+  /* spec 017 FR-029 (owner 2026-10-31: no doors) and spec 097 FR-001: Open office or Real office, a separate preference (durbar.officeview) */
+  function officeRow(){
+    const view=X.view.get()==='real'?'real':'open', pressed=k=>k===view;
+    return `<div class="scr-row"><span class="scr-row-l" id="dsL">Office layout</span><div class="seg" role="group" aria-labelledby="dsL" aria-describedby="dsN dsR"><button type="button" data-officelayout="open" aria-pressed="${pressed('open')}">Open office</button><button type="button" data-officelayout="real" aria-pressed="${pressed('real')}">Real office</button></div><span class="scr-note small" id="dsN">Open office: the plain desks and status words. Real office: a realistic open-plan office, with a person at each desk, places along the back wall and lights that follow the status of each agent.</span><span class="scr-note small" id="dsR">${esc(X.view.note())}</span></div>`;
   }
   function liveActRow(){
     const on=!!X.liveAct.get();
@@ -824,8 +793,6 @@
       return;
     }
     if(window.DurbarHarnesses&&window.DurbarHarnesses.onClick(e))return;
-    const dlb=e.target.closest('[data-detail]');
-    if(dlb&&X.detail){X.detail.set(dlb.dataset.detail);paint();return;}
     const dnb=e.target.closest('button[data-density]');
     if(dnb&&X.density){X.density.set(dnb.dataset.density);const g=dnb.parentElement;if(g)g.querySelectorAll('[data-density]').forEach(b=>b.setAttribute('aria-pressed',String(b===dnb)));return;}
     const ss=e.target.closest('#seriousSw');
@@ -835,11 +802,19 @@
       if(res&&res.ok){X.setSerious(!!res.seriousMode);ss.classList.toggle('on',!!res.seriousMode);ss.setAttribute('aria-checked',res.seriousMode?'true':'false');const m=$('seriousMsg');if(m)m.textContent=res.seriousMode?'Serious mode is on: no mood drawings.':'Serious mode is off.';}
       return;
     }
+    const wb=e.target.closest('#wrGroup [data-world]');
+    if(wb&&X.view&&X.view.world){pickWorld(wb);return;}
     const olb=e.target.closest('[data-officelayout]');
-    if(olb&&X.signs){
-      await X.signs.set(olb.dataset.officelayout==='cabins'); /* FR-027: Open office may ask first about doors you closed (and stay with cabins) */
-      const on=!!X.signs.get(), g=olb.parentElement;
-      if(g)g.querySelectorAll('[data-officelayout]').forEach(b=>b.setAttribute('aria-pressed',String((b.dataset.officelayout==='cabins')===on)));
+    if(olb&&X.view){
+      const k=olb.dataset.officelayout, V=X.view;
+      await V.set(k==='real'?'real':'flat');
+      const view=V.get()==='real'?'real':'open', g=olb.parentElement;
+      if(g)g.querySelectorAll('[data-officelayout]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.officelayout===view)));
+      const n=$('dsR');if(n)n.textContent=V.note();
+      const hadFocus=document.activeElement===olb;
+      await paint(); /* the World row appears with Real office, and Characters names the world's default set */
+      if(hadFocus){const nb=document.querySelector('[data-officelayout="'+k+'"]');if(nb)focusIn(nb);} /* the repaint replaced the pressed button: keep the keyboard where it was */
+      const tw=$('thWorld');if(tw){tw.textContent=worldWords();tw.hidden=!tw.textContent;}
       return;
     }
     const shs=e.target.closest('#shutSw');
@@ -907,9 +882,6 @@
         ${v.env.concat(v.headers).length?`<div class="srv-secrets" aria-label="Secret values (masked)">${v.env.map(x=>secretChip('env',x)).join('')}${v.headers.map(x=>secretChip('header',x)).join('')}</div>`:''}
       </div>
       <div class="srv-act">${sw(v.enabled&&v.trusted,(v.enabled?'Disable ':'Enable ')+v.name,'data-act="toggle"')}<button class="btn sm" type="button" data-act="edit">Edit</button><button class="btn sm danger" type="button" data-act="remove">Remove</button></div></li>`).join('');
-    const leg=st.legacy.map(v=>`<li class="srv legacy" data-legacy="${esc(v.name)}"><div class="srv-main"><div class="srv-top"><b class="srv-name">${esc(v.name)}</b><span class="mtag warn">old app-level server, not applied</span><span class="mtag">${esc(v.transport)}</span></div>
-        <code class="srv-cmd" title="${esc(cmd(v))}">${esc(cap(cmd(v),180))}</code></div>
-      <div class="srv-act"><button class="btn sm" type="button" data-act="move">Move here</button><button class="btn sm danger" type="button" data-act="rmlegacy">Remove</button></div></li>`).join('');
     r.innerHTML=head('MCP extras · '+st.name)+`<div class="scr-body">
       <section class="scr-sec" aria-labelledby="fxH"><h3 id="fxH">Extra servers for <code>${esc(st.name)}</code> <small>${FOLDER_NOTE.toLowerCase()}</small></h3>
         <p class="scr-note">These servers are optional and belong to <b>this folder only</b>: agents in other folders do not get them. Servers from your Copilot CLI list are available to every agent and are not edited here.</p>
@@ -920,8 +892,7 @@
         ${srv?`<ul class="srvs" id="srvList">${srv}</ul>`:'<p class="scr-empty">No extras for this folder. Your Copilot CLI servers are already available to its agents.</p>'}
         <p class="scr-note small">Changes apply to <b>new</b> sessions in this folder and to agents that start or resume afterwards. A running session keeps its servers until it ends, or until you switch one in that agent's MCP menu.</p>
       </section>
-      ${leg?`<section class="scr-sec" aria-labelledby="lgH"><h3 id="lgH">Old app-level servers <small>not applied</small></h3>
-        <p class="scr-note">Earlier versions kept one global list of servers. Those are no longer used anywhere. <b>Move here</b> puts one into this folder (switched off; you review and trust it again), or remove it.</p><ul class="srvs" id="legList">${leg}</ul></section>`:''}</div>`;
+    </div>`;
     wireHead();
     $('mcpAdd').onclick=()=>editServer(null,st);
     $('mcpImportVs').onclick=()=>importVSCode(st);
@@ -933,15 +904,6 @@
     const st=cur&&cur.st;if(!st)return;
     const li=e.target.closest('li.srv');if(!li)return;
     const act=(e.target.closest('[data-act]')||{}).dataset;if(!act)return;
-    if(li.dataset.legacy){
-      const n=li.dataset.legacy;
-      if(act.act==='move'){const res=await X.bridge.mcpMoveLegacy(n,st.key);X.toast(res&&res.ok?esc(n)+' moved here (off). Review it and switch it on.':'Could not move: '+esc((res&&res.error)||'unknown error'),4200);paintFolder();}
-      else if(act.act==='rmlegacy'){
-        const r=await dialog({title:'Remove old server "'+n+'"?',html:'<p class="dsub">It is deleted from Agent Durbar with its stored secret values. It was not being used.</p>',buttons:[{label:'Cancel',value:null},{label:'Remove',value:'ok',cls:'primary danger'}]});
-        if(r){await X.bridge.mcpRemoveLegacy(n);paintFolder();}
-      }
-      return;
-    }
     const name=li.dataset.name,v=st.servers.find(x=>x.name===name);if(!v)return;
     if(act.act==='toggle'){const turnOn=!(v.enabled&&v.trusted);await toggleServer(v,turnOn,st);}
     else if(act.act==='edit')editServer(v,st);
@@ -1186,6 +1148,9 @@
     const load=async()=>X.bridge.agentMcp(a.id);
     /* FR-176: opening the dialog counts as a look (like the window regaining focus): main reads the list once soon after a sign-in attempt */
     let st=await X.bridge.agentMcp(a.id,true);
+    /* spec 100 FR-003, FR-011: the MCP figures; opening asks (main: at most once a minute), the answer repaints through mcpEvent */
+    const mc=window.exports||{}, ctxOf=()=>X.mcpCtx?X.mcpCtx(a.id):null;
+    if(X.bridge.agentMcpContext&&X.mcpCtxSet)void Promise.resolve(X.bridge.agentMcpContext(a.id,true)).then(v=>{if(v&&v.ok)X.mcpCtxSet(a.id,v);}).catch(()=>0);
     const restarting=new Set(); /* server names whose Restart is under way (FR-031: the button stays disabled) */
     const openDet=new Set(); /* server names whose Details are open (kept over a repaint) */
     let sessBusy=false;
@@ -1234,6 +1199,7 @@
       return `<div class="mcp-refresh"><button class="btn sm" type="button" id="mcpRefresh" data-refresh="1"${refreshBusy?' aria-disabled="true"':''} aria-label="Refresh the state of every server">${refreshBusy?'Refreshing…':'Refresh'}</button><span class="dsub small" id="mcpRefreshNote" role="status">${esc(refreshNote||'Asks '+app+' for the state of every server again.')}</span></div>`;
     };
     const body=s=>{
+      const mcC=ctxOf(), mcRep=mcC&&mcC.view&&mcC.view.report||null, mcTop=mcRep?mc.heaviest(mcRep,1)[0]:undefined;
       const rows=s.servers.map(x=>{
         const W=window.DurbarMcpWords, app=s.app||o&&o.appName;
         const octx={off:x.off,defaultOn:x.defaultOn,origin:x.origin,app,launchedOff:x.launchedOff,switchedHere:x.switchedHere};
@@ -1269,14 +1235,16 @@
         const rmb=removable&&(X.bridge.mcpGlobalRemovePreview||X.bridge.mcpRemove)?`<button class="btn sm" type="button" data-mrm="${esc(x.name)}" aria-label="${esc('Remove '+x.name+'…')}" title="Remove it from the list it comes from (you review the change first)">Remove…</button>`:'';
         const why=removable?'':srcs.includes('builtin')?'Built into the agent app':'Reported by the running session; managed by the agent app';
         const sg=x.canSignIn||x.signInSteps||x.signIn?signHTML(x,s):'';
-        return `<li class="srv sm${open||sg?' open':''}" data-n="${esc(x.name)}"${why?` title="${esc(why)}"`:''}><div class="srv-main"><div class="srv-top">${nameEl}${srcChips(x)}${stat}${org?'<span class="mtag warn org-tag">Blocked by your organization</span>':''}${!x.defaultOn&&by!=='settings'?`<span class="mtag">${x.origin==='folder'?'off in folder extras':'off in Settings'}</span>`:''}</div>${hh.why}${org?`<span class="srv-hint srv-org" id="${orgId}">${esc(org)}.</span>`:orgMay?`<span class="srv-hint srv-org">${esc(orgMay)}.</span>`:''}${hint?`<span class="srv-hint">${esc(hint)}</span>`:''}${btnRow(det,hh.diag)}${detBox}</div>
+        /* spec 100 FR-011: this row's tokens and label */
+        const costW=mcRep&&s.live?mc.rowFigure(mc.serverOf(mcRep,x),{off:x.off||!x.defaultOn,status:x.status,hasReport:true,largest:!!mcTop&&mc.serverOf({servers:[mcTop]},x)===mcTop}):'';
+        return `<li class="srv sm${open||sg?' open':''}" data-n="${esc(x.name)}"${why?` title="${esc(why)}"`:''}><div class="srv-main"><div class="srv-top">${nameEl}${srcChips(x)}${stat}${org?'<span class="mtag warn org-tag">Blocked by your organization</span>':''}${!x.defaultOn&&by!=='settings'?`<span class="mtag">${x.origin==='folder'?'off in folder extras':'off in Settings'}</span>`:''}${costW?`<span class="mcp-cost">${esc(costW)}</span>`:''}</div>${hh.why}${org?`<span class="srv-hint srv-org" id="${orgId}">${esc(org)}.</span>`:orgMay?`<span class="srv-hint srv-org">${esc(orgMay)}.</span>`:''}${hint?`<span class="srv-hint">${esc(hint)}</span>`:''}${btnRow(det,hh.diag)}${detBox}</div>
           <div class="srv-act">${rs}${againB(x)}${rmb}${sw(eff,(appOff?x.name+' is off in '+(app?W.plain(app,40):'the agent app'):(eff?'Switch off ':'Switch on ')+x.name+' for '+a.name+(s.live?' in this session':' when its session starts')),'data-n="'+esc(x.name)+'"'+(!x.defaultOn||fixed||appOff||org?' disabled':'')+(org?' aria-describedby="'+orgId+'"':''))}</div>${sg}${open?toolsHTML(x.name):''}</li>`;}).join('');
       /* FR-022 / FR-030 / FR-032: Restart session lives only here (Q10) */
       const rsess=s.canRestartSession&&X.bridge.agentMcpRestartSession?`<div class="mcp-rsess"><button class="btn sm" type="button" id="mcpRestartSess"${sessBusy?' disabled':''}>${sessBusy?'Restarting session…':'Restart session with these servers'}</button><span class="dsub small">${noServerRestart?esc(o.appName||'This agent app')+' cannot restart one server; use this instead. ':''}Ends this session and resumes it with the servers in Settings and the folder's extras. The conversation is kept.${s.start==='next-message'?' The servers start with your next message.':''}</span></div>`:'';
       /* spec 058 FR-164 (owner 2026-10-23): sign in again to every server Copilot can redo, so the signed runtime writes each sign-in anew */
       const againN=(s.servers||[]).filter(x=>x.canSignInAgain&&!x.signIn).length;
       const againAll=againN>1&&X.bridge.agentMcpSignIn?`<div class="mcp-rsess"><button class="btn sm" type="button" id="mcpSignAgainAll"${againBusy?' disabled':''}>${againBusy?'Starting sign-ins…':'Sign in again to all ('+againN+')…'}</button><span class="dsub small">For keychain prompts that come back on every launch (sign-ins saved by an older Agent Durbar): ${esc(s.app||'the agent app')} forgets each saved sign-in and you sign in again in your browser, one page per server.</span></div>`:'';
-      return `<p class="dsub">${s.live?(fixed?'This agent is running.':s.toggleApplies==='next-message'?'This agent is running: a switch applies from your next message.':'This agent is running: a switch applies right away.'):'This agent has no running session: your choices apply when it starts.'} Servers from your agent apps' own lists apply to every folder (see <b>Settings</b>); <i>Durbar folder</i> servers belong to this agent's folder only. Here you can only switch one off for <b>${esc(a.name)}</b>.</p>${fixed?'<p class="dsub" role="note"><b>The switches are off for this agent app:</b> it cannot change its MCP servers while it runs. They are set when the session starts.</p>':''}${refreshRow(s)}<ul class="srvs" id="agMcp">${rows||'<li class="scr-empty">No MCP servers.</li>'}</ul>${rsess}${againAll}<p class="dsub small">A switch stays for this agent, also in its next sessions, until the app is closed.</p>`;
+      return `<p class="dsub">${s.live?(fixed?'This agent is running.':s.toggleApplies==='next-message'?'This agent is running: a switch applies from your next message.':'This agent is running: a switch applies right away.'):'This agent has no running session: your choices apply when it starts.'} Servers from your agent apps' own lists apply to every folder (see <b>Settings</b>); <i>Durbar folder</i> servers belong to this agent's folder only. Here you can only switch one off for <b>${esc(a.name)}</b>.</p>${fixed?'<p class="dsub" role="note"><b>The switches are off for this agent app:</b> it cannot change its MCP servers while it runs. They are set when the session starts.</p>':''}${refreshRow(s)}<ul class="srvs" id="agMcp">${rows||'<li class="scr-empty">No MCP servers.</li>'}</ul>${mcRep&&s.live?`<p class="dsub small mcp-total" id="mcpTotal">${mc.totalLine(mcRep,mcC.window)?`<b>${esc(mc.totalLine(mcRep,mcC.window))}.</b> `:''}${esc(mc.footnoteOf(mcRep,mcC.app))}${mcRep.servers.some(y=>y.deferredTokens)?' Tools loaded on demand are not in the window until they are used, so they are not in this total.':''}</p>`:''}${rsess}${againAll}<p class="dsub small">A switch stays for this agent, also in its next sessions, until the app is closed.</p>`;
     };
     let dlg=null;
     /* spec 069 FR-032/FR-033: expanded rows and their tools, loaded once per open dialog (again after a Restart) */
@@ -1477,7 +1445,10 @@
       await repaint();
     };
     const d0=dialog({title:'MCP servers for '+a.name,wide:true,html:body(st),buttons:[{label:'Settings',value:'settings'},{label:'Folder extras…',value:'folder'},{label:'Done',value:'ok',cls:'primary'}],
-      onOpen:d=>{dlg=d.querySelector('.dlg');dlg._ov=d;if(st.canRefresh)setTimeout(()=>{void refresh(false);},0); /* FR-190: every open reads the states again */d.addEventListener('click',async e=>{
+      onOpen:d=>{dlg=d.querySelector('.dlg');dlg._ov=d;
+        /* spec 100 FR-022: from the warning line: the heaviest server's switch has the focus; nothing is switched */
+        if(o&&o.focusServer)setTimeout(()=>{const row=(st.servers||[]).find(y=>mc.serverOf({servers:[o.focusServer]},y)),b=row&&[...d.querySelectorAll('.dbody button.swt')].find(x=>x.dataset.n===row.name);if(b)focusIn(b);},0);
+        if(st.canRefresh)setTimeout(()=>{void refresh(false);},0); /* FR-190: every open reads the states again */d.addEventListener('click',async e=>{
         const tg=e.target.closest('button[data-tools]');if(tg){void toggleTools(tg.dataset.tools);return;}
         const ad=e.target.closest('[data-tall][aria-disabled="true"],input[data-tool][aria-disabled="true"]');if(ad){e.preventDefault();return;} /* FR-064: focusable, never changed */
         const ta=e.target.closest('button[data-tall]');if(ta&&!ta.disabled){const n=ta.dataset.tall,r=toolsOf.get(n);if(r&&r.ok){void saveOff(n,ta.getAttribute('aria-checked')==='true'?r.tools.filter(t=>!t.orgBlocked).map(t=>t.name).filter(t=>/^[A-Za-z0-9_.-]{1,128}$/.test(t)):[]);}return;}
@@ -1529,8 +1500,7 @@
     const all=period==='all';
     const agents=X.agents();
     const hasActivity=!!X.bridge.activityList;
-    const simple=!!(X.detail&&X.detail.get()==='simple'); /* spec 052 FR-081: Simple has no Models and context tab and no token column */
-    let tab=cur.tab||'tools'; if((all||simple)&&tab==='agents')tab='tools'; if(tab==='activity'&&!hasActivity)tab='tools';
+    let tab=cur.tab||'tools'; if(all&&tab==='agents')tab='tools'; if(tab==='activity'&&!hasActivity)tab='tools';
     let scope=cur.scope||null; /* session: an agent id; all time: an agent label */
     let tot,groups,scopeSel;
     if(all){
@@ -1548,8 +1518,8 @@
       scopeSel=`<label class="select-wrap"><span class="sr-only">Show</span><select id="toolScope"><option value="">All agents</option>${agents.map(a=>`<option value="${esc(a.id)}"${a.id===scope?' selected':''}>${esc(a.name)}</option>`).join('')}</select></label>`;
     }
     const per=`<div class="seg" role="tablist" aria-label="Period"><button role="tab" id="perSession" aria-selected="${!all}" type="button">This session</button><button role="tab" id="perAll" aria-selected="${all}" type="button">All time</button></div>`;
-    const tabs=`<div class="seg" role="tablist" aria-label="Tools view"><button role="tab" id="tabTools" aria-selected="${tab==='tools'}" type="button">${simple?'Activity summary':'Tool usage'}</button>${simple||all?'':`<button role="tab" id="tabAgents" aria-selected="${tab==='agents'}" type="button">Models and context</button>`}<button role="tab" id="tabCost" aria-selected="${tab==='cost'}" type="button">Cost</button>${hasActivity?`<button role="tab" id="tabActivity" aria-selected="${tab==='activity'}" type="button">Activity</button>`:''}</div>`;
-    const cost=tab==='cost'?costView(simple):null;
+    const tabs=`<div class="seg" role="tablist" aria-label="Tools view"><button role="tab" id="tabTools" aria-selected="${tab==='tools'}" type="button">Tool usage</button>${all?'':`<button role="tab" id="tabAgents" aria-selected="${tab==='agents'}" type="button">Models and context</button>`}<button role="tab" id="tabCost" aria-selected="${tab==='cost'}" type="button">Cost</button>${hasActivity?`<button role="tab" id="tabActivity" aria-selected="${tab==='activity'}" type="button">Activity</button>`:''}</div>`;
+    const cost=tab==='cost'?costView():null;
     const act=tab==='activity'?await activityView():null;
     const body=act?act.html:cost?cost.html:tab==='tools'?await toolsTab(scope,tot,groups,all):agentsTab(scope,agents);
     if(!cur||cur.kind!=='tools')return;
@@ -1605,7 +1575,7 @@
   }
   /* ---------------- Tools > Cost (spec 052 FR-044, #315) ---------------- */
   const sinceDay=s=>typeof s==='string'&&/^\d{4}-\d{2}-\d{2}/.test(s)?s.slice(0,10):'';
-  function costView(simple){
+  function costView(){
     const C=window.DurbarCost;
     const day=sinceDay(X.usageSince?X.usageSince():'');
     if(!day)costPer='run';
@@ -1623,8 +1593,8 @@
     const moneyCell=r=>C.notReported(r)?'<td class="num unk">not reported</td>':r.empty?'<td class="num">–</td>':n((/^</.test(C.money(r.money))?'':'≈ ')+C.money(r.money)); /* "<$0.01" needs no "≈" (as on the cards) */
     const row=r=>{
       const note=[r.tokensOnly?'Codex: tokens only':'',r.other?'saved totals of folders no longer in the list':''].filter(Boolean).join(' · ');
-      return `<tr class="${r.empty?'empty':''}${r.other?' other':''}"><th scope="row" title="${esc(r.path||r.name)}">${esc(r.name)}</th>${moneyCell(r)}${n(r.aiu.toFixed(2))}${n(r.usd?C.money(r.usd):'–')}${simple?'':n(r.tokens?fmt(r.tokens):'–')}${n(String(r.calls))}<td class="cnote">${esc(note)}</td></tr>`;};
-    const head=`<thead><tr><th scope="col">Folder</th><th scope="col" class="num">Est. cost</th><th scope="col" class="num">Copilot AIU</th><th scope="col" class="num">Claude $ est.<br><small>this session</small></th>${simple?'':'<th scope="col" class="num">Tokens<br><small>this session</small></th>'}<th scope="col" class="num">Calls</th><th scope="col">Note</th></tr></thead>`;
+      return `<tr class="${r.empty?'empty':''}${r.other?' other':''}"><th scope="row" title="${esc(r.path||r.name)}">${esc(r.name)}</th>${moneyCell(r)}${n(r.aiu.toFixed(2))}${n(r.usd?C.money(r.usd):'–')}${n(r.tokens?fmt(r.tokens):'–')}${n(String(r.calls))}<td class="cnote">${esc(note)}</td></tr>`;};
+    const head=`<thead><tr><th scope="col">Folder</th><th scope="col" class="num">Est. cost</th><th scope="col" class="num">Copilot AIU</th><th scope="col" class="num">Claude $ est.<br><small>this session</small></th><th scope="col" class="num">Tokens<br><small>this session</small></th><th scope="col" class="num">Calls</th><th scope="col">Note</th></tr></thead>`;
     const sum=`<p class="scr-sum">Cost by folder, <b>${allTime?'all time':'this session'}</b>${allTime?` (since ${esc(day)})`:''}. Estimated cost: Copilot AI credits at $0.01 each, plus Claude Code's own estimate. Not a bill.</p>`;
     const notes=`<p class="scr-note small">Copilot AIU and calls: ${allTime?'the totals saved since '+esc(day)+' (reset in Settings) plus this session':'since Agent Durbar opened (or the last reset)'}; ended sessions are included. Claude $ and tokens: the sessions open now, this session only. Codex reports tokens but no cost. A budget per folder is not available yet.</p>`;
     return {seg,built,label,html:sum+`<table class="ttab cost">${head}<tbody>${built.rows.map(row).join('')}</tbody><tfoot>${row(Object.assign({empty:false,other:false,path:''},built.total,{tokensOnly:false}))}</tfoot></table>`+notes+plan};

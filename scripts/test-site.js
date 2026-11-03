@@ -2,7 +2,7 @@
  * Spec 050: the project website builds and is self-contained (`npm run test:site`, also part of `npm test`). No network:
  * checks that docs/site/landing.json is validated against the README (a bad anchor, screenshot or harness fails), then
  * builds with SITE_RELEASE=off into a temp folder and checks both pages: every local link and image exists, nothing is
- * loaded from another site, CSP and disclaimer, the landing page's hero, status line, six themes and no internal spec
+ * loaded from another site, CSP and disclaimer, the landing page's hero, status line, two themes and no internal spec
  * numbers, the docs page's README sections and feature grid, and that the whole site stays under a size budget.
  */
 'use strict';
@@ -87,7 +87,7 @@ assert.ok(index.includes(landing.status.slice(0, 40)), 'the status line in the h
 assert.ok(index.indexOf('id="status"') < index.indexOf('id="features"'), 'the status line comes before the features');
 assert.match(index, /src="screenshots\/052-office-1440x900\.png"/, 'current hero screenshot');
 for (const t of landing.themes) assert.ok(index.includes(`screenshots/${t.screenshot}`) && index.includes(`>${t.name.replace(/&/g, '&amp;')}</figcaption>`), `theme ${t.name}`);
-assert.strictEqual(landing.themes.length, 6, 'six themes');
+assert.strictEqual(landing.themes.length, 2, 'two themes (spec 035 FR-017)');
 for (const h of landing.harnesses) assert.ok(index.includes(`<h3>${h.name}</h3>`), `agent app ${h.name}`);
 for (const id of ['features', 'how', 'themes', 'apps', 'safety', 'download']) assert.ok(index.includes(`id="${id}"`), `landing section ${id}`);
 assert.ok(!/FR-\d|spec 0\d\d|spec \d{3}/i.test(index), 'no FR or spec numbers on the landing page');
@@ -107,10 +107,15 @@ assert.ok(specsSec.includes('href="https://github.com/three-feathers/agent-durba
 assert.ok(!/specs-index group=index|specs-index group=046/.test(specsSec), 'no marker comments on the page');
 assert.ok(index.includes('href="docs.html#specs-index"'), 'the landing page links the index');
 for (const n of landing.featuresExclude) assert.ok(!docs.includes(`<small>Spec ${n}</small>`), `process spec ${n} is not a feature`);
+// spec 021 FR-068: a deprecated or superseded spec is no built feature, even when its note says "built"
+{
+  const rows = ['| [901](901-a/spec.md) | Alpha | built |', '| [902](902-b/spec.md) | Beta | deprecated: built, then removed on 2026-10-31 |', '| [903](903-c/spec.md) | Gamma | superseded: built, replaced by 901 |', '| [904](904-d/spec.md) | Delta | built: a follow-up |'].join('\n');
+  assert.deepStrictEqual(require('./build-site.js').features(rows).map((f) => f.num), ['901', '904'], 'deprecated and superseded rows are not listed');
+}
 for (const c of landing.cards) assert.ok(docs.includes(`id="${c.readmeAnchor}"`), `card anchor ${c.readmeAnchor} exists on the docs page`);
 
 // visitor rounds 2026-10-20 (spec 050): screenshots open full size, a FAQ for leads and skeptics, honest safety lines, phones
-for (const f of [landing.hero.image, ...landing.themes.map((t) => t.screenshot), landing.aiTheme.screenshot]) assert.ok(index.includes(`<a class="zoom" href="screenshots/${f}"`), `${f} opens full size`);
+for (const f of [landing.hero.image, ...landing.themes.map((t) => t.screenshot)]) assert.ok(index.includes(`<a class="zoom" href="screenshots/${f}"`), `${f} opens full size`);
 assert.match(index, /<figure class="shot"><a class="zoom" href="screenshots\/051-harnesses-1440x900\.png"[^>]*><span class="crop"/, 'the how-it-works shot is cropped to what matters and opens full size');
 assert.ok(index.includes('id="faq"') && landing.faq.length >= 5 && landing.faq.every((f) => index.includes(esc(f.q))), 'FAQ section with every question');
 for (const f of landing.faq) if (f.readmeAnchor) assert.ok(docs.includes(`id="${f.readmeAnchor}"`), `FAQ anchor ${f.readmeAnchor} exists`);
@@ -123,7 +128,7 @@ assert.match(docs, /\.docs\{grid-template-columns:minmax\(0,1fr\)/, 'the docs co
 assert.match(docs, /<a class="keep" href="index\.html#download">Download<\/a>/, 'Download stays in the docs header on phones');
 
 // spec 050 FR-012 (issue #759): every picture the site links is a palette PNG (colour type 3), made by `npm run shots:docs` or `npm run shots:compress`;
-// a linked picture the quality guard refused to compress is named in KEPT_ORIGINAL with the reason (none today)
+// a linked picture the quality guard refused to compress is named in KEPT_ORIGINAL with the reason
 const KEPT_ORIGINAL = {};
 for (const f of require('./shots-docs.js').linkedImages(ROOT)) {
   const b = fs.readFileSync(path.join(ROOT, 'docs', 'screenshots', f)).subarray(0, 26);

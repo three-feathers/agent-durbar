@@ -4,12 +4,12 @@
 group: 046
 title: Managed configuration for organizations: one admin-only config folder (policy.json, MCP list, icon, theme pack) sets the display name and icon, allowed agent apps, MCP lists and endpoints, an agent/profile/skill registry, OpenTelemetry, theme and custom LLMs with admin token pricing, plus the accepted additions (mode lock, proxy and CA, feature switches, installers, signing, spend caps, folder rules, updates, registry/MDM sources, signed config, audit log, retention, rebrand build, legal notice, version pins, endpoint auth, sign-in, vendor settings view); everything set there is locked; a narrow-only user layer; bad config fails closed and visibly
 status: draft
-note: spec only; decisions recorded, signing purchase needs the owner's OK
+note: Settings > Organization (FR-208) built; the rest is spec only; decisions recorded, signing purchase needs the owner's OK
 -->
 
 **Feature Branch**: `076-managed-config`
 **Created**: 2026-10-23
-**Status**: Draft. Section O (FR-198..FR-207, phase P27, issue #602) is built (PR 644; `[IMPLEMENTED]` tags there); everything else is spec only, nothing built. Q1-Q12 answered by Vikram on 2026-10-23 (defaults, except Q10: admin token pricing). A1-A19 accepted by Vikram on 2026-10-23 as requirements (section N); the code-signing certificate purchase still needs his explicit OK at purchase time. Security review by Paco's agent (2026-10-23, 17 items) folded in; R1-R8 answered by Vikram on 2026-10-23 (recommended defaults).
+**Status**: Draft. Section O (FR-198..FR-207, phase P27, issue #602) is built (PR 644; `[IMPLEMENTED]` tags there) and so is the read-only Settings > Organization section (FR-208); everything else is spec only, nothing built. Q1-Q12 answered by Vikram on 2026-10-23 (defaults, except Q10: admin token pricing). A1-A19 accepted by Vikram on 2026-10-23 as requirements (section N); the code-signing certificate purchase still needs his explicit OK at purchase time. Security review by Paco's agent (2026-10-23, 17 items) folded in; R1-R8 answered by Vikram on 2026-10-23 (recommended defaults).
 **Input**: Owner request by Vikram (2026-10-23): "Durbar must be packageable and usable in corporate environments. All of it is driven by a config folder (config files plus icons), and anything set there is locked, i.e. not editable in the UI (shown as *Set by your organization*):
 1. change the app display name and icon (the original name stays in About and credits);
 2. restrict which agent apps (harnesses) are allowed;
@@ -1012,8 +1012,25 @@ https://learn.chatgpt.com/docs/enterprise/managed-configuration.md (`allowed_app
 - **FR-207 For the Organization page.** `orgpolicy:view` returns, per app: whether a policy applies, whether part of it could not be
   read, where it came from (`paths`: file paths, or *the Copilot runtime*), what was wrong (`problems`: path and kind, never a value),
   the mode verdicts (words and whether refused), and counts of the model, server and tool rules (no values). The window uses it for the
-  mode menus; spec 076's Settings > Organization page (FR-194) will list it.
-  `[IMPLEMENTED]` test: `test-orgpolicy.ts` (e: no value of any list, valid or not, reaches the view). The Organization page itself is FR-194 (not built).
+  mode menus; Settings > Organization (FR-208) lists it.
+  `[IMPLEMENTED]` test: `test-orgpolicy.ts` (e: no value of any list, valid or not, reaches the view). The Organization page is FR-208 (built; FR-194's key list is not).
+
+- **FR-208 Settings > Organization (issue #602, spec delta 2026-10-31).** A read-only section of Settings, built only from `orgpolicy:view` (FR-207; no
+  new read, nothing written, no values of any rule). One row per agent app in the view: its name, one status line, where it came from
+  (`paths`), the mode verdicts in FR-202's words, the counts of model, server and tool rules, and each problem (path and kind). The status
+  line keeps three states apart, and **a failed read is never "no policy"**: *No policy file found on this computer* (found: no, unreadable:
+  no; with the note that a company profile, registry value or server-managed setting can still apply, FR-206); *Policy applies* (found,
+  fully read); *Policy found, but Agent Durbar could not read all of it, so what it blocks is unknown* (unreadable, in any case of found).
+  If `orgpolicy:view` itself fails, the section says the policies are unknown and shows no row as clear. Apps absent from the view have no
+  reader and are not listed. The text is escaped, at least 10.5px, and the section is not shown when the bridge has no view or the view is
+  empty. Not built here: showing top-level keys of the vendor files (FR-194's key list), FR-195's "which one wins" line, macOS MDM and the
+  Windows registry (P17), server-managed settings, Codex `mcp_servers` identity rules and a real managed machine (`[KNOWN GAP]`, FR-206).
+  Section O's phase P27 stays open for those.
+  **Relation to FR-015:** FR-208 is the read-only part of that diagnostics page for the agent apps' own policies (FR-207); FR-015's page (Durbar's own
+  managed config, shown only under a policy) is not built. When it is, this section becomes a part of that one page, not a second Organization page.
+  **Not understood is unknown:** a view that is not a plain object is a failed read; an entry that is not an object, or whose `found` and `unreadable` are not
+  both booleans, reads unknown (never "no policy"); only `{}` hides the section. A `fatal` policy (the app refuses to start) also reads unknown here: the view does not carry it (`[KNOWN GAP]`).
+  The list is not a live region; only the failure line is announced. Problem lines are in the warning colour; advice that already says Durbar could not read the policy does not add "(advice only)". `[IMPLEMENTED]` `test:` `test-orgwords.ts`; `sim:` `shots-076-orgpolicy.js` (`?simorgpolicy=1`). Pictures: [1440x900](../../docs/screenshots/076-orgpolicy-organization-1440x900.png), [1280x800](../../docs/screenshots/076-orgpolicy-organization-1280x800.png).
 
 ### M. Testing
 
@@ -1158,6 +1175,14 @@ All three answered on PR #575 (09:03-09:06 UTC) with option a, the recommended o
 
 ## Changes
 
+- 2026-11-01 (sweep of the build): **FR-208**: a slow reply of an earlier paint of Settings does not overwrite the Organization section of a later one.
+- 2026-11-02 (pre-review): **FR-208**: the status pill keeps its own width (it stretched across the row), and `shots-076-orgpolicy` checks a failed `orgpolicy:view` (says unknown, no row, no "no policy" line; mutation-checked).
+
+### 2026-10-31: Settings > Organization, the part of issue #602 that needs no native code (FR-208)
+
+Issue #602 asks for the Organization page that lists `orgpolicy:view`. FR-208 adds it, read-only, from the view that already exists; the
+sources that still need native code or a managed machine stay `[KNOWN GAP]` (FR-206). Tasks T206..T209.
+
 ### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
 
 The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
@@ -1215,4 +1240,8 @@ ignored, FR-007d). Narrow-only; a value that is not a boolean, a malformed `perm
 The rule is built and tested (`requireOsSandboxFrom`, `src/main/sandboxpolicy.ts`), but this spec has no policy reader yet, so it is not
 reachable in the app (`[KNOWN GAP]`, as `updatepolicy.ts`). FR-173's open point is answered by spec 087: Claude Code's and Copilot's
 OS sandboxes now hold their shell commands in Read-only and Ask first, and Settings > Agent apps shows each app's sandbox line (spec 087
-FR-012); there is no Organization page yet for the pointer FR-012 asks for.
+FR-012); Settings > Organization exists since FR-208, but it carries no sandbox pointer yet (`[KNOWN GAP]`: the pointer FR-012 asks for).
+
+### 2026-10-31: the theme maker and Import are retired (spec 040 FR-031; spec 021 FR-067)
+
+- **FR-091** and **FR-158** change: `appearance.allowThemeMaker`, `features.themeMaker` and the Import part of `allowUserThemes` are **no-ops** (accepted, ignored, never an error), because *Make a theme with AI* and *Import a theme* no longer exist. `allowUserThemes: false` still hides the list of themes you saved and **Remove the active theme…**. A managed theme pack still goes through `checkUserManifest`. Spec 076 is a draft: nothing was built for these keys.

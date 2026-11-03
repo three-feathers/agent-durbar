@@ -23,7 +23,7 @@ import { folderFingerprint } from './usagetotalsstore';
 import { notesMdText, type NotesMdSection } from '../shared/notesmd';
 import { HIDDEN_ALL_RE } from '../shared/names';
 
-/** What one import of `.durbar/notes.md` did (FR-054; spec Changes 2026-10-31, T041). Counts only: never a title or a text. */
+/** What one import of `.durbar/notes/notes.md` did (FR-054; spec Changes 2026-10-31, T041). Counts only: never a title or a text. */
 export interface NotesImport { added: number; edited: number; older: number; deleted: number; tooLong: number; overCap: number; again: number; keptDurbar: number }
 /** A file title as Durbar keeps it: hidden bidi and zero-width characters removed (T041 AC14), then `cleanTitle` (undefined: none). */
 const fileTitle = (t: string | undefined): string | undefined => (t === undefined ? undefined : cleanTitle(t.replace(HIDDEN_ALL_RE, '')));
@@ -425,9 +425,43 @@ export class NotesStore {
     return this.mutate(folderKey, folderName, (doc) => applyChange(doc, { op: 'delete', id, rev }, this.now(), () => ''));
   }
 
-  /** FR-048: every note of the folder, tombstones kept. */
-  removeAll(folderKey: string, folderName: string): Promise<NotesWrote> {
-    return this.mutate(folderKey, folderName, (doc) => applyChange(doc, { op: 'deleteAll' }, this.now(), () => ''));
+  /** FR-048: every note of the folder (or only the counted ones, `only`: id and rev), tombstones kept. */
+  removeAll(folderKey: string, folderName: string, only?: readonly { id: string; rev: number }[]): Promise<NotesWrote & { count?: number }> {
+    let count = 0;
+    return this.mutate(folderKey, folderName, (doc) => {
+      const r = applyChange(doc, { op: 'deleteAll', ...(only ? { only } : {}) }, this.now(), () => '');
+      if (r.ok) count = doc.notes.length - r.doc.notes.length; // what was really deleted, under the folder's queue and lock
+      return r;
+    }).then((w) => (w.ok ? { ...w, count } : w));
+  }
+
+  /**
+   * FR-048 (T034b): *Also delete its notes* of a removed folder. Deletes only this folder's `<fingerprint>.json` (the fingerprint of
+   * main's own folder key), under the folder's queue and lock; no tombstones are kept, the file is gone. A link there is unlinked as a
+   * link; anything that is not a file or a link is refused. Files moved aside by *Start over* (`.json.bad-*`) are left.
+   */
+  forget(folderKey: string): Promise<{ ok: true; fingerprint: string; deleted: boolean } | NotesFail> {
+    const fp = this.fingerprintOf(folderKey);
+    return this.queue(fp, async () => {
+      const lk = await this.lock(fp);
+      if (!lk.ok) return lk;
+      try {
+        if (!(await this.ownsLock(fp, lk.token))) return { ok: false, code: 'write', error: 'The notes are busy (another Durbar is writing them). Try again.' } as NotesFail;
+        const file = this.fileOf(fp);
+        let deleted = false;
+        try {
+          const st = this.fs.lstatSync(file);
+          if (!st.isFile() && !st.isSymbolicLink()) return { ok: false, code: 'write', error: 'The notes file of this folder is not a file; it was left.' } as NotesFail;
+          this.fs.unlinkSync(file);
+          deleted = true;
+        } catch (e) {
+          if (errCode(e) !== 'ENOENT') return { ok: false, code: 'write', error: `Could not delete the notes (${errCode(e)}).` } as NotesFail;
+        }
+        this.cache.delete(fp);
+        this.fire(fp);
+        return { ok: true as const, fingerprint: fp, deleted };
+      } finally { await this.unlockFile(fp, lk.token); }
+    });
   }
 
   /** FR-007: a file Durbar cannot read is renamed to `<fingerprint>.json.bad-<UTC time>` (0600) and the folder starts empty. */
@@ -470,7 +504,7 @@ export class NotesStore {
   }
 
   /**
-   * FR-054 (T041 AC3, AC11..AC16): the sections parsed from the folder's `.durbar/notes.md`, imported. A known id whose title (hidden
+   * FR-054 (T041 AC3, AC11..AC16): the sections parsed from the folder's `.durbar/notes/notes.md`, imported. A known id whose title (hidden
    * characters removed), text (`notesMdText` form) or `done` differs is an edit, unless its marker's `updated=` is older than the stored
    * note (an older copy: a branch switch, a revert); `created=` is ignored and the edit's time is `updated=` clamped to now, never
    * earlier than the stored one; the edit sets `fileEdited`. Any other section is a new note `from: file`, created now (a valid id never
@@ -636,7 +670,7 @@ export class NotesStore {
     return this.mutate(folderKey, folderName, (doc) => {
       const next: NotesDoc = { ...doc, notes: doc.notes.map((n) => ({ ...n })), tombstones: doc.tombstones.map((t) => ({ ...t })) };
       if (mirror) { next.mirror = { sha256: mirror.sha256, bytes: mirror.bytes, at: mirror.at }; delete next.filePending; } // written: every note is in the file now
-      else delete next.mirror;
+      else { delete next.mirror; delete next.fileImport; delete next.filePending; } // forgetting the file forgets everything about it (turn-on; Changes 2026-11-01: the old .durbar/notes/notes.md is not followed)
       return { ok: true, doc: next };
     });
   }

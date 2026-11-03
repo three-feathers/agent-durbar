@@ -36,10 +36,7 @@ export const NOTES_LIMITS = (() => {
    */
   const noteMdBytes = 3 * (textChars + titleChars) + Math.ceil(textChars / 17) + 1 + 256;
   const mdBytes = notesPerFolder * noteMdBytes + 1_024;
-  /** FR-051: the most read of a worktree's or submodule's `.git` file and of its `commondir` file, and of `info/exclude` (files Durbar did not write). */
-  const gitFileBytes = 4_096;
-  const excludeBytes = 1_048_576;
-  return { textChars, titleChars, notesPerFolder, tombstones, folderNameChars, inputChars, titleInputChars, ordMax, noteExtraBytes, tombstoneBytes, docExtraBytes, noteJsonBytes, storeBytes, noteMdBytes, mdBytes, gitFileBytes, excludeBytes } as const;
+  return { textChars, titleChars, notesPerFolder, tombstones, folderNameChars, inputChars, titleInputChars, ordMax, noteExtraBytes, tombstoneBytes, docExtraBytes, noteJsonBytes, storeBytes, noteMdBytes, mdBytes } as const;
 })();
 
 export type NoteFrom = 'agent' | 'user' | 'selection' | 'typed' | 'file';
@@ -282,7 +279,8 @@ export type NoteChange =
   | { op: 'add'; text: string; title?: string; from: NoteFrom; hidden: boolean; source?: NoteSource }
   | { op: 'update'; id: string; rev: number; title?: string; text?: string; done?: boolean; hidden?: boolean }
   | { op: 'delete'; id: string; rev: number }
-  | { op: 'deleteAll' };
+  /** `only`: the notes main counted (id and rev); a later or edited note stays (T034b). Absent: every note. */
+  | { op: 'deleteAll'; only?: readonly { id: string; rev: number }[] };
 
 export type ChangeResult =
   | { ok: true; doc: NotesDoc; note?: Note }
@@ -314,8 +312,11 @@ export function applyChange(doc: NotesDoc, change: NoteChange, now: Date, newId:
     return { ok: true, doc: d, note };
   }
   if (change.op === 'deleteAll') {
-    for (const n of d.notes) d.tombstones.push({ id: n.id, deletedAt: stamp });
-    d.notes = [];
+    const only = change.only ? new Map(change.only.map((x) => [x.id, x.rev])) : undefined;
+    const gone = only ? d.notes.filter((n) => only.get(n.id) === n.rev) : d.notes;
+    for (const n of gone) d.tombstones.push({ id: n.id, deletedAt: stamp });
+    const goneIds = new Set(gone.map((n) => n.id));
+    d.notes = d.notes.filter((n) => !goneIds.has(n.id));
     d.tombstones = capTombstones(d.tombstones);
     return { ok: true, doc: d };
   }
@@ -421,6 +422,8 @@ export interface NotesFileSwitch { on: boolean; disabled?: string }
 /** `notes:fileCount` (FR-050, only while turning on): notes the existing file would add, whether it exists, whether the folder is in a git repository. */
 export type NotesFileCount = { ok: true; count: number; exists: boolean; strayText: number; repo: boolean } | NotesFail;
 /** `notes:setFile` (FR-050, FR-055): the switch's new position, the mirror's state after turning on, and a short line for the screen. */
-export type NotesSetFile = { ok: true; on: boolean; file?: NotesFileState; message?: string; demo?: boolean } | (NotesFail & { excludeFailed?: true });
+export type NotesSetFile = { ok: true; on: boolean; file?: NotesFileState; message?: string; demo?: boolean } | NotesFail;
 export type NotesView = { ok: true; fingerprint: string; folderName: string; notes: Note[]; max: number; readOnly?: string; session?: string; file?: NotesFileState; fileSwitch?: NotesFileSwitch } | NotesFail;
-export type NotesWrote = { ok: true; fingerprint: string; note?: Note; existing?: boolean } | NotesFail;
+export type NotesWrote = { ok: true; fingerprint: string; note?: Note; existing?: boolean; count?: number } | NotesFail;
+/** FR-048 (T034b): what *Export…* did: the count and the chosen file's base name (never its folder), a cancel, or the demo's answer. */
+export type NotesExport = { ok: true; count: number; name: string } | { ok: true; demo: true; message: string } | { ok: false; cancelled: true } | NotesFail;

@@ -345,3 +345,25 @@
 
 ## FR-181: no Demo / Live badge in the top bar (2026-10-31, owner)
 - [x] T193 `check-no-demo-badge.js` first (fails with the badge), then `#protoBadge`, `.proto` and `setBadge` removed; UI-suite entry; the cues that remain are listed in the spec delta [FR-181]
+
+## FR-206..FR-208: the Needs you inbox cannot answer a request by accident (2026-11-01)
+- [x] T203 `check-inbox-safety.js` first (on `main` it fails: a stale button re-answers a request, a held A answers, key A sends a limit's hidden amount), then `reqOf` and the live-card check in `paintInbox` [FR-206]; UI-suite entry
+- [x] T204 Limit row: the amount field in the row, no letter keys, own words, empty amount sends nothing, typing is not a command [FR-207]
+- [x] T205 `inboxKey` ignores `e.repeat` on A, S, D, O, Enter, Space and the chat's Alt+A/S/D; no key on a row being answered [FR-208]; five mutants run
+- [x] T206 Review of #1004 (independent security review): `check-answer-safety.js` first, then the answer bar's focus rule and no limit buttons in the bar [FR-210], the composer's repeat guard [FR-211], the limit card's in-flight lock, rounding and late-answer rule, the row's kept amount and Open key [FR-209]; native key steps with `isAutoRepeat`; every mutant run one at a time and listed in the PR
+- [x] T207 Plan card focus (spec 066 FR-064) [FR-212]; driver step in `check-answer-safety.js`
+- [x] T208 Corrected FR-206's wording (the broker ignores a second answer: no wrong approval from the stale row)
+- [x] T209 Re-review of #1004 at 97a9e6d7: inbox clicks stay in the inbox (`#inboxDlg` excluded at the document click handler), Enter in the limit amount raises, focus stays in the dialog after an answer [FR-213]; real-mouse and native-key steps
+- [x] T210 Plan focus rule (no modal, empty box, focus on the page or in the box) and held Enter/Space on the plan's buttons (spec 066 FR-064, an agent decision) [FR-212]
+- [x] T211 Answer bar same-card rule by position (agent-supplied option labels cannot catch focus); late limit reply skips a settled card; `inboxKey` row guard, Space guard and `live.contains(src)` kept and tested; question answers locked in flight [FR-209, FR-210, FR-206, FR-208]
+- [x] T212 Third review of #1004: typing on a plan goes to the box; a hung limit answer (Sending…, 30 s unlock, "Still waiting", Copilot `cancelLimit` time limit); Space guard step; bar ignores locked cards; repaint keeps focus in the amount; tests for the question unlock and the amount's repeat check [FR-209, FR-210, FR-212, FR-213]
+- [x] T213 Fourth review of #1004: a settled limit card keeps its status (timer and late failure), `stop`/`interrupt` give up on cancel, abort and disconnect after 5 s (`test:copilotcap` with all three hanging), paste on the plan goes to the box [FR-209, FR-212]
+- [x] T226 Measure stop and interrupt after the 5 s give-up on a real Copilot runtime (issue #1028): `scripts/copilot-giveup-real.ts`, 7 prompts plus 2 to check the fixes [FR-228]
+- [x] T227 The row says Stop was sent; `send` waits for calls given up on (`test:copilotcap`, mutation-checked; `real:` the next message runs) [FR-229]
+- [x] T228 `start` and rename of the same id wait for a late close (`test:copilotcap`, mutation-checked; `real:` the resumed session lives) [FR-230]
+- [x] T246 Measure the runtime's own limit after a give-up on a real Copilot runtime (issue #1028 question 3): `--repl`, 32.05 AI credits [FR-231]
+- [x] T247 A send after a give-up waits for the end of the stopped turn (`test:copilotcap`, mutation-checked; `real:`) [FR-232]
+- [x] T248 Stop at a limit shows no error (`test:copilotcap`, mutation-checked; `real:`) [FR-233]
+- [x] T249 A raise under what was used keeps the card and the message (`test:copilotcap`, mutation-checked; `real:`) [FR-234]
+- [x] T250 A session over its cap opens again (`test:copilotcap`, mutation-checked; `real:`) [FR-235]
+- [x] T251 Remove the Simple / Expert switch: Expert is the only behaviour, "No spending limit" kept, the welcome question and the Settings control gone, a stored `durbar.detail` dropped once; 11 drivers lose the second dimension, `shots-052-ux` checks nothing renders the switch; docs and `*-simple-*` pictures removed [FR-236]

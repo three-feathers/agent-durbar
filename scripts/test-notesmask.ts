@@ -1,5 +1,6 @@
 /** Spec 083 T011 (FR-005, D3, SC-002, issue 699): `maskNoteText` masks a note's text and keeps its Markdown. `npm run test:notes`. No credits; every token is built at run time. */
 import * as assert from 'assert';
+import { assertLinearShape } from './redact-growth-lib';
 import { CUT_LINE, NOTES_LIMITS, fitText } from '../src/shared/notes';
 import { maskNoteText } from '../src/shared/redact';
 
@@ -80,17 +81,9 @@ assert.deepStrictEqual(maskNoteText(''), { text: '', changed: false });
 assert.strictEqual(maskNoteText(12345 as unknown as string).text, '12345');
 
 // AC4: linear time (CPU time, docs/agent-notes.md "Timing checks"): 8x the input, far less than 128x the time (spec: under 16x)
-const cpuMs = (f: () => void): number => { const c = process.cpuUsage(); f(); const d = process.cpuUsage(c); return (d.user + d.system) / 1000; };
 const unit = '## Heading\n\nSome **bold** text with `code`, a [link](https://example.org/a) and snake_case_words; ' + GH + ' and more.\n\n- one\n- two _em_\n\n';
 const make = (n: number): string => unit.repeat(Math.ceil(n / unit.length)).slice(0, n);
-const small = make(20_000);
-const large = make(160_000);
-let bestSmall = Infinity;
-let bestLarge = Infinity;
-for (let i = 0; i < 3; i++) { bestSmall = Math.min(bestSmall, cpuMs(() => M(small))); bestLarge = Math.min(bestLarge, cpuMs(() => M(large))); }
-assert.ok(bestLarge < Math.max(bestSmall, 5) * 16 + 200, `linear: 20k ${bestSmall.toFixed(1)} ms, 160k ${bestLarge.toFixed(1)} ms`);
-assert.ok(bestLarge < 3000, `160k characters in ${bestLarge.toFixed(0)} ms (limit 3 s)`);
-const pathological = ('**' + 'a'.repeat(30) + '`').repeat(5000);
-assert.ok(cpuMs(() => M(pathological)) < 3000, 'many marks next to long runs stay fast');
+assertLinearShape('note text', (x) => void M(x), make, 160_000);
+assertLinearShape('many marks next to long runs', (x) => void M(x), (n) => ('**' + 'a'.repeat(30) + '`').repeat(Math.ceil(n / 33)), 165_000);
 
-console.log(`notes mask: shapes in Markdown, split and glued tokens, known values, mask-then-cut, linear (20k ${bestSmall.toFixed(0)} ms, 160k ${bestLarge.toFixed(0)} ms)`);
+console.log(`notes mask: shapes in Markdown, split and glued tokens, known values, mask-then-cut, linear`);
