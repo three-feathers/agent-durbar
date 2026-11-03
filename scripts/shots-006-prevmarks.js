@@ -6,12 +6,12 @@
  *   OUT=docs/screenshots DURBAR_USER_DATA=$(mktemp -d) DURBAR_SIM=15 DURBAR_SIM_FREEZE=1 \
  *     DURBAR_DRIVER=$PWD/scripts/shots-006-prevmarks.js xvfb-run -a npx electron . --no-sandbox
  *
- * At 1440x900 and 1280x800, Expert and Simple: the row menu, pinned rows first, Show hidden, the red delete confirmation (Cancel
+ * At 1440x900 and 1280x800,: the row menu, pinned rows first, Show hidden, the red delete confirmation (Cancel
  * focused), the refusal for a session still in the office (with and without Remove from office), and Delete… disabled with its
  * reason. Asserts the row fits (Resume/View and ⋯ never wrap, overlap or leave the row). Writes docs/screenshots/006-prev-*.png.
  *
  * FR-033..FR-037 (2026-10-21): the section above the chat, collapsed and expanded, light and dark: no Previous (N) in the header,
- * one slim toggle row with aria-expanded, Ctrl+Shift+H with its focus moves, the choice saved for the next chat, Simple wording, no
+ * one slim toggle row with aria-expanded, Ctrl+Shift+H with its focus moves, the choice saved for the next chat, no
  * section for a folder without history. Writes docs/screenshots/006-sessions-*.png.
  */
 const assert = require('assert');
@@ -28,10 +28,9 @@ module.exports = async (ctx) => {
   const log = (...a) => console.log('[006-prev]', ...a);
   const count = () => js(`document.querySelector('#prevBtn .prev-c').textContent`);
   const rows = () => js(`[...document.querySelectorAll('#prevLists .prev-row')].map(r=>({g:r.dataset.pg,k:r.dataset.pk,t:r.querySelector('.prev-t').textContent,pin:!!r.querySelector('.prev-pin'),hid:r.classList.contains('is-hidden')}))`);
-  const shot = (name, w, h, level) => H.shot(path.join(OUT, `006-prev-${name}-${w}x${h}${level === 'simple' ? '-simple' : ''}.png`), { prep: 'calm' });
-  const load = async (w, h, query, level) => {
+  const shot = (name, w, h) => H.shot(path.join(OUT, `006-prev-${name}-${w}x${h}.png`), { prep: 'calm' });
+  const load = async (w, h, query) => {
     await H.load({ w, h, query });
-    await js(`document.body.classList.toggle('simple',${level === 'simple'})`);
     await js(`(()=>{const d=[...document.querySelectorAll('#stage .desk[data-id]')].find(x=>/Ada/.test(x.innerText));d.click();})()`);
     await ctx.waitFor(`!!document.getElementById('prevBtn')&&!document.getElementById('prevBtn').hidden`, 8000);
     if (!(await js(`!!document.querySelector('#prev .prev-row')`))) { await js(`document.getElementById('prevBtn').click()`); }
@@ -65,7 +64,7 @@ module.exports = async (ctx) => {
   const ARIA = MAC ? 'Meta+Shift+H' : 'Control+Shift+H', KEYTXT = MAC ? '⇧⌘H' : 'Ctrl+Shift+H';
   /* a capture can fail once right after a page load on the Windows runner (UnknownVizError): settle and try once more */
   const shotSafe = async (file) => { try { await H.shot(file, { prep: 'calm' }); } catch (e) { console.log('[006-prev] capture retry:', String(e && e.message || e)); await settle(); await ctx.sleep(500); await H.shot(file, { prep: 'calm' }); } };
-  const forget = () => js(`(()=>{try{localStorage.removeItem('durbar.prevOpen');localStorage.removeItem('durbar.detail');}catch(e){}})()`);
+  const forget = () => js(`(()=>{try{localStorage.removeItem('durbar.prevOpen');}catch(e){}})()`);
   const openAgent = async (name) => { await js(`(()=>{const d=[...document.querySelectorAll('#stage .desk[data-id]')].find(x=>x.innerText.includes(${jsLiteral(name)}));d.click();})()`); await ctx.waitFor(`!!document.getElementById('panelHead')`, 8000); await settle(); };
   const sect = () => js(`(()=>{const p=document.getElementById('prev'),b=document.getElementById('prevBtn'),pp=document.getElementById('prevPanel');if(!p||!b)return null;const r=p.getBoundingClientRect(),br=b.getBoundingClientRect();
     return {shown:!p.hidden&&r.height>0,exp:b.getAttribute('aria-expanded'),ctl:b.getAttribute('aria-controls'),keys:b.getAttribute('aria-keyshortcuts'),panel:!pp.hidden,label:b.querySelector('.prev-l').textContent,region:p.getAttribute('aria-label'),
@@ -121,12 +120,8 @@ module.exports = async (ctx) => {
         await js(`(()=>{const i=document.getElementById('palIn');i.value='previous sessions';i.dispatchEvent(new Event('input',{bubbles:true}));})()`);
         assert.ok(await until(`[...document.querySelectorAll('.pal-o .pal-l')].some(x=>x.textContent==='Show or hide previous sessions')`), T + ': palette item');
         await H.key('Escape', [], { char: 'never' }); await settle();
-        // Simple wording (FR-033)
-        await js(`localStorage.setItem('durbar.detail','simple')`); await H.load({ w, h, query: q }); await openAgent('Ada'); await ctx.waitFor(`!document.getElementById('prev').hidden`, 8000); await settle();
-        S = await sect(); assert.strictEqual(S.label, 'Earlier chats'); assert.strictEqual(S.region, 'Earlier chats');
-        await shotSafe(path.join(OUT, `006-sessions-simple-${w}x${h}.png`));
         // FR-034/FR-036 (review on #497): the key pressed while the lists still load never says "none"; it opens once they are back
-        await js(`localStorage.removeItem('durbar.detail')`); await forget();
+        await forget();
         await H.load({ w, h, query: { ...q, simprevdelay: '2500' } }); await openAgent('Ada');
         assert.ok(await js(`document.getElementById('prev').hidden`), T + ': no row while loading');
         await js(`document.querySelectorAll('#toasts .toast').forEach(t=>t.remove());document.getElementById('msgInput').focus()`);
@@ -168,9 +163,9 @@ module.exports = async (ctx) => {
   await H.load({ w: 1440, h: 900 }); await forget(); /* the row checks below start from no saved choice */
 
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
-    for (const level of ['expert', 'simple']) {
-      await load(w, h, {}, level);
-      const L = `${w}x${h} ${level}`;
+    {
+      await load(w, h, {});
+      const L = `${w}x${h}`;
       let r = await rows();
       assert.deepStrictEqual(r.map((x) => x.k), ['prev-1', 'prev-2', 'prev-3', 'prev-4', 'h1/c1', 'h1/c2'], 'both groups, newest first');
       await assertFit(L + ' initial');
@@ -179,7 +174,7 @@ module.exports = async (ctx) => {
       assert.deepStrictEqual(await menuItems(), ['Pin to top', 'Rename…', 'Hide', 'Delete…'], 'agent session menu (059 FR-006: Rename… between Pin and Hide)');
       assert.ok(await js(`document.activeElement.closest('#modeMenu')!==null`), 'focus is in the menu');
       assert.ok(await js(`document.querySelector('#modeMenu').getAttribute('role')==='menu'&&document.querySelector('#prevLists .prev-row[data-pk="prev-3"] .prev-more').getAttribute('aria-label')==='Actions for Add a retry with backoff to the registry client'`), 'roles and labels');
-      await shot('menu', w, h, level);
+      await shot('menu', w, h);
       await escKey(); await until(`!document.getElementById('modeMenu')&&document.activeElement===document.querySelector('#prevLists .prev-row[data-pk="prev-3"] .prev-more')`);
       assert.ok(await js(`!document.getElementById('modeMenu')`), 'Escape closes the menu');
       assert.ok(await js(`document.activeElement===document.querySelector('#prevLists .prev-row[data-pk="prev-3"] .prev-more')`), 'focus returns to the ⋯');
@@ -214,14 +209,14 @@ module.exports = async (ctx) => {
       assert.ok(await js(`!!document.querySelector('#prevLists .prev-row[data-pk="prev-4"] .prev-hidtag')`), 'Hidden tag');
       await openMore('prev-4');
       assert.deepStrictEqual(await menuItems(), ['Rename…', 'Unhide', 'Delete…'], 'a hidden row offers Unhide (no Pin)');
-      await shot('hidden', w, h, level);
+      await shot('hidden', w, h);
       await escKey(); await until(`!document.getElementById('modeMenu')`);
       await assertFit(L + ' hidden shown');
       // Delete…: the red confirmation, Cancel focused
       await openMore('prev-2'); await pact('delete');
       const dlg = await js(`({t:document.getElementById('mdT').textContent,b:document.getElementById('mdB').textContent,l:[...document.querySelectorAll('#mdL li')].map(x=>x.textContent),btn:[...document.querySelectorAll('#modeDlg .dbtn .btn')].map(x=>x.textContent+(x.className.includes('danger')?'*':'')),f:document.activeElement.textContent})`);
       assert.deepStrictEqual(dlg, { t: 'Delete this session?', b: '“Why does the canton lookup return duplicates?” will be deleted from GitHub Copilot on this computer.', l: ['It will also be gone from VS Code and the Copilot CLI, and it cannot be resumed again.', 'This cannot be undone. To only take it out of this list, use Hide.'], btn: ['Cancel', 'Delete*'], f: 'Cancel' }, 'delete confirmation');
-      await shot('delete', w, h, level);
+      await shot('delete', w, h);
       await js(`document.querySelector('#modeDlg [data-cancel]').click()`); await ctx.waitFor(`!document.getElementById('modeDlg')`, 8000);
       assert.ok((await rows()).some((x) => x.k === 'prev-2'), 'Cancel keeps the row');
       await openMore('prev-2'); await pact('delete');
