@@ -681,8 +681,11 @@ export interface AgentAdapter {
    * Spec 058 FR-012: restart one MCP server of a running session, only that one, with the configuration it already has. Optional
    * (`capabilities.mcpRestart`). Rejects with a short, user-facing sentence when the session is not running or the server cannot be
    * restarted now; never starts a session and never restarts the others. The new state follows as an `mcp` event.
+   * `opts.auto` (spec 058 FR-207, FR-214): main's automatic reconnect before a message: only the app's own reconnect call, never a
+   * fallback that switches the server off and on, never a sign-in call; the adapter reads the server list again afterwards when the
+   * call's own answer is not the outcome (Copilot). Only adapters with `capabilities.mcpSignInReconnect` are called with it.
    */
-  restartMcpServer?(sessionId: string, name: string): Promise<void>;
+  restartMcpServer?(sessionId: string, name: string, opts?: { auto?: boolean }): Promise<void>;
   /**
    * Spec 069 FR-031: the tools one MCP server of a running session offers, as the agent app reports them now. Optional
    * (`capabilities.mcpTools`). Rejects with a short, user-facing sentence when the session or the server is not running.

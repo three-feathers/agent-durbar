@@ -269,6 +269,17 @@
       void agentMcp(m.a,sg?Object.assign({},m.o,{signIn:{name:n,again:sg.dataset.lvagain!==undefined}}):m.o); /* FR-195: the dialog runs its own Sign in */
     }
   }
+  /* ---------------- spec 058 FR-213: Settings > MCP servers: Refresh MCP sign-ins automatically (on unless turned off), and what it does,
+     no more than what runs ---------------- */
+  /* this delta's first part (PR 1, T178..T181, T184..T186): the reconnect before a message; the launch check and the 30-minute recheck
+     (T182, T183) come with the second part, which brings FR-213's full line */
+  const SIGNIN_REFRESH_LINE='Agent Durbar asks the agent app to reconnect remote MCP servers on its own before a message after an hour without a reply. This happens in every permission mode. Where the agent app runs its MCP servers in its own OS sandbox (Copilot in Read-only and Ask first), a reconnect did not renew the sign-in, so there Agent Durbar only tells you when a server needs you to sign in again. Only the app\u2019s own sign-in is renewed; Agent Durbar never sees it. A reconnect never starts a local server. Codex chats are not reconnected; they renew with their next session.';
+  function signInRefreshRow(app){
+    if(!X.bridge.setMcpSignInRefresh)return '';
+    const on=!app||app.mcpSignInRefresh!==false;
+    return `<div class="scr-tools mcp-refresh"><span class="swrow" style="display:flex;align-items:center;gap:10px"><b>Refresh MCP sign-ins automatically</b>${sw(on,'Refresh MCP sign-ins automatically','id="mcpRefreshSw"')}</span><span class="scr-note small" id="mcpRefreshMsg" role="status"></span></div>
+        <p class="scr-note small" id="mcpRefreshLine">${esc(SIGNIN_REFRESH_LINE)}</p>`;
+  }
   /* ---------------- spec 100 FR-012, FR-020: Settings > MCP servers: the warning levels and the last figures (never measured: nothing; Durbar starts no server for it) ---------------- */
   let mcpCosts=null;
   function mcpCostSection(){
@@ -438,6 +449,7 @@
       <details class="scr-adv" id="advMcp"${advOpen?' open':''}><summary><h3 class="scr-adv-h">Advanced: MCP servers (extra tools for agents)</h3><span class="mtag warn" id="advMcpAtt"${live&&live.agg.attention?'':' hidden'}>${esc(attText(live?live.agg.attention:0))}</span></summary>
       <section class="scr-sec" aria-labelledby="mcpH"><h3 id="mcpH" tabindex="-1">MCP servers</h3>
         ${liveSection()}
+        ${signInRefreshRow(app)}
         <p class="scr-note">Every agent gets the servers of your <b>Copilot CLI list</b>, the one global list.</p>
         <details class="scr-more"><summary>More</summary><p class="scr-note small">There is nothing to configure or import here. Each agent can switch single servers off from its own header (MCP button). Claude Code and Codex read their own MCP settings; each agent's <b>MCP</b> item (in its chat's More menu) shows what it uses.</p></details>
         <p class="scr-warn" role="note"><b>MCP servers run local commands with your user rights.</b> The Copilot runtime starts the servers of your CLI list in every session, exactly as the CLI does. Read-only MCP tools can run without asking even in Read-only mode.</p>
@@ -864,6 +876,15 @@
     }
     const la=e.target.closest('#liveActSw');
     if(la&&X.liveAct){const on=!X.liveAct.get();X.liveAct.set(on);la.classList.toggle('on',on);la.setAttribute('aria-checked',on?'true':'false');return;}
+    const mr=e.target.closest('#mcpRefreshSw');
+    if(mr&&X.bridge.setMcpSignInRefresh){ /* spec 058 FR-213: main's answer is what is in force */
+      const on=mr.getAttribute('aria-checked')!=='true';
+      let res=null; try{res=await X.bridge.setMcpSignInRefresh(on);}catch(err){res=null;}
+      const m=$('mcpRefreshMsg');
+      if(res&&res.ok){const v=res.mcpSignInRefresh!==false;mr.classList.toggle('on',v);mr.setAttribute('aria-checked',v?'true':'false');if(m)m.textContent=v?'On: sign-ins are refreshed automatically.':'Off: nothing is reconnected by itself. Sign in and Restart still work.';}
+      else if(m)m.textContent='Not saved.';
+      return;
+    }
     const ns=e.target.closest('#notifySw');
     if(ns&&X.bridge.setNotifyNeedsMe){
       const on=ns.getAttribute('aria-checked')!=='true';

@@ -114,6 +114,8 @@ body.has-bridge #liveBar{display:flex}
 .note{font-size:var(--t3-size);color:var(--ink-2);background:var(--pb-waiting,#fbefd6);border:1px solid var(--tone-warn-line);border-radius:12px;padding:8px 12px;max-width:92%;align-self:flex-start;overflow-wrap:break-word}
 .note.err{background:var(--pb-error,#f6e2df);border-color:var(--tone-bad-line);color:var(--red-ink)}
 .note .btn{height:28px;margin:0;padding:0 10px}
+.note.mcpre{background:var(--tone-info-soft);border-color:var(--tone-info-line);color:var(--ink-2);font-size:var(--t4-size)} /* spec 058 FR-208, FR-211: one quiet line (12px, over the 10.5px floor) */
+.note.mcpre-sign{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
 .note-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
 .note .ro-done{margin:6px 0 0;color:var(--ink-2)} /* spec 003 FR-096: after a switch from a Read-only denial; inherits the note's size (10.5px floor) */
 /* spec 012 FR-157: the chat's sign-in card; the raw error only in a small, closed Details */

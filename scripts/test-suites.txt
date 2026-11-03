@@ -50,6 +50,7 @@ test:copilotcap
 test:mcpsession
 test:mcpcall
 test:mcpsignin
+test:mcpsigninrefresh
 test:places
 test:floornav
 test:cuttext

@@ -11,6 +11,7 @@ import { ANNOUNCE_APPS, parseAnnounced, parseCap, parseSandboxAlways, parseSetti
 import type { AppSettings } from '../shared/credits';
 import { mcpWarnDefaults, parseWarnLevels } from '../shared/mcpcost';
 import type { McpWarnLevels } from '../shared/mcpcost';
+import { MCP_SIGNIN_REFRESH_DEFAULT } from './mcpsigninrefresh';
 import { addCustomPlace, removeCustomPlace, setPlaceEntry, updateCustomPlace } from '../shared/places';
 import type { CustomPlace, PlaceError, PlaceMap } from '../shared/places';
 import { migrateLegacyTheme, parseCharacters } from '../shared/characters';
@@ -209,6 +210,18 @@ export class SettingsStore {
     if (v) delete next.checkUpdatesAtStart;
     else next.checkUpdatesAtStart = false;
     return this.commit(next) ? v : this.checkUpdatesAtStart;
+  }
+
+  /** Spec 058 FR-213: *Refresh MCP sign-ins automatically*: the stored choice, or the default (one constant) when none is stored. */
+  get mcpSignInRefresh(): boolean {
+    const v = this.s.mcpSignInRefresh;
+    return v === undefined ? MCP_SIGNIN_REFRESH_DEFAULT : v === true;
+  }
+
+  /** Only a real boolean changes it and is written as chosen (so a later change of the default keeps the person's choice). Returns the value now in force (a failed save keeps the old one). */
+  setMcpSignInRefresh(v: unknown): boolean {
+    if (typeof v !== 'boolean') return this.mcpSignInRefresh;
+    return this.commit({ ...this.s, mcpSignInRefresh: v }) ? v : this.mcpSignInRefresh; // issue #1023: a failed save keeps the old value
   }
 
   /** Spec 081 FR-016: the last announced version per agent app, a copy. */

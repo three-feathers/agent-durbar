@@ -96,6 +96,7 @@ export const CLAUDE_CAPABILITIES: AdapterCapabilities = Object.freeze({
   mcpSignInSteps: "If Sign in is not available, run `claude mcp login {name}` in a terminal and finish in your browser. This works only for a server in Claude Code's own settings. Then press Restart on this row.", // FR-181 (Q21 A)
   mcpSignInNote: 'Not checked on a real account yet.', // FR-180 until T106
   mcpSignInRestart: true, // FR-176/FR-181: Restart (mcp_reconnect) picks up a sign-in finished outside Durbar
+  mcpSignInReconnect: true, // spec 058 FR-207: the automatic reconnect is the same mcp_reconnect + mcp_status (real: T177, CLI 2.1.317, refreshes after expiry)
   handoff: true, // spec 030 FR-034: a forked one-shot, the session is not changed
   oneShot: true, // spec 040 FR-015: no tools, no MCP, no settings, not saved
   renameSession: 'next-turn', // spec 059 FR-007: `--name` on the session's next CLI start (real: Vikram's agent, 2026-10-20, CLI 2.1.304)
@@ -109,13 +110,14 @@ export const CLAUDE_CAPABILITIES: AdapterCapabilities = Object.freeze({
 export const CLAUDE_SDK_CAPABILITIES: AdapterCapabilities = Object.freeze((() => {
   // the SDK transport sends only a few control requests (claudeSdk.ts): no rename, no mcp_reconnect, no mcp_authenticate (spec 058
   // FR-175); the terminal steps and the note stay (FR-180: the steps show without the in-app call)
-  const { renameSession: _r, mcpRestart: _m, mcpTools: _t, mcpContext: _c, mcpSignIn: _s, mcpSignInRestart: _sr, ...rest } = CLAUDE_CAPABILITIES as AdapterCapabilities & { renameSession?: unknown; mcpRestart?: unknown; mcpTools?: unknown; mcpContext?: unknown; mcpSignIn?: unknown; mcpSignInRestart?: unknown };
+  const { renameSession: _r, mcpRestart: _m, mcpTools: _t, mcpContext: _c, mcpSignIn: _s, mcpSignInRestart: _sr, mcpSignInReconnect: _sa, ...rest } = CLAUDE_CAPABILITIES as AdapterCapabilities & { renameSession?: unknown; mcpRestart?: unknown; mcpTools?: unknown; mcpContext?: unknown; mcpSignIn?: unknown; mcpSignInRestart?: unknown; mcpSignInReconnect?: unknown };
   void _c;
   void _r;
   void _m;
   void _t;
   void _s;
   void _sr;
+  void _sa;
   return rest;
 })()) as AdapterCapabilities;
 /** Spec 058 FR-175: how long Durbar waits for the CLI's answer to `mcp_authenticate` (discovery and registration run first). */
@@ -1004,7 +1006,8 @@ export class ClaudeAdapter implements AgentAdapter {
    * or failed MCP server", read: CLI 2.1.304), then `mcp_status` for the new list. The CLI is not launched for it: before the first
    * message there is nothing to restart. A server that was off at launch is not in the CLI's config at all.
    */
-  async restartMcpServer(sessionId: string, name: string): Promise<void> {
+  async restartMcpServer(sessionId: string, name: string, _opts?: { auto?: boolean }): Promise<void> {
+    void _opts; // spec 058 FR-207: the automatic reconnect is this same call (mcp_reconnect only: no sign-in call, nothing switched off)
     const s = this.sessions.get(sessionId);
     if (!s) throw new Error('This session is not running. Send a message to start it.');
     if (!s.transport?.alive) throw new Error('Claude Code starts its MCP servers with your next message; there is nothing to restart yet.');

@@ -218,7 +218,17 @@ export interface AppSettingsView {
   breakResume?: 'auto' | 'ask';
   /** Spec 080 FR-031: where a plain click on a chat link opens (default `'session'`). */
   chatLinksIn?: 'session' | 'system';
+  /** Spec 058 FR-213: *Refresh MCP sign-ins automatically* (on unless turned off). */
+  mcpSignInRefresh?: boolean;
 }
+
+/** Spec 058 FR-208, FR-211: main's sign-in refresh lines for one chat (names and fixed kinds only; no vendor text, no token). */
+export type McpSignInRefreshNote =
+  | { id: string; kind: 'waiting'; count: number }
+  | { id: string; kind: 'late'; names: string[] }
+  | { id: string; kind: 'done' }
+  | { id: string; kind: 'not-sent' }
+  | { id: string; kind: 'needs-sign-in'; name: string };
 
 /** A profile file (spec 043 FR-010); `path` is for display only, the window sends `id` back. */
 export interface ProfileFileInfo {
@@ -915,6 +925,8 @@ export interface DurbarApi {
   /** Spec 081 FR-016: whether Settings > Agent apps is on screen (then the card is the announcement and no toast is shown). */
   harnessVisible?(on: boolean): Promise<boolean>;
   setCheckUpdatesAtStart?(on: boolean): Promise<{ ok: boolean; checkUpdatesAtStart?: boolean }>;
+  /** Spec 058 FR-213: *Refresh MCP sign-ins automatically*. */
+  setMcpSignInRefresh?(on: boolean): Promise<{ ok: boolean; mcpSignInRefresh?: boolean }>;
   harnessPaste?(text: string): Promise<{ ok: boolean; error?: string }>;
   harnessCancel?(): Promise<boolean>;
   harnessOpenPage?(kind: string): Promise<{ ok: boolean }>;
@@ -941,6 +953,8 @@ export interface DurbarApi {
   onHeldStopped?(cb: (p: { id?: string; why: string }) => void): () => void;
   /** Spec 076 FR-203: a session started under advice of its agent app's organization policy; the words to show (no policy values). */
   onOrgNote?(cb: (p: { id: string; text: string }) => void): () => void;
+  /** Spec 058 FR-208, FR-211: the sign-in refresh lines of a chat. */
+  onMcpSignInRefresh?(cb: (p: McpSignInRefreshNote) => void): () => void;
   /** Spec 054 FR-062: remote control is still on with a new (checked) link after a relaunch. */
   onRemoteUrl?(cb: (p: { id: string; url: string }) => void): () => void;
   onHarnessDone?(cb: (p: { kind: string; op: string; ok: boolean; exitCode?: number | null; reason?: string; lines: string[]; error?: string; failure?: string; fallback?: 'official'; note?: string }) => void): () => void;
@@ -1071,7 +1085,8 @@ export interface DurbarApi {
   stageAttachment(name: string, mime: string, data: ArrayBuffer): Promise<StageResult>;
   /** `slash` (spec 073 FR-005): the message started with a folder or user entry and its text was sent; the value says where it came from.
    *  `slashNote` (a VS Code prompt file): the settings not applied and the variables left as written. */
-  send(id: string, text: string, attachments: PickedFile[], opts?: { plan?: boolean }): Promise<{ ok: boolean; error?: string; slash?: string; slashNote?: string }>;
+  /** `notSent` (spec 058 FR-208): Stop ended the MCP sign-in wait before the message went: nothing was sent. */
+  send(id: string, text: string, attachments: PickedFile[], opts?: { plan?: boolean }): Promise<{ ok: boolean; error?: string; slash?: string; slashNote?: string; notSent?: boolean }>;
   /** Spec 073 FR-010: the "/" entries of the agent's app in its folder (folder, user, app). */
   slashCommands?(id: string): Promise<{ ok: boolean; error?: string; entries: SlashCommandInfo[] }>;
   /**

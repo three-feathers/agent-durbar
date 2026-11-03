@@ -230,6 +230,7 @@
     "test:mcpcall": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-mcpcall.js",
     "test:mcpsession": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-mcp-session.js",
     "test:mcpsignin": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-mcp-signin.js",
+    "test:mcpsigninrefresh": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-mcp-signinrefresh.js && node dist-scripts/scripts/test-mcp-signinwiring.js",
     "test:dialog": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-dialog.js",
     "check:rename": "npm run build && xvfb-run -a sh -c \"L=\\$(mktemp); DURBAR_USER_DATA=\\$(mktemp -d) DURBAR_SIM=15 DURBAR_SIM_FREEZE=1 DURBAR_DRIVER=\\$PWD/scripts/check-rename.js electron . --no-sandbox 2>&1 | tee \\$L; grep -q 'rename] all checks passed' \\$L\"",
     "check:themes": "npm run build && node scripts/check-parallel.js --themes",

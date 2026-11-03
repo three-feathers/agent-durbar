@@ -160,9 +160,12 @@ for (const r of ROWS) {
   const main = [mainOnly, ...fs.readdirSync(ipcDir).filter((f) => f.endsWith('.ts')).map((f) => fs.readFileSync(path.join(ipcDir, f), 'utf8'))].join('\n');
   for (const f of ['agentState.noteSend(id)', 'agentState.noteSendFailed(id)', "'did-finish-load', () => agentState.clearPaused()", "ipcOn('agents:setPaused'", 'agentState.onEvent(e)']) assert.ok(main.includes(f), `main.ts no longer has: ${f}`);
   // The scheduled send (spec 044) must note the send and its failure like the interactive one.
-  const i = mainOnly.indexOf('send: async (folder, prompt, s)');
+  // spec 058 FR-209: main's scheduler hands the send to `scheduledSendOp` (agentops.ts) with the tracker, so the gate can be tested
+  const i = mainOnly.indexOf('send: async (_folder, prompt, s)');
   const sched = mainOnly.slice(i, mainOnly.indexOf('setTimer:', i));
-  assert.ok(i > 0 && sched.includes('agentState.noteSend(a.id)') && sched.includes('agentState.noteSendFailed(a.id)'), 'the scheduled send path notes the send and its failure');
+  const ops = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'agentops.ts'), 'utf8');
+  const op = ops.slice(ops.indexOf('export async function scheduledSendOp'));
+  assert.ok(i > 0 && /return scheduledSendOp\(\{ agent: a, adapter: [^\n]*, agentState,/.test(sched) && op.includes('d.agentState.noteSend(a.id)') && op.includes('d.agentState.noteSendFailed(a.id)'), 'the scheduled send path notes the send and its failure');
   assert.ok(main.includes('applySetPaused(agentState'), 'agents:setPaused goes through applySetPaused');
   const count = (s: string, f: string): number => s.split(f).length - 1;
   assert.ok(count(main, 'agentState.remove(') >= count(main, 'agents.delete('), 'every agents.delete( in main.ts has an agentState.remove( next to it');

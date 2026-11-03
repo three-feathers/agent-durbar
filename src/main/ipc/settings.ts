@@ -5,6 +5,7 @@ import { aboutView } from '../../shared/about';
 import { parseCap } from '../../shared/credits';
 import { mcpWarnDefaults } from '../../shared/mcpcost';
 import type { SettingsStore } from '../settings';
+import { MCP_SIGNIN_REFRESH_DEFAULT } from '../mcpsigninrefresh';
 
 export interface SettingsIpcDeps {
   /** Created when the app is ready: read when a handler runs. */
@@ -17,7 +18,7 @@ export interface SettingsIpcDeps {
 export function register(deps: SettingsIpcDeps): void {
   const { getRunTheme, clearRunTheme } = deps;
   const settingsStore = deps.getSettingsStore;
-  ipcHandle('settings:get', () => ({ defaultMaxAiCredits: settingsStore()?.defaultMaxAiCredits, placeMap: settingsStore()?.placeMap ?? {}, customPlaces: settingsStore()?.customPlaces ?? [], seriousMode: settingsStore()?.seriousMode ?? false, notifyNeedsMe: settingsStore()?.notifyNeedsMe ?? true, breakResume: settingsStore()?.breakResume ?? 'auto', chatLinksIn: settingsStore()?.chatLinksIn ?? 'session', mcpWarnLevels: settingsStore()?.mcpWarnLevels, theme: getRunTheme() ?? settingsStore()?.theme ?? 'clean-office', characters: settingsStore()?.characters ?? 'theme', unsaved: settingsStore()?.unsavedKeys ?? [], about: aboutView(app.getVersion()) }));
+  ipcHandle('settings:get', () => ({ defaultMaxAiCredits: settingsStore()?.defaultMaxAiCredits, placeMap: settingsStore()?.placeMap ?? {}, customPlaces: settingsStore()?.customPlaces ?? [], seriousMode: settingsStore()?.seriousMode ?? false, notifyNeedsMe: settingsStore()?.notifyNeedsMe ?? true, breakResume: settingsStore()?.breakResume ?? 'auto', chatLinksIn: settingsStore()?.chatLinksIn ?? 'session', mcpSignInRefresh: settingsStore()?.mcpSignInRefresh ?? MCP_SIGNIN_REFRESH_DEFAULT, mcpWarnLevels: settingsStore()?.mcpWarnLevels, theme: getRunTheme() ?? settingsStore()?.theme ?? 'clean-office', characters: settingsStore()?.characters ?? 'theme', unsaved: settingsStore()?.unsavedKeys ?? [], about: aboutView(app.getVersion()) }));
   /* issue #1023: a setter returns the value now in force, so `ok` is true only when that is what was asked for (a failed save keeps the old value) */
   const setting = <K extends string, T>(key: K, fallback: T, set: (st: SettingsStore, v: unknown) => T, want: (v: unknown) => unknown = (v) => v, unsavedKey?: string) => (_e: unknown, v: unknown) => {
     const st = settingsStore();
@@ -32,6 +33,8 @@ export function register(deps: SettingsIpcDeps): void {
   ipcHandle('settings:setNotifyNeedsMe', setting('notifyNeedsMe', true, (st, v) => st.setNotifyNeedsMe(v)));
   /* spec 081 FR-022 (Q6 = A): the agent-app update check at start: on unless turned off */
   ipcHandle('settings:setCheckUpdatesAtStart', setting('checkUpdatesAtStart', true, (st, v) => st.setCheckUpdatesAtStart(v)));
+  /* spec 058 FR-213: Refresh MCP sign-ins automatically (on unless turned off); a non-boolean keeps the setting */
+  ipcHandle('settings:setMcpSignInRefresh', setting('mcpSignInRefresh', MCP_SIGNIN_REFRESH_DEFAULT, (st, v) => st.setMcpSignInRefresh(v)));
   /* spec 068 FR-006: what happens when a coffee break ends ('auto' or 'ask'; anything else keeps the setting) */
   ipcHandle('settings:setBreakResume', setting<'breakResume', 'auto' | 'ask'>('breakResume', 'auto', (st, v) => st.setBreakResume(v)));
   /* spec 080 FR-031: where a plain click on a chat link opens. A preference like the others here (the window's trust boundary); the URL of a click is checked in main whichever it is. */
