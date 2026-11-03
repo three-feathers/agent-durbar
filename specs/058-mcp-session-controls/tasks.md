@@ -566,7 +566,7 @@ apps, as T176 allows) after them.
   Codex chats never read (a list without `serverName` starts copies of local servers, round 3); one reconnect on a new `needs-auth` that
   is not blocked (adapters with `mcpSignInReconnect` only), once at `resume`; stopped when the
   switch goes off; tests with fake timers, including 15 Copilot chats with one blocked server that is never contacted [FR-212]
-- [ ] T184 Settings: "Refresh MCP sign-ins automatically" (the default one constant pending G5; a present non-boolean reads off; FR-213's line) in the settings store, the IPC view
+- [ ] T184 Settings: "Refresh MCP sign-ins automatically" (default on, G5 settled A; a present non-boolean reads off; FR-213's line) in the settings store, the IPC view
   and *Settings > MCP servers*, with its line; off stops T181's plan, T182 and T183; tests [FR-213]
 - [ ] T185 Renderer: the status line "Reconnecting MCP sign-ins (N servers)…", the bound note, the "<name> needs you to sign in again."
   line with **Sign in…** (opens the chat's MCP dialog on that row, FR-194's path), *Not sent* with the text back; `role="status"`, no

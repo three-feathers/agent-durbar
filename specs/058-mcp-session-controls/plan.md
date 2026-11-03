@@ -412,11 +412,11 @@ and one Settings switch (default on). Builds on PR #1073's launch strip and Sett
   temp folder (Codex `serverName` list; Claude through the existing private `--mcp-config` launch path with the session builder's map
   filtered to remote servers; Copilot `mcp.config.list` -> every non-remote entry disabled -> a no-message session -> `list`, stopping and
   switching the check off for the run if a local server is not disabled), into PR #1073's `launchUpdate`.
-- Settings: one boolean in the settings store and `AppSettingsView`; a present non-boolean reads off; the default is one constant pending
-  G5; the wording of FR-213.
+- Settings: one boolean in the settings store and `AppSettingsView`; a present non-boolean reads off; the default is one constant, on
+  (G5 settled A); the wording of FR-213.
 
 ### Order
 
 T176 and T177 done (2026-11-03). T178 -> T179 -> T180 -> T181 -> T184 -> T185 -> T183 -> T182 -> T186 -> T187; T188, T189 last. G5
-(Paco's answer) and G6 may change one constant or FR-207's Copilot line; G3 (and the macOS launch check) waits for a Mac check; G7 is a
+is settled (A); G6 may change one constant or FR-207's Copilot line; G3 (and the macOS launch check) waits for a Mac check; G7 is a
 later delta.

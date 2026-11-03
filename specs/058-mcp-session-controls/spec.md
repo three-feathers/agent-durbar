@@ -1886,17 +1886,15 @@ before the message needs the server. For Copilot, **Sign in** itself finishes wi
   first message and an MCP switch, and `refreshMcpStatus`) start such copies today; reported for a separate bug issue. `[KNOWN GAP]` a status read does not test a token: all three apps kept `connected` after expiry until a call or reconnect (`real:`
   T177), so the recheck finds what the app already knows, and the gap reconnect (FR-205 moment 2) is what catches a token that expired
   quietly.
-- **FR-213** **One Settings switch.** *Settings > MCP servers*: "Refresh MCP sign-ins automatically". Its default is **pending G5**
-  (Vikram answered A, default on in every mode; Paco's answer is pending); the planner reads the default from one constant. The line under it says plainly (review item 10), and its words follow the spec, not more (round 3): "Agent Durbar asks the
+- **FR-213** **One Settings switch.** *Settings > MCP servers*: "Refresh MCP sign-ins automatically". Its default is **on**
+  (G5 settled: A, both owners); the planner reads the default from one constant. The line under it says plainly (review item 10), and its words follow the spec, not more (round 3): "Agent Durbar asks the
   agent app to check and reconnect remote MCP servers on its own: once at launch (not on macOS), before a message after an hour without a
-  reply, and every 30 minutes. <MODE PART> Only the app's own sign-in is renewed; Agent Durbar never sees it. A reconnect never starts a
+  reply, and every 30 minutes. This happens in every permission mode, Read-only included. Only the app's own sign-in is renewed; Agent Durbar never sees it. A reconnect never starts a
   local server; the launch check can start one unknown to Agent Durbar at most once per run for Copilot, and then stops. Codex chats are
-  not reconnected; they renew with their next session." `<MODE PART>` is one fixed sentence chosen by G5's answer: A "This happens in
-  every permission mode, Read-only included."; B "In Read-only it only tells you when a sign-in is needed." Until G5 is settled, no
-  build ships the line. Off: no launch question to the apps (FR-204), no automatic reconnect (FR-205) and no recheck (FR-212); PR
+  not reconnected; they renew with their next session." The mode sentence follows G5 (A). Off: no launch question to the apps (FR-204), no automatic reconnect (FR-205) and no recheck (FR-212); PR
   #1073's file check, the live reports and every button stay. Stored like the other app settings; a stored value that is present but
-  not a boolean reads as **off** (fail closed, round 2); only a missing value takes the default. The planner takes one input `allowReadOnly` (G5) so that either answer is a one-line switch:
-  `true` = every mode (Vikram's A), `false` = in Read-only only the sign-in line, no reconnect (B). In the simulator's demo mode nothing
+  not a boolean reads as **off** (fail closed, round 2); only a missing value takes the default. The planner keeps one input `allowReadOnly` (G5), `true`
+  as decided; `false` (only the sign-in line in Read-only) stays testable. In the simulator's demo mode nothing
   runs.
 - **FR-214** **Safe by default, no tokens** (constitution III). Durbar never reads, stores, logs, compares or passes a token, refresh
   token, credential file or keychain item; the agent app does every refresh and stores its own sign-in. **The automatic path never calls**
@@ -1974,9 +1972,9 @@ before the message needs the server. For Copilot, **Sign in** itself finishes wi
 - **G4** Remote control from a phone (spec 054) bypasses Durbar's send path: not covered (FR-208). Default: accept the gap. Not asked.
 - **G5** **Automatic reconnect in Read-only mode (constitution III)**. A = every mode, default on; B = in Read-only only the "needs you to
   sign in again" line, no reconnect. Vikram: **A** (owner decision, Vikram, 2026-11-03 06:49 UTC, Telegram; reason given with the
-  question: the reconnect only restarts the chat's own remote MCP connection and changes no files). Paco: pending (asked through his
-  agent on PR #1076). The planner's `allowReadOnly` input and the switch's default constant (FR-213) make either answer a one-line
-  change; until both answers are in, the shipped default stays pending.
+  question: the reconnect only restarts the chat's own remote MCP connection and changes no files). Paco: **A** (owner decision, Paco,
+  2026-11-03, relayed by his agent in the team chat and on PR #1076). **Settled: A**, default on in every mode, Read-only included
+  (constitution III: no file change, no tool call; FR-214 holds).
 - **G6** Copilot: may the automatic path call `rpc.mcp.oauth.login` (no `forceReauth`) when a server reads `needs-auth`? `real:` T177: in
   a second session it is the only call that refreshed (no browser, no URL). If it returns an `authorizationUrl` the URL would be dropped,
   never opened, and the row shows Sign in; but the call starts the runtime's loopback listener and a dynamic client registration each
