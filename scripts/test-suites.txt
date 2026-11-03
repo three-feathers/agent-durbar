@@ -79,6 +79,7 @@ test:activity
 test:authcheck
 test:account
 test:autherrors
+test:autopilot
 test:elicit
 test:macos
 test:profiledir

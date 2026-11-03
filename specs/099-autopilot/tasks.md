@@ -22,7 +22,7 @@ Numbers taken: spec 099, FR-001..FR-090 (sparse by group; FR-007, FR-008, FR-009
 - [x] T012 `src/adapters/autopilot.ts`: `AutopilotRun` (count, limit, end once, no-progress counter), `AUTOPILOT_ANSWER`,
   `goalText`, `isClaudeContinuation`, `codexGoalEnd` + `scripts/test-autopilot.ts`. Test lines: stop at exactly
   `limit + 1`; a second end is ignored; a limit of 21 and of 1000 accepted, 0 and 1001 refused, none means the default of 5, and it cannot be turned off; control characters; over 4000 characters on Claude Code refused with a reason, with `clear`, `stop`, `off`, `reset`, `none`, `cancel` and a line shaped like a slash command (`/word`, no further `/` in that word; `/usr/bin/env is broken` passes); every Codex status [FR-020, FR-021, FR-030, FR-040]
-- [x] T013 `package.json`: `test:autopilot` in the `npm test` list
+- [x] T013 `package.json` and `scripts/test-suites.txt`: `test:autopilot` in the `npm test` list
 - [x] T014 `AutopilotRun`: the backstop (a second counter and elapsed time from an injected clock, 2 hours by default, raisable, 1-168 hours, ending with `error`), and the guard that stays armed after a failed stop or clear + `scripts/test-autopilot.ts`. Test lines: the marker never comes and the run still ends; exactly at each bound; the guard interrupts a later continuation [FR-021, FR-054, SC-003]
 
 ## Phase 2: Adapters (PR `099-p2-adapters`)
