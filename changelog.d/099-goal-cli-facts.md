@@ -1,1 +1,0 @@
-- Internal (Autopilot is not reachable in the app yet): a goal with a line starting with `/` is no longer refused on Claude Code, and the goal limits (4000 UTF-16 units, six reserved words) were checked against the real CLI (spec 099).
