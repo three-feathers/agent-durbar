@@ -95,9 +95,9 @@ async function main(): Promise<void> {
       const o = createSandboxOps({ adapterOf: () => undefined, instance: () => ad, readyAdapterIds: async () => new Set(['claude']), store: () => real });
       assert.deepStrictEqual(o.alwaysOff(true, 'claude'), { ok: true, saved: false }, 'real store, unwritable: off for this run, not saved');
       assert.strictEqual(real.sandboxAlwaysContinue('claude'), false);
-      real.setDefaultMaxAiCredits(50); // another setting kept for the run does not make a clean undo "not saved"
+      real.setDefaultMaxAiCredits(50).value; // another setting kept for the run does not make a clean undo "not saved"
       nfs.rmSync(root, { force: true }); nfs.mkdirSync(root, { recursive: true });
-      real.setSeriousMode(true); // a save that works clears the flags
+      real.setSeriousMode(true).value; // a save that works clears the flags
       assert.deepStrictEqual(o.alwaysOff(true, 'claude'), { ok: true }, 'saved: no extra word');
       nfs.rmSync(npath.dirname(root), { recursive: true, force: true });
     }

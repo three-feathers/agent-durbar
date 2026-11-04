@@ -27,14 +27,14 @@ for (const v of ['"session"', '"System"', '"other"', 'true', '1', 'null', '{}'])
   const st = new SettingsStore(f);
   st.load();
   assert.strictEqual(st.chatLinksIn, 'session', 'the default is the session browser');
-  assert.strictEqual(st.setChatLinksIn('bogus'), 'session', 'anything else keeps the value');
-  assert.strictEqual(st.setChatLinksIn(5), 'session');
-  assert.strictEqual(st.setChatLinksIn('system'), 'system');
+  assert.strictEqual(st.setChatLinksIn('bogus').value, 'session', 'anything else keeps the value');
+  assert.strictEqual(st.setChatLinksIn(5).value, 'session');
+  assert.strictEqual(st.setChatLinksIn('system').value, 'system');
   const back = new SettingsStore(f);
   back.load();
   assert.strictEqual(back.chatLinksIn, 'system', 'kept after a restart');
-  assert.strictEqual(back.setChatLinksIn('bogus'), 'system', 'garbage does not reset it');
-  assert.strictEqual(back.setChatLinksIn('session'), 'session');
+  assert.strictEqual(back.setChatLinksIn('bogus').value, 'system', 'garbage does not reset it');
+  assert.strictEqual(back.setChatLinksIn('session').value, 'session');
   assert.ok(!('chatLinksIn' in JSON.parse(fs.readFileSync(f, 'utf8'))), 'the default is not written');
   fs.rmSync(dir, { recursive: true, force: true });
 }

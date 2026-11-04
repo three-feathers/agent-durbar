@@ -400,11 +400,11 @@ const valid = (b: EventBody): void => assert.deepStrictEqual(validateEvent({ ...
   const ss = new SettingsStore(f);
   ss.load();
   assert.strictEqual(ss.breakResume, 'auto');
-  for (const junk of ['no', 0, null, undefined, {}, true]) assert.strictEqual(ss.setBreakResume(junk), 'auto', 'junk: ' + String(junk));
-  assert.strictEqual(ss.setBreakResume('ask'), 'ask');
+  for (const junk of ['no', 0, null, undefined, {}, true]) assert.strictEqual(ss.setBreakResume(junk).value, 'auto', 'junk: ' + String(junk));
+  assert.strictEqual(ss.setBreakResume('ask').value, 'ask');
   const back = new SettingsStore(f); back.load();
   assert.strictEqual(back.breakResume, 'ask', 'kept after a restart');
-  back.setBreakResume('auto');
+  back.setBreakResume('auto').value;
   assert.ok(!('breakResume' in JSON.parse(fs.readFileSync(f, 'utf8'))), 'the default is not written');
   fs.rmSync(dir, { recursive: true, force: true });
 }

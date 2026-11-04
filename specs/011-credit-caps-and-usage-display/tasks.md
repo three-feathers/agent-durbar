@@ -46,3 +46,7 @@ Backlog: capability flag (spec 012). (Office and per-folder totals: done 2026-10
 
 - [x] T070 `SettingsStore.commit(next, keep?)` shared by every setter: truth values roll back, convenience and safer changes stay for the run and are listed per setting (`isUnsaved`); `settings:*` replies `ok` only when the value asked for is in force; `scripts/test-credits.ts` unwritable-path and IPC cases [FR-012]
 - [x] T071 Window side of #1023: one `saveFailed` helper in `screens.js` (and the Agent apps checkbox) for every settings row; `scripts/check-settings-save.js` in the UI suite [FR-012]
+
+## 2026-11-04: settings `ok` from the write, no `.tmp` (issues #1094, #1047)
+
+- [x] T072 Setters behind `setting()` return `{ ok, value }` (`Saved<T>`), `ok` from `commit()`; `SettingsStore.save()` removes its `.tmp` in a `finally`; `scripts/test-credits.ts` unchanged-value, injected partial-write and failed-rename cases [FR-012]
