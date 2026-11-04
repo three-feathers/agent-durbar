@@ -103,6 +103,7 @@ test:ipcchannels
 test:planmode
 test:probe
 test:autofollow
+test:openwith
 test:liveact
 test:names
 test:renameadapters
