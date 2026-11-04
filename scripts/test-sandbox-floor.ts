@@ -753,6 +753,19 @@ ok('SC-001: 27 app × OS × mode cells match FR-001..FR-005; no auto-approve, by
     m.set(D, { kind: 'link', to });
     assert.deepStrictEqual(read(m), { layer: { version: 1, permissions: { requireOsSandbox: true } } }, `FR-209: a root-made link in a trusted folder to a trusted folder (${to}) is read`);
   }
+  // second review of #1123: "at most 40 links", at the edge. A chain of n root-made links in trusted folders: managed -> /opt/c1 -> ... -> /opt/t
+  const chain = (n: number): Map<string, Node> => {
+    const m = root(); m.delete(D); m.delete(F);
+    m.set('/opt', { kind: 'dir', uid: 0, mode: 0o755 }); m.set('/opt/t', { kind: 'dir', uid: 0, mode: 0o755 });
+    m.set('/opt/t/policy.json', { kind: 'file', uid: 0, mode: 0o644, ino: 9, text: '{"version":1}' });
+    const hop = (i: number): string => (i === n ? '/opt/t' : `/opt/c${i}`);
+    m.set(D, { kind: 'link', to: hop(1) });
+    for (let i = 1; i < n; i++) m.set(`/opt/c${i}`, { kind: 'link', to: hop(i + 1) });
+    return m;
+  };
+  assert.deepStrictEqual(read(chain(40)), { layer: { version: 1 } }, 'FR-209: a chain of exactly 40 links is read');
+  const over = read(chain(41));
+  assert.ok(over.layer === 'unreadable' && /more than 40 links/.test(over.problem), `FR-209: a chain of 41 links is refused (${JSON.stringify(over)})`);
   // each failure is unreadable, so the sandbox is required, and says why
   const cases: Array<[string, (m: Map<string, Node>) => void, RegExp]> = [
     ['folder present, file missing', (m) => { m.delete(F); }, /missing/],

@@ -1210,6 +1210,7 @@ All three answered on PR #575 (09:03-09:06 UTC) with option a, the recommended o
       - a link's target not trust-checked fails `FR-209 managed linked by root to a user-owned folder: unreadable with its reason`;
       - the link cap answering "no folder" fails `FR-209 a link loop on the policy path: unreadable with its reason`;
       - the device not compared fails `FR-209: swapped for a file with the same inode on another device: unreadable`.
+    - **Round 3 (fjcabello's side):** the edge of "at most 40 links": a chain of exactly 40 root-made links in trusted folders is read, and 41 are refused. Mutants: `>=` for `>` fails `FR-209: a chain of exactly 40 links is read`; a cap of 41 fails `FR-209: a chain of 41 links is refused`.
   - `[KNOWN GAP]` **macOS ACLs:** a `chmod +a` entry that lets a group write a root-owned 755 folder is not visible in the mode, so such a folder passes the trust check.
   - `requireOsSandbox()` (`sandboxpolicy.ts`) now answers `requireOsSandboxFrom([readMachinePolicy()])` at each session start (`main.ts`), so a policy added or fixed applies to the next session, with no restart (FR-008, tighten-only for new sessions).
   - `test:` `scripts/test-sandbox-floor.ts`, on a fake file system: each case above, the path per platform, the trust check up to the root, and the size cap. `read:` on this Mac `/`, `/Library` and `/Library/Application Support` are root-owned and not group- or world-writable, so a correctly installed folder passes the check. With no `AgentDurbar` folder there, `requireOsSandbox()` is `false`.
