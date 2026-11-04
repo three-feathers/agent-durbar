@@ -120,6 +120,12 @@ async function main(): Promise<void> {
     };
     assert.deepStrictEqual(await sess(false).continueWithout(true, 's9', { always: true }), { ok: true, alwaysSaved: false }, 'always not saved: said');
     assert.deepStrictEqual(await sess(true).continueWithout(true, 's9', { always: true }), { ok: true }, 'always saved: no extra word');
+    // issue 1094: `ok` false while `value` is what was asked (the write failed, the value was already in force): still "not saved"
+    {
+      const o = createSandboxOps({ adapterOf: () => ad, instance: () => ad, readyAdapterIds: async () => new Set(['claude']), store: () => ({ setSandboxAlwaysContinue: () => ({ ok: false, value: true }), sandboxAlwaysContinue: () => true }) });
+      o.onEvent(note('s9', ['continue', 'always']));
+      assert.deepStrictEqual(await o.continueWithout(true, 's9', { always: true }), { ok: true, alwaysSaved: false }, 'ok false, value true: not saved');
+    }
   }
   // review round 8 (4): the window always gets the cleaned sandbox event: the seam, and main.ts pinned to it
   const { toWindowEvent } = await import('../src/main/sandboxops');
