@@ -125,6 +125,10 @@ Header actions: **Stop** (interrupt the turn; the agent stays ready), **End sess
 
 **Tasks:** T130..T132 and T197..T199 in `tasks.md`. Numbers taken: FR-210..FR-215, T130..T132, T197..T199 (checked against `main`, the remote branches and the open PRs on 2026-11-02, rechecked after merging `main` 2026-11-03; #1014 holds FR-190..FR-209 and T113..T129).
 
+### 2026-11-04: `check-chat-visibility` waits on state, and its height bound is stated (issue #1102, driver only, no app change)
+
+**Driver bounds** `[IMPLEMENTED]` `sim:` The turn samples count painted frames, not seconds (a sample runs until its time and its minimum frame count are both reached), find-in-page is asked again until it finds the token, and the "as tall as with the rule off" check allows 2 px at 1 device pixel per CSS pixel and, above 1 (a Retina Mac; `UI_SUITE_DPR=2` forces it on any OS), 2 px plus 1/64 px per message (layout-unit precision; 63 px for 4,004 messages, 31 px seen at 2x). Nothing else is loosened.
+
 ### 2026-10-31: MCP context cost (spec 100)
 
 **FR-052**: the token summary adds an *MCP tools* bar when a report exists, labelled as estimated when it is; the MCP chip adds the tokens (FR-053). Owned by [spec 100](../100-mcp-context/spec.md) FR-010, FR-013.

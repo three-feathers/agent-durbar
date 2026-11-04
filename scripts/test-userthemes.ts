@@ -5,6 +5,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { checkUserManifest, USER_THEME_LIMITS, RESERVED_THEME_IDS } from '../src/shared/themes';
 import { UserThemeStore } from '../src/main/themes';
+import { tmpDir } from './test-tmp';
 
 // reserved ids (spec 035 FR-018): the built-in, the old Cheeky Crew and the removed ones; main's handlers use exactly this list
 for (const id of ['clean-office', 'retro', 'cheeky-crew', 'corporate', 'durbar-indian', 'durbar-european', 'durbar-japanese']) assert.ok(RESERVED_THEME_IDS.includes(id), `${id} is reserved`);
@@ -50,7 +51,7 @@ assert.ok(checkUserManifest('{"id":"x","art":{"chair-back":"<rect/>"}}').error!.
 assert.ok(checkUserManifest('{"id":"x","scene":"robots"}').error!.includes('scene must be one of'), 'an unknown scene kit is refused');
 
 // --- store: list / export / remove (saved themes; Import and the AI maker were retired, spec 040 FR-031) ---
-const root = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-uth-'));
+const root = tmpDir('durbar-uth-');
 const themesDir = path.join(root, 'themes');
 const seed = (id: string, manifest: object | string, extra: Record<string, string> = {}): void => {
   fs.mkdirSync(path.join(themesDir, id), { recursive: true });
@@ -83,7 +84,7 @@ seed('broken', 'nope');
 assert.ok(store.list().some((t) => t.id === 'broken' && !t.ok));
 
 // export
-const dest = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-uth-out-'));
+const dest = tmpDir('durbar-uth-out-');
 const e = store.exportFolder('ocean', dest);
 assert.strictEqual(e.ok, true);
 assert.strictEqual(fs.readFileSync(path.join(String(e.to), 'manifest.json'), 'utf8'), fs.readFileSync(path.join(themesDir, 'ocean', 'manifest.json'), 'utf8'));
@@ -104,7 +105,7 @@ for (const bad of ['..', '../themes', 'a/b', '', '.ocean.tmp-123', 'nope', 'C:\\
 assert.ok(fs.existsSync(path.join(themesDir, 'old-court')) && fs.existsSync(path.join(themesDir, '.ocean.tmp-123')), 'nothing else is touched');
 // links inside a theme folder are removed as links, never followed
 {
-  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-uth-outside-'));
+  const outside = tmpDir('durbar-uth-outside-');
   fs.writeFileSync(path.join(outside, 'keep.txt'), 'mine');
   fs.mkdirSync(path.join(outside, 'sub'));
   fs.writeFileSync(path.join(outside, 'sub', 'keep2.txt'), 'mine too');

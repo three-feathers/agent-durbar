@@ -17,6 +17,18 @@ const { execFileSync } = require('child_process');
 const cl = require('./changelog.js');
 const rn = require('./release-notes.js');
 
+// spec 012 FR-166 (#1093): every folder made here is removed when the process exits (also a failed assert), with the files made beside it
+const madeTmp = [];
+function mkTmp(prefix) {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  madeTmp.push(d);
+  return d;
+}
+process.on('exit', () => {
+  for (const d of madeTmp) for (const p of [d, `${d}-notes.md`, `${d}-ttitle.txt`, `${d}-summary.md`]) { try { fs.rmSync(p, { recursive: true, force: true }); } catch (_) { /* the OS cleans its temp folder */ } }
+});
+
+
 const RELEASED = [
   '## v0.1.0-alpha.10 ([pre-release](https://example.invalid/a10), 2026-10-21)',
   '',
@@ -32,7 +44,7 @@ const RELEASED = [
 const head = (unreleased) => `# Changelog\n\nIntro paragraph.\n\n## Unreleased (on \`main\`, after the alpha.10 tag)\n\n${unreleased}${unreleased ? '\n\n' : ''}`;
 
 function repo(unreleased, fragments = {}) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-changelog-'));
+  const dir = mkTmp('durbar-changelog-');
   fs.writeFileSync(path.join(dir, 'CHANGELOG.md'), head(unreleased) + RELEASED);
   fs.mkdirSync(path.join(dir, 'changelog.d'));
   fs.writeFileSync(path.join(dir, 'changelog.d', 'README.md'), '# not a fragment\n\nprose\n');
@@ -244,7 +256,7 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
 // --- spec 008 FR-117..FR-119: scripts/release-notes.js on throwaway git repositories ---
 {
   // no user or system git config (signing, hooks, autocrlf): an empty file, which works on Windows too
-  const emptyConfig = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-gitconfig-')), 'config');
+  const emptyConfig = path.join(mkTmp('durbar-gitconfig-'), 'config');
   fs.writeFileSync(emptyConfig, '');
   const gitEnv = { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: emptyConfig, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@example.invalid', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@example.invalid', GIT_AUTHOR_DATE: '2026-10-23T10:00:00Z', GIT_COMMITTER_DATE: '2026-10-23T10:00:00Z' };
   const g = (d, ...args) => execFileSync('git', args, { cwd: d, env: gitEnv, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
@@ -264,6 +276,19 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
     return d;
   };
   const opts = { tag: 'v0.1.0-alpha.11', repo: 'three-feathers/agent-durbar', mainRef: 'refs/heads/main' };
+  {
+    // spec 008 FR-173 (T125): the Highlights block sits under the heading, above the list, from the tagged commit's fragments
+    const d = gitRepo();
+    fs.writeFileSync(path.join(d, 'changelog.d', 'a.md'), '- Change A.\n  Highlight: **A** is new.\n');
+    fs.writeFileSync(path.join(d, 'changelog.d', 'b.md'), '- Change B.\n  Highlight: **B** too.\n  Scene: crews\n');
+    commit(d, 'fields');
+    g(d, 'tag', '-a', '-m', 'alpha.11', 'v0.1.0-alpha.11');
+    const r = rn.releaseNotes(d, opts);
+    const h = r.heading;
+    assert.strictEqual(r.notes, `${rn.PREAMBLE}\n\n## ${h}\n\n### Highlights\n\n- **B** too.\n- **A** is new.\n\n### All changes\n\n- Change A.\n- Change B.\n`, 'Highlights (Scene first) above the whole list; the fields are not in the list');
+    assert.ok(r.highlights.startsWith('### Highlights'), 'the block is also returned on its own');
+    // a section already in CHANGELOG.md (folded) gets no block, and no fragment with a Highlight: no block (covered by the exact notes above)
+  }
   {
     const d = gitRepo();
     g(d, 'tag', '-a', '-m', 'alpha.11', 'v0.1.0-alpha.11');
@@ -417,7 +442,7 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
     assert.ok(sum.includes('gh release edit v0.1.0 --draft=false --latest'), 'the summary gives the owner the publish command');
     assert.ok(!rn.summary({ kind: 'release', heading: 'h', previous: 'p', source: 'fragments', commits: 0 }, 'v0.1.0-rc.1').includes('gh release edit'), 'no such command for a pre-release');
     // the CLI writes what the workflow reads
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-out-'));
+    const tmp = mkTmp('durbar-out-');
     execFileSync(process.execPath, [path.join(__dirname, 'release-notes.js'), '--root', d, '--tag', 'v0.1.0', '--repo', opts.repo, '--main-ref', 'refs/heads/main', '--out', path.join(tmp, 'n.md'), '--github-output', path.join(tmp, 'out')], { env: gitEnv, stdio: 'ignore' });
     assert.strictEqual(fs.readFileSync(path.join(tmp, 'out'), 'utf8'), 'prerelease=false\nlatest=true\n', 'the stable tag writes prerelease=false, latest=true');
     // versionsort.suffix=-: the stable tag sorts above its own pre-releases, so the next release's previous is v0.1.0, not alpha.19
