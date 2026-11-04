@@ -401,6 +401,54 @@ export function realLayout(model: RealModel, viewport: { w: number; h: number },
   return { u, big, lobbyH: Lb, floorH: height - Lb, width: W, height, scroll: !fits, faceH: FACE_U * u, zones, fixtures: lb.fixtures, floorStrip: lb.floorStrip };
 }
 
+/* Spec 097 FR-236 (2026-11-04 attention lights): the monitor light bar, its clamp, the tint on the monitor's top bezel and the pool on the desk top */
+export const BAR_W = 0.86, BAR_H = 8, BAR_GAP = 7, BAR_EDGE = 3, CLAMP_W = 18, CLAMP_H = 9, BEZEL_H = 8;
+/** the pool: 1.25 bars wide, its top at 8 % of the desk's height, 0.52 u tall (about 110 px with 6 agents at 1440x900 in 2 folders, u 212, as the mock) */
+export const POOL_W = 1.25, POOL_TOP = 0.08, POOL_U = 0.52;
+export interface LightBar { bar: Rect; clamp: Rect | null; bezel: Rect; pool: Rect; /** the monitor's glass inside the pool, relative to the pool (the mask's hole) */ cut: Rect | null; onEdge: boolean;
+  /** no bar, clamp, tint or pool: the bar would meet a face (an asleep person in front of its own dark monitor on a narrow desk, FR-120) */ hidden: boolean }
+const roHit = (a: Rect, b: Rect): boolean => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+/** The chrome text a bar must never meet: every folder sign and, in `aisles`, every marquee. */
+export function barAvoid(lay: Layout): Rect[] {
+  return [...lay.zones.map((z) => z.sign), ...lay.zones.flatMap((z) => z.desks.map((d) => d.marquee).filter((m): m is Rect => !!m))];
+}
+/** Every face box of the floor (FR-013's `face`) and of the lobby's visitors: no pool reaches one. */
+export function barFaces(lay: Layout): Rect[] {
+  return [...lay.zones.flatMap((z) => z.desks.map((d) => d.face)), ...lay.fixtures.flatMap((f) => f.visitors.map((v) => v.face))].filter((f): f is Rect => !!f);
+}
+/**
+ * FR-236: where one desk's light bar and pool go. Pure: the renderer draws these rects in its light layer (D4), the same for every state
+ * (the colour is a class, FR-244). `avoid` and `faces` default to the layout's own (pass them once for a whole floor).
+ * - the bar: 86 % of the monitor, centred on it, its bottom 7 px above the monitor's top; on the monitor's edge (its bottom 3 px over
+ *   the monitor, and never above the lowest rect it meets) when a sign or marquee is where it would be;
+ * - the pool: 1.25 bars wide, centred under the bar, from 8 % of the desk's height down; at the monitor's width if it would reach a face,
+ *   and then its top below every face it still reaches;
+ * - `hidden` when the bar would still meet a face: a narrow asleep desk's person sits in front of its own dark monitor (FR-120), so that
+ *   desk has no bar (the New reply tag still says what green would, FR-238).
+ */
+export function lightBar(d: DeskBox, lay: Layout, avoid: readonly Rect[] = barAvoid(lay), faces: readonly Rect[] = barFaces(lay)): LightBar {
+  const m = d.screen, w = BAR_W * m.w, x = m.x + (m.w - w) / 2;
+  let bar: Rect = { x, y: m.y - BAR_GAP - BAR_H, w, h: BAR_H }, onEdge = false;
+  const hits = avoid.filter((r) => roHit(bar, r));
+  if (hits.length) {
+    onEdge = true;
+    bar = { ...bar, y: Math.max(m.y + BAR_EDGE - BAR_H, ...hits.map((r) => r.y + r.h)) };
+  }
+  const hidden = faces.some((f) => roHit(bar, f));
+  const clamp = onEdge ? null : { x: m.x + (m.w - CLAMP_W) / 2, y: m.y - CLAMP_H, w: CLAMP_W, h: CLAMP_H };
+  const bezel = { x, y: m.y, w, h: Math.min(BEZEL_H, m.h) };
+  const cx = x + w / 2, top = d.desk.y + POOL_TOP * d.desk.full, h = POOL_U * lay.u;
+  let pool: Rect = { x: cx - (POOL_W * w) / 2, y: top, w: POOL_W * w, h };
+  if (faces.some((f) => roHit(pool, f))) pool = { ...pool, x: m.x, w: m.w };
+  for (let f = faces.find((q) => roHit(pool, q)); f; f = faces.find((q) => roHit(pool, q))) {
+    const y = f.y + f.h, bottom = pool.y + pool.h;
+    pool = bottom - y > 1 ? { ...pool, y, h: bottom - y } : { ...pool, y: bottom, h: 0 }; /* below the face, the same bottom; nothing left: no pool */
+  }
+  const g = d.glass, cx0 = Math.max(g.x, pool.x), cy0 = Math.max(g.y, pool.y), cx1 = Math.min(g.x + g.w, pool.x + pool.w), cy1 = Math.min(g.y + g.h, pool.y + pool.h);
+  const cut = pool.h > 0 && cx1 > cx0 && cy1 > cy0 ? { x: cx0 - pool.x, y: cy0 - pool.y, w: cx1 - cx0, h: cy1 - cy0 } : null;
+  return { bar, clamp, bezel, pool, cut, onEdge, hidden };
+}
+
 /** FR-037: each session keeps one person; a new one gets the least-used person in its folder, then overall (ties: the seeded `rand`).
  *  `map` is session id -> person id; sessions no longer listed are dropped (which frees their person). */
 export function assignPeople(map: Record<string, string>, sessions: readonly { id: string; folder: string }[], ids: readonly string[], rand: (id: string) => number): Record<string, string> {

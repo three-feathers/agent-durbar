@@ -5,6 +5,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { placeBox, portraitCrop, PORTRAIT_SIDE, slipAvoid, NOTE_PAPER, NOTE_PAPER_DEFAULT, NOTE_INK, notePaper, screenFit, screenFor, personMotion, zoomRect, realLayout, lobbyWidths, sortDesks, assignPeople, standPose, standHeight, POSE_FRAME_B, lobbyRange, PERSON_M, DOOR_M, FRONT_DEPTH, NEAR_SCALE, CHIP_H, U_MIN, U_MAX, U_MAX_BIG, FACE_U, PLATE_H, PLATE_H_ASK, STRIP,
   type RealModel, type RealMeta, type RealAgent, type RealState, type Rect, type Layout } from '../src/shared/realoffice-layout';
+import { barProblems, barTally } from './realoffice-bar-check';
 import { lampWords, lightFor, lightState, LIGHT_TABLE, ambientFor, doneTick, fixtureLight, isActive, type LightState } from '../src/shared/lights';
 
 process.exitCode = 1;
@@ -70,8 +71,10 @@ function problems(L: Layout, W: number, H: number): string[] {
     for (const v of f.visitors) if (v.fig && (v.fig.y < -0.5 || v.fig.y + v.fig.h > L.lobbyH)) out.push(`visitor ${v.id} leaves the band`);
   }
   L.fixtures.forEach((a, i) => L.fixtures.forEach((b, j) => { if (j > i && inter(a.slot, b.slot)) out.push(`fixtures ${a.id}/${b.id} overlap`); }));
+  out.push(...barProblems(L, BARS)); /* FR-236 */
   return out;
 }
+const BARS = barTally();
 
 // ---- FR-019, FR-011, FR-012: 1..40 agents in 1..8 folders at both sizes, chat closed and open (the floor width the app passes) ----
 const SIZES: [number, number][] = [[1440, 900 - 52], [1280, 800 - 52], [1440 - 470, 900 - 52], [1280 - 470, 800 - 52]];
@@ -87,6 +90,12 @@ for (const [W, H] of SIZES) for (const n of [1, 2, 3, 4, 5, 8, 12, 15, 20, 30, 4
   assert.strictEqual(L.big, n <= 4, 'big screens exactly for 4 agents or fewer (FR-020)');
   cases++;
 }
+
+// FR-236 (T185): every case of the bar's rules came up in the sweep, so a mutant of each can fail
+console.log('light bars:', JSON.stringify(BARS));
+assert.ok(BARS.onEdge > 0, 'FR-236: some bar sits on its monitor\'s edge under a sign');
+assert.ok(BARS.poolNarrowed > 0, 'FR-236: some pool narrows to its monitor for a face');
+assert.ok(BARS.onEdge < BARS.bars, 'FR-236: most bars stand above their monitor');
 
 // ---- SC-002: desk faces at least 40 px with 15 agents at 1280x800 and 1440x900 (chat closed), 4 folders as the simulator ----
 const faces: Record<string, number> = {};
@@ -442,6 +451,19 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
   for (const s of STATES) assert.strictEqual(lightFor(s, { still: true }).motion, null, `FR-047: ${s} still under reduced motion or Serious mode`);
   assert.strictEqual(lightFor('waiting', { still: true }).call, 'amber', 'the call light stays, steady');
   lightFor("working").lamp = "off"; assert.strictEqual(lightFor('working').lamp, 'warm', 'the table cannot be changed through a result');
+  // FR-237: the Bar column, and an unread reply green only where the bar would be off (lightState first)
+  const bars = Object.fromEntries((Object.keys(LIGHT_TABLE) as LightState[]).map((k) => [k, lightFor(k).bar]));
+  assert.deepStrictEqual(bars, { working: 'off', thinking: 'off', waiting: 'amber', error: 'red', limit: 'orange', done: 'off', idle: 'off', asleep: 'off' }, 'FR-237: the Bar column');
+  for (const k of Object.keys(LIGHT_TABLE) as LightState[]) {
+    const want = LIGHT_TABLE[k].bar === 'off' ? 'green' : LIGHT_TABLE[k].bar;
+    assert.strictEqual(lightFor(k, { unread: true }).bar, want, `FR-237: ${k} with an unread reply: ${want}`);
+    assert.strictEqual(lightFor(k, { unread: true, still: true }).bar, want, `FR-237: ${k}, unread and still: ${want}`);
+  }
+  assert.strictEqual(lightFor('waiting', { unread: true }).bar, 'amber', 'FR-237: a new reply never hides a need (amber over green)');
+  assert.strictEqual(lightFor('failing', { unread: true }).bar, 'red', 'FR-237: failing is an error, red over green');
+  assert.strictEqual(lightFor(lightState('waiting', { limit: true }), { unread: true }).bar, 'orange', 'FR-237: limit wins, orange over green');
+  assert.strictEqual(lightFor(lightState('waiting', { asleep: true }), { unread: true }).bar, 'green', 'FR-237: asleep has no bar of its own: an unread reply shows');
+  assert.strictEqual(lightFor('idle', { unread: false }).bar, 'off', 'FR-237: read: no green');
   // FR-043
   assert.strictEqual(ambientFor([]), 1);
   assert.strictEqual(ambientFor(['idle', 'done', 'asleep']), 0.7);
