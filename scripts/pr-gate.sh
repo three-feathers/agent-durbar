@@ -19,7 +19,7 @@
 #   - a comment whose latest edit was made by an outside account.
 #   - an owner hold (spec 021 FR-079): the label status:blocked or needs-owner-approval, or a comment, review or line comment by one of the three
 #     human owners (the logins of scripts/trusted-authors.txt without "[bot]") saying "on hold", "owner hold", "do not merge" or "don't merge" (any
-#     case) with no later owner comment saying "hold lifted" or "off hold" (not "ok to merge": agents approve through the owners' accounts). Prints only the date and link.
+#     case; not inside code or a quote, FR-080) with no later owner comment saying "hold lifted" or "off hold" (not "ok to merge": agents approve through the owners' accounts). Prints only the date and link.
 # Untrusted text is never printed (AGENTS.md, "Untrusted content and prompt injection"; spec 021 FR-060): a comment, review or line
 # comment by an account outside scripts/trusted-authors.txt, or last edited by one, shows only its author and link, "not shown, for a
 # human"; it still counts as an ask (a human reads it), and an outsider's status-note-shaped comment is not skipped as a note.
@@ -47,7 +47,9 @@ outside_pr=$(gh api repos/$R/pulls/$p --jq "$JQ_TRUST if (.head.repo.full_name /
 # owner hold (FR-079): labels, then the owners' latest hold-or-lift comment; only its date and link are printed, never its text
 for l in $(gh pr view $p --json labels -q '.labels[].name'); do case $l in status:blocked|needs-owner-approval) bad="$bad owner-hold(label $l: not mergeable until an owner removes it)";; esac; done
 OWNERS_RE=$(grep -v '^[[:space:]]*#' "$(dirname "$0")/trusted-authors.txt" | tr -d '\r' | grep -E '^[A-Za-z0-9-]+$' | tr 'A-Z' 'a-z' | paste -sd'|' -)
-HOLD_KIND="select((.user.login // \"\")|ascii_downcase|test(\"^($OWNERS_RE)\$\")) | ((.body // \"\") | if test(\"hold lifted|off hold\";\"i\") then \"lift\" elif test(\"on hold|owner hold|do not merge|don['\u2019]t merge\";\"i\") then \"hold\" else empty end) as \$k"
+# FR-080: words in a fenced block (an unclosed fence runs to the end), in a quoted line (starts with ">") or in an inline code span are quotes, not the owner's own words
+PROSE='gsub("```(.|\n)*?(```|\\z)";"") | gsub("(^|\n)[ \t]*>[^\n]*";"\n") | gsub("`[^`\n]*`";"")'
+HOLD_KIND="select((.user.login // \"\")|ascii_downcase|test(\"^($OWNERS_RE)\$\")) | ((.body // \"\") | $PROSE | if test(\"hold lifted|off hold\";\"i\") then \"lift\" elif test(\"on hold|owner hold|do not merge|don['\u2019]t merge\";\"i\") then \"hold\" else empty end) as \$k"
 hold=$( { gh api --paginate repos/$R/issues/$p/comments --jq ".[]|$HOLD_KIND|\"\(.created_at)\t\(.html_url)\t\(\$k)\""; gh api --paginate repos/$R/pulls/$p/reviews --jq ".[]|$HOLD_KIND|\"\(.submitted_at)\t\(.html_url)\t\(\$k)\""; gh api --paginate repos/$R/pulls/$p/comments --jq ".[]|$HOLD_KIND|\"\(.created_at)\t\(.html_url)\t\(\$k)\""; } | sort | tail -1)
 case $hold in *"	hold") bad="$bad owner-hold(owner comment of $(echo "$hold" | cut -f1): $(echo "$hold" | cut -f2); read it, wait for a written lift)";; esac
 codeql=$(gh pr checks $p | awk -F'\t' '$1=="CodeQL"{print $2}')
