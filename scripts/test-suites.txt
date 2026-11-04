@@ -102,6 +102,7 @@ test:checkpoints
 test:ipcchannels
 test:planmode
 test:probe
+test:openwith
 test:liveact
 test:names
 test:renameadapters
