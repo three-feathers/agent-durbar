@@ -332,7 +332,7 @@ Each has a recommendation (Q6 is for Paco, the crew owner). The build waits for 
 
 ## Changes
 
-### 2026-11-04 attention lights (owner decisions; FR-236..FR-238, FR-243; FR-239..FR-242 withdrawn; T185..T193)
+### 2026-11-04 attention lights (owner decisions; FR-236..FR-238, FR-243, FR-244; FR-239..FR-242 withdrawn; T185..T193)
 
 **Status: specified, not built.** Spec, plan and tasks only (PR 1 of 2); the build is PR 2.
 
