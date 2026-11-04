@@ -207,11 +207,12 @@ module.exports = async (ctx) => {
     assert.strictEqual(await expanded(needG.key), 'true', `${tag}: opening a chat expands its folder`);
     assert.ok(await js(`(()=>{const r=document.querySelector('#stripList .sitem.sel'),l=document.getElementById('stripList');const a=r.getBoundingClientRect(),b=l.getBoundingClientRect();return r.getClientRects().length>0&&a.top>=b.top-1&&a.bottom<=b.bottom+1})()`), `${tag}: and its row is in view`);
     // a long folder name: ellipsis, title, no overflow
-    const long = 'a-very-long-folder-name-that-goes-on-and-on-'.repeat(3);
+    const long = '<i>x</i>&amp;' + 'a-very-long-folder-name-that-goes-on-and-on-'.repeat(3); // markup in a name stays text
     assert.ok(await js(`window.__durbarSimUi.renameRoomElsewhere(${jsLiteral(needG.key)},${jsLiteral(long)})`), `${tag}: the folder is renamed`);
     await ok(`__rail.head(${jsLiteral(needG.key)}).title===${jsLiteral(long)}`, `${tag}: the long name is in the heading's title`);
-    const ln = await js(`(()=>{const n=__rail.head(${jsLiteral(needG.key)}).querySelector('.rg-n');const cs=getComputedStyle(n);return {cut:n.scrollWidth>n.clientWidth,ell:cs.textOverflow,font:parseFloat(cs.fontSize),over:document.querySelector('.rail').scrollWidth>document.querySelector('.rail').clientWidth+1}})()`);
+    const ln = await js(`(()=>{const h=__rail.head(${jsLiteral(needG.key)}),n=h.querySelector('.rg-n');const cs=getComputedStyle(n);return {cut:n.scrollWidth>n.clientWidth,ell:cs.textOverflow,font:parseFloat(cs.fontSize),over:document.querySelector('.rail').scrollWidth>document.querySelector('.rail').clientWidth+1,text:n.textContent,markup:!!h.querySelector('i')}})()`);
     assert.ok(ln.cut && ln.ell === 'ellipsis' && ln.font >= 10.5 && !ln.over, `${tag}: a long name is cut with an ellipsis: ${JSON.stringify(ln)}`);
+    assert.ok(ln.text === long && !ln.markup, `${tag}: a folder name with markup is shown as text: ${JSON.stringify(ln.text.slice(0, 30))}`);
 
     // ---- Your door (052 FR-216) ----
     const door = await js(`(()=>{const b=document.getElementById('railDoor');return {n:+b.querySelector('b').textContent,need:window.__durbarSimUi.needsCount(),label:b.getAttribute('aria-label'),text:b.innerText.replace(/\\s+/g,' ').trim()}})()`);
