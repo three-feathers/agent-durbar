@@ -257,6 +257,41 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(h.ap(), [], 'sandbox hold: no run armed');
   }
 
+  // merge with spec 052 FR-229: a send waits for a Stop's late calls; Autopilot turned off during that wait means a plain message, not a goal
+  {
+    type LiveLate = { lateCalls?: Set<Promise<void>> };
+    const hold = (r: Rig): (() => void) => {
+      let land: () => void = () => undefined;
+      const p = new Promise<void>((res) => { land = res; });
+      const live = (r.ad as unknown as { sessions: Map<string, LiveLate> }).sessions.get(r.sid)!;
+      (live.lateCalls ??= new Set()).add(p);
+      void p.then(() => live.lateCalls!.delete(p));
+      return land;
+    };
+    const r = await rig();
+    await r.ad.setAutopilot(r.sid, { limit: 5 });
+    const land = hold(r);
+    const sent = r.ad.send(r.sid, { text: 'after the stop' });
+    await tick();
+    assert.ok(!r.order().includes('send'), 'the send waits for the late call');
+    await r.ad.setAutopilot(r.sid, null); // the person turns Autopilot off while it waits
+    land();
+    assert.strictEqual(await sent.then(() => 'sent', (e: Error) => e.message), 'sent', 'Autopilot went off during the wait: the message still goes');
+    const s1 = r.s.calls.filter((c) => c.name === 'send').map((c) => c.args[0] as { prompt: string; agentMode?: string });
+    assert.deepStrictEqual(s1.map((x) => [x.prompt, x.agentMode ?? 'none']), [['after the stop', 'none']], 'Autopilot went off during the wait: a plain message, not a goal');
+    assert.ok(!r.ap().some((e) => e.phase === 'started'), 'no run started after Autopilot went off');
+    // a Stop during the wait drops the message (FR-229), Autopilot or not
+    const q = await rig();
+    await q.ad.setAutopilot(q.sid, { limit: 5 });
+    const land2 = hold(q);
+    const sent2 = q.ad.send(q.sid, { text: 'dropped' });
+    await tick();
+    await q.ad.interrupt(q.sid);
+    land2();
+    await sent2;
+    assert.ok(!q.s.calls.some((c) => c.name === 'send'), 'a Stop during the wait drops the message');
+  }
+
   // a send that fails ends the run it began, once
   {
     const r = await rig();

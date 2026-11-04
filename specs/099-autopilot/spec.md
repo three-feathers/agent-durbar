@@ -689,7 +689,7 @@ Owner decision of Vikram, 2026-10-31 and restated 2026-11-01 (matching Paco; fir
   - **Merged with main, 2026-11-04** (after #963, #1099 and spec 052 FR-229):
     - The adapters' `/word` refusal text (`goalRefusal` case `command`) is removed, and `test-autopilot-claude.ts` now checks that `tests pass\n/compact` is sent as one `/goal` message.
     - On Copilot, Stop's Autopilot branch and End's `endQuietly` run inside FR-229's stop sequence, so a send made during them waits as it does for any Stop.
-    - `send` checks the Autopilot refusals before and again after that wait, because the Stop may have turned Autopilot off.
+    - `send` checks the Autopilot refusals before and again after that wait, because Autopilot may have been turned off during it. A Stop during the wait drops the message (FR-229). `test-autopilot-copilot.ts`: Autopilot turned off during the wait sends a plain message and starts no run. Without the second check the send rejects ("This session is not on Autopilot."), which fails `Autopilot went off during the wait: the message still goes`.
     - The `test:autopilot-*` suites are listed in `scripts/test-suites.txt`.
 
 ### 2026-11-03: the `/word` refusal is dropped for Claude Code goals (owner decision, Vikram)
