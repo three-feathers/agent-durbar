@@ -773,6 +773,14 @@ Agent decisions stand until the owner changes them.
 
 ## Changes
 
+### 2026-11-04: the arcade lobby on whole pixel scales too (FR-255, owner decision, issue #1104)
+
+*Seen* (Mac session, 2026-11-04, macOS 26.0, device scale 2, 15 simulated agents): the lobby's fixtures were drawn at 4.709x (1440x900) and 3.79x (1280x800), and its visitors at 2.64x and 2.13x. They were pixelated with no smoothing, but with uneven pixel widths. *Owner decision* (Vikram, Telegram DM, 2026-11-04 06:06 UTC, option A): snap the lobby's fixtures and visitors to whole device-pixel scales too, as FR-255 does for desks and people; the lobby may come out slightly smaller or larger.
+
+- **FR-255, the lobby (pixel-art worlds):** in a world with `pixelArt`, `lobbyBand` draws each fixture at the nearest whole scale (CSS px per art pixel) to the one it would have had, when it still fits the free floor before the next place (its own visitors kept beside it) and stays inside the lobby band (its name plate sits at the band's top when the band is short, as before); otherwise at the whole scale below. Each visitor is drawn at the whole scale below its own, since a larger one could cover its name chip. The left and top edges are whole CSS px, so at device scale 1 and 2 every lobby pixel is an even square. Rounding down alone made the 1280x800 fixtures half size (1.9 to 1), which is not a slight change; with this rule they are drawn at 2. Worlds without `pixelArt` (photo, cave) are unchanged.
+- `sim:` `scripts/shots-102-arcade.js` checks it with the people and cabinets: every visible lobby fixture and visitor image at a whole scale (width x device scale / natural width) and a whole device-pixel left edge, at 1440x900 and 1280x800. Run on the Mac at device scale 1 and 2, and the pictures looked at.
+- The known gap "Lobby people are not on the grid" above is closed for pixel worlds.
+
 ### 2026-11-03: Retro arcade: the floor used, and four cabinet bodies (owner's fourth look), behind its closed flag
 
 Vikram, 06:16 UTC (relayed): "B and be creative, may be zigzag positioning for max usage and also make arcade look different."
@@ -1011,7 +1019,7 @@ Written with the build. Motion, status light and night are RA4 and RA5.
 - **The page's `require`:** it answers only `./realoffice-layout`. A shim answering everything broke the office when `crew.js` could not load (`check-crew`).
 - `[KNOWN GAP]` **Chat open is not drawn yet:** on this base a chat hides the office, so `aislesLayout` is checked at those widths only by `test-realoffice-aisles`; the driver checks chat closed. It comes with #1001.
 - `[KNOWN GAP]` T212 asks for a mutant adding a node on a status update: `check-office-ops` on `main` has no such row yet (#950 brings it). `check:office` has no world id yet; `shots-102-arcade` carries the overlap checks instead.
-- `[KNOWN GAP]` **Lobby people are not on the grid:** `lobbyBand` scales them by the door, as in other worlds, so their pixels can be uneven (FR-255). The asleep console (FR-259) is not drawn, and a screen's own text is not pixel type. Windows at 125 % and 150 % are not looked at (T204).
+- **Lobby people on the grid** (was a `[KNOWN GAP]`; *Changes* 2026-11-04, #1104): in pixel worlds `lobbyBand` snaps fixtures and visitors to whole scales. The asleep console (FR-259) is not drawn, and a screen's own text is not pixel type. Windows at 125 % and 150 % are not looked at (T204).
 
 ### 2026-11-01: Retro arcade, frames and packs built (RA2, T201, T207, T208); numbers measured
 
