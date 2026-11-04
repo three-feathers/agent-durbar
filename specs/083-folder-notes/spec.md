@@ -293,6 +293,19 @@ In the drawer I choose **Open source** on a note: the chat it came from opens an
 
 ## Changes
 
+### 2026-11-04: the "deleted and made again" identity test no longer depends on the file system's clock (issue #1027, test only)
+
+*Found* (PR #1020): `test-notesswitch`'s identity test re-created a folder 20 times on a real disk and needed birth times to differ. On ext4 they are coarse (a few ms), so it flaked 3 of 8 runs until #1020 added a 30 ms wait. The test still depended on the disk's clock and on whether it records a birth time at all.
+
+- `test:` `scripts/test-notesswitch.ts` gives `NotesFile` a file system whose `lstatSync` answers chosen `dev`, `ino` and `birthtimeNs` for the folder, and the real one for everything else. It checks the rule itself with no wait and on any disk:
+  - the same inode with another birth time (deleted and made again, inode reused) is not the same folder;
+  - another inode is not the same folder;
+  - the same inode and birth time is the same folder (the same-tick case, so the known gap in point 6 stays pinned);
+  - with no birth time (0 or 1970), only `dev:ino` is compared;
+  - `sameFolder` compares the birth time only when both identities have one.
+  A real-disk case remains for what needs no timing: a file added inside keeps the identity.
+- `folderId` is unchanged. The product limit of point 6 (`[KNOWN GAP]`, same-tick replacement on coarse clocks) is unchanged too: whether to do more there is an open question for the owners, not decided here.
+
 ### 2026-11-01: the project file moves to `.durbar/notes/notes.md`, ignored by a `.gitignore` of its own; no `.git/info/exclude` (decided by the owner, 2026-10-31 and 2026-11-01; replaces PR #957, which wrote exclude lines in every Unicode form)
 
 *Why:* PR #957 found that on macOS git compares NFC names, so an exclude line written with the folder's bytes could report *Added* while `git add -A` staged the private file (fail open). Ruben's review of #957 added mixed forms and non-ASCII case as further misses. Any line in a path-dependent list has this problem; a `.gitignore` *inside* the folder does not, because its pattern `*` names no path. The owner chose that design and no migration.

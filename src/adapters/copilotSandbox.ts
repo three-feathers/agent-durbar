@@ -18,7 +18,7 @@ export const COPILOT_SANDBOX_VERIFIED: readonly string[] = Object.freeze([]);
  * the state was `on`. A second run's `sandbox.decision` showed why: the command ran inside an engaged sandbox built from Durbar's policy,
  * with no bypass, whose effective policy had one read-write rule Durbar did not send (K15, issue #755).
  */
-export const COPILOT_SANDBOX_NOTE_COMMAND = 'If you approve, Copilot’s sandbox may still let this write outside the folder (seen on Linux, 2026-10-25).';
+export const COPILOT_SANDBOX_NOTE_COMMAND = 'If you approve, this can also write in Copilot’s temp folder (a private one Durbar gives it), not only this folder.'; // spec 087 FR-021a, FR-023 (K15, real: Linux 2026-11-04)
 export const COPILOT_NO_REPORT = 'this Copilot cannot report its sandbox';
 
 /** `SandboxHostSupport`, checked (FR-006). */
