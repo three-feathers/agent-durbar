@@ -256,6 +256,17 @@ export function lobbyWidths(fixtures: readonly number[], counts: readonly number
 export const COMPACT_W = 96;
 
 /** FR-023..FR-027: the lobby band: fixtures scaled whole to the band, visitors in front, widths from lobbyWidths. */
+/**
+ * Spec 102 FR-255 (#1104): a pixel world's lobby fixture scale (CSS px per art pixel): the nearest whole scale to `raw` when it fits the free
+ * floor `room` and its top stays 3 px inside the band (`floorY` is the floor line), else the whole scale below (at least 1).
+ */
+export function lobbyScale(raw: number, artW: number, room: number, floorLine: number, floorY: number): number {
+  const up = Math.round(raw), down = Math.max(1, Math.floor(raw + 1e-6));
+  return up > down && artW * up <= room && floorY - floorLine * up >= 3 ? up : down;
+}
+/** Spec 102 FR-255 (#1104): a lobby visitor's whole scale: the one below its own (a larger one could cover its name chip), at least 1. */
+export const visitorScale = (k: number): number => Math.max(1, Math.floor(k + 1e-6));
+
 function roLobby(meta: RealMeta, places: RealPlace[], W: number, Lb: number): { fixtures: FixtureBox[]; floorStrip: Rect } {
   const FLOOR = Math.round(Math.max(18, Lb * 0.13)), floorY = Lb - FLOOR + 3;
   const wallH = floorY, fs0 = wallH / meta.floorLine;
@@ -272,10 +283,10 @@ function roLobby(meta: RealMeta, places: RealPlace[], W: number, Lb: number): { 
        so every art pixel is an even square at device scale 1 and 2 */
     const snap = !!meta.pixelArt;
     const artW = !p.custom && roOwn(meta.fixtures, p.id) ? meta.fixtures[p.id][0] : (meta.fixtures.web || [100, meta.floorLine])[0];
-    const raw = fs0 * al.scale[i], up = Math.round(raw), down = Math.max(1, Math.floor(raw + 1e-6));
+    const raw = fs0 * al.scale[i];
     /* the nearest whole scale when it still fits the free floor before the next place (its visitors kept) and stays inside the band, else the one below (#1104) */
     const room = (i + 1 < places.length ? al.x[i + 1] : W) - al.x[i] - (al.w[i] - al.fw[i]) - al.gap; /* the free floor up to the next place, its visitors kept */
-    const fs = snap ? (up > down && artW * up <= room && floorY - meta.floorLine * up >= 3 ? up : down) : raw;
+    const fs = snap ? lobbyScale(raw, artW, room, meta.floorLine, floorY) : raw;
     const x = snap ? Math.round(al.x[i]) : al.x[i], fw = snap ? artW * fs : al.fw[i], fh = snap ? meta.floorLine * fs : wallH * al.scale[i];
     const objTop = floorY - fh + (meta.fixtureTop && roOwn(meta.fixtureTop, p.id) && !p.custom ? meta.fixtureTop[p.id] * fs : fh * 0.35);
     const art: Rect | null = compact ? null : { x, y: floorY - fh, w: fw, h: fh };
@@ -288,7 +299,7 @@ function roLobby(meta: RealMeta, places: RealPlace[], W: number, Lb: number): { 
         /* the feet (the picture's lowest opaque row) stand on the front floor plane, in front of the fixture; one scale per person,
            from its upright 'letter' pose, NEAR_SCALE larger than at the wall line. */
         const k0 = nearPx / standHeight(meta, String(v.person));
-        const k = snap ? Math.max(1, Math.floor(k0 + 1e-6)) : k0, fw2 = sp.size[0] * k, fh2 = sp.size[1] * k; /* FR-255 (#1104): whole scale in a pixel world */
+        const k = snap ? visitorScale(k0) : k0, fw2 = sp.size[0] * k, fh2 = sp.size[1] * k; /* FR-255 (#1104): whole scale in a pixel world */
         const px = (n: number): number => (snap ? Math.round(n) : n);
         const faces = meta.facing || 'left', st = meta.stand[String(v.person)], fb = roOwn(POSE_FRAME_B, sp.pose) && roOwn(st.poses, POSE_FRAME_B[sp.pose]) ? POSE_FRAME_B[sp.pose] : null;
         /* the two running pictures have their own canvases: each in its own box, the feet on one spot, so changing picture moves no foot */
