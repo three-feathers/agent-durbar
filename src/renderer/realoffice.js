@@ -20,6 +20,7 @@
   /* phase P2 (FR-030..FR-035, FR-070..FR-074). CUR: the drawn scene; a monitor repaints on its own, at most once per REPAINT_MS, only when its
      lines changed, and not at all while the office is hidden or the desk is scrolled away: so no timer runs in an idle office. */
   const REPAINT_MS = 2000; /* FR-033 */
+  let TICK_WAIT = 0; /* redraws waiting for a done tick to end (pending(), for the op-count driver) */
   const SCR = new Map(); /* desk id -> {box, last, timer, dirty, away, fit, sig} */
   const OFF = new Set(); /* keys of desks whose motion stands still: scrolled away or under the zoom */
   let LAY_G = 0; const CUR_G = () => LAY_G; /* the arcade's scale, for its screen text (0 in other worlds) */
@@ -406,7 +407,7 @@
         if (call === 'green-once') {
           if (L.doneTick(SEEN, k, d.state)) { TICKS.set(k, now); if (st && st.flourish && moving() && !hiddenNow()) coinUp(chrome, k, lay.g); }
           const t0 = TICKS.get(k); call = t0 && now - t0 < 2000 ? 'green' : null;
-          if (call) setTimeout(() => { if (onArt) onArt(); }, 2050 - (now - t0)); /* redraw when the tick is over */
+          if (call) { TICK_WAIT++; setTimeout(() => { TICK_WAIT--; if (onArt) onArt(); }, 2050 - (now - t0)); } /* redraw when the tick is over */
         } else { L.doneTick(SEEN, k, d.state); TICKS.delete(k); }
         if (call) { const c = el(lights, 'c:' + k, 'div', 'ro-call call-' + call + (lt.motion === 'pulse' ? ' pulse' : '') + (call === 'green' && !opts.still ? ' fade' : '')); box(c, { x: d.call.x, y: d.call.y, w: 10, h: 10 }); dset(c, 'for', k); }
         /* FR-038: cues, inside the slot */
@@ -1083,5 +1084,7 @@
     wasHidden = false;
     CUR = null;
   }
-  root.DurbarRealOffice = { hoverState: () => ({ still: QUIET_POINTER, armed: ARMED }), render, reset, leave, feed, resume, quietFocus, whereSize: () => WHERE.size, bad: () => [...BAD], resolve, stagger, personOf: (id) => (PEOPLE && has(PEOPLE, id) ? PEOPLE[id] : null) /* the chat's header draws the same person (spec 097 FR-106) */ }; /* resolve: for the driver's deterministic check */
+  /* spec 097 FR-186: work the room has put off on a timer (a screen's throttled repaint, FR-033; a redraw when a done tick ends): check-office-ops-real starts a measured update only when there is none, so no earlier update's deferred work is counted in it. Read only */
+  const pending = () => { let screens = 0; for (const s of SCR.values()) if (s.timer) screens++; return { screens, ticks: TICK_WAIT }; };
+  root.DurbarRealOffice = { hoverState: () => ({ still: QUIET_POINTER, armed: ARMED }), pending, render, reset, leave, feed, resume, quietFocus, whereSize: () => WHERE.size, bad: () => [...BAD], resolve, stagger, personOf: (id) => (PEOPLE && has(PEOPLE, id) ? PEOPLE[id] : null) /* the chat's header draws the same person (spec 097 FR-106) */ }; /* resolve: for the driver's deterministic check */
 })(typeof self !== 'undefined' ? self : this);

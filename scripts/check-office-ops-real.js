@@ -2,7 +2,8 @@
  * Spec 097 FR-186, FR-178's Real office rows (this file; the flat rows are `check-office-ops.js`, one file each since the #941/#950 merge) (T149, T151, T153; part of T142): operation counts of Real office, never times. Simulator only, no AI credits.
  * At 15 and 40 agents, 1440x900, device pixel ratio 1 (emulated, so that every OS counts the same; FR-183 says what Retina does):
  *   - one status event of one agent through the normal path (`__durbarSimEmit`), waited for with until(), the median of 8 (simulator visits run on the wall clock, so
- *     a single reading can hold another agent's walk): renders, layout reads (offset*, client*, scroll*, getBoundingClientRect, getClientRects), nodes added or removed
+ *     a single reading can hold another agent's walk), each started only when nothing is put off (DurbarRealOffice.pending(): no screen repaint, FR-033, and no
+ *     done-tick redraw waiting on a timer) and the lobby is settled, so no earlier update's deferred work lands in it: renders, layout reads (offset*, client*, scroll*, getBoundingClientRect, getClientRects), nodes added or removed
  *     and attribute writes in #stage (a MutationObserver; the state's own cues, a call light, a "?", "!", the thinking dots and a folder's count of a new state, are not "nodes rewritten");
  *   - elements recalculated by one text change (`UpdateLayoutTree.elementCount` of one short contentTracing, a count; animations off for the trace);
  *   - FR-180, FR-181: the running infinite animations (at most one per light whose state moves, none outside the lights), that each is stepped at most 8 changes a
@@ -24,9 +25,10 @@ const { contentTracing } = require('electron');
 const { helpers, jsLiteral } = require('./driver-helpers');
 
 const LIMITS = { rendersPerStatus: 1, readsPerStatus: 5, nodesPerStatus: 0, attrWritesPerStatus: 10, elementsRecalculated: 50, pictureArea: 4, animationsOverLights: 0, animationsOffLights: 0, animationsUnstepped: 0, animationsOtherProperty: 0, lightsBoxShadow: 0, stepsPerSecond: 8, blendElements: 0, animationsStill: 0 };
-/* Measured 2026-11-04 at the head that answers the review on #969, Linux under xvfb, 13 runs, 8 updates each (idle and under a CPU load): reads 15 and nodes 22 in
-   every update at 15 and 40 agents; attribute writes 40 and 34 by turns at 15 (median 40), 48 and 42 at 40 (median 48). Margin: 2 on each (one more node pair or a
-   few more writes than measured fail). Spec 097, Changes 2026-11-04 (review on #969) */
+/* Measured 2026-11-04 (second review on #969), Linux under xvfb: 16 runs of 8 updates, 8 idle and 8 under eight busy loops on 4 cores: reads 15 and nodes 22 in
+   every update at 15 and 40 agents; attribute writes 40 and 34 by turns at 15 (median 40), 48 and 42 at 40 (median 48). Before each update waited for nothing put off,
+   a loaded run counted 26, 27 and 44 nodes in single updates at 40 agents (a screen's deferred repaint, or a done tick's redraw, inside the window: a second render);
+   with the wait, none. Margin: 2 on each (one more node pair or a few more writes than measured fail). Spec 097, Changes 2026-11-04 (review on #969) */
 const KNOWN_FAILURES = {
   /* T149 left: about 24 and 32 attribute writes are the change itself, as the desks re-sort on a status change (measured 2026-11-04 with drawSlips returning at once: reads 3, nodes 0, attribute writes 24 at 15 agents and 32 at 40; FR-190: the budget of 10 may need moving) */
   'attrWritesPerStatus@15': { task: 'T149 (desks re-sorting) and T184 (slips)', max: 42 },
@@ -165,24 +167,32 @@ module.exports = async (ctx) => {
     await H.until(shows('working'), 8000);
     await frames();
     const per = { renders: [], reads: [], nodes: [], attrs: [] };
-    let seen = {};
+    let seen = {}, worst = null, putOff = 0;
     for (let i = 0; i < 8; i++) {
       const st = i % 2 ? 'working' : 'idle';
+      /* a deterministic window (review on #969, nodes 27 once at 40 agents): the previous update's deferred work (its screen's throttled repaint, FR-033, 2 s; a done tick's redraw, 2.05 s)
+         lands later on the wall clock, and under a CPU load inside this window. Start only when nothing is put off, the lobby settled and no render queued */
+      assert.ok(await H.until(`(()=>{const p=window.DurbarRealOffice.pending();return p.screens===0&&p.ticks===0;})()&&` + SETTLED, 15000), `${n} agents: nothing put off before update ${i}: ` + JSON.stringify(await js(`window.DurbarRealOffice.pending()`)));
+      await frames();
       await js(`window.__ops.start()`);
       await emit(st);
       const ok = await H.until(shows(st), 8000);
       assert.ok(ok, `the plate shows ${st}`);
       await frames();
       const o = await js(`window.__ops.stop()`);
+      const put = await js(`(()=>{const p=window.DurbarRealOffice.pending();return p.screens+p.ticks;})()`); putOff += put;
       for (const k of Object.keys(per)) per[k].push(o[k]);
       seen = o.seen;
+      if (!worst || o.nodes + o.attrs > worst.nodes + worst.attrs) worst = { i, ...o }; /* the most costly update's breakdown is logged, so a failure says what it wrote */
     }
+    assert.ok(putOff > 0, `${n} agents: pending() saw the screen repaints the updates put off (FR-033), so the wait before each update waits for something real`);
     rows[`rendersPerStatus@${n}`] = med(per.renders);
     rows[`readsPerStatus@${n}`] = med(per.reads);
     rows[`nodesPerStatus@${n}`] = med(per.nodes);
     rows[`attrWritesPerStatus@${n}`] = med(per.attrs);
     console.log('[ops]', n, 'agents, per status update (8):', JSON.stringify(per));
     for (const [k, v] of Object.entries(seen)) console.log('[ops]  ', n, 'agents, last update wrote', k, v); // node: = added or removed
+    console.log('[ops]', n, 'agents, the most costly update (' + worst.i + '):', worst.nodes, 'nodes', worst.attrs, 'attribute writes', JSON.stringify(worst.seen));
     // ---- FR-185: one text change, in the normal shape of a render ----
     await js(`(()=>{const s=document.createElement('style');s.textContent='*,*::before,*::after{animation:none!important;transition:none!important}';document.head.append(s);})()`);
     const change = (i) => js(`(()=>{document.querySelector('#stage .ro-plate .ro-l2').textContent=${jsLiteral('Op ')}+${i};return document.body.offsetHeight;})()`);
