@@ -64,7 +64,7 @@ try {
   assert.ok(check(copy({ md: (t) => t.replace('missing (#1148)', 'missing (owner decision, 2026-02-30)') })).some((m) => /Real office cell "missing \(owner decision, 2026-02-30\)" is not plain works/.test(m)), 'a marker with no real date does not waive the gap');
   assert.ok(!check(copy({ md: (t) => t.replace('missing (#1148)', 'missing (owner decision, #1148)') })).some((m) => /marker|Real office cell/.test(m)), 'an issue marker is accepted');
   // a works note with a limiting word is not parity
-  for (const w of ['works pose, dots and lights only', 'works, partly', 'works, no pencil', 'works except drag'])
+  for (const w of ['works pose, dots and lights only', 'works, partly', 'works, partial', 'works, partially drawn', 'works, no pencil', 'works, not the lounge', 'works, missing drag', 'works without drag', 'works except drag'])
     fails({ md: (t) => t.replace('works pose, dots and lights only; heavy, monster and siren missing (#1171)', w) }, new RegExp('Real office cell "' + w + '" is not plain works'));
   // the offered worlds cannot be read
   fails({ crew: () => 'throw new Error("no worlds here");' }, /cannot read the offered worlds from src\/renderer\/crew.js: no worlds here/);
