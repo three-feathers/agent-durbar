@@ -1,0 +1,1 @@
+- **A click on the middle of a short name opens the chat, not rename** (spec 059 FR-030): the rename pencil is invisible until hover, and on a short name with no room beside it, its box could start left of the name's middle and take the click. The whole box now stays in the name's right half. Checked in the simulator at both window sizes.

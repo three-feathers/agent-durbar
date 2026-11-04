@@ -639,15 +639,24 @@ async function phase2(): Promise<void> {
     assert.strictEqual(h.sch.doc.schedules.length, 50);
     assert.ok(!h.sch.save({ folder: '/w', prompt: 'new', every: 45 }, () => true).ok);
   }
-  // spec 072: until main wires loops (T006) `save` refuses them
+  // spec 072: the switch is off until the UI PR; off, `save` refuses a loop and keeps nothing; the tests below switch it on
   {
+    assert.strictEqual(loopSupport.enabled, false, 'loops are off until the UI PR (T010-T013) turns them on');
     const h = harness({ pausedAll: false, schedules: [] });
     const input = { folder: '/w', prompt: 'p', target: { session: 's1', agent: 'copilot' }, cap: { amount: 5, unit: 'aiu' }, loop: { minDelay: 5, maxDelay: 60, defaultDelay: 30, maxPasses: 3, endAt: now + 60 * MIN } };
+    loopSupport.enabled = false;
     assert.deepStrictEqual(h.sch.save(input, () => true), { ok: false, error: 'Loops are not available yet.' });
     assert.strictEqual(h.sch.doc.schedules.length, 0);
     loopSupport.enabled = true;
     assert.ok(h.sch.save(input, () => true).ok, 'with the switch on');
-    loopSupport.enabled = false;
+    // the limits still hold with the switch on (FR-003 as built; T042 is not): no pass limit, no end time, or a missing cap is refused
+    for (const bad of [{ maxPasses: undefined }, { endAt: undefined }, { maxPasses: 101 }, { endAt: now + 25 * 60 * MIN }]) {
+      const hh = harness({ pausedAll: false, schedules: [] });
+      assert.ok(!hh.sch.save({ ...input, loop: { ...input.loop, ...bad } }, () => true).ok, `refused: ${JSON.stringify(bad)}`);
+      assert.strictEqual(hh.sch.doc.schedules.length, 0);
+    }
+    const nocap = harness({ pausedAll: false, schedules: [] });
+    assert.deepStrictEqual(nocap.sch.save({ ...input, cap: undefined }, () => true), { ok: false, error: 'A loop needs a limit (AI credits or dollars).' });
   }
   loopSupport.enabled = true;
   // spec 072 (T002): a loop is a schedule with a `loop` field: session target, no every/at/rule, validated limits, main-owned state stripped

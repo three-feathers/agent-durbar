@@ -5,6 +5,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { placeBox, portraitCrop, PORTRAIT_SIDE, slipAvoid, NOTE_PAPER, NOTE_PAPER_DEFAULT, NOTE_INK, notePaper, screenFit, screenFor, personMotion, zoomRect, realLayout, lobbyWidths, sortDesks, assignPeople, standPose, standHeight, POSE_FRAME_B, lobbyRange, PERSON_M, DOOR_M, FRONT_DEPTH, NEAR_SCALE, CHIP_H, U_MIN, U_MAX, U_MAX_BIG, FACE_U, PLATE_H, PLATE_H_ASK, STRIP,
   type RealModel, type RealMeta, type RealAgent, type RealState, type Rect, type Layout } from '../src/shared/realoffice-layout';
+import { lobbyBand, lobbyScale, visitorScale } from '../src/shared/realoffice-layout';
+import { createHash } from 'crypto';
 import { lampWords, lightFor, lightState, LIGHT_TABLE, ambientFor, doneTick, fixtureLight, isActive, type LightState } from '../src/shared/lights';
 
 process.exitCode = 1;
@@ -687,5 +689,48 @@ for (const [W, H] of SIZES.slice(0, 2)) {
   console.log(`zoom: ${zoomCases} placements`);
 }
 
+// spec 102 FR-255 (#1104): the arcade lobby on whole scales (the rule, then the band itself)
+{
+  // 1. rounds up and fits (the free floor and the band)
+  assert.strictEqual(lobbyScale(1.9, 44, 100, 48, 200), 2, 'FR-255 lobby: 1.9 rounds up to 2 when it fits');
+  // 2. rounds up but does not fit: the scale below
+  assert.strictEqual(lobbyScale(1.9, 44, 80, 48, 200), 1, 'FR-255 lobby: no room on the floor: the scale below');
+  assert.strictEqual(lobbyScale(1.9, 44, 100, 48, 90), 1, 'FR-255 lobby: it would leave the band: the scale below');
+  assert.strictEqual(lobbyScale(2.3, 44, 60, 48, 200), 2, 'FR-255 lobby: nearest below needs no room check');
+  // 3. a scale under 1 is drawn at 1
+  assert.strictEqual(lobbyScale(0.6, 44, 20, 48, 200), 1, 'FR-255 lobby: under 1 is 1');
+  assert.strictEqual(lobbyScale(0.3, 44, 20, 48, 200), 1, 'FR-255 lobby: well under 1 is 1');
+  // 4. a visitor takes the scale below its own
+  assert.deepStrictEqual([2.64, 2.13, 1.99, 0.7, 3, 2.9999999].map(visitorScale), [2, 2, 1, 1, 3, 3], 'FR-255 lobby: a visitor takes the whole scale below its own');
+  // 5. the band of the pixel world: whole scales and whole-px edges, quiet and crowded, at several widths and heights
+  const retro = { ...readJson('worlds', 'retro', 'world.json'), ...readJson('sets', 'retro', 'set.json') } as unknown as RealMeta;
+  const crowd = Object.keys(retro.stand);
+  let checked = 0;
+  for (const [W, Lb] of [[1408, 150], [1248, 128], [1408, 196], [1000, 140]]) {
+    for (const busy of [0, 1, 3]) {
+      const places = PLACES.map((id, i) => ({ id, visitors: i % 3 === 0 ? Array.from({ length: busy }, (_, j) => ({ id: id + j, person: crowd[(i + j) % crowd.length], needsYou: false })) : [] }));
+      const lb = lobbyBand(retro, places as never, W, Lb);
+      for (const f of lb.fixtures) {
+        if (f.art) {
+          const aw = retro.fixtures[f.id][0];
+          assert.ok([f.art.x, f.art.y, f.art.w, f.art.h].every(Number.isInteger), `FR-255 lobby ${W}x${Lb}: fixture ${f.id} on whole px ${JSON.stringify(f.art)}`);
+          assert.ok(Number.isInteger(f.art.w / aw) && f.art.w / aw >= 1, `FR-255 lobby ${W}x${Lb}: fixture ${f.id} at a whole scale (${f.art.w / aw})`);
+          assert.ok(f.art.y >= 0, `FR-255 lobby ${W}x${Lb}: fixture ${f.id} inside the band`);
+          checked++;
+        }
+        for (const v of f.visitors) if (v.fig) {
+          assert.ok(Number.isInteger(v.fig.x) && Number.isInteger(v.fig.y), `FR-255 lobby ${W}x${Lb}: visitor ${v.id} on whole px`);
+          const k = v.fig.w / retro.stand[String(crowd.find((p) => v.fig!.file.startsWith(p + '-')))].poses[v.fig.pose][0];
+          assert.ok(Math.abs(k - Math.round(k)) < 1e-9 && k >= 1, `FR-255 lobby ${W}x${Lb}: visitor ${v.id} at a whole scale (${k})`);
+          checked++;
+        }
+      }
+    }
+  }
+  assert.ok(checked > 50, `FR-255 lobby: enough pictures checked (${checked})`);
+  // 6. a world without pixelArt is unchanged: the photo world's band is byte-identical to main's (sha computed with main's code, 2026-11-04)
+  const P = ['library', 'software', 'terminal', 'web', 'other', 'coffee', 'boss', 'bank', 'postbox'].map((id, i) => ({ id, visitors: i % 3 === 0 ? [{ id: 'v' + i, person: PEOPLE[i], needsYou: false }] : [] }));
+  assert.strictEqual(createHash('sha256').update(JSON.stringify(lobbyBand(META, P, 1408, 150))).digest('hex').slice(0, 16), 'fad790c1536fb4f8', 'FR-255 lobby: the photo world is unchanged');
+}
 console.log(`realoffice layout and lights tests passed (${cases} layouts, faces ${JSON.stringify(faces)})`);
 process.exitCode = 0;

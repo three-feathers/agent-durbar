@@ -6,7 +6,7 @@
 
 ## The rule
 
-**No code in `src/` until the spec, plan and tasks exist and are committed.** In order:
+**No code in `src/` until the spec, plan and tasks are committed.** In order:
 
 1. `/speckit.specify` (new behaviour), or a dated *spec delta* under `## Changes` in the owning `specs/NNN-name/spec.md` (fix or tweak).
 2. `/speckit.clarify` when anything is ambiguous: ask the user, do not guess.
@@ -114,7 +114,7 @@ Another team's agent's approval (via its human's account) counts.
 - **Look for an existing capability first** (FR-031): every review and new spec checks for a dialog, menu, IPC channel, store, helper or adapter call doing the job; reuse or extend it, and name it.
 - **Re-approving after a push** (FR-032): compare `git diff $(git merge-base <old> origin/main) <old> -- src scripts | git patch-id --stable` with the new head's; same, re-approve and say so; else review the difference.
 - **Admin merge** (FR-032): only when a formality is the last blocker (a spec-only PR's skipped checks, or an approval dismissed by a main merge with unchanged patch id) and CI that ran is green, security clean, review written, issue checked. Refused by your tool: no workaround, give your human the command.
-- **The merge queue** (FR-041): approve, then `gh pr merge <N> --auto --match-head-commit <sha>`; `--delete-branch` does not work with it; `gh pr view` hides a queued PR, so check `isInMergeQueue` via GraphQL. `gh stack merge` merges every lower member: check each first.
+- **The merge queue** (FR-041): approve, then `gh pr merge <N> --auto --match-head-commit <sha>`; `--delete-branch` does not work with it; `gh pr view` hides a queued PR: check `isInMergeQueue` via GraphQL. `gh stack merge` merges every lower member: check each first.
 - **Unstack** (FR-040) with a replacement PR off main that closes the old one with a link; never by force-push, rename or stack tool.
 - **Cleanup** (FR-050): delete branch and worktree by hand right after the merge, and only once the PR is `MERGED`; never someone else's open branch.
 - Paths in `CODEOWNERS` need one of the three owners.

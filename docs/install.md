@@ -10,7 +10,7 @@ Requirements, downloads, verifying a download, the first-run steps for each syst
   - Not tried yet: installs through winget or Homebrew, the official installers on a real machine, and the flows on macOS and Windows (a manual CI check on clean macOS, Windows and Linux machines, with and without admin rights, is spec 060 T060).
 - Durbar never sees, stores or sends your tokens: each harness reads its own sign-in. Durbar has no accounts, no servers and no telemetry.
 - Usage bills against **your** plans. Several agents in parallel can use credits quickly; see [Costs and caps](safety.md#costs-and-caps).
-- Optional: VS Code, VS Code Insiders or VSCodium, for *Open in VS Code*.
+- Optional: VS Code, VS Code Insiders or VSCodium, for *Open with*.
 
 **Download** the build for your system from the [Releases page](https://github.com/three-feathers/agent-durbar/releases). Check it against `SHA256SUMS.txt`. There is no auto-update: download a newer release to update.
 
