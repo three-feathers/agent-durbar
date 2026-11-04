@@ -90,6 +90,8 @@
     "test:toolstats": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-toolstats.js",
     "test:credits": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-credits.js",
     "test:site": "node scripts/test-site.js",
+    "test:blogcheck": "node scripts/test-check-posts.js",
+    "blog:check": "node scripts/check-posts.js",
     "test:docsscripts": "node scripts/test-docs-scripts.js",
     "test:perfrecord": "node scripts/test-perf-record.js",
     "test:worldmatrix": "node scripts/test-world-matrix.js",
