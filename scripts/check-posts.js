@@ -190,9 +190,10 @@ function nameForms(text) {
   const out = new Set();
   toks.forEach((t, i) => {
     out.add(t); out.add(t.replace(/-/g, ''));
-    // every contiguous run of up to RUN_MAX hyphen-separated parts ("2026-11-01-x-y" holds "x-y"); at most 64 parts, so a word
-    // gives at most 64 x 8 runs (round 4: 64-part words took 12.6 s for 240 KB with every run; a name has fewer than 8 parts)
-    const parts = t.split('-').slice(0, 64);
+    // every contiguous run of up to RUN_MAX hyphen-separated parts ("2026-11-01-x-y" holds "x-y"), in a word of any length: a word
+    // of k parts gives at most 8k runs, linear in the text (round 4 capped the run length; round 5 dropped the 64-part limit, which
+    // let a name after part 64 through)
+    const parts = t.split('-');
     for (let a = 0; a < parts.length; a++) for (let b = a + 1; b <= Math.min(parts.length, a + RUN_MAX); b++) { const run = parts.slice(a, b); out.add(run.join('-')); out.add(run.join('')); }
     if (i + 1 < toks.length) { const u = toks[i + 1]; out.add(t + u); out.add(`${t}-${u}`); out.add(`${t} ${u}`); out.add(`${t}.${u}`); }
   });

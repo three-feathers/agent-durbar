@@ -402,13 +402,6 @@ function cli() {
   fails({ [P]: post(front(), body('Hover <a title="%2Fhome%2Fstandin">here</a>.')) }, 'path', 'a percent-encoded path inside a tag attribute');
   // the run cap keeps a name found anywhere in a long hyphenated word
   fails({ [P]: post(front(), body(`The ${Array.from({ length: 30 }, (_, i) => `p${i}`).join('-')}-quokka-corp build.`)) }, 'blocked', 'a blocked label at the end of a 32-part word');
-  // 3. the worst case the review measured (240 KB of 64-part words as one paragraph), in CPU time with a generous bound
-  const word = Array.from({ length: 64 }, (_, i) => `p${i}`).join('-');
-  const big = Array.from({ length: 63 }, () => Array(Math.floor(4000 / (word.length + 1))).fill(word).join(' ')).join('\n');
-  const t0 = process.cpuUsage();
-  cp.textProblems(big, { redact: cp.loadRedact(), blocked: new Set([cp.hashName('quokkacorp')]), phrases: ['zebra moonbase'], files: new Set() });
-  const c = process.cpuUsage(t0);
-  assert.ok((c.user + c.system) / 1e6 < 8, `240 KB of 64-part words stays well inside the CI job (${((c.user + c.system) / 1e6).toFixed(1)} s CPU)`);
   // 2. the CLI's last resort prints neither a path nor a stack (a test-only hook makes checkAll fail)
   check({ [P]: post() });
   cliReady();
@@ -416,6 +409,38 @@ function cli() {
   assert.strictEqual(r.status, 1, 'an internal failure fails the check');
   assert.match(r.stderr, /internal error \(ETESTSEAM\); nothing is published/, 'the last resort names only the error code');
   assert.ok(!r.stderr.includes(T) && !r.stdout.includes(T) && !/check-posts\.js/.test(r.stderr) && !/\n\s+at /.test(r.stderr) && !/test-only failure/.test(r.stderr), `the last resort prints no path, message or stack: ${r.stderr.slice(0, 200)}`);
+}
+
+// review of PR #1106, round 5 (rubenlupi's side at 293569848)
+{
+  // 1. no part limit: a blocked label after part 64, at the end of a 200-part word, and in a file name (withheld, never printed)
+  const parts = (n) => Array.from({ length: n }, (_, i) => `p${i}`).join('-');
+  fails({ [P]: post(front(), body(`The ${parts(70)}-quokka-corp build.`)) }, 'blocked', 'a blocked label after part 64 of a word');
+  fails({ [P]: post(front(), body(`The ${parts(200)}-quokka-corp build.`)) }, 'blocked', 'a blocked label at the end of a 200-part word');
+  {
+    const name = `2026-11-01-${'a-'.repeat(70)}quokka-corp.md`; // 165 bytes: fits a 255-byte file name
+    check({ [name]: post(front({ date: '2026-11-01', writtenOn: '2026-11-01' })) });
+    const r = cli();
+    assert.ok(!/quokka/i.test(r.out) && /withheld/.test(r.out), `a blocked label after part 64 of a file name is withheld, never printed: ${r.out.slice(0, 200)}`);
+  }
+  // 3. the same blocked name on two lines: both lines are reported (a cache must not hide a repeat)
+  {
+    const r = check({ [P]: post(front(), body('We met quokkacorp once.\n\nWe met quokkacorp twice.')) });
+    const lines = new Set(r.problems.filter((p) => p.rule === 'blocked').map((p) => p.line));
+    assert.ok(lines.size >= 2, `the same blocked name on two lines is reported on both: ${JSON.stringify([...lines])}`);
+  }
+  // 2. the worst cases, each one paragraph of about 240 KB, in absolute CPU time: measured here at 0.9 to 1.4 s each (5 runs) and
+  // 3.7 s on the reviewer's machine; the bound of 20 s is about 5x the slowest machine seen and 14x here, so it stays quiet on a
+  // slow CI runner and still catches a quadratic step (which costs minutes on these inputs)
+  const word = parts(64);
+  for (const [what, big] of [['64-part words', Array.from({ length: 63 }, () => Array(Math.floor(4000 / (word.length + 1))).fill(word).join(' ')).join('\n')],
+    ['one 4000-character hyphenated word per line', Array.from({ length: 63 }, (_, k) => Array.from({ length: 1333 }, (_, i) => `p${(i + k) % 997}`).join('-').slice(0, 4000)).join('\n')],
+    ['a-a-a lines', Array.from({ length: 63 }, () => 'a-'.repeat(2000)).join('\n')]]) {
+    const t0 = process.cpuUsage();
+    cp.textProblems(big, { redact: cp.loadRedact(), blocked: new Set([cp.hashName('quokkacorp')]), phrases: ['zebra moonbase'], files: new Set() });
+    const c = process.cpuUsage(t0);
+    assert.ok((c.user + c.system) / 1e6 < 20, `240 KB of ${what} as one paragraph stays inside the CI job (${((c.user + c.system) / 1e6).toFixed(1)} s CPU)`);
+  }
 }
 
 // every rule has a fixture above (a rule with none would be a rule no test can kill)
