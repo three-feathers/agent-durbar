@@ -115,6 +115,7 @@ import { broadFolderKind } from '../shared/broadfolder';
 import { REPO_URL, aboutPanelOptions } from '../shared/about';
 import { modelControlFor } from '../shared/modelswitch';
 import { createDebugSink, redact } from '../shared/redact';
+import { eventGate } from '../adapters/eventguard';
 import { profileDir } from './profiledir';
 import { simClockSetup } from './simclock';
 import { debugSwitchesToRemove } from './debugguard';
@@ -184,6 +185,7 @@ for (const [name, value] of simClock.switches) app.commandLine.appendSwitch(name
 // spec 010 FR-024: under the simulator every descriptor creates an inert stand-in, never the real adapter
 const registry = createRegistry(simGuardDescriptors([...PRODUCTION_DESCRIPTORS, ...offeredDescriptors(dev)], SIMULATOR)); // Copilot, then Claude Code (spec 012 FR-135); detection decides what is ready
 const router = createRouter(registry);
+router.setEventGuard(eventGate((line) => console.warn(redact(line)))); // spec 010 FR-035: every event checked before any listener; a bad one is dropped
 /** Spec 076 section O (issue #602): each agent app's own organization policy, read by its adapter, cached 60 s. */
 const orgPolicies = new OrgPolicyCache({ ids: () => registry.list().map((d) => d.id), adapter: (id) => (registry.has(id) ? router.instance(id) : undefined) });
 /** Spec 076 FR-203: the start guard's deps; advice is shown once the session has started (a toast in the window). */
