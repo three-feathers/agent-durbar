@@ -104,6 +104,7 @@ test:checkpoints
 test:ipcchannels
 test:planmode
 test:probe
+test:logo-assets
 test:autofollow
 test:openwith
 test:liveact
