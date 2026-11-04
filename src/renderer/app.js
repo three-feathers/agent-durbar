@@ -833,7 +833,7 @@ function renderStats(){
   const list=visibleAgents().filter(a=>!a.parent); const c={working:0,waiting:0,idle:0,error:0,done:0};
   list.forEach(a=>{const s=vis(a); if(s==='working'||s==='thinking')c.working++; else c[s]++;});
   const defs=[['working','Working','working or thinking'],['waiting','Waiting','waiting for you'],['idle','Idle','idle or paused'],['error',c.error===1?'Error':'Errors','with errors'],['done','Done','done']];
-  morphHTML($('stats'),defs.map(([k,l])=>`<button class="stat${(k==='waiting'||k==='error')&&c[k]?' attn':''}" data-k="${k}" aria-pressed="${ui.status===k}" title="" aria-label="${l}: ${c[k]}"><span class="dot ${k}"></span><b>${c[k]}</b><span class="l">${l}</span></button>`).join('')+aiuChip());
+  morphHTML($('stats'),defs.map(([k,l])=>`<button class="stat${(k==='waiting'||k==='error')&&c[k]?' attn':''}" data-k="${k}" aria-pressed="${ui.status===k}" title="" aria-label="${l}: ${c[k]}"><span class="dot ${k}"></span><b data-d="${String(c[k]).length}">${c[k]}</b><span class="l">${l}</span></button>`).join('')+aiuChip());
   statCounts=c;
   /* spec 001 FR-187: the pills' own instant tooltip, never a native title (title="" also stops the #stats group's title from showing on them) */
   window.DurbarTip.bind($('stats'),{selector:'.stat[data-k]',text:el=>window.DurbarTip.statusText(el.dataset.k,statCounts[el.dataset.k],ui.status===el.dataset.k)});
