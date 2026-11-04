@@ -108,13 +108,13 @@ Four reviewers worked from 17 simulator screenshots: the office at 1440x900 and 
 
 ## Changes
 
-### 2026-11-04: FR-237's driver empties the number field on macOS (issue #1103, driver only)
+### 2026-11-04: FR-237's driver selects the number field with select() on macOS (issue #1103, driver only)
 
 *Seen* (Mac session, 2026-11-04, macOS 26.0, `sim:` `scripts/check-edit-popups.js` at a64c2362, 1440x900 and 1280x800, device scale 1 and 2): every kind passed except the spending limit, `typed into the field: {v:'4250'}`. A synthetic Cmd+A does not select on darwin (#683), and the page cannot select inside an `<input type="number">` (`selectionStart` is `null`), so "42" landed next to the old "50". A driver gap, not an app bug.
 
-- **FR-237 driver** `sim:` on darwin, for a number field, the page sets the value to empty and sends `input`, and the driver waits until the field is empty and still focused; the real typed text must then read exactly `42`, so typing that does not reach the field still fails. Other platforms and text fields are unchanged.
-- *Checked* on macOS 26.0 (Apple M4), `npm run check:ui -- --only check-edit-popups`: passes at both sizes. *Mutation*: no typing into the number field on darwin fails `1440x900 spending limit: typed into the field: {"v":"","s":null,"e":null,"focus":true}`; without the emptying it fails as in the issue (`v:'4250'`).
-- `[KNOWN GAP]` Run at device scale 1 only after the fix; Windows not run.
+- **FR-237 driver** `sim:` on darwin, the page calls the number field's `select()` (it works on `type=number`; only `selectionStart` and `setSelectionRange` do not), and the real typed text must then read exactly `42`. So on macOS the step proves again that select all, then typing, replaces the old value, as it does on Linux with a real Ctrl+A. The field starts empty when no limit was set yet (as with `EP_ONLY=spending`), so before the click the page gives it the value `50` when it has none, and the driver asserts it holds a value other than the typed one. Without that, a replacement could not be told from typing into an empty field. Other kinds and platforms are unchanged.
+- *Checked* on macOS 26.0 (Apple M4), `npm run check:ui -- --only check-edit-popups`: passes at both sizes. *Mutations* (macOS, `EP_ONLY=spending`): without `select()` it fails `1440x900 spending limit: typed into the field: {"v":"4250",...}`; with no typing into the number field it fails `... {"v":"50",...}`. Before the old-value seed, the first mutant passed with `EP_ONLY` (the field was empty), which is why the seed is there. On Linux a native Ctrl+A already selects, so the `select()` line is not run there and its mutant is a macOS-only result.
+- `[KNOWN GAP]` What the macOS step proves: a page-side `select()` followed by typing replaces the value. A synthetic Cmd+A selecting it is still not proven (#683). Run at device scale 1 only after the fix; Windows not run.
 
 ### 2026-11-03: a text popup stays open while you select its text (FR-237, owner bug report)
 
