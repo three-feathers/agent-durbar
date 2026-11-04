@@ -712,10 +712,9 @@ ok('SC-001: 27 app × OS × mode cells match FR-001..FR-005; no auto-approve, by
   /** A fake file system over `m` (POSIX paths); `onOpen` may change the tree between the checks and the open (a swap). */
   const fakeFs = (m: Map<string, Node>, onOpen: () => void = () => undefined): PolicyFs => {
     const st = (n: Node): PolicyStat => ({ uid: n.uid ?? 0, mode: n.mode ?? 0o644, ino: n.ino ?? 0, dev: n.dev ?? 1, nlink: n.nlink ?? 1, size: n.size ?? Buffer.byteLength(n.text ?? ''), isDirectory: () => n.kind === 'dir', isFile: () => n.kind === 'file', isSymbolicLink: () => n.kind === 'link' });
-    const real = (p: string): string => { const n = m.get(p); if (!n) throw ENOENT(); return n.kind === 'link' ? real(n.to!) : p; };
     const fds = new Map<number, Node>();
     return {
-      realpathSync: real,
+      readlinkSync: (p) => { const n = m.get(p); if (!n) throw ENOENT(); if (n.kind !== 'link') throw Object.assign(new Error('EINVAL'), { code: 'EINVAL' }); return n.to!; },
       lstatSync: (p) => { const n = m.get(p); if (!n) throw ENOENT(); return st(n); },
       openSync: (p) => { onOpen(); const n = m.get(p); if (!n) throw ENOENT(); if (n.kind === 'link') throw Object.assign(new Error('ELOOP'), { code: 'ELOOP' }); const fd = fds.size + 10; fds.set(fd, n); return fd; },
       fstatSync: (fd) => st(fds.get(fd)!),
@@ -746,6 +745,14 @@ ok('SC-001: 27 app × OS × mode cells match FR-001..FR-005; no auto-approve, by
   const exact = root(); const pad = JSON.stringify({ version: 1, x: '' }); exact.get(F)!.text = pad.slice(0, -2) + ' '.repeat(POLICY_MAX_BYTES - pad.length) + '"}';
   assert.strictEqual(Buffer.byteLength(exact.get(F)!.text!), POLICY_MAX_BYTES);
   assert.ok(read(exact).layer !== 'unreadable', 'FR-209: exactly 256 KiB is read');
+  // review of #1123 (finding A): a link in a trusted folder, made by root, to a trusted folder is still read (absolute and relative)
+  for (const to of ['/opt/t', '../../../opt/t']) {
+    const m = root(); m.delete(D); m.delete(F);
+    m.set('/opt', { kind: 'dir', uid: 0, mode: 0o755 }); m.set('/opt/t', { kind: 'dir', uid: 0, mode: 0o755 });
+    m.set('/opt/t/policy.json', { kind: 'file', uid: 0, mode: 0o644, ino: 9, text: '{"version":1,"permissions":{"requireOsSandbox":true}}' });
+    m.set(D, { kind: 'link', to });
+    assert.deepStrictEqual(read(m), { layer: { version: 1, permissions: { requireOsSandbox: true } } }, `FR-209: a root-made link in a trusted folder to a trusted folder (${to}) is read`);
+  }
   // each failure is unreadable, so the sandbox is required, and says why
   const cases: Array<[string, (m: Map<string, Node>) => void, RegExp]> = [
     ['folder present, file missing', (m) => { m.delete(F); }, /missing/],
@@ -759,8 +766,14 @@ ok('SC-001: 27 app × OS × mode cells match FR-001..FR-005; no auto-approve, by
     ['user-writable folder, linked to a root-owned JSON', (m) => { m.get(D)!.uid = 501; m.set('/usr', { kind: 'dir', uid: 0, mode: 0o755 }); m.set('/usr/lib', { kind: 'dir', uid: 0, mode: 0o755 }); m.set('/usr/lib/x.json', { kind: 'file', uid: 0, mode: 0o644, ino: 8, text: '{"version":1}' }); m.set(F, { kind: 'link', to: '/usr/lib/x.json' }); }, /folder of the policy path/],
     ['a root-owned folder, policy.json linked to a root-owned JSON', (m) => { m.set('/usr', { kind: 'dir', uid: 0, mode: 0o755 }); m.set('/usr/lib', { kind: 'dir', uid: 0, mode: 0o755 }); m.set('/usr/lib/x.json', { kind: 'file', uid: 0, mode: 0o644, ino: 8, text: '{"version":1}' }); m.set(F, { kind: 'link', to: '/usr/lib/x.json' }); }, /is a link/],
     // review of #1123 (MEDIUM): the managed folder deleted under a user-writable parent is not "no policy"
-    ['folder deleted under a user-writable parent', (m) => { m.delete(D); m.delete(F); m.get('/Library/Application Support/AgentDurbar')!.uid = 501; }, /missing and a folder of the policy path/],
-    ['folder and parent deleted under a world-writable grandparent', (m) => { m.delete(D); m.delete(F); m.delete('/Library/Application Support/AgentDurbar'); m.get('/Library/Application Support')!.mode = 0o777; }, /missing and a folder of the policy path/],
+    ['folder deleted under a user-writable parent', (m) => { m.delete(D); m.delete(F); m.get('/Library/Application Support/AgentDurbar')!.uid = 501; }, /folder of the policy path \(\/Library\/Application Support\/AgentDurbar\)/],
+    ['folder and parent deleted under a world-writable grandparent', (m) => { m.delete(D); m.delete(F); m.delete('/Library/Application Support/AgentDurbar'); m.get('/Library/Application Support')!.mode = 0o777; }, /folder of the policy path \(\/Library\/Application Support\) is not owned/],
+    // review of #1123 (finding A): the folder holding `managed` is user-writable, `managed` swapped for a link to a trusted folder that holds
+    // a root-owned policy.json with version 1: the literal path is checked, not only the resolved one
+    ['managed swapped for a link to a trusted folder, under a user-writable parent', (m) => { m.get('/Library/Application Support/AgentDurbar')!.uid = 501; m.delete(D); m.delete(F); m.set('/opt', { kind: 'dir', uid: 0, mode: 0o755 }); m.set('/opt/t', { kind: 'dir', uid: 0, mode: 0o755 }); m.set('/opt/t/policy.json', { kind: 'file', uid: 0, mode: 0o644, ino: 9, text: '{"version":1}' }); m.set(D, { kind: 'link', to: '/opt/t' }); }, /folder of the policy path \(\/Library\/Application Support\/AgentDurbar\) is not owned/],
+    // a link made by root in a trusted folder, to a folder that is not trusted: the target is walked too
+    ['managed linked by root to a user-owned folder', (m) => { m.delete(D); m.delete(F); m.set('/Users', { kind: 'dir', uid: 0, mode: 0o755 }); m.set('/Users/me', { kind: 'dir', uid: 501, mode: 0o755 }); m.set('/Users/me/policy.json', { kind: 'file', uid: 0, mode: 0o644, ino: 9, text: '{"version":1}' }); m.set(D, { kind: 'link', to: '/Users/me' }); }, /folder of the policy path \(\/Users\/me\) is not owned/],
+    ['a link loop on the policy path', (m) => { m.delete(D); m.delete(F); m.set(D, { kind: 'link', to: 'managed' }); }, /more than 40 links/],
     ['over 256 KiB', (m) => { m.get(F)!.size = POLICY_MAX_BYTES + 1; }, /256 KiB/],
     ['a hard link (two links)', (m) => { m.get(F)!.nlink = 2; }, /cannot be read \(links\)/],
   ];
@@ -779,6 +792,10 @@ ok('SC-001: 27 app × OS × mode cells match FR-001..FR-005; no auto-approve, by
     const m2 = root();
     const r2 = read(m2, () => { m2.get(F)!.uid = 501; });
     assert.ok(r2.layer === 'unreadable' && /changed while it was checked/.test(r2.problem), 'FR-209: made untrusted after the checks: the opened file is checked again');
+    // review of #1123 (finding B): the same inode number on another device is another file
+    const m3 = root();
+    const r3 = read(m3, () => { m3.set(F, { kind: 'file', uid: 0, mode: 0o644, ino: 99, dev: 2, text: '{"version":1}' }); });
+    assert.ok(r3.layer === 'unreadable' && /changed while it was checked/.test(r3.problem), 'FR-209: swapped for a file with the same inode on another device: unreadable');
   }
   // the reason is logged, once per distinct problem (nobody is locked out without one)
   const lines: string[] = [];
@@ -790,7 +807,7 @@ ok('SC-001: 27 app × OS × mode cells match FR-001..FR-005; no auto-approve, by
   // the refusal the person sees names the organization (spec 087 FR-019)
   const claudeSrc = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'adapters', 'claude.ts'), 'utf8');
   assert.ok(claudeSrc.includes('Your organization requires the OS sandbox in Read-only and Ask first, so Durbar cannot continue without it.'), 'the refusal sentence exists');
-  ok('FR-209: the machine policy.json: fixed POSIX paths, the policy folder and every parent trusted first, a link refused, a missing folder only under trusted parents, size cap, BOM, JSON and version, unreadable requires the sandbox and says why');
+  ok('FR-209: the machine policy.json: fixed POSIX paths, every folder of the literal path and of each link target trusted, a link only in a trusted folder, a linked policy.json refused, same inode and device, a missing folder only under trusted parents, size cap, BOM, JSON and version, unreadable requires the sandbox and says why');
 }
 console.log('sandbox floor (spec 087): all checks passed');
 FLOOR_DONE = true;

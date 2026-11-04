@@ -1,7 +1,7 @@
 /**
  * Spec 076 FR-209 (P1, first slice; issue #734): the machine `policy.json`, read for spec 087's `permissions.requireOsSandbox`.
- * Pure apart from the injected file system: a fixed path per OS (FR-002), FR-005's trust check on the policy folder and every folder above
- * it, FR-009's size cap, and FR-010's whole-file failure as `'unreadable'` (which the sandbox rule reads as "required").
+ * Pure apart from the injected file system: a fixed path per OS (FR-002), FR-005's trust check on every folder of the literal path and of
+ * every link's target, FR-009's size cap, and FR-010's whole-file failure as `'unreadable'` (which the sandbox rule reads as "required").
  * Windows reads nothing in this slice (`[KNOWN GAP]`, issue #1124).
  */
 import * as nodeFs from 'fs';
@@ -24,14 +24,14 @@ export function machinePolicyDir(platform: string): string | undefined {
 
 export interface PolicyStat { uid: number; mode: number; ino: number; dev: number; size: number; nlink: number; isDirectory(): boolean; isFile(): boolean; isSymbolicLink(): boolean }
 export interface PolicyFs extends CappedFs {
-  realpathSync(p: string): string;
+  readlinkSync(p: string): string;
   lstatSync(p: string): PolicyStat;
   fstatSync(fd: number): PolicyStat;
 }
 
 /** The real file system. */
 export const nodePolicyFs: PolicyFs = {
-  realpathSync: (p) => nodeFs.realpathSync(p),
+  readlinkSync: (p) => nodeFs.readlinkSync(p),
   lstatSync: (p) => nodeFs.lstatSync(p),
   openSync: (p, flags) => nodeFs.openSync(p, flags),
   fstatSync: (fd) => Object.assign(nodeFs.fstatSync(fd), { isSymbolicLink: () => false }),
@@ -48,50 +48,74 @@ export type MachinePolicy = { layer: undefined } | { layer: Record<string, unkno
 const trusted = (st: PolicyStat): boolean => st.uid === 0 && (st.mode & 0o022) === 0;
 const noEnt = (e: unknown): boolean => (e as { code?: string } | null)?.code === 'ENOENT';
 
+/** The most links followed on the way to the policy folder (Linux's own limit is 40). */
+const MAX_HOPS = 40;
+type Walk = { real: string } | { missing: true } | { why: string };
+
 /**
- * The machine layer: `undefined` only when the folder is missing and every folder above it that exists is trusted; the parsed object when
- * every check passes; else `'unreadable'` with a short problem for the log (never the file's content).
+ * FR-005 on the literal path (review of #1123, finding A): `dir` is resolved one name at a time from `/`, so every folder passed through
+ * on the way is checked, not only the folders of the resolved path. A folder must be a real, trusted folder before anything in it is
+ * believed: a link is followed only when the folder that holds it is trusted (so only root could have made it), and its target is walked
+ * the same way. A missing name inside a trusted folder is "no folder" (only root could have removed it).
+ */
+function walkTrusted(fs: PolicyFs, dir: string): Walk {
+  const where = (d: string): string => `a folder of the policy path (${d}) is not owned by root or is writable by others`;
+  let st: PolicyStat;
+  try {
+    st = fs.lstatSync('/');
+  } catch {
+    return { why: 'a folder of the policy path (/) cannot be read' };
+  }
+  if (!st.isDirectory() || !trusted(st)) return { why: where('/') };
+  let cur = '/'; // invariant: `cur` and every folder above it is a real, trusted folder
+  const rest = dir.split('/');
+  let hops = 0;
+  while (rest.length) {
+    const name = rest.shift()!;
+    if (name === '' || name === '.') continue;
+    if (name === '..') {
+      cur = P.dirname(cur);
+      continue;
+    }
+    const next = P.join(cur, name);
+    try {
+      st = fs.lstatSync(next);
+    } catch (e) {
+      return noEnt(e) ? { missing: true } : { why: `a folder of the policy path (${next}) cannot be read` };
+    }
+    if (st.isSymbolicLink()) {
+      // `cur` is trusted, so the link is root's; its target is walked from `cur` (relative) or from `/` (absolute)
+      if (++hops > MAX_HOPS) return { why: `the policy path has more than ${MAX_HOPS} links` };
+      let to: string;
+      try {
+        to = fs.readlinkSync(next);
+      } catch {
+        return { why: `a link of the policy path (${next}) cannot be read` };
+      }
+      if (to.startsWith('/')) cur = '/';
+      rest.unshift(...to.split('/'));
+      continue;
+    }
+    if (!st.isDirectory() || !trusted(st)) return { why: where(next) };
+    cur = next;
+  }
+  return { real: cur };
+}
+
+/**
+ * The machine layer: `undefined` only when the folder is missing inside a trusted folder reached through trusted folders; the parsed
+ * object when every check passes; else `'unreadable'` with a short problem for the log (never the file's content).
  */
 export function readMachinePolicy(platform: string = process.platform, fs: PolicyFs = nodePolicyFs, flags: CappedFlags = nodeFs.constants): MachinePolicy {
   const dir = machinePolicyDir(platform);
   if (!dir) return { layer: undefined };
   const bad = (problem: string): MachinePolicy => ({ layer: 'unreadable', problem });
-  /** The folder `real` (already resolved) and every folder above it up to the root: real folders, root-owned, not writable by others. */
-  const chainBad = (real: string): string | undefined => {
-    for (let d = real; ; d = P.dirname(d)) {
-      let st: PolicyStat;
-      try {
-        st = fs.lstatSync(d);
-      } catch {
-        return `a folder of the policy path (${d}) cannot be read`;
-      }
-      if (st.isSymbolicLink() || !st.isDirectory() || !trusted(st)) return `a folder of the policy path (${d}) is not owned by root or is writable by others`;
-      if (P.dirname(d) === d) return undefined;
-    }
-  };
   try {
-    let realDir: string;
-    try {
-      realDir = fs.realpathSync(dir);
-    } catch (e) {
-      if (!noEnt(e)) return bad('the policy folder cannot be resolved');
-      // review of #1123: a missing folder is "no policy" only when no one but root could have removed it: the nearest folder above it
-      // that exists, and every folder above that, must pass the trust check
-      for (let up = P.dirname(dir); ; up = P.dirname(up)) {
-        let real: string;
-        try {
-          real = fs.realpathSync(up);
-        } catch (e2) {
-          if (noEnt(e2) && P.dirname(up) !== up) continue;
-          return bad('a folder above the policy folder cannot be resolved');
-        }
-        const why = chainBad(real);
-        return why ? bad(`the policy folder is missing and ${why}`) : { layer: undefined };
-      }
-    }
-    // FR-005: the policy folder itself and every folder above it, before anything inside it is trusted (review of #1123)
-    const why = chainBad(realDir);
-    if (why) return bad(why);
+    // FR-005: every folder on the literal path and on every link's target, before anything inside the policy folder is trusted
+    const w = walkTrusted(fs, dir);
+    if ('why' in w) return bad(w.why);
+    if ('missing' in w) return { layer: undefined };
+    const realDir = w.real;
     const file = P.join(realDir, 'policy.json');
     let own: PolicyStat;
     try {
