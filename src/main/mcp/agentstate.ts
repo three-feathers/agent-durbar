@@ -110,6 +110,12 @@ export class AgentStateTracker {
     return !!a && (!!a.coffee || a.limit);
   }
 
+  /** Spec 072 FR-015/FR-017: what the agent waits on now: an open question, or Durbar's spending cap (a `limit` request). */
+  waitsOf(id: string): { question: boolean; limit: boolean } | undefined {
+    const a = this.agents.get(id);
+    return a ? { question: a.question, limit: a.limit } : undefined;
+  }
+
   get(id: string): AgentStateView | undefined {
     const a = this.agents.get(id);
     if (!a) return undefined;

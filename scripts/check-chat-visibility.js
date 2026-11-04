@@ -4,6 +4,7 @@
  *
  *   node scripts/ui-suite.js --only check-chat-visibility            (npm run check:ui runs it with the rest)
  *   DURBAR_CV_MUTANT=off|hidden|nosize|zero node scripts/ui-suite.js --only check-chat-visibility     (must FAIL)
+ *   CVONLY=1440|1280    one of the two sizes (a normal run that can pass: ui-suite.js runs one entry per size, FR-063)
  *   CVWH=1280x520 ...   one other window size; CVBASE=1 skips the "is skipped" checks (with DURBAR_CV_MUTANT=off: the rule-off baseline)
  *
  * At 1440x900 and 1280x800 the first agent's chat is filled with 4000 simulated messages (copies of its own with 1 to 9 sentences, a
@@ -78,7 +79,9 @@ module.exports = async (ctx) => {
   const pending = `window.__durbarSimUi&&document.body.classList.contains('panel-open')&&!!document.querySelector('#chat .chat-inner')`;
   const median = (a) => a.slice().sort((x, y) => x - y)[Math.floor(a.length / 2)];
 
-  for (const [w, h] of (process.env.CVWH ? [process.env.CVWH.split('x').map(Number)] : [[1440, 900], [1280, 800]])) {
+  const SIZES = process.env.CVWH ? [process.env.CVWH.split('x').map(Number)] : [[1440, 900], [1280, 800]].filter(([sw]) => !process.env.CVONLY || String(sw) === process.env.CVONLY);
+  assert.ok(SIZES.length > 0, `CVONLY=${process.env.CVONLY} matches no size (use 1440 or 1280): nothing would be checked`);
+  for (const [w, h] of SIZES) {
     const tag = `${w}x${h}`;
     const id = await open(w, h);
 
@@ -207,9 +210,13 @@ module.exports = async (ctx) => {
     const { clipboard } = require('electron');
     await clipboard.writeText('');
     H.wc().copy();
+    /* Windows writes CRLF to the clipboard and the selection text has LF: compare with LF on both sides, the length check is otherwise as before */
+    const lf = (x) => String(x).replace(/\r\n/g, '\n');
+    const wantTok = ['⟦' + '00020' + '⟧', '⟦' + '00040' + '⟧'];
     let copied = '';
-    for (let k = 0; k < 50 && !copied; k++) { copied = String(await clipboard.readText()); if (!copied) await ctx.sleep(60); }
-    assert.ok(copied.includes('⟦' + '00020' + '⟧') && copied.includes('⟦' + '00040' + '⟧') && copied.length >= sel.text.length * 0.95, `${tag}: Copy gives the whole selection: ${copied.length} of ${sel.text.length} chars`);
+    for (let k = 0; k < 100 && !(copied && wantTok.every((t) => copied.includes(t))); k++) { copied = lf(await clipboard.readText()); if (!wantTok.every((t) => copied.includes(t))) await ctx.sleep(60); }
+    sel.text = lf(sel.text);
+    assert.ok(copied.includes('⟦' + '00020' + '⟧') && copied.includes('⟦' + '00040' + '⟧') && copied.length >= sel.text.length * 0.95, `${tag}: Copy gives the whole selection (line ends as LF): ${copied.length} of ${sel.text.length} chars, tokens ${wantTok.map((t) => copied.includes(t)).join('/')}`);
     await js(`getSelection().removeAllRanges()`);
 
     /* 6. FIND (Chromium's own; the app has no Find box) */
@@ -242,9 +249,19 @@ module.exports = async (ctx) => {
     await js(`(()=>{const b=document.querySelector('#chat .chat-inner>[data-cv="10"] .cvfocus');if(b)b.focus();})()`);
     const seen = [];
     for (let i = 0; i < 14; i++) {
-      const was = await js(`window.__cvFo`);
-      await H.key('Tab', [], { char: 'never', pause: 0 });
-      assert.ok(await until(`window.__cvFo>${jsLiteral(was)}`, 2000), `${tag}: Tab moved the focus`);
+      /* a Tab is tried again (3 times) only when a trusted window blur came in between: Windows runners give the window's focus to a neighbour driver at random
+         (docs/agent-notes.md, osRetry in check-status-tooltip.js); with no blur it fails at once and says what it saw */
+      let moved = false, ev = '';
+      for (let t = 0; t < 3 && !moved; t++) {
+        await js(`window.__cvBlur=0;if(!window.__cvBlurOn){window.__cvBlurOn=1;window.addEventListener('blur',e=>{if(e.isTrusted&&e.target===window)window.__cvBlur++;},true)}`);
+        await H.focusPage();
+        const was = await js(`window.__cvFo`);
+        await H.key('Tab', [], { char: 'never', pause: 0 });
+        moved = await until(`window.__cvFo>${jsLiteral(was)}`, 5000);
+        ev = moved ? '' : await js(`'blurs:'+window.__cvBlur+' hasFocus:'+document.hasFocus()+' active:'+(document.activeElement&&document.activeElement.tagName)`);
+        if (!moved && !/blurs:[1-9]/.test(ev)) break;
+      }
+      assert.ok(moved, `${tag}: Tab moved the focus (${ev}; a retry only follows a window blur)`);
       await quiet('a Tab');
       seen.push(await js(`(()=>{const c=document.getElementById('chat'),cr=c.getBoundingClientRect(),a=document.activeElement,m=a&&a.closest('.chat-inner>*[data-cv]');if(!m)return {out:true};const r=a.getBoundingClientRect();return {i:+m.dataset.cv,inView:r.bottom>cr.top-1&&r.top<cr.bottom+1}})()`));
     }
