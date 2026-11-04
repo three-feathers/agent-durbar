@@ -95,7 +95,7 @@ ok(!/UNREAD|syncSeen|markRead/.test(closeP), 'closing the chat does not clear th
 ok(/BP\.mount\(a\);[^\n]*\n\s*syncSeen\(\);/.test(app), 'opening a chat reads its reply, after the tab is known');
 ok(/document\.addEventListener\('visibilitychange',syncSeen\)/.test(app), 'the window coming back reads the open chat');
 ok(/NT\.ret=null; syncSeen\(\);/.test(app), 'closing the Notes drawer reads the uncovered chat');
-ok(/host\.chatShown\(id\)/.test(bp) && /chatShown:\(\)=>syncSeen\(\)/.test(app), 'the Chat tab coming back reads the chat');
+ok(/host\.chatShown\(id\)/.test(bp) && /chatShown:id=>\{syncSeen\(\);chatBack\(id\);\}/.test(app), 'the Chat tab coming back reads the chat');
 ok(/unread:isUnread\(a\),since:sinceLast\(a\)/.test(app), 'the lounge input carries the marker');
 ok(!/a\.state='unread'|setState\(a,'unread'/.test(app) && !/vis\(a\)[^;]*isUnread/.test(app), 'unread is not a state: vis(a) and the counts do not read it');
 const stats = app.slice(app.indexOf('function renderStats()'), app.indexOf('function renderFilter()'));

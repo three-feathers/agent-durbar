@@ -2560,7 +2560,7 @@ function openPanel(id,focus){
   updatePanelHeader(); renderGrants();
   const chatEl=$('chat'); chatEl.dataset.pin='1'; chatEl._lastTop=undefined; chatEl.scrollTop=1e6;
   let rs=0; const restick=()=>{if(ui.selected!==a.id)return; const un=rs===0&&cvUnmarkIfResized(chat.el); /* marks dropped at this frame (another width or layout): the end moved by what that laid out, not by the person */ if(!un&&chatEl.scrollHeight-chatEl.scrollTop-chatEl.clientHeight>400)return; chatEl.scrollTop=chatEl.scrollHeight; if(++rs<4)requestAnimationFrame(restick); else chatEl.onscroll();}; if(chat.el.childElementCount>4)requestAnimationFrame(restick); /* spec 005 FR-210: the messages at the end get their real height a frame after the first layout, so the end moves; follow it for 4 frames, then read the pin again; a chat of 4 or fewer messages has no skipped one and is left alone */
-  chatEl.onscroll=()=>{const t=chatEl.scrollTop; if(chatEl.scrollHeight-t-chatEl.clientHeight<80)chatEl.dataset.pin='1'; else if(chatEl._lastTop===undefined||t<chatEl._lastTop-1)chatEl.dataset.pin='0'; chatEl._lastTop=t;}; /* spec 005 FR-214: the scroll event of the app's own stick-to-bottom write arrives a frame later, when a new block may already have grown the page; that is not the person leaving the end. Only a move up from the position of the last scroll event is (whoever wrote the last position, so no writer has to record it) */
+  chatEl.onscroll=()=>{const t=chatEl.scrollTop; if(!chatEl.clientHeight||chatEl._hold){chatEl._lastTop=t;return;} /* spec 005 FR-235: the collapsed chat (Browser tab) and the frames after it opens again clamp the position; that is not the person */ if(chatEl.scrollHeight-t-chatEl.clientHeight<80)chatEl.dataset.pin='1'; else if(chatEl._lastTop===undefined||t<chatEl._lastTop-1)chatEl.dataset.pin='0'; chatEl._lastTop=t;}; /* spec 005 FR-214: the scroll event of the app's own stick-to-bottom write arrives a frame later, when a new block may already have grown the page; that is not the person leaving the end. Only a move up from the position of the last scroll event is (whoever wrote the last position, so no writer has to record it) */
   $('panel').querySelector('.panel-in').classList.toggle('helper-ro',!!(a.live&&a.parent)); /* spec 097 Changes 2026-11-04 (issue 1140): not 'ro', the Real office root's class, whose floor picture and corners it took */
   $('backBtn').onclick=closePanel;
   refreshFolderStatus(a); /* spec 063: branch and changed files on the folder chip */
@@ -3497,6 +3497,15 @@ function mcpWarnLine(a){
   stick();
 }
 /* follows the chat's end if it was at the end; a person who scrolled up stays where they are */
+/* spec 005 FR-235: Chat -> Browser -> Chat. The Browser tab collapses #chat to height 0, so on return the browser clamps scrollTop and the sizes of the long chat's messages settle; a chat that followed the end follows it again, one scrolled up keeps its place (per session) */
+const CHAT_TAB=new Map();
+function chatLeave(id){const c=$('chat');if(c&&ui.selected===id&&c.clientHeight)CHAT_TAB.set(id,{follow:c.dataset.pin!=='0',top:c.scrollTop});}
+function chatBack(id){const s=CHAT_TAB.get(id),c=$('chat');if(!s||!c||ui.selected!==id)return;CHAT_TAB.delete(id);const a=byId(id);if(!a)return;
+  c._hold=true; let n=0;
+  const step=()=>{if(ui.selected!==id||$('chat')!==c){c._hold=false;return;}
+    if(s.follow){c.scrollTop=c.scrollHeight;c.dataset.pin='1';stickyScroll(liveChat(a));}else{c.scrollTop=s.top;c.dataset.pin='0';}
+    c._lastTop=c.scrollTop; if(++n<3)requestAnimationFrame(step); else {c._hold=false;}};
+  step();}
 function mcpStick(a){const c=$('chat'),chat=liveChat(a),on=!!c&&chat.el.parentNode===c&&c.dataset.pin!=='0';return ()=>{if(on){c.scrollTop=c.scrollHeight;c.dataset.pin='1';stickyScroll(chat);}};} /* now, and once more on the next frame: the opening chat still lays out */
 /* FR-030: the extra sentence on the folded compaction line; once per session per level, dismissible */
 function mcpCompactHint(a,R,now){
@@ -4837,7 +4846,8 @@ BP.init({ bridge: window.agentDurbar, toast:(t,ms)=>toast(esc(t),ms).classList.a
   bringForward:bringBrowserForward,
   menu:openBrowserMenu,
   marksChanged:()=>scheduleRender(),
-  chatShown:()=>syncSeen(),
+  chatShown:id=>{syncSeen();chatBack(id);},
+  chatLeft:id=>chatLeave(id),
   recheck:()=>overlaySync(),
   covers:()=>{const v=document.getElementById('bView');return !!v&&coversBrowser(v.getBoundingClientRect());} });
 /* spec 080 FR-008 (T016): overlays win. One helper opens and closes an overlay; while any is open and the Browser tab shows, main takes the

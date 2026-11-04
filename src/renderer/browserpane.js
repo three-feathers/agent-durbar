@@ -352,6 +352,7 @@
   async function select(tab,o){
     if(!cur)return;
     const id=cur.id;
+    if(tab==='browser'&&cur.tab==='chat'&&host&&host.chatLeft)host.chatLeft(id); /* spec 005 FR-235: before the chat collapses, say whether it follows the end */
     cur.tab=tab;
     setSelected(tab);
     if(o&&o.focus){const t=$(tab==='chat'?'tabChat':'tabBrowser');if(t)t.focus({preventScroll:true});}
