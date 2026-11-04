@@ -66,7 +66,7 @@ function elementsRecalculated(events) {
 }
 
 /* The counters, in the page: renders, layout reads, nodes and attribute writes between `start()` and `stop()` */
-const INSTRUMENT = `(()=>{ if(window.__ops)return; const O=window.__ops={on:false,reads:0,renders:0,attrs:0,nodes:0,seen:{},by:{}};const CUE=/^ro-(call|bub|bang|dots|cnt)\\b/;
+const INSTRUMENT = `(()=>{ if(window.__ops)return; const O=window.__ops={on:false,reads:0,renders:0,attrs:0,nodes:0,seen:{},by:{},resized:[]};const CUE=/^ro-(call|bub|bang|dots|cnt)\\b/;
   const bump=()=>{if(!O.on)return;O.reads++;const f=String(new Error().stack||'').split('\\n').slice(3,5).map(x=>x.trim().replace(/^.*\\/([^/]+:\\d+):\\d+\\)?$/,'$1')).join(' < ');O.by[f]=(O.by[f]||0)+1;};
   for(const prop of ['offsetWidth','offsetHeight','offsetTop','offsetLeft','clientWidth','clientHeight','clientTop','clientLeft','scrollHeight','scrollWidth','scrollTop','scrollLeft'])
     for(const proto of [HTMLElement.prototype,Element.prototype]){const d=Object.getOwnPropertyDescriptor(proto,prop);if(d&&d.get)Object.defineProperty(proto,prop,{...d,get(){bump();return d.get.call(this);}});}
@@ -74,8 +74,12 @@ const INSTRUMENT = `(()=>{ if(window.__ops)return; const O=window.__ops={on:fals
   const R=window.DurbarRealOffice,r=R.render;R.render=function(){if(O.on)O.renders++;return r.apply(this,arguments);};
   const take=(l)=>{if(!O.on)return;for(const m of l){if(m.type==='attributes'){O.attrs++;const k=(m.target.className&&String(m.target.className).split(' ')[0]||m.target.tagName)+'.'+m.attributeName;O.seen[k]=(O.seen[k]||0)+1;}else for(const n of [...m.addedNodes,...m.removedNodes])if(!(n.classList&&CUE.test(n.className))){O.nodes++;const k='node:'+(n.className&&String(n.className).split(' ')[0]||n.nodeName)+' in '+(m.target.className&&String(m.target.className).split(' ')[0]||m.target.nodeName);O.seen[k]=(O.seen[k]||0)+1;}}};
   const mo=new MutationObserver(take);mo.observe(document.getElementById('stage'),{subtree:true,childList:true,attributes:true});
-  O.start=()=>{O.reads=O.renders=O.attrs=O.nodes=0;O.seen={};O.by={};O.on=true;};
-  O.stop=()=>{take(mo.takeRecords());O.on=false;return {reads:O.reads,renders:O.renders,attrs:O.attrs,nodes:O.nodes,seen:O.seen,by:O.by};};
+  /* the top bar's parts that change size while counting (its ResizeObserver refits the bar, fitTopbar, with layout reads): which, from what to what */
+  const tbName=(e)=>(e.id?'#'+e.id:'')+(e.className&&typeof e.className==='string'?'.'+e.className.trim().split(/\\s+/).join('.'):'')||e.tagName;const tbW=new Map();
+  const tro=new ResizeObserver((l)=>{for(const en of l){const w=Math.round(en.contentRect.width*100)/100,h=Math.round(en.contentRect.height*100)/100,was=tbW.get(en.target);tbW.set(en.target,[w,h]);if(O.on&&was&&(was[0]!==w||was[1]!==h))O.resized.push(tbName(en.target)+' '+was.join('x')+'>'+w+'x'+h+' '+JSON.stringify(en.target.textContent.trim().slice(0,40)));}});
+  const tb=document.querySelector('.topbar');if(tb)for(const e of [tb,...tb.querySelectorAll(':scope > *, #stats > *, #stats b, #stats span.l')])tro.observe(e);
+  O.start=()=>{O.reads=O.renders=O.attrs=O.nodes=0;O.seen={};O.by={};O.resized=[];O.on=true;};
+  O.stop=()=>{take(mo.takeRecords());O.on=false;return {reads:O.reads,renders:O.renders,attrs:O.attrs,nodes:O.nodes,seen:O.seen,by:O.by,resized:O.resized};};
 })()`;
 
 /* FR-183: natural area of the distinct pictures (each decoded once) over what is shown, in device pixels; a chosen picture's real size comes from a plain Image of its currentSrc (with srcset, naturalWidth is corrected by the chosen density) */
@@ -190,7 +194,7 @@ module.exports = async (ctx) => {
       const put = await js(`(()=>{const p=window.DurbarRealOffice.pending();return p.screens+p.ticks;})()`); putOff += put;
       for (const k of Object.keys(per)) per[k].push(o[k]);
       seen = o.seen;
-      if (!mostReads || o.reads > mostReads.reads) mostReads = { i, reads: o.reads, by: o.by };
+      if (!mostReads || o.reads > mostReads.reads) mostReads = { i, reads: o.reads, by: o.by, resized: o.resized };
       if (!worst || o.nodes + o.attrs > worst.nodes + worst.attrs) worst = { i, ...o }; /* the most costly update's breakdown is logged, so a failure says what it wrote */
     }
     assert.deepStrictEqual(startedBusy, [], `${n} agents: every measured update started with nothing put off (the updates that did not)`);
@@ -254,7 +258,8 @@ module.exports = async (ctx) => {
   /* a failing reads row names its callers one per short line, the most first, right before the assert: the suite keeps only a failed driver's last 25 lines of 240 characters */
   for (const f of failed) {
     const m = /^readsPerStatus@(\d+) /.exec(f), r = m && readsBy[m[1]];
-    if (r) for (const [line, c] of Object.entries(r.by).sort((x, y) => y[1] - x[1]).slice(0, 10)) console.log(`[ops] reads@${m[1]} update ${r.i}: ${c} from ${line}`);
+    if (r) for (const [line, c] of Object.entries(r.by).sort((x, y) => y[1] - x[1]).slice(0, 8)) console.log(`[ops] reads@${m[1]} update ${r.i}: ${c} from ${line}`);
+    if (r) for (const z of r.resized.slice(0, 4)) console.log(`[ops] reads@${m[1]} update ${r.i}: top bar resized ${z}`);
   }
   assert.deepStrictEqual(failed, [], `op rows over their limits:\n  ${failed.join('\n  ')}`);
   console.log('[ops] checks passed');
