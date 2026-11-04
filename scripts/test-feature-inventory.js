@@ -58,14 +58,15 @@ try {
   assert.ok(!check(copy(own(haloWorld))).some((m) => m.startsWith(HALO) && !/: no scripts\//.test(m)), 'a decision in the Worlds cell waives the Worlds gap');
   const deskWorld = (t) => t.replace('| missing (#1148) | none |', '| missing | none (owner decision, 2026-11-04) |');
   assert.ok(check(copy({ md: deskWorld })).some((m) => /Real office cell "missing" is not plain works/.test(m)), 'a Worlds decision does not waive the Real office cell');
-  // the marker's form
+  // the marker's form (escape every regex metacharacter, backslash included; CodeQL js/incomplete-sanitization)
+  const reEsc = (x) => x.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&');
   for (const bad of ['(owner decision, x)', '(owner decision, 2026-02-30)', '(owner decision, 2026-11-4)', '(owner decision, #0)', '(owner decision 2026-11-04)', '(Owner decision, #12'])
-    fails({ md: (t) => t.replace('missing (#1148)', 'missing ' + bad) }, new RegExp('marker "' + bad.replace(/[()]/g, '\\$&') + '\\)?" must be exactly'));
+    fails({ md: (t) => t.replace('missing (#1148)', 'missing ' + bad) }, new RegExp('marker "' + reEsc(bad) + '\\)?" must be exactly'));
   assert.ok(check(copy({ md: (t) => t.replace('missing (#1148)', 'missing (owner decision, 2026-02-30)') })).some((m) => /Real office cell "missing \(owner decision, 2026-02-30\)" is not plain works/.test(m)), 'a marker with no real date does not waive the gap');
   assert.ok(!check(copy({ md: (t) => t.replace('missing (#1148)', 'missing (owner decision, #1148)') })).some((m) => /marker|Real office cell/.test(m)), 'an issue marker is accepted');
   // a works note with a limiting word is not parity
   for (const w of ['works pose, dots and lights only', 'works, partly', 'works, partial', 'works, partially drawn', 'works, no pencil', 'works, not the lounge', 'works, missing drag', 'works without drag', 'works except drag'])
-    fails({ md: (t) => t.replace('works pose, dots and lights only; heavy, monster and siren missing (#1171)', w) }, new RegExp('Real office cell "' + w + '" is not plain works'));
+    fails({ md: (t) => t.replace('works pose, dots and lights only; heavy, monster and siren missing (#1171)', w) }, new RegExp('Real office cell "' + reEsc(w) + '" is not plain works'));
   // the offered worlds cannot be read
   fails({ crew: () => 'throw new Error("no worlds here");' }, /cannot read the offered worlds from src\/renderer\/crew.js: no worlds here/);
   process.exitCode = 0;
