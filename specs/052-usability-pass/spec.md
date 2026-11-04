@@ -41,7 +41,7 @@ Four reviewers worked from 17 simulator screenshots: the office at 1440x900 and 
 - **FR-001** **Answer bar.** While an agent waits on a permission request or a question, a bar is pinned just above the composer: "*Name* asks: *the request*". It has the same choices as the card in the chat (Approve / Approve for this session / Deny, or the question's options and *Reply…*), and they act on the same request. It is hidden when nothing is pending, and *Show in chat* scrolls to the card.
 - **FR-002** **Previous sessions stay closed when there is a conversation.** The list opens by itself only when the agent's chat is empty (a new session in a folder with history), as before. The toggle shows the count, and the user's choice is kept.
 - **FR-003** **Chat header: two actions and More.**
-  - Visible: *Stop* (while a turn runs, as before), *Open in VS Code*, and **More**.
+  - Visible: *Stop* (while a turn runs, as before), *Open in VS Code* (**Open with** since spec 009 FR-019), and **More**.
   - More opens a menu with Tools, MCP servers, Schedules, + New session and Copy resume command. Then, after a divider, *End session* and **Remove session…**, in danger colour and last.
   - The menu is a real menu: Esc closes it, the arrow keys move, and focus returns to More.
   - The buttons keep their ids, so every driver and shortcut still works.
@@ -96,7 +96,7 @@ Four reviewers worked from 17 simulator screenshots: the office at 1440x900 and 
   - the room counts have words;
   - Jonas's request is answerable without scrolling (the card in view, or the bar);
   - with the chat scrolled away, the bar's Approve settles the card;
-  - 3 header actions (Open in VS Code, Stop, More); the More menu opens on Down and closes on Esc, with focus back on More, and End and Remove are last;
+  - 3 header actions (Open in VS Code (**Open with** since spec 009 FR-019), Stop, More); the More menu opens on Down and closes on Esc, with focus back on More, and End and Remove are last;
   - Previous sessions is closed; the list header is straight (column tops within 1px);
   - N goes Kenji → Tomas (Jonas had just been approved).
   - Screenshots: `docs/screenshots/052-*.png`.
@@ -107,6 +107,14 @@ Four reviewers worked from 17 simulator screenshots: the office at 1440x900 and 
 - `[KNOWN GAP]`: the reviews were AI personas working from screenshots and the source, not people; nobody ran a screen reader or 150% zoom.
 
 ## Changes
+
+### 2026-11-04: FR-237's driver selects the number field with select() on macOS (issue #1103, driver only)
+
+*Seen* (Mac session, 2026-11-04, macOS 26.0, `sim:` `scripts/check-edit-popups.js` at a64c2362, 1440x900 and 1280x800, device scale 1 and 2): every kind passed except the spending limit, `typed into the field: {v:'4250'}`. A synthetic Cmd+A does not select on darwin (#683), and the page cannot select inside an `<input type="number">` (`selectionStart` is `null`), so "42" landed next to the old "50". A driver gap, not an app bug.
+
+- **FR-237 driver** `sim:` on darwin, the page calls the number field's `select()` (it works on `type=number`; only `selectionStart` and `setSelectionRange` do not), and the real typed text must then read exactly `42`. So on macOS the step proves again that select all, then typing, replaces the old value, as it does on Linux with a real Ctrl+A. The field starts empty when no limit was set yet (as with `EP_ONLY=spending`), so before the click the page gives it the value `50` when it has none, and the driver asserts it holds a value other than the typed one. Without that, a replacement could not be told from typing into an empty field. Other kinds and platforms are unchanged.
+- *Checked* on macOS 26.0 (Apple M4), `npm run check:ui -- --only check-edit-popups`: passes at both sizes. *Mutations* (macOS, `EP_ONLY=spending`): without `select()` it fails `1440x900 spending limit: typed into the field: {"v":"4250",...}`; with no typing into the number field it fails `... {"v":"50",...}`. Before the old-value seed, the first mutant passed with `EP_ONLY` (the field was empty), which is why the seed is there. On Linux a native Ctrl+A already selects, so the `select()` line is not run there and its mutant is a macOS-only result.
+- `[KNOWN GAP]` What the macOS step proves: a page-side `select()` followed by typing replaces the value. A synthetic Cmd+A selecting it is still not proven (#683). Run at device scale 1 only after the fix; Windows not run.
 
 ### 2026-11-03: a text popup stays open while you select its text (FR-237, owner bug report)
 
@@ -176,6 +184,7 @@ Owner approval 2026-11-02 (ceiling 45 AI credits, 32.05 spent). `real:` Linux 7.
 - **Delta 2026-11-02 (Paco's review of #1038):** a send waits for every Stop call under one deadline (the abort follows the cancel), a missing `rpc.metadata` or any failure leaves the row idle, a reconnect clears `stoppedAtLimit`, and the probe kills only the runtime's descendants and passes every send through one gate (`test:copilotcap`, no real prompts). All `real:` here is on SDK 1.0.24 / runtime 1.0.101; 1.0.26 has the same refusal text (`read:`), behaviour not re-run.
 
 - **Delta 2026-11-03 (Paco's second review of #1038):** a Stop or End holds a send from its first line (one promise for the whole sequence in `lateCalls`), not from when each call starts, so no await can reopen FR-229 (`test:copilotcap`, mutation-checked, no real prompts).
+- **Delta 2026-11-04 (issue #1089, test only):** the gap between the cancel step and the abort is held open by `test:copilotcap` itself (a promise it releases) instead of a 60 ms timer. Under load, the 20 ms wait before the check could outlast the timer, so the abort had already started and `in the gap between cancel and abort nothing goes` failed once. The assertion is unchanged, and it also checks that the gap is still open. The End case holds the same gate and checks the same way (`End: in the gap between cancel and abort nothing goes`). The adapter is unchanged. *Repro*: a preload that blocks the event loop for 80 ms every 30 ms made the old test fail 10 of 10 runs on that assertion, and the new one fail 0 of 10 (macOS 26.0, Node 22.23). Mutants: Stop holding sends only after its cancel step fails `in the gap between cancel and abort nothing goes`; End doing the same fails `End: in the gap between cancel and abort nothing goes`.
 
 ### 2026-11-02: Copilot stop and interrupt after the 5 s give-up, measured on a real runtime (FR-228..FR-230, issue #1028)
 
@@ -774,7 +783,7 @@ A QA engineer and a returning non-technical user checked the build before the re
 ### 2026-10-20: round 10, chrome density and type
 Three senior designers (ex-Apple Pro Apps, ex-Google Material, ex-Ubiquiti UniFi) found the window chrome bulky: a chat header of about 150px, inbox rows of about 165px, Settings sections that read like cards in a brochure, and a dozen stray font sizes. This round tightens the chrome only. The top bar, rooms, room headers, desk cards and the lobby keep their sizes (the geometry and office checks). Another round 10 change (FR-100..FR-104) covers the desk cards, the stats strip, the list view and the Tools tables; this one does not touch them.
 - **FR-095** **Chat header and chat** [IMPLEMENTED] read: `styles.css`, `app.js`. [KNOWN GAP] no Electron run and no screenshots in this change; the heights are from the CSS, not measured.
-  - `.ph` padding `8px 16px`. The header is one row: avatar (32px), name (T1), role (T5) on the same line, status, "active …", the chips; Previous, Open in VS Code, Stop and More are pinned right (`.ph-top{flex-wrap:nowrap}`, `.actions{flex:none}`). Chips that do not fit wrap to a second row inside their own group, under the first chips; the actions never move down.
+  - `.ph` padding `8px 16px`. The header is one row: avatar (32px), name (T1), role (T5) on the same line, status, "active …", the chips; Previous, Open in VS Code (**Open with** since spec 009 FR-019), Stop and More are pinned right (`.ph-top{flex-wrap:nowrap}`, `.actions{flex:none}`). Chips that do not fit wrap to a second row inside their own group, under the first chips; the actions never move down.
   - One control height in the header: chips (`--h-chip` is 28px inside `.ph`) and buttons (`.btn.sm`) are both 28px.
   - The task line and the usage line share one line under the header row (the task ellipsizes; its full text is in its `title`).
   - The "Previous sessions" bar is gone. **Previous (N)** (`#prevBtn`, `.btn.sm`, class `prev-toggle`, `data-pv="toggle"`, `aria-expanded`, `aria-controls="prev"`) sits first in the header's actions; it opens the same panel (`#prev`, now a labelled region) with the same search and lists, and opens by itself for an empty chat as before (FR-002). Its title says how many sessions of each kind there are. It is hidden in the read-only VS Code view, like the panel.
@@ -850,7 +859,7 @@ Issue #363. Owner (Paco, 2026-10-20): "when I'm in a session I don't see how to 
   2. It must fit the one-row header at 1280x800 with the narrowest panel; if the label does not fit, it becomes an icon-only "+" with the same accessible name. The choice is made by measuring (see Evidence below), at 1280x800 and 1440x900, in Simple and Expert.
   3. **+ New session** stays in **More** and in every other path; no route is lost.
   4. Optional: a first row "+ New session" at the top of the Previous list. Not done (decision below).
-  5. This is a **third visible header action by owner decision**, an exception to round 10's "two actions in view" (FR-003, FR-095): Previous (N), **+ New** and Open in VS Code, then More. Everything else stays in More.
+  5. This is a **third visible header action by owner decision**, an exception to round 10's "two actions in view" (FR-003, FR-095): Previous (N), **+ New** and Open in VS Code (**Open with** since spec 009 FR-019), then More. Everything else stays in More.
   - Tests: `check-office-overlap.js` asserts the button, its accessible name, that it is absent for a sub-agent, that it opens the dialog, and that the header stays on one row without overlap.
   - Evidence: sim: (2026-10-20, Linux, xvfb, DejaVu/Noto as installed) `check:office` 288/288 including the new chat checks; label kept as **+ New** (66px wide): the smallest gap between the chips and the actions over the 15 simulator agents was 17px in Expert and 52px in Simple at both 1280x800 and 1440x900 (the chip group may wrap to a second row as before; the actions stay on the first). Mutation: hiding the button made `check:office` print 32 FAILs. Point 4 (a first row in the Previous list) was not done: the header button and More already give two routes in the chat. [KNOWN GAP] not tried on a real Mac or Windows; the 17px gap is on Linux fonts.
 
