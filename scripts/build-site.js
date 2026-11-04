@@ -287,8 +287,8 @@ function validateLanding(landing, { readme, shotExists = (f) => fs.existsSync(pa
 }
 
 /* Spec 104 FR-027: the site's download is the newest published app release. An asset-only release (`media-library`, spec 104
- * FR-024; `worlds-*`, spec 021 FR-066) builds no app, so only a `v*` version tag counts; drafts never do. */
-const APP_TAG_RE = /^v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
+ * FR-024; `worlds-*`, spec 021 FR-066) builds no app, so only a stable `vX.Y.Z` tag counts; drafts, pre-releases and test builds never do. */
+const APP_TAG_RE = /^v\d+\.\d+\.\d+$/; // stable only: a pre-release or a `-test.M` build from any branch never becomes the site's download (review of PR #1106)
 function pickRelease(list) {
   if (!Array.isArray(list)) return null;
   return list.find((x) => x && !x.draft && APP_TAG_RE.test(String(x.tag_name || ''))) || null;
@@ -654,6 +654,24 @@ function loadUnreleased(file = process.env.SITE_UNRELEASED || path.join(ROOT, UN
   if (errs.length) throw new Error(`${UNRELEASED_FILE}:\n- ${errs.join('\n- ')}`);
   return phrases;
 }
+/*
+ * A text with every `<...>` run taken out (replaced by `sep`), for reading what a page shows. Not a sanitiser: nothing it returns is
+ * put into a page (output is always escaped with esc()). One pass over the characters, so it is linear on any input, and an
+ * unclosed `<` drops the rest of the line as a browser would hide it. (CodeQL js/incomplete-multi-character-sanitization flagged
+ * the regex form; review of PR #1106.)
+ */
+function withoutTags(t, sep = '') {
+  const s = String(t);
+  let out = '';
+  let open = false;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (open) { if (c === '>') { open = false; out += sep; } else if (c === '\n') { open = false; out += sep + c; } continue; }
+    if (c === '<') { open = true; continue; }
+    out += c;
+  }
+  return open ? out + sep : out;
+}
 const ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
 /* Lower case, accents off, separators to one space. */
 function fold(t) {
@@ -665,7 +683,7 @@ function readings(text) {
     if (e[0] === '#') { const n = e[1] === 'x' || e[1] === 'X' ? parseInt(e.slice(2), 16) : Number(e.slice(1)); return Number.isFinite(n) && n > 0 && n < 0x110000 ? String.fromCodePoint(n) : m; }
     return ENTITIES[e.toLowerCase()] !== undefined ? ENTITIES[e.toLowerCase()] : m;
   });
-  const out = [decoded, decoded.replace(/<[^<>]*>/g, ''), decoded.replace(/<[^<>]*>/g, ' '), decoded.replace(/\\(?=[!-/:-@[-`{-~])/g, '').replace(/[*`~]+/g, '')];
+  const out = [decoded, withoutTags(decoded), withoutTags(decoded, ' '), decoded.replace(/\\(?=[!-/:-@[-`{-~])/g, '').replace(/[*`~]+/g, '')];
   return out.map(fold);
 }
 /* The phrases of `phrases` found in `text` (each once). */
@@ -772,7 +790,7 @@ function validateMedia(manifest, { root = ROOT } = {}) {
           let vtt = null;
           try { vtt = fs.readFileSync(path.join(root, f.captions), 'utf8'); } catch { /* missing */ }
           if (vtt === null) errs.push(`${at}.captions ${f.captions} does not exist`);
-          else if (!/^\uFEFF?WEBVTT(?:[ \t].*)?\r?\n/.test(vtt) || !/-->/.test(vtt)) errs.push(`${at}.captions ${f.captions} is not WebVTT with at least one cue`);
+          else if (!/^\uFEFF?WEBVTT(?:[ \t].*)?\r?\n/.test(vtt) || !vtt.includes('-->')) errs.push(`${at}.captions ${f.captions} is not WebVTT with at least one cue`);
         }
       }
     } else for (const k of ['duration', 'fps', 'poster', 'captions']) if (f[k] !== undefined) errs.push(`${at}.${k} is for videos only`);
@@ -791,8 +809,9 @@ function validateMedia(manifest, { root = ROOT } = {}) {
 }
 /* The text of a WebVTT file's cues, for the transcript under a player. */
 function vttText(vtt) {
-  return String(vtt).replace(/\r\n?/g, '\n').split(/\n{2,}/).filter((b) => /-->/.test(b))
-    .map((b) => b.split('\n').filter((l) => !/-->/.test(l) && !/^\d+$/.test(l.trim())).join(' ').replace(/<[^>]*>/g, '').trim()).filter(Boolean).join(' ');
+  // a cue's timing line holds the WebVTT arrow; its text lines lose their tags (<b>, <v Name>); the caller escapes the result
+  return String(vtt).replace(/\r\n?/g, '\n').split(/\n{2,}/).filter((b) => b.includes('-->'))
+    .map((b) => withoutTags(b.split('\n').filter((l) => !l.includes('-->') && !/^\d+$/.test(l.trim())).join(' ')).trim()).filter(Boolean).join(' ');
 }
 /*
  * Spec 104 FR-023: the one player. No autoplay or loop, no sound until pressed, poster, size, captions and the transcript in the page.
@@ -865,7 +884,7 @@ async function main() {
   console.log(`site: ${OUT} (index ${index.length} B, docs ${docs.length} B, ${feats.length} features, ${gallery.length} gallery images, ${copied.size} images copied${rel ? ', release ' + rel.tag : ', no release info'}${talks.length ? `, ${talks.length} unlisted talk page(s)` : ''})`);
 }
 
-module.exports = { pickRelease, APP_TAG_RE, unreleasedPhrases, loadUnreleased, unreleasedHits, readings, fold, publicTexts, unreleasedProblems, stripDraftNotes, validateWorlds, validateMedia, MEDIA_KINDS, MEDIA_SITE_MAX, vttText, videoTag, playerProblems, siteSource, copyTalks, validateLanding, headingAnchors, harnessNames, installSteps, features, latestChanges, shortChanges, stripRefs, slugger };
+module.exports = { withoutTags, pickRelease, APP_TAG_RE, unreleasedPhrases, loadUnreleased, unreleasedHits, readings, fold, publicTexts, unreleasedProblems, stripDraftNotes, validateWorlds, validateMedia, MEDIA_KINDS, MEDIA_SITE_MAX, vttText, videoTag, playerProblems, siteSource, copyTalks, validateLanding, headingAnchors, harnessNames, installSteps, features, latestChanges, shortChanges, stripRefs, slugger };
 
 if (require.main === module) {
   main().catch((e) => {

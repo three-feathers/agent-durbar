@@ -40,16 +40,16 @@ const FILE_MAX = 256 * 1024;
 
 /* The rules, by id. Each has a fixture that fails it and a mutant that removes it (scripts/test-check-posts.js). */
 const RULES = {
-  secret: 'a token or secret (src/shared/redact.ts)',
+  secret: 'a token or secret (src/shared/redact.ts), also base64- or hex-encoded or cut across two lines',
   'redact-unavailable': 'redact.ts could not be loaded, so nothing is published (fail closed)',
-  path: 'a home folder or other private path',
+  path: 'a home folder, drive, UNC or other private path',
   email: 'an email address',
   phone: 'a phone number',
   'bot-handle': 'a full bot handle (shorten it, as the talk does)',
   chat: 'a chat marker (chat link, chat id or quoted chat)',
   unreleased: 'a phrase from docs/site/unreleased.json (FR-008)',
   host: 'a URL, host, local name or host:port that is not on the allowlist (GitHub, the site, example.invalid)',
-  scheme: 'a link that is not https',
+  scheme: 'a link that is not https (javascript:, data:, file:, http:, ...) and not relative',
   blocked: 'a blocked name (docs/site/blocked-hashes.json)',
   'first-name': "an owner's first name (handles only, FR-067)",
   'file-name': 'a post file name that is not YYYY-MM-DD-slug.md',
@@ -72,6 +72,7 @@ const RULES = {
   'hidden-char': 'an invisible or direction-changing character, an unknown HTML entity, or a word mixing Latin with Cyrillic or Greek letters',
   'long-line': 'a line longer than 4096 characters',
 };
+const PATH_RULES = new Set(['secret', 'path', 'email', 'phone', 'bot-handle', 'chat', 'unreleased', 'blocked', 'first-name', 'hidden-char']);
 const FRONT_KEYS = ['date', 'title', 'writtenBy', 'whose', 'writtenOn', 'evidence', 'notVerified', 'humanRead', 'agentReview', 'clip', 'security', 'securityNote'];
 
 /* ---------- loading ---------- */
@@ -116,9 +117,34 @@ function lineReadings(line) {
   });
   const clean = decoded.replace(IGNORABLE, '');
   const latin = clean.normalize('NFKD').replace(/\p{M}+/gu, '').replace(CONFUSABLE_RE, (c) => CONFUSABLE[c]);
-  const unmarked = latin.replace(/\\(?=[!-/:-@[-`{-~])/g, '').replace(/[*`~]+/g, '').replace(/<[^<>]*>/g, '');
+  const unmarked = site.withoutTags(latin.replace(/\\(?=[!-/:-@[-`{-~])/g, '').replace(/[*`~]+/g, ''));
   const defanged = unmarked.replace(/\s*(?:\[\.\]|\(\.\)|\{\.\}|\[dot\]|\(dot\))\s*/gi, '.').replace(/(\S)\s+\.(?=[a-z]{2,24}\b)/g, '$1.');
-  return [...new Set([n, decoded, clean, latin, unmarked, defanged, unmarked.replace(/_+/g, '')])];
+  // percent-encoding read as a browser or server would (twice, for double encoding), query and fragment included (review of PR #1106)
+  const pct1 = percentDecoded(defanged);
+  const pct = percentDecoded(pct1);
+  return [...new Set([n, decoded, clean, latin, unmarked, defanged, unmarked.replace(/_+/g, ''), pct1, pct, pct.replace(IGNORABLE, '')])];
+}
+/* `%XX` runs decoded as UTF-8 where they form valid UTF-8, else byte by byte as Latin-1; never throws. */
+function percentDecoded(t) {
+  return String(t).replace(/(?:%[0-9a-f]{2})+/gi, (run) => {
+    try { return decodeURIComponent(run); } catch { return run.replace(/%([0-9a-f]{2})/gi, (m, h) => String.fromCharCode(parseInt(h, 16))); }
+  });
+}
+/* Base64 and hex runs long enough to hold a token, decoded, for the secret rule only (review of PR #1106). A decoded run that is
+ * not mostly printable text is dropped: a commit hash or a picture's data is not a token. */
+function encodedSecrets(t) {
+  const out = [];
+  const printable = (x) => x.length >= 12 && (x.match(/[\x20-\x7e]/g) || []).length / x.length > 0.9;
+  for (const m of String(t).matchAll(/[A-Za-z0-9+/_-]{24,}={0,2}/g)) {
+    const b = m[0].replace(/-/g, '+').replace(/_/g, '/');
+    const x = Buffer.from(b, 'base64').toString('latin1');
+    if (printable(x)) out.push(x);
+  }
+  for (const m of String(t).matchAll(/(?<![0-9a-f])(?:[0-9a-f]{2}){20,}(?![0-9a-f])/gi)) {
+    const x = Buffer.from(m[0], 'hex').toString('latin1');
+    if (printable(x)) out.push(x);
+  }
+  return out;
 }
 
 /* Hosts the site may name. On GitHub, only this project's own pages (and Spec Kit, which it is built with): anything else on
@@ -211,11 +237,18 @@ function textProblems(text, ctx) {
       || (raw.match(/[\p{L}\p{M}]+/gu) || []).some((w) => /[a-z]/i.test(w) && /[Ͱ-ϿЀ-ӿ]/.test(w))) add(ln, 'hidden-char');
     for (const r of lineReadings(raw)) {
       if (ctx.redact) {
-        let masked;
-        try { masked = ctx.redact(r, {}); } catch { masked = null; }
-        if (masked !== r) add(ln, 'secret');
+        for (const x of [r, ...encodedSecrets(r)]) {
+          let masked;
+          try { masked = ctx.redact(x, {}); } catch { masked = null; }
+          if (masked !== x) add(ln, 'secret');
+        }
       }
-      if (/(?:^|[^\w/.-])(?:~[a-z0-9._-]*[\\/]|\/home\/|\/Users\/|\/root(?:\/|\b)|\/var\/folders\/|\/private\/(?:var|tmp)\/|\/tmp\/|\/mnt\/[a-z]\/|[a-z]:[\\/]+(?:users|documents and settings)[\\/])|\\\\[a-z0-9._-]+\\[a-z0-9$._-]+|[$%](?:home|userprofile|appdata|localappdata|homepath|xdg_[a-z_]+)\b|\$\{home\}|\.(?:ssh|aws|claude|copilot|codex|gnupg)\//i.test(r)) add(ln, 'path');
+      // any drive path (C:\, D:/, \\?\C:\), UNC path, home or user folder: always private in a public text (review of PR #1106)
+      if (/(?<![\p{L}\p{N}])[a-z]:[\\/]|\\\\[?.]\\|(?:^|[^\w.-])(?:\/opt\/|\/srv\/|\/Volumes\/|\/media\/[a-z]|\/run\/user\/)/iu.test(r)) add(ln, 'path');
+      // a link target that is not https (javascript:, data:, vbscript:, file:, ...) and not a relative link (review of PR #1106)
+      for (const m of r.matchAll(/\]\(\s*<?([^)\s>]*)/g)) if (/^[a-z][a-z0-9+.-]*:/i.test(m[1]) && !/^https:\/\//i.test(m[1])) add(ln, 'scheme');
+      if (/(?<![\w.-])(?:javascript|vbscript|data|file|blob|filesystem|view-source|about|ftp|sftp|ssh|smb|ldap|chrome|jar):(?=[^\s])/i.test(r) || /<[a-z][a-z0-9+.-]*:(?!\/\/)[^>\s]*>/i.test(r)) add(ln, 'scheme');
+      if (/(?:^|[^\w.-])(?:~[a-z0-9._-]*[\\/]|\/home\/|\/Users\/|\/root(?:\/|\b)|\/var\/folders\/|\/private\/(?:var|tmp)\/|\/tmp\/|\/mnt\/[a-z]\/|[a-z]:[\\/]+(?:users|documents and settings)[\\/])|\\\\[a-z0-9._-]+\\[a-z0-9$._-]+|[$%](?:home|userprofile|appdata|localappdata|homepath|xdg_[a-z_]+)\b|\$\{home\}|\.(?:ssh|aws|claude|copilot|codex|gnupg)\//i.test(r)) add(ln, 'path');
       if (/(?<![a-z0-9._%+-])[a-z0-9._%+-]{1,64}@[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}/i.test(r) || /\bmailto:/i.test(r)) add(ln, 'email');
       // phones: URLs, code and dates out first; a bare run of digits counts only with a +, separators or a phone word nearby
       const phoneText = r.replace(URL_RE, ' ').replace(/`[^`]*`/g, ' ').replace(/\b\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2})?)?/g, ' D ');
@@ -232,7 +265,7 @@ function textProblems(text, ctx) {
       const hosts = [];
       for (const m of r.matchAll(URL_RE)) hosts.push(...urlProblems(`${m[1]}://${m[2]}`, ln, add, links));
       for (const m of r.replace(URL_RE, ' ').matchAll(WWW_RE)) { add(ln, 'scheme'); hosts.push(...urlProblems(`https://${m[1]}`, ln, add, links)); }
-      for (const m of r.replace(URL_RE, (x, s, rest) => (/^(?:www\.)?github\.com$|githubusercontent\.com$|^three-feathers\.github\.io$/i.test(rest.split(/[/?#]/)[0]) ? ' ' : ` ${rest.replace(/^[^/?#]*/, ' ')}`)).replace(WWW_RE, ' ').matchAll(HOSTLIKE_RE)) {
+      for (const m of r.replace(URL_RE, (x, s, rest) => (/^(?:www\.)?github\.com$|githubusercontent\.com$|^three-feathers\.github\.io$/i.test(rest.split(/[/?#]/)[0]) ? ' ' : ` ${rest.replace(/^[^/?#]*/, ' ')}`)).replace(WWW_RE, ' ').replace(/\]\(\s*<?(?![a-z][a-z0-9+.-]*:)[^)\s>]*/gi, '](').matchAll(HOSTLIKE_RE)) { // a relative link target is a file, not a host
         const h = m[1].toLowerCase();
         hosts.push(h); // every dotted word is hashed against the blocked list
         if (KNOWN_DOTTED.has(h) || ctx.files.has(h) || !hostish(h)) continue;
@@ -256,6 +289,8 @@ function textProblems(text, ctx) {
   if (start < lines.length) paras.push([start, lines.slice(start)]);
   for (const [s, ls] of paras) {
     if (ls.length < 2 || ls.some((l) => l.length > LINE_MAX)) continue;
+    // a token cut across two lines (review of PR #1106): the lines joined with nothing between them
+    if (ctx.redact) for (const r of lineReadings(ls.map((l) => l.trim()).join(''))) { let m; try { m = ctx.redact(r, {}); } catch { m = null; } if (m !== r) add(s + 1, 'secret'); }
     for (const r of lineReadings(ls.join(' '))) {
       if (site.unreleasedHits(r, ctx.phrases).length) add(s + 1, 'unreleased');
       for (const w of nameForms(r)) if (ctx.blocked.has(hashName(w))) add(s + 1, 'blocked');
@@ -504,6 +539,20 @@ function checkAll(opts = {}) {
       else if (!ok) push(l.file, l.line, 'outside-link');
     }
   }
+  // file and folder names are public too (the slug is the post's URL): the text rules run on each relative path, and a path that
+  // fails is never printed, so a blocked name cannot reach a CI log through it (review of PR #1106)
+  const roots = [POSTS, ...TEXT_DIRS];
+  const withheld = new Map();
+  for (const rel of new Set([...files.map((f) => f.rel), ...problems.map((p) => p.file)])) {
+    const root = roots.find((d) => rel.startsWith(`${d}/`));
+    if (!root) continue;
+    const tail = rel.slice(root.length + 1);
+    const pp = textProblems(tail.replace(/\.[a-z0-9]{1,5}$/i, '').replace(/[\\/]/g, ' '), ctx).problems.filter((x) => PATH_RULES.has(x.rule));
+    if (!pp.length) continue;
+    withheld.set(rel, `${root}/<file name withheld ${withheld.size + 1}>`);
+    for (const x of pp) problems.push({ file: rel, line: 0, rule: x.rule });
+  }
+  for (const p of problems) if (withheld.has(p.file)) p.file = withheld.get(p.file);
   const uniq = [...new Map(problems.map((p) => [`${p.file}\0${p.line}\0${p.rule}`, p])).values()];
   return { problems: uniq, notes, files: files.length };
 }

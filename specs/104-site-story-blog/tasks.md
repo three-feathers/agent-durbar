@@ -2,7 +2,7 @@
 
 **Input**: [spec.md](spec.md), [plan.md](plan.md)
 
-**Tests**: required (constitution VII): Node tests with fixtures and mutations; 0 credits. Each task is one small PR, in this order. **Time and cost are estimates**, not measurements; costs are list-price equivalents of plan use (plan, *Costs*). Numbers taken: spec 104, FR-001..FR-079, SC-001..SC-006, T001..T024; in spec 021, FR-076 and T055 (checked 2026-11-03 against `main`, remote branches and open PRs: FR-073..FR-075 and FR-077 are merged, FR-076 and T055 are free).
+**Tests**: required (constitution VII): Node tests with fixtures and mutations; 0 credits. Each task is one small PR, in this order. **Time and cost are estimates**, not measurements; costs are list-price equivalents of plan use (plan, *Costs*). Numbers taken: spec 104, FR-001..FR-079, SC-001..SC-006, T001..T025 (T025 added 2026-11-04, checked against `main` and open PRs); in spec 021, FR-076 and T055 (checked 2026-11-03 against `main`, remote branches and open PRs: FR-073..FR-075 and FR-077 are merged, FR-076 and T055 are free).
 
 **Format**: `- [ ] Tnnn [P?] description [requirements]`, then its test. `[P]` can run beside the task before it.
 
@@ -46,6 +46,8 @@
 - [ ] T021 **Measure** [SC-005]: real token use of the first 3 posts, in the plan. Above the budget: stop daily posts and ask the owner. Also confirm playback by hand in a browser on the live site, and on a phone if a human can (`real:`, or say not checked).
 
 - [ ] T024 **Taking a post down** [FR-077]: a recipe in `docs/collaboration.md` (revert PR, delete the `media-library` asset and its `media.json` entry, rebuild, rotate a leaked secret, tell the human what stays readable in history); the check fails a `media.json` entry whose post is gone. Test: fixture with an orphan entry fails. Estimate: 30 min, $2.
+
+- [ ] T025 **Owner step: block the incident host by name** [FR-062]: a human owner runs `node scripts/check-posts.js --add-blocked-host`, types the PR #885 host at the prompt (not echoed, nothing printed) and commits only `docs/site/blocked-hashes.json` in a signed PR; never in an argument, file, log, PR text or agent prompt. Until then FR-062's "refused by name" does not hold (spec *Known gaps*). Test: `blog:check` on a stand-in post naming the host fails `blocked` (run by that human, not in CI). Estimate: 5 min of an owner's time, $0.
 
 ## Later
 

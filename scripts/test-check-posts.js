@@ -71,6 +71,7 @@ const post = (f = front(), body = BODY) => `---\n${JSON.stringify(f, null, 1)}\n
 function check(files, o = {}) {
   fs.rmSync(path.join(T, 'docs/site/blog'), { recursive: true, force: true });
   fs.rmSync(path.join(T, 'docs/site/story'), { recursive: true, force: true });
+  for (const f of fs.readdirSync(path.join(T, 'docs/site/captions'))) if (f !== 'clip-a.vtt') fs.rmSync(path.join(T, 'docs/site/captions', f), { recursive: true, force: true });
   for (const [rel, text] of Object.entries(files)) w(rel.includes('/') ? rel : `docs/site/blog/${rel}`, text);
   const calls = [];
   const r = cp.checkAll({ root: T, gh: o.offline ? undefined : ghFake(calls, o.drafts), offline: !!o.offline, env: o.env || {}, redactLoader: o.redactLoader });
@@ -268,6 +269,59 @@ if (process.platform !== 'win32') {
   assert.ok((cpu.user + cpu.system) / 1e6 < 20, `hostile 256 KB inputs stay fast (${((cpu.user + cpu.system) / 1e6).toFixed(1)} s CPU)`);
   // the human step also blocks the bare name of a host
   assert.ok(cp.normaliseBlocked('https://Standin-Client.co.uk/x') === 'standin-client.co.uk' && cp.normaliseBlocked('not a host!') === null, 'normalised names');
+}
+
+// review of PR #1106 (rubenlupi's side, 2026-11-04): each probe below passed at 4e84600 and fails now
+{
+  const B64 = Buffer.from(`token ${TOKEN} here`).toString('base64');
+  const HEX = Buffer.from(`token ${TOKEN} here`).toString('hex');
+  for (const [t, rule, what] of [
+    // 2. percent-encoding, query and fragment included
+    ['See https://example.invalid/x?q=blocked%2Dstandin%2Eexample%2Einvalid', 'blocked', 'a blocked host percent-encoded in a query'],
+    ['See https://example.invalid/x#blocked-standin%2eexample%2einvalid', 'blocked', 'a blocked host percent-encoded in a fragment'],
+    ['See https://example.invalid/x?to=standin%40example.invalid', 'email', 'an address percent-encoded in a query'],
+    ['See https://github.com/three-feathers/agent-durbar/blob/main/%2Fhome%2Fstandin', 'path', 'a home path percent-encoded in a URL'],
+    ['The folder %2Fhome%2Fstandin%2Fx', 'path', 'a bare percent-encoded home path'],
+    ['We met quokka%2Dcorp there', 'blocked', 'a blocked name with a percent-encoded hyphen'],
+    ['See %252Fhome%252Fstandin', 'path', 'double percent-encoding'],
+    // 3. schemes without ://
+    ['[x](javascript:alert(1))', 'scheme', 'a javascript: link'], ['[x](data:text/html;base64,PHA+)', 'scheme', 'a data: link'],
+    ['[x](vbscript:msgbox)', 'scheme', 'a vbscript: link'], ['[x]( javascript:void(0))', 'scheme', 'a javascript: link after a space'],
+    ['<javascript:alert(1)>', 'scheme', 'an autolink with a bad scheme'], ['Open file:standin', 'scheme', 'a bare file: link'],
+    // 4. any drive or UNC path
+    ['Work in D:\\work\\standin\\x', 'path', 'a D: drive path'], ['Work in E:/clients/standin/x', 'path', 'a drive path with slashes'],
+    ['Work in \\\\?\\C:\\x', 'path', 'a long Windows path'], ['Work in /opt/standin/x', 'path', 'an /opt path'],
+    // 6. mutants that survived: the hidden-char rule by name, entity decoding, /Users/
+    [`Vik${'\u2060'}ram`, 'hidden-char', 'a word joiner'], ['A \u2066isolate\u2069 here', 'hidden-char', 'a bidi isolate'], ['Fine&ZeroWidthSpace;text', 'hidden-char', 'an unknown named entity alone'],
+    ['Write to standin&#64;example.invalid', 'email', 'an address with an entity @'], ['The folder &#x2F;home&#x2F;standin&#x2F;x', 'path', 'a path written with entities'],
+    ['The folder /Users/standin/x', 'path', 'a macOS home folder'],
+    // 8. encoded secrets
+    [`The blob ${B64} was pasted`, 'secret', 'a base64-encoded token'], [`The blob ${HEX} was pasted`, 'secret', 'a hex-encoded token'],
+  ]) fails({ [P]: post(front(), body(t)) }, rule, what);
+  fails({ [P]: post(front(), body(`The key was ${TOKEN.slice(0, 20)}\n${TOKEN.slice(20)} once.`)) }, 'secret', 'a token split across two lines of a paragraph');
+  // relative links and plain prose with a colon still pass; a commit hash is not an encoded secret
+  passes({ [P]: post(front(), body(`See [the plan](../plan.md), [a section](#how), the data: it shows. Commit ${SHA} is fine.`)) }, 'relative links, a colon in prose and a commit hash');
+  // 6. non-UTF-8 bytes and NUL refuse the file
+  for (const [bytes, what] of [[Buffer.concat([Buffer.from(post()), Buffer.from([0xff, 0xfe])]), 'non-UTF-8 bytes'], [Buffer.concat([Buffer.from(post()), Buffer.from([0])]), 'a NUL byte']]) {
+    check({});
+    fs.mkdirSync(path.join(T, 'docs/site/blog'), { recursive: true });
+    fs.writeFileSync(path.join(T, 'docs/site/blog', P), bytes);
+    const r = cp.checkAll({ root: T, gh: ghFake([]), env: {} });
+    assert.ok(r.problems.some((p) => p.rule === 'file-read'), `${what} refuse the file`);
+  }
+  // 5. file and folder names are checked, and a failing name is never printed
+  fails({ '2026-11-05-quokkacorp-visit.md': post() }, 'blocked', 'a blocked name in a post\'s file name');
+  fails({ '2026-11-05-zebra-moonbase.md': post() }, 'unreleased', 'an unreleased phrase in a file name');
+  fails({ '2026-11-05-ruben-says.md': post() }, 'first-name', 'a first name in a file name');
+  fails({ 'docs/site/captions/quokkacorp.vtt': 'WEBVTT\n\n00:00.000 --> 00:01.000\nHi\n' }, 'blocked', 'a blocked name in a caption\'s file name');
+  fails({ 'docs/site/story/quokkacorp/ch1.md': 'Plain.\n' }, 'blocked', 'a blocked name in a folder name');
+  {
+    const r = check({ '2026-11-05-quokkacorp-visit.md': post(front(), body(`Key ${TOKEN}.`)) });
+    assert.ok(r.problems.every((p) => !/quokkacorp/i.test(p.file)) && r.problems.some((p) => /<file name withheld 1>/.test(p.file)), `the failing name is withheld: ${JSON.stringify(r.problems.map((p) => p.file))}`);
+    const out = spawnSync(process.execPath, ['-e', `const cp=require(${JSON.stringify(path.join(__dirname, 'check-posts.js'))});const r=cp.checkAll({root:${JSON.stringify(T)},gh:()=>{throw new Error('x')},env:{}});for(const p of r.problems)console.log(p.file+':'+p.line+': '+p.rule);`], { encoding: 'utf8' });
+    assert.ok(/withheld/.test(out.stdout) && !/quokkacorp/i.test(out.stdout + out.stderr), 'the printed output never names the blocked file');
+  }
+  passes({ '2026-11-05-specs-first.md': post() }, 'a plain file name passes');
 }
 
 // every rule has a fixture above (a rule with none would be a rule no test can kill)

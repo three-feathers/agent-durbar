@@ -190,8 +190,10 @@ for (const f of mp4s) assert.ok(fs.statSync(path.join(talkDir, f)).size < 40 * 1
   ];
   assert.strictEqual(site.pickRelease(list).tag_name, 'v0.1.9', 'pickRelease skips media-library, worlds-* and drafts');
   assert.strictEqual(site.pickRelease(list.slice(0, 3)), null, 'no app release: none (the page links the Releases page)');
-  for (const t of ['vfoo', 'v1', 'v0.1', 'worlds-v0.1.0', 'media-library', ' v0.1.0', 'v0.1.0\n']) assert.ok(!site.APP_TAG_RE.test(t), `${JSON.stringify(t)} is not an app tag`);
-  for (const t of ['v0.1.0', 'v0.1.0-alpha.19', 'v12.3.45']) assert.ok(site.APP_TAG_RE.test(t), `${t} is an app tag`);
+  for (const t of ['vfoo', 'v1', 'v0.1', 'worlds-v0.1.0', 'media-library', ' v0.1.0', 'v0.1.0\n', 'v0.1.9-test.1', 'v0.1.0-alpha.19-test.2', 'v0.2.0-alpha.1', 'v0.2.0-rc.1']) assert.ok(!site.APP_TAG_RE.test(t), `${JSON.stringify(t)} is not a stable app tag`);
+  for (const t of ['v0.1.0', 'v12.3.45']) assert.ok(site.APP_TAG_RE.test(t), `${t} is an app tag`);
+  // review of PR #1106: a test build published as a pre-release from any branch, listed first, never becomes the download
+  assert.strictEqual(site.pickRelease([{ tag_name: 'v0.1.10-test.1', draft: false, prerelease: true }, ...list]).tag_name, 'v0.1.9', 'a -test.M build is skipped');
   // the wiring: the build reads the list through the same filter
   const o = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-site-rel-'));
   execFileSync(process.execPath, [path.join(__dirname, 'build-site.js')], { env: { ...process.env, SITE_OUT: o, SITE_FAKE_RELEASES: JSON.stringify(list) }, stdio: 'pipe' });
@@ -300,6 +302,13 @@ for (const f of mp4s) assert.ok(fs.statSync(path.join(talkDir, f)).size < 40 * 1
   for (const [mut, re] of [[on.replace('<video ', '<video autoplay '), /autoplay or loop/], [on.replace('<video ', '<video loop '), /autoplay or loop/], [on.replace(/<track[^>]*>/, ''), /captions track/], [on.replace(' preload="none"', ''), /preload/], [on.replace(/ poster="[^"]*"/, ''), /poster/], [on.replace(' controls', ''), /controls/], ['<audio src="x.mp3"></audio>', /audio/]]) {
     assert.ok(site.playerProblems(mut).some((x) => re.test(x)), `the player check refuses ${re}`);
   }
+  // review of PR #1106 (CodeQL): tags come out by a linear scan, never a regex sanitiser; the transcript is escaped on output
+  assert.strictEqual(site.withoutTags('a<b>c</b>d<scr<script>ipt>e'), 'acdipt>e', 'every <...> run is taken out');
+  assert.strictEqual(site.withoutTags('x <unclosed y'), 'x ', 'an unclosed < hides the rest');
+  assert.strictEqual(site.withoutTags('a<b>c', ' '), 'a c', 'tags as spaces');
+  assert.strictEqual(site.vttText('WEBVTT\n\n00:00.000 --> 00:01.000\n<v Standin>Hi <b>there</b>\n'), 'Hi there', 'cue text without tags or timing');
+  assert.ok(!site.videoTag({ ...e, captions: 'docs/site/captions/clip-a.vtt' }, { root: r }).includes('<b>'), 'cue markup never reaches the page');
+  { const t0 = process.cpuUsage(); site.withoutTags('<'.repeat(300000) + 'x'.repeat(300000)); site.vttText('WEBVTT\n\n' + '00:00.000 --> 00:01.000\n<<<<\n\n'.repeat(20000)); const c = process.cpuUsage(t0); assert.ok((c.user + c.system) / 1e6 < 5, 'linear on hostile input'); }
   // escaping: a hostile title stays text
   assert.ok(!site.videoTag({ ...e, title: '<img src=x onerror=alert(1)>' }, { root: r, fetched: true }).includes('<img src=x'), 'the title is escaped');
   fs.rmSync(r, { recursive: true, force: true });
