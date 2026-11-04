@@ -384,14 +384,25 @@ PR ([#728 comment](https://github.com/three-feathers/agent-durbar/pull/728#issue
 3. The same as 2, with the runtime's `TMPDIR` (and its session folder) set to a fresh private folder (0700): **refused** (exit 1, "No such file or directory"; Copilot retried once, refused again). So on Linux the temp grant follows the runtime's `TMPDIR`, not `/tmp` itself.
 
 - **FR-023** `[IMPLEMENTED]` `test:` **Copilot's runtime gets a private temp folder of its own.** When Durbar starts the Copilot runtime (`createClient`), it makes a new folder under the OS temp root (`fs.mkdtemp`, prefix `durbar-cprt-`, mode 0700 where modes apply) and starts the runtime with `TMPDIR` set to it (`TEMP` and `TMP` too on Windows). Only the runtime's environment changes, not Durbar's own. This narrows Copilot's own temp grant from the shared temp folder (`/tmp` on Linux) to that folder.
+  - **Review of #1126 (fjcabello's side), fixed:**
+    - The folder is bound to its client (`runtimeTmps`): stopping a runtime removes only that runtime's folder, so a runtime that a `getClient()` started while the old one was stopping keeps its own. `test:` a 50 ms stop during a refresh and during `dispose`.
+    - Any spelling of `TMPDIR`, `TEMP` or `TMP` in Durbar's environment is dropped before the runtime's are set, because Windows reads its environment without case.
+    - The dev path passes `RuntimeConnection.forStdio()` explicitly, so `COPILOT_SDK_DEFAULT_CONNECTION=inprocess` (which takes no `env`) cannot be chosen.
+    - The test's environment check uses a planted variable, since Windows spells `PATH` as `Path`.
+    - Mutants:
+      - removing only the right folder is replaced by the old "remove the current one", which fails `FR-023 refresh: the runtime started during the stop keeps its folder`;
+      - keeping a case variant of `TEMP` fails the Windows env assertion.
   - **One folder per runtime, not per session.** FR-161 (spec 058) keeps ONE runtime for every Copilot session in a run (a runtime per session would ask for the keychain again per session on a Mac). So the Copilot sessions of one run share this folder `[KNOWN GAP]`.
   - **Removed on every exit path:** when the runtime is stopped (`dispose`), when it is replaced after a new sign-in (`refreshAuth`, the next client gets a new folder), when its start fails, and when the app quits. The folder is in the same registry as spec 012 FR-165's MCP config folders (`privatedirs.ts`), swept on the process `exit` event and in `will-quit` (`sweepMcpConfigs`).
   - `real:` 2026-11-04, Linux, at 457b980d (the Linux session, under the owner's standing OK; Copilot CLI 1.0.105, bubblewrap, Ask first, 0.157 AIU): with Durbar starting the runtime, an approved `touch "$TMPDIR/probe.txt"` was **allowed**, and the file landed in the `durbar-cprt-` folder (0700); the host `/tmp` was **refused** ("No such file or directory"); the folder was gone after `dispose`.
   - `test:` `scripts/test-copilot-tmpdir.ts` (fake client, no runtime): the client's `env` carries the folder as `TMPDIR` (and `TEMP`/`TMP` on Windows); the folder exists with mode 0700; a sign-in refresh makes a new folder and removes the old one; `dispose` and the quit sweep remove it.
-- **FR-021a text** (the chip tooltip): Ask first now says "writes: this folder and Copilot's temp folder" and "Copilot keeps a temp folder writable; Durbar gives it a private one", instead of "not only this folder". Read-only says "writes: none asked; Copilot keeps a temp folder writable". The *Sandboxed (partial)* label stays, because approved commands can still write in that folder.
+- **FR-021a text** (the chip tooltip): Ask first now says "writes: this folder and Copilot's temp folder" and "Copilot keeps a temp folder writable; Durbar gives it a private one", instead of "not only this folder". Read-only says "writes: none asked; a temp folder likely" (hedged, because Read-only is not seen; review of #1126; it is short so the longest tooltip still fits 300 characters). The *Sandboxed (partial)* label stays, because approved commands can still write in that folder.
 - `[KNOWN GAP]` K15 (issue #755):
   - **macOS:** not run. The `read:` text says `$TMPDIR` is the granted temp folder there too, so FR-023 should narrow it the same way.
   - **Read-only:** not exercised (no folder allow rules for Copilot); the grant is most likely there too.
+  - **Windows:** `TEMP` and `TMP` are set (`test:`); the folder's ACL is inherited from `%TEMP%` (`read:`, Node's `mkdtemp`). Nothing was run on Windows.
+  - **A crash or a SIGKILL of Durbar** leaves the folder behind (no handler runs). The OS cleans its temp folder.
+  - **Not yet checked:** that the runtime's own tools (not only an approved shell `touch`) write inside the private `TMPDIR`. The `real:` line covers an approved shell command only.
   - **Checked on Linux only** (the `real:` line under FR-023). Check for macOS, which needs Vikram's own OK: an approved `touch "$TMPDIR/probe.txt"` (expected allowed), a folder under `/tmp` and one under `$HOME` (both expected refused).
 
 ### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)

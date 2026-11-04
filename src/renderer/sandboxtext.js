@@ -35,7 +35,7 @@
     if(s.covers.includes('files'))return 'Commands and file changes run in '+where+' (writes: none, network: off).'+(s.approvedMayLeave?' If you approve a command, '+(app||'the app')+' may run it outside the sandbox.':'');
     /* FR-021a (K15, #755): Copilot's runtime always keeps a temp folder writable (its own grant; real: Linux 2026-11-04), so no bare 'this folder' or 'none';
        FR-023 makes that folder a private one Durbar gives the runtime */
-    if(s.covers.includes('mcp'))return 'Shell commands and MCP servers run in '+where+' (writes: '+(s.approvedMayLeave?'this folder and '+(app||'the app')+'\u2019s temp folder':w==='none'?'only '+(app||'the app')+'\u2019s temp folder':w)+', network: off). File reads and edits are checked by Durbar.'+(s.approvedMayLeave?' '+(app||'The app')+' keeps a temp folder writable; Durbar gives it a private one.':'');
+    if(s.covers.includes('mcp'))return 'Shell commands and MCP servers run in '+where+' (writes: '+(s.approvedMayLeave?'this folder and '+(app||'the app')+'\u2019s temp folder':w==='none'?'none asked; a temp folder likely':w)+', network: off). File reads and edits are checked by Durbar.'+(s.approvedMayLeave?' '+(app||'The app')+' keeps a temp folder writable; Durbar gives it a private one.':'');
     return 'Shell commands run in '+where+' (writes: '+w+', network: off). MCP servers, hooks, the status line, file reads and edits are outside it.';
   }
   /* the tooltip (at most 300 characters: a data tooltip); `mask` is the window's masking, applied to the reason once more */

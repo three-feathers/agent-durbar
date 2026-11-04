@@ -539,7 +539,7 @@ ok('SC-001: 27 app × OS × mode cells match FR-001..FR-005; no auto-approve, by
   assert.ok(cpAsk.endsWith(T.NOT_VERIFIED) && cpAsk.length <= 300, 'not cut: the not-verified sentence is kept');
   const cpRo = T.tooltip({ ...on, covers: ['shell', 'mcp'] }, 'Copilot');
   assert.ok(!cpRo.includes('Durbar gives it a private one'), 'Read-only: no Ask first sentence');
-  assert.ok(cpRo.includes('(writes: only Copilot\u2019s temp folder, network: off)') && !cpRo.includes('writes: none,'), `Read-only: no bare "writes: none" (K15): ${cpRo}`);
+  assert.ok(cpRo.includes('(writes: none asked; a temp folder likely, network: off)') && !cpRo.includes('writes: none,'), `Read-only: no bare "writes: none" (K15): ${cpRo}`);
   assert.ok(cpRo.endsWith(T.NOT_VERIFIED), 'Read-only keeps the not-verified ending');
   const cpKept = T.tooltip({ ...on, covers: ['shell', 'mcp'], untilNewSession: true, managed: true }, 'Copilot');
   assert.ok(cpKept.endsWith(T.NOT_VERIFIED) && cpKept.length <= 300, `the longest Copilot tooltip still ends with the not-verified sentence (${cpKept.length})`);
