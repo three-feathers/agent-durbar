@@ -332,6 +332,19 @@ Each has a recommendation (Q6 is for Paco, the crew owner). The build waits for 
 
 ## Changes
 
+### 2026-11-04 the chat's look follows the setting for every chat (bug #1140, T195)
+
+**Owner report** (Vikram, Telegram, 2026-11-04, packaged v0.1.8 on macOS): with Real office chosen, the chat of a session that existed before looked like Open office, while a helper's chat of that same session looked like the Real office; restarting did not change it.
+
+**Cause** (`sim:` reproduced at 1440x900): the helper's read-only chat marked its panel with the class `ro`, which is also the Real office root's class. Once Real office's stylesheet was loaded, `realoffice.css`'s `.ro` rule gave the helper's chat panel the room's floor picture, its corners and its custom properties, so a helper's chat showed the floor under its text. Every main chat, new or resumed, had the FR-106 look as designed (the world surface and the portrait): what differed was the helper's accident, not anything per session. That broke FR-106's "the text is never on a picture".
+
+**Fix:** the read-only mark is `helper-ro` (the first rename, `sub-ro`, was already taken by the sub-agent notice's own rule and painted the panel blue: found by the driver). Every chat, main or helper, new or resumed, takes the same world surface from `html[data-world]` and `#panel`, set from the Office layout setting; switching the setting with a chat open changes it at once (`setWorld` and `syncChatHeader` already ran on that path). The portrait stays on main chats only: FR-106's portrait is the person at the desk, and a helper has none.
+
+**What the owner will see:** a helper's chat no longer shows the floor picture; both chats have the world's tinted surface. The fuller "chat in the world" look (FR-231..FR-233: corners, dark header, materials) is still specified, not built.
+
+- `sim:` `scripts/check-097-chat-look.js` at both sizes: a main session's chat and its helper's chat have the same panel surface and panel background, no picture behind the text and no element with the class `ro`; with each chat open, Open office gives the flat surface back and Real office brings the world (and the main chat's portrait) back without reopening. Mutant: the class back to `ro` fails "no element of the helper chat carries the Real office root's class \"ro\"".
+- `[KNOWN GAP]` not checked on the packaged macOS build the owner used; the cause is in renderer CSS and is the same on every platform (`read:`).
+
 ### 2026-11-04 attention lights (owner decisions; FR-236..FR-238, FR-243, FR-244; FR-239..FR-242 withdrawn; T185..T193)
 
 **Status: specified, not built.** Spec, plan and tasks only (PR 1 of 2); the build is PR 2.
