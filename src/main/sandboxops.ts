@@ -15,7 +15,7 @@ export interface SandboxOpsDeps {
   /** An adapter instance by app id (throws for an unknown one). */
   instance(app: string): AgentAdapter;
   readyAdapterIds(): Promise<ReadonlySet<string>>;
-  store(): { setSandboxAlwaysContinue(app: unknown, on: unknown): boolean; sandboxAlwaysContinue(app: string): boolean; isUnsaved?(key: string): boolean } | undefined;
+  store(): { setSandboxAlwaysContinue(app: unknown, on: unknown): { ok: boolean; value: boolean }; sandboxAlwaysContinue(app: string): boolean; isUnsaved?(key: string): boolean } | undefined;
 }
 
 /**
@@ -65,7 +65,7 @@ export function createSandboxOps(deps: SandboxOpsDeps) {
         return { ok: false, error: errText(err) };
       }
       // only after the adapter accepted; when the choice cannot be saved it is not in force (turning it on is rolled back), the window is told
-      if (always && deps.store() && deps.store()!.setSandboxAlwaysContinue(ad.id, true) !== true) return { ok: true, alwaysSaved: false };
+      if (always && deps.store() && deps.store()!.setSandboxAlwaysContinue(ad.id, true).ok !== true) return { ok: true, alwaysSaved: false };
       return { ok: true };
     },
     async hosts(fromApp: boolean): Promise<Record<string, SandboxHostView>> {
@@ -96,8 +96,8 @@ export function createSandboxOps(deps: SandboxOpsDeps) {
       const st = deps.store();
       if (!st) return { ok: true };
       // safe direction: off for this run whatever the save did; if the file could not be written the choice is back after a restart, and the window says so
-      const still = st.setSandboxAlwaysContinue(app, false);
-      return still ? { ok: false } : st.isUnsaved?.('sandboxAlwaysContinue') ? { ok: true, saved: false } : { ok: true };
+      const r = st.setSandboxAlwaysContinue(app, false); // `value` is what is in force, `ok` whether the write reached disk (issue #1094)
+      return r.value ? { ok: false } : !r.ok || st.isUnsaved?.('sandboxAlwaysContinue') ? { ok: true, saved: false } : { ok: true };
     },
   };
 }

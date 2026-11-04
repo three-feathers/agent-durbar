@@ -6,6 +6,7 @@
  *   node scripts/ui-suite.js --only shots-017,shots-033
  *   UI_SUITE_OUT=<folder>                 where every screenshot goes (default: a new temp folder, printed at the end)
  *   UI_SUITE_XVFB=1                       Linux: run under xvfb-run even when a display is set
+ *   UI_SUITE_DPR=<1..4>                   force the device scale factor (2 = a Retina screen) for every driver
  *   UI_SUITE_JOBS=<n>                     drivers at once (default 2; each has its own profile and, on Linux, its own xvfb display)
  *   UI_SUITE_RETRY=1                      run each failed driver once more, alone, at the end; a pass then is reported as FLAKY
  *                                         (listed in the summary and the GitHub job summary), never as a clean pass
@@ -90,8 +91,10 @@ const DRIVERS = [
   { name: 'check-sched-top' }, // spec 044 FR-027..FR-035: the top-bar Schedules button
   { name: 'check-sched-history' }, // spec 044 FR-040..FR-044: a schedule's run history and Schedules here (N)
   { name: 'check-question-options' },
+  { name: 'check-inbox-text' }, // spec 052 FR-214: the text of a Needs you card never runs words together
   { name: 'check-question-visible' },
   { name: 'check-chat-no-scroll' },
+  { name: 'check-chat-visibility' }, // spec 005 FR-210: a long chat is laid out only near the view; scroll, find, copy, focus and the pinned end are as before
   { name: 'check-chat-title' }, // spec 052 FR-180 (#789): the chat header's title uses the free room up to the buttons
   { name: 'check-no-demo-badge' }, // spec 052 FR-181: no Demo / Live badge in the top bar; the demo cues remain
   { name: 'check-sim-guard' }, // spec 010 FR-026: the real preload API is refused by main under DURBAR_SIM
@@ -246,7 +249,7 @@ function runOne(d, outDir) {
   if (d.sim === false) { delete env.DURBAR_SIM; delete env.DURBAR_SIM_FREEZE; }
   if (d.freeze === false) delete env.DURBAR_SIM_FREEZE; // a driver that needs the live simulator (spec 001 FR-082: shots-docs.js)
   for (const v of OUT_VARS) env[v] = outDir;
-  const argv = [ROOT, '--no-sandbox'];
+  const argv = [ROOT, '--no-sandbox', ...(/^[1-4]$/.test(process.env.UI_SUITE_DPR || '') ? ['--force-device-scale-factor=' + process.env.UI_SUITE_DPR] : [])]; // UI_SUITE_DPR=2: a high-density screen (a Retina Mac) on any OS
   const useXvfb = process.platform === 'linux' && (!process.env.DISPLAY || process.env.UI_SUITE_XVFB === '1'); // UI_SUITE_XVFB=1: keep windows off a desktop
   const [file, list] = useXvfb ? ['xvfb-run', ['-a', electron, ...argv]] : [electron, argv];
   return new Promise((resolve) => {
