@@ -111,26 +111,28 @@ Order: row 9 of [spec 005's plan table](../005-chat-fullscreen-and-agent-strip/p
 
 Order: rows A15..A18 of [spec 005's plan table](../005-chat-fullscreen-and-agent-strip/plan.md). Tokens and the surface colour: [spec 070](../070-theme-tokens/spec.md) FR-068..FR-074. No new runtime dependency. Constitution V: no text on art, sizes unchanged but prose, contrast by test; art is one static background per surface, with no blur, blend or filter (FR-180, FR-182).
 
-## Attention lights (delta 2026-11-04; FR-236..FR-243, T185..T193)
+## Attention lights (delta 2026-11-04; FR-236..FR-238, FR-243, FR-244, T185..T193)
 
-Owner decision: Vikram, Telegram DM, 2026-11-04 04:38 UTC, round 3's D1 (warm dusk) without D4's Boss-door glow. Spec *Changes* has the requirements and the honest limits. This is PR 1 (spec only). PR 2 builds it in the order below.
+Owner decisions (Vikram, Telegram DMs, 2026-11-04):
+- 04:38 UTC: round 3's D1, without D4's Boss-door glow.
+- 04:52 UTC: "Ok, just add light without any dusk". FR-239..FR-242 are withdrawn; FR-043, FR-047 and FR-182 are unchanged.
+
+Spec *Changes* has the requirements and the honest limits. This is PR 1 (spec only). PR 2 builds it in the order below.
 
 - **Geometry, pure** (`src/shared/realoffice-layout.ts`, T185). `lightBar(desk, lay)` returns `{bar, clamp, bezel, pool, poolHole, onEdge}` for each `DeskBox`, from the `screen` and `glass` rects already there. The rules are tested where they are made:
   - the bar inside the monitor's span;
   - the pool narrowed, then lowered, clear of every `face` box;
   - `onEdge` when a `ZoneBox.sign` or other chrome rect the layout places overlaps the bar's normal place.
 
-  `clearArea(desk)` returns the dusk's ellipse (centre and radii). No DOM: unit-tested on every OS (FR-019 stays under 5 ms).
+  No DOM: unit-tested on every OS (FR-019 stays under 5 ms).
 - **State, pure** (`src/shared/lights.ts`, T186).
   - `Light` gains `bar: 'off'|'amber'|'red'|'orange'|'green'`, and `LIGHT_TABLE` gains the *Bar* column.
   - `lightFor(state, { still, unread })`: unread turns an off bar green and nothing else.
-  - `duskOn(lights)`: true when any bar is amber, red or orange.
-  - `DUSK`: the four filter values, one definition for both paths.
   - `lampWords` is unchanged: the words for green are the tag's.
 - **Drawing** (`src/renderer/realoffice.js`, `realoffice.css`, T187).
-  - Bar, clamp, bezel and pool sit in `.ro-lights` (above the dusk, under the chrome), one set per desk, created once and switched by class (`bar-amber` ...). A status change adds no node (FR-178 *Nodes* row).
+  - Bar, clamp, bezel and pool sit in `.ro-lights` (under the chrome), one set per desk, created once and switched by class (`bar-amber` ...). A status change adds no node and no layout read (FR-244).
   - The New reply tag is a `<span aria-hidden="true">` in `.ro-chrome`, placed from the plate's rect, shown by class from `isUnread(a)`. The plate's `aria-label` takes `unreadWords(a)`.
-  - The dusk is one `.ro-dusk` element between `.ro-art` and `.ro-amb`, with the clear areas as one `mask-image` value written only when it changes. Forced colours, `prefers-contrast: more`, reduced motion and Serious mode use the existing `.ro.still` and media rules.
+  - Forced colours, reduced motion and Serious mode use the existing `.ro.still` and media rules.
 - **Reused, not added** (spec 021 FR-031):
   - `isUnread` and `unreadWords` (`app.js`, DurbarUnread), not a second unread store;
   - the existing light layer, its `--ro-*` colours and the FR-049 fixed-colour rule;
@@ -139,20 +141,12 @@ Owner decision: Vikram, Telegram DM, 2026-11-04 04:38 UTC, round 3's D1 (warm du
   - FR-050's contrast pass in `check-office-overlap.js`;
   - `check-office-ops.js` for the op rows;
   - `shots-097-realoffice.js` for pictures.
-- **Cost and FR-182** (T190). The mock's `backdrop-filter` over the whole office (path A) breaks FR-182's hard rule (over 15 % of the window, animations beneath), so it is not the default:
-  1. PR 2 builds both paths behind an internal switch and measures path A, path B and the dusk off against FR-178's rows at 15 and 40 agents (`check-office-ops` op rows; `check-perf.js --record` frames at 10x activity and idle CPU).
-  2. The real-GPU run goes to the Mac session (FR-189).
-  3. Path A stays only if it is inside every row, costs at most 2 ms a frame and 2 points of a core idle on the real GPU against the dusk off, and the owner approves a named FR-182 exception with those numbers.
-  4. Otherwise path B ships: a static `filter: brightness(.86) saturate(.82) sepia(.10) contrast(.93)` on image-layer elements outside the clear areas, and a second, filtered floor picture with a static mask.
-  5. The losing path's code is removed before merge. The result is a dated delta (FR-190).
-- **Checks.**
-  - `test:realoffice-layout` (geometry, `lightFor`, `duskOn`; mutation-checked).
-  - `test:theme-tokens` (no animated `filter`/`backdrop-filter`, no `mix-blend-mode` in the new rules, the FR-182 list).
-  - `check:office` Real variant (overlap with the tag and bars, contrast with the dusk on, FR-243).
-  - A face-luminance step in `shots-097-realoffice.js` (FR-242).
-  - Screenshots at both sizes (FR-092).
+- **Cost** (T190, T192): count checks only.
+  - `check-office-ops` counts 0 nodes and no extra layout reads for a status change that lights a bar.
+  - `test:theme-tokens` finds no `backdrop-filter`, `filter` or `mix-blend-mode` in the bar rules and no animation of anything but `opacity`.
+  - No frame-time measurement: the bar is gradients and opacity only.
 - **Constitution.**
-  - V: no state by colour alone (tag, plate words); no motion in the bar; text never on the dusk; reduced motion and Serious mode switch at once.
+  - V: no state by colour alone (tag, plate words); no motion in the bar; text never on art.
   - III: no new storage or IPC; the tag shows no content.
   - VI: CSS and pure TS only.
   - VIII: the mock's limits are in the spec.
