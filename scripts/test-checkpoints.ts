@@ -5,8 +5,9 @@ import * as os from 'os';
 import * as path from 'path';
 import { CheckpointStore, unsafeTarget } from '../src/main/checkpoints';
 import { PermissionBroker } from '../src/adapters/permissions';
+import { tmpDir } from './test-tmp';
 
-const base = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-ckpt-test-'));
+const base = tmpDir('durbar-ckpt-test-');
 const store = path.join(base, 'store');
 const ws = path.join(base, 'ws');
 const outside = path.join(base, 'outside');

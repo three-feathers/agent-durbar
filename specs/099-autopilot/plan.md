@@ -121,7 +121,7 @@ Written once in `src/adapters/autopilotHost.ts` (Phase 2): the settings and run 
 - The activity log gets `autopilot-on`, `autopilot-end <reason>` and `autopilot-off`, with no prompt text.
 - No progress: main takes the folder fingerprint at each `continued` event with the spec 063 runner (read-only), and calls
   `setAutopilot(null)` with reason `no-progress` after two unchanged ones in a row.
-- The scheduler (spec 044, 072) follows FR-083. In the first build, while T096 is held, a scheduled prompt or a loop's pass that is due for a session on Autopilot is not sent, and the run log says why (T032). `autopilot` on a schedule is refused (FR-084).
+- **Void 2026-11-01 (owner; spec *Changes*): the scheduler sends in the session's mode, nothing is held; the rest of this line is the old plan.** The scheduler (spec 044, 072) follows FR-083. In the first build, while T096 is held, a scheduled prompt or a loop's pass that is due for a session on Autopilot is not sent, and the run log says why (T032). `autopilot` on a schedule is refused (FR-084).
 
 ### Renderer
 

@@ -8,6 +8,7 @@
  * before its handler runs, so neither the window nor a driver's page script can reach a real agent app or the real profile.
  * FR-029: this is the only file in src/ that may use `ipcMain` or `webContents.ipc` (`test:ipcchannels`). FR-031: the mode is main's.
  */
+import { redact } from '../shared/redact';
 import { ipcMain } from 'electron';
 import type { IpcMainEvent, IpcMainInvokeEvent } from 'electron';
 import * as path from 'path';
@@ -35,7 +36,7 @@ function simAllows(channel: string): boolean {
   if (simulator === false || simChannelOpen(channel)) return true; // undefined (never decided) refuses: fail closed
   if (!warned.has(channel)) {
     warned.add(channel);
-    console.warn(`[simguard] refused "${channel}" under DURBAR_SIM`);
+    console.warn(redact(`[simguard] refused "${channel}" under DURBAR_SIM`));
   }
   return false;
 }

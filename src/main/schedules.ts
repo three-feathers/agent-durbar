@@ -11,7 +11,7 @@ import { localTime, nextRuleRun, parseRule } from '../shared/schedrules';
 import type { CalendarRule } from '../shared/schedrules';
 import { LOOP_MAX_DELAY, LOOP_MAX_HOURS, LOOP_MAX_PASSES, LOOP_MIN_DELAY, clampPace, cleanReason, oneLine, parsePace } from '../shared/looppace';
 
-export type Outcome = 'sent' | 'skipped-busy' | 'skipped-paused' | 'skipped-cap' | 'skipped-ended' | 'missed' | 'failed' | 'held' | 'ended' | 'skipped-door-full' | 'skipped-review';
+export type Outcome = 'sent' | 'skipped-busy' | 'skipped-paused' | 'skipped-cap' | 'skipped-ended' | 'missed' | 'failed' | 'held' | 'ended' | 'skipped-door-full' | 'skipped-review'; // spec 044 FR-127: 'skipped-door-full' is only read from old logs, never written again
 export type CapUnit = 'aiu' | 'usd';
 /** FR-014: one session instead of the folder's agent. `name` is display only. */
 export interface ScheduleTarget {
@@ -418,12 +418,6 @@ export interface SchedulerDeps {
   waitOf?(session: string): LoopWait | undefined;
   /** After any change (for the renderer). */
   changed?(doc: SchedulesDoc): void;
-  /**
-   * Spec 044 FR-110 (owner 2026-10-23): the run's agent has its door closed by the user (Do not disturb). Main queues the run there and
-   * answers true: the run is then held (not sent, not dropped). 'full' (review on #631): the door is closed but its queue is full, so
-   * the run is not kept and its outcome says so (never sent either). False when the door is open (or there is no such agent).
-   */
-  hold?(s: Schedule, now: number): boolean | 'full';
   /** Spec 081 FR-013: a reason the run cannot go now (its agent app is updating and the run would start or resume a session); the run is held and tried again. */
   heldBy?(s: Schedule): string | undefined;
 }
@@ -858,7 +852,10 @@ export class Scheduler {
     this.running = true;
     try {
       const now = this.deps.now();
-      for (const s of this.doc.schedules) {
+      // by id, looked up now: `remove` and `save` change the list while a send is awaited, and a deleted schedule must not fire
+      for (const id of this.doc.schedules.map((x) => x.id)) {
+        let s = this.doc.schedules.find((x) => x.id === id);
+        if (!s) continue;
         const t = this.dueNow(s);
         if (t === undefined || t > now) continue;
         if (s.loop) {
@@ -866,14 +863,12 @@ export class Scheduler {
           continue;
         }
         let outcome: Outcome;
-        let held: boolean | 'full' = false;
         let r: boolean | string = false;
         let reason: RunReason | undefined;
         if (needsReview(s)) outcome = 'skipped-review'; // FR-124: first, so the row always says this reason
         else if (this.doc.pausedAll) outcome = 'skipped-paused';
         else if (s.target && !this.deps.hasSession(s.target.session)) outcome = 'skipped-ended';
         else if (s.cap && (s.spent ?? 0) >= s.cap.amount) outcome = 'skipped-cap';
-        else if ((held = this.deps.hold?.(s, now) ?? false)) outcome = held === 'full' ? 'skipped-door-full' : 'held'; // FR-110: queued at a door closed by the user, before busy
         else if (this.deps.isBusy(s.folder, s.target?.session)) outcome = 'skipped-busy';
         else if (this.deps.heldBy?.(s)) {
           // spec 081 FR-013: its app is updating and this run would start or resume a session: held, looked at again soon (or at the release)
@@ -882,11 +877,16 @@ export class Scheduler {
           continue;
         } else {
           this.heldUntil.delete(s.id);
-          const sr = await this.sendRun(s, s.prompt);
+          const sent = s;
+          const sr = await this.sendRun(sent, sent.prompt);
           r = sr.r;
           reason = sr.reason;
           outcome = r ? 'sent' : 'failed';
-          if (typeof r === 'string' && r) this.attrib.set(r, s.id);
+          if (typeof r === 'string' && r) this.attrib.set(r, sent.id);
+          // `save` replaces the stored object while the send is awaited: what follows (`done`, `next`) must reach the stored one, or a once schedule would run again
+          const stored = this.doc.schedules.find((x) => x.id === sent.id);
+          if (!stored) continue; // deleted while its send was awaited: nothing is logged or updated for it
+          s = stored;
         }
         this.record(s, outcome, now, { session: typeof r === 'string' && r ? r : s.target?.session, reason });
         if (outcome === 'skipped-ended' || outcome === 'skipped-cap' || (outcome === 'skipped-review' && !recurring(s))) {
@@ -941,7 +941,7 @@ export class Scheduler {
   }
 
   /**
-   * Spec 044 FR-111 (review on #631): Send all at an opened door releases each held run through the scheduler, never around it: Pause
+   * Spec 017 FR-031 (migration, spec 044 FR-128): the person chose Send for a prompt that was held behind a door before the update. It goes through the scheduler, never around it: Pause
    * all, the schedule's pause, its session, its own limit and a busy agent (coffee breaks count, scheduleBusy) are checked as for a
    * scheduled run; it goes out through the same `send` (credited to the schedule, `schedule:ran`), and `last` records it.
    * 'gone': the schedule was deleted, so the run is dropped by the caller (the user deleted the schedule).

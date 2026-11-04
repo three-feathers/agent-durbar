@@ -15,7 +15,7 @@ export interface SandboxOpsDeps {
   /** An adapter instance by app id (throws for an unknown one). */
   instance(app: string): AgentAdapter;
   readyAdapterIds(): Promise<ReadonlySet<string>>;
-  store(): { setSandboxAlwaysContinue(app: unknown, on: unknown): boolean; sandboxAlwaysContinue(app: string): boolean } | undefined;
+  store(): { setSandboxAlwaysContinue(app: unknown, on: unknown): { ok: boolean; value: boolean }; sandboxAlwaysContinue(app: string): boolean; isUnsaved?(key: string): boolean } | undefined;
 }
 
 /**
@@ -26,7 +26,7 @@ export function toWindowEvent(e: AgentEvent, outward: (e: AgentEvent) => AgentEv
   return outwardSandboxEvent(outward(e));
 }
 
-export type OpResult = { ok: true } | { ok: false; error: string };
+export type OpResult = { ok: true; alwaysSaved?: false } | { ok: false; error: string };
 const errText = (e: unknown): string => sandboxReason(e instanceof Error ? e.message : String(e)) ?? 'Durbar could not do that.';
 const NO_NOTE = 'There is no OS sandbox note to answer for this session.';
 
@@ -64,7 +64,8 @@ export function createSandboxOps(deps: SandboxOpsDeps) {
       } catch (err) {
         return { ok: false, error: errText(err) };
       }
-      if (always) deps.store()?.setSandboxAlwaysContinue(ad.id, true); // only after the adapter accepted
+      // only after the adapter accepted; when the choice cannot be saved it is not in force (turning it on is rolled back), the window is told
+      if (always && deps.store() && deps.store()!.setSandboxAlwaysContinue(ad.id, true).ok !== true) return { ok: true, alwaysSaved: false };
       return { ok: true };
     },
     async hosts(fromApp: boolean): Promise<Record<string, SandboxHostView>> {
@@ -90,10 +91,13 @@ export function createSandboxOps(deps: SandboxOpsDeps) {
       return out;
     },
     /** FR-007c: Settings only undoes the stored choice, for a known app id. */
-    alwaysOff(fromApp: boolean, app: unknown): { ok: boolean } {
+    alwaysOff(fromApp: boolean, app: unknown): { ok: boolean; saved?: false } {
       if (!fromApp || typeof app !== 'string' || !(ANNOUNCE_APPS as readonly string[]).includes(app)) return { ok: false };
-      deps.store()?.setSandboxAlwaysContinue(app, false);
-      return { ok: true };
+      const st = deps.store();
+      if (!st) return { ok: true };
+      // safe direction: off for this run whatever the save did; if the file could not be written the choice is back after a restart, and the window says so
+      const r = st.setSandboxAlwaysContinue(app, false); // `value` is what is in force, `ok` whether the write reached disk (issue #1094)
+      return r.value ? { ok: false } : !r.ok || st.isUnsaved?.('sandboxAlwaysContinue') ? { ok: true, saved: false } : { ok: true };
     },
   };
 }

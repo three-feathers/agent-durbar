@@ -53,6 +53,10 @@ A friendly front door at <https://three-feathers.github.io/agent-durbar/>: what 
 
 ## Changes
 
+### 2026-11-01: a new look, videos and a blog are specified in spec 104 (owner request)
+
+Spec [104](../104-site-story-blog/spec.md) owns the redesign, the videos and the agent blog; nothing is built yet. When its tasks land they supersede FR-008's landing sections, FR-009's visual design and the six-themes strip of FR-007, and widen FR-002's CSP by `media-src 'self'`. FR-001..FR-005, FR-012 and FR-014 stand. Until then this spec describes the live site.
+
 ### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
 
 The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
@@ -157,3 +161,7 @@ The site reached 15.5 MB with the pictures of spec 083, against the 15 MB budget
   - **Budget.** The talk folder has its own budget: under 45 MB with the video, under 2 MB without it, and `talk.mp4` under 40 MB. FR-012's 8 MB is for the site without `talk/`.
   - `test:` `scripts/test-site.js` asserts all of the above (both pages built, noindex, strict CSP, no inline code, local links exist except the three video files, no external resources or network calls in the talk's JS and CSS, not linked from `index.html` or `docs.html`, no sitemap, a video with a captions track, the budgets). Mutations (robots removed from the host page, an inline script, an external image, a missing screenshot, a README link to the talk) each fail it. `[IMPLEMENTED]`
   - `real:` both pages built and captured at 1920x1080 and 1280x800, light and dark, in Electron under xvfb from a local server; keyboard navigation and answer reveal checked by script. `[KNOWN GAP]` Not checked on a real projector, in Safari or Firefox, or on Windows/macOS browsers; the copy buttons were not tried inside Teams. `noindex` keeps well-behaved search engines out; it is not access control: anyone with the link (or who reads this repository) can open the pages.
+
+### 2026-10-31: two themes on the landing page (spec 035 FR-017)
+
+- FR-007, FR-009's "strip of the six themes" and the "six themes" test now read **two**: Clean Office and Retro Pixel (`docs/site/landing.json`, `test:site`). The grid shows two cards. `features()` in `build-site.js` lists no `deprecated` or `superseded` spec even when its note says "built" (spec 021 FR-068, `test:site`).

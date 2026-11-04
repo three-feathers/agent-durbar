@@ -1,5 +1,7 @@
 /** Scheduled prompts (spec 044): the store and the scheduler with a fake clock and sender. `npm run test:schedules`. No session, no credits. */
 import * as assert from 'assert';
+import * as fs from 'fs';
+import * as path from 'path';
 import { MAX_PROMPT, MAX_SCHEDULES, Scheduler, alignedNext, loopSupport, cleanSchedule, dueAt, needsReview, parseSchedules, loadSchedules, saveSchedules } from '../src/main/schedules';
 import type { Schedule, SchedulesDoc, SchedulerDeps } from '../src/main/schedules';
 
@@ -701,6 +703,101 @@ async function phase2(): Promise<void> {
     assert.strictEqual(round.schedules.find((x) => x.id === id)?.loop?.passes, 4);
   }
   loopSupport.enabled = false;
+
+  // ---- spec 017 FR-032, spec 044 FR-127, FR-128 (owner decision 2026-10-31: no doors): no door check anywhere ----
+  {
+    const doc = { pausedAll: false, schedules: [] as Schedule[] };
+    const h = harness(doc);
+    // a schedule for a session that had a closed door (the old durbar-doors.json) just runs as normal
+    doc.schedules.push({ id: 'once-1', folder: '/w', prompt: 'to s1 once', at: h.now + MIN, target: { session: 's1' } } as Schedule);
+    doc.schedules.push({ id: 'rec-1', folder: '/w', prompt: 'to s1 every 10', every: 10, next: h.now + MIN, target: { session: 's1' } } as Schedule);
+    await h.advance(MIN);
+    await h.sch.tick();
+    assert.deepStrictEqual(h.sent, ['/w:to s1 once', '/w:to s1 every 10'], 'both run as normal');
+    assert.strictEqual(doc.schedules[0].last?.outcome, 'sent');
+    assert.strictEqual(doc.schedules[1].last?.outcome, 'sent');
+    // the scheduler has no hold dependency: an injected hold that would queue every run is never asked (a mutant that re-adds the check fails)
+    const asked: string[] = [];
+    const h2 = harness({ pausedAll: false, schedules: [{ id: 'x1', folder: '/w', prompt: 'p', at: 1_000_000_000_000 + MIN, target: { session: 's1' } } as Schedule] }, undefined, { hold: (s: Schedule) => (asked.push(s.id), true) } as never);
+    await h2.advance(MIN);
+    await h2.sch.tick();
+    assert.deepStrictEqual(asked, [], 'no door check is asked');
+    assert.deepStrictEqual(h2.sent, ['/w:p'], 'and the run goes out');
+    // the source: no door check or hold hook in schedules.ts (the outcome name stays readable for old logs only)
+    let root = __dirname;
+    while (!fs.existsSync(path.join(root, 'package.json'))) root = path.dirname(root);
+    const src = fs.readFileSync(path.join(root, 'src', 'main', 'schedules.ts'), 'utf8').split(/\r?\n/);
+    assert.ok(src.length > 500, 'the scan read schedules.ts');
+    const hits = src.filter((l) => /door|deps\.hold\b|\bhold\?\(/i.test(l) && !/skipped-door-full|releaseDoorRun|behind a door before the update/.test(l));
+    assert.deepStrictEqual(hits, [], 'no door check left in schedules.ts: ' + hits.join(' | '));
+    // an old log with the retired outcome loads, and no code path writes it
+    assert.ok(!src.some((l) => /outcome = .*'skipped-door-full'|record\([^)]*'skipped-door-full'/.test(l)), 'skipped-door-full is never written');
+  }
+  // spec 044 delta 2026-11-02: a send that is awaited while the schedule list changes (found in review of #965, older than that work)
+  {
+    // (1) a once schedule is edited while its run is going out: it is done, and does not run again
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    const out: string[] = [];
+    const h = harness({ pausedAll: false, schedules: [] }, 1_000_000_000_000, { send: async (f, p) => { out.push(`${f}:${p}`); await gate; return 'folder-agent'; } });
+    h.sch.start();
+    const r = h.sch.save({ folder: '/w', prompt: 'once', at: h.now + 10 * MIN }, () => true);
+    assert.ok(r.ok);
+    const at = r.ok ? r.schedule.at : undefined;
+    const id = r.ok ? r.schedule.id : '';
+    const run = h.advance(10 * MIN);
+    await new Promise((x) => setImmediate(x));
+    assert.deepStrictEqual(out, ['/w:once'], 'the run is going out');
+    const edit = h.sch.save({ id, edit: true, folder: '/w', prompt: 'once, reworded', at }, () => true);
+    assert.ok(edit.ok, 'an edit while the run is going out is accepted');
+    release();
+    await run;
+    await new Promise((x) => setImmediate(x));
+    assert.strictEqual(h.sch.doc.schedules.find((x) => x.id === id)?.done, true, 'the stored once schedule is done, not only the object the run started with');
+    await h.advance(10 * MIN);
+    await h.sch.tick();
+    assert.strictEqual(out.length, 1, 'a once schedule edited during its run does not run again');
+  }
+  {
+    // (2) a schedule deleted while an earlier schedule's run is going out does not fire
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    const out: string[] = [];
+    const h = harness({ pausedAll: false, schedules: [] }, 1_000_000_000_000, { send: async (f, p) => { out.push(`${f}:${p}`); if (p === 'first') await gate; return 'folder-agent'; } });
+    h.sch.start();
+    const a = h.sch.save({ folder: '/w', prompt: 'first', at: h.now + 10 * MIN }, () => true);
+    const b = h.sch.save({ folder: '/w', prompt: 'second', at: h.now + 10 * MIN }, () => true);
+    assert.ok(a.ok && b.ok);
+    const run = h.advance(10 * MIN);
+    await new Promise((x) => setImmediate(x));
+    assert.deepStrictEqual(out, ['/w:first'], 'the first run is going out');
+    assert.strictEqual(h.sch.remove(b.ok ? b.schedule.id : ''), true);
+    release();
+    await run;
+    await new Promise((x) => setImmediate(x));
+    assert.deepStrictEqual(out, ['/w:first'], 'the deleted schedule did not fire');
+  }
+
+  {
+    // (3) a schedule deleted during its own send is neither logged nor updated
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    const out: string[] = [];
+    const h = harness({ pausedAll: false, schedules: [] }, 1_000_000_000_000, { send: async (f, p) => { out.push(`${f}:${p}`); await gate; return 'folder-agent'; } });
+    h.sch.start();
+    const a = h.sch.save({ folder: '/w', prompt: 'solo', at: h.now + 10 * MIN }, () => true);
+    assert.ok(a.ok);
+    const id = a.ok ? a.schedule.id : '';
+    const run = h.advance(10 * MIN);
+    await new Promise((x) => setImmediate(x));
+    assert.deepStrictEqual(out, ['/w:solo'], 'the run is going out');
+    assert.strictEqual(h.sch.remove(id), true);
+    release();
+    await run;
+    await new Promise((x) => setImmediate(x));
+    assert.deepStrictEqual(h.sch.runsOf(id), [], 'no log entry is made for a schedule deleted during its own send');
+    assert.ok(!h.sch.doc.schedules.some((x) => x.id === id), 'it is not brought back');
+  }
 }
 
 if (require.main === module) main().catch((e) => { console.error(e); process.exit(1); });

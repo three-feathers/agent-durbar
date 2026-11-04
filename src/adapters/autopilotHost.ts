@@ -79,7 +79,6 @@ export function goalRefusal(r: Exclude<GoalTextResult, { ok: true }>): string {
   switch (r.reason) {
     case 'empty': return 'Write what the finished result should be.';
     case 'too-long': return 'Claude Code takes a goal of at most 4000 characters. Shorten it and send again.';
-    case 'command': return 'A goal cannot hold a line that starts with a slash: Claude Code could run it as a command. Reword it and send again.';
     default: return 'On Claude Code that word would clear the goal instead of setting one. Describe the finished result in other words.';
   }
 }

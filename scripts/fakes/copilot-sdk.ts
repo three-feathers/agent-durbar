@@ -173,6 +173,7 @@ export class FakeClient {
   }
   async resumeSession(id: string, config: Record<string, unknown>): Promise<FakeSession> {
     if (this.resumeFail.has(id)) throw new Error(`cannot resume ${id}`);
+    if (this.resumeOverCap && config.sessionLimits) throw new Error(`Request session.resume failed with message: session resume failed: GenericFailure, This session has already used ${this.resumeOverCap} AI credits. The session limit must be above ${this.resumeOverCap}`);
     if (this.resumeGate) { const g = this.resumeGate; this.resumeGate = undefined; await g; } // spec 059: holds the first resume until the test lets it go
     this.resumed.push({ id, config });
     this.last = this.track(new FakeSession(id, config));
@@ -193,6 +194,8 @@ export class FakeClient {
   resumeGate?: Promise<void>;
   /** `resumeSession` rejects for these ids (FR-158 error path). */
   resumeFail = new Set<string>();
+  /** Spec 052 FR-235: credits used; a resume with a cap is refused as the runtime does when the cap is under them (real 2026-11-02). */
+  resumeOverCap = 0;
   /** Stored sessions that are not open: id -> the folder Copilot kept for them (spec 059). */
   storedDirs = new Map<string, string>();
   async getSessionMetadata(id: string): Promise<unknown> {

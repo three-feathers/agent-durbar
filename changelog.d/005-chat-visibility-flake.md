@@ -1,0 +1,1 @@
+- Test driver only (issue #1102): the long-chat visibility check no longer fails on a loaded machine or on a 2x screen. No change for users.
