@@ -5,7 +5,7 @@
  * "Weekly retro <YYYY>-W<ww>" for the three agent sides to answer. No AI calls, no third-party code, no shell (execFileSync).
  *
  * Aggregates only: counts, medians, workflow and job names, issue numbers. No login names and no outsider text (an issue or PR
- * title is never copied: items appear as "#N"). That is the DORA rule of AGENTS.md (never rank people or agents).
+ * title is never copied: items appear as "#N"). That is the DORA rule of docs/rules/incident-triage.md (never rank people or agents).
  *
  *   node scripts/weekly-retro.js                         live: gather with gh, open the issue unless this week's exists
  *   node scripts/weekly-retro.js --dry-run               live gather, print the issue, change nothing
@@ -134,7 +134,7 @@ function buildFacts(d, now, root, repo) {
 
 function renderBody(f) {
   const L = [];
-  L.push(`Weekly retro for ${f.since} to ${f.until} (spec 021 FR-063, task T049). Opened by \`scripts/weekly-retro.js\`; facts are aggregates from the GitHub API and \`main\`, never a ranking of people or agents (AGENTS.md, DORA rule). Issue and PR items are numbers only.`);
+  L.push(`Weekly retro for ${f.since} to ${f.until} (spec 021 FR-063, task T049). Opened by \`scripts/weekly-retro.js\`; facts are aggregates from the GitHub API and \`main\`, never a ranking of people or agents (docs/rules/incident-triage.md, DORA rule). Issue and PR items are numbers only.`);
   L.push('', '## Facts', '');
   L.push(`- PRs: ${f.prs.merged} merged, ${f.prs.closed} closed unmerged, ${f.prs.open} open now. Median open to merge: ${f.prs.medianHoursToMerge === null ? 'n/a' : f.prs.medianHoursToMerge + ' h'}.`);
   L.push(`- Change-request reviews on PRs finished this week: ${f.changeRequests}.`);
@@ -144,7 +144,7 @@ function renderBody(f) {
     for (const w of f.workflows) L.push(`| ${w.name} | ${w.runs} | ${w.failed} | ${w.pct} |`);
   } else L.push('No finished runs found.');
   L.push('', 'Top failing jobs: ' + (f.topJobs.length ? f.topJobs.map((j) => `${j.name} (${j.n})`).join(', ') : 'none') + '.');
-  L.push('', `- Red scheduled workflows (newest scheduled run failed; each needs an owner within 24 h or a pause, AGENTS.md *Red means owned*): ${f.red.length ? f.red.join(', ') : 'none'}.`);
+  L.push('', `- Red scheduled workflows (newest scheduled run failed; each needs an owner within 24 h or a pause, docs/rules/review-rounds.md *Red means owned*): ${f.red.length ? f.red.join(', ') : 'none'}.`);
   L.push(`- \`status:claimed\` issues idle more than 3 days: ${f.idle.length ? f.idle.map((i) => `#${i.number} (${i.days} d)`).join(', ') : 'none'}.`);
   L.push(`- \`needs-owner-approval\` open items and their age: ${f.approval.length ? f.approval.map((i) => `#${i.number} (${i.days} d)`).join(', ') : 'none'}.`);
   L.push('', '### Rule files against their word budgets (`npm run rules:check`)', '', '| file | words | budget |', '|---|---:|---:|');

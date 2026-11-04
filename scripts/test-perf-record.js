@@ -228,7 +228,7 @@ async function groupTests() {
   assert.ok(lost.error, 'a command that cannot start is an error, not a hang');
 }
 
-// the driver files stay out of the pull-request suite and assert no time (AGENTS.md Timing)
+// the driver files stay out of the pull-request suite and assert no time (docs/rules/review-rounds.md Timing)
 const root = path.join(__dirname, '..');
 assert.ok(/'check-perf':/.test(fs.readFileSync(path.join(root, 'scripts', 'ui-suite.js'), 'utf8')), 'check-perf stays in NOT_IN_SUITE');
 for (const f of ['perf-record.js', 'perf-record-driver.js']) {
