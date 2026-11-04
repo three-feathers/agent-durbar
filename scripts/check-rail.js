@@ -13,7 +13,8 @@
  *   - two row heights only, 30 and 52px (T115): tall for whoever needs you; with the clock 25 minutes on, the ages say so and no row changes
  *     height or place; two lines of a request fit unclipped; text on tall rows at 4.5:1 in the default, Retro and a dark user theme.
  *   - folders collapse (FR-216): Enter and Space on the heading, a real click, a real double click (once, and no chat opens); a collapsed
- *     folder keeps its count and a needs-you mark with its number; the state survives switching chats and a status change; opening a chat
+ *     folder keeps its count and a needs-you mark with its number (live, 1 included), says when the open chat is in it, and its focused
+ *     heading keeps the focus when the folder moves; the state survives switching chats and a status change; opening a chat
  *     in a collapsed folder (from the office) expands it; a long folder name is cut with an ellipsis and keeps its title; nothing is saved
  *     while rememberOn() is off (the simulator), and with railstore=1 the state is saved by folder path and comes back after a reload.
  *   - Your door (052 FR-216): its count is the Needs you count; it opens the queue and Escape gives the focus back.
@@ -156,6 +157,28 @@ module.exports = async (ctx) => {
       await emit(sib, { type: 'status', status: 'working', intent: 'Working' });
       await ok(`!__rail.row(${jsLiteral(sib)}).classList.contains('tall')`, `${tag}: ${sib} answered`);
     }
+    // ---- a collapsed quiet folder: a request shows the needs-you mark at 1, live; the folder moves up and its focused heading keeps the focus ----
+    {
+      await H.focusPage();
+      gs = await rows();
+      const mover = gs.map((g, i) => ({ g, i })).reverse().find(({ g, i }) => i > 0 && g.ids.length >= 2 && g.ids.every((r) => !r.tall && r.id !== first) && gs[i - 1].ids.every((r) => !r.tall));
+      assert.ok(mover, `${tag}: a quiet folder without the open chat that can move up`);
+      const k = mover.g.key, n = mover.g.ids.length, sib = mover.g.ids[1].id;
+      await js(`__rail.head(${jsLiteral(k)}).click()`);
+      await ok(`__rail.head(${jsLiteral(k)}).getAttribute('aria-expanded')==='false'`, `${tag}: ${k} collapsed`);
+      assert.ok(!(await js(`!!__rail.head(${jsLiteral(k)}).querySelector('.rg-need')`)), `${tag}: a quiet collapsed folder has no needs-you mark`);
+      await js(`__rail.head(${jsLiteral(k)}).focus()`);
+      await ok(`document.activeElement===__rail.head(${jsLiteral(k)})`, `${tag}: ${k}'s heading has the focus`);
+      await emit(sib, { type: 'status', status: 'needs-permission', intent: 'Waiting for permission: run ls' });
+      await ok(`(()=>{const m=__rail.head(${jsLiteral(k)}).querySelector('.rg-need');return !!m&&m.textContent.trim()==='1'})()`, `${tag}: live, the collapsed folder's needs-you mark shows 1`);
+      assert.ok(new RegExp(`: ${n} sessions, 1 needs you$`).test(await js(`__rail.head(${jsLiteral(k)}).getAttribute('aria-label')`)), `${tag}: the heading's name says 1 needs you`);
+      assert.ok((await rows()).map((g) => g.key).indexOf(k) < mover.i, `${tag}: the collapsed folder moved up`);
+      assert.ok(await js(`document.activeElement===__rail.head(${jsLiteral(k)})`), `${tag}: the focus stayed on ${k}'s heading after its folder moved`);
+      await emit(sib, { type: 'status', status: 'working', intent: 'Working' });
+      await ok(`!__rail.head(${jsLiteral(k)}).querySelector('.rg-need')`, `${tag}: answered, the mark is gone`);
+      await js(`__rail.head(${jsLiteral(k)}).click()`);
+      await ok(`__rail.head(${jsLiteral(k)}).getAttribute('aria-expanded')==='true'`, `${tag}: ${k} expanded again`);
+    }
 
     // ---- two heights, never by time (T115) ----
     const h0 = await heights();
@@ -187,6 +210,13 @@ module.exports = async (ctx) => {
     const needG = gs.find((g) => g.key !== selRoom && g.ids.some((r) => r.tall));
     assert.ok(needG, `${tag}: a folder with someone needing you, not the open chat's`);
     const needN = needG.ids.filter((r) => r.tall).length;
+    // the open chat's folder, collapsed, says the open chat is in it (FR-216 item 5)
+    await js(`__rail.head(${jsLiteral(selRoom)}).click()`);
+    await ok(`__rail.head(${jsLiteral(selRoom)}).getAttribute('aria-expanded')==='false'`, `${tag}: the open chat's folder collapses`);
+    const here = await js(`(()=>{const h=__rail.head(${jsLiteral(selRoom)});return {sel:h.classList.contains('has-sel'),label:h.getAttribute('aria-label')}})()`);
+    assert.ok(here.sel && /, the open chat is here$/.test(here.label), `${tag}: collapsed, the open chat's folder is marked and says the open chat is here: ${JSON.stringify(here)}`);
+    await js(`__rail.head(${jsLiteral(selRoom)}).click()`);
+    await ok(`__rail.head(${jsLiteral(selRoom)}).getAttribute('aria-expanded')==='true'&&!__rail.head(${jsLiteral(selRoom)}).classList.contains('has-sel')`, `${tag}: expanded, no open-chat mark`);
     // keyboard: Enter collapses, Space expands
     await H.focusPage();
     await js(`__rail.head(${jsLiteral(needG.key)}).focus()`);
