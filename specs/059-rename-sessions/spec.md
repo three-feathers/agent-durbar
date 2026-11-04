@@ -335,6 +335,16 @@ All answered with option A (see *Clarifications*); kept here for the record of t
 
 ## Changes
 
+### 2026-11-04: a pencil follows its name after a live paint (issue #1135)
+
+*Seen* (Mac session, simulator, macOS 26.0): `shots-001-live-activity` failed at 1440x900 dense with `pencil sim-2 covers intent`: the pencil sat 7 px below where `placeRen` puts it, over the task line under the name. *Cause:* the live activity line (`paintLive`, spec 001 FR-028) writes a card's text without a render, so no pencil pass follows it. A new line of text can change the card's height and move the names of its room, and their pencils stayed where the names had been.
+
+- Item 2, placement: each pencil remembers where its name was when it was placed. After a live paint changes a card's text, every pencil of that room whose name has moved is placed again; the others are left as they are.
+- Review of #1138 (the live paint is the hot path, spec 097 FR-178): the live paint reads no layout itself. It queues the lines it rewrote, and one animation frame per paint burst reads each line's height against the height it had. Only for a room whose line changed height does it read where the names are, and then it places the pencils whose name moved (reads first, then writes).
+- `sim:` `scripts/check-office-ops.js` row `readsPerLivePaint` (15 and 40 agents, a thinking delta that rewrites one desk's live line, the frame after it included): at most 1 layout read, measured 1 at both. Mutants: names read on every paint, `readsPerLivePaint@15 = 5, limit 1`; the unbatched first version of this fix, `readsPerLivePaint@15 = 4, limit 1`.
+- `sim:` `scripts/shots-001-live-activity.js`, now in `check:ui` (it ran only in `shots:docs`, so CI never ran it): the office page rules after live paints at 1440x900, sparse and dense, including that no pencil covers the task line. Mutant: no re-place after a live paint fails `1440 dense: office page rules` with `pencil sim-2 covers intent{unit:sim-2}`.
+- Windows CI on #1138 (first run of this driver there): `1440: long text keeps its newest lines in view` failed twice. Not the pencil code (the side panel's `.over` is set in `paintLive`'s panel branch, which this change does not touch): the driver's long text, cut to the panel's 200 characters, took 7 lines in Linux's font and fitted the box (6 lines) in Windows' narrower Segoe UI. Reproduced on Linux with `Liberation Sans Narrow` injected into the panel; the driver now uses capitals, so the text is taller than the box in any font, asserts that by a Range height first, then the class and that the newest character is in the box. Mutant: `fitSide` never adds `.over` fails `1440: long text keeps its newest lines in view` with `"over":false,"lastIn":false`. Not verified on Windows until CI runs.
+
 ### 2026-11-04: the chat header is a Mac drag area (spec 052 FR-215, spec 005 PR R1)
 
 FR-025's drag rule holds for `#panelTitle`, `#panelTitleBtn` and every interactive control in `.ph` (`button`, `a`, `input`, `[tabindex]`, `[title]`): on macOS they are `no-drag`, so a click renames. The header container `.ph` itself is now a drag area, per 052 FR-215 (the newer owner decision); FR-025's "the chat header `.ph` is not a drag region today" described 2026-10-24 and is superseded. `check-rename-inline` checks the title, its button and every control in `.ph`.

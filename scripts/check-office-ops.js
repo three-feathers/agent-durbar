@@ -8,6 +8,7 @@
  *     off; a calibration (a new element in a desk) must show at least one event, so a renamed thread or category cannot read as 0 and pass; the text change itself may recalculate 0);
  *   - one status event of one agent, 8 times, each a real change (every sample must draw, none may search; renders, style reads of the floor and layout reads are the median): renders and searches are the app's own counters (`__durbarSimUi.ops()`), reads are offset*, client*, scroll*, getBoundingClientRect and
  *     getClientRects calls. The first proxy for renders, `getComputedStyle(#floor)`, was read twice per render and showed two where there was one;
+ *   - one live paint (a thinking delta rewrites one desk's live line, no render; review of #1138), 8 times: the layout reads, the pencils' frame included (median of the samples without a render);
  *   - after each of those status updates no `data-placed` mark sits on anything but a role or a pencil (a finished turn marks the desk unread and shifts keyless spans);
  *   - at 15 agents, 1280x800: after each status pill's filter and its clearing, after an agent starts or stops matching a status filter (a neighbour room's width changes while its HTML does not; its header is made tight by a spacer) and after a body class changes with no room changing (the fit key), the header and usage-line fit classes equal what a
  *     full fit gives (stale fits).
@@ -149,6 +150,27 @@ module.exports = async (ctx) => {
     rows[`searchesPerStatus@${n}`] = Math.max(...per.searches);
     rows[`floorStyleReadsPerStatus@${n}`] = med(per.gcsFloor);
     rows[`readsPerStatus@${n}`] = med(per.reads);
+
+    /* one live paint (spec 001 FR-028, review of #1138): a thinking delta rewrites one desk's live line without a render. Its layout reads, through the
+       pencils' frame (two frames waited), must not grow with the pencils of the room: the line's height is read, the names only when it changed */
+    const lid = await js(`(()=>{const e=document.querySelector('#stage .desk[data-id] [data-live]');return e&&e.dataset.live;})()`);
+    assert.ok(lid, `${n} agents: a desk has a live line`);
+    const liveLine = `document.querySelector('#stage [data-live=${jsLiteral(lid)}]')`;
+    await drawn(emit('working').split(id).join(lid)); // working, so that the deltas below change no status
+    const live = { reads: [], renders: [] };
+    for (let i = 0; i < 8; i++) {
+      const word = `Ops step ${i} checked`;
+      await js(`window.__ops.start()`);
+      await js(`window.__durbarSimEmit({type:'thinking',sessionId:${jsLiteral(lid)},reasoningId:'ops-r',timestamp:Date.now(),delta:${jsLiteral(word + '. ')}})`);
+      assert.ok(await until(`(${liveLine}||{}).textContent&&${liveLine}.textContent.includes(${jsLiteral(word)})`, 5000), `${n} agents: live paint ${i} shows`);
+      await js(TWO_FRAMES);
+      const o = await js(`window.__ops.stop()`);
+      live.reads.push(o.reads); live.renders.push(o.renders);
+    }
+    console.log('[ops]', n, 'agents, per live paint (8): reads', live.reads.join(','), 'renders', live.renders.join(','));
+    const quiet = live.reads.filter((_, i) => live.renders[i] === 0); // a sample with a render in it (a timer's) measures the render
+    assert.ok(quiet.length >= 4, `${n} agents: at least 4 live paints without a render (${live.renders})`);
+    rows[`readsPerLivePaint@${n}`] = med(quiet);
 
     if (n === 15) {
       /* stale fits (T156): what an incremental fit leaves must equal a full fit, after a status filter and its clearing, at 1280x800 */
