@@ -22,7 +22,7 @@ Owner answered Q1-Q9 on 2026-10-22 (see spec.md); Q6 is (b), no Read-only except
 
 ### UI (simulator only)
 
-- [ ] T010 Renderer: **Loop this…** in the session menu and the **Loop** kind in the Schedules dialog from a chat, one form with the defaults and the worst-case line [FR-005]
+- [ ] T010 Renderer: **Loop this…** in the session menu and the **Loop** kind in the Schedules dialog from a chat, one form with the defaults and the worst-case line; this PR turns `loopSupport.enabled` on (off since PR #1118), with or after T042 [FR-005]
 - [ ] T011 Renderer: loop rows in the Schedules dialog and Settings > Schedules (next, reason, source, pass N of M, spend, end reason, Stop loop / Start again / Delete) [FR-021]
 - [ ] T012 Renderer: desk chip (icon and word, compact = icon with label), chat notes per pass; `check:office` at 1440x900 and 1280x800 with 15 agents and 5 loops [FR-020, FR-023, SC-006]
 - [ ] T013 Simulator: loops in `simSched`, scripted `LOOP:` replies (`simloop=` next, stop, none, low); driver `scripts/shots-072-loop.js` and screenshots `docs/screenshots/072-*` at both sizes [FR-040, FR-041]
