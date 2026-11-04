@@ -108,6 +108,14 @@ Four reviewers worked from 17 simulator screenshots: the office at 1440x900 and 
 
 ## Changes
 
+### 2026-11-04: FR-237's driver empties the number field on macOS (issue #1103, driver only)
+
+*Seen* (Mac session, 2026-11-04, macOS 26.0, `sim:` `scripts/check-edit-popups.js` at a64c2362, 1440x900 and 1280x800, device scale 1 and 2): every kind passed except the spending limit, `typed into the field: {v:'4250'}`. A synthetic Cmd+A does not select on darwin (#683), and the page cannot select inside an `<input type="number">` (`selectionStart` is `null`), so "42" landed next to the old "50". A driver gap, not an app bug.
+
+- **FR-237 driver** `sim:` on darwin, for a number field, the page sets the value to empty and sends `input`, and the driver waits until the field is empty and still focused; the real typed text must then read exactly `42`, so typing that does not reach the field still fails. Other platforms and text fields are unchanged.
+- *Checked* on macOS 26.0 (Apple M4), `npm run check:ui -- --only check-edit-popups`: passes at both sizes. *Mutation*: no typing into the number field on darwin fails `1440x900 spending limit: typed into the field: {"v":"","s":null,"e":null,"focus":true}`; without the emptying it fails as in the issue (`v:'4250'`).
+- `[KNOWN GAP]` Run at device scale 1 only after the fix; Windows not run.
+
 ### 2026-11-03: a text popup stays open while you select its text (FR-237, owner bug report)
 
 *Report* (Vikram, 2026-11-03): rename popups sometimes closed while he was typing, probably when selecting all of the text. *Cause, reproduced in the simulator with real input events* (`sim:` `scripts/check-edit-popups.js` with `EP_KEEP=1` against the renderer of `main` at 8456e3bc9, 1440x900): a mouse drag that starts inside a dialog and ends outside its box (selecting the text and overshooting) makes the browser send the click to the element that holds both ends, the backdrop, and every backdrop listener read `e.target === backdrop` as "clicked outside" and closed the dialog. 11 popups closed that way: 9 with a field (the Rename dialog of `dialog.js`, so every `askDialog` with a field: session, folder, floor, note, compact focus, plan revision; Rename floor; the floors popover's new floor name, through its document click-outside check; the Place dialog of `screens.js` `dialog()`, every Settings dialog with a field; the command palette; Schedules; the spending limit; New session; New profile) and 2 with none (the Needs you inbox and the keyboard sheet). A second cause in the Folders panel: the rename-in-place field sits in its own layer on `document.body`, so even a plain click into it counted as outside the panel and closed the panel and the edit.

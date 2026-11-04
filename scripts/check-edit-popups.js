@@ -22,7 +22,8 @@
  * The inbox and the keyboard sheet have no field: a drag from inside the box that ends on the backdrop keeps them, a click there closes.
  * macOS (issue #683): a synthetic Cmd+A, Home or Shift+End reaches the renderer but does not select or move there, so on darwin those
  * steps assert only that the app does not take the key (the popup stays, the text is unchanged); the page selects or moves the caret
- * itself where a later step needs it, and the selection checks of the mouse steps (drag, double-click) are skipped too.
+ * itself where a later step needs it, and the selection checks of the mouse steps (drag, double-click) are skipped too. A number field
+ * cannot be selected at all, so on darwin the page empties it before the typing (#1103); the typed text must still arrive.
  * EP_ONLY=<regex> runs some kinds; EP_KEEP=1 lists every miss instead of stopping (a survey of an older build, never a pass).
  * A miss prints DRIVER FAILED (Electron still exits 0), so the suite fails unless "all checks passed" is printed.
  */
@@ -84,6 +85,11 @@ module.exports = async (ctx) => {
     assert.ok(await isOpen(), `${t}: a click in the field keeps the popup open`);
     await H.key('A', [MOD], { char: 'never' });
     if (MAC && !num) await pageSel(k.input, 0, null); /* #683: a synthetic Cmd+A does not select on macOS; the page does, so typing replaces */
+    if (MAC && num) { /* #1103: a number field cannot be selected at all (selectionStart is null), so the page empties it; the typing below must still reach it */
+      await js(`(()=>{const i=document.querySelector(${jsLiteral(k.input)});i.value='';i.dispatchEvent(new Event('input',{bubbles:true}));return true})()`);
+      r = await fieldUntil(k.input, `i.value===''&&f`);
+      assert.ok(r.ok, `${t}: the page empties the number field, focus kept: ${jsLiteral(r.f)}`);
+    }
     wc().insertText(TEXT);
     r = await fieldUntil(k.input, `i.value===${jsLiteral(TEXT)}&&f`);
     assert.ok(r.ok, `${t}: typed into the field: ${jsLiteral(r.f)}`);
