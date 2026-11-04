@@ -1,4 +1,5 @@
 import { copilotHooksJson } from '../shared/foldersetup';
+import { makePrivateDir } from './privatedirs';
 import { readCopilotOrgPolicy, resolveCopilotManaged } from './copilotOrgPolicy';
 import type { CopilotManagedClient } from './copilotOrgPolicy';
 import type { OrgPolicy } from '../shared/orgpolicy';
@@ -54,6 +55,8 @@ import * as os from 'os';
 import * as fs from 'fs';
 import * as path from 'path';
 import { cleanSummary } from './handoff';
+import { copilotVendorStats } from './vendorstats';
+import type { VendorStats } from './vendorstats';
 import type { HandoffResult } from './handoff';
 import { sessionIdOk } from '../shared/sessionid';
 import { allowedRemoteUrl, cleanRemoteError, isRemoteVisibility } from '../shared/remote';
@@ -243,6 +246,7 @@ export const COPILOT_CAPABILITIES: AdapterCapabilities = Object.freeze({
   mcpSignIn: true, // spec 058 FR-064: rpc.mcp.oauth.login (@experimental; read: SDK 1.0.22-1.0.26 rpc.d.ts; real: worked once, macOS 2026-10-23, one server; the rest in T105)
   mcpSignInSteps: 'If Sign in is not available, sign in from the Copilot CLI: run `copilot`, type `/mcp auth {name}` and finish in your browser. Then use Restart session with these servers. This may not carry over to this session (seen on 2026-10-23).', // FR-068
   mcpSignInNote: 'Checked once on a real account; other servers and systems not yet.', // FR-074/FR-180: the row's honest note
+  sessionStats: true, // spec 085 FR-012: rpc.usage.getMetrics (@experimental; read: SDK 1.0.24; not run on a real session)
   handoff: true, // spec 030 FR-034: rpc.history.summarizeForHandoff (cost unverified)
   modelSwitch: Object.freeze({ verified: true, contextTier: true }), // spec 030 Phase 3 (real 2026-10-20, Copilot Pro): switch, effort, long tier, confirmation and compact-and-switch (T041, T044, T045)
   planMode: true, // spec 066 FR-003: mode.set plan + onExitPlanModeRequest (@experimental)
@@ -299,6 +303,19 @@ const errorText = (e: unknown): string => (e instanceof Error ? e.message : Stri
 /** Spec 061: the private folder that holds a session's accepted folder hooks (removed when the session ends). */
 export const HOOK_DIR_PREFIX = 'durbar-folder-hooks-';
 let hookDirsSwept = false;
+/** Spec 087 FR-023: the runtime's environment: Durbar's own, with `TMPDIR` (and `TEMP`/`TMP` on Windows) set to the private folder. */
+export function copilotRuntimeEnv(base: NodeJS.ProcessEnv, tmpDir: string, platform: string): Record<string, string> {
+  const env: Record<string, string> = {};
+  // any spelling of TMPDIR, TEMP or TMP is dropped first: Windows reads its environment without case (review of #1126)
+  for (const [k, v] of Object.entries(base)) if (typeof v === 'string' && !/^(tmpdir|temp|tmp)$/i.test(k)) env[k] = v;
+  env.TMPDIR = tmpDir;
+  if (platform === 'win32') {
+    env.TEMP = tmpDir;
+    env.TMP = tmpDir;
+  }
+  return env;
+}
+
 /** Review nit #424: once per run, remove copies left by a crash (older than a day, so another running Durbar's are never touched). */
 export function sweepOldHookDirs(now = Date.now(), dir = os.tmpdir()): void {
   if (hookDirsSwept) return;
@@ -424,17 +441,49 @@ export class CopilotAdapter implements AgentAdapter {
     return starting;
   }
 
-  /** Start one runtime client. Protected so a test can hand in a new fake client each time (spec 012 FR-158). */
+  /**
+   * Spec 087 FR-023: each runtime's private TMPDIR, bound to its client (review of #1126: a folder held in one field could be removed from
+   * under a runtime that a `getClient()` started while the old one was still stopping).
+   */
+  private runtimeTmps = new Map<CopilotClient, () => void>();
+
+  /**
+   * Start one runtime client. Protected so a test can hand in a new fake client each time (spec 012 FR-158).
+   * Spec 087 FR-023 (K15, #755): the runtime gets a private temp folder as `TMPDIR` (`TEMP`/`TMP` on Windows), so the temp grant its
+   * sandbox always adds is that folder, not the shared temp folder. The folder lives as long as that client: it is removed when exactly
+   * that client is stopped (`releaseRuntimeTmp`), when its start fails, or by the quit sweep.
+   */
   protected async createClient(): Promise<CopilotClient> {
-    // Packaged app: run the runtime from app.asar.unpacked. Dev: let the SDK locate it.
-    // No token is passed or stored here; the runtime uses the Copilot login on this machine.
-    const runtimePath = unpackedRuntimePath();
-    this.debug?.(`runtime: ${runtimePath ?? 'sdk default'}`);
-    const c = new CopilotClient(
-      runtimePath ? { connection: RuntimeConnection.forStdio({ path: runtimePath }), workingDirectory: os.homedir() } : {},
-    );
+    const tmp = makePrivateDir('durbar-cprt-');
+    try {
+      // Packaged app: run the runtime from app.asar.unpacked. Dev: the SDK's own runtime, still as a child process: the connection is
+      // passed explicitly so an env such as COPILOT_SDK_DEFAULT_CONNECTION=inprocess cannot pick the in-process transport, which takes no env
+      // (review of #1126). No token is passed or stored here; the runtime uses the Copilot login on this machine.
+      const runtimePath = unpackedRuntimePath();
+      this.debug?.(`runtime: ${runtimePath ?? 'sdk default'}`);
+      const env = copilotRuntimeEnv(process.env, tmp.dir, process.platform);
+      const c = await this.newClient(runtimePath ? { connection: RuntimeConnection.forStdio({ path: runtimePath }), workingDirectory: os.homedir(), env } : { connection: RuntimeConnection.forStdio(), env });
+      this.runtimeTmps.set(c, tmp.cleanup);
+      return c;
+    } catch (e) {
+      tmp.cleanup();
+      throw e;
+    }
+  }
+
+  /** Construct and start the SDK client (a test overrides this to see the options without a runtime). */
+  protected async newClient(opts: ConstructorParameters<typeof CopilotClient>[0]): Promise<CopilotClient> {
+    const c = new CopilotClient(opts);
     await c.start();
     return c;
+  }
+
+  /** Spec 087 FR-023: removes the private temp folder of exactly this (stopped) client, never another runtime's. */
+  private releaseRuntimeTmp(c: CopilotClient | undefined): void {
+    if (!c) return;
+    const cleanup = this.runtimeTmps.get(c);
+    this.runtimeTmps.delete(c);
+    cleanup?.();
   }
 
   /**
@@ -481,6 +530,7 @@ export class CopilotAdapter implements AgentAdapter {
         this.debug?.(`refreshAuth: old client stop failed: ${e instanceof Error ? e.message : String(e)}`);
       }
     }
+    this.releaseRuntimeTmp(old); // spec 087 FR-023: only the stopped runtime's own folder
     let client: CopilotClient;
     try {
       client = await this.getClient();
@@ -1435,6 +1485,14 @@ export class CopilotAdapter implements AgentAdapter {
     }
   }
 
+  /** Spec 085 FR-010/FR-012: the runtime's own totals (`rpc.usage.getMetrics`, experimental), as counts only; an older runtime without the call, or a bad answer, reports nothing. */
+  async sessionStats(sessionId: string): Promise<VendorStats | undefined> {
+    const live = this.mustGet(sessionId);
+    const usage = (live.session.rpc as unknown as { usage?: { getMetrics?: () => Promise<unknown> } }).usage;
+    if (typeof usage?.getMetrics !== 'function') return undefined;
+    return copilotVendorStats(await usage.getMetrics());
+  }
+
   /** Spec 030 FR-034: the runtime's own hand-off summary (`rpc.history.summarizeForHandoff`, experimental); the conversation is not changed. */
   async handoffSummary(sessionId: string): Promise<HandoffResult> {
     const live = this.mustGet(sessionId);
@@ -1980,7 +2038,11 @@ export class CopilotAdapter implements AgentAdapter {
     this.starting = undefined;
     const client = this.client ?? (await pending?.catch(() => undefined));
     this.client = undefined;
-    await client?.stop();
+    try {
+      await client?.stop();
+    } finally {
+      this.releaseRuntimeTmp(client); // spec 087 FR-023: only this runtime's own folder
+    }
   }
 
   onEvent(listener: (event: AgentEvent) => void): Unsubscribe {

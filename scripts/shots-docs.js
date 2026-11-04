@@ -35,6 +35,7 @@ const DOC_SHOTS = [
   { name: 'shots-001-live-activity', freeze: false, files: ['001-live-activity-dense-1440x900.png', '001-live-activity-side-1440x900.png'] },
   { name: 'shots-001-lobby', files: ['001-lobby-15-1280x800.png', '001-lobby-15-1440x900.png', '001-lobby-15-1440x900-retro.png', '001-lobby-3-1440x900.png'] },
   { name: 'check-unread', files: ['001-unread-1440x900.png'] }, // spec 001 FR-172 (issue #691): two unread replies on their desks
+  { name: 'check-rail', files: ['005-rail-collapsed-1440x900.png'] }, // spec 005 FR-216: the agent rail with a collapsed folder (count and needs-you mark)
   { name: 'check-status-tooltip', files: ['001-status-tooltip-1440x900.png'] }, // spec 001 FR-187 (issue #875): the tooltip on the Idle count (hover)
   { name: 'shots-005-cardmenu', files: ['005-card-menu-stop-end-1440x900.png'] },
   { name: 'check-ro-ask', files: ['003-ro-ask-menu-1440x900.png'] },
@@ -62,6 +63,7 @@ const DOC_SHOTS = [
   { label: 'shots-051-setup win32', name: 'shots-051-setup', files: ['051-install-manual-win32-1440x900.png'] },
   { name: 'shots-081-updates', files: ['081-updates-avail-1440x900.png'] },
   { name: 'shots-052-ux', files: ['052-office-1440x900.png'] },
+  { name: 'check-auto-follow', files: ['052-auto-follow-queue-1440x900.png', '052-auto-follow-queue-1280x800.png'] },
   { name: 'shots-063-folder-status', files: ['063-folder-changes-1440x900.png'] },
   { name: 'shots-009-openwith', files: ['009-openwith-1440x900.png', '009-openwith-1280x800.png'] }, // spec 009 FR-019: the chat header's Open with menu
   { name: 'shots-093', files: ['093-choice-1440x900.png', '093-name-refused-1440x900.png', '093-clone-url-refused-1440x900.png', '093-clone-progress-1440x900.png', '093-clone-allow-1440x900.png'] }, // spec 093: + Folder's choice, a refused name; phase 2: a refused clone URL, the clone's progress, the Allow all host sentence
@@ -197,7 +199,7 @@ async function main({ argv = process.argv.slice(2), run, ensure, clockQuery } = 
     while (next < todo.length) {
       const d = todo[next++];
       const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-docs-shots-'));
-      const r = await runOne({ name: d.name, sim: d.sim, freeze: d.freeze, env: { ...suiteEnv(d, suite.DRIVERS), DURBAR_SIM_CLOCK: clock } }, tmp);
+      const r = await runOne({ name: d.name, sim: d.sim, freeze: d.freeze, env: { ...suiteEnv(d, suite.DRIVERS), DURBAR_SIM_CLOCK: clock, DURBAR_DOC_SHOTS: '1' } }, tmp);
       const missing = d.files.filter((f) => !fs.existsSync(path.join(tmp, source(f))));
       const label = d.label || d.name;
       if (!r.ok || missing.length) {

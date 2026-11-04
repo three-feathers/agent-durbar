@@ -41,6 +41,10 @@ export class FakeSession {
   /** Spec 051 FR-018: what `rpc.gitHubAuth.getStatus` answers (a no-prompt status that carries `copilotPlan`); `statusFail` rejects; `statusHangs` never settles; `noGitHubAuth` leaves the method out. */
   statusAnswer: unknown = { isAuthenticated: true, authType: 'gh-cli', login: 'someone', statusMessage: 'ok', copilotPlan: 'individual' };
   statusFail = '';
+  /** Spec 085: what `rpc.usage.getMetrics` answers (the real shape: `codeChanges` with file names, lines; `totalNanoAiu`; `totalUserRequests`). */
+  metricsAnswer: unknown = { codeChanges: { filesModified: ['a.ts', 'b.ts', 'c.ts'], filesModifiedCount: 3, linesAdded: 40, linesRemoved: 7 }, totalNanoAiu: 2_500_000_000, totalUserRequests: 2, totalPremiumRequestCost: 1.5 };
+  metricsFail = '';
+  metricsHangs = false;
   statusHangs = false;
   constructor(public sessionId: string, public config: Record<string, unknown>) {}
   private rec<T>(name: string, v: T, ...args: unknown[]): T { this.calls.push({ name, args }); return v; }
@@ -68,6 +72,8 @@ export class FakeSession {
       get: async () => this.rec('name.get', { name: this.nameAnswer }),
       set: async (a: unknown) => { this.calls.push({ name: 'name.set', args: [a] }); if (this.nameSetFail) throw new Error(this.nameSetFail); },
     },
+    // spec 085 FR-012: `rpc.usage.getMetrics` (@experimental); `metricsFail` rejects, `metricsHangs` never settles, a test deletes `rpc.usage` to act as an older runtime
+    usage: ({ getMetrics: async () => { this.calls.push({ name: 'usage.getMetrics', args: [] }); if (this.metricsHangs) return new Promise<unknown>(() => undefined); if (this.metricsFail) throw new Error(this.metricsFail); return this.metricsAnswer; } }) as Record<string, unknown> | undefined,
     metadata: { isProcessing: async () => this.rec('isProcessing', { processing: this.processing }) },
     gitHubAuth: {
       getStatus: async () => {

@@ -51,7 +51,7 @@ module.exports = async (ctx) => {
   const openMs = await js(`new Promise(r=>{const d=document.querySelector('#stage .desk[data-id="sim-1"]');const t=performance.now();d.click();
     const w=()=>{const h=document.querySelector('#panel .panel-in');if(h){requestAnimationFrame(()=>r(Math.round(performance.now()-t)));}else requestAnimationFrame(w);};w();})`);
   const switchMs = await js(`(async()=>{const ids=[...document.querySelectorAll('#stage .desk[data-id]')].map(d=>d.dataset.id).filter(x=>/^sim-\\d+$/.test(x)).slice(1,11);const out=[];
-    for(const id of ids){const t=performance.now();const s=document.querySelector('.strip [data-id="'+id+'"], #stage .desk[data-id="'+id+'"]');if(!s)continue;s.click();
+    for(const id of ids){const t=performance.now();const s=document.querySelector('#stripList [data-sw="'+id+'"], #stage .desk[data-id="'+id+'"]');if(!s)continue;s.click();
       await new Promise(r=>{const w=()=>{const p=document.querySelector('#panel');if(p&&p.dataset&&(p.dataset.id===id||document.querySelector('#panel .panel-in')))requestAnimationFrame(()=>r());else requestAnimationFrame(w);};w();});out.push(performance.now()-t);}
     out.sort((a,b)=>a-b);return {n:out.length,p50:Math.round(out[Math.floor(out.length/2)]||0),max:Math.round(out[out.length-1]||0)};})()`);
 

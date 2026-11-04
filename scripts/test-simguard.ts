@@ -133,7 +133,7 @@ const REACHES_AGENT_APP = [
   'sessions:listPrevious', 'sessions:rename', 'sessions:delete',
   'adapters:list', 'models:list',
   'harness:run', 'harness:paste', 'harness:cancel', 'harness:copilotAuth', 'harness:accounts', 'harness:quota', 'harness:openSignIn', 'harness:updates',
-  'schedules:runNow',
+  'schedules:runNow', 'schedules:restartLoop', // spec 072 FR-008: Start again sends a loop pass at once
 ];
 // a channel added later that also reaches an agent app (PR #505's profiles:generate) is refused by the default deny; list it here when it lands
 for (const extra of ['profiles:generate']) if (invoked.includes(extra)) REACHES_AGENT_APP.push(extra);

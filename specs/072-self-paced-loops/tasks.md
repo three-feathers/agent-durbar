@@ -16,13 +16,13 @@ Owner answered Q1-Q9 on 2026-10-22 (see spec.md); Q6 is (b), no Read-only except
 
 ### Wiring
 
-- [ ] T006 `main.ts`: feed final assistant text to the scheduler during a pass, the loop footer in `scheduleDeps.send`, holds from `agentState`, Stop and End session end the loop; a `loop:pass` push to the window; route late `usage` events to `noteUsage` and check the usage/idle order per adapter (spec `[KNOWN GAP]`) [FR-006, FR-007, FR-009, FR-015]
-- [ ] T007 IPC `schedules:stopLoop` and `schedules:restartLoop` (validated, `fromApp`), `ScheduleInfo.loop` in `src/shared/api.ts`, preload; `test:ipcchannels` [FR-005, FR-007, FR-008]
-- [ ] T008 Activity log: decisions `loop-start|pass|skip|hold|end`, rows recorded in main with cleaned reasons and never the prompt; `test:activity` [FR-024, SC-005]
+- [x] T006 `main.ts`: feed final assistant text to the scheduler during a pass, the loop footer in `scheduleDeps.send`, holds from `agentState`, Stop and End session end the loop; a `loop:pass` push to the window; route late `usage` events to `noteUsage` and check the usage/idle order per adapter (spec `[KNOWN GAP]`) [FR-006, FR-007, FR-009, FR-015]
+- [x] T007 IPC `schedules:stopLoop` and `schedules:restartLoop` (validated, `fromApp`), `ScheduleInfo.loop` in `src/shared/api.ts`, preload; `test:ipcchannels` [FR-005, FR-007, FR-008]
+- [x] T008 Activity log: decisions `loop-start|pass|skip|hold|end`, rows recorded in main with cleaned reasons and never the prompt; `test:activity` [FR-024, SC-005]
 
 ### UI (simulator only)
 
-- [ ] T010 Renderer: **Loop this…** in the session menu and the **Loop** kind in the Schedules dialog from a chat, one form with the defaults and the worst-case line [FR-005]
+- [ ] T010 Renderer: **Loop this…** in the session menu and the **Loop** kind in the Schedules dialog from a chat, one form with the defaults and the worst-case line; this PR turns `loopSupport.enabled` on (off since PR #1118), with or after T042 [FR-005]
 - [ ] T011 Renderer: loop rows in the Schedules dialog and Settings > Schedules (next, reason, source, pass N of M, spend, end reason, Stop loop / Start again / Delete) [FR-021]
 - [ ] T012 Renderer: desk chip (icon and word, compact = icon with label), chat notes per pass; `check:office` at 1440x900 and 1280x800 with 15 agents and 5 loops [FR-020, FR-023, SC-006]
 - [ ] T013 Simulator: loops in `simSched`, scripted `LOOP:` replies (`simloop=` next, stop, none, low); driver `scripts/shots-072-loop.js` and screenshots `docs/screenshots/072-*` at both sizes [FR-040, FR-041]
