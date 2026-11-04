@@ -94,6 +94,7 @@ export const SIM_OPTIONAL_MEMBERS: Readonly<Record<string, ((c: Caps) => boolean
   sessionStats: (c: Caps) => !!c.sessionStats, // spec 085 FR-010
   generateText: (c: Caps) => !!c.oneShot,
   setRemote: (c: Caps) => !!c.remote,
+  setAutopilot: (c: Caps) => !!c.autopilot, // spec 099 FR-001
   renameSession: (c: Caps) => !!c.renameSession,
   deleteSession: (c: Caps) => !!c.deleteSession,
   startMcpSignIn: (c: Caps) => !!c.mcpSignIn,

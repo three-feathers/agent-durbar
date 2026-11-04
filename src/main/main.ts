@@ -6,7 +6,7 @@ import type { FolderSetupStart } from '../shared/foldersetup';
 import type { McpServerSpec } from '../shared/mcp';
 import { copilotDir, copilotServerNames } from './mcpfiles'; // spec 061 FR-015: the explainer switches Copilot's own servers off
 import { parseEffort } from '../shared/effort';
-import { app, BrowserWindow, dialog, Menu, protocol, screen, shell } from 'electron';
+import { app, BrowserWindow, dialog, Menu, powerMonitor, protocol, screen, shell } from 'electron';
 import { register as registerActivityIpc } from './ipc/activity';
 import { register as registerAdaptersIpc } from './ipc/adapters';
 import { register as registerAgentsIpc } from './ipc/agents';
@@ -48,12 +48,14 @@ import * as os from 'os';
 import * as path from 'path';
 import { PRODUCTION_DESCRIPTORS } from '../adapters/descriptors';
 import { offeredDescriptors } from '../adapters/experimental';
+import { sweepMcpConfigs } from '../adapters/claude';
 import { createRegistry, detectAll } from '../adapters/registry';
-import { configureDevClaudeBin, detectorFor, setLoginPath } from '../adapters/detect';
+import { configureDevClaudeBin, detectorFor, nodeDetectEnv, setLoginPath } from '../adapters/detect';
+import { missingChecker } from './mcpcmdcheck';
 import { mergeLoginPath, nodeLoginPathDeps, readLoginShellPath } from './loginpath';
 import { renameOp, titleSyncOf } from './sessionnames';
 import { adapterForAdd, createRouter, previousSessionsOf } from '../adapters/router';
-import { endSessionOp, restorable, sendWithSlash, startGuardOp, stopTurnOp, validMode } from './agentops';
+import { endSessionOp, restorable, scheduledSendOp, sendWithSlash, startGuardOp, stopTurnOp, validMode } from './agentops';
 import type { OpsDeps, StartGuardDeps } from './agentops';
 import { adapterOf } from './folders';
 import type { AgentAdapter, AgentEvent } from '../adapters/types';
@@ -78,6 +80,7 @@ import { McpStore } from './mcpstore';
 import { AgentStateTracker } from './mcp/agentstate';
 import { maskMcpEvent, maskMcpHistory } from './mcpmask';
 import { registerMcpIpc, safeStorageCodec } from './mcpipc';
+import { MCP_SIGNIN_REFRESH_DEFAULT } from './mcpsigninrefresh';
 import { McpCostStore } from './mcpcosts';
 import { appServerUrls } from './mcpsignin';
 import { globalFiles } from './mcpglobal';
@@ -206,8 +209,27 @@ const mcp = registerMcpIpc({
   pushContext: (id, view) => toRenderer('mcp-context', { id, view }), // spec 100 FR-003
   costs: () => mcpCostStore,
   globalList: (app) => { const a = globalLists.state(() => []).apps.find((x) => x.app === app); return a && !a.error ? a.servers.map((v) => v.name) : undefined; }, // spec 100 FR-012
+  // spec 058 FR-205..FR-215: the automatic MCP sign-in refresh; monotonic clock, the Settings switch (never under the simulator), main's busy state
+  signInRefresh: {
+    now: () => performance.now(),
+    on: () => !SIMULATOR && (settingsStore?.mcpSignInRefresh ?? MCP_SIGNIN_REFRESH_DEFAULT),
+    platform: process.platform,
+    busy: (id) => chatBusy(id),
+    push: (p) => toRenderer('agents:mcpSignInRefresh', p),
+  },
 });
-registerMcpGlobalIpc({ lists: () => globalLists, offList: () => mcpStore?.ambientDisabled() ?? [], setOff: (k, off) => mcpStore?.setAmbientDisabled(k, off) });
+// spec 058 FR-198: each searched folder read once (async readdir, 10 s cache), names looked up in sets; network paths never read
+const mcpMissing = missingChecker(nodeDetectEnv, (dir) => fs.promises.readdir(dir, { withFileTypes: true }).then((l) => l.filter((d) => d.isFile() || d.isSymbolicLink()).map((d) => d.name)));
+registerMcpGlobalIpc({
+  lists: () => globalLists,
+  offList: () => mcpStore?.ambientDisabled() ?? [],
+  setOff: (k, off) => mcpStore?.setAmbientDisabled(k, off),
+  // spec 058 FR-198: after the login shell's PATH was read (once, at most 3 s)
+  check: async (s) => {
+    await loginPathReady();
+    return mcpMissing(s);
+  },
+});
 /** Files the user picked through the native dialog; only these can be attached. */
 const pickedFiles = new Set<string>();
 /** Private folder for pasted / dropped files (removed on quit). */
@@ -231,7 +253,7 @@ const toRenderer = (channel: string, payload: unknown): void => {
 /** An MCP status event carries server error text: masked here, once, before the window sees it (spec 019 FR-021). */
 /** Spec 019 FR-022: the masked copy of an `mcp` event, built once per event; every path out of main (window, debug sink) uses it. */
 const outward = (e: AgentEvent): AgentEvent => maskMcpEvent(e, e.type === 'mcp' || (e.type === 'toolCall' && ((e.phase !== 'start' && e.mcpServer) || e.edit)) ? mcp.secretValuesFor(e.sessionId) : []); // spec 005 FR-024: edits too
-router.onEvent((e) => toRenderer('agent:event', toWindowEvent(e, outward))); // spec 087 (review rounds 7-8): the sandbox event cleaned too
+router.onEvent((e) => { if (!mcp.hidesEvent(e)) toRenderer('agent:event', toWindowEvent(e, outward)); }); // spec 087 (review rounds 7-8): the sandbox event cleaned too; spec 058 FR-215: an elicitation main declined is not shown
 // Spec 087 FR-011: the OS sandbox state is kept on the agent's info (cleaned: own known fields, reason masked and cut), so a reloaded
 // window gets it from agents:list; never saved
 router.onEvent((e) => {
@@ -557,6 +579,8 @@ const scheduleAgent = (s: { folder: string; target?: { session: string } }): Age
 /** Spec 081 FR-013: the sessions of one app's adapter that are open (live) now. */
 const liveSessionsOf = (kind: string): AgentInfo[] => [...agents.values()].filter((a) => router.adapterIdOf(a.id) === kind && router.forAgent(a.id)?.isLive(a.id) === true);
 const busyStatus = (id: string): boolean => ['working', 'needs-permission'].includes(lastStatus.get(id) ?? '');
+/** Spec 058 FR-209: a turn runs or waits for the person, by the adapter's own status (not the window's Thinking after a send). */
+const chatBusy = (id: string): boolean => busyStatus(id) || agentState.get(id)?.state === 'waiting';
 /** Spec 006 FR-039: the main sessions that are busy, as the running marker lists them (ids and agent app only). */
 router.onEvent((e) => {
   if (!crashMarker || e.type !== 'status' || e.agentId) return;
@@ -580,23 +604,10 @@ const scheduleDeps = (file: string): SchedulerDeps => ({
     const unit = caps.capUnit === 'usd' ? 'usd' : 'aiu';
     return (unit === 'usd' ? caps.usage.costUsd : caps.usage.nanoAiu) ? unit : undefined; // FR-015: a limit needs the spend in that unit
   },
-  send: async (folder, prompt, s) => {
+  send: async (_folder, prompt, s) => {
     const a = scheduleAgent(s);
-    const ad = a ? router.forAgent(a.id) : undefined;
-    if (!a || !ad) return false;
-    agentState.ensure(a.id, a.lazy);
-    agentState.noteSend(a.id); // same as the interactive send: the window shows Thinking from the moment a prompt goes out
-    try {
-      await ensureLive(a);
-      toRenderer('agent:event', { type: 'user', sessionId: a.id, timestamp: Date.now(), text: prompt });
-      toRenderer('schedule:ran', { agentId: a.id, scheduleId: s.id, every: s.every, at: s.at, rule: s.rule });
-      await ad.send(a.id, { text: prompt });
-      noteLastSession(a);
-    } catch (err) {
-      agentState.noteSendFailed(a.id);
-      throw err;
-    }
-    return a.id;
+    // spec 058 FR-209: the scheduler's send awaits the same per-chat MCP sign-in gate as the window's send
+    return scheduledSendOp({ agent: a, adapter: a ? router.forAgent(a.id) : undefined, agentState, gate: (id) => mcp.signInRefresh.beforeSend(id), ensureLive: (x) => ensureLive(x), toWindow: toRenderer, noteLastSession, now: () => Date.now() }, prompt, s);
   },
   setTimer: (ms, fn) => setTimeout(fn, ms),
   clearTimer: (t) => clearTimeout(t as NodeJS.Timeout),
@@ -751,7 +762,7 @@ const browser = registerBrowserIpc({ agents, getWin: () => win, toRenderer, simu
 const browserGone = (id: string): void => void browser.destroy(id).catch(() => undefined);
 /** Spec 043 FR-041: which profile file changes each session has seen (shared by ipc/agents.ts and ipc/profiles.ts). */
 const profileFreshness = createProfileFreshness();
-registerAgentsIpc({ browserGone, agents, router, agentState, opsDeps, remoteOps, mcpSecrets: (id) => mcp.secretValuesFor(id), logMcp: (a, action) => logActivity(a, 'mcp-restart', action), getScheduler: () => scheduler, getCheckpointStore: () => checkpointStore, profileFreshness, vsChatRefs, continued, wsKey, asEffort, addMany, addWorkspace, sendOp, ensureLive, readyAdapterIds, forgetOpenSession, maskHistory, forgetSandboxNote: (id) => sandboxOps.forget(id), getSummaryDays: () => summaryDays }); // spec 087: sandboxOps is set below, before any IPC call
+registerAgentsIpc({ browserGone, agents, router, agentState, opsDeps, remoteOps, mcpGate: (id) => mcp.signInRefresh.beforeSend(id), mcpStopWait: (id) => mcp.signInRefresh.stopWait(id), mcpBusy: (id) => chatBusy(id), mcpForget: (id) => mcp.signInRefresh.forget(id), mcpSecrets: (id) => mcp.secretValuesFor(id), logMcp: (a, action) => logActivity(a, 'mcp-restart', action), getScheduler: () => scheduler, getCheckpointStore: () => checkpointStore, profileFreshness, vsChatRefs, continued, wsKey, asEffort, addMany, addWorkspace, sendOp, ensureLive, readyAdapterIds, forgetOpenSession, maskHistory, forgetSandboxNote: (id) => sandboxOps.forget(id), getSummaryDays: () => summaryDays }); // spec 087: sandboxOps is set below, before any IPC call
 registerAttachmentsIpc({ dev, pickedFiles, getStageDir, sizeOf });
 registerPreviousIpc({ browserGone, renameSessionOpFor, dev, agents, router, registry, agentState, getFolderStore: () => folderStore, getScheduler: () => scheduler, wsKey, resumeIdFor, forgetOpenSession, logActivity, addWorkspace, vsChatRefs, maskHistory });
 registerCheckpointsIpc({ agents, getCheckpointStore: () => checkpointStore, busyStatus });
@@ -989,6 +1000,7 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
+  powerMonitor.on('resume', () => mcp.signInRefresh.resumed()); // spec 058 FR-205: a wake from sleep puts every chat past the quiet-hour gap
   app.setAboutPanelOptions(aboutPanelOptions(app.getVersion())); // owner and contributors: src/shared/about.ts (spec 008 FR-018)
   // spec 052 FR-083, FR-164: a Mac menu from roles (Settings… ⌘,; File > Add Folder… ⌘O); no menu on Windows and Linux (no Reload or DevTools for users)
   const menu = appMenuTemplate(process.platform, {
@@ -1193,6 +1205,7 @@ app.on('will-quit', () => {
   usageTotalsStore?.flush();
   activityStore?.flush();
   if (stageDir) fs.rmSync(stageDir, { recursive: true, force: true });
+  sweepMcpConfigs(); // spec 012 FR-165: a Claude CLI still running keeps no mcp-config.json (env and header values) behind
 });
 
 app.on('window-all-closed', () => {

@@ -126,6 +126,10 @@ For a folder that has not been used yet in this run, a "Previous sessions" panel
 
 ## Changes
 
+### 2026-11-03: `shots-006-continue` waits for the status line (spec 021 FR-048b)
+
+`sim:` The driver read the chat header's status once, right after the "Continued after restart" text appeared; the header is painted on the next render, so on a busy runner it could still say *Starting* (Linux UI job on #981, a PR that does not touch this). It now waits with `until()` for *Idle*, and still fails when the status never gets there. Nothing in the app changes.
+
 ### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
 
 The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
@@ -325,6 +329,18 @@ Why: when Durbar is killed, crashes or the machine stops while agents are workin
 ### 2026-10-27: + Folder can also create a folder (cross-reference; owned by spec 093, issue #805)
 Spec 093 adds a choice to **+ Folder** (FR-001 here): add an existing folder (unchanged), or create one (clone a repository, a new local repository with `git init`, or an empty folder). The created folder is added through the same `addMany` path, in the top bar's mode like Add existing (default Read-only; owner answer Q2 = b, 2026-10-27). Requirements, security model and tasks are in `specs/093-create-folder/`; nothing in this spec changes until it is built.
 
+### 2026-11-01: the sidebar option closes; the crash card floats (design sweep; spec 005 FR-190, spec 052 FR-218)
+
+**Status: specified, not built.** The owner accepted the sweep's recommendations on 2026-11-01 (spec 005's delta).
+
+- **The "collapsible left sidebar of chats" row and the owner question closes.** The patterns table above kept a left rail as an owner option (the *Corrected* block's "Q1: Disclosure section above the chat (built) or a left rail…"). Answer: **the section stays for previous sessions; no sidebar of chats.** The agent rail (005 FR-190, a floor plan with a List switch) shows the **running agents** the strip listed, not history, so *Previous sessions* stays a disclosure, FR-033 otherwise unchanged. The table's reason "would lose its 880px measure" no longer holds either, as 005 FR-206 replaces that column; the decision does not rest on it.
+- **FR-033, its place only.** The collapsed row joins the chat header's row with the tabs (005 FR-199), or on that spec's fallback shares one 31 px row with the tabs. The button, count, breakdown and the expanded lists stay.
+- **FR-041, its place only.** "One strip under the top bar" becomes a card on the one floating surface (052 FR-218): the same words and the same *Resume all*, *Pick…* and *Dismiss*. FR-042..FR-046 stay, and it no longer moves the office's lounge corners, so the lounge rule in FR-041 falls away with `#crashStrip`; `check:office` shows it. `shots-006-crash` follows (T065).
+
 ## Changes 2026-10-31: doors removed (pointer, spec 017 T024)
 
 Spec 017 FR-029 (owner decision, no doors) removed the Office with cabins layout, the desk door button, meeting-room signs, room door plates, **Close all** / **Open all**, door-held schedules and the door refusal of remote control, and `door-art`, `--door-*` and the door words of the theme contract. Any requirement in this spec about those (door plates, plate totals or siren, door signs, collapse, Close all / Open all, the `door` field) no longer applies and is kept as a record; Hide folder, floors and the plain status word stay. See spec 017's table of what was lost and what remains.
+
+## Changes 2026-11-03: content search is spec 095 (pointer, spec 095 T003)
+
+FR-023 is unchanged: the Previous sessions panel's box still searches titles only, per panel. Searching the content of open and previous sessions (your messages and the agent's replies, from a top-bar box) is [spec 095](../095-search-conversations/spec.md) (FR-041 there keeps this box as it is). Spec 095 reuses `fold` and `terms` of `src/renderer/sessionsearch.js` and adds `locate` and `anchorKey` to the same file, without changing `filterSessions`.

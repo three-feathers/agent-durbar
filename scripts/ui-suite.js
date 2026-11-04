@@ -6,6 +6,7 @@
  *   node scripts/ui-suite.js --only shots-017,shots-033
  *   UI_SUITE_OUT=<folder>                 where every screenshot goes (default: a new temp folder, printed at the end)
  *   UI_SUITE_XVFB=1                       Linux: run under xvfb-run even when a display is set
+ *   UI_SUITE_DPR=<1..4>                   force the device scale factor (2 = a Retina screen) for every driver
  *   UI_SUITE_JOBS=<n>                     drivers at once (default 2; each has its own profile and, on Linux, its own xvfb display)
  *   UI_SUITE_RETRY=1                      run each failed driver once more, alone, at the end; a pass then is reported as FLAKY
  *                                         (listed in the summary and the GitHub job summary), never as a clean pass
@@ -41,11 +42,13 @@ const DRIVERS = [
   { name: 'shots-034-list' },
   { name: 'shots-015-compact' }, // spec 015 FR-014: Compacting on the desk, list, header, strip and ring (simcompact=1 in its own query)
   { name: 'shots-034-retry' }, // spec 034 FR-021: Retrying and Gave up (simretry=1 in its own query)
+  { name: 'check-settings-save' }, // spec 011 FR-012 (issue #1023): a Settings row whose save fails returns to the value in force and says so
   { name: 'check-unread' }, // spec 001 FR-170..FR-177, spec 005 FR-176/FR-177 (issue #691): a finished agent's reply stays marked New until its chat is shown
   { name: 'check-status-filter' }, // spec 001 FR-180 (issue #790): a status pill says what it hides, and Show all
   { name: 'check-status-tooltip' }, // spec 001 FR-187 (issue #875): the instant tooltip on the status counts: hover, keyboard focus, Escape, wording with the filter on and off, inside the window, clear of the pill, every theme, Serious mode
   { name: 'check-list-columns' }, // spec 001 FR-182..FR-184 (issues #812, #813): List columns follow their content and every cut cell keeps its text; the room's whole bottom wall; the header pencil without a tile
-  { name: 'check-rename-inline' }, // spec 059 FR-027 (issue #636): rename in place on every surface, Expert and Simple, both sizes
+  { name: 'check-rename-inline' }, // spec 059 FR-027 (issue #636): rename in place on every surface, both sizes
+  { name: 'check-edit-popups' }, // spec 052 FR-237: every text popup stays open through a drag that ends outside, Ctrl/Cmd+A and live events, both sizes
   { name: 'check-session-summary' }, // spec 085 FR-003/FR-007: the card shown in the chat when a session ends (simsummary=1), both sizes
   { name: 'shots-044-everywhere' },
   { name: 'shots-044-templates' },
@@ -67,6 +70,8 @@ const DRIVERS = [
   { name: 'shots-058-mcp-signin' }, // spec 058 T102/T104: Sign in for a Copilot server that needs it (simmcpauth), the two-step open, the steps
   { name: 'shots-058-mcp-words' }, // spec 058 T113-T115: state words, hints, Details and live refresh in the MCP dialog
   { name: 'shots-058-mcp-settings' }, // spec 058 FR-080..FR-086 (#596): live MCP state over the running chats in Settings
+  { name: 'shots-058-mcp-launch' }, // spec 058 FR-195..FR-203: MCP health strip at launch; Sign in, Sign in again and Restart where it failed in Settings
+  { name: 'shots-058-mcp-signin-refresh' }, // spec 058 FR-208..FR-216: the sign-in refresh lines, Stop during the wait, the Settings switch
   { name: 'shots-076-orgpolicy' }, // spec 076 FR-202..FR-205 (#602): what the agent app's own organization policy blocks, greyed with the reason
   { name: 'shots-058-mcp-health' }, // spec 058 FR-090..FR-096 (#603): failure reason, when, Copy diagnostics (masked), the MCP chip dot
   { name: 'shots-058-mcp-refresh' }, // spec 058 FR-187..FR-192 (#779): the last call's outcome on a Running row, Refresh and the re-read on open
@@ -86,8 +91,10 @@ const DRIVERS = [
   { name: 'check-sched-top' }, // spec 044 FR-027..FR-035: the top-bar Schedules button
   { name: 'check-sched-history' }, // spec 044 FR-040..FR-044: a schedule's run history and Schedules here (N)
   { name: 'check-question-options' },
+  { name: 'check-inbox-text' }, // spec 052 FR-214: the text of a Needs you card never runs words together
   { name: 'check-question-visible' },
   { name: 'check-chat-no-scroll' },
+  { name: 'check-chat-visibility' }, // spec 005 FR-210: a long chat is laid out only near the view; scroll, find, copy, focus and the pinned end are as before
   { name: 'check-chat-title' }, // spec 052 FR-180 (#789): the chat header's title uses the free room up to the buttons
   { name: 'check-no-demo-badge' }, // spec 052 FR-181: no Demo / Live badge in the top bar; the demo cues remain
   { name: 'check-sim-guard' }, // spec 010 FR-026: the real preload API is refused by main under DURBAR_SIM
@@ -100,6 +107,7 @@ const DRIVERS = [
   { name: 'check-theme-art' }, // spec 040 FR-023: a picked theme's characters and gadgets on desks, walkers, places and chips
   { name: 'check-crew' }, // spec 077: Cheeky portraits (Characters = Cheeky on Clean Office): box vs protected zones, pose, sharpness, the fallback with a picture removed
   { name: 'check-crew', label: 'check-crew retro', env: { CREW_THEME: 'retro' } }, // spec 077 FR-070: the same with Characters = Cheeky on Retro Pixel
+  { name: 'check-floor-repaint', env: { DURBAR_SIM_FLOORS: '1' } }, // spec 033 FR-088 (#787): the office repaints after a floor switch although a side panel throws
   { name: 'check-office-ops' }, // spec 097 FR-185, FR-186 (T142, T148): operation counts of the flat office, never times: elements recalculated by one text change at 15 and 40 agents
   { name: 'check-characters' }, // spec 077 FR-064..FR-069: Settings > Characters on Retro Pixel (Cheeky, Minimalist, the theme's own)
   { name: 'check-removed-themes' }, // spec 035 FR-017, FR-018: a stored id of a removed theme shows Clean Office, in both sizes; Retro stays
@@ -122,6 +130,7 @@ const DRIVERS = [
   { name: 'check-097-motion' }, // spec 097 P2: the people's motion and what stops it
   { name: 'check-001-halo' }, // spec 001 FR-210: the waiting halo is a still glow, nothing animates it
   { name: 'shots-097-realoffice' }, // spec 097 P1: Real office mode (the switch, the scene, the lights, flat loads none of it)
+  { name: 'shots-102-arcade' }, // spec 102 RA3: the Retro arcade behind its flag: only its files, cabinets, marquee, no overlap at 3, 4, 8 and 15 at both sizes
   { name: 'shots-097-moments' }, // spec 097 FR-118..FR-129: the nine world moments (first run, empty office, asleep at the desk, walk, inbox, limit, elicitation, coffee, jumps) in the Photo office and the cave
   { name: 'shots-097-moments', label: 'shots-097-moments cave', env: { MOMENTS_WORLDS: 'cave' } }, // the same nine moments in the Prehistoric cave (its flag is the simulator's page address)
   { name: 'shots-097-chat' }, // spec 097 FR-106 (T120): the chat in the world: desk-side column, portrait, lamp words, surface and contrast, card tails
@@ -193,26 +202,68 @@ function syntaxErrors(files) {
   return out;
 }
 
+/**
+ * Spec 008 FR-175 (review on #1083): end a child and everything it started. On POSIX the child must lead its own process group
+ * (`detached: true`), which the whole group gets SIGKILL; on Windows `taskkill /T /F` (no shell) ends the tree. Falls back to `child.kill()`.
+ */
+function killTree(child, { platform = process.platform, run = require('child_process').execFile, sync = false } = {}) {
+  if (!child || !child.pid) return;
+  try {
+    if (platform === 'win32' && sync) require('child_process').execFileSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true, shell: false, stdio: 'ignore', timeout: 10000 });
+    else if (platform === 'win32') run('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true, shell: false }, () => {});
+    else process.kill(-child.pid, 'SIGKILL');
+  } catch { try { child.kill('SIGKILL'); } catch { /* gone */ } }
+}
+
+/**
+ * Spec 008 FR-175 (review on #1083): a detached tree does not get the terminal's Ctrl-C, so while it runs, SIGINT, SIGTERM and the
+ * parent's exit end it with `killTree`; a signal is then raised again with its default action (exit 130 / 143, as without the
+ * handler). Returns `release()`, called when the run ends, which removes the handlers. `proc` and `kill` are for tests.
+ */
+function guardTree(child, { proc = process, kill = killTree } = {}) {
+  let done = false;
+  const onSignal = (sig) => { kill(child, { sync: true }); release(); proc.kill(proc.pid, sig); };
+  const onExit = () => kill(child, { sync: true });
+  const release = () => {
+    if (done) return;
+    done = true;
+    proc.removeListener('SIGINT', onSignal);
+    proc.removeListener('SIGTERM', onSignal);
+    proc.removeListener('exit', onExit);
+  };
+  proc.on('SIGINT', onSignal);
+  proc.on('SIGTERM', onSignal);
+  proc.on('exit', onExit);
+  return release;
+}
+
+/**
+ * Run one driver. Opt-in for unattended callers (spec 008 FR-175, FR-176; scripts/release-video.js): `d.baseEnv` replaces
+ * `process.env` as the base of the child's environment (an allow-list, so no token reaches Electron), `d.timeoutMs` replaces the
+ * suite's limit, and `d.killTree` ends the whole process tree at the limit (on Linux `xvfb-run` alone would leave Electron running).
+ */
 function runOne(d, outDir) {
   const electron = require('electron'); // the binary's path
   const user = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-ui-user-'));
-  const env = { ...process.env, ...(d.sim === false ? {} : SIM), ...(d.env || {}), DURBAR_USER_DATA: user, DURBAR_DRIVER: path.join(__dirname, d.name + '.js') };
+  const env = { ...(d.baseEnv || process.env), ...(d.sim === false ? {} : SIM), ...(d.env || {}), DURBAR_USER_DATA: user, DURBAR_DRIVER: path.join(__dirname, d.name + '.js') };
   if (d.sim === false) { delete env.DURBAR_SIM; delete env.DURBAR_SIM_FREEZE; }
   if (d.freeze === false) delete env.DURBAR_SIM_FREEZE; // a driver that needs the live simulator (spec 001 FR-082: shots-docs.js)
   for (const v of OUT_VARS) env[v] = outDir;
-  const argv = [ROOT, '--no-sandbox'];
+  const argv = [ROOT, '--no-sandbox', ...(/^[1-4]$/.test(process.env.UI_SUITE_DPR || '') ? ['--force-device-scale-factor=' + process.env.UI_SUITE_DPR] : [])]; // UI_SUITE_DPR=2: a high-density screen (a Retina Mac) on any OS
   const useXvfb = process.platform === 'linux' && (!process.env.DISPLAY || process.env.UI_SUITE_XVFB === '1'); // UI_SUITE_XVFB=1: keep windows off a desktop
   const [file, list] = useXvfb ? ['xvfb-run', ['-a', electron, ...argv]] : [electron, argv];
   return new Promise((resolve) => {
     const started = Date.now();
     let log = '';
-    const child = spawn(file, list, { cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, shell: false });
+    const child = spawn(file, list, { cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, shell: false, ...(d.killTree && process.platform !== 'win32' ? { detached: true } : {}) });
     const keep = (b) => { log += b.toString(); if (log.length > 400_000) log = log.slice(-200_000); };
     child.stdout.on('data', keep);
     child.stderr.on('data', keep);
-    const timer = setTimeout(() => { log += '\n[ui-suite] time limit reached'; child.kill(); }, TIMEOUT_MS);
+    const releaseGuard = d.killTree ? guardTree(child) : () => {};
+    const timer = setTimeout(() => { log += '\n[ui-suite] time limit reached'; if (d.killTree) killTree(child); else child.kill(); }, d.timeoutMs || TIMEOUT_MS);
     child.on('close', (code) => {
       clearTimeout(timer);
+      releaseGuard();
       fs.rmSync(user, { recursive: true, force: true });
       const failedLine = log.split(/\r?\n/).find((l) => l.includes('DRIVER FAILED') || l.includes('[ui-suite] time limit'));
       resolve({ ok: code === 0 && !failedLine, code, secs: Math.round((Date.now() - started) / 1000), why: failedLine || (code !== 0 ? `exit ${code}` : ''), log });
@@ -270,5 +321,5 @@ async function main({ ensure = ensureElectron, run = runOne, argv } = {}) {
   if (failed.length) process.exitCode = 1;
 }
 
-module.exports = { syntaxErrors, main, runOne, DRIVERS, NOT_IN_SUITE }; // runOne: also spec 001 FR-082 (scripts/shots-docs.js)
+module.exports = { syntaxErrors, main, runOne, killTree, guardTree, DRIVERS, NOT_IN_SUITE }; // runOne: also spec 001 FR-082 (scripts/shots-docs.js)
 if (require.main === module) main().catch((e) => { console.error('ui-suite:', e.message); process.exitCode = 1; });

@@ -489,12 +489,62 @@ const simHealth = (prev: Map<string, SimHealthMark> | undefined, servers: { name
   return typeof f === 'function' ? f(prev, servers, Date.now()) : undefined;
 };
 const SIM_APP_NAME: Record<string, string> = { copilot: 'GitHub Copilot', claude: 'Claude Code', codex: 'OpenAI Codex' };
-const SIM_COPILOT_CAPS = { ...SIM_PLAN_CAPS, remoteService: { name: 'GitHub', host: 'github.com', mobile: 'GitHub Mobile' }, interrupt: true, resume: true, images: true, models: true, effort: true, permissionModes: ['read-only', 'ask', 'allow'], permModeSwitch: 'live', usage: { tokens: true, costUsd: false, nanoAiu: true }, context: true, caps: true, helpers: true, history: true, mcpStatus: true, mcpToggle: true, mcpStart: 'next-message', mcpToggleApplies: 'live', mcpRestart: true, handoff: true, remote: true, oneShot: true, deleteSession: true, renameSession: 'any' } as AdapterInfo['capabilities'];
+const SIM_COPILOT_CAPS = { ...SIM_PLAN_CAPS, remoteService: { name: 'GitHub', host: 'github.com', mobile: 'GitHub Mobile' }, interrupt: true, resume: true, images: true, models: true, effort: true, permissionModes: ['read-only', 'ask', 'allow'], permModeSwitch: 'live', usage: { tokens: true, costUsd: false, nanoAiu: true }, context: true, caps: true, helpers: true, history: true, mcpStatus: true, mcpToggle: true, mcpStart: 'next-message', mcpToggleApplies: 'live', mcpRestart: true, mcpSignInReconnect: true, handoff: true, remote: true, oneShot: true, deleteSession: true, renameSession: 'any' } as AdapterInfo['capabilities'];
 const SIM_MIXED_KINDS: AdapterInfo[] = [
   { id: 'claude', displayName: 'Claude Code (simulated)', state: 'ready', version: 'sim', capabilities: { ...SIM_COPILOT_CAPS, modelSwitch: { verified: true, contextTier: false }, usage: { tokens: true, costUsd: true, nanoAiu: false }, caps: true, capUnit: 'usd', oneShot: true, remote: true, remoteService: { name: 'Claude', host: 'claude.ai', mobile: 'the Claude app' }, mcpToggle: true, mcpStart: 'next-message', permModeSwitch: 'live', helpers: true, history: true, deleteSession: false, renameSession: 'next-turn' } }, // spec 006 FR-028: Claude Code has no per-session delete
-  { id: 'codex', displayName: 'Codex (simulated)', state: 'ready', version: 'sim', capabilities: { ...SIM_COPILOT_CAPS, modelSwitch: { verified: true, contextTier: false }, usage: { tokens: true, costUsd: false, nanoAiu: false }, caps: false, permModeSwitch: 'next-message', history: false, helpers: false, mcpToggle: true, mcpStart: 'session', mcpToggleApplies: 'next-message', mcpRestart: false, remote: false } }, // spec 058 T028: the real switch values (FR-133, FR-147)
+  { id: 'codex', displayName: 'Codex (simulated)', state: 'ready', version: 'sim', capabilities: { ...SIM_COPILOT_CAPS, modelSwitch: { verified: true, contextTier: false }, usage: { tokens: true, costUsd: false, nanoAiu: false }, caps: false, permModeSwitch: 'next-message', history: false, helpers: false, mcpToggle: true, mcpStart: 'session', mcpToggleApplies: 'next-message', mcpRestart: false, mcpSignInReconnect: false, remote: false } }, // spec 058 T028: the real switch values (FR-133, FR-147)
   { id: 'basic', displayName: 'Basic agent (simulated)', state: 'ready', version: 'sim', capabilities: { interrupt: false, resume: false, images: false, models: false, effort: false, permissionModes: ['read-only'], permModeSwitch: 'none', usage: { tokens: true, costUsd: false, nanoAiu: false }, context: false, caps: false, helpers: false, history: false, mcpStatus: false, mcpToggle: false } as AdapterInfo['capabilities'] },
 ];
+
+/* spec 058 FR-216: the shapes of src/main/mcpsigninrefresh.ts's planner (this file cannot import); the block below is a copy of the planner itself, compared by test:mcpsigninrefresh */
+interface SignInServerView { name: string; status: string; transport?: string; key: string; off?: boolean; signInOpen?: boolean; restarting?: boolean; policy?: boolean }
+interface SignInRecordView { at?: number; blocked?: 'sign-in' | 'policy' }
+interface SignInPlanInput { moment: 'send' | 'recheck'; now: number; lastResponseAt?: number; resumedAt?: number; on: boolean; allowReadOnly: boolean; readOnly: boolean; platform: string; takesPart: boolean; renews?: boolean; live: boolean; busy: boolean; servers: readonly SignInServerView[]; records: Readonly<Record<string, SignInRecordView>>; inFlight: readonly string[] }
+interface SignInPlan { why: 'off' | 'no-part' | 'not-live' | 'busy' | 'no-moment' | 'first' | 'gap' | 'recheck'; reconnect: { name: string; key: string }[]; join: { name: string; key: string }[]; signInOnly: string[] }
+/* mcpsigninrefresh:begin */
+const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
+  const GAP = 60 * 60_000;
+  const none = (why: SignInPlan['why']): SignInPlan => ({ why, reconnect: [], join: [], signInOnly: [] });
+  if (i.on !== true) return none('off');
+  if (!i.takesPart) return none('no-part');
+  if (!i.live) return none('not-live');
+  if (i.busy) return none('busy');
+  let why: SignInPlan['why'];
+  if (i.moment === 'recheck') why = 'recheck';
+  else if (i.lastResponseAt === undefined) why = 'first';
+  else {
+    const quiet = i.now - i.lastResponseAt;
+    const woke = i.resumedAt !== undefined && i.resumedAt > i.lastResponseAt;
+    if (!(quiet >= GAP) && !woke) return none('no-moment');
+    why = 'gap';
+  }
+  const flying = new Set(i.inFlight);
+  const out: SignInPlan = { why, reconnect: [], join: [], signInOnly: [] };
+  const seen = new Set<string>();
+  for (const s of i.servers) {
+    if (!s || typeof s.name !== 'string' || seen.has(s.name)) continue;
+    seen.add(s.name);
+    if (s.off === true || s.status === 'disabled') continue;
+    if (!/^(?:http|sse|streamable-?http)$/i.test(typeof s.transport === 'string' ? s.transport : '')) continue; // remote only: never a local (stdio) server
+    if (s.signInOpen === true || s.restarting === true || s.policy === true) continue;
+    const wants = s.status === 'needs-auth' || (why === 'gap' && s.status === 'connected' && i.platform !== 'darwin');
+    if (!wants) continue;
+    const rec = Object.prototype.hasOwnProperty.call(i.records, s.key) ? i.records[s.key] : undefined;
+    if (rec && rec.blocked) continue;
+    if (flying.has(s.key)) {
+      out.join.push({ name: s.name, key: s.key });
+      continue;
+    }
+    if (rec && typeof rec.at === 'number' && i.now - rec.at >= 0 && i.now - rec.at < GAP) continue; // one attempt per server per gap, app-wide
+    if ((i.readOnly && !i.allowReadOnly) || i.renews === false) {
+      if (s.status === 'needs-auth') out.signInOnly.push(s.name);
+      continue;
+    }
+    out.reconnect.push({ name: s.name, key: s.key });
+  }
+  return out;
+};
+/* mcpsigninrefresh:end */
 
 (function () {
   const SIM_ROOM_ORDER = ['mcp-swiss', 'swisscontract-ai', 'command-center', 'blog', 'infra-notes'];
@@ -759,6 +809,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       if (e.type === 'toolCall' && e.phase === 'failed' && e.mcpServer && simCallClass(e.output) === 'policy') e = { ...e, mcpCall: 'policy' }; // FR-193: like maskMcpEvent, the word only
       listeners.forEach((l) => l(e));
       simSchedHook?.(e);
+      if (e.type === 'status' && !e.agentId && (e.status === 'idle' || e.status === 'error' || e.status === 'stopped')) simSignIn?.last.set(e.sessionId, simSignIn.mono()); // spec 058 FR-205: the last response
       if (e.type === 'status' && e.status === 'idle') {
         const q = sims.find((x) => x.info.id === e.sessionId);
         if (q?.pendingModel) window.setTimeout(() => void applyPending(q), 0); // the turn ended: the queued switch applies
@@ -768,6 +819,70 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     };
     /* spec 024 test hook, simulator only: a driver can send one normalized event (for example a tool call of a given MCP server) */
     (window as unknown as { __durbarSimEmit?: (e: AgentEvent) => void }).__durbarSimEmit = emit;
+    /* spec 058 FR-205..FR-216 (T186), `simsigninrefresh=1` only (the demo runs nothing): main's automatic MCP sign-in refresh, with the
+       planner copied above (`planMcpSignInRefresh`) on a simulated monotonic clock. A driver reports remote servers with __durbarSimEmit,
+       moves the clock (`advance`, an hour without a reply) and sets each server's fate: `ok` (renews), `expired` (stays needs-auth),
+       `slow` (outlasts the wait). `simsigninwait=<ms>` shortens the 5 s wait for a driver. Nothing here reads or holds a token. */
+    const simSignInQs = typeof location !== 'undefined' ? new URLSearchParams(location.search) : new URLSearchParams();
+    const simSignIn = {
+      flag: simSignInQs.get('simsigninrefresh') === '1',
+      on: true,
+      offset: 0,
+      waitMs: Math.max(200, Math.min(5000, Number(simSignInQs.get('simsigninwait')) || 5000)),
+      last: new Map<string, number>(),
+      records: {} as Record<string, SignInRecordView>,
+      flights: new Map<string, Promise<string>>(),
+      waits: new Map<string, () => void>(),
+      fates: new Map<string, string>(),
+      subs: new Set<(p: { id: string; kind: string; count?: number; names?: string[]; name?: string }) => void>(),
+      mono(): number { return (typeof performance !== 'undefined' ? performance.now() : 0) + this.offset; },
+      push(p: { id: string; kind: string; count?: number; names?: string[]; name?: string }): void { this.subs.forEach((f) => { try { f(p); } catch { /* a listener */ } }); },
+    };
+    (window as unknown as { __durbarSimSignIn?: unknown }).__durbarSimSignIn = {
+      advance: (ms: number) => { simSignIn.offset += Math.max(0, Number(ms) || 0); },
+      fate: (name: string, f: string) => { simSignIn.fates.set(String(name), String(f)); },
+      lastResponse: (id: string) => simSignIn.last.get(id),
+    };
+    const simSignInGate = async (s: SimAgent): Promise<'go' | 'stopped'> => {
+      if (!simSignIn.flag) return 'go';
+      const id = s.info.id;
+      const kc = caps(s.info.adapterId ?? 'copilot');
+      const servers = (s.mcpLive ?? []).map((m) => ({ name: m.name, status: s.mcpOff?.has(m.name) ? 'disabled' : m.status, ...(m.transport ? { transport: m.transport } : {}), key: (s.info.adapterId ?? 'copilot') + '\0' + m.name + '\0' }));
+      const plan = planMcpSignInRefresh({ moment: 'send', now: simSignIn.mono(), lastResponseAt: simSignIn.last.get(id), on: simSignIn.on, allowReadOnly: true, readOnly: s.info.permMode === 'read-only', platform: 'sim', takesPart: kc.mcpRestart === true && (kc as { mcpSignInReconnect?: boolean }).mcpSignInReconnect === true, ...(s.info.sandbox && s.info.sandbox.state !== 'off' && s.info.sandbox.covers.includes('mcp') ? { renews: false } : {}), live: s.state !== 'idle' || !!s.ctx || !!s.mcpLive, busy: s.state === 'working' || s.state === 'waiting', servers, records: simSignIn.records, inFlight: [...simSignIn.flights.keys()] });
+      const fly = (name: string, key: string): Promise<string> => {
+        const running = simSignIn.flights.get(key);
+        if (running) return running;
+        const at = simSignIn.mono();
+        const fate = simSignIn.fates.get(name) ?? 'ok';
+        const f = new Promise<string>((done) => window.setTimeout(() => {
+          const st = fate === 'expired' ? 'needs-auth' : 'connected';
+          const q = sims.find((x) => x.info.id === id);
+          if (q?.mcpLive) emit({ type: 'mcp', sessionId: id, timestamp: now(), servers: q.mcpLive.map((m) => (m.name === name ? { ...m, status: st, ...(st === 'needs-auth' ? { errorClass: 'auth' as const } : {}) } : m)) as McpServerStatus[] });
+          simSignIn.records[key] = st === 'needs-auth' ? { at, blocked: 'sign-in' } : { at };
+          done(st === 'needs-auth' ? 'needs-sign-in' : 'reconnected');
+        }, fate === 'slow' ? simSignIn.waitMs + 1500 : 600));
+        simSignIn.flights.set(key, f);
+        void f.then(() => simSignIn.flights.delete(key));
+        return f;
+      };
+      const items = [...plan.reconnect.map((r) => ({ name: r.name, f: fly(r.name, r.key) })), ...plan.join.map((j) => ({ name: j.name, f: simSignIn.flights.get(j.key) as Promise<string> })).filter((x) => !!x.f)];
+      for (const x of items) void x.f.then((r) => { if (r === 'needs-sign-in') simSignIn.push({ id, kind: 'needs-sign-in', name: x.name }); });
+      for (const n of plan.signInOnly) simSignIn.push({ id, kind: 'needs-sign-in', name: n }); // like main: no reconnect, only the line
+      if (!items.length) return 'go';
+      const pending = new Set(items.map((x) => x.name));
+      for (const x of items) void x.f.then(() => pending.delete(x.name));
+      simSignIn.push({ id, kind: 'waiting', count: items.length });
+      const out = await new Promise<'done' | 'late' | 'stopped'>((resolve) => {
+        simSignIn.waits.set(id, () => resolve('stopped'));
+        const t = window.setTimeout(() => resolve('late'), simSignIn.waitMs);
+        void Promise.all(items.map((x) => x.f)).then(() => { window.clearTimeout(t); resolve('done'); });
+      });
+      simSignIn.waits.delete(id);
+      if (out === 'stopped') { simSignIn.push({ id, kind: 'not-sent' }); return 'stopped'; }
+      if (out === 'late') { simSignIn.push({ id, kind: 'late', names: [...pending] }); return 'go'; }
+      simSignIn.push({ id, kind: 'done' });
+      return 'go';
+    };
     /* simtitles=1 (spec 001/002 deltas 2026-10-18): titles for a few main agents, two of them in one folder and one long enough to be ellipsized */
     if (opts.titles) {
       const SIM_TITLES = ['Fix login bug', 'Release notes for v0.3', 'Review PR 121: contract clause parser', 'Rename public tool find_company and update every call site and the docs index', 'Canton lookup edge cases'];
@@ -1569,7 +1684,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     ];
     // ---- Fake agent-app lists (spec 069 FR-040): in memory; previews masked like main's; nothing is written anywhere ----
     type GApp = 'copilot' | 'claude' | 'codex';
-    type GView = { name: string; transport: 'stdio' | 'http' | 'sse' | 'other'; command?: string; args?: string[]; url?: string; envKeys: string[]; headerKeys: string[]; refs?: boolean };
+    type GView = { name: string; transport: 'stdio' | 'http' | 'sse' | 'other'; command?: string; args?: string[]; url?: string; envKeys: string[]; headerKeys: string[]; refs?: boolean; missing?: boolean };
     const G_LABEL: Record<GApp, string> = { copilot: 'Copilot CLI', claude: 'Claude Code', codex: 'Codex' };
     const G_FILE: Record<GApp, string> = { copilot: '~/.copilot/mcp-config.json', claude: '~/.claude.json', codex: '~/.codex/config.toml' };
     const gLists: Record<GApp, GView[]> = {
@@ -1584,6 +1699,11 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       ],
       codex: [{ name: 'context7', transport: 'stdio', command: 'npx', args: ['-y', '@upstash/context7-mcp'], envKeys: [], headerKeys: [] }],
     };
+    /* spec 058 FR-198/FR-199: `simmcplaunch=1` = a Claude Code server whose command main did not find, and a Codex list that cannot be read */
+    const simLaunch = simQs?.get('simmcplaunch') === '1';
+    if (simLaunch) gLists.claude.push({ name: 'playwright', transport: 'stdio', command: 'playwright-mcp', args: [], envKeys: [], headerKeys: [], missing: true });
+    /* review on PR 1073: "github" is found in the Copilot CLI list but Claude Code's entry is missing: only the entry a row shows counts */
+    if (simLaunch) { const g = gLists.claude.find((x) => x.name === 'github'); if (g) g.missing = true; }
     const gOff = new Set<string>();
     const simToolsOff: Record<string, Record<string, string[]>> = {};
     let gSeq = 0;
@@ -1605,7 +1725,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       return `${JSON.stringify(i.name)}: {\n${Object.entries(e).map(([k, v]) => `  ${JSON.stringify(k)}: ${v && typeof v === 'object' ? one(v) : JSON.stringify(v)}`).join(',\n')}\n}`;
     };
     const globalApi: Partial<DurbarApi> = {
-      mcpGlobalState: async () => ({ ok: true, apps: G_APPS.map((app) => ({ app, label: G_LABEL[app], file: G_FILE[app], found: true, servers: gLists[app].map((x) => ({ ...x })), off: app === 'claude' ? [...gOff] : [] })) }),
+      mcpGlobalState: async () => ({ ok: true, apps: G_APPS.map((app) => ({ app, label: G_LABEL[app], file: G_FILE[app], found: true, ...(simLaunch && app === 'codex' ? { error: 'The file could not be read.' } : {}), servers: simLaunch && app === 'codex' ? [] : gLists[app].map((x) => ({ ...x })), off: app === 'claude' ? [...gOff] : [] })) }),
       mcpGlobalPreview: async (input, apps, mode) => {
         const i = input as McpServerInput;
         const list = gApps(apps);
@@ -1873,7 +1993,10 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
           github: [['search_issues', 'Search issues and pull requests in a repository'], ['get_pull_request', 'Get one pull request with its files and checks'], ['create_issue', 'Open a new issue'], ['list_commits', 'List the commits of a branch'], ['get_file_contents', 'Read a file at a ref']],
           // `search` is also a tool of my-notes (two servers, one tool name: spec 069 review on PR 503); `run query` cannot be turned off (FR-063)
           'github-mcp-server': [['get_me', 'Your GitHub account'], ['search_code', 'Search code on GitHub'], ['search', 'Search GitHub'], ['run query', 'A tool name with a space']],
-          playwright: [['browser_navigate', 'Open a URL in the browser'], ['browser_click', 'Click an element'], ['browser_snapshot', 'Accessibility snapshot of the page'], ['browser_take_screenshot']],
+          // spec 069 FR-067: 25 tools, the later ones with very long names and descriptions (the overflow check of shots-069-mcp-tools)
+          playwright: [['browser_navigate', 'Open a URL in the browser'], ['browser_click', 'Click an element'], ['browser_snapshot', 'Accessibility snapshot of the page'], ['browser_take_screenshot'],
+            ...Array.from({ length: 21 }, (_, i): [string, string] => [i % 4 === 0 ? 'browser_extremely_long_tool_name_for_the_overflow_check_' + (i + 1) : 'browser_action_' + (i + 1),
+              'Performs a long, wordy browser action number ' + (i + 1) + ' on the current page: it waits for the network to be idle, scrolls the target into view, retries when the element moves, and returns an accessibility snapshot https://example.test/a/very/long/unbroken/address/that/does/not/wrap/at/all/' + i])],
           'docs-search': [],
         };
         /* the same state the row shows (spec 058's canned failures; a Restart fixes them): only a running server lists tools */
@@ -2079,10 +2202,11 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
     const capApi: Partial<DurbarApi> = {
       usageTotals: async () => ({ ok: true, since: savedSince, office: saved.office, folders: saved.folders }),
       usageResetTotals: async () => { savedSince = new Date().toISOString(); saved = { office: zero, folders: [] }; return { ok: true, since: savedSince, office: zero, folders: [] }; },
-      getSettings: async () => ({ mcpWarnLevels: simMcpLevels, defaultMaxAiCredits: defaultCap, placeMap: { ...placeMap }, customPlaces: customPlaces.map((p) => ({ ...p })), seriousMode, notifyNeedsMe, breakResume, chatLinksIn, ...(simTheme ? { theme: simTheme } : {}), characters: simCharacters, about: { name: 'Agent Durbar', version: '0.1.6 (simulator)', owner: 'Three Feathers', copyright: 'Copyright (c) 2026 Three Feathers contributors', website: 'https://github.com/three-feathers/agent-durbar', contributors: [{ label: 'vikramgorla', url: 'https://github.com/vikramgorla' }, { label: 'fjcabello', url: 'https://github.com/fjcabello' }, { label: 'rubenlupi', url: 'https://github.com/rubenlupi' }] } /* sample data, real values come from src/shared/about.ts */ }),
+      getSettings: async () => ({ mcpSignInRefresh: simSignIn.on, mcpWarnLevels: simMcpLevels, defaultMaxAiCredits: defaultCap, placeMap: { ...placeMap }, customPlaces: customPlaces.map((p) => ({ ...p })), seriousMode, notifyNeedsMe, breakResume, chatLinksIn, ...(simTheme ? { theme: simTheme } : {}), characters: simCharacters, about: { name: 'Agent Durbar', version: '0.1.8 (simulator)', owner: 'Three Feathers', copyright: 'Copyright (c) 2026 Three Feathers contributors', website: 'https://github.com/three-feathers/agent-durbar', contributors: [{ label: 'vikramgorla', url: 'https://github.com/vikramgorla' }, { label: 'fjcabello', url: 'https://github.com/fjcabello' }, { label: 'rubenlupi', url: 'https://github.com/rubenlupi' }] } /* sample data, real values come from src/shared/about.ts */ }),
       setDefaultCap: async (c) => { defaultCap = c !== null && c >= 30 ? Math.round(c * 100) / 100 : undefined; return { ok: true, defaultMaxAiCredits: defaultCap }; },
       setSeriousMode: async (on) => { if (typeof on === 'boolean') seriousMode = on; return { ok: true, seriousMode }; },
       setNotifyNeedsMe: async (on) => { if (typeof on === 'boolean') notifyNeedsMe = on; return { ok: true, notifyNeedsMe }; },
+      setMcpSignInRefresh: async (on) => { if (typeof on === 'boolean') simSignIn.on = on; return { ok: true, mcpSignInRefresh: simSignIn.on }; }, // spec 058 FR-213
       setBreakResume: async (v) => { if (v === 'auto' || v === 'ask') breakResume = v; return { ok: true, breakResume }; },
       setChatLinksIn: async (v) => { if (v === 'session' || v === 'system') chatLinksIn = v; return { ok: true, chatLinksIn }; },
       setBadge: async () => ({ ok: true }), /* spec 052 FR-059: no app icon in the demo */
@@ -2846,7 +2970,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
           const finish = (extra: Record<string, unknown>, ok: boolean) => {
             if (ok) { const r = simUpdResults.get(kind); if (r) simUpdResults.set(kind, { ...r, state: 'up-to-date', installed: r.stable ?? r.latest ?? r.installed }); }
             simUpdEmit();
-            simHarness.done.forEach((cb) => cb({ kind, op, ok, exitCode: ok ? 0 : 1, lines: ['(simulated)'], ...extra } as never));
+            simHarness.done.forEach((cb) => cb({ kind, op, ok, exitCode: ok || extra.failure === 'managed' ? 0 : 1, lines: ['(simulated)'], ...extra } as never)); // a Managed run is the recorded shape: ok:false with exit 0
           };
           const FAIL: Record<string, Record<string, unknown>> = { admin: { failure: 'admin' }, inuse: { failure: 'in-use' }, managed: { failure: 'managed' }, network: { failure: 'network' }, other: { failure: 'other' }, fallback: { failure: 'other', fallback: 'official' } };
           setTimeout(() => prog({ lines: ['Updating (simulated)…'] }), 300);
@@ -3071,6 +3195,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
           return { ok: true };
         }
         s.breakUntil = undefined;
+        if ((await simSignInGate(s)) === 'stopped') return { ok: false, notSent: true, error: 'Not sent: you stopped it while MCP sign-ins were reconnecting.' }; // spec 058 FR-208
         window.setTimeout(() => void reply(s, text), 400);
         // spec 073 FR-011: a folder or user entry is "sent as its text", as the real adapters do (FR-005)
         const sl = /^\/([A-Za-z0-9][A-Za-z0-9._:-]{0,63})(?:\s|$)/.exec(String(text).trim());
@@ -3079,6 +3204,8 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       },
       stop: async (id) => {
         // Stop = interrupt the turn only (like the real adapter): pending approval denied, grants kept, back to Ready.
+        const w = simSignIn.waits.get(id); // spec 058 FR-208: Stop during the sign-in wait ends the wait; no turn runs
+        if (w) { w(); return; }
         const s = sims.find((x) => x.info.id === id);
         if (!s) return;
         if (s.limitReq) {
@@ -3300,6 +3427,7 @@ const SIM_MIXED_KINDS: AdapterInfo[] = [
       onAgentRenamed: (cb) => { renamedListeners.add(cb); return () => renamedListeners.delete(cb); },
       /* spec 076 FR-205: like main's start guard, a Codex session started in Allow all (canned advice) shows the advice once */
       onOrgNote: (cb) => { simOrgNotes.add(cb); return () => simOrgNotes.delete(cb); },
+      onMcpSignInRefresh: (cb) => { simSignIn.subs.add(cb as never); return () => simSignIn.subs.delete(cb as never); }, // spec 058 FR-208, FR-211
       listPrevious: async (id) => {
         await prevWait();
         const src = sims.find((x) => x.info.id === id);

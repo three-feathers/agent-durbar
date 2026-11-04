@@ -64,6 +64,8 @@ export interface AgentInfo {
   maxAiCredits?: number;
   /** Restored from a saved Allow all after a restart (spec 003 FR-026): shown as a small "restored" note until the mode is switched. */
   permRestored?: boolean;
+  /** Spec 099 FR-002: this session is on Autopilot (Allow all plus a goal loop). Main memory only: never saved, never restored (FR-005). */
+  autopilot?: { limit: number; cap?: number; hours?: number; run?: { continuation: number; startedAt: number } };
   /**
    * Spec 003 (2026-10-21): where the mode of a session that came back (restart or Previous sessions) was taken from, so the chat
    * can say it: `session` = the mode last chosen for this very session; `folder` = the folder's saved mode (nothing remembered for
@@ -198,6 +200,8 @@ export interface AppSettingsView {
   mcpWarnLevels?: McpWarnLevels;
   /** Owner, version and contributors for Settings > About (spec 008 FR-018). */
   about?: AboutView;
+  /** Settings in force for this run only because the file could not be written (issue 1023), e.g. `defaultMaxAiCredits`. */
+  unsaved?: string[];
   /** Default cap (AIU) applied to new sessions; unset = none. */
   defaultMaxAiCredits?: number;
   /** Places in the office (spec 024): MCP server name -> place id or `desk`; unmapped servers use the built-in rules. */
@@ -216,7 +220,17 @@ export interface AppSettingsView {
   breakResume?: 'auto' | 'ask';
   /** Spec 080 FR-031: where a plain click on a chat link opens (default `'session'`). */
   chatLinksIn?: 'session' | 'system';
+  /** Spec 058 FR-213: *Refresh MCP sign-ins automatically* (on unless turned off). */
+  mcpSignInRefresh?: boolean;
 }
+
+/** Spec 058 FR-208, FR-211: main's sign-in refresh lines for one chat (names and fixed kinds only; no vendor text, no token). */
+export type McpSignInRefreshNote =
+  | { id: string; kind: 'waiting'; count: number }
+  | { id: string; kind: 'late'; names: string[] }
+  | { id: string; kind: 'done' }
+  | { id: string; kind: 'not-sent' }
+  | { id: string; kind: 'needs-sign-in'; name: string };
 
 /** A profile file (spec 043 FR-010); `path` is for display only, the window sends `id` back. */
 export interface ProfileFileInfo {
@@ -448,6 +462,8 @@ export interface GlobalEntryView {
   headerKeys: string[];
   /** Some value is a `${NAME}` reference (or Codex `env_vars` / `env_http_headers`). */
   refs?: boolean;
+  /** Spec 058 FR-198: a stdio command Agent Durbar looked up and did not find on this computer (a file lookup, nothing run). */
+  missing?: boolean;
 }
 
 /** One app's list as read now (spec 069 FR-002, FR-008). */
@@ -820,11 +836,11 @@ export interface DurbarApi {
   /** Change the permission mode of agent `id` now (applies to the next request). `clearGrants`: forget "Approve for this session"; `approvePending`: approve what is waiting. */
   setPermMode?(id: string, mode: PermMode, opts?: { clearGrants?: boolean; approvePending?: boolean }): Promise<{ ok: boolean; error?: string; mode?: PermMode; pending?: number }>;
   /** Spec 087 FR-007a/FR-007c: *Continue without the OS sandbox* for this session (`always`: on this computer, where offered). Nothing is sent. */
-  sandboxContinue?(id: string, opts?: { always?: boolean }): Promise<{ ok: boolean; error?: string }>;
+  sandboxContinue?(id: string, opts?: { always?: boolean }): Promise<{ ok: boolean; error?: string; alwaysSaved?: false }>;
   /** Spec 087 FR-012: per ready agent app, whether its OS sandbox can run here (Settings > Agent apps). */
   sandboxHosts?(): Promise<Record<string, SandboxHostView>>;
   /** Spec 087 FR-007c: undo *Always continue on this computer* for an app. */
-  sandboxAlwaysOff?(app: string): Promise<{ ok: boolean }>;
+  sandboxAlwaysOff?(app: string): Promise<{ ok: boolean; saved?: false }>;
   /** Change the model, effort or context tier of agent `id` (spec 030). Validated in main; saved with the folder entry once applied. */
   setModel?(id: string, request: ModelSwitchRequest): Promise<{ ok: boolean; error?: string; result?: ModelSwitchResult }>;
   /** Remove a queued model switch (spec 030). */
@@ -913,6 +929,8 @@ export interface DurbarApi {
   /** Spec 081 FR-016: whether Settings > Agent apps is on screen (then the card is the announcement and no toast is shown). */
   harnessVisible?(on: boolean): Promise<boolean>;
   setCheckUpdatesAtStart?(on: boolean): Promise<{ ok: boolean; checkUpdatesAtStart?: boolean }>;
+  /** Spec 058 FR-213: *Refresh MCP sign-ins automatically*. */
+  setMcpSignInRefresh?(on: boolean): Promise<{ ok: boolean; mcpSignInRefresh?: boolean }>;
   harnessPaste?(text: string): Promise<{ ok: boolean; error?: string }>;
   harnessCancel?(): Promise<boolean>;
   harnessOpenPage?(kind: string): Promise<{ ok: boolean }>;
@@ -939,6 +957,8 @@ export interface DurbarApi {
   onHeldStopped?(cb: (p: { id?: string; why: string }) => void): () => void;
   /** Spec 076 FR-203: a session started under advice of its agent app's organization policy; the words to show (no policy values). */
   onOrgNote?(cb: (p: { id: string; text: string }) => void): () => void;
+  /** Spec 058 FR-208, FR-211: the sign-in refresh lines of a chat. */
+  onMcpSignInRefresh?(cb: (p: McpSignInRefreshNote) => void): () => void;
   /** Spec 054 FR-062: remote control is still on with a new (checked) link after a relaunch. */
   onRemoteUrl?(cb: (p: { id: string; url: string }) => void): () => void;
   onHarnessDone?(cb: (p: { kind: string; op: string; ok: boolean; exitCode?: number | null; reason?: string; lines: string[]; error?: string; failure?: string; fallback?: 'official'; note?: string }) => void): () => void;
@@ -1069,7 +1089,8 @@ export interface DurbarApi {
   stageAttachment(name: string, mime: string, data: ArrayBuffer): Promise<StageResult>;
   /** `slash` (spec 073 FR-005): the message started with a folder or user entry and its text was sent; the value says where it came from.
    *  `slashNote` (a VS Code prompt file): the settings not applied and the variables left as written. */
-  send(id: string, text: string, attachments: PickedFile[], opts?: { plan?: boolean }): Promise<{ ok: boolean; error?: string; slash?: string; slashNote?: string }>;
+  /** `notSent` (spec 058 FR-208): Stop ended the MCP sign-in wait before the message went: nothing was sent. */
+  send(id: string, text: string, attachments: PickedFile[], opts?: { plan?: boolean }): Promise<{ ok: boolean; error?: string; slash?: string; slashNote?: string; notSent?: boolean }>;
   /** Spec 073 FR-010: the "/" entries of the agent's app in its folder (folder, user, app). */
   slashCommands?(id: string): Promise<{ ok: boolean; error?: string; entries: SlashCommandInfo[] }>;
   /**

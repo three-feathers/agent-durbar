@@ -2,7 +2,11 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
-import { cleanSessionTitle, cleanTitle, eventsToHistory, normDir, previousSessionsFor, sameDir } from '../src/adapters/history';
+import * as os from 'os';
+import { SEARCH_HISTORY_LIMITS, cleanSessionTitle, cleanTitle, eventsToHistory, normDir, previousSessionsFor, sameDir } from '../src/adapters/history';
+import { MAX_FILE_BYTES, claudeHistoryFromText, claudeProjectSlug } from '../src/adapters/claudeHistory';
+import { readClaudeHistoryStream } from '../src/adapters/claudeStream';
+import { codexHistory } from '../src/adapters/codexHistory';
 
 // --- folder matching
 assert.strictEqual(normDir('/a/b/', 'linux'), '/a/b');
@@ -126,3 +130,115 @@ assert.deepStrictEqual(named.map((s) => s.title), ['Release notes', 'only a summ
 }
 
 console.log('history tests passed');
+
+// Spec 095 T012 (FR-024, D2): the search's text-only read. The replay (default limits) is unchanged; `textOnly` drops tool items before
+// they are stored; the 300-item cap is lifted; the streamed Claude read gives exactly what claudeHistoryFromText gives on the same text.
+process.exitCode = 1; // set to 0 only after the last async check (a promise that never settles must not pass)
+const kinds = (h: { items: { type: string }[] }) => h.items.map((i) => i.type).join(',');
+{
+  const ev = (type: string, data: Record<string, unknown>) => ({ type, data, timestamp: '2026-10-19T10:00:00.000Z' });
+  const evs = [
+    ev('user.message', { content: 'run the tests' }),
+    ev('tool.execution_start', { toolCallId: 't1', toolName: 'bash', arguments: { command: 'npm test' } }),
+    ev('tool.execution_complete', { toolCallId: 't1', success: true, result: { content: 'TOOLONLY 3 passing' } }),
+    ev('assistant.message', { content: 'All green.' }),
+  ];
+  assert.strictEqual(kinds(eventsToHistory(evs)), 'user,tool,output', 'the replay keeps tool items');
+  assert.strictEqual(kinds(eventsToHistory(evs, SEARCH_HISTORY_LIMITS)), 'user,output', 'textOnly drops them');
+  assert.ok(!JSON.stringify(eventsToHistory(evs, SEARCH_HISTORY_LIMITS)).includes('TOOLONLY'), 'no tool output anywhere in the result');
+  const many = Array.from({ length: 450 }, (_, i) => ev('user.message', { content: `m${i}` }));
+  assert.strictEqual(eventsToHistory(many).items.length, 300, 'the replay keeps its 300 cap');
+  const all = eventsToHistory(many, SEARCH_HISTORY_LIMITS);
+  assert.deepStrictEqual([all.items.length, all.truncated, (all.items[0] as { text: string }).text], [450, false, 'm0'], 'the search sees the oldest message too');
+  assert.strictEqual((eventsToHistory([ev('user.message', { content: 'x'.repeat(25_000) })], SEARCH_HISTORY_LIMITS).items[0] as { text: string }).text.length, 20_001, '20 000 characters per message (plus the cut mark)');
+}
+{
+  const thread = { turns: [{ items: [
+    { type: 'userMessage', content: [{ type: 'text', text: 'fix it' }] },
+    { type: 'commandExecution', id: 'c1', command: 'ls', aggregatedOutput: 'TOOLONLY a b', status: 'completed' },
+    { type: 'fileChange', id: 'f1', changes: [{ path: '/p/a.ts' }], status: 'completed' },
+    { type: 'agentMessage', text: 'Fixed.' },
+  ] }] };
+  assert.strictEqual(kinds(codexHistory(thread)), 'user,tool,tool,output', 'the Codex replay keeps commands and file changes');
+  assert.strictEqual(kinds(codexHistory(thread, SEARCH_HISTORY_LIMITS)), 'user,output');
+  assert.ok(!JSON.stringify(codexHistory(thread, SEARCH_HISTORY_LIMITS)).includes('TOOLONLY'));
+  const big = { turns: [{ items: Array.from({ length: 400 }, (_, i) => ({ type: 'agentMessage', text: `a${i}` })) }] };
+  assert.strictEqual(codexHistory(big).items.length, 300, 'the Codex replay keeps its cap');
+  assert.strictEqual(codexHistory(big, SEARCH_HISTORY_LIMITS).items.length, 400, 'no cap for the search');
+}
+
+const J = (o: unknown): string => JSON.stringify(o);
+const CFG = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-095-stream-'));
+const WS = path.join(CFG, 'ws folder');
+const ID = '95959595-9595-4595-8595-959595959595';
+const fileOf = (id: string) => path.join(CFG, 'projects', claudeProjectSlug(WS), `${id}.jsonl`);
+fs.mkdirSync(path.dirname(fileOf(ID)), { recursive: true });
+const cuser = (content: unknown, extra: Record<string, unknown> = {}) => J({ type: 'user', cwd: WS, timestamp: '2026-10-19T10:00:00.000Z', message: { role: 'user', content }, ...extra });
+const casst = (content: unknown[], extra: Record<string, unknown> = {}) => J({ type: 'assistant', cwd: WS, timestamp: '2026-10-19T10:00:05.000Z', message: { role: 'assistant', content }, ...extra });
+const claudeText = [
+  cuser('Fix the invoice export'),
+  casst([{ type: 'text', text: 'Looking. Ñandú 😀' }, { type: 'tool_use', id: 'tu1', name: 'Read', input: { file_path: '/p/x.ts' } }]),
+  cuser([{ type: 'tool_result', tool_use_id: 'tu1', content: 'TOOLONLY export function x() {}' }]),
+  casst([{ type: 'text', text: 'SIDECHAIN helper text' }], { isSidechain: true }),
+  cuser('SIDECHAIN prompt', { isSidechain: true }),
+  'not json',
+  ...Array.from({ length: 350 }, (_, i) => casst([{ type: 'text', text: `reply ${i} ` + 'é'.repeat(i % 7) }])),
+  casst([{ type: 'text', text: 'last' }]),
+].join('\n') + '\n';
+
+async function streamed(): Promise<void> {
+  fs.writeFileSync(fileOf(ID), claudeText);
+  // the scan path makes no synchronous fs call: every *Sync function of the real fs module throws while the stream reads
+  const realFs = require('fs') as Record<string, unknown>;
+  const saved = new Map<string, unknown>();
+  for (const k of Object.keys(realFs)) if (/Sync$/.test(k) && typeof realFs[k] === 'function') { saved.set(k, realFs[k]); realFs[k] = () => { throw new Error(`${k} on the scan path`); }; }
+  let r: Awaited<ReturnType<typeof readClaudeHistoryStream>>;
+  let crlf: Awaited<ReturnType<typeof readClaudeHistoryStream>>;
+  try {
+    r = await readClaudeHistoryStream(ID, WS, SEARCH_HISTORY_LIMITS, CFG);
+  } finally {
+    for (const [k, v] of saved) realFs[k] = v;
+  }
+  assert.ok(r.ok, 'read');
+  assert.deepStrictEqual(r.history, claudeHistoryFromText(claudeText, SEARCH_HISTORY_LIMITS), 'the streamed read equals claudeHistoryFromText on the same text');
+  assert.strictEqual(r.history.items.length, 353, 'no 300 cap');
+  assert.ok(!kinds(r.history).includes('tool'), 'no tool item');
+  const flat = JSON.stringify(r.history);
+  assert.ok(!flat.includes('TOOLONLY') && !flat.includes('SIDECHAIN'), 'no tool output, no side-chain line');
+  const d = await readClaudeHistoryStream(ID, WS, {}, CFG);
+  assert.ok(d.ok);
+  assert.deepStrictEqual(d.history, claudeHistoryFromText(claudeText), 'with the replay limits too');
+  // CRLF line ends (a file copied on Windows) and a missing last newline
+  const ID2 = '95959595-9595-4595-8595-000000000002';
+  fs.writeFileSync(fileOf(ID2), claudeText.trimEnd().split('\n').join('\r\n'));
+  crlf = await readClaudeHistoryStream(ID2, WS, SEARCH_HISTORY_LIMITS, CFG);
+  assert.ok(crlf.ok);
+  assert.deepStrictEqual(crlf.history, claudeHistoryFromText(claudeText, SEARCH_HISTORY_LIMITS), 'CRLF reads the same');
+  // over the cap: skipped, never read (the real cap is the reader's 50 MB)
+  assert.strictEqual(MAX_FILE_BYTES, 50 * 1024 * 1024);
+  assert.deepStrictEqual(await readClaudeHistoryStream(ID, WS, SEARCH_HISTORY_LIMITS, CFG, { maxBytes: 100 }), { ok: false, reason: 'too-large' }, 'too large, skipped');
+  // missing file, bad id, a folder in place of the file, an empty file
+  assert.deepStrictEqual(await readClaudeHistoryStream('95959595-0000-4000-8000-000000000000', WS, {}, CFG), { ok: false, reason: 'missing' });
+  assert.deepStrictEqual(await readClaudeHistoryStream('../etc/passwd', WS, {}, CFG), { ok: false, reason: 'missing' }, 'the id passes the reader\'s allow-list');
+  const ID3 = '95959595-9595-4595-8595-000000000003';
+  fs.mkdirSync(fileOf(ID3));
+  assert.deepStrictEqual(await readClaudeHistoryStream(ID3, WS, {}, CFG), { ok: false, reason: 'unreadable' });
+  const ID4 = '95959595-9595-4595-8595-000000000004';
+  fs.writeFileSync(fileOf(ID4), '');
+  assert.deepStrictEqual(await readClaudeHistoryStream(ID4, WS, {}, CFG), { ok: true, history: { items: [], total: 0, truncated: false } });
+  // a cancelled scan stops reading between lines
+  let n = 0;
+  const part = await readClaudeHistoryStream(ID, WS, SEARCH_HISTORY_LIMITS, CFG, { stop: () => ++n > 3 });
+  assert.ok(part.ok && part.history.items.length <= 3, 'stopped early');
+  // Windows-style folder: the slug is the reader's own (no new path code)
+  assert.strictEqual(claudeProjectSlug('C:\\Users\\a b\\x.y'), 'C--Users-a-b-x-y');
+}
+streamed().then(() => {
+  fs.rmSync(CFG, { recursive: true, force: true });
+  console.log('history text-only and streamed Claude read tests passed');
+  process.exitCode = 0;
+}, (e) => {
+  fs.rmSync(CFG, { recursive: true, force: true });
+  console.error(e);
+  process.exitCode = 1;
+});
