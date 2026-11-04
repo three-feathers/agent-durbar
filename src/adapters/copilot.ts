@@ -177,6 +177,8 @@ export const copilotSandboxRefusal = (reason: string): string => `Copilot could 
 
 /** Spec 052 FR-229: the row after an interrupt given up on; the runtime's own `session.idle` brings "Aborted" back when the abort lands. */
 export const COPILOT_STOP_SENT = 'Stop sent: Copilot has not answered yet';
+/** Spec 099 FR-059: a plan-first send whose `mode.set plan` waited while Autopilot was turned on. */
+export const COPILOT_PLAN_CROSSED = 'Autopilot was turned on while plan first was starting, so this message was not sent. Send it again.';
 /** Spec 052 FR-229: the row while a send waits for a late abort, and the send's failure when it never answers. */
 export const COPILOT_STOP_WAIT = 'Waiting for Copilot to stop the last turn';
 export const COPILOT_STOP_NO_ANSWER = 'Copilot has not answered Stop yet, so your message was not sent. Send it again in a moment, or end the session.';
@@ -1144,10 +1146,10 @@ export class CopilotAdapter implements AgentAdapter {
     if (message.plan) {
       const epoch = live.modeEpoch;
       await live.session.rpc.mode.set({ mode: 'plan' });
-      // FR-059: Autopilot came on during that wait (its mode.set went after this one): not in plan mode, so the plan message is refused
+      // FR-059: Autopilot was turned on during that wait (its mode.set went after this one, and may yet fail): the plan message is not sent
       if (live.modeEpoch !== epoch) {
         live.turnOpen = false;
-        throw new Error(AUTOPILOT_NO_PLAN);
+        throw new Error(COPILOT_PLAN_CROSSED);
       }
       live.planMode = true;
     } else if (live.planMode) {
@@ -1210,13 +1212,15 @@ export class CopilotAdapter implements AgentAdapter {
     live.modeEpoch = (live.modeEpoch ?? 0) + 1;
     auto.turnOn({ ...settings, cap });
     this.autopilotUsed = true;
+    // FR-059 (review on #967): `autopilot` leaves plan mode, so a run's send (during this wait too) has no mode.set after its last check
+    live.planMode = false;
     try {
       await live.session.rpc.mode.set({ mode: 'autopilot' });
     } catch (e) {
       auto.settings = undefined;
+      live.planMode = true; // the mode is not known (a plan send may have set `plan` meanwhile): the next plain send goes back to interactive first
       throw e;
     }
-    live.planMode = false; // FR-059 (review on #967): out of plan mode now, so a run's send has no mode.set after its last check
   }
 
   private async autopilotOff(sid: string, live: Live, reason: AutopilotEnd): Promise<void> {

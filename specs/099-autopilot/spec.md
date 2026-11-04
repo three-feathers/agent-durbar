@@ -414,7 +414,7 @@ the cap is reached, the run ends with **cap**. Without a cap, the dialog says pl
   - **A Stop** (or the session ending) drops the message, as FR-229 of spec 052 drops one held by a Stop. **Autopilot off alone** sends it as a plain message, never a goal.
   - **The Autopilot cap goes back** on every way out before the run begins: Copilot sends the session's own cap again; Claude Code drops the Autopilot `--max-budget-usd`, and the next launch is without it.
   - Later sends work as before: no turn is left open and no Autopilot refusal sticks. No goal outlives the Stop. Codex reads Autopilot again right before `thread/goal/set`, with no wait between. Fake adapter tests with gated fakes: T050.
-  - **Every wait counts, the restore too** (round 2 of that review): any wait after that read, the cap restore included, is followed by the same read of Stop and Autopilot (Autopilot back on during the restore goes through the cap again), and nothing that changes the mode comes between the last read and the goal. A failure the chat reported as "nothing was sent" (FR-054) is final: no plain resend follows it. A plan-first send whose `mode.set plan` waited across Autopilot turning on is refused ("Plan first is not available on Autopilot yet.") and leaves plan mode unset. T051.
+  - **Every wait counts, the restore too** (round 2 of that review): any wait after that read, the cap restore included, is followed by the same read of Stop and Autopilot (Autopilot back on during the restore goes through the cap again), and nothing that changes the mode comes between the last read and the goal. A failure the chat reported as "nothing was sent" (FR-054) is final: no plain resend follows it. A plan-first send whose `mode.set plan` waited across Autopilot turning on is refused ("Autopilot was turned on while plan first was starting, so this message was not sent. Send it again."). Copilot counts plan mode as left from the start of `mode.set autopilot`, so a goal sent during that wait has no mode change before it; if that `mode.set` fails, plan mode counts as set again, so the next plain message goes back to `interactive` first. T051.
 
 ### Window
 
@@ -696,6 +696,14 @@ Owner decision of Vikram, 2026-10-31 and restated 2026-11-01 (matching Paco; fir
     - On Copilot, Stop's Autopilot branch and End's `endQuietly` run inside FR-229's stop sequence, so a send made during them waits as it does for any Stop.
     - `send` checks the Autopilot refusals before and again after that wait, because Autopilot may have been turned off during it. A Stop during the wait drops the message (FR-229). `test-autopilot-copilot.ts`: Autopilot turned off during the wait sends a plain message and starts no run. Without the second check the send rejects ("This session is not on Autopilot."), which fails `Autopilot went off during the wait: the message still goes`.
     - The `test:autopilot-*` suites are listed in `scripts/test-suites.txt`.
+
+### 2026-11-04: plan mode around Autopilot's own mode change, round 3 (review on #967)
+
+Round 3 of rubenlupi's review on PR #967 (2026-11-04): `planMode` stayed set while `setAutopilot` waited on `mode.set autopilot`, so a goal sent then (the plan card's "Approve and run on Autopilot") did `mode.set interactive` first; and when that `mode.set` failed during a plan send's wait, `planMode` was left unset with the runtime maybe still in plan mode, and the plan send was refused with the Autopilot text although Autopilot never came on.
+
+- **Changes:** FR-059's plan sentence (above). **Replaces:** the round-2 "refused with AUTOPILOT_NO_PLAN and leaves plan mode unset".
+- **How:** `setAutopilot` clears `planMode` before the await and sets it in the catch; the plan send's refusal is `COPILOT_PLAN_CROSSED`.
+- Tests: `test-autopilot-copilot.ts` probes E (text), F and G, gated fakes. No real session.
 
 ### 2026-11-04: every wait of that send, round 2 (review on #967)
 

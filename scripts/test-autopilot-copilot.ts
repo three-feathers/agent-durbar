@@ -7,7 +7,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { FakeClient, FakeCopilot } from './fakes/copilot-sdk';
 import type { FakeSession } from './fakes/copilot-sdk';
-import { COPILOT_CAPABILITIES, COPILOT_STOP_WAIT, copilotTaskEnd } from '../src/adapters/copilot';
+import { COPILOT_CAPABILITIES, COPILOT_PLAN_CROSSED, COPILOT_STOP_WAIT, copilotTaskEnd } from '../src/adapters/copilot';
 import { AUTOPILOT_ANSWER, CLOCK_SAMPLE_MS } from '../src/adapters/autopilot';
 import { LINE_BACKSTOP, LINE_CAP_NOT_RESTORED, LINE_CLOSED, LINE_SELF_STARTED, LINE_UNCONFIRMED } from '../src/adapters/autopilotHost';
 import type { AutopilotTuning } from '../src/adapters/autopilotHost';
@@ -399,11 +399,57 @@ async function main(): Promise<void> {
     await until(() => asked, 'probe E: the plan mode.set is in flight');
     await r.ad.setAutopilot(r.sid, { limit: 5 });
     answer();
-    assert.strictEqual(await planned, 'Plan first is not available on Autopilot yet.', 'FR-059 probe E: Autopilot on during the plan mode.set refuses the plan message');
+    assert.strictEqual(await planned, COPILOT_PLAN_CROSSED, 'FR-059 probe E: Autopilot on during the plan mode.set refuses the plan message');
     assert.deepStrictEqual(r.s.calls.filter((c) => c.name === 'send'), [], 'probe E: the plan message is not sent');
     const from = r.order().length;
     assert.strictEqual(await r.ad.send(r.sid, { text: 'the goal' }).then(() => 'ok', (e: Error) => e.message), 'ok', 'probe E: the next goal is not refused');
     assert.deepStrictEqual(r.order().slice(from), ['send'], 'FR-059 probe E: plan mode was not set again, so no mode.set before the goal');
+  }
+
+  // FR-059 round 3 (review on #967, probe F): a plan turn left plan mode set; a goal sent while setAutopilot still waits on its mode.set
+  // autopilot (the plan card's "Approve and run on Autopilot") has no mode.set interactive before it
+  {
+    const r = await rig();
+    await r.ad.send(r.sid, { text: 'plan it', plan: true });
+    fire(r.s, { type: 'session.idle', data: {} }); // the plan turn ends without a plan
+    const set = r.s.rpc.mode.set.bind(r.s.rpc.mode);
+    let asked = false;
+    let answer: () => void = () => undefined;
+    r.s.rpc.mode.set = (a: unknown) => { asked = true; r.s.rpc.mode.set = set; return new Promise((res) => { answer = () => res(set(a)); }); };
+    const from = r.order().length;
+    const sendsBefore = r.s.calls.filter((c) => c.name === 'send').length;
+    const on = r.ad.setAutopilot(r.sid, { limit: 5 });
+    await until(() => asked, 'probe F: mode.set autopilot is in flight');
+    const goal = r.ad.send(r.sid, { text: 'the goal' }).then(() => 'ok', (e: Error) => e.message);
+    await until(() => r.s.calls.filter((c) => c.name === 'send').length > sendsBefore || r.order().length > from, 'probe F: the goal send went or asked for a mode');
+    answer();
+    await on;
+    assert.strictEqual(await goal, 'ok', 'probe F: the goal is not refused');
+    assert.ok(!r.order().slice(from).includes('mode:interactive'), 'FR-059 probe F: no mode.set interactive before a goal sent while Autopilot turns on');
+    const sent = r.s.calls.filter((c) => c.name === 'send').map((c) => c.args[0] as { prompt: string; agentMode?: string }).map((x) => [x.prompt, x.agentMode ?? 'none']);
+    assert.deepStrictEqual(sent.slice(1), [['the goal', 'autopilot']], 'probe F: the goal goes on Autopilot');
+  }
+
+  // FR-059 round 3 (review on #967, probe G): Autopilot's own mode.set fails while a plan send waits on mode.set plan: the plan send says
+  // why it was not sent, and plan mode counts as set, so the next plain message goes back to interactive first
+  {
+    const r = await rig();
+    const set = r.s.rpc.mode.set.bind(r.s.rpc.mode);
+    let asked = false;
+    let answer: () => void = () => undefined;
+    r.s.rpc.mode.set = (a: unknown) => {
+      asked = true;
+      r.s.rpc.mode.set = (b: unknown) => { r.s.rpc.mode.set = set; return (b as { mode: string }).mode === 'autopilot' ? Promise.reject(new Error('mode refused')) : set(b); };
+      return new Promise((res) => { answer = () => res(set(a)); });
+    };
+    const planned = r.ad.send(r.sid, { text: 'plan it', plan: true }).then(() => 'ok', (e: Error) => e.message);
+    await until(() => asked, 'probe G: the plan mode.set is in flight');
+    await assert.rejects(r.ad.setAutopilot(r.sid, { limit: 5 }), /mode refused/);
+    answer();
+    assert.strictEqual(await planned, COPILOT_PLAN_CROSSED, 'FR-059 probe G: the plan send says Autopilot was turned on meanwhile');
+    const from = r.order().length;
+    await r.ad.send(r.sid, { text: 'plain' });
+    assert.deepStrictEqual(r.order().slice(from), ['mode:interactive', 'send'], 'FR-059 probe G: after the failed mode.set autopilot, plan mode counts as set');
   }
 
   // spec 099 2026-11-04 (review on #967, mutant C2): Stop's Autopilot branch runs inside FR-229's stop sequence, so a send during it waits
