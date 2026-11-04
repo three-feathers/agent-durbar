@@ -163,3 +163,4 @@ PRs, gates and line-count goals: `plan.md`. Each PR measures on `main` first and
 
 - [ ] T128 [Gate] The owner's and teammates' real GPUs, Windows, macOS and Linux: the walk's cases at both sizes, Flat and Photo; numbers in the spec. Decide: full zoom, or "chat grows, room still", or a plain cut. `real:` no AI credits, simulator only [FR-209]
 - [ ] T129 [PR Z, after T128] What the gate chose, with its budget in `check:perf` and a cut for no GPU, Reduced motion and a non-desk opening. Test: a new driver counts frames and animations; mutant: animation under Reduced motion [FR-209]
+- [x] T135 [US1] Issue #1145 (FR-234): hide the chat header's More button when its menu has no item (a helper's chat). Test: `check-helper-more` (ui-suite), mutant: remove the `syncMoreBtn()` call.

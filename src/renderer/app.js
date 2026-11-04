@@ -2280,6 +2280,7 @@ function updatePanelHeader(){
   const t=ph.querySelector('[data-f=task]'); t.textContent=taskText(a); t.title=taskText(a);
   const ug=ph.querySelector('[data-f=usage]'); ug.textContent=usageLong(a); ug.title=ug.textContent.endsWith(' est.')?USD_TIP:'';
   updateCapChip(a);
+  syncMoreBtn(); /* spec 005 FR-234 (issue 1145): no More button for a menu with no items */
   $('pauseBtn').querySelector('span').textContent=a.paused?'Resume':'Pause';
   syncRunState(); /* spec 005 FR-038: Send or Stop follows the turn */
   syncChatHeader(); /* spec 097 FR-106: the portrait and the lamp words follow the header */
@@ -2287,6 +2288,8 @@ function updatePanelHeader(){
 }
 /* spec 052 FR-003: the chat header's More menu. A real menu: arrows move, Home/End jump, Esc closes and returns focus to More;
    a choice or a click elsewhere closes it. The items are the old buttons with their ids, so their handlers stay as they were. */
+/* spec 005 FR-234 (issue 1145): a helper's More menu holds nothing (every item is for the session's own agent), so the button is hidden whenever the menu has no item; an open empty menu is closed */
+function syncMoreBtn(){const b=$('moreBtn'), m=$('moreMenu'); if(!b||!m)return; const has=!!m.querySelector('[role="menuitem"]'); b.hidden=!has; if(!has){m.hidden=true; b.setAttribute('aria-expanded','false');}}
 function wireMoreMenu(){wireMenu('moreBtn','moreMenu');}
 /* spec 052 FR-003, #308: one menu behaviour for the chat's More and the top bar's ⋯ */
 function wireMenu(btnId,menuId){
