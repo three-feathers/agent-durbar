@@ -131,7 +131,7 @@ Header actions: **Stop** (interrupt the turn; the agent stays ready), **End sess
 
 ### 2026-11-04: `check-chat-visibility` runs one size per ui-suite entry (issue #1127, driver only)
 
-**Driver split** `[IMPLEMENTED]` `sim:` The driver took more than the suite's 600 s limit on a slow runner with both sizes in one process (CI run 41769615163). `scripts/ui-suite.js` now has two entries, `check-chat-visibility 1440` and `check-chat-visibility 1280` (`CVONLY=1440|1280`, a normal run that can pass), each with its own limit and slot (spec 008 FR-063). Every case and assertion runs at both sizes as before; `--only check-chat-visibility` runs both.
+**Driver split** `[IMPLEMENTED]` `sim:` The driver took more than the suite's 600 s limit on a slow runner with both sizes in one process (CI run 41769615163). `scripts/ui-suite.js` now has two entries, `check-chat-visibility 1440` and `check-chat-visibility 1280` (`CVONLY=1440|1280`, a normal run that can pass), each with its own limit and slot (spec 008 FR-063). Every case and assertion runs at both sizes as before; `--only check-chat-visibility` runs both. With two sizes at once on one machine a neighbour's window could hold the OS focus and Tab moved nothing (seen 3 of 3 pairs), so the driver asks `H.focusPage()` for the page focus before each Tab and waits up to 15 s for the move.
 
 ### 2026-10-31: MCP context cost (spec 100)
 
