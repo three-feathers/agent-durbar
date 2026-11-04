@@ -1256,7 +1256,7 @@ process.on('exit', () => {
   // app's starts off (no settings) and is the store's value
   {
     const writes: unknown[] = [];
-    const store = { chatLinksNewTab: false, setChatLinksNewTab(on: unknown) { writes.push(on); return on; } };
+    const store = { chatLinksNewTab: false, setChatLinksNewTab(on: unknown) { writes.push(on); return { ok: true, value: on as boolean }; } };
     const sim = makeLinksToggle(true, () => store);
     assert.strictEqual(sim.get(), false, 'the simulator\'s toggle is off by default');
     store.chatLinksNewTab = true;
@@ -1285,6 +1285,8 @@ process.on('exit', () => {
     const badT = makeLinksToggle(false, () => bad);
     assert.strictEqual(badT.set(true), false, 'an unwritable profile: the save failed');
     assert.strictEqual(badT.get(), false, 'and the old value is in force');
+    assert.strictEqual(badT.set(false), false, 'issue 1094: off asked while it is already off, and the write fails: not saved');
+    assert.strictEqual(bad.setChatLinksNewTab(false).ok, false, 'the store says so too');
     // issue 1023: the session browser's one-time note on an unwritable profile is kept for the run, so the browser opens
     assert.strictEqual(bad.acceptBrowserNote(), true);
     assert.strictEqual(bad.browserNoteAccepted, true, 'accepted for this run');
@@ -1298,7 +1300,7 @@ process.on('exit', () => {
     const st = new SettingsStore(f);
     st.load();
     assert.strictEqual(st.chatLinksNewTab, false, 'off by default');
-    for (const bad of ['yes', 1, null, undefined, {}]) assert.strictEqual(st.setChatLinksNewTab(bad), false, 'a non-boolean changes nothing');
+    for (const bad of ['yes', 1, null, undefined, {}]) assert.strictEqual(st.setChatLinksNewTab(bad).value, false, 'a non-boolean changes nothing');
     st.setChatLinksNewTab(true);
     const back = new SettingsStore(f); back.load();
     assert.strictEqual(back.chatLinksNewTab, true, 'kept after a restart');
