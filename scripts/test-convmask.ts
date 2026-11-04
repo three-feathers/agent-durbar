@@ -70,7 +70,7 @@ assert.strictEqual(M.maskText(`**note** the ${MCPV} here`, VALS), '**note** the 
 // same text (so the old pass showed the mark-stripped text): never shown, with or without its mark
 for (const v of ['p@ss*w0rd!!77', 'hunter~2secret', 'abc[123]xyzQ', 'Pa`ss`word99', 'brkt]Close99x', 'esc_aped_v4lue']) {
   const plainV = v.replace(/[*`~[\]]/g, '');
-  for (const written of [v, v.replace(/_/g, '\\_')]) {
+  for (const written of [v, v.split('_').join('\\_')]) {
     for (const second of [GHP, MCPV]) {
       const t = `the db password is ${written} ok and token ${second} end`;
       const out = M.maskText(t, [v, MCPV]);

@@ -155,6 +155,22 @@ async function main(): Promise<void> {
       }
     }
     assert.strictEqual(guarded, 40);
+    // re-review of PR 1098: a long match near a window edge that is not the message's edge is not cut there; the window grows (here
+    // straight to the whole message, which the stub marks) on both sides
+    {
+      const L = 'x' + 'y'.repeat(200);
+      const pad = (n: number) => 'p '.repeat(n);
+      for (const side of ['left', 'right'] as const) {
+        const win = side === 'left' ? pad(25) + L + ' ' + pad(400) : pad(400) + L + ' ' + pad(60);
+        const stub: Masker = {
+          maskText: (r) => r,
+          maskedWindow: (raw, _f, _t, _v, w) => (w?.whole ? { text: 'WHOLE ' + raw, atStart: true, atEnd: true, work: 1 } : { text: win, atStart: false, atEnd: false, work: 1 }),
+        };
+        const ex = messageExcerpts(pad(500) + L + ' ' + pad(500), L, { ...o, masker: stub })!.excerpts;
+        assert.strictEqual(ex.length, 1);
+        assert.ok(ex[0].anchor.head.startsWith('whole'), `${side} edge: the excerpt is cut from the whole message, not next to the window's edge (head ${ex[0].anchor.head.slice(0, 10)})`);
+      }
+    }
     // the mask throws: the caller gets the throw (and drops the message)
     const bad = createMasker({ unhide: () => { throw new Error('x'); } });
     assert.throws(() => messageExcerpts('the invoice', 'invoice', { ...o, masker: bad }));

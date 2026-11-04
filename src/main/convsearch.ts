@@ -220,7 +220,7 @@ function cutIn(search: SessionSearchApi, m: string, atStart: boolean, atEnd: boo
     if (r.term !== term) continue;
     if (r.end - r.start >= BUDGET.excerptChars - 2) {
       // a match longer than an excerpt (review of PR 1098): its start, cut on a code point, marked to the cut, then `…`
-      if (!atEnd && r.start + BUDGET.excerptChars > m.length - BUDGET.edgeGuard) { near = true; continue; }
+      if ((!atStart && r.start < BUDGET.edgeGuard) || (!atEnd && r.start + BUDGET.excerptChars > m.length - BUDGET.edgeGuard)) { near = true; continue; }
       const [s, e] = bounds(m, r.start, r.end);
       const lead = s > 0 ? '…' : '';
       const body = m.slice(s, e); // at most excerptChars - 2, on a code point (`bounds`): with both marks, within excerptChars
