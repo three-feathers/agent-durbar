@@ -6,6 +6,7 @@ import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { contrast } from '../src/shared/themegen';
+import { captureWithoutRoom } from '../src/main/docshot';
 
 const ROOT = path.join(__dirname, '..', '..');
 const LOGO = path.join(ROOT, 'build', 'logo');
@@ -216,6 +217,30 @@ for (const rel of ['scripts', 'src', 'package.json', 'README.md']) {
   assert.ok(!/DurbarLogo/.test(fs.readFileSync(path.join(ROOT, 'src', 'main', 'main.ts'), 'utf8')), 'main does not read the logo choice');
 }
 
+// the macOS room is closed for every doc picture (not run on a Mac: the offset logic is tested with a fake page)
+{
+  const calls: string[] = [];
+  let state = false; // 'fullscreen' in dataset
+  const run = async (code: string) => { calls.push(code); if (/h\.dataset\.fullscreen=''/.test(code)) { const w = state; state = true; return w; } if (/delete /.test(code)) state = false; return undefined; };
+  void (async () => {
+    let during = false;
+    const r = await captureWithoutRoom(run, async () => { during = state; return 'png'; }, true);
+    assert.ok(r === 'png' && during && !state, 'DURBAR_DOC_SHOTS: fullscreen set during the capture, put back after');
+    state = true; calls.length = 0;
+    await captureWithoutRoom(run, async () => 1, true);
+    assert.ok(state && calls.length === 1, 'an app already in full screen stays so');
+    state = false; calls.length = 0;
+    await assert.rejects(captureWithoutRoom(run, async () => { throw new Error('x'); }, true), /x/);
+    assert.ok(!state, 'put back even when the capture fails');
+    calls.length = 0;
+    await captureWithoutRoom(run, async () => 1, false);
+    assert.strictEqual(calls.length, 0, 'off outside shots:docs');
+  })().catch((e) => { console.error(e); process.exit(1); });
+  const mainSrc = fs.readFileSync(path.join(ROOT, 'src', 'main', 'main.ts'), 'utf8');
+  assert.match(mainSrc, /shot: \(file: string\) => captureWithoutRoom\(/, 'the driver ctx.shot (every picture) goes through captureWithoutRoom');
+  assert.ok(!/closes the room|dataset\.fullscreen/.test(fs.readFileSync(path.join(ROOT, 'scripts', 'driver-helpers.js'), 'utf8')), 'helpers().shot has no copy of the fix');
+}
+
 // ---- the check itself: each rule goes red on its broken case ----
 {
   const good = svgs.get('icon-1-20.svg')!;
@@ -232,6 +257,8 @@ for (const rel of ['scripts', 'src', 'package.json', 'README.md']) {
   assert.throws(() => M.marksSource(() => good.replace('</svg>', '<path data-slot="gold" fill="#FFC21A" d="M0 0"></path></svg>')), /closing tag/, 'and the generator refuses it');
   assert.strictEqual(M.captureProblem({ width: 256, height: 256 }, 256), '', 'an exact capture is fine');
   for (const sz of [{ width: 1024, height: 740 }, { width: 2048, height: 2048 }, { width: 512, height: 512 }]) assert.match(M.captureProblem(sz, 1024), /capture of/, `a capture of ${sz.width}x${sz.height} is refused`);
+  // the generator really throws on a wrong capture (a source assertion, as for setIcon: the check would pass with the throw removed)
+  assert.match(fs.readFileSync(path.join(ROOT, 'scripts', 'build-icons.js'), 'utf8'), /const wrong = captureProblem\(sz, px\);\s*if \(wrong\) throw new Error\(/, 'build-icons render() throws when captureProblem reports a wrong capture');
   const md = fs.readFileSync(path.join(LOGO, 'ASSETS.md'), 'utf8');
   const one = new Map([['icon-1-20.svg', good]]);
   const head = '| file | icon | form | world | tool | date | prompt | made by | licence | approved by |\n|---|---|---|---|---|---|---|---|---|---|\n';

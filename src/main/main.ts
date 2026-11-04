@@ -1,4 +1,5 @@
 import { destroyAllViews } from './browser/views';
+import { captureWithoutRoom } from './docshot';
 import { registerSimScheme } from './browser/simpages';
 import { FolderSetupStore } from './foldersetupstore';
 import { acceptedFor, hasFolderRules, scanFolderSetupCached } from './foldersetup';
@@ -1121,7 +1122,7 @@ app.whenReady().then(() => {
       browserTabs: (id: string) => browser.tabsOf(id),
       js: <T>(code: string): Promise<T> => (win as BrowserWindow).webContents.executeJavaScript(code, true) as Promise<T>,
       sleep: (ms: number) => new Promise<void>((r) => setTimeout(r, ms)),
-      shot: async (file: string) => fs.writeFileSync(file, (await (win as BrowserWindow).webContents.capturePage()).toPNG()),
+      shot: (file: string) => captureWithoutRoom((code) => (win as BrowserWindow).webContents.executeJavaScript(code, true), async () => fs.writeFileSync(file, (await (win as BrowserWindow).webContents.capturePage()).toPNG()), dev.DURBAR_DOC_SHOTS === '1'),
       waitFor: async (expr: string, ms = 120000) => {
         const end = Date.now() + ms;
         while (Date.now() < end) {

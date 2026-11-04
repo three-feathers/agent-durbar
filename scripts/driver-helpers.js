@@ -204,12 +204,7 @@ function helpers(ctx) {
     if (o.settle) await w.settle();
     if (prep !== 'calm' && !o.walking) await w.settleWalk(); // FR-085 (calm already waited); `walking: true` keeps a figure mid-walk on purpose
     await ctx.sleep(o.delay === undefined ? 150 : o.delay);
-    /* spec 101 (owner's look at #988): a picture has no window controls, so the room kept for macOS's traffic lights would show as an
-       empty gap before the logo; `npm run shots:docs` takes them with it closed, as Windows and Linux show the bar (the app is unchanged) */
-    const noRoom = process.env.DURBAR_DOC_SHOTS === '1';
-    /* the app's own full-screen state has no room (styles.css): set for the moment of the picture, then put back as it was */
-    const was = noRoom ? await js(`(()=>{const h=document.documentElement,w='fullscreen' in h.dataset;h.dataset.fullscreen='';return w;})()`) : true;
-    try { await ctx.shot(file); } finally { if (!was) await js(`(()=>{delete document.documentElement.dataset.fullscreen;})();0`); }
+    await ctx.shot(file); // spec 101: under `npm run shots:docs` main's ctx.shot closes the macOS room for every picture (src/main/docshot.ts)
     if (o.tag) console.log(`[${o.tag}] saved`, o.what !== undefined ? o.what : path.basename(file));
   };
   /**
