@@ -29,11 +29,7 @@ export function register(deps: SettingsIpcDeps): void {
   };
   ipcHandle('settings:setSeriousMode', setting('seriousMode', false, (st, v) => st.setSeriousMode(v)));
   /* spec 001 FR-192: Still highlights (no motion); only a boolean changes it */
-  ipcHandle('settings:setStillHighlights', (_e, on: unknown) => {
-    const st = settingsStore();
-    if (!st || typeof on !== 'boolean') return { ok: false, stillHighlights: st?.stillHighlights ?? false }; /* refused: the real value in force, not a false "saved" */
-    return st.setStillHighlights(on); /* { ok, stillHighlights }: not ok = the save failed and it stayed as it was, even when the value is unchanged */
-  });
+  ipcHandle('settings:setStillHighlights', setting('stillHighlights', false, (st, v) => st.setStillHighlights(v)));
   /* spec 052 FR-059: OS notifications when an agent needs you and the window is in the background (on unless turned off) */
   ipcHandle('settings:setNotifyNeedsMe', setting('notifyNeedsMe', true, (st, v) => st.setNotifyNeedsMe(v)));
   /* spec 081 FR-022 (Q6 = A): the agent-app update check at start: on unless turned off */
