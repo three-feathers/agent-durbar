@@ -14,3 +14,10 @@
 - Simulator: `simcompact=1`.
 - Tests: `scripts/test-compaction.ts` (in `npm test`), driver `scripts/shots-015-compact.js` (UI suite, `shots:docs`), mutation checks listed in the PR.
 - Docs: README (feature text), changelog fragment, specs-index block, `docs/agent-notes.md` entry.
+
+## 2026-11-04 delta: background helpers (issue #1141)
+
+- Types: `SubagentEvent.background?: boolean` (`src/adapters/types.ts`); `eventguard.ts` refuses a non-boolean.
+- Adapters: `claudeMap.ts` keeps a set of background call ids from the `Agent` / `Task` input (`run_in_background === true`); `user()` closes only calls not in it; `task_notification` closes both; `reset` clears it. `map.ts` sets `background: true` on `subagent.started` when `executionMode === 'background'`.
+- Renderer (`app.js`): `onSubagent` stores `s.background`; `onTaskTool` on `complete` of a background record that is still running changes nothing (no status, no result, no card change); `failed` still ends it; the session `stopped` branch ends running helpers as failed ("Stopped with its session").
+- Simulator: `simbghelper=1` in `subRun`. Tests: `scripts/test-claude-map.ts`, `scripts/test-events.ts` (or the Copilot mapper test), a case in `scripts/check-office-fill.js` next to the Claude-shaped helper case.

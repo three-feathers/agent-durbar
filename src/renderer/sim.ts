@@ -687,6 +687,9 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
     // spec 001 FR-097 (issue 697): simhelpers=<1..6> gives every main agent that many helpers (running, done and failed mixed, in SIM_HX_ORDER),
     // and the first agent's second helper is Codex-shaped: announced with no task and finished with no result (so "not reported" is seen)
     const simHelpers = !noHelpers && simQs && /^[1-6]$/.test(simQs.get('simhelpers') || '') ? parseInt(simQs.get('simhelpers') || '0', 10) : 0;
+    // spec 015 FR-018 (issue 1141): simbghelper=1 launches the first still-working helper in the background: its parent call returns at once
+    // with a launch note (as Claude's `run_in_background` and Copilot's background `task` do) and the helper goes on working
+    let simBgHelper = !!simQs && simQs.get('simbghelper') === '1';
     // Fewer than 12: drop the quieter agents first so the status mix stays varied.
     let rows = ROSTER.slice(0, Math.min(n, ROSTER.length));
     if (n < 12) rows = ROSTER.filter((r) => r[0] !== 'Hugo' && r[0] !== 'Priya' && r[0] !== 'Noor' && r[0] !== 'Omar').slice(0, n);
@@ -1301,7 +1304,10 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
       const call = sid(s) + '-task' + h, base = { sessionId: sid(s), timestamp: now() };
       const prompt = 'You are a helper for the **' + name + '** step.\n\n' + task + '.\n\nOnly read files; report back in two sentences.' + (opts.reply === 'long' ? '\n\n' + LONG_TEXT : '');
       emit({ ...base, type: 'toolCall', callId: call, tool: 'task', phase: 'start', args: { description: task, prompt, agent_type: 'explore' } });
-      emit({ ...base, type: 'subagent', subagentId: call, name, phase: 'started', task, agentName: 'explore', model: 'gpt-5.6-luna' });
+      const bg = simBgHelper && (st === 'working' || st === 'thinking');
+      if (bg) simBgHelper = false;
+      emit({ ...base, type: 'subagent', subagentId: call, name, phase: 'started', task, agentName: 'explore', model: 'gpt-5.6-luna', ...(bg ? { background: true } : {}) });
+      if (bg) emit({ ...base, type: 'toolCall', callId: call, tool: 'task', phase: 'complete', output: 'Agent started in the background. You will be told when it finishes.' });
       emit({ ...base, type: 'user', agentId: call, text: prompt });
       emit({ ...base, type: 'status', status: 'working', agentId: call, intent: task });
       if (h % 2 === 0) emit({ ...base, type: 'thinking', agentId: call, reasoningId: call + '-r', delta: '**Scoping the check**\n\nOnly the touched files matter, so I will start with ' + s.files[0] + '. ' });
@@ -1392,7 +1398,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
       s.state = 'waiting';
       // spec 087 FR-021: a Codex approval card in Ask first says what approving may mean for its sandbox (its own line, as codexPermission)
       const sbxApp = s.info.adapterId ?? 'copilot';
-      const sbxNote = sbxApp === 'codex' ? (kind === 'shell' ? 'If you approve, Codex may run this outside its sandbox.' : 'If you approve, Codex writes this outside its read-only sandbox.') : sbxApp === 'copilot' && kind === 'shell' && s.info.permMode === 'ask' && s.info.sandbox?.state === 'on' ? 'If you approve, Copilot’s sandbox may still let this write outside the folder (seen on Linux, 2026-10-25).' : undefined; // FR-021a (K15)
+      const sbxNote = sbxApp === 'codex' ? (kind === 'shell' ? 'If you approve, Codex may run this outside its sandbox.' : 'If you approve, Codex writes this outside its read-only sandbox.') : sbxApp === 'copilot' && kind === 'shell' && s.info.permMode === 'ask' && s.info.sandbox?.state === 'on' ? 'If you approve, this can also write in Copilot’s temp folder (a private one Durbar gives it), not only this folder.' : undefined; // FR-021a (K15)
       emit({ type: 'status', sessionId: sid(s), timestamp: now() - (opts.waitOld ? 120_000 : 0), status: 'needs-permission', intent, permission: { ...base, state: 'pending', ...(diff ? { diff } : {}), ...(sbxNote ? { sandboxNote: sbxNote } : {}) } });
       return false;
     }
@@ -2094,6 +2100,8 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
     /* spec 024: place mapping kept in memory (plain script: no imports, so the ids are listed here) */
     const placeMap: Record<string, string> = {};
     let seriousMode = false; /* spec 034 */
+    let stillHighlights = typeof location !== 'undefined' && new URLSearchParams(location.search).get('simstillhl') === '1'; /* spec 001 FR-192; ?simstillhl=1 starts it saved on (the boot read) */
+    let autoFollowWork = false; /* spec 052 FR-182: off by default; the simulator keeps it in memory and refuses a non-boolean like main */
     let notifyNeedsMe = false; /* spec 052 FR-059: off in the demo until you turn it on */
     let breakResume: 'auto' | 'ask' = 'auto'; /* spec 068 FR-006 */
     let chatLinksIn: 'session' | 'system' = 'session'; /* spec 080 FR-031 */
@@ -2202,9 +2210,11 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
     const capApi: Partial<DurbarApi> = {
       usageTotals: async () => ({ ok: true, since: savedSince, office: saved.office, folders: saved.folders }),
       usageResetTotals: async () => { savedSince = new Date().toISOString(); saved = { office: zero, folders: [] }; return { ok: true, since: savedSince, office: zero, folders: [] }; },
-      getSettings: async () => ({ mcpSignInRefresh: simSignIn.on, mcpWarnLevels: simMcpLevels, defaultMaxAiCredits: defaultCap, placeMap: { ...placeMap }, customPlaces: customPlaces.map((p) => ({ ...p })), seriousMode, notifyNeedsMe, breakResume, chatLinksIn, ...(simTheme ? { theme: simTheme } : {}), characters: simCharacters, about: { name: 'Agent Durbar', version: '0.1.8 (simulator)', owner: 'Three Feathers', copyright: 'Copyright (c) 2026 Three Feathers contributors', website: 'https://github.com/three-feathers/agent-durbar', contributors: [{ label: 'vikramgorla', url: 'https://github.com/vikramgorla' }, { label: 'fjcabello', url: 'https://github.com/fjcabello' }, { label: 'rubenlupi', url: 'https://github.com/rubenlupi' }] } /* sample data, real values come from src/shared/about.ts */ }),
+      getSettings: async () => ({ mcpSignInRefresh: simSignIn.on, mcpWarnLevels: simMcpLevels, defaultMaxAiCredits: defaultCap, placeMap: { ...placeMap }, customPlaces: customPlaces.map((p) => ({ ...p })), seriousMode, stillHighlights, autoFollowWork, notifyNeedsMe, breakResume, chatLinksIn, ...(simTheme ? { theme: simTheme } : {}), characters: simCharacters, about: { name: 'Agent Durbar', version: '0.1.9 (simulator)', owner: 'Three Feathers', copyright: 'Copyright (c) 2026 Three Feathers contributors', website: 'https://github.com/three-feathers/agent-durbar', contributors: [{ label: 'vikramgorla', url: 'https://github.com/vikramgorla' }, { label: 'fjcabello', url: 'https://github.com/fjcabello' }, { label: 'rubenlupi', url: 'https://github.com/rubenlupi' }] } /* sample data, real values come from src/shared/about.ts */ }),
       setDefaultCap: async (c) => { defaultCap = c !== null && c >= 30 ? Math.round(c * 100) / 100 : undefined; return { ok: true, defaultMaxAiCredits: defaultCap }; },
       setSeriousMode: async (on) => { if (typeof on === 'boolean') seriousMode = on; return { ok: true, seriousMode }; },
+      setStillHighlights: async (on) => { if (typeof on !== 'boolean') return { ok: false, stillHighlights }; stillHighlights = on; return { ok: true, stillHighlights }; },
+      setAutoFollowWork: async (on) => { if (typeof on !== 'boolean') return { ok: false, autoFollowWork }; autoFollowWork = on; return { ok: true, autoFollowWork }; },
       setNotifyNeedsMe: async (on) => { if (typeof on === 'boolean') notifyNeedsMe = on; return { ok: true, notifyNeedsMe }; },
       setMcpSignInRefresh: async (on) => { if (typeof on === 'boolean') simSignIn.on = on; return { ok: true, mcpSignInRefresh: simSignIn.on }; }, // spec 058 FR-213
       setBreakResume: async (v) => { if (v === 'auto' || v === 'ask') breakResume = v; return { ok: true, breakResume }; },

@@ -256,14 +256,14 @@ module.exports = async (ctx) => {
   // a 480px panel (spec 005 FR-058): the tabs and the bar fit one row each and the page area is not empty
   {
     await H.load({ w: 1280, h: 800, ready: 'fit', focus: true });
-    await js(`(()=>{const s=document.createElement('style');s.id='narrowPanel';s.textContent='#panel{flex:0 0 480px!important;max-width:480px!important}';document.head.append(s);})()`);
+    await js(`(()=>{const s=document.createElement('style');s.id='narrowPanel';s.textContent='#panel>.panel-in{flex:0 0 480px!important;max-width:480px!important}';document.head.append(s);})()`);
     await openChat("a=>a.id==='sim-5'");
     await clickTab('tabBrowser');
     await wait(() => views().length === 1, 'narrow: the view attaches');
     await typeAddress(SIM_URL('links'));
     await wait(() => viewUrl() === SIM_URL('links'), 'narrow: loads');
     await ctx.sleep(300);
-    const fit = await js(`(()=>{const P=document.getElementById('panel').getBoundingClientRect();const bad=[];
+    const fit = await js(`(()=>{const P=document.querySelector('#panel>.panel-in').getBoundingClientRect();const bad=[];
       for(const e of document.querySelectorAll('#panelTabs *, #browserPane .bbar *, #browserPane .bstat *')){const r=e.getBoundingClientRect();if(!r.width)continue;if(r.left<P.left-0.5||r.right>P.right+0.5)bad.push((e.id||e.className)+':'+Math.round(r.left)+'-'+Math.round(r.right));}
       const rows=new Set([...document.querySelectorAll('#browserPane .bbar > *')].map(e=>Math.round(e.getBoundingClientRect().top)));
       const v=document.getElementById('bView').getBoundingClientRect();

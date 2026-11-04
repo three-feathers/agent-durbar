@@ -9,7 +9,7 @@
  * none on helpers or in the list's Folder cell), every item of FR-021 (Enter, blur, window blur, Tab, Esc that never
  * closes the chat, unchanged = no call, empty reset, a rule error on Enter and on blur, IME, paste, busy, one edit at a time), every item
  * of FR-023 (a late title, a rename elsewhere, an ended session, a removed one, a re-render, a view switch), the box of the item not
- * moving (D8), the field's font size, the macOS title bar not a drag region over the title, and the escaped EVIL name. Page code that must
+ * moving (D8), the field's font size, the title and every header control no-drag on a Mac (059 FR-025, 052 FR-215), and the escaped EVIL name. Page code that must
  * see the "chat just opened" state runs in ONE js call with the click that opens it (a round trip under load takes longer than 400 ms).
  * A miss prints DRIVER FAILED (Electron still exits 0), so the npm script exits non-zero unless "all checks passed" is printed.
  */
@@ -164,10 +164,12 @@ module.exports = async (ctx) => {
       assert.strictEqual(await ae(), 'panelTitleBtn|', `${tag}: focus is on the title button after saving`);
       assert.strictEqual(await box('#panelHead'), hb, `${tag}: the header kept its box after saving`);
       assert.strictEqual(await nameOf(A), 'Billing refactor');
-      // the macOS title bar is not a drag region over the title (the header .ph is not one)
+      // 059 FR-025 (delta 2026-11-04) with 052 FR-215: the header .ph is a Mac drag area, but the title, its button and every control in it are no-drag
       await js(`document.documentElement.dataset.platform='darwin'`);
-      const regions = await js(`['#panelTitle','#panelTitleBtn','#panelHead','.ph-top'].map(s=>getComputedStyle(document.querySelector(s)).webkitAppRegion||'none')`);
-      assert.ok(regions.every((x) => x !== 'drag'), `${tag}: the title and header are not a drag region on a Mac: ${regions}`);
+      const regions = await js(`['#panelTitle','#panelTitleBtn'].map(s=>getComputedStyle(document.querySelector(s)).webkitAppRegion||'none')`);
+      assert.ok(regions.every((x) => x === 'no-drag'), `${tag}: the title and its button are no-drag on a Mac: ${regions}`);
+      const dragging = await js(`(()=>{const c=[...document.querySelectorAll('#panelHead :is(button,a,input,[tabindex],[title])')];return {n:c.length,bad:c.filter(e=>getComputedStyle(e).webkitAppRegion!=='no-drag').map(e=>(e.id||e.className||e.tagName)+'='+(getComputedStyle(e).webkitAppRegion||'none'))}})()`);
+      assert.ok(dragging.n >= 3 && dragging.bad.length === 0, `${tag}: every control in the chat header is no-drag on a Mac (${dragging.n} read): ${JSON.stringify(dragging.bad)}`);
       await js(`delete document.documentElement.dataset.platform`);
       // empty resets (6): the runtime title comes back, "Name reset." is announced, the call carries ''
       await click('#panelTitleBtn', 1); await ctx.sleep(120); await type('   '); await key('Return'); await settle();
