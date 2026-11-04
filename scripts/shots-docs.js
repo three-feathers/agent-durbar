@@ -62,6 +62,7 @@ const DOC_SHOTS = [
   { label: 'shots-051-setup win32', name: 'shots-051-setup', files: ['051-install-manual-win32-1440x900.png'] },
   { name: 'shots-081-updates', files: ['081-updates-avail-1440x900.png'] },
   { name: 'shots-052-ux', files: ['052-office-1440x900.png'] },
+  { name: 'check-auto-follow', files: ['052-auto-follow-queue-1440x900.png', '052-auto-follow-queue-1280x800.png'] },
   { name: 'shots-063-folder-status', files: ['063-folder-changes-1440x900.png'] },
   { name: 'shots-009-openwith', files: ['009-openwith-1440x900.png', '009-openwith-1280x800.png'] }, // spec 009 FR-019: the chat header's Open with menu
   { name: 'shots-093', files: ['093-choice-1440x900.png', '093-name-refused-1440x900.png', '093-clone-url-refused-1440x900.png', '093-clone-progress-1440x900.png', '093-clone-allow-1440x900.png'] }, // spec 093: + Folder's choice, a refused name; phase 2: a refused clone URL, the clone's progress, the Allow all host sentence

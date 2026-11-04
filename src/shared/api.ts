@@ -210,6 +210,8 @@ export interface AppSettingsView {
   customPlaces?: CustomPlaceView[];
   /** Serious mode (spec 034): the agent figures show no monster, ambulance or other mood drawing. */
   seriousMode?: boolean;
+  /** Auto-follow work (spec 052 FR-182): off by default. */
+  autoFollowWork?: boolean;
   /** Active theme id (specs 035-040). Omitted = Clean Office. */
   theme?: string;
   /** Spec 077 FR-064: who sits at the desks (`theme`: the theme's own). */
@@ -928,6 +930,8 @@ export interface DurbarApi {
   removePlace?(id: string): Promise<CustomPlaceResult>;
   /** Turn Serious mode on or off (spec 034). */
   setSeriousMode?(on: boolean): Promise<{ ok: boolean; seriousMode?: boolean }>;
+  /** Turn Auto-follow work on or off (spec 052 FR-182). `ok: false` (nothing changed, the value in force is returned as `autoFollowWork`) for a value that is not a boolean or a save that failed; no `error` text. */
+  setAutoFollowWork?(on: boolean): Promise<{ ok: boolean; autoFollowWork?: boolean; unsaved?: true }>;
   /** Turn the "needs you" OS notifications on or off (spec 052 FR-059). */
   setNotifyNeedsMe?(on: boolean): Promise<{ ok: boolean; notifyNeedsMe?: boolean }>;
   /** Spec 068 FR-006: what happens when a coffee break ends. */
