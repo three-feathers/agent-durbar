@@ -26,6 +26,9 @@
   let CUR = null; /* {ro, screenOf, still, hold, desks: Map id -> desk, agents: Map id -> model agent, folders: Map, drawn} */
   let ZOOM = null; /* {id, hover, focus, panel, plate} */
   let IO = null, DISMISSED = '';
+  /* spec 052 FR-183: focus the app moves by itself onto a plate is not the person asking to read that screen */
+  let QUIET_FOCUS = false, QUIET_POINTER = false, QUIET_AT = '', ARMED = false; /* QUIET_POINTER: the room came back (Esc from a chat, issue 1040) under a pointer that has not moved; hovering starts when it leaves QUIET_AT. ARMED: a hover zoom is waiting out its 120 ms (driver reads hoverState) */
+  function quietFocus(fn) { QUIET_FOCUS = true; QUIET_POINTER = true; QUIET_AT = ''; try { fn(); } finally { QUIET_FOCUS = false; } }
 
   const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
   const px = (n) => Math.round(n * 10) / 10 + 'px';
@@ -789,6 +792,7 @@
     wasHidden = hiddenNow();
     const h = hiddenNow(); CUR.ro.classList.toggle('paused', h); if (h) finishMoves(CUR.ro);
     if (h) { closeZoom(); return; }
+    QUIET_POINTER = true; QUIET_AT = ''; /* back in view: a pointer resting on a screen is not asking to read it */
     if (moving() && !CUR.pixelArt) onGrid(CUR.ro); /* FR-229 */
     for (const [id, s] of SCR) if (s.dirty) plan(id);
   }
@@ -818,19 +822,29 @@
   const ZOOM_W = [380, 480], ZOOM_HEAD = 44, ZOOM_LH = 17, ZOOM_ROWS = 12, ZOOM_MIN_ROWS = 4;
   function wireZoom(ro) {
     let wait = 0;
+    ro.addEventListener('pointermove', (e) => {
+      if (!QUIET_POINTER) return;
+      const at = e.clientX + ',' + e.clientY;
+      if (!QUIET_AT) QUIET_AT = at;
+      if (QUIET_AT === at) return;
+      QUIET_POINTER = false;
+      const sc = e.target.closest && e.target.closest('.ro-screen');
+      if (sc && sc.dataset.for && e.pointerType !== 'touch' && DISMISSED !== sc.dataset.for) { clearTimeout(wait); ARMED = true; wait = setTimeout(() => { ARMED = false; openZoom(sc.dataset.for, 'hover'); }, 120); }
+    });
     ro.addEventListener('pointerover', (e) => {
       const sc = e.target.closest && e.target.closest('.ro-screen');
-      if (!sc || e.pointerType === 'touch' || !sc.dataset.for) return;
+      if (QUIET_POINTER && !QUIET_AT) QUIET_AT = e.clientX + ',' + e.clientY;
+      if (QUIET_POINTER || !sc || e.pointerType === 'touch' || !sc.dataset.for) return;
       if ((ZOOM && ZOOM.hover && ZOOM.id === sc.dataset.for) || DISMISSED === sc.dataset.for) return; /* Esc holds until the pointer has left */
-      clearTimeout(wait); wait = setTimeout(() => openZoom(sc.dataset.for, 'hover'), 120); /* crossing the room opens nothing */
+      clearTimeout(wait); ARMED = true; wait = setTimeout(() => { ARMED = false; openZoom(sc.dataset.for, 'hover'); }, 120); /* crossing the room opens nothing */
     });
     ro.addEventListener('pointerout', (e) => {
       const sc = e.target.closest && e.target.closest('.ro-screen');
       if (!sc || (e.relatedTarget && sc.contains(e.relatedTarget))) return;
-      clearTimeout(wait); DISMISSED = '';
+      clearTimeout(wait); ARMED = false; DISMISSED = '';
       if (ZOOM && ZOOM.id === sc.dataset.for) leaveZoom('hover');
     });
-    ro.addEventListener('focusin', (e) => { const p = e.target.closest && e.target.closest('.ro-plate'); if (p && p.matches(':focus-visible')) openZoom(p.dataset.id, 'focus'); });
+    ro.addEventListener('focusin', (e) => { const p = e.target.closest && e.target.closest('.ro-plate'); if (p && !QUIET_FOCUS && p.matches(':focus-visible')) openZoom(p.dataset.id, 'focus'); });
     ro.addEventListener('focusout', (e) => { const p = e.target.closest && e.target.closest('.ro-plate'); if (p && ZOOM && ZOOM.id === p.dataset.id) leaveZoom('focus'); });
   }
   function zoomKey(e) {
@@ -1069,5 +1083,5 @@
     wasHidden = false;
     CUR = null;
   }
-  root.DurbarRealOffice = { render, reset, leave, feed, resume, whereSize: () => WHERE.size, bad: () => [...BAD], resolve, stagger, personOf: (id) => (PEOPLE && has(PEOPLE, id) ? PEOPLE[id] : null) /* the chat's header draws the same person (spec 097 FR-106) */ }; /* resolve: for the driver's deterministic check */
+  root.DurbarRealOffice = { hoverState: () => ({ still: QUIET_POINTER, armed: ARMED }), render, reset, leave, feed, resume, quietFocus, whereSize: () => WHERE.size, bad: () => [...BAD], resolve, stagger, personOf: (id) => (PEOPLE && has(PEOPLE, id) ? PEOPLE[id] : null) /* the chat's header draws the same person (spec 097 FR-106) */ }; /* resolve: for the driver's deterministic check */
 })(typeof self !== 'undefined' ? self : this);

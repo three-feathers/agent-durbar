@@ -39,6 +39,7 @@ module.exports = async (ctx) => {
     await arm();
     for (let t = 0; t < 5; t++) {
       const was = await blurs();
+      await moveTo(p.x - 2, p.y); /* issue 1040: after the room returns, the first event only marks where the pointer is; the next move is the hover */
       if (!(await moveTo(p.x, p.y))) { console.log('[097-screens] the page did not get the pointer move for', i, JSON.stringify(await js(`({got:window.__mv,focus:document.hasFocus(),hidden:document.hidden})`))); await refocus(); await moveTo(1, 1); continue; }
       await H.until('(' + OPENED(i) + ')||window.__blurs!==' + jsLiteral(was), 15000);
       if (await js(OPENED(i))) return;
@@ -197,6 +198,17 @@ module.exports = async (ctx) => {
     await must(`true`, 'a tick');
     await js(`document.activeElement&&document.activeElement.blur&&document.activeElement.blur();0`);
     await refocus();
+    /* issue 1040: Esc back to the office (the panel closes) with the pointer resting on a screen opens no zoom; the browser's pointerover there carries no move (here sent by hand, as macOS does). The first real move opens it as before */
+    await js(`document.body.classList.add('panel-open');0`);
+    await must(`document.querySelector('#stage .ro').classList.contains('paused')`, 'the office paused under the panel');
+    await js(`document.body.classList.remove('panel-open');0`);
+    await must(`!document.querySelector('#stage .ro').classList.contains('paused')`, 'the office back');
+    await js(`(()=>{const s=document.querySelector('#stage .ro-screen[data-for="'+CSS.escape(${jsLiteral(mid)})+'"]');s.dispatchEvent(new PointerEvent('pointerover',{bubbles:true,pointerType:'mouse',clientX:${jsLiteral(mp.x)},clientY:${jsLiteral(mp.y)}}));})();0`);
+    await must(`(()=>{const h=window.DurbarRealOffice.hoverState();return h.still&&!h.armed;})()`, 'back under a still pointer: nothing can open (still, no hover timer armed)');
+    assert.strictEqual(await js(`!!document.getElementById('roZoom')`), false, 'back under a still pointer: no zoom opens');
+    await hover(mid, { x: mp.x + 4, y: mp.y + 2 });
+    await moveTo(1, 1);
+    await must(`!document.getElementById('roZoom')`, 'the zoom closed when the pointer left');
     /* FR-230: a sign redrawing under the keyboard keeps the focus on the same button. The changed counts prove the redraw happened; since spec 097 T149 the sign keeps its nodes (signFill), so the button itself stays, where before it was built again and the focus given back (a marked button then proved the redraw). Whether the button is the same node is not asserted: the sign is built again when its name, path, cost line or buttons change, and the simulator's cost line appears during a run */
     {
       const zone = (await js(`window.__durbarSimUi.realLayout().zones.filter(z=>z.desks.some(d=>d.state==='working')).map(z=>({id:z.id,desk:z.desks.find(d=>d.state==='working').id}))[0]`));

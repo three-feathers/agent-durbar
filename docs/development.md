@@ -15,6 +15,7 @@ npm run check:perf -- --record perf.json   # spec 097 T145: records frame, CPU, 
 npm run world:matrix      # spec 098: world moment x world pictures and checks into out/world-matrix/ (git-ignored; Electron, simulator only; -- --size 1280x800 --worlds photo --forced-colors; `node scripts/world-matrix.js --selftest` proves its checks). CI: world-matrix.yml, weekly and a path-filtered PR subset, artifacts for 14 days
 npm run check:office      # layout check at 1440x900 and 1280x800 (Electron; xvfb on Linux), simulator only
 npm run shots:docs        # retake every screenshot the README and the website link (simulator, one Electron at a time; -- --only, --list, --out <dir>); every picture it writes is palette-compressed (about 60% smaller, with a quality guard)
+npm run icons:build      # by hand, one offscreen Electron: rebuilds build/icon.{svg,png,ico,icns}, build/logo/icons.json and src/renderer/logo-marks.js from the drawings in build/logo (spec 101); test:logo-assets fails when they are stale
 npm run shots:compress    # compress screenshots by hand: the linked ones, or the files you name (-- --check only lists; DURBAR_SHOTS_COMPRESS=off turns it off in shots:docs)
 npm run release:video -- --version vX.Y.Z --out <dir>   # a 30-60 s clip of a release's changes from the simulator (MP4 + GIF, needs ffmpeg; spec 008 FR-171..FR-178; trial, not in the release flow yet)
 npm run check:geometry    # Retro lays out exactly like Clean Office (CHECK_ALL_THEMES=1: every theme, about a minute)
@@ -25,6 +26,7 @@ npm run check:fuses-launch  # on demand, after pack:dir: the packed Linux app op
 npm run specs:index       # the full specs index from each spec's specs-index block, into specs/INDEX.md (git-ignored); --add specs/NNN-x for a new spec; specs:check in npm test, which also refuses conflict markers
 npm run labels:backfill   # dry run: the labels each issue and PR is missing (spec 021 FR-045); -- --create-labels --apply adds them (add-only)
 npm run changelog:check   # check the changelog.d/ fragments (in npm test); changelog:preview lists them; a tag's notes come from them, then changelog:build folds them (changelog.d/README.md)
+npm run blog:check        # spec 104: the agent blog's guard over docs/site/{blog,captions,story,explainers}: tokens (redact.ts), private paths, addresses, chat markers, unreleased phrases, a host allowlist and blocked-name hashes, first names, evidence, security hold, who reads and reviews (in npm test through test:site; -- --offline skips the online author check and says so). The file, line and rule are printed, never the matched text. `node scripts/check-posts.js --add-blocked-host` is a human step that reads one name from stdin and prints nothing
 npm run rules:check       # word budgets of the rule files (AGENTS.md, CLAUDE.md, agent notes, checklist, ...; in npm test): one rule in, one rule out
 ```
 

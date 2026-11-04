@@ -3,15 +3,15 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: New logo family: the human user is the sovereign, agents are the court. Four base icons (vector, hand-tuned at 16, 20 and 32 px), a Settings picker, a top bar that follows the world's flat palette, build icons fixed at icon 1
-note: spec only; #930 lands first, then #988 (build, phases 1 to 3) merges main; cave and loft art waits for Paco
-status: draft
+note: phases 1 to 3 built (icons, picker, palettes); painted previews (phase 4) not built
+status: building
 -->
 
 **Feature Branch**: `101-logo-family` (spec); code branches `101-pN-slug`, one per phase
 
 **Created**: 2026-10-31
 
-**Status**: Draft (2026-10-31, merged with main 2026-11-03). This PR (#930) is spec, plan and tasks only; no art, no code. **Order (owner-side decision, 2026-11-03): #930 lands first, then #988 (`101-logo-build`, the build of phases 1 to 3) merges `main`.** #988 carries these same spec commits and files, so after #930 lands its diff shrinks to the build, the ticked tasks and the spec text it changes; "nothing built" is true for #930 only.
+**Status**: Building (2026-11-01). Phases 1 to 3 are built on `101-logo-build` (flat vector icons, build icons, top bar, picker, palettes of the photo, cave and loft worlds); phase 4 (painted previews) is not built.
 
 **Input**: Owner decisions (Vikram, Telegram and terminal, 2026-10-31), listed below; concepts and vector drawings by Vikram's agent, outside the repo (*Evidence*).
 
@@ -233,4 +233,29 @@ Who: the owner's "Ok" is recorded as Vikram's (the spec's decision source is Vik
 
 ## Changes
 
-No deltas yet.
+### 2026-11-03: pictures without the macOS traffic-light room (owner's look at #988)
+
+Vikram accepted the icons (03:33 UTC, relayed): "placement can be a little more towards left". Measured on this Mac: the mark starts 78 px from the window's left edge, after the room kept for the traffic lights (`styles.css`, macOS only, not in full screen); Windows and Linux keep no room (20 px, the bar's padding). A picture has no window controls, so that room showed as an empty gap. The driver `ctx.shot` in main (`src/main/docshot.ts`, so `helpers().shot()` and every direct `ctx.shot()` alike) closes the room for the moment of the picture when `npm run shots:docs` takes it (`DURBAR_DOC_SHOTS=1`), by the app's own full-screen state, which has no room, so every picture taken from now on shows the bar as Windows and Linux do; the app is unchanged. `test:logo-assets` pins the offset logic with a fake page (not run on a Mac). `[KNOWN GAP]` the roughly 45 committed Mac pictures taken through a direct `ctx.shot()` (`001-fill-*`, `001-helpers-*`, `052-office`, `097-office-layout`, ...) still start at x=78 until they are retaken on a Mac. `[KNOWN GAP]` the room's own width against the real traffic lights is not measured (a screen capture of the window is refused on this Mac); it waits for a screenshot of the window's top-left.
+
+### 2026-11-03: the generator and its checks fail loudly (review of #988)
+
+- `build-icons` refuses a capture that is not exactly the size asked for, in both directions, instead of resampling it: a clamped window would have written a squashed icon. `test:`
+- A shape written with a closing tag (`<path ...></path>`) is refused by `test:logo-assets` and by the generator: it passed the element list, and the top bar would have lost it without a word. `test:`
+- `check-logo-family` fails when it cannot block `localStorage`, instead of passing without testing. `sim:`
+
+### 2026-11-02: the real world seam, and the pictures
+
+Spec 097's seam is on `main` now: `check-logo-family` also goes through Real office, where `html[data-world]` is set for real, and back. Only `photo` is reachable that way from the driver; the cave and loft palettes are still set by hand. **Pictures:** the merge with `main` keeps `main`'s pictures, and only the two README heroes (`shots-hero`) are retaken so far. No job refreshes pictures: `world-matrix` keeps its results as artifacts and commits nothing. So every linked picture that shows the top bar is retaken with `npm run shots:docs`, looked at and committed as the last step before merge, once the owner has accepted the icons (T018 stays open until then).
+
+### 2026-11-01: phases 1 to 3 built (`101-logo-build`)
+
+- **Paco approved the cave and loft columns on 2026-11-01** (relayed in Vikram's build instruction; Q6): FR-062 is met for their flat palettes, which are in `src/renderer/logo.css` with a `Paco` row in `build/logo/ASSETS.md`. Painted cave and loft pictures are still not in the repo (phase 4 not built).
+- `[IMPLEMENTED]` `test:` `sim:` FR-010..FR-014, FR-020..FR-023 (vector previews), FR-030..FR-032, FR-034, FR-035, FR-040..FR-044, FR-050, FR-051, FR-060..FR-062, FR-070..FR-072. FR-033 and FR-101/FR-102 are implemented as the selectors `html[data-world="photo"|"cave"|"loft"][data-world]`; `[KNOWN GAP]` the driver reaches `photo` through Real office (the entry above) and sets the cave and loft by hand; a world with no block (country, kingdom) keeps the base palette.
+- **Deltas to the text above, made while building:**
+  - FR-036: the forced-colours rules are in `src/renderer/logo.css` (loaded after `styles.css`, so they beat the slot rules at equal weight), not in `styles.css`'s block; the tile keeps its size with an inset outline instead of a border.
+  - FR-032: the palettes live in `src/renderer/logo.css`, a file outside the theme-literals ratchet of spec 070; its colours are token declarations, and `index.html` and `styles.css` gain no literal. `--logo-plate` is the chosen icon's plate, from `--logo-plate-1..5` (one per icon in Clean; all equal in a theme or a world), so a Settings preview can show its own plate.
+  - FR-012/FR-020: the renderer's copy (`src/renderer/logo-marks.js`, 12 KB) and the inline top-bar icon have no `fill` attribute; the tokens paint every slot. The files in `build/logo` keep their literal `fill`.
+  - FR-072: `check-logo-family.js` sets `data-world` by hand and attaches the DevTools protocol to emulate forced colours; the window-icon call site is held by `test:logo-assets` (no `setIcon` or `setOverlayIcon` anywhere in `src`), since the renderer cannot call it.
+  - FR-041: the ICNS and ICO entries are PNGs written by `scripts/build-icons.js`; `ic07..ic10` (128 px and up) carry the plate at 824/1024 of the canvas (D3).
+  - FR-024, FR-040 (painted): not built; the picker shows the vector previews (FR-023's fallback) in every world.
+

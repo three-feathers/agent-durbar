@@ -658,7 +658,7 @@
   const WORLD_GLASS=0.9; /* the opaque share of a glass fill; themes.css uses the same 90% (test:theme-tokens pins it) */
   const WORLD_SETS={
     photo:{
-      name:'Photo office',
+      name:'Photo office', ui:'clean', /* #1144: the world's chrome is plain, so a theme's hard button shadows (Retro Pixel) never reach it */
       /* warm neutrals of the photo office: cream panels, greige page, espresso ink; oak and amber for the primary button, focus and selection */
       page:{'--bg':'#ece4d8','--surface':'#fbf7f0','--surface-2':'#f3ece1','--raised':'#fffcf6','--card':'#fbf7f0','--soft':'#f8f2e8','--note':'#f3ece1',
         '--line':'#e0d4c2','--line-2':'#c9b79c','--line-ctl':'#8e7a60','--ink':'#2b231d','--ink-2':'#54473b','--muted':'#5c4f43',
@@ -691,7 +691,7 @@
     },
     /* the cave: parchment-and-stone page, a bar of dark cave brown with torchlight gold (the logo's cave palette, spec 101 FR-033) */
     cave:{
-      name:'Prehistoric cave',
+      name:'Prehistoric cave', ui:'clean',
       page:{'--bg':'#e4d6bf','--surface':'#f7efe0','--surface-2':'#efe3cc','--raised':'#fbf5e8','--card':'#f7efe0','--soft':'#f3e9d6','--note':'#efe3cc',
         '--line':'#d9c6a6','--line-2':'#c2a87f','--line-ctl':'#86704f','--ink':'#2a1a10','--ink-2':'#4f3a28','--muted':'#5a4430',
         '--sage':'#b8793a','--sage-ink':'#7a3f14','--focus':'#8f4a10','--sel-border':'#a8672c','--sel-ring':'#efd9bb','--sel-ring-2':'#f1dfc4',

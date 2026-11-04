@@ -346,6 +346,9 @@
 ## FR-181: no Demo / Live badge in the top bar (2026-10-31, owner)
 - [x] T193 `check-no-demo-badge.js` first (fails with the badge), then `#protoBadge`, `.proto` and `setBadge` removed; UI-suite entry; the cues that remain are listed in the spec delta [FR-181]
 
+## FR-182..FR-190: opt-in auto-follow and attention queue (2026-11-01, issue #686)
+- [x] T194 One task for issue #686. Spec first (this delta, committed before `src/`). Then: `autoFollowWork` in `src/shared/credits.ts`, `src/main/settings.ts`, `src/main/ipc/settings.ts` (`{ok:false}` for a non-boolean), preload, `api.ts`, `sim.ts`; Settings switch; pure `src/renderer/autofollow.js` (queue, held place, guard decision, arrival key); `app.js` wiring (accepted send, arrival, guards, floors, strip, keys, palette, help); `styles.css` marker and strip; `test:autofollow`; `scripts/check-auto-follow.js` (UI suite); mutations of the guards and of off-by-default; changelog fragment [FR-182..FR-190]
+
 ## FR-191..FR-205: the Needs you panel (2026-11-01, owner). Not before the Retro world
 - [x] T195 Q-NY-1..Q-NY-16 recorded as agent decisions of 2026-11-01, told to the owner and reversible by him [FR-191..FR-204]
 - [ ] T196 Tests first: `createArrivals()` in `attention.js`, `test-attention` with its mutants [FR-193, FR-205]
@@ -361,7 +364,7 @@
 ## FR-214..FR-227: design sweep (2026-11-01, owner). PRs, gates and line-count goals: spec 005 `plan.md`
 - [x] T220 [PR D1, first] `requestText()` puts a space between blocks. Test first: a pure-helper test and a driver that fail on `main` with the run-together words; mutant: old `textContent` [FR-214]
 - [ ] T221 [K2, PR #1011] `.swt.on` from a token: 2.47:1 to 6.08:1 and 6.92:1, in spec 033's delta and its driver. Tick when #1011 lands [FR-223]
-- [ ] T222 [PR R1, with spec 005] Mac rules on the rail's top row and chat header, also collapsed and hidden; `test-macos`. `[KNOWN GAP]` real Mac asked of its owner [FR-215]
+- [ ] T222 [PR R1, with spec 005] Mac rules on the rail's top row and chat header, also collapsed and hidden; `test-macos`. `[KNOWN GAP]` real Mac asked of its owner [FR-215]. R1 part done 2026-11-03 (top row and chat header; `test-macos`, `check-rail`); collapsed and narrow with R3 (005 T116)
 - [ ] T223 [PR N1] Measure first: 93 px and moving desks with three bars. Card kind and stay-open action in `toastActions()`; restore card, Change…, Dismiss, red lock, asks on every start. Test: new `check-notices`; desks unchanged with cards; a second start asks again; mutant: dismiss clears the lock [FR-218, FR-219, FR-220, FR-227]
 - [ ] T252 [PR N1] Flat at 15: shrink to the lock after 8 s unless hovered or focused, by injected clock; Photo top right clear. Test: `check-notices`; mutant: timer ignores hover [FR-221]
 - [ ] T214 [PR N2] Away and crash cards; `#restoreStrip`, `#awayStrip`, `#crashStrip` and `.notice-strip` removed; Mac notice rules removed; FR-015, FR-057's buttons, FR-089 changed in place. Test: `check-notices` (also the log at 700 and 600 px, 005 FR-195, 31 less on FR-199's fallback), `shots-006-crash`, `check:office` [FR-218]
