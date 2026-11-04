@@ -451,6 +451,8 @@ async function main(): Promise<void> {
   await tick();
   const g2Next = ad.send(g2, { text: 'into the end' });
   await until(() => slow.inGap());
+  await new Promise((r) => setTimeout(r, 20)); // as for Stop: the send's chance to go wrongly while the gap is held open
+  assert.ok(slow.inGap() && !g2s.calls.some((c) => c.name === 'abort') && sends(g2s) === 0, 'End: in the gap between cancel and abort nothing goes');
   slow.release();
   await g2Stop;
   await g2Next;
