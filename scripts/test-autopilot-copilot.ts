@@ -17,6 +17,8 @@ import type { AgentEvent } from '../src/adapters/types';
 const NANO = 1e9;
 const tick = async (n = 6): Promise<void> => { for (let i = 0; i < n; i++) await new Promise((r) => setImmediate(r)); };
 const until = async (ok: () => boolean, what: string): Promise<void> => { for (let i = 0; i < 2000 && !ok(); i++) await new Promise((r) => setTimeout(r, 1)); assert.ok(ok(), what); };
+/** FR-048b: a promise that must settle, waited for with `until`, so a hang fails with `what` instead of stalling the suite. */
+const settles = async <T>(p: Promise<T>, what: string): Promise<T> => { let out: { v: T } | undefined; void p.then((v) => { out = { v }; }, () => undefined); await until(() => out !== undefined, what); return out!.v; };
 const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-ap-copilot-'));
 const cont = { type: 'user.message', data: { content: '', source: 'autopilot', agentMode: 'autopilot', isAutopilotContinuation: true } };
 
@@ -409,7 +411,7 @@ async function main(): Promise<void> {
   // FR-059 round 3 (review on #967, probe F): a plan turn left plan mode set; a goal sent while setAutopilot still waits on its mode.set
   // autopilot (the plan card's "Approve and run on Autopilot") has no mode.set interactive before it
   {
-    const r = await rig();
+    const r = await rig({ tuning: { waitMs: 5000 } }); // the turn-on bound does not fire here
     await r.ad.send(r.sid, { text: 'plan it', plan: true });
     fire(r.s, { type: 'session.idle', data: {} }); // the plan turn ends without a plan
     const set = r.s.rpc.mode.set.bind(r.s.rpc.mode);
@@ -424,8 +426,8 @@ async function main(): Promise<void> {
     await tick();
     assert.strictEqual(r.s.calls.filter((c) => c.name === 'send').length, sendsBefore, 'FR-059 probe F: the goal waits for the turn-on to settle');
     answer();
-    await on;
-    assert.strictEqual(await goal, 'ok', 'probe F: the goal is not refused');
+    await settles(on, 'probe F: setAutopilot settles');
+    assert.strictEqual(await settles(goal, 'FR-059 probe F: the goal send settles after the turn-on'), 'ok', 'probe F: the goal is not refused');
     assert.ok(!r.order().slice(from).includes('mode:interactive'), 'FR-059 probe F: no mode.set interactive before a goal sent while Autopilot turns on');
     const sent = r.s.calls.filter((c) => c.name === 'send').map((c) => c.args[0] as { prompt: string; agentMode?: string }).map((x) => [x.prompt, x.agentMode ?? 'none']);
     assert.deepStrictEqual(sent.slice(1), [['the goal', 'autopilot']], 'probe F: the goal goes on Autopilot');
@@ -434,7 +436,7 @@ async function main(): Promise<void> {
   // FR-059 round 4 (review on #967, probe I): a goal sent while setAutopilot waits on mode.set autopilot, which then fails: the send waited,
   // so no run starts, no Autopilot cap goes on, Autopilot reads off, and the message goes plain; the next plain message works as usual
   {
-    const r = await rig({ cap: 100 });
+    const r = await rig({ cap: 100, tuning: { waitMs: 5000 } }); // the turn-on bound does not fire here
     const caps: unknown[] = [];
     r.s.rpc.options.update = async (a: unknown) => { caps.push((a as { sessionLimits?: unknown }).sessionLimits); };
     const set = r.s.rpc.mode.set.bind(r.s.rpc.mode);
@@ -446,8 +448,8 @@ async function main(): Promise<void> {
     const goal = r.ad.send(r.sid, { text: 'the goal' }).then(() => 'ok', (e: Error) => e.message);
     await tick();
     refuse();
-    assert.strictEqual(await on, 'mode refused', 'probe I: setAutopilot is refused');
-    assert.strictEqual(await goal, 'ok', 'probe I: the send is not refused');
+    assert.strictEqual(await settles(on, 'probe I: setAutopilot settles'), 'mode refused', 'probe I: setAutopilot is refused');
+    assert.strictEqual(await settles(goal, 'FR-059 probe I: the goal send settles after the failed turn-on'), 'ok', 'probe I: the send is not refused');
     const auto = (r.ad as unknown as { sessions: Map<string, { auto?: { on: boolean; settings?: unknown } }> }).sessions.get(r.sid)!.auto!;
     assert.deepStrictEqual([auto.on, auto.settings], [false, undefined], 'FR-059 probe I: a rejected setAutopilot leaves Autopilot off');
     assert.ok(!r.ap().some((e) => e.phase === 'started'), 'FR-059 probe I: no run starts on a turn-on that failed');
@@ -456,9 +458,29 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(caps, [], 'probe I: no Autopilot cap went on, so none is left');
     fire(r.s, { type: 'session.idle', data: {} });
     const from = r.order().length;
-    await r.ad.send(r.sid, { text: 'next' });
+    await settles(r.ad.send(r.sid, { text: 'next' }), 'probe I: the next plain message settles');
     assert.deepStrictEqual(r.order().slice(from), ['send'], 'probe I: the next plain message goes as usual');
     assert.deepStrictEqual(sends().at(-1), ['next', 'none']);
+  }
+
+  // FR-059 round 5 (review on #967, probe J): mode.set autopilot never answers (a gate never released; a 20 ms injected bound, no long sleep):
+  // the turn-on fails closed, so the send waiting on it goes plain, Autopilot reads off, and plan mode counts as set
+  {
+    const r = await rig({ tuning: { waitMs: 20 } });
+    const set = r.s.rpc.mode.set.bind(r.s.rpc.mode);
+    let asked = false;
+    r.s.rpc.mode.set = () => { asked = true; r.s.rpc.mode.set = set; return new Promise(() => undefined); };
+    const on = r.ad.setAutopilot(r.sid, { limit: 5 }).then(() => 'ok', (e: Error) => e.message);
+    await until(() => asked, 'probe J: mode.set autopilot is in flight');
+    const goal = r.ad.send(r.sid, { text: 'the goal' }).then(() => 'ok', (e: Error) => e.message);
+    assert.match(await settles(on, 'FR-059 probe J: an unanswered turn-on fails within its bound'), /did not answer in time/, 'probe J: setAutopilot says the runtime did not answer');
+    assert.strictEqual(await settles(goal, 'FR-059 probe J: the send waiting on an unanswered turn-on goes on'), 'ok', 'probe J: the send is not refused');
+    const auto = (r.ad as unknown as { sessions: Map<string, { auto?: { on: boolean; settings?: unknown }; planMode?: boolean; turningOn?: unknown }> }).sessions.get(r.sid)!;
+    assert.deepStrictEqual([auto.auto!.on, auto.auto!.settings, auto.turningOn], [false, undefined, undefined], 'FR-059 probe J: an unanswered turn-on leaves Autopilot off and settled');
+    assert.ok(!r.ap().some((e) => e.phase === 'started'), 'probe J: no run starts');
+    const last = r.s.calls.filter((c) => c.name === 'send').map((c) => c.args[0] as { prompt: string; agentMode?: string }).map((x) => [x.prompt, x.agentMode ?? 'none']);
+    assert.deepStrictEqual(last, [['the goal', 'none']], 'probe J: the message goes plain');
+    assert.deepStrictEqual(r.order().slice(-2), ['mode:interactive', 'send'], 'FR-059 probe J: plan mode counts as set, so a late autopilot answer is undone before the message');
   }
 
   // FR-059 round 3 (review on #967, probe G): Autopilot's own mode.set fails while a plan send waits on mode.set plan: the plan send says

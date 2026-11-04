@@ -1220,9 +1220,10 @@ export class CopilotAdapter implements AgentAdapter {
     live.planMode = false;
     const on = (async () => {
       try {
-        await live.session.rpc.mode.set({ mode: 'autopilot' });
+        // bounded like the other Autopilot waits: a runtime that never answers fails the turn-on closed, so a send waiting on it goes on
+        await within(Promise.resolve(live.session.rpc.mode.set({ mode: 'autopilot' })), this.autopilotTuning.waitMs ?? CLEAR_WAIT_MS, 'Copilot');
       } catch (e) {
-        auto.settings = undefined; // a failed turn-on leaves Autopilot off
+        auto.settings = undefined; // a failed or unanswered turn-on leaves Autopilot off (a late answer is undone by the interactive reset below)
         live.planMode = true; // the mode is not known (a plan send may have set `plan` meanwhile): the next plain send goes back to interactive first
         throw e;
       }
