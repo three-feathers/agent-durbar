@@ -1,5 +1,5 @@
 /*
- * Spec 015 FR-018 (issue #1142): the "Sub-agent activity / Back to parent chat" bar stays at the top of a helper's chat while the log
+ * Spec 015 FR-020 (issue #1142): the "Sub-agent activity / Back to parent chat" bar stays at the top of a helper's chat while the log
  * scrolls. Simulator only (no AI credits, no agent app). Linux with xvfb-run:
  *
  *   npm run check:ui -- --only check-helper-bar

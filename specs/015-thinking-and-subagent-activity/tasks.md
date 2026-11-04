@@ -21,4 +21,4 @@
 - [x] T014 `--forward-subagent-text` / SDK `forwardSubagentText`, gated on Claude Code 2.1.211+ [FR-016]
 - [x] T015 Tests (argv, version gate, adapter launch, SDK option, forwarded-message mapping) with mutation checks; changelog fragment; `[KNOWN GAP]` kept (no real session) [FR-017]
 - [x] T016 Real compaction shapes (#731): real Claude and Codex orders in `scripts/test-compaction.ts`; Codex: the first usage after a compaction gives no context figure; Copilot manual compaction ends from the `history.compact` answer; stale `read:` text updated; `[KNOWN GAP]` kept (automatic, failed, truncation, cost) [FR-007, FR-008, FR-009b, FR-012]
-- [x] T017 Issue #1142 (FR-018): `.sub-ro` sticky at the top of a helper's chat on an opaque surface. Test: `check-helper-bar` (ui-suite), mutant: remove `position: sticky`; pictures at both sizes.
+- [x] T020 Issue #1142 (FR-020): `.sub-ro` sticky at the top of a helper's chat on an opaque surface. Test: `check-helper-bar` (ui-suite), mutant: remove `position: sticky`; pictures at both sizes.
