@@ -395,6 +395,29 @@ function cli() {
   for (const [t, what] of [['[x](java&#9;script:alert(1))', 'a tab entity in a scheme'], ['[x](java\tscript:alert(1))', 'a raw tab in a scheme'], ['[x](tel:standin)', 'a tel: link'], ['[x](i&#9;rc:standin)', 'a tab entity inside an unlisted scheme'], ['[x](t\tel:standin)', 'a raw tab inside an unlisted scheme'], ['[x](irc:standin)', 'an irc: link'], ['[x](xmpp:standin)', 'an xmpp: link']]) fails({ [P]: post(front(), body(t)) }, 'scheme', what);
 }
 
+// review of PR #1106, round 4 (rubenlupi's side at 08c571719)
+{
+  // 1. payloads inside a tag's attribute: only the readings taken from the text as written (tags kept) see them
+  fails({ [P]: post(front(), body('Hover <span title="a.b@example[.]org">here</span>.')) }, 'email', 'a defanged address inside a tag attribute');
+  fails({ [P]: post(front(), body('Hover <a title="%2Fhome%2Fstandin">here</a>.')) }, 'path', 'a percent-encoded path inside a tag attribute');
+  // the run cap keeps a name found anywhere in a long hyphenated word
+  fails({ [P]: post(front(), body(`The ${Array.from({ length: 30 }, (_, i) => `p${i}`).join('-')}-quokka-corp build.`)) }, 'blocked', 'a blocked label at the end of a 32-part word');
+  // 3. the worst case the review measured (240 KB of 64-part words as one paragraph), in CPU time with a generous bound
+  const word = Array.from({ length: 64 }, (_, i) => `p${i}`).join('-');
+  const big = Array.from({ length: 63 }, () => Array(Math.floor(4000 / (word.length + 1))).fill(word).join(' ')).join('\n');
+  const t0 = process.cpuUsage();
+  cp.textProblems(big, { redact: cp.loadRedact(), blocked: new Set([cp.hashName('quokkacorp')]), phrases: ['zebra moonbase'], files: new Set() });
+  const c = process.cpuUsage(t0);
+  assert.ok((c.user + c.system) / 1e6 < 8, `240 KB of 64-part words stays well inside the CI job (${((c.user + c.system) / 1e6).toFixed(1)} s CPU)`);
+  // 2. the CLI's last resort prints neither a path nor a stack (a test-only hook makes checkAll fail)
+  check({ [P]: post() });
+  cliReady();
+  const r = spawnSync(process.execPath, [path.join(T, 'scripts', 'check-posts.js')], { encoding: 'utf8', env: { ...process.env, CI: '1', DURBAR_BLOGCHECK_TEST_THROW: '1', PATH: `${path.join(T, 'fakebin')}${path.delimiter}${process.env.PATH}` } });
+  assert.strictEqual(r.status, 1, 'an internal failure fails the check');
+  assert.match(r.stderr, /internal error \(ETESTSEAM\); nothing is published/, 'the last resort names only the error code');
+  assert.ok(!r.stderr.includes(T) && !r.stdout.includes(T) && !/check-posts\.js/.test(r.stderr) && !/\n\s+at /.test(r.stderr) && !/test-only failure/.test(r.stderr), `the last resort prints no path, message or stack: ${r.stderr.slice(0, 200)}`);
+}
+
 // every rule has a fixture above (a rule with none would be a rule no test can kill)
 {
   const src = fs.readFileSync(__filename, 'utf8');

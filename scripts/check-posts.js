@@ -184,14 +184,16 @@ function repoFileNames(root) {
   }
 }
 /* Every form a blocked name could take in a reading: each word, its parts split on "-", joined without "-", and pairs of words. */
+const RUN_MAX = 8;
 function nameForms(text) {
   const toks = String(text).toLowerCase().match(/[\p{L}\p{N}]+(?:-[\p{L}\p{N}]+)*/gu) || [];
   const out = new Set();
   toks.forEach((t, i) => {
     out.add(t); out.add(t.replace(/-/g, ''));
-    // every contiguous run of hyphen-separated parts ("2026-11-01-x-y" holds "x-y"); k parts give k(k+1)/2 runs, at most 64 parts
+    // every contiguous run of up to RUN_MAX hyphen-separated parts ("2026-11-01-x-y" holds "x-y"); at most 64 parts, so a word
+    // gives at most 64 x 8 runs (round 4: 64-part words took 12.6 s for 240 KB with every run; a name has fewer than 8 parts)
     const parts = t.split('-').slice(0, 64);
-    for (let a = 0; a < parts.length; a++) for (let b = a + 1; b <= parts.length; b++) { const run = parts.slice(a, b); out.add(run.join('-')); out.add(run.join('')); }
+    for (let a = 0; a < parts.length; a++) for (let b = a + 1; b <= Math.min(parts.length, a + RUN_MAX); b++) { const run = parts.slice(a, b); out.add(run.join('-')); out.add(run.join('')); }
     if (i + 1 < toks.length) { const u = toks[i + 1]; out.add(t + u); out.add(`${t}-${u}`); out.add(`${t} ${u}`); out.add(`${t}.${u}`); }
   });
   return out;
@@ -237,6 +239,9 @@ function textProblems(text, ctx) {
   const links = [];
   const add = (line, rule) => { if (!out.some((p) => p.line === line && p.rule === rule)) out.push({ line, rule }); };
   if (!ctx.redact) add(1, 'redact-unavailable');
+  // each word form is hashed once per text (many readings and paragraphs repeat the same words)
+  const hashed = new Map();
+  const isBlocked = (w) => { let v = hashed.get(w); if (v === undefined) { v = ctx.blocked.has(hashName(w)); hashed.set(w, v); } return v; };
   const lines = String(text).split(/\r?\n/);
   lines.forEach((raw, i) => {
     const ln = i + 1;
@@ -288,7 +293,7 @@ function textProblems(text, ctx) {
         const parts = h.split('.');
         for (let k = 0; k < parts.length; k++) if (ctx.blocked.has(hashName(parts.slice(k).join('.')))) add(ln, 'blocked');
       }
-      for (const w of nameForms(r)) if (ctx.blocked.has(hashName(w))) add(ln, 'blocked');
+      for (const w of nameForms(r)) if (isBlocked(w)) add(ln, 'blocked');
       if (site.unreleasedHits(r, ctx.phrases).length) add(ln, 'unreleased');
       for (const m of r.matchAll(/(?<![\w&/])#(\d{1,7})\b/g)) if (!links.some((l) => l.line === ln && l.kind === 'ref' && l.id === m[1])) links.push({ line: ln, repo: REPO, kind: 'ref', id: m[1], comment: null, other: false });
     }
@@ -304,7 +309,7 @@ function textProblems(text, ctx) {
     if (ctx.redact) for (const r of lineReadings(ls.map((l) => l.trim()).join(''))) { let m; try { m = ctx.redact(r, {}); } catch { m = null; } if (m !== r) add(s + 1, 'secret'); }
     for (const r of lineReadings(ls.join(' '))) {
       if (site.unreleasedHits(r, ctx.phrases).length) add(s + 1, 'unreleased');
-      for (const w of nameForms(r)) if (ctx.blocked.has(hashName(w))) add(s + 1, 'blocked');
+      for (const w of nameForms(r)) if (isBlocked(w)) add(s + 1, 'blocked');
       for (const w of FIRST_NAMES) if (new RegExp(`(?<!\\p{L})${w}(?!\\p{L})`, 'iu').test(r)) add(s + 1, 'first-name');
     }
   }
@@ -629,7 +634,11 @@ if (require.main === module) {
   } else {
     for (const a of args) if (a !== '--offline') { process.stderr.write('usage: node scripts/check-posts.js [--offline] | --add-blocked-host\n'); process.exit(2); }
     let r;
-    try { r = checkAll({ offline: args.includes('--offline') }); } catch (e) {
+    try {
+      // tests only (round 4): make checkAll fail, to prove the last resort prints no path or stack; it can only fail the check
+      if (process.env.DURBAR_BLOGCHECK_TEST_THROW === '1') throw Object.assign(new Error(`test-only failure in ${__filename}`), { code: 'ETESTSEAM' });
+      r = checkAll({ offline: args.includes('--offline') });
+    } catch (e) {
       // fail closed without a path, a name or a stack: only the error's code (round 3)
       process.stderr.write(`blog:check: internal error (${/^[A-Z][A-Z0-9_]{1,30}$/.test(String(e && e.code)) ? e.code : 'no code'}); nothing is published (fail closed)\n`);
       process.exit(1);
