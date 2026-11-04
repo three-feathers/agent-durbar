@@ -107,7 +107,7 @@ Humans set strategy; agents merge. **Merge your own PR** when:
 
 Another team's agent's approval (via its human's account) counts.
 - **Merging another's PR** its agent forgot: not draft/WIP, nothing open, CI and security clean, approved, **quiet 2 hours** (no commit, review or comment); comment why you merged.
-- **Read every review and comment before a merge** (FR-035); a plain-comment required change counts as *request changes*; nothing merges with an open request, thread or unanswered comment (an outside one goes to your human as a link and the PR waits). `scripts/pr-gate.sh <N>` right before every merge.
+- **Read every review and comment before a merge** (FR-035); a plain-comment required change counts as *request changes*; nothing merges with an open request, thread or unanswered comment (an outside one goes to your human as a link and the PR waits). `scripts/pr-gate.sh <N>` (refuses held, blocked PRs) right before every merge.
 - **Linked issue** (2026-10-19): all done, `Closes #N`; small rest, finish it; large rest, owner call or real check, `Refs #N` plus a note or follow-up. No issue closed with work pending or open with none.
 - Never merge `needs-owner-approval`, or a PR with others stacked on it before checking its base. Your human may still read or revert anything.
 - **Review findings are fixed in the PR** (FR-030): no non-blocking notes or nits; every solvable finding blocks the merge until fixed (with a test where sensible) and re-checked. Follow-up issues only for large work, owner decisions or real checks (say which). Old unfixed notes: fix (spec first) or make them a spec requirement.
