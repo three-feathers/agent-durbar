@@ -128,7 +128,6 @@ async function runSuites({ suites, jobs, bail = false, cwd = ROOT, env = process
         code = 1;
         log += `${s.name} left ${leaks.length} durbar-* temp entr${leaks.length === 1 ? 'y' : 'ies'} behind (${leaks.slice(0, 5).join(', ')}${leaks.length > 5 ? ', ...' : ''}): remove what the suite makes (try/finally) or use a helper that does\n`;
       }
-      if (bailed) return; // stopped by another suite's failure: its result means nothing
       const secs = ((now() - st) / 1000).toFixed(1);
       if (code) {
         failed.push(s.name);

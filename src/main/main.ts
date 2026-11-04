@@ -48,6 +48,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { PRODUCTION_DESCRIPTORS } from '../adapters/descriptors';
 import { offeredDescriptors } from '../adapters/experimental';
+import { sweepMcpConfigs } from '../adapters/claude';
 import { createRegistry, detectAll } from '../adapters/registry';
 import { configureDevClaudeBin, detectorFor, nodeDetectEnv, setLoginPath } from '../adapters/detect';
 import { missingChecker } from './mcpcmdcheck';
@@ -1200,6 +1201,7 @@ app.on('will-quit', () => {
   usageTotalsStore?.flush();
   activityStore?.flush();
   if (stageDir) fs.rmSync(stageDir, { recursive: true, force: true });
+  sweepMcpConfigs(); // spec 012 FR-165: a Claude CLI still running keeps no mcp-config.json (env and header values) behind
 });
 
 app.on('window-all-closed', () => {

@@ -468,7 +468,9 @@ export function privateMcpConfig(json: string, tmpRoot: string = os.tmpdir()): {
 /**
  * Spec 012 FR-165 (#1093): the folders `privateMcpConfig` made and has not yet cleaned. The CLI's `exit` handler cleans its own; when the app
  * ends while a CLI still runs (no `exit` ever comes), this set is swept on the process's `exit` event, so `mcp-config.json` (env and header
- * values) never outlives the app. Not covered: a SIGKILL or a crash of the app itself, which no handler sees.
+ * values) never outlives the app. Not covered: a SIGKILL or a crash of the app itself, which no handler sees, and, in Electron's main
+ * process, `app.exit()` and `process.exit()`, which do not emit Node's `exit` event (probed 2026-11-04; main also sweeps in `will-quit`, so
+ * `app.quit()` is covered twice, and the product calls `app.exit` only in the driver path after `disposeAll`).
  */
 const liveMcpDirs = new Set<string>();
 let exitSweepHooked = false;

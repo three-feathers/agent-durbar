@@ -30,12 +30,11 @@ import { FakeCodexServer } from './fakes/codex-app-server';
 import type { FakeCodexOptions } from './fakes/codex-app-server';
 import { tmpDir } from './test-tmp';
 
-// A throw-away Copilot session whose createSession or disconnect never answers keeps its `durbar-acct-` folder by design (FR-022: the next
-// run's stale sweep removes it, an hour later); the hung-session cases below leave two. Spec 012 FR-166: remove them when this process ends.
-process.on('exit', () => {
-  const root = os.tmpdir();
-  for (const n of fs.readdirSync(root)) if (n.startsWith('durbar-acct-')) fs.rmSync(path.join(root, n), { recursive: true, force: true });
-});
+// A throw-away Copilot session whose createSession never answers keeps its `durbar-acct-` folder by design (FR-022: the next run's stale
+// sweep removes it, an hour later). The hung-createSession case records the folders it was given; this process removes only those at exit
+// (spec 012 FR-166), never another `durbar-acct-*` folder of the real temp folder.
+const hungDirs: string[] = [];
+process.on('exit', () => { for (const d of hungDirs) fs.rmSync(d, { recursive: true, force: true }); });
 
 /** Waits on a real condition (polls every 5 ms) and fails with `what` on a generous timeout; never a fixed sleep. */
 async function until(cond: () => boolean | Promise<boolean>, what: string, timeoutMs = 10_000): Promise<void> {
@@ -574,7 +573,7 @@ void (async () => {
       // createSession never answers
       const c = new AuthFakeClient();
       let makes = 0;
-      c.createSession = () => { makes++; return new Promise<never>(() => undefined); };
+      c.createSession = (cfg: Record<string, unknown>) => { makes++; if (typeof cfg.workingDirectory === 'string') hungDirs.push(cfg.workingDirectory); return new Promise<never>(() => undefined); };
       const ad = tune(new FakeCopilot(c));
       const t0 = Date.now();
       assert.deepStrictEqual(await ad.accountInfo(), base, 'a hung createSession: the account without a plan');

@@ -3,7 +3,7 @@ import * as assert from 'assert';
 import { MAX_LINE_BYTES, createCliTransport } from '../src/adapters/claudeTransport';
 import type { ChildLike, ControlAnswer, IncomingControl, TransportHandlers } from '../src/adapters/claudeTransport';
 import { fakeSpawn } from './fakes/claude-cli';
-import { liveMcpConfigCount, makeCliTransportFactory, sweepMcpConfigs } from '../src/adapters/claude';
+import { liveMcpConfigCount, makeCliTransportFactory, privateMcpConfig, sweepMcpConfigs } from '../src/adapters/claude';
 import type { SpawnFn } from '../src/adapters/claudeTransport';
 import { execFileSync } from 'child_process';
 import * as fs from 'fs';
@@ -172,7 +172,7 @@ async function main(): Promise<void> {
 
   // spec 012 FR-165 (#1093): the private MCP config folder (env and header values) is gone on every way the CLI can end
   {
-    const root = tmpDir('durbar-fr171-');
+    const root = tmpDir('durbar-fr165-');
     const left = (): string[] => fs.readdirSync(root).filter((n) => n.startsWith('durbar-mcp-'));
     const launch = { mode: 'read-only' as const, sessionId: 's', resume: false, mcpConfig: '{"mcpServers":{"x":{"env":{"TOKEN":"secret"}}}}' };
     const start = (spawn: SpawnFn, exits: unknown[] = []) =>
@@ -230,7 +230,13 @@ async function main(): Promise<void> {
       assert.deepStrictEqual(left(), [], 'sweep: nothing left');
       assert.strictEqual(liveMcpConfigCount(), 0);
     }
-    // the exit hook itself: a process that makes a config folder and ends with process.exit leaves none behind
+    // a failed write (the JSON is not a string) removes the folder it just made and leaves nothing live
+    {
+      assert.throws(() => privateMcpConfig(undefined as unknown as string, root));
+      assert.deepStrictEqual(left(), [], 'write failure: nothing left');
+      assert.strictEqual(liveMcpConfigCount(), 0, 'write failure: nothing live');
+    }
+    // the exit hook itself (plain Node only; Electron's app.exit and process.exit skip the event: FR-165 KNOWN GAP): a process that makes a config folder and ends with process.exit leaves none behind
     {
       const mod = require.resolve('../src/adapters/claude');
       execFileSync(process.execPath, ['-e', `require(${JSON.stringify(mod)}).privateMcpConfig('{}', ${JSON.stringify(root)}); process.exit(0);`], { stdio: 'ignore' });
