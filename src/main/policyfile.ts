@@ -1,11 +1,16 @@
 /**
  * Spec 076 FR-209 (P1, first slice; issue #734): the machine `policy.json`, read for spec 087's `permissions.requireOsSandbox`.
- * Pure apart from the injected file system: a fixed path per OS (FR-002), FR-005's trust check after `realpath` on every component up to
- * the root, FR-009's size cap, and FR-010's whole-file failure as `'unreadable'` (which the sandbox rule reads as "required").
- * Windows reads nothing in this slice (`[KNOWN GAP]`, its reader needs `SHGetKnownFolderPath`).
+ * Pure apart from the injected file system: a fixed path per OS (FR-002), FR-005's trust check on the policy folder and every folder above
+ * it, FR-009's size cap, and FR-010's whole-file failure as `'unreadable'` (which the sandbox rule reads as "required").
+ * Windows reads nothing in this slice (`[KNOWN GAP]`, issue #1124).
  */
 import * as nodeFs from 'fs';
 import * as path from 'path';
+import { readCapped } from '../shared/cappedread';
+import type { CappedFlags, CappedFs } from '../shared/cappedread';
+
+/** The fixed machine paths are POSIX paths on every platform that reads them (review of #1123: the platform `path` broke them on Windows). */
+const P = path.posix;
 
 /** FR-009: the largest `policy.json` read. */
 export const POLICY_MAX_BYTES = 256 * 1024;
@@ -14,76 +19,95 @@ export const POLICY_MAX_BYTES = 256 * 1024;
 export function machinePolicyDir(platform: string): string | undefined {
   if (platform === 'darwin') return '/Library/Application Support/AgentDurbar/managed';
   if (platform === 'linux') return '/etc/agent-durbar/managed';
-  return undefined; // win32: [KNOWN GAP] (FR-002 needs SHGetKnownFolderPath through koffi)
+  return undefined; // win32: [KNOWN GAP] (issue #1124: FR-002 needs SHGetKnownFolderPath through koffi)
 }
 
-export interface PolicyStat { uid: number; mode: number; ino: number; size: number; isDirectory(): boolean; isFile(): boolean; isSymbolicLink(): boolean }
-export interface PolicyFs {
+export interface PolicyStat { uid: number; mode: number; ino: number; dev: number; size: number; nlink: number; isDirectory(): boolean; isFile(): boolean; isSymbolicLink(): boolean }
+export interface PolicyFs extends CappedFs {
   realpathSync(p: string): string;
   lstatSync(p: string): PolicyStat;
-  /** Opens without following a final link, reads at most `max + 1` bytes, and returns them with the stat of the opened file. */
-  readNoFollow(p: string, max: number): { bytes: Buffer; st: PolicyStat };
+  fstatSync(fd: number): PolicyStat;
 }
 
-/** The real file system: `O_NOFOLLOW` where the OS has it, and the opened file's own stat (so a swap after the checks is seen). */
+/** The real file system. */
 export const nodePolicyFs: PolicyFs = {
   realpathSync: (p) => nodeFs.realpathSync(p),
   lstatSync: (p) => nodeFs.lstatSync(p),
-  readNoFollow(p, max) {
-    const fd = nodeFs.openSync(p, nodeFs.constants.O_RDONLY | (nodeFs.constants.O_NOFOLLOW ?? 0));
-    try {
-      const st = nodeFs.fstatSync(fd);
-      const buf = Buffer.alloc(Math.min(st.size, max) + 1);
-      const n = nodeFs.readSync(fd, buf, 0, buf.length, 0);
-      return { bytes: buf.subarray(0, n), st: Object.assign(st, { isSymbolicLink: () => false }) };
-    } finally {
-      nodeFs.closeSync(fd);
-    }
-  },
+  openSync: (p, flags) => nodeFs.openSync(p, flags),
+  fstatSync: (fd) => Object.assign(nodeFs.fstatSync(fd), { isSymbolicLink: () => false }),
+  readSync: (fd, buf, off, len, pos) => nodeFs.readSync(fd, buf, off, len, pos),
+  closeSync: (fd) => nodeFs.closeSync(fd),
 };
 
 export type MachinePolicy = { layer: undefined } | { layer: Record<string, unknown> } | { layer: 'unreadable'; problem: string };
 
-/** FR-005 (POSIX): owned by root and not group- or world-writable. */
+/**
+ * FR-005 (POSIX): owned by root and not group- or world-writable. `[KNOWN GAP]` macOS ACLs (`chmod +a`) are not visible in the mode, so a
+ * folder whose ACL lets a group write passes (review of #1123).
+ */
 const trusted = (st: PolicyStat): boolean => st.uid === 0 && (st.mode & 0o022) === 0;
+const noEnt = (e: unknown): boolean => (e as { code?: string } | null)?.code === 'ENOENT';
 
 /**
- * The machine layer: `undefined` with no machine folder; the parsed object when it passes every check; else `'unreadable'` with a short
- * problem for the log (never the file's content).
+ * The machine layer: `undefined` only when the folder is missing and every folder above it that exists is trusted; the parsed object when
+ * every check passes; else `'unreadable'` with a short problem for the log (never the file's content).
  */
-export function readMachinePolicy(platform: string = process.platform, fs: PolicyFs = nodePolicyFs): MachinePolicy {
+export function readMachinePolicy(platform: string = process.platform, fs: PolicyFs = nodePolicyFs, flags: CappedFlags = nodeFs.constants): MachinePolicy {
   const dir = machinePolicyDir(platform);
   if (!dir) return { layer: undefined };
-  let realDir: string;
-  try {
-    realDir = fs.realpathSync(dir);
-  } catch (e) {
-    if ((e as { code?: string }).code === 'ENOENT') return { layer: undefined }; // no machine policy: nothing changes
-    return { layer: 'unreadable', problem: 'the policy folder cannot be resolved' };
-  }
   const bad = (problem: string): MachinePolicy => ({ layer: 'unreadable', problem });
+  /** The folder `real` (already resolved) and every folder above it up to the root: real folders, root-owned, not writable by others. */
+  const chainBad = (real: string): string | undefined => {
+    for (let d = real; ; d = P.dirname(d)) {
+      let st: PolicyStat;
+      try {
+        st = fs.lstatSync(d);
+      } catch {
+        return `a folder of the policy path (${d}) cannot be read`;
+      }
+      if (st.isSymbolicLink() || !st.isDirectory() || !trusted(st)) return `a folder of the policy path (${d}) is not owned by root or is writable by others`;
+      if (P.dirname(d) === d) return undefined;
+    }
+  };
   try {
-    if (!fs.lstatSync(realDir).isDirectory()) return bad('the policy folder is not a folder');
-    const file = path.join(dir, 'policy.json');
-    let real: string;
+    let realDir: string;
     try {
-      real = fs.realpathSync(file);
-    } catch {
-      return bad('policy.json is missing in the policy folder');
+      realDir = fs.realpathSync(dir);
+    } catch (e) {
+      if (!noEnt(e)) return bad('the policy folder cannot be resolved');
+      // review of #1123: a missing folder is "no policy" only when no one but root could have removed it: the nearest folder above it
+      // that exists, and every folder above that, must pass the trust check
+      for (let up = P.dirname(dir); ; up = P.dirname(up)) {
+        let real: string;
+        try {
+          real = fs.realpathSync(up);
+        } catch (e2) {
+          if (noEnt(e2) && P.dirname(up) !== up) continue;
+          return bad('a folder above the policy folder cannot be resolved');
+        }
+        const why = chainBad(real);
+        return why ? bad(`the policy folder is missing and ${why}`) : { layer: undefined };
+      }
     }
-    // FR-005 after realpath: the file and every folder up to the root, each checked with lstat (no component is a link any more)
-    const own = fs.lstatSync(real);
-    if (own.isSymbolicLink() || !own.isFile()) return bad('policy.json is not a regular file');
+    // FR-005: the policy folder itself and every folder above it, before anything inside it is trusted (review of #1123)
+    const why = chainBad(realDir);
+    if (why) return bad(why);
+    const file = P.join(realDir, 'policy.json');
+    let own: PolicyStat;
+    try {
+      own = fs.lstatSync(file); // never followed: a link is refused outright (review of #1123: a link to any root-owned JSON passed)
+    } catch (e) {
+      return bad(noEnt(e) ? 'policy.json is missing in the policy folder' : 'policy.json cannot be read');
+    }
+    if (own.isSymbolicLink()) return bad('policy.json is a link');
+    if (!own.isFile()) return bad('policy.json is not a regular file');
     if (!trusted(own)) return bad('policy.json is not owned by root or is writable by others');
-    for (let d = path.dirname(real); ; d = path.dirname(d)) {
-      const st = fs.lstatSync(d);
-      if (st.isSymbolicLink() || !st.isDirectory() || !trusted(st)) return bad(`a folder above policy.json (${d}) is not owned by root or is writable by others`);
-      if (path.dirname(d) === d) break;
-    }
-    const { bytes, st } = fs.readNoFollow(real, POLICY_MAX_BYTES);
-    if (st.ino !== own.ino || !st.isFile() || !trusted(st)) return bad('policy.json changed while it was checked');
-    if (bytes.length > POLICY_MAX_BYTES) return bad('policy.json is larger than 256 KiB');
-    let text = bytes.toString('utf8');
+    // FR-031: the shared capped, no-follow, one-link read; the opened file must be the checked one and still trusted
+    const r = readCapped(fs, flags, file, POLICY_MAX_BYTES, (st: PolicyStat) =>
+      st.ino !== own.ino || st.dev !== own.dev || !trusted(st) ? 'policy.json changed while it was checked' : undefined,
+    );
+    if (!r.ok) return bad(r.code === 'vetoed' ? r.why : r.code === 'too-big' ? 'policy.json is larger than 256 KiB' : `policy.json cannot be read (${r.code})`);
+    let text = r.buf.toString('utf8');
     if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
     let v: unknown;
     try {

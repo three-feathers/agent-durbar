@@ -1181,12 +1181,25 @@ All three answered on PR #575 (09:03-09:06 UTC) with option a, the recommended o
 
 - **FR-209** `[IMPLEMENTED]` `test:` **The machine `policy.json` is read for `requireOsSandbox`, failing closed.** `readMachinePolicy` (`src/main/policyfile.ts`, pure, with injected file system and platform) reads the machine layer of FR-002:
   - macOS `/Library/Application Support/AgentDurbar/managed/policy.json`, Linux `/etc/agent-durbar/managed/policy.json`. The path is fixed in code; no environment variable, `DURBAR_*` hook or setting moves it.
-  - No folder: no policy (`undefined`), so nothing changes for a person without one.
+  - No folder, and every folder above it that exists is trusted: no policy (`undefined`), so nothing changes for a person without one.
   - Otherwise any of these gives `'unreadable'`, which `requireOsSandboxFrom` turns into "the sandbox is required" (FR-010 for this key: its strictest state):
     - the folder is not a real folder, or `policy.json` is missing or not a regular file;
     - FR-005's trust check fails: after `realpath`, the file, the folder and every parent up to `/` must be owned by root (uid 0) and not group- or world-writable;
     - the file is over 256 KiB (FR-009), or unreadable;
     - it is not JSON (UTF-8, a BOM allowed), not an object, or its `version` is not `1`.
+  - **Review of #1123 (fjcabello's side, 2026-11-04), fixed:**
+    - **HIGH:** the trust check started at the folder of `policy.json`'s link target, so a user-writable policy folder with `policy.json` linked to any root-owned JSON with `version: 1` passed. Now the policy folder (after `realpath`) and every folder above it are checked first, and `policy.json` itself is `lstat`ed and refused when it is a link.
+    - **No folder now means no folder under trusted parents:** when the policy folder is missing, the nearest folder above it that exists, and every folder above that, must pass the trust check, or the layer is `'unreadable'`. A user who can write `/etc/agent-durbar` cannot turn the requirement off by deleting `managed`.
+    - The fixed paths use `path.posix` on every platform.
+    - The read is the shared `readCapped` (FR-031: no-follow, non-blocking, one link, capped), with a check that the opened file is the one checked and still trusted.
+    - `test:` the review's case, a policy folder deleted under a user-writable parent, a BOM, exactly 256 KiB, a hard link, and a file made user-owned after the checks.
+    - Mutants:
+      - no policy-folder check fails `FR-209 a world-writable parent`;
+      - no link refusal fails `FR-209 symlinked to a user-owned file`;
+      - a missing folder counted as no policy fails `FR-209 folder deleted under a user-writable parent`;
+      - no trust check on the opened file fails `FR-209: made untrusted after the checks`;
+      - no BOM strip fails `FR-209: a BOM is allowed`.
+  - `[KNOWN GAP]` **macOS ACLs:** a `chmod +a` entry that lets a group write a root-owned 755 folder is not visible in the mode, so such a folder passes the trust check.
   - `requireOsSandbox()` (`sandboxpolicy.ts`) now answers `requireOsSandboxFrom([readMachinePolicy()])` at each session start (`main.ts`), so a policy added or fixed applies to the next session, with no restart (FR-008, tighten-only for new sessions).
   - `test:` `scripts/test-sandbox-floor.ts`, on a fake file system: each case above, the path per platform, the trust check up to the root, and the size cap. `read:` on this Mac `/`, `/Library` and `/Library/Application Support` are root-owned and not group- or world-writable, so a correctly installed folder passes the check. With no `AgentDurbar` folder there, `requireOsSandbox()` is `false`.
 - `[KNOWN GAP]`, for later slices of P1 (each already specified above, none decided here; issues #1124 and #1125):
