@@ -209,6 +209,7 @@
     "test:simmodel": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-sim-model.js",
     "test:copilotmodel": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-copilot-model.js",
     "test:foldersetup": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-foldersetup.js",
+    "test:stillhighlights": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-stillhighlights.js",
     "test:characters": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-characters.js",
     "test:worldzip": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-worldzip.js",
     "test:worldpack": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-worldpack.js",
