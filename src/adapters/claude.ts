@@ -11,6 +11,7 @@
  * - Settings files are never loaded (`--setting-sources ""`, Q8); the folder's `CLAUDE.md` (with `@` imports inside the
  *   folder) goes in as an appended system prompt instead (owner decision, review of #160).
  */
+import { livePrivateDirs, makePrivateDir, sweepPrivateDirs } from './privatedirs';
 import { readClaudeOrgPolicy } from './claudeOrgPolicy';
 import type { OrgPolicy } from '../shared/orgpolicy';
 import { claudeSettingsJson } from '../shared/foldersetup';
@@ -443,19 +444,8 @@ export const CLAUDE_ENTRYPOINT = 'agent-durbar';
  * new private temp folder (`mkdtemp`, 0700); `--mcp-config` gets the path; `cleanup` deletes the folder (on the CLI's exit).
  */
 export function privateMcpConfig(json: string, tmpRoot: string = os.tmpdir()): { file: string; cleanup: () => void } {
-  const dir = fs.mkdtempSync(path.join(tmpRoot, 'durbar-mcp-'));
-  const cleanup = (): void => {
-    liveMcpDirs.delete(dir);
-    try {
-      fs.rmSync(dir, { recursive: true, force: true });
-    } catch {
-      /* the OS cleans its temp folder */
-    }
-  };
-  liveMcpDirs.add(dir);
-  hookExitSweep();
+  const { dir, cleanup } = makePrivateDir('durbar-mcp-', tmpRoot); // spec 012 FR-165: tracked and swept on exit (privatedirs.ts)
   try {
-    if (process.platform !== 'win32') fs.chmodSync(dir, 0o700);
     const file = path.join(dir, 'mcp-config.json');
     fs.writeFileSync(file, json, { mode: 0o600, flag: 'wx' });
     return { file, cleanup };
@@ -465,34 +455,13 @@ export function privateMcpConfig(json: string, tmpRoot: string = os.tmpdir()): {
   }
 }
 
-/**
- * Spec 012 FR-165 (#1093): the folders `privateMcpConfig` made and has not yet cleaned. The CLI's `exit` handler cleans its own; when the app
- * ends while a CLI still runs (no `exit` ever comes), this set is swept on the process's `exit` event, so `mcp-config.json` (env and header
- * values) never outlives the app. Not covered: a SIGKILL or a crash of the app itself, which no handler sees, and, in Electron's main
- * process, `app.exit()` and `process.exit()`, which do not emit Node's `exit` event (probed 2026-11-04; main also sweeps in `will-quit`, so
- * `app.quit()` is covered twice, and the product calls `app.exit` only in the driver path after `disposeAll`).
- */
-const liveMcpDirs = new Set<string>();
-let exitSweepHooked = false;
-function hookExitSweep(): void {
-  if (exitSweepHooked) return;
-  exitSweepHooked = true;
-  process.on('exit', sweepMcpConfigs);
-}
-/** Removes every private MCP config folder still live; called on process exit (and by the tests). */
+/** Spec 012 FR-165: removes every private temp folder still live (the MCP config folders and spec 087 FR-023's Copilot TMPDIR); main calls it in `will-quit`. */
 export function sweepMcpConfigs(): void {
-  for (const dir of [...liveMcpDirs]) {
-    liveMcpDirs.delete(dir);
-    try {
-      fs.rmSync(dir, { recursive: true, force: true });
-    } catch {
-      /* the OS cleans its temp folder */
-    }
-  }
+  sweepPrivateDirs();
 }
 /** How many private MCP config folders are live (tests). */
 export function liveMcpConfigCount(): number {
-  return liveMcpDirs.size;
+  return livePrivateDirs('durbar-mcp-');
 }
 
 /** The CLI argv for a launch, with the MCP JSON moved to a private file (`privateMcpConfig`). */

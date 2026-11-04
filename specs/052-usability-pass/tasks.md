@@ -346,6 +346,9 @@
 ## FR-181: no Demo / Live badge in the top bar (2026-10-31, owner)
 - [x] T193 `check-no-demo-badge.js` first (fails with the badge), then `#protoBadge`, `.proto` and `setBadge` removed; UI-suite entry; the cues that remain are listed in the spec delta [FR-181]
 
+## FR-182..FR-190: opt-in auto-follow and attention queue (2026-11-01, issue #686)
+- [x] T194 One task for issue #686. Spec first (this delta, committed before `src/`). Then: `autoFollowWork` in `src/shared/credits.ts`, `src/main/settings.ts`, `src/main/ipc/settings.ts` (`{ok:false}` for a non-boolean), preload, `api.ts`, `sim.ts`; Settings switch; pure `src/renderer/autofollow.js` (queue, held place, guard decision, arrival key); `app.js` wiring (accepted send, arrival, guards, floors, strip, keys, palette, help); `styles.css` marker and strip; `test:autofollow`; `scripts/check-auto-follow.js` (UI suite); mutations of the guards and of off-by-default; changelog fragment [FR-182..FR-190]
+
 ## FR-191..FR-205: the Needs you panel (2026-11-01, owner). Not before the Retro world
 - [x] T195 Q-NY-1..Q-NY-16 recorded as agent decisions of 2026-11-01, told to the owner and reversible by him [FR-191..FR-204]
 - [ ] T196 Tests first: `createArrivals()` in `attention.js`, `test-attention` with its mutants [FR-193, FR-205]
