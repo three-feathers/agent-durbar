@@ -387,6 +387,25 @@ async function main(): Promise<void> {
     assert.strictEqual(await sent, 'ok', 'FR-059 probe B: a Stop can not land between the last check and the goal');
   }
 
+  // FR-059 round 2 (review on #967, probe E): Autopilot turned on while a plan send waits on its own mode.set plan: the plan message is
+  // refused, plan mode is not set again afterwards, and the next goal goes with no mode.set after its last check
+  {
+    const r = await rig();
+    const set = r.s.rpc.mode.set.bind(r.s.rpc.mode);
+    let asked = false;
+    let answer: () => void = () => undefined;
+    r.s.rpc.mode.set = (a: unknown) => { asked = true; r.s.rpc.mode.set = set; return new Promise((res) => { answer = () => res(set(a)); }); };
+    const planned = r.ad.send(r.sid, { text: 'plan it', plan: true }).then(() => 'ok', (e: Error) => e.message);
+    await until(() => asked, 'probe E: the plan mode.set is in flight');
+    await r.ad.setAutopilot(r.sid, { limit: 5 });
+    answer();
+    assert.strictEqual(await planned, 'Plan first is not available on Autopilot yet.', 'FR-059 probe E: Autopilot on during the plan mode.set refuses the plan message');
+    assert.deepStrictEqual(r.s.calls.filter((c) => c.name === 'send'), [], 'probe E: the plan message is not sent');
+    const from = r.order().length;
+    assert.strictEqual(await r.ad.send(r.sid, { text: 'the goal' }).then(() => 'ok', (e: Error) => e.message), 'ok', 'probe E: the next goal is not refused');
+    assert.deepStrictEqual(r.order().slice(from), ['send'], 'FR-059 probe E: plan mode was not set again, so no mode.set before the goal');
+  }
+
   // spec 099 2026-11-04 (review on #967, mutant C2): Stop's Autopilot branch runs inside FR-229's stop sequence, so a send during it waits
   for (const running of [true, false]) {
     const r = await rig();

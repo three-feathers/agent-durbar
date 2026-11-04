@@ -414,7 +414,7 @@ the cap is reached, the run ends with **cap**. Without a cap, the dialog says pl
   - **A Stop** (or the session ending) drops the message, as FR-229 of spec 052 drops one held by a Stop. **Autopilot off alone** sends it as a plain message, never a goal.
   - **The Autopilot cap goes back** on every way out before the run begins: Copilot sends the session's own cap again; Claude Code drops the Autopilot `--max-budget-usd`, and the next launch is without it.
   - Later sends work as before: no turn is left open and no Autopilot refusal sticks. No goal outlives the Stop. Codex reads Autopilot again right before `thread/goal/set`, with no wait between. Fake adapter tests with gated fakes: T050.
-  - **Every wait counts, the restore too** (round 2 of that review): any wait after that read, the cap restore included, is followed by the same read of Stop and Autopilot (Autopilot back on during the restore goes through the cap again), and nothing that changes the mode comes between the last read and the goal. A failure the chat reported as "nothing was sent" (FR-054) is final: no plain resend follows it. T051.
+  - **Every wait counts, the restore too** (round 2 of that review): any wait after that read, the cap restore included, is followed by the same read of Stop and Autopilot (Autopilot back on during the restore goes through the cap again), and nothing that changes the mode comes between the last read and the goal. A failure the chat reported as "nothing was sent" (FR-054) is final: no plain resend follows it. A plan-first send whose `mode.set plan` waited across Autopilot turning on is refused ("Plan first is not available on Autopilot yet.") and leaves plan mode unset. T051.
 
 ### Window
 
@@ -703,7 +703,8 @@ Round 2 of rubenlupi's review on PR #967 (2026-11-04) found three waits FR-059 m
 
 - **Adds:** FR-059's "every wait counts" sentence (above). **Replaces:** nothing.
 - **How:** Copilot's `setAutopilot` clears `planMode` once `mode.set autopilot` succeeded (that mode leaves plan mode), so a run's send has no mode change after the read; `capForRun` reads Stop and Autopilot again after the restore. Claude Code's `sendLaunched` returns why it ended (`began`, `plain`, `none`), and only `plain`, from the read itself, resends.
-- Tests: `test-autopilot-copilot.ts` (probes A, B, C and D), `test-autopilot-claude.ts` (probe p5), gated fakes, no timer. No real session.
+- **Also:** Copilot's `setAutopilot` bumps a mode epoch (`modeEpoch`) when it turns Autopilot on; a plan send that saw it move across its `mode.set plan` refuses the plan message and does not set `planMode` (the edge left open in the round-2 answer).
+- Tests: `test-autopilot-copilot.ts` (probes A to E), `test-autopilot-claude.ts` (probe p5), gated fakes, no timer. No real session.
 
 ### 2026-11-04: a Stop or Autopilot off during a send's last wait (review on #967)
 

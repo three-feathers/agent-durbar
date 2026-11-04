@@ -106,6 +106,8 @@ interface Live {
   /** Spec 066: plans waiting for the user (request id -> answer); the runtime is in plan mode (set by a plan-first send). */
   plans?: Map<string, (answer: PlanAnswer) => void>;
   planMode?: boolean;
+  /** Spec 099 FR-059: bumped when `setAutopilot` turns Autopilot on, so a plan send that waited across it does not go on. */
+  modeEpoch?: number;
   /** MCP elicitations waiting for the user (spec 012 FR-151): request id -> waiter. */
   elicitations?: Map<string, ElicitWaiter>;
   /** The session's folders (spec 043: a profile file inside one is the repository's). */
@@ -1117,7 +1119,13 @@ export class CopilotAdapter implements AgentAdapter {
     live.turnOpen = true;
     // spec 066 FR-003: plan first: the runtime's own plan mode (it reads and proposes; nothing changes until the user approves)
     if (message.plan) {
+      const epoch = live.modeEpoch;
       await live.session.rpc.mode.set({ mode: 'plan' });
+      // FR-059: Autopilot came on during that wait (its mode.set went after this one): not in plan mode, so the plan message is refused
+      if (live.modeEpoch !== epoch) {
+        live.turnOpen = false;
+        throw new Error(AUTOPILOT_NO_PLAN);
+      }
       live.planMode = true;
     } else if (live.planMode) {
       // review on #441: a plan-first turn that ended without a plan (the model just answered) left the runtime in plan mode, so a
@@ -1176,6 +1184,7 @@ export class CopilotAdapter implements AgentAdapter {
       this.refuseSpentCap(live, cap);
     }
     const auto = (live.auto ??= this.newAutopilot(sessionId, live));
+    live.modeEpoch = (live.modeEpoch ?? 0) + 1;
     auto.turnOn({ ...settings, cap });
     this.autopilotUsed = true;
     try {
