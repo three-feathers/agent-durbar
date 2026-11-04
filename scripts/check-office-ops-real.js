@@ -5,6 +5,7 @@
  *     a single reading can hold another agent's walk), each started only when nothing is put off (DurbarRealOffice.pending(): no screen repaint, FR-033, and no
  *     done-tick redraw waiting on a timer) and the lobby is settled, so no earlier update's deferred work lands in it: renders, layout reads (offset*, client*, scroll*, getBoundingClientRect, getClientRects), nodes added or removed
  *     and attribute writes in #stage (a MutationObserver; the state's own cues, a call light, a "?", "!", the thinking dots and a folder's count of a new state, are not "nodes rewritten");
+ *   - topbarResizes: no part of the top bar changes size in those updates (a count's pill keeps its width with proportional figures too, as on the Windows runner's font);
  *   - elements recalculated by one text change (`UpdateLayoutTree.elementCount` of one short contentTracing, a count; animations off for the trace);
  *   - FR-180, FR-181: the running infinite animations (at most one per light whose state moves, none outside the lights), that each is stepped at most 8 changes a
  *     second and names only transform and opacity, no element with a blend mode; none running under reduced motion (emulated) and Serious mode (the Settings switch);
@@ -24,7 +25,7 @@ const assert = require('assert');
 const { contentTracing } = require('electron');
 const { helpers, jsLiteral } = require('./driver-helpers');
 
-const LIMITS = { rendersPerStatus: 1, readsPerStatus: 5, nodesPerStatus: 0, attrWritesPerStatus: 10, elementsRecalculated: 50, pictureArea: 4, animationsOverLights: 0, animationsOffLights: 0, animationsUnstepped: 0, animationsOtherProperty: 0, lightsBoxShadow: 0, stepsPerSecond: 8, blendElements: 0, animationsStill: 0 };
+const LIMITS = { rendersPerStatus: 1, readsPerStatus: 5, nodesPerStatus: 0, attrWritesPerStatus: 10, elementsRecalculated: 50, pictureArea: 4, animationsOverLights: 0, animationsOffLights: 0, animationsUnstepped: 0, animationsOtherProperty: 0, lightsBoxShadow: 0, stepsPerSecond: 8, blendElements: 0, animationsStill: 0, topbarResizes: 0 };
 /* Measured 2026-11-04 (second review on #969), Linux under xvfb: 16 runs of 8 updates, 8 idle and 8 under eight busy loops on 4 cores: reads 15 and nodes 22 in
    every update at 15 and 40 agents; attribute writes 40 and 34 by turns at 15 (median 40), 48 and 42 at 40 (median 48). Before each update waited for nothing put off,
    a loaded run counted 26, 27 and 44 nodes in single updates at 40 agents (a screen's deferred repaint, or a done tick's redraw, inside the window: a second render);
@@ -166,6 +167,9 @@ module.exports = async (ctx) => {
     }
     // ---- FR-184: one status change of one agent at its desk ----
     await js(INSTRUMENT);
+    /* the Windows runner's system font ignored tabular figures ("6" 7.78 px, "7" 7.52 px), so a count change resized its pill and the top bar measured itself again (fitTopbar, 12 reads):
+       the counts are given proportional figures here, so Linux and macOS see the same font case, and a pill must still keep its size (spec 097, Changes 2026-11-04) */
+    await ctx.win.webContents.insertCSS('#stats .stat b{font-variant-numeric:proportional-nums!important}');
     const id = await js(`(()=>{const p=[...document.querySelectorAll('#stage .ro-plate')].find(x=>x.dataset.state==='working'&&document.querySelector('#stage .ro-person[data-for="'+CSS.escape(x.dataset.id)+'"]'))||[...document.querySelectorAll('#stage .ro-plate')].find(x=>x.dataset.state==='idle'&&document.querySelector('#stage .ro-person[data-for="'+CSS.escape(x.dataset.id)+'"]'));return p&&p.dataset.id})()`);
     assert.ok(id, 'an agent at its desk, working or idle');
     const emit = (st) => js(`window.__durbarSimEmit({type:'status',sessionId:${jsLiteral(id)},timestamp:Date.now(),status:${jsLiteral(st)}})`);
@@ -175,7 +179,7 @@ module.exports = async (ctx) => {
     await emit('working');
     await H.until(shows('working'), 8000);
     await frames();
-    const per = { renders: [], reads: [], nodes: [], attrs: [] };
+    const per = { renders: [], reads: [], nodes: [], attrs: [] }, resizes = [];
     let seen = {}, worst = null, putOff = 0, mostReads = null;
     const startedBusy = [];
     for (let i = 0; i < 8; i++) {
@@ -193,6 +197,7 @@ module.exports = async (ctx) => {
       const o = await js(`window.__ops.stop()`);
       const put = await js(`(()=>{const p=window.DurbarRealOffice.pending();return p.screens+p.ticks;})()`); putOff += put;
       for (const k of Object.keys(per)) per[k].push(o[k]);
+      resizes.push(...o.resized);
       seen = o.seen;
       if (!mostReads || o.reads > mostReads.reads) mostReads = { i, reads: o.reads, by: o.by, resized: o.resized };
       if (!worst || o.nodes + o.attrs > worst.nodes + worst.attrs) worst = { i, ...o }; /* the most costly update's breakdown is logged, so a failure says what it wrote */
@@ -203,6 +208,8 @@ module.exports = async (ctx) => {
     rows[`readsPerStatus@${n}`] = med(per.reads);
     rows[`nodesPerStatus@${n}`] = med(per.nodes);
     rows[`attrWritesPerStatus@${n}`] = med(per.attrs);
+    rows[`topbarResizes@${n}`] = resizes.length; /* every top-bar part that changed size in the 8 updates: none may */
+    for (const z of resizes.slice(0, 4)) console.log('[ops]', n, 'agents, top bar resized in an update:', z);
     readsBy[n] = mostReads;
     console.log('[ops]', n, 'agents, per status update (8):', JSON.stringify(per));
     console.log('[ops]', n, 'agents, layout reads of update', mostReads.i, '(' + mostReads.reads + '), by line:', JSON.stringify(mostReads.by));
