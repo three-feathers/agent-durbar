@@ -42,10 +42,11 @@
     for(const p of o.closed){if(typeof p!=='string'||!p.length||p.length>MAX_PATH)return new Set();out.add(p);}
     return out;
   }
-  /* the value to store, or null to remove the key: only paths that are still folders (`known`), at most MAX_FOLDS */
-  function foldsJSON(closed,known){
-    const k=known instanceof Set?known:new Set(known||[]), list=[];
-    for(const p of closed instanceof Set?closed:[]){if(typeof p==='string'&&p.length&&p.length<=MAX_PATH&&k.has(p))list.push(p);if(list.length>=MAX_FOLDS)break;}
+  /* the value to store, or null to remove the key: only paths that are still folders (`known`), at most MAX_FOLDS. Before the session list
+     has loaded (`listed` false) every saved path is kept, as pruneNumbers does: a folder whose sessions have not appeared yet is not lost */
+  function foldsJSON(closed,known,listed){
+    const k=known instanceof Set?known:new Set(known||[]), all=listed===false, list=[];
+    for(const p of closed instanceof Set?closed:[]){if(typeof p==='string'&&p.length&&p.length<=MAX_PATH&&(all||k.has(p)))list.push(p);if(list.length>=MAX_FOLDS)break;}
     return list.length?JSON.stringify({v:1,closed:list}):null;
   }
   return {FOLD_KEY,MAX_FOLDS,MAX_PATH,group,loadFolds,foldsJSON};

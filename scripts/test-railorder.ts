@@ -16,7 +16,7 @@ const R = require(path.join(ROOT, 'src', 'renderer', 'railorder.js')) as {
   FOLD_KEY: string; MAX_FOLDS: number; MAX_PATH: number;
   group(items: Item[]): Group[];
   loadFolds(raw: unknown): Set<string>;
-  foldsJSON(closed: Set<string>, known: Iterable<string>): string | null;
+  foldsJSON(closed: Set<string>, known: Iterable<string>, listed?: boolean): string | null;
 };
 
 // ---- order ----
@@ -92,6 +92,10 @@ assert.strictEqual(R.loadFolds(JSON.stringify({ v: 1, closed: Array.from({ lengt
 // the stored value: known folders only, in order; null (remove the key) when nothing is collapsed
 assert.strictEqual(R.foldsJSON(new Set(['/a', '/gone', '/b']), ['/a', '/b', '/c']), JSON.stringify({ v: 1, closed: ['/a', '/b'] }));
 assert.strictEqual(R.foldsJSON(new Set(), ['/a']), null);
+// FR-216 item 4: a toggle before the session list has loaded keeps a saved path whose folder has not appeared yet; once listed it is pruned
+assert.strictEqual(R.foldsJSON(new Set(['/later', '/a']), ['/a'], false), JSON.stringify({ v: 1, closed: ['/later', '/a'] }), 'before the list has loaded, an unseen saved folder is kept');
+assert.strictEqual(R.foldsJSON(new Set(['/later', '/a']), ['/a'], true), JSON.stringify({ v: 1, closed: ['/a'] }), 'once listed, an unseen folder is pruned');
+assert.strictEqual(R.foldsJSON(new Set(['x'.repeat(R.MAX_PATH + 1)]), [], false), null, 'before the list has loaded, an over-long path is still never stored');
 assert.strictEqual(R.foldsJSON(new Set(['/gone']), ['/a']), null, 'only gone folders: the key is removed');
 assert.strictEqual(R.foldsJSON(new Set(['x'.repeat(R.MAX_PATH + 1)]), ['x'.repeat(R.MAX_PATH + 1)]), null, 'an over-long path is never stored');
 {

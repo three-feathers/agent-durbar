@@ -83,6 +83,10 @@ module.exports = async (ctx) => {
     console.log(`RAIL ${tag} ${JSON.stringify(fit)}`);
     assert.ok(!fit.strip, `${tag}: the strip is gone`);
     assert.strictEqual(fit.nav, 'Agents', `${tag}: a nav named Agents`);
+    // heading outline (FR-216 item 1): h1 > h2 Agents (visually hidden, first in the nav) > h3 per folder
+    const outline = await js(`(()=>{const n=document.querySelector('#panel nav.rail'),hs=[...n.querySelectorAll('h1,h2,h3,h4,h5,h6')],h2=hs[0],b=h2&&h2.getBoundingClientRect();return {first:h2?h2.tagName+':'+h2.textContent.trim():'',h2s:hs.filter(h=>h.tagName==='H2').length,rest:[...new Set(hs.slice(1).map(h=>h.tagName))],folders:n.querySelectorAll('.rg-h').length,inH3:[...n.querySelectorAll('.rg-h')].every(x=>x.parentElement.tagName==='H3'),seen:!!b&&b.width>1&&b.height>1}})()`);
+    assert.ok(outline.first === 'H2:Agents' && outline.h2s === 1 && outline.folders > 0 && outline.inH3 && JSON.stringify(outline.rest) === '["H3"]', `${tag}: the rail's headings are an h2 Agents then one h3 per folder: ${JSON.stringify(outline)}`);
+    assert.ok(!outline.seen, `${tag}: the h2 Agents is visually hidden: ${JSON.stringify(outline)}`);
     assert.ok(fit.rail.x === 0 && fit.rail.w === 220 && Math.abs(fit.rail.bottom - h) < 1, `${tag}: the rail is a 220px column on the left, to the bottom: ${JSON.stringify(fit.rail)}`);
     assert.ok(Math.abs(fit.rail.y - fit.notice) < 1 && Math.abs(fit.headY - fit.rail.y) < 1, `${tag}: the rail and the chat header start under the notice bar, nothing above the header: ${JSON.stringify(fit)}`);
     assert.strictEqual(fit.panelX, 220, `${tag}: the chat starts right of the rail`);

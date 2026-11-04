@@ -6646,7 +6646,7 @@ function railFolds(){
 }
 function saveFolds(){
   if(!railRemember())return;
-  try{const v=RAIL.foldsJSON(railFolds(),ROOMS.map(r=>r.path));if(v)localStorage.setItem(RAIL.FOLD_KEY,v);else localStorage.removeItem(RAIL.FOLD_KEY);}catch(e){/* storage off: kept for this run */}
+  try{const v=RAIL.foldsJSON(railFolds(),ROOMS.map(r=>r.path),agentsListed||demoOn);if(v)localStorage.setItem(RAIL.FOLD_KEY,v);else localStorage.removeItem(RAIL.FOLD_KEY);}catch(e){/* storage off: kept for this run */}
 }
 function toggleFold(roomId){
   const r=ROOMS.find(x=>x.id===roomId); if(!r)return;
@@ -6661,7 +6661,7 @@ function railGroups(){
 }
 function railHTML(){
   const ib=$('inboxBtn');
-  return `<nav class="rail" aria-label="Agents"><div class="rail-top"><button class="btn back" id="backBtn" type="button" title="Back to the office (Esc)">${ICON('back')}<span>Office</span></button><!-- spec 005 FR-190: R2 (T127) puts the Plan | List switch here, R3 (T116) the collapse button --></div>
+  return `<nav class="rail" aria-label="Agents"><h2 class="sr-only">Agents</h2><div class="rail-top"><button class="btn back" id="backBtn" type="button" title="Back to the office (Esc)">${ICON('back')}<span>Office</span></button><!-- spec 005 FR-190: R2 (T127) puts the Plan | List switch here, R3 (T116) the collapse button --></div>
    <div class="rail-door"><button class="btn sm" id="railDoor" type="button" aria-haspopup="dialog" title="${esc(ib?ib.title:'Needs you')}"${ib&&ib.getAttribute('aria-keyshortcuts')?` aria-keyshortcuts="${esc(ib.getAttribute('aria-keyshortcuts'))}"`:''}>${ALERT_ICON}<span>Your door</span><b>0</b></button><!-- spec 052 FR-219: the red lock goes beside it (T223) --></div>
    <div class="rail-list" id="stripList"></div></nav>`;
 }
