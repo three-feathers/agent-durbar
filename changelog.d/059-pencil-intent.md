@@ -1,0 +1,1 @@
+- **The rename pencil follows its name when a card's live line changes** (spec 059, issue #1135): a new line of live activity could move the names in a room while their hover pencils stayed put, over the task line. Checked with `shots-001-live-activity`, now part of `check:ui`.

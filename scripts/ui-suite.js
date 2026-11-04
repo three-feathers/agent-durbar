@@ -48,6 +48,7 @@ const DRIVERS = [
   { name: 'check-status-filter' }, // spec 001 FR-180 (issue #790): a status pill says what it hides, and Show all
   { name: 'check-status-tooltip' }, // spec 001 FR-187 (issue #875): the instant tooltip on the status counts: hover, keyboard focus, Escape, wording with the filter on and off, inside the window, clear of the pill, every theme, Serious mode
   { name: 'check-list-columns' }, // spec 001 FR-182..FR-184 (issues #812, #813): List columns follow their content and every cut cell keeps its text; the room's whole bottom wall; the header pencil without a tile
+  { name: 'shots-001-live-activity', freeze: false }, // spec 001 FR-028 live activity, and spec 059 (issue #1135): after a live paint no pencil stays on the line under its name
   { name: 'check-rename-inline' }, // spec 059 FR-027 (issue #636): rename in place on every surface, both sizes
   { name: 'check-edit-popups' }, // spec 052 FR-237: every text popup stays open through a drag that ends outside, Ctrl/Cmd+A and live events, both sizes
   { name: 'check-session-summary' }, // spec 085 FR-003/FR-007: the card shown in the chat when a session ends (simsummary=1), both sizes

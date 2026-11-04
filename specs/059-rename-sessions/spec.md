@@ -335,6 +335,13 @@ All answered with option A (see *Clarifications*); kept here for the record of t
 
 ## Changes
 
+### 2026-11-04: a pencil follows its name after a live paint (issue #1135)
+
+*Seen* (Mac session, simulator, macOS 26.0): `shots-001-live-activity` failed at 1440x900 dense with `pencil sim-2 covers intent`: the pencil sat 7 px below where `placeRen` puts it, over the task line under the name. *Cause:* the live activity line (`paintLive`, spec 001 FR-028) writes a card's text without a render, so no pencil pass follows it. A new line of text can change the card's height and move the names of its room, and their pencils stayed where the names had been.
+
+- Item 2, placement: each pencil remembers where its name was when it was placed. After a live paint changes a card's text, every pencil of that room whose name has moved is placed again; the others are left as they are.
+- `sim:` `scripts/shots-001-live-activity.js`, now in `check:ui` (it ran only in `shots:docs`, so CI never ran it): the office page rules after live paints at 1440x900, sparse and dense, including that no pencil covers the task line. Mutant: no re-place after a live paint fails `1440 dense: office page rules` with `pencil sim-2 covers intent{unit:sim-2}`.
+
 ### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
 
 The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):

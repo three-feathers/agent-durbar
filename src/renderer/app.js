@@ -934,7 +934,9 @@ function sideHTML(a){
 function paintLive(a){
   const st=$('stage'); if(!st)return;
   const id=CSS.escape(a.id), r=liveShown(a);
-  st.querySelectorAll(`[data-live="${id}"]`).forEach(el=>{const t=deskLine(a);if(el.textContent!==t){el.textContent=t;if(GROW)fitSide(el);}const k=LIVE_SIDE||!r?'':r.kind;if((el.dataset.lk||'')!==k){if(k)el.dataset.lk=k;else delete el.dataset.lk;}});
+  const moved=new Set(); /* issue 1135: a new line of text can change the card's height and move the names of its room */
+  st.querySelectorAll(`[data-live="${id}"]`).forEach(el=>{const t=deskLine(a);if(el.textContent!==t){el.textContent=t;if(GROW)fitSide(el);const rm=el.closest('.room');if(rm)moved.add(rm);}const k=LIVE_SIDE||!r?'':r.kind;if((el.dataset.lk||'')!==k){if(k)el.dataset.lk=k;else delete el.dataset.lk;}});
+  moved.forEach(rm=>rm.querySelectorAll('.ren[data-ren]').forEach(b=>{if(REN_AT.get(b)!==nameAt(b))placeRen(b);})); /* only the pencils whose name moved */
   const sp=st.querySelector(`[data-side="${id}"]`);
   if(sp){const k=r?r.kind:'',w=r?window.DurbarLiveAct.KIND_WORD[k]||'':'',t=r?r.lines:'';
     sp.classList.toggle('is-empty',!r);if((sp.dataset.lk||'')!==k){if(k)sp.dataset.lk=k;else delete sp.dataset.lk;}
@@ -8342,6 +8344,10 @@ function startFolderEdit(r,surface,from){
     focusBack:()=>{const sel=from==='pencil'?(surface==='fp'?'#foldersPop':'#stage')+' .ren[data-renfolder="'+CSS.escape(r.id)+'"]':surface==='fp'?'#foldersPop [data-fp="rename"][data-room="'+CSS.escape(r.id)+'"]':'#stage [data-foldermenu="'+CSS.escape(r.id)+'"]';return document.querySelector(sel)||document.querySelector('#stage [data-foldermenu="'+CSS.escape(r.id)+'"]');}});
   return true;
 }
+/* spec 059 (issue 1135): where each pencil's name was when it was placed. A live paint (paintLive) writes a card's text without a render, and a
+   new line can move the names of its room: such a pencil is placed again, so it never stays on the line below */
+const REN_AT=new WeakMap();
+const nameAt=b=>{const d=b.parentElement&&b.parentElement.querySelector(':scope>.desk[data-id],:scope>.lrow[data-id]'),n=d&&d.querySelector('.name,.lnm,.room-name');if(!n)return '';const r=n.getBoundingClientRect();return Math.round(r.left*2)+','+Math.round(r.top*2)+','+Math.round(r.width*2);};
 /* The pencil of a card or row sits at the end of the name (after the mode icon); when that would cover another part of it
    (status word, pill, badge, chat number, draft mark) it sits over the tail of the name instead. It takes no layout space (positioned).
    A room header's pencil is in the header's flow (spec 001 FR-179, issue 788), so it is never over the name: it gives way to the menu. */
@@ -8364,6 +8370,7 @@ function placeRen(b){
   const pad=(b.offsetWidth-S)/2; /* the box is 24px (a 24px target, spec 052), the glyph 16px in its middle */
   b.style.left=Math.round(left-pad-or.left-(op.clientLeft||0))+'px'; b.style.top=Math.round(top-pad-or.top-(op.clientTop||0))+'px';
   if(!b.hasAttribute('data-placed'))b.setAttribute('data-placed','');
+  REN_AT.set(b,nameAt(b)); /* issue 1135: re-placed when its name moves */
 }
 let PLACE_ONLY=null, PLACE_DIRTY=null; /* set by renderOffice: the stage parts it rewrote (null = all); read by the placePencils that follows it in renderAll */
 function placePencils(only,dirty){
