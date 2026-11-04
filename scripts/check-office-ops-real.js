@@ -106,6 +106,9 @@ module.exports = async (ctx) => {
   const dbg = ctx.win.webContents.debugger;
   if (!dbg.isAttached()) dbg.attach('1.3');
   await dbg.sendCommand('Emulation.setDeviceMetricsOverride', { width: 0, height: 0, deviceScaleFactor: 1, mobile: false });
+  /* the machine's own setting must not decide the motion rows (as in check-097-motion): Windows CI runners report "reduce motion", and then the people and the lights
+     rightly stand still, so "second frames running" found none there (spec 097, Changes 2026-11-04). The reduced-motion rows below emulate "reduce" themselves */
+  await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
   const rows = {};
   const load = (n, extra = {}) => H.load({ w: 1440, h: 900, index, query: { sim: String(n), officeview: 'real', ...extra }, ready: REAL, readyMs: 30000, settle: false });
   const frames = () => js(`new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>{const c=new MessageChannel();c.port1.onmessage=()=>r(1);c.port2.postMessage(0);})))`);
@@ -120,6 +123,7 @@ module.exports = async (ctx) => {
 
   // ---- FR-183 with the people moving (romotion=1): a pose's second frame takes the same size as its first, so the half-size set holds with motion on ----
   await load(15, { romotion: '1' });
+  assert.strictEqual(await js(`matchMedia('(prefers-reduced-motion: reduce)').matches`), false, 'motion on: reduced motion is emulated off, whatever the machine says');
   assert.ok(await H.until('(' + SETTLED + `)&&document.querySelectorAll('#stage :is(.ro-person2,.ro-visitor2).m-b').length>0`, 20000), 'motion on: second frames running: ' + JSON.stringify(await js(`[...document.querySelectorAll('#stage :is(.ro-person2,.ro-visitor2,.ro-rig)')].map(e=>e.className)`)));
   const pair = await js(`[...document.querySelectorAll('#stage :is(.ro-person2,.ro-visitor2)')].map(b=>{const a=document.querySelector('#stage :is(.ro-person,.ro-visitor)[data-for="'+CSS.escape(b.dataset.for)+'"]');return [b.dataset.for,/\.h\.webp$/.test(a&&a.currentSrc||''),/\.h\.webp$/.test(b.currentSrc)];})`);
   const moving15 = await js(AREA);

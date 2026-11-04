@@ -1,0 +1,1 @@
+- **Real office operation check passes on Windows CI** (spec 097, Changes 2026-11-04): the simulator driver `check-office-ops-real` now sets motion on itself, so a Windows runner's "reduce motion" setting no longer makes its moving-people row find nothing. No app change.

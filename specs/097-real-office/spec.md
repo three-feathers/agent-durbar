@@ -332,6 +332,14 @@ Each has a recommendation (Q6 is for Paco, the crew owner). The build waits for 
 
 ## Changes
 
+### 2026-11-04 the op rows' motion half fails on Windows CI (driver fix)
+
+**Seen:** `check-office-ops-real` (FR-183's `pictureArea@15motion` row, #969) failed twice on every Windows UI check, `main` itself included (f8867f035), with `motion on: second frames running: []`: no second frame and no rig at all. Linux and macOS passed.
+
+**Cause:** the driver, not the app. Windows CI runners report `prefers-reduced-motion: reduce` (docs/agent-notes.md), and then `moving()` rightly draws no second frame and no rig (FR-047). `check-097-motion` already emulates `no-preference` for that reason; this driver read the machine's own setting. `sim:` reproduced on Linux with `--force-prefers-reduced-motion`: the old driver fails with the same line, the new one passes.
+
+**Fix:** the driver emulates `prefers-reduced-motion: no-preference` before its first load and asserts it on the motion page, so the motion rows (`pictureArea@15motion`, FR-180's light rows) do not depend on the runner. The `animationsStill@reduced` row still emulates `reduce` itself, so reduced motion keeps its own check. No row or limit changed. `read:` the Windows result is the PR's own CI; not run on Windows by hand.
+
 ### 2026-11-04 the chat's look follows the setting for every chat (bug #1140, T195)
 
 **Owner report** (Vikram, Telegram, 2026-11-04, packaged v0.1.8 on macOS): with Real office chosen, the chat of a session that existed before looked like Open office, while a helper's chat of that same session looked like the Real office; restarting did not change it.
