@@ -24,6 +24,6 @@
 
 ## 2026-11-04 delta: background helper done too early (issue #1141)
 
-- [ ] T017 Spec delta FR-018, FR-019; plan and tasks (numbers checked against `main`, remote branches and open PRs on 2026-11-04)
-- [ ] T018 `SubagentEvent.background`, event guard; Claude mapper (`run_in_background`, close only on `task_notification`), Copilot mapper (`executionMode`); renderer `onTaskTool` / session stop [FR-018]
-- [ ] T019 Simulator `simbghelper=1`; mapper tests; driver case; mutation checks; changelog fragment; `[KNOWN GAP]` kept [FR-019]
+- [x] T017 Spec delta FR-018, FR-019; plan and tasks (numbers checked against `main`, remote branches and open PRs on 2026-11-04)
+- [x] T018 `SubagentEvent.background`, event guard; Claude mapper (`run_in_background`, close only on `task_notification`), Copilot mapper (`executionMode`); renderer `onTaskTool` / session stop [FR-018]
+- [x] T019 Simulator `simbghelper=1`; mapper tests; driver case; mutation checks; changelog fragment; `[KNOWN GAP]` kept [FR-019]
