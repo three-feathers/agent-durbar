@@ -61,6 +61,9 @@ export interface AdapterCapabilities {
    * one through its own flow (Copilot `forceReauth`), so the agent app writes the sign-in again itself. Only with `mcpSignIn`; missing = false.
    */
   readonly mcpSignInAgain?: boolean;
+  /** `sessionStats()` exists: the agent app's own totals for the session (files, lines, cost; spec 085 FR-010); missing = false. */
+  readonly sessionStats?: boolean;
+
   /**
    * Spec 058 FR-207: main may call `restartMcpServer(id, name, { auto: true })` by itself, before a message after a quiet hour, so the
    * agent app renews a remote server's sign-in with its own stored refresh token. Only with `mcpRestart`; missing = false (Codex, the
@@ -80,6 +83,8 @@ export interface AdapterCapabilities {
   readonly renameSession?: 'any' | 'next-turn';
   /** Spec 066: plan first: the app's own plan mode (nothing runs while planning), answered with `resolvePlan`; missing = false. */
   readonly planMode?: boolean;
+  /** Spec 011 FR-081: `accountQuota()` exists: a free, read-only call reports the account's limits; missing = false (they read "not reported"). */
+  readonly accountQuota?: boolean;
   /** `deleteSession()` exists: one earlier session can be removed through the vendor's own API, never by deleting files (spec 006 FR-028); missing = false. */
   readonly deleteSession?: boolean;
   /** Spec 054 FR-060: the service a session is controlled from when `remote` is on: its name, the only host its links may use, and its phone app. */

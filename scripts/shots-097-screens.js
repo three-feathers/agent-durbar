@@ -39,6 +39,7 @@ module.exports = async (ctx) => {
     await arm();
     for (let t = 0; t < 5; t++) {
       const was = await blurs();
+      await moveTo(p.x - 2, p.y); /* issue 1040: after the room returns, the first event only marks where the pointer is; the next move is the hover */
       if (!(await moveTo(p.x, p.y))) { console.log('[097-screens] the page did not get the pointer move for', i, JSON.stringify(await js(`({got:window.__mv,focus:document.hasFocus(),hidden:document.hidden})`))); await refocus(); await moveTo(1, 1); continue; }
       await H.until('(' + OPENED(i) + ')||window.__blurs!==' + jsLiteral(was), 15000);
       if (await js(OPENED(i))) return;
@@ -197,7 +198,18 @@ module.exports = async (ctx) => {
     await must(`true`, 'a tick');
     await js(`document.activeElement&&document.activeElement.blur&&document.activeElement.blur();0`);
     await refocus();
-    /* FR-230: a sign redrawing under the keyboard gives the focus back to the same button. A marked button proves the redraw happened */
+    /* issue 1040: Esc back to the office (the panel closes) with the pointer resting on a screen opens no zoom; the browser's pointerover there carries no move (here sent by hand, as macOS does). The first real move opens it as before */
+    await js(`document.body.classList.add('panel-open');0`);
+    await must(`document.querySelector('#stage .ro').classList.contains('paused')`, 'the office paused under the panel');
+    await js(`document.body.classList.remove('panel-open');0`);
+    await must(`!document.querySelector('#stage .ro').classList.contains('paused')`, 'the office back');
+    await js(`(()=>{const s=document.querySelector('#stage .ro-screen[data-for="'+CSS.escape(${jsLiteral(mid)})+'"]');s.dispatchEvent(new PointerEvent('pointerover',{bubbles:true,pointerType:'mouse',clientX:${jsLiteral(mp.x)},clientY:${jsLiteral(mp.y)}}));})();0`);
+    await must(`(()=>{const h=window.DurbarRealOffice.hoverState();return h.still&&!h.armed;})()`, 'back under a still pointer: nothing can open (still, no hover timer armed)');
+    assert.strictEqual(await js(`!!document.getElementById('roZoom')`), false, 'back under a still pointer: no zoom opens');
+    await hover(mid, { x: mp.x + 4, y: mp.y + 2 });
+    await moveTo(1, 1);
+    await must(`!document.getElementById('roZoom')`, 'the zoom closed when the pointer left');
+    /* FR-230: a sign redrawing under the keyboard keeps the focus on the same button. The changed counts prove the redraw happened; since spec 097 T149 the sign keeps its nodes (signFill) when only its counts change, so the button itself stays. Whether the button is the same node is not asserted in this first part (the simulator's cost line can appear during a run, which builds the sign again); the rebuild path, with new buttons, is the second part below */
     {
       const zone = (await js(`window.__durbarSimUi.realLayout().zones.filter(z=>z.desks.some(d=>d.state==='working')).map(z=>({id:z.id,desk:z.desks.find(d=>d.state==='working').id}))[0]`));
       const SIGN = `.ro-sign[data-folder=${JSON.stringify(zone.id)}]`;
@@ -208,9 +220,45 @@ module.exports = async (ctx) => {
         const was = await counts();
         await emit({ type: 'status', sessionId: zone.desk, status: i ? 'working' : 'idle', intent: 'Driver work' });
         await must(`document.querySelector(${jsLiteral(SIGN + ' .ro-sc')}).textContent!==${jsLiteral(was)}`, 'the sign redrawn');
-        await must(`(()=>{const a=document.activeElement;return a.dataset[${jsLiteral(attr)}]===${jsLiteral(zone.id)}&&!a.__marked;})()`, 'the focus on the redrawn sign\'s ' + attr + ' button');
+        assert.notStrictEqual(await counts(), was, 'the sign\'s counts changed after the redraw: a redraw that did not happen fails here');
+        await must(`(()=>{const a=document.activeElement;return a.dataset[${jsLiteral(attr)}]===${jsLiteral(zone.id)};})()`, 'the focus on the redrawn sign\'s ' + attr + ' button');
       }
       assert.strictEqual(await counts(), c0, 'the desk back as it was');
+      /* FR-230, the rebuild path (review on #969): a sign whose cost line comes or goes is built again (signFill's signature), so its + and menu button are new
+         elements; the render's focus keep (app.js) gives the focus to the new one. The cost line is hidden and shown by the simulator's quietHeads(['aiu']), the
+         app's own head-line switch, so the rebuild is the real one; the old button gone from the page proves it happened */
+      const COST = `!!document.querySelector(${jsLiteral(SIGN + ' .ro-cost')})`;
+      assert.ok(await js(COST), 'the sign has a cost line to take away');
+      for (const [i, attr] of ['newsess', 'foldermenu'].entries()) {
+        const had = await js(COST);
+        await js(`(()=>{const b=document.querySelector(${jsLiteral(SIGN + ' [data-' + attr + ']')});b.__marked=1;window.__oldBtn=b;b.focus();})();0`);
+        assert.ok(await js(`document.activeElement===window.__oldBtn`), 'the ' + attr + ' button has the focus before the rebuild');
+        await js(`window.__durbarSimUi.quietHeads(${jsLiteral(had ? ['aiu'] : [])});0`);
+        await emit({ type: 'status', sessionId: zone.desk, status: i ? 'working' : 'idle', intent: 'Driver work' });
+        await must((had ? '!' : '') + COST + '&&!window.__oldBtn.isConnected', 'the sign built again, its cost line ' + (had ? 'gone' : 'back') + ' and the old ' + attr + ' button out of the page');
+        await must(`(()=>{const a=document.activeElement;return !!a&&a.dataset[${jsLiteral(attr)}]===${jsLiteral(zone.id)}&&!a.__marked&&!!a.closest(${jsLiteral(SIGN)});})()`, 'the focus on the rebuilt sign\'s new ' + attr + ' button');
+      }
+      await js(`window.__durbarSimUi.quietHeads([]);window.__oldBtn=null;0`);
+    }
+    /* FR-016, FR-184 (review on #969): a plate keeps its nodes on a status change but rebuilds its helper list when the helpers change: a new helper adds one to
+       "+N" and a dot; the helper failing changes that dot. Through the event path, as an agent app reports a helper (a `subagent` event) */
+    {
+      /* a working desk with fewer than 3 helpers, so the new one's dot is among the 3 shown */
+      const desk = (await js(`window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks).filter(d=>d.state==='working').map(d=>d.id).find(id=>{const p=document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(id)+'"]'),h=p&&p.querySelector('.ro-help');return !!p&&(!h||+((/\\+(\\d+)/.exec(h.textContent)||[])[1])<3);})`));
+      assert.ok(desk, 'a working desk with fewer than 3 helpers');
+      await js(`window.__pl=()=>document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(${jsLiteral(desk)})+'"]');0`);
+      const help = () => js(`(()=>{const h=window.__pl().querySelector('.ro-help');return h?{n:(/\\+(\\d+)/.exec(h.textContent)||[])[1]||'',dots:[...h.querySelectorAll('.dot')].map(d=>d.className).join('|')}:{n:'0',dots:''};})()`);
+      const h0 = await help();
+      await js(`window.__nm=window.__pl().querySelector('b');0`);
+      const sub = 'drv-helper-1', base = { sessionId: desk };
+      await emit({ ...base, type: 'subagent', subagentId: sub, name: 'Driver helper', phase: 'started', task: 'Check the driver', agentName: 'explore' });
+      await emit({ ...base, type: 'status', status: 'working', agentId: sub, intent: 'Check the driver' });
+      await must(`(window.__pl().querySelector('.ro-help')||{textContent:''}).textContent.includes('+'+${jsLiteral(String(Number(h0.n) + 1))})`, 'the plate\'s helper count one up (was ' + JSON.stringify(h0) + ')');
+      const h1 = await help();
+      assert.strictEqual(Number(h1.n), Number(h0.n) + 1, 'a new helper adds one: ' + JSON.stringify([h0, h1]));
+      await emit({ ...base, type: 'subagent', subagentId: sub, name: 'Driver helper', phase: 'failed', task: 'Failed', error: 'Failed', agentName: 'explore' });
+      await must(`(()=>{const h=window.__pl().querySelector('.ro-help');return !!h&&[...h.querySelectorAll('.dot')].map(d=>d.className).join('|')!==${jsLiteral(h1.dots)};})()`, 'the plate\'s helper dots changed when the helper failed (were ' + h1.dots + ')');
+      assert.ok(await js(`window.__pl().querySelector('b')===window.__nm`), 'FR-184: the plate kept its name node while its helper list changed');
     }
     // keyboard parity: real Tab presses reach a plate; the same zoom opens; Esc closes it and keeps the focus; the next Tab moves on and opens the next
     const toSign = () => js(`(()=>{const s=document.querySelector('.ro-sign .ro-sb');s&&s.focus();})()`);

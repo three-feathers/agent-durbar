@@ -147,6 +147,20 @@ Status on 2026-11-04. **Vikram** answered as marked (Q2 and his position on Q10 
 
 ## Changes
 
+### 2026-11-04: the redact module loads on every Node that `engines` allows (FR-080, issue #1115)
+
+*Found* (Mac session, 2026-11-04): `scripts/release-notes.js` `loadRedact` (used by `check-posts.js` and the release notes) required `src/shared/redact.ts` through Node's type stripping, which needs Node 22.18 or later. So on Node 22.16, which `engines` (`^20.19.0 || >=22.12.0`) allows, `test:blogcheck` failed while every other suite passed. CI uses the latest 22.x, so it did not show.
+
+- **FR-080** `[IMPLEMENTED]` `test:` **The mask loads without type stripping, always from the source's own rules.** `loadRedact` first requires `src/shared/redact.ts` itself, where Node strips types (22.18+, and the release workflow). Otherwise it compiles that same source now, in memory, with the repo's own `typescript` (`transpileModule`; `redact.ts` has no imports), and loads the result. It never uses a compiled copy from `dist` or `dist-scripts`. If neither way works (no `typescript`, a compile error), it throws and the callers still fail closed (`redact-unavailable`). `engines` is unchanged.
+  - *Review of #1119 (fjcabello's side, 2026-11-04):* the first version fell back to a compiled copy that was not older than the source. A modification time does not prove freshness (`cp -p`, `rsync -a`, a cache restore, clock skew), so the copy is gone and the source is compiled instead.
+  - `test:` `scripts/test-check-posts.js`, acting as if Node cannot strip types:
+    - the source compiles, loads and masks a token;
+    - compiled copies in `dist` and `dist-scripts` that are newer by mtime but mask nothing are not used: a token is still masked;
+    - with no compiler, the load fails closed.
+    Mutants: picking a compiled copy by mtime fails `FR-080: a newer-looking compiled copy with older rules is not used`; dropping the no-compiler guard fails `FR-080: no compiler, no mask: it fails closed`.
+  - *CI on c5e2fd33 (2026-11-04):* `test:changelog`'s "no redaction: refused" case ran the CLI without type stripping and expected a refusal; with the compile fallback the CLI now loads the mask, so nothing was refused. The rule stays; the test now also takes the compiler away through `DURBAR_REDACT_NO_COMPILE=1`, a seam that can only make the load fail. That test's test-build notes block no longer skips Node before 22.18, because the mask loads there now. Mutants: ignoring the seam, or returning an unmasking stand-in when there is no compiler, each fail `no redaction: refused`.
+  - `real:` `npm test` on Node 22.16.0 and 22.23.4 (macOS, the Mac session).
+
 ### 2026-11-04: phase 1 built (T002..T006); owner decisions on Q10 and Q2
 
 **Owner decision, Vikram, Telegram DM, 2026-11-03 23:15 UTC (his position on Q10), relayed by his coordinating agent and posted on this PR:** a human reads the first 5 posts and every post with a name in it; every post **also** needs an agent review that checks it discloses no personal information (names beyond handles, employers, private paths, chat contents, personal data) and nothing that compromises security (tokens, internal URLs, security internals); the review blocks the post if it finds any. Written into FR-079 and the *Agent review* list. `blog:check` mechanises what a script can (handles allowlist, first names, private paths, tokens through redact.ts's fail-closed wrapper, `humanRead`, `agentReview` from another side); the rest is the reviewer's list. **Ruben's own answer to Q10 still switches spec 021 FR-076 on**: until then nothing is published to the blog and AGENTS.md is unchanged (T018 not started).

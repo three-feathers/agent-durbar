@@ -335,6 +335,8 @@ export class EventMapper {
           task: d.agentDescription,
           agentName: d.agentName,
           model: d.model,
+          // spec 015 FR-018: SDK `TaskExecutionMode` is 'sync' | 'background'; only the exact word marks a background helper
+          ...(d.executionMode === 'background' ? { background: true } : {}),
         });
       case 'subagent.completed':
         return this.emit({
@@ -454,7 +456,7 @@ const COPILOT_RATE: Record<string, string> = {
 export function copilotUsageLimit(errorType: unknown, errorCode: unknown): (EventBody & { type: 'usageLimit' }) | null {
   const code = typeof errorCode === 'string' ? errorCode : '';
   if (errorType === 'rate_limit') return { type: 'usageLimit', scope: 'rate', source: Object.prototype.hasOwnProperty.call(COPILOT_RATE, code) ? COPILOT_RATE[code] : 'Copilot rate limit' };
-  if (errorType === 'quota' && (code === 'quota_exceeded' || code === 'session_quota_exceeded')) return { type: 'usageLimit', scope: 'quota', paid: true, source: 'Copilot premium requests' };
+  if (errorType === 'quota' && (code === 'quota_exceeded' || code === 'session_quota_exceeded')) return { type: 'usageLimit', scope: 'quota', paid: true, source: 'Copilot usage' };
   return null;
 }
 

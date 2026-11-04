@@ -1,3 +1,22 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
-<rect width="512" height="512" rx="96" fill="#2f4a6b"/><rect x="232" y="92" width="224" height="96" rx="14" fill="#f4efe6" fill-opacity=".16"/><rect x="256" y="110" width="176" height="14" rx="7.0" fill="#9bc1a0"/><rect x="256" y="134" width="123" height="14" rx="7.0" fill="#8fb0d3"/><rect x="256" y="158" width="79" height="14" rx="7.0" fill="#f4efe6"/><circle cx="272.0" cy="232.0" r="22.0" fill="#f4efe6"/><path d="M242.3,293.6 V290.3 A29.7,29.7 0 0 1 301.7,290.3 V293.6 Z" fill="#f4efe6"/><rect x="242" y="298" width="60" height="40" rx="7" fill="#9bc1a0"/><circle cx="350.0" cy="232.0" r="22.0" fill="#f4efe6"/><path d="M320.3,293.6 V290.3 A29.7,29.7 0 0 1 379.7,290.3 V293.6 Z" fill="#f4efe6"/><rect x="320" y="298" width="60" height="40" rx="7" fill="#8fb0d3"/><circle cx="428.0" cy="232.0" r="22.0" fill="#f4efe6"/><path d="M398.3,293.6 V290.3 A29.7,29.7 0 0 1 457.7,290.3 V293.6 Z" fill="#f4efe6"/><rect x="398" y="298" width="60" height="40" rx="7" fill="#9bc1a0"/><rect x="222" y="338" width="244" height="20" rx="8" fill="#f4efe6"/><rect x="240" y="358" width="14" height="54" rx="5" fill="#f4efe6" fill-opacity=".55"/><rect x="434" y="358" width="14" height="54" rx="5" fill="#f4efe6" fill-opacity=".55"/><circle cx="122" cy="152" r="32" fill="#e0a84a"/><path d="M74.0,412 L80.0,238.0 A42.0,42.0 0 0 1 164.0,238.0 L170.0,412 Q170.0,412 162.0,412 Z" fill="#e0a84a"/><path d="M146,226 L212,150" stroke="#e0a84a" stroke-width="24" stroke-linecap="round"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-label="Agent Durbar">
+  <title>Agent Durbar: Prompt sovereign</title>
+  <rect data-slot="plate" fill="#10141E" x="0" y="0" width="1024" height="1024" rx="200"/>
+  <path data-slot="gold" fill="#FFC21A" d="M298 263L278 186L339 215L382 153L424 215L487 186L463 263Z"/>
+  <path data-slot="gold" fill="#FFC21A" d="M305.6 336.3Q284.4 357.4 305.5 378.7L385.8 459.6L296.8 541.9Q274.8 562.2 295.1 584.3L316.9 607.7Q337.2 629.8 359.3 609.4L502.1 477.4Q518.2 462.4 502.7 446.8L370.8 313.9Q349.6 292.6 328.4 313.7Z"/>
+  <rect data-slot="gold" fill="#FFC21A" x="513" y="546" width="252" height="66" rx="26"/>
+  <rect data-slot="bot" fill="#C2DEFF" x="215.5" y="714" width="16" height="89"/>
+  <circle data-slot="bot" fill="#C2DEFF" cx="223.5" cy="714" r="21"/>
+  <rect data-slot="bot" fill="#C2DEFF" x="134" y="759" width="179" height="129" rx="44"/>
+  <circle data-slot="eye" fill="#0E1420" cx="187.5" cy="823.5" r="17.5"/>
+  <circle data-slot="eye" fill="#0E1420" cx="259.5" cy="823.5" r="17.5"/>
+  <rect data-slot="bot" fill="#C2DEFF" x="504.5" y="714" width="16" height="89"/>
+  <circle data-slot="bot" fill="#C2DEFF" cx="512.5" cy="714" r="21"/>
+  <rect data-slot="bot" fill="#C2DEFF" x="423" y="759" width="179" height="129" rx="44"/>
+  <circle data-slot="eye" fill="#0E1420" cx="476.5" cy="823.5" r="17.5"/>
+  <circle data-slot="eye" fill="#0E1420" cx="548.5" cy="823.5" r="17.5"/>
+  <rect data-slot="bot" fill="#C2DEFF" x="793.5" y="714" width="16" height="89"/>
+  <circle data-slot="bot" fill="#C2DEFF" cx="801.5" cy="714" r="21"/>
+  <rect data-slot="bot" fill="#C2DEFF" x="712" y="759" width="179" height="129" rx="44"/>
+  <circle data-slot="eye" fill="#0E1420" cx="765.5" cy="823.5" r="17.5"/>
+  <circle data-slot="eye" fill="#0E1420" cx="837.5" cy="823.5" r="17.5"/>
 </svg>

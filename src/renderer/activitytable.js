@@ -15,6 +15,7 @@
     'remote-on':'Remote control on','remote-off':'Remote control off',
     'session-deleted':'Session deleted',
     'mcp-restart':'MCP restart',
+    'loop-start':'Loop started','loop-pass':'Loop pass','loop-skip':'Loop pass skipped','loop-hold':'Loop on hold','loop-end':'Loop ended',
     'autopilot-on':'Autopilot on',
     'autopilot-end':'Autopilot ended',
     'autopilot-off':'Autopilot off',

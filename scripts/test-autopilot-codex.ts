@@ -13,7 +13,8 @@ import { FakeCodexServer } from './fakes/codex-app-server';
 import type { FakeCodexOptions } from './fakes/codex-app-server';
 
 const settle = async (s: FakeCodexServer, n = 10): Promise<void> => { for (let i = 0; i < n; i++) { await s.flush(); await new Promise((r) => setImmediate(r)); } };
-const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms)); // only as a bound on a loop that must end, never before a read
+const until = async (ok: () => boolean, what: string): Promise<void> => { for (let i = 0; i < 2000 && !ok(); i++) await new Promise((r) => setTimeout(r, 1)); assert.ok(ok(), what); };
 let finished = false;
 process.on('beforeExit', () => { if (!finished) { console.error('autopilot codex: did not finish'); process.exitCode = 1; } });
 
@@ -172,10 +173,22 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(r.wire(), []);
     assert.deepStrictEqual(r.ap(), []);
     await assert.rejects(r.ad.setAutopilot(r.sid, { limit: 5, cap: 0 }), /token cap/);
+    await assert.rejects(r.ad.setAutopilot(r.sid, { limit: 5, cap: 1.5 }), /token cap/, 'review on #967 (mutant X9): a token cap is a whole number');
     await assert.rejects(r.ad.setAutopilot(r.sid, { limit: 0 }), /limit/);
     await r.ad.send(r.sid, { text: 'stop' });
     await settle(r.srv);
     assert.strictEqual((r.srv.requests('thread/goal/set')[0].params as { objective: string }).objective, 'stop');
+  }
+
+  // FR-002 (review on #967, mutant X6): a goal goes only on a thread opened in Allow all, whatever the broker says now
+  {
+    const r = await rig();
+    await r.ad.setAutopilot(r.sid, { limit: 5 });
+    (r.ad as unknown as { sessions: Map<string, { mode: string }> }).sessions.get(r.sid)!.mode = 'ask'; // the thread's settings, not the broker's
+    await assert.rejects(r.ad.send(r.sid, { text: 'x' }), /only in Allow all/, 'a thread outside Allow all: refused');
+    await settle(r.srv);
+    assert.strictEqual(r.srv.requests('thread/goal/set').length, 0, 'FR-002: no goal on a thread opened outside Allow all');
+    assert.deepStrictEqual(r.ap(), [], 'and no run');
   }
 
   // goal/set refused: the run ends error, the chat says so, the send fails
@@ -320,7 +333,7 @@ async function main(): Promise<void> {
       assert.strictEqual(r.ap().filter((e) => e.phase === 'continued').length, 0);
     }
     await stop;
-    await sleep(60);
+    await until(() => r.lines().includes(LINE_UNCONFIRMED) && !r.ad.isLive(r.sid) && !!r.srv.children[0].exited, `${how}: the session ends, its child goes, and the chat says so`);
     assert.deepStrictEqual(r.reasons(), ['stopped'], `${how}: keeps its reason`);
     assert.ok(r.wire().includes('turn/interrupt'), `${how}: the turn is still interrupted`);
     assert.strictEqual(r.ad.isLive(r.sid), false, `${how}: the session ended`);
@@ -342,8 +355,7 @@ async function main(): Promise<void> {
     const r = await rig();
     await onRun(r);
     r.srv.children[0].exit(1, null);
-    await settle(r.srv);
-    await sleep(10);
+    await until(() => r.reasons().length > 0 && r.lines().includes(LINE_UNCONFIRMED), 'a dead child: the run ends and the chat says so');
     assert.deepStrictEqual(r.reasons(), ['error'], 'a dead child');
     assert.strictEqual(r.ad.isLive(r.sid), false);
     assert.ok(r.lines().includes(LINE_UNCONFIRMED));

@@ -14,7 +14,7 @@ import { fakeSpawn } from './fakes/claude-cli';
 import type { FakeClaudeChild } from './fakes/claude-cli';
 
 const tick = async (n = 8): Promise<void> => { for (let i = 0; i < n; i++) await new Promise((r) => setImmediate(r)); };
-const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+const until = async (ok: () => boolean, what: string): Promise<void> => { for (let i = 0; i < 2000 && !ok(); i++) await new Promise((r) => setTimeout(r, 1)); assert.ok(ok(), what); };
 const cont = { type: 'user', isSynthetic: true, parent_tool_use_id: null, message: { role: 'user', content: 'Stop hook feedback: the goal is not met yet' } };
 const asst = (id: string, parent: string | null = null): unknown => ({ type: 'assistant', parent_tool_use_id: parent, message: { id, role: 'assistant', content: [{ type: 'text', text: 'working' }] } });
 const success = (over: Record<string, unknown> = {}): unknown => ({ type: 'result', subtype: 'success', is_error: false, num_turns: 3, terminal_reason: 'completed', result: 'finished', total_cost_usd: 0.01, ...over });
@@ -371,8 +371,7 @@ async function main(): Promise<void> {
     assert.strictEqual(r.ap().filter((e) => e.phase === 'continued').length, 0, 'not counted');
     const child = r.c();
     await stop;
-    await tick();
-    await sleep(40);
+    await until(() => r.lines().includes(LINE_UNCONFIRMED) && !r.ad.isLive(r.sid), 'FR-054: the session ends, and the chat says so');
     assert.deepStrictEqual(r.reasons(), ['stopped'], 'keeps its reason');
     assert.strictEqual(r.ad.isLive(r.sid), false, 'the session ended');
     assert.ok(child.ended || child.killed.length, 'its child closed');
@@ -389,13 +388,60 @@ async function main(): Promise<void> {
     assert.ok(r.sp.calls.at(-1)!.args.includes('--resume'));
   }
 
+  // FR-059 (review on #967): Stop, or Autopilot off, while the resume's `/goal clear` waits (answered by the test, no timer): no goal is written,
+  // the Autopilot cap goes (the next launch has no `--max-budget-usd`), and a later Autopilot send works. A Stop drops the message; off alone sends it plain.
+  for (const how of ['stop', 'off'] as const) {
+    const r = await rig({ exists: true, id: `bbbbbbbb-${how}`, tuning: { wired: true, waitMs: 2000 } });
+    await r.ad.setAutopilot(r.sid, { limit: 5, cap: 2 });
+    r.opts.clear = () => undefined; // the test answers it
+    const sent = r.ad.send(r.sid, { text: 'the goal' });
+    await until(() => r.users().includes('/goal clear'), `${how}: the resume's clear is written`);
+    assert.ok(r.sp.calls.at(-1)!.args.includes('--max-budget-usd'), `${how}: launched with the Autopilot cap`);
+    if (how === 'stop') await r.ad.interrupt(r.sid); else await r.ad.setAutopilot(r.sid, null);
+    r.opts.clear = () => noGoal; // a later clear (a relaunch on a session that was on Autopilot) is answered by the fake
+    r.c().send(noGoal); // the one in flight
+    assert.strictEqual(await sent.then(() => 'ok', (e: Error) => e.message), 'ok', `${how} during the resume's clear: the send is not refused`);
+    await tick();
+    assert.ok(!r.users().some((u) => /^\/goal (?!clear)/.test(String(u))), `${how} during the resume's clear: no goal outlives it`);
+    assert.ok(!r.ap().some((e) => e.phase === 'started'), `${how}: no run started`);
+    assert.strictEqual((r.ad as unknown as { sessions: Map<string, { apCap?: number }> }).sessions.get(r.sid)!.apCap, undefined, `${how} during the resume's clear: the Autopilot cap is not left set`);
+    if (how === 'stop') {
+      assert.ok(!r.users().includes('the goal'), 'a Stop during the clear drops the message');
+      await r.ad.send(r.sid, { text: 'plain later' });
+      await until(() => r.users().includes('plain later'), 'the later plain message is written');
+    } else await until(() => r.users().includes('the goal'), 'Autopilot off during the clear: the message goes plain');
+    assert.ok(!r.sp.calls.at(-1)!.args.includes('--max-budget-usd'), `${how}: the process for the plain message runs without the Autopilot cap`);
+    r.c().send(success());
+    await tick();
+    await r.ad.setAutopilot(r.sid, { limit: 5 });
+    assert.strictEqual(await r.ad.send(r.sid, { text: 'next goal' }).then(() => 'ok', (e: Error) => e.message), 'ok', `${how}: a later Autopilot send works`);
+    await until(() => r.users().includes('/goal next goal'), `${how}: the later send sets its goal`);
+  }
+
+  // FR-059 round 2 (review on #967, probe p5): Autopilot off during the resume's `/goal clear`, then the clear fails (the child exits, no timer):
+  // the chat says nothing was sent, and nothing is (no plain resend through a relaunch)
+  {
+    const r = await rig({ exists: true, id: 'bbbbbbbb-p5', tuning: { wired: true, waitMs: 2000 } });
+    await r.ad.setAutopilot(r.sid, { limit: 5, cap: 2 });
+    r.opts.clear = () => undefined;
+    const sent = r.ad.send(r.sid, { text: 'the goal' });
+    await until(() => r.users().includes('/goal clear'), 'p5: the resume clear is written');
+    await r.ad.setAutopilot(r.sid, null);
+    r.opts.clear = () => noGoal; // a relaunch's clear would be answered
+    r.c().exit(1, null); // the one in flight fails
+    assert.strictEqual(await sent.then(() => 'ok', (e: Error) => e.message), 'ok', 'p5: the send is not refused');
+    await tick();
+    assert.ok(r.events.some((e) => e.type === 'status' && e.status === 'error' && /nothing was sent/.test(e.intent ?? '')), 'p5: the failed clear is said');
+    assert.ok(!r.users().includes('the goal'), 'FR-059 p5: after "nothing was sent" the message is not sent');
+    assert.strictEqual(r.sp.children.length, 1, 'p5: no relaunch to resend it');
+  }
+
   // a dead child ends the run with error, the session is ended, and says so
   {
     const r = await rig();
     await onRun(r);
     r.c().exit(1, null);
-    await tick();
-    await sleep(5);
+    await until(() => r.reasons().length > 0 && r.lines().includes(LINE_UNCONFIRMED), 'a dead child: the run ends and the chat says so');
     assert.deepStrictEqual(r.reasons(), ['error']);
     assert.strictEqual(r.ad.isLive(r.sid), false);
     assert.ok(r.lines().includes(LINE_UNCONFIRMED));
@@ -424,7 +470,7 @@ async function main(): Promise<void> {
     const f = await rig({ exists: true, id: 'aaaaaaaa-3', tuning: { wired: true } });
     f.opts.clear = () => undefined;
     await f.ad.send(f.sid, { text: 'hello' });
-    await sleep(60);
+    await until(() => f.events.some((e) => e.type === 'status' && e.status === 'error' && /nothing was sent/.test(e.intent ?? '')), 'FR-054: the failed clear is said');
     assert.deepStrictEqual(f.users(), ['/goal clear'], 'FR-054: nothing sent');
     assert.ok(f.events.some((e) => e.type === 'status' && e.status === 'error' && /nothing was sent/.test(e.intent ?? '')));
     // a clear that is answered next time lets the next message go

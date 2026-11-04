@@ -25,6 +25,11 @@ export const ORG_UNREAD = "Durbar could not read your organization's policy for 
 /** How long each step of turning on may take; Stop and End do not wait for it. Proposed, as FR-054's 10 seconds. */
 export const SETUP_WAIT_MS = 30_000;
 export const TOOK_TOO_LONG = 'Autopilot did not start: the agent app did not answer in time.';
+/**
+ * Spec 099 FR-059: after a Stop or an End released a turning-on, how long main still listens for the adapter's own refusal of it (Copilot's
+ * `COPILOT_TURN_ON_STOPPED`, `COPILOT_TURN_ON_OFF`, "The session is not running.") before it answers with `CHANGED`. The Stop itself waits for nothing.
+ */
+export const TOLD_WAIT_MS = 2_000;
 export const NO_READ = "If Durbar cannot read this folder's changes it cannot see a lack of progress";
 export const CHANGED = 'This session changed while you were deciding, so Autopilot did not start. Choose it again.';
 export const WARN_LIMIT = 'Above 20 extra turns, this run can spend much more before it stops.';
@@ -145,6 +150,8 @@ export interface AutopilotOpsDeps {
   changed?(a: AgentInfo): void;
   /** Test seam; production uses `SETUP_WAIT_MS`. */
   setupWaitMs?: number;
+  /** Test seam; production uses `TOLD_WAIT_MS` (never more than the setup wait). */
+  toldWaitMs?: number;
 }
 
 /** One turning-on. `released` rejects at a Stop or an End: nothing waits on a call that may never answer. */
@@ -185,6 +192,13 @@ export function createAutopilotOps(d: AutopilotOpsDeps) {
     let timer: ReturnType<typeof setTimeout> | undefined;
     p.catch(() => undefined);
     return Promise.race([p, t.released, new Promise<never>((_r, rej) => { timer = setTimeout(() => rej(new Error(TOOK_TOO_LONG)), ms); })]).finally(() => clearTimeout(timer));
+  };
+
+  /** FR-059: the adapter's refusal text of a call, if it settles within `ms`; undefined when it answered ok or not in time. */
+  const toldText = (p: Promise<unknown>, ms: number): Promise<string | undefined> => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const late = new Promise<undefined>((res) => { timer = setTimeout(() => res(undefined), ms); });
+    return Promise.race([p.then(() => undefined, (e: unknown) => maskedLine(errText(e), 300)), late]).finally(() => clearTimeout(timer));
   };
 
   /** FR-054: the stop could not be confirmed. A known state whatever happens: Allow all, no Autopilot, the session's process gone. */
@@ -269,8 +283,9 @@ export function createAutopilotOps(d: AutopilotOpsDeps) {
         if (!r.ok) return refuse(r.error ?? 'Could not change the mode.');
         pending = r.pending;
       }
-      // the adapter's answer may come after a limit or a Stop: an on it reports then is taken straight back
-      const backOff = (): Promise<void> => Promise.resolve().then(() => ad.setAutopilot?.(a.id, null, 'stopped')).then(() => undefined).catch(() => failClosed(a));
+      // the adapter's answer may come after a limit or a Stop: an on it reports then is taken straight back.
+      // An ended session has no Autopilot to take back (FR-059: End during a turn-on), and its "The session is not running." is no failed stop.
+      const backOff = (): Promise<void> => (ad.isLive(a.id) ? Promise.resolve().then(() => ad.setAutopilot?.(a.id, null, 'stopped')).then(() => undefined).catch(() => (ad.isLive(a.id) ? failClosed(a) : undefined)) : Promise.resolve());
       let abandoned = false;
       const call = (async () => ad.setAutopilot?.(a.id, settings))();
       call.then(() => { if (abandoned) void backOff(); }, () => undefined);
@@ -278,8 +293,13 @@ export function createAutopilotOps(d: AutopilotOpsDeps) {
         await limited(t, call, wait);
       } catch (err) {
         abandoned = true;
+        if (err === RELEASED) {
+          // FR-059: a Stop or an End during the adapter's turn-on: its own refusal says which, if it comes soon; main's state is already down
+          const told = await toldText(call, Math.min(d.toldWaitMs ?? TOLD_WAIT_MS, wait));
+          if (told === undefined) void backOff();
+          return { ...refuse(told ?? CHANGED), mode: a.permMode };
+        }
         void backOff();
-        if (err === RELEASED) return { ...refuse(CHANGED), mode: a.permMode };
         if (mode !== 'allow') say(a, `Autopilot did not start, and this session and its folder stay in Allow all: ${maskedLine(errText(err), 200)}`, true);
         return { ...refuse(maskedLine(errText(err), 300)), mode: a.permMode };
       }

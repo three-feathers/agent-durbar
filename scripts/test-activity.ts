@@ -4,10 +4,12 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { ActivityStore } from '../src/main/activitystore';
-import { ACTIVITY_FIELDS, ACTIVITY_MAX_ROWS, activityCsv, activityJson, csvCell, decisionOf, sanitizeActivityRow } from '../src/shared/activity';
+import { ACTIVITY_DECISIONS, ACTIVITY_FIELDS, ACTIVITY_MAX_ROWS, activityCsv, activityJson, csvCell, decisionOf, sanitizeActivityRow } from '../src/shared/activity';
 import type { ActivityRow } from '../src/shared/activity';
 import { setCapOp, setModeOp } from '../src/main/agentops';
 import type { OpsDeps } from '../src/main/agentops';
+import { loopActivity } from '../src/main/loopwiring';
+import type { LoopNote } from '../src/main/schedules';
 import type { AgentInfo } from '../src/shared/api';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -145,7 +147,27 @@ try {
     const html = T.tableHtml([{ t: '2026-10-20T10:00:00Z', agent: '<img src=x onerror=alert(1)>', folder: 'f', app: 'a', mode: 'allow', action: '"><script>', decision: 'auto-allow-all' }], esc);
     assert.ok(!html.includes('<img') && !html.includes('<script>'), 'escaped');
     assert.ok(html.includes('Automatic (Allow all)') && html.includes('Allow all'));
-    assert.deepStrictEqual(Object.values(T.DECISION_WORDS), ['Allowed once by you', 'Allowed for the session', 'Denied', 'Automatic (Allow all)', 'Automatic (session permission)', 'Mode changed', 'Limit changed', 'Remote control on', 'Remote control off', 'Session deleted', 'MCP restart', 'Autopilot on', 'Autopilot ended', 'Autopilot off']);
+    assert.deepStrictEqual(Object.values(T.DECISION_WORDS), ['Allowed once by you', 'Allowed for the session', 'Denied', 'Automatic (Allow all)', 'Automatic (session permission)', 'Mode changed', 'Limit changed', 'Remote control on', 'Remote control off', 'Session deleted', 'MCP restart', 'Loop started', 'Loop pass', 'Loop pass skipped', 'Loop on hold', 'Loop ended', 'Autopilot on', 'Autopilot ended', 'Autopilot off']);
+    assert.deepStrictEqual(Object.keys(T.DECISION_WORDS), [...ACTIVITY_DECISIONS], 'one plain word per decision, in the same order');
+
+    // spec 072 FR-024 (T008): the loop rows main records, through the store: kept, redacted, never the prompt or the reply
+    {
+      const st = new ActivityStore(path.join(dir, 'loops.json'), { ...noTimer, env: {} });
+      const L = { minDelay: 5, maxDelay: 60, defaultDelay: 30, maxPasses: 12, endAt: 1 };
+      const tok = 'ghp_' + 'B'.repeat(36);
+      const notes: LoopNote[] = [{ kind: 'start' }, { kind: 'sent', pass: 1 }, { kind: 'pass', pass: 1, next: 1, minutes: 25, reason: `waiting for CI ${tok}`, source: 'agent' }, { kind: 'skip', why: 'busy' }, { kind: 'hold', why: 'person' }, { kind: 'end', reason: 'agent', text: `Stopped by the agent: merged ${tok}` }];
+      for (const n of notes) {
+        const r = loopActivity(n, { loop: L, cap: { amount: 50, unit: 'aiu' } });
+        if (r) assert.ok(st.record({ agent: 'Ana', folder: '/home/u/w', app: 'GitHub Copilot', mode: 'read-only', action: r.action, decision: r.decision, prompt: 'the loop prompt' }));
+      }
+      const got = st.list();
+      assert.deepStrictEqual(got.map((r) => r.decision).sort(), ['loop-end', 'loop-hold', 'loop-pass', 'loop-skip', 'loop-start'].sort(), 'one row per start, pass, skip, hold and end; a pass that only went out has none');
+      assert.ok(got.every((r) => r.mode === 'read-only'), 'the session\'s own mode');
+      const text = JSON.stringify(got);
+      assert.ok(!text.includes('BBBBBBBB') && !text.includes('the loop prompt'), 'redacted, and no prompt');
+      assert.ok(got.some((r) => r.decision === 'loop-pass' && r.action.startsWith('Loop pass 1 of 12 · next in 25 min: waiting for CI')));
+      assert.ok(T.tableHtml(got, esc).includes('Loop pass skipped'), 'the table words the loop decisions');
+    }
 
     // issue #973: the export is the notes export's atomic, no-follow write (main's own handler on a stand-in `electron`, a fake save dialog)
     {

@@ -1,4 +1,5 @@
 import { copilotHooksJson } from '../shared/foldersetup';
+import { makePrivateDir } from './privatedirs';
 import { readCopilotOrgPolicy, resolveCopilotManaged } from './copilotOrgPolicy';
 import type { CopilotManagedClient } from './copilotOrgPolicy';
 import type { OrgPolicy } from '../shared/orgpolicy';
@@ -36,6 +37,8 @@ import type {
   WriteGuard,
 } from './types';
 import type { AdapterDescriptor } from './capabilities';
+import type { QuotaRead } from '../shared/quota';
+import { copilotQuota, quotaAccountKey, quotaFailureOf, quotaWithKey } from './quotamap';
 import { EventMapper } from './map';
 import type { EventBody, RawEvent } from './map';
 import { autoTierToSend, compactResultFrom, managedAutoTierFrom, modelConfig, modelOptionFrom, runtimeHasAutoTiers, runtimeMessage, sdkTier, switchResultFrom, withAutoTiers } from './copilotmodel';
@@ -59,6 +62,8 @@ import * as os from 'os';
 import * as fs from 'fs';
 import * as path from 'path';
 import { cleanSummary } from './handoff';
+import { copilotVendorStats } from './vendorstats';
+import type { VendorStats } from './vendorstats';
 import type { HandoffResult } from './handoff';
 import { sessionIdOk } from '../shared/sessionid';
 import { allowedRemoteUrl, cleanRemoteError, isRemoteVisibility } from '../shared/remote';
@@ -103,6 +108,20 @@ interface Live {
   /** Spec 066: plans waiting for the user (request id -> answer); the runtime is in plan mode (set by a plan-first send). */
   plans?: Map<string, (answer: PlanAnswer) => void>;
   planMode?: boolean;
+  /**
+   * Spec 099 FR-059 (review on #967): the session's one operation queue. Autopilot on, Autopilot off and the part of a send up to the
+   * runtime call run one at a time, each reading the session again at its start; Stop and End do not queue (they are counted instead).
+   */
+  ops?: Promise<void>;
+  /** Spec 099 FR-059: End session has begun, so a queued step does nothing. */
+  ending?: boolean;
+  /**
+   * Spec 099 FR-059: a turn-on sent `mode.set autopilot` and its `session.mode_changed` has not come: that change is Durbar's own, not
+   * FR-006, even when Autopilot is off by then (the call timed out, failed, or a Stop came meanwhile).
+   */
+  ownTurnOn?: boolean;
+  /** Spec 099 FR-059: which turn-on set `ownTurnOn`, so only its own timer clears it (one bound after it gave up). */
+  ownTurnOnId?: number;
   /** MCP elicitations waiting for the user (spec 012 FR-151): request id -> waiter. */
   elicitations?: Map<string, ElicitWaiter>;
   /** The session's folders (spec 043: a profile file inside one is the repository's). */
@@ -121,6 +140,8 @@ interface Live {
    * turn runs, and a Durbar-raised limit waiting for the user with the message it held back.
    */
   capNow?: number | null;
+  /** Spec 099 FR-022, FR-059: the cap restore went unanswered or failed, so `capNow` is not known to be in force: the next goal sends its cap again. */
+  capUnsure?: boolean;
   usedCheckpointNano?: number;
   usedSinceNano?: number;
   turnOpen?: boolean;
@@ -170,6 +191,12 @@ export const copilotSandboxRefusal = (reason: string): string => `Copilot could 
 
 /** Spec 052 FR-229: the row after an interrupt given up on; the runtime's own `session.idle` brings "Aborted" back when the abort lands. */
 export const COPILOT_STOP_SENT = 'Stop sent: Copilot has not answered yet';
+/** Spec 099 FR-059: a plan-first send whose `mode.set plan` waited while Autopilot was turned on. */
+export const COPILOT_TURN_ON_STOPPED = 'Stop came before Autopilot was on, so Autopilot is off.';
+/** Spec 099 FR-059: Autopilot was turned off again while its turn-on waited for Copilot. */
+export const COPILOT_TURN_ON_OFF = 'Autopilot was turned off before it came on.';
+/** Spec 099 FR-059: a runtime call of a queued send step (cap update, plan or interactive mode change) gave no answer within its bound. */
+export const COPILOT_STEP_NO_ANSWER = 'Copilot did not answer in time, so this message was not sent.';
 /** Spec 052 FR-229: the row while a send waits for a late abort, and the send's failure when it never answers. */
 export const COPILOT_STOP_WAIT = 'Waiting for Copilot to stop the last turn';
 export const COPILOT_STOP_NO_ANSWER = 'Copilot has not answered Stop yet, so your message was not sent. Send it again in a moment, or end the session.';
@@ -187,6 +214,10 @@ const usedInRefusal = (e: unknown): number | undefined => {
 /** FR-070: credits a live session has used, as far as the runtime reported them. */
 const usedCredits = (live: Live): number => ((live.usedCheckpointNano ?? 0) + (live.usedSinceNano ?? 0)) / 1e9;
 /** FR-071: a cap is set and what was used reached it. */
+/** Spec 099: what a send does on Autopilot, read from the session's state at that moment. */
+/** Spec 099 FR-059: a place in a session's operation queue (`reserve`). */
+type Slot = { turn: Promise<void>; free: () => void };
+type SendPlan = { startsRun: true; auto: AutopilotState; goal: GoalTextResult } | { startsRun: false; auto: AutopilotState | undefined; goal: undefined };
 const overCap = (live: Live): boolean => typeof live.capNow === 'number' && live.capNow > 0 && usedCredits(live) >= live.capNow;
 const nanoOf = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : undefined);
 
@@ -278,6 +309,7 @@ export const COPILOT_CAPABILITIES: AdapterCapabilities = Object.freeze({
   mcpSignIn: true, // spec 058 FR-064: rpc.mcp.oauth.login (@experimental; read: SDK 1.0.22-1.0.26 rpc.d.ts; real: worked once, macOS 2026-10-23, one server; the rest in T105)
   mcpSignInSteps: 'If Sign in is not available, sign in from the Copilot CLI: run `copilot`, type `/mcp auth {name}` and finish in your browser. Then use Restart session with these servers. This may not carry over to this session (seen on 2026-10-23).', // FR-068
   mcpSignInNote: 'Checked once on a real account; other servers and systems not yet.', // FR-074/FR-180: the row's honest note
+  sessionStats: true, // spec 085 FR-012: rpc.usage.getMetrics (@experimental; read: SDK 1.0.24; not run on a real session)
   handoff: true, // spec 030 FR-034: rpc.history.summarizeForHandoff (cost unverified)
   modelSwitch: Object.freeze({ verified: true, contextTier: true }), // spec 030 Phase 3 (real 2026-10-20, Copilot Pro): switch, effort, long tier, confirmation and compact-and-switch (T041, T044, T045)
   planMode: true, // spec 066 FR-003: mode.set plan + onExitPlanModeRequest (@experimental)
@@ -285,6 +317,7 @@ export const COPILOT_CAPABILITIES: AdapterCapabilities = Object.freeze({
   renameSession: 'any', // spec 059 FR-007: rpc.name.set (@experimental; real 2026-10-20 on a live session, 0 credits); a stored session through a prompt-free resume: real 2026-10-21 (T050a, 0 credits)
   remoteService: Object.freeze({ name: 'GitHub', host: 'github.com', mobile: 'GitHub Mobile' }), // spec 054 FR-060
   osSandbox: true, // spec 087: the local sandbox through session.rpc.options.update (@experimental; read: SDK 1.0.22-1.0.26; not run on a real session)
+  accountQuota: true, // spec 011 FR-081: account.getQuota (read: no session, no prompt, no spend; spec 068, spec 012 FR-156)
   deleteSession: true, // spec 006 FR-028: CopilotClient.deleteSession (read: SDK 1.0.22-1.0.26 client.d.ts; never run on a real session)
   oneShot: true, // spec 040 FR-015: a throw-away SDK session with no tools and no MCP, deleted after (real 2026-10-20: no tool ran, nothing left on disk)
   autopilot: Object.freeze({ capUnit: 'aiu', attachments: true, planApproval: true, verified: false }), // spec 099 FR-001: fakes only until T094; nothing in main or the window reads it before T030, T033
@@ -334,6 +367,19 @@ const errorText = (e: unknown): string => (e instanceof Error ? e.message : Stri
 /** Spec 061: the private folder that holds a session's accepted folder hooks (removed when the session ends). */
 export const HOOK_DIR_PREFIX = 'durbar-folder-hooks-';
 let hookDirsSwept = false;
+/** Spec 087 FR-023: the runtime's environment: Durbar's own, with `TMPDIR` (and `TEMP`/`TMP` on Windows) set to the private folder. */
+export function copilotRuntimeEnv(base: NodeJS.ProcessEnv, tmpDir: string, platform: string): Record<string, string> {
+  const env: Record<string, string> = {};
+  // any spelling of TMPDIR, TEMP or TMP is dropped first: Windows reads its environment without case (review of #1126)
+  for (const [k, v] of Object.entries(base)) if (typeof v === 'string' && !/^(tmpdir|temp|tmp)$/i.test(k)) env[k] = v;
+  env.TMPDIR = tmpDir;
+  if (platform === 'win32') {
+    env.TEMP = tmpDir;
+    env.TMP = tmpDir;
+  }
+  return env;
+}
+
 /** Review nit #424: once per run, remove copies left by a crash (older than a day, so another running Durbar's are never touched). */
 export function sweepOldHookDirs(now = Date.now(), dir = os.tmpdir()): void {
   if (hookDirsSwept) return;
@@ -463,17 +509,49 @@ export class CopilotAdapter implements AgentAdapter {
     return starting;
   }
 
-  /** Start one runtime client. Protected so a test can hand in a new fake client each time (spec 012 FR-158). */
+  /**
+   * Spec 087 FR-023: each runtime's private TMPDIR, bound to its client (review of #1126: a folder held in one field could be removed from
+   * under a runtime that a `getClient()` started while the old one was still stopping).
+   */
+  private runtimeTmps = new Map<CopilotClient, () => void>();
+
+  /**
+   * Start one runtime client. Protected so a test can hand in a new fake client each time (spec 012 FR-158).
+   * Spec 087 FR-023 (K15, #755): the runtime gets a private temp folder as `TMPDIR` (`TEMP`/`TMP` on Windows), so the temp grant its
+   * sandbox always adds is that folder, not the shared temp folder. The folder lives as long as that client: it is removed when exactly
+   * that client is stopped (`releaseRuntimeTmp`), when its start fails, or by the quit sweep.
+   */
   protected async createClient(): Promise<CopilotClient> {
-    // Packaged app: run the runtime from app.asar.unpacked. Dev: let the SDK locate it.
-    // No token is passed or stored here; the runtime uses the Copilot login on this machine.
-    const runtimePath = unpackedRuntimePath();
-    this.debug?.(`runtime: ${runtimePath ?? 'sdk default'}`);
-    const c = new CopilotClient(
-      runtimePath ? { connection: RuntimeConnection.forStdio({ path: runtimePath }), workingDirectory: os.homedir() } : {},
-    );
+    const tmp = makePrivateDir('durbar-cprt-');
+    try {
+      // Packaged app: run the runtime from app.asar.unpacked. Dev: the SDK's own runtime, still as a child process: the connection is
+      // passed explicitly so an env such as COPILOT_SDK_DEFAULT_CONNECTION=inprocess cannot pick the in-process transport, which takes no env
+      // (review of #1126). No token is passed or stored here; the runtime uses the Copilot login on this machine.
+      const runtimePath = unpackedRuntimePath();
+      this.debug?.(`runtime: ${runtimePath ?? 'sdk default'}`);
+      const env = copilotRuntimeEnv(process.env, tmp.dir, process.platform);
+      const c = await this.newClient(runtimePath ? { connection: RuntimeConnection.forStdio({ path: runtimePath }), workingDirectory: os.homedir(), env } : { connection: RuntimeConnection.forStdio(), env });
+      this.runtimeTmps.set(c, tmp.cleanup);
+      return c;
+    } catch (e) {
+      tmp.cleanup();
+      throw e;
+    }
+  }
+
+  /** Construct and start the SDK client (a test overrides this to see the options without a runtime). */
+  protected async newClient(opts: ConstructorParameters<typeof CopilotClient>[0]): Promise<CopilotClient> {
+    const c = new CopilotClient(opts);
     await c.start();
     return c;
+  }
+
+  /** Spec 087 FR-023: removes the private temp folder of exactly this (stopped) client, never another runtime's. */
+  private releaseRuntimeTmp(c: CopilotClient | undefined): void {
+    if (!c) return;
+    const cleanup = this.runtimeTmps.get(c);
+    this.runtimeTmps.delete(c);
+    cleanup?.();
   }
 
   /**
@@ -527,6 +605,7 @@ export class CopilotAdapter implements AgentAdapter {
         this.debug?.(`refreshAuth: old client stop failed: ${e instanceof Error ? e.message : String(e)}`);
       }
     }
+    this.releaseRuntimeTmp(old); // spec 087 FR-023: only the stopped runtime's own folder
     let client: CopilotClient;
     try {
       client = await this.getClient();
@@ -600,6 +679,26 @@ export class CopilotAdapter implements AgentAdapter {
       return plan ? { ...id, plan } : id;
     } catch {
       return { status: 'unknown' };
+    }
+  }
+
+  /**
+   * Spec 011 FR-081: the account's quota snapshots from `account.getQuota` on the shared runtime client (no session, no prompt, nothing
+   * billed; @experimental, and it can lag). A runtime without the call is "not reported". Only figures leave; login and token never do.
+   */
+  async accountQuota(): Promise<QuotaRead> {
+    let key: string | undefined;
+    try {
+      const client = await this.getClient();
+      // FR-095: getQuota names no account; the local auth status does. Only a one-way fingerprint of it goes on
+      const st = (await client.getAuthStatus().catch(() => undefined)) as { host?: unknown; login?: unknown } | undefined;
+      key = quotaAccountKey(st?.login, st?.host);
+      const rpc = (client as unknown as { rpc?: { account?: { getQuota?: (p: object) => Promise<unknown> } } }).rpc;
+      if (typeof rpc?.account?.getQuota !== 'function') return { kind: 'not-reported', reason: 'unsupported' };
+      return quotaWithKey(copilotQuota(await rpc.account.getQuota({})), key);
+    } catch (e) {
+      if (isMethodNotFound(e)) return { kind: 'not-reported', reason: 'unsupported' };
+      return quotaWithKey({ kind: 'failed', failure: quotaFailureOf(e) }, key);
     }
   }
 
@@ -1028,11 +1127,27 @@ export class CopilotAdapter implements AgentAdapter {
   }
 
   async send(sessionId: string, message: AgentMessage): Promise<void> {
+    // spec 099 FR-059: the place in the session's queue and the Stop count are taken when the send is made, before any wait, so steps
+    // run in the order they were asked for and a Stop after this drops the message
+    const made = this.sessions.get(sessionId);
+    const madeStops = made?.interrupts;
+    const slot = made ? this.reserve(made) : undefined;
+    let sent: { done: Promise<void> } | undefined;
+    try {
+      sent = await this.sendQueued(sessionId, message, made, madeStops, slot);
+    } finally {
+      slot?.free();
+    }
+    await sent?.done;
+  }
+
+  private async sendQueued(sessionId: string, message: AgentMessage, made: Live | undefined, madeStops: number | undefined, slot: Slot | undefined): Promise<{ done: Promise<void> } | undefined> {
     await this.refreshing?.catch(() => undefined); // FR-158: send on the reconnected session
     const live = this.mustGet(sessionId);
+    const stops = live === made ? madeStops : live.interrupts; // a reconnect made a new session object: its own count
     await live.sandboxApplying?.catch(() => undefined);
-    // spec 099: refusals first, so a refused message leaves everything as it was; read again after a wait for a Stop's late calls (that Stop may have turned Autopilot off)
-    const refusals = (): { startsRun: true; auto: AutopilotState; goal: GoalTextResult } | { startsRun: false; auto: AutopilotState | undefined; goal: undefined } => {
+    // spec 099: refusals first, so a refused message leaves everything as it was; read again at the step's start and after its waits
+    const refusals = (): SendPlan => {
       const auto = live.auto?.on ? live.auto : undefined;
       if (auto && message.plan) throw new Error(AUTOPILOT_NO_PLAN);
       if (!auto || auto.running) return { startsRun: false, auto, goal: undefined };
@@ -1042,38 +1157,76 @@ export class CopilotAdapter implements AgentAdapter {
       return { startsRun: true, auto, goal };
     };
     refusals();
-    if (!(await this.waitLateCalls(sessionId, live))) return;
-    const { auto, startsRun, goal } = refusals();
+    // spec 099 FR-059: one step of the session's queue up to the runtime call, so no turn-on, Autopilot off or other send runs in between
+    const step = (): Promise<{ done: Promise<void> } | undefined> => this.sendStep(sessionId, live, message, stops, refusals);
+    return slot && live === made ? slot.turn.then(step) : this.serial(live, step);
+  }
+
+  /**
+   * Spec 099 FR-059: the queued part of `send`. A Stop or End since `send` was called (or during a wait here) drops the message, as FR-229
+   * drops one held by a Stop. Returns the runtime call in flight, which the caller waits for outside the queue.
+   */
+  private async sendStep(sid: string, live: Live, message: AgentMessage, stops: number | undefined, refusals: () => SendPlan): Promise<{ done: Promise<void> } | undefined> {
+    const gone = (): boolean => this.sessions.get(sid) !== live || !!live.ending || live.interrupts !== stops;
+    refusals();
+    if (!(await this.waitLateCalls(sid, live))) return undefined;
+    const first = refusals();
     // spec 087 FR-007: the sandbox is not in force: nothing is sent until the person chooses (or, under the policy, ever)
     const hold = live.sandboxHold;
-    if (hold && !(this.sandboxContinued.has(sessionId) && !live.requireOsSandbox)) {
+    if (hold && !(this.sandboxContinued.has(sid) && !live.requireOsSandbox)) {
       if (live.requireOsSandbox || hold.refuse) throw new Error(hold.refuse ? hold.reason : copilotSandboxRefusal(hold.reason));
       live.sandboxNoteOpen = true;
-      this.emit(sessionId, { type: 'sandbox', sandbox: live.sandbox ?? null, notice: { text: copilotSandboxNotice(hold.reason), actions: ['continue'] } });
-      this.emit(sessionId, { type: 'status', status: 'idle', intent: 'Not sent: the OS sandbox could not start' });
-      return;
+      this.emit(sid, { type: 'sandbox', sandbox: live.sandbox ?? null, notice: { text: copilotSandboxNotice(hold.reason), actions: ['continue'] } });
+      this.emit(sid, { type: 'status', status: 'idle', intent: 'Not sent: the OS sandbox could not start' });
+      return undefined;
     }
     // spec 011 FR-071: at or over the cap the message is held and the user is asked (the runtime asks too, unless its limit came after a resume with none: spec 052 FR-231)
     if (overCap(live)) {
-      this.raiseLocalLimit(sessionId, live, message);
-      return;
+      this.raiseLocalLimit(sid, live, message);
+      return undefined;
     }
     // spec 099: past every hold, so a held message starts no run (it comes back here when it is let go)
-    if (startsRun) await this.applyAutopilotCap(live, auto.settings?.cap);
+    let ready: SendPlan = first;
+    if (first.startsRun) {
+      // FR-022, FR-059: the Autopilot cap for this run, then Stop and Autopilot read again (they may have changed while it waited; a Stop
+      // counts at once, before it has turned Autopilot off). Anything but a run starting now puts the session's own cap back. From a run's
+      // last read to `begin()` there is no wait; every other wait is followed by the read below the mode change.
+      // Every runtime call here is bounded (`bounded`): one that does not answer drops the message with COPILOT_STEP_NO_ANSWER after the
+      // session's own cap is put back (bounded too), and the queue goes on.
+      let again: SendPlan | undefined;
+      try {
+        await this.applyAutopilotCap(live, first.auto.settings?.cap);
+        again = refusals(); // a Stop turned Autopilot off at once, so after one this is plain and dropped below
+      } finally {
+        if (!again?.startsRun) await this.restoreAutopilotCap(sid, live);
+      }
+      if (!again) return undefined; // a Stop or End: dropped (FR-229); Autopilot off alone: `again` is plain
+      ready = again;
+    }
+    const { auto, startsRun, goal } = ready;
     live.turnOpen = true;
-    // spec 066 FR-003: plan first: the runtime's own plan mode (it reads and proposes; nothing changes until the user approves)
-    if (message.plan) {
-      await live.session.rpc.mode.set({ mode: 'plan' });
-      live.planMode = true;
-    } else if (live.planMode) {
-      // review on #441: a plan-first turn that ended without a plan (the model just answered) left the runtime in plan mode, so a
-      // normal message would never act: back to interactive first
-      await live.session.rpc.mode.set({ mode: 'interactive' });
-      live.planMode = false;
+    try {
+      // spec 066 FR-003: plan first: the runtime's own plan mode (it reads and proposes; nothing changes until the user approves)
+      if (message.plan) {
+        live.planMode = true; // from the ask: if it does not answer, the mode is not known and the next plain send resets it
+        await this.bounded(live.session.rpc.mode.set({ mode: 'plan' }));
+      } else if (live.planMode) {
+        // review on #441: a plan-first turn that ended without a plan (the model just answered) left the runtime in plan mode, so a
+        // normal message would never act: back to interactive first. A run never gets here: turning Autopilot on left plan mode.
+        await this.bounded(live.session.rpc.mode.set({ mode: 'interactive' }));
+        live.planMode = false;
+      }
+    } catch (e) {
+      live.turnOpen = false; // FR-059: no answer (or a failure): the message is not sent and no turn is left open
+      throw e;
+    }
+    if (gone()) { // FR-059: a Stop or End during any wait of this step (late calls, cap restore, mode change) drops the message
+      live.turnOpen = false;
+      return undefined;
     }
     // Files the user attached are theirs to share: the runtime may read them even outside the folders (spec 003 FR-023).
     if (message.attachments?.length) live.broker.allowReadPaths(message.attachments.map((a) => a.path));
-    this.emit(sessionId, { type: 'status', status: 'working', intent: 'Thinking' });
+    this.emit(sid, { type: 'status', status: 'working', intent: 'Thinking' });
     // Text files go as `file` attachments (the runtime reads them from disk). Images go as
     // base64 `blob` attachments with a mime type, the SDK's documented way to send an image.
     const attachments = (message.attachments ?? []).map((a) => {
@@ -1085,37 +1238,91 @@ export class CopilotAdapter implements AgentAdapter {
       return { type: 'file' as const, path: a.path, displayName: name };
     });
     this.debug?.(
-      `send ${sessionId.slice(0, 8)} prompt=${JSON.stringify(message.text)} attachments=${JSON.stringify(
+      `send ${sid.slice(0, 8)} prompt=${JSON.stringify(message.text)} attachments=${JSON.stringify(
         attachments.map((a) => (a.type === 'blob' ? { type: a.type, mimeType: a.mimeType, displayName: a.displayName, base64Chars: a.data.length } : a)),
       )}`,
     );
+    const atts = attachments.length ? attachments : undefined;
     if (!startsRun || !goal?.ok) {
-      await live.session.send({ prompt: message.text, attachments: attachments.length ? attachments : undefined }); // spec 099 FR-058: during a run a plain message, never a new goal
-      return;
+      // spec 099 FR-058: during a run a plain message, never a new goal
+      return { done: (async () => { await live.session.send({ prompt: message.text, attachments: atts }); })() };
     }
     // FR-010 (`real:` T090): before the send, whose first events may already belong to the run
     live.pendingEnd = undefined;
     live.sawWork = false;
     const run = auto.begin();
-    try {
-      await live.session.send({ prompt: goal.text, attachments: attachments.length ? attachments : undefined, agentMode: 'autopilot' } as Parameters<CopilotSession['send']>[0]);
-    } catch (e) {
-      auto.finish('error');
-      await run.whenStopped();
-      throw e;
-    }
+    const done = (async () => {
+      try {
+        await live.session.send({ prompt: goal.text, attachments: atts, agentMode: 'autopilot' } as Parameters<CopilotSession['send']>[0]);
+      } catch (e) {
+        auto.finish('error');
+        await run.whenStopped();
+        throw e;
+      }
+    })();
+    return { done };
+  }
+
+  /** Spec 099 FR-059: a runtime call of a queued step, bounded like the turn-on: no answer in time fails with COPILOT_STEP_NO_ANSWER. */
+  private bounded<T>(call: Promise<T> | T): Promise<T> {
+    return within(Promise.resolve(call), this.autopilotTuning.waitMs ?? CLEAR_WAIT_MS, 'Copilot').catch((e: unknown) => {
+      throw e instanceof Error && /did not answer in time/.test(e.message) ? new Error(COPILOT_STEP_NO_ANSWER) : e;
+    });
+  }
+
+  /** Spec 099 FR-059: a place in this session's queue: `turn` resolves when every step before it is done; `free` lets the next one go. */
+  private reserve(live: Live): Slot {
+    let free: () => void = () => undefined;
+    const mine = new Promise<void>((res) => { free = res; });
+    const turn = live.ops ?? Promise.resolve();
+    live.ops = turn.then(() => mine);
+    return { turn, free };
+  }
+
+  /** Spec 099 FR-059: runs `step` after every step queued before it on this session; a failed step does not stop the next. */
+  private serial<T>(live: Live, step: () => Promise<T>): Promise<T> {
+    const slot = this.reserve(live);
+    return slot.turn.then(step).finally(slot.free);
   }
 
   /* ---------------- spec 099: Autopilot ---------------- */
 
   /** FR-002, FR-010, FR-022: on for the next messages, or off (a running run stops, FR-050). The broker keeps answering `onPermissionRequest`; never `setApproveAll`. */
   async setAutopilot(sessionId: string, settings: AutopilotSettings | null, reason: AutopilotEnd = 'stopped'): Promise<void> {
-    // FR-050: a stop acts before anything is awaited; a sign-in refresh may hold the wait below for long
-    const here = settings === null ? this.sessions.get(sessionId) : undefined;
-    if (here) return this.autopilotOff(sessionId, here, reason);
-    await this.refreshing?.catch(() => undefined);
-    const live = this.mustGet(sessionId);
-    if (settings === null) return this.autopilotOff(sessionId, live, reason);
+    // FR-059: the place in the queue and the Stop count are taken when this is asked for, as `send` takes them
+    const made = this.sessions.get(sessionId);
+    // FR-050: off during a run is the run's stop order, as Stop's is: it acts before anything is awaited and does not queue (a run is no queued
+    // step, and a sign-in refresh may hold the wait below for long)
+    if (settings === null && made?.auto?.running) return this.autopilotOff(sessionId, made, reason);
+    const madeStops = made?.interrupts;
+    // FR-059: off reads off at once, for a send step in flight (it goes plain); the mode change waits its turn in the queue
+    const offNow = (l: Live | undefined): boolean => {
+      const wasOn = !!l?.auto?.on;
+      if (l?.auto && !l.auto.running) l.auto.settings = undefined;
+      return wasOn;
+    };
+    const madeOn = settings === null ? offNow(made) : false;
+    const slot = made ? this.reserve(made) : undefined;
+    try {
+      await this.refreshing?.catch(() => undefined);
+      const live = this.mustGet(sessionId);
+      const mine = !!slot && live === made;
+      if (settings === null) {
+        const wasOn = mine ? madeOn : offNow(live);
+        const off = (): Promise<void> => this.autopilotOff(sessionId, live, reason, wasOn);
+        return await (mine ? slot.turn.then(off) : this.serial(live, off));
+      }
+      this.checkTurnOn(live, settings);
+      const stops = mine ? madeStops : live.interrupts;
+      const on = (): Promise<void> => this.turnOnStep(sessionId, live, settings, stops);
+      return await (mine ? slot.turn.then(on) : this.serial(live, on));
+    } finally {
+      slot?.free();
+    }
+  }
+
+  /** FR-002, FR-022, D9: the refusals of a turn-on, read when it is asked for and again when its step starts. Returns the cap to use. */
+  private checkTurnOn(live: Live, settings: AutopilotSettings): number | undefined {
     if (live.broker.getMode() !== 'allow') throw new Error(AUTOPILOT_NOT_ALLOW);
     if (live.auto?.running) throw new Error(AUTOPILOT_ONE_RUN);
     let cap = settings.cap;
@@ -1124,20 +1331,49 @@ export class CopilotAdapter implements AgentAdapter {
       cap = Math.max(cap, MIN_CAP); // D9: the runtime's own smallest cap
       this.refuseSpentCap(live, cap);
     }
-    const auto = (live.auto ??= this.newAutopilot(sessionId, live));
-    auto.turnOn({ ...settings, cap });
-    this.autopilotUsed = true;
-    try {
-      await live.session.rpc.mode.set({ mode: 'autopilot' });
-    } catch (e) {
-      auto.settings = undefined;
-      throw e;
-    }
+    return cap;
   }
 
-  private async autopilotOff(sid: string, live: Live, reason: AutopilotEnd): Promise<void> {
+  /**
+   * FR-010, FR-059: the turn-on as one step of the queue, so no send starts a run before its `mode.set autopilot` answered. That call is
+   * bounded like the other Autopilot waits; a failure or no answer leaves Autopilot off, and a Stop or End before or during it does too.
+   */
+  private async turnOnStep(sid: string, live: Live, settings: AutopilotSettings, stops: number | undefined): Promise<void> {
+    if (this.sessions.get(sid) !== live || live.ending) throw new Error('The session is not running.');
+    if (live.interrupts !== stops) throw new Error(COPILOT_TURN_ON_STOPPED);
+    const cap = this.checkTurnOn(live, settings);
+    const auto = (live.auto ??= this.newAutopilot(sid, live));
+    auto.turnOn({ ...settings, cap });
+    this.autopilotUsed = true;
+    live.ownTurnOn = true;
+    const id = (live.ownTurnOnId = (live.ownTurnOnId ?? 0) + 1);
+    const ms = this.autopilotTuning.waitMs ?? CLEAR_WAIT_MS;
+    // a late answer within one more bound is still ours; after that a mode change to `autopilot` is FR-006 again
+    const forget = (): void => { setTimeout(() => { if (live.ownTurnOnId === id) live.ownTurnOn = false; }, ms).unref?.(); };
+    try {
+      await within(Promise.resolve(live.session.rpc.mode.set({ mode: 'autopilot' })), ms, 'Copilot');
+    } catch (e) {
+      auto.settings = undefined; // a failed or unanswered turn-on leaves Autopilot off
+      live.planMode = true; // the mode is not known: the next plain send goes back to interactive first (a late answer is ours: `ownTurnOn`)
+      forget();
+      throw e;
+    }
+    // read again after that wait: End ended the session; a Stop, Autopilot off or a stricter mode (FR-051) turned Autopilot off meanwhile.
+    // The caller is told the real outcome, and the runtime's own mode change for this call stays Durbar's (`forget` keeps it for a bound).
+    const ended = this.sessions.get(sid) !== live || !!live.ending;
+    const notAllow = live.broker.getMode() !== 'allow';
+    if (ended || live.interrupts !== stops || notAllow || !auto.on) {
+      auto.settings = undefined;
+      forget();
+      throw new Error(ended ? 'The session is not running.' : live.interrupts !== stops ? COPILOT_TURN_ON_STOPPED : notAllow ? AUTOPILOT_NOT_ALLOW : COPILOT_TURN_ON_OFF);
+    }
+    live.planMode = false; // `autopilot` left plan mode, so a run's send has no mode.set after its last check
+    live.ownTurnOn = false; // answered and on: its mode change, before or after this, is no news
+  }
+
+  private async autopilotOff(sid: string, live: Live, reason: AutopilotEnd, wasOn = !!live.auto?.on): Promise<void> {
     const auto = live.auto;
-    if (!auto?.on && !auto?.running) return;
+    if (!auto || (!wasOn && !auto.on && !auto.running) || this.sessions.get(sid) !== live) return;
     if (auto.running) {
       auto.run?.end(reason);
       await auto.run?.whenStopped();
@@ -1146,10 +1382,12 @@ export class CopilotAdapter implements AgentAdapter {
     auto.settings = undefined;
     const ack = this.modeAck(live);
     try {
-      await live.session.rpc.mode.set({ mode: 'interactive' });
+      // FR-059: bounded like every runtime call of a step, so a `mode.set` that never answers holds neither the queue nor a Stop
+      await this.bounded(live.session.rpc.mode.set({ mode: 'interactive' }));
       await within(ack, this.autopilotTuning.waitMs ?? CLEAR_WAIT_MS, 'Copilot');
     } catch {
-      await auto.close();
+      live.planMode = true; // the mode is not known: if the session lives on, the next plain send goes back to interactive first
+      await auto.close(); // FR-054: not confirmed off, so the session ends (its End aborts what is going)
     }
   }
 
@@ -1196,10 +1434,14 @@ export class CopilotAdapter implements AgentAdapter {
     if (cap === undefined) return;
     this.refuseSpentCap(live, cap);
     const want = capInForce(live.ownCap, cap);
-    if (want === null || want === live.capNow) return;
+    if (want === null || (want === live.capNow && !live.capUnsure)) return;
     live.apCapSent = want;
-    await live.session.rpc.options.update({ sessionLimits: { maxAiCredits: want } });
-    live.capNow = want;
+    try {
+      await this.bounded(live.session.rpc.options.update({ sessionLimits: { maxAiCredits: want } }));
+      live.capUnsure = false;
+    } finally {
+      live.capNow = want; // no answer (it may still land) or a failure: counted as sent, so the restore puts the session's own cap back
+    }
   }
 
   /** FR-022: after every end the session's own cap again; a failure leaves the tighter one and says so. The cap card shows only if that cap itself is reached. */
@@ -1208,9 +1450,11 @@ export class CopilotAdapter implements AgentAdapter {
     const own = live.ownCap ?? null;
     if (live.apCapSent !== undefined && own !== live.capNow) {
       try {
-        await live.session.rpc.options.update({ sessionLimits: own === null ? null : { maxAiCredits: own } });
+        await this.bounded(live.session.rpc.options.update({ sessionLimits: own === null ? null : { maxAiCredits: own } })); // FR-059: bounded, so the queue goes on
         live.capNow = own;
+        live.capUnsure = false;
       } catch {
+        live.capUnsure = true; // FR-059: which cap is in force is not known: the next goal sends its own again
         this.emit(sid, { type: 'status', status: 'idle', intent: LINE_CAP_NOT_RESTORED });
       }
     }
@@ -1232,6 +1476,16 @@ export class CopilotAdapter implements AgentAdapter {
   /** FR-006, FR-053 act on this session: main can turn Autopilot on, or `setAutopilot` ran here. */
   private goalsWired(): boolean {
     return (this.autopilotTuning.wired ?? AUTOPILOT_WIRED) || this.autopilotUsed;
+  }
+
+  /** FR-059: a turn-on given up on (failed, timed out or stopped) answered late: back to `interactive` as a step of the queue, with no FR-006 line and no abort. */
+  private undoLateTurnOn(sid: string, live: Live): void {
+    live.planMode = true;
+    void this.serial(live, async () => {
+      if (this.sessions.get(sid) !== live || live.ending || live.auto?.on || !live.planMode) return;
+      await within(Promise.resolve(live.session.rpc.mode.set({ mode: 'interactive' })), this.autopilotTuning.waitMs ?? CLEAR_WAIT_MS, 'Copilot');
+      live.planMode = false;
+    }).catch(() => undefined); // not confirmed: `planMode` stays, so the next plain send tries again
   }
 
   /** FR-006: the app went into its own loop without Durbar: out of it, and said in the chat. */
@@ -1266,8 +1520,11 @@ export class CopilotAdapter implements AgentAdapter {
     if (e.type === 'session_limits_exhausted.completed') return d.requestId !== undefined && d.requestId === live.apLimitId;
     if (e.agentId) return false; // FR-008: a helper's events count toward nothing
     if (e.type === 'session.mode_changed') {
+      const own = live.ownTurnOn;
+      live.ownTurnOn = false; // the runtime answers in order: the next mode change after a turn-on is that turn-on's, or none is coming
       if (d.newMode === 'interactive') { live.modeAck?.(); live.modeAck = undefined; }
-      if (d.newMode === 'autopilot' && !auto?.on) this.selfStarted(sid, live);
+      if (d.newMode === 'autopilot' && !auto?.on && own) this.undoLateTurnOn(sid, live); // FR-059: Durbar's own turn-on, answered after it was given up
+      else if (d.newMode === 'autopilot' && !auto?.on) this.selfStarted(sid, live);
       else if (d.newMode !== 'autopilot' && auto?.running) auto.finish('stopped');
       return false;
     }
@@ -1404,12 +1661,16 @@ export class CopilotAdapter implements AgentAdapter {
     const stopDone = this.stopSequence(live);
     try {
       live.interrupts = (live.interrupts ?? 0) + 1;
+      // spec 099 FR-059: off at once, as Autopilot off is, so a send step reading it after a wait finds it off; the mode change follows below
+      const apWasOn = !!live.auto?.on && !live.auto.running;
+      if (apWasOn) live.auto!.settings = undefined;
       live.broker.denyPending();
       this.cancelQuestions(live, 'interrupt');
       if (live.limitRequestId) live.stoppedAtLimit = true;
       // spec 099 FR-050: Stop on Autopilot is the run's own stop order, and it starts before the limit card's answer is awaited
       const running = !!live.auto?.running;
-      const off = running || live.auto?.on ? this.autopilotOff(sessionId, live, 'stopped') : undefined;
+      // FR-059: with no run, `apWasOn` keeps the mode change going although the settings were cleared above
+      const off = running ? this.autopilotOff(sessionId, live, 'stopped') : apWasOn || live.auto?.on ? this.autopilotOff(sessionId, live, 'stopped', true) : undefined;
       await this.cancelLimit(live);
       if (running) {
         await off;
@@ -1433,6 +1694,7 @@ export class CopilotAdapter implements AgentAdapter {
     await this.refreshing?.catch(() => undefined);
     const live = this.sessions.get(sessionId);
     if (!live) return;
+    live.ending = true; // spec 099 FR-059: a queued step does nothing from here
     const stopDone = this.stopSequence(live);
     try {
       live.auto?.endQuietly(); // spec 099 FR-052
@@ -1453,6 +1715,7 @@ export class CopilotAdapter implements AgentAdapter {
       this.endKeptFloor(sessionId, live);
       this.emit(sessionId, { type: 'status', status: 'stopped' });
     } finally {
+      if (this.sessions.get(sessionId) === live) live.ending = false; // an End that threw left the session: it takes messages again
       stopDone();
     }
   }
@@ -1493,8 +1756,7 @@ export class CopilotAdapter implements AgentAdapter {
   /** Spec 087: how long a sandbox call may take before it counts as refused (a hung runtime never blocks a start). */
   protected sandboxTimeoutMs = 15_000;
   private timed<T>(p: Promise<T>, what: string): Promise<T> {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    return Promise.race([p, new Promise<never>((_, rej) => { timer = setTimeout(() => rej(new Error(`${what} did not answer in time`)), this.sandboxTimeoutMs); })]).finally(() => clearTimeout(timer));
+    return within(p, this.sandboxTimeoutMs, what); // FR-031 (review on #967): the one timeout race, autopilotHost's `within`
   }
 
   private hostSupport(client: CopilotClient): Promise<CopilotHostSupport | undefined> {
@@ -1733,6 +1995,14 @@ export class CopilotAdapter implements AgentAdapter {
     } catch (err) {
       return { success: false, message: runtimeMessage(err, 'The runtime refused to compact.') };
     }
+  }
+
+  /** Spec 085 FR-010/FR-012: the runtime's own totals (`rpc.usage.getMetrics`, experimental), as counts only; an older runtime without the call, or a bad answer, reports nothing. */
+  async sessionStats(sessionId: string): Promise<VendorStats | undefined> {
+    const live = this.mustGet(sessionId);
+    const usage = (live.session.rpc as unknown as { usage?: { getMetrics?: () => Promise<unknown> } }).usage;
+    if (typeof usage?.getMetrics !== 'function') return undefined;
+    return copilotVendorStats(await usage.getMetrics());
   }
 
   /** Spec 030 FR-034: the runtime's own hand-off summary (`rpc.history.summarizeForHandoff`, experimental); the conversation is not changed. */
@@ -2297,7 +2567,11 @@ export class CopilotAdapter implements AgentAdapter {
     this.starting = undefined;
     const client = this.client ?? (await pending?.catch(() => undefined));
     this.client = undefined;
-    await client?.stop();
+    try {
+      await client?.stop();
+    } finally {
+      this.releaseRuntimeTmp(client); // spec 087 FR-023: only this runtime's own folder
+    }
   }
 
   onEvent(listener: (event: AgentEvent) => void): Unsubscribe {

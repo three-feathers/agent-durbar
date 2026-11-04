@@ -1,4 +1,5 @@
 import { destroyAllViews } from './browser/views';
+import { captureWithoutRoom } from './docshot';
 import { registerSimScheme } from './browser/simpages';
 import { FolderSetupStore } from './foldersetupstore';
 import { acceptedFor, hasFolderRules, scanFolderSetupCached } from './foldersetup';
@@ -69,6 +70,7 @@ import { GROUND } from '../shared/floors';
 import { createElicitTracker } from '../shared/elicit';
 import { CheckpointStore } from './checkpoints';
 import { DEFAULT_ADAPTER, FolderStore, modeForSession, restoreMode, sessionsToRestore } from './folders';
+import { SummaryDays } from './summarydays';
 import { AppStateStore, buildSinceAway, placeWindow, quitMessage } from './daily';
 import type { SinceAway } from './daily';
 import { CrashMarker, installCrashMarker, interruptedFrom } from './crashmarker';
@@ -93,6 +95,7 @@ import { UsageStore } from './usagestore';
 import { AgentTrustStore } from './agenttrust';
 import { Scheduler, loadSchedules, publicDoc, saveSchedules, scheduleBusy } from './schedules';
 import type { SchedulerDeps } from './schedules';
+import { loopActivity, loopPrompt, loopPush, loopStillWanted, loopWaitOf, routeLoopEvent } from './loopwiring';
 import { UsageTotalsStore } from './usagetotalsstore';
 import { ActivityStore } from './activitystore';
 import { decisionOf } from '../shared/activity';
@@ -117,6 +120,7 @@ import { broadFolderKind } from '../shared/broadfolder';
 import { REPO_URL, aboutPanelOptions } from '../shared/about';
 import { modelControlFor } from '../shared/modelswitch';
 import { createDebugSink, redact } from '../shared/redact';
+import { eventGate } from '../adapters/eventguard';
 import { profileDir } from './profiledir';
 import { simClockSetup } from './simclock';
 import { debugSwitchesToRemove } from './debugguard';
@@ -163,6 +167,7 @@ let agentTrust: AgentTrustStore | undefined;
 let activityStore: ActivityStore | undefined;
 /** Spec 052 round 8: the window's place and size and the last quit time (not settings). Created when the app is ready. */
 let appState: AppStateStore | undefined;
+let summaryDays: SummaryDays | undefined; // spec 085 FR-009
 /** Spec 052 FR-089: what happened while the app was closed, built once at start; null after the card is dismissed. */
 let sinceAway: SinceAway | null = null;
 /** Spec 006 FR-038..FR-046 (#606): the running marker (never under the simulator) and the sessions the last run left mid-turn. */
@@ -185,6 +190,9 @@ for (const [name, value] of simClock.switches) app.commandLine.appendSwitch(name
 // spec 010 FR-024: under the simulator every descriptor creates an inert stand-in, never the real adapter
 const registry = createRegistry(simGuardDescriptors([...PRODUCTION_DESCRIPTORS, ...offeredDescriptors(dev)], SIMULATOR)); // Copilot, then Claude Code (spec 012 FR-135); detection decides what is ready
 const router = createRouter(registry);
+/** Spec 010 FR-035: the shape check of every event, one instance for the run (its drop-line count is per run); spec 099 FR-082 adds Autopilot's check to it below. */
+const eventShape = eventGate((line) => console.warn(redact(line)));
+router.setEventGuard(eventShape); // spec 010 FR-035: every event checked before any listener; a bad one is dropped
 /** Spec 076 section O (issue #602): each agent app's own organization policy, read by its adapter, cached 60 s. */
 const orgPolicies = new OrgPolicyCache({ ids: () => registry.list().map((d) => d.id), adapter: (id) => (registry.has(id) ? router.instance(id) : undefined) });
 /** Spec 076 FR-203: the start guard's deps; advice is shown once the session has started (a toast in the window). */
@@ -280,7 +288,7 @@ const autopilotOps = createAutopilotOps({
   rememberLimit: (limit) => settingsStore?.setAutopilotLimit(limit),
   warn: (line) => console.warn(redact(line)), // T095: the masked log line (check-console-mask)
 });
-router.setEventGuard((e) => autopilotOps.accepts(e)); // FR-082, T095: before any listener, so nothing uses or forwards a bad one
+router.setEventGuard((e) => eventShape(e) && autopilotOps.accepts(e)); // spec 099 FR-082, T095 with spec 010 FR-035: both checks, the shape first, before any listener, so nothing uses or forwards a bad one
 router.onEvent((e) => autopilotOps.onEvent(e));
 router.onEvent((e) => { if (!mcp.hidesEvent(e)) toRenderer('agent:event', toWindowEvent(e, outward)); }); // spec 087 (review rounds 7-8): the sandbox event cleaned too; spec 058 FR-215: an elicitation main declined is not shown
 // Spec 087 FR-011: the OS sandbox state is kept on the agent's info (cleaned: own known fields, reason masked and cut), so a reloaded
@@ -309,9 +317,9 @@ router.onEvent((e) => {
 const lastStatus = new Map<string, string>();
 router.onEvent((e) => {
   if (e.type === 'status' && !e.agentId) lastStatus.set(e.sessionId, e.status);
-  // spec 044 FR-015: usage between a scheduled send and the end of that turn counts toward the schedule's own limit
-  if (e.type === 'usage') scheduler?.noteUsage(e.sessionId, e);
-  else if (e.type === 'status' && !e.agentId && (e.status === 'idle' || e.status === 'error' || e.status === 'stopped')) scheduler?.turnEnded(e.sessionId);
+  // spec 044 FR-015: usage between a scheduled send and the end of that turn counts toward the schedule's own limit; spec 072: a loop
+  // pass's final text, its end and its holds (after agentState and lastStatus above have taken the event)
+  routeLoopEvent(e, scheduler);
 });
 /** Key an agent's all-time counts are kept under: "<agent name> · <folder name>" (base name only, spec 020). */
 const usageLabel = (a: AgentInfo): string => agentLabel(a.name, a.workspaceFile ? path.basename(a.workspaceFile).replace(/\.code-workspace$/i, '') : a.cwd);
@@ -636,7 +644,18 @@ const scheduleDeps = (file: string): SchedulerDeps => ({
   send: async (_folder, prompt, s) => {
     const a = scheduleAgent(s);
     // spec 058 FR-209: the scheduler's send awaits the same per-chat MCP sign-in gate as the window's send
-    return scheduledSendOp({ agent: a, adapter: a ? router.forAgent(a.id) : undefined, agentState, gate: (id) => mcp.signInRefresh.beforeSend(id), ensureLive: (x) => ensureLive(x), toWindow: toRenderer, noteLastSession, now: () => Date.now() }, prompt, s);
+    // spec 072 FR-006, FR-009: a loop pass is the user's own send path in the session's mode, plus Durbar's footer (loops only)
+    return scheduledSendOp({ agent: a, adapter: a ? router.forAgent(a.id) : undefined, agentState, gate: (id) => mcp.signInRefresh.beforeSend(id), ensureLive: (x) => ensureLive(x), toWindow: toRenderer, noteLastSession, now: () => Date.now(), stillWanted: loopStillWanted(scheduler, s) }, loopPrompt(prompt, s), s);
+  },
+  /* spec 072 FR-015/FR-017: holds from main's own state of the session (agentState flags, the last status) */
+  waitOf: (session) => loopWaitOf(session, { status: (id) => lastStatus.get(id), waits: (id) => agentState.waitsOf(id) }),
+  /* spec 072 FR-023/FR-024: one activity row per loop start, pass, skip, hold and end, and the window's chat note; never the prompt or reply */
+  loopNote: (s, n) => {
+    const a = s.target ? agents.get(s.target.session) : undefined;
+    const row = loopActivity(n, s);
+    if (a && row) logActivity(a, row.decision, row.action);
+    const push = loopPush(n, s);
+    if (push) toRenderer('loop:pass', push);
   },
   setTimer: (ms, fn) => setTimeout(fn, ms),
   clearTimer: (t) => clearTimeout(t as NodeJS.Timeout),
@@ -775,7 +794,7 @@ const renameSessionOpFor = (openIds: () => ReadonlySet<string>) => renameOp({
 const remoteOps = registerRemoteIpc({ agents, router, toRenderer, getWin: () => win, logActivity, autopilotOn: (id) => autopilotOps.engaged(id) });
 registerHeldMigIpc({ held: () => heldBefore, router });
 registerAppIpc({
-  getSinceAway: () => sinceAway,
+  getSinceAway: () => (sinceAway ? { ...sinceAway, briefing: summaryDays?.recent() } : null), // spec 085 FR-009: yesterday's and today's ended sessions, numbers only
   clearSinceAway: () => { sinceAway = null; },
   getWin: () => win,
   // FR-040: asked again on every call, so a session that was resumed meanwhile (its chat opened) leaves the card
@@ -791,7 +810,7 @@ const browser = registerBrowserIpc({ agents, getWin: () => win, toRenderer, simu
 const browserGone = (id: string): void => void browser.destroy(id).catch(() => undefined);
 /** Spec 043 FR-041: which profile file changes each session has seen (shared by ipc/agents.ts and ipc/profiles.ts). */
 const profileFreshness = createProfileFreshness();
-registerAgentsIpc({ browserGone, autopilot: autopilotOps, agents, router, agentState, opsDeps, remoteOps, mcpGate: (id) => mcp.signInRefresh.beforeSend(id), mcpStopWait: (id) => mcp.signInRefresh.stopWait(id), mcpBusy: (id) => chatBusy(id), mcpForget: (id) => mcp.signInRefresh.forget(id), mcpSecrets: (id) => mcp.secretValuesFor(id), logMcp: (a, action) => logActivity(a, 'mcp-restart', action), getScheduler: () => scheduler, getCheckpointStore: () => checkpointStore, profileFreshness, vsChatRefs, continued, wsKey, asEffort, addMany, addWorkspace, sendOp, ensureLive, readyAdapterIds, forgetOpenSession, maskHistory, forgetSandboxNote: (id) => sandboxOps.forget(id) }); // spec 087: sandboxOps is set below, before any IPC call
+registerAgentsIpc({ browserGone, autopilot: autopilotOps, agents, router, agentState, opsDeps, remoteOps, mcpGate: (id) => mcp.signInRefresh.beforeSend(id), mcpStopWait: (id) => mcp.signInRefresh.stopWait(id), mcpBusy: (id) => chatBusy(id), mcpForget: (id) => mcp.signInRefresh.forget(id), mcpSecrets: (id) => mcp.secretValuesFor(id), logMcp: (a, action) => logActivity(a, 'mcp-restart', action), getScheduler: () => scheduler, getCheckpointStore: () => checkpointStore, profileFreshness, vsChatRefs, continued, wsKey, asEffort, addMany, addWorkspace, sendOp, ensureLive, readyAdapterIds, forgetOpenSession, maskHistory, forgetSandboxNote: (id) => sandboxOps.forget(id), getSummaryDays: () => summaryDays }); // spec 087: sandboxOps is set below, before any IPC call
 registerAttachmentsIpc({ dev, pickedFiles, getStageDir, sizeOf });
 registerPreviousIpc({ browserGone, renameSessionOpFor, dev, agents, router, registry, agentState, getFolderStore: () => folderStore, getScheduler: () => scheduler, wsKey, resumeIdFor, forgetOpenSession, logActivity, addWorkspace, vsChatRefs, maskHistory });
 registerCheckpointsIpc({ agents, getCheckpointStore: () => checkpointStore, busyStatus });
@@ -817,6 +836,7 @@ const harnessIpc = registerHarnessIpc({
     // each running turn is interrupted first (stopTurnOp), then the session ends and stays resumable (endSessionOp does not interrupt by itself)
     endAll: async (kind) => {
       for (const a of liveSessionsOf(kind)) {
+        scheduler?.stopLoopFor(a.id, 'session'); // spec 072 FR-007: ending the session ends its loop
         await stopTurnOp(opsDeps, a.id);
         await endSessionOp({ release: (k) => remoteOps.release(k), router }, a.id);
       }
@@ -1083,6 +1103,8 @@ app.whenReady().then(() => {
   });
   appState = new AppStateStore(path.join(app.getPath('userData'), 'durbar-app-state.json'));
   appState.load();
+  summaryDays = new SummaryDays(path.join(app.getPath('userData'), 'durbar-summary-days.json'));
+  summaryDays.load();
   const startedAt = Date.now();
   const quitAt = appState.quitAt;
   appState.setQuitAt(undefined); // spec 052 FR-089: a crash leaves no quit time, so it never shows a wrong "away" time
@@ -1154,7 +1176,7 @@ app.whenReady().then(() => {
       browserTabs: (id: string) => browser.tabsOf(id),
       js: <T>(code: string): Promise<T> => (win as BrowserWindow).webContents.executeJavaScript(code, true) as Promise<T>,
       sleep: (ms: number) => new Promise<void>((r) => setTimeout(r, ms)),
-      shot: async (file: string) => fs.writeFileSync(file, (await (win as BrowserWindow).webContents.capturePage()).toPNG()),
+      shot: (file: string) => captureWithoutRoom((code) => (win as BrowserWindow).webContents.executeJavaScript(code, true), async () => fs.writeFileSync(file, (await (win as BrowserWindow).webContents.capturePage()).toPNG()), dev.DURBAR_DOC_SHOTS === '1'),
       waitFor: async (expr: string, ms = 120000) => {
         const end = Date.now() + ms;
         while (Date.now() < end) {
@@ -1203,6 +1225,7 @@ app.on('before-quit', (ev) => {
   }
   scheduler?.flush(); // spec 044 FR-037: a fold-only change of the run log is written now
   quitting = true; // only once the quit is confirmed: after a Cancel, closing the window on macOS still only hides it
+  scheduler?.endAllLoops('app-closed'); // spec 072 FR-008: before disposeAll, whose `stopped` events would say "the session has ended"
   if (!quitNoted) {
     quitNoted = true;
     if (win && !win.isDestroyed()) saveWindowState(win);
@@ -1237,6 +1260,7 @@ app.on('will-quit', () => {
 });
 
 app.on('window-all-closed', () => {
+  scheduler?.endAllLoops('app-closed'); // spec 072 FR-008: the sessions are disposed next (and off a Mac the app quits)
   void router.disposeAll().finally(() => {
     if (process.platform !== 'darwin') app.quit();
   });

@@ -140,10 +140,12 @@ export async function runContract(name: string, make: () => ContractTarget, hook
     assert.strictEqual(has('listMcpTools'), !!cap.mcpTools, M('C2', 'listMcpTools() <=> capabilities.mcpTools (spec 069 FR-031)'));
     assert.strictEqual(has('mcpContext'), !!cap.mcpContext, M('C2', 'mcpContext() <=> capabilities.mcpContext (spec 100 FR-001)'));
     assert.strictEqual(has('handoffSummary'), !!cap.handoff, M('C2', 'handoffSummary() <=> capabilities.handoff'));
+    assert.strictEqual(has('sessionStats'), !!cap.sessionStats, M('C2', 'sessionStats() <=> capabilities.sessionStats (spec 085 FR-010)'));
     assert.strictEqual(has('generateText'), !!cap.oneShot, M('C2', 'generateText() <=> capabilities.oneShot'));
     assert.strictEqual(has('setRemote'), !!cap.remote, M('C2', 'setRemote() <=> capabilities.remote (spec 054 FR-001)'));
     assert.strictEqual(has('setAutopilot'), !!cap.autopilot, M('C2', 'setAutopilot() <=> capabilities.autopilot (spec 099 FR-001)'));
     assert.strictEqual(has('renameSession'), !!cap.renameSession, M('C2', 'renameSession() <=> capabilities.renameSession (spec 059 FR-007)'));
+    assert.strictEqual(has('accountQuota'), !!cap.accountQuota, M('C2', 'accountQuota() <=> capabilities.accountQuota (spec 011 FR-081)'));
     assert.strictEqual(has('deleteSession'), !!cap.deleteSession, M('C2', 'deleteSession() <=> capabilities.deleteSession (spec 006 FR-028)'));
     assert.strictEqual(has('sandboxHost'), !!cap.osSandbox, M('C2', 'sandboxHost() <=> capabilities.osSandbox (spec 087 FR-012)'));
     if (has('continueWithoutSandbox')) assert.ok(cap.osSandbox, M('C2', 'continueWithoutSandbox() only with capabilities.osSandbox (spec 087 FR-007a)'));
@@ -360,13 +362,13 @@ const OMITTABLE: Record<OptionalMember, true> = {
   interrupt: true, resolvePermission: true, revokeGrant: true, revokeCall: true, setCap: true, resolveLimit: true, setMcpEnabled: true, setModel: true,
   cancelQueuedModel: true, compact: true, listModelOptions: true, listPreviousSessions: true, history: true, setPermMode: true,
   handoffSummary: true, generateText: true, deleteSession: true, renameSession: true, startMcpSignIn: true, cancelMcpSignIn: true, refreshMcpStatus: true,
-  restartMcpServer: true, listMcpTools: true, setAutopilot: true,
+  restartMcpServer: true, listMcpTools: true, sessionStats: true, setAutopilot: true,
 };
 export const ALL_OPTIONAL = Object.keys(OMITTABLE) as OptionalMember[];
 /** Optional `AgentAdapter` members FakeAdapter does not implement (so it cannot omit them): fields, and methods no fake test needs yet. */
 const NOT_IN_FAKE = [
   'debug', 'writeGuard', 'resolvePlan', 'answerQuestion', 'answerElicitation', 'listAgentProfiles', 'reloadAgentProfiles', 'selectAgentProfile', 'setRemote',
-  'authStatus', 'verifySignIn', 'accountInfo', 'refreshAuth', 'resumeIdOf', 'listSlashCommands', 'expandSlashCommand', 'readOrgPolicy',
+  'authStatus', 'verifySignIn', 'accountInfo', 'accountQuota', 'refreshAuth', 'resumeIdOf', 'listSlashCommands', 'expandSlashCommand', 'readOrgPolicy',
   'continueWithoutSandbox', 'sandboxHost', // spec 087: real adapters only (C2 below)
   'mcpContext', // spec 100: real adapters only (C2 below)
 ];

@@ -11,6 +11,7 @@
  * - Settings files are never loaded (`--setting-sources ""`, Q8); the folder's `CLAUDE.md` (with `@` imports inside the
  *   folder) goes in as an appended system prompt instead (owner decision, review of #160).
  */
+import { livePrivateDirs, makePrivateDir, sweepPrivateDirs } from './privatedirs';
 import { readClaudeOrgPolicy } from './claudeOrgPolicy';
 import type { OrgPolicy } from '../shared/orgpolicy';
 import { claudeSettingsJson } from '../shared/foldersetup';
@@ -67,6 +68,7 @@ import type { ClaudeAgentDef } from './claudeAgents';
 import type { AgentProfile, AskedQuestion, ElicitAnswer, SlashCommand, SlashExpansion } from './types';
 import { answerElicitation, cancelElicitations, declineElicitation, runElicitation, type ElicitWaiter } from './elicitation';
 import { AUTOPILOT_ANSWER, goalText, isClaudeContinuation } from './autopilot';
+import type { GoalTextResult } from './autopilot';
 import { AUTOPILOT_NOT_ALLOW, AUTOPILOT_NO_PLAN, AUTOPILOT_ONE_RUN, AUTOPILOT_TEXT_ONLY, AUTOPILOT_WAIT_TURN, AUTOPILOT_WIRED, AutopilotState, CLEAR_WAIT_MS, LINE_CLOSED, LINE_SELF_STARTED, LINE_UNCONFIRMED, capInForce, emitAutoAnswered, goalRefusal, lineNotCleared, within } from './autopilotHost';
 import type { AutopilotTuning } from './autopilotHost';
 
@@ -324,6 +326,9 @@ export function claudeModelOptions(models: unknown): ModelOption[] {
   return out;
 }
 
+/** Spec 099 FR-059: how `sendLaunched` ended, so a failure said in the chat is never followed by a plain resend. */
+type LaunchEnd = 'began' | 'plain' | 'none';
+
 /** A dollar amount for `--max-budget-usd`: at least $0.0001 (Claude stops at once), 4 decimals, no exponent. */
 export function budgetText(usd: number): string {
   return String(Math.max(0.0001, Math.round(usd * 1e4) / 1e4).toFixed(4)).replace(/0+$/, '').replace(/\.$/, '');
@@ -495,19 +500,8 @@ export const CLAUDE_ENTRYPOINT = 'agent-durbar';
  * new private temp folder (`mkdtemp`, 0700); `--mcp-config` gets the path; `cleanup` deletes the folder (on the CLI's exit).
  */
 export function privateMcpConfig(json: string, tmpRoot: string = os.tmpdir()): { file: string; cleanup: () => void } {
-  const dir = fs.mkdtempSync(path.join(tmpRoot, 'durbar-mcp-'));
-  const cleanup = (): void => {
-    liveMcpDirs.delete(dir);
-    try {
-      fs.rmSync(dir, { recursive: true, force: true });
-    } catch {
-      /* the OS cleans its temp folder */
-    }
-  };
-  liveMcpDirs.add(dir);
-  hookExitSweep();
+  const { dir, cleanup } = makePrivateDir('durbar-mcp-', tmpRoot); // spec 012 FR-165: tracked and swept on exit (privatedirs.ts)
   try {
-    if (process.platform !== 'win32') fs.chmodSync(dir, 0o700);
     const file = path.join(dir, 'mcp-config.json');
     fs.writeFileSync(file, json, { mode: 0o600, flag: 'wx' });
     return { file, cleanup };
@@ -517,34 +511,13 @@ export function privateMcpConfig(json: string, tmpRoot: string = os.tmpdir()): {
   }
 }
 
-/**
- * Spec 012 FR-165 (#1093): the folders `privateMcpConfig` made and has not yet cleaned. The CLI's `exit` handler cleans its own; when the app
- * ends while a CLI still runs (no `exit` ever comes), this set is swept on the process's `exit` event, so `mcp-config.json` (env and header
- * values) never outlives the app. Not covered: a SIGKILL or a crash of the app itself, which no handler sees, and, in Electron's main
- * process, `app.exit()` and `process.exit()`, which do not emit Node's `exit` event (probed 2026-11-04; main also sweeps in `will-quit`, so
- * `app.quit()` is covered twice, and the product calls `app.exit` only in the driver path after `disposeAll`).
- */
-const liveMcpDirs = new Set<string>();
-let exitSweepHooked = false;
-function hookExitSweep(): void {
-  if (exitSweepHooked) return;
-  exitSweepHooked = true;
-  process.on('exit', sweepMcpConfigs);
-}
-/** Removes every private MCP config folder still live; called on process exit (and by the tests). */
+/** Spec 012 FR-165: removes every private temp folder still live (the MCP config folders and spec 087 FR-023's Copilot TMPDIR); main calls it in `will-quit`. */
 export function sweepMcpConfigs(): void {
-  for (const dir of [...liveMcpDirs]) {
-    liveMcpDirs.delete(dir);
-    try {
-      fs.rmSync(dir, { recursive: true, force: true });
-    } catch {
-      /* the OS cleans its temp folder */
-    }
-  }
+  sweepPrivateDirs();
 }
 /** How many private MCP config folders are live (tests). */
 export function liveMcpConfigCount(): number {
-  return liveMcpDirs.size;
+  return livePrivateDirs('durbar-mcp-');
 }
 
 /** The CLI argv for a launch, with the MCP JSON moved to a private file (`privateMcpConfig`). */
@@ -764,6 +737,8 @@ interface Session {
   auto?: AutopilotState;
   /** Spec 099 FR-022: the Autopilot cap of the run on its way (`--max-budget-usd` takes the lower of this and `capUsd`), and the cap the running CLI got. */
   apCap?: number;
+  /** Spec 099 FR-059: counts Stops, so a send can tell one came during its awaits. */
+  stops?: number;
   launchedCap?: number | null;
   /** Spec 099 FR-053: this launch resumed a session: `/goal clear` comes before anything else is written. */
   clearDue?: boolean;
@@ -1006,35 +981,63 @@ export class ClaudeAdapter implements AgentAdapter {
       return;
     }
     // spec 099 FR-022: past the holds, so a held message starts no run: the lower cap goes on the relaunch the cap already causes
-    if (startsRun && auto.settings?.cap !== undefined) {
-      this.refuseSpentCap(s, auto.settings.cap);
-      s.apCap = auto.settings.cap;
-      if (capInForce(s.capUsd, s.apCap) !== (s.launchedCap ?? null)) s.needsRelaunch = true;
+    if (startsRun && auto.settings?.cap !== undefined) this.refuseSpentCap(s, auto.settings.cap);
+    // FR-059 (review on #967): a Stop or Autopilot off during the awaits below is read after the last one; until the run begins the cap is undone on every way out
+    const stops = s.stops;
+    let end: LaunchEnd = 'none';
+    try {
+      if (startsRun && auto.settings?.cap !== undefined) {
+        s.apCap = auto.settings.cap;
+        if (capInForce(s.capUsd, s.apCap) !== (s.launchedCap ?? null)) s.needsRelaunch = true;
+      }
+      end = await this.sendLaunched(s, message, startsRun ? { auto, goal, stops } : undefined);
+    } finally {
+      if (startsRun && end !== 'began') this.undoAutopilotCap(s);
     }
+    // Autopilot went off alone (no Stop, no failure said in the chat): the message goes as a plain one, through the relaunch that takes the Autopilot cap off
+    if (end === 'plain') await this.send(sessionId, message);
+  }
+
+  /** FR-022: the Autopilot cap of a run that did not begin goes, and the next launch is without it. */
+  private undoAutopilotCap(s: Session): void {
+    if (s.apCap === undefined) return;
+    s.apCap = undefined;
+    if (capInForce(s.capUsd, undefined) !== (s.launchedCap ?? null)) s.needsRelaunch = true;
+  }
+
+  /**
+   * The launch and the write of `send`. With `run`: 'began' when the run began; 'plain' when only Autopilot went off meanwhile (the caller
+   * sends it plain); 'none' otherwise: held, failed (the chat said nothing was sent, FR-054) or ended by a Stop (FR-059). Without `run`: 'none'.
+   */
+  private async sendLaunched(s: Session, message: AgentMessage, run: { auto: AutopilotState; goal: GoalTextResult | undefined; stops: number | undefined } | undefined): Promise<LaunchEnd> {
+    const sessionId = s.id;
     if (message.attachments?.length) s.broker.allowReadPaths(message.attachments.map((a) => a.path));
     // FR-116: new flags for a changed mode, but never in the middle of a turn (the hook keeps the current mode until then)
     const relaunch = !!s.transport?.alive && !s.turnOpen && !s.auto?.running && ((s.launchedMode !== undefined && s.launchedMode !== s.broker.getMode()) || !!s.needsRelaunch);
     // spec 087 FR-007: the floor of the launch this message needs is decided before anything is sent; a refusal throws (the send fails)
-    if ((relaunch || !s.transport?.alive) && !s.starting && !(await this.planSandbox(s))) return; // held: the note says why, nothing sent
+    if ((relaunch || !s.transport?.alive) && !s.starting && !(await this.planSandbox(s))) return 'none'; // held: the note says why, nothing sent
     this.emit(sessionId, { type: 'status', status: 'working', intent: 'Thinking' });
     let t: ClaudeTransport;
     try {
       if (relaunch) await this.relaunchForMode(s);
       t = await this.ensureTransport(s);
     } catch (e) {
-      if (s.sandboxExit !== undefined) return; // spec 087 FR-007: the sandbox exit already said why; nothing is re-sent
+      if (s.sandboxExit !== undefined) return 'none'; // spec 087 FR-007: the sandbox exit already said why; nothing is re-sent
       this.emit(sessionId, { type: 'status', status: 'error', intent: e instanceof Error ? e.message : 'Claude could not start' });
-      return;
+      return 'none';
     }
-    // spec 099 FR-053: before anything is written; a failed clear sends nothing (FR-054)
-    if (s.clearDue && !(await this.clearFirst(s, t))) return;
-    if (startsRun && goal?.ok) {
+    // spec 099 FR-053: before anything is written; a failed clear sends nothing (FR-054), not even plain later
+    if (s.clearDue && !(await this.clearFirst(s, t))) return 'none';
+    if (run) {
+      // FR-059: after the last await. A Stop or the session's end drops the message; Autopilot off alone sends it plain (the caller)
+      if (this.sessions.get(sessionId) !== s || s.stops !== run.stops) return 'none';
+      if (!run.auto.on || !run.goal?.ok) return 'plain';
       s.blockCap = false;
       s.lastMainId = undefined;
-      auto.begin();
+      run.auto.begin();
       s.turnOpen = true;
-      t.sendUser(`/goal ${goal.text}`); // FR-011
-      return;
+      t.sendUser(`/goal ${run.goal.text}`); // FR-011
+      return 'began';
     }
     // spec 066 FR-004: plan first: Claude Code's own plan mode for this turn (it reads and proposes with ExitPlanMode; nothing changes)
     if (message.plan) {
@@ -1044,11 +1047,12 @@ export class ClaudeAdapter implements AgentAdapter {
         s.planDraft = '';
       } catch (e) {
         this.emit(sessionId, { type: 'status', status: 'error', intent: `Claude could not switch to plan mode: ${e instanceof Error ? e.message : String(e)}` });
-        return;
+        return 'none';
       }
     }
     s.turnOpen = true;
     t.sendUser(userContentOf(message.plan ? { ...message, text: `${message.text}\n\n${CLAUDE_PLAN_NOTE}` } : message, this.deps.readImage));
+    return 'none';
   }
 
   /* ---------------- spec 099: Autopilot ---------------- */
@@ -1210,6 +1214,7 @@ export class ClaudeAdapter implements AgentAdapter {
   async interrupt(sessionId: string): Promise<void> {
     const s = this.sessions.get(sessionId);
     if (!s) return;
+    s.stops = (s.stops ?? 0) + 1; // spec 099 FR-059: a send that awaited across this Stop starts no run
     s.broker.denyPending();
     this.cancelQuestions(s, 'interrupt');
     // spec 099 FR-050: Stop on Autopilot is the run's own stop order, and the session goes back to Allow all

@@ -204,7 +204,7 @@ function helpers(ctx) {
     if (o.settle) await w.settle();
     if (prep !== 'calm' && !o.walking) await w.settleWalk(); // FR-085 (calm already waited); `walking: true` keeps a figure mid-walk on purpose
     await ctx.sleep(o.delay === undefined ? 150 : o.delay);
-    await ctx.shot(file);
+    await ctx.shot(file); // spec 101: under `npm run shots:docs` main's ctx.shot closes the macOS room for every picture (src/main/docshot.ts)
     if (o.tag) console.log(`[${o.tag}] saved`, o.what !== undefined ? o.what : path.basename(file));
   };
   /**

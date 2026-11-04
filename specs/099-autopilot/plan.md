@@ -114,6 +114,8 @@ Written once in `src/adapters/autopilotHost.ts` (Phase 2): the settings and run 
 - `setRemote` stays refused while on Autopilot, through its `modeOf === 'allow'` check (`remoteops.ts:42`), pinned by a test (FR-007).
 - The Autopilot cap goes straight to the adapter's `setCap`, never through `setCapOp`, and is restored from `a.maxAiCredits` when a run ends (FR-022). `setCapOp` changes `a.maxAiCredits` only, and the lower still wins during a run.
 - A stop or clear that is not confirmed in 10 seconds (proposed) ends the session (FR-054).
+- A Stop or End during the adapter's turn-on brings main's state down at once; the answer to the window waits up to `TOLD_WAIT_MS` (2 s) for the adapter's own refusal (FR-059: Copilot's queue says which came) before it says `CHANGED`. A back-off of a session that is gone is skipped, so an End shows no "not confirmed" line.
+- The router's one event guard is `eventShape(e) && autopilotOps.accepts(e)`: spec 010 FR-035's `eventGate`, then FR-082's Autopilot check (T095).
 - It is not added to `SIM_OPEN_CHANNELS` (the simulator fakes it in `sim.ts`), not to the MCP tools, and not to remote control. Only Stop may come from remote or phone controls (FR-009): a new path, T098.
 - `setModeOp` to `read-only` or `ask` calls `setAutopilot(null)` first (FR-051).
 - The folder store never gets `autopilot`: `setSessionMode` keeps `allow`.
@@ -162,6 +164,7 @@ through the built adapters (T091, T092, T094) come after p2 and before `verified
 - No progress is a heuristic, and may stop a run that reads a lot before writing. Two unchanged continuations is a low bar,
   and the setting stays internal until real use.
 - A soft cap on Codex can overshoot by one turn. The dialog says so.
+- A Stop or Autopilot off can land while a send that starts a run waits (review on #967). Rule (FR-059): nothing an adapter sets for a run (the cap, the open turn, the run) is set for good before its last wait; after that wait it reads the Stop count and Autopilot again, and every way out before the run begins puts the cap back (Copilot `capForRun`, Claude Code `send`'s `finally`). Tests use gated fakes, never timers (T050).
 
 ## Complexity Tracking
 

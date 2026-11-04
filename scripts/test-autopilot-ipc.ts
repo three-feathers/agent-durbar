@@ -16,6 +16,8 @@ import { FakeAdapter } from '../src/adapters/fake';
 import type { AgentEvent, AutopilotSettings } from '../src/adapters/types';
 import type { AdapterDescriptor } from '../src/adapters/capabilities';
 import type { AgentInfo, PermMode } from '../src/shared/api';
+import { COPILOT_TURN_ON_STOPPED } from '../src/adapters/copilot';
+import { LINE_UNCONFIRMED } from '../src/adapters/autopilotHost';
 import { dialogText, plainLine, readSettings, windowAdapters, NOT_AVAILABLE, REMOTE_ON, CHANGED, ORG_UNREAD } from '../src/main/autopilotops';
 import type { AutopilotOpsDeps } from '../src/main/autopilotops';
 import { OrgPolicyCache } from '../src/main/orgpolicy';
@@ -49,7 +51,7 @@ async function main(): Promise<void> {
   const foreign = { senderFrame: foreignFrame, sender: { mainFrame: foreignFrame } };
 
   /** One office: a session in `mode`, the real router, the real remote ops, and a store and log that record. */
-  async function office(o: { mode?: PermMode; enabled?: boolean; caps?: R; confirm?: AutopilotOpsDeps['confirm']; org?: AutopilotOpsDeps['org']; fingerprint?: AutopilotOpsDeps['fingerprint']; remoteConfirm?: (id: string) => Promise<boolean>; live?: boolean; setupWaitMs?: number; ensureLive?: AutopilotOpsDeps['ensureLive'] } = {}) {
+  async function office(o: { mode?: PermMode; enabled?: boolean; caps?: R; confirm?: AutopilotOpsDeps['confirm']; org?: AutopilotOpsDeps['org']; fingerprint?: AutopilotOpsDeps['fingerprint']; remoteConfirm?: (id: string) => Promise<boolean>; live?: boolean; setupWaitMs?: number; toldWaitMs?: number; ensureLive?: AutopilotOpsDeps['ensureLive'] } = {}) {
     handlers.clear();
     const fake = new FakeAdapter({ capabilities: o.caps ?? { autopilot: AP, remote: true, remoteService: { name: 'GitHub', host: 'github.com', mobile: 'GitHub Mobile' } } } as never);
     const desc = { id: 'fake', displayName: 'Fake', create: () => fake, detect: async () => ({ state: 'ready' }), capabilities: fake.capabilities } as unknown as AdapterDescriptor;
@@ -72,7 +74,7 @@ async function main(): Promise<void> {
     const remoteOps = createRemoteOps({ known: (x) => agents.has(x), adapterOf: (x) => router.forAgent(x), open: async () => undefined, modeOf: (x) => agents.get(x)?.permMode, confirm: o.remoteConfirm, autopilotOn: (x) => onAuto(x) });
     const ops = createAutopilotOps({
       agents, router, ops: opsDeps, enabled: () => o.enabled !== false, remoteOn: (x) => remoteOps.engaged(x), org: o.org ?? (async () => undefined),
-      confirm: o.confirm ?? (async (t) => { asked.push(t); return true; }), ensureLive: o.ensureLive ?? (async () => undefined), setupWaitMs: o.setupWaitMs, changed: (x) => void pushed.push(x.autopilot ?? null), appName: () => 'Fake', folderLabel: (x) => x.cwd, fingerprint: o.fingerprint,
+      confirm: o.confirm ?? (async (t) => { asked.push(t); return true; }), ensureLive: o.ensureLive ?? (async () => undefined), setupWaitMs: o.setupWaitMs, toldWaitMs: o.toldWaitMs, changed: (x) => void pushed.push(x.autopilot ?? null), appName: () => 'Fake', folderLabel: (x) => x.cwd, fingerprint: o.fingerprint,
       log: (x, d, t) => void logs.push(`${d}: ${t}`), say: (_x, l) => void says.push(l), warn: (l) => void warns.push(l),
     });
     onAuto = (x) => ops.engaged(x);
@@ -713,7 +715,7 @@ async function main(): Promise<void> {
       await tick();
       void b2.call(how, b2.id);
       assert.strictEqual((await p2).error, CHANGED, `${how}: a dialog with no answer`);
-      const b3 = await office();
+      const b3 = await office({ toldWaitMs: 20 }); // the adapter's call never answers: main stops listening for its refusal after this bound
       b3.fake.stop = () => hang();
       const real = b3.fake.setAutopilot!;
       let go: () => void = () => undefined;
@@ -726,6 +728,36 @@ async function main(): Promise<void> {
       await tick();
       assert.strictEqual(b3.a.autopilot, undefined, 'its late answer changes nothing');
       assert.strictEqual(b3.ops.engaged(b3.id), false);
+      // FR-059 (#967's queue): the adapter refuses the turn-on a Stop or End came before, with its own words, and the window is told those words
+      const b5 = await office();
+      let go5: () => void = () => undefined;
+      const words = how === 'agents:end' ? 'The session is not running.' : COPILOT_TURN_ON_STOPPED;
+      b5.fake.setAutopilot = async (_s, c) => { if (c) { await new Promise<void>((res) => { go5 = res; }); throw new Error(words); } };
+      const p5 = turnOn(b5);
+      await until(() => onHold(go5));
+      void b5.call(how, b5.id);
+      assert.strictEqual(b5.ops.engaged(b5.id), false, `${how}: released in the same tick, before the adapter answers`);
+      go5();
+      const r5 = await p5;
+      assert.strictEqual(r5.ok, false);
+      assert.strictEqual(r5.error, words, `FR-059 ${how} during the turn-on: setAutopilot's own refusal reaches the window, not CHANGED`);
+      await tick();
+      assert.ok(!b5.says.includes(LINE_UNCONFIRMED), `${how}: a refused turn-on is no unconfirmed stop`);
+      // End during a turn-on: the session is gone, so there is nothing to take back and no "not confirmed" line, whatever the adapter answers
+      if (how === 'agents:end') {
+        const b6 = await office();
+        let go6: () => void = () => undefined;
+        b6.fake.setAutopilot = async (_s, c) => { if (c) await new Promise<void>((res) => { go6 = res; }); else throw new Error('The session is not running.'); };
+        const p6 = turnOn(b6);
+        await until(() => onHold(go6));
+        void b6.call(how, b6.id);
+        b6.fake.isLive = () => false;
+        go6();
+        assert.strictEqual((await p6).ok, false, 'End: not on');
+        await tick();
+        assert.strictEqual(b6.a.autopilot, undefined);
+        assert.ok(!b6.says.includes(LINE_UNCONFIRMED), 'End during a turn-on: no back-off on a session that is gone, so no "not confirmed" line');
+      }
       // and it can be turned on again after
       const b4 = await office({ org: () => hang(), setupWaitMs: 15 });
       await turnOn(b4);
@@ -870,7 +902,7 @@ async function main(): Promise<void> {
     "confirm: (o) => nativeConfirm(win, o),",
     "remoteOn: (id) => remoteOps.engaged(id),",
     "org: (a) => orgPolicies.autopilotRefusal(appIdOf(a.id)),",
-    "router.setEventGuard((e) => autopilotOps.accepts(e));",
+    "router.setEventGuard((e) => eventShape(e) && autopilotOps.accepts(e));", // with spec 010 FR-035's shape check: both pass
     "autopilotOn: (id) => autopilotOps.engaged(id) });",
     "endAutopilot: (a) => autopilotOps.endForMode(a), autopilotStopSeen: (id) => autopilotOps.stopSeen(id)",
     "windowAdapters(infos, autopilotOn())",

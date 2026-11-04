@@ -112,15 +112,16 @@ for (const f of ipcFiles) {
 const FROM_APP = [
   'activity:clear', 'activity:export', 'activity:list',
   'adapters:sandboxAlwaysOff', 'adapters:sandboxHosts', 'agents:sandboxContinue', // spec 087: the OS sandbox choices and the Settings line
-  'agents:checkpointPreview', 'agents:checkpointUndo', 'agents:gitStatus', 'agents:mcpCancelSignIn', 'agents:mcpOpenSignIn', 'agents:mcpRefresh', 'agents:mcpSignIn', 'agents:openRemote', 'agents:resolvePlan', 'agents:send', 'agents:sessionSummary', 'agents:setMode', 'agents:setAutopilot', 'agents:setRemote',
+  'agents:checkpointPreview', 'agents:checkpointUndo', 'agents:gitStatus', 'agents:mcpCancelSignIn', 'agents:mcpOpenSignIn', 'agents:mcpRefresh', 'agents:mcpSignIn', 'agents:openInVSCode', 'agents:openRemote', 'agents:openWith', 'agents:openWithTargets', 'agents:resolvePlan', 'agents:send', 'agents:sessionSummary', 'agents:setMode', 'agents:setAutopilot', 'agents:setRemote',
   'app:dismissInterrupted', 'app:dismissSinceAway', 'app:interrupted', 'app:sinceAway', 'heldmig:discard', 'heldmig:discardBad', 'heldmig:list', 'heldmig:noticed', 'heldmig:send', // 'app:interrupted': spec 006 FR-041, ids and folder names of the sessions a crash left mid-turn
   'folders:create', 'folders:createCancel', 'folders:createCheck', 'folders:createPickParent', // spec 093 FR-080: create a folder (writes to the disk, runs git), and end its clone
   'folders:remove', // spec 083 FR-048 (T034b): with {deleteNotes} it deletes the folder's notes file
   'browser:back', 'browser:bounds', 'browser:openLink', 'browser:openMail', 'browser:consentAccept', 'browser:leaveAnswer', 'browser:snapshot', 'browser:forward', 'browser:mute', 'browser:navigate', 'browser:open', 'browser:openSystem', 'browser:overlay', 'browser:reload', 'browser:state', 'browser:stop', 'browser:visible', 'browser:newTab', 'browser:selectTab', 'browser:closeTab', 'browser:setLinksNewTab', // spec 080 T014 FR-003, T023 FR-127: the session browser answers the app's own page only
-  'harness:accounts', 'harness:cancel', 'harness:copilotAuth', 'harness:openPage', 'harness:openSignIn', 'harness:paste', 'harness:plans', 'harness:run', 'harness:updates', 'harness:visible',
+  'harness:accounts', 'harness:quota', 'harness:cancel', 'harness:copilotAuth', 'harness:openPage', 'harness:openSignIn', 'harness:paste', 'harness:plans', 'harness:run', 'harness:updates', 'harness:visible',
   'notes:add', 'notes:delete', 'notes:deleteAll', 'notes:export', 'notes:fileCount', 'notes:list', 'notes:save', 'notes:setFile', 'notes:startOver', 'notes:update', // spec 083 FR-062: the folder's notes, by agent id; T042: the project-file switch (writes and deletes in the project)
   'profiles:create', 'profiles:delete', 'profiles:generate', 'profiles:save', // spec 043 FR-011, FR-040: writes to (or deletes) profile files
   'schedules:remove', 'schedules:runNow', 'schedules:runs', 'schedules:save',
+  'schedules:restartLoop', 'schedules:stopLoop', // spec 072 FR-007, FR-008 (T007): Stop loop and Start again
 ];
 assert.strictEqual(new Set(FROM_APP).size, FROM_APP.length, 'no channel twice in the list');
 // spec 043 FR-041 (review on #572): an ended or removed session is forgotten by the profile list freshness; a change prunes the rest
@@ -133,8 +134,17 @@ for (const c of ['agents:end', 'agents:remove']) assert.ok(/profileFreshness\?\.
   assert.ok(ns >= 0 && so > ns, '"agents:send" notes the session start before sendOp');
   assert.ok(/await sessionStarts\.noteStart\(id, ag\.cwd\)/.test(send) && /const ag = agents\.get\(id\)/.test(send), '"agents:send" notes the start for main\'s own folder of that agent');
   const sum = regs.get('agents:sessionSummary')?.[0]?.block ?? '';
-  assert.ok(/ipcHandle\('agents:sessionSummary', async \(e, id: unknown\)/.test(sum), '"agents:sessionSummary" takes only the id from the window');
+  assert.ok(/ipcHandle\('agents:sessionSummary', async \(e, id: unknown, final\?: unknown\)/.test(sum), '"agents:sessionSummary" takes only the id from the window');
   assert.ok(/agents\.get\(id\)/.test(sum) && /sessionStarts\.summarize\(a\.id, a\.cwd\)/.test(sum), '"agents:sessionSummary" summarizes main\'s own folder for the session, never one the window sends');
+  assert.ok(/readReported\(router\.forAgent\(a\.id\), a\.id\)/.test(sum) && /final === true/.test(sum), '"agents:sessionSummary" asks the agent app\'s totals through the adapter of main\'s own agent, and only `final === true` marks an End');
+  // review (Paco's side): the lounge reads often and never shows the app's own totals, so only the End's read (`final: true`) asks the adapter (getMetrics)
+  const sumBlock = regs.get('agents:sessionSummary')?.[0]?.block ?? '';
+  assert.ok(/final === true \? readReported\(/.test(sumBlock) && !/Promise\.all\(\[[^\]]*,\s*readReported\(/.test(sumBlock), '"agents:sessionSummary" asks the adapter for its own totals only when final is true');
+  assert.ok(sumBlock.indexOf('finals.begin(a.id)') >= 0 && sumBlock.indexOf('finals.begin(a.id)') < sumBlock.indexOf('await Promise.all') && /finals\.offer\(a\.id, epoch,/.test(sumBlock), '"agents:sessionSummary" takes the epoch before it awaits the read, and keeps the answer only for that epoch (a read that lands after the End is not counted by the next one)');
+  const endBlock = regs.get('agents:end')?.[0]?.block ?? '';
+  assert.ok(/finals\.take\(id, Date\.now\(\)\)/.test(endBlock) && /if \(day\) deps\.getSummaryDays\?\.\(\)\?\.add\(day\)/.test(endBlock) && !/getSummaryDays[^;]*\.add\([^)]*id/.test(endBlock), '"agents:end" adds the numbers of a summary asked for this End to the day rollup (numbers only), after the session ended');
+  assert.ok(/sessionStarts\.elapsedMs\(id\)/.test(endBlock) && /uncounted: 1/.test(endBlock), '"agents:end" counts an End with no fresh card as a session that was not measured');
+  assert.ok(!/getSummaryDays/.test(regs.get('agents:remove')?.[0]?.block ?? ''), '"agents:remove" adds nothing to the rollup (FR-009)');
   for (const c of ['agents:end', 'agents:remove']) assert.ok(/sessionStarts\.forget\(/.test(regs.get(c)?.[0]?.block ?? ''), `"${c}" must forget the session start`);
 }
 assert.ok(/fresh\.prune\(/.test(fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'ipc', 'profiles.ts'), 'utf8')), 'profiles.ts prunes sessions no longer in the office on a change');

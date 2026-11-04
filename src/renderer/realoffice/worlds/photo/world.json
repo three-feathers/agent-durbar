@@ -57,5 +57,8 @@
    276
   ]
  },
- "floorLine": 276
+ "floorLine": 276,
+ "px": {
+  "desk.webp": 900
+ }
 }

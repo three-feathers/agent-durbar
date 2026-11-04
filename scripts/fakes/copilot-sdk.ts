@@ -47,6 +47,10 @@ export class FakeSession {
   /** Spec 051 FR-018: what `rpc.gitHubAuth.getStatus` answers (a no-prompt status that carries `copilotPlan`); `statusFail` rejects; `statusHangs` never settles; `noGitHubAuth` leaves the method out. */
   statusAnswer: unknown = { isAuthenticated: true, authType: 'gh-cli', login: 'someone', statusMessage: 'ok', copilotPlan: 'individual' };
   statusFail = '';
+  /** Spec 085: what `rpc.usage.getMetrics` answers (the real shape: `codeChanges` with file names, lines; `totalNanoAiu`; `totalUserRequests`). */
+  metricsAnswer: unknown = { codeChanges: { filesModified: ['a.ts', 'b.ts', 'c.ts'], filesModifiedCount: 3, linesAdded: 40, linesRemoved: 7 }, totalNanoAiu: 2_500_000_000, totalUserRequests: 2, totalPremiumRequestCost: 1.5 };
+  metricsFail = '';
+  metricsHangs = false;
   statusHangs = false;
   constructor(public sessionId: string, public config: Record<string, unknown>) {}
   private rec<T>(name: string, v: T, ...args: unknown[]): T { this.calls.push({ name, args }); return v; }
@@ -86,6 +90,8 @@ export class FakeSession {
       get: async () => this.rec('name.get', { name: this.nameAnswer }),
       set: async (a: unknown) => { this.calls.push({ name: 'name.set', args: [a] }); if (this.nameSetFail) throw new Error(this.nameSetFail); },
     },
+    // spec 085 FR-012: `rpc.usage.getMetrics` (@experimental); `metricsFail` rejects, `metricsHangs` never settles, a test deletes `rpc.usage` to act as an older runtime
+    usage: ({ getMetrics: async () => { this.calls.push({ name: 'usage.getMetrics', args: [] }); if (this.metricsHangs) return new Promise<unknown>(() => undefined); if (this.metricsFail) throw new Error(this.metricsFail); return this.metricsAnswer; } }) as Record<string, unknown> | undefined,
     metadata: { isProcessing: async () => this.rec('isProcessing', { processing: this.processing }) },
     gitHubAuth: {
       getStatus: async () => {
@@ -153,9 +159,10 @@ export class FakeClient {
   sendHangs = false;
   /** Handed to every session this client creates or resumes (spec 059). */
   nameSetFail = '';
-  /** Spec 099: the mode a resumed session comes back in; `modeSetFailOnResume` makes its `mode.set` reject. */
+  /** Spec 099: the mode a resumed session comes back in; `modeSetFailOnResume` makes its `mode.set` reject; `modeSilentOnResume`: no `session.mode_changed` after it. */
   resumeMode = 'interactive';
   modeSetFailOnResume = '';
+  modeSilentOnResume = false;
   private track(s: FakeSession): FakeSession {
     s.turnScript = this.turnScript;
     s.nameAnswer = this.nameAnswer;
@@ -179,6 +186,7 @@ export class FakeClient {
     this.last = this.track(new FakeSession(id, config));
     this.last.mode = this.resumeMode;
     this.last.modeSetFail = this.modeSetFailOnResume;
+    this.last.modeSilent = this.modeSilentOnResume;
     return this.last;
   }
   /** Like the SDK: throws when the session is not on disk. */
@@ -224,6 +232,8 @@ export class FakeClient {
   modelsFail = '';
   listModelsFail = '';
   noQuota = false;
+  /** Spec 011 FR-081: what `account.getQuota` answers; default no snapshots. */
+  quotaResult: unknown = { quotaSnapshots: {} };
   noRpcModels = false;
   async getAuthStatus(): Promise<unknown> {
     this.authCalls.push('getAuthStatus');
@@ -237,7 +247,7 @@ export class FakeClient {
   get rpc(): Record<string, unknown> {
     return {
       sandbox: { getHostSupport: async () => { this.hostCalls++; if (this.sandboxHostFail) throw new Error(this.sandboxHostFail); return this.sandboxHost; } },
-      ...(this.noQuota ? {} : { account: { getQuota: async (p: unknown) => { this.authCalls.push('account.getQuota'); void p; if (this.quotaFail) throw new Error(this.quotaFail); return { quotaSnapshots: {} }; } } }),
+      ...(this.noQuota ? {} : { account: { getQuota: async (p: unknown) => { this.authCalls.push('account.getQuota'); void p; if (this.quotaFail) throw new Error(this.quotaFail); return this.quotaResult; } } }),
       ...(this.noRpcModels ? {} : { models: { list: async () => { this.authCalls.push('models.list'); if (this.modelsFail) throw new Error(this.modelsFail); return { models: [] }; } } }),
       ...(this.managed === undefined && !this.managedFail && !this.managedHangs ? {} : { managedSettings: { resolve: async (p: unknown) => {
         void p; this.managedCalls++;

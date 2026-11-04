@@ -256,7 +256,12 @@ export interface ScheduledSendDeps {
   toWindow(channel: string, payload: unknown): void;
   noteLastSession(a: AgentInfo): void;
   now(): number;
+  /** Spec 072 FR-007: asked once the session is live, right before the prompt goes; false = the run was stopped meanwhile (Stop, Stop loop, End): nothing is sent. */
+  stillWanted?(): boolean;
 }
+
+/** Spec 072 FR-007: the error a send throws when its run was stopped while the session was starting; nothing reached the app. */
+export const NOT_SENT_STOPPED = 'Not sent: stopped';
 
 /**
  * Spec 044: a scheduled prompt goes through the user's own send path: Thinking at once, the session started or resumed, the prompt shown
@@ -276,12 +281,16 @@ export async function scheduledSendOp(d: ScheduledSendDeps, prompt: string, s: {
   }
   try {
     await d.ensureLive(a);
+    if (d.stillWanted && !d.stillWanted()) {
+      d.agentState.noteNotSent?.(a.id); // not an error: the agent is ready again
+      throw new Error(NOT_SENT_STOPPED);
+    }
     d.toWindow('agent:event', { type: 'user', sessionId: a.id, timestamp: d.now(), text: prompt });
     d.toWindow('schedule:ran', { agentId: a.id, scheduleId: s.id, every: s.every, at: s.at, rule: s.rule });
     await ad.send(a.id, { text: prompt });
     d.noteLastSession(a);
   } catch (err) {
-    d.agentState.noteSendFailed(a.id);
+    if (!(err instanceof Error && err.message === NOT_SENT_STOPPED)) d.agentState.noteSendFailed(a.id);
     throw err;
   }
   return a.id;

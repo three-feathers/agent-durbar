@@ -3,6 +3,17 @@ import * as assert from 'assert';
 import { EventEmitter } from 'events';
 import { createCodexRpc, CodexRpcError, MAX_LINE_BYTES, RequestOutcome, RpcChild, SpawnFn, SpawnOptions } from '../src/adapters/codexRpc';
 
+/** Poll until `cond` holds (5 s limit): a fixed sleep flakes on a loaded runner (FR-048b). Throws with `what` on a timeout. */
+async function until(cond: () => boolean, what: string, ms = 5000): Promise<void> {
+  const end = Date.now() + ms;
+  while (!cond()) {
+    if (Date.now() > end) throw new Error(`timed out waiting for: ${what}`);
+    await new Promise((r) => setTimeout(r, 5));
+  }
+}
+/** Let a timer of `ms` fire and then some: only for negatives, after a positive signal proved the clock runs. */
+const past = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 class FakeChild extends EventEmitter {
   pid: number | undefined = 4242;
   signals: (string | number | undefined)[] = [];
@@ -182,7 +193,7 @@ async function main(): Promise<void> {
     assert.strictEqual(fc.ended, true);
     assert.strictEqual((await rejects(p)).kind, 'closed');
     assert.strictEqual((await rejects(rpc.request('b'))).kind, 'closed');
-    await new Promise((r) => setTimeout(r, 40));
+    await until(() => fc.signals.length >= 1, 'SIGTERM after the close grace');
     assert.deepStrictEqual(fc.signals, ['SIGTERM'], 'SIGTERM exactly once after grace');
     rpc.close();
     assert.strictEqual(fc.killed, 1);
@@ -191,7 +202,7 @@ async function main(): Promise<void> {
     const { fc, rpc } = make({ closeGraceMs: 15 });
     rpc.close();
     fc.die(0);
-    await new Promise((r) => setTimeout(r, 40));
+    await past(60); // negative: well past closeGraceMs (15 ms); a live timer would have fired
     assert.strictEqual(fc.killed, 0, 'no kill when the child exited in time');
   }
 
@@ -199,7 +210,7 @@ async function main(): Promise<void> {
   {
     const { fc, rpc } = make({ closeGraceMs: 10, killGraceMs: 10 });
     rpc.close();
-    await new Promise((r) => setTimeout(r, 60));
+    await until(() => fc.signals.length >= 2, 'SIGTERM then SIGKILL');
     assert.deepStrictEqual(fc.signals, ['SIGTERM', 'SIGKILL']);
     rpc.close();
     assert.strictEqual(fc.killed, 2);
@@ -207,9 +218,9 @@ async function main(): Promise<void> {
   {
     const { fc, rpc } = make({ closeGraceMs: 10, killGraceMs: 30 });
     rpc.close();
-    await new Promise((r) => setTimeout(r, 20));
+    await until(() => fc.signals.length >= 1, 'SIGTERM');
     fc.die(null, 'SIGTERM');
-    await new Promise((r) => setTimeout(r, 60));
+    await past(120); // negative: 4x killGraceMs (30 ms) after the exit; a live SIGKILL timer would have fired
     assert.deepStrictEqual(fc.signals, ['SIGTERM'], 'no SIGKILL after the child exited');
   }
 
@@ -218,7 +229,7 @@ async function main(): Promise<void> {
     const steps: string[] = [];
     const { fc, rpc } = make({ closeGraceMs: 10, killGraceMs: 10, killChild: (c, sig) => { steps.push(`${(c as unknown as FakeChild).pid}:${sig}`); } });
     rpc.close();
-    await new Promise((r) => setTimeout(r, 60));
+    await until(() => steps.length >= 2, 'both kill steps');
     assert.deepStrictEqual(steps, ['4242:SIGTERM', '4242:SIGKILL']);
     assert.strictEqual(fc.killed, 0, 'the direct child.kill is not used when a killer is injected');
   }
@@ -251,7 +262,7 @@ async function main(): Promise<void> {
     fc.out('{"id":1,"result":1}\n');
     assert.strictEqual(await p, 1);
     rpc.close();
-    await new Promise((r) => setTimeout(r, 40));
+    await until(() => fc.signals.length >= 1, 'SIGTERM (still killable)');
     assert.deepStrictEqual(fc.signals, ['SIGTERM'], 'still killable');
   }
   {

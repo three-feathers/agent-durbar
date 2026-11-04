@@ -34,6 +34,7 @@ test:compressshots
 test:changelog
 test:releasevideo
 test:specsindex
+test:stillhighlights
 test:orgwords
 test:handoff
 test:toolusage
@@ -51,6 +52,7 @@ test:simevents
 test:copilotmodel
 test:copilotoneshot
 test:copilotcap
+test:copilot-tmpdir
 test:mcpsession
 test:mcpcall
 test:mcpsignin
@@ -108,6 +110,9 @@ test:checkpoints
 test:ipcchannels
 test:planmode
 test:probe
+test:logo-assets
+test:autofollow
+test:openwith
 test:liveact
 test:names
 test:renameadapters
@@ -139,6 +144,7 @@ test:crew-assets
 test:realoffice-layout
 test:realoffice-assets
 test:roomorder
+test:railorder
 test:composersize
 test:innerscroll
 test:ctxbreakdown
@@ -205,4 +211,5 @@ test:prereview
 test:mcpcost
 test:mcpcontextop
 test:mcpcontextipc
+test:quota
 test:featureinventory
