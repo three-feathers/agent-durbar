@@ -1563,6 +1563,14 @@ body.has-bridge .folder-ctl #foldersBtn{border-top-left-radius:0;border-bottom-l
 .inbox-row .ib-h:focus{outline:2px solid var(--focus);outline-offset:3px}
 .inbox-row:focus-within{border-color:var(--focus)}
 .inbox-keys{margin:0;font-size:var(--t5-size);color:var(--muted)}
+/* spec 097 FR-121: the inbox header (the Boss door and the queue's faces; aria-hidden). Here, not in realoffice.css (loaded lazily): without these sizes the faces fill the dialog (spec 052, issue #1174) */
+.inbox-dlg .ib-world{display:flex;align-items:center;gap:12px;padding:8px 12px;border-bottom:1px solid var(--line);background:var(--surface-2)}
+.inbox-dlg .ibw-door{height:54px;width:auto;border-radius:4px}
+.inbox-dlg .ibw-faces{margin-left:auto;display:flex}
+.inbox-dlg .ibw-face{width:30px;height:30px;margin-left:-6px;border-radius:50%;overflow:hidden;border:2px solid var(--surface);background:var(--surface-2);display:block}
+.inbox-dlg .ibw-face:first-child{margin-left:0}
+.inbox-dlg .ibw-face>*{width:100%;height:100%}
+
 
 /* spec 052 R3 design polish (Clean Office only unless noted; colour, border colour, background, shadow, radius, weight and
    letter-spacing only, so every size stays and check:geometry holds) */

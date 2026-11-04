@@ -400,3 +400,4 @@
 
 ## 2026-11-02: activity export, atomic no-follow write (issue #973)
 - [x] T260 `activity:export` through `writeNotesExport` (new `what` and `maxBytes` options); `test-activity` cases for a link target, hard link, FIFO, folder, replace and mode [FR-071]
+- [x] T264 The inbox header's sizes move from `realoffice.css` to `styles.css`; driver `check-inbox-avatar` asserts every inbox avatar is at most 40 px and the first Allow button is hit by `elementFromPoint` [issue #1174]
