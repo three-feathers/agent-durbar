@@ -1090,3 +1090,13 @@ The owner asked that sessions be shared between Durbar and the Claude Code CLI. 
 ## Changes 2026-11-02: removed page and tools (owner decision, PR #1054)
 
 `scripts/signin-real.ts`, `scripts/claude-repo-config-real.ts` were removed on 2026-11-02 by owner decision (no caller; run dates and credit counts above stay valid history); the scripts are in git history at commit `1c75b5bee`.
+
+## Changes 2026-11-04: no temp folder left behind (T140, issue #1093)
+
+`npm test` left about 14,500 `durbar-*` folders (2.5 GB) in a developer's `/tmp`, and the product's `--mcp-config` folder had one exit it did not cover.
+
+**FR-165** `[IMPLEMENTED]` The private folder `privateMcpConfig` makes (`mcp-config.json`, with MCP env and header values) is removed on every way a Claude CLI can end: spawn throws, the `error` event, an exit or a kill (the transport reports an `exit` for each), `close()` after TERM and KILL, and the app ending while the CLI runs (no `exit` ever arrives: the folders still live are swept on the process's `exit` event, `sweepMcpConfigs`). Not covered: a SIGKILL or crash of the app itself, which no handler sees (`[KNOWN GAP]`; the folder is mode 0700 and the file 0600 in the OS temp folder).
+  - `test:` `scripts/test-claude-transport.ts` (one case per path above, counting `durbar-mcp-*` in a private root through `makeCliTransportFactory`; the exit hook in a real child process that calls `process.exit`); mutation-checked (hook removed: the child-process case fails).
+
+**FR-166** `[IMPLEMENTED]` `npm test` runs each suite with its own empty `TMPDIR`/`TEMP`/`TMP` (`scripts/run-tests.js`); a `durbar-*` entry left in it when the suite ends fails the suite and names the entry; the folder is removed either way. Tests make temp folders through `tmpDir` (`scripts/test-tmp.ts`, removed at process exit, also after `process.exit`); the two plain-JS suites (`test-changelog.js`, `test-specs-index.js`) carry the same hook. Parallelism is unchanged.
+  - `test:` `scripts/test-run-tests.ts` (a leaking suite fails and is named, a clean one passes, each suite has its own folder, removed afterwards). Before: 12 of 197 suites leaked, 175+ folders per run; see the PR for the counts after.

@@ -29,6 +29,7 @@ import { ClaudeMapper, claudeMcpServers, withSkipped } from './claudeMap';
 import type { ClaudeMessage } from './claudeMap';
 import { claudeOptionsFor, parseMcpTool, preToolUseDecision, toolKind } from './claudeModes';
 import { createCliTransport } from './claudeTransport';
+import type { SpawnFn } from './claudeTransport';
 import type { ClaudeTransport, ControlAnswer, IncomingControl, TransportHandlers, UserContent } from './claudeTransport';
 import type { AdapterCapabilities, AdapterDescriptor, PermissionMode } from './capabilities';
 import type { EventBody } from './map';
@@ -444,12 +445,15 @@ export const CLAUDE_ENTRYPOINT = 'agent-durbar';
 export function privateMcpConfig(json: string, tmpRoot: string = os.tmpdir()): { file: string; cleanup: () => void } {
   const dir = fs.mkdtempSync(path.join(tmpRoot, 'durbar-mcp-'));
   const cleanup = (): void => {
+    liveMcpDirs.delete(dir);
     try {
       fs.rmSync(dir, { recursive: true, force: true });
     } catch {
       /* the OS cleans its temp folder */
     }
   };
+  liveMcpDirs.add(dir);
+  hookExitSweep();
   try {
     if (process.platform !== 'win32') fs.chmodSync(dir, 0o700);
     const file = path.join(dir, 'mcp-config.json');
@@ -461,6 +465,34 @@ export function privateMcpConfig(json: string, tmpRoot: string = os.tmpdir()): {
   }
 }
 
+/**
+ * Spec 012 FR-165 (#1093): the folders `privateMcpConfig` made and has not yet cleaned. The CLI's `exit` handler cleans its own; when the app
+ * ends while a CLI still runs (no `exit` ever comes), this set is swept on the process's `exit` event, so `mcp-config.json` (env and header
+ * values) never outlives the app. Not covered: a SIGKILL or a crash of the app itself, which no handler sees.
+ */
+const liveMcpDirs = new Set<string>();
+let exitSweepHooked = false;
+function hookExitSweep(): void {
+  if (exitSweepHooked) return;
+  exitSweepHooked = true;
+  process.on('exit', sweepMcpConfigs);
+}
+/** Removes every private MCP config folder still live; called on process exit (and by the tests). */
+export function sweepMcpConfigs(): void {
+  for (const dir of [...liveMcpDirs]) {
+    liveMcpDirs.delete(dir);
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+    } catch {
+      /* the OS cleans its temp folder */
+    }
+  }
+}
+/** How many private MCP config folders are live (tests). */
+export function liveMcpConfigCount(): number {
+  return liveMcpDirs.size;
+}
+
 /** The CLI argv for a launch, with the MCP JSON moved to a private file (`privateMcpConfig`). */
 export function cliLaunchArgs(launch: ClaudeLaunch, tmpRoot?: string): { args: string[]; cleanup: () => void } {
   if (!launch.mcpConfig) return { args: claudeArgs(launch), cleanup: () => undefined };
@@ -468,27 +500,33 @@ export function cliLaunchArgs(launch: ClaudeLaunch, tmpRoot?: string): { args: s
   return { args: claudeArgs({ ...launch, mcpConfig: p.file }), cleanup: p.cleanup };
 }
 
-export const cliTransportFactory: TransportFactory = (o) => {
-  const { args, cleanup } = cliLaunchArgs(o.launch);
-  try {
-    return createCliTransport({
-      file: o.file,
-      args,
-      cwd: o.cwd,
-      env: o.env,
-      handlers: {
-        ...o.handlers,
-        exit: (info) => {
-          cleanup();
-          o.handlers.exit(info);
+/** The CLI transport factory; `spawn` and `tmpRoot` are for the tests (a fake child, a counted temp folder). */
+export function makeCliTransportFactory(opts: { spawn?: SpawnFn; tmpRoot?: string } = {}): TransportFactory {
+  return (o) => {
+    const { args, cleanup } = cliLaunchArgs(o.launch, opts.tmpRoot);
+    try {
+      return createCliTransport({
+        file: o.file,
+        args,
+        cwd: o.cwd,
+        env: o.env,
+        spawn: opts.spawn,
+        handlers: {
+          ...o.handlers,
+          exit: (info) => {
+            cleanup();
+            o.handlers.exit(info);
+          },
         },
-      },
-    });
-  } catch (e) {
-    cleanup();
-    throw e;
-  }
-};
+      });
+    } catch (e) {
+      cleanup();
+      throw e;
+    }
+  };
+}
+
+export const cliTransportFactory: TransportFactory = makeCliTransportFactory();
 
 export interface ClaudeAdapterDeps {
   /** Spec 100: how long `get_context_usage` may take (tests). */

@@ -9,9 +9,10 @@ import { applyFolderImport, previewFolderImport, readVSCodeFile } from '../src/m
 import { McpStore } from '../src/main/mcpstore';
 import { CLI_FILE_LABEL, cliServers, copilotDir, readCandidates } from '../src/main/mcpfiles';
 import type { SecretCodec } from '../src/main/mcpstore';
+import { tmpDir } from './test-tmp';
 
 const fx = (n: string): string => fs.readFileSync(path.join(__dirname, '..', '..', 'scripts', 'fixtures', 'mcp', n), 'utf8');
-const tmp = (): string => path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-mcp-')), 'durbar-mcp.json');
+const tmp = (): string => path.join(tmpDir('durbar-mcp-'), 'durbar-mcp.json');
 const K1 = '/work/folder-a';
 const K2 = '/work/folder-b';
 const SECRET = 'sk-test-DUMMY-secret-value';
@@ -163,7 +164,7 @@ const codec = (available = true): SecretCodec => ({
 
 // 6. The Copilot CLI list: read live from ~/.copilot/mcp-config.json, no setup, read-only (spec 020 FR-009)
 {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-copilot-'));
+  const dir = tmpDir('durbar-copilot-');
   let r = cliServers(dir, new Set());
   assert.deepStrictEqual(r.servers.map((a) => a.name), ['github-mcp-server'], 'built-in server is listed even without a config file');
   assert.deepStrictEqual(r.file, { label: CLI_FILE_LABEL, found: false, error: undefined, skipped: 0 });
@@ -398,13 +399,13 @@ const codec = (available = true): SecretCodec => ({
   assert.strictEqual(candidateInput(by.docs).env?.length, 0);
 
   // 9b. Preview (main): masked, no values, digest; files on disk; read-only
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-vsimp-'));
+  const root = tmpDir('durbar-vsimp-');
   const projA = path.join(root, 'proj-a');
   fs.mkdirSync(path.join(projA, '.vscode'), { recursive: true });
   const fileA = path.join(projA, '.vscode', 'mcp.json');
   fs.writeFileSync(fileA, fx('vscode-mcp.jsonc'));
   const beforeA = fs.readFileSync(fileA, 'utf8');
-  const cliDir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-copilot-'));
+  const cliDir = tmpDir('durbar-copilot-');
   fs.writeFileSync(path.join(cliDir, 'mcp-config.json'), fx('copilot-mcp-config.json'));
   const cliBefore = fs.readFileSync(path.join(cliDir, 'mcp-config.json'), 'utf8');
   const cliNamesNow = cliServers(cliDir, new Set()).servers.map((x) => x.name);
