@@ -196,6 +196,7 @@
     "test:globals": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-renderer-globals.js",
     "test:authcheck": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-authcheck.js",
     "test:account": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-account.js",
+    "test:quota": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-quota.js",
     "test:autherrors": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-autherrors.js",
     "test:mcpauth": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-mcpauth.js",
     "test:theme": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-theme.js",
