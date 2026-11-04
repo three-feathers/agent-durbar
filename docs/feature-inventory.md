@@ -14,7 +14,7 @@ One row per thing a user can do or see. [features.md](features.md) stays the use
 | Helpers (sub-agents): card, tree, own chat, needs you | works | missing, only `+N` and 3 dots; planned as small figures beside the desk (owner idea, spec delta pending) | planned | 001 015 097 | test:helpercard read:src/renderer/realoffice.js |
 | Live activity on the desk | works | in PR 097-p2-screens | mock+planned (live-screen) | 001 097 | test:liveact driver:shots-001-live-activity |
 | Model, tokens, cost, context, last tool on the desk | works | missing | none | 019 097 | test:ctxbreakdown read:src/renderer/realoffice.js |
-| Unread "New", draft, question marks | works | missing | none | 001 005 | test:unread read:src/renderer/realoffice.js |
+| Unread "New", draft, question marks | works | planned New reply tag and green light bar (097 FR-237, FR-238); draft and question marks missing | none | 001 005 | test:unread read:src/renderer/realoffice.js |
 | Hover card | works | missing, tooltip only | none | 001 097 | test:tooltip read:src/renderer/realoffice.js |
 | Drag to rearrange rooms, desks, places | works | missing | none | 033 | test:roomorder driver:shots-033-order |
 | Rename a session (F2, pencil) | works | works F2 and menu, no pencil | none | 059 | test:sessionname read:src/renderer/app.js |
@@ -49,7 +49,8 @@ One row per thing a user can do or see. [features.md](features.md) stays the use
 | Scheduled prompts, loops | works | works | none | 044 072 | test:schedules test:loops |
 | Custom agents and profile files | works | works | none | 043 | test:agentprofiles test:profileeditor |
 | Folder status (branch, changes), session summary | works | works | none | 063 085 | test:gitstatus test:sessionsummary |
-| Continue in another app, VS Code open and history | works | works | none | 009 030 | test:handoff test:vscodechat |
+| Continue in another app, VS Code chat history | works | works | none | 009 030 | test:handoff test:vscodechat |
+| Open with menu (installed VS Code editions, Show in folder) and Open in editor | in PR 009-open-with | in PR 009-open-with, same chat header | none | 009 | test:openwith driver:shots-009-openwith |
 | Keyboard navigator, Ctrl+K palette | works | works | none | 074 | test:navigator driver:shots-074-navigator |
 | Model, effort and Auto routing | works | works | none | 007 030 | test:modelchoice test:modelswitch |
 | Context ring and Compact | works | works | none | 019 034 | test:compaction test:ctxbreakdown |

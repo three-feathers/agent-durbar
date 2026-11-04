@@ -37,6 +37,7 @@
     "test:serial": "node scripts/run-tests.js --serial",
     "test:prereview": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-prereview.js",
     "test:vscode": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-vscode.js",
+    "test:openwith": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-openwith.js",
     "test:history": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-history.js",
     "test:vscodechat": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-vscodechat.js",
     "test:wsroots": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-workspace-roots.js",
