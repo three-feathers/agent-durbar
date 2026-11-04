@@ -1216,7 +1216,7 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .sub-full-head{display:flex;align-items:center;gap:8px}.sub-full-head h3{margin:0;font-size:14px}
 .sub-full-task{margin:0;color:var(--ink-2);font-size:13px}
 .sub-full-body{display:flex;flex-direction:column;gap:8px}
-.panel-in.ro .composer{display:none}
+.panel-in.helper-ro .composer{display:none}
 @media (prefers-reduced-motion:reduce){.subblk.running .sub-st::before,.bubble.caret.md>*:last-child::after{animation:none}}
 
 /* ---- lobby and walking figures (spec 024): one shared band with the places agents go to ---- */
@@ -2042,7 +2042,7 @@ h2,h3,h4{text-wrap:balance}
 .nt-btn:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
 .msg.user .bubble{position:relative}
 .msg.user .bubble>.nt-btn{right:auto;left:10px}
-.panel-in.ro .nt-btn{display:none}
+.panel-in.helper-ro .nt-btn{display:none}
 .notes-drawer{position:absolute;z-index:6;display:flex;flex-direction:column;min-height:0;background:var(--surface);border-top:1px solid var(--line);border-bottom:1px solid var(--line);box-sizing:border-box}
 .notes-drawer[hidden]{display:none}
 .nt-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 16px 6px}

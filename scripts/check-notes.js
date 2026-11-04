@@ -110,7 +110,7 @@ module.exports = async (ctx) => {
       check(!!hp, `${tag}: a helper is on the office floor`);
       if (hp) {
         await js(`document.querySelector('#stage .helper[data-id="'+CSS.escape(${jsLiteral(hp.id)})+'"]').click()`);
-        check(await until(`document.body.classList.contains('panel-open')&&!!document.querySelector('#panel .panel-in.ro')`, 10000), `${tag}: the helper's chat is open`);
+        check(await until(`document.body.classList.contains('panel-open')&&!!document.querySelector('#panel .panel-in.helper-ro')`, 10000), `${tag}: the helper's chat is open`);
         await settle();
         /* the helper is made live in the page only, and a notes-enabled message is planted in its log, so only the parent test can hide the button */
         const hs = await js(`(()=>{const U=window.__durbarSimUi,h=U.agents().find(a=>a.id===${jsLiteral(hp.id)}),was=h.live;h.live=true;const root=document.createElement('div');root.className='chat-inner';root.setAttribute('data-notes','1');root.innerHTML='<div class="msg agent"><div class="bubble"><button type="button" class="nt-btn" aria-label="Message actions">x</button>A planted helper reply with enough words to select.</div></div>';document.getElementById('chat').appendChild(root);const b=root.querySelector('.bubble');const t=[...b.childNodes].find(n=>n.nodeType===3);const r=document.createRange();r.setStart(t,2);r.setEnd(t,20);const s=getSelection();s.removeAllRanges();s.addRange(r);const sel=s.toString().length;const par=h.parent;h.parent='';const without=U.notes.selNow();h.parent=par;const withP=U.notes.selNow();h.live=was;root.remove();getSelection().removeAllRanges();return JSON.stringify({sel,without,withP,par:!!par})})()`).then(JSON.parse);
