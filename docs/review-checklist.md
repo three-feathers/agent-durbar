@@ -73,7 +73,7 @@ On 2026-10-23 Vikram's agent grouped the ~1,100 *Required fixes* in reviews of ~
 ## Tests
 
 - [ ] **Slice size**: about 800 changed lines, pictures excluded.
-- [ ] **Plant a mutation per new rule, each guard both ways; see a test fail** (drop the guard, swap the order); a risky-logic PR lists each mutant's failing assertion, quoted. [#630](https://github.com/three-feathers/agent-durbar/pull/630)
+- [ ] **Mutate each new rule, each guard both ways; see a test fail** (drop the guard, swap the order); list them in the PR, quoting each failing assertion for risky logic. [#630](https://github.com/three-feathers/agent-durbar/pull/630)
 - [ ] **After a scripted edit or conflict resolution in a test file, no section disappeared**: compare `git diff --stat` and `grep -c assert` before and after. [#644](https://github.com/three-feathers/agent-durbar/pull/644)
 - [ ] **An injected dependency is really used** (`env`, a clock, a runner): plant "use the global instead". FR-058
 - [ ] **A test of a script's refusal is safe when the refusal breaks**: fakes first on `PATH` for every outside tool (record and fail), remotes pointing nowhere, assert none was called. FR-058
