@@ -7,6 +7,9 @@ import { createRegistry, detectAll } from '../src/adapters/registry';
 import { adapterForAdd, createRouter, historyOf, interruptOf, refusesLive, modelOptionsOf, previousSessionsOf, setCapOf, setMcpEnabledOf, setPermModeOf } from '../src/adapters/router';
 import type { AdapterCapabilities, AdapterDescriptor } from '../src/adapters/capabilities';
 import type { AgentAdapter, AgentEvent, ModelOption } from '../src/adapters/types';
+import { eventGate, EVENT_DROP_LOG_MAX } from '../src/adapters/eventguard';
+import * as fs from 'fs';
+import * as path from 'path';
 
 const CAPS: AdapterCapabilities = {
   interrupt: false, resume: false, images: false, models: false, effort: false, permissionModes: ['read-only'], permModeSwitch: 'none',
@@ -225,6 +228,49 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(adapterForAdd('other', undefined, has, 'copilot'), { id: 'other' }, 'i: without a ready check (resume, restore) nothing changes');
     assert.deepStrictEqual(adapterForAdd(undefined, 'other', has, 'copilot', ready), { id: 'other' }, 'i: a saved kind is not re-checked');
     assert.ok('error' in adapterForAdd('future', undefined, has, 'copilot', ready), 'i: unknown still refused with a ready check');
+  }
+  // spec 010 FR-035 (issue #1039): main's event gate, through the router, before every listener
+  {
+    const { made, router } = fakes();
+    const lines: string[] = [];
+    let asked = 0;
+    const gate = eventGate((l) => lines.push(l));
+    router.setEventGuard((e) => { asked++; return gate(e); });
+    const got: AgentEvent[][] = [[], [], []];
+    router.instance('a');
+    got.forEach((g) => router.onEvent((e) => g.push(e)));
+    const a = made.a[0];
+    const good = { type: 'status', sessionId: 's1', timestamp: 1, status: 'idle' } as unknown as AgentEvent;
+    const bad = { type: 'status', sessionId: 's1', timestamp: 1, status: 'ghp_' + 'A'.repeat(36) } as unknown as AgentEvent;
+    a.emit(good);
+    a.emit(bad);
+    assert.deepStrictEqual(got.map((g) => g.length), [1, 1, 1], 'FR-035: a good event reaches every listener once, a bad one none');
+    assert.strictEqual(asked, 2, 'FR-035: the guard is asked once per event, not once per listener');
+    assert.strictEqual(lines.length, 1);
+    assert.ok(/^\[events\] dropped a bad status event: status /.test(lines[0]), lines[0]);
+    // the line is cut, and capped per run
+    a.emit({ type: 'status', sessionId: 's1', timestamp: 1, status: 'x'.repeat(5000) } as unknown as AgentEvent);
+    assert.ok(lines[1].length <= 300, 'FR-035: cut to 300 characters');
+    for (let i = 0; i < 50; i++) a.emit({ ...bad }); // fresh objects: the router keeps one verdict per event object
+    assert.strictEqual(lines.length, EVENT_DROP_LOG_MAX + 1, 'FR-035: at most 20 lines, then one saying the rest are not logged');
+    assert.deepStrictEqual(got.map((g) => g.length), [1, 1, 1]);
+    // an adapter created after the guard is set is guarded too
+    router.instance('b');
+    made.b[0].emit(bad);
+    made.b[0].emit(good);
+    assert.deepStrictEqual(got.map((g) => g.length), [2, 2, 2], 'FR-035: later adapters too');
+    // cost: an absolute CPU bound, wide headroom (about 0.06 us per event on an Apple M4)
+    const g2 = eventGate(() => undefined);
+    const mix = [good, { type: 'toolCall', sessionId: 's', timestamp: 1, phase: 'complete', callId: 'c', tool: 'bash', args: { command: 'ls' }, result: 'x'.repeat(20000) }, { type: 'usage', sessionId: 's', timestamp: 1, inputTokens: 1, outputTokens: 2 }];
+    const t0 = process.cpuUsage();
+    for (let i = 0; i < 200_000; i++) g2(mix[i % mix.length]);
+    const u = process.cpuUsage(t0);
+    assert.ok((u.user + u.system) / 1000 < 1500, `FR-035: 200,000 events took ${Math.round((u.user + u.system) / 1000)} ms of CPU (bound 1500 ms)`);
+    assert.ok(mix.every((e) => g2(e)), 'the mix is all good events');
+    // main sets the guard right after making the router, before its first listener, and masks the line
+    const mainTs = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'main.ts'), 'utf8');
+    const at = mainTs.indexOf('router.setEventGuard(eventGate((line) => console.warn(redact(line))));');
+    assert.ok(at > 0 && at < mainTs.indexOf('router.onEvent('), 'FR-035: main.ts sets the masked gate before its first router.onEvent');
   }
   console.log('router tests passed');
 }

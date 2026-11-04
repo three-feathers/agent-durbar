@@ -1,0 +1,1 @@
+- **Agent events are checked in the app** (spec 010 FR-035, issue #1039): every event from Copilot, Claude Code or Codex now passes the same shape check the tests use before the window or any other part of Durbar sees it. A malformed one is dropped and logged (masked) instead of reaching the window. Checked with `test:runtime-core`; no real session was run.

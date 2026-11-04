@@ -222,3 +222,28 @@ export function eventProblems(e: unknown): string[] {
   }
   return out;
 }
+
+/** Spec 010 FR-035 (issue #1039): how many dropped events a run logs before it stops saying so. */
+export const EVENT_DROP_LOG_MAX = 20;
+
+/**
+ * Spec 010 FR-035: main's check on every agent event (the router's event guard). True passes; a bad event is dropped with one line for
+ * `warn`, which masks it (main passes `redact`). Only the type and the problems are named, cut to 300 characters; at most `EVENT_DROP_LOG_MAX` lines.
+ */
+export function eventGate(warn: (line: string) => void): (e: unknown) => boolean {
+  let logged = 0;
+  return (e) => {
+    const p = eventProblems(e);
+    if (!p.length) return true;
+    if (logged < EVENT_DROP_LOG_MAX) {
+      logged++;
+      const t = isObj(e) && typeof e.type === 'string' ? e.type : typeof e;
+      warn(`[events] dropped a bad ${t} event: ${p.join('; ')}`.slice(0, 300));
+    } else if (logged === EVENT_DROP_LOG_MAX) {
+      logged++;
+      warn('[events] further bad events are dropped without a log line');
+    }
+    return false;
+  };
+}
+
