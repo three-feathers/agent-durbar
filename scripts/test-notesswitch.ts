@@ -671,26 +671,30 @@ async function main(): Promise<void> {
   const hasBirth = (p: string): boolean => nodeFs.statSync(p, { bigint: true }).birthtimeNs > 86_400_000_000_000n;
   const diskRoot = ((): string => { const c = posix && nodeFs.existsSync('/var/tmp') ? '/var/tmp' : os.tmpdir(); return realOf(nodeFs.mkdtempSync(path.join(c, 'durbar-notesswitch-disk-'))); })();
   await test('PR 931 review 3, point 1: the identity tells a folder deleted and made again at the same path apart (birth time); a file added inside keeps it', async () => {
-    const f = new NotesFile();
+    // issue #1027: the rule is checked with chosen stat values, so no wait and no dependence on the disk's clock or birth-time support
     const dir = path.join(diskRoot, 'proj');
     nodeFs.mkdirSync(dir);
-    nodeFs.writeFileSync(path.join(dir, 'a.txt'), 'x');
+    const real = realOf(dir);
+    let fake: { dev: bigint; ino: bigint; birthtimeNs: bigint } = { dev: 7n, ino: 42n, birthtimeNs: 1_700_000_000_000_000_000n };
+    const fsx = { ...nodeFs, lstatSync: ((p: string, o?: unknown) => (p === real ? { ...fake, isDirectory: () => true } : (nodeFs.lstatSync as (a: string, b?: unknown) => unknown)(p, o))) } as never;
+    const f = new NotesFile({ fs: fsx });
     const id1 = f.folderId(dir)!;
-    if (!hasBirth(dir)) { skip('this file system gives no birth time: only device and inode are compared (spec 083 known gap)'); return; }
-    nodeFs.writeFileSync(path.join(dir, 'b.txt'), 'y');
-    assert.ok(NotesFile.sameFolder(id1, f.folderId(dir)!), 'a file added inside: the same folder');
-    let reused = 0;
-    for (let i = 0; i < 20; i++) {
-      await new Promise((res) => setTimeout(res, 30)); // coarse timestamps (ext4: a few ms): not the same tick as the first folder, or the identity cannot differ (a known limit, spec 083)
-      nodeFs.rmSync(dir, { recursive: true }); // the test's own folder
-      nodeFs.mkdirSync(dir);
-      nodeFs.writeFileSync(path.join(dir, 'a.txt'), 'x');
-      const id2 = f.folderId(dir)!;
-      if (id2.split(':')[1] === id1.split(':')[1]) reused++;
-      assert.ok(!NotesFile.sameFolder(id1, id2), `deleted and made again (${reused} times the inode number was reused): not the same folder`);
-    }
-    console.log(`  (inode number reused in ${reused} of 20 recreations; the birth time told them apart)`);
+    fake = { ...fake, birthtimeNs: fake.birthtimeNs + 1_000_000n }; // deleted and made again 1 ms later, the inode number reused
+    assert.ok(!NotesFile.sameFolder(id1, f.folderId(dir)!), 'the same inode with another birth time: not the same folder');
+    fake = { ...fake, ino: 43n };
+    assert.ok(!NotesFile.sameFolder(id1, f.folderId(dir)!), 'another inode: not the same folder');
+    fake = { dev: 7n, ino: 42n, birthtimeNs: 1_700_000_000_000_000_000n }; // made again within the same tick (spec 083 point 6, known gap)
+    assert.ok(NotesFile.sameFolder(id1, f.folderId(dir)!), 'the same inode and birth time: the same folder (the known same-tick gap)');
+    assert.strictEqual(id1, '7:42:1700000000000000000', 'dev, inode and birth time');
+    fake = { dev: 7n, ino: 42n, birthtimeNs: 0n }; // a file system with no birth time
+    assert.strictEqual(f.folderId(dir), '7:42', 'no birth time: only device and inode');
     assert.ok(NotesFile.sameFolder('1:2', '1:2:3') && !NotesFile.sameFolder('1:2:3', '1:2:4') && !NotesFile.sameFolder('1:2', '9:2'), 'birth time compared only when both have it');
+    // what needs no timing, on the real disk: a file added inside keeps the identity
+    const g = new NotesFile();
+    nodeFs.writeFileSync(path.join(dir, 'a.txt'), 'x');
+    const r1 = g.folderId(dir)!;
+    nodeFs.writeFileSync(path.join(dir, 'b.txt'), 'y');
+    assert.ok(NotesFile.sameFolder(r1, g.folderId(dir)!), 'a file added inside: the same folder');
   });
   await test('PR 931 review 3, point 2: the identity is recorded at turn-on, so a folder replaced before the first write is not written into', async () => {
     let locked = false;

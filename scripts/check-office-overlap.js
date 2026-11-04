@@ -163,6 +163,8 @@ function pageCheck(expanded, expectPlaces) {
     if (B.x < D.x - T || B.r > D.r + T || B.y < D.y - T || B.b > D.b + T) problems.push(`pencil ${who} leaves its card`);
     const nmEl = d.querySelector('.name'); /* #781: with the mode icon wrapped below the name the pencil must not land on the name's first half (it sits after the name, or over its end at most) */
     if (nmEl && nmEl.getClientRects().length) { const N = R(nmEl); if (N.w > 1 && B.x < N.x + N.w / 2 - T && B.y < N.b - T && B.b > N.y + T) problems.push(`pencil ${who} covers the first half of the name`); }
+    /* spec 059 FR-030 (issue #1067): the pencil's whole 24px box, not only its glyph, stays off the name's middle, so a click there (hit-tested, the pencil is invisible until hover) reaches the card */
+    if (nmEl && nmEl.getClientRects().length) { const N = R(nmEl); if (N.w > 1) { const mx = N.x + N.w / 2, my = (N.y + N.b) / 2, hit = document.elementFromPoint(mx, my); if (hit && hit.closest('.ren')) problems.push(`pencil ${who} box covers the middle of its name (a click there lands on the pencil)`); if (B0.x < mx - 0.5 && B0.r > mx + 0.5 && B0.y < N.b && B0.b > N.y) problems.push(`pencil ${who} box reaches the middle of its name`); } }
     /* spec 001 FR-185 (issue #850): nor any text of the details column (.gx: Last tool, Usage, Cost, ...), the role or the task line */
     d.querySelectorAll('.stl, .pill, .badge, .chatno, .draft-mark, .modeic, .modebadge, .gx-h, .gx-t, .gx-l, .role, .intent').forEach((e) => {
       if (!e.getClientRects().length || getComputedStyle(e).visibility === 'hidden') return;
@@ -937,8 +939,8 @@ async function driver(ctx) {
         if (ox > T && oy > T) P.push(`${kids[i].id || kids[i].className.split(' ')[0]} overlaps ${kids[j].id || kids[j].className.split(' ')[0]}`);
       }
     }
-    const strip = document.getElementById('stripList');
-    if (strip && R(strip).right > innerWidth + 1) P.push('the agent strip leaves the window');
+    const strip = document.getElementById('stripList'); /* spec 005 FR-190: the agent rail's list */
+    if (strip && (R(strip).right > innerWidth + 1 || R(strip).bottom > innerHeight + 1)) P.push('the agent rail leaves the window');
     /* spec 005 FR-037..FR-040: the chat settings are one row under the message box, inside the window, nothing overlapping; the
        Send / Stop slot sits inside the box */
     const bar = document.getElementById('cToolbar'), row = document.getElementById('ctItems'), box = document.querySelector('#panel .inbox');

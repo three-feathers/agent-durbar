@@ -91,6 +91,20 @@ const run = (events: RawEvent[]): EventBody[] => {
   assert.deepStrictEqual({ p: (out[4] as { phase: string }).phase, e: (out[4] as { error?: string }).error }, { p: 'failed', e: 'boom' });
 }
 
+// 4z. Spec 015 FR-018 (issue #1141): `executionMode: 'background'` marks the helper; 'sync', a missing or an odd value does not.
+{
+  const bgOf = (mode: unknown): unknown => {
+    const out = run([{ type: 'subagent.started', agentId: 'inst-b', data: { toolCallId: 'call-b', agentName: 'explore', agentDisplayName: 'Bg', agentDescription: 'Look', ...(mode === undefined ? {} : { executionMode: mode }) } }]);
+    const s = out.find((e) => e.type === 'subagent');
+    assert.ok(s && s.type === 'subagent' && s.phase === 'started', 'a started helper');
+    for (const e of out) assert.deepStrictEqual(eventProblems({ ...e, sessionId: 's', timestamp: 1 } as never), [], 'the event guard accepts it');
+    return (s as { background?: unknown }).background;
+  };
+  assert.strictEqual(bgOf('background'), true, 'executionMode background marks a background helper');
+  for (const m of ['sync', undefined, 'Background', true, '']) assert.strictEqual(bgOf(m), undefined, `executionMode ${String(m)} is not background`);
+  assert.deepStrictEqual(eventProblems({ type: 'subagent', sessionId: 's', timestamp: 1, subagentId: 'x', phase: 'started', background: 'yes' } as never), ['subagent.background is not a boolean'], 'the guard refuses a non-boolean background');
+}
+
 // 5. Unknown event types and tool failures are tolerated.
 {
   const out = run([

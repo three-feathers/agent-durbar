@@ -335,6 +335,10 @@ All answered with option A (see *Clarifications*); kept here for the record of t
 
 ## Changes
 
+### 2026-11-04: the chat header is a Mac drag area (spec 052 FR-215, spec 005 PR R1)
+
+FR-025's drag rule holds for `#panelTitle`, `#panelTitleBtn` and every interactive control in `.ph` (`button`, `a`, `input`, `[tabindex]`, `[title]`): on macOS they are `no-drag`, so a click renames. The header container `.ph` itself is now a drag area, per 052 FR-215 (the newer owner decision); FR-025's "the chat header `.ph` is not a drag region today" described 2026-10-24 and is superseded. `check-rename-inline` checks the title, its button and every control in `.ph`.
+
 ### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
 
 The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
@@ -588,6 +592,17 @@ checks are unchanged. `check-office-overlap` now also fails a desk pencil that c
 - **FR-169** `[IMPLEMENTED]` `sim:` `check:office` ("the folder pencil is over the name", both sizes, floors cases) A room header's pencil is in the header's flow, right after the name (`ren-in`, as in the Folders panel), not positioned over it, and `placeRen` no longer places folder pencils (the fallback over the end of the name stays for desk cards and rows, FR-025). When the name would be squeezed, the pencil is the first thing to go (`no-ren`, spec 001 FR-179); **Rename…** in the folder's ⋯ menu always remains.
 
 Numbers taken: FR-169 and T081 (checked against `main` and the open PRs on 2026-10-26).
+
+### 2026-11-04: the pencil's box never covers the middle of a short name (issue #1067)
+
+*Problem*: the desk pencil is a 24px box (opacity 0 until hover or focus, but still hit-tested) around a 16px glyph. When it has no room beside the name, `placeRen` put the GLYPH in the name's right half, so the box started 4px left of the middle and a click on the middle of a short name ("Priya" at 1280x800) could land on the pencil and open rename instead of the chat. `check:office` judged the glyph only.
+
+- **FR-030** `[IMPLEMENTED]` `sim:` `check:office` (both sizes) In the fallback over the end of the name, the pencil's whole 24px box lies in the name's right half (`placeRen` adds the box's 4px margin), so the middle of the name always hits the card. `check:office` fails a pencil whose box reaches the middle of its name, or when `elementFromPoint` at the name's centre is a pencil. Keyboard access (always in Tab order), hover, focus and every rename flow are unchanged.
+- `sim:` `check-rename-inline` (in `check:ui`, both sizes, taken from the duplicate #1134 by the Mac session): for every desk card whose pencil is on the name's line, the element at the name's horizontal middle is the card and the pencil's box starts at or after the middle. The simulator's own layouts rarely put a pencil over a name, so the driver also makes the case on purpose: the shortest name, on a card narrowed by a stylesheet rule. Mutant: the old placement fails `1440: on a short name with no room, the pencil box leaves the name's middle to the card (issue #1067)`.
+- `[KNOWN GAP]` For a name under about 14 px wide (one or two characters) on a card too narrow for the pencil beside it, the hidden 24px box can now overhang the card's right edge by a few px (the old formula kept it inside, but over the name's middle). The simulator's names never reach this case, so no driver sees it (review of #1114, rubenlupi's side, 2026-11-04).
+- `[KNOWN GAP]` The Mac-only `shots-001-live-activity` failure "pencil sim-2 covers intent" at 1440x900 dense is a different, vertical overlap (the pencil against the task line under the name), not changed here and not reproduced on Linux; tracked in issue #1135.
+
+Numbers taken: FR-030 and T082 (checked against `main` and the open PRs on 2026-11-04). Task T082.
 
 ## Changes 2026-10-31: doors removed (pointer, spec 017 T024)
 

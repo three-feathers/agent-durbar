@@ -1,0 +1,1 @@
+- **No zoom under a still pointer** (spec 097, #1040): pressing Esc back to the office with the pointer resting on a screen no longer opens that screen's zoom; the next real move does, and keyboard focus zoom is unchanged. Checked in the simulator at both sizes, with a mutant; not seen or verified on macOS.

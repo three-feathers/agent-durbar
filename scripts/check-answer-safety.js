@@ -52,8 +52,10 @@ module.exports = async (ctx) => {
     };
     const plan = (n) => emit({ type: 'plan', phase: 'proposed', requestId: 'pl' + n + '-' + w, text: '1. Do a thing' });
     const got = (n) => js(`window[${jsLiteral('__' + n)}].slice()`);
+    // #chat is a flex column: without flex:none the 4000px filler shrinks to 0 and the card is out of view only when the chat happens to
+    // overflow (with the rail the chat is taller, and on Windows the card then fit; spec 005 R1)
     const barUp = async () => {
-      await js(`(()=>{const c=document.getElementById('chat');if(!document.getElementById('fillerX')){const f=document.createElement('div');f.id='fillerX';f.style.height='4000px';c.prepend(f);}c.scrollTop=0;c.dispatchEvent(new Event('scroll'));})()`);
+      await js(`(()=>{const c=document.getElementById('chat');if(!document.getElementById('fillerX')){const f=document.createElement('div');f.id='fillerX';f.style.height='4000px';f.style.flex='none';c.prepend(f);}c.scrollTop=0;c.dispatchEvent(new Event('scroll'));})()`);
       assert.ok(await until(`!document.getElementById('answerBar').hidden`, 5000), `${w}: the answer bar shows (the card is out of view)`);
     };
     const setup = () => js(`window.__bb=l=>[...document.querySelectorAll('#answerBar button')].find(b=>b.textContent===l);window.__cb=l=>[...document.querySelectorAll('#chat .note.limit .note-actions button')].find(b=>b.textContent===l);0`);
@@ -151,7 +153,7 @@ module.exports = async (ctx) => {
     // ---- FR-210 (B): a limit card out of view: the bar has no amount to send, only "Show in chat" ----
     await fresh();
     await limit('lb-' + w);
-    await js(`(()=>{const c=document.getElementById('chat');if(!document.getElementById('fillerX')){const f=document.createElement('div');f.id='fillerX';f.style.height='4000px';c.prepend(f);}c.scrollTop=0;c.dispatchEvent(new Event('scroll'));})()`);
+    await js(`(()=>{const c=document.getElementById('chat');if(!document.getElementById('fillerX')){const f=document.createElement('div');f.id='fillerX';f.style.height='4000px';f.style.flex='none';c.prepend(f);}c.scrollTop=0;c.dispatchEvent(new Event('scroll'));})()`);
     assert.ok(await until(`!document.getElementById('answerBar').hidden`, 5000), `${w}: the bar shows for the limit`);
     assert.deepStrictEqual(await barLabels(), ['Show in chat'], `${w}: only "Show in chat" ${jsLiteral(await barLabels())}`);
     assert.strictEqual(await js(`!!document.querySelector('#answerBar input')`), false, `${w}: no field in the bar`);

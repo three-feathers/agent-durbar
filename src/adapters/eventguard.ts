@@ -133,6 +133,7 @@ export function eventProblems(e: unknown): string[] {
     case 'subagent':
       if (!str(e.subagentId) || !e.subagentId) out.push('subagent.subagentId missing');
       if (!oneOf(e.phase, ['started', 'completed', 'failed'])) out.push(`subagent.phase ${String(e.phase)}`);
+      if (e.background !== undefined && typeof e.background !== 'boolean') out.push('subagent.background is not a boolean');
       break;
     case 'usage':
       for (const k of ['inputTokens', 'outputTokens', 'cacheReadTokens', 'nanoAiu', 'costUsd']) if (!optNum(e[k])) out.push(`usage.${k} is not a non-negative number`);
