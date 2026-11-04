@@ -179,10 +179,6 @@ export async function readReported(
 }
 
 /**
- * Durbar's own numbers of an ended session as the day rollup adds them (FR-009). A folder that is not git, could not be read, or had no commit
- * at the start was not measured: it adds the session and its minutes and `uncounted: 1`, never zeros that read as "nothing changed" (review of c0e6c872).
- */
-/**
  * Spec 085 FR-009: the summary asked for a session's End (`final`), kept for at most a minute until the End adds it to the day.
  * Each End (or removal) starts a new epoch for the id, and an answer that was asked in an earlier epoch is not kept: a read that lands after
  * the window gave up and the End counted the session as not measured must not wait for the next End of a resumed session (counted twice).
@@ -213,6 +209,10 @@ export class SummaryFinals {
   }
 }
 
+/**
+ * Durbar's own numbers of an ended session as the day rollup adds them (FR-009). A folder that is not git, could not be read, or had no commit
+ * at the start was not measured: it adds the session and its minutes and `uncounted: 1`, never zeros that read as "nothing changed" (review of c0e6c872).
+ */
 export function dayNumbers(sum: SessionSummary): Partial<DaySum> | undefined {
   if (!sum.ok) return undefined;
   const base = { minutes: Math.floor(sum.ms / 60000) };
