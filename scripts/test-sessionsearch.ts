@@ -1,9 +1,11 @@
 /** Title search of Previous sessions (spec 006 FR-023, issue #252): `npm run test:sessionsearch`. Pure matcher, no credits. */
 import * as assert from 'assert';
 import * as path from 'path';
+import { assertLinearShape } from './redact-growth-lib';
 type S = { id: string; title: string };
-const { filterSessions, terms, arrangeSessions, applyMark, visibleCount, deleteDialogText, refusalDialogText, noDeleteReason } = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'sessionsearch.js')) as {
-  filterSessions: (l: S[], q: string) => S[]; terms: (q: string) => string[];
+const { fold, locate, anchorKey, filterSessions, terms, arrangeSessions, applyMark, visibleCount, deleteDialogText, refusalDialogText, noDeleteReason } = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'sessionsearch.js')) as {
+  filterSessions: (l: S[], q: string) => S[]; terms: (q: string) => string[]; fold: (s: unknown) => string;
+  locate: (text: unknown, query: string, max?: number) => Array<{ start: number; end: number; term: number }>; anchorKey: (t: unknown) => string;
   applyMark: (m: { pinned?: string[]; hidden?: string[] }, k: string, mark: string) => { pinned: string[]; hidden: string[] };
   visibleCount: (l: unknown[], hidden: string[]) => number;
   deleteDialogText: (o: { title?: string; app?: string; cli?: string; codex?: boolean }) => { title: string; body: string; lines: string[] };
@@ -89,3 +91,86 @@ assert.strictEqual(visibleCount(null as unknown as unknown[], []), 0);
   assert.strictEqual(noDeleteReason('Claude Code'), 'Claude Code cannot delete one session. Hide it instead.');
 }
 console.log('sessionsearch pin/hide tests passed');
+
+// Spec 095 FR-040, T011: `locate` (folded matches mapped back to the original text) and `anchorKey`
+{
+  type R = { start: number; end: number; term: number };
+  const show = (text: string, q: string) => locate(text, q).map((r: R) => `${r.term}:${text.slice(r.start, r.end)}`);
+  // the facts of the fold, computed with node from the real function (plan T011): no unification of ß with ss; İ folds to i; ı stays
+  assert.strictEqual(fold('ß'), 'ß');
+  assert.strictEqual(fold('Straße').includes('ss'), false, '"ß" does not match "ss"');
+  assert.deepStrictEqual(show('Straße', 'strasse'), []);
+  assert.strictEqual(fold('İ'), 'i');
+  assert.deepStrictEqual(show('İstanbul trip', 'istanbul'), ['0:İstanbul'], '"İstanbul" matches "istanbul"');
+  assert.strictEqual(fold('ı'), 'ı');
+  assert.deepStrictEqual(show('Diyarbakır', 'diyarbakir'), [], 'the dotless ı stays ı');
+  // accents, case, any order, every occurrence, offsets in the original text
+  assert.deepStrictEqual(show('Explicación del diseño. EXPLICACION otra vez', 'diseno explicacion'), ['1:Explicación', '0:diseño', '1:EXPLICACION']);
+  assert.deepStrictEqual(locate('Fix the CSV export', 'csv'), [{ start: 8, end: 11, term: 0 }], 'ASCII: identity offsets');
+  // a combining mark joins the character before it: the range never leaves an accent behind
+  assert.deepStrictEqual(show('café au lait', 'cafe'), ['0:café']);
+  // emoji (surrogate pairs) before and inside: offsets stay on code point boundaries
+  const emo = '\u{1F600} résumé \u{1F680}x\u{1F680} done';
+  assert.deepStrictEqual(show(emo, 'resume'), ['0:résumé']);
+  assert.deepStrictEqual(show(emo, '\u{1F680}x'), ['0:\u{1F680}x']);
+  // Greek final sigma: per code point folding differs, so the word maps whole; the match is still found where fold finds it
+  assert.strictEqual(fold('ΟΔΟΣ'), 'οδος');
+  assert.deepStrictEqual(show('ο ΟΔΟΣ μας', 'οδος'), ['0:ΟΔΟΣ']);
+  // Hangul folds to jamo (NFD): a match maps to whole syllables
+  assert.deepStrictEqual(show('한국어 공부', '한국'), ['0:한국']);
+  // empty, blank and missing input
+  assert.deepStrictEqual(locate('', 'x'), []);
+  assert.deepStrictEqual(locate('text', '   '), []);
+  assert.deepStrictEqual(locate(undefined, 'x'), []);
+  assert.deepStrictEqual(show('a+b (c)', '(c)'), ['0:(c)'], 'the query is a plain substring, never a regex');
+  assert.deepStrictEqual(show('word word word', 'word word'), ['0:word', '0:word', '0:word'], 'a repeated query word counts once');
+  assert.strictEqual(locate('aaaa '.repeat(1000), 'aaaa', 5).length, 5, 'at most `max` per word');
+  // long: 20 000 characters with accents; the last match is mapped right
+  const long = 'é'.repeat(19_990) + ' Señal';
+  assert.strictEqual(long.length, 19_996);
+  assert.deepStrictEqual(show(long, 'senal'), ['0:Señal']);
+  // property: on a mixed corpus, every range starts and ends on a code point boundary and holds its word when folded
+  const parts = ['a', 'É', 'ß', 'İ', 'ı', 'Σ', 'ς', 'é', '\u{1F600}', '한', ' ', '\n', 'x', 'ΟΔΟΣ', 'ǅ', 'ﬁ'];
+  let seed = 7;
+  const rnd = (n: number) => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed % n; };
+  const lone = (s: string, i: number) => i > 0 && i < s.length && /[\uDC00-\uDFFF]/.test(s[i]) && /[\uD800-\uDBFF]/.test(s[i - 1]);
+  let checked = 0;
+  for (let n = 0; n < 300; n++) {
+    let t = '';
+    for (let k = 0; k < 40; k++) t += parts[rnd(parts.length)];
+    for (const q of ['a', 'e', 'i', 'σ', 'ς', 'ss', 'ß', '\u{1F600}', 'x a', 'οδος']) {
+      const words = [...new Set(terms(q))];
+      for (const r of locate(t, q)) {
+        assert.ok(!lone(t, r.start) && !lone(t, r.end), `code point boundary: ${JSON.stringify(t)} ${r.start}..${r.end}`);
+        assert.ok(fold(t.slice(r.start, r.end)).includes(words[r.term]), `the range holds its word: ${JSON.stringify(t.slice(r.start, r.end))} / ${words[r.term]}`);
+        checked++;
+      }
+      // the same rule as filterSessions: every word found by locate exactly when the folded text holds it
+      for (let w = 0; w < words.length; w++) assert.strictEqual(locate(t, q).some((r) => r.term === w), fold(t).includes(words[w]), `found iff present: ${JSON.stringify(t)} ${words[w]}`);
+    }
+  }
+  assert.ok(checked > 500, `the property saw enough ranges (${checked})`);
+
+  // anchorKey: Markdown stripped, then fold; the code inside a fence stays (the chat shows it)
+  assert.strictEqual(anchorKey('# Plan\n\n**Bold** _it_ and [the link](https://example.test/x) `code`'), 'plan bold it and the link code');
+  assert.strictEqual(anchorKey('```ts\nconst a = 1;\n```\nDone'), 'const a = 1; done');
+  assert.strictEqual(anchorKey('> quoted\n- item one\n1. first\n* star'), 'quoted item one first star');
+  assert.strictEqual(anchorKey('![shot](a.png) Explicación'), 'shot explicacion');
+  assert.strictEqual(anchorKey('  many\n\n  spaces\t here '), 'many spaces here');
+  assert.strictEqual(anchorKey('[redacted] token ~ path'), '[redacted] token path', 'a mask stays readable; a lone ~ is a strike mark and goes');
+  assert.strictEqual(anchorKey(''), '');
+  assert.strictEqual(anchorKey(null), '');
+  assert.strictEqual(anchorKey('**a**'), anchorKey('a'), 'the rendered text and the source give the same key');
+  assert.strictEqual(anchorKey('x'.repeat(20_000)).length, 20_000);
+}
+// review of PR 1098, finding 3: anchorKey is linear (a run of `[` scanned to the line end at every `[`: 489 ms at 20 000 characters). CPU-time
+// growth against a 1/16 baseline of the same shape (redact-growth-lib), so load does not decide it
+{
+  assertLinearShape('anchorKey: a run of [', (x) => anchorKey(x), (n) => '['.repeat(n), 160_000);
+  assertLinearShape('anchorKey: repeated [a](', (x) => anchorKey(x), (n) => '[a]('.repeat(Math.ceil(n / 4)), 160_000);
+  assertLinearShape('anchorKey: [ then (', (x) => anchorKey(x), (n) => '[x](' + '('.repeat(n), 160_000);
+  assert.strictEqual(anchorKey('see [the link](https://x.test/a) and [b](c)'), 'see the link and b', 'links still give their text');
+  assert.strictEqual(anchorKey('[nested [b] text](u)'), anchorKey('[nested [b] text](u)'), 'nested brackets: left as they are, the same on both sides');
+}
+console.log('sessionsearch locate/anchorKey tests passed');
+
