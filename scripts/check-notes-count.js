@@ -193,7 +193,7 @@ module.exports = async (ctx) => {
     check(!!helper, `${tag}: the floor has a helper card (the precondition)`);
     if (helper) {
       await js(`document.querySelector(${jsLiteral(`#stage .helper[data-id="${helper}"]`)}).click()`);
-      check(await until(`document.body.classList.contains('panel-open')&&!!document.querySelector('#panel .panel-in.ro')`, 10000), `${tag}: a helper's chat is open (the precondition)`);
+      check(await until(`document.body.classList.contains('panel-open')&&!!document.querySelector('#panel .panel-in.helper-ro')`, 10000), `${tag}: a helper's chat is open (the precondition)`);
       check(await js(`!document.getElementById('ntCount')&&!document.getElementById('notesDrawer')&&document.querySelectorAll('#chat .nt-mark,#chat .nt-btn').length===0`), `${tag}: no count, no drawer and no marker in a helper's chat`);
     }
 
