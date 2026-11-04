@@ -328,6 +328,13 @@ for (const f of FILES) {
   assert.deepStrictEqual([doc.documentElement.dataset.ui, 'dark' in doc.documentElement.dataset, st.get('--surface')], ['retro', true, W.worldTokens('retro')['--surface']], 'the arcade shown');
   W.setWorld(null);
   assert.strictEqual(snap(doc), want3, 'leaving the arcade restores the theme exactly');
+  // #1144 (spec 097 FR-245): the photo office and the cave set their own plain chrome, so Retro Pixel's offset button shadows never reach them
+  W.setTheme('retro'); const want4 = snap(doc);
+  assert.strictEqual(doc.documentElement.dataset.ui, 'retro', 'Retro Pixel sets its UI style');
+  W.setWorld('photo');
+  assert.strictEqual(doc.documentElement.dataset.ui, 'clean', 'the photo office sets the plain UI style over the Retro theme');
+  W.setWorld(null);
+  assert.strictEqual(snap(doc), want4, 'leaving the photo office restores the theme exactly');
   g.document = undefined;
 }
 console.log(`theme tokens guard passed (${n} corpus checks, ${FILES.length} files under the ratchet)`);

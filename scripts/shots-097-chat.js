@@ -10,7 +10,8 @@
  *   - the header has no 32 px portrait with its lamp ring, dot and a cropped picture, or the lamp words ("Lamp warm, steady", ...) are not on the task line alone, whole beside a long task;
  *   - the tab order of the panel is not the flat office's (the same agent, same elements);
  *   - the panel surface is under 78 % opaque, or any text pair (title, lamp words, cards, hint) is under 4.5:1 against the composited surface (3:1 for large text);
- *   - text under 10.5 px.
+ *   - text under 10.5 px;
+ *   - (#1144, FR-245) with Retro Pixel picked as the theme, a header button (.btn) in the Photo office has an offset box-shadow (the arcade's hard 3px shadow); the theme comes back after.
  * Screenshots: <SHOTS_OUT>/<world>-chat-<w>x<h>.png, <world>-chatlimit-<w>x<h>.png.
  */
 const os = require('os');
@@ -86,6 +87,27 @@ module.exports = async (ctx) => {
       await H.settle();
       assert.strictEqual(await tabOrder(), tabsReal, `${tag}: the panel's tab order (outside the agent strip, whose states move) is the flat one`);
       assert.ok(!(await js(`!!document.querySelector('.ro-col,#roPortrait')`)), `${tag}: flat has neither column nor portrait`);
+    }
+
+    /* #1144 (spec 097 FR-245): Retro Pixel's hard offset shadow on .btn never reaches the Photo office */
+    if (world === 'photo') {
+      const pickTheme = async (id) => {
+        await H.js(`document.getElementById('settingsBtn').click()`);
+        const sel = `#thList [data-theme="${id}"]`;
+        await must(`!!document.querySelector(${jsLiteral(sel)})`, 'theme ' + id + ' in Settings');
+        await js(`document.querySelector(${jsLiteral(sel)}).click()`);
+        await must(`window.THEME.current().id===${jsLiteral(id)}`, 'theme ' + id + ' applied');
+        await js(`window.DurbarScreens.close()`);
+        await H.settle();
+      };
+      await H.load({ w, h, query: q(world), ready: REAL, settle: false });
+      const was = await js(`window.THEME.current().id`);
+      await pickTheme('retro');
+      await open('Mira');
+      const sh = await js(`(()=>{const b=[...document.querySelectorAll('#panel .btn')].filter(e=>e.getClientRects().length);return {ui:document.documentElement.dataset.ui,n:b.length,shadows:b.map(e=>getComputedStyle(e).boxShadow).filter(x=>x&&x!=='none')}})()`);
+      await pickTheme(was);
+      assert.ok(sh.n > 0, `${tag}: the chat header has buttons (${sh.n})`);
+      assert.deepStrictEqual([sh.ui, sh.shadows], ['clean', []], `${tag}: Retro Pixel theme in the Photo office: plain UI style and no offset shadow on .btn`);
     }
   }
   async function shot(world, name, w, h) { await H.shot(path.join(OUT, `${world}-${name}-${w}x${h}.png`), { prep: 'calm', settle: true, tag: 'chat', what: `${world}-${name}-${w}x${h}` }); }

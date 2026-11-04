@@ -1,0 +1,1 @@
+- **Real office buttons**: the chat header's buttons no longer show Retro Pixel's hard offset shadow in the Photo office or the cave (spec 097 FR-245, issue #1144); a world sets its own plain chrome style and leaving it gives the theme back. Checked by `test:theme-tokens` and `shots-097-chat` (simulator, Linux; not run on macOS or Windows).
