@@ -239,6 +239,17 @@ module.exports = async (ctx) => {
     await ok(`(document.querySelector('#stripList .sitem.sel')||{dataset:{}}).dataset.sw===${jsLiteral(inside)}`, `${tag}: ${inside}'s chat opens`);
     assert.strictEqual(await expanded(needG.key), 'true', `${tag}: opening a chat expands its folder`);
     assert.ok(await js(`(()=>{const r=document.querySelector('#stripList .sitem.sel'),l=document.getElementById('stripList');const a=r.getBoundingClientRect(),b=l.getBoundingClientRect();return r.getClientRects().length>0&&a.top>=b.top-1&&a.bottom<=b.bottom+1})()`), `${tag}: and its row is in view`);
+    // ---- the picture for the docs (features.md): a collapsed folder with its count and needs-you mark, 1440x900 ----
+    if (w === 1440) {
+      const cg = (await rows()).find((g) => g.ids.some((r) => r.tall) && !g.ids.some((r) => r.id === inside)) || (await rows()).find((g) => !g.ids.some((r) => r.id === inside));
+      await js(`__rail.head(${jsLiteral(cg.key)}).click()`);
+      await ok(`__rail.head(${jsLiteral(cg.key)}).getAttribute('aria-expanded')==='false'`, `${tag}: a folder collapsed for the picture`);
+      await js(`(()=>{const l=document.getElementById('stripList');l.scrollTop=0;})()`);
+      await H.shot(path.join(OUT, '005-rail-collapsed-1440x900.png'), { prep: 'calm', blur: true, tag: 'rail' });
+      await js(`__rail.head(${jsLiteral(cg.key)}).click()`);
+      await ok(`__rail.head(${jsLiteral(cg.key)}).getAttribute('aria-expanded')==='true'`, `${tag}: expanded again after the picture`);
+    }
+
     // a long folder name: ellipsis, title, no overflow
     const long = '<i>x</i>&amp;' + 'a-very-long-folder-name-that-goes-on-and-on-'.repeat(3); // markup in a name stays text
     assert.ok(await js(`window.__durbarSimUi.renameRoomElsewhere(${jsLiteral(needG.key)},${jsLiteral(long)})`), `${tag}: the folder is renamed`);
@@ -265,17 +276,6 @@ module.exports = async (ctx) => {
       if (await expanded(lastKey) === 'false') { await js(`__rail.head(${jsLiteral(lastKey)}).click()`); await ok(`__rail.head(${jsLiteral(lastKey)}).getAttribute('aria-expanded')==='true'`, `${tag}: expanded again`); }
       ctx.win.setContentSize(w, h);
       await ok(`innerHeight===${h}`, `${tag}: the window is back to its size`);
-    }
-
-    // ---- the picture for the docs (features.md): a collapsed folder with its count and needs-you mark, 1440x900 ----
-    if (w === 1440) {
-      const cg = (await rows()).find((g) => g.ids.some((r) => r.tall) && !g.ids.some((r) => r.id === inside)) || (await rows()).find((g) => !g.ids.some((r) => r.id === inside));
-      await js(`__rail.head(${jsLiteral(cg.key)}).click()`);
-      await ok(`__rail.head(${jsLiteral(cg.key)}).getAttribute('aria-expanded')==='false'`, `${tag}: a folder collapsed for the picture`);
-      await js(`(()=>{const l=document.getElementById('stripList');l.scrollTop=0;})()`);
-      await H.shot(path.join(OUT, '005-rail-collapsed-1440x900.png'), { prep: 'calm', blur: true, tag: 'rail' });
-      await js(`__rail.head(${jsLiteral(cg.key)}).click()`);
-      await ok(`__rail.head(${jsLiteral(cg.key)}).getAttribute('aria-expanded')==='true'`, `${tag}: expanded again after the picture`);
     }
 
     // ---- Your door (052 FR-216) ----
