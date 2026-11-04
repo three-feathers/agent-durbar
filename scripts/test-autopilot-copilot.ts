@@ -421,13 +421,44 @@ async function main(): Promise<void> {
     const on = r.ad.setAutopilot(r.sid, { limit: 5 });
     await until(() => asked, 'probe F: mode.set autopilot is in flight');
     const goal = r.ad.send(r.sid, { text: 'the goal' }).then(() => 'ok', (e: Error) => e.message);
-    await until(() => r.s.calls.filter((c) => c.name === 'send').length > sendsBefore || r.order().length > from, 'probe F: the goal send went or asked for a mode');
+    await tick();
+    assert.strictEqual(r.s.calls.filter((c) => c.name === 'send').length, sendsBefore, 'FR-059 probe F: the goal waits for the turn-on to settle');
     answer();
     await on;
     assert.strictEqual(await goal, 'ok', 'probe F: the goal is not refused');
     assert.ok(!r.order().slice(from).includes('mode:interactive'), 'FR-059 probe F: no mode.set interactive before a goal sent while Autopilot turns on');
     const sent = r.s.calls.filter((c) => c.name === 'send').map((c) => c.args[0] as { prompt: string; agentMode?: string }).map((x) => [x.prompt, x.agentMode ?? 'none']);
     assert.deepStrictEqual(sent.slice(1), [['the goal', 'autopilot']], 'probe F: the goal goes on Autopilot');
+  }
+
+  // FR-059 round 4 (review on #967, probe I): a goal sent while setAutopilot waits on mode.set autopilot, which then fails: the send waited,
+  // so no run starts, no Autopilot cap goes on, Autopilot reads off, and the message goes plain; the next plain message works as usual
+  {
+    const r = await rig({ cap: 100 });
+    const caps: unknown[] = [];
+    r.s.rpc.options.update = async (a: unknown) => { caps.push((a as { sessionLimits?: unknown }).sessionLimits); };
+    const set = r.s.rpc.mode.set.bind(r.s.rpc.mode);
+    let asked = false;
+    let refuse: () => void = () => undefined;
+    r.s.rpc.mode.set = () => { asked = true; r.s.rpc.mode.set = set; return new Promise((_res, rej) => { refuse = () => rej(new Error('mode refused')); }); };
+    const on = r.ad.setAutopilot(r.sid, { limit: 5, cap: 40 }).then(() => 'ok', (e: Error) => e.message);
+    await until(() => asked, 'probe I: mode.set autopilot is in flight');
+    const goal = r.ad.send(r.sid, { text: 'the goal' }).then(() => 'ok', (e: Error) => e.message);
+    await tick();
+    refuse();
+    assert.strictEqual(await on, 'mode refused', 'probe I: setAutopilot is refused');
+    assert.strictEqual(await goal, 'ok', 'probe I: the send is not refused');
+    const auto = (r.ad as unknown as { sessions: Map<string, { auto?: { on: boolean; settings?: unknown } }> }).sessions.get(r.sid)!.auto!;
+    assert.deepStrictEqual([auto.on, auto.settings], [false, undefined], 'FR-059 probe I: a rejected setAutopilot leaves Autopilot off');
+    assert.ok(!r.ap().some((e) => e.phase === 'started'), 'FR-059 probe I: no run starts on a turn-on that failed');
+    const sends = (): Array<[string, string]> => r.s.calls.filter((c) => c.name === 'send').map((c) => c.args[0] as { prompt: string; agentMode?: string }).map((x) => [x.prompt, x.agentMode ?? 'none']);
+    assert.deepStrictEqual(sends(), [['the goal', 'none']], 'probe I: the message goes plain, never as a goal');
+    assert.deepStrictEqual(caps, [], 'probe I: no Autopilot cap went on, so none is left');
+    fire(r.s, { type: 'session.idle', data: {} });
+    const from = r.order().length;
+    await r.ad.send(r.sid, { text: 'next' });
+    assert.deepStrictEqual(r.order().slice(from), ['send'], 'probe I: the next plain message goes as usual');
+    assert.deepStrictEqual(sends().at(-1), ['next', 'none']);
   }
 
   // FR-059 round 3 (review on #967, probe G): Autopilot's own mode.set fails while a plan send waits on mode.set plan: the plan send says

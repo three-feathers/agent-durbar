@@ -110,6 +110,8 @@ interface Live {
   planMode?: boolean;
   /** Spec 099 FR-059: bumped when `setAutopilot` turns Autopilot on, so a plan send that waited across it does not go on. */
   modeEpoch?: number;
+  /** Spec 099 FR-059: `setAutopilot`'s `mode.set autopilot` in flight (settles after its catch ran); a send waits for it, so no run starts on a mode that may fail. */
+  turningOn?: Promise<void>;
   /** MCP elicitations waiting for the user (spec 012 FR-151): request id -> waiter. */
   elicitations?: Map<string, ElicitWaiter>;
   /** The session's folders (spec 043: a profile file inside one is the repository's). */
@@ -1110,6 +1112,8 @@ export class CopilotAdapter implements AgentAdapter {
     await this.refreshing?.catch(() => undefined); // FR-158: send on the reconnected session
     const live = this.mustGet(sessionId);
     await live.sandboxApplying?.catch(() => undefined);
+    // spec 099 FR-059 (review on #967): a send during `setAutopilot`'s mode.set waits for it, so no run starts on a turn-on that then fails
+    await live.turningOn;
     // spec 099: refusals first, so a refused message leaves everything as it was; read again after a wait for a Stop's late calls (that Stop may have turned Autopilot off)
     const refusals = (): SendPlan => {
       const auto = live.auto?.on ? live.auto : undefined;
@@ -1212,14 +1216,23 @@ export class CopilotAdapter implements AgentAdapter {
     live.modeEpoch = (live.modeEpoch ?? 0) + 1;
     auto.turnOn({ ...settings, cap });
     this.autopilotUsed = true;
-    // FR-059 (review on #967): `autopilot` leaves plan mode, so a run's send (during this wait too) has no mode.set after its last check
+    // FR-059 (review on #967): `autopilot` leaves plan mode, so a run's send has no mode.set after its last check
     live.planMode = false;
+    const on = (async () => {
+      try {
+        await live.session.rpc.mode.set({ mode: 'autopilot' });
+      } catch (e) {
+        auto.settings = undefined; // a failed turn-on leaves Autopilot off
+        live.planMode = true; // the mode is not known (a plan send may have set `plan` meanwhile): the next plain send goes back to interactive first
+        throw e;
+      }
+    })();
+    const settled = on.catch(() => undefined);
+    live.turningOn = settled;
     try {
-      await live.session.rpc.mode.set({ mode: 'autopilot' });
-    } catch (e) {
-      auto.settings = undefined;
-      live.planMode = true; // the mode is not known (a plan send may have set `plan` meanwhile): the next plain send goes back to interactive first
-      throw e;
+      await on;
+    } finally {
+      if (live.turningOn === settled) live.turningOn = undefined;
     }
   }
 
