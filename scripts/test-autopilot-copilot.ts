@@ -7,7 +7,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { FakeClient, FakeCopilot } from './fakes/copilot-sdk';
 import type { FakeSession } from './fakes/copilot-sdk';
-import { COPILOT_CAPABILITIES, COPILOT_STOP_WAIT, COPILOT_TURN_ON_STOPPED, copilotTaskEnd } from '../src/adapters/copilot';
+import { COPILOT_CAPABILITIES, COPILOT_STEP_NO_ANSWER, COPILOT_STOP_WAIT, COPILOT_TURN_ON_STOPPED, copilotTaskEnd } from '../src/adapters/copilot';
 import { AUTOPILOT_ANSWER, CLOCK_SAMPLE_MS } from '../src/adapters/autopilot';
 import { AUTOPILOT_ONE_RUN, LINE_BACKSTOP, LINE_CAP_NOT_RESTORED, LINE_CLOSED, LINE_SELF_STARTED, LINE_UNCONFIRMED } from '../src/adapters/autopilotHost';
 import type { AutopilotTuning } from '../src/adapters/autopilotHost';
@@ -294,7 +294,7 @@ async function main(): Promise<void> {
       void p.then(() => live.lateCalls!.delete(p));
       return land;
     };
-    const r = await rig();
+    const r = await rig({ tuning: { waitMs: 2000 } });
     await r.ad.setAutopilot(r.sid, { limit: 5 });
     const land = hold(r);
     const sent = r.ad.send(r.sid, { text: 'after the stop' });
@@ -308,7 +308,7 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(s1.map((x) => [x.prompt, x.agentMode ?? 'none']), [['after the stop', 'none']], 'Autopilot went off during the wait: a plain message, not a goal');
     assert.ok(!r.ap().some((e) => e.phase === 'started'), 'no run started after Autopilot went off');
     // a Stop during the wait drops the message (FR-229), Autopilot or not
-    const q = await rig();
+    const q = await rig({ tuning: { waitMs: 2000 } });
     await q.ad.setAutopilot(q.sid, { limit: 5 });
     const land2 = hold(q);
     const sent2 = q.ad.send(q.sid, { text: 'dropped' });
@@ -322,7 +322,7 @@ async function main(): Promise<void> {
   // FR-059 (review on #967): Stop, or Autopilot off, while the Autopilot cap update waits (a gated fake, no timer): the session's own cap goes
   // back, no run starts, and the next Autopilot send is not refused. A Stop drops the message; Autopilot off alone sends it plain.
   for (const how of ['stop', 'off', 'stop-now', 'stop-slow'] as const) {
-    const r = await rig({ cap: 100 });
+    const r = await rig({ cap: 100, tuning: { waitMs: 2000 } });
     await r.ad.setAutopilot(r.sid, { limit: 5, cap: 40 });
     const caps: unknown[] = [];
     let open: () => void = () => undefined;
@@ -364,7 +364,7 @@ async function main(): Promise<void> {
 
   // FR-059 round 2 (review on #967, probe C): a Stop while the cap restore waits (Autopilot went off during the cap update) still drops the message
   {
-    const r = await rig({ cap: 100 });
+    const r = await rig({ cap: 100, tuning: { waitMs: 2000 } });
     await r.ad.setAutopilot(r.sid, { limit: 5, cap: 40 });
     const caps: unknown[] = [];
     const opens: Array<() => void> = [];
@@ -403,7 +403,7 @@ async function main(): Promise<void> {
   // FR-059 round 2 (review on #967, probes A and B): a plan-first turn left plan mode set; turning Autopilot on leaves plan mode, so the run's
   // send has no mode.set after its last check (A), and a Stop can no longer land in one (B)
   for (const probe of ['A', 'B'] as const) {
-    const r = await rig();
+    const r = await rig({ tuning: { waitMs: 2000 } });
     await r.ad.send(r.sid, { text: 'plan it', plan: true });
     fire(r.s, { type: 'session.idle', data: {} }); // the plan turn ends without a plan
     await r.ad.setAutopilot(r.sid, { limit: 5 });
@@ -429,7 +429,7 @@ async function main(): Promise<void> {
   // FR-059 round 2 (review on #967, probe E), queue since round 6: Autopilot turned on while a plan send waits on its own mode.set plan
   // waits its turn, so the plan goes as a plan, then Autopilot comes on and leaves plan mode: the next goal has no mode.set before it
   {
-    const r = await rig();
+    const r = await rig({ tuning: { waitMs: 2000 } });
     const set = r.s.rpc.mode.set.bind(r.s.rpc.mode);
     let asked = false;
     let answer: () => void = () => undefined;
@@ -544,7 +544,7 @@ async function main(): Promise<void> {
 
   // FR-059 round 6 (probe P): a plan turn left plan mode set; a plain message's reset to interactive waits; a Stop during it drops the message
   {
-    const r = await rig();
+    const r = await rig({ tuning: { waitMs: 2000 } });
     await r.ad.send(r.sid, { text: 'plan it', plan: true });
     fire(r.s, { type: 'session.idle', data: {} }); // the plan turn ends without a plan
     const set = r.s.rpc.mode.set.bind(r.s.rpc.mode);
@@ -563,7 +563,7 @@ async function main(): Promise<void> {
 
   // FR-059 round 6 (probe S2): a turn-on queued behind a send, and a Stop before its turn: the turn-on fails and sends no mode.set autopilot
   {
-    const r = await rig();
+    const r = await rig({ tuning: { waitMs: 2000 } });
     await r.ad.send(r.sid, { text: 'plan it', plan: true });
     fire(r.s, { type: 'session.idle', data: {} }); // plan mode left set, so the next plain send waits on mode.set interactive
     const set = r.s.rpc.mode.set.bind(r.s.rpc.mode);
@@ -654,10 +654,92 @@ async function main(): Promise<void> {
     assert.strictEqual(r.s.mode, 'interactive', 'probe L: the runtime ends in interactive');
   }
 
+  // FR-059 round 7 (probes H1 to H4): each runtime call of a send step is bounded (a gate never released, a 20 ms injected bound): the
+  // message is dropped with COPILOT_STEP_NO_ANSWER, what can be put back is, and the queue goes on (Autopilot off and a later send settle)
+  {
+    const sends = (r: Rig): Array<[string, string]> => r.s.calls.filter((c) => c.name === 'send').map((c) => c.args[0] as { prompt: string; agentMode?: string }).map((x) => [x.prompt, x.agentMode ?? 'none']);
+    // H1: the Autopilot cap update never answers: no run, the session's own cap is sent back, Autopilot off and the next message go
+    {
+      const r = await rig({ cap: 100, tuning: { waitMs: 20 } });
+      await r.ad.setAutopilot(r.sid, { limit: 5, cap: 40 });
+      const caps: unknown[] = [];
+      r.s.rpc.options.update = (a: unknown) => { caps.push((a as { sessionLimits?: unknown }).sessionLimits); return caps.length === 1 ? new Promise<void>(() => undefined) : Promise.resolve(); };
+      const goal = r.ad.send(r.sid, { text: 'the goal' }).then(() => 'ok', (e: Error) => e.message);
+      assert.strictEqual(await settles(goal, 'FR-059 probe H1: a cap update that never answers ends within its bound'), COPILOT_STEP_NO_ANSWER, 'probe H1: the message is dropped, and says why');
+      assert.deepStrictEqual(caps, [{ maxAiCredits: 40 }, { maxAiCredits: 100 }], 'FR-059 probe H1: the session\'s own cap is sent back');
+      assert.ok(!r.ap().some((e) => e.phase === 'started'), 'probe H1: no run');
+      await settles(r.ad.setAutopilot(r.sid, null), 'probe H1: the queue goes on: Autopilot off settles');
+      await settles(r.ad.send(r.sid, { text: 'next' }), 'probe H1: the queue goes on: the next message settles');
+      assert.deepStrictEqual(sends(r), [['next', 'none']]);
+    }
+    // H2: the cap restore never answers (Autopilot went off during the cap update): said, and the queue goes on
+    {
+      const r = await rig({ cap: 100, tuning: { waitMs: 20 } });
+      await r.ad.setAutopilot(r.sid, { limit: 5, cap: 40 });
+      const caps: unknown[] = [];
+      let open: () => void = () => undefined;
+      r.s.rpc.options.update = (a: unknown) => {
+        caps.push((a as { sessionLimits?: unknown }).sessionLimits);
+        if (caps.length === 1) return new Promise<void>((res) => { open = res; });
+        return caps.length === 2 ? new Promise<void>(() => undefined) : Promise.resolve();
+      };
+      const goal = r.ad.send(r.sid, { text: 'the goal' }).then(() => 'ok', (e: Error) => e.message);
+      await until(() => caps.length === 1, 'probe H2: the cap update is in flight');
+      const off = r.ad.setAutopilot(r.sid, null);
+      open();
+      await settles(goal, 'FR-059 probe H2: a cap restore that never answers ends within its bound');
+      assert.ok(r.lines().includes(LINE_CAP_NOT_RESTORED), 'FR-059 probe H2: the cap that could not be put back is said');
+      await settles(off, 'probe H2: the queue goes on: Autopilot off settles');
+      await settles(r.ad.send(r.sid, { text: 'next' }), 'probe H2: the queue goes on: the next message settles');
+    }
+    // H3: plan first, and mode.set plan never answers: dropped, no turn left open, and the next plain message resets the mode first
+    {
+      const r = await rig({ tuning: { waitMs: 20 } });
+      const set = r.s.rpc.mode.set.bind(r.s.rpc.mode);
+      r.s.rpc.mode.set = () => { r.s.rpc.mode.set = set; return new Promise(() => undefined); };
+      const plan = r.ad.send(r.sid, { text: 'plan it', plan: true }).then(() => 'ok', (e: Error) => e.message);
+      assert.strictEqual(await settles(plan, 'FR-059 probe H3: a mode.set plan that never answers ends within its bound'), COPILOT_STEP_NO_ANSWER, 'probe H3: the plan message is dropped, and says why');
+      assert.deepStrictEqual(sends(r), [], 'probe H3: nothing sent');
+      await settles(r.ad.setAutopilot(r.sid, { limit: 5 }), 'probe H3: the queue goes on: Autopilot on settles');
+      const from = r.order().length;
+      const next = r.ad.send(r.sid, { text: 'next goal' }).then(() => 'ok', (e: Error) => e.message);
+      assert.strictEqual(await settles(next, 'probe H3: the next goal settles'), 'ok', 'FR-059 probe H3: no turn was left open, so a goal is not refused');
+      assert.deepStrictEqual(sends(r), [['next goal', 'autopilot']]);
+      assert.deepStrictEqual(r.order().slice(from), ['send'], 'probe H3: Autopilot on left plan mode');
+    }
+    // H4: the reset to interactive (plan mode left set) never answers: dropped, plan mode still counts as set, and the next one tries again
+    {
+      const r = await rig({ tuning: { waitMs: 20 } });
+      await r.ad.send(r.sid, { text: 'plan it', plan: true });
+      fire(r.s, { type: 'session.idle', data: {} });
+      const set = r.s.rpc.mode.set.bind(r.s.rpc.mode);
+      r.s.rpc.mode.set = () => { r.s.rpc.mode.set = set; return new Promise(() => undefined); };
+      const plain = r.ad.send(r.sid, { text: 'plain' }).then(() => 'ok', (e: Error) => e.message);
+      assert.strictEqual(await settles(plain, 'FR-059 probe H4: a reset to interactive that never answers ends within its bound'), COPILOT_STEP_NO_ANSWER, 'probe H4: dropped, and says why');
+      const from = r.order().length;
+      await settles(r.ad.send(r.sid, { text: 'again' }), 'probe H4: the queue goes on');
+      assert.deepStrictEqual(r.order().slice(from), ['mode:interactive', 'send'], 'FR-059 probe H4: plan mode still counts as set, so the next message resets it first');
+    }
+  }
+
+  // FR-059 round 7 (probe H5): a turn-on that timed out and never answers stops counting as Durbar's own one bound later, so a loop the
+  // runtime starts after that still gets its FR-006 line
+  {
+    const r = await rig({ tuning: { waitMs: 20 } });
+    const set = r.s.rpc.mode.set.bind(r.s.rpc.mode);
+    r.s.rpc.mode.set = () => { r.s.rpc.mode.set = set; return new Promise(() => undefined); };
+    assert.match(await settles(r.ad.setAutopilot(r.sid, { limit: 5 }).then(() => 'ok', (e: Error) => e.message), 'probe H5: the turn-on times out'), /did not answer in time/);
+    const live = (r.ad as unknown as { sessions: Map<string, { ownTurnOn?: boolean }> }).sessions.get(r.sid)!;
+    assert.strictEqual(live.ownTurnOn, true, 'probe H5: right after the timeout, a late answer is still ours');
+    await until(() => live.ownTurnOn === false, 'FR-059 probe H5: one bound after the timeout the turn-on is forgotten');
+    fire(r.s, { type: 'session.mode_changed', data: { newMode: 'autopilot', previousMode: 'interactive' } });
+    await until(() => r.lines().includes(LINE_SELF_STARTED), 'FR-059 probe H5: a later loop the runtime starts gets its FR-006 line');
+  }
+
   // FR-059 round 3 (review on #967, probe G), queue since round 6: Autopilot's own mode.set fails after a plan send ahead of it: the plan
   // went as a plan, and plan mode counts as set, so the next plain message goes back to interactive first
   {
-    const r = await rig();
+    const r = await rig({ tuning: { waitMs: 2000 } });
     const set = r.s.rpc.mode.set.bind(r.s.rpc.mode);
     let asked = false;
     let answer: () => void = () => undefined;
@@ -680,7 +762,7 @@ async function main(): Promise<void> {
 
   // spec 099 2026-11-04 (review on #967, mutant C2): Stop's Autopilot branch runs inside FR-229's stop sequence, so a send during it waits
   for (const running of [true, false]) {
-    const r = await rig();
+    const r = await rig({ tuning: { waitMs: 2000 } });
     await r.ad.setAutopilot(r.sid, { limit: 5 });
     if (running) await r.ad.send(r.sid, { text: 'goal' });
     const before = r.s.calls.filter((c) => c.name === 'send').length;
