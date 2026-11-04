@@ -23,7 +23,7 @@ w('scripts/trusted-authors.txt', fs.readFileSync(path.join(ROOT, 'scripts/truste
 w('scripts/check-posts.js', '// placeholder\n');
 w('specs/104-x/spec.md', '# x\n');
 w('docs/site/unreleased.json', JSON.stringify({ phrases: ['Zebra Moonbase'] }));
-w('docs/site/blocked-hashes.json', JSON.stringify({ sha256: [cp.hashName('blocked-standin.example.invalid'), cp.hashName('quokkacorp')] }));
+w('docs/site/blocked-hashes.json', JSON.stringify({ sha256: [cp.hashName('blocked-standin.example.invalid'), cp.hashName('quokkacorp'), cp.hashName('wombat-tea-house')] })); // a 3-part stand-in: none of its 2-part runs is blocked
 w('docs/site/captions/clip-a.vtt', 'WEBVTT\n\n00:00.000 --> 00:02.000\nHello\n');
 const H64 = 'cd'.repeat(32);
 const media = { files: [
@@ -441,6 +441,14 @@ function cli() {
     const c = process.cpuUsage(t0);
     assert.ok((c.user + c.system) / 1e6 < 20, `240 KB of ${what} as one paragraph stays inside the CI job (${((c.user + c.system) / 1e6).toFixed(1)} s CPU)`);
   }
+}
+
+// review of PR #1106, round 6: a blocked name of 3 parts inside a longer hyphenated word, in text and in a file name
+{
+  fails({ [P]: post(front(), body('The foo-wombat-tea-house-bar build.')) }, 'blocked', 'a 3-part blocked label in the middle of a hyphenated word');
+  check({ '2026-11-01-x-wombat-tea-house-y.md': post(front({ date: '2026-11-01', writtenOn: '2026-11-01' })) });
+  const r = cli();
+  assert.ok(!/wombat/i.test(r.out) && /withheld/.test(r.out), `a 3-part blocked label in a file name is withheld under CI=1: ${r.out.slice(0, 200)}`);
 }
 
 // every rule has a fixture above (a rule with none would be a rule no test can kill)
