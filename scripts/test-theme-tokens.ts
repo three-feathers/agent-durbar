@@ -335,6 +335,10 @@ for (const f of FILES) {
   assert.strictEqual(doc.documentElement.dataset.ui, 'clean', 'the photo office sets the plain UI style over the Retro theme');
   W.setWorld(null);
   assert.strictEqual(snap(doc), want4, 'leaving the photo office restores the theme exactly');
+  W.setWorld('cave');
+  assert.strictEqual(doc.documentElement.dataset.ui, 'clean', 'the cave sets the plain UI style over the Retro theme');
+  W.setWorld(null);
+  assert.strictEqual(snap(doc), want4, 'leaving the cave restores the theme exactly');
   g.document = undefined;
 }
 console.log(`theme tokens guard passed (${n} corpus checks, ${FILES.length} files under the ratchet)`);
