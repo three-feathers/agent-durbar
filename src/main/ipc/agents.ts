@@ -110,6 +110,7 @@ export function register(deps: AgentsIpcDeps): void {
   // #1080, item 2). A wait ended on an idle chat is not interrupted: an interrupt with no turn would leave the app expecting an abort
   // (Claude Code's abortExpected) and swallow the next real error (third review of PR #1080).
   ipcHandle('agents:stop', (_e, id: string) => {
+    if (typeof id === 'string') scheduler()?.stopPassFor(id); // spec 072 FR-007: Stop during a loop pass ends the loop; between passes it stops only that turn
     const ended = typeof id === 'string' && deps.mcpStopWait?.(id) === true;
     if (ended && !(deps.mcpBusy?.(id) ?? false)) return undefined;
     return stopTurnOp(opsDeps, id);
@@ -117,6 +118,7 @@ export function register(deps: AgentsIpcDeps): void {
 
   /** End session (spec 005): remote control off first (spec 054 FR-011: off on GitHub too), then the adapter frees the session. Also Restart session's first step (spec 058 FR-022). */
   const endSession = async (id: string): Promise<void> => {
+    scheduler()?.stopLoopFor(id, 'session'); // spec 072 FR-007: End session (and Restart session's first step) ends the session's loop
     try {
       await endSessionOp({ release: (k) => remoteOps.release(k), router }, id);
     } finally {

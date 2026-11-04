@@ -129,6 +129,10 @@ Header actions: **Stop** (interrupt the turn; the agent stays ready), **End sess
 
 **Driver bounds** `[IMPLEMENTED]` `sim:` The turn samples count painted frames, not seconds (a sample runs until its time and its minimum frame count are both reached), find-in-page is asked again until it finds the token, and the "as tall as with the rule off" check allows 2 px at 1 device pixel per CSS pixel and, above 1 (a Retina Mac; `UI_SUITE_DPR=2` forces it on any OS), 2 px plus 1/64 px per message (layout-unit precision; 63 px for 4,004 messages, 31 px seen at 2x). Nothing else is loosened.
 
+### 2026-11-04: `check-chat-visibility` runs one size per ui-suite entry (issue #1127, driver only)
+
+**Driver split** `[IMPLEMENTED]` `sim:` The driver took more than the suite's 600 s limit on a slow runner with both sizes in one process (CI run 41769615163). `scripts/ui-suite.js` now has two entries, `check-chat-visibility 1440` and `check-chat-visibility 1280` (`CVONLY=1440|1280`, a normal run that can pass), each with its own limit and slot (spec 008 FR-063). Every case and assertion runs at both sizes as before; `--only check-chat-visibility` runs both. With two sizes at once on one machine a neighbour's window could hold the OS focus and Tab moved nothing (seen 3 of 3 pairs), so the driver asks `H.focusPage()` for the page focus before each Tab and waits for the move; a Tab is tried again (3 times) only after a trusted window blur, else it fails naming the blur count and `hasFocus` (the `osRetry` pattern of `check-status-tooltip.js`). The Copy check compares with `\r\n` turned into `\n` on both sides (Windows' clipboard), its length bound unchanged, and waits until both end tokens are in the copy.
+
 ### 2026-10-31: MCP context cost (spec 100)
 
 **FR-052**: the token summary adds an *MCP tools* bar when a report exists, labelled as estimated when it is; the MCP chip adds the tokens (FR-053). Owned by [spec 100](../100-mcp-context/spec.md) FR-010, FR-013.

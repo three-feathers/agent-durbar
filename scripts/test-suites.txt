@@ -51,6 +51,7 @@ test:simevents
 test:copilotmodel
 test:copilotoneshot
 test:copilotcap
+test:copilot-tmpdir
 test:mcpsession
 test:mcpcall
 test:mcpsignin
@@ -102,6 +103,7 @@ test:checkpoints
 test:ipcchannels
 test:planmode
 test:probe
+test:autofollow
 test:openwith
 test:liveact
 test:names
