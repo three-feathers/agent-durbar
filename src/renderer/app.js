@@ -934,9 +934,7 @@ function sideHTML(a){
 function paintLive(a){
   const st=$('stage'); if(!st)return;
   const id=CSS.escape(a.id), r=liveShown(a);
-  const moved=new Set(); /* issue 1135: a new line of text can change the card's height and move the names of its room */
-  st.querySelectorAll(`[data-live="${id}"]`).forEach(el=>{const t=deskLine(a);if(el.textContent!==t){el.textContent=t;if(GROW)fitSide(el);const rm=el.closest('.room');if(rm)moved.add(rm);}const k=LIVE_SIDE||!r?'':r.kind;if((el.dataset.lk||'')!==k){if(k)el.dataset.lk=k;else delete el.dataset.lk;}});
-  moved.forEach(rm=>rm.querySelectorAll('.ren[data-ren]').forEach(b=>{if(REN_AT.get(b)!==nameAt(b))placeRen(b);})); /* only the pencils whose name moved */
+  st.querySelectorAll(`[data-live="${id}"]`).forEach(el=>{const t=deskLine(a);if(el.textContent!==t){el.textContent=t;if(GROW)fitSide(el);renSoon(el);}const k=LIVE_SIDE||!r?'':r.kind;if((el.dataset.lk||'')!==k){if(k)el.dataset.lk=k;else delete el.dataset.lk;}});
   const sp=st.querySelector(`[data-side="${id}"]`);
   if(sp){const k=r?r.kind:'',w=r?window.DurbarLiveAct.KIND_WORD[k]||'':'',t=r?r.lines:'';
     sp.classList.toggle('is-empty',!r);if((sp.dataset.lk||'')!==k){if(k)sp.dataset.lk=k;else delete sp.dataset.lk;}
@@ -8347,6 +8345,18 @@ function startFolderEdit(r,surface,from){
 /* spec 059 (issue 1135): where each pencil's name was when it was placed. A live paint (paintLive) writes a card's text without a render, and a
    new line can move the names of its room: such a pencil is placed again, so it never stays on the line below */
 const REN_AT=new WeakMap();
+/* review of #1138: paintLive is the hot path, so it never reads layout for the pencils. It queues the lines it rewrote, and one animation frame per
+   paint burst reads first (each line's height against the height it had: most new text does not wrap), then the names of the rooms whose line
+   changed height, and only then places the pencils whose name moved (placeRen writes) */
+const LIVE_H=new WeakMap(), REN_PEND=new Set(); let renFrame=0;
+function renSoon(el){REN_PEND.add(el);if(!renFrame)renFrame=requestAnimationFrame(renFlush);}
+function renFlush(){
+  renFrame=0; const rooms=new Set();
+  for(const el of REN_PEND){if(!el.isConnected)continue;const h=el.offsetHeight;if(LIVE_H.get(el)!==h){LIVE_H.set(el,h);const rm=el.closest('.room');if(rm)rooms.add(rm);}} /* a line seen for the first time counts as changed */
+  REN_PEND.clear();
+  const due=[]; rooms.forEach(rm=>rm.querySelectorAll('.ren[data-ren]').forEach(b=>{if(REN_AT.get(b)!==nameAt(b))due.push(b);}));
+  due.forEach(placeRen);
+}
 const nameAt=b=>{const d=b.parentElement&&b.parentElement.querySelector(':scope>.desk[data-id],:scope>.lrow[data-id]'),n=d&&d.querySelector('.name,.lnm,.room-name');if(!n)return '';const r=n.getBoundingClientRect();return Math.round(r.left*2)+','+Math.round(r.top*2)+','+Math.round(r.width*2);};
 /* The pencil of a card or row sits at the end of the name (after the mode icon); when that would cover another part of it
    (status word, pill, badge, chat number, draft mark) it sits over the tail of the name instead. It takes no layout space (positioned).
