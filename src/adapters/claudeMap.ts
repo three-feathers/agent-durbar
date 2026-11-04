@@ -500,8 +500,9 @@ export class ClaudeMapper {
       // Spec 058 FR-060/FR-063: judge the whole text before the output cut, only for a failed MCP tool call
       const mcpAuth = b.is_error === true && !!meta.mcpServer && isMcpAuthChallenge(text);
       this.emit({ type: 'toolCall', callId: b.tool_use_id, ...meta, phase: b.is_error === true ? 'failed' : 'complete', output: cap(text), ...(mcpAuth ? { mcpAuth: true as const } : {}), agentId });
-      // The sub-agent tool's own result closes its helper if no task_notification did; a background helper's result is only its launch (FR-018).
-      if (isSubagentTool(meta.tool) && !this.backgroundSubagents.has(b.tool_use_id) && this.closeSubagent(b.tool_use_id)) this.emit({ type: 'subagent', subagentId: b.tool_use_id, phase: b.is_error === true ? 'failed' : 'completed', ...(b.is_error === true ? { error: cap(textOf(b.content)) ?? 'failed' } : {}), agentId });
+      // The sub-agent tool's own result closes its helper if no task_notification did; a background helper's result is only its launch (FR-018),
+      // unless the launch itself failed: then it ends as failed with the error (review of #1160).
+      if (isSubagentTool(meta.tool) && (b.is_error === true || !this.backgroundSubagents.has(b.tool_use_id)) && this.closeSubagent(b.tool_use_id)) this.emit({ type: 'subagent', subagentId: b.tool_use_id, phase: b.is_error === true ? 'failed' : 'completed', ...(b.is_error === true ? { error: cap(textOf(b.content)) ?? 'failed' } : {}), agentId });
     }
   }
 

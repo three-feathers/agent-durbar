@@ -174,6 +174,16 @@ for (const f of files) {
   assert.deepStrictEqual(subs([start('tB', true), { type: 'system', subtype: 'task_started', task_id: 'kB', tool_use_id: 'tB' }, result('tB'), { type: 'result', subtype: 'success' }, { type: 'system', subtype: 'task_notification', task_id: 'kB', status: 'stopped' }]), ['tB:started:bg', 'tB:failed'], 'by task_id, after the turn ended; stopped is failed');
   assert.deepStrictEqual(subs([start('tF', false), result('tF')]), ['tF:started', 'tF:completed'], 'run_in_background false: the tool result still closes it');
   assert.deepStrictEqual(subs([start('tS', 'true'), result('tS')]), ['tS:started', 'tS:completed'], 'only a real true is background');
+  // review of #1160: a failed launch ends a background helper as failed, with its error, and leaves nothing open
+  {
+    const outF: EventBody[] = [];
+    const mF = new ClaudeMapper((x) => outF.push(x));
+    mF.map(start('tE', true));
+    mF.map({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'tE', is_error: true, content: 'could not start the agent' }] } });
+    const ev = outF.filter((e) => e.type === 'subagent').map((e) => (e.type === 'subagent' ? `${e.phase}:${e.error ?? ''}` : ''));
+    assert.deepStrictEqual(ev, ['started:', 'failed:could not start the agent'], 'a background helper whose launch failed ends as failed with the error');
+    assert.strictEqual(mF.stats().openSubagents, 0, 'a failed background launch leaves no open helper');
+  }
   const out: EventBody[] = [];
   const m = new ClaudeMapper((b) => out.push(b));
   m.map(start('tR', true)); m.map(result('tR'));
