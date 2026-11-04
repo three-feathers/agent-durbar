@@ -140,6 +140,20 @@ export class SettingsStore {
     return this.commit(next) ? { ok: true, value: v } : { ok: false, value: this.chatLinksNewTab };
   }
 
+  /** Spec 001 FR-192: *Still highlights (no motion)*, off by default. */
+  get stillHighlights(): boolean {
+    return this.s.stillHighlights === true;
+  }
+
+  /** Only a real boolean changes it; the default (off) is not written. `ok` only when the write reached disk (a failed write is not ok even when the value did not change); `value` the one in force (#1094). */
+  setStillHighlights(v: unknown): Saved<boolean> {
+    if (typeof v !== 'boolean') return { ok: false, value: this.stillHighlights };
+    const next: AppSettings = { ...this.s };
+    if (v) next.stillHighlights = true;
+    else delete next.stillHighlights;
+    return this.commit(next) ? { ok: true, value: v } : { ok: false, value: this.stillHighlights };
+  }
+
   /** Serious mode (spec 034): off by default. */
   get seriousMode(): boolean {
     return this.s.seriousMode === true;
@@ -152,6 +166,20 @@ export class SettingsStore {
     if (v) next.seriousMode = true;
     else delete next.seriousMode;
     return this.commit(next) ? { ok: true, value: v } : { ok: false, value: this.seriousMode };
+  }
+
+  /** Auto-follow work (spec 052 FR-182, issue 686): off by default; only `true` is written. */
+  get autoFollowWork(): boolean {
+    return this.s.autoFollowWork === true;
+  }
+
+  /** Only a real boolean changes it; anything else keeps the current value. Returns `{ ok, value }`: `ok` only when the write reached disk, `value` the one in force (issue #1094). */
+  setAutoFollowWork(v: unknown): Saved<boolean> {
+    if (typeof v !== 'boolean') return { ok: false, value: this.autoFollowWork };
+    const next: AppSettings = { ...this.s };
+    if (v) next.autoFollowWork = true;
+    else delete next.autoFollowWork;
+    return this.commit(next) ? { ok: true, value: v } : { ok: false, value: this.autoFollowWork };
   }
 
   /** Spec 087 FR-007c: the apps with *Always continue on this computer* stored. */

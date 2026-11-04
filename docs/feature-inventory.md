@@ -14,7 +14,7 @@ One row per thing a user can do or see. [features.md](features.md) stays the use
 | Helpers (sub-agents): card, tree, own chat, needs you | works | missing, only `+N` and 3 dots; planned as small figures beside the desk (owner idea, spec delta pending) | planned | 001 015 097 | test:helpercard read:src/renderer/realoffice.js |
 | Live activity on the desk | works | in PR 097-p2-screens | mock+planned (live-screen) | 001 097 | test:liveact driver:shots-001-live-activity |
 | Model, tokens, cost, context, last tool on the desk | works | missing | none | 019 097 | test:ctxbreakdown read:src/renderer/realoffice.js |
-| Unread "New", draft, question marks | works | missing | none | 001 005 | test:unread read:src/renderer/realoffice.js |
+| Unread "New", draft, question marks | works | planned New reply tag and green light bar (097 FR-237, FR-238); draft and question marks missing | none | 001 005 | test:unread read:src/renderer/realoffice.js |
 | Hover card | works | missing, tooltip only | none | 001 097 | test:tooltip read:src/renderer/realoffice.js |
 | Drag to rearrange rooms, desks, places | works | missing | none | 033 | test:roomorder driver:shots-033-order |
 | Rename a session (F2, pencil) | works | works F2 and menu, no pencil | none | 059 | test:sessionname read:src/renderer/app.js |
@@ -26,10 +26,11 @@ One row per thing a user can do or see. [features.md](features.md) stays the use
 | Status pills as filters | works | works | none | 001 | driver:shots-001-welcome read:src/renderer/app.js |
 | Room doors (cabin signs) | missing, removed by owner decision (#954) | missing, removed | none | 017 | driver:check-no-doors |
 | Waiting desk halo (a still glow behind the screen) | works, still since #1057 | missing, the worlds have their own lights | none | 001 | driver:check-001-halo |
+| Still highlights (no motion): Settings > Highlights | works | works, the whole room stands still | none | 001 | test:stillhighlights driver:check-unread |
 | Simple / Expert switch and the "Do you write code?" question | missing, removed by owner decision (#1060) | missing, removed | none | 052 | driver:shots-052-ux |
 | Old app-level MCP servers in the folder extras dialog | missing, removed (#1058) | missing, removed | none | 020 | driver:shots-m10 |
 | Room menu: New session, Schedules, Rename, Cost, Move | works | works on the folder sign | none | 001 006 | driver:shots-005-cardmenu read:src/renderer/realoffice.js |
-| Full-screen chat, other agents in a strip | works | works, in PR 097-chat-in-world for the world's own frame | mock+planned (chat-open) | 005 | test:innerscroll driver:shots-005-cardmenu |
+| Full-screen chat, other agents in the rail (List, folders collapse) | works | works, in PR 097-chat-in-world for the world's own frame (rail not checked there) | mock+planned (chat-open) | 005 | test:innerscroll test:railorder driver:check-rail driver:shots-005-cardmenu |
 | Reopening a long chat is fast: older messages are skipped until near the view; the end is followed while a turn streams | works, simulator only | works, chat only (window chrome, no office drawing); not checked with a world on | none | 005 | driver:check-chat-visibility |
 | Thinking, tool calls, Markdown | works | works | mock+planned (chat-shell) | 015 016 | test:markdown test:events |
 | File edits as they happen, Undo these changes | works | works | none | 065 | test:edits test:checkpoints |

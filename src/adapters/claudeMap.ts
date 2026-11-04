@@ -150,6 +150,8 @@ export class ClaudeMapper {
   private thinkingStreamed = new Set<string>();
   /** Sub-agents started and not yet closed (by `task_notification` or by the Agent tool's own result): each gets exactly one closing event. */
   private openSubagents = new Set<string>();
+  /** Spec 015 FR-018: open sub-agents started with `run_in_background: true`; their tool result is a launch note, so only `task_notification` closes them. */
+  private backgroundSubagents = new Set<string>();
   /** Spec 005 FR-019: streamed arguments of file-changing tool_use blocks, and stream block index -> tool_use id per stream. */
   private edits = new EditStreams();
   private blockIds = new Map<string, string>();
@@ -196,6 +198,7 @@ export class ClaudeMapper {
     this.tools.clear();
     this.tasks.clear();
     this.openSubagents.clear();
+    this.backgroundSubagents.clear();
     this.streamMessage.clear();
     this.thinkingStreamed.clear();
     this.edits.clear();
@@ -364,6 +367,7 @@ export class ClaudeMapper {
   /** Mark a sub-agent closed and drop its task table entries; false when it was not open (already closed or never started). */
   private closeSubagent(id: string): boolean {
     if (!this.openSubagents.delete(id)) return false;
+    this.backgroundSubagents.delete(id);
     for (const [task, tool] of this.tasks) if (tool === id) this.tasks.delete(task);
     return true;
   }
@@ -439,8 +443,10 @@ export class ClaudeMapper {
           this.emit({ type: 'toolCall', callId, ...meta, phase: early ? 'update' : 'start', args: b.input, ...(edit ? { edit } : {}), agentId });
           if (isSubagentTool(name) && !this.openSubagents.has(callId)) {
             this.openSubagents.add(callId);
-            const input = (b.input ?? {}) as { prompt?: unknown; description?: unknown; subagent_type?: unknown };
-            this.emit({ type: 'subagent', subagentId: callId, phase: 'started', task: str(input.prompt) ?? str(input.description), agentName: str(input.subagent_type), agentId });
+            const input = (b.input ?? {}) as { prompt?: unknown; description?: unknown; subagent_type?: unknown; run_in_background?: unknown };
+            const background = input.run_in_background === true;
+            if (background) this.backgroundSubagents.add(callId);
+            this.emit({ type: 'subagent', subagentId: callId, phase: 'started', task: str(input.prompt) ?? str(input.description), agentName: str(input.subagent_type), ...(background ? { background: true } : {}), agentId });
           }
         }
       } catch (e) {
@@ -494,8 +500,9 @@ export class ClaudeMapper {
       // Spec 058 FR-060/FR-063: judge the whole text before the output cut, only for a failed MCP tool call
       const mcpAuth = b.is_error === true && !!meta.mcpServer && isMcpAuthChallenge(text);
       this.emit({ type: 'toolCall', callId: b.tool_use_id, ...meta, phase: b.is_error === true ? 'failed' : 'complete', output: cap(text), ...(mcpAuth ? { mcpAuth: true as const } : {}), agentId });
-      // The sub-agent tool's own result closes its helper if no task_notification did.
-      if (isSubagentTool(meta.tool) && this.closeSubagent(b.tool_use_id)) this.emit({ type: 'subagent', subagentId: b.tool_use_id, phase: b.is_error === true ? 'failed' : 'completed', ...(b.is_error === true ? { error: cap(textOf(b.content)) ?? 'failed' } : {}), agentId });
+      // The sub-agent tool's own result closes its helper if no task_notification did; a background helper's result is only its launch (FR-018),
+      // unless the launch itself failed: then it ends as failed with the error (review of #1160).
+      if (isSubagentTool(meta.tool) && (b.is_error === true || !this.backgroundSubagents.has(b.tool_use_id)) && this.closeSubagent(b.tool_use_id)) this.emit({ type: 'subagent', subagentId: b.tool_use_id, phase: b.is_error === true ? 'failed' : 'completed', ...(b.is_error === true ? { error: cap(textOf(b.content)) ?? 'failed' } : {}), agentId });
     }
   }
 

@@ -44,7 +44,7 @@ module.exports = async (ctx) => {
   const ada = await idOf('Ada'); assert.ok(ada, 'Ada is on the floor');
   await click(`#stage [data-id="${ada}"]`); await ctx.sleep(1000);
   await ctx.js(`(()=>{const t=document.querySelector('.prev-toggle[aria-expanded="true"]');if(t)t.click();})()`); await ctx.sleep(400);
-  await ctx.js(`(()=>{const c=document.getElementById('chat');if(c)c.scrollTop=0;const s=document.querySelector('.strip .sitem');if(s&&s.parentElement)s.parentElement.scrollLeft=0;})()`); await ctx.sleep(400);
+  await ctx.js(`(()=>{const c=document.getElementById('chat');if(c)c.scrollTop=0;const s=document.getElementById('stripList');if(s)s.scrollTop=0;})()`); await ctx.sleep(400);
   assert.match(await text('#modeChip'), /Read-only/, 'the mode chip is in the header');
   await shot('m6-fullchat-sim15-1440x900.png');
 };
