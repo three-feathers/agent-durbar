@@ -477,9 +477,7 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
     }
     assert.strictEqual(rn.TEST_TAG_RE.exec('v0.1.0-alpha.15-test.3')[1], '0.1.0-alpha.15', 'the base version is the tag without -test.N');
   }
-  if (!process.features.typescript) {
-    console.log('test-changelog: test-build notes skipped (this Node has no type stripping, so src/shared/redact.ts cannot load; CI runs them)');
-  } else {
+  { // spec 104 FR-080: the masker loads on every Node that engines allows (type stripping, else compiled now), so this runs everywhere
     const { redact, cut } = rn.loadRedact();
     const TOKEN = `ghp_${'Ab1'.repeat(12)}`;
     const LONG = `Long subject with ${TOKEN} inside ${'word '.repeat(60)}end`;
@@ -541,13 +539,14 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
       execFileSync(process.execPath, [path.join(__dirname, 'release-notes.js'), '--root', d, '--tag', topts.tag, '--repo', opts.repo, '--main-ref', 'refs/heads/main', '--out', out, '--title-out', title], { env: gitEnv, stdio: 'ignore' });
       assert.strictEqual(fs.readFileSync(out, 'utf8'), r.notes);
       assert.strictEqual(fs.readFileSync(title, 'utf8'), 'Agent Durbar v0.1.0-alpha.11-test.1 (test build)\n');
-      // fail closed: without type stripping redact.ts cannot load, and there are no notes rather than unmasked ones
+      // fail closed: with no way to load redact.ts, there are no notes rather than unmasked ones
       fs.rmSync(out);
       let failed;
       try {
-        execFileSync(process.execPath, ['--no-experimental-strip-types', path.join(__dirname, 'release-notes.js'), '--root', d, '--tag', topts.tag, '--repo', opts.repo, '--main-ref', 'refs/heads/main', '--out', out], { env: gitEnv, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+        // spec 104 FR-080: no type stripping AND no compiler (DURBAR_REDACT_NO_COMPILE=1, as if typescript were not installed): nothing can mask
+        execFileSync(process.execPath, [...(process.features.typescript ? ['--no-experimental-strip-types'] : []), path.join(__dirname, 'release-notes.js'), '--root', d, '--tag', topts.tag, '--repo', opts.repo, '--main-ref', 'refs/heads/main', '--out', out], { env: { ...gitEnv, DURBAR_REDACT_NO_COMPILE: '1' }, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
       } catch (e) { failed = e; }
-      assert.ok(failed && failed.status === 1 && /masked with src\/shared\/redact\.ts, which needs Node 22\.18/.test(failed.stderr), 'no redaction: refused');
+      assert.ok(failed && failed.status === 1 && /masked with src\/shared\/redact\.ts, which could not be loaded/.test(failed.stderr), 'no redaction: refused');
       assert.ok(!fs.existsSync(out), 'no redaction: no notes file');
       // the version: package.json must be the tag without -test.N
       g(d, 'tag', '-a', '-m', 'test', 'v0.1.0-alpha.12-test.1');

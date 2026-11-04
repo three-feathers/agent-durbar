@@ -704,7 +704,7 @@ async function main(): Promise<void> {
 
   // ---- FR-021a (K15): a shell request in Ask first with the floor on carries the card's own sandbox line; nothing else does ----
   {
-    const NOTE = 'If you approve, Copilot’s sandbox may still let this write outside the folder (seen on Linux, 2026-10-25).';
+    const NOTE = 'If you approve, this can also write in Copilot’s temp folder (a private one Durbar gives it), not only this folder.';
     type Decide = (r: unknown) => Promise<{ kind: string }>;
     const pendingOf = (ev: AgentEvent[], sid: string, id: string) => ev.map((e) => (e.type === 'status' && e.sessionId === sid ? e.permission : undefined)).find((p) => p?.requestId === id && p.state === 'pending');
     const ask = async (m: ReturnType<typeof make>, sid: string, req: Record<string, unknown>) => {

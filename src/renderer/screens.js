@@ -350,6 +350,10 @@
     const notifySec=X.bridge.setNotifyNeedsMe&&X.isNotify?`<section class="scr-sec" aria-labelledby="ntfH"><h3 id="ntfH">Notifications</h3>
         <p class="scr-note">While Agent Durbar is in the background, one notification tells you when an agent asks for permission, asks a question, reaches its spending limit or hits an error. It shows only the agent's name and a short summary of the request, never file contents. The window title and the app icon show how many need you.</p>
         <div class="scr-tools"><span class="swrow" style="display:flex;align-items:center;gap:10px"><b>Notify me when an agent needs me (when Durbar is in the background)</b>${sw(!!X.isNotify(),'Notify me when an agent needs me (when Durbar is in the background)','id="notifySw"')}</span><span class="scr-note small" id="notifyMsg" role="status"></span></div></section>`:'';
+    /* spec 052 FR-182 (issue 686): Auto-follow work, off by default; its pause is on the strip, not here */
+    const followSec=X.bridge.setAutoFollowWork&&X.autoFollow?`<section class="scr-sec" aria-labelledby="afH"><h3 id="afH">Auto-follow work</h3>
+        <p class="scr-note">After you send a message, Durbar can take you back to the office and mark that agent's desk, then open its chat when it finishes, asks you something, hits an error or reaches its limit. It never allows, denies or answers anything for you, and it waits while you type, have a dialog or menu open, or are reading an older part of a chat. A strip under the top bar shows where it stands, with Previous and Next for the agents that need you, and a Pause button. Off by default; kept on this computer.</p>
+        <div class="scr-tools"><span class="swrow" style="display:flex;align-items:center;gap:10px"><b>Auto-follow work</b> <small>(off: nothing moves by itself)</small>${sw(!!X.autoFollow.get(),'Auto-follow work (off: nothing moves by itself)','id="followSw"')}</span><span class="scr-note small" id="followMsg" role="status"></span></div></section>`:'';
     let placesSec='';
     if(X.bridge.setPlace&&X.places){
       const P=X.places, map=app.placeMap||{};
@@ -418,6 +422,13 @@
     const logoSec=LG&&LG.IDS?`<section class="scr-sec" aria-labelledby="lgH"><h3 id="lgH">Logo</h3>
         <p class="scr-note">The icon in the top bar; it takes the colours of your world. The app\u2019s own icon in the Dock, taskbar or Finder stays the same.</p>
         <ul class="thlist" id="lgList">${logoItems()}</ul></section>`:'';
+    /* spec 001 FR-192 (WCAG 2.2.2): the way to stop the moving person at a desk that needs you or has a New reply; the glow and the badge stay */
+    /* the row shows what main saved (settings:get), and the window follows it when its own read at start failed or is behind */
+    const stillOn=X.isStillHl?(typeof app.stillHighlights==='boolean'?app.stillHighlights:!!X.isStillHl()):false;
+    if(X.isStillHl&&X.setStillHl&&typeof app.stillHighlights==='boolean'&&app.stillHighlights!==!!X.isStillHl())X.setStillHl(app.stillHighlights);
+    const stillSec=X.bridge.setStillHighlights&&X.isStillHl?`<section class="scr-sec" aria-labelledby="stillH"><h3 id="stillH">Highlights</h3>
+        <p class="scr-note">A desk that needs you or has a New reply glows, and its person jumps and then keeps pulsing until you answer. Turn this on to keep the glow and the New badge but stop that movement: the pulsing, the waving hand, the tapping and the badge's pings. In Real office the whole room stands still. Some other small animations still follow your system's reduced motion setting.</p>
+        <div class="scr-tools"><span class="swrow" style="display:flex;align-items:center;gap:10px"><b>Still highlights</b> <small>(no motion)</small>${sw(stillOn,'Still highlights (no motion): desks keep the glow and the New badge, the person does not move','id="stillSw"')}</span><span class="scr-note small" id="stillMsg" role="status"></span></div></section>`:'';
     const ab=app.about;
     const aboutSec=ab?`<section class="scr-sec" aria-labelledby="aboutH"><h3 id="aboutH">About</h3>
         <p class="scr-note"><b>${esc(ab.name)}</b> ${esc(ab.version)} · by <b>${esc(ab.owner)}</b></p>
@@ -451,7 +462,7 @@
         <li>It does not see your bill; costs are estimates.</li>
         <li>It sends nothing to any server of its own.</li>
         <li>Rooms you hide or switch off still run and cost money.</li></ul></section>`;
-    r.innerHTML=head('Settings')+`<div class="scr-body">${hsSec}${pfSec}${detailSec}${keySec}${notSec}${themeSec}${charSec}${logoSec}${capSec}${moodSec}${breakSec}${linksSec}${notifySec}${schedSec}${floorsSec}${orgSec}${placesSec}
+    r.innerHTML=head('Settings')+`<div class="scr-body">${hsSec}${pfSec}${detailSec}${keySec}${notSec}${themeSec}${charSec}${logoSec}${stillSec}${capSec}${moodSec}${breakSec}${linksSec}${notifySec}${followSec}${schedSec}${floorsSec}${orgSec}${placesSec}
       <details class="scr-adv" id="advMcp"${advOpen?' open':''}><summary><h3 class="scr-adv-h">Advanced: MCP servers (extra tools for agents)</h3><span class="mtag warn" id="advMcpAtt"${live&&live.agg.attention?'':' hidden'}>${esc(attText(live?live.agg.attention:0))}</span></summary>
       <section class="scr-sec" aria-labelledby="mcpH"><h3 id="mcpH" tabindex="-1">MCP servers</h3>
         ${liveSection()}
@@ -861,6 +872,22 @@
       if(res&&res.ok){X.setSerious(!!res.seriousMode);ss.classList.toggle('on',!!res.seriousMode);ss.setAttribute('aria-checked',res.seriousMode?'true':'false');const m=$('seriousMsg');if(m)m.textContent=res.seriousMode?'Serious mode is on: no mood drawings.':'Serious mode is off.';}
       return;
     }
+    const st=e.target.closest('#stillSw');
+    if(st&&X.bridge.setStillHighlights){
+      if(st.dataset.busy==='1')return; /* a save is in flight: a second press would send the same value again */
+      st.dataset.busy='1';
+      const on=st.getAttribute('aria-checked')!=='true';
+      let res=null; try{res=await X.bridge.setStillHighlights(on);}catch(err){res=null;}
+      delete st.dataset.busy;
+      const m=$('stillMsg'), isBool=!!res&&typeof res.stillHighlights==='boolean';
+      if(isBool)X.setStillHl(res.stillHighlights); /* what main says is in force, saved or not (a failed save keeps the old value) */
+      if(!res||!res.ok){ /* not saved: the switch and the window show what main says is in force (a boolean), else what they showed */
+        const inForce=isBool?res.stillHighlights:st.getAttribute('aria-checked')==='true';
+        st.classList.toggle('on',inForce);st.setAttribute('aria-checked',inForce?'true':'false');
+        if(m)m.textContent='Could not save this setting. It stays '+(inForce?'on':'off')+'.';return;}
+      st.classList.toggle('on',res.stillHighlights);st.setAttribute('aria-checked',res.stillHighlights?'true':'false');if(m)m.textContent=res.stillHighlights?'Still highlights is on: the glow stays, nothing moves.':'Still highlights is off.';
+      return;
+    }
     const wb=e.target.closest('#wrGroup [data-world]');
     if(wb&&X.view&&X.view.world){pickWorld(wb);return;}
     const olb=e.target.closest('[data-officelayout]');
@@ -888,6 +915,15 @@
     }
     const la=e.target.closest('#liveActSw');
     if(la&&X.liveAct){const on=!X.liveAct.get();X.liveAct.set(on);la.classList.toggle('on',on);la.setAttribute('aria-checked',on?'true':'false');return;}
+    const fw=e.target.closest('#followSw');
+    if(fw&&X.bridge.setAutoFollowWork&&X.autoFollow){
+      const on=fw.getAttribute('aria-checked')!=='true';
+      let res=null; try{res=await X.bridge.setAutoFollowWork(on);}catch(err){res=null;}
+      if(saveFailed(res,'followMsg',onOff(fw)))return; /* issue 1094: a refused or unsaved change says so and the switch stays */
+      const m=$('followMsg');
+      if(res&&res.ok===true&&typeof res.autoFollowWork==='boolean'){const v=res.autoFollowWork;X.autoFollow.set(v);fw.classList.toggle('on',v);fw.setAttribute('aria-checked',v?'true':'false');if(m)m.textContent=v?'Auto-follow work is on.':'Auto-follow work is off.';}
+      return;
+    }
     const mr=e.target.closest('#mcpRefreshSw');
     if(mr&&X.bridge.setMcpSignInRefresh){ /* spec 058 FR-213: main's answer is what is in force */
       const on=mr.getAttribute('aria-checked')!=='true';

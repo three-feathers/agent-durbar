@@ -1,7 +1,9 @@
+import { redact } from '../shared/redact';
+import { readMachinePolicy } from './policyfile';
+import type { MachinePolicy } from './policyfile';
 /**
- * Spec 087 FR-019 (T050): `permissions.requireOsSandbox` of the organization policy (spec 076). Spec 076 has no policy reader yet
- * (`updatepolicy.ts` says the same), so `requireOsSandbox()` answers `false` and only the rule below is built and tested
- * (`[KNOWN GAP]`, stated in the spec and the README). When 076's reader lands, it hands its layers to `requireOsSandboxFrom`.
+ * Spec 087 FR-019 (T050): `permissions.requireOsSandbox` of the organization policy (spec 076). The machine layer is read by spec 076
+ * FR-209 (`policyfile.ts`, macOS and Linux; Windows `[KNOWN GAP]`); the user layer is not read yet.
  */
 
 /**
@@ -29,7 +31,18 @@ export function requireOsSandboxFrom(layers: ReadonlyArray<unknown>): boolean {
   return req;
 }
 
-/** What the app uses today: no organization policy reader exists yet (spec 076), so nothing requires the sandbox. */
-export function requireOsSandbox(): boolean {
-  return requireOsSandboxFrom([]);
+/**
+ * What the app uses (spec 076 FR-209): the machine `policy.json` on macOS and Linux, read at each session start, so a policy added or
+ * fixed applies to the next session. A present but broken policy requires the sandbox, and the reason is logged once per distinct problem
+ * (the session itself shows spec 087's refusal sentence, so nobody is locked out without a reason).
+ */
+let lastProblem = '';
+export function requireOsSandbox(read: () => MachinePolicy = () => readMachinePolicy(), warn: (line: string) => void = (l) => console.warn(redact(l))): boolean {
+  const m = read();
+  if (m.layer === 'unreadable' && m.problem !== lastProblem) {
+    lastProblem = m.problem;
+    warn(`[policy] your organization's policy could not be read (${m.problem}): the OS sandbox is required until it is fixed`);
+  }
+  if (m.layer !== 'unreadable') lastProblem = '';
+  return requireOsSandboxFrom([m.layer]);
 }

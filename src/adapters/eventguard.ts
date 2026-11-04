@@ -133,6 +133,7 @@ export function eventProblems(e: unknown): string[] {
     case 'subagent':
       if (!str(e.subagentId) || !e.subagentId) out.push('subagent.subagentId missing');
       if (!oneOf(e.phase, ['started', 'completed', 'failed'])) out.push(`subagent.phase ${String(e.phase)}`);
+      if (e.background !== undefined && typeof e.background !== 'boolean') out.push('subagent.background is not a boolean');
       break;
     case 'usage':
       for (const k of ['inputTokens', 'outputTokens', 'cacheReadTokens', 'nanoAiu', 'costUsd']) if (!optNum(e[k])) out.push(`usage.${k} is not a non-negative number`);
@@ -221,4 +222,42 @@ export function eventProblems(e: unknown): string[] {
       break;
   }
   return out;
+}
+
+/** Spec 010 FR-035 (issue #1039): how many dropped events a run logs before it stops saying so. */
+export const EVENT_DROP_LOG_MAX = 20;
+
+/**
+ * Spec 010 FR-035 (review of #1117): one `eventProblems` line without any value from the event. Every line starts with a field name
+ * written in this file; what follows can carry the agent's value (`status <value>`), so only the field and a fixed kind word are kept.
+ */
+export function problemWords(problem: string): string {
+  if (problem === 'not an object') return 'event: not an object';
+  if (problem.startsWith('unknown type')) return 'type: not one of the known values';
+  const field = /^[A-Za-z][A-Za-z.[\]]{0,59}/.exec(problem)?.[0] ?? 'field';
+  const rest = problem.slice(field.length);
+  const kind = /missing/.test(rest) ? 'missing' : /too long/.test(rest) ? 'too long' : /malformed/.test(rest) ? 'malformed' : /^ is not /.test(rest) ? 'wrong kind of value' : 'not one of the known values';
+  return `${field}: ${kind}`;
+}
+
+/**
+ * Spec 010 FR-035: main's check on every agent event (the router's event guard). True passes; a bad event is dropped with one line for
+ * `warn` naming only its type (when known) and each field with the kind of problem, never a value from the event (`problemWords`); main
+ * masks it again with `redact`. At most `EVENT_DROP_LOG_MAX` lines.
+ */
+export function eventGate(warn: (line: string) => void): (e: unknown) => boolean {
+  let logged = 0;
+  return (e) => {
+    const p = eventProblems(e);
+    if (!p.length) return true;
+    if (logged < EVENT_DROP_LOG_MAX) {
+      logged++;
+      const t = isObj(e) && oneOf(e.type, EVENT_TYPES) ? String(e.type) : 'unknown';
+      warn(`[events] dropped a bad ${t} event: ${[...new Set(p.map(problemWords))].join('; ')}`.slice(0, 300));
+    } else if (logged === EVENT_DROP_LOG_MAX) {
+      logged++;
+      warn('[events] further bad events are dropped without a log line');
+    }
+    return false;
+  };
 }

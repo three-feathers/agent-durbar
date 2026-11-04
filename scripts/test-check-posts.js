@@ -489,6 +489,30 @@ function cli() {
   assert.deepStrictEqual(JSON.parse(fs.readFileSync(path.join(ROOT, 'docs/site/blocked-hashes.json'), 'utf8')).sha256.every((h) => /^[0-9a-f]{64}$/.test(h)), true, 'the real hash list holds hashes only');
 }
 
+// spec 104 FR-080 (issue #1115, review of #1119): without type stripping the mask is redact.ts compiled now, never a compiled copy
+{
+  const rn = require('./release-notes.js');
+  let r;
+  assert.doesNotThrow(() => { r = rn.loadRedact({ noStrip: true }); }, 'FR-080: without type stripping redact.ts is compiled and loads');
+  assert.ok(!r.redact(`k ${TOKEN}`).includes(TOKEN), 'FR-080: and it masks a token');
+  // a compiled copy built from older rules but newer by mtime (cp -p, a cache restore, clock skew) is never used
+  const R = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-loadredact-'));
+  fs.mkdirSync(path.join(R, 'src', 'shared'), { recursive: true });
+  fs.copyFileSync(path.join(ROOT, 'src', 'shared', 'redact.ts'), path.join(R, 'src', 'shared', 'redact.ts'));
+  for (const rel of [['dist-scripts', 'src', 'shared'], ['dist', 'shared']]) {
+    const d = path.join(R, ...rel);
+    fs.mkdirSync(d, { recursive: true });
+    fs.writeFileSync(path.join(d, 'redact.js'), "exports.redact = (x) => x; exports.cut = (x) => x;\n"); // old rules: masks nothing
+    const later = new Date(Date.now() + 3_600_000);
+    fs.utimesSync(path.join(d, 'redact.js'), later, later);
+  }
+  const fresh = rn.loadRedact({ root: R, noStrip: true });
+  assert.ok(!fresh.redact(`k ${TOKEN}`).includes(TOKEN), 'FR-080: a newer-looking compiled copy with older rules is not used');
+  // no typescript: fails closed
+  assert.throws(() => rn.loadRedact({ root: R, noStrip: true, ts: null }), /typescript is not installed/, 'FR-080: no compiler, no mask: it fails closed');
+  fs.rmSync(R, { recursive: true, force: true });
+}
+
 fs.rmSync(T, { recursive: true, force: true });
 console.log('test-check-posts: ok (every rule fails its fixture; the clean post and the repository pass)');
 process.exitCode = 0;

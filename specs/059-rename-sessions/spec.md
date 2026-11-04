@@ -335,6 +335,10 @@ All answered with option A (see *Clarifications*); kept here for the record of t
 
 ## Changes
 
+### 2026-11-04: the chat header is a Mac drag area (spec 052 FR-215, spec 005 PR R1)
+
+FR-025's drag rule holds for `#panelTitle`, `#panelTitleBtn` and every interactive control in `.ph` (`button`, `a`, `input`, `[tabindex]`, `[title]`): on macOS they are `no-drag`, so a click renames. The header container `.ph` itself is now a drag area, per 052 FR-215 (the newer owner decision); FR-025's "the chat header `.ph` is not a drag region today" described 2026-10-24 and is superseded. `check-rename-inline` checks the title, its button and every control in `.ph`.
+
 ### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
 
 The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):

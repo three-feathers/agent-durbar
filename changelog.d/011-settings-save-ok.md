@@ -1,1 +1,0 @@
-- **Settings: "Saved" only when it was saved** (spec 011, issues #1094, #1047): asking again for a value already in force while the settings file cannot be written no longer says Saved, and a failed save no longer leaves a `.tmp` file next to the settings. Checked by `test:credits` (injected write and rename failures, mutation-checked).
