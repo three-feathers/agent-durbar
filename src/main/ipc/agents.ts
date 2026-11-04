@@ -10,7 +10,7 @@ import { endSessionOp, errText, sessionOptsOf, setCapOp, setModeOp, stopTurnOp, 
 import type { OpsDeps } from '../agentops';
 import { folderGitStatus } from '../gitstatus';
 import type { GitStatus } from '../gitstatus';
-import { SessionStarts, dayNumbers, readReported } from '../sessionsummary';
+import { SessionStarts, SummaryFinals, dayNumbers, readReported } from '../sessionsummary';
 import type { SummaryDays } from '../summarydays';
 import type { SessionSummary } from '../sessionsummary';
 import { applySetPaused } from '../mcp/agentstate';
@@ -71,7 +71,7 @@ export function register(deps: AgentsIpcDeps): void {
   const { agents, router, agentState, opsDeps, remoteOps, mcpSecrets, logMcp, wsKey, asEffort, addMany, addWorkspace, sendOp, ensureLive, readyAdapterIds, forgetOpenSession, vsChatRefs, continued, maskHistory } = deps;
   const scheduler = deps.getScheduler;
   const sessionStarts = new SessionStarts(); // spec 085: when and from which commit each session began in this run (memory only)
-  const finals = new Map<string, { sum: SessionSummary; at: number }>(); // spec 085 FR-009: the numbers of a session whose card was just built for its End; added to the day rollup only when the End happens
+  const finals = new SummaryFinals(); // spec 085 FR-009: the numbers of a session whose card was just built for its End; added to the day rollup only when the End comes, never for one asked before an earlier End
   const checkpointStore = deps.getCheckpointStore;
   ipcHandle('agents:list', () => [...agents.values()]);
   const sessionOpts = (o: unknown): SessionOptions & { persist: boolean } => sessionOptsOf(o, asEffort); // shared with folders:create (spec 093 FR-060)
@@ -130,11 +130,10 @@ export function register(deps: AgentsIpcDeps): void {
   ipcHandle('agents:end', async (_e, id: string) => {
     if (!agents.has(id)) return;
     await endSession(id);
-    const fin = finals.get(id);
-    finals.delete(id);
+    const fin = finals.take(id, Date.now()); // also starts a new epoch: a read still on its way is dropped
     const elapsed = sessionStarts.elapsedMs(id);
     // a card built a minute ago for an End that never came is not counted; an End with no fresh card (the window gave up waiting) still ended a session: counted as not measured
-    const day = fin && Date.now() - fin.at < 60_000 ? dayNumbers(fin.sum) : elapsed !== undefined ? { minutes: Math.floor(elapsed / 60000), uncounted: 1 } : undefined;
+    const day = fin ? dayNumbers(fin) : elapsed !== undefined ? { minutes: Math.floor(elapsed / 60000), uncounted: 1 } : undefined;
     if (day) deps.getSummaryDays?.()?.add(day); // spec 085 FR-009: the user ended it
     sessionStarts.forget(id); // spec 085: the next session in this folder starts its own count
     deps.profileFreshness?.forget(id); // spec 043 FR-041
@@ -215,7 +214,7 @@ export function register(deps: AgentsIpcDeps): void {
     router.unbind(a.id);
     checkpointStore()?.forget(a.id); // spec 065 FR-006
     sessionStarts.forget(a.id); // spec 085
-    finals.delete(a.id);
+    finals.drop(a.id);
     deps.profileFreshness?.forget(a.id); // spec 043 FR-041
     deps.forgetSandboxNote?.(a.id); // spec 087
     deps.browserGone?.(a.id); // spec 080 FR-023
@@ -269,8 +268,9 @@ export function register(deps: AgentsIpcDeps): void {
   ipcHandle('agents:sessionSummary', async (e, id: unknown, final?: unknown): Promise<SessionSummary> => {
     const a = fromApp(e) && typeof id === 'string' ? agents.get(id) : undefined;
     if (!a || !a.cwd) return { ok: false, error: 'unknown agent' };
+    const epoch = finals.begin(a.id);
     const [sum, reported] = await Promise.all([sessionStarts.summarize(a.id, a.cwd), final === true ? readReported(router.forAgent(a.id), a.id) : undefined]); // the app's own totals only at the End: the lounge never shows them
-    if (final === true && sum.ok) finals.set(a.id, { sum, at: Date.now() });
+    if (final === true && sum.ok) finals.offer(a.id, epoch, sum, Date.now());
     return sum.ok && reported ? { ...sum, reported } : sum;
   });
   // spec 009 FR-019..FR-024 (issue #685): the "Open with" menu. The window sends an agent id (and a fixed target id); the folder is main's.

@@ -182,6 +182,37 @@ export async function readReported(
  * Durbar's own numbers of an ended session as the day rollup adds them (FR-009). A folder that is not git, could not be read, or had no commit
  * at the start was not measured: it adds the session and its minutes and `uncounted: 1`, never zeros that read as "nothing changed" (review of c0e6c872).
  */
+/**
+ * Spec 085 FR-009: the summary asked for a session's End (`final`), kept for at most a minute until the End adds it to the day.
+ * Each End (or removal) starts a new epoch for the id, and an answer that was asked in an earlier epoch is not kept: a read that lands after
+ * the window gave up and the End counted the session as not measured must not wait for the next End of a resumed session (counted twice).
+ */
+export class SummaryFinals {
+  private readonly kept = new Map<string, { sum: SessionSummary; at: number }>();
+  private readonly epoch = new Map<string, number>();
+  /** Before the read starts: the epoch it belongs to. */
+  begin(id: string): number {
+    return this.epoch.get(id) ?? 0;
+  }
+  /** After the read: kept only when no End or removal came in between. */
+  offer(id: string, token: number, sum: SessionSummary, now: number): boolean {
+    if (this.begin(id) !== token) return false;
+    this.kept.set(id, { sum, at: now });
+    return true;
+  }
+  /** The End: the fresh summary kept for it, if any; either way the id starts a new epoch and keeps nothing. */
+  take(id: string, now: number): SessionSummary | undefined {
+    const k = this.kept.get(id);
+    this.drop(id);
+    return k && now - k.at < 60_000 ? k.sum : undefined;
+  }
+  /** A removal, or the End's own cleanup. */
+  drop(id: string): void {
+    this.kept.delete(id);
+    this.epoch.set(id, this.begin(id) + 1);
+  }
+}
+
 export function dayNumbers(sum: SessionSummary): Partial<DaySum> | undefined {
   if (!sum.ok) return undefined;
   const base = { minutes: Math.floor(sum.ms / 60000) };

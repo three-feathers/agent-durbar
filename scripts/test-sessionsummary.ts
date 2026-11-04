@@ -3,7 +3,8 @@ import * as assert from 'assert';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
-import { SessionStarts, countBinary, dayNumbers, isNotRepo, parseCount, parseShortstat, readReported, sourceId, validRef } from '../src/main/sessionsummary';
+import type { SessionSummary } from '../src/main/sessionsummary';
+import { SessionStarts, SummaryFinals, countBinary, dayNumbers, isNotRepo, parseCount, parseShortstat, readReported, sourceId, validRef } from '../src/main/sessionsummary';
 import { SummaryDays, localDay, parseDays } from '../src/main/summarydays';
 import { boundedCount, cleanVendorStats, copilotVendorStats } from '../src/adapters/vendorstats';
 import { FakeAdapter } from '../src/adapters/fake';
@@ -327,6 +328,22 @@ async function main(): Promise<void> {
   assert.strictEqual(W.briefing({ sessions: '3', files: -4, added: 1e30, removed: NaN, commits: { x: 1 }, minutes: 'abc' }), '', 'a string for the session count is no count');
   assert.ok(!/NaN|Infinity|undefined|\[object/.test(W.briefing({ sessions: 2, files: -4, added: 1e30, removed: NaN, commits: { x: 1 }, minutes: 'abc' })));
   assert.deepStrictEqual(dayNumbers({ ok: true, ms: 125000, git: { repo: true, files: 2, added: 3, removed: 1, binary: 0, newFiles: 0, commits: 1, dirtyAtStart: false } }), { minutes: 2, files: 2, added: 3, removed: 1, commits: 1 }, 'a measured repository has no `uncounted`');
+  { // review of 766ba2f3 (point 2): a final read that lands after the End is not counted again by the next End
+    const sum = (ms: number): SessionSummary => ({ ok: true, ms, git: { repo: false } });
+    const fin = new SummaryFinals();
+    const late = fin.begin('a'); // the read starts, then the window gives up and the End comes with nothing kept
+    assert.strictEqual(fin.take('a', 1000), undefined, 'an End with no card kept counts nothing from the card');
+    assert.strictEqual(fin.offer('a', late, sum(60000), 2000), false, 'the late read is not kept: its End has passed');
+    assert.strictEqual(fin.take('a', 3000), undefined, 'a resumed session whose own card is missing does not add the old numbers');
+    const now = fin.begin('a'); // the resumed session: its own read counts once
+    assert.strictEqual(fin.offer('a', now, sum(120000), 4000), true, 'a read asked in the current epoch is kept');
+    assert.deepStrictEqual(fin.take('a', 5000), sum(120000), 'the End takes it');
+    assert.strictEqual(fin.take('a', 5001), undefined, 'and it is taken once');
+    const stale = fin.begin('b'); fin.offer('b', stale, sum(1), 0);
+    assert.strictEqual(fin.take('b', 61_000), undefined, 'a card of a minute ago is not counted');
+    fin.begin('c'); const tc = fin.begin('c'); fin.drop('c');
+    assert.strictEqual(fin.offer('c', tc, sum(1), 0), false, 'a removal also ends the epoch');
+  }
   assert.deepStrictEqual(dayNumbers({ ok: true, ms: 60000, git: { repo: false } }), { minutes: 1, uncounted: 1 }, 'a non-git folder adds the session and its minutes, and is marked not measured');
   assert.deepStrictEqual(dayNumbers({ ok: true, ms: 60000, git: { repo: false, unreadable: true } }), { minutes: 1, uncounted: 1 }, 'an unreadable folder: not measured');
   assert.deepStrictEqual(dayNumbers({ ok: true, ms: 120000, git: { repo: true, files: 0, added: 0, removed: 0, binary: 0, newFiles: 0, commits: 0, dirtyAtStart: false, noHead: true } }), { minutes: 2, uncounted: 1 }, 'no commit at the start (noHead forces 0): not measured, never zeros');
