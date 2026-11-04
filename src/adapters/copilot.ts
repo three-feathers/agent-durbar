@@ -1291,6 +1291,9 @@ export class CopilotAdapter implements AgentAdapter {
   async setAutopilot(sessionId: string, settings: AutopilotSettings | null, reason: AutopilotEnd = 'stopped'): Promise<void> {
     // FR-059: the place in the queue and the Stop count are taken when this is asked for, as `send` takes them
     const made = this.sessions.get(sessionId);
+    // FR-050: off during a run is the run's stop order, as Stop's is: it acts before anything is awaited and does not queue (a run is no queued
+    // step, and a sign-in refresh may hold the wait below for long)
+    if (settings === null && made?.auto?.running) return this.autopilotOff(sessionId, made, reason);
     const madeStops = made?.interrupts;
     // FR-059: off reads off at once, for a send step in flight (it goes plain); the mode change waits its turn in the queue
     const offNow = (l: Live | undefined): boolean => {
@@ -1664,15 +1667,18 @@ export class CopilotAdapter implements AgentAdapter {
       live.broker.denyPending();
       this.cancelQuestions(live, 'interrupt');
       if (live.limitRequestId) live.stoppedAtLimit = true;
+      // spec 099 FR-050: Stop on Autopilot is the run's own stop order, and it starts before the limit card's answer is awaited
+      const running = !!live.auto?.running;
+      // FR-059: with no run, `apWasOn` keeps the mode change going although the settings were cleared above
+      const off = running ? this.autopilotOff(sessionId, live, 'stopped') : apWasOn || live.auto?.on ? this.autopilotOff(sessionId, live, 'stopped', true) : undefined;
       await this.cancelLimit(live);
-      // spec 099 FR-050: Stop on Autopilot is the run's own stop order, and the session goes back to Allow all
-      if (live.auto?.running) {
-        await this.autopilotOff(sessionId, live, 'stopped');
+      if (running) {
+        await off;
         if (this.sessions.get(sessionId) === live) this.emit(sessionId, { type: 'status', status: 'idle', intent: 'Aborted' });
         return;
       }
-      if (apWasOn || live.auto?.on) {
-        await this.autopilotOff(sessionId, live, 'stopped', true); // no run, but a typed turn may be going: it stops below
+      if (off) {
+        await off; // no run, but a typed turn may be going: it stops below
         if (this.sessions.get(sessionId) !== live) return;
       }
       const answered = await this.within(live, live.session.abort(), this.stopStepMs).catch(() => true); // a failure: nothing running; no answer: a hung runtime, given up on after stopStepMs, the interrupt goes on

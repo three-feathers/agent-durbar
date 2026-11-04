@@ -89,6 +89,8 @@ test:autopilot-copilot
 test:autopilot-claude
 test:autopilot-codex
 test:autopilot-reach
+test:autopilot-ipc
+test:autopilot-window
 test:elicit
 test:macos
 test:profiledir

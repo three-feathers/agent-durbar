@@ -110,7 +110,7 @@ async function main(): Promise<void> {
     const nextErrorSurfaces = (): boolean => { const swallowed = abortExpected; abortExpected = false; return !swallowed; };
     const agentState = new AgentStateTracker();
     agentsIpc.register({
-      agents, router: router as never, agentState, opsDeps: { agents, router: { forAgent: () => ({ isLive: () => true, interrupt: async (id: string) => { interrupts.push(id); abortExpected = true; }, capabilities: { interrupt: true } }) } } as never,
+      agents, router: router as never, agentState, autopilot: { setAutopilot: async () => ({ ok: false }), forget: () => undefined, stopSeen: () => undefined } as never, opsDeps: { agents, router: { forAgent: () => ({ isLive: () => true, interrupt: async (id: string) => { interrupts.push(id); abortExpected = true; }, capabilities: { interrupt: true } }) } } as never,
       remoteOps: { release: async () => undefined, has: () => false } as never, getScheduler: () => undefined, getCheckpointStore: () => undefined, vsChatRefs: new Map(), continued: new Map(), wsKey: () => ws, asEffort: () => undefined,
       addMany: async () => ({ ok: true, agents: [] }) as never, addWorkspace: (async () => undefined) as never, ensureLive: async () => undefined, readyAdapterIds: async () => new Set<string>(), forgetOpenSession: () => undefined,
       maskHistory: (_id, h) => h, mcpSecrets: () => [], logMcp: () => undefined,
