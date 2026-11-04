@@ -304,7 +304,9 @@ for (const f of mp4s) assert.ok(fs.statSync(path.join(talkDir, f)).size < 40 * 1
   }
   // review of PR #1106 (CodeQL): tags come out by a linear scan, never a regex sanitiser; the transcript is escaped on output
   assert.strictEqual(site.withoutTags('a<b>c</b>d<scr<script>ipt>e'), 'acdipt>e', 'every <...> run is taken out');
-  assert.strictEqual(site.withoutTags('x <unclosed y'), 'x ', 'an unclosed < hides the rest');
+  assert.strictEqual(site.withoutTags('x <unclosed y'), 'x <unclosed y', 'a < with no > on its line is text: nothing after it is hidden (round 3)');
+  assert.strictEqual(site.withoutTags('1 < 2 and <b>3</b> > 0'), '1 < 2 and 3 > 0', 'a stray < is kept, real tags go');
+  assert.strictEqual(site.withoutTags('a <b\nc> d'), 'a <b\nc> d', 'a tag does not run across a line end');
   assert.strictEqual(site.withoutTags('a<b>c', ' '), 'a c', 'tags as spaces');
   assert.strictEqual(site.vttText('WEBVTT\n\n00:00.000 --> 00:01.000\n<v Standin>Hi <b>there</b>\n'), 'Hi there', 'cue text without tags or timing');
   assert.ok(!site.videoTag({ ...e, captions: 'docs/site/captions/clip-a.vtt' }, { root: r }).includes('<b>'), 'cue markup never reaches the page');

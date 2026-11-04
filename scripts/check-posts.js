@@ -118,11 +118,19 @@ function lineReadings(line) {
   const clean = decoded.replace(IGNORABLE, '');
   const latin = clean.normalize('NFKD').replace(/\p{M}+/gu, '').replace(CONFUSABLE_RE, (c) => CONFUSABLE[c]);
   const unmarked = site.withoutTags(latin.replace(/\\(?=[!-/:-@[-`{-~])/g, '').replace(/[*`~]+/g, ''));
-  const defanged = unmarked.replace(/\s*(?:\[\.\]|\(\.\)|\{\.\}|\[dot\]|\(dot\))\s*/gi, '.').replace(/(\S)\s+\.(?=[a-z]{2,24}\b)/g, '$1.');
+  const defang = (x) => x.replace(/\s*(?:\[\.\]|\(\.\)|\{\.\}|\[dot\]|\(dot\))\s*/gi, '.').replace(/(\S)\s+\.(?=[a-z]{2,24}\b)/g, '$1.');
+  const defanged = defang(unmarked);
   // percent-encoding read as a browser or server would (twice, for double encoding), query and fragment included (review of PR #1106)
-  const pct1 = percentDecoded(defanged);
-  const pct = percentDecoded(pct1);
-  return [...new Set([n, decoded, clean, latin, unmarked, defanged, unmarked.replace(/_+/g, ''), pct1, pct, pct.replace(IGNORABLE, '')])];
+  // the defanged and percent-decoded readings come from both the text with tags taken out and the text as written (tags kept),
+  // so no derived reading can only remove content (review of PR #1106, round 3)
+  const out = [n, decoded, clean, latin, unmarked, unmarked.replace(/_+/g, '')];
+  for (const base of [unmarked, latin, n]) {
+    const d = defang(base);
+    const p1 = percentDecoded(d);
+    const p2 = percentDecoded(p1);
+    out.push(d, p1, p2, p2.replace(IGNORABLE, ''));
+  }
+  return [...new Set(out)];
 }
 /* `%XX` runs decoded as UTF-8 where they form valid UTF-8, else byte by byte as Latin-1; never throws. */
 function percentDecoded(t) {
@@ -181,7 +189,9 @@ function nameForms(text) {
   const out = new Set();
   toks.forEach((t, i) => {
     out.add(t); out.add(t.replace(/-/g, ''));
-    for (const p of t.split('-')) out.add(p);
+    // every contiguous run of hyphen-separated parts ("2026-11-01-x-y" holds "x-y"); k parts give k(k+1)/2 runs, at most 64 parts
+    const parts = t.split('-').slice(0, 64);
+    for (let a = 0; a < parts.length; a++) for (let b = a + 1; b <= parts.length; b++) { const run = parts.slice(a, b); out.add(run.join('-')); out.add(run.join('')); }
     if (i + 1 < toks.length) { const u = toks[i + 1]; out.add(t + u); out.add(`${t}-${u}`); out.add(`${t} ${u}`); out.add(`${t}.${u}`); }
   });
   return out;
@@ -246,8 +256,9 @@ function textProblems(text, ctx) {
       // any drive path (C:\, D:/, \\?\C:\), UNC path, home or user folder: always private in a public text (review of PR #1106)
       if (/(?<![\p{L}\p{N}])[a-z]:[\\/]|\\\\[?.]\\|(?:^|[^\w.-])(?:\/opt\/|\/srv\/|\/Volumes\/|\/media\/[a-z]|\/run\/user\/)/iu.test(r)) add(ln, 'path');
       // a link target that is not https (javascript:, data:, vbscript:, file:, ...) and not a relative link (review of PR #1106)
-      for (const m of r.matchAll(/\]\(\s*<?([^)\s>]*)/g)) if (/^[a-z][a-z0-9+.-]*:/i.test(m[1]) && !/^https:\/\//i.test(m[1])) add(ln, 'scheme');
-      if (/(?<![\w.-])(?:javascript|vbscript|data|file|blob|filesystem|view-source|about|ftp|sftp|ssh|smb|ldap|chrome|jar):(?=[^\s])/i.test(r) || /<[a-z][a-z0-9+.-]*:(?!\/\/)[^>\s]*>/i.test(r)) add(ln, 'scheme');
+      // a browser drops tabs, line breaks and other controls inside a URL, so "java<TAB>script:" is javascript: (round 3)
+      for (const m of r.matchAll(/\]\(\s*<?([^) >]*)/g)) { const t = m[1].replace(/[\x00-\x1f\x7f]+/g, ''); if (/^[a-z][a-z0-9+.-]*:/i.test(t) && !/^https:\/\//i.test(t)) add(ln, 'scheme'); }
+      if (/(?<![\w.-])(?:javascript|vbscript|data|file|blob|filesystem|view-source|about|ftp|sftp|ssh|smb|ldap|chrome|jar):(?=[^\s])/i.test(r.replace(/[\x00-\x1f\x7f]+/g, '')) || /<[a-z][a-z0-9+.-]*:(?!\/\/)[^>\s]*>/i.test(r)) add(ln, 'scheme');
       if (/(?:^|[^\w.-])(?:~[a-z0-9._-]*[\\/]|\/home\/|\/Users\/|\/root(?:\/|\b)|\/var\/folders\/|\/private\/(?:var|tmp)\/|\/tmp\/|\/mnt\/[a-z]\/|[a-z]:[\\/]+(?:users|documents and settings)[\\/])|\\\\[a-z0-9._-]+\\[a-z0-9$._-]+|[$%](?:home|userprofile|appdata|localappdata|homepath|xdg_[a-z_]+)\b|\$\{home\}|\.(?:ssh|aws|claude|copilot|codex|gnupg)\//i.test(r)) add(ln, 'path');
       if (/(?<![a-z0-9._%+-])[a-z0-9._%+-]{1,64}@[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}/i.test(r) || /\bmailto:/i.test(r)) add(ln, 'email');
       // phones: URLs, code and dates out first; a bare run of digits counts only with a +, separators or a phone word nearby
@@ -455,19 +466,26 @@ function checkAll(opts = {}) {
   const ctx = { redact, blocked, phrases, files: new Set([...repoFileNames(root), ...[...media.keys()].map((n) => n.toLowerCase())]) };
   const git = opts.git || ((args) => gitOk(root, args));
   const links = [];
+  // an unreadable file (permissions, a race) is a file-read problem, never a crash that prints a path or a stack (round 3)
   const readText = (rel) => {
-    const p = path.join(root, rel);
-    const st = fs.lstatSync(p);
-    if (!st.isFile() || st.size > FILE_MAX) return null;
-    const b = fs.readFileSync(p);
-    const t = b.toString('utf8');
-    return Buffer.from(t, 'utf8').equals(b) && !t.includes('\0') ? t : null;
+    try {
+      const p = path.join(root, rel);
+      const st = fs.lstatSync(p);
+      if (!st.isFile() || st.size > FILE_MAX) return null;
+      const b = fs.readFileSync(p);
+      const t = b.toString('utf8');
+      return Buffer.from(t, 'utf8').equals(b) && !t.includes('\0') ? t : null;
+    } catch {
+      return null;
+    }
   };
   const files = [];
   const walk = (rel, isPosts) => {
     const abs = path.join(root, rel);
     if (!fs.existsSync(abs)) return;
-    for (const e of fs.readdirSync(abs, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : 1))) {
+    let list;
+    try { list = fs.readdirSync(abs, { withFileTypes: true }); } catch { push(rel, 1, 'file-read'); return; }
+    for (const e of list.sort((a, b) => (a.name < b.name ? -1 : 1))) {
       const r = `${rel}/${e.name}`;
       if (e.isSymbolicLink()) { push(r, 1, 'file-read'); continue; }
       if (e.isDirectory()) { if (isPosts) push(r, 1, 'file-name'); else walk(r, false); continue; }
@@ -548,6 +566,7 @@ function checkAll(opts = {}) {
     if (!root) continue;
     const tail = rel.slice(root.length + 1);
     const pp = textProblems(tail.replace(/\.[a-z0-9]{1,5}$/i, '').replace(/[\\/]/g, ' '), ctx).problems.filter((x) => PATH_RULES.has(x.rule));
+    if (/[^\x20-\x7e]/.test(tail)) pp.push({ line: 0, rule: 'hidden-char' }); // any non-ASCII name is withheld (round 3)
     if (!pp.length) continue;
     withheld.set(rel, `${root}/<file name withheld ${withheld.size + 1}>`);
     for (const x of pp) problems.push({ file: rel, line: 0, rule: x.rule });
@@ -609,7 +628,12 @@ if (require.main === module) {
     readSecretLine().then((line) => { process.exit(addBlocked(line) ? 0 : 2); });
   } else {
     for (const a of args) if (a !== '--offline') { process.stderr.write('usage: node scripts/check-posts.js [--offline] | --add-blocked-host\n'); process.exit(2); }
-    const r = checkAll({ offline: args.includes('--offline') });
+    let r;
+    try { r = checkAll({ offline: args.includes('--offline') }); } catch (e) {
+      // fail closed without a path, a name or a stack: only the error's code (round 3)
+      process.stderr.write(`blog:check: internal error (${/^[A-Z][A-Z0-9_]{1,30}$/.test(String(e && e.code)) ? e.code : 'no code'}); nothing is published (fail closed)\n`);
+      process.exit(1);
+    }
     for (const n of r.notes) console.log(`blog:check: ${n}`);
     if (r.problems.length) {
       for (const p of r.problems) console.error(`${p.file}:${p.line}: ${p.rule}: ${RULES[p.rule] || p.rule}`);

@@ -655,22 +655,24 @@ function loadUnreleased(file = process.env.SITE_UNRELEASED || path.join(ROOT, UN
   return phrases;
 }
 /*
- * A text with every `<...>` run taken out (replaced by `sep`), for reading what a page shows. Not a sanitiser: nothing it returns is
- * put into a page (output is always escaped with esc()). One pass over the characters, so it is linear on any input, and an
- * unclosed `<` drops the rest of the line as a browser would hide it. (CodeQL js/incomplete-multi-character-sanitization flagged
- * the regex form; review of PR #1106.)
+ * A text with every HTML tag taken out (replaced by `sep`), for reading what a page shows. Not a sanitiser: nothing it returns is
+ * put into a page (output is always escaped with esc()). A `<` starts a tag only when a letter, `/`, `!` or `?` follows it and a
+ * `>` closes it on the same line; any other `<` ("1 < 2") is text and kept, so nothing after it is hidden (review of PR #1106,
+ * round 3). Linear: the next `>` and line end are found in one backward pass. (CodeQL js/incomplete-multi-character-sanitization
+ * flagged the regex form, round 2.)
  */
 function withoutTags(t, sep = '') {
   const s = String(t);
+  const nextGt = new Array(s.length + 1);
+  let gt = -1;
+  for (let i = s.length - 1; i >= 0; i--) { if (s[i] === '\n') gt = -1; else if (s[i] === '>') gt = i; nextGt[i] = gt; }
   let out = '';
-  let open = false;
   for (let i = 0; i < s.length; i++) {
     const c = s[i];
-    if (open) { if (c === '>') { open = false; out += sep; } else if (c === '\n') { open = false; out += sep + c; } continue; }
-    if (c === '<') { open = true; continue; }
+    if (c === '<' && i + 1 < s.length && /[A-Za-z/!?]/.test(s[i + 1]) && nextGt[i + 1] > i) { out += sep; i = nextGt[i + 1]; continue; }
     out += c;
   }
-  return open ? out + sep : out;
+  return out;
 }
 const ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
 /* Lower case, accents off, separators to one space. */

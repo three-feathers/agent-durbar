@@ -324,6 +324,75 @@ if (process.platform !== 'win32') {
   passes({ '2026-11-05-specs-first.md': post() }, 'a plain file name passes');
 }
 
+// review of PR #1106, round 3 (rubenlupi's side at 20671725e): each probe passed or leaked there
+const cliReady = (() => {
+  let done = false;
+  return () => {
+    if (done) return;
+    fs.mkdirSync(path.join(T, 'scripts'), { recursive: true });
+    for (const f of ['check-posts.js', 'build-site.js', 'specs-index.js', 'release-notes.js']) fs.copyFileSync(path.join(__dirname, f), path.join(T, 'scripts', f));
+    fs.symlinkSync(path.join(ROOT, 'node_modules'), path.join(T, 'node_modules'), process.platform === 'win32' ? 'junction' : 'dir');
+    // a fake gh first on PATH that refuses everything: the CLI must never reach the network from a test
+    fs.mkdirSync(path.join(T, 'fakebin'), { recursive: true });
+    fs.writeFileSync(path.join(T, 'fakebin', 'gh'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+    fs.writeFileSync(path.join(T, 'fakebin', 'gh.cmd'), '@exit /b 1\r\n');
+    done = true;
+  };
+})();
+/* The real CLI on the throw-away repository, under CI=1: stdout and stderr together. */
+function cli() {
+  cliReady();
+  const r = spawnSync(process.execPath, [path.join(T, 'scripts', 'check-posts.js')], { encoding: 'utf8', env: { ...process.env, CI: '1', PATH: `${path.join(T, 'fakebin')}${path.delimiter}${process.env.PATH}` } });
+  return { status: r.status, out: `${r.stdout}\n${r.stderr}` };
+}
+{
+  // 1. a blocked label inside a longer hyphenated word: in prose, in a dated slug, and in an accented caption name
+  for (const t of ['The foo-quokka-corp-server ran.', 'See my-quokka-corp now.', 'The quokka-corp-v2 build.', 'The 2026-11-01-quokka-corp page.']) fails({ [P]: post(front(), body(t)) }, 'blocked', `a blocked label inside a hyphenated word: ${t}`);
+  for (const files of [{ '2026-11-01-quokka-corp.md': post(front({ date: '2026-11-01', writtenOn: '2026-11-01' }), body(`Key ${TOKEN}; mail standin@example.invalid; in /home/standin.`)) },
+    { 'docs/site/captions/badé-quokka-corp.vtt': `WEBVTT\n\n00:00.000 --> 00:01.000\nKey ${TOKEN}\n` },
+    { 'docs/site/captions/café-notes.vtt': `WEBVTT\n\n00:00.000 --> 00:01.000\nKey ${TOKEN}\n` }]) {
+    check(files);
+    const r = cli();
+    for (const leak of ['quokka', 'café', 'badé', TOKEN, 'standin@example.invalid']) assert.ok(!r.out.includes(leak), `under CI=1 the output never names "${leak.slice(0, 6)}..."`);
+    assert.ok(r.status === 1 && /withheld/.test(r.out), `the CLI fails and withholds the name: ${r.out.slice(0, 300)}`);
+  }
+  // 2. an unreadable file: a file-read problem, no crash, no absolute path, no stack, and a failing name withheld
+  if (process.platform !== 'win32') {
+    for (const name of ['2026-11-05-specs-first.md', '2026-11-02-quokka-corp.md']) {
+      check({ [name]: post() });
+      const f = path.join(T, 'docs/site/blog', name);
+      fs.chmodSync(f, 0o000);
+      let readable = true;
+      try { fs.readFileSync(f); } catch { readable = false; }
+      if (!readable) {
+        const r = cli();
+        assert.ok(r.status === 1 && /: file-read:/.test(r.out), `an unreadable file is a file-read problem: ${r.out.slice(0, 300)}`);
+        assert.ok(!r.out.includes(T) && !/\n\s+at /.test(r.out) && !/quokka/.test(r.out) && !/EACCES/.test(r.out.replace(/internal error \(EACCES\)/, '')), `no path, stack or blocked name: ${r.out.slice(0, 300)}`);
+      } else console.log('test-check-posts: running as a user who reads mode-000 files: the unreadable-file case is skipped');
+      fs.chmodSync(f, 0o644);
+    }
+  }
+  if (process.platform !== 'win32') {
+    check({ 'docs/site/story/quokka-corp/ch1.md': 'Plain.\n' });
+    const d = path.join(T, 'docs/site/story/quokka-corp');
+    fs.chmodSync(d, 0o000);
+    let readable = true;
+    try { fs.readdirSync(d); } catch { readable = false; }
+    if (!readable) {
+      const r = cli();
+      assert.ok(r.status === 1 && /: file-read:/.test(r.out) && !r.out.includes(T) && !/\n\s+at /.test(r.out) && !/quokka/.test(r.out), `an unreadable folder is a file-read problem, withheld, no stack: ${r.out.slice(0, 300)}`);
+    }
+    fs.chmodSync(d, 0o755);
+  }
+  // 3. a stray < must not hide the rest of the line from any reading
+  fails({ [P]: post(front(), body('If 1 < 2 then see https://example.invalid/x?q=blocked%2Dstandin%2Eexample%2Einvalid')) }, 'blocked', 'a percent-encoded blocked host after a stray <');
+  fails({ [P]: post(front(), body('If 1 < 2 then %2Fhome%2Fstandin%2Fx')) }, 'path', 'a percent-encoded path after a stray <');
+  fails({ [P]: post(front(), body('If 1 < 2 then write a.b@example[.]org')) }, 'email', 'a defanged address after a stray <');
+  fails({ [P]: post(front(), body('If 1 < 2 then see standin-client[.]com')) }, 'host', 'a defanged host after a stray <');
+  // 4. controls inside a scheme; 5. schemes no bare-word rule knows
+  for (const [t, what] of [['[x](java&#9;script:alert(1))', 'a tab entity in a scheme'], ['[x](java\tscript:alert(1))', 'a raw tab in a scheme'], ['[x](tel:standin)', 'a tel: link'], ['[x](i&#9;rc:standin)', 'a tab entity inside an unlisted scheme'], ['[x](t\tel:standin)', 'a raw tab inside an unlisted scheme'], ['[x](irc:standin)', 'an irc: link'], ['[x](xmpp:standin)', 'an xmpp: link']]) fails({ [P]: post(front(), body(t)) }, 'scheme', what);
+}
+
 // every rule has a fixture above (a rule with none would be a rule no test can kill)
 {
   const src = fs.readFileSync(__filename, 'utf8');
@@ -333,10 +402,7 @@ if (process.platform !== 'win32') {
 // the human step: the name comes from stdin, nothing is printed, only a hash is written; a bad name is refused
 {
   const keep = fs.readFileSync(path.join(T, 'docs/site/blocked-hashes.json'), 'utf8');
-  fs.mkdirSync(path.join(T, 'scripts'), { recursive: true });
-  fs.copyFileSync(path.join(__dirname, 'check-posts.js'), path.join(T, 'scripts', 'check-posts.js'));
-  for (const f of ['build-site.js', 'specs-index.js', 'release-notes.js']) fs.copyFileSync(path.join(__dirname, f), path.join(T, 'scripts', f));
-  fs.symlinkSync(path.join(ROOT, 'node_modules'), path.join(T, 'node_modules'), process.platform === 'win32' ? 'junction' : 'dir');
+  cliReady();
   const r = spawnSync(process.execPath, [path.join(T, 'scripts', 'check-posts.js'), '--add-blocked-host'], { input: 'https://Other-Standin.invalid/path\n', encoding: 'utf8' });
   assert.strictEqual(r.status, 0, `the add step succeeds: ${r.stderr}`);
   assert.strictEqual(r.stdout + r.stderr, '', 'the add step prints nothing');
@@ -347,7 +413,6 @@ if (process.platform !== 'win32') {
   assert.ok(bad.status !== 0 && !/not a host/.test(bad.stdout + bad.stderr), 'a bad name is refused without echoing it');
   const arg = spawnSync(process.execPath, [path.join(T, 'scripts', 'check-posts.js'), '--add-blocked-host', 'x.example.invalid'], { encoding: 'utf8' });
   assert.ok(arg.status === 2 && !/x\.example\.invalid/.test(arg.stdout + arg.stderr), 'a name as an argument is refused, not echoed');
-  fs.unlinkSync(path.join(T, 'node_modules'));
   w('docs/site/blocked-hashes.json', keep);
 }
 
