@@ -132,12 +132,12 @@ export class SettingsStore {
   }
 
   /** Only a real boolean changes it; the default (off) is not written. Returns `{ ok, value }`: `ok` only when the write reached disk, `value` the one in force (issue #1094). */
-  setChatLinksNewTab(v: unknown): boolean {
-    if (typeof v !== 'boolean') return this.chatLinksNewTab;
+  setChatLinksNewTab(v: unknown): Saved<boolean> {
+    if (typeof v !== 'boolean') return { ok: false, value: this.chatLinksNewTab };
     const next: AppSettings = { ...this.s };
     if (v) next.chatLinksNewTab = true;
     else delete next.chatLinksNewTab;
-    return this.commit(next) ? v : this.chatLinksNewTab;
+    return this.commit(next) ? { ok: true, value: v } : { ok: false, value: this.chatLinksNewTab };
   }
 
   /** Serious mode (spec 034): off by default. */
@@ -160,8 +160,8 @@ export class SettingsStore {
   }
 
   /** Spec 087 FR-007c: store or undo the choice for a known app id; anything else changes nothing. Returns `{ ok, value }`: `ok` only when the write reached disk, `value` the one in force (issue #1094). */
-  setSandboxAlwaysContinue(app: unknown, on: unknown): boolean {
-    if (typeof app !== 'string' || !parseSandboxAlways([app]).length || typeof on !== 'boolean') return typeof app === 'string' && this.sandboxAlwaysContinue(app);
+  setSandboxAlwaysContinue(app: unknown, on: unknown): Saved<boolean> {
+    if (typeof app !== 'string' || !parseSandboxAlways([app]).length || typeof on !== 'boolean') return { ok: false, value: typeof app === 'string' && this.sandboxAlwaysContinue(app) };
     const set = new Set(this.s.sandboxAlwaysContinue ?? []);
     if (on) set.add(app);
     else set.delete(app);
@@ -169,8 +169,8 @@ export class SettingsStore {
     const list = parseSandboxAlways([...set]);
     if (list.length) next.sandboxAlwaysContinue = list;
     else delete next.sandboxAlwaysContinue;
-    this.commit(next, !on ? 'sandboxAlwaysContinue' : undefined); // turning the choice off is the safe direction: in force for this run even if it cannot be saved (`isUnsaved`); turning it on is rolled back
-    return this.sandboxAlwaysContinue(app);
+    const ok = this.commit(next, !on ? 'sandboxAlwaysContinue' : undefined); // turning the choice off is the safe direction: in force for this run even if it cannot be saved (`isUnsaved`); turning it on is rolled back
+    return { ok, value: this.sandboxAlwaysContinue(app) };
   }
 
   /** OS notifications when an agent needs you (spec 052 FR-059): on by default; only `false` is written. */

@@ -266,12 +266,12 @@ try {
     assert.deepStrictEqual(s1.unsavedKeys, ['defaultMaxAiCredits'], 'only the cap is for this run only');
     assert.strictEqual(s1.setSeriousMode(true).value, false);
     assert.strictEqual(s1.seriousMode, false, 'serious mode rolled back');
-    assert.strictEqual(s1.setChatLinksNewTab(true), false);
+    assert.strictEqual(s1.setChatLinksNewTab(true).value, false);
     assert.strictEqual(s1.setChatLinksIn('system').value, 'session');
     assert.strictEqual(s1.setNotifyNeedsMe(false).value, true);
     assert.strictEqual(s1.setBreakResume('ask').value, 'auto');
     assert.strictEqual(s1.setCheckUpdatesAtStart(false).value, true);
-    assert.strictEqual(s1.setSandboxAlwaysContinue('claude', true), false);
+    assert.strictEqual(s1.setSandboxAlwaysContinue('claude', true).value, false);
     assert.strictEqual(s1.sandboxAlwaysContinue('claude'), false);
     // convenience and bookkeeping values stay in memory for the run (the rule in spec 011 FR-012): the browser must open, an update is announced once, + Folder remembers
     assert.strictEqual(s1.setAnnouncedVersion('codex', '0.164.0'), true, 'announced: in force');
@@ -301,18 +301,18 @@ try {
       const root = path.join(dir, 'later-blocked');
       const f = path.join(root, 'durbar-settings.json');
       const sb = new SettingsStore(f); sb.load();
-      assert.strictEqual(sb.setSandboxAlwaysContinue('claude', true), true);
+      assert.strictEqual(sb.setSandboxAlwaysContinue('claude', true).value, true);
       assert.strictEqual(sb.setDefaultMaxAiCredits(100).value, 100);
       assert.strictEqual(sb.isUnsaved('defaultMaxAiCredits'), false, 'saved');
       fs.rmSync(root, { recursive: true, force: true });
       fs.writeFileSync(root, 'x'); // the folder is now a file: every save fails
-      assert.strictEqual(sb.setSandboxAlwaysContinue('claude', false), false, 'off takes effect');
+      assert.strictEqual(sb.setSandboxAlwaysContinue('claude', false).value, false, 'off takes effect');
       assert.strictEqual(sb.sandboxAlwaysContinue('claude'), false, 'and stays off in memory');
       assert.strictEqual(sb.isUnsaved('sandboxAlwaysContinue'), true, 'and says it was not saved');
       // the flag belongs to its setting: the same cap saved again (not tighter, rolled back) is not "this run only" because the sandbox choice is
       assert.strictEqual(sb.setDefaultMaxAiCredits(100).value, 100);
       assert.strictEqual(sb.isUnsaved('defaultMaxAiCredits'), false, 'an unrelated unsaved change is not this one');
-      assert.strictEqual(sb.setSandboxAlwaysContinue('codex', true), false, 'turning it on is rolled back');
+      assert.strictEqual(sb.setSandboxAlwaysContinue('codex', true).value, false, 'turning it on is rolled back');
       assert.strictEqual(sb.sandboxAlwaysContinue('codex'), false);
       assert.strictEqual(sb.setDefaultMaxAiCredits(60).value, 60, 'a lower cap is in force for this run');
       assert.strictEqual(sb.setDefaultMaxAiCredits(200).value, 60, 'a higher cap is rolled back');
@@ -359,7 +359,11 @@ try {
     none(st.setBreakResume('auto'), 'break resume');
     none(st.setChatLinksIn('session'), 'chat links');
     none(st.setDefaultMaxAiCredits(''), 'default cap');
+    none(st.setChatLinksNewTab(false), 'links in a new tab');
+    none(st.setSandboxAlwaysContinue('claude', true), 'always continue (on)');
     assert.deepStrictEqual(st.unsavedKeys, [], 'nothing is kept for the run by these');
+    none(st.setSandboxAlwaysContinue('claude', false), 'always continue (off while off)');
+    assert.deepStrictEqual(st.unsavedKeys, ['sandboxAlwaysContinue'], 'turning it off is the safe direction: kept for the run, still not ok');
     // a write that works is ok, also for an unchanged value
     const ok = new SettingsStore(path.join(d2, 'good', 'durbar-settings.json')); ok.load();
     assert.strictEqual(ok.setSeriousMode(false).ok, true);
