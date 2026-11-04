@@ -99,6 +99,8 @@ A world is not finished until its chat and settings screens have been looked at 
 - People stand out from the background. A lighter room or a darker one is a choice to test against people, cards and labels, not a mood alone.
 - The light has one direction and temperature. Shadows agree with it.
 - **Light pools are pixels in the floor picture,** not extra layers, and never follow a person. No flicker and no moving water.
+- **Status light is the one exception, and it belongs to the desk.** The room's own light (windows, ceiling lamps) is part of the art. A status light (spec 097 D4, FR-040) is an overlay on a real object, such as a monitor's light bar shining down onto the desk. It stays when its person is away, never moves, and never crosses a face (spec 097 FR-236, 2026-11-04).
+- **Attention dims the room, never the text.** While someone needs you, a warm dusk lowers the art outside the lit desks a little (about 14 % light, 18 % colour). Labels sit above it and keep their contrast, and faces stay natural (spec 097 FR-239..FR-243, 2026-11-04).
 - **A bright sky hurts labels by their edges, not their text.** A white chip on a pale sky measured 1.42:1 with the sky, and about 15:1 for its text: give it an edge at 3:1 against whatever is behind it, computed per world, since one edge passes a pale sky and fails a mid-grey floor, and keep the sky below glare. Text never sits on the sky itself.
 
 ## Performance

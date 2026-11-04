@@ -3,7 +3,7 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Real office mode (owner request, Vikram 2026-10-30/31): a realistic front-facing open-plan office as a second office mode beside flat (default), live screens, animated people, status lights; folds in #692
-note: P1, P2 (screens, zoom, motion) and the world seam built, no second world offered; P3 and crews' worlds not; room materials in chat specified
+note: P1, P2 (screens, zoom, motion) and the world seam built, no second world offered; P3 and crews' worlds not; chat materials and attention lights specified
 status: building
 -->
 
@@ -205,29 +205,31 @@ I can put my own characters (spec 096) in the Real office, and set a room or a d
 
 #### Lights (the owner's scheme)
 
-- **FR-040** **Light parts.** Each desk has a **lamp** (a warm radial light on the desk and person), a **screen glow** (light from the monitor on the face), and a small **call light** (a dot on the desk corner). Each lobby fixture has one light of its own. All are CSS overlays (D4).
+- **FR-040** **Light parts.** Each desk has a **lamp** (a warm radial light on the desk and person), a **screen glow** (light from the monitor on the face), and a small **call light** (a dot on the desk corner). Each lobby fixture has one light of its own. All are CSS overlays (D4). **Amended 2026-11-04 (FR-236):** a fifth part, the monitor's **light bar** with its pool; see *Changes*, attention lights.
 - **FR-041** **Status to light** (`lightFor(status, flags)`, pure):
 
-  | State | Lamp | Screen glow | Call light | Motion |
-  |---|---|---|---|---|
-  | working | warm, steady | on | none | none |
-  | thinking (compacting, retrying) | on | slow breathe (5 s) | none | breathe |
-  | waiting (needs you) | brighter | on | **amber, gentle pulse (2.2 s)**: the strongest cue | pulse |
-  | error | on | faint red tint | **small steady red** | none, no flashing |
-  | limit reached | on | on | **orange**, steady | none |
-  | done | dims to low | dims | brief green tick (2 s, then gone) | one fade |
-  | idle, paused | low | low | none | none |
-  | asleep (stopped, or finished over 10 min ago) | off | off | none | none; person rests at the desk (FR-129) |
+  | State | Lamp | Screen glow | Call light | Bar (2026-11-04, FR-237) | Motion |
+  |---|---|---|---|---|---|
+  | working | warm, steady | on | none | off (green with a new reply) | none |
+  | thinking (compacting, retrying) | on | slow breathe (5 s) | none | off (green with a new reply) | breathe |
+  | waiting (needs you) | brighter | on | **amber, gentle pulse (2.2 s)**: the strongest cue | **amber**, steady | pulse |
+  | error | on | faint red tint | **small steady red** | **red**, steady | none, no flashing |
+  | limit reached | on | on | **orange**, steady | **orange**, steady | none |
+  | done | dims to low | dims | brief green tick (2 s, then gone) | off (green with a new reply) | one fade |
+  | idle, paused | low | low | none | off (green with a new reply) | none |
+  | asleep (stopped, or finished over 10 min ago) | off | off | none | off (green with a new reply) | none; person rests at the desk (FR-129) |
+
+  The *Bar* column was added 2026-11-04 (FR-237). "A new reply" means `isUnread`; the bar never moves.
 
 - **FR-042** **Red stays small.** An error never tints more than its own desk's lamp area and screen; the room, zone and neighbours are never red.
-- **FR-043** **Room brightness.** The room ambient follows the share of active agents (working, thinking, waiting, limit, error) among visible ones: from 70 % (none active) to 100 % (all active), eased over 1.5 s (instant under reduced motion). It is an overlay on the art layer only.
+- **FR-043** **Room brightness.** The room ambient follows the share of active agents (working, thinking, waiting, limit, error) among visible ones: from 70 % (none active) to 100 % (all active), eased over 1.5 s (instant under reduced motion). It is an overlay on the art layer only. **Amended 2026-11-04 (FR-239, FR-240):** while anyone needs you, a warm dusk dims the image layer outside the lit desks as well, stacked with this ambient.
 - **FR-044** **Readable at every light.** Name plates, folder signs, lobby plates, chips, the zoom and all text sit **above** the light layer and are never dimmed; their contrast is the theme's (spec 070 D4) whatever the lights do.
-- **FR-045** **Lobby lights.** Library: a reading lamp on when someone is there. Bank: a counter lamp on when someone is there. Boss: a busy light over the door on when a queue forms (2 or more visitors, or 1 that needs the user). Coffee: the machine glows while someone is there. Terminal, Web, Software, Other tools and custom places: a soft fixture light when occupied. Unoccupied fixtures are at room light.
+- **FR-045** **Lobby lights.** Library: a reading lamp on when someone is there. Bank: a counter lamp on when someone is there. Boss: a busy light over the door on when a queue forms (2 or more visitors, or 1 that needs the user). Coffee: the machine glows while someone is there. Terminal, Web, Software, Other tools and custom places: a soft fixture light when occupied. Unoccupied fixtures are at room light. **Amended 2026-11-04 (FR-239):** under the dusk the lobby fixtures' pictures dim with the room, and their lights do not. The Boss door gets no extra glow (the mock's D4 glow was not chosen).
 - **FR-046** **Not colour alone.** Every light repeats a cue that is also in words or icons (plate, badge, bubble); no state is shown by light only (constitution V).
-- **FR-047** **Motion rules.** Under reduced motion or Serious mode no light pulses, breathes or fades: pulsing lights are steady at their bright level, the done tick shows for 2 s without a fade.
+- **FR-047** **Motion rules.** Under reduced motion or Serious mode no light pulses, breathes or fades: pulsing lights are steady at their bright level, the done tick shows for 2 s without a fade. **Amended 2026-11-04 (FR-236, FR-240):** the light bar never moves in any mode, and the dusk switches at once, with no fade.
 - **FR-048** **Cheap.** Lights use opacity and transforms only (compositor), no blur filters, no per-frame JavaScript; at most one CSS animation per desk.
 - **FR-049** **Theme.** Light colours are fixed (warm white, amber, red, orange, green) for meaning (spec 070 FR-050); dark themes do not change the art or lights, only the chrome.
-- **FR-050** **Contrast check.** The overlap check's Real office variant also measures the contrast of every plate and sign against its own background at room brightness 70 % and 100 % and fails under the theme's ratio.
+- **FR-050** **Contrast check.** The overlap check's Real office variant also measures the contrast of every plate and sign against its own background at room brightness 70 % and 100 % and fails under the theme's ratio. **Amended 2026-11-04 (FR-243):** also with the dusk on, and for the New reply tag.
 - **FR-051** **Forced colours.** Under `forced-colors: active` the light layer and ambient are not drawn (`display:none`), and status words and icons carry the meaning; under `prefers-contrast: more` lights are steady and the ambient stays at 100 %.
 - **FR-052** **Done tick, once.** The green tick shows once per transition to done, not again on re-render or resize.
 
@@ -329,6 +331,100 @@ Each has a recommendation (Q6 is for Paco, the crew owner). The build waits for 
 - **VIII Honest limits**: lobby face size, walking and people repetition are written as gaps.
 
 ## Changes
+
+### 2026-11-04 attention lights (owner decision; FR-236..FR-243, T185..T193)
+
+**Status: specified, not built.** Spec, plan and tasks only (PR 1 of 2); the build is PR 2 (T185..T193).
+
+**Owner decision.** Vikram, Telegram DM, 2026-11-04 04:38 UTC, after three rounds of mock-ups: "A", read by his agent as its pick, round 3's **D1, warm dusk**, without D4's glow at the Boss door. Agents that need you still walk to the Boss as today ("Ok to only be at boss"): FR-024's visits, FR-121's queue and FR-128 do not change.
+
+**Why.** At a glance, the room should show who needs you, as a real office does (`docs/world-design.md` first principles 1 and 2). Today's cue is a 10 px call light on the monitor's corner and a lamp. Across 15 desks that is too weak, and Real office has no new-reply cue at all (`docs/feature-inventory.md`: *Unread "New"*, Real office `missing`).
+
+**Evidence (outside the repo, not committed).** The mock-ups were drawn over the simulator by a page-eval driver. Nothing in `src/` changed. Files: `lights-mock/` (round 1: A, B, C), `lights-mock2/` (round 2: V1..V3 and face crops) and `lights-mock3/` (round 3: D1..D4, `pick-15.png` = D1 at 15 agents), driver `mock3.js`, all in the coordinator's scratchpad, 1440x900 only. The numbers below are the mock's.
+
+**Reconciled with `docs/world-design.md`.**
+- *"A real place, not a dashboard"*: the bar is a real object, a monitor light bar clamped on the monitor and shining down. It does not move, and its light falls where such a lamp's light falls: a pool on the desk top.
+- *"Light pools are pixels in the floor picture, not extra layers, and never follow a person"*: that rule is about the room's own light (windows, ceiling lamps), which is part of the art. Status lights have always been CSS overlays (D4, FR-040). A bar's pool belongs to a desk, not a person: it stays when the person goes to the Boss, and it never moves. The guide gets this line in this PR.
+
+#### Requirements
+
+- **FR-236** **The light bar.** Every desk's monitor carries a slim light bar (amends FR-040: a fifth light part).
+  - **Size and place:** 86 % of the monitor's width, about 8 px thick, centred on the monitor. Its bottom edge is 7 px above the monitor's top. A small clamp (about 18x9 px) holds it in the middle and meets the monitor's top edge.
+  - **Off** (dark, with a faint neutral line along its lower edge) in every state but those in FR-237.
+  - **Lit**, in the colour of FR-237: the lower line shines, a soft tint of the same colour falls on the monitor's top bezel (about 8 px), and a **light pool** lies on the desk top.
+  - **The pool:** a pre-tinted radial gradient (no blend, FR-180), centred under the bar, 1.25 times the bar's width, about 110 px tall at 1440x900 with 6 agents and scaled with `u`. Its top is at 8 % of the desk's height. It leaves the monitor's glass clear (a mask with the glass cut out), so it never paints over the screen.
+  - **No motion.** Lit or off, the bar and its pool never pulse, breathe or fade in a loop. Only the on/off change itself may cross-fade, by `opacity` (FR-180).
+  - **Never across a face.** The bar lies inside the monitor's own span. FR-013's layout keeps faces off the monitor (the layout's `face` box), so the bar never meets a face, and the layout test asserts it. The pool is wider than the monitor. If at full width it would reach a face box (its own person's or a neighbour's), it shrinks to the monitor's width. If it still reaches one, its top moves down to that face box's bottom edge.
+  - **Below a header:** where a room header (a folder sign, `ZoneBox.sign`) or any other chrome text the layout places would overlap the bar at its normal height, the bar drops onto the monitor's top edge (its bottom 3 px over the monitor), and it never covers the header.
+  - **Waiting at the Boss:** an agent that needs you and stands at the Boss leaves its desk with the bar lit amber. The empty desk keeps its lit bar, its pool and its post-it.
+- **FR-237** **Bar colours** (amends FR-041: the table gets a *Bar* column). Bar colours are FR-049's fixed light colours, never a theme's.
+  - **Amber** when the agent needs you (*waiting*, including a helper that needs you, which lifts its parent as in *Edge cases*).
+  - **Red** on an error.
+  - **Orange** on a limit.
+  - **Soft green** on a new reply not read yet (`isUnread`, DurbarUnread: the same marker the flat desk's "New" uses; helpers never have one).
+  - **Off** otherwise.
+  - Precedence: the light state (`lightState`: asleep, then limit, then paused, then the status) picks amber, red or orange first. Green only shows where none of those apply, so a new reply never hides a need.
+  - The mock's reference colours were amber 255,172,40, orange 250,128,36, red 230,70,58 and green 80,200,125. The build may keep the existing `--ro-*` values if the owner's look at T191 accepts them.
+  - **Not colour alone** (FR-046): each lit colour repeats a cue already shown in words or icons. Amber, red and orange: the plate's status word and icon. Green: FR-238's tag.
+- **FR-238** **"New reply" in Real office.** A desk with an unread reply shows a small tag with the words **New reply** just above its name plate, at the plate's right end.
+  - Look: white on green, at least 11 px, a 2 px light ring, at least 4.5:1.
+  - It lives in the chrome layer, above the dusk and the lights, never on the art. It joins FR-091's overlap check like a chip.
+  - It goes when the reply is read: the same moment the flat "New" goes, from the same `isUnread`.
+  - The plate's accessible name gains flat's phrase ", new reply not read yet" (`unreadWords`). The tag is `aria-hidden`, so the words are not read twice.
+  - The tag is a word, not a colour, so light never carries the new-reply state alone (FR-046). With this, the inventory row *Unread "New"* becomes `planned` for Real office.
+- **FR-239** **Warm dusk** (amends FR-043). While at least one visible desk on the floor needs you (a bar lit amber, red or orange), everything outside the lit desks dims a little and warms.
+  - **Values**, the mock's D1: `brightness(.86) saturate(.82) sepia(.10) contrast(.93)`. That is about 14 % less light, 18 % less colour, a slight warm tint and slightly lower contrast, which lifts the shadows.
+  - **Where:** in the image layer: the floor, desks, monitors, people and lobby fixtures (`.ro-art`). Never the plates, signs, chips, tags, screen text or lights. Those sit above it and keep their own contrast (FR-044).
+  - **Clear areas:** every desk with a lit bar, green included, sits in a soft-edged clear area. This is an ellipse centred on the desk's span (desk and plate across, the monitor's top to the plate's bottom down), with radii 0.56 and 0.72 of that span. It is clear to 60 % of the radius and fully dusk at 100 %. Clear areas join where desks are close.
+  - **Faces** under the dusk stay natural: FR-242.
+  - **Lobby:** the lobby band is outside the desks, so it dims too, the Boss included. Lobby fixture lights (FR-045) are in the light layer and do not dim.
+  - **With FR-043:** the room ambient (the active share) keeps its overlay and stacks with the dusk, as in the mock-ups. FR-242's face bound holds over the two together. A green bar alone does not start the dusk.
+  - **Off:** when nothing needs you, the dusk goes and the room is FR-043's alone.
+- **FR-240** **Dusk motion and off switches** (amends FR-047 and FR-051).
+  - The dusk comes and goes with one `opacity` ease of about 1.5 s, like FR-043. Under reduced motion or Serious mode it switches at once, with no fade.
+  - Nothing about it loops.
+  - Under `forced-colors: active` the dusk, the bars, the pools and the bezel tint are not drawn (FR-051's light layer rule). The tag stays, in system colours with a border.
+  - Under `prefers-contrast: more` the dusk is off, as the ambient stays at 100 % there (FR-051). The bars stay, steady.
+  - On a hidden window, nothing about it runs (FR-074).
+- **FR-241** **The dusk's cost decides how it is drawn** (FR-048, FR-178, FR-180, FR-182). The mock drew the dusk with one `backdrop-filter` over the whole office, masked by the clear areas (path A). Two rules forbid that as it stands:
+  - **FR-182** forbids `backdrop-filter` on anything over 15 % of the window or over a running animation, and the people animate beneath.
+  - **FR-048** asks for compositor-cheap lights.
+
+  So PR 2:
+  1. **Measures** path A, path B and the dusk off, at 15 and 40 agents, against FR-178's rows: the op rows in `check-office-ops`, the recorded rows (frames at 10x activity, idle CPU visible, settled), and a `real:` run on the Mac's real GPU (FR-189; T190).
+  2. **Path A** ships only if it stays inside every FR-178 row, adds at most 2 ms a frame and at most 2 points of a core idle on the real GPU against the dusk off (FR-182's menu rule), **and** the owner approves a named FR-182 exception for it, with those numbers, in a dated delta (FR-190).
+  3. **Otherwise path B:** a static `filter` with the same values on the image-layer elements outside the clear areas. A desk, person, monitor or fixture inside a clear area gets no filter. The floor picture is drawn a second time, filtered, with a static `mask-image` holding the clear areas' soft holes. Nothing animates a filter (FR-180), so under path B the dusk switches at once in every mode: a small look change, shown to the owner in T191. A static `filter` on a person measured free once (2026-11-02: `brightness(.72)` on every person, 5.1 against 5.3 % of a core).
+
+  In both paths, a status change that turns a bar on or off adds or removes no node: the bar, pool and tag exist on every desk and change by class. It writes at most the desk's own classes and the dusk's one mask value, inside FR-178's *Attribute writes* row.
+- **FR-242** **Faces stay natural.** With the dusk on, against off, in the same simulator scene (a test hook toggles only the dusk), each dimmed face's mean relative luminance falls between 9 % and 16 % (the mock: about 11 % to 13 %). Faces are FR-012's face boxes; in a clear area the change is at most 3 %. Measured at 6 and 15 agents, 1440x900 and 1280x800 (T189).
+- **FR-243** **Contrast under the dusk** (amends FR-050). FR-050's check also measures every plate, sign, place plate, chip and New reply tag with the dusk on, against its own background, and fails under the theme's ratio (4.5:1 for plate text). Since they sit above the dusk on opaque backgrounds, the number must equal the dusk-off one; a change means a layer is in the wrong place.
+
+#### Amended in place
+
+FR-040 (a fifth part, the bar), FR-041 (the *Bar* column), FR-043 (the dusk), FR-045 (lobby lights and the dusk; D4's door glow not taken), FR-047 (bar and dusk motion) and FR-050 (dusk contrast) carry a one-line pointer to this delta. D4 ("every light is CSS") now also covers a static filter for the dusk under path B.
+
+#### Acceptance criteria
+
+1. `test:` For every state and flag, `lightFor` returns FR-041's row with the *Bar* column. Unread turns an *off* bar green and never overrides amber, red or orange. A helper's unread never counts.
+2. `test:` For 1..40 agents at both sizes, chat open and closed: each bar lies inside its monitor's span, centred, 86 % wide. No bar or pool rect meets a face box. No bar meets a sign or other chrome text rect, and a bar with a sign above it sits on the monitor's edge. Mutation-checked: a 100 % bar and a pool that ignores faces must fail.
+3. `sim:` A waiting agent at the Boss: its empty desk shows the amber bar, pool and post-it, and the plate says *Waiting* in words.
+4. `sim:` A done agent with an unread reply: green bar, **New reply** tag, the plate's name ends ", new reply not read yet". After the chat opens: the bar is off and the tag is gone.
+5. `sim:` With anyone waiting, the dusk is on and every lit desk is in a clear area. With nobody waiting, error or limit, it is off. A green bar alone does not start it.
+6. `sim:` Plate, sign, chip and tag contrast with the dusk on equals the dusk-off value and is at least the theme's ratio (FR-243).
+7. `sim:` FR-242's face bound at 6 and 15 agents, both sizes.
+8. `sim:` Reduced motion and Serious mode switch the dusk at once. In forced colours, no dusk, bar or pool is drawn and the tag remains. Under `prefers-contrast: more`, no dusk.
+9. `test:` `test:theme-tokens`: no `@keyframes` or transition on `filter` or `backdrop-filter`, no `mix-blend-mode` in the new rules. A `backdrop-filter` on the dusk only with FR-241's recorded exception.
+10. `sim:` + `real:` FR-241's measurement is recorded in a dated delta, with the chosen path.
+11. `real:` The owner looks at the screenshots at both sizes (T191).
+
+#### Honest limits
+
+- `[KNOWN GAP]` **The mock-ups were drawn over the simulator** by a page-eval script, never by app code, and at **1440x900 only**: 1280x800 was not mocked. The no-face rule for the pool is new and was not in the mock (the mock's pool was always 1.25 bars wide). The header rule was in it.
+- `[KNOWN GAP]` **The cost is unmeasured.** The mock used `backdrop-filter`, which FR-182 forbids at this size. Path B's look (an instant switch, a hard edge on a desk's own pictures) was not mocked.
+- `[KNOWN GAP]` **At 6 agents the dusk is mild:** the clear areas cover much of the floor, so little is dimmed (D1.png). It shows more at 15 (pick-15.png).
+- `[KNOWN GAP]` The mocks ran at an ambient of about 0.92 to 0.95 (most agents active). The dusk stacked on a low ambient (one waiting among 14 idle, ambient 0.72) was not seen. T191 adds that scene for the owner, and FR-242 bounds it.
+- Not seen in a mock: a dusk with only a green bar (it does not start one, FR-239), forced colours (the rule was in the mock's CSS, not emulated), and reduced motion.
+- Windows and macOS: CI only, except T190's real-GPU run on the Mac.
 
 ### 2026-11-02: the op row counts the least of its samples
 
