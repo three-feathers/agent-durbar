@@ -1,0 +1,1 @@
+- **Agent rules shortened** (spec 021 FR-063): two sentences in `AGENTS.md` say the same thing in fewer words (3,000 to 2,997); no rule changed. Checked with `npm run rules:check` and a before/after token diff.

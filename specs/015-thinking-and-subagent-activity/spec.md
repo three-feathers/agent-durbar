@@ -4,7 +4,7 @@
 group: 015-018
 title: Thinking that shows up, sub-agent activity
 status: built
-note: Claude helper text has no real-session check ([KNOWN GAP])
+note: Claude helper text and background helpers have no real-session check ([KNOWN GAP])
 -->
 
 **Feature Branch**: `015-thinking-and-subagent-activity` (milestone 7; amends 002 FR-007, FR-010, FR-013)
@@ -49,6 +49,15 @@ note: Claude helper text has no real-session check ([KNOWN GAP])
 - **KNOWN LIMIT** Reasoning of `auto` arrives in one ~1 s burst after a few seconds of waiting, so "streaming" is short; no explicit reasoning model could be tested on this plan; nested sub-agents are shown flat under the top-level agent.
 
 ## Changes
+
+### 2026-11-04: a helper is done when it ends, not when its launch call returns (issue #1141)
+
+**Input**: Vikram, packaged v0.1.8, Real office, macOS (2026-11-04): "sub agent from main agent chat says done while it is still working". Found by reading code (`read:`), not reproduced on a real session. A helper started **in the background** (Claude Code's `Agent` / `Task` with `run_in_background: true`; Copilot's `task` whose `subagent.started` says `executionMode: 'background'`, values `sync` | `background` in the SDK 1.0.22 `TaskExecutionMode`) makes the parent's tool call return at once with a launch note, while the helper goes on working. Two places took that return for the helper's end: (1) the renderer's `onTaskTool` set any running record to done when the parent's call completed; (2) the Claude mapper closed the helper on the `Agent` / `Task` tool result when no `task_notification` had come first, which for a background helper is always the case.
+
+- **FR-018** A helper's status follows its own lifecycle. A **background** helper (the `subagent` started event carries `background: true`; set by the Claude mapper from the call's `run_in_background: true` and by the Copilot mapper from `executionMode: 'background'`) stays Running, in the chat block, the helper card and its transcript, until its own `subagent` completed or failed event, or until the parent session stops (then it reads Failed, "Stopped with its session"). The parent's call returning (`toolCall` complete) does not end it and its output (the launch note) is not the helper's result; a failed parent call still ends it as Failed (the launch itself failed). A helper without `background` (every foreground helper, and adapters that cannot tell) keeps the existing rule: its own end event or the parent's call completion, whichever comes first. The Claude mapper closes a background helper only on `task_notification` (or `reset`); its tool result closes only a foreground one. A parent turn that goes idle ends nothing (a background helper outlives the turn).
+- **FR-019** Tests, no credits: mapper cases (Claude background call: tool result emits no close, the `task_notification` emits one; foreground unchanged; Copilot `executionMode` background and sync, an odd value is not background); a renderer case in a UI driver (a background helper whose parent call returns at once stays Running in the record, the block and the card, until its own end event; a session stop ends a running one); the simulator (`simbghelper=1`: the first agent's first helper is launched in the background, its parent call returns at once and the helper keeps working). Each mutation-checked.
+
+`[KNOWN GAP]` Not seen on a real session (owner's budget; constitution VIII): that Claude Code's stream-json `tool_use` input carries `run_in_background`, that a background helper's end arrives as `task_notification` with its `tool_use_id` (or a `task_id` from `task_started`), and that Copilot sends `subagent.completed` for a background helper when it really ends are `read:` (SDK types, spec 012 research) or assumed. If an end event never comes, the helper stays Running until its session stops. Not checked on macOS (PR CI runs a Linux stub, spec 008 FR-106); the change has no platform-specific code.
 
 ### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
 
@@ -114,3 +123,9 @@ The `status:` of the specs-index block used to read (moved here unchanged; the b
 - `[KNOWN GAP]` `read:` Claude's mid-compaction `system/init` re-emits the `mcp` list, and `ClaudeAdapter.onMapped` then clears `mcpAuthSeen` as for every init (the CLI's own list replaces the derived marks); not tested whether the real init lists a server that needs sign-in as such. Not changed: it is the existing rule for each init, and compaction does not add a case.
 - `[KNOWN GAP]` the real runs used `claude -p` on a resumed session and `codex app-server` with `thread/compact/start` (Durbar never sends it; its Codex `compact()` is not offered) and the Copilot SDK's `history.compact`, not Durbar's long-lived stream-json session with its flags (`--setting-sources ""` and others). The order seen may differ there. The cost of the run was not measured (the CLIs report none for these calls); the 6 prompts were small.
 - `[KNOWN GAP]` Not checked on macOS (PR CI runs a Linux stub, spec 008 FR-106); the change has no platform-specific code.
+
+### 2026-11-04: the "Sub-agent activity / Back to parent chat" bar stays at the top (owner feedback, issue #1142)
+
+Owner (Vikram, 2026-11-04, packaged v0.1.8): after a long scroll in a helper's chat the top block ("Sub-agent activity", "Back to parent chat") was gone; it has to stay so that the parent chat is one click away. `read:` cause: `buildSubTranscript` appends `.sub-ro` as the first child of the scrolling log and `.sub-ro` had no `position: sticky`.
+
+- **FR-020** **The helper bar is sticky.** `.sub-ro` is `position: sticky; top: -16px` (the log's top padding, so no line shows above it) in the chat log, above the log's content, on an opaque surface (the `--surface` token under the info tint, so a world's or theme's set applies and no text shows through). At scroll top it sits in the flow and covers no message; at any other scroll position it stays in view and "Back to parent chat" takes the click (`elementFromPoint` on the button is the button). It holds at 1440x900 and 1280x800, in the flat office and Real office, with text of at least 10.5 px (it is 12 px). Test: `check-helper-bar` (scroll a long helper chat to its end, assert the bar and the button are visible, the click lands on the button and returns to the parent, the bar does not cover the first message at the top); mutant: remove `position: sticky`, the visible assert fails. Pictures at both sizes (the bar is flush with the log's top edge when stuck: `top: -16px` is `#chat`'s own padding). `[IMPLEMENTED]` test: Pictures: [1440x900](../../docs/screenshots/015-helper-bar-end-1440x900.png), [1280x800](../../docs/screenshots/015-helper-bar-end-1280x800.png).

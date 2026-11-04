@@ -358,14 +358,14 @@ module.exports = async (ctx) => {
     await resizeSteps(tag, w, h);
 
     /* spec 005 FR-054 (issue 627): the owner's medium width (a 760px panel): everything, MCP and the ring included, in the row; no "⋯" */
-    await js(`(()=>{const s=document.createElement('style');s.id='midPanel';s.textContent='#panel{flex:0 0 760px!important;max-width:760px!important}';document.head.append(s);})()`);
+    await js(`(()=>{const s=document.createElement('style');s.id='midPanel';s.textContent='#panel>.panel-in{flex:0 0 760px!important;max-width:760px!important}';document.head.append(s);})()`);
     await ctx.sleep(150); await settle();
     m = await M();
     m.P.forEach((p) => check(false, `${tag} 760px: ${p}`));
     check(!m.more && ['agentChip', 'modeChip', 'modelChip', 'ctxChip', 'mcpBtn', 'attFile', 'attImg'].every((x) => m.rowIds.includes(x)), `${tag} 760px: not everything fits ${JSON.stringify({ more: m.more, row: m.rowIds, pop: m.popIds })}`);
     await js(`document.getElementById('midPanel').remove()`);
     /* narrow panel (spec #452's docking may give it 480px): one row, "⋯", the mode stays */
-    await js(`(()=>{const s=document.createElement('style');s.id='narrowPanel';s.textContent='#panel{flex:0 0 480px!important;max-width:480px!important}';document.head.append(s);})()`);
+    await js(`(()=>{const s=document.createElement('style');s.id='narrowPanel';s.textContent='#panel>.panel-in{flex:0 0 480px!important;max-width:480px!important}';document.head.append(s);})()`);
     await until(`(()=>{const b=document.getElementById('ctMoreBtn');return !!b&&!b.hidden})()`, 3000);
     await settle();
     m = await M();
@@ -376,7 +376,7 @@ module.exports = async (ctx) => {
       check(out.length > 0 && out.every((x) => ORDER.indexOf(x) < Math.min(...kept.map((k) => ORDER.indexOf(k)), 99)) && m.popIds.includes('agentChip'), `${tag} narrow: overflow order ${JSON.stringify({ out, kept })}`); }
     await js(`document.getElementById('ctMoreBtn').click()`);
     check(await until(`!document.getElementById('ctMorePop').hidden`, 2000), `${tag} narrow: "⋯" does not open`);
-    const pop = await js(`(()=>{const p=document.getElementById('ctMorePop'),r=p.getBoundingClientRect(),pr=document.getElementById('panel').getBoundingClientRect();return {inside:r.left>=pr.left-1&&r.right<=pr.right+1&&r.top>=0,focus:p.contains(document.activeElement)}})()`);
+    const pop = await js(`(()=>{const p=document.getElementById('ctMorePop'),r=p.getBoundingClientRect(),pr=document.querySelector('#panel>.panel-in').getBoundingClientRect();return {inside:r.left>=pr.left-1&&r.right<=pr.right+1&&r.top>=0,focus:p.contains(document.activeElement)}})()`);
     check(pop.inside && pop.focus, `${tag} narrow: the "⋯" popover ${JSON.stringify(pop)}`);
     await H.shot(path.join(OUT, `005-composer-narrow-${tag}.png`), { prep: 'calm', tag: 'composer' }); // focus stays in the popover
     await key('Escape');

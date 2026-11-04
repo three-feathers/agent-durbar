@@ -50,6 +50,17 @@ export async function runElicitation(emit: (b: EventBody) => void, pending: Map<
   return out;
 }
 
+/** Spec 099 FR-030: on Autopilot a form or a sign-in cannot be decided for the user: shown, marked as handled, and declined at once. */
+export function declineElicitation(emit: (b: EventBody) => void, requestId: string, input: ElicitInput): ElicitAnswer {
+  const parsed = parseElicitRequest(input);
+  if (parsed.ok) {
+    const request = parsed.request;
+    emit({ type: 'question', phase: 'asked', requestId, questions: [{ question: request.message, ...(request.source ? { header: request.source.slice(0, 40) } : {}), multiSelect: false, options: [] }], elicitation: request, autoAnswered: true });
+    emit({ type: 'question', phase: 'answered', requestId, elicitAction: 'decline', autoAnswered: true });
+  } else emit({ type: 'status', status: 'working', intent: `Declined an MCP request: ${parsed.reason}` });
+  return { action: 'decline' };
+}
+
 /** The user's answer (already checked by main); unknown ids are ignored. */
 export function answerElicitation(pending: Map<string, ElicitWaiter> | undefined, requestId: string, answer: ElicitAnswer): void {
   pending?.get(requestId)?.resolve(answer);

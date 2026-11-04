@@ -5,7 +5,9 @@
  */
 import * as assert from 'assert';
 import { assertLinearShape, assertWithinYardstick } from './redact-growth-lib';
-import { countDiff, editFile, finishEdit, partialJson, patchFiles, EDIT_FILES_MAX } from '../src/shared/edits';
+import { countDiff, editFile, finishEdit, maskedClip, partialJson, patchFiles, EDIT_FILES_MAX, MASK_MARGIN } from '../src/shared/edits';
+import { clipDiff } from '../src/shared/diff';
+import { redact } from '../src/shared/redact';
 import { DIFF_MAX } from '../src/shared/diff';
 import { ArgStream, EditStreams, codexEdit, editOf, editPath, isEditTool, ARG_STREAM_MAX } from '../src/adapters/edits';
 import { EventMapper } from '../src/adapters/map';
@@ -409,6 +411,112 @@ const TOKEN = 'ghp_abcdefghijklmnopqrstuvwxyz0123456789';
   const diff = (n: number): string => '@@\n' + ('+a=1&b=2?c=3 ' + HDR + '\n').repeat(Math.ceil(n / 60)).slice(0, n);
   const work = (x: string): void => void maskEditInfo({ files: Array.from({ length: 20 }, (_, i) => ({ path: `/w/${i}.ts`, kind: 'edit' as const, diff: x.slice(0, Math.ceil(x.length / 20)) })) }, vals);
   assertLinearShape('maskEditInfo', work, diff);
+}
+
+// spec 012 FR-167 (issue #1052): an edit's diff is masked only as far as it can be shown
+{
+  const tok = (i: number): string => 'ghp_' + String(i).padStart(4, '0') + 'A'.repeat(32); // a GitHub token shape the mask knows
+  // up to DIFF_MAX plus the margin: exactly the old result
+  const small = Array.from({ length: 900 }, (_, i) => (i % 50 === 7 ? `token = ${tok(i)}` : `line ${i} of plain text`)).join('\n');
+  assert.ok(small.length <= DIFF_MAX + MASK_MARGIN);
+  assert.strictEqual(maskedClip(small), clipDiff(redact(small), DIFF_MAX), 'FR-167: unchanged within the margin');
+  // a long text: what is shown is masked, with secrets near the cut, at the masked window's end, and many masks shortening the text before the cut
+  const filler = (n: number): string => Array.from({ length: n }, (_, i) => `row ${i} ${'x'.repeat(40)}`).join('\n');
+  const near = filler(400) + `\nkey ${tok(1)}\n`; // just before DIFF_MAX
+  const shrink = Array.from({ length: 3000 }, (_, i) => tok(i)).join('\n'); // every line masked: the masked text is much shorter
+  for (const [what, text] of [
+    ['near the cut', near + filler(15000)],
+    ['straddling the window end', 'y'.repeat(DIFF_MAX + MASK_MARGIN - 20) + tok(2) + filler(15000)],
+    ['many masks before the cut', shrink + filler(15000)],
+  ] as Array<[string, string]>) {
+    const out = maskedClip(text);
+    assert.ok(!/ghp_\d{4}A{8}/.test(out), `FR-167 ${what}: no token shows`);
+    assert.ok(out.length <= DIFF_MAX + 100, `FR-167 ${what}: cut at DIFF_MAX`);
+    assert.strictEqual(out, clipDiff(redact(text), DIFF_MAX), `FR-167 ${what}: same as masking it all`);
+  }
+  // the margin, with literal offsets (DIFF_MAX 20,000, margin 16,384): a token at every position around the shown cut and around the
+  // masked window's end gives exactly the old result, so a smaller margin inside maskedClip shows a half-cut token
+  assert.strictEqual(DIFF_MAX, 20_000);
+  assert.strictEqual(MASK_MARGIN, 16_384);
+  const tail = filler(1000);
+  for (const at of [...Array.from({ length: 120 }, (_, i) => 19_960 + i), ...Array.from({ length: 80 }, (_, i) => 36_330 + i)]) {
+    const text = 'y'.repeat(at) + ' ' + tok(at) + '\n' + tail;
+    assert.strictEqual(maskedClip(text), clipDiff(redact(text), DIFF_MAX), `FR-167: a token at ${at} gives the old result`);
+  }
+  // masks before the cut shorten the window to just over DIFF_MAX (546 tokens, 30 characters shorter each, no newline): the whole text is
+  // masked instead, so the token cut by the window's end at 36,384 does not show
+  {
+    const head = Array.from({ length: 546 }, (_, i) => tok(i)).join(' ') + ' ';
+    const text = head + 'y'.repeat(36_384 - 21 - head.length) + ' ' + tok(9999) + '\n' + tail;
+    const out = maskedClip(text);
+    assert.ok(!out.includes('ghp_9999'), 'FR-167: a window shortened to just over DIFF_MAX shows no half-cut token');
+    assert.strictEqual(out, clipDiff(redact(text), DIFF_MAX), 'FR-167: a window shortened to just over DIFF_MAX gives the old result');
+  }
+  // the margin's size, with literal offsets: a JWT (three segments, 12,290 characters; the mask needs 5 characters of its third segment,
+  // which starts 8,194 past `eyJ`) reaches between 8,192 and 16,384 past where it starts. Cut before 5 characters of that segment, it is not
+  // masked, so a window or a shortening allowance of only 8,192 shows its start; the real 16,384 gives the old result.
+  {
+    const jwt = 'eyJ' + 'a'.repeat(4093) + '.' + 'b'.repeat(4096) + '.' + 'c'.repeat(4096);
+    // a JWT starting at 19,990..19,999, shown: a window ending at 20,000 + 8,192 cuts it, the real window holds all of it
+    for (let at = 19_990; at < 20_000; at++) {
+      const text = 'y'.repeat(at - 1) + ' ' + jwt + '\n' + tail;
+      const out = maskedClip(text);
+      assert.strictEqual(out, clipDiff(redact(text), DIFF_MAX), `FR-167: a JWT at ${at} gives the old result`);
+      assert.ok(!out.includes('eyJ'), `FR-167: a JWT at ${at} does not show`);
+    }
+    // 273 tokens shorten the window by 8,190 (30 each); a JWT starting at 28,180..28,191 is cut by the window's end at 36,384 and would
+    // move into view: the whole text is masked instead, however small the shortening
+    const head = Array.from({ length: 273 }, (_, i) => tok(i)).join(' ') + ' ';
+    assert.strictEqual(head.length - redact(head).length, 8_190);
+    for (let at = 28_180; at < 28_192; at++) {
+      const text = head + 'y'.repeat(at - 1 - head.length) + ' ' + jwt + '\n' + tail;
+      const out = maskedClip(text);
+      assert.strictEqual(out, clipDiff(redact(text), DIFF_MAX), `FR-167: a JWT at ${at} after 8,190 masked characters gives the old result`);
+      assert.ok(!out.includes('eyJ'), `FR-167: a JWT at ${at} after 8,190 masked characters does not show`);
+    }
+  }
+  // the cut: a newline exactly at DIFF_MAX is the cut; one at DIFF_MAX + 1 is past it (clipDiff's own lastIndexOf bound)
+  for (const at of [20_000, 20_001]) {
+    const text = 'y'.repeat(at) + '\n' + tail;
+    const out = maskedClip(text);
+    assert.strictEqual(out.indexOf('\n'), 20_000, `FR-167: a newline at ${at} cuts at 20000`);
+    assert.strictEqual(out, clipDiff(redact(text), DIFF_MAX), `FR-167: a newline at ${at} gives the old result`);
+  }
+  // at most two mask calls when masking shortens the window (a giant token, an open PEM block, a repeated key name, a giant Cookie)
+  for (const [what, text] of [
+    ['a giant token', 'ghp_' + 'A'.repeat(200_000)],
+    ['an open PEM block', '-----BEGIN RSA PRIVATE KEY-----\n' + Array.from({ length: 3200 }, () => 'A'.repeat(64)).join('\n')],
+    ['token= repeated', 'token='.repeat(35_000)],
+    ['a giant Cookie', 'Cookie: ' + 'sid=abcdef0123; '.repeat(13_000)],
+  ] as Array<[string, string]>) {
+    let calls = 0;
+    const out = maskedClip(text, DIFF_MAX, (x) => { calls++; return redact(x); });
+    assert.ok(calls <= 2, `FR-167 ${what}: ${calls} mask calls, at most 2`);
+    assert.strictEqual(out, clipDiff(redact(text), DIFF_MAX), `FR-167 ${what}: same as masking it all`);
+  }
+  // finishEdit uses it: a diff over the mask's own 1,000,000-character cut counts every line not shown
+  {
+    const long = filler(30000);
+    assert.ok(long.length > 1_000_000);
+    assert.strictEqual(finishEdit([{ path: '/w/a.txt', kind: 'create', diff: long }])!.files[0].diff, maskedClip(long), 'FR-167: finishEdit masks only what it shows');
+  }
+  // the mask runs over a bounded window, not over the whole text (the cause of #1052)
+  let masked = 0;
+  const big = ' '.repeat(ARG_STREAM_MAX);
+  const out = maskedClip(big, DIFF_MAX, (x) => { masked += x.length; return redact(x); });
+  assert.ok(masked <= 4 * (DIFF_MAX + MASK_MARGIN), `FR-167: masked ${masked} characters of ${big.length}, at most ${4 * (DIFF_MAX + MASK_MARGIN)}`);
+  assert.ok(out.length <= DIFF_MAX + 100);
+  // the streamed Write of #1052: 800,000 spaces in 100-character fragments, an absolute CPU bound with wide headroom (was about 9 s on Linux, 2.2 s on an M4)
+  const json = JSON.stringify({ file_path: '/w/big.txt', content: ' '.repeat(800_000) });
+  const es = new EditStreams();
+  es.begin('big', 'Write');
+  const t0 = process.cpuUsage();
+  let steps = 0;
+  for (let i = 0; i < json.length; i += 100) steps += es.delta('big', json.slice(i, i + 100)).length;
+  const u = process.cpuUsage(t0);
+  const ms = (u.user + u.system) / 1000;
+  assert.ok(steps > 1, 'the stream was parsed as it grew');
+  assert.ok(ms < 6000, `FR-167: an 800,000-space streamed Write took ${Math.round(ms)} ms of CPU (bound 6000 ms)`);
 }
 
 console.log('edits: ok');

@@ -9,7 +9,7 @@
  * none on helpers or in the list's Folder cell), every item of FR-021 (Enter, blur, window blur, Tab, Esc that never
  * closes the chat, unchanged = no call, empty reset, a rule error on Enter and on blur, IME, paste, busy, one edit at a time), every item
  * of FR-023 (a late title, a rename elsewhere, an ended session, a removed one, a re-render, a view switch), the box of the item not
- * moving (D8), the field's font size, the macOS title bar not a drag region over the title, and the escaped EVIL name. Page code that must
+ * moving (D8), the field's font size, the title and every header control no-drag on a Mac (059 FR-025, 052 FR-215), and the escaped EVIL name. Page code that must
  * see the "chat just opened" state runs in ONE js call with the click that opens it (a round trip under load takes longer than 400 ms).
  * A miss prints DRIVER FAILED (Electron still exits 0), so the npm script exits non-zero unless "all checks passed" is printed.
  */
@@ -75,6 +75,27 @@ module.exports = async (ctx) => {
       assert.ok(await js(`typeof __durbarSimUi.inline==='function'&&!!window.__simRenameCalls`), `${tag}: the simulator hooks exist`);
       const ids = await js(`[...document.querySelectorAll('#stage .unit>.ren[data-ren]')].map(b=>b.dataset.ren)`);
       assert.ok(ids.length >= 6, `${tag}: pencils on the desks: ${ids.length}`);
+      /* issue #1067: the pencil's 24px box (invisible until hover, still clickable) never covers the middle of a name it shares a line with: a click there opens the chat */
+      const mid = await js(`(()=>{const out=[];let n=0;for(const b of document.querySelectorAll('#stage .unit>.ren[data-ren]')){const d=b.parentElement.querySelector(':scope>.desk[data-id]'),nm=d&&d.querySelector('.name');if(!nm||!nm.getClientRects().length)continue;
+        const r=nm.getBoundingClientRect(),q=b.getBoundingClientRect();if(q.bottom<=r.top||q.top>=r.bottom)continue;n++;const mx=r.left+r.width/2,my=r.top+r.height/2,at=document.elementFromPoint(mx,my);
+        if(q.left<mx-0.5||(at&&(at===b||b.contains(at))))out.push(b.dataset.ren+' '+JSON.stringify(nm.textContent.trim())+' name '+Math.round(r.left)+'..'+Math.round(r.right)+' box '+Math.round(q.left)+'..'+Math.round(q.right));}
+        return {n,out};})()`);
+      assert.ok(mid.n >= 1, `${tag}: some pencils share their name's line (${mid.n})`);
+      assert.deepStrictEqual(mid.out, [], `${tag}: no pencil box covers the middle of its name (issue #1067)`);
+      /* the case the bug needs, made on purpose: the shortest name on a card too narrow for the pencil beside it, so the pencil falls back over the
+         name (a stylesheet rule, so a re-render keeps it); its box must still leave the name's middle to the card */
+      const forced = await js(`(async()=>{let best=null;for(const b of document.querySelectorAll('#stage .unit>.ren[data-ren]')){const d=b.parentElement.querySelector(':scope>.desk[data-id]'),nm=d&&d.querySelector('.name');if(!nm||!nm.getClientRects().length)continue;const w=nm.getBoundingClientRect().width;if(!best||w<best.w)best={id:d.dataset.id,w};}
+        if(!best)return {err:'no desk'};const d=document.querySelector('#stage .desk[data-id="'+CSS.escape(best.id)+'"]'),nm=d.querySelector('.name'),dr=d.getBoundingClientRect(),nr=nm.getBoundingClientRect();
+        const st=document.createElement('style');st.id='ri-1067';st.textContent='#stage .desk[data-id="'+CSS.escape(best.id)+'"]{width:'+Math.ceil(nr.right-dr.left+10)+'px!important;min-width:0!important;max-width:none!important}#stage .desk[data-id="'+CSS.escape(best.id)+'"] .name{flex:none!important;min-width:max-content!important}';document.head.appendChild(st);
+        window.__durbarSimUi.render();await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));await new Promise(r=>setTimeout(r,200));
+        const b=document.querySelector('#stage .ren[data-ren="'+CSS.escape(best.id)+'"]'),n2=document.querySelector('#stage .desk[data-id="'+CSS.escape(best.id)+'"] .name');const r=n2.getBoundingClientRect(),q=b.getBoundingClientRect();
+        const mx=r.left+r.width/2,my=r.top+r.height/2,at=document.elementFromPoint(mx,my);
+        const res={id:best.id,name:n2.textContent.trim(),nameW:Math.round(r.width),over:q.left<r.right,boxLeft:Math.round(q.left),mid:Math.round(mx),covers:q.left<mx-0.5||!!(at&&(at===b||b.contains(at)))};
+        st.remove();window.__durbarSimUi.render();return res;})()`);
+      console.log('[rename-inline] ' + tag + ' forced short name: ' + JSON.stringify(forced));
+      assert.ok(forced.over, `${tag}: the forced case puts the pencil over the name (${JSON.stringify(forced)})`);
+      assert.strictEqual(forced.covers, false, `${tag}: on a short name with no room, the pencil box leaves the name's middle to the card (issue #1067): ${JSON.stringify(forced)}`);
+      await settle();
       const [A, B, C, D, E] = ids;
 
       // the screenshots of the edit state, on the fresh page (no rename has happened yet, so no leftover names)
@@ -164,10 +185,12 @@ module.exports = async (ctx) => {
       assert.strictEqual(await ae(), 'panelTitleBtn|', `${tag}: focus is on the title button after saving`);
       assert.strictEqual(await box('#panelHead'), hb, `${tag}: the header kept its box after saving`);
       assert.strictEqual(await nameOf(A), 'Billing refactor');
-      // the macOS title bar is not a drag region over the title (the header .ph is not one)
+      // 059 FR-025 (delta 2026-11-04) with 052 FR-215: the header .ph is a Mac drag area, but the title, its button and every control in it are no-drag
       await js(`document.documentElement.dataset.platform='darwin'`);
-      const regions = await js(`['#panelTitle','#panelTitleBtn','#panelHead','.ph-top'].map(s=>getComputedStyle(document.querySelector(s)).webkitAppRegion||'none')`);
-      assert.ok(regions.every((x) => x !== 'drag'), `${tag}: the title and header are not a drag region on a Mac: ${regions}`);
+      const regions = await js(`['#panelTitle','#panelTitleBtn'].map(s=>getComputedStyle(document.querySelector(s)).webkitAppRegion||'none')`);
+      assert.ok(regions.every((x) => x === 'no-drag'), `${tag}: the title and its button are no-drag on a Mac: ${regions}`);
+      const dragging = await js(`(()=>{const c=[...document.querySelectorAll('#panelHead :is(button,a,input,[tabindex],[title])')];return {n:c.length,bad:c.filter(e=>getComputedStyle(e).webkitAppRegion!=='no-drag').map(e=>(e.id||e.className||e.tagName)+'='+(getComputedStyle(e).webkitAppRegion||'none'))}})()`);
+      assert.ok(dragging.n >= 3 && dragging.bad.length === 0, `${tag}: every control in the chat header is no-drag on a Mac (${dragging.n} read): ${JSON.stringify(dragging.bad)}`);
       await js(`delete document.documentElement.dataset.platform`);
       // empty resets (6): the runtime title comes back, "Name reset." is announced, the call carries ''
       await click('#panelTitleBtn', 1); await ctx.sleep(120); await type('   '); await key('Return'); await settle();
