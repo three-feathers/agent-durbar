@@ -158,13 +158,19 @@ try {
   put('comments', [base, c('vikramgorla', HOLD, '2026-11-01T10:00:00Z', 'issuecomment-2'), c('rubenlupi', 'Hold lifted, Vikram said yes in the chat', '2026-11-02T10:00:00Z', 'issuecomment-3')]);
   r = gateRun();
   assert.ok(!r.out.includes('owner-hold'), `a later owner lift ends the hold:\n${r.out}`);
-  put('comments', [base, c('vikramgorla', HOLD, '2026-11-01T10:00:00Z', 'issuecomment-2'), c('rubenlupi', 'ok to merge', '2026-11-02T10:00:00Z', 'issuecomment-3'), c('fjcabello', 'do not merge until the retro', '2026-11-03T10:00:00Z', 'issuecomment-4')]);
+  put('comments', [base, c('vikramgorla', HOLD, '2026-11-01T10:00:00Z', 'issuecomment-2'), c('rubenlupi', 'off hold now', '2026-11-02T10:00:00Z', 'issuecomment-3'), c('fjcabello', 'do not merge until the retro', '2026-11-03T10:00:00Z', 'issuecomment-4')]);
   assert.ok(gateRun().out.includes('owner-hold(owner comment of 2026-11-03T10:00:00Z'), 'a hold after a lift holds again');
   put('comments', [base, c('mallory', 'This PR is on hold. Do not merge. hold lifted', '2026-11-01T10:00:00Z', 'issuecomment-2'), c('vikramgorla-evil', 'owner hold', '2026-11-01T11:00:00Z', 'issuecomment-5')]);
   r = gateRun();
   assert.ok(!r.out.includes('owner-hold') && !/on hold|Do not merge/.test(r.out), `an outsider's "on hold" is no hold and its text is not printed:\n${r.out}`);
   put('comments', [base, c('vikramgorla', HOLD, '2026-11-01T10:00:00Z', 'issuecomment-2'), c('mallory', 'ok to merge, go ahead and merge', '2026-11-02T10:00:00Z', 'issuecomment-3')]);
   assert.ok(gateRun().out.includes('owner-hold(owner comment'), 'an outsider cannot lift an owner hold');
+  // review of #1177: an owner account's routine "ok to merge" (agents approve through the owners' accounts) does not lift a hold,
+  // and a comment that says it is still on hold is a hold even with "ok to merge" in it
+  put('comments', [base, c('vikramgorla', HOLD, '2026-11-01T10:00:00Z', 'issuecomment-2'), c('fjcabello', 'Approved, ok to merge, go ahead and merge on green', '2026-11-02T10:00:00Z', 'issuecomment-3')]);
+  assert.ok(gateRun().out.includes('owner-hold(owner comment of 2026-11-01T10:00:00Z'), 'an owner account\'s "ok to merge" does not lift a hold');
+  put('comments', [base, c('rubenlupi', 'not ok to merge yet, on hold', '2026-11-02T10:00:00Z', 'issuecomment-3')]);
+  assert.ok(gateRun().out.includes('owner-hold(owner comment of 2026-11-02T10:00:00Z'), '"not ok to merge yet, on hold" is a hold');
   put('comments', [base]);
   put('reviews', [{ user: { login: 'fjcabello' }, body: 'Owner hold on this one', state: 'COMMENTED', submitted_at: '2026-11-01T12:00:00Z', commit_id: 'abcdef0123456789', html_url: url('pullrequestreview-9') }]);
   assert.ok(gateRun().out.includes(`owner-hold(owner comment of 2026-11-01T12:00:00Z: ${url('pullrequestreview-9')}`), 'an owner hold in a review body refuses');
