@@ -261,6 +261,11 @@ export interface SubagentEvent extends BaseEvent {
   durationMs?: number;
   totalTokens?: number;
   totalToolCalls?: number;
+  /**
+   * Spec 015 FR-018 (issue #1141): on `started` only, the helper runs in the background: the parent's call returns at once with a
+   * launch note while the helper goes on, so only this helper's own `completed` / `failed` (or the session stopping) ends it.
+   */
+  background?: boolean;
 }
 
 /** Per model call usage. Credits are reported by the runtime as nano-AIU when available. */

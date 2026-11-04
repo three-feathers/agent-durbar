@@ -595,3 +595,9 @@ The chat's chrome takes 367 of 900 px today, 41% of the window, in five rows plu
 ## Changes 2026-11-02: removed page and tools (owner decision, PR #1054)
 
 `scripts/edit-stream-real.ts` were removed on 2026-11-02 by owner decision (no caller; run dates and credit counts above stay valid history); the scripts are in git history at commit `1c75b5bee`.
+
+## Changes 2026-11-04: no empty More menu in a helper's chat (owner feedback, issue #1145)
+
+Owner (Vikram, 2026-11-04, packaged v0.1.8, Real office): More in a sub-agent's chat opened an empty popover. `read:` cause: `openPanel` builds `#moreMenu` and every item is for the session's own agent (`!a.parent`: Tools and usage, Schedules, New session, Continue in another app, Copy resume command, Rename, End session, Remove; Notes and Remote also need `!a.parent`), so a helper's menu has none, yet the button was drawn. FR-004 does not say what a helper's header shows; the empty menu is a defect.
+
+- **FR-234** **More only when it holds something.** The header's More button is hidden whenever its menu has no item (`syncMoreBtn`, run when the header is built and on every header update), and an open empty menu is closed. A helper's chat therefore has no More; a main agent's chat keeps it. No item is added for helpers: each current item acts on the session's own agent (the helper is read-only and its parent's chat holds the actions). Test: `check-helper-more` (a helper's chat has no visible `#moreBtn`; a main agent's has it with at least one item and its open menu is inside the window, both sizes); mutant: remove the `syncMoreBtn()` call, the helper assert fails. `[IMPLEMENTED]` test:
