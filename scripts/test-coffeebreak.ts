@@ -14,6 +14,7 @@ import { scheduleBusy } from '../src/main/schedules';
 import { eventProblems as validateEvent } from '../src/adapters/eventguard';
 import { AgentStateTracker } from '../src/main/mcp/agentstate';
 import type { AgentEvent } from '../src/adapters/types';
+import { tmpDir } from './test-tmp';
 
 interface Break { id: string; kind: string; phase: string; rehit?: boolean; heldByRehit?: boolean; resetsAt?: number; estimated: boolean; paid: boolean; source: string; noAuto: boolean }
 interface Breaks {
@@ -395,7 +396,7 @@ const valid = (b: EventBody): void => assert.deepStrictEqual(validateEvent({ ...
 {
   assert.deepStrictEqual(parseSettings('{"breakResume":"ask"}'), { breakResume: 'ask' });
   for (const v of ['"auto"', '"ASK"', 'true', '1', 'null']) assert.deepStrictEqual(parseSettings('{"breakResume":' + v + '}'), {}, 'only ask is kept: ' + v);
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-coffee-'));
+  const dir = tmpDir('durbar-coffee-');
   const f = path.join(dir, 's.json');
   const ss = new SettingsStore(f);
   ss.load();
