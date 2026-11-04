@@ -199,7 +199,7 @@ async function main({ argv = process.argv.slice(2), run, ensure, clockQuery } = 
     while (next < todo.length) {
       const d = todo[next++];
       const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-docs-shots-'));
-      const r = await runOne({ name: d.name, sim: d.sim, freeze: d.freeze, env: { ...suiteEnv(d, suite.DRIVERS), DURBAR_SIM_CLOCK: clock } }, tmp);
+      const r = await runOne({ name: d.name, sim: d.sim, freeze: d.freeze, env: { ...suiteEnv(d, suite.DRIVERS), DURBAR_SIM_CLOCK: clock, DURBAR_DOC_SHOTS: '1' } }, tmp);
       const missing = d.files.filter((f) => !fs.existsSync(path.join(tmp, source(f))));
       const label = d.label || d.name;
       if (!r.ok || missing.length) {

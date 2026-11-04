@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" role="img" aria-label="Agent Durbar">
+  <title>Agent Durbar: Figure with badge</title>
+  <rect data-slot="plate" fill="#061C4A" x="0" y="0" width="32" height="32" rx="6"/>
+  <path data-slot="gold" fill="#FFC21A" d="M13 5L12 1.5L14.2 3L16 1L17.8 3L20 1.5L19 5Z"/>
+  <circle data-slot="cream" fill="#FBF6EE" cx="16" cy="9.5" r="3.8"/>
+  <path data-slot="cream" fill="#FBF6EE" d="M10 21V16A3 3 0 0 1 13 13H19A3 3 0 0 1 22 16V21Z"/>
+  <path data-slot="badge" fill="#061C4A" d="M12.5 15L13.5 14L16.5 17L13.5 20L12.5 19L14.5 17Z"/>
+  <rect data-slot="badge" fill="#061C4A" x="16.5" y="18" width="3.5" height="1.5"/>
+  <rect data-slot="bot" fill="#C2DEFF" x="5.5" y="23" width="1" height="3.5"/>
+  <circle data-slot="bot" fill="#C2DEFF" cx="6" cy="23" r="1"/>
+  <rect data-slot="bot" fill="#C2DEFF" x="3" y="25" width="6" height="5" rx="1.5"/>
+  <circle data-slot="eye" fill="#0E1420" cx="4.7" cy="27.5" r="0.8"/>
+  <circle data-slot="eye" fill="#0E1420" cx="7.3" cy="27.5" r="0.8"/>
+  <rect data-slot="bot" fill="#C2DEFF" x="15.5" y="23" width="1" height="3.5"/>
+  <circle data-slot="bot" fill="#C2DEFF" cx="16" cy="23" r="1"/>
+  <rect data-slot="bot" fill="#C2DEFF" x="13" y="25" width="6" height="5" rx="1.5"/>
+  <circle data-slot="eye" fill="#0E1420" cx="14.7" cy="27.5" r="0.8"/>
+  <circle data-slot="eye" fill="#0E1420" cx="17.3" cy="27.5" r="0.8"/>
+  <rect data-slot="bot" fill="#C2DEFF" x="25.5" y="23" width="1" height="3.5"/>
+  <circle data-slot="bot" fill="#C2DEFF" cx="26" cy="23" r="1"/>
+  <rect data-slot="bot" fill="#C2DEFF" x="23" y="25" width="6" height="5" rx="1.5"/>
+  <circle data-slot="eye" fill="#0E1420" cx="24.7" cy="27.5" r="0.8"/>
+  <circle data-slot="eye" fill="#0E1420" cx="27.3" cy="27.5" r="0.8"/>
+</svg>

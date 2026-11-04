@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" role="img" aria-label="Agent Durbar">
+  <title>Agent Durbar: Terminal chair</title>
+  <rect data-slot="plate" fill="#03183A" x="0" y="0" width="16" height="16" rx="3"/>
+  <path data-slot="gold" fill="#FFC21A" d="M6 3L5.5 0.6L6.9 1.5L8 0.3L9.1 1.5L10.5 0.6L10 3Z"/>
+  <rect data-slot="gold" fill="#FFC21A" x="5" y="4" width="6" height="7"/>
+  <rect data-slot="screen" fill="#060C1A" x="6" y="5" width="4" height="5"/>
+  <path data-slot="cream" fill="#FBF6EE" d="M6.5 5.5H7.5L9 7.5L7.5 9.5H6.5V8.7L7.4 7.5L6.5 6.3Z"/>
+  <rect data-slot="gold" fill="#FFC21A" x="4" y="11" width="8" height="2"/>
+  <rect data-slot="gold" fill="#FFC21A" x="5" y="13" width="1" height="2"/>
+  <rect data-slot="gold" fill="#FFC21A" x="10" y="13" width="1" height="2"/>
+  <rect data-slot="bot" fill="#C2DEFF" x="1" y="11" width="2" height="3" rx="0.4"/>
+  <rect data-slot="bot" fill="#C2DEFF" x="13" y="11" width="2" height="3" rx="0.4"/>
+</svg>

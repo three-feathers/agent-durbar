@@ -26,11 +26,10 @@ build/logo/icons.json                 source and output hashes
         +- scripts/test-logo-assets.ts  test:logo-assets, in npm test
 src/renderer/logo-marks.js            window.DurbarLogo: id -> svg strings; no colours beyond the base fills
 src/renderer/index.html               icon 1 inline, no script needed
-src/renderer/styles.css               --logo-* in the token block; [data-slot] fills inside .brand-mark; forced colours
-src/renderer/themes.css               non-Clean styles: --logo-* = var(--brand-*)
-src/renderer/theme.js                 reads durbar.logo early, sets data-logo, swaps the SVG
+src/renderer/logo.css                 the palettes (base, non-Clean = var(--brand-*), photo, cave, loft as html[data-world]); [data-slot] fills inside .brand-mark; forced colours (built 2026-11-01)
+src/renderer/logo-marks.js            (above) also reads durbar.logo early, sets data-logo, swaps the SVG; no theme.js change
 src/renderer/screens.js               Settings > Logo, the Characters pattern
-src/renderer/realoffice/worlds/<id>/  world.json chrome tokens gain --logo-*: approved worlds only
+src/renderer/realoffice/worlds/<id>/  (not built: until 097 P1 lands the palettes stay in logo.css)
 src/renderer/logo/art/<world>/        192 px WebP previews: approved worlds only
 ```
 

@@ -158,5 +158,5 @@
 - [x] T122: the `Highlight:` and `Scene:` fragment fields in `scripts/changelog.js` (check, strip on fold, `highlights()`/`highlightsBlock()`, shown by `changelog:preview`), tests in `test-changelog.js`, the format in `changelog.d/README.md` [FR-173]
 - [x] T123 (`read:`, prose steps, no test): the daily release steps in `changelog.d/README.md` (record, look, upload to the draft, image line, publish without it on failure) [FR-174, FR-175]
 - [x] T126: the release clip's camera (eased zooms, holds, a caption per step, `-zoom` stills), the home-path refusal and the neutral simulator paths, with tests [FR-171, FR-176, FR-178] (spec delta 2026-11-04)
-- [ ] T124: the first published release with a clip: check the GIF renders inline on the release page (and the MP4 link); else the repository fallback of FR-174 [FR-174] (real check)
+- [x] T124 (2026-11-04, v0.1.9: the owner saw the GIF play inline on the release page): the first published release with a clip: check the GIF renders inline on the release page (and the MP4 link); else the repository fallback of FR-174 [FR-174] (real check)
 - [x] T125: the Highlights block at the top of the draft's notes in `scripts/release-notes.js`, with tests [FR-173]

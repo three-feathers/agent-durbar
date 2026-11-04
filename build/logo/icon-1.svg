@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-label="Agent Durbar">
+  <title>Agent Durbar: Prompt sovereign</title>
+  <rect data-slot="plate" fill="#10141E" x="0" y="0" width="1024" height="1024" rx="200"/>
+  <path data-slot="gold" fill="#FFC21A" d="M298 263L278 186L339 215L382 153L424 215L487 186L463 263Z"/>
+  <path data-slot="gold" fill="#FFC21A" d="M305.6 336.3Q284.4 357.4 305.5 378.7L385.8 459.6L296.8 541.9Q274.8 562.2 295.1 584.3L316.9 607.7Q337.2 629.8 359.3 609.4L502.1 477.4Q518.2 462.4 502.7 446.8L370.8 313.9Q349.6 292.6 328.4 313.7Z"/>
+  <rect data-slot="gold" fill="#FFC21A" x="513" y="546" width="252" height="66" rx="26"/>
+  <rect data-slot="bot" fill="#C2DEFF" x="215.5" y="714" width="16" height="89"/>
+  <circle data-slot="bot" fill="#C2DEFF" cx="223.5" cy="714" r="21"/>
+  <rect data-slot="bot" fill="#C2DEFF" x="134" y="759" width="179" height="129" rx="44"/>
+  <circle data-slot="eye" fill="#0E1420" cx="187.5" cy="823.5" r="17.5"/>
+  <circle data-slot="eye" fill="#0E1420" cx="259.5" cy="823.5" r="17.5"/>
+  <rect data-slot="bot" fill="#C2DEFF" x="504.5" y="714" width="16" height="89"/>
+  <circle data-slot="bot" fill="#C2DEFF" cx="512.5" cy="714" r="21"/>
+  <rect data-slot="bot" fill="#C2DEFF" x="423" y="759" width="179" height="129" rx="44"/>
+  <circle data-slot="eye" fill="#0E1420" cx="476.5" cy="823.5" r="17.5"/>
+  <circle data-slot="eye" fill="#0E1420" cx="548.5" cy="823.5" r="17.5"/>
+  <rect data-slot="bot" fill="#C2DEFF" x="793.5" y="714" width="16" height="89"/>
+  <circle data-slot="bot" fill="#C2DEFF" cx="801.5" cy="714" r="21"/>
+  <rect data-slot="bot" fill="#C2DEFF" x="712" y="759" width="179" height="129" rx="44"/>
+  <circle data-slot="eye" fill="#0E1420" cx="765.5" cy="823.5" r="17.5"/>
+  <circle data-slot="eye" fill="#0E1420" cx="837.5" cy="823.5" r="17.5"/>
+</svg>

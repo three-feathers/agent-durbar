@@ -205,7 +205,7 @@ const api: DurbarApi = {
   openWithTargets: (id) => ipcRenderer.invoke('agents:openWithTargets', id),
   openWith: (id, target) => ipcRenderer.invoke('agents:openWith', id, target),
   gitStatus: (id) => ipcRenderer.invoke('agents:gitStatus', id),
-  sessionSummary: (id) => ipcRenderer.invoke('agents:sessionSummary', id),
+  sessionSummary: (id, final) => ipcRenderer.invoke('agents:sessionSummary', id, final === true),
   onEvent: (cb) => sub('agent:event', cb),
   onAgentAdded: (cb) => sub('agent:added', cb),
   onAgentRenamed: (cb) => sub('agents:renamed', cb),
