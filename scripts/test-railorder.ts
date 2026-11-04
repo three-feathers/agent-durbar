@@ -46,6 +46,16 @@ const it = (id: string, room: string, rank: number, i: number, o: Partial<Item> 
   ]);
   assert.deepStrictEqual(g[0].ids, ['x5', 'x3', 'x2', 'x1', 'x4'], 'needs (oldest first), then prio, then creation order');
 }
+// the result never depends on the input order (a comparator that only works one way round is caught): every rotation of the input
+{
+  const rot = <T>(l: T[], k: number): T[] => l.slice(k).concat(l.slice(0, k));
+  // a folder that needs you leads even when the office puts it last and the quiet folders are many
+  const fs0 = [it('q1', 'A', 0, 0), it('q2', 'B', 1, 1), it('q3', 'C', 2, 2), it('q4', 'E', 4, 3), it('n1', 'D', 3, 4, { needs: true, since: 9, prio: 2 })];
+  for (let k = 0; k < fs0.length; k++) assert.deepStrictEqual(R.group(rot(fs0, k)).map((x) => x.room), ['D', 'A', 'B', 'C', 'E'], `folders, rotation ${k}`);
+  // inside a folder whoever needs you leads even with the same prio and a later creation (a spending limit needs you at prio 2)
+  const rs0 = [it('r1', 'A', 0, 0), it('r2', 'A', 0, 1), it('r3', 'A', 0, 2, { needs: true, since: 7, prio: 2 }), it('r4', 'A', 0, 3)];
+  for (let k = 0; k < rs0.length; k++) assert.deepStrictEqual(R.group(rot(rs0, k))[0].ids, ['r3', 'r1', 'r2', 'r4'], `rows, rotation ${k}`);
+}
 // a tie on the wait keeps prio, then creation order; an unknown wait sorts after a known one
 {
   const g = R.group([it('p', 'A', 0, 0, { needs: true, since: 5, prio: 1 }), it('q', 'A', 0, 1, { needs: true, since: 5, prio: 0 }), it('r', 'A', 0, 2, { needs: true })]);
