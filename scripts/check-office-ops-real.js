@@ -5,6 +5,7 @@
  *     a single reading can hold another agent's walk), each started only when nothing is put off (DurbarRealOffice.pending(): no screen repaint, FR-033, and no
  *     done-tick redraw waiting on a timer) and the lobby is settled, so no earlier update's deferred work lands in it: renders, layout reads (offset*, client*, scroll*, getBoundingClientRect, getClientRects), nodes added or removed
  *     and attribute writes in #stage (a MutationObserver; the state's own cues, a call light, a "?", "!", the thinking dots and a folder's count of a new state, are not "nodes rewritten");
+ *   - topbarResizes: no part of the top bar changes size in those updates (a count's pill keeps its width with proportional figures too, as on the Windows runner's font);
  *   - elements recalculated by one text change (`UpdateLayoutTree.elementCount` of one short contentTracing, a count; animations off for the trace);
  *   - FR-180, FR-181: the running infinite animations (at most one per light whose state moves, none outside the lights), that each is stepped at most 8 changes a
  *     second and names only transform and opacity, no element with a blend mode; none running under reduced motion (emulated) and Serious mode (the Settings switch);
@@ -24,7 +25,7 @@ const assert = require('assert');
 const { contentTracing } = require('electron');
 const { helpers, jsLiteral } = require('./driver-helpers');
 
-const LIMITS = { rendersPerStatus: 1, readsPerStatus: 5, nodesPerStatus: 0, attrWritesPerStatus: 10, elementsRecalculated: 50, pictureArea: 4, animationsOverLights: 0, animationsOffLights: 0, animationsUnstepped: 0, animationsOtherProperty: 0, lightsBoxShadow: 0, stepsPerSecond: 8, blendElements: 0, animationsStill: 0 };
+const LIMITS = { rendersPerStatus: 1, readsPerStatus: 5, nodesPerStatus: 0, attrWritesPerStatus: 10, elementsRecalculated: 50, pictureArea: 4, animationsOverLights: 0, animationsOffLights: 0, animationsUnstepped: 0, animationsOtherProperty: 0, lightsBoxShadow: 0, stepsPerSecond: 8, blendElements: 0, animationsStill: 0, topbarResizes: 0 };
 /* Measured 2026-11-04 (second review on #969), Linux under xvfb: 16 runs of 8 updates, 8 idle and 8 under eight busy loops on 4 cores: reads 15 and nodes 22 in
    every update at 15 and 40 agents; attribute writes 40 and 34 by turns at 15 (median 40), 48 and 42 at 40 (median 48). Before each update waited for nothing put off,
    a loaded run counted 26, 27 and 44 nodes in single updates at 40 agents (a screen's deferred repaint, or a done tick's redraw, inside the window: a second render);
@@ -66,16 +67,20 @@ function elementsRecalculated(events) {
 }
 
 /* The counters, in the page: renders, layout reads, nodes and attribute writes between `start()` and `stop()` */
-const INSTRUMENT = `(()=>{ if(window.__ops)return; const O=window.__ops={on:false,reads:0,renders:0,attrs:0,nodes:0,seen:{}};const CUE=/^ro-(call|bub|bang|dots|cnt)\\b/;
-  const bump=()=>{if(O.on)O.reads++;};
+const INSTRUMENT = `(()=>{ if(window.__ops)return; const O=window.__ops={on:false,reads:0,renders:0,attrs:0,nodes:0,seen:{},by:{},resized:[]};const CUE=/^ro-(call|bub|bang|dots|cnt)\\b/;
+  const bump=()=>{if(!O.on)return;O.reads++;const f=String(new Error().stack||'').split('\\n').slice(3,5).map(x=>x.trim().replace(/^.*\\/([^/]+:\\d+):\\d+\\)?$/,'$1')).join(' < ');O.by[f]=(O.by[f]||0)+1;};
   for(const prop of ['offsetWidth','offsetHeight','offsetTop','offsetLeft','clientWidth','clientHeight','clientTop','clientLeft','scrollHeight','scrollWidth','scrollTop','scrollLeft'])
     for(const proto of [HTMLElement.prototype,Element.prototype]){const d=Object.getOwnPropertyDescriptor(proto,prop);if(d&&d.get)Object.defineProperty(proto,prop,{...d,get(){bump();return d.get.call(this);}});}
   for(const m of ['getBoundingClientRect','getClientRects']){const f=Element.prototype[m];Element.prototype[m]=function(){bump();return f.apply(this,arguments);};}
   const R=window.DurbarRealOffice,r=R.render;R.render=function(){if(O.on)O.renders++;return r.apply(this,arguments);};
   const take=(l)=>{if(!O.on)return;for(const m of l){if(m.type==='attributes'){O.attrs++;const k=(m.target.className&&String(m.target.className).split(' ')[0]||m.target.tagName)+'.'+m.attributeName;O.seen[k]=(O.seen[k]||0)+1;}else for(const n of [...m.addedNodes,...m.removedNodes])if(!(n.classList&&CUE.test(n.className))){O.nodes++;const k='node:'+(n.className&&String(n.className).split(' ')[0]||n.nodeName)+' in '+(m.target.className&&String(m.target.className).split(' ')[0]||m.target.nodeName);O.seen[k]=(O.seen[k]||0)+1;}}};
   const mo=new MutationObserver(take);mo.observe(document.getElementById('stage'),{subtree:true,childList:true,attributes:true});
-  O.start=()=>{O.reads=O.renders=O.attrs=O.nodes=0;O.seen={};O.on=true;};
-  O.stop=()=>{take(mo.takeRecords());O.on=false;return {reads:O.reads,renders:O.renders,attrs:O.attrs,nodes:O.nodes,seen:O.seen};};
+  /* the top bar's parts that change size while counting (its ResizeObserver refits the bar, fitTopbar, with layout reads): which, from what to what */
+  const tbName=(e)=>(e.id?'#'+e.id:'')+(e.className&&typeof e.className==='string'?'.'+e.className.trim().split(/\\s+/).join('.'):'')||e.tagName;const tbW=new Map();
+  const tro=new ResizeObserver((l)=>{for(const en of l){const w=Math.round(en.contentRect.width*100)/100,h=Math.round(en.contentRect.height*100)/100,was=tbW.get(en.target);tbW.set(en.target,[w,h]);if(O.on&&was&&(was[0]!==w||was[1]!==h))O.resized.push(tbName(en.target)+' '+was.join('x')+'>'+w+'x'+h+' '+JSON.stringify(en.target.textContent.trim().slice(0,40)));}});
+  const tb=document.querySelector('.topbar');if(tb)for(const e of [tb,...tb.querySelectorAll(':scope > *, #stats > *, #stats b, #stats span.l')])tro.observe(e);
+  O.start=()=>{O.reads=O.renders=O.attrs=O.nodes=0;O.seen={};O.by={};O.resized=[];O.on=true;};
+  O.stop=()=>{take(mo.takeRecords());O.on=false;return {reads:O.reads,renders:O.renders,attrs:O.attrs,nodes:O.nodes,seen:O.seen,by:O.by,resized:O.resized};};
 })()`;
 
 /* FR-183: natural area of the distinct pictures (each decoded once) over what is shown, in device pixels; a chosen picture's real size comes from a plain Image of its currentSrc (with srcset, naturalWidth is corrected by the chosen density) */
@@ -106,7 +111,11 @@ module.exports = async (ctx) => {
   const dbg = ctx.win.webContents.debugger;
   if (!dbg.isAttached()) dbg.attach('1.3');
   await dbg.sendCommand('Emulation.setDeviceMetricsOverride', { width: 0, height: 0, deviceScaleFactor: 1, mobile: false });
+  /* the machine's own setting must not decide the motion rows (as in check-097-motion): Windows CI runners report "reduce motion", and then the people and the lights
+     rightly stand still, so "second frames running" found none there (spec 097, Changes 2026-11-04). The reduced-motion rows below emulate "reduce" themselves */
+  await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
   const rows = {};
+  const readsBy = {}; /* n -> the layout reads of the update with the most, by the page line that made them (a reads row over its limit names them) */
   const load = (n, extra = {}) => H.load({ w: 1440, h: 900, index, query: { sim: String(n), officeview: 'real', ...extra }, ready: REAL, readyMs: 30000, settle: false });
   const frames = () => js(`new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>{const c=new MessageChannel();c.port1.onmessage=()=>r(1);c.port2.postMessage(0);})))`);
 
@@ -120,6 +129,7 @@ module.exports = async (ctx) => {
 
   // ---- FR-183 with the people moving (romotion=1): a pose's second frame takes the same size as its first, so the half-size set holds with motion on ----
   await load(15, { romotion: '1' });
+  assert.strictEqual(await js(`matchMedia('(prefers-reduced-motion: reduce)').matches`), false, 'motion on: reduced motion is emulated off, whatever the machine says');
   assert.ok(await H.until('(' + SETTLED + `)&&document.querySelectorAll('#stage :is(.ro-person2,.ro-visitor2).m-b').length>0`, 20000), 'motion on: second frames running: ' + JSON.stringify(await js(`[...document.querySelectorAll('#stage :is(.ro-person2,.ro-visitor2,.ro-rig)')].map(e=>e.className)`)));
   const pair = await js(`[...document.querySelectorAll('#stage :is(.ro-person2,.ro-visitor2)')].map(b=>{const a=document.querySelector('#stage :is(.ro-person,.ro-visitor)[data-for="'+CSS.escape(b.dataset.for)+'"]');return [b.dataset.for,/\.h\.webp$/.test(a&&a.currentSrc||''),/\.h\.webp$/.test(b.currentSrc)];})`);
   const moving15 = await js(AREA);
@@ -157,6 +167,9 @@ module.exports = async (ctx) => {
     }
     // ---- FR-184: one status change of one agent at its desk ----
     await js(INSTRUMENT);
+    /* the Windows runner's system font ignored tabular figures ("6" 7.78 px, "7" 7.52 px), so a count change resized its pill and the top bar measured itself again (fitTopbar, 12 reads):
+       the counts are given proportional figures here, so Linux and macOS see the same font case, and a pill must still keep its size (spec 097, Changes 2026-11-04) */
+    await ctx.win.webContents.insertCSS('#stats .stat b{font-variant-numeric:proportional-nums!important}');
     const id = await js(`(()=>{const p=[...document.querySelectorAll('#stage .ro-plate')].find(x=>x.dataset.state==='working'&&document.querySelector('#stage .ro-person[data-for="'+CSS.escape(x.dataset.id)+'"]'))||[...document.querySelectorAll('#stage .ro-plate')].find(x=>x.dataset.state==='idle'&&document.querySelector('#stage .ro-person[data-for="'+CSS.escape(x.dataset.id)+'"]'));return p&&p.dataset.id})()`);
     assert.ok(id, 'an agent at its desk, working or idle');
     const emit = (st) => js(`window.__durbarSimEmit({type:'status',sessionId:${jsLiteral(id)},timestamp:Date.now(),status:${jsLiteral(st)}})`);
@@ -166,8 +179,8 @@ module.exports = async (ctx) => {
     await emit('working');
     await H.until(shows('working'), 8000);
     await frames();
-    const per = { renders: [], reads: [], nodes: [], attrs: [] };
-    let seen = {}, worst = null, putOff = 0;
+    const per = { renders: [], reads: [], nodes: [], attrs: [] }, resizes = [];
+    let seen = {}, worst = null, putOff = 0, mostReads = null;
     const startedBusy = [];
     for (let i = 0; i < 8; i++) {
       const st = i % 2 ? 'working' : 'idle';
@@ -184,7 +197,9 @@ module.exports = async (ctx) => {
       const o = await js(`window.__ops.stop()`);
       const put = await js(`(()=>{const p=window.DurbarRealOffice.pending();return p.screens+p.ticks;})()`); putOff += put;
       for (const k of Object.keys(per)) per[k].push(o[k]);
+      resizes.push(...o.resized);
       seen = o.seen;
+      if (!mostReads || o.reads > mostReads.reads) mostReads = { i, reads: o.reads, by: o.by, resized: o.resized };
       if (!worst || o.nodes + o.attrs > worst.nodes + worst.attrs) worst = { i, ...o }; /* the most costly update's breakdown is logged, so a failure says what it wrote */
     }
     assert.deepStrictEqual(startedBusy, [], `${n} agents: every measured update started with nothing put off (the updates that did not)`);
@@ -193,7 +208,11 @@ module.exports = async (ctx) => {
     rows[`readsPerStatus@${n}`] = med(per.reads);
     rows[`nodesPerStatus@${n}`] = med(per.nodes);
     rows[`attrWritesPerStatus@${n}`] = med(per.attrs);
+    rows[`topbarResizes@${n}`] = resizes.length; /* every top-bar part that changed size in the 8 updates: none may */
+    for (const z of resizes.slice(0, 4)) console.log('[ops]', n, 'agents, top bar resized in an update:', z);
+    readsBy[n] = mostReads;
     console.log('[ops]', n, 'agents, per status update (8):', JSON.stringify(per));
+    console.log('[ops]', n, 'agents, layout reads of update', mostReads.i, '(' + mostReads.reads + '), by line:', JSON.stringify(mostReads.by));
     for (const [k, v] of Object.entries(seen)) console.log('[ops]  ', n, 'agents, last update wrote', k, v); // node: = added or removed
     console.log('[ops]', n, 'agents, the most costly update (' + worst.i + '):', worst.nodes, 'nodes', worst.attrs, 'attribute writes', JSON.stringify(worst.seen));
     // ---- FR-185: one text change, in the normal shape of a render ----
@@ -240,8 +259,14 @@ module.exports = async (ctx) => {
     const row = key.split('@')[0], known = KNOWN_FAILURES[key];
     if (value > LIMITS[row]) {
       if (known && value <= known.max) console.log(`[ops] ${key} = ${value} over ${LIMITS[row]} (known failure, ${known.task}; may not pass ${known.max})`);
-      else failed.push(`${key} = ${value}, limit ${known ? known.max : LIMITS[row]}`);
+      else failed.push(`${key} = ${value}, limit ${known ? known.max : LIMITS[row]}` + (row === 'readsPerStatus' ? ' (callers in the [ops] reads lines above)' : ''));
     } else if (known) failed.push(`${key} = ${value} is within its limit: delete its KNOWN_FAILURES entry (${known.task})`);
+  }
+  /* a failing reads row names its callers one per short line, the most first, right before the assert: the suite keeps only a failed driver's last 25 lines of 240 characters */
+  for (const f of failed) {
+    const m = /^readsPerStatus@(\d+) /.exec(f), r = m && readsBy[m[1]];
+    if (r) for (const [line, c] of Object.entries(r.by).sort((x, y) => y[1] - x[1]).slice(0, 8)) console.log(`[ops] reads@${m[1]} update ${r.i}: ${c} from ${line}`);
+    if (r) for (const z of r.resized.slice(0, 4)) console.log(`[ops] reads@${m[1]} update ${r.i}: top bar resized ${z}`);
   }
   assert.deepStrictEqual(failed, [], `op rows over their limits:\n  ${failed.join('\n  ')}`);
   console.log('[ops] checks passed');
