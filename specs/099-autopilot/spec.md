@@ -410,6 +410,10 @@ the cap is reached, the run ends with **cap**. Without a cap, the dialog says pl
   - If the clear cannot be confirmed, Durbar ends the session and kills its child where it has its own (Claude Code, Codex). The session's history stays.
   - The chat says so: "Durbar could not confirm that Autopilot stopped, so it ended this session's process." The run keeps the reason it was ending with, or **error** if it had none.
   - The next message resumes in Allow all and clears first (FR-053). If that clear fails too, the message is not sent, and the chat says why. Fake adapter tests: T025.
+- **FR-059** **A Stop, or Autopilot off, while a send that starts a run is still waiting** (Copilot's cap update, Claude Code's launch and its resume `/goal clear`) starts no run and leaves nothing behind (review on #967, 2026-11-04). The adapter reads the session again after the last wait, just before the run begins:
+  - **A Stop** (or the session ending) drops the message, as FR-229 of spec 052 drops one held by a Stop. **Autopilot off alone** sends it as a plain message, never a goal.
+  - **The Autopilot cap goes back** on every way out before the run begins: Copilot sends the session's own cap again; Claude Code drops the Autopilot `--max-budget-usd`, and the next launch is without it.
+  - Later sends work as before: no turn is left open and no Autopilot refusal sticks. No goal outlives the Stop. Codex reads Autopilot again right before `thread/goal/set`, with no wait between. Fake adapter tests with gated fakes: T050.
 
 ### Window
 
@@ -691,6 +695,15 @@ Owner decision of Vikram, 2026-10-31 and restated 2026-11-01 (matching Paco; fir
     - On Copilot, Stop's Autopilot branch and End's `endQuietly` run inside FR-229's stop sequence, so a send made during them waits as it does for any Stop.
     - `send` checks the Autopilot refusals before and again after that wait, because Autopilot may have been turned off during it. A Stop during the wait drops the message (FR-229). `test-autopilot-copilot.ts`: Autopilot turned off during the wait sends a plain message and starts no run. Without the second check the send rejects ("This session is not on Autopilot."), which fails `Autopilot went off during the wait: the message still goes`.
     - The `test:autopilot-*` suites are listed in `scripts/test-suites.txt`.
+
+### 2026-11-04: a Stop or Autopilot off during a send's last wait (review on #967)
+
+Review on PR #967 (rubenlupi's agent, 2026-11-04): on Copilot a Stop or `setAutopilot(null)` while the Autopilot cap update waited made the send fail with "This session is not on Autopilot.", left the turn open and the Autopilot cap in force, so every later Autopilot send was refused. On Claude Code the same during the resume's `/goal clear` left the Autopilot cap set for later launches.
+
+- **Adds:** FR-059 (above). **Replaces:** nothing; FR-022's "restored after every end" now also covers a run that never began.
+- **How:** Copilot reads the refusals again after the cap update, with the Stop count (`interrupts`) taken before it, and restores the session's cap on anything but a run starting now (`capForRun`). Claude Code keeps a Stop count (`stops`), checks it with Autopilot after the last wait, undoes the Autopilot cap in a `finally` until the run began, and sends a plain message again through the relaunch when Autopilot went off alone.
+- **Also from that review:** a test for the stop-sequence claim of the 2026-11-04 merge entry (a send during a Stop still stopping Autopilot waits, run and no run), for the Copilot resume wait on `session.mode_changed` (FR-053), End session stopping the clock sample (FR-052), the Codex `live.mode` guard before `thread/goal/set` (FR-002) and a whole-number token cap; the fixed sleeps in the Codex and Claude Code tests became condition waits (FR-048b); Copilot's `timed` now uses `within` (FR-031).
+- Tests: `test-autopilot-copilot.ts`, `test-autopilot-claude.ts`, `test-autopilot-codex.ts` on fakes only. No real session.
 
 ### 2026-11-03: the `/word` refusal is dropped for Claude Code goals (owner decision, Vikram)
 

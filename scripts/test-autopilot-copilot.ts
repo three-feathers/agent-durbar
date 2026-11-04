@@ -7,7 +7,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { FakeClient, FakeCopilot } from './fakes/copilot-sdk';
 import type { FakeSession } from './fakes/copilot-sdk';
-import { COPILOT_CAPABILITIES, copilotTaskEnd } from '../src/adapters/copilot';
+import { COPILOT_CAPABILITIES, COPILOT_STOP_WAIT, copilotTaskEnd } from '../src/adapters/copilot';
 import { AUTOPILOT_ANSWER, CLOCK_SAMPLE_MS } from '../src/adapters/autopilot';
 import { LINE_BACKSTOP, LINE_CAP_NOT_RESTORED, LINE_CLOSED, LINE_SELF_STARTED, LINE_UNCONFIRMED } from '../src/adapters/autopilotHost';
 import type { AutopilotTuning } from '../src/adapters/autopilotHost';
@@ -290,6 +290,84 @@ async function main(): Promise<void> {
     land2();
     await sent2;
     assert.ok(!q.s.calls.some((c) => c.name === 'send'), 'a Stop during the wait drops the message');
+  }
+
+  // FR-059 (review on #967): Stop, or Autopilot off, while the Autopilot cap update waits (a gated fake, no timer): the session's own cap goes
+  // back, no run starts, and the next Autopilot send is not refused. A Stop drops the message; Autopilot off alone sends it plain.
+  for (const how of ['stop', 'off'] as const) {
+    const r = await rig({ cap: 100 });
+    await r.ad.setAutopilot(r.sid, { limit: 5, cap: 40 });
+    const caps: unknown[] = [];
+    let open: () => void = () => undefined;
+    let gated = true;
+    r.s.rpc.options.update = async (a: unknown) => {
+      caps.push((a as { sessionLimits?: unknown }).sessionLimits);
+      if (gated) { gated = false; await new Promise<void>((res) => { open = res; }); }
+    };
+    const sent = r.ad.send(r.sid, { text: 'the goal' });
+    await until(() => caps.length === 1, `${how}: the cap update is in flight`);
+    if (how === 'stop') await r.ad.interrupt(r.sid); else await r.ad.setAutopilot(r.sid, null);
+    open();
+    assert.strictEqual(await sent.then(() => 'ok', (e: Error) => e.message), 'ok', `${how} during the cap update: the send is not refused`);
+    assert.deepStrictEqual(caps, [{ maxAiCredits: 40 }, { maxAiCredits: 100 }], `${how} during the cap update: the session's own cap goes back`);
+    assert.ok(!r.lines().includes(LINE_CAP_NOT_RESTORED), `${how}: restored, so not said`);
+    assert.ok(!r.ap().some((e) => e.phase === 'started'), `${how} during the cap update: no run started`);
+    const sends = (): Array<[string, string]> => r.s.calls.filter((c) => c.name === 'send').map((c) => c.args[0] as { prompt: string; agentMode?: string }).map((x) => [x.prompt, x.agentMode ?? 'none']);
+    if (how === 'stop') assert.deepStrictEqual(sends(), [], 'a Stop during the cap update drops the message');
+    else {
+      assert.deepStrictEqual(sends(), [['the goal', 'none']], 'Autopilot off during the cap update: a plain message, never a goal');
+      fire(r.s, { type: 'session.idle', data: {} }); // that plain turn ends
+    }
+    await r.ad.setAutopilot(r.sid, { limit: 5, cap: 40 });
+    assert.strictEqual(await r.ad.send(r.sid, { text: 'next goal' }).then(() => 'ok', (e: Error) => e.message), 'ok', `${how}: a later Autopilot send works`);
+    assert.strictEqual(sends().at(-1)![1], 'autopilot', `${how}: the later send starts its run`);
+    assert.strictEqual(r.ap().filter((e) => e.phase === 'started').length, 1);
+  }
+
+  // spec 099 2026-11-04 (review on #967, mutant C2): Stop's Autopilot branch runs inside FR-229's stop sequence, so a send during it waits
+  for (const running of [true, false]) {
+    const r = await rig();
+    await r.ad.setAutopilot(r.sid, { limit: 5 });
+    if (running) await r.ad.send(r.sid, { text: 'goal' });
+    const before = r.s.calls.filter((c) => c.name === 'send').length;
+    let answer: () => void = () => undefined;
+    let asked = false;
+    const set = r.s.rpc.mode.set.bind(r.s.rpc.mode);
+    r.s.rpc.mode.set = (a: unknown) => { asked = true; return new Promise((res) => { answer = () => res(set(a)); }); };
+    const stopping = r.ad.interrupt(r.sid);
+    await until(() => asked, 'Stop is stopping Autopilot: its mode.set waits');
+    const typed = r.ad.send(r.sid, { text: 'typed during the stop' });
+    await until(() => r.lines().includes(COPILOT_STOP_WAIT), `${running ? 'run' : 'no run'}: the send says it waits for the Stop`);
+    assert.strictEqual(r.s.calls.filter((c) => c.name === 'send').length, before, `${running ? 'run' : 'no run'}: a send during a Stop that is still stopping Autopilot waits`);
+    answer();
+    await stopping;
+    await typed;
+    const last = r.s.calls.filter((c) => c.name === 'send').at(-1)!.args[0] as { prompt: string; agentMode?: string };
+    assert.deepStrictEqual([last.prompt, last.agentMode ?? 'none'], ['typed during the stop', 'none'], 'after the Stop: a plain message');
+  }
+
+  // FR-053, FR-054 (review on #967, mutant C12): a resume found in autopilot waits for session.mode_changed; none: the start fails, nothing is sent
+  {
+    const client = new FakeClient();
+    client.onDisk.add('old-silent');
+    client.resumeMode = 'autopilot';
+    client.modeSilentOnResume = true;
+    const r = await rig({ client, tuning: { wired: true, waitMs: 20 } });
+    await assert.rejects(r.ad.start({ workspace: ws, resumeSessionId: 'old-silent', permissionMode: 'allow', quiet: true }), /could not clear.*nothing was sent/, 'no session.mode_changed after the clear: the start fails');
+    assert.ok(client.last.calls.some((c) => c.name === 'mode.set'), 'the clear was asked for');
+    assert.strictEqual(r.ad.isLive('old-silent'), false);
+  }
+
+  // FR-052 (review on #967, mutant C13): End session ends the run quietly, and its clock sample stops
+  {
+    let cancelled = 0;
+    const r = await rig({ tuning: { setTimer: () => () => { cancelled++; } } });
+    await r.ad.setAutopilot(r.sid, { limit: 5, hours: 1 });
+    await r.ad.send(r.sid, { text: 'x' });
+    assert.strictEqual(cancelled, 0, 'the run is going');
+    await r.ad.stop(r.sid);
+    assert.ok(cancelled >= 1, 'FR-052: End session stops the clock sample');
+    assert.deepStrictEqual(reasons(r), [], 'and shows no card');
   }
 
   // a send that fails ends the run it began, once

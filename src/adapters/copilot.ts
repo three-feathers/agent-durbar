@@ -190,6 +190,8 @@ const usedInRefusal = (e: unknown): number | undefined => {
 /** FR-070: credits a live session has used, as far as the runtime reported them. */
 const usedCredits = (live: Live): number => ((live.usedCheckpointNano ?? 0) + (live.usedSinceNano ?? 0)) / 1e9;
 /** FR-071: a cap is set and what was used reached it. */
+/** Spec 099: what a send does on Autopilot, read from the session's state at that moment. */
+type SendPlan = { startsRun: true; auto: AutopilotState; goal: GoalTextResult } | { startsRun: false; auto: AutopilotState | undefined; goal: undefined };
 const overCap = (live: Live): boolean => typeof live.capNow === 'number' && live.capNow > 0 && usedCredits(live) >= live.capNow;
 const nanoOf = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : undefined);
 
@@ -1082,7 +1084,7 @@ export class CopilotAdapter implements AgentAdapter {
     const live = this.mustGet(sessionId);
     await live.sandboxApplying?.catch(() => undefined);
     // spec 099: refusals first, so a refused message leaves everything as it was; read again after a wait for a Stop's late calls (that Stop may have turned Autopilot off)
-    const refusals = (): { startsRun: true; auto: AutopilotState; goal: GoalTextResult } | { startsRun: false; auto: AutopilotState | undefined; goal: undefined } => {
+    const refusals = (): SendPlan => {
       const auto = live.auto?.on ? live.auto : undefined;
       if (auto && message.plan) throw new Error(AUTOPILOT_NO_PLAN);
       if (!auto || auto.running) return { startsRun: false, auto, goal: undefined };
@@ -1093,7 +1095,7 @@ export class CopilotAdapter implements AgentAdapter {
     };
     refusals();
     if (!(await this.waitLateCalls(sessionId, live))) return;
-    const { auto, startsRun, goal } = refusals();
+    const first = refusals();
     // spec 087 FR-007: the sandbox is not in force: nothing is sent until the person chooses (or, under the policy, ever)
     const hold = live.sandboxHold;
     if (hold && !(this.sandboxContinued.has(sessionId) && !live.requireOsSandbox)) {
@@ -1109,7 +1111,9 @@ export class CopilotAdapter implements AgentAdapter {
       return;
     }
     // spec 099: past every hold, so a held message starts no run (it comes back here when it is let go)
-    if (startsRun) await this.applyAutopilotCap(live, auto.settings?.cap);
+    const ready = first.startsRun ? await this.capForRun(sessionId, live, first.auto, refusals) : first;
+    if (!ready) return;
+    const { auto, startsRun, goal } = ready;
     live.turnOpen = true;
     // spec 066 FR-003: plan first: the runtime's own plan mode (it reads and proposes; nothing changes until the user approves)
     if (message.plan) {
@@ -1236,6 +1240,23 @@ export class CopilotAdapter implements AgentAdapter {
   private refuseSpentCap(live: Live, cap: number): void {
     const used = usedCredits(live);
     if (cap <= used) throw new Error(`A cap of ${cap} AI credits is not above what this session has spent (${Math.round(used * 100) / 100}).`);
+  }
+
+  /**
+   * FR-022, FR-059 (review on #967): the Autopilot cap for the run this send starts, then the refusals read again, since a Stop or Autopilot off
+   * may have come while the cap update waited. Anything but a run starting now puts the session's own cap back first. A Stop, or the session
+   * ending, drops the message (as FR-229 drops one held by a Stop): undefined. Autopilot off alone: a plain message.
+   */
+  private async capForRun(sid: string, live: Live, auto: AutopilotState, refusals: () => SendPlan): Promise<SendPlan | undefined> {
+    const stops = live.interrupts;
+    await this.applyAutopilotCap(live, auto.settings?.cap);
+    let again: SendPlan | undefined;
+    try {
+      if (this.sessions.get(sid) === live && live.interrupts === stops) again = refusals();
+    } finally {
+      if (!again?.startsRun) await this.restoreAutopilotCap(sid, live);
+    }
+    return again;
   }
 
   /** FR-022: the lower of the session's cap and the Autopilot cap, for this run. Never touches `live.cap` or `ownCap`. */
@@ -1538,8 +1559,7 @@ export class CopilotAdapter implements AgentAdapter {
   /** Spec 087: how long a sandbox call may take before it counts as refused (a hung runtime never blocks a start). */
   protected sandboxTimeoutMs = 15_000;
   private timed<T>(p: Promise<T>, what: string): Promise<T> {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    return Promise.race([p, new Promise<never>((_, rej) => { timer = setTimeout(() => rej(new Error(`${what} did not answer in time`)), this.sandboxTimeoutMs); })]).finally(() => clearTimeout(timer));
+    return within(p, this.sandboxTimeoutMs, what); // FR-031 (review on #967): the one timeout race, autopilotHost's `within`
   }
 
   private hostSupport(client: CopilotClient): Promise<CopilotHostSupport | undefined> {

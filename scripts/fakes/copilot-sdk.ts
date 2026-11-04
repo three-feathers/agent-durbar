@@ -159,9 +159,10 @@ export class FakeClient {
   sendHangs = false;
   /** Handed to every session this client creates or resumes (spec 059). */
   nameSetFail = '';
-  /** Spec 099: the mode a resumed session comes back in; `modeSetFailOnResume` makes its `mode.set` reject. */
+  /** Spec 099: the mode a resumed session comes back in; `modeSetFailOnResume` makes its `mode.set` reject; `modeSilentOnResume`: no `session.mode_changed` after it. */
   resumeMode = 'interactive';
   modeSetFailOnResume = '';
+  modeSilentOnResume = false;
   private track(s: FakeSession): FakeSession {
     s.turnScript = this.turnScript;
     s.nameAnswer = this.nameAnswer;
@@ -185,6 +186,7 @@ export class FakeClient {
     this.last = this.track(new FakeSession(id, config));
     this.last.mode = this.resumeMode;
     this.last.modeSetFail = this.modeSetFailOnResume;
+    this.last.modeSilent = this.modeSilentOnResume;
     return this.last;
   }
   /** Like the SDK: throws when the session is not on disk. */
