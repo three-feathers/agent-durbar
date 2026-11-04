@@ -639,9 +639,9 @@ async function phase2(): Promise<void> {
     assert.strictEqual(h.sch.doc.schedules.length, 50);
     assert.ok(!h.sch.save({ folder: '/w', prompt: 'new', every: 45 }, () => true).ok);
   }
-  // spec 072: main wires loops (T006), so the switch is on; turned off, `save` refuses a loop and keeps nothing
+  // spec 072: the switch is off until the UI PR; off, `save` refuses a loop and keeps nothing; the tests below switch it on
   {
-    assert.strictEqual(loopSupport.enabled, true, 'T006: loops are on by default');
+    assert.strictEqual(loopSupport.enabled, false, 'loops are off until the UI PR (T010-T013) turns them on');
     const h = harness({ pausedAll: false, schedules: [] });
     const input = { folder: '/w', prompt: 'p', target: { session: 's1', agent: 'copilot' }, cap: { amount: 5, unit: 'aiu' }, loop: { minDelay: 5, maxDelay: 60, defaultDelay: 30, maxPasses: 3, endAt: now + 60 * MIN } };
     loopSupport.enabled = false;

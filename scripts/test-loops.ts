@@ -37,6 +37,7 @@ function harness(doc: SchedulesDoc = { pausedAll: false, schedules: [] }) {
     waitOf: () => wait.v,
     mono: () => now - skew.v,
     send: async (f, p, s) => {
+      if (s.loop) sch.passLive(s.id, s.loop.passes, s.loop.startedAt); // as scheduledSendOp's stillWanted: the prompt goes out now
       sent.push(p);
       onSend.fn?.();
       if (gate.p) await gate.p;
@@ -241,6 +242,38 @@ async function main(): Promise<void> {
     h.sch.turnEnded('s1', { finalText: 'LOOP: next 5 min' });
     assert.deepStrictEqual([s.loop?.ended?.reason, s.loop?.ended?.text], ['limit', 'Stopped: reached its limit']);
     assert.strictEqual(s.spent, 1.5, 'the pass that went over was not interrupted');
+  }
+  {
+    // review of PR 1118 (R3): spend exactly at the cap ends the loop too, and nothing more is sent
+    const h = harness();
+    const s = await h.loop({ cap: { amount: 1, unit: 'aiu' } });
+    h.sch.noteUsage('s1', { nanoAiu: 1e9 });
+    assert.strictEqual(s.spent, 1);
+    h.sch.turnEnded('s1', { finalText: 'LOOP: next 5 min' });
+    assert.strictEqual(s.loop?.ended?.reason, 'limit', 'spent === cap ends the loop');
+    await h.advance(60 * MIN);
+    assert.strictEqual(h.sent.length, 1, 'no pass after the cap is reached exactly');
+  }
+  {
+    // review of PR 1118 (R1): with loops off (the default until the UI PR), Start again and a due loop send nothing
+    const h = harness();
+    const s = await h.loop();
+    h.sch.stopLoop(s.id);
+    loopSupport.enabled = false;
+    try {
+      assert.deepStrictEqual(h.sch.restartLoop(s.id), { ok: false, error: 'Loops are not available yet.' });
+      assert.ok(s.loop?.ended, 'still ended');
+      // a loop that is due while loops are off (switched off at run time) ends and is never sent
+      loopSupport.enabled = true;
+      const t = await h.loop({ target: { session: 's2', agent: 'copilot' } });
+      h.sch.turnEnded('s2', { finalText: 'LOOP: next 5 min' });
+      loopSupport.enabled = false;
+      const n = h.sent.length;
+      await h.advance(60 * MIN);
+      assert.deepStrictEqual([h.sent.length, t.loop?.ended?.reason], [n, 'app-closed'], 'a due loop with loops off is ended, not sent');
+    } finally {
+      loopSupport.enabled = true;
+    }
   }
 
   // --- holds, busy, Pause all (T004) ---
@@ -1014,7 +1047,7 @@ async function wiring(): Promise<void> {
     sch.remove(c2.id);
   }
   // review of the T006 PR (2): Stop, Stop loop or End while the session starts: the pass's prompt is never sent, and not a failed pass
-  for (const how of ['stop', 'stopLoop', 'end', 'none'] as const) {
+  for (const how of ['stop', 'stopLoop', 'end', 'none', 'idle'] as const) {
     const out: string[] = [];
     let release: () => void = () => undefined;
     const live = new Promise<void>((res) => { release = res; });
@@ -1036,9 +1069,20 @@ async function wiring(): Promise<void> {
     if (how === 'stop') sch3.stopPassFor('s1');
     else if (how === 'stopLoop') sch3.stopLoop(l3.id);
     else if (how === 'end') sch3.stopLoopFor('s1', 'session');
+    // review of PR 1118 (R2): an idle while the session starts (before the prompt goes out) is not the pass's end
+    else if (how === 'idle') routeLoopEvent({ sessionId: 's1', type: 'status', status: 'idle', timestamp: now } as AgentEvent, sch3);
     release();
     await pending;
     sch3.stop();
+    if (how === 'idle') {
+      const li = sch3.doc.schedules[0].loop;
+      assert.deepStrictEqual([out.length, li?.passes, li?.inPass, li?.noPaceStreak ?? 0, !!li?.ended], [1, 1, true, 0, false], 'idle while starting: the pass still goes out, once, and is not ended or counted as unpaced');
+      routeLoopEvent({ sessionId: 's1', type: 'status', status: 'idle', timestamp: now } as AgentEvent, sch3);
+      assert.deepStrictEqual([sch3.doc.schedules[0].loop?.inPass, sch3.doc.schedules[0].loop?.noPaceStreak], [false, 1], 'the idle after the prompt went out ends the pass');
+      const l4 = sch3.doc.schedules[0];
+      assert.strictEqual(sch3.passLive(l4.id, l4.loop?.passes, l4.loop?.startedAt), false, 'a pass that has ended is not live: a late send of it is refused');
+      continue;
+    }
     if (how === 'none') {
       assert.strictEqual(out.length, 1, 'control: a live pass is sent');
       continue;
@@ -1055,9 +1099,15 @@ async function wiring(): Promise<void> {
     assert.ok(r.ok);
     await advance(0);
     if (!inPass) ev({ sessionId: 's2', type: 'status', status: 'idle' });
+    const before = rows.length;
     ev({ sessionId: 's2', type: 'status', status: 'stopped' });
     const e = sch.doc.schedules[0].loop?.ended;
     assert.deepStrictEqual([e?.reason, e?.text], ['session', 'Stopped: the session has ended'], `a stopped status ${inPass ? 'in' : 'between'} passes`);
+    if (inPass) {
+      // review of PR 1118 (R4): the session ending is not an unpaced pass: no "next in" pass row, no no-line streak
+      assert.deepStrictEqual(rows.slice(before).map((x) => x.action), ['Loop pass 1 of 3', 'Loop: Stopped: the session has ended'], 'the pass row has no next wake');
+      assert.ok(!sch.doc.schedules[0].loop?.noPaceStreak, 'no no-line streak from the session ending');
+    }
     now += 10 * MIN;
   }
 
@@ -1135,6 +1185,9 @@ async function wiring(): Promise<void> {
       assert.strictEqual(endOf(a), 'user', 'Stop loop ends it at once');
       assert.deepStrictEqual(await call('schedules:stopLoop', a.id), { ok: false }, 'an ended loop is not stopped twice');
       tnow += MIN;
+      loopSupport.enabled = false;
+      assert.deepStrictEqual(await call('schedules:restartLoop', a.id), { ok: false, error: 'Loops are not available yet.' }, 'R1: Start again over IPC honours the switch');
+      loopSupport.enabled = true;
       assert.deepStrictEqual(await call('schedules:restartLoop', a.id), { ok: true });
       assert.ok(!a.loop?.ended && a.loop?.passes === 0 && a.next === tnow, 'Start again: a new run from now');
       // a foreign frame never reaches the handler
