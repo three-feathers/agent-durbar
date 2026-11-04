@@ -845,6 +845,17 @@ export class Scheduler {
     return any;
   }
 
+  /**
+   * FR-008: Durbar is quitting: every running loop ends "when Durbar closed" now, before the sessions are disposed (their `stopped`
+   * status would otherwise end each loop as "the session has ended"). Nothing is sent.
+   */
+  endAllLoops(reason: 'app-closed'): void {
+    const now = this.deps.now();
+    let any = false;
+    for (const s of this.doc.schedules) if (s.loop && !s.loop.ended) (this.endLoop(s, reason, now), (any = true));
+    if (any) this.commit();
+  }
+
   /** FR-007: the session's own Stop: ends its loop only while a pass runs there; Stop on a turn the user sent between passes does not. */
   stopPassFor(session: string): boolean {
     const s = this.inPassOf(session);

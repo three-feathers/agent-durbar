@@ -1183,6 +1183,7 @@ app.on('before-quit', (ev) => {
   }
   scheduler?.flush(); // spec 044 FR-037: a fold-only change of the run log is written now
   quitting = true; // only once the quit is confirmed: after a Cancel, closing the window on macOS still only hides it
+  scheduler?.endAllLoops('app-closed'); // spec 072 FR-008: before disposeAll, whose `stopped` events would say "the session has ended"
   if (!quitNoted) {
     quitNoted = true;
     if (win && !win.isDestroyed()) saveWindowState(win);
@@ -1216,6 +1217,7 @@ app.on('will-quit', () => {
 });
 
 app.on('window-all-closed', () => {
+  scheduler?.endAllLoops('app-closed'); // spec 072 FR-008: the sessions are disposed next (and off a Mac the app quits)
   void router.disposeAll().finally(() => {
     if (process.platform !== 'darwin') app.quit();
   });

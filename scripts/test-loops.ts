@@ -1061,6 +1061,20 @@ async function wiring(): Promise<void> {
     now += 10 * MIN;
   }
 
+  // re-check of the T006 PR (N1): quitting ends running loops "when Durbar closed" before the sessions' `stopped` events arrive
+  for (const inPass of [true, false]) {
+    for (const q of [...sch.doc.schedules]) sch.remove(q.id);
+    const r = sch.save({ folder: '/w', prompt: 'p', target: { session: 's2', agent: 'copilot' }, cap: { amount: 5, unit: 'aiu' }, loop: { minDelay: 5, maxDelay: 60, defaultDelay: 30, maxPasses: 3, endAt: now + 60 * MIN } }, () => true);
+    assert.ok(r.ok);
+    await advance(0);
+    if (!inPass) ev({ sessionId: 's2', type: 'status', status: 'idle' });
+    sch.endAllLoops('app-closed');
+    ev({ sessionId: 's2', type: 'status', status: 'stopped' }); // router.disposeAll()
+    const e = sch.doc.schedules[0].loop?.ended;
+    assert.deepStrictEqual([e?.reason, e?.text], ['app-closed', 'Ended when Durbar closed'], `quit ${inPass ? 'in' : 'between'} passes: ended when Durbar closed`);
+    now += 10 * MIN;
+  }
+
   // the activity text of every note kind: clamped asks, failed passes, review skips, holds, the cap-less start
   const L = { minDelay: 5, maxDelay: 60, defaultDelay: 30, maxPasses: 12, endAt: 1 };
   assert.strictEqual(loopActivity({ kind: 'pass', pass: 3, minutes: 5, source: 'clamped', asked: 2, next: 1 }, { loop: L })?.action, 'Loop pass 3 of 12 · next in 5 min: asked 2 min (minimum)');
@@ -1151,6 +1165,14 @@ async function wiring(): Promise<void> {
     assert.ok(/waitOf: \(session\) => loopWaitOf\(session, \{ status: \(id\) => lastStatus\.get\(id\), waits: \(id\) => agentState\.waitsOf\(id\) \}\)/.test(mainSrc), 'main.ts computes holds from lastStatus and agentState');
     assert.ok(/loopNote: \(s, n\) => \{[\s\S]{0,400}logActivity\(a, row\.decision, row\.action\)[\s\S]{0,200}toRenderer\('loop:pass', push\)/.test(mainSrc), 'main.ts logs loop rows and pushes loop:pass');
     assert.ok(/scheduler\?\.stopLoopFor\(a\.id, 'session'\);/.test(mainSrc), 'the update gate ends the loops of the sessions it ends');
+    // N1: on quit the loops end as app-closed before the sessions are disposed, in before-quit and in window-all-closed
+    for (const [from, to] of [["app.on('before-quit'", "app.on('will-quit'"], ["app.on('window-all-closed'", '\n});']] as const) {
+      const i = mainSrc.indexOf(from);
+      const block = mainSrc.slice(i, mainSrc.indexOf(to, i + from.length));
+      const end = block.indexOf("scheduler?.endAllLoops('app-closed');");
+      const dispose = block.indexOf('router.disposeAll()');
+      assert.ok(i >= 0 && end >= 0 && dispose > end, `${from}: loops end as app-closed before router.disposeAll()`);
+    }
     assert.ok(!/setMode|permMode =/.test(fs.readFileSync(path.join(repoRoot(), 'src', 'main', 'loopwiring.ts'), 'utf8')), 'the wiring never sets a mode (FR-006)');
   }
 }
