@@ -26,6 +26,7 @@ npm run check:fuses-launch  # on demand, after pack:dir: the packed Linux app op
 npm run specs:index       # the full specs index from each spec's specs-index block, into specs/INDEX.md (git-ignored); --add specs/NNN-x for a new spec; specs:check in npm test, which also refuses conflict markers
 npm run labels:backfill   # dry run: the labels each issue and PR is missing (spec 021 FR-045); -- --create-labels --apply adds them (add-only)
 npm run changelog:check   # check the changelog.d/ fragments (in npm test); changelog:preview lists them; a tag's notes come from them, then changelog:build folds them (changelog.d/README.md)
+npm run blog:check        # spec 104: the agent blog's guard over docs/site/{blog,captions,story,explainers}: tokens (redact.ts), private paths, addresses, chat markers, unreleased phrases, a host allowlist and blocked-name hashes, first names, evidence, security hold, who reads and reviews (in npm test through test:site; -- --offline skips the online author check and says so). The file, line and rule are printed, never the matched text. `node scripts/check-posts.js --add-blocked-host` is a human step that reads one name from stdin and prints nothing
 npm run rules:check       # word budgets of the rule files (AGENTS.md, CLAUDE.md, agent notes, checklist, ...; in npm test): one rule in, one rule out
 ```
 

@@ -471,8 +471,8 @@ async function main(): Promise<void> {
     const st = new SettingsStore(file);
     st.load();
     assert.strictEqual(st.mcpSignInRefresh, true, 'no file: on (the default)');
-    assert.strictEqual(st.setMcpSignInRefresh('no'), true, 'a non-boolean changes nothing');
-    assert.strictEqual(st.setMcpSignInRefresh(false), false);
+    assert.strictEqual(st.setMcpSignInRefresh('no').value, true, 'a non-boolean changes nothing');
+    assert.strictEqual(st.setMcpSignInRefresh(false).value, false);
     const st2 = new SettingsStore(file);
     st2.load();
     assert.strictEqual(st2.mcpSignInRefresh, false, 'off survives a restart');

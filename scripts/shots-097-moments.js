@@ -17,12 +17,13 @@ const { AT_CLOCK } = require('./shots-068-coffee');
 /* the plate's words after "Coffee break — ": "resumes at 14:30" today, "resumes Tue 12:08 AM" when the reset is on the next day (a run just before midnight UTC); test-coffeebreak checks it against untilText */
 const RESUMES = `resumes ${AT_CLOCK}`;
 
-const OUT = process.env.SHOTS_OUT || fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-097-moments-'));
 const SIZES = [[1440, 900], [1280, 800]];
 const WORLDS = (process.env.MOMENTS_WORLDS || 'photo').split(',');
 const ONLY = (process.env.MOMENTS_ONLY || '').split(',').filter(Boolean);
 
 module.exports = async (ctx) => {
+  // made when the driver runs, not when the file is required (test-coffeebreak requires it for RESUMES: spec 012 FR-166)
+  const OUT = process.env.SHOTS_OUT || fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-097-moments-'));
   const H = helpers(ctx);
   const { js } = H;
   const must = async (expr, what, ms = 15000) => assert.ok(await H.until(expr, ms), 'timed out waiting for ' + what);

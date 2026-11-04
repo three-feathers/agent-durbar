@@ -1,10 +1,10 @@
 /** IPC for settings: the read, serious mode, notifications, theme and characters choice (spec 077 FR-064), places and the default credit cap (specs 011, 024, 040, 052; moved out of main.ts as it was, spec 045 FR-060). */
 import { app } from 'electron';
 import { ipcHandle } from '../ipcguard';
-import { aboutView } from '../../shared/about';
 import { parseCap } from '../../shared/credits';
+import { aboutView } from '../../shared/about';
 import { mcpWarnDefaults } from '../../shared/mcpcost';
-import type { SettingsStore } from '../settings';
+import type { SettingsStore, Saved } from '../settings';
 import { MCP_SIGNIN_REFRESH_DEFAULT } from '../mcpsigninrefresh';
 
 export interface SettingsIpcDeps {
@@ -19,14 +19,13 @@ export function register(deps: SettingsIpcDeps): void {
   const { getRunTheme, clearRunTheme } = deps;
   const settingsStore = deps.getSettingsStore;
   ipcHandle('settings:get', () => ({ defaultMaxAiCredits: settingsStore()?.defaultMaxAiCredits, placeMap: settingsStore()?.placeMap ?? {}, customPlaces: settingsStore()?.customPlaces ?? [], seriousMode: settingsStore()?.seriousMode ?? false, notifyNeedsMe: settingsStore()?.notifyNeedsMe ?? true, breakResume: settingsStore()?.breakResume ?? 'auto', chatLinksIn: settingsStore()?.chatLinksIn ?? 'session', mcpSignInRefresh: settingsStore()?.mcpSignInRefresh ?? MCP_SIGNIN_REFRESH_DEFAULT, mcpWarnLevels: settingsStore()?.mcpWarnLevels, theme: getRunTheme() ?? settingsStore()?.theme ?? 'clean-office', characters: settingsStore()?.characters ?? 'theme', unsaved: settingsStore()?.unsavedKeys ?? [], about: aboutView(app.getVersion()) }));
-  /* issue #1023: a setter returns the value now in force, so `ok` is true only when that is what was asked for (a failed save keeps the old value) */
-  const setting = <K extends string, T>(key: K, fallback: T, set: (st: SettingsStore, v: unknown) => T, want: (v: unknown) => unknown = (v) => v, unsavedKey?: string) => (_e: unknown, v: unknown) => {
+  /* issues #1023, #1094: a setter answers `{ok, value}`, `ok` only when the write reached disk, so a failed write of a value already in force is not "Saved" */
+  const setting = <K extends string, T>(key: K, fallback: T, set: (st: SettingsStore, v: unknown) => Saved<T>, want: (v: unknown) => unknown = (v) => v, unsavedKey?: string) => (_e: unknown, v: unknown) => {
     const st = settingsStore();
-    const now = st ? set(st, v) : fallback;
-    const same = st !== undefined && now === want(v);
+    const r: Saved<T> = st ? set(st, v) : { ok: false, value: fallback };
     // a safer change kept for this run only (a tighter cap that could not be saved): in force, but not ok, and the window is told
-    const kept = same && unsavedKey !== undefined && st.isUnsaved(unsavedKey); // this setting only, never another one's
-    return { ok: same && !kept, ...(kept ? { unsaved: true } : {}), [key]: now } as { ok: boolean; unsaved?: true } & Record<K, T>;
+    const kept = st !== undefined && unsavedKey !== undefined && r.value === want(v) && st.isUnsaved(unsavedKey); // this setting only, and only when the value asked for is the one kept (a refused looser cap is not
+    return { ok: r.ok && !kept, ...(kept ? { unsaved: true } : {}), [key]: r.value } as { ok: boolean; unsaved?: true } & Record<K, T>;
   };
   ipcHandle('settings:setSeriousMode', setting('seriousMode', false, (st, v) => st.setSeriousMode(v)));
   /* spec 052 FR-059: OS notifications when an agent needs you and the window is in the background (on unless turned off) */

@@ -2,6 +2,7 @@
 import * as assert from 'assert';
 import * as path from 'path';
 import { EventEmitter } from 'events';
+import * as fs from 'fs';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const rt = require(path.join(__dirname, '..', '..', 'scripts', 'run-tests.js')) as {
@@ -170,6 +171,27 @@ process.on('exit', () => { if (!done) { console.error('test-run-tests: did not f
   // stopChild alone: no pid, nothing happens; an already gone group is not an error
   rt.stopChild(null, {});
   rt.stopChild({ pid: 5 }, { platform: 'linux', kill: () => { throw new Error('ESRCH'); } });
+  // spec 012 FR-166 (#1093): each suite runs with its own empty TMPDIR; a `durbar-*` entry left in it fails the suite, which is named; the folder is removed
+  {
+    const h = harness({ 'leaky.js': 0, 'clean.js': 0 });
+    const dirs: Record<string, string> = {};
+    const spawnFn = (cmd: string, args: string[], opts: { env: Record<string, string>; detached?: boolean; shell?: unknown }) => {
+      const name = path.basename(args[0]);
+      assert.ok(opts.env.TMPDIR && opts.env.TEMP === opts.env.TMPDIR && opts.env.TMP === opts.env.TMPDIR, 'TMPDIR, TEMP and TMP point at the suite folder');
+      assert.deepStrictEqual(fs.readdirSync(opts.env.TMPDIR), [], 'the folder starts empty');
+      dirs[name] = opts.env.TMPDIR;
+      if (name === 'leaky.js') {
+        fs.mkdirSync(path.join(opts.env.TMPDIR, 'durbar-leak-AbC123'));
+        fs.mkdirSync(path.join(opts.env.TMPDIR, 'other-thing')); // not ours to judge: only durbar-* counts
+      }
+      return h.spawnFn(cmd, args, opts);
+    };
+    const r = await run(h, [suite('leaky'), suite('clean')], { jobs: 2, bail: false, spawnFn });
+    assert.deepStrictEqual(r.failed, ['leaky'], 'only the suite that left a durbar-* folder fails');
+    assert.ok(/leaky left 1 durbar-\* temp entry behind \(durbar-leak-AbC123\)/.test(r.out), r.out);
+    assert.notStrictEqual(dirs['leaky.js'], dirs['clean.js'], 'each suite has its own folder');
+    for (const d of Object.values(dirs)) assert.ok(!fs.existsSync(d), 'the suite folder is removed');
+  }
   done = true;
   console.log('run-tests --bail: ok');
 })().catch((e) => { console.error(e); process.exit(1); });

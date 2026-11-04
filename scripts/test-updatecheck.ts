@@ -982,10 +982,10 @@ const bodyOf = (text: string | Buffer, status = 200) => (r: FakeReq) => { const 
     const s = new SettingsStore(file);
     s.load();
     assert.strictEqual(s.checkUpdatesAtStart, true, 'on by default (Q6 = A)');
-    assert.strictEqual(s.setCheckUpdatesAtStart('no'), true, 'only a real boolean changes it');
-    assert.strictEqual(s.setCheckUpdatesAtStart(false), false);
+    assert.strictEqual(s.setCheckUpdatesAtStart('no').value, true, 'only a real boolean changes it');
+    assert.strictEqual(s.setCheckUpdatesAtStart(false).value, false);
     assert.strictEqual(JSON.parse(fs.readFileSync(file, 'utf8')).checkUpdatesAtStart, false);
-    assert.strictEqual(s.setCheckUpdatesAtStart(true), true);
+    assert.strictEqual(s.setCheckUpdatesAtStart(true).value, true);
     assert.ok(!('checkUpdatesAtStart' in JSON.parse(fs.readFileSync(file, 'utf8'))), 'only false is written');
     // announced versions: an allowed app id and a valid version; anything else is dropped
     for (const [app, v] of [['__proto__', '1.0.0'], ['constructor', '1.0.0'], ['codex', '<b>'], ['codex', '1.0'], ['codex', 5], ['codex', '1'.repeat(70)], ['bash', '1.0.0'], [5, '1.0.0'], ['codex', null]] as Array<[unknown, unknown]>) assert.strictEqual(s.setAnnouncedVersion(app, v), false, `${String(app)} ${String(v)}`);
