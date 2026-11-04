@@ -489,27 +489,27 @@ function cli() {
   assert.deepStrictEqual(JSON.parse(fs.readFileSync(path.join(ROOT, 'docs/site/blocked-hashes.json'), 'utf8')).sha256.every((h) => /^[0-9a-f]{64}$/.test(h)), true, 'the real hash list holds hashes only');
 }
 
-// spec 104 FR-080 (issue #1115): the mask loads without type stripping from a compiled copy, never a stale one
+// spec 104 FR-080 (issue #1115, review of #1119): without type stripping the mask is redact.ts compiled now, never a compiled copy
 {
   const rn = require('./release-notes.js');
-  // npm test compiles dist-scripts before any suite: as on Node before 22.18, with no type stripping, that copy masks
   let r;
-  assert.doesNotThrow(() => { r = rn.loadRedact({ noStrip: true }); }, 'FR-080: without type stripping the compiled copy loads');
-  assert.ok(!r.redact(`k ${TOKEN}`).includes(TOKEN), 'FR-080: the compiled copy masks a token');
-  // a copy older than the source is refused (fails closed); a fresh one is used
+  assert.doesNotThrow(() => { r = rn.loadRedact({ noStrip: true }); }, 'FR-080: without type stripping redact.ts is compiled and loads');
+  assert.ok(!r.redact(`k ${TOKEN}`).includes(TOKEN), 'FR-080: and it masks a token');
+  // a compiled copy built from older rules but newer by mtime (cp -p, a cache restore, clock skew) is never used
   const R = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-loadredact-'));
-  const src = path.join(R, 'src', 'shared', 'redact.ts');
-  const out = path.join(R, 'dist-scripts', 'src', 'shared', 'redact.js');
-  fs.mkdirSync(path.dirname(src), { recursive: true });
-  fs.mkdirSync(path.dirname(out), { recursive: true });
-  fs.writeFileSync(src, 'export const x: number = 1;\n');
-  fs.writeFileSync(out, "exports.redact = () => 'fresh copy'; exports.cut = (x) => x;\n");
-  const old = new Date(Date.now() - 60_000);
-  fs.utimesSync(out, old, old);
-  assert.throws(() => rn.loadRedact({ root: R, noStrip: true }), /older than redact\.ts/, 'FR-080: a copy older than redact.ts is refused');
-  const now = new Date(Date.now() + 60_000);
-  fs.utimesSync(out, now, now);
-  assert.strictEqual(rn.loadRedact({ root: R, noStrip: true }).redact('x'), 'fresh copy', 'FR-080: a fresh compiled copy is used');
+  fs.mkdirSync(path.join(R, 'src', 'shared'), { recursive: true });
+  fs.copyFileSync(path.join(ROOT, 'src', 'shared', 'redact.ts'), path.join(R, 'src', 'shared', 'redact.ts'));
+  for (const rel of [['dist-scripts', 'src', 'shared'], ['dist', 'shared']]) {
+    const d = path.join(R, ...rel);
+    fs.mkdirSync(d, { recursive: true });
+    fs.writeFileSync(path.join(d, 'redact.js'), "exports.redact = (x) => x; exports.cut = (x) => x;\n"); // old rules: masks nothing
+    const later = new Date(Date.now() + 3_600_000);
+    fs.utimesSync(path.join(d, 'redact.js'), later, later);
+  }
+  const fresh = rn.loadRedact({ root: R, noStrip: true });
+  assert.ok(!fresh.redact(`k ${TOKEN}`).includes(TOKEN), 'FR-080: a newer-looking compiled copy with older rules is not used');
+  // no typescript: fails closed
+  assert.throws(() => rn.loadRedact({ root: R, noStrip: true, ts: null }), /typescript is not installed/, 'FR-080: no compiler, no mask: it fails closed');
   fs.rmSync(R, { recursive: true, force: true });
 }
 

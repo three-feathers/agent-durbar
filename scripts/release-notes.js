@@ -81,10 +81,11 @@ function publishCommand(tag) {
  * stripping (Node 22.18 and later). Fail closed: without it there are no test-build notes, never unmasked ones.
  */
 /*
- * Spec 104 FR-080 (issue #1115): the mask, on every Node that `engines` allows. First `src/shared/redact.ts` itself (Node 22.18+ strips its
- * types); else a compiled copy (`dist-scripts`, which `npm test` compiles first, or `dist`), only when it is not older than the source, so
- * stale masking rules are never used. Throws when none loads: the callers fail closed. `o.root`, `o.noStrip` (act as if Node cannot strip
- * types): for tests.
+ * Spec 104 FR-080 (issue #1115; review of #1119): the mask, on every Node that `engines` allows. First `src/shared/redact.ts` itself (Node
+ * 22.18+ strips its types); else that same source compiled now, in memory, with the repo's own `typescript` (`transpileModule`: one file,
+ * no imports), so the rules used are always the source's, never an older compiled copy. Throws when neither works (no typescript, a
+ * compile error): the callers fail closed. `o.root`, `o.noStrip` (act as if Node cannot strip types), `o.ts` (the compiler, `null` = none):
+ * for tests.
  */
 function loadRedact(o = {}) {
   const root = o.root || ROOT;
@@ -100,20 +101,22 @@ function loadRedact(o = {}) {
       why.push(`redact.ts: ${e.message}`);
     }
   }
-  let srcTime = Infinity;
-  try { srcTime = fs.statSync(src).mtimeMs; } catch { /* no source: no copy can be checked against it */ }
-  for (const rel of [['dist-scripts', 'src', 'shared', 'redact.js'], ['dist', 'shared', 'redact.js']]) {
-    const f = path.join(root, ...rel);
-    try {
-      if (fs.statSync(f).mtimeMs < srcTime) { why.push(`${rel.join('/')}: older than redact.ts`); continue; }
-      const r = require(f);
-      if (ok(r)) return r;
-      why.push(`${rel.join('/')}: no redact or cut export`);
-    } catch (e) {
-      why.push(`${rel.join('/')}: ${e.code === 'ENOENT' ? 'not built' : e.message}`);
-    }
+  try {
+    let ts = o.ts;
+    if (ts === undefined) ts = require('typescript');
+    if (!ts) throw new Error('typescript is not installed');
+    const js = ts.transpileModule(fs.readFileSync(src, 'utf8'), { fileName: src, reportDiagnostics: false, compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
+    const Module = require('module');
+    const m = new Module(src, module);
+    m.filename = src;
+    m.paths = Module._nodeModulePaths(path.dirname(src));
+    m._compile(js, src);
+    if (ok(m.exports)) return m.exports;
+    why.push('compiled redact.ts: no redact or cut export');
+  } catch (e) {
+    why.push(`compiling redact.ts: ${e.message}`);
   }
-  throw new Error(`test-build notes are masked with src/shared/redact.ts: on Node before 22.18 build first (npm test compiles it); ${why.join('; ')}`);
+  throw new Error(`test-build notes are masked with src/shared/redact.ts, which could not be loaded: ${why.join('; ')}`);
 }
 
 function git(root, args) {
