@@ -1189,9 +1189,9 @@ All three answered on PR #575 (09:03-09:06 UTC) with option a, the recommended o
     - it is not JSON (UTF-8, a BOM allowed), not an object, or its `version` is not `1`.
   - `requireOsSandbox()` (`sandboxpolicy.ts`) now answers `requireOsSandboxFrom([readMachinePolicy()])` at each session start (`main.ts`), so a policy added or fixed applies to the next session, with no restart (FR-008, tighten-only for new sessions).
   - `test:` `scripts/test-sandbox-floor.ts`, on a fake file system: each case above, the path per platform, the trust check up to the root, and the size cap. `read:` on this Mac `/`, `/Library` and `/Library/Application Support` are root-owned and not group- or world-writable, so a correctly installed folder passes the check. With no `AgentDurbar` folder there, `requireOsSandbox()` is `false`.
-- `[KNOWN GAP]`, for later slices of P1 (each already specified above, none decided here):
-  - **Windows reads nothing yet.** FR-002 requires `SHGetKnownFolderPath` through `koffi`, a new direct dependency (plan), and FR-005's write probe. Until then Windows behaves as before: nothing requires the sandbox.
-  - FR-006's closed schema (`samples/managed/schema/policy.schema.json` is not in the repo): other keys and unknown keys are not checked in this slice.
+- `[KNOWN GAP]`, for later slices of P1 (each already specified above, none decided here; issues #1124 and #1125):
+  - **Windows reads nothing yet** (issue #1124). FR-002 requires `SHGetKnownFolderPath` through `koffi`, a new direct dependency (plan), and FR-005's write probe. Until then Windows behaves as before: nothing requires the sandbox.
+  - FR-006's closed schema (this and the items below: issue #1125) (`samples/managed/schema/policy.schema.json` is not in the repo): other keys and unknown keys are not checked in this slice.
   - FR-011 closed mode for a broken file (no session at all) is not built: this slice only takes `requireOsSandbox`'s strictest state.
   - The user layer (FR-003), FR-004 (dev hooks ignored under a policy), reload and the folder watcher (FR-008), the banner, and Settings > Organization showing this file.
 
