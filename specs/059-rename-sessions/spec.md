@@ -589,6 +589,15 @@ checks are unchanged. `check-office-overlap` now also fails a desk pencil that c
 
 Numbers taken: FR-169 and T081 (checked against `main` and the open PRs on 2026-10-26).
 
+### 2026-11-04: the pencil's box never covers the middle of a short name (issue #1067)
+
+*Problem*: the desk pencil is a 24px box (opacity 0 until hover or focus, but still hit-tested) around a 16px glyph. When it has no room beside the name, `placeRen` put the GLYPH in the name's right half, so the box started 4px left of the middle and a click on the middle of a short name ("Priya" at 1280x800) could land on the pencil and open rename instead of the chat. `check:office` judged the glyph only.
+
+- **FR-030** `[IMPLEMENTED]` `sim:` `check:office` (both sizes) In the fallback over the end of the name, the pencil's whole 24px box lies in the name's right half (`placeRen` adds the box's 4px margin), so the middle of the name always hits the card. `check:office` fails a pencil whose box reaches the middle of its name, or when `elementFromPoint` at the name's centre is a pencil. Keyboard access (always in Tab order), hover, focus and every rename flow are unchanged.
+- `[KNOWN GAP]` The Mac-only `shots-001-live-activity` failure "pencil sim-2 covers intent" (comment on #1067, Mac fonts) is a different overlap (the box's 4px margin over the task line) and is not changed here; not reproduced on Linux.
+
+Numbers taken: FR-030 and T082 (checked against `main` and the open PRs on 2026-11-04). Task T082.
+
 ## Changes 2026-10-31: doors removed (pointer, spec 017 T024)
 
 Spec 017 FR-029 (owner decision, no doors) removed the Office with cabins layout, the desk door button, meeting-room signs, room door plates, **Close all** / **Open all**, door-held schedules and the door refusal of remote control, and `door-art`, `--door-*` and the door words of the theme contract. Any requirement in this spec about those (door plates, plate totals or siren, door signs, collapse, Close all / Open all, the `door` field) no longer applies and is kept as a record; Hide folder, floors and the plain status word stay. See spec 017's table of what was lost and what remains.
