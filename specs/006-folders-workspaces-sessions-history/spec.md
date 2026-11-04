@@ -340,3 +340,7 @@ Spec 093 adds a choice to **+ Folder** (FR-001 here): add an existing folder (un
 ## Changes 2026-10-31: doors removed (pointer, spec 017 T024)
 
 Spec 017 FR-029 (owner decision, no doors) removed the Office with cabins layout, the desk door button, meeting-room signs, room door plates, **Close all** / **Open all**, door-held schedules and the door refusal of remote control, and `door-art`, `--door-*` and the door words of the theme contract. Any requirement in this spec about those (door plates, plate totals or siren, door signs, collapse, Close all / Open all, the `door` field) no longer applies and is kept as a record; Hide folder, floors and the plain status word stay. See spec 017's table of what was lost and what remains.
+
+## Changes 2026-11-03: content search is spec 095 (pointer, spec 095 T003)
+
+FR-023 is unchanged: the Previous sessions panel's box still searches titles only, per panel. Searching the content of open and previous sessions (your messages and the agent's replies, from a top-bar box) is [spec 095](../095-search-conversations/spec.md) (FR-041 there keeps this box as it is). Spec 095 reuses `fold` and `terms` of `src/renderer/sessionsearch.js` and adds `locate` and `anchorKey` to the same file, without changing `filterSessions`.

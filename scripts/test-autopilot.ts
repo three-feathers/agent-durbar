@@ -476,10 +476,13 @@ process.on('exit', () => { if (!finished) { console.error('autopilot test did no
     assert.deepStrictEqual(t(L4000 + 'y'), { ok: false, reason: 'too-long' }, 'no app: the strictest rules');
     assert.deepStrictEqual(t(L4000 + 'y', 'codex'), { ok: true, text: L4000 + 'y' }, 'Codex has no such limit here');
     assert.deepStrictEqual(t(L4000 + 'y', 'copilot'), { ok: true, text: L4000 + 'y' });
-    // a line that starts with a slash could run a second command on Claude Code
-    for (const v of ['/compact', 'fix it\n/compact', 'fix it\n  /goal clear', '/goal x', '\n\n /x', '\u200d/compact', 'a\n\u200d /compact', 'a\u2028/compact', '/compact\u200b', '/c\u200fompact', '/tmp is full']) assert.deepStrictEqual(t(v, 'claude'), { ok: false, reason: 'command' }, JSON.stringify(v));
-    for (const v of ['/usr/bin/env is broken', '/usr/bin\n/etc/hosts\n/var/log/x', '/ foo', '/', 'see /usr/bin and a/b', '/a/b', '//x', 'fix ./a and /compact']) assert.strictEqual(t(v, 'claude').ok, true, `${JSON.stringify(v)} is not a slash command`);
-    assert.deepStrictEqual(t('/compact', 'codex'), { ok: true, text: '/compact' });
+    // a line that starts with a slash is not a command on Claude Code: one message is one command (real: CLI 2.1.317, 2026-11-03)
+    for (const v of ['/compact', 'fix it\n/compact', 'tests pass\n/cost', '/goal x', '/tmp is full', '/word', '/usr/bin', '/usr/bin/env is broken']) assert.deepStrictEqual(t(v, 'claude'), { ok: true, text: v }, JSON.stringify(v));
+    assert.deepStrictEqual(t('a'.repeat(3990) + '\n/cost\n' + 'b'.repeat(10), 'claude'), { ok: false, reason: 'too-long' }, '4007 with a /cost line: only the length counts');
+    const E2000 = '\u{1F600}'.repeat(2000);
+    assert.deepStrictEqual(t(E2000, 'claude'), { ok: true, text: E2000 }, '2000 emoji = 4000 code units');
+    assert.deepStrictEqual(t(E2000 + '\u{1F600}', 'claude'), { ok: false, reason: 'too-long' }, '2001 emoji = 4002 code units, as the CLI counts');
+    for (const w of ['clear', 'stop', 'off', 'reset', 'none', 'cancel']) for (const v of [`  ${w.toUpperCase()}  `, ` ${w[0].toUpperCase()}${w.slice(1)}\t`, `\n${w}\n`]) assert.deepStrictEqual(t(v, 'claude'), { ok: false, reason: 'reserved' }, JSON.stringify(v));
     // a long input finishes (a backtracking pattern would not; no wall clock is asserted, FR-048b)
     for (const unit of ['\u0001 ', ' \r\n', '\u0001'.repeat(3), 'a\u0000', '\u200b\u0001', '\n ']) {
       const big = unit.repeat(Math.ceil(2_000_000 / unit.length));

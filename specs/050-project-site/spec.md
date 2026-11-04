@@ -53,6 +53,10 @@ A friendly front door at <https://three-feathers.github.io/agent-durbar/>: what 
 
 ## Changes
 
+### 2026-11-01: a new look, videos and a blog are specified in spec 104 (owner request)
+
+Spec [104](../104-site-story-blog/spec.md) owns the redesign, the videos and the agent blog; nothing is built yet. When its tasks land they supersede FR-008's landing sections, FR-009's visual design and the six-themes strip of FR-007, and widen FR-002's CSP by `media-src 'self'`. FR-001..FR-005, FR-012 and FR-014 stand. Until then this spec describes the live site.
+
 ### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
 
 The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
