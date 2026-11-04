@@ -248,8 +248,13 @@ module.exports = async (ctx) => {
     const row = key.split('@')[0], known = KNOWN_FAILURES[key];
     if (value > LIMITS[row]) {
       if (known && value <= known.max) console.log(`[ops] ${key} = ${value} over ${LIMITS[row]} (known failure, ${known.task}; may not pass ${known.max})`);
-      else failed.push(`${key} = ${value}, limit ${known ? known.max : LIMITS[row]}` + (row === 'readsPerStatus' ? ` (the update with the most, by line: ${JSON.stringify(readsBy[key.split('@')[1]])})` : ''));
+      else failed.push(`${key} = ${value}, limit ${known ? known.max : LIMITS[row]}` + (row === 'readsPerStatus' ? ' (callers in the [ops] reads lines above)' : ''));
     } else if (known) failed.push(`${key} = ${value} is within its limit: delete its KNOWN_FAILURES entry (${known.task})`);
+  }
+  /* a failing reads row names its callers one per short line, the most first, right before the assert: the suite keeps only a failed driver's last 25 lines of 240 characters */
+  for (const f of failed) {
+    const m = /^readsPerStatus@(\d+) /.exec(f), r = m && readsBy[m[1]];
+    if (r) for (const [line, c] of Object.entries(r.by).sort((x, y) => y[1] - x[1]).slice(0, 10)) console.log(`[ops] reads@${m[1]} update ${r.i}: ${c} from ${line}`);
   }
   assert.deepStrictEqual(failed, [], `op rows over their limits:\n  ${failed.join('\n  ')}`);
   console.log('[ops] checks passed');
