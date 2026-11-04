@@ -340,6 +340,8 @@ Each has a recommendation (Q6 is for Paco, the crew owner). The build waits for 
 
 **Fix:** the driver emulates `prefers-reduced-motion: no-preference` before its first load and asserts it on the motion page, so the motion rows (`pictureArea@15motion`, FR-180's light rows) do not depend on the runner. The `animationsStill@reduced` row still emulates `reduce` itself, so reduced motion keeps its own check. No row or limit changed. `read:` the Windows result is the PR's own CI; not run on Windows by hand.
 
+**Next on Windows (#1180's first CI run):** with motion on, the driver reached its rows and failed one, `readsPerStatus@15 = 27` (limit 17, Linux 15; the 40-agent row read 15 on both). Nodes (22) and attribute writes (40, 48) were the same as on Linux: the slips are redrawn on every update on both systems (T184, already in `KNOWN_FAILURES`), so the slip redraw is not what differs. The 12 extra reads are not explained: a wider or narrower text, or a bigger slip font, injected on Linux left the count at 15. The log does not say where they come from, so the driver now counts each layout read by the page line that made it and names them for the update with the most reads, in the log and in a failing reads row (a mutant with the ceiling at 10 printed them). `[KNOWN GAP]` cause not found yet; no limit raised.
+
 ### 2026-11-04 the chat's look follows the setting for every chat (bug #1140, T195)
 
 **Owner report** (Vikram, Telegram, 2026-11-04, packaged v0.1.8 on macOS): with Real office chosen, the chat of a session that existed before looked like Open office, while a helper's chat of that same session looked like the Real office; restarting did not change it.
