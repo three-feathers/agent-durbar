@@ -175,6 +175,7 @@ Numbers: T165..T170; FR-191..FR-194.
 - [ ] T180 [PR A17] Settings on the desk; unstyled selects and checkboxes on tokens; scrollbars. Test: `check-ui-text`, `sim:` both sizes, both worlds; mutant: a browser-default select [FR-234]
 - [ ] T181 [PR A18] `.dlg` out of the blur list, opaque. Test: as FR-235 [FR-235]
 - [ ] T182 [PR A16, A17] `realoffice.css`'s `.ro-glass`, `.ro-bezel`, `--ro-scr-*` read `--glass*`, last, since they are pixel-checked; the owner looks at the chat and Settings beside the room before each merges. Test: `check:office`, `check:geometry` [FR-233, FR-234]
+- [x] T183 [FR-034, #1040] Back in view, a still pointer opens no zoom: the next real move does. Test: `sim:` `shots-097-screens` (a bare pointerover after Esc/panel close, then a real move); mutant: no wait on return; shares spec 052's QUIET_POINTER (FR-183), no second flag
 
 ## 2026-11-04 delta: attention lights (FR-236..FR-238, FR-243, FR-244; PR 2, the build)
 
@@ -191,4 +192,5 @@ The dusk was dropped (owner, 2026-11-04 04:52 UTC): FR-239..FR-242 and T189 are 
 - [ ] T191 [US2] Screenshots at 1440x900 and 1280x800: 6 and 15 agents with amber, red, orange and green bars, a green-only desk with its tag, the bar on the monitor's edge under a sign. Retake `097-real-lights-1440x900.png` and the 15-agent pictures this changes, and look at each. The owner looks before merge. Test: `npm run shots:docs` (`DOC_SHOTS`); `real:` the owner's verdict, quoted in the spec [FR-092, FR-236..FR-238]
 - [ ] T192 [US2] Static rules: `test:theme-tokens` holds no `backdrop-filter`, `filter`, `mix-blend-mode` or non-`opacity` animation in the bar rules. Test: `test:theme-tokens`, with a mutant for each [FR-180, FR-182, FR-244]
 - [ ] T193 [US2] Docs: changelog fragment; `docs/feature-inventory.md` *Unread "New"* Real office `works`; `docs/features.md` Real office lights; the spec's tags; the README status block if it names Real office's lights. Test: `npm run changelog:check`, `specs:check`, the inventory test [FR-238]
+- [x] T194 [US1] Issue #1144 (FR-245): the Photo office and the cave set `ui: 'clean'` in `theme.js`, so Retro Pixel's offset button shadows never reach a world. Test: `test:theme-tokens` and `shots-097-chat` (computed `.btn` box-shadow under the Retro Pixel theme), mutant: drop the `ui`.
 - [x] T195 [US1] Bug #1140: a helper's read-only chat no longer carries the Real office root's class `ro` (renamed `helper-ro`), so every chat, main or helper, new or resumed, has the same world look, also when the setting changes with a chat open. Test: `scripts/check-097-chat-look.js` at both sizes, with a mutant (the class back to `ro`) [FR-106]

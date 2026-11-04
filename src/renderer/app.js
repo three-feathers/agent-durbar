@@ -799,7 +799,10 @@ function holdTimer(t,ms,kill){
 /* spec 052 FR-170: with a chat open the toasts end above the composer (they sat on its left end); the bottom edge is read when a toast arrives */
 function placeToasts(){const box=$('toasts');if(!box)return;let top=innerHeight; /* the highest box a toast must stay above: the answer bar when it shows, else the composer */
   if(document.body.classList.contains('panel-open'))for(const e of [document.querySelector('#panel .composer'),$('answerBar')])if(e&&!e.hidden&&e.getClientRects().length)top=Math.min(top,e.getBoundingClientRect().top);
-  box.style.setProperty('--toast-b',(top<innerHeight?Math.ceil(innerHeight-top+12):16)+'px');}
+  box.style.setProperty('--toast-b',(top<innerHeight?Math.ceil(innerHeight-top+12):16)+'px');
+  /* spec 005 FR-190: and they start in the chat column, so they never cover the agent rail's rows */
+  const pi=document.body.classList.contains('panel-open')&&document.querySelector('#panel>.panel-in'),pl=pi&&pi.getClientRects().length?Math.round(pi.getBoundingClientRect().left):0;
+  box.style.setProperty('--toast-l',(pl+16)+'px');}
 let toastRO=null;
 function mountToast(t){const box=$('toasts');placeToasts();box.appendChild(t);
   if(window.ResizeObserver){if(!toastRO)toastRO=new ResizeObserver(placeToasts);toastRO.disconnect();for(const e of [document.querySelector('#panel .composer'),$('answerBar'),$('panel')])if(e)toastRO.observe(e);} /* the composer grows with a long message, the answer bar appears and goes */}
@@ -1090,12 +1093,12 @@ function shutReply(a,n){const fb=vis(a)==='done'?'Finished.':'Ready.';return (a.
    seat (recent) or a nap bed (old); a speech bubble over the couch and a dream cloud over the beds take turns (LOUNGE_TURN, FR-055). */
 let LOUNGE_TURN=0;
 function restHTML(x,i){
-  const {a,k}=x, st=vis(a), ago=ACT.agoLong(sinceLast(a)), said=SHUT.spoken(ago), line=shutReply(a,140);
+  const {a,k}=x, sumw=loungeSum(a), st=vis(a), ago=ACT.agoLong(sinceLast(a)), said=SHUT.spoken(ago), line=shutReply(a,140);
   const who=a.profile?a.profile.name+' · '+a.role:a.role;
   const roll=SHUT_PREV&&!SHUT_PREV.has(a.id)?' rolling':'';
   const where=k==='recent'?'resting on the couch':'asleep on a nap bed';
-  const lab=`${esc(a.name)}${chatNoWords(a)}${draftWords(a)}, ${esc(who)}, folder ${esc(roomOf(a).path)}, ${where}, ${st==='done'?'finished':'idle after its reply'}${said?' '+esc(said):''}: ${esc(line)}${/[.!?…]$/.test(line)?'':'.'} Open chat panel.`; /* every part escaped here */
-  const peek=`<span class="peek" aria-hidden="true"><span class="pk-h"><b>${esc(a.name)}</b><span class="pk-role">${esc(who)}</span></span><span class="pk-st">${SHUT_MARK+esc(stWord(a))}${ago?' · finished '+esc(ago):''} · ${where}</span><span class="pk-tx">${esc(shutReply(a,300))}</span></span>`;
+  const lab=`${esc(a.name)}${chatNoWords(a)}${draftWords(a)}, ${esc(who)}, folder ${esc(roomOf(a).path)}, ${where}, ${st==='done'?'finished':'idle after its reply'}${said?' '+esc(said):''}: ${esc(line)}${/[.!?…]$/.test(line)?'':'.'}${sumw?' Changed: '+esc(sumw)+'.':''} Open chat panel.`; /* every part escaped here */
+  const peek=`<span class="peek" aria-hidden="true"><span class="pk-h"><b>${esc(a.name)}</b><span class="pk-role">${esc(who)}</span></span><span class="pk-st">${SHUT_MARK+esc(stWord(a))}${ago?' · finished '+esc(ago):''} · ${where}</span><span class="pk-tx">${esc(shutReply(a,300))}</span>${sumw?`<span class="pk-sum">${esc(sumw)} · counted by Agent Durbar</span>`:''}</span>`;
   const crewBed=k==='old'&&THEME.sceneKit()==='crew'; /* spec 077 FR-071: a sleeping crew character is the couch's head and shoulders, not a turned face */
   const bedSvg=`<svg class="lg-bed" viewBox="0 0 44 24" preserveAspectRatio="none" aria-hidden="true" focusable="false"><rect class="bd-frame" x="1" y="10" width="42" height="11" rx="3"/><rect class="bd-head" x="1" y="3" width="5" height="18" rx="2"/><rect class="bd-mat" x="5" y="8" width="37" height="6" rx="2.5"/><rect class="bd-pil" x="6" y="5" width="10" height="5" rx="2.5"/><rect class="bd-leg" x="3" y="20" width="3" height="4"/><rect class="bd-leg" x="38" y="20" width="3" height="4"/></svg>`;
   const art=k==='recent'
@@ -1119,10 +1122,12 @@ function shutGroup(r,rolled){
 }
 const shutW=(r,rolled)=>{const g=shutGroup(r,rolled);return g?g.w:0;};
 /* one bubble: every resident's line, the one whose turn it is shown; its tail points at that resident (x: the centre of its seat or bed) */
+/* spec 085 FR-008: the bubble's line starts with the numbers when the agent has them (then it opens the changed-files list), else the reply */
+const bubLine=x=>{const w=loungeBrief(x.a),r=shutReply(x.a,160);return w?w+' · '+r:r;};
 function bubbleHTML(cls,list,width,xOf,lineOf,tip){
   if(!list.length)return width?`<span class="lg-bub none" style="flex-basis:${width}px"></span>`:'';
   const on=SHUT.turn(LOUNGE_TURN,list.length);
-  return `<span class="lg-bub ${cls}" style="flex-basis:${width}px;--tail:${xOf(on)}px" aria-hidden="true"${tip?` title="${esc(tip)}"`:''}>${list.map((x,i)=>`<span class="lg-t${i===on?' on':''}" style="--tx:${xOf(i)}px">${cls==='dream'?'<b class="lg-zz">z z</b> ':''}${esc(lineOf(x))}</span>`).join('')}</span>`;
+  return `<span class="lg-bub ${cls}" style="flex-basis:${width}px;--tail:${xOf(on)}px" aria-hidden="true"${tip?` title="${esc(tip)}"`:''}>${list.map((x,i)=>`<span class="lg-t${i===on?' on':''}${loungeSum(x.a)?' sum':''}"${loungeSum(x.a)?` data-sumfiles="${esc(x.a.id)}" title="Click to list the changed files"`:''} style="--tx:${xOf(i)}px">${cls==='dream'?'<b class="lg-zz">z z</b> ':''}${esc(lineOf(x))}</span>`).join('')}</span>`;
 }
 function shuttersHTML(r,rolled){
   const g=shutGroup(r,rolled); if(!g)return '';
@@ -1134,8 +1139,8 @@ function shuttersHTML(r,rolled){
   const couches=cs.map(k=>{const xs=g.recent.slice(seat,seat+k);seat+=k;
     return `<span class="lg-couch" style="flex-basis:${k*SHUT.SEAT_W+SHUT.COUCH_PAD}px"><svg class="lg-sofa" viewBox="0 0 100 40" preserveAspectRatio="none" aria-hidden="true" focusable="false"><rect class="sf-back" x="4" y="2" width="92" height="24" rx="7"/><rect class="sf-seat" x="4" y="20" width="92" height="14" rx="4"/><rect class="sf-arm" x="0" y="12" width="9" height="24" rx="4"/><rect class="sf-arm" x="91" y="12" width="9" height="24" rx="4"/><rect class="sf-leg" x="8" y="34" width="5" height="6"/><rect class="sf-leg" x="87" y="34" width="5" height="6"/></svg>${xs.map(restHTML).join('')}</span>`;}).join('');
   const all=g.old, dreams=all.map(x=>x.a.name+': '+shutReply(x.a,90)).join('\n');
-  const say=bubbleHTML('say',g.recent,g.sayW,seatX,x=>shutReply(x.a,160),'');
-  const dream=bubbleHTML('dream',all,g.dreamW,i=>bedX(i),x=>shutReply(x.a,160),dreams);
+  const say=bubbleHTML('say',g.recent,g.sayW,seatX,bubLine,'');
+  const dream=bubbleHTML('dream',all,g.dreamW,i=>bedX(i),bubLine,dreams);
   /* bunks: two beds to a column (the lower bunk first) */
   const bunks=[];for(let i=0;i<g.shown.length;i+=2)bunks.push(`<span class="lg-bunk${i+1>=g.shown.length?' solo':''}">${g.shown.slice(i,i+2).map(restHTML).join('')}</span>`);
   const beds=bunks.join('')+(g.hidden.length?`<button class="more shut-more" type="button" data-more="${esc(g.key)}" aria-expanded="false" aria-label="Show ${g.hidden.length} more finished agents asleep in ${esc(r.name)}" title="${g.hidden.length} more asleep">+${g.hidden.length} asleep</button>`:'')+(g.fewer?`<button class="more shut-more fewer" type="button" data-more="${esc(g.key)}" aria-expanded="true" aria-label="Show fewer finished agents in ${esc(r.name)}">Fewer</button>`:'');
@@ -1163,6 +1168,7 @@ function officeModel(ignoreStatus){
     shown.sort((x,y)=>key(x)-key(y));
     if(ORDER.desks[r.path])shown=RO.sortBy(shown,a=>a.id,ORDER.desks[r.path]); /* issue 677: the desks the user put in order come first, in that order */
     const mains=shown.filter(a=>!plan.has(a.id)), rolled=shown.filter(a=>plan.has(a.id)).map(a=>({a,k:plan.get(a.id)}));
+    rolled.forEach(x=>refreshLoungeSummary(x.a,true)); /* spec 085 FR-008: a resting agent's numbers (one read per reply; no start in this run = no line) */
     rooms.push({r,mains,rolled,all:agents.filter(a=>wsOf(a)===r.id)});
   });
   return rooms;
@@ -2277,6 +2283,7 @@ function updatePanelHeader(){
   const t=ph.querySelector('[data-f=task]'); t.textContent=taskText(a); t.title=taskText(a);
   const ug=ph.querySelector('[data-f=usage]'); ug.textContent=usageLong(a); ug.title=ug.textContent.endsWith(' est.')?USD_TIP:'';
   updateCapChip(a);
+  syncMoreBtn(); /* spec 005 FR-234 (issue 1145): no More button for a menu with no items */
   $('pauseBtn').querySelector('span').textContent=a.paused?'Resume':'Pause';
   syncRunState(); /* spec 005 FR-038: Send or Stop follows the turn */
   syncChatHeader(); /* spec 097 FR-106: the portrait and the lamp words follow the header */
@@ -2284,6 +2291,8 @@ function updatePanelHeader(){
 }
 /* spec 052 FR-003: the chat header's More menu. A real menu: arrows move, Home/End jump, Esc closes and returns focus to More;
    a choice or a click elsewhere closes it. The items are the old buttons with their ids, so their handlers stay as they were. */
+/* spec 005 FR-234 (issue 1145): a helper's More menu holds nothing (every item is for the session's own agent), so the button is hidden whenever the menu has no item; an open empty menu is closed */
+function syncMoreBtn(){const b=$('moreBtn'), m=$('moreMenu'); if(!b||!m)return; const has=!!m.querySelector('[role="menuitem"]'); b.hidden=!has; if(!has){m.hidden=true; b.setAttribute('aria-expanded','false');}}
 function wireMoreMenu(){wireMenu('moreBtn','moreMenu');}
 /* spec 052 FR-003, #308: one menu behaviour for the chat's More and the top bar's ⋯ */
 function wireMenu(btnId,menuId){
@@ -2518,11 +2527,11 @@ function openPanel(id,focus){
   document.body.classList.add('panel-open');
   const room=roomOf(a), parent=a.parent?byId(a.parent):null;
   const p=$('panel');
-  const stripScroll=(p.querySelector('.strip-list')||{}).scrollLeft||0;
+  const stripScroll=(p.querySelector('.rail-list')||{}).scrollTop||0;
+  {const rr=roomOf(a);if(rr&&railFolds().delete(rr.path))saveFolds();} /* spec 005 FR-216: opening a chat expands its folder in the rail */
   const mdlName=a.live&&a.info?modelLabel(a.info):'';
   const subText=a.role+(parent?' · helper of '+parent.name:'');
-  p.innerHTML=`<div class="panel-in">
-   <div class="strip" role="navigation" aria-label="Agents"><button class="btn back" id="backBtn" type="button" title="Back to the office (Esc)">${ICON('back')}<span>Office</span></button><div class="strip-list" id="stripList"></div></div>
+  p.innerHTML=`${railHTML()}<div class="panel-in">
    <div class="ph" id="panelHead"><div class="ph-top"><div class="avatar">${avatar(a)}</div><div class="ph-id"><h2 id="panelTitle" tabindex="-1" title="${esc(panelTipOf(a))}"${titleRenameable(a)?` aria-label="${esc(a.name)}"`:''}>${panelTitleHTML(a)}</h2><div class="sub" title="${esc(subText)}">${parent?'':chatNoHTML(a)}${!parent&&chatNoOf(a)?'<span class="sr-only">Chat '+chatNoOf(a)+'. </span>':''}${esc(subText)}</div></div>
       <div class="ph-meta"><span data-f="status"></span><span class="ph-ago" data-f="ago"></span><!-- spec 005 FR-039: the header keeps who and what (status, limit, remote, folder); how the next message runs is under the message box (FR-037) -->${a.live&&!a.parent&&bridge&&bridge.setCap?capChipHTML(liveRoot(a)):''}${canRemote(a)?remoteChipHTML(a):''}<span class="folder" title="${esc(room.path)}"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" style="flex:none"><path d="M1.8 4.2a1.4 1.4 0 0 1 1.4-1.4h3l1.6 1.8h4.8a1.4 1.4 0 0 1 1.4 1.4v6.2a1.4 1.4 0 0 1-1.4 1.4H3.2a1.4 1.4 0 0 1-1.4-1.4z"/></svg><span class="folder-t">${esc(showPath(room.path))}</span></span>${notesOn(a)?'<button class="nt-count" id="ntCount" type="button" aria-expanded="false" aria-controls="notesDrawer" data-notes-toggle hidden>Notes</button>':''}</div>      <div class="actions"><!-- spec 052 FR-003: two actions in view (FR-139: a third, + New, by owner decision), the rest under More (ids kept; End and Remove last); spec 006 FR-033 (2026-10-21): Previous sessions moved out of the actions, to their own section above the chat -->${a.live&&!a.parent&&bridge.newSession&&anyKindReady()&&!demoOn?`<button class="btn sm" id="newSessHdrBtn" type="button" title="New session in ${esc(room.name)}" aria-label="New session in ${esc(room.name)}">+ New</button>`:''}${a.live?`<button class="btn sm primary" id="vscodeBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="openWithMenu" title="Open this folder in an editor or the file manager. This does not move the conversation.">${CODE_SVG}Open with<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg></button><div class="more-menu" id="openWithMenu" role="menu" aria-label="Open with" aria-describedby="owNote" hidden><p role="none" class="ow-note" id="owNote">Opens this folder only. Your conversation stays here.${a.live&&bridge.newSession&&!a.parent&&anyKindReady()&&canHandover(a)?' To hand it to another app, use More, then Continue in another app…':''}</p><div id="owItems" role="none"></div></div>`:`<button class="btn sm primary" id="vscodeBtn" type="button" title="A demo agent: shows the command an editor would be opened with">${CODE_SVG}Open in editor</button>`/* spec 009 FR-019 (review of PR 976): a demo agent has no menu to promise */}
         <button class="btn sm" id="pauseBtn" type="button"><svg viewBox="0 0 16 16" fill="currentColor"><rect x="4" y="3" width="2.8" height="10" rx="1"/><rect x="9.2" y="3" width="2.8" height="10" rx="1"/></svg><span>Pause</span></button>
@@ -2546,7 +2555,7 @@ function openPanel(id,focus){
    <div class="drop-ov" id="dropOv" aria-hidden="true"><div>Drop to attach<small>Up to 5 files, 10 MB each. Images: PNG, JPEG, GIF, WebP, BMP.</small></div></div></div>`;
   BP.mount(a); /* spec 080 T015: wires the tabs and the browser bar; the same session keeps its tab, another starts on Chat */
   syncSeen(); /* spec 005 FR-176: the chat is shown now, so a reply not read yet is read (not when the Browser tab is in front) */
-  renderStrip(); const sl=$('stripList'); if(sl)sl.scrollLeft=stripScroll;
+  renderStrip(); const sl=$('stripList'); if(sl)sl.scrollTop=stripScroll;
   const chat=getChat(a); $('chat').appendChild(chat.el);
   updatePanelHeader(); renderGrants();
   const chatEl=$('chat'); chatEl.dataset.pin='1'; chatEl._lastTop=undefined; chatEl.scrollTop=1e6;
@@ -2579,6 +2588,7 @@ function openPanel(id,focus){
   wireAnswerBar(a);paintCoffeeBar.key='';paintCoffeeBar(); /* spec 068 FR-022 */
   if(needsMe(a)){const c=pendingCardOf(a);if(c)announce(a.name+(c.classList.contains('question')?' asks: ':' needs your OK: ')+requestText(c));}
   $('pauseBtn').onclick=()=>{a.paused=!a.paused;if(a.live&&bridge.setPaused)bridge.setPaused(a.id,a.paused);toast(esc(a.name)+(a.paused?' paused.':' resumed.'));renderAll();};
+  $('railDoor').onclick=()=>openInbox(); /* spec 052 FR-216: Your door opens the Needs you queue */
   if($('stopBtn'))$('stopBtn').onclick=e=>{RUN_SAID.stopped=true;if(a.live){const b=e.currentTarget;if(b.getAttribute('aria-busy')==='true')return;b.setAttribute('aria-busy','true');return stopLive(a).catch(failToast('stop')).finally(()=>{b.removeAttribute('aria-busy');syncRunState();});}stopDemoTurn(a);a.paused=false;a.state='idle';a.label=null;a.task='Stopped by you. Ready for a new task.';toast(esc(a.name)+' stopped.');renderAll();};
   $('attFile').onclick=()=>{if(a.live)return pickLive();addPicked([{name:SAMPLE_FILES[fi++%SAMPLE_FILES.length],kind:'file',size:12*1024}]);};
   $('attImg').onclick=()=>{if(a.live)return pickLive('image');addPicked([{name:SAMPLE_IMGS[ii++%SAMPLE_IMGS.length],kind:'image',size:240*1024}]);};
@@ -2611,7 +2621,7 @@ function openPanel(id,focus){
   $('sendBtn').onclick=()=>{if($('sendBtn').getAttribute('aria-disabled')!=='true')sendMessage(input.value);};
   setSend(); wireToolbar(); /* spec 005 FR-037..FR-040 */
   wireComposerGrip(); /* spec 005 FR-044..FR-048 */
-  renderAll(); const cur=document.querySelector('#stripList .sitem.sel'); if(cur)SCROLL.reveal(cur,{inline:'nearest'});
+  renderAll(); placeToasts(); const cur=document.querySelector('#stripList .sitem.sel'); if(cur)SCROLL.reveal(cur,{block:'nearest'});
   /* spec 074 FR-022 (issue 587): this chat's unsent text comes back */
   {const m=$('msgInput'),dr=DRAFTS.get(id);if(m&&dr){m.value=dr.t;autoGrow();}if(dr&&dr.att.length){renderAttached();setSend();}}
   /* spec 074 FR-019: a chat the user opened gets the cursor in its message box (the title when it has none) */
@@ -3642,7 +3652,7 @@ function closePanel(){closeSlash();keepDraft();
   BP.hide(); hideSelButton(); cvMark(); /* spec 080 FR-009: the browser view comes off the window; the page stays loaded */
   if(ctObs){ctObs.res.disconnect();ctObs.mut.disconnect();ctObs=null;} closeCtMore(false); closeCtxMenu();
   const id=ui.selected; ui.selected=null; document.body.classList.remove('panel-open'); $('panel').innerHTML='';
-  renderAll();
+  renderAll(); placeToasts();
   const n=id&&document.querySelector(`[data-id="${CSS.escape(id)}"]`); if(n)focusIn(n);
 }
 
@@ -3721,6 +3731,7 @@ document.addEventListener('click',e=>{
   if(pc){const cur=byId(ui.selected);if(cur&&cur.parent)openPanel(cur.parent,false);return;}
   if(e.target.closest('[data-fn-all]')){const pill=document.querySelector(`.stat[data-k="${ui.status}"]`);if(pill)pill.click();else{ui.status=null;renderAll();}return;} /* FR-180: Show all is the pill's own toggle */
   const st=e.target.closest('.stat[data-k]'); if(st){const k=st.dataset.k;ui.status=ui.status===k?null:k;renderAll();const n=document.querySelector(`.stat[data-k="${k}"]`);if(n)focusIn(n);return;}
+  const sf=e.target.closest('[data-sumfiles]'); if(sf){const a=byId(sf.dataset.sumfiles),ra=a&&liveRoot(a);if(ra&&ra.live)showSessionChanges(ra,sf,0);return;} /* spec 085 FR-008: the lounge line opens the changed-files list, not the chat */
   const rn=e.target.closest('[data-ren]'); if(rn){const a=byId(rn.dataset.ren);if(a)startSessionEdit(a,rn.closest('#list')?'list':'desk','pencil');return;} /* spec 059 FR-020 item 2: before [data-id] */
   const rf=e.target.closest('[data-renfolder]'); if(rf){const r=ROOMS.find(x=>x.id===rf.dataset.renfolder);if(r)startFolderEdit(r,rf.closest('#foldersPop')?'fp':'room','pencil');return;}
   const rp=e.target.closest('[data-renprev]'); if(rp){const a=byId(ui.selected);if(a)startSessionEdit(a,'prev','pencil',rp.dataset.renprev);return;}
@@ -3730,7 +3741,8 @@ document.addEventListener('click',e=>{
   const mo=e.target.closest('[data-more]'); if(mo){const id=mo.dataset.more;ui.expanded[id]=!ui.expanded[id];renderAll();return;}
   const cm=e.target.closest('.chips-more'); if(cm){const box=cm.parentNode;box.dataset.exp=box.dataset.exp==='1'?'0':'1';refreshChips(box);return;}
   const chip=e.target.closest('#chat .chip:not(.att-chip)'); if(chip){if(e.target.closest('.xbody'))return;const o=chip.classList.toggle('open');chip.setAttribute('aria-expanded',String(o));return;} /* spec 052 FR-063: the open body (Copy, Show all, selecting text) keeps it open */
-  const sw=e.target.closest('[data-sw]'); if(sw){openPanel(sw.dataset.sw,true);return;} /* spec 074 FR-019: mouse or keyboard */
+  const rg=e.target.closest('[data-rgfold]'); if(rg){if(e.detail<2)toggleFold(rg.dataset.rgfold);return;} /* spec 005 FR-216: a click, Enter or Space toggles a folder; the second click of a double click is dropped, so a double click toggles it once and never opens a chat */
+  const sw=e.target.closest('[data-sw]'); if(sw){if(e.detail>=2)return; /* spec 005 FR-216: the second click of a double click never opens a chat (a heading's first click can move another row under the pointer) */openPanel(sw.dataset.sw,true);return;} /* spec 074 FR-019: mouse or keyboard */
   if(e.target.closest('[data-costview]')){window.DurbarScreens.openTools(null,'cost');return;}
   const mr=e.target.closest('[data-mcproom]'); if(mr){const f=folderOfRoom(mr.dataset.mcproom);if(f)window.DurbarScreens.folderMcp(f.key,f.name);return;}
   const sc=e.target.closest('[data-schedroom]'); if(sc){const r=ROOMS.find(x=>x.id===sc.dataset.schedroom);if(r)openSchedules(r);return;}
@@ -4712,8 +4724,10 @@ async function renderAwayStrip(){
   let s=null; try{s=await bridge.sinceAway();}catch(e){s=null;}
   if(!s||typeof s.awayMs!=='number'){el.hidden=true;el.innerHTML='';return;}
   const missed=Array.isArray(s.missed)?s.missed:[];
+  const briefW=SSUM&&SSUM.briefing?SSUM.briefing(s.briefing):''; /* spec 085 FR-009: numbers only, from main's rollup, coerced again */
   el.innerHTML='<span class="ns-ic" aria-hidden="true">i</span><span class="ns-t"><b>Since you were away</b> ('+esc(awayWords(s.awayMs))+'): '+
     (missed.length?(missed.length===1?'1 scheduled prompt':missed.length+' scheduled prompts')+' did not run while the app was closed.':'nothing was scheduled while the app was closed.')+
+    (briefW?' <span class="aw-brief" title="'+esc(SSUM.briefingTip)+'">'+esc(briefW)+'</span>':'')+
     '</span>'+(missed.length?'<span class="aw-list">'+missed.map(m=>'<span class="aw-it" data-sched="'+esc(m.id)+'"><span class="aw-w"><b>'+esc(m.folderName)+'</b>: “'+esc(safeExcerpt(m.prompt,80,''))+'”'+(m.repeats?' <small>(runs again as planned)</small>':'')+'</span>'+(bridge.runScheduleNow?'<button class="btn" type="button" data-awrun="'+esc(m.id)+'">Run missed now</button>':'')+'</span>').join('')+'</span>':'')+
     '<span class="ns-act"><button class="btn" type="button" data-aw="close">Dismiss</button></span>';
   el.hidden=false;
@@ -5711,13 +5725,14 @@ function onSubagent(a,e){
   const s=subRec(a,e.subagentId), card=s.card;
   if(e.name)s.name=safeMask(e.name)||s.name; if(e.model)s.model=e.model; if(e.agentName)s.agentName=safeMask(e.agentName)||''; /* spec 041 FR-065 */
   if(e.task&&e.phase==='started')s.task=e.task;
+  if(e.phase==='started'&&e.background===true)s.background=true; /* spec 015 FR-018: the parent's call returns at once; only this helper's own end ends it */
   if(e.durationMs)s.durationMs=e.durationMs; if(e.totalTokens)s.tokens=e.totalTokens; if(e.totalToolCalls!=null)s.tools=Math.max(s.tools,e.totalToolCalls);
   card.name=s.name;card.role=s.agentName?'Helper · '+s.agentName:'Helper';
   if(e.phase==='started'){s.status='running';setState(card,'working',null,s.task||'Working');}
   else{
     s.t1=Date.now();
     if(e.phase==='failed'){s.status='failed';s.error=e.error||e.task||'Failed';setState(card,'error',null,safeExcerpt(s.error,100));}
-    else{s.status='done';setState(card,'done','Done',safeExcerpt(s.result||s.task,100));}
+    else{s.status='done';setState(card,'done','Done',safeExcerpt(s.result||s.lastFinal||s.task,100));}
     s.views.forEach(v=>{tEnd(v.T,{note:false});});
     subCollapse(s);
   }
@@ -5734,6 +5749,7 @@ function onTaskTool(a,e){
     if(g.agent_type&&!s.agentName)s.agentName=safeMask(String(g.agent_type))||''; /* spec 041 FR-065 */
     if(s.name==='Sub-agent'&&s.task)s.name=SHORT(safeMask(s.task),40);
   } else if(e.phase==='update')return; /* FR-095: an update changes no status, does not collapse the block and does not touch the card */
+  else if(e.phase==='complete'&&s.background)return; /* spec 015 FR-018 (issue 1141): a background helper's call returns with a launch note, never its result or its end; only the helper's own end event (or its session stopping) ends it */
   else {
     if(e.phase==='complete'&&e.output)s.result=String(e.output);
     if(e.phase==='failed'){s.status='failed';s.error=String(e.output||'Failed');}
@@ -6496,7 +6512,7 @@ function onLiveEvent(e){
       updateCtxChip(a);scheduleRender();
     } /* spec 015 FR-010: a stop or an error ends the mark even if the adapter sent no end */
     const gaveUp=e.status==='error'?a.gaveUp:null; a.gaveUp=null; /* spec 034 FR-019: the line of a turn that gave up after retries */
-    if(e.status==='idle')refreshFolderStatus(a); /* spec 063 FR-005: a finished turn may have changed files */
+    if(e.status==='idle')refreshFolderStatus(a); /* spec 063 FR-005: a finished turn may have changed files. The lounge numbers are not read here: an agent still at its desk shows none, and one that rests is read once per reply by the office render (spec 085 FR-008) */
     /* spec 068: the turn that hit a usage limit ends quietly (the coffee break says why); working again, Stop or the end of the session end the break */
     if(a.coffee&&!a.limit){
       /* only the turn's closing status keeps the break (2026-10-22): the adapters' marker reason 'usage-limit' (never the words), then at most one plain idle of the same turn */
@@ -6533,6 +6549,7 @@ function onLiveEvent(e){
       if(a.remote){a.remote=null;updateRemoteUi(a);} /* spec 054 FR-003: remote control ends with the session */
       a.worked=false; /* spec 058 FR-022: the turn ended with the session; a resume's "idle" (Restart session) is not a finished turn ("Done") */
       mcpSessionEnded(a); /* spec 100: the figures, a dismissal and the compaction times belong to that session */
+      if(a.subs)a.subs.forEach(s=>{if(s.status==='running')onSubagent(a,{subagentId:s.id,phase:'failed',error:'Stopped with its session'});}); /* spec 015 FR-018: no helper stays Running after its session */
       closeTurn(a);setState(a,'idle','Ended','Session ended. Send a message to resume it.');}
     return;}
   case 'permission':if(main)settlePerm(a,e.permission);return;
@@ -6780,11 +6797,30 @@ const SSUM=window.DurbarSessionSummary||null;
 /* asked before the end (main forgets the start when the session ends); never delays the end by more than 5 s; null = no card */
 async function readSessionSummary(r){
   if(!SSUM||!bridge.sessionSummary||!r)return null;
-  try{const s=await Promise.race([bridge.sessionSummary(r.id),new Promise(res=>setTimeout(()=>res(null),5000))]);return s&&s.ok===true?s:null;}catch(e){return null;}
+  try{const s=await Promise.race([bridge.sessionSummary(r.id,true),new Promise(res=>setTimeout(()=>res(null),5000))]);return s&&s.ok===true?s:null;}catch(e){return null;}
 }
 /* the cost part is the session's own usage figure (the same words as its usage line): money, tokens only for an agent app without a price, else nothing */
 function sessionSummaryCost(r){const t=costText(r);return !t?'':/ tok$/.test(t)?t.replace(/ tok$/,' tokens'):'cost '+t;}
 if(SIM)window.__durbarSumCost=id=>{const a=byId(id);return a?sessionSummaryCost(liveRoot(a)):null;}; /* simulator only: the driver checks the card's cost part against the session's own usage figure */
+/* the changed-files list: the spec 063 dialog from a fresh gitStatus (the card's button, the lounge line); `commits`: what the session committed is in git's history, not in this list */
+async function showSessionChanges(r,anchor,commits){
+  const st=await bridge.gitStatus(r.id).catch(()=>null);
+  if(!st||!st.repo||!GS.count(st)){toast('No uncommitted changes in the folder now.'+(commits>0?' What the session committed is in the folder\'s git history.':''),4200);return;}
+  showFolderStatus(r,anchor,st);
+}
+/* spec 085 FR-008: when a main agent finishes a turn, its numbers are read once (one read in flight) for the lounge line; words from numbers only, kept in memory, '' = nothing to say */
+const LSUM=new Map();
+function refreshLoungeSummary(a0,onlyNew){
+  const a=a0&&liveRoot(a0); if(!a||!a.live||a.parent||!SSUM||!bridge.sessionSummary)return;
+  const c=LSUM.get(a.id)||{busy:false,words:'',brief:'',key:undefined,asked:false};LSUM.set(a.id,c);
+  if(c.busy||(onlyNew&&c.asked&&c.key===a.lastOutput))return; /* resting agents are read once per reply (a new reply changes lastOutput) */
+  c.busy=true;c.asked=true;c.key=a.lastOutput;
+  Promise.race([bridge.sessionSummary(a.id),new Promise(res=>setTimeout(()=>res(null),5000))])
+    .then(s=>{c.words=s&&s.ok===true?SSUM.short(s):'';c.brief=s&&s.ok===true?SSUM.brief(s):'';},()=>{c.words='';c.brief='';})
+    .finally(()=>{c.busy=false;scheduleRender();});
+}
+const loungeSum=a=>{const c=a&&LSUM.get(a.id);return c&&c.words||'';};
+const loungeBrief=a=>{const c=a&&LSUM.get(a.id);return c&&c.brief||'';};
 function sessionSummaryNote(r,sum){
   if(!SSUM||!sum)return;
   const t=SSUM.text(sum,sessionSummaryCost(r));if(!t)return;
@@ -6792,9 +6828,7 @@ function sessionSummaryNote(r,sum){
   if(sum.git&&sum.git.repo===true&&bridge.gitStatus){
     const row=document.createElement('div');row.className='note-actions';
     const b=document.createElement('button');b.type='button';b.className='btn';b.textContent='Show uncommitted changes';b.dataset.act='sumFiles';
-    b.onclick=async()=>{const st=await bridge.gitStatus(r.id).catch(()=>null);
-      if(!st||!st.repo||!GS.count(st)){toast('No uncommitted changes in the folder now.'+(sum.git.commits>0?' What the session committed is in the folder\'s git history.':''),4200);return;}
-      showFolderStatus(r,b,st);};
+    b.onclick=()=>showSessionChanges(r,b,sum.git.commits);
     row.appendChild(b);note.appendChild(row);
   }
 }
@@ -6802,15 +6836,76 @@ const failToast=what=>err=>toast('Could not '+what+': '+esc(String(err&&err.mess
 async function copyResume(a){const r=liveRoot(a),cmd=resumeCmdOf(r); if(!cmd)return;
   try{await navigator.clipboard.writeText(cmd);toast('Copied <code>'+esc(cmd)+'</code>. End the session here first, then run it in a terminal in '+esc(roomOf(r).path)+'. In VS Code, turn on the sessions list filter External to see sessions started here.',9000).classList.add('ok');}
   catch{toast('Run <code>'+esc(cmd)+'</code> in a terminal in '+esc(roomOf(r).path)+' (end the session here first).',8000);}}
-/* ---------------- full-screen chat: the strip of all agents ---------------- */
-function stripAgents(){
-  return agents.filter(x=>!x.parent&&roomShown(roomOf(x))).map((x,i)=>[x,i]).sort((p,q)=>prio(p[0])-prio(q[0])||p[1]-q[1]).map(p=>p[0]);
+/* ---------------- full-screen chat: the agent rail (spec 005 FR-190, FR-194, FR-216; it was the strip) ----------------
+   One list: every main agent on a shown floor, by folder (DurbarRail.group: who needs you first, oldest first, then the office's room
+   order; inside a folder needsMe() first by NEED_SINCE, then prio and creation order). Two row heights: plain, and tall for whoever needs
+   you (the age in words and the request). Keyed rows through morphHTML (data-sw, data-key, .sel, aria-current). Folders collapse. */
+const RAIL=window.DurbarRail;
+/* FR-216: the collapsed folders are saved only when rememberOn(); the simulator saves them only with railstore=1 (check-rail's reload step) */
+const railRemember=()=>rememberOn()||(!!SIM&&qs.get('railstore')==='1');
+let RAIL_FOLDS=null;
+function railFolds(){
+  if(!RAIL_FOLDS){RAIL_FOLDS=new Set();if(railRemember()){try{RAIL_FOLDS=RAIL.loadFolds(localStorage.getItem(RAIL.FOLD_KEY));}catch(e){RAIL_FOLDS=new Set();}}}
+  return RAIL_FOLDS;
 }
+function saveFolds(){
+  if(!railRemember())return;
+  try{const v=RAIL.foldsJSON(railFolds(),ROOMS.map(r=>r.path),agentsListed||demoOn);if(v)localStorage.setItem(RAIL.FOLD_KEY,v);else localStorage.removeItem(RAIL.FOLD_KEY);}catch(e){/* storage off: kept for this run */}
+}
+function toggleFold(roomId){
+  const r=ROOMS.find(x=>x.id===roomId); if(!r)return;
+  const f=railFolds(); if(f.has(r.path))f.delete(r.path); else f.add(r.path);
+  saveFolds(); renderStrip();
+}
+function railGroups(){
+  needsMeOrder(); /* NEED_SINCE for whoever needs you now */
+  const rank=new Map(roomsInOrder().map((r,i)=>[r.id,i]));
+  const list=agents.filter(x=>!x.parent&&roomShown(roomOf(x)));
+  return RAIL.group(list.map((x,i)=>({id:x.id,room:x.room,rank:rank.get(x.room),needs:needsMe(x),since:NEED_SINCE.get(x.id),prio:prio(x),i})));
+}
+function railHTML(){
+  const ib=$('inboxBtn');
+  return `<nav class="rail" aria-label="Agents"><h2 class="sr-only">Agents</h2><div class="rail-top"><button class="btn back" id="backBtn" type="button" title="Back to the office (Esc)">${ICON('back')}<span>Office</span></button><!-- spec 005 FR-190: R2 (T127) puts the Plan | List switch here, R3 (T116) the collapse button --></div>
+   <div class="rail-door"><button class="btn sm" id="railDoor" type="button" aria-haspopup="dialog" title="${esc(ib?ib.title:'Needs you')}"${ib&&ib.getAttribute('aria-keyshortcuts')?` aria-keyshortcuts="${esc(ib.getAttribute('aria-keyshortcuts'))}"`:''}>${ALERT_ICON}<span>Your door</span><b>0</b></button><!-- spec 052 FR-219: the red lock goes beside it (T223) --></div>
+   <div class="rail-list" id="stripList"></div></nav>`;
+}
+/* "Waiting 3 min" (ATT.waitLabel, as the inbox and the Boss say it), or "Error · 3 min"; text only, never a size (052 FR-061) */
+function railAge(x,now){
+  const t=NEED_SINCE.get(x.id), w=t==null?'':ATT.waitLabel(Math.max(0,now-t)).replace(/^waiting /,'').replace('less than a minute','<1 min');
+  return vis(x)==='waiting'?(w?'Waiting '+w:stWord(x,true)):stWord(x,true)+(w?' · '+w:'');
+}
+function railAgeSaid(x,now){const t=NEED_SINCE.get(x.id);return vis(x)==='waiting'?(t==null?stWord(x,true):ATT.waitLabel(Math.max(0,now-t))):stWord(x,true)+(t==null?'':', '+ATT.waitLabel(Math.max(0,now-t)).replace(/^waiting /,'for '));}
+function railReq(x){const c=x.live||chats[x.id]?pendingCardOf(x):null;return c?requestText(c):taskText(x);} /* never builds a demo chat just to look (as attentionItems) */
+function railRow(x,root,now){
+  const st=pillSt(x),attn=st==='waiting'||st==='error'||st==='failing'||st==='retrying', sel=x.id===root, tall=needsMe(x); /* spec 052 FR-092: Failing here too; spec 034 FR-018: Retrying */
+  const head=`<span class="sav">${avatar(x)}</span>`, name=`<b>${esc(x.name)}${draftHTML(x)}${unreadHTML(x)}${dialogHTML(x)}</b>`;
+  const cls=`sitem st-${st}${attn?' attn':''}${tall?' tall':''}${sel?' sel':''}`, key=`data-sw="${esc(x.id)}" data-key="sw:${esc(x.id)}" aria-current="${sel}"`, who=`${esc(x.name)}${chatNoWords(x)}${draftWords(x)}${unreadWords(x)}`, no=chatNoOf(x)?'C'+chatNoOf(x)+' · ':'';
+  if(!tall)return `<button class="${cls}" type="button" ${key} title="${no}${esc(x.name)} · ${esc(stWord(x,true))}: ${esc(taskText(x))}" aria-label="${who}, ${esc(stWord(x,true))}. Open chat.">${head}<span class="stx">${name}</span><span class="sst"><span class="dot ${st}"></span><span class="sw">${esc(stWord(x,true))}</span></span></button>`;
+  const req=SHORT(railReq(x),200); /* masked first (requestText), then cut: tooltips stay within 300 characters (spec 052 FR-171) */
+  return `<button class="${cls}" type="button" ${key} title="${no}${esc(x.name)} · ${esc(railAge(x,now))}: ${esc(req)}" aria-label="${who}, ${esc(railAgeSaid(x,now))}: ${esc(req)}. Open chat.">${head}<span class="stx"><span class="stop">${name}<span class="sage">${esc(railAge(x,now))}</span></span><span class="sreq">${esc(req)}</span></span></button>`;
+}
+function renderRailDoor(){
+  const b=$('railDoor'); if(!b)return;
+  const n=needsMeOrder().length;
+  b.classList.toggle('attn',n>0); const c=b.querySelector('b'); if(c&&c.textContent!==String(n))c.textContent=String(n);
+  b.setAttribute('aria-label','Your door: '+(n?n+(n===1?' agent needs':' agents need')+' you':'nobody needs you')+'. Open Needs you.');
+}
+let railTick=0;
 function renderStrip(){
   const box=$('stripList'); if(!box)return;
-  const cur=byId(ui.selected), root=cur?(cur.parent||cur.id):null;
-  morphHTML(box,stripAgents().map(x=>{const st=pillSt(x),attn=st==='waiting'||st==='error'||st==='failing'||st==='retrying'; /* spec 052 FR-092: Failing here too; spec 034 FR-018: Retrying */
-    return `<button class="sitem st-${st}${attn?' attn':''}${x.id===root?' sel':''}" type="button" data-sw="${esc(x.id)}" data-key="sw:${esc(x.id)}" aria-current="${x.id===root}" title="${chatNoOf(x)?'C'+chatNoOf(x)+' · ':''}${esc(x.name)} · ${esc(stWord(x,true))}: ${esc(taskText(x))}" aria-label="${esc(x.name)}${chatNoWords(x)}${draftWords(x)}${unreadWords(x)}, ${esc(stWord(x,true))}. Open chat."><span class="sav">${avatar(x)}</span><span class="stx"><b>${esc(x.name)}${draftHTML(x)}${unreadHTML(x)}${dialogHTML(x)}</b><span class="sst"><span class="dot ${st}"></span><span class="sw">${esc(stWord(x,true))}</span><span class="sin">${esc(SHORT(taskText(x),48))}</span></span></span></button>`;}).join(''));
+  const cur=byId(ui.selected), root=cur?(cur.parent||cur.id):null, folds=railFolds(), now=Date.now();
+  renderRailDoor();
+  /* spec 005 FR-216: a moved folder is re-inserted by morphHTML, which drops the focus; the focused row or heading gets it back by key */
+  const fa=document.activeElement, fk=fa&&box.contains(fa)?(fa.dataset.sw!=null?'[data-sw="'+CSS.escape(fa.dataset.sw)+'"]':fa.dataset.rgfold!=null?'[data-rgfold="'+CSS.escape(fa.dataset.rgfold)+'"]':null):null;
+  morphHTML(box,railGroups().map((g,gi)=>{
+    const r=ROOMS.find(x=>x.id===g.room); if(!r)return '';
+    const shut=folds.has(r.path), n=g.ids.length, here=!!root&&g.ids.includes(root);
+    const need=shut&&g.needN?`<span class="rg-need" title="${g.needN} ${g.needN===1?'needs':'need'} you">${ALERT_ICON}${g.needN}</span>`:'';
+    return `<div class="rgrp" data-key="rg:${esc(r.id)}"><h3 class="rg-hd"><button class="rg-h${shut&&here?' has-sel':''}" type="button" data-rgfold="${esc(r.id)}" aria-expanded="${!shut}" aria-controls="rgRows${gi}" title="${esc(r.name)}" aria-label="${esc(r.name)}: ${n} ${n===1?'session':'sessions'}${g.needN?', '+g.needN+(g.needN===1?' needs':' need')+' you':''}${shut&&here?', the open chat is here':''}">${ICON('chev')}<span class="rg-n">${esc(r.name)}</span>${need}<span class="rg-c" aria-hidden="true">${n}</span></button></h3><div class="rg-rows" id="rgRows${gi}"${shut?' hidden':''}>${g.ids.map(id=>railRow(byId(id),root,now)).join('')}</div></div>`;
+  }).join(''));
+  if(fk&&!box.contains(document.activeElement)){const n=box.querySelector(fk);if(n&&n.getClientRects().length)n.focus({preventScroll:true});}
+  /* 052 FR-061: the ages tick as text only, every 30 s while the rail is shown */
+  if(!railTick)railTick=setInterval(()=>{if(!$('stripList')){clearInterval(railTick);railTick=0;return;}const t=Date.now();document.querySelectorAll('#stripList .sitem.tall[data-sw]').forEach(el=>{const x=byId(el.dataset.sw),s=el.querySelector('.sage');if(x&&s){const v=railAge(x,t);if(s.textContent!==v)s.textContent=v;}});},30000);
 }
 
 
@@ -8362,9 +8457,9 @@ function placeRen(b){
   const top=nr.top+(nr.height-S)/2, hit=l=>prot.some(q=>l<q.right&&l+S>q.left&&top<q.bottom&&top+S>q.top);
   const gx=sib.querySelector('.gx'), gr=gx&&gx.getClientRects().length?gx.getBoundingClientRect():null, lim=gr?Math.min(sr.right-2,gr.left-2):sr.right-2; /* spec 001 FR-185: a wide card's details column (.gx) is right of the text column: the pencil never goes into it */
   let left=tr.right+3;
-  if(left+S>lim||hit(left))left=Math.max(nr.right-S,nr.left+nr.width/2); /* no room beside it: over the end of the name, never more than its right half (the click on the name's middle still opens the chat) */
-  const op=b.offsetParent||wrap, or=op.getBoundingClientRect(); /* the positioned ancestor: the unit or row wrapper, for a room header the room (the header itself is not positioned: the plant is placed against the room) */
   const pad=(b.offsetWidth-S)/2; /* the box is 24px (a 24px target, spec 052), the glyph 16px in its middle */
+  if(left+S>lim||hit(left))left=Math.max(nr.right-S,nr.left+nr.width/2+pad+2); /* no room beside it: over the end of the name, and its whole 24px box (not only the glyph) in the name's right half: the box is invisible until hover, so a click on the name's middle must still open the chat (spec 059 FR-030, issue 1067) */
+  const op=b.offsetParent||wrap, or=op.getBoundingClientRect(); /* the positioned ancestor: the unit or row wrapper, for a room header the room (the header itself is not positioned: the plant is placed against the room) */
   b.style.left=Math.round(left-pad-or.left-(op.clientLeft||0))+'px'; b.style.top=Math.round(top-pad-or.top-(op.clientTop||0))+'px';
   if(!b.hasAttribute('data-placed'))b.setAttribute('data-placed','');
 }

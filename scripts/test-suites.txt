@@ -104,6 +104,7 @@ test:checkpoints
 test:ipcchannels
 test:planmode
 test:probe
+test:logo-assets
 test:autofollow
 test:openwith
 test:liveact
@@ -137,6 +138,7 @@ test:crew-assets
 test:realoffice-layout
 test:realoffice-assets
 test:roomorder
+test:railorder
 test:composersize
 test:innerscroll
 test:ctxbreakdown

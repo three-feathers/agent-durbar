@@ -1,6 +1,6 @@
 {
   "styles.css": {
-    "colors": 113,
+    "colors": 105,
     "fonts": 0
   },
   "screens.css": {
@@ -24,7 +24,7 @@
     "fonts": 0
   },
   "index.html": {
-    "colors": 5,
+    "colors": 4,
     "fonts": 0
   },
   "realoffice-world.css": {

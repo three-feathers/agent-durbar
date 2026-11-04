@@ -416,6 +416,12 @@
     const charSec=window.THEME&&window.THEME.setCharacters&&X.applyCharacters?`<section class="scr-sec" aria-labelledby="chH"><h3 id="chH">Characters</h3>
         <p class="scr-note">Who sits at the desks, on top of any theme; the choice applies at once and is kept on this computer.</p>
         <ul class="thlist" id="chList">${charItems()}</ul></section>`:'';
+    /* Logo (spec 101 FR-020..FR-023): the top-bar icon, the Characters pattern; DurbarLogo (logo-marks.js) keeps the choice in localStorage and applies it at once */
+    const LG=window.DurbarLogo;
+    const logoItems=()=>{const cur=LG.current();return LG.IDS.map((id)=>{const n=LG.NAMES[id];return `<li class="throw"><button class="thpick" type="button" data-logo="${esc(id)}" aria-pressed="${id===cur}" aria-label="Logo ${esc(n[0])}: ${esc(n[1])}"><span class="lgsw" aria-hidden="true">${LG.preview(id)}</span><span class="thtx"><b title="${esc(n[0])}">${esc(n[0])}</b><small title="${esc(n[1])}">${esc(n[1])}</small></span></button></li>`;}).join('');};
+    const logoSec=LG&&LG.IDS?`<section class="scr-sec" aria-labelledby="lgH"><h3 id="lgH">Logo</h3>
+        <p class="scr-note">The icon in the top bar; it takes the colours of your world. The app\u2019s own icon in the Dock, taskbar or Finder stays the same.</p>
+        <ul class="thlist" id="lgList">${logoItems()}</ul></section>`:'';
     /* spec 001 FR-192 (WCAG 2.2.2): the way to stop the moving person at a desk that needs you or has a New reply; the glow and the badge stay */
     /* the row shows what main saved (settings:get), and the window follows it when its own read at start failed or is behind */
     const stillOn=X.isStillHl?(typeof app.stillHighlights==='boolean'?app.stillHighlights:!!X.isStillHl()):false;
@@ -456,7 +462,7 @@
         <li>It does not see your bill; costs are estimates.</li>
         <li>It sends nothing to any server of its own.</li>
         <li>Rooms you hide or switch off still run and cost money.</li></ul></section>`;
-    r.innerHTML=head('Settings')+`<div class="scr-body">${hsSec}${pfSec}${detailSec}${keySec}${notSec}${themeSec}${charSec}${stillSec}${capSec}${moodSec}${breakSec}${linksSec}${notifySec}${followSec}${schedSec}${floorsSec}${orgSec}${placesSec}
+    r.innerHTML=head('Settings')+`<div class="scr-body">${hsSec}${pfSec}${detailSec}${keySec}${notSec}${themeSec}${charSec}${logoSec}${stillSec}${capSec}${moodSec}${breakSec}${linksSec}${notifySec}${followSec}${schedSec}${floorsSec}${orgSec}${placesSec}
       <details class="scr-adv" id="advMcp"${advOpen?' open':''}><summary><h3 class="scr-adv-h">Advanced: MCP servers (extra tools for agents)</h3><span class="mtag warn" id="advMcpAtt"${live&&live.agg.attention?'':' hidden'}>${esc(attText(live?live.agg.attention:0))}</span></summary>
       <section class="scr-sec" aria-labelledby="mcpH"><h3 id="mcpH" tabindex="-1">MCP servers</h3>
         ${liveSection()}
@@ -543,6 +549,12 @@
       $('chList').querySelectorAll('[data-characters]').forEach((x)=>x.setAttribute('aria-pressed',String(x===b)));
       /* a repaint of the list that a theme pick started earlier can land between this click and the change itself and show the old choice (check-characters on CI): once the change is applied, the buttons say what is applied */
       Promise.resolve(done).then(()=>{const l=$('chList');if(l&&window.THEME&&window.THEME.characters){const cur=window.THEME.characters();l.querySelectorAll('[data-characters]').forEach((x)=>x.setAttribute('aria-pressed',String(x.dataset.characters===cur)));}});
+    });
+    /* spec 101 FR-020: a Logo pick shows at once in the top bar and is kept (no IPC, no file) */
+    if($('lgList'))$('lgList').addEventListener('click',(e)=>{
+      const b=e.target.closest&&e.target.closest('[data-logo]');if(!b||!window.DurbarLogo)return;
+      const v=window.DurbarLogo.set(b.dataset.logo);
+      $('lgList').querySelectorAll('[data-logo]').forEach((x)=>x.setAttribute('aria-pressed',String(x.dataset.logo===v)));
     });
     if($('thExport'))$('thExport').onclick=async()=>{
       if(!X.bridge.exportTheme)return;
