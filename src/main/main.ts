@@ -48,6 +48,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { PRODUCTION_DESCRIPTORS } from '../adapters/descriptors';
 import { offeredDescriptors } from '../adapters/experimental';
+import { sweepMcpConfigs } from '../adapters/claude';
 import { createRegistry, detectAll } from '../adapters/registry';
 import { configureDevClaudeBin, detectorFor, nodeDetectEnv, setLoginPath } from '../adapters/detect';
 import { missingChecker } from './mcpcmdcheck';
@@ -92,6 +93,7 @@ import { UsageStore } from './usagestore';
 import { AgentTrustStore } from './agenttrust';
 import { Scheduler, loadSchedules, publicDoc, saveSchedules, scheduleBusy } from './schedules';
 import type { SchedulerDeps } from './schedules';
+import { loopActivity, loopPrompt, loopPush, loopStillWanted, loopWaitOf, routeLoopEvent } from './loopwiring';
 import { UsageTotalsStore } from './usagetotalsstore';
 import { ActivityStore } from './activitystore';
 import { decisionOf } from '../shared/activity';
@@ -113,6 +115,7 @@ import { broadFolderKind } from '../shared/broadfolder';
 import { REPO_URL, aboutPanelOptions } from '../shared/about';
 import { modelControlFor } from '../shared/modelswitch';
 import { createDebugSink, redact } from '../shared/redact';
+import { eventGate } from '../adapters/eventguard';
 import { profileDir } from './profiledir';
 import { simClockSetup } from './simclock';
 import { debugSwitchesToRemove } from './debugguard';
@@ -181,6 +184,7 @@ for (const [name, value] of simClock.switches) app.commandLine.appendSwitch(name
 // spec 010 FR-024: under the simulator every descriptor creates an inert stand-in, never the real adapter
 const registry = createRegistry(simGuardDescriptors([...PRODUCTION_DESCRIPTORS, ...offeredDescriptors(dev)], SIMULATOR)); // Copilot, then Claude Code (spec 012 FR-135); detection decides what is ready
 const router = createRouter(registry);
+router.setEventGuard(eventGate((line) => console.warn(redact(line)))); // spec 010 FR-035: every event checked before any listener; a bad one is dropped
 /** Spec 076 section O (issue #602): each agent app's own organization policy, read by its adapter, cached 60 s. */
 const orgPolicies = new OrgPolicyCache({ ids: () => registry.list().map((d) => d.id), adapter: (id) => (registry.has(id) ? router.instance(id) : undefined) });
 /** Spec 076 FR-203: the start guard's deps; advice is shown once the session has started (a toast in the window). */
@@ -277,9 +281,9 @@ router.onEvent((e) => {
 const lastStatus = new Map<string, string>();
 router.onEvent((e) => {
   if (e.type === 'status' && !e.agentId) lastStatus.set(e.sessionId, e.status);
-  // spec 044 FR-015: usage between a scheduled send and the end of that turn counts toward the schedule's own limit
-  if (e.type === 'usage') scheduler?.noteUsage(e.sessionId, e);
-  else if (e.type === 'status' && !e.agentId && (e.status === 'idle' || e.status === 'error' || e.status === 'stopped')) scheduler?.turnEnded(e.sessionId);
+  // spec 044 FR-015: usage between a scheduled send and the end of that turn counts toward the schedule's own limit; spec 072: a loop
+  // pass's final text, its end and its holds (after agentState and lastStatus above have taken the event)
+  routeLoopEvent(e, scheduler);
 });
 /** Key an agent's all-time counts are kept under: "<agent name> · <folder name>" (base name only, spec 020). */
 const usageLabel = (a: AgentInfo): string => agentLabel(a.name, a.workspaceFile ? path.basename(a.workspaceFile).replace(/\.code-workspace$/i, '') : a.cwd);
@@ -604,7 +608,18 @@ const scheduleDeps = (file: string): SchedulerDeps => ({
   send: async (_folder, prompt, s) => {
     const a = scheduleAgent(s);
     // spec 058 FR-209: the scheduler's send awaits the same per-chat MCP sign-in gate as the window's send
-    return scheduledSendOp({ agent: a, adapter: a ? router.forAgent(a.id) : undefined, agentState, gate: (id) => mcp.signInRefresh.beforeSend(id), ensureLive: (x) => ensureLive(x), toWindow: toRenderer, noteLastSession, now: () => Date.now() }, prompt, s);
+    // spec 072 FR-006, FR-009: a loop pass is the user's own send path in the session's mode, plus Durbar's footer (loops only)
+    return scheduledSendOp({ agent: a, adapter: a ? router.forAgent(a.id) : undefined, agentState, gate: (id) => mcp.signInRefresh.beforeSend(id), ensureLive: (x) => ensureLive(x), toWindow: toRenderer, noteLastSession, now: () => Date.now(), stillWanted: loopStillWanted(scheduler, s) }, loopPrompt(prompt, s), s);
+  },
+  /* spec 072 FR-015/FR-017: holds from main's own state of the session (agentState flags, the last status) */
+  waitOf: (session) => loopWaitOf(session, { status: (id) => lastStatus.get(id), waits: (id) => agentState.waitsOf(id) }),
+  /* spec 072 FR-023/FR-024: one activity row per loop start, pass, skip, hold and end, and the window's chat note; never the prompt or reply */
+  loopNote: (s, n) => {
+    const a = s.target ? agents.get(s.target.session) : undefined;
+    const row = loopActivity(n, s);
+    if (a && row) logActivity(a, row.decision, row.action);
+    const push = loopPush(n, s);
+    if (push) toRenderer('loop:pass', push);
   },
   setTimer: (ms, fn) => setTimeout(fn, ms),
   clearTimer: (t) => clearTimeout(t as NodeJS.Timeout),
@@ -785,6 +800,7 @@ const harnessIpc = registerHarnessIpc({
     // each running turn is interrupted first (stopTurnOp), then the session ends and stays resumable (endSessionOp does not interrupt by itself)
     endAll: async (kind) => {
       for (const a of liveSessionsOf(kind)) {
+        scheduler?.stopLoopFor(a.id, 'session'); // spec 072 FR-007: ending the session ends its loop
         await stopTurnOp(opsDeps, a.id);
         await endSessionOp({ release: (k) => remoteOps.release(k), router }, a.id);
       }
@@ -1170,6 +1186,7 @@ app.on('before-quit', (ev) => {
   }
   scheduler?.flush(); // spec 044 FR-037: a fold-only change of the run log is written now
   quitting = true; // only once the quit is confirmed: after a Cancel, closing the window on macOS still only hides it
+  scheduler?.endAllLoops('app-closed'); // spec 072 FR-008: before disposeAll, whose `stopped` events would say "the session has ended"
   if (!quitNoted) {
     quitNoted = true;
     if (win && !win.isDestroyed()) saveWindowState(win);
@@ -1200,9 +1217,11 @@ app.on('will-quit', () => {
   usageTotalsStore?.flush();
   activityStore?.flush();
   if (stageDir) fs.rmSync(stageDir, { recursive: true, force: true });
+  sweepMcpConfigs(); // spec 012 FR-165: a Claude CLI still running keeps no mcp-config.json (env and header values) behind
 });
 
 app.on('window-all-closed', () => {
+  scheduler?.endAllLoops('app-closed'); // spec 072 FR-008: the sessions are disposed next (and off a Mac the app quits)
   void router.disposeAll().finally(() => {
     if (process.platform !== 'darwin') app.quit();
   });

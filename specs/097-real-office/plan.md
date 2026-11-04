@@ -110,3 +110,43 @@ Order: row 9 of [spec 005's plan table](../005-chat-fullscreen-and-agent-strip/p
 ## The chat and Settings look like the room (delta 2026-11-02; FR-231..FR-235)
 
 Order: rows A15..A18 of [spec 005's plan table](../005-chat-fullscreen-and-agent-strip/plan.md). Tokens and the surface colour: [spec 070](../070-theme-tokens/spec.md) FR-068..FR-074. No new runtime dependency. Constitution V: no text on art, sizes unchanged but prose, contrast by test; art is one static background per surface, with no blur, blend or filter (FR-180, FR-182).
+
+## Attention lights (delta 2026-11-04; FR-236..FR-238, FR-243, FR-244, T185..T193)
+
+Owner decisions (Vikram, Telegram DMs, 2026-11-04):
+- 04:38 UTC: round 3's D1, without D4's Boss-door glow.
+- 04:52 UTC: "Ok, just add light without any dusk". FR-239..FR-242 are withdrawn; FR-043, FR-047 and FR-182 are unchanged.
+
+Spec *Changes* has the requirements and the honest limits. This is PR 1 (spec only). PR 2 builds it in the order below.
+
+- **Geometry, pure** (`src/shared/realoffice-layout.ts`, T185). `lightBar(desk, lay)` returns `{bar, clamp, bezel, pool, poolHole, onEdge}` for each `DeskBox`, from the `screen` and `glass` rects already there. The rules are tested where they are made:
+  - the bar inside the monitor's span;
+  - the pool narrowed, then lowered, clear of every `face` box;
+  - `onEdge` when a `ZoneBox.sign` or other chrome rect the layout places overlaps the bar's normal place.
+
+  No DOM: unit-tested on every OS (FR-019 stays under 5 ms).
+- **State, pure** (`src/shared/lights.ts`, T186).
+  - `Light` gains `bar: 'off'|'amber'|'red'|'orange'|'green'`, and `LIGHT_TABLE` gains the *Bar* column.
+  - `lightFor(state, { still, unread })`: unread turns an off bar green and nothing else.
+  - `lampWords` is unchanged: the words for green are the tag's.
+- **Drawing** (`src/renderer/realoffice.js`, `realoffice.css`, T187).
+  - Bar, clamp, bezel and pool sit in `.ro-lights` (under the chrome), one set per desk, created once and switched by class (`bar-amber` ...). A status change adds no node and no layout read (FR-244).
+  - The New reply tag is a `<span aria-hidden="true">` in `.ro-chrome`, placed from the plate's rect, shown by class from `isUnread(a)`. The plate's `aria-label` takes `unreadWords(a)`.
+  - Forced colours, reduced motion and Serious mode use the existing `.ro.still` and media rules.
+- **Reused, not added** (spec 021 FR-031):
+  - `isUnread` and `unreadWords` (`app.js`, DurbarUnread), not a second unread store;
+  - the existing light layer, its `--ro-*` colours and the FR-049 fixed-colour rule;
+  - `lightState`'s precedence;
+  - the layout's `face` boxes (the same ones `portraitCrop` uses);
+  - FR-050's contrast pass in `check-office-overlap.js`;
+  - `check-office-ops.js` for the op rows;
+  - `shots-097-realoffice.js` for pictures.
+- **Cost** (T190, T192): count checks only.
+  - `check-office-ops` counts 0 nodes and no extra layout reads for a status change that lights a bar.
+  - `test:theme-tokens` finds no `backdrop-filter`, `filter` or `mix-blend-mode` in the bar rules and no animation of anything but `opacity`.
+  - No frame-time measurement: the bar is gradients and opacity only.
+- **Constitution.**
+  - V: no state by colour alone (tag, plate words); no motion in the bar; text never on art.
+  - III: no new storage or IPC; the tag shows no content.
+  - VI: CSS and pure TS only.
+  - VIII: the mock's limits are in the spec.

@@ -19,13 +19,14 @@ import type { AgentEvent, PermissionMode } from '../src/adapters/types';
 import { eventProblems } from '../src/adapters/eventguard';
 import { FakeCodexServer, fakePid } from './fakes/codex-app-server';
 import type { FakeCodexOptions } from './fakes/codex-app-server';
+import { tmpDir } from './test-tmp';
 
 const BIN = path.join(os.tmpdir(), 'fake-codex-bin');
 /** FR-087: a refusal never offers the widest mode as the way out. */
 const noFallback = (e: Error): boolean => !/Allow all/i.test(e.message);
 const tmp: string[] = [];
 const dir = (): string => {
-  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-codex-'));
+  const d = tmpDir('durbar-codex-');
   tmp.push(d);
   return d;
 };
