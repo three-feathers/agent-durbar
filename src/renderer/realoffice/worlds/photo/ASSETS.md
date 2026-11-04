@@ -57,6 +57,19 @@ in the repository.
 - re-cut (#921 review, owner 2026-11-01): the Web globe's wall and floor patch showed in front of the wall (a feathered rectangle with the photo's floor at the bottom); the picture was cut out again with Pillow (background flood-filled from the edges, floor rows and a stray strip removed, the largest piece kept, edge softened 0.7 px), re-encoded as WebP quality 80, method 6, no metadata; same size and floor line. Other fixtures are photo bays and were looked at at both sizes (no change).
 - licence: MIT
 
+### half-size-desk
+
+- files: desk.h.webp
+- source: `desk.webp` in this folder (spec 097 FR-183, T153); nothing was drawn or generated: the full-size desk made smaller, so what *b-desk* above says holds. `world.json` keeps the full desk's width in `px` (for `srcset`)
+- tool: Pillow 10.2 (the earlier set was made with 11.3.0), `Image.resize` with LANCZOS, saved as WebP at quality 80, method 6, with no metadata; no AI generation
+- date: 2026-11-01
+- made by: a scripted downscale, by the agent working on T153
+- approved by: no approval of its own: the desk's approval above applies; the owner has not looked at the half-size picture separately
+- reference: none
+- prompt: none, no generation
+- cut: half of each side, rounded up; no crop; the desk moved here from the people's folder when worlds and sets were split (2026-11-04)
+- licence: MIT
+
 ## References (generated the same day, not shipped)
 
 - `room-art/b-person/b-person-sheet.png` (render-style reference for every seated sheet; an invented woman): A sheet with THREE poses side by side in one row, on a fully TRANSPARENT background (PNG with alpha channel), equal spacing with clear empty gaps between them. The SAME person in all three: a woman in her 30s with curly dark hair and a mustard cardigan over a white top, seen from the front, sitting on a black office chair, only her chair back and her upper body from the lap up are shown (draw NO desk, no table, no monitor). Pose 1 working: typing, looking down. Pose 2 waiting: right arm raised high. Pose 3 resting: leaning back with hands behind her head. Photoreal 3D render look, realistic, soft warm daylight, same camera about 20 degrees down, no text.
