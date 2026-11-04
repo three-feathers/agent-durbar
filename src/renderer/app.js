@@ -8434,9 +8434,9 @@ function placeRen(b){
   const top=nr.top+(nr.height-S)/2, hit=l=>prot.some(q=>l<q.right&&l+S>q.left&&top<q.bottom&&top+S>q.top);
   const gx=sib.querySelector('.gx'), gr=gx&&gx.getClientRects().length?gx.getBoundingClientRect():null, lim=gr?Math.min(sr.right-2,gr.left-2):sr.right-2; /* spec 001 FR-185: a wide card's details column (.gx) is right of the text column: the pencil never goes into it */
   let left=tr.right+3;
-  if(left+S>lim||hit(left))left=Math.max(nr.right-S,nr.left+nr.width/2); /* no room beside it: over the end of the name, never more than its right half (the click on the name's middle still opens the chat) */
-  const op=b.offsetParent||wrap, or=op.getBoundingClientRect(); /* the positioned ancestor: the unit or row wrapper, for a room header the room (the header itself is not positioned: the plant is placed against the room) */
   const pad=(b.offsetWidth-S)/2; /* the box is 24px (a 24px target, spec 052), the glyph 16px in its middle */
+  if(left+S>lim||hit(left))left=Math.max(nr.right-S,nr.left+nr.width/2+pad+2); /* no room beside it: over the end of the name, and its whole 24px box (not only the glyph) in the name's right half: the box is invisible until hover, so a click on the name's middle must still open the chat (spec 059 FR-030, issue 1067) */
+  const op=b.offsetParent||wrap, or=op.getBoundingClientRect(); /* the positioned ancestor: the unit or row wrapper, for a room header the room (the header itself is not positioned: the plant is placed against the room) */
   b.style.left=Math.round(left-pad-or.left-(op.clientLeft||0))+'px'; b.style.top=Math.round(top-pad-or.top-(op.clientTop||0))+'px';
   if(!b.hasAttribute('data-placed'))b.setAttribute('data-placed','');
 }

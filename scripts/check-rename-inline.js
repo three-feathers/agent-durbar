@@ -75,6 +75,27 @@ module.exports = async (ctx) => {
       assert.ok(await js(`typeof __durbarSimUi.inline==='function'&&!!window.__simRenameCalls`), `${tag}: the simulator hooks exist`);
       const ids = await js(`[...document.querySelectorAll('#stage .unit>.ren[data-ren]')].map(b=>b.dataset.ren)`);
       assert.ok(ids.length >= 6, `${tag}: pencils on the desks: ${ids.length}`);
+      /* issue #1067: the pencil's 24px box (invisible until hover, still clickable) never covers the middle of a name it shares a line with: a click there opens the chat */
+      const mid = await js(`(()=>{const out=[];let n=0;for(const b of document.querySelectorAll('#stage .unit>.ren[data-ren]')){const d=b.parentElement.querySelector(':scope>.desk[data-id]'),nm=d&&d.querySelector('.name');if(!nm||!nm.getClientRects().length)continue;
+        const r=nm.getBoundingClientRect(),q=b.getBoundingClientRect();if(q.bottom<=r.top||q.top>=r.bottom)continue;n++;const mx=r.left+r.width/2,my=r.top+r.height/2,at=document.elementFromPoint(mx,my);
+        if(q.left<mx-0.5||(at&&(at===b||b.contains(at))))out.push(b.dataset.ren+' '+JSON.stringify(nm.textContent.trim())+' name '+Math.round(r.left)+'..'+Math.round(r.right)+' box '+Math.round(q.left)+'..'+Math.round(q.right));}
+        return {n,out};})()`);
+      assert.ok(mid.n >= 1, `${tag}: some pencils share their name's line (${mid.n})`);
+      assert.deepStrictEqual(mid.out, [], `${tag}: no pencil box covers the middle of its name (issue #1067)`);
+      /* the case the bug needs, made on purpose: the shortest name on a card too narrow for the pencil beside it, so the pencil falls back over the
+         name (a stylesheet rule, so a re-render keeps it); its box must still leave the name's middle to the card */
+      const forced = await js(`(async()=>{let best=null;for(const b of document.querySelectorAll('#stage .unit>.ren[data-ren]')){const d=b.parentElement.querySelector(':scope>.desk[data-id]'),nm=d&&d.querySelector('.name');if(!nm||!nm.getClientRects().length)continue;const w=nm.getBoundingClientRect().width;if(!best||w<best.w)best={id:d.dataset.id,w};}
+        if(!best)return {err:'no desk'};const d=document.querySelector('#stage .desk[data-id="'+CSS.escape(best.id)+'"]'),nm=d.querySelector('.name'),dr=d.getBoundingClientRect(),nr=nm.getBoundingClientRect();
+        const st=document.createElement('style');st.id='ri-1067';st.textContent='#stage .desk[data-id="'+CSS.escape(best.id)+'"]{width:'+Math.ceil(nr.right-dr.left+10)+'px!important;min-width:0!important;max-width:none!important}#stage .desk[data-id="'+CSS.escape(best.id)+'"] .name{flex:none!important;min-width:max-content!important}';document.head.appendChild(st);
+        window.__durbarSimUi.render();await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));await new Promise(r=>setTimeout(r,200));
+        const b=document.querySelector('#stage .ren[data-ren="'+CSS.escape(best.id)+'"]'),n2=document.querySelector('#stage .desk[data-id="'+CSS.escape(best.id)+'"] .name');const r=n2.getBoundingClientRect(),q=b.getBoundingClientRect();
+        const mx=r.left+r.width/2,my=r.top+r.height/2,at=document.elementFromPoint(mx,my);
+        const res={id:best.id,name:n2.textContent.trim(),nameW:Math.round(r.width),over:q.left<r.right,boxLeft:Math.round(q.left),mid:Math.round(mx),covers:q.left<mx-0.5||!!(at&&(at===b||b.contains(at)))};
+        st.remove();window.__durbarSimUi.render();return res;})()`);
+      console.log('[rename-inline] ' + tag + ' forced short name: ' + JSON.stringify(forced));
+      assert.ok(forced.over, `${tag}: the forced case puts the pencil over the name (${JSON.stringify(forced)})`);
+      assert.strictEqual(forced.covers, false, `${tag}: on a short name with no room, the pencil box leaves the name's middle to the card (issue #1067): ${JSON.stringify(forced)}`);
+      await settle();
       const [A, B, C, D, E] = ids;
 
       // the screenshots of the edit state, on the fresh page (no rename has happened yet, so no leftover names)
