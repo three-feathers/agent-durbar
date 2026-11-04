@@ -26,6 +26,7 @@
   let CUR = null; /* {ro, screenOf, still, hold, desks: Map id -> desk, agents: Map id -> model agent, folders: Map, drawn} */
   let ZOOM = null; /* {id, hover, focus, panel, plate} */
   let IO = null, DISMISSED = '';
+  let STILL = false, STILL_AT = ''; /* issue 1040: the room came back (Esc from a chat) under a pointer that has not moved: hovering waits for a real move from STILL_AT */
 
   const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
   const px = (n) => Math.round(n * 10) / 10 + 'px';
@@ -744,6 +745,7 @@
     wasHidden = hiddenNow();
     const h = hiddenNow(); CUR.ro.classList.toggle('paused', h); if (h) finishMoves(CUR.ro);
     if (h) { closeZoom(); return; }
+    STILL = true; STILL_AT = ''; /* back in view: a pointer resting on a screen is not asking to read it */
     if (moving() && !CUR.pixelArt) onGrid(CUR.ro); /* FR-229 */
     for (const [id, s] of SCR) if (s.dirty) plan(id);
   }
@@ -773,8 +775,18 @@
   const ZOOM_W = [380, 480], ZOOM_HEAD = 44, ZOOM_LH = 17, ZOOM_ROWS = 12, ZOOM_MIN_ROWS = 4;
   function wireZoom(ro) {
     let wait = 0;
+    ro.addEventListener('pointermove', (e) => {
+      if (!STILL) return;
+      const at = e.clientX + ',' + e.clientY;
+      if (!STILL_AT) STILL_AT = at;
+      if (STILL_AT === at) return;
+      STILL = false;
+      const sc = e.target.closest && e.target.closest('.ro-screen');
+      if (sc && sc.dataset.for && e.pointerType !== 'touch' && DISMISSED !== sc.dataset.for) { clearTimeout(wait); wait = setTimeout(() => openZoom(sc.dataset.for, 'hover'), 120); }
+    });
     ro.addEventListener('pointerover', (e) => {
       const sc = e.target.closest && e.target.closest('.ro-screen');
+      if (STILL) { if (!STILL_AT) STILL_AT = e.clientX + ',' + e.clientY; return; }
       if (!sc || e.pointerType === 'touch' || !sc.dataset.for) return;
       if ((ZOOM && ZOOM.hover && ZOOM.id === sc.dataset.for) || DISMISSED === sc.dataset.for) return; /* Esc holds until the pointer has left */
       clearTimeout(wait); wait = setTimeout(() => openZoom(sc.dataset.for, 'hover'), 120); /* crossing the room opens nothing */

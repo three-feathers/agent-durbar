@@ -175,3 +175,4 @@ Numbers: T165..T170; FR-191..FR-194.
 - [ ] T180 [PR A17] Settings on the desk; unstyled selects and checkboxes on tokens; scrollbars. Test: `check-ui-text`, `sim:` both sizes, both worlds; mutant: a browser-default select [FR-234]
 - [ ] T181 [PR A18] `.dlg` out of the blur list, opaque. Test: as FR-235 [FR-235]
 - [ ] T182 [PR A16, A17] `realoffice.css`'s `.ro-glass`, `.ro-bezel`, `--ro-scr-*` read `--glass*`, last, since they are pixel-checked; the owner looks at the chat and Settings beside the room before each merges. Test: `check:office`, `check:geometry` [FR-233, FR-234]
+- [x] T183 [FR-034, #1040] Back in view, a still pointer opens no zoom: the next real move does. Test: `sim:` `shots-097-screens` (a bare pointerover after Esc/panel close, then a real move); mutant: no wait on return
