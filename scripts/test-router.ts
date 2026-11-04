@@ -247,7 +247,17 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(got.map((g) => g.length), [1, 1, 1], 'FR-035: a good event reaches every listener once, a bad one none');
     assert.strictEqual(asked, 2, 'FR-035: the guard is asked once per event, not once per listener');
     assert.strictEqual(lines.length, 1);
-    assert.ok(/^\[events\] dropped a bad status event: status /.test(lines[0]), lines[0]);
+    // review of #1117: no value from the event reaches the log, not even one redact() would not mask (a sentence, a home path)
+    {
+      const said: string[] = [];
+      const g = eventGate((l) => said.push(l));
+      g({ type: 'status', sessionId: 's1', timestamp: 1, status: 'I read the notes in /home/someone/secret and will continue' });
+      g({ type: 'status', sessionId: 's1', timestamp: 1, status: 'idle', reason: 'see /home/someone/secret', errorKind: 'a long private sentence' });
+      g({ type: 'a private sentence as a type', sessionId: 's1', timestamp: 1 });
+      for (const l of said) assert.ok(!/home|someone|secret|sentence|private|notes|continue/.test(l), `FR-035: the drop line carries no value from the event: ${l}`);
+      assert.strictEqual(said.length, 3);
+    }
+    assert.strictEqual(lines[0], '[events] dropped a bad status event: status: not one of the known values', 'FR-035: type, field and kind only');
     // the line is cut, and capped per run
     a.emit({ type: 'status', sessionId: 's1', timestamp: 1, status: 'x'.repeat(5000) } as unknown as AgentEvent);
     assert.ok(lines[1].length <= 300, 'FR-035: cut to 300 characters');
