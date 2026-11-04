@@ -168,13 +168,15 @@ module.exports = async (ctx) => {
     await frames();
     const per = { renders: [], reads: [], nodes: [], attrs: [] };
     let seen = {}, worst = null, putOff = 0;
+    const startedBusy = [];
     for (let i = 0; i < 8; i++) {
       const st = i % 2 ? 'working' : 'idle';
       /* a deterministic window (review on #969, nodes 27 once at 40 agents): the previous update's deferred work (its screen's throttled repaint, FR-033, 2 s; a done tick's redraw, 2.05 s)
          lands later on the wall clock, and under a CPU load inside this window. Start only when nothing is put off, the lobby settled and no render queued */
       assert.ok(await H.until(`(()=>{const p=window.DurbarRealOffice.pending();return p.screens===0&&p.ticks===0;})()&&` + SETTLED, 15000), `${n} agents: nothing put off before update ${i}: ` + JSON.stringify(await js(`window.DurbarRealOffice.pending()`)));
       await frames();
-      await js(`window.__ops.start()`);
+      /* what was put off at the very start of the window, read in the same page task that starts it: every measured update must start from none */
+      if (await js(`(()=>{const p=window.DurbarRealOffice.pending();window.__ops.start();return p.screens+p.ticks;})()`)) startedBusy.push(i);
       await emit(st);
       const ok = await H.until(shows(st), 8000);
       assert.ok(ok, `the plate shows ${st}`);
@@ -185,6 +187,7 @@ module.exports = async (ctx) => {
       seen = o.seen;
       if (!worst || o.nodes + o.attrs > worst.nodes + worst.attrs) worst = { i, ...o }; /* the most costly update's breakdown is logged, so a failure says what it wrote */
     }
+    assert.deepStrictEqual(startedBusy, [], `${n} agents: every measured update started with nothing put off (the updates that did not)`);
     assert.ok(putOff > 0, `${n} agents: pending() saw the screen repaints the updates put off (FR-033), so the wait before each update waits for something real`);
     rows[`rendersPerStatus@${n}`] = med(per.renders);
     rows[`readsPerStatus@${n}`] = med(per.reads);
