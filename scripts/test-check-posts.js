@@ -362,6 +362,7 @@ function cli() {
       check({ [name]: post() });
       const f = path.join(T, 'docs/site/blog', name);
       fs.chmodSync(f, 0o000);
+      try {
       let readable = true;
       try { fs.readFileSync(f); } catch { readable = false; }
       if (!readable) {
@@ -369,20 +370,21 @@ function cli() {
         assert.ok(r.status === 1 && /: file-read:/.test(r.out), `an unreadable file is a file-read problem: ${r.out.slice(0, 300)}`);
         assert.ok(!r.out.includes(T) && !/\n\s+at /.test(r.out) && !/quokka/.test(r.out) && !/EACCES/.test(r.out.replace(/internal error \(EACCES\)/, '')), `no path, stack or blocked name: ${r.out.slice(0, 300)}`);
       } else console.log('test-check-posts: running as a user who reads mode-000 files: the unreadable-file case is skipped');
-      fs.chmodSync(f, 0o644);
+      } finally { fs.chmodSync(f, 0o644); } // restored even when an assert fails, so the temp folder can be removed
     }
   }
   if (process.platform !== 'win32') {
     check({ 'docs/site/story/quokka-corp/ch1.md': 'Plain.\n' });
     const d = path.join(T, 'docs/site/story/quokka-corp');
     fs.chmodSync(d, 0o000);
+    try {
     let readable = true;
     try { fs.readdirSync(d); } catch { readable = false; }
     if (!readable) {
       const r = cli();
       assert.ok(r.status === 1 && /: file-read:/.test(r.out) && !r.out.includes(T) && !/\n\s+at /.test(r.out) && !/quokka/.test(r.out), `an unreadable folder is a file-read problem, withheld, no stack: ${r.out.slice(0, 300)}`);
     }
-    fs.chmodSync(d, 0o755);
+    } finally { fs.chmodSync(d, 0o755); }
   }
   // 3. a stray < must not hide the rest of the line from any reading
   fails({ [P]: post(front(), body('If 1 < 2 then see https://example.invalid/x?q=blocked%2Dstandin%2Eexample%2Einvalid')) }, 'blocked', 'a percent-encoded blocked host after a stray <');
