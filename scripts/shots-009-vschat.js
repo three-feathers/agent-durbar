@@ -36,7 +36,7 @@ module.exports = async (ctx) => {
     assert.ok(r.notesAbove, 'the notes are above the transcript');
     assert.ok(r.cont && r.banner, 'Continue in VS Code is there and the banner still says it cannot be continued here');
     await js(`document.getElementById('vsCont').click()`); await ctx.sleep(400);
-    assert.match(await js(`document.getElementById('toasts').innerText`), /Opening in VS Code/);
+    assert.match(await js(`document.getElementById('toasts').innerText`), /Opening in (VS Code|your editor)…/);
     await H.shot(path.join(OUT, `009-vschat-latest-${w}x${h}.png`), { prep: 'calm', delay: 300 });
     await js(`document.getElementById('vsBack').click()`); await ctx.sleep(300);
     await js(`document.getElementById('panelClose')&&document.getElementById('panelClose').click()`); await ctx.sleep(300);

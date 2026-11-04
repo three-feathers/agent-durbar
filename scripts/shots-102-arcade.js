@@ -71,6 +71,14 @@ module.exports = async (ctx) => {
     console.log('[102-arcade]', tag, JSON.stringify({ g: art.g, scroll: art.scroll }));
     assert.ok(Number.isInteger(art.g) && art.g >= 2, tag + ': an integer scale: ' + art.g);
     assert.deepStrictEqual(art.off, [], tag + ': the art on the grid');
+    /* spec 102 FR-255 (owner 2026-11-04, #1104): the lobby too: every fixture and visitor at a whole scale, on a whole device pixel */
+    const lobby = await js(`(()=>{const d=devicePixelRatio,off=[];let n=0;
+      for(const i of document.querySelectorAll('#stage img.ro-fx,#stage img.ro-visitor')){if(i.hidden||!i.getClientRects().length||!i.naturalWidth)continue;n++;const b=i.getBoundingClientRect(),s=b.width*d/i.naturalWidth,s2=b.height*d/i.naturalHeight,x=b.left*d;
+        if(Math.abs(s-Math.round(s))>0.01||Math.abs(s2-Math.round(s2))>0.01||Math.round(s)<1)off.push((i.dataset.place||i.className)+' x'+s.toFixed(3));if(Math.abs(x-Math.round(x))>0.01)off.push((i.dataset.place||i.className)+' left '+x.toFixed(2));}
+      return {n,d,off};})()`);
+    console.log('[102-arcade]', tag, 'lobby', JSON.stringify({ n: lobby.n, dpr: lobby.d }));
+    assert.ok(lobby.n > 0, tag + ': the lobby has pictures');
+    assert.deepStrictEqual(lobby.off, [], tag + ': the lobby on whole pixel scales (FR-255, #1104)');
     assert.strictEqual(art.px, 'pixelated', tag + ': nearest pixel, people'); assert.strictEqual(art.cab, 'pixelated', tag + ': nearest pixel, cabinets');
     assert.strictEqual(art.scan, 0, tag + ': nothing skewed'); assert.strictEqual(art.mirrorText, 0, tag + ': no text in a mirrored element');
     if (n <= 15) { assert.strictEqual(art.scroll, false, tag + ': no office scroll'); assert.ok(art.fh <= 1, tag + ': the floor does not scroll: ' + art.fh); }

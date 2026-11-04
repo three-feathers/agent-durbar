@@ -299,7 +299,7 @@ Allow all keeps the app's default. When the vendor's managed policy forces a san
 - **FR-018** `[IMPLEMENTED]` (test: `scripts/test-sandbox-floor.ts`) Pure modules with unit tests: `claudeSandboxSettings(mode, roots)`, `claudeSandboxState({ platform, version,
   haveBwrap, haveSocat, startExit })`, `copilotSandboxConfig(mode, roots, pathDirs, host)`, `copilotSandboxState(host, warning?)`,
   Codex's state from its existing checks; every OS through injected platform values.
-- **FR-019** `[IMPLEMENTED]` for the rule (test: `scripts/test-sandbox-floor.ts` T050; adapter refusals in the T020/T021 tests) `[KNOWN GAP]` not reachable in the app: spec 076 has no policy reader yet, so `requireOsSandbox()` answers `false` (the reader: issue #734) Organization policy (spec 076): a new key `permissions.requireOsSandbox` (boolean, default `false`) makes FR-007
+- **FR-019** `[IMPLEMENTED]` for the rule (test: `scripts/test-sandbox-floor.ts` T050; adapter refusals in the T020/T021 tests) reachable on macOS and Linux through spec 076 FR-209 (the machine `policy.json`, issue #734); `[KNOWN GAP]` Windows reads no policy yet (issue #1124) Organization policy (spec 076): a new key `permissions.requireOsSandbox` (boolean, default `false`) makes FR-007
   refuse instead of warn. It can only narrow (spec 076's narrow-only rule); bad values count as `true` (fail closed). Confirmed by
   owner decision Q1.
 - **FR-020** `[IMPLEMENTED]` Linux, Claude Code, Read-only only (real: T060, 2026-10-25, *Changes*) `[KNOWN GAP]` Linux Copilot (Read-only: Durbar refused the command first; Ask first: an approved write outside the folder was **not** refused, K15), Linux Claude Ask first and network, macOS (T061), Windows (T062) Real checks are separate tasks (constitution IV): one tiny read-only prompt per app and OS within the owner's budget
@@ -993,7 +993,7 @@ Built on branch `087-os-sandbox-build`, simulator and fakes only (zero credits).
   check that failed is not kept, so the next session asks again (a real `supported: false` answer is kept for the runtime's life). Protected
   paths are joined in the form of their root (CI on Windows, PR #733).
 - **Managed (US4 AC2).** No real surface reports a managed floor (FR-008, K12), so only the simulator shows *Sandboxed (managed)*.
-- **Policy (FR-019).** `requireOsSandboxFrom(layers)` is the rule; spec 076 has no reader yet, so the app passes no layer (`[KNOWN GAP]`; reading `policy.json` is issue #734).
+- **Policy (FR-019).** `requireOsSandboxFrom(layers)` is the rule; the app passes the machine layer from spec 076 FR-209 (macOS and Linux; `[KNOWN GAP]` Windows).
 - **Settings.** *Always continue* is stored as `sandboxAlwaysContinue` (app ids only) in the settings file and undone from the app's
   Settings card; IPC `agents:sandboxContinue`, `adapters:sandboxHosts`, `adapters:sandboxAlwaysOff` (all owner-only, `fromApp`).
 - **Tooltips (spec 052 FR-168 limits).** The chip's own title stays short (static, 120); the sandbox segment carries the coverage tooltip

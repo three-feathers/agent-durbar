@@ -22,3 +22,9 @@
 - [x] T015 Tests (argv, version gate, adapter launch, SDK option, forwarded-message mapping) with mutation checks; changelog fragment; `[KNOWN GAP]` kept (no real session) [FR-017]
 - [x] T016 Real compaction shapes (#731): real Claude and Codex orders in `scripts/test-compaction.ts`; Codex: the first usage after a compaction gives no context figure; Copilot manual compaction ends from the `history.compact` answer; stale `read:` text updated; `[KNOWN GAP]` kept (automatic, failed, truncation, cost) [FR-007, FR-008, FR-009b, FR-012]
 - [x] T020 Issue #1142 (FR-020): `.sub-ro` sticky at the top of a helper's chat on an opaque surface. Test: `check-helper-bar` (ui-suite), mutant: remove `position: sticky`; pictures at both sizes.
+
+## 2026-11-04 delta: background helper done too early (issue #1141)
+
+- [x] T017 Spec delta FR-018, FR-019; plan and tasks (numbers checked against `main`, remote branches and open PRs on 2026-11-04)
+- [x] T018 `SubagentEvent.background`, event guard; Claude mapper (`run_in_background`, close only on `task_notification`), Copilot mapper (`executionMode`); renderer `onTaskTool` / session stop [FR-018]
+- [x] T019 Simulator `simbghelper=1`; mapper tests; driver case; mutation checks; changelog fragment; `[KNOWN GAP]` kept [FR-019]
