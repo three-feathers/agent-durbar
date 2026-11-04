@@ -750,7 +750,8 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 /* keep 15+ animated scenes cheap: compact scenes animate in coarse steps (a few repaints per second, not 60) */
 .sc-c .wave{animation-timing-function:steps(8)}
 .sc-c .bar{animation-timing-function:steps(8)}
-.sc-c .hand-l,.sc-c .hand-r{animation-timing-function:steps(1)}
+/* spec 097 T158 (probe, `check-office-ops` handPositions): `tap` is two keyframes run `alternate`; steps(1) is jump-end, which holds `from` in both directions, so the hands never moved (one position over two cycles) while 16 animations ticked. steps(2,jump-none) shows both positions, as many changes a second as the 8 steps did not (4) */
+.sc-c .hand-l,.sc-c .hand-r{animation-timing-function:steps(2,jump-none)}
 .sc-c .bubble-g{animation-timing-function:steps(4)}
 .sc-c .td,.sc-c .cursor{animation-timing-function:steps(5)}
 .sc-c .steam{animation-timing-function:steps(6)}

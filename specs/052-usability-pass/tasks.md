@@ -359,7 +359,7 @@
 - [ ] T202 Existing drivers follow the panel; pictures retaken; docs, changelog fragment; older FRs updated in place (the delta's list), spec 003, 074, 092, 097 lines included; `/speckit.converge` [FR-205]
 
 ## FR-214..FR-227: design sweep (2026-11-01, owner). PRs, gates and line-count goals: spec 005 `plan.md`
-- [ ] T220 [PR D1, first] `requestText()` puts a space between blocks. Test first: a pure-helper test and a driver that fail on `main` with the run-together words; mutant: old `textContent` [FR-214]
+- [x] T220 [PR D1, first] `requestText()` puts a space between blocks. Test first: a pure-helper test and a driver that fail on `main` with the run-together words; mutant: old `textContent` [FR-214]
 - [ ] T221 [K2, PR #1011] `.swt.on` from a token: 2.47:1 to 6.08:1 and 6.92:1, in spec 033's delta and its driver. Tick when #1011 lands [FR-223]
 - [ ] T222 [PR R1, with spec 005] Mac rules on the rail's top row and chat header, also collapsed and hidden; `test-macos`. `[KNOWN GAP]` real Mac asked of its owner [FR-215]. R1 part done 2026-11-03 (top row and chat header; `test-macos`, `check-rail`); collapsed and narrow with R3 (005 T116)
 - [ ] T223 [PR N1] Measure first: 93 px and moving desks with three bars. Card kind and stay-open action in `toastActions()`; restore card, Change…, Dismiss, red lock, asks on every start. Test: new `check-notices`; desks unchanged with cards; a second start asks again; mutant: dismiss clears the lock [FR-218, FR-219, FR-220, FR-227]

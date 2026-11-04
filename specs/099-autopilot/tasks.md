@@ -88,7 +88,7 @@ Numbers taken: spec 099, FR-001..FR-090 (sparse by group; FR-007, FR-008, FR-009
   autopilot (no auto-deny), attachments are accepted, `session.task_complete` ends it, the mode stays `autopilot`. Not seen
   in T090: a continuation, `ask_user`, Stop mid-run (T093 then saw all three). Plan approval with `autopilot` is still `[KNOWN GAP]` (FR-060)
 - [ ] T091 **Claude Code** through the built adapter: one run to done, one to the limit (limit 1), one cap in the middle of a goal
-  (`--max-budget-usd` 0.02); a multi-line condition; `/goal clear` with no goal set, and whether `--resume` brings a goal back [FR-005, FR-011, FR-021, FR-022, FR-053]
+  (`--max-budget-usd` 0.02) [the CLI facts (limit, reserved words, multi-line condition) are done: `real:` 2.1.317, spec FR-011; the adapter run still needs #967]; whether newlines reach the Stop-hook evaluator; `/goal clear` with no goal set, and whether `--resume` brings a goal back [FR-005, FR-011, FR-021, FR-022, FR-053]
 - [ ] T092 **Codex** through the built adapter: one run to done, one to the limit (limit 1), one to `budgetLimited`; a model
   switch between runs; a `turn/start` during a goal turn; `thread/goal/clear` with no goal set, and whether `thread/resume` brings a goal back; whether goal turns after a `plan` turn run in `default` (only then `planApproval` may become true) [FR-005, FR-012, FR-021, FR-022, FR-053, FR-058, FR-060]
 - [x] T093 **Longer probes on all three apps** (owner OK, Vikram, Telegram, 2026-10-31 11:11 UTC; Copilot cap 30): a staged task

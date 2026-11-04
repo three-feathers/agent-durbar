@@ -277,7 +277,7 @@ if (require.main === module) {
       process.exit(errors.length ? 1 : 0);
     } else if (cmd === 'preview') {
       const { bullets, frs } = pending(root);
-      const block = highlightsBlock(highlights(frs)); // spec 008 FR-173: what the Highlights would be (not in the release notes yet)
+      const block = highlightsBlock(highlights(frs)); // spec 008 FR-173: what the Highlights will be (scripts/release-notes.js puts the same block in the notes)
       console.log(`${block ? `${block}\n\n` : ''}${bullets.length ? bullets.join('\n') : '(nothing pending)'}`);
     } else if (cmd === 'build' && args.includes('--stdout')) {
       process.stdout.write(`${notes(root, { release: opt('--release'), previous: opt('--previous') }).section}\n`);
