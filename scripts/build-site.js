@@ -242,7 +242,7 @@ const ICONS = {
   lock: '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
   gauge: '<path d="M4 18a8 8 0 1 1 16 0"/><path d="M12 18l4-6"/>',
 };
-function validateLanding(landing, { readme, shotExists = (f) => fs.existsSync(path.join(ROOT, SHOTS, f)) }) {
+function validateLanding(landing, { readme, shotExists = (f) => fs.existsSync(path.join(ROOT, SHOTS, f)), worlds = JSON.parse(read(WORLDS_FILE)) }) {
   const errs = [];
   const anchors = headingAnchors(readme);
   const names = harnessNames(readme);
@@ -278,8 +278,22 @@ function validateLanding(landing, { readme, shotExists = (f) => fs.existsSync(pa
     need(h.notYet, `harnesses[${i}].notYet`);
   });
   if (!Array.isArray(landing.featuresExclude)) errs.push('featuresExclude is missing');
+  // spec 104 FR-008: a world is shown only with an entry in docs/site/worlds.json naming the release that holds it
+  if (landing.worlds !== undefined) {
+    const known = new Set(((worlds && worlds.worlds) || []).map((w) => fold(w && w.name)));
+    (Array.isArray(landing.worlds) ? landing.worlds : [null]).forEach((w, i) => { if (!w || !known.has(fold(w.name || ''))) errs.push(`worlds[${i}] is not in ${WORLDS_FILE}`); });
+  }
   return errs;
 }
+
+/* Spec 104 FR-027: the site's download is the newest published app release. An asset-only release (`media-library`, spec 104
+ * FR-024; `worlds-*`, spec 021 FR-066) builds no app, so only a stable `vX.Y.Z` tag counts; drafts, pre-releases and test builds never do. */
+const APP_TAG_RE = /^v\d+\.\d+\.\d+$/; // stable only: a pre-release or a `-test.M` build from any branch never becomes the site's download (review of PR #1106)
+function pickRelease(list) {
+  if (!Array.isArray(list)) return null;
+  return list.find((x) => x && !x.draft && APP_TAG_RE.test(String(x.tag_name || ''))) || null;
+}
+const releaseOf = (rel) => ({ tag: String(rel.tag_name), url: String(rel.html_url || ''), pre: rel.prerelease === true, date: String(rel.published_at || '').slice(0, 10), assets: (Array.isArray(rel.assets) ? rel.assets : []).map((a) => ({ name: String(a.name), url: String(a.browser_download_url) })) });
 
 async function latestRelease() {
   if (process.env.SITE_RELEASE === 'off') return null;
@@ -287,15 +301,18 @@ async function latestRelease() {
   if (process.env.SITE_FAKE_RELEASE) {
     try { const f = JSON.parse(process.env.SITE_FAKE_RELEASE); return { tag: String(f.tag), url: String(f.url || ''), pre: f.pre === true, date: String(f.date || ''), assets: (Array.isArray(f.assets) ? f.assets : []).map((a) => ({ name: String(a.name), url: String(a.url) })) }; } catch { return null; }
   }
+  // tests only (spec 104 FR-027): a release list as the API returns it, no network; it goes through the same filter as the real one
+  if (process.env.SITE_FAKE_RELEASES) {
+    try { const rel = pickRelease(JSON.parse(process.env.SITE_FAKE_RELEASES)); return rel ? releaseOf(rel) : null; } catch { return null; }
+  }
   try {
     const headers = { Accept: 'application/vnd.github+json', 'User-Agent': 'agent-durbar-site' };
     if (process.env.GITHUB_TOKEN) headers.Authorization = `Bearer ${process.env.GITHUB_TOKEN}`;
-    const r = await fetch(`https://api.github.com/repos/${REPO}/releases?per_page=5`, { headers });
+    // 30, not 5: a run of asset-only releases must not push the newest app release off the page
+    const r = await fetch(`https://api.github.com/repos/${REPO}/releases?per_page=30`, { headers });
     if (!r.ok) return null;
-    const list = await r.json();
-    const rel = Array.isArray(list) ? list.find((x) => !x.draft) : null;
-    if (!rel) return null;
-    return { tag: String(rel.tag_name), url: String(rel.html_url), pre: rel.prerelease === true, date: String(rel.published_at || '').slice(0, 10), assets: (rel.assets || []).map((a) => ({ name: String(a.name), url: String(a.browser_download_url) })) };
+    const rel = pickRelease(await r.json());
+    return rel ? releaseOf(rel) : null;
   } catch {
     return null; // no network: the page links to the Releases page instead
   }
@@ -427,7 +444,7 @@ function page({ title, description, css, nav, body, og }) {
 <meta name="twitter:card" content="summary_large_image">
 <meta name="theme-color" content="#f7f4ee" media="(prefers-color-scheme: light)"><meta name="theme-color" content="#141210" media="(prefers-color-scheme: dark)">` : ''}
 <link rel="icon" href="icon.svg" type="image/svg+xml">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self'; media-src 'self'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
 <style>${CSS_BASE}${css}</style></head>
 <body>
 <header class="top"><div class="wrap"><a class="brand" href="index.html"><img src="icon.svg" alt="" width="28" height="28">Agent Durbar</a>
@@ -612,6 +629,219 @@ function copyTalks(out) {
   return pages.sort();
 }
 
+/*
+ * Spec 104 FR-008 (T003): nothing unreleased. docs/site/unreleased.json lists exact phrases (two words or more, so a common word
+ * a shipped feature also uses never trips it) for worlds and features not yet in a release. The build fails when one appears in
+ * the generated HTML or feed, in a caption or transcript, or in README.md. Text is compared after HTML tags and entities, Markdown
+ * marks, accents and case are taken out, and a run of spaces, hyphens or underscores matches any other. Pictures cannot be scanned.
+ */
+const UNRELEASED_FILE = 'docs/site/unreleased.json';
+function unreleasedPhrases(json) {
+  const errs = [];
+  if (!json || typeof json !== 'object' || !Array.isArray(json.phrases)) return { phrases: [], errs: ['unreleased.json needs a "phrases" array'] };
+  const phrases = [];
+  json.phrases.forEach((p, i) => {
+    if (typeof p !== 'string' || !p.trim()) { errs.push(`phrases[${i}] is not a phrase`); return; }
+    if (fold(p).split(' ').filter(Boolean).length < 2) { errs.push(`phrases[${i}] is one word: list exact phrases of two words or more (spec 104 FR-008)`); return; }
+    phrases.push(p.trim());
+  });
+  return { phrases, errs };
+}
+function loadUnreleased(file = process.env.SITE_UNRELEASED || path.join(ROOT, UNRELEASED_FILE)) {
+  let json;
+  try { json = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) { throw new Error(`${UNRELEASED_FILE} cannot be read: ${e.message}`); }
+  const { phrases, errs } = unreleasedPhrases(json);
+  if (errs.length) throw new Error(`${UNRELEASED_FILE}:\n- ${errs.join('\n- ')}`);
+  return phrases;
+}
+/*
+ * A text with every HTML tag taken out (replaced by `sep`), for reading what a page shows. Not a sanitiser: nothing it returns is
+ * put into a page (output is always escaped with esc()). A `<` starts a tag only when a letter, `/`, `!` or `?` follows it and a
+ * `>` closes it on the same line; any other `<` ("1 < 2") is text and kept, so nothing after it is hidden (review of PR #1106,
+ * round 3). Linear: the next `>` and line end are found in one backward pass. (CodeQL js/incomplete-multi-character-sanitization
+ * flagged the regex form, round 2.)
+ */
+function withoutTags(t, sep = '') {
+  const s = String(t);
+  const nextGt = new Array(s.length + 1);
+  let gt = -1;
+  for (let i = s.length - 1; i >= 0; i--) { if (s[i] === '\n') gt = -1; else if (s[i] === '>') gt = i; nextGt[i] = gt; }
+  let out = '';
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (c === '<' && i + 1 < s.length && /[A-Za-z/!?]/.test(s[i + 1]) && nextGt[i + 1] > i) { out += sep; i = nextGt[i + 1]; continue; }
+    out += c;
+  }
+  return out;
+}
+const ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
+/* Lower case, accents off, separators to one space. */
+function fold(t) {
+  return String(t).replace(/\p{Default_Ignorable_Code_Point}/gu, '').normalize('NFKD').replace(/\p{M}+/gu, '').toLowerCase().replace(/[\s_\-\u2010-\u2015]+/g, ' ').trim();
+}
+/* The readings of a text a reader could see: as written, with tags removed, with tags as spaces, with Markdown marks removed. */
+function readings(text) {
+  const decoded = String(text).replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e) => {
+    if (e[0] === '#') { const n = e[1] === 'x' || e[1] === 'X' ? parseInt(e.slice(2), 16) : Number(e.slice(1)); return Number.isFinite(n) && n > 0 && n < 0x110000 ? String.fromCodePoint(n) : m; }
+    return ENTITIES[e.toLowerCase()] !== undefined ? ENTITIES[e.toLowerCase()] : m;
+  });
+  const out = [decoded, withoutTags(decoded), withoutTags(decoded, ' '), decoded.replace(/\\(?=[!-/:-@[-`{-~])/g, '').replace(/[*`~]+/g, '')];
+  return out.map(fold);
+}
+/* The phrases of `phrases` found in `text` (each once). */
+function unreleasedHits(text, phrases) {
+  const rs = readings(text).map((r) => ` ${r.replace(/[^\p{L}\p{N}]+/gu, ' ')} `);
+  return phrases.filter((p) => { const f = ` ${fold(p).replace(/[^\p{L}\p{N}]+/gu, ' ').trim()} `; return rs.some((r) => r.includes(f)); });
+}
+/* Every public text the gate reads: the built site's pages, feeds, captions and transcripts, README.md, and the captions in git. */
+function publicTexts(out, root = ROOT) {
+  const list = [];
+  const walk = (dir, label, re) => {
+    if (!fs.existsSync(dir)) return;
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const p = path.join(dir, e.name);
+      if (e.isSymbolicLink()) throw new Error(`${label}/${e.name}: symbolic links are not published`);
+      if (e.isDirectory()) walk(p, `${label}/${e.name}`, re);
+      else if (re.test(e.name)) list.push({ where: `${label}/${e.name}`, text: fs.readFileSync(p, 'utf8') });
+    }
+  };
+  if (out) walk(out, '_site', /\.(html|xml|vtt|txt|md)$/i);
+  list.push({ where: 'README.md', text: fs.readFileSync(path.join(root, 'README.md'), 'utf8') });
+  walk(path.join(root, 'docs/site/captions'), 'docs/site/captions', /\.(vtt|txt|md)$/i);
+  return list;
+}
+function unreleasedProblems(sources, phrases) {
+  const errs = [];
+  for (const s of sources) for (const p of unreleasedHits(s.text, phrases)) errs.push(`${s.where}: names "${p}", which is not in a release (${UNRELEASED_FILE}, spec 104 FR-008)`);
+  return errs;
+}
+/* Spec 104 FR-008: the site's specs index leaves out the note of a `draft` spec, since notes name planned work. */
+function stripDraftNotes(index) {
+  return String(index).split('\n').map((l) => l.replace(/^(\| \[\d{3}\]\([^)]+\) \| .+ \| \*{0,2}draft\*{0,2}): .*( \|)\s*$/i, '$1$2')).join('\n');
+}
+/* Spec 104 FR-008: docs/site/worlds.json, the worlds the site may show, each with the `v*` release that holds it (a CHANGELOG heading). */
+const WORLDS_FILE = 'docs/site/worlds.json';
+function validateWorlds(worlds, { changelog, phrases = [] }) {
+  const errs = [];
+  if (!worlds || typeof worlds !== 'object' || !Array.isArray(worlds.worlds)) return ['worlds.json needs a "worlds" array'];
+  const released = new Set([...String(changelog).matchAll(/^## (v\d+\.\d+\.\d+)\b/gm)].map((m) => m[1]));
+  const names = new Set();
+  worlds.worlds.forEach((w, i) => {
+    if (!w || typeof w !== 'object') { errs.push(`worlds[${i}] is not an object`); return; }
+    for (const k of Object.keys(w)) if (!['name', 'release', 'spec'].includes(k)) errs.push(`worlds[${i}] has an unknown key "${k}"`);
+    if (typeof w.name !== 'string' || !w.name.trim()) errs.push(`worlds[${i}].name is missing`);
+    else if (names.has(fold(w.name))) errs.push(`worlds[${i}].name "${w.name}" is listed twice`);
+    else names.add(fold(w.name));
+    if (typeof w.release !== 'string' || !/^v\d+\.\d+\.\d+$/.test(w.release)) errs.push(`worlds[${i}].release must be a stable v* tag`);
+    else if (!released.has(w.release)) errs.push(`worlds[${i}].release ${w.release} is not a release in CHANGELOG.md`);
+    if (typeof w.spec !== 'string' || !/^specs\/\d{3}-[a-z0-9-]+\/spec\.md$/.test(w.spec)) errs.push(`worlds[${i}].spec must be a specs/NNN-name/spec.md path`);
+    if (typeof w.name === 'string' && unreleasedHits(w.name, phrases).length) errs.push(`worlds[${i}].name "${w.name}" is also on the unreleased list`);
+  });
+  return errs;
+}
+
+/*
+ * Spec 104 FR-022..FR-025, FR-024a (T006): docs/site/media.json, the manifest of the site's videos and posters. The files live as
+ * assets of the `media-library` release and are fetched and hash-checked at deploy (T008); this checks the manifest itself, so a
+ * pull-request build checks every entry without fetching anything (FR-025). Captions are WebVTT in git under docs/site/captions/.
+ */
+const MEDIA_FILE = 'docs/site/media.json';
+const MB = 1024 * 1024;
+// FR-022: our own budgets (a short is a release asset for YouTube only, not deployed); FR-021: 1280x720 at most, 30 fps at most
+const MEDIA_KINDS = {
+  film: { bytes: 20 * MB, seconds: 240, video: true },
+  explainer: { bytes: 6 * MB, seconds: 90, video: true },
+  clip: { bytes: 2 * MB, seconds: 40, video: true },
+  short: { bytes: 20 * MB, seconds: 60, video: true, vertical: true, notOnSite: true },
+  poster: { bytes: 60 * 1024, video: false },
+};
+const MEDIA_SITE_MAX = 600 * MB;
+const MEDIA_KEYS = ['name', 'kind', 'bytes', 'sha256', 'duration', 'width', 'height', 'fps', 'poster', 'captions', 'title', 'licence', 'madeBy', 'approvedBy'];
+function validateMedia(manifest, { root = ROOT } = {}) {
+  const errs = [];
+  if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest) || !Array.isArray(manifest.files)) return ['media.json needs a "files" array'];
+  for (const k of Object.keys(manifest)) if (k !== 'files') errs.push(`media.json has an unknown key "${k}"`);
+  const byName = new Map();
+  manifest.files.forEach((f, i) => {
+    if (!f || typeof f !== 'object' || Array.isArray(f)) { errs.push(`files[${i}] is not an object`); return; }
+    const at = `files[${i}]${typeof f.name === 'string' ? ` (${f.name.slice(0, 80)})` : ''}`;
+    for (const k of Object.keys(f)) if (!MEDIA_KEYS.includes(k)) errs.push(`${at} has an unknown key "${k}"`);
+    const kind = Object.prototype.hasOwnProperty.call(MEDIA_KINDS, f.kind) ? MEDIA_KINDS[f.kind] : null;
+    if (!kind) { errs.push(`${at}.kind must be one of ${Object.keys(MEDIA_KINDS).join(', ')}`); return; }
+    const ext = kind.video ? /\.mp4$/ : /\.(webp|png|jpg)$/;
+    if (typeof f.name !== 'string' || !/^[a-z0-9][a-z0-9._-]{0,99}$/.test(f.name) || !ext.test(f.name) || f.name.includes('..')) errs.push(`${at}.name must be a plain lower-case file name ending ${kind.video ? '.mp4' : '.webp, .png or .jpg'}`);
+    else if (byName.has(f.name)) errs.push(`${at}.name is listed twice`);
+    else byName.set(f.name, f);
+    if (!Number.isSafeInteger(f.bytes) || f.bytes <= 0) errs.push(`${at}.bytes must be a positive whole number`);
+    else if (f.bytes > kind.bytes) errs.push(`${at} is ${f.bytes} bytes, over the ${f.kind} budget of ${kind.bytes} (spec 104 FR-022)`);
+    if (typeof f.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(f.sha256)) errs.push(`${at}.sha256 must be 64 lower-case hex digits (spec 104 FR-024)`);
+    for (const k of ['licence', 'madeBy', 'approvedBy']) if (typeof f[k] !== 'string' || !f[k].trim()) errs.push(`${at}.${k} is missing (spec 104 FR-024a)`);
+    if (kind.video) {
+      if (!(typeof f.duration === 'number' && Number.isFinite(f.duration) && f.duration > 0)) errs.push(`${at}.duration must be seconds above 0`);
+      else if (f.duration > kind.seconds) errs.push(`${at} runs ${f.duration} s, over the ${f.kind} limit of ${kind.seconds} s (spec 104 FR-022)`);
+      const [mw, mh] = kind.vertical ? [720, 1280] : [1280, 720];
+      if (!Number.isSafeInteger(f.width) || !Number.isSafeInteger(f.height) || f.width <= 0 || f.height <= 0) errs.push(`${at}.width and .height must be whole pixels`);
+      else if (f.width > mw || f.height > mh) errs.push(`${at} is ${f.width}x${f.height}, over ${mw}x${mh} (spec 104 FR-021, FR-028)`);
+      if (!(typeof f.fps === 'number' && f.fps > 0 && f.fps <= 30)) errs.push(`${at}.fps must be above 0 and at most 30 (spec 104 FR-021)`);
+      if (typeof f.title !== 'string' || !f.title.trim()) errs.push(`${at}.title is missing (the player's name)`);
+      if (!kind.notOnSite) {
+        if (typeof f.poster !== 'string' || !f.poster) errs.push(`${at}.poster is missing (spec 104 FR-023, SC-003)`);
+        if (typeof f.captions !== 'string' || !f.captions) errs.push(`${at}.captions is missing (spec 104 FR-023, SC-003)`);
+        else if (!/^docs\/site\/captions\/[a-z0-9][a-z0-9._-]{0,99}\.vtt$/.test(f.captions) || f.captions.includes('..')) errs.push(`${at}.captions must be a docs/site/captions/<name>.vtt path`);
+        else {
+          let vtt = null;
+          try { vtt = fs.readFileSync(path.join(root, f.captions), 'utf8'); } catch { /* missing */ }
+          if (vtt === null) errs.push(`${at}.captions ${f.captions} does not exist`);
+          else if (!/^\uFEFF?WEBVTT(?:[ \t].*)?\r?\n/.test(vtt) || !vtt.includes('-->')) errs.push(`${at}.captions ${f.captions} is not WebVTT with at least one cue`);
+        }
+      }
+    } else for (const k of ['duration', 'fps', 'poster', 'captions']) if (f[k] !== undefined) errs.push(`${at}.${k} is for videos only`);
+  });
+  let site = 0;
+  for (const f of byName.values()) {
+    const kind = MEDIA_KINDS[f.kind];
+    if (kind && !kind.notOnSite && Number.isSafeInteger(f.bytes)) site += f.bytes;
+    if (kind && kind.video && !kind.notOnSite && typeof f.poster === 'string' && f.poster) {
+      const p = byName.get(f.poster);
+      if (!p || p.kind !== 'poster') errs.push(`${f.name}.poster "${f.poster.slice(0, 80)}" is not a poster in the manifest (spec 104 SC-003)`);
+    }
+  }
+  if (site > MEDIA_SITE_MAX) errs.push(`the site's media add up to ${site} bytes, over ${MEDIA_SITE_MAX} (spec 104 FR-022: the oldest clips leave the site)`);
+  return errs;
+}
+/* The text of a WebVTT file's cues, for the transcript under a player. */
+function vttText(vtt) {
+  // a cue's timing line holds the WebVTT arrow; its text lines lose their tags (<b>, <v Name>); the caller escapes the result
+  return String(vtt).replace(/\r\n?/g, '\n').split(/\n{2,}/).filter((b) => b.includes('-->'))
+    .map((b) => withoutTags(b.split('\n').filter((l) => !l.includes('-->') && !/^\d+$/.test(l.trim())).join(' ')).trim()).filter(Boolean).join(' ');
+}
+/*
+ * Spec 104 FR-023: the one player. No autoplay or loop, no sound until pressed, poster, size, captions and the transcript in the page.
+ * FR-025: a build without the files (pull requests, tests) keeps the poster's place and says the video was not fetched.
+ */
+function videoTag(entry, { root = ROOT, fetched = false } = {}) {
+  const vtt = fs.readFileSync(path.join(root, entry.captions), 'utf8');
+  const cap = `captions/${path.posix.basename(entry.captions)}`;
+  const box = `width="${entry.width}" height="${entry.height}"`;
+  const player = fetched
+    ? `<video controls preload="none" playsinline ${box} poster="media/${esc(entry.poster)}" aria-label="${esc(entry.title)}"><source src="media/${esc(entry.name)}" type="video/mp4"><track kind="captions" default src="${esc(cap)}" srclang="en" label="English"></video>`
+    : `<div class="vid-off" style="aspect-ratio:${entry.width}/${entry.height}" role="img" aria-label="${esc(entry.title)}: video not fetched in this build"><p>Video not fetched in this build: ${esc(entry.title)}</p></div>`;
+  return `<figure class="vid">${player}<details><summary>Transcript</summary><p>${esc(vttText(vtt))}</p></details></figure>`;
+}
+/* Spec 104 FR-023: what the build refuses in its own pages: every <video> has controls, preload="none", playsinline, a poster, a
+ * size and a captions track, and none autoplays or loops. Returns the problems found in `html`. */
+function playerProblems(html, where = 'page') {
+  const errs = [];
+  for (const m of String(html).matchAll(/<video\b[^>]*>[\s\S]*?<\/video>|<video\b[^>]*>/gi)) {
+    const tag = /^<video\b[^>]*>/i.exec(m[0])[0];
+    if (/\s(autoplay|loop)\b/i.test(tag)) errs.push(`${where}: a <video> with autoplay or loop (spec 104 FR-023)`);
+    for (const [re, what] of [[/\scontrols\b/i, 'controls'], [/\spreload="none"/i, 'preload="none"'], [/\splaysinline\b/i, 'playsinline'], [/\sposter="[^"]+"/i, 'a poster'], [/\swidth="\d+"/i, 'a width'], [/\sheight="\d+"/i, 'a height']]) if (!re.test(tag)) errs.push(`${where}: a <video> without ${what} (spec 104 FR-023)`);
+    if (!/<track\b[^>]*\skind="captions"[^>]*\sdefault\b|<track\b[^>]*\sdefault\b[^>]*\skind="captions"/i.test(m[0])) errs.push(`${where}: a <video> without a default captions track (spec 104 FR-023)`);
+  }
+  if (/<audio\b/i.test(html)) errs.push(`${where}: an <audio> element (spec 104 FR-023: sound only from a pressed video)`);
+  return errs;
+}
+
 async function main() {
   const readme = siteSource();
   const intro = readme.split('\n').find((l) => l.startsWith('Agent Durbar is ')) || '';
@@ -622,7 +852,13 @@ async function main() {
   // spec 025 delta 2026-10-22: the index rows are not committed; they are built from each spec's specs-index block
   const specsGen = specsIndex.generate(ROOT);
   if (specsGen.errors.length) console.warn(`specs index: ${specsGen.errors.length} problem(s) (npm run specs:check)`);
-  const specsMd = specsGen.text;
+  const specsMd = stripDraftNotes(specsGen.text); // spec 104 FR-008: no note of a draft spec on the site
+  const phrases = loadUnreleased();
+  const worldErrs = validateWorlds(JSON.parse(read(WORLDS_FILE)), { changelog: read('CHANGELOG.md'), phrases });
+  if (worldErrs.length) throw new Error(`${WORLDS_FILE} is out of step:\n- ${worldErrs.join('\n- ')}`);
+  const media = JSON.parse(read(MEDIA_FILE));
+  const mediaErrs = validateMedia(media);
+  if (mediaErrs.length) throw new Error(`${MEDIA_FILE} is out of step:\n- ${mediaErrs.join('\n- ')}`);
   const feats = features(specsMd, landing.featuresExclude);
   const changes = latestChanges(read('CHANGELOG.md'));
   const rel = await latestRelease();
@@ -642,10 +878,15 @@ async function main() {
     fs.copyFileSync(src, path.join(OUT, 'screenshots', path.basename(r)));
   }
   const talks = copyTalks(OUT);
+  // spec 104 FR-023: captions are text in git, copied next to the pages for the players' <track>
+  for (const f of media.files) if (f.captions) { fs.mkdirSync(path.join(OUT, 'captions'), { recursive: true }); fs.copyFileSync(path.join(ROOT, f.captions), path.join(OUT, 'captions', path.posix.basename(f.captions))); }
+  // spec 104 FR-023, FR-008: the build refuses a bad player and any unreleased phrase in what it publishes (and in README.md)
+  const gate = [...playerProblems(index, 'index.html'), ...playerProblems(docs, 'docs.html'), ...unreleasedProblems(publicTexts(OUT), phrases)];
+  if (gate.length) { fs.rmSync(OUT, { recursive: true, force: true }); throw new Error(`the site is not published:\n- ${gate.join('\n- ')}`); }
   console.log(`site: ${OUT} (index ${index.length} B, docs ${docs.length} B, ${feats.length} features, ${gallery.length} gallery images, ${copied.size} images copied${rel ? ', release ' + rel.tag : ', no release info'}${talks.length ? `, ${talks.length} unlisted talk page(s)` : ''})`);
 }
 
-module.exports = { siteSource, copyTalks, validateLanding, headingAnchors, harnessNames, installSteps, features, latestChanges, shortChanges, stripRefs, slugger };
+module.exports = { withoutTags, pickRelease, APP_TAG_RE, unreleasedPhrases, loadUnreleased, unreleasedHits, readings, fold, publicTexts, unreleasedProblems, stripDraftNotes, validateWorlds, validateMedia, MEDIA_KINDS, MEDIA_SITE_MAX, vttText, videoTag, playerProblems, siteSource, copyTalks, validateLanding, headingAnchors, harnessNames, installSteps, features, latestChanges, shortChanges, stripRefs, slugger };
 
 if (require.main === module) {
   main().catch((e) => {
