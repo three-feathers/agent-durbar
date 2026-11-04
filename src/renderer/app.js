@@ -1977,6 +1977,7 @@ function renderAll(){
   /* spec 052 FR-173: look in the view the focus was in. The office desks stay in the page (hidden) while the list shows, with the same data-id, so a document-wide lookup found the hidden desk and the focus fell to the page. */
   if(id&&!inPanel){const n=document.querySelector(`${scope}[${key}="${CSS.escape(id)}"]`); if(n&&ae!==n)n.focus({preventScroll:true});}
   if(ui.selected){updatePanelHeader();renderStrip();}
+  afTick(); /* spec 052 FR-182..FR-190: markers, arrivals and the strip */
   rememberUi();
   placePencils(ui.view==='office'?PLACE_ONLY:null,PLACE_DIRTY); INL().follow(); /* spec 059 FR-023 item 5: the open field follows its name; spec 097 FR-184: pencils only on the parts renderOffice rewrote */
   if(floorSwitchTimed)endFloorSwitchTiming();
@@ -2453,6 +2454,7 @@ const unreadWords=a=>isUnread(a)?', new reply not read yet':'';
 function noteCompleted(a){
   if(a.parent)return;
   if(SIM&&!window.__durbarSimReplayed)return; /* simulator only: its start-up script (agents that were already Done) is history, not news */
+  afOnCompleted(a); /* spec 052 FR-184 */
   const r=UNREAD.complete(a.id,chatShownNow(a.id));
   if(r==='marked'){UNREAD_AT.set(a.id,Date.now());const rm=roomOf(a);if(rm&&roomShown(rm)){announce(a.name+' finished. New reply.');UNREAD_SAID.add(a.id);}} /* FR-174: nothing is announced for a hidden folder or floor */
   else if(r==='seen')UNREAD_AT.delete(a.id);
@@ -2507,6 +2509,7 @@ let cvRz=0; const cvSoon=()=>{if(cvRz)return; cvRz=requestAnimationFrame(()=>{cv
 addEventListener('resize',cvSoon); new MutationObserver(cvSoon).observe(document.documentElement,{attributes:true});
 function openPanel(id,focus){
   const a=byId(id); if(!a)return; if(ui.selected!==id||!document.body.classList.contains('panel-open'))cvMark(); /* after the check: an unknown id leaves the chat on screen unmarked */ if(!pulling)PULLED.delete(id); /* the user came back: this session may bring its chat forward again */
+  if(AF_ON&&!AF_AUTO&&!pulling&&(ui.selected!==id||!document.body.classList.contains('panel-open')))AFT.manualOpen(id); /* spec 052 FR-185: opening another agent by hand ends the following of the others */
   if(ui.selected!==id||!document.body.classList.contains('panel-open'))PANEL_OPENED_AT=performance.now(); closeSlash(); keepDraft(); ui.selected=id; attached=(DRAFTS.get(id)||{att:[]}).att.slice();
   noteRecentChat(a); rememberUi();
   document.body.classList.add('panel-open');
@@ -3901,6 +3904,8 @@ document.addEventListener('keydown',e=>{
     return;
   }
   /* spec 052 FR-014: N opens the next agent that needs you (waiting, error or at its limit), outside text fields and dialogs */
+  /* spec 052 FR-186: [ and ] are Previous and Next in the attention queue, only with Auto-follow on, outside text fields, dialogs and menus */
+  if(AF_ON&&(e.key==='['||e.key===']')&&!e.altKey&&!e.ctrlKey&&!e.metaKey&&!e.isComposing&&!(e.target&&e.target.closest&&e.target.closest('input,textarea,select,[contenteditable="true"],[role="dialog"],[role="menu"]'))&&!modalOpen()){const v=afSnapshot();if(v.dialog||v.menu||v.screen)return;e.preventDefault();afGo(e.key===']'?1:-1);return;}
   if((e.key==='i'||e.key==='I')&&!e.altKey&&!e.ctrlKey&&!e.metaKey&&!e.isComposing&&!(e.target&&e.target.closest&&e.target.closest('input,textarea,select,[contenteditable="true"],[role="dialog"],[role="menu"]'))&&!modalOpen()){e.preventDefault();openInbox();return;}
   /* spec 052 FR-043: ? opens the keyboard shortcut sheet, outside text fields and dialogs */
   if(e.key==='?'&&!e.altKey&&!e.ctrlKey&&!e.metaKey&&!e.isComposing&&!(e.target&&e.target.closest&&e.target.closest('input,textarea,select,[contenteditable="true"],[role="dialog"],[role="menu"]'))&&!modalOpen()){e.preventDefault();openKbdHelp();return;}
@@ -4190,6 +4195,165 @@ function openNextNeedsMe(){
   const cur=list.findIndex(a=>a.id===ui.selected), nx=list[(cur+1)%list.length];
   openPanel(nx.id,'title'); /* spec 074 FR-019: the title, not the message box, so N, N, N keeps walking the queue (spec 052 FR-014) */
 }
+/* ---- spec 052 FR-182..FR-190 (issue 686): opt-in Auto-follow and the attention queue. The decisions are in autofollow.js (pure); this reads the
+   page and opens chats with the existing openPanel / closePanel / goToFloor. The queue is needsMeOrder() (unchanged) then the unread finished
+   agents; nothing here answers, allows, denies or resolves anything, and the focus goes to the chat title, never to an answer button. ---- */
+const AF=window.DurbarAutoFollow, AFT=AF.createTracker();
+let AF_ON=false, AF_PAUSED=false, AF_HELD=null, AF_TYPED=null, AF_HOLD='', AF_AUTO=false, AF_POLL=0, AF_PASSES=0;
+const AF_DONE=new Map(); /* id -> completions seen, so each completion is its own arrival */
+const afPanelId=()=>document.body.classList.contains('panel-open')?ui.selected:null;
+function setAutoFollowOn(v){AF_ON=!!v;if(AF_ON)AF_PAUSED=false;else{AFT.clear();AF_HELD=null;AF_HOLD='';}afTick();}
+function afQueueIds(){
+  return AF.queue(needsMeOrder().map(a=>a.id),agents.filter(a=>isUnread(a)).map(a=>({id:a.id,at:UNREAD_AT.get(a.id)})));
+}
+function afSyncHeld(ids){
+  const id=afPanelId(); if(!id){AF_HELD=null;return;}
+  const i=ids.indexOf(id); if(i>=0)AF_HELD={id,at:i}; else if(!AF_HELD||AF_HELD.id!==id)AF_HELD=null;
+}
+const afLive=ids=>AF.withHeld(ids||afQueueIds(),AF_HELD&&AF_HELD.id===afPanelId()?AF_HELD:null);
+/* FR-185: what the page sees now */
+function afSnapshot(){
+  const ae=document.activeElement, ed=el=>!!el&&el.nodeType===1&&(el.matches('input,textarea,select,[contenteditable]:not([contenteditable="false"])')||!!el.isContentEditable);
+  const editable=ed(ae), live=el=>!el.hidden&&el.getClientRects().length>0;
+  const chat=$('chat'), open=afPanelId();
+  return {editable,editableText:editable&&String(ae.value!=null?ae.value:ae.textContent||'').length>0,
+    typedAgo:AF_TYPED==null?null:Date.now()-AF_TYPED,
+    dialog:modalOpen()||[...document.querySelectorAll('[role="dialog"]')].some(live),
+    menu:[...document.querySelectorAll(OVERLAY_SEL+',#floorsPop,#foldersPop,[aria-haspopup][aria-expanded="true"]')].some(n=>!n.closest('#toasts')&&live(n)),
+    pointerDown:AF_PTR_DOWN,pointerAgo:performance.now()-AF_PTR_AT,
+    screen:document.body.classList.contains('screen-open')||!!(window.DurbarScreens&&window.DurbarScreens.isOpen()),
+    readingOther:!!open&&!AFT.has(open)&&!!chat&&chat.dataset.pin==='0',
+    hidden:document.visibilityState==='hidden',blurred:!schedHasFocus()};
+}
+document.addEventListener('keydown',e=>{ /* FR-185: a key typed into a field counts as typing for 2 s (Enter does not: it is how a message is sent) */
+  const t=e.target; if(!t||!t.matches||e.ctrlKey||e.metaKey||e.altKey)return;
+  if(t.matches('input,textarea,select,[contenteditable]:not([contenteditable="false"])')&&(e.key.length===1||e.key==='Backspace'||e.key==='Delete'))AF_TYPED=Date.now();
+},true);
+/* FR-185: a click may be on its way */
+let AF_PTR_DOWN=false, AF_PTR_AT=-Infinity, AF_OPENED_AT=-Infinity;
+const afPtrNow=()=>{AF_PTR_AT=performance.now();};
+document.addEventListener('pointerdown',()=>{AF_PTR_DOWN=true;afPtrNow();},true);
+for(const t of ['pointerup','pointercancel'])document.addEventListener(t,()=>{AF_PTR_DOWN=false;afPtrNow();},true);
+document.addEventListener('wheel',afPtrNow,{capture:true,passive:true});
+window.addEventListener('blur',()=>{AF_PTR_DOWN=false;});
+/* FR-184: for 500 ms after an automatic open, a click on an answer control does nothing */
+const AF_ANSWER_SEL='#chat .note:not(.settled) button,#chat .note:not(.settled) input,#chat .note:not(.settled) label,.answer-bar button';
+document.addEventListener('click',e=>{if(performance.now()-AF_OPENED_AT<500&&e.target.closest&&e.target.closest(AF_ANSWER_SEL)){e.preventDefault();e.stopImmediatePropagation();}},true);
+const afCanOpen=id=>{const a=byId(id);return !!a&&roomShown(roomOf(a));}; /* FR-188: a hidden folder or an off floor is never opened by itself */
+function afFocusDesk(id){
+  const d=document.querySelector(`#stage .desk[data-id="${CSS.escape(id)}"],#stage .ro-plate[data-id="${CSS.escape(id)}"]`)||document.querySelector(`#list button.lrow[data-id="${CSS.escape(id)}"]`);
+  if(d&&d.getClientRects().length){focusIn(d);return true;}
+  return false;
+}
+/* FR-183: focus moved here is not the person asking for a screen's zoom */
+const afQuiet=fn=>{const R=window.DurbarRealOffice;if(R&&R.quietFocus)R.quietFocus(fn);else fn();};
+/* FR-183: back to the office with this desk marked; one announcement for the whole step */
+function afBackToOffice(a,what){
+  const room=roomOf(a), drawn=!!room&&roomShown(room);
+  if(drawn&&!AF.holdReason(afSnapshot(),{office:true})){
+    let moved=false,fname='';
+    const f=floorsLive()&&floorById(room.floor);
+    if(f&&floorScreens()&&oneFloorView()&&f.id!==curFloorId()){moved=goToFloor(f.id,{announce:false});fname=f.name;} /* FR-188: no second floor announcement */
+    afQuiet(()=>{if(afPanelId()){AFT.setLast(ui.selected);AF_AUTO=true;try{closePanel();}finally{AF_AUTO=false;}}afFocusDesk(a.id);});
+    announce(what+(moved&&fname?' on '+fname:'')+'. Back to the office.');
+  }
+}
+/* FR-183: an accepted message follows its agent and returns to the office. `shown` = the chat shown before the send; `several` = one of a Send to several */
+function afOnAccepted(a,shown,several){
+  if(!AF_ON||AF_PAUSED||a.state==='idle'||a.state==='done')return; /* the app answered, and no turn is running */
+  const now=afPanelId();
+  if(now&&now!==shown)return; /* FR-183: you opened another chat while it was on its way */
+  AFT.follow(a.id); AFT.acted();
+  if(!several&&now===shown)afBackToOffice(a,a.name+' is working');
+  afTick();
+}
+function afOnCompleted(a){
+  if(!AF_ON||!AFT.has(a.id))return;
+  const n=(AF_DONE.get(a.id)||0)+1; AF_DONE.set(a.id,n); AFT.arrive(a.id,'done',n);
+}
+/* FR-184: arrivals of the followed agents, delivered when no guard holds */
+function afScan(){
+  for(const id of AFT.ids()){
+    const a=byId(id); if(!a){AFT.drop(id);continue;}
+    if(needsMe(a))AFT.arrive(id,vis(a)==='error'?'error':a.limit?'limit':'ask',NEED_SINCE.get(id));
+    else AFT.retract(id,['ask','error','limit']);
+  }
+}
+function afDeliver(){
+  if(!AF_ON||AF_PAUSED)return;
+  AF_PASSES++; /* only read by the simulator's driver, as the witness that a delivery pass ran */
+  const reason=AFT.pendingList().length?(AF.holdReason(afSnapshot())||(AFT.isQuiet?'you have not acted since the last switch':'')):'';
+  AF_HOLD=reason;
+  const d=AFT.due(reason,afCanOpen);
+  if(!d){afRender();return;}
+  const a=byId(d.id);
+  if(a&&!(afPanelId()===d.id)){ /* already shown: nothing moves */
+    AF_AUTO=true; try{openPanel(d.id,'title');}finally{AF_AUTO=false;}
+    AF_OPENED_AT=performance.now();
+    if(d.kind!=='ask')announce(a.name+(d.kind==='done'?' finished':d.kind==='error'?' has an error':' reached its limit')+'. Its chat is open.');
+  }
+  afTick();
+}
+function afRender(){
+  const el=$('followStrip'); if(!el)return;
+  if(el.hidden===AF_ON)el.hidden=!AF_ON;
+  if(!AF_ON)return;
+  if(!el.dataset.built){
+    el.dataset.built='1';
+    el.innerHTML='<span class="af-t" id="afText"></span><span class="af-pos" id="afPos" aria-hidden="true"></span><button class="btn" type="button" id="afPrev">Previous</button><button class="btn" type="button" id="afNext">Next</button><button class="btn" type="button" id="afPause" aria-pressed="false">Pause</button>';
+    $('afPrev').onclick=()=>afGo(-1);$('afNext').onclick=()=>afGo(1);
+    $('afPause').onclick=()=>afSetPaused(!AF_PAUSED);
+  }
+  const ids=afLive(), cur=afPanelId(), pos=AF.position(ids,cur), pt=AF.positionText(pos);
+  const fid=AFT.ids()[0], fa=fid&&byId(fid);
+  const text=AF.statusText({paused:AF_PAUSED,held:AF_HOLD,heldCount:AFT.pendingList().length,followed:AFT.size,office:!cur,name:fa&&fa.name,hiddenName:fa&&!afCanOpen(fid)?fa.name:''});
+  const set=(id,t)=>{const n=$(id);if(n&&n.textContent!==t)n.textContent=t;};
+  set('afText',text);set('afPos','Attention: '+pt);
+  el.classList.toggle('paused',AF_PAUSED);
+  const empty=!ids.length, np=pos.index>=0?(pos.index+1)+' of '+pos.count:pos.count+(pos.count===1?' needs you':' need you');
+  const lab=(w,k)=>w+' in attention queue'+(empty?'. Nothing needs you; goes back to the office':'. '+np)+' ('+k+')';
+  const attr=(n,k,v)=>{if(n&&n.getAttribute(k)!==v)n.setAttribute(k,v);};
+  attr($('afPrev'),'aria-label',lab('Previous','['));attr($('afNext'),'aria-label',lab('Next',']'));
+  attr($('afPrev'),'title',empty?'Nothing needs you. Back to the office ([)':'Previous in the attention queue ([)');attr($('afNext'),'title',empty?'Nothing needs you. Back to the office (])':'Next in the attention queue (])');
+  attr($('afPrev'),'aria-keyshortcuts','[');attr($('afNext'),'aria-keyshortcuts',']');
+  const pb=$('afPause'); set('afPause',AF_PAUSED?'Resume':'Pause');attr(pb,'aria-pressed',AF_PAUSED?'true':'false');
+  attr(pb,'title',AF_PAUSED?'Resume auto-follow':'Pause auto-follow: nothing moves by itself until you resume');
+}
+/* FR-182: pause is for this run only */
+function afSetPaused(on){
+  if(!AF_ON)return; AF_PAUSED=!!on; if(AF_PAUSED){AFT.clear();AF_HOLD='';}
+  announce(AF_PAUSED?'Auto-follow paused.':'Auto-follow resumed.'); afTick();
+}
+/* the one pass after every render and on events: markers, arrivals, the strip */
+function afTick(){
+  const ids=new Set(AF_ON&&!AF_PAUSED?AFT.ids():[]);
+  document.querySelectorAll('.is-followed').forEach(n=>{if(!ids.has(n.dataset.id)){n.classList.remove('is-followed');n.removeAttribute('data-following');}});
+  for(const id of ids)document.querySelectorAll(`#stage .desk[data-id="${CSS.escape(id)}"], #stage .ro-plate[data-id="${CSS.escape(id)}"], #list button.lrow[data-id="${CSS.escape(id)}"]`).forEach(n=>{n.classList.add('is-followed');n.setAttribute('data-following','1');});
+  if(AF_ON&&!AF_PAUSED){afScan();afSyncHeld(afQueueIds());}
+  afRender();
+  if(AF_ON&&!AF_PAUSED&&AFT.pendingList().length){
+    if(!AF_POLL)AF_POLL=setInterval(afDeliver,400);
+    setTimeout(afDeliver,0);
+  }else if(AF_POLL){clearInterval(AF_POLL);AF_POLL=0;AF_HOLD='';}
+}
+/* FR-186, FR-187: Previous and Next over the queue; an empty queue goes back to the office with the last desk focused */
+function afGo(dir){
+  if(!AF_ON)return;
+  AFT.acted();
+  const ids=afLive(), cur=afPanelId(), id=AF.step(ids,cur,dir);
+  if(!id){
+    if(cur)AFT.setLast(ui.selected);
+    const last=AFT.lastDesk();
+    afQuiet(()=>{if(cur){AF_AUTO=true;try{closePanel();}finally{AF_AUTO=false;}}if(last)afFocusDesk(last);});
+    announce('Nothing needs you. Back to the office.');afTick();return;
+  }
+  AFT.manualOpen(id); AF_HELD={id,at:ids.indexOf(id)};
+  AF_AUTO=true; try{openPanel(id,'title');}finally{AF_AUTO=false;}
+  const a=byId(id); announce((a?a.name+', ':'')+(ids.indexOf(id)+1)+' of '+ids.length+'.');
+  afTick();
+}
+window.addEventListener('focus',()=>{afPtrNow();if(AF_ON)afTick();});
+document.addEventListener('visibilitychange',()=>{if(AF_ON)afTick();});
 /* ---- spec 052 FR-042 / FR-043 (#316): command palette (Ctrl+K, ⌘K on a Mac) and keyboard shortcut sheet (?) ---- */
 let palBack=null, palItems=[], palActive=0;
 const palUsable=id=>{const el=$(id);return !!el&&!el.disabled&&!el.hidden&&!el.closest('[hidden]:not(#topMoreMenu)');}; /* items inside the top bar's closed menus still count */
@@ -4198,6 +4362,9 @@ function palActions(){
   return [
     {label:'Needs you',hint:'The inbox of agents that need you ('+INBOX_KEY+')',kw:'inbox attention waiting approve',keys:['I'],run:openInbox},
     {label:'Next agent that needs you',hint:'Open the next waiting chat ('+NEXT_KEY+')',kw:'next waiting jump',keys:['N'],run:openNextNeedsMe},
+    {label:'Next in attention queue',hint:'Auto-follow: the next agent that needs you or has a new reply (])',kw:'auto follow attention queue next',keys:[']'],run:()=>afGo(1),ok:()=>AF_ON},
+    {label:'Previous in attention queue',hint:'Auto-follow: the previous one ([)',kw:'auto follow attention queue previous',keys:['['],run:()=>afGo(-1),ok:()=>AF_ON},
+    {label:AF_PAUSED?'Resume auto-follow':'Pause auto-follow',hint:'Nothing moves by itself while it is paused',kw:'auto follow pause resume stop',run:()=>afSetPaused(!AF_PAUSED),ok:()=>AF_ON},
     {label:'Schedules',hint:"Every folder's scheduled prompts",kw:'schedule scheduled prompts timer every daily morning cron',keys:keyLabels(['mod','shift','S']),run:openSchedulesView,ok:schedTopShown}, /* spec 044 FR-032 */
     {label:'Office view',kw:'view office desks rooms',run:palClick('vOffice'),ok:()=>palUsable('vOffice')},
     {label:'List view',kw:'view list table rows',run:palClick('vList'),ok:()=>palUsable('vList')},
@@ -4374,6 +4541,7 @@ function openKbdHelp(back){
     [['I'],'Needs you inbox',keyLabels(['mod','shift','A'])],
     [keyLabels(['mod','A']),'Needs you inbox, outside text (in a text box it selects all)'], /* spec 074 FR-021 */
     [['N'],'Next agent that needs you',keyLabels(['mod','shift','N'])],
+    ...(AF_ON?[[['[',']'],'Auto-follow: previous or next in the attention queue']]:[]), /* spec 052 FR-186 */
     ...(schedTopShown()?[[keyLabels(['mod','shift','S']),"Schedules: every folder's scheduled prompts"]]:[]), /* spec 044 FR-031 */
     ...(IS_MAC?[[keyLabels(['mod',',']),'Settings']]:[]), /* FR-083: the app menu's Settings… item */
     [['Ctrl','`'],'Back to the previous chat (on a Mac too: Control, not Cmd)'],
@@ -4471,9 +4639,11 @@ async function sendToSeveral(anchor){
     buttons:[{label:'Cancel',value:null},{label:'Send',value:'send',cls:'primary'}],returnFocus:anchor});
   if(!r||r.value!=='send')return;
   const text=String(r.text||'').trim().slice(0,4000);if(!text||!r.picked||!r.picked.length)return;
-  const bad=[];let n=0;
+  const bad=[];let n=0,last=null;
+  const shown0=afPanelId(); /* spec 052 FR-183: the chat shown once, before the first send: a chat opened by hand while the sends go on is not the one to leave */
   for(const id of r.picked){const a=byId(id);if(!a||!a.live){bad.push(a?a.name:id);continue;}
-    try{await sendLive(text,id,{fromComposer:false});n++;}catch(err){bad.push(a.name);}}
+    try{await sendLive(text,id,{fromComposer:false,several:true,afShown:shown0});n++;if(AFT.has(a.id))last=a;}catch(err){bad.push(a.name);}}
+  if(AF_ON&&!AF_PAUSED&&last&&AFT.has(last.id)&&afPanelId()===shown0){afBackToOffice(last,AFT.size>1?AFT.size+' followed agents are working':last.name+' is working');afTick();} /* spec 052 FR-183: one move and one announcement for the whole send */
   toast(bad.length?'Sent to '+n+'; could not send to '+esc(bad.join(', '))+'.':'Sent to '+n+' session'+(n===1?'':'s')+'.',3600).classList.add(bad.length?'err':'ok');
 }
 const folderOfAgentName=a=>{const r=roomOf(a);const p=r&&r.path?String(r.path).replace(/[\\/]+$/,''):'';return p.split(/[\\/]/).pop()||'';};
@@ -6440,8 +6610,10 @@ async function sendLive(text,forId,opts){
   const planFirst=!!a.planNext&&!!(capsFor(a)&&capsFor(a).planMode); /* spec 066: one message only */
   if(a.planNext){a.planNext=false;renderAttached();}
   if(planFirst)addNote(chat,'Asked for a plan first: nothing changes until you approve it.');
+  const afShown=opts&&opts.several&&'afShown' in opts?opts.afShown:afPanelId(); /* spec 052 FR-183: what you were looking at when you sent (a Send to several: before the first send) */
   const r=await bridge.send(a.id,text||'Please look at the attached file(s).',atts.map(x=>({path:x.path,name:x.name,kind:x.kind})),planFirst?{plan:true}:undefined);
   if(r&&r.notSent){mcpNotSent(a,chat,text,fromComposer);return;} /* spec 058 FR-208: Stop during the MCP sign-in wait: nothing was sent */
+  if(r.ok&&!(opts&&opts.coffee))afOnAccepted(a,afShown,!!(opts&&opts.several)); /* spec 052 FR-183: accepted by the agent app; a break resuming by itself is not the person's send */
   if(!r.ok){closeTurn(a);const n=addNote(chat,'Send failed: '+esc((r.error&&safeMask(r.error))||'unknown error'),true); /* spec 041 FR-065 (delta 2026-10-23): the app's error is masked (shown whole, not cut); no mask: a neutral word */modeRefusalAction(a,n,r.error);setState(a,'error',null,'Send failed: '+safeExcerpt(r.error,100,'unknown error'));}
   else if(r.slash)addNote(chat,'Sent the text of <code>'+esc(DurbarCutText.cutText(safeMask(r.slash),160))+'</code> (the agent app does not load it in Durbar’s sessions).'+(r.slashNote?' '+esc(DurbarCutText.cutText(safeMask(r.slashNote),200)):'')); /* spec 073 FR-005; slashNote: masked, then cut (FR-013) */
   else if(r.slashNote)addNote(chat,esc(DurbarCutText.cutText(safeMask(r.slashNote),240))); /* spec 073 (review on PR 615): over the size cap, sent as typed; masked, then cut (FR-013) */
@@ -8636,7 +8808,7 @@ if(bridge){
     const s=e.target.closest&&e.target.closest('.floors-ui select[data-fl="move"]');if(s)moveRoomToFloor(s.dataset.room,s.value);
     if(e.target&&e.target.classList&&e.target.classList.contains('fl-into-sel')){INTO=e.target.value;renderIntoFloor();renderFloorsPanel();renderFloorsSettings();}});
   document.addEventListener('keydown',e=>{const t=e.target;if(e.key==='Enter'&&t&&t.closest&&t.closest('.floors-ui .fl-new')){e.preventDefault();floorAction(t.closest('.fl-new').querySelector('[data-fl="create"]'));}});
-  window.DurbarScreens.init({shutters:{get:()=>SHUT_PREF,set:setShutOn,usable:()=>!!SHUT},view:{get:officeView,set:setOfficeView,note:()=>roPeople().note&&officeView()==='real'?roPeople().note:'',world:{get:()=>roPeople().world,set:setRoWorld,list:roWorlds,defaultSet:()=>roPeople().setName}},navKey:{text:navKeyText,textOf:c=>keyText(NAV.comboParts(c)),defText:()=>keyText(NAV.comboParts(NAV.DEFAULT_COMBO)),isDefault:()=>NAV.sameCombo(NAV_KEY,NAV.DEFAULT_COMBO),set:setNavKey,recording:on=>{navRecording=!!on;},fromEvent:e=>NAV.comboFromEvent(e,IS_MAC),clash:c=>NAV.clashOf(c,IS_MAC)},roomName:id=>{const r=ROOMS.find(x=>x.id===id);return r?r.name:String(id||'');},refreshKinds:()=>loadKinds(true),setAccounts,density:{get:()=>DENSITY,set:setDensity},liveAct:{get:()=>LIVE_PREF,set:setLiveOn,usable:()=>!!LIVEACT},bridge,stats:STATS,esc,mask:safeMask,toast,announce,floors:{on:()=>floorsLive(),render:()=>renderFloorsSettings()},sched:{on:()=>!!bridge.listSchedules&&!demoOn,render:()=>renderSchedSettings()},onSettings:v=>{APP_SETTINGS=v||{};},onUsageReset,isSerious:()=>SERIOUS,isNotify:()=>NOTIFY,setNotify:on=>{NOTIFY=!!on;},breakResume:()=>BREAK_RESUME,setBreakResume:v=>{BREAK_RESUME=v==='ask'?'ask':'auto';},chatLinksIn:()=>CHAT_LINKS,setChatLinksIn:v=>{CHAT_LINKS=v==='system'?'system':'session';},setSerious:on=>{SERIOUS=!!on;markSerious();scheduleRender();},usageSince:()=>LEDGER.since(),usageOffice:()=>LEDGER.office(),costData,usageError:()=>usageSaveError,
+  window.DurbarScreens.init({autoFollow:{get:()=>AF_ON,set:v=>setAutoFollowOn(v)},shutters:{get:()=>SHUT_PREF,set:setShutOn,usable:()=>!!SHUT},view:{get:officeView,set:setOfficeView,note:()=>roPeople().note&&officeView()==='real'?roPeople().note:'',world:{get:()=>roPeople().world,set:setRoWorld,list:roWorlds,defaultSet:()=>roPeople().setName}},navKey:{text:navKeyText,textOf:c=>keyText(NAV.comboParts(c)),defText:()=>keyText(NAV.comboParts(NAV.DEFAULT_COMBO)),isDefault:()=>NAV.sameCombo(NAV_KEY,NAV.DEFAULT_COMBO),set:setNavKey,recording:on=>{navRecording=!!on;},fromEvent:e=>NAV.comboFromEvent(e,IS_MAC),clash:c=>NAV.clashOf(c,IS_MAC)},roomName:id=>{const r=ROOMS.find(x=>x.id===id);return r?r.name:String(id||'');},refreshKinds:()=>loadKinds(true),setAccounts,density:{get:()=>DENSITY,set:setDensity},liveAct:{get:()=>LIVE_PREF,set:setLiveOn,usable:()=>!!LIVEACT},bridge,stats:STATS,esc,mask:safeMask,toast,announce,floors:{on:()=>floorsLive(),render:()=>renderFloorsSettings()},sched:{on:()=>!!bridge.listSchedules&&!demoOn,render:()=>renderSchedSettings()},onSettings:v=>{APP_SETTINGS=v||{};},onUsageReset,isSerious:()=>SERIOUS,isNotify:()=>NOTIFY,setNotify:on=>{NOTIFY=!!on;},breakResume:()=>BREAK_RESUME,setBreakResume:v=>{BREAK_RESUME=v==='ask'?'ask':'auto';},chatLinksIn:()=>CHAT_LINKS,setChatLinksIn:v=>{CHAT_LINKS=v==='system'?'system':'session';},setSerious:on=>{SERIOUS=!!on;markSerious();scheduleRender();},usageSince:()=>LEDGER.since(),usageOffice:()=>LEDGER.office(),costData,usageError:()=>usageSaveError,
     places:window.DurbarPlaces,customPlaces:()=>CUSTOM,placeMap:()=>PLACE_MAP,placeLabel,setCustomPlaces,placeServers:()=>[...SEEN_SERVERS],setPlaceMap:m=>{PLACE_MAP=(m&&typeof m==='object')?m:{};scheduleRender();},
     applyTheme,
     applyCharacters,charPreview, /* spec 077 FR-068 */
@@ -8704,7 +8876,7 @@ if(bridge){
     }).catch(()=>apply());}else apply();
   };
   if(bridge.getOrder)bridge.getOrder().then(d=>{ORDER=RO.sanitize(d);scheduleRender();}).catch(()=>{}); /* issue 677: a failed or corrupt read keeps the automatic order */
-  if(bridge.getSettings)bridge.getSettings().then(v=>{APP_SETTINGS=v||{};PLACE_MAP=(v&&v.placeMap)||{};CUSTOM=(v&&Array.isArray(v.customPlaces))?v.customPlaces:[];SERIOUS=!!(v&&v.seriousMode);markSerious();NOTIFY=!!(v&&v.notifyNeedsMe!==false);BREAK_RESUME=v&&v.breakResume==='ask'?'ask':'auto';CHAT_LINKS=v&&v.chatLinksIn==='system'?'system':'session';themeBoot(v);}).catch(()=>{});
+  if(bridge.getSettings)bridge.getSettings().then(v=>{APP_SETTINGS=v||{};PLACE_MAP=(v&&v.placeMap)||{};CUSTOM=(v&&Array.isArray(v.customPlaces))?v.customPlaces:[];SERIOUS=!!(v&&v.seriousMode);markSerious();setAutoFollowOn(!!(v&&v.autoFollowWork===true));NOTIFY=!!(v&&v.notifyNeedsMe!==false);BREAK_RESUME=v&&v.breakResume==='ask'?'ask':'auto';CHAT_LINKS=v&&v.chatLinksIn==='system'?'system':'session';themeBoot(v);}).catch(()=>{});
   setInterval(()=>{if(VISITS.tick())scheduleRender();},250);
   setInterval(coffeeTick,SIM_BREAK?1000:5000); /* spec 068: resume, ask or remind when a break is due */
   agents=LIVE.agents; ROOMS=LIVE.rooms;
@@ -8719,7 +8891,7 @@ if(pendingOpen&&demoOn){openPanel(pendingOpen,false);pendingOpen=null;}
 const settleNow=()=>{if(!agentsListed||!window.__durbarSimReplayed||baselineQueued||baselineAsking)return false;if(renderQueued){renderQueued=false;renderAll();}return true;};
 /* simulator drivers load with simfreeze=1: the desk glow then holds still (FR-178: the geometry and screenshot checks measure boxes, so no zoom may be mid-way); the unread driver opts back in with hlmotion=1 to test the motion itself */
 if(SIM&&qs.get('simfreeze')==='1'&&qs.get('hlmotion')!=='1')document.documentElement.classList.add('hl-still');
-if(SIM)window.__durbarSimUi={ops:()=>({...OPS}),agents:()=>agents,cv:{mark:cvMark,release:cvRelease,drop:cvDrop,openPanel,setDensity},setLive:setLiveOn,setOfficeView,needsCount:()=>needsMeOrder().length,clearDetail:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return false;c.querySelectorAll(':scope > details.pdiff').forEach(x=>x.remove());scheduleRender();return true;},addDetail:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return false;const d=document.createElement('details');d.className='pdiff';d.innerHTML='<summary>Show the change (+1 \u22121)</summary><pre>- a\n+ b</pre>';c.insertBefore(d,c.querySelector(':scope > .note-actions'));scheduleRender();return true;},requestText:s=>{const n=document.createElement('div');n.className='note elicit';n.textContent=String(s);return requestText(n);},setSerious:v=>{SERIOUS=!!v;return SERIOUS;}, /* spec 097 (the moments driver): a change in the card, the card text's masking, Serious mode */unread:{mark:id=>UNREAD.complete(id,false)==='marked',read:id=>markRead(byId(id))}, /* spec 097 (the moments driver): the New reply mark and Mark as read, as the app sets them */order:{get:()=>ORDER,saved:()=>bridge.getOrder?bridge.getOrder():null,reset:resetOrder,path:id=>(ROOMS.find(r=>'room:'+r.id===id)||{}).path||''}, /* issue 677 (check 033-order): the order held and saved, Reset, a room's key */
+if(SIM)window.__durbarSimUi={afPasses:()=>AF_PASSES,ops:()=>({...OPS}),agents:()=>agents,cv:{mark:cvMark,release:cvRelease,drop:cvDrop,openPanel,setDensity},setLive:setLiveOn,setOfficeView,needsCount:()=>needsMeOrder().length,clearDetail:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return false;c.querySelectorAll(':scope > details.pdiff').forEach(x=>x.remove());scheduleRender();return true;},addDetail:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return false;const d=document.createElement('details');d.className='pdiff';d.innerHTML='<summary>Show the change (+1 \u22121)</summary><pre>- a\n+ b</pre>';c.insertBefore(d,c.querySelector(':scope > .note-actions'));scheduleRender();return true;},requestText:s=>{const n=document.createElement('div');n.className='note elicit';n.textContent=String(s);return requestText(n);},setSerious:v=>{SERIOUS=!!v;return SERIOUS;}, /* spec 097 (the moments driver): a change in the card, the card text's masking, Serious mode */unread:{mark:id=>UNREAD.complete(id,false)==='marked',read:id=>markRead(byId(id))}, /* spec 097 (the moments driver): the New reply mark and Mark as read, as the app sets them */order:{get:()=>ORDER,saved:()=>bridge.getOrder?bridge.getOrder():null,reset:resetOrder,path:id=>(ROOMS.find(r=>'room:'+r.id===id)||{}).path||''}, /* issue 677 (check 033-order): the order held and saved, Reset, a room's key */
   toast:(s,act)=>{const t=act?toastAction(esc(String(s)),String(act),()=>{},8000):toast(esc(String(s)),8000);return !!t;}, /* spec 097 FR-113: a toast for the world-chrome driver (simulator only) */realLayout:()=>RO_LAST, /* spec 097: the last Real office layout (check-office-overlap's Real office variant) */slips:()=>realSlips(), /* spec 097: what the world draws as slips (the moments driver; simulator only) */uncrowd:()=>{agents.forEach(x=>VISITS.unpin(x.id));scheduleRender();return true;},crowd:(pid,n,from)=>{const a=agents.filter(x=>!x.parent).slice(from||0,(from||0)+n);a.forEach(x=>VISITS.pin(x.id,pid,'test'));scheduleRender();return a.length;}, /* spec 097: n main agents stand at a place (a "+N" crowd for the driver; simulator only) */crew:{state:()=>({map:{...CREW_MAP},help:{...CREW_HELP},bad:[...CREW_BAD],hasModule:!!CREW}),renderAll:()=>{renderAll();return true;},probe:()=>{try{crewPreload();syncCrew();return {ok:true,of:agents.map(x=>crewOf(x)).filter(Boolean).length};}catch(e){return {ok:false,err:String(e&&e.message)};}},openInbox:()=>{openInbox();return true;},closeInbox:()=>{closeInbox();return true;},openPanel:id=>{openPanel(id);return true;},fall:c=>{const f0=CREW.file;CREW.file=(i,p)=>i===c?'crew/art/gone.webp':f0(i,p);crewLoaded.clear();crewPreload();CREW.file=f0;return true;}}, /* spec 077 (check-crew): the character map, a render, and one character's pictures failing to load */
   readAll:(quiet)=>{const n=UNREAD.size;UNREAD.ids().forEach(id=>{UNREAD.read(id);UNREAD_AT.delete(id);});if(!quiet)scheduleRender();return n;},notes:{all:()=>[...NT.by.values()].map(x=>x.notes||[]).flat(),saveMsg:btn=>{const a=byId(ui.selected);return notesSaveMsg(a,msgInfo(btn),btn);},noCommands:()=>{const x=agents.find(q=>q.live&&!q.parent&&!slashSupported(q));return x?x.name:'';},selNow:()=>{showSelButton();const b=document.getElementById('ntSelBtn');return !!b&&!b.hidden;},open:()=>openNotes(byId(ui.selected)),close:()=>closeNotes(false),search:q=>{const f=$('ntSearch');if(!f)return false;f.value=q;f.dispatchEvent(new Event('input'));return true;},marks:{clear:()=>{document.querySelectorAll('#chat .nt-mark').forEach(x=>x.remove());document.querySelectorAll('#chat .bubble').forEach(b=>{b._nd=undefined;});return true;},run:()=>notesMarkAll(byId(ui.selected))},change:(note,patch)=>notesChange(byId(ui.selected),note,patch),rename:note=>renameNote(byId(ui.selected),note,null),plant:n=>{const a=byId(ui.selected),st=a&&notesOf(a);if(!st||!st.ok)return false;st.notes.push(n);notesPaint();if(slashUi)slashUpdate();return true;}}, /* spec 083: the check-notes driver reads the window's notes and takes the paths a click cannot */
   sizingLounges:()=>lastSizing.reduce((n,m)=>n+(m.rolled||[]).length,0), sizingMains:()=>lastSizing.reduce((n,m)=>n+m.mains.length,0), /* FR-181: the desks it is sized for (a pill does not reshape the cards) */ /* spec 001 FR-180: the finished agents the office is sized for */
