@@ -1175,6 +1175,26 @@ All three answered on PR #575 (09:03-09:06 UTC) with option a, the recommended o
 
 ## Changes
 
+### 2026-11-04: P1, first slice: the machine `policy.json` is read for `permissions.requireOsSandbox` (FR-209, issue #734)
+
+*Why:* spec 087 FR-019 built `permissions.requireOsSandbox` and its rule (`requireOsSandboxFrom`), but nothing read Durbar's own `policy.json`, so an organization could not set it (issue #734).
+
+- **FR-209** `[IMPLEMENTED]` `test:` **The machine `policy.json` is read for `requireOsSandbox`, failing closed.** `readMachinePolicy` (`src/main/policyfile.ts`, pure, with injected file system and platform) reads the machine layer of FR-002:
+  - macOS `/Library/Application Support/AgentDurbar/managed/policy.json`, Linux `/etc/agent-durbar/managed/policy.json`. The path is fixed in code; no environment variable, `DURBAR_*` hook or setting moves it.
+  - No folder: no policy (`undefined`), so nothing changes for a person without one.
+  - Otherwise any of these gives `'unreadable'`, which `requireOsSandboxFrom` turns into "the sandbox is required" (FR-010 for this key: its strictest state):
+    - the folder is not a real folder, or `policy.json` is missing or not a regular file;
+    - FR-005's trust check fails: after `realpath`, the file, the folder and every parent up to `/` must be owned by root (uid 0) and not group- or world-writable;
+    - the file is over 256 KiB (FR-009), or unreadable;
+    - it is not JSON (UTF-8, a BOM allowed), not an object, or its `version` is not `1`.
+  - `requireOsSandbox()` (`sandboxpolicy.ts`) now answers `requireOsSandboxFrom([readMachinePolicy()])` at each session start (`main.ts`), so a policy added or fixed applies to the next session, with no restart (FR-008, tighten-only for new sessions).
+  - `test:` `scripts/test-sandbox-floor.ts`, on a fake file system: each case above, the path per platform, the trust check up to the root, and the size cap. `read:` on this Mac `/`, `/Library` and `/Library/Application Support` are root-owned and not group- or world-writable, so a correctly installed folder passes the check. With no `AgentDurbar` folder there, `requireOsSandbox()` is `false`.
+- `[KNOWN GAP]`, for later slices of P1 (each already specified above, none decided here):
+  - **Windows reads nothing yet.** FR-002 requires `SHGetKnownFolderPath` through `koffi`, a new direct dependency (plan), and FR-005's write probe. Until then Windows behaves as before: nothing requires the sandbox.
+  - FR-006's closed schema (`samples/managed/schema/policy.schema.json` is not in the repo): other keys and unknown keys are not checked in this slice.
+  - FR-011 closed mode for a broken file (no session at all) is not built: this slice only takes `requireOsSandbox`'s strictest state.
+  - The user layer (FR-003), FR-004 (dev hooks ignored under a policy), reload and the folder watcher (FR-008), the banner, and Settings > Organization showing this file.
+
 - 2026-11-01 (sweep of the build): **FR-208**: a slow reply of an earlier paint of Settings does not overwrite the Organization section of a later one.
 - 2026-11-02 (pre-review): **FR-208**: the status pill keeps its own width (it stretched across the row), and `shots-076-orgpolicy` checks a failed `orgpolicy:view` (says unknown, no row, no "no policy" line; mutation-checked).
 

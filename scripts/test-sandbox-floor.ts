@@ -13,6 +13,8 @@ import { HOME_SECRETS, leftOutFields, normalizeRoot, sandboxRoots, splitFolders 
 import * as os from 'os';
 import { cleanSandboxState, outwardSandboxEvent, sandboxReason } from '../src/shared/sandbox';
 import { requireOsSandbox, requireOsSandboxFrom } from '../src/main/sandboxpolicy';
+import { machinePolicyDir, readMachinePolicy, POLICY_MAX_BYTES } from '../src/main/policyfile';
+import type { PolicyFs, PolicyStat } from '../src/main/policyfile';
 import { parseSettings } from '../src/shared/credits';
 
 const ok = (m: string): void => console.log('ok - ' + m);
@@ -318,7 +320,7 @@ ok('SC-001: 27 app × OS × mode cells match FR-001..FR-005; no auto-approve, by
   assert.strictEqual(requireOsSandboxFrom(['unreadable']), true, 'a policy that is present but unreadable: fail closed');
   assert.strictEqual(requireOsSandboxFrom([{ permissions: { requireOsSandbox: true } }, { permissions: { requireOsSandbox: false } }]), true, 'a later layer cannot set it back to false');
   assert.strictEqual(requireOsSandboxFrom([JSON.parse('{"__proto__":{"permissions":{"requireOsSandbox":true}}}')]), false, 'own properties only');
-  assert.strictEqual(requireOsSandbox(), false, 'no spec 076 reader yet: not required ([KNOWN GAP])');
+  assert.strictEqual(requireOsSandbox(), false, 'spec 076 FR-209: no machine policy folder on this runner: not required');
   // FR-007c: the stored choice: known app ids only
   assert.deepStrictEqual(parseSettings(JSON.stringify({ sandboxAlwaysContinue: ['claude', 'evil', 'claude', 3] })).sandboxAlwaysContinue, ['claude']);
   assert.strictEqual(parseSettings(JSON.stringify({ sandboxAlwaysContinue: 'claude' })).sandboxAlwaysContinue, undefined);
@@ -692,6 +694,78 @@ ok('SC-001: 27 app × OS × mode cells match FR-001..FR-005; no auto-approve, by
     assert.strictEqual(T.allowAllNote(codexSandboxState(mode, 'linux'), 'Codex'), '', `Codex ${mode}: no sentence`);
   }
   ok('T067: Restart without the sandbox only for a kept floor in Allow all (not managed, resume); never for Claude Code or Codex; fails closed; its tooltip and the Allow all sentence (FR-022c)');
+}
+
+// spec 076 FR-209 (issue #734): the machine policy.json, read for requireOsSandbox, failing closed
+{
+  type Node = { kind: 'dir' | 'file' | 'link'; uid?: number; mode?: number; ino?: number; to?: string; text?: string; size?: number };
+  const D = '/Library/Application Support/AgentDurbar/managed';
+  const root = (): Map<string, Node> => {
+    const m = new Map<string, Node>();
+    let ino = 1;
+    for (const d of ['/', '/Library', '/Library/Application Support', '/Library/Application Support/AgentDurbar', D]) m.set(d, { kind: 'dir', uid: 0, mode: 0o755, ino: ino++ });
+    m.set(D + '/policy.json', { kind: 'file', uid: 0, mode: 0o644, ino: 99, text: JSON.stringify({ version: 1, permissions: { requireOsSandbox: true } }) });
+    return m;
+  };
+  const fakeFs = (m: Map<string, Node>): PolicyFs => {
+    const st = (n: Node): PolicyStat => ({ uid: n.uid ?? 0, mode: n.mode ?? 0o644, ino: n.ino ?? 0, size: n.size ?? Buffer.byteLength(n.text ?? ''), isDirectory: () => n.kind === 'dir', isFile: () => n.kind === 'file', isSymbolicLink: () => n.kind === 'link' });
+    const real = (p: string): string => { const n = m.get(p); if (!n) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' }); return n.kind === 'link' ? real(n.to!) : p; };
+    return {
+      realpathSync: real,
+      lstatSync: (p) => { const n = m.get(p); if (!n) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' }); return st(n); },
+      readNoFollow: (p, max) => { const n = m.get(p); if (!n || n.kind === 'link') throw new Error('ELOOP'); const b = Buffer.from(n.text ?? ''); return { bytes: n.size ? Buffer.alloc(Math.min(n.size, max + 1)) : b.subarray(0, max + 1), st: st(n) }; },
+    };
+  };
+  const read = (m: Map<string, Node>) => readMachinePolicy('darwin', fakeFs(m));
+  const req = (m: Map<string, Node>): boolean => requireOsSandbox(() => read(m), () => undefined);
+  // fixed paths per OS
+  assert.strictEqual(machinePolicyDir('darwin'), D);
+  assert.strictEqual(machinePolicyDir('linux'), '/etc/agent-durbar/managed');
+  assert.strictEqual(machinePolicyDir('win32'), undefined, 'Windows reads nothing in this slice (KNOWN GAP)');
+  // no folder: no policy, nothing required
+  const none = root(); none.delete(D); none.delete(D + '/policy.json');
+  assert.deepStrictEqual(read(none), { layer: undefined });
+  assert.strictEqual(req(none), false, 'FR-209: no machine folder: nothing changes');
+  // a valid, trusted policy
+  assert.strictEqual(req(root()), true, 'FR-209: a trusted policy that sets requireOsSandbox requires it');
+  const off = root(); off.get(D + '/policy.json')!.text = JSON.stringify({ version: 1, permissions: { requireOsSandbox: false } });
+  assert.strictEqual(req(off), false, 'FR-209: false is honoured from a trusted file');
+  // each failure is unreadable, so the sandbox is required, and says why
+  const cases: Array<[string, (m: Map<string, Node>) => void, RegExp]> = [
+    ['folder present, file missing', (m) => { m.delete(D + '/policy.json'); }, /missing/],
+    ['file broken (not JSON)', (m) => { m.get(D + '/policy.json')!.text = '{"version": 1, "permissions": '; }, /not valid JSON/],
+    ['no version 1', (m) => { m.get(D + '/policy.json')!.text = '{"permissions": {"requireOsSandbox": false}}'; }, /version 1/],
+    ['not root-owned', (m) => { m.get(D + '/policy.json')!.uid = 501; }, /owned by root/],
+    ['a world-writable parent', (m) => { m.get('/Library/Application Support')!.mode = 0o777; }, /folder above/],
+    ['a group-writable folder', (m) => { m.get(D)!.mode = 0o775; }, /folder above/],
+    ['symlinked to a user-writable file', (m) => { m.set('/Users/me/evil.json', { kind: 'file', uid: 501, mode: 0o644, ino: 7, text: '{"version":1,"permissions":{"requireOsSandbox":false}}' }); m.set('/Users/me', { kind: 'dir', uid: 501, mode: 0o755 }); m.set('/Users', { kind: 'dir', uid: 0, mode: 0o755 }); m.set(D + '/policy.json', { kind: 'link', to: '/Users/me/evil.json' }); }, /owned by root/],
+    ['over 256 KiB', (m) => { m.get(D + '/policy.json')!.size = POLICY_MAX_BYTES + 1; }, /256 KiB/],
+  ];
+  for (const [what, change, why] of cases) {
+    const m = root();
+    change(m);
+    const r = read(m);
+    assert.ok(r.layer === 'unreadable' && why.test(r.problem), `FR-209 ${what}: unreadable with its reason (${JSON.stringify(r)})`);
+    assert.strictEqual(req(m), true, `FR-209 ${what}: the sandbox is required`);
+  }
+  // a file swapped between the checks and the read (another inode opened) is refused
+  {
+    const f = fakeFs(root());
+    const swapped: PolicyFs = { ...f, readNoFollow: (p, max) => { const r = f.readNoFollow(p, max); return { bytes: r.bytes, st: { ...r.st, ino: 100 } }; } };
+    const r = readMachinePolicy('darwin', swapped);
+    assert.ok(r.layer === 'unreadable' && /changed while it was checked/.test(r.problem), 'FR-209: swapped after the checks: unreadable');
+  }
+  // the reason is logged, once per distinct problem (nobody is locked out without one)
+  const lines: string[] = [];
+  const broken = root(); broken.get(D + '/policy.json')!.text = 'nope';
+  requireOsSandbox(() => read(broken), (l) => lines.push(l));
+  requireOsSandbox(() => read(broken), (l) => lines.push(l));
+  assert.strictEqual(lines.length, 1, 'logged once');
+  assert.ok(/could not be read \(policy.json is not valid JSON\): the OS sandbox is required/.test(lines[0]) && !lines[0].includes('nope'), `FR-209: the reason, never the content: ${lines[0]}`);
+  // the refusal the person sees names the organization (spec 087 FR-019)
+  const claudeSrc = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'adapters', 'claude.ts'), 'utf8');
+  assert.ok(claudeSrc.includes('Your organization requires the OS sandbox in Read-only and Ask first, so Durbar cannot continue without it.'), 'the refusal sentence exists');
+  ok('FR-209: the machine policy.json: fixed paths, trust check after realpath on every level (links, writable parents), size cap, JSON and version, unreadable requires the sandbox and says why');
 }
 console.log('sandbox floor (spec 087): all checks passed');
 FLOOR_DONE = true;
