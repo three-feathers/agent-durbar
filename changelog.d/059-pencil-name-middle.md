@@ -1,0 +1,1 @@
+- **A click on a short name opens the chat again** (spec 059, issue #1067): on a desk card with no room beside a short name, the hidden rename pencil's click area could cover the middle of the name, so a click there started a rename. The pencil now keeps clear of the name's middle. Checked with `check-rename-inline` at both sizes (simulator).

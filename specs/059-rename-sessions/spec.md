@@ -335,6 +335,13 @@ All answered with option A (see *Clarifications*); kept here for the record of t
 
 ## Changes
 
+### 2026-11-04: the pencil's hit box never covers the middle of a short name (issue #1067)
+
+*Seen* (Mac session, simulator, 2026-11-03): on a short name with no room beside it (for example "Priya" or "Hugo" at 1280x800 with 15 agents), a click on the middle of the name opened rename instead of the chat. `placeRen` kept the pencil's 16 px **glyph** in the right half of the name, but the button's 24 px **box** (a 24 px target, spec 052) starts 4 px left of the glyph, so the box could cover the name's middle. The box is invisible until hover, and still takes clicks.
+
+- Item 2 (desk card and list row), placement: when the pencil has no room beside the name, the whole 24 px box sits right of the name's middle (its left edge 2 px past the middle), so a click on the name's middle always opens the chat, as item 2 says.
+- `sim:` `scripts/check-rename-inline.js` (in `check:ui`): at 1440x900 and 1280x800 with 15 agents, for every desk card whose pencil is on the name's line, the element at the name's horizontal middle is the card, not the pencil, and the pencil's box starts at or after the middle. The simulator's own layouts rarely put a pencil over a name, so the driver also makes the case on purpose: the shortest name, on a card narrowed (a stylesheet rule) so the pencil has no room beside it. Mutant: the old placement fails `1440: on a short name with no room, the pencil box leaves the name's middle to the card (issue #1067)`.
+- `[KNOWN GAP]` Not fixed here: `shots-001-live-activity` (not in `check:ui`) still fails on macOS with `pencil sim-2 covers intent{unit:sim-2}` at 1440x900 dense, as it does on main. That is the pencil's glyph against the line below the name, a vertical overlap with another cause; issue #1067 stays open for it.
 ### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
 
 The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
