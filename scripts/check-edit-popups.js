@@ -22,7 +22,8 @@
  * The inbox and the keyboard sheet have no field: a drag from inside the box that ends on the backdrop keeps them, a click there closes.
  * macOS (issue #683): a synthetic Cmd+A, Home or Shift+End reaches the renderer but does not select or move there, so on darwin those
  * steps assert only that the app does not take the key (the popup stays, the text is unchanged); the page selects or moves the caret
- * itself where a later step needs it, and the selection checks of the mouse steps (drag, double-click) are skipped too.
+ * itself where a later step needs it, and the selection checks of the mouse steps (drag, double-click) are skipped too. A number field
+ * has no setSelectionRange (selectionStart is null), so on darwin the page calls its select() instead (#1103), and typing must replace it.
  * EP_ONLY=<regex> runs some kinds; EP_KEEP=1 lists every miss instead of stopping (a survey of an older build, never a pass).
  * A miss prints DRIVER FAILED (Electron still exits 0), so the suite fails unless "all checks passed" is printed.
  */
@@ -80,10 +81,15 @@ module.exports = async (ctx) => {
     let ri = await rect(k.input), box = await rect(k.box), r;
     const fy = Math.min((ri.t + ri.b) / 2, ri.t + 14); /* the first text line (a textarea's middle is under its text) */
     // 1. click in the field, select all, type
+    if (num) { /* #1103: the number field must hold an old value, or "typing replaces it" is not tested (it starts empty when no limit was set yet) */
+      const old = await js(`(()=>{const i=document.querySelector(${jsLiteral(k.input)});if(i.value==='')i.value='50';return i.value})()`);
+      assert.ok(old !== '' && old !== TEXT, `${t}: the number field holds another value before the typing: ${jsLiteral(old)}`);
+    }
     clickAt(ri.l + 8, fy); await ctx.sleep(SETTLE);
     assert.ok(await isOpen(), `${t}: a click in the field keeps the popup open`);
     await H.key('A', [MOD], { char: 'never' });
     if (MAC && !num) await pageSel(k.input, 0, null); /* #683: a synthetic Cmd+A does not select on macOS; the page does, so typing replaces */
+    if (MAC && num) await js(`document.querySelector(${jsLiteral(k.input)}).select()`); /* #1103: a number field has no setSelectionRange, but select() selects its value, so typing replaces it */
     wc().insertText(TEXT);
     r = await fieldUntil(k.input, `i.value===${jsLiteral(TEXT)}&&f`);
     assert.ok(r.ok, `${t}: typed into the field: ${jsLiteral(r.f)}`);

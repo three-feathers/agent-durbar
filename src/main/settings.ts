@@ -154,6 +154,20 @@ export class SettingsStore {
     return this.commit(next) ? { ok: true, value: v } : { ok: false, value: this.seriousMode };
   }
 
+  /** Auto-follow work (spec 052 FR-182, issue 686): off by default; only `true` is written. */
+  get autoFollowWork(): boolean {
+    return this.s.autoFollowWork === true;
+  }
+
+  /** Only a real boolean changes it; anything else keeps the current value. Returns `{ ok, value }`: `ok` only when the write reached disk, `value` the one in force (issue #1094). */
+  setAutoFollowWork(v: unknown): Saved<boolean> {
+    if (typeof v !== 'boolean') return { ok: false, value: this.autoFollowWork };
+    const next: AppSettings = { ...this.s };
+    if (v) next.autoFollowWork = true;
+    else delete next.autoFollowWork;
+    return this.commit(next) ? { ok: true, value: v } : { ok: false, value: this.autoFollowWork };
+  }
+
   /** Spec 087 FR-007c: the apps with *Always continue on this computer* stored. */
   sandboxAlwaysContinue(app: string): boolean {
     return (this.s.sandboxAlwaysContinue ?? []).includes(app);
