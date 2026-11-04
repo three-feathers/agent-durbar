@@ -79,7 +79,9 @@ module.exports = async (ctx) => {
   const pending = `window.__durbarSimUi&&document.body.classList.contains('panel-open')&&!!document.querySelector('#chat .chat-inner')`;
   const median = (a) => a.slice().sort((x, y) => x - y)[Math.floor(a.length / 2)];
 
-  for (const [w, h] of (process.env.CVWH ? [process.env.CVWH.split('x').map(Number)] : [[1440, 900], [1280, 800]].filter(([sw]) => !process.env.CVONLY || String(sw) === process.env.CVONLY))) {
+  const SIZES = process.env.CVWH ? [process.env.CVWH.split('x').map(Number)] : [[1440, 900], [1280, 800]].filter(([sw]) => !process.env.CVONLY || String(sw) === process.env.CVONLY);
+  assert.ok(SIZES.length > 0, `CVONLY=${process.env.CVONLY} matches no size (use 1440 or 1280): nothing would be checked`);
+  for (const [w, h] of SIZES) {
     const tag = `${w}x${h}`;
     const id = await open(w, h);
 
