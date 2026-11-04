@@ -708,10 +708,11 @@
   function second(art, key, id, rect, file, cls, m) {
     const prev = art._k.get(key), on = !!prev && prev._file === file && prev._ok;
     const b = el(art, key, 'img', cls + (on ? ' m-b m-' + m.style : '') + (OFF.has(id) ? ' ro-off' : ''));
-    box(b, rect); b.dataset.for = id; setVar(b, '--ro-per', m.period + 's'); setVar(b, '--ro-sw', m.sway + 's'); setVar(b, '--ro-u', (rect.h / 100).toFixed(3) + 'px');
-    if (b._file !== file) {
+    box(b, rect); dset(b, 'for', id); setVar(b, '--ro-per', m.period + 's'); setVar(b, '--ro-sw', m.sway + 's'); setVar(b, '--ro-u', (rect.h / 100).toFixed(3) + 'px');
+    const fresh = b._file !== file;
+    img(b, file, true, rect.w); /* FR-183: the second frame takes the same size as the first (its `sizes` follows the shown width on every render, as the first's does) */
+    if (fresh) {
       b._file = file; b._ok = false; b._clock = false;
-      img(b, file, true);
       b.decode().then(() => { if (b._file === file) { b._ok = true; if (onArt) onArt(); } }, () => {});
     }
     return { b, on };
@@ -951,8 +952,9 @@
   }
 
   /* a chip is [alert icon] + name; the icon is the app's own Alert sign (app.js signIcon, built from trusted markup, not the model's
-     text; constitution V: no emoji), the name goes in with textContent. `label` is the name; a crowded chip shows initials, stagger()
-     keeps the full name in data-full, and a render does not write the name back only for stagger() to cut it again (FR-184). */
+     text; constitution V: no emoji), the name goes in with textContent. `label` is the name. When stagger() has cut a crowded chip's
+     name (the whole name kept in data-full), a render with the same name leaves the cut text as it is: the chip keeps the text it was placed
+     with when the lobby's signature holds and stagger() does not run again (FR-184); a new name or icon clears data-full and writes the name. */
   function chipFill(ch, label, wait, icon) {
     const w = wait && icon ? icon : '';
     if (ch._ic !== w || !ch.querySelector('.ro-cn')) {
@@ -964,8 +966,6 @@
     if (ch.dataset.full !== undefined) delete ch.dataset.full;
     text(ch.querySelector('.ro-cn'), label);
   }
-
-  /* the width of a text in a chip's font, without touching the chip (no write, no layout): what its initials will take */
 
   /* visitors' name chips stand above their heads (owner 2026-10-31 10:48: never over the feet or legs; the layout gives each its
      place); when two would touch, the chip takes the nearest free spot (up to 64 px left or right, up to three levels up, inside the

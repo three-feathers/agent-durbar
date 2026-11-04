@@ -1,6 +1,5 @@
 /*
  * Spec 097 FR-186, FR-178's Real office rows (this file; the flat rows are `check-office-ops.js`, one file each since the #941/#950 merge) (T149, T151, T153; part of T142): operation counts of Real office, never times. Simulator only, no AI credits.
- * `origin/097-flat-perf-has` and `097-flat-perf-layout` (#941, #950) have a file of this name with the flat rows: on a merge keep both, as `flat` and `real` parts.
  * At 15 and 40 agents, 1440x900, device pixel ratio 1 (emulated, so that every OS counts the same; FR-183 says what Retina does):
  *   - one status event of one agent through the normal path (`__durbarSimEmit`), waited for with until(), the median of 8 (simulator visits run on the wall clock, so
  *     a single reading can hold another agent's walk): renders, layout reads (offset*, client*, scroll*, getBoundingClientRect, getClientRects), nodes added or removed
@@ -8,7 +7,10 @@
  *   - elements recalculated by one text change (`UpdateLayoutTree.elementCount` of one short contentTracing, a count; animations off for the trace);
  *   - FR-180, FR-181: the running infinite animations (at most one per light whose state moves, none outside the lights), that each is stepped at most 8 changes a
  *     second and names only transform and opacity, no element with a blend mode; none running under reduced motion (emulated) and Serious mode (the Settings switch);
- *   - FR-183: natural area of the distinct pictures over the shown device-pixel area, also at 3 agents (big screens), which must not show a picture below its size.
+ *   - FR-183: natural area of the distinct pictures over the shown device-pixel area, also at 3 agents (big screens), which must not show a picture below its size;
+ *     read on a settled lobby (SETTLED): a simulator visit starts 600 ms after its call on the wall clock, so a read taken at once on an idle machine and later on a
+ *     loaded one saw different people (4 or 34 visitors at 40 agents, a ratio of 2.81 or 4.05 to 4.65; review on #969).
+ * Every row over its limit fails; a KNOWN_FAILURES entry's `max` is what was measured plus a stated margin, so a regression under a known failure still fails.
  * A row over its limit today is named in KNOWN_FAILURES with its fix task and the most it may reach meanwhile; that task's PR deletes the entry.
  *
  *   npm run check:ui -- --only check-office-ops-real      (builds first)
@@ -22,20 +24,25 @@ const { contentTracing } = require('electron');
 const { helpers, jsLiteral } = require('./driver-helpers');
 
 const LIMITS = { rendersPerStatus: 1, readsPerStatus: 5, nodesPerStatus: 0, attrWritesPerStatus: 10, elementsRecalculated: 50, pictureArea: 4, animationsOverLights: 0, animationsOffLights: 0, animationsUnstepped: 0, animationsOtherProperty: 0, lightsBoxShadow: 0, stepsPerSecond: 8, blendElements: 0, animationsStill: 0 };
+/* Measured 2026-11-04 at the head that answers the review on #969, Linux under xvfb, 13 runs, 8 updates each (idle and under a CPU load): reads 15 and nodes 22 in
+   every update at 15 and 40 agents; attribute writes 40 and 34 by turns at 15 (median 40), 48 and 42 at 40 (median 48). Margin: 2 on each (one more node pair or a
+   few more writes than measured fail). Spec 097, Changes 2026-11-04 (review on #969) */
 const KNOWN_FAILURES = {
   /* T149 left: about 24 and 32 attribute writes are the change itself, as the desks re-sort on a status change (measured 2026-11-04 with drawSlips returning at once: reads 3, nodes 0, attribute writes 24 at 15 agents and 32 at 40; FR-190: the budget of 10 may need moving) */
-  'attrWritesPerStatus@15': { task: 'T149 (desks re-sorting) and T184 (slips)', max: 60 },
-  'attrWritesPerStatus@40': { task: 'T149 (desks re-sorting) and T184 (slips)', max: 90 },
+  'attrWritesPerStatus@15': { task: 'T149 (desks re-sorting) and T184 (slips)', max: 42 },
+  'attrWritesPerStatus@40': { task: 'T149 (desks re-sorting) and T184 (slips)', max: 50 },
   /* T184: the slips (spec 097 FR-121..FR-124, drawSlips, main) are drawn again on a status update. Measured 2026-11-04 with drawSlips returning at once:
      nodes 22 to 0, layout reads 15 to 3, attribute writes 40 to 24 (15 agents) and 48 to 32 (40): so all 22 nodes, 12 of the 15 reads and 16 attribute writes are the slips'.
      Not known: why they are redrawn (whether the simulator's update really changes a slip's content, or their signature changes without it) */
-  'readsPerStatus@15': { task: 'T184, the slips redrawn on a status update', max: 20 },
-  'readsPerStatus@40': { task: 'T184, the slips redrawn on a status update', max: 20 },
-  'nodesPerStatus@15': { task: 'T184, the slips redrawn on a status update', max: 30 },
-  'nodesPerStatus@40': { task: 'T184, the slips redrawn on a status update', max: 30 },
+  'readsPerStatus@15': { task: 'T184, the slips redrawn on a status update', max: 17 },
+  'readsPerStatus@40': { task: 'T184, the slips redrawn on a status update', max: 17 },
+  'nodesPerStatus@15': { task: 'T184, the slips redrawn on a status update', max: 24 },
+  'nodesPerStatus@40': { task: 'T184, the slips redrawn on a status update', max: 24 },
 };
 
 const REAL = `!!document.querySelector('#stage .ro .ro-plate')&&[...document.querySelectorAll('#stage .ro img')].every(i=>i.complete)`;
+/* the lobby as it stays: every script replayed, no visit waiting to start or end (places.js settled()), no render queued (settleNow draws it), no picture fading out, every picture decoded */
+const SETTLED = `!!window.__durbarSimReplayed&&window.__durbarSimUi.visitsSettled()&&window.__durbarSimUi.settleNow()&&!document.querySelector('#stage .ro-ghost')&&${REAL}`;
 const med = (a) => [...a].sort((x, y) => x - y)[Math.floor(a.length / 2)];
 
 async function trace(fn) {
@@ -49,11 +56,11 @@ async function trace(fn) {
   } finally { fs.rmSync(file, { force: true }); }
 }
 
-/** Sum of `elementCount` of the renderer main thread's UpdateLayoutTree events. */
+/** Sum of `elementCount` of the renderer main thread's UpdateLayoutTree events, and how many events of that thread the trace holds at all. */
 function elementsRecalculated(events) {
   const names = new Map(events.filter((e) => e.ph === 'M' && e.name === 'thread_name').map((e) => [`${e.pid}:${e.tid}`, e.args.name]));
-  return events.filter((e) => e.name === 'UpdateLayoutTree' && names.get(`${e.pid}:${e.tid}`) === 'CrRendererMain')
-    .reduce((s, e) => s + ((e.args && e.args.elementCount) || 0), 0);
+  const main = events.filter((e) => e.ph !== 'M' && names.get(`${e.pid}:${e.tid}`) === 'CrRendererMain');
+  return { count: main.filter((e) => e.name === 'UpdateLayoutTree').reduce((s, e) => s + ((e.args && e.args.elementCount) || 0), 0), mainEvents: main.length };
 }
 
 /* The counters, in the page: renders, layout reads, nodes and attribute writes between `start()` and `stop()` */
@@ -103,14 +110,25 @@ module.exports = async (ctx) => {
 
   // ---- FR-183 at big screens ----
   await load(3);
-  await H.until(REAL, 15000);
+  assert.ok(await H.until(SETTLED, 20000), '3 agents: the lobby settled');
   const big = await js(AREA);
   rows['pictureArea@3'] = big.ratio;
   console.log('[ops] 3 agents, pictures:', JSON.stringify(big));
   assert.deepStrictEqual(big.under, [], 'big screens: no picture is shown larger than it is');
 
+  // ---- FR-183 with the people moving (romotion=1): a pose's second frame takes the same size as its first, so the half-size set holds with motion on ----
+  await load(15, { romotion: '1' });
+  assert.ok(await H.until(`(${SETTLED})&&document.querySelectorAll('#stage :is(.ro-person2,.ro-visitor2).m-b').length>0`, 20000), 'motion on: second frames running: ' + JSON.stringify(await js(`[...document.querySelectorAll('#stage :is(.ro-person2,.ro-visitor2,.ro-rig)')].map(e=>e.className)`)));
+  const pair = await js(`[...document.querySelectorAll('#stage :is(.ro-person2,.ro-visitor2)')].map(b=>{const a=document.querySelector('#stage :is(.ro-person,.ro-visitor)[data-for="'+CSS.escape(b.dataset.for)+'"]');return [b.dataset.for,/\.h\.webp$/.test(a&&a.currentSrc||''),/\.h\.webp$/.test(b.currentSrc)];})`);
+  const moving15 = await js(AREA);
+  rows['pictureArea@15motion'] = moving15.ratio;
+  console.log('[ops] 15 agents with motion, pictures:', JSON.stringify(moving15), 'second frames', pair.length);
+  assert.ok(pair.length > 0, 'motion on: second frames to compare');
+  assert.deepStrictEqual(pair.filter(([, a, b]) => a !== b), [], 'FR-183: a second frame is half size exactly when its first frame is ([id, first half, second half])');
+
   for (const n of [15, 40]) {
     await load(n);
+    assert.ok(await H.until(SETTLED, 20000), `${n} agents: the lobby settled`);
     assert.strictEqual(await js(`document.querySelector('#stage .ro').dataset.big==='1'`), false, `${n} agents are not big screens`);
     const area = await js(AREA);
     rows[`pictureArea@${n}`] = area.ratio;
@@ -130,7 +148,7 @@ module.exports = async (ctx) => {
     rows[`blendElements@${n}`] = a.blend;
     /* T151: what the moving lights make the main thread paint: logged, never asserted (a number of a stretch of time) */
     for (let t = 0; t < 3; t++) {
-      const tick = await trace(() => ctx.sleep(2200));
+      const tick = await trace(() => ctx.sleep(2200)); /* FR-048b: a measurement window of a fixed length (what 2.2 s of moving lights paint), not a wait for a state */
       const main = new Map(tick.filter((e) => e.ph === 'M' && e.name === 'thread_name').map((e) => [`${e.pid}:${e.tid}`, e.args.name]));
       const count = (name) => tick.filter((e) => e.name === name && main.get(`${e.pid}:${e.tid}`) === 'CrRendererMain').length;
       console.log('[ops]', n, 'agents, in 2.2 s of moving lights, main thread: Paint', count('Paint'), 'UpdateLayoutTree', count('UpdateLayoutTree'), 'PrePaint', count('PrePaint'), 'Layerize', count('Layerize'), '(logged only)');
@@ -170,8 +188,14 @@ module.exports = async (ctx) => {
     const change = (i) => js(`(()=>{document.querySelector('#stage .ro-plate .ro-l2').textContent=${jsLiteral('Op ')}+${i};return document.body.offsetHeight;})()`);
     await change(0);
     await frames();
+    /* a trace that holds no event of the renderer's main thread did not record it (seen under a CPU load: 2 0 2 2): taken again, up to 4 more times; a trace
+       that recorded the thread but no recalculation still fails below */
     const counts = [];
-    for (let i = 1; i <= 4; i++) counts.push(elementsRecalculated(await trace(() => change(i))));
+    for (let i = 1, again = 0; counts.length < 4; i++) {
+      const r = elementsRecalculated(await trace(() => change(i)));
+      if (r.mainEvents === 0 && again < 4) { again++; console.log('[ops]', n, 'agents, a trace without the renderer main thread, taken again'); continue; }
+      counts.push(r.count);
+    }
     assert.ok(counts.every((c) => c > 0), `${n} agents: a replaced text node must recalculate some element; a trace with none means the trace's thread or event name changed (${counts})`);
     rows[`elementsRecalculated@${n}`] = Math.max(...counts);
     console.log('[ops]', n, 'agents, elements recalculated by one text change:', counts.join(' '));
