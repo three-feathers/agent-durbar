@@ -8,7 +8,8 @@
  *      10 frames later with the pin on, and new text keeps it at the end;
  *   2. scrolled up 400 px above the end (near enough that collapsing clamps it): the same trip leaves scrollTop and the pin off as they were,
  *      held over frames, and new text does not move it;
- *   3. the Chat content keeps its width while collapsed (the cause: it re-wrapped wider, shorter, and grew back with no scroll event).
+ *   3. the Chat content keeps its width while collapsed (the cause: it re-wrapped wider, shorter, and grew back with no scroll event);
+ *   all of it again with a classic scrollbar (15 px, injected style), where the collapsed chat would lose the scrollbar's width.
  * Waits are conditions or counts of frames, never a fixed sleep. A miss prints DRIVER FAILED.
  */
 const assert = require('assert');
@@ -36,9 +37,11 @@ module.exports = async (ctx) => {
     return { w0, wc };
   };
 
-  for (const [w, h] of [[1440, 900], [1280, 800]]) {
-    const tag = `${w}x${h}`;
+  for (const [w, h, sb] of [[1440, 900, false], [1280, 800, false], [1440, 900, true], [1280, 800, true]]) {
+    const tag = `${w}x${h}${sb ? ' classic scrollbar' : ''}`;
     await H.load({ w, h, ready: 'fit', focus: true });
+    /* a classic scrollbar (Windows, Linux, macOS "always show"; FR-235) takes 15 px that overflow:hidden on the collapsed chat would give back */
+    if (sb) await js(`(()=>{const st=document.createElement('style');st.textContent='#chat::-webkit-scrollbar{width:15px;background:#ddd}#chat::-webkit-scrollbar-thumb{background:#888}';document.head.append(st);})()`);
     const o = await H.openSimAgent(`a=>a.id===${jsLiteral(ID)}`, '#panelTabs');
     assert.ok(o.ok, `${tag}: the chat and its tabs are open: ${JSON.stringify(o.seen)}`);
     await H.settle();
@@ -64,9 +67,9 @@ module.exports = async (ctx) => {
     assert.ok(s.gap < 2 && s.pin === '1', `${tag}: still at the end 10 frames later: ${JSON.stringify(s)}`);
     await emit({ type: 'status', status: 'working', intent: 'Working' }); await stream(300); await stream(301); await frames(10);
     s = await st();
-    assert.ok(s.gap < 24 && s.pin === '1', `${tag}: new text keeps it at the end (two streamed blocks are 400 px; a last wrapped line may land a frame after the write, under 24 px): ${JSON.stringify(s)}`);
+    assert.ok(s.gap < 24 && s.pin === '1', `${tag}: new text keeps it at the end (two streamed blocks are 400 px; a stable offset of about 10 px with the pin on also shows after new text on main, cause unknown, not frame lag, so under 24 px passes): ${JSON.stringify(s)}`);
 
-    assert.strictEqual(wd.wc, wd.w0, `${tag}: the messages keep their width while the chat is collapsed`);
+    assert.strictEqual(wd.wc, wd.w0, `${tag}: the messages keep their width while the chat is collapsed (Chat ${wd.w0} px, collapsed ${wd.wc} px)`);
 
     // 2. scrolled up near the end
     await js(`(()=>{const c=document.getElementById('chat');c.scrollTop=c.scrollHeight-c.clientHeight-400;})()`);

@@ -419,7 +419,7 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .btn.danger{color:var(--red-ink)}
 .btn.danger:hover{background:var(--tone-bad-soft);border-color:var(--tone-bad-line);color:var(--tone-bad-ink)}
 .btn svg{width:15px;height:15px;flex:none}
-#chat{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding:16px;display:flex;flex-direction:column;gap:12px}
+#chat{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding:16px;scrollbar-gutter:stable;display:flex;flex-direction:column;gap:12px}
 .chat-inner{display:flex;flex-direction:column;gap:12px;min-width:0}
 /* spec 005 FR-210: when a chat is closed its older messages get .cvo (cvMark), so reopening lays out only the ones near the view; an unseen one keeps the height it last had (auto), 90px before it was ever seen. Nothing is marked while the chat is open: a message the app has just added is measured at once (answer bar, notes) and a class change on a live message makes it jump to its 90px guess for a frame */
 .chat-inner>.cvo{content-visibility:auto;contain-intrinsic-block-size:auto 90px;overflow-clip-margin:14px}
