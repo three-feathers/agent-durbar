@@ -34,6 +34,7 @@ test:compressshots
 test:changelog
 test:releasevideo
 test:specsindex
+test:stillhighlights
 test:orgwords
 test:handoff
 test:toolusage
