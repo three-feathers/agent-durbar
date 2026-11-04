@@ -8345,7 +8345,7 @@ function startFolderEdit(r,surface,from){
 /* spec 059 (issue 1135): where each pencil's name was when it was placed. A live paint (paintLive) writes a card's text without a render, and a
    new line can move the names of its room: such a pencil is placed again, so it never stays on the line below */
 const REN_AT=new WeakMap();
-/* review of #1138: paintLive is the hot path, so it never reads layout for the pencils. It queues the lines it rewrote, and one animation frame per
+/* review of PR 1138: paintLive is the hot path, so it never reads layout for the pencils. It queues the lines it rewrote, and one animation frame per
    paint burst reads first (each line's height against the height it had: most new text does not wrap), then the names of the rooms whose line
    changed height, and only then places the pencils whose name moved (placeRen writes) */
 const LIVE_H=new WeakMap(), REN_PEND=new Set(); let renFrame=0;
