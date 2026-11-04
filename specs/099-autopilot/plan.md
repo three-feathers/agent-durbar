@@ -69,6 +69,8 @@ Autopilot on a schedule (FR-084) is out of the first build, pending the other tw
 
 ### Adapters
 
+Written once in `src/adapters/autopilotHost.ts` (Phase 2): the settings and run of one session, the 10 second wait, the clock sample, S3 and the fixed chat lines. `AUTOPILOT_WIRED` stays false until T030 (spec *Changes*).
+
 - **Copilot** (`copilot.ts`):
   - `setAutopilot` sets `live.autopilot` and calls `mode.set autopilot` or `interactive`;
   - `send` adds `agentMode: 'autopilot'`, `onUserInputRequest` auto-answers, and the elicitation is declined;
@@ -160,6 +162,7 @@ through the built adapters (T091, T092, T094) come after p2 and before `verified
 - No progress is a heuristic, and may stop a run that reads a lot before writing. Two unchanged continuations is a low bar,
   and the setting stays internal until real use.
 - A soft cap on Codex can overshoot by one turn. The dialog says so.
+- A Stop or Autopilot off can land while a send that starts a run waits (review on #967). Rule (FR-059): nothing an adapter sets for a run (the cap, the open turn, the run) is set for good before its last wait; after that wait it reads the Stop count and Autopilot again, and every way out before the run begins puts the cap back (Copilot `capForRun`, Claude Code `send`'s `finally`). Tests use gated fakes, never timers (T050).
 
 ## Complexity Tracking
 

@@ -34,7 +34,7 @@ module.exports = async (ctx) => {
     const helper = await js(`(()=>{const h=window.__durbarSimUi.agents().find(a=>a.parent&&document.querySelector('#stage .helper[data-id="'+CSS.escape(a.id)+'"]'));return h?h.id:null})()`);
     assert.ok(helper, `${tag}: a helper is on the office floor`);
     await js(`document.querySelector('#stage .helper[data-id="'+CSS.escape(${jsLiteral(helper)})+'"]').click()`);
-    await ok(`document.body.classList.contains('panel-open')&&!!document.querySelector('#panel .panel-in.ro')`, `${tag}: the helper's chat is open`);
+    await ok(`document.body.classList.contains('panel-open')&&!!document.querySelector('#panel .panel-in.helper-ro')`, `${tag}: the helper's chat is open`);
     await H.settle();
     await ok(`!!document.querySelector('#chat .sub-ro [data-parentchat]')`, `${tag}: the helper's chat has the Sub-agent activity bar`);
     /* a long log under the bar */
@@ -59,7 +59,7 @@ module.exports = async (ctx) => {
     await H.shot(path.join(OUT, `015-helper-bar-end-${tag}.png`), { prep: 'calm', settle: true, tag: 'helper-bar', what: 'end ' + tag });
 
     await js(`document.querySelector('#chat .sub-ro [data-parentchat]').click()`);
-    await ok(`!document.querySelector('#panel .panel-in.ro')&&document.body.classList.contains('panel-open')`, `${tag}: Back to parent chat shows the parent's chat`);
+    await ok(`!document.querySelector('#panel .panel-in.helper-ro')&&document.body.classList.contains('panel-open')`, `${tag}: Back to parent chat shows the parent's chat`);
     console.log('[helper-bar]', tag, 'ok');
   }
   console.log('all checks passed');

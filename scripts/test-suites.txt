@@ -85,6 +85,10 @@ test:authcheck
 test:account
 test:autherrors
 test:autopilot
+test:autopilot-copilot
+test:autopilot-claude
+test:autopilot-codex
+test:autopilot-reach
 test:elicit
 test:macos
 test:profiledir
