@@ -13,18 +13,20 @@ export type Lamp = 'warm' | 'bright' | 'on' | 'low' | 'off';
 export type Glow = 'on' | 'breathe' | 'red' | 'low' | 'off';
 export type Call = 'amber' | 'red' | 'orange' | 'green-once' | null;
 export type Motion = 'pulse' | 'breathe' | 'fade' | null;
-export interface Light { lamp: Lamp; glow: Glow; call: Call; motion: Motion }
+/** FR-237: the monitor light bar's colour (FR-049's fixed light colours, never a theme's). */
+export type Bar = 'amber' | 'red' | 'orange' | 'green' | 'off';
+export interface Light { lamp: Lamp; glow: Glow; call: Call; motion: Motion; bar: Bar }
 
 /** FR-041, one row per state (the table of the spec, in its order). */
 export const LIGHT_TABLE: Readonly<Record<LightState, Light>> = {
-  working: { lamp: 'warm', glow: 'on', call: null, motion: null },
-  thinking: { lamp: 'on', glow: 'breathe', call: null, motion: 'breathe' },
-  waiting: { lamp: 'bright', glow: 'on', call: 'amber', motion: 'pulse' },
-  error: { lamp: 'on', glow: 'red', call: 'red', motion: null },
-  limit: { lamp: 'on', glow: 'on', call: 'orange', motion: null },
-  done: { lamp: 'low', glow: 'low', call: 'green-once', motion: 'fade' },
-  idle: { lamp: 'low', glow: 'low', call: null, motion: null },
-  asleep: { lamp: 'off', glow: 'off', call: null, motion: null },
+  working: { lamp: 'warm', glow: 'on', call: null, motion: null, bar: 'off' },
+  thinking: { lamp: 'on', glow: 'breathe', call: null, motion: 'breathe', bar: 'off' },
+  waiting: { lamp: 'bright', glow: 'on', call: 'amber', motion: 'pulse', bar: 'amber' },
+  error: { lamp: 'on', glow: 'red', call: 'red', motion: null, bar: 'red' },
+  limit: { lamp: 'on', glow: 'on', call: 'orange', motion: null, bar: 'orange' },
+  done: { lamp: 'low', glow: 'low', call: 'green-once', motion: 'fade', bar: 'off' },
+  idle: { lamp: 'low', glow: 'low', call: null, motion: null, bar: 'off' },
+  asleep: { lamp: 'off', glow: 'off', call: null, motion: null, bar: 'off' },
 };
 
 const lightOwn = (o: object, k: string): boolean => Object.prototype.hasOwnProperty.call(o, k);
@@ -42,11 +44,13 @@ export function lightState(status: string, flags?: { limit?: boolean; paused?: b
   return lightOwn(LIGHT_TABLE, s) ? (s as LightState) : 'idle';
 }
 
-/** FR-041 and FR-047: the light of one desk. With `still` (reduced motion or Serious mode) nothing pulses, breathes or fades: the
+/** FR-041, FR-047 and FR-237: the light of one desk. `unread` (DurbarUnread's `isUnread`; never for a helper) turns an off bar green. With `still` (reduced motion or Serious mode) nothing pulses, breathes or fades: the
  *  pulsing call light stays at its bright level, the done tick shows without a fade. */
-export function lightFor(state: string, opts?: { still?: boolean }): Light {
+export function lightFor(state: string, opts?: { still?: boolean; unread?: boolean }): Light {
   const row = LIGHT_TABLE[lightState(state)];
-  return opts && opts.still ? { ...row, motion: null } : { ...row };
+  /* FR-237: an unread reply lights an off bar green; amber, red and orange (the light state) always come first, so a new reply never hides a need */
+  const bar: Bar = row.bar === 'off' && opts && opts.unread ? 'green' : row.bar;
+  return opts && opts.still ? { ...row, motion: null, bar } : { ...row, bar };
 }
 
 /** FR-107: the lamp state in words, the same in every world (a flame or a neon strip is still "Lamp"): for the hover card, the chat header and the desk-side plate,
