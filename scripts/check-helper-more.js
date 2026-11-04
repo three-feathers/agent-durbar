@@ -4,7 +4,7 @@
  *
  *   npm run check:ui -- --only check-helper-more
  *
- * At 1440x900 and 1280x800 (SIM=15): a helper's chat (the read-only .panel-in.ro) shows no visible #moreBtn and no open menu; going back
+ * At 1440x900 and 1280x800 (SIM=15): a helper's chat (the read-only .panel-in.helper-ro) shows no visible #moreBtn and no open menu; going back
  * and opening a main agent's chat shows #moreBtn, its menu holds at least one item and opens with the button inside the chat header's
  * bounds. Every wait is until() and its result is asserted. A miss prints DRIVER FAILED.
  */
@@ -25,7 +25,7 @@ module.exports = async (ctx) => {
     const helper = await js(`(()=>{const h=window.__durbarSimUi.agents().find(a=>a.parent&&document.querySelector('#stage .helper[data-id="'+CSS.escape(a.id)+'"]'));return h?h.id:null})()`);
     assert.ok(helper, `${tag}: a helper is on the office floor`);
     await js(`document.querySelector('#stage .helper[data-id="'+CSS.escape(${jsLiteral(helper)})+'"]').click()`);
-    await ok(`document.body.classList.contains('panel-open')&&!!document.querySelector('#panel .panel-in.ro')`, `${tag}: the helper's chat is open`);
+    await ok(`document.body.classList.contains('panel-open')&&!!document.querySelector('#panel .panel-in.helper-ro')`, `${tag}: the helper's chat is open`);
     await H.settle();
     const hm = await more();
     assert.deepStrictEqual(hm, { btn: false, items: 0, menuOpen: false }, `${tag}: a helper's chat has no visible More button: ${JSON.stringify(hm)}`);
@@ -34,7 +34,7 @@ module.exports = async (ctx) => {
     const main = await js(`(()=>{const a=window.__durbarSimUi.agents().find(a=>!a.parent&&a.live&&document.querySelector('#stage .desk[data-id="'+CSS.escape(a.id)+'"]'));return a?a.id:null})()`);
     assert.ok(main, `${tag}: a main agent's desk is on the office floor`);
     await js(`document.querySelector('#stage .desk[data-id="'+CSS.escape(${jsLiteral(main)})+'"]').click()`);
-    await ok(`document.body.classList.contains('panel-open')&&!document.querySelector('#panel .panel-in.ro')&&!!document.getElementById('moreBtn')`, `${tag}: a main agent's chat is open`);
+    await ok(`document.body.classList.contains('panel-open')&&!document.querySelector('#panel .panel-in.helper-ro')&&!!document.getElementById('moreBtn')`, `${tag}: a main agent's chat is open`);
     await H.settle();
     const mm = await more();
     assert.ok(mm.btn && mm.items >= 1, `${tag}: a main agent's chat keeps More with items: ${JSON.stringify(mm)}`);
