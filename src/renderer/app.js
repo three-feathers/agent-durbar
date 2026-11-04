@@ -206,6 +206,9 @@ const ACT=window.DurbarActivity;
 let SERIOUS=false; /* Serious mode (Settings): no mood drawings at all */
 /* spec 052 FR-069: Serious mode also stops every looping animation (styles.css, html[data-serious]) */
 function markSerious(){document.documentElement.toggleAttribute('data-serious',SERIOUS);}
+/* spec 001 FR-192 (WCAG 2.2.2): Settings > Still highlights (no motion): the desk glow and the New badge stay, the person and the badge do not move (styles.css, html[data-still-highlights]) */
+let STILL_HL=false;
+function markStillHl(){document.documentElement.toggleAttribute('data-still-highlights',STILL_HL);}
 /* Spec 052 FR-031 (removed 2026-11-02): the Simple / Expert switch is gone and Expert is the only behaviour. A value stored by the old switch is dropped once. */
 try{localStorage.removeItem('durbar.detail');}catch(e){}
 /* spec 052 FR-099 (round 10): Spacing, Comfortable or Compact. Compact tightens the chrome only (chat, screens, dialogs, inbox); the top bar,
@@ -709,7 +712,7 @@ function scene(a,mini,c){
   const kit=THEME.sceneKit(); /* another theme's people and desks (spec 035 FR-013); the office kit is the code below */
   /* spec 040 FR-023: the signature names the theme too, so a theme switch redraws the desk (same signature = the old SVG is kept) */
   const tk=THEME.themeIdForCache();
-  if(kit!=='office'&&window.DurbarScenes){const v=window.DurbarScenes.draw(kit,a,{st,mood,k,mini,c,T:T_,shade,reduced:REDUCED||SERIOUS,themeKey:tk,art:kitArt(),crew:kit==='crew'?crewOf(a):'',crewFb:kit==='crew'&&CREW_BAD.has(crewOf(a))});if(v)return c?v:stillSig(v);}
+  if(kit!=='office'&&window.DurbarScenes){const v=window.DurbarScenes.draw(kit,a,{st,mood,k,mini,c,T:T_,shade,reduced:REDUCED||SERIOUS||STILL_HL,themeKey:tk,art:kitArt(),crew:kit==='crew'?crewOf(a):'',crewFb:kit==='crew'&&CREW_BAD.has(crewOf(a))});if(v)return c?v:stillSig(v);}
   let s=`<svg class="scene${c?' sc-c':''}" data-sig="${st}|${k.shirt}${k.skin}${k.hair}${k.style}${k.glasses?1:0}|${c?'c':mini?'m':'f'}|${tk}|${mood.body}${mood.trouble||''}${mood.coffee?'C':''}" viewBox="${c?'16 5 176 116':mini?'22 4 166 118':'0 0 200 124'}" aria-hidden="true" focusable="false">`;
   s+=`<ellipse cx="100" cy="118" rx="88" ry="3.5" fill="${T_('--scene-shadow')}" opacity=".06"/>`;
   /* compact scenes: flat halo rects + CSS-only animation (no blur filter, no SMIL) so 15 of them stay cheap */
@@ -761,7 +764,7 @@ function scene(a,mini,c){
   s+='<g class="pp">';
   s+=`<g class="${typing?'hand-l':''}">${armL(61,71,68,81)}${hand(68.5,81.4)}</g>`;
   if(st==='waiting'&&mood.trouble!=='impatient'&&mood.trouble!=='faint'){ /* impatient taps the desk, a fainted agent does not wave */
-    const wave = REDUCED||SERIOUS||c?'':`<animateTransform attributeName="transform" type="rotate" values="-4 87 71;6 87 71;-4 87 71" dur="2.8s" repeatCount="indefinite"/>`;
+    const wave = REDUCED||SERIOUS||STILL_HL||c?'':`<animateTransform attributeName="transform" type="rotate" values="-4 87 71;6 87 71;-4 87 71" dur="2.8s" repeatCount="indefinite"/>`;
     s+=`<g${c?' class="wave"':''}>${wave}${armL(87,71,97,46)}${hand(97.5,42.5)}</g>`;
   } else if(st==='idle'||mood.trouble==='faint'){
     s+=`<g>${armL(87,71,96,80)}${hand(97,80.5)}</g>`;
@@ -775,8 +778,8 @@ function scene(a,mini,c){
   s+='</svg>';
   return c?s:stillSig(s);
 }
-/* spec 052 FR-069: Serious mode draws full scenes without the SMIL wave; a mark in the signature redraws them when it is switched */
-function stillSig(svg){return SERIOUS?svg.replace(' data-sig="',' data-sig="still|'):svg;}
+/* spec 052 FR-069, spec 001 FR-192: Serious mode and Still highlights draw full scenes without the SMIL wave; a mark in the signature redraws them when either is switched */
+function stillSig(svg){return SERIOUS||STILL_HL?svg.replace(' data-sig="',' data-sig="still|'):svg;}
 /* ov (spec 077 FR-068, the Characters previews): {kit, crew} draw another kit or a given character than the office's own */
 function avatar(a,view,ov){
   const k=themedLook(a.look);
@@ -796,7 +799,10 @@ function holdTimer(t,ms,kill){
 /* spec 052 FR-170: with a chat open the toasts end above the composer (they sat on its left end); the bottom edge is read when a toast arrives */
 function placeToasts(){const box=$('toasts');if(!box)return;let top=innerHeight; /* the highest box a toast must stay above: the answer bar when it shows, else the composer */
   if(document.body.classList.contains('panel-open'))for(const e of [document.querySelector('#panel .composer'),$('answerBar')])if(e&&!e.hidden&&e.getClientRects().length)top=Math.min(top,e.getBoundingClientRect().top);
-  box.style.setProperty('--toast-b',(top<innerHeight?Math.ceil(innerHeight-top+12):16)+'px');}
+  box.style.setProperty('--toast-b',(top<innerHeight?Math.ceil(innerHeight-top+12):16)+'px');
+  /* spec 005 FR-190: and they start in the chat column, so they never cover the agent rail's rows */
+  const pi=document.body.classList.contains('panel-open')&&document.querySelector('#panel>.panel-in'),pl=pi&&pi.getClientRects().length?Math.round(pi.getBoundingClientRect().left):0;
+  box.style.setProperty('--toast-l',(pl+16)+'px');}
 let toastRO=null;
 function mountToast(t){const box=$('toasts');placeToasts();box.appendChild(t);
   if(window.ResizeObserver){if(!toastRO)toastRO=new ResizeObserver(placeToasts);toastRO.disconnect();for(const e of [document.querySelector('#panel .composer'),$('answerBar'),$('panel')])if(e)toastRO.observe(e);} /* the composer grows with a long message, the answer bar appears and goes */}
@@ -1722,7 +1728,7 @@ function renderReal(stage,floor,aw,ah,model,empty){
   }
   if(stage.dataset.d!=='real'){stage.dataset.d='real';stage.textContent='';}
   layoutKey='';GROW=0;setGrow(stage,0);spreadOffice(stage,false);stagePrev=null;
-  RO_LAST=window.DurbarRealOffice.render(stage,Object.assign(realModel(model),empty?{empty}:{}),{w:aw,h:ah},{live:liveOn(),still:REDUCED||SERIOUS,hold:roFrozen()||(!!APP_SETTINGS&&APP_SETTINGS.characterMotion===false),screenOf:realScreen,world:pp.world,set:pp.set,remember:rememberOn(), /* FR-071: the 096 Motion setting, once it exists, stops the people */
+  RO_LAST=window.DurbarRealOffice.render(stage,Object.assign(realModel(model),empty?{empty}:{}),{w:aw,h:ah},{live:liveOn(),still:REDUCED||SERIOUS||STILL_HL,hold:roFrozen()||(!!APP_SETTINGS&&APP_SETTINGS.characterMotion===false),screenOf:realScreen,world:pp.world,set:pp.set,remember:rememberOn(), /* FR-071: the 096 Motion setting, once it exists, stops the people */
     rand:CREW&&(SIM||!rememberOn())?CREW.seededRand:Math.random,onArt:()=>scheduleRender()});
   stage.style.width=aw+'px';stage.style.height=RO_LAST.height+'px';
   stage.dataset.fit=RO_LAST.scroll?'scroll':'ok';floor.classList.toggle('scrolls',!!RO_LAST.scroll);
@@ -1980,6 +1986,7 @@ function renderAll(){
   /* spec 052 FR-173: look in the view the focus was in. The office desks stay in the page (hidden) while the list shows, with the same data-id, so a document-wide lookup found the hidden desk and the focus fell to the page. */
   if(id&&!inPanel){const n=document.querySelector(`${scope}[${key}="${CSS.escape(id)}"]`); if(n&&ae!==n)n.focus({preventScroll:true});}
   if(ui.selected){updatePanelHeader();renderStrip();}
+  afTick(); /* spec 052 FR-182..FR-190: markers, arrivals and the strip */
   rememberUi();
   placePencils(ui.view==='office'?PLACE_ONLY:null,PLACE_DIRTY); INL().follow(); /* spec 059 FR-023 item 5: the open field follows its name; spec 097 FR-184: pencils only on the parts renderOffice rewrote */
   if(floorSwitchTimed)endFloorSwitchTiming();
@@ -2247,7 +2254,7 @@ function syncChatHeader(){
   if(!on){if(port0)port0.remove();return;}
   const pp=roPeople(), person=RO.personOf(a.id), v=VISITS.at(a.id), old=shutPlan(roomOf(a)).get(a.id)==='old'&&!v;
   const ls=E.lightState(isFailing(a)?'failing':isRetrying(a)?'retrying':isCompacting(a)?'compacting':vis(a),{limit:!!a.limit,paused:!!a.paused,asleep:old});
-  const lt=E.lightFor(ls,{still:REDUCED||SERIOUS}), words=E.lampWords(lt), pose=(E.SEAT_POSE||{})[ls]||'rest';
+  const lt=E.lightFor(ls,{still:REDUCED||SERIOUS||STILL_HL}), words=E.lampWords(lt), pose=(E.SEAT_POSE||{})[ls]||'rest';
   const file=person&&!v&&/^[a-z0-9-]{1,24}$/.test(person)?'realoffice/sets/'+pp.set+'/'+person+'-'+pose+'.webp':'';
   const pack=/^[a-z0-9-]{1,24}$/.test(pp.set)&&/^[a-z0-9-]{1,24}$/.test(pp.world);
   const key=[a.id,ls,words,file,stWord(a),v?v.place:'',helpersOf(a).length,pp.world,pp.set].join('|');
@@ -2276,6 +2283,7 @@ function updatePanelHeader(){
   const t=ph.querySelector('[data-f=task]'); t.textContent=taskText(a); t.title=taskText(a);
   const ug=ph.querySelector('[data-f=usage]'); ug.textContent=usageLong(a); ug.title=ug.textContent.endsWith(' est.')?USD_TIP:'';
   updateCapChip(a);
+  syncMoreBtn(); /* spec 005 FR-234 (issue 1145): no More button for a menu with no items */
   $('pauseBtn').querySelector('span').textContent=a.paused?'Resume':'Pause';
   syncRunState(); /* spec 005 FR-038: Send or Stop follows the turn */
   syncChatHeader(); /* spec 097 FR-106: the portrait and the lamp words follow the header */
@@ -2283,6 +2291,8 @@ function updatePanelHeader(){
 }
 /* spec 052 FR-003: the chat header's More menu. A real menu: arrows move, Home/End jump, Esc closes and returns focus to More;
    a choice or a click elsewhere closes it. The items are the old buttons with their ids, so their handlers stay as they were. */
+/* spec 005 FR-234 (issue 1145): a helper's More menu holds nothing (every item is for the session's own agent), so the button is hidden whenever the menu has no item; an open empty menu is closed */
+function syncMoreBtn(){const b=$('moreBtn'), m=$('moreMenu'); if(!b||!m)return; const has=!!m.querySelector('[role="menuitem"]'); b.hidden=!has; if(!has){m.hidden=true; b.setAttribute('aria-expanded','false');}}
 function wireMoreMenu(){wireMenu('moreBtn','moreMenu');}
 /* spec 052 FR-003, #308: one menu behaviour for the chat's More and the top bar's ⋯ */
 function wireMenu(btnId,menuId){
@@ -2448,14 +2458,15 @@ const chatShownNow=id=>window.DurbarUnread.isShown(id,{selected:ui.selected,pane
 const isUnread=a=>!!a&&!a.parent&&UNREAD.has(a.id);
 /* FR-178: the first 1.9 s of a desk's glow (New, or needs you) carry .hl-in (three entry pulses); after that the slow breathe only. Reduced motion: CSS shows the static glow. */
 const HL_AT=new Map();
-function hlIn(a,st){const k=st==='waiting'?'needs':(isUnread(a)&&st!=='error'&&!isFailing(a)&&!isRetrying(a))?'new':'';if(!k){HL_AT.delete(a.id);return '';}const p=HL_AT.get(a.id);if(!p||p.k!==k)HL_AT.set(a.id,{k,t:Date.now()});return !REDUCED&&Date.now()-HL_AT.get(a.id).t<1900?' hl-in':'';}
-const unreadFresh=a=>!REDUCED&&!reducedMotion()&&Date.now()-(UNREAD_AT.get(a.id)||0)<1400;
+function hlIn(a,st){const k=st==='waiting'?'needs':(isUnread(a)&&st!=='error'&&!isFailing(a)&&!isRetrying(a))?'new':'';if(!k){HL_AT.delete(a.id);return '';}const p=HL_AT.get(a.id);if(!p||p.k!==k)HL_AT.set(a.id,{k,t:Date.now()});return !REDUCED&&!STILL_HL&&Date.now()-HL_AT.get(a.id).t<1900?' hl-in':'';}
+const unreadFresh=a=>!REDUCED&&!STILL_HL&&!reducedMotion()&&Date.now()-(UNREAD_AT.get(a.id)||0)<1400;
 const unreadHTML=a=>isUnread(a)?`<span class="unread-mark${unreadFresh(a)?' fresh':''}" title="New reply, not read yet" aria-hidden="true"><i></i>New</span>`:'';
 const unreadWords=a=>isUnread(a)?', new reply not read yet':'';
 /* the Done event: marked unless the chat is shown; a second end-of-turn event for an agent already marked does nothing (FR-171) */
 function noteCompleted(a){
   if(a.parent)return;
   if(SIM&&!window.__durbarSimReplayed)return; /* simulator only: its start-up script (agents that were already Done) is history, not news */
+  afOnCompleted(a); /* spec 052 FR-184 */
   const r=UNREAD.complete(a.id,chatShownNow(a.id));
   if(r==='marked'){UNREAD_AT.set(a.id,Date.now());const rm=roomOf(a);if(rm&&roomShown(rm)){announce(a.name+' finished. New reply.');UNREAD_SAID.add(a.id);}} /* FR-174: nothing is announced for a hidden folder or floor */
   else if(r==='seen')UNREAD_AT.delete(a.id);
@@ -2510,16 +2521,17 @@ let cvRz=0; const cvSoon=()=>{if(cvRz)return; cvRz=requestAnimationFrame(()=>{cv
 addEventListener('resize',cvSoon); new MutationObserver(cvSoon).observe(document.documentElement,{attributes:true});
 function openPanel(id,focus){
   const a=byId(id); if(!a)return; if(ui.selected!==id||!document.body.classList.contains('panel-open'))cvMark(); /* after the check: an unknown id leaves the chat on screen unmarked */ if(!pulling)PULLED.delete(id); /* the user came back: this session may bring its chat forward again */
+  if(AF_ON&&!AF_AUTO&&!pulling&&(ui.selected!==id||!document.body.classList.contains('panel-open')))AFT.manualOpen(id); /* spec 052 FR-185: opening another agent by hand ends the following of the others */
   if(ui.selected!==id||!document.body.classList.contains('panel-open'))PANEL_OPENED_AT=performance.now(); closeSlash(); keepDraft(); ui.selected=id; attached=(DRAFTS.get(id)||{att:[]}).att.slice();
   noteRecentChat(a); rememberUi();
   document.body.classList.add('panel-open');
   const room=roomOf(a), parent=a.parent?byId(a.parent):null;
   const p=$('panel');
-  const stripScroll=(p.querySelector('.strip-list')||{}).scrollLeft||0;
+  const stripScroll=(p.querySelector('.rail-list')||{}).scrollTop||0;
+  {const rr=roomOf(a);if(rr&&railFolds().delete(rr.path))saveFolds();} /* spec 005 FR-216: opening a chat expands its folder in the rail */
   const mdlName=a.live&&a.info?modelLabel(a.info):'';
   const subText=a.role+(parent?' · helper of '+parent.name:'');
-  p.innerHTML=`<div class="panel-in">
-   <div class="strip" role="navigation" aria-label="Agents"><button class="btn back" id="backBtn" type="button" title="Back to the office (Esc)">${ICON('back')}<span>Office</span></button><div class="strip-list" id="stripList"></div></div>
+  p.innerHTML=`${railHTML()}<div class="panel-in">
    <div class="ph" id="panelHead"><div class="ph-top"><div class="avatar">${avatar(a)}</div><div class="ph-id"><h2 id="panelTitle" tabindex="-1" title="${esc(panelTipOf(a))}"${titleRenameable(a)?` aria-label="${esc(a.name)}"`:''}>${panelTitleHTML(a)}</h2><div class="sub" title="${esc(subText)}">${parent?'':chatNoHTML(a)}${!parent&&chatNoOf(a)?'<span class="sr-only">Chat '+chatNoOf(a)+'. </span>':''}${esc(subText)}</div></div>
       <div class="ph-meta"><span data-f="status"></span><span class="ph-ago" data-f="ago"></span><!-- spec 005 FR-039: the header keeps who and what (status, limit, remote, folder); how the next message runs is under the message box (FR-037) -->${a.live&&!a.parent&&bridge&&bridge.setCap?capChipHTML(liveRoot(a)):''}${canRemote(a)?remoteChipHTML(a):''}<span class="folder" title="${esc(room.path)}"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" style="flex:none"><path d="M1.8 4.2a1.4 1.4 0 0 1 1.4-1.4h3l1.6 1.8h4.8a1.4 1.4 0 0 1 1.4 1.4v6.2a1.4 1.4 0 0 1-1.4 1.4H3.2a1.4 1.4 0 0 1-1.4-1.4z"/></svg><span class="folder-t">${esc(showPath(room.path))}</span></span>${notesOn(a)?'<button class="nt-count" id="ntCount" type="button" aria-expanded="false" aria-controls="notesDrawer" data-notes-toggle hidden>Notes</button>':''}</div>      <div class="actions"><!-- spec 052 FR-003: two actions in view (FR-139: a third, + New, by owner decision), the rest under More (ids kept; End and Remove last); spec 006 FR-033 (2026-10-21): Previous sessions moved out of the actions, to their own section above the chat -->${a.live&&!a.parent&&bridge.newSession&&anyKindReady()&&!demoOn?`<button class="btn sm" id="newSessHdrBtn" type="button" title="New session in ${esc(room.name)}" aria-label="New session in ${esc(room.name)}">+ New</button>`:''}${a.live?`<button class="btn sm primary" id="vscodeBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="openWithMenu" title="Open this folder in an editor or the file manager. This does not move the conversation.">${CODE_SVG}Open with<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg></button><div class="more-menu" id="openWithMenu" role="menu" aria-label="Open with" aria-describedby="owNote" hidden><p role="none" class="ow-note" id="owNote">Opens this folder only. Your conversation stays here.${a.live&&bridge.newSession&&!a.parent&&anyKindReady()&&canHandover(a)?' To hand it to another app, use More, then Continue in another app…':''}</p><div id="owItems" role="none"></div></div>`:`<button class="btn sm primary" id="vscodeBtn" type="button" title="A demo agent: shows the command an editor would be opened with">${CODE_SVG}Open in editor</button>`/* spec 009 FR-019 (review of PR 976): a demo agent has no menu to promise */}
         <button class="btn sm" id="pauseBtn" type="button"><svg viewBox="0 0 16 16" fill="currentColor"><rect x="4" y="3" width="2.8" height="10" rx="1"/><rect x="9.2" y="3" width="2.8" height="10" rx="1"/></svg><span>Pause</span></button>
@@ -2543,7 +2555,7 @@ function openPanel(id,focus){
    <div class="drop-ov" id="dropOv" aria-hidden="true"><div>Drop to attach<small>Up to 5 files, 10 MB each. Images: PNG, JPEG, GIF, WebP, BMP.</small></div></div></div>`;
   BP.mount(a); /* spec 080 T015: wires the tabs and the browser bar; the same session keeps its tab, another starts on Chat */
   syncSeen(); /* spec 005 FR-176: the chat is shown now, so a reply not read yet is read (not when the Browser tab is in front) */
-  renderStrip(); const sl=$('stripList'); if(sl)sl.scrollLeft=stripScroll;
+  renderStrip(); const sl=$('stripList'); if(sl)sl.scrollTop=stripScroll;
   const chat=getChat(a); $('chat').appendChild(chat.el);
   updatePanelHeader(); renderGrants();
   const chatEl=$('chat'); chatEl.dataset.pin='1'; chatEl._lastTop=undefined; chatEl.scrollTop=1e6;
@@ -2576,6 +2588,7 @@ function openPanel(id,focus){
   wireAnswerBar(a);paintCoffeeBar.key='';paintCoffeeBar(); /* spec 068 FR-022 */
   if(needsMe(a)){const c=pendingCardOf(a);if(c)announce(a.name+(c.classList.contains('question')?' asks: ':' needs your OK: ')+requestText(c));}
   $('pauseBtn').onclick=()=>{a.paused=!a.paused;if(a.live&&bridge.setPaused)bridge.setPaused(a.id,a.paused);toast(esc(a.name)+(a.paused?' paused.':' resumed.'));renderAll();};
+  $('railDoor').onclick=()=>openInbox(); /* spec 052 FR-216: Your door opens the Needs you queue */
   if($('stopBtn'))$('stopBtn').onclick=e=>{RUN_SAID.stopped=true;if(a.live){const b=e.currentTarget;if(b.getAttribute('aria-busy')==='true')return;b.setAttribute('aria-busy','true');return stopLive(a).catch(failToast('stop')).finally(()=>{b.removeAttribute('aria-busy');syncRunState();});}stopDemoTurn(a);a.paused=false;a.state='idle';a.label=null;a.task='Stopped by you. Ready for a new task.';toast(esc(a.name)+' stopped.');renderAll();};
   $('attFile').onclick=()=>{if(a.live)return pickLive();addPicked([{name:SAMPLE_FILES[fi++%SAMPLE_FILES.length],kind:'file',size:12*1024}]);};
   $('attImg').onclick=()=>{if(a.live)return pickLive('image');addPicked([{name:SAMPLE_IMGS[ii++%SAMPLE_IMGS.length],kind:'image',size:240*1024}]);};
@@ -2608,7 +2621,7 @@ function openPanel(id,focus){
   $('sendBtn').onclick=()=>{if($('sendBtn').getAttribute('aria-disabled')!=='true')sendMessage(input.value);};
   setSend(); wireToolbar(); /* spec 005 FR-037..FR-040 */
   wireComposerGrip(); /* spec 005 FR-044..FR-048 */
-  renderAll(); const cur=document.querySelector('#stripList .sitem.sel'); if(cur)SCROLL.reveal(cur,{inline:'nearest'});
+  renderAll(); placeToasts(); const cur=document.querySelector('#stripList .sitem.sel'); if(cur)SCROLL.reveal(cur,{block:'nearest'});
   /* spec 074 FR-022 (issue 587): this chat's unsent text comes back */
   {const m=$('msgInput'),dr=DRAFTS.get(id);if(m&&dr){m.value=dr.t;autoGrow();}if(dr&&dr.att.length){renderAttached();setSend();}}
   /* spec 074 FR-019: a chat the user opened gets the cursor in its message box (the title when it has none) */
@@ -3639,7 +3652,7 @@ function closePanel(){closeSlash();keepDraft();
   BP.hide(); hideSelButton(); cvMark(); /* spec 080 FR-009: the browser view comes off the window; the page stays loaded */
   if(ctObs){ctObs.res.disconnect();ctObs.mut.disconnect();ctObs=null;} closeCtMore(false); closeCtxMenu();
   const id=ui.selected; ui.selected=null; document.body.classList.remove('panel-open'); $('panel').innerHTML='';
-  renderAll();
+  renderAll(); placeToasts();
   const n=id&&document.querySelector(`[data-id="${CSS.escape(id)}"]`); if(n)focusIn(n);
 }
 
@@ -3728,7 +3741,8 @@ document.addEventListener('click',e=>{
   const mo=e.target.closest('[data-more]'); if(mo){const id=mo.dataset.more;ui.expanded[id]=!ui.expanded[id];renderAll();return;}
   const cm=e.target.closest('.chips-more'); if(cm){const box=cm.parentNode;box.dataset.exp=box.dataset.exp==='1'?'0':'1';refreshChips(box);return;}
   const chip=e.target.closest('#chat .chip:not(.att-chip)'); if(chip){if(e.target.closest('.xbody'))return;const o=chip.classList.toggle('open');chip.setAttribute('aria-expanded',String(o));return;} /* spec 052 FR-063: the open body (Copy, Show all, selecting text) keeps it open */
-  const sw=e.target.closest('[data-sw]'); if(sw){openPanel(sw.dataset.sw,true);return;} /* spec 074 FR-019: mouse or keyboard */
+  const rg=e.target.closest('[data-rgfold]'); if(rg){if(e.detail<2)toggleFold(rg.dataset.rgfold);return;} /* spec 005 FR-216: a click, Enter or Space toggles a folder; the second click of a double click is dropped, so a double click toggles it once and never opens a chat */
+  const sw=e.target.closest('[data-sw]'); if(sw){if(e.detail>=2)return; /* spec 005 FR-216: the second click of a double click never opens a chat (a heading's first click can move another row under the pointer) */openPanel(sw.dataset.sw,true);return;} /* spec 074 FR-019: mouse or keyboard */
   if(e.target.closest('[data-costview]')){window.DurbarScreens.openTools(null,'cost');return;}
   const mr=e.target.closest('[data-mcproom]'); if(mr){const f=folderOfRoom(mr.dataset.mcproom);if(f)window.DurbarScreens.folderMcp(f.key,f.name);return;}
   const sc=e.target.closest('[data-schedroom]'); if(sc){const r=ROOMS.find(x=>x.id===sc.dataset.schedroom);if(r)openSchedules(r);return;}
@@ -3905,6 +3919,8 @@ document.addEventListener('keydown',e=>{
     return;
   }
   /* spec 052 FR-014: N opens the next agent that needs you (waiting, error or at its limit), outside text fields and dialogs */
+  /* spec 052 FR-186: [ and ] are Previous and Next in the attention queue, only with Auto-follow on, outside text fields, dialogs and menus */
+  if(AF_ON&&(e.key==='['||e.key===']')&&!e.altKey&&!e.ctrlKey&&!e.metaKey&&!e.isComposing&&!(e.target&&e.target.closest&&e.target.closest('input,textarea,select,[contenteditable="true"],[role="dialog"],[role="menu"]'))&&!modalOpen()){const v=afSnapshot();if(v.dialog||v.menu||v.screen)return;e.preventDefault();afGo(e.key===']'?1:-1);return;}
   if((e.key==='i'||e.key==='I')&&!e.altKey&&!e.ctrlKey&&!e.metaKey&&!e.isComposing&&!(e.target&&e.target.closest&&e.target.closest('input,textarea,select,[contenteditable="true"],[role="dialog"],[role="menu"]'))&&!modalOpen()){e.preventDefault();openInbox();return;}
   /* spec 052 FR-043: ? opens the keyboard shortcut sheet, outside text fields and dialogs */
   if(e.key==='?'&&!e.altKey&&!e.ctrlKey&&!e.metaKey&&!e.isComposing&&!(e.target&&e.target.closest&&e.target.closest('input,textarea,select,[contenteditable="true"],[role="dialog"],[role="menu"]'))&&!modalOpen()){e.preventDefault();openKbdHelp();return;}
@@ -4194,6 +4210,165 @@ function openNextNeedsMe(){
   const cur=list.findIndex(a=>a.id===ui.selected), nx=list[(cur+1)%list.length];
   openPanel(nx.id,'title'); /* spec 074 FR-019: the title, not the message box, so N, N, N keeps walking the queue (spec 052 FR-014) */
 }
+/* ---- spec 052 FR-182..FR-190 (issue 686): opt-in Auto-follow and the attention queue. The decisions are in autofollow.js (pure); this reads the
+   page and opens chats with the existing openPanel / closePanel / goToFloor. The queue is needsMeOrder() (unchanged) then the unread finished
+   agents; nothing here answers, allows, denies or resolves anything, and the focus goes to the chat title, never to an answer button. ---- */
+const AF=window.DurbarAutoFollow, AFT=AF.createTracker();
+let AF_ON=false, AF_PAUSED=false, AF_HELD=null, AF_TYPED=null, AF_HOLD='', AF_AUTO=false, AF_POLL=0, AF_PASSES=0;
+const AF_DONE=new Map(); /* id -> completions seen, so each completion is its own arrival */
+const afPanelId=()=>document.body.classList.contains('panel-open')?ui.selected:null;
+function setAutoFollowOn(v){AF_ON=!!v;if(AF_ON)AF_PAUSED=false;else{AFT.clear();AF_HELD=null;AF_HOLD='';}afTick();}
+function afQueueIds(){
+  return AF.queue(needsMeOrder().map(a=>a.id),agents.filter(a=>isUnread(a)).map(a=>({id:a.id,at:UNREAD_AT.get(a.id)})));
+}
+function afSyncHeld(ids){
+  const id=afPanelId(); if(!id){AF_HELD=null;return;}
+  const i=ids.indexOf(id); if(i>=0)AF_HELD={id,at:i}; else if(!AF_HELD||AF_HELD.id!==id)AF_HELD=null;
+}
+const afLive=ids=>AF.withHeld(ids||afQueueIds(),AF_HELD&&AF_HELD.id===afPanelId()?AF_HELD:null);
+/* FR-185: what the page sees now */
+function afSnapshot(){
+  const ae=document.activeElement, ed=el=>!!el&&el.nodeType===1&&(el.matches('input,textarea,select,[contenteditable]:not([contenteditable="false"])')||!!el.isContentEditable);
+  const editable=ed(ae), live=el=>!el.hidden&&el.getClientRects().length>0;
+  const chat=$('chat'), open=afPanelId();
+  return {editable,editableText:editable&&String(ae.value!=null?ae.value:ae.textContent||'').length>0,
+    typedAgo:AF_TYPED==null?null:Date.now()-AF_TYPED,
+    dialog:modalOpen()||[...document.querySelectorAll('[role="dialog"]')].some(live),
+    menu:[...document.querySelectorAll(OVERLAY_SEL+',#floorsPop,#foldersPop,[aria-haspopup][aria-expanded="true"]')].some(n=>!n.closest('#toasts')&&live(n)),
+    pointerDown:AF_PTR_DOWN,pointerAgo:performance.now()-AF_PTR_AT,
+    screen:document.body.classList.contains('screen-open')||!!(window.DurbarScreens&&window.DurbarScreens.isOpen()),
+    readingOther:!!open&&!AFT.has(open)&&!!chat&&chat.dataset.pin==='0',
+    hidden:document.visibilityState==='hidden',blurred:!schedHasFocus()};
+}
+document.addEventListener('keydown',e=>{ /* FR-185: a key typed into a field counts as typing for 2 s (Enter does not: it is how a message is sent) */
+  const t=e.target; if(!t||!t.matches||e.ctrlKey||e.metaKey||e.altKey)return;
+  if(t.matches('input,textarea,select,[contenteditable]:not([contenteditable="false"])')&&(e.key.length===1||e.key==='Backspace'||e.key==='Delete'))AF_TYPED=Date.now();
+},true);
+/* FR-185: a click may be on its way */
+let AF_PTR_DOWN=false, AF_PTR_AT=-Infinity, AF_OPENED_AT=-Infinity;
+const afPtrNow=()=>{AF_PTR_AT=performance.now();};
+document.addEventListener('pointerdown',()=>{AF_PTR_DOWN=true;afPtrNow();},true);
+for(const t of ['pointerup','pointercancel'])document.addEventListener(t,()=>{AF_PTR_DOWN=false;afPtrNow();},true);
+document.addEventListener('wheel',afPtrNow,{capture:true,passive:true});
+window.addEventListener('blur',()=>{AF_PTR_DOWN=false;});
+/* FR-184: for 500 ms after an automatic open, a click on an answer control does nothing */
+const AF_ANSWER_SEL='#chat .note:not(.settled) button,#chat .note:not(.settled) input,#chat .note:not(.settled) label,.answer-bar button';
+document.addEventListener('click',e=>{if(performance.now()-AF_OPENED_AT<500&&e.target.closest&&e.target.closest(AF_ANSWER_SEL)){e.preventDefault();e.stopImmediatePropagation();}},true);
+const afCanOpen=id=>{const a=byId(id);return !!a&&roomShown(roomOf(a));}; /* FR-188: a hidden folder or an off floor is never opened by itself */
+function afFocusDesk(id){
+  const d=document.querySelector(`#stage .desk[data-id="${CSS.escape(id)}"],#stage .ro-plate[data-id="${CSS.escape(id)}"]`)||document.querySelector(`#list button.lrow[data-id="${CSS.escape(id)}"]`);
+  if(d&&d.getClientRects().length){focusIn(d);return true;}
+  return false;
+}
+/* FR-183: focus moved here is not the person asking for a screen's zoom */
+const afQuiet=fn=>{const R=window.DurbarRealOffice;if(R&&R.quietFocus)R.quietFocus(fn);else fn();};
+/* FR-183: back to the office with this desk marked; one announcement for the whole step */
+function afBackToOffice(a,what){
+  const room=roomOf(a), drawn=!!room&&roomShown(room);
+  if(drawn&&!AF.holdReason(afSnapshot(),{office:true})){
+    let moved=false,fname='';
+    const f=floorsLive()&&floorById(room.floor);
+    if(f&&floorScreens()&&oneFloorView()&&f.id!==curFloorId()){moved=goToFloor(f.id,{announce:false});fname=f.name;} /* FR-188: no second floor announcement */
+    afQuiet(()=>{if(afPanelId()){AFT.setLast(ui.selected);AF_AUTO=true;try{closePanel();}finally{AF_AUTO=false;}}afFocusDesk(a.id);});
+    announce(what+(moved&&fname?' on '+fname:'')+'. Back to the office.');
+  }
+}
+/* FR-183: an accepted message follows its agent and returns to the office. `shown` = the chat shown before the send; `several` = one of a Send to several */
+function afOnAccepted(a,shown,several){
+  if(!AF_ON||AF_PAUSED||a.state==='idle'||a.state==='done')return; /* the app answered, and no turn is running */
+  const now=afPanelId();
+  if(now&&now!==shown)return; /* FR-183: you opened another chat while it was on its way */
+  AFT.follow(a.id); AFT.acted();
+  if(!several&&now===shown)afBackToOffice(a,a.name+' is working');
+  afTick();
+}
+function afOnCompleted(a){
+  if(!AF_ON||!AFT.has(a.id))return;
+  const n=(AF_DONE.get(a.id)||0)+1; AF_DONE.set(a.id,n); AFT.arrive(a.id,'done',n);
+}
+/* FR-184: arrivals of the followed agents, delivered when no guard holds */
+function afScan(){
+  for(const id of AFT.ids()){
+    const a=byId(id); if(!a){AFT.drop(id);continue;}
+    if(needsMe(a))AFT.arrive(id,vis(a)==='error'?'error':a.limit?'limit':'ask',NEED_SINCE.get(id));
+    else AFT.retract(id,['ask','error','limit']);
+  }
+}
+function afDeliver(){
+  if(!AF_ON||AF_PAUSED)return;
+  AF_PASSES++; /* only read by the simulator's driver, as the witness that a delivery pass ran */
+  const reason=AFT.pendingList().length?(AF.holdReason(afSnapshot())||(AFT.isQuiet?'you have not acted since the last switch':'')):'';
+  AF_HOLD=reason;
+  const d=AFT.due(reason,afCanOpen);
+  if(!d){afRender();return;}
+  const a=byId(d.id);
+  if(a&&!(afPanelId()===d.id)){ /* already shown: nothing moves */
+    AF_AUTO=true; try{openPanel(d.id,'title');}finally{AF_AUTO=false;}
+    AF_OPENED_AT=performance.now();
+    if(d.kind!=='ask')announce(a.name+(d.kind==='done'?' finished':d.kind==='error'?' has an error':' reached its limit')+'. Its chat is open.');
+  }
+  afTick();
+}
+function afRender(){
+  const el=$('followStrip'); if(!el)return;
+  if(el.hidden===AF_ON)el.hidden=!AF_ON;
+  if(!AF_ON)return;
+  if(!el.dataset.built){
+    el.dataset.built='1';
+    el.innerHTML='<span class="af-t" id="afText"></span><span class="af-pos" id="afPos" aria-hidden="true"></span><button class="btn" type="button" id="afPrev">Previous</button><button class="btn" type="button" id="afNext">Next</button><button class="btn" type="button" id="afPause" aria-pressed="false">Pause</button>';
+    $('afPrev').onclick=()=>afGo(-1);$('afNext').onclick=()=>afGo(1);
+    $('afPause').onclick=()=>afSetPaused(!AF_PAUSED);
+  }
+  const ids=afLive(), cur=afPanelId(), pos=AF.position(ids,cur), pt=AF.positionText(pos);
+  const fid=AFT.ids()[0], fa=fid&&byId(fid);
+  const text=AF.statusText({paused:AF_PAUSED,held:AF_HOLD,heldCount:AFT.pendingList().length,followed:AFT.size,office:!cur,name:fa&&fa.name,hiddenName:fa&&!afCanOpen(fid)?fa.name:''});
+  const set=(id,t)=>{const n=$(id);if(n&&n.textContent!==t)n.textContent=t;};
+  set('afText',text);set('afPos','Attention: '+pt);
+  el.classList.toggle('paused',AF_PAUSED);
+  const empty=!ids.length, np=pos.index>=0?(pos.index+1)+' of '+pos.count:pos.count+(pos.count===1?' needs you':' need you');
+  const lab=(w,k)=>w+' in attention queue'+(empty?'. Nothing needs you; goes back to the office':'. '+np)+' ('+k+')';
+  const attr=(n,k,v)=>{if(n&&n.getAttribute(k)!==v)n.setAttribute(k,v);};
+  attr($('afPrev'),'aria-label',lab('Previous','['));attr($('afNext'),'aria-label',lab('Next',']'));
+  attr($('afPrev'),'title',empty?'Nothing needs you. Back to the office ([)':'Previous in the attention queue ([)');attr($('afNext'),'title',empty?'Nothing needs you. Back to the office (])':'Next in the attention queue (])');
+  attr($('afPrev'),'aria-keyshortcuts','[');attr($('afNext'),'aria-keyshortcuts',']');
+  const pb=$('afPause'); set('afPause',AF_PAUSED?'Resume':'Pause');attr(pb,'aria-pressed',AF_PAUSED?'true':'false');
+  attr(pb,'title',AF_PAUSED?'Resume auto-follow':'Pause auto-follow: nothing moves by itself until you resume');
+}
+/* FR-182: pause is for this run only */
+function afSetPaused(on){
+  if(!AF_ON)return; AF_PAUSED=!!on; if(AF_PAUSED){AFT.clear();AF_HOLD='';}
+  announce(AF_PAUSED?'Auto-follow paused.':'Auto-follow resumed.'); afTick();
+}
+/* the one pass after every render and on events: markers, arrivals, the strip */
+function afTick(){
+  const ids=new Set(AF_ON&&!AF_PAUSED?AFT.ids():[]);
+  document.querySelectorAll('.is-followed').forEach(n=>{if(!ids.has(n.dataset.id)){n.classList.remove('is-followed');n.removeAttribute('data-following');}});
+  for(const id of ids)document.querySelectorAll(`#stage .desk[data-id="${CSS.escape(id)}"], #stage .ro-plate[data-id="${CSS.escape(id)}"], #list button.lrow[data-id="${CSS.escape(id)}"]`).forEach(n=>{n.classList.add('is-followed');n.setAttribute('data-following','1');});
+  if(AF_ON&&!AF_PAUSED){afScan();afSyncHeld(afQueueIds());}
+  afRender();
+  if(AF_ON&&!AF_PAUSED&&AFT.pendingList().length){
+    if(!AF_POLL)AF_POLL=setInterval(afDeliver,400);
+    setTimeout(afDeliver,0);
+  }else if(AF_POLL){clearInterval(AF_POLL);AF_POLL=0;AF_HOLD='';}
+}
+/* FR-186, FR-187: Previous and Next over the queue; an empty queue goes back to the office with the last desk focused */
+function afGo(dir){
+  if(!AF_ON)return;
+  AFT.acted();
+  const ids=afLive(), cur=afPanelId(), id=AF.step(ids,cur,dir);
+  if(!id){
+    if(cur)AFT.setLast(ui.selected);
+    const last=AFT.lastDesk();
+    afQuiet(()=>{if(cur){AF_AUTO=true;try{closePanel();}finally{AF_AUTO=false;}}if(last)afFocusDesk(last);});
+    announce('Nothing needs you. Back to the office.');afTick();return;
+  }
+  AFT.manualOpen(id); AF_HELD={id,at:ids.indexOf(id)};
+  AF_AUTO=true; try{openPanel(id,'title');}finally{AF_AUTO=false;}
+  const a=byId(id); announce((a?a.name+', ':'')+(ids.indexOf(id)+1)+' of '+ids.length+'.');
+  afTick();
+}
+window.addEventListener('focus',()=>{afPtrNow();if(AF_ON)afTick();});
+document.addEventListener('visibilitychange',()=>{if(AF_ON)afTick();});
 /* ---- spec 052 FR-042 / FR-043 (#316): command palette (Ctrl+K, ⌘K on a Mac) and keyboard shortcut sheet (?) ---- */
 let palBack=null, palItems=[], palActive=0;
 const palUsable=id=>{const el=$(id);return !!el&&!el.disabled&&!el.hidden&&!el.closest('[hidden]:not(#topMoreMenu)');}; /* items inside the top bar's closed menus still count */
@@ -4202,6 +4377,9 @@ function palActions(){
   return [
     {label:'Needs you',hint:'The inbox of agents that need you ('+INBOX_KEY+')',kw:'inbox attention waiting approve',keys:['I'],run:openInbox},
     {label:'Next agent that needs you',hint:'Open the next waiting chat ('+NEXT_KEY+')',kw:'next waiting jump',keys:['N'],run:openNextNeedsMe},
+    {label:'Next in attention queue',hint:'Auto-follow: the next agent that needs you or has a new reply (])',kw:'auto follow attention queue next',keys:[']'],run:()=>afGo(1),ok:()=>AF_ON},
+    {label:'Previous in attention queue',hint:'Auto-follow: the previous one ([)',kw:'auto follow attention queue previous',keys:['['],run:()=>afGo(-1),ok:()=>AF_ON},
+    {label:AF_PAUSED?'Resume auto-follow':'Pause auto-follow',hint:'Nothing moves by itself while it is paused',kw:'auto follow pause resume stop',run:()=>afSetPaused(!AF_PAUSED),ok:()=>AF_ON},
     {label:'Schedules',hint:"Every folder's scheduled prompts",kw:'schedule scheduled prompts timer every daily morning cron',keys:keyLabels(['mod','shift','S']),run:openSchedulesView,ok:schedTopShown}, /* spec 044 FR-032 */
     {label:'Office view',kw:'view office desks rooms',run:palClick('vOffice'),ok:()=>palUsable('vOffice')},
     {label:'List view',kw:'view list table rows',run:palClick('vList'),ok:()=>palUsable('vList')},
@@ -4378,6 +4556,7 @@ function openKbdHelp(back){
     [['I'],'Needs you inbox',keyLabels(['mod','shift','A'])],
     [keyLabels(['mod','A']),'Needs you inbox, outside text (in a text box it selects all)'], /* spec 074 FR-021 */
     [['N'],'Next agent that needs you',keyLabels(['mod','shift','N'])],
+    ...(AF_ON?[[['[',']'],'Auto-follow: previous or next in the attention queue']]:[]), /* spec 052 FR-186 */
     ...(schedTopShown()?[[keyLabels(['mod','shift','S']),"Schedules: every folder's scheduled prompts"]]:[]), /* spec 044 FR-031 */
     ...(IS_MAC?[[keyLabels(['mod',',']),'Settings']]:[]), /* FR-083: the app menu's Settings… item */
     [['Ctrl','`'],'Back to the previous chat (on a Mac too: Control, not Cmd)'],
@@ -4475,9 +4654,11 @@ async function sendToSeveral(anchor){
     buttons:[{label:'Cancel',value:null},{label:'Send',value:'send',cls:'primary'}],returnFocus:anchor});
   if(!r||r.value!=='send')return;
   const text=String(r.text||'').trim().slice(0,4000);if(!text||!r.picked||!r.picked.length)return;
-  const bad=[];let n=0;
+  const bad=[];let n=0,last=null;
+  const shown0=afPanelId(); /* spec 052 FR-183: the chat shown once, before the first send: a chat opened by hand while the sends go on is not the one to leave */
   for(const id of r.picked){const a=byId(id);if(!a||!a.live){bad.push(a?a.name:id);continue;}
-    try{await sendLive(text,id,{fromComposer:false});n++;}catch(err){bad.push(a.name);}}
+    try{await sendLive(text,id,{fromComposer:false,several:true,afShown:shown0});n++;if(AFT.has(a.id))last=a;}catch(err){bad.push(a.name);}}
+  if(AF_ON&&!AF_PAUSED&&last&&AFT.has(last.id)&&afPanelId()===shown0){afBackToOffice(last,AFT.size>1?AFT.size+' followed agents are working':last.name+' is working');afTick();} /* spec 052 FR-183: one move and one announcement for the whole send */
   toast(bad.length?'Sent to '+n+'; could not send to '+esc(bad.join(', '))+'.':'Sent to '+n+' session'+(n===1?'':'s')+'.',3600).classList.add(bad.length?'err':'ok');
 }
 const folderOfAgentName=a=>{const r=roomOf(a);const p=r&&r.path?String(r.path).replace(/[\\/]+$/,''):'';return p.split(/[\\/]/).pop()||'';};
@@ -5544,13 +5725,14 @@ function onSubagent(a,e){
   const s=subRec(a,e.subagentId), card=s.card;
   if(e.name)s.name=safeMask(e.name)||s.name; if(e.model)s.model=e.model; if(e.agentName)s.agentName=safeMask(e.agentName)||''; /* spec 041 FR-065 */
   if(e.task&&e.phase==='started')s.task=e.task;
+  if(e.phase==='started'&&e.background===true)s.background=true; /* spec 015 FR-018: the parent's call returns at once; only this helper's own end ends it */
   if(e.durationMs)s.durationMs=e.durationMs; if(e.totalTokens)s.tokens=e.totalTokens; if(e.totalToolCalls!=null)s.tools=Math.max(s.tools,e.totalToolCalls);
   card.name=s.name;card.role=s.agentName?'Helper · '+s.agentName:'Helper';
   if(e.phase==='started'){s.status='running';setState(card,'working',null,s.task||'Working');}
   else{
     s.t1=Date.now();
     if(e.phase==='failed'){s.status='failed';s.error=e.error||e.task||'Failed';setState(card,'error',null,safeExcerpt(s.error,100));}
-    else{s.status='done';setState(card,'done','Done',safeExcerpt(s.result||s.task,100));}
+    else{s.status='done';setState(card,'done','Done',safeExcerpt(s.result||s.lastFinal||s.task,100));}
     s.views.forEach(v=>{tEnd(v.T,{note:false});});
     subCollapse(s);
   }
@@ -5567,6 +5749,7 @@ function onTaskTool(a,e){
     if(g.agent_type&&!s.agentName)s.agentName=safeMask(String(g.agent_type))||''; /* spec 041 FR-065 */
     if(s.name==='Sub-agent'&&s.task)s.name=SHORT(safeMask(s.task),40);
   } else if(e.phase==='update')return; /* FR-095: an update changes no status, does not collapse the block and does not touch the card */
+  else if(e.phase==='complete'&&s.background)return; /* spec 015 FR-018 (issue 1141): a background helper's call returns with a launch note, never its result or its end; only the helper's own end event (or its session stopping) ends it */
   else {
     if(e.phase==='complete'&&e.output)s.result=String(e.output);
     if(e.phase==='failed'){s.status='failed';s.error=String(e.output||'Failed');}
@@ -6366,6 +6549,7 @@ function onLiveEvent(e){
       if(a.remote){a.remote=null;updateRemoteUi(a);} /* spec 054 FR-003: remote control ends with the session */
       a.worked=false; /* spec 058 FR-022: the turn ended with the session; a resume's "idle" (Restart session) is not a finished turn ("Done") */
       mcpSessionEnded(a); /* spec 100: the figures, a dismissal and the compaction times belong to that session */
+      if(a.subs)a.subs.forEach(s=>{if(s.status==='running')onSubagent(a,{subagentId:s.id,phase:'failed',error:'Stopped with its session'});}); /* spec 015 FR-018: no helper stays Running after its session */
       closeTurn(a);setState(a,'idle','Ended','Session ended. Send a message to resume it.');}
     return;}
   case 'permission':if(main)settlePerm(a,e.permission);return;
@@ -6446,8 +6630,10 @@ async function sendLive(text,forId,opts){
   const planFirst=!!a.planNext&&!!(capsFor(a)&&capsFor(a).planMode); /* spec 066: one message only */
   if(a.planNext){a.planNext=false;renderAttached();}
   if(planFirst)addNote(chat,'Asked for a plan first: nothing changes until you approve it.');
+  const afShown=opts&&opts.several&&'afShown' in opts?opts.afShown:afPanelId(); /* spec 052 FR-183: what you were looking at when you sent (a Send to several: before the first send) */
   const r=await bridge.send(a.id,text||'Please look at the attached file(s).',atts.map(x=>({path:x.path,name:x.name,kind:x.kind})),planFirst?{plan:true}:undefined);
   if(r&&r.notSent){mcpNotSent(a,chat,text,fromComposer);return;} /* spec 058 FR-208: Stop during the MCP sign-in wait: nothing was sent */
+  if(r.ok&&!(opts&&opts.coffee))afOnAccepted(a,afShown,!!(opts&&opts.several)); /* spec 052 FR-183: accepted by the agent app; a break resuming by itself is not the person's send */
   if(!r.ok){closeTurn(a);const n=addNote(chat,'Send failed: '+esc((r.error&&safeMask(r.error))||'unknown error'),true); /* spec 041 FR-065 (delta 2026-10-23): the app's error is masked (shown whole, not cut); no mask: a neutral word */modeRefusalAction(a,n,r.error);setState(a,'error',null,'Send failed: '+safeExcerpt(r.error,100,'unknown error'));}
   else if(r.slash)addNote(chat,'Sent the text of <code>'+esc(DurbarCutText.cutText(safeMask(r.slash),160))+'</code> (the agent app does not load it in Durbar’s sessions).'+(r.slashNote?' '+esc(DurbarCutText.cutText(safeMask(r.slashNote),200)):'')); /* spec 073 FR-005; slashNote: masked, then cut (FR-013) */
   else if(r.slashNote)addNote(chat,esc(DurbarCutText.cutText(safeMask(r.slashNote),240))); /* spec 073 (review on PR 615): over the size cap, sent as typed; masked, then cut (FR-013) */
@@ -6650,15 +6836,76 @@ const failToast=what=>err=>toast('Could not '+what+': '+esc(String(err&&err.mess
 async function copyResume(a){const r=liveRoot(a),cmd=resumeCmdOf(r); if(!cmd)return;
   try{await navigator.clipboard.writeText(cmd);toast('Copied <code>'+esc(cmd)+'</code>. End the session here first, then run it in a terminal in '+esc(roomOf(r).path)+'. In VS Code, turn on the sessions list filter External to see sessions started here.',9000).classList.add('ok');}
   catch{toast('Run <code>'+esc(cmd)+'</code> in a terminal in '+esc(roomOf(r).path)+' (end the session here first).',8000);}}
-/* ---------------- full-screen chat: the strip of all agents ---------------- */
-function stripAgents(){
-  return agents.filter(x=>!x.parent&&roomShown(roomOf(x))).map((x,i)=>[x,i]).sort((p,q)=>prio(p[0])-prio(q[0])||p[1]-q[1]).map(p=>p[0]);
+/* ---------------- full-screen chat: the agent rail (spec 005 FR-190, FR-194, FR-216; it was the strip) ----------------
+   One list: every main agent on a shown floor, by folder (DurbarRail.group: who needs you first, oldest first, then the office's room
+   order; inside a folder needsMe() first by NEED_SINCE, then prio and creation order). Two row heights: plain, and tall for whoever needs
+   you (the age in words and the request). Keyed rows through morphHTML (data-sw, data-key, .sel, aria-current). Folders collapse. */
+const RAIL=window.DurbarRail;
+/* FR-216: the collapsed folders are saved only when rememberOn(); the simulator saves them only with railstore=1 (check-rail's reload step) */
+const railRemember=()=>rememberOn()||(!!SIM&&qs.get('railstore')==='1');
+let RAIL_FOLDS=null;
+function railFolds(){
+  if(!RAIL_FOLDS){RAIL_FOLDS=new Set();if(railRemember()){try{RAIL_FOLDS=RAIL.loadFolds(localStorage.getItem(RAIL.FOLD_KEY));}catch(e){RAIL_FOLDS=new Set();}}}
+  return RAIL_FOLDS;
 }
+function saveFolds(){
+  if(!railRemember())return;
+  try{const v=RAIL.foldsJSON(railFolds(),ROOMS.map(r=>r.path),agentsListed||demoOn);if(v)localStorage.setItem(RAIL.FOLD_KEY,v);else localStorage.removeItem(RAIL.FOLD_KEY);}catch(e){/* storage off: kept for this run */}
+}
+function toggleFold(roomId){
+  const r=ROOMS.find(x=>x.id===roomId); if(!r)return;
+  const f=railFolds(); if(f.has(r.path))f.delete(r.path); else f.add(r.path);
+  saveFolds(); renderStrip();
+}
+function railGroups(){
+  needsMeOrder(); /* NEED_SINCE for whoever needs you now */
+  const rank=new Map(roomsInOrder().map((r,i)=>[r.id,i]));
+  const list=agents.filter(x=>!x.parent&&roomShown(roomOf(x)));
+  return RAIL.group(list.map((x,i)=>({id:x.id,room:x.room,rank:rank.get(x.room),needs:needsMe(x),since:NEED_SINCE.get(x.id),prio:prio(x),i})));
+}
+function railHTML(){
+  const ib=$('inboxBtn');
+  return `<nav class="rail" aria-label="Agents"><h2 class="sr-only">Agents</h2><div class="rail-top"><button class="btn back" id="backBtn" type="button" title="Back to the office (Esc)">${ICON('back')}<span>Office</span></button><!-- spec 005 FR-190: R2 (T127) puts the Plan | List switch here, R3 (T116) the collapse button --></div>
+   <div class="rail-door"><button class="btn sm" id="railDoor" type="button" aria-haspopup="dialog" title="${esc(ib?ib.title:'Needs you')}"${ib&&ib.getAttribute('aria-keyshortcuts')?` aria-keyshortcuts="${esc(ib.getAttribute('aria-keyshortcuts'))}"`:''}>${ALERT_ICON}<span>Your door</span><b>0</b></button><!-- spec 052 FR-219: the red lock goes beside it (T223) --></div>
+   <div class="rail-list" id="stripList"></div></nav>`;
+}
+/* "Waiting 3 min" (ATT.waitLabel, as the inbox and the Boss say it), or "Error · 3 min"; text only, never a size (052 FR-061) */
+function railAge(x,now){
+  const t=NEED_SINCE.get(x.id), w=t==null?'':ATT.waitLabel(Math.max(0,now-t)).replace(/^waiting /,'').replace('less than a minute','<1 min');
+  return vis(x)==='waiting'?(w?'Waiting '+w:stWord(x,true)):stWord(x,true)+(w?' · '+w:'');
+}
+function railAgeSaid(x,now){const t=NEED_SINCE.get(x.id);return vis(x)==='waiting'?(t==null?stWord(x,true):ATT.waitLabel(Math.max(0,now-t))):stWord(x,true)+(t==null?'':', '+ATT.waitLabel(Math.max(0,now-t)).replace(/^waiting /,'for '));}
+function railReq(x){const c=x.live||chats[x.id]?pendingCardOf(x):null;return c?requestText(c):taskText(x);} /* never builds a demo chat just to look (as attentionItems) */
+function railRow(x,root,now){
+  const st=pillSt(x),attn=st==='waiting'||st==='error'||st==='failing'||st==='retrying', sel=x.id===root, tall=needsMe(x); /* spec 052 FR-092: Failing here too; spec 034 FR-018: Retrying */
+  const head=`<span class="sav">${avatar(x)}</span>`, name=`<b>${esc(x.name)}${draftHTML(x)}${unreadHTML(x)}${dialogHTML(x)}</b>`;
+  const cls=`sitem st-${st}${attn?' attn':''}${tall?' tall':''}${sel?' sel':''}`, key=`data-sw="${esc(x.id)}" data-key="sw:${esc(x.id)}" aria-current="${sel}"`, who=`${esc(x.name)}${chatNoWords(x)}${draftWords(x)}${unreadWords(x)}`, no=chatNoOf(x)?'C'+chatNoOf(x)+' · ':'';
+  if(!tall)return `<button class="${cls}" type="button" ${key} title="${no}${esc(x.name)} · ${esc(stWord(x,true))}: ${esc(taskText(x))}" aria-label="${who}, ${esc(stWord(x,true))}. Open chat.">${head}<span class="stx">${name}</span><span class="sst"><span class="dot ${st}"></span><span class="sw">${esc(stWord(x,true))}</span></span></button>`;
+  const req=SHORT(railReq(x),200); /* masked first (requestText), then cut: tooltips stay within 300 characters (spec 052 FR-171) */
+  return `<button class="${cls}" type="button" ${key} title="${no}${esc(x.name)} · ${esc(railAge(x,now))}: ${esc(req)}" aria-label="${who}, ${esc(railAgeSaid(x,now))}: ${esc(req)}. Open chat.">${head}<span class="stx"><span class="stop">${name}<span class="sage">${esc(railAge(x,now))}</span></span><span class="sreq">${esc(req)}</span></span></button>`;
+}
+function renderRailDoor(){
+  const b=$('railDoor'); if(!b)return;
+  const n=needsMeOrder().length;
+  b.classList.toggle('attn',n>0); const c=b.querySelector('b'); if(c&&c.textContent!==String(n))c.textContent=String(n);
+  b.setAttribute('aria-label','Your door: '+(n?n+(n===1?' agent needs':' agents need')+' you':'nobody needs you')+'. Open Needs you.');
+}
+let railTick=0;
 function renderStrip(){
   const box=$('stripList'); if(!box)return;
-  const cur=byId(ui.selected), root=cur?(cur.parent||cur.id):null;
-  morphHTML(box,stripAgents().map(x=>{const st=pillSt(x),attn=st==='waiting'||st==='error'||st==='failing'||st==='retrying'; /* spec 052 FR-092: Failing here too; spec 034 FR-018: Retrying */
-    return `<button class="sitem st-${st}${attn?' attn':''}${x.id===root?' sel':''}" type="button" data-sw="${esc(x.id)}" data-key="sw:${esc(x.id)}" aria-current="${x.id===root}" title="${chatNoOf(x)?'C'+chatNoOf(x)+' · ':''}${esc(x.name)} · ${esc(stWord(x,true))}: ${esc(taskText(x))}" aria-label="${esc(x.name)}${chatNoWords(x)}${draftWords(x)}${unreadWords(x)}, ${esc(stWord(x,true))}. Open chat."><span class="sav">${avatar(x)}</span><span class="stx"><b>${esc(x.name)}${draftHTML(x)}${unreadHTML(x)}${dialogHTML(x)}</b><span class="sst"><span class="dot ${st}"></span><span class="sw">${esc(stWord(x,true))}</span><span class="sin">${esc(SHORT(taskText(x),48))}</span></span></span></button>`;}).join(''));
+  const cur=byId(ui.selected), root=cur?(cur.parent||cur.id):null, folds=railFolds(), now=Date.now();
+  renderRailDoor();
+  /* spec 005 FR-216: a moved folder is re-inserted by morphHTML, which drops the focus; the focused row or heading gets it back by key */
+  const fa=document.activeElement, fk=fa&&box.contains(fa)?(fa.dataset.sw!=null?'[data-sw="'+CSS.escape(fa.dataset.sw)+'"]':fa.dataset.rgfold!=null?'[data-rgfold="'+CSS.escape(fa.dataset.rgfold)+'"]':null):null;
+  morphHTML(box,railGroups().map((g,gi)=>{
+    const r=ROOMS.find(x=>x.id===g.room); if(!r)return '';
+    const shut=folds.has(r.path), n=g.ids.length, here=!!root&&g.ids.includes(root);
+    const need=shut&&g.needN?`<span class="rg-need" title="${g.needN} ${g.needN===1?'needs':'need'} you">${ALERT_ICON}${g.needN}</span>`:'';
+    return `<div class="rgrp" data-key="rg:${esc(r.id)}"><h3 class="rg-hd"><button class="rg-h${shut&&here?' has-sel':''}" type="button" data-rgfold="${esc(r.id)}" aria-expanded="${!shut}" aria-controls="rgRows${gi}" title="${esc(r.name)}" aria-label="${esc(r.name)}: ${n} ${n===1?'session':'sessions'}${g.needN?', '+g.needN+(g.needN===1?' needs':' need')+' you':''}${shut&&here?', the open chat is here':''}">${ICON('chev')}<span class="rg-n">${esc(r.name)}</span>${need}<span class="rg-c" aria-hidden="true">${n}</span></button></h3><div class="rg-rows" id="rgRows${gi}"${shut?' hidden':''}>${g.ids.map(id=>railRow(byId(id),root,now)).join('')}</div></div>`;
+  }).join(''));
+  if(fk&&!box.contains(document.activeElement)){const n=box.querySelector(fk);if(n&&n.getClientRects().length)n.focus({preventScroll:true});}
+  /* 052 FR-061: the ages tick as text only, every 30 s while the rail is shown */
+  if(!railTick)railTick=setInterval(()=>{if(!$('stripList')){clearInterval(railTick);railTick=0;return;}const t=Date.now();document.querySelectorAll('#stripList .sitem.tall[data-sw]').forEach(el=>{const x=byId(el.dataset.sw),s=el.querySelector('.sage');if(x&&s){const v=railAge(x,t);if(s.textContent!==v)s.textContent=v;}});},30000);
 }
 
 
@@ -8659,7 +8906,7 @@ if(bridge){
     const s=e.target.closest&&e.target.closest('.floors-ui select[data-fl="move"]');if(s)moveRoomToFloor(s.dataset.room,s.value);
     if(e.target&&e.target.classList&&e.target.classList.contains('fl-into-sel')){INTO=e.target.value;renderIntoFloor();renderFloorsPanel();renderFloorsSettings();}});
   document.addEventListener('keydown',e=>{const t=e.target;if(e.key==='Enter'&&t&&t.closest&&t.closest('.floors-ui .fl-new')){e.preventDefault();floorAction(t.closest('.fl-new').querySelector('[data-fl="create"]'));}});
-  window.DurbarScreens.init({shutters:{get:()=>SHUT_PREF,set:setShutOn,usable:()=>!!SHUT},view:{get:officeView,set:setOfficeView,note:()=>roPeople().note&&officeView()==='real'?roPeople().note:'',world:{get:()=>roPeople().world,set:setRoWorld,list:roWorlds,defaultSet:()=>roPeople().setName}},navKey:{text:navKeyText,textOf:c=>keyText(NAV.comboParts(c)),defText:()=>keyText(NAV.comboParts(NAV.DEFAULT_COMBO)),isDefault:()=>NAV.sameCombo(NAV_KEY,NAV.DEFAULT_COMBO),set:setNavKey,recording:on=>{navRecording=!!on;},fromEvent:e=>NAV.comboFromEvent(e,IS_MAC),clash:c=>NAV.clashOf(c,IS_MAC)},roomName:id=>{const r=ROOMS.find(x=>x.id===id);return r?r.name:String(id||'');},refreshKinds:()=>loadKinds(true),setAccounts,density:{get:()=>DENSITY,set:setDensity},liveAct:{get:()=>LIVE_PREF,set:setLiveOn,usable:()=>!!LIVEACT},bridge,stats:STATS,esc,mask:safeMask,toast,announce,floors:{on:()=>floorsLive(),render:()=>renderFloorsSettings()},sched:{on:()=>!!bridge.listSchedules&&!demoOn,render:()=>renderSchedSettings()},onSettings:v=>{APP_SETTINGS=v||{};},onUsageReset,isSerious:()=>SERIOUS,isNotify:()=>NOTIFY,setNotify:on=>{NOTIFY=!!on;},breakResume:()=>BREAK_RESUME,setBreakResume:v=>{BREAK_RESUME=v==='ask'?'ask':'auto';},chatLinksIn:()=>CHAT_LINKS,setChatLinksIn:v=>{CHAT_LINKS=v==='system'?'system':'session';},setSerious:on=>{SERIOUS=!!on;markSerious();scheduleRender();},usageSince:()=>LEDGER.since(),usageOffice:()=>LEDGER.office(),costData,usageError:()=>usageSaveError,
+  window.DurbarScreens.init({autoFollow:{get:()=>AF_ON,set:v=>setAutoFollowOn(v)},shutters:{get:()=>SHUT_PREF,set:setShutOn,usable:()=>!!SHUT},view:{get:officeView,set:setOfficeView,note:()=>roPeople().note&&officeView()==='real'?roPeople().note:'',world:{get:()=>roPeople().world,set:setRoWorld,list:roWorlds,defaultSet:()=>roPeople().setName}},navKey:{text:navKeyText,textOf:c=>keyText(NAV.comboParts(c)),defText:()=>keyText(NAV.comboParts(NAV.DEFAULT_COMBO)),isDefault:()=>NAV.sameCombo(NAV_KEY,NAV.DEFAULT_COMBO),set:setNavKey,recording:on=>{navRecording=!!on;},fromEvent:e=>NAV.comboFromEvent(e,IS_MAC),clash:c=>NAV.clashOf(c,IS_MAC)},roomName:id=>{const r=ROOMS.find(x=>x.id===id);return r?r.name:String(id||'');},refreshKinds:()=>loadKinds(true),setAccounts,density:{get:()=>DENSITY,set:setDensity},liveAct:{get:()=>LIVE_PREF,set:setLiveOn,usable:()=>!!LIVEACT},bridge,stats:STATS,esc,mask:safeMask,toast,announce,floors:{on:()=>floorsLive(),render:()=>renderFloorsSettings()},sched:{on:()=>!!bridge.listSchedules&&!demoOn,render:()=>renderSchedSettings()},onSettings:v=>{APP_SETTINGS=v||{};},onUsageReset,isSerious:()=>SERIOUS,isNotify:()=>NOTIFY,setNotify:on=>{NOTIFY=!!on;},breakResume:()=>BREAK_RESUME,setBreakResume:v=>{BREAK_RESUME=v==='ask'?'ask':'auto';},chatLinksIn:()=>CHAT_LINKS,setChatLinksIn:v=>{CHAT_LINKS=v==='system'?'system':'session';},setSerious:on=>{SERIOUS=!!on;markSerious();scheduleRender();},isStillHl:()=>STILL_HL,setStillHl:on=>{STILL_HL=!!on;markStillHl();scheduleRender();},usageSince:()=>LEDGER.since(),usageOffice:()=>LEDGER.office(),costData,usageError:()=>usageSaveError,
     places:window.DurbarPlaces,customPlaces:()=>CUSTOM,placeMap:()=>PLACE_MAP,placeLabel,setCustomPlaces,placeServers:()=>[...SEEN_SERVERS],setPlaceMap:m=>{PLACE_MAP=(m&&typeof m==='object')?m:{};scheduleRender();},
     applyTheme,
     applyCharacters,charPreview, /* spec 077 FR-068 */
@@ -8727,7 +8974,7 @@ if(bridge){
     }).catch(()=>apply());}else apply();
   };
   if(bridge.getOrder)bridge.getOrder().then(d=>{ORDER=RO.sanitize(d);scheduleRender();}).catch(()=>{}); /* issue 677: a failed or corrupt read keeps the automatic order */
-  if(bridge.getSettings)bridge.getSettings().then(v=>{APP_SETTINGS=v||{};PLACE_MAP=(v&&v.placeMap)||{};CUSTOM=(v&&Array.isArray(v.customPlaces))?v.customPlaces:[];SERIOUS=!!(v&&v.seriousMode);markSerious();NOTIFY=!!(v&&v.notifyNeedsMe!==false);BREAK_RESUME=v&&v.breakResume==='ask'?'ask':'auto';CHAT_LINKS=v&&v.chatLinksIn==='system'?'system':'session';themeBoot(v);}).catch(()=>{});
+  if(bridge.getSettings)bridge.getSettings().then(v=>{APP_SETTINGS=v||{};PLACE_MAP=(v&&v.placeMap)||{};CUSTOM=(v&&Array.isArray(v.customPlaces))?v.customPlaces:[];SERIOUS=!!(v&&v.seriousMode);markSerious();STILL_HL=!!(v&&v.stillHighlights);markStillHl();setAutoFollowOn(!!(v&&v.autoFollowWork===true));NOTIFY=!!(v&&v.notifyNeedsMe!==false);BREAK_RESUME=v&&v.breakResume==='ask'?'ask':'auto';CHAT_LINKS=v&&v.chatLinksIn==='system'?'system':'session';themeBoot(v);}).catch(()=>{});
   setInterval(()=>{if(VISITS.tick())scheduleRender();},250);
   setInterval(coffeeTick,SIM_BREAK?1000:5000); /* spec 068: resume, ask or remind when a break is due */
   agents=LIVE.agents; ROOMS=LIVE.rooms;
@@ -8742,7 +8989,7 @@ if(pendingOpen&&demoOn){openPanel(pendingOpen,false);pendingOpen=null;}
 const settleNow=()=>{if(!agentsListed||!window.__durbarSimReplayed||baselineQueued||baselineAsking)return false;if(renderQueued){renderQueued=false;renderAll();}return true;};
 /* simulator drivers load with simfreeze=1: the desk glow then holds still (FR-178: the geometry and screenshot checks measure boxes, so no zoom may be mid-way); the unread driver opts back in with hlmotion=1 to test the motion itself */
 if(SIM&&qs.get('simfreeze')==='1'&&qs.get('hlmotion')!=='1')document.documentElement.classList.add('hl-still');
-if(SIM)window.__durbarSimUi={ops:()=>({...OPS}),agents:()=>agents,cv:{mark:cvMark,release:cvRelease,drop:cvDrop,openPanel,setDensity},setLive:setLiveOn,setOfficeView,needsCount:()=>needsMeOrder().length,clearDetail:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return false;c.querySelectorAll(':scope > details.pdiff').forEach(x=>x.remove());scheduleRender();return true;},addDetail:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return false;const d=document.createElement('details');d.className='pdiff';d.innerHTML='<summary>Show the change (+1 \u22121)</summary><pre>- a\n+ b</pre>';c.insertBefore(d,c.querySelector(':scope > .note-actions'));scheduleRender();return true;},requestText:s=>{const n=document.createElement('div');n.className='note elicit';n.textContent=String(s);return requestText(n);},setSerious:v=>{SERIOUS=!!v;return SERIOUS;}, /* spec 097 (the moments driver): a change in the card, the card text's masking, Serious mode */unread:{mark:id=>UNREAD.complete(id,false)==='marked',read:id=>markRead(byId(id))}, /* spec 097 (the moments driver): the New reply mark and Mark as read, as the app sets them */order:{get:()=>ORDER,saved:()=>bridge.getOrder?bridge.getOrder():null,reset:resetOrder,path:id=>(ROOMS.find(r=>'room:'+r.id===id)||{}).path||''}, /* issue 677 (check 033-order): the order held and saved, Reset, a room's key */
+if(SIM)window.__durbarSimUi={afPasses:()=>AF_PASSES,ops:()=>({...OPS}),agents:()=>agents,scene:(a,mini,c)=>scene(a,mini,c), /* a drawn scene's markup, for the drivers (FR-192: the SMIL wave) */cv:{mark:cvMark,release:cvRelease,drop:cvDrop,openPanel,setDensity},setLive:setLiveOn,setOfficeView,needsCount:()=>needsMeOrder().length,clearDetail:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return false;c.querySelectorAll(':scope > details.pdiff').forEach(x=>x.remove());scheduleRender();return true;},addDetail:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return false;const d=document.createElement('details');d.className='pdiff';d.innerHTML='<summary>Show the change (+1 \u22121)</summary><pre>- a\n+ b</pre>';c.insertBefore(d,c.querySelector(':scope > .note-actions'));scheduleRender();return true;},requestText:s=>{const n=document.createElement('div');n.className='note elicit';n.textContent=String(s);return requestText(n);},setSerious:v=>{SERIOUS=!!v;return SERIOUS;}, /* spec 097 (the moments driver): a change in the card, the card text's masking, Serious mode */unread:{mark:id=>UNREAD.complete(id,false)==='marked',read:id=>markRead(byId(id))}, /* spec 097 (the moments driver): the New reply mark and Mark as read, as the app sets them */order:{get:()=>ORDER,saved:()=>bridge.getOrder?bridge.getOrder():null,reset:resetOrder,path:id=>(ROOMS.find(r=>'room:'+r.id===id)||{}).path||''}, /* issue 677 (check 033-order): the order held and saved, Reset, a room's key */
   toast:(s,act)=>{const t=act?toastAction(esc(String(s)),String(act),()=>{},8000):toast(esc(String(s)),8000);return !!t;}, /* spec 097 FR-113: a toast for the world-chrome driver (simulator only) */realLayout:()=>RO_LAST, /* spec 097: the last Real office layout (check-office-overlap's Real office variant) */slips:()=>realSlips(), /* spec 097: what the world draws as slips (the moments driver; simulator only) */uncrowd:()=>{agents.forEach(x=>VISITS.unpin(x.id));scheduleRender();return true;},crowd:(pid,n,from)=>{const a=agents.filter(x=>!x.parent).slice(from||0,(from||0)+n);a.forEach(x=>VISITS.pin(x.id,pid,'test'));scheduleRender();return a.length;}, /* spec 097: n main agents stand at a place (a "+N" crowd for the driver; simulator only) */crew:{state:()=>({map:{...CREW_MAP},help:{...CREW_HELP},bad:[...CREW_BAD],hasModule:!!CREW}),renderAll:()=>{renderAll();return true;},probe:()=>{try{crewPreload();syncCrew();return {ok:true,of:agents.map(x=>crewOf(x)).filter(Boolean).length};}catch(e){return {ok:false,err:String(e&&e.message)};}},openInbox:()=>{openInbox();return true;},closeInbox:()=>{closeInbox();return true;},openPanel:id=>{openPanel(id);return true;},fall:c=>{const f0=CREW.file;CREW.file=(i,p)=>i===c?'crew/art/gone.webp':f0(i,p);crewLoaded.clear();crewPreload();CREW.file=f0;return true;}}, /* spec 077 (check-crew): the character map, a render, and one character's pictures failing to load */
   readAll:(quiet)=>{const n=UNREAD.size;UNREAD.ids().forEach(id=>{UNREAD.read(id);UNREAD_AT.delete(id);});if(!quiet)scheduleRender();return n;},notes:{all:()=>[...NT.by.values()].map(x=>x.notes||[]).flat(),saveMsg:btn=>{const a=byId(ui.selected);return notesSaveMsg(a,msgInfo(btn),btn);},noCommands:()=>{const x=agents.find(q=>q.live&&!q.parent&&!slashSupported(q));return x?x.name:'';},selNow:()=>{showSelButton();const b=document.getElementById('ntSelBtn');return !!b&&!b.hidden;},open:()=>openNotes(byId(ui.selected)),close:()=>closeNotes(false),search:q=>{const f=$('ntSearch');if(!f)return false;f.value=q;f.dispatchEvent(new Event('input'));return true;},marks:{clear:()=>{document.querySelectorAll('#chat .nt-mark').forEach(x=>x.remove());document.querySelectorAll('#chat .bubble').forEach(b=>{b._nd=undefined;});return true;},run:()=>notesMarkAll(byId(ui.selected))},change:(note,patch)=>notesChange(byId(ui.selected),note,patch),rename:note=>renameNote(byId(ui.selected),note,null),plant:n=>{const a=byId(ui.selected),st=a&&notesOf(a);if(!st||!st.ok)return false;st.notes.push(n);notesPaint();if(slashUi)slashUpdate();return true;}}, /* spec 083: the check-notes driver reads the window's notes and takes the paths a click cannot */
   sizingLounges:()=>lastSizing.reduce((n,m)=>n+(m.rolled||[]).length,0), sizingMains:()=>lastSizing.reduce((n,m)=>n+m.mains.length,0), /* FR-181: the desks it is sized for (a pill does not reshape the cards) */ /* spec 001 FR-180: the finished agents the office is sized for */

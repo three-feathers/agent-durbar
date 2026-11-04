@@ -210,6 +210,10 @@ export interface AppSettingsView {
   customPlaces?: CustomPlaceView[];
   /** Serious mode (spec 034): the agent figures show no monster, ambulance or other mood drawing. */
   seriousMode?: boolean;
+  /** Spec 001 FR-192: desk highlights keep the glow and the New badge but no motion. */
+  stillHighlights?: boolean;
+  /** Auto-follow work (spec 052 FR-182): off by default. */
+  autoFollowWork?: boolean;
   /** Active theme id (specs 035-040). Omitted = Clean Office. */
   theme?: string;
   /** Spec 077 FR-064: who sits at the desks (`theme`: the theme's own). */
@@ -314,6 +318,35 @@ export interface ScheduleInfo {
   cap?: { amount: number; unit: 'aiu' | 'usd' };
   spent?: number;
   spentUnknown?: boolean;
+  /** Spec 072 FR-002: a self-paced loop on `target`'s session: the user's limits, and main's own state (never taken from the window). */
+  loop?: LoopInfo;
+}
+/** Spec 072 FR-002: a loop's limits (minutes, epoch ms) and what main keeps: passes, the last ask, a hold, and how it ended. */
+export interface LoopInfo {
+  minDelay: number;
+  maxDelay: number;
+  defaultDelay: number;
+  maxPasses: number;
+  endAt: number;
+  startedAt?: number;
+  passes?: number;
+  inPass?: boolean;
+  lastAsk?: { minutes: number; reason: string; source: 'agent' | 'default' | 'clamped'; asked?: number };
+  noPaceStreak?: number;
+  errorStreak?: number;
+  hold?: 'pause-all' | 'person' | 'break';
+  ended?: { at: number; reason: 'user' | 'agent' | 'session' | 'limit' | 'passes' | 'time' | 'no-pace' | 'errors' | 'app-closed'; text: string };
+}
+/** Spec 072 FR-023: the `loop:pass` push for a pass's chat note: pass N went out, its next wake, or the loop's end. No prompt or reply. */
+export interface LoopPassInfo {
+  agentId: string;
+  scheduleId: string;
+  phase: 'sent' | 'next' | 'end';
+  pass?: number;
+  maxPasses: number;
+  next?: number;
+  reason?: string;
+  ended?: string;
 }
 /** Spec 052 FR-089: the Since you were away card's facts (src/main/daily.ts). */
 export interface SinceAwayInfo {
@@ -901,6 +934,10 @@ export interface DurbarApi {
   removePlace?(id: string): Promise<CustomPlaceResult>;
   /** Turn Serious mode on or off (spec 034). */
   setSeriousMode?(on: boolean): Promise<{ ok: boolean; seriousMode?: boolean }>;
+  /** Turn Still highlights (no motion) on or off (spec 001 FR-192). */
+  setStillHighlights?(on: boolean): Promise<{ ok: boolean; stillHighlights?: boolean }>;
+  /** Turn Auto-follow work on or off (spec 052 FR-182). `ok: false` (nothing changed, the value in force is returned as `autoFollowWork`) for a value that is not a boolean or a save that failed; no `error` text. */
+  setAutoFollowWork?(on: boolean): Promise<{ ok: boolean; autoFollowWork?: boolean; unsaved?: true }>;
   /** Turn the "needs you" OS notifications on or off (spec 052 FR-059). */
   setNotifyNeedsMe?(on: boolean): Promise<{ ok: boolean; notifyNeedsMe?: boolean }>;
   /** Spec 068 FR-006: what happens when a coffee break ends. */
@@ -976,6 +1013,10 @@ export interface DurbarApi {
   runScheduleNow?(id: string): Promise<{ ok: boolean; error?: string }>;
   /** Spec 044 FR-043: one schedule's run log, newest first; read-only. */
   scheduleRuns?(id: string): Promise<{ ok: true; runs: ScheduleRunInfo[] } | { ok: false }>;
+  /** Spec 072 FR-007: Stop loop (ends a running loop at once). */
+  stopLoop?(id: string): Promise<{ ok: boolean; error?: string }>;
+  /** Spec 072 FR-008: Start again (a new run of an ended loop with its old limits; passes and spend from zero). */
+  restartLoop?(id: string): Promise<{ ok: boolean; error?: string }>;
   /** Spec 052 FR-089: what happened while the app was closed (more than 30 minutes), or null. */
   sinceAway?(): Promise<SinceAwayInfo | null>;
   dismissSinceAway?(): Promise<{ ok: boolean }>;
@@ -984,6 +1025,8 @@ export interface DurbarApi {
   dismissInterrupted?(): Promise<{ ok: boolean }>;
   onSchedules?(cb: (doc: SchedulesInfo) => void): () => void;
   onScheduleRan?(cb: (r: { agentId: string; scheduleId: string; every?: number; at?: number; rule?: ScheduleInfo['rule'] }) => void): () => void;
+  /** Spec 072 FR-023: a loop pass went out, ended with its next wake, or the loop ended. */
+  onLoopPass?(cb: (p: LoopPassInfo) => void): () => void;
   /** Answer the agent's question (spec 012 FR-128): question text -> answer; null = skip. */
   answerQuestion?(id: string, requestId: string, answers: Record<string, string> | null): Promise<{ ok: boolean; error?: string }>;
   /** Answer an MCP elicitation (spec 012 FR-151): `accept` with the form's values (checked in main), `decline` or `cancel`. `field` names a field that failed the check. */

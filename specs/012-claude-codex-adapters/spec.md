@@ -1100,3 +1100,7 @@ The owner asked that sessions be shared between Durbar and the Claude Code CLI. 
 
 **FR-166** `[IMPLEMENTED]` `npm test` runs each suite with its own empty `TMPDIR`/`TEMP`/`TMP` (`scripts/run-tests.js`); a `durbar-*` entry left in it when the suite ends fails the suite and names the entry; the folder is removed either way. Tests make temp folders through `tmpDir` (`scripts/test-tmp.ts`, removed at process exit, also after `process.exit`); the two plain-JS suites (`test-changelog.js`, `test-specs-index.js`) carry the same hook. Parallelism is unchanged.
   - `test:` `scripts/test-run-tests.ts` (a leaking suite fails and is named, a clean one passes, each suite has its own folder, removed afterwards). Before: 12 of 197 suites leaked, 175+ folders per run; see the PR for the counts after.
+
+## Changes 2026-11-04: Codex RPC stop test waits on conditions (issue #1136)
+
+`scripts/test-codex-rpc.ts` slept a fixed 60 ms before asserting the SIGTERM/SIGKILL escalation (FR-079) and failed on a loaded macOS CI runner (`['SIGTERM']` instead of `['SIGTERM','SIGKILL']`, run 41784180794 on PR #972). Test-only, no product change (FR-048b). The positive cases now poll with an `until` (5 s limit) for the signals; the two negatives ("no kill when the child exited in time", "no SIGKILL after the child exited") wait for a positive signal first where one exists (SIGTERM seen), then pass several times the grace before asserting absence. `test:` `scripts/test-codex-rpc.ts`.

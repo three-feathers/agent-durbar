@@ -1,0 +1,1 @@
+- **No empty More menu in a helper's chat** (spec 005 FR-234, issue #1145): a sub-agent's chat header no longer shows a More button that opens an empty popover; a main agent's chat keeps More. Checked by the simulator driver `check-helper-more` at both sizes on Linux (not run on macOS or Windows).
