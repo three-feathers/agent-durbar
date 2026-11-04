@@ -204,7 +204,7 @@ module.exports = async (ctx) => {
     await js(`document.body.classList.remove('panel-open');0`);
     await must(`!document.querySelector('#stage .ro').classList.contains('paused')`, 'the office back');
     await js(`(()=>{const s=document.querySelector('#stage .ro-screen[data-for="'+CSS.escape(${jsLiteral(mid)})+'"]');s.dispatchEvent(new PointerEvent('pointerover',{bubbles:true,pointerType:'mouse',clientX:${jsLiteral(mp.x)},clientY:${jsLiteral(mp.y)}}));})();0`);
-    await js(`new Promise(r=>setTimeout(r,300))`); // longer than the open delay: it must not open (a bound on a negative, not a wait for a state)
+    await must(`(()=>{const h=window.DurbarRealOffice.hoverState();return h.still&&!h.armed;})()`, 'back under a still pointer: nothing can open (still, no hover timer armed)');
     assert.strictEqual(await js(`!!document.getElementById('roZoom')`), false, 'back under a still pointer: no zoom opens');
     await hover(mid, { x: mp.x + 4, y: mp.y + 2 });
     await moveTo(1, 1);
