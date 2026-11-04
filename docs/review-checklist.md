@@ -1,6 +1,6 @@
 # Review checklist: first time right
 
-**Before asking for review**, read your real diff (`git diff origin/main...HEAD`) as a reviewer who assumes it is wrong. Rules: [AGENTS.md](../AGENTS.md) (*First time right*). Add a line for a new mistake (reason, one evidence link); fix or delete a wrong one. Guidance only: nothing here overrides AGENTS.md, the constitution or the safety rules. Tool pitfalls: [agent-notes.md](agent-notes.md).
+**Before asking for review**, read your real diff (`git diff origin/main...HEAD`) as a reviewer who assumes it is wrong. Rules: [AGENTS.md](../AGENTS.md) (*First time right*). Add a line for a new mistake (reason, one evidence link); fix or delete a wrong one. Tool pitfalls: [agent-notes.md](agent-notes.md).
 
 ## Where the list comes from
 
@@ -72,7 +72,8 @@ On 2026-10-23 Vikram's agent grouped the ~1,100 *Required fixes* in reviews of ~
 
 ## Tests
 
-- [ ] **Plant a mutation per new rule and see a test fail** (remove the guard, swap the order, return early); list them in the PR. [#630](https://github.com/three-feathers/agent-durbar/pull/630)
+- [ ] **Slice size**: about 800 changed lines per PR, pictures excluded (#887).
+- [ ] **Plant a mutation per new rule, each guard both ways, and see a test fail** (drop the guard, swap the order); a risky-logic PR lists each mutant and its failing assertion, quoted. Survivors hid four real gaps (#935). [#630](https://github.com/three-feathers/agent-durbar/pull/630)
 - [ ] **After a scripted edit or conflict resolution in a test file, no section disappeared**: compare `git diff --stat` and `grep -c assert` before and after. [#644](https://github.com/three-feathers/agent-durbar/pull/644)
 - [ ] **An injected dependency is really used** (`env`, a clock, a runner): plant "use the global instead". FR-058
 - [ ] **A test of a script's refusal is safe when the refusal breaks**: fakes first on `PATH` for every outside tool (record and fail), remotes pointing nowhere, assert none was called. FR-058
@@ -99,7 +100,6 @@ On 2026-10-23 Vikram's agent grouped the ~1,100 *Required fixes* in reviews of ~
 - [ ] **A handler main gives Electron answers on every path**: `setWindowOpenHandler` code that calls main's logic is wrapped so a throw still returns `deny` (a test makes it throw); a page's request never moves focus unless the page had it (spec 080, #915).
 - [ ] **A driver runs a page's script in that page's own `webContents`**, not in "the attached view": a page that opens a tab stops being the attached one mid-step (spec 080 `check-browser-tabs`, 2026-10-31).
 - [ ] **A menu row sends only its own field**, merged when its turn comes; a fake answers as the real runtime does (spec 030).
-- [ ] **Mutate each guard both ways**: surviving mutants hid four real gaps (#935).
 - [ ] **No unquoted `$` or heredoc in a shell comment body**: `$0.0066` became `/bin/bash.0066`.
 - [ ] **Sub-agents get unique scratch folders and one PR-body file each**: files overwritten on 2026-10-23 and again 2026-10-31.
 
