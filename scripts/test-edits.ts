@@ -5,7 +5,9 @@
  */
 import * as assert from 'assert';
 import { assertLinearShape, assertWithinYardstick } from './redact-growth-lib';
-import { countDiff, editFile, finishEdit, partialJson, patchFiles, EDIT_FILES_MAX } from '../src/shared/edits';
+import { countDiff, editFile, finishEdit, maskedClip, partialJson, patchFiles, EDIT_FILES_MAX, MASK_MARGIN } from '../src/shared/edits';
+import { clipDiff } from '../src/shared/diff';
+import { redact } from '../src/shared/redact';
 import { DIFF_MAX } from '../src/shared/diff';
 import { ArgStream, EditStreams, codexEdit, editOf, editPath, isEditTool, ARG_STREAM_MAX } from '../src/adapters/edits';
 import { EventMapper } from '../src/adapters/map';
@@ -409,6 +411,52 @@ const TOKEN = 'ghp_abcdefghijklmnopqrstuvwxyz0123456789';
   const diff = (n: number): string => '@@\n' + ('+a=1&b=2?c=3 ' + HDR + '\n').repeat(Math.ceil(n / 60)).slice(0, n);
   const work = (x: string): void => void maskEditInfo({ files: Array.from({ length: 20 }, (_, i) => ({ path: `/w/${i}.ts`, kind: 'edit' as const, diff: x.slice(0, Math.ceil(x.length / 20)) })) }, vals);
   assertLinearShape('maskEditInfo', work, diff);
+}
+
+// spec 012 FR-166 (issue #1052): an edit's diff is masked only as far as it can be shown
+{
+  const tok = (i: number): string => 'ghp_' + String(i).padStart(4, '0') + 'A'.repeat(32); // a GitHub token shape the mask knows
+  // up to DIFF_MAX plus the margin: exactly the old result
+  const small = Array.from({ length: 900 }, (_, i) => (i % 50 === 7 ? `token = ${tok(i)}` : `line ${i} of plain text`)).join('\n');
+  assert.ok(small.length <= DIFF_MAX + MASK_MARGIN);
+  assert.strictEqual(maskedClip(small), clipDiff(redact(small), DIFF_MAX), 'FR-166: unchanged within the margin');
+  // a long text: what is shown is masked, with secrets near the cut, at the masked window's end, and many masks shortening the text before the cut
+  const filler = (n: number): string => Array.from({ length: n }, (_, i) => `row ${i} ${'x'.repeat(40)}`).join('\n');
+  const near = filler(400) + `\nkey ${tok(1)}\n`; // just before DIFF_MAX
+  const shrink = Array.from({ length: 3000 }, (_, i) => tok(i)).join('\n'); // every line masked: the masked text is much shorter
+  for (const [what, text] of [
+    ['near the cut', near + filler(15000)],
+    ['straddling the window end', 'y'.repeat(DIFF_MAX + MASK_MARGIN - 20) + tok(2) + filler(15000)],
+    ['many masks before the cut', shrink + filler(15000)],
+  ] as Array<[string, string]>) {
+    const out = maskedClip(text);
+    assert.ok(!/ghp_\d{4}A{8}/.test(out), `FR-166 ${what}: no token shows`);
+    assert.ok(out.length <= DIFF_MAX + 100, `FR-166 ${what}: cut at DIFF_MAX`);
+    assert.strictEqual(out, clipDiff(redact(text), DIFF_MAX), `FR-166 ${what}: same as masking it all`);
+  }
+  // finishEdit uses it: a diff over the mask's own 1,000,000-character cut counts every line not shown
+  {
+    const long = filler(30000);
+    assert.ok(long.length > 1_000_000);
+    assert.strictEqual(finishEdit([{ path: '/w/a.txt', kind: 'create', diff: long }])!.files[0].diff, maskedClip(long), 'FR-166: finishEdit masks only what it shows');
+  }
+  // the mask runs over a bounded window, not over the whole text (the cause of #1052)
+  let masked = 0;
+  const big = ' '.repeat(ARG_STREAM_MAX);
+  const out = maskedClip(big, DIFF_MAX, (x) => { masked += x.length; return redact(x); });
+  assert.ok(masked <= 4 * (DIFF_MAX + MASK_MARGIN), `FR-166: masked ${masked} characters of ${big.length}, at most ${4 * (DIFF_MAX + MASK_MARGIN)}`);
+  assert.ok(out.length <= DIFF_MAX + 100);
+  // the streamed Write of #1052: 800,000 spaces in 100-character fragments, an absolute CPU bound with wide headroom (was about 9 s on Linux, 2.2 s on an M4)
+  const json = JSON.stringify({ file_path: '/w/big.txt', content: ' '.repeat(800_000) });
+  const es = new EditStreams();
+  es.begin('big', 'Write');
+  const t0 = process.cpuUsage();
+  let steps = 0;
+  for (let i = 0; i < json.length; i += 100) steps += es.delta('big', json.slice(i, i + 100)).length;
+  const u = process.cpuUsage(t0);
+  const ms = (u.user + u.system) / 1000;
+  assert.ok(steps > 1, 'the stream was parsed as it grew');
+  assert.ok(ms < 6000, `FR-166: an 800,000-space streamed Write took ${Math.round(ms)} ms of CPU (bound 6000 ms)`);
 }
 
 console.log('edits: ok');
