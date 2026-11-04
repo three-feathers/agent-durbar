@@ -82,6 +82,9 @@ html[data-density="compact"] #topMoreMenu{--h-ctl:32px; --h-chip:26px; --h-pill:
 .stat[aria-pressed="true"]{background:var(--surface-2);box-shadow:inset 0 -2px 0 var(--stat-sel-border,#8aa7be)}
 .stat[aria-pressed="true"] span.l{font-weight:650;color:var(--ink)}
 .stat b{font-size:14px;font-weight:600;font-variant-numeric:tabular-nums}
+/* spec 097, Changes 2026-11-04: a count keeps its width when its number changes, whatever the font: tabular-nums alone did not hold on the Windows runner's system font ("6" 7.78 px, "7" 7.52 px), so every status change resized a pill and the top bar measured itself again (fitTopbar). One "0" width per digit (ch); a tabular font looks as before */
+.stat b[data-d]{display:inline-block;text-align:center}
+.stat b[data-d="1"]{width:1ch}.stat b[data-d="2"]{width:2ch}.stat b[data-d="3"]{width:3ch}.stat b[data-d="4"]{width:4ch}
 /* usage total chip (spec 011 FR-019): same pill as the counters, but a note, not a filter */
 .stat-aiu{cursor:default}
 .stat-aiu:hover{background:transparent}
