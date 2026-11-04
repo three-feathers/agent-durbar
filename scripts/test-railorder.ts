@@ -7,6 +7,7 @@
  */
 import assert from 'assert';
 import path from 'path';
+import fs from 'fs';
 
 process.exitCode = 1;
 const ROOT = path.join(__dirname, '..', '..');
@@ -106,6 +107,14 @@ assert.strictEqual(R.foldsJSON(new Set(['x'.repeat(R.MAX_PATH + 1)]), ['x'.repea
 }
 // round trip
 assert.deepStrictEqual([...R.loadFolds(R.foldsJSON(new Set(['/a']), ['/a']))], ['/a']);
+
+// source pin (FR-216 item 4): the page prunes saved folds only once the session list has loaded, as pruneNumbers does
+{
+  const src = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'app.js'), 'utf8');
+  const fn = (src.match(/function saveFolds\(\)\{[\s\S]*?\n\}/) || [''])[0];
+  assert.ok(fn, 'app.js has saveFolds()');
+  assert.ok(/RAIL\.foldsJSON\(railFolds\(\),\s*ROOMS\.map\(r=>r\.path\),\s*agentsListed\|\|demoOn\)/.test(fn), 'saveFolds() passes agentsListed||demoOn to foldsJSON, so nothing is pruned before the session list has loaded');
+}
 
 process.exitCode = 0;
 console.log('railorder tests passed');
