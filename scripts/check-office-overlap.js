@@ -937,8 +937,8 @@ async function driver(ctx) {
         if (ox > T && oy > T) P.push(`${kids[i].id || kids[i].className.split(' ')[0]} overlaps ${kids[j].id || kids[j].className.split(' ')[0]}`);
       }
     }
-    const strip = document.getElementById('stripList');
-    if (strip && R(strip).right > innerWidth + 1) P.push('the agent strip leaves the window');
+    const strip = document.getElementById('stripList'); /* spec 005 FR-190: the agent rail's list */
+    if (strip && (R(strip).right > innerWidth + 1 || R(strip).bottom > innerHeight + 1)) P.push('the agent rail leaves the window');
     /* spec 005 FR-037..FR-040: the chat settings are one row under the message box, inside the window, nothing overlapping; the
        Send / Stop slot sits inside the box */
     const bar = document.getElementById('cToolbar'), row = document.getElementById('ctItems'), box = document.querySelector('#panel .inbox');
