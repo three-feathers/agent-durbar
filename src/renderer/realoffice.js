@@ -22,6 +22,7 @@
   const REPAINT_MS = 2000; /* FR-033 */
   const SCR = new Map(); /* desk id -> {box, last, timer, dirty, away, fit, sig} */
   const OFF = new Set(); /* keys of desks whose motion stands still: scrolled away or under the zoom */
+  let LAY_G = 0; const CUR_G = () => LAY_G; /* the arcade's scale, for its screen text (0 in other worlds) */
   let CUR = null; /* {ro, screenOf, still, hold, desks: Map id -> desk, agents: Map id -> model agent, folders: Map, drawn} */
   let ZOOM = null; /* {id, hover, focus, panel, plate} */
   let IO = null, DISMISSED = '';
@@ -40,7 +41,8 @@
     if (sx === 1 && sy === 1) { el.animate([{ translate: `${dx}px ${dy}px` }, { translate: '0 0' }], ease); return; }
     /* scaled about the element's own origin: the translate brings its top left to where it was */
     const o = getComputedStyle(el).transformOrigin.split(' '), ox = parseFloat(o[0]) || 0, oy = parseFloat(o[1]) || 0;
-    el.animate([{ translate: `${dx - ox * (1 - sx)}px ${dy - oy * (1 - sy)}px`, scale: `${sx} ${sy}` }, { translate: '0 0', scale: '1 1' }], ease);
+    const flip = el.classList.contains('mir') ? -1 : 1; /* a mirrored picture stays mirrored while it eases (spec 102 FR-256) */
+    el.animate([{ translate: `${dx - ox * (1 - sx)}px ${dy - oy * (1 - sy)}px`, scale: `${flip * sx} ${sy}` }, { translate: '0 0', scale: `${flip} 1` }], ease);
   };
   const box = (el, r) => {
     if (SLIDE && el._x !== undefined && !el.classList.contains('ro-chip') && !el.classList.contains('ro-lplate')) {
@@ -134,7 +136,28 @@
   const WHERE = new Map(), GLIDING = new Map();
   /* spec Changes 2026-11-01: a person zooms out where they were and zooms in where they go: never two bodies, nothing crosses the room */
   const ZOOM_OUT = 280, ZOOM_IN = 320;
+  /* spec 102 FR-262: in a pixel world the teleport is a dissolve: three copies under static dither masks, from a small pool; only opacity moves */
+  let PIXEL = false; const DIS_POOL = [];
+  const DIS_MS = 150;
+  function dissolve(e, out, delay) {
+    if (!e.parentNode) return;
+    [0, 1, 2].forEach((i) => {
+      const c = DIS_POOL.pop() || document.createElement('img');
+      c.alt = ''; c.setAttribute('aria-hidden', 'true'); c.className = 'ro-dis d' + i + (e.classList.contains('mir') ? ' mir' : '');
+      c.src = e.getAttribute('src'); c.style.cssText = 'left:' + e.style.left + ';top:' + e.style.top + ';width:' + e.style.width + ';height:' + e.style.height;
+      e.parentNode.insertBefore(c, e.nextSibling);
+      const peak = 0.34 + i * 0.2;
+      const a = c.animate([{ opacity: 0 }, { opacity: 1, offset: out ? 1 - peak : peak }, { opacity: 0 }], { duration: DIS_MS, delay, easing: 'steps(3)', fill: 'both' });
+      a.onfinish = a.oncancel = () => { c.remove(); if (DIS_POOL.length < 12) DIS_POOL.push(c); };
+    });
+  }
+  /* spec 102 FR-260: a done flourish: one coin rises and fades, 2 s, once; stepped; its element is always there */
+  function coinUp(chrome, k, g) {
+    const co = chrome._k.get('co:' + k); if (!co) return;
+    co.animate([{ transform: 'translateY(0)', opacity: 1 }, { transform: 'translateY(' + -20 * g + 'px)', opacity: 0 }], { duration: 2000, easing: 'steps(10)' });
+  }
   function poof(host, r, delay) {
+    if (PIXEL) return;
     const d = document.createElement('div'); d.className = 'ro-poof';
     const w = r.h * 0.8; box(d, { x: r.x + r.w / 2 - w / 2, y: r.y + r.h * 0.45 - w / 2, w, h: w }); host.appendChild(d);
     const a = d.animate([{ transform: 'scale(.5)', opacity: 0 }, { opacity: 1, offset: 0.4 }, { transform: 'scale(1.2)', opacity: 0 }], { duration: ZOOM_IN, delay, easing: 'ease-out', fill: 'backwards' });
@@ -144,12 +167,20 @@
     const r = { x: parseFloat(e.style.left) || 0, y: parseFloat(e.style.top) || 0, w: parseFloat(e.style.width) || 0, h: parseFloat(e.style.height) || 0 };
     e.className = 'ro-ghost' + (e.classList.contains('ro-visitor') ? ' v' : ''); delete e.dataset.for;
     if (e.parentNode && r.h) poof(e.parentNode, r, 0);
+    if (PIXEL) { dissolve(e, true, 0); const f = e.animate([{ opacity: 1 }, { opacity: 0 }], { duration: DIS_MS, easing: 'steps(3)', fill: 'forwards' }); f.onfinish = f.oncancel = () => e.remove(); return; }
     const a = e.animate([{ transform: 'scale(1)', opacity: 1 }, { transform: 'scale(.62)', opacity: 0 }], { duration: ZOOM_OUT, easing: 'cubic-bezier(.5,0,.8,.5)', fill: 'forwards' });
     a.onfinish = a.oncancel = () => e.remove();
   }
   function glide(e, id, from, to) {
     if (!from || (from.x === to.x && from.y === to.y)) return false;
     if (e.parentNode) poof(e.parentNode, to, ZOOM_OUT - 40);
+    if (PIXEL) {
+      dissolve(e, false, DIS_MS);
+      const f = e.animate([{ opacity: 0 }, { opacity: 1 }], { duration: DIS_MS, delay: DIS_MS, easing: 'steps(3)', fill: 'backwards' });
+      GLIDING.set(id, f);
+      f.onfinish = f.oncancel = () => { if (GLIDING.get(id) === f) { GLIDING.delete(id); if (onArt) onArt(); } };
+      return true;
+    }
     const a = e.animate([{ transform: 'scale(.62)', opacity: 0 }, { transform: 'scale(1.03)', opacity: 1, offset: 0.72 }, { transform: 'none', opacity: 1 }], { duration: ZOOM_IN, delay: ZOOM_OUT - 40, easing: 'cubic-bezier(.2,.7,.3,1)', fill: 'backwards' });
     GLIDING.set(id, a);
     a.onfinish = a.oncancel = () => { if (GLIDING.get(id) === a) { GLIDING.delete(id); if (onArt) onArt(); } };
@@ -177,6 +208,19 @@
   function clock(e, ms) { for (const a of e.getAnimations()) if (a.animationName) a.startTime = onStep(ms); } /* the CSS loops only: a walk under way keeps its own time */
 
   /* the typing rig: a wrapper with the body's movement on the body's clock, over it a head and two hands cut from the same picture (spec Changes 2026-11-01) */
+  /* spec 102 FR-257, FR-306: the cabinet: one of the world's drawings, a strip of bodies in colour variants; the colour (with its marquee
+     trim and side art) stays with the session, the body follows the seat order, so neighbours differ */
+  function cabinetOf(dc, meta, cab, k, state, body) {
+    dc.classList.toggle('st-idle', state === 'idle'); /* FR-260: dim by opacity: a shade would darken the floor beside it too */
+    const kind = cab.gw === meta.monitor.big.glass[2] ? 'big' : cab.gw === meta.monitor.small.glass[2] ? 'small' : 'narrow', m = meta.monitor[kind];
+    let h = 0; for (const c of k) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+    const nb = m.bodies || 1, cell = ((body || 0) % nb) * (m.cells / nb) + (h % (m.cells / nb));
+    const url = 'url("' + WD + m.file + '")', size = m.cells * 100 + '% 100%', pos = (cell / Math.max(1, m.cells - 1)) * 100 + '% 0';
+    dc.dataset.body = String(cell / (m.cells / nb) | 0);
+    if (dc.style.backgroundImage !== url) dc.style.backgroundImage = url;
+    if (dc.style.backgroundSize !== size) dc.style.backgroundSize = size;
+    if (dc.style.backgroundPosition !== pos) dc.style.backgroundPosition = pos;
+  }
   function rigOf(art, k, rect, r, m, pe) {
     const w = el(art, 'rg:' + k, 'div', 'ro-rig m-rig' + (OFF.has(k) ? ' ro-off' : ''));
     box(w, rect); w.dataset.for = k;
@@ -243,6 +287,7 @@
     if (SET_SHOWN !== set) { SET_SHOWN = set; PEOPLE = null; SEEN.clear(); TICKS.clear(); } /* the people belong to a set: switching sets draws its own, kept apart */
     const meta = Object.assign({}, root.DurbarRealOfficeWorlds[world], root.DurbarRealOfficeSets[set]); /* the world's furniture numbers with the set's people numbers */
     onArt = opts.onArt || null;
+    PIXEL = !!meta.pixelArt;
     const ids = Object.keys(meta.seat).sort();
     const who = people(model, ids, opts.rand, !!opts.remember);
     const seatOk = (p) => !!p && !['typeA', 'think', 'waveA', 'rest'].some((f) => BAD.has(SD + p + '-' + f + '.webp'));
@@ -252,11 +297,13 @@
     };
     const signs = {};
     for (const f of model.folders) signs[f.id] = { name: f.name, path: f.path, counts: f.counts.length + (f.cost ? 1 : 0) };
-    const lay = L.realLayout(engine, view, meta, signs);
+    const lay = meta.arrangement && meta.arrangement !== 'rows' && L.layoutFor ? L.layoutFor(meta.arrangement, engine, view, meta, signs) : L.realLayout(engine, view, meta, signs); /* spec 102 FR-228: the one seam */
 
     let ro = stage.querySelector(':scope > .ro');
     if (!ro) { stage.textContent = ''; ro = document.createElement('div'); ro.className = 'ro'; stage.appendChild(ro); ro.addEventListener('click', forward); wireZoom(ro); }
     ro.style.width = px(lay.width); ro.style.height = px(lay.height);
+    LAY_G = lay.cabinet ? lay.g || 0 : 0;
+    if (lay.g) setVar(ro, '--ro-g', String(lay.g)); /* spec 102 FR-255: one integer scale for the world's art */
     ro.dataset.set = set; ro.dataset.world = world; ro.dataset.u = String(Math.round(lay.u)); ro.dataset.face = String(Math.round(lay.faceH * 10) / 10); ro.dataset.big = lay.big ? '1' : '0';
     ro.classList.toggle('still', !!opts.still);
     ro.classList.toggle('hold', !!opts.hold); /* the people stand still, the lights may not (FR-071) */
@@ -290,7 +337,7 @@
       const zk = z.id + '\u0000' + z.part; /* a folder too big for one row has more parts, each its own zone (the sign repeats, "continued") */
       const zb = el(art, 'z:' + zk, 'div', 'ro-zone'); box(zb, z.box);
       /* FR-018: the folder sign: name, path, counts, cost, + and the room menu (the app's own handlers: data-newsess, data-foldermenu) */
-      const sg = el(chrome, 's:' + zk, 'div', 'ro-sign'); box(sg, { x: z.sign.x, y: z.sign.y, h: z.sign.h }); sg.style.maxWidth = px(z.sign.w);
+      const sg = el(chrome, 's:' + zk, 'div', 'ro-sign' + (z.signShort ? ' short' : '')); box(sg, { x: z.sign.x, y: z.sign.y, h: z.sign.h }); sg.style.maxWidth = px(z.sign.w);
       sg.dataset.folder = z.id;
       const sig = JSON.stringify([f.name, f.path, f.counts, f.cost, f.newSess, f.menu, z.part]);
       if (sg._sig !== sig && z.part > 1) { sg._sig = sig; sg.textContent = ''; const b = document.createElement('b'); b.textContent = f.name + ' (continued)'; b.title = f.name + '\n' + f.path; sg.appendChild(b); }
@@ -308,38 +355,56 @@
       for (const d of z.desks) {
         const a = byAgent.get(d.id), k = d.id;
         const lt = L.lightFor(d.state, { still: !!opts.still });
+        const st = lay.cabinet ? L.aisleStatus(d.state, !!opts.still) : null; /* spec 102 FR-260 */
         /* the person, behind the desk: FR-036's pose, FR-070's second frame or breath, FR-072's cross-fade; FR-065: the initials disc when the picture failed */
         if (d.person) {
           const m = L.personMotion(k, d.person.pose, d.state);
           const fresh = !art._k.has('p:' + k);
           const rigged = d.person.pose === 'typeA' && moving() && LOD === 0 && !GLIDING.has(k) && !(fresh && CUR.drawn && WHERE.has(k)) && meta.rig && has(meta.rig, d.person.pid) ? meta.rig[d.person.pid] : null;
           const two = !rigged && moving() && m.kind === 'frames' && d.person.fileB && !BAD.has(SD + d.person.fileB) && !GLIDING.has(k) ? second(art, 'pb:' + k, k, d.person, d.person.fileB, 'ro-person2', m) : null;
-          const pe = el(art, 'p:' + k, 'img', 'ro-person' + (a.asleep ? ' asleep' : '') + (rigged ? ' m-rig' : two && two.on ? ' m-a m-' + m.style : m.kind === 'breathe' && moving() ? ' m-br' : '') + (OFF.has(k) ? ' ro-off' : ''));
+          const pe = el(art, 'p:' + k, 'img', 'ro-person' + (a.asleep ? ' asleep' : '') + (lay.cabinet ? (st.bob && moving() ? ' bob' : '') : rigged ? ' m-rig' : two && two.on ? ' m-a m-' + m.style : m.kind === 'breathe' && moving() ? ' m-br' : '') + (OFF.has(k) ? ' ro-off' : ''));
           box(pe, d.person); pe.dataset.for = k; pe.dataset.pose = d.person.pose;
+          if (d.facing) pe.classList.toggle('mir', d.facing === 'right');
+          if (lay.cabinet) { /* FR-261: people in 4 phases on one clock, whenever each began: at most 8 frames a second */
+            let h = 0; for (const c of k) h = (h * 31 + c.charCodeAt(0)) >>> 0; setVar(pe, '--ro-ph', -(h % 4) * 0.25 + 's');
+            if (st.bob) for (const an of pe.getAnimations()) if (an.animationName && an.startTime !== 0) an.startTime = 0;
+          }
           const was = pe.getAttribute('src');
-          if (was && was !== SD + d.person.file && moving() && !hiddenNow() && !OFF.has(k)) { const g = pe.cloneNode(false); art.insertBefore(g, pe); fadeAway(g, 120); pe.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 170, delay: 90, easing: 'ease-in-out', fill: 'backwards' }); } /* FR-072, spec Changes 2026-11-01: the old out, then the new in */
+          if (was && was !== SD + d.person.file && !lay.cabinet /* a pixel world swaps the frame: no second picture (FR-261) */ && moving() && !hiddenNow() && !OFF.has(k)) { const g = pe.cloneNode(false); art.insertBefore(g, pe); fadeAway(g, 120); pe.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 170, delay: 90, easing: 'ease-in-out', fill: 'backwards' }); } /* FR-072, spec Changes 2026-11-01: the old out, then the new in */
           img(pe, d.person.file, true);
           if (fresh && CUR.drawn && moving() && !hiddenNow() && !OFF.has(k) && !glide(pe, k, WHERE.get(k), d.person)) fadeIn(pe, 150, 150); /* FR-073: in at the desk */
           WHERE.set(k, d.person);
           if (m.kind) { setVar(pe, '--ro-per', m.period + 's'); setVar(pe, '--ro-sw', m.sway + 's'); setVar(pe, '--ro-u', (d.person.h / 100).toFixed(3) + 'px'); }
           if (rigged) rigOf(art, k, d.person, rigged, m, pe);
           if (two && two.on && !two.b._clock) { two.b._clock = true; clock(two.b, m.offset); clock(pe, m.offset); }
-        } else if (!d.narrow) {
+        } else if (!d.narrow && !(lay.cabinet && a.away)) { /* at a cabinet, an empty place is the note on its glass */
           const ini = el(art, 'i:' + k, 'div', 'ro-initials'); const r = 0.5 * lay.u; box(ini, { x: d.slot.x + 0.05 * d.slot.w + 0.42 * lay.u - r / 2, y: d.desk.y - r - 6, w: r, h: r }); ini.dataset.for = k; text(ini, initials(a.name));
         }
-        const dc = el(art, 'd:' + k, 'div', 'ro-desk' + (d.narrow ? ' narrow' : '') + (a.asleep ? ' asleep' : '')); box(dc, d.desk); dc.dataset.for = k;
-        const dk = dc.firstChild || dc.appendChild(document.createElement('img')); dk.style.height = px(d.desk.full); img(dk, 'desk.webp');
+        const dc = el(art, 'd:' + k, 'div', 'ro-desk' + (d.narrow ? ' narrow' : '') + (a.asleep ? ' asleep' : '') + (lay.cabinet ? ' ro-cab' + (d.facing === 'right' ? ' mir' : '') : '')); box(dc, d.desk); dc.dataset.for = k;
+        if (lay.cabinet) cabinetOf(dc, meta, lay.cabinet, k, d.state, d.body);
+        else { const dk = dc.firstChild || dc.appendChild(document.createElement('img')); dk.style.height = px(d.desk.full); img(dk, 'desk.webp'); }
         /* the monitor: the glass in the art; its text sits with the chrome, above the lights (FR-044), and repaints on its own (FR-033) */
         const sc = el(art, 'm:' + k, 'div', 'ro-screen st-' + d.state + (lt.glow === 'off' ? ' off' : '') + (a.asleep ? ' asleep' : '')); box(sc, d.screen); sc.dataset.for = k;
         if (!sc.firstChild) sc.innerHTML = '<div class="ro-bezel"><div class="ro-glass" aria-hidden="true"></div></div><div class="ro-neck"></div><div class="ro-foot"></div>';
         const bez = sc.firstChild; bez.style.height = px(d.glass.h + 6);
         screenBox(chrome, d, k);
+        /* spec 102 FR-257: the marquee carries the name: real text, level, never inside the mirrored picture */
+        if (d.marquee) {
+          const mq = el(chrome, 'mq:' + k, 'div', 'ro-marquee mq-' + st.marquee); box(mq, d.marquee); attr(mq, 'aria-hidden', 'true'); text(mq, a.name); mq.dataset.for = k;
+          /* the flash is opacity on the marquee's own ::after: no node, and it moves with the marquee (FR-261); one beat for all of them */
+          if (/flash/.test(st.marquee)) for (const an of mq.getAnimations({ subtree: true })) if (an.startTime !== 0) an.startTime = 0;
+          const gc = meta.glow, gi = Math.max(0, gc.cells.indexOf(d.state)), gw = gc.cell[0] * lay.g, gh = gc.cell[1] * lay.g;
+          const fg = el(art, 'fg:' + k, 'div', 'ro-fglow g-' + st.glow); box(fg, { x: Math.max(d.slot.x, Math.min(d.desk.x + (d.desk.w - gw) / 2, d.slot.x + d.slot.w - gw)), y: d.plate.y - gh / 2, w: gw, h: gh }); fg.dataset.for = k;
+          const gp = (gi / Math.max(1, gc.cells.length - 1)) * 100 + '% 0'; if (fg.style.backgroundPosition !== gp) fg.style.backgroundPosition = gp;
+          const q = el(chrome, 'cu:' + k, 'div', 'ro-cue cue-' + st.cue); box(q, d.cue); q.dataset.for = k; attr(q, 'aria-hidden', 'true'); text(q, { none: '', dots: '\u2022\u2022\u2022', ask: '?', bang: '!', tick: '\u2713', zz: 'z z' }[st.cue]);
+          const co = el(chrome, 'co:' + k, 'div', 'ro-coin'); box(co, { x: d.face.x + d.face.w / 2 - 3 * lay.g, y: d.face.y, w: 6 * lay.g, h: 6 * lay.g }); attr(co, 'aria-hidden', 'true'); co.dataset.for = k;
+        }
         /* FR-040, FR-041: lamp, screen glow and call light, as classes over the art (D4) */
         const lamp = el(lights, 'l:' + k, 'div', 'ro-lamp lamp-' + lt.lamp + (lt.motion === 'pulse' ? ' pulse' : '')); box(lamp, d.lamp);
         const glow = el(lights, 'g:' + k, 'div', 'ro-glow glow-' + lt.glow + (lt.motion === 'breathe' ? ' breathe' : '')); box(glow, { x: d.glass.x - 6, y: d.glass.y - 6, w: d.glass.w + 12, h: d.glass.h + 12 });
         let call = lt.call;
         if (call === 'green-once') {
-          if (L.doneTick(SEEN, k, d.state)) TICKS.set(k, now);
+          if (L.doneTick(SEEN, k, d.state)) { TICKS.set(k, now); if (st && st.flourish && moving() && !hiddenNow()) coinUp(chrome, k, lay.g); }
           const t0 = TICKS.get(k); call = t0 && now - t0 < 2000 ? 'green' : null;
           if (call) setTimeout(() => { if (onArt) onArt(); }, 2050 - (now - t0)); /* redraw when the tick is over */
         } else { L.doneTick(SEEN, k, d.state); TICKS.delete(k); }
@@ -364,7 +429,7 @@
           if (a.helpers.length) { const h = document.createElement('span'); h.className = 'ro-help'; h.textContent = '+' + a.helpers.length + ' '; a.helpers.slice(0, 3).forEach((s) => h.insertAdjacentHTML('beforeend', dotHTML(s))); l1.appendChild(h); }
           const l2 = document.createElement('span'); l2.className = 'ro-l2';
           l2.insertAdjacentHTML('beforeend', dotHTML(d.state));
-          l2.appendChild(document.createTextNode(' ' + (a.word + (a.task ? ' · ' + a.task : ''))));
+          l2.appendChild(document.createTextNode(' ' + [a.word, a.task].filter(Boolean).join(' · ')));
           pl.appendChild(l1); pl.appendChild(l2);
         }
       }
@@ -477,7 +542,10 @@
     const avoid = A(lay);
     if (EMPTY_BOX) avoid.push(EMPTY_BOX);
     /* with more than four agents the monitors are read from afar: a slip takes a spot clear of them, else a smaller variant (the pill); with big screens (four or fewer) it may sit over one */
-    const softAvoid = lay.big ? [] : lay.zones.flatMap((z) => z.desks.map((d) => d.screen));
+    const screens = lay.zones.flatMap((z) => z.desks.map((d) => d.screen));
+    const HARD = lay.cabinet ? [...screens, ...lay.zones.flatMap((z) => z.desks.flatMap((d) => [d.desk, d.person]).filter(Boolean))] : []; /* what no slip may ever cover in the arcade */
+    if (lay.cabinet) avoid.push(...HARD); /* spec 102, owner 2026-11-03: in the arcade nothing covers a cabinet or a person */
+    const softAvoid = lay.big || lay.cabinet ? [] : screens;
     const bounds = { x: 4, y: lay.lobbyH + 4, w: lay.width - 8, h: lay.height - lay.lobbyH - 8 };
     const door = (id) => { const f = lay.fixtures.find((x) => x.id === id); return f ? { x: f.slot.x + f.slot.w / 2, y: lay.lobbyH } : { x: lay.width / 2, y: lay.lobbyH }; };
     const hits = (r) => avoid.some((q) => r.x < q.x + q.w && q.x < r.x + r.w && r.y < q.y + q.h && q.y < r.y + r.h);
@@ -499,9 +567,11 @@
         e.style.width = ''; e.style.height = '';
         const size = () => ({ w: Math.ceil(e.offsetWidth) + 2, h: Math.ceil(e.offsetHeight) + 2 });
         let r = size();
-        if (e._at && e._v === v && e._at.w >= r.w && e._at.h >= r.h && !hits({ x: e._at.x, y: e._at.y, w: r.w, h: r.h }) && e._at.x + r.w <= bounds.x + bounds.w && e._at.y + r.h <= bounds.y + bounds.h) { avoid.push({ x: e._at.x, y: e._at.y, w: r.w, h: r.h }); e.dataset.variant = v; return true; }
+        const laneFree = () => lay.lane && v === 'pill' && !(e._at.y >= lay.lane.y && e._at.y + r.h <= lay.lane.y + lay.lane.h + 0.01) && P(r, avoid, lay.lane, anchor); /* a pill docked before its font loaded goes back to the lane */
+        if (e._at && e._v === v && e._at.w >= r.w && e._at.h >= r.h && !hits({ x: e._at.x, y: e._at.y, w: r.w, h: r.h }) && !laneFree() && e._at.x + r.w <= bounds.x + bounds.w && e._at.y + r.h <= bounds.y + bounds.h) { avoid.push({ x: e._at.x, y: e._at.y, w: r.w, h: r.h }); e.dataset.variant = v; return true; }
         for (let pass = 0; pass < 2; pass++) { /* the second pass re-places with the box it really has (a late font can widen the text) */
-          const at = P(r, avoid.concat(softAvoid), bounds, anchor) || (lay.big || v === 'pill' ? P(r, avoid, bounds, anchor) : null); /* a one-line pill may sit over a monitor when there is no other spot */
+          const dock = () => P(r, avoid, { x: bounds.x, y: bounds.y + bounds.h - r.h, w: bounds.w, h: r.h }, anchor) || (lay.lane && P(r, HARD, lay.lane, anchor)) || P(r, HARD, bounds, anchor, 4) || { x: bounds.x + bounds.w - r.w, y: bounds.y + bounds.h - r.h, w: r.w, h: r.h }; /* last: over another slip or a sign, never a cabinet, screen or person while any such spot exists (pre-review of #1079) */
+          const at = (lay.lane && v === 'pill' ? P(r, avoid, lay.lane, anchor) : null) || P(r, avoid.concat(softAvoid), bounds, anchor) || (lay.big || v === 'pill' ? P(r, avoid, bounds, anchor) : null) || (lay.cabinet && v === 'pill' ? dock() : null); /* a one-line pill may sit over a monitor when there is no other spot; in the arcade it docks at the floor's bottom edge, never hidden */
           if (!at) break;
           e.style.left = px(at.x); e.style.top = px(at.y);
           const r2 = size();
@@ -532,7 +602,7 @@
           for (const g of Q.folded) { const b = btn(g.text, '', 'sl-fold', { slipact: 'open', slipid: g.id }); e.appendChild(b); }
           if (Q.more > 0) e.appendChild(btn('+' + Q.more + ' more \u00B7 Open the inbox', '', 'sl-more', { slipact: 'inbox' }));
         },
-      }, door('boss'), ['full', 'pill'], 'inbox');
+      }, door('boss'), lay.cabinet ? ['pill'] : ['full', 'pill'], 'inbox'); /* the arcade: one line, the inbox holds the rest */
     }
     if (slips.limit) {
       const L = slips.limit;
@@ -548,7 +618,7 @@
           row.appendChild(btn('Show in chat', 'Open the chat', 'link', { slipact: 'open', slipid: L.id, slipfocus: 'limit' }));
           e.appendChild(row);
         },
-      }, door('bank'), ['full', 'pill'], 'limit-card');
+      }, door('bank'), lay.cabinet ? ['pill'] : ['full', 'pill'], 'limit-card');
     }
     for (const B of slips.elicit || []) {
       const d = lay.zones.flatMap((z) => z.desks).find((x) => x.id === B.id);
@@ -604,7 +674,7 @@
 
   /* ---- FR-030..FR-035: the monitors ---- */
   function screenBox(chrome, d, k) {
-    const L = X(), f = L.screenFit(d.glass), box2 = el(chrome, 'st:' + k, 'div', 'ro-stext st-' + d.state + (f.small ? ' small' : '') + (d.state === 'asleep' ? ' off' : '') + (OFF.has(k) ? ' ro-off' : '')); box(box2, d.glass); attr(box2, 'aria-hidden', 'true');
+    const L = X(), f = L.screenFit(d.glass, CUR_G()), box2 = el(chrome, 'st:' + k, 'div', 'ro-stext st-' + d.state + (f.small ? ' small' : '') + (d.state === 'asleep' ? ' off' : '') + (OFF.has(k) ? ' ro-off' : '')); box(box2, d.glass); attr(box2, 'aria-hidden', 'true');
     let s = SCR.get(k);
     if (!s || s.box !== box2) { if (s) clearTimeout(s.timer); s = { box: box2, last: -Infinity, timer: 0, dirty: true, away: false, sig: '', fit: '' }; SCR.set(k, s); }
     const fit = JSON.stringify(f);
@@ -642,7 +712,7 @@
   function paintScreen(id) {
     const s = SCR.get(id), d = CUR && CUR.desks.get(id), a = CUR && CUR.agents.get(id);
     if (!s || !d || !a || !CUR.screenOf) return;
-    const L = X(), data = CUR.screenOf(id, d.state, a.word), f = L.screenFit(d.glass);
+    const L = X(), data = CUR.screenOf(id, d.state, a.word), f = L.screenFit(d.glass, CUR_G());
     if (data.off) { if (s.painted) { s.box.textContent = ''; s.painted = false; s.lines = null; s.bars = null; s.caret = null; } s.sig = ''; return; }
     const sig = JSON.stringify([data.lines, data.caret, s.fit]);
     if (sig === s.sig) return;

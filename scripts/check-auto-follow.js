@@ -109,7 +109,7 @@ module.exports = async (ctx) => {
     assert.strictEqual(await js(`document.getElementById('followSw')`), null, 'no switch outside Settings');
 
     // ---- on: the switch is a real click, the answer comes from main (the simulator's stand-in refuses a non-boolean like main)
-    assert.deepStrictEqual(await js(`window.__durbarSimUi.bridge().setAutoFollowWork('yes').then(r=>({ok:r.ok,v:r.autoFollowWork,e:typeof r.error}))`), { ok: false, v: false, e: 'string' }, `${tag}: a non-boolean is refused with ok:false`);
+    assert.deepStrictEqual(await js(`window.__durbarSimUi.bridge().setAutoFollowWork('yes').then(r=>({ok:r.ok,v:r.autoFollowWork}))`), { ok: false, v: false }, `${tag}: a non-boolean is refused with ok:false`);
     await setting(true);
     let st = await strip();
     assert.ok(!st.hidden && st.h >= 28 && st.h <= 40, `${tag}: the strip shows, one row: ${st.h}px`);

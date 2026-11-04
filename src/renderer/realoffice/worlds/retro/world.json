@@ -1,6 +1,7 @@
 {
  "arrangement": "aisles",
  "bandRows": 112,
+ "css": "world.css",
  "defaultSet": "retro",
  "desk": [
   40,
@@ -80,11 +81,12 @@
  "id": "retro",
  "monitor": {
   "big": {
+   "bodies": 4,
    "cell": [
     92,
     91
    ],
-   "cells": 4,
+   "cells": 16,
    "file": "monitor.webp",
    "glass": [
     5,
@@ -112,11 +114,12 @@
    ]
   },
   "narrow": {
+   "bodies": 4,
    "cell": [
     61,
     73
    ],
-   "cells": 4,
+   "cells": 16,
    "file": "monitor-narrow.webp",
    "glass": [
     5,
@@ -144,11 +147,12 @@
    ]
   },
   "small": {
+   "bodies": 4,
    "cell": [
     73,
     73
    ],
-   "cells": 4,
+   "cells": 16,
    "file": "monitor-half.webp",
    "glass": [
     5,

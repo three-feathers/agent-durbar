@@ -61,6 +61,12 @@ export interface AdapterCapabilities {
    * one through its own flow (Copilot `forceReauth`), so the agent app writes the sign-in again itself. Only with `mcpSignIn`; missing = false.
    */
   readonly mcpSignInAgain?: boolean;
+  /**
+   * Spec 058 FR-207: main may call `restartMcpServer(id, name, { auto: true })` by itself, before a message after a quiet hour, so the
+   * agent app renews a remote server's sign-in with its own stored refresh token. Only with `mcpRestart`; missing = false (Codex, the
+   * Claude SDK transport: no automatic reconnect).
+   */
+  readonly mcpSignInReconnect?: boolean;
   /** `handoffSummary()` exists (spec 030 FR-034); missing = false. */
   readonly handoff?: boolean;
   /** `generateText()` exists: one prompt, no tools, no session kept (spec 040 FR-015); missing = false. */
@@ -82,6 +88,12 @@ export interface AdapterCapabilities {
   readonly osSandbox?: boolean;
   /** Spec 030 FR-040: how `setModel` behaves: `verified` = checked on a real account (else the UI says it is not), `contextTier` = a long-context tier can be chosen. Missing = not verified, tier offered (the Copilot default before this field). */
   readonly modelSwitch?: Readonly<{ verified: boolean; contextTier: boolean }>;
+  /**
+   * Spec 099 FR-001: `setAutopilot()` exists: the app can keep going on its own goal loop under Allow all. Missing = no Autopilot, never offered.
+   * `capUnit` is the unit of the optional spend cap (`null`: none possible); `attachments`: the Autopilot send takes attachments (D10);
+   * `planApproval`: the plan card may offer Autopilot (FR-060); `verified`: true only after a real run is recorded in the spec.
+   */
+  readonly autopilot?: Readonly<{ capUnit: 'aiu' | 'usd' | 'tokens' | null; attachments: boolean; planApproval: boolean; verified: boolean }>;
 }
 
 /** Where an adapter stands on this machine (spec 012 FR-030). `unknown` also covers a detect that failed. */

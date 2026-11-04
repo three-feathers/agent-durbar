@@ -114,6 +114,8 @@ body.has-bridge #liveBar{display:flex}
 .note{font-size:var(--t3-size);color:var(--ink-2);background:var(--pb-waiting,#fbefd6);border:1px solid var(--tone-warn-line);border-radius:12px;padding:8px 12px;max-width:92%;align-self:flex-start;overflow-wrap:break-word}
 .note.err{background:var(--pb-error,#f6e2df);border-color:var(--tone-bad-line);color:var(--red-ink)}
 .note .btn{height:28px;margin:0;padding:0 10px}
+.note.mcpre{background:var(--tone-info-soft);border-color:var(--tone-info-line);color:var(--ink-2);font-size:var(--t4-size)} /* spec 058 FR-208, FR-211: one quiet line (12px, over the 10.5px floor) */
+.note.mcpre-sign{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
 .note-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
 .note .ro-done{margin:6px 0 0;color:var(--ink-2)} /* spec 003 FR-096: after a switch from a Read-only denial; inherits the note's size (10.5px floor) */
 /* spec 012 FR-157: the chat's sign-in card; the raw error only in a small, closed Details */
@@ -419,6 +421,8 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .btn svg{width:15px;height:15px;flex:none}
 #chat{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding:16px;display:flex;flex-direction:column;gap:12px}
 .chat-inner{display:flex;flex-direction:column;gap:12px;min-width:0}
+/* spec 005 FR-210: when a chat is closed its older messages get .cvo (cvMark), so reopening lays out only the ones near the view; an unseen one keeps the height it last had (auto), 90px before it was ever seen. Nothing is marked while the chat is open: a message the app has just added is measured at once (answer bar, notes) and a class change on a live message makes it jump to its 90px guess for a frame */
+.chat-inner>.cvo{content-visibility:auto;contain-intrinsic-block-size:auto 90px;overflow-clip-margin:14px}
 .msg{display:flex;flex-direction:column;gap:8px;max-width:100%;min-width:0}
 .msg.user{align-items:flex-end}
 .msg .meta{font-size:var(--t5-size);color:var(--muted)}
@@ -747,7 +751,8 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 /* keep 15+ animated scenes cheap: compact scenes animate in coarse steps (a few repaints per second, not 60) */
 .sc-c .wave{animation-timing-function:steps(8)}
 .sc-c .bar{animation-timing-function:steps(8)}
-.sc-c .hand-l,.sc-c .hand-r{animation-timing-function:steps(1)}
+/* spec 097 T158 (probe, `check-office-ops` handPositions): `tap` is two keyframes run `alternate`; steps(1) is jump-end, which holds `from` in both directions, so the hands never moved (one position over two cycles) while 16 animations ticked. steps(2,jump-none) shows both positions, as many changes a second as the 8 steps did not (4) */
+.sc-c .hand-l,.sc-c .hand-r{animation-timing-function:steps(2,jump-none)}
 .sc-c .bubble-g{animation-timing-function:steps(4)}
 .sc-c .td,.sc-c .cursor{animation-timing-function:steps(5)}
 .sc-c .steam{animation-timing-function:steps(6)}
@@ -1574,6 +1579,9 @@ html .notice-strip.info .ns-ic{background:transparent;color:var(--ink-2);box-sha
 .notice-strip .aw-it{display:flex;align-items:center;gap:10px;min-width:0}
 .notice-strip .aw-w{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .notice-strip .aw-w small{color:var(--ink-2);font-size:11px}
+.notice-strip .ml-list{max-height:min(34vh,210px);overflow-y:auto;overscroll-behavior:contain;gap:5px} /* spec 058 FR-200: the open list scrolls inside itself; the window never scrolls */
+.notice-strip .ml-list .aw-it{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start} /* Show stays in one right column when a line wraps */
+.notice-strip .ml-w{white-space:normal} /* spec 058 FR-200: the fix wraps, never cut */
 .notice-strip .aw-ok{color:var(--green-ink,var(--ink-2));font-weight:600}
 /* spec 006 FR-041/FR-042: the crash card reuses the Since you were away strip; its Pick… list scrolls from five rows */
 /* spec 006 FR-042 (review of PR 720): the sessions flow on one line and wrap, so an open list costs the office one row, not one row per session; past two lines it scrolls */

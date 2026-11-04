@@ -119,11 +119,11 @@ export function problems(files: Map<string, Buffer>, peopleJson: string, md: str
   for (const [pid, parts] of Object.entries((meta as { rig?: Record<string, Record<string, unknown>> }).rig || {})) for (const key of Object.keys(parts)) want.add(`${pid}-rig${key}.webp`); /* spec Changes 2026-11-01 */
   for (const k of ['wall', 'monitor'] as const) { const v = (meta as Record<string, unknown>)[k]; if (typeof v === 'string') want.add(v); } // optional parts a world names (spec 102 FR-220)
   /* the arcade names its parts in objects (spec 102 FR-252, FR-257, FR-260): three cabinets, the night room, the glow strip */
-  const objs = meta as unknown as { monitor?: Record<string, { file: string; cells: number; screenRect: number[]; marqueeRect: number[] }>; night?: { wall: string; floor: string }; glow?: { file: string; cells: string[] } };
+  const objs = meta as unknown as { monitor?: Record<string, { file: string; cells: number; bodies?: number; screenRect: number[]; marqueeRect: number[] }>; night?: { wall: string; floor: string }; glow?: { file: string; cells: string[] } };
   if (objs.monitor && typeof objs.monitor === 'object') for (const [k, mv] of Object.entries(objs.monitor)) {
     want.add(mv.file);
     const inUnit = (a: number[]): boolean => Array.isArray(a) && a.length === 4 && a.every((v) => v >= 0 && v <= 1) && a[0] + a[2] <= 1.0001 && a[1] + a[3] <= 1.0001 && a[2] > 0 && a[3] > 0;
-    if (!inUnit(mv.screenRect) || !inUnit(mv.marqueeRect) || mv.cells !== 4) out.push(`monitor ${k}: screenRect, marqueeRect (fractions of a cell) and 4 cells needed (spec 102 FR-221, FR-257)`);
+    if (!inUnit(mv.screenRect) || !inUnit(mv.marqueeRect) || mv.cells !== 4 * (mv.bodies || 1)) out.push(`monitor ${k}: screenRect, marqueeRect (fractions of a cell) and 4 cells per body needed (spec 102 FR-221, FR-257, FR-306)`);
   }
   if (objs.night) { want.add(objs.night.wall); want.add(objs.night.floor); }
   if (objs.glow) want.add(objs.glow.file);
@@ -161,7 +161,11 @@ for (const wid of worldIds) {
     const css = fs.readFileSync(path.join(RO, 'worlds', wid, 'world.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
     assert.ok(!/mix-blend-mode\s*:\s*(?!normal)/.test(css) && !/backdrop-filter|[^-]filter\s*:/.test(css), `${wid}: world.css has no blend mode, blur or filter (FR-180)`);
     assert.ok(!/url\(\s*['"]?(?:https?:|\/|\.\.|data:)/i.test(css), `${wid}: world.css loads only files of its own folder`);
-    for (const sel of css.split('}').map((r) => r.split('{')[0].trim()).filter((x) => x && !x.startsWith('@') && !x.startsWith(')'))) assert.ok(sel.includes(`[data-world="${wid}"]`), `${wid}: every rule is scoped to the world: ${sel.slice(0, 60)}`);
+    /* spec 102 T214, FR-260: a world's own motion: keyframes move transform and opacity only, and a loop is stepped */
+    const frames = [...css.matchAll(/@keyframes\s+[\w-]+\s*\{((?:[^{}]*\{[^{}]*\})*)\s*\}/g)];
+    for (const f of frames) for (const d of f[1].matchAll(/\{([^{}]*)\}/g)) for (const prop of d[1].split(';').map((x) => x.split(':')[0].trim()).filter(Boolean)) assert.ok(prop === 'transform' || prop === 'opacity', `${wid}: @keyframes move only transform and opacity: ${prop}`);
+    for (const m of css.matchAll(/animation:\s*([^;}]+)/g)) if (!/^none/.test(m[1])) assert.ok(/steps\(/.test(m[1]), `${wid}: a world's loop is stepped: ${m[1]}`);
+    for (const sel of css.replace(/@keyframes\s+[\w-]+\s*\{(?:[^{}]*\{[^{}]*\})*\s*\}/g, '').split('}').map((r) => r.split('{')[0].trim()).filter((x) => x && !x.startsWith('@') && !x.startsWith(')'))) assert.ok(sel.includes(`[data-world="${wid}"]`), `${wid}: every rule is scoped to the world: ${sel.slice(0, 60)}`);
     for (const m of css.matchAll(/url\(\s*([\w.-]+)\s*\)/g)) assert.ok(w.files.has(m[1]), `${wid}: world.css names ${m[1]}, which is in the folder`);
   }
   const st = readPack('sets', wj.defaultSet), sj = st.json as { id: string; level: string };
@@ -242,11 +246,11 @@ if (worldIds.includes('retro')) {
     assert.deepStrictEqual(m.cell, [cab.w, cab.h], `the ${k} cabinet's drawing is ${cab.w} x ${cab.h}, as the plan assumes`);
     assert.deepStrictEqual(m.glass.slice(2), [CABINETS[k].gw, CABINETS[k].gh], `the ${k} glass is the plan's`);
     const info = webpInfo(w.files.get(k === 'big' ? 'monitor.webp' : k === 'small' ? 'monitor-half.webp' : 'monitor-narrow.webp') as Buffer);
-    assert.deepStrictEqual([info.width, info.height], [cab.w * 4, cab.h], `${k}: four cells in a strip`);
+    assert.deepStrictEqual([info.width, info.height], [cab.w * 16, cab.h], `${k}: four bodies in four colours in a strip`);
   }
-  // the set: 15 people x 17 frames, no more, no fewer; a person missing a required frame fails (T207)
-  const SEATED = ['typeA', 'typeB', 'waveA', 'waveB', 'think', 'rest'], VIEWA = ['type', 'book', 'knock', 'letter', 'counter'], FACE = ['face-book', 'face-coffee', 'face-knock', 'face-letter', 'face-runA', 'face-runB'];
-  assert.strictEqual(st.files.size, 15 * 17, '255 frames');
+  // the set: 15 people x 18 frames (17 and the seated `sit` of 2026-11-03), no more, no fewer; a person missing a required frame fails (T207)
+  const SEATED = ['typeA', 'typeB', 'waveA', 'waveB', 'think', 'rest'], VIEWA = ['type', 'book', 'knock', 'letter', 'counter'], FACE = ['face-book', 'face-coffee', 'face-knock', 'face-letter', 'face-runA', 'face-runB', 'sit'];
+  assert.strictEqual(st.files.size, 15 * 18, '270 frames');
   for (const pid of Object.keys(sj.seat)) for (const p of [...SEATED, ...VIEWA, ...FACE]) assert.ok(st.files.has(`${pid}-${p}.webp`), `${pid} has ${p}`);
   assert.strictEqual(Object.keys(sj.seat).length, 15);
   const heights = Object.entries(sj.faceBox).map(([pid, f]) => { assert.strictEqual(f.pose, 'face-book'); const [x, y, fw, fh] = f.box, [pw, ph] = sj.stand[pid].poses['face-book']; assert.ok(x >= 0 && y >= 0 && x + fw <= pw && y + fh <= ph && fw > 8 && fh > 8, `${pid}: faceBox inside its frame`); return fh; });

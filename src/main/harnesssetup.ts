@@ -12,7 +12,7 @@ import { CMD_UNSAFE, windowsCmd } from '../shared/wincmd';
 import { redact } from '../shared/redact';
 import { SIGN_IN, installPlans, integrityLine, lastLines, managersFor, manualCommands, parseSignIn, stripAnsi, updatePlans, validPaste, OFFICIAL_PAGES, SETUP_NAMES } from '../shared/harnesssetup';
 import type { ManualCommand, OfficialScript, PackageManager, SetupKind, SetupPlan, SignInView, UpdatePlanOpts } from '../shared/harnesssetup';
-import { CODEX_UPDATE_COMMAND, classifyFailure, codexNeedsFallback, codexUpdateEnv, isOfficialCodex, npmOwns, pathWithToolDir, sourceOf, updateDecision, updateOutcomeNote, versionLabel } from '../shared/updatecheck';
+import { CLAUDE_UPDATE_DISABLED, CODEX_UPDATE_COMMAND, classifyFailure, codexNeedsFallback, codexUpdateEnv, isOfficialCodex, npmOwns, pathWithToolDir, sourceOf, updateDecision, updateOutcomeNote, versionLabel } from '../shared/updatecheck';
 import type { FailureClass, UpdatePolicy, UpdateSource } from '../shared/updatecheck';
 import * as fs from 'fs';
 import { downloadScript } from './officialinstall';
@@ -431,6 +431,7 @@ export class HarnessSetup {
     try { await this.deps.redetect(); } catch { /* the cards keep their last state */ }
     // spec 081 FR-014: the failure class comes from the masked output, never the raw one; a successful `claude update` that says "up to date" is not an update
     let failure: FailureClass | undefined;
+    let managedExit0 = false;
     let fallback: 'official' | undefined;
     let note: string | undefined;
     if (r.op !== 'signin') {
@@ -438,8 +439,10 @@ export class HarnessSetup {
       const cls = classifyFailure({ code, text, platform: this.deps.detectEnv.platform, timedOut: r.reason === 'timeout' });
       if (!ok) failure = cls;
       else if (cls === 'vendor-up-to-date') failure = cls;
+      // real: `claude update` with updates disabled exits 0 and says so (T040); a success exit must not hide that
+      else if (cls === 'managed' && r.op === 'update' && r.kind === 'claude' && CLAUDE_UPDATE_DISABLED.test(text)) { failure = cls; managedExit0 = true; }
       if (r.codexUpdate && codexNeedsFallback({ ok, reason: r.reason, cls })) fallback = 'official';
-      if (ok && r.op === 'update' && this.deps.snapshot) {
+      if (ok && !managedExit0 && r.op === 'update' && this.deps.snapshot) {
         try {
           const before = await r.before;
           const after = (await this.deps.snapshot())[r.kind];
@@ -447,7 +450,7 @@ export class HarnessSetup {
         } catch { /* no note */ }
       }
     }
-    this.deps.send('harness:done', { kind: r.kind, op: r.op, ok, exitCode: code, ...(r.reason ? { reason: r.reason } : {}), lines: this.safeLines(r.out, r.op === 'signin' ? parseSignIn(r.kind, r.out) : undefined), ...(failure ? { failure } : {}), ...(fallback ? { fallback } : {}), ...(note ? { note } : {}) });
+    this.deps.send('harness:done', { kind: r.kind, op: r.op, ok: ok && !managedExit0, exitCode: code, ...(r.reason ? { reason: r.reason } : {}), lines: this.safeLines(r.out, r.op === 'signin' ? parseSignIn(r.kind, r.out) : undefined), ...(failure ? { failure } : {}), ...(fallback ? { fallback } : {}), ...(note ? { note } : {}) });
     if (this.running === r) this.running = undefined;
   }
 

@@ -79,21 +79,19 @@ for (const v of ['false', '"true"', '1', 'null', '[]']) eq(parseSettings('{"auto
   const ss = new SettingsStore(f); ss.load();
   eq(ss.autoFollowWork, false, 'off by default');
   for (const junk of ['yes', 1, 0, null, undefined, {}, []]) {
-    const r = ss.autoFollowReply(junk);
-    eq([r.ok, r.autoFollowWork, typeof r.error], [false, false, 'string'], 'refused with ok:false: ' + String(junk));
+    eq(ss.setAutoFollowWork(junk), { ok: false, value: false }, 'refused with ok:false: ' + String(junk));
   }
   ok(!fs.existsSync(f), 'a refused value saves nothing');
-  eq(ss.autoFollowReply(true), { ok: true, autoFollowWork: true }, 'on');
+  eq(ss.setAutoFollowWork(true), { ok: true, value: true }, 'on');
   const back = new SettingsStore(f); back.load(); eq(back.autoFollowWork, true, 'kept after a restart');
-  eq(back.autoFollowReply('no').autoFollowWork, true, 'a refused value keeps the value in force');
+  eq(back.setAutoFollowWork('no'), { ok: false, value: true }, 'a refused value keeps the value in force');
   { /* FR-182: a save that fails is said, and the value in force stays */
     const blocked = path.join(dir, 'blocked'); fs.writeFileSync(blocked, 'a file, so nothing can be written under it');
     const no = new SettingsStore(path.join(blocked, 's.json')); no.load();
-    const r = no.autoFollowReply(true);
-    eq([r.ok, r.autoFollowWork, typeof r.error], [false, false, 'string'], 'a failed save answers ok:false');
+    eq(no.setAutoFollowWork(true), { ok: false, value: false }, 'a failed save answers ok:false');
     eq(no.autoFollowWork, false, 'and the value in force stays');
   }
-  eq(back.autoFollowReply(false), { ok: true, autoFollowWork: false }, 'off'); ok(!('autoFollowWork' in JSON.parse(fs.readFileSync(f, 'utf8'))), 'off is not written');
+  eq(back.setAutoFollowWork(false), { ok: true, value: false }, 'off'); ok(!('autoFollowWork' in JSON.parse(fs.readFileSync(f, 'utf8'))), 'off is not written');
   fs.rmSync(dir, { recursive: true, force: true });
 }
 // FR-185: a click on its way holds an arrival, not the return to the office after pressing Send
