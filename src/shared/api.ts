@@ -901,7 +901,7 @@ export interface DurbarApi {
   removePlace?(id: string): Promise<CustomPlaceResult>;
   /** Turn Serious mode on or off (spec 034). */
   setSeriousMode?(on: boolean): Promise<{ ok: boolean; seriousMode?: boolean }>;
-  /** Turn Auto-follow work on or off (spec 052 FR-182). `ok: false` (nothing changed) for a value that is not a boolean. */
+  /** Turn Auto-follow work on or off (spec 052 FR-182). `ok: false` (nothing changed, the value in force is returned as `autoFollowWork`) for a value that is not a boolean or a save that failed; no `error` text. */
   setAutoFollowWork?(on: boolean): Promise<{ ok: boolean; autoFollowWork?: boolean; unsaved?: true }>;
   /** Turn the "needs you" OS notifications on or off (spec 052 FR-059). */
   setNotifyNeedsMe?(on: boolean): Promise<{ ok: boolean; notifyNeedsMe?: boolean }>;

@@ -403,7 +403,9 @@ module.exports = async (ctx) => {
       await ok(`/is working in a hidden folder/.test(document.getElementById('afText').textContent)`, `${tag}: the strip says it is in a hidden folder`);
       await settled(S2);
       await ok(`((window.__durbarSimUi.agents().find(a=>a.id===${jsLiteral(S2)}))||{}).state!=='working'`, `${tag}: it finished`);
-      await stays(`!document.body.classList.contains('panel-open')`, `${tag}: a hidden folder opens nothing by itself`, 900); /* the delivery polls every 400 ms */
+      const passes0 = await js(`window.__durbarSimUi.afPasses()`);
+      await ok(`window.__durbarSimUi.afPasses()>=${jsLiteral(Number(passes0) + 2)}`, `${tag}: two delivery passes ran after it finished (the witness)`, 4000);
+      await stays(`!document.body.classList.contains('panel-open')`, `${tag}: a hidden folder opens nothing by itself`, 300); /* the passes above are the proof it was looked at; this holds while they run */
       await H.key('[', [], { char: 'always' });
       await ok(`document.body.classList.contains('panel-open')&&document.getElementById('panelTitle').textContent===${jsLiteral(await nameOf(S2))}`, `${tag}: Previous reaches it`);
       await backToOffice();
@@ -441,6 +443,54 @@ module.exports = async (ctx) => {
     await ok(`window.__ann.includes('Nothing needs you. Back to the office.')`, `${tag}: said so: ` + JSON.stringify(await anns()));
     await H.key('[', [], { char: 'always' });
     await stays(`!document.body.classList.contains('panel-open')&&document.activeElement&&document.activeElement.dataset.id==='sim-1'`, `${tag}: again in the office: nothing moves, the desk keeps the focus`);
+    console.log(`[follow] ${tag} ok`);
+  }
+
+
+  // ---- Send to several (FR-183): one move and one announcement for the whole send; a chat opened by hand while it goes on stays
+  {
+    const tag = '1440x900 several';
+    await H.load({ w: 1440, h: 900 });
+    await H.calm({ blur: true });
+    wc.focus();
+    await hooks();
+    await setting(true);
+    const nA = await nameOf(A), nB = await nameOf(B);
+    const sendSeveral = async (text, names) => {
+      await mclick('#topMoreBtn');
+      await ok(`!!document.getElementById('sendSeveralBtn')&&!document.getElementById('sendSeveralBtn').hidden`, `${tag}: the menu offers it`);
+      await mclick('#sendSeveralBtn');
+      await ok(`!!document.getElementById('mdP')`, `${tag}: the dialog is there`);
+      const n = await js(`(()=>{const t=document.getElementById('mdIn');t.value=${jsLiteral(text)};t.dispatchEvent(new Event('input',{bubbles:true}));
+        for(const l of document.querySelectorAll('#mdP .dpick')){const cb=l.querySelector('input');if(${jsLiteral(names)}.includes(l.querySelector('.dpick-t').textContent.split(' \u00b7 ')[0])&&!cb.disabled){cb.checked=true;cb.dispatchEvent(new Event('change',{bubbles:true}));}}
+        return document.querySelectorAll('#mdP input:checked').length})()`);
+      assert.strictEqual(n, 2, `${tag}: the two sessions are picked`);
+      await ok(`document.querySelector('#modeDlg .btn.primary').textContent==='Send to 2 sessions'&&!document.querySelector('#modeDlg .btn.primary').disabled`, `${tag}: Send is ready`);
+      await mclick('#modeDlg .btn.primary');
+    };
+    // two followed sessions: one announcement for both, and the desk of the last is marked
+    await js(`window.__ann=[]`);
+    /* each send takes 200 ms, so a sentence said per session would land on its own (the announcer keeps only the last one inside 60 ms) */
+    await js(`(()=>{const b=window.__durbarSimUi.bridge();b.__send=b.send;b.send=async(...a)=>{await new Promise(r=>setTimeout(r,200));return b.__send(...a);};})();0`);
+    await sendSeveral('hello several', [nA, nB]);
+    await ok(`[...document.querySelectorAll('.toast')].some(t=>/Sent to 2 sessions/.test(t.textContent))`, `${tag}: sent`);
+    await js(`(()=>{const b=window.__durbarSimUi.bridge();b.send=b.__send;})();0`);
+    await ok(`window.__ann.some(t=>/2 followed agents are working\. Back to the office\./.test(t))`, `${tag}: one sentence for the two: ` + JSON.stringify(await anns()));
+    await settled(A); await settled(B);
+    assert.strictEqual((await anns()).filter((t) => /Back to the office/.test(t)).length, 1, `${tag}: exactly one "Back to the office" for the whole send: ` + JSON.stringify(await anns()));
+    // a chat opened by hand while the sends are on their way stays open (the setting off and on forgets the followed ones, and a chat an arrival opened is closed)
+    if (await panelOpen()) await backToOffice();
+    await setting(false); await setting(true);
+    await js(`(()=>{const b=window.__durbarSimUi.bridge();b.__send=b.send;window.__gate=new Promise(r=>{window.__openGate=r;});b.send=async()=>{await window.__gate;return {ok:true};};})();0`);
+    await js(`window.__ann=[]`);
+    await sendSeveral('hello again', [nA, nB]);
+    await openChat(C);
+    await ok(`document.getElementById('panelTitle').textContent===${jsLiteral(await nameOf(C))}`, `${tag}: Maya's chat is open by hand`);
+    await js(`window.__openGate();0`);
+    await ok(`[...document.querySelectorAll('.toast')].some(t=>/Sent to 2 sessions/.test(t.textContent))`, `${tag}: the held sends finished`);
+    await js(`(()=>{const b=window.__durbarSimUi.bridge();b.send=b.__send;})();0`);
+    await stays(`document.body.classList.contains('panel-open')&&document.getElementById('panelTitle').textContent===${jsLiteral(await nameOf(C))}`, `${tag}: the chat opened by hand stays`, 600);
+    assert.strictEqual((await anns()).filter((t) => /Back to the office/.test(t)).length, 0, `${tag}: and nothing says Back to the office: ` + JSON.stringify(await anns()));
     console.log(`[follow] ${tag} ok`);
   }
 
