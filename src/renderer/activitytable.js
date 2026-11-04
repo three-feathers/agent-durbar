@@ -15,6 +15,7 @@
     'remote-on':'Remote control on','remote-off':'Remote control off',
     'session-deleted':'Session deleted',
     'mcp-restart':'MCP restart',
+    'loop-start':'Loop started','loop-pass':'Loop pass','loop-skip':'Loop pass skipped','loop-hold':'Loop on hold','loop-end':'Loop ended',
   };
   const MODE_WORDS={'read-only':'Read-only',ask:'Ask first',allow:'Allow all'};
   const NOTE='Kept on this computer. Actions and decisions only; never prompts, replies or file contents.';
