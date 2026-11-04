@@ -85,7 +85,7 @@ function publishCommand(tag) {
  * 22.18+ strips its types); else that same source compiled now, in memory, with the repo's own `typescript` (`transpileModule`: one file,
  * no imports), so the rules used are always the source's, never an older compiled copy. Throws when neither works (no typescript, a
  * compile error): the callers fail closed. `o.root`, `o.noStrip` (act as if Node cannot strip types), `o.ts` (the compiler, `null` = none):
- * for tests.
+ * for tests; `DURBAR_REDACT_NO_COMPILE=1` does the same as `o.ts = null` for the CLI (it can only make the load fail).
  */
 function loadRedact(o = {}) {
   const root = o.root || ROOT;
@@ -103,6 +103,8 @@ function loadRedact(o = {}) {
   }
   try {
     let ts = o.ts;
+    // a test seam that can only make the load fail (act as if no compiler is installed), never succeed: fail closed
+    if (ts === undefined && process.env.DURBAR_REDACT_NO_COMPILE === '1') ts = null;
     if (ts === undefined) ts = require('typescript');
     if (!ts) throw new Error('typescript is not installed');
     const js = ts.transpileModule(fs.readFileSync(src, 'utf8'), { fileName: src, reportDiagnostics: false, compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;

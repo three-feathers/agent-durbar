@@ -158,7 +158,8 @@ Status on 2026-11-04. **Vikram** answered as marked (Q2 and his position on Q10 
     - compiled copies in `dist` and `dist-scripts` that are newer by mtime but mask nothing are not used: a token is still masked;
     - with no compiler, the load fails closed.
     Mutants: picking a compiled copy by mtime fails `FR-080: a newer-looking compiled copy with older rules is not used`; dropping the no-compiler guard fails `FR-080: no compiler, no mask: it fails closed`.
-  - `real:` `npm test` on Node 22.16.0 (macOS, the Mac session).
+  - *CI on c5e2fd33 (2026-11-04):* `test:changelog`'s "no redaction: refused" case ran the CLI without type stripping and expected a refusal; with the compile fallback the CLI now loads the mask, so nothing was refused. The rule stays; the test now also takes the compiler away through `DURBAR_REDACT_NO_COMPILE=1`, a seam that can only make the load fail. That test's test-build notes block no longer skips Node before 22.18, because the mask loads there now. Mutants: ignoring the seam, or returning an unmasking stand-in when there is no compiler, each fail `no redaction: refused`.
+  - `real:` `npm test` on Node 22.16.0 and 22.23.4 (macOS, the Mac session).
 
 ### 2026-11-04: phase 1 built (T002..T006); owner decisions on Q10 and Q2
 
