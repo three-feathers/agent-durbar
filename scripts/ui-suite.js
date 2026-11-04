@@ -250,7 +250,8 @@ function runOne(d, outDir) {
   if (d.sim === false) { delete env.DURBAR_SIM; delete env.DURBAR_SIM_FREEZE; }
   if (d.freeze === false) delete env.DURBAR_SIM_FREEZE; // a driver that needs the live simulator (spec 001 FR-082: shots-docs.js)
   for (const v of OUT_VARS) env[v] = outDir;
-  const argv = [ROOT, '--no-sandbox', ...(/^[1-4]$/.test(process.env.UI_SUITE_DPR || '') ? ['--force-device-scale-factor=' + process.env.UI_SUITE_DPR] : [])]; // UI_SUITE_DPR=2: a high-density screen (a Retina Mac) on any OS
+  const dpr = String(d.dpr || process.env.UI_SUITE_DPR || ''); // d.dpr: a driver that always records at that density (release-video: sharp zooms)
+  const argv = [ROOT, '--no-sandbox', ...(/^[1-4]$/.test(dpr) ? ['--force-device-scale-factor=' + dpr] : [])]; // UI_SUITE_DPR=2: a high-density screen (a Retina Mac) on any OS
   const useXvfb = process.platform === 'linux' && (!process.env.DISPLAY || process.env.UI_SUITE_XVFB === '1'); // UI_SUITE_XVFB=1: keep windows off a desktop
   const [file, list] = useXvfb ? ['xvfb-run', ['-a', electron, ...argv]] : [electron, argv];
   return new Promise((resolve) => {

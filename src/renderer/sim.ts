@@ -733,7 +733,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
         prompt: i === 0
           ? 'Please split the tool registry by domain (companies, cantons, filings) without changing the public API. The attached notes describe the naming I want, and the screenshot shows the current module graph.'
           : 'Please take care of this: ' + intent.charAt(0).toLowerCase() + intent.slice(1) + '.',
-        attachments: i === 0 ? ['/home/vikram/notes/registry-split-notes.md', '/home/vikram/Pictures/module-graph-2026-10-16-final-v3-annotated.png'] : i === 3 ? ['/home/vikram/docs/tool-table.csv'] : undefined,
+        attachments: i === 0 ? ['~/projects/demo/notes/registry-split-notes.md', '~/projects/demo/Pictures/module-graph-2026-10-16-final-v3-annotated.png'] : i === 3 ? ['~/projects/demo/docs/tool-table.csv'] : undefined,
         tool: 0,
         think: i,
         grants: new Map(),
@@ -1678,7 +1678,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
     }
     const fakeCli = [
       { name: 'github', origin: 'copilot-config' as const, transport: 'stdio' as const, command: 'npx', args: ['-y', '@example/github-mcp'], enabled: true },
-      { name: 'my-notes', origin: 'copilot-config' as const, transport: 'stdio' as const, command: 'node', args: ['/home/vikram/tools/notes-mcp.js'], enabled: true },
+      { name: 'my-notes', origin: 'copilot-config' as const, transport: 'stdio' as const, command: 'node', args: ['~/projects/demo/tools/notes-mcp.js'], enabled: true },
       { name: 'github-mcp-server', origin: 'builtin' as const, enabled: true },
       ...SIM_REMOTE.map((r) => ({ name: r.name, origin: 'copilot-config' as const, transport: 'http' as const, url: r.url, enabled: true })),
     ];
@@ -1690,12 +1690,12 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
     const gLists: Record<GApp, GView[]> = {
       copilot: [
         { name: 'github', transport: 'stdio', command: 'npx', args: ['-y', '@example/github-mcp'], envKeys: [], headerKeys: [] },
-        { name: 'my-notes', transport: 'stdio', command: 'node', args: ['/home/vikram/tools/notes-mcp.js'], envKeys: [], headerKeys: [] },
+        { name: 'my-notes', transport: 'stdio', command: 'node', args: ['~/projects/demo/tools/notes-mcp.js'], envKeys: [], headerKeys: [] },
       ],
       claude: [
         { name: 'github', transport: 'stdio', command: 'npx', args: ['-y', '@example/github-mcp'], envKeys: [], headerKeys: [] },
         { name: 'sentry', transport: 'http', url: 'https://mcp.sentry.example/mcp', envKeys: [], headerKeys: ['Authorization'], refs: true },
-        { name: 'my-notes', transport: 'stdio', command: 'node', args: ['/home/vikram/tools/notes-mcp-v1.js'], envKeys: [], headerKeys: [] },
+        { name: 'my-notes', transport: 'stdio', command: 'node', args: ['~/projects/demo/tools/notes-mcp-v1.js'], envKeys: [], headerKeys: [] },
       ],
       codex: [{ name: 'context7', transport: 'stdio', command: 'npx', args: ['-y', '@upstash/context7-mcp'], envKeys: [], headerKeys: [] }],
     };
@@ -1901,7 +1901,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
           ({ id, name, originalName: id, transport: 'stdio', env: [], headers: [], notes: [], alreadyAdded: have.has(name) ? true : undefined, ...o });
         const items = [
           mk('playwright', 'playwright', { command: 'npx', args: ['@playwright/mcp@latest'] }),
-          mk('postgres', 'postgres', { command: 'npx', args: ['-y', '@modelcontextprotocol/server-postgres', '/home/vikram/work/mcp-swiss'], env: [{ key: 'DATABASE_URL', hasValue: true }], notes: ['Ignored fields: envFile.', '"envFile" is not read: add its variables by hand if the server needs them.'] }),
+          mk('postgres', 'postgres', { command: 'npx', args: ['-y', '@modelcontextprotocol/server-postgres', '~/work/mcp-swiss'], env: [{ key: 'DATABASE_URL', hasValue: true }], notes: ['Ignored fields: envFile.', '"envFile" is not read: add its variables by hand if the server needs them.'] }),
           mk('sentry', 'sentry', { transport: 'http', url: 'https://mcp.sentry.example.test/mcp', headers: [{ key: 'Authorization', hasValue: false }], notes: ['Authorization: contains a ${...} reference. The value is not copied or resolved; enter it after importing.'] }),
           mk('github', 'github-vscode', { command: 'npx', args: ['-y', '@example/github-mcp'], env: [{ key: 'GITHUB_TOKEN', hasValue: false }], notes: ['The name "github" is already taken here (Copilot CLI list or another extra); it will be imported as "github-vscode".', 'GITHUB_TOKEN: contains a ${...} reference. The value is not copied or resolved; enter it after importing.'] }),
           mk('notion', 'notion', { command: 'node', args: ['notion-mcp.js', '--workspace', '${input:notion-workspace}'], blocked: 'Needs a value that VS Code asks you for (${input:notion-workspace}). Agent Durbar never asks for or guesses it: add this server by hand.' }),
@@ -3132,8 +3132,8 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
         ] } };
       },
       pickAttachments: async (): Promise<PickedFile[]> => [
-        { path: '/home/vikram/notes/api-design-notes.md', name: 'api-design-notes.md', kind: 'file' },
-        { path: '/home/vikram/Pictures/screenshot-2026-10-16.png', name: 'screenshot-2026-10-16.png', kind: 'image' },
+        { path: '~/projects/demo/notes/api-design-notes.md', name: 'api-design-notes.md', kind: 'file' },
+        { path: '~/projects/demo/Pictures/screenshot-2026-10-16.png', name: 'screenshot-2026-10-16.png', kind: 'image' },
       ],
       stageAttachment: async (name, mime, data) => {
         // The simulator has no disk: pretend to stage, with the same caps as the real main process.

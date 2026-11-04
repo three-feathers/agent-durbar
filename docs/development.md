@@ -16,7 +16,7 @@ npm run world:matrix      # spec 098: world moment x world pictures and checks i
 npm run check:office      # layout check at 1440x900 and 1280x800 (Electron; xvfb on Linux), simulator only
 npm run shots:docs        # retake every screenshot the README and the website link (simulator, one Electron at a time; -- --only, --list, --out <dir>); every picture it writes is palette-compressed (about 60% smaller, with a quality guard)
 npm run shots:compress    # compress screenshots by hand: the linked ones, or the files you name (-- --check only lists; DURBAR_SHOTS_COMPRESS=off turns it off in shots:docs)
-npm run release:video -- --version vX.Y.Z --out <dir>   # a 30-60 s clip of a release's changes from the simulator (MP4 + GIF, needs ffmpeg; spec 008 FR-171..FR-178; trial, not in the release flow yet)
+npm run release:video -- --version vX.Y.Z --out <dir>   # a 30-60 s clip of a release's changes from the simulator (MP4 + GIF, eased zooms on what changed, needs ffmpeg; spec 008 FR-171..FR-178; trial, not in the release flow yet)
 npm run check:geometry    # Retro lays out exactly like Clean Office (CHECK_ALL_THEMES=1: every theme, about a minute)
 npm run check:ui          # every simulator driver that asserts, one after another, on any OS (UI_SUITE_XVFB=1 keeps windows off a Linux desktop); -- --list names them, -- --only check-notes,check-edits runs just those
 npm run check:themes      # on demand: the full layout check in every theme, a few at a time, low priority, memory limits

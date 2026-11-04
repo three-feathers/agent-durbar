@@ -142,6 +142,15 @@ Retired spec numbers, never to be reused for a new spec (`specs:check` and `--ad
 
 ## Changes
 
+### 2026-11-04: the release clip zooms on what changed; the privacy check refuses any home path; neutral simulator paths (owner ask)
+
+*Why:* owner, after watching the v0.1.9 trial clip: the app fills the frame at full size, so a viewer cannot see which control changed. Separately, the clip must never show a written-out home folder, and the simulator's sample data showed `/home/vikram/...`.
+
+- The clip has a **camera**: each scene eases in to the part of the app that changed, holds there, and eases back; every step has its own caption. The recording is at a fixed 2x density (`runOne` takes `d.dpr`) so the zoom stays sharp. `-zoom` stills are written next to the clip for looking at the zoomed frames, and old stills are cleared first.
+- The privacy check (FR-176) refuses **any** written-out home folder in a scene's text: `/home/<name>`, `/Users/<name>` and `C:\Users\<name>`, whatever the name, not only the user's own.
+- The simulator's sample paths (`src/renderer/sim.ts`) are neutral (`~/projects/demo/...`, `~/work/mcp-swiss`), so no picture or clip from the simulator holds a real-looking home path.
+- Tests: `test:releasevideo` covers the camera steps, the stills and the new path cases (T126). Not verified on macOS or Windows.
+
 ### 2026-11-04: the clip goes into the release flow, starting with v0.1.9 (owner decision)
 
 *Why:* owner, Telegram DM 2026-11-03 23:23 UTC, answering option "A": wire the release video into the release flow so the first clip goes into the v0.1.9 release notes. **The first clip is shown to him before it is published.** Clips are not added to older releases. The clip is hosted on the release's assets (FR-174), and on the site later through spec 104; no YouTube.
