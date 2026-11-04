@@ -2421,7 +2421,7 @@ function paintFolderStatus(a){
 }
 async function showFolderStatus(a,chip,st0){
   const st=st0||(FSTAT.get(a.id)||{}).st;if(!st||!st.repo)return;
-  const r=await askDialog({title:'Changes in '+(folderNameOf(a)||'this folder'),body:GS.body(st),lines:GS.lines(st),buttons:[{label:'Open in VS Code',value:'vscode'},{label:'Done',value:null,cls:'primary'}],returnFocus:chip});
+  const r=await askDialog({title:'Changes in '+(folderNameOf(a)||'this folder'),body:GS.body(st),lines:GS.lines(st),buttons:[{label:'Open in editor',value:'vscode'},{label:'Done',value:null,cls:'primary'}],returnFocus:chip});
   if(r&&r.value==='vscode'&&bridge.openInVSCode)openLive(a,chip);
 }
 /* spec 074 FR-022 (issues 587, 612): unsent text and attachments per chat, in memory only (this window; never written to disk: a draft
@@ -2482,6 +2482,7 @@ function paintPanelTitle(a,h){
   else h.textContent=a.name;
 }
 let PANEL_OPENED_AT=0; /* the click guard of FR-020 item 1: the second click of a double-click on a desk lands on the header of the chat it opened */
+const CODE_SVG='<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 4.5L2 8l3.5 3.5M10.5 4.5L14 8l-3.5 3.5M9 3l-2 10"/></svg>'; /* the header's editor button icon */
 /* spec 005 FR-210: before a chat is taken off screen, mark all but its newest 4 messages .cvo (styles.css), so the next open lays out only those near the view. Each marked message also keeps the height it has now as its fallback size, so a message that is skipped is not a 90px guess but its real height and a scroll through it does not shift the view */
 const CV_OBS=new WeakMap(); /* chat element -> the MutationObserver that watches its marked messages while the chat is off screen */
 /* what a message's height depends on besides the width: the root's attributes (density, theme tokens and fonts, world) and the chat's own font */
@@ -2517,7 +2518,7 @@ function openPanel(id,focus){
   p.innerHTML=`<div class="panel-in">
    <div class="strip" role="navigation" aria-label="Agents"><button class="btn back" id="backBtn" type="button" title="Back to the office (Esc)">${ICON('back')}<span>Office</span></button><div class="strip-list" id="stripList"></div></div>
    <div class="ph" id="panelHead"><div class="ph-top"><div class="avatar">${avatar(a)}</div><div class="ph-id"><h2 id="panelTitle" tabindex="-1" title="${esc(panelTipOf(a))}"${titleRenameable(a)?` aria-label="${esc(a.name)}"`:''}>${panelTitleHTML(a)}</h2><div class="sub" title="${esc(subText)}">${parent?'':chatNoHTML(a)}${!parent&&chatNoOf(a)?'<span class="sr-only">Chat '+chatNoOf(a)+'. </span>':''}${esc(subText)}</div></div>
-      <div class="ph-meta"><span data-f="status"></span><span class="ph-ago" data-f="ago"></span><!-- spec 005 FR-039: the header keeps who and what (status, limit, remote, folder); how the next message runs is under the message box (FR-037) -->${a.live&&!a.parent&&bridge&&bridge.setCap?capChipHTML(liveRoot(a)):''}${canRemote(a)?remoteChipHTML(a):''}<span class="folder" title="${esc(room.path)}"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" style="flex:none"><path d="M1.8 4.2a1.4 1.4 0 0 1 1.4-1.4h3l1.6 1.8h4.8a1.4 1.4 0 0 1 1.4 1.4v6.2a1.4 1.4 0 0 1-1.4 1.4H3.2a1.4 1.4 0 0 1-1.4-1.4z"/></svg><span class="folder-t">${esc(showPath(room.path))}</span></span>${notesOn(a)?'<button class="nt-count" id="ntCount" type="button" aria-expanded="false" aria-controls="notesDrawer" data-notes-toggle hidden>Notes</button>':''}</div>      <div class="actions"><!-- spec 052 FR-003: two actions in view (FR-139: a third, + New, by owner decision), the rest under More (ids kept; End and Remove last); spec 006 FR-033 (2026-10-21): Previous sessions moved out of the actions, to their own section above the chat -->${a.live&&!a.parent&&bridge.newSession&&anyKindReady()&&!demoOn?`<button class="btn sm" id="newSessHdrBtn" type="button" title="New session in ${esc(room.name)}" aria-label="New session in ${esc(room.name)}">+ New</button>`:''}<button class="btn sm primary" id="vscodeBtn" type="button" title="Open this folder in VS Code"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 4.5L2 8l3.5 3.5M10.5 4.5L14 8l-3.5 3.5M9 3l-2 10"/></svg>Open in VS Code</button>
+      <div class="ph-meta"><span data-f="status"></span><span class="ph-ago" data-f="ago"></span><!-- spec 005 FR-039: the header keeps who and what (status, limit, remote, folder); how the next message runs is under the message box (FR-037) -->${a.live&&!a.parent&&bridge&&bridge.setCap?capChipHTML(liveRoot(a)):''}${canRemote(a)?remoteChipHTML(a):''}<span class="folder" title="${esc(room.path)}"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" style="flex:none"><path d="M1.8 4.2a1.4 1.4 0 0 1 1.4-1.4h3l1.6 1.8h4.8a1.4 1.4 0 0 1 1.4 1.4v6.2a1.4 1.4 0 0 1-1.4 1.4H3.2a1.4 1.4 0 0 1-1.4-1.4z"/></svg><span class="folder-t">${esc(showPath(room.path))}</span></span>${notesOn(a)?'<button class="nt-count" id="ntCount" type="button" aria-expanded="false" aria-controls="notesDrawer" data-notes-toggle hidden>Notes</button>':''}</div>      <div class="actions"><!-- spec 052 FR-003: two actions in view (FR-139: a third, + New, by owner decision), the rest under More (ids kept; End and Remove last); spec 006 FR-033 (2026-10-21): Previous sessions moved out of the actions, to their own section above the chat -->${a.live&&!a.parent&&bridge.newSession&&anyKindReady()&&!demoOn?`<button class="btn sm" id="newSessHdrBtn" type="button" title="New session in ${esc(room.name)}" aria-label="New session in ${esc(room.name)}">+ New</button>`:''}${a.live?`<button class="btn sm primary" id="vscodeBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="openWithMenu" title="Open this folder in an editor or the file manager. This does not move the conversation.">${CODE_SVG}Open with<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg></button><div class="more-menu" id="openWithMenu" role="menu" aria-label="Open with" aria-describedby="owNote" hidden><p role="none" class="ow-note" id="owNote">Opens this folder only. Your conversation stays here.${a.live&&bridge.newSession&&!a.parent&&anyKindReady()&&canHandover(a)?' To hand it to another app, use More, then Continue in another app…':''}</p><div id="owItems" role="none"></div></div>`:`<button class="btn sm primary" id="vscodeBtn" type="button" title="A demo agent: shows the command an editor would be opened with">${CODE_SVG}Open in editor</button>`/* spec 009 FR-019 (review of PR 976): a demo agent has no menu to promise */}
         <button class="btn sm" id="pauseBtn" type="button"><svg viewBox="0 0 16 16" fill="currentColor"><rect x="4" y="3" width="2.8" height="10" rx="1"/><rect x="9.2" y="3" width="2.8" height="10" rx="1"/></svg><span>Pause</span></button>
         <button class="btn sm" id="moreBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="moreMenu" title="More actions for this agent">More<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg></button><div class="more-menu" id="moreMenu" role="menu" aria-label="More actions" hidden>${a.live&&!a.parent?`<button class="more-it" role="menuitem" tabindex="-1" id="toolsHdrBtn" type="button" title="Which tools this agent used, how often, and its models and context window"><span class="mt">Tools and usage<small>Tools used, models, context window</small></span></button>`:''}${notesOn(a)?`<button class="more-it" role="menuitem" tabindex="-1" id="notesHdrBtn" type="button" data-notes-toggle aria-keyshortcuts="${esc(ariaKeys(NOTES_KEYS))}" title="Messages and ideas kept for this folder, to put back into the message box"><span class="mt">Notes…<small>Saved messages and ideas · ${esc(keyText(NOTES_KEYS))}</small></span></button>`:''}${a.live&&!a.parent&&bridge.listSchedules&&!demoOn?`<button class="more-it" role="menuitem" tabindex="-1" id="schedHdrBtn" type="button" title="Prompts sent to this folder's agent at a time, every day or at an interval"><span class="mt">Schedules${(()=>{try{const n=schedulesOf(room).filter(s=>!s.done).length;return n?' ('+n+')':'';}catch(e){return '';}})()}<small>Prompts sent at a set time</small></span></button>`:''}${a.live&&bridge.newSession&&!a.parent&&anyKindReady()?`<button class="more-it" role="menuitem" tabindex="-1" id="newSessBtn" type="button" title="Another agent with its own chat in this folder"><span class="mt">+ New session<small>Another agent in this folder</small></span></button>${canHandover(a)?'<button class="more-it" role="menuitem" tabindex="-1" id="handoverBtn" type="button" title="Start a session in another agent app from a summary of this conversation. You review it first."><span class="mt">Continue in another app…<small>Start there from a summary</small></span></button>':''}`:''}${canRemote(a)?`<button class="more-it${a.remote?' on':''}" role="menuitem" tabindex="-1" id="remoteBtn" type="button" title="Follow and steer this session from github.com and GitHub Mobile">${remoteItemInner(a)}</button>`:''}${a.live&&!a.parent&&resumeCmdOf(a)?`<button class="more-it" role="menuitem" tabindex="-1" id="copyResBtn" type="button" title="Copy a command that continues this session in a terminal (end the session here first)"><span class="mt">Copy resume command<small>Continue this session in a terminal</small></span></button>`:''}${canRenameSession(a)?`<button class="more-it" role="menuitem" tabindex="-1" id="renameSessBtn" type="button" title="Give this session a short name"><span class="mt">Rename…<small>A short name for this session</small></span></button>`:''}<div class="more-sep" role="separator"></div>${a.live&&bridge.end&&!a.parent?`<button class="more-it danger" role="menuitem" tabindex="-1" id="endBtn" type="button" title="End this session and free it. Sending a message later resumes it."><span class="mt">End session<small>A later message resumes it</small></span></button>`:''}${a.live&&bridge.removeSession&&!a.parent&&siblingsOf(a).length?`<button class="more-it danger" role="menuitem" tabindex="-1" id="rmSessBtn" type="button" title="End this session and take its card out of the office. The folder's other sessions stay."><span class="mt">Remove from office<small>Ends it; history stays in Previous sessions</small></span></button>`:(a.live&&bridge.removeFolder&&!a.parent&&!demoOn?`<button class="more-it danger" role="menuitem" tabindex="-1" id="rmFolderBtn" type="button" title="Forget ${esc(DurbarCutText.cutText(room.name,30))} in Agent Durbar. Its session ends; nothing on disk is deleted."><span class="mt">Remove folder<small>Forgets the folder; files stay on disk</small></span></button>`:'')}</div></div></div>
     <div class="ph-line"><p class="ptask" data-f="task"></p><p class="pusage" data-f="usage"></p></div>
@@ -2548,7 +2549,7 @@ function openPanel(id,focus){
   $('panel').querySelector('.panel-in').classList.toggle('ro',!!(a.live&&a.parent));
   $('backBtn').onclick=closePanel;
   refreshFolderStatus(a); /* spec 063: branch and changed files on the folder chip */
-  $('vscodeBtn').onclick=e=>a.live?openLive(a,e.currentTarget):toast('Would run <code>code '+esc(room.path)+'</code>',3800);
+  if(a.live)wireOpenWith(a);else $('vscodeBtn').onclick=()=>toast('Would run <code>code '+esc(room.path)+'</code>',3800);
   if(a.live)$('pauseBtn').hidden=true;
   if($('newSessBtn'))$('newSessBtn').onclick=()=>newSession(a);
   if($('newSessHdrBtn'))$('newSessHdrBtn').onclick=()=>newSession(a);
@@ -6549,12 +6550,52 @@ function showSignInCard(a0,o){
   return n;
 }
 async function pickLive(want){addPicked(await bridge.pickAttachments(want));}
+/* spec 009 FR-019..FR-024 (issue 685): the header's Open with menu. The window sends the agent id and a fixed target id; main owns the folder. It opens a folder only, it never moves the session. */
+const OW_REFETCH_MS=3000; /* review of PR 976: each list costs main a PATH scan of file checks, so a hover, focus or key asks at most this often */
+async function fillOpenWith(a,force){
+  const items=$('owItems'),menu=$('openWithMenu');if(!items)return;
+  const now=performance.now(), has=!!items.querySelector('[data-ow]');
+  if(items.dataset.owBusy==='1'||(!force&&has&&now-Number(items.dataset.owAt||0)<OW_REFETCH_MS))return; /* one list at a time; an empty menu always asks */
+  items.dataset.owBusy='1';items.dataset.owAt=String(now);
+  let t=null;try{t=bridge.openWithTargets?await bridge.openWithTargets(liveRoot(a).id):null;}catch(err){t=null;}
+  finally{delete items.dataset.owBusy;}
+  if(!items.isConnected)return;
+  if(!Array.isArray(t)){if(has)return;t=[{id:'vscode',label:'VS Code',hint:'Opens this folder in VS Code'}].concat(bridge.openWith?[{id:'folder',label:'Show in folder',hint:'Opens it in the file manager'}]:[]);} /* a failed ask keeps the list it has */
+  const html=t.map(x=>`<button class="more-it" role="menuitem" tabindex="-1" type="button" data-ow="${esc(x.id)}" title="${esc(x.hint)}"><span class="mt">${esc(x.label)}<small>${esc(x.hint)}</small></span></button>`).join('');
+  if(html===items.dataset.owHtml&&has)return; /* the same list: the menu (and the focused item) is left as it is */
+  const f=document.activeElement, was=f&&items.contains(f)?f.dataset.ow:null, open=menu&&!menu.hidden;
+  items.innerHTML=html;items.dataset.owHtml=html;
+  items.querySelectorAll('[data-ow]').forEach(b=>{b.onclick=()=>openWithRun(a,b.dataset.ow,b.querySelector('.mt').firstChild.textContent,$('vscodeBtn'),b.dataset.ow==='folder');});
+  /* a changed list under an open menu keeps the focus on the same target, else the first (spec 009 2026-11-02: a first fill focuses the first item) */
+  if(open&&(was!==null||!has||!f||!menu.contains(f))){const n=[...items.querySelectorAll('[data-ow]')];const g=n.find(x=>x.dataset.ow===was)||n[0];if(g)focusIn(g);}
+}
+function wireOpenWith(a){
+  const b=$('vscodeBtn');if(!b)return;
+  wireMenu('vscodeBtn','openWithMenu');
+  fillOpenWith(a,true);
+  /* a fresh list for a pointer, and for a keyboard or screen reader (focus, or a key that opens the menu) */
+  b.addEventListener('pointerenter',()=>fillOpenWith(a));
+  b.addEventListener('focus',()=>fillOpenWith(a));
+  b.addEventListener('keydown',e=>{if(['Enter',' ','ArrowDown','ArrowUp'].includes(e.key))fillOpenWith(a);});
+}
+async function openWithRun(a,target,label,btn,isFolder){
+  const done=busy(btn,'Opening…');
+  try{
+    const r=bridge.openWith?await bridge.openWith(liveRoot(a).id,target):await bridge.openInVSCode(liveRoot(a).id);
+    toast(r.ok?'Opening '+(isFolder?'the folder in your file manager':'in '+esc(r.edition||label))+'… (this opens the folder only; the conversation stays here)'+(r.note?' '+esc(r.note):''):'Could not open '+esc(label)+': '+esc(r.error||'unknown error'),r.ok?4200:5200).classList.add(r.ok?'ok':'err');
+  }catch(err){toast('Could not open '+esc(label)+': '+esc(String(err&&err.message||err)),5000).classList.add('err');}
+  finally{
+    done();
+    /* the chosen item sat in a menu that is now closed, and the button was disabled while it ran: focus back on the button (keyboard) */
+    const f=document.activeElement;if(btn&&btn.isConnected&&(!f||f===document.body||!!f.closest('#openWithMenu')))focusIn(btn);
+  }
+}
 /* spec 052 FR-047: btn (optional) shows the busy state while the bridge call runs; FR-050: success and failure toasts are typed */
 async function openLive(a,btn){
   const done=busy(btn,'Opening…');
   try{const r=await bridge.openInVSCode(liveRoot(a).id);
-    toast(r.ok?'Opening in '+esc(r.edition||'VS Code')+'…':'Could not open VS Code: '+esc(r.error||'unknown error'),4200).classList.add(r.ok?'ok':'err');}
-  catch(err){toast('Could not open VS Code: '+esc(String(err&&err.message||err)),5000).classList.add('err');}
+    toast(r.ok?'Opening in '+esc(r.edition||'your editor')+'…'+(r.note?' '+esc(r.note):''):'Could not open '+esc(r.edition||'an editor')+': '+esc(r.error||'unknown error'),r.ok?4200:5200).classList.add(r.ok?'ok':'err');} /* review of PR 976: the edition that answered, never a fixed "VS Code" */
+  catch(err){toast('Could not open an editor: '+esc(String(err&&err.message||err)),5000).classList.add('err');}
   finally{done();}
 }
 async function stopLive(a,btn){const r=liveRoot(a),done=busy(btn,'Stopping…');try{await bridge.stop(r.id);}finally{done();}toast(esc(r.name)+': stopped the current turn. It is ready for your next message.').classList.add('ok');}

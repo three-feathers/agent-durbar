@@ -17,7 +17,7 @@ status: built
 In a chat, the folder chip in the header also shows the git branch and how many files have uncommitted changes, for example `~/work/api · main · 3 changed`. Nothing changes for a folder that is not a git repository, or when git is not installed.
 
 ### Story 2 - See which files changed (P1)
-Clicking the folder chip, when it shows changes, opens a small dialog: the branch (and ahead/behind of its upstream), then each changed file with its state (modified, added, deleted, renamed, untracked) and its +/− line counts. Buttons: **Open in VS Code** (the existing action) and **Done**.
+Clicking the folder chip, when it shows changes, opens a small dialog: the branch (and ahead/behind of its upstream), then each changed file with its state (modified, added, deleted, renamed, untracked) and its +/− line counts. Buttons: **Open in editor** (the existing action, named *Open in VS Code* until spec 009's 2026-11-02 change; the first installed edition through spec 009 FR-027) and **Done**.
 
 ### Story 3 - It stays current without noise (P2)
 The status is read when the chat opens and again when the agent finishes a turn (it goes idle), at most once every 5 seconds per folder. There is no polling while nothing happens.
@@ -50,7 +50,7 @@ Committing, staging, discarding or diffs inside Durbar (VS Code does this). Stat
   - the read-only argv (`--no-optional-locks`, no writing subcommand), the 200-file cap, and failures giving `{ repo: false }`;
   - the window's words.
 - `sim:` `scripts/shots-063-folder-status.js` at 1440x900 and 1280x800:
-  - a folder with 3 changes: the chip says "· main · 3 changed", is a button, is at least 10.5px and fits the header; the dialog is titled with the folder name, lists the files in plain words ("changed", "new", "deleted") and has Open in VS Code and Done;
+  - a folder with 3 changes: the chip says "· main · 3 changed", is a button, is at least 10.5px and fits the header; the dialog is titled with the folder name, lists the files in plain words ("changed", "new", "deleted") and has Open in editor and Done;
   - a clean repository shows the branch only, and is not a button;
   - a folder that is not a repository is unchanged.
   - Screenshots: `docs/screenshots/063-folder-*`.
