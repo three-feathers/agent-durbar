@@ -4,14 +4,14 @@ One row per thing a user can do or see. [features.md](features.md) stays the use
 
 - **Flat**, **Real office**: `works`, `in PR` (branch named in the proof), `planned` (in a spec, not built), `missing` (nobody wrote it down, or decided out). A short note may follow the word.
 - **Worlds**: arrangement worlds (spec 098/102), any of `mock`, `planned`, `built`, or `none`; a registry moment in `( )` must exist in [world-moments.json](experience/world-moments.json). `built` needs the registry's `code: present`.
-- **Parity** (spec 021 FR-078, owner decision 2026-11-04): every world has what Flat has, characters included. A row where Flat is `works` needs, in **Real office** (shipped before the rule), a cell that is `works` or names its issue (`#NNN`); in every other offered world (the choices of Settings > Office layout > World, read from `src/renderer/crew.js`) the Worlds cell must be `built`. Either may carry `(owner decision, <date or #issue>)` instead. `npm run test:featureinventory` fails otherwise.
+- **Parity** (spec 021 FR-078, owner decision 2026-11-04): every world has what Flat has, characters included. A row where Flat is `works` needs, in **Real office** (shipped before the rule), a cell that is plain `works` or names its issue (`#NNN`); in every other offered world (the choices of Settings > Office layout > World, read from `src/renderer/crew.js`) the Worlds cell must be `built`. **Plain `works`**: the note after `works` has none of the words *only, partly, partial, partially, no, not, missing, without, except* (such a note admits a gap or an unchecked part, so the cell names its issue). **Owner decision**: a cell may carry exactly `(owner decision, YYYY-MM-DD)` (a real date) or `(owner decision, #NNN)` instead; it waives only the cell it is written in, so a Real office decision does not waive the Worlds cell, nor the reverse (a world's exception goes in the Worlds cell, after its state). Any other `(owner decision …)` form fails. The check is offline: it does not confirm that an issue exists or is open. `npm run test:featureinventory` fails otherwise.
 - **Proof** (each row needs one, all must resolve): `test:NAME` = the `test:NAME` script of package.json; `driver:NAME` = `scripts/NAME.js`; `read:PATH` = source read, not run. Real office and worlds cells come from the 2026-11-01 parity audit (`read:`), the simulator run excepted.
 - **Upkeep**: a PR that adds, changes or removes a user-visible feature updates its row.
 
 | Feature | Flat | Real office | Worlds | Specs | Proof |
 |---|---|---|---|---|---|
 | Desk: name, role, status word, task | works | works | mock+planned (desk-card) | 001 034 097 | test:mood driver:shots-097-realoffice |
-| Moods and trouble signs (heavy, monster, siren) | works | works pose, dots and lights only | mock+planned (desk-lights) | 034 097 | test:mood read:src/renderer/realoffice.js |
+| Moods and trouble signs (heavy, monster, siren) | works | works pose, dots and lights only; heavy, monster and siren missing (#1171) | mock+planned (desk-lights) | 034 097 | test:mood read:src/renderer/realoffice.js |
 | Helpers (sub-agents): card, tree, own chat, needs you | works | missing, only `+N` and 3 dots; planned as small figures beside the desk (#1139) | planned | 001 015 097 | test:helpercard read:src/renderer/realoffice.js |
 | Live activity on the desk | works | works, monitors show the newest output (PR 979) | mock+planned (live-screen) | 001 097 | test:liveact driver:shots-001-live-activity |
 | Model, tokens, cost, context, last tool on the desk | works | missing (#1148) | none | 019 097 | test:ctxbreakdown read:src/renderer/realoffice.js |
@@ -30,9 +30,9 @@ One row per thing a user can do or see. [features.md](features.md) stays the use
 | Still highlights (no motion): Settings > Highlights | works | works, the whole room stands still | none | 001 | test:stillhighlights driver:check-unread |
 | Simple / Expert switch and the "Do you write code?" question | missing, removed by owner decision (#1060) | missing, removed | none | 052 | driver:shots-052-ux |
 | Old app-level MCP servers in the folder extras dialog | missing, removed (#1058) | missing, removed | none | 020 | driver:shots-m10 |
-| Room menu: New session, Schedules, Rename, Cost, Move | works | works on the folder sign | none | 001 006 | driver:shots-005-cardmenu read:src/renderer/realoffice.js |
-| Full-screen chat, other agents in the rail (List, folders collapse) | works | works, in PR 097-chat-in-world for the world's own frame (rail not checked there) | mock+planned (chat-open) | 005 | test:innerscroll test:railorder driver:check-rail driver:shots-005-cardmenu |
-| Reopening a long chat is fast: older messages are skipped until near the view; the end is followed while a turn streams | works, simulator only | works, chat only (window chrome, no office drawing); not checked with a world on | none | 005 | driver:check-chat-visibility |
+| Room menu: New session, Schedules, Rename, Cost, Move | works | works, the app's own room menu on the folder sign | none | 001 006 | driver:shots-005-cardmenu read:src/renderer/realoffice.js |
+| Full-screen chat, other agents in the rail (List, folders collapse) | works | works, in PR 097-chat-in-world for the world's own frame (rail not checked there, #1172) | mock+planned (chat-open) | 005 | test:innerscroll test:railorder driver:check-rail driver:shots-005-cardmenu |
+| Reopening a long chat is fast: older messages are skipped until near the view; the end is followed while a turn streams | works, simulator only | works, chat only (window chrome, no office drawing); not checked with a world on (#1172) | none | 005 | driver:check-chat-visibility |
 | Chat reads well in every world: a resumed session's chat has the same look; sub-agent chat text is readable | works | missing, a resumed session lacks the look (#1140); sub-agent text unreadable over the photo (#1146) | none | 005 097 | read:src/renderer/app.js |
 | Thinking, tool calls, Markdown | works | works | mock+planned (chat-shell) | 015 016 | test:markdown test:events |
 | File edits as they happen, Undo these changes | works | works | none | 065 | test:edits test:checkpoints |
@@ -57,8 +57,8 @@ One row per thing a user can do or see. [features.md](features.md) stays the use
 | Model, effort and Auto routing | works | works | none | 007 030 | test:modelchoice test:modelswitch |
 | Context ring and Compact | works | works | none | 019 034 | test:compaction test:ctxbreakdown |
 | MCP servers: state, sign-in, restart, global | works | works | none | 019 058 061 069 | test:mcphealth test:mcpsignin test:mcpglobal driver:shots-058-mcp-launch |
-| MCP problems strip at launch (reason, fix, Show, Dismiss) | works | works, the same strip above the office (driver); not checked with a world on | none | 058 | driver:shots-058-mcp-launch test:mcpwords |
-| MCP sign-ins refreshed before a message after a quiet hour (waiting line, sign-in line, Settings switch) | works | works, chat and Settings only (window chrome, no office drawing); not checked with a world on | none | 058 | test:mcpsigninrefresh driver:shots-058-mcp-signin-refresh |
+| MCP problems strip at launch (reason, fix, Show, Dismiss) | works | works, the same strip above the office (driver); not checked with a world on (#1172) | none | 058 | driver:shots-058-mcp-launch test:mcpwords |
+| MCP sign-ins refreshed before a message after a quiet hour (waiting line, sign-in line, Settings switch) | works | works, chat and Settings only (window chrome, no office drawing); not checked with a world on (#1172) | none | 058 | test:mcpsigninrefresh driver:shots-058-mcp-signin-refresh |
 | Tools and Cost tabs | works | works | none | 019 020 | test:toolstats test:usagetotals |
 | Credit caps and usage display | works | works | planned (limit-card) | 011 | test:credits test:usagestore driver:shots-012-cost-cap |
 | OS sandbox floor | works | works | none | 087 | test:runtime-sandbox |

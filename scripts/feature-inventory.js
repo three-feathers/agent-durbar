@@ -7,9 +7,11 @@
  *    (test:NAME = package.json script test:NAME, driver:NAME = scripts/NAME.js, read:PATH = an existing file);
  *  - `in PR` names a branch in the row; `built` in Worlds needs a registry moment with code: present;
  *  - every spec with `status: built` is in a row or on the `Exempt:` line;
- *  - parity (spec 021 FR-078, owner 2026-11-04): where Flat is `works`, the Real office cell is `works` or names an issue (#NNN) or carries
- *    `(owner decision, <date or #issue>)`; and while any world other than Real office (id `photo`) is offered by src/renderer/crew.js
- *    (WORLDS rows whose flag is absent or on in WORLD_FLAGS), the Worlds cell of such a row says `built` or carries the marker;
+ *  - parity (spec 021 FR-078, owner 2026-11-04): where Flat starts with `works`, the Real office cell is plain `works` (no word of
+ *    LIMIT_WORDS in its note) or names an issue (#NNN) or carries its own owner decision; and while any world other than Real office
+ *    (id `photo`) is offered by src/renderer/crew.js (WORLDS rows whose flag is absent or on in WORLD_FLAGS), the Worlds cell of such a
+ *    row says `built` or carries its own owner decision. A decision waives only the cell it is written in;
+ *  - every `(owner decision, ...)` is exactly `(owner decision, YYYY-MM-DD)` with a real date or `(owner decision, #NNN)`;
  *  - a registry world with shippable: true needs the Helpers row to say `built` for worlds (helpers per world are a row).
  * Plain Node, paths with path.join. Usage: node scripts/feature-inventory.js [--root D]
  */
@@ -19,6 +21,15 @@ const path = require('path');
 
 const STATES = ['works', 'in PR', 'planned', 'missing'];
 const state = (c) => STATES.find((s) => c === s || c.startsWith(s + ' ') || c.startsWith(s + ','));
+/* a `works` note with one of these words admits a gap ("works pose, dots and lights only"), so it is not parity */
+const LIMIT_WORDS = ['only', 'partly', 'partial', 'partially', 'no', 'not', 'missing', 'without', 'except'];
+const LIMITS = new RegExp(`\\b(${LIMIT_WORDS.join('|')})\\b`, 'i');
+const fullWorks = (c) => state(c) === 'works' && !LIMITS.test(c.slice('works'.length));
+const MARKER = /\(\s*owner decision\b[^)]*\)?/gi;
+const realDate = (d) => { const [y, m, n] = d.split('-').map(Number); const t = new Date(Date.UTC(y, m - 1, n)); return t.getUTCFullYear() === y && t.getUTCMonth() === m - 1 && t.getUTCDate() === n; };
+const goodMarker = (t) => { const m = /^\(owner decision, (?:(\d{4}-\d{2}-\d{2})|#[1-9]\d*)\)$/.exec(t); return !!m && (!m[1] || realDate(m[1])); };
+/* true when this one cell carries a well-formed owner decision; a decision in another cell does not count */
+const decided = (cell) => (cell.match(MARKER) || []).some(goodMarker);
 
 function check(root) {
   const p = [];
@@ -52,7 +63,8 @@ function check(root) {
       if (!s) bad(`cell "${c[i]}" must start with one of ${STATES.join(', ')}`);
       else if (s === 'in PR' && !/^in PR [\w.-]+/.test(c[i])) bad('"in PR" must name the branch');
     }
-    const w = /^(none|(mock|planned|built)(\+(mock|planned|built))*)(?: \(([\w-]+)\))?$/.exec(c[3]);
+    for (const i of [1, 2, 3]) for (const t of c[i].match(MARKER) || []) if (!goodMarker(t)) bad(`marker "${t}" must be exactly (owner decision, YYYY-MM-DD) with a real date, or (owner decision, #NNN)`);
+    const w = /^(none|(mock|planned|built)(\+(mock|planned|built))*)(?: \(([\w-]+)\))?(?: \(owner decision, [^)]*\))?$/.exec(c[3]);
     if (!w) bad(`Worlds "${c[3]}" is not none or mock/planned/built joined by +`);
     else {
       if (w[5] && !moments.has(w[5])) bad(`registry has no moment "${w[5]}"`);
@@ -62,9 +74,8 @@ function check(root) {
       }
     }
     if (state(c[1]) === 'works') {
-      const decided = /\(owner decision, [^)]+\)/;
-      if (state(c[2]) !== 'works' && !/#\d+/.test(c[2]) && !decided.test(c[2])) bad(`Real office cell "${c[2]}" is not works, so it must name an issue (#NNN) or carry (owner decision, <date or #issue>)`);
-      if (others.length && !/built/.test(c[3]) && !decided.test(c[3] + ' ' + c[2])) bad(`world(s) ${others.join(', ')} offered, but Worlds "${c[3]}" is not built (Flat has this feature: parity, spec 021 FR-078)`);
+      if (!fullWorks(c[2]) && !/#\d+/.test(c[2]) && !decided(c[2])) bad(`Real office cell "${c[2]}" is not plain works (a note with ${LIMIT_WORDS.join(', ')} admits a gap), so it must name an issue (#NNN) or carry its own (owner decision, YYYY-MM-DD or #NNN)`);
+      if (others.length && !(w && /built/.test(w[1])) && !decided(c[3])) bad(`world(s) ${others.join(', ')} offered, but Worlds "${c[3]}" is not built and carries no owner decision of its own (Flat has this feature: parity, spec 021 FR-078)`);
     }
     const ns = c[4].split(/\s+/).filter(Boolean);
     if (!ns.length) bad('no spec');
