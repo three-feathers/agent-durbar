@@ -265,6 +265,19 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
   };
   const opts = { tag: 'v0.1.0-alpha.11', repo: 'three-feathers/agent-durbar', mainRef: 'refs/heads/main' };
   {
+    // spec 008 FR-173 (T125): the Highlights block sits under the heading, above the list, from the tagged commit's fragments
+    const d = gitRepo();
+    fs.writeFileSync(path.join(d, 'changelog.d', 'a.md'), '- Change A.\n  Highlight: **A** is new.\n');
+    fs.writeFileSync(path.join(d, 'changelog.d', 'b.md'), '- Change B.\n  Highlight: **B** too.\n  Scene: crews\n');
+    commit(d, 'fields');
+    g(d, 'tag', '-a', '-m', 'alpha.11', 'v0.1.0-alpha.11');
+    const r = rn.releaseNotes(d, opts);
+    const h = r.heading;
+    assert.strictEqual(r.notes, `${rn.PREAMBLE}\n\n## ${h}\n\n### Highlights\n\n- **B** too.\n- **A** is new.\n\n### All changes\n\n- Change A.\n- Change B.\n`, 'Highlights (Scene first) above the whole list; the fields are not in the list');
+    assert.ok(r.highlights.startsWith('### Highlights'), 'the block is also returned on its own');
+    // a section already in CHANGELOG.md (folded) gets no block, and no fragment with a Highlight: no block (covered by the exact notes above)
+  }
+  {
     const d = gitRepo();
     g(d, 'tag', '-a', '-m', 'alpha.11', 'v0.1.0-alpha.11');
     fs.writeFileSync(path.join(d, 'changelog.d', 'c.md'), '- Change C after the tag.\n');
