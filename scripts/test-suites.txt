@@ -205,4 +205,5 @@ test:prereview
 test:mcpcost
 test:mcpcontextop
 test:mcpcontextipc
+test:quota
 test:featureinventory

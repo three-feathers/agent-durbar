@@ -493,6 +493,7 @@
       const e=X.esc;
       box.innerHTML=sec.failed?`<p class="scr-note warn" role="status">${e(sec.failText)}</p>`:`<ul class="orgrows">${sec.rows.map(r=>`<li class="orgrow" data-org="${e(r.id)}" data-state="${r.state}"><b>${e(r.app)}</b> <span class="mtag${r.state==='unknown'?' warn':''}">${e(r.status)}</span>${r.note?`<small>${e(r.note)}</small>`:''}${r.paths.length?`<small>From: ${r.paths.map(x=>`<code>${e(x)}</code>`).join(', ')}</small>`:''}${r.modes.length?`<ul>${r.modes.map(m=>`<li>${e(m.mode)}: ${e(m.why)}${m.advice?' (advice only)':''}</li>`).join('')}</ul>`:''}${r.noMode?`<small>${e(r.noMode)}</small>`:''}${r.counts.length?`<small>${e(r.counts.join(' · '))}</small>`:''}${r.problems.map(x=>`<small class="warn">${e(x)}</small>`).join('')}</li>`).join('')}</ul>`;
     })();}
+    if(hsSec&&window.DurbarHarnesses.loadQuota)window.DurbarHarnesses.loadQuota(acctAgain==='check'?'check':'open'); /* spec 011 FR-083: within main's floors */
     if(hsSec&&window.DurbarHarnesses.loadSandbox)window.DurbarHarnesses.loadSandbox(); /* spec 087 FR-012: the OS sandbox line per app, after the paint */
     wireHead();
     /* spec 051 FR-008: entry points open Settings at Agent apps */
@@ -1818,7 +1819,7 @@
   }
 
   window.DurbarScreens={saveFailText,oneShotCostLine,aiCredits,
-    init(ctx){X=ctx;if(window.DurbarHarnesses)window.DurbarHarnesses.init({bridge:ctx.bridge,mask:ctx.mask,toast:(t)=>ctx.toast(ctx.esc(t),3600),onAccounts:(a)=>{if(ctx.setAccounts)ctx.setAccounts(a);},onBadge:setUpdBadge,onChange:(again)=>{X._hsRefresh=true;X._acctRefresh='check';if(ctx.refreshKinds)ctx.refreshKinds();if(cur&&cur.kind==='settings')paint();}});},
+    init(ctx){X=ctx;if(window.DurbarHarnesses)window.DurbarHarnesses.init({bridge:ctx.bridge,mask:ctx.mask,handover:ctx.handover,toast:(t)=>ctx.toast(ctx.esc(t),3600),onAccounts:(a)=>{if(ctx.setAccounts)ctx.setAccounts(a);},onBadge:setUpdBadge,onChange:(again)=>{X._hsRefresh=true;X._acctRefresh='check';if(ctx.refreshKinds)ctx.refreshKinds();if(cur&&cur.kind==='settings')paint();}});},
     folderMcp:openFolder,
     folderNotes:openNotes, /* spec 083 T034a: {key, name, render(focus), onClose()} */
     notesKey:()=>cur&&cur.kind==='notes'?cur.key:null,
