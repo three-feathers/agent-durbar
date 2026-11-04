@@ -42,7 +42,7 @@ const KNOWN_FAILURES = {
 
 const REAL = `!!document.querySelector('#stage .ro .ro-plate')&&[...document.querySelectorAll('#stage .ro img')].every(i=>i.complete)`;
 /* the lobby as it stays: every script replayed, no visit waiting to start or end (places.js settled()), no render queued (settleNow draws it), no picture fading out, every picture decoded */
-const SETTLED = `!!window.__durbarSimReplayed&&window.__durbarSimUi.visitsSettled()&&window.__durbarSimUi.settleNow()&&!document.querySelector('#stage .ro-ghost')&&${REAL}`;
+const SETTLED = `!!window.__durbarSimReplayed&&window.__durbarSimUi.visitsSettled()&&window.__durbarSimUi.settleNow()&&!document.querySelector('#stage .ro-ghost')&&` + REAL;
 const med = (a) => [...a].sort((x, y) => x - y)[Math.floor(a.length / 2)];
 
 async function trace(fn) {
@@ -118,7 +118,7 @@ module.exports = async (ctx) => {
 
   // ---- FR-183 with the people moving (romotion=1): a pose's second frame takes the same size as its first, so the half-size set holds with motion on ----
   await load(15, { romotion: '1' });
-  assert.ok(await H.until(`(${SETTLED})&&document.querySelectorAll('#stage :is(.ro-person2,.ro-visitor2).m-b').length>0`, 20000), 'motion on: second frames running: ' + JSON.stringify(await js(`[...document.querySelectorAll('#stage :is(.ro-person2,.ro-visitor2,.ro-rig)')].map(e=>e.className)`)));
+  assert.ok(await H.until('(' + SETTLED + `)&&document.querySelectorAll('#stage :is(.ro-person2,.ro-visitor2).m-b').length>0`, 20000), 'motion on: second frames running: ' + JSON.stringify(await js(`[...document.querySelectorAll('#stage :is(.ro-person2,.ro-visitor2,.ro-rig)')].map(e=>e.className)`)));
   const pair = await js(`[...document.querySelectorAll('#stage :is(.ro-person2,.ro-visitor2)')].map(b=>{const a=document.querySelector('#stage :is(.ro-person,.ro-visitor)[data-for="'+CSS.escape(b.dataset.for)+'"]');return [b.dataset.for,/\.h\.webp$/.test(a&&a.currentSrc||''),/\.h\.webp$/.test(b.currentSrc)];})`);
   const moving15 = await js(AREA);
   rows['pictureArea@15motion'] = moving15.ratio;

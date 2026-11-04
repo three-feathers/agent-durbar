@@ -233,9 +233,9 @@ module.exports = async (ctx) => {
         const had = await js(COST);
         await js(`(()=>{const b=document.querySelector(${jsLiteral(SIGN + ' [data-' + attr + ']')});b.__marked=1;window.__oldBtn=b;b.focus();})();0`);
         assert.ok(await js(`document.activeElement===window.__oldBtn`), 'the ' + attr + ' button has the focus before the rebuild');
-        await js(`window.__durbarSimUi.quietHeads(${had ? "['aiu']" : '[]'});0`);
+        await js(`window.__durbarSimUi.quietHeads(${jsLiteral(had ? ['aiu'] : [])});0`);
         await emit({ type: 'status', sessionId: zone.desk, status: i ? 'working' : 'idle', intent: 'Driver work' });
-        await must(`${had ? '!' : ''}${COST}&&!window.__oldBtn.isConnected`, 'the sign built again, its cost line ' + (had ? 'gone' : 'back') + ' and the old ' + attr + ' button out of the page');
+        await must((had ? '!' : '') + COST + '&&!window.__oldBtn.isConnected', 'the sign built again, its cost line ' + (had ? 'gone' : 'back') + ' and the old ' + attr + ' button out of the page');
         await must(`(()=>{const a=document.activeElement;return !!a&&a.dataset[${jsLiteral(attr)}]===${jsLiteral(zone.id)}&&!a.__marked&&!!a.closest(${jsLiteral(SIGN)});})()`, 'the focus on the rebuilt sign\'s new ' + attr + ' button');
       }
       await js(`window.__durbarSimUi.quietHeads([]);window.__oldBtn=null;0`);
@@ -246,19 +246,19 @@ module.exports = async (ctx) => {
       /* a working desk with fewer than 3 helpers, so the new one's dot is among the 3 shown */
       const desk = (await js(`window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks).filter(d=>d.state==='working').map(d=>d.id).find(id=>{const p=document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(id)+'"]'),h=p&&p.querySelector('.ro-help');return !!p&&(!h||+((/\\+(\\d+)/.exec(h.textContent)||[])[1])<3);})`));
       assert.ok(desk, 'a working desk with fewer than 3 helpers');
-      const PL = `document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(${jsLiteral(desk)})+'"]')`;
-      const help = () => js(`(()=>{const h=${PL}.querySelector('.ro-help');return h?{n:(/\\+(\\d+)/.exec(h.textContent)||[])[1]||'',dots:[...h.querySelectorAll('.dot')].map(d=>d.className).join('|')}:{n:'0',dots:''};})()`);
+      await js(`window.__pl=()=>document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(${jsLiteral(desk)})+'"]');0`);
+      const help = () => js(`(()=>{const h=window.__pl().querySelector('.ro-help');return h?{n:(/\\+(\\d+)/.exec(h.textContent)||[])[1]||'',dots:[...h.querySelectorAll('.dot')].map(d=>d.className).join('|')}:{n:'0',dots:''};})()`);
       const h0 = await help();
-      await js(`window.__nm=${PL}.querySelector('b');0`);
+      await js(`window.__nm=window.__pl().querySelector('b');0`);
       const sub = 'drv-helper-1', base = { sessionId: desk };
       await emit({ ...base, type: 'subagent', subagentId: sub, name: 'Driver helper', phase: 'started', task: 'Check the driver', agentName: 'explore' });
       await emit({ ...base, type: 'status', status: 'working', agentId: sub, intent: 'Check the driver' });
-      await must(`(${PL}.querySelector('.ro-help')||{textContent:''}).textContent.includes('+'+${jsLiteral(String(Number(h0.n) + 1))})`, 'the plate\'s helper count one up (was ' + JSON.stringify(h0) + ')');
+      await must(`(window.__pl().querySelector('.ro-help')||{textContent:''}).textContent.includes('+'+${jsLiteral(String(Number(h0.n) + 1))})`, 'the plate\'s helper count one up (was ' + JSON.stringify(h0) + ')');
       const h1 = await help();
       assert.strictEqual(Number(h1.n), Number(h0.n) + 1, 'a new helper adds one: ' + JSON.stringify([h0, h1]));
       await emit({ ...base, type: 'subagent', subagentId: sub, name: 'Driver helper', phase: 'failed', task: 'Failed', error: 'Failed', agentName: 'explore' });
-      await must(`(()=>{const h=${PL}.querySelector('.ro-help');return !!h&&[...h.querySelectorAll('.dot')].map(d=>d.className).join('|')!==${jsLiteral(h1.dots)};})()`, 'the plate\'s helper dots changed when the helper failed (were ' + h1.dots + ')');
-      assert.ok(await js(`${PL}.querySelector('b')===window.__nm`), 'FR-184: the plate kept its name node while its helper list changed');
+      await must(`(()=>{const h=window.__pl().querySelector('.ro-help');return !!h&&[...h.querySelectorAll('.dot')].map(d=>d.className).join('|')!==${jsLiteral(h1.dots)};})()`, 'the plate\'s helper dots changed when the helper failed (were ' + h1.dots + ')');
+      assert.ok(await js(`window.__pl().querySelector('b')===window.__nm`), 'FR-184: the plate kept its name node while its helper list changed');
     }
     // keyboard parity: real Tab presses reach a plate; the same zoom opens; Esc closes it and keeps the focus; the next Tab moves on and opens the next
     const toSign = () => js(`(()=>{const s=document.querySelector('.ro-sign .ro-sb');s&&s.focus();})()`);
