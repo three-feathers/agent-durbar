@@ -28,6 +28,17 @@ Keep the generator: `scripts/build-site.js` gets new tokens, new pages and a pos
 
 A 720p frame as a poster: PNG 722 KB, JPEG (`q:v` 6) 102 KB, WebP (quality 70) 52 KB. Encoding took about 15 s for 30 s of video at CRF 28 on 2 threads.
 
+### Simulator capture (T002, measured)
+
+`real:` 2026-11-04, this 4-core Linux machine under light load, Xvfb screen 1280x720x24, `DURBAR_SIM=15` with the live simulator (not frozen), one Electron under `nice -n 10`, `ffmpeg` 6.1.1, H.264 `slow` CRF 28, `yuv420p`, `+faststart`, silent, 10 s each. The app refuses `child_process.spawn` under `DURBAR_SIM` (spec 010 FR-030), so the encoder ran outside the app: (A) a throw-away driver wrote `capturePage()` bitmaps into a named pipe that `ffmpeg` read; (B) `ffmpeg -f x11grab` recorded the Xvfb screen. No code kept.
+
+| Way | Frames got | Encoded at | File, 10 s | Per second | Encoder CPU |
+|---|---:|---:|---:|---:|---:|
+| A `capturePage` to a pipe (every OS) | 414 to 424 in 10 s (41 to 42 fps, page 1279x719, scaled) | 30 fps | 151 to 154 KB | about 15 KB | 7.3 s user + 0.8 s system |
+| B `x11grab` of Xvfb (Linux only) | 300 (30 fps held, 29 to 30 reported) | 30 fps | 151 KB | about 15 KB | 7.0 s user + 0.5 s system |
+
+Read with care: the office is mostly still (`mpdecimate` kept 22 of 300 frames in B, 3 of 300 in A), so this is a floor for simulator footage; text cards, the pixel cast and camera moves will cost more. With Kokoro voice and chiptune at about 8 KB/s (estimate, not measured: Kokoro is not installed here), simulator clips would be about 23 KB/s: 40 s about 0.9 MB, 90 s about 2.1 MB, 4 minutes about 5.5 MB. All under FR-022's ceilings, so FR-021 and FR-022 stay as written; the ceilings stay because the films are mostly not simulator footage. **Pick: A** (`capturePage`), as it works on every OS and holds more than 30 fps here; B is a Linux-only fallback.
+
 Why FR-021 and FR-022: voice and chiptune add about 8 KB/s, so at 73 KB/s 4 minutes is about 17.5 MB; at the lower setting with sound, 48 KB/s (an estimate adding the two rows), 90 s is about 4.3 MB and 40 s about 1.9 MB. Pixel art may well compress better; T002 measures. AV1 at these settings was larger, so one H.264 file stays.
 
 ### Budget (estimates from the table)
@@ -57,7 +68,7 @@ Git gains text only: post, captions and manifest entry, an estimated 4 KB a post
 | YouTube or Vimeo as the site's player | None | Theirs | Third-party embed and tracking, breaks FR-004 | No: the channel (FR-029) is separate, and the site embeds nothing |
 | Paid object storage or CDN | None | Theirs | Money and an account (needs approval), a second host | No: not needed at this size |
 
-**Pick** (YouTube below is a second place to publish, FR-029, not the site's source): `media-library` release as the store, fetched and hash-checked into `_site/media/` by `pages.yml`, cached per file with `actions/cache` (the run is daily, so the cache avoids downloading about 73 MB each day). `pages.yml` stays as it is today in what matters: top-level `permissions: contents: read`, every action pinned to a full SHA (a pinned SHA for `actions/cache` too), no `pull_request_target`, no `${{ }}` in `run:`; fetching a public release needs no token. Immutable releases are off on this repository (`read:` API, 2026-11-01), so assets can be added to one release. A clip, its poster and a Short are three assets, so the 1,000-asset limit is about 330 posts; then a new `media-library-2` follows the same pattern.
+**Pick, settled by the owner** (Q2 = A, Vikram, 2026-11-03 23:25 UTC; YouTube below is a second place to publish, FR-029, not the site's source): `media-library` release as the store, fetched and hash-checked into `_site/media/` by `pages.yml`, cached per file with `actions/cache` (the run is daily, so the cache avoids downloading about 73 MB each day). `pages.yml` stays as it is today in what matters: top-level `permissions: contents: read`, every action pinned to a full SHA (a pinned SHA for `actions/cache` too), no `pull_request_target`, no `${{ }}` in `run:`; fetching a public release needs no token. Immutable releases are off on this repository (`read:` API, 2026-11-01), so assets can be added to one release. A clip, its poster and a Short are three assets, so the 1,000-asset limit is about 330 posts; then a new `media-library-2` follows the same pattern.
 
 Measure first: a deploy with the start set (T008) confirms fetch and deploy fit the 10-minute limit; `pages.yml` ran about 4 minutes on 2026-11-01, queue included. If a much larger artifact is too slow, lower the ceiling.
 
@@ -65,7 +76,7 @@ Measure first: a deploy with the start set (T008) confirms fetch and deploy fit 
 
 `scripts/make-video.js <recipe.json>` (needs `ffmpeg`, no `npm test` step). A recipe lists scenes: a text card (an HTML page rendered offscreen with the site's tokens) or a simulator capture (a driver script). Captions come from the recipe's lines, so WebVTT, transcript and on-screen text have one source. Output: MP4, WebVTT, WebP poster, contact sheet (`ffmpeg` tile, one frame per 3 s), manifest entry.
 
-- **Capture**: T002 tries `capturePage` frames piped to `ffmpeg` (works on every OS) against `x11grab` under Xvfb (Linux only). Keep the one that holds 24 fps.
+- **Capture**: `capturePage` frames piped to `ffmpeg` (T002 measured: 41 fps captured, 30 fps encoded; works on every OS). Under `DURBAR_SIM` the app cannot start `ffmpeg` itself, so `make-video.js` (T011) starts `ffmpeg` and the driver writes frames to its pipe.
 - **Load**: one Electron at a time, `nice`.
 - **Mac**: only the Mac session records, in simulator mode, with its own screen tool; the file then takes the same encode and contact sheet.
 - **Voice and style** (spec FR-020): local Kokoro, male and female in turns; chiptune; pixel cast; the Rule File voice reads real rule text; one diagram per chapter. The film pipeline of last week is not in this repository and its sample is in progress elsewhere: T011 starts from it and takes nothing unreviewed. Kokoro is not installed here (`real:`), so T002 has no voice figure until that sample is measured. No new npm dependency; the voice tool is an author's tool, like `ffmpeg`.
@@ -77,7 +88,8 @@ Measure first: a deploy with the start set (T008) confirms fetch and deploy fit 
 - **Layout**: the hero is the office picture at full width, with a row of status lights in plain CSS (off under reduced motion) and words beside each. Each section is a place in the office rather than a card grid. Two mockups for the owner first ("a mockup is a question", `docs/world-design.md`, on its open PR #992).
 - **No scripts**: native `<video>`, `<details>` for transcripts, CSS only. Same CSP plus `media-src 'self'`.
 - **Size**: `FR-007` forces a cut: the docs gallery and the themes strip give up pictures first.
-- **Specs index**: `docs.html` renders each spec's `note`. Open PR #1005 adds a note naming an unreleased world to spec 102's block, which would reach the public page on merge. T003 stops this; until T003 lands, that note should be reworded on its PR.
+- **Specs index**: `docs.html` renders each spec's `note`; since T003 the site drops a `draft` spec's note (`stripDraftNotes`), and any phrase of `unreleased.json` in a page fails the build.
+- **Guards (phase 1, built)**: `build-site.js` exports `pickRelease`, the unreleased gate (`unreleasedHits`, `publicTexts`, `validateWorlds`), the media manifest (`validateMedia`) and the player (`videoTag`, `playerProblems`) for T008, T009 and T016 to use; `check-posts.js` is the blog check. Post format and paths: spec *Changes* 2026-11-04.
 
 ## Story chapters and evidence
 

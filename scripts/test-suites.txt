@@ -29,6 +29,7 @@ test:toolstats
 test:devhooks
 test:credits
 test:site
+test:blogcheck
 test:compressshots
 test:changelog
 test:releasevideo
@@ -101,6 +102,7 @@ test:checkpoints
 test:ipcchannels
 test:planmode
 test:probe
+test:openwith
 test:liveact
 test:names
 test:renameadapters

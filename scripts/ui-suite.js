@@ -6,6 +6,7 @@
  *   node scripts/ui-suite.js --only shots-017,shots-033
  *   UI_SUITE_OUT=<folder>                 where every screenshot goes (default: a new temp folder, printed at the end)
  *   UI_SUITE_XVFB=1                       Linux: run under xvfb-run even when a display is set
+ *   UI_SUITE_DPR=<1..4>                   force the device scale factor (2 = a Retina screen) for every driver
  *   UI_SUITE_JOBS=<n>                     drivers at once (default 2; each has its own profile and, on Linux, its own xvfb display)
  *   UI_SUITE_RETRY=1                      run each failed driver once more, alone, at the end; a pass then is reported as FLAKY
  *                                         (listed in the summary and the GitHub job summary), never as a clean pass
@@ -117,6 +118,7 @@ const DRIVERS = [
   { name: 'check-inbox-safety' }, // spec 052 FR-206..FR-208: Needs you: a stale button, a held key and a limit row answer nothing they should not
   { name: 'check-ro-ask' }, // spec 003 FR-094..FR-097: a Read-only denial's "Switch to Ask first…" opens the mode menu
   { name: 'check-why-allowed' }, // spec 003 FR-099..FR-105 (#605): the why-allowed tag on tool cards and Undo this rule
+  { name: 'shots-009-openwith' }, // spec 009 FR-019..FR-025 (#685): the header's Open with menu (items, note, 10.5px, arrows, Esc, toast)
   { name: 'check-composer-toolbar' }, // spec 005 FR-037..FR-043: chat settings under the message box, one Send / Stop slot
   { name: 'check-slash-suggest' }, // spec 073: the "/" list in the message box (keyboard, ARIA, geometry)
   { name: 'check-notes' }, // spec 083: save a message, the Notes drawer, Insert and notes in the "/" list (US1 scenarios 1..6, SC-001, SC-002)
@@ -249,7 +251,7 @@ function runOne(d, outDir) {
   if (d.sim === false) { delete env.DURBAR_SIM; delete env.DURBAR_SIM_FREEZE; }
   if (d.freeze === false) delete env.DURBAR_SIM_FREEZE; // a driver that needs the live simulator (spec 001 FR-082: shots-docs.js)
   for (const v of OUT_VARS) env[v] = outDir;
-  const argv = [ROOT, '--no-sandbox'];
+  const argv = [ROOT, '--no-sandbox', ...(/^[1-4]$/.test(process.env.UI_SUITE_DPR || '') ? ['--force-device-scale-factor=' + process.env.UI_SUITE_DPR] : [])]; // UI_SUITE_DPR=2: a high-density screen (a Retina Mac) on any OS
   const useXvfb = process.platform === 'linux' && (!process.env.DISPLAY || process.env.UI_SUITE_XVFB === '1'); // UI_SUITE_XVFB=1: keep windows off a desktop
   const [file, list] = useXvfb ? ['xvfb-run', ['-a', electron, ...argv]] : [electron, argv];
   return new Promise((resolve) => {

@@ -129,7 +129,7 @@ export function tabShortcut(e: KeyLike | null | undefined, mac: boolean): TabSho
 /** What the toggle needs of the settings store (`SettingsStore`). */
 export interface LinksToggleStore {
   readonly chatLinksNewTab: boolean;
-  setChatLinksNewTab(on: unknown): unknown; // the value in force
+  setChatLinksNewTab(on: unknown): { ok: boolean; value: boolean }; // `ok` only when the write reached disk, `value` the one in force
 }
 /**
  * FR-123: the app-wide *Open chat links in a new tab* toggle, read in main only. Off by default. The simulator keeps it in memory and writes
@@ -145,7 +145,7 @@ export function makeLinksToggle(simulator: boolean, store: () => LinksToggleStor
         return true;
       }
       const st = store();
-      return st !== undefined && st.setChatLinksNewTab(on) === on; // false: no store, or the save failed and the old value is in force
+      return st !== undefined && st.setChatLinksNewTab(on).ok; // false: no store, or the save failed (also when the value asked for was already in force)
     },
   };
 }

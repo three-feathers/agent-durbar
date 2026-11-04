@@ -20,6 +20,7 @@ import { copilotExcludedTools } from '../src/adapters/copilot';
 import { claudeArgs, claudeDisallowedMcp } from '../src/adapters/claude';
 import { codexMcpConfig } from '../src/adapters/codexMcp';
 import { McpStore } from '../src/main/mcpstore';
+import { tmpDir } from './test-tmp';
 
 const info = (id: string): AgentInfo => ({ id, name: 'Ana', cwd: '/w', permMode: 'ask', model: 'auto' }) as AgentInfo;
 const routerOf = (ad: AgentAdapter | undefined) => ({ forAgent: () => ad });
@@ -32,7 +33,7 @@ process.on('exit', (code) => {
 });
 
 async function main(): Promise<void> {
-  const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-069-tools-'));
+  const ws = tmpDir('durbar-069-tools-');
   // ---- normMcpTools: array, map by name, title fallback, junk, cap ----
   assert.deepStrictEqual(normMcpTools([{ name: 'a', description: 'A' }, { name: 'b', title: 'Bee' }, { name: '' }, 7, null, { description: 'no name' }]), [{ name: 'a', description: 'A' }, { name: 'b', description: 'Bee' }]);
   assert.deepStrictEqual(normMcpTools({ x: { name: 'x', description: 'X', inputSchema: {} }, y: {} }), [{ name: 'x', description: 'X' }, { name: 'y' }]);

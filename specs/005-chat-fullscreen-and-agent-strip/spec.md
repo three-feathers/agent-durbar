@@ -53,7 +53,7 @@ The turn shows a collapsible Thinking block (live counter "Waiting for the model
 
 ### User Story 4 - Stop, End, New session, Open in VS Code (Priority: P2)
 
-Header actions: **Stop** (interrupt the turn; the agent stays ready), **End session** (frees it; sending resumes it), **+ New session** (feature 006), **Open in VS Code** (feature 009), **Copy resume command** (`copilot --resume <id>`).
+Header actions: **Stop** (interrupt the turn; the agent stays ready), **End session** (frees it; sending resumes it), **+ New session** (feature 006), **Open in VS Code** (feature 009; **Open with** since spec 009 FR-019), **Copy resume command** (`copilot --resume <id>`).
 
 **Acceptance Scenarios**:
 
@@ -124,6 +124,10 @@ Header actions: **Stop** (interrupt the turn; the agent stays ready), **End sess
 **Mutants** (each planted by hand in `app.js` or `styles.css`, run with `node scripts/ui-suite.js --only check-chat-visibility`, must FAIL): see the PR comment for the list and the case that caught each; the CSS mutants (`DURBAR_CV_MUTANT=off|hidden|nosize|zero|noclip`) are in the driver. A run with any debug switch (`CVLOG`, `CVBASE`, `CVSKIP`, `CVWH`, `CVSIZE`, `DURBAR_CV_MUTANT`) never prints `all checks passed`.
 
 **Tasks:** T130..T132 and T197..T199 in `tasks.md`. Numbers taken: FR-210..FR-215, T130..T132, T197..T199 (checked against `main`, the remote branches and the open PRs on 2026-11-02, rechecked after merging `main` 2026-11-03; #1014 holds FR-190..FR-209 and T113..T129).
+
+### 2026-11-04: `check-chat-visibility` waits on state, and its height bound is stated (issue #1102, driver only, no app change)
+
+**Driver bounds** `[IMPLEMENTED]` `sim:` The turn samples count painted frames, not seconds (a sample runs until its time and its minimum frame count are both reached), find-in-page is asked again until it finds the token, and the "as tall as with the rule off" check allows 2 px at 1 device pixel per CSS pixel and, above 1 (a Retina Mac; `UI_SUITE_DPR=2` forces it on any OS), 2 px plus 1/64 px per message (layout-unit precision; 63 px for 4,004 messages, 31 px seen at 2x). Nothing else is loosened.
 
 ### 2026-10-31: MCP context cost (spec 100)
 
@@ -269,7 +273,7 @@ The `status:` of the specs-index block used to read (moved here unchanged; the b
   - While a turn runs and you have typed text, a live agent still takes the message (as today: Enter sends, spec 012): **Send** shows to the left of the spinner, so a mouse user can send too. A demo agent does not (it says "Hold on…", as today).
   - An agent app that cannot interrupt (`feat(a,'stop')` false, the "basic" kind) has no Stop; while it runs the slot shows the spinner and the (disabled when empty) Send.
   - **Enter** sends, **Shift+Enter** is a new line (unchanged). **Esc** stays *Back to the office* (FR-002; unchanged): no new stop shortcut in this delta (decision below). Stop keeps its keyboard access (Tab, Enter/Space) and the card menu's Stop (FR-017).
-- **FR-039** `[IMPLEMENTED]` (`sim:` `check:composer-toolbar` asserts none of the moved controls is left in the header or More) The chat **header keeps** the agent's identity and state: avatar, name, role, status pill, "active …", the spending-limit chip, the remote-control chip and the folder chip (they describe the session, not the next message), and the actions Previous, + New, Open in VS Code, Pause (demo only) and More. **Stop leaves the header**; *MCP servers* leaves More (FR-037 item 5).
+- **FR-039** `[IMPLEMENTED]` (`sim:` `check:composer-toolbar` asserts none of the moved controls is left in the header or More) The chat **header keeps** the agent's identity and state: avatar, name, role, status pill, "active …", the spending-limit chip, the remote-control chip and the folder chip (they describe the session, not the next message), and the actions Previous, + New, Open in VS Code (**Open with** since spec 009 FR-019), Pause (demo only) and More. **Stop leaves the header**; *MCP servers* leaves More (FR-037 item 5).
 - **FR-040** `[IMPLEMENTED]` (`sim:` `check:composer-toolbar` at a 480px panel; the window sizes in `check:office`) **Narrow widths**: the toolbar is always one row. When its controls do not fit, the ones that fit least are moved, in this order, into an **overflow button "⋯"** at the right of the toolbar (`#ctMoreBtn`, `aria-haspopup`, `aria-expanded`, label "More chat settings"): MCP, Context, Profile, Attach image, Attach file, Model. The **mode never moves** (safety, constitution II). The overflow opens a small popover listing the moved controls as they are (same ids and handlers); Escape or a click outside closes it and returns focus to "⋯". Nothing wraps, overlaps or leaves the panel at 1440x900, at 1280x800, and at 1280x800 with the chat panel 480px wide (the width spec #452's docking may give it).
 - **FR-041** `[IMPLEMENTED]` (`sim:` `check:composer-toolbar` Simple; `shots-052-ux`) **Simple** detail level (spec 052 FR-031) shows: Mode, Context (from 70%, as today), Attach file, Attach image, and the Send/Stop button; Profile, Model and MCP stay hidden in Simple as they are today.
 - **FR-042** `[IMPLEMENTED]` (`sim:` 10.5px and overlap asserted; light and dark user theme; `check:ui-text` from PR #479 passes on a local merge with this branch) **Accessibility and look**: the toolbar is a group (`role="group"`, `aria-label="Chat settings"`; not `role="toolbar"`, which would promise arrow-key movement: Tab moves between its controls as before); every control keeps its name, `aria-haspopup`/`aria-expanded` and focus return; the minimum text is 10.5px; colours are theme tokens (no new literal colours), so light and dark themes both read; the spinner uses `currentColor`.
