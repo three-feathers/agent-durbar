@@ -11,7 +11,7 @@
  *
  * With --bail no new suite starts after the first failure and the running ones are stopped (POSIX: the suite's whole process group;
  * Windows: `taskkill /T /F` on its tree), so no Electron or Xvfb is left behind. The final run, PR CI and the merge queue run everything.
- * Every suite writes its own temp folders; a suite's output is printed when it ends, whole, so lines never interleave.
+ * Every suite runs with its own empty TMPDIR and fails if a `durbar-*` entry is left in it (spec 012 FR-166). A suite's output is printed when it ends, whole, so lines never interleave.
  */
 const fs = require('fs');
 const { spawn, spawnSync } = require('child_process');
@@ -79,16 +79,25 @@ function stopChild(child, { platform = process.platform, spawnFn = spawn, kill =
   if (child.once) child.once('close', () => { clearTimer(timer); force(); });
 }
 
+// spec 012 FR-166 (#1093): every suite gets its own empty temp folder (TMPDIR/TEMP/TMP, so os.tmpdir() is inside it). When the suite ends, a
+// `durbar-*` entry left in it is a leak: the suite fails and names the entry. The folder is removed either way, so a leak never piles up.
+function suiteTmpEnv(env, dir) { return { ...env, TMPDIR: dir, TEMP: dir, TMP: dir }; }
+function makeSuiteTmp(base = os.tmpdir()) { return fs.mkdtempSync(path.join(base, 'suite-tmp-')); }
+function leftBehind(dir) {
+  try { return fs.readdirSync(dir).filter((n) => n.startsWith('durbar-')).sort(); } catch (_) { return []; }
+}
+function removeSuiteTmp(dir) { try { fs.rmSync(dir, { recursive: true, force: true }); } catch (_) { /* the OS cleans its temp folder */ } }
+
 // Run the suites with `jobs` at a time. Returns { failed: [names], bailed: name | null }. Everything the outside world touches
 // (spawn, kill, platform, output, clock) is injected so scripts/test-run-tests.ts can drive it with fakes.
 async function runSuites({ suites, jobs, bail = false, cwd = ROOT, env = process.env, platform = process.platform, spawnFn = spawn, kill = process.kill,
-  write = (t) => process.stdout.write(t), now = Date.now, running = new Set(), stopOpts = {}, ctl = {} }) {
+  write = (t) => process.stdout.write(t), now = Date.now, running = new Set(), stopOpts = {}, ctl = {}, tmp = { make: makeSuiteTmp, left: leftBehind, remove: removeSuiteTmp } }) {
   const failed = [];
   let bailed = null;
   let next = 0;
-  const runStep = (args) =>
+  const runStep = (args, stepEnv) =>
     new Promise((resolve) => {
-      const p = spawnFn(process.execPath, args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'], detached: bail && platform !== 'win32' });
+      const p = spawnFn(process.execPath, args, { cwd, env: stepEnv, stdio: ['ignore', 'pipe', 'pipe'], detached: bail && platform !== 'win32' });
       running.add(p);
       let out = '';
       p.stdout.on('data', (d) => (out += d));
@@ -105,13 +114,20 @@ async function runSuites({ suites, jobs, bail = false, cwd = ROOT, env = process
       const st = now();
       let log = '';
       let code = 0;
+      const tmpDir = tmp.make();
       for (const args of s.steps) {
-        if (bailed) return;
-        const r = await runStep(args);
+        if (bailed) break;
+        const r = await runStep(args, suiteTmpEnv(env, tmpDir));
         log += r.out;
         if (r.code !== 0) { code = r.code || 1; break; }
       }
-      if (bailed) return; // stopped by another suite's failure: its result means nothing
+      const leaks = bailed ? [] : tmp.left(tmpDir);
+      tmp.remove(tmpDir);
+      if (bailed) return;
+      if (!code && leaks.length) {
+        code = 1;
+        log += `${s.name} left ${leaks.length} durbar-* temp entr${leaks.length === 1 ? 'y' : 'ies'} behind (${leaks.slice(0, 5).join(', ')}${leaks.length > 5 ? ', ...' : ''}): remove what the suite makes (try/finally) or use a helper that does\n`;
+      }
       const secs = ((now() - st) / 1000).toFixed(1);
       if (code) {
         failed.push(s.name);
@@ -159,7 +175,7 @@ function runMain({ suites, jobs, bail, t0 = Date.now(), exit = process.exit, run
   });
 }
 
-module.exports = { parseArgs, readSuiteList, unlistedSuites, NOT_SUITES, loadSuites, stopChild, runSuites, runMain };
+module.exports = { suiteTmpEnv, leftBehind, parseArgs, readSuiteList, unlistedSuites, NOT_SUITES, loadSuites, stopChild, runSuites, runMain };
 
 if (require.main === module) {
   const { ensureElectron } = require('./ensure-electron');

@@ -10,6 +10,18 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+
+// spec 012 FR-166 (#1093): every folder made here is removed when the process exits (also a failed assert), with the files made beside it
+const madeTmp = [];
+function mkTmp(prefix) {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  madeTmp.push(d);
+  return d;
+}
+process.on('exit', () => {
+  for (const d of madeTmp) for (const p of [d, `${d}-notes.md`, `${d}-ttitle.txt`]) { try { fs.rmSync(p, { recursive: true, force: true }); } catch (_) { /* the OS cleans its temp folder */ } }
+});
+
 const { spawnSync } = require('child_process');
 const si = require('./specs-index.js');
 
@@ -72,7 +84,7 @@ assert.strictEqual(si.groupId('## Index'), 'index');
 
 // --- a throwaway repository ---
 function repo(readme, specs) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-specs-'));
+  const dir = mkTmp('durbar-specs-');
   fs.mkdirSync(path.join(dir, 'specs'));
   fs.writeFileSync(path.join(dir, 'specs', 'README.md'), readme);
   for (const [d, text] of Object.entries(specs)) {

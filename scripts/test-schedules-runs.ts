@@ -130,6 +130,7 @@ async function main(): Promise<void> {
     assert.ok(/scheduler\?\.flush\(\)/.test(bq.slice(0, bq.indexOf('\n});'))), 'the one before-quit handler writes a pending fold-only change (FR-037)');
     const wq = mainSrc.slice(mainSrc.indexOf("app.on('will-quit', () => {"));
     assert.ok(/scheduler\?\.flush\(\)/.test(wq.slice(0, wq.indexOf('\n});'))), 'will-quit writes it too (folds counted in the dispose window)');
+    assert.ok(/^\s*sweepMcpConfigs\(\);/m.test(wq.slice(0, wq.indexOf('\n});'))), 'will-quit sweeps the private MCP config folders (spec 012 FR-165)');
     assert.ok(/ipcHandle\('schedules:list', \(\) => \{[^}]*publicDoc\(/.test(ipcSrc.replace(/\s+/g, ' ')), 'schedules:list carries no runs')
     // the document pushed to the window carries no runs; the saved one does
     assert.strictEqual('runs' in publicDoc(h.sch.doc), false, 'publicDoc has no runs');
