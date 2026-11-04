@@ -210,6 +210,8 @@ export interface AppSettingsView {
   customPlaces?: CustomPlaceView[];
   /** Serious mode (spec 034): the agent figures show no monster, ambulance or other mood drawing. */
   seriousMode?: boolean;
+  /** Spec 001 FR-192: desk highlights keep the glow and the New badge but no motion. */
+  stillHighlights?: boolean;
   /** Auto-follow work (spec 052 FR-182): off by default. */
   autoFollowWork?: boolean;
   /** Active theme id (specs 035-040). Omitted = Clean Office. */
@@ -350,6 +352,8 @@ export interface LoopPassInfo {
 export interface SinceAwayInfo {
   awayMs: number;
   missed: Array<{ id: string; folderName: string; prompt: string; repeats: boolean }>;
+  /** Spec 085 FR-009: yesterday's and today's ended sessions (counts and minutes only); missing = none. */
+  briefing?: { sessions: number; files: number; added: number; removed: number; commits: number; minutes: number; uncounted?: number };
 }
 
 /** Spec 006 FR-040..FR-041 (issue #606): sessions the last run left in the middle of a turn, still resumable. Ids and folder names only. */
@@ -930,6 +934,8 @@ export interface DurbarApi {
   removePlace?(id: string): Promise<CustomPlaceResult>;
   /** Turn Serious mode on or off (spec 034). */
   setSeriousMode?(on: boolean): Promise<{ ok: boolean; seriousMode?: boolean }>;
+  /** Turn Still highlights (no motion) on or off (spec 001 FR-192). */
+  setStillHighlights?(on: boolean): Promise<{ ok: boolean; stillHighlights?: boolean }>;
   /** Turn Auto-follow work on or off (spec 052 FR-182). `ok: false` (nothing changed, the value in force is returned as `autoFollowWork`) for a value that is not a boolean or a save that failed; no `error` text. */
   setAutoFollowWork?(on: boolean): Promise<{ ok: boolean; autoFollowWork?: boolean; unsaved?: true }>;
   /** Turn the "needs you" OS notifications on or off (spec 052 FR-059). */
@@ -1164,7 +1170,8 @@ export interface DurbarApi {
   /** Spec 063: the git branch and uncommitted changes of the agent's folder (read-only). Optional: older bridges lack it. */
   gitStatus?(id: string): Promise<FolderGitStatus>;
   /** Spec 085: what the session did since its first message in this run (time, git files and lines, commits), for the card shown when it ends. Optional: older bridges lack it. */
-  sessionSummary?(id: string): Promise<SessionSummaryInfo>;
+  /** `final: true` says the End follows: main adds the numbers to the day rollup when it happens (spec 085 FR-009). */
+  sessionSummary?(id: string, final?: boolean): Promise<SessionSummaryInfo>;
   /** Earlier Copilot CLI/SDK sessions in this agent's folder (newest first). Optional: not in the simulator. */
   listPrevious?(id: string): Promise<{ ok: boolean; error?: string; sessions: PreviousSession[]; pinned?: string[]; hidden?: string[]; names?: Record<string, string> }>;
   /** Pin, unpin, hide or unhide one row (spec 006 FR-026). `src` is the agent's adapter id or `vscode`; ids only, never a path. */
@@ -1242,9 +1249,10 @@ export type FolderGitStatus =
   | { repo: true; branch: string; detached?: boolean; ahead?: number; behind?: number; files: Array<{ path: string; state: 'modified' | 'added' | 'deleted' | 'renamed' | 'untracked' | 'conflict'; added?: number; removed?: number; binary?: boolean }>; more: number };
 
 /** Spec 085: what `sessionSummary` answers (mirrors `SessionSummary` in src/main/sessionsummary.ts; `unreadable`: git could not be read, which is not "not a git folder"). `pullRequests`: only when the adapter reports them (none does yet). */
+/** `reported` (FR-010): what the agent app itself reported, counts only; `source` is its adapter id. */
 export type SessionSummaryInfo =
   | { ok: false; error: string }
-  | { ok: true; ms: number; pullRequests?: number; git: { repo: false; unreadable?: true } | { repo: true; files: number; added: number; removed: number; binary: number; newFiles: number; commits: number; dirtyAtStart: boolean; noHead?: boolean; newFilesUnknown?: boolean } };
+  | { ok: true; ms: number; pullRequests?: number; reported?: { source: string; files?: number; added?: number; removed?: number; nanoAiu?: number; requests?: number }; git: { repo: false; unreadable?: true } | { repo: true; files: number; added: number; removed: number; binary: number; newFiles: number; commits: number; dirtyAtStart: boolean; noHead?: boolean; newFilesUnknown?: boolean } };
 
 /** Spec 065: the note after a turn whose file-edit tools changed files. */
 export interface CheckpointNote { id: string; turn: number; kind: 'turn' | 'undo'; files: { path: string; change: 'changed' | 'created' | 'deleted' }[]; notCovered: { path: string; why: string }[] }

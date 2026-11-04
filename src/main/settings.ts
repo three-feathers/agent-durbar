@@ -140,6 +140,20 @@ export class SettingsStore {
     return this.commit(next) ? { ok: true, value: v } : { ok: false, value: this.chatLinksNewTab };
   }
 
+  /** Spec 001 FR-192: *Still highlights (no motion)*, off by default. */
+  get stillHighlights(): boolean {
+    return this.s.stillHighlights === true;
+  }
+
+  /** Only a real boolean changes it; the default (off) is not written. `ok` only when the write reached disk (a failed write is not ok even when the value did not change); `value` the one in force (#1094). */
+  setStillHighlights(v: unknown): Saved<boolean> {
+    if (typeof v !== 'boolean') return { ok: false, value: this.stillHighlights };
+    const next: AppSettings = { ...this.s };
+    if (v) next.stillHighlights = true;
+    else delete next.stillHighlights;
+    return this.commit(next) ? { ok: true, value: v } : { ok: false, value: this.stillHighlights };
+  }
+
   /** Serious mode (spec 034): off by default. */
   get seriousMode(): boolean {
     return this.s.seriousMode === true;

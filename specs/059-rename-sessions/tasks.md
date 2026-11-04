@@ -139,3 +139,4 @@ Decisions D1..D9: coordinator, under Ruben's delegation. Renderer only; no IPC, 
 - T070 → T072; T071 any time before T073. T072 → T073, T074, T075 → T076 → T077 → T078. Phase 8 does not depend on T050.
 - [x] T081 Issue #788 (FR-169): the room header's pencil in flow after the name; `placeRen` and `placePencils` no longer handle folder pencils; `check:office` fails a folder pencil over the name
 
+- [x] T082 Issue #1067 (FR-030): `placeRen`'s fallback keeps the pencil's whole 24px box in the name's right half; `check:office` fails a box reaching the name's middle or a name-centre hit on a pencil

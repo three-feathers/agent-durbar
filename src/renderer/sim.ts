@@ -687,6 +687,9 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
     // spec 001 FR-097 (issue 697): simhelpers=<1..6> gives every main agent that many helpers (running, done and failed mixed, in SIM_HX_ORDER),
     // and the first agent's second helper is Codex-shaped: announced with no task and finished with no result (so "not reported" is seen)
     const simHelpers = !noHelpers && simQs && /^[1-6]$/.test(simQs.get('simhelpers') || '') ? parseInt(simQs.get('simhelpers') || '0', 10) : 0;
+    // spec 015 FR-018 (issue 1141): simbghelper=1 launches the first still-working helper in the background: its parent call returns at once
+    // with a launch note (as Claude's `run_in_background` and Copilot's background `task` do) and the helper goes on working
+    let simBgHelper = !!simQs && simQs.get('simbghelper') === '1';
     // Fewer than 12: drop the quieter agents first so the status mix stays varied.
     let rows = ROSTER.slice(0, Math.min(n, ROSTER.length));
     if (n < 12) rows = ROSTER.filter((r) => r[0] !== 'Hugo' && r[0] !== 'Priya' && r[0] !== 'Noor' && r[0] !== 'Omar').slice(0, n);
@@ -1301,7 +1304,10 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
       const call = sid(s) + '-task' + h, base = { sessionId: sid(s), timestamp: now() };
       const prompt = 'You are a helper for the **' + name + '** step.\n\n' + task + '.\n\nOnly read files; report back in two sentences.' + (opts.reply === 'long' ? '\n\n' + LONG_TEXT : '');
       emit({ ...base, type: 'toolCall', callId: call, tool: 'task', phase: 'start', args: { description: task, prompt, agent_type: 'explore' } });
-      emit({ ...base, type: 'subagent', subagentId: call, name, phase: 'started', task, agentName: 'explore', model: 'gpt-5.6-luna' });
+      const bg = simBgHelper && (st === 'working' || st === 'thinking');
+      if (bg) simBgHelper = false;
+      emit({ ...base, type: 'subagent', subagentId: call, name, phase: 'started', task, agentName: 'explore', model: 'gpt-5.6-luna', ...(bg ? { background: true } : {}) });
+      if (bg) emit({ ...base, type: 'toolCall', callId: call, tool: 'task', phase: 'complete', output: 'Agent started in the background. You will be told when it finishes.' });
       emit({ ...base, type: 'user', agentId: call, text: prompt });
       emit({ ...base, type: 'status', status: 'working', agentId: call, intent: task });
       if (h % 2 === 0) emit({ ...base, type: 'thinking', agentId: call, reasoningId: call + '-r', delta: '**Scoping the check**\n\nOnly the touched files matter, so I will start with ' + s.files[0] + '. ' });
@@ -2094,6 +2100,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
     /* spec 024: place mapping kept in memory (plain script: no imports, so the ids are listed here) */
     const placeMap: Record<string, string> = {};
     let seriousMode = false; /* spec 034 */
+    let stillHighlights = typeof location !== 'undefined' && new URLSearchParams(location.search).get('simstillhl') === '1'; /* spec 001 FR-192; ?simstillhl=1 starts it saved on (the boot read) */
     let autoFollowWork = false; /* spec 052 FR-182: off by default; the simulator keeps it in memory and refuses a non-boolean like main */
     let notifyNeedsMe = false; /* spec 052 FR-059: off in the demo until you turn it on */
     let breakResume: 'auto' | 'ask' = 'auto'; /* spec 068 FR-006 */
@@ -2203,9 +2210,10 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
     const capApi: Partial<DurbarApi> = {
       usageTotals: async () => ({ ok: true, since: savedSince, office: saved.office, folders: saved.folders }),
       usageResetTotals: async () => { savedSince = new Date().toISOString(); saved = { office: zero, folders: [] }; return { ok: true, since: savedSince, office: zero, folders: [] }; },
-      getSettings: async () => ({ mcpSignInRefresh: simSignIn.on, mcpWarnLevels: simMcpLevels, defaultMaxAiCredits: defaultCap, placeMap: { ...placeMap }, customPlaces: customPlaces.map((p) => ({ ...p })), seriousMode, autoFollowWork, notifyNeedsMe, breakResume, chatLinksIn, ...(simTheme ? { theme: simTheme } : {}), characters: simCharacters, about: { name: 'Agent Durbar', version: '0.1.8 (simulator)', owner: 'Three Feathers', copyright: 'Copyright (c) 2026 Three Feathers contributors', website: 'https://github.com/three-feathers/agent-durbar', contributors: [{ label: 'vikramgorla', url: 'https://github.com/vikramgorla' }, { label: 'fjcabello', url: 'https://github.com/fjcabello' }, { label: 'rubenlupi', url: 'https://github.com/rubenlupi' }] } /* sample data, real values come from src/shared/about.ts */ }),
+      getSettings: async () => ({ mcpSignInRefresh: simSignIn.on, mcpWarnLevels: simMcpLevels, defaultMaxAiCredits: defaultCap, placeMap: { ...placeMap }, customPlaces: customPlaces.map((p) => ({ ...p })), seriousMode, stillHighlights, autoFollowWork, notifyNeedsMe, breakResume, chatLinksIn, ...(simTheme ? { theme: simTheme } : {}), characters: simCharacters, about: { name: 'Agent Durbar', version: '0.1.9 (simulator)', owner: 'Three Feathers', copyright: 'Copyright (c) 2026 Three Feathers contributors', website: 'https://github.com/three-feathers/agent-durbar', contributors: [{ label: 'vikramgorla', url: 'https://github.com/vikramgorla' }, { label: 'fjcabello', url: 'https://github.com/fjcabello' }, { label: 'rubenlupi', url: 'https://github.com/rubenlupi' }] } /* sample data, real values come from src/shared/about.ts */ }),
       setDefaultCap: async (c) => { defaultCap = c !== null && c >= 30 ? Math.round(c * 100) / 100 : undefined; return { ok: true, defaultMaxAiCredits: defaultCap }; },
       setSeriousMode: async (on) => { if (typeof on === 'boolean') seriousMode = on; return { ok: true, seriousMode }; },
+      setStillHighlights: async (on) => { if (typeof on !== 'boolean') return { ok: false, stillHighlights }; stillHighlights = on; return { ok: true, stillHighlights }; },
       setAutoFollowWork: async (on) => { if (typeof on !== 'boolean') return { ok: false, autoFollowWork }; autoFollowWork = on; return { ok: true, autoFollowWork }; },
       setNotifyNeedsMe: async (on) => { if (typeof on === 'boolean') notifyNeedsMe = on; return { ok: true, notifyNeedsMe }; },
       setMcpSignInRefresh: async (on) => { if (typeof on === 'boolean') simSignIn.on = on; return { ok: true, mcpSignInRefresh: simSignIn.on }; }, // spec 058 FR-213
@@ -2376,6 +2384,9 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
       },
       // spec 044: scheduled prompts in memory; a 1 s check sends through the simulated agents (no credits)
       // spec 041 FR-065: the welcome-back card with a missed schedule whose prompt holds the planted secrets across character 80
+      // spec 085 FR-009: `simaway=1` gives the Since you were away strip yesterday's and today's ended sessions (numbers only), and `simaway=hostile` numbers a broken main could send
+      ...(simQuery.get('simaway') ? { sinceAway: async () => ({ awayMs: 5 * 3600e3, missed: [], briefing: simQuery.get('simaway') === 'hostile'
+        ? { sessions: '3', files: -4, added: 1e30, removed: NaN, commits: { x: 1 }, minutes: 'abc' } : { sessions: 3, files: 18, added: 400, removed: 90, commits: 2, minutes: 130 } }), dismissSinceAway: async () => ({ ok: true }) } : {}),
       ...(opts.reply === 'secrets' ? { sinceAway: async () => ({ awayMs: 3 * 3600e3, missed: [{ id: 'aw1', folderName: 'mcp-swiss', prompt: FILL(76) + SECRETS_TEXT, repeats: true }] }), dismissSinceAway: async () => ({ ok: true }) } : {}),
       listSchedules: async () => ({ pausedAll: simSched.pausedAll, schedules: simSched.list.map((x) => ({ ...x })) }),
       saveSchedule: async (inputIn) => {
@@ -3540,10 +3551,15 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
       // reported pull request (a fixture: no adapter reports them yet), sim-2 a folder that is not git, sim-3 a folder that already had changes; others a repository with no changes
       sessionSummary: async (id: string) => {
         if (!simQuery.get('simsummary')) return { ok: false as const, error: 'not in the simulator' };
+        const reads = ((window as unknown as { __durbarSumReads?: Record<string, number> }).__durbarSumReads ??= {}); // simulator only: how often each agent's numbers were read (the driver proves one read per reply)
+        reads[id] = (reads[id] ?? 0) + 1;
         const n = Number(String(id).replace(/\D/g, '')) || 0;
-        if (n === 1) return { ok: true as const, ms: 25 * 60000 + 20000, pullRequests: 1, git: { repo: true as const, files: 12, added: 340, removed: 80, binary: 0, newFiles: 3, commits: 1, dirtyAtStart: false } };
+        if (n === 1) return { ok: true as const, ms: 25 * 60000 + 20000, pullRequests: 1, reported: { source: 'copilot', files: 12, added: 338, removed: 80, nanoAiu: 2_500_000_000, requests: 2 }, git: { repo: true as const, files: 12, added: 340, removed: 80, binary: 0, newFiles: 3, commits: 1, dirtyAtStart: false } };
         if (n === 2) return { ok: true as const, ms: 3 * 60000, git: { repo: false as const } };
         if (n === 3) return { ok: true as const, ms: 65 * 60000, git: { repo: true as const, files: 2, added: 5, removed: 1, binary: 0, newFiles: 0, commits: 0, dirtyAtStart: true } };
+        // the two agents that rest in the lounge (Noor sim-4, Maya sim-15): spec 085 FR-008
+        if (n === 4) return { ok: true as const, ms: 40 * 60000, git: { repo: true as const, files: 6, added: 120, removed: 35, binary: 0, newFiles: 0, commits: 1, dirtyAtStart: false } };
+        if (n === 15) return { ok: true as const, ms: 12 * 60000, git: { repo: true as const, files: 2, added: 8, removed: 2, binary: 0, newFiles: 0, commits: 0, dirtyAtStart: false } };
         return { ok: true as const, ms: 20000, git: { repo: true as const, files: 0, added: 0, removed: 0, binary: 0, newFiles: 0, commits: 0, dirtyAtStart: false } };
       },
       onEvent: (cb) => { listeners.add(cb); return () => listeners.delete(cb); },

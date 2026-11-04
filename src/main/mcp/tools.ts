@@ -54,7 +54,7 @@ export const READ_TOOLS: readonly ToolDef[] = deepFreeze<ToolDef[]>([
   { kind: 'read', name: 'durbar_list_agents', description: 'List the agents: id, name, folder, floor, adapter kind, mode, model, cap, state (the office word and sub-label) and whether it is lazy.', inputSchema: NO_ARGS },
   { kind: 'read', name: 'durbar_list_floors', description: 'List the floors of the office and which are on.', inputSchema: NO_ARGS },
   { kind: 'read', name: 'durbar_usage_totals', description: 'AI credit usage totals for the office and per folder: saved baseline plus this run, and since when.', inputSchema: NO_ARGS },
-  { kind: 'read', name: 'durbar_settings', description: 'Durbar settings: default cap, serious mode, place map and custom places.', inputSchema: NO_ARGS },
+  { kind: 'read', name: 'durbar_settings', description: 'Durbar settings: default cap, serious mode, still highlights, place map and custom places.', inputSchema: NO_ARGS },
   { kind: 'read', name: 'durbar_mcp_state', description: 'MCP servers Durbar agents use: Copilot CLI list and per-folder extras (secret values are never shown, only key names).', inputSchema: NO_ARGS },
   {
     kind: 'read',

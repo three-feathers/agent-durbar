@@ -27,10 +27,11 @@ One row per thing a user can do or see. [features.md](features.md) stays the use
 | Status pills as filters | works | works | none | 001 | driver:shots-001-welcome read:src/renderer/app.js |
 | Room doors (cabin signs) | missing, removed by owner decision (#954) | missing, removed | none | 017 | driver:check-no-doors |
 | Waiting desk halo (a still glow behind the screen) | works, still since #1057 | missing, the call light replaces it (owner decision, 2026-11-04) | none | 001 | driver:check-001-halo |
+| Still highlights (no motion): Settings > Highlights | works | works, the whole room stands still | none | 001 | test:stillhighlights driver:check-unread |
 | Simple / Expert switch and the "Do you write code?" question | missing, removed by owner decision (#1060) | missing, removed | none | 052 | driver:shots-052-ux |
 | Old app-level MCP servers in the folder extras dialog | missing, removed (#1058) | missing, removed | none | 020 | driver:shots-m10 |
 | Room menu: New session, Schedules, Rename, Cost, Move | works | works on the folder sign | none | 001 006 | driver:shots-005-cardmenu read:src/renderer/realoffice.js |
-| Full-screen chat, other agents in a strip | works | works, chat frame of the world (PR 1001) | mock+planned (chat-open) | 005 | test:innerscroll driver:shots-005-cardmenu |
+| Full-screen chat, other agents in the rail (List, folders collapse) | works | works, in PR 097-chat-in-world for the world's own frame (rail not checked there) | mock+planned (chat-open) | 005 | test:innerscroll test:railorder driver:check-rail driver:shots-005-cardmenu |
 | Reopening a long chat is fast: older messages are skipped until near the view; the end is followed while a turn streams | works, simulator only | works, chat only (window chrome, no office drawing); not checked with a world on | none | 005 | driver:check-chat-visibility |
 | Chat reads well in every world: a resumed session's chat has the same look; sub-agent chat text is readable | works | missing, a resumed session lacks the look (#1140); sub-agent text unreadable over the photo (#1146) | none | 005 097 | read:src/renderer/app.js |
 | Thinking, tool calls, Markdown | works | works | mock+planned (chat-shell) | 015 016 | test:markdown test:events |
