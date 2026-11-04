@@ -82,9 +82,9 @@ export class FakeAdapter implements AgentAdapter {
   declare setCap?: (sessionId: string, credits: number | null) => Promise<void>;
   declare resolveLimit?: (sessionId: string, requestId: string, action: LimitAction) => Promise<void>;
   declare setMcpEnabled?: (sessionId: string, name: string, enabled: boolean) => Promise<void>;
-  declare restartMcpServer?: (sessionId: string, name: string) => Promise<void>;
-  /** Spec 058: every `restartMcpServer` call, in order. */
-  readonly restartCalls: Array<{ sessionId: string; name: string }> = [];
+  declare restartMcpServer?: (sessionId: string, name: string, opts?: { auto?: boolean }) => Promise<void>;
+  /** Spec 058: every `restartMcpServer` call, in order (`auto`: main's automatic reconnect, FR-207). */
+  readonly restartCalls: Array<{ sessionId: string; name: string; auto?: boolean }> = [];
   /** Spec 058: when set, `restartMcpServer` rejects with this message. */
   failRestart?: string;
   declare listMcpTools?: (sessionId: string, name: string) => Promise<McpToolInfo[]>;
@@ -166,6 +166,7 @@ export class FakeAdapter implements AgentAdapter {
     if (c.mcpSignInSteps === undefined) delete (caps as { mcpSignInSteps?: unknown }).mcpSignInSteps;
     if (c.mcpSignInNote === undefined) delete (caps as { mcpSignInNote?: unknown }).mcpSignInNote;
     if (!c.mcpSignInRestart || !caps.mcpRestart) delete (caps as { mcpSignInRestart?: unknown }).mcpSignInRestart;
+    if (!c.mcpSignInReconnect || !caps.mcpRestart) delete (caps as { mcpSignInReconnect?: unknown }).mcpSignInReconnect; // spec 058 FR-207
     if (!c.renameSession || omit.has('renameSession')) delete (caps as { renameSession?: unknown }).renameSession;
     if (!c.autopilot || omit.has('setAutopilot')) delete (caps as { autopilot?: unknown }).autopilot;
     this.capabilities = caps;
@@ -187,8 +188,8 @@ export class FakeAdapter implements AgentAdapter {
     }
     if (caps.mcpToggle) this.setMcpEnabled = async (sid) => void this.mustGet(sid);
     if (caps.mcpRestart) {
-      this.restartMcpServer = async (sid, name) => {
-        this.restartCalls.push({ sessionId: sid, name });
+      this.restartMcpServer = async (sid, name, opts) => {
+        this.restartCalls.push({ sessionId: sid, name, ...(opts?.auto === true ? { auto: true } : {}) });
         if (!this.sessions.has(sid)) throw new Error('This session is not running. Send a message to start it.');
         if (this.failRestart !== undefined) throw new Error(this.failRestart);
         this.emit(sid, { type: 'mcp', servers: [{ name, status: 'connected' }] });

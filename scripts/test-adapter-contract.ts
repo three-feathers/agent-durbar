@@ -52,7 +52,7 @@ export interface ContractReport {
 }
 
 const ID_RE = /^[a-z][a-z0-9-]{0,31}$/;
-const TYPES = new Set(['user', 'status', 'permission', 'grants', 'thinking', 'output', 'toolCall', 'subagent', 'usage', 'context', 'model', 'compaction', 'mcp', 'limit', 'sandbox', 'autopilot']); // spec 087; spec 099: the OS sandbox state
+const TYPES = new Set(['user', 'status', 'permission', 'grants', 'thinking', 'output', 'toolCall', 'subagent', 'usage', 'context', 'model', 'compaction', 'mcp', 'limit', 'sandbox', 'autopilot']); // spec 087 added `sandbox` (the OS sandbox state); spec 099 added `autopilot`
 const ALL_MODES: PermissionMode[] = ['read-only', 'ask', 'allow'];
 
 /** Waits (a few event-loop turns at most) for something that must already be on its way. */
@@ -138,6 +138,7 @@ export async function runContract(name: string, make: () => ContractTarget, hook
     assert.strictEqual(has('restartMcpServer'), !!cap.mcpRestart, M('C2', 'restartMcpServer() <=> capabilities.mcpRestart (spec 058 FR-012)'));
     if (cap.mcpRestart) assert.ok(cap.mcpToggle, M('C2', 'a per-server restart only exists where servers can be switched (spec 058 FR-012)'));
     assert.strictEqual(has('listMcpTools'), !!cap.mcpTools, M('C2', 'listMcpTools() <=> capabilities.mcpTools (spec 069 FR-031)'));
+    assert.strictEqual(has('mcpContext'), !!cap.mcpContext, M('C2', 'mcpContext() <=> capabilities.mcpContext (spec 100 FR-001)'));
     assert.strictEqual(has('handoffSummary'), !!cap.handoff, M('C2', 'handoffSummary() <=> capabilities.handoff'));
     assert.strictEqual(has('generateText'), !!cap.oneShot, M('C2', 'generateText() <=> capabilities.oneShot'));
     assert.strictEqual(has('setRemote'), !!cap.remote, M('C2', 'setRemote() <=> capabilities.remote (spec 054 FR-001)'));
@@ -155,6 +156,7 @@ export async function runContract(name: string, make: () => ContractTarget, hook
     // spec 058 FR-180: the row's note only where the row can show a sign-in (Sign in or the terminal steps); a non-empty sentence
     if (cap.mcpSignInNote !== undefined) assert.ok(typeof cap.mcpSignInNote === 'string' && cap.mcpSignInNote.length > 0 && (!!cap.mcpSignIn || !!cap.mcpSignInSteps), M('C2', 'mcpSignInNote is a non-empty string, only with mcpSignIn or mcpSignInSteps (spec 058 FR-180)'));
     // spec 058 FR-176/FR-181: Restart as the end of a sign-in needs a Restart
+    if (cap.mcpSignInReconnect !== undefined) assert.ok(cap.mcpSignInReconnect === true && !!cap.mcpRestart && has('restartMcpServer'), M('C2', 'mcpSignInReconnect only with mcpRestart and restartMcpServer() (spec 058 FR-207)'));
     if (cap.mcpSignInRestart !== undefined) assert.ok(cap.mcpSignInRestart === true && !!cap.mcpRestart && has('restartMcpServer'), M('C2', 'mcpSignInRestart only with mcpRestart and restartMcpServer() (spec 058 FR-176)'));
     assert.strictEqual(has('setPermMode'), cap.permModeSwitch !== 'none', M('C2', "setPermMode() <=> permModeSwitch !== 'none'"));
     ran('C2');
@@ -366,6 +368,7 @@ const NOT_IN_FAKE = [
   'debug', 'writeGuard', 'resolvePlan', 'answerQuestion', 'answerElicitation', 'listAgentProfiles', 'reloadAgentProfiles', 'selectAgentProfile', 'setRemote',
   'authStatus', 'verifySignIn', 'accountInfo', 'refreshAuth', 'resumeIdOf', 'listSlashCommands', 'expandSlashCommand', 'readOrgPolicy',
   'continueWithoutSandbox', 'sandboxHost', // spec 087: real adapters only (C2 below)
+  'mcpContext', // spec 100: real adapters only (C2 below)
 ];
 
 /** The optional members of `interface AgentAdapter`, read from `src/adapters/types.ts` with the TypeScript parser (no hand-kept copy). */

@@ -15,7 +15,7 @@
  * feature cell. `status` is ONE word from a fixed list (spec 021 FR-063, delta 2026-10-29): draft (outline, not agreed), specified
  * (spec, plan and tasks agreed, nothing or little built), building (work in progress, or planned build tasks still open), built
  * (done; open tasks are only deferred follow-ups, [KNOWN GAP]s or checks that need a real account or an owner), released (built
- * and shipped in a published release), superseded (replaced by another spec; say which in the note). The detail belongs in the
+ * and shipped in a published release), superseded (replaced by another spec; say which in the note), deprecated (removed with no direct replacement; the note says why and when, spec 021 FR-068). The detail belongs in the
  * spec's `## Changes`, not here. `note` is optional and shown after the status. One line each, Markdown allowed, no "|", no
  * "-->" or "--!>". specs/README.md holds only the hand-written text and the markers; the tables are built from the blocks by the
  * website (spec 050) and by this script.
@@ -42,7 +42,7 @@ const MARK_RE = /^<!--\s*specs-index group=([A-Za-z0-9._-]+)\s*-->$/;
 const ROW_RE = /^\| \[(\d{3})\]\((\d{3}-[a-z0-9-]+)\/spec\.md\) \| (.*?) \| (.*) \|$/;
 const KEYS = ['group', 'title', 'status', 'note'];
 const REQUIRED = ['group', 'title', 'status'];
-const STATUSES = ['draft', 'specified', 'building', 'built', 'released', 'superseded'];
+const STATUSES = ['draft', 'specified', 'building', 'built', 'released', 'superseded', 'deprecated'];
 const NOTE_MAX = 160;
 /* Numbers of the one-release spec folders folded into spec 008's release table (spec 021 FR-063): never reused for a new spec. */
 const RETIRED = ['023', '026', '031', '042', '046', '047', '053', '055', '067', '071', '078', '079', '082', '086', '088', '089', '090', '091'];
@@ -99,6 +99,25 @@ function setBlock(text, meta) {
     return [lines[0], '', block.replace(/\n$/, ''), ...rest].join('\n');
   }
   return `${block}\n${t}`;
+}
+
+/* Conflict markers left in any Markdown file under specs/ (spec 025 FR-018): always an error, strict marker or not. "=======" alone is a Markdown heading underline, so it is not looked for. */
+const CONFLICT_RE = /^(<<<<<<<|\|\|\|\|\|\|\||>>>>>>>)( |$)/;
+function conflictMarkers(root = ROOT) {
+  const found = [];
+  const walk = (dir) => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true }).sort((x, y) => (x.name < y.name ? -1 : x.name > y.name ? 1 : 0))) {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) walk(p);
+      else if (e.isFile() && e.name.endsWith('.md')) {
+        read(p).split(/\r?\n/).forEach((l, i) => {
+          if (CONFLICT_RE.test(l)) found.push(`${path.relative(root, p).split(path.sep).join('/')}:${i + 1}: a conflict marker was left in (${l.slice(0, 7)})`);
+        });
+      }
+    }
+  };
+  walk(path.join(root, 'specs'));
+  return found;
 }
 
 /* Every spec folder with its block: [{ dir, num, meta, errors }]. */
@@ -231,7 +250,7 @@ function importIndex(root = ROOT, { write = true } = {}) {
   return { readme: out.join('\n'), specs: rows.size, errors };
 }
 
-module.exports = { RETIRED, STATUSES, NOTE_MAX, parseBlock, setBlock, valueErrors, readSpecs, generate, check, addBlock, groupId, importIndex };
+module.exports = { RETIRED, STATUSES, NOTE_MAX, parseBlock, setBlock, valueErrors, readSpecs, generate, check, conflictMarkers, addBlock, groupId, importIndex };
 
 if (require.main === module) {
   const args = process.argv.slice(2);
@@ -251,10 +270,13 @@ if (require.main === module) {
     }
     if (args.includes('--check')) {
       const { problems, strict } = check(root, { strict: args.includes('--strict') });
+      const markers = conflictMarkers(root);
+      for (const m of markers) console.error(`error: ${m}`);
+      if (markers.length) console.log(`specs:check: ${markers.length} conflict marker(s)`);
       for (const p of problems) console[strict ? 'error' : 'log'](`${strict ? 'error' : 'warning'}: ${p}`);
       if (problems.length && !strict) console.log('(warning only until specs/README.md has the line "<!-- specs-index: strict -->")');
-      console.log(problems.length ? `specs:check: ${problems.length} problem(s)` : 'specs:check ok');
-      process.exit(problems.length && strict ? 1 : 0);
+      if (!markers.length) console.log(problems.length ? `specs:check: ${problems.length} problem(s)` : 'specs:check ok');
+      process.exit((problems.length && strict) || markers.length ? 1 : 0);
     }
     const { text, errors } = generate(root);
     for (const e of errors) console.error(`error: ${e}`);

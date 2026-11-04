@@ -3,6 +3,7 @@
  * `npm run test:claudeadapter`. No claude, no account, no credits.
  */
 import * as assert from 'assert';
+import { McpContextTracker } from '../src/main/mcpcontextop';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -10,6 +11,7 @@ import { CLAUDE_ENTRYPOINT, ClaudeAdapter, PRE_TOOL_USE_HOOK, budgetText, claude
 import { createCliTransport } from '../src/adapters/claudeTransport';
 import type { AgentEvent } from '../src/adapters/types';
 import { FakeClaudeChild, fakeSpawn, SANDBOX_HOST_OK } from './fakes/claude-cli';
+import { tmpDir } from './test-tmp';
 
 const tick = (ms = 0): Promise<void> => new Promise((r) => setTimeout(r, ms));
 async function until<T>(what: string, f: () => T | undefined, ms = 1500): Promise<T> {
@@ -22,7 +24,7 @@ async function until<T>(what: string, f: () => T | undefined, ms = 1500): Promis
   }
 }
 
-const WS = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-claude-ws-'));
+const WS = tmpDir('durbar-claude-ws-');
 
 /** A fake child that answers initialize, and on each user message runs `turn(child, text)`. */
 function scripted(turn: (c: FakeClaudeChild, text: string) => void | Promise<void>) {
@@ -153,7 +155,7 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(cfg.mcpServers.fs, { type: 'stdio', command: 'npx', args: ['-y', 'mcp-fs'], env: { K: 'v' } });
     // spec 069 FR-009 (review 6 on #489): the JSON, values included, never goes on the command line (`ps` shows argv)
     const json = mcpConfigOf({ fs: { type: 'stdio', command: 'npx', args: [], env: { TOKEN: 'sk-planted-ARGV-secret' } } })!;
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-069-argv-'));
+    const root = tmpDir('durbar-069-argv-');
     const l = cliLaunchArgs({ mode: 'read-only', sessionId: 's', resume: false, mcpConfig: json }, root);
     assert.ok(!l.args.join(' ').includes('sk-planted-ARGV-secret') && !l.args.includes(json), 'no MCP JSON on argv');
     const file = l.args[l.args.indexOf('--mcp-config') + 1];
@@ -653,6 +655,9 @@ async function main(): Promise<void> {
     const sp = fakeSpawn();
     const reqs: Record<string, unknown>[] = [];
     let servers = [{ name: 'notes', status: 'failed', error: 'spawn notes ENOENT' }, { name: 'web', status: 'connected' }];
+    const usageReqs: Record<string, unknown>[] = []; // spec 100 T013
+    let usageMode: 'ok' | 'silent' | 'unknown' = 'ok';
+    let usageReply: unknown = {};
     sp.next = (c) => {
       c.onWrite = (o) => {
         if (o.type !== 'control_request') {
@@ -662,11 +667,17 @@ async function main(): Promise<void> {
         const r = o.request as { subtype: string; serverName?: string };
         if (r.subtype.startsWith('mcp_')) reqs.push(r);
         if (r.subtype === 'mcp_reconnect') servers = servers.map((x) => (x.name === r.serverName ? { name: x.name, status: 'connected' } : x));
+        if (r.subtype === 'get_context_usage') {
+          usageReqs.push(r);
+          if (usageMode === 'silent') return; // never answers: the time limit
+          if (usageMode === 'unknown') return void setTimeout(() => c.send({ type: 'control_response', response: { subtype: 'error', request_id: o.request_id, error: 'Unsupported control request subtype: get_context_usage' } }), 0);
+          return void setTimeout(() => c.send({ type: 'control_response', response: { subtype: 'success', request_id: o.request_id, response: usageReply } }), 0);
+        }
         const response = r.subtype === 'mcp_status' ? { mcpServers: servers } : {};
         setTimeout(() => c.send({ type: 'control_response', response: { subtype: 'success', request_id: o.request_id, response } }), 0);
       };
     };
-    const ad = new ClaudeAdapter({ autopilot: { wired: false }, sandboxFacts: SANDBOX_HOST_OK, claudePath: async () => '/usr/bin/claude', makeTransport: (x) => createCliTransport({ file: x.file, args: claudeArgs(x.launch), cwd: x.cwd, env: x.env, handlers: x.handlers, spawn: sp.spawn, closeGraceMs: 10, killGraceMs: 10 }), sessionExists: () => false, claudeMd: () => undefined, env: () => ({}) });
+    const ad = new ClaudeAdapter({ autopilot: { wired: false }, mcpContextTimeoutMs: 40, sandboxFacts: SANDBOX_HOST_OK, claudePath: async () => '/usr/bin/claude', makeTransport: (x) => createCliTransport({ file: x.file, args: claudeArgs(x.launch), cwd: x.cwd, env: x.env, handlers: x.handlers, spawn: sp.spawn, closeGraceMs: 10, killGraceMs: 10 }), sessionExists: () => false, claudeMd: () => undefined, env: () => ({}) });
     assert.deepStrictEqual([ad.capabilities.mcpRestart, ad.capabilities.mcpStart, ad.capabilities.mcpToggleApplies, typeof ad.restartMcpServer], [true, 'next-message', 'live', 'function']);
     const ev: AgentEvent[] = [];
     ad.onEvent((e) => ev.push(e));
@@ -681,6 +692,18 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(reqs, [{ subtype: 'mcp_reconnect', serverName: 'notes' }, { subtype: 'mcp_status' }], 'one mcp_reconnect for that server, then the new list');
     const last = [...ev].reverse().find((e) => e.type === 'mcp') as { servers: { name: string; status: string }[] };
     assert.strictEqual(last.servers.find((x) => x.name === 'notes')?.status, 'connected', 'the new state from mcp_status');
+    // spec 058 FR-207, FR-214 (review of PR #1080, item 3): the automatic reconnect is the same mcp_reconnect + mcp_status and nothing
+    // else: never mcp_authenticate, mcp_oauth_callback_url or mcp_clear_auth; also when the server still needs a sign-in
+    assert.strictEqual(ad.capabilities.mcpSignInReconnect, true);
+    reqs.length = 0;
+    await ad.restartMcpServer(sid, 'notes', { auto: true });
+    assert.deepStrictEqual(reqs, [{ subtype: 'mcp_reconnect', serverName: 'notes' }, { subtype: 'mcp_status' }], 'automatic: mcp_reconnect, then mcp_status, nothing more');
+    servers = servers.map((x) => (x.name === 'notes' ? { name: 'notes', status: 'needs-auth' } : x));
+    reqs.length = 0;
+    await ad.restartMcpServer(sid, 'notes', { auto: true }).catch(() => undefined);
+    assert.ok(reqs.every((r) => r.subtype === 'mcp_reconnect' || r.subtype === 'mcp_status'), 'needs-auth: still only mcp_reconnect / mcp_status: ' + JSON.stringify(reqs));
+    assert.ok(!reqs.some((r) => /authenticate|oauth|clear_auth/.test(String(r.subtype))), 'never a sign-in request');
+    servers = servers.map((x) => (x.name === 'notes' ? { name: 'notes', status: 'connected' } : x));
     await assert.rejects(ad.restartMcpServer('no-such', 'notes'), /not running/);
     // spec 069 FR-031: a server's tools come from the same mcp_status reply (documented McpServerStatus.tools)
     servers = servers.map((x) => (x.name === 'web' ? { ...x, tools: [{ name: 'fetch', description: 'Fetch a URL' }, { name: 'search' }] } : x)) as typeof servers;
@@ -690,11 +713,45 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(reqs, [{ subtype: 'mcp_status' }], 'only mcp_status is asked');
     assert.deepStrictEqual(await ad.listMcpTools(sid, 'notes'), [], 'a server without tools in the reply: none');
     await assert.rejects(ad.listMcpTools(sid, 'gone'), /not running in this session/);
+    // spec 100 T013: get_context_usage, summary only; grouped per server, deferred apart, the window, a turn never disturbed
+    assert.strictEqual(ad.capabilities.mcpContext, 'reported');
+    usageReply = { rawMaxTokens: 200_000, maxTokens: 160_000, mcpTools: [
+      { name: 'mcp__web__fetch', serverName: 'web', tokens: 900, isLoaded: true },
+      { name: 'mcp__web__search', serverName: 'web', tokens: 100 },
+      { name: 'mcp__web__rare', serverName: 'web', tokens: 40_000, isLoaded: false },
+      { name: 'mcp__notes__read', serverName: 'notes', tokens: 50, isLoaded: true },
+    ] };
+    assert.deepStrictEqual(await ad.mcpContext(sid), { servers: [{ name: 'web', tokens: 1000, deferredTokens: 40_000, tools: 3, source: 'reported' }, { name: 'notes', tokens: 50, deferredTokens: 0, tools: 1, source: 'reported' }], window: 200_000 });
+    assert.deepStrictEqual(usageReqs, [{ subtype: 'get_context_usage', detail: 'summary' }], 'summary, never full (decided Q2)');
+    usageMode = 'unknown';
+    assert.deepStrictEqual(await ad.mcpContext(sid), { servers: [], failed: true }, 'a CLI that does not know the request: a failed read');
+    usageMode = 'silent';
+    assert.deepStrictEqual(await ad.mcpContext(sid), { servers: [], failed: true }, 'a CLI that never answers: the time limit, a failed read');
+    usageMode = 'ok';
+    // finding 1, through the tracker: a failure after figures keeps them; a real empty list replaces them
+    {
+      let now = 0;
+      const t = new McpContextTracker({ agents: new Map([[sid, { id: sid } as never]]), router: { forAgent: () => ad } as never, secrets: () => [], live: () => [], off: () => new Set(), push: () => undefined, now: () => now });
+      assert.strictEqual((await t.get(sid, true)).report?.servers[0].name, 'web');
+      for (const mode of ['unknown', 'silent'] as const) {
+        usageMode = mode;
+        now += 61_000;
+        assert.strictEqual((await t.get(sid, true)).report?.servers[0].name, 'web', `${mode}: the last figures stay`);
+      }
+      usageMode = 'ok';
+    }
+    (ad as unknown as { sessions: Map<string, { turnOpen?: boolean }> }).sessions.get(sid)!.turnOpen = true;
+    usageReqs.length = 0;
+    assert.deepStrictEqual(await ad.mcpContext(sid), { servers: [], busy: true }, 'during a turn: nothing asked, main asks at its end (FR-003)');
+    assert.strictEqual(usageReqs.length, 0);
+    (ad as unknown as { sessions: Map<string, { turnOpen?: boolean }> }).sessions.get(sid)!.turnOpen = false;
     await ad.stop(sid);
+    assert.deepStrictEqual(await ad.mcpContext(sid), { servers: [], failed: true }, 'a stopped CLI is not started for it');
     // the SDK transport (dev opt-in) sends no mcp_reconnect: no Restart there (C2)
     const sdk = new ClaudeAdapter({ autopilot: { wired: false }, sandboxFacts: SANDBOX_HOST_OK, sdkTransport: true, claudePath: async () => '/usr/bin/claude', sessionExists: () => false, claudeMd: () => undefined, env: () => ({}) } as never);
     assert.deepStrictEqual([sdk.capabilities.mcpRestart, typeof sdk.restartMcpServer], [undefined, 'undefined'], 'SDK transport: no restartMcpServer');
     assert.deepStrictEqual([sdk.capabilities.mcpTools, typeof sdk.listMcpTools], [undefined, 'undefined'], 'SDK transport: no listMcpTools (spec 069)');
+    assert.deepStrictEqual([sdk.capabilities.mcpContext, typeof sdk.mcpContext], [undefined, 'undefined'], 'SDK transport: no mcpContext (spec 100)');
     // spec 069 FR-062: the launch carries the turned-off tools into --disallowedTools
     const sp2 = fakeSpawn();
     const ad2 = new ClaudeAdapter({ autopilot: { wired: false }, sandboxFacts: SANDBOX_HOST_OK, claudePath: async () => '/usr/bin/claude', makeTransport: (x) => createCliTransport({ file: x.file, args: claudeArgs(x.launch), cwd: x.cwd, env: x.env, handlers: x.handlers, spawn: sp2.spawn, closeGraceMs: 10, killGraceMs: 10 }), sessionExists: () => false, claudeMd: () => undefined, env: () => ({}) });
@@ -992,8 +1049,8 @@ async function main(): Promise<void> {
 
   // ---- custom agents (spec 043 FR-008): chosen before the first message, passed on the first launch; a started session refuses ----
   {
-    const cfg = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-cagent-cfg-'));
-    const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-cagent-ws-'));
+    const cfg = tmpDir('durbar-cagent-cfg-');
+    const ws = tmpDir('durbar-cagent-ws-');
     fs.mkdirSync(path.join(ws, '.claude', 'agents'), { recursive: true });
     fs.writeFileSync(path.join(ws, '.claude', 'agents', 'pirate.md'), '---\nname: pirate\ndescription: Arr\n---\nYou are a pirate.');
     const sp = fakeSpawn();
@@ -1190,7 +1247,7 @@ async function main(): Promise<void> {
     await ad.stop(sid);
   }
 
-  // ---- spec 040 FR-015: a stand-alone one-shot (AI theme maker): no session, no tools, an empty temp folder removed after ----
+  // ---- spec 040 FR-015: a stand-alone one-shot: no session, no tools, an empty temp folder removed after ----
   {
     const a = oneShotArgs('make a theme');
     const at = (f: string) => a[a.indexOf(f) + 1];

@@ -1,10 +1,13 @@
 /**
  * Spec 099 (Autopilot), the shared core: pure, no SDK, no I/O, no timers. All three adapters use it, so the rules are written once.
  * The adapters use it through `autopilotHost.ts`; nothing in main calls it before T030.
+ * One live use: `claudeHistory.ts` (`typedPrompt`, the Previous-sessions list and chat history) calls `isClaudeContinuation` to hide a
+ * synthetic `Stop hook feedback:` message.
  */
 
 import { isObj } from '../shared/guards';
 import { HIDDEN_ALL_RE } from '../shared/names';
+import { claudeHelperRef } from './claudeMap';
 import type { AutopilotEnd, AutopilotEvent } from './types';
 
 /** FR-040: the end reasons, in the order the spec lists them. */
@@ -25,11 +28,11 @@ export const MAX_HOURS = 168;
 export const BACKSTOP_TURNS_PER = 100;
 /** FR-023: two continuations in a row with an unchanged folder fingerprint. */
 export const NO_PROGRESS_AFTER = 2;
-/** How often an adapter must call `checkElapsed()` (and the most a clock set back between two samples can delay the backstop is bounded by what it hid in one). */
+/** How often an adapter must call `checkElapsed()`. A clock set back between two samples hides at most this much real time per step back. */
 export const CLOCK_SAMPLE_MS = 60_000;
-/** FR-011: Claude Code's own limit: a goal over this many trimmed characters gets a plain-text refusal from the CLI, so Durbar refuses it first, with a reason (spec Changes, awaiting owner review). */
+/** FR-011: Claude Code's own limit: a goal over this many trimmed UTF-16 code units (JS `.length`) gets a plain-text refusal from the CLI, so Durbar refuses it first, with a reason (`real:` CLI 2.1.317, 2026-11-03). */
 export const GOAL_MAX_CLAUDE = 4000;
-/** FR-011: the words that make Claude Code's `/goal` clear the goal instead of setting one (CLI 2.1.316, `read:`), trimmed and case-insensitive. */
+/** FR-011: the words that make Claude Code's `/goal` clear the goal instead of setting one (`real:` CLI 2.1.317, 2026-11-03: the whole trimmed argument, case-insensitive), so a goal that is only one of them is refused. */
 export const CLAUDE_GOAL_RESERVED: readonly string[] = ['clear', 'stop', 'off', 'reset', 'none', 'cancel'];
 export const RUN_ID_MAX = 128;
 
@@ -83,7 +86,7 @@ export interface AutopilotRunOptions {
   /**
    * The clock, in ms. Injected so tests need no timers. Only forward steps between two samples count, and a reading that is not a finite number ends
    * the run as `error` (fail closed). The core owns no timer: the adapter must call `checkElapsed()` at least every `CLOCK_SAMPLE_MS`, so a
-   * step back can hide at most what happened inside one sample. `[KNOWN GAP]`: a step back between two samples still delays the end by its size.
+   * step back hides at most one sample's time. `[KNOWN GAP]`: each step back between two samples can delay the end by up to `CLOCK_SAMPLE_MS`.
    */
   now?: () => number;
   /** Backstop model turns per `limit + 1`: 100 (default; Copilot, Claude Code), 1 for Codex, which counts `turn/completed` (FR-021). A positive whole number. */
@@ -153,13 +156,20 @@ export class AutopilotRun {
   get backstopTurns(): number { return this.per * (this.limit + 1); }
   /** About when the backstop ends the run, on the injected clock, for the adapter's one timer; it moves later if the clock was set back. `checkElapsed()` decides. */
   get deadlineMs(): number { return this.lastNow + Math.max(0, this.hours * 3_600_000 - this.elapsedMs); }
-  /** Resolves (never rejects) when the first `halt` has settled. */
+  /** Resolves (never rejects). Before `end()` it is already resolved (no halt has been called), so await it only after `ended`: then it resolves when the first `halt` has settled. */
   whenStopped(): Promise<void> { return this.stopped; }
 
-  /** Emits `started` once. The plan answer starts a run with no send (FR-060); a first continuation starts it by itself. */
+  /**
+   * Emits `started` once. The plan answer starts a run with no send (FR-060); a first continuation starts it by itself. The backstop clock
+   * starts here, not at construction: time between building the run and starting it does not count.
+   */
   start(): void {
     if (this.begun || this.over) return;
     this.begun = true;
+    const t0 = this.now();
+    this.clockBad = !(typeof t0 === 'number' && Number.isFinite(t0));
+    this.lastNow = this.clockBad ? 0 : t0;
+    this.elapsedMs = 0;
     this.send({ phase: 'started', runId: this.runId, n: 0, limit: this.limit });
   }
 
@@ -175,7 +185,7 @@ export class AutopilotRun {
     }
     this.n += 1;
     this.send({ phase: 'continued', runId: this.runId, n: this.n, limit: this.limit });
-    return 'counted';
+    return this.over ? 'ended' : 'counted'; // a listener may have ended the run (a spend cap) while handling `continued`
   }
 
   /** The backstop's turn counter (FR-021), fed by each adapter with its own signal; independent of `continuation()`. */
@@ -198,9 +208,17 @@ export class AutopilotRun {
     if (this.unchanged >= NO_PROGRESS_AFTER) this.end('no-progress');
   }
 
-  /** Ends the run once. An unknown reason ends it as `error`. Returns true only for the call that ended it. */
+  /**
+   * Ends the run once. An unknown reason ends it as `error`. Returns true only for the call that ended it. A run that ends before `start()` emits
+   * `started` first, so a consumer keyed on `runId` never sees an end it did not see begin. Order (FR-050): `halt` is called synchronously first,
+   * then `ended` is emitted, so the stop is already in flight when a listener sees `ended`; `halt` must not emit through the run's listener.
+   */
   end(reason: AutopilotEnd, spend?: AutopilotEvent['spend']): boolean {
     if (this.over) return false;
+    if (!this.begun) {
+      this.start();
+      if (this.over) return false; // a listener ended the run from `started`
+    }
     const r = isAutopilotEnd(reason) ? reason : 'error';
     this.over = true;
     this.begun = true;
@@ -270,42 +288,42 @@ export class AutopilotRun {
   }
 }
 
-export type GoalTextResult = { ok: true; text: string } | { ok: false; reason: 'empty' | 'reserved' | 'too-long' | 'command' };
+export type GoalTextResult = { ok: true; text: string } | { ok: false; reason: 'empty' | 'reserved' | 'too-long' };
 
 /** Hidden characters removed from a goal: `HIDDEN_ALL_RE` plus the bidi marks it leaves (LRM, RLM, ALM, the deprecated U+206A-F) and the tag characters. ZWNJ and ZWJ stay: real scripts need them. */
 const GOAL_HIDDEN_RE = /[\u200e\u200f\u061c\u206a-\u206f]|[\u{e0000}-\u{e007f}]/gu;
-/** A slash command: the line starts with `/word`, and that first word holds no further `/` (so `/usr/bin/env` and `/ foo` are not one). */
-const SLASH_COMMAND_RE = /^\/[^\s/]+(?:\s|$)/;
+/** A visible character: not white space, a control, a format, surrogate, private-use or noncharacter, a combining mark on its own, a Default_Ignorable character (joiners, Hangul fillers, variation selectors, Khmer inherent vowels, reserved ranges) or the braille blank. */
+const VISIBLE_RE = /[^\s\p{Z}\p{Cc}\p{Cf}\p{Cs}\p{Co}\p{M}\p{Default_Ignorable_Code_Point}\p{Noncharacter_Code_Point}\u2800]/u;
 
 /**
  * FR-011, S2: the goal sent for a message. U+2028/9 become a newline (two words never join); the other hidden characters (bidi, zero-width space,
  * tag characters, the rest of `HIDDEN_ALL_RE`; ZWNJ and ZWJ stay) are removed; each run of C0 (but newline), DEL and C1 characters becomes
  * one space, so CRLF becomes a space and a newline. Text with no visible character (spaces and joiners only) is `empty`, for every app.
  * On Claude Code (and with no `app`, the strictest rules) it also refuses: a whole text that is one of `CLAUDE_GOAL_RESERVED` (the CLI would
- * clear the goal), a trimmed text over 4000 characters (the CLI refuses it in plain text), and a line shaped like a slash command (`/word`, no
- * further `/` in that word; a safe default, awaiting owner review). Linear in the input length; takes the user's text only.
+ * clear the goal) and a trimmed text over 4000 UTF-16 code units (the CLI refuses it in plain text). A line starting with `/` is
+ * accepted: the CLI runs one command per message and takes the rest, newlines included, as the condition (`real:` 2.1.317; owner, 2026-11-03). Linear in the input length; takes the user's text only.
  */
 export function goalText(text: unknown, app?: 'claude' | 'codex' | 'copilot'): GoalTextResult {
   if (typeof text !== 'string') return { ok: false, reason: 'empty' };
   // eslint-disable-next-line no-control-regex
   const clean = text.replace(/[\u2028\u2029]/g, '\n').replace(HIDDEN_ALL_RE, '').replace(GOAL_HIDDEN_RE, '').replace(/[\u0000-\u0009\u000b-\u001f\u007f-\u009f]+/g, ' ');
+  if (/\p{Cs}/u.test(clean)) return { ok: false, reason: 'empty' }; // ill-formed text (a lone surrogate) is never sent
   const t = clean.trim();
-  if (!t || !/[^\s\u200c\u200d]/.test(t)) return { ok: false, reason: 'empty' };
+  if (!t || !VISIBLE_RE.test(t)) return { ok: false, reason: 'empty' };
   if (app === undefined || app === 'claude') {
     if (t.length > GOAL_MAX_CLAUDE) return { ok: false, reason: 'too-long' };
     if (CLAUDE_GOAL_RESERVED.includes(t.toLowerCase())) return { ok: false, reason: 'reserved' };
-    if (clean.split('\n').some((line) => SLASH_COMMAND_RE.test(line.replace(/^[\s\u200c\u200d]+/, '')))) return { ok: false, reason: 'command' };
   }
-  return { ok: true, text: clean };
+  return { ok: true, text: t }; // the trimmed text is what was checked and what is sent
 }
 
 /**
- * FR-020: a Claude Code continuation is a synthetic user message of the main stream (`agentId` and `parent_tool_use_id` missing or null) with a text block that starts with `Stop hook feedback:`. A message the
- * user typed with the same words has no `isSynthetic: true`, and a helper's message (FR-008) carries an agent or parent id or `isSidechain: true`.
+ * FR-020: a Claude Code continuation is a synthetic user message of the main stream (no helper marker) with a text block that starts with `Stop hook feedback:`. A message the
+ * user typed with the same words has no `isSynthetic: true`, and a helper's message (FR-008) carries `agent_id` or `parent_tool_use_id` (the Claude mapper's rule, `claudeHelperRef`), `agentId` or `isSidechain: true`.
  */
 export function isClaudeContinuation(msg: unknown): boolean {
   if (!isObj(msg) || msg.type !== 'user' || msg.isSynthetic !== true || msg.isSidechain === true) return false;
-  if ((msg.agentId !== undefined && msg.agentId !== null) || (msg.agent_id !== undefined && msg.agent_id !== null) || (msg.parent_tool_use_id !== undefined && msg.parent_tool_use_id !== null)) return false; // `agent_id`: the name the CLI's stream uses (`claudeMap.ts` `who()`)
+  if (claudeHelperRef(msg) || (msg.agentId !== undefined && msg.agentId !== null)) return false; // the mapper's own rule (`parent_tool_use_id` or `agent_id`), plus the history file's `agentId`
   const m = msg.message;
   if (!isObj(m)) return false;
   const content = m.content;

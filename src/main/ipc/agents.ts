@@ -57,6 +57,14 @@ export interface AgentsIpcDeps {
   autopilot: Pick<AutopilotOps, 'setAutopilot' | 'forget' | 'stopSeen'>;
   /** Spec 052 activity log row for Restart session (spec 058 FR-022). */
   logMcp(a: AgentInfo, action: string): void;
+  /** Spec 058 FR-208, FR-209: the per-chat MCP sign-in gate every send path awaits first (`stopped` = Stop during the wait). */
+  mcpGate?(id: string): Promise<'go' | 'stopped'>;
+  /** Spec 058 FR-208: Stop ends a running gate wait; true when there was one. */
+  mcpStopWait?(id: string): boolean;
+  /** Spec 058 FR-209: main's own busy state of the chat (a turn runs or waits for the person), not the window's Thinking. */
+  mcpBusy?(id: string): boolean;
+  /** Spec 058 T179: the session ended (End session, Restart session, removed): its next message is a first message again. */
+  mcpForget?(id: string): void;
 }
 
 export function register(deps: AgentsIpcDeps): void {
@@ -90,15 +98,34 @@ export function register(deps: AgentsIpcDeps): void {
     if (ag && ag.cwd) await sessionStarts.noteStart(id, ag.cwd); // spec 085 FR-001: before the turn can change a file; first send only
     agentState.ensure(id, agents.get(id)?.lazy);
     agentState.noteSend(id); // the window shows Thinking from the moment the user sends (app.js sendLive)
+    // spec 058 FR-208/FR-209: the chat's MCP sign-in reconnects first, at most 5 s; Stop meanwhile = nothing is sent
+    // (review of PR #1080, item 4: a gate that throws never holds the message: it goes)
+    if (deps.mcpGate && (await Promise.resolve().then(() => deps.mcpGate?.(id)).catch(() => 'go' as const)) === 'stopped') {
+      agentState.noteNotSent(id);
+      return { ok: false, notSent: true, error: 'Not sent: you stopped it while MCP sign-ins were reconnecting.' };
+    }
     const r = await sendOp(id, text, attachments, ad, plan);
     if (!r.ok) agentState.noteSendFailed(id); // and Error when the send fails (app.js sendLive)
     return r;
   });
   // Stop only interrupts the running turn (the agent returns to Ready); End session frees the runtime session.
-  ipcHandle('agents:stop', (_e, id: string) => stopTurnOp(opsDeps, id));
+  // spec 058 FR-208: Stop ends a sign-in wait. It interrupts the turn when no wait was ended, or when a turn runs anyway (review of PR
+  // #1080, item 2). A wait ended on an idle chat is not interrupted: an interrupt with no turn would leave the app expecting an abort
+  // (Claude Code's abortExpected) and swallow the next real error (third review of PR #1080).
+  ipcHandle('agents:stop', (_e, id: string) => {
+    const ended = typeof id === 'string' && deps.mcpStopWait?.(id) === true;
+    if (ended && !(deps.mcpBusy?.(id) ?? false)) return undefined;
+    return stopTurnOp(opsDeps, id);
+  });
 
   /** End session (spec 005): remote control off first (spec 054 FR-011: off on GitHub too), then the adapter frees the session. Also Restart session's first step (spec 058 FR-022). */
-  const endSession = (id: string): Promise<void> => endSessionOp({ release: (k) => remoteOps.release(k), router }, id);
+  const endSession = async (id: string): Promise<void> => {
+    try {
+      await endSessionOp({ release: (k) => remoteOps.release(k), router }, id);
+    } finally {
+      deps.mcpForget?.(id); // spec 058 T179: after the session's own `stopped`, so the next message is a first message
+    }
+  };
   ipcHandle('agents:end', async (_e, id: string) => {
     if (!agents.has(id)) return;
     deps.autopilot.stopSeen(id); // spec 099 FR-052: before anything is awaited: a hung setup or a hung stop holds nothing back

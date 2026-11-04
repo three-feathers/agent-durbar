@@ -137,6 +137,15 @@ async function main(): Promise<void> {
     valid(r);
   }
 
+  // FR-011 (owner decision 2026-11-03, `real:` 2.1.317): a `/word` line inside a goal is part of the condition, so it is sent as one `/goal` message
+  {
+    const r = await rig();
+    await r.ad.setAutopilot(r.sid, { limit: 5 });
+    await r.ad.send(r.sid, { text: 'tests pass\n/compact' });
+    await tick();
+    assert.deepStrictEqual(r.users(), ['/goal tests pass\n/compact'], 'a multi-line goal with a slash line is one /goal message');
+  }
+
   // a typed `/goal`, a clear word, too long, attachments, plan first: refused, nothing written
   {
     const r = await rig();
@@ -144,7 +153,6 @@ async function main(): Promise<void> {
     await assert.rejects(r.ad.send(r.sid, { text: '/goal x' }), new RegExp(CLAUDE_GOAL_TYPED));
     await assert.rejects(r.ad.send(r.sid, { text: 'stop' }), /clear the goal/);
     await assert.rejects(r.ad.send(r.sid, { text: 'x'.repeat(4001) }), /4000/);
-    await assert.rejects(r.ad.send(r.sid, { text: 'a\n/compact' }), /slash/);
     await assert.rejects(r.ad.send(r.sid, { text: '' }), /finished result/);
     await assert.rejects(r.ad.send(r.sid, { text: 'x', plan: true }), /Plan first/);
     await assert.rejects(r.ad.send(r.sid, { text: 'x', attachments: [{ path: '/a', kind: 'file' } as never] }), /text only/);

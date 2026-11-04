@@ -23,7 +23,7 @@ import { emptyOrgPolicy, wholeOrgPolicy } from '../src/shared/orgpolicy';
 import { readCopilotOrgPolicy } from '../src/adapters/copilotOrgPolicy';
 import { claudeHistoryFromText } from '../src/adapters/claudeHistory';
 import { folderFingerprint } from '../src/main/gitstatus';
-import { AUTOPILOT_HELD, Scheduler } from '../src/main/schedules';
+import { Scheduler } from '../src/main/schedules';
 
 type R = Record<string, unknown>;
 const AP = { capUnit: 'aiu' as const, attachments: true, planApproval: true, verified: false };
@@ -845,83 +845,15 @@ async function main(): Promise<void> {
     assert.ok(main0);
   }
 
-  // ---- T032: a due schedule on a session on Autopilot is not sent, and a stored `autopilot` is refused ----
+  // ---- owner decision 2026-11-01 (T032 dropped): the scheduler does not look at Autopilot; a due prompt goes through the normal send ----
   {
     let sends = 0;
-    let onAuto = true;
     const doc = { pausedAll: false, schedules: [{ id: 'abcd1234', folder: '/f', prompt: 'p', every: 60, at: 1 }] };
-    const timers: Array<() => void> = [];
     const clock = { t: 1_000_000 };
-    const make = (d: unknown, send = async () => { sends++; return 's1'; }) => new Scheduler(d as never, { now: () => clock.t, mono: () => clock.t, isBusy: () => false, hasSession: () => true, send, setTimer: (_ms: number, fn: () => void) => { timers.push(fn); return 0; }, clearTimer: () => undefined, save: () => undefined, changed: () => undefined, onAutopilot: () => onAuto, capUnitOf: () => undefined } as never);
-    const s = make(JSON.parse(JSON.stringify(doc)));
-    const sch = s.doc.schedules[0] as { next?: number; last?: { outcome: string } };
-    sch.next = clock.t - 1;
+    const s = new Scheduler(doc as never, { now: () => clock.t, mono: () => clock.t, isBusy: () => false, hasSession: () => true, send: async () => { sends++; return 's1'; }, setTimer: () => 0, clearTimer: () => undefined, save: () => undefined, changed: () => undefined, capUnitOf: () => undefined } as never);
+    (s.doc.schedules[0] as { next?: number }).next = clock.t - 1;
     await s.tick();
-    assert.strictEqual(sends, 0, 'not sent');
-    assert.strictEqual(sch.last?.outcome, 'skipped-autopilot', 'the run log says why');
-    assert.deepStrictEqual(s.runsOf('abcd1234').map((r) => r.outcome), ['skipped-autopilot']);
-    assert.strictEqual((await s.runNow('abcd1234')).ok, false, 'Run now too');
-    assert.strictEqual(sends, 0);
-    onAuto = false;
-    sch.next = clock.t - 1;
-    await s.tick();
-    assert.strictEqual(sends, 1, 'off Autopilot it goes as before');
-    // turned on while the send waited for its session: main's send throws, and it is the same outcome
-    const t = make(JSON.parse(JSON.stringify(doc)), async () => { throw AUTOPILOT_HELD; });
-    const tc = t.doc.schedules[0] as { next?: number; last?: { outcome: string } };
-    tc.next = clock.t - 1;
-    await t.tick();
-    assert.strictEqual(tc.last?.outcome, 'skipped-autopilot');
-    // stored
-    const { parseSchedules } = await import('../src/main/schedules');
-    const parsed = parseSchedules(JSON.stringify({ schedules: [{ id: 'efgh5678', folder: '/f', prompt: 'p', every: 60, at: 1, mode: 'autopilot' }] }), clock.t);
-    assert.strictEqual(parsed.schedules[0].mode, 'autopilot', 'kept, so it is refused and not sent in the session\'s mode');
-    const st = make(parsed);
-    onAuto = false;
-    const sc = st.doc.schedules[0] as { next?: number; last?: { outcome: string } };
-    sc.next = clock.t - 1;
-    const sent0 = sends;
-    await st.tick();
-    assert.strictEqual(sends, sent0, 'a stored autopilot is never sent');
-    assert.strictEqual(sc.last?.outcome, 'skipped-autopilot');
-    // an Edit or a Pause keeps the marker: it stays refused, and never runs in the session's mode
-    const kept = st.save({ id: 'efgh5678', edit: true, prompt: 'new words', every: 60 }, () => true);
-    assert.strictEqual(kept.ok, true, JSON.stringify(kept));
-    assert.strictEqual((kept as { schedule: { mode?: string } }).schedule.mode, 'autopilot', 'an edit keeps it');
-    const paused = st.save({ id: 'efgh5678', folder: '/f', prompt: 'new words', every: 60, paused: true }, () => true);
-    assert.strictEqual((paused as { schedule: { mode?: string } }).schedule.mode, 'autopilot', 'a Pause keeps it');
-    // a loop: not a pass, and when it went on Autopilot during the send, not an error either
-    const loopDoc = (): unknown => ({ pausedAll: false, schedules: [{ id: 'loop1234', folder: '/f', prompt: 'p', target: { session: 's1', agent: 'copilot' }, loop: { minDelay: 5, maxDelay: 60, defaultDelay: 30, maxPasses: 9, passes: 2, endAt: clock.t + 1e9 }, next: clock.t - 1 }] });
-    let loopSends = 0;
-    onAuto = true;
-    const lp = make(parseSchedules(JSON.stringify(loopDoc()), clock.t), async () => { loopSends++; return 's1'; });
-    (lp.doc.schedules[0] as { next?: number }).next = clock.t - 1;
-    await lp.tick();
-    assert.strictEqual(loopSends, 0, 'a due pass is not sent');
-    assert.strictEqual(lp.runsOf('loop1234')[0]?.outcome, 'skipped-autopilot');
-    assert.strictEqual(lp.doc.schedules[0].loop?.passes, 2, 'not a pass');
-    onAuto = false;
-    const lr = make(parseSchedules(JSON.stringify(loopDoc()), clock.t), async () => { throw AUTOPILOT_HELD; });
-    (lr.doc.schedules[0] as { next?: number }).next = clock.t - 1;
-    await lr.tick();
-    assert.strictEqual(lr.runsOf('loop1234')[0]?.outcome, 'skipped-autopilot', 'the race: not failed');
-    const lc = lr.doc.schedules[0].loop!;
-    assert.strictEqual(lc.passes, 2, 'the race: not a pass');
-    assert.ok(!lc.inPass && !lc.ended);
-    assert.ok(!lc.errorStreak, 'the race: no error counted');
-    // the door: stays there
-    let doorSends = 0;
-    onAuto = true;
-    const dr = make(JSON.parse(JSON.stringify(doc)), async () => { doorSends++; return 's1'; });
-    assert.strictEqual(await dr.releaseDoorRun('abcd1234', 'p'), 'busy');
-    assert.strictEqual(doorSends, 0);
-    onAuto = false;
-    const dr2 = make(JSON.parse(JSON.stringify(doc)), async () => { throw AUTOPILOT_HELD; });
-    assert.strictEqual(await dr2.releaseDoorRun('abcd1234', 'p'), 'busy', 'the race too');
-    const made = st.save({ folder: '/f', prompt: 'p', every: 60, mode: 'autopilot' }, () => true);
-    assert.strictEqual(made.ok, false);
-    assert.match(String((made as { error?: string }).error), /not available/);
-    assert.strictEqual((await st.runNow('efgh5678')).ok, false);
+    assert.strictEqual(sends, 1, 'a due schedule is sent; the session\'s mode (Autopilot too) is the adapter\'s business');
   }
 
   // ---- T030: the Claude replay ----
@@ -942,11 +874,10 @@ async function main(): Promise<void> {
     "autopilotOn: (id) => autopilotOps.engaged(id) });",
     "endAutopilot: (a) => autopilotOps.endForMode(a), autopilotStopSeen: (id) => autopilotOps.stopSeen(id)",
     "windowAdapters(infos, autopilotOn())",
-    "if (autopilotOps.engaged(a.id)) throw AUTOPILOT_HELD;",
     "if (autopilotOn()) query.simautopilot = '1';",
     "changed: (a) => toRenderer('agents:autopilot', { id: a.id, autopilot: a.autopilot ?? null }),",
   ]) assert.ok(mainTs.includes(line), `main.ts: ${line}`);
-  assert.ok(mainTs.indexOf('router.setEventGuard(') < mainTs.indexOf("router.onEvent((e) => toRenderer('agent:event'"), 'the guard is set before the window hears anything');
+  assert.ok(mainTs.indexOf('router.setEventGuard(') < mainTs.indexOf("toRenderer('agent:event', toWindowEvent(e, outward))"), 'the guard is set before the window hears anything');
   const sim = codeOf(fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'simguard.ts'), 'utf8'));
   assert.ok(!sim.includes('agents:setAutopilot'), 'not on SIM_OPEN_CHANNELS');
   assert.strictEqual(dialogs.length, 0, 'no native box was asked in this file');

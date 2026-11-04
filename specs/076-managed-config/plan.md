@@ -51,7 +51,7 @@ drops it, add `ajv` as a devDependency in that PR (dev only, never shipped).
 | `src/main/policyfetch.ts` | `fetchJson(url, {maxBytes, timeouts, redirects, token?})` over an injected `fetch` (Electron `net.fetch` on a non-persistent partition `durbar-policy-fetch` with `credentials: 'omit'` and `allowNTLMCredentialsForDomains('')`) and an injected address check (`dns.lookup` all addresses, refuse loopback/link-local/metadata/unspecified/multicast, private only for `network.trustedHosts`; behind a proxy from `session.resolveProxy`, literal and local-name hosts refused and unresolvable names only for `network.trustedHosts`, FR-120), per hop with `redirect: 'manual'`; the same `hostAllowed(url)` check is used for MCP server URLs from URL lists before a session start (FR-040); ETag cache in `<userData>/managed-cache/`, re-validated on use; Ed25519 `.sig` check when `signing` applies |
 | `src/main/registryinstall.ts` | download, hash check, safe write (reuse spec 043's writer), bookkeeping `registry-installs.json`, uninstall |
 | `src/main/ipc/policy.ts` | `policy:get` (view without secret values), `policy:reload`, `policy:copyText`; registry `registry:list/install/update/uninstall` |
-| Renderer `organization.js` | Settings > Organization page, banners (red safe mode, yellow key errors), a shared `lockLine(key)` helper used by every locked control |
+| Renderer `organization.js` (so far only the read-only FR-208 section: `orgwords.js` and its paint in `screens.js`) | Settings > Organization page, banners (red safe mode, yellow key errors), a shared `lockLine(key)` helper used by every locked control |
 
 ### D2 Validation
 

@@ -16,7 +16,7 @@ Examples of good findings, from the hand audit of 2026-10-23: issue #749 (`scrip
 
 ## Check each finding with a mutation where you can
 
-The helper runs one `test:*` suite (a name from `package.json` that `test:serial` lists). It changes one exact snippet in one file under `src/` or `scripts/`, runs the suite, and puts the file back. One run at a time; each takes from seconds to a few minutes, so pick the few that matter.
+The helper runs one `test:*` suite (a name that `scripts/test-suites.txt` lists). It changes one exact snippet in one file under `src/` or `scripts/`, runs the suite, and puts the file back. One run at a time; each takes from seconds to a few minutes, so pick the few that matter.
 
 ```
 {{MUTATE}} baseline --test test:theme

@@ -15,8 +15,47 @@
 function endAllBody(n,busyN){
   return (n===1?'1 session ends':n+' sessions end')+' and frees '+(n===1?'its place':'their places')+(busyN?' ('+busyN+' still working: '+(busyN===1?'its reply stops':'their replies stop')+')':'')+'. The chats stay; send a message to pick up where you left off.';
 }
+/* Spec 052 FR-237 (owner bug report 2026-11-03): a press that starts in a text field and ends outside its popup (a drag that selects
+   the text and overshoots, a triple-click that moves) must not close the popup. The browser sends that click to the nearest element that
+   holds both ends, so a backdrop or a click-outside listener used to read it as a click outside. The one place that knows where the press
+   started: a capture listener on the document records the primary press's down and up targets; a click within a second of that up comes
+   from it (a click from the keyboard or a script has no fresh press, and then only its target counts, as before). */
+const DURBAR_PRESS=(function(){
+  const PRESS={down:null,up:null,upT:-1e9};
+  function trackPress(doc){
+    if(!doc||typeof doc.addEventListener!=='function'||doc.__durbarPress)return;
+    doc.__durbarPress=true;
+    const prim=e=>e.button===undefined||e.button===0;
+    const down=e=>{if(prim(e)){PRESS.down=e.target;PRESS.up=null;}};
+    const up=e=>{if(prim(e)){PRESS.up=e.target;PRESS.upT=e.timeStamp||0;}};
+    doc.addEventListener('pointerdown',down,true);doc.addEventListener('mousedown',down,true);
+    doc.addEventListener('pointerup',up,true);doc.addEventListener('mouseup',up,true);
+  }
+  /* the press behind this click, {down, up}, or null when it has none (keyboard, script, a stale press) */
+  function pressOf(e){
+    if(!e||!PRESS.up||Math.abs((e.timeStamp||0)-PRESS.upT)>1000)return null;
+    return {down:PRESS.down,up:PRESS.up};
+  }
+  /* a click on the backdrop `ov` itself that may close its dialog: the press started and ended on the backdrop */
+  function isBackdropClick(e,ov){
+    if(!e||e.target!==ov)return false;
+    const p=pressOf(e); return !p||(p.down===ov&&p.up===ov);
+  }
+  /* close a dialog on a click on its backdrop, never on a drag that only ends there */
+  function onBackdrop(ov,fn){trackPress(ov.ownerDocument);ov.addEventListener('click',e=>{if(isBackdropClick(e,ov))fn(e);});}
+  /* a click outside every element of `roots` that may close a popover: its target is outside them and, for a pointer press, the press
+     started outside them too (a caller whose popover hosts the rename-in-place field passes that field's layer as a root) */
+  function isOutsideClick(e,roots){
+    const inAny=n=>!!n&&roots.some(r=>r&&typeof r.contains==='function'&&r.contains(n));
+    if(!e||inAny(e.target))return false;
+    const p=pressOf(e); return !p||!inAny(p.down);
+  }
+  if(typeof document!=='undefined')trackPress(document);
+  return {trackPress,pressOf,isBackdropClick,onBackdrop,isOutsideClick};
+})();
 (function(root,factory){
   factory.endAllBody=endAllBody;
+  Object.assign(factory,DURBAR_PRESS);
   if(typeof module==='object'&&module.exports) module.exports=factory;
   else root.DurbarDialog=factory;
 })(typeof self!=='undefined'?self:this, function create(doc){
@@ -62,7 +101,9 @@ function endAllBody(n,busyN){
         else if(!e.shiftKey&&i===it.length-1){e.preventDefault();focusIn(it[0]);}
       };
       /* focus must not leave the dialog (a stray focus() on the control behind it, a click on the backdrop) */
-      const onFocusIn=e=>{if(!d.contains(e.target)){const f=first();if(f)focusIn(f);}};
+      /* FR-237: back to the control that had the focus inside (the field keeps its text and selection), not to the first button */
+      let lastIn=null;
+      const onFocusIn=e=>{if(d.contains(e.target)){lastIn=e.target;return;}const f=lastIn&&d.contains(lastIn)?lastIn:first();if(f)focusIn(f);};
       buttons.forEach(b=>{const el=doc.createElement('button');el.type='button';el.className='btn'+(b.cls?' '+b.cls:'');el.textContent=b.label;if(b.value===null)el.dataset.cancel='1';el.onclick=()=>{
         if(el.disabled)return;
         if(b.value!==null&&input&&typeof input.check==='function'){
@@ -74,7 +115,7 @@ function endAllBody(n,busyN){
       /* spec 064 FR-002: the primary button stays disabled until the text and the number of picks it needs are there */
       if(need){const p=row.querySelector('.primary');const check2=()=>{if(!p)return;const okText=!need.text||String(textOf()||'').trim().length>0;const okPicks=!need.picks||(pickedOf()||[]).length>=need.picks;p.disabled=!(okText&&okPicks);if(need.label)p.textContent=need.label((pickedOf()||[]).length);};d.addEventListener('input',check2);d.addEventListener('change',check2);check2();}
       if(custom){row.parentNode.insertBefore(custom.node,row);const p=row.querySelector('.primary');custom.onChange=v=>{if(p)p.disabled=!v;};if(p)p.disabled=!custom.valid();}
-      d.addEventListener('click',e=>{if(e.target===d)done(null);});
+      DURBAR_PRESS.onBackdrop(d,()=>done(null)); /* FR-237: a drag from the field that ends on the backdrop keeps the dialog */
       doc.addEventListener('keydown',onKey,true);doc.addEventListener('focusin',onFocusIn,true);
       doc.body.appendChild(d);
       focusIn(input&&input.focus?d.querySelector('#mdIn'):first());

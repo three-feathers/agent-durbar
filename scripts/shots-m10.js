@@ -78,7 +78,7 @@ module.exports = async (ctx) => {
     assert.match(await text('h2'), /MCP extras · mcp-swiss/);
     assert.ok(await count('#srvList li.srv') === 2, 'two extras in mcp-swiss');
     assert.match(await text('#srvList'), /Extra, this folder only/);
-    assert.match(await text('#legList'), /old-fetch/, 'old app-level server offered');
+    assert.ok(await count('#legList') === 0 && !(await text('body')).includes('Old app-level'), 'spec 020 change 2026-11-02: no old app-level list');
     await shot('folder-extras', w, h);
     await click('li.srv[data-name="docs-search"] [data-act="toggle"]'); await textHas('#scrDlg', /Trust "docs-search" in mcp-swiss/);
     assert.match(await text('#scrDlg'), /Trust "docs-search" in mcp-swiss/);
