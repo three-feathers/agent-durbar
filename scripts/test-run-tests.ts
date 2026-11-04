@@ -2,11 +2,15 @@
 import * as assert from 'assert';
 import * as path from 'path';
 import { EventEmitter } from 'events';
+import * as fs from 'fs';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const rt = require(path.join(__dirname, '..', '..', 'scripts', 'run-tests.js')) as {
   parseArgs: (argv: string[], env: Record<string, string | undefined>) => { bail: boolean; ignoredBail: boolean; filters: string[] };
-  loadSuites: (pkg: unknown, filters: string[]) => { name: string; steps: string[][] }[];
+  readSuiteList: (text?: string) => string[];
+  unlistedSuites: (scripts: Record<string, string>, names?: string[], allow?: string[]) => string[];
+  NOT_SUITES: string[];
+  loadSuites: (pkg: unknown, filters: string[], names?: string[]) => { name: string; steps: string[][] }[];
   stopChild: (c: unknown, o: unknown) => void;
   runSuites: (o: Record<string, unknown>) => Promise<{ failed: string[]; bailed: string | null }>;
 };
@@ -67,11 +71,30 @@ process.on('exit', () => { if (!done) { console.error('test-run-tests: did not f
   }
   for (const ci of ['', '0', 'false']) assert.strictEqual(rt.parseArgs(['--bail'], { CI: ci }).bail, true, `CI=${ci} is not CI`);
   assert.deepStrictEqual(rt.parseArgs([], { CI: 'true' }), { bail: false, ignoredBail: false, filters: [] }, 'nothing asked, nothing ignored');
-  const pkg = { scripts: { 'test:serial': 'npm run test:a && npm run test:folders && npm run test:folderx', 'test:a': 'tsc -p tsconfig.scripts.json && node a.js && node a2.js', 'test:folders': 'node f.js', 'test:folderx': 'node x.js' } };
-  assert.deepStrictEqual(rt.loadSuites(pkg, []).map((s) => s.name), ['test:a', 'test:folders', 'test:folderx']);
-  assert.deepStrictEqual(rt.loadSuites(pkg, ['folder']).map((s) => s.name), ['test:folders', 'test:folderx'], 'the name filter still works');
-  assert.deepStrictEqual(rt.loadSuites(pkg, [])[0].steps, [['a.js'], ['a2.js']], 'a suite keeps its steps in order');
-  assert.throws(() => rt.loadSuites({ scripts: { 'test:serial': 'npm run test:z', 'test:z': 'echo hi' } }, []), /only "node <file>"/);
+  const pkg = { scripts: { 'test:a': 'tsc -p tsconfig.scripts.json && node a.js && node a2.js', 'test:folders': 'node f.js', 'test:folderx': 'node x.js' } };
+  const list = rt.readSuiteList('# a comment\ntest:a\n\n  test:folders  # trailing\r\ntest:folderx\n');
+  assert.deepStrictEqual(list, ['test:a', 'test:folders', 'test:folderx'], 'the list: one name per line, comments and blanks ignored');
+  assert.throws(() => rt.readSuiteList('test:a\ntest:a\n'), /twice/, 'a name listed twice is an error');
+  assert.deepStrictEqual(rt.loadSuites(pkg, [], list).map((s) => s.name), ['test:a', 'test:folders', 'test:folderx']);
+  assert.deepStrictEqual(rt.loadSuites(pkg, ['folder'], list).map((s) => s.name), ['test:folders', 'test:folderx'], 'the name filter still works');
+  assert.deepStrictEqual(rt.loadSuites(pkg, [], list)[0].steps, [['a.js'], ['a2.js']], 'a suite keeps its steps in order');
+  assert.throws(() => rt.loadSuites({ scripts: { 'test:z': 'echo hi' } }, [], ['test:z']), /only "node <file>"/);
+  assert.throws(() => rt.loadSuites({ scripts: {} }, [], ['test:nope']), /not a script/);
+  {
+    // the real list: every name is a script, nothing twice, and every `test:*` script is listed or is one of the few chains
+    const real = require(path.join(__dirname, '..', '..', 'package.json')) as { scripts: Record<string, string> };
+    const names = rt.readSuiteList();
+    assert.strictEqual(new Set(names).size, names.length);
+    for (const n of names) assert.ok(real.scripts[n], `${n} is a script`);
+    assert.ok(names.includes('test:checknames') && names.length > 100, 'the real list is read');
+    // every test:* script is listed or is an allowed chain: a forgotten suite would never run
+    assert.deepStrictEqual(rt.unlistedSuites(real.scripts), [], 'a test:* script is in neither scripts/test-suites.txt nor NOT_SUITES');
+    for (const n of rt.NOT_SUITES) assert.ok(real.scripts[n] && !names.includes(n), `${n} is a real script and not in the list`);
+    // mutant: a test script that is not in the list is found; a listed one and an allowed chain are not
+    assert.deepStrictEqual(rt.unlistedSuites({ ...real.scripts, 'test:forgotten': 'node x.js' }), ['test:forgotten'], 'red: a test not in the list');
+    assert.deepStrictEqual(rt.unlistedSuites({ 'test:a': 'x', 'test:chain': 'x', build: 'x' }, ['test:a'], ['test:chain']), [], 'listed, allowed and non-test scripts pass');
+    assert.strictEqual(real.scripts['test:serial'], 'node scripts/run-tests.js --serial');
+  }
 
   // default: everything runs even after a failure
   {
@@ -148,6 +171,27 @@ process.on('exit', () => { if (!done) { console.error('test-run-tests: did not f
   // stopChild alone: no pid, nothing happens; an already gone group is not an error
   rt.stopChild(null, {});
   rt.stopChild({ pid: 5 }, { platform: 'linux', kill: () => { throw new Error('ESRCH'); } });
+  // spec 012 FR-166 (#1093): each suite runs with its own empty TMPDIR; a `durbar-*` entry left in it fails the suite, which is named; the folder is removed
+  {
+    const h = harness({ 'leaky.js': 0, 'clean.js': 0 });
+    const dirs: Record<string, string> = {};
+    const spawnFn = (cmd: string, args: string[], opts: { env: Record<string, string>; detached?: boolean; shell?: unknown }) => {
+      const name = path.basename(args[0]);
+      assert.ok(opts.env.TMPDIR && opts.env.TEMP === opts.env.TMPDIR && opts.env.TMP === opts.env.TMPDIR, 'TMPDIR, TEMP and TMP point at the suite folder');
+      assert.deepStrictEqual(fs.readdirSync(opts.env.TMPDIR), [], 'the folder starts empty');
+      dirs[name] = opts.env.TMPDIR;
+      if (name === 'leaky.js') {
+        fs.mkdirSync(path.join(opts.env.TMPDIR, 'durbar-leak-AbC123'));
+        fs.mkdirSync(path.join(opts.env.TMPDIR, 'other-thing')); // not ours to judge: only durbar-* counts
+      }
+      return h.spawnFn(cmd, args, opts);
+    };
+    const r = await run(h, [suite('leaky'), suite('clean')], { jobs: 2, bail: false, spawnFn });
+    assert.deepStrictEqual(r.failed, ['leaky'], 'only the suite that left a durbar-* folder fails');
+    assert.ok(/leaky left 1 durbar-\* temp entry behind \(durbar-leak-AbC123\)/.test(r.out), r.out);
+    assert.notStrictEqual(dirs['leaky.js'], dirs['clean.js'], 'each suite has its own folder');
+    for (const d of Object.values(dirs)) assert.ok(!fs.existsSync(d), 'the suite folder is removed');
+  }
   done = true;
   console.log('run-tests --bail: ok');
 })().catch((e) => { console.error(e); process.exit(1); });

@@ -9,9 +9,10 @@ import { applyFolderImport, previewFolderImport, readVSCodeFile } from '../src/m
 import { McpStore } from '../src/main/mcpstore';
 import { CLI_FILE_LABEL, cliServers, copilotDir, readCandidates } from '../src/main/mcpfiles';
 import type { SecretCodec } from '../src/main/mcpstore';
+import { tmpDir } from './test-tmp';
 
 const fx = (n: string): string => fs.readFileSync(path.join(__dirname, '..', '..', 'scripts', 'fixtures', 'mcp', n), 'utf8');
-const tmp = (): string => path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-mcp-')), 'durbar-mcp.json');
+const tmp = (): string => path.join(tmpDir('durbar-mcp-'), 'durbar-mcp.json');
 const K1 = '/work/folder-a';
 const K2 = '/work/folder-b';
 const SECRET = 'sk-test-DUMMY-secret-value';
@@ -163,7 +164,7 @@ const codec = (available = true): SecretCodec => ({
 
 // 6. The Copilot CLI list: read live from ~/.copilot/mcp-config.json, no setup, read-only (spec 020 FR-009)
 {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-copilot-'));
+  const dir = tmpDir('durbar-copilot-');
   let r = cliServers(dir, new Set());
   assert.deepStrictEqual(r.servers.map((a) => a.name), ['github-mcp-server'], 'built-in server is listed even without a config file');
   assert.deepStrictEqual(r.file, { label: CLI_FILE_LABEL, found: false, error: undefined, skipped: 0 });
@@ -239,46 +240,105 @@ const codec = (available = true): SecretCodec => ({
   assert.strictEqual(JSON.parse(fs.readFileSync(f, 'utf8')).version, 3, "v3: one vault for all secret values (FR-023)");
 }
 
-// 8. Migration of the milestone-8 global list: kept as legacy, never applied, movable into a folder (FR-015)
+// 8. Spec 020 change 2026-11-02: the old app-level lists (milestone 8 `servers`, version 2 `legacy`) are gone. A file that still has them is
+// ignored (never parsed, decrypted, shown, applied or deleted); today's store keeps loading, decrypting and saving.
 {
   const f = tmp();
-  const v1 = { version: 1, servers: [
-    { name: 'old-one', transport: 'stdio', enabled: true, command: 'node', args: ['old.js'], trust: 'x', env: [{ key: 'K', enc: 'ENC1:' + Buffer.from(SECRET.split('').reverse().join('')).toString('base64') }], headers: [] },
-    { name: 'old-two', transport: 'http', enabled: true, url: 'https://example.test/mcp', env: [], headers: [] },
-    { name: 'bad name', transport: 'stdio', command: 'x' },
-  ], disabledAmbient: ['github-mcp-server'] };
-  fs.writeFileSync(f, JSON.stringify(v1));
-  const s = new McpStore(f, codec());
-  s.load();
-  assert.deepStrictEqual(s.legacyList().map((x) => x.name), ['old-one', 'old-two'], 'valid old servers are kept, invalid dropped');
-  assert.ok(s.legacyList().every((x) => !x.enabled), 'legacy servers are shown off');
-  assert.deepStrictEqual(s.forSession(K1).mcpServers, {}, 'legacy servers are not passed to any session');
-  assert.deepStrictEqual(s.forSession(K2).mcpServers, {});
-  assert.deepStrictEqual(s.ambientDisabled(), ['github-mcp-server'], 'the global CLI-list switches survive');
-  assert.ok(!JSON.stringify(s.legacyList()).includes(SECRET));
-  // moving puts it into the folder, off and untrusted, secrets kept
-  assert.strictEqual(s.moveLegacy('old-one', K1, ['playwright']).ok, true);
-  assert.deepStrictEqual(s.legacyList().map((x) => x.name), ['old-two']);
-  const moved = s.list(K1)[0];
-  assert.ok(moved.name === 'old-one' && !moved.enabled && !moved.trusted);
-  assert.deepStrictEqual(moved.env, [{ key: 'K', set: true }]);
-  assert.deepStrictEqual(s.forSession(K1).mcpServers, {}, 'moved servers must be trusted again');
-  s.setEnabled(K1, 'old-one', true, true);
-  assert.strictEqual(s.forSession(K1).mcpServers['old-one'].env?.K, SECRET);
-  assert.deepStrictEqual(s.forSession(K2).mcpServers, {}, 'and they belong to that folder only');
-  // clash with a CLI name, unknown names, remove
-  assert.strictEqual(s.moveLegacy('old-two', K1, ['OLD-TWO']).ok, false);
-  assert.strictEqual(s.moveLegacy('nope', K1).ok, false);
-  assert.strictEqual(s.moveLegacy('old-two', '').ok, false);
-  assert.ok(s.removeLegacy('old-two'));
-  assert.strictEqual(s.removeLegacy('old-two'), false);
-  // saved as version 2 and reloaded
-  const s2 = new McpStore(f, codec());
-  s2.load();
-  assert.deepStrictEqual(s2.legacyList(), []);
-  assert.deepStrictEqual(s2.list(K1).map((x) => x.name), ['old-one']);
+  const OLD = 'old-secret-DUMMY-value';
+  const oldEnc = codec().encrypt(OLD);
+  const servers = [{ name: 'old-one', transport: 'stdio', enabled: true, command: 'node', args: ['old.js'], trust: 'x', env: [{ key: 'K', enc: oldEnc }], headers: [] }];
+  const legacy = [{ name: 'old-two', transport: 'http', enabled: true, url: 'https://example.test/mcp', env: [], headers: [{ key: 'H', ref: 'gone' }] }];
+  const vault = codec().encrypt(JSON.stringify({ r1: SECRET }));
+  const trust = trustHash({ transport: 'stdio', command: 'node', args: ['n.js'] });
+  fs.writeFileSync(f, JSON.stringify({ version: 3, servers, legacy, disabledAmbient: ['github-mcp-server'], vault,
+    folders: { [K1]: [{ name: 'now', transport: 'stdio', command: 'node', args: ['n.js'], enabled: true, trust, env: [{ key: 'T', ref: 'r1' }], headers: [] }] } }));
+  const decrypted: string[] = [];
+  const spy: SecretCodec = { ...codec(), decrypt: (b) => (decrypted.push(b), codec().decrypt(b)) };
+  const logged: string[] = [];
+  const saved = { log: console.log, warn: console.warn, error: console.error };
+  console.log = console.warn = console.error = (...a: unknown[]): void => void logged.push(a.join(' '));
+  try {
+    const s = new McpStore(f, spy);
+    s.load();
+    // nothing of the old lists is offered, listed or applied
+    for (const m of ['legacyList', 'moveLegacy', 'removeLegacy']) assert.strictEqual((s as unknown as Record<string, unknown>)[m], undefined, `${m} is gone`);
+    assert.deepStrictEqual(s.list(K1).map((x) => x.name), ['now'], 'only today\'s folder servers are listed');
+    assert.deepStrictEqual(s.list(K2), []);
+    assert.deepStrictEqual(s.extraNames(), ['now']);
+    assert.ok(!JSON.stringify([s.list(K1), s.extraNames(), s.knownSecretValues(K1)]).match(/old-one|old-two/), 'old names appear nowhere');
+    assert.deepStrictEqual(s.ambientDisabled(), ['github-mcp-server'], 'the CLI-list switches still load');
+    assert.strictEqual(decrypted.length, 0, 'load decrypts nothing');
+    // today's store decrypts its vault and starts a session; the old blob is never decrypted, the old servers never passed
+    const sess = s.forSession(K1);
+    assert.deepStrictEqual(Object.keys(sess.mcpServers), ['now']);
+    assert.strictEqual(sess.mcpServers.now.env?.T, SECRET, 'today\'s vault still decrypts');
+    assert.deepStrictEqual(decrypted, [vault], 'only the vault was decrypted, never an old blob');
+    assert.deepStrictEqual(s.forSession(K2).mcpServers, {});
+    // today's store saves (new secret, toggle, remove): a new vault, no plaintext, old lists carried through untouched
+    assert.ok(s.upsert(K2, { name: 'fresh', transport: 'stdio', command: 'node', args: ['f.js'], env: [{ key: 'N', value: SECRET + '-2' }] }).ok);
+    assert.ok(s.setEnabled(K1, 'now', false).ok);
+    const raw = fs.readFileSync(f, 'utf8');
+    for (const plain of [SECRET, SECRET + '-2', OLD]) assert.ok(!raw.includes(plain), 'no plaintext secret on disk');
+    const disk = JSON.parse(raw);
+    assert.deepStrictEqual(disk.servers, servers, 'the old `servers` list stays on disk as it was');
+    assert.deepStrictEqual(disk.legacy, legacy, 'the old `legacy` list stays on disk as it was');
+    assert.ok(disk.version === 3 && disk.vault && disk.vault !== vault, 'a new vault was written');
+    const s2 = new McpStore(f, spy);
+    s2.load();
+    assert.ok(s2.setEnabled(K1, 'now', true, true).ok);
+    assert.strictEqual(s2.forSession(K1).mcpServers.now.env?.T, SECRET);
+    assert.strictEqual(s2.forSession(K2).mcpServers.fresh, undefined, 'untrusted fresh stays off');
+    assert.ok(s2.setEnabled(K2, 'fresh', true, true).ok);
+    assert.strictEqual(s2.forSession(K2).mcpServers.fresh.env?.N, SECRET + '-2', 'a value saved after the old file was read round-trips');
+    assert.ok(!decrypted.includes(oldEnc), 'the old per-value blob was never decrypted');
+    assert.ok(!logged.join('\n').match(/old-one|old-two|old-secret|ENC1:/), 'nothing from the old lists is logged');
+    assert.ok(!fs.readFileSync(f, 'utf8').includes(OLD));
+    // an old-only file (no folders): empty, nothing decrypted, nothing applied, still writable
+    const g = tmp();
+    fs.writeFileSync(g, JSON.stringify({ version: 1, servers }));
+    decrypted.length = 0;
+    const h = new McpStore(g, spy);
+    h.load();
+    assert.deepStrictEqual(h.extraNames(), []);
+    assert.deepStrictEqual(h.forSession(K1).mcpServers, {});
+    assert.strictEqual(h.noPrompt(), true, 'an old list never makes a Keychain prompt wait');
+    h.setAmbientDisabled('x', true);
+    assert.strictEqual(decrypted.length, 0);
+    assert.deepStrictEqual(JSON.parse(fs.readFileSync(g, 'utf8')).servers, servers, 'still on disk after a write');
+    // old servers' vault values: the vault is rebuilt from today's servers only, so they go at the next secret change; the old list keeps a dangling ref
+    {
+      const m = tmp();
+      const OLDV = 'old-vault-DUMMY-value';
+      const oldList = [{ name: 'old-three', transport: 'stdio', command: 'node', env: [{ key: 'Q', ref: 'oldref' }], headers: [] }];
+      const v0 = codec().encrypt(JSON.stringify({ r1: SECRET, oldref: OLDV }));
+      fs.writeFileSync(m, JSON.stringify({ version: 3, legacy: oldList, vault: v0,
+        folders: { [K1]: [{ name: 'now', transport: 'stdio', command: 'node', args: ['n.js'], enabled: true, trust, env: [{ key: 'T', ref: 'r1' }], headers: [] }] } }));
+      const u = new McpStore(m, codec());
+      u.load();
+      assert.ok(u.upsert(K2, { name: 'more', transport: 'stdio', command: 'node', env: [{ key: 'M', value: 'm-DUMMY-value' }] }).ok);
+      const after = JSON.parse(fs.readFileSync(m, 'utf8'));
+      assert.deepStrictEqual(after.legacy, oldList, 'the old list stays as inert JSON, dangling ref and all');
+      const inVault = JSON.parse(codec().decrypt(after.vault)) as Record<string, string>;
+      assert.strictEqual(inVault.oldref, undefined, 'the old server\'s vault value is gone after a secret change');
+      assert.ok(!Object.values(inVault).includes(OLDV));
+      assert.ok(!fs.readFileSync(m, 'utf8').includes(OLDV));
+      const w = new McpStore(m, codec());
+      w.load();
+      assert.strictEqual(w.forSession(K1).mcpServers.now.env?.T, SECRET, 'today\'s secrets survive');
+      assert.ok(w.upsert(K2, { name: 'again', transport: 'stdio', command: 'node' }).ok, 'a dangling ref errors nothing');
+      assert.deepStrictEqual(JSON.parse(fs.readFileSync(m, 'utf8')).legacy, oldList);
+    }
+    // a hostile old list (huge, wrong types, prototype keys) changes nothing
+    const k = tmp();
+    fs.writeFileSync(k, JSON.stringify({ version: 2, servers: 'x', legacy: [{ __proto__: { polluted: 1 }, name: ['a'] }, null, 5], folders: {} }));
+    const t = new McpStore(k, spy);
+    t.load();
+    assert.deepStrictEqual(t.extraNames(), []);
+    assert.strictEqual(({} as Record<string, unknown>).polluted, undefined);
+  } finally {
+    Object.assign(console, saved);
+  }
 }
-
 
 // 9. Per-folder import from VS Code's .vscode/mcp.json (spec 020 FR-020..FR-031, issue #7)
 {
@@ -339,13 +399,13 @@ const codec = (available = true): SecretCodec => ({
   assert.strictEqual(candidateInput(by.docs).env?.length, 0);
 
   // 9b. Preview (main): masked, no values, digest; files on disk; read-only
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-vsimp-'));
+  const root = tmpDir('durbar-vsimp-');
   const projA = path.join(root, 'proj-a');
   fs.mkdirSync(path.join(projA, '.vscode'), { recursive: true });
   const fileA = path.join(projA, '.vscode', 'mcp.json');
   fs.writeFileSync(fileA, fx('vscode-mcp.jsonc'));
   const beforeA = fs.readFileSync(fileA, 'utf8');
-  const cliDir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-copilot-'));
+  const cliDir = tmpDir('durbar-copilot-');
   fs.writeFileSync(path.join(cliDir, 'mcp-config.json'), fx('copilot-mcp-config.json'));
   const cliBefore = fs.readFileSync(path.join(cliDir, 'mcp-config.json'), 'utf8');
   const cliNamesNow = cliServers(cliDir, new Set()).servers.map((x) => x.name);
@@ -491,7 +551,7 @@ const codec = (available = true): SecretCodec => ({
   const again = new McpStore(f, codec());
   again.load();
   assert.deepStrictEqual(again.extraNames(), s.extraNames(), 'same names after load()');
-  // legacy servers are not listed; a hand-edited prototype key or bad name is dropped
+  // old app-level lists are not listed; a hand-edited prototype key or bad name is dropped
   const g = tmp();
   const doc = {
     version: 2,
@@ -506,7 +566,7 @@ const codec = (available = true): SecretCodec => ({
   fs.writeFileSync(g, JSON.stringify(doc));
   const h = new McpStore(g, codec());
   h.load();
-  assert.deepStrictEqual(h.extraNames(), ['good'], 'legacy, __proto__, bad and too long names are not listed');
+  assert.deepStrictEqual(h.extraNames(), ['good'], 'old-list, __proto__, bad and too long names are not listed');
   assert.strictEqual(({} as Record<string, unknown>).good, undefined, 'no pollution');
   // a broken file gives an empty list
   const b = tmp();
@@ -560,7 +620,7 @@ const codec = (available = true): SecretCodec => ({
   assert.strictEqual(c.decrypt, 0, 'load decrypts nothing');
   assert.ok(s.list(K1).every((v) => v.env.every((e) => e.set) && !v.needsSecrets), 'stored values show as set without decrypting');
   assert.ok(s.list(K2).every((v) => !v.needsSecrets));
-  void s.secretsPersist, s.extraNames(), s.legacyList();
+  void s.secretsPersist, s.extraNames();
   assert.strictEqual(c.decrypt, 0, 'views, names and the Settings flag decrypt nothing');
   assert.ok(c.available <= 1, 'the store asks the codec at most once whether it can store secrets');
   // a session in folder B (all off) or with every server switched off for the agent: nothing to start, no decrypt
@@ -643,5 +703,139 @@ const codec = (available = true): SecretCodec => ({
   assert.ok(r.setEnabled(K1, 'b', true, true).ok);
   assert.deepStrictEqual(r.forSession(K1).mcpServers.b.env, { Z: 'vc' }, 'the off server\'s value was migrated too');
   assert.strictEqual(dec, 1, 'after the migration a session decrypts once');
+}
+
+// Spec 019 change 2026-10-31: an unreadable store is moved aside before the first write, its bytes intact, the vault never unlocked.
+{
+  const fsMut = require('fs') as { renameSync: typeof fs.renameSync }; // the module object the store's `fs` reads through
+  const asides = (f: string): string[] => fs.readdirSync(path.dirname(f)).filter((n) => n.startsWith(`${path.basename(f)}.unreadable-`)).map((n) => path.join(path.dirname(f), n));
+  const good = { version: 3, folders: { [K1]: [{ name: 'kept', transport: 'stdio', command: 'node', args: ['k.js'], enabled: false, env: [{ key: 'K', ref: 'r1' }] }] }, legacy: [], disabledAmbient: [], vault: 'ENC1:the-only-copy' };
+  const whole = JSON.stringify(good);
+  const truncated = whole.slice(0, Math.floor(whole.length / 2));
+  const oversize = whole + ' '.repeat(2 * 1024 * 1024);
+  const counting = (): { c: SecretCodec; dec: () => number } => {
+    let n = 0;
+    const base = codec();
+    return { c: { ...base, decrypt: (b) => (n++, base.decrypt(b)) }, dec: () => n };
+  };
+  const NEW = { name: 'fresh', transport: 'stdio', command: 'node', args: ['f.js'] };
+  const actions: [string, (s: McpStore) => unknown][] = [
+    ['add a server', (s) => assert.ok(s.upsert(K1, { ...NEW, env: [{ key: 'E', value: SECRET }] }).ok)],
+    ['switch a list server off', (s) => s.setAmbientDisabled('a', true)],
+    ['turn a tool off', (s) => assert.ok(s.setToolsOff(K1, 'a', ['t1']).ok)],
+  ];
+  const warned: string[] = [];
+  const warn = console.warn;
+  console.warn = (...a: unknown[]): void => void warned.push(a.join(' '));
+  for (const [label, bytes] of [['truncated', truncated], ['oversize', oversize], ['JSON null', 'null'], ['JSON array', '[1]'], ['JSON number', '5']] as const) {
+    for (const [what, act] of actions) {
+      const f = tmp();
+      fs.writeFileSync(f, bytes, { mode: 0o644 });
+      const { c, dec } = counting();
+      const s = new McpStore(f, c);
+      s.load();
+      assert.deepStrictEqual(s.list(K1), [], `${label}: loads as empty`);
+      assert.strictEqual(fs.readFileSync(f, 'utf8'), bytes, `${label}: loading alone changes nothing`);
+      assert.deepStrictEqual(asides(f), [], `${label}: loading alone moves nothing`);
+      act(s);
+      s.setAmbientDisabled('second', true);
+      const moved = asides(f);
+      assert.strictEqual(moved.length, 1, `${label}, ${what}: moved aside once`);
+      assert.strictEqual(fs.readFileSync(moved[0], 'utf8'), bytes, `${label}, ${what}: the original bytes survive`);
+      if (process.platform !== 'win32') assert.strictEqual(fs.statSync(moved[0]).mode & 0o777, 0o600, `${label}: the moved file is private`);
+      assert.strictEqual(dec(), 0, `${label}, ${what}: the vault is not unlocked`);
+      assert.ok(!fs.readFileSync(f, 'utf8').includes('the-only-copy'), `${label}: the new file is a clean store`);
+      const again = new McpStore(f, codec());
+      again.load();
+      if (what === 'add a server') assert.deepStrictEqual(again.list(K1).map((v) => v.name), ['fresh'], `${label}: the action is what is saved`);
+      if (what === 'switch a list server off') assert.deepStrictEqual(again.ambientDisabled(), ['a', 'second']);
+      if (what === 'turn a tool off') assert.deepStrictEqual(again.toolsOffFor(K1), { a: ['t1'] });
+      again.setAmbientDisabled('later', true);
+      assert.strictEqual(asides(f).length, 1, `${label}: a readable file is not moved again`);
+    }
+  }
+  assert.ok(warned.length && warned.every((l) => !l.includes('the-only-copy') && !l.includes('kept') && !l.includes(os.tmpdir())), 'the log names the file only, no contents and no folder');
+  // Two moves in the same instant never overwrite one another.
+  {
+    const f = tmp();
+    const iso = Date.prototype.toISOString;
+    Date.prototype.toISOString = function (): string { return '2026-10-31T00:00:00.000Z'; };
+    try {
+      for (const b of ['{first', '{second', '{third']) {
+        fs.writeFileSync(f, b);
+        const s = new McpStore(f);
+        s.load();
+        s.setAmbientDisabled('a', true);
+      }
+    } finally {
+      Date.prototype.toISOString = iso;
+    }
+    assert.deepStrictEqual(asides(f).map((m) => fs.readFileSync(m, 'utf8')).sort(), ['{first', '{second', '{third']);
+    assert.ok(asides(f).every((m) => !path.basename(m).includes(':')), 'no ":" in a file name (Windows)');
+  }
+  // It cannot be moved (a Windows lock): the action fails, the file stays as it was, and a later action tries again.
+  {
+    const f = tmp();
+    fs.writeFileSync(f, truncated);
+    const s = new McpStore(f, codec());
+    s.load();
+    const real = fsMut.renameSync;
+    fsMut.renameSync = ((a: fs.PathLike, b: fs.PathLike) => {
+      if (a === f) throw Object.assign(new Error('locked'), { code: 'EBUSY' });
+      return real(a, b);
+    }) as typeof fs.renameSync;
+    try {
+      assert.throws(() => s.upsert(K1, NEW), /locked/, 'the save is refused, the IPC handler says so');
+    } finally {
+      fsMut.renameSync = real;
+    }
+    assert.strictEqual(fs.readFileSync(f, 'utf8'), truncated, 'a refused save leaves the file as it was');
+    assert.deepStrictEqual(asides(f), []);
+    s.setAmbientDisabled('a', true);
+    assert.strictEqual(fs.readFileSync(asides(f)[0], 'utf8'), truncated, 'the next action moves it');
+    assert.deepStrictEqual(JSON.parse(fs.readFileSync(f, 'utf8')).folders[K1][0].name, 'fresh', 'and keeps the refused action');
+  }
+  // A read error that is not "missing" (here a folder in its place) is unreadable too, and nothing inside it is lost.
+  {
+    const f = tmp();
+    fs.mkdirSync(f);
+    fs.writeFileSync(path.join(f, 'inside'), 'x');
+    const s = new McpStore(f);
+    s.load();
+    s.setAmbientDisabled('a', true);
+    assert.strictEqual(fs.readFileSync(path.join(asides(f)[0], 'inside'), 'utf8'), 'x');
+    assert.ok(fs.statSync(f).isFile());
+  }
+  // The file vanished between the load and the action: the action goes on.
+  {
+    const f = tmp();
+    fs.writeFileSync(f, truncated);
+    const s = new McpStore(f);
+    s.load();
+    fs.unlinkSync(f);
+    s.setAmbientDisabled('a', true);
+    s.setAmbientDisabled('b', true);
+    assert.deepStrictEqual(asides(f), [], 'the file it just wrote is not moved');
+    assert.deepStrictEqual(JSON.parse(fs.readFileSync(f, 'utf8')).disabledAmbient, ['a', 'b']);
+  }
+  // A missing file and a good file stay normal: nothing moved, nothing lost.
+  {
+    const f = tmp();
+    const s = new McpStore(f, codec());
+    s.load();
+    s.setAmbientDisabled('a', true);
+    assert.deepStrictEqual(asides(f), [], 'a missing file is normal');
+    const g = tmp();
+    fs.writeFileSync(g, whole);
+    const { c, dec } = counting();
+    const r = new McpStore(g, c);
+    r.load();
+    r.setAmbientDisabled('a', true);
+    assert.deepStrictEqual(asides(g), [], 'a good file is not moved');
+    assert.strictEqual(JSON.parse(fs.readFileSync(g, 'utf8')).vault, good.vault, 'and keeps its vault');
+    assert.strictEqual(r.list(K1)[0].name, 'kept');
+    assert.strictEqual(dec(), 0);
+  }
+  console.warn = warn;
 }
 console.log('mcp tests passed');

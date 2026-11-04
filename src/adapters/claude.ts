@@ -29,13 +29,15 @@ import { ClaudeMapper, claudeMcpServers, withSkipped } from './claudeMap';
 import type { ClaudeMessage } from './claudeMap';
 import { claudeOptionsFor, parseMcpTool, preToolUseDecision, toolKind } from './claudeModes';
 import { createCliTransport } from './claudeTransport';
+import type { SpawnFn } from './claudeTransport';
 import type { ClaudeTransport, ControlAnswer, IncomingControl, TransportHandlers, UserContent } from './claudeTransport';
 import type { AdapterCapabilities, AdapterDescriptor, PermissionMode } from './capabilities';
 import type { EventBody } from './map';
 import { PermissionBroker, claudeServerPart, mcpToolBlockList, startModeOf } from './permissions';
 import type { BrokerEvent, PermissionLike } from './permissions';
 import type { AgentAdapter, AgentEvent, AgentMessage, LimitAction, McpServerSpec, McpSignInResult, PlanAnswer, SignInCheck, StartOptions, Unsubscribe, WriteGuard } from './types';
-import type { McpToolInfo } from './types';
+import type { McpContextReport, McpToolInfo } from './types';
+import { claudeMcpContext, MCP_CONTEXT_TIMEOUT_MS } from './mcpcontext';
 import { normMcpTools } from './mcptools';
 import { PLAN_REJECTED, cleanPlanText, reviseText } from './plan';
 import { claudeAccount } from './accounts';
@@ -89,11 +91,13 @@ export const CLAUDE_CAPABILITIES: AdapterCapabilities = Object.freeze({
   mcpToggleApplies: 'live', // FR-133 (a server that was off at launch: next message)
   mcpToolFilter: true, // spec 069 FR-062: --disallowedTools mcp__<server>__<tool> (read: CLI docs; not run on a real account)
   mcpTools: true, // spec 069 FR-031: the tools of a server in the mcp_status reply (read: docs McpServerStatus.tools; not run on a real account)
+  mcpContext: 'reported', // spec 100 FR-001: control request get_context_usage, detail summary (real: Claude Code 2.1.316, T031 2026-11-02: tool `isLoaded` is no guide, the category decides; not seen: a mixed loaded and deferred list, Windows, macOS)
   mcpRestart: true, // spec 058 FR-012: control request mcp_reconnect (read: CLI 2.1.304 strings; not checked on a real account)
   mcpSignIn: true, // spec 058 FR-175: control request mcp_authenticate (undocumented; read: CLI 2.1.304 program only; not checked on a real account, T106)
   mcpSignInSteps: "If Sign in is not available, run `claude mcp login {name}` in a terminal and finish in your browser. This works only for a server in Claude Code's own settings. Then press Restart on this row.", // FR-181 (Q21 A)
   mcpSignInNote: 'Not checked on a real account yet.', // FR-180 until T106
   mcpSignInRestart: true, // FR-176/FR-181: Restart (mcp_reconnect) picks up a sign-in finished outside Durbar
+  mcpSignInReconnect: true, // spec 058 FR-207: the automatic reconnect is the same mcp_reconnect + mcp_status (real: T177, CLI 2.1.317, refreshes after expiry)
   handoff: true, // spec 030 FR-034: a forked one-shot, the session is not changed
   oneShot: true, // spec 040 FR-015: no tools, no MCP, no settings, not saved
   renameSession: 'next-turn', // spec 059 FR-007: `--name` on the session's next CLI start (real: Vikram's agent, 2026-10-20, CLI 2.1.304)
@@ -107,12 +111,14 @@ export const CLAUDE_CAPABILITIES: AdapterCapabilities = Object.freeze({
 export const CLAUDE_SDK_CAPABILITIES: AdapterCapabilities = Object.freeze((() => {
   // the SDK transport sends only a few control requests (claudeSdk.ts): no rename, no mcp_reconnect, no mcp_authenticate (spec 058
   // FR-175); the terminal steps and the note stay (FR-180: the steps show without the in-app call)
-  const { renameSession: _r, mcpRestart: _m, mcpTools: _t, mcpSignIn: _s, mcpSignInRestart: _sr, ...rest } = CLAUDE_CAPABILITIES as AdapterCapabilities & { renameSession?: unknown; mcpRestart?: unknown; mcpTools?: unknown; mcpSignIn?: unknown; mcpSignInRestart?: unknown };
+  const { renameSession: _r, mcpRestart: _m, mcpTools: _t, mcpContext: _c, mcpSignIn: _s, mcpSignInRestart: _sr, mcpSignInReconnect: _sa, ...rest } = CLAUDE_CAPABILITIES as AdapterCapabilities & { renameSession?: unknown; mcpRestart?: unknown; mcpTools?: unknown; mcpContext?: unknown; mcpSignIn?: unknown; mcpSignInRestart?: unknown; mcpSignInReconnect?: unknown };
+  void _c;
   void _r;
   void _m;
   void _t;
   void _s;
   void _sr;
+  void _sa;
   return rest;
 })()) as AdapterCapabilities;
 /** Spec 058 FR-175: how long Durbar waits for the CLI's answer to `mcp_authenticate` (discovery and registration run first). */
@@ -439,12 +445,15 @@ export const CLAUDE_ENTRYPOINT = 'agent-durbar';
 export function privateMcpConfig(json: string, tmpRoot: string = os.tmpdir()): { file: string; cleanup: () => void } {
   const dir = fs.mkdtempSync(path.join(tmpRoot, 'durbar-mcp-'));
   const cleanup = (): void => {
+    liveMcpDirs.delete(dir);
     try {
       fs.rmSync(dir, { recursive: true, force: true });
     } catch {
       /* the OS cleans its temp folder */
     }
   };
+  liveMcpDirs.add(dir);
+  hookExitSweep();
   try {
     if (process.platform !== 'win32') fs.chmodSync(dir, 0o700);
     const file = path.join(dir, 'mcp-config.json');
@@ -456,6 +465,36 @@ export function privateMcpConfig(json: string, tmpRoot: string = os.tmpdir()): {
   }
 }
 
+/**
+ * Spec 012 FR-165 (#1093): the folders `privateMcpConfig` made and has not yet cleaned. The CLI's `exit` handler cleans its own; when the app
+ * ends while a CLI still runs (no `exit` ever comes), this set is swept on the process's `exit` event, so `mcp-config.json` (env and header
+ * values) never outlives the app. Not covered: a SIGKILL or a crash of the app itself, which no handler sees, and, in Electron's main
+ * process, `app.exit()` and `process.exit()`, which do not emit Node's `exit` event (probed 2026-11-04; main also sweeps in `will-quit`, so
+ * `app.quit()` is covered twice, and the product calls `app.exit` only in the driver path after `disposeAll`).
+ */
+const liveMcpDirs = new Set<string>();
+let exitSweepHooked = false;
+function hookExitSweep(): void {
+  if (exitSweepHooked) return;
+  exitSweepHooked = true;
+  process.on('exit', sweepMcpConfigs);
+}
+/** Removes every private MCP config folder still live; called on process exit (and by the tests). */
+export function sweepMcpConfigs(): void {
+  for (const dir of [...liveMcpDirs]) {
+    liveMcpDirs.delete(dir);
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+    } catch {
+      /* the OS cleans its temp folder */
+    }
+  }
+}
+/** How many private MCP config folders are live (tests). */
+export function liveMcpConfigCount(): number {
+  return liveMcpDirs.size;
+}
+
 /** The CLI argv for a launch, with the MCP JSON moved to a private file (`privateMcpConfig`). */
 export function cliLaunchArgs(launch: ClaudeLaunch, tmpRoot?: string): { args: string[]; cleanup: () => void } {
   if (!launch.mcpConfig) return { args: claudeArgs(launch), cleanup: () => undefined };
@@ -463,29 +502,37 @@ export function cliLaunchArgs(launch: ClaudeLaunch, tmpRoot?: string): { args: s
   return { args: claudeArgs({ ...launch, mcpConfig: p.file }), cleanup: p.cleanup };
 }
 
-export const cliTransportFactory: TransportFactory = (o) => {
-  const { args, cleanup } = cliLaunchArgs(o.launch);
-  try {
-    return createCliTransport({
-      file: o.file,
-      args,
-      cwd: o.cwd,
-      env: o.env,
-      handlers: {
-        ...o.handlers,
-        exit: (info) => {
-          cleanup();
-          o.handlers.exit(info);
+/** The CLI transport factory; `spawn` and `tmpRoot` are for the tests (a fake child, a counted temp folder). */
+export function makeCliTransportFactory(opts: { spawn?: SpawnFn; tmpRoot?: string } = {}): TransportFactory {
+  return (o) => {
+    const { args, cleanup } = cliLaunchArgs(o.launch, opts.tmpRoot);
+    try {
+      return createCliTransport({
+        file: o.file,
+        args,
+        cwd: o.cwd,
+        env: o.env,
+        spawn: opts.spawn,
+        handlers: {
+          ...o.handlers,
+          exit: (info) => {
+            cleanup();
+            o.handlers.exit(info);
+          },
         },
-      },
-    });
-  } catch (e) {
-    cleanup();
-    throw e;
-  }
-};
+      });
+    } catch (e) {
+      cleanup();
+      throw e;
+    }
+  };
+}
+
+export const cliTransportFactory: TransportFactory = makeCliTransportFactory();
 
 export interface ClaudeAdapterDeps {
+  /** Spec 100: how long `get_context_usage` may take (tests). */
+  mcpContextTimeoutMs?: number;
   /** Absolute path of `claude` (from detect); resolved lazily at the first start of a CLI. */
   claudePath: () => Promise<string | undefined>;
   /** Makes a transport (tests inject a fake; default: the CLI transport; the SDK transport when chosen, FR-113). */
@@ -685,6 +732,7 @@ export class ClaudeAdapter implements AgentAdapter {
     if (deps.sdkTransport) (this as { renameSession?: unknown }).renameSession = undefined;
     if (deps.sdkTransport) (this as { restartMcpServer?: unknown }).restartMcpServer = undefined;
     if (deps.sdkTransport) (this as { listMcpTools?: unknown }).listMcpTools = undefined;
+    if (deps.sdkTransport) (this as { mcpContext?: unknown }).mcpContext = undefined;
     if (deps.sdkTransport) (this as { startMcpSignIn?: unknown }).startMcpSignIn = undefined;
     if (deps.sdkTransport) (this as { refreshMcpStatus?: unknown }).refreshMcpStatus = undefined;
   }
@@ -998,7 +1046,8 @@ export class ClaudeAdapter implements AgentAdapter {
    * or failed MCP server", read: CLI 2.1.304), then `mcp_status` for the new list. The CLI is not launched for it: before the first
    * message there is nothing to restart. A server that was off at launch is not in the CLI's config at all.
    */
-  async restartMcpServer(sessionId: string, name: string): Promise<void> {
+  async restartMcpServer(sessionId: string, name: string, _opts?: { auto?: boolean }): Promise<void> {
+    void _opts; // spec 058 FR-207: the automatic reconnect is this same call (mcp_reconnect only: no sign-in call, nothing switched off)
     const s = this.sessions.get(sessionId);
     if (!s) throw new Error('This session is not running. Send a message to start it.');
     if (!s.transport?.alive) throw new Error('Claude Code starts its MCP servers with your next message; there is nothing to restart yet.');
@@ -1078,6 +1127,22 @@ export class ClaudeAdapter implements AgentAdapter {
     const srv = list.find((x) => !!x && typeof x === 'object' && (x as { name?: unknown }).name === name) as { tools?: unknown; status?: unknown } | undefined;
     if (!srv) throw new Error(`${name} is not running in this session.`);
     return normMcpTools(srv.tools);
+  }
+
+  /**
+   * Spec 100 FR-001, FR-003: the CLI's own figures (`get_context_usage`, `summary`: no extra network requests, decided Q2). Only a running
+   * CLI is asked and never during a turn (`busy`: main asks again at the turn's end). A CLI that does not know the request, a failure or a
+   * time-out is a failed read: main keeps the last figures.
+   */
+  async mcpContext(sessionId: string): Promise<McpContextReport> {
+    const s = this.sessions.get(sessionId);
+    if (!s?.transport?.alive) return { servers: [], failed: true };
+    if (s.turnOpen) return { servers: [], busy: true };
+    try {
+      return claudeMcpContext(await s.transport.request({ subtype: 'get_context_usage', detail: 'summary' }, this.deps.mcpContextTimeoutMs ?? MCP_CONTEXT_TIMEOUT_MS), (s.lastMcp ?? []).map((x) => x.name));
+    } catch {
+      return { servers: [], failed: true };
+    }
   }
 
   /** FR-128: the user's answers (question text -> label(s)), or null when they skipped. */
@@ -1304,7 +1369,7 @@ export class ClaudeAdapter implements AgentAdapter {
     return out;
   }
 
-  /** Spec 040 FR-015: one prompt in an empty temp folder (the AI theme maker); no session is created or kept. */
+  /** Spec 040 FR-015: one prompt in an empty temp folder (first for the AI theme maker, retired in spec 040 FR-031); no session is created or kept. */
   async generateText(prompt: string): Promise<{ text: string; costUsd?: number }> {
     const file = await this.deps.claudePath();
     if (!file) throw new Error('Claude Code is not installed or could not be found.');

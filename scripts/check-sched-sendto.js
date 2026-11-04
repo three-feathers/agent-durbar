@@ -5,7 +5,7 @@
  *
  *   npm run check:ui -- --only check-sched-sendto
  *
- * At 1440x900, 1280x800 and 900x700, in Simple and Expert, at the dialog's usual width and at a narrow one (340 px), with a session
+ * At 1440x900, 1280x800 and 900x700, at the dialog's usual width and at a narrow one (340 px), with a session
  * whose name is a long sentence. A miss prints DRIVER FAILED (Electron still exits 0), so the npm script exits non-zero unless
  * "all checks passed" is printed.
  */
@@ -25,14 +25,10 @@ module.exports = async (ctx) => {
   };
   for (const [w, h] of [[1440, 900], [1280, 800], [900, 700]]) {
     ctx.win.setContentSize(w, h);
-    for (const level of ['simple', 'expert']) {
-      // the detail level is a stored display preference (localStorage), read at load
-      await H.load({ query: { simtitles: '1' }, settle: false });
-      await js(`localStorage.setItem('durbar.detail',${jsLiteral(level)})`);
+    {
       await H.load({ query: { simtitles: '1' }, settle: false });
       await until(`[...document.querySelectorAll('#stage .desk[data-id]')].some(x=>x.textContent.includes('Rename public tool'))`); await settle();
       await H.calm();
-      assert.strictEqual(await js(`document.body.classList.contains('simple')`), level === 'simple', 'detail level ' + level);
       for (const width of [0, 340]) {
         const id = await js(`(()=>{const d=[...document.querySelectorAll('#stage .desk[data-id]')].find(x=>x.textContent.includes('Rename public tool'));if(!d)throw new Error('no desk with the long title');d.click();return d.dataset.id})()`);
         await until(`document.body.classList.contains('panel-open')&&!!document.getElementById('schedHdrBtn')`); await settle();
@@ -55,7 +51,7 @@ module.exports = async (ctx) => {
           sel.value=''; sel.dispatchEvent(new Event('change'));
           const hint2={hidden:hint.hidden};
           return {to:row('.sc-to .sc-lbl','#scTarget'),cap:row('#scCapL .sc-lbl','#scCap'),opts,inner,hint0,hint1,hint2,id:${jsLiteral(id)}}})()`);
-        const tag = `${w}x${h} ${level} ${width || 'full'}`;
+        const tag = `${w}x${h} ${width || 'full'}`;
         for (const k of ['to', 'cap']) {
           const x = r[k];
           if (k === 'cap' && !x.vis) continue; // Limit only shows when the folder's agent has a spending unit
@@ -76,7 +72,7 @@ module.exports = async (ctx) => {
         assert.strictEqual(r.hint1.desc, 'scToHint', `${tag}: the select is described by the hint`);
         assert.strictEqual(r.hint2.hidden, true, `${tag}: the hint hides again`);
         console.log('[sched-sendto]', tag, 'ok', JSON.stringify({ label: r.to.lb.h, optW: r.opts.map((o) => Math.round(o.w)), selW: Math.round(r.inner) }));
-        if (!width) await ctx.shot(path.join(process.env.OUT || '/tmp', `044-sendto-${level}-${w}x${h}.png`));
+        if (!width) await ctx.shot(path.join(process.env.OUT || '/tmp', `044-sendto-expert-${w}x${h}.png`));
         await js(`document.getElementById('scClose').click()`); await until(`!document.getElementById('schedDlg')`);
         await js(`document.getElementById('backBtn').click()`); await until(`!document.body.classList.contains('panel-open')`); await settle();
       }

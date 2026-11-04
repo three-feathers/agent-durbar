@@ -9,8 +9,8 @@
  *
  * At 1440x900 and 1280x800 it fails (exit 1) when:
  *   - flat is not the default (no Real office element, no Real office file requested: FR-002, SC-004);
- *   - Settings > Office layout has no third button, or choosing it does not draw the Real office, or Open office / Office with cabins do
- *     not bring the flat office back (FR-001, FR-003; durbar.doorsigns untouched), or a broken stored value is not flat;
+ *   - Settings > Office layout has no Real office button, or choosing it does not draw the Real office, or Open office does not bring
+ *     the flat office back (FR-001, FR-003), or a broken stored value is not flat;
  *   - with 15 agents: a main agent without its one focusable plate (button, accessible name with the status word, FR-090), a plate
  *     without a status word, a desk without a person that is not away or asleep, an away desk without "at <place>" (FR-017);
  *   - a status cue is missing: a waiting agent without its "?" and amber call light, an error agent without "!" and its red call light,
@@ -21,9 +21,8 @@
  *   - a place plate (Other tools, Postbox, ...; also at 12 and 8 agents and in a wider font) is cut by an ellipsis, is under 10.5 px or overlaps a plate or chip, or a chip shows bare initials or sits away from its person (Paco's review of #921);
  *   - a lobby chip at the Boss, Bank or Coffee is not a button with a name, or Enter on it does not open the chat, or a chip has an
  *     emoji or a needs-you chip lacks the alert icon (FR-026, constitution V);
- *   - a failed Discard or Send all of a held prompt still switches to Real office; the "+N" plate of a crowd does not open the flat list;
+ *   - the "+N" plate of a crowd does not open the flat list;
  *     a plate does not take the arrow keys, Shift+F10 or a right-click (a card menu) (Codex pass on #921);
- *   - choosing Real office from the cabins with a door you closed does not ask first, or Keep cabins does not keep them (FR-004);
  *   - a click on a person or a plate does not open that agent's chat (FR-006);
  *   - a picture that fails to load leaves a broken image instead of the initials disc (FR-065).
  *   - the world chrome (FR-113): in Real office the top bar, More menu, a toast, Settings and a dialog do not use the photo world's
@@ -42,7 +41,7 @@ const SIZES = [[1440, 900], [1280, 800]];
 module.exports = async (ctx) => {
   const H = helpers(ctx);
   const { js } = H;
-  const SHARP = `(()=>{const px=window.DurbarRealOfficeArt.px,all=[...document.querySelectorAll('#stage .ro-person,#stage .ro-visitor')].filter(i=>i.currentSrc);const rows=all.map(i=>{const half=/\.h\.webp$/.test(i.currentSrc),file=i.currentSrc.split('/').pop().replace('.h.webp','.webp'),own=half?Math.ceil(px[file]/2):px[file];return {half,seat:i.classList.contains('ro-person'),ratio:own/(i.getBoundingClientRect().width*devicePixelRatio)};});const rs=(f)=>rows.filter(f).map(r=>r.ratio);return {dpr:devicePixelRatio,seatFull:rows.filter(r=>r.seat&&!r.half).length,seatHalf:rows.filter(r=>r.seat&&r.half).length,lobbyFull:rows.filter(r=>!r.seat&&!r.half).length,lobbyHalf:rows.filter(r=>!r.seat&&r.half).length,minHalfRatio:Math.min(99,...rs(r=>r.half)),seatRatios:[Math.min(99,...rs(r=>r.seat)),Math.max(0,...rs(r=>r.seat))]};})()`;
+  const SHARP = `(()=>{const px={...window.DurbarRealOfficeWorlds.photo.px,...window.DurbarRealOfficeSets.office.px},all=[...document.querySelectorAll('#stage .ro-person,#stage .ro-visitor')].filter(i=>i.currentSrc);const rows=all.map(i=>{const half=/\.h\.webp$/.test(i.currentSrc),file=i.currentSrc.split('/').pop().replace('.h.webp','.webp'),own=half?Math.ceil(px[file]/2):px[file];return {half,seat:i.classList.contains('ro-person'),ratio:own/(i.getBoundingClientRect().width*devicePixelRatio)};});const rs=(f)=>rows.filter(f).map(r=>r.ratio);return {dpr:devicePixelRatio,seatFull:rows.filter(r=>r.seat&&!r.half).length,seatHalf:rows.filter(r=>r.seat&&r.half).length,lobbyFull:rows.filter(r=>!r.seat&&!r.half).length,lobbyHalf:rows.filter(r=>!r.seat&&r.half).length,minHalfRatio:Math.min(99,...rs(r=>r.half)),seatRatios:[Math.min(99,...rs(r=>r.seat)),Math.max(0,...rs(r=>r.seat))]};})()`;
   const must = async (expr, what, ms = 15000) => assert.ok(await H.until(expr, ms), 'timed out waiting for ' + what);
   const REAL = `!!document.querySelector('#stage .ro .ro-plate')&&document.getElementById('stage').dataset.d==='real'`;
   /* every picture of the office has decoded (or failed): no half-drawn screenshot */
@@ -73,26 +72,39 @@ module.exports = async (ctx) => {
         short:C.filter(c=>/\u2026$/.test((c.querySelector('.ro-cn')||{}).textContent||'')).map(c=>c.dataset.name),initials:C.filter(c=>{const t=(c.querySelector('.ro-cn')||{}).textContent;return t!==c.dataset.name&&!/\u2026$/.test(t)}).map(c=>c.dataset.name),far:C.filter(c=>{const v=document.querySelector('#stage .ro-visitor[data-for="'+CSS.escape(c.dataset.for||c.dataset.pvopen||'')+'"]');if(!v)return false;const a=c.getBoundingClientRect(),b=v.getBoundingClientRect();return Math.abs((a.left+a.right)/2-(b.left+b.right)/2)>70}).map(c=>c.dataset.name),shortened:C.filter(c=>/\u2026$/.test((c.querySelector('.ro-cn')||{}).textContent||'')).length,chips:C.length,labels:P.map(p=>p.textContent)}})()`;
 
   // ---- FR-002, SC-004: flat is the default and loads nothing of Real office ----
-  await H.load({ w: 1440, h: 900 });
+  await H.load({ w: 1440, h: 900 }); await js(`localStorage.removeItem('durbar.officeview')`); await H.load({ w: 1440, h: 900 });
   assert.strictEqual(await js(`!!document.querySelector('.ro')`), false, 'flat by default');
   assert.strictEqual(await realFiles(), 0, 'flat mode requested a Real office file');
   assert.strictEqual(await js(`!!window.DurbarRealOffice`), false, 'flat mode loaded realoffice.js');
 
   // ---- FR-001, FR-003, FR-004: the Settings button and the stored choice ----
-  await js(`localStorage.setItem('durbar.doorsigns','off')`);
   await H.load({ w: 1440, h: 900 });
   await js(`window.DurbarScreens.openSettings()`);
   await must(`!!document.querySelector('[data-officelayout="real"]')`, 'the Real office button');
   const seg = await js(`[...document.querySelectorAll('[data-officelayout]')].map(b=>b.dataset.officelayout+':'+b.getAttribute('aria-pressed')).join(' ')`);
-  assert.strictEqual(seg, 'cabins:false open:true real:false', 'three buttons, Open office pressed: ' + seg);
+  assert.strictEqual(seg, 'open:true real:false', 'two buttons, Open office pressed: ' + seg);
   await js(`document.querySelector('[data-officelayout="real"]').scrollIntoView({block:'center'})`);
   await H.shot(path.join(OUT, '097-office-layout-1440x900.png'), { prep: 'calm' });
-  await js(`document.querySelector('[data-officelayout="real"]').click()`);
+  await js(`document.querySelector('[data-officelayout="real"]').focus();document.querySelector('[data-officelayout="real"]').click()`);
   await must(`document.querySelector('[data-officelayout="real"]').getAttribute('aria-pressed')==='true'`, 'Real office pressed');
+  await must(`document.activeElement&&document.activeElement.dataset&&document.activeElement.dataset.officelayout==='real'`, 'the keyboard focus stays on the Real office button after the repaint');
   assert.strictEqual(await js(`localStorage.getItem('durbar.officeview')`), 'real', 'stored as real');
-  assert.strictEqual(await js(`localStorage.getItem('durbar.doorsigns')`), 'off', 'durbar.doorsigns untouched');
   await js(`document.getElementById('scrClose').click()`);
   await must(REAL, 'the Real office after the Settings choice');
+  /* spec 097 FR-115, spec 102 FR-201, FR-205: html[data-world] is the shown world; only that world's and that set's packs were asked for; no World row while one world is offered */
+  assert.strictEqual(await js(`document.documentElement.dataset.world`), 'photo', 'html[data-world] is photo in Real office');
+  assert.strictEqual(await js(`document.querySelector('#stage .ro').dataset.world+'/'+document.querySelector('#stage .ro').dataset.set`), 'photo/office', 'the room draws the Photo office with the Office people');
+  const packFiles = await js(`[...new Set([...document.querySelectorAll('script[src],link[href],#stage img[src]')].map(e=>e.getAttribute('src')||e.getAttribute('href')).filter(n=>/realoffice\\/(worlds|sets)\\//.test(n)).map(n=>n.replace(/^.*realoffice\\/(worlds|sets)\\/([^/]+)\\/.*$/,'$1/$2')))].sort().join(' ')`);
+  assert.strictEqual(packFiles, 'sets/office worlds/photo', 'Real office asked for the Photo office and the Office people only: ' + packFiles);
+  await js(`window.DurbarScreens.openSettings()`);
+  await must(`!!document.querySelector('[data-officelayout="real"]')`, 'Settings');
+  assert.strictEqual(await js(`!!document.querySelector('#wrGroup')`), false, 'no World row while only one world is offered');
+  assert.ok(/World\u2019s default \(Office people\)/.test(await js(`document.querySelector('#chList [data-characters="theme"]').getAttribute('aria-label')`)), 'Characters starts with the world\u2019s default set');
+  await js(`document.querySelector('#chList [data-characters="cheeky"]').click()`);
+  await must(`document.getElementById('dsR').textContent==='Real office shows Office people until Cheeky has Real office poses.'`, 'Cheeky has no Real office poses: Settings says so under Office layout');
+  await js(`document.querySelector('#chList [data-characters="theme"]').click()`);
+  await must(`document.getElementById('dsR').textContent===''`, 'the line goes with the default');
+  await js(`document.getElementById('scrClose').click()`);
   await js(`window.DurbarScreens.openSettings()`);
   await must(`!!document.querySelector('[data-officelayout="open"]')`, 'the Office layout row');
   await js(`document.querySelector('[data-officelayout="open"]').click()`);
@@ -102,55 +114,6 @@ module.exports = async (ctx) => {
   await js(`localStorage.setItem('durbar.officeview','nonsense')`);
   await H.load({ w: 1440, h: 900 });
   assert.strictEqual(await js(`!!document.querySelector('.ro')`), false, 'a broken stored value means flat');
-
-  // ---- FR-004: from the cabins, with a door you closed, Real office asks the open-office question first ----
-  /* spec 017's cabins and doors are removed in a later change (spec 017 delta, PR 937); this test goes with them */
-  await js(`localStorage.setItem('durbar.officeview','flat');localStorage.setItem('durbar.doorsigns','on')`);
-  await H.load({ w: 1440, h: 900 });
-  const DOOR = `document.querySelector('#stage .unit [data-doorset][aria-pressed="false"]')`;
-  await must(`!!${DOOR}`, 'a cabin door button');
-  const doorId = await js(`${DOOR}.dataset.doorset`);
-  await js(`${DOOR}.click()`);
-  await must(`document.querySelector('#stage [data-doorset="'+CSS.escape(${jsLiteral(doorId)})+'"]').getAttribute('aria-pressed')==='true'`, 'the door closed');
-  const chooseReal = async () => { await js(`window.DurbarScreens.openSettings()`); await must(`!!document.querySelector('[data-officelayout="real"]')`, 'the Real office button'); await js(`document.querySelector('[data-officelayout="real"]').click()`); };
-  const DLG = `[...document.querySelectorAll('#modeDlg .dbtn button')].map((x)=>x.textContent)`;
-  await chooseReal();
-  await must(`!!document.getElementById('modeDlg')`, 'the question about the closed door');
-  assert.strictEqual(await js(`document.querySelector('#modeDlg h3').textContent`), 'Switch to an open office?', 'the open-office question');
-  assert.ok((await js(DLG)).includes('Keep cabins'), 'the dialog offers Keep cabins');
-  await js(`[...document.querySelectorAll('#modeDlg .dbtn button')].find((x)=>x.textContent==='Keep cabins').click()`);
-  await must(`!document.getElementById('modeDlg')`, 'the dialog closed');
-  assert.notStrictEqual(await js(`localStorage.getItem('durbar.officeview')`), 'real', 'Keep cabins keeps the cabins');
-  await chooseReal();
-  await must(`!!document.getElementById('modeDlg')`, 'the question again');
-  await js(`[...document.querySelectorAll('#modeDlg .dbtn button')].find((x)=>/^(Open the doors|Discard)$/.test(x.textContent)).click()`);
-  await must(`localStorage.getItem('durbar.officeview')==='real'`, 'Real office chosen after the doors opened');
-  await js(`localStorage.setItem('durbar.officeview','flat');localStorage.setItem('durbar.doorsigns','off')`);
-
-  // ---- Codex pass on #921: a failed Discard or Send all must not switch to Real office (the held prompts keep their door) ----
-  /* spec 017's cabins and doors go in a later change (PR 954); this test goes with them */
-  await js(`localStorage.setItem('durbar.officeview','flat');localStorage.setItem('durbar.doorsigns','on')`);
-  await H.load({ w: 1440, h: 900, query: { simschedfire: '25' } }); /* the simulator's one-off schedule fires in 25 s: a door closed before that holds the run (a loaded machine closes it late) */
-  const target = await js(`window.__durbarSimUi.bridge().listSchedules().then((d)=>{const s=d.schedules.find((x)=>x.id==='sched-fire');return s&&s.target?s.target.session:null})`);
-  assert.ok(target, 'the simulator has a scheduled prompt for an agent');
-  const TBTN = `document.querySelector('#stage .unit [data-doorset="'+CSS.escape(${jsLiteral(target)})+'"]')`;
-  await must(`!!${TBTN}`, 'the target\'s door button');
-  if ((await js(`${TBTN}.getAttribute('aria-pressed')`)) !== 'true') await js(`${TBTN}.click()`);
-  await must(`window.__durbarSimUi.bridge().doorsList().then((d)=>((d[${jsLiteral(target)}]||{}).held||0)>=1)`, 'a held prompt at the closed door', 60000);
-  await must(`[...document.querySelectorAll('#stage .desk[data-id="'+CSS.escape(${jsLiteral(target)})+'"] .cb-sign')].some((e)=>/1 held/.test(e.getAttribute('title')||''))`, 'the door sign says 1 held', 60000);
-  await chooseReal();
-  await must(`!!document.getElementById('modeDlg')`, 'the question with a held prompt');
-  await js(`window.__roRel=window.__durbarSimUi.bridge().releaseHeld;window.__durbarSimUi.bridge().releaseHeld=async()=>({ok:false,error:'stubbed'});true`);
-  await js(`[...document.querySelectorAll('#modeDlg .dbtn button')].find((x)=>/^Discard$/.test(x.textContent)).click()`);
-  await must(`[...document.querySelectorAll('#toasts .toast')].some((t)=>/held prompts are still there/.test(t.textContent))`, 'the failed release says so');
-  assert.notStrictEqual(await js(`localStorage.getItem('durbar.officeview')`), 'real', 'a failed Discard does not switch to Real office');
-  assert.ok(await js(`window.__durbarSimUi.bridge().doorsList().then((d)=>((d[${jsLiteral(target)}]||{}).held||0)>=1)`), 'the held prompt is still held');
-  await js(`window.__durbarSimUi.bridge().releaseHeld=window.__roRel;true`);
-  await chooseReal();
-  await must(`!!document.getElementById('modeDlg')`, 'the question again');
-  await js(`[...document.querySelectorAll('#modeDlg .dbtn button')].find((x)=>/^Discard$/.test(x.textContent)).click()`);
-  await must(`localStorage.getItem('durbar.officeview')==='real'`, 'Real office after a Discard that worked');
-  await js(`localStorage.setItem('durbar.officeview','flat');localStorage.setItem('durbar.doorsigns','off')`);
 
   for (const [w, h] of SIZES) {
     await loadReal(w, h);
@@ -175,7 +138,7 @@ module.exports = async (ctx) => {
     assert.deepStrictEqual(d.bare, [], 'no awake desk is empty without a visit');
     assert.ok(d.persons + d.visitors >= 8, `people sit at their desks or stand in the lobby on a visit: ${d.persons} + ${d.visitors}`);
     assert.ok(d.fixtures >= 8, 'the lobby fixtures are drawn: ' + d.fixtures);
-    const aw = await js(`[...document.querySelectorAll('#stage .ro-away')].every(e=>/^at .+ ↑$/.test(e.textContent))`);
+    const aw = await js(`[...document.querySelectorAll('#stage .ro-away')].every(e=>/^at .+$/.test(e.textContent))`);
     assert.ok(aw, 'away desks say where');
     // ---- FR-038, FR-041, FR-046: cues and lights by status ----
     const cues = await js(`(()=>{const o={};for(const p of document.querySelectorAll('#stage .ro-plate')){const id=p.dataset.id,st=p.dataset.state;
@@ -189,7 +152,7 @@ module.exports = async (ctx) => {
     assert.strictEqual(bub.x, bub.e, 'one "!" per error desk');
     // ---- owner 2026-10-31 10:19 and 10:48: every visitor's feet (its measured foot line) on the FRONT floor plane (in front of the
     //      fixtures, FRONT_DEPTH of the strip below the wall line) within 2 px, with a contact shadow there; no chip over a figure's lower 25 % ----
-    const FEET = `(()=>{const A=self.DurbarRealOfficeArt,sr=document.querySelector('#stage .ro-strip').getBoundingClientRect(),wl=sr.top+3,fl=wl+self.exports.FRONT_DEPTH*(sr.bottom-wl),out=[];
+    const FEET = `(()=>{const A=Object.assign({},self.DurbarRealOfficeWorlds.photo,self.DurbarRealOfficeSets.office),sr=document.querySelector('#stage .ro-strip').getBoundingClientRect(),wl=sr.top+3,fl=wl+self.exports.FRONT_DEPTH*(sr.bottom-wl),out=[];
       const chips=[...document.querySelectorAll('#stage .ro-chip')].map(c=>c.getBoundingClientRect());
       for(const im of document.querySelectorAll('#stage .ro-visitor')){const m=/(p\\d\\d)-(\\w+)\\.webp$/.exec(im.getAttribute('src'));const f=A.stand[m[1]].feet[m[2]],t=A.stand[m[1]].top[m[2]],fc=A.stand[m[1]].foot[m[2]];
         const r=im.getBoundingClientRect(),y=r.top+r.height*f,cx=r.left+r.width*fc,lo=r.top+r.height*(f-0.25*(f-t));
@@ -212,7 +175,7 @@ module.exports = async (ctx) => {
     const SETTLED = `(()=>{const v=[...document.querySelectorAll('#stage .ro-visitor')];return v.length>=3&&v.every(i=>i.complete&&i.naturalWidth>0)})()`;
     /* written out here, not read from FX_POSE: a driver that asks the code what to expect cannot catch the code being wrong */
     const WANT_POSE = ({ library: 'book', software: 'book', terminal: 'runA', web: 'type', boss: 'knock', coffee: 'counter', bank: 'counter', postbox: 'letter', other: 'type' });
-    const FACING = `(()=>{const A=self.DurbarRealOfficeArt,WANT=${jsLiteral(WANT_POSE)},out=[],vs=[...document.querySelectorAll('#stage .ro-visitor')];
+    const FACING = `(()=>{const A=Object.assign({},self.DurbarRealOfficeWorlds.photo,self.DurbarRealOfficeSets.office),WANT=${jsLiteral(WANT_POSE)},out=[],vs=[...document.querySelectorAll('#stage .ro-visitor')];
       for(const im of vs){const m=/(p\\d\\d)-(\\w+)\\.webp$/.exec(im.getAttribute('src')),pl=im.dataset.place,fx=document.querySelector('#stage .ro-fx[data-place="'+pl+'"],#stage .ro-kiosk[data-place="'+pl+'"]');
         const r=im.getBoundingClientRect(),footX=r.left+r.width*A.stand[m[1]].foot[m[2]],q=fx&&fx.getBoundingClientRect(),want=WANT[pl]||'letter';
         out.push({who:im.dataset.for,place:pl,pose:m[2],ok:m[2]===want||(m[2]==='letter'&&want==='runA'),faces:im.dataset.faces,meta:A.facing,side:q?(footX>q.left+q.width/2?'left':'right'):'none',footX,h:r.height,
@@ -277,6 +240,9 @@ module.exports = async (ctx) => {
     assert.deepStrictEqual(pl.cp, [], 'no chip covers a place plate');
     assert.deepStrictEqual(pl.cc, [], 'no two chips overlap');
     assert.deepStrictEqual(pl.initials, [], `no bare initial in the lobby (names, or their first letters and an ellipsis): ${JSON.stringify(pl.initials)} of ${pl.chips}`);
+    /* going back from the chat above leaves the focus on a plate, and a focused plate has its zoom open (FR-034): not in the picture */
+    await js(`document.activeElement&&document.activeElement.blur&&document.activeElement.blur();0`);
+    await must(`!document.getElementById('roZoom')`, 'no zoom in the picture');
     await H.shot(path.join(OUT, `097-real-15-${w}x${h}.png`), { prep: 'calm' });
     // ---- owner 2026-10-31 ("make a real running pose"): someone at the Terminal jogs in place (stride A in P1), no treadmill; a
     //      close crop of the lobby band shows it ----
@@ -362,6 +328,18 @@ module.exports = async (ctx) => {
     await H.key('Escape');
     await must("!document.getElementById('modeMenu')&&(" + FOCUSED + ')', 'the right-click menu closed and focus is back on the plate');
   }
+
+  // ---- owner 2026-11-01: with motion on, a chip and a plate never touch, in any frame while a crowd changes: they fade in place, they do not travel ----
+  await loadReal(1280, 800, { sim: '15', romotion: '1' });
+  await must(`!!document.querySelector('#stage .ro-lplate')`, 'the lobby plates');
+  await js(`document.querySelector('style#roNoAnim')&&document.querySelector('style#roNoAnim').remove();0`);
+  for (const [pid, n, from] of [['terminal', 4, 0], ['software', 3, 2], ['boss', 5, 6], ['terminal', 2, 9]]) {
+    const look = "const look=()=>{const r=" + PLATES + ";n++;for(const x of r.cp)bad.add(x);if(performance.now()-t0<1500)requestAnimationFrame(look);else done({n,bad:[...bad]});};requestAnimationFrame(look);";
+    const frames = await js(`new Promise((done)=>{const bad=new Set();let n=0;const t0=performance.now();window.__durbarSimUi.uncrowd();window.__durbarSimUi.crowd(${jsLiteral(pid)},${jsLiteral(n)},${jsLiteral(from)});` + look + '})');
+    assert.ok(frames.n > 5, 'frames were looked at: ' + JSON.stringify(frames));
+    assert.deepStrictEqual(frames.bad, [], `no chip on a plate in any frame (${pid} ${n}): ${JSON.stringify(frames)}`);
+  }
+  await js(`window.__durbarSimUi.uncrowd();0`);
 
   // ---- the guards of the chip placement, deterministically (no font needed): chips widened after the drawing are placed again by the
   //      ResizeObserver (settle), and a chip that sits on a plate is moved off it (resolve) ----
@@ -495,7 +473,7 @@ module.exports = async (ctx) => {
   /* a simulator visit can take the chosen person to the lobby before its picture fails (then no disc is drawn at its desk): try another person, up to six times */
   let discOk = false;
   for (let t = 0; t < 6 && !discOk; t++) {
-    const victim = await js(`(()=>{const i=document.querySelector('#stage .ro-person');if(!i)return '';const f=i.dataset.for;i.removeAttribute('srcset');i.src='realoffice/art/missing.webp';return f})()`);
+    const victim = await js(`(()=>{const i=document.querySelector('#stage .ro-person');if(!i)return '';const f=i.dataset.for;i.removeAttribute('srcset');i.src='realoffice/sets/office/missing.webp';return f})()`);
     if (victim) discOk = await H.until(`!!document.querySelector('#stage .ro-initials[data-for="'+CSS.escape(${jsLiteral(victim)})+'"]')`, 5000);
   }
   assert.ok(discOk, 'the initials disc after a failed picture');
@@ -559,6 +537,11 @@ module.exports = async (ctx) => {
     assert.strictEqual(set.sec, RGB(W['--surface']), 'Settings sections are the world surface');
     assert.strictEqual(set.ink, RGB(W['--ink']), 'Settings text is the world ink');
     await H.shot(path.join(OUT, `097-world-settings-${w}x${h}.png`), { prep: 'calm' });
+    // 2026-11-01 (spec 033 delta, issue 1010): the toggle switch follows the world: an on switch is the world's --sage-ink, its knob the world's surface
+    const sw = await js(`(()=>{const b=document.querySelector('#screen .swt.on');if(!b)return null;b.scrollIntoView({block:'center'});const cs=getComputedStyle(b),k=getComputedStyle(b.querySelector('i'));return {bg:cs.backgroundColor,knob:k.backgroundColor}})()`);
+    assert.ok(sw, 'Settings has an on switch');
+    assert.deepStrictEqual(sw, { bg: RGB(W['--sage-ink']), knob: RGB(W['--surface']) }, 'the on switch follows the world');
+    await H.shot(path.join(OUT, `097-world-switch-${w}x${h}.png`), { prep: 'calm' });
     await js(`document.getElementById('scrClose').click()`);
     // a dialog: the keyboard shortcuts sheet on a warm scrim. FR-182: no blur, the opaque token surface, and every text checked on the computed colours (constitution V)
     await js(`document.getElementById('kbdHelpBtn').click()`);

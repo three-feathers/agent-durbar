@@ -19,11 +19,7 @@ export interface RemoteOpsDeps {
   confirm?(id: string): Promise<boolean>;
   /** FR-011: remote control on or off, for the activity log. */
   record?(id: string, on: boolean): void;
-  /** FR-040 (spec 017 FR-018, owner 2026-10-23): the agent's door is closed by the user; turning remote control on is then refused. */
-  doorClosed?(id: string): boolean;
 }
-
-export const DOOR_CLOSED = 'The door is closed (Do not disturb). Open it first.';
 
 export const NO_REMOTE = 'This agent app cannot be controlled remotely.';
 export const NOT_RUNNING = 'Send a message first so the session is running, then turn on remote control.';
@@ -40,7 +36,6 @@ export function createRemoteOps(deps: RemoteOpsDeps) {
       if (!ad.isLive(id)) return { ok: false, error: NOT_RUNNING };
       // FR-011 (security review, 2026-10-20): never with Allow all, and only after the main process's own confirmation
       if (on && deps.modeOf?.(id) === 'allow') return { ok: false, error: NOT_IN_ALLOW_ALL };
-      if (on && deps.doorClosed?.(id)) return { ok: false, error: DOOR_CLOSED };
       if (on && deps.confirm && !(await deps.confirm(id))) return { ok: false, cancelled: true, error: 'Cancelled.' };
       let r: RemoteState;
       try {

@@ -39,3 +39,24 @@ updates:
       - dependency-name: '*'
         update-types: ['version-update:semver-major']
       - dependency-name: electron
+      # Held at 1.0.24 (issue #1084): SDK 1.0.26+ (runtime 1.0.103+) needs a host `entra.clientId` for Microsoft Entra MCP sign-in and token renewal,
+      # which Durbar does not have. Lift this when a supported Entra route exists (a decision for the owner).
+      - dependency-name: '@github/copilot-sdk'
+        versions: ['>1.0.24']
+  - package-ecosystem: npm
+    directory: /scripts/prereview
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 1
+    cooldown:
+      default-days: 7
+    labels: [task, area:security, spec:103]
+    groups:
+      prereview:
+        patterns: ['*']
+        update-types: [minor, patch]
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
+      - dependency-name: electron

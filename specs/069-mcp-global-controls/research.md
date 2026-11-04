@@ -8,7 +8,7 @@ Evidence tags: `read:` source, docs or program strings; `real:` run and seen. No
 | --- | --- | --- |
 | Copilot CLI list (read-only, every Copilot agent) | `src/main/mcpfiles.ts` `cliServers`, `copilotDir` | Re-read on each screen open; the Settings switch only adds the name to `disabledMcpServers` for new sessions. |
 | Folder extras (Durbar's own, per folder, trust prompt, secrets in one vault) | `src/main/mcpstore.ts`, `src/main/mcpipc.ts`, `src/renderer/screens.js` `paintFolder` / `editServer` | Spec 020; the add form is `editServer`. |
-| Old app-level list (`legacy`) | `McpStore.legacyRecs` | Milestone 8's global list, kept only to move or remove; never passed to a session. Not reused: the owner chose the apps' own files. |
+| Old app-level list (`legacy`) | removed (spec 020 FR-032) | Milestone 8's global list; was never passed to a session. Not reused: the owner chose the apps' own files. |
 | Folder's own `.mcp.json` / `.codex/config.toml` (read) | `src/main/foldersetup.ts` (`readCodexMcpToml`) | Spec 061; read-only line-based TOML reader to extend. |
 | Per-agent dialog | `screens.js` `agentMcp`, `agents:mcp`, `agents:setMcp` | PR #473 adds Restart, Restart session, `agentMcpReply` in `src/main/mcpsession.ts`. |
 | Installed apps | `adapters:list` (`AdapterInfo.state`) | Used for FR-007. |
