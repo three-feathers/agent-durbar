@@ -140,6 +140,8 @@ interface Live {
    * turn runs, and a Durbar-raised limit waiting for the user with the message it held back.
    */
   capNow?: number | null;
+  /** Spec 099 FR-022, FR-059: the cap restore went unanswered or failed, so `capNow` is not known to be in force: the next goal sends its cap again. */
+  capUnsure?: boolean;
   usedCheckpointNano?: number;
   usedSinceNano?: number;
   turnOpen?: boolean;
@@ -191,6 +193,8 @@ export const copilotSandboxRefusal = (reason: string): string => `Copilot could 
 export const COPILOT_STOP_SENT = 'Stop sent: Copilot has not answered yet';
 /** Spec 099 FR-059: a plan-first send whose `mode.set plan` waited while Autopilot was turned on. */
 export const COPILOT_TURN_ON_STOPPED = 'Stop came before Autopilot was on, so Autopilot is off.';
+/** Spec 099 FR-059: Autopilot was turned off again while its turn-on waited for Copilot. */
+export const COPILOT_TURN_ON_OFF = 'Autopilot was turned off before it came on.';
 /** Spec 099 FR-059: a runtime call of a queued send step (cap update, plan or interactive mode change) gave no answer within its bound. */
 export const COPILOT_STEP_NO_ANSWER = 'Copilot did not answer in time, so this message was not sent.';
 /** Spec 052 FR-229: the row while a send waits for a late abort, and the send's failure when it never answers. */
@@ -1351,11 +1355,14 @@ export class CopilotAdapter implements AgentAdapter {
       forget();
       throw e;
     }
-    // a Stop during that wait turned Autopilot off (its own mode.set went after this one); End ended the session
-    if (this.sessions.get(sid) !== live || live.ending || live.interrupts !== stops) {
+    // read again after that wait: End ended the session; a Stop, Autopilot off or a stricter mode (FR-051) turned Autopilot off meanwhile.
+    // The caller is told the real outcome, and the runtime's own mode change for this call stays Durbar's (`forget` keeps it for a bound).
+    const ended = this.sessions.get(sid) !== live || !!live.ending;
+    const notAllow = live.broker.getMode() !== 'allow';
+    if (ended || live.interrupts !== stops || notAllow || !auto.on) {
       auto.settings = undefined;
       forget();
-      throw new Error(COPILOT_TURN_ON_STOPPED);
+      throw new Error(ended ? 'The session is not running.' : live.interrupts !== stops ? COPILOT_TURN_ON_STOPPED : notAllow ? AUTOPILOT_NOT_ALLOW : COPILOT_TURN_ON_OFF);
     }
     live.planMode = false; // `autopilot` left plan mode, so a run's send has no mode.set after its last check
     live.ownTurnOn = false; // answered and on: its mode change, before or after this, is no news
@@ -1372,10 +1379,12 @@ export class CopilotAdapter implements AgentAdapter {
     auto.settings = undefined;
     const ack = this.modeAck(live);
     try {
-      await live.session.rpc.mode.set({ mode: 'interactive' });
+      // FR-059: bounded like every runtime call of a step, so a `mode.set` that never answers holds neither the queue nor a Stop
+      await this.bounded(live.session.rpc.mode.set({ mode: 'interactive' }));
       await within(ack, this.autopilotTuning.waitMs ?? CLEAR_WAIT_MS, 'Copilot');
     } catch {
-      await auto.close();
+      live.planMode = true; // the mode is not known: if the session lives on, the next plain send goes back to interactive first
+      await auto.close(); // FR-054: not confirmed off, so the session ends (its End aborts what is going)
     }
   }
 
@@ -1422,10 +1431,11 @@ export class CopilotAdapter implements AgentAdapter {
     if (cap === undefined) return;
     this.refuseSpentCap(live, cap);
     const want = capInForce(live.ownCap, cap);
-    if (want === null || want === live.capNow) return;
+    if (want === null || (want === live.capNow && !live.capUnsure)) return;
     live.apCapSent = want;
     try {
       await this.bounded(live.session.rpc.options.update({ sessionLimits: { maxAiCredits: want } }));
+      live.capUnsure = false;
     } finally {
       live.capNow = want; // no answer (it may still land) or a failure: counted as sent, so the restore puts the session's own cap back
     }
@@ -1439,7 +1449,9 @@ export class CopilotAdapter implements AgentAdapter {
       try {
         await this.bounded(live.session.rpc.options.update({ sessionLimits: own === null ? null : { maxAiCredits: own } })); // FR-059: bounded, so the queue goes on
         live.capNow = own;
+        live.capUnsure = false;
       } catch {
+        live.capUnsure = true; // FR-059: which cap is in force is not known: the next goal sends its own again
         this.emit(sid, { type: 'status', status: 'idle', intent: LINE_CAP_NOT_RESTORED });
       }
     }
