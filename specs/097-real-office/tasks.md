@@ -175,3 +175,7 @@ Numbers: T165..T170; FR-191..FR-194.
 - [ ] T180 [PR A17] Settings on the desk; unstyled selects and checkboxes on tokens; scrollbars. Test: `check-ui-text`, `sim:` both sizes, both worlds; mutant: a browser-default select [FR-234]
 - [ ] T181 [PR A18] `.dlg` out of the blur list, opaque. Test: as FR-235 [FR-235]
 - [ ] T182 [PR A16, A17] `realoffice.css`'s `.ro-glass`, `.ro-bezel`, `--ro-scr-*` read `--glass*`, last, since they are pixel-checked; the owner looks at the chat and Settings beside the room before each merges. Test: `check:office`, `check:geometry` [FR-233, FR-234]
+
+## 2026-11-04 delta: merging #969 with main (T184)
+
+- [ ] T184 The slips (FR-121..FR-124, `drawSlips`) are drawn again on every status update in the simulator: 22 nodes, 12 of the 15 layout reads and 16 attribute writes per update at 15 and 40 agents (measured with `drawSlips` returning at once: nodes 0, reads 3, attribute writes 24 and 32). Find out whether a slip's content really changes with the update or only its signature does, and keep a slip's nodes and placement when its content did not change. Expected: `check-office-ops-real` nodes 0 and reads at most 5, its `readsPerStatus` and `nodesPerStatus` KNOWN_FAILURES entries deleted. Test: `sim:` `check-office-ops-real`; `shots-097-moments` keeps its slip checks [FR-121, FR-184]

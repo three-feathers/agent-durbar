@@ -197,7 +197,7 @@ module.exports = async (ctx) => {
     await must(`true`, 'a tick');
     await js(`document.activeElement&&document.activeElement.blur&&document.activeElement.blur();0`);
     await refocus();
-    /* FR-230: a sign redrawing under the keyboard keeps the focus on the same button. The changed counts prove the redraw happened; since spec 097 T149 the sign keeps its nodes (signFill), so the button itself stays, where before it was built again and the focus given back (a marked button then proved the redraw) */
+    /* FR-230: a sign redrawing under the keyboard keeps the focus on the same button. The changed counts prove the redraw happened; since spec 097 T149 the sign keeps its nodes (signFill), so the button itself stays, where before it was built again and the focus given back (a marked button then proved the redraw). Whether the button is the same node is not asserted: the sign is built again when its name, path, cost line or buttons change, and the simulator's cost line appears during a run */
     {
       const zone = (await js(`window.__durbarSimUi.realLayout().zones.filter(z=>z.desks.some(d=>d.state==='working')).map(z=>({id:z.id,desk:z.desks.find(d=>d.state==='working').id}))[0]`));
       const SIGN = `.ro-sign[data-folder=${JSON.stringify(zone.id)}]`;
@@ -208,6 +208,7 @@ module.exports = async (ctx) => {
         const was = await counts();
         await emit({ type: 'status', sessionId: zone.desk, status: i ? 'working' : 'idle', intent: 'Driver work' });
         await must(`document.querySelector(${jsLiteral(SIGN + ' .ro-sc')}).textContent!==${jsLiteral(was)}`, 'the sign redrawn');
+        assert.notStrictEqual(await counts(), was, 'the sign\'s counts changed after the redraw: a redraw that did not happen fails here');
         await must(`(()=>{const a=document.activeElement;return a.dataset[${jsLiteral(attr)}]===${jsLiteral(zone.id)};})()`, 'the focus on the redrawn sign\'s ' + attr + ' button');
       }
       assert.strictEqual(await counts(), c0, 'the desk back as it was');

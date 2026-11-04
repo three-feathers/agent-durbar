@@ -23,16 +23,16 @@ const { helpers, jsLiteral } = require('./driver-helpers');
 
 const LIMITS = { rendersPerStatus: 1, readsPerStatus: 5, nodesPerStatus: 0, attrWritesPerStatus: 10, elementsRecalculated: 50, pictureArea: 4, animationsOverLights: 0, animationsOffLights: 0, animationsUnstepped: 0, animationsOtherProperty: 0, lightsBoxShadow: 0, stepsPerSecond: 8, blendElements: 0, animationsStill: 0 };
 const KNOWN_FAILURES = {
-  /* T149 left (merged with main 2026-11-04): about 15 and 30 attribute writes are the change itself, as the desks re-sort on a status change, and the
-     slips (spec 097 FR-121, main) written again; FR-190: the budget of 10 may need moving */
-  'attrWritesPerStatus@15': { task: 'T149, the desks re-sorting and the slips', max: 60 },
-  'attrWritesPerStatus@40': { task: 'T149, the desks re-sorting and the slips', max: 90 },
-  /* the slips (spec 097 FR-121..FR-124, drawSlips, main) are drawn again on a status update: all 22 nodes of the simulator's
-     update (the 15 layout reads are not attributed; not yet looked into whether the slips' content really changes; no task yet, so it is named here) */
-  'readsPerStatus@15': { task: 'slips redrawn on a status update (097 FR-121), no task yet', max: 20 },
-  'readsPerStatus@40': { task: 'slips redrawn on a status update (097 FR-121), no task yet', max: 20 },
-  'nodesPerStatus@15': { task: 'slips redrawn on a status update (097 FR-121), no task yet', max: 30 },
-  'nodesPerStatus@40': { task: 'slips redrawn on a status update (097 FR-121), no task yet', max: 30 },
+  /* T149 left: about 24 and 32 attribute writes are the change itself, as the desks re-sort on a status change (measured 2026-11-04 with drawSlips returning at once: reads 3, nodes 0, attribute writes 24 at 15 agents and 32 at 40; FR-190: the budget of 10 may need moving) */
+  'attrWritesPerStatus@15': { task: 'T149 (desks re-sorting) and T184 (slips)', max: 60 },
+  'attrWritesPerStatus@40': { task: 'T149 (desks re-sorting) and T184 (slips)', max: 90 },
+  /* T184: the slips (spec 097 FR-121..FR-124, drawSlips, main) are drawn again on a status update. Measured 2026-11-04 with drawSlips returning at once:
+     nodes 22 to 0, layout reads 15 to 3, attribute writes 40 to 24 (15 agents) and 48 to 32 (40): so all 22 nodes, 12 of the 15 reads and 16 attribute writes are the slips'.
+     Not known: why they are redrawn (whether the simulator's update really changes a slip's content, or their signature changes without it) */
+  'readsPerStatus@15': { task: 'T184, the slips redrawn on a status update', max: 20 },
+  'readsPerStatus@40': { task: 'T184, the slips redrawn on a status update', max: 20 },
+  'nodesPerStatus@15': { task: 'T184, the slips redrawn on a status update', max: 30 },
+  'nodesPerStatus@40': { task: 'T184, the slips redrawn on a status update', max: 30 },
 };
 
 const REAL = `!!document.querySelector('#stage .ro .ro-plate')&&[...document.querySelectorAll('#stage .ro img')].every(i=>i.complete)`;
