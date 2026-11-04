@@ -1,0 +1,1 @@
+- Test driver only (issue #1127): the long-chat visibility check runs one window size per CI slot, so it no longer hits the suite time limit. No change for users.

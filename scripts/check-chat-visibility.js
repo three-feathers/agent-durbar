@@ -4,6 +4,7 @@
  *
  *   node scripts/ui-suite.js --only check-chat-visibility            (npm run check:ui runs it with the rest)
  *   DURBAR_CV_MUTANT=off|hidden|nosize|zero node scripts/ui-suite.js --only check-chat-visibility     (must FAIL)
+ *   CVONLY=1440|1280    one of the two sizes (a normal run that can pass: ui-suite.js runs one entry per size, FR-063)
  *   CVWH=1280x520 ...   one other window size; CVBASE=1 skips the "is skipped" checks (with DURBAR_CV_MUTANT=off: the rule-off baseline)
  *
  * At 1440x900 and 1280x800 the first agent's chat is filled with 4000 simulated messages (copies of its own with 1 to 9 sentences, a
@@ -78,7 +79,7 @@ module.exports = async (ctx) => {
   const pending = `window.__durbarSimUi&&document.body.classList.contains('panel-open')&&!!document.querySelector('#chat .chat-inner')`;
   const median = (a) => a.slice().sort((x, y) => x - y)[Math.floor(a.length / 2)];
 
-  for (const [w, h] of (process.env.CVWH ? [process.env.CVWH.split('x').map(Number)] : [[1440, 900], [1280, 800]])) {
+  for (const [w, h] of (process.env.CVWH ? [process.env.CVWH.split('x').map(Number)] : [[1440, 900], [1280, 800]].filter(([sw]) => !process.env.CVONLY || String(sw) === process.env.CVONLY))) {
     const tag = `${w}x${h}`;
     const id = await open(w, h);
 
@@ -243,8 +244,9 @@ module.exports = async (ctx) => {
     const seen = [];
     for (let i = 0; i < 14; i++) {
       const was = await js(`window.__cvFo`);
+      assert.ok(await H.focusPage(), `${tag}: the page has the focus before Tab (a neighbour driver's window can hold the OS focus when two sizes run at once)`);
       await H.key('Tab', [], { char: 'never', pause: 0 });
-      assert.ok(await until(`window.__cvFo>${jsLiteral(was)}`, 2000), `${tag}: Tab moved the focus`);
+      assert.ok(await until(`window.__cvFo>${jsLiteral(was)}`, 15000), `${tag}: Tab moved the focus`);
       await quiet('a Tab');
       seen.push(await js(`(()=>{const c=document.getElementById('chat'),cr=c.getBoundingClientRect(),a=document.activeElement,m=a&&a.closest('.chat-inner>*[data-cv]');if(!m)return {out:true};const r=a.getBoundingClientRect();return {i:+m.dataset.cv,inView:r.bottom>cr.top-1&&r.top<cr.bottom+1}})()`));
     }
