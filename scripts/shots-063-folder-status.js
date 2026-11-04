@@ -39,7 +39,7 @@ module.exports = async (ctx) => {
     assert.match(dlg.t, /^Changes in [^ ]+$/, 'titled with the folder name'); assert.ok(!/Jonas|Ada|Kenji/.test(dlg.t), 'not the agent name');
     assert.strictEqual(dlg.b, 'On branch main. 3 files have changes that are not committed yet:');
     assert.deepStrictEqual(dlg.l, ['src/tools/registry.ts · +42 −17 · changed', 'src/tools/companies.ts · +118 −0 · new', 'src/tools/old-lookup.ts · +0 −64 · deleted']);
-    assert.deepStrictEqual(dlg.btn, ['Open in VS Code', 'Done']);
+    assert.deepStrictEqual(dlg.btn, ['Open in editor', 'Done']);
     await ctx.sleep(450); // the dialog fades in
     await ctx.shot(path.join(OUT, `063-folder-changes-${w}x${h}.png`));
     await js(`document.querySelector('#modeDlg .dbtn .primary').click()`);

@@ -1,0 +1,4 @@
+{
+  "note": "Hashes of names the blog check refuses (spec 104 FR-062). Added only by a human with `node scripts/check-posts.js --add-blocked-host`, which reads the name from stdin and prints nothing. Never write the name anywhere.",
+  "sha256": []
+}

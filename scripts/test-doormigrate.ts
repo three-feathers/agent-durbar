@@ -12,9 +12,10 @@ import type { HeldRun, MigrateDeps, ReleaseResult } from '../src/main/doormigrat
 import { MAX_PROMPT } from '../src/main/schedules';
 import { harness } from './test-schedules';
 import type { Schedule } from '../src/main/schedules';
+import { tmpDir } from './test-tmp';
 
 const MIN = 60_000;
-const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-doormig-'));
+const dir = tmpDir('durbar-doormig-');
 const OLD = (doors: unknown) => JSON.stringify({ doors });
 const run = (id: string, prompt = 'p' + id, scheduleId: string | undefined = 'sch-' + id): HeldRun => ({ id, at: 1, prompt, ...(scheduleId ? { scheduleId } : {}) });
 

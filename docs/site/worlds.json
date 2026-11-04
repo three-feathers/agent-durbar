@@ -1,0 +1,6 @@
+{
+  "worlds": [
+    { "name": "Open office", "release": "v0.1.0", "spec": "specs/001-office-view-and-densities/spec.md" },
+    { "name": "Photo office", "release": "v0.1.6", "spec": "specs/097-real-office/spec.md" }
+  ]
+}

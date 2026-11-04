@@ -1,0 +1,1 @@
+- Test driver only (issue #1136): the Codex stop-escalation test waits for the signals instead of a fixed sleep, so it no longer fails on a loaded machine. No change for users.

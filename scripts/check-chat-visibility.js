@@ -4,6 +4,7 @@
  *
  *   node scripts/ui-suite.js --only check-chat-visibility            (npm run check:ui runs it with the rest)
  *   DURBAR_CV_MUTANT=off|hidden|nosize|zero node scripts/ui-suite.js --only check-chat-visibility     (must FAIL)
+ *   CVONLY=1440|1280    one of the two sizes (a normal run that can pass: ui-suite.js runs one entry per size, FR-063)
  *   CVWH=1280x520 ...   one other window size; CVBASE=1 skips the "is skipped" checks (with DURBAR_CV_MUTANT=off: the rule-off baseline)
  *
  * At 1440x900 and 1280x800 the first agent's chat is filled with 4000 simulated messages (copies of its own with 1 to 9 sentences, a
@@ -78,7 +79,9 @@ module.exports = async (ctx) => {
   const pending = `window.__durbarSimUi&&document.body.classList.contains('panel-open')&&!!document.querySelector('#chat .chat-inner')`;
   const median = (a) => a.slice().sort((x, y) => x - y)[Math.floor(a.length / 2)];
 
-  for (const [w, h] of (process.env.CVWH ? [process.env.CVWH.split('x').map(Number)] : [[1440, 900], [1280, 800]])) {
+  const SIZES = process.env.CVWH ? [process.env.CVWH.split('x').map(Number)] : [[1440, 900], [1280, 800]].filter(([sw]) => !process.env.CVONLY || String(sw) === process.env.CVONLY);
+  assert.ok(SIZES.length > 0, `CVONLY=${process.env.CVONLY} matches no size (use 1440 or 1280): nothing would be checked`);
+  for (const [w, h] of SIZES) {
     const tag = `${w}x${h}`;
     const id = await open(w, h);
 
@@ -160,7 +163,12 @@ module.exports = async (ctx) => {
     await js(`(async()=>{const c=document.getElementById('chat');for(let y=0;y<c.scrollHeight;y+=c.clientHeight*0.8){c.scrollTop=y;await new Promise(r=>requestAnimationFrame(r));}})()`);
     await js(`document.getElementById('chat').scrollTop=0`); await quiet('a scroll');
     const tot = await js(`document.getElementById('chat').scrollHeight`);
-    assert.ok(Math.abs(tot - hv.total) <= 2, `${tag}: after one pass the chat is as tall as with the rule off: ${tot} against ${hv.total}`);
+    /* bound: 2 px at 1x. On a screen with more than one device pixel per CSS pixel (a Retina Mac, --force-device-scale-factor=2, seen on Linux too) a remembered
+       height is kept in 1/64 px layout units, so each message may differ by up to 1/64 px from its rule-off height: add (messages / 64) px, 63 px for 4,004 messages
+       (31 px seen at 2x). Nothing looser: a size guess that is wrong by a pixel per message is still far outside it. */
+    const dpr = await js('devicePixelRatio'), msgCount = (await js(`document.querySelectorAll('#chat .chat-inner>*').length`));
+    const tolTall = 2 + (dpr > 1 ? msgCount / 64 : 0);
+    assert.ok(Math.abs(tot - hv.total) <= tolTall, `${tag}: after one pass the chat is as tall as with the rule off: ${tot} against ${hv.total} (allowed ${tolTall.toFixed(1)}px at ${dpr}x, ${msgCount} messages)`);
     // the copy button hangs under the bubble (bottom:-11px): it must not be cut off by the skipped box
     const cut = await js(`(()=>{const c=document.getElementById('chat');const b=[...c.querySelectorAll('.msg.agent .bubble>.cp-msg')][0];if(!b)return {none:true};b.scrollIntoView({block:'center'});
       const r=b.getBoundingClientRect(),el=document.elementFromPoint(r.left+r.width/2,r.bottom-2);const m=b.closest('.chat-inner>*');return {hit:!!el&&(el===b||b.contains(el)),box:Math.round(r.height),skippedBox:!!m&&m.classList.contains('cvo')}})()`);
@@ -171,8 +179,8 @@ module.exports = async (ctx) => {
     const send = async (txt) => {
       await js(`(()=>{const i=document.getElementById('msgInput');i.value=${jsLiteral(txt)};i.dispatchEvent(new Event('input',{bubbles:true}));document.getElementById('sendBtn').click();})()`);
     };
-    const sample = (ms, scrolled) => js(`(async()=>{const c=document.getElementById('chat');const out={max:0,n:0,s0:c.scrollTop,ser:[],ev:[]};c.addEventListener('scroll',()=>out.ev.push([out.n,Math.round(c.scrollHeight-c.scrollTop-c.clientHeight),Math.round(c.scrollTop),c.dataset.pin]),{passive:true});const end=performance.now()+${jsLiteral(ms)};
-      while(performance.now()<end){await new Promise(r=>requestAnimationFrame(r));await new Promise(r=>setTimeout(r,0));const g=c.scrollHeight-c.scrollTop-c.clientHeight;out.n++;
+    const sample = (ms, scrolled, minFrames = 0) => js(`(async()=>{const c=document.getElementById('chat');const out={max:0,n:0,s0:c.scrollTop,ser:[],ev:[]};c.addEventListener('scroll',()=>out.ev.push([out.n,Math.round(c.scrollHeight-c.scrollTop-c.clientHeight),Math.round(c.scrollTop),c.dataset.pin]),{passive:true});const end=performance.now()+${jsLiteral(ms)},cap=performance.now()+30000;
+      while((performance.now()<end||out.n<${jsLiteral(minFrames)})&&performance.now()<cap){await new Promise(r=>requestAnimationFrame(r));await new Promise(r=>setTimeout(r,0));const g=c.scrollHeight-c.scrollTop-c.clientHeight;out.n++;
         const bad=${scrolled ? 'Math.abs(c.scrollTop-out.s0)>1' : 'g>60'};if(bad&&out.prev){out.max=Math.max(out.max,${scrolled ? 'Math.abs(c.scrollTop-out.s0)' : 'g'});}out.prev=bad;if(out.ser.length<400)out.ser.push(Math.round(g)+(c.dataset.pin==='1'?'':'p0'));}
       out.busy=!!document.querySelector('#chat .typing');return out})()`);
     await reopen(id); await quiet('a reopen'); // the app's own way to the end
@@ -180,7 +188,7 @@ module.exports = async (ctx) => {
     const pre = await js(`(()=>{const c=document.getElementById('chat');return {gap:Math.round(c.scrollHeight-c.scrollTop-c.clientHeight),pin:c.dataset.pin,st:Math.round(c.scrollTop),sh:c.scrollHeight}})()`);
     await send('quick links please');
     assert.ok(await until(`!!document.querySelector('#chat .typing')||document.querySelectorAll('#chat .chat-inner>.msg').length>${jsLiteral(N + 2)}`, 8000), `${tag}: a turn starts`);
-    const s1 = await sample(2500, false);
+    const s1 = await sample(2500, false, 21);
     assert.ok(s1.max === 0 && s1.n > 20, `${tag}: a streaming turn stays pinned to the end of the chat (largest gap ${s1.max}px in ${s1.n} frames; pre-send ${JSON.stringify(pre)}; gaps ${s1.ser.slice(0, 30).join(' ')}; scroll events [frame,gap,top,pin] ${JSON.stringify(s1.ev.slice(0, 12))})`);
     assert.ok(await until(`!document.querySelector('#chat .typing')`, 30000), `${tag}: the turn ends`);
     await quiet('the turn');
@@ -189,7 +197,7 @@ module.exports = async (ctx) => {
     const before = await js(`document.getElementById('chat').scrollTop`);
     await send('and one more');
     assert.ok(await until(`!!document.querySelector('#chat .typing')`, 8000), `${tag}: a second turn starts`);
-    const s2 = await sample(2000, true);
+    const s2 = await sample(2000, true, 21);
     assert.ok(s2.max === 0 && s2.n > 20, `${tag}: a chat scrolled up is not moved by a turn (moved ${s2.max}px in ${s2.n} frames)`);
     assert.ok(await until(`!document.querySelector('#chat .typing')`, 30000), `${tag}: the second turn ends`);
 
@@ -202,20 +210,27 @@ module.exports = async (ctx) => {
     const { clipboard } = require('electron');
     await clipboard.writeText('');
     H.wc().copy();
+    /* Windows writes CRLF to the clipboard and the selection text has LF: compare with LF on both sides, the length check is otherwise as before */
+    const lf = (x) => String(x).replace(/\r\n/g, '\n');
+    const wantTok = ['⟦' + '00020' + '⟧', '⟦' + '00040' + '⟧'];
     let copied = '';
-    for (let k = 0; k < 50 && !copied; k++) { copied = String(await clipboard.readText()); if (!copied) await ctx.sleep(60); }
-    assert.ok(copied.includes('⟦' + '00020' + '⟧') && copied.includes('⟦' + '00040' + '⟧') && copied.length >= sel.text.length * 0.95, `${tag}: Copy gives the whole selection: ${copied.length} of ${sel.text.length} chars`);
+    for (let k = 0; k < 100 && !(copied && wantTok.every((t) => copied.includes(t))); k++) { copied = lf(await clipboard.readText()); if (!wantTok.every((t) => copied.includes(t))) await ctx.sleep(60); }
+    sel.text = lf(sel.text);
+    assert.ok(copied.includes('⟦' + '00020' + '⟧') && copied.includes('⟦' + '00040' + '⟧') && copied.length >= sel.text.length * 0.95, `${tag}: Copy gives the whole selection (line ends as LF): ${copied.length} of ${sel.text.length} chars, tokens ${wantTok.map((t) => copied.includes(t)).join('/')}`);
     await js(`getSelection().removeAllRanges()`);
 
     /* 6. FIND (Chromium's own; the app has no Find box) */
     await js(`document.getElementById('chat').scrollTop=0`); await quiet('a scroll');
     const tok = '⟦' + '02500' + '⟧';
-    const found = await new Promise((resolve) => {
+    /* find-in-page answers when the loaded renderer gets to it: ask again until it finds the token (or 30 s), never one read after a fixed 6 s */
+    const askFind = () => new Promise((resolve) => {
       const wc = H.wc(); let res = null;
       const on = (_e, r) => { if (r.finalUpdate) { res = r; wc.removeListener('found-in-page', on); resolve(r); } };
       wc.on('found-in-page', on); wc.findInPage(tok);
       setTimeout(() => { wc.removeListener('found-in-page', on); resolve(res); }, 6000);
     });
+    let found = null;
+    for (const stop = Date.now() + 30000; Date.now() < stop;) { found = await askFind(); if (found && found.matches === 1) break; }
     assert.ok(found && found.matches === 1, `${tag}: find-in-page finds the token in a skipped message: ${JSON.stringify(found && { m: found.matches, o: found.activeMatchOrdinal })}`);
     const landed = await until(`(()=>{const c=document.getElementById('chat'),cr=c.getBoundingClientRect(),e=document.querySelector('#chat .chat-inner>[data-cv="2500"]');if(!e)return false;const r=e.getBoundingClientRect();return r.bottom>cr.top&&r.top<cr.bottom&&e.firstElementChild.checkVisibility({contentVisibilityAuto:true})})()`, 4000);
     H.wc().stopFindInPage('clearSelection');
@@ -234,9 +249,19 @@ module.exports = async (ctx) => {
     await js(`(()=>{const b=document.querySelector('#chat .chat-inner>[data-cv="10"] .cvfocus');if(b)b.focus();})()`);
     const seen = [];
     for (let i = 0; i < 14; i++) {
-      const was = await js(`window.__cvFo`);
-      await H.key('Tab', [], { char: 'never', pause: 0 });
-      assert.ok(await until(`window.__cvFo>${jsLiteral(was)}`, 2000), `${tag}: Tab moved the focus`);
+      /* a Tab is tried again (3 times) only when a trusted window blur came in between: Windows runners give the window's focus to a neighbour driver at random
+         (docs/agent-notes.md, osRetry in check-status-tooltip.js); with no blur it fails at once and says what it saw */
+      let moved = false, ev = '';
+      for (let t = 0; t < 3 && !moved; t++) {
+        await js(`window.__cvBlur=0;if(!window.__cvBlurOn){window.__cvBlurOn=1;window.addEventListener('blur',e=>{if(e.isTrusted&&e.target===window)window.__cvBlur++;},true)}`);
+        await H.focusPage();
+        const was = await js(`window.__cvFo`);
+        await H.key('Tab', [], { char: 'never', pause: 0 });
+        moved = await until(`window.__cvFo>${jsLiteral(was)}`, 5000);
+        ev = moved ? '' : await js(`'blurs:'+window.__cvBlur+' hasFocus:'+document.hasFocus()+' active:'+(document.activeElement&&document.activeElement.tagName)`);
+        if (!moved && !/blurs:[1-9]/.test(ev)) break;
+      }
+      assert.ok(moved, `${tag}: Tab moved the focus (${ev}; a retry only follows a window blur)`);
       await quiet('a Tab');
       seen.push(await js(`(()=>{const c=document.getElementById('chat'),cr=c.getBoundingClientRect(),a=document.activeElement,m=a&&a.closest('.chat-inner>*[data-cv]');if(!m)return {out:true};const r=a.getBoundingClientRect();return {i:+m.dataset.cv,inView:r.bottom>cr.top-1&&r.top<cr.bottom+1}})()`));
     }
@@ -317,7 +342,7 @@ module.exports = async (ctx) => {
     assert.ok((await js(gap)) > 80, `${tag}: the small scroll up left the end by more than 80px: ${await js(gap)}`);
     await send('and a turn after the small scroll up');
     assert.ok(await until(`!!document.querySelector('#chat .typing')`, 8000), `${tag}: a turn starts (pin 2)`);
-    const s3 = await sample(2000, true);
+    const s3 = await sample(2000, true, 8); // frames are counted, not assumed: a loaded runner paints few frames in 2 s
     assert.ok(s3.max === 0 && s3.n > 5, `${tag}: a chat moved up a little after the end moved by itself is not pulled back by a turn (moved ${s3.max}px in ${s3.n} frames)`);
     assert.ok(await until(`!document.querySelector('#chat .typing')`, 30000), `${tag}: the turn ends (pin 2)`);
     ctx.win.setContentSize(w, h);

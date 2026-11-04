@@ -11,6 +11,7 @@
  * - Settings files are never loaded (`--setting-sources ""`, Q8); the folder's `CLAUDE.md` (with `@` imports inside the
  *   folder) goes in as an appended system prompt instead (owner decision, review of #160).
  */
+import { livePrivateDirs, makePrivateDir, sweepPrivateDirs } from './privatedirs';
 import { readClaudeOrgPolicy } from './claudeOrgPolicy';
 import type { OrgPolicy } from '../shared/orgpolicy';
 import { claudeSettingsJson } from '../shared/foldersetup';
@@ -29,6 +30,7 @@ import { ClaudeMapper, claudeMcpServers, withSkipped } from './claudeMap';
 import type { ClaudeMessage } from './claudeMap';
 import { claudeOptionsFor, parseMcpTool, preToolUseDecision, toolKind } from './claudeModes';
 import { createCliTransport } from './claudeTransport';
+import type { SpawnFn } from './claudeTransport';
 import type { ClaudeTransport, ControlAnswer, IncomingControl, TransportHandlers, UserContent } from './claudeTransport';
 import type { AdapterCapabilities, AdapterDescriptor, PermissionMode } from './capabilities';
 import type { EventBody } from './map';
@@ -442,16 +444,8 @@ export const CLAUDE_ENTRYPOINT = 'agent-durbar';
  * new private temp folder (`mkdtemp`, 0700); `--mcp-config` gets the path; `cleanup` deletes the folder (on the CLI's exit).
  */
 export function privateMcpConfig(json: string, tmpRoot: string = os.tmpdir()): { file: string; cleanup: () => void } {
-  const dir = fs.mkdtempSync(path.join(tmpRoot, 'durbar-mcp-'));
-  const cleanup = (): void => {
-    try {
-      fs.rmSync(dir, { recursive: true, force: true });
-    } catch {
-      /* the OS cleans its temp folder */
-    }
-  };
+  const { dir, cleanup } = makePrivateDir('durbar-mcp-', tmpRoot); // spec 012 FR-165: tracked and swept on exit (privatedirs.ts)
   try {
-    if (process.platform !== 'win32') fs.chmodSync(dir, 0o700);
     const file = path.join(dir, 'mcp-config.json');
     fs.writeFileSync(file, json, { mode: 0o600, flag: 'wx' });
     return { file, cleanup };
@@ -461,6 +455,15 @@ export function privateMcpConfig(json: string, tmpRoot: string = os.tmpdir()): {
   }
 }
 
+/** Spec 012 FR-165: removes every private temp folder still live (the MCP config folders and spec 087 FR-023's Copilot TMPDIR); main calls it in `will-quit`. */
+export function sweepMcpConfigs(): void {
+  sweepPrivateDirs();
+}
+/** How many private MCP config folders are live (tests). */
+export function liveMcpConfigCount(): number {
+  return livePrivateDirs('durbar-mcp-');
+}
+
 /** The CLI argv for a launch, with the MCP JSON moved to a private file (`privateMcpConfig`). */
 export function cliLaunchArgs(launch: ClaudeLaunch, tmpRoot?: string): { args: string[]; cleanup: () => void } {
   if (!launch.mcpConfig) return { args: claudeArgs(launch), cleanup: () => undefined };
@@ -468,27 +471,33 @@ export function cliLaunchArgs(launch: ClaudeLaunch, tmpRoot?: string): { args: s
   return { args: claudeArgs({ ...launch, mcpConfig: p.file }), cleanup: p.cleanup };
 }
 
-export const cliTransportFactory: TransportFactory = (o) => {
-  const { args, cleanup } = cliLaunchArgs(o.launch);
-  try {
-    return createCliTransport({
-      file: o.file,
-      args,
-      cwd: o.cwd,
-      env: o.env,
-      handlers: {
-        ...o.handlers,
-        exit: (info) => {
-          cleanup();
-          o.handlers.exit(info);
+/** The CLI transport factory; `spawn` and `tmpRoot` are for the tests (a fake child, a counted temp folder). */
+export function makeCliTransportFactory(opts: { spawn?: SpawnFn; tmpRoot?: string } = {}): TransportFactory {
+  return (o) => {
+    const { args, cleanup } = cliLaunchArgs(o.launch, opts.tmpRoot);
+    try {
+      return createCliTransport({
+        file: o.file,
+        args,
+        cwd: o.cwd,
+        env: o.env,
+        spawn: opts.spawn,
+        handlers: {
+          ...o.handlers,
+          exit: (info) => {
+            cleanup();
+            o.handlers.exit(info);
+          },
         },
-      },
-    });
-  } catch (e) {
-    cleanup();
-    throw e;
-  }
-};
+      });
+    } catch (e) {
+      cleanup();
+      throw e;
+    }
+  };
+}
+
+export const cliTransportFactory: TransportFactory = makeCliTransportFactory();
 
 export interface ClaudeAdapterDeps {
   /** Spec 100: how long `get_context_usage` may take (tests). */

@@ -91,8 +91,8 @@ module.exports = async (ctx) => {
     await key('Escape');
     check(await until(`document.getElementById('ntCount').getAttribute('aria-expanded')==='false'`, 5000), `${tag}: Esc is reflected on the count`);
     /* the header fits a 480px panel with the count */
-    await js(`(()=>{const s=document.createElement('style');s.id='narrowPanel';s.textContent='#panel{flex:0 0 480px!important;max-width:480px!important}';document.head.append(s);})()`);
-    check(await until(`Math.round(document.getElementById('panel').getBoundingClientRect().width)===480`, 4000), `${tag}: the panel is 480px wide`);
+    await js(`(()=>{const s=document.createElement('style');s.id='narrowPanel';s.textContent='#panel>.panel-in{flex:0 0 480px!important;max-width:480px!important}';document.head.append(s);})()`);
+    check(await until(`Math.round(document.querySelector('#panel>.panel-in').getBoundingClientRect().width)===480`, 4000), `${tag}: the panel is 480px wide`);
     const hn = await headCheck();
     hn.forEach((p) => check(false, `${tag} (480px): ${p}`));
     await shot(`083-notes-count-480-${tag}.png`);

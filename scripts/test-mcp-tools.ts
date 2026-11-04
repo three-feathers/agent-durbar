@@ -15,6 +15,7 @@ import type { AgentInfo, McpAmbientView } from '../src/shared/api';
 import type { McpServerView } from '../src/shared/mcp';
 import type { SavedFolder } from '../src/main/folders';
 import { officeTotals } from '../src/shared/usagedoc';
+import { tmpDir } from './test-tmp';
 /** CPU time of this process (user + system) in ms: the cost budgets below use it, never the wall clock, so a loaded machine cannot fail them (AGENTS.md, Timing; issue #940). */
 const cpuMs = (): number => { const c = process.cpuUsage(); return (c.user + c.system) / 1000; };
 
@@ -283,7 +284,7 @@ async function main(): Promise<void> {
     const mk = (n: number, nf: number, over: Partial<ReadToolsDeps> = {}) => {
       const folders = Array.from({ length: nf }, (_, i) => folder(i, i === 1 ? { hidden: true, label: 'Nice room', floor: 'f-aaaaaaaa', maxAiCredits: 120 } : {}));
       const agents = Array.from({ length: n }, (_, i) => agentOf(folders[i % nf], i, i === 0 ? { lazy: true } : i === 1 ? { floor: 'f-aaaaaaaa', maxAiCredits: 120, permMode: 'allow' } : {}));
-      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-t016-'));
+      const dir = tmpDir('durbar-t016-');
       const usage = new UsageTotalsStore(path.join(dir, 'u.json'), { delayMs: 1e9, setTimer: () => 0, clearTimer: () => undefined });
       const tracker = new AgentStateTracker();
       const deps: ReadToolsDeps = {
@@ -292,7 +293,7 @@ async function main(): Promise<void> {
         tracker,
         floors: () => ({ floors: [{ id: 'ground', name: 'Ground floor', on: true }, { id: 'f-aaaaaaaa', name: 'Attic', on: false }], lastFloor: 'f-aaaaaaaa' }),
         usage,
-        settings: () => ({ defaultMaxAiCredits: 300, seriousMode: true, placeMap: { gh: 'web' }, customPlaces: [{ id: 'c-abc123', name: 'Lab', icon: 'flask' }], theme: 'secret-theme' }),
+        settings: () => ({ defaultMaxAiCredits: 300, seriousMode: true, stillHighlights: true, placeMap: { gh: 'web' }, customPlaces: [{ id: 'c-abc123', name: 'Lab', icon: 'flask' }], theme: 'secret-theme' }),
         mcpCli: () => ({ cli: [{ name: 'cli1', origin: 'copilot-config', transport: 'stdio', args: ['s.js', '--password', SECRETS.argToken, `--token ${SECRETS.oneArg}`], command: `node --api-key=${SECRETS.cmdTok} ${SECRETS.pathDir}/s.js`, enabled: false }, { name: 'github-mcp-server', origin: 'builtin', enabled: true }], file: { label: '~/.copilot/mcp-config.json', found: true, skipped: 1, error: SECRETS.outside }, secretsPersist: false }),
         mcpExtras: (k) => (k === folders[0].workspace ? [extra, planted] : []),
         windowSim: () => false,
@@ -385,7 +386,7 @@ async function main(): Promise<void> {
       assert.deepStrictEqual(fl.floors.map((x: any) => [x.id, x.on, x.ground]), [['ground', true, true], ['f-aaaaaaaa', false, false]]);
       assert.strictEqual(fl.lastFloor, 'f-aaaaaaaa');
       const st = (await call('durbar_settings')).data;
-      assert.deepStrictEqual(st, { defaultCap: 300, seriousMode: true, placeMap: { gh: 'web' }, customPlaces: [{ id: 'c-abc123', name: 'Lab', icon: 'flask' }] });
+      assert.deepStrictEqual(st, { defaultCap: 300, seriousMode: true, stillHighlights: true, placeMap: { gh: 'web' }, customPlaces: [{ id: 'c-abc123', name: 'Lab', icon: 'flask' }] });
       const none = (await call('durbar_settings')).data;
       assert.ok(!('theme' in none));
     }
@@ -610,7 +611,7 @@ async function main(): Promise<void> {
 
     // 12g. usage: baseline plus this run for the same events
     {
-      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-t016u-'));
+      const dir = tmpDir('durbar-t016u-');
       const file = path.join(dir, 'u.json');
       const f0 = folder(0), f1 = folder(1);
       const seed = new UsageTotalsStore(file, { delayMs: 1e9, setTimer: () => 0, clearTimer: () => undefined });

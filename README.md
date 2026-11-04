@@ -23,14 +23,14 @@ Agent Durbar is an office-style desktop app to **see, chat with and coordinate A
 ## What it does
 
 - **An office, not a log:** every agent is a person at a desk in its folder's room; you see at a glance who is working, waiting for you or in trouble. 15 agents fit one screen. Drag a room, a desk or a lobby place to put them in your order (or Alt+arrows; Alt+Shift+arrows moves the room); the order is saved and the layout stays automatic.
-- **Full-screen chat** with thinking, tool calls, diffs, questions and file attachments streaming live; a browser tab in every chat.
+- **Full-screen chat** with thinking, tool calls, diffs, questions and file attachments streaming live; a browser tab in every chat. A rail on its left keeps every agent in view by folder, whoever needs you first; a folder collapses with a click.
 - **Three agent apps side by side:** Copilot, Claude Code and Codex, with one set of permission modes and model, context and spending controls.
 - **Needs you:** one inbox of every agent waiting for an answer or a permission, oldest first.
 - **Sessions that last:** resume after a restart or a crash, scheduled prompts, undo an agent's file changes, notes, continue in another app.
 - **MCP servers** shared across your agent apps, with health (checked at launch too), sign-in and restart from a chat or Settings, sign-ins the agent app renews by itself before a message after a quiet hour (on by default; Durbar never sees a token), per-tool switches and what each costs in context. When your organization's sign-in rules (Entra Conditional Access, for example a managed-device check) refuse a tool, the chat says so under the failed call and offers Sign in again….
 - **Two themes** (Clean Office and Retro Pixel), and your own saved themes.
 
-![Full-screen chat with the other agents in a slim strip, 1280x800](docs/screenshots/m6-fullchat-sim15-1280x800.png)
+![Full-screen chat with the other agents in the rail on its left, 1280x800](docs/screenshots/m6-fullchat-sim15-1280x800.png)
 
 Every feature, with its limits: [docs/features.md](docs/features.md).
 
@@ -87,6 +87,6 @@ Agent Durbar is by **Three Feathers**. Key contributors: [vikramgorla](https://g
 
 The Cheeky, Prehistoric, Pirate, Monster, Royal and Animal Rebels Crew pictures (`src/renderer/crew/art/`) were made by Paco with ChatGPT image generation, and Paco did the final pass; [`ASSETS.md`](src/renderer/crew/art/ASSETS.md) gives the tool and date of each (spec 077). The app id is `io.github.three-feathers.agentdurbar` since 2026-10-16; a build from before then is a separate app to the OS.
 
-The Real office pictures (`src/renderer/realoffice/worlds/photo/` for the room, `src/renderer/realoffice/sets/office/` for the people) were made with Codex image generation on Vikram's plan and approved by Vikram, MIT like the code; the `ASSETS.md` in each folder ([room](src/renderer/realoffice/worlds/photo/ASSETS.md), [people](src/renderer/realoffice/sets/office/ASSETS.md)) gives each sheet's tool, date and prompt (spec 097). A world and a set of people are separate packs that load only when shown (the Photo office with the Office people: 6.1 MB; the Prehistoric cave with the Prehistoric people: 1.8 MB, off by default behind a switch until the owner opens it). The cave's pictures were made with Codex image generation on Vikram's plan and approved by Paco ([room](src/renderer/realoffice/worlds/cave/ASSETS.md), [people](src/renderer/realoffice/sets/prehistoric/ASSETS.md)).
+The Real office pictures (`src/renderer/realoffice/worlds/photo/` for the room, `src/renderer/realoffice/sets/office/` for the people) were made with Codex image generation on Vikram's plan and approved by Vikram, MIT like the code; the `ASSETS.md` in each folder ([room](src/renderer/realoffice/worlds/photo/ASSETS.md), [people](src/renderer/realoffice/sets/office/ASSETS.md)) gives each sheet's tool, date and prompt (spec 097). A world and a set of people are separate packs that load only when shown (the Photo office with the Office people: 6.1 MB; a second world with its people: 1.8 MB, in the app but off by default behind a switch until the owner opens it). That world's pictures were made with Codex image generation on Vikram's plan and approved by Paco ([room](src/renderer/realoffice/worlds/cave/ASSETS.md), [people](src/renderer/realoffice/sets/prehistoric/ASSETS.md)).
 
 See also [SECURITY.md](SECURITY.md), [CONTRIBUTING.md](CONTRIBUTING.md) and the [CHANGELOG](CHANGELOG.md).

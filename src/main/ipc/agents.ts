@@ -1,5 +1,5 @@
 /** IPC for sessions and agents: list, add, send, stop, end, new session, mode, cap, limit, pause, remove, wake, permissions, git status, open in VS Code (spec 045 FR-060; moved out of main.ts as it was). */
-import { dialog } from 'electron';
+import { dialog, shell } from 'electron';
 import { fromAppFrame as fromApp, ipcHandle, ipcOn } from '../ipcguard';
 import type { AdapterRouter } from '../../adapters/router';
 import { historyOf } from '../../adapters/router';
@@ -18,7 +18,7 @@ import type { AgentStateTracker } from '../mcp/agentstate';
 import type { CheckpointStore } from '../checkpoints';
 import type { createRemoteOps } from '../remoteops';
 import type { Scheduler } from '../schedules';
-import { openInVSCode } from '../vscode';
+import { listTargets, openInFirstEditor, openWith, ownedAgent, realDeps } from '../openwith';
 import type { AddWorkspace, EnsureLive, SendOp } from './types';
 
 export interface AgentsIpcDeps {
@@ -110,6 +110,7 @@ export function register(deps: AgentsIpcDeps): void {
   // #1080, item 2). A wait ended on an idle chat is not interrupted: an interrupt with no turn would leave the app expecting an abort
   // (Claude Code's abortExpected) and swallow the next real error (third review of PR #1080).
   ipcHandle('agents:stop', (_e, id: string) => {
+    if (typeof id === 'string') scheduler()?.stopPassFor(id); // spec 072 FR-007: Stop during a loop pass ends the loop; between passes it stops only that turn
     const ended = typeof id === 'string' && deps.mcpStopWait?.(id) === true;
     if (ended && !(deps.mcpBusy?.(id) ?? false)) return undefined;
     return stopTurnOp(opsDeps, id);
@@ -117,6 +118,7 @@ export function register(deps: AgentsIpcDeps): void {
 
   /** End session (spec 005): remote control off first (spec 054 FR-011: off on GitHub too), then the adapter frees the session. Also Restart session's first step (spec 058 FR-022). */
   const endSession = async (id: string): Promise<void> => {
+    scheduler()?.stopLoopFor(id, 'session'); // spec 072 FR-007: End session (and Restart session's first step) ends the session's loop
     try {
       await endSessionOp({ release: (k) => remoteOps.release(k), router }, id);
     } finally {
@@ -258,9 +260,13 @@ export function register(deps: AgentsIpcDeps): void {
     const a = fromApp(e) && typeof id === 'string' ? agents.get(id) : undefined;
     return a && a.cwd ? sessionStarts.summarize(a.id, a.cwd) : { ok: false, error: 'unknown agent' };
   });
-  ipcHandle('agents:openInVSCode', (_e, id: string) => {
-    const a = agents.get(id);
-    // Only paths of agents we started: the workspace file if there is one, else the folder.
-    return a ? openInVSCode(a.workspaceFile ?? a.cwd) : { ok: false, error: 'unknown agent' };
-  });
+  // spec 009 FR-019..FR-024 (issue #685): the "Open with" menu. The window sends an agent id (and a fixed target id); the folder is main's.
+  const ownedOf = (id: unknown) => ownedAgent(agents, id);
+  const owDeps = () => realDeps((p) => shell.openPath(p), (p) => shell.showItemInFolder(p));
+  /* FR-027: one guarded path; the workspace file if there is one, else the folder, of an agent main started */
+  ipcHandle('agents:openInVSCode', (e, id: unknown) => (fromApp(e) ? openInFirstEditor(ownedOf(id), owDeps()) : { ok: false, error: 'invalid request' }));
+  ipcHandle('agents:openWithTargets', (e, id: unknown) => (fromApp(e) ? listTargets(ownedOf(id), owDeps()) : []));
+  ipcHandle('agents:openWith', (e, id: unknown, target: unknown) =>
+    fromApp(e) ? openWith(ownedOf(id), target, owDeps()) : { ok: false, error: 'invalid request' },
+  );
 }
