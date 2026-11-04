@@ -411,11 +411,15 @@ async function main(): Promise<void> {
   assert.strictEqual(sends(c2.s), 1);
 
   // second review of #1038, FR-229: the Stop holds a send from its first line, however long its cancel step takes to hand over to the abort
-  const slowCancel = (): (() => void) => {
+  // the gap is held by the test, not by a timer: under load a timer could end before the checks (issue #1089)
+  const slowCancel = (): { undo: () => void; release: () => void; inGap: () => boolean } => {
     const at = ad as unknown as { cancelLimit: (l: unknown) => Promise<void> };
     const real = at.cancelLimit;
-    at.cancelLimit = async function (this: unknown, l: unknown): Promise<void> { await real.call(this, l); await new Promise((r) => setTimeout(r, 60)); };
-    return () => { delete (at as { cancelLimit?: unknown }).cancelLimit; };
+    let inGap = false;
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((r) => { release = r; });
+    at.cancelLimit = async function (this: unknown, l: unknown): Promise<void> { await real.call(this, l); inGap = true; await held; };
+    return { undo: () => { delete (at as { cancelLimit?: unknown }).cancelLimit; }, release: () => release(), inGap: () => inGap };
   };
   const g1 = await ad.start({ workspace: ws, model: 'gpt-6-luna', quiet: true });
   const g1s = client.last as FakeSession;
@@ -423,12 +427,14 @@ async function main(): Promise<void> {
   let g1Aborts = 0;
   (g1s as unknown as { abort: () => Promise<void> }).abort = () => { g1Aborts++; return new Promise<void>((r) => { g1Land = r; }); };
   (ad as unknown as { stopStepMs: number }).stopStepMs = 400;
-  let undoSlow = slowCancel();
+  let slow = slowCancel();
   const g1Stop = ad.interrupt(g1);
   await tick();
   const g1Next = ad.send(g1, { text: 'in the gap' });
-  await new Promise((r) => setTimeout(r, 20));
-  assert.ok(g1Aborts === 0 && sends(g1s) === 0, 'in the gap between cancel and abort nothing goes');
+  await until(() => slow.inGap());
+  await new Promise((r) => setTimeout(r, 20)); // the send's chance to go wrongly; the gap stays open until release()
+  assert.ok(slow.inGap() && g1Aborts === 0 && sends(g1s) === 0, 'in the gap between cancel and abort nothing goes');
+  slow.release();
   await until(() => g1Aborts === 1);
   await new Promise((r) => setTimeout(r, 150));
   assert.strictEqual(sends(g1s), 0, 'nor before the abort has landed');
@@ -436,18 +442,20 @@ async function main(): Promise<void> {
   await g1Stop;
   await g1Next;
   assert.strictEqual(sends(g1s), 1, 'then it goes');
-  undoSlow();
+  slow.undo();
   // End session the same: a send in the gap is dropped with the session, never sent into it
   const g2 = await ad.start({ workspace: ws, model: 'gpt-6-luna', quiet: true });
   const g2s = client.last as FakeSession;
-  undoSlow = slowCancel();
+  slow = slowCancel();
   const g2Stop = ad.stop(g2);
   await tick();
   const g2Next = ad.send(g2, { text: 'into the end' });
+  await until(() => slow.inGap());
+  slow.release();
   await g2Stop;
   await g2Next;
   assert.strictEqual(sends(g2s), 0, 'End holds it from its first line');
-  undoSlow();
+  slow.undo();
   (ad as unknown as { stopStepMs: number }).stopStepMs = 80;
   // a Stop or an End that throws leaves nothing behind: the next message goes at once
   for (const end of ['interrupt', 'stop'] as const) {
