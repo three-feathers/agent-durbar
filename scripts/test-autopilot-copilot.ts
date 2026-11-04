@@ -324,6 +324,69 @@ async function main(): Promise<void> {
     assert.strictEqual(r.ap().filter((e) => e.phase === 'started').length, 1);
   }
 
+  // FR-059 round 2 (review on #967, probe C): a Stop while the cap restore waits (Autopilot went off during the cap update) still drops the message
+  {
+    const r = await rig({ cap: 100 });
+    await r.ad.setAutopilot(r.sid, { limit: 5, cap: 40 });
+    const caps: unknown[] = [];
+    const opens: Array<() => void> = [];
+    r.s.rpc.options.update = async (a: unknown) => {
+      caps.push((a as { sessionLimits?: unknown }).sessionLimits);
+      await new Promise<void>((res) => { opens.push(res); });
+    };
+    const sent = r.ad.send(r.sid, { text: 'goal C' });
+    await until(() => caps.length === 1, 'probe C: the cap update is in flight');
+    await r.ad.setAutopilot(r.sid, null);
+    opens[0]();
+    await until(() => caps.length === 2, 'probe C: the cap restore is in flight');
+    await r.ad.interrupt(r.sid);
+    opens[1]();
+    assert.strictEqual(await sent.then(() => 'ok', (e: Error) => e.message), 'ok', 'probe C: the send is not refused');
+    assert.deepStrictEqual(caps, [{ maxAiCredits: 40 }, { maxAiCredits: 100 }], 'probe C: the session cap went back');
+    assert.deepStrictEqual(r.s.calls.filter((c) => c.name === 'send'), [], 'FR-059: a Stop during the cap restore drops the message');
+    // and Autopilot back on during the restore: read again, so the message is a goal under the Autopilot cap, never plain
+    await r.ad.setAutopilot(r.sid, { limit: 5, cap: 40 });
+    const again = r.ad.send(r.sid, { text: 'goal D' });
+    await until(() => caps.length === 3, 'probe D: the cap update is in flight');
+    await r.ad.setAutopilot(r.sid, null);
+    opens[2]();
+    await until(() => caps.length === 4, 'probe D: the cap restore is in flight');
+    await r.ad.setAutopilot(r.sid, { limit: 5, cap: 40 });
+    opens[3]();
+    await until(() => caps.length === 5, 'probe D: the Autopilot cap goes on again');
+    opens[4]();
+    assert.strictEqual(await again.then(() => 'ok', (e: Error) => e.message), 'ok');
+    const last = r.s.calls.filter((c) => c.name === 'send').map((c) => c.args[0] as { prompt: string; agentMode?: string });
+    assert.deepStrictEqual(last.map((x) => [x.prompt, x.agentMode ?? 'none']), [['goal D', 'autopilot']], 'FR-059: Autopilot back on during the cap restore: a goal, not plain');
+    assert.deepStrictEqual(caps.slice(2), [{ maxAiCredits: 40 }, { maxAiCredits: 100 }, { maxAiCredits: 40 }]);
+  }
+
+  // FR-059 round 2 (review on #967, probes A and B): a plan-first turn left plan mode set; turning Autopilot on leaves plan mode, so the run's
+  // send has no mode.set after its last check (A), and a Stop can no longer land in one (B)
+  for (const probe of ['A', 'B'] as const) {
+    const r = await rig();
+    await r.ad.send(r.sid, { text: 'plan it', plan: true });
+    fire(r.s, { type: 'session.idle', data: {} }); // the plan turn ends without a plan
+    await r.ad.setAutopilot(r.sid, { limit: 5 });
+    const from = r.order().length;
+    let asked = false;
+    let answer: () => void = () => undefined;
+    if (probe === 'B') {
+      const set = r.s.rpc.mode.set.bind(r.s.rpc.mode);
+      r.s.rpc.mode.set = (a: unknown) => { asked = true; r.s.rpc.mode.set = set; return new Promise((res) => { answer = () => res(set(a)); }); };
+    }
+    let settled = false;
+    const sent = r.ad.send(r.sid, { text: 'the goal' }).then(() => 'ok', (e: Error) => e.message).finally(() => { settled = true; });
+    if (probe === 'A') {
+      assert.strictEqual(await sent, 'ok');
+      assert.deepStrictEqual(r.order().slice(from), ['send'], 'FR-059 probe A: no mode.set between the last check and the goal');
+      continue;
+    }
+    await until(() => asked || settled, 'probe B: the send reached a mode.set or went');
+    if (asked) { await r.ad.interrupt(r.sid); answer(); }
+    assert.strictEqual(await sent, 'ok', 'FR-059 probe B: a Stop can not land between the last check and the goal');
+  }
+
   // spec 099 2026-11-04 (review on #967, mutant C2): Stop's Autopilot branch runs inside FR-229's stop sequence, so a send during it waits
   for (const running of [true, false]) {
     const r = await rig();

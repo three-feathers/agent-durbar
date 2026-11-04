@@ -326,6 +326,9 @@ export function claudeModelOptions(models: unknown): ModelOption[] {
   return out;
 }
 
+/** Spec 099 FR-059: how `sendLaunched` ended, so a failure said in the chat is never followed by a plain resend. */
+type LaunchEnd = 'began' | 'plain' | 'none';
+
 /** A dollar amount for `--max-budget-usd`: at least $0.0001 (Claude stops at once), 4 decimals, no exponent. */
 export function budgetText(usd: number): string {
   return String(Math.max(0.0001, Math.round(usd * 1e4) / 1e4).toFixed(4)).replace(/0+$/, '').replace(/\.$/, '');
@@ -981,20 +984,18 @@ export class ClaudeAdapter implements AgentAdapter {
     if (startsRun && auto.settings?.cap !== undefined) this.refuseSpentCap(s, auto.settings.cap);
     // FR-059 (review on #967): a Stop or Autopilot off during the awaits below is read after the last one; until the run begins the cap is undone on every way out
     const stops = s.stops;
-    let began = false;
-    let plainNow = false;
+    let end: LaunchEnd = 'none';
     try {
       if (startsRun && auto.settings?.cap !== undefined) {
         s.apCap = auto.settings.cap;
         if (capInForce(s.capUsd, s.apCap) !== (s.launchedCap ?? null)) s.needsRelaunch = true;
       }
-      began = await this.sendLaunched(s, message, startsRun ? { auto, goal, stops } : undefined);
-      plainNow = startsRun && !began && this.sessions.get(sessionId) === s && s.stops === stops && !auto.on;
+      end = await this.sendLaunched(s, message, startsRun ? { auto, goal, stops } : undefined);
     } finally {
-      if (startsRun && !began) this.undoAutopilotCap(s);
+      if (startsRun && end !== 'began') this.undoAutopilotCap(s);
     }
-    // Autopilot went off alone (no Stop): the message goes as a plain one, through the relaunch that takes the Autopilot cap off
-    if (plainNow) await this.send(sessionId, message);
+    // Autopilot went off alone (no Stop, no failure said in the chat): the message goes as a plain one, through the relaunch that takes the Autopilot cap off
+    if (end === 'plain') await this.send(sessionId, message);
   }
 
   /** FR-022: the Autopilot cap of a run that did not begin goes, and the next launch is without it. */
@@ -1004,35 +1005,39 @@ export class ClaudeAdapter implements AgentAdapter {
     if (capInForce(s.capUsd, undefined) !== (s.launchedCap ?? null)) s.needsRelaunch = true;
   }
 
-  /** The launch and the write of `send`. With `run`: true when the run began; false when it did not (held, failed, or ended by a Stop or Autopilot off meanwhile). */
-  private async sendLaunched(s: Session, message: AgentMessage, run: { auto: AutopilotState; goal: GoalTextResult | undefined; stops: number | undefined } | undefined): Promise<boolean> {
+  /**
+   * The launch and the write of `send`. With `run`: 'began' when the run began; 'plain' when only Autopilot went off meanwhile (the caller
+   * sends it plain); 'none' otherwise: held, failed (the chat said nothing was sent, FR-054) or ended by a Stop (FR-059). Without `run`: 'none'.
+   */
+  private async sendLaunched(s: Session, message: AgentMessage, run: { auto: AutopilotState; goal: GoalTextResult | undefined; stops: number | undefined } | undefined): Promise<LaunchEnd> {
     const sessionId = s.id;
     if (message.attachments?.length) s.broker.allowReadPaths(message.attachments.map((a) => a.path));
     // FR-116: new flags for a changed mode, but never in the middle of a turn (the hook keeps the current mode until then)
     const relaunch = !!s.transport?.alive && !s.turnOpen && !s.auto?.running && ((s.launchedMode !== undefined && s.launchedMode !== s.broker.getMode()) || !!s.needsRelaunch);
     // spec 087 FR-007: the floor of the launch this message needs is decided before anything is sent; a refusal throws (the send fails)
-    if ((relaunch || !s.transport?.alive) && !s.starting && !(await this.planSandbox(s))) return false; // held: the note says why, nothing sent
+    if ((relaunch || !s.transport?.alive) && !s.starting && !(await this.planSandbox(s))) return 'none'; // held: the note says why, nothing sent
     this.emit(sessionId, { type: 'status', status: 'working', intent: 'Thinking' });
     let t: ClaudeTransport;
     try {
       if (relaunch) await this.relaunchForMode(s);
       t = await this.ensureTransport(s);
     } catch (e) {
-      if (s.sandboxExit !== undefined) return false; // spec 087 FR-007: the sandbox exit already said why; nothing is re-sent
+      if (s.sandboxExit !== undefined) return 'none'; // spec 087 FR-007: the sandbox exit already said why; nothing is re-sent
       this.emit(sessionId, { type: 'status', status: 'error', intent: e instanceof Error ? e.message : 'Claude could not start' });
-      return false;
+      return 'none';
     }
-    // spec 099 FR-053: before anything is written; a failed clear sends nothing (FR-054)
-    if (s.clearDue && !(await this.clearFirst(s, t))) return false;
+    // spec 099 FR-053: before anything is written; a failed clear sends nothing (FR-054), not even plain later
+    if (s.clearDue && !(await this.clearFirst(s, t))) return 'none';
     if (run) {
       // FR-059: after the last await. A Stop or the session's end drops the message; Autopilot off alone sends it plain (the caller)
-      if (this.sessions.get(sessionId) !== s || s.stops !== run.stops || !run.auto.on || !run.goal?.ok) return false;
+      if (this.sessions.get(sessionId) !== s || s.stops !== run.stops) return 'none';
+      if (!run.auto.on || !run.goal?.ok) return 'plain';
       s.blockCap = false;
       s.lastMainId = undefined;
       run.auto.begin();
       s.turnOpen = true;
       t.sendUser(`/goal ${run.goal.text}`); // FR-011
-      return true;
+      return 'began';
     }
     // spec 066 FR-004: plan first: Claude Code's own plan mode for this turn (it reads and proposes with ExitPlanMode; nothing changes)
     if (message.plan) {
@@ -1042,12 +1047,12 @@ export class ClaudeAdapter implements AgentAdapter {
         s.planDraft = '';
       } catch (e) {
         this.emit(sessionId, { type: 'status', status: 'error', intent: `Claude could not switch to plan mode: ${e instanceof Error ? e.message : String(e)}` });
-        return false;
+        return 'none';
       }
     }
     s.turnOpen = true;
     t.sendUser(userContentOf(message.plan ? { ...message, text: `${message.text}\n\n${CLAUDE_PLAN_NOTE}` } : message, this.deps.readImage));
-    return false;
+    return 'none';
   }
 
   /* ---------------- spec 099: Autopilot ---------------- */

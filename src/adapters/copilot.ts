@@ -1184,6 +1184,7 @@ export class CopilotAdapter implements AgentAdapter {
       auto.settings = undefined;
       throw e;
     }
+    live.planMode = false; // FR-059 (review on #967): out of plan mode now, so a run's send has no mode.set after its last check
   }
 
   private async autopilotOff(sid: string, live: Live, reason: AutopilotEnd): Promise<void> {
@@ -1245,18 +1246,24 @@ export class CopilotAdapter implements AgentAdapter {
   /**
    * FR-022, FR-059 (review on #967): the Autopilot cap for the run this send starts, then the refusals read again, since a Stop or Autopilot off
    * may have come while the cap update waited. Anything but a run starting now puts the session's own cap back first. A Stop, or the session
-   * ending, drops the message (as FR-229 drops one held by a Stop): undefined. Autopilot off alone: a plain message.
+   * ending, drops the message (as FR-229 drops one held by a Stop): undefined. Autopilot off alone: a plain message. The restore is a wait
+   * too, so both are read again after it.
    */
   private async capForRun(sid: string, live: Live, auto: AutopilotState, refusals: () => SendPlan): Promise<SendPlan | undefined> {
     const stops = live.interrupts;
+    const stopped = (): boolean => this.sessions.get(sid) !== live || live.interrupts !== stops;
     await this.applyAutopilotCap(live, auto.settings?.cap);
     let again: SendPlan | undefined;
     try {
-      if (this.sessions.get(sid) === live && live.interrupts === stops) again = refusals();
+      if (!stopped()) again = refusals();
     } finally {
       if (!again?.startsRun) await this.restoreAutopilotCap(sid, live);
     }
-    return again;
+    if (!again || again.startsRun) return again;
+    // the restore waited too: a Stop during it drops the message; Autopilot back on during it goes through the cap again
+    if (stopped()) return undefined;
+    const now = refusals();
+    return now.startsRun ? this.capForRun(sid, live, now.auto, refusals) : now;
   }
 
   /** FR-022: the lower of the session's cap and the Autopilot cap, for this run. Never touches `live.cap` or `ownCap`. */

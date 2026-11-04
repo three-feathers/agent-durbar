@@ -418,6 +418,24 @@ async function main(): Promise<void> {
     await until(() => r.users().includes('/goal next goal'), `${how}: the later send sets its goal`);
   }
 
+  // FR-059 round 2 (review on #967, probe p5): Autopilot off during the resume's `/goal clear`, then the clear fails (the child exits, no timer):
+  // the chat says nothing was sent, and nothing is (no plain resend through a relaunch)
+  {
+    const r = await rig({ exists: true, id: 'bbbbbbbb-p5', tuning: { wired: true, waitMs: 2000 } });
+    await r.ad.setAutopilot(r.sid, { limit: 5, cap: 2 });
+    r.opts.clear = () => undefined;
+    const sent = r.ad.send(r.sid, { text: 'the goal' });
+    await until(() => r.users().includes('/goal clear'), 'p5: the resume clear is written');
+    await r.ad.setAutopilot(r.sid, null);
+    r.opts.clear = () => noGoal; // a relaunch's clear would be answered
+    r.c().exit(1, null); // the one in flight fails
+    assert.strictEqual(await sent.then(() => 'ok', (e: Error) => e.message), 'ok', 'p5: the send is not refused');
+    await tick();
+    assert.ok(r.events.some((e) => e.type === 'status' && e.status === 'error' && /nothing was sent/.test(e.intent ?? '')), 'p5: the failed clear is said');
+    assert.ok(!r.users().includes('the goal'), 'FR-059 p5: after "nothing was sent" the message is not sent');
+    assert.strictEqual(r.sp.children.length, 1, 'p5: no relaunch to resend it');
+  }
+
   // a dead child ends the run with error, the session is ended, and says so
   {
     const r = await rig();
