@@ -66,16 +66,16 @@ function elementsRecalculated(events) {
 }
 
 /* The counters, in the page: renders, layout reads, nodes and attribute writes between `start()` and `stop()` */
-const INSTRUMENT = `(()=>{ if(window.__ops)return; const O=window.__ops={on:false,reads:0,renders:0,attrs:0,nodes:0,seen:{}};const CUE=/^ro-(call|bub|bang|dots|cnt)\\b/;
-  const bump=()=>{if(O.on)O.reads++;};
+const INSTRUMENT = `(()=>{ if(window.__ops)return; const O=window.__ops={on:false,reads:0,renders:0,attrs:0,nodes:0,seen:{},by:{}};const CUE=/^ro-(call|bub|bang|dots|cnt)\\b/;
+  const bump=()=>{if(!O.on)return;O.reads++;const f=String(new Error().stack||'').split('\\n').slice(3,5).map(x=>x.trim().replace(/^.*\\/([^/]+:\\d+):\\d+\\)?$/,'$1')).join(' < ');O.by[f]=(O.by[f]||0)+1;};
   for(const prop of ['offsetWidth','offsetHeight','offsetTop','offsetLeft','clientWidth','clientHeight','clientTop','clientLeft','scrollHeight','scrollWidth','scrollTop','scrollLeft'])
     for(const proto of [HTMLElement.prototype,Element.prototype]){const d=Object.getOwnPropertyDescriptor(proto,prop);if(d&&d.get)Object.defineProperty(proto,prop,{...d,get(){bump();return d.get.call(this);}});}
   for(const m of ['getBoundingClientRect','getClientRects']){const f=Element.prototype[m];Element.prototype[m]=function(){bump();return f.apply(this,arguments);};}
   const R=window.DurbarRealOffice,r=R.render;R.render=function(){if(O.on)O.renders++;return r.apply(this,arguments);};
   const take=(l)=>{if(!O.on)return;for(const m of l){if(m.type==='attributes'){O.attrs++;const k=(m.target.className&&String(m.target.className).split(' ')[0]||m.target.tagName)+'.'+m.attributeName;O.seen[k]=(O.seen[k]||0)+1;}else for(const n of [...m.addedNodes,...m.removedNodes])if(!(n.classList&&CUE.test(n.className))){O.nodes++;const k='node:'+(n.className&&String(n.className).split(' ')[0]||n.nodeName)+' in '+(m.target.className&&String(m.target.className).split(' ')[0]||m.target.nodeName);O.seen[k]=(O.seen[k]||0)+1;}}};
   const mo=new MutationObserver(take);mo.observe(document.getElementById('stage'),{subtree:true,childList:true,attributes:true});
-  O.start=()=>{O.reads=O.renders=O.attrs=O.nodes=0;O.seen={};O.on=true;};
-  O.stop=()=>{take(mo.takeRecords());O.on=false;return {reads:O.reads,renders:O.renders,attrs:O.attrs,nodes:O.nodes,seen:O.seen};};
+  O.start=()=>{O.reads=O.renders=O.attrs=O.nodes=0;O.seen={};O.by={};O.on=true;};
+  O.stop=()=>{take(mo.takeRecords());O.on=false;return {reads:O.reads,renders:O.renders,attrs:O.attrs,nodes:O.nodes,seen:O.seen,by:O.by};};
 })()`;
 
 /* FR-183: natural area of the distinct pictures (each decoded once) over what is shown, in device pixels; a chosen picture's real size comes from a plain Image of its currentSrc (with srcset, naturalWidth is corrected by the chosen density) */
@@ -110,6 +110,7 @@ module.exports = async (ctx) => {
      rightly stand still, so "second frames running" found none there (spec 097, Changes 2026-11-04). The reduced-motion rows below emulate "reduce" themselves */
   await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
   const rows = {};
+  const readsBy = {}; /* n -> the layout reads of the update with the most, by the page line that made them (a reads row over its limit names them) */
   const load = (n, extra = {}) => H.load({ w: 1440, h: 900, index, query: { sim: String(n), officeview: 'real', ...extra }, ready: REAL, readyMs: 30000, settle: false });
   const frames = () => js(`new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>{const c=new MessageChannel();c.port1.onmessage=()=>r(1);c.port2.postMessage(0);})))`);
 
@@ -171,7 +172,7 @@ module.exports = async (ctx) => {
     await H.until(shows('working'), 8000);
     await frames();
     const per = { renders: [], reads: [], nodes: [], attrs: [] };
-    let seen = {}, worst = null, putOff = 0;
+    let seen = {}, worst = null, putOff = 0, mostReads = null;
     const startedBusy = [];
     for (let i = 0; i < 8; i++) {
       const st = i % 2 ? 'working' : 'idle';
@@ -189,6 +190,7 @@ module.exports = async (ctx) => {
       const put = await js(`(()=>{const p=window.DurbarRealOffice.pending();return p.screens+p.ticks;})()`); putOff += put;
       for (const k of Object.keys(per)) per[k].push(o[k]);
       seen = o.seen;
+      if (!mostReads || o.reads > mostReads.reads) mostReads = { i, reads: o.reads, by: o.by };
       if (!worst || o.nodes + o.attrs > worst.nodes + worst.attrs) worst = { i, ...o }; /* the most costly update's breakdown is logged, so a failure says what it wrote */
     }
     assert.deepStrictEqual(startedBusy, [], `${n} agents: every measured update started with nothing put off (the updates that did not)`);
@@ -197,7 +199,9 @@ module.exports = async (ctx) => {
     rows[`readsPerStatus@${n}`] = med(per.reads);
     rows[`nodesPerStatus@${n}`] = med(per.nodes);
     rows[`attrWritesPerStatus@${n}`] = med(per.attrs);
+    readsBy[n] = mostReads;
     console.log('[ops]', n, 'agents, per status update (8):', JSON.stringify(per));
+    console.log('[ops]', n, 'agents, layout reads of update', mostReads.i, '(' + mostReads.reads + '), by line:', JSON.stringify(mostReads.by));
     for (const [k, v] of Object.entries(seen)) console.log('[ops]  ', n, 'agents, last update wrote', k, v); // node: = added or removed
     console.log('[ops]', n, 'agents, the most costly update (' + worst.i + '):', worst.nodes, 'nodes', worst.attrs, 'attribute writes', JSON.stringify(worst.seen));
     // ---- FR-185: one text change, in the normal shape of a render ----
@@ -244,7 +248,7 @@ module.exports = async (ctx) => {
     const row = key.split('@')[0], known = KNOWN_FAILURES[key];
     if (value > LIMITS[row]) {
       if (known && value <= known.max) console.log(`[ops] ${key} = ${value} over ${LIMITS[row]} (known failure, ${known.task}; may not pass ${known.max})`);
-      else failed.push(`${key} = ${value}, limit ${known ? known.max : LIMITS[row]}`);
+      else failed.push(`${key} = ${value}, limit ${known ? known.max : LIMITS[row]}` + (row === 'readsPerStatus' ? ` (the update with the most, by line: ${JSON.stringify(readsBy[key.split('@')[1]])})` : ''));
     } else if (known) failed.push(`${key} = ${value} is within its limit: delete its KNOWN_FAILURES entry (${known.task})`);
   }
   assert.deepStrictEqual(failed, [], `op rows over their limits:\n  ${failed.join('\n  ')}`);
