@@ -26,7 +26,7 @@
   let CUR = null; /* {ro, screenOf, still, hold, desks: Map id -> desk, agents: Map id -> model agent, folders: Map, drawn} */
   let ZOOM = null; /* {id, hover, focus, panel, plate} */
   let IO = null, DISMISSED = '';
-  let STILL = false, STILL_AT = '', ARMED = false; /* ARMED: a hover zoom is waiting out its 120 ms (driver reads hoverState) */ /* issue 1040: the room came back (Esc from a chat) under a pointer that has not moved: hovering waits for a real move from STILL_AT */
+  let QUIET_POINTER = false, QUIET_AT = '', ARMED = false; /* ARMED: a hover zoom is waiting out its 120 ms (driver reads hoverState) */ /* issue 1040: the room came back (Esc from a chat) under a pointer that has not moved: hovering waits for a real move from QUIET_AT */
 
   const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
   const px = (n) => Math.round(n * 10) / 10 + 'px';
@@ -745,7 +745,7 @@
     wasHidden = hiddenNow();
     const h = hiddenNow(); CUR.ro.classList.toggle('paused', h); if (h) finishMoves(CUR.ro);
     if (h) { closeZoom(); return; }
-    STILL = true; STILL_AT = ''; /* back in view: a pointer resting on a screen is not asking to read it */
+    QUIET_POINTER = true; QUIET_AT = ''; /* back in view: a pointer resting on a screen is not asking to read it */
     if (moving() && !CUR.pixelArt) onGrid(CUR.ro); /* FR-229 */
     for (const [id, s] of SCR) if (s.dirty) plan(id);
   }
@@ -776,17 +776,17 @@
   function wireZoom(ro) {
     let wait = 0;
     ro.addEventListener('pointermove', (e) => {
-      if (!STILL) return;
+      if (!QUIET_POINTER) return;
       const at = e.clientX + ',' + e.clientY;
-      if (!STILL_AT) STILL_AT = at;
-      if (STILL_AT === at) return;
-      STILL = false;
+      if (!QUIET_AT) QUIET_AT = at;
+      if (QUIET_AT === at) return;
+      QUIET_POINTER = false;
       const sc = e.target.closest && e.target.closest('.ro-screen');
       if (sc && sc.dataset.for && e.pointerType !== 'touch' && DISMISSED !== sc.dataset.for) { clearTimeout(wait); ARMED = true; wait = setTimeout(() => { ARMED = false; openZoom(sc.dataset.for, 'hover'); }, 120); }
     });
     ro.addEventListener('pointerover', (e) => {
       const sc = e.target.closest && e.target.closest('.ro-screen');
-      if (STILL) { if (!STILL_AT) STILL_AT = e.clientX + ',' + e.clientY; return; }
+      if (QUIET_POINTER) { if (!QUIET_AT) QUIET_AT = e.clientX + ',' + e.clientY; return; }
       if (!sc || e.pointerType === 'touch' || !sc.dataset.for) return;
       if ((ZOOM && ZOOM.hover && ZOOM.id === sc.dataset.for) || DISMISSED === sc.dataset.for) return; /* Esc holds until the pointer has left */
       clearTimeout(wait); ARMED = true; wait = setTimeout(() => { ARMED = false; openZoom(sc.dataset.for, 'hover'); }, 120); /* crossing the room opens nothing */
@@ -1031,5 +1031,5 @@
     wasHidden = false;
     CUR = null;
   }
-  root.DurbarRealOffice = { hoverState: () => ({ still: STILL, armed: ARMED }), render, reset, leave, feed, resume, whereSize: () => WHERE.size, bad: () => [...BAD], resolve, stagger, personOf: (id) => (PEOPLE && has(PEOPLE, id) ? PEOPLE[id] : null) /* the chat's header draws the same person (spec 097 FR-106) */ }; /* resolve: for the driver's deterministic check */
+  root.DurbarRealOffice = { hoverState: () => ({ still: QUIET_POINTER, armed: ARMED }), render, reset, leave, feed, resume, whereSize: () => WHERE.size, bad: () => [...BAD], resolve, stagger, personOf: (id) => (PEOPLE && has(PEOPLE, id) ? PEOPLE[id] : null) /* the chat's header draws the same person (spec 097 FR-106) */ }; /* resolve: for the driver's deterministic check */
 })(typeof self !== 'undefined' ? self : this);
