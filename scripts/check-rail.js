@@ -23,6 +23,8 @@
  */
 const assert = require('assert');
 const { helpers, jsLiteral } = require('./driver-helpers');
+const path = require('path');
+const OUT = process.env.OUT || require('os').tmpdir();
 
 process.exitCode = 1;
 const DARK = { id: 'rail-night', name: 'Night (rail check)', extends: 'clean-office', tokens: { '--bg': '#14171c', '--surface': '#1d2127', '--surface-2': '#262b33', '--raised': '#22272e', '--card': '#1d2127', '--soft': '#20252c', '--note': '#2a2f37', '--warn-bg': '#3a3020', '--card-waiting': '#2a2112', '--card-waiting-line': '#7a5a1e', '--card-error': '#2c1518', '--card-error-line': '#7a3a38', '--line': '#3a414c', '--line-2': '#4b5361', '--line-ctl': '#5a6372', '--ink': '#e8eaee', '--ink-2': '#c4c9d1', '--muted': '#9aa2ae', '--blue-ink': '#8fb8ff', '--amber-ink': '#f0c36a', '--red-ink': '#ff9a8f' } };
@@ -124,6 +126,37 @@ module.exports = async (ctx) => {
     checkOrder(gs, 'after the answer');
     assert.strictEqual(gs.map((g) => g.key).indexOf(quietG.key), before, `${tag}: its folder is back in its place`);
 
+    // ---- markup in a name or a request stays text (FR-197: names and tall rows escape what they show) ----
+    {
+      const NAME = '<b>N</b><img src=x>', LIT = '<i>x</i><img src=x> "q" &amp;', REQ = 'Waiting for permission: ' + LIT; // a quote and an entity too: an unescaped attribute breaks on them
+      assert.ok(await js(`window.__durbarSimUi.renamedElsewhere(${jsLiteral(asker)},${jsLiteral(NAME)})`), `${tag}: ${asker} renamed`);
+      await emit(asker, { type: 'status', status: 'needs-permission', intent: REQ });
+      await ok(`(()=>{const r=__rail.row(${jsLiteral(asker)});return !!r&&r.classList.contains('tall')&&r.querySelector('.stop b').textContent.startsWith(${jsLiteral(NAME)})})()`, `${tag}: the renamed asker is a tall row`);
+      const e = await js(`(()=>{const r=__rail.row(${jsLiteral(asker)}),q=r.querySelector('.sreq'),b=r.querySelector('.stop b');return {img:!!r.querySelector('img,i'),nameKids:[...b.children].filter(c=>/^(B|IMG)$/.test(c.tagName)).length,req:q.textContent,reqKids:q.children.length,label:r.getAttribute('aria-label'),title:r.title}})()`);
+      assert.ok(!e.img && e.nameKids === 0 && e.reqKids === 0, `${tag}: no markup became elements in the row: ${JSON.stringify(e)}`);
+      assert.ok(e.req.includes(LIT), `${tag}: the request is shown as text: ${e.req}`);
+      assert.ok(e.label.startsWith(NAME) && e.label.includes(LIT) && e.title.includes(NAME) && e.title.includes(LIT), `${tag}: the name and title carry the literal text: ${JSON.stringify(e)}`);
+      await emit(asker, { type: 'status', status: 'working', intent: 'Working' });
+      await js(`window.__durbarSimUi.renamedElsewhere(${jsLiteral(asker)},'')`);
+      await ok(`!__rail.row(${jsLiteral(asker)}).classList.contains('tall')`, `${tag}: back to a plain row`);
+    }
+    // ---- the focused row keeps the keyboard focus when its folder moves (morphHTML re-inserts the folder) ----
+    {
+      await H.focusPage();
+      gs = await rows();
+      const mover = gs.map((g, i) => ({ g, i })).reverse().find(({ g, i }) => i > 0 && g.ids.length >= 2 && g.ids.every((r) => !r.tall) && gs[i - 1].ids.every((r) => !r.tall)); // the folder above is quiet too, so asking moves it up
+      assert.ok(mover, `${tag}: a quiet folder that can move up`);
+      const keep = mover.g.ids[0].id, sib = mover.g.ids[1].id;
+      await js(`__rail.row(${jsLiteral(keep)}).focus()`);
+      await ok(`document.activeElement===__rail.row(${jsLiteral(keep)})`, `${tag}: ${keep}'s row has the focus`);
+      await emit(sib, { type: 'status', status: 'needs-permission', intent: 'Waiting for permission: run ls' });
+      await ok(`__rail.row(${jsLiteral(sib)}).classList.contains('tall')`, `${tag}: ${sib} asks`);
+      assert.ok((await rows()).map((g) => g.key).indexOf(mover.g.key) < mover.i, `${tag}: the folder moved up`);
+      assert.ok(await js(`document.activeElement===__rail.row(${jsLiteral(keep)})`), `${tag}: the focus stayed on ${keep}'s row after its folder moved`);
+      await emit(sib, { type: 'status', status: 'working', intent: 'Working' });
+      await ok(`!__rail.row(${jsLiteral(sib)}).classList.contains('tall')`, `${tag}: ${sib} answered`);
+    }
+
     // ---- two heights, never by time (T115) ----
     const h0 = await heights();
     const set = [...new Set(Object.values(h0))].sort((a, b) => a - b);
@@ -214,6 +247,37 @@ module.exports = async (ctx) => {
     assert.ok(ln.cut && ln.ell === 'ellipsis' && ln.font >= 10.5 && !ln.over, `${tag}: a long name is cut with an ellipsis: ${JSON.stringify(ln)}`);
     assert.ok(ln.text === long && !ln.markup, `${tag}: a folder name with markup is shown as text: ${JSON.stringify(ln.text.slice(0, 30))}`);
 
+    // ---- a double click on the last heading of a scrolled rail opens no chat (the first click collapses it and moves rows under the pointer) ----
+    {
+      await js(`document.querySelectorAll('#stripList .rg-h[aria-expanded="false"]').forEach(h=>h.click())`);
+      await ok(`!document.querySelector('#stripList .rg-h[aria-expanded="false"]')`, `${tag}: every folder open`);
+      ctx.win.setContentSize(w, h - 250); // a shorter window, so the rail scrolls whatever the statuses are now
+      await ok(`(()=>{const l=document.getElementById('stripList');return l.scrollHeight-l.clientHeight>40})()`, `${tag}: the rail scrolls in a shorter window`);
+      await js(`(()=>{const l=document.getElementById('stripList');l.scrollTop=l.scrollHeight;})()`);
+      await ok(`(()=>{const l=document.getElementById('stripList');return l.scrollTop>0&&l.scrollTop>=l.scrollHeight-l.clientHeight-1})()`, `${tag}: the rail is scrolled to its end`);
+      const lastKey = await js(`[...document.querySelectorAll('#stripList .rgrp')].pop().dataset.key.slice(3)`);
+      const s0 = await selected(), t0 = await H.text('#panelTitle', 'textContent');
+      await watch(lastKey);
+      await mouse(headQ(lastKey), 2);
+      await ok(`window.__c2>=1`, `${tag}: the second click of the double click arrives`);
+      assert.strictEqual(await selected(), s0, `${tag}: a double click on the last heading of a scrolled rail opens no chat`);
+      assert.strictEqual(await H.text('#panelTitle', 'textContent'), t0, `${tag}: the same chat stays open`);
+      if (await expanded(lastKey) === 'false') { await js(`__rail.head(${jsLiteral(lastKey)}).click()`); await ok(`__rail.head(${jsLiteral(lastKey)}).getAttribute('aria-expanded')==='true'`, `${tag}: expanded again`); }
+      ctx.win.setContentSize(w, h);
+      await ok(`innerHeight===${h}`, `${tag}: the window is back to its size`);
+    }
+
+    // ---- the picture for the docs (features.md): a collapsed folder with its count and needs-you mark, 1440x900 ----
+    if (w === 1440) {
+      const cg = (await rows()).find((g) => g.ids.some((r) => r.tall) && !g.ids.some((r) => r.id === inside)) || (await rows()).find((g) => !g.ids.some((r) => r.id === inside));
+      await js(`__rail.head(${jsLiteral(cg.key)}).click()`);
+      await ok(`__rail.head(${jsLiteral(cg.key)}).getAttribute('aria-expanded')==='false'`, `${tag}: a folder collapsed for the picture`);
+      await js(`(()=>{const l=document.getElementById('stripList');l.scrollTop=0;})()`);
+      await H.shot(path.join(OUT, '005-rail-collapsed-1440x900.png'), { prep: 'calm', blur: true, tag: 'rail' });
+      await js(`__rail.head(${jsLiteral(cg.key)}).click()`);
+      await ok(`__rail.head(${jsLiteral(cg.key)}).getAttribute('aria-expanded')==='true'`, `${tag}: expanded again after the picture`);
+    }
+
     // ---- Your door (052 FR-216) ----
     const door = await js(`(()=>{const b=document.getElementById('railDoor');return {n:+b.querySelector('b').textContent,need:window.__durbarSimUi.needsCount(),label:b.getAttribute('aria-label'),text:b.innerText.replace(/\\s+/g,' ').trim()}})()`);
     assert.ok(door.n === door.need && /^Your door \d+$/.test(door.text) && new RegExp(`^Your door: ${door.need} agents? needs? you`).test(door.label), `${tag}: Your door shows the Needs you count: ${JSON.stringify(door)}`);
@@ -240,12 +304,12 @@ module.exports = async (ctx) => {
   await js(`document.querySelector('#stage .desk[data-id="sim-1"]').click()`);
   await ok(`!!document.querySelector('#stripList .sitem.sel')`, 'railstore: a chat opens');
   const g = (await rows()).find((x) => !x.ids.some((r) => r.id === 'sim-1'));
-  const path = await js(`(window.__durbarSimUi.agents().find(a=>a.id===${jsLiteral(g.ids[0].id)})||{}).cwd||''`);
+  const cwd = await js(`(window.__durbarSimUi.agents().find(a=>a.id===${jsLiteral(g.ids[0].id)})||{}).cwd||''`);
   await js(`__rail.head(${jsLiteral(g.key)}).click()`);
   await ok(`__rail.head(${jsLiteral(g.key)}).getAttribute('aria-expanded')==='false'`, 'railstore: collapsed');
   const saved = JSON.parse(await js(`localStorage.getItem('durbar.railFolds')`) || 'null');
   assert.ok(saved && saved.v === 1 && Array.isArray(saved.closed) && saved.closed.length === 1 && typeof saved.closed[0] === 'string' && !/sim-/.test(saved.closed[0]), `railstore: saved as one folder path: ${JSON.stringify(saved)}`);
-  if (path) assert.ok(saved.closed[0] === path || path.startsWith(saved.closed[0]) || saved.closed[0].endsWith(path.split(/[\\/]/).pop()), `railstore: the saved key is the folder's path: ${saved.closed[0]} vs ${path}`);
+  if (cwd) assert.ok(saved.closed[0] === cwd || cwd.startsWith(saved.closed[0]) || saved.closed[0].endsWith(cwd.split(/[\\/]/).pop()), `railstore: the saved key is the folder's path: ${saved.closed[0]} vs ${cwd}`);
   await H.load({ w: 1280, h: 800, query: { railstore: '1' } });
   await railHelpers();
   await js(`document.querySelector('#stage .desk[data-id="sim-1"]').click()`);

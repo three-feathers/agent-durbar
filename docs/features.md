@@ -91,3 +91,5 @@ Where each feature works (Flat, Real office, worlds): [feature inventory](featur
 - **Activity** (Tools > Activity) is a local log for a team lead: every answer to a permission request, every automatic approval (Allow all or a session permission), every mode or spending-limit change, and every MCP restart (spec 058), with time, agent, folder, agent app and mode. It keeps the newest 5000 rows on this computer, holds actions and decisions only (never prompts, replies or file contents), and exports to CSV or JSON. Claude Code and Codex in Allow all approve inside their own process, so their automatic approvals are not listed (Copilot's are).
 
 ![Full-screen chat with the other agents in the rail on its left, 1280x800](screenshots/m6-fullchat-sim15-1280x800.png)
+
+![The agent rail with a collapsed folder: its count and how many in it need you, 1440x900](screenshots/005-rail-collapsed-1440x900.png)

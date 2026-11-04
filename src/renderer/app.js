@@ -3728,7 +3728,7 @@ document.addEventListener('click',e=>{
   const cm=e.target.closest('.chips-more'); if(cm){const box=cm.parentNode;box.dataset.exp=box.dataset.exp==='1'?'0':'1';refreshChips(box);return;}
   const chip=e.target.closest('#chat .chip:not(.att-chip)'); if(chip){if(e.target.closest('.xbody'))return;const o=chip.classList.toggle('open');chip.setAttribute('aria-expanded',String(o));return;} /* spec 052 FR-063: the open body (Copy, Show all, selecting text) keeps it open */
   const rg=e.target.closest('[data-rgfold]'); if(rg){if(e.detail<2)toggleFold(rg.dataset.rgfold);return;} /* spec 005 FR-216: a click, Enter or Space toggles a folder; the second click of a double click is dropped, so a double click toggles it once and never opens a chat */
-  const sw=e.target.closest('[data-sw]'); if(sw){openPanel(sw.dataset.sw,true);return;} /* spec 074 FR-019: mouse or keyboard */
+  const sw=e.target.closest('[data-sw]'); if(sw){if(e.detail>=2)return; /* spec 005 FR-216: the second click of a double click never opens a chat (a heading's first click can move another row under the pointer) */openPanel(sw.dataset.sw,true);return;} /* spec 074 FR-019: mouse or keyboard */
   if(e.target.closest('[data-costview]')){window.DurbarScreens.openTools(null,'cost');return;}
   const mr=e.target.closest('[data-mcproom]'); if(mr){const f=folderOfRoom(mr.dataset.mcproom);if(f)window.DurbarScreens.folderMcp(f.key,f.name);return;}
   const sc=e.target.closest('[data-schedroom]'); if(sc){const r=ROOMS.find(x=>x.id===sc.dataset.schedroom);if(r)openSchedules(r);return;}
@@ -6618,7 +6618,6 @@ function railGroups(){
   const list=agents.filter(x=>!x.parent&&roomShown(roomOf(x)));
   return RAIL.group(list.map((x,i)=>({id:x.id,room:x.room,rank:rank.get(x.room),needs:needsMe(x),since:NEED_SINCE.get(x.id),prio:prio(x),i})));
 }
-function stripAgents(){return railGroups().flatMap(g=>g.ids.map(byId));}
 function railHTML(){
   const ib=$('inboxBtn');
   return `<nav class="rail" aria-label="Agents"><div class="rail-top"><button class="btn back" id="backBtn" type="button" title="Back to the office (Esc)">${ICON('back')}<span>Office</span></button><!-- spec 005 FR-190: R2 (T127) puts the Plan | List switch here, R3 (T116) the collapse button --></div>
@@ -6651,12 +6650,15 @@ function renderStrip(){
   const box=$('stripList'); if(!box)return;
   const cur=byId(ui.selected), root=cur?(cur.parent||cur.id):null, folds=railFolds(), now=Date.now();
   renderRailDoor();
+  /* spec 005 FR-216: a moved folder is re-inserted by morphHTML, which drops the focus; the focused row or heading gets it back by key */
+  const fa=document.activeElement, fk=fa&&box.contains(fa)?(fa.dataset.sw!=null?'[data-sw="'+CSS.escape(fa.dataset.sw)+'"]':fa.dataset.rgfold!=null?'[data-rgfold="'+CSS.escape(fa.dataset.rgfold)+'"]':null):null;
   morphHTML(box,railGroups().map((g,gi)=>{
     const r=ROOMS.find(x=>x.id===g.room); if(!r)return '';
     const shut=folds.has(r.path), n=g.ids.length, here=!!root&&g.ids.includes(root);
     const need=shut&&g.needN?`<span class="rg-need" title="${g.needN} ${g.needN===1?'needs':'need'} you">${ALERT_ICON}${g.needN}</span>`:'';
     return `<div class="rgrp" data-key="rg:${esc(r.id)}"><h3 class="rg-hd"><button class="rg-h${shut&&here?' has-sel':''}" type="button" data-rgfold="${esc(r.id)}" aria-expanded="${!shut}" aria-controls="rgRows${gi}" title="${esc(r.name)}" aria-label="${esc(r.name)}: ${n} ${n===1?'session':'sessions'}${g.needN?', '+g.needN+(g.needN===1?' needs':' need')+' you':''}${shut&&here?', the open chat is here':''}">${ICON('chev')}<span class="rg-n">${esc(r.name)}</span>${need}<span class="rg-c" aria-hidden="true">${n}</span></button></h3><div class="rg-rows" id="rgRows${gi}"${shut?' hidden':''}>${g.ids.map(id=>railRow(byId(id),root,now)).join('')}</div></div>`;
   }).join(''));
+  if(fk&&!box.contains(document.activeElement)){const n=box.querySelector(fk);if(n&&n.getClientRects().length)n.focus({preventScroll:true});}
   /* 052 FR-061: the ages tick as text only, every 30 s while the rail is shown */
   if(!railTick)railTick=setInterval(()=>{if(!$('stripList')){clearInterval(railTick);railTick=0;return;}const t=Date.now();document.querySelectorAll('#stripList .sitem.tall[data-sw]').forEach(el=>{const x=byId(el.dataset.sw),s=el.querySelector('.sage');if(x&&s){const v=railAge(x,t);if(s.textContent!==v)s.textContent=v;}});},30000);
 }
