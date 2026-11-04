@@ -15,6 +15,9 @@ import type { McpServerStatus } from './types';
 import { nonEmptyStr as str } from '../shared/guards';
 import { EditStreams, editOf } from './edits';
 
+/** Whether a stream message is a helper's (a sub-agent's): the one rule `who()` uses, shared so no other reader decides it differently. */
+export const claudeHelperRef = (m: { parent_tool_use_id?: unknown; agent_id?: unknown }): string | undefined => str(m.parent_tool_use_id) || str(m.agent_id);
+
 /** Fields of the SDK messages this mapper reads (structural subset; shapes from the SDK docs, unverified on a real account). */
 export interface ClaudeContentBlock {
   type: string;
@@ -204,10 +207,9 @@ export class ClaudeMapper {
 
   /** `agentId` of a normalized event: the spawning tool_use id, undefined for the main agent. */
   private who(m: ClaudeMessage): string | undefined {
-    const p = str(m.parent_tool_use_id);
-    if (p) return p;
-    const a = str(m.agent_id);
-    return a ? this.tasks.get(a) ?? a : undefined;
+    const ref = claudeHelperRef(m);
+    if (!ref) return undefined;
+    return str(m.parent_tool_use_id) ? ref : this.tasks.get(ref) ?? ref;
   }
 
   /** Map one SDK message. Never throws on unknown or malformed input. */
@@ -314,7 +316,7 @@ export class ClaudeMapper {
         });
       }
       case 'status': {
-        // spec 015 FR-007 (issue #601, `read:`): the CLI says `compacting` while it summarises the conversation; the main agent only
+        // spec 015 FR-007 (issue #601, `real:` 2026-11-02, #731): the CLI says `compacting` while it summarises, then `status: null` with `compact_result: 'success'` BEFORE `compact_boundary` (a `system/init` comes in between); the main agent only
         if (this.who(m)) return;
         if (m.status === 'compacting') return this.compactionStart();
         if (m.compact_result === 'failed') return this.compactionFailed();
@@ -325,7 +327,7 @@ export class ClaudeMapper {
         const meta = m.compact_metadata && typeof m.compact_metadata === 'object' ? (m.compact_metadata as Record<string, unknown>) : {};
         const size = (v: unknown): number | undefined => { const n = num(v); const r = n === undefined ? undefined : Math.round(n); return r !== undefined && r >= 0 && r < 1e9 ? r : undefined; };
         const pre = size(meta.pre_tokens);
-        const post = size(meta.post_tokens); // optional in the SDK (`read:` sdk.d.ts 0.3.310): the real size after, so the ring need not wait
+        const post = size(meta.post_tokens); // seen `real:` (2.1.316), optional in the SDK types: the real size after, so the ring need not wait
         this.compacting = false;
         this.lastCtx = undefined; // the size it held before is gone; the next message's usage gives the new one
         return this.emit({

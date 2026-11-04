@@ -3,7 +3,7 @@
  * `thread/list`, `thread/read {includeTurns: true}` and `model/list` results (shapes as Codex 0.163 sends them, real
  * 2026-10-19) to Durbar's shapes. Server data is untrusted: every field is checked, text is capped, unknown items are skipped.
  */
-import type { HistoryItem, HistoryResult, PreviousSession } from './history';
+import type { HistoryItem, HistoryLimits, HistoryResult, PreviousSession } from './history';
 import { cleanSessionTitle, cleanTitle, sameDir } from './history';
 import type { ModelOption } from '../shared/modelswitch';
 import { isObj, nonEmptyStr as str } from '../shared/guards';
@@ -51,8 +51,14 @@ const textOf = (content: unknown): string =>
   Array.isArray(content) ? content.map((c) => (isObj(c) && c.type === 'text' && typeof c.text === 'string' ? c.text : '')).join('').trim() : '';
 const cap = (s: string, n: number): string => (s.length > n ? s.slice(0, n) + '…' : s);
 
-/** `thread/read {includeTurns: true}` `thread` to the chat replay: prompts, final answers, commands and file changes. */
-export function codexHistory(thread: unknown): HistoryResult {
+/**
+ * `thread/read {includeTurns: true}` `thread` to the chat replay: prompts, final answers, commands and file changes. `limits` (spec 095
+ * FR-024, search only): `textOnly` drops commands and file changes, `maxItems` / `maxTextChars` replace the replay's caps.
+ */
+export function codexHistory(thread: unknown, limits: Partial<HistoryLimits> = {}): HistoryResult {
+  const maxItems = limits.maxItems ?? MAX_ITEMS;
+  const maxText = limits.maxTextChars ?? MAX_TEXT;
+  const textOnly = limits.textOnly === true;
   const all: HistoryItem[] = [];
   const turns = isObj(thread) && Array.isArray(thread.turns) ? thread.turns : [];
   for (const turn of turns) {
@@ -61,10 +67,12 @@ export function codexHistory(thread: unknown): HistoryResult {
       if (!isObj(it)) continue;
       if (it.type === 'userMessage') {
         const text = textOf(it.content);
-        if (text) all.push({ type: 'user', text: cap(text, MAX_TEXT) });
+        if (text) all.push({ type: 'user', text: cap(text, maxText) });
       } else if (it.type === 'agentMessage') {
         const text = typeof it.text === 'string' ? it.text.trim() : '';
-        if (text) all.push({ type: 'output', text: cap(text, MAX_TEXT) });
+        if (text) all.push({ type: 'output', text: cap(text, maxText) });
+      } else if (textOnly) {
+        continue; // spec 095 D2: tool output is never searched
       } else if (it.type === 'commandExecution' && str(it.id)) {
         const out = typeof it.aggregatedOutput === 'string' ? it.aggregatedOutput : undefined;
         all.push({ type: 'tool', callId: it.id as string, tool: 'shell', label: cap(str(it.command) ?? 'command', 200), ...(out ? { output: cap(out, MAX_OUTPUT) } : {}), ...(it.status === 'failed' || it.status === 'declined' ? { failed: true } : {}) });
@@ -74,8 +82,8 @@ export function codexHistory(thread: unknown): HistoryResult {
       }
     }
   }
-  const items = all.length > MAX_ITEMS ? all.slice(all.length - MAX_ITEMS) : all;
-  return { items, total: all.length, truncated: all.length > MAX_ITEMS };
+  const items = all.length > maxItems ? all.slice(all.length - maxItems) : all;
+  return { items, total: all.length, truncated: all.length > maxItems };
 }
 
 const EFFORT = /^[a-z][a-z0-9_-]{0,15}$/;

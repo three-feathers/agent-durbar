@@ -1,10 +1,10 @@
 # Review checklist: first time right
 
-Run this on your own diff **before you ask for review**, as a reviewer who assumes it is wrong: read the real diff (`git diff origin/main...HEAD`). Rules: [AGENTS.md](../AGENTS.md) (*First time right*). Add a line for a new mistake (reason, one evidence link); fix or delete a wrong one. Guidance only: nothing here overrides AGENTS.md, the constitution or the safety rules. Tool pitfalls: [agent-notes.md](agent-notes.md).
+**Before asking for review**, read your real diff (`git diff origin/main...HEAD`) as a reviewer who assumes it is wrong. Rules: [AGENTS.md](../AGENTS.md) (*First time right*). Add a line for a new mistake (reason, one evidence link); fix or delete a wrong one. Guidance only: nothing here overrides AGENTS.md, the constitution or the safety rules. Tool pitfalls: [agent-notes.md](agent-notes.md).
 
 ## Where the list comes from
 
-On 2026-10-23 Vikram's agent grouped the ~1,100 *Required fixes* in reviews of ~300 PRs since 2026-10-18 by keyword (approximate counts):
+On 2026-10-23 Vikram's agent grouped the ~1,100 *Required fixes* in reviews of ~300 PRs since 2026-10-18 by keyword (approx.):
 
 | Pitfall | Findings | PRs |
 |---|---:|---:|
@@ -21,15 +21,14 @@ On 2026-10-23 Vikram's agent grouped the ~1,100 *Required fixes* in reviews of ~
 | A parallel copy of an existing capability | ~20 | 15 |
 | Stale PR description | ~15 | 14 |
 | Theme and layout literals | ~15 | 8 |
-| `package.json` test-list conflicts | ~10 | 5 |
 
 ## The branch and CI
 
-- [ ] **Mergeable, and CI ran on this head.** A conflicting PR runs only CodeQL (no build, tests, gate or UI). Merge `origin/main`, push, read the checks of *that* sha (`scripts/pr-gate.sh <N>`). [#620](https://github.com/three-feathers/agent-durbar/pull/620), [#560](https://github.com/three-feathers/agent-durbar/pull/560)
-- [ ] **After merging `main`, `git diff --stat origin/main...HEAD` lists only your files**: a bad resolution dropped another PR's code and tests. [#560](https://github.com/three-feathers/agent-durbar/pull/560)
-- [ ] **No conflict markers**: `specs:check` covers `specs/`.
-- [ ] **Keep both sides** of a `scripts/test-suites.txt` conflict, then `npm test`. [#565](https://github.com/three-feathers/agent-durbar/pull/565)
-- [ ] **CI for the exact sha, never "green" from memory**: `gh pr checks <N>`, then post `checks run at <sha>: …`. [#630](https://github.com/three-feathers/agent-durbar/pull/630), [#588](https://github.com/three-feathers/agent-durbar/pull/588)
+- [ ] **Branch `NNN` = spec number, not issue number**: `src/` changes fail the gate; renaming closes PRs. [#1095](https://github.com/three-feathers/agent-durbar/pull/1095)
+- [ ] **Mergeable, and CI ran on this head.** Conflicting PRs run only CodeQL. Merge `origin/main`, push, read the checks of *that* sha (`scripts/pr-gate.sh <N>`). [#620](https://github.com/three-feathers/agent-durbar/pull/620), [#560](https://github.com/three-feathers/agent-durbar/pull/560)
+- [ ] **After merging `main`, `git diff --stat origin/main...HEAD` lists only your files**, or a resolution dropped others' code. [#560](https://github.com/three-feathers/agent-durbar/pull/560)
+- [ ] **No conflict markers or broken syntax**: `specs:check` covers `specs/`; after a conflict in renderer JS run `npm run test:rendersyntax`. **Keep both sides** of a `scripts/test-suites.txt` conflict, then `npm test`. [#565](https://github.com/three-feathers/agent-durbar/pull/565)
+- [ ] **CI for the exact sha**: `gh pr checks <N>`, then post `checks run at <sha>: …`. [#630](https://github.com/three-feathers/agent-durbar/pull/630), [#588](https://github.com/three-feathers/agent-durbar/pull/588)
 - [ ] **New CodeQL alerts fixed at the cause**, test code included (or dismissed with a reason). [#598](https://github.com/three-feathers/agent-durbar/pull/598)
 
 ## Spec, numbers and text
@@ -67,9 +66,9 @@ On 2026-10-23 Vikram's agent grouped the ~1,100 *Required fixes* in reviews of ~
 - [ ] **Timers use a monotonic clock; a bad value falls back to the most restrictive choice.** [#635](https://github.com/three-feathers/agent-durbar/pull/635)
 - [ ] **A tool run inside the user's folder obeys that folder's config**: run git only through `nodeGitExec`, test with a planted marker command ([agent-apps.md](agent-apps.md)). [#718](https://github.com/three-feathers/agent-durbar/pull/718), [#719](https://github.com/three-feathers/agent-durbar/issues/719)
 - [ ] **Text guards that emulate a parser** (YAML, shell) use its whitespace (`[ \t]`, not JS `\s`, which matches NBSP) and refuse non-ASCII. [#700](https://github.com/three-feathers/agent-durbar/pull/700)
-- [ ] **One limit, end to end**: every layer that accepts or keys a value (renderer, IPC, adapter) uses the same named constant; a smaller middle cap refuses loudly, never drops silently. Display-only cuts are fine. Grep the old number; test just over the smallest cap. [#693](https://github.com/three-feathers/agent-durbar/pull/693)
+- [ ] **One limit, end to end**: every layer that accepts or keys a value (renderer, IPC, adapter) uses the same named constant; a smaller middle cap refuses loudly. Display-only cuts are fine. Grep the old number; test just over the smallest cap. [#693](https://github.com/three-feathers/agent-durbar/pull/693)
 - [ ] **Unusable input never gets a permissive default**: unreadable IPC input is refused with a reason; a security decision on a bad value fails closed; untrusted files are still parsed tolerantly (constitution III). [#693](https://github.com/three-feathers/agent-durbar/pull/693)
-- [ ] **Outside and Dependabot PRs: a human decides** (FR-062) on lockfile changes (new packages, `resolved`, `integrity`) and binaries; a new dependency only when a spec or plan names it. Never widen `test:supplychain`'s allow-list without an owner decision.
+- [ ] **Outside and Dependabot PRs: a human decides** (FR-062) on lockfile changes (new packages, `resolved`, `integrity`) and binaries; new dependencies only as a spec or plan names them; `test:supplychain`'s allow-list widens only by owner decision. Agent-runtime SDK bumps need a free `real:` MCP sign-in probe (#1084).
 
 ## Tests
 
@@ -106,7 +105,7 @@ On 2026-10-23 Vikram's agent grouped the ~1,100 *Required fixes* in reviews of ~
 
 ## UI and accessibility
 
-- [ ] **Dialog semantics**: `role="dialog"`/`alertdialog` with `aria-modal`, the guard (focus trap, keys) tested, menus with consistent `menu`/`menuitem`. [#597](https://github.com/three-feathers/agent-durbar/pull/597), [#632](https://github.com/three-feathers/agent-durbar/pull/632)
+- [ ] **Dialog semantics**: `role="dialog"`/`alertdialog`, `aria-modal`, guard (focus trap, keys) tested, consistent `menu`/`menuitem`; outside clicks: `DurbarDialog.onBackdrop`/`isOutsideClick` (FR-237). [#597](https://github.com/three-feathers/agent-durbar/pull/597), [#632](https://github.com/three-feathers/agent-durbar/pull/632)
 - [ ] **A refusable action says so**: the handler returns whether it acted, the UI announces success only then, the button is disabled with the reason. [#640](https://github.com/three-feathers/agent-durbar/pull/640)
 - [ ] **Announcements reach a screen reader** (live region used and tested); focus lands sensibly after Escape. [#622](https://github.com/three-feathers/agent-durbar/pull/622)
 - [ ] **Theme tokens, not literals**; check one dark and one non-default theme. [#530](https://github.com/three-feathers/agent-durbar/pull/530), [#588](https://github.com/three-feathers/agent-durbar/pull/588)
@@ -124,7 +123,7 @@ On 2026-10-23 Vikram's agent grouped the ~1,100 *Required fixes* in reviews of ~
 ## Reuse and docs
 
 - [ ] **Search for an existing helper, predicate, dialog or matcher** first (`git grep` the concept) and name it in the PR. [#628](https://github.com/three-feathers/agent-durbar/pull/628)
-- [ ] **Docs in the same PR**: `changelog.d/` fragment, `specs-index` status, task ticked, README and notes. [#535](https://github.com/three-feathers/agent-durbar/pull/535)
+- [ ] **Docs in the same PR**: `changelog.d/` fragment, `specs-index` status, task ticked, README, notes, `feature-inventory.md` row. [#535](https://github.com/three-feathers/agent-durbar/pull/535)
 
 ## How we review
 

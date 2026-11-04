@@ -83,10 +83,11 @@ export function register(deps: HarnessIpcDeps): HarnessIpc {
     send: (channel: string, p: unknown) => {
       toRenderer(channel, p);
       // spec 081 FR-013: the update lock is held to the end of the run; the card then needs no network to know the new version
-      const done = p as { kind?: string; op?: string; ok?: boolean };
+      const done = p as { kind?: string; op?: string; ok?: boolean; failure?: string };
       if (channel === 'harness:done' && done.op === 'update' && isSetupKind(done.kind)) {
         gate.release(done.kind);
-        void checker.afterUpdate(done.kind).catch(() => undefined);
+        // a Managed run changed nothing and is never retried: its card keeps 'Update available' and says Managed, so the result is not dropped
+        if (done.failure !== 'managed') void checker.afterUpdate(done.kind).catch(() => undefined);
       }
     },
     redetect: async () => { await adaptersList(true); },

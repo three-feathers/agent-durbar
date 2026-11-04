@@ -54,3 +54,12 @@ Backlog: capability flag (spec 012). (Office and per-folder totals: done 2026-10
 - [x] T057 Docs, agent-apps, changelog fragment, specs 012 and 051 cross-references
 - [x] T058 Review of 7a179ce4: unusable windows read "not reported", `resetDate` only, below-zero percent, the account fingerprint and its label; tests, mutants [FR-082, FR-095]
 - [x] T059 `real:` 2026-11-02 (owner's OK): check the real shapes of `account.getQuota` and `account/rateLimits/read`, field names and printing nothing personal; free calls, no prompt, cost limit 0 credits [issue #690] Result: free, shapes as mapped, `tokenBasedBilling` finding in spec *Changes* 2026-11-02
+
+## 2026-11-02: settings setters check the save (issue #1023)
+
+- [x] T070 `SettingsStore.commit(next, keep?)` shared by every setter: truth values roll back, convenience and safer changes stay for the run and are listed per setting (`isUnsaved`); `settings:*` replies `ok` only when the value asked for is in force; `scripts/test-credits.ts` unwritable-path and IPC cases [FR-012]
+- [x] T071 Window side of #1023: one `saveFailed` helper in `screens.js` (and the Agent apps checkbox) for every settings row; `scripts/check-settings-save.js` in the UI suite [FR-012]
+
+## 2026-11-04: settings `ok` from the write, no `.tmp` (issues #1094, #1047)
+
+- [x] T072 Setters behind `setting()` return `{ ok, value }` (`Saved<T>`), `ok` from `commit()`; `SettingsStore.save()` removes its `.tmp` in a `finally`; `setChatLinksNewTab` and `setSandboxAlwaysContinue` too, callers in `browser/tabs.ts` and `sandboxops.ts` read `ok`; `scripts/test-credits.ts` unchanged-value, injected partial-write and failed-rename cases [FR-012]

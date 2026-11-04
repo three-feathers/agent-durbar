@@ -28,6 +28,13 @@ import type { AdapterInfo } from '../src/shared/adapters';
 import { FakeClient, FakeCopilot } from './fakes/copilot-sdk';
 import { FakeCodexServer } from './fakes/codex-app-server';
 import type { FakeCodexOptions } from './fakes/codex-app-server';
+import { tmpDir } from './test-tmp';
+
+// A throw-away Copilot session whose createSession never answers keeps its `durbar-acct-` folder by design (FR-022: the next run's stale
+// sweep removes it, an hour later). The hung-createSession case records the folders it was given; this process removes only those at exit
+// (spec 012 FR-166), never another `durbar-acct-*` folder of the real temp folder.
+const hungDirs: string[] = [];
+process.on('exit', () => { for (const d of hungDirs) fs.rmSync(d, { recursive: true, force: true }); });
 
 /** Waits on a real condition (polls every 5 ms) and fails with `what` on a generous timeout; never a fixed sleep. */
 async function until(cond: () => boolean | Promise<boolean>, what: string, timeoutMs = 10_000): Promise<void> {
@@ -501,7 +508,7 @@ void (async () => {
 
     // item 1: every MCP server the runtime would start by itself is switched off by name, and none is passed in
     {
-      const home = fs.mkdtempSync(path.join(os.tmpdir(), 'acct-test-'));
+      const home = tmpDir('acct-test-');
       fs.writeFileSync(path.join(home, 'mcp-config.json'), JSON.stringify({ mcpServers: { notes: { command: 'node', args: ['x.js'] }, web: { type: 'http', url: 'https://example.invalid/mcp' } } }));
       const names = copilotServerNames(home);
       assert.ok(names.includes('notes') && names.includes('web') && names.length >= 3, `the config's servers and the built-in ones: ${names.join(',')}`);
@@ -566,7 +573,7 @@ void (async () => {
       // createSession never answers
       const c = new AuthFakeClient();
       let makes = 0;
-      c.createSession = () => { makes++; return new Promise<never>(() => undefined); };
+      c.createSession = (cfg: Record<string, unknown>) => { makes++; if (typeof cfg.workingDirectory === 'string') hungDirs.push(cfg.workingDirectory); return new Promise<never>(() => undefined); };
       const ad = tune(new FakeCopilot(c));
       const t0 = Date.now();
       assert.deepStrictEqual(await ad.accountInfo(), base, 'a hung createSession: the account without a plan');
@@ -624,7 +631,7 @@ void (async () => {
 
     // item 5: the sweep removes only our own old folders, directly in the temp folder, and never follows a link
     {
-      const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'acct-sweep-'));
+      const tmp = tmpDir('acct-sweep-');
       const mk = (n: string, old: boolean): string => { const p = path.join(tmp, n); fs.mkdirSync(p); fs.writeFileSync(path.join(p, 'f'), 'x'); if (old) { const t = new Date(Date.now() - 2 * 3600_000); fs.utimesSync(p, t, t); } return p; };
       mk('durbar-acct-old', true);
       mk('durbar-gen-old', true);

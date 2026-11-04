@@ -48,7 +48,7 @@ const SCENES = {
   'all-floors': { query: { sim: '15', simfloors: '1' } },
   /* spec 097 FR-118..FR-124 (the nine world moments): Real office on, the simulator's own requests, asleep agents, break and floors */
   lounge: { query: { sim: '15', officeview: 'real' }, act: `window.__durbarSimUi.agents().filter(a=>!a.parent&&a.state==='done').forEach(a=>{a.lastEventAt=Date.now()-34*60000});window.__durbarSimUi.crew.renderAll()` }, /* a finished agent that finished 34 minutes ago sleeps at its desk */
-  'empty-office': { query: { sim: '15', officeview: 'real', simfloors: 'ground' }, act: `document.dispatchEvent(new KeyboardEvent('keydown',{key:'PageDown',bubbles:true}))` }, /* the second floor is empty */
+  'empty-office': { query: { sim: '15', officeview: 'real', simfloors: 'ground' }, act: `document.dispatchEvent(new KeyboardEvent('keydown',{key:'PageUp',bubbles:true}))` }, /* the second floor is empty */
   'first-run': { query: { sim: '15', officeview: 'real' }, act: 'window.__durbarSimUi.agents().splice(0);window.__durbarSimUi.crew.renderAll()' },
   inbox: { query: { sim: '15', officeview: 'real' } },
   'limit-card': { query: { sim: '15', officeview: 'real' } },

@@ -1,0 +1,1 @@
+- Compaction: the events of Claude Code, Codex and Copilot were checked on real sessions (manual compaction) and the shapes are recorded. After a Codex compaction the context ring waits for the next message instead of showing the old size, and a Copilot manual compaction ends its "Compacting" mark from the answer when no end event comes.

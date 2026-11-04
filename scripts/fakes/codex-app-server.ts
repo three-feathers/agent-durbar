@@ -314,19 +314,27 @@ export class FakeCodexServer {
         this.enqueue(child, { method: 'thread/deleted', params: { threadId: tid } });
         return;
       }
+      case 'config/read': {
+        if (this.configReadNever) return;
+        // `real:` codex-cli 0.163.0: the effective config, `mcp_servers` holding the user's servers (a disabled one too); starts nothing
+        const mcp_servers = Object.fromEntries((this.configMcpNames ?? []).map((n) => [n, { command: 'node' }]));
+        return this.reply(child, id, { config: { mcp_servers }, origins: {} });
+      }
       case 'mcpServerStatus/list': {
         // spec 069 FR-031: one server's tools when `serverName` is given (a map by tool name, as the generated schema says)
         const all: Array<Record<string, unknown>> = (this.mcpList as Array<Record<string, unknown>> | undefined) ?? [
           { name: 'echo', authStatus: 'unsupported', runtimeStatus: 'connected', tools: { echo: { name: 'echo', description: 'Echo the text back\nSecond line', inputSchema: {} }, ping: { name: 'ping', inputSchema: {} } }, resources: [], resourceTemplates: [] },
           { name: 'broken', authStatus: 'unsupported', runtimeStatus: 'failed', tools: {}, toolsError: 'tools/list failed: spawn broken-mcp ENOENT', resources: [], resourceTemplates: [] },
         ];
+        if (isObj(params) && this.mcpFailFor !== undefined && params.serverName === this.mcpFailFor) return this.fail(child, id, -32000, 'boom');
+        if (isObj(params) && this.mcpNeverFor !== undefined && params.serverName === this.mcpNeverFor) return; // never answers
         const want = isObj(params) && typeof params.serverName === 'string' && !this.mcpIgnoreServerName ? params.serverName : undefined;
         // spec 069 (review on #499): an app-server that pages (`mcpPageSize`, `cursor` = the next index) and may ignore `serverName`
         const list = want ? all.filter((x) => x.name === want) : this.mcpList ?? all.slice(0, 1);
         const from = isObj(params) && typeof params.cursor === 'string' ? Number(params.cursor) || 0 : 0;
         const size = this.mcpPageSize ?? list.length;
         const answer = (): void => this.reply(child, id, { data: list.slice(from, from + size), nextCursor: this.mcpStuckCursor ?? (from + size < list.length ? String(from + size) : null) });
-        if (this.holdMcpList) return void this.heldMcpList.push(answer);
+        if (this.holdMcpList || (isObj(params) && this.mcpHoldName !== undefined && params.serverName === this.mcpHoldName)) return void this.heldMcpList.push(answer);
         return answer();
       }
       case 'model/list':
@@ -455,6 +463,14 @@ export class FakeCodexServer {
     });
   }
 
+  /** Tests: `mcpServerStatus/list` for this `serverName` answers an error / never answers. */
+  mcpFailFor: string | undefined;
+  mcpNeverFor: string | undefined;
+  /** Tests: hold only this server's reply until `releaseMcpList()`; `config/read` never answers. */
+  mcpHoldName: string | undefined;
+  configReadNever = false;
+  /** The server names `config/read` answers with (the user's `config.toml`). */
+  configMcpNames: string[] | undefined;
   /** What `mcpServerStatus/list` answers (default: one connected `echo`). */
   mcpList: unknown[] | undefined;
   /** Tests: hold the `mcpServerStatus/list` replies until `releaseMcpList()`. */
@@ -466,8 +482,10 @@ export class FakeCodexServer {
   /** Spec 069 (re-review on #499): a broken pager that always answers this `nextCursor`. */
   mcpStuckCursor: string | undefined;
   private heldMcpList: Array<() => void> = [];
+  heldMcpListCount(): number { return this.heldMcpList.length; }
   releaseMcpList(): void {
     this.holdMcpList = false;
+    this.mcpHoldName = undefined;
     for (const f of this.heldMcpList.splice(0)) f();
   }
 
