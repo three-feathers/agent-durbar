@@ -80,14 +80,40 @@ function publishCommand(tag) {
  * The repo's own redaction (spec 012). It is TypeScript and the verify job installs nothing, so Node loads it with its built-in type
  * stripping (Node 22.18 and later). Fail closed: without it there are no test-build notes, never unmasked ones.
  */
-function loadRedact() {
-  try {
-    const r = require(path.join(__dirname, '..', 'src', 'shared', 'redact.ts'));
-    if (typeof r.redact !== 'function' || typeof r.cut !== 'function') throw new Error('no redact or cut export');
-    return r;
-  } catch (e) {
-    throw new Error(`test-build notes are masked with src/shared/redact.ts, which needs Node 22.18 or later (type stripping): ${e.message}`);
+/*
+ * Spec 104 FR-080 (issue #1115): the mask, on every Node that `engines` allows. First `src/shared/redact.ts` itself (Node 22.18+ strips its
+ * types); else a compiled copy (`dist-scripts`, which `npm test` compiles first, or `dist`), only when it is not older than the source, so
+ * stale masking rules are never used. Throws when none loads: the callers fail closed. `o.root`, `o.noStrip` (act as if Node cannot strip
+ * types): for tests.
+ */
+function loadRedact(o = {}) {
+  const root = o.root || ROOT;
+  const src = path.join(root, 'src', 'shared', 'redact.ts');
+  const ok = (r) => r && typeof r.redact === 'function' && typeof r.cut === 'function';
+  const why = [];
+  if (!o.noStrip) {
+    try {
+      const r = require(src);
+      if (ok(r)) return r;
+      why.push('redact.ts: no redact or cut export');
+    } catch (e) {
+      why.push(`redact.ts: ${e.message}`);
+    }
   }
+  let srcTime = Infinity;
+  try { srcTime = fs.statSync(src).mtimeMs; } catch { /* no source: no copy can be checked against it */ }
+  for (const rel of [['dist-scripts', 'src', 'shared', 'redact.js'], ['dist', 'shared', 'redact.js']]) {
+    const f = path.join(root, ...rel);
+    try {
+      if (fs.statSync(f).mtimeMs < srcTime) { why.push(`${rel.join('/')}: older than redact.ts`); continue; }
+      const r = require(f);
+      if (ok(r)) return r;
+      why.push(`${rel.join('/')}: no redact or cut export`);
+    } catch (e) {
+      why.push(`${rel.join('/')}: ${e.code === 'ENOENT' ? 'not built' : e.message}`);
+    }
+  }
+  throw new Error(`test-build notes are masked with src/shared/redact.ts: on Node before 22.18 build first (npm test compiles it); ${why.join('; ')}`);
 }
 
 function git(root, args) {

@@ -489,6 +489,30 @@ function cli() {
   assert.deepStrictEqual(JSON.parse(fs.readFileSync(path.join(ROOT, 'docs/site/blocked-hashes.json'), 'utf8')).sha256.every((h) => /^[0-9a-f]{64}$/.test(h)), true, 'the real hash list holds hashes only');
 }
 
+// spec 104 FR-080 (issue #1115): the mask loads without type stripping from a compiled copy, never a stale one
+{
+  const rn = require('./release-notes.js');
+  // npm test compiles dist-scripts before any suite: as on Node before 22.18, with no type stripping, that copy masks
+  let r;
+  assert.doesNotThrow(() => { r = rn.loadRedact({ noStrip: true }); }, 'FR-080: without type stripping the compiled copy loads');
+  assert.ok(!r.redact(`k ${TOKEN}`).includes(TOKEN), 'FR-080: the compiled copy masks a token');
+  // a copy older than the source is refused (fails closed); a fresh one is used
+  const R = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-loadredact-'));
+  const src = path.join(R, 'src', 'shared', 'redact.ts');
+  const out = path.join(R, 'dist-scripts', 'src', 'shared', 'redact.js');
+  fs.mkdirSync(path.dirname(src), { recursive: true });
+  fs.mkdirSync(path.dirname(out), { recursive: true });
+  fs.writeFileSync(src, 'export const x: number = 1;\n');
+  fs.writeFileSync(out, "exports.redact = () => 'fresh copy'; exports.cut = (x) => x;\n");
+  const old = new Date(Date.now() - 60_000);
+  fs.utimesSync(out, old, old);
+  assert.throws(() => rn.loadRedact({ root: R, noStrip: true }), /older than redact\.ts/, 'FR-080: a copy older than redact.ts is refused');
+  const now = new Date(Date.now() + 60_000);
+  fs.utimesSync(out, now, now);
+  assert.strictEqual(rn.loadRedact({ root: R, noStrip: true }).redact('x'), 'fresh copy', 'FR-080: a fresh compiled copy is used');
+  fs.rmSync(R, { recursive: true, force: true });
+}
+
 fs.rmSync(T, { recursive: true, force: true });
 console.log('test-check-posts: ok (every rule fails its fixture; the clean post and the repository pass)');
 process.exitCode = 0;

@@ -147,6 +147,16 @@ Status on 2026-11-04. **Vikram** answered as marked (Q2 and his position on Q10 
 
 ## Changes
 
+### 2026-11-04: the redact module loads on every Node that `engines` allows (FR-080, issue #1115)
+
+*Found* (Mac session, 2026-11-04): `scripts/release-notes.js` `loadRedact` (used by `check-posts.js` and the release notes) required `src/shared/redact.ts` through Node's type stripping, which needs Node 22.18 or later. So on Node 22.16, which `engines` (`^20.19.0 || >=22.12.0`) allows, `test:blogcheck` failed while every other suite passed. CI uses the latest 22.x, so it did not show.
+
+- **FR-080** `[IMPLEMENTED]` `test:` **The mask loads without type stripping, and never from a stale copy.** `loadRedact` tries, in order:
+  - `src/shared/redact.ts` itself, where Node strips types (22.18+, and the release workflow);
+  - the compiled `dist-scripts/src/shared/redact.js` (which `npm test` compiles before any suite) or `dist/shared/redact.js` (`npm run build`), each only when it is at least as new as `redact.ts`.
+  If none loads, it throws and the callers still fail closed (`redact-unavailable`). `engines` is unchanged.
+  - `test:` `scripts/test-check-posts.js`: with type stripping made to fail, a fresh compiled copy is used, and the mask still masks a token. With the compiled copy older than the source, it is refused and the load fails closed. `real:` `npm test` on Node 22.16.0 (macOS, the Mac session).
+
 ### 2026-11-04: phase 1 built (T002..T006); owner decisions on Q10 and Q2
 
 **Owner decision, Vikram, Telegram DM, 2026-11-03 23:15 UTC (his position on Q10), relayed by his coordinating agent and posted on this PR:** a human reads the first 5 posts and every post with a name in it; every post **also** needs an agent review that checks it discloses no personal information (names beyond handles, employers, private paths, chat contents, personal data) and nothing that compromises security (tokens, internal URLs, security internals); the review blocks the post if it finds any. Written into FR-079 and the *Agent review* list. `blog:check` mechanises what a script can (handles allowlist, first names, private paths, tokens through redact.ts's fail-closed wrapper, `humanRead`, `agentReview` from another side); the rest is the reviewer's list. **Ruben's own answer to Q10 still switches spec 021 FR-076 on**: until then nothing is published to the blog and AGENTS.md is unchanged (T018 not started).
