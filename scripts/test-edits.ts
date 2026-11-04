@@ -452,6 +452,29 @@ const TOKEN = 'ghp_abcdefghijklmnopqrstuvwxyz0123456789';
     assert.ok(!out.includes('ghp_9999'), 'FR-167: a window shortened to just over DIFF_MAX shows no half-cut token');
     assert.strictEqual(out, clipDiff(redact(text), DIFF_MAX), 'FR-167: a window shortened to just over DIFF_MAX gives the old result');
   }
+  // the margin's size, with literal offsets: a JWT (three segments, 12,290 characters; the mask needs 5 characters of its third segment,
+  // which starts 8,194 past `eyJ`) reaches between 8,192 and 16,384 past where it starts. Cut before 5 characters of that segment, it is not
+  // masked, so a window or a shortening allowance of only 8,192 shows its start; the real 16,384 gives the old result.
+  {
+    const jwt = 'eyJ' + 'a'.repeat(4093) + '.' + 'b'.repeat(4096) + '.' + 'c'.repeat(4096);
+    // a JWT starting at 19,990..19,999, shown: a window ending at 20,000 + 8,192 cuts it, the real window holds all of it
+    for (let at = 19_990; at < 20_000; at++) {
+      const text = 'y'.repeat(at - 1) + ' ' + jwt + '\n' + tail;
+      const out = maskedClip(text);
+      assert.strictEqual(out, clipDiff(redact(text), DIFF_MAX), `FR-167: a JWT at ${at} gives the old result`);
+      assert.ok(!out.includes('eyJ'), `FR-167: a JWT at ${at} does not show`);
+    }
+    // 273 tokens shorten the window by 8,190 (30 each); a JWT starting at 28,180..28,191 is cut by the window's end at 36,384 and would
+    // move into view: the whole text is masked instead, however small the shortening
+    const head = Array.from({ length: 273 }, (_, i) => tok(i)).join(' ') + ' ';
+    assert.strictEqual(head.length - redact(head).length, 8_190);
+    for (let at = 28_180; at < 28_192; at++) {
+      const text = head + 'y'.repeat(at - 1 - head.length) + ' ' + jwt + '\n' + tail;
+      const out = maskedClip(text);
+      assert.strictEqual(out, clipDiff(redact(text), DIFF_MAX), `FR-167: a JWT at ${at} after 8,190 masked characters gives the old result`);
+      assert.ok(!out.includes('eyJ'), `FR-167: a JWT at ${at} after 8,190 masked characters does not show`);
+    }
+  }
   // the cut: a newline exactly at DIFF_MAX is the cut; one at DIFF_MAX + 1 is past it (clipDiff's own lastIndexOf bound)
   for (const at of [20_000, 20_001]) {
     const text = 'y'.repeat(at) + '\n' + tail;

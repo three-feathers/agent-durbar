@@ -129,7 +129,8 @@ export const MASK_MARGIN = 16_384;
  * `clipDiff(redact(text), max)` without masking what is never shown: only the start of the text, `max + MASK_MARGIN` characters, is
  * masked (never cut at its start, so look-behind context is kept). If masking shortened that window below `max + MASK_MARGIN`, the whole
  * text is masked once instead, exactly as before, so `mask` runs at most twice. The count of lines not shown covers the masked tail and
- * the raw rest (a number only).
+ * the raw rest (a number only). What is shown equals the old output, except over 1M characters when position 1M falls in one long
+ * token-character run starting before `max`: the old cut dropped the run, this shows its first `max` characters masked (spec 012 FR-167).
  */
 export function maskedClip(text: string, max: number = DIFF_MAX, mask: (s: string) => string = redact): string {
   const end = max + MASK_MARGIN;
