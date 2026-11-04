@@ -25,6 +25,7 @@ function copy(mut) {
   put('package.json', same);
   put('docs/feature-inventory.md', mut.md || same);
   put('docs/experience/world-moments.json', mut.reg || same);
+  put('src/renderer/crew.js', mut.crew || same);
   for (const s of fs.readdirSync(path.join(ROOT, 'specs')).filter((x) => /^\d{3}-/.test(x))) put(`specs/${s}/spec.md`, same);
   return d;
 }
@@ -37,10 +38,15 @@ try {
   fails({ md: (t) => t.replace('mock+planned (desk-card)', 'mock+planned (no-such-moment)') }, /no moment/);
   fails({ md: (t) => t.replace('mock+planned (desk-card)', 'built (desk-card)') }, /code: present/);
   fails({ md: (t) => t.replace(/\| OS sandbox[^\n]*\n/, '') }, /087-.* built but in no row/);
-  fails({ md: (t) => t.replace('in PR 097-p2-screens', 'in PR') }, /must name the branch/);
+  fails({ md: (t) => t.replace('missing (#1148)', 'in PR') }, /must name the branch/);
   fails({ md: (t) => t.replace('Exempt: 002 ', 'Exempt: ') }, /002-.* built but in no row/);
   fails({ md: (t) => t.replace(/\| Helpers[^\n]*\n/, '') , reg: (t) => t.replace('"shippable": false', '"shippable": true') }, /shippable: true/);
   fails({ reg: (t) => t.replace('"shippable": false', '"shippable": true') }, /shippable: true/);
+  // parity (spec 021 FR-078)
+  fails({ md: (t) => t.replace('missing (#1148)', 'missing') }, /Real office cell "missing" is not works, so it must name an issue/);
+  fails({ md: (t) => t.replace('Helpers (sub-agents): card, tree, own chat, needs you | works | missing, only `+N` and 3 dots; planned as small figures beside the desk (#1139)', 'Helpers (sub-agents): card, tree, own chat, needs you | works | in PR 097-helpers') }, /Real office cell "in PR 097-helpers" is not works/);
+  fails({ crew: (t) => t.replace('retro: false', 'retro: true') }, /world\(s\) retro offered, but Worlds "none" is not built/);
+  assert.ok(!check(copy({ md: (t) => t.replace('missing (#1148)', 'missing (owner decision, 2026-11-04)') })).some((m) => /Real office cell/.test(m)), 'a marker accepts a Real office gap');
   process.exitCode = 0;
   console.log('test-feature-inventory: ok');
 } finally {

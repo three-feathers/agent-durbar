@@ -7,6 +7,9 @@
  *    (test:NAME = package.json script test:NAME, driver:NAME = scripts/NAME.js, read:PATH = an existing file);
  *  - `in PR` names a branch in the row; `built` in Worlds needs a registry moment with code: present;
  *  - every spec with `status: built` is in a row or on the `Exempt:` line;
+ *  - parity (spec 021 FR-078, owner 2026-11-04): where Flat is `works`, the Real office cell is `works` or names an issue (#NNN) or carries
+ *    `(owner decision, <date or #issue>)`; and while any world other than Real office (id `photo`) is offered by src/renderer/crew.js
+ *    (WORLDS rows whose flag is absent or on in WORLD_FLAGS), the Worlds cell of such a row says `built` or carries the marker;
  *  - a registry world with shippable: true needs the Helpers row to say `built` for worlds (helpers per world are a row).
  * Plain Node, paths with path.join. Usage: node scripts/feature-inventory.js [--root D]
  */
@@ -30,6 +33,13 @@ function check(root) {
   const seen = new Set();
   const rows = md.split('\n').filter((l) => l.startsWith('| ') && !l.startsWith('| Feature') && !l.startsWith('|---'));
   if (!rows.length) p.push('no feature rows');
+  let others = [];
+  try {
+    const cp = j('src', 'renderer', 'crew.js');
+    delete require.cache[require.resolve(cp)];
+    const crew = require(cp);
+    others = crew.offeredWorlds().filter((w) => w.id !== 'photo').map((w) => w.id);
+  } catch (e) { p.push(`cannot read the offered worlds from src/renderer/crew.js: ${e.message}`); }
   let helpersBuilt = false;
   let helpersRow = false;
   for (const l of rows) {
@@ -50,6 +60,11 @@ function check(root) {
         if (!w[5] || moments.get(w[5])?.code !== 'present') bad('Worlds "built" needs a registry moment with code: present');
         if (/^Helpers/.test(name)) helpersBuilt = true;
       }
+    }
+    if (state(c[1]) === 'works') {
+      const decided = /\(owner decision, [^)]+\)/;
+      if (state(c[2]) !== 'works' && !/#\d+/.test(c[2]) && !decided.test(c[2])) bad(`Real office cell "${c[2]}" is not works, so it must name an issue (#NNN) or carry (owner decision, <date or #issue>)`);
+      if (others.length && !/built/.test(c[3]) && !decided.test(c[3] + ' ' + c[2])) bad(`world(s) ${others.join(', ')} offered, but Worlds "${c[3]}" is not built (Flat has this feature: parity, spec 021 FR-078)`);
     }
     const ns = c[4].split(/\s+/).filter(Boolean);
     if (!ns.length) bad('no spec');
