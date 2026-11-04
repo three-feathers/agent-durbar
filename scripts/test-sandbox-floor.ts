@@ -512,7 +512,7 @@ ok('SC-001: 27 app × OS × mode cells match FR-001..FR-005; no auto-approve, by
   assert.strictEqual(copilotSandboxState({ mode: 'ask', platform: 'linux', host, applied: true })?.approvedMayLeave, true, 'Ask first, on: may leave');
   assert.strictEqual(copilotSandboxState({ mode: 'read-only', platform: 'linux', host, applied: true })?.approvedMayLeave, undefined, 'Read-only: never asks');
   assert.strictEqual(copilotSandboxState({ mode: 'ask', platform: 'linux', host })?.approvedMayLeave, undefined, 'not on yet: no claim');
-  assert.strictEqual(COPILOT_SANDBOX_NOTE_COMMAND, 'If you approve, Copilot’s sandbox may still let this write outside the folder (seen on Linux, 2026-10-25).');
+  assert.strictEqual(COPILOT_SANDBOX_NOTE_COMMAND, 'If you approve, this can also write in Copilot’s temp folder (a private one Durbar gives it), not only this folder.');
   const T = require('../../src/renderer/sandboxtext.js') as { chipWord(s: unknown): string; tooltip(s: unknown, app: string, mask?: (t: string) => string): string; hostLine(v: unknown): string; NOT_VERIFIED: string };
   const on = { state: 'on', mechanism: 'bubblewrap', covers: ['shell'], writes: 'none', verified: false };
   assert.strictEqual(T.chipWord(on), 'Sandboxed');
@@ -532,14 +532,14 @@ ok('SC-001: 27 app × OS × mode cells match FR-001..FR-005; no auto-approve, by
   assert.ok(/MCP servers, hooks, the status line, file reads and edits are outside it\./.test(tip), 'Claude: MCP not covered');
   assert.ok(!T.tooltip({ ...on, verified: true }, 'Claude Code').includes('not verified'), 'a verified state drops it');
   assert.ok(/Shell commands and MCP servers run in the macOS sandbox \(writes: this folder/.test(T.tooltip({ ...on, mechanism: 'seatbelt', covers: ['shell', 'mcp'], writes: 'folders' }, 'Copilot')));
-  // FR-021a (K15): Copilot in Ask first says an approved command may leave the sandbox, and still ends with the not-verified sentence
+  // FR-021a (K15, #755): Copilot in Ask first names its own temp folder, and still ends with the not-verified sentence
   const cpAsk = T.tooltip({ ...on, covers: ['shell', 'mcp'], writes: 'folders', approvedMayLeave: true }, 'Copilot');
-  assert.ok(cpAsk.includes('(writes: not only this folder, network: off). File reads and edits are checked by Durbar. An approved command could write outside the folder (Copilot, seen on Linux, 2026-10-25).'), cpAsk);
-  assert.ok(!cpAsk.includes('writes: this folder'), 'no this-folder claim the run refuted');
+  assert.ok(cpAsk.includes('(writes: this folder and Copilot\u2019s temp folder, network: off). File reads and edits are checked by Durbar. Copilot keeps a temp folder writable; Durbar gives it a private one.'), cpAsk);
+  assert.ok(!/writes: this folder,/.test(cpAsk), 'no bare this-folder claim: the temp folder is named (K15)');
   assert.ok(cpAsk.endsWith(T.NOT_VERIFIED) && cpAsk.length <= 300, 'not cut: the not-verified sentence is kept');
   const cpRo = T.tooltip({ ...on, covers: ['shell', 'mcp'] }, 'Copilot');
-  assert.ok(!cpRo.includes('An approved command'), 'Read-only: no such sentence');
-  assert.ok(cpRo.includes('(writes: none asked; Copilot may add one, network: off)') && !cpRo.includes('writes: none,'), `Read-only: no bare "writes: none" (K15): ${cpRo}`);
+  assert.ok(!cpRo.includes('Durbar gives it a private one'), 'Read-only: no Ask first sentence');
+  assert.ok(cpRo.includes('(writes: only Copilot\u2019s temp folder, network: off)') && !cpRo.includes('writes: none,'), `Read-only: no bare "writes: none" (K15): ${cpRo}`);
   assert.ok(cpRo.endsWith(T.NOT_VERIFIED), 'Read-only keeps the not-verified ending');
   const cpKept = T.tooltip({ ...on, covers: ['shell', 'mcp'], untilNewSession: true, managed: true }, 'Copilot');
   assert.ok(cpKept.endsWith(T.NOT_VERIFIED) && cpKept.length <= 300, `the longest Copilot tooltip still ends with the not-verified sentence (${cpKept.length})`);

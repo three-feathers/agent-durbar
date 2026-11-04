@@ -1,4 +1,5 @@
 import { copilotHooksJson } from '../shared/foldersetup';
+import { makePrivateDir } from './privatedirs';
 import { readCopilotOrgPolicy, resolveCopilotManaged } from './copilotOrgPolicy';
 import type { CopilotManagedClient } from './copilotOrgPolicy';
 import type { OrgPolicy } from '../shared/orgpolicy';
@@ -296,6 +297,18 @@ const errorText = (e: unknown): string => (e instanceof Error ? e.message : Stri
 /** Spec 061: the private folder that holds a session's accepted folder hooks (removed when the session ends). */
 export const HOOK_DIR_PREFIX = 'durbar-folder-hooks-';
 let hookDirsSwept = false;
+/** Spec 087 FR-023: the runtime's environment: Durbar's own, with `TMPDIR` (and `TEMP`/`TMP` on Windows) set to the private folder. */
+export function copilotRuntimeEnv(base: NodeJS.ProcessEnv, tmpDir: string, platform: string): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const [k, v] of Object.entries(base)) if (typeof v === 'string') env[k] = v;
+  env.TMPDIR = tmpDir;
+  if (platform === 'win32') {
+    env.TEMP = tmpDir;
+    env.TMP = tmpDir;
+  }
+  return env;
+}
+
 /** Review nit #424: once per run, remove copies left by a crash (older than a day, so another running Durbar's are never touched). */
 export function sweepOldHookDirs(now = Date.now(), dir = os.tmpdir()): void {
   if (hookDirsSwept) return;
@@ -421,17 +434,43 @@ export class CopilotAdapter implements AgentAdapter {
     return starting;
   }
 
-  /** Start one runtime client. Protected so a test can hand in a new fake client each time (spec 012 FR-158). */
+  /** Spec 087 FR-023: the private TMPDIR of the current runtime (one per runtime: FR-161 keeps one runtime for every session). */
+  private runtimeTmp?: { dir: string; cleanup: () => void };
+
+  /**
+   * Start one runtime client. Protected so a test can hand in a new fake client each time (spec 012 FR-158).
+   * Spec 087 FR-023 (K15, #755): the runtime gets a private temp folder as `TMPDIR` (`TEMP`/`TMP` on Windows), so the temp grant its
+   * sandbox always adds is that folder, not the shared temp folder; a new runtime gets a new folder and the old one is removed.
+   */
   protected async createClient(): Promise<CopilotClient> {
-    // Packaged app: run the runtime from app.asar.unpacked. Dev: let the SDK locate it.
-    // No token is passed or stored here; the runtime uses the Copilot login on this machine.
-    const runtimePath = unpackedRuntimePath();
-    this.debug?.(`runtime: ${runtimePath ?? 'sdk default'}`);
-    const c = new CopilotClient(
-      runtimePath ? { connection: RuntimeConnection.forStdio({ path: runtimePath }), workingDirectory: os.homedir() } : {},
-    );
+    this.dropRuntimeTmp();
+    const tmp = makePrivateDir('durbar-cprt-');
+    this.runtimeTmp = tmp;
+    try {
+      // Packaged app: run the runtime from app.asar.unpacked. Dev: let the SDK locate it.
+      // No token is passed or stored here; the runtime uses the Copilot login on this machine.
+      const runtimePath = unpackedRuntimePath();
+      this.debug?.(`runtime: ${runtimePath ?? 'sdk default'}`);
+      const env = copilotRuntimeEnv(process.env, tmp.dir, process.platform);
+      return await this.newClient(runtimePath ? { connection: RuntimeConnection.forStdio({ path: runtimePath }), workingDirectory: os.homedir(), env } : { env });
+    } catch (e) {
+      if (this.runtimeTmp === tmp) this.dropRuntimeTmp();
+      throw e;
+    }
+  }
+
+  /** Construct and start the SDK client (a test overrides this to see the options without a runtime). */
+  protected async newClient(opts: ConstructorParameters<typeof CopilotClient>[0]): Promise<CopilotClient> {
+    const c = new CopilotClient(opts);
     await c.start();
     return c;
+  }
+
+  /** Spec 087 FR-023: removes the current runtime's private temp folder. */
+  private dropRuntimeTmp(): void {
+    const t = this.runtimeTmp;
+    this.runtimeTmp = undefined;
+    t?.cleanup();
   }
 
   /**
@@ -478,6 +517,7 @@ export class CopilotAdapter implements AgentAdapter {
         this.debug?.(`refreshAuth: old client stop failed: ${e instanceof Error ? e.message : String(e)}`);
       }
     }
+    this.dropRuntimeTmp(); // spec 087 FR-023: the old runtime's TMPDIR; the next one gets its own
     let client: CopilotClient;
     try {
       client = await this.getClient();
@@ -1957,7 +1997,11 @@ export class CopilotAdapter implements AgentAdapter {
     this.starting = undefined;
     const client = this.client ?? (await pending?.catch(() => undefined));
     this.client = undefined;
-    await client?.stop();
+    try {
+      await client?.stop();
+    } finally {
+      this.dropRuntimeTmp(); // spec 087 FR-023
+    }
   }
 
   onEvent(listener: (event: AgentEvent) => void): Unsubscribe {

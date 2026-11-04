@@ -51,6 +51,7 @@ test:simevents
 test:copilotmodel
 test:copilotoneshot
 test:copilotcap
+test:copilot-tmpdir
 test:mcpsession
 test:mcpcall
 test:mcpsignin
