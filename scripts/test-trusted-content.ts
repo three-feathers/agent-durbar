@@ -178,6 +178,8 @@ try {
   assert.ok(!r.out.includes('owner-hold'), `a hold phrase only in code, a fence or a quote is no hold:\n${r.out}`);
   put('comments', [base, c('vikramgorla', 'Quoting: `on hold`\n' + FENCE + '\nowner hold\n' + FENCE + '\nThis one is on hold until the store lands.', '2026-11-01T10:00:00Z', 'issuecomment-2')]);
   assert.ok(gateRun().out.includes(`owner-hold(owner comment of 2026-11-01T10:00:00Z: ${url('issuecomment-2')}`), 'a prose hold next to quoted ones still holds');
+  put('comments', [base, c('vikramgorla', 'A stray ' + FENCE + ' fence\nThis one is on hold until the store lands.', '2026-11-01T10:00:00Z', 'issuecomment-2')]);
+  assert.ok(gateRun().out.includes('owner-hold(owner comment of 2026-11-01T10:00:00Z'), 'an unclosed fence does not hide a later prose hold');
   put('comments', [base, c('vikramgorla', HOLD, '2026-11-01T10:00:00Z', 'issuecomment-2'), c('fjcabello', 'The gate lifts on `hold lifted`\n> off hold\n' + FENCE + '\nhold lifted\n' + FENCE, '2026-11-02T10:00:00Z', 'issuecomment-3')]);
   assert.ok(gateRun().out.includes('owner-hold(owner comment of 2026-11-01T10:00:00Z'), 'a quoted "hold lifted" does not lift a hold');
   put('comments', [base, c('vikramgorla', HOLD, '2026-11-01T10:00:00Z', 'issuecomment-2'), c('fjcabello', 'Hold lifted. (`on hold` was the old state)', '2026-11-02T10:00:00Z', 'issuecomment-3')]);
