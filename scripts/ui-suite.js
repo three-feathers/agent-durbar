@@ -101,6 +101,7 @@ const DRIVERS = [
   { name: 'check-question-options' },
   { name: 'check-inbox-text' }, // spec 052 FR-214: the text of a Needs you card never runs words together
   { name: 'check-inbox-avatar' }, // spec 052 (#1174): no avatar in the Needs you dialog outgrows its box; the first Allow button is in view
+  { name: 'check-097-one-face' }, // spec 097 (#1193): the rail row, the chat header and the inbox show one picture per agent, in Real office and in the flat office with two crews
   { name: 'check-question-visible' },
   { name: 'check-chat-no-scroll' },
   { name: 'check-chat-visibility', label: 'check-chat-visibility 1440', env: { CVONLY: '1440' } }, // one entry per size so each has its own time limit (#1127, FR-063)

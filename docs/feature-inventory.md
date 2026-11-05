@@ -64,6 +64,7 @@ One row per thing a user can do or see. [features.md](features.md) stays the use
 | Credit caps and usage display | works | works | planned (limit-card) | 011 | test:credits test:usagestore driver:shots-012-cost-cap |
 | OS sandbox floor | works | works | none | 087 | test:runtime-sandbox |
 | Themes and user themes | works | missing (#1153) | none | 035 036 037 038 039 040 | test:theme test:userthemes |
+| One face per agent: rail row, chat header, inbox faces are the same picture | works | works (one picker, `roFace`) | none | 097 | driver:check-097-one-face |
 | Characters (crews): the Characters choice drawn in the office | works | missing, only the Office people are drawn; every other crew shows them (#1154) | none | 077 096 | test:characters test:crew |
 | Harness setup, agent-app updates | works | works | none | 051 081 | test:harnesssetup test:updatecheck |
 | Remote control | works | works | none | 054 | test:remote driver:shots-054-remote |
