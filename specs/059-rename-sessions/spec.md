@@ -634,5 +634,7 @@ Real office shipped without FR-020 item 2's pencil: its desks rename through the
   - it covers the plate's name, role or helper dots, or leaves the plate's box;
   - a click on the pencil or F2 on the plate does not open the edit field over that plate's name;
   - Enter does not save a new name onto the plate, or Esc does not cancel it.
-  - Mutants: the name's anchor removed; F2 not reaching a Real office plate.
+  - Mutants, each failing: the name's anchor removed (`sim-3: covers -, outside true, -57px after the name`); F2 kept from a plate in the page, and `.ro-plate` taken out of the app's F2 handler (both `timed out waiting for 1440x900: F2 on a plate opens the name field`).
+  - The second mutant shows that F2 never reached a Real office plate before this change, although the feature inventory said "works F2"; the row now says what is built.
+  - The pencil shows only on hover or focus, so no linked picture changes.
 

@@ -18,7 +18,7 @@ One row per thing a user can do or see. [features.md](features.md) stays the use
 | Unread "New", draft, question marks | works | planned New reply tag and green light bar (097 FR-237, FR-238; #1150); draft and question marks missing (#1149) | none | 001 005 | test:unread read:src/renderer/realoffice.js |
 | Hover card | works | missing, tooltip only (#1151) | none | 001 097 | test:tooltip read:src/renderer/realoffice.js |
 | Drag to rearrange rooms, desks, places | works | missing (#1152) | none | 033 | test:roomorder driver:shots-033-order |
-| Rename a session (F2, pencil) | works | works F2 and menu; pencil missing (#1155) | none | 059 | test:sessionname read:src/renderer/app.js |
+| Rename a session (F2, pencil) | works | works, the pencil beside a plate's name and F2 on a plate (059 FR-170) | none | 059 | test:sessionname driver:check-097-plate-pencil |
 | Lobby places, visitors, away at a place | works | works | mock+planned (lobby) | 024 | test:places driver:shots-024 |
 | Boss queue, Bank, Postbox | works | works | mock+planned (boss-bank-post-coffee) | 001 024 | driver:shots-001-lobby read:src/renderer/realoffice.js |
 | Coffee break at a usage limit | works | works | planned (coffee-bar) | 068 | test:coffeebreak driver:shots-068-coffee |
