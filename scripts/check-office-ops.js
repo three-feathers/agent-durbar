@@ -9,6 +9,7 @@
  *   - one status event of one agent, 8 times, each a real change (every sample must draw, none may search; renders, style reads of the floor and layout reads are the median): renders and searches are the app's own counters (`__durbarSimUi.ops()`), reads are offset*, client*, scroll*, getBoundingClientRect and
  *     getClientRects calls. The first proxy for renders, `getComputedStyle(#floor)`, was read twice per render and showed two where there was one;
  *   - one live paint (a thinking delta rewrites one desk's live line, no render; review of #1138), 8 times: the layout reads, the pencils' frame included (median of the samples without a render);
+ *   - Real office (spec 097 FR-244, T190): over 8 status events that tint and clear one desk's screen (FR-236), no screen or New reply tag is added or removed;
  *   - after each of those status updates no `data-placed` mark sits on anything but a role or a pencil (a finished turn marks the desk unread and shifts keyless spans);
  *   - at 15 agents, 1280x800: after each status pill's filter and its clearing, after an agent starts or stops matching a status filter (a neighbour room's width changes while its HTML does not; its header is made tight by a spacer) and after a body class changes with no room changing (the fit key), the header and usage-line fit classes equal what a
  *     full fit gives (stale fits).
@@ -241,6 +242,22 @@ module.exports = async (ctx) => {
     await H.load({ w: 1440, h: 900, index: process.env.OPS_INDEX || undefined, query: { sim: String(n), officeview: 'real', worldflags: 'retro', world: 'retro' }, ready: `!!document.querySelector('#stage .ro .ro-marquee')`, readyMs: 30000 });
     await js(`(()=>{const s=document.createElement('style');s.textContent='*,*::before,*::after{animation:none!important;transition:none!important}';document.head.appendChild(s);})();0`);
     await measure('#stage .ro-marquee', '#stage .ro-marquee', `elementsRecalculated@retro${n}`, `${n} agents, arcade`);
+
+    /* spec 097 FR-244 (T190): a status change that tints or clears a desk's screen (FR-236) adds or removes no screen or New reply tag: the tint is a
+       class on the screen made once per desk. 8 status events alternating error (red) and working (the normal screen) on one desk. */
+    await H.load({ w: 1440, h: 900, index: process.env.OPS_INDEX || undefined, query: { sim: String(n), officeview: 'real' }, ready: `!!document.querySelector('#stage .ro .ro-screen')`, readyMs: 30000 });
+    const tid = await js(`(()=>{const p=[...document.querySelectorAll('#stage .ro-plate[data-state="working"]')][0];return p?p.dataset.id:'';})()`);
+    assert.ok(tid, `${n} agents: a working desk with the normal screen`);
+    await js(`(()=>{window.__tN=0;const f=ms=>{for(const m of ms)for(const x of [...m.addedNodes,...m.removedNodes])if(x.nodeType===1&&x.matches('.ro-screen,.ro-newtag'))window.__tN++;};window.__tO=new MutationObserver(f);for(const l of document.querySelectorAll('#stage .ro-art,#stage .ro-chrome'))window.__tO.observe(l,{childList:true});})()`);
+    const seen = [];
+    for (let i = 0; i < 8; i++) {
+      const st = i % 2 ? 'working' : 'error', red = !(i % 2);
+      await js(`window.__durbarSimEmit({type:'status',sessionId:${jsLiteral(tid)},timestamp:Date.now(),status:${jsLiteral(st)}})`);
+      seen.push(await until(`(document.querySelector('#stage .ro-screen[data-for="'+CSS.escape(${jsLiteral(tid)})+'"]')||{classList:{contains:()=>false}}).classList.contains('tint-red')===${jsLiteral(red)}`, 8000));
+    }
+    assert.ok(seen.every(Boolean), `${n} agents: every status event tinted or cleared the screen (${seen})`);
+    rows[`tintNodesPerStatus@${n}`] = await js(`(window.__tO.disconnect(),window.__tN)`);
+    console.log('[ops]', n, 'agents, Real office: screen and tag nodes added or removed over 8 tint changes', rows[`tintNodesPerStatus@${n}`]);
   }
   const { failed, notes } = judge(rows);
   for (const l of notes) console.log('[ops]', l);

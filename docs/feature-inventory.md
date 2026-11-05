@@ -15,7 +15,7 @@ One row per thing a user can do or see. [features.md](features.md) stays the use
 | Helpers (sub-agents): card, tree, own chat, needs you | works | missing, only `+N` and 3 dots; planned as small figures beside the desk (#1139) | planned | 001 015 097 | test:helpercard read:src/renderer/realoffice.js |
 | Live activity on the desk | works | works, monitors show the newest output (PR 979) | mock+planned (live-screen) | 001 097 | test:liveact driver:shots-001-live-activity |
 | Model, tokens, cost, context, last tool on the desk | works | missing (#1148) | none | 019 097 | test:ctxbreakdown read:src/renderer/realoffice.js |
-| Unread "New", draft, question marks | works | planned New reply tag and green light bar (097 FR-237, FR-238; #1150); draft and question marks missing (#1149) | none | 001 005 | test:unread read:src/renderer/realoffice.js |
+| Unread "New", draft, question marks | works | works, a New reply tag and a green screen (097 FR-236, FR-238); draft and question marks missing (#1149) | none | 001 005 097 | test:unread driver:shots-097-realoffice |
 | Hover card | works | missing, tooltip only (#1151) | none | 001 097 | test:tooltip read:src/renderer/realoffice.js |
 | Drag to rearrange rooms, desks, places | works | missing (#1152) | none | 033 | test:roomorder driver:shots-033-order |
 | Rename a session (F2, pencil) | works | works, the pencil beside a plate's name and F2 on a plate (059 FR-170) | none | 059 | test:sessionname driver:check-097-plate-pencil |

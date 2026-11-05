@@ -506,7 +506,7 @@ async function driver(ctx) {
       const lum = ([r, g, b]) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
       const bgOf = (e) => { for (let n = e; n; n = n.parentElement) { const c = rgb(getComputedStyle(n).backgroundColor); if (c.length >= 3 && (c.length < 4 || c[3] > 0.95)) return c; } return [255, 255, 255]; };
       let minRatio = 99;
-      document.querySelectorAll('#stage .ro-plate b, #stage .ro-plate .ro-l2, #stage .ro-sign b, #stage .ro-lplate span, #stage .ro-chip').forEach((e) => {
+      document.querySelectorAll('#stage .ro-plate b, #stage .ro-plate .ro-l2, #stage .ro-sign b, #stage .ro-lplate span, #stage .ro-chip, #stage .ro-newtag.on').forEach((e) => { /* spec 097 FR-238: the New reply tag too */
         if (!e.getClientRects().length) return;
         const a = lum(rgb(getComputedStyle(e).color)), b = lum(bgOf(e)), k = (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
         minRatio = Math.min(minRatio, k);
