@@ -38,7 +38,7 @@ module.exports = async (ctx) => {
   // the colour --desk-new as the browser computes it (rgb), read through a probe so a theme or a fallback cannot hide a wrong value
   const green = () => js(`(()=>{const p=document.createElement('i');p.style.color='var(--tint-green)';document.body.appendChild(p);const c=getComputedStyle(p).color;p.remove();return c;})()`);
   const needsC = () => js(`(()=>{const p=document.createElement('i');p.style.color='var(--tint-amber)';document.body.appendChild(p);const c=getComputedStyle(p).color;p.remove();return c;})()`);
-  // spec 001 FR-230, FR-231: the card glow is gone; the monitor light bar carries the colour. `glowOf` keeps its old token names and answers with the light colour
+  // spec 001 FR-230, FR-231: the card glow is gone; the screen's tint carries the colour. `glowOf` keeps its old token names and answers with the light colour
   // the screen is tinted with (--tint-green for a new reply, --tint-amber for needs you), as the browser computes it, so the screen's fill can be compared with it
   const glowOf = (tok) => { const t = { '--desk-new': '--tint-green', '--desk-needs': '--tint-amber' }[tok] || tok; return js(`(()=>{const p=document.createElement('i');p.style.color='var('+${jsLiteral(t)}+')';document.body.appendChild(p);const c=getComputedStyle(p).color;p.remove();return c;})()`); };
   const A = 'sim-7', B = 'sim-13', C = 'sim-15'; // Priya (idle, folder with others at work), Hugo (idle, likewise), Maya (Done, on the couch)
@@ -131,7 +131,7 @@ module.exports = async (ctx) => {
     await js(`window.__durbarSimEmit({timestamp:Date.now(),sessionId:${jsLiteral(A)},type:'status',status:'idle'})`);
     await ok(`!!document.querySelector(${jsLiteral(sel(A) + '[data-state=\"done\"]')})`, `${tag}: Priya is Done again after the question`);
     assert.ok((await info(A)).glow.includes(GG), `${tag}: and the green glow is back`);
-    // Limit reached (and Coffee break when one is on the floor) is a needs-you desk whose light bar is orange (spec 001 FR-231, FR-237's precedence)
+    // Limit reached (and Coffee break when one is on the floor) is a needs-you desk whose screen is orange (spec 001 FR-231, spec 097 FR-236's precedence)
     const wd = await js(`[...document.querySelectorAll('#stage .desk[data-id]')].map(d=>({w:(d.querySelector('.pill,.stl')||{}).textContent||'',c:d.className,g:d.dataset.tint||''}))`);
     assert.ok(wd.some((x) => /Limit reached/.test(x.w)), `${tag}: the simulator has a Limit reached desk`);
     for (const x of wd.filter((y) => /Limit reached|Coffee break/.test(y.w))) assert.ok(/\bis-waiting\b/.test(x.c) && x.g === 'orange', `${tag}: "${x.w.trim()}" is a needs-you desk and its screen is orange (FR-237: the limit): ${x.c} ${x.g}`);
@@ -420,7 +420,7 @@ module.exports = async (ctx) => {
     await H.load({ w: 1440, h: 900, query: { hlmotion: '1' } });
     assert.strictEqual(await js(`document.documentElement.hasAttribute('data-still-highlights')`), false, 'boot: not saved, not applied');
   }
-  // Real office (review of 09aa0ac0, 2): the switch holds the whole room still, the call lights and the people with them (spec 097 FR-047, the shared
+  // Real office (review of 09aa0ac0, 2): the switch holds the whole room still, the lights and the people with them (spec 097 FR-047, the shared
   // `still`); nothing endless runs in it with the switch on, and it all comes back when the switch is off.
   {
     const dbg = ctx.win.webContents.debugger;

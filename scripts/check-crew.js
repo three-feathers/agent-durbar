@@ -113,7 +113,7 @@ function idleOpacity() {
   });
 }
 
-/* spec 001 FR-178 (FR-230: the light bar instead of the glow) with spec 077: the desk's light and the person's zoom (.pp scaled by --hl-e about the chair, 74 99). In the page: each desk with a
+/* spec 001 FR-178 (FR-230, FR-231: the screen's tint instead of the glow) with spec 077: the desk's tint and the person's zoom (.pp scaled by --hl-e about the chair, 74 99). In the page: each desk with a
    portrait at the peak of its entry pulse, with what the face must stay clear of. Each desk gets the New class, then the waiting class, for the
    measurement only (synchronous, so the app never redraws in between). */
 function glowZoom() {
@@ -126,7 +126,7 @@ function glowZoom() {
     if (d.matches('.is-failing,.is-retrying,.is-error')) continue; // no glow on these (FR-178)
     const had = d.className, bar0 = d.dataset.tint, ltb = svg.querySelector('.scr');
     for (const needs of [false, true]) { // both glows on every desk: New (zoom 1.15), then needs you (1.25)
-      d.className = had; d.classList.remove('is-waiting', 'is-unread'); d.classList.add(needs ? 'is-waiting' : 'is-unread'); d.dataset.tint = needs ? 'amber' : 'green'; /* spec 001 FR-231: the light bar the app sets with the class */
+      d.className = had; d.classList.remove('is-waiting', 'is-unread'); d.classList.add(needs ? 'is-waiting' : 'is-unread'); d.dataset.tint = needs ? 'amber' : 'green'; /* spec 001 FR-231: the tint the app sets with the class */
       const e = parseFloat(getComputedStyle(d).getPropertyValue('--hl-e')) || 1, saved = pp.style.cssText;
       pp.style.animation = 'none'; pp.style.transform = `scale(${e})`;
       const covers = [];

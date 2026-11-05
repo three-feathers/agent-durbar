@@ -1,5 +1,5 @@
 /*
- * Spec 001 FR-230..FR-232 (owner, 2026-11-05 16:46 UTC): Open office's screens are tinted by status, as Real office's (spec 097 FR-236); no
+ * Spec 001 FR-230, FR-231 (owner, 2026-11-05 16:46 UTC; FR-232 folded into FR-231): Open office's screens are tinted by status, as Real office's (spec 097 FR-236); no
  * separate lights; the card glow and the waiting halo are gone. Simulator only (DURBAR_SIM=15 DURBAR_SIM_FREEZE=1), no AI credits; every
  * wait is an until().
  *
@@ -82,7 +82,7 @@ module.exports = async (ctx) => {
     }
     if (res.desks.some((d) => d.id === gw && d.tint === 'amber')) seen.both++;
     console.log('[001-lights]', tag, res.desks.length, 'desks', JSON.stringify(res.desks.reduce((a, d) => ((a[d.tint] = (a[d.tint] || 0) + 1), a), {})));
-    assert.deepStrictEqual(P, [], `${tag}: the screen tints (spec 001 FR-230..FR-232)`);
+    assert.deepStrictEqual(P, [], `${tag}: the screen tints (spec 001 FR-230, FR-231)`);
   }
   for (const k of ['amber', 'orange', 'red', 'green', 'both']) assert.ok(seen[k] > 0, `the run saw ${k} (${JSON.stringify(seen)}): a check that met no case proves nothing`);
   console.log('[001-lights] ok', JSON.stringify(seen));

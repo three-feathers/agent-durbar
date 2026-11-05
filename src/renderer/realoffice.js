@@ -398,7 +398,7 @@
           const q = el(chrome, 'cu:' + k, 'div', 'ro-cue cue-' + st.cue); box(q, d.cue); dset(q, 'for', k); attr(q, 'aria-hidden', 'true'); text(q, { none: '', dots: '\u2022\u2022\u2022', ask: '?', bang: '!', tick: '\u2713', zz: 'z z' }[st.cue]);
           const co = el(chrome, 'co:' + k, 'div', 'ro-coin'); box(co, { x: d.face.x + d.face.w / 2 - 3 * lay.g, y: d.face.y, w: 6 * lay.g, h: 6 * lay.g }); attr(co, 'aria-hidden', 'true'); dset(co, 'for', k);
         }
-        /* FR-040, FR-041: lamp, screen glow and call light, as classes over the art (D4) */
+        /* FR-040, FR-041: lamp and screen glow, as classes over the art (D4); the status cue is the screen's tint (FR-236) */
         const lamp = el(lights, 'l:' + k, 'div', 'ro-lamp lamp-' + lt.lamp + (lt.motion === 'pulse' ? ' pulse' : '')); box(lamp, d.lamp);
         const glow = el(lights, 'g:' + k, 'div', 'ro-glow glow-' + lt.glow + (lt.motion === 'breathe' ? ' breathe' : '')); box(glow, { x: d.glass.x - 6, y: d.glass.y - 6, w: d.glass.w + 12, h: d.glass.h + 12 });
         if (L.doneTick(SEEN, k, d.state) && st && st.flourish && moving() && !hiddenNow()) coinUp(chrome, k, lay.g); /* spec 102 FR-261: the arcade's coin on a turn to done (FR-236: no call light any more) */

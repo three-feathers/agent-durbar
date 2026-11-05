@@ -15,7 +15,7 @@
   function halo(o) {
     const { st, c, T } = o;
     if (c) {
-      const hc = { working: T('--halo-working'), thinking: T('--halo-thinking'), error: T('--halo-error') }[st]; /* spec 001 FR-230: no waiting halo; the light bar and call light say it */
+      const hc = { working: T('--halo-working'), thinking: T('--halo-thinking'), error: T('--halo-error') }[st]; /* spec 001 FR-230: no waiting halo; the screen's tint says it (FR-231) */
       return hc ? `<g class="halo halo-${st}"><rect x="101" y="22" width="86" height="66" rx="17" fill="${hc}" opacity=".13"/><rect x="107" y="28" width="74" height="54" rx="13" fill="${hc}" opacity=".16"/></g>` : '';
     }
     if (st === 'working' || st === 'thinking') return `<rect class="glow" x="106" y="28" width="76" height="54" rx="14" fill="${st === 'working' ? T('--halo-working') : T('--halo-thinking')}" filter="url(#soft)" opacity=".24"/>`;

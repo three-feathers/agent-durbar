@@ -1677,7 +1677,7 @@ html .notice-strip.info .ns-ic{background:transparent;color:var(--ink-2);box-sha
 .desk:is([data-tint="amber"],[data-tint="red"],[data-tint="orange"],[data-tint="green"]) .scene .scr-c [fill]:not([fill="none"]){fill:var(--tint-ink)}
 .desk:is([data-tint="amber"],[data-tint="red"],[data-tint="orange"],[data-tint="green"]) .scene .scr-c rect[stroke][fill]{fill:none}
 .desk:is([data-tint="amber"],[data-tint="red"],[data-tint="orange"],[data-tint="green"]) .scene .scr-c circle[fill]:has(+.done-tick){fill:none}
-/* FR-178, amended by FR-230 (owner 2026-11-05): no glow around a desk card any more; the monitor light bar and the call light (FR-231, FR-232) carry needs you and New.
+/* FR-178, amended by FR-230 (owner 2026-11-05): no glow around a desk card any more; the screen's tint (FR-231) carries needs you and New.
    The drawn person (.pp) still calls for attention: three entry pulses (class .hl-in, the first 1.9 s), then a smaller pulse, from the seat (transform-origin at the chair).
    Only transform is animated; reduced motion and Still highlights stop it. The pulses stay by the owner's decision (2026-11-05 18:04 UTC, "flat office - keep it"). */
 .desk.is-unread:where(:not(.is-waiting,.is-failing,.is-retrying,.is-error)){--hl-e:1.15;--hl-b:1.05;--hl-p:2.4s}

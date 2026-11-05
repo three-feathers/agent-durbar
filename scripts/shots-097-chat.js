@@ -65,7 +65,7 @@ module.exports = async (ctx) => {
     const cut = await js(`(()=>{const t=document.querySelector('.ph-line .ptask'),w=document.querySelector('.ro-lampwords'),was=t.textContent;t.textContent='A very long task '.repeat(40);const a=t.getBoundingClientRect(),b=w.getBoundingClientRect(),l=t.parentElement.getBoundingClientRect(),r={cut:t.scrollWidth>t.clientWidth,whole:w.scrollWidth<=w.clientWidth+1,inside:b.right<=l.right+1,after:b.left>=a.right-1};t.textContent=was;return r;})()`);
     assert.deepStrictEqual(cut, { cut: true, whole: true, inside: true, after: true }, `${tag}: a long task never hides the lamp words`);
     assert.ok(st.ring && st.dot && st.img && st.crop, `${tag}: portrait with lamp ring, dot and the cropped person: ${JSON.stringify(st)}`);
-    assert.ok(/^Lamp (warm, steady|on, breathing|bright, amber call light|on, red error light|on, orange call light|low|off)/.test(st.lamp), `${tag}: lamp words in the header: ${st.lamp}`);
+    assert.ok(/^Lamp (warm, steady|on, breathing|bright, amber screen|on, red screen|on, orange screen|low|off)/.test(st.lamp), `${tag}: lamp words in the header: ${st.lamp}`);
     const ct = await js(CONTRAST);
     assert.ok(ct.alpha >= 0.78, `${tag}: the panel surface is at least 78 % opaque (${ct.alpha})`);
     assert.deepStrictEqual(ct.bad, [], `${tag}: contrast of ${ct.n} text pairs`);
