@@ -184,6 +184,21 @@ try {
   assert.ok(gateRun().out.includes('owner-hold(owner comment of 2026-11-01T10:00:00Z'), 'a quoted "hold lifted" does not lift a hold');
   put('comments', [base, c('vikramgorla', HOLD, '2026-11-01T10:00:00Z', 'issuecomment-2'), c('fjcabello', 'Hold lifted. (`on hold` was the old state)', '2026-11-02T10:00:00Z', 'issuecomment-3')]);
   assert.ok(!gateRun().out.includes('owner-hold'), 'a prose lift next to a quoted hold phrase lifts');
+  // FR-083 (#1190): the phrases match as whole words: "condition holds" is no "on hold"
+  for (const w of ['It ends as soon as the condition holds.', 'The button holds the state.', 'Mentions on holdings only.', 'Not a donut merge, no owner holder.']) {
+    put('comments', [base, c('vikramgorla', w, '2026-11-01T10:00:00Z', 'issuecomment-2')]);
+    assert.ok(!gateRun().out.includes('owner-hold'), `"${w}" holds no word-boundary hold phrase, so no hold`);
+  }
+  for (const w of ['On hold.', 'Please (on hold) wait', 'owner hold', "don't merge", 'don\u2019t merge', 'Do not merge!']) {
+    put('comments', [base, c('vikramgorla', w, '2026-11-01T10:00:00Z', 'issuecomment-2')]);
+    assert.ok(gateRun().out.includes('owner-hold(owner comment of 2026-11-01T10:00:00Z'), `"${w}" is still a hold`);
+  }
+  for (const w of ['hold lifted', 'Off hold.', '(off hold)']) {
+    put('comments', [base, c('vikramgorla', HOLD, '2026-11-01T10:00:00Z', 'issuecomment-2'), c('fjcabello', w, '2026-11-02T10:00:00Z', 'issuecomment-3')]);
+    assert.ok(!gateRun().out.includes('owner-hold'), `"${w}" still lifts a hold`);
+  }
+  put('comments', [base, c('vikramgorla', HOLD, '2026-11-01T10:00:00Z', 'issuecomment-2'), c('fjcabello', 'The threshold lifted, and the foothold lifted too.', '2026-11-02T10:00:00Z', 'issuecomment-3')]);
+  assert.ok(gateRun().out.includes('owner-hold(owner comment of 2026-11-01T10:00:00Z'), '"threshold lifted" and "foothold lifted" are no "hold lifted" lift');
   put('comments', [base]);
   put('reviews', [{ user: { login: 'fjcabello' }, body: 'Owner hold on this one', state: 'COMMENTED', submitted_at: '2026-11-01T12:00:00Z', commit_id: 'abcdef0123456789', html_url: url('pullrequestreview-9') }]);
   assert.ok(gateRun().out.includes(`owner-hold(owner comment of 2026-11-01T12:00:00Z: ${url('pullrequestreview-9')}`), 'an owner hold in a review body refuses');
