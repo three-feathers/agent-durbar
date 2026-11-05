@@ -1791,11 +1791,11 @@ html:not([data-ui]) #topBtns button:not([aria-pressed="true"]):hover{background:
 #addFolder.ring-once{position:relative}
 #addFolder.ring-once::after{content:"";position:absolute;inset:-3px;border-radius:inherit;border:2px solid var(--sel-border,#7fa0bd);opacity:0;pointer-events:none;animation:ringonce 1.4s ease-out 1 both}
 @keyframes ringonce{0%{opacity:.8;transform:scale(.96)}100%{opacity:0;transform:scale(1.22)}}
-/* FR-069: Serious mode stops every looping animation (idle bob and nod, typing hands, steam, bars, halos, waving, thinking dots,
+/* FR-069 (changed 2026-11-05, issue #1182): Settings > Motion off stops every looping animation (idle bob and nod, typing hands, steam, bars, halos, waving, thinking dots,
    carets, walking bob, mood signs). One-shot signals (the done tick, the waiting pings, the pops) stay. The busy spinner stays: it is a progress sign. */
-html[data-serious] :is(.bar,.glow,.hand-l,.hand-r,.head,.bubble-g,.td,.steam,.wave,.cursor,.tap,.dizzy,.amb-light,.siren-light,.live i,.typing i,.walker.walking .wk),
-html[data-serious] :is(.caret,.bubble.caret.md>*:last-child)::after,
-html[data-serious] .subblk.running .sub-st::before{animation:none!important}
+html[data-motion-off] :is(.bar,.glow,.hand-l,.hand-r,.head,.bubble-g,.td,.steam,.wave,.cursor,.tap,.dizzy,.amb-light,.siren-light,.live i,.typing i,.walker.walking .wk),
+html[data-motion-off] :is(.caret,.bubble.caret.md>*:last-child)::after,
+html[data-motion-off] .subblk.running .sub-st::before{animation:none!important}
 
 /* spec 052 FR-076: one expand arrow. "Show the change", "Show the exact command", Settings' "More" and the advanced section use the shared
    chevron (the Thinking / Previous sessions SVG, drawn as a mask in currentColor) that turns 90° when open; the browser's marker is hidden. */

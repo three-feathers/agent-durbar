@@ -336,7 +336,7 @@
        extras, every server seen in tool events this run and any already mapped. */
     /* Agent mood (spec 034 FR-004): Serious mode turns the monster, ambulance and the other drawings off */
     const moodSec=X.bridge.setSeriousMode&&X.isSerious?`<section class="scr-sec" aria-labelledby="moodH"><h3 id="moodH">Agent mood</h3>
-        <p class="scr-note">Agent figures get heavier from 70% of their context window and turn into a grumpy monster above 90% (a hint to start a fresh session). Trouble gets a drawing too: an ambulance when a session errors (one at a time), a coffee break when a usage or spending limit is used up, an agent tapping the desk after 60 s waiting for you, and dizzy stars after 3 failed tool calls in a row. The text and percentages never change. Serious mode turns every drawing off.</p>
+        <p class="scr-note">Agent figures get heavier from 70% of their context window and turn into a grumpy monster above 90% (a hint to start a fresh session). Trouble gets a drawing too: an ambulance when a session errors (one at a time), a coffee break when a usage or spending limit is used up, an agent tapping the desk after 60 s waiting for you, and dizzy stars after 3 failed tool calls in a row. The text and percentages never change. Serious mode turns every drawing off; it does not stop motion (Settings > Motion does).</p>
         <div class="scr-tools"><span class="swrow" style="display:flex;align-items:center;gap:10px"><b>Serious mode</b> <small>(no mood drawings)</small>${sw(!!X.isSerious(),'Serious mode: no mood drawings on the agent figures','id="seriousSw"')}</span><span class="scr-note small" id="seriousMsg" role="status"></span></div></section>`:'';
     /* spec 068 FR-006: what happens when a coffee break ends (a usage limit of the agent app has reset) */
     const breakSec=X.bridge.setBreakResume&&X.breakResume?`<section class="scr-sec" aria-labelledby="brkH"><h3 id="brkH">Coffee break</h3>
@@ -422,6 +422,12 @@
     const logoSec=LG&&LG.IDS?`<section class="scr-sec" aria-labelledby="lgH"><h3 id="lgH">Logo</h3>
         <p class="scr-note">The icon in the top bar; it takes the colours of your world. The app\u2019s own icon in the Dock, taskbar or Finder stays the same.</p>
         <ul class="thlist" id="lgList">${logoItems()}</ul></section>`:'';
+    /* spec 052 FR-069 (issue 1182): Motion, on by default; the system's reduced motion still turns it off; Serious mode does not */
+    const motionOn=X.isMotion?(typeof app.motion==='boolean'?app.motion:!!X.isMotion()):true;
+    if(X.isMotion&&X.setMotion&&typeof app.motion==='boolean'&&app.motion!==!!X.isMotion())X.setMotion(app.motion);
+    const motionSec=X.bridge.setMotion&&X.isMotion?`<section class="scr-sec" aria-labelledby="motionH"><h3 id="motionH">Motion</h3>
+        <p class="scr-note">People walk and type, lights blink and the Real office moves. Turn this off to stop all of it; text and colours stay. Your system's reduced motion setting turns it off as well. Serious mode does not stop motion.</p>
+        <div class="scr-tools"><span class="swrow" style="display:flex;align-items:center;gap:10px"><b>Motion</b> <small>(walking, typing, lights)</small>${sw(motionOn,'Motion: people walk and type, lights blink; off keeps everything still','id="motionSw"')}</span><span class="scr-note small" id="motionMsg" role="status"></span></div></section>`:'';
     /* spec 001 FR-192 (WCAG 2.2.2): the way to stop the moving person at a desk that needs you or has a New reply; the glow and the badge stay */
     /* the row shows what main saved (settings:get), and the window follows it when its own read at start failed or is behind */
     const stillOn=X.isStillHl?(typeof app.stillHighlights==='boolean'?app.stillHighlights:!!X.isStillHl()):false;
@@ -462,7 +468,7 @@
         <li>It does not see your bill; costs are estimates.</li>
         <li>It sends nothing to any server of its own.</li>
         <li>Rooms you hide or switch off still run and cost money.</li></ul></section>`;
-    r.innerHTML=head('Settings')+`<div class="scr-body">${hsSec}${pfSec}${detailSec}${keySec}${notSec}${themeSec}${charSec}${logoSec}${stillSec}${capSec}${moodSec}${breakSec}${linksSec}${notifySec}${followSec}${schedSec}${floorsSec}${orgSec}${placesSec}
+    r.innerHTML=head('Settings')+`<div class="scr-body">${hsSec}${pfSec}${detailSec}${keySec}${notSec}${themeSec}${charSec}${logoSec}${motionSec}${stillSec}${capSec}${moodSec}${breakSec}${linksSec}${notifySec}${followSec}${schedSec}${floorsSec}${orgSec}${placesSec}
       <details class="scr-adv" id="advMcp"${advOpen?' open':''}><summary><h3 class="scr-adv-h">Advanced: MCP servers (extra tools for agents)</h3><span class="mtag warn" id="advMcpAtt"${live&&live.agg.attention?'':' hidden'}>${esc(attText(live?live.agg.attention:0))}</span></summary>
       <section class="scr-sec" aria-labelledby="mcpH"><h3 id="mcpH" tabindex="-1">MCP servers</h3>
         ${liveSection()}
@@ -871,6 +877,22 @@
       let res=null; try{res=await X.bridge.setSeriousMode(on);}catch(err){res=null;}
       if(saveFailed(res,'seriousMsg',onOff(ss)))return;
       if(res&&res.ok){X.setSerious(!!res.seriousMode);ss.classList.toggle('on',!!res.seriousMode);ss.setAttribute('aria-checked',res.seriousMode?'true':'false');const m=$('seriousMsg');if(m)m.textContent=res.seriousMode?'Serious mode is on: no mood drawings.':'Serious mode is off.';}
+      return;
+    }
+    const mo=e.target.closest('#motionSw');
+    if(mo&&X.bridge.setMotion){
+      if(mo.dataset.busy==='1')return; /* a save is in flight */
+      mo.dataset.busy='1';
+      const on=mo.getAttribute('aria-checked')!=='true';
+      let res=null; try{res=await X.bridge.setMotion(on);}catch(err){res=null;}
+      delete mo.dataset.busy;
+      const m=$('motionMsg'), isBool=!!res&&typeof res.motion==='boolean';
+      if(isBool)X.setMotion(res.motion); /* what main says is in force, saved or not */
+      if(!res||!res.ok){
+        const inForce=isBool?res.motion:mo.getAttribute('aria-checked')==='true';
+        mo.classList.toggle('on',inForce);mo.setAttribute('aria-checked',inForce?'true':'false');
+        if(m)m.textContent='Could not save this setting. It stays '+(inForce?'on':'off')+'.';return;}
+      mo.classList.toggle('on',res.motion);mo.setAttribute('aria-checked',res.motion?'true':'false');if(m)m.textContent=res.motion?'Motion is on.':'Motion is off: everything stays still.';
       return;
     }
     const st=e.target.closest('#stillSw');
