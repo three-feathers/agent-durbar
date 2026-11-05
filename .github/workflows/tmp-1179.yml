@@ -1,0 +1,37 @@
+name: TMP 1179 windows repeat (remove before review)
+on:
+  push:
+    branches: [052-windows-flakes]
+permissions:
+  contents: read
+jobs:
+  rep:
+    name: rep ${{ matrix.n }}
+    runs-on: windows-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        n: [1, 2, 3]
+    env:
+      UI_SUITE_JOBS: '3'
+      UI_SUITE_RETRY: '0'
+      UI_SUITE_OUT: ${{ github.workspace }}/ui-shots
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: three drivers at once, four times
+        shell: bash
+        run: |
+          fails=0
+          for i in 1 2 3 4; do
+            echo "=== round $i"
+            node scripts/ui-suite.js --only check-auto-follow,check-edit-popups,check-status-tooltip || fails=$((fails+1))
+          done
+          echo "rounds failed: $fails of 4"
+          test "$fails" = 0

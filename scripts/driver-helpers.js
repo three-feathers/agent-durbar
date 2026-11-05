@@ -136,6 +136,9 @@ function helpers(ctx) {
   };
   const focusPage = async (o = {}) => {
     const end = Date.now() + (o.ms || 3000);
+    /* emulate: the emulation is on from the start, not only after the real focus failed: a neighbour can take the OS focus later (check-edit-popups,
+       #1179: a focus() behind a dialog fires no focusin in an unfocused page), and releaseFocus() ends it as before */
+    if (o.emulate) { await emulateFocus(); if (emulating.has(wc())) return w.until('document.hasFocus()', 1500); }
     for (;;) {
       try { if (ctx.win.show) ctx.win.show(); if (ctx.win.focus) ctx.win.focus(); wc().focus(); } catch { /* the window is going away: the guard reports it */ }
       if (await w.until('document.hasFocus()', 400)) return true;

@@ -23,6 +23,19 @@ module.exports = async (ctx) => {
   const wc = ctx.win.webContents;
   const MOD = process.platform === 'darwin' ? ['meta'] : ['control'];
   const ok = async (expr, what, ms) => assert.ok(await until(expr, ms || 8000), what);
+  /* An arrival the strip delivers is held while the window is in the background (FR-185). On Windows CI three drivers share one desktop and a neighbour's
+     window can take the OS focus at any moment, so a wait for an arrival asks for the real focus again at every look (never the focus emulation: the hold
+     steps below test a real blur) and, when it fails, says what the page saw (focus and the strip's text). Every wait still ends as soon as the condition holds. */
+  const okArrival = async (expr, what, ms) => {
+    const end = Date.now() + ms;
+    for (;;) {
+      await H.focusPage({ ms: 1500 });
+      if (await until(expr, 1500)) return;
+      if (Date.now() > end) break;
+    }
+    const seen = await js(`({focus:document.hasFocus(),strip:(document.getElementById('afText')||{}).textContent||'',open:document.body.classList.contains('panel-open')})`);
+    assert.fail(what + ' (page: ' + JSON.stringify(seen) + ')');
+  };
   const sel = (id) => `#stage .desk[data-id="${id}"]`;
   const E = (id, ev) => js(`window.__durbarSimEmit(Object.assign({timestamp:Date.now(),sessionId:${jsLiteral(id)}},${jsLiteral(ev)}))`);
   const finish = async (id, text) => { await E(id, { type: 'status', status: 'working', intent: 'Working' }); await E(id, { type: 'output', final: true, text: text || 'All done.' }); await E(id, { type: 'status', status: 'idle' }); };
@@ -132,7 +145,7 @@ module.exports = async (ctx) => {
     assert.ok(!/done|finished/i.test(off.tx), `${tag}: the status promises nothing`);
     await ok(`window.__ann.includes(${jsLiteral(nameA + ' is working. Back to the office.')})`, `${tag}: said`);
     await finish(A, 'All done.');
-    await ok(`document.body.classList.contains('panel-open')&&document.getElementById('panelTitle').textContent===${jsLiteral(nameA)}`, `${tag}: its chat opens when it finishes`, 25000);
+    await okArrival(`document.body.classList.contains('panel-open')&&document.getElementById('panelTitle').textContent===${jsLiteral(nameA)}`, `${tag}: its chat opens when it finishes`, 25000);
     let ac = await active();
     assert.strictEqual(ac.id, 'panelTitle', `${tag}: focus is on the chat title: ${JSON.stringify(ac)}`);
     assert.strictEqual(await followed(), '', `${tag}: no longer followed once shown`);
@@ -145,7 +158,7 @@ module.exports = async (ctx) => {
     // ---- a permission request: the chat opens, Enter on the title approves nothing
     assert.strictEqual(await js(`window.__durbarSimUi.bridge().setPermMode(${jsLiteral(A)},'ask',{}).then(r=>r.ok)`), true, `${tag}: ${nameA} goes to Ask first`);
     await send(A, 'please edit the file');
-    await ok(`document.body.classList.contains('panel-open')&&document.getElementById('panelTitle').textContent===${jsLiteral(nameA)}&&!!document.querySelector('#chat .note.perm:not(.settled)')`, `${tag}: ${nameA}'s permission request opens its chat`, 25000);
+    await okArrival(`document.body.classList.contains('panel-open')&&document.getElementById('panelTitle').textContent===${jsLiteral(nameA)}&&!!document.querySelector('#chat .note.perm:not(.settled)')`, `${tag}: ${nameA}'s permission request opens its chat`, 25000);
     ac = await active();
     assert.ok(ac.id === 'panelTitle' && !ac.inBar, `${tag}: focus on the title, not a button of the request: ${JSON.stringify(ac)}`);
     for (const k of ['Return', 'Space']) await H.key(k, [], { char: 'always' });
@@ -158,14 +171,14 @@ module.exports = async (ctx) => {
     await sendQuiet(B, 'hello error');
     await E(B, { type: 'status', status: 'error', intent: 'The agent app stopped with an error.' });
     const nameB = await nameOf(B);
-    await ok(`document.body.classList.contains('panel-open')&&document.getElementById('panelTitle').textContent===${jsLiteral(nameB)}`, `${tag}: an error opens the chat`, 15000);
+    await okArrival(`document.body.classList.contains('panel-open')&&document.getElementById('panelTitle').textContent===${jsLiteral(nameB)}`, `${tag}: an error opens the chat`, 15000);
     assert.strictEqual((await active()).id, 'panelTitle', `${tag}: error: focus on the title`);
     await ok(`window.__ann.includes(${jsLiteral(nameB + ' has an error. Its chat is open.')})`, `${tag}: the arrival was the error`);
     await mclick('#backBtn'); await ok(`!document.body.classList.contains('panel-open')`, `${tag}: the Office button closes the chat`);
     await sendQuiet(C, 'hello limit');
     await E(C, { type: 'limit', phase: 'exhausted', requestId: 'lim-af', maxAiCredits: 30, usedAiCredits: 30 });
     const nameC = await nameOf(C);
-    await ok(`document.body.classList.contains('panel-open')&&document.getElementById('panelTitle').textContent===${jsLiteral(nameC)}`, `${tag}: a limit opens the chat`, 15000);
+    await okArrival(`document.body.classList.contains('panel-open')&&document.getElementById('panelTitle').textContent===${jsLiteral(nameC)}`, `${tag}: a limit opens the chat`, 15000);
     assert.strictEqual((await active()).id, 'panelTitle', `${tag}: limit: focus on the title`);
     await ok(`window.__ann.includes(${jsLiteral(nameC + ' reached its limit. Its chat is open.')})`, `${tag}: the arrival was the limit`);
     await mclick('#backBtn'); await ok(`!document.body.classList.contains('panel-open')`, `${tag}: the Office button closes the chat`);
@@ -211,7 +224,7 @@ module.exports = async (ctx) => {
     const Q = await idByName('Rosa'), nameQ = await nameOf(Q);
     await sendQuiet(Q, 'hello question');
     await E(Q, { type: 'question', phase: 'asked', requestId: 'q-af', questions: [{ question: 'Which one?', multiSelect: false, options: [{ label: 'yes' }, { label: 'no' }] }] });
-    await ok(`document.body.classList.contains('panel-open')&&document.getElementById('panelTitle').textContent===${jsLiteral(nameQ)}`, `${tag}: a question opens the chat`, 15000);
+    await okArrival(`document.body.classList.contains('panel-open')&&document.getElementById('panelTitle').textContent===${jsLiteral(nameQ)}`, `${tag}: a question opens the chat`, 15000);
     ac = await active();
     assert.ok(ac.id === 'panelTitle' && !ac.inBar, `${tag}: question: focus on the title: ${JSON.stringify(ac)}`);
     for (const k of ['Return', 'Space']) await H.key(k, [], { char: 'always' });
