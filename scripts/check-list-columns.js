@@ -162,7 +162,7 @@ module.exports = async (ctx) => {
     await ok(`!document.querySelector(${jsLiteral(SEL)}).matches(':hover')`, `${tag}: the pointer left`);
     // a real Tab from the control before the pencil (a programmatic focus() plus a key press gives no :focus-visible on Windows)
     // the window must own the OS focus first: on a busy Windows runner it can lose it, and then the Tab never reaches the page (main run 40634878862)
-    // (the shared H.focusPage; it falls back to Chromium's focus emulation when a neighbour driver's window keeps the OS focus (Windows runs three at once),
+    // (the shared H.focusPage; with emulate it turns on Chromium's focus emulation from the call on, as a neighbour driver's window can take the OS focus (Windows runs three at once),
     // and the emulation is released in the finally below, so nothing after this block sees a page that cannot blur)
     const ownFocus = () => H.focusPage({ emulate: true });
     try {

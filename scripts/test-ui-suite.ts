@@ -228,7 +228,7 @@ const dh = require(path.join(ROOT, 'scripts', 'driver-helpers.js'));
   assert.strictEqual(await D.focusPage({ ms: 50 }), false, 'without emulate, a page that never gets the focus is reported');
   assert.deepStrictEqual(cmds, [], 'and nothing is emulated');
   dbgCtx.js = async (c: string) => (c.includes('!document.hasFocus') ? cmds.length > 0 && cmds[cmds.length - 1][1] === false : !c.includes('hasFocus') || (cmds.length > 0 && cmds[cmds.length - 1][1] === true));
-  assert.strictEqual(await D.focusPage({ ms: 50, emulate: true }), true, 'emulate: true falls back to the emulation'); assert.deepStrictEqual(cmds[0], ['Emulation.setFocusEmulationEnabled', true]);
+  assert.strictEqual(await D.focusPage({ ms: 50, emulate: true }), true, 'emulate: true turns the emulation on from the first call'); assert.deepStrictEqual(cmds[0], ['Emulation.setFocusEmulationEnabled', true]);
   await D.releaseFocus(); assert.deepStrictEqual(cmds[cmds.length - 1], ['Emulation.setFocusEmulationEnabled', false], 'releaseFocus turns it off'); assert.strictEqual(attached, false, 'and detaches the debugger');
   console.log('driver-helpers: key, load, escaping and shot behave');
 })().catch((e) => { console.error(e); process.exit(1); });
