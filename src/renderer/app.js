@@ -2147,6 +2147,7 @@ function addUserMsg(chat,text,atts,ts){
     c.innerHTML=(x.img?ICON('img'):ICON('file'))+'<span>'+esc(x.name)+'</span>';box.appendChild(c);});
   if(!(atts||[]).length)box.remove();
   chat.el.appendChild(m);stickyScroll(chat);
+  return m;
 }
 function getChat(a){
   if(a.live)return liveChat(a);
@@ -5475,6 +5476,14 @@ function mcpReLine(p){
     const b=document.createElement('button');b.type='button';b.className='btn sm mcpre-btn';b.textContent='Sign in…';b.dataset.n=String(p.name);
     b.setAttribute('aria-label','Sign in to '+name+' again: open the MCP servers');
     n.append(t,b);
+  }else if(p.kind==='nudged'){ /* spec 058 FR-218: the one automatic message, said plainly before it is sent */
+    const name=MCPRE_NAME(p.name)||'An MCP server';
+    const n=addNote(chat,'');n.classList.add('mcpre','mcpre-nudge');n.setAttribute('role','status');
+    n.textContent='Sent automatically: '+name+' was reconnected after a sign-in error, so the agent was asked to retry the step that failed.';
+  }else if(p.kind==='nudge-failed'){ /* the automatic message was refused: the bubble is marked, the line says so */
+    const last=[...chat.el.querySelectorAll('.msg.user.auto')].pop();
+    if(last&&!last.querySelector('.unsent')){last.classList.add('not-sent');const u=document.createElement('div');u.className='unsent';u.textContent='Not sent';last.appendChild(u);}
+    const n=[...chat.el.querySelectorAll('.note.mcpre-nudge')].pop();if(n)n.textContent='The automatic message was not sent. Ask the agent to retry the step yourself.';
   }
   /* review of PR 1080: the line is what the person's own send caused, so in the open chat it is brought into view (the chat's own scroller
      only, after layout), also when the chat was scrolled up and does not follow new text */
@@ -6534,7 +6543,9 @@ function onLiveEvent(e){
   if(e.agentId&&e.type!=='permission'&&e.type!=='grants'&&e.type!=='limit')return onSubEvent(a,e);
   const chat=liveChat(a), main=true;
   switch(e.type){
-  case 'user':{addUserMsg(chat,e.text,(e.attachments||[]).map(x=>({name:String(x.path).split(/[\\/]/).pop(),img:x.kind==='image',path:x.path})));return;}
+  case 'user':{const um=addUserMsg(chat,e.text,(e.attachments||[]).map(x=>({name:String(x.path).split(/[\\/]/).pop(),img:x.kind==='image',path:x.path})));
+    if(e.auto===true&&um){um.classList.add('auto');const mt=um.querySelector('.meta');if(mt)mt.textContent=mt.textContent.replace(/^You/,'Agent Durbar, automatic');} /* spec 058 FR-218: not the person's own message */
+    return;}
   case 'status':{
     if(!main)return;
     /* spec 015 FR-009b: the desk mark ends when the agent goes idle, stops or fails (a compaction in the background may still run: its line stays until the result);

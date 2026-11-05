@@ -271,9 +271,9 @@
   }
   /* ---------------- spec 058 FR-213: Settings > MCP servers: Refresh MCP sign-ins automatically (on unless turned off), and what it does,
      no more than what runs ---------------- */
-  /* this delta's first part (PR 1, T178..T181, T184..T186): the reconnect before a message; the launch check and the 30-minute recheck
-     (T182, T183) come with the second part, which brings FR-213's full line */
-  const SIGNIN_REFRESH_LINE='Agent Durbar asks the agent app to reconnect remote MCP servers on its own before a message after an hour without a reply. This happens in every permission mode. Where the agent app runs its MCP servers in its own OS sandbox (Copilot in Read-only and Ask first), a reconnect did not renew the sign-in, so there Agent Durbar only tells you when a server needs you to sign in again. Only the app\u2019s own sign-in is renewed; Agent Durbar never sees it. A reconnect never starts a local server. Codex chats are not reconnected; they renew with their next session.';
+  /* the reconnect before a message (T178..T181, T184..T186) and the renewal after a failed call and its one automatic note (T190..T199, FR-218); the launch check (T182)
+     comes later and the 30-minute recheck (T183) is replaced by the renewal, so the line names what runs and no more */
+  const SIGNIN_REFRESH_LINE='Agent Durbar asks the agent app to reconnect remote MCP servers on its own before a message after an hour without a reply. This happens in every permission mode. Where the agent app runs its MCP servers in its own OS sandbox (Copilot in Read-only and Ask first), a reconnect did not renew the sign-in, so there Agent Durbar only tells you when a server needs you to sign in again. Only the app\u2019s own sign-in is renewed; Agent Durbar never sees it. A reconnect never starts a local server. In a Copilot chat, when a call to a remote server fails with a sign-in error, it reconnects that server at once and, if that worked, sends the agent one short automatic message asking it to retry the step. That is one extra message and uses AI credits; it is never sent at a spending limit, and your own message is never sent again. Turning this switch off stops both. Codex chats are not reconnected; they renew with their next session.';
   function signInRefreshRow(app){
     if(!X.bridge.setMcpSignInRefresh)return '';
     const on=!app||app.mcpSignInRefresh!==false;
@@ -1359,7 +1359,8 @@
         const eff=x.defaultOn&&!x.off&&!appOff&&!org;
         const sv=W.stateOf(x.status,octx);
         const cw=x.status==='connected'?W.callWord(x.lastCall):''; /* FR-187/FR-188 (issue 779 A) */
-        const stat=`<span class="mst ${esc(sv.cls)}"${x.status&&sv.cls==='unknown'?` title="${esc(W.plain(x.status,120))}"`:''}>${W.iconSvg(sv.icon)}<span class="mst-w">${esc(sv.word)}</span>${cw?`<span class="mst-call">\u00b7 ${esc(cw)}</span>`:''}</span>`;
+        const rnw=x.status==='connected'&&typeof x.renewedAt==='number'&&W.renewedWord?W.renewedWord(x.renewedAt):''; /* spec 058 FR-221: "Renewed 12:40", a quiet note, no chat line */
+        const stat=`<span class="mst ${esc(sv.cls)}"${x.status&&sv.cls==='unknown'?` title="${esc(W.plain(x.status,120))}"`:''}>${W.iconSvg(sv.icon)}<span class="mst-w">${esc(sv.word)}</span>${cw?`<span class="mst-call">\u00b7 ${esc(cw)}</span>`:''}${rnw?`<span class="mst-call mst-renew">\u00b7 ${esc(rnw)}</span>`:''}</span>`;
         const hint=W.hintFor({status:x.status,errorClass:x.errorClass,error:x.error,app,by})||(cw?W.callHint(x.lastCall,app):'');
         const detOpen=x.error&&openDet.has(x.name);
         /* FR-007: the masked text (main masked it; never the runtime's raw text) behind Details, and Copy copies exactly that */

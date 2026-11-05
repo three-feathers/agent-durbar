@@ -237,7 +237,11 @@ export type McpSignInRefreshNote =
   | { id: string; kind: 'late'; names: string[] }
   | { id: string; kind: 'done' }
   | { id: string; kind: 'not-sent' }
-  | { id: string; kind: 'needs-sign-in'; name: string };
+  | { id: string; kind: 'needs-sign-in'; name: string }
+  /** Spec 058 FR-218 (2026-11-05): the agent was sent one short automatic message after a server was reconnected (the message itself is a `user` event). */
+  | { id: string; kind: 'nudged'; name: string }
+  /** The automatic message could not be sent (the adapter refused it): the window marks it so. */
+  | { id: string; kind: 'nudge-failed'; name: string };
 
 /** A profile file (spec 043 FR-010); `path` is for display only, the window sends `id` back. */
 export interface ProfileFileInfo {
@@ -690,6 +694,8 @@ export interface AgentMcpEntry {
   since?: number;
   /** Spec 058 FR-092: a failed or needs-sign-in state that came after the server was Running in this session. */
   afterRunning?: boolean;
+  /** Spec 058 FR-221 (2026-11-05): when Agent Durbar last renewed this server's sign-in in the background (epoch ms, display only); only for a connected server. */
+  renewedAt?: number;
   /** Spec 058 FR-092: the transport the adapter reported (`stdio`, `http`, ...); missing = not reported. */
   transport?: string;
   /** The default from Settings: on for new sessions. */
