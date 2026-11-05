@@ -1,1 +1,0 @@
-- Test driver only: the helper-bar and helper-more UI checks look for the renamed read-only chat class (`helper-ro`), so `main`'s UI checks pass again. No change for users.
