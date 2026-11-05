@@ -1035,3 +1035,21 @@ Owner (Vikram, 2026-11-04, packaged v0.1.8, Real office): the chat header's butt
 ## Changes 2026-11-05: Motion off replaces Serious mode as a motion switch (FR-033, FR-047, FR-071, FR-102, issue #1182)
 
 [spec 052](../052-usability-pass/spec.md) FR-069 (Changes 2026-11-05, issue #1182, owner decision of Vikram, 2026-11-04): Serious mode hides only the mood drawings and trouble signs and no longer stops motion; motion stops under the system's reduced motion or with Settings > **Motion** off (default on). Every place in this spec that says motion stops "in Serious mode" (FR-033 caret, FR-047 lights, FR-071 people, the ride and the lights' on/off change, scenarios and Limits) now reads: under reduced motion or with Motion off. **FR-071** is: no person animation under reduced motion or with Motion off; a still frame (`typeA`, `waveA`) is shown. The `characterMotion` setting named there is **dropped** (spec 096 delta 2026-11-05: its switch is the global Motion); the `characterMotion` read in `app.js` is removed, no behaviour change (nothing wrote it). Serious mode only hides the moods; heavy, monster and siren are still missing here (#1171) and Serious mode hides them when they arrive. `check-097-motion`, `check-office-ops-real` and `shots-097-realoffice` use the Motion switch, `check-serious-motion` covers Serious mode.
+
+### 2026-11-05: chat text measured against the pixels behind it (issue #1146, T197)
+
+**Owner report** (Vikram, Telegram, 2026-11-04 08:05 UTC, packaged v0.1.8, Real office, macOS): a helper's chat was unreadable. Its message and header text lay on the blurred floor photo. The screenshot is confidential; the issue records only layout facts.
+
+**Already fixed by #1164** (merge `319dfdfc5`, T195): the helper panel no longer carries the Real office root's class `ro`, so no chat takes the floor picture. `read:` on `main` at `8fd7b834`, both chats sit on the world's opaque surface at both sizes. **What was missing is the guard:** FR-050 measures the room's plates and signs only, and the token lint (FR-040) checks tokens, not rendered pixels. So nothing measured chat text against what is really behind it.
+
+- **The check:** `scripts/check-097-chat-contrast.js` (in `check:ui`), at 1440x900 and 1280x800, for a main session's chat (given a reply with a link and inline code) and a helper's chat.
+  - Every glyph in the panel is made transparent and the window is captured, so the pixels inside each line of text are what is behind it: a surface, a chip's fill or a picture.
+  - Each line's own colour (computed `color`, times its and its ancestors' opacity) is blended over those pixels at every second device pixel. The 5th percentile is the line's figure.
+  - **It fails when:** body text, a link or a code chip is under 4.5:1, or large text is under 3:1; a header line ends past the window's right edge (#1146's clipped stats line); or a kind of text is not measured at all (no link, no code chip, fewer than 10 lines).
+- `sim:` both sizes pass: about 80 to 118 lines per chat. The worst line is a status word at 5.62:1 (`rgb(52, 96, 127)` on the surface), and no header line is clipped.
+- **Mutants:** both fail `1440x900: chat text at least 4.5:1 (large 3:1) against the pixels behind it`.
+  - `CONTRAST_MUTANT=ro` puts the class `ro` back on the helper panel (#1164's bug): the helper's header line falls to 2.44:1, as the owner saw.
+  - `CONTRAST_MUTANT=clear` makes the chat's surfaces transparent over the floor photo: "Open with" falls to 2.07:1.
+- `sim:` on macOS 26.0 (Apple M4), the platform of the report, with the same result. This is the simulator on a Mac, not a real agent session; no credits were used.
+- FR-233's reading sheet (mat, binding, code as a monitor) is not built here; it stays with #1166. When it lands, this check is the one that keeps its text readable.
+
