@@ -389,6 +389,14 @@ All answered by the owner: option A for each (see *Clarifications*). The options
 
 ## Changes
 
+### 2026-11-05: `shots-058-mcp-refresh` sends the repainting report after the marker call (issue #1196)
+
+**Seen:** on Linux CI (PR #1191 run 42006041419) the assert `the marker call shows` failed once.
+
+**Cause (driver, not app):** the open dialog repaints on an `mcp` event only (FR-004, 150 ms after the first event of a burst); a `toolCall` event repaints nothing. The driver sent the report first and the marker call (c6) after it, so a marker that reached the page after the 150 ms timer fired had nothing left to repaint it and `until()` timed out. `sim:` reproduced: 1 of 10 runs failed under a CPU load (2 busy loops per core), 0 of 20 idle; with a 400 ms pause before the marker call the old driver fails every time (mutant), the new one passes.
+
+**Fix:** the driver sends calls c4, c5 and the marker c6, then the report, so the repaint that report causes (a pending one or a new one) reads every call before it; the marker is still waited for with `until()`. No sleep, no limit raised. No behaviour change.
+
 - 2026-11-01 (sweep of the build): **FR-194**: the policy line hides and comes back with its call when older calls collapse.
 
 ### 2026-11-05: renewing a remote MCP sign-in at once after a failed call, and one note to the agent (issue #1201; changes FR-212's design)
