@@ -547,6 +547,14 @@ module.exports = async (ctx) => {
   const lumJs = `{const lum=c=>{const k=/^color\\(/.test(c)?1:255;const v=(c.replace(/^color\\(srgb/,'').match(/[\\d.]+/g)||[]).slice(0,3).map(Number).map(x=>x/k).map(x=>x<=0.03928?x/12.92:Math.pow((x+0.055)/1.055,2.4));return .2126*v[0]+.7152*v[1]+.0722*v[2]};const ratio=(a,b)=>{const[x,y]=[lum(a),lum(b)].sort((p,q)=>q-p);return (x+.05)/(y+.05)};window.__roRatio=ratio;}true;`;
   const ensureLum = () => js(lumJs);
   const W = await js(`JSON.stringify(window.THEME.worldTokens('photo'))`).then(JSON.parse);
+  /* issue 839: the macOS CI runner has Reduce transparency on, and the app rightly draws opaque panels then (prefers-reduced-transparency): the
+     world's glass is measured with the preference at no-preference (it stays across loads); the reduced case is checked further down on purpose,
+     where the emulation is set again and then cleared */
+  {
+    const dbg = ctx.win.webContents.debugger;
+    if (!dbg.isAttached()) dbg.attach('1.3');
+    await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-transparency', value: 'no-preference' }] });
+  }
   await H.load({ w: 1440, h: 900 });
   const flat = await js(`({w:document.documentElement.dataset.world||'',bar:getComputedStyle(document.querySelector('.topbar')).backgroundColor,img:getComputedStyle(document.querySelector('.topbar')).backgroundImage,css:!!document.getElementById('roWorldCss')})`);
   assert.deepStrictEqual(flat, { w: '', bar: 'rgb(255, 253, 249)', img: 'none', css: false }, 'flat: the Clean Office bar, no world, no world CSS loaded: ' + JSON.stringify(flat));
