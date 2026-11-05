@@ -287,6 +287,23 @@ if (part === 'shapes' || part === 'shapes2') {
   }
   // A JWT's length bound hides a stall from the growth ratio (each `eyJ` costs up to a fixed 4096 steps), so against a neighbour of the same size: the regex alone took 3.5 s on `25AA` + `eyJ`, 25 times `pct`
   for (const k of ['jwt25', 'jwt25Body', 'jwtOne', 'jwtTwo', 'jwtRun', 'jwtRuns', 'jwtRunsOne', 'jwtRunsTwo'].filter((j) => j in measured)) assert.ok(measured[k].max < Math.max(1000, measured.pct.max * 8), `${k}: ${measured[k].max.toFixed(0)} ms CPU on REDACT_MAX_CHARS, against ${measured.pct.max.toFixed(0)} ms for a run of %25`);
+  // A bare cookie token run that is not one (spec 012 FR-168, issue #1159): `cookie:` heads with no stop character between them and a word at the end. Each head once scanned the whole rest of the text (18 s at 100 KB); now 1 MB in a child with a hard stop, CPU time against 1/16 of it.
+  if (part === 'shapes2') {
+    const code = `
+      const { redact } = require(${JSON.stringify(require.resolve('../src/shared/redact'))});
+      const once = (f) => { const c = process.cpuUsage(); f(); const d = process.cpuUsage(c); return (d.user + d.system) / 1000; };
+      const out = {};
+      for (const unit of ['cookie:', 'cookie:/', 'cookie:.', 'cookie:-', 'cookie:}x', 'cookie:#']) {
+        const mk = (n) => unit.repeat(Math.floor(n / unit.length)) + ' x';
+        let full = Infinity, base = Infinity;
+        for (let i = 0; i < 3; i++) { full = Math.min(full, once(() => redact(mk(1000000), {}))); base = Math.min(base, once(() => redact(mk(62500), {}))); if (full < 1000) break; }
+        out[unit] = { full, base };
+      }
+      process.stdout.write(JSON.stringify(out));`;
+    const r = spawnSync(process.execPath, ['-e', code], { encoding: 'utf8', timeout: 240_000, maxBuffer: 1 << 20 });
+    assert.strictEqual(r.status, 0, `the bare-cookie child ended: ${r.signal ?? r.stderr}`);
+    for (const [k, v] of Object.entries(JSON.parse(r.stdout) as Record<string, { full: number; base: number }>)) assert.ok(v.full < 2000 || v.full < Math.max(v.base, 2) * 40, `bare cookie run ${k}: ${v.full.toFixed(0)} ms CPU for 1 MB against ${v.base.toFixed(1)} ms for 1/16`);
+  }
 }
 }
 
