@@ -82,6 +82,9 @@ html[data-density="compact"] #topMoreMenu{--h-ctl:32px; --h-chip:26px; --h-pill:
 .stat[aria-pressed="true"]{background:var(--surface-2);box-shadow:inset 0 -2px 0 var(--stat-sel-border,#8aa7be)}
 .stat[aria-pressed="true"] span.l{font-weight:650;color:var(--ink)}
 .stat b{font-size:14px;font-weight:600;font-variant-numeric:tabular-nums}
+/* spec 097, Changes 2026-11-04: a count keeps its width when its number changes, whatever the font: tabular-nums alone did not hold on the Windows runner's system font ("6" 7.78 px, "7" 7.52 px), so every status change resized a pill and the top bar measured itself again (fitTopbar). One "0" width per digit (ch); a tabular font looks as before */
+.stat b[data-d]{display:inline-block;text-align:center}
+.stat b[data-d="1"]{width:1ch}.stat b[data-d="2"]{width:2ch}.stat b[data-d="3"]{width:3ch}.stat b[data-d="4"]{width:4ch}
 /* usage total chip (spec 011 FR-019): same pill as the counters, but a note, not a filter */
 .stat-aiu{cursor:default}
 .stat-aiu:hover{background:transparent}
@@ -550,7 +553,7 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 
 /* toast */
 /* spec 052 FR-004: bottom left, clear of the centred composer; a toast takes the pointer so it can be hovered (timer pauses) and closed */
-#toasts{position:fixed;left:16px;bottom:var(--toast-b,16px);display:flex;flex-direction:column;gap:8px;align-items:flex-start;z-index:50;pointer-events:none}
+#toasts{position:fixed;left:var(--toast-l,16px);bottom:var(--toast-b,16px);display:flex;flex-direction:column;gap:8px;align-items:flex-start;z-index:50;pointer-events:none}
 .toast{overflow-wrap:break-word;pointer-events:auto;background:#2f3a36;color:#f7f4ee;padding:10px 16px;border-radius:12px;font-size:13px;line-height:1.45;box-shadow:0 8px 24px rgba(40,35,25,.18);animation:pop .25s ease-out;max-width:420px}
 .toast.warn{border-left:4px solid var(--tone-warn-line)}
 .toast code{font-family:var(--font-mono);background:color-mix(in srgb,var(--raised) 14%,transparent);padding:1px 6px;border-radius:6px}
@@ -597,7 +600,6 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 }
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
-  .strip-list{animation:sl-fade linear both!important;animation-timeline:scroll(self inline)!important} /* scroll-linked, not motion */
   ::view-transition-group(*),::view-transition-old(*),::view-transition-new(*){animation:none!important} /* spec 052 FR-070 (app.js also skips the transition) */
 }
 
@@ -834,28 +836,53 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
    Full-screen chat (replaces the docked panel)
    ===================================================================== */
 .panel-in{animation:none}
-.strip{flex:none;display:flex;align-items:center;gap:8px;height:48px;padding:0 12px;background:var(--surface-2);border-bottom:1px solid var(--line)}
-.strip .back{flex:none;height:var(--h-ctl);padding:0 12px 0 8px}
-.strip-list{flex:1;min-width:0;display:flex;gap:8px;align-items:center;overflow-x:auto;overflow-y:hidden;height:100%;padding:0 2px;scrollbar-width:thin}
-/* spec 052 FR-138: the agent strip fades at the edge that is cut off while it can scroll (a scroll-driven mask: no geometry, nothing when everything fits) */
-@property --sl-l{syntax:"<length>";inherits:false;initial-value:0px}
-@property --sl-r{syntax:"<length>";inherits:false;initial-value:0px}
-@keyframes sl-fade{0%{--sl-l:0px;--sl-r:28px}4%{--sl-l:28px;--sl-r:28px}96%{--sl-l:28px;--sl-r:28px}100%{--sl-l:28px;--sl-r:0px}}
-.strip-list{animation:sl-fade linear both;animation-timeline:scroll(self inline);-webkit-mask-image:linear-gradient(to right,transparent 0,#000 var(--sl-l),#000 calc(100% - var(--sl-r)),transparent 100%);mask-image:linear-gradient(to right,transparent 0,#000 var(--sl-l),#000 calc(100% - var(--sl-r)),transparent 100%)}
-.sitem{flex:none;width:196px;height:40px;display:flex;align-items:center;gap:8px;padding:2px 8px 2px 4px;border-radius:var(--r-md);border:1px solid var(--line);background:var(--raised);cursor:pointer;text-align:left;min-width:0}
-.sitem:hover{border-color:var(--line-2);background:var(--surface)}
-.sitem.sel{border-color:var(--sel-border,#7fa0bd);box-shadow:0 0 0 2px var(--sel-ring-2,#dde8f1);background:var(--tone-info-faint)}
-.sitem.attn.st-waiting{background:var(--warn-bg);border-color:#e0b25e}
-.sitem.attn.st-error{background:var(--card-error);border-color:var(--card-error-line)}
-.sav{width:30px;height:30px;border-radius:50%;background:var(--avatar-bg,#e7eee8);overflow:hidden;flex:none}
-.stx{display:flex;flex-direction:column;min-width:0;flex:1;gap:1px}
-.stx b{font-size:12px;line-height:16px;font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.sst{display:flex;align-items:center;gap:5px;min-width:0;font-size:11px;line-height:14px;color:var(--ink-2);white-space:nowrap}
+/* spec 005 FR-190, FR-194: the agent rail (was the strip): a column on the left of the open chat, full height, 220px. Top row: Office (R2 adds
+   the Plan | List switch, R3 the collapse button); under it Your door (052 FR-216); then the List view: folders (heading and count, they
+   collapse, FR-216 of this spec) and two row heights only, plain 30px and tall 52px (who needs you). Nothing here grows with time. */
+body.panel-open #panel{flex-direction:row}
+#panel>.panel-in{flex:1;min-width:0}
+.rail{flex:none;width:220px;display:flex;flex-direction:column;min-height:0;background:var(--surface-2);border-right:1px solid var(--line)}
+.rail-top{flex:none;display:flex;align-items:center;gap:var(--s-2);height:40px;padding:0 var(--s-2)}
+.rail-top .back{flex:none;height:var(--h-ctl);padding:0 12px 0 8px}
+.rail-door{flex:none;display:flex;padding:0 var(--s-2) var(--s-1)}
+.rail-door .btn{flex:1;min-width:0;justify-content:flex-start;gap:6px;height:28px;padding:0 var(--s-2);font-size:var(--t4-size)}
+.rail-door .btn svg{flex:none;width:14px;height:14px}
+.rail-door .btn b{margin-left:auto;font-variant-numeric:tabular-nums}
+.rail-door .btn.attn{background:var(--card-waiting);border-color:var(--card-waiting-line);color:var(--ink)}
+.rail-list{flex:1;min-height:0;display:flex;flex-direction:column;gap:var(--s-1);overflow-x:hidden;overflow-y:auto;padding:var(--s-1) var(--s-1) var(--s-2);scrollbar-width:thin}
+.rgrp{flex:none;display:flex;flex-direction:column;min-width:0}
+.rg-hd{margin:0;font:inherit}
+.rg-h{display:flex;align-items:center;gap:6px;width:100%;height:24px;padding:0 6px;border:1px solid transparent;border-radius:var(--r-sm);background:transparent;color:var(--ink-2);font-size:var(--t5-size);line-height:16px;font-weight:650;text-align:left;cursor:pointer;min-width:0}
+.rg-h:hover{background:var(--surface)}
+.rg-h.has-sel{border-color:var(--sel-border)}
+.rg-h .chev{width:10px;height:10px;flex:none;transition:transform .2s}
+.rg-h[aria-expanded="true"] .chev{transform:rotate(90deg)}
+.rg-n{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rg-need{flex:none;display:inline-flex;align-items:center;gap:2px;height:18px;padding:0 5px;border-radius:999px;background:var(--card-waiting);box-shadow:inset 0 0 0 1px var(--card-waiting-line);color:var(--ink);font-variant-numeric:tabular-nums}
+.rg-need svg{width:11px;height:11px}
+.rg-c{flex:none;color:var(--muted);font-weight:500;font-variant-numeric:tabular-nums}
+.rg-rows{display:flex;flex-direction:column;gap:1px;min-width:0}
+.rg-rows[hidden]{display:none}
+.sitem{flex:none;width:100%;height:30px;display:flex;align-items:center;gap:var(--s-2);padding:0 6px;border-radius:var(--r-sm);border:1px solid transparent;background:transparent;cursor:pointer;text-align:left;min-width:0}
+.sitem:not(.tall):hover{border-color:var(--line-2);background:var(--surface)}
+.sitem.sel{border-color:var(--sel-border);box-shadow:inset 0 0 0 1px var(--sel-border);background:var(--tone-info-faint)}
+.sitem.tall{height:52px;align-items:flex-start;padding:2px 6px;background:var(--card-waiting);border-color:var(--card-waiting-line)}
+.sitem.tall .sav{margin-top:1px}
+.sitem.tall.st-error{background:var(--card-error);border-color:var(--card-error-line)}
+.sitem.tall.sel{border-color:var(--sel-border);box-shadow:inset 0 0 0 1px var(--sel-border)}
+.sav{width:22px;height:22px;border-radius:50%;background:var(--avatar-bg);overflow:hidden;flex:none}
+.stx{display:flex;flex-direction:column;min-width:0;flex:1}
+.stx b{font-size:12px;line-height:16px;font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.sst{flex:none;display:flex;align-items:center;gap:5px;font-size:var(--t5-size);line-height:14px;color:var(--ink-2);white-space:nowrap}
 .sst .dot{width:8px;height:8px}
 .sst .sw{flex:none;font-weight:600}
-.sst .sin{overflow:hidden;text-overflow:ellipsis;min-width:0;color:var(--muted)}
 .sitem.attn .sw{color:var(--amber-ink)}
 .sitem.attn.st-error .sw{color:var(--red-ink)}
+.stop{display:flex;align-items:baseline;gap:6px;min-width:0}
+.stop b{flex:1}
+.sage{flex:none;font-size:var(--t5-size);line-height:16px;font-weight:600;color:var(--ink);white-space:nowrap;font-variant-numeric:tabular-nums}
+.sreq{font-size:var(--t5-size);line-height:15px;color:var(--ink);overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow-wrap:anywhere;max-height:30px}
+@media (prefers-reduced-motion:reduce){.rg-h .chev{transition:none}}
 .ph{padding:8px 16px}
 /* spec 052 FR-095 (round 10): the chat header on one row: avatar, name, status, "active …", the chips; the actions pinned right.
    Chips that do not fit wrap to a second row inside their own group, under the first chips; the actions never move down. */
@@ -1210,13 +1237,13 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .sub-err{font-size:12px;color:var(--red-ink);background:var(--pb-error,#f6e2df);border-radius:9px;padding:6px 10px}
 .sub-foot{font-size:11px;color:var(--muted)}.sub-foot:empty{display:none}
 .subblk .bubble{font-size:13px;max-width:100%;padding:8px 12px}
-.sub-ro{display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--tone-info-soft);border:1px solid var(--tone-info-line);border-radius:12px;padding:8px 12px;font-size:12px}
+.sub-ro{position:sticky;top:-16px;z-index:3;display:flex;align-items:center;justify-content:space-between;gap:12px;background-color:var(--surface);background-image:linear-gradient(var(--tone-info-soft),var(--tone-info-soft));/* spec 015 FR-020 (issue 1142): stays at the top of the chat while the log scrolls (top:-16px is #chat's own top padding, so stuck it is flush with the log's edge and no line shows above it); the surface under the tint keeps it opaque */border:1px solid var(--tone-info-line);border-radius:12px;padding:8px 12px;font-size:12px}
 .sub-ro span{display:block;color:var(--ink-2);font-size:12px}
 .sub-full{display:flex;flex-direction:column;gap:8px;min-width:0}
 .sub-full-head{display:flex;align-items:center;gap:8px}.sub-full-head h3{margin:0;font-size:14px}
 .sub-full-task{margin:0;color:var(--ink-2);font-size:13px}
 .sub-full-body{display:flex;flex-direction:column;gap:8px}
-.panel-in.ro .composer{display:none}
+.panel-in.helper-ro .composer{display:none}
 @media (prefers-reduced-motion:reduce){.subblk.running .sub-st::before,.bubble.caret.md>*:last-child::after{animation:none}}
 
 /* ---- lobby and walking figures (spec 024): one shared band with the places agents go to ---- */
@@ -1539,6 +1566,14 @@ body.has-bridge .folder-ctl #foldersBtn{border-top-left-radius:0;border-bottom-l
 .inbox-row .ib-h:focus{outline:2px solid var(--focus);outline-offset:3px}
 .inbox-row:focus-within{border-color:var(--focus)}
 .inbox-keys{margin:0;font-size:var(--t5-size);color:var(--muted)}
+/* spec 097 FR-121: the inbox header (the Boss door and the queue's faces; aria-hidden). Here, not in realoffice.css (loaded lazily): without these sizes the faces fill the dialog (spec 052, issue #1174) */
+.inbox-dlg .ib-world{display:flex;align-items:center;gap:12px;padding:8px 12px;border-bottom:1px solid var(--line);background:var(--surface-2)}
+.inbox-dlg .ibw-door{height:54px;width:auto;border-radius:4px}
+.inbox-dlg .ibw-faces{margin-left:auto;display:flex}
+.inbox-dlg .ibw-face{width:30px;height:30px;margin-left:-6px;border-radius:50%;overflow:hidden;border:2px solid var(--surface);background:var(--surface-2);display:block}
+.inbox-dlg .ibw-face:first-child{margin-left:0}
+.inbox-dlg .ibw-face>*{width:100%;height:100%}
+
 
 /* spec 052 R3 design polish (Clean Office only unless noted; colour, border colour, background, shadow, radius, weight and
    letter-spacing only, so every size stays and check:geometry holds) */
@@ -1645,7 +1680,7 @@ html .notice-strip.info .ns-ic{background:transparent;color:var(--ink-2);box-sha
   .desk.hl-in.is-waiting .pp,.desk.hl-in.is-unread:where(:not(.is-waiting,.is-failing,.is-retrying,.is-error)) .pp{animation:hl-enter .6s ease-in-out 3,hl-breathe var(--hl-p) ease-in-out 1.8s infinite}
   .desk.is-waiting::after,.desk.is-unread:where(:not(.is-waiting,.is-failing,.is-retrying,.is-error))::after{animation:hl-glow var(--hl-p) ease-in-out infinite}
 }
-html.hl-still .desk .pp,html.hl-still .desk::after{animation:none!important} /* simulator drivers only (see app.js): the glow stays, the person holds still */
+html:is(.hl-still,[data-still-highlights]) .desk .pp,html[data-still-highlights] .badge.waiting::after,html:is(.hl-still,[data-still-highlights]) .desk::after,html[data-still-highlights] .unread-mark,html[data-still-highlights] :is(.wave,.tap){animation:none!important} /* hl-still: simulator drivers only (see app.js). data-still-highlights: Settings > Still highlights (FR-192, WCAG 2.2.2); the glow and the New badge stay; the person, the glow, the badge, the compact wave and the desk tap hold still (not every animation: reduced motion does that) */
 @keyframes hl-enter{0%,100%{transform:scale(1)}50%{transform:scale(var(--hl-e,1.15))}}
 @keyframes hl-breathe{0%,100%{transform:scale(1)}50%{transform:scale(var(--hl-b,1.05))}}
 @keyframes hl-glow{0%,100%{opacity:.7}50%{opacity:1}}
@@ -1756,11 +1791,11 @@ html:not([data-ui]) #topBtns button:not([aria-pressed="true"]):hover{background:
 #addFolder.ring-once{position:relative}
 #addFolder.ring-once::after{content:"";position:absolute;inset:-3px;border-radius:inherit;border:2px solid var(--sel-border,#7fa0bd);opacity:0;pointer-events:none;animation:ringonce 1.4s ease-out 1 both}
 @keyframes ringonce{0%{opacity:.8;transform:scale(.96)}100%{opacity:0;transform:scale(1.22)}}
-/* FR-069: Serious mode stops every looping animation (idle bob and nod, typing hands, steam, bars, halos, waving, thinking dots,
+/* FR-069 (changed 2026-11-05, issue #1182): Settings > Motion off stops every looping animation (idle bob and nod, typing hands, steam, bars, halos, waving, thinking dots,
    carets, walking bob, mood signs). One-shot signals (the done tick, the waiting pings, the pops) stay. The busy spinner stays: it is a progress sign. */
-html[data-serious] :is(.bar,.glow,.hand-l,.hand-r,.head,.bubble-g,.td,.steam,.wave,.cursor,.tap,.dizzy,.amb-light,.siren-light,.live i,.typing i,.walker.walking .wk),
-html[data-serious] :is(.caret,.bubble.caret.md>*:last-child)::after,
-html[data-serious] .subblk.running .sub-st::before{animation:none!important}
+html[data-motion-off] :is(.bar,.glow,.hand-l,.hand-r,.head,.bubble-g,.td,.steam,.wave,.cursor,.tap,.dizzy,.amb-light,.siren-light,.live i,.typing i,.walker.walking .wk),
+html[data-motion-off] :is(.caret,.bubble.caret.md>*:last-child)::after,
+html[data-motion-off] .subblk.running .sub-st::before{animation:none!important}
 
 /* spec 052 FR-076: one expand arrow. "Show the change", "Show the exact command", Settings' "More" and the advanced section use the shared
    chevron (the Thinking / Previous sessions SVG, drawn as a mask in currentColor) that turns 90° when open; the browser's marker is hidden. */
@@ -1778,19 +1813,20 @@ html[data-serious] .subblk.running .sub-st::before{animation:none!important}
 /* spec 052 FR-085: macOS only (html[data-platform="darwin"] comes from the preload; never set on Windows or Linux). The title bar is
    hidden ("hiddenInset"): the top bar is the window's drag area and keeps room on the left for the traffic lights, except in full
    screen. Everything you can click in it stays clickable. An open chat hides the top bar, so its agent strip takes the same rules; a
-   screen (Settings, Tools, a folder) opened over a chat also hides the strip, so then its header does. */
-html[data-platform="darwin"] :is(.topbar,.strip,body.panel-open .notice-strip,body.panel-open.screen-open .scr-head){-webkit-app-region:drag}
-html[data-platform="darwin"]:not([data-fullscreen]) .strip{padding-left:78px}
+   screen (Settings, Tools, a folder) opened over a chat also hides the strip, so then its header does.
+   Spec 052 FR-215: the rail's top row (traffic-light room, then Office) and the chat header are the drag areas the strip was. In the header
+   a control or anything with a tooltip ([title]: the title, the task line, the folder chip) stays no-drag, so it keeps its hover. */
+html[data-platform="darwin"] :is(.topbar,.rail-top,body.panel-open .ph,body.panel-open .notice-strip,body.panel-open.screen-open .scr-head){-webkit-app-region:drag}
+html[data-platform="darwin"]:not([data-fullscreen]) .rail-top{padding-left:78px}
 html[data-platform="darwin"]:not([data-fullscreen]) body.panel-open .notice-strip{padding-left:78px}
 html[data-platform="darwin"]:not([data-fullscreen]) body.panel-open.screen-open .scr-head{padding-left:max(78px,calc((100% - 880px)/2 + 24px))} /* FR-138: keeps the FR-097 alignment */
 html[data-platform="darwin"] :is(.topbar,body.panel-open .notice-strip,body.panel-open.screen-open .scr-head) :is(button,a,input,select,textarea,label,summary,[role="button"],[role="menu"],[role="group"],[tabindex],.more-menu){-webkit-app-region:no-drag}
-html[data-platform="darwin"] .strip>:is(button,a,input,select,textarea,label,summary,[role="button"],[role="menu"],[role="group"],[tabindex],.strip-list){-webkit-app-region:no-drag}
-html[data-platform="darwin"] .strip-list *{-webkit-app-region:initial} /* FR-138: the agents inherit the scroller's no-drag; reset, so the ones past its edge (they overflow, unclipped) keep no region of their own; only the scroller's box is no-drag, so they cannot cover the grab area */
+html[data-platform="darwin"] :is(.rail-top,body.panel-open .ph) :is(button,a,input,select,textarea,label,summary,[role="button"],[role="menu"],[role="group"],[tabindex],[title],.more-menu,.grants){-webkit-app-region:no-drag}
 /* spec 052 FR-138: with a chat open a visible notice strip is the first row (the drag row with the room); the row below drops the room. A
-   second visible strip drops it too. The chat strip keeps a fixed grab area at its right end; its scroller (.strip-list) is no-drag. An
+   second visible strip drops it too (spec 052 FR-215: the rail's top row too). An
    overlay, a popover or a menu is no-drag itself, because Electron ignores z-order for drag regions (a backdrop over a drag area is not clickable). */
 html[data-platform="darwin"] body.panel-open .notice-strip:not([hidden]) ~ .notice-strip{padding-left:20px}
-html[data-platform="darwin"] .notice-strip:not([hidden]) ~ .workspace .strip{padding-left:12px}
+html[data-platform="darwin"] .notice-strip:not([hidden]) ~ .workspace .rail-top{padding-left:8px}
 /* FR-138: the traffic-light room is reserved on the top bar's first row only (a wrapped second row starts at the normal padding): an empty first
    flex item that is 78px minus the padding wide and takes back the gap after it. A notice strip that is the first row is at least 40px tall, so the
    Office button below it never reaches into the 78x40 box. */
@@ -1811,9 +1847,6 @@ html[data-platform="darwin"]:not([data-fullscreen]) .topbar::before{content:"";f
 html[data-platform="darwin"] body.panel-open :is(#restoreStrip:not([hidden]),#restoreStrip[hidden]+#awayStrip:not([hidden]),#restoreStrip[hidden]+#awayStrip[hidden]+#crashStrip:not([hidden])){min-height:40px}
 html[data-platform="darwin"] body.panel-open #restoreStrip[hidden]+#awayStrip[hidden]+#crashStrip[hidden]+#followStrip:not([hidden]){min-height:40px}
 html[data-platform="darwin"] .notice-strip:not([hidden]) ~ #screen .scr-head{padding-left:max(24px,calc((100% - 880px)/2 + 24px))}
-html[data-platform="darwin"] .strip{padding-right:0}
-/* FR-138: the grab area at the right end of the chat strip is a 32px handle (plus the 8px gap before it = 40px of drag) with grip dots */
-html[data-platform="darwin"] .strip::after{content:"";flex:none;align-self:stretch;width:32px;box-sizing:border-box;padding:10px 10px;background:radial-gradient(circle,color-mix(in srgb,var(--muted) 55%,transparent) 1.1px,transparent 1.6px) 0 0/6px 6px;background-clip:content-box;background-origin:content-box}
 html[data-platform="darwin"] :is(.dlg-ov,#foldersPop,#floorsPop,#defaultsPop,.mode-menu,.more-menu){-webkit-app-region:no-drag}
 
 /* spec 052 (2026-10-21, round 3, accessibility): small controls get a 24px hit area (WCAG 2.2 target size) without changing the layout */
@@ -1930,6 +1963,10 @@ h2,h3,h4{text-wrap:balance}
 .lg-bub.dream{border-style:dashed;border-radius:12px}
 .lg-t{position:absolute;inset:1px 7px;font-size:10.5px;line-height:15px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:0;transition:opacity .6s ease}
 .lg-t.on{opacity:1}
+/* spec 085 FR-008: only the visible line that carries numbers takes a click (it lists the changed files) */
+.lg-t{pointer-events:none}
+.lg-t.sum.on{pointer-events:auto;cursor:pointer}
+.lg-t.sum.on:hover{text-decoration:underline;text-underline-offset:2px}
 .lg-bub::after{content:"";position:absolute;bottom:-5px;left:calc(var(--tail,50%) - 4px);width:7px;height:7px;background:var(--bubble,var(--surface));border-right:1px solid var(--bubble-line,var(--line-2));border-bottom:1px solid var(--bubble-line,var(--line-2));transform:rotate(45deg)}
 .lg-bub.dream::after{border-radius:50%;transform:none;width:6px;height:6px;bottom:-8px;border:1px solid var(--bubble-line,var(--line-2))}
 .lg-bub.none::after{display:none}
@@ -1993,6 +2030,7 @@ h2,h3,h4{text-wrap:balance}
 .peek .pk-st{display:flex;align-items:center;gap:5px;font-size:11px;line-height:15px;color:var(--ink-2)}
 .peek .sh-mark{width:11px;height:11px;flex:none;color:var(--c-done)}
 .peek .pk-tx{font-size:11.5px;line-height:15px;color:var(--ink-2);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;white-space:normal}
+.peek .pk-sum{font-size:11px;line-height:15px;color:var(--ink-2);margin-top:2px;padding-top:3px;border-top:1px solid var(--line-2);white-space:normal}
 /* FR-055: one settle-in when an agent arrives in the lounge, one rise when it goes back to its desk (transform only) */
 .desk.shut.rolling .lg-sp{animation:shut-in .22s ease-out}
 .unit.unrolling{animation:shut-out .22s ease-out;transform-origin:50% 100%}
@@ -2042,7 +2080,7 @@ h2,h3,h4{text-wrap:balance}
 .nt-btn:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
 .msg.user .bubble{position:relative}
 .msg.user .bubble>.nt-btn{right:auto;left:10px}
-.panel-in.ro .nt-btn{display:none}
+.panel-in.helper-ro .nt-btn{display:none}
 .notes-drawer{position:absolute;z-index:6;display:flex;flex-direction:column;min-height:0;background:var(--surface);border-top:1px solid var(--line);border-bottom:1px solid var(--line);box-sizing:border-box}
 .notes-drawer[hidden]{display:none}
 .nt-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 16px 6px}
@@ -2110,6 +2148,8 @@ h2,h3,h4{text-wrap:balance}
 .mcp-costs li{padding:2px 0}
 
 
+/* spec 085 FR-009: the day's numbers in the Since you were away strip */
+.aw-brief{display:block;font-size:11px;line-height:15px;color:var(--ink-2);margin-top:2px}
 /* spec 052 FR-182..FR-190 (issue 686): Auto-follow. No animation or transition anywhere (FR-189): reduced motion and Still highlights change nothing. */
 .desk.is-followed,button.lrow.is-followed,.ro-plate.is-followed{outline-style:dashed;outline-width:2px;outline-color:var(--focus);outline-offset:-4px}
 .follow-strip{gap:6px 10px;flex-wrap:nowrap}

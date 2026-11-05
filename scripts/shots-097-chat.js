@@ -6,11 +6,12 @@
  *     DURBAR_DRIVER=$PWD/scripts/shots-097-chat.js npx electron .        (xvfb-run -a ... --no-sandbox on Linux)
  *
  * For the Photo office and the cave (MOMENTS_WORLDS, default photo) at 1440x900 and 1280x800 it fails (exit 1) when:
- *   - a desk-side column exists (the owner removed it on 2026-11-01) or the chat is not the whole window's width;
+ *   - a desk-side column exists (the owner removed it on 2026-11-01) or the chat is not the window's width beside the 220px agent rail (spec 005 FR-190);
  *   - the header has no 32 px portrait with its lamp ring, dot and a cropped picture, or the lamp words ("Lamp warm, steady", ...) are not on the task line alone, whole beside a long task;
  *   - the tab order of the panel is not the flat office's (the same agent, same elements);
  *   - the panel surface is under 78 % opaque, or any text pair (title, lamp words, cards, hint) is under 4.5:1 against the composited surface (3:1 for large text);
- *   - text under 10.5 px.
+ *   - text under 10.5 px;
+ *   - (#1144, FR-245) with Retro Pixel picked as the theme, a header button (.btn) in the Photo office has an offset box-shadow (the arcade's hard 3px shadow); the theme comes back after.
  * Screenshots: <SHOTS_OUT>/<world>-chat-<w>x<h>.png, <world>-chatlimit-<w>x<h>.png.
  */
 const os = require('os');
@@ -34,7 +35,7 @@ module.exports = async (ctx) => {
     await must(`document.body.classList.contains('panel-open')&&!!document.getElementById('roPortrait')`, 'the chat of ' + name);
     await H.settle();
   };
-  const tabOrder = () => js(`[...document.querySelectorAll('#panel button,#panel [href],#panel input,#panel textarea,#panel select,#panel [tabindex]:not([tabindex="-1"])')].filter(e=>!e.closest('.strip-list')&&e.getClientRects().length).map(e=>e.id||e.getAttribute('aria-label')||e.textContent.trim().slice(0,20)||e.tagName).join('|').replace(/ \\u00B7 \\d+s/g,'')`); /* a running turn's clock ("Thinking · 1s") moves between two loads */
+  const tabOrder = () => js(`[...document.querySelectorAll('#panel button,#panel [href],#panel input,#panel textarea,#panel select,#panel [tabindex]:not([tabindex="-1"])')].filter(e=>!e.closest('.rail-list')&&e.getClientRects().length).map(e=>e.id||e.getAttribute('aria-label')||e.textContent.trim().slice(0,20)||e.tagName).join('|').replace(/ \\u00B7 \\d+s/g,'')`); /* a running turn's clock ("Thinking · 1s") moves between two loads */
   /* every text element of the panel and its pair against the composited surface behind it */
   const CONTRAST = `(()=>{const P=(c)=>{let m=/^color\\(srgb ([^)]+)\\)/.exec(c);if(m){const v=m[1].split(/[ \\/]+/).filter(Boolean).map(Number);return {r:v[0]*255,g:v[1]*255,b:v[2]*255,a:v.length>3?v[3]:1};}m=/rgba?\\(([^)]+)\\)/.exec(c);if(!m)return null;const v=m[1].split(/[ ,\\/]+/).filter(Boolean).map(Number);return {r:v[0],g:v[1],b:v[2],a:v.length>3?v[3]:1};};
     const bgOf=(e)=>{let acc={r:255,g:255,b:255};const st=[];for(let n=e;n;n=n.parentElement){const c=P(getComputedStyle(n).backgroundColor);if(c&&c.a>0)st.push(c);if(c&&c.a>=1)break;}
@@ -52,10 +53,11 @@ module.exports = async (ctx) => {
     await H.load({ w, h, query: q(world), ready: REAL, settle: false });
     await must(`[...document.querySelectorAll('#stage .ro img')].every(i=>i.complete)`, 'the pictures');
     await open('Mira');
-    const st = await js(`(()=>{const pi=document.querySelector('.panel-in'),port=document.getElementById('roPortrait'),im=port&&port.querySelector('img');return {col:!!document.querySelector('.ro-col,.rc-stage'),chat:pi.getBoundingClientRect().width,iw:innerWidth,
+    const st = await js(`(()=>{const pi=document.querySelector('.panel-in'),port=document.getElementById('roPortrait'),im=port&&port.querySelector('img');const rl=document.querySelector('#panel>.rail');return {col:!!document.querySelector('.ro-col,.rc-stage'),chat:pi.getBoundingClientRect().width,iw:innerWidth,rail:rl?rl.getBoundingClientRect().width:0,
       port:port&&[port.getBoundingClientRect().width,port.getBoundingClientRect().height],ring:port&&getComputedStyle(port).outlineStyle==='solid',dot:!!(port&&port.querySelector('.dot')),img:!!im,crop:!!(im&&im.style.left&&im.style.top),lamp:(document.querySelector('.ro-lampwords')||{}).textContent,where:[...document.querySelectorAll('.ro-lampwords')].map(e=>e.parentElement.className+'/'+(e.previousElementSibling||{}).className),headH:document.querySelector('.ph').getBoundingClientRect().height}})()`);
     assert.strictEqual(st.col, false, `${tag}: no desk-side column`);
-    assert.strictEqual(Math.round(st.chat), st.iw, `${tag}: the chat has the whole window's width (${st.chat})`);
+    assert.strictEqual(st.rail, 220, `${tag}: the agent rail is on the left (spec 005 FR-190): ${st.rail}`);
+    assert.strictEqual(Math.round(st.chat), st.iw - st.rail, `${tag}: the chat has the rest of the window's width (${st.chat})`);
     assert.deepStrictEqual(st.port, [32, 32], `${tag}: a 32 px portrait`);
     assert.deepStrictEqual(st.where, ['ph-line/ptask'], `${tag}: the lamp words on the task line, after the task, and nowhere else`);
     console.log('[097-chat]', tag, 'header', st.headH);
@@ -86,6 +88,27 @@ module.exports = async (ctx) => {
       await H.settle();
       assert.strictEqual(await tabOrder(), tabsReal, `${tag}: the panel's tab order (outside the agent strip, whose states move) is the flat one`);
       assert.ok(!(await js(`!!document.querySelector('.ro-col,#roPortrait')`)), `${tag}: flat has neither column nor portrait`);
+    }
+
+    /* #1144 (spec 097 FR-245): Retro Pixel's hard offset shadow on .btn never reaches the Photo office */
+    if (world === 'photo') {
+      const pickTheme = async (id) => {
+        await H.js(`document.getElementById('settingsBtn').click()`);
+        const sel = `#thList [data-theme="${id}"]`;
+        await must(`!!document.querySelector(${jsLiteral(sel)})`, 'theme ' + id + ' in Settings');
+        await js(`document.querySelector(${jsLiteral(sel)}).click()`);
+        await must(`window.THEME.current().id===${jsLiteral(id)}`, 'theme ' + id + ' applied');
+        await js(`window.DurbarScreens.close()`);
+        await H.settle();
+      };
+      await H.load({ w, h, query: q(world), ready: REAL, settle: false });
+      const was = await js(`window.THEME.current().id`);
+      await pickTheme('retro');
+      await open('Mira');
+      const sh = await js(`(()=>{const b=[...document.querySelectorAll('#panel .btn')].filter(e=>e.getClientRects().length);return {ui:document.documentElement.dataset.ui,n:b.length,shadows:b.map(e=>getComputedStyle(e).boxShadow).filter(x=>x&&x!=='none')}})()`);
+      await pickTheme(was);
+      assert.ok(sh.n > 0, `${tag}: the chat header has buttons (${sh.n})`);
+      assert.deepStrictEqual([sh.ui, sh.shadows], ['clean', []], `${tag}: Retro Pixel theme in the Photo office: plain UI style and no offset shadow on .btn`);
     }
   }
   async function shot(world, name, w, h) { await H.shot(path.join(OUT, `${world}-${name}-${w}x${h}.png`), { prep: 'calm', settle: true, tag: 'chat', what: `${world}-${name}-${w}x${h}` }); }

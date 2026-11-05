@@ -3,6 +3,8 @@
  * `usageLimit` event. Agent-neutral; no vendor type leaves the adapter (constitution II).
  */
 
+import { quotaTimeMs } from '../shared/quota';
+
 const DAY = 86_400_000;
 
 /** Spec 068 FR-002: the words of the closing status; display text only (the break keys on `reason`). */
@@ -22,9 +24,8 @@ export function usageLimitClosing(): { type: 'status'; status: 'idle'; intent: s
  * a past reset for a limit that just hit is stale, and taken as known it would resume at once (2026-10-22).
  */
 export function resetMs(v: unknown, now = Date.now()): number | undefined {
-  const n = typeof v === 'number' ? v : typeof v === 'string' && /^\d{9,13}$/.test(v) ? Number(v) : typeof v === 'string' ? Date.parse(v) : NaN;
-  if (!Number.isFinite(n) || n <= 0) return undefined;
-  const ms = n < 1e12 ? n * 1000 : n;
+  const ms = quotaTimeMs(v);
+  if (ms === undefined) return undefined;
   return ms > now && ms < now + 31 * DAY ? Math.round(ms) : undefined;
 }
 

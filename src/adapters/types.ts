@@ -12,10 +12,13 @@ import type { AdapterCapabilities, PermissionMode } from './capabilities';
 import type { McpContextReport, McpContextServer } from '../shared/mcpcost';
 import type { OrgPolicy } from '../shared/orgpolicy';
 import type { HandoffResult } from './handoff';
+import type { VendorStats } from './vendorstats';
+export type { VendorStats };
 import type { HistoryResult, PreviousSession } from './history';
 import type { RemoteState } from '../shared/remote';
 import type { EditInfo } from '../shared/edits';
 import type { AccountIdentity, AccountInfoOptions } from '../shared/account';
+import type { QuotaRead } from '../shared/quota';
 import type { SandboxHostView, SandboxState } from '../shared/api';
 export type { EditInfo };
 export type { McpContextReport, McpContextServer };
@@ -261,6 +264,11 @@ export interface SubagentEvent extends BaseEvent {
   durationMs?: number;
   totalTokens?: number;
   totalToolCalls?: number;
+  /**
+   * Spec 015 FR-018 (issue #1141): on `started` only, the helper runs in the background: the parent's call returns at once with a
+   * launch note while the helper goes on, so only this helper's own `completed` / `failed` (or the session stopping) ends it.
+   */
+  background?: boolean;
 }
 
 /** Per model call usage. Credits are reported by the runtime as nano-AIU when available. */
@@ -744,6 +752,8 @@ export interface AgentAdapter {
   cancelQueuedModel?(sessionId: string, queueId: string): Promise<void>;
   /** Compact the context now (spends a model call); `focus` steers the summary. Optional. */
   compact?(sessionId: string, focus?: string): Promise<CompactResult>;
+  /** Spec 085 FR-010: what the agent app itself reports about the session so far, as counts only (never names or text); undefined = nothing reported. Optional (`capabilities.sessionStats`). */
+  sessionStats?(sessionId: string): Promise<VendorStats | undefined>;
   /** A markdown hand-off summary of the conversation, made without changing it (spec 030 FR-034). Optional (`capabilities.handoff`). */
   handoffSummary?(sessionId: string): Promise<HandoffResult>;
   /**
@@ -782,6 +792,11 @@ export interface AgentAdapter {
    * Personal data: the adapter never passes it to `debug`, and main sends it only to the window (FR-015). Never a token.
    */
   accountInfo?(opts?: AccountInfoOptions): Promise<AccountIdentity>;
+  /**
+   * Spec 011 FR-081 (issue #690): what the provider reports about the account's limits, through a read-only call that spends nothing and
+   * has no prompt, session or turn. Optional (`capabilities.accountQuota`). A call that could spend does not belong here. Never a token.
+   */
+  accountQuota?(): Promise<QuotaRead>;
   /**
    * Spec 012 FR-158: pick up a new sign-in made outside the adapter (Settings or the chat's sign-in card) in anything the adapter
    * keeps across sessions (Copilot's shared runtime client). Live sessions survive it. Optional: an adapter that starts a

@@ -182,6 +182,8 @@
         return out.sort((a,b)=>a.from-b.from||(a.id<b.id?-1:1)).map(x=>x.id);
       },
       size(){return v.size;},
+      /* spec 097 FR-186: nothing will change on its own: no call waits for its debounce and no ended visit waits for its dwell (only open calls and pins remain) */
+      settled(){for(const r of v.values())if(!r.pinned&&(r.atSince===null?!r.ended:r.ended))return false;return true;},
     };
   }
 

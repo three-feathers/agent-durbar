@@ -274,7 +274,7 @@ const valid = (b: EventBody): void => assert.deepStrictEqual(validateEvent({ ...
 }
 {
   assert.deepStrictEqual(copilotUsageLimit('rate_limit', 'user_weekly_rate_limited'), { type: 'usageLimit', scope: 'rate', source: 'Copilot weekly limit' });
-  assert.deepStrictEqual(copilotUsageLimit('quota', 'quota_exceeded'), { type: 'usageLimit', scope: 'quota', paid: true, source: 'Copilot premium requests' });
+  assert.deepStrictEqual(copilotUsageLimit('quota', 'quota_exceeded'), { type: 'usageLimit', scope: 'quota', paid: true, source: 'Copilot usage' });
   assert.strictEqual(copilotUsageLimit('quota', 'billing_not_configured'), null, 'no wait fixes billing');
   assert.strictEqual(copilotUsageLimit('authentication', undefined), null);
   assert.strictEqual(copilotUsageLimit('rate_limit', '__proto__')!.source, 'Copilot rate limit');

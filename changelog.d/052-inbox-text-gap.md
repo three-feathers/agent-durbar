@@ -1,1 +1,0 @@
-- **Needs you text no longer runs words together** (spec 052 FR-214): the inbox, the answer bar, the announcements and the Real office slips read "search_companies) Allow for this session ...", not "search_companies)Allow ...", and a card with several questions shows all of them. Checked by the simulator driver `check-inbox-text`.

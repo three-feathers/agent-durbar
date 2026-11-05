@@ -687,6 +687,9 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
     // spec 001 FR-097 (issue 697): simhelpers=<1..6> gives every main agent that many helpers (running, done and failed mixed, in SIM_HX_ORDER),
     // and the first agent's second helper is Codex-shaped: announced with no task and finished with no result (so "not reported" is seen)
     const simHelpers = !noHelpers && simQs && /^[1-6]$/.test(simQs.get('simhelpers') || '') ? parseInt(simQs.get('simhelpers') || '0', 10) : 0;
+    // spec 015 FR-018 (issue 1141): simbghelper=1 launches the first still-working helper in the background: its parent call returns at once
+    // with a launch note (as Claude's `run_in_background` and Copilot's background `task` do) and the helper goes on working
+    let simBgHelper = !!simQs && simQs.get('simbghelper') === '1';
     // Fewer than 12: drop the quieter agents first so the status mix stays varied.
     let rows = ROSTER.slice(0, Math.min(n, ROSTER.length));
     if (n < 12) rows = ROSTER.filter((r) => r[0] !== 'Hugo' && r[0] !== 'Priya' && r[0] !== 'Noor' && r[0] !== 'Omar').slice(0, n);
@@ -733,7 +736,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
         prompt: i === 0
           ? 'Please split the tool registry by domain (companies, cantons, filings) without changing the public API. The attached notes describe the naming I want, and the screenshot shows the current module graph.'
           : 'Please take care of this: ' + intent.charAt(0).toLowerCase() + intent.slice(1) + '.',
-        attachments: i === 0 ? ['/home/vikram/notes/registry-split-notes.md', '/home/vikram/Pictures/module-graph-2026-10-16-final-v3-annotated.png'] : i === 3 ? ['/home/vikram/docs/tool-table.csv'] : undefined,
+        attachments: i === 0 ? ['~/projects/demo/notes/registry-split-notes.md', '~/projects/demo/Pictures/module-graph-2026-10-16-final-v3-annotated.png'] : i === 3 ? ['~/projects/demo/docs/tool-table.csv'] : undefined,
         tool: 0,
         think: i,
         grants: new Map(),
@@ -1301,7 +1304,10 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
       const call = sid(s) + '-task' + h, base = { sessionId: sid(s), timestamp: now() };
       const prompt = 'You are a helper for the **' + name + '** step.\n\n' + task + '.\n\nOnly read files; report back in two sentences.' + (opts.reply === 'long' ? '\n\n' + LONG_TEXT : '');
       emit({ ...base, type: 'toolCall', callId: call, tool: 'task', phase: 'start', args: { description: task, prompt, agent_type: 'explore' } });
-      emit({ ...base, type: 'subagent', subagentId: call, name, phase: 'started', task, agentName: 'explore', model: 'gpt-5.6-luna' });
+      const bg = simBgHelper && (st === 'working' || st === 'thinking');
+      if (bg) simBgHelper = false;
+      emit({ ...base, type: 'subagent', subagentId: call, name, phase: 'started', task, agentName: 'explore', model: 'gpt-5.6-luna', ...(bg ? { background: true } : {}) });
+      if (bg) emit({ ...base, type: 'toolCall', callId: call, tool: 'task', phase: 'complete', output: 'Agent started in the background. You will be told when it finishes.' });
       emit({ ...base, type: 'user', agentId: call, text: prompt });
       emit({ ...base, type: 'status', status: 'working', agentId: call, intent: task });
       if (h % 2 === 0) emit({ ...base, type: 'thinking', agentId: call, reasoningId: call + '-r', delta: '**Scoping the check**\n\nOnly the touched files matter, so I will start with ' + s.files[0] + '. ' });
@@ -1392,7 +1398,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
       s.state = 'waiting';
       // spec 087 FR-021: a Codex approval card in Ask first says what approving may mean for its sandbox (its own line, as codexPermission)
       const sbxApp = s.info.adapterId ?? 'copilot';
-      const sbxNote = sbxApp === 'codex' ? (kind === 'shell' ? 'If you approve, Codex may run this outside its sandbox.' : 'If you approve, Codex writes this outside its read-only sandbox.') : sbxApp === 'copilot' && kind === 'shell' && s.info.permMode === 'ask' && s.info.sandbox?.state === 'on' ? 'If you approve, Copilot’s sandbox may still let this write outside the folder (seen on Linux, 2026-10-25).' : undefined; // FR-021a (K15)
+      const sbxNote = sbxApp === 'codex' ? (kind === 'shell' ? 'If you approve, Codex may run this outside its sandbox.' : 'If you approve, Codex writes this outside its read-only sandbox.') : sbxApp === 'copilot' && kind === 'shell' && s.info.permMode === 'ask' && s.info.sandbox?.state === 'on' ? 'If you approve, this can also write in Copilot’s temp folder (a private one Durbar gives it), not only this folder.' : undefined; // FR-021a (K15)
       emit({ type: 'status', sessionId: sid(s), timestamp: now() - (opts.waitOld ? 120_000 : 0), status: 'needs-permission', intent, permission: { ...base, state: 'pending', ...(diff ? { diff } : {}), ...(sbxNote ? { sandboxNote: sbxNote } : {}) } });
       return false;
     }
@@ -1460,7 +1466,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
       s.state = 'idle';
       closeOpen(s);
       if (kind === 'plan') emit({ type: 'usageLimit', sessionId: id, timestamp: now(), scope: 'plan', resetsAt: s.breakUntil, source: 'Simulated 5-hour window' });
-      else emit({ type: 'usageLimit', sessionId: id, timestamp: now(), scope: 'quota', paid: true, source: 'Simulated premium requests' });
+      else emit({ type: 'usageLimit', sessionId: id, timestamp: now(), scope: 'quota', paid: true, source: 'Simulated Copilot usage' });
       emit({ type: 'status', sessionId: id, timestamp: now(), status: 'idle', intent: 'Usage limit reached', reason: 'usage-limit' }); // spec 068: the marker, as the adapters' usageLimitClosing()
     };
     /* spec 034 FR-020 (simretry=1): Clara's agent app is retrying a model call (attempt 3 of 10, servers busy, HTTP 529) and stays so;
@@ -1678,7 +1684,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
     }
     const fakeCli = [
       { name: 'github', origin: 'copilot-config' as const, transport: 'stdio' as const, command: 'npx', args: ['-y', '@example/github-mcp'], enabled: true },
-      { name: 'my-notes', origin: 'copilot-config' as const, transport: 'stdio' as const, command: 'node', args: ['/home/vikram/tools/notes-mcp.js'], enabled: true },
+      { name: 'my-notes', origin: 'copilot-config' as const, transport: 'stdio' as const, command: 'node', args: ['~/projects/demo/tools/notes-mcp.js'], enabled: true },
       { name: 'github-mcp-server', origin: 'builtin' as const, enabled: true },
       ...SIM_REMOTE.map((r) => ({ name: r.name, origin: 'copilot-config' as const, transport: 'http' as const, url: r.url, enabled: true })),
     ];
@@ -1690,12 +1696,12 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
     const gLists: Record<GApp, GView[]> = {
       copilot: [
         { name: 'github', transport: 'stdio', command: 'npx', args: ['-y', '@example/github-mcp'], envKeys: [], headerKeys: [] },
-        { name: 'my-notes', transport: 'stdio', command: 'node', args: ['/home/vikram/tools/notes-mcp.js'], envKeys: [], headerKeys: [] },
+        { name: 'my-notes', transport: 'stdio', command: 'node', args: ['~/projects/demo/tools/notes-mcp.js'], envKeys: [], headerKeys: [] },
       ],
       claude: [
         { name: 'github', transport: 'stdio', command: 'npx', args: ['-y', '@example/github-mcp'], envKeys: [], headerKeys: [] },
         { name: 'sentry', transport: 'http', url: 'https://mcp.sentry.example/mcp', envKeys: [], headerKeys: ['Authorization'], refs: true },
-        { name: 'my-notes', transport: 'stdio', command: 'node', args: ['/home/vikram/tools/notes-mcp-v1.js'], envKeys: [], headerKeys: [] },
+        { name: 'my-notes', transport: 'stdio', command: 'node', args: ['~/projects/demo/tools/notes-mcp-v1.js'], envKeys: [], headerKeys: [] },
       ],
       codex: [{ name: 'context7', transport: 'stdio', command: 'npx', args: ['-y', '@upstash/context7-mcp'], envKeys: [], headerKeys: [] }],
     };
@@ -1901,7 +1907,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
           ({ id, name, originalName: id, transport: 'stdio', env: [], headers: [], notes: [], alreadyAdded: have.has(name) ? true : undefined, ...o });
         const items = [
           mk('playwright', 'playwright', { command: 'npx', args: ['@playwright/mcp@latest'] }),
-          mk('postgres', 'postgres', { command: 'npx', args: ['-y', '@modelcontextprotocol/server-postgres', '/home/vikram/work/mcp-swiss'], env: [{ key: 'DATABASE_URL', hasValue: true }], notes: ['Ignored fields: envFile.', '"envFile" is not read: add its variables by hand if the server needs them.'] }),
+          mk('postgres', 'postgres', { command: 'npx', args: ['-y', '@modelcontextprotocol/server-postgres', '~/work/mcp-swiss'], env: [{ key: 'DATABASE_URL', hasValue: true }], notes: ['Ignored fields: envFile.', '"envFile" is not read: add its variables by hand if the server needs them.'] }),
           mk('sentry', 'sentry', { transport: 'http', url: 'https://mcp.sentry.example.test/mcp', headers: [{ key: 'Authorization', hasValue: false }], notes: ['Authorization: contains a ${...} reference. The value is not copied or resolved; enter it after importing.'] }),
           mk('github', 'github-vscode', { command: 'npx', args: ['-y', '@example/github-mcp'], env: [{ key: 'GITHUB_TOKEN', hasValue: false }], notes: ['The name "github" is already taken here (Copilot CLI list or another extra); it will be imported as "github-vscode".', 'GITHUB_TOKEN: contains a ${...} reference. The value is not copied or resolved; enter it after importing.'] }),
           mk('notion', 'notion', { command: 'node', args: ['notion-mcp.js', '--workspace', '${input:notion-workspace}'], blocked: 'Needs a value that VS Code asks you for (${input:notion-workspace}). Agent Durbar never asks for or guesses it: add this server by hand.' }),
@@ -2094,6 +2100,8 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
     /* spec 024: place mapping kept in memory (plain script: no imports, so the ids are listed here) */
     const placeMap: Record<string, string> = {};
     let seriousMode = false; /* spec 034 */
+    let motion = true; /* spec 052 FR-069 (issue #1182) */
+    let stillHighlights = typeof location !== 'undefined' && new URLSearchParams(location.search).get('simstillhl') === '1'; /* spec 001 FR-192; ?simstillhl=1 starts it saved on (the boot read) */
     let autoFollowWork = false; /* spec 052 FR-182: off by default; the simulator keeps it in memory and refuses a non-boolean like main */
     let notifyNeedsMe = false; /* spec 052 FR-059: off in the demo until you turn it on */
     let breakResume: 'auto' | 'ask' = 'auto'; /* spec 068 FR-006 */
@@ -2203,9 +2211,11 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
     const capApi: Partial<DurbarApi> = {
       usageTotals: async () => ({ ok: true, since: savedSince, office: saved.office, folders: saved.folders }),
       usageResetTotals: async () => { savedSince = new Date().toISOString(); saved = { office: zero, folders: [] }; return { ok: true, since: savedSince, office: zero, folders: [] }; },
-      getSettings: async () => ({ mcpSignInRefresh: simSignIn.on, mcpWarnLevels: simMcpLevels, defaultMaxAiCredits: defaultCap, placeMap: { ...placeMap }, customPlaces: customPlaces.map((p) => ({ ...p })), seriousMode, autoFollowWork, notifyNeedsMe, breakResume, chatLinksIn, ...(simTheme ? { theme: simTheme } : {}), characters: simCharacters, about: { name: 'Agent Durbar', version: '0.1.8 (simulator)', owner: 'Three Feathers', copyright: 'Copyright (c) 2026 Three Feathers contributors', website: 'https://github.com/three-feathers/agent-durbar', contributors: [{ label: 'vikramgorla', url: 'https://github.com/vikramgorla' }, { label: 'fjcabello', url: 'https://github.com/fjcabello' }, { label: 'rubenlupi', url: 'https://github.com/rubenlupi' }] } /* sample data, real values come from src/shared/about.ts */ }),
+      getSettings: async () => ({ mcpSignInRefresh: simSignIn.on, mcpWarnLevels: simMcpLevels, defaultMaxAiCredits: defaultCap, placeMap: { ...placeMap }, customPlaces: customPlaces.map((p) => ({ ...p })), seriousMode, motion, stillHighlights, autoFollowWork, notifyNeedsMe, breakResume, chatLinksIn, ...(simTheme ? { theme: simTheme } : {}), characters: simCharacters, about: { name: 'Agent Durbar', version: '0.1.10 (simulator)', owner: 'Three Feathers', copyright: 'Copyright (c) 2026 Three Feathers contributors', website: 'https://github.com/three-feathers/agent-durbar', contributors: [{ label: 'vikramgorla', url: 'https://github.com/vikramgorla' }, { label: 'fjcabello', url: 'https://github.com/fjcabello' }, { label: 'rubenlupi', url: 'https://github.com/rubenlupi' }] } /* sample data, real values come from src/shared/about.ts */ }),
       setDefaultCap: async (c) => { defaultCap = c !== null && c >= 30 ? Math.round(c * 100) / 100 : undefined; return { ok: true, defaultMaxAiCredits: defaultCap }; },
       setSeriousMode: async (on) => { if (typeof on === 'boolean') seriousMode = on; return { ok: true, seriousMode }; },
+      setMotion: async (on) => { if (typeof on !== 'boolean') return { ok: false, motion }; motion = on; return { ok: true, motion }; },
+      setStillHighlights: async (on) => { if (typeof on !== 'boolean') return { ok: false, stillHighlights }; stillHighlights = on; return { ok: true, stillHighlights }; },
       setAutoFollowWork: async (on) => { if (typeof on !== 'boolean') return { ok: false, autoFollowWork }; autoFollowWork = on; return { ok: true, autoFollowWork }; },
       setNotifyNeedsMe: async (on) => { if (typeof on === 'boolean') notifyNeedsMe = on; return { ok: true, notifyNeedsMe }; },
       setMcpSignInRefresh: async (on) => { if (typeof on === 'boolean') simSignIn.on = on; return { ok: true, mcpSignInRefresh: simSignIn.on }; }, // spec 058 FR-213
@@ -2376,6 +2386,9 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
       },
       // spec 044: scheduled prompts in memory; a 1 s check sends through the simulated agents (no credits)
       // spec 041 FR-065: the welcome-back card with a missed schedule whose prompt holds the planted secrets across character 80
+      // spec 085 FR-009: `simaway=1` gives the Since you were away strip yesterday's and today's ended sessions (numbers only), and `simaway=hostile` numbers a broken main could send
+      ...(simQuery.get('simaway') ? { sinceAway: async () => ({ awayMs: 5 * 3600e3, missed: [], briefing: simQuery.get('simaway') === 'hostile'
+        ? { sessions: '3', files: -4, added: 1e30, removed: NaN, commits: { x: 1 }, minutes: 'abc' } : { sessions: 3, files: 18, added: 400, removed: 90, commits: 2, minutes: 130 } }), dismissSinceAway: async () => ({ ok: true }) } : {}),
       ...(opts.reply === 'secrets' ? { sinceAway: async () => ({ awayMs: 3 * 3600e3, missed: [{ id: 'aw1', folderName: 'mcp-swiss', prompt: FILL(76) + SECRETS_TEXT, repeats: true }] }), dismissSinceAway: async () => ({ ok: true }) } : {}),
       listSchedules: async () => ({ pausedAll: simSched.pausedAll, schedules: simSched.list.map((x) => ({ ...x })) }),
       saveSchedule: async (inputIn) => {
@@ -2762,7 +2775,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
       },
     };
 
-    const simKinds = simKindsParam === '1' || simKindsParam === 'solo'; // spec 012 FR-136: '1' = two ready harnesses (picker shown), 'solo' = only Copilot ready (picker hidden)
+    const simKinds = simKindsParam === '1' || simKindsParam === 'solo' || simKindsParam === 'ready'; /* 'ready' (spec 011 FR-092): all three apps ready */ // spec 012 FR-136: '1' = two ready harnesses (picker shown), 'solo' = only Copilot ready (picker hidden)
     // Spec 006 FR-028: `simprev=inoffice|inoffice-solo|error` make the next delete answer a refusal or an error. Delete… disabled (no per-session delete) is seen with `simkinds=mixed`, where Ada is Claude Code.
     const simPrev = simQuery.get('simprev') ?? '';
     // Spec 006 FR-034/FR-036: `simprevdelay=<ms>` (at most 10 s) makes both lists answer late, so a driver can press Ctrl+Shift+H while they load.
@@ -2788,6 +2801,48 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
     const simExpired = new Set<string>(simAuthMode === 'expired' ? ['copilot', 'claude'] : []);
     const SIM_AUTH_ERROR = 'Failed to authenticate. API Error: 401 OAuth access token is invalid.';
     const signInState = (a: AdapterInfo): AdapterInfo => (a.state === 'ready' && simSignedOut.has(a.id) ? { ...a, state: 'not-signed-in', hint: 'Sign in first: open Settings > Agent apps and choose Sign in….' } : a);
+    /* spec 011 FR-092: the account-limit fixtures; raw reads, sanitised and stepped by shared/quota.ts as main does it */
+    const simQuotaEntries = new Map<string, import('../shared/quota').QuotaEntry>();
+    const simQuotaCount = new Map<string, number>();
+    const simQuotaMode = (app: string): string => {
+      const raw = simQuery.get('simquota') ?? '';
+      const per = raw.split(',').map((p) => p.split(':')).find((p) => p.length === 2 && p[0] === app);
+      if (per) return per[1];
+      if (app === 'claude') return 'noread'; // Claude Code has no free call (FR-081)
+      return raw && !raw.includes(':') ? raw : 'current';
+    };
+    const simQuotaFixture = (app: string, mode: string, nth: number, now: number): { read: unknown; at?: number } => {
+      const H = 3_600_000, D = 24 * H;
+      const reqs = (used: number, limit: number, left: number, extra: Record<string, unknown> = {}) => ({ id: 'premium_interactions', label: 'Premium requests', unit: 'requests', used, limit, remainingPercent: left, resetsAt: new Date(now + 12 * D).toISOString(), resetZone: 'UTC', ...extra });
+      const chat = { id: 'chat', label: 'Chat requests', unit: 'requests', used: 0, unlimited: true };
+      const wins = (first: number, second: number, extra: Record<string, unknown> = {}) => [{ id: 'primary', label: '5-hour window', unit: 'percent', usedPercent: first, windowMins: 300, resetsAt: now + 3 * H, ...extra }, { id: 'secondary', label: 'Weekly window', unit: 'percent', usedPercent: second, windowMins: 10080, resetsAt: now + 5 * D }];
+      const source = app === 'copilot' ? 'GitHub Copilot, account.getQuota (experimental; can lag a few minutes)' : app === 'codex' ? 'Codex, account/rateLimits/read' : 'Simulated';
+      const KEY_A = 'a'.repeat(32), KEY_B = 'b'.repeat(32);
+      const ok = (buckets: unknown[], at?: number) => ({ read: { kind: 'ok', source, buckets, accountKey: KEY_A }, at });
+      const copilot = app === 'copilot';
+      const fail = (failure: string) => ({ read: { kind: 'failed', failure } });
+      switch (mode) {
+        case 'near': return ok(copilot ? [reqs(1410, 1500, 6, { overageAllowed: true }), chat] : wins(93, 41));
+        case 'exhausted': return ok(copilot ? [reqs(1500, 1500, 0), chat] : wins(100, 60));
+        case 'stale': return ok(copilot ? [reqs(506, 1500, 66.3), chat] : wins(12, 41), now - 40 * 60_000);
+        case 'agingsoon': return ok(copilot ? [reqs(506, 1500, 66.3)] : wins(12, 41), now - 15 * 60_000 + 2500);
+        case 'resetsoon': return ok(copilot ? [reqs(1410, 1500, 6, { resetsAt: now + 2500 })] : wins(93, 41, { resetsAt: now + 2500 }));
+        case 'partial': return ok(copilot ? [reqs(506, 1500, 66.3), { id: 'chat', label: 'Chat requests', unit: 'requests', used: 'lots' }] : [wins(12, 41)[0], { id: 'secondary', label: 'Weekly window', unit: 'percent', usedPercent: 'lots' }]);
+        case 'switched': return nth === 1 ? ok(copilot ? [reqs(506, 1500, 66.3)] : wins(12, 41)) : { read: { kind: 'failed', failure: 'unavailable', accountKey: KEY_B } };
+        case 'nokey': return { read: { kind: 'ok', source, buckets: copilot ? [reqs(506, 1500, 66.3)] : wins(12, 41) } };
+        case 'failed': return fail('unavailable');
+        case 'failagain': return nth === 1 ? ok(copilot ? [reqs(506, 1500, 66.3), chat] : wins(12, 41)) : fail('timeout');
+        case 'ratelimited': return fail('rate-limited');
+        case 'signedout': return fail('signed-out');
+        case 'malformed': return { read: { kind: 'ok', source, buckets: 'nonsense' } };
+        case 'notreported': return copilot ? ok([]) : { read: { kind: 'not-reported', reason: 'api-key' } };
+        case 'usagebilled': return ok([{ id: 'premium_interactions', label: 'Usage', unit: 'requests', billing: 'usage', resetsAt: new Date(now + 12 * D).toISOString(), resetZone: 'UTC' }, { ...chat, label: 'Chat', billing: 'usage' }]);
+        case 'unlimited': return ok([chat]);
+        case 'resetpast': return ok(copilot ? [reqs(1500, 1500, 0, { resetsAt: now - H })] : wins(100, 41, { resetsAt: now - H }));
+        case 'hostile': return { read: { kind: 'ok', source: '<script>alert(1)</script> \u202eevil', buckets: [{ id: 'x', label: '<img src=x onerror="document.title=1"> ' + 'long'.repeat(60), unit: 'requests', used: 7, remaining: Infinity, limit: -5, remainingPercent: NaN, resetsAt: 1e300, resetZone: '<b>zone</b>' }, { id: '__proto__', label: '<b>bold</b>', unit: 'requests', used: 3, limit: 1e300 }, { id: 'bad', label: 'gone', unit: 'dollars', used: 1 }] } };
+        default: return ok(copilot ? [reqs(506, 1500, 66.3), chat] : wins(12, 41));
+      }
+    };
     const simAdapters = (): AdapterInfo[] => simAdapterList().map(signInState);
     const simAdapterList = (): AdapterInfo[] => [
       { id: 'copilot', displayName: 'Copilot', state: 'ready', version: 'sim', capabilities: { ...copilotCaps } },
@@ -2796,7 +2851,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
           ? { id: 'claude', displayName: 'Claude Code', state: 'not-installed', hint: 'Install Claude Code, then choose Check again.', capabilities: { ...copilotCaps, caps: false, mcpToggle: false, remote: false } }
           : { id: 'claude', displayName: 'Claude Code', state: 'ready', version: 'sim', where: '~/.local/bin/claude', capabilities: { ...copilotCaps, caps: false, mcpToggle: false, remote: false } },
         // spec 060 FR-003: found through a version manager's folder (nvm), shown as where it was found
-        { id: 'codex', displayName: 'Codex', state: 'too-old', version: '0.9.0', hint: 'Update Codex to 1.0 or newer, then choose Check again.', where: '~/.nvm/versions/node/v22.3.0/bin/codex', capabilities: { ...copilotCaps, interrupt: false, history: false, permissionModes: ['read-only'], remote: false } },      ] as AdapterInfo[] : []),
+        simKindsParam === 'ready' ? { id: 'codex', displayName: 'Codex', state: 'ready', version: 'sim', where: '~/.nvm/versions/node/v22.3.0/bin/codex', capabilities: { ...copilotCaps, caps: false, mcpToggle: false, remote: false } } : { id: 'codex', displayName: 'Codex', state: 'too-old', version: '0.9.0', hint: 'Update Codex to 1.0 or newer, then choose Check again.', where: '~/.nvm/versions/node/v22.3.0/bin/codex', capabilities: { ...copilotCaps, interrupt: false, history: false, permissionModes: ['read-only'], remote: false } },      ] as AdapterInfo[] : []),
       ...(mixed ? SIM_MIXED_KINDS : []),
     ];
     const notReady = (adapterId: string): string | undefined => {
@@ -2939,6 +2994,33 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
           else if (a.id === 'codex') out[a.id] = SIM_CODEX;
         }
         return out;
+      },
+      // spec 011 FR-092: fixtures per app, through the same pure steps as main (window.exports, shared/quota.ts); no adapter, no network.
+      // `simquota=near` or `simquota=copilot:near,codex:failed`; `simquotafloor=0` lifts the floors so a driver can ask twice.
+      harnessQuota: async (mode, only) => {
+        const q = (window as unknown as { exports: typeof import('../shared/quota') }).exports;
+        const w = window as unknown as { __durbarSimQuotaReads?: string[]; __durbarSimQuotaReject?: boolean; __durbarSimQuotaGates?: Record<string, Promise<void> | undefined> };
+        const gate = only !== undefined ? w.__durbarSimQuotaGates?.[only] : undefined;
+        if (gate) await gate; // a driver holds one app's answer back
+        if (w.__durbarSimQuotaReject) throw new Error('refused by the fixture');
+        const now = Date.now(), out: Record<string, ReturnType<typeof q.quotaView>> = {};
+        for (const a of simAdapters()) {
+          if (only !== undefined && a.id !== only) continue;
+          if (a.state === 'not-signed-in') { out[a.id] = q.quotaView(a.id, q.applyQuotaRead(undefined, { kind: 'failed', failure: 'signed-out' }, now)); continue; }
+          if (a.state !== 'ready') continue;
+          const m = simQuotaMode(a.id);
+          if (m === 'noread') { out[a.id] = q.quotaView(a.id, q.applyQuotaRead(undefined, { kind: 'not-reported', reason: 'no-read' }, now)); continue; }
+          const was = simQuotaEntries.get(a.id);
+          if (q.quotaShouldAsk(was, mode ?? 'cached', now) || (mode === 'check' && simQuery.get('simquotafloor') === '0')) {
+            (w.__durbarSimQuotaReads = w.__durbarSimQuotaReads ?? []).push(a.id);
+            const nth = (simQuotaCount.get(a.id) ?? 0) + 1;
+            simQuotaCount.set(a.id, nth);
+            const f = simQuotaFixture(a.id, m, nth, now);
+            simQuotaEntries.set(a.id, q.applyQuotaRead({ ...was, askedAt: now }, q.sanitiseQuotaRead(f.read, now), f.at ?? now));
+          }
+          out[a.id] = q.quotaView(a.id, simQuotaEntries.get(a.id));
+        }
+        return { ok: true as const, apps: out };
       },
       copilotAuth: async () => ({ known: true, signedIn: true, ...(simQuery.get('simnopwsh') === '1' ? { pwshMissing: true } : {}) }), // spec 052 FR-073: page address simnopwsh=1 shows the Windows PowerShell 7 hint
       // spec 060 FR-002: in the app, ask main for the real routes of this OS (main assumes a typical new machine under the simulator);
@@ -3134,8 +3216,8 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
         ] } };
       },
       pickAttachments: async (): Promise<PickedFile[]> => [
-        { path: '/home/vikram/notes/api-design-notes.md', name: 'api-design-notes.md', kind: 'file' },
-        { path: '/home/vikram/Pictures/screenshot-2026-10-16.png', name: 'screenshot-2026-10-16.png', kind: 'image' },
+        { path: '~/projects/demo/notes/api-design-notes.md', name: 'api-design-notes.md', kind: 'file' },
+        { path: '~/projects/demo/Pictures/screenshot-2026-10-16.png', name: 'screenshot-2026-10-16.png', kind: 'image' },
       ],
       stageAttachment: async (name, mime, data) => {
         // The simulator has no disk: pretend to stage, with the same caps as the real main process.
@@ -3540,10 +3622,15 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
       // reported pull request (a fixture: no adapter reports them yet), sim-2 a folder that is not git, sim-3 a folder that already had changes; others a repository with no changes
       sessionSummary: async (id: string) => {
         if (!simQuery.get('simsummary')) return { ok: false as const, error: 'not in the simulator' };
+        const reads = ((window as unknown as { __durbarSumReads?: Record<string, number> }).__durbarSumReads ??= {}); // simulator only: how often each agent's numbers were read (the driver proves one read per reply)
+        reads[id] = (reads[id] ?? 0) + 1;
         const n = Number(String(id).replace(/\D/g, '')) || 0;
-        if (n === 1) return { ok: true as const, ms: 25 * 60000 + 20000, pullRequests: 1, git: { repo: true as const, files: 12, added: 340, removed: 80, binary: 0, newFiles: 3, commits: 1, dirtyAtStart: false } };
+        if (n === 1) return { ok: true as const, ms: 25 * 60000 + 20000, pullRequests: 1, reported: { source: 'copilot', files: 12, added: 338, removed: 80, nanoAiu: 2_500_000_000, requests: 2 }, git: { repo: true as const, files: 12, added: 340, removed: 80, binary: 0, newFiles: 3, commits: 1, dirtyAtStart: false } };
         if (n === 2) return { ok: true as const, ms: 3 * 60000, git: { repo: false as const } };
         if (n === 3) return { ok: true as const, ms: 65 * 60000, git: { repo: true as const, files: 2, added: 5, removed: 1, binary: 0, newFiles: 0, commits: 0, dirtyAtStart: true } };
+        // the two agents that rest in the lounge (Noor sim-4, Maya sim-15): spec 085 FR-008
+        if (n === 4) return { ok: true as const, ms: 40 * 60000, git: { repo: true as const, files: 6, added: 120, removed: 35, binary: 0, newFiles: 0, commits: 1, dirtyAtStart: false } };
+        if (n === 15) return { ok: true as const, ms: 12 * 60000, git: { repo: true as const, files: 2, added: 8, removed: 2, binary: 0, newFiles: 0, commits: 0, dirtyAtStart: false } };
         return { ok: true as const, ms: 20000, git: { repo: true as const, files: 0, added: 0, removed: 0, binary: 0, newFiles: 0, commits: 0, dirtyAtStart: false } };
       },
       onEvent: (cb) => { listeners.add(cb); return () => listeners.delete(cb); },

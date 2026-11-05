@@ -1,7 +1,8 @@
 /**
  * Spec 099 (Autopilot), the shared core: pure, no SDK, no I/O, no timers. All three adapters use it, so the rules are written once.
- * Phase 1 only: no adapter and no main code starts a run, and no descriptor reports `capabilities.autopilot`. One live use: `claudeHistory.ts`
- * (`typedPrompt`, the Previous-sessions list and chat history) calls `isClaudeContinuation` to hide a synthetic `Stop hook feedback:` message.
+ * The adapters use it through `autopilotHost.ts`; nothing in main calls it before T030.
+ * One live use: `claudeHistory.ts` (`typedPrompt`, the Previous-sessions list and chat history) calls `isClaudeContinuation` to hide a
+ * synthetic `Stop hook feedback:` message.
  */
 
 import { isObj } from '../shared/guards';

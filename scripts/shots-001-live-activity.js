@@ -75,10 +75,15 @@ module.exports = async (ctx) => {
     p3 = await side('sim-2');
     assert.match(p3.t, /Step 39 is checked\.$/, `${w}: the newest text is painted last`);
     assert.strictEqual(await rects(), before, `${w}: no layout shift while text streams`);
-    await think('sim-2', 'drv-r2', 'Long thoughts: ' + 'the parser keeps every clause in order and checks each one twice. '.repeat(4));
-    await ctx.sleep(400);
-    p3 = await side('sim-2');
-    assert.ok(p3.over, `${w}: long text keeps its newest lines in view`);
+    /* PR #1138 (Windows CI): the panel keeps at most 200 characters (PANEL_MAX), about 6.4 lines of its box, so mixed-case text took 7 lines in
+       Noto Sans (Linux) but fitted in a narrower font (Segoe UI on Windows; Liberation Sans Narrow on Linux: 6 lines), and `.over` was rightly
+       not set. Capitals are wide in every font, so this text is taller than the box everywhere; the step measures that (a Range over the
+       text: justify-content does not change it), then the class and where the newest character is */
+    await think('sim-2', 'drv-r2', 'Long thoughts: ' + 'THE PARSER KEEPS EVERY CLAUSE IN ORDER AND CHECKS EACH ONE TWICE. '.repeat(4));
+    assert.ok(await until(`/CHECKS EACH ONE TWICE\\.$/.test((document.querySelector('#stage [data-side="sim-2"] .ls-t')||{}).textContent||'')`, 3000), '1440: the long thought reached the side panel');
+    const lf = await js(`(()=>{const t=document.querySelector('#stage [data-side="sim-2"] .ls-t'),n=t&&t.lastChild;if(!n)return null;const b=t.getBoundingClientRect(),r=document.createRange();r.selectNodeContents(t);const e=document.createRange();e.setStart(n,n.length-1);e.setEnd(n,n.length);const c=e.getBoundingClientRect();return {t:t.textContent.slice(-24),textH:Math.round(r.getBoundingClientRect().height),boxH:t.clientHeight,over:t.classList.contains('over'),lastIn:c.top>=b.top-1&&c.bottom<=b.bottom+1}})()`);
+    assert.ok(lf && lf.textH > lf.boxH + 1, `${w}: the long text is taller than the panel (else the next step checks nothing): ${JSON.stringify(lf)}`);
+    assert.ok(lf.over && lf.lastIn, `${w}: long text keeps its newest lines in view: ${JSON.stringify(lf)}`);
     await page(`${w} sparse, long text`);
     await think('sim-2', 'drv-r3', 'So I will list every caller first and keep the old name as an alias for one release. ');
     await ctx.sleep(400);

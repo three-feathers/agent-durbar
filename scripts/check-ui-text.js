@@ -282,11 +282,11 @@ module.exports = async (ctx) => {
   add('chat-slash-list', 'menu', ['#slashList'], async () => {
     if (!(await openChat('Ada'))) return false;
     const long = extraQuery.simslash === 'long';
-    if (long) { await js(`(()=>{const s=document.createElement('style');s.id='narrowPanel';s.textContent='#panel{flex:0 0 480px!important;max-width:480px!important}';document.head.append(s);})()`); await settle(400); }
+    if (long) { await js(`(()=>{const s=document.createElement('style');s.id='narrowPanel';s.textContent='#panel>.panel-in{flex:0 0 480px!important;max-width:480px!important}';document.head.append(s);})()`); await settle(400); }
     await js(typeSlash);
     if (!(await until(`!!document.querySelector('#slashList [role="option"]')`, 3000))) return false;
     if (!long) return true;
-    const st = await js(`(()=>{const l=document.getElementById('slashList'),lr=l.getBoundingClientRect(),p=document.getElementById('panel').getBoundingClientRect();const o=document.querySelector('#slashList [role="option"]'),n=o.querySelector('.sl-name');
+    const st = await js(`(()=>{const l=document.getElementById('slashList'),lr=l.getBoundingClientRect(),p=document.querySelector('#panel>.panel-in').getBoundingClientRect();const o=document.querySelector('#slashList [role="option"]'),n=o.querySelector('.sl-name');
       return {panel:Math.round(p.width),name:n.textContent,cut:n.scrollWidth>n.clientWidth,tip:o.title,bad:[...l.querySelectorAll('.sl-src')].filter(e=>{const r=e.getBoundingClientRect();return r.right>lr.right-6.5||r.left<lr.left||e.scrollWidth>e.clientWidth+1;}).map(e=>e.textContent)}})()`);
     const fail = (detail) => found.push({ surface: 'chat-slash-long', theme: themeId || theme, size: `${W}x${Hh}`, rule: 'slash-long', el: '#slashList', detail });
     if (st.panel !== 480) fail(`the panel is ${st.panel}px, not 480px`);

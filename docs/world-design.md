@@ -92,7 +92,7 @@ A world is not finished until its chat and settings screens have been looked at 
 - **A world pack may override the paper look.** The post-it is modern flat paper by default; a pack may restyle it (its own material, edge, tilt) as long as it keeps one colour per reason and the contrast above. **Open for the cave:** modern paper post-its look out of place in the Prehistoric cave (review, 2026-11-02; not yet an owner decision); the cave has no paper override yet, and its pieces (a slab, a bark scrap) are to be offered before it ships. Not redrawn now; the cave stays behind its closed flag.
 - **The room stays put when someone leaves.** Their seat, plate and status stay, with a square, readable post-it (in the world's own style) saying where they went. Rows and screens resize only when the number of sessions changes, and they ease.
 - **Prefer a rig to more pictures for small motions.** Cut a person into head, torso and hands with pivots, so hands stay on the keys. Image models repeat poses, so several "in-between" frames often add little.
-- Reduced motion and Serious mode stop it. Hidden and off-screen pause it.
+- Reduced motion and Settings > Motion off stop it (Serious mode does not). Hidden and off-screen pause it.
 
 ## Light
 

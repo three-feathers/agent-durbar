@@ -41,6 +41,7 @@ const names = (c: FakeMcpClient): string[] => c.request('tools/list').result.too
 const FORBIDDEN = /session|prompt|send|start|stop|end_turn|permission|resolve|grant|approve|limit|reset|usage_reset|turn/i;
 
 async function main(): Promise<void> {
+  let motionOff = false; // the Motion setting the fake store reports (spec 052 FR-069b)
   // the shipped build flag is off until T038
   assert.strictEqual(CHANGE_TOOLS_ENABLED, false, 'change tools are off in this build (FR-064)');
 
@@ -293,7 +294,7 @@ async function main(): Promise<void> {
         tracker,
         floors: () => ({ floors: [{ id: 'ground', name: 'Ground floor', on: true }, { id: 'f-aaaaaaaa', name: 'Attic', on: false }], lastFloor: 'f-aaaaaaaa' }),
         usage,
-        settings: () => ({ defaultMaxAiCredits: 300, seriousMode: true, placeMap: { gh: 'web' }, customPlaces: [{ id: 'c-abc123', name: 'Lab', icon: 'flask' }], theme: 'secret-theme' }),
+        settings: () => ({ defaultMaxAiCredits: 300, seriousMode: true, ...(motionOff ? { motion: false as const } : {}), stillHighlights: true, placeMap: { gh: 'web' }, customPlaces: [{ id: 'c-abc123', name: 'Lab', icon: 'flask' }], theme: 'secret-theme' }),
         mcpCli: () => ({ cli: [{ name: 'cli1', origin: 'copilot-config', transport: 'stdio', args: ['s.js', '--password', SECRETS.argToken, `--token ${SECRETS.oneArg}`], command: `node --api-key=${SECRETS.cmdTok} ${SECRETS.pathDir}/s.js`, enabled: false }, { name: 'github-mcp-server', origin: 'builtin', enabled: true }], file: { label: '~/.copilot/mcp-config.json', found: true, skipped: 1, error: SECRETS.outside }, secretsPersist: false }),
         mcpExtras: (k) => (k === folders[0].workspace ? [extra, planted] : []),
         windowSim: () => false,
@@ -386,7 +387,11 @@ async function main(): Promise<void> {
       assert.deepStrictEqual(fl.floors.map((x: any) => [x.id, x.on, x.ground]), [['ground', true, true], ['f-aaaaaaaa', false, false]]);
       assert.strictEqual(fl.lastFloor, 'f-aaaaaaaa');
       const st = (await call('durbar_settings')).data;
-      assert.deepStrictEqual(st, { defaultCap: 300, seriousMode: true, placeMap: { gh: 'web' }, customPlaces: [{ id: 'c-abc123', name: 'Lab', icon: 'flask' }] });
+      assert.deepStrictEqual(st, { defaultCap: 300, seriousMode: true, motion: true, stillHighlights: true, placeMap: { gh: 'web' }, customPlaces: [{ id: 'c-abc123', name: 'Lab', icon: 'flask' }] });
+      assert.strictEqual(st.motion, true, 'durbar_settings: motion is true by default (a file without the key)');
+      motionOff = true;
+      assert.strictEqual((await call('durbar_settings')).data.motion, false, 'durbar_settings: motion is false after Motion is turned off');
+      motionOff = false;
       const none = (await call('durbar_settings')).data;
       assert.ok(!('theme' in none));
     }

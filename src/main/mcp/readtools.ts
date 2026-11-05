@@ -285,6 +285,8 @@ export function createReadToolHandlers(deps: ReadToolsDeps): ToolHandlers {
       return json({
         defaultCap: s.defaultMaxAiCredits ?? null,
         seriousMode: s.seriousMode === true,
+        motion: s.motion !== false,
+        stillHighlights: s.stillHighlights === true,
         placeMap: { ...(s.placeMap ?? {}) },
         customPlaces: (s.customPlaces ?? []).map((p) => ({ id: p.id, name: p.name, icon: p.icon })),
       });

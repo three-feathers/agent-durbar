@@ -122,6 +122,31 @@ export function patchFiles(text: string): EditFile[] {
 /** A path as shown: one line, masked (FR-024), at most `PATH_MAX` characters. Also for the early `start` of a streamed call. */
 export const cleanPath = (p: string): string => redact(String(p).replace(/[\r\n\t]+/g, ' ')).slice(0, PATH_MAX);
 
+/** Spec 012 FR-167 (issue #1052): characters past the shown cut that are masked too, so a secret cut by the masked window's end stays out of view. */
+export const MASK_MARGIN = 16_384;
+
+/**
+ * `clipDiff(redact(text), max)` without masking what is never shown: only the start of the text, `max + MASK_MARGIN` characters, is
+ * masked (never cut at its start, so look-behind context is kept). If masking shortened that window below `max + MASK_MARGIN`, the whole
+ * text is masked once instead, exactly as before, so `mask` runs at most twice. The count of lines not shown covers the masked tail and
+ * the raw rest (a number only). What is shown equals the old output, except over 1M characters when position 1M falls in one long
+ * token-character run starting before `max`: the old cut dropped the run, this shows the first `max` masked characters (the run's start
+ * included, or less when a line ends before it), never more than before (spec 012 FR-167).
+ */
+export function maskedClip(text: string, max: number = DIFF_MAX, mask: (s: string) => string = redact): string {
+  const end = max + MASK_MARGIN;
+  if (end < text.length) {
+    const masked = mask(text.slice(0, end));
+    if (masked.length >= end) {
+      const cut = masked.lastIndexOf('\n', max);
+      const kept = masked.slice(0, cut > 0 ? cut : max);
+      const left = (masked.slice(kept.length) + text.slice(end)).split('\n').filter(Boolean).length;
+      return kept + `\n… ${left} more line${left === 1 ? '' : 's'} not shown`;
+    }
+  }
+  return clipDiff(mask(text), max);
+}
+
 /** Mask secrets in paths and diffs, cut each diff at `DIFF_MAX` characters, keep at most `EDIT_FILES_MAX` files (FR-024). */
 export function finishEdit(files: EditFile[], partial?: boolean): EditInfo | undefined {
   const ok = files.filter((f) => f && typeof f.path === 'string' && f.path.trim());
@@ -130,7 +155,7 @@ export function finishEdit(files: EditFile[], partial?: boolean): EditInfo | und
     const g: EditFile = { path: cleanPath(f.path), kind: isEditKind(f.kind) ? f.kind : 'edit' };
     if (f.movedTo) g.movedTo = cleanPath(f.movedTo);
     if (typeof f.diff === 'string' && f.diff) {
-      g.diff = clipDiff(redact(f.diff), DIFF_MAX);
+      g.diff = maskedClip(f.diff, DIFF_MAX);
       g.added = f.added ?? 0;
       g.removed = f.removed ?? 0;
     }
