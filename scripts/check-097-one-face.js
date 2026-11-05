@@ -64,6 +64,11 @@ module.exports = async (ctx) => {
       pics++;
       if (p.visiting) away++;
       same(`${w}x${h} real ${a.name}`, p);
+      if (a === ids[0]) {
+      // the rail works out each room's plan once, not once per row (issue 1193's cost finding)
+      const cost = await js(`({plans:window.__durbarSimUi.railPlans(),rooms:document.querySelectorAll('#stripList .rgrp').length,rows:document.querySelectorAll('#stripList .sitem').length})`);
+      assert.ok(cost.rows > cost.rooms && cost.plans > 0 && cost.plans <= cost.rooms, `${w}x${h}: one rail render computes at most one room plan per room (not per row): ${JSON.stringify(cost)}`);
+      }
       await back();
     }
     assert.ok(away > 0, `${w}x${h}: at least one agent is away from its desk (visiting) and still has its picture`);
