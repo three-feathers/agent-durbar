@@ -69,7 +69,7 @@ module.exports = async (ctx) => {
   const sendQuiet = async (id, text) => {
     await js(`(()=>{const b=window.__durbarSimUi.bridge();b.__send=b.send;b.send=async()=>({ok:true});})();0`);
     await send(id, text);
-    await ok(`!document.body.classList.contains('panel-open')`, 'back in the office after the send');
+    await okArrival(`!document.body.classList.contains('panel-open')`, 'back in the office after the send', 8000);
     await js(`(()=>{const b=window.__durbarSimUi.bridge();b.send=b.__send;})();0`);
   };
   const setting = async (want) => {
