@@ -47,7 +47,7 @@ outside_pr=$(gh api repos/$R/pulls/$p --jq "$JQ_TRUST if (.head.repo.full_name /
 # owner hold (FR-079): labels, then the owners' latest hold-or-lift comment; only its date and link are printed, never its text
 for l in $(gh pr view $p --json labels -q '.labels[].name'); do case $l in status:blocked|needs-owner-approval) bad="$bad owner-hold(label $l: not mergeable until an owner removes it)";; esac; done
 OWNERS_RE=$(grep -v '^[[:space:]]*#' "$(dirname "$0")/trusted-authors.txt" | tr -d '\r' | grep -E '^[A-Za-z0-9-]+$' | tr 'A-Z' 'a-z' | paste -sd'|' -)
-# FR-080: words in a fenced block in a quoted line (starts with ">") or in an inline code span are quotes, not the owner's own words
+# FR-080: words in a closed fenced block, in a quoted line (starts with ">") or in an inline code span are quotes, not the owner's own words
 PROSE='gsub("```(.|\n)*?```";"") | gsub("(^|\n)[ \t]*>[^\n]*";"\n") | gsub("`[^`\n]*`";"")'
 HOLD_KIND="select((.user.login // \"\")|ascii_downcase|test(\"^($OWNERS_RE)\$\")) | ((.body // \"\") | $PROSE | if test(\"hold lifted|off hold\";\"i\") then \"lift\" elif test(\"on hold|owner hold|do not merge|don['\u2019]t merge\";\"i\") then \"hold\" else empty end) as \$k"
 hold=$( { gh api --paginate repos/$R/issues/$p/comments --jq ".[]|$HOLD_KIND|\"\(.created_at)\t\(.html_url)\t\(\$k)\""; gh api --paginate repos/$R/pulls/$p/reviews --jq ".[]|$HOLD_KIND|\"\(.submitted_at)\t\(.html_url)\t\(\$k)\""; gh api --paginate repos/$R/pulls/$p/comments --jq ".[]|$HOLD_KIND|\"\(.created_at)\t\(.html_url)\t\(\$k)\""; } | sort | tail -1)
