@@ -430,6 +430,7 @@ async function main(): Promise<void> {
     const ad = new FakeCopilot(client);
     (ad as unknown as { autoReadDelayMs: number }).autoReadDelayMs = 5;
     assert.strictEqual(ad.capabilities.mcpSignInReconnect, true);
+    assert.strictEqual(ad.capabilities.mcpBackgroundRenew, true, 'Copilot renews after a failed call (FR-218)');
     const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-058-auto-'));
     const sid = await ad.start({ workspace: ws, quiet: true });
     const s = client.last;
@@ -458,6 +459,7 @@ async function main(): Promise<void> {
   }
   assert.ok(CopilotAdapter && CLAUDE_CAPABILITIES.mcpSignInReconnect === true, 'the Claude CLI takes part');
   assert.ok(!('mcpSignInReconnect' in CLAUDE_SDK_CAPABILITIES), 'the Claude SDK transport does not (no mcp_reconnect)');
+  assert.ok(CLAUDE_CAPABILITIES.mcpBackgroundRenew === undefined && CLAUDE_SDK_CAPABILITIES.mcpBackgroundRenew === undefined && CODEX_CAPABILITIES.mcpBackgroundRenew === undefined, 'Claude Code and Codex renew by themselves: no background renewal (FR-218)');
   assert.ok(CODEX_CAPABILITIES.mcpSignInReconnect === undefined && CODEX_CAPABILITIES.mcpRestart === false, 'Codex: no automatic reconnect (FR-207, G7)');
 
   // ---- the Settings value (FR-213) ----

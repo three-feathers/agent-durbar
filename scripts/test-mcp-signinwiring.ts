@@ -353,6 +353,55 @@ async function main(): Promise<void> {
     pending.shift()!('connected');
     await p3;
 
+    // ---- spec 058 FR-218..FR-221 (2026-11-05): renew after a failed call or a needs-auth report, after the turn, no timer ----
+    {
+      (ad as unknown as { capabilities: unknown }).capabilities = { ...ad.capabilities, mcpBackgroundRenew: true };
+      mcp.signInRefresh.dropChat(sid);
+      mcp.signInRefresh.clearBlock(undefined, 'docs');
+      timers.length = 0;
+      const runTimers = async (): Promise<void> => { for (const h of timers.splice(0)) if (!h.done) h.fn(); await tick(); };
+      const n0 = ad.restartCalls.length;
+      const sent0 = sent.length;
+      const pushes0 = pushes.length;
+      clock.now += 3 * H;
+      emit(sid, { type: 'mcp', servers: list('connected') });
+      await runTimers();
+      assert.strictEqual(ad.restartCalls.length, n0, 'a connected server, hours later: nothing (no timer, no renewal by age)');
+      busy = true;
+      emit(sid, { type: 'toolCall', callId: 'c1', tool: 'docs-x', mcpServer: 'docs', phase: 'failed', output: 'MCP OAuth challenge required (HTTP 401)', mcpAuth: true });
+      await runTimers();
+      assert.strictEqual(ad.restartCalls.length, n0, 'never during the turn');
+      busy = false;
+      emit(sid, { type: 'status', status: 'idle' });
+      await runTimers();
+      assert.deepStrictEqual(ad.restartCalls.slice(n0), [{ sessionId: sid, name: 'docs', auto: true }], 'one automatic reconnect after the turn');
+      emit(sid, { type: 'mcp', servers: list('needs-auth') }); // the runtime's own needs-auth report during it: the same episode
+      await runTimers();
+      assert.strictEqual(ad.restartCalls.length, n0 + 1, 'the needs-auth report of the same episode adds no second reconnect');
+      pending.shift()!('connected');
+      await tick();
+      const reply = (await call('agents:mcp', sid)) as { servers: Array<{ name: string; renewedAt?: number }> };
+      assert.strictEqual(typeof reply.servers.find((x) => x.name === 'docs')?.renewedAt, 'number', 'the dialog row gets the Renewed time');
+      assert.strictEqual(sent.length, sent0, 'the message is never sent again by the renewal');
+      assert.deepStrictEqual(pushes.slice(pushes0), [], 'no chat line');
+      assert.ok(logs.includes('MCP server docs renewed (automatic)'), 'the activity row');
+      // second trigger alone: connected, then needs-auth, after the cooldown
+      clock.now += 6 * 60_000;
+      emit(sid, { type: 'mcp', servers: list('connected') });
+      emit(sid, { type: 'mcp', servers: list('needs-auth') });
+      await runTimers();
+      assert.strictEqual(ad.restartCalls.length, n0 + 2, 'a needs-auth report after connected renews, with no failed call');
+      pending.shift()!('connected');
+      await tick();
+      // a Claude-like adapter (no `mcpBackgroundRenew`) is not renewed
+      (ad as unknown as { capabilities: unknown }).capabilities = { ...ad.capabilities, mcpBackgroundRenew: undefined };
+      clock.now += 6 * 60_000;
+      emit(sid, { type: 'mcp', servers: list('connected') });
+      emit(sid, { type: 'mcp', servers: list('needs-auth') });
+      await runTimers();
+      assert.strictEqual(ad.restartCalls.length, n0 + 2, 'no capability: no renewal');
+    }
+
     assert.deepStrictEqual(forbidden, [], 'never a sign-in call or a status read from the automatic path');
     assert.ok(!JSON.stringify([pushes, logs]).includes('Server status'), 'no app text in a line or a row');
   } finally {

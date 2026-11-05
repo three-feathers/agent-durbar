@@ -18,6 +18,7 @@
  * - Settings > MCP servers: the switch "Refresh MCP sign-ins automatically" (on) with its line; off, a quiet hour reconnects nothing;
  * - a hostile server name renders as text (checked after the pictures, on a first message);
  * - a Copilot chat whose OS sandbox covers its MCP servers (Read-only, Ask first) is not reconnected: only the sign-in line.
+ * - (2026-11-05, FR-220) a server renewed in the background reads "Renewed 12:40" on its dialog row (only that row, 10.5px or more), with no chat line (picture 058-mcp-renewed-<w>x<h>.png in OUT, not a documentation picture: the site budget).
  * Shots (DOC_SHOTS): 058-mcp-refresh-waiting-<w>x<h>.png (the waiting line), 058-mcp-refresh-signin-<w>x<h>.png (the sign-in line),
  * 058-mcp-refresh-settings-<w>x<h>.png (the switch and its line). Prints "[058] sign-in refresh PASS".
  */
@@ -133,6 +134,20 @@ module.exports = async (ctx) => {
     assert.ok(await until(`window.__sendRes.some(r=>r&&r.notSent===true)`, 3000), 'the send answered not sent');
     assert.strictEqual(await js(`window.__work`), 0, 'no reply: nothing was sent');
     await js(`(()=>{const i=document.getElementById('msgInput');i.value='';i.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+
+    // ---- FR-220 (2026-11-05): a server Durbar renewed in the background says "Renewed 12:40" on its row, and nothing in the chat ----
+    {
+      const chatLines = await js(`document.querySelectorAll('#chat .note').length`);
+      await js(`window.__durbarSimSignIn.renewed(${jsLiteral(id)},'docs',${jsLiteral(new Date(2026, 10, 5, 12, 40).getTime())});0`);
+      await js(`document.getElementById('mcpBtn').click()`);
+      assert.ok(await until(`!!document.querySelector('#agMcp li.srv[data-n="docs"] .mst-renew')`, 6000), 'the dialog row shows the renewal note');
+      const row = await js(`(()=>{const e=document.querySelector('#agMcp li.srv[data-n="docs"] .mst-renew');const r=e.getBoundingClientRect(),d=document.querySelector('#agMcp').getBoundingClientRect();return {t:e.textContent,fs:parseFloat(getComputedStyle(e).fontSize),inside:r.left>=d.left-1&&r.right<=d.right+1,other:!!document.querySelector('#agMcp li.srv[data-n="crm"] .mst-renew')||!!document.querySelector('#agMcp li.srv[data-n="files"] .mst-renew'),pageX:document.documentElement.scrollWidth<=innerWidth};})()`);
+      assert.ok(row.t === '\u00b7 Renewed 12:40' && row.fs >= 10.5 && row.inside && !row.other && row.pageX, `${w}: the quiet "Renewed 12:40" note, only on the renewed server: ` + JSON.stringify(row));
+      await shot(`058-mcp-renewed-${w}x${h}.png`);
+      await js(`(()=>{const b=[...document.querySelectorAll('#scrDlg .dbtn .btn')].find(b=>b.textContent==='Done');if(b)b.click();})()`);
+      assert.ok(await until(`!document.getElementById('scrDlg')`), 'the dialog closed');
+      assert.strictEqual(await js(`document.querySelectorAll('#chat .note').length`), chatLines, 'no chat line came with it');
+    }
 
     // ---- Settings: the switch and its line; off = nothing runs ----
     await js(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`);

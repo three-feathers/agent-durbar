@@ -20,6 +20,10 @@ export const MCP_SIGNIN_GAP_MS = 60 * 60_000;
 export const MCP_SIGNIN_WAIT_MS = 5000;
 /** FR-212: the status recheck of running, idle chats. */
 export const MCP_RECHECK_MS = 30 * 60_000;
+/** FR-218: a server tried this recently (by any automatic reconnect) is not renewed again after a failure: one reconnect per failure episode, the row says Needs sign-in. */
+export const MCP_RENEW_FAIL_COOLDOWN_MS = 5 * 60_000;
+/** FR-219: a chat that was sent to this recently counts as busy for a renewal (a send may be starting). */
+export const MCP_RENEW_SEND_QUIET_MS = 10_000;
 /** FR-213 (G5 settled A, both owners): the Settings switch is on unless the person turns it off. */
 export const MCP_SIGNIN_REFRESH_DEFAULT = true;
 /** FR-213 (G5 settled A): an automatic reconnect also runs in Read-only (it changes no file and calls no tool). */
@@ -38,6 +42,12 @@ export interface SignInServerView {
   signInOpen?: boolean;
   /** The person's own Restart of this server runs. */
   restarting?: boolean;
+  /** FR-218: built into the agent app (never renewed). */
+  builtin?: boolean;
+  /** FR-218: Durbar's own static header (a bearer in a folder extra) is the server's login, not an OAuth sign-in. */
+  staticAuth?: boolean;
+  /** FR-218: this server failed with a sign-in error (a failed `auth` call, or a report that turned `needs-auth`) and waits for the chat's idle moment. */
+  failed?: boolean;
   /** Refused by policy in this run (a `policy` call class, FR-193) or by an organization verdict (spec 076). */
   policy?: boolean;
 }
@@ -85,7 +95,7 @@ export interface SignInPlanInput {
 export interface SignInPlan {
   why: 'off' | 'no-part' | 'not-live' | 'busy' | 'no-moment' | 'first' | 'gap' | 'recheck';
   /** Start one reconnect for each (no other chat runs one for that server). */
-  reconnect: { name: string; key: string }[];
+  reconnect: { name: string; key: string; kind?: 'renew' }[];
   /** Another chat's reconnect of the same server runs: wait for its result and take it as this chat's own. */
   join: { name: string; key: string }[];
   /** `allowReadOnly` false in Read-only, or `renews` false: no reconnect, only the sign-in line for these names. */
@@ -138,6 +148,73 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
 /* mcpsigninrefresh:end */
 export { planMcpSignInRefresh };
 
+export interface RenewPlanInput {
+  now: number;
+  /** The Settings switch (FR-213), already read. */
+  on: boolean;
+  /** The adapter has `restartMcpServer`, `mcpSignInReconnect` and `mcpBackgroundRenew` (FR-218). */
+  renewable: boolean;
+  live: boolean;
+  /** Main's busy state of the chat (a turn runs, starts, waits for the person). */
+  busy: boolean;
+  /** A send was made a moment ago or waits at FR-208's gate, or a reconnect of this chat runs (FR-220). */
+  quiet: boolean;
+  /** See `SignInPlanInput.renews`. */
+  renews?: boolean;
+  readOnly: boolean;
+  allowReadOnly: boolean;
+  cooldownMs: number;
+  servers: readonly SignInServerView[];
+  records: Readonly<Record<string, SignInRecordView>>;
+  inFlight: readonly string[];
+}
+
+export interface RenewPlan {
+  why: 'off' | 'no-part' | 'not-live' | 'busy' | 'renew';
+  reconnect: { name: string; key: string; kind: 'renew' }[];
+  join: { name: string; key: string }[];
+  /** No reconnect where `renews` is false: only the sign-in line, for a failed call. */
+  signInOnly: string[];
+}
+
+/**
+ * Spec 058 FR-218, FR-219 (2026-11-05): which servers of one chat to renew now. Only a server that failed with a sign-in error (a failed
+ * `auth` call or a report that turned `needs-auth`) is renewed, never on a timer, never while the chat is busy or a send is starting,
+ * never a local, built-in, static-header, switched-off, policy or blocked server, one reconnect per server key across chats (a running
+ * one is joined), one per failure episode (the cooldown), and nothing where a reconnect cannot renew (`renews` false: only the sign-in line).
+ */
+export const planMcpRenew = (i: RenewPlanInput): RenewPlan => {
+  const none = (why: RenewPlan['why']): RenewPlan => ({ why, reconnect: [], join: [], signInOnly: [] });
+  if (i.on !== true) return none('off');
+  if (!i.renewable) return none('no-part');
+  if (!i.live) return none('not-live');
+  if (i.busy || i.quiet) return none('busy');
+  const flying = new Set(i.inFlight);
+  const out: RenewPlan = none('renew');
+  const seen = new Set<string>();
+  for (const s of i.servers) {
+    if (!s || typeof s.name !== 'string' || seen.has(s.name)) continue;
+    seen.add(s.name);
+    if (s.off === true || s.status === 'disabled' || s.builtin === true || s.staticAuth === true) continue;
+    if (!/^(?:http|sse|streamable-?http)$/i.test(typeof s.transport === 'string' ? s.transport : '')) continue; // remote only
+    if (s.signInOpen === true || s.restarting === true || s.policy === true) continue;
+    const rec = Object.prototype.hasOwnProperty.call(i.records, s.key) ? i.records[s.key] : undefined;
+    if (rec && rec.blocked) continue;
+    if (s.failed !== true) continue;
+    if (flying.has(s.key)) {
+      out.join.push({ name: s.name, key: s.key });
+      continue;
+    }
+    if (rec && typeof rec.at === 'number' && i.now - rec.at >= 0 && i.now - rec.at < i.cooldownMs) continue;
+    if ((i.readOnly && !i.allowReadOnly) || i.renews === false) {
+      if (s.status === 'needs-auth') out.signInOnly.push(s.name);
+      continue;
+    }
+    out.reconnect.push({ name: s.name, key: s.key, kind: 'renew' });
+  }
+  return out;
+};
+
 /** FR-207: what one automatic reconnect came to, from the state the app reports afterwards; no vendor text. */
 export type SignInResult = 'reconnected' | 'needs-sign-in' | 'failed' | 'policy';
 
@@ -169,6 +246,8 @@ export interface SignInChatView {
   readOnly: boolean;
   /** See `SignInPlanInput.renews`. */
   renews?: boolean;
+  /** FR-218: the adapter has `restartMcpServer`, `mcpSignInReconnect` and `mcpBackgroundRenew`. */
+  renewable?: boolean;
   /** The chat's last report, built only when the cheap checks (switch, app, running, busy, moment) let a plan go on. */
   servers(): SignInServerView[];
 }
@@ -187,6 +266,11 @@ export interface RefresherDeps {
   allowReadOnly?: boolean;
   waitMs?: number;
   timers?: SignInTimers;
+  /** FR-221: the wall clock, only to show "Renewed 12:40"; never used for a decision. Missing = no time is shown. */
+  wall?(): number;
+  /** FR-218, FR-219 (injected in tests): the cooldown after a reconnect, the quiet time after a send. */
+  failCooldownMs?: number;
+  sendQuietMs?: number;
   /** The chat now, or undefined for an unknown one. */
   view(agentId: string): SignInChatView | undefined;
   /** The existing per-server restart (`mcpRestartOp`, promise map) in its automatic form; resolves with whether it worked and a masked error. */
@@ -204,6 +288,9 @@ const LOG_LINE: Record<SignInResult, (n: string) => string> = {
   failed: (n) => `MCP server ${n} could not reconnect (automatic)`,
   policy: (n) => `MCP server ${n} was refused by your organization's sign-in rules (automatic)`,
 };
+
+/** FR-221: the activity row of a renewal that worked (names and fixed words only). */
+const RENEW_LOG = (n: string): string => `MCP server ${n} renewed (automatic)`;
 
 const keyPrefix = (adapterId: string, name: string): string => `${adapterId}\0${name}\0`;
 /** FR-210: one flight and one record per adapter, server name and server address (a URL change is a new key: no block carried over). */
@@ -226,12 +313,142 @@ export class McpSignInRefresher {
   /** `<agent id>\0<server>` under an automatic reconnect now (FR-215: an elicitation from it is declined). */
   private readonly auto = new Set<string>();
   private readonly declined = new Set<string>();
+  /** FR-218: per chat, the servers that failed with a sign-in error and wait for the idle moment (a set: both triggers of one episode are one). */
+  private readonly pending = new Map<string, Set<string>>();
+  /** The status each server had in a chat's last report: a server that turns `needs-auth` after `connected` is a failure (FR-218). */
+  private readonly lastStatus = new Map<string, Map<string, string>>();
+  /** FR-220: when a send last started in a chat (monotonic). */
+  private readonly sentAt = new Map<string, number>();
+  /** FR-221: `<agent id>\0<server>` -> wall time of the last renewal that read connected (display only). */
+  private readonly renewedWall = new Map<string, number>();
 
   constructor(private readonly d: RefresherDeps) {}
 
-  /** FR-205: a turn ended (`idle`, `error`, `stopped` from the adapter). */
+  /** FR-205: a turn ended (`idle`, `error`, `stopped` from the adapter). A failure that waited for it is looked at now (FR-219). */
   turnEnded(agentId: string): void {
     this.lastResponse.set(agentId, this.d.now());
+    if (this.pending.has(agentId)) this.soon(agentId);
+  }
+
+  private timers(): SignInTimers {
+    return this.d.timers ?? {
+      set: (fn: () => void, ms: number) => {
+        const h = setTimeout(fn, ms);
+        (h as { unref?: () => void }).unref?.(); // a pending check never keeps the program alive
+        return h;
+      },
+      clear: (h: unknown) => clearTimeout(h as ReturnType<typeof setTimeout>),
+    };
+  }
+
+  /** One short look at one chat after its turn ended or a failure came (the busy state of main settles first). */
+  private soon(agentId: string): void {
+    this.timers().set(() => this.renewChat(agentId), 250);
+  }
+
+  /**
+   * FR-218, second trigger (`real:` probe 2026-11-05: the runtime's `needs-auth` status event came right after the first 401 while its
+   * list still said `connected`): an `mcp` report in which a server that read `connected` in the last one now needs a sign-in. A
+   * server that was never connected in this chat (a first sign-in) is not a failure. Names and statuses only.
+   */
+  noteServers(agentId: string, servers: ReadonlyArray<{ name: string; status?: string; errorClass?: string }>): void {
+    const prev = this.lastStatus.get(agentId);
+    const next = new Map<string, string>();
+    for (const x of servers) {
+      if (!x || typeof x.name !== 'string') continue;
+      const st = typeof x.status === 'string' ? x.status : '';
+      next.set(x.name, st);
+      if (prev?.get(x.name) === 'connected' && (st === 'needs-auth' || (st === 'failed' && x.errorClass === 'auth'))) this.noteFailure(agentId, x.name);
+    }
+    this.lastStatus.set(agentId, next);
+  }
+
+  /**
+   * FR-218, first trigger: a call of this server failed with the `auth` class. Either trigger marks the server for one reconnect at the
+   * chat's first idle moment (never mid-call); both for one episode are one mark (a set), and the cooldown keeps a later one from a second reconnect.
+   */
+  noteFailure(agentId: string, name: string): void {
+    let set = this.pending.get(agentId);
+    if (!set) this.pending.set(agentId, (set = new Set()));
+    if (set.size < 200) set.add(name);
+    this.soon(agentId);
+  }
+
+  /** FR-221: End session, Restart session, a stopped or removed chat: its waiting failures and "Renewed" times go. */
+  dropChat(agentId: string): void {
+    this.lastStatus.delete(agentId);
+    this.pending.delete(agentId);
+    this.sentAt.delete(agentId);
+    const p = `${agentId}\0`;
+    for (const k of [...this.renewedWall.keys()]) if (k.startsWith(p)) this.renewedWall.delete(k);
+  }
+
+  /** FR-220: when Durbar last renewed this server in this chat (wall clock, display only), or undefined. */
+  renewedAt(agentId: string, name: string): number | undefined {
+    return this.renewedWall.get(`${agentId}\0${name}`);
+  }
+
+  /** The renewal plan of one chat now (the servers are built only when the cheap checks let it go on). */
+  planRenew(agentId: string): { plan: RenewPlan; view?: SignInChatView } {
+    const empty: RenewPlan = { why: 'not-live', reconnect: [], join: [], signInOnly: [] };
+    let v: SignInChatView | undefined;
+    try {
+      v = this.d.view(agentId);
+    } catch {
+      v = undefined;
+    }
+    if (!v) {
+      this.dropChat(agentId); // a chat main no longer knows (removed)
+      return { plan: empty };
+    }
+    let on = false;
+    try {
+      on = this.d.on() === true;
+    } catch {
+      on = false; // fail closed
+    }
+    const now = this.d.now();
+    const sent = this.sentAt.get(agentId);
+    const input: RenewPlanInput = {
+      now,
+      on,
+      renewable: v.takesPart && v.renewable === true,
+      live: v.live,
+      busy: v.busy,
+      quiet: this.waits.has(agentId) || this.reconnecting.has(agentId) || (sent !== undefined && now - sent >= 0 && now - sent < (this.d.sendQuietMs ?? MCP_RENEW_SEND_QUIET_MS)),
+      ...(v.renews === false ? { renews: false } : {}),
+      readOnly: v.readOnly,
+      allowReadOnly: this.d.allowReadOnly ?? MCP_SIGNIN_ALLOW_READ_ONLY,
+      cooldownMs: this.d.failCooldownMs ?? MCP_RENEW_FAIL_COOLDOWN_MS,
+      servers: [],
+      records: {},
+      inFlight: [...this.flights.keys()],
+    };
+    const pre = planMcpRenew(input);
+    if (pre.why !== 'renew') return { plan: pre, view: v };
+    let servers: SignInServerView[] = [];
+    try {
+      servers = v.servers();
+    } catch {
+      servers = [];
+    }
+    const waiting = this.pending.get(agentId);
+    const records: Record<string, SignInRecordView> = {};
+    const out: SignInServerView[] = servers.map((x) => {
+      const r = this.records.get(x.key);
+      if (r) records[x.key] = r;
+      return { ...x, ...(waiting?.has(x.name) ? { failed: true } : {}) };
+    });
+    return { plan: planMcpRenew({ ...input, servers: out, records }), view: v };
+  }
+
+  /** FR-218, FR-219: renew what failed in one chat. A failure that waited is dropped once the chat was idle and looked at. */
+  renewChat(agentId: string): void {
+    const { plan } = this.planRenew(agentId);
+    if (plan.why === 'renew') {
+      this.pending.delete(agentId);
+      this.run(agentId, plan);
+    } else if (plan.why !== 'busy') this.pending.delete(agentId);
   }
 
   /** FR-205: `powerMonitor` `resume`: every chat is past the gap (a monotonic clock may not count sleep). */
@@ -242,6 +459,7 @@ export class McpSignInRefresher {
   /** T179: End session, Restart session or a removed chat: the next message is a first message again. */
   forget(agentId: string): void {
     this.lastResponse.delete(agentId);
+    this.dropChat(agentId);
   }
 
   /** FR-210: the person signed in, pressed Restart, or switched the server: automatic reconnects may try it again. Policy blocks stay. */
@@ -348,7 +566,7 @@ export class McpSignInRefresher {
   }
 
   /** Start (or join) the reconnects of a plan; resolves when all of them settled. Sign-in lines go to the window as results come. */
-  run(agentId: string, plan: SignInPlan): { items: { name: string; f: Promise<SignInResult> }[]; done: Promise<void> } | undefined {
+  run(agentId: string, plan: Pick<SignInPlan, 'reconnect' | 'join' | 'signInOnly'>): { items: { name: string; f: Promise<SignInResult> }[]; done: Promise<void> } | undefined {
     const work: Promise<void>[] = [];
     const items: { name: string; f: Promise<SignInResult> }[] = [];
     const take = (name: string, f: Promise<SignInResult>): void => {
@@ -357,7 +575,7 @@ export class McpSignInRefresher {
         if (r === 'needs-sign-in') this.d.push({ id: agentId, kind: 'needs-sign-in', name });
       }, () => undefined));
     };
-    for (const r of plan.reconnect) take(r.name, this.fly(agentId, r.name, r.key));
+    for (const r of plan.reconnect) take(r.name, this.fly(agentId, r.name, r.key, r.kind));
     for (const j of plan.join) {
       const f = this.flights.get(j.key);
       if (f) take(j.name, f);
@@ -388,6 +606,7 @@ export class McpSignInRefresher {
   }
 
   private async gate(agentId: string): Promise<'go' | 'stopped'> {
+    this.sentAt.set(agentId, this.d.now()); // FR-220: a renewal does not start while this send is on its way
     const prior = this.reconnecting.get(agentId);
     const { plan } = this.plan(agentId, 'send');
     // review of PR #1080 (item 2): a message while a turn runs (a steer, a queued message) goes at once: no wait, not even for an earlier
@@ -424,7 +643,7 @@ export class McpSignInRefresher {
   }
 
   /** FR-210: one reconnect per server key across chats; its result updates the records and the activity log. */
-  private fly(agentId: string, name: string, key: string): Promise<SignInResult> {
+  private fly(agentId: string, name: string, key: string, kind?: 'renew'): Promise<SignInResult> {
     const running = this.flights.get(key);
     if (running) return running;
     const tag = `${agentId}\0${name}`;
@@ -446,7 +665,16 @@ export class McpSignInRefresher {
       }
       const res = signInResult({ ...st, ok: r.ok, fresh: r.fresh, declined: this.declined.has(tag) });
       this.records.set(key, res === 'needs-sign-in' ? { at, blocked: 'sign-in' } : res === 'policy' ? { at, blocked: 'policy' } : { at });
-      this.d.log(agentId, LOG_LINE[res](name));
+      if (res === 'reconnected') {
+        // FR-220: a renewal that reads connected is shown on the row (wall time, display only)
+        try {
+          const w = this.d.wall?.();
+          if (typeof w === 'number' && Number.isFinite(w)) this.renewedWall.set(tag, w);
+        } catch {
+          /* no time shown */
+        }
+      }
+      this.d.log(agentId, kind === 'renew' && res === 'reconnected' ? RENEW_LOG(name) : LOG_LINE[res](name));
       return res;
     })();
     this.flights.set(key, f);

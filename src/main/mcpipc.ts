@@ -103,6 +103,9 @@ export function registerMcpIpc(deps: {
     waitMs?: number;
     timers?: SignInTimers;
     allowReadOnly?: boolean;
+    /** Spec 058 FR-218, FR-219: the renewal timings (tests inject them). */
+    failCooldownMs?: number;
+    sendQuietMs?: number;
   };
 }): { optionsFor(agentId: string): { mcpServers: Record<string, McpServerSpec>; disabledMcpServers: string[]; disabledMcpTools?: Record<string, string[]> }; secretValuesFor(agentId: string): string[]; signInRefresh: McpSignInRefresher; hidesEvent(e: { type: string; requestId?: unknown }): boolean } {
   const { agents, router, dev } = deps;
@@ -166,6 +169,24 @@ export function registerMcpIpc(deps: {
       return false;
     }
   };
+  /** Spec 058 FR-218: a built-in server of the agent app is never renewed. */
+  const isBuiltin = (agentId: string, name: string): boolean => {
+    try {
+      return cli().servers.some((v) => v.name === name && v.origin === 'builtin');
+    } catch {
+      return false;
+    }
+  };
+  /** Spec 058 FR-218: a folder extra with a header of Durbar's own (a static bearer) is not an OAuth sign-in; names only, never a value. */
+  const hasStaticHeader = (agentId: string, name: string): boolean => {
+    const a = agents.get(agentId);
+    try {
+      const v = a ? store().list(keyOf(a)).find((x) => x.name === name) : undefined;
+      return !!v && Array.isArray(v.headers) && v.headers.length > 0;
+    } catch {
+      return false;
+    }
+  };
   const rd = deps.signInRefresh;
   const refresher = new McpSignInRefresher({
     now: rd ? () => rd.now() : () => 0,
@@ -174,6 +195,9 @@ export function registerMcpIpc(deps: {
     allowReadOnly: rd?.allowReadOnly,
     waitMs: rd?.waitMs,
     timers: rd?.timers,
+    wall: deps.now ?? Date.now, // spec 058 FR-221: only for "Renewed 12:40" on the row
+    failCooldownMs: rd?.failCooldownMs,
+    sendQuietMs: rd?.sendQuietMs,
     view: (agentId) => {
       const a = agents.get(agentId);
       const ad = a ? router.forAgent(a.id) : undefined;
@@ -182,6 +206,7 @@ export function registerMcpIpc(deps: {
       return {
         adapterId: ad.id,
         takesPart: typeof ad.restartMcpServer === 'function' && ad.capabilities.mcpSignInReconnect === true,
+        renewable: ad.capabilities.mcpBackgroundRenew === true, // spec 058 FR-218
         live: ad.isLive(a.id),
         busy: rd.busy(a.id),
         readOnly: a.permMode === 'read-only',
@@ -202,6 +227,8 @@ export function registerMcpIpc(deps: {
           ...(signIns.has(a.id, x.name) ? { signInOpen: true } : {}),
           ...(restarting.has(`${a.id}\0${x.name}`) ? { restarting: true } : {}),
           ...(policyOf(a.id, x.name) ? { policy: true } : {}),
+          ...(isBuiltin(a.id, x.name) ? { builtin: true } : {}),
+          ...(hasStaticHeader(a.id, x.name) ? { staticAuth: true } : {}),
           };
         }),
       };
@@ -246,17 +273,21 @@ export function registerMcpIpc(deps: {
   });
   router.onEvent((e) => {
     calls.onEvent(e);
+    // spec 058 FR-219: a failed call of an MCP server with the `auth` class (the same class the row's word comes from) is renewed after the turn
+    if (e.type === 'toolCall' && e.phase === 'failed' && e.mcpServer && calls.get(e.sessionId, e.mcpServer) === 'auth') refresher.noteFailure(e.sessionId, e.mcpServer);
     if (e.type === 'mcp') {
       live.set(e.sessionId, e.servers);
       reports.set(e.sessionId, (reports.get(e.sessionId) ?? 0) + 1); // spec 058 FR-207: a report after a reconnect is a fresh one
       calls.onServers(e.sessionId, e.servers); // FR-188: a server that came back to connected drops its call class
       health.set(e.sessionId, mcpHealthUpdate(health.get(e.sessionId), e.servers, Date.now()));
       signIns.onServers(e.sessionId, e.servers); // connected: the sign-in is finished
+      refresher.noteServers(e.sessionId, e.servers); // spec 058 FR-218: a server that was connected and now needs a sign-in is a failure (second trigger)
     } else if (e.type === 'status' && e.status === 'stopped') {
       live.delete(e.sessionId);
       reports.delete(e.sessionId);
       health.delete(e.sessionId);
       signIns.dropAgent(e.sessionId); // End session, Restart session (it ends the session first), a failed reconnect
+      refresher.dropChat(e.sessionId); // spec 058 FR-222
     }
     // spec 058 FR-205: the chat's last response ended (the turn-end signal the scheduler also reads)
     if (e.type === 'status' && !e.agentId && (e.status === 'idle' || e.status === 'error' || e.status === 'stopped')) refresher.turnEnded(e.sessionId);
@@ -382,6 +413,7 @@ export function registerMcpIpc(deps: {
       health: health.get(a.id),
       lastCall: (n) => calls.get(a.id, n),
       signIn: (n) => signIns.view(a.id, n),
+      renewedAt: (n) => refresher.renewedAt(a.id, n), // spec 058 FR-221
       serverUrl: (n) => serverUrlOf(a.id, n),
       orgBlocked: deps.orgMcpNow ? (n) => deps.orgMcpNow?.(a.id, serverDefOf(a.id, n)) : undefined,
       global: gn,

@@ -690,6 +690,8 @@ export interface AgentMcpEntry {
   since?: number;
   /** Spec 058 FR-092: a failed or needs-sign-in state that came after the server was Running in this session. */
   afterRunning?: boolean;
+  /** Spec 058 FR-221 (2026-11-05): when Agent Durbar last renewed this server's sign-in in the background (epoch ms, display only); only for a connected server. */
+  renewedAt?: number;
   /** Spec 058 FR-092: the transport the adapter reported (`stdio`, `http`, ...); missing = not reported. */
   transport?: string;
   /** The default from Settings: on for new sessions. */

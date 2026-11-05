@@ -1359,7 +1359,8 @@
         const eff=x.defaultOn&&!x.off&&!appOff&&!org;
         const sv=W.stateOf(x.status,octx);
         const cw=x.status==='connected'?W.callWord(x.lastCall):''; /* FR-187/FR-188 (issue 779 A) */
-        const stat=`<span class="mst ${esc(sv.cls)}"${x.status&&sv.cls==='unknown'?` title="${esc(W.plain(x.status,120))}"`:''}>${W.iconSvg(sv.icon)}<span class="mst-w">${esc(sv.word)}</span>${cw?`<span class="mst-call">\u00b7 ${esc(cw)}</span>`:''}</span>`;
+        const rnw=x.status==='connected'&&typeof x.renewedAt==='number'&&W.renewedWord?W.renewedWord(x.renewedAt):''; /* spec 058 FR-221: "Renewed 12:40", a quiet note, no chat line */
+        const stat=`<span class="mst ${esc(sv.cls)}"${x.status&&sv.cls==='unknown'?` title="${esc(W.plain(x.status,120))}"`:''}>${W.iconSvg(sv.icon)}<span class="mst-w">${esc(sv.word)}</span>${cw?`<span class="mst-call">\u00b7 ${esc(cw)}</span>`:''}${rnw?`<span class="mst-call mst-renew">\u00b7 ${esc(rnw)}</span>`:''}</span>`;
         const hint=W.hintFor({status:x.status,errorClass:x.errorClass,error:x.error,app,by})||(cw?W.callHint(x.lastCall,app):'');
         const detOpen=x.error&&openDet.has(x.name);
         /* FR-007: the masked text (main masked it; never the runtime's raw text) behind Details, and Copy copies exactly that */

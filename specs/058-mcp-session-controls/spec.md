@@ -391,6 +391,106 @@ All answered by the owner: option A for each (see *Clarifications*). The options
 
 - 2026-11-01 (sweep of the build): **FR-194**: the policy line hides and comes back with its call when older calls collapse.
 
+### 2026-11-05: renewing a remote MCP sign-in after a failed call, in the background (issue #1201; changes FR-212's design)
+
+**Status**: built 2026-11-05 (T190..T195), fakes, unit tests and the simulator only (`test:` `test-mcp-renew.ts`, `test-mcp-signinwiring.ts`, `sim:` `shots-058-mcp-signin-refresh.js`); probed free the same day (below). `[KNOWN GAP]` not seen on a real Entra
+server, nor on macOS or Windows. Numbers taken (checked on `origin/main`, remote branches and open PRs): **FR-218..FR-222**, **T190..T195**.
+
+**Input** (owner, Vikram, Telegram, 2026-11-05 16:53 UTC): his Microsoft (Entra) MCP servers (Teams, mail and similar) stop working about
+every hour in Copilot chats; the server list still says *connected*, the agent's tool call fails, and the dialog's Restart fixes it. He
+wants Agent Durbar to renew them **automatically, in the background, seamlessly**: no delay when he sends and no chat noise. 16:58 UTC:
+renew "before it expires and only when required, not too many unnecessary ones": **no timer and no proactive restarts**.
+
+**Why FR-212 changes.** FR-212 (not built) was a 30-minute *status* recheck that reconnects a server it finds `needs-auth`. This report
+is the case a status read cannot see: the runtime keeps saying `connected` while calls fail (`real:` T177 and the probe below), so a
+recheck finds nothing, and FR-205's gap reconnect only runs before a message after a quiet hour, with a wait of up to 5 s. FR-212's timer is
+replaced by FR-218's reaction to the failed call itself. T183 is superseded by T190..T194.
+
+**Probe, free, local test server (`real:` 2026-11-05, Linux, Copilot SDK 1.0.26 / runtime 1.0.103; 0 prompts, 0 AI credits, no account,
+fake values only).** Scratch `HOME`/`COPILOT_HOME`/`XDG_*` under `env -i`, `DBUS_SESSION_BUS_ADDRESS` pointing nowhere, the real
+`CopilotClient`, `mcpOAuthTokenStorage: 'persistent'`, `scripts/demo-oauth-mcp.ts` (HTTP 401 on an expired token, rotating refresh
+tokens) with a 20 s access token; sign-in through `rpc.mcp.oauth.login` and a plain HTTP client as the browser; the calls are
+`rpc.mcp.list`, `rpc.mcp.listTools` (a request to the server) and `rpc.mcp.restartServer`. Two runs without `onMcpAuthRequest`, one with it.
+- **(c) Today's path, no handler.** After the token expired, the first call to the server failed ("MCP OAuth challenge required (HTTP 401)")
+  and a `session.mcp_server_status_changed` event said `needs-auth`, but **`rpc.mcp.list` still said `connected`** and kept saying it.
+  The runtime tried by itself: each failing call led to `pending` -> `connected` events and one more refresh grant at the server
+  (1, 2, 3 grants over 60 s, the demo server rotates them), yet **every later call still failed** for the whole minute. `restartServer`
+  rejected ("requires authentication", as in T177), then the status was `connected` and the next call **worked** (one more refresh grant).
+  This reproduces the owner's report with a local server. `mcp.oauth_required` was never emitted (no interest is registered).
+- **(a) With a handler** (`onMcpAuthRequest` set, which makes the SDK register interest in `mcp.oauth_required`): at session start
+  `mcp.oauth_required` came with `reason: 'initial'` (no `runtimeRefreshSupported`); after the failed calls it came with
+  `reason: 'refresh'`, `runtimeRefreshSupported: true` (fields: `httpResponse`, `reason`, `requestId`, `resourceMetadata`,
+  `runtimeRefreshSupported`, `serverName`, `serverUrl`, `wwwAuthenticateParams`). It arrived **only after a call failed**, not before expiry.
+- **(b)** Answering `{kind: 'runtimeRefresh'}` worked as documented: `mcp.oauth_recovery_completed` `succeeded`, `mcp.oauth_completed`
+  `token`, one refresh grant, status `connected`. It did **not** make the next call work any more than the runtime's own attempts did
+  (the status went back to `needs-auth` and the call failed again); only the later `restartServer` (which again triggered a
+  `refresh` request, answered `runtimeRefresh`) made the call work.
+- **(d) Regression.** With the handler set, the answer to `reason: 'initial'` cannot be "let the runtime do it": the SDK turns
+  `runtimeRefresh` into `cancelled` unless `runtimeRefreshSupported` is true (it is missing for `initial`). With `initial` cancelled,
+  a **new runtime with a stored sign-in stayed `needs-auth` (0 refresh grants)**, while without a handler the same start refreshed
+  the stored token and reached `connected`. So registering interest breaks today's cached-token start. The runtime-owned
+  `oauth.login` still worked with the handler (sign-in, `connected`).
+- **How to repeat it** (the scripts are not in the repository: they are scratch files, about 100 lines): build `dist-scripts`
+  (`npx tsc -p tsconfig.scripts.json`), then run a Node ES-module script with `env -i PATH=$PATH HOME=<tmp> USERPROFILE=<tmp>
+  COPILOT_HOME=<tmp>/copilot XDG_CONFIG_HOME XDG_DATA_HOME XDG_CACHE_HOME XDG_STATE_HOME=<tmp>/... DBUS_SESSION_BUS_ADDRESS=unix:path=/nonexistent`
+  that (1) starts `startDemoOAuthMcp({ accessTtl: 20 })` from `dist-scripts/scripts/demo-oauth-mcp.js`, (2) imports `CopilotClient` from the
+  SDK's `dist/index.js`, `new CopilotClient({})`, `start()`, `createSession({ workingDirectory, mcpServers: { demo: { type: 'http', url,
+  tools: ['*'] } }, enableConfigDiscovery: false, enableFileHooks: false, mcpOAuthTokenStorage: 'persistent', onPermissionRequest: reject })`,
+  with `onMcpAuthRequest` only in the handler run, (3) waits for `needs-auth`, calls `session.rpc.mcp.oauth.login({ serverName,
+  clientName, callbackSuccessMessage })`, GETs the returned URL with `redirect: 'manual'` and then its 302 target (the "browser"),
+  (4) waits 8, 15, 20, 30 and 60 s while reading `rpc.mcp.list()`, `rpc.mcp.listTools({ serverName })` and the demo server's `stats`
+  (counts only), (5) calls `rpc.mcp.restartServer`, and (6) stops the client, waits 25 s and starts a second client with a new
+  session to see the cached-token start. It logs statuses, event types, `reason`, `runtimeRefreshSupported` and counts; never a token or
+  the authorization URL. Linux, SDK 1.0.26, runtime 1.0.103, 0 credits.
+- **Decision.** Not built: `onMcpAuthRequest` / `handlePendingRequest` (a regression at start, no better recovery than a reconnect). The
+  rule in `copilot.ts` stays: never `handlePendingRequest` or `onMcpAuthRequest`. What works, and is already Durbar's: `restartServer`.
+
+#### Requirements (delta)
+
+- **FR-218** **Renew after a failure.** Two triggers, either one marks the server for one reconnect, and both for one failure episode are one
+  mark: (1) a failed MCP tool call whose class is `auth` (`classifyMcpCall`, FR-187: the adapter's own OAuth-challenge flag, a 401 or
+  Unauthorized, an Entra sign-in code, a token expired); (2) an `mcp` report in which a server that read `connected` in the chat's
+  last report now reads `needs-auth` (or `failed` with the `auth` class): the probe's `session.mcp_server_status_changed` came right
+  after the first 401 while `rpc.mcp.list` still said `connected`. A server that was never connected in this chat (a first sign-in)
+  is not a failure, and a trigger that arrives while that server's reconnect runs, or within the cooldown after it, starts nothing (the chat is not idle, then the cooldown). The server is remote in a chat whose adapter takes
+  part (`restartMcpServer`, `mcpSignInReconnect`) **and** has the new capability `mcpBackgroundRenew` (Copilot true; Claude Code and
+  Codex false: Claude's CLI refreshes on a 401 and retries, Codex refreshes when a thread starts, FR-207) is followed by **one reconnect**
+  (FR-207's path, `mcpRestartOp` through `refreshFlight`) **after the turn**: never mid tool call, never while a turn runs, starts or
+  waits for the person. Durbar never sends the message again. **No timer and no proactive reconnect** (owner, 16:58 UTC). Remote
+  only (FR-206's rule), switched on, not built in, no static header of Durbar's own, no sign-in page open, not restarting, not
+  refused by policy (`policy` class never renews), not blocked (FR-210). A server tried by any automatic reconnect in the last 5
+  minutes (`MCP_RENEW_FAIL_COOLDOWN_MS`) is not tried again: the row says *Needs sign-in*.
+- **FR-219** **Idle, one at a time, not under the sandbox.** Idle is FR-209's rule (main's busy state) and no send within the last 10 s
+  (`MCP_RENEW_SEND_QUIET_MS`), no send waiting at FR-208's gate, no reconnect of that chat running. A busy chat keeps the failure
+  pending and is looked at when its turn ends (`status` `idle`, `error`, `stopped`) and by a short check after it. One reconnect per
+  server across chats (FR-210's `refreshFlight`: another chat joins that result). Where `renews` is false (Copilot's OS sandbox
+  covers its MCP servers, or Read-only with `allowReadOnly` false) nothing is reconnected and FR-211's sign-in line shows. A send that
+  arrives while the reconnect runs awaits it by FR-209's rule, at most 5 s (a rare, short case).
+- **FR-220** **Seamless.** No chat line for a renewal that works (FR-215). The MCP dialog's server row reads **Renewed 12:40** (local
+  time; with the date when not today) next to its state while it reads `connected`; the activity-log row says "MCP server <name> renewed
+  (automatic)" (names and fixed words only, replacing the "reconnected before your message" row). A renewal that fails is as today:
+  *Needs sign-in* (or *failed*) with **Sign in** and FR-211's calm line. Nothing is read, stored, logged or printed from a token
+  (FR-214 holds: the same forbidden calls, tested again).
+- **FR-221** **Edges.** A chat that ends, restarts or is removed drops its pending failures and its "Renewed" time. A server switched
+  off, `disabled`, or restarted by the person while it waits is not reconnected (FR-210 as for any automatic reconnect). Many chats on one
+  Copilot runtime: one reconnect per server name and address. The switch of FR-213 turns this off with the rest. Wall clock moved: no
+  effect (decisions use the monotonic clock; the shown time is the wall clock at the renewal).
+- **FR-222** **Tests and simulator.** One pure function `planMcpRenew` (`src/main/mcpsigninrefresh.ts`), with `scripts/test-mcp-signinrefresh.ts`
+  and an injected clock and fake adapter: a failed `auth` call, and a report that turns `needs-auth` after `connected`, each renews after the turn and not during it; both together, or a late one during the reconnect, make one reconnect; a first sign-in does not; waits while busy and renews at the
+  first idle moment; never two at once per server (15 chats, one reconnect); local, built-in, static-header, switched-off, policy and
+  blocked servers, sandboxed chats, the cooldown and the switch off all skip; Claude Code and Codex never; no renewal without a failed
+  call (no timer: a clock that moves hours renews nothing); the row's "Renewed" time; the refresher's dependencies hold no send (the
+  message is never sent again). A wiring test (`scripts/test-mcp-signinwiring.ts`) runs both triggers through `registerMcpIpc`. Mutants
+  (each fails its own assert): no idle check, no per-server lock (planner and flight), either trigger removed, a first sign-in counted,
+  the cooldown ignored, a late trigger during the reconnect, local or built-in servers renewed, the sandbox ignored, the block ignored,
+  renewal without the capability, the pending mark kept after a renewal. A simulator step in
+  `scripts/shots-058-mcp-signin-refresh.js` shows the "Renewed" note in the dialog at 1440x900 and 1280x800.
+
+#### Docs (delta)
+
+`docs/limits.md` (MCP sign-in refresh paragraph, honest: probed on a local server only), `docs/safety.md`, `docs/feature-inventory.md`, the probe's
+method is in this spec (`docs/agent-apps.md` is at its word budget), `docs/features.md`, a `changelog.d/` fragment. Settings' line under *Refresh MCP sign-ins automatically* names the renewal after a failed call.
+
 ### 2026-10-31: MCP context cost (spec 100)
 
 the per-agent MCP dialog's rows add each server's tokens and label, with a total and a footnote; a warning line in the chat opens this dialog with the heaviest server focused. Owned by [spec 100](../100-mcp-context/spec.md) FR-011, FR-022.
@@ -1876,7 +1976,7 @@ before the message needs the server. For Copilot, **Sign in** itself finishes wi
   automatically). For Copilot, Sign in may finish with no browser when the stored refresh token still works (`real:` T177). During the
   launch strip's window (FR-199) it is also a strip finding. The chip's dot (FR-094) and the Settings count (FR-084) follow from the state
   as today.
-- **FR-212** **A recheck about every 30 minutes.** Every 30 minutes (`MCP_RECHECK_MS`, injected), main reads the server list of each
+- **FR-212** *(design changed 2026-11-05, see *Changes*: a status read cannot see an Entra expiry that still reads `connected`; FR-218..FR-221 renew after a failed call instead; the text below is the unbuilt first design.)* **A recheck about every 30 minutes.** Every 30 minutes (`MCP_RECHECK_MS`, injected), main reads the server list of each
   **running** chat (`isLive`) that is not busy, **one chat after the other, each awaited** (single-flight: a tick that finds the previous
   one still running is skipped), through `mcpRefreshOp` with `startNothing` (FR-190). No prompt, no model call, and no network of Durbar's
   own: only what the agent app does to answer its own status call. A remote server it finds `needs-auth` that is not blocked (FR-210) gets

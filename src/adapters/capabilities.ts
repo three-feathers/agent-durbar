@@ -70,6 +70,12 @@ export interface AdapterCapabilities {
    * Claude SDK transport: no automatic reconnect).
    */
   readonly mcpSignInReconnect?: boolean;
+  /**
+   * Spec 058 FR-218 (2026-11-05): main renews this app's remote MCP sign-ins on a timer (about every 45 minutes while the chat is idle) and
+   * after a failed call, with the same reconnect. Only with `mcpSignInReconnect`; missing = false (Claude Code refreshes on a 401 by itself,
+   * Codex refreshes when a thread starts).
+   */
+  readonly mcpBackgroundRenew?: boolean;
   /** `handoffSummary()` exists (spec 030 FR-034); missing = false. */
   readonly handoff?: boolean;
   /** `generateText()` exists: one prompt, no tools, no session kept (spec 040 FR-015); missing = false. */

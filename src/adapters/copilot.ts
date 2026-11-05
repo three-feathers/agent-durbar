@@ -304,6 +304,7 @@ export const COPILOT_CAPABILITIES: AdapterCapabilities = Object.freeze({
   mcpTools: true, // spec 069 FR-031: rpc.mcp.listTools (@experimental; read: SDK 1.0.22-1.0.26 rpc.d.ts; not run on a real account)
   mcpContext: 'reported', // spec 100 FR-001: rpc.metadata.getContextAttribution (@experimental; real: Copilot CLI 1.0.98 / SDK 1.0.22, T031 2026-11-02: `toolDefinition:<server>-<tool>` entries, `null` through the first turn; not seen: `deferTools: auto`, a plan without the call, Windows, macOS)
   mcpRestart: true, // spec 058 FR-012: rpc.mcp.restartServer (@experimental; real 2026-10-21, runtime 1.0.22), else disable then enable (fallback read: only)
+  mcpBackgroundRenew: true, // spec 058 FR-218: Entra sign-ins expire about hourly while the list still says connected (owner, 2026-11-05)
   mcpSignInReconnect: true, // spec 058 FR-207: the automatic reconnect calls rpc.mcp.restartServer only and re-reads `list` 1.5 s later (real: T176/T177, runtime 1.0.103)
   mcpSignInAgain: true, // spec 058 FR-164: oauth.login forceReauth ("clears any cached OAuth token for the server and runs a full new authorization", read: SDK 1.0.22-1.0.26 rpc.d.ts; not run on a real account)
   mcpSignIn: true, // spec 058 FR-064: rpc.mcp.oauth.login (@experimental; read: SDK 1.0.22-1.0.26 rpc.d.ts; real: worked once, macOS 2026-10-23, one server; the rest in T105)
