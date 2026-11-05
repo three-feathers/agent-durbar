@@ -182,6 +182,10 @@ export class McpSignInStore {
   has(agentId: string, name: string): boolean {
     return !!this.live(agentId, name);
   }
+  /** A sign-in for this server is starting (reserved, its address not yet held). */
+  starting(agentId: string, name: string): boolean {
+    return this.pending.has(McpSignInStore.key(agentId, name));
+  }
   /** One sign-in per server: also while the call to the runtime is under way (the address has not arrived yet). False when one is open or starting. */
   reserve(agentId: string, name: string): boolean {
     const k = McpSignInStore.key(agentId, name);

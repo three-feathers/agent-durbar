@@ -581,11 +581,15 @@ apps, as T176 allows) after them.
   [FR-204..FR-217]
 - [ ] T189 `/speckit-converge` for this delta: spec Status, tags, `[KNOWN GAP]`s from T176/T177 [FR-204..FR-217]
 - [x] T190 Capability `mcpBackgroundRenew` (Copilot true, Claude CLI/SDK and Codex false) and its contract test [FR-218]
-- [x] T191 Planner `planMcpRenew` (failure, idle, sandbox, server filters, blocks, cooldown, flights) and the refresher's pending failures,
-  turn-end look, one short check; reuse of `fly` and FR-210's maps; no timer [FR-218, FR-219, FR-221]
+- [x] T191 Planner `planMcpRenew` (failure, in-flight call, sandbox, server filters, blocks, cooldown) and the refresher's marks, per-server queue
+  (`serial`) and cooldown per chat; reuse of `fly` and FR-210's records; no timer [FR-218, FR-219, FR-221]
 - [x] T192 Wiring in `mcpipc.ts`: a failed call of class `auth` feeds the failure; `builtin` and static-header marks in the chat view [FR-218]
 - [x] T193 The row's "Renewed HH:MM" (`AgentMcpEntry.renewedAt`, the dialog, the activity row), no chat line for success [FR-220]
 - [x] T194 Unit tests with a fake clock and fake adapter, and the four mutants [FR-222]
+- [x] T196 Renew at once, mid-turn (owner 2026-11-05 18:03 UTC): `noteCall`/`callsInFlight`, no idle rule for this trigger [FR-218]
+- [x] T197 The one automatic note: `mcpNudgeOp` (the adapter's `send`, a `user` event, a plain name), `nudged` line, limits (switch, limit, Stop, ended chat, gate) [FR-218]
+- [x] T198 Review fixes of PR #1203 (short turn, stale marks, per-session queue, the person's own actions, docs) [FR-218..FR-221]
+- [x] T199 Settings line, `docs/limits.md`, `docs/features.md`, `docs/safety.md` name the note and its credits [FR-218]
 - [x] T195 Simulator step "Renewed" at 1440x900 and 1280x800, looked at; docs, changelog fragment, Settings line [FR-220, FR-222]
 - **Built 2026-11-03, part 1** (branch `058-mcp-auth-refresh-build`, T178..T181, T184..T186 and T187's docs for them; over the
   ~500-line mark, so split along the plan's order): the planner, main's refresher (last response, resume, the per-chat gate every send

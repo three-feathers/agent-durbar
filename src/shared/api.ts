@@ -237,7 +237,9 @@ export type McpSignInRefreshNote =
   | { id: string; kind: 'late'; names: string[] }
   | { id: string; kind: 'done' }
   | { id: string; kind: 'not-sent' }
-  | { id: string; kind: 'needs-sign-in'; name: string };
+  | { id: string; kind: 'needs-sign-in'; name: string }
+  /** Spec 058 FR-218 (2026-11-05): the agent was sent one short automatic message after a server was reconnected (the message itself is a `user` event). */
+  | { id: string; kind: 'nudged'; name: string };
 
 /** A profile file (spec 043 FR-010); `path` is for display only, the window sends `id` back. */
 export interface ProfileFileInfo {

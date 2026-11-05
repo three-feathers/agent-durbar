@@ -846,6 +846,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
       advance: (ms: number) => { simSignIn.offset += Math.max(0, Number(ms) || 0); },
       fate: (name: string, f: string) => { simSignIn.fates.set(String(name), String(f)); },
       lastResponse: (id: string) => simSignIn.last.get(id),
+      push: (p: { id: string; kind: string; name?: string }) => { simSignIn.push(p); },
       renewed: (id: string, name: string, at: number) => { const q = sims.find((x) => x.info.id === id); if (q) (q.mcpRenewed ??= new Map()).set(String(name), Number(at)); },
     };
     const simSignInGate = async (s: SimAgent): Promise<'go' | 'stopped'> => {

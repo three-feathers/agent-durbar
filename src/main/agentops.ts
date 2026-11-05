@@ -238,6 +238,41 @@ export interface ScheduledSendDeps {
   stillWanted?(): boolean;
 }
 
+/** Spec 058 FR-218: the one automatic note after a server was reconnected (a server name is checked first: it goes into the agent's prompt). */
+export const mcpNudgeText = (name: string): string => `The ${name} MCP server was reconnected after a sign-in error. Please retry the step that failed.`;
+const NUDGE_NAME = /^[\p{L}\p{N}_.@+() -]{1,64}$/u; // letters, digits and the usual name punctuation; never a line break or a quote
+
+export interface McpNudgeDeps {
+  agent: AgentInfo | undefined;
+  adapter: AgentAdapter | undefined;
+  agentState: { ensure(id: string, lazy?: boolean): void; noteSend(id: string): void; noteSendFailed(id: string): void };
+  toWindow(channel: string, payload: unknown): void;
+  noteLastSession(a: AgentInfo): void;
+  now(): number;
+}
+
+/**
+ * Spec 058 FR-218 (owner, 2026-11-05 18:03 UTC): the one short automatic message to the agent after a renewal. The adapter's own `send`
+ * (the path of the person's messages and scheduled prompts: it queues behind a running turn); the window gets the same `user` event a
+ * scheduled prompt gets, and main's refresher adds the "sent automatically" note. A name that is not plain text sends nothing.
+ */
+export async function mcpNudgeOp(d: McpNudgeDeps, name: string): Promise<void> {
+  const a = d.agent;
+  const ad = d.adapter;
+  if (!a || !ad || typeof name !== 'string' || !NUDGE_NAME.test(name)) throw new Error('not sent');
+  d.agentState.ensure(a.id, a.lazy);
+  d.agentState.noteSend(a.id);
+  const text = mcpNudgeText(name);
+  try {
+    d.toWindow('agent:event', { type: 'user', sessionId: a.id, timestamp: d.now(), text });
+    await ad.send(a.id, { text });
+    d.noteLastSession(a);
+  } catch (err) {
+    d.agentState.noteSendFailed(a.id);
+    throw err;
+  }
+}
+
 /** Spec 072 FR-007: the error a send throws when its run was stopped while the session was starting; nothing reached the app. */
 export const NOT_SENT_STOPPED = 'Not sent: stopped';
 
