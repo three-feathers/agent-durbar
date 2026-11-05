@@ -29,7 +29,7 @@ module.exports = async (ctx) => {
   const okArrival = async (expr, what, ms) => {
     const end = Date.now() + ms;
     for (;;) {
-      await H.focusPage({ ms: 1500 });
+      if (!(await js(`document.hasFocus()`))) await H.focusPage({ ms: 1500 }); /* only when it is lost: a focus call on a focused window raises a focus event, and the strip holds an arrival for POINTER_MS after one (FR-185) */
       if (await until(expr, 1500)) return;
       if (Date.now() > end) break;
     }
