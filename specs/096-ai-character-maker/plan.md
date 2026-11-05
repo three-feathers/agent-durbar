@@ -7,7 +7,7 @@
 Codex gets a new adapter capability, `imageGen`. It makes one 2x2 sheet (working, waiting, resting, blink) from a fixed style preset, a fixed layout block and the user's description inside a guard wrapper.
 - **Main** reads the one expected file, checks its header bytes, and has a sandboxed hidden encoder window decode, slice, key out, resize and encode it to four 352x352 WebP frames. Main checks the frames again, holds them as a *try*, and saves them to `userData/characters/<id>/` on Save.
 - **The renderer** reuses the theme maker's dialog parts, adds **My characters** as a Characters value, and registers the generated ids with `crew.js`, so the existing pick, crops, fallback and checks work unchanged.
-- **Motion** is route (1): cross-fade, discrete bob, blink frame, typing cue, existing glow. It is paused by reduced motion, Serious mode, the Motion setting, a hidden window and idleness.
+- **Motion** is route (1): cross-fade, discrete bob, blink frame, typing cue, existing glow. It is paused by reduced motion, the global Motion setting (not Serious mode, 2026-11-05), a hidden window and idleness.
 
 ## Technical Context
 
@@ -16,7 +16,7 @@ Codex gets a new adapter capability, `imageGen`. It makes one 2x2 sheet (working
   - Decode and encode use Chromium in a sandboxed window: `createImageBitmap`, `OffscreenCanvas.convertToBlob({type:'image/webp'})`.
   - The header checks are pure TS.
   - Considered and not chosen: `sharp` (native, a supply-chain and packaging cost on 3 OSes), a WASM WebP encoder (a new dependency to review), and Electron `nativeImage` (it decodes untrusted bytes in the privileged main process and cannot write WebP).
-- **Storage**: `userData/characters/` (pictures and `character.json`); `durbar-settings.json` gains `characterPins` and `characterMotion`; the renderer keeps `durbar.crew.mine` in `localStorage`.
+- **Storage**: `userData/characters/` (pictures and `character.json`); `durbar-settings.json` gains `characterPins` (no `characterMotion`: the global Motion of spec 052 is reused, delta 2026-11-05); the renderer keeps `durbar.crew.mine` in `localStorage`.
 - **Testing**: Node unit tests (`tsconfig.scripts.json`), the fake Codex app-server, the simulator drivers (`until()` waits), and the 15-agent layout checks at 1440x900 and 1280x800.
 - **Platforms**: Windows, macOS and Linux. Paths use `path.join`; the temp folder comes from `fs.mkdtemp(os.tmpdir())`.
 - **Constraints**:
@@ -86,7 +86,7 @@ Results go to `docs/agent-apps.md` (Codex) and this spec's `## Changes`, with `r
 | Usage line | Codex `account/rateLimits/read` (spec 051/068) | show the plan's window in the maker when it answers |
 | Folder pick for export | `pickFolder` in `src/main/ipc/themes.ts` with `DURBAR_PICK` | lift to a shared helper |
 | IPC guard | `ipcHandle`, `fromApp`, `test-ipcchannels.ts` | register the new channels as owner-only |
-| Motion pause | `REDUCED`, `reducedMotion()`, `SERIOUS`, existing `@media (prefers-reduced-motion)` blocks | one `motionAllowed()` and a `body.motion-paused` class |
+| Motion pause | `REDUCED`, `reducedMotion()`, `MOTION` (was `SERIOUS`, 2026-11-05), existing `@media (prefers-reduced-motion)` blocks | one `motionAllowed()` and a `body.motion-paused` class |
 | Glow | spec 077 FR-053 halo, FR-062 glow | none |
 
 ## Data flow of one try

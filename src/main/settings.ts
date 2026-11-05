@@ -154,6 +154,20 @@ export class SettingsStore {
     return this.commit(next) ? { ok: true, value: v } : { ok: false, value: this.stillHighlights };
   }
 
+  /** Spec 052 FR-069 (issue #1182): *Motion*, on by default; only `false` is written, so a file of an older version means on. */
+  get motion(): boolean {
+    return this.s.motion !== false;
+  }
+
+  /** Only a real boolean changes it. `ok` only when the write reached disk; `value` the one in force. */
+  setMotion(v: unknown): Saved<boolean> {
+    if (typeof v !== 'boolean') return { ok: false, value: this.motion };
+    const next: AppSettings = { ...this.s };
+    if (v) delete next.motion;
+    else next.motion = false;
+    return this.commit(next) ? { ok: true, value: v } : { ok: false, value: this.motion };
+  }
+
   /** Serious mode (spec 034): off by default. */
   get seriousMode(): boolean {
     return this.s.seriousMode === true;

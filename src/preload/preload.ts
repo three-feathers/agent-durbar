@@ -63,6 +63,7 @@ const api: DurbarApi = {
   updatePlace: (id, patch) => ipcRenderer.invoke('settings:updatePlace', id, patch),
   removePlace: (id) => ipcRenderer.invoke('settings:removePlace', id),
   setSeriousMode: (on) => ipcRenderer.invoke('settings:setSeriousMode', on),
+  setMotion: (on) => ipcRenderer.invoke('settings:setMotion', on),
   setStillHighlights: (on) => ipcRenderer.invoke('settings:setStillHighlights', on),
   setAutoFollowWork: (on) => ipcRenderer.invoke('settings:setAutoFollowWork', on),
   setNotifyNeedsMe: (on) => ipcRenderer.invoke('settings:setNotifyNeedsMe', on),
