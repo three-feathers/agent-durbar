@@ -161,3 +161,4 @@
 - [x] T124 (2026-11-04, v0.1.9: the owner saw the GIF play inline on the release page): the first published release with a clip: check the GIF renders inline on the release page (and the MP4 link); else the repository fallback of FR-174 [FR-174] (real check)
 - [x] T125: the Highlights block at the top of the draft's notes in `scripts/release-notes.js`, with tests [FR-173]
 - [x] T127 (2026-11-05, issue #1162): the simulator's About version from `package.json` through a generated `appversion.js`; `test:simversion`; release steps no longer list `sim.ts` [FR-179]
+- [x] T128 Issue #839 (FR-180): `check-inbox-safety` and `check-answer-safety` press the Mac keys; `check-answer-safety` waits for the card before scrolling; `shots-097-realoffice` measures the glass at `prefers-reduced-transparency: no-preference`; `check-characters` reports the app state on a crew-step timeout (cause not found yet)
