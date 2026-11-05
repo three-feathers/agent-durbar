@@ -8,7 +8,7 @@
  *   - topbarResizes: no part of the top bar changes size in those updates (a count's pill keeps its width with proportional figures too, as on the Windows runner's font);
  *   - elements recalculated by one text change (`UpdateLayoutTree.elementCount` of one short contentTracing, a count; animations off for the trace);
  *   - FR-180, FR-181: the running infinite animations (at most one per light whose state moves, none outside the lights), that each is stepped at most 8 changes a
- *     second and names only transform and opacity, no element with a blend mode; none running under reduced motion (emulated) and Serious mode (the Settings switch);
+ *     second and names only transform and opacity, no element with a blend mode; none running under reduced motion (emulated) and with Motion off (the Settings switch);
  *   - FR-183: natural area of the distinct pictures over the shown device-pixel area, also at 3 agents (big screens), which must not show a picture below its size;
  *     read on a settled lobby (SETTLED): a simulator visit starts 600 ms after its call on the wall clock, so a read taken at once on an idle machine and later on a
  *     loaded one saw different people (4 or 34 visitors at 40 agents, a ratio of 2.81 or 4.05 to 4.65; review on #969).
@@ -233,7 +233,7 @@ module.exports = async (ctx) => {
     console.log('[ops]', n, 'agents, elements recalculated by one text change:', counts.join(' '));
   }
 
-  // ---- FR-047, FR-181: nothing runs under reduced motion or Serious mode ----
+  // ---- FR-047, FR-181: nothing runs under reduced motion or with Motion off ----
   await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
   await load(15);
   assert.ok(await js(`document.querySelector('#stage .ro').classList.contains('still')`), 'reduced motion: the scene is still');
@@ -243,12 +243,12 @@ module.exports = async (ctx) => {
   await H.until(`document.querySelectorAll('#stage .ro-call.pulse, #stage .ro-glow.breathe').length>0`, 40000);
   assert.ok((await js(ANIMS_STILL)) > 0, 'normal motion: a light moves, so the two rows above and below can fail');
   await js(`document.getElementById('settingsBtn').click()`);
-  await H.until(`!!document.getElementById('seriousSw')`);
-  await js(`document.getElementById('seriousSw').click()`);
-  await H.until(`document.getElementById('seriousSw').getAttribute('aria-checked')==='true'`);
+  assert.ok(await H.until(`!!document.getElementById('motionSw')`), 'the Motion switch');
+  await js(`document.getElementById('motionSw').click()`);
+  assert.ok(await H.until(`document.getElementById('motionSw').getAttribute('aria-checked')==='false'`), 'Motion off');
   await js(`document.getElementById('scrClose').click()`);
   await H.until(`document.querySelector('#stage .ro').classList.contains('still')`);
-  rows['animationsStill@serious'] = await js(ANIMS_STILL);
+  rows['animationsStill@motionoff'] = await js(ANIMS_STILL);
   await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [] }).catch(() => undefined);
   await dbg.sendCommand('Emulation.clearDeviceMetricsOverride').catch(() => undefined);
   dbg.detach();

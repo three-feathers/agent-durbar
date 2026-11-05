@@ -440,18 +440,18 @@ module.exports = async (ctx) => {
     await must(`document.querySelectorAll('#stage .ro-call.pulse').length>0`, 'a pulsing call light to hold still', 60000);
   assert.strictEqual(await js(STILL), false, 'normal motion: the scene is not still');
   await js(`document.getElementById('settingsBtn').click()`);
-  await must(`!!document.getElementById('seriousSw')`, 'the Serious mode switch');
-  await js(`document.getElementById('seriousSw').click()`);
-  await must(`document.getElementById('seriousSw').getAttribute('aria-checked')==='true'`, 'Serious mode on');
+  await must(`!!document.getElementById('motionSw')`, 'the Motion switch');
+  await js(`document.getElementById('motionSw').click()`);
+  await must(`document.getElementById('motionSw').getAttribute('aria-checked')==='false'`, 'Motion off');
   await js(`document.getElementById('scrClose').click()`);
-  await must(STILL, 'the scene still in Serious mode');
-  assert.strictEqual(await js(MOVING), 0, 'Serious mode: no light moves');
+  await must(STILL, 'the scene still with Motion off');
+  assert.strictEqual(await js(MOVING), 0, 'Motion off: no light moves');
   await js(`document.getElementById('settingsBtn').click()`);
-  await must(`!!document.getElementById('seriousSw')`, 'the Serious mode switch');
-  await js(`document.getElementById('seriousSw').click()`);
-  await must(`document.getElementById('seriousSw').getAttribute('aria-checked')==='false'`, 'Serious mode off');
+  await must(`!!document.getElementById('motionSw')`, 'the Motion switch');
+  await js(`document.getElementById('motionSw').click()`);
+  await must(`document.getElementById('motionSw').getAttribute('aria-checked')==='true'`, 'Motion on');
   await js(`document.getElementById('scrClose').click()`);
-  await must(`!(${STILL})`, 'the scene moves again with Serious mode off');
+  await must(`!(${STILL})`, 'the scene moves again with Motion on');
   });
   await emulate([{ name: 'prefers-reduced-motion', value: 'reduce' }], async () => {
     await loadReal(1440, 900);

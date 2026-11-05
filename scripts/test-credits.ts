@@ -120,6 +120,25 @@ try {
   assert.deepStrictEqual(parseSettings('{"seriousMode":true}'), { seriousMode: true });
   for (const bad of ['"yes"', '1', '0', 'null', '[]', '{}', '"true"', '{"seriousMode":"true"}', '{"seriousMode":1}', '{"seriousMode":false}']) assert.deepStrictEqual(parseSettings(bad.startsWith('{') ? bad : '{"seriousMode":' + bad + '}'), {}, 'only true is kept: ' + bad);
 
+  // spec 052 FR-069b (issue #1182): Motion is on by default and an old file (no key) means on; only `false` is written; Serious mode is independent
+  {
+    const f4 = path.join(dir, 'motion', 'durbar-settings.json');
+    fs.mkdirSync(path.dirname(f4), { recursive: true });
+    fs.writeFileSync(f4, JSON.stringify({ version: 1, seriousMode: true }));
+    const mo = new SettingsStore(f4); mo.load();
+    assert.strictEqual(mo.motion, true, 'a file without the key: motion on');
+    assert.strictEqual(mo.seriousMode, true, 'and Serious mode keeps its meaning');
+    assert.deepStrictEqual(mo.setMotion(false), { ok: true, value: false }); assert.strictEqual(mo.motion, false); assert.strictEqual(mo.seriousMode, true, 'Motion off leaves Serious mode');
+    assert.strictEqual(JSON.parse(fs.readFileSync(f4, 'utf8')).motion, false, 'off is written as false');
+    for (const junk of ['no', 0, 1, null, undefined, {}, []]) assert.deepStrictEqual(mo.setMotion(junk), { ok: false, value: false }, 'only a boolean changes it: ' + String(junk));
+    const mb = new SettingsStore(f4); mb.load();
+    assert.strictEqual(mb.motion, false, 'kept after a restart');
+    assert.deepStrictEqual(mb.setMotion(true), { ok: true, value: true });
+    assert.ok(!('motion' in JSON.parse(fs.readFileSync(f4, 'utf8'))), 'on is not written');
+    assert.deepStrictEqual(parseSettings('{"motion":false}'), { motion: false });
+    for (const bad of ['{"motion":true}', '{"motion":"false"}', '{"motion":0}', '{"motion":null}']) assert.deepStrictEqual(parseSettings(bad), {}, 'only false is kept: ' + bad);
+  }
+
   // ---- spec 024 FR-018..FR-020 (issue #115): custom places ----
   {
     const realFs = require('fs') as typeof fs; // the store reads fs at call time, so patching the real module is seen by it

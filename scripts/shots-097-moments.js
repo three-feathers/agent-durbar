@@ -364,13 +364,13 @@ module.exports = async (ctx) => {
       const tok = 'ghp_' + 'A1b2'.repeat(9);
       const masked = await js(`window.__durbarSimUi.requestText(${jsLiteral('Allow ' + tok + ' to run')})`);
       assert.ok(!masked.includes(tok.slice(4, 24)), `${tag}: a token-like value is masked in a slip's text: ${masked}`);
-      /* Serious mode: no ride */
-      await js(`window.__durbarSimUi.setSerious(true)`);
+      /* Motion off (Serious mode no longer stops motion, issue 1182): no ride */
+      await js(`window.__durbarSimUi.setMotion(false)`);
       const f0 = await js(`localStorage.getItem('durbar.floor')`);
       await H.key('PageUp', [], { pause: 30 });
       await must(`localStorage.getItem('durbar.floor')!==${jsLiteral(f0)}`, 'the floor changed');
-      assert.strictEqual(await js(`document.querySelectorAll('.ro-ride').length`), 0, `${tag}: no ride in Serious mode`);
-      await js(`window.__durbarSimUi.setSerious(false)`);
+      assert.strictEqual(await js(`document.querySelectorAll('.ro-ride').length`), 0, `${tag}: no ride with Motion off`);
+      await js(`window.__durbarSimUi.setMotion(true)`);
     }
     // ---- owner 2026-11-02: one post-it colour per reason (the place), dark ink, the words stay ----
     if (run('notes')) {

@@ -104,7 +104,7 @@
 .ro-fxl.fxl-glow{background:radial-gradient(ellipse 45% 35% at 45% 55%,rgba(var(--ro-fx-lamp),.6),rgba(var(--ro-fx-lamp),0))}
 .ro-fxl.fxl-busy{background:radial-gradient(circle 7px at 50% 3%,rgb(var(--ro-amber)) 0 5px,rgba(var(--ro-amber),.45) 6px,rgba(var(--ro-amber),0) 16px)}
 
-/* FR-041 motion: one animation per desk at most (FR-048); none under reduced motion (styles.css), Serious mode or .still (FR-047). FR-181: stepped, at most 8 changes a second
+/* FR-041 motion: one animation per desk at most (FR-048); none under reduced motion (styles.css), Motion off or .still (FR-047). FR-181: stepped, at most 8 changes a second
    (the pulse 3.6, the breath 3.2, the tick's fade 5), and only the states of FR-041's table move: a stepped value causes damage only on a step */
 .ro-call.pulse{animation:ro-pulse 2.2s steps(4,end) infinite}
 .ro-glow.breathe{animation:ro-breathe 5s steps(8,end) infinite}
@@ -113,11 +113,11 @@
 @keyframes ro-breathe{50%{opacity:.35}}
 @keyframes ro-blink{0%,100%{opacity:1}50%{opacity:0}}
 @keyframes ro-fade{0%,60%{opacity:1}100%{opacity:0}}
-.ro.still .ro-lights *,html[data-serious] .ro-lights *{animation:none!important}
+.ro.still .ro-lights *,html[data-motion-off] .ro-lights *{animation:none!important}
 .ro.still .ro-ambient{transition:none}
 
 /* People (spec Changes 2026-11-01): two pictures of a pose cross-fade, and a small eased movement runs on both, on one clock; opacity and transform only (FR-180),
-   so the compositor runs them. The second picture is hidden unless its animation runs, so every off switch below leaves the first showing: reduced motion (styles.css), Serious mode, .still and .hold (FR-071). */
+   so the compositor runs them. The second picture is hidden unless its animation runs, so every off switch below leaves the first showing: reduced motion (styles.css), Motion off, .still and .hold (FR-071). */
 .ro-person2,.ro-visitor2{opacity:0}
 .ro-art>:is(.m-a,.m-b,.m-br,.m-knock){transform-origin:var(--ro-org,50% 100%);backface-visibility:hidden}
 .m-a.m-type{animation:ro-fa var(--ro-per,1s) linear infinite,ro-type var(--ro-sw,6s) ease-in-out infinite}
@@ -136,7 +136,7 @@
 .ro-rig .h{animation:ro-rig-head var(--ro-sw,6s) ease-in-out infinite}
 .ro-rig .l,.ro-rig .r{animation:ro-rig-hand var(--ro-pat,2.8s) ease-in-out infinite}
 .ro-rig .r{animation-direction:reverse;animation-duration:calc(var(--ro-pat,2.8s)*1.13)}
-:is(.ro.still,.ro.hold,.ro.lod1,.ro.lod2) .ro-rig img,html[data-serious] .ro-rig img{animation:none!important}
+:is(.ro.still,.ro.hold,.ro.lod1,.ro.lod2) .ro-rig img,html[data-motion-off] .ro-rig img{animation:none!important}
 .ro.lod2 .ro-art>:is(.m-br,.m-rig,.m-knock){animation:none!important}
 .ro.paused .ro-rig img,.ro-off.ro-rig img{animation-play-state:paused!important}
 /* the coming picture first, so the figure never goes see-through */
@@ -152,8 +152,8 @@
 @keyframes ro-rig-hand{0%,58%,100%{transform:none}5%{transform:translateY(calc(var(--ro-u,1px)*-.75)) rotate(-2deg)}10%{transform:translateY(calc(var(--ro-u,1px)*.15))}16%{transform:translateY(calc(var(--ro-u,1px)*-.55)) rotate(1.5deg)}21%{transform:none}27%{transform:translateY(calc(var(--ro-u,1px)*-.85)) rotate(-1deg)}33%{transform:translateY(calc(var(--ro-u,1px)*.1))}39%{transform:translateY(calc(var(--ro-u,1px)*-.5)) rotate(1deg)}45%{transform:none}51%{transform:translateY(calc(var(--ro-u,1px)*-.6))}}
 @keyframes ro-rig-head{0%,100%{transform:rotate(-.9deg)}22%{transform:rotate(-.2deg) translateY(calc(var(--ro-u,1px)*.35))}48%{transform:rotate(.9deg)}74%{transform:rotate(.2deg) translateY(calc(var(--ro-u,1px)*.3))}}
 @keyframes ro-knock{0%,24%,100%{transform:none}6%,18%{transform:translateX(calc(var(--ro-u,1px)*.7)) rotate(.3deg)}12%{transform:translateX(0)}}
-:is(.ro.still,.ro.hold) .ro-art>*,html[data-serious] .ro-art>*{animation:none!important}
-:is(.ro.still,.ro.hold) .ro-caret,html[data-serious] .ro-caret{display:none}
+:is(.ro.still,.ro.hold) .ro-art>*,html[data-motion-off] .ro-art>*{animation:none!important}
+:is(.ro.still,.ro.hold) .ro-caret,html[data-motion-off] .ro-caret{display:none}
 /* FR-074: hidden, or a desk scrolled away or covered: stands still and catches up when seen again */
 .ro.paused :is(.ro-art>*,.ro-lights>*,.ro-caret),.ro-off,.ro-off .ro-caret{animation-play-state:paused!important}
 

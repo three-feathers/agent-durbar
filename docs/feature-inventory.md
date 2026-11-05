@@ -11,7 +11,7 @@ One row per thing a user can do or see. [features.md](features.md) stays the use
 | Feature | Flat | Real office | Worlds | Specs | Proof |
 |---|---|---|---|---|---|
 | Desk: name, role, status word, task | works | works | mock+planned (desk-card) | 001 034 097 | test:mood driver:shots-097-realoffice |
-| Moods and trouble signs (heavy, monster, siren) | works | works pose, dots and lights only; heavy, monster and siren missing (#1171) | mock+planned (desk-lights) | 034 097 | test:mood read:src/renderer/realoffice.js |
+| Moods and trouble signs (heavy, monster, siren); Serious mode hides them and only them (not motion, issue #1182) | works | works pose, dots and lights only; heavy, monster and siren missing (#1171) | mock+planned (desk-lights) | 034 097 | test:mood read:src/renderer/realoffice.js |
 | Helpers (sub-agents): card, tree, own chat, needs you | works | missing, only `+N` and 3 dots; planned as small figures beside the desk (#1139) | planned | 001 015 097 | test:helpercard read:src/renderer/realoffice.js |
 | Live activity on the desk | works | works, monitors show the newest output (PR 979) | mock+planned (live-screen) | 001 097 | test:liveact driver:shots-001-live-activity |
 | Model, tokens, cost, context, last tool on the desk | works | missing (#1148) | none | 019 097 | test:ctxbreakdown read:src/renderer/realoffice.js |
@@ -27,6 +27,7 @@ One row per thing a user can do or see. [features.md](features.md) stays the use
 | Status pills as filters | works | works | none | 001 | driver:shots-001-welcome read:src/renderer/app.js |
 | Room doors (cabin signs) | missing, removed by owner decision (#954) | missing, removed | none | 017 | driver:check-no-doors |
 | Waiting desk halo (a still glow behind the screen) | works, still since #1057 | missing, the call light replaces it (owner decision, 2026-11-04) | none | 001 | driver:check-001-halo |
+| Motion (default on): Settings > Motion stops walking, typing and lights; reduced motion does too, Serious mode does not (issue #1182) | works | works, the whole room stands still | none | 052 | driver:check-serious-motion driver:check-097-motion |
 | Still highlights (no motion): Settings > Highlights | works | works, the whole room stands still | none | 001 | test:stillhighlights driver:check-unread |
 | Simple / Expert switch and the "Do you write code?" question | missing, removed by owner decision (#1060) | missing, removed | none | 052 | driver:shots-052-ux |
 | Old app-level MCP servers in the folder extras dialog | missing, removed (#1058) | missing, removed | none | 020 | driver:shots-m10 |

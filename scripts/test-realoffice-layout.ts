@@ -441,7 +441,7 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
   assert.strictEqual(lightState('waiting', { limit: true }), 'limit', 'limit wins over waiting');
   assert.strictEqual(lightState('error', { asleep: true }), 'asleep');
   assert.strictEqual(lightState('toString'), 'idle', 'own keys only'); assert.strictEqual(lightState('nonsense'), 'idle');
-  for (const s of STATES) assert.strictEqual(lightFor(s, { still: true }).motion, null, `FR-047: ${s} still under reduced motion or Serious mode`);
+  for (const s of STATES) assert.strictEqual(lightFor(s, { still: true }).motion, null, `FR-047: ${s} still under reduced motion or Motion off`);
   assert.strictEqual(lightFor('waiting', { still: true }).call, 'amber', 'the call light stays, steady');
   lightFor("working").lamp = "off"; assert.strictEqual(lightFor('working').lamp, 'warm', 'the table cannot be changed through a result');
   // FR-043
