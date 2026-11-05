@@ -133,10 +133,11 @@ module.exports = async (ctx) => {
     await report(id, all('connected'));
     await failedCall(id, 'tidy', 'HTTP 401', 'c4');
     await failedCall(id, 'agent365-teams', POLICY, 'c5');
-    await report(id, all('connected'));
-    // events reach the page in order but it paints them later: the first paint can show c4 alone (the read below then saw no policy words, main runs on Windows and Linux).
-    // A last call on "crm" after the report is the marker: once it shows, the page has painted everything sent before it
+    // The dialog repaints only on an `mcp` event (FR-004; a toolCall event repaints nothing), 150 ms after the first one of a burst. So a call that reaches the page after that
+    // timer fired shows only when a later report repaints (#1196: "the marker call shows" failed once on Linux CI, 1 of 10 runs under a CPU load). The report goes LAST, after every call,
+    // and the marker call is the one before it: events reach the page in order, so the repaint that report causes (a pending one or a new one) reads every call sent before it.
     await failedCall(id, 'crm', 'HTTP 401', 'c6');
+    await report(id, all('connected'));
     assert.ok(await until(`(()=>{const li=document.querySelector('#agMcp li.srv[data-n="crm"] .mst-call');return !!li&&li.textContent===${jsLiteral(AUTH_WORDS)};})()`), `${w}: the marker call shows`);
     assert.ok(await until(`(()=>{const li=document.querySelector('#agMcp li.srv[data-n="tidy"] .mst-call');return !!li&&li.textContent===${jsLiteral(AUTH_WORDS)};})()`), `${w}: tidy says the last call needs sign-in`);
     assert.strictEqual((await row('agent365-teams')).call, POLICY_WORDS, `${w}: a policy stays across a repeated connected report`);
