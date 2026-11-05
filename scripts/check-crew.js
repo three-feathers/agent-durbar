@@ -113,7 +113,7 @@ function idleOpacity() {
   });
 }
 
-/* spec 001 FR-178 with spec 077: the desk glow and the person's zoom (.pp scaled by --hl-e about the chair, 74 99). In the page: each desk with a
+/* spec 001 FR-178 (FR-230: the light bar instead of the glow) with spec 077: the desk's light and the person's zoom (.pp scaled by --hl-e about the chair, 74 99). In the page: each desk with a
    portrait at the peak of its entry pulse, with what the face must stay clear of. Each desk gets the New class, then the waiting class, for the
    measurement only (synchronous, so the app never redraws in between). */
 function glowZoom() {
@@ -124,9 +124,9 @@ function glowZoom() {
     const svg = d.querySelector('svg.scene'), pp = svg && svg.querySelector('.pp'), im = svg && svg.querySelector('image.crew-pic');
     if (!pp || !im) continue;
     if (d.matches('.is-failing,.is-retrying,.is-error')) continue; // no glow on these (FR-178)
-    const had = d.className;
+    const had = d.className, bar0 = d.dataset.tint, ltb = svg.querySelector('.scr');
     for (const needs of [false, true]) { // both glows on every desk: New (zoom 1.15), then needs you (1.25)
-      d.className = had; d.classList.remove('is-waiting', 'is-unread'); d.classList.add(needs ? 'is-waiting' : 'is-unread');
+      d.className = had; d.classList.remove('is-waiting', 'is-unread'); d.classList.add(needs ? 'is-waiting' : 'is-unread'); d.dataset.tint = needs ? 'amber' : 'green'; /* spec 001 FR-231: the light bar the app sets with the class */
       const e = parseFloat(getComputedStyle(d).getPropertyValue('--hl-e')) || 1, saved = pp.style.cssText;
       pp.style.animation = 'none'; pp.style.transform = `scale(${e})`;
       const covers = [];
@@ -134,10 +134,11 @@ function glowZoom() {
       const w = document.createTreeWalker(d, NodeFilter.SHOW_TEXT);
       for (let n = w.nextNode(); n; n = w.nextNode()) { const p = n.parentElement; if (n.nodeValue.trim() && !p.closest('svg') && !p.closest('.chatno') && p.getClientRects().length) covers.push(['card text', r(p)]); }
       out.push({ kind: needs ? 'needs you' : 'new', e, href: im.getAttribute('href'), vb: (svg.getAttribute('viewBox') || '').split(/\s+/).map(Number), svg: r(svg), card: r(d), covers,
-        glow: getComputedStyle(d, '::after').boxShadow !== 'none', ink: getComputedStyle(d).getPropertyValue('--hl').trim() });
+        bar: ltb ? getComputedStyle(ltb).fill : '', want: (() => { const i = document.createElement('i'); i.style.color = needs ? 'var(--tint-amber)' : 'var(--tint-green)'; document.body.appendChild(i); const c = getComputedStyle(i).color; i.remove(); return c; })(),
+        cardGlow: getComputedStyle(d, '::after').boxShadow });
       pp.style.cssText = saved;
     }
-    d.className = had;
+    d.className = had; if (bar0 === undefined) delete d.dataset.tint; else d.dataset.tint = bar0;
   }
   return out;
 }
@@ -293,7 +294,7 @@ async function runCrew(ctx, full) {
       const [u0, v0, u1, v1] = [X(fb[0]), Y(fb[1]), X(fb[0] + fb[2]), Y(fb[1] + fb[3])];
       const R = g.svg, sc = Math.min((R[2] - R[0]) / g.vb[2], (R[3] - R[1]) / g.vb[3]), ox = R[0] + ((R[2] - R[0]) - g.vb[2] * sc) / 2, oy = R[1] + ((R[3] - R[1]) - g.vb[3] * sc) / 2;
       const px = [ox + (u0 - vx) * sc, oy + (v0 - vy) * sc, ox + (u1 - vx) * sc, oy + (v1 - vy) * sc], where = `${tag} ${g.kind} ${m[1]}-${m[2]} (zoom ${g.e})`;
-      assert.ok(g.glow && g.e > 1 && g.ink, `${where}: the glow and a zoom are on`);
+      assert.ok(g.bar === g.want && g.e > 1 && g.cardGlow === 'none', `${where}: the screen is tinted (${g.bar} = ${g.want}), the person zooms, and the card has no glow (spec 001 FR-230, FR-231): ${g.cardGlow}`);
       assert.ok(px[0] >= g.card[0] - 0.5 && px[1] >= g.card[1] - 0.5 && px[2] <= g.card[2] + 0.5 && px[3] <= g.card[3] + 0.5, `${where}: the zoomed face ${px.map(Math.round)} stays inside its card ${g.card.map(Math.round)}`);
       for (const [name, c] of g.covers) {
         const dx = Math.min(px[2], c[2]) - Math.max(px[0], c[0]), dy = Math.min(px[3], c[3]) - Math.max(px[1], c[1]);

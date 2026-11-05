@@ -363,7 +363,7 @@ Each has a recommendation (Q6 is for Paco, the crew owner). The build waits for 
 
 ### 2026-11-04, rewritten 2026-11-05: attention by the screen's tint (owner decisions; FR-236..FR-238, FR-243, FR-244; FR-239..FR-242 withdrawn; T185..T193)
 
-**Status: built in Real office and the arcade (branch `097-light-bar`), the owner's look pending (T191).** Open office takes the same rule in its own PR with a spec 001 delta.
+**Status: built in Real office and the arcade (#1202), and in Open office (spec 001 FR-230, FR-231, branch `001-screen-tints`). The owner OK'd the pictures of all three (Vikram, 2026-11-05 18:02 UTC: "screens are ok"; T191).**
 
 **Owner decisions, in order** (Vikram, Telegram DMs):
 - 2026-11-04 04:38 and 04:52 UTC, on PR #1122: a monitor light bar with a pool on the desk, without the dusk. FR-239..FR-242 were withdrawn then, and their numbers are never reused; T189 too.
@@ -402,7 +402,7 @@ Each has a recommendation (Q6 is for Paco, the crew owner). The build waits for 
 4. `sim:` Red on an error and orange at the limit. A done desk with an unread reply has a green screen, the **New reply** tag, and a name ending ", new reply not read yet"; once the chat is opened, the normal screen and no tag.
 5. `sim:` No call light is drawn. Forced colours: no screen keeps its tint, and the tag stays.
 6. `sim:` FR-243's contrast pass holds on every tint, and FR-244's node count stays at 0.
-7. `real:` The owner looks at the pictures at both sizes (T191).
+7. `real:` The owner looks at the pictures at both sizes (T191): "screens are ok" (2026-11-05 18:02 UTC).
 
 #### Evidence
 
