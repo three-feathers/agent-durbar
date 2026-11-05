@@ -457,11 +457,13 @@ async function main(): Promise<void> {
       // another failure (an organization policy text, a plain error) is not unauthorized
       mcp.signInRefresh.dropChat(sid);
       clock.now += 6 * 60_000;
-      for (const text of ['AADSTS53003 blocked by Conditional Access', 'tools/list failed: 500 internal error']) {
+      for (const text of ['AADSTS53003 blocked by Conditional Access', 'tools/list failed: 500 internal error', 'unauthorized_client: the client is not authorized to use this grant type', 'invalid cursor: page token expired', 'MCP error -32602: Tool listing unauthorized for this plan tier', 'error 401: license seat not assigned', 'Session token is invalid for workspace (the user left the workspace)']) {
         listFails = text;
         const rcount: number = ad.restartCalls.length;
+        const lcount: number = listed.length;
         emit(sid, { type: 'mcp', servers: list('connected') });
         await tick();
+        assert.strictEqual(listed.length, lcount + 1, `${text.slice(0, 12)}: the check really ran`);
         assert.strictEqual(ad.restartCalls.length, rcount, `${text.slice(0, 12)}: nothing is restarted`);
         mcp.signInRefresh.dropChat(sid);
       }

@@ -14,6 +14,7 @@
 process.exitCode = 1;
 import * as assert from 'assert';
 import { McpSignInRefresher, MCP_CHECK_FRESH_MS, MCP_CHECK_TIMEOUT_MS, planMcpCheck, signInKey } from '../src/main/mcpsigninrefresh';
+import { isCheckUnauthorized } from '../src/shared/mcpcall';
 import type { CheckPlanInput, McpCheckOutcome, RefresherDeps, SignInChatView, SignInRefreshPush, SignInServerView } from '../src/main/mcpsigninrefresh';
 
 const H = 60 * 60_000;
@@ -56,7 +57,7 @@ const make = () => {
   };
   return { d, t, pushes, logs, checks, reconnects, nudges, timers, chats, answers, hang, hung, on, diag, reconnectHold };
 };
-const base = (more: Partial<CheckPlanInput> = {}): CheckPlanInput => ({ now: 10 * H, on: true, canCheck: true, live: true, servers: [srv('docs', 'connected')], records: {}, healthyAt: {}, busy: [], freshMs: MCP_CHECK_FRESH_MS, ...more });
+const base = (more: Partial<CheckPlanInput> = {}): CheckPlanInput => ({ now: 10 * H, on: true, canCheck: true, live: true, servers: [srv('docs', 'connected')], records: {}, checkedAt: {}, busy: [], freshMs: MCP_CHECK_FRESH_MS, ...more });
 
 async function main(): Promise<void> {
   assert.strictEqual(MCP_CHECK_FRESH_MS, 5 * 60_000, 'owner: 5 minutes');
@@ -71,9 +72,9 @@ async function main(): Promise<void> {
     const key = srv('docs', 'connected').key;
     assert.deepStrictEqual(planMcpCheck(base({ records: { [key]: { at: 1, blocked: 'sign-in' } } })), [], 'blocked: not checked');
     assert.deepStrictEqual(planMcpCheck(base({ busy: ['docs'] })), [], 'a renewal or check runs: not checked');
-    assert.deepStrictEqual(planMcpCheck(base({ healthyAt: { docs: 10 * H - 4 * 60_000 } })), [], 'healthy 4 minutes ago: skipped');
-    assert.deepStrictEqual(planMcpCheck(base({ healthyAt: { docs: 10 * H - 5 * 60_000 } })), ['docs'], 'healthy 5 minutes ago: checked again');
-    assert.deepStrictEqual(planMcpCheck(base({ healthyAt: { docs: 10 * H + 5000 } })), ['docs'], 'a clock that went back proves nothing');
+    assert.deepStrictEqual(planMcpCheck(base({ checkedAt: { docs: 10 * H - 4 * 60_000 } })), [], 'healthy 4 minutes ago: skipped');
+    assert.deepStrictEqual(planMcpCheck(base({ checkedAt: { docs: 10 * H - 5 * 60_000 } })), ['docs'], 'healthy 5 minutes ago: checked again');
+    assert.deepStrictEqual(planMcpCheck(base({ checkedAt: { docs: 10 * H + 5000 } })), ['docs'], 'a clock that went back proves nothing');
     for (const [label, x] of [['switch off', { on: false }], ['not live', { live: false }], ['adapter cannot', { canCheck: false }], ['sandbox', { renews: false }]] as [string, Partial<CheckPlanInput>][]) {
       assert.deepStrictEqual(planMcpCheck(base(x)), [], `${label}: nothing`);
     }
@@ -87,12 +88,14 @@ async function main(): Promise<void> {
     m.hang.add('docs');
     m.hang.add('wiki');
     r.turnEnded('a');
-    const gate = await r.beforeSend('a'); // the checks wait for ever: the send still settles
-    assert.strictEqual(gate, 'go', 'the send goes');
+    let settled: string | undefined;
+    void r.beforeSend('a').then((g) => { settled = g; });
+    await tick();
+    assert.strictEqual(settled, 'go', 'the send settles and goes while both checks are still pending (never held by a check)');
     assert.deepStrictEqual(m.checks.sort(), ['a:docs', 'a:wiki'], 'both servers are checked, in parallel');
     assert.deepStrictEqual(m.pushes, [], 'no line for a check that is still waiting');
     await r.beforeSend('a');
-    assert.strictEqual(m.checks.length, 2, 'a server already being checked is not checked twice');
+    assert.strictEqual(m.checks.length, 2, 'a server whose request is outstanding is not checked twice');
   }
 
   // ---- healthy: nothing; freshness; every message ----
@@ -122,14 +125,19 @@ async function main(): Promise<void> {
     await r.beforeSend('a');
     await tick();
     assert.strictEqual(m.checks.length, 3, 'five minutes after that call: checked');
-    // a failed check or an unanswered one is no proof of health
+    // a failed check is no proof of health, but it is not repeated at every message either (review of PR 1210)
     m.answers.set('docs', 'error');
     m.t.now += 6 * 60_000;
     await r.beforeSend('a');
     await tick();
+    assert.strictEqual(m.checks.length, 4, 'checked once, the answer is a plain error');
+    for (let k = 0; k < 5; k++) { m.t.now += 40_000; await r.beforeSend('a'); await tick(); }
+    assert.strictEqual(m.checks.length, 4, 'a plain error is not re-checked at each message within 5 minutes');
+    m.t.now += 5 * 60_000;
     await r.beforeSend('a');
     await tick();
-    assert.strictEqual(m.checks.length, 5, 'a failed (not unauthorized) check does not count as healthy: checked again at the next message');
+    assert.strictEqual(m.checks.length, 5, 'after 5 minutes it is checked again');
+    assert.strictEqual(m.timers.filter((x) => !x.done).length, 0, 'every settled check cleared its 30 s timer (no live timer is left)');
     assert.deepStrictEqual([m.reconnects, m.pushes, m.logs], [[], [], []], 'any other failure: nothing happens');
   }
 
@@ -148,8 +156,8 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(m.pushes, [{ id: 'a', kind: 'reconnecting', name: 'docs' }], 'the line while it runs, and for nothing else');
     release();
     await tick();
-    assert.deepStrictEqual(m.pushes, [{ id: 'a', kind: 'reconnecting', name: 'docs' }, { id: 'a', kind: 'reconnect-end', name: 'docs' }], 'the line ends with the reconnect');
     assert.deepStrictEqual(m.nudges, [], 'no note to the agent from a check (it never failed)');
+    assert.deepStrictEqual(m.pushes, [{ id: 'a', kind: 'reconnecting', name: 'docs' }, { id: 'a', kind: 'reconnect-end', name: 'docs' }], 'the line ends with the reconnect');
     assert.deepStrictEqual(m.logs, [], 'no activity row for a renewal without Diagnostics');
     await r.beforeSend('a');
     await tick();
@@ -207,12 +215,22 @@ async function main(): Promise<void> {
     await tick();
     assert.strictEqual(r.checkUnknown('a', 'docs'), true, 'no answer in 30 s: unknown (the row says so)');
     assert.deepStrictEqual([m.reconnects, m.pushes, m.logs, m.nudges], [[], [], [], []], 'nothing else happens');
-    m.hung.forEach((f) => f('unauthorized')); // a late answer after the verdict changes nothing
-    await tick();
-    assert.deepStrictEqual(m.reconnects, [], 'a late answer is ignored');
-    m.hang.clear();
+    m.t.now += 4 * 60_000;
     await r.beforeSend('a');
     await tick();
+    assert.strictEqual(m.checks.length, 1, 'unknown: not asked again within 5 minutes');
+    m.t.now += 10 * 60_000;
+    for (let k = 0; k < 4; k++) { await r.beforeSend('a'); await tick(); }
+    assert.strictEqual(m.checks.length, 1, 'a hung request is never stacked: no second request while the first is outstanding, however many messages');
+    m.hung.forEach((f) => f('unauthorized')); // it finally settles, late: nothing happens
+    await tick();
+    assert.deepStrictEqual(m.reconnects, [], 'a late answer is ignored');
+    m.hung.length = 0;
+    m.hang.clear();
+    m.t.now += 6 * 60_000;
+    await r.beforeSend('a');
+    await tick();
+    assert.strictEqual(m.checks.length, 2, 'once it settled (and 5 minutes passed) the server is checked again');
     assert.strictEqual(r.checkUnknown('a', 'docs'), false, 'a later successful check clears it');
     const m2 = make();
     const r2 = new McpSignInRefresher(m2.d);
@@ -226,6 +244,82 @@ async function main(): Promise<void> {
     assert.strictEqual(r2.checkUnknown('a', 'docs'), false, 'a successful call clears it too');
     r2.dropChat('a');
     assert.strictEqual(r2.checkUnknown('a', 'docs'), false);
+  }
+
+  // ---- review of PR 1210: an old unauthorized answer never restarts a server a second time ----
+  {
+    const key = srv('docs', 'connected').key;
+    const hungOne = (): ReturnType<typeof make> => { const q = make(); q.chats.set('a', chat([srv('docs', 'connected')])); q.hang.add('docs'); return q; };
+    // the same send's gap reconnect (FR-205) started after the check began
+    let q = hungOne();
+    let r = new McpSignInRefresher(q.d);
+    await r.beforeSend('a');
+    await tick();
+    r.run('a', { reconnect: [{ name: 'docs', key }], join: [], signInOnly: [] });
+    await tick();
+    q.hung.forEach((f) => f('unauthorized'));
+    await tick();
+    assert.deepStrictEqual(q.reconnects, ['a:docs'], 'check + gap reconnect at one send: the server is restarted once');
+    // the person's own Restart / Sign in (clearPending) after the check began
+    q = hungOne();
+    r = new McpSignInRefresher(q.d);
+    await r.beforeSend('a');
+    await tick();
+    r.clearPending('a', 'docs');
+    q.hung.forEach((f) => f('unauthorized'));
+    await tick();
+    assert.deepStrictEqual([q.reconnects, q.pushes], [[], []], 'the person acted on the server while the check ran: its answer is old, no restart');
+    // a global switch change
+    q = hungOne();
+    r = new McpSignInRefresher(q.d);
+    await r.beforeSend('a');
+    await tick();
+    r.clearPending(undefined, 'docs');
+    q.hung.forEach((f) => f('unauthorized'));
+    await tick();
+    assert.deepStrictEqual(q.reconnects, [], 'a global switch change also makes it old');
+    // the same answer with nothing in between does restart (the stamp is not a blanket skip)
+    q = hungOne();
+    r = new McpSignInRefresher(q.d);
+    await r.beforeSend('a');
+    await tick();
+    q.hung.forEach((f) => f('unauthorized'));
+    await tick();
+    assert.deepStrictEqual(q.reconnects, ['a:docs'], 'with nothing in between the unauthorized answer reconnects');
+    // a reconnect that is running or queued for the key makes the server busy: no check at all
+    q = make();
+    q.chats.set('a', chat([srv('docs', 'connected')]));
+    r = new McpSignInRefresher(q.d);
+    let free!: () => void;
+    q.reconnectHold.v = new Promise<void>((res) => { free = res; });
+    r.run('a', { reconnect: [{ name: 'docs', key }], join: [], signInOnly: [] });
+    void r.beforeSend('a'); // waits (FR-208) for that reconnect: not awaited here
+    await tick();
+    assert.deepStrictEqual(q.checks, [], 'a running reconnect of the key: the server is not checked');
+    free();
+    await tick();
+  }
+
+  // ---- review of PR 1210: a check that ends after its chat ended or the switch went off leaves no state ----
+  {
+    for (const [label, undo] of [['chat ended', (q: ReturnType<typeof make>) => q.chats.delete('a')], ['switch off', (q: ReturnType<typeof make>) => { q.on.v = false; }]] as [string, (q: ReturnType<typeof make>) => unknown][]) {
+      const q = make();
+      q.chats.set('a', chat([srv('docs', 'connected')]));
+      q.hang.add('docs');
+      const r = new McpSignInRefresher(q.d);
+      await r.beforeSend('a');
+      await tick();
+      undo(q);
+      q.timers.find((x) => x.ms === 30_000)!.fn();
+      await tick();
+      assert.strictEqual(r.checkUnknown('a', 'docs'), false, `${label}: the late verdict leaves no "unknown" behind`);
+    }
+  }
+
+  // ---- review of PR 1210: the check's own narrow signal ----
+  {
+    for (const t of ['Request session.mcp.listTools failed with message: MCP OAuth challenge required (HTTP 401)', 'HTTP 401', 'HTTP/1.1 401 Unauthorized', '401 Unauthorized', 'invalid_grant: refresh token revoked', 'AADSTS70043: The refresh token has expired', 'AADSTS50173 grant expired']) assert.strictEqual(isCheckUnauthorized(t), true, `a sign-in: ${t}`);
+    for (const t of ['unauthorized_client: the client is not authorized to use this grant type', 'invalid cursor: page token expired', 'MCP error -32602: Tool listing unauthorized for this plan tier', 'error 401: license seat not assigned', 'Session token is invalid for workspace (the user left the workspace)', 'token expired', 'Unauthorized', 'AADSTS53003 blocked by Conditional Access HTTP 401', 'AADSTS50105 user not assigned', '', undefined, 401]) assert.strictEqual(isCheckUnauthorized(t), false, `not a sign-in: ${String(t)}`);
   }
 
   // ---- the new chat's first report ----

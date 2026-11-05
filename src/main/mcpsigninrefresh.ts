@@ -239,7 +239,7 @@ export interface CheckPlanInput {
   servers: readonly SignInServerView[];
   records: Readonly<Record<string, SignInRecordView>>;
   /** Server name -> monotonic time of its last successful call or check in this chat. */
-  healthyAt: Readonly<Record<string, number>>;
+  checkedAt: Readonly<Record<string, number>>;
   /** Names with a renewal queued or running, or a check running, in this chat. */
   busy: readonly string[];
   freshMs: number;
@@ -264,7 +264,7 @@ export function planMcpCheck(i: CheckPlanInput): string[] {
     const rec = Object.prototype.hasOwnProperty.call(i.records, s.key) ? i.records[s.key] : undefined;
     if (rec && rec.blocked) continue;
     if (busy.has(s.name)) continue;
-    const ok = Object.prototype.hasOwnProperty.call(i.healthyAt, s.name) ? i.healthyAt[s.name] : undefined;
+    const ok = Object.prototype.hasOwnProperty.call(i.checkedAt, s.name) ? i.checkedAt[s.name] : undefined;
     if (typeof ok === 'number' && i.now - ok >= 0 && i.now - ok < i.freshMs) continue;
     out.push(s.name);
   }
@@ -407,8 +407,11 @@ export class McpSignInRefresher {
   /** FR-218: `<agent id>\0<server key>` -> monotonic time of the last automatic renewal tried from that chat (the cooldown). */
   private readonly renewAt = new Map<string, number>();
   /** FR-224: `<agent id>\0<server>` -> monotonic time of the last successful call or check. */
-  private readonly healthyAt = new Map<string, number>();
-  /** FR-223: checks that run now. */
+  private readonly checkedAt = new Map<string, number>();
+  /** FR-225: see `stamp`. */
+  private readonly gens = new Map<string, number>();
+  private gen0 = 0;
+  /** FR-223: checks whose request to the runtime is not settled yet (kept past the 30 s verdict: a hung server never gets a second request on top of the first). */
   private readonly checking = new Set<string>();
   /** FR-225: servers whose last check got no answer in time (the dialog row says so) until a call or check succeeds. */
   private readonly unknown = new Set<string>();
@@ -495,13 +498,28 @@ export class McpSignInRefresher {
     }
   }
 
+  /** A successful call or check: it also ends an "unknown". */
   private markHealthy(tag: string): void {
     this.unknown.delete(tag);
+    this.markChecked(tag);
+  }
+
+  /** FR-224 (review of PR 1210): every check outcome, not only success, keeps that server out of the next checks for 5 minutes (no re-check on every send). */
+  private markChecked(tag: string): void {
     try {
-      if (this.healthyAt.size < 5000) this.healthyAt.set(tag, this.d.now());
+      if (this.checkedAt.size < 5000) this.checkedAt.set(tag, this.d.now());
     } catch {
       /* no clock: nothing is skipped */
     }
+  }
+
+  /** FR-225 (review of PR 1210): moves whenever a reconnect or a sign-in of this server starts or the person acts on it; a check that began before it discards an unauthorized answer. */
+  private stamp(tag: string): string {
+    return `${this.gen0}:${this.gens.get(tag) ?? 0}`;
+  }
+
+  private bump(tag: string): void {
+    if (this.gens.size < 5000 || this.gens.has(tag)) this.gens.set(tag, (this.gens.get(tag) ?? 0) + 1);
   }
 
   /** FR-225: the last check of this server got no answer in time (the row says *Did not answer a check*). */
@@ -534,7 +552,7 @@ export class McpSignInRefresher {
         ...(v.renews === false ? { renews: false } : {}),
         servers: [],
         records: {},
-        healthyAt: {},
+        checkedAt: {},
         busy: [],
         freshMs: this.d.checkFreshMs ?? MCP_CHECK_FRESH_MS,
       };
@@ -552,11 +570,11 @@ export class McpSignInRefresher {
         const r = this.records.get(x.key);
         if (r) records[x.key] = r;
         const tag = `${agentId}\0${x.name}`;
-        const h = this.healthyAt.get(tag);
+        const h = this.checkedAt.get(tag);
         if (h !== undefined) healthy[x.name] = h;
-        if (this.checking.has(tag) || this.renewing.has(tag) || this.pending.get(agentId)?.has(x.name)) busy.push(x.name);
+        if (this.checking.has(tag) || this.renewing.has(tag) || this.pending.get(agentId)?.has(x.name) || this.flights.has(x.key) || this.keyLock.has(x.key)) busy.push(x.name);
       }
-      for (const name of planMcpCheck({ ...input, servers, records, healthyAt: healthy, busy })) void this.checkOne(agentId, name, d);
+      for (const name of planMcpCheck({ ...input, servers, records, checkedAt: healthy, busy })) void this.checkOne(agentId, name, d);
     } catch {
       /* a check never reaches the send */
     }
@@ -566,6 +584,7 @@ export class McpSignInRefresher {
     const tag = `${agentId}\0${name}`;
     if (this.checking.size >= 500) return;
     this.checking.add(tag);
+    const stamp = this.stamp(tag);
     const t = this.timers();
     let timer: unknown;
     let out: McpCheckOutcome | 'unknown';
@@ -576,14 +595,15 @@ export class McpSignInRefresher {
         try {
           p = check(agentId, name);
         } catch {
+          this.checking.delete(tag);
           resolve('error');
           return;
         }
-        p.then((r) => resolve(r === 'ok' || r === 'unauthorized' ? r : 'error'), () => resolve('error'));
+        // the request stays outstanding until it really settles, even after the 30 s verdict
+        p.then((r) => { this.checking.delete(tag); resolve(r === 'ok' || r === 'unauthorized' ? r : 'error'); }, () => { this.checking.delete(tag); resolve('error'); });
       });
     } finally {
       t.clear(timer);
-      this.checking.delete(tag);
     }
     let alive = false;
     let on = false;
@@ -598,10 +618,15 @@ export class McpSignInRefresher {
       this.markHealthy(tag);
       this.nudged.delete(tag); // as a successful call: the next failure is a new episode
     } else if (out === 'unknown') {
+      this.markChecked(tag);
       if (this.unknown.size < 500) this.unknown.add(tag);
+    } else if (out === 'error') {
+      this.markChecked(tag);
     } else if (out === 'unauthorized') {
       this.unknown.delete(tag);
-      this.healthyAt.delete(tag);
+      this.markChecked(tag);
+      // a reconnect or sign-in of this server started after this check began (a gap reconnect at the same send, the person's Restart or Sign in): its answer is old
+      if (this.stamp(tag) !== stamp) return;
       this.checkOnly.add(tag);
       this.noteFailure(agentId, name, true);
       if (!this.renewing.has(tag) && !this.pending.get(agentId)?.has(name)) this.checkOnly.delete(tag); // nothing started (cooldown, blocked): no mark stays
@@ -634,9 +659,11 @@ export class McpSignInRefresher {
       if (r && !r.started) r.cancelled = true; // queued, not yet running: it never starts
     };
     if (agentId !== undefined) {
+      this.bump(`${agentId}\0${name}`);
       cancel(agentId);
       return this.dropMark(agentId, name);
     }
+    this.gen0++; // a global switch: every chat's checks of this name are old
     for (const id of [...new Set([...this.pending.keys(), ...[...this.renewing.keys()].map((k) => k.split('\0')[0])])]) {
       cancel(id);
       this.dropMark(id, name); // a global switch: every chat
@@ -657,7 +684,7 @@ export class McpSignInRefresher {
     this.startChecked.delete(agentId);
     const p = `${agentId}\0`;
     for (const k of [...this.unknown, ...this.checkOnly, ...this.checking]) if (k.startsWith(p)) { this.unknown.delete(k); this.checkOnly.delete(k); this.checking.delete(k); }
-    for (const m of [this.renewedWall, this.renewAt, this.calls, this.failStops, this.healthyAt] as Map<string, unknown>[]) for (const k of [...m.keys()]) if (k.startsWith(p)) m.delete(k);
+    for (const m of [this.renewedWall, this.renewAt, this.calls, this.failStops, this.checkedAt, this.gens] as Map<string, unknown>[]) for (const k of [...m.keys()]) if (k.startsWith(p)) m.delete(k);
     for (const k of [...this.nudged]) if (k.startsWith(p)) this.nudged.delete(k);
   }
 
@@ -990,6 +1017,7 @@ export class McpSignInRefresher {
       if (running) return running;
     }
     const tag = `${agentId}\0${name}`;
+    this.bump(tag); // FR-225: a check that began before this reconnect discards an unauthorized answer
     const ctl = { started: false, cancelled: false, done: Promise.resolve() as Promise<unknown> };
     if (kind === 'renew') {
       this.renewAt.set(`${agentId}\0${key}`, this.d.now()); // at once: a trigger of the same episode that comes next is inside the cooldown

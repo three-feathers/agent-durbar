@@ -578,13 +578,21 @@ sign-in by `rpc.mcp.oauth.login` and a plain HTTP client). Scratch script, not i
   and the send does not await it; a throwing check or a missing dependency changes nothing. Not checked: local, built-in, static-header,
   switched-off or disabled servers, a sign-in open or starting, the person's own Restart running, a `policy` server, a blocked server (FR-210),
   a server still in the queue or running a renewal, one already being checked, and chats under the sandbox rule (`renews` false: a reconnect could not renew there).
-- **FR-224** **Skip what was healthy a moment ago.** A server with a **successful tool call or successful check in this chat within the last 5
-  minutes** (`MCP_CHECK_FRESH_MS`, monotonic clock, per chat and server) is not checked. A failed or unanswered check does not count as healthy.
-- **FR-225** **Unauthorized: reconnect at once, otherwise nothing.** A check that fails with the `auth` class (`classifyMcpCall`: the 401 text) marks
+- **FR-224** **Skip what was checked a moment ago.** A server with a **successful tool call, or any check outcome (ok, plain error, unknown,
+  unauthorized), in this chat within the last 5 minutes** (`MCP_CHECK_FRESH_MS`, monotonic clock, per chat and server) is not checked (review of
+  PR 1210: a plain error was re-checked at every send). A server whose request is **still outstanding** after the 30 s verdict (a hung server)
+  is not asked again until that request settles (the runtime request is not cancelled; 16 pending requests were seen after 10 minutes without
+  this), and a server with a running or queued reconnect for its key is not checked.
+- **FR-225** **Unauthorized: reconnect at once, otherwise nothing.** A check that fails with a **narrow sign-in signal** (`isCheckUnauthorized`: an HTTP
+  401 form, "MCP OAuth challenge required", `invalid_grant`, or an Entra sign-in code that signing in again fixes; never a bare "unauthorized" or
+  "token expired", and never a policy text; review of PR 1210: `classifyMcpCall` is wide and read "unauthorized_client", "page token expired" and
+  "license seat" as sign-ins) marks
   the server exactly as a failed call does (FR-218's `noteFailure`): one reconnect through the same planner and per-server queue (FR-219), the wait for
   another call to the same server in that session, the 5-minute cooldown, the sign-in block and the **Sign in again** state after a repeat. Where the
   check's own renewal read `connected` and the next check still fails, Durbar stops as FR-218 does (no second reconnect until a call or check
-  succeeded). A healthy server is **never** restarted. Any other failure (a `policy` text, a server error, a server that is not connected) does nothing.
+  succeeded). A server that answers is **not restarted by the check**. **An unauthorized answer is old** and discarded when a reconnect of that server (a gap
+  reconnect at the same send, a renewal, the person's Restart or Sign in, a switch change) started after the check began (a generation stamp per chat
+  and server). Any other failure (a `policy` text, a server error, a server that is not connected) does nothing.
   **No note to the agent from this path** (the agent never failed); when the agent's own call fails while the check's reconnect runs, FR-218's note
   still goes after it (the call's failure takes the reconnect over). A server not answering within **30 s** (`MCP_CHECK_TIMEOUT_MS`, injected
   timers) counts as **unknown**: nothing else happens, the message went long ago, and the server's dialog row says *Did not answer a check*

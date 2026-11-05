@@ -15,7 +15,7 @@ import { mcpSecretValues } from './mcpmask';
 import { claudeOffKey, mergeSessionServers, offOf } from './mcpglobal';
 import { agentMcpReply, mcpRefreshOp, mcpRestartOp } from './mcpsession';
 import { McpCallTracker } from './mcpcall';
-import { classifyMcpCall } from '../shared/mcpcall';
+import { classifyMcpCall, isCheckUnauthorized } from '../shared/mcpcall';
 import { McpSignInRefresher, signInKey } from './mcpsigninrefresh';
 import type { SignInRefreshPush, SignInTimers } from './mcpsigninrefresh';
 import type { McpRestartResult } from '../shared/api';
@@ -218,7 +218,7 @@ export function registerMcpIpc(deps: {
         await ad.listMcpTools(agentId, name);
         return 'ok';
       } catch (err) {
-        return classifyMcpCall(err instanceof Error ? err.message : String(err)) === 'auth' ? 'unauthorized' : 'error';
+        return isCheckUnauthorized(err instanceof Error ? err.message : String(err)) ? 'unauthorized' : 'error'; // the narrow signal, not the wide word (FR-225)
       }
     },
     view: (agentId) => {
