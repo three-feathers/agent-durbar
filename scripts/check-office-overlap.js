@@ -557,7 +557,7 @@ async function driver(ctx) {
          hook on the classes, as a status change sets them), and the pixels inside those rects are compared. */
       {
         const TEXT_RECTS = `[...document.querySelectorAll('#stage :is(.ro-plate,.ro-sign,.ro-lplate,.ro-chip,.ro-newtag.on,.ro-stext)')].filter(e=>e.getClientRects().length).map(e=>{const r=e.getBoundingClientRect();return {k:e.className.split(' ')[0]+' '+(e.dataset.id||e.dataset.for||e.dataset.place||e.dataset.folder||''),x:r.left,y:r.top,w:r.width,h:r.height}})`;
-        const force = (on) => ctx.js(`(()=>{document.querySelectorAll('#stage :is(.ro-bar,.ro-pool,.ro-tint):not(.none)').forEach(e=>{e.classList.toggle('on',${on});if(${on})e.classList.add('bar-amber');});
+        const force = (on) => ctx.js(`(()=>{document.querySelectorAll('#stage :is(.ro-bar,.ro-pool,.ro-tint):not(.none)').forEach(e=>{e.classList.toggle('on',${jsLiteral(on)});if(${jsLiteral(on)})e.classList.add('bar-amber');});
           return new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r(true))));})()`);
         await ctx.js(`[...document.querySelectorAll('#stage .ro-newtag')].slice(0,3).forEach(t=>t.classList.add('on'))`); /* tags shown in both captures, so they are compared too */
         await ctx.js(`(()=>{const s=document.createElement('style');s.id='ops-bars-still';s.textContent='#stage .ro-bar::after,#stage :is(.ro-pool,.ro-tint){transition:none!important}';document.head.appendChild(s);return true})()`);

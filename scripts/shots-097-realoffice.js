@@ -469,12 +469,15 @@ module.exports = async (ctx) => {
   console.log('[097] ambient: 15 agents', amb15, '8 agents', amb);
   // ---- FR-236..FR-238 (2026-11-04 attention lights, T187): the monitor light bar by state, the New reply tag, made once and switched by class ----
   {
-    const BAR = (k) => `(()=>{const q=s=>document.querySelector('#stage '+s+'[data-for="'+CSS.escape(${jsLiteral(k)})+'"]');const b=q('.ro-bar'),p=q('.ro-pool'),t=q('.ro-newtag'),pl=document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(${jsLiteral(k)})+'"]');
-      return {bar:b?b.dataset.bar:'',on:!!b&&b.classList.contains('on'),pool:!!p&&p.classList.contains('on'),tag:!!t&&t.classList.contains('on')&&t.getClientRects().length>0,label:pl?pl.getAttribute('aria-label')||'':''};})()`;
+    /* one page function reads a desk's bar, pool, tag and plate name; each call passes only the desk id (jsLiteral) */
+    const installBar = () => js(`window.__roBar=k=>{const q=s=>document.querySelector('#stage '+s+'[data-for="'+CSS.escape(k)+'"]');const b=q('.ro-bar'),p=q('.ro-pool'),t=q('.ro-newtag'),pl=document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(k)+'"]');
+      return {bar:b?b.dataset.bar:'',on:!!b&&b.classList.contains('on'),pool:!!p&&p.classList.contains('on'),tag:!!t&&t.classList.contains('on')&&t.getClientRects().length>0,label:pl?pl.getAttribute('aria-label')||'':''};};true`);
+    const BAR = (k) => `window.__roBar(${jsLiteral(k)})`;
     const PARTS = `document.querySelectorAll('#stage :is(.ro-bar,.ro-pool,.ro-tint,.ro-clamp,.ro-newtag)').length`;
     const emitTo = (id, e) => js(`window.__durbarSimEmit(Object.assign({timestamp:Date.now(),sessionId:${jsLiteral(id)}},${jsLiteral(e)}))`);
     /* amber at the Boss: a waiting agent away at the Boss leaves its desk lit amber, and its plate says Waiting in words (acceptance 3) */
     await loadReal(1440, 900);
+    await installBar();
     const boss = await js(`(()=>{const p=[...document.querySelectorAll('#stage .ro-plate[data-state="waiting"]')].find(p=>(p.getAttribute('aria-label')||'').includes(', at Boss.'));return p?p.dataset.id:'';})()`);
     assert.ok(boss, 'the simulator has an agent waiting at the Boss: ' + JSON.stringify(await js(`[...document.querySelectorAll('#stage .ro-plate')].map(p=>p.dataset.state+' | '+p.getAttribute('aria-label'))`)));
     const b0 = await js(BAR(boss));
@@ -482,6 +485,7 @@ module.exports = async (ctx) => {
     assert.match(b0.label, /Waiting/, 'its plate says Waiting in words (FR-046)');
     /* the rest at 8 agents (bigger desks): red on an error, orange on a limit, green with the tag on an unread reply; then read: off, no tag */
     await loadReal(1440, 900, { sim: '8' });
+    await installBar();
     const parts0 = await js(PARTS), ids = await js(`[...document.querySelectorAll('#stage .ro-plate')].map(p=>p.dataset.id)`);
     assert.ok(parts0 >= ids.length * 5, `FR-244: bar, pool, bezel, clamp and tag exist on every desk (${parts0} for ${ids.length} desks)`);
     await js(`(()=>{const L=document.querySelector('#stage .ro-lights'),C=document.querySelector('#stage .ro-chrome');window.__barNodes=0;const f=ms=>{for(const m of ms)for(const n of [...m.addedNodes,...m.removedNodes])if(n.nodeType===1&&n.matches('.ro-bar,.ro-pool,.ro-tint,.ro-clamp,.ro-newtag'))window.__barNodes++;};window.__barObs=new MutationObserver(f);window.__barObs.observe(L,{childList:true});window.__barObs.observe(C,{childList:true});})()`);
@@ -508,7 +512,8 @@ module.exports = async (ctx) => {
     await js(`window.__durbarSimUi.crew.openPanel(${jsLiteral(eG)})`);
     await must(`document.body.classList.contains('panel-open')&&(document.getElementById('panelTitle')||{}).textContent===${jsLiteral(gName)}`, 'the chat of the unread agent');
     await js(`document.getElementById('backBtn').click()`);
-    await must(`!document.body.classList.contains('panel-open')&&(${BAR(eG)}).bar==='off'&&!(${BAR(eG)}).tag`, 'FR-237, FR-238: read, the bar is off and the tag is gone');
+    await must(`!document.body.classList.contains('panel-open')`, 'back to the office');
+    await must(`(${BAR(eG)}).bar==='off'&&!(${BAR(eG)}).tag`, 'FR-237, FR-238: read, the bar is off and the tag is gone');
     assert.ok(!/new reply/.test((await js(BAR(eG))).label), 'read: the plate\'s name no longer says new reply');
     assert.strictEqual(await js(`(window.__barObs.disconnect(),window.__barNodes)`), 0, 'FR-244: lighting and clearing bars added or removed no bar, pool, bezel, clamp or tag');
     assert.strictEqual(await js(PARTS), parts0, 'FR-244: the same number of light parts after the changes');
