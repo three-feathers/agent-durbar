@@ -1117,3 +1117,12 @@ Optional member behind `capabilities.accountQuota`: Copilot `account.getQuota`, 
 ## Changes 2026-11-04: Codex RPC stop test waits on conditions (issue #1136)
 
 `scripts/test-codex-rpc.ts` slept a fixed 60 ms before asserting the SIGTERM/SIGKILL escalation (FR-079) and failed on a loaded macOS CI runner (`['SIGTERM']` instead of `['SIGTERM','SIGKILL']`, run 41784180794 on PR #972). Test-only, no product change (FR-048b). The positive cases now poll with an `until` (5 s limit) for the signals; the two negatives ("no kill when the child exited in time", "no SIGKILL after the child exited") wait for a positive signal first where one exists (SIGTERM seen), then pass several times the grace before asserting absence. `test:` `scripts/test-codex-rpc.ts`.
+
+## Changes 2026-11-05: a Cookie header with one opaque token is hidden (issue #1159)
+
+*Found:* `redact` hid `Cookie: name=value` pairs, but `Cookie: <one long token>` (no `=`) showed whole. FR-080 (c) did not say what a header value without `=` does; it names headers as secrets, so a session credential in a `Cookie` or `Set-Cookie` line is hidden whole. The rule is not entropy-based, because a session id is often plain letters and digits.
+
+- **FR-168** `[IMPLEMENTED]` `test:` `scripts/test-redact-shapes.ts` **A `Cookie` or `Set-Cookie` header value with no `=` is hidden whole when it is one token of at least 8 characters** (`bareTokenEnd` in `src/shared/redact.ts`, used by the cookie scan, and the `"Cookie": "token"` JSON form). The token ends at the line's end, a quote, a backslash or a `;` (`Set-Cookie: <token>; Path=/; HttpOnly` keeps its attributes); a bare token after `name=value;` pairs is hidden with them. Header name in any case, CRLF, a curl `-H '...'` argument, a JSON string and an escaped JSON string all work. Nothing the old rules hid is unhidden: a token that does not qualify gives back the end the pairs had.
+  - Prose stays: `cookie: my session bug`, `cookie: stores`, `the cookie: banner dismissed yesterday` (words, or under 8 characters, or more words after the token).
+  - `[KNOWN GAP]` One word of 8 or more characters alone on a `cookie:` line is hidden even when harmless (`cookie: preferences are saved here` stays, `cookie: preferences` does not): over-masking is accepted (secret-coverage.md).
+  - Mutants: the bare-token call removed (the opaque-token assert fails); the header name made case-sensitive (the existing lower-case `set-cookie` assert fails first, so the new lower-case case is not what catches it).

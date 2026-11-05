@@ -249,6 +249,16 @@ function closerAt(v: string): number {
   }
   return -1;
 }
+/** A header value with no `=`: one opaque token (a session id, a signed blob). It is masked whole when it is at least 8 characters and ends the value: the line, a quote or backslash, or a `;` (a `Set-Cookie` attribute follows). `prev` is where the pairs before it ended (-1 for none); a token that is not one gives `prev` back, so nothing already masked is unmasked. `cookie: my session bug` (words) and `cookie: x|curl=1` stay. */
+function bareTokenEnd(s: string, at: number, prev: number): number {
+  let i = at;
+  while (i < s.length && !/[\s=;,"'\\|&`$()]/.test(s[i])) i++;
+  if (i - at < 8) return prev;
+  let j = i;
+  while (s[j] === ' ' || s[j] === '\t') j++;
+  if (s[i] === ';' || s[j] === undefined || s[j] === '\r' || s[j] === '\n' || s[j] === '"' || s[j] === "'" || s[j] === '\\') return i;
+  return prev;
+}
 /** A cookie header: `name=value` pairs split by `;`. Returns where the pairs end, or -1 when this is prose. A hand-written scan, one pass, no regex to go wrong: it stops at a quote, a backslash or the
  *  line's end. A pair followed by more text counts when its value is long enough to be one (`sid=abcdef12 && curl x`); `cookie: a=b is the format` is prose, and a short later pair ends it there, so an `Expires=Wed, 21 Oct` stays. */
 function cookieEnd(s: string, from: number, newlineFrom: (i: number) => number): number {
@@ -258,7 +268,7 @@ function cookieEnd(s: string, from: number, newlineFrom: (i: number) => number):
   for (;;) {
     const nameAt = i;
     while (i < s.length && i - nameAt < 128 && !/[\s=;,"'\\|&`$(]/.test(s[i])) i++;
-    if (i === nameAt || s[i] !== '=') return end;
+    if (i === nameAt || s[i] !== '=') return bareTokenEnd(s, nameAt, end);
     const valueAt = ++i;
     if (s[i] === '"') { const q = s.indexOf('"', i + 1); const nl = newlineFrom(i); i = q < 0 || (nl >= 0 && nl < q) ? (nl < 0 ? s.length : nl) : q + 1; } else while (i < s.length && !/[\s;"'\\|&`]/.test(s[i]) && !(s[i] === '$' && (s[i + 1] === '(' || s[i + 1] === '{'))) i++;
     if (ends(s[i]) || s[i] === '|' || s[i] === '&' || s[i] === '`' || s[i] === '$') return i; // the shell after it stays visible (STOP's rule; a diff reaches the approval card through `redact`)
@@ -306,7 +316,7 @@ const HELD_PATTERNS: RegExp[] = [
 /** Rules added by T137, after `HELD_SHAPES`. */
 const PATTERNS: RegExp[] = [
   KEY_BLOCK,
-  shape(String.raw`((?:set-)?cookie\\{0,2}["']\s{0,8}:\s{0,8}\\{0,2}")(?=[^\s=;,"'\\]{1,128}=)(?:[^"\\\r\n]|\\(?!"))*`, 'gi'), // `"Cookie": "sid=…"`, in JSON: to the closing quote. The header form: `maskCookies`.
+  shape(String.raw`((?:set-)?cookie\\{0,2}["']\s{0,8}:\s{0,8}\\{0,2}")(?=[^\s=;,"'\\]{1,128}=|[^\s=;,"'\\|&\x60$()]{8,}(?:"|\\))(?:[^"\\\r\n]|\\(?!"))*`, 'gi'), // `"Cookie": "sid=…"` or one opaque token, in JSON: to the closing quote. The header form: `maskCookies`.
   // a `.netrc` entry: the word `password`, a space, the value
   new RegExp(String.raw`(\bmachine\s{1,8}\S{1,253}\s{1,8}(?:login\s{1,8}\S{1,128}\s{1,8})?password\s{1,8})${CMD_VALUE}`, 'g'),
   // `curl -u user:pass` (only after `curl`: `git push -u origin:main` is not this); the user stays, a bare `-u user` has no secret to hide
