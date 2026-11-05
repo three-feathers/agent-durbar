@@ -260,6 +260,9 @@ function bareEnd(s: string, at: number, ctx: BareCtx): number {
   if (i - at < 8 || (i - at <= 9 && BARE_PLAIN.test(s.slice(at, i)))) return -1;
   return ctx.endOk(i) ? i : -1;
 }
+/** Characters the bare-token scans looked at, for the growth test (`scripts/test-redact-growth.ts`): a count, not a clock, so a stall fails on any machine. Read and reset by `bareStepsForTest`; one addition per scan, no cost worth naming. */
+let bareSteps = 0;
+export function bareStepsForTest(): number { const n = bareSteps; bareSteps = 0; return n; }
 const ENV_MASK = /\[redacted:[A-Za-z0-9_.-]{1,64}\]/y;
 /** A cookie header: `name=value` pairs split by `;`. Returns where the pairs end, or -1 when this is prose. A hand-written scan, one pass, no regex to go wrong: it stops at a quote, a backslash or the
  *  line's end. A pair followed by more text counts when its value is long enough to be one (`sid=abcdef12 && curl x`); `cookie: a=b is the format` is prose, and a short later pair ends it there, so an `Expires=Wed, 21 Oct` stays. */
@@ -311,15 +314,17 @@ function maskCookies(s: string, mask: string): string {
   let runS = -1;
   let runE = -2;
   const plainEnd = (i: number): number => {
-    if (i >= runS && i <= runE) return runE;
+    if (i >= runS && i <= runE) { bareSteps++; return runE; }
     let k = i;
     while (k < s.length && !/[\s=;"'\\|&`)\]}>]/.test(s[k]) && !(s[k] === '$' && (s[k + 1] === '(' || s[k + 1] === '{'))) k++;
+    bareSteps += k - i + 1;
     runS = i; runE = k;
     return k;
   };
   const nextHead = (i: number): number => { // the heads are met in order, so the sum of these searches is one pass
     COOKIE_HEAD_NEXT.lastIndex = i;
     const h = COOKIE_HEAD_NEXT.exec(s);
+    bareSteps += (h ? h.index : s.length) - i + 1;
     return h ? h.index : -1;
   };
   const ctx: BareCtx = {
@@ -327,6 +332,7 @@ function maskCookies(s: string, mask: string): string {
     endOk: (i) => {
       let j = i;
       while (s[j] === ' ' || s[j] === '\t') j++;
+      bareSteps += j - i + 1;
       const c = s[j];
       return c === undefined || /[\r\n"'\\;|&`)\]}>]/.test(c) || (c === '$' && (s[j + 1] === '(' || s[j + 1] === '{'));
     },

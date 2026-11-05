@@ -4,7 +4,7 @@
  * `node dist-scripts/scripts/test-redact-growth.js <part>`.
  */
 import * as assert from 'assert';
-import { REDACT_MAX_CHARS, _uncappedForTest, redact } from '../src/shared/redact';
+import { REDACT_MAX_CHARS, _uncappedForTest, bareStepsForTest, redact } from '../src/shared/redact';
 import { spawnSync } from 'child_process';
 import { assertLinearGrowth, assertLinearShape, assertWithinYardstick, cpuMs, worstGrowth, workerRun } from './redact-growth-lib';
 
@@ -260,27 +260,34 @@ if (part === 'shapes' || part === 'shapes2') {
     begin: '-----BEGIN ', beginLong: '-----BEGIN ' + 'A'.repeat(90) + ' ', beginName: '-----BEGIN RSA ', endNoBegin: '-----END PRIVATE KEY-----', endAfterBegin: '-----END ',
     cookie: 'cookie: ', cookieEq: 'cookie: a=', cookieJson: '"cookie":"a=', cookieNoEq: 'cookie: ' + 'a'.repeat(120) + ' ', netrc: 'machine a ', netrcFull: 'machine a login b password ', curl: 'curl ', curlU: 'curl -u a:',  jwtOne: 'eyJabcde.', jwtTwo: 'eyJabcde.abcde.', jwtRun: 'a_' + 'eyJ', jwtRuns: ('25AA' + 'eyJ').repeat(570) + ' ', jwtRunsOne: ('25AA' + 'eyJ').repeat(570) + '.abcde ', jwtRunsTwo: ('25AA' + 'eyJ').repeat(570) + '.abcde.a ', entra: 'abc1Q', entraRun: '1Q~', prefix: 'np' + 'm_', under: '_', pct: '%25', digits: '1234567890123456', hexRun: 'abcdef0123456789', hexUs: 'abcdef0123456789abcdef0123456789-u', sg: 'SG' + '.', dots: 'aaaaaaaaaaaaaa.', atlas: 'aaaaaaaaaaaaaa.at' + 'lasv1.', a22: 'A', fbId: '1234567890123456|', authress: 'sc' + '_abcde.abcd.acc_', teams: '.webhook.office.com/webhookb2/', query: '?sig=', jwt25: '25AAeyJ', jwt25Body: '25AAeyJabcdefgh', r25: '25', jwtDash: '-eyJ', jwtPct: '%41eyJ', b64Eaaa: 'EAAA-', b64Pct: '%41AAAAAAAAAAAAAAAAAAAAAAAB' + 'a'.repeat(90) + '+', b64Line: 'EAAA' + 'a'.repeat(70) + '\n', b64Wrap: 'a'.repeat(76) + '\n', cookieQuote: 'cookie: a="x" ', cookieQuoteLine: 'cookie: a="x\n', cookiePairs: 'cookie: a=1;', machineRun: 'machine h password x;', curlParen: 'curl -u a:b(', cookieWord: 'cookie: a=1 x ', closers: 'token=abc12345) ', cookieHead: 'cookie:', namedDotted: 'token=a.b.', namedWords: 'token=ab-c-',  b64EaaaEnd: 'EAAA' + 'a'.repeat(70) + '/',  text: 'the quick brown fox: reads src/a.ts = done, foo_bar-baz. ',
   };
-  // A bare cookie token run that is not one (spec 012 FR-168, issue #1159): `cookie:` heads with nothing between them that stops a token, ending in a word. Each head once scanned the whole rest of the text (18 s at 100 KB). A child with a hard stop; it checks 16 KB and 64 KB first and names the unit that is not linear (a 4x input must not cost more than 8x), and only then runs 1 MB.
+  // A bare cookie token run that is not one (spec 012 FR-168, issue #1159): `cookie:` heads with nothing between them that stops a token, ending in a word. Each head once scanned the whole rest of the text (18 s at 100 KB). Counted, not timed: `bareStepsForTest` is how many characters the bare-token scans looked at, at most 4 per input character at 16 KB and at 1 MB, whatever the machine. Then 1 MB in a child with a hard stop as the coarse backstop.
   if (part === 'shapes2') {
+    // [unit repeated for the size (or its first half), what repeats for the other half, a last word]
+    const cases: Record<string, [string, string, string]> = { head: ['cookie:', '', ' x'], slash: ['cookie:/', '', ' x'], dot: ['cookie:.', '', ' x'], dash: ['cookie:-', '', ' x'], comma: ['cookie:,', '', ' x'], pct: ['cookie:%', '', ' x'], hash: ['cookie:#', '', ' x'], colon: ['cookie:a:', '', ' x'], spaces: ['cookie:', ' ', 'x'], tabs: ['cookie:abcdefgh', '\t', 'x'], quote: ['cookie:"', '', ' x'], pairs: ['cookie: a=1; ', '', 'x'] };
+    const mk = (unit: string, pad: string, last: string, n: number): string => (pad ? unit.repeat(Math.floor(n / 2 / unit.length)) + pad.repeat(Math.floor(n / 2)) + last : unit.repeat(Math.floor(n / unit.length)) + last);
+    for (const n of [16_000, 1_000_000]) {
+      for (const [k, [unit, pad, last]] of Object.entries(cases)) {
+        const text = mk(unit, pad, last, n);
+        bareStepsForTest();
+        redact(text, {});
+        const steps = bareStepsForTest();
+        assert.ok(steps <= 4 * text.length, `bare cookie run ${k} at ${n}: ${steps} steps for ${text.length} characters (limit 4 per character)`);
+      }
+    }
     const code = `
       const { redact } = require(${JSON.stringify(require.resolve('../src/shared/redact'))});
       const once = (f) => { const c = process.cpuUsage(); f(); const d = process.cpuUsage(c); return (d.user + d.system) / 1000; };
       const out = {};
-      // [unit repeated for the size (or its first half), what repeats for the other half, a last word]
-      const cases = { head: ['cookie:', '', ' x'], slash: ['cookie:/', '', ' x'], dot: ['cookie:.', '', ' x'], dash: ['cookie:-', '', ' x'], comma: ['cookie:,', '', ' x'], pct: ['cookie:%', '', ' x'], hash: ['cookie:#', '', ' x'], colon: ['cookie:a:', '', ' x'], spaces: ['cookie:', ' ', 'x'], tabs: ['cookie:abcdefgh', '\\t', 'x'] };
+      const cases = ${JSON.stringify(cases)};
       for (const [k, [unit, pad, last]] of Object.entries(cases)) {
-        const mk = (n) => pad ? unit.repeat(Math.floor(n / 2 / unit.length)) + pad.repeat(Math.floor(n / 2)) + last : unit.repeat(Math.floor(n / unit.length)) + last;
-        const t = (n) => { let best = Infinity; for (let i = 0; i < 3; i++) best = Math.min(best, once(() => redact(mk(n), {}))); return best; };
-        const t16 = t(16000), t64 = t(64000);
-        if (t64 > Math.max(300, 8 * Math.max(t16, 2))) { out.fail = k + ': ' + t16.toFixed(0) + ' ms CPU for 16 KB, ' + t64.toFixed(0) + ' ms for 64 KB'; break; }
-        out[k] = t(1000000);
+        const n = 1000000;
+        const text = pad ? unit.repeat(Math.floor(n / 2 / unit.length)) + pad.repeat(Math.floor(n / 2)) + last : unit.repeat(Math.floor(n / unit.length)) + last;
+        out[k] = once(() => redact(text, {}));
       }
       process.stdout.write(JSON.stringify(out));`;
     const r = spawnSync(process.execPath, ['-e', code], { encoding: 'utf8', timeout: 120_000, maxBuffer: 1 << 20 });
     assert.strictEqual(r.status, 0, `the bare-cookie child ended: ${r.signal ?? r.stderr}`);
-    const bare = JSON.parse(r.stdout) as Record<string, number | string>;
-    assert.ok(!bare.fail, `bare cookie run is not linear: ${bare.fail}`);
-    for (const [k, v] of Object.entries(bare)) assert.ok((v as number) < 3000, `bare cookie run ${k}: ${(v as number).toFixed(0)} ms CPU for 1 MB`);
+    for (const [k, v] of Object.entries(JSON.parse(r.stdout) as Record<string, number>)) assert.ok(v < 10_000, `bare cookie run ${k}: ${v.toFixed(0)} ms CPU for 1 MB`);
   }
   // two suites, each trap in one (over 30 s on Windows as one); `pct` in both, as the neighbour the JWT traps are read against
   const units = Object.fromEntries(Object.entries(allUnits).filter(([k], i) => k === 'pct' || (part === 'shapes2') === (k.startsWith('jwt') || i % 2 === 1)));
