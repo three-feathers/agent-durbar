@@ -37,6 +37,8 @@ export function barProblems(L: Layout, tally?: BarTally): string[] {
       if (d.state !== 'asleep') out.push(`bar of ${d.id} (${d.state}) hidden: only a sleeper sits in front of its monitor`);
       continue; /* nothing of it is drawn */
     }
+    if (meet(b.bezel, d.glass, 0)) out.push(`tint of ${d.id} reaches the glass (FR-243: the screen text's background)`);
+    if (b.bezel.y < m.y - 0.01 || b.bezel.x < m.x - 0.01 || b.bezel.x + b.bezel.w > m.x + m.w + 0.01) out.push(`tint of ${d.id} leaves the monitor`);
     for (const f of faces) if (meet(b.pool, f)) out.push(`pool of ${d.id} meets a face ${JSON.stringify(f)}`);
     const full = 1.25 * b.bar.w;
     if (b.pool.w < full - 0.01) {

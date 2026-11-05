@@ -105,6 +105,7 @@
 .ro-bar{border-radius:3px;background:#202024;box-shadow:inset 0 -1px 0 rgba(255,255,255,.2)}
 .ro-bar::after{content:"";position:absolute;inset:0;border-radius:inherit;opacity:0;transition:opacity .25s ease;background:linear-gradient(rgba(255,255,255,.35),rgba(var(--ro-bar,var(--ro-amber)),1) 55%);box-shadow:0 2px 6px 1px rgba(var(--ro-bar,var(--ro-amber)),.6)}
 .ro-bar.on::after{opacity:1}
+.ro-bar.edge::after{box-shadow:0 -6px 6px -1px rgba(var(--ro-bar,var(--ro-amber)),.6)} /* on the monitor's edge its bottom meets the glass: the glow goes up only, never onto the screen text's background (FR-243) */
 .ro-clamp{border-radius:2px 2px 0 0;background:#2b2b30;box-shadow:inset 0 1px 0 rgba(255,255,255,.12)}
 .ro-tint{opacity:0;transition:opacity .25s ease;background:linear-gradient(rgba(var(--ro-bar,var(--ro-amber)),.55),rgba(var(--ro-bar,var(--ro-amber)),0))}
 .ro-pool{opacity:0;transition:opacity .25s ease;background:radial-gradient(50% 100% at 50% 0,rgba(var(--ro-bar,var(--ro-amber)),.6),rgba(var(--ro-bar,var(--ro-amber)),.22) 55%,rgba(var(--ro-bar,var(--ro-amber)),0)); /* brightest at its top: the desk top in front of the monitor, which the plate does not cover */

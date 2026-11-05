@@ -457,7 +457,7 @@ export function lightBar(d: DeskBox, lay: Layout, avoid: readonly Rect[] = barAv
   }
   const hidden = faces.some((f) => roHit(bar, f));
   const clamp = onEdge ? null : { x: m.x + (m.w - CLAMP_W) / 2, y: m.y - CLAMP_H, w: CLAMP_W, h: CLAMP_H };
-  const bezel = { x, y: m.y, w, h: Math.min(BEZEL_H, m.h) };
+  const bezel = { x, y: m.y, w, h: Math.max(0, Math.min(BEZEL_H, d.glass.y - m.y)) }; /* on the bezel above the glass, never on the glass (the screen text's background, FR-243) */
   const cx = x + w / 2, top = d.desk.y + POOL_TOP * d.desk.full, h = POOL_U * lay.u;
   let pool: Rect = { x: cx - (POOL_W * w) / 2, y: top, w: POOL_W * w, h };
   if (faces.some((f) => roHit(pool, f))) pool = { ...pool, x: m.x, w: m.w };
