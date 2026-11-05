@@ -20,6 +20,11 @@ const OUT = process.env.OUT || require('os').tmpdir();
 module.exports = async (ctx) => {
   const H = helpers(ctx);
   const { js, until } = H;
+  /* The whole driver runs with Chromium's focus emulation on (spec 052 delta 2026-11-05, #1179): the return to the office after a send is decided once, at the
+     moment the app accepts the message, and is skipped when the window is in the background then; on the shared Windows desktop a neighbour can take the OS focus at
+     that moment, and no later wait can bring the return back. The hold steps below stand in for a blur with window.__durbarFocus, not with the OS, so they still test it. */
+  await H.focusPage({ emulate: 'first' });
+  try {
   const wc = ctx.win.webContents;
   const MOD = process.platform === 'darwin' ? ['meta'] : ['control'];
   const ok = async (expr, what, ms) => assert.ok(await until(expr, ms || 8000), what);
@@ -606,5 +611,6 @@ module.exports = async (ctx) => {
       await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [] });
     }
   }
+  } finally { await H.releaseFocus(); }
   console.log('[follow] all checks passed');
 };
