@@ -1,1 +1,0 @@
-- **A helper's chat in Real office no longer shows the floor picture behind its text** (spec 097, #1140): every chat, main or helper, new or resumed, has the same world look and follows the Office layout setting, also when it changes with a chat open. Checked with the simulator driver `check-097-chat-look` at both sizes.
