@@ -1293,3 +1293,7 @@ He answered "ok" to all ten, with the recommendations. These are decisions now, 
   - **Its exit, per world:** the flag opens on the owner's look and the store (T255, T257), or the world's code and pack are removed. A world that waits **over 30 days** after landing goes back to him with that choice.
   - **Not chosen, three worlds at once:** a very large PR, and art held on a branch for an unknown time, reaching users no sooner.
   This delta does not write the rule itself: that is the weekly retro's and spec 021's.
+
+## Changes 2026-11-05: Serious mode no longer stops motion (issue #1182)
+
+[spec 052](../052-usability-pass/spec.md) FR-069 (Changes 2026-11-05, issue #1182, owner decision of Vikram, 2026-11-04): Serious mode hides only the mood drawings and trouble signs and no longer stops motion; motion stops under the system's reduced motion or with Settings > **Motion** off (default on). "Forced colours, Serious mode, reduced motion" (and its scenario 6 and T170) now read: forced colours, reduced motion and Motion off; Serious mode hides only the moods.
