@@ -102,11 +102,13 @@
    Made once per desk and switched by class (.on and .bar-<colour>; .none where a sleeper sits in front of the monitor). No filter, backdrop-filter
    or blend; nothing moves but the on/off cross-fade, by opacity, instant under reduced motion (styles.css), .still and Serious mode. Forced colours
    hide the whole light layer (FR-051 above). The colours are FR-049's fixed light colours (--ro-*), never a theme's. */
-.ro-bar{border-radius:3px;background:#202024;box-shadow:inset 0 -1px 0 rgba(255,255,255,.2)}
-.ro-bar::after{content:"";position:absolute;inset:0;border-radius:inherit;opacity:0;transition:opacity .25s ease;background:linear-gradient(rgba(255,255,255,.35),rgba(var(--ro-bar,var(--ro-amber)),1) 55%);box-shadow:0 2px 6px 1px rgba(var(--ro-bar,var(--ro-amber)),.6)}
+.ro-bar{border-radius:3px;background:linear-gradient(to top,rgba(255,255,255,.2) 1px,#202024 1px)} /* off: dark, a faint line along its lower edge */
+/* lit: the fill and its glow are two static gradients on one pseudo-element (a light has no box-shadow, T151); the glow reaches 5 px around the bar */
+.ro-bar::after{content:"";position:absolute;inset:-5px -3px;opacity:0;transition:opacity .25s ease;
+  background:linear-gradient(rgba(255,255,255,.35),rgb(var(--ro-bar,var(--ro-amber))) 55%) 50% 50%/calc(100% - 6px) calc(100% - 10px) no-repeat,radial-gradient(closest-side,rgba(var(--ro-bar,var(--ro-amber)),.55),rgba(var(--ro-bar,var(--ro-amber)),0))}
 .ro-bar.on::after{opacity:1}
-.ro-bar.edge::after{box-shadow:0 -6px 6px -1px rgba(var(--ro-bar,var(--ro-amber)),.6)} /* on the monitor's edge its bottom meets the glass: the glow goes up only, never onto the screen text's background (FR-243) */
-.ro-clamp{border-radius:2px 2px 0 0;background:#2b2b30;box-shadow:inset 0 1px 0 rgba(255,255,255,.12)}
+.ro-bar.edge::after{inset:-8px -3px 0;background-position:50% 100%,0 0} /* on the monitor's edge its bottom meets the glass: the glow ends at the bar's bottom, never on the screen text's background (FR-243) */
+.ro-clamp{border-radius:2px 2px 0 0;background:linear-gradient(rgba(255,255,255,.12) 1px,#2b2b30 1px)}
 .ro-tint{opacity:0;transition:opacity .25s ease;background:linear-gradient(rgba(var(--ro-bar,var(--ro-amber)),.55),rgba(var(--ro-bar,var(--ro-amber)),0))}
 .ro-pool{opacity:0;transition:opacity .25s ease;background:radial-gradient(50% 100% at 50% 0,rgba(var(--ro-bar,var(--ro-amber)),.6),rgba(var(--ro-bar,var(--ro-amber)),.22) 55%,rgba(var(--ro-bar,var(--ro-amber)),0)); /* brightest at its top: the desk top in front of the monitor, which the plate does not cover */
   /* the monitor's glass is cut out, so the pool never paints over the screen */
