@@ -5,7 +5,7 @@
  * its budget or missing. A PR that needs more room deletes or merges text elsewhere first; raising a budget is a rule change
  * and goes through spec 021 like any other.
  *
- * FR-081 (2026-11-04): AGENTS.md is the always-loaded core with a lower cap; task rules live in `docs/rules/*.md`, each with
+ * FR-082 (2026-11-04): AGENTS.md is the always-loaded core with a lower cap; task rules live in `docs/rules/*.md`, each with
  * its own budget. Every `docs/rules/*.md` file must have a budget here, carry the rule-text header (RULE_HEADER) and be linked
  * from AGENTS.md as `](docs/rules/<name>.md)`, so no task file is orphaned or read as guidance; AGENTS.md plus `docs/rules/`
  * together stay under TOTAL_CAP.
@@ -20,7 +20,7 @@ const fs = require('fs');
 const path = require('path');
 
 // file (relative to the repository root, forward slashes) -> maximum words; set 2026-10-29 at about 10% above the slimmed files
-// docs/rules/* set 2026-11-04 (FR-081) at about 10% above the split files; AGENTS.md lowered from 3000 to the core cap
+// docs/rules/* set 2026-11-04 (FR-082) at about 10% above the split files; AGENTS.md lowered from 3000 to the core cap
 const BUDGETS = {
   'AGENTS.md': 2000,
   'docs/rules/incident-triage.md': 240,
@@ -68,7 +68,7 @@ function check(root, budgets = BUDGETS) {
   return { rows, problems };
 }
 
-// FR-081: the task files of docs/rules/ (only when the budget table has any, so fixtures without them stay simple)
+// FR-082: the task files of docs/rules/ (only when the budget table has any, so fixtures without them stay simple)
 function rulesFiles(root, budgets, rows, problems) {
   const budgeted = Object.keys(budgets).filter((f) => f.startsWith(`${RULES_DIR}/`));
   if (!budgeted.length) return;
@@ -78,7 +78,7 @@ function rulesFiles(root, budgets, rows, problems) {
   } catch {
     // each budgeted file already reports itself missing
   }
-  for (const f of present) if (!(f in budgets)) problems.push(`${f}: a rule file with no word budget: add it to BUDGETS in scripts/rules-check.js (spec 021 FR-081)`);
+  for (const f of present) if (!(f in budgets)) problems.push(`${f}: a rule file with no word budget: add it to BUDGETS in scripts/rules-check.js (spec 021 FR-082)`);
   let core = '';
   try {
     core = fs.readFileSync(path.join(root, 'AGENTS.md'), 'utf8');
@@ -92,8 +92,8 @@ function rulesFiles(root, budgets, rows, problems) {
     } catch {
       continue;
     }
-    if (!core.includes(`](${f})`)) problems.push(`${f}: not linked from AGENTS.md (a pointer line "](${f})" is required, spec 021 FR-081)`);
-    if (!text.includes(RULE_HEADER)) problems.push(`${f}: missing the rule-text header "${RULE_HEADER} ..." (spec 021 FR-081)`);
+    if (!core.includes(`](${f})`)) problems.push(`${f}: not linked from AGENTS.md (a pointer line "](${f})" is required, spec 021 FR-082)`);
+    if (!text.includes(RULE_HEADER)) problems.push(`${f}: missing the rule-text header "${RULE_HEADER} ..." (spec 021 FR-082)`);
   }
   const ruleRows = rows.filter((r) => (r.file === 'AGENTS.md' || r.file.startsWith(`${RULES_DIR}/`)) && r.words !== null);
   const extra = present.filter((f) => !(f in budgets)).map((f) => {

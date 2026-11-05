@@ -36,7 +36,7 @@ assert.deepStrictEqual(inferAreas(pr({ files: ['scripts/shots-mcp.js', 'docs/scr
 assert.deepStrictEqual(inferAreas(pr({ files: ['AGENTS.md', 'docs/collaboration.md'] }), []), ['harness']);
 assert.deepStrictEqual(inferAreas(pr({ files: ['docs/agent-apps.md'] }), []), ['harness'], 'the agent-apps notes are agent harness, not user docs');
 assert.deepStrictEqual(inferAreas(pr({ files: ['scripts/rules-check.js', 'scripts/test-rules-check.js'] }), []), ['harness']);
-assert.deepStrictEqual(inferAreas(pr({ files: ['docs/rules/merge-mechanics.md'] }), []), ['harness'], 'the docs/rules task files are agent rules (FR-081), not user docs');
+assert.deepStrictEqual(inferAreas(pr({ files: ['docs/rules/merge-mechanics.md'] }), []), ['harness'], 'the docs/rules task files are agent rules (FR-082), not user docs');
 assert.notStrictEqual(inferType(pr({ title: '021: task rules', files: ['docs/rules/docs-sync.md'] })), 'documentation', 'docs/rules is rule text, not user documentation');
 assert.notStrictEqual(inferType(pr({ title: '021: vendor notes', files: ['docs/agent-apps.md'] })), 'documentation', 'agent-apps.md is not user documentation');
 assert.deepStrictEqual(inferAreas(pr({ files: ['src/renderer/styles.css', 'README.md', 'docs/agent-notes.md', 'package.json', 'package-lock.json'] }), []), ['ui'], 'docs, harness and package.json are not areas next to code');

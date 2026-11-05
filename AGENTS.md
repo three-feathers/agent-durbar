@@ -4,7 +4,7 @@
 
 **One rule in, one rule out** (FR-063): a PR adding a rule names what it replaces, or why none; a checkable rule gets a script. `npm run rules:check` (in `npm test`) enforces word budgets.
 
-Task rules (FR-081): the files in `docs/rules/` are rule text too, not guidance; each pointer below says when to read one.
+Task rules (FR-082): the files in `docs/rules/` are rule text too, not guidance; each pointer below says when to read one.
 
 ## The rule
 
@@ -72,7 +72,7 @@ Command names: `CLAUDE.md`, `.github/copilot-instructions.md`; other tools follo
 ### Claim, label, branch
 
 - **Claim** with `scripts/claim.sh <N>` (FR-063): the first assignee owns the issue or reviews the PR; an assigned item is refused, of two racing claims the later backs off. `--release <N> [why]` gives up; a PR's author never holds the review claim. No `taking #N` or `FINAL`.
-- **Priority order** (FR-080), for picking issues, building and reviewing: (1) bugs; (2) parity in existing worlds (the Real office gaps, #1147); (3) the Retro world (spec 102); (4) all new features; (5) other worlds with parity. Security and owner-urgent items may still jump it (FR-039); *Teammates' PRs first* (FR-043) applies within a level.
+- **Priority order** (FR-081), for picking issues, building and reviewing: (1) bugs; (2) parity in existing worlds (the Real office gaps, #1147); (3) the Retro world (spec 102); (4) all new features; (5) other worlds with parity. Security and owner-urgent items may still jump it (FR-039); *Teammates' PRs first* (FR-043) applies within a level.
 - **Labels** (FR-045): one type (`bug`, `enhancement`, `task`, `documentation` = user docs, `question`; spec-only PR = `task`), at least one `area:*` from `.github/labels.tsv`, `spec:NNN` per spec. Flags only when true (`status:*`, `needs-owner-approval`, `spec-exempt`, `docs-n/a`, `accessibility`, `incident`); no other families; GitHub's defaults are for closing. `npm run labels:backfill` (dry run, add-only) fills gaps.
 - **One issue = one task** (`Tnnn` in `tasks.md`); unrelated work gets a new issue (review findings on the PR's own change are not unrelated).
 - **Branch `NNN-slug`** in its own worktree; **never check out a PR or branch in your main checkout** (FR-050). **Never push to `main`.**

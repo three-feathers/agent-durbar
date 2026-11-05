@@ -1,6 +1,6 @@
 # Review rounds and pace
 
-This file is rule text, part of [AGENTS.md](../../AGENTS.md) (FR-081): read it before you ask for review, review a PR, post checks, plan a round, sub-agents or load, or publish the daily release. It binds like AGENTS.md, unlike the guidance files (review checklist, agent-notes, agent-apps); "here" and "this file" in it mean AGENTS.md with `docs/rules/`.
+This file is rule text, part of [AGENTS.md](../../AGENTS.md) (FR-082): read it before you ask for review, review a PR, post checks, plan a round, sub-agents or load, or publish the daily release. It binds like AGENTS.md, unlike the guidance files (review checklist, agent-notes, agent-apps); "here" and "this file" in it mean AGENTS.md with `docs/rules/`.
 
 ## First time right
 

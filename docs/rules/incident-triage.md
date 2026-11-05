@@ -1,6 +1,6 @@
 # Bug and deployment incident triage
 
-This file is rule text, part of [AGENTS.md](../../AGENTS.md) (FR-081): read it before you triage a bug or a deployment incident, or classify incidents at release prep. It binds like AGENTS.md, unlike the guidance files (review checklist, agent-notes, agent-apps); "here" and "this file" in it mean AGENTS.md with `docs/rules/`.
+This file is rule text, part of [AGENTS.md](../../AGENTS.md) (FR-082): read it before you triage a bug or a deployment incident, or classify incidents at release prep. It binds like AGENTS.md, unlike the guidance files (review checklist, agent-notes, agent-apps); "here" and "this file" in it mean AGENTS.md with `docs/rules/`.
 
 (FR-051..FR-053) For learning only: never to rank people or agents.
 - Use the Bug form fields and the issue's comments; ask for a missing version, else `Unknown`. Never infer release or introducing PR from dates.

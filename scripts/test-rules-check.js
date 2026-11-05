@@ -1,7 +1,7 @@
 /*
  * Spec 021 FR-063 (`npm run test:rules`, part of `npm test`): the rule-file word budgets of scripts/rules-check.js, checked on
  * throwaway folders: within budget passes, one word over fails and names the file, a missing file fails, the CLI exits 1 on a
- * planted over-budget file. FR-081: a docs/rules file with no budget, not linked from AGENTS.md or without the rule-text header
+ * planted over-budget file. FR-082: a docs/rules file with no budget, not linked from AGENTS.md or without the rule-text header
  * fails, and AGENTS.md plus docs/rules over TOTAL_CAP fails. The real repository is checked by `node scripts/rules-check.js`, the suite's second step.
  */
 'use strict';
@@ -35,7 +35,7 @@ try {
   assert.strictEqual(rc.countWords(text(123)), 123);
 
   // the agreed table (spec 021, 2026-10-29 delta): the file set and every budget are pinned, so dropping a file or raising a
-  // budget fails here and needs a spec change; AGENTS.md is the core (FR-081, 2026-11-04) with a hard max of 2000
+  // budget fails here and needs a spec change; AGENTS.md is the core (FR-082, 2026-11-04) with a hard max of 2000
   const AGREED = {
     'AGENTS.md': 2000,
     'docs/rules/incident-triage.md': 240,
@@ -52,7 +52,7 @@ try {
   };
   assert.deepStrictEqual(Object.keys(rc.BUDGETS).sort(), Object.keys(AGREED).sort(), 'the rule-file set changed: update spec 021 first');
   for (const [f, b] of Object.entries(AGREED)) assert.strictEqual(rc.BUDGETS[f], b, `${f}: budget ${rc.BUDGETS[f]}, agreed ${b}`);
-  assert.ok(rc.BUDGETS['AGENTS.md'] <= 2000, 'AGENTS.md budget above its core hard max of 2000 words (FR-081)');
+  assert.ok(rc.BUDGETS['AGENTS.md'] <= 2000, 'AGENTS.md budget above its core hard max of 2000 words (FR-082)');
   assert.strictEqual(rc.TOTAL_CAP, 3500, 'AGENTS.md + docs/rules cap changed: update spec 021 first');
   assert.strictEqual(rc.RULES_DIR, 'docs/rules');
 
@@ -72,7 +72,7 @@ try {
     assert.strictEqual(r.problems.length, 1);
     assert.match(r.problems[0], /^docs\/b\.md: missing/);
   }
-  // FR-081 fixtures: AGENTS.md links each rules file, each rules file carries the header
+  // FR-082 fixtures: AGENTS.md links each rules file, each rules file carries the header
   const R = (n) => `docs/rules/${n}.md`;
   const core = (names, n = 20) => `${names.map((x) => `- read [x](${R(x)}).`).join('\n')}\n${text(n)}`;
   const rule = (n = 10) => `# T\n\n${rc.RULE_HEADER}: read it before a task.\n${text(n)}`;

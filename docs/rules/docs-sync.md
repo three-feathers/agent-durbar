@@ -1,6 +1,6 @@
 # Keep docs in sync
 
-This file is rule text, part of [AGENTS.md](../../AGENTS.md) (FR-081): read it before you open or update a PR. It binds like AGENTS.md, unlike the guidance files (review checklist, agent-notes, agent-apps); "here" and "this file" in it mean AGENTS.md with `docs/rules/`.
+This file is rule text, part of [AGENTS.md](../../AGENTS.md) (FR-082): read it before you open or update a PR. It binds like AGENTS.md, unlike the guidance files (review checklist, agent-notes, agent-apps); "here" and "this file" in it mean AGENTS.md with `docs/rules/`.
 
 A PR that changes behaviour, scripts, permissions, settings, MCP or tools, release status or contributors updates in the same PR:
 - **README**: status block (fold PR's), *Safety model* (**Read-only / Ask first / Allow all**), credits. Rest in `docs/`: `features.md`, `install.md`, `safety.md`, `development.md` (`npm run`), `limits.md`.
