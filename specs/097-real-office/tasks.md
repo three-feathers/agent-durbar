@@ -194,7 +194,7 @@ The dusk was dropped (owner, 2026-11-04 04:52 UTC): FR-239..FR-242 and T189 are 
 - [x] T188 [US2] Contrast: FR-050's pass measures screen text on its own (tinted) glass and the New reply tag. Test: `sim:` `OFFICE_VIEW=real node scripts/check-office-overlap.js` [FR-243]
 - T189 *Withdrawn (owner, 2026-11-04): the face dimming bound went with the dusk.*
 - [x] T190 [US2] The tint is cheap: `check-office-ops` row `tintNodesPerStatus` counts screens and tags added or removed over 8 tint changes (limit 0) [FR-244]
-- [ ] T191 [US2] Pictures at 1440x900 and 1280x800 (3, 8 and 15 agents, the arcade, two sleepers) to the owner; retake `097-real-lights-1440x900.png` on Linux (the docs set's renderer). Test: `real:` the owner's verdict [FR-236, FR-238]
+- [x] T191 [US2] Pictures at 1440x900 and 1280x800 (3, 8 and 15 agents, the arcade, two sleepers) to the owner; `097-real-lights-1440x900.png` and the linked Real office pictures retaken on Linux (#1202). `real:` the owner's verdict, Vikram, Telegram, 2026-11-05 18:02 UTC: "screens are ok" (recorded on #1202), for Real office, the arcade and the flat office [FR-236, FR-238]
 - T192 *Withdrawn (2026-11-05): the bar's static rules went with the bar; a tint is a background colour, with no motion or filter to check.*
 - [x] T193 [US2] Docs: changelog fragment; `docs/feature-inventory.md`; `docs/features.md` Real office lights; the spec's tags [FR-236, FR-238]
 - [x] T194 [US1] Issue #1144 (FR-245): the Photo office and the cave set `ui: 'clean'` in `theme.js`, so Retro Pixel's offset button shadows never reach a world. Test: `test:theme-tokens` and `shots-097-chat` (computed `.btn` box-shadow under the Retro Pixel theme), mutant: drop the `ui`.

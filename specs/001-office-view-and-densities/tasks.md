@@ -278,3 +278,8 @@ Numbers taken: T167..T183. Each phase one small PR, after #950 and #959 land (#9
 
 - [x] T190 (FR-210): `styles.css`: the halo is a still glow (`opacity: .75`, no `@keyframes halo`); `scripts/check-001-halo.js` registered in `ui-suite.js`, mutation-checked (`fill-opacity` and `opacity` animations put back both fail it)
 - [x] T191 (FR-210): docs: spec delta, `docs/agent-notes.md` line on the blur measured, `changelog.d/001-halo-cheap.md`; screenshots not retaken (a glow that no longer pulses)
+- [x] T192 (FR-230): the card glow and the waiting halo go: no `::after` glow on a needs-you or New desk card (`styles.css`), no `halo-waiting` in a compact scene (`app.js`, `scenekits.js`); the person pulses stay, in one block
+- [x] T193 (FR-231): `deskTint(a)` in `app.js` (spec 097 FR-236's precedence) as `data-tint` on the desk card; the scene's screen `.scr` and glyphs `.scr-c` in every kit; `--tint-*` and the tint and ink rules in `styles.css`; the shut card carries no tint (FR-173)
+- [x] T194 (FR-230, FR-231): `scripts/check-001-lights.js` (in `ui-suite.js`): every kit at both sizes; tint by state, fill, glyph ink, no glow or halo, no motion. Mutants: the glow back, green over amber (page and code), the ink rules gone
+- [x] T195 (FR-230): `check-unread`, `check-crew`, `test:unread` and the feature-inventory self-test assert the tint where they asserted the glow
+- [x] T196 (FR-230, FR-231): docs: changelog fragment, `docs/features.md`, `docs/feature-inventory.md`, `docs/agent-notes.md`; the owner OK'd the pictures (2026-11-05 18:02 UTC); the 40 linked Open office pictures retaken on Linux through `shots-docs.js` (ade5aa4c)

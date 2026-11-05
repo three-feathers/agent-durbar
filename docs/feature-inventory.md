@@ -26,7 +26,8 @@ One row per thing a user can do or see. [features.md](features.md) stays the use
 | Floors, lift, All floors, Focus mode | works | works | mock+planned (lift-panel) | 033 092 | test:floors test:floornav driver:shots-092-lift |
 | Status pills as filters | works | works | none | 001 | driver:shots-001-welcome read:src/renderer/app.js |
 | Room doors (cabin signs) | missing, removed by owner decision (#954) | missing, removed | none | 017 | driver:check-no-doors |
-| Waiting desk halo (a still glow behind the screen) | works, still since #1057 | missing, the call light replaces it (owner decision, 2026-11-04) | none | 001 | driver:check-001-halo |
+| Waiting desk halo (a still glow behind the screen) | missing, the screen's tint replaces it (owner decision, 2026-11-05) | missing, the screen's tint replaces it (owner decision, 2026-11-05) | none | 001 | driver:check-001-lights |
+| Status screen tint: the monitor screen amber when an agent needs you, orange at its limit, red on an error, green with an unread reply | works | works | none | 001 097 | driver:check-001-lights driver:shots-097-realoffice |
 | Motion (default on): Settings > Motion stops walking, typing and lights; reduced motion does too, Serious mode does not (issue #1182) | works | works, the whole room stands still | none | 052 | driver:check-serious-motion driver:check-097-motion |
 | Still highlights (no motion): Settings > Highlights | works | works, the whole room stands still | none | 001 | test:stillhighlights driver:check-unread |
 | Simple / Expert switch and the "Do you write code?" question | missing, removed by owner decision (#1060) | missing, removed | none | 052 | driver:shots-052-ux |
