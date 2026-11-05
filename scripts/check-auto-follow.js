@@ -20,9 +20,27 @@ const OUT = process.env.OUT || require('os').tmpdir();
 module.exports = async (ctx) => {
   const H = helpers(ctx);
   const { js, until } = H;
+  /* The whole driver runs with Chromium's focus emulation on (spec 052 delta 2026-11-05, #1179): the return to the office after a send is decided once, at the
+     moment the app accepts the message, and is skipped when the window is in the background then; on the shared Windows desktop a neighbour can take the OS focus at
+     that moment, and no later wait can bring the return back. The hold steps below stand in for a blur with window.__durbarFocus, not with the OS, so they still test it. */
+  await H.focusPage({ emulate: 'first' });
+  try {
   const wc = ctx.win.webContents;
   const MOD = process.platform === 'darwin' ? ['meta'] : ['control'];
   const ok = async (expr, what, ms) => assert.ok(await until(expr, ms || 8000), what);
+  /* An arrival the strip delivers is held while the window is in the background (FR-185). On Windows CI three drivers share one desktop and a neighbour's
+     window can take the OS focus at any moment, so a wait for an arrival asks for the real focus again at any look where the page lacks it (the whole driver also runs
+     under emulate:'first', see above; the background hold steps stand in for a blur with window.__durbarFocus) and, when it fails, says what the page saw (focus and the strip's text). Every wait still ends as soon as the condition holds. */
+  const okArrival = async (expr, what, ms) => {
+    const end = Date.now() + ms;
+    for (;;) {
+      if (!(await js(`document.hasFocus()`))) await H.focusPage({ ms: 1500 }); /* only when it is lost: a focus call on a focused window raises a focus event, and the strip holds an arrival for POINTER_MS after one (FR-185) */
+      if (await until(expr, 1500)) return;
+      if (Date.now() > end) break;
+    }
+    const seen = await js(`({focus:document.hasFocus(),strip:(document.getElementById('afText')||{}).textContent||'',open:document.body.classList.contains('panel-open')})`);
+    assert.fail(what + ' (page: ' + JSON.stringify(seen) + ')');
+  };
   const sel = (id) => `#stage .desk[data-id="${id}"]`;
   const E = (id, ev) => js(`window.__durbarSimEmit(Object.assign({timestamp:Date.now(),sessionId:${jsLiteral(id)}},${jsLiteral(ev)}))`);
   const finish = async (id, text) => { await E(id, { type: 'status', status: 'working', intent: 'Working' }); await E(id, { type: 'output', final: true, text: text || 'All done.' }); await E(id, { type: 'status', status: 'idle' }); };
@@ -56,7 +74,7 @@ module.exports = async (ctx) => {
   const sendQuiet = async (id, text) => {
     await js(`(()=>{const b=window.__durbarSimUi.bridge();b.__send=b.send;b.send=async()=>({ok:true});})();0`);
     await send(id, text);
-    await ok(`!document.body.classList.contains('panel-open')`, 'back in the office after the send');
+    await okArrival(`!document.body.classList.contains('panel-open')`, 'back in the office after the send', 8000);
     await js(`(()=>{const b=window.__durbarSimUi.bridge();b.send=b.__send;})();0`);
   };
   const setting = async (want) => {
@@ -132,7 +150,7 @@ module.exports = async (ctx) => {
     assert.ok(!/done|finished/i.test(off.tx), `${tag}: the status promises nothing`);
     await ok(`window.__ann.includes(${jsLiteral(nameA + ' is working. Back to the office.')})`, `${tag}: said`);
     await finish(A, 'All done.');
-    await ok(`document.body.classList.contains('panel-open')&&document.getElementById('panelTitle').textContent===${jsLiteral(nameA)}`, `${tag}: its chat opens when it finishes`, 25000);
+    await okArrival(`document.body.classList.contains('panel-open')&&document.getElementById('panelTitle').textContent===${jsLiteral(nameA)}`, `${tag}: its chat opens when it finishes`, 25000);
     let ac = await active();
     assert.strictEqual(ac.id, 'panelTitle', `${tag}: focus is on the chat title: ${JSON.stringify(ac)}`);
     assert.strictEqual(await followed(), '', `${tag}: no longer followed once shown`);
@@ -145,7 +163,7 @@ module.exports = async (ctx) => {
     // ---- a permission request: the chat opens, Enter on the title approves nothing
     assert.strictEqual(await js(`window.__durbarSimUi.bridge().setPermMode(${jsLiteral(A)},'ask',{}).then(r=>r.ok)`), true, `${tag}: ${nameA} goes to Ask first`);
     await send(A, 'please edit the file');
-    await ok(`document.body.classList.contains('panel-open')&&document.getElementById('panelTitle').textContent===${jsLiteral(nameA)}&&!!document.querySelector('#chat .note.perm:not(.settled)')`, `${tag}: ${nameA}'s permission request opens its chat`, 25000);
+    await okArrival(`document.body.classList.contains('panel-open')&&document.getElementById('panelTitle').textContent===${jsLiteral(nameA)}&&!!document.querySelector('#chat .note.perm:not(.settled)')&&document.activeElement&&document.activeElement.id==='panelTitle'`, `${tag}: ${nameA}'s permission request opens its chat with the focus on the title`, 25000);
     ac = await active();
     assert.ok(ac.id === 'panelTitle' && !ac.inBar, `${tag}: focus on the title, not a button of the request: ${JSON.stringify(ac)}`);
     for (const k of ['Return', 'Space']) await H.key(k, [], { char: 'always' });
@@ -158,14 +176,14 @@ module.exports = async (ctx) => {
     await sendQuiet(B, 'hello error');
     await E(B, { type: 'status', status: 'error', intent: 'The agent app stopped with an error.' });
     const nameB = await nameOf(B);
-    await ok(`document.body.classList.contains('panel-open')&&document.getElementById('panelTitle').textContent===${jsLiteral(nameB)}`, `${tag}: an error opens the chat`, 15000);
+    await okArrival(`document.body.classList.contains('panel-open')&&document.getElementById('panelTitle').textContent===${jsLiteral(nameB)}`, `${tag}: an error opens the chat`, 15000);
     assert.strictEqual((await active()).id, 'panelTitle', `${tag}: error: focus on the title`);
     await ok(`window.__ann.includes(${jsLiteral(nameB + ' has an error. Its chat is open.')})`, `${tag}: the arrival was the error`);
     await mclick('#backBtn'); await ok(`!document.body.classList.contains('panel-open')`, `${tag}: the Office button closes the chat`);
     await sendQuiet(C, 'hello limit');
     await E(C, { type: 'limit', phase: 'exhausted', requestId: 'lim-af', maxAiCredits: 30, usedAiCredits: 30 });
     const nameC = await nameOf(C);
-    await ok(`document.body.classList.contains('panel-open')&&document.getElementById('panelTitle').textContent===${jsLiteral(nameC)}`, `${tag}: a limit opens the chat`, 15000);
+    await okArrival(`document.body.classList.contains('panel-open')&&document.getElementById('panelTitle').textContent===${jsLiteral(nameC)}`, `${tag}: a limit opens the chat`, 15000);
     assert.strictEqual((await active()).id, 'panelTitle', `${tag}: limit: focus on the title`);
     await ok(`window.__ann.includes(${jsLiteral(nameC + ' reached its limit. Its chat is open.')})`, `${tag}: the arrival was the limit`);
     await mclick('#backBtn'); await ok(`!document.body.classList.contains('panel-open')`, `${tag}: the Office button closes the chat`);
@@ -211,7 +229,7 @@ module.exports = async (ctx) => {
     const Q = await idByName('Rosa'), nameQ = await nameOf(Q);
     await sendQuiet(Q, 'hello question');
     await E(Q, { type: 'question', phase: 'asked', requestId: 'q-af', questions: [{ question: 'Which one?', multiSelect: false, options: [{ label: 'yes' }, { label: 'no' }] }] });
-    await ok(`document.body.classList.contains('panel-open')&&document.getElementById('panelTitle').textContent===${jsLiteral(nameQ)}`, `${tag}: a question opens the chat`, 15000);
+    await okArrival(`document.body.classList.contains('panel-open')&&document.getElementById('panelTitle').textContent===${jsLiteral(nameQ)}`, `${tag}: a question opens the chat`, 15000);
     ac = await active();
     assert.ok(ac.id === 'panelTitle' && !ac.inBar, `${tag}: question: focus on the title: ${JSON.stringify(ac)}`);
     for (const k of ['Return', 'Space']) await H.key(k, [], { char: 'always' });
@@ -593,5 +611,6 @@ module.exports = async (ctx) => {
       await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [] });
     }
   }
+  } finally { await H.releaseFocus(); }
   console.log('[follow] all checks passed');
 };
