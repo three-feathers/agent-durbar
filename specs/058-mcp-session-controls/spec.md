@@ -406,18 +406,31 @@ is the case a status read cannot see: the runtime keeps saying `connected` while
 recheck finds nothing, and FR-205's gap reconnect only runs before a message after a quiet hour, with a wait of up to 5 s. FR-212's timer is
 replaced by FR-218's reaction to the failed call itself. T183 is superseded by T190..T194.
 
-**Probe, free, local test server (`real:` 2026-11-05, Linux, Copilot SDK 1.0.26 / runtime 1.0.103; 0 prompts, 0 AI credits, no account,
-fake values only).** Scratch `HOME`/`COPILOT_HOME`/`XDG_*` under `env -i`, `DBUS_SESSION_BUS_ADDRESS` pointing nowhere, the real
+**Probe, free, local test server (`real:` 2026-11-05, Linux; 0 prompts, 0 AI credits, no account, fake values only). Which SDK:** the first
+run (cases (a), (b), (c) and (d) below) used a stale scratch install, **Copilot SDK 1.0.26 / runtime 1.0.103**, which is not the version this
+repository ships (`package.json` pins **1.0.24**, owner decision on #1084). Case (c) was therefore run again the same day, same script and
+setup, on a clean `npm ci` of the shipped **SDK 1.0.24 / runtime 1.0.101** (see *(c) on the shipped SDK* below). Cases (a), (b) and (d)
+(`onMcpAuthRequest`) were **not** re-run on 1.0.24 and are labelled 1.0.26 only; the decision they led to (the handler is not used) does not
+depend on the version. Scratch `HOME`/`COPILOT_HOME`/`XDG_*` under `env -i`, `DBUS_SESSION_BUS_ADDRESS` pointing nowhere, the real
 `CopilotClient`, `mcpOAuthTokenStorage: 'persistent'`, `scripts/demo-oauth-mcp.ts` (HTTP 401 on an expired token, rotating refresh
 tokens) with a 20 s access token; sign-in through `rpc.mcp.oauth.login` and a plain HTTP client as the browser; the calls are
 `rpc.mcp.list`, `rpc.mcp.listTools` (a request to the server) and `rpc.mcp.restartServer`. Two runs without `onMcpAuthRequest`, one with it.
-- **(c) Today's path, no handler.** After the token expired, the first call to the server failed ("MCP OAuth challenge required (HTTP 401)")
+- **(c) Today's path, no handler (SDK 1.0.26 / runtime 1.0.103).** After the token expired, the first call to the server failed ("MCP OAuth challenge required (HTTP 401)")
   and a `session.mcp_server_status_changed` event said `needs-auth`, but **`rpc.mcp.list` still said `connected`** and kept saying it.
   The runtime tried by itself: each failing call led to `pending` -> `connected` events and one more refresh grant at the server
   (1, 2, 3 grants over 60 s, the demo server rotates them), yet **every later call still failed** for the whole minute. `restartServer`
   rejected ("requires authentication", as in T177), then the status was `connected` and the next call **worked** (one more refresh grant).
   This reproduces the owner's report with a local server. `mcp.oauth_required` was never emitted (no interest is registered).
-- **(a) With a handler** (`onMcpAuthRequest` set, which makes the SDK register interest in `mcp.oauth_required`): at session start
+- **(c) on the shipped SDK (SDK 1.0.24 / runtime 1.0.101, clean `npm ci`).** The same symptom, with two differences. After the token
+  expired the first call failed with the same text ("MCP OAuth challenge required (HTTP 401)") and **`rpc.mcp.list` kept saying `connected`**
+  for the whole run; **every call failed for the 60 s watched** (401 count rising: 1, 2, 3, 5), and the runtime made **no refresh of its own**
+  (0 refresh grants at the server, where 1.0.26 made 1 to 3 attempts that did not help either), so it does not recover by itself. **No
+  `needs-auth` status event came after the failed call** (1.0.26 sent one right after the first 401). `restartServer` rejected ("requires
+  authentication", as before), the status was `connected` and the next call **worked** (one refresh grant). A new runtime with the stored
+  sign-in and an expired token reached `connected` with one refresh grant (the cached-token start works). Consequence for this delta: the
+  trigger that always fires is the failed call (FR-218 trigger 1, the call's own error text); the report trigger (2) fires only where the
+  runtime sends the status event (seen on 1.0.26, not on 1.0.24), so on 1.0.24 a renewal rests on trigger 1 alone. No code change needed.
+- **(a) With a handler (SDK 1.0.26 only)** (`onMcpAuthRequest` set, which makes the SDK register interest in `mcp.oauth_required`): at session start
   `mcp.oauth_required` came with `reason: 'initial'` (no `runtimeRefreshSupported`); after the failed calls it came with
   `reason: 'refresh'`, `runtimeRefreshSupported: true` (fields: `httpResponse`, `reason`, `requestId`, `resourceMetadata`,
   `runtimeRefreshSupported`, `serverName`, `serverUrl`, `wwwAuthenticateParams`). It arrived **only after a call failed**, not before expiry.
@@ -441,7 +454,8 @@ tokens) with a 20 s access token; sign-in through `rpc.mcp.oauth.login` and a pl
   (4) waits 8, 15, 20, 30 and 60 s while reading `rpc.mcp.list()`, `rpc.mcp.listTools({ serverName })` and the demo server's `stats`
   (counts only), (5) calls `rpc.mcp.restartServer`, and (6) stops the client, waits 25 s and starts a second client with a new
   session to see the cached-token start. It logs statuses, event types, `reason`, `runtimeRefreshSupported` and counts; never a token or
-  the authorization URL. Linux, SDK 1.0.26, runtime 1.0.103, 0 credits.
+  the authorization URL. Linux, SDK 1.0.26 / runtime 1.0.103 and, for (c), SDK 1.0.24 / runtime 1.0.101 (a worktree with its own `npm ci`;
+  `require('@github/copilot-sdk/package.json')` is refused by the package's `exports`, read the file's `version` instead), 0 credits.
 - **Decision.** Not built: `onMcpAuthRequest` / `handlePendingRequest` (a regression at start, no better recovery than a reconnect). The
   rule in `copilot.ts` stays: never `handlePendingRequest` or `onMcpAuthRequest`. What works, and is already Durbar's: `restartServer`.
 
