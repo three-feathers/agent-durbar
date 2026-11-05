@@ -18,6 +18,8 @@
  * - Settings > MCP servers: the switch "Refresh MCP sign-ins automatically" (on) with its line; off, a quiet hour reconnects nothing;
  * - a hostile server name renders as text (checked after the pictures, on a first message);
  * - a Copilot chat whose OS sandbox covers its MCP servers (Read-only, Ask first) is not reconnected: only the sign-in line.
+ * - (2026-11-05, FR-218) the one automatic note to the agent shows one calm line, "Sent automatically: <server> was reconnected after a sign-in error, so the agent was asked to retry the step that failed.", naming the server as configured;
+ * - (2026-11-05, FR-220) a server renewed in the background reads "Renewed 12:40" on its dialog row (only that row, 10.5px or more), with no chat line (picture 058-mcp-renewed-<w>x<h>.png in OUT, not a documentation picture: the site budget).
  * Shots (DOC_SHOTS): 058-mcp-refresh-waiting-<w>x<h>.png (the waiting line), 058-mcp-refresh-signin-<w>x<h>.png (the sign-in line),
  * 058-mcp-refresh-settings-<w>x<h>.png (the switch and its line). Prints "[058] sign-in refresh PASS".
  */
@@ -134,6 +136,31 @@ module.exports = async (ctx) => {
     assert.strictEqual(await js(`window.__work`), 0, 'no reply: nothing was sent');
     await js(`(()=>{const i=document.getElementById('msgInput');i.value='';i.dispatchEvent(new Event('input',{bubbles:true}));})()`);
 
+    // ---- FR-220 (2026-11-05): a server Durbar renewed in the background says "Renewed 12:40" on its row, and nothing in the chat ----
+    {
+      // the one automatic note to the agent (owner, 2026-11-05): one calm line that says what was sent, the server named as configured
+      await js(`window.__durbarSimSignIn.push({id:${jsLiteral(id)},kind:'nudged',name:'Teams (work)'});0`);
+      assert.ok(await until(`[...document.querySelectorAll('#chat .note.mcpre-nudge')].some(n=>n.textContent==='Sent automatically: Teams (work) was reconnected after a sign-in error, so the agent was asked to retry the step that failed.')`, 3000), 'the automatic-note line names the server');
+      await emit({ type: 'user', sessionId: id, text: 'The MCP server "Teams-work" was reconnected after a sign-in error. Please retry the step that failed.', auto: true });
+      assert.ok(await until(`[...document.querySelectorAll('#chat .msg.user.auto')].some(m=>/^Agent Durbar, automatic/.test(m.querySelector('.meta').textContent)&&m.querySelector('.bubble').textContent.startsWith('The MCP server "Teams-work"'))`, 3000), 'the automatic message is drawn as Agent Durbar\'s own, not as the person\'s');
+      await js(`window.__durbarSimSignIn.push({id:${jsLiteral(id)},kind:'nudge-failed',name:'Teams-work'});0`);
+      assert.ok(await until(`(()=>{const m=[...document.querySelectorAll('#chat .msg.user.auto')].pop();return !!m&&!!m.querySelector('.unsent')&&[...document.querySelectorAll('#chat .note.mcpre-nudge')].pop().textContent.startsWith('The automatic message was not sent')})()`, 3000), 'a refused automatic message is marked Not sent');
+      await js(`(()=>{const m=[...document.querySelectorAll('#chat .msg.user.auto')].pop();if(m)m.scrollIntoView({block:'center'});})()`);
+      await shot(`058-mcp-auto-message-${w}x${h}.png`);
+      const lay2 = await layout();
+      assert.ok(lay2.min >= 10.5 && lay2.inChat && lay2.roles && lay2.pageX, `${w}: the automatic-note line is calm: ` + JSON.stringify(lay2));
+      const chatLines = await js(`document.querySelectorAll('#chat .note').length`);
+      await js(`window.__durbarSimSignIn.renewed(${jsLiteral(id)},'docs',${jsLiteral(new Date(2026, 10, 5, 12, 40).getTime())});0`);
+      await js(`document.getElementById('mcpBtn').click()`);
+      assert.ok(await until(`!!document.querySelector('#agMcp li.srv[data-n="docs"] .mst-renew')`, 6000), 'the dialog row shows the renewal note');
+      const row = await js(`(()=>{const e=document.querySelector('#agMcp li.srv[data-n="docs"] .mst-renew');const r=e.getBoundingClientRect(),d=document.querySelector('#agMcp').getBoundingClientRect();return {t:e.textContent,fs:parseFloat(getComputedStyle(e).fontSize),inside:r.left>=d.left-1&&r.right<=d.right+1,other:!!document.querySelector('#agMcp li.srv[data-n="crm"] .mst-renew')||!!document.querySelector('#agMcp li.srv[data-n="files"] .mst-renew'),pageX:document.documentElement.scrollWidth<=innerWidth};})()`);
+      assert.ok(row.t === '\u00b7 Renewed 12:40' && row.fs >= 10.5 && row.inside && !row.other && row.pageX, `${w}: the quiet "Renewed 12:40" note, only on the renewed server: ` + JSON.stringify(row));
+      await shot(`058-mcp-renewed-${w}x${h}.png`);
+      await js(`(()=>{const b=[...document.querySelectorAll('#scrDlg .dbtn .btn')].find(b=>b.textContent==='Done');if(b)b.click();})()`);
+      assert.ok(await until(`!document.getElementById('scrDlg')`), 'the dialog closed');
+      assert.strictEqual(await js(`document.querySelectorAll('#chat .note').length`), chatLines, 'no chat line came with it');
+    }
+
     // ---- Settings: the switch and its line; off = nothing runs ----
     await js(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`);
     assert.ok(await until(`!document.body.classList.contains('panel-open')`), 'the chat closed');
@@ -141,7 +168,7 @@ module.exports = async (ctx) => {
     assert.ok(await until(`!!document.getElementById('mcpRefreshSw')&&document.getElementById('advMcp').open`), 'Settings at MCP servers, with the switch');
     const st = await js(`(()=>{const s=document.getElementById('mcpRefreshSw'),l=document.getElementById('mcpRefreshLine');l.scrollIntoView({block:'center'});return {on:s.getAttribute('aria-checked'),role:s.getAttribute('role'),label:s.getAttribute('aria-label'),line:l.textContent,fs:Math.min(parseFloat(getComputedStyle(l).fontSize),parseFloat(getComputedStyle(s.closest('.swrow')).fontSize)),pageX:document.documentElement.scrollWidth<=innerWidth}})()`);
     assert.ok(st.on === 'true' && st.role === 'switch' && st.label === 'Refresh MCP sign-ins automatically' && st.fs >= 10.5 && st.pageX, 'the switch is on by default: ' + JSON.stringify(st));
-    assert.strictEqual(st.line, 'Agent Durbar asks the agent app to reconnect remote MCP servers on its own before a message after an hour without a reply. This happens in every permission mode. Where the agent app runs its MCP servers in its own OS sandbox (Copilot in Read-only and Ask first), a reconnect did not renew the sign-in, so there Agent Durbar only tells you when a server needs you to sign in again. Only the app\u2019s own sign-in is renewed; Agent Durbar never sees it. A reconnect never starts a local server. Codex chats are not reconnected; they renew with their next session.', 'the Settings line, word for word');
+    assert.strictEqual(st.line, 'Agent Durbar asks the agent app to reconnect remote MCP servers on its own before a message after an hour without a reply. This happens in every permission mode. Where the agent app runs its MCP servers in its own OS sandbox (Copilot in Read-only and Ask first), a reconnect did not renew the sign-in, so there Agent Durbar only tells you when a server needs you to sign in again. Only the app\u2019s own sign-in is renewed; Agent Durbar never sees it. A reconnect never starts a local server. In a Copilot chat, when a call to a remote server fails with a sign-in error, it reconnects that server at once and, if that worked, sends the agent one short automatic message asking it to retry the step. That is one extra message and uses AI credits; it is never sent at a spending limit, and your own message is never sent again. Turning this switch off stops both. Codex chats are not reconnected; they renew with their next session.', 'the Settings line, word for word');
     await settle();
     await H.clearToasts();
     await shot(`058-mcp-refresh-settings-${w}x${h}.png`);

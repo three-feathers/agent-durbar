@@ -159,6 +159,7 @@ export async function runContract(name: string, make: () => ContractTarget, hook
     if (cap.mcpSignInNote !== undefined) assert.ok(typeof cap.mcpSignInNote === 'string' && cap.mcpSignInNote.length > 0 && (!!cap.mcpSignIn || !!cap.mcpSignInSteps), M('C2', 'mcpSignInNote is a non-empty string, only with mcpSignIn or mcpSignInSteps (spec 058 FR-180)'));
     // spec 058 FR-176/FR-181: Restart as the end of a sign-in needs a Restart
     if (cap.mcpSignInReconnect !== undefined) assert.ok(cap.mcpSignInReconnect === true && !!cap.mcpRestart && has('restartMcpServer'), M('C2', 'mcpSignInReconnect only with mcpRestart and restartMcpServer() (spec 058 FR-207)'));
+    if (cap.mcpBackgroundRenew !== undefined) assert.ok(cap.mcpBackgroundRenew === true && cap.mcpSignInReconnect === true, M('C2', 'mcpBackgroundRenew only with mcpSignInReconnect (spec 058 FR-218)'));
     if (cap.mcpSignInRestart !== undefined) assert.ok(cap.mcpSignInRestart === true && !!cap.mcpRestart && has('restartMcpServer'), M('C2', 'mcpSignInRestart only with mcpRestart and restartMcpServer() (spec 058 FR-176)'));
     assert.strictEqual(has('setPermMode'), cap.permModeSwitch !== 'none', M('C2', "setPermMode() <=> permModeSwitch !== 'none'"));
     ran('C2');

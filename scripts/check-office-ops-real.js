@@ -2,8 +2,8 @@
  * Spec 097 FR-186, FR-178's Real office rows (this file; the flat rows are `check-office-ops.js`, one file each since the #941/#950 merge) (T149, T151, T153; part of T142): operation counts of Real office, never times. Simulator only, no AI credits.
  * At 15 and 40 agents, 1440x900, device pixel ratio 1 (emulated, so that every OS counts the same; FR-183 says what Retina does):
  *   - one status event of one agent through the normal path (`__durbarSimEmit`), waited for with until(), the median of 8 (simulator visits run on the wall clock, so
- *     a single reading can hold another agent's walk), each started only when nothing is put off (DurbarRealOffice.pending(): no screen repaint, FR-033, and no
- *     done-tick redraw waiting on a timer) and the lobby is settled, so no earlier update's deferred work lands in it: renders, layout reads (offset*, client*, scroll*, getBoundingClientRect, getClientRects), nodes added or removed
+ *     a single reading can hold another agent's walk), each started only when nothing is put off (DurbarRealOffice.pending(): no screen repaint, FR-033; spec 097 FR-236 removed the done tick's timed
+ *     redraw) and the lobby is settled, so no earlier update's deferred work lands in it: renders, layout reads (offset*, client*, scroll*, getBoundingClientRect, getClientRects), nodes added or removed
  *     and attribute writes in #stage (a MutationObserver; the state's own cues, a call light, a "?", "!", the thinking dots and a folder's count of a new state, are not "nodes rewritten");
  *   - topbarResizes: no part of the top bar changes size in those updates (a count's pill keeps its width with proportional figures too, as on the Windows runner's font);
  *   - elements recalculated by one text change (`UpdateLayoutTree.elementCount` of one short contentTracing, a count; animations off for the trace);
@@ -147,7 +147,7 @@ module.exports = async (ctx) => {
     console.log('[ops]', n, 'agents, pictures:', JSON.stringify(area));
     assert.deepStrictEqual(area.under, [], `${n} agents: no picture is shown larger than it is`);
     // ---- FR-180, FR-181: wait for a light that moves (a simulator agent may be on a visit), then read ----
-    await H.until(`document.querySelectorAll('#stage .ro-call.pulse, #stage .ro-glow.breathe').length>0`, 40000);
+    await H.until(`document.querySelectorAll('#stage .ro-glow.breathe').length>0`, 40000);
     const a = await js(ANIMS);
     console.log('[ops]', n, 'agents, animations:', JSON.stringify(a));
     assert.ok(a.running > 0, 'a light moves, so the row is not empty');
@@ -186,16 +186,16 @@ module.exports = async (ctx) => {
       const st = i % 2 ? 'working' : 'idle';
       /* a deterministic window (review on #969, nodes 27 once at 40 agents): the previous update's deferred work (its screen's throttled repaint, FR-033, 2 s; a done tick's redraw, 2.05 s)
          lands later on the wall clock, and under a CPU load inside this window. Start only when nothing is put off, the lobby settled and no render queued */
-      assert.ok(await H.until(`(()=>{const p=window.DurbarRealOffice.pending();return p.screens===0&&p.ticks===0;})()&&` + SETTLED, 15000), `${n} agents: nothing put off before update ${i}: ` + JSON.stringify(await js(`window.DurbarRealOffice.pending()`)));
+      assert.ok(await H.until(`(()=>{const p=window.DurbarRealOffice.pending();return p.screens===0;})()&&` + SETTLED, 15000), `${n} agents: nothing put off before update ${i}: ` + JSON.stringify(await js(`window.DurbarRealOffice.pending()`)));
       await frames();
       /* what was put off at the very start of the window, read in the same page task that starts it: every measured update must start from none */
-      if (await js(`(()=>{const p=window.DurbarRealOffice.pending();window.__ops.start();return p.screens+p.ticks;})()`)) startedBusy.push(i);
+      if (await js(`(()=>{const p=window.DurbarRealOffice.pending();window.__ops.start();return p.screens;})()`)) startedBusy.push(i);
       await emit(st);
       const ok = await H.until(shows(st), 8000);
       assert.ok(ok, `the plate shows ${st}`);
       await frames();
       const o = await js(`window.__ops.stop()`);
-      const put = await js(`(()=>{const p=window.DurbarRealOffice.pending();return p.screens+p.ticks;})()`); putOff += put;
+      const put = await js(`(()=>{const p=window.DurbarRealOffice.pending();return p.screens;})()`); putOff += put;
       for (const k of Object.keys(per)) per[k].push(o[k]);
       resizes.push(...o.resized);
       seen = o.seen;
@@ -240,7 +240,7 @@ module.exports = async (ctx) => {
   rows['animationsStill@reduced'] = await js(ANIMS_STILL);
   await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
   await load(15);
-  await H.until(`document.querySelectorAll('#stage .ro-call.pulse, #stage .ro-glow.breathe').length>0`, 40000);
+  await H.until(`document.querySelectorAll('#stage .ro-glow.breathe').length>0`, 40000);
   assert.ok((await js(ANIMS_STILL)) > 0, 'normal motion: a light moves, so the two rows above and below can fail');
   await js(`document.getElementById('settingsBtn').click()`);
   assert.ok(await H.until(`!!document.getElementById('motionSw')`), 'the Motion switch');

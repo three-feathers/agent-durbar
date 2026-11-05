@@ -173,6 +173,7 @@ export class FakeAdapter implements AgentAdapter {
     if (c.mcpSignInNote === undefined) delete (caps as { mcpSignInNote?: unknown }).mcpSignInNote;
     if (!c.mcpSignInRestart || !caps.mcpRestart) delete (caps as { mcpSignInRestart?: unknown }).mcpSignInRestart;
     if (!c.mcpSignInReconnect || !caps.mcpRestart) delete (caps as { mcpSignInReconnect?: unknown }).mcpSignInReconnect; // spec 058 FR-207
+    if (!c.mcpBackgroundRenew || !caps.mcpSignInReconnect) delete (caps as { mcpBackgroundRenew?: unknown }).mcpBackgroundRenew; // spec 058 FR-218
     if (!c.renameSession || omit.has('renameSession')) delete (caps as { renameSession?: unknown }).renameSession;
     if (!c.autopilot || omit.has('setAutopilot')) delete (caps as { autopilot?: unknown }).autopilot;
     this.capabilities = caps;

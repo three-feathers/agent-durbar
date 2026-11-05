@@ -15,7 +15,7 @@ One row per thing a user can do or see. [features.md](features.md) stays the use
 | Helpers (sub-agents): card, tree, own chat, needs you | works | missing, only `+N` and 3 dots; planned as small figures beside the desk (#1139) | planned | 001 015 097 | test:helpercard read:src/renderer/realoffice.js |
 | Live activity on the desk | works | works, monitors show the newest output (PR 979) | mock+planned (live-screen) | 001 097 | test:liveact driver:shots-001-live-activity |
 | Model, tokens, cost, context, last tool on the desk | works | missing (#1148) | none | 019 097 | test:ctxbreakdown read:src/renderer/realoffice.js |
-| Unread "New", draft, question marks | works | planned New reply tag and green light bar (097 FR-237, FR-238; #1150); draft and question marks missing (#1149) | none | 001 005 | test:unread read:src/renderer/realoffice.js |
+| Unread "New", draft, question marks | works | works, a New reply tag and a green screen (097 FR-236, FR-238); draft and question marks missing (#1149) | none | 001 005 097 | test:unread driver:shots-097-realoffice |
 | Hover card | works | missing, tooltip only (#1151) | none | 001 097 | test:tooltip read:src/renderer/realoffice.js |
 | Drag to rearrange rooms, desks, places | works | missing (#1152) | none | 033 | test:roomorder driver:shots-033-order |
 | Rename a session (F2, pencil) | works | works, the pencil beside a plate's name and F2 on a plate (059 FR-170) | none | 059 | test:sessionname driver:check-097-plate-pencil |
@@ -59,7 +59,7 @@ One row per thing a user can do or see. [features.md](features.md) stays the use
 | Context ring and Compact | works | works | none | 019 034 | test:compaction test:ctxbreakdown |
 | MCP servers: state, sign-in, restart, global | works | works | none | 019 058 061 069 | test:mcphealth test:mcpsignin test:mcpglobal driver:shots-058-mcp-launch |
 | MCP problems strip at launch (reason, fix, Show, Dismiss) | works | works, the same strip above the office (driver); not checked with a world on (#1172) | none | 058 | driver:shots-058-mcp-launch test:mcpwords |
-| MCP sign-ins refreshed before a message after a quiet hour (waiting line, sign-in line, Settings switch) | works | works, chat and Settings only (window chrome, no office drawing); not checked with a world on (#1172) | none | 058 | test:mcpsigninrefresh driver:shots-058-mcp-signin-refresh |
+| MCP sign-ins refreshed before a message after a quiet hour, and renewed after a failed call (waiting line, sign-in line, Settings switch, Renewed note) | works | works, chat and Settings only (window chrome, no office drawing); not checked with a world on (#1172) | none | 058 | test:mcpsigninrefresh driver:shots-058-mcp-signin-refresh |
 | Tools and Cost tabs | works | works | none | 019 020 | test:toolstats test:usagetotals |
 | Credit caps and usage display | works | works | planned (limit-card) | 011 | test:credits test:usagestore driver:shots-012-cost-cap |
 | OS sandbox floor | works | works | none | 087 | test:runtime-sandbox |

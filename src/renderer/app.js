@@ -1659,12 +1659,12 @@ function realModel(model){
         const asleep=old.has(a.id)&&!v;
         if(asleep){ /* spec 097 FR-120, FR-129: asleep at the desk; the words of the lounge's peek card and label, the same masked reply (shutReply) */
           const ago=ACT.agoLong(sinceLast(a)), said=SHUT.spoken(ago), line=shutReply(a,140), who=a.profile?a.profile.name+' · '+a.role:a.role;
-          return {id:a.id,name:a.name,role:a.role,state:st,word:'Asleep',task:ago?'finished '+ago:'',asleep:true,tip:'Asleep · '+stWord(a)+(ago?' · finished '+ago:'')+' · Lamp off\n'+shutReply(a,300),selected:ui.selected===a.id,ren:canRenameSession(a),away:null,awayLabel:'',
-            label:a.name+', '+who+', folder '+deskMask(showPath(r.path))+', asleep at the desk'+(said?', finished '+said:'')+': '+line+(/[.!?…]$/.test(line)?'':'.')+' Open chat panel.',helpers:helpersOf(a).map(h=>stOf(h,false))};
+          return {id:a.id,name:a.name,role:a.role,state:st,word:'Asleep',task:ago?'finished '+ago:'',asleep:true,tip:'Asleep · '+stWord(a)+(ago?' · finished '+ago:'')+' · Lamp off\n'+shutReply(a,300),selected:ui.selected===a.id,ren:canRenameSession(a),unread:isUnread(a),away:null,awayLabel:'',
+            label:a.name+unreadWords(a)+', '+who+', folder '+deskMask(showPath(r.path))+', asleep at the desk'+(said?', finished '+said:'')+': '+line+(/[.!?…]$/.test(line)?'':'.')+' Open chat panel.',helpers:helpersOf(a).map(h=>stOf(h,false))};
         }
         const br=v&&v.place===D.COFFEE&&BREAKS.get(a.id)&&BREAKS.get(a.id).kind!=='cap'?coffeeUntilWords(a):''; /* owner 2026-11-02: the post-it of a coffee break says until when (an app's usage window), never of Durbar's cap at the Bank */
-        return {id:a.id,name:a.name,role:a.role,state:st,word:stWord(a),task,tip:deskTip(a),selected:ui.selected===a.id,ren:canRenameSession(a),away:v?v.place:null,awayLabel:place+(br?' '+br:''),
-          label:[a.name,a.role,stWord(a)].concat(task?[task]:[],needs?['needs you']:[],place?['at '+place]:[]).join(', ')+'. Open chat panel.', /* FR-090: text for setAttribute, not markup */
+        return {id:a.id,name:a.name,role:a.role,state:st,word:stWord(a),task,tip:deskTip(a),selected:ui.selected===a.id,ren:canRenameSession(a),unread:isUnread(a),away:v?v.place:null,awayLabel:place+(br?' '+br:''),
+          label:[a.name+unreadWords(a),a.role,stWord(a)].concat(task?[task]:[],needs?['needs you']:[],place?['at '+place]:[]).join(', ')+'. Open chat panel.', /* FR-090: text for setAttribute, not markup */
           helpers:helpersOf(a).map(h=>stOf(h,false))};})};
   });
   const places=lobbyPlaces().map(p=>{
@@ -2147,6 +2147,7 @@ function addUserMsg(chat,text,atts,ts){
     c.innerHTML=(x.img?ICON('img'):ICON('file'))+'<span>'+esc(x.name)+'</span>';box.appendChild(c);});
   if(!(atts||[]).length)box.remove();
   chat.el.appendChild(m);stickyScroll(chat);
+  return m;
 }
 function getChat(a){
   if(a.live)return liveChat(a);
@@ -2296,7 +2297,7 @@ function syncChatHeader(){
   if(top&&(!port||port._k!==key)){
     if(port)port.remove();
     port=document.createElement('span');port.id='roPortrait';port.className='ro-portrait';port.setAttribute('aria-hidden','true');port._k=key;
-    port.dataset.lamp=lt.lamp;port.dataset.call=lt.call||'';
+    port.dataset.lamp=lt.lamp;port.dataset.tint=lt.tint; /* spec 097 FR-236: the ring follows the screen tint */
     port.dataset.face=faceKey(a);
     if(file&&pack){const clip=document.createElement('span');clip.className='rp-clip';const im=document.createElement('img');im.alt='';im.draggable=false;im.src=file;
       if(f.crop&&f.seatM){im.style.width=(f.seatM.w/f.crop.s*100)+'%';im.style.left=(-f.crop.x/f.crop.s*100)+'%';im.style.top=(-f.crop.y/f.crop.s*100)+'%';} /* the face fills the circle: the data of the layout's face box */
@@ -5475,6 +5476,14 @@ function mcpReLine(p){
     const b=document.createElement('button');b.type='button';b.className='btn sm mcpre-btn';b.textContent='Sign in…';b.dataset.n=String(p.name);
     b.setAttribute('aria-label','Sign in to '+name+' again: open the MCP servers');
     n.append(t,b);
+  }else if(p.kind==='nudged'){ /* spec 058 FR-218: the one automatic message, said plainly before it is sent */
+    const name=MCPRE_NAME(p.name)||'An MCP server';
+    const n=addNote(chat,'');n.classList.add('mcpre','mcpre-nudge');n.setAttribute('role','status');
+    n.textContent='Sent automatically: '+name+' was reconnected after a sign-in error, so the agent was asked to retry the step that failed.';
+  }else if(p.kind==='nudge-failed'){ /* the automatic message was refused: the bubble is marked, the line says so */
+    const last=[...chat.el.querySelectorAll('.msg.user.auto')].pop();
+    if(last&&!last.querySelector('.unsent')){last.classList.add('not-sent');const u=document.createElement('div');u.className='unsent';u.textContent='Not sent';last.appendChild(u);}
+    const n=[...chat.el.querySelectorAll('.note.mcpre-nudge')].pop();if(n)n.textContent='The automatic message was not sent. Ask the agent to retry the step yourself.';
   }
   /* review of PR 1080: the line is what the person's own send caused, so in the open chat it is brought into view (the chat's own scroller
      only, after layout), also when the chat was scrolled up and does not follow new text */
@@ -6534,7 +6543,9 @@ function onLiveEvent(e){
   if(e.agentId&&e.type!=='permission'&&e.type!=='grants'&&e.type!=='limit')return onSubEvent(a,e);
   const chat=liveChat(a), main=true;
   switch(e.type){
-  case 'user':{addUserMsg(chat,e.text,(e.attachments||[]).map(x=>({name:String(x.path).split(/[\\/]/).pop(),img:x.kind==='image',path:x.path})));return;}
+  case 'user':{const um=addUserMsg(chat,e.text,(e.attachments||[]).map(x=>({name:String(x.path).split(/[\\/]/).pop(),img:x.kind==='image',path:x.path})));
+    if(e.auto===true&&um){um.classList.add('auto');const mt=um.querySelector('.meta');if(mt)mt.textContent=mt.textContent.replace(/^You/,'Agent Durbar, automatic');} /* spec 058 FR-218: not the person's own message */
+    return;}
   case 'status':{
     if(!main)return;
     /* spec 015 FR-009b: the desk mark ends when the agent goes idle, stops or fails (a compaction in the background may still run: its line stays until the result);

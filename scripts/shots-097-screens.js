@@ -6,7 +6,7 @@
  *   - a screen is a placeholder: an awake desk's screen has no real text, its text is under 10.5 px, or text does not change when the agent writes (FR-030, FR-032);
  *   - the newest line is not at the bottom of the glass, or a repaint comes sooner than 2 s after the last under a stream of lines (FR-033);
  *   - a hostile line (token, home path, markup, a link, ANSI, 1 MB) shows on a screen or in the zoom other than masked, inert and capped (FR-031, SC-005);
- *   - a status screen is wrong: amber frame, red tint, dark glass with no text when asleep, a green done line (FR-035);
+ *   - a status screen is wrong: an amber screen with no ring when it needs you, a red screen on an error (FR-236), dark glass with no text when asleep, a green done line (FR-035);
  *   - the zoom, for every one of the 15 screens by real pointer moves: covers its own plate or a needs-you plate, leaves the window, is not 380-480 px wide or 12.5 px
  *     text, or stays after the pointer left; Esc closes it and it stays closed until the pointer has left; Tab to a desk's plate opens the same zoom, Esc closes it
  *     with the focus kept; it is a named region and not a live one (FR-034);
@@ -86,12 +86,14 @@ module.exports = async (ctx) => {
     assert.ok(all.some((s) => s.bars > 0), 'FR-032: bars from earlier lines on small screens');
     // FR-035: status screens, computed
     const look = await js(`(()=>{const q=(st,sel,prop,pe)=>{const e=document.querySelector('#stage .ro-screen.st-'+st+' '+sel);return e?getComputedStyle(e,pe)[prop]:null;};
-      return {waitFrame:q('waiting','.ro-bezel','boxShadow'),errGlass:q('error','.ro-glass','backgroundColor'),workGlass:q('working','.ro-glass','backgroundColor'),
+      return {waitFrame:q('waiting','.ro-bezel','boxShadow'),waitGlass:q('waiting','.ro-glass','backgroundColor'),errGlass:q('error','.ro-glass','backgroundColor'),workGlass:q('working','.ro-glass','backgroundColor'),
         done:(()=>{const e=[...document.querySelectorAll('#stage .ro-stext.st-done .ro-rows .ro-sl')].pop();return e?[e.dataset.k,getComputedStyle(e).color]:null;})(),
         ask:(()=>{const e=[...document.querySelectorAll('#stage .ro-stext.st-waiting .ro-rows .ro-sl')].pop();return e?[e.dataset.k,e.textContent]:null;})()};})()`);
     console.log('[097-screens] status', JSON.stringify(look));
-    assert.ok(/rgb\(240, 160, 48\)/.test(look.waitFrame || ''), 'needs-you: an amber frame: ' + look.waitFrame);
-    assert.ok(look.errGlass && look.errGlass !== look.workGlass, 'error: a red tint on the glass');
+    /* spec 097 FR-236 (owner, 2026-11-05): the screen itself is the cue: an amber glass, no amber ring around the bezel; a red glass on an error */
+    assert.ok(!/rgb\(240, 160, 48\)/.test(look.waitFrame || ''), 'needs-you: no amber ring around the monitor (FR-236): ' + look.waitFrame);
+    assert.strictEqual(look.waitGlass, 'rgb(85, 58, 0)', 'needs-you: an amber screen (FR-236)');
+    assert.strictEqual(look.errGlass, 'rgb(101, 20, 20)', 'error: a red screen (FR-236)');
     assert.ok(look.done && look.done[0] === 'done' && /rgb\(159, 220, 174\)/.test(look.done[1]), 'done: the newest line green: ' + look.done);
     assert.ok(look.ask && look.ask[0] === 'ask' && look.ask[1].length > 3 && !/^Went to see/.test(look.ask[1]), 'needs-you: the question itself on the glass: ' + look.ask);
 

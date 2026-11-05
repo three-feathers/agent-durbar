@@ -311,6 +311,7 @@ interface SimAgent {
   /** Spec 058 FR-071 (simmcpauth): servers with a sign-in open (Sign in pressed); `opened` after Open sign-in page. Dropped by End session and Restart session. */
   mcpSign?: Map<string, { opened: boolean; at: number; again?: boolean }>;
   /** The last `mcp` event emitted for this session, like main's `live` list: the dialog's reply reads it (a driver can emit its own). */
+  mcpRenewed?: Map<string, number>; /* spec 058 FR-220: when a driver says Durbar renewed a server in the background (wall clock, display only) */
   mcpReported?: SimAgent['mcpLive']; /* the last list a driver reported through `__durbarSimEmit` (not the simulator's own): its names stay in the dialog */
   mcpAppOff?: Set<string>; /* servers a reported `mcp` list had as `disabled` that this agent's switch did not turn off (the agent app's own config) */
   mcpLive?: { name: string; status: string; error?: string; errorClass?: McpServerStatus['errorClass']; transport?: string }[];
@@ -845,6 +846,8 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
       advance: (ms: number) => { simSignIn.offset += Math.max(0, Number(ms) || 0); },
       fate: (name: string, f: string) => { simSignIn.fates.set(String(name), String(f)); },
       lastResponse: (id: string) => simSignIn.last.get(id),
+      push: (p: { id: string; kind: string; name?: string }) => { simSignIn.push(p); },
+      renewed: (id: string, name: string, at: number) => { const q = sims.find((x) => x.info.id === id); if (q) (q.mcpRenewed ??= new Map()).set(String(name), Number(at)); },
     };
     const simSignInGate = async (s: SimAgent): Promise<'go' | 'stopped'> => {
       if (!simSignIn.flag) return 'go';
@@ -1977,6 +1980,8 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
         for (const x of servers) { const ob = simOrgServer(s.info.adapterId, x.name); if (ob) Object.assign(x, { orgBlocked: ob }); } // spec 076 FR-205
         /* spec 058 FR-188: a Running (connected), switched-on server in a running session says how its last call failed (the class only) */
         for (const x of servers) { const c = s.mcpCalls?.get(x.name); if (live && c && !s.mcpOff?.has(x.name) && (x as { status?: string }).status === 'connected') Object.assign(x, { lastCall: c }); }
+        /* spec 058 FR-220: "Renewed 12:40" on a connected, switched-on server Durbar renewed in the background */
+        for (const x of servers) { const t = s.mcpRenewed?.get(x.name); if (live && typeof t === 'number' && !s.mcpOff?.has(x.name) && (x as { status?: string }).status === 'connected') Object.assign(x, { renewedAt: t }); }
         return { ok: true, servers, live, app: SIM_APP_NAME[s.info.adapterId ?? 'copilot'] ?? 'GitHub Copilot', ...(kc.mcpStart ? { start: kc.mcpStart } : {}), ...(kc.mcpToggleApplies ? { toggleApplies: kc.mcpToggleApplies } : {}), canRestartSession: live && kc.resume, canListTools: true, toolFilter: true, ...(live && simSignApp(s) ? { canRefresh: true } : {}) };
       },
       /* spec 058 FR-040: a canned Restart: Starting for a moment, then Running */
