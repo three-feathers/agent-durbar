@@ -363,7 +363,7 @@ Each has a recommendation (Q6 is for Paco, the crew owner). The build waits for 
 
 ### 2026-11-04 attention lights (owner decisions; FR-236..FR-238, FR-243, FR-244; FR-239..FR-242 withdrawn; T185..T193)
 
-**Status: specified, not built.** Spec, plan and tasks only (PR 1 of 2); the build is PR 2.
+**Status: built in Real office (branch `097-light-bar`), owner's look at T191 pending.** Spec, plan and tasks came in PR 1 (#1122). Open office's half (the owner's scope change of 2026-11-05: its halo replaced by these lights) is a second PR with its own spec 001 delta.
 
 **Owner decisions** (Vikram, Telegram DMs):
 - **2026-11-04 04:38 UTC, after three rounds of mock-ups:** "A", read by his agent as its pick, round 3's D1 without D4's glow at the Boss door. Agents that need you still walk to the Boss as today ("Ok to only be at boss"): FR-024's visits, FR-121's queue and FR-128 do not change.
@@ -440,6 +440,16 @@ FR-040 (a fifth part, the bar), FR-041 (the *Bar* column), FR-045 (D4's door glo
 - `[KNOWN GAP]` The bar's cost is unmeasured. It is gradients, opacity and a static mask on each lit pool, with no filter, so T190 checks counts only, not frame times.
 - Forced colours and reduced motion were not emulated in the mock.
 - Windows and macOS: CI only.
+
+#### Build notes (2026-11-05, decided while building; each with its reason)
+
+- **A narrow asleep desk has no bar** (agreed with the coordinator, 2026-11-05). FR-120's sleeper sits in front of its own dark monitor once the desk narrows, so FR-236's premise that the layout keeps faces off the monitor does not hold there: no bar inside the monitor's span misses that face. `lightBar` returns `hidden`, and the bar, clamp, tint and pool stay made but are not drawn (`.none`). Asleep's own bar is off in the table, so only an unread reply could light it, and the New reply tag still says that in words (FR-238, FR-046). `test:` every hidden bar in the sweeps belongs to an asleep desk (144 of 2120 in `rows`, none in `aisles`).
+- **The pool is 0.52 u tall**, about 110 px at 1440x900 with 6 agents in 2 folders (u 212), the simulator's spread. Its top is FR-236's 8 % of the desk's height. The name plate covers most of it (the plate is opaque chrome), so its gradient is brightest at its top edge, the strip of desk top in front of the monitor that shows.
+- **The tint stays on the bezel above the glass** (3 px on a desk monitor, 4 g on a cabinet), not 8 px: on the glass it would change the screen text's background (FR-243). The bar's glow is a static gradient, not a `box-shadow` (T151's rule for lights, now checked for the bar's rules too). A bar on the monitor's edge glows up only, because a downward glow reached the glass: `check-office-overlap` found that in its first run.
+- **Signs and arcade marquees are what a bar keeps clear of** (FR-236's "header or other chrome text"). The error cue "!" on the monitor's corner (FR-038) is not on that list: it meets the bar's end at both heights and sits above the light layer, so it is never covered.
+- **Colours**: FR-049's existing `--ro-amber`, `--ro-red`, `--ro-orange` and `--ro-green`, not the mock's, as FR-237 allows if the owner's look at T191 accepts them.
+- **Motion off** replaces Serious mode in FR-236's "instant" rule (FR-047 as amended by #1182).
+- The asleep-desk case, both sizes and 3, 8 and 15 agents go to the owner's look (T191) before any PR.
 
 ### 2026-11-04: review on #969 answered (T149 corrected; op rows settled and tight; FR-230 rebuild and the plate's helper list tested)
 
