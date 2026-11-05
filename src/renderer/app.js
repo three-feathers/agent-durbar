@@ -2296,7 +2296,7 @@ function syncChatHeader(){
   if(top&&(!port||port._k!==key)){
     if(port)port.remove();
     port=document.createElement('span');port.id='roPortrait';port.className='ro-portrait';port.setAttribute('aria-hidden','true');port._k=key;
-    port.dataset.lamp=lt.lamp;port.dataset.call=lt.call||'';
+    port.dataset.lamp=lt.lamp;port.dataset.tint=lt.tint; /* spec 097 FR-236: the ring follows the screen tint */
     port.dataset.face=faceKey(a);
     if(file&&pack){const clip=document.createElement('span');clip.className='rp-clip';const im=document.createElement('img');im.alt='';im.draggable=false;im.src=file;
       if(f.crop&&f.seatM){im.style.width=(f.seatM.w/f.crop.s*100)+'%';im.style.left=(-f.crop.x/f.crop.s*100)+'%';im.style.top=(-f.crop.y/f.crop.s*100)+'%';} /* the face fills the circle: the data of the layout's face box */

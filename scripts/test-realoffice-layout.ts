@@ -5,7 +5,6 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { placeBox, portraitCrop, PORTRAIT_SIDE, slipAvoid, NOTE_PAPER, NOTE_PAPER_DEFAULT, NOTE_INK, notePaper, screenFit, screenFor, personMotion, zoomRect, realLayout, lobbyWidths, sortDesks, assignPeople, standPose, standHeight, POSE_FRAME_B, lobbyRange, PERSON_M, DOOR_M, FRONT_DEPTH, NEAR_SCALE, CHIP_H, U_MIN, U_MAX, U_MAX_BIG, FACE_U, PLATE_H, PLATE_H_ASK, STRIP,
   type RealModel, type RealMeta, type RealAgent, type RealState, type Rect, type Layout } from '../src/shared/realoffice-layout';
-import { barProblems, barTally } from './realoffice-bar-check';
 import { lobbyBand, lobbyScale, visitorScale } from '../src/shared/realoffice-layout';
 import { createHash } from 'crypto';
 import { lampWords, lightFor, lightState, LIGHT_TABLE, ambientFor, doneTick, fixtureLight, isActive, type LightState } from '../src/shared/lights';
@@ -73,10 +72,8 @@ function problems(L: Layout, W: number, H: number): string[] {
     for (const v of f.visitors) if (v.fig && (v.fig.y < -0.5 || v.fig.y + v.fig.h > L.lobbyH)) out.push(`visitor ${v.id} leaves the band`);
   }
   L.fixtures.forEach((a, i) => L.fixtures.forEach((b, j) => { if (j > i && inter(a.slot, b.slot)) out.push(`fixtures ${a.id}/${b.id} overlap`); }));
-  out.push(...barProblems(L, BARS)); /* FR-236 */
   return out;
 }
-const BARS = barTally();
 
 // ---- FR-019, FR-011, FR-012: 1..40 agents in 1..8 folders at both sizes, chat closed and open (the floor width the app passes) ----
 const SIZES: [number, number][] = [[1440, 900 - 52], [1280, 800 - 52], [1440 - 470, 900 - 52], [1280 - 470, 800 - 52]];
@@ -92,12 +89,6 @@ for (const [W, H] of SIZES) for (const n of [1, 2, 3, 4, 5, 8, 12, 15, 20, 30, 4
   assert.strictEqual(L.big, n <= 4, 'big screens exactly for 4 agents or fewer (FR-020)');
   cases++;
 }
-
-// FR-236 (T185): every case of the bar's rules came up in the sweep, so a mutant of each can fail
-console.log('light bars:', JSON.stringify(BARS));
-assert.ok(BARS.onEdge > 0, 'FR-236: some bar sits on its monitor\'s edge under a sign');
-assert.ok(BARS.poolNarrowed > 0, 'FR-236: some pool narrows to its monitor for a face');
-assert.ok(BARS.onEdge < BARS.bars, 'FR-236: most bars stand above their monitor');
 
 // ---- SC-002: desk faces at least 40 px with 15 agents at 1280x800 and 1440x900 (chat closed), 4 folders as the simulator ----
 const faces: Record<string, number> = {};
@@ -436,36 +427,49 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
 // ---- FR-041: lights ----
 {
   assert.deepStrictEqual(Object.keys(LIGHT_TABLE), ['working', 'thinking', 'waiting', 'error', 'limit', 'done', 'idle', 'asleep'], 'one row per state');
-  const row = (s: string): string => { const l = lightFor(s); return [l.lamp, l.glow, l.call, l.motion].join('/'); };
-  assert.strictEqual(row('working'), 'warm/on//');
-  assert.strictEqual(row('thinking'), 'on/breathe//breathe');
-  assert.strictEqual(row('waiting'), 'bright/on/amber/pulse');
-  assert.strictEqual(row('error'), 'on/red/red/');
-  assert.strictEqual(row('limit'), 'on/on/orange/');
-  assert.strictEqual(row('done'), 'low/low/green-once/fade');
-  assert.strictEqual(row('idle'), 'low/low//');
-  assert.strictEqual(row('asleep'), 'off/off//');
+  const row = (s: string): string => { const l = lightFor(s); return [l.lamp, l.glow, l.motion, l.tint].join('/'); };
+  assert.strictEqual(row('working'), 'warm/on//none');
+  assert.strictEqual(row('thinking'), 'on/breathe/breathe/none');
+  assert.strictEqual(row('waiting'), 'bright/on//amber');
+  assert.strictEqual(row('error'), 'on/on//red', 'FR-236: no red halo, the screen is red');
+  assert.strictEqual(row('limit'), 'on/on//orange');
+  assert.strictEqual(row('done'), 'low/low//none');
+  assert.strictEqual(row('idle'), 'low/low//none');
+  assert.strictEqual(row('asleep'), 'off/off//none');
+  assert.ok(!('call' in lightFor('waiting')), 'FR-236: no call light');
+  // FR-236: the tint precedence (the light state first), green only for a done desk with an unread reply
+  for (const k of Object.keys(LIGHT_TABLE) as LightState[]) {
+    const want = k === 'done' ? 'green' : LIGHT_TABLE[k].tint;
+    assert.strictEqual(lightFor(k, { unread: true }).tint, want, `FR-236: ${k} with an unread reply: ${want}`);
+    assert.strictEqual(lightFor(k, { unread: true, still: true }).tint, want, `FR-236: ${k}, unread and still: ${want}`);
+  }
+  assert.strictEqual(lightFor('waiting', { unread: true }).tint, 'amber', 'FR-236: a new reply never hides a need');
+  assert.strictEqual(lightFor('failing', { unread: true }).tint, 'red', 'FR-236: failing is an error');
+  assert.strictEqual(lightFor(lightState('waiting', { limit: true }), { unread: true }).tint, 'orange', 'FR-236: limit wins');
+  assert.strictEqual(lightFor('done', { unread: false }).tint, 'none', 'FR-236: read: the normal screen');
+  // FR-236: every screen-text colour on every tint at least 4.5:1, read from realoffice.css (a changed colour cannot slip by)
+  {
+    const css = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'realoffice.css'), 'utf8');
+    const lin = (v: number): number => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+    const lum = (h: string): number => { const n = [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16)); return 0.2126 * lin(n[0]) + 0.7152 * lin(n[1]) + 0.0722 * lin(n[2]); };
+    const ratio = (a: string, b: string): number => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
+    const inks = [...css.matchAll(/--ro-scr-([a-z]+):(#[0-9a-f]{6})/g)].map((m) => [m[1], m[2]]);
+    const tints = [...css.matchAll(/\.ro-screen\.tint-([a-z]+) \.ro-glass\{background:(#[0-9a-f]{6})\}/g)].map((m) => [m[1], m[2]]);
+    assert.deepStrictEqual(tints.map((t) => t[0]).sort(), ['amber', 'green', 'orange', 'red'], 'FR-236: four tints in realoffice.css');
+    assert.ok(inks.length >= 7, 'the screen-text colours are read');
+    const low = tints.flatMap(([t, bg]) => inks.filter(([, c]) => ratio(c, bg) < 4.5).map(([k, c]) => `${k} ${c} on ${t} ${bg}: ${ratio(c, bg).toFixed(2)}`));
+    assert.deepStrictEqual(low, [], 'FR-236: every screen-text colour on every tint at 4.5:1 or more');
+    const arcade = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'realoffice', 'worlds', 'retro', 'world.css'), 'utf8');
+    const arcTints = [...arcade.matchAll(/\.ro-screen\.tint-([a-z]+) \.ro-glass\{background-color:(#[0-9a-f]{6})\}/g)].map((m) => [m[1], m[2]]);
+    assert.deepStrictEqual(Object.fromEntries(arcTints), Object.fromEntries(tints), 'FR-236: the arcade tints its screens with the same colours (the same contrast)');
+  }
   assert.strictEqual(lightState('compacting'), 'thinking'); assert.strictEqual(lightState('retrying'), 'thinking');
   assert.strictEqual(lightState('failing'), 'error'); assert.strictEqual(lightState('working', { paused: true }), 'idle');
   assert.strictEqual(lightState('waiting', { limit: true }), 'limit', 'limit wins over waiting');
   assert.strictEqual(lightState('error', { asleep: true }), 'asleep');
   assert.strictEqual(lightState('toString'), 'idle', 'own keys only'); assert.strictEqual(lightState('nonsense'), 'idle');
   for (const s of STATES) assert.strictEqual(lightFor(s, { still: true }).motion, null, `FR-047: ${s} still under reduced motion or Motion off`);
-  assert.strictEqual(lightFor('waiting', { still: true }).call, 'amber', 'the call light stays, steady');
   lightFor("working").lamp = "off"; assert.strictEqual(lightFor('working').lamp, 'warm', 'the table cannot be changed through a result');
-  // FR-237: the Bar column, and an unread reply green only where the bar would be off (lightState first)
-  const bars = Object.fromEntries((Object.keys(LIGHT_TABLE) as LightState[]).map((k) => [k, lightFor(k).bar]));
-  assert.deepStrictEqual(bars, { working: 'off', thinking: 'off', waiting: 'amber', error: 'red', limit: 'orange', done: 'off', idle: 'off', asleep: 'off' }, 'FR-237: the Bar column');
-  for (const k of Object.keys(LIGHT_TABLE) as LightState[]) {
-    const want = LIGHT_TABLE[k].bar === 'off' ? 'green' : LIGHT_TABLE[k].bar;
-    assert.strictEqual(lightFor(k, { unread: true }).bar, want, `FR-237: ${k} with an unread reply: ${want}`);
-    assert.strictEqual(lightFor(k, { unread: true, still: true }).bar, want, `FR-237: ${k}, unread and still: ${want}`);
-  }
-  assert.strictEqual(lightFor('waiting', { unread: true }).bar, 'amber', 'FR-237: a new reply never hides a need (amber over green)');
-  assert.strictEqual(lightFor('failing', { unread: true }).bar, 'red', 'FR-237: failing is an error, red over green');
-  assert.strictEqual(lightFor(lightState('waiting', { limit: true }), { unread: true }).bar, 'orange', 'FR-237: limit wins, orange over green');
-  assert.strictEqual(lightFor(lightState('waiting', { asleep: true }), { unread: true }).bar, 'green', 'FR-237: asleep has no bar of its own: an unread reply shows');
-  assert.strictEqual(lightFor('idle', { unread: false }).bar, 'off', 'FR-237: read: no green');
   // FR-043
   assert.strictEqual(ambientFor([]), 1);
   assert.strictEqual(ambientFor(['idle', 'done', 'asleep']), 0.7);
@@ -586,7 +590,7 @@ for (const [W, H] of SIZES.slice(0, 2)) {
 // ---- FR-107: the lamp in words, one phrase per FR-041 row, the same for every world ----
 {
   const W = Object.fromEntries((Object.keys(LIGHT_TABLE) as LightState[]).map((k) => [k, lampWords(lightFor(k))]));
-  assert.deepStrictEqual(W, { working: 'Lamp warm, steady', thinking: 'Lamp on, breathing', waiting: 'Lamp bright, amber call light', error: 'Lamp on, red error light', limit: 'Lamp on, orange call light', done: 'Lamp low', idle: 'Lamp low', asleep: 'Lamp off' }, 'a phrase per light row');
+  assert.deepStrictEqual(W, { working: 'Lamp warm, steady', thinking: 'Lamp on, breathing', waiting: 'Lamp bright, amber screen', error: 'Lamp on, red screen', limit: 'Lamp on, orange screen', done: 'Lamp low', idle: 'Lamp low', asleep: 'Lamp off' }, 'a phrase per light row');
   assert.strictEqual(lampWords(lightFor('waiting', { still: true })), W.waiting, 'reduced motion does not change the words');
 }
 

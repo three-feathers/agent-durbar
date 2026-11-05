@@ -13,7 +13,7 @@
  *     the flat office back (FR-001, FR-003), or a broken stored value is not flat;
  *   - with 15 agents: a main agent without its one focusable plate (button, accessible name with the status word, FR-090), a plate
  *     without a status word, a desk without a person that is not away or asleep, an away desk without "at <place>" (FR-017);
- *   - a status cue is missing: a waiting agent without its "?" and amber call light, an error agent without "!" and its red call light,
+ *   - a status cue is missing: a waiting agent without its "?" and amber screen, an error agent without "!" and its red screen, a call light drawn (FR-236),
  *     a light shown without a word (FR-038, FR-041, FR-046);
  *   - the lights move or the scene is not .still under reduced motion (emulated over CDP, page loaded with it) or Serious mode (the real
  *     Settings switch) (FR-047), or the lights show under forced colours (FR-051, emulated);
@@ -141,13 +141,14 @@ module.exports = async (ctx) => {
     const aw = await js(`[...document.querySelectorAll('#stage .ro-away')].every(e=>/^at .+$/.test(e.textContent))`);
     assert.ok(aw, 'away desks say where');
     // ---- FR-038, FR-041, FR-046: cues and lights by status ----
+    /* FR-236 (owner, 2026-11-05): the screen is the cue, no call light: each plate's screen carries its state's tint */
     const cues = await js(`(()=>{const o={};for(const p of document.querySelectorAll('#stage .ro-plate')){const id=p.dataset.id,st=p.dataset.state;
-      const call=[...document.querySelectorAll('#stage .ro-call')].find(c=>c.dataset.for===id);(o[st]=o[st]||[]).push(call?call.className.replace(/ro-call |pulse|fade/g,'').trim():'none');}return o;})()`);
-    console.log('[097] call lights by state', JSON.stringify(cues));
-    if (cues.waiting) assert.ok(cues.waiting.every((c) => c === 'call-amber'), 'waiting: amber call light');
-    if (cues.error) assert.ok(cues.error.every((c) => c === 'call-red'), 'error: red call light');
-    if (cues.limit) assert.ok(cues.limit.every((c) => c === 'call-orange'), 'limit: orange call light');
-    for (const st of ['working', 'thinking', 'idle', 'asleep']) if (cues[st]) assert.ok(cues[st].every((c) => c === 'none'), `${st}: no call light`);
+      const sc=document.querySelector('#stage .ro-screen[data-for="'+CSS.escape(id)+'"]'),m=sc&&/\\btint-(\\w+)/.exec(sc.className);(o[st]=o[st]||[]).push(m?m[1]:'none');}return {o,calls:document.querySelectorAll('#stage .ro-call').length};})()`);
+    console.log('[097] screen tints by state', JSON.stringify(cues));
+    assert.strictEqual(cues.calls, 0, 'FR-236: no call light is drawn');
+    const want = { waiting: 'amber', error: 'red', limit: 'orange' };
+    for (const [st, t] of Object.entries(want)) if (cues.o[st]) assert.ok(cues.o[st].every((c) => c === t), `${st}: a ${t} screen (${cues.o[st]})`);
+    for (const st of ['working', 'thinking', 'idle', 'asleep']) if (cues.o[st]) assert.ok(cues.o[st].every((c) => c === 'none'), `${st}: the normal screen (${cues.o[st]})`);
     const bub = await js(`({e:document.querySelectorAll('#stage .ro-plate[data-state="error"]').length,x:document.querySelectorAll('#stage .ro-bang').length})`);
     assert.strictEqual(bub.x, bub.e, 'one "!" per error desk');
     // ---- owner 2026-10-31 10:19 and 10:48: every visitor's feet (its measured foot line) on the FRONT floor plane (in front of the
@@ -437,7 +438,7 @@ module.exports = async (ctx) => {
   await emulate([{ name: 'prefers-reduced-motion', value: 'no-preference' }], async () => {
     await loadReal(1440, 900);
     assert.ok(await js(`!matchMedia('(prefers-reduced-motion: reduce)').matches`), 'normal motion is emulated');
-    await must(`document.querySelectorAll('#stage .ro-call.pulse').length>0`, 'a pulsing call light to hold still', 60000);
+    await must(`document.querySelectorAll('#stage .ro-glow.breathe').length>0`, 'a breathing screen glow (a thinking desk) to hold still', 60000);
   assert.strictEqual(await js(STILL), false, 'normal motion: the scene is not still');
   await js(`document.getElementById('settingsBtn').click()`);
   await must(`!!document.getElementById('motionSw')`, 'the Motion switch');
@@ -467,42 +468,41 @@ module.exports = async (ctx) => {
   const amb = Number(await js(`document.querySelector('#stage .ro').dataset.ambient`));
   assert.ok(amb >= 0.7 && amb <= 1 && amb15 >= 0.7 && amb15 <= 1, 'ambient in 0.7..1: ' + amb + ', ' + amb15);
   console.log('[097] ambient: 15 agents', amb15, '8 agents', amb);
-  // ---- FR-236..FR-238 (2026-11-04 attention lights, T187): the monitor light bar by state, the New reply tag, made once and switched by class ----
+  // ---- FR-236..FR-238 (owner, 2026-11-05 16:46 UTC): the screen tint by state and the New reply tag, switched by class (no node) ----
   {
-    /* one page function reads a desk's bar, pool, tag and plate name; each call passes only the desk id (jsLiteral) */
-    const installBar = () => js(`window.__roBar=k=>{const q=s=>document.querySelector('#stage '+s+'[data-for="'+CSS.escape(k)+'"]');const b=q('.ro-bar'),p=q('.ro-pool'),t=q('.ro-newtag'),pl=document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(k)+'"]');
-      return {bar:b?b.dataset.bar:'',on:!!b&&b.classList.contains('on'),pool:!!p&&p.classList.contains('on'),tag:!!t&&t.classList.contains('on')&&t.getClientRects().length>0,label:pl?pl.getAttribute('aria-label')||'':''};};true`);
-    const BAR = (k) => `window.__roBar(${jsLiteral(k)})`;
-    const PARTS = `document.querySelectorAll('#stage :is(.ro-bar,.ro-pool,.ro-tint,.ro-clamp,.ro-newtag)').length`;
+    /* one page function reads a desk's screen tint, glass colour, tag and plate name; each call passes only the desk id (jsLiteral) */
+    const installTint = () => js(`window.__roT=k=>{const q=s=>document.querySelector('#stage '+s+'[data-for="'+CSS.escape(k)+'"]');const sc=q('.ro-screen'),g=sc&&sc.querySelector('.ro-glass'),t=q('.ro-newtag'),pl=document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(k)+'"]'),m=sc&&/\\btint-(\\w+)/.exec(sc.className);
+      return {tint:m?m[1]:'none',glass:g?getComputedStyle(g).backgroundColor:'',tag:!!t&&t.classList.contains('on')&&t.getClientRects().length>0,label:pl?pl.getAttribute('aria-label')||'':'',state:pl?pl.dataset.state:''};};true`);
+    const T = (k) => `window.__roT(${jsLiteral(k)})`;
+    const TINT = { amber: 'rgb(85, 58, 0)', red: 'rgb(101, 20, 20)', orange: 'rgb(110, 32, 6)', green: 'rgb(15, 69, 38)' };
     const emitTo = (id, e) => js(`window.__durbarSimEmit(Object.assign({timestamp:Date.now(),sessionId:${jsLiteral(id)}},${jsLiteral(e)}))`);
-    /* amber at the Boss: a waiting agent away at the Boss leaves its desk lit amber, and its plate says Waiting in words (acceptance 3) */
+    /* amber at the Boss: the empty desk of a waiting agent at the Boss keeps its amber screen, and its plate says Waiting (acceptance 3) */
     await loadReal(1440, 900);
-    await installBar();
+    await installTint();
     const boss = await js(`(()=>{const p=[...document.querySelectorAll('#stage .ro-plate[data-state="waiting"]')].find(p=>(p.getAttribute('aria-label')||'').includes(', at Boss.'));return p?p.dataset.id:'';})()`);
-    assert.ok(boss, 'the simulator has an agent waiting at the Boss: ' + JSON.stringify(await js(`[...document.querySelectorAll('#stage .ro-plate')].map(p=>p.dataset.state+' | '+p.getAttribute('aria-label'))`)));
-    const b0 = await js(BAR(boss));
-    assert.ok(b0.bar === 'amber' && b0.on && b0.pool, `FR-236: the empty desk of an agent waiting at the Boss keeps its amber bar and pool: ${JSON.stringify(b0)}`);
+    assert.ok(boss, 'the simulator has an agent waiting at the Boss');
+    const b0 = await js(T(boss));
+    assert.ok(b0.tint === 'amber' && b0.glass === TINT.amber, `FR-236: the empty desk of an agent waiting at the Boss keeps its amber screen: ${JSON.stringify(b0)}`);
     assert.match(b0.label, /Waiting/, 'its plate says Waiting in words (FR-046)');
-    /* the rest at 8 agents (bigger desks): red on an error, orange on a limit, green with the tag on an unread reply; then read: off, no tag */
+    /* the rest at 8 agents: red on an error, orange on a limit, green with the tag on a done desk with an unread reply; read: the normal screen, no tag */
     await loadReal(1440, 900, { sim: '8' });
-    await installBar();
-    const parts0 = await js(PARTS), ids = await js(`[...document.querySelectorAll('#stage .ro-plate')].map(p=>p.dataset.id)`);
-    assert.ok(parts0 >= ids.length * 5, `FR-244: bar, pool, bezel, clamp and tag exist on every desk (${parts0} for ${ids.length} desks)`);
-    await js(`(()=>{const L=document.querySelector('#stage .ro-lights'),C=document.querySelector('#stage .ro-chrome');window.__barNodes=0;const f=ms=>{for(const m of ms)for(const n of [...m.addedNodes,...m.removedNodes])if(n.nodeType===1&&n.matches('.ro-bar,.ro-pool,.ro-tint,.ro-clamp,.ro-newtag'))window.__barNodes++;};window.__barObs=new MutationObserver(f);window.__barObs.observe(L,{childList:true});window.__barObs.observe(C,{childList:true});})()`);
-    const lit = [];
-    for (const k of ids) if ((await js(BAR(k))).bar !== 'none') lit.push(k); /* a narrow asleep desk has no bar (its sleeper is in front of the monitor) */
-    assert.ok(lit.length >= 3, `three desks with a bar to light (${lit.length})`);
-    const [eR, eO, eG] = lit.slice(-3);
+    await installTint();
+    const plain = [];
+    for (const k of await js(`[...document.querySelectorAll('#stage .ro-plate')].map(p=>p.dataset.id)`)) { const x = await js(T(k)); if (x.tint === 'none' && x.state !== 'asleep') plain.push(k); }
+    assert.ok(plain.length >= 3, `three desks with the normal screen (${plain.length})`);
+    const NODES = `document.querySelectorAll('#stage :is(.ro-screen,.ro-newtag)').length`, n0 = await js(NODES);
+    await js(`(()=>{window.__tN=0;const f=ms=>{for(const m of ms)for(const n of [...m.addedNodes,...m.removedNodes])if(n.nodeType===1&&n.matches('.ro-screen,.ro-newtag'))window.__tN++;};window.__tO=new MutationObserver(f);for(const l of document.querySelectorAll('#stage .ro-art,#stage .ro-chrome'))window.__tO.observe(l,{childList:true});return 1})()`);
+    const [eR, eO, eG] = plain.slice(-3);
     await emitTo(eR, { type: 'status', status: 'error', intent: 'Failed' });
-    await must(`(${BAR(eR)}).bar==='red'&&(${BAR(eR)}).on`, 'FR-237: a red bar on an error');
+    await must(`(${T(eR)}).tint==='red'&&(${T(eR)}).glass===${jsLiteral(TINT.red)}`, 'FR-236: a red screen on an error');
     await emitTo(eO, { type: 'status', status: 'working', intent: 'Working' });
-    await emitTo(eO, { type: 'limit', phase: 'exhausted', requestId: 'drv-lim-bar', maxAiCredits: 5, usedAiCredits: 5 });
-    await must(`(${BAR(eO)}).bar==='orange'`, 'FR-237: an orange bar on a limit');
+    await emitTo(eO, { type: 'limit', phase: 'exhausted', requestId: 'drv-lim-tint', maxAiCredits: 5, usedAiCredits: 5 });
+    await must(`(${T(eO)}).tint==='orange'&&(${T(eO)}).glass===${jsLiteral(TINT.orange)}`, 'FR-236: an orange screen at the limit');
     await emitTo(eG, { type: 'status', status: 'working', intent: 'Working' });
     await emitTo(eG, { type: 'output', final: true, text: 'All done.' });
     await emitTo(eG, { type: 'status', status: 'idle' });
-    await must(`(${BAR(eG)}).bar==='green'&&(${BAR(eG)}).tag`, 'FR-237, FR-238: a green bar and the New reply tag on an unread reply');
-    const g = await js(BAR(eG));
+    await must(`(${T(eG)}).tint==='green'&&(${T(eG)}).glass===${jsLiteral(TINT.green)}&&(${T(eG)}).tag`, 'FR-236, FR-238: a green screen and the New reply tag on a done desk with an unread reply');
+    const g = await js(T(eG));
     assert.ok(/, new reply not read yet/.test(g.label), `FR-238: the plate's name says the reply is new: ${g.label}`);
     assert.strictEqual(await js(`document.querySelector('#stage .ro-newtag.on').getAttribute('aria-hidden')`), 'true', 'FR-238: the tag is aria-hidden (the name says it)');
     await H.settle();
@@ -513,27 +513,21 @@ module.exports = async (ctx) => {
     await must(`document.body.classList.contains('panel-open')&&(document.getElementById('panelTitle')||{}).textContent===${jsLiteral(gName)}`, 'the chat of the unread agent');
     await js(`document.getElementById('backBtn').click()`);
     await must(`!document.body.classList.contains('panel-open')`, 'back to the office');
-    await must(`(${BAR(eG)}).bar==='off'&&!(${BAR(eG)}).tag`, 'FR-237, FR-238: read, the bar is off and the tag is gone');
-    assert.ok(!/new reply/.test((await js(BAR(eG))).label), 'read: the plate\'s name no longer says new reply');
-    assert.strictEqual(await js(`(window.__barObs.disconnect(),window.__barNodes)`), 0, 'FR-244: lighting and clearing bars added or removed no bar, pool, bezel, clamp or tag');
-    assert.strictEqual(await js(PARTS), parts0, 'FR-244: the same number of light parts after the changes');
-    /* forced colours: no bar or pool is drawn, the tag stays (FR-236, FR-238; acceptance 6) */
+    await must(`(${T(eG)}).tint==='none'&&!(${T(eG)}).tag`, 'FR-236, FR-238: read, the normal screen and no tag');
+    assert.ok(!/new reply/.test((await js(T(eG))).label), 'read: the plate\'s name no longer says new reply');
+    assert.strictEqual(await js(`(window.__tO.disconnect(),window.__tN)`), 0, 'FR-244: tinting and clearing screens added or removed no screen or tag');
+    assert.strictEqual(await js(NODES), n0, 'FR-244: the same screens and tags after the changes');
+    /* forced colours: the system colours win on the glass (no tint), the tag stays (FR-051, FR-238; acceptance 6) */
     await emitTo(eG, { type: 'status', status: 'working', intent: 'Working' });
     await emitTo(eG, { type: 'output', final: true, text: 'Done again.' });
     await emitTo(eG, { type: 'status', status: 'idle' });
-    await must(`(${BAR(eG)}).tag`, 'the tag again');
+    await must(`(${T(eG)}).tag`, 'the tag again');
     await emulate([{ name: 'forced-colors', value: 'active' }], async () => {
       await must(`matchMedia('(forced-colors: active)').matches`, 'forced colours emulated');
-      const fc = await js(`({drawn:[...document.querySelectorAll('#stage :is(.ro-bar,.ro-pool,.ro-tint)')].filter(e=>e.getClientRects().length).length,tag:(()=>{const t=document.querySelector('#stage .ro-newtag.on');return !!t&&t.getClientRects().length>0&&getComputedStyle(t).display!=='none'})()})`);
-      assert.deepStrictEqual(fc, { drawn: 0, tag: true }, 'forced colours: no bar, pool or tint is drawn; the New reply tag stays: ' + JSON.stringify(fc));
+      const fc = await js(`({tinted:[...document.querySelectorAll('#stage .ro-screen[class*="tint-"] .ro-glass')].filter(g=>${jsLiteral(Object.values(TINT))}.includes(getComputedStyle(g).backgroundColor)).length,tag:(()=>{const t=document.querySelector('#stage .ro-newtag.on');return !!t&&t.getClientRects().length>0&&getComputedStyle(t).display!=='none'})()})`);
+      assert.deepStrictEqual(fc, { tinted: 0, tag: true }, 'forced colours: no screen keeps its tint; the New reply tag stays: ' + JSON.stringify(fc));
     });
-    /* reduced motion and Serious mode: the on/off change is instant (no transition on the bar parts) */
-    await emulate([{ name: 'prefers-reduced-motion', value: 'reduce' }], async () => {
-      await must(`matchMedia('(prefers-reduced-motion: reduce)').matches`, 'reduced motion emulated');
-      const tr = await js(`[...document.querySelectorAll('#stage :is(.ro-pool,.ro-tint)')].map(e=>getComputedStyle(e).transitionDuration).concat([...document.querySelectorAll('#stage .ro-bar')].map(e=>getComputedStyle(e,'::after').transitionDuration)).filter(d=>d.split(',').some(x=>parseFloat(x)>0)).length`);
-      assert.strictEqual(tr, 0, 'reduced motion: the bar parts change at once');
-    });
-    console.log('[097] light bars: amber at the Boss, red, orange, green with the tag, read and forced colours checked;', parts0, 'parts made once');
+    console.log('[097] screen tints: amber at the Boss, red, orange, green with the tag, read and forced colours checked; no node added');
   }
 
   // ---- FR-065: a picture that fails: no broken image, the initials disc ----

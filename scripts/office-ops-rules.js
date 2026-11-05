@@ -19,7 +19,7 @@ const LIMITS = {
   animationsRunning: 90, // T158: measured 78 at 15 agents
   'animationsRunning@40': 260, // measured 250
   animatedOtherProperties: 0, // FR-180: only transform and opacity animate
-  barNodesPerStatus: 0, // spec 097 FR-244 (T190): lighting or clearing a monitor light bar adds or removes no bar, pool, tint, clamp or tag
+  tintNodesPerStatus: 0, // spec 097 FR-244 (T190): tinting or clearing a screen (FR-236) adds or removes no screen or New reply tag
   leakedPlaced: 0, // a `data-placed` mark on anything but a role or a pencil
   staleFits: 0, // header and usage-line classes that a full fit would change, after a status filter and a body-class change
 };

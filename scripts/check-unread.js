@@ -427,7 +427,7 @@ module.exports = async (ctx) => {
       await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
       await H.load({ w: 1440, h: 900, query: { officeview: 'real' }, ready: `!!document.querySelector('#stage .ro .ro-plate')&&document.getElementById('stage').dataset.d==='real'`, settle: false });
       const endless = () => js(`(()=>{const ro=document.querySelector('#stage .ro');if(!ro)return -1;return ro.getAnimations({subtree:true}).filter(a=>{const t=a.effect&&a.effect.getComputedTiming();return t&&t.iterations===Infinity&&a.playState==='running';}).length;})()`);
-      await ok(`document.querySelectorAll('#stage .ro-call.pulse').length>0`, 'Real office: a pulsing call light with motion allowed', 60000);
+      await ok(`document.querySelectorAll('#stage .ro-glow.breathe').length>0`, 'Real office: a breathing screen glow with motion allowed', 60000); /* spec 097 FR-236: no call light any more */
       assert.strictEqual(await js(`document.querySelector('#stage .ro').classList.contains('still')`), false, 'Real office: the room is not still');
       assert.ok((await endless()) > 0, 'Real office: something endless runs while the switch is off');
       await H.click('#settingsBtn');
@@ -436,15 +436,14 @@ module.exports = async (ctx) => {
       await ok(`document.getElementById('stillSw').getAttribute('aria-checked')==='true'`, 'Real office: the switch is on');
       await H.click('#scrClose');
       await ok(`document.querySelector('#stage .ro').classList.contains('still')`, 'Real office: the room is still with the switch on', 30000);
-      await ok(`document.querySelectorAll('#stage .ro-call.pulse').length===0&&document.querySelectorAll('#stage .ro-glow.breathe').length===0`, 'Real office: no call light pulses and no glow breathes');
-      await ok(`getComputedStyle(document.querySelector('#stage .ro-call')).animationName==='none'`, 'Real office: a call light has no animation');
+      await ok(`document.querySelectorAll('#stage .ro-glow.breathe').length===0`, 'Real office: no glow breathes');
       assert.strictEqual(await endless(), 0, 'Real office: nothing endless runs with the switch on');
       await H.click('#settingsBtn');
       await ok(`!!document.getElementById('stillSw')`, 'Real office: Settings again');
       await H.click('#stillSw');
       await ok(`document.getElementById('stillSw').getAttribute('aria-checked')==='false'`, 'Real office: the switch is off again');
       await H.click('#scrClose');
-      await ok(`!document.querySelector('#stage .ro').classList.contains('still')&&document.querySelectorAll('#stage .ro-call.pulse').length>0`, 'Real office: the motion is back with the switch off', 30000);
+      await ok(`!document.querySelector('#stage .ro').classList.contains('still')&&document.querySelectorAll('#stage .ro-glow.breathe').length>0`, 'Real office: the motion is back with the switch off', 30000);
       console.log('[unread] real office ok');
     } finally {
       await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [] });

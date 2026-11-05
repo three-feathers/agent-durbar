@@ -4,7 +4,6 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { realLayout, sortDesks, type RealMeta, type RealModel, type RealAgent, type RealState, type Rect, type Layout } from '../src/shared/realoffice-layout';
-import { barProblems, barTally } from './realoffice-bar-check';
 import { aisleStatus, aislesLayout, layoutFor, aisleTabOrder, aisleFace, FACE_FLOOR, AISLE_SIGN_MIN_W, ARRANGEMENTS } from '../src/shared/realoffice-arrangements';
 
 process.exitCode = 1;
@@ -92,7 +91,6 @@ function problems(L: Layout, W: number, k: number): string[] {
 
 // ---- measure first (T202): what fits, at 1..15 and 40 agents in 1..8 folders, the two floors the app shows ----
 const faces: Record<string, Record<number, number>> = {}, report: string[] = [];
-const BARS = barTally();
 let cases = 0;
 for (let s = 0; s < SIZES.length; s++) {
   const [W, H] = SIZES[s];
@@ -101,7 +99,7 @@ for (let s = 0; s < SIZES.length; s++) {
     for (const f of [1, 2, 3, 4, 8].filter((x) => x <= n)) {
       const L = aislesLayout(model(n, f), { w: W, h: H }, META, SIGNS(f));
       cases++;
-      const p = [...problems(L, W, n), ...barProblems(L, BARS)]; /* FR-236: the light bar on a cabinet's screen too */
+      const p = problems(L, W, n);
       assert.deepStrictEqual(p, [], `${n} agents in ${f} folders at ${NAMES[s]}: ${p.slice(0, 4).join('; ')}`);
       if (f === 1 || n <= 8) faces[NAMES[s]][n] = L.faceH;
       if (n <= 15 && L.scroll) report.push(`${n} in ${f} at ${NAMES[s]}: scrolls`);
@@ -110,8 +108,6 @@ for (let s = 0; s < SIZES.length; s++) {
     }
   }
 }
-console.log('aisles light bars:', JSON.stringify(BARS));
-assert.ok(BARS.bars > 0, 'FR-236: the aisles sweep checked bars');
 // no scroll up to 15 on either floor: not asserted as a fact of nature; a failure names the floor so the design is changed, not the test
 assert.deepStrictEqual(report.filter((r) => / scrolls$/.test(r)), [], 'up to 15 agents the hall fits without scrolling');
 console.log(report.filter((r) => r.startsWith('15 in 4')).join('\n'));

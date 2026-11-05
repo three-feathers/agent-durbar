@@ -290,14 +290,8 @@ function worldCssProblems(cssIn: string): string[] {
   }
   /* FR-181: a light moves in steps; FR-180, T151: the lights have no box-shadow to repaint */
   /* (the people's loops keep to the 1/12 s grid, checked by `check-097-motion`, spec 097 FR-229; the lights are stepped here) */
-  for (const r of css.matchAll(/([^{}]*)\{([^{}]*)\}/g)) if (/\.ro-(glow|call|lamp|fxl|bar|pool|tint|clamp)\b/.test(r[1])) for (const m of r[2].matchAll(/(?:^|[;{\s])animation\s*:\s*([^;}]+)/g)) if (!/steps\(\d+|step-(?:start|end)/.test(m[1]) && !/^none\b/.test(m[1].trim())) out.push(`animation "${m[1].trim()}" is not stepped (FR-181)`);
-  for (const m of css.matchAll(/([^{}]*)\{([^{}]*)\}/g)) if (/\.ro-(glow|call|lamp|fxl|bar|pool|tint|clamp)\b/.test(m[1]) && /box-shadow\s*:(?!\s*none)/.test(m[2])) out.push(`${m[1].trim()} has a box-shadow: a light is a static gradient (T151)`);
-  /* spec 097 FR-244: the monitor light bar, its pool, tint and clamp: no filter (a backdrop-filter is FR-182's, a blend is above), and nothing moves but opacity */
-  for (const m of css.matchAll(/([^{}]*)\{([^{}]*)\}/g)) if (/\.ro-(bar|pool|tint|clamp)\b/.test(m[1])) {
-    if (/(?:^|[;{\s])filter\s*:(?!\s*none)/.test(m[2])) out.push(`${m[1].trim()} has a filter (FR-244)`);
-    if (/(?:^|[;{\s])animation(?:-name)?\s*:(?!\s*none)/.test(m[2])) out.push(`${m[1].trim()} has an animation: the bar only cross-fades (FR-244)`);
-    for (const t of m[2].matchAll(/(?:^|[;{\s])transition(?:-property)?\s*:\s*([^;}]+)/g)) for (const part of t[1].replace(/\([^)]*\)/g, '').split(',')) { const name = part.trim().split(/\s+/)[0]; if (!['opacity', 'none'].includes(name)) out.push(`${m[1].trim()} transitions ${name}: only opacity (FR-244)`); }
-  }
+  for (const r of css.matchAll(/([^{}]*)\{([^{}]*)\}/g)) if (/\.ro-(glow|call|lamp|fxl)\b/.test(r[1])) for (const m of r[2].matchAll(/(?:^|[;{\s])animation\s*:\s*([^;}]+)/g)) if (!/steps\(\d+|step-(?:start|end)/.test(m[1]) && !/^none\b/.test(m[1].trim())) out.push(`animation "${m[1].trim()}" is not stepped (FR-181)`);
+  for (const m of css.matchAll(/([^{}]*)\{([^{}]*)\}/g)) if (/\.ro-(glow|call|lamp|fxl)\b/.test(m[1]) && /box-shadow\s*:(?!\s*none)/.test(m[2])) out.push(`${m[1].trim()} has a box-shadow: a light is a static gradient (T151)`);
   /* FR-182: a blur only on the allow list, whatever the media query; `none` turns it off */
   const ALLOW = new Set(['.toast', '.more-menu', '.mode-menu', '.grants-pop', '.ct-more-pop', '#defaultsPop', '#foldersPop', '#floorsPop']);
   for (const m of css.matchAll(/([^{}]*)\{([^{}]*)\}/g)) {
@@ -326,13 +320,6 @@ function worldCssProblems(cssIn: string): string[] {
   assert.deepStrictEqual(worldCssProblems('html[data-world] .toast{backdrop-filter:blur(2px)}.dlg{backdrop-filter:none}@media (forced-colors:active){.dlg{backdrop-filter:none}}'), [], 'a listed blur, and turning it off, pass');
   red('.ro-glow.a{animation:k 2s ease-in-out infinite}', /not stepped/, 'a smooth light');
   red('.ro-glow.x{opacity:1;box-shadow:0 0 1px red}', /box-shadow/, 'a light with a box-shadow');
-  red('.ro-bar.on::after{box-shadow:0 2px 6px red}', /box-shadow/, 'FR-244: a light bar with a box-shadow');
-  red('.ro-pool{filter:blur(4px)}', /has a filter/, 'FR-244: a pool with a filter');
-  red('.ro-tint.on{mix-blend-mode:screen}', /mix-blend-mode/, 'FR-244: a tint that blends');
-  red('.ro-bar{animation:k 2s steps(2) infinite}', /has an animation/, 'FR-244: a bar that pulses');
-  red('.ro-pool{transition:transform .2s}', /transitions transform/, 'FR-244: a pool that moves');
-  red('html[data-world] .ro-pool{backdrop-filter:blur(2px)}', /backdrop-filter on \.ro-pool/, 'FR-244: a pool with a backdrop blur');
-  assert.deepStrictEqual(worldCssProblems('.ro-bar::after{opacity:0;transition:opacity .25s ease;background:red}.ro-pool{transition:none}'), [], 'FR-244: an opacity cross-fade passes');
   assert.deepStrictEqual(worldCssProblems('/* mix-blend-mode:screen */ .a{transition:opacity 1s;background:red}@keyframes k{50%{opacity:.5;transform:scale(2)}}'), [], 'the allowed forms pass');
   assert.deepStrictEqual(worldCssProblems('.a{animation:k 2s steps(4,end) infinite;box-shadow:0 0 1px red}.ro-call.b{animation:none}.m-a{animation:k 1s linear infinite}'), [], 'a stepped animation, none, a shadow on something that is not a light, and a person\'s loop (the 1/12 s grid is check-097-motion\'s) pass');
 }

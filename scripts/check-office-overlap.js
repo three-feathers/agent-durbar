@@ -506,7 +506,7 @@ async function driver(ctx) {
       const lum = ([r, g, b]) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
       const bgOf = (e) => { for (let n = e; n; n = n.parentElement) { const c = rgb(getComputedStyle(n).backgroundColor); if (c.length >= 3 && (c.length < 4 || c[3] > 0.95)) return c; } return [255, 255, 255]; };
       let minRatio = 99;
-      document.querySelectorAll('#stage .ro-plate b, #stage .ro-plate .ro-l2, #stage .ro-sign b, #stage .ro-lplate span, #stage .ro-chip, #stage .ro-newtag.on').forEach((e) => { /* FR-238: the New reply tag too */
+      document.querySelectorAll('#stage .ro-plate b, #stage .ro-plate .ro-l2, #stage .ro-sign b, #stage .ro-lplate span, #stage .ro-chip, #stage .ro-newtag.on').forEach((e) => { /* spec 097 FR-238: the New reply tag too */
         if (!e.getClientRects().length) return;
         const a = lum(rgb(getComputedStyle(e).color)), b = lum(bgOf(e)), k = (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
         minRatio = Math.min(minRatio, k);
@@ -551,41 +551,6 @@ async function driver(ctx) {
         if (res.problems.length) { failed++; console.log(`FAIL ${tag} ${step} ambient ${amb}: ${res.problems.slice(0, 12).join('; ')}`); }
         rows.push({ label: `${tag} ${step} ambient ${amb}`, d: 'real', h: '-', rooms: '-', plates: res.info.plates, desks: res.info.plates, stageH: Math.round(res.info.u || 0), floorH: 0, minFont: res.info.minFont, problems: res.problems.length });
         console.log(`  ${tag}: face ${res.info.face ? res.info.face.toFixed(1) : '?'}px, u ${res.info.u ? res.info.u.toFixed(0) : '?'}, contrast >= ${res.info.minRatio ? res.info.minRatio.toFixed(2) : '?'}`);
-      }
-      /* spec 097 FR-243 (T188): every monitor light bar lit changes no pixel of a plate, sign, place plate, chip, New reply tag or screen text: they
-         sit above the light layer on their own backgrounds. The room is captured with every bar part forced off, then forced lit (amber; a test
-         hook on the classes, as a status change sets them), and the pixels inside those rects are compared. */
-      {
-        const TEXT_RECTS = `[...document.querySelectorAll('#stage :is(.ro-plate,.ro-sign,.ro-lplate,.ro-chip,.ro-newtag.on,.ro-stext)')].filter(e=>e.getClientRects().length).map(e=>{const r=e.getBoundingClientRect();return {k:e.className.split(' ')[0]+' '+(e.dataset.id||e.dataset.for||e.dataset.place||e.dataset.folder||''),x:r.left,y:r.top,w:r.width,h:r.height}})`;
-        const force = (on) => ctx.js(`(()=>{document.querySelectorAll('#stage :is(.ro-bar,.ro-pool,.ro-tint):not(.none)').forEach(e=>{e.classList.toggle('on',${jsLiteral(on)});if(${jsLiteral(on)})e.classList.add('bar-amber');});
-          return new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r(true))));})()`);
-        await ctx.js(`[...document.querySelectorAll('#stage .ro-newtag')].slice(0,3).forEach(t=>t.classList.add('on'))`); /* tags shown in both captures, so they are compared too */
-        await ctx.js(`(()=>{const s=document.createElement('style');s.id='ops-bars-still';s.textContent='#stage .ro-bar::after,#stage :is(.ro-pool,.ro-tint){transition:none!important}';document.head.appendChild(s);return true})()`);
-        const grab = async () => { const img = await ctx.win.webContents.capturePage(); return { bmp: img.toBitmap(), w: img.getSize().width, s: img.getSize().width / (await ctx.js('innerWidth')) }; };
-        await force(false); const off = await grab();
-        const rects = await ctx.js(TEXT_RECTS);
-        await force(true); const lit = await grab();
-        const lightsN = await ctx.js(`document.querySelectorAll('#stage .ro-bar.on').length`);
-        await force(false); const off2 = await grab(); /* a pixel that differs between the two dark captures (a caret, a monitor's own repaint) is not the light's */
-        const changed = [];
-        for (const r of rects) {
-          let n = 0;
-          const d = (a, b, i) => Math.abs(a.bmp[i] - b.bmp[i]) > 2 || Math.abs(a.bmp[i + 1] - b.bmp[i + 1]) > 2 || Math.abs(a.bmp[i + 2] - b.bmp[i + 2]) > 2;
-          /* 3 px inside the box: a rounded corner's pixels are the room behind, not the plate */
-          for (let y = Math.ceil((r.y + 3) * off.s); y < Math.floor((r.y + r.h - 3) * off.s); y++) for (let x = Math.ceil((r.x + 3) * off.s); x < Math.floor((r.x + r.w - 3) * off.s); x++) {
-            const i = (y * off.w + x) * 4;
-            if (!d(off, off2, i) && d(off, lit, i)) n++;
-          }
-          if (n) changed.push(`${r.k} (${n} px)`);
-        }
-        await ctx.js(`(()=>{document.getElementById('ops-bars-still').remove();window.__durbarSimUi.render();return true})()`);
-        total++;
-        const fp = [];
-        if (lightsN < 1) fp.push('no bar was lit for the comparison');
-        if (rects.length < 5) fp.push(`only ${rects.length} text rects compared`);
-        if (changed.length) fp.push(`lit bars change the pixels of ${changed.slice(0, 6).join(', ')}`);
-        if (fp.length) { failed++; console.log(`FAIL ${tag} bars lit (FR-243): ${fp.join('; ')}`); }
-        console.log(`  ${tag}: ${lightsN} bars lit, ${rects.length} plates, signs, chips, tags and screen texts unchanged: ${!changed.length}`);
       }
       if (shotsDir) await ctx.shot(path.join(shotsDir, `${prefix}-${tag.replace(/ /g, '-')}.png`));
       /* chat open: the chat takes the window (spec 001: body.panel-open hides the office); the page must not overflow, and closing it draws the same office */
