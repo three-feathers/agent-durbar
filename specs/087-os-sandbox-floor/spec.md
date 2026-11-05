@@ -414,6 +414,9 @@ PR ([#728 comment](https://github.com/three-feathers/agent-durbar/pull/728#issue
   - **A crash or a SIGKILL of Durbar** leaves the folder behind (no handler runs). The OS cleans its temp folder.
   - **Not yet checked:** that the runtime's own tools (not only an approved shell `touch`) write inside the private `TMPDIR`. The `real:` line covers an approved shell command only.
   - **Checked on Linux and macOS** (the `real:` lines under FR-023), Ask first only.
+  - **Cannot be removed from inside Durbar** (`read:` 2026-11-05, SDK 1.0.24 `schemas/api.schema.json`, not run): the schema says temporary storage "follow[s] [its] own rules and stay[s] granted" whatever `allowDevToolAccess` or `addCurrentWorkingDirectory` say, and the only knobs (`readwritePaths`, `deniedPaths`) do not name it. Whether a `deniedPaths` entry for the private folder would win over that grant was **not tested**; it is not recommended, since the runtime's own shell scratch files use that folder. The narrowing in FR-023 (private folder instead of `/tmp`) is the fix Durbar owns. Open for the owner: an upstream request that Copilot report the extra rule in `sandbox.decision` and offer an opt-out (draft kept in the issue, not posted).
+  - **Read-only, why unexercised:** Durbar's broker refuses Copilot's shell in Read-only before the sandbox runs, so a `touch` probe cannot tell; the grant would matter only for MCP and LSP servers (`sandboxMcpServers`, `sandboxLspServers`), which write to `TMPDIR` too (`read:`). The tooltip's "a temp folder likely" stays.
+  - **macOS path length** (a side effect of FR-023: a long `os.tmpdir()` makes the private `TMPDIR` too long for Unix sockets) is issue #1173, owned by another contributor; not changed here.
 
 ### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
 
