@@ -3,16 +3,15 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vm from 'vm';
-import { execFileSync } from 'child_process';
 
 const ROOT = path.join(__dirname, '..', '..');
 const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')) as { version: string };
-execFileSync(process.execPath, [path.join(ROOT, 'scripts', 'copy-assets.js')], { stdio: 'ignore' });
-const generated = fs.readFileSync(path.join(ROOT, 'dist', 'renderer', 'appversion.js'), 'utf8');
+// read-only: the same pure function copy-assets.js writes the file with (no dist/ writes, safe beside parallel suites)
+const generated: string = require(path.join(ROOT, 'scripts', 'appversion.js')).appVersionScript(pkg.version);
 const sandbox: { self?: unknown; DurbarAppVersion?: string } = {};
 sandbox.self = sandbox; // as in a page, self is the global object
 vm.runInNewContext(generated, sandbox);
-assert.strictEqual(sandbox.DurbarAppVersion, pkg.version, 'the generated appversion.js carries package.json\'s version');
+assert.strictEqual(sandbox.DurbarAppVersion, pkg.version, 'the appversion.js text carries package.json\'s version');
 
 // the expression sim.ts uses for About.version, evaluated with the generated global
 const src = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'sim.ts'), 'utf8');
