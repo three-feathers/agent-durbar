@@ -459,6 +459,30 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
     assert.ok(inks.length >= 7, 'the screen-text colours are read');
     const low = tints.flatMap(([t, bg]) => inks.filter(([, c]) => ratio(c, bg) < 4.5).map(([k, c]) => `${k} ${c} on ${t} ${bg}: ${ratio(c, bg).toFixed(2)}`));
     assert.deepStrictEqual(low, [], 'FR-236: every screen-text colour on every tint at 4.5:1 or more');
+    /* FR-236: the four tints are told apart: every pair at least 12 apart in CIEDE2000 (orange once sat 7.5 from red and read the same maroon) */
+    const toLab = (h: string): number[] => {
+      const [r, g, b] = [1, 3, 5].map((i) => { const v = parseInt(h.slice(i, i + 2), 16) / 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; });
+      const f = (t: number): number => (t > 216 / 24389 ? Math.cbrt(t) : (24389 / 27 * t + 16) / 116);
+      const X = f((0.4124 * r + 0.3576 * g + 0.1805 * b) / 0.95047), Y = f(0.2126 * r + 0.7152 * g + 0.0722 * b), Z = f((0.0193 * r + 0.1192 * g + 0.9505 * b) / 1.08883);
+      return [116 * Y - 16, 500 * (X - Y), 200 * (Y - Z)];
+    };
+    const de00 = (p: string, q: string): number => {
+      const [L1, a1, b1] = toLab(p), [L2, a2, b2] = toLab(q), rad = Math.PI / 180;
+      const Cb = (Math.hypot(a1, b1) + Math.hypot(a2, b2)) / 2, G = 0.5 * (1 - Math.sqrt(Cb ** 7 / (Cb ** 7 + 25 ** 7)));
+      const A1 = (1 + G) * a1, A2 = (1 + G) * a2, C1 = Math.hypot(A1, b1), C2 = Math.hypot(A2, b2);
+      const hue = (x: number, y: number): number => { const v = Math.atan2(y, x) / rad; return v < 0 ? v + 360 : v; };
+      const h1 = hue(A1, b1), h2 = hue(A2, b2);
+      let dh = h2 - h1; if (C1 * C2 === 0) dh = 0; else if (dh > 180) dh -= 360; else if (dh < -180) dh += 360;
+      const dL = L2 - L1, dC = C2 - C1, dH = 2 * Math.sqrt(C1 * C2) * Math.sin((dh / 2) * rad), Lb = (L1 + L2) / 2, Cp = (C1 + C2) / 2;
+      const hb = C1 * C2 === 0 ? h1 + h2 : Math.abs(h1 - h2) > 180 ? (h1 + h2 + 360) / 2 : (h1 + h2) / 2;
+      const T = 1 - 0.17 * Math.cos((hb - 30) * rad) + 0.24 * Math.cos(2 * hb * rad) + 0.32 * Math.cos((3 * hb + 6) * rad) - 0.2 * Math.cos((4 * hb - 63) * rad);
+      const RT = -Math.sin(2 * 30 * Math.exp(-(((hb - 275) / 25) ** 2)) * rad) * 2 * Math.sqrt(Cp ** 7 / (Cp ** 7 + 25 ** 7));
+      const SL = 1 + (0.015 * (Lb - 50) ** 2) / Math.sqrt(20 + (Lb - 50) ** 2), SC = 1 + 0.045 * Cp, SH = 1 + 0.015 * Cp * T;
+      return Math.sqrt((dL / SL) ** 2 + (dC / SC) ** 2 + (dH / SH) ** 2 + RT * (dC / SC) * (dH / SH));
+    };
+    assert.ok(Math.abs(de00('#000000', '#ffffff') - 100) < 0.01, 'CIEDE2000: black to white is 100');
+    const near = tints.flatMap(([t, a], i) => tints.slice(i + 1).filter(([, b]) => de00(a, b) < 12).map(([u, b]) => `${t} ${a} to ${u} ${b}: ${de00(a, b).toFixed(1)}`));
+    assert.deepStrictEqual(near, [], 'FR-236: every pair of tints at least 12 apart (CIEDE2000), so orange never reads as red or amber');
     const arcade = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'realoffice', 'worlds', 'retro', 'world.css'), 'utf8');
     const arcTints = [...arcade.matchAll(/\.ro-screen\.tint-([a-z]+) \.ro-glass\{background-color:(#[0-9a-f]{6})\}/g)].map((m) => [m[1], m[2]]);
     assert.deepStrictEqual(Object.fromEntries(arcTints), Object.fromEntries(tints), 'FR-236: the arcade tints its screens with the same colours (the same contrast)');

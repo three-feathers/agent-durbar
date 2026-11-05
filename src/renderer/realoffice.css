@@ -36,10 +36,10 @@
 /* FR-035: error a faint red tint, needs-you an amber frame, asleep dark glass with no text (done: its newest line is green) */
 /* FR-236 (owner, 2026-11-05 16:46 UTC): the screen is the status cue, no separate light. A dark tint behind the text, at least 4.5:1 for every
    screen-text colour (--ro-scr-*: 5.26:1 at worst, err on amber; test:realoffice-layout holds it). Amber needs you, red error, orange the spending
-   limit (redder than the mock's, hue 15, apart from amber), green a done desk with a reply not read yet. The other states keep the normal glass. */
+   limit (redder than the mock's, hue 23, kept at least 12 CIEDE2000 from red and amber: test:realoffice-layout), green a done desk with a reply not read yet. The other states keep the normal glass. */
 .ro-screen.tint-amber .ro-glass{background:#553a00}
 .ro-screen.tint-red .ro-glass{background:#651414}
-.ro-screen.tint-orange .ro-glass{background:#6e2006}
+.ro-screen.tint-orange .ro-glass{background:#7a2e00}
 .ro-screen.tint-green .ro-glass{background:#0f4526}
 .ro-screen.off .ro-glass{background:#121314}
 /* FR-030..FR-033: the text of a monitor, in the chrome over the glass; newest at the bottom, the top scrolls away as in flat's side panel */

@@ -20,7 +20,7 @@
 /* spec 097 FR-236: the screen tint in the arcade too, under its scan lines (the colour only; the same tints and contrast as realoffice.css) */
 .ro[data-world="retro"] .ro-screen.tint-amber .ro-glass{background-color:#553a00}
 .ro[data-world="retro"] .ro-screen.tint-red .ro-glass{background-color:#651414}
-.ro[data-world="retro"] .ro-screen.tint-orange .ro-glass{background-color:#6e2006}
+.ro[data-world="retro"] .ro-screen.tint-orange .ro-glass{background-color:#7a2e00}
 .ro[data-world="retro"] .ro-screen.tint-green .ro-glass{background-color:#0f4526}
 .ro[data-world="retro"] .ro-screen:is(.st-waiting,.st-limit) .ro-bezel,.ro[data-world="retro"] .ro-screen:hover .ro-bezel{box-shadow:none}
 /* the marquee: real text, at least 12 px, one line, level (FR-257) */

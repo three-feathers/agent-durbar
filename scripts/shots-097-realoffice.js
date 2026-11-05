@@ -474,7 +474,7 @@ module.exports = async (ctx) => {
     const installTint = () => js(`window.__roT=k=>{const q=s=>document.querySelector('#stage '+s+'[data-for="'+CSS.escape(k)+'"]');const sc=q('.ro-screen'),g=sc&&sc.querySelector('.ro-glass'),t=q('.ro-newtag'),pl=document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(k)+'"]'),m=sc&&/\\btint-(\\w+)/.exec(sc.className);
       return {tint:m?m[1]:'none',glass:g?getComputedStyle(g).backgroundColor:'',tag:!!t&&t.classList.contains('on')&&t.getClientRects().length>0,label:pl?pl.getAttribute('aria-label')||'':'',state:pl?pl.dataset.state:''};};true`);
     const T = (k) => `window.__roT(${jsLiteral(k)})`;
-    const TINT = { amber: 'rgb(85, 58, 0)', red: 'rgb(101, 20, 20)', orange: 'rgb(110, 32, 6)', green: 'rgb(15, 69, 38)' };
+    const TINT = { amber: 'rgb(85, 58, 0)', red: 'rgb(101, 20, 20)', orange: 'rgb(122, 46, 0)', green: 'rgb(15, 69, 38)' };
     const emitTo = (id, e) => js(`window.__durbarSimEmit(Object.assign({timestamp:Date.now(),sessionId:${jsLiteral(id)}},${jsLiteral(e)}))`);
     /* amber at the Boss: the empty desk of a waiting agent at the Boss keeps its amber screen, and its plate says Waiting (acceptance 3) */
     await loadReal(1440, 900);

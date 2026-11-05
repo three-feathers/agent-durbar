@@ -372,11 +372,11 @@ Each has a recommendation (Q6 is for Paco, the crew owner). The build waits for 
 #### Requirements
 
 - **FR-236** **The screen's tint is the status cue** (amends FR-040, FR-041 and FR-042).
-  - A desk's monitor glass is tinted by its light state: **amber** `#553a00` when the agent needs you, **red** `#651414` on an error (failing too), **orange** `#6e2006` at the spending limit, and **green** `#0f4526` on a done desk whose reply is not read yet.
+  - A desk's monitor glass is tinted by its light state: **amber** `#553a00` when the agent needs you, **red** `#651414` on an error (failing too), **orange** `#7a2e00` at the spending limit, and **green** `#0f4526` on a done desk whose reply is not read yet.
   - Working, thinking, idle and asleep keep the normal glass.
-  - Orange is redder than the mock's `#682a04` (hue 15 against amber's 41 and red's 0), as the owner asked.
+  - Orange is a little redder than the mock's `#682a04` (hue 23 against amber's 41 and red's 0), as the owner asked, and held apart from red: every pair of tints is at least 12 apart in CIEDE2000 (13.1 orange to red, 15.4 orange to amber). The first choice, `#6e2006` (hue 15), was only 7.5 from red and looked the same maroon at desk size (coordinator's Linux render, 2026-11-05).
   - **Precedence** (`lightFor`): the light state first (asleep, limit, paused, then the status), so a need always shows over a new reply. Green only for a done desk; a helper never has an unread reply.
-  - **Contrast:** every screen-text colour (`--ro-scr-*`) on every tint is at least 4.5:1; the lowest is 5.26:1, the error text on amber.
+  - **Contrast:** every screen-text colour (`--ro-scr-*`) on every tint is at least 4.5:1; the lowest is 4.72:1, on orange.
   - **Removed** with the decision: the corner call light (with its amber ring, its pulse and the done tick), the red screen glow (the "red halo"), and the amber ring around a waiting or limit monitor's bezel.
   - The arcade tints its cabinet screens the same way, under its scan lines.
   - An empty desk keeps its tint while its agent is away (a waiting agent at the Boss leaves an amber screen).
@@ -391,7 +391,7 @@ Each has a recommendation (Q6 is for Paco, the crew owner). The build waits for 
 - **FR-239..FR-242** *Withdrawn (owner, 2026-11-04): the dusk.*
 - **FR-243** **Contrast with the tints** (amends FR-050).
   - FR-050's pass measures screen text against its own glass's background, so on every tint, and measures the New reply tag.
-  - `test:realoffice-layout` also checks every `--ro-scr-*` colour on every tint at 4.5:1, read from `realoffice.css`, and that the arcade's tints are the same colours.
+  - `test:realoffice-layout` also checks every `--ro-scr-*` colour on every tint at 4.5:1, read from `realoffice.css`, that every pair of tints is at least 12 apart in CIEDE2000, and that the arcade's tints are the same colours.
 - **FR-244** **The tint is cheap.** It is one class on the screen element, made once per desk. A status change that tints or clears a screen adds or removes no node and reads no layout; no filter, blend or animation is involved.
 
 #### Acceptance criteria
@@ -409,6 +409,7 @@ Each has a recommendation (Q6 is for Paco, the crew owner). The build waits for 
 - `test:` `test:realoffice-layout`: the tint table, its precedence, and the contrast of every text colour on every tint (plus the arcade's).
   - Mutant: green whenever unread fails `FR-236: working with an unread reply: none`.
   - Mutant: a lighter amber `#8a6a10` fails `FR-236: every screen-text colour on every tint at 4.5:1 or more` with `plain #c8d1da on amber #8a6a10: 3.27`.
+  - Mutant: orange back at `#6e2006` fails the tints-apart assert (orange to red 7.5).
 - `sim:` `shots-097-realoffice`: amber at the Boss; red, orange and green with the tag; read; no node added; forced colours.
 - `sim:` `check-office-ops`, row `tintNodesPerStatus` (limit 0), and `check-office-overlap` (`OFFICE_VIEW=real`, 31/31).
 - `sim:` `check-unread` and `check-office-ops-real` now take the thinking desk's breathing glow as their sign of motion, since the call light that used to pulse is gone.
