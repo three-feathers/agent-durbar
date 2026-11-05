@@ -351,10 +351,9 @@ module.exports = async (ctx) => {
     wc().sendInputEvent({ type: 'keyUp', keyCode: 'V', modifiers: PASTE });
     /* on a Mac, Cmd+V pastes through the app menu's Edit > Paste (appmenu.ts editMenu role), which a synthetic key event never reaches: the key
        moves the focus (the app's own handler, checked below); the menu's paste is then done as the menu does it (issue 839) */
-    if (process.platform === 'darwin') { await ctx.sleep(50); wc().paste(); }
-    await ctx.sleep(300);
-    assert.strictEqual(await js(`document.activeElement.id`), 'msgInput', w + ': Ctrl+V (Cmd+V on a Mac) on Approve moves focus to the message box');
-    assert.strictEqual(await js(`document.getElementById('msgInput').value`), 'pasted text', w + ': and the paste lands there');
+    assert.ok(await until(`document.activeElement&&document.activeElement.id==='msgInput'`, 3000), w + ': Ctrl+V (Cmd+V on a Mac) on Approve moves focus to the message box'); /* FR-048b: wait for it, then paste (review of #1206) */
+    if (process.platform === 'darwin') wc().paste();
+    assert.ok(await until(`document.getElementById('msgInput').value==='pasted text'`, 3000), w + ': and the paste lands there: ' + jsLiteral(await js(`document.getElementById('msgInput').value`)));
     await nkey('Return');
     assert.deepStrictEqual(await got('plan'), [], w + ': Enter after the paste does not approve the plan ' + jsLiteral(await got('plan')));
 
