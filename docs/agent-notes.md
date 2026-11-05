@@ -139,6 +139,7 @@ Each entry: **what** (bold), why, how to apply, evidence (`real:`, `read:`, `tes
 - **The simulator's End session never reaches main**: a driver that checks a browser teardown uses the driver-context hooks `ctx.browserGone` / `ctx.browserStates` (`main.ts`), not the renderer.
 - **No referrer from a custom scheme** (2026-10-31): a `durbar-sim:` `_blank` has `referrer.url === ''`; test referrer rules over loopback http (`check-browser-tabs.js`).
 - **CSS anchor positioning** (2026-11-05, #1155, Chromium 125+): `anchor-name`s are document-global, so unique, and precede what they anchor; guard: `check-097-plate-pencil`.
+- **A driver that counts one update starts from a settled office, and one that waits for a repaint sends an event that repaints** (2026-11-05, #1195, #1196): a status event starts or ends a visit on the 250 ms visit tick, which renders, so wait for `__durbarSimUi.visitsSettled()` and `settleNow()` before a counted window; the open MCP dialog repaints on an `mcp` event only (not a `toolCall`), so send the report last. Both flaked only on slow Linux CI: reproduce with 2 busy loops per core (`while :; do :; done &`) around `ui-suite --only <driver>`.
 
 ## Team chat
 

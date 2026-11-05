@@ -134,6 +134,11 @@ module.exports = async (ctx) => {
     await drawn(emit('working')); // so that every change below is a real change of one agent's status
     const per = { renders: [], searches: [], reads: [], gcsFloor: [] }, leaks = [];
     for (let i = 0; i < 8; i++) {
+      /* a settled window (#1195, 3 renders once in 8 on Linux CI, 3 of 10 runs under a CPU load): the previous update's visit (a desk walking to a place starts, or ends, on the
+         250 ms visit tick, which renders) lands inside this window on a slow machine. Start only when no visit waits to start or end and no render is queued (the lobby's own
+         settled signals, as check-office-ops-real does); the visit this update starts is the one timer's render the limit below allows */
+      assert.ok(await until(`window.__durbarSimUi.visitsSettled()&&window.__durbarSimUi.settleNow()`, 15000), `${n} agents: the office settled before update ${i}`);
+      await js(TWO_FRAMES);
       await js(`window.__ops.start()`);
       await drawn(emit(i % 2 ? 'working' : 'idle'));
       const o = await js(`window.__ops.stop()`);

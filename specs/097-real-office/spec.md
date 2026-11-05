@@ -332,6 +332,14 @@ Each has a recommendation (Q6 is for Paco, the crew owner). The build waits for 
 
 ## Changes
 
+### 2026-11-05: `check-office-ops` counts each status update from a settled office (issue #1195, T198)
+
+**Seen:** on Linux CI (PR #1191 run 42006041419, earlier #1185) one of the 8 counted status updates at 40 agents drew 3 renders (1,1,1,1,1,1,1,3) and failed `every status update is one render, two at most`.
+
+**Cause (driver, not app):** the 8 samples ran back to back. A status event starts or ends a desk's visit, and the visit starts or ends on the 250 ms visit tick (`VISITS.tick`), which renders. On a slow machine that tick, and the previous sample's, land inside the next sample's window next to its own render. `sim:` reproduced on Linux with a CPU load (2 busy loops per core): 3 of 10 runs failed with exactly `(1,1,1,1,1,1,1,3)`, 0 of 20 on an idle machine. The app does not render twice for one update.
+
+**Fix:** before each counted update the driver waits, with `until()`, for the office's own settled signals (`__durbarSimUi.visitsSettled()` and `settleNow()`, as `check-office-ops-real` does) and two frames. The limit (1..2 renders) is unchanged, no sleep, no wall-clock assert. No behaviour change.
+
 ### 2026-11-04 the op rows' motion half fails on Windows CI (driver fix)
 
 **Seen:** `check-office-ops-real` (FR-183's `pictureArea@15motion` row, #969) failed twice on every Windows UI check, `main` itself included (f8867f035), with `motion on: second frames running: []`: no second frame and no rig at all. Linux and macOS passed.
