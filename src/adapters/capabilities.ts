@@ -72,7 +72,8 @@ export interface AdapterCapabilities {
   readonly mcpSignInReconnect?: boolean;
   /**
    * Spec 058 FR-218 (2026-11-05): after a failed call (or a report that turns `needs-auth` after `connected`), main reconnects that remote
-   * MCP server once, after the turn, with the same reconnect. No timer. Only with `mcpSignInReconnect`; missing = false (Claude Code refreshes on a 401 by itself,
+   * MCP server once, at once and also in the middle of a turn, with the same reconnect, and sends the agent one short automatic note when it
+   * worked. No timer. Only with `mcpSignInReconnect`; missing = false (Claude Code refreshes on a 401 by itself,
    * Codex refreshes when a thread starts).
    */
   readonly mcpBackgroundRenew?: boolean;

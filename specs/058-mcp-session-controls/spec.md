@@ -457,7 +457,9 @@ tokens) with a 20 s access token; sign-in through `rpc.mcp.oauth.login` and a pl
   false: Claude's CLI refreshes on a 401 and retries, Codex refreshes when a thread starts, FR-207). **The reconnect starts at once, also in
   the middle of a turn** (owner, 2026-11-05 18:03 UTC: "after the turn" comes too late, the agent says it cannot use Teams and carries on),
   through FR-207's path and the refresher's per-server queue (FR-219). Its only waits: another tool call to the **same server in that
-  session** that is still running (it waits for it to end, `callsInFlight`), and the conditions below. **No timer and no proactive reconnect**
+  session** that is still running (it waits for it to end, `callsInFlight`, checked again right before the restart runs, because the restart
+  may have waited in the per-server queue; a call that never reports its end, after Stop or an abort, is cleared by the turn's end and by
+  Stop), and the conditions below. **No timer and no proactive reconnect**
   (owner, 16:58 UTC). Not renewed: local, built-in, static-header, switched-off or disabled servers, a sign-in open or starting, the
   person's own Restart running (FR-221), a `policy` class (FR-210), a blocked server (FR-210), a sandboxed chat (FR-219). Once a chat
   tried a server, it does not try it again for 5 minutes (`MCP_RENEW_FAIL_COOLDOWN_MS`, per chat and server, set when the reconnect is
@@ -465,14 +467,21 @@ tokens) with a 20 s access token; sign-in through `rpc.mcp.oauth.login` and a pl
   still *Running* when the app says connected, as the probe's runtime did) and the existing call word.
   **The nudge** (owner decision "3 for mcp", 18:02-18:03 UTC: "Renew at once and send the agent a short automatic note 'Teams is
   reconnected, retry that step'. That continues on its own but costs one extra message."): when a reconnect of this FR read `connected`,
-  main sends the agent **one short automatic message** in that chat: "The <server> MCP server was reconnected after a sign-in error.
-  Please retry the step that failed." `<server>` is the failed server's own name as the person configured it (letters, digits, spaces and
-  `_ . @ + ( ) -` only, at most 64; any other name sends nothing), never a fixed or example word; two servers renewed together get two notes,
-  each naming its own server. It goes through the adapter's own `send` (the path of the person's messages and scheduled prompts): while a
+  main sends the agent **one short automatic message** in that chat: `The MCP server "<server>" was reconnected after a sign-in
+  error. Please retry the step that failed.` `<server>` is the failed server's own name as the person configured it, never a fixed or
+  example word, **quoted, and only when it is a plain name** (`[A-Za-z0-9_.-]`, 1 to 64): the name goes into the agent's prompt as a
+  user-role message, so a name with spaces, brackets, quotes or line breaks (text that could read as an instruction, a prompt-injection
+  route through the person's own config or an imported list) is left out: "An MCP server was reconnected after a sign-in error; please retry
+  the step that failed." Two servers renewed together get two notes, each naming its own server (or none). It goes through the adapter's own `send` (the path of the person's messages and scheduled prompts): while a
   turn runs, the app queues it behind the turn (Copilot's `session.send` default), so the agent reads it when the turn ends; with no turn it
-  starts one. The chat shows it as the message it is (a `user` event, as a scheduled prompt) followed by one note, "Sent automatically:
-  <server> was reconnected after a sign-in error, so the agent was asked to retry the step that failed." Limits: **at most one note per
-  server per failure episode** (it follows the one reconnect, so the cooldown covers it); **none when the reconnect failed**; none with the
+  starts one. The chat first shows one note, "Sent automatically: <server> was reconnected after a sign-in error, so the agent was asked to retry
+  the step that failed." (said before the send), then the message itself as a `user` event with `auto: true`, drawn as Agent Durbar's own
+  automatic message (italic, dashed, "Agent Durbar, automatic"), not as the person's. If the adapter refuses the send, the bubble is marked
+  *Not sent* and the note says so. Limits: **at most one note per
+  server per failure episode, and no further note until a call to that server has succeeded in that chat** (a successful `toolCall` re-arms
+  it); **when the note was sent and the server fails again (the restart read connected but calls keep failing, for example a revoked
+  refresh token), Durbar stops: no second reconnect, no second note, the server is blocked (FR-210) and shows the Sign in again state
+  and FR-211's line**, so a failing server costs one reconnect and one note, never one every 5 minutes; **none when the reconnect failed**; none with the
   Settings switch off (FR-213: it turns off both, also when switched off while the reconnect runs); none in a chat that is not running or
   was ended; none after the person pressed **Stop** since the failure; **none in a chat held by a spending limit** (Durbar's cap, or the
   app's usage limit: a coffee break, `agentState.onBreak`), where the server is still renewed; behind a send of the person's that is at the
@@ -492,8 +501,9 @@ tokens) with a 20 s access token; sign-in through `rpc.mcp.oauth.login` and a pl
   sign-in* (or *failed*) with **Sign in** and FR-211's calm line. Nothing is read, stored, logged or printed from a token (FR-214 holds:
   the same forbidden calls, tested again).
 - **FR-221** **Edges.** A chat that ends, restarts or is removed drops its marks, its call list and its "Renewed" time. The person's own
-  actions win: Restart, Sign in (also while it starts: a reservation counts as open) and a switch change drop a waiting mark
-  (`clearPending`) and a running sign-in or Restart is never met by a renewal. A report that says `connected` drops a waiting mark, and a
+  actions win: Restart, Sign in (also while it starts: a reservation counts as open) and a switch change drop a waiting mark and cancel a
+  renewal still queued (`clearPending`); a running sign-in or Restart is never met by a renewal, and **Sign in again waits for a renewal
+  that already runs** (`settle` in `mcpSignInOp`), so `oauth.login` and `restartServer` never overlap. A report that says `connected` drops a waiting mark, and a
   trigger that arrives while that chat's reconnect of the server runs dies with it. Many chats on one Copilot runtime: each chat's session is
   restarted, one at a time per server name and address (`[KNOWN GAP]` not verified with real sessions that share a runtime). The switch
   of FR-213 turns this off with the rest. Wall clock moved: no effect (decisions use the monotonic clock; the shown time is the wall clock

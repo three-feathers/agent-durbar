@@ -145,9 +145,11 @@ async function main(): Promise<void> {
     await tick();
     assert.deepStrictEqual([m2.calls.length, m2.nudges.length], [1, 1], 'inside the cooldown: no second reconnect and no second note');
     m2.t.now += 5 * 60_000;
+    r2.noteCall('a', 'docs', 'ok1', 'start');
+    r2.noteCall('a', 'docs', 'ok1', 'ok'); // a call to the server worked: the next failure is a new episode
     r2.noteFailure('a', 'docs');
     await tick();
-    assert.deepStrictEqual(m2.calls, ['a:docs', 'a:docs'], 'a new episode after the cooldown: one more');
+    assert.deepStrictEqual(m2.calls, ['a:docs', 'a:docs'], 'a new episode after the cooldown and a working call: one more');
   }
 
   // ---- waits for another call to the same server in that session ----
@@ -354,6 +356,111 @@ async function main(): Promise<void> {
     r4.noteFailure('a', 'docs');
     await tick();
     assert.deepStrictEqual(m4.calls, ['a:docs', 'b:docs'], 'but chat a itself is inside its own cooldown');
+  }
+
+  // ---- review round 2: a queued restart re-checks the chat's calls; a call that never ends; no note storm; a refused note ----
+  {
+    const m = make({ hang: true });
+    const r = new McpSignInRefresher(m.d);
+    m.chats.set('a', chat([srv('docs', 'needs-auth')]));
+    m.chats.set('b', chat([srv('docs', 'needs-auth')]));
+    r.noteFailure('a', 'docs');
+    r.noteFailure('b', 'docs'); // queued behind chat a's restart
+    await tick();
+    r.noteCall('b', 'docs', 'new', 'start'); // chat b starts a new call to docs while it waits in the queue
+    m.finish.get('a:docs')!('connected');
+    await tick();
+    assert.deepStrictEqual(m.calls, ['a:docs'], 'the queued restart does not run while its own chat has a call to that server running');
+    r.noteCall('b', 'docs', 'new', 'end');
+    await tick();
+    assert.deepStrictEqual(m.calls, ['a:docs', 'b:docs'], 'it goes when that call ended');
+    m.finish.get('b:docs')!('connected');
+    await tick();
+    // the person acts on chat b's server while its restart waits in the queue: it never starts
+    const mq = make({ hang: true });
+    const rq = new McpSignInRefresher(mq.d);
+    mq.chats.set('a', chat([srv('docs', 'needs-auth')]));
+    mq.chats.set('b', chat([srv('docs', 'needs-auth')]));
+    rq.noteFailure('a', 'docs');
+    rq.noteFailure('b', 'docs');
+    await tick();
+    rq.clearPending('b', 'docs'); // Restart, Sign in or a switch in chat b
+    mq.finish.get('a:docs')!('connected');
+    await tick();
+    assert.deepStrictEqual(mq.calls, ['a:docs'], 'a queued renewal the person cancelled never starts');
+    // a call that never reports its end (an abort): a Stop or the turn's end clears it
+    const m2 = make();
+    const r2 = new McpSignInRefresher(m2.d);
+    m2.chats.set('a', chat([srv('docs', 'needs-auth')], { busy: true }));
+    r2.noteCall('a', 'docs', 'lost', 'start');
+    r2.noteFailure('a', 'docs');
+    await tick();
+    assert.deepStrictEqual(m2.calls, [], 'a call is still counted as running');
+    r2.turnEnded('a'); // the turn ended without that call's end
+    await tick();
+    assert.deepStrictEqual(m2.calls, ['a:docs'], 'the turn end clears it: the waiting renewal goes');
+    const m3 = make();
+    const r3 = new McpSignInRefresher(m3.d);
+    m3.chats.set('a', chat([srv('docs', 'needs-auth')]));
+    r3.noteCall('a', 'docs', 'lost', 'start');
+    r3.noteFailure('a', 'docs');
+    await tick();
+    r3.noteStop('a');
+    await tick();
+    assert.deepStrictEqual([m3.calls, m3.nudges], [['a:docs'], []], 'Stop clears it too: renewed, but no note after a Stop');
+    // restart reads connected but calls keep failing (a revoked refresh token): one note, then the Sign in again state, no loop
+    const m4 = make();
+    const r4 = new McpSignInRefresher(m4.d);
+    m4.chats.set('a', chat([srv('docs', 'needs-auth')]));
+    r4.noteFailure('a', 'docs');
+    await tick();
+    for (let i = 0; i < 6; i++) {
+      m4.t.now += 6 * 60_000; // each failure comes after the cooldown
+      r4.noteFailure('a', 'docs');
+      await tick();
+    }
+    assert.deepStrictEqual([m4.calls.length, m4.nudges.length], [1, 1], 'six more failures over 36 minutes: no further reconnect and no further note');
+    assert.deepStrictEqual(m4.pushes.filter((p) => p.kind === 'needs-sign-in').length >= 1, true, 'the Sign in again state is shown');
+    assert.strictEqual(r4.recordOf(signInKey('copilot', 'docs', 'https://docs.example/mcp'))?.blocked, 'sign-in', 'blocked until the person signs in');
+    // a call that succeeded re-arms the note (a new episode)
+    const m5 = make();
+    const r5 = new McpSignInRefresher(m5.d);
+    m5.chats.set('a', chat([srv('docs', 'needs-auth')]));
+    r5.noteFailure('a', 'docs');
+    await tick();
+    r5.noteCall('a', 'docs', 'w', 'start');
+    r5.noteCall('a', 'docs', 'w', 'ok');
+    m5.t.now += 6 * 60_000;
+    r5.noteFailure('a', 'docs');
+    await tick();
+    assert.deepStrictEqual([m5.calls.length, m5.nudges.length], [2, 2], 'after a call worked, a new failure is a new episode: renewed and a note again');
+    // the adapter refuses the note: the window is told it was not sent
+    const m6 = make();
+    m6.d.nudge = async () => { throw new Error('refused'); };
+    const r6 = new McpSignInRefresher(m6.d);
+    m6.chats.set('a', chat([srv('docs', 'needs-auth')]));
+    r6.noteFailure('a', 'docs');
+    await tick();
+    assert.deepStrictEqual(m6.pushes.map((p) => p.kind), ['nudged', 'nudge-failed'], 'said before the send, marked not sent when it failed');
+  }
+
+  // ---- Stop while the note waits at a send's gate ----
+  {
+    const m = make({ hang: true });
+    const r = new McpSignInRefresher(m.d);
+    m.chats.set('a', chat([srv('wiki', 'needs-auth')]));
+    const sending = r.beforeSend('a');
+    await tick();
+    m.chats.set('a', chat([srv('wiki', 'connected'), srv('docs', 'needs-auth')]));
+    r.noteFailure('a', 'docs');
+    await tick();
+    m.finish.get('a:docs')!('connected');
+    await tick();
+    r.noteStop('a'); // the person presses Stop while the note waits behind the send
+    m.finish.get('a:wiki')!('connected');
+    await sending;
+    await tick();
+    assert.deepStrictEqual(m.nudges, [], 'Stop while the note waited behind the send: no note');
   }
 
   // ---- stale marks and the person's own actions ----

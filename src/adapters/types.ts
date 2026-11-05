@@ -392,6 +392,8 @@ export interface UserEvent extends BaseEvent {
   type: 'user';
   text: string;
   attachments?: Attachment[];
+  /** Spec 058 FR-218: Agent Durbar's own automatic message (not the person's); shown as such. */
+  auto?: true;
 }
 
 /**

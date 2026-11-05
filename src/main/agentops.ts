@@ -238,9 +238,16 @@ export interface ScheduledSendDeps {
   stillWanted?(): boolean;
 }
 
-/** Spec 058 FR-218: the one automatic note after a server was reconnected (a server name is checked first: it goes into the agent's prompt). */
-export const mcpNudgeText = (name: string): string => `The ${name} MCP server was reconnected after a sign-in error. Please retry the step that failed.`;
-const NUDGE_NAME = /^[\p{L}\p{N}_.@+() -]{1,64}$/u; // letters, digits and the usual name punctuation; never a line break or a quote
+/**
+ * Spec 058 FR-218: the one automatic note after a server was reconnected. The server name goes into the agent's prompt as a user-role
+ * message, so it is quoted and only a plain name (`[A-Za-z0-9_.-]`, at most 64) is used; any other name (spaces, brackets, quotes, line breaks:
+ * text that could read as an instruction) is left out and the note says "An MCP server".
+ */
+const NUDGE_NAME = /^[A-Za-z0-9_.-]{1,64}$/;
+export const mcpNudgeText = (name: string): string =>
+  typeof name === 'string' && NUDGE_NAME.test(name)
+    ? `The MCP server "${name}" was reconnected after a sign-in error. Please retry the step that failed.`
+    : 'An MCP server was reconnected after a sign-in error; please retry the step that failed.';
 
 export interface McpNudgeDeps {
   agent: AgentInfo | undefined;
@@ -253,18 +260,19 @@ export interface McpNudgeDeps {
 
 /**
  * Spec 058 FR-218 (owner, 2026-11-05 18:03 UTC): the one short automatic message to the agent after a renewal. The adapter's own `send`
- * (the path of the person's messages and scheduled prompts: it queues behind a running turn); the window gets the same `user` event a
- * scheduled prompt gets, and main's refresher adds the "sent automatically" note. A name that is not plain text sends nothing.
+ * (the path of the person's messages and scheduled prompts: it queues behind a running turn); the window gets a `user` event marked
+ * `auto: true` (shown as an automatic message, not as the person's), and main's refresher says "Sent automatically" before the send and
+ * marks it not sent when the send throws.
  */
 export async function mcpNudgeOp(d: McpNudgeDeps, name: string): Promise<void> {
   const a = d.agent;
   const ad = d.adapter;
-  if (!a || !ad || typeof name !== 'string' || !NUDGE_NAME.test(name)) throw new Error('not sent');
+  if (!a || !ad) throw new Error('not sent');
   d.agentState.ensure(a.id, a.lazy);
   d.agentState.noteSend(a.id);
   const text = mcpNudgeText(name);
   try {
-    d.toWindow('agent:event', { type: 'user', sessionId: a.id, timestamp: d.now(), text });
+    d.toWindow('agent:event', { type: 'user', sessionId: a.id, timestamp: d.now(), text, auto: true });
     await ad.send(a.id, { text });
     d.noteLastSession(a);
   } catch (err) {

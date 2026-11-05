@@ -291,6 +291,8 @@ export interface SignInDeps {
   secrets(agentId: string): readonly string[];
   /** FR-075: the server's own address (http or https) when it has one; stdio and runtime-only servers have none. */
   serverUrl?(agentId: string, name: string): string | undefined;
+  /** Spec 058 FR-218: resolves when no automatic renewal or restart of this server runs in this chat (Sign in again never overlaps one). */
+  settle?(agentId: string, name: string): Promise<void>;
 }
 
 const NOT_RUNNING = 'This session is not running. Send a message to start it, then sign in.';
@@ -320,6 +322,11 @@ export async function mcpSignInOp(d: SignInDeps, store: McpSignInStore, id: unkn
   const redo = again === true;
   if (redo && !ad.capabilities.mcpSignInAgain) return { ok: false, error: `${ad.displayName} cannot sign in again from Agent Durbar.` };
   if (redo ? !canSignInAgainStatus(st, d.serverUrl?.(a.id, name)) : !needsSignIn(st)) return { ok: false, error: redo ? `${name} cannot be signed in again now.` : `${name} does not need a sign-in.` };
+  try {
+    await d.settle?.(a.id, name); // a renewal already running finishes first: `oauth.login` and `restartServer` never overlap
+  } catch {
+    /* settled or not, the person's sign-in goes on */
+  }
   if (!store.reserve(a.id, name)) return { ok: false, error: store.has(a.id, name) ? `A sign-in for ${name} is already open.` : 'A sign-in for this server is already starting, or too many are open.' };
   try {
     let r;

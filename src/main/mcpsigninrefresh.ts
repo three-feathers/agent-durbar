@@ -48,6 +48,8 @@ export interface SignInServerView {
   triedAt?: number;
   /** FR-218: another tool call to this server runs in this session now (a renewal waits for it). */
   callsInFlight?: boolean;
+  /** FR-218: a renewal and its note already went out for this server in this chat and no call to it has succeeded since: a second failure gives up. */
+  repeat?: boolean;
   /** FR-218: this server failed with a sign-in error (a failed `auth` call, or a report that turned `needs-auth`) and waits for the chat's idle moment. */
   failed?: boolean;
   /** Refused by policy in this run (a `policy` call class, FR-193) or by an organization verdict (spec 076). */
@@ -174,6 +176,8 @@ export interface RenewPlan {
   signInOnly: string[];
   /** FR-218: marked servers that wait for another call to the same server in this session to end. */
   deferred: string[];
+  /** FR-218: a second failure in one episode (the renewal did not help): no more reconnects, the Sign in again state instead. */
+  giveUp: { name: string; key: string }[];
 }
 
 /**
@@ -186,7 +190,7 @@ export interface RenewPlan {
  * session, so each chat's own is queued, never skipped).
  */
 export const planMcpRenew = (i: RenewPlanInput): RenewPlan => {
-  const none = (why: RenewPlan['why']): RenewPlan => ({ why, reconnect: [], join: [], signInOnly: [], deferred: [] });
+  const none = (why: RenewPlan['why']): RenewPlan => ({ why, reconnect: [], join: [], signInOnly: [], deferred: [], giveUp: [] });
   if (i.on !== true) return none('off');
   if (!i.renewable) return none('no-part');
   if (!i.live) return none('not-live');
@@ -202,6 +206,10 @@ export const planMcpRenew = (i: RenewPlanInput): RenewPlan => {
     if (rec && rec.blocked) continue;
     if (s.failed !== true) continue;
     if (typeof s.triedAt === 'number' && i.now - s.triedAt >= 0 && i.now - s.triedAt < i.cooldownMs) continue; // one reconnect per failure episode, per chat and server
+    if (s.repeat === true) {
+      out.giveUp.push({ name: s.name, key: s.key }); // the renewal and its note did not help: stop, show Sign in again
+      continue;
+    }
     if ((i.readOnly && !i.allowReadOnly) || i.renews === false) {
       if (s.status === 'needs-auth') out.signInOnly.push(s.name);
       continue;
@@ -328,6 +336,10 @@ export class McpSignInRefresher {
   /** FR-218: how often the person stopped each chat, and the count when each server's failure came (a Stop after it: no nudge). */
   private readonly stops = new Map<string, number>();
   private readonly failStops = new Map<string, number>();
+  /** FR-218: `<agent id>\0<server>` of a note sent after which no call to that server has succeeded in that chat (no further note, a second failure gives up). */
+  private readonly nudged = new Set<string>();
+  /** FR-218: the renewals of a chat that are queued or running, by `<agent id>\0<server>` (the person's own action cancels a queued one and waits for a running one). */
+  private readonly renewing = new Map<string, { started: boolean; cancelled: boolean; done: Promise<unknown> }>();
   /** FR-218: per chat, the send gate that runs now (a nudge waits behind it). */
   private readonly gating = new Map<string, Promise<void>>();
   /** FR-221: `<agent id>\0<server>` -> wall time of the last renewal that read connected (display only). */
@@ -342,6 +354,13 @@ export class McpSignInRefresher {
   /** FR-205: a turn ended (`idle`, `error`, `stopped` from the adapter). */
   turnEnded(agentId: string): void {
     this.lastResponse.set(agentId, this.d.now());
+    this.clearCalls(agentId); // a call that never reported its end (an abort) must not hold a renewal for ever
+  }
+
+  private clearCalls(agentId: string): void {
+    const p = `${agentId}\0`;
+    for (const k of [...this.calls.keys()]) if (k.startsWith(p)) this.calls.delete(k);
+    if (this.pending.has(agentId)) this.renewChat(agentId); // a mark that waited for such a call goes on
   }
 
   private timers(): SignInTimers {
@@ -359,8 +378,9 @@ export class McpSignInRefresher {
    * FR-218: a tool call to an MCP server of a chat started or ended (ids and names only). A renewal of a server waits until no other call
    * to it runs in that session; when the last one ends, a waiting mark goes on.
    */
-  noteCall(agentId: string, name: string, callId: string, phase: 'start' | 'end'): void {
+  noteCall(agentId: string, name: string, callId: string, phase: 'start' | 'end' | 'ok'): void {
     const k = `${agentId}\0${name}`;
+    if (phase === 'ok') this.nudged.delete(k); // a call to this server succeeded: the next failure is a new episode
     if (phase === 'start') {
       let set = this.calls.get(k);
       if (!set) this.calls.set(k, (set = new Set()));
@@ -377,6 +397,7 @@ export class McpSignInRefresher {
   /** FR-218: the person pressed Stop (or the session ended): a failure from before it is never followed by a nudge. */
   noteStop(agentId: string): void {
     this.stops.set(agentId, (this.stops.get(agentId) ?? 0) + 1);
+    this.clearCalls(agentId); // after a Stop no tool call of the aborted turn is going to end
   }
 
   /**
@@ -417,8 +438,24 @@ export class McpSignInRefresher {
 
   /** FR-221: the person pressed Restart or Sign in, or switched the server: a waiting failure mark is no longer wanted. */
   clearPending(agentId: string | undefined, name: string): void {
-    if (agentId !== undefined) return this.dropMark(agentId, name);
-    for (const id of [...this.pending.keys()]) this.dropMark(id, name); // a global switch: every chat
+    const cancel = (id: string): void => {
+      const r = this.renewing.get(`${id}\0${name}`);
+      if (r && !r.started) r.cancelled = true; // queued, not yet running: it never starts
+    };
+    if (agentId !== undefined) {
+      cancel(agentId);
+      return this.dropMark(agentId, name);
+    }
+    for (const id of [...new Set([...this.pending.keys(), ...[...this.renewing.keys()].map((k) => k.split('\0')[0])])]) {
+      cancel(id);
+      this.dropMark(id, name); // a global switch: every chat
+    }
+  }
+
+  /** FR-218: resolves when no renewal of this server is running in this chat (Sign in again waits for it, so the two never overlap). */
+  quiesce(agentId: string, name: string): Promise<void> {
+    const r = this.renewing.get(`${agentId}\0${name}`);
+    return r ? r.done.then(() => undefined, () => undefined) : Promise.resolve();
   }
 
   /** FR-221: End session, Restart session, a stopped or removed chat: its waiting failures and "Renewed" times go. */
@@ -428,6 +465,7 @@ export class McpSignInRefresher {
     this.stops.delete(agentId);
     const p = `${agentId}\0`;
     for (const m of [this.renewedWall, this.renewAt, this.calls, this.failStops] as Map<string, unknown>[]) for (const k of [...m.keys()]) if (k.startsWith(p)) m.delete(k);
+    for (const k of [...this.nudged]) if (k.startsWith(p)) this.nudged.delete(k);
   }
 
   /** FR-220: when Durbar last renewed this server in this chat (wall clock, display only), or undefined. */
@@ -437,7 +475,7 @@ export class McpSignInRefresher {
 
   /** The renewal plan of one chat now (the servers are built only when the cheap checks let it go on). */
   planRenew(agentId: string): { plan: RenewPlan; view?: SignInChatView } {
-    const empty: RenewPlan = { why: 'not-live', reconnect: [], join: [], signInOnly: [], deferred: [] };
+    const empty: RenewPlan = { why: 'not-live', reconnect: [], join: [], signInOnly: [], deferred: [], giveUp: [] };
     let v: SignInChatView | undefined;
     try {
       v = this.d.view(agentId);
@@ -480,7 +518,7 @@ export class McpSignInRefresher {
       const r = this.records.get(x.key);
       if (r) records[x.key] = r;
       const tried = this.renewAt.get(`${agentId}\0${x.key}`);
-      return { ...x, ...(tried !== undefined ? { triedAt: tried } : {}), ...(this.calls.has(`${agentId}\0${x.name}`) ? { callsInFlight: true } : {}), ...(waiting?.has(x.name) ? { failed: true } : {}) };
+      return { ...x, ...(tried !== undefined ? { triedAt: tried } : {}), ...(this.calls.has(`${agentId}\0${x.name}`) ? { callsInFlight: true } : {}), ...(this.nudged.has(`${agentId}\0${x.name}`) ? { repeat: true } : {}), ...(waiting?.has(x.name) ? { failed: true } : {}) };
     });
     return { plan: planMcpRenew({ ...input, servers: out, records }), view: v };
   }
@@ -494,6 +532,12 @@ export class McpSignInRefresher {
     if (plan.why === 'renew') {
       if (plan.deferred.length) this.pending.set(agentId, new Set(plan.deferred));
       else this.pending.delete(agentId);
+      for (const g of plan.giveUp) {
+        // the renewal and its note did not help (the restart read connected, the calls still fail: a revoked refresh token): stop here
+        this.records.set(g.key, { at: this.d.now(), blocked: 'sign-in' });
+        this.d.log(agentId, `MCP server ${g.name} needs a new sign-in (automatic)`);
+        this.d.push({ id: agentId, kind: 'needs-sign-in', name: g.name });
+      }
       this.run(agentId, plan);
     } else this.pending.delete(agentId);
   }
@@ -522,11 +566,12 @@ export class McpSignInRefresher {
         return;
       }
       if (!on || !v || !v.live || v.limited === true || stopped()) return;
+      this.nudged.add(tag);
+      this.d.push({ id: agentId, kind: 'nudged', name }); // said before the send
       try {
         await d(agentId, name);
-        this.d.push({ id: agentId, kind: 'nudged', name });
       } catch {
-        /* nothing was sent: no line */
+        this.d.push({ id: agentId, kind: 'nudge-failed', name }); // the message was not sent: marked so
       }
     })();
   }
@@ -646,13 +691,13 @@ export class McpSignInRefresher {
   }
 
   /** Start (or join) the reconnects of a plan; resolves when all of them settled. Sign-in lines go to the window as results come. */
-  run(agentId: string, plan: Pick<SignInPlan, 'reconnect' | 'join' | 'signInOnly'>): { items: { name: string; f: Promise<SignInResult> }[]; done: Promise<void> } | undefined {
+  run(agentId: string, plan: Pick<SignInPlan, 'reconnect' | 'join' | 'signInOnly'>): { items: { name: string; f: Promise<SignInResult | 'skipped'> }[]; done: Promise<void> } | undefined {
     const work: Promise<void>[] = [];
-    const items: { name: string; f: Promise<SignInResult> }[] = [];
-    const take = (name: string, f: Promise<SignInResult>): void => {
+    const items: { name: string; f: Promise<SignInResult | 'skipped'> }[] = [];
+    const take = (name: string, f: Promise<SignInResult | 'skipped'>): void => {
       items.push({ name, f });
       work.push(f.then((r) => {
-        this.dropMark(agentId, name); // FR-218: a trigger that came during this reconnect is part of its episode
+        if (r === 'skipped') return; // it did not run (the person acted, or a call is running): the mark stays as it was put
         if (r === 'needs-sign-in') this.d.push({ id: agentId, kind: 'needs-sign-in', name });
       }, () => this.dropMark(agentId, name)));
     };
@@ -745,14 +790,31 @@ export class McpSignInRefresher {
    * same server (a running one is joined). A renewal (FR-218) is never shared: `restartServer` acts on one session, so each chat's own
    * restart is queued behind the one that runs. Its result updates the records and the activity log.
    */
-  private fly(agentId: string, name: string, key: string, kind?: 'renew'): Promise<SignInResult> {
+  private fly(agentId: string, name: string, key: string, kind?: 'renew'): Promise<SignInResult | 'skipped'> {
     if (kind !== 'renew') {
       const running = this.flights.get(key);
       if (running) return running;
     }
     const tag = `${agentId}\0${name}`;
-    if (kind === 'renew') this.renewAt.set(`${agentId}\0${key}`, this.d.now()); // at once: a trigger of the same episode that comes next is inside the cooldown
-    const f = this.serial(key, async (): Promise<SignInResult> => {
+    const ctl = { started: false, cancelled: false, done: Promise.resolve() as Promise<unknown> };
+    if (kind === 'renew') {
+      this.renewAt.set(`${agentId}\0${key}`, this.d.now()); // at once: a trigger of the same episode that comes next is inside the cooldown
+      this.renewing.set(tag, ctl);
+    }
+    const f = this.serial(key, async (): Promise<SignInResult | 'skipped'> => {
+      if (kind === 'renew') {
+        // the person acted on this server while this renewal waited in the queue: it never starts
+        if (ctl.cancelled) return 'skipped';
+        // FR-218: a new call to this server started in this chat while this one waited: put the mark back, the call's end goes on
+        if (this.calls.has(tag)) {
+          this.renewAt.delete(`${agentId}\0${key}`);
+          let set = this.pending.get(agentId);
+          if (!set) this.pending.set(agentId, (set = new Set()));
+          set.add(name);
+          return 'skipped';
+        }
+        ctl.started = true;
+      }
       this.auto.add(tag);
       this.declined.delete(tag);
       const at = this.d.now();
@@ -783,9 +845,11 @@ export class McpSignInRefresher {
       if (kind === 'renew' && res === 'reconnected') this.nudge(agentId, name);
       return res;
     });
-    if (kind !== 'renew') this.flights.set(key, f);
+    ctl.done = f;
+    if (kind !== 'renew') this.flights.set(key, f as Promise<SignInResult>);
     const end = (): void => {
       if (this.flights.get(key) === f) this.flights.delete(key);
+      if (this.renewing.get(tag) === ctl) this.renewing.delete(tag);
       this.auto.delete(tag);
       this.declined.delete(tag);
     };

@@ -141,6 +141,12 @@ module.exports = async (ctx) => {
       // the one automatic note to the agent (owner, 2026-11-05): one calm line that says what was sent, the server named as configured
       await js(`window.__durbarSimSignIn.push({id:${jsLiteral(id)},kind:'nudged',name:'Teams (work)'});0`);
       assert.ok(await until(`[...document.querySelectorAll('#chat .note.mcpre-nudge')].some(n=>n.textContent==='Sent automatically: Teams (work) was reconnected after a sign-in error, so the agent was asked to retry the step that failed.')`, 3000), 'the automatic-note line names the server');
+      await emit({ type: 'user', sessionId: id, text: 'The MCP server "Teams-work" was reconnected after a sign-in error. Please retry the step that failed.', auto: true });
+      assert.ok(await until(`[...document.querySelectorAll('#chat .msg.user.auto')].some(m=>/^Agent Durbar, automatic/.test(m.querySelector('.meta').textContent)&&m.querySelector('.bubble').textContent.startsWith('The MCP server "Teams-work"'))`, 3000), 'the automatic message is drawn as Agent Durbar\'s own, not as the person\'s');
+      await js(`window.__durbarSimSignIn.push({id:${jsLiteral(id)},kind:'nudge-failed',name:'Teams-work'});0`);
+      assert.ok(await until(`(()=>{const m=[...document.querySelectorAll('#chat .msg.user.auto')].pop();return !!m&&!!m.querySelector('.unsent')&&[...document.querySelectorAll('#chat .note.mcpre-nudge')].pop().textContent.startsWith('The automatic message was not sent')})()`, 3000), 'a refused automatic message is marked Not sent');
+      await js(`(()=>{const m=[...document.querySelectorAll('#chat .msg.user.auto')].pop();if(m)m.scrollIntoView({block:'center'});})()`);
+      await shot(`058-mcp-auto-message-${w}x${h}.png`);
       const lay2 = await layout();
       assert.ok(lay2.min >= 10.5 && lay2.inChat && lay2.roles && lay2.pageX, `${w}: the automatic-note line is calm: ` + JSON.stringify(lay2));
       const chatLines = await js(`document.querySelectorAll('#chat .note').length`);
