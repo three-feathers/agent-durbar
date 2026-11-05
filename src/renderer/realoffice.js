@@ -418,10 +418,21 @@
         /* FR-120: a static "z z" over a sleeping person (carved in the cave); aria-hidden, the plate and the name carry the meaning */
         if (a.asleep && d.person) { const z = el(chrome, 'z:' + k, 'div', 'ro-zz'); box(z, { x: d.person.x + d.person.w * 0.62, y: Math.max(d.slot.y + 2, d.person.y + d.person.h * 0.04) }); attr(z, 'aria-hidden', 'true'); text(z, 'z z'); }
         /* FR-016, FR-090: the name plate is the desk's one focusable button; the app's click handler opens the chat ([data-id]) */
-        const pl = el(chrome, 'n:' + k, 'button', 'ro-plate st-' + d.state + (a.selected ? ' sel' : '') + (d.narrow ? ' narrow' : '') + (a.asleep ? ' asleep' : '')); box(pl, d.plate);
+        const pl = el(chrome, 'n:' + k, 'button', 'ro-plate st-' + d.state + (a.selected ? ' sel' : '') + (d.narrow ? ' narrow' : '') + (a.asleep ? ' asleep' : '') + (a.ren ? ' has-ren' : '')); box(pl, d.plate);
         if (pl.type !== 'button') pl.type = 'button'; dset(pl, 'id', k); dset(pl, 'state', d.state); if (a.asleep) dset(pl, 'surface', 'lounge'); /* spec 098 FR-010: the moment's marker */
         attr(pl, 'aria-pressed', a.selected ? 'true' : 'false'); attr(pl, 'aria-label', a.label); attr(pl, 'title', a.tip);
         plateFill(pl, a, d.state);
+        /* spec 059 FR-170 (#1155): Open office's rename pencil (.ren[data-ren]: the app's own click and F2 handlers, the same in-place edit), right
+           after its plate (a button cannot sit inside one) so the plate's hover and focus show it; CSS anchors it just after the name: no layout read */
+        if (a.ren) {
+          const anc = '--ren-' + k.replace(/[^A-Za-z0-9_-]/g, '_'), nm = pl._parts.nm;
+          if (nm.style.getPropertyValue('anchor-name') !== anc) nm.style.setProperty('anchor-name', anc);
+          const rb = el(chrome, 'rn:' + k, 'button', 'ren ro-ren');
+          if (pl.nextElementSibling !== rb) pl.after(rb);
+          if (rb.type !== 'button') rb.type = 'button'; dset(rb, 'ren', k); attr(rb, 'aria-label', 'Rename ' + a.name); attr(rb, 'title', 'Rename ' + a.name);
+          if (rb.style.getPropertyValue('position-anchor') !== anc) rb.style.setProperty('position-anchor', anc);
+          if (!rb.firstChild && model.renIcon) rb.innerHTML = model.renIcon; /* the app's own icon markup (trusted, as alertIcon) */
+        }
       }
     }
     /* the lobby band: fixtures, their lights, visitors and chips, place plates (FR-023..FR-027, FR-045) */

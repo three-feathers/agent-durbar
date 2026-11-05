@@ -1053,3 +1053,7 @@ Owner (Vikram, 2026-11-04, packaged v0.1.8, Real office): the chat header's butt
 - `sim:` on macOS 26.0 (Apple M4), the platform of the report, with the same result. This is the simulator on a Mac, not a real agent session; no credits were used.
 - FR-233's reading sheet (mat, binding, code as a monitor) is not built here; it stays with #1166. When it lands, this check is the one that keeps its text readable.
 
+### 2026-11-05: the rename pencil on a plate (issue #1155, part of #1147)
+
+A Real office plate has Open office's rename pencil beside its name, and F2 on a focused plate edits the name in place. The rule, its placement by CSS anchor positioning, its checks and its mutants are in [spec 059](../059-rename-sessions/spec.md) FR-170 (the spec that owns renaming; T083 there). Here it only closes the parity gap that FR-090's plates had: before this, F2 on a plate did nothing. `sim:` `scripts/check-097-plate-pencil.js`.
+

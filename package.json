@@ -146,6 +146,7 @@
     "test:shutters": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-shutters.js",
     "test:heldmig": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-heldmig-wiring.js",
     "test:doormigrate": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-doormigrate.js",
+    "test:simversion": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-sim-version.js",
     "test:simclock": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-simclock.js",
     "test:liveact": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-liveact.js",
     "test:grantlabel": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-grant-label.js",
