@@ -1659,11 +1659,11 @@ function realModel(model){
         const asleep=old.has(a.id)&&!v;
         if(asleep){ /* spec 097 FR-120, FR-129: asleep at the desk; the words of the lounge's peek card and label, the same masked reply (shutReply) */
           const ago=ACT.agoLong(sinceLast(a)), said=SHUT.spoken(ago), line=shutReply(a,140), who=a.profile?a.profile.name+' · '+a.role:a.role;
-          return {id:a.id,name:a.name,role:a.role,state:st,word:'Asleep',task:ago?'finished '+ago:'',asleep:true,tip:'Asleep · '+stWord(a)+(ago?' · finished '+ago:'')+' · Lamp off\n'+shutReply(a,300),selected:ui.selected===a.id,unread:isUnread(a),away:null,awayLabel:'',
+          return {id:a.id,name:a.name,role:a.role,state:st,word:'Asleep',task:ago?'finished '+ago:'',asleep:true,tip:'Asleep · '+stWord(a)+(ago?' · finished '+ago:'')+' · Lamp off\n'+shutReply(a,300),selected:ui.selected===a.id,ren:canRenameSession(a),unread:isUnread(a),away:null,awayLabel:'',
             label:a.name+unreadWords(a)+', '+who+', folder '+deskMask(showPath(r.path))+', asleep at the desk'+(said?', finished '+said:'')+': '+line+(/[.!?…]$/.test(line)?'':'.')+' Open chat panel.',helpers:helpersOf(a).map(h=>stOf(h,false))};
         }
         const br=v&&v.place===D.COFFEE&&BREAKS.get(a.id)&&BREAKS.get(a.id).kind!=='cap'?coffeeUntilWords(a):''; /* owner 2026-11-02: the post-it of a coffee break says until when (an app's usage window), never of Durbar's cap at the Bank */
-        return {id:a.id,name:a.name,role:a.role,state:st,word:stWord(a),task,tip:deskTip(a),selected:ui.selected===a.id,unread:isUnread(a),away:v?v.place:null,awayLabel:place+(br?' '+br:''),
+        return {id:a.id,name:a.name,role:a.role,state:st,word:stWord(a),task,tip:deskTip(a),selected:ui.selected===a.id,ren:canRenameSession(a),unread:isUnread(a),away:v?v.place:null,awayLabel:place+(br?' '+br:''),
           label:[a.name+unreadWords(a),a.role,stWord(a)].concat(task?[task]:[],needs?['needs you']:[],place?['at '+place]:[]).join(', ')+'. Open chat panel.', /* FR-090: text for setAttribute, not markup */
           helpers:helpersOf(a).map(h=>stOf(h,false))};})};
   });
@@ -1674,7 +1674,7 @@ function realModel(model){
       title:p.id===D.POSTBOX?placeLabelFull(p.id)+': the next scheduled runs. Open Settings > Schedules.':placeTip(p.id,ids,wait),
       visitors:ids.map(id=>{const a=byId(id),v=VISITS.at(id);return {id,name:a.name,needsYou:vis(a)==='waiting'||!!a.limit,title:visitorWords(a,v,true)};})};
   });
-  return {folders,places,slips:realSlips(),alertIcon:ALERT_ICON,sessions:agents.filter(a=>!a.parent).map(a=>({id:a.id,folder:a.room}))};
+  return {folders,places,slips:realSlips(),alertIcon:ALERT_ICON,renIcon:ICON('rename'),sessions:agents.filter(a=>!a.parent).map(a=>({id:a.id,folder:a.room}))};
 }
 /* spec 097 FR-121, FR-122, FR-124 (Real office): the requests the world draws as slips at the Boss door and the Bank, and as a bubble at the desk. Plain data
    from the very cards the chat and the inbox already hold (pendingCardOf, inboxActs, requestText), so the words, the buttons, their order and their tooltips are
@@ -3922,7 +3922,7 @@ document.addEventListener('keydown',e=>{
   if(e.target&&e.target.closest&&!modalOpen()&&!e.repeat&&!e.target.closest('input,textarea,select,[contenteditable="true"]')&&INL().startsEdit(e,e.target.id==='panelTitle')){
     const t=e.target; let a=null,surf='',from='card',pid='';
     if(t.id==='panelTitle'||t.id==='panelTitleBtn'){a=byId(ui.selected);surf='panel';from='title';}
-    else if(t.matches('.desk[data-id]')){a=byId(t.dataset.id);surf='desk';}
+    else if(t.matches('.desk[data-id],.ro-plate[data-id]')){a=byId(t.dataset.id);surf='desk';} /* spec 059 FR-170: a Real office plate too */
     else if(t.matches('.lrow[data-id]')){a=byId(t.dataset.id);surf='list';}
     else if(t.matches('.ren[data-ren]')){a=byId(t.dataset.ren);surf=t.closest('#list')?'list':'desk';from='pencil';}
     else if(t.closest('#prev .prev-row[data-pg="cli"]')){a=byId(ui.selected);surf='prev';from=t.matches('.ren')?'pencil':'row';pid=t.closest('.prev-row').dataset.pk;}
@@ -8441,7 +8441,8 @@ function inlineNameEl(surface,id,pid){
     const row=prevRowEl('cli',pid); return row?row.querySelector('.prev-t'):null;
   }
   const list=surface==='list';
-  return document.querySelector((list?'#list .lrow':'#stage .desk')+'[data-id="'+CSS.escape(id)+'"] '+(list?'.lnm':'.name'));
+  const q='[data-id="'+CSS.escape(id)+'"]';
+  return document.querySelector(list?'#list .lrow'+q+' .lnm':'#stage .desk'+q+' .name, #stage .ro-plate'+q+' .ro-l1>b'); /* spec 059 FR-170: or a Real office plate's name */
 }
 /* One session's name edited in place. `from`: what started it ('title', 'pencil', 'card'), so focus goes back there. The save is the
    dialog's own submit part (submitSessionName), not a copy (FR-022). `pid`: the session id of a Previous sessions row. */
@@ -8450,7 +8451,7 @@ function startSessionEdit(a0,surface,from,pid){
   let prev=null,onDone=null,cur=a.name;
   if(surface==='prev'){const x=prevRenameArgs(a,pid,'.ren[data-renprev]'); if(!x)return false; prev=x.prev; onDone=x.onDone; cur=prev.name||prev.title||'';}
   const find=()=>inlineNameEl(surface,a.id,pid), el=find(); if(!el||el==='gone'||!el.getClientRects().length)return false; /* a hidden name (the other view) has no box to cover */
-  const app=kindWord((a.info||{}).adapterId), id=CSS.escape(a.id), root=surface==='list'?'#list':'#stage', row=surface==='list'?'.lrow':'.desk';
+  const app=kindWord((a.info||{}).adapterId), id=CSS.escape(a.id), root=surface==='list'?'#list':'#stage', row=surface==='list'?'.lrow':'.desk,.ro-plate';
   INL().open({doc:document,anchor:el,value:SN().shortName(cur,SN().MAX),max:SN().MAX,key:surface+':'+(pid||a.id),
     label:'Name of session '+cur,hint:'Enter saves, Escape cancels. Empty uses '+app+"'s title again.",
     check:SN().nameError,
@@ -8459,7 +8460,7 @@ function startSessionEdit(a0,surface,from,pid){
     reanchor:find,
     grow:surface!=='prev',maxWidth:surface==='list'?360:480,
     clip:()=>{const n=find();return n&&n!=='gone'?(surface==='panel'?$('panelHead'):surface==='prev'?n.closest('.prev-tx'):n.closest(row)):null;},
-    focusBack:()=>surface==='panel'?($('panelTitleBtn')||$('panelTitle')):surface==='prev'?(()=>{const r=prevRowEl('cli',pid);return r&&(r.querySelector('.ren[data-renprev]')||r.querySelector('.prev-more'));})():document.querySelector(from==='pencil'?root+' .ren[data-ren="'+id+'"]':root+' '+row+'[data-id="'+id+'"]')});
+    focusBack:()=>surface==='panel'?($('panelTitleBtn')||$('panelTitle')):surface==='prev'?(()=>{const r=prevRowEl('cli',pid);return r&&(r.querySelector('.ren[data-renprev]')||r.querySelector('.prev-more'));})():document.querySelector(from==='pencil'?root+' .ren[data-ren="'+id+'"]':row.split(',').map(r=>root+' '+r+'[data-id="'+id+'"]').join(','))});
   return true;
 }
 /* the item left the window while its field was open (FR-023 item 4): the field closed without saving; keep focus somewhere real, nearest first */

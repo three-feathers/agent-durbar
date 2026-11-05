@@ -276,4 +276,11 @@ body.ro-chat .ph .avatar{display:none}
 .ro-newtag{display:none;transform:translate(-100%,calc(-100% - 2px));padding:1px 6px;border-radius:7px;font-size:11px;font-weight:700;line-height:15px;white-space:nowrap;color:#fff;background:#1f7a45;box-shadow:0 0 0 2px rgba(255,255,255,.92);pointer-events:none}
 .ro-newtag.on{display:block}
 @media (forced-colors:active){.ro-newtag{color:CanvasText;background:Canvas;border:1px solid CanvasText;box-shadow:none}}
+/* spec 059 FR-170 (#1155): Open office's rename pencil (.ren, styles.css) beside a plate's name. It is the plate's next sibling, anchored by CSS to
+   the name (anchor-name and position-anchor are set per desk), so it follows the name with no script. The plate keeps 22px after the name for it,
+   so it covers neither the role nor the helper dots; a long name gives way first (ellipsis). It shows on the plate's hover and focus, as on a desk. */
+.ro-plate.has-ren .ro-l1>b{margin-right:22px}
+.ro-chrome>.ren.ro-ren{left:calc(anchor(right) - 1px);top:calc(anchor(center) - 12px)}
+.ro-chrome>.ro-plate:is(:hover,:focus-visible)+.ren.ro-ren{opacity:1}
+.ro-chrome>.ren.ro-ren:is(:hover,:focus-visible){opacity:1} /* on the pencil itself the plate is no longer :hover (a sibling, review of #1200): it stays shown under the pointer */
 
