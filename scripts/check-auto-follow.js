@@ -29,8 +29,8 @@ module.exports = async (ctx) => {
   const MOD = process.platform === 'darwin' ? ['meta'] : ['control'];
   const ok = async (expr, what, ms) => assert.ok(await until(expr, ms || 8000), what);
   /* An arrival the strip delivers is held while the window is in the background (FR-185). On Windows CI three drivers share one desktop and a neighbour's
-     window can take the OS focus at any moment, so a wait for an arrival asks for the real focus again at every look (never the focus emulation: the hold
-     steps below test a real blur) and, when it fails, says what the page saw (focus and the strip's text). Every wait still ends as soon as the condition holds. */
+     window can take the OS focus at any moment, so a wait for an arrival asks for the real focus again at any look where the page lacks it (the whole driver also runs
+     under emulate:'first', see above; the background hold steps stand in for a blur with window.__durbarFocus) and, when it fails, says what the page saw (focus and the strip's text). Every wait still ends as soon as the condition holds. */
   const okArrival = async (expr, what, ms) => {
     const end = Date.now() + ms;
     for (;;) {

@@ -111,7 +111,7 @@ function helpers(ctx) {
   /**
    * Windows CI: the drivers run three at a time on one desktop and a hidden runner window loses the OS focus to a neighbour, so `document.hasFocus()`
    * turns false in the middle of a driver (seen as `pageFocus:false, active:true, focus:false` in check-list-columns). `focusPage()` asks for the real
-   * focus until the page has it and returns whether it does. With `{ emulate: true }` it turns on Chromium's focus emulation first, from the call on (CDP
+   * focus until the page has it and returns whether it does. With `{ emulate: true }` it falls back to Chromium's focus emulation only when the real focus does not come; with `{ emulate: 'first' }` it turns the emulation on at once, from the call on, for a driver that tests no OS blur (CDP
    * `Emulation.setFocusEmulationEnabled`), which makes `hasFocus()` true whatever the OS does and so hides every real blur: the caller owns that
    * and ends it with `releaseFocus()` (try/finally) before any step that tests a focus loss. Nothing turns it on by itself, `H.key` included.
    * `loseFocus()` releases, blurs the window and returns whether the page reports no focus, for a driver that tests a blur (assert its result).
