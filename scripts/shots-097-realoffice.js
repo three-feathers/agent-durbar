@@ -467,7 +467,69 @@ module.exports = async (ctx) => {
   const amb = Number(await js(`document.querySelector('#stage .ro').dataset.ambient`));
   assert.ok(amb >= 0.7 && amb <= 1 && amb15 >= 0.7 && amb15 <= 1, 'ambient in 0.7..1: ' + amb + ', ' + amb15);
   console.log('[097] ambient: 15 agents', amb15, '8 agents', amb);
-  await H.shot(path.join(OUT, '097-real-lights-1440x900.png'), { prep: 'calm' });
+  // ---- FR-236..FR-238 (2026-11-04 attention lights, T187): the monitor light bar by state, the New reply tag, made once and switched by class ----
+  {
+    const BAR = (k) => `(()=>{const q=s=>document.querySelector('#stage '+s+'[data-for="'+CSS.escape(${jsLiteral(k)})+'"]');const b=q('.ro-bar'),p=q('.ro-pool'),t=q('.ro-newtag'),pl=document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(${jsLiteral(k)})+'"]');
+      return {bar:b?b.dataset.bar:'',on:!!b&&b.classList.contains('on'),pool:!!p&&p.classList.contains('on'),tag:!!t&&t.classList.contains('on')&&t.getClientRects().length>0,label:pl?pl.getAttribute('aria-label')||'':''};})()`;
+    const PARTS = `document.querySelectorAll('#stage :is(.ro-bar,.ro-pool,.ro-tint,.ro-clamp,.ro-newtag)').length`;
+    const emitTo = (id, e) => js(`window.__durbarSimEmit(Object.assign({timestamp:Date.now(),sessionId:${jsLiteral(id)}},${jsLiteral(e)}))`);
+    /* amber at the Boss: a waiting agent away at the Boss leaves its desk lit amber, and its plate says Waiting in words (acceptance 3) */
+    await loadReal(1440, 900);
+    const boss = await js(`(()=>{const p=[...document.querySelectorAll('#stage .ro-plate[data-state="waiting"]')].find(p=>(p.getAttribute('aria-label')||'').includes(', at Boss.'));return p?p.dataset.id:'';})()`);
+    assert.ok(boss, 'the simulator has an agent waiting at the Boss: ' + JSON.stringify(await js(`[...document.querySelectorAll('#stage .ro-plate')].map(p=>p.dataset.state+' | '+p.getAttribute('aria-label'))`)));
+    const b0 = await js(BAR(boss));
+    assert.ok(b0.bar === 'amber' && b0.on && b0.pool, `FR-236: the empty desk of an agent waiting at the Boss keeps its amber bar and pool: ${JSON.stringify(b0)}`);
+    assert.match(b0.label, /Waiting/, 'its plate says Waiting in words (FR-046)');
+    /* the rest at 8 agents (bigger desks): red on an error, orange on a limit, green with the tag on an unread reply; then read: off, no tag */
+    await loadReal(1440, 900, { sim: '8' });
+    const parts0 = await js(PARTS), ids = await js(`[...document.querySelectorAll('#stage .ro-plate')].map(p=>p.dataset.id)`);
+    assert.ok(parts0 >= ids.length * 5, `FR-244: bar, pool, bezel, clamp and tag exist on every desk (${parts0} for ${ids.length} desks)`);
+    await js(`(()=>{const L=document.querySelector('#stage .ro-lights'),C=document.querySelector('#stage .ro-chrome');window.__barNodes=0;const f=ms=>{for(const m of ms)for(const n of [...m.addedNodes,...m.removedNodes])if(n.nodeType===1&&n.matches('.ro-bar,.ro-pool,.ro-tint,.ro-clamp,.ro-newtag'))window.__barNodes++;};window.__barObs=new MutationObserver(f);window.__barObs.observe(L,{childList:true});window.__barObs.observe(C,{childList:true});})()`);
+    const lit = [];
+    for (const k of ids) if ((await js(BAR(k))).bar !== 'none') lit.push(k); /* a narrow asleep desk has no bar (its sleeper is in front of the monitor) */
+    assert.ok(lit.length >= 3, `three desks with a bar to light (${lit.length})`);
+    const [eR, eO, eG] = lit.slice(-3);
+    await emitTo(eR, { type: 'status', status: 'error', intent: 'Failed' });
+    await must(`(${BAR(eR)}).bar==='red'&&(${BAR(eR)}).on`, 'FR-237: a red bar on an error');
+    await emitTo(eO, { type: 'status', status: 'working', intent: 'Working' });
+    await emitTo(eO, { type: 'limit', phase: 'exhausted', requestId: 'drv-lim-bar', maxAiCredits: 5, usedAiCredits: 5 });
+    await must(`(${BAR(eO)}).bar==='orange'`, 'FR-237: an orange bar on a limit');
+    await emitTo(eG, { type: 'status', status: 'working', intent: 'Working' });
+    await emitTo(eG, { type: 'output', final: true, text: 'All done.' });
+    await emitTo(eG, { type: 'status', status: 'idle' });
+    await must(`(${BAR(eG)}).bar==='green'&&(${BAR(eG)}).tag`, 'FR-237, FR-238: a green bar and the New reply tag on an unread reply');
+    const g = await js(BAR(eG));
+    assert.ok(/, new reply not read yet/.test(g.label), `FR-238: the plate's name says the reply is new: ${g.label}`);
+    assert.strictEqual(await js(`document.querySelector('#stage .ro-newtag.on').getAttribute('aria-hidden')`), 'true', 'FR-238: the tag is aria-hidden (the name says it)');
+    await H.settle();
+    await H.shot(path.join(OUT, '097-real-lights-1440x900.png'), { prep: 'calm' });
+    /* read: opening the chat clears it, as the flat "New" (acceptance 4) */
+    const gName = await js(`window.__durbarSimUi.agents().find(a=>a.id===${jsLiteral(eG)}).name`);
+    await js(`window.__durbarSimUi.crew.openPanel(${jsLiteral(eG)})`);
+    await must(`document.body.classList.contains('panel-open')&&(document.getElementById('panelTitle')||{}).textContent===${jsLiteral(gName)}`, 'the chat of the unread agent');
+    await js(`document.getElementById('backBtn').click()`);
+    await must(`!document.body.classList.contains('panel-open')&&(${BAR(eG)}).bar==='off'&&!(${BAR(eG)}).tag`, 'FR-237, FR-238: read, the bar is off and the tag is gone');
+    assert.ok(!/new reply/.test((await js(BAR(eG))).label), 'read: the plate\'s name no longer says new reply');
+    assert.strictEqual(await js(`(window.__barObs.disconnect(),window.__barNodes)`), 0, 'FR-244: lighting and clearing bars added or removed no bar, pool, bezel, clamp or tag');
+    assert.strictEqual(await js(PARTS), parts0, 'FR-244: the same number of light parts after the changes');
+    /* forced colours: no bar or pool is drawn, the tag stays (FR-236, FR-238; acceptance 6) */
+    await emitTo(eG, { type: 'status', status: 'working', intent: 'Working' });
+    await emitTo(eG, { type: 'output', final: true, text: 'Done again.' });
+    await emitTo(eG, { type: 'status', status: 'idle' });
+    await must(`(${BAR(eG)}).tag`, 'the tag again');
+    await emulate([{ name: 'forced-colors', value: 'active' }], async () => {
+      await must(`matchMedia('(forced-colors: active)').matches`, 'forced colours emulated');
+      const fc = await js(`({drawn:[...document.querySelectorAll('#stage :is(.ro-bar,.ro-pool,.ro-tint)')].filter(e=>e.getClientRects().length).length,tag:(()=>{const t=document.querySelector('#stage .ro-newtag.on');return !!t&&t.getClientRects().length>0&&getComputedStyle(t).display!=='none'})()})`);
+      assert.deepStrictEqual(fc, { drawn: 0, tag: true }, 'forced colours: no bar, pool or tint is drawn; the New reply tag stays: ' + JSON.stringify(fc));
+    });
+    /* reduced motion and Serious mode: the on/off change is instant (no transition on the bar parts) */
+    await emulate([{ name: 'prefers-reduced-motion', value: 'reduce' }], async () => {
+      await must(`matchMedia('(prefers-reduced-motion: reduce)').matches`, 'reduced motion emulated');
+      const tr = await js(`[...document.querySelectorAll('#stage :is(.ro-pool,.ro-tint)')].map(e=>getComputedStyle(e).transitionDuration).concat([...document.querySelectorAll('#stage .ro-bar')].map(e=>getComputedStyle(e,'::after').transitionDuration)).filter(d=>d.split(',').some(x=>parseFloat(x)>0)).length`);
+      assert.strictEqual(tr, 0, 'reduced motion: the bar parts change at once');
+    });
+    console.log('[097] light bars: amber at the Boss, red, orange, green with the tag, read and forced colours checked;', parts0, 'parts made once');
+  }
 
   // ---- FR-065: a picture that fails: no broken image, the initials disc ----
   /* a simulator visit can take the chosen person to the lobby before its picture fails (then no disc is drawn at its desk): try another person, up to six times */

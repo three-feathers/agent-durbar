@@ -416,7 +416,7 @@
         const lb = L.lightBar(d, lay, BAV, BFC), lit = lb.hidden ? ' none' : lt.bar === 'off' ? '' : ' on bar-' + lt.bar;
         const po = el(lights, 'lp:' + k, 'div', 'ro-pool' + lit); box(po, lb.pool); dset(po, 'for', k);
         const cut = lb.cut || { x: 0, y: 0, w: 0, h: 0 }; setVar(po, '--ro-cx', px(cut.x)); setVar(po, '--ro-cy', px(cut.y)); setVar(po, '--ro-cw', px(cut.w)); setVar(po, '--ro-ch', px(cut.h));
-        const bz = el(lights, 'lz:' + k, 'div', 'ro-bezel' + lit); box(bz, lb.bezel); dset(bz, 'for', k);
+        const bz = el(lights, 'lz:' + k, 'div', 'ro-tint' + lit); box(bz, lb.bezel); dset(bz, 'for', k);
         const cp = el(lights, 'lc:' + k, 'div', 'ro-clamp' + (lb.hidden || !lb.clamp ? ' none' : '')); box(cp, lb.clamp || lb.bar); dset(cp, 'for', k);
         const br = el(lights, 'lb:' + k, 'div', 'ro-bar' + (lb.onEdge ? ' edge' : '') + lit); box(br, lb.bar); dset(br, 'for', k); dset(br, 'bar', lb.hidden ? 'none' : lt.bar);
         /* FR-238: "New reply" above the plate's right end, while the reply is unread (the flat desk's "New", the same isUnread) */
