@@ -211,3 +211,4 @@ test:mcpcontextop
 test:mcpcontextipc
 test:quota
 test:featureinventory
+test:simversion
