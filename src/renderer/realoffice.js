@@ -332,6 +332,7 @@
     const byFolder = new Map(model.folders.map((f) => [f.id, f]));
     const byAgent = new Map(model.folders.flatMap((f) => f.agents.map((a) => [a.id, a])));
     const now = Date.now();
+    const BAV = L.barAvoid(lay), BFC = L.barFaces(lay); /* FR-236: the signs and faces every bar keeps clear of, once per render */
     for (const z of lay.zones) {
       const f = byFolder.get(z.id);
       const zk = z.id + '\u0000' + z.part; /* a folder too big for one row has more parts, each its own zone (the sign repeats, "continued") */
@@ -354,7 +355,7 @@
       }
       for (const d of z.desks) {
         const a = byAgent.get(d.id), k = d.id;
-        const lt = L.lightFor(d.state, { still: !!opts.still });
+        const lt = L.lightFor(d.state, { still: !!opts.still, unread: !!a.unread }); /* FR-237: an unread reply lights an off bar green */
         const st = lay.cabinet ? L.aisleStatus(d.state, !!opts.still) : null; /* spec 102 FR-260 */
         /* the person, behind the desk: FR-036's pose, FR-070's second frame or breath, FR-072's cross-fade; FR-065: the initials disc when the picture failed */
         if (d.person) {
@@ -409,6 +410,16 @@
           if (call) setTimeout(() => { if (onArt) onArt(); }, 2050 - (now - t0)); /* redraw when the tick is over */
         } else { L.doneTick(SEEN, k, d.state); TICKS.delete(k); }
         if (call) { const c = el(lights, 'c:' + k, 'div', 'ro-call call-' + call + (lt.motion === 'pulse' ? ' pulse' : '') + (call === 'green' && !opts.still ? ' fade' : '')); box(c, { x: d.call.x, y: d.call.y, w: 10, h: 10 }); c.dataset.for = k; }
+        /* FR-236, FR-237, FR-244: the monitor light bar, its clamp, the bezel tint and the pool, from the layout's rects (no layout read); made once
+           per desk, so a status change only switches classes (no node added or removed); `.none` where a sleeper sits in front of the monitor */
+        const lb = L.lightBar(d, lay, BAV, BFC), lit = lb.hidden ? ' none' : lt.bar === 'off' ? '' : ' on bar-' + lt.bar;
+        const po = el(lights, 'lp:' + k, 'div', 'ro-pool' + lit); box(po, lb.pool); po.dataset.for = k;
+        const cut = lb.cut || { x: 0, y: 0, w: 0, h: 0 }; setVar(po, '--ro-cx', px(cut.x)); setVar(po, '--ro-cy', px(cut.y)); setVar(po, '--ro-cw', px(cut.w)); setVar(po, '--ro-ch', px(cut.h));
+        const bz = el(lights, 'lz:' + k, 'div', 'ro-bezel' + lit); box(bz, lb.bezel); bz.dataset.for = k;
+        const cp = el(lights, 'lc:' + k, 'div', 'ro-clamp' + (lb.hidden || !lb.clamp ? ' none' : '')); box(cp, lb.clamp || lb.bar); cp.dataset.for = k;
+        const br = el(lights, 'lb:' + k, 'div', 'ro-bar' + (lb.onEdge ? ' edge' : '') + lit); box(br, lb.bar); br.dataset.for = k; br.dataset.bar = lb.hidden ? 'none' : lt.bar;
+        /* FR-238: "New reply" above the plate's right end, while the reply is unread (the flat desk's "New", the same isUnread) */
+        const nt = el(chrome, 'nr:' + k, 'span', 'ro-newtag' + (a.unread ? ' on' : '')); box(nt, { x: d.plate.x + d.plate.w, y: d.plate.y }); attr(nt, 'aria-hidden', 'true'); text(nt, 'New reply'); nt.dataset.for = k;
         /* FR-038: cues, inside the slot */
         if (d.bubble) { const b = el(chrome, 'b:' + k, 'div', 'ro-bub'); box(b, d.bubble); attr(b, 'aria-hidden', 'true'); text(b, '?'); }
         if (d.bang) { const b = el(chrome, 'x:' + k, 'div', 'ro-bang'); box(b, d.bang); attr(b, 'aria-hidden', 'true'); text(b, '!'); }

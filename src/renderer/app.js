@@ -1614,12 +1614,12 @@ function realModel(model){
         const asleep=old.has(a.id)&&!v;
         if(asleep){ /* spec 097 FR-120, FR-129: asleep at the desk; the words of the lounge's peek card and label, the same masked reply (shutReply) */
           const ago=ACT.agoLong(sinceLast(a)), said=SHUT.spoken(ago), line=shutReply(a,140), who=a.profile?a.profile.name+' · '+a.role:a.role;
-          return {id:a.id,name:a.name,role:a.role,state:st,word:'Asleep',task:ago?'finished '+ago:'',asleep:true,tip:'Asleep · '+stWord(a)+(ago?' · finished '+ago:'')+' · Lamp off\n'+shutReply(a,300),selected:ui.selected===a.id,away:null,awayLabel:'',
-            label:a.name+', '+who+', folder '+deskMask(showPath(r.path))+', asleep at the desk'+(said?', finished '+said:'')+': '+line+(/[.!?…]$/.test(line)?'':'.')+' Open chat panel.',helpers:helpersOf(a).map(h=>stOf(h,false))};
+          return {id:a.id,name:a.name,role:a.role,state:st,word:'Asleep',task:ago?'finished '+ago:'',asleep:true,tip:'Asleep · '+stWord(a)+(ago?' · finished '+ago:'')+' · Lamp off\n'+shutReply(a,300),selected:ui.selected===a.id,unread:isUnread(a),away:null,awayLabel:'',
+            label:a.name+unreadWords(a)+', '+who+', folder '+deskMask(showPath(r.path))+', asleep at the desk'+(said?', finished '+said:'')+': '+line+(/[.!?…]$/.test(line)?'':'.')+' Open chat panel.',helpers:helpersOf(a).map(h=>stOf(h,false))};
         }
         const br=v&&v.place===D.COFFEE&&BREAKS.get(a.id)&&BREAKS.get(a.id).kind!=='cap'?coffeeUntilWords(a):''; /* owner 2026-11-02: the post-it of a coffee break says until when (an app's usage window), never of Durbar's cap at the Bank */
-        return {id:a.id,name:a.name,role:a.role,state:st,word:stWord(a),task,tip:deskTip(a),selected:ui.selected===a.id,away:v?v.place:null,awayLabel:place+(br?' '+br:''),
-          label:[a.name,a.role,stWord(a)].concat(task?[task]:[],needs?['needs you']:[],place?['at '+place]:[]).join(', ')+'. Open chat panel.', /* FR-090: text for setAttribute, not markup */
+        return {id:a.id,name:a.name,role:a.role,state:st,word:stWord(a),task,tip:deskTip(a),selected:ui.selected===a.id,unread:isUnread(a),away:v?v.place:null,awayLabel:place+(br?' '+br:''),
+          label:[a.name+unreadWords(a),a.role,stWord(a)].concat(task?[task]:[],needs?['needs you']:[],place?['at '+place]:[]).join(', ')+'. Open chat panel.', /* FR-090: text for setAttribute, not markup */
           helpers:helpersOf(a).map(h=>stOf(h,false))};})};
   });
   const places=lobbyPlaces().map(p=>{
