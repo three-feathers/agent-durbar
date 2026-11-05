@@ -617,3 +617,22 @@ Numbers taken: FR-030 and T082 (checked against `main` and the open PRs on 2026-
 ## Changes 2026-10-31: doors removed (pointer, spec 017 T024)
 
 Spec 017 FR-029 (owner decision, no doors) removed the Office with cabins layout, the desk door button, meeting-room signs, room door plates, **Close all** / **Open all**, door-held schedules and the door refusal of remote control, and `door-art`, `--door-*` and the door words of the theme contract. Any requirement in this spec about those (door plates, plate totals or siren, door signs, collapse, Close all / Open all, the `door` field) no longer applies and is kept as a record; Hide folder, floors and the plain status word stay. See spec 017's table of what was lost and what remains.
+
+### 2026-11-05: the rename pencil in Real office (issue #1155, part of #1147; FR-170, T083)
+
+Real office shipped without FR-020 item 2's pencil: its desks rename through the card menu's dialog only. The owner decided on 2026-11-04 that every world has Open office's features (spec 021 FR-078), so this closes the gap. Coordinator's direction: reuse Open office's pencil, with no second pencil (FR-031).
+
+- **FR-170** **The pencil beside a Real office plate's name.**
+  - **The same button.** It is Open office's `.ren[data-ren]`: the same icon, 24 px target and label "Rename <name>". The same click and F2 handlers start the same in-place edit (`startSessionEdit`, the shared field of FR-021..FR-023, `submitSessionName`). Only sessions that `canRenameSession` allows get one; helpers and the arcade's visitors do not.
+  - **Where.** In the Real office chrome layer, right after its plate (a button cannot sit inside a button). It sits just after the end of the name by CSS anchor positioning (the name is its anchor), so placing it needs no layout read and no script. The plate keeps 22 px after the name, so the pencil never covers the role, a helper count or the plate's edge; a long name gives way first, ending in an ellipsis.
+  - **When it shows.** As in Open office: on the plate's hover and keyboard focus, on its own focus, and with `body.ren-show`. It is always in the tab order after its plate, for keyboard and screen readers.
+  - **F2 on a plate** starts the same edit over the plate's name (`inlineNameEl` finds a Real office plate's name). The field opens over the name and gives focus back to the plate or the pencil, as on an Open office desk.
+  - Forced colours, reduced motion and Motion off: the same as Open office's pencil, which never moves.
+- `sim:` `scripts/check-097-plate-pencil.js` (in `check:ui`), at 1440x900 and 1280x800 with 15 agents in Real office. It fails when:
+  - a renamable main agent's plate has no pencil, or a helper gets one;
+  - the pencil does not show on the plate's hover or focus;
+  - it covers the plate's name, role or helper dots, or leaves the plate's box;
+  - a click on the pencil or F2 on the plate does not open the edit field over that plate's name;
+  - Enter does not save a new name onto the plate, or Esc does not cancel it.
+  - Mutants: the name's anchor removed; F2 not reaching a Real office plate.
+
