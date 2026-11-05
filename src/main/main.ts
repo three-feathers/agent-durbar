@@ -222,6 +222,7 @@ const mcp = registerMcpIpc({
     push: (p) => toRenderer('agents:mcpSignInRefresh', p),
     limited: (id) => agentState.onBreak(id),
     nudge: (id, name) => nudgeAgent(id, name),
+    diagnostics: () => settingsStore?.diagnostics === true, // spec 058 FR-227
   },
 });
 // spec 058 FR-198: each searched folder read once (async readdir, 10 s cache), names looked up in sets; network paths never read

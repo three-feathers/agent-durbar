@@ -22,6 +22,10 @@ export const MCP_SIGNIN_WAIT_MS = 5000;
 export const MCP_RECHECK_MS = 30 * 60_000;
 /** FR-218: a server tried this recently (by any automatic reconnect) is not renewed again after a failure: one reconnect per failure episode, the row says Needs sign-in. */
 export const MCP_RENEW_FAIL_COOLDOWN_MS = 5 * 60_000;
+/** FR-224: a server with a successful call or check this recently is not checked before a message. */
+export const MCP_CHECK_FRESH_MS = 5 * 60_000;
+/** FR-225: a check that does not answer in this time counts as unknown (nothing else happens). */
+export const MCP_CHECK_TIMEOUT_MS = 30_000;
 /** FR-213 (G5 settled A, both owners): the Settings switch is on unless the person turns it off. */
 export const MCP_SIGNIN_REFRESH_DEFAULT = true;
 /** FR-213 (G5 settled A): an automatic reconnect also runs in Read-only (it changes no file and calls no tool). */
@@ -223,6 +227,53 @@ export const planMcpRenew = (i: RenewPlanInput): RenewPlan => {
   return out;
 };
 
+export interface CheckPlanInput {
+  now: number;
+  /** The Settings switch (FR-213), already read. */
+  on: boolean;
+  /** The adapter has `restartMcpServer`, `mcpSignInReconnect`, `mcpBackgroundRenew` and `listMcpTools`. */
+  canCheck: boolean;
+  live: boolean;
+  /** See `SignInPlanInput.renews`. */
+  renews?: boolean;
+  servers: readonly SignInServerView[];
+  records: Readonly<Record<string, SignInRecordView>>;
+  /** Server name -> monotonic time of its last successful call or check in this chat. */
+  healthyAt: Readonly<Record<string, number>>;
+  /** Names with a renewal queued or running, or a check running, in this chat. */
+  busy: readonly string[];
+  freshMs: number;
+}
+
+/**
+ * Spec 058 FR-223, FR-224 (2026-11-05, issue #1205): the servers of one chat to check before a message. Only a remote, connected server
+ * that Durbar may act on and that had no successful call or check in the last `freshMs`.
+ */
+export function planMcpCheck(i: CheckPlanInput): string[] {
+  if (i.on !== true || !i.canCheck || !i.live || i.renews === false) return [];
+  const busy = new Set(i.busy);
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const s of i.servers) {
+    if (!s || typeof s.name !== 'string' || seen.has(s.name)) continue;
+    seen.add(s.name);
+    if (s.status !== 'connected') continue; // never a server that is not connected: a check must not make the runtime reconnect it
+    if (s.off === true || s.builtin === true || s.staticAuth === true) continue;
+    if (!/^(?:http|sse|streamable-?http)$/i.test(typeof s.transport === 'string' ? s.transport : '')) continue; // remote only
+    if (s.signInOpen === true || s.restarting === true || s.policy === true) continue;
+    const rec = Object.prototype.hasOwnProperty.call(i.records, s.key) ? i.records[s.key] : undefined;
+    if (rec && rec.blocked) continue;
+    if (busy.has(s.name)) continue;
+    const ok = Object.prototype.hasOwnProperty.call(i.healthyAt, s.name) ? i.healthyAt[s.name] : undefined;
+    if (typeof ok === 'number' && i.now - ok >= 0 && i.now - ok < i.freshMs) continue;
+    out.push(s.name);
+  }
+  return out;
+}
+
+/** What a check came to (FR-225): `unauthorized` = the `auth` class; `error` = any other failure (nothing happens). */
+export type McpCheckOutcome = 'ok' | 'unauthorized' | 'error';
+
 /** FR-207: what one automatic reconnect came to, from the state the app reports afterwards; no vendor text. */
 export type SignInResult = 'reconnected' | 'needs-sign-in' | 'failed' | 'policy';
 
@@ -256,6 +307,8 @@ export interface SignInChatView {
   renews?: boolean;
   /** FR-218: the adapter has `restartMcpServer`, `mcpSignInReconnect` and `mcpBackgroundRenew`. */
   renewable?: boolean;
+  /** FR-223: the adapter can answer a server's tool list (`listMcpTools`). */
+  canCheck?: boolean;
   /** FR-218: Durbar's own spending limit, or the agent app's usage limit, holds this chat (a coffee break): no automatic message. */
   limited?: boolean;
   /** The chat's last report, built only when the cheap checks (switch, app, running, busy, moment) let a plan go on. */
@@ -278,6 +331,13 @@ export interface RefresherDeps {
   timers?: SignInTimers;
   /** FR-221: the wall clock, only to show "Renewed 12:40"; never used for a decision. Missing = no time is shown. */
   wall?(): number;
+  /** FR-223 (injected in tests): the check's two times (5 minutes fresh, 30 s unknown). */
+  checkFreshMs?: number;
+  checkTimeoutMs?: number;
+  /** FR-223: one real round-trip to the server (`listMcpTools`): never throws a text, only a fixed outcome. Missing = no check. */
+  check?(agentId: string, name: string): Promise<McpCheckOutcome>;
+  /** FR-227: Settings > Diagnostics. Missing or false = no activity row for a renewal that worked. */
+  diagnostics?(): boolean;
   /** FR-218 (injected in tests): the cooldown after a reconnect. */
   failCooldownMs?: number;
   /**
@@ -346,6 +406,16 @@ export class McpSignInRefresher {
   private readonly renewedWall = new Map<string, number>();
   /** FR-218: `<agent id>\0<server key>` -> monotonic time of the last automatic renewal tried from that chat (the cooldown). */
   private readonly renewAt = new Map<string, number>();
+  /** FR-224: `<agent id>\0<server>` -> monotonic time of the last successful call or check. */
+  private readonly healthyAt = new Map<string, number>();
+  /** FR-223: checks that run now. */
+  private readonly checking = new Set<string>();
+  /** FR-225: servers whose last check got no answer in time (the dialog row says so) until a call or check succeeds. */
+  private readonly unknown = new Set<string>();
+  /** FR-225: reconnects started by a check: no note to the agent (it never failed), and the "Reconnecting" line. */
+  private readonly checkOnly = new Set<string>();
+  /** FR-223: chats whose start check ran. */
+  private readonly startChecked = new Set<string>();
   /** FR-210, FR-218: per server key, the tail of the queue of reconnects: one at a time across chats (rotating refresh tokens), each chat's own restart still runs. */
   private readonly keyLock = new Map<string, Promise<void>>();
 
@@ -380,7 +450,10 @@ export class McpSignInRefresher {
    */
   noteCall(agentId: string, name: string, callId: string, phase: 'start' | 'end' | 'ok'): void {
     const k = `${agentId}\0${name}`;
-    if (phase === 'ok') this.nudged.delete(k); // a call to this server succeeded: the next failure is a new episode
+    if (phase === 'ok') {
+      this.nudged.delete(k); // a call to this server succeeded: the next failure is a new episode
+      this.markHealthy(k);
+    }
     if (phase === 'start') {
       let set = this.calls.get(k);
       if (!set) this.calls.set(k, (set = new Set()));
@@ -416,6 +489,123 @@ export class McpSignInRefresher {
       if (prev?.get(x.name) === 'connected' && (st === 'needs-auth' || (st === 'failed' && x.errorClass === 'auth'))) this.noteFailure(agentId, x.name);
     }
     this.lastStatus.set(agentId, next);
+    if (!this.startChecked.has(agentId) && servers.some((x) => x && x.status === 'connected')) {
+      this.startChecked.add(agentId); // FR-223: a new chat's first report with a connected server
+      this.checkChat(agentId);
+    }
+  }
+
+  private markHealthy(tag: string): void {
+    this.unknown.delete(tag);
+    try {
+      if (this.healthyAt.size < 5000) this.healthyAt.set(tag, this.d.now());
+    } catch {
+      /* no clock: nothing is skipped */
+    }
+  }
+
+  /** FR-225: the last check of this server got no answer in time (the row says *Did not answer a check*). */
+  checkUnknown(agentId: string, name: string): boolean {
+    return this.unknown.has(`${agentId}\0${name}`);
+  }
+
+  /**
+   * FR-223, FR-224: check the chat's remote sign-in servers now, **in parallel** (this returns at once; the message is never held). Every
+   * failure inside is swallowed: a check never throws into a send.
+   */
+  checkChat(agentId: string): void {
+    try {
+      const d = this.d.check;
+      if (!d) return;
+      let v: SignInChatView | undefined;
+      let on = false;
+      try {
+        v = this.d.view(agentId);
+        on = this.d.on() === true;
+      } catch {
+        return;
+      }
+      if (!v || !on) return;
+      const input: CheckPlanInput = {
+        now: this.d.now(),
+        on,
+        canCheck: v.takesPart && v.renewable === true && v.canCheck === true,
+        live: v.live,
+        ...(v.renews === false ? { renews: false } : {}),
+        servers: [],
+        records: {},
+        healthyAt: {},
+        busy: [],
+        freshMs: this.d.checkFreshMs ?? MCP_CHECK_FRESH_MS,
+      };
+      if (planMcpCheck({ ...input, servers: [{ name: '-', status: 'connected', transport: 'http', key: '-' }] }).length === 0) return; // the cheap checks first
+      let servers: SignInServerView[] = [];
+      try {
+        servers = v.servers();
+      } catch {
+        return;
+      }
+      const records: Record<string, SignInRecordView> = {};
+      const healthy: Record<string, number> = {};
+      const busy: string[] = [];
+      for (const x of servers) {
+        const r = this.records.get(x.key);
+        if (r) records[x.key] = r;
+        const tag = `${agentId}\0${x.name}`;
+        const h = this.healthyAt.get(tag);
+        if (h !== undefined) healthy[x.name] = h;
+        if (this.checking.has(tag) || this.renewing.has(tag) || this.pending.get(agentId)?.has(x.name)) busy.push(x.name);
+      }
+      for (const name of planMcpCheck({ ...input, servers, records, healthyAt: healthy, busy })) void this.checkOne(agentId, name, d);
+    } catch {
+      /* a check never reaches the send */
+    }
+  }
+
+  private async checkOne(agentId: string, name: string, check: (agentId: string, name: string) => Promise<McpCheckOutcome>): Promise<void> {
+    const tag = `${agentId}\0${name}`;
+    if (this.checking.size >= 500) return;
+    this.checking.add(tag);
+    const t = this.timers();
+    let timer: unknown;
+    let out: McpCheckOutcome | 'unknown';
+    try {
+      out = await new Promise<McpCheckOutcome | 'unknown'>((resolve) => {
+        timer = t.set(() => resolve('unknown'), this.d.checkTimeoutMs ?? MCP_CHECK_TIMEOUT_MS);
+        let p: Promise<McpCheckOutcome>;
+        try {
+          p = check(agentId, name);
+        } catch {
+          resolve('error');
+          return;
+        }
+        p.then((r) => resolve(r === 'ok' || r === 'unauthorized' ? r : 'error'), () => resolve('error'));
+      });
+    } finally {
+      t.clear(timer);
+      this.checking.delete(tag);
+    }
+    let alive = false;
+    let on = false;
+    try {
+      alive = !!this.d.view(agentId);
+      on = this.d.on() === true;
+    } catch {
+      return;
+    }
+    if (!alive || !on) return; // the chat ended or the switch went off while it ran
+    if (out === 'ok') {
+      this.markHealthy(tag);
+      this.nudged.delete(tag); // as a successful call: the next failure is a new episode
+    } else if (out === 'unknown') {
+      if (this.unknown.size < 500) this.unknown.add(tag);
+    } else if (out === 'unauthorized') {
+      this.unknown.delete(tag);
+      this.healthyAt.delete(tag);
+      this.checkOnly.add(tag);
+      this.noteFailure(agentId, name, true);
+      if (!this.renewing.has(tag) && !this.pending.get(agentId)?.has(name)) this.checkOnly.delete(tag); // nothing started (cooldown, blocked): no mark stays
+    }
   }
 
   /**
@@ -423,7 +613,8 @@ export class McpSignInRefresher {
    * starts at once, during a turn too (owner, 2026-11-05 18:03 UTC); both for one episode are one mark (a set), and the cooldown keeps a
    * later one from a second reconnect.
    */
-  noteFailure(agentId: string, name: string): void {
+  noteFailure(agentId: string, name: string, fromCheck = false): void {
+    if (!fromCheck) this.checkOnly.delete(`${agentId}\0${name}`); // FR-225: the agent's own call failed: FR-218's note applies after the reconnect
     let set = this.pending.get(agentId);
     if (!set) this.pending.set(agentId, (set = new Set()));
     if (set.size < 200) set.add(name);
@@ -463,8 +654,10 @@ export class McpSignInRefresher {
     this.lastStatus.delete(agentId);
     this.pending.delete(agentId);
     this.stops.delete(agentId);
+    this.startChecked.delete(agentId);
     const p = `${agentId}\0`;
-    for (const m of [this.renewedWall, this.renewAt, this.calls, this.failStops] as Map<string, unknown>[]) for (const k of [...m.keys()]) if (k.startsWith(p)) m.delete(k);
+    for (const k of [...this.unknown, ...this.checkOnly, ...this.checking]) if (k.startsWith(p)) { this.unknown.delete(k); this.checkOnly.delete(k); this.checking.delete(k); }
+    for (const m of [this.renewedWall, this.renewAt, this.calls, this.failStops, this.healthyAt] as Map<string, unknown>[]) for (const k of [...m.keys()]) if (k.startsWith(p)) m.delete(k);
     for (const k of [...this.nudged]) if (k.startsWith(p)) this.nudged.delete(k);
   }
 
@@ -724,6 +917,7 @@ export class McpSignInRefresher {
    * reconnect of this chat already running (a recheck's), at most `waitMs` in total. `stopped` = Stop during the wait: nothing is sent.
    */
   async beforeSend(agentId: string): Promise<'go' | 'stopped'> {
+    this.checkChat(agentId); // FR-223: beside the send, never awaited
     const open = this.gate(agentId);
     const mine = open.then(() => undefined, () => undefined);
     this.gating.set(agentId, mine); // FR-218: a nudge waits behind this send
@@ -814,6 +1008,7 @@ export class McpSignInRefresher {
           return 'skipped';
         }
         ctl.started = true;
+        if (this.checkOnly.has(tag)) this.d.push({ id: agentId, kind: 'reconnecting', name }); // FR-226: only while a reconnect from a check runs
       }
       this.auto.add(tag);
       this.declined.delete(tag);
@@ -831,6 +1026,8 @@ export class McpSignInRefresher {
         st = {};
       }
       const res = signInResult({ ...st, ok: r.ok, fresh: r.fresh, declined: this.declined.has(tag) });
+      const fromCheck = kind === 'renew' && this.checkOnly.has(tag);
+      if (fromCheck) this.d.push({ id: agentId, kind: 'reconnect-end', name }); // FR-226: the line goes whatever the result
       this.records.set(key, res === 'needs-sign-in' ? { at, blocked: 'sign-in' } : res === 'policy' ? { at, blocked: 'policy' } : { at });
       if (res === 'reconnected') {
         // FR-220: a renewal that reads connected is shown on the row (wall time, display only), for a chat that still exists
@@ -841,15 +1038,28 @@ export class McpSignInRefresher {
           /* no time shown */
         }
       }
-      this.d.log(agentId, kind === 'renew' && res === 'reconnected' ? RENEW_LOG(name) : LOG_LINE[res](name));
-      if (kind === 'renew' && res === 'reconnected') this.nudge(agentId, name);
+      const renewed = kind === 'renew' && res === 'reconnected';
+      let diag = false;
+      try {
+        diag = this.d.diagnostics?.() === true;
+      } catch {
+        diag = false;
+      }
+      if (!renewed || diag) this.d.log(agentId, renewed ? RENEW_LOG(name) : LOG_LINE[res](name)); // FR-227: the row of a renewal that worked only with Diagnostics
+      if (renewed) {
+        if (fromCheck && this.checkOnly.has(tag)) this.nudged.add(tag); // no note (the agent never failed); a repeat of the failure still stops here (FR-218)
+        else this.nudge(agentId, name);
+      }
       return res;
     });
     ctl.done = f;
     if (kind !== 'renew') this.flights.set(key, f as Promise<SignInResult>);
     const end = (): void => {
       if (this.flights.get(key) === f) this.flights.delete(key);
-      if (this.renewing.get(tag) === ctl) this.renewing.delete(tag);
+      if (this.renewing.get(tag) === ctl) {
+        this.renewing.delete(tag);
+        if (!this.pending.get(agentId)?.has(name)) this.checkOnly.delete(tag); // a renewal put back to wait for a call stays a check's
+      }
       this.auto.delete(tag);
       this.declined.delete(tag);
     };

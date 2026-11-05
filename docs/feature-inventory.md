@@ -59,7 +59,7 @@ One row per thing a user can do or see. [features.md](features.md) stays the use
 | Context ring and Compact | works | works | none | 019 034 | test:compaction test:ctxbreakdown |
 | MCP servers: state, sign-in, restart, global | works | works | none | 019 058 061 069 | test:mcphealth test:mcpsignin test:mcpglobal driver:shots-058-mcp-launch |
 | MCP problems strip at launch (reason, fix, Show, Dismiss) | works | works, the same strip above the office (driver); not checked with a world on (#1172) | none | 058 | driver:shots-058-mcp-launch test:mcpwords |
-| MCP sign-ins refreshed before a message after a quiet hour, and renewed after a failed call (waiting line, sign-in line, Settings switch, Renewed note) | works | works, chat and Settings only (window chrome, no office drawing); not checked with a world on (#1172) | none | 058 | test:mcpsigninrefresh driver:shots-058-mcp-signin-refresh |
+| MCP sign-ins refreshed before a message after a quiet hour, checked in the background before every message, and renewed after a failed call (waiting line, Reconnecting line, sign-in line, Settings switches, Renewed note) | works | works, chat and Settings only (window chrome, no office drawing); not checked with a world on (#1172) | none | 058 | test:mcpsigninrefresh driver:shots-058-mcp-signin-refresh |
 | Tools and Cost tabs | works | works | none | 019 020 | test:toolstats test:usagetotals |
 | Credit caps and usage display | works | works | planned (limit-card) | 011 | test:credits test:usagestore driver:shots-012-cost-cap |
 | OS sandbox floor | works | works | none | 087 | test:runtime-sandbox |

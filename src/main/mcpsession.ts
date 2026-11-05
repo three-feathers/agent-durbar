@@ -56,6 +56,8 @@ export interface McpReplyInput {
   signIn?(name: string): { host: string; opened: boolean; expiresInMs: number; otherSite?: string } | undefined;
   /** Spec 058 FR-221: when Durbar last renewed this server's sign-in in this session (wall clock ms), shown as "Renewed 12:40". */
   renewedAt?(name: string): number | undefined;
+  /** Spec 058 FR-225: the last check before a message got no answer in 30 s. */
+  checkUnknown?(name: string): boolean;
   /** FR-164: the server's own address when Durbar knows one (a folder extra, a list Durbar passes, the Copilot CLI list); stdio has none. */
   serverUrl?(name: string): string | undefined;
   /** Spec 076 FR-202 (issue #602): why the agent app's own organization policy blocks this server, or undefined. */
@@ -122,7 +124,7 @@ export function agentMcpReply(i: McpReplyInput): AgentMcpReply {
     const signRestart = needs && canRestart && !!ad?.capabilities.mcpSignInRestart && !!steps;
     // FR-188: only a Running (connected) row, on, in a running session says its last call failed; a word only, never the text
     const lastCall = isLive && on && st?.status === 'connected' ? i.lastCall?.(name) : undefined;
-    entries.push({ name, origin, status: st?.status, error: maskMcpError(st?.error, secrets), ...(st?.errorClass ? { errorClass: st.errorClass } : {}), ...(lastCall ? { lastCall } : {}), ...(mark ? { since: mark.since } : {}), ...(st?.status === 'connected' && typeof renewed === 'number' ? { renewedAt: renewed } : {}), ...(mark?.afterRunning ? { afterRunning: true } : {}), ...(st?.transport ? { transport: st.transport } : {}), defaultOn, off: off.has(name), ...(canRestart ? { canRestart: true } : {}), ...(canSignIn ? { canSignIn: true } : {}), ...(canSignInAgain ? { canSignInAgain: true } : {}), ...(open ? { signIn: open } : {}), ...(steps ? { signInSteps: steps } : {}), ...(end ? { signInEnd: end } : {}), ...(note ? { signInNote: note } : {}), ...(signRestart ? { signInRestart: true } : {}), ...(i.launchedOff?.has(name) ? { launchedOff: true } : {}), ...(i.switchedHere?.has(name) ? { switchedHere: true } : {}) });
+    entries.push({ name, origin, status: st?.status, error: maskMcpError(st?.error, secrets), ...(st?.errorClass ? { errorClass: st.errorClass } : {}), ...(lastCall ? { lastCall } : {}), ...(mark ? { since: mark.since } : {}), ...(st?.status === 'connected' && typeof renewed === 'number' ? { renewedAt: renewed } : {}), ...(st?.status === 'connected' && isLive && on && i.checkUnknown?.(name) === true ? { checkUnknown: true as const } : {}), ...(mark?.afterRunning ? { afterRunning: true } : {}), ...(st?.transport ? { transport: st.transport } : {}), defaultOn, off: off.has(name), ...(canRestart ? { canRestart: true } : {}), ...(canSignIn ? { canSignIn: true } : {}), ...(canSignInAgain ? { canSignInAgain: true } : {}), ...(open ? { signIn: open } : {}), ...(steps ? { signInSteps: steps } : {}), ...(end ? { signInEnd: end } : {}), ...(note ? { signInNote: note } : {}), ...(signRestart ? { signInRestart: true } : {}), ...(i.launchedOff?.has(name) ? { launchedOff: true } : {}), ...(i.switchedHere?.has(name) ? { switchedHere: true } : {}) });
   };
   const cli = i.app === 'claude' || i.app === 'codex' ? [] : i.cli;
   const own = i.app === 'claude' ? (i.claudeList ?? []) : [];

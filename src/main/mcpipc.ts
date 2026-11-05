@@ -109,6 +109,11 @@ export function registerMcpIpc(deps: {
     limited?(agentId: string): boolean;
     /** Spec 058 FR-218: send the agent the one automatic note (main shows it in the chat and sends it through the adapter). */
     nudge?(agentId: string, name: string): Promise<void>;
+    /** Spec 058 FR-227: Settings > Diagnostics (off by default). */
+    diagnostics?(): boolean;
+    /** Spec 058 FR-223, FR-225: the check's times (tests inject them). */
+    checkFreshMs?: number;
+    checkTimeoutMs?: number;
   };
 }): { optionsFor(agentId: string): { mcpServers: Record<string, McpServerSpec>; disabledMcpServers: string[]; disabledMcpTools?: Record<string, string[]> }; secretValuesFor(agentId: string): string[]; signInRefresh: McpSignInRefresher; hidesEvent(e: { type: string; requestId?: unknown }): boolean } {
   const { agents, router, dev } = deps;
@@ -201,6 +206,21 @@ export function registerMcpIpc(deps: {
     wall: deps.now ?? Date.now, // spec 058 FR-221: only for "Renewed 12:40" on the row
     failCooldownMs: rd?.failCooldownMs,
     nudge: rd?.nudge,
+    diagnostics: rd?.diagnostics, // spec 058 FR-227
+    checkFreshMs: rd?.checkFreshMs,
+    checkTimeoutMs: rd?.checkTimeoutMs,
+    // spec 058 FR-223, FR-225 (issue #1205): one real round-trip (`listMcpTools`: its FR-163 guard refuses a server that is not connected); only a fixed outcome
+    // leaves here, never the text
+    check: async (agentId, name) => {
+      const ad = router.forAgent(agentId);
+      if (!ad || typeof ad.listMcpTools !== 'function' || ad.capabilities.mcpTools !== true) return 'error';
+      try {
+        await ad.listMcpTools(agentId, name);
+        return 'ok';
+      } catch (err) {
+        return classifyMcpCall(err instanceof Error ? err.message : String(err)) === 'auth' ? 'unauthorized' : 'error';
+      }
+    },
     view: (agentId) => {
       const a = agents.get(agentId);
       const ad = a ? router.forAgent(a.id) : undefined;
@@ -210,6 +230,7 @@ export function registerMcpIpc(deps: {
         adapterId: ad.id,
         takesPart: typeof ad.restartMcpServer === 'function' && ad.capabilities.mcpSignInReconnect === true,
         renewable: ad.capabilities.mcpBackgroundRenew === true, // spec 058 FR-218
+        canCheck: typeof ad.listMcpTools === 'function' && ad.capabilities.mcpTools === true, // spec 058 FR-223
         limited: rd.limited?.(a.id) === true,
         live: ad.isLive(a.id),
         busy: rd.busy(a.id),
@@ -425,6 +446,7 @@ export function registerMcpIpc(deps: {
       lastCall: (n) => calls.get(a.id, n),
       signIn: (n) => signIns.view(a.id, n),
       renewedAt: (n) => refresher.renewedAt(a.id, n), // spec 058 FR-221
+      checkUnknown: (n) => refresher.checkUnknown(a.id, n), // spec 058 FR-225
       serverUrl: (n) => serverUrlOf(a.id, n),
       orgBlocked: deps.orgMcpNow ? (n) => deps.orgMcpNow?.(a.id, serverDefOf(a.id, n)) : undefined,
       global: gn,

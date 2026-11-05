@@ -482,6 +482,19 @@ async function main(): Promise<void> {
     const st3 = new SettingsStore(file);
     st3.load();
     assert.strictEqual(st3.mcpSignInRefresh, false, 'a malformed stored value reads off (fail closed)');
+    // FR-227 (#1205): Diagnostics, off by default, only `true` is kept
+    assert.deepStrictEqual(parseSettings('{"diagnostics":true}'), { diagnostics: true });
+    for (const bad of ['false', '"true"', '1', 'null', '[]']) assert.deepStrictEqual(parseSettings(`{"diagnostics":${bad}}`), {}, `only true is kept: ${bad}`);
+    const dg = new SettingsStore(path.join(dir, 'diag.json'));
+    dg.load();
+    assert.strictEqual(dg.diagnostics, false, 'off by default');
+    assert.deepStrictEqual(dg.setDiagnostics('yes'), { ok: false, value: false }, 'a non-boolean changes nothing');
+    assert.deepStrictEqual(dg.setDiagnostics(true), { ok: true, value: true });
+    const dg2 = new SettingsStore(path.join(dir, 'diag.json'));
+    dg2.load();
+    assert.strictEqual(dg2.diagnostics, true, 'on survives a restart');
+    dg2.setDiagnostics(false);
+    assert.ok(!('diagnostics' in JSON.parse(fs.readFileSync(path.join(dir, 'diag.json'), 'utf8'))), 'off is not written');
     fs.rmSync(dir, { recursive: true, force: true });
   }
 

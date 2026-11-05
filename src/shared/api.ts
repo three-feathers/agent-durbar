@@ -229,6 +229,8 @@ export interface AppSettingsView {
   chatLinksIn?: 'session' | 'system';
   /** Spec 058 FR-213: *Refresh MCP sign-ins automatically* (on unless turned off). */
   mcpSignInRefresh?: boolean;
+  /** Spec 058 FR-227 (issue #1205): *Diagnostics*, off by default: extra activity rows (a renewal that worked). */
+  diagnostics?: boolean;
 }
 
 /** Spec 058 FR-208, FR-211: main's sign-in refresh lines for one chat (names and fixed kinds only; no vendor text, no token). */
@@ -241,7 +243,10 @@ export type McpSignInRefreshNote =
   /** Spec 058 FR-218 (2026-11-05): the agent was sent one short automatic message after a server was reconnected (the message itself is a `user` event). */
   | { id: string; kind: 'nudged'; name: string }
   /** The automatic message could not be sent (the adapter refused it): the window marks it so. */
-  | { id: string; kind: 'nudge-failed'; name: string };
+  | { id: string; kind: 'nudge-failed'; name: string }
+  /** Spec 058 FR-226 (issue #1205): a reconnect started by the check before a message runs / has ended (the line "Reconnecting <name>…"). */
+  | { id: string; kind: 'reconnecting'; name: string }
+  | { id: string; kind: 'reconnect-end'; name: string };
 
 /** A profile file (spec 043 FR-010); `path` is for display only, the window sends `id` back. */
 export interface ProfileFileInfo {
@@ -696,6 +701,8 @@ export interface AgentMcpEntry {
   afterRunning?: boolean;
   /** Spec 058 FR-221 (2026-11-05): when Agent Durbar last renewed this server's sign-in in the background (epoch ms, display only); only for a connected server. */
   renewedAt?: number;
+  /** Spec 058 FR-225 (issue #1205): the last check before a message got no answer in 30 s; the row says so until a call or check succeeds. */
+  checkUnknown?: true;
   /** Spec 058 FR-092: the transport the adapter reported (`stdio`, `http`, ...); missing = not reported. */
   transport?: string;
   /** The default from Settings: on for new sessions. */
@@ -978,6 +985,8 @@ export interface DurbarApi {
   setCheckUpdatesAtStart?(on: boolean): Promise<{ ok: boolean; checkUpdatesAtStart?: boolean }>;
   /** Spec 058 FR-213: *Refresh MCP sign-ins automatically*. */
   setMcpSignInRefresh?(on: boolean): Promise<{ ok: boolean; mcpSignInRefresh?: boolean }>;
+  /** Spec 058 FR-227: Settings > Diagnostics (off by default). */
+  setDiagnostics?(on: boolean): Promise<{ ok: boolean; diagnostics?: boolean }>;
   harnessPaste?(text: string): Promise<{ ok: boolean; error?: string }>;
   harnessCancel?(): Promise<boolean>;
   harnessOpenPage?(kind: string): Promise<{ ok: boolean }>;

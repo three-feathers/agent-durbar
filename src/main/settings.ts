@@ -154,6 +154,20 @@ export class SettingsStore {
     return this.commit(next) ? { ok: true, value: v } : { ok: false, value: this.stillHighlights };
   }
 
+  /** Spec 058 FR-227 (issue #1205): *Diagnostics*, off by default. */
+  get diagnostics(): boolean {
+    return this.s.diagnostics === true;
+  }
+
+  /** Only a real boolean changes it; the default (off) is not written. `ok` only when the write reached disk; `value` the one in force. */
+  setDiagnostics(v: unknown): Saved<boolean> {
+    if (typeof v !== 'boolean') return { ok: false, value: this.diagnostics };
+    const next: AppSettings = { ...this.s };
+    if (v) next.diagnostics = true;
+    else delete next.diagnostics;
+    return this.commit(next) ? { ok: true, value: v } : { ok: false, value: this.diagnostics };
+  }
+
   /** Spec 052 FR-069 (issue #1182): *Motion*, on by default; only `false` is written, so a file of an older version means on. */
   get motion(): boolean {
     return this.s.motion !== false;
