@@ -286,4 +286,5 @@ body.ro-chat .ph .avatar{display:none}
 .ro-plate.has-ren .ro-l1>b{margin-right:22px}
 .ro-chrome>.ren.ro-ren{left:calc(anchor(right) - 1px);top:calc(anchor(center) - 12px)}
 .ro-chrome>.ro-plate:is(:hover,:focus-visible)+.ren.ro-ren{opacity:1}
+.ro-chrome>.ren.ro-ren:is(:hover,:focus-visible){opacity:1} /* on the pencil itself the plate is no longer :hover (a sibling, review of #1200): it stays shown under the pointer */
 

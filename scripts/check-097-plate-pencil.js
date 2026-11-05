@@ -3,11 +3,11 @@
  * DURBAR_SIM_FREEZE=1), no AI credits; every wait is an until().
  *
  *   npm run check:ui -- --only check-097-plate-pencil      (builds first)
- *   PENCIL_MUTANT=anchor|f2   the name's anchor removed / F2 not reaching a plate (each must fail; shows the check can fail)
+ *   PENCIL_MUTANT=anchor|f2|hover   the name's anchor removed / F2 not reaching a plate / the pencil's own hover rule removed (each must fail)
  *
  * At 1440x900 and 1280x800 in Real office it fails (exit 1) when:
  *   - a plate of a session that may be renamed has no pencil right after it, or a pencil has no plate, or a plate is followed by another's pencil;
- *   - a pencil shows before its plate is hovered or focused, or does not show on hover;
+ *   - a pencil shows before its plate is hovered or focused, does not show on hover, or fades when the pointer reaches it (review of #1200);
  *   - the pencil's icon covers the plate's name, role or helper dots, or leaves the plate;
  *   - a click on the pencil, or F2 on the focused plate, does not open the name field over that plate's name;
  *   - Enter does not put the new name on the plate, or Esc does not keep the old one.
@@ -31,6 +31,7 @@ module.exports = async (ctx) => {
     await H.load({ w, h, query: { officeview: 'real', sim: '15' }, ready: `document.querySelectorAll('#stage .ro-plate').length>=10`, readyMs: 30000, settle: false });
     await must(`document.querySelectorAll('#stage .ren.ro-ren').length>=1`, `${tag}: the pencils`);
     if (MUTANT === 'anchor') await js(`(()=>{document.querySelectorAll('#stage .ro-plate .ro-l1>b').forEach(b=>b.style.removeProperty('anchor-name'));return 1})()`);
+    if (MUTANT === 'hover') await js(`(()=>{for(const sh of document.styleSheets){let rs;try{rs=sh.cssRules}catch{continue}for(let i=rs.length-1;i>=0;i--)if(rs[i].selectorText&&rs[i].selectorText.includes('.ren.ro-ren:is(:hover'))sh.deleteRule(i);}return 1})()`);
     if (MUTANT === 'f2') await js(`(()=>{document.addEventListener('keydown',e=>{if(e.key==='F2'&&e.target.closest&&e.target.closest('.ro-plate'))e.stopImmediatePropagation();},true);return 1})()`);
     /* every renamable main session's plate has its pencil right after it; nothing else has one (the app's own rule, canRenameSession) */
     const pairs = await js(`(()=>{const ren=new Set(window.__durbarSimUi.agents().filter(a=>!a.parent).map(a=>a.id));
@@ -52,6 +53,18 @@ module.exports = async (ctx) => {
     const c = await js(`(()=>{const r=window.__pp.plate().getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height-6)}})()`);
     wc().sendInputEvent({ type: 'mouseMove', x: c.x, y: c.y });
     await must(`getComputedStyle(window.__pp.pen()).opacity==='1'`, `${tag}: the pencil shows on the plate's hover`);
+    /* onto the pencil itself (review of #1200): the plate is no longer :hover, the pencil must stay shown under the pointer, and a real click on it edits */
+    const pc = await js(`(()=>{const r=window.__pp.pen().getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)}})()`);
+    wc().sendInputEvent({ type: 'mouseMove', x: pc.x, y: pc.y });
+    await must(`window.__pp.pen().matches(':hover')`, `${tag}: the pointer is on the pencil`);
+    await must(`getComputedStyle(window.__pp.pen()).opacity==='1'&&!window.__pp.plate().matches(':hover')`, `${tag}: the pencil stays shown with the pointer on it (the plate no longer hovered)`);
+    await js(`new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r(1))))`);
+    assert.strictEqual(await js(`getComputedStyle(window.__pp.pen()).opacity`), '1', `${tag}: the pencil stays shown with the pointer on it, two frames later`);
+    wc().sendInputEvent({ type: 'mouseDown', x: pc.x, y: pc.y, button: 'left', clickCount: 1 });
+    wc().sendInputEvent({ type: 'mouseUp', x: pc.x, y: pc.y, button: 'left', clickCount: 1 });
+    await must(`!!window.__pp.field()`, `${tag}: a real click on the hovered pencil opens the name field`);
+    await H.key('Escape');
+    await must(`!window.__pp.field()`, `${tag}: Esc closes it`);
     wc().sendInputEvent({ type: 'mouseMove', x: 1, y: 1 });
     /* the pencil: the field over the name; Esc keeps the old name */
     const old = await js(`window.__pp.plate().querySelector('.ro-l1>b').textContent`);
