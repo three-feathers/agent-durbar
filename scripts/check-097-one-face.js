@@ -16,9 +16,9 @@ module.exports = async (ctx) => {
   // the face of one place as {key, src, sig}: data-face, the picture file (if any), and the drawing with ids removed
   const FACE = `const face=e=>{if(!e)return null;const i=e.querySelector('img');return {key:e.dataset.face||'',src:i?i.getAttribute('src'):'',sig:e.innerHTML.replace(/ (id|clip-path|fill|href|xlink:href|mask|filter)="[^"]*(url\\(#|#)[^"]*"/g,'').replace(/ id="[^"]*"/g,'')};};`;
   const probe = (id) => js(`(()=>{${FACE}
-    const row=document.querySelector('#stripList .sitem[data-sw=${jsLiteral(id)}] .sav'), real=document.body.classList.contains('ro-chat'),
+    const row=document.querySelector('#stripList .sitem[data-sw=${jsLiteral(id)}] .sav'), real=document.body.classList.contains('ro-chat'),visiting=real&&!!(((document.getElementById('roPortrait')||{})._k||'').split('|')[5]),
       head=real?document.getElementById('roPortrait'):document.querySelector('#panelHead .avatar');
-    return {real, rail:face(row), head:face(head), avatar:face(document.querySelector('#panelHead .avatar'))};})()`);
+    return {real, visiting, rail:face(row), head:face(head), avatar:face(document.querySelector('#panelHead .avatar'))};})()`);
   const openChat = async (id, name) => {
     await js(`window.__durbarSimUi.crew.openPanel(${jsLiteral(id)})`);
     await must(`document.body.classList.contains('panel-open')&&(document.getElementById('panelTitle')||{}).textContent===${jsLiteral(name)}&&!!document.querySelector('#stripList .sitem[data-sw=${jsLiteral(id)}] .sav')`, 'the chat of ' + name);
@@ -55,15 +55,18 @@ module.exports = async (ctx) => {
     await H.settle();
     const ids = await js(`window.__durbarSimUi.agents().filter(a=>!a.parent).slice(0,6).map(a=>({id:a.id,name:a.name}))`);
     assert.ok(ids.length >= 2, 'the simulator has agents');
-    let pics = 0;
+    let pics = 0, away = 0;
     for (const a of ids) {
       await openChat(a.id, a.name);
       await must(`!!document.getElementById('roPortrait')`, 'the Real office header portrait of ' + a.name);
       const p = await probe(a.id);
-      if (p.head.src) pics++;
+      assert.ok(p.rail.src && p.head.src, `${w}x${h} real ${a.name}: every agent with a person shows a picture in the rail and the header, not a letter: ${JSON.stringify(p.rail.key)}`);
+      pics++;
+      if (p.visiting) away++;
       same(`${w}x${h} real ${a.name}`, p);
       await back();
     }
+    assert.ok(away > 0, `${w}x${h}: at least one agent is away from its desk (visiting) and still has its picture`);
     assert.ok(pics > 0, `${w}x${h}: at least one agent at its desk shows a Real office picture in the header`);
     // Flat: the theme's own people and two crews
     await H.load({ w, h, settle: true });
