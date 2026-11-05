@@ -158,7 +158,7 @@ module.exports = async (ctx) => {
     // ---- a permission request: the chat opens, Enter on the title approves nothing
     assert.strictEqual(await js(`window.__durbarSimUi.bridge().setPermMode(${jsLiteral(A)},'ask',{}).then(r=>r.ok)`), true, `${tag}: ${nameA} goes to Ask first`);
     await send(A, 'please edit the file');
-    await okArrival(`document.body.classList.contains('panel-open')&&document.getElementById('panelTitle').textContent===${jsLiteral(nameA)}&&!!document.querySelector('#chat .note.perm:not(.settled)')`, `${tag}: ${nameA}'s permission request opens its chat`, 25000);
+    await okArrival(`document.body.classList.contains('panel-open')&&document.getElementById('panelTitle').textContent===${jsLiteral(nameA)}&&!!document.querySelector('#chat .note.perm:not(.settled)')&&document.activeElement&&document.activeElement.id==='panelTitle'`, `${tag}: ${nameA}'s permission request opens its chat with the focus on the title`, 25000);
     ac = await active();
     assert.ok(ac.id === 'panelTitle' && !ac.inBar, `${tag}: focus on the title, not a button of the request: ${JSON.stringify(ac)}`);
     for (const k of ['Return', 'Space']) await H.key(k, [], { char: 'always' });
