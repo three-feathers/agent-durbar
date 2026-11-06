@@ -148,7 +148,7 @@ export async function buildScope(d: ScopeDeps, stop: () => boolean = () => false
   const inTime = async <T>(p: Promise<T>): Promise<T | typeof LATE> => {
     const left = deadline - clock();
     if (left <= 0) return LATE;
-    p.catch(() => undefined); // a listing given up that fails later is not an unhandled rejection
+    // a listing given up that fails later is not an unhandled rejection: the race has already subscribed to it (test: scope deadline)
     return Promise.race([p, wait(left).then((): typeof LATE => LATE)]);
   };
   const late = (app: string): void => { lateLists++; lateApps.add(app); };
