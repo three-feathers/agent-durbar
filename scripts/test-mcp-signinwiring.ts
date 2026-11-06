@@ -171,11 +171,31 @@ async function main(): Promise<void> {
     emit(sid, { type: 'mcp', servers: list('connected') });
     const rowOf = async (): Promise<{ status?: string; needsSignIn?: boolean } | undefined> => ((await call('agents:mcp', sid)) as { servers: Array<{ name: string; status?: string; needsSignIn?: boolean }> }).servers.find((x) => x.name === 'docs');
     assert.deepStrictEqual([(await rowOf())?.status, (await rowOf())?.needsSignIn], ['connected', true], 'blocked and read connected: the row still needs a sign-in');
+    // review of #1230 (4): a same-name server blocked in ANOTHER folder keeps its block when a call in this folder works
+    const sidB = await ad.start({ workspace: ws, quiet: true });
+    agents.set(sidB, { id: sidB, cwd: '/folder-b', name: 'Bea', permMode: 'ask' } as never);
+    emit(sidB, { type: 'mcp', servers: list('needs-auth') });
+    const pB = pushes.length;
+    const sB = call('agents:send', sidB, 'hi from b', []);
+    await tick();
+    pending.shift()!('needs-auth');
+    await sB;
+    await tick();
+    const iB = ad.restartCalls.findIndex((c) => c.sessionId === sidB);
+    assert.ok(iB >= 0, 'folder B had its own reconnect');
+    ad.restartCalls.splice(iB, 1); // the later counts are about folder A
+    assert.ok(pushes.slice(pB).some((x) => x.id === sidB && x.kind === 'needs-sign-in' && (x as { name?: string }).name === 'docs'), 'folder B is blocked by its own failed renewal');
+    emit(sidB, { type: 'mcp', servers: list('connected') });
+    const rowB = async (): Promise<{ needsSignIn?: boolean } | undefined> => ((await call('agents:mcp', sidB)) as { servers: Array<{ name: string; needsSignIn?: boolean }> }).servers.find((x) => x.name === 'docs');
+    assert.strictEqual((await rowB())?.needsSignIn, true, 'folder B: blocked and read connected');
     // a call to this server that worked clears the block: the row is plain again (and a failed or other server's call does not)
     emit(sid, { type: 'toolCall', callId: 'z1', tool: 'files-x', mcpServer: 'files', phase: 'complete' });
     assert.strictEqual((await rowOf())?.needsSignIn, true, 'a successful call to another server leaves the block');
     emit(sid, { type: 'toolCall', callId: 'z2', tool: 'docs-x', mcpServer: 'docs', phase: 'complete' });
     assert.strictEqual((await rowOf())?.needsSignIn, undefined, 'a successful call to this server clears its block');
+    assert.strictEqual((await rowB())?.needsSignIn, true, 'a call that worked in folder A leaves folder B\'s block and its needsSignIn');
+    emit(sidB, { type: 'status', status: 'stopped' });
+    agents.delete(sidB);
     await tick();
     const r3 = call('agents:mcpRestart', sid, 'docs');
     await tick();
