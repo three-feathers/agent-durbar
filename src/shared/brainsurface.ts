@@ -177,13 +177,19 @@ export function costText(usd: number | null, ctx: SurfaceCtx): string {
   return typeof usd === 'number' && Number.isFinite(usd) && usd >= 0 ? usdText(usd, ctx.mask) : 'cost unknown';
 }
 
-/** FR-015: the parts of the turn's estimate, as the header's tooltip words them: "≈ $0.42 = 42.00 AIU" or "… + $0.03 Claude (est.)"; '' when the cost is unknown; hidden while sharing. */
+/**
+ * FR-015: the parts of the turn's estimate, as the header's tooltip words them ("≈ $0.07 = 4.20 AIU + $0.03 Claude (est.)"); '' when the cost is
+ * unknown or not finite; hidden while sharing. The unit words come from `mask.units` (the app's), none are written here (FR-001).
+ */
 export function costDetail(s: BrainState, ctx: SurfaceCtx): string {
   if (ctx.sharing) return SHARE_COST;
-  if (!s.costKnown) return '';
-  const parts = [`${usdText(s.turnCost, ctx.mask)} = ${s.turnAiu.toFixed(2)} AIU`];
-  if (s.turnUsd) parts.push(`${usdText(s.turnUsd, ctx.mask).replace(/^≈ /, '')} Claude (est.)`);
-  return parts.join(' + ');
+  if (!s.costKnown || ![s.turnCost, s.turnAiu, s.turnUsd].every((x) => Number.isFinite(x) && x >= 0)) return '';
+  const u = ctx.mask.units;
+  const total = usdText(s.turnCost, ctx.mask);
+  if (!u || !u.creditsWord || !u.estimateWord) return total;
+  const est = `${usdText(s.turnUsd, ctx.mask).replace(/^≈ /, '')} ${u.estimateWord}`;
+  if (!s.turnAiu) return s.turnUsd ? `${total} ${u.estimateWord}` : total;
+  return `${total} = ${s.turnAiu.toFixed(2)} ${u.creditsWord}${s.turnUsd ? ' + ' + est : ''}`;
 }
 
 /** The sentence under the card (FR-022). Sharing: the current tool word and state only. */

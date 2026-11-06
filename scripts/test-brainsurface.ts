@@ -10,7 +10,7 @@ import {
 
 const USAGE = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'usagetotals.js'));
 const COST = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'costtable.js'));
-const mask: BrainMask = { ...R, units: { validNano: USAGE.validNano, AIU_USD: COST.AIU_USD, money: COST.money } };
+const mask: BrainMask = { ...R, units: { validNano: USAGE.validNano, AIU_USD: COST.AIU_USD, money: COST.money, creditsWord: 'AIU', estimateWord: 'Claude (est.)' } };
 const GH = 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8';
 const SK = 'sk-live-' + 'a1B2c3D4e5F6g7H8i9J0k1L2';
 const SESS = 'SESS_' + 'q9W8e7R6t5Y4u3I2o1P0aSdFg';

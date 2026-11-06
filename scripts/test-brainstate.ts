@@ -3,13 +3,13 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as R from '../src/shared/redact';
-import { exportText, formatStep, officeLine, sentenceFor } from '../src/shared/brainsurface';
+import { costDetail, exportText, formatStep, officeLine, sentenceFor } from '../src/shared/brainsurface';
 import { BrainMask, BrainState, FRAME_MS, GLYPHS, HISTORY_MAX, PAINT_MS, REVEAL_ORDER, STEP_CAP, TRAIL_MAX, baseName, brainState, currentStep, glyphOf, initBrain, loopText, markPainted, maskText, programOf, revealStages, sentenceOf, shouldPaint, trailOf, usedLobes } from '../src/shared/brainstate';
 
 // the app's own usage units (spec 011 `usagetotals.js`, spec 052 `costtable.js`), as the page passes them next to redact's functions
 const USAGE = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'usagetotals.js'));
 const COST = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'costtable.js'));
-const mask: BrainMask = { ...R, units: { validNano: USAGE.validNano, AIU_USD: COST.AIU_USD, money: COST.money } }; // redact.ts's own functions
+const mask: BrainMask = { ...R, units: { validNano: USAGE.validNano, AIU_USD: COST.AIU_USD, money: COST.money, creditsWord: 'AIU', estimateWord: 'Claude (est.)' } }; // redact.ts's own functions
 const GH = 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8';
 let clock = 1_000_000;
 let id = 0;
@@ -444,6 +444,66 @@ assert.ok(Math.abs(s.turnCost - 0.05) < 1e-9, 'junk costs are ignored');
   const f8 = brainState(brainState(initBrain('Ada', thrower), { type: 'user' }, 1, thrower), { type: 'thinking', delta: 'some words' }, 2, thrower);
   assert.strictEqual(f8.inKeyBlock, true, 'a throwing openKeyBlockStart leaves the block open');
   assert.ok(!f8.buf.includes('some words'), 'and keeps no text');
+  assert.strictEqual(f8.buf, '[redacted]', 'a failing check leaves exactly the mark');
+}
+
+// J1 (round 3): a secret that arrives in the same piece as a short trailing word that starts a scheme word ("to", "tok", "Bearer"...) never stays raw
+{
+  const SEC = 'Zq9Xw8Er7Ty6Ui5Op4Lk3Jh2';
+  const heads = ['Authorization: Bearer ', 'Authorization: Basic ', 'Authorization: token ', 'Proxy-Authorization: Bearer ', 'X-Api-Key: ', 'api_key=', 'password: ', 'password=', 'token: ', 'Cookie: sid=', 'client_secret=', '-H "Authorization: Bearer ', 'secret ', 'PASSWORD ', '--token ', 'auth: '];
+  const tails = ['', ' and', ' to', ' then I will', ' is sent to', ' b', ' a', ' ba', ' de', ' ne', ' tok', ' x.', ' x\n', ' Bearer', ' Authorization: Bearer', ' password', ' token', ' a b c d e f g h i j k l m'];
+  let cases = 0;
+  for (const h of heads) for (const tl of tails) for (const sz of [1, 3, 7, 1000]) {
+    const text = 'I will send ' + h + SEC + tl;
+    if (maskText(mask, text).includes(SEC.slice(0, 8))) continue; // redact itself does not mask this shape (#1227's kind of gap): out of scope here
+    cases++;
+    const chunks: string[] = []; for (let i = 0; i < text.length; i += sz) chunks.push(text.slice(i, i + sz));
+    const st = feed(fresh(), [{ type: 'user' }, ...chunks.map((delta) => ({ type: 'thinking', delta })), start('bash', { command: 'ls' })], 1);
+    const all = [JSON.stringify(st), ...(['office', 'card', 'front', 'transcript', 'turnmap', 'export', 'share'] as const).map((sf) => formatStep(sf, currentStep(st)!, { mask })), sentenceFor(st, { mask })];
+    for (let j = 0; j + 8 <= SEC.length; j += 4) for (const out of all) assert.ok(!out.includes(SEC.slice(j, j + 8)), `"${text}" in ${sz}-char deltas kept "${SEC.slice(j, j + 8)}": ${out.slice(0, 160)}`);
+  }
+  assert.ok(cases > 800, `the fuzz ran (${cases} cases)`);
+}
+// J2: ordinary text costs no header probe: redact runs at most twice per delta (counted, never timed)
+{
+  let calls = 0;
+  const counting: BrainMask = { ...mask, redact: (x: unknown) => { calls++; return R.redact(x); } };
+  let s2 = brainState(initBrain('Ada', counting), { type: 'user' }, 1, counting);
+  let worst = 0;
+  for (const piece of 'I will read the file and then run the tests to see what broke, which is fine. '.repeat(3).split('')) {
+    calls = 0; s2 = brainState(s2, { type: 'thinking', delta: piece }, 2, counting); worst = Math.max(worst, calls);
+  }
+  assert.ok(worst <= 2, `ordinary prose costs at most 2 redact calls per delta (worst ${worst})`);
+  calls = 0; s2 = brainState(s2, { type: 'thinking', delta: ' Authorization: Bear' }, 3, counting);
+  assert.ok(calls >= 2, 'a header-looking line does get probed (so the counter counts)');
+}
+// J3: a tool start ends the reason: the next call never shows one from before the previous call (FR-020)
+{
+  const r = feed(fresh(), [{ type: 'user' }, { type: 'thinking', delta: 'Old reason here.' }, start('bash', { command: 'one' }), { type: 'thinking', delta: ' more words follow' }, start('bash', { command: 'two' })]);
+  assert.strictEqual(r.turn!.steps[0].why, 'Old reason here.');
+  assert.ok(!r.turn!.steps[1].why.includes('Old reason'), `the next call's Why holds nothing from before the previous call: "${r.turn!.steps[1].why}"`);
+  const r2 = feed(fresh(), [{ type: 'user' }, { type: 'output', delta: 'Old reply here.' }, start('bash', { command: 'one' }), { type: 'output', delta: ' fresh words' }, start('bash', { command: 'two' })]);
+  assert.ok(!r2.turn!.steps[1].why.includes('Old reply'), 'also for a reply');
+}
+// J4: units: costUsd is capped like credits, a NaN rate is "cost unknown", the unit words come from the app (none in src/shared), no "0.00 AIU"
+{
+  for (const big of [1e7, 1e300]) assert.strictEqual(feed(fresh(), [{ type: 'user' }, { type: 'usage', costUsd: big }]).costKnown, false, `costUsd ${big} is beyond the cap: not reported`);
+  assert.strictEqual(feed(fresh(), [{ type: 'user' }, { type: 'usage', costUsd: 999 }]).costKnown, true, 'a normal costUsd counts');
+  const nanRate: BrainMask = { ...mask, units: { ...mask.units!, AIU_USD: NaN } };
+  const n = brainState(brainState(initBrain('Ada', nanRate), { type: 'user' }, 1, nanRate), { type: 'usage', nanoAiu: 1e9 }, 2, nanRate);
+  assert.strictEqual(n.costKnown, false, 'AIU_USD NaN: cost unknown');
+  assert.strictEqual(costDetail({ ...n, costKnown: true, turnCost: NaN, turnAiu: 1, turnUsd: 0 }, { mask }), '', 'a non-finite total says nothing');
+  assert.strictEqual(costDetail({ ...n, costKnown: true, turnCost: 1, turnAiu: Infinity, turnUsd: 0 }, { mask }), '');
+  const words: BrainMask = { ...mask, units: { ...mask.units!, creditsWord: 'credits', estimateWord: 'est. dollars' } };
+  const w = brainState(brainState(brainState(initBrain('Ada', words), { type: 'user' }, 1, words), { type: 'usage', nanoAiu: 4.2e9 }, 2, words), { type: 'usage', costUsd: 0.03 }, 3, words);
+  assert.strictEqual(costDetail(w, { mask: words }), '≈ $0.07 = 4.20 credits + $0.03 est. dollars', 'the unit words are the app\'s');
+  assert.strictEqual(costDetail(w, { mask: { ...words, units: { ...words.units!, creditsWord: undefined } } }), '≈ $0.07', 'no words passed: the total only');
+  const only = brainState(brainState(initBrain('Ada', mask), { type: 'user' }, 1, mask), { type: 'usage', costUsd: 0.03 }, 2, mask);
+  assert.strictEqual(costDetail(only, { mask }), '≈ $0.03 Claude (est.)', 'no credits seen: no "0.00 AIU" part');
+  for (const f of ['brainstate.ts', 'brainsurface.ts']) {
+    const code = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'shared', f), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+    assert.ok(!/\b(AIU|Claude|Copilot|Codex)\b/.test(code), `${f} writes no vendor or unit word in code (FR-001)`);
+  }
 }
 
 // ---- bloom lobes (FR-051) and the sentence of an ended turn

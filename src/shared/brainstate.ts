@@ -27,7 +27,7 @@ export interface BrainMask {
    * The app's usage units (spec 011 `usagetotals.js` `validNano`, spec 052 `costtable.js` `AIU_USD` and `money`): the page passes `DurbarUsage` and
    * `DurbarCost`. Without it a `nanoAiu` figure is "not reported" and only `costUsd` counts.
    */
-  units?: { validNano(x: unknown): boolean; AIU_USD: number; money?(usd: number): string };
+  units?: { validNano(x: unknown): boolean; AIU_USD: number; money?(usd: number): string; creditsWord?: string; estimateWord?: string };
 }
 
 export type GlyphId = 'think' | 'read' | 'edit' | 'shell' | 'web' | 'mcp' | 'you';
@@ -286,6 +286,15 @@ function expects(mask: BrainMask, text: string): boolean {
   return m !== '' && !m.includes(PROBE);
 }
 /**
+ * J1: a held raw head may only be header words. Every word is a name (`Authorization:`, `sid=`), a scheme word or short (7 characters or
+ * fewer), ; a secret that arrived in the same piece as the header ("Bearer <secret> to") fails this.
+ */
+function heldOk(mask: BrainMask, head: string): boolean {
+  const words = head.split(/\s+/).filter(Boolean);
+  const ok = words.every((w) => w.length <= 7 || /^["'(]?[A-Za-z][A-Za-z0-9_.-]{0,40}[:=]["']?$/.test(w) || mask.schemePrefix(w));
+  return ok;
+}
+/**
  * Does the end of `joined`'s last line expect a secret value? `at` is where its raw tail starts, `head` the tail itself (header words, no secret yet). Null when not.
  */
 function valueExpected(mask: BrainMask, joined: string): { at: number; head: string } | null {
@@ -305,7 +314,10 @@ function valueExpected(mask: BrainMask, joined: string): { at: number; head: str
         if (m !== '' && !m.includes(PROBE)) return { at: start + starts[k], head: L.slice(starts[k]) };
       }
     }
+    // J2: only a word that can start a header (a name with `:` or `=`, or a scheme word) is tried, so ordinary text costs no probe
     for (let k = starts.length - 1; k >= Math.max(0, starts.length - 12); k--) {
+      const word = L.slice(starts[k]).split(/\s/, 1)[0];
+      if (!/[:=]/.test(word) && !mask.schemePrefix(word)) continue;
       const tail = L.slice(starts[k]);
       if (!expects(mask, tail)) continue;
       return { at: start + starts[k], head: tail };
@@ -369,7 +381,8 @@ function streamText(tail: Tail, piece: string, whole: boolean, mask: BrainMask):
   // H4: nested BEGIN lines are counted, so an inner END cannot close the outer block
   const nest = openDepth(joined);
   if (open >= 0 || nest.depth > 0) { key = Math.max(1, nest.depth); carry = markerSuffix(joined); }
-  const cut = open >= 0 || nest.depth > 0 ? null : valueExpected(mask, joined);
+  let cut = open >= 0 || nest.depth > 0 ? null : valueExpected(mask, joined);
+  if (cut && !heldOk(mask, cut.head)) cut = null; // J1: a raw head is held only when it holds no secret; else the whole text is masked
   if (failed) buf = '[redacted]';
   else if (nest.depth > 0 && open < 0) buf = (safe(() => mask.maskGluedTail(maskText(mask, joined.slice(0, nest.at)))) + '[redacted]').slice(-BUF_MAX);
   else if (cut) {
@@ -388,11 +401,12 @@ function streamText(tail: Tail, piece: string, whole: boolean, mask: BrainMask):
 export function usageParts(e: Ev, mask: BrainMask): { aiu: number; aiuUsd: number; usd: number } | null {
   let usd = 0, aiu = 0, known = false;
   const c = e.costUsd;
-  if (typeof c === 'number' && Number.isFinite(c) && c >= 0) { usd = c; known = true; }
+  const capOk = (x: number): boolean => { try { return mask.units ? mask.units.validNano(x * 1e9) : x <= 1e6; } catch { return false; } }; // costUsd is capped like a credit figure (J4)
+  if (typeof c === 'number' && Number.isFinite(c) && c >= 0 && capOk(c)) { usd = c; known = true; }
   let aiuUsd = 0;
   try {
     const u = mask.units;
-    if (u && u.validNano(e.nanoAiu)) { aiu = (e.nanoAiu as number) / 1e9; aiuUsd = u.AIU_USD; known = true; }
+    if (u && Number.isFinite(u.AIU_USD) && u.AIU_USD >= 0 && u.validNano(e.nanoAiu)) { aiu = (e.nanoAiu as number) / 1e9; aiuUsd = u.AIU_USD; known = true; }
   } catch { /* fail closed: not reported */ }
   return known ? { aiu, aiuUsd, usd } : null;
 }
