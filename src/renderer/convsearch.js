@@ -7,7 +7,8 @@
 })(typeof self!=='undefined'?self:this, (function(){
   'use strict';
   const SPEAKER={you:'You:',agent:'Agent:'};
-  const keyOf=h=>String(h&&h.group)+'\u0000'+String(h&&h.adapter)+'\u0000'+String(h&&h.sessionId);
+  /* a row's key; it goes into an HTML attribute, so no control character (the parser turns NUL into U+FFFD) */
+  const keyOf=h=>[h&&h.group,h&&h.adapter,h&&h.sessionId].map(x=>encodeURIComponent(String(x))).join(':');
   const plural=(n,one,many)=>n+' '+(n===1?one:(many||one+'s'));
   const listWords=a=>a.length<2?a.join(''):a.slice(0,-1).join(', ')+' and '+a[a.length-1];
 

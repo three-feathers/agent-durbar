@@ -26,6 +26,10 @@ const C = require(path.join(ROOT, 'src', 'renderer', 'convsearch.js')) as {
 const esc = (s: string): string => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const hit = (over: Partial<Hit>): Hit => ({ adapter: 'copilot', sessionId: 's', group: 'office', app: 'GitHub Copilot', folderName: 'demo', title: 'Untitled session', titleMarks: [], time: 0, excerpts: [], more: 0, ...over });
 
+// ---- a row key is safe in an HTML attribute (no NUL: the parser would turn it into U+FFFD and the key would no longer match)
+assert.strictEqual(C.keyOf(hit({ group: 'earlier', adapter: 'vscode', sessionId: 'h/abc:1' })), 'earlier:vscode:h%2Fabc%3A1');
+assert.ok(!/[\u0000-\u001f]/.test(C.keyOf(hit({ sessionId: 'a\u0000b' }))));
+
 // ---- FR-033 (Q3): the minimum, as main counts it
 assert.ok(C.longEnough('a bc') && !C.longEnough('x y') && !C.longEnough('  ab ') && C.longEnough('\u{1F600}\u{1F600}\u{1F600}'));
 
@@ -35,8 +39,8 @@ assert.ok(C.longEnough('a bc') && !C.longEnough('x y') && !C.longEnough('  ab ')
   C.addBatch(st, { hits: [hit({ sessionId: 'a', time: 0 }), hit({ sessionId: 'p1', group: 'earlier', time: 10 })], progress: { done: 2, total: 5 } });
   C.addBatch(st, { hits: [hit({ sessionId: 'b', time: 0 }), hit({ sessionId: 'p2', group: 'earlier', time: 30 }), hit({ sessionId: 'a', title: 'renamed' })], progress: { done: 5, total: 5 } });
   C.addBatch(st, { hits: [{ group: 'nope' }, null] });
-  assert.deepStrictEqual(st.order, { office: ['office\u0000copilot\u0000a', 'office\u0000copilot\u0000b'], earlier: ['earlier\u0000copilot\u0000p1', 'earlier\u0000copilot\u0000p2'] }, 'rows appear in arrival order; one seen again keeps its place');
-  assert.strictEqual(st.hits.get('office\u0000copilot\u0000a')!.title, 'renamed', 'and takes the new data');
+  assert.deepStrictEqual(st.order, { office: ['office:copilot:a', 'office:copilot:b'], earlier: ['earlier:copilot:p1', 'earlier:copilot:p2'] }, 'rows appear in arrival order; one seen again keeps its place');
+  assert.strictEqual(st.hits.get('office:copilot:a')!.title, 'renamed', 'and takes the new data');
   assert.strictEqual(C.stateText(st), 'Searching, 5 of 5 sessions');
   const lastActive: Record<string, number> = { a: 100, b: 200 };
   C.finish(st, { notes: { searched: 5, folders: 2 }, progress: { done: 5, total: 5 } }, (h) => (h.group === 'office' ? lastActive[h.sessionId] : h.time));

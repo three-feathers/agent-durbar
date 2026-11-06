@@ -250,7 +250,8 @@ const simCleanQuery = (q: unknown): { ok: true; query: string; cut: boolean } | 
  * then matched first, earlier Copilot and Codex sessions by title only, tool lines never searched, hidden earlier sessions not searched
  * (counted), every word in any order, at most 3 excerpts masked before they are cut (the page's own `maskNoteText`, failing closed), a
  * random `searchId`, one live search (a new start or a cancel ends the old one), events only for the live id. `simsearch=slow`: one
- * session every 400 ms, for the "Searching, N of M sessions" state; `simsearch=locked`: the end state says saved MCP values were locked.
+ * session every 400 ms, for the "Searching, N of M sessions" state; `simsearch=locked`: the end state says saved MCP values were locked;
+ * `simsearch=older`: each open session also has a message its chat does not show, for "That message is older than the chat shows".
  */
 function simConvSearchApi(qs: URLSearchParams, scope: () => SimConvSession[]): Pick<DurbarApi, 'convSearchStart' | 'convSearchCancel' | 'convSearchClear' | 'onConvSearch'> {
   type Search = { fold(s: unknown): string; terms(q: string): string[]; locate(t: unknown, q: string): Array<{ start: number; end: number; term: number }>; anchorKey(t: unknown): string };
@@ -2332,29 +2333,28 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
     } catch {
       /* no saved theme */
     }
-    // spec 095 T025: the canned corpus of the conversation search: each open session gets one of these conversations (tool lines are
-    // never searched); the earlier sessions are the ones Previous sessions lists (Claude Code: content; Copilot and Codex: title only)
-    const SIM_CONV: Array<Array<{ speaker: 'you' | 'agent' | 'tool'; text: string }>> = [
-      [{ speaker: 'you', text: 'Fix the invoice export to CSV when the totals are empty.' }, { speaker: 'tool', text: 'grep -rn invoice src/' }, { speaker: 'agent', text: 'Done: the invoice export now writes a header row even when the list is empty.' }],
-      [{ speaker: 'you', text: 'Una explicación del error de la cuenta, por favor.' }, { speaker: 'agent', text: 'The error comes from the canton lookup returning duplicates for merged municipalities.' }],
-      [{ speaker: 'you', text: 'Add a retry with backoff to the registry client.' }, { speaker: 'agent', text: 'Added a retry with exponential backoff, capped at five tries; the export job uses it too.' }],
-      [{ speaker: 'you', text: 'Why is the Windows build slow?' }, { speaker: 'tool', text: 'cat .github/workflows/build.yml (invoice)' }, { speaker: 'agent', text: 'The cache step runs twice; the second one can be dropped.' }],
-    ];
+    // spec 095 T025: the conversation search over what the simulator shows: an open session's first message, a resumed session's replay
+    // (Claude Code; earlier Copilot and Codex sessions by title only) and the VS Code chats of mcp-swiss; tool lines are never searched
     const simConvSearchCalls = simConvSearchApi(simQuery, () => {
       const room = (s: SimAgent): string => (s.info as AgentInfo & { roomName?: string }).roomName ?? s.info.name;
       const open: SimConvSession[] = sims.map((s, i) => ({
         adapter: s.info.adapterId ?? 'copilot', app: SIM_APP[s.info.adapterId ?? 'copilot'] ?? 'Agent', folderName: room(s), sessionId: s.info.id, agentId: s.info.id, group: 'office',
-        title: s.info.alias || s.info.title || 'Untitled session', time: 0, content: 'read', messages: SIM_CONV[i % SIM_CONV.length],
+        title: s.info.alias || s.info.title || 'Untitled session', time: 0, content: 'read', messages: [...(simQuery.get('simsearch') === 'older' ? [{ speaker: 'you' as const, text: 'An older message about the pipeline that this chat no longer shows.' }] : []), { speaker: 'you', text: s.prompt }],
       }));
       const owner = sims.find(hasPrev);
-      const earlier: SimConvSession[] = owner ? simPrevList(owner.info.adapterId ?? 'copilot').map((p, i) => {
+      const asMsg = (it: { type: string; text?: string; label?: string }): SimConvSession['messages'][number] => ({ speaker: it.type === 'user' ? 'you' : it.type === 'tool' ? 'tool' : 'agent', text: String(it.text ?? it.label ?? '') });
+      const earlier: SimConvSession[] = owner ? simPrevList(owner.info.adapterId ?? 'copilot').map((p) => {
         const adapter = owner.info.adapterId ?? 'copilot';
         return {
           adapter, app: SIM_APP[adapter] ?? 'Agent', folderName: room(owner), sessionId: p.id, agentId: owner.info.id, group: 'earlier', title: simPrevNames.get(p.id) || p.title, time: p.modifiedTime,
-          content: adapter === 'claude' ? 'read' : 'title', hidden: prevMarksOf(adapter, [p.id]).hidden.length > 0, messages: SIM_CONV[(i + 1) % SIM_CONV.length],
+          content: adapter === 'claude' ? 'read' : 'title', hidden: prevMarksOf(adapter, [p.id]).hidden.length > 0, messages: simResumeItems(p.modifiedTime).map(asMsg),
         };
       }) : [];
-      return [...open, ...earlier];
+      const vs: SimConvSession[] = owner ? simVsChats().map((c) => ({
+        adapter: 'vscode', app: 'VS Code', folderName: room(owner), sessionId: c.key, agentId: owner.info.id, group: 'earlier' as const, title: simPrevNames.get(c.key) || c.title, time: c.updated ?? 0,
+        content: 'read' as const, hidden: prevMarksOf('vscode', [c.key]).hidden.length > 0, messages: simVsTranscript().blocks.filter((b) => b.type !== 'note').map((b) => asMsg({ type: b.type === 'assistant' ? 'output' : b.type, text: 'text' in b ? b.text : undefined, label: 'label' in b ? b.label : undefined })),
+      })) : [];
+      return [...open, ...earlier, ...vs];
     });
     const { forgetFolder: simNotesForget, ...simNotesCalls } = simNotesApi(simQuery, (id) => { const s = sims.find((x) => x.info.id === id); return s ? { key: s.info.workspaceFile || s.info.cwd, name: (s.info as AgentInfo & { roomName?: string }).roomName ?? s.info.name, session: simQuery.get('simresumeid') ? 'resume-' + s.info.id : s.info.id } : undefined; }); // spec 083 FR-060 (simresumeid=1: the saved session id is not the agent's id, as with a Codex thread id)
     const capApi: Partial<DurbarApi> = {
@@ -2936,6 +2936,29 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
     const prevDeleted = new Set<string>();
     const simSessionModes = new Map<string, AgentInfo['permMode']>([['prev-1', 'allow']]); // spec 003 (2026-10-21): the mode last chosen per earlier session
     const hasPrev = (x: SimAgent): boolean => x.info.cwd === '~/work/mcp-swiss' || (!!opts.solo && x.info.name === 'Ada'); // earlier sessions live in mcp-swiss (or in Ada's own folder with `simrooms=solo`)
+    /* what a resumed earlier session replays, and the VS Code chat the viewer shows (one source for those and the conversation search, spec 095 T025) */
+    const simResumeItems = (t: number): import('../shared/api').HistoryItem[] => [
+      { type: 'user', text: 'Rename the filings handler to filingsSearch and update its tests.', ts: t },
+      { type: 'tool', callId: 'c1', tool: 'grep', label: 'grep filingsHandler', output: '6 matches in 3 files' },
+      { type: 'output', text: 'Renamed the handler and updated the three tests that import it. The test run passes.' },
+    ];
+    const simVsChats = (): import('../shared/api').VsChatSummary[] => [
+      { key: 'h1/c1', title: 'Explain the registry design', updated: Date.now() - 5 * 86400e3, requests: 2, format: 'jsonl' },
+      { key: 'h1/c2', title: 'Explicación del diseño de la caché', updated: Date.now() - 9 * 86400e3, requests: 3, format: 'jsonl' },
+    ];
+    const simVsTranscript = (): import('../shared/api').VsChatTranscript => ({ title: 'Explain the registry design', totalRequests: 346, shownRequests: 26,
+        notes: ['Only the last 26 of 346 messages are shown.', '1 kind(s) of content were not recognised and skipped (futureThing2027). VS Code\'s format may have changed.'],
+        blocks: [
+          { type: 'user' as const, text: 'Explain how the tool registry is organised.' },
+          { type: 'assistant' as const, text: 'Tools are registered in registry.ts and looked up by name. Each domain exports a list that the registry concatenates.' },
+          { type: 'tool' as const, label: 'Read src/tools/registry.ts' },
+          ...Array.from({ length: 23 }, (_, i) => [
+            { type: 'user' as const, text: `Follow-up ${i + 1}: how does the registry handle name clashes between two domains?` },
+            { type: 'assistant' as const, text: `Answer ${i + 1}: the last domain wins and a warning is logged at startup.\n\nThe registry keeps one map from name to handler, so a clash replaces the earlier entry.` },
+          ]).flat(),
+          { type: 'user' as const, text: 'Thanks. This is the latest message in the chat.' },
+          { type: 'assistant' as const, text: 'You are welcome. This is the last reply.' },
+        ] });
     /* the simulated earlier sessions of mcp-swiss (Previous sessions and the conversation search, spec 095 T025) */
     const simPrevList = (adapter = 'copilot'): Array<{ id: string; title: string; startTime: number; modifiedTime: number; branch: string }> => {
       const t = Date.now();
@@ -3720,35 +3743,16 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
         const resumedTitle = opts.names === 'long' ? SIM_LONG_RESUMED_TITLE : undefined; // #451: the runtime sends the title of a resumed session (as askTitle does), so the desk's name is that title
         if (resumedTitle) window.setTimeout(() => emit({ type: 'title', sessionId: info.id, timestamp: now(), title: resumedTitle }), 300);
         return { ok: true, ...(modeWas ? { modeWas } : {}), agent: info, title: resumedTitle ?? (opts.reply === 'secrets' ? FILL(83) + SECRETS_TEXT + ' ' : '') + (sessionId === 'prev-1' ? 'Rename the filings handler and update its tests' : 'Why does the canton lookup return duplicates?'),
-          history: { total: 4, truncated: false, items: [
-            { type: 'user', text: 'Rename the filings handler to filingsSearch and update its tests.', ts: t },
-            { type: 'tool', callId: 'c1', tool: 'grep', label: 'grep filingsHandler', output: '6 matches in 3 files' },
-            { type: 'output', text: 'Renamed the handler and updated the three tests that import it. The test run passes.' },
-          ] } };
+          history: { total: 4, truncated: false, items: simResumeItems(t) } };
       },
       listVsChats: async (id) => {
         await prevWait();
         const src = sims.find((x) => x.info.id === id);
         if (!src || !hasPrev(src)) return { ok: true, sessions: [], storesFound: 0, unreadable: 0, tooLarge: 0, formatNote: '' };
         return { ok: true, storesFound: 1, unreadable: 0, tooLarge: 0, formatNote: 'VS Code does not document this format; unknown parts are skipped.',
-          sessions: [
-            { key: 'h1/c1', title: 'Explain the registry design', updated: Date.now() - 5 * 86400e3, requests: 2, format: 'jsonl' },
-            { key: 'h1/c2', title: 'Explicación del diseño de la caché', updated: Date.now() - 9 * 86400e3, requests: 3, format: 'jsonl' },
-          ], ...prevMarksOf('vscode', ['h1/c1', 'h1/c2']) };
+          sessions: simVsChats(), ...prevMarksOf('vscode', ['h1/c1', 'h1/c2']) };
       },
-      readVsChat: async () => ({ ok: true, transcript: { title: 'Explain the registry design', totalRequests: 346, shownRequests: 26,
-        notes: ['Only the last 26 of 346 messages are shown.', '1 kind(s) of content were not recognised and skipped (futureThing2027). VS Code\'s format may have changed.'],
-        blocks: [
-          { type: 'user' as const, text: 'Explain how the tool registry is organised.' },
-          { type: 'assistant' as const, text: 'Tools are registered in registry.ts and looked up by name. Each domain exports a list that the registry concatenates.' },
-          { type: 'tool' as const, label: 'Read src/tools/registry.ts' },
-          ...Array.from({ length: 23 }, (_, i) => [
-            { type: 'user' as const, text: `Follow-up ${i + 1}: how does the registry handle name clashes between two domains?` },
-            { type: 'assistant' as const, text: `Answer ${i + 1}: the last domain wins and a warning is logged at startup.\n\nThe registry keeps one map from name to handler, so a clash replaces the earlier entry.` },
-          ]).flat(),
-          { type: 'user' as const, text: 'Thanks. This is the latest message in the chat.' },
-          { type: 'assistant' as const, text: 'You are welcome. This is the last reply.' },
-        ] } }),
+      readVsChat: async () => ({ ok: true, transcript: simVsTranscript() }),
       openInVSCode: async () => ({ ok: true }),
       // spec 009 FR-019 (issue #685): fixed stand-ins; nothing is launched in the simulator
       openWithTargets: async () => [
