@@ -59,7 +59,7 @@
 
 - [x] T064 Other docs and website pages the change touches (not the README feature line, *Safety model* or keyboard sheet, which ship in Phase 3 with T060)
 
-- [ ] T062 Mutation check of plan *Testing* 6, each listed in the PR; `docs/agent-notes.md` entries learned (fold length changes, mask-before-cut windows, Copilot and Codex reader gap)
+- [x] T062 Mutation check of plan *Testing* 6, each listed in the PR; `docs/agent-notes.md` entries learned (fold length changes, mask-before-cut windows, Copilot and Codex reader gap)
 - [ ] T063 Spec housekeeping: tick tasks, `[IMPLEMENTED]` tags, specs-index status, `/speckit-converge`; owner `real:` checks on a real store (timings, Windows and macOS paths)
 
 ## Dependencies

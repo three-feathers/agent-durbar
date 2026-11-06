@@ -14,7 +14,7 @@
  *           at its message (simkinds=mixed: Ada is Claude Code); a VS Code chat opens in the viewer at its message; an earlier
  *           Copilot session (title only) resumes at the end; `simsearch=older`: "That message is older than the chat shows."
  *   FR-015  `simsearch=slow`: "Searching, N of M sessions" and Stop, then "Stopped."
- *   FR-014  every end-state note the scan sent (owner answer D: `simsearch=locked`, the exact text)
+ *   FR-014  every end-state note the scan sent (owner answer D: `simsearch=locked`, the exact text); FR-023: Office ends the search
  *   FR-003  the palette's "Search conversations" only focuses the box; the ? sheet lists the shortcut; Settings > Keyboard changes it
  *   FR-050  a mark has a non-colour cue and readable contrast in Clean Office and Retro; Real office: the same box and results;
  *           reduced motion: the jump's outline without its fade
@@ -197,6 +197,9 @@ module.exports = async (ctx) => {
     await doneWith(1);
     r = await results();
     assert.ok(r.notes.endsWith(LOCKED), `${w}: owner answer D, the exact note: ${r.notes}`);
+    // FR-023: leaving the List view ends the search (the box is emptied, no result is left)
+    await js(`document.getElementById('vOffice').click()`);
+    await ok(`!document.body.classList.contains('list-mode')&&document.getElementById('convSearch').value===''&&!document.querySelector('#list .cs-wrap')`, `${w}: the Office button ends the search`);
 
     // ---- FR-003: the palette entry only focuses the box; the ? sheet lists the shortcut ----
     await key('Escape', [], { char: 'never' });
