@@ -3,13 +3,13 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Brain view (owner request, Vikram 2026-11-05/06): a transparent point-cloud brain and a ring of seven tool glyphs per agent, docked in the chat's right rail above Your door, In front on request, in the office beside people who need you; loop warning with Look and Stop, turn map, habits, stale-read alert, screen share, masking and accessibility contract
-status: specified
-note: spec, plan, tasks, 8 mockup stills; Q1..Q4 decided 2026-11-06 (constitution 1.2.0); ready for P1; nothing built
+status: building
+note: spec, plan, tasks, 8 mockup stills; Q1..Q4 decided 2026-11-06 (constitution 1.2.0); P1 G1 built (state reducer, loop rule, surface formatters; no UI yet)
 -->
 
 **Feature Branch**: `106-brain-view` (spec, plan and tasks only). The build is one small PR per task group, phases P1 to P4.
 **Created**: 2026-11-06
-**Status**: Specified, ready for P1 (2026-11-06: the owner answered Q1..Q4). Nothing is built, no dependency is added.
+**Status**: Building (2026-11-06: the owner answered Q1..Q4; P1 G1 landed the pure state and surface modules, no UI yet). No dependency is added.
 **Input**: Owner requests and decisions (Vikram, Telegram, quoted with their dates), settled through 14 rounds of mockups with him:
 
 - **2026-11-05 19:40**: "can we have a mode where we can see everything what's happening with a visual workflow of how did the session run, which tool got called... a visual floating window which shows what the brain is doing... futuristic... adaptable to different worlds".
@@ -262,3 +262,16 @@ Cost uses the app's existing estimate and is shown with "≈". The 230 px dock h
 - **Q4, decided** (Vikram, Telegram, 2026-11-06 12:50 UTC, option "1"): with Brain view on, the right rail (Brain on top, Your door below) opens with every chat, and the person can still collapse it; a saved collapse (005 FR-196) is respected (FR-031). This amends 052 FR-216's "opened on request", with a dated delta in spec 052.
 
 ## Changes
+
+### 2026-11-06: P1 G1 built, and what building it settled (T003, T004, T013)
+
+`[IMPLEMENTED]` FR-001..FR-008 (state), FR-012, FR-020..FR-022, FR-040..FR-042, FR-085, FR-086 in `src/shared/brainstate.ts` and `brainsurface.ts`; `test:` `test:brainstate`, `test:brainloop`, `test:brainsurface`. Not built: moods and Serious mode (T010), placement (T011), every renderer view. Questions the code had to answer, now written here:
+
+- **Turn end (FR-005)**: the agent's `status` of `idle` (the final reply), `error` or `stopped` ends the turn; a `user` event starts the next, and so does a `working` status after an ended turn (a scheduled prompt has no `user` event). A `user` event over a running turn closes it as stopped. A permission refusal that ends the turn arrives as one of those statuses.
+- **Mask word (FR-085)**: secrets read `[redacted]`, `redact.ts`'s own mark, not `••••`: one masking, no second set of words. Every formatter masks its result again (idempotent), so a surface stays safe when handed an unmasked step; the state holds masked text only.
+- **Tool table (FR-012)**: exact normalized names only (no guessing from part of a name: `read_agent` is no file read, `task` and `spawn_agent` are "Other tool"); the table is checked against the simulator, the fake adapter and every tool name in `scripts/fixtures/` (a new fixture name forces a decision in `test:brainstate`).
+- **Cost (FR-015, FR-042)**: the state sums `usage` events' `costUsd` only; with none the loop line and the cost say "cost unknown", never $0. Mapping credits (`nanoAiu`) to dollars is `usagetotals.js`'s job and joins when the dock reads it (T006).
+- **Loop rule (FR-041)**: a helper's steps do not count; once set it stays while the run alternates between the same two glyphs and clears on a third glyph, a turn end, a stop or a new turn; N is the number of A-then-B pairs of the trailing run (a run of 5 steps is 2); late events of an ended turn never set it.
+- **Screen share (FR-080, FR-085)**: every formatter returns `Tool · state` and nothing else (no step number, no name); the loop line says "cost hidden while sharing".
+- **Turn map text (FR-050)**: "1 Read · registry.ts · done" (path relative to the folder, else the file name; the "214 lines" of the example needs tool output, which Brain view never keeps, FR-074, so it is not shown).
+- **Known limit**: a command's absolute paths outside the home folder and outside the agent's folder stay in the turn map and the export (only home paths and the folder prefix are folded); `[KNOWN GAP]`, to settle with T018.
