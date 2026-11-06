@@ -42,7 +42,7 @@ async function main(): Promise<void> {
   (require('../src/main/ipcguard') as typeof import('../src/main/ipcguard')).initSimGuard(false);
   /* eslint-disable @typescript-eslint/no-require-imports */
   const { register, cleanQuery, QUERY, SHORT, NONE } = require('../src/main/ipc/convsearch') as typeof import('../src/main/ipc/convsearch');
-  const { CODEX_LIST_GATE_MS, CODEX_LIST_TTL_MS, buildScope, createCodexListCache } = require('../src/main/convscope') as typeof import('../src/main/convscope');
+  const { CODEX_LIST_GATE_MS, CODEX_LIST_TTL_MS, SCOPE_LIST_MS, buildScope, createCodexListCache } = require('../src/main/convscope') as typeof import('../src/main/convscope');
   type Scope = import('../src/main/convscope').Scope;
   const { DEFAULT_TIMEOUT_MS: CODEX_RPC_TIMEOUT_MS } = require('../src/adapters/codexRpc') as typeof import('../src/adapters/codexRpc');
   const { createReadGate, orderPlan, rendererScript } = require('../src/main/convsearch') as typeof import('../src/main/convsearch');
@@ -109,7 +109,7 @@ async function main(): Promise<void> {
   let sessions = 2;
   const scopeCalls: unknown[][] = [];
   const stops: Array<() => boolean> = [];
-  const NOTES0 = { floorOffFolders: 0, mcpValuesLocked: false };
+  const NOTES0 = { floorOffFolders: 0, mcpValuesLocked: false, lateLists: 0, lateApps: [] as string[] };
   let scopeOf: () => Scope = () => ({ plan: { sessions: [] }, read: async () => ({ ok: true, items: [] }), values: () => [], notes: NOTES0 });
   let hold: Promise<void> | undefined;
   const deferred: Array<() => void> = [];
@@ -153,7 +153,7 @@ async function main(): Promise<void> {
       ? { ok: true, items: [{ type: 'user', text: `Look at ${HOME}/work/demo/invoice.ts and the export, token ${GH}, value ${MCP_VALUE}` }, { type: 'tool', callId: 'c', tool: 'grep', label: 'grep invoice export' }, { type: 'output', text: `The invoice export is fixed; key ${MCP_VALUE} unchanged.` }] }
       : { ok: true, items: [{ type: 'output', text: 'the invoice export again' }] }),
     values: () => [MCP_VALUE],
-    notes: { floorOffFolders: 2, mcpValuesLocked: true },
+    notes: { floorOffFolders: 2, mcpValuesLocked: true, lateLists: 0, lateApps: [] },
   });
   const r1 = await start(E1, 'invoice export', '/etc', { folder: '/etc' }, 'a1');
   assert.ok(r1.ok && /^[0-9a-f]{32}$/.test(r1.searchId), `a random 128-bit id: ${JSON.stringify(r1)}`);
@@ -534,7 +534,7 @@ async function main(): Promise<void> {
     };
     const titles = (sc: Scope) => sc.plan.sessions.filter((x) => x.group === 'earlier').map((x) => x.sessionId);
     const s1 = await buildScope(deps);
-    assert.deepStrictEqual([listed, titles(s1), s1.notes], [['/c/one'], ['t1', 't2'], { floorOffFolders: 1, mcpValuesLocked: false }], 'a folder on a floor that is off is not listed, but counted');
+    assert.deepStrictEqual([listed, titles(s1), s1.notes], [['/c/one'], ['t1', 't2'], { floorOffFolders: 1, mcpValuesLocked: false, lateLists: 0, lateApps: [] }], 'a folder on a floor that is off is not listed, but counted');
     const s2 = await buildScope(deps);
     assert.deepStrictEqual([listed.length, titles(s2)], [1, ['t1', 't2']], 'the next search reuses the kept titles: no new thread/list (no app-server)');
     agents.set('t1', ag('t1', 'codex', '/c/one')); // t1 resumed: open now, and a new Codex agent in the folder
@@ -559,6 +559,83 @@ async function main(): Promise<void> {
     const thrower = { ...deps, values: { ...deps.values, noPrompt: (): boolean => { throw new Error('vault'); } } };
     assert.strictEqual((await buildScope(thrower)).notes.mcpValuesLocked, true, 'not known: said as locked');
     assert.deepStrictEqual(listed.filter((x) => x === '/c/off'), [], 'never a thread/list for the folder on the off floor');
+  }
+
+  // ---- review N-R1 (FR-026): a delete that succeeded in Previous sessions drops the kept Codex titles at once
+  stage = 'delete drops kept';
+  {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { PrevSessions } = require('../src/main/prevsessions') as typeof import('../src/main/prevsessions');
+    const a = { id: 'x1', name: 'one', cwd: '/c/one', folders: ['/c/one'], permMode: 'read-only', adapterId: 'codex' } as AgentInfo;
+    const removed: string[] = [];
+    let threads = ['th1', 'th2'];
+    const ad = { capabilities: { deleteSession: true }, isLive: () => false, deleteSession: async (id: string) => { if (id === 'th2') throw new Error('Codex refused'); removed.push(id); threads = threads.filter((t) => t !== id); }, listPreviousSessions: async () => threads.map((id) => ({ id, title: id, startTime: 1, modifiedTime: 2 })) };
+    let changed = 0;
+    const c = createCodexListCache();
+    const prev = new PrevSessions({ agents: new Map([['x1', a]]), router: { forAgent: () => ad as never, adapterIdOf: () => 'codex' }, wsKey: (x) => x.cwd, resumeIdFor: (id) => id, appName: () => 'Codex', changed: () => { changed++; c.clear(); } });
+    c.set('/c/one', ['x1'], [{ id: 'th1', title: 'th1', startTime: 1, modifiedTime: 2 }], Date.now());
+    assert.deepStrictEqual((await prev.delete('x1', 'th2')).ok, false);
+    assert.deepStrictEqual([changed, c.size()], [0, 1], 'a delete that failed changes nothing');
+    assert.deepStrictEqual(await prev.delete('x1', 'th1'), { ok: true });
+    assert.deepStrictEqual([removed, changed, c.size()], [['th1'], 1, 0], 'a delete that succeeded drops the kept titles');
+    const prev2 = new PrevSessions({ agents: new Map([['x1', a]]), router: { forAgent: () => ad as never, adapterIdOf: () => 'codex' }, wsKey: (x) => x.cwd, resumeIdFor: (id) => id, appName: () => 'Codex', changed: () => { throw new Error('listener'); } });
+    threads = ['th3'];
+    assert.deepStrictEqual(await prev2.delete('x1', 'th3'), { ok: true }, 'a listener that throws never turns a done delete into a failure');
+    // the IPC's own drop, and the wiring by text (main.ts names no delete: test-prevsessions' rule)
+    cache.set('/w/x', [], [{ id: 't1', title: 'kept', startTime: 1, modifiedTime: 2 }], Date.now());
+    ipc.dropKept();
+    assert.strictEqual(cache.size(), 0, 'dropKept drops the kept titles');
+    assert.ok(/registerPreviousIpc\(\{ sessionsChanged: \(\) => convSearch\.dropKept\(\),/.test(read('src/main/main.ts')), 'main.ts points sessionsChanged at the search');
+    assert.ok(/changed: \(\) => deps\.sessionsChanged\?\.\(\) \}/.test(read('src/main/ipc/previous.ts')), 'previous.ts hands it to PrevSessions');
+  }
+
+  // ---- review N-R2 (FR-022): the plan has a deadline; a hung Codex app-server does not hold it
+  stage = 'scope deadline';
+  {
+    const ag = (id: string, adapterId: string, cwd: string): AgentInfo => ({ id, name: path.basename(cwd), cwd, folders: [cwd], permMode: 'read-only', adapterId } as AgentInfo);
+    const agents = new Map<string, AgentInfo>([['x1', ag('x1', 'codex', '/d/one')], ['x2', ag('x2', 'codex', '/d/two')], ['k1', ag('k1', 'claude', '/d/three')]]);
+    const listings: string[] = [];
+    const adapters: Record<string, unknown> = {
+      codex: { id: 'codex', isLive: () => false, listPreviousSessions: async (cwd: string) => { listings.push('codex ' + cwd); return []; } },
+      claude: { id: 'claude', isLive: () => false, listPreviousSessions: async (cwd: string) => { listings.push('claude ' + cwd); return [{ id: 'kp', title: 'claude earlier', startTime: 1, modifiedTime: 2 }]; } },
+    };
+    // a fake timer: a wait fires only when the test says, and then moves the fake clock; nothing really waits
+    let clock = 0;
+    const timers: Array<{ ms: number; fire(): void }> = [];
+    const wait = (ms: number): Promise<void> => new Promise<void>((r) => timers.push({ ms, fire: () => { clock = Math.max(clock, ms); r(); } }));
+    const fireAll = (): void => { for (const t of timers.splice(0)) t.fire(); };
+    let gateCalls = 0;
+    let rejectLate: ((e: Error) => void) | undefined;
+    const kept = createCodexListCache();
+    const deps = {
+      agents, router: { forAgent: (id: string) => adapters[agents.get(id)!.adapterId] as never, adapterIdOf: (id: string) => agents.get(id)?.adapterId }, wsKey: (a: AgentInfo) => a.cwd, resumeIdFor: (id: string) => id, appName: (id: string) => ({ codex: 'Codex', claude: 'Claude Code' }[id] ?? id), vsUserDirs: () => [],
+      values: { knownSecretValues: () => [], noPrompt: () => true, secretValuesFor: () => [] },
+      gate: { run: () => { gateCalls++; return new Promise<unknown>((_r, j) => { rejectLate = j; }); } }, // a hung app-server: the gate never answers
+      listChats: (async () => ({ sessions: [], storesFound: 0, unreadable: 0, tooLarge: 0 })) as never,
+      codexLists: kept, now: () => clock, wait,
+    };
+    const t0 = Date.now();
+    const pending = buildScope(deps);
+    for (let i = 0; i < 200 && !gateCalls; i++) await tick();
+    assert.strictEqual(gateCalls, 1, 'the first Codex listing waits at the hung gate');
+    assert.ok(timers.some((t) => t.ms === SCOPE_LIST_MS), 'it races the time left: the whole deadline');
+    fireAll(); // the deadline passes
+    const sc = await pending;
+    assert.ok(Date.now() - t0 < 1000, 'the plan is ready without really waiting');
+    assert.strictEqual(gateCalls, 1, 'no listing starts after the deadline (the second Codex folder is never listed)');
+    assert.deepStrictEqual(listings, [], 'nothing else listed after it');
+    assert.deepStrictEqual([sc.notes.lateLists, sc.notes.lateApps.sort()], [5, ['Claude Code', 'Codex', 'VS Code']], 'every folder and app not listed in time is counted: Codex x2, Claude Code, VS Code x2 (the first VS Code list was in time)');
+    assert.deepStrictEqual(sc.plan.sessions.map((x) => x.sessionId), ['x1', 'x2', 'k1'], 'the plan holds the open sessions');
+    assert.strictEqual(kept.size(), 0, 'a listing given up is not kept');
+    rejectLate!(new Error('probe died')); // a listing given up that fails later is not an unhandled rejection
+    await settle(5);
+    assert.strictEqual(SCOPE_LIST_MS, 30_000);
+    // in time: nothing late
+    clock = 0;
+    const ok = await buildScope({ ...deps, gate: { run: (_k: string, fn: () => Promise<unknown>) => fn() } });
+    assert.deepStrictEqual([ok.notes.lateLists, ok.notes.lateApps], [0, []]);
+    assert.ok(ok.plan.sessions.some((x) => x.sessionId === 'kp') && listings.length === 3, 'listed in time: in the plan');
+    timers.length = 0;
   }
 
   // ---- source checks (FR-025, FR-032, FR-033)
