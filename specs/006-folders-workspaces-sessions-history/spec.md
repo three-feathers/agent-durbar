@@ -260,7 +260,7 @@ The `status:` of the specs-index block used to read (moved here unchanged; the b
 
 *Owner (Vikram, 2026-10-21):* "It was very difficult for me to find the 'Previous (x)' button, as it is placed where it doesn't sound obviously related to the session list. Can we redo that experience to have collapse/expand in a more intuitive and standard manner?"
 
-*Missing:* since spec 052 FR-095 (round 10) the list is opened by **Previous (N)**, a `.btn.sm` among the chat header's actions (`#prevBtn`, next to + New, Open in VS Code, Stop and More). The button looks like an action, not like the heading of a list, and the list it opens appears in another place (`#prev`, under the header). Round 10 removed the earlier full-width "Previous sessions" bar because the chat chrome was bulky (a header of about 150px); any new control must stay slim.
+*Missing:* since spec 052 FR-095 (round 10) the list is opened by **Previous (N)**, a `.btn.sm` among the chat header's actions (`#prevBtn`, next to + New, Open in VS Code (**Open with** since spec 009 FR-019), Stop and More). The button looks like an action, not like the heading of a list, and the list it opens appears in another place (`#prev`, under the header). Round 10 removed the earlier full-width "Previous sessions" bar because the chat chrome was bulky (a header of about 150px); any new control must stay slim.
 
 *Existing capability (reused, not copied):* the list itself (`prevListsHtml`, the title search FR-023, pins, hides and Show hidden FR-024/FR-025, the row ⋯ menu FR-027 with Rename… from spec 059 FR-006, Delete… FR-030), `renderPrev`/`loadPrev`, the auto-open for an empty chat (spec 052 FR-002), the shared SVG chevron (`ICON('chev')`, design rule 10, as the Thinking and helper toggles), the `durbar.*` localStorage display preferences (as `durbar.detail`, `durbar.density`), the command palette and the keyboard sheet (spec 052 FR-042/FR-043) and `DurbarKeys` (FR-084). No new list, menu, store or IPC.
 
@@ -340,3 +340,7 @@ Spec 093 adds a choice to **+ Folder** (FR-001 here): add an existing folder (un
 ## Changes 2026-10-31: doors removed (pointer, spec 017 T024)
 
 Spec 017 FR-029 (owner decision, no doors) removed the Office with cabins layout, the desk door button, meeting-room signs, room door plates, **Close all** / **Open all**, door-held schedules and the door refusal of remote control, and `door-art`, `--door-*` and the door words of the theme contract. Any requirement in this spec about those (door plates, plate totals or siren, door signs, collapse, Close all / Open all, the `door` field) no longer applies and is kept as a record; Hide folder, floors and the plain status word stay. See spec 017's table of what was lost and what remains.
+
+## Changes 2026-11-03: content search is spec 095 (pointer, spec 095 T003)
+
+FR-023 is unchanged: the Previous sessions panel's box still searches titles only, per panel. Searching the content of open and previous sessions (your messages and the agent's replies, from a top-bar box) is [spec 095](../095-search-conversations/spec.md) (FR-041 there keeps this box as it is). Spec 095 reuses `fold` and `terms` of `src/renderer/sessionsearch.js` and adds `locate` and `anchorKey` to the same file, without changing `filterSessions`.

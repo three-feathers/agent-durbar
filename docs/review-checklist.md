@@ -1,6 +1,6 @@
 # Review checklist: first time right
 
-**Before asking for review**, read your real diff (`git diff origin/main...HEAD`) as a reviewer who assumes it is wrong. Rules: [AGENTS.md](../AGENTS.md) (*First time right*). Add a line for a new mistake (reason, one evidence link); fix or delete a wrong one. Guidance only: nothing here overrides AGENTS.md, the constitution or the safety rules. Tool pitfalls: [agent-notes.md](agent-notes.md).
+**Before asking for review**, read your real diff (`git diff origin/main...HEAD`) as a reviewer who assumes it is wrong. Rules: [rules/review-rounds.md](rules/review-rounds.md) (*First time right*). Add a line for a new mistake (reason, one evidence link); fix or delete a wrong one. Guidance only: nothing here overrides AGENTS.md, the constitution or the safety rules. Tool pitfalls: [agent-notes.md](agent-notes.md).
 
 ## Where the list comes from
 
@@ -72,7 +72,8 @@ On 2026-10-23 Vikram's agent grouped the ~1,100 *Required fixes* in reviews of ~
 
 ## Tests
 
-- [ ] **Plant a mutation per new rule and see a test fail** (remove the guard, swap the order, return early); list them in the PR. [#630](https://github.com/three-feathers/agent-durbar/pull/630)
+- [ ] **Slice size**: about 800 changed lines, pictures excluded.
+- [ ] **Mutate each new rule, each guard both ways; see a test fail** (drop the guard, swap order); list them in the PR, quoting each failing assertion for risky logic. [#630](https://github.com/three-feathers/agent-durbar/pull/630)
 - [ ] **After a scripted edit or conflict resolution in a test file, no section disappeared**: compare `git diff --stat` and `grep -c assert` before and after. [#644](https://github.com/three-feathers/agent-durbar/pull/644)
 - [ ] **An injected dependency is really used** (`env`, a clock, a runner): plant "use the global instead". FR-058
 - [ ] **A test of a script's refusal is safe when the refusal breaks**: fakes first on `PATH` for every outside tool (record and fail), remotes pointing nowhere, assert none was called. FR-058
@@ -93,13 +94,12 @@ On 2026-10-23 Vikram's agent grouped the ~1,100 *Required fixes* in reviews of ~
 - [ ] **When the simulator bypasses main, test main's logic in a pure function**; never open a sim channel to main (spec 010 FR-022..FR-027). [#693](https://github.com/three-feathers/agent-durbar/pull/693)
 - [ ] **File identity = device, inode, birth time**: test delete and recreate, and the failure path. PR #931
 - [ ] **A destructive call behind a native confirmation has no side door**: another call deleting the same data asks the same way. Spec 083 T034b
-- [ ] **A stale-breaker that looks, then deletes by path is a race**: move aside and check identity, or carry a token. Issue #723
+- [ ] **Look, await, act races**: re-check after the last await (file identity, Stop) or carry a token; undo on every exit. #723, #967
 - [ ] **A script that spends credits gates every send**: budget checked in one pure function right before each send; unknown usage is unknown, never 0; only the exact command runs without an approval card; take a baseline; plant cap-raised, extra-prompt and stop-disabled mutants. [#827](https://github.com/three-feathers/agent-durbar/pull/827)
 - [ ] **Main changes what the window reads in one synchronous step, then awaits teardown**: a tab list updated before its active tab let a driver name a removed tab (spec 080 closeTab, 2026-10-31).
 - [ ] **A handler main gives Electron answers on every path**: `setWindowOpenHandler` code that calls main's logic is wrapped so a throw still returns `deny` (a test makes it throw); a page's request never moves focus unless the page had it (spec 080, #915).
 - [ ] **A driver runs a page's script in that page's own `webContents`**, not in "the attached view": a page that opens a tab stops being the attached one mid-step (spec 080 `check-browser-tabs`, 2026-10-31).
 - [ ] **A menu row sends only its own field**, merged when its turn comes; a fake answers as the real runtime does (spec 030).
-- [ ] **Mutate each guard both ways**: surviving mutants hid four real gaps (#935).
 - [ ] **No unquoted `$` or heredoc in a shell comment body**: `$0.0066` became `/bin/bash.0066`.
 - [ ] **Sub-agents get unique scratch folders and one PR-body file each**: files overwritten on 2026-10-23 and again 2026-10-31.
 

@@ -11,7 +11,6 @@
   let WD = 'realoffice/worlds/photo/', SD = 'realoffice/sets/office/'; /* the shown world's and set's folders (spec 102 FR-205): a world loads no other world's files */
   const BAD = new Set(); /* FR-065: pictures that failed to load in this session */
   const SEEN = new Map(); /* FR-052: the light state each desk had at the last render */
-  const TICKS = new Map(); /* desk id -> time the green tick started */
   let PEOPLE = null; /* session id -> person id, durbar.realpeople (Office people) or durbar.realpeople.<set> */
   let SET_SHOWN = '';
   const peopleKey = () => SET_SHOWN === 'office' || !SET_SHOWN ? 'durbar.realpeople' : 'durbar.realpeople.' + SET_SHOWN;
@@ -26,9 +25,15 @@
   let CUR = null; /* {ro, screenOf, still, hold, desks: Map id -> desk, agents: Map id -> model agent, folders: Map, drawn} */
   let ZOOM = null; /* {id, hover, focus, panel, plate} */
   let IO = null, DISMISSED = '';
+  /* spec 052 FR-183: focus the app moves by itself onto a plate is not the person asking to read that screen */
+  let QUIET_FOCUS = false, QUIET_POINTER = false, QUIET_AT = '', ARMED = false; /* QUIET_POINTER: the room came back (Esc from a chat, issue 1040) under a pointer that has not moved; hovering starts when it leaves QUIET_AT. ARMED: a hover zoom is waiting out its 120 ms (driver reads hoverState) */
+  function quietFocus(fn) { QUIET_FOCUS = true; QUIET_POINTER = true; QUIET_AT = ''; try { fn(); } finally { QUIET_FOCUS = false; } }
 
   const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
   const px = (n) => Math.round(n * 10) / 10 + 'px';
+  /* FR-184: nothing rewrites what did not change: a style or dataset value is written only when it differs */
+  const sty = (e, k, v) => { if (e.style[k] !== v) e.style[k] = v; };
+  const dset = (e, k, v) => { if (e.dataset[k] !== v) e.dataset[k] = v; };
   /* spec Changes 2026-11-01: while `SLIDE` is on (a draw of the same window size, people moving), something the layout moved or resized eases there on `translate` and `scale`, so a change does not make the room jump; chips and plates fade in place instead */
   let SLIDE = false;
   /* on `translate` and `scale`, not `transform`: an element keeps its own transform while it moves (the post-it's tilt, a person's motion); no layout during it (spec Changes 2026-11-01) */
@@ -48,7 +53,7 @@
     }
     if (r.w != null) el._bw = r.w;
     if (r.h != null) el._bh = r.h;
-    el._x = r.x; el._y = r.y; el.style.left = px(r.x); el.style.top = px(r.y); if (r.w != null) el.style.width = px(r.w); if (r.h != null) el.style.height = px(r.h); };
+    el._x = r.x; el._y = r.y; sty(el, 'left', px(r.x)); sty(el, 'top', px(r.y)); if (r.w != null) sty(el, 'width', px(r.w)); if (r.h != null) sty(el, 'height', px(r.h)); };
   const initials = (name) => String(name || '?').trim().split(/\s+/).slice(0, 2).map((w) => Array.from(w)[0] || '').join('').toUpperCase() || '?';
 
   /* the keyed layers: one Map per layer, elements reused by key; unseen keys are removed at the end of a render */
@@ -69,18 +74,26 @@
     return e;
   }
   /* FR-073: `fade`: a person or visitor who left fades where they stood (the fade itself is a picture nobody can click); an element that leaves is also unobserved (the resize observer of the chrome layer, settle), so the observed set cannot grow all day */
-  function sweep(layer, fade) { for (const [k, e] of layer._k) if (!layer._seen.has(k)) { if (layer._obs && layer._obs.delete(e)) layer._ro.unobserve(e); if (fade && (k.startsWith('p:') || k.startsWith('v:'))) zoomOut(e); else e.remove(); layer._k.delete(k); } }
+  /* spec 097 FR-249: a desk picture whose agent went to the lounge (or a lounge desk whose agent went back) fades out where it stood */
+  function sweep(layer, fade) { for (const [k, e] of layer._k) if (!layer._seen.has(k)) { if (layer._obs && layer._obs.delete(e)) layer._ro.unobserve(e); if (fade && (k.startsWith('p:') || k.startsWith('v:'))) zoomOut(e); else if (fade && (k.startsWith('d:') || k.startsWith('ld:'))) fadeOut(e, 220); else e.remove(); layer._k.delete(k); } }
+  function fadeOut(e, ms) { delete e.dataset.for; e.style.pointerEvents = 'none'; const a = e.animate([{ opacity: 1 }, { opacity: 0 }], { duration: ms, easing: 'ease-in-out', fill: 'forwards' }); a.onfinish = a.oncancel = () => e.remove(); }
   function text(e, t) { t = String(t == null ? '' : t); if (e.textContent !== t) e.textContent = t; }
   function attr(e, k, v) { if (v == null || v === false) { if (e.hasAttribute(k)) e.removeAttribute(k); } else if (e.getAttribute(k) !== String(v)) e.setAttribute(k, String(v)); }
-  function img(e, file, set) {
-    const src = (set ? SD : WD) + file;
+  /* FR-183: a person or the desk comes in two sizes, chosen by what it is shown at (`shown`, CSS px; the browser multiplies by the device pixel ratio); the world's or set's `px` holds the full picture's width. FR-065: a failed picture marks `src`, whichever size failed */
+  /* owner 2026-11-01: faces stay sharp. The half-size picture only when it is shown at least this much smaller than it is, where the softness cannot be seen; a little more memory for that */
+  const HALF_MARGIN = 1.5;
+  let WPX = {}, SPX = {}; /* the shown world's and set's `px`: file -> the full picture's width, for the ones that have a half-size picture */
+  function img(e, file, set, shown) {
+    const src = (set ? SD : WD) + file, w = shown && (set ? SPX : WPX)[file];
+    if (w) { const sizes = Math.ceil(shown * HALF_MARGIN) + 'px'; if (e.getAttribute('sizes') !== sizes) e.setAttribute('sizes', sizes); }
     if (e.getAttribute('src') !== src) {
-      e.alt = ''; e.decoding = 'async'; e.draggable = false; e.setAttribute('aria-hidden', 'true');
+      if (e.getAttribute('aria-hidden') !== 'true') { e.alt = ''; e.decoding = 'async'; e.draggable = false; e.setAttribute('aria-hidden', 'true'); }
       e.onerror = () => { if (!BAD.has(src)) { BAD.add(src); if (onArt) onArt(); } };
+      if (w) e.setAttribute('srcset', (set ? SD : WD) + file.replace(/\.webp$/, '.h.webp') + ' ' + Math.ceil(w / 2) + 'w, ' + src + ' ' + w + 'w'); else e.removeAttribute('srcset');
       e.src = src;
     }
   }
-  /* FR-071 and FR-047: may anything move now? Web Animations do not see the CSS rules, so this is asked before each one; `still` holds Serious mode and reduced motion at load, the query a later change */
+  /* FR-071 and FR-047: may anything move now? Web Animations do not see the CSS rules, so this is asked before each one; `still` holds Motion off and reduced motion at load, the query a later change */
   function moving() {
     if (!CUR || CUR.still || CUR.hold || !CUR.ro._ready) return false;
     try { if (matchMedia('(prefers-reduced-motion: reduce)').matches) return false; } catch (e) { return false; }
@@ -220,7 +233,7 @@
   }
   function rigOf(art, k, rect, r, m, pe) {
     const w = el(art, 'rg:' + k, 'div', 'ro-rig m-rig' + (OFF.has(k) ? ' ro-off' : ''));
-    box(w, rect); w.dataset.for = k;
+    box(w, rect); dset(w, 'for', k);
     const org = getComputedStyle(pe).transformOrigin; if (w.style.transformOrigin !== org) w.style.transformOrigin = org;
     for (const [v, val] of [['--ro-sw', m.sway + 's'], ['--ro-u', (rect.h / 100).toFixed(3) + 'px'], ['--ro-pat', (2.2 + (m.offset % 900) / 900) .toFixed(2) + 's']]) setVar(w, v, val);
     if (w._pid !== rect.pid) {
@@ -259,7 +272,8 @@
   }
 
   /* a span with a status dot (the app's .dot classes, forced-colours aware) */
-  function dotHTML(state) { return '<span class="dot ' + ({ limit: 'waiting', asleep: 'idle' }[state] || state) + '" aria-hidden="true"></span>'; }
+  const dotClass = (state) => 'dot ' + ({ limit: 'waiting', asleep: 'idle' }[state] || state);
+  function dotHTML(state) { return '<span class="' + dotClass(state) + '" aria-hidden="true"></span>'; }
 
   /* FR-037: one person per session, kept in durbar.realpeople; the simulator uses a seeded pick so pictures repeat run to run */
   function people(model, ids, rand, remember) {
@@ -281,7 +295,8 @@
     const L = X();
     const world = has(root.DurbarRealOfficeWorlds || {}, opts.world || 'photo') ? opts.world || 'photo' : 'photo', set = has(root.DurbarRealOfficeSets || {}, opts.set || 'office') ? opts.set || 'office' : 'office';
     WD = 'realoffice/worlds/' + world + '/'; SD = 'realoffice/sets/' + set + '/';
-    if (SET_SHOWN !== set) { SET_SHOWN = set; PEOPLE = null; SEEN.clear(); TICKS.clear(); } /* the people belong to a set: switching sets draws its own, kept apart */
+    if (SET_SHOWN !== set) { SET_SHOWN = set; PEOPLE = null; SEEN.clear(); } /* the people belong to a set: switching sets draws its own, kept apart */
+    WPX = root.DurbarRealOfficeWorlds[world].px || {}; SPX = root.DurbarRealOfficeSets[set].px || {};
     const meta = Object.assign({}, root.DurbarRealOfficeWorlds[world], root.DurbarRealOfficeSets[set]); /* the world's furniture numbers with the set's people numbers */
     onArt = opts.onArt || null;
     PIXEL = !!meta.pixelArt;
@@ -289,7 +304,7 @@
     const who = people(model, ids, opts.rand, !!opts.remember);
     const seatOk = (p) => !!p && !['typeA', 'think', 'waveA', 'rest'].some((f) => BAD.has(SD + p + '-' + f + '.webp'));
     const engine = {
-      folders: model.folders.map((f) => ({ id: f.id, agents: f.agents.map((a) => ({ id: a.id, state: a.state, away: a.away || null, person: seatOk(who[a.id]) ? who[a.id] : null })) })),
+      folders: model.folders.map((f) => ({ id: f.id, agents: f.agents.map((a) => ({ id: a.id, state: a.state, away: a.away || null, person: seatOk(who[a.id]) ? who[a.id] : null, lounge: !!a.lounge })) })), /* spec 097 FR-246: the app's room rule (shutPlan) seats it in the lounge row */
       places: model.places.map((p) => ({ id: p.id, custom: !!p.custom, visitors: p.visitors.map((v) => ({ id: v.id, needsYou: !!v.needsYou, person: who[v.id] || null })) })),
     };
     const signs = {};
@@ -298,10 +313,10 @@
 
     let ro = stage.querySelector(':scope > .ro');
     if (!ro) { stage.textContent = ''; ro = document.createElement('div'); ro.className = 'ro'; stage.appendChild(ro); ro.addEventListener('click', forward); wireZoom(ro); }
-    ro.style.width = px(lay.width); ro.style.height = px(lay.height);
+    sty(ro, 'width', px(lay.width)); sty(ro, 'height', px(lay.height));
     LAY_G = lay.cabinet ? lay.g || 0 : 0;
     if (lay.g) setVar(ro, '--ro-g', String(lay.g)); /* spec 102 FR-255: one integer scale for the world's art */
-    ro.dataset.set = set; ro.dataset.world = world; ro.dataset.u = String(Math.round(lay.u)); ro.dataset.face = String(Math.round(lay.faceH * 10) / 10); ro.dataset.big = lay.big ? '1' : '0';
+    dset(ro, 'set', set); dset(ro, 'world', world); dset(ro, 'u', String(Math.round(lay.u))); dset(ro, 'face', String(Math.round(lay.faceH * 10) / 10)); dset(ro, 'big', lay.big ? '1' : '0');
     ro.classList.toggle('still', !!opts.still);
     ro.classList.toggle('hold', !!opts.hold); /* the people stand still, the lights may not (FR-071) */
     const drawn = !!(CUR && CUR.ro === ro && CUR.drawn);
@@ -309,7 +324,7 @@
     if (ZOOM && !ZOOM.panel.isConnected) closeZoom();
     const sized = view.w + 'x' + view.h, sameSize = !!CUR && CUR.sized === sized && !!CUR.painted;
     const wasLive = CUR && CUR.ro === ro ? CUR.live : undefined;
-    CUR = { pixelArt: !!meta.pixelArt, ro, live: opts.live, screenOf: opts.screenOf || null, sized, still: !!opts.still, hold: !!opts.hold, desks: new Map(lay.zones.flatMap((z) => z.desks.map((d) => [d.id, d]))), agents: new Map(model.folders.flatMap((f) => f.agents.map((a) => [a.id, { ...a, folder: f.name }]))), drawn, scroll: !!lay.scroll };
+    CUR = { pixelArt: !!meta.pixelArt, ro, live: opts.live, screenOf: opts.screenOf || null, sized, still: !!opts.still, hold: !!opts.hold, desks: new Map(lay.zones.flatMap((z) => z.desks.map((d) => [d.id, d])).concat(lay.lounge ? lay.lounge.desks.map((d) => [d.id, d]) : [])), agents: new Map(model.folders.flatMap((f) => f.agents.map((a) => [a.id, { ...a, folder: f.name }]))), drawn, scroll: !!lay.scroll };
     SLIDE = sameSize && moving() && !hiddenNow();
     CUR.painted = true;
     ro.classList.toggle('paused', hiddenNow()); if (hiddenNow()) finishMoves(ro);
@@ -318,10 +333,12 @@
     const lobby = el(art, 'lobby', 'div', 'ro-lobby'); box(lobby, { x: 0, y: 0, w: lay.width, h: lay.lobbyH });
     const strip = el(art, 'strip', 'div', 'ro-strip'); box(strip, lay.floorStrip);
     /* FR-043: the room ambient: the share of active desks among the visible ones */
-    const states = model.empty ? ['idle'] : lay.zones.flatMap((z) => z.desks.map((d) => d.state)); /* FR-119: an empty floor is lit at 70 % (FR-043) */
+    const allDesks = lay.zones.flatMap((z) => z.desks).concat(lay.lounge ? lay.lounge.desks : []); /* spec 097 FR-247: the lounge's seats are desks to the room's light, the zoom and the slips */
+    const states = model.empty ? ['idle'] : allDesks.map((d) => d.state); /* FR-119: an empty floor is lit at 70 % (FR-043) */
     const ambient = L.ambientFor(states);
-    ro.style.setProperty('--ro-amb', String(Math.round((1 - ambient) * 1000) / 1000));
-    ro.dataset.ambient = String(ambient);
+    const ambV = String(Math.round((1 - ambient) * 1000) / 1000);
+    if (ro.style.getPropertyValue('--ro-amb') !== ambV) ro.style.setProperty('--ro-amb', ambV);
+    dset(ro, 'ambient', String(ambient));
     const ambEl = el(amb, 'amb', 'div', 'ro-ambient'); box(ambEl, { x: 0, y: 0, w: lay.width, h: lay.height });
 
     EMPTY_BOX = null;
@@ -334,33 +351,36 @@
       const zk = z.id + '\u0000' + z.part; /* a folder too big for one row has more parts, each its own zone (the sign repeats, "continued") */
       const zb = el(art, 'z:' + zk, 'div', 'ro-zone'); box(zb, z.box);
       /* FR-018: the folder sign: name, path, counts, cost, + and the room menu (the app's own handlers: data-newsess, data-foldermenu) */
-      const sg = el(chrome, 's:' + zk, 'div', 'ro-sign' + (z.signShort ? ' short' : '')); box(sg, { x: z.sign.x, y: z.sign.y, h: z.sign.h }); sg.style.maxWidth = px(z.sign.w);
-      sg.dataset.folder = z.id;
-      const sig = JSON.stringify([f.name, f.path, f.counts, f.cost, f.newSess, f.menu, z.part]);
-      if (sg._sig !== sig && z.part > 1) { sg._sig = sig; sg.textContent = ''; const b = document.createElement('b'); b.textContent = f.name + ' (continued)'; b.title = f.name + '\n' + f.path; sg.appendChild(b); }
-      if (sg._sig !== sig) {
-        sg._sig = sig; sg.textContent = '';
-        const b = document.createElement('b'); b.textContent = f.name; b.title = f.name + '\n' + f.path; sg.appendChild(b);
-        const p = document.createElement('span'); p.className = 'ro-path'; p.textContent = f.path; sg.appendChild(p);
-        const sc = document.createElement('span'); sc.className = 'ro-sc';
-        for (const c of f.counts) { const s = document.createElement('span'); s.className = 'ro-cnt'; s.title = c.n + ' ' + c.word; s.insertAdjacentHTML('beforeend', dotHTML(c.state)); s.appendChild(document.createTextNode(String(c.n))); sc.appendChild(s); }
-        if (f.cost) { const m = document.createElement('span'); m.className = 'ro-cost'; m.textContent = f.cost; sc.appendChild(m); }
-        if (f.newSess) { const nb = document.createElement('button'); nb.type = 'button'; nb.className = 'ro-sb'; nb.dataset.newsess = z.id; nb.title = nb.ariaLabel = 'New session in ' + f.name; nb.setAttribute('aria-label', 'New session in ' + f.name); nb.textContent = '+'; sc.appendChild(nb); }
-        if (f.menu) { const mb = document.createElement('button'); mb.type = 'button'; mb.className = 'ro-sb'; mb.dataset.foldermenu = z.id; mb.setAttribute('aria-haspopup', 'menu'); mb.setAttribute('aria-label', 'Folder actions for ' + f.name); mb.title = 'Folder actions'; mb.textContent = '⋯'; sc.appendChild(mb); }
-        sg.appendChild(sc);
+      const sg = el(chrome, 's:' + zk, 'div', 'ro-sign' + (z.signShort ? ' short' : '')); box(sg, { x: z.sign.x, y: z.sign.y, h: z.sign.h }); sty(sg, 'maxWidth', px(z.sign.w));
+      dset(sg, 'folder', z.id);
+      signFill(sg, f, z);
+      for (const d of z.desks) deskOne(d);
+    }
+    if (lay.lounge) {
+      for (const d of lay.lounge.desks) deskOne(d); /* spec 097 FR-247: after the desks */
+      /* FR-249: keyboard order is the desks', then the seats': a plate that was a desk's keeps its element, so it is moved after the last desk's plate (and its pencil), unless it has the focus */
+      const last = lay.zones.length ? lay.zones[lay.zones.length - 1].desks.slice(-1)[0] : null;
+      let at = last ? chrome._k.get('rn:' + last.id) || chrome._k.get('n:' + last.id) : null;
+      for (const d of lay.lounge.desks) {
+        const pl = chrome._k.get('n:' + d.id), rb = chrome._k.get('rn:' + d.id);
+        if (!pl || pl.contains(document.activeElement) || (rb && rb.contains(document.activeElement))) { at = rb || pl || at; continue; }
+        if (at && at.nextElementSibling !== pl) at.after(pl);
+        if (rb && pl.nextElementSibling !== rb) pl.after(rb);
+        at = rb || pl;
       }
-      for (const d of z.desks) {
+    }
+    function deskOne(d) {
         const a = byAgent.get(d.id), k = d.id;
-        const lt = L.lightFor(d.state, { still: !!opts.still });
+        const lt = L.lightFor(d.state, { still: !!opts.still, unread: !!a.unread }); /* FR-236: a done desk with an unread reply tints green */
         const st = lay.cabinet ? L.aisleStatus(d.state, !!opts.still) : null; /* spec 102 FR-260 */
         /* the person, behind the desk: FR-036's pose, FR-070's second frame or breath, FR-072's cross-fade; FR-065: the initials disc when the picture failed */
         if (d.person) {
-          const m = L.personMotion(k, d.person.pose, d.state);
+          const m = d.lounge ? { kind: null, period: 0, offset: 0, sway: 0, style: null } : L.personMotion(k, d.person.pose, d.state); /* FR-247: a lounge seat is a still picture: nothing runs there, in view or scrolled away (FR-181) */
           const fresh = !art._k.has('p:' + k);
           const rigged = d.person.pose === 'typeA' && moving() && LOD === 0 && !GLIDING.has(k) && !(fresh && CUR.drawn && WHERE.has(k)) && meta.rig && has(meta.rig, d.person.pid) ? meta.rig[d.person.pid] : null;
           const two = !rigged && moving() && m.kind === 'frames' && d.person.fileB && !BAD.has(SD + d.person.fileB) && !GLIDING.has(k) ? second(art, 'pb:' + k, k, d.person, d.person.fileB, 'ro-person2', m) : null;
           const pe = el(art, 'p:' + k, 'img', 'ro-person' + (a.asleep ? ' asleep' : '') + (lay.cabinet ? (st.bob && moving() ? ' bob' : '') : rigged ? ' m-rig' : two && two.on ? ' m-a m-' + m.style : m.kind === 'breathe' && moving() ? ' m-br' : '') + (OFF.has(k) ? ' ro-off' : ''));
-          box(pe, d.person); pe.dataset.for = k; pe.dataset.pose = d.person.pose;
+          box(pe, d.person); dset(pe, 'for', k); dset(pe, 'pose', d.person.pose);
           if (d.facing) pe.classList.toggle('mir', d.facing === 'right');
           if (lay.cabinet) { /* FR-261: people in 4 phases on one clock, whenever each began: at most 8 frames a second */
             let h = 0; for (const c of k) h = (h * 31 + c.charCodeAt(0)) >>> 0; setVar(pe, '--ro-ph', -(h % 4) * 0.25 + 's');
@@ -368,75 +388,79 @@
           }
           const was = pe.getAttribute('src');
           if (was && was !== SD + d.person.file && !lay.cabinet /* a pixel world swaps the frame: no second picture (FR-261) */ && moving() && !hiddenNow() && !OFF.has(k)) { const g = pe.cloneNode(false); art.insertBefore(g, pe); fadeAway(g, 120); pe.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 170, delay: 90, easing: 'ease-in-out', fill: 'backwards' }); } /* FR-072, spec Changes 2026-11-01: the old out, then the new in */
-          img(pe, d.person.file, true);
+          img(pe, d.person.file, true, d.person.w);
           if (fresh && CUR.drawn && moving() && !hiddenNow() && !OFF.has(k) && !glide(pe, k, WHERE.get(k), d.person)) fadeIn(pe, 150, 150); /* FR-073: in at the desk */
           WHERE.set(k, d.person);
           if (m.kind) { setVar(pe, '--ro-per', m.period + 's'); setVar(pe, '--ro-sw', m.sway + 's'); setVar(pe, '--ro-u', (d.person.h / 100).toFixed(3) + 'px'); }
           if (rigged) rigOf(art, k, d.person, rigged, m, pe);
           if (two && two.on && !two.b._clock) { two.b._clock = true; clock(two.b, m.offset); clock(pe, m.offset); }
+        } else if (d.lounge) { /* FR-065 in the lounge: the initials where the face would be */
+          const ini = el(art, 'i:' + k, 'div', 'ro-initials'); box(ini, d.face); dset(ini, 'for', k); text(ini, initials(a.name));
         } else if (!d.narrow && !(lay.cabinet && a.away)) { /* at a cabinet, an empty place is the note on its glass */
-          const ini = el(art, 'i:' + k, 'div', 'ro-initials'); const r = 0.5 * lay.u; box(ini, { x: d.slot.x + 0.05 * d.slot.w + 0.42 * lay.u - r / 2, y: d.desk.y - r - 6, w: r, h: r }); ini.dataset.for = k; text(ini, initials(a.name));
+          const ini = el(art, 'i:' + k, 'div', 'ro-initials'); const r = 0.5 * lay.u; box(ini, { x: d.slot.x + 0.05 * d.slot.w + 0.42 * lay.u - r / 2, y: d.desk.y - r - 6, w: r, h: r }); dset(ini, 'for', k); text(ini, initials(a.name));
         }
-        const dc = el(art, 'd:' + k, 'div', 'ro-desk' + (d.narrow ? ' narrow' : '') + (a.asleep ? ' asleep' : '') + (lay.cabinet ? ' ro-cab' + (d.facing === 'right' ? ' mir' : '') : '')); box(dc, d.desk); dc.dataset.for = k;
-        if (lay.cabinet) cabinetOf(dc, meta, lay.cabinet, k, d.state, d.body);
-        else { const dk = dc.firstChild || dc.appendChild(document.createElement('img')); dk.style.height = px(d.desk.full); img(dk, 'desk.webp'); }
+        /* spec 097 FR-247, FR-248: a lounge seat has the world's desk, small and whole, instead of a desk or a cabinet; FR-249: a desk picture that comes fades in */
+        const fresh = !art._k.has((d.lounge ? 'ld:' : 'd:') + k) && CUR.drawn && moving() && !hiddenNow();
+        if (d.lounge) { const t = el(art, 'ld:' + k, 'img', 'ro-ltable'); box(t, d.table); dset(t, 'for', k); img(t, 'desk.webp', false, d.table.w); if (fresh) fadeIn(t, 220); }
+        else {
+          const dc = el(art, 'd:' + k, 'div', 'ro-desk' + (d.narrow ? ' narrow' : '') + (lay.cabinet ? ' ro-cab' + (d.facing === 'right' ? ' mir' : '') : '')); box(dc, d.desk); dset(dc, 'for', k);
+          if (lay.cabinet) cabinetOf(dc, meta, lay.cabinet, k, d.state, d.body);
+          else { const dk = dc.firstChild || dc.appendChild(document.createElement('img')); sty(dk, 'height', px(d.desk.full)); img(dk, 'desk.webp', false, d.desk.w); }
+          if (fresh) fadeIn(dc, 220);
+        }
         /* the monitor: the glass in the art; its text sits with the chrome, above the lights (FR-044), and repaints on its own (FR-033) */
-        const sc = el(art, 'm:' + k, 'div', 'ro-screen st-' + d.state + (lt.glow === 'off' ? ' off' : '') + (a.asleep ? ' asleep' : '')); box(sc, d.screen); sc.dataset.for = k;
+        const sc = el(art, 'm:' + k, 'div', 'ro-screen st-' + d.state + (lt.glow === 'off' ? ' off' : '') + (a.asleep ? ' asleep' : '') + (d.lounge ? ' ro-lmon' : '') + (lt.tint !== 'none' ? ' tint-' + lt.tint : '')); /* FR-236: the screen is the status cue */ box(sc, d.screen); dset(sc, 'for', k);
         if (!sc.firstChild) sc.innerHTML = '<div class="ro-bezel"><div class="ro-glass" aria-hidden="true"></div></div><div class="ro-neck"></div><div class="ro-foot"></div>';
         const bez = sc.firstChild; bez.style.height = px(d.glass.h + 6);
-        screenBox(chrome, d, k);
+        if (!d.lounge) screenBox(chrome, d, k);
+        else { const s = SCR.get(k); if (s) { clearTimeout(s.timer); if (IO) IO.unobserve(s.box); SCR.delete(k); } } /* FR-247: a lounge monitor shows no text (the zoom still reads its last lines, FR-034) */
         /* spec 102 FR-257: the marquee carries the name: real text, level, never inside the mirrored picture */
         if (d.marquee) {
-          const mq = el(chrome, 'mq:' + k, 'div', 'ro-marquee mq-' + st.marquee); box(mq, d.marquee); attr(mq, 'aria-hidden', 'true'); text(mq, a.name); mq.dataset.for = k;
+          const mq = el(chrome, 'mq:' + k, 'div', 'ro-marquee mq-' + st.marquee); box(mq, d.marquee); attr(mq, 'aria-hidden', 'true'); text(mq, a.name); dset(mq, 'for', k);
           /* the flash is opacity on the marquee's own ::after: no node, and it moves with the marquee (FR-261); one beat for all of them */
           if (/flash/.test(st.marquee)) for (const an of mq.getAnimations({ subtree: true })) if (an.startTime !== 0) an.startTime = 0;
           const gc = meta.glow, gi = Math.max(0, gc.cells.indexOf(d.state)), gw = gc.cell[0] * lay.g, gh = gc.cell[1] * lay.g;
-          const fg = el(art, 'fg:' + k, 'div', 'ro-fglow g-' + st.glow); box(fg, { x: Math.max(d.slot.x, Math.min(d.desk.x + (d.desk.w - gw) / 2, d.slot.x + d.slot.w - gw)), y: d.plate.y - gh / 2, w: gw, h: gh }); fg.dataset.for = k;
+          const fg = el(art, 'fg:' + k, 'div', 'ro-fglow g-' + st.glow); box(fg, { x: Math.max(d.slot.x, Math.min(d.desk.x + (d.desk.w - gw) / 2, d.slot.x + d.slot.w - gw)), y: d.plate.y - gh / 2, w: gw, h: gh }); dset(fg, 'for', k);
           const gp = (gi / Math.max(1, gc.cells.length - 1)) * 100 + '% 0'; if (fg.style.backgroundPosition !== gp) fg.style.backgroundPosition = gp;
-          const q = el(chrome, 'cu:' + k, 'div', 'ro-cue cue-' + st.cue); box(q, d.cue); q.dataset.for = k; attr(q, 'aria-hidden', 'true'); text(q, { none: '', dots: '\u2022\u2022\u2022', ask: '?', bang: '!', tick: '\u2713', zz: 'z z' }[st.cue]);
-          const co = el(chrome, 'co:' + k, 'div', 'ro-coin'); box(co, { x: d.face.x + d.face.w / 2 - 3 * lay.g, y: d.face.y, w: 6 * lay.g, h: 6 * lay.g }); attr(co, 'aria-hidden', 'true'); co.dataset.for = k;
+          const q = el(chrome, 'cu:' + k, 'div', 'ro-cue cue-' + st.cue); box(q, d.cue); dset(q, 'for', k); attr(q, 'aria-hidden', 'true'); text(q, { none: '', dots: '\u2022\u2022\u2022', ask: '?', bang: '!', tick: '\u2713', zz: 'z z' }[st.cue]);
+          const co = el(chrome, 'co:' + k, 'div', 'ro-coin'); box(co, { x: d.face.x + d.face.w / 2 - 3 * lay.g, y: d.face.y, w: 6 * lay.g, h: 6 * lay.g }); attr(co, 'aria-hidden', 'true'); dset(co, 'for', k);
         }
-        /* FR-040, FR-041: lamp, screen glow and call light, as classes over the art (D4) */
-        const lamp = el(lights, 'l:' + k, 'div', 'ro-lamp lamp-' + lt.lamp + (lt.motion === 'pulse' ? ' pulse' : '')); box(lamp, d.lamp);
+        /* FR-040, FR-041: lamp and screen glow, as classes over the art (D4); the status cue is the screen's tint (FR-236) */
+        const lamp = el(lights, 'l:' + k, 'div', 'ro-lamp lamp-' + lt.lamp + (lt.motion === 'pulse' ? ' pulse' : '')); box(lamp, d.lamp); dset(lamp, 'for', k);
         const glow = el(lights, 'g:' + k, 'div', 'ro-glow glow-' + lt.glow + (lt.motion === 'breathe' ? ' breathe' : '')); box(glow, { x: d.glass.x - 6, y: d.glass.y - 6, w: d.glass.w + 12, h: d.glass.h + 12 });
-        let call = lt.call;
-        if (call === 'green-once') {
-          if (L.doneTick(SEEN, k, d.state)) { TICKS.set(k, now); if (st && st.flourish && moving() && !hiddenNow()) coinUp(chrome, k, lay.g); }
-          const t0 = TICKS.get(k); call = t0 && now - t0 < 2000 ? 'green' : null;
-          if (call) setTimeout(() => { if (onArt) onArt(); }, 2050 - (now - t0)); /* redraw when the tick is over */
-        } else { L.doneTick(SEEN, k, d.state); TICKS.delete(k); }
-        if (call) { const c = el(lights, 'c:' + k, 'div', 'ro-call call-' + call + (lt.motion === 'pulse' ? ' pulse' : '') + (call === 'green' && !opts.still ? ' fade' : '')); box(c, { x: d.call.x, y: d.call.y, w: 10, h: 10 }); c.dataset.for = k; }
+        if (L.doneTick(SEEN, k, d.state) && st && st.flourish && moving() && !hiddenNow()) coinUp(chrome, k, lay.g); /* spec 102 FR-261: the arcade's coin on a turn to done (FR-236: no call light any more) */
+        /* FR-238: "New reply" above the plate's right end while the reply is unread (the flat desk's "New", the same isUnread); made once, shown by class */
+        const nt = el(chrome, 'nr:' + k, 'span', 'ro-newtag' + (a.unread ? ' on' : '')); box(nt, { x: d.plate.x + d.plate.w, y: d.plate.y }); attr(nt, 'aria-hidden', 'true'); text(nt, 'New reply'); dset(nt, 'for', k);
         /* FR-038: cues, inside the slot */
         if (d.bubble) { const b = el(chrome, 'b:' + k, 'div', 'ro-bub'); box(b, d.bubble); attr(b, 'aria-hidden', 'true'); text(b, '?'); }
         if (d.bang) { const b = el(chrome, 'x:' + k, 'div', 'ro-bang'); box(b, d.bang); attr(b, 'aria-hidden', 'true'); text(b, '!'); }
         if (d.dots) { const b = el(chrome, 't:' + k, 'div', 'ro-dots'); box(b, d.dots); attr(b, 'aria-hidden', 'true'); if (!b.firstChild) b.innerHTML = '<i></i><i></i><i></i>'; }
-        if (d.away) { const w = el(chrome, 'a:' + k, 'div', 'ro-away'); w.dataset.place = a.away; if (a.away === 'coffee') w.dataset.surface = 'coffee-bar'; /* spec 098 FR-010: the moment's marker */ w.style.setProperty('--ro-note', L.notePaper(a.away)); w.style.setProperty('--ro-note-ink', L.NOTE_INK); box(w, { x: d.away.x, y: d.away.y, w: d.away.s, h: d.away.s }); text(w, 'at ' + a.awayLabel); if (!w._in && CUR.drawn && moving() && !hiddenNow()) w.animate([{ transform: 'translateX(-50%) rotate(-2.5deg) scale(.7)', opacity: 0 }, { transform: 'translateX(-50%) rotate(-2.5deg)', opacity: 1 }], { duration: ZOOM_IN, delay: ZOOM_OUT - 40, easing: 'cubic-bezier(.2,.7,.3,1)', fill: 'backwards' }); w._in = true; }
+        if (d.away) { const w = el(chrome, 'a:' + k, 'div', 'ro-away'); dset(w, 'place', a.away); if (a.away === 'coffee') dset(w, 'surface', 'coffee-bar'); /* spec 098 FR-010: the moment's marker */ w.style.setProperty('--ro-note', L.notePaper(a.away)); w.style.setProperty('--ro-note-ink', L.NOTE_INK); box(w, { x: d.away.x, y: d.away.y, w: d.away.s, h: d.away.s }); text(w, 'at ' + a.awayLabel); if (!w._in && CUR.drawn && moving() && !hiddenNow()) w.animate([{ transform: 'translateX(-50%) rotate(-2.5deg) scale(.7)', opacity: 0 }, { transform: 'translateX(-50%) rotate(-2.5deg)', opacity: 1 }], { duration: ZOOM_IN, delay: ZOOM_OUT - 40, easing: 'cubic-bezier(.2,.7,.3,1)', fill: 'backwards' }); w._in = true; }
         /* FR-120: a static "z z" over a sleeping person (carved in the cave); aria-hidden, the plate and the name carry the meaning */
         if (a.asleep && d.person) { const z = el(chrome, 'z:' + k, 'div', 'ro-zz'); box(z, { x: d.person.x + d.person.w * 0.62, y: Math.max(d.slot.y + 2, d.person.y + d.person.h * 0.04) }); attr(z, 'aria-hidden', 'true'); text(z, 'z z'); }
         /* FR-016, FR-090: the name plate is the desk's one focusable button; the app's click handler opens the chat ([data-id]) */
-        const pl = el(chrome, 'n:' + k, 'button', 'ro-plate st-' + d.state + (a.selected ? ' sel' : '') + (d.narrow ? ' narrow' : '') + (a.asleep ? ' asleep' : '')); box(pl, d.plate);
-        pl.type = 'button'; pl.dataset.id = k; pl.dataset.state = d.state; if (a.asleep) pl.dataset.surface = 'lounge'; /* spec 098 FR-010: the moment's marker */
+        const pl = el(chrome, 'n:' + k, 'button', 'ro-plate st-' + d.state + (a.selected ? ' sel' : '') + (d.narrow ? ' narrow' : '') + (a.asleep ? ' asleep' : '') + (d.lounge ? ' lounge' : '') + (a.ren ? ' has-ren' : '')); box(pl, d.plate);
+        if (pl.type !== 'button') pl.type = 'button'; dset(pl, 'id', k); dset(pl, 'state', d.state); if (d.lounge) dset(pl, 'surface', 'lounge'); else if (pl.dataset.surface) delete pl.dataset.surface; /* spec 098 FR-010: the moment's marker (spec 097 FR-246: every lounge seat) */
         attr(pl, 'aria-pressed', a.selected ? 'true' : 'false'); attr(pl, 'aria-label', a.label); attr(pl, 'title', a.tip);
-        const psig = JSON.stringify([a.name, a.role, a.word, a.task, a.helpers, d.state]);
-        if (pl._sig !== psig) {
-          pl._sig = psig; pl.textContent = '';
-          const l1 = document.createElement('span'); l1.className = 'ro-l1';
-          const nm = document.createElement('b'); nm.textContent = a.name; l1.appendChild(nm);
-          const rl = document.createElement('span'); rl.className = 'ro-role'; rl.textContent = a.role; l1.appendChild(rl);
-          if (a.helpers.length) { const h = document.createElement('span'); h.className = 'ro-help'; h.textContent = '+' + a.helpers.length + ' '; a.helpers.slice(0, 3).forEach((s) => h.insertAdjacentHTML('beforeend', dotHTML(s))); l1.appendChild(h); }
-          const l2 = document.createElement('span'); l2.className = 'ro-l2';
-          l2.insertAdjacentHTML('beforeend', dotHTML(d.state));
-          l2.appendChild(document.createTextNode(' ' + [a.word, a.task].filter(Boolean).join(' · ')));
-          pl.appendChild(l1); pl.appendChild(l2);
+        plateFill(pl, a, d.state);
+        /* spec 059 FR-170 (#1155): Open office's rename pencil (.ren[data-ren]: the app's own click and F2 handlers, the same in-place edit), right
+           after its plate (a button cannot sit inside one) so the plate's hover and focus show it; CSS anchors it just after the name: no layout read */
+        if (a.ren) {
+          const anc = '--ren-' + k.replace(/[^A-Za-z0-9_-]/g, '_'), nm = pl._parts.nm;
+          if (nm.style.getPropertyValue('anchor-name') !== anc) nm.style.setProperty('anchor-name', anc);
+          const rb = el(chrome, 'rn:' + k, 'button', 'ren ro-ren');
+          if (pl.nextElementSibling !== rb) pl.after(rb);
+          if (rb.type !== 'button') rb.type = 'button'; dset(rb, 'ren', k); attr(rb, 'aria-label', 'Rename ' + a.name); attr(rb, 'title', 'Rename ' + a.name);
+          if (rb.style.getPropertyValue('position-anchor') !== anc) rb.style.setProperty('position-anchor', anc);
+          if (!rb.firstChild && model.renIcon) rb.innerHTML = model.renIcon; /* the app's own icon markup (trusted, as alertIcon) */
         }
-      }
     }
     /* the lobby band: fixtures, their lights, visitors and chips, place plates (FR-023..FR-027, FR-045) */
     const byPlace = new Map(model.places.map((p) => [p.id, p]));
     for (const fx of lay.fixtures) {
       const p = byPlace.get(fx.id), file = 'fx-' + fx.id + '.webp';
-      if (fx.art && !fx.custom && !BAD.has(WD + file)) { const im = el(art, 'f:' + fx.id, 'img', 'ro-fx'); box(im, fx.art); im.dataset.place = fx.id; img(im, file); }
-      else if (fx.art && fx.custom) { const ki = el(art, 'f:' + fx.id, 'div', 'ro-kiosk'); ki.dataset.place = fx.id; box(ki, { x: fx.art.x + fx.art.w * 0.2, y: fx.art.y + fx.art.h * 0.35, w: fx.art.w * 0.6, h: fx.art.h * 0.65 }); if (ki._ic !== p.icon) { ki._ic = p.icon; ki.innerHTML = p.icon || ''; } }
+      if (fx.art && !fx.custom && !BAD.has(WD + file)) { const im = el(art, 'f:' + fx.id, 'img', 'ro-fx'); box(im, fx.art); dset(im, 'place', fx.id); img(im, file); }
+      else if (fx.art && fx.custom) { const ki = el(art, 'f:' + fx.id, 'div', 'ro-kiosk'); dset(ki, 'place', fx.id); box(ki, { x: fx.art.x + fx.art.w * 0.2, y: fx.art.y + fx.art.h * 0.35, w: fx.art.w * 0.6, h: fx.art.h * 0.65 }); if (ki._ic !== p.icon) { ki._ic = p.icon; ki.innerHTML = p.icon || ''; } }
       const fl = L.fixtureLight(fx.id, p.visitors.length, p.visitors.some((v) => v.needsYou));
       if (fl && fx.art) { const li = el(lights, 'fl:' + fx.id, 'div', 'ro-fxl fxl-' + fl + (fx.id === 'boss' ? ' boss' : '')); box(li, fx.light); }
       for (const v of fx.visitors) {
@@ -448,7 +472,7 @@
           const m = L.personMotion(v.id, v.fig.pose, null), fresh = !art._k.has('v:' + v.id), mov = moving() && !OFF.has(v.id);
           const two = mov && m.kind === 'frames' && v.fig.fileB && !BAD.has(SD + v.fig.fileB) && !(GLIDING.has(v.id) || (fresh && CUR.drawn && WHERE.has(v.id))) ? second(art, 'vb:' + v.id, v.id, v.fig.b || v.fig, v.fig.fileB, 'ro-visitor2', m) : null;
           const cl = two && two.on ? ' m-a m-' + m.style : mov ? ({ breathe: ' m-br', knock: ' m-knock' }[m.kind] || '') : '';
-          const im = el(art, 'v:' + v.id, 'img', 'ro-visitor' + cl); box(im, v.fig); im.dataset.for = v.id; im.dataset.place = fx.id; im.dataset.pose = v.fig.pose; im.dataset.faces = v.fig.faces; im.dataset.feet = String(Math.round(v.fig.feetY * 10) / 10); img(im, v.fig.file, true);
+          const im = el(art, 'v:' + v.id, 'img', 'ro-visitor' + cl); box(im, v.fig); dset(im, 'for', v.id); dset(im, 'place', fx.id); dset(im, 'pose', v.fig.pose); dset(im, 'faces', v.fig.faces); dset(im, 'feet', String(Math.round(v.fig.feetY * 10) / 10)); img(im, v.fig.file, true, v.fig.w);
           if (cl) { setVar(im, '--ro-per', m.period + 's'); setVar(im, '--ro-sw', m.sway + 's'); setVar(im, '--ro-u', (v.fig.h / 100).toFixed(3) + 'px'); setVar(im, '--ro-org', '50% ' + px(v.fig.feetY - v.fig.y)); }
           if (fresh && CUR.drawn && moving() && !hiddenNow() && !glide(im, v.id, WHERE.get(v.id), v.fig)) fadeIn(im, 150, 150);
           WHERE.set(v.id, v.fig);
@@ -456,15 +480,15 @@
         }
         /* FR-026 "as the flat lobby": a go-place visitor (Boss, Bank, Coffee) is the flat lobby's own button (data-pvopen, and
            data-coffeeid for the coffee menu): app.js's delegated handlers open the chat; others forward to their plate (data-for) */
-        const ch = el(chrome, 'vc:' + v.id, p.go ? 'button' : 'span', 'ro-chip' + (ag.needsYou ? ' wait' : '')); box(ch, v.chip); ch.dataset.y = String(v.chip.y); ch.dataset.x = String(v.chip.x);
-        if (p.go) { ch.type = 'button'; ch.dataset.pvopen = v.id; if (fx.id === 'coffee') ch.dataset.coffeeid = v.id; attr(ch, 'aria-label', ag.title + '. Open the chat.'); } else ch.dataset.for = v.id;
-        attr(ch, 'title', ag.title); ch.dataset.name = ag.name; chipFill(ch, ag.name, ag.needsYou, model.alertIcon);
+        const ch = el(chrome, 'vc:' + v.id, p.go ? 'button' : 'span', 'ro-chip' + (ag.needsYou ? ' wait' : '')); dset(ch, 'y', String(v.chip.y)); dset(ch, 'x', String(v.chip.x)); /* its place is stagger()'s to write */
+        if (p.go) { if (ch.type !== 'button') ch.type = 'button'; dset(ch, 'pvopen', v.id); if (fx.id === 'coffee') dset(ch, 'coffeeid', v.id); attr(ch, 'aria-label', ag.title + '. Open the chat.'); } else dset(ch, 'for', v.id);
+        attr(ch, 'title', ag.title); dset(ch, 'name', ag.name); chipFill(ch, ag.name, ag.needsYou, model.alertIcon);
       }
       /* FR-025/FR-026 "as the flat lobby": the people that do not fit ("+N") open the flat lobby's own list (data-placemore, app.js
          openPlaceMenu), so the plate is a button then, with a name that says so */
       const pl = el(chrome, 'fp:' + fx.id, p.post || fx.more > 0 ? 'button' : 'div', 'ro-lplate' + (p.visitors.some((v) => v.needsYou) ? ' wait' : '')); box(pl, { x: fx.plate.x, y: fx.plate.y });
-      if (p.post) { pl.type = 'button'; pl.dataset.post = '1'; } else if (fx.more > 0) { pl.type = 'button'; pl.dataset.placemore = fx.id; attr(pl, 'aria-haspopup', 'menu'); } else { attr(pl, 'role', 'group'); }
-      pl.dataset.place = fx.id; pl.style.maxWidth = px(Math.max(44, fx.plate.w));
+      if (p.post) { if (pl.type !== 'button') pl.type = 'button'; dset(pl, 'post', '1'); } else if (fx.more > 0) { if (pl.type !== 'button') pl.type = 'button'; dset(pl, 'placemore', fx.id); attr(pl, 'aria-haspopup', 'menu'); } else { attr(pl, 'role', 'group'); }
+      dset(pl, 'place', fx.id); sty(pl, 'maxWidth', px(Math.max(44, fx.plate.w)));
       attr(pl, 'title', fx.more > 0 ? p.title + '. ' + fx.more + ' more: open the list.' : p.title); attr(pl, 'aria-label', fx.more > 0 ? p.title + '. ' + fx.more + ' more: open the list.' : p.title);
       /* owner 2026-10-31 09:03: no bare count when the people are visible; "+N" only for those that do not fit */
       const lsig = JSON.stringify([p.label, fx.more]);
@@ -474,9 +498,11 @@
     sweep(art, drawn && moving() && !hiddenNow()); [amb, lights, chrome].forEach((l) => sweep(l));
     for (const id of WHERE.keys()) if (!CUR.agents.has(id)) WHERE.delete(id); /* a session gone: what stays is bounded by the sessions there are */
     watchBody(); wasHidden = hiddenNow();
-    fitPlates(chrome, lay.width);
-    fitRoles(chrome);
-    stagger(chrome, lay.width);
+    fitRoles(chrome); /* keeps its own record of what it measured */
+    /* FR-184: a status update reads no layout here: chips and plates are measured and placed again only when one of them or the width changed */
+    const lobbySig = JSON.stringify([lay.width, [...chrome.querySelectorAll(':scope > .ro-chip')].map((c) => [c.dataset.name, c.dataset.x, c.dataset.y, !!c._ic]), [...chrome.querySelectorAll(':scope > .ro-lplate')].map((e) => [e.dataset.place, e.title, e.style.left, e.style.top])]);
+    if (chrome._lobbySig !== lobbySig) { placeLobby(chrome, lay.width); chrome._lobbySig = document.hidden || document.body.classList.contains('panel-open') ? null : lobbySig; } /* under a chat nothing is laid out: what it measures there is not remembered */
+    else for (const e of chrome.querySelectorAll(':scope > .ro-chip, :scope > .ro-lplate')) if (e._at) { sty(e, 'left', e._at[0]); sty(e, 'top', e._at[1]); if (e._at[2]) sty(e, 'maxWidth', e._at[2]); } /* the draw above wrote the unplaced box: back to where they were placed */
     /* a chip or plate does not travel: it fades in where it now is, so nothing passes over anything (owner 2026-11-01) */
     for (const e of chrome.querySelectorAll(':scope > .ro-chip, :scope > .ro-lplate')) {
       const L = parseFloat(e.style.left), T = parseFloat(e.style.top);
@@ -502,6 +528,56 @@
     settle(chrome, lay.width);
     return lay;
   }
+
+  /* FR-018, FR-184: the folder sign keeps its nodes: only the counts and the cost change on a status update, and the + and the room menu keep the focus */
+  function signFill(sg, f, z) {
+    const sig = JSON.stringify([f.name, f.path, !!f.cost, f.newSess, f.menu, z.part]);
+    if (sg._sig !== sig) {
+      sg._sig = sig; sg.textContent = ''; sg._cnt = null; sg._cost = null;
+      const b = document.createElement('b'); b.textContent = z.part > 1 ? f.name + ' (continued)' : f.name; b.title = f.name + '\n' + f.path; sg.appendChild(b);
+      if (z.part > 1) return;
+      const p = document.createElement('span'); p.className = 'ro-path'; p.textContent = f.path; sg.appendChild(p);
+      const sc = document.createElement('span'); sc.className = 'ro-sc'; sg._sc = sc; sg._cnt = new Map();
+      if (f.cost) { const m = document.createElement('span'); m.className = 'ro-cost'; sc.appendChild(m); sg._cost = m; }
+      if (f.newSess) { const nb = document.createElement('button'); nb.type = 'button'; nb.className = 'ro-sb'; nb.dataset.newsess = z.id; nb.title = 'New session in ' + f.name; nb.setAttribute('aria-label', 'New session in ' + f.name); nb.textContent = '+'; sc.appendChild(nb); }
+      if (f.menu) { const mb = document.createElement('button'); mb.type = 'button'; mb.className = 'ro-sb'; mb.dataset.foldermenu = z.id; mb.setAttribute('aria-haspopup', 'menu'); mb.setAttribute('aria-label', 'Folder actions for ' + f.name); mb.title = 'Folder actions'; mb.textContent = '⋯'; sc.appendChild(mb); }
+      sg.appendChild(sc);
+    }
+    if (!sg._cnt) return;
+    if (sg._cost) text(sg._cost, f.cost);
+    /* one count per state, reused by state and kept in the model's order, in front of the cost and the buttons */
+    const sc = sg._sc, live = new Set(f.counts.map((c) => c.state));
+    for (const [st, e] of sg._cnt) if (!live.has(st)) { e.remove(); sg._cnt.delete(st); }
+    let next = sc.firstChild;
+    for (const c of f.counts) {
+      let e = sg._cnt.get(c.state);
+      if (!e) { e = document.createElement('span'); e.className = 'ro-cnt'; e.insertAdjacentHTML('beforeend', dotHTML(c.state)); e._n = document.createTextNode(''); e.appendChild(e._n); sg._cnt.set(c.state, e); }
+      if (e._n.data !== String(c.n)) e._n.data = String(c.n);
+      attr(e, 'title', c.n + ' ' + c.word);
+      if (e === next) next = next.nextSibling; else sc.insertBefore(e, next);
+    }
+  }
+
+  /* FR-016, FR-184: the plate keeps its nodes on a status change: only the text and the dot that changed are written (a helper's list is rebuilt when it changes) */
+  function plateFill(pl, a, state) {
+    let P = pl._parts;
+    if (!P) {
+      P = pl._parts = { l1: document.createElement('span'), nm: document.createElement('b'), rl: document.createElement('span'), l2: document.createElement('span'), dot: document.createElement('span'), tn: document.createTextNode(''), h: null, hs: '' };
+      P.l1.className = 'ro-l1'; P.rl.className = 'ro-role'; P.l1.append(P.nm, P.rl);
+      P.l2.className = 'ro-l2'; P.dot.setAttribute('aria-hidden', 'true'); P.l2.append(P.dot, P.tn);
+      pl.textContent = ''; pl.append(P.l1, P.l2);
+    }
+    text(P.nm, a.name); text(P.rl, a.role);
+    const hs = a.helpers.join();
+    if (P.hs !== hs) {
+      P.hs = hs; if (P.h) { P.h.remove(); P.h = null; }
+      if (a.helpers.length) { P.h = document.createElement('span'); P.h.className = 'ro-help'; P.h.textContent = '+' + a.helpers.length + ' '; a.helpers.slice(0, 3).forEach((s) => P.h.insertAdjacentHTML('beforeend', dotHTML(s))); P.l1.appendChild(P.h); }
+    }
+    const dc = dotClass(state), line = ' ' + [a.word, a.task].filter(Boolean).join(' · ');
+    if (P.dot.className !== dc) P.dot.className = dc;
+    if (P.tn.data !== line) P.tn.data = line;
+  }
+
 
   /* spec 097 FR-119 (empty office): a floor with nothing on it. Three empty desks of the world, their screens off, under the plate that holds
      the flat office's own sentence (word for word, textContent). The shared lobby above is the real one (the caller passes the places). */
@@ -539,15 +615,15 @@
     const avoid = A(lay);
     if (EMPTY_BOX) avoid.push(EMPTY_BOX);
     /* with more than four agents the monitors are read from afar: a slip takes a spot clear of them, else a smaller variant (the pill); with big screens (four or fewer) it may sit over one */
-    const screens = lay.zones.flatMap((z) => z.desks.map((d) => d.screen));
-    const HARD = lay.cabinet ? [...screens, ...lay.zones.flatMap((z) => z.desks.flatMap((d) => [d.desk, d.person]).filter(Boolean))] : []; /* what no slip may ever cover in the arcade */
+    const desks = lay.zones.flatMap((z) => z.desks).concat(lay.lounge ? lay.lounge.desks : []), screens = desks.map((d) => d.screen);
+    const HARD = lay.cabinet ? [...screens, ...desks.flatMap((d) => [d.desk, d.person]).filter(Boolean)] : []; /* what no slip may ever cover in the arcade */
     if (lay.cabinet) avoid.push(...HARD); /* spec 102, owner 2026-11-03: in the arcade nothing covers a cabinet or a person */
     const softAvoid = lay.big || lay.cabinet ? [] : screens;
     const bounds = { x: 4, y: lay.lobbyH + 4, w: lay.width - 8, h: lay.height - lay.lobbyH - 8 };
     const door = (id) => { const f = lay.fixtures.find((x) => x.id === id); return f ? { x: f.slot.x + f.slot.w / 2, y: lay.lobbyH } : { x: lay.width / 2, y: lay.lobbyH }; };
     const hits = (r) => avoid.some((q) => r.x < q.x + q.w && q.x < r.x + r.w && r.y < q.y + q.h && q.y < r.y + r.h);
     const put = (key, cls, build, anchor, variants, surface) => {
-      const e = el(chrome, key, 'div', cls); e.dataset.surface = surface;
+      const e = el(chrome, key, 'div', cls); dset(e, 'surface', surface);
       /* a late stylesheet, font or text change gives the slip another box than the one it was placed with: it is placed again (once per change) */
       if (typeof ResizeObserver === 'function') {
         if (!SLIP_RO) SLIP_RO = new ResizeObserver((list) => { for (const en of list) { const t = en.target; if (t._at && (Math.ceil(t.offsetWidth) + 2 > t._at.w || Math.ceil(t.offsetHeight) + 2 > t._at.h) && onArt) onArt(); } });
@@ -572,11 +648,11 @@
           if (!at) break;
           e.style.left = px(at.x); e.style.top = px(at.y);
           const r2 = size();
-          if (r2.w <= r.w && r2.h <= r.h) { e._at = at; e._v = v; e.dataset.variant = v; avoid.push(at); return true; }
+          if (r2.w <= r.w && r2.h <= r.h) { e._at = at; e._v = v; dset(e, 'variant', v); avoid.push(at); return true; }
           r = r2;
         }
       }
-      e.hidden = true; e._at = null; e._v = null; e.dataset.variant = 'none'; return false;
+      e.hidden = true; e._at = null; e._v = null; dset(e, 'variant', 'none'); return false;
     };
     const btn = (label, title, cls, data) => { const b = document.createElement('button'); b.type = 'button'; b.className = cls === 'link' ? 'linkbtn ro-sbtn' : cls === 'sl-fold' || cls === 'sl-more' || cls === 'ro-pill' ? 'ro-sbtn ' + cls : 'btn sm ro-sbtn ' + cls; /* the inbox's own button classes (spec 052 FR-076) */ b.textContent = label; if (title) b.title = title; for (const k of Object.keys(data)) b.dataset[k] = String(data[k]); return b; };
     const p = (cls, t) => { const n = document.createElement('p'); n.className = cls; n.textContent = t; return n; };
@@ -618,7 +694,7 @@
       }, door('bank'), lay.cabinet ? ['pill'] : ['full', 'pill'], 'limit-card');
     }
     for (const B of slips.elicit || []) {
-      const d = lay.zones.flatMap((z) => z.desks).find((x) => x.id === B.id);
+      const d = lay.zones.flatMap((z) => z.desks).concat(lay.lounge ? lay.lounge.desks : []).find((x) => x.id === B.id);
       if (!d) continue;
       put('slip:' + B.id, 'ro-slip ro-bubble', {
         sig: B,
@@ -637,6 +713,10 @@
   /* a font that arrives after the measure (a lazily loaded bold face, another machine's metrics) widens a chip or plate: a
      ResizeObserver sees it and places again, so nothing overlaps in the settled state. A width equal to the one the placement
      used ends it (no loop). */
+  function placeLobby(chrome, W) {
+    fitPlates(chrome, W); stagger(chrome, W);
+    for (const e of chrome.querySelectorAll(':scope > .ro-chip, :scope > .ro-lplate')) e._at = [e.style.left, e.style.top, e.style.maxWidth];
+  }
   function settle(chrome, W) {
     if (typeof ResizeObserver !== 'function') return;
     chrome._W = W;
@@ -648,7 +728,7 @@
           queued = false;
           if (!chrome.isConnected) return;
           const moved = [...chrome.querySelectorAll(':scope > .ro-chip, :scope > .ro-lplate')].some((e) => e._w != null && Math.abs(e.getBoundingClientRect().width - e._w) > 0.5);
-          if (moved) { chrome._settled = (chrome._settled || 0) + 1; fitPlates(chrome, chrome._W); stagger(chrome, chrome._W); } /* _settled: the driver sees the observer act */
+          if (moved) { chrome._settled = (chrome._settled || 0) + 1; placeLobby(chrome, chrome._W); } /* _settled: the driver sees the observer act */
         });
       });
     }
@@ -660,10 +740,11 @@
   function second(art, key, id, rect, file, cls, m) {
     const prev = art._k.get(key), on = !!prev && prev._file === file && prev._ok;
     const b = el(art, key, 'img', cls + (on ? ' m-b m-' + m.style : '') + (OFF.has(id) ? ' ro-off' : ''));
-    box(b, rect); b.dataset.for = id; setVar(b, '--ro-per', m.period + 's'); setVar(b, '--ro-sw', m.sway + 's'); setVar(b, '--ro-u', (rect.h / 100).toFixed(3) + 'px');
-    if (b._file !== file) {
+    box(b, rect); dset(b, 'for', id); setVar(b, '--ro-per', m.period + 's'); setVar(b, '--ro-sw', m.sway + 's'); setVar(b, '--ro-u', (rect.h / 100).toFixed(3) + 'px');
+    const fresh = b._file !== file;
+    img(b, file, true, rect.w); /* FR-183: the second frame takes the same size as the first (its `sizes` follows the shown width on every render, as the first's does) */
+    if (fresh) {
       b._file = file; b._ok = false; b._clock = false;
-      img(b, file, true);
       b.decode().then(() => { if (b._file === file) { b._ok = true; if (onArt) onArt(); } }, () => {});
     }
     return { b, on };
@@ -744,6 +825,7 @@
     wasHidden = hiddenNow();
     const h = hiddenNow(); CUR.ro.classList.toggle('paused', h); if (h) finishMoves(CUR.ro);
     if (h) { closeZoom(); return; }
+    QUIET_POINTER = true; QUIET_AT = ''; /* back in view: a pointer resting on a screen is not asking to read it */
     if (moving() && !CUR.pixelArt) onGrid(CUR.ro); /* FR-229 */
     for (const [id, s] of SCR) if (s.dirty) plan(id);
   }
@@ -773,19 +855,29 @@
   const ZOOM_W = [380, 480], ZOOM_HEAD = 44, ZOOM_LH = 17, ZOOM_ROWS = 12, ZOOM_MIN_ROWS = 4;
   function wireZoom(ro) {
     let wait = 0;
+    ro.addEventListener('pointermove', (e) => {
+      if (!QUIET_POINTER) return;
+      const at = e.clientX + ',' + e.clientY;
+      if (!QUIET_AT) QUIET_AT = at;
+      if (QUIET_AT === at) return;
+      QUIET_POINTER = false;
+      const sc = e.target.closest && e.target.closest('.ro-screen');
+      if (sc && sc.dataset.for && e.pointerType !== 'touch' && DISMISSED !== sc.dataset.for) { clearTimeout(wait); ARMED = true; wait = setTimeout(() => { ARMED = false; openZoom(sc.dataset.for, 'hover'); }, 120); }
+    });
     ro.addEventListener('pointerover', (e) => {
       const sc = e.target.closest && e.target.closest('.ro-screen');
-      if (!sc || e.pointerType === 'touch' || !sc.dataset.for) return;
+      if (QUIET_POINTER && !QUIET_AT) QUIET_AT = e.clientX + ',' + e.clientY;
+      if (QUIET_POINTER || !sc || e.pointerType === 'touch' || !sc.dataset.for) return;
       if ((ZOOM && ZOOM.hover && ZOOM.id === sc.dataset.for) || DISMISSED === sc.dataset.for) return; /* Esc holds until the pointer has left */
-      clearTimeout(wait); wait = setTimeout(() => openZoom(sc.dataset.for, 'hover'), 120); /* crossing the room opens nothing */
+      clearTimeout(wait); ARMED = true; wait = setTimeout(() => { ARMED = false; openZoom(sc.dataset.for, 'hover'); }, 120); /* crossing the room opens nothing */
     });
     ro.addEventListener('pointerout', (e) => {
       const sc = e.target.closest && e.target.closest('.ro-screen');
       if (!sc || (e.relatedTarget && sc.contains(e.relatedTarget))) return;
-      clearTimeout(wait); DISMISSED = '';
+      clearTimeout(wait); ARMED = false; DISMISSED = '';
       if (ZOOM && ZOOM.id === sc.dataset.for) leaveZoom('hover');
     });
-    ro.addEventListener('focusin', (e) => { const p = e.target.closest && e.target.closest('.ro-plate'); if (p && p.matches(':focus-visible')) openZoom(p.dataset.id, 'focus'); });
+    ro.addEventListener('focusin', (e) => { const p = e.target.closest && e.target.closest('.ro-plate'); if (p && !QUIET_FOCUS && p.matches(':focus-visible')) openZoom(p.dataset.id, 'focus'); });
     ro.addEventListener('focusout', (e) => { const p = e.target.closest && e.target.closest('.ro-plate'); if (p && ZOOM && ZOOM.id === p.dataset.id) leaveZoom('focus'); });
   }
   function zoomKey(e) {
@@ -891,15 +983,19 @@
     }
   }
 
-  /* a chip is [alert icon] + name; the icon is the app's own Alert sign (app.js ALERT_ICON, built from trusted markup, not the model's
-     text; constitution V: no emoji), the name goes in with textContent. `label` is the name or, when crowded, the initials. */
+  /* a chip is [alert icon] + name; the icon is the app's own Alert sign (app.js signIcon, built from trusted markup, not the model's
+     text; constitution V: no emoji), the name goes in with textContent. `label` is the name. When stagger() has cut a crowded chip's
+     name (the whole name kept in data-full), a render with the same name leaves the cut text as it is: the chip keeps the text it was placed
+     with when the lobby's signature holds and stagger() does not run again (FR-184); a new name or icon clears data-full and writes the name. */
   function chipFill(ch, label, wait, icon) {
     const w = wait && icon ? icon : '';
     if (ch._ic !== w || !ch.querySelector('.ro-cn')) {
-      ch._ic = w; ch.textContent = '';
+      ch._ic = w; ch.textContent = ''; delete ch.dataset.full;
       if (w) { const i = document.createElement('span'); i.className = 'ro-ci'; i.setAttribute('aria-hidden', 'true'); i.innerHTML = w; ch.appendChild(i); }
       const n = document.createElement('span'); n.className = 'ro-cn'; ch.appendChild(n);
     }
+    if (ch.dataset.full === label) return;
+    if (ch.dataset.full !== undefined) delete ch.dataset.full;
     text(ch.querySelector('.ro-cn'), label);
   }
 
@@ -1006,7 +1102,7 @@
   }
 
   /* forget the session picks (Settings change of Characters, a test) */
-  function reset() { PEOPLE = null; SEEN.clear(); TICKS.clear(); WHERE.clear(); }
+  function reset() { PEOPLE = null; SEEN.clear(); WHERE.clear(); }
   /* leaving Real office: nothing of it goes on, and no key listener of the zoom stays to swallow an Escape */
   function leave() {
     closeZoom();
@@ -1019,5 +1115,7 @@
     wasHidden = false;
     CUR = null;
   }
-  root.DurbarRealOffice = { render, reset, leave, feed, resume, whereSize: () => WHERE.size, bad: () => [...BAD], resolve, stagger, personOf: (id) => (PEOPLE && has(PEOPLE, id) ? PEOPLE[id] : null) /* the chat's header draws the same person (spec 097 FR-106) */ }; /* resolve: for the driver's deterministic check */
+  /* spec 097 FR-186: work the room has put off on a timer (a screen's throttled repaint, FR-033; a redraw when a done tick ends): check-office-ops-real starts a measured update only when there is none, so no earlier update's deferred work is counted in it. Read only */
+  const pending = () => { let screens = 0; for (const s of SCR.values()) if (s.timer) screens++; return { screens }; }; /* FR-236: no done tick to wait for any more */
+  root.DurbarRealOffice = { hoverState: () => ({ still: QUIET_POINTER, armed: ARMED }), pending, render, reset, leave, feed, resume, quietFocus, whereSize: () => WHERE.size, bad: () => [...BAD], resolve, stagger, personOf: (id) => (PEOPLE && has(PEOPLE, id) ? PEOPLE[id] : null) /* the chat's header draws the same person (spec 097 FR-106) */ }; /* resolve: for the driver's deterministic check */
 })(typeof self !== 'undefined' ? self : this);

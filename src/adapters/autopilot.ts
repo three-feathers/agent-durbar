@@ -1,7 +1,8 @@
 /**
  * Spec 099 (Autopilot), the shared core: pure, no SDK, no I/O, no timers. All three adapters use it, so the rules are written once.
- * Phase 1 only: no adapter and no main code starts a run, and no descriptor reports `capabilities.autopilot`. One live use: `claudeHistory.ts`
- * (`typedPrompt`, the Previous-sessions list and chat history) calls `isClaudeContinuation` to hide a synthetic `Stop hook feedback:` message.
+ * The adapters use it through `autopilotHost.ts`; nothing in main calls it before T030.
+ * One live use: `claudeHistory.ts` (`typedPrompt`, the Previous-sessions list and chat history) calls `isClaudeContinuation` to hide a
+ * synthetic `Stop hook feedback:` message.
  */
 
 import { isObj } from '../shared/guards';
@@ -29,9 +30,9 @@ export const BACKSTOP_TURNS_PER = 100;
 export const NO_PROGRESS_AFTER = 2;
 /** How often an adapter must call `checkElapsed()`. A clock set back between two samples hides at most this much real time per step back. */
 export const CLOCK_SAMPLE_MS = 60_000;
-/** FR-011: Claude Code's own limit: a goal over this many trimmed characters gets a plain-text refusal from the CLI, so Durbar refuses it first, with a reason (spec Changes, awaiting owner review). */
+/** FR-011: Claude Code's own limit: a goal over this many trimmed UTF-16 code units (JS `.length`) gets a plain-text refusal from the CLI, so Durbar refuses it first, with a reason (`real:` CLI 2.1.317, 2026-11-03). */
 export const GOAL_MAX_CLAUDE = 4000;
-/** FR-011: the words that make Claude Code's `/goal` clear the goal instead of setting one (reported from a read of the CLI 2.1.316 binary, not recorded: `[KNOWN GAP]`, T091), trimmed and case-insensitive. */
+/** FR-011: the words that make Claude Code's `/goal` clear the goal instead of setting one (`real:` CLI 2.1.317, 2026-11-03: the whole trimmed argument, case-insensitive), so a goal that is only one of them is refused. */
 export const CLAUDE_GOAL_RESERVED: readonly string[] = ['clear', 'stop', 'off', 'reset', 'none', 'cancel'];
 export const RUN_ID_MAX = 128;
 
@@ -287,22 +288,20 @@ export class AutopilotRun {
   }
 }
 
-export type GoalTextResult = { ok: true; text: string } | { ok: false; reason: 'empty' | 'reserved' | 'too-long' | 'command' };
+export type GoalTextResult = { ok: true; text: string } | { ok: false; reason: 'empty' | 'reserved' | 'too-long' };
 
 /** Hidden characters removed from a goal: `HIDDEN_ALL_RE` plus the bidi marks it leaves (LRM, RLM, ALM, the deprecated U+206A-F) and the tag characters. ZWNJ and ZWJ stay: real scripts need them. */
 const GOAL_HIDDEN_RE = /[\u200e\u200f\u061c\u206a-\u206f]|[\u{e0000}-\u{e007f}]/gu;
 /** A visible character: not white space, a control, a format, surrogate, private-use or noncharacter, a combining mark on its own, a Default_Ignorable character (joiners, Hangul fillers, variation selectors, Khmer inherent vowels, reserved ranges) or the braille blank. */
 const VISIBLE_RE = /[^\s\p{Z}\p{Cc}\p{Cf}\p{Cs}\p{Co}\p{M}\p{Default_Ignorable_Code_Point}\p{Noncharacter_Code_Point}\u2800]/u;
-/** A slash command: the line starts with `/word`, and that first word holds no further `/` (so `/usr/bin/env` and `/ foo` are not one). */
-const SLASH_COMMAND_RE = /^\/[^\s/]+(?:\s|$)/;
 
 /**
  * FR-011, S2: the goal sent for a message. U+2028/9 become a newline (two words never join); the other hidden characters (bidi, zero-width space,
  * tag characters, the rest of `HIDDEN_ALL_RE`; ZWNJ and ZWJ stay) are removed; each run of C0 (but newline), DEL and C1 characters becomes
  * one space, so CRLF becomes a space and a newline. Text with no visible character (spaces and joiners only) is `empty`, for every app.
  * On Claude Code (and with no `app`, the strictest rules) it also refuses: a whole text that is one of `CLAUDE_GOAL_RESERVED` (the CLI would
- * clear the goal), a trimmed text over 4000 characters (the CLI refuses it in plain text), and a line shaped like a slash command (`/word`, no
- * further `/` in that word; a safe default, awaiting owner review). Linear in the input length; takes the user's text only.
+ * clear the goal) and a trimmed text over 4000 UTF-16 code units (the CLI refuses it in plain text). A line starting with `/` is
+ * accepted: the CLI runs one command per message and takes the rest, newlines included, as the condition (`real:` 2.1.317; owner, 2026-11-03). Linear in the input length; takes the user's text only.
  */
 export function goalText(text: unknown, app?: 'claude' | 'codex' | 'copilot'): GoalTextResult {
   if (typeof text !== 'string') return { ok: false, reason: 'empty' };
@@ -314,7 +313,6 @@ export function goalText(text: unknown, app?: 'claude' | 'codex' | 'copilot'): G
   if (app === undefined || app === 'claude') {
     if (t.length > GOAL_MAX_CLAUDE) return { ok: false, reason: 'too-long' };
     if (CLAUDE_GOAL_RESERVED.includes(t.toLowerCase())) return { ok: false, reason: 'reserved' };
-    if (clean.split('\n').some((line) => SLASH_COMMAND_RE.test(line.replace(/^[\s\u200c\u200d]+/, '')))) return { ok: false, reason: 'command' };
   }
   return { ok: true, text: t }; // the trimmed text is what was checked and what is sent
 }

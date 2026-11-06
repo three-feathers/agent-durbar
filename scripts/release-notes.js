@@ -80,14 +80,45 @@ function publishCommand(tag) {
  * The repo's own redaction (spec 012). It is TypeScript and the verify job installs nothing, so Node loads it with its built-in type
  * stripping (Node 22.18 and later). Fail closed: without it there are no test-build notes, never unmasked ones.
  */
-function loadRedact() {
-  try {
-    const r = require(path.join(__dirname, '..', 'src', 'shared', 'redact.ts'));
-    if (typeof r.redact !== 'function' || typeof r.cut !== 'function') throw new Error('no redact or cut export');
-    return r;
-  } catch (e) {
-    throw new Error(`test-build notes are masked with src/shared/redact.ts, which needs Node 22.18 or later (type stripping): ${e.message}`);
+/*
+ * Spec 104 FR-080 (issue #1115; review of #1119): the mask, on every Node that `engines` allows. First `src/shared/redact.ts` itself (Node
+ * 22.18+ strips its types); else that same source compiled now, in memory, with the repo's own `typescript` (`transpileModule`: one file,
+ * no imports), so the rules used are always the source's, never an older compiled copy. Throws when neither works (no typescript, a
+ * compile error): the callers fail closed. `o.root`, `o.noStrip` (act as if Node cannot strip types), `o.ts` (the compiler, `null` = none):
+ * for tests; `DURBAR_REDACT_NO_COMPILE=1` does the same as `o.ts = null` for the CLI (it can only make the load fail).
+ */
+function loadRedact(o = {}) {
+  const root = o.root || ROOT;
+  const src = path.join(root, 'src', 'shared', 'redact.ts');
+  const ok = (r) => r && typeof r.redact === 'function' && typeof r.cut === 'function';
+  const why = [];
+  if (!o.noStrip) {
+    try {
+      const r = require(src);
+      if (ok(r)) return r;
+      why.push('redact.ts: no redact or cut export');
+    } catch (e) {
+      why.push(`redact.ts: ${e.message}`);
+    }
   }
+  try {
+    let ts = o.ts;
+    // a test seam that can only make the load fail (act as if no compiler is installed), never succeed: fail closed
+    if (ts === undefined && process.env.DURBAR_REDACT_NO_COMPILE === '1') ts = null;
+    if (ts === undefined) ts = require('typescript');
+    if (!ts) throw new Error('typescript is not installed');
+    const js = ts.transpileModule(fs.readFileSync(src, 'utf8'), { fileName: src, reportDiagnostics: false, compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
+    const Module = require('module');
+    const m = new Module(src, module);
+    m.filename = src;
+    m.paths = Module._nodeModulePaths(path.dirname(src));
+    m._compile(js, src);
+    if (ok(m.exports)) return m.exports;
+    why.push('compiled redact.ts: no redact or cut export');
+  } catch (e) {
+    why.push(`compiling redact.ts: ${e.message}`);
+  }
+  throw new Error(`test-build notes are masked with src/shared/redact.ts, which could not be loaded: ${why.join('; ')}`);
 }
 
 function git(root, args) {
@@ -174,7 +205,11 @@ function releaseNotes(root, { tag, repo, mainRef = MAIN_REF }) {
   const stable = !releaseKind(tag).prerelease;
   const heading = `${tag} ([${stable ? 'release' : 'pre-release'}](https://github.com/${repo}/releases/tag/${tag}), ${date})`;
   const { section, source } = cl.notes(root, { release: heading, previous });
-  return { kind, title: `Agent Durbar ${tag}`, heading, previous, source, notes: `${stable ? STABLE_PREAMBLE : PREAMBLE}\n\n${section}\n` };
+  // spec 008 FR-173 (T125): the Highlights block above the long list, from the fragments' `Highlight:` fields. Only while the notes
+  // come from fragments (a section already in CHANGELOG.md has had its fields dropped by the fold); none, no block.
+  const block = source === 'fragments' ? cl.highlightsBlock(cl.highlights(cl.readFragments(root))) : '';
+  const withBlock = block ? section.replace(/^(## [^\n]*\n)\n?/, `$1\n${block}\n\n### All changes\n\n`) : section;
+  return { kind, title: `Agent Durbar ${tag}`, heading, previous, source, highlights: block, notes: `${stable ? STABLE_PREAMBLE : PREAMBLE}\n\n${withBlock}\n` };
 }
 
 /* The job summary: what was checked and the fold PR's commands with the exact heading (changelog.d/README.md). */

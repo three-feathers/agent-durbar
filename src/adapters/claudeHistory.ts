@@ -15,7 +15,7 @@ import { isClaudeContinuation } from './autopilot';
 export const HEAD_BYTES = 256 * 1024;
 export const MAX_FILE_BYTES = 50 * 1024 * 1024;
 export const MAX_FILES = 200;
-const ID_RE = /^[A-Za-z0-9-]{8,80}$/;
+export const ID_RE = /^[A-Za-z0-9-]{8,80}$/;
 
 /** Claude's project folder name for a working directory: every character other than A-Z, a-z, 0-9 becomes `-`. */
 export function claudeProjectSlug(cwd: string): string {
@@ -26,19 +26,8 @@ export function claudeConfigDir(env: NodeJS.ProcessEnv = process.env): string {
   return env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
 }
 
-const lines = (text: string): Record<string, unknown>[] => {
-  const out: Record<string, unknown>[] = [];
-  for (const l of text.split('\n')) {
-    if (!l.trim()) continue;
-    try {
-      const o = JSON.parse(l) as unknown;
-      if (isObj(o)) out.push(o);
-    } catch {
-      /* a cut last line (head read) or a malformed line */
-    }
-  }
-  return out;
-};
+/* a cut last line (head read) or a malformed line is skipped */
+const lines = (text: string): Record<string, unknown>[] => text.split('\n').map(parseSessionLine).filter((o): o is Record<string, unknown> => o !== undefined);
 const tsOf = (o: Record<string, unknown>): number | undefined => {
   const t = typeof o.timestamp === 'string' ? Date.parse(o.timestamp) : NaN;
   return Number.isFinite(t) ? t : undefined;
@@ -84,21 +73,35 @@ export function sessionFromHead(id: string, head: ClaudeSessionHead, mtimeMs: nu
   return { id, title: head.title ?? 'Untitled session', startTime: head.startTime ?? mtimeMs, modifiedTime: mtimeMs, branch: head.branch };
 }
 
-/** The chat history of a session file's text: prompts, assistant text, tool calls with a short result. Side-chain lines are skipped. */
-export function claudeHistoryFromText(text: string, limits: Partial<HistoryLimits> = {}): HistoryResult {
+/** One line of a session file as an object, or undefined (blank, malformed or a cut last line). */
+export function parseSessionLine(l: string): Record<string, unknown> | undefined {
+  if (!l.trim()) return undefined;
+  try {
+    const o = JSON.parse(l) as unknown;
+    return isObj(o) ? o : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The history built one line at a time: the single per-line parser of `claudeHistoryFromText` and of the streamed read of the conversation
+ * search (spec 095 FR-024, `claudeStream.ts`). Side-chain lines are skipped; with `textOnly` tool calls and results are never stored.
+ */
+export function claudeHistoryBuilder(limits: Partial<HistoryLimits> = {}): { line(l: string): void; result(): HistoryResult } {
   const lim = { ...DEFAULT_HISTORY_LIMITS, ...limits };
   const items: HistoryItem[] = [];
   const toolIdx = new Map<string, number>();
-  for (const o of lines(text)) {
-    if (o.isSidechain === true || !isObj(o.message)) continue;
+  const take = (o: Record<string, unknown>): void => {
+    if (o.isSidechain === true || !isObj(o.message)) return;
     const content = o.message.content;
     if (o.type === 'user') {
       const p = typedPrompt(o);
       if (p) {
         items.push({ type: 'user', text: cut(p, lim.maxTextChars), ts: tsOf(o) });
-        continue;
+        return;
       }
-      if (!Array.isArray(content)) continue;
+      if (lim.textOnly || !Array.isArray(content)) return;
       for (const b of content) {
         if (!isObj(b) || b.type !== 'tool_result' || typeof b.tool_use_id !== 'string') continue;
         const i = toolIdx.get(b.tool_use_id);
@@ -113,16 +116,31 @@ export function claudeHistoryFromText(text: string, limits: Partial<HistoryLimit
       for (const b of content) {
         if (!isObj(b)) continue;
         if (b.type === 'text' && typeof b.text === 'string' && b.text.trim()) items.push({ type: 'output', text: cut(b.text.trim(), lim.maxTextChars), ts: tsOf(o) });
-        else if (b.type === 'tool_use' && typeof b.id === 'string' && typeof b.name === 'string') {
+        else if (!lim.textOnly && b.type === 'tool_use' && typeof b.id === 'string' && typeof b.name === 'string') {
           toolIdx.set(b.id, items.length);
           items.push({ type: 'tool', callId: b.id, tool: b.name, label: toolLabel(b.input), ts: tsOf(o) });
         }
       }
     }
-  }
-  const total = items.length;
-  const kept = total > lim.maxItems ? items.slice(total - lim.maxItems) : items;
-  return { items: kept, total, truncated: total > kept.length };
+  };
+  return {
+    line(l: string): void {
+      const o = parseSessionLine(l);
+      if (o) take(o);
+    },
+    result(): HistoryResult {
+      const total = items.length;
+      const kept = total > lim.maxItems ? items.slice(total - lim.maxItems) : items;
+      return { items: kept, total, truncated: total > kept.length };
+    },
+  };
+}
+
+/** The chat history of a session file's text: prompts, assistant text, tool calls with a short result. Side-chain lines are skipped. */
+export function claudeHistoryFromText(text: string, limits: Partial<HistoryLimits> = {}): HistoryResult {
+  const b = claudeHistoryBuilder(limits);
+  for (const l of text.split('\n')) b.line(l);
+  return b.result();
 }
 
 /* ------------------------------------------------------------------ fs (read-only, capped) ------------------------------------------------------------------ */

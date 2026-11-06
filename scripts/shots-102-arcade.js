@@ -12,7 +12,7 @@
  *   - a marquee, glow or cue is not FR-260's table for its state; an error's glow leaves its slot; a status update adds a node (FR-261);
  *   - flashes are not on one beat or not 1 change each 1.1 s, a person's bob is off its 4 phases or on someone not working, anything moves but transform and opacity (FR-261);
  *   - a move is not a dissolve of static masks, shows two bodies, or the coin plays more than once (FR-260, FR-262);
- *   - under reduced motion, Serious mode, forced colours or a hidden window anything runs, or a flash is not steady and different from lit (FR-260, FR-074).
+ *   - under reduced motion, Motion off, forced colours or a hidden window anything runs, or a flash is not steady and different from lit (FR-260, FR-074).
  * Screenshots: <SHOTS_OUT>/102-arcade-<n>-<w>x<h>.png
  */
 const path = require('path');
@@ -71,6 +71,14 @@ module.exports = async (ctx) => {
     console.log('[102-arcade]', tag, JSON.stringify({ g: art.g, scroll: art.scroll }));
     assert.ok(Number.isInteger(art.g) && art.g >= 2, tag + ': an integer scale: ' + art.g);
     assert.deepStrictEqual(art.off, [], tag + ': the art on the grid');
+    /* spec 102 FR-255 (owner 2026-11-04, #1104): the lobby too: every fixture and visitor at a whole scale, on a whole device pixel */
+    const lobby = await js(`(()=>{const d=devicePixelRatio,off=[];let n=0;
+      for(const i of document.querySelectorAll('#stage img.ro-fx,#stage img.ro-visitor')){if(i.hidden||!i.getClientRects().length||!i.naturalWidth)continue;n++;const b=i.getBoundingClientRect(),s=b.width*d/i.naturalWidth,s2=b.height*d/i.naturalHeight,x=b.left*d;
+        if(Math.abs(s-Math.round(s))>0.01||Math.abs(s2-Math.round(s2))>0.01||Math.round(s)<1)off.push((i.dataset.place||i.className)+' x'+s.toFixed(3));if(Math.abs(x-Math.round(x))>0.01)off.push((i.dataset.place||i.className)+' left '+x.toFixed(2));}
+      return {n,d,off};})()`);
+    console.log('[102-arcade]', tag, 'lobby', JSON.stringify({ n: lobby.n, dpr: lobby.d }));
+    assert.ok(lobby.n > 0, tag + ': the lobby has pictures');
+    assert.deepStrictEqual(lobby.off, [], tag + ': the lobby on whole pixel scales (FR-255, #1104)');
     assert.strictEqual(art.px, 'pixelated', tag + ': nearest pixel, people'); assert.strictEqual(art.cab, 'pixelated', tag + ': nearest pixel, cabinets');
     assert.strictEqual(art.scan, 0, tag + ': nothing skewed'); assert.strictEqual(art.mirrorText, 0, tag + ': no text in a mirrored element');
     if (n <= 15) { assert.strictEqual(art.scroll, false, tag + ': no office scroll'); assert.ok(art.fh <= 1, tag + ': the floor does not scroll: ' + art.fh); }
@@ -188,7 +196,10 @@ module.exports = async (ctx) => {
   };
 
   await media(MOTION('no-preference'));
+  /* every state at a cabinet: the lounge (spec 097 FR-246, its own driver check-097-lounge) is switched off for this page, as Settings does, so a done agent keeps its cabinet */
+  await js(`localStorage.setItem('durbar.shutters','off');1`);
   await loadArcade(1440, 900, 15, { romotion: '1', simfreeze: '1' });
+  await js(`localStorage.removeItem('durbar.shutters');1`);
   await setStates(STATES);
   await must(`[...document.querySelectorAll('#stage .ro-marquee.mq-flash,#stage .ro-marquee.mq-flash-red')].length>=2`, 'flashes');
   await must(`${ROOM}.filter(a=>!a.animationName).length===0`, 'a sort over');
@@ -258,7 +269,7 @@ module.exports = async (ctx) => {
   await must(`${ROOM}.filter(a=>/^ro-arc-/.test(a.animationName)).length===0`, 'reduced motion mid-session: no loop of this world, had ' + JSON.stringify(await running()), 4000);
   await media(MOTION('no-preference'));
 
-  /* FR-260: reduced motion, Serious mode, forced colours */
+  /* FR-260: reduced motion, Motion off, forced colours */
   await media(MOTION('reduce'));
   await loadArcade(1440, 900, 15, { romotion: '1', simfreeze: '1' });
   await stillChecks('reduced motion');
@@ -268,13 +279,13 @@ module.exports = async (ctx) => {
   await media(MOTION('no-preference'));
   await loadArcade(1440, 900, 15, { romotion: '1', simfreeze: '1' });
   await js(`window.DurbarScreens.openSettings();0`);
-  await must(`!!document.getElementById('seriousSw')`, 'the Serious mode switch');
-  await js(`document.getElementById('seriousSw').click();document.getElementById('scrClose').click();0`);
-  await must(`document.querySelector('#stage .ro').classList.contains('still')`, 'Serious mode on');
-  await stillChecks('Serious mode');
+  await must(`!!document.getElementById('motionSw')`, 'the Motion switch');
+  await js(`document.getElementById('motionSw').click();document.getElementById('scrClose').click();0`);
+  await must(`document.querySelector('#stage .ro').classList.contains('still')`, 'Motion off');
+  await stillChecks('Motion off');
   await js(`window.DurbarScreens.openSettings();0`);
-  await must(`!!document.getElementById('seriousSw')`, 'the Serious mode switch');
-  await js(`document.getElementById('seriousSw').click();document.getElementById('scrClose').click();0`);
+  await must(`!!document.getElementById('motionSw')`, 'the Motion switch');
+  await js(`document.getElementById('motionSw').click();document.getElementById('scrClose').click();0`);
 
   console.log('[102-arcade] PASS');
 };

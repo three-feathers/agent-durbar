@@ -19,13 +19,14 @@ import type { AgentEvent, PermissionMode } from '../src/adapters/types';
 import { eventProblems } from '../src/adapters/eventguard';
 import { FakeCodexServer, fakePid } from './fakes/codex-app-server';
 import type { FakeCodexOptions } from './fakes/codex-app-server';
+import { tmpDir } from './test-tmp';
 
 const BIN = path.join(os.tmpdir(), 'fake-codex-bin');
 /** FR-087: a refusal never offers the widest mode as the way out. */
 const noFallback = (e: Error): boolean => !/Allow all/i.test(e.message);
 const tmp: string[] = [];
 const dir = (): string => {
-  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-codex-'));
+  const d = tmpDir('durbar-codex-');
   tmp.push(d);
   return d;
 };
@@ -96,9 +97,10 @@ async function main(): Promise<void> {
   {
     assert.deepStrictEqual(JSON.parse(JSON.stringify(CODEX_CAPABILITIES)), {
       interrupt: true, resume: true, images: true, models: true, planMode: true, effort: true, modelSwitch: { verified: true, contextTier: false },
+      autopilot: { capUnit: 'tokens', attachments: false, planApproval: false, verified: false }, // spec 099 T021
       permissionModes: ['read-only', 'ask', 'allow'], permModeSwitch: 'next-message',
       usage: { tokens: true, costUsd: false, nanoAiu: false }, context: true, caps: false, helpers: true, history: true, mcpStatus: true, mcpToggle: true, mcpStart: 'session', mcpToggleApplies: 'next-message', mcpTools: true, mcpToolFilter: true, mcpContext: 'estimated',
-    mcpRestart: false, handoff: true, oneShot: true, deleteSession: true, renameSession: 'any', osSandbox: true,
+    mcpRestart: false, handoff: true, oneShot: true, accountQuota: true, deleteSession: true, renameSession: 'any', osSandbox: true,
     });
     assert.ok(Object.isFrozen(CODEX_CAPABILITIES) && Object.isFrozen(CODEX_CAPABILITIES.permissionModes) && Object.isFrozen(CODEX_CAPABILITIES.usage), 'capabilities are deeply frozen');
     const { ad } = make();

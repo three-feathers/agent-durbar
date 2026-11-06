@@ -52,8 +52,13 @@ module.exports = async (ctx) => {
     };
     const plan = (n) => emit({ type: 'plan', phase: 'proposed', requestId: 'pl' + n + '-' + w, text: '1. Do a thing' });
     const got = (n) => js(`window[${jsLiteral('__' + n)}].slice()`);
+    // #chat is a flex column: without flex:none the 4000px filler shrinks to 0 and the card is out of view only when the chat happens to
+    // overflow (with the rail the chat is taller, and on Windows the card then fit; spec 005 R1)
     const barUp = async () => {
-      await js(`(()=>{const c=document.getElementById('chat');if(!document.getElementById('fillerX')){const f=document.createElement('div');f.id='fillerX';f.style.height='4000px';c.prepend(f);}c.scrollTop=0;c.dispatchEvent(new Event('scroll'));})()`);
+      /* issue 839: the card must be painted before the chat is scrolled away from it, or the chat's auto-follow brings it back into view and the bar stays hidden (seen on a Mac) */
+      assert.ok(await until(`!!document.querySelector('#chat .question .q-item, #chat .note.perm, #chat .note.limit, #chat .note.plan')`, 8000), `${w}: the request's card is in the chat`);
+      await js(`new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r(1))))`);
+      await js(`(()=>{const c=document.getElementById('chat');if(!document.getElementById('fillerX')){const f=document.createElement('div');f.id='fillerX';f.style.height='4000px';f.style.flex='none';c.prepend(f);}c.scrollTop=0;c.dispatchEvent(new Event('scroll'));})()`);
       assert.ok(await until(`!document.getElementById('answerBar').hidden`, 5000), `${w}: the answer bar shows (the card is out of view)`);
     };
     const setup = () => js(`window.__bb=l=>[...document.querySelectorAll('#answerBar button')].find(b=>b.textContent===l);window.__cb=l=>[...document.querySelectorAll('#chat .note.limit .note-actions button')].find(b=>b.textContent===l);0`);
@@ -129,7 +134,7 @@ module.exports = async (ctx) => {
       await ask('s1-' + w, 'First?', [lbl, 'other']);
       await barUp();
       const sel = '#answerBar .' + cls;
-      assert.ok(await until(`!!document.querySelector(${jsLiteral(sel)})`, 5000), w + ': the bar has its ' + cls + ' button');
+      assert.ok(await until(`!!document.querySelector(${jsLiteral(sel)})`, 5000), w + ': the bar has its ' + cls + ' button: ' + (await js(`(()=>{const b=document.getElementById('answerBar');return b?(b.hidden?'hidden ':'')+[...b.querySelectorAll('button,input')].map(e=>e.className+'/'+(e.textContent||e.placeholder)).join(' | '):'no bar'})()`)));
       await js(`document.querySelector(${jsLiteral(sel)}).focus()`);
       await ask('s2-' + w, 'Second?', ['x', 'y']);
       assert.ok(await until(`/1 of 2/.test(document.getElementById('answerBar').textContent)`, 5000), `${w}: the bar repainted with the count`);
@@ -151,7 +156,7 @@ module.exports = async (ctx) => {
     // ---- FR-210 (B): a limit card out of view: the bar has no amount to send, only "Show in chat" ----
     await fresh();
     await limit('lb-' + w);
-    await js(`(()=>{const c=document.getElementById('chat');if(!document.getElementById('fillerX')){const f=document.createElement('div');f.id='fillerX';f.style.height='4000px';c.prepend(f);}c.scrollTop=0;c.dispatchEvent(new Event('scroll'));})()`);
+    await js(`(()=>{const c=document.getElementById('chat');if(!document.getElementById('fillerX')){const f=document.createElement('div');f.id='fillerX';f.style.height='4000px';f.style.flex='none';c.prepend(f);}c.scrollTop=0;c.dispatchEvent(new Event('scroll'));})()`);
     assert.ok(await until(`!document.getElementById('answerBar').hidden`, 5000), `${w}: the bar shows for the limit`);
     assert.deepStrictEqual(await barLabels(), ['Show in chat'], `${w}: only "Show in chat" ${jsLiteral(await barLabels())}`);
     assert.strictEqual(await js(`!!document.querySelector('#answerBar input')`), false, `${w}: no field in the bar`);
@@ -341,11 +346,14 @@ module.exports = async (ctx) => {
     await js(`document.getElementById('msgInput').focus()`);
     await plan(8);
     assert.ok(await until(`document.activeElement&&document.activeElement.textContent==='Approve'`, 5000), w + ': (the plan took the focus)');
-    wc().sendInputEvent({ type: 'keyDown', keyCode: 'V', modifiers: ['control'] });
-    wc().sendInputEvent({ type: 'keyUp', keyCode: 'V', modifiers: ['control'] });
-    await ctx.sleep(300);
-    assert.strictEqual(await js(`document.activeElement.id`), 'msgInput', w + ': Ctrl+V on Approve moves focus to the message box');
-    assert.strictEqual(await js(`document.getElementById('msgInput').value`), 'pasted text', w + ': and the paste lands there');
+    const PASTE = process.platform === 'darwin' ? ['meta'] : ['control']; /* issue 839: on a Mac Ctrl+V moves focus but only Cmd+V pastes */
+    wc().sendInputEvent({ type: 'keyDown', keyCode: 'V', modifiers: PASTE });
+    wc().sendInputEvent({ type: 'keyUp', keyCode: 'V', modifiers: PASTE });
+    /* on a Mac, Cmd+V pastes through the app menu's Edit > Paste (appmenu.ts editMenu role), which a synthetic key event never reaches: the key
+       moves the focus (the app's own handler, checked below); the menu's paste is then done as the menu does it (issue 839) */
+    assert.ok(await until(`document.activeElement&&document.activeElement.id==='msgInput'`, 3000), w + ': Ctrl+V (Cmd+V on a Mac) on Approve moves focus to the message box'); /* FR-048b: wait for it, then paste (review of #1206) */
+    if (process.platform === 'darwin') wc().paste();
+    assert.ok(await until(`document.getElementById('msgInput').value==='pasted text'`, 3000), w + ': and the paste lands there: ' + jsLiteral(await js(`document.getElementById('msgInput').value`)));
     await nkey('Return');
     assert.deepStrictEqual(await got('plan'), [], w + ': Enter after the paste does not approve the plan ' + jsLiteral(await got('plan')));
 

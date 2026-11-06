@@ -271,14 +271,16 @@
   }
   /* ---------------- spec 058 FR-213: Settings > MCP servers: Refresh MCP sign-ins automatically (on unless turned off), and what it does,
      no more than what runs ---------------- */
-  /* this delta's first part (PR 1, T178..T181, T184..T186): the reconnect before a message; the launch check and the 30-minute recheck
-     (T182, T183) come with the second part, which brings FR-213's full line */
-  const SIGNIN_REFRESH_LINE='Agent Durbar asks the agent app to reconnect remote MCP servers on its own before a message after an hour without a reply. This happens in every permission mode. Where the agent app runs its MCP servers in its own OS sandbox (Copilot in Read-only and Ask first), a reconnect did not renew the sign-in, so there Agent Durbar only tells you when a server needs you to sign in again. Only the app\u2019s own sign-in is renewed; Agent Durbar never sees it. A reconnect never starts a local server. Codex chats are not reconnected; they renew with their next session.';
+  /* the reconnect before a message (T178..T181, T184..T186) and the renewal after a failed call and its one automatic note (T190..T199, FR-218); the launch check (T182)
+     comes later and the 30-minute recheck (T183) is replaced by the renewal, so the line names what runs and no more */
+  const SIGNIN_REFRESH_LINE='Agent Durbar asks the agent app to reconnect remote MCP servers on its own before a message after an hour without a reply. This happens in every permission mode. Where the agent app runs its MCP servers in its own OS sandbox (Copilot in Read-only and Ask first), a reconnect did not renew the sign-in, so there Agent Durbar only tells you when a server needs you to sign in again. Only the app\u2019s own sign-in is renewed; Agent Durbar never sees it. A reconnect never starts a local server. In a Copilot chat, when a call to a remote server fails with a sign-in error, it reconnects that server at once and, if that worked, sends the agent one short automatic message asking it to retry the step. That is one extra message and uses AI credits; it is never sent at a spending limit, and your own message is never sent again. Turning this switch off stops both. Codex chats are not reconnected; they renew with their next session. In a Copilot chat it also checks each remote sign-in server in the background beside every message you send (a tool-list request, no AI, never holding the message) and reconnects at once one that answers unauthorized.';
   function signInRefreshRow(app){
     if(!X.bridge.setMcpSignInRefresh)return '';
     const on=!app||app.mcpSignInRefresh!==false;
     return `<div class="scr-tools mcp-refresh"><span class="swrow" style="display:flex;align-items:center;gap:10px"><b>Refresh MCP sign-ins automatically</b>${sw(on,'Refresh MCP sign-ins automatically','id="mcpRefreshSw"')}</span><span class="scr-note small" id="mcpRefreshMsg" role="status"></span></div>
-        <p class="scr-note small" id="mcpRefreshLine">${esc(SIGNIN_REFRESH_LINE)}</p>`;
+        <p class="scr-note small" id="mcpRefreshLine">${esc(SIGNIN_REFRESH_LINE)}</p>
+        ${X.bridge.setDiagnostics?`<div class="scr-tools mcp-diag"><span class="swrow" style="display:flex;align-items:center;gap:10px"><b>Diagnostics</b>${sw(!!(app&&app.diagnostics),'Diagnostics','id="diagSw"')}</span><span class="scr-note small" id="diagMsg" role="status"></span></div>
+        <p class="scr-note small">Off by default. On, the activity log also gets a row when Agent Durbar renews an MCP sign-in in the background.</p>`:''}`;
   }
   /* ---------------- spec 100 FR-012, FR-020: Settings > MCP servers: the warning levels and the last figures (never measured: nothing; Durbar starts no server for it) ---------------- */
   let mcpCosts=null;
@@ -336,7 +338,7 @@
        extras, every server seen in tool events this run and any already mapped. */
     /* Agent mood (spec 034 FR-004): Serious mode turns the monster, ambulance and the other drawings off */
     const moodSec=X.bridge.setSeriousMode&&X.isSerious?`<section class="scr-sec" aria-labelledby="moodH"><h3 id="moodH">Agent mood</h3>
-        <p class="scr-note">Agent figures get heavier from 70% of their context window and turn into a grumpy monster above 90% (a hint to start a fresh session). Trouble gets a drawing too: an ambulance when a session errors (one at a time), a coffee break when a usage or spending limit is used up, an agent tapping the desk after 60 s waiting for you, and dizzy stars after 3 failed tool calls in a row. The text and percentages never change. Serious mode turns every drawing off.</p>
+        <p class="scr-note">Agent figures get heavier from 70% of their context window and turn into a grumpy monster above 90% (a hint to start a fresh session). Trouble gets a drawing too: an ambulance when a session errors (one at a time), a coffee break when a usage or spending limit is used up, an agent tapping the desk after 60 s waiting for you, and dizzy stars after 3 failed tool calls in a row. The text and percentages never change. Serious mode turns every drawing off; it does not stop motion (Settings > Motion does).</p>
         <div class="scr-tools"><span class="swrow" style="display:flex;align-items:center;gap:10px"><b>Serious mode</b> <small>(no mood drawings)</small>${sw(!!X.isSerious(),'Serious mode: no mood drawings on the agent figures','id="seriousSw"')}</span><span class="scr-note small" id="seriousMsg" role="status"></span></div></section>`:'';
     /* spec 068 FR-006: what happens when a coffee break ends (a usage limit of the agent app has reset) */
     const breakSec=X.bridge.setBreakResume&&X.breakResume?`<section class="scr-sec" aria-labelledby="brkH"><h3 id="brkH">Coffee break</h3>
@@ -350,6 +352,10 @@
     const notifySec=X.bridge.setNotifyNeedsMe&&X.isNotify?`<section class="scr-sec" aria-labelledby="ntfH"><h3 id="ntfH">Notifications</h3>
         <p class="scr-note">While Agent Durbar is in the background, one notification tells you when an agent asks for permission, asks a question, reaches its spending limit or hits an error. It shows only the agent's name and a short summary of the request, never file contents. The window title and the app icon show how many need you.</p>
         <div class="scr-tools"><span class="swrow" style="display:flex;align-items:center;gap:10px"><b>Notify me when an agent needs me (when Durbar is in the background)</b>${sw(!!X.isNotify(),'Notify me when an agent needs me (when Durbar is in the background)','id="notifySw"')}</span><span class="scr-note small" id="notifyMsg" role="status"></span></div></section>`:'';
+    /* spec 052 FR-182 (issue 686): Auto-follow work, off by default; its pause is on the strip, not here */
+    const followSec=X.bridge.setAutoFollowWork&&X.autoFollow?`<section class="scr-sec" aria-labelledby="afH"><h3 id="afH">Auto-follow work</h3>
+        <p class="scr-note">After you send a message, Durbar can take you back to the office and mark that agent's desk, then open its chat when it finishes, asks you something, hits an error or reaches its limit. It never allows, denies or answers anything for you, and it waits while you type, have a dialog or menu open, or are reading an older part of a chat. A strip under the top bar shows where it stands, with Previous and Next for the agents that need you, and a Pause button. Off by default; kept on this computer.</p>
+        <div class="scr-tools"><span class="swrow" style="display:flex;align-items:center;gap:10px"><b>Auto-follow work</b> <small>(off: nothing moves by itself)</small>${sw(!!X.autoFollow.get(),'Auto-follow work (off: nothing moves by itself)','id="followSw"')}</span><span class="scr-note small" id="followMsg" role="status"></span></div></section>`:'';
     let placesSec='';
     if(X.bridge.setPlace&&X.places){
       const P=X.places, map=app.placeMap||{};
@@ -412,6 +418,25 @@
     const charSec=window.THEME&&window.THEME.setCharacters&&X.applyCharacters?`<section class="scr-sec" aria-labelledby="chH"><h3 id="chH">Characters</h3>
         <p class="scr-note">Who sits at the desks, on top of any theme; the choice applies at once and is kept on this computer.</p>
         <ul class="thlist" id="chList">${charItems()}</ul></section>`:'';
+    /* Logo (spec 101 FR-020..FR-023): the top-bar icon, the Characters pattern; DurbarLogo (logo-marks.js) keeps the choice in localStorage and applies it at once */
+    const LG=window.DurbarLogo;
+    const logoItems=()=>{const cur=LG.current();return LG.IDS.map((id)=>{const n=LG.NAMES[id];return `<li class="throw"><button class="thpick" type="button" data-logo="${esc(id)}" aria-pressed="${id===cur}" aria-label="Logo ${esc(n[0])}: ${esc(n[1])}"><span class="lgsw" aria-hidden="true">${LG.preview(id)}</span><span class="thtx"><b title="${esc(n[0])}">${esc(n[0])}</b><small title="${esc(n[1])}">${esc(n[1])}</small></span></button></li>`;}).join('');};
+    const logoSec=LG&&LG.IDS?`<section class="scr-sec" aria-labelledby="lgH"><h3 id="lgH">Logo</h3>
+        <p class="scr-note">The icon in the top bar; it takes the colours of your world. The app\u2019s own icon in the Dock, taskbar or Finder stays the same.</p>
+        <ul class="thlist" id="lgList">${logoItems()}</ul></section>`:'';
+    /* spec 052 FR-069 (issue 1182): Motion, on by default; the system's reduced motion still turns it off; Serious mode does not */
+    const motionOn=X.isMotion?(typeof app.motion==='boolean'?app.motion:!!X.isMotion()):true;
+    if(X.isMotion&&X.setMotion&&typeof app.motion==='boolean'&&app.motion!==!!X.isMotion())X.setMotion(app.motion);
+    const motionSec=X.bridge.setMotion&&X.isMotion?`<section class="scr-sec" aria-labelledby="motionH"><h3 id="motionH">Motion</h3>
+        <p class="scr-note">People walk and type, lights blink and the Real office moves. Turn this off to stop all of it; text and colours stay. Your system's reduced motion setting turns it off as well. Serious mode does not stop motion.</p>
+        <div class="scr-tools"><span class="swrow" style="display:flex;align-items:center;gap:10px"><b>Motion</b> <small>(walking, typing, lights)</small>${sw(motionOn,'Motion: people walk and type, lights blink; off keeps everything still','id="motionSw"')}</span><span class="scr-note small" id="motionMsg" role="status"></span></div></section>`:'';
+    /* spec 001 FR-192 (WCAG 2.2.2): the way to stop the moving person at a desk that needs you or has a New reply; the glow and the badge stay */
+    /* the row shows what main saved (settings:get), and the window follows it when its own read at start failed or is behind */
+    const stillOn=X.isStillHl?(typeof app.stillHighlights==='boolean'?app.stillHighlights:!!X.isStillHl()):false;
+    if(X.isStillHl&&X.setStillHl&&typeof app.stillHighlights==='boolean'&&app.stillHighlights!==!!X.isStillHl())X.setStillHl(app.stillHighlights);
+    const stillSec=X.bridge.setStillHighlights&&X.isStillHl?`<section class="scr-sec" aria-labelledby="stillH"><h3 id="stillH">Highlights</h3>
+        <p class="scr-note">A desk that needs you or has a New reply glows, and its person jumps and then keeps pulsing until you answer. Turn this on to keep the glow and the New badge but stop that movement: the pulsing, the waving hand, the tapping and the badge's pings. In Real office the whole room stands still. Some other small animations still follow your system's reduced motion setting.</p>
+        <div class="scr-tools"><span class="swrow" style="display:flex;align-items:center;gap:10px"><b>Still highlights</b> <small>(no motion)</small>${sw(stillOn,'Still highlights (no motion): desks keep the glow and the New badge, the person does not move','id="stillSw"')}</span><span class="scr-note small" id="stillMsg" role="status"></span></div></section>`:'';
     const ab=app.about;
     const aboutSec=ab?`<section class="scr-sec" aria-labelledby="aboutH"><h3 id="aboutH">About</h3>
         <p class="scr-note"><b>${esc(ab.name)}</b> ${esc(ab.version)} · by <b>${esc(ab.owner)}</b></p>
@@ -445,7 +470,7 @@
         <li>It does not see your bill; costs are estimates.</li>
         <li>It sends nothing to any server of its own.</li>
         <li>Rooms you hide or switch off still run and cost money.</li></ul></section>`;
-    r.innerHTML=head('Settings')+`<div class="scr-body">${hsSec}${pfSec}${detailSec}${keySec}${notSec}${themeSec}${charSec}${capSec}${moodSec}${breakSec}${linksSec}${notifySec}${schedSec}${floorsSec}${orgSec}${placesSec}
+    r.innerHTML=head('Settings')+`<div class="scr-body">${hsSec}${pfSec}${detailSec}${keySec}${notSec}${themeSec}${charSec}${logoSec}${motionSec}${stillSec}${capSec}${moodSec}${breakSec}${linksSec}${notifySec}${followSec}${schedSec}${floorsSec}${orgSec}${placesSec}
       <details class="scr-adv" id="advMcp"${advOpen?' open':''}><summary><h3 class="scr-adv-h">Advanced: MCP servers (extra tools for agents)</h3><span class="mtag warn" id="advMcpAtt"${live&&live.agg.attention?'':' hidden'}>${esc(attText(live?live.agg.attention:0))}</span></summary>
       <section class="scr-sec" aria-labelledby="mcpH"><h3 id="mcpH" tabindex="-1">MCP servers</h3>
         ${liveSection()}
@@ -476,6 +501,7 @@
       const e=X.esc;
       box.innerHTML=sec.failed?`<p class="scr-note warn" role="status">${e(sec.failText)}</p>`:`<ul class="orgrows">${sec.rows.map(r=>`<li class="orgrow" data-org="${e(r.id)}" data-state="${r.state}"><b>${e(r.app)}</b> <span class="mtag${r.state==='unknown'?' warn':''}">${e(r.status)}</span>${r.note?`<small>${e(r.note)}</small>`:''}${r.paths.length?`<small>From: ${r.paths.map(x=>`<code>${e(x)}</code>`).join(', ')}</small>`:''}${r.modes.length?`<ul>${r.modes.map(m=>`<li>${e(m.mode)}: ${e(m.why)}${m.advice?' (advice only)':''}</li>`).join('')}</ul>`:''}${r.noMode?`<small>${e(r.noMode)}</small>`:''}${r.counts.length?`<small>${e(r.counts.join(' · '))}</small>`:''}${r.problems.map(x=>`<small class="warn">${e(x)}</small>`).join('')}</li>`).join('')}</ul>`;
     })();}
+    if(hsSec&&window.DurbarHarnesses.loadQuota)window.DurbarHarnesses.loadQuota(acctAgain==='check'?'check':'open'); /* spec 011 FR-083: within main's floors */
     if(hsSec&&window.DurbarHarnesses.loadSandbox)window.DurbarHarnesses.loadSandbox(); /* spec 087 FR-012: the OS sandbox line per app, after the paint */
     wireHead();
     /* spec 051 FR-008: entry points open Settings at Agent apps */
@@ -532,6 +558,12 @@
       $('chList').querySelectorAll('[data-characters]').forEach((x)=>x.setAttribute('aria-pressed',String(x===b)));
       /* a repaint of the list that a theme pick started earlier can land between this click and the change itself and show the old choice (check-characters on CI): once the change is applied, the buttons say what is applied */
       Promise.resolve(done).then(()=>{const l=$('chList');if(l&&window.THEME&&window.THEME.characters){const cur=window.THEME.characters();l.querySelectorAll('[data-characters]').forEach((x)=>x.setAttribute('aria-pressed',String(x.dataset.characters===cur)));}});
+    });
+    /* spec 101 FR-020: a Logo pick shows at once in the top bar and is kept (no IPC, no file) */
+    if($('lgList'))$('lgList').addEventListener('click',(e)=>{
+      const b=e.target.closest&&e.target.closest('[data-logo]');if(!b||!window.DurbarLogo)return;
+      const v=window.DurbarLogo.set(b.dataset.logo);
+      $('lgList').querySelectorAll('[data-logo]').forEach((x)=>x.setAttribute('aria-pressed',String(x.dataset.logo===v)));
     });
     if($('thExport'))$('thExport').onclick=async()=>{
       if(!X.bridge.exportTheme)return;
@@ -849,6 +881,38 @@
       if(res&&res.ok){X.setSerious(!!res.seriousMode);ss.classList.toggle('on',!!res.seriousMode);ss.setAttribute('aria-checked',res.seriousMode?'true':'false');const m=$('seriousMsg');if(m)m.textContent=res.seriousMode?'Serious mode is on: no mood drawings.':'Serious mode is off.';}
       return;
     }
+    const mo=e.target.closest('#motionSw');
+    if(mo&&X.bridge.setMotion){
+      if(mo.dataset.busy==='1')return; /* a save is in flight */
+      mo.dataset.busy='1';
+      const on=mo.getAttribute('aria-checked')!=='true';
+      let res=null; try{res=await X.bridge.setMotion(on);}catch(err){res=null;}
+      delete mo.dataset.busy;
+      const m=$('motionMsg'), isBool=!!res&&typeof res.motion==='boolean';
+      if(isBool)X.setMotion(res.motion); /* what main says is in force, saved or not */
+      if(!res||!res.ok){
+        const inForce=isBool?res.motion:mo.getAttribute('aria-checked')==='true';
+        mo.classList.toggle('on',inForce);mo.setAttribute('aria-checked',inForce?'true':'false');
+        if(m)m.textContent='Could not save this setting. It stays '+(inForce?'on':'off')+'.';return;}
+      mo.classList.toggle('on',res.motion);mo.setAttribute('aria-checked',res.motion?'true':'false');if(m)m.textContent=res.motion?'Motion is on.':'Motion is off: everything stays still.';
+      return;
+    }
+    const st=e.target.closest('#stillSw');
+    if(st&&X.bridge.setStillHighlights){
+      if(st.dataset.busy==='1')return; /* a save is in flight: a second press would send the same value again */
+      st.dataset.busy='1';
+      const on=st.getAttribute('aria-checked')!=='true';
+      let res=null; try{res=await X.bridge.setStillHighlights(on);}catch(err){res=null;}
+      delete st.dataset.busy;
+      const m=$('stillMsg'), isBool=!!res&&typeof res.stillHighlights==='boolean';
+      if(isBool)X.setStillHl(res.stillHighlights); /* what main says is in force, saved or not (a failed save keeps the old value) */
+      if(!res||!res.ok){ /* not saved: the switch and the window show what main says is in force (a boolean), else what they showed */
+        const inForce=isBool?res.stillHighlights:st.getAttribute('aria-checked')==='true';
+        st.classList.toggle('on',inForce);st.setAttribute('aria-checked',inForce?'true':'false');
+        if(m)m.textContent='Could not save this setting. It stays '+(inForce?'on':'off')+'.';return;}
+      st.classList.toggle('on',res.stillHighlights);st.setAttribute('aria-checked',res.stillHighlights?'true':'false');if(m)m.textContent=res.stillHighlights?'Still highlights is on: the glow stays, nothing moves.':'Still highlights is off.';
+      return;
+    }
     const wb=e.target.closest('#wrGroup [data-world]');
     if(wb&&X.view&&X.view.world){pickWorld(wb);return;}
     const olb=e.target.closest('[data-officelayout]');
@@ -876,12 +940,30 @@
     }
     const la=e.target.closest('#liveActSw');
     if(la&&X.liveAct){const on=!X.liveAct.get();X.liveAct.set(on);la.classList.toggle('on',on);la.setAttribute('aria-checked',on?'true':'false');return;}
+    const fw=e.target.closest('#followSw');
+    if(fw&&X.bridge.setAutoFollowWork&&X.autoFollow){
+      const on=fw.getAttribute('aria-checked')!=='true';
+      let res=null; try{res=await X.bridge.setAutoFollowWork(on);}catch(err){res=null;}
+      if(saveFailed(res,'followMsg',onOff(fw)))return; /* issue 1094: a refused or unsaved change says so and the switch stays */
+      const m=$('followMsg');
+      if(res&&res.ok===true&&typeof res.autoFollowWork==='boolean'){const v=res.autoFollowWork;X.autoFollow.set(v);fw.classList.toggle('on',v);fw.setAttribute('aria-checked',v?'true':'false');if(m)m.textContent=v?'Auto-follow work is on.':'Auto-follow work is off.';}
+      return;
+    }
     const mr=e.target.closest('#mcpRefreshSw');
     if(mr&&X.bridge.setMcpSignInRefresh){ /* spec 058 FR-213: main's answer is what is in force */
       const on=mr.getAttribute('aria-checked')!=='true';
       let res=null; try{res=await X.bridge.setMcpSignInRefresh(on);}catch(err){res=null;}
       const m=$('mcpRefreshMsg');
       if(res&&res.ok){const v=res.mcpSignInRefresh!==false;mr.classList.toggle('on',v);mr.setAttribute('aria-checked',v?'true':'false');if(m)m.textContent=v?'On: sign-ins are refreshed automatically.':'Off: nothing is reconnected by itself. Sign in and Restart still work.';}
+      else if(m)m.textContent='Not saved.';
+      return;
+    }
+    const dg=e.target.closest('#diagSw'); /* spec 058 FR-227: main's answer is what is in force */
+    if(dg&&X.bridge.setDiagnostics){
+      const on=dg.getAttribute('aria-checked')!=='true';
+      let res=null; try{res=await X.bridge.setDiagnostics(on);}catch(err){res=null;}
+      const m=$('diagMsg');
+      if(res&&res.ok&&typeof res.diagnostics==='boolean'){dg.classList.toggle('on',res.diagnostics);dg.setAttribute('aria-checked',res.diagnostics?'true':'false');if(m)m.textContent=res.diagnostics?'Diagnostics is on.':'Diagnostics is off.';}
       else if(m)m.textContent='Not saved.';
       return;
     }
@@ -1288,7 +1370,9 @@
         const eff=x.defaultOn&&!x.off&&!appOff&&!org;
         const sv=W.stateOf(x.status,octx);
         const cw=x.status==='connected'?W.callWord(x.lastCall):''; /* FR-187/FR-188 (issue 779 A) */
-        const stat=`<span class="mst ${esc(sv.cls)}"${x.status&&sv.cls==='unknown'?` title="${esc(W.plain(x.status,120))}"`:''}>${W.iconSvg(sv.icon)}<span class="mst-w">${esc(sv.word)}</span>${cw?`<span class="mst-call">\u00b7 ${esc(cw)}</span>`:''}</span>`;
+        const rnw=x.status==='connected'&&typeof x.renewedAt==='number'&&W.renewedWord?W.renewedWord(x.renewedAt):''; /* spec 058 FR-221: "Renewed 12:40", a quiet note, no chat line */
+        const ckU=x.status==='connected'&&x.checkUnknown===true; /* spec 058 FR-225: the last check before a message got no answer in 30 s */
+        const stat=`<span class="mst ${esc(sv.cls)}"${x.status&&sv.cls==='unknown'?` title="${esc(W.plain(x.status,120))}"`:''}>${W.iconSvg(sv.icon)}<span class="mst-w">${esc(sv.word)}</span>${cw?`<span class="mst-call">\u00b7 ${esc(cw)}</span>`:''}${rnw?`<span class="mst-call mst-renew">\u00b7 ${esc(rnw)}</span>`:''}${ckU?`<span class="mst-call mst-unk">\u00b7 Did not answer a check</span>`:''}</span>`;
         const hint=W.hintFor({status:x.status,errorClass:x.errorClass,error:x.error,app,by})||(cw?W.callHint(x.lastCall,app):'');
         const detOpen=x.error&&openDet.has(x.name);
         /* FR-007: the masked text (main masked it; never the runtime's raw text) behind Details, and Copy copies exactly that */
@@ -1296,7 +1380,7 @@
         const detBox=detOpen?`<div class="srv-det"><pre class="srv-err" tabindex="0" data-err="${esc(x.name)}" aria-label="${esc('Error text of '+x.name)}">${esc(x.error)}</pre><button class="btn sm" type="button" data-copy="${esc(x.name)}" aria-label="${esc('Copy the error text of '+x.name)}">Copy</button></div>`:'';
         const hh=healthHTML(x,`data-diag="${esc(x.name)}"`,'Copy diagnostics of '+x.name);
         /* spec 058 (2026-10-23, Vikram's report): on a row that needs a sign-in, Restart is a dead end ("needs auth" again), so Sign in takes its place and Restart is hidden */
-        const needsSign=(x.status==='needs-auth'||(x.status==='failed'&&x.errorClass==='auth'))&&!!(x.canSignIn||x.signInSteps);
+        const needsSign=(x.status==='needs-auth'||(x.status==='failed'&&x.errorClass==='auth')||x.needsSignIn===true)&&!!(x.canSignIn||x.signInSteps); /* FR-229 (issue 1229): also a server Durbar knows needs a sign-in while the runtime reads it connected, or the session is not running */
         const signB=needsSign&&x.canSignIn&&!x.signIn?(signBusy.has(x.name)?`<button class="btn sm primary" type="button" disabled aria-label="${esc('Signing in to '+x.name)}">Signing in…</button>`:`<button class="btn sm primary" type="button" data-signin="${esc(x.name)}" aria-label="${esc('Sign in to '+x.name)}" title="Start ${esc(s.app||'your agent app')}'s own sign-in for this server">Sign in</button>`):'';
         const rsB=x.canRestart&&X.bridge.agentMcpRestart?(restarting.has(x.name)?`<button class="btn sm" type="button" disabled aria-label="${esc('Restarting '+x.name+' for '+a.name)}">Restarting…</button>`:`<button class="btn sm" type="button" data-restart="${esc(x.name)}" aria-label="${esc('Restart '+x.name+' for '+a.name)}" title="Restart only this server in this session">Restart</button>`):'';
         /* FR-176/FR-181 (Q21 A): an app that picks up a sign-in finished outside Durbar with Restart (Claude Code) keeps it next to Sign in */
@@ -1533,7 +1617,13 @@
         /* spec 100 FR-022: from the warning line: the heaviest server's switch has the focus; nothing is switched */
         if(o&&o.focusServer)setTimeout(()=>{const row=(st.servers||[]).find(y=>mc.serverOf({servers:[o.focusServer]},y)),b=row&&[...d.querySelectorAll('.dbody button.swt')].find(x=>x.dataset.n===row.name);if(b)focusIn(b);},0);
         /* spec 058 FR-195: from Settings: start this row's own Sign in / Sign in again, exactly as its button here would (only when the row offers it) */
-        if(o&&o.signIn)setTimeout(()=>{const n=o.signIn.name,ag=o.signIn.again===true,b=[...d.querySelectorAll(ag?'button[data-signagain]':'button[data-signin]')].find(y=>(ag?y.dataset.signagain:y.dataset.signin)===n&&!y.disabled);if(!b)return;focusIn(b);if(ag)void signAgain([n],b);else void signIn(n);},0);
+        if(o&&o.signIn)setTimeout(()=>{const n=o.signIn.name,ag=o.signIn.again===true,b=[...d.querySelectorAll(ag?'button[data-signagain]':'button[data-signin]')].find(y=>(ag?y.dataset.signagain:y.dataset.signin)===n&&!y.disabled);if(!b){ /* FR-229: never silent: the press says why nothing started */
+          const row=(st.servers||[]).find(y=>y.name===n),W2=window.DurbarMcpWords;
+          if(row&&row.signIn&&!ag)return; /* a sign-in is already open: its row shows Open sign-in page */
+          const msg=W2&&W2.signInPressNote?W2.signInPressNote(n,row,undefined,st.live):'Could not start the sign-in for '+n+'.';
+          const ab=row&&row.canSignInAgain===true?[...d.querySelectorAll('button[data-signagain]')].find(y=>y.dataset.signagain===n):null;if(ab)focusIn(ab); /* the row's own Sign in again, named in the line */
+          if(row)signNote.set(n,msg);void repaint();X.toast(esc(msg),5200).classList.add('err');X.announce(msg);return;}
+        focusIn(b);if(ag)void signAgain([n],b);else void signIn(n);},0);
         if(st.canRefresh)setTimeout(()=>{void refresh(false);},0); /* FR-190: every open reads the states again */d.addEventListener('click',async e=>{
         const tg=e.target.closest('button[data-tools],button[data-tn]');if(tg){void toggleTools(tg.dataset.tools||tg.dataset.tn);return;}
         const ad=e.target.closest('[data-tall][aria-disabled="true"],input[data-tool][aria-disabled="true"]');if(ad){e.preventDefault();return;} /* FR-064: focusable, never changed */
@@ -1770,7 +1860,7 @@
   }
 
   window.DurbarScreens={saveFailText,oneShotCostLine,aiCredits,
-    init(ctx){X=ctx;if(window.DurbarHarnesses)window.DurbarHarnesses.init({bridge:ctx.bridge,mask:ctx.mask,toast:(t)=>ctx.toast(ctx.esc(t),3600),onAccounts:(a)=>{if(ctx.setAccounts)ctx.setAccounts(a);},onBadge:setUpdBadge,onChange:(again)=>{X._hsRefresh=true;X._acctRefresh='check';if(ctx.refreshKinds)ctx.refreshKinds();if(cur&&cur.kind==='settings')paint();}});},
+    init(ctx){X=ctx;if(window.DurbarHarnesses)window.DurbarHarnesses.init({bridge:ctx.bridge,mask:ctx.mask,handover:ctx.handover,toast:(t)=>ctx.toast(ctx.esc(t),3600),onAccounts:(a)=>{if(ctx.setAccounts)ctx.setAccounts(a);},onBadge:setUpdBadge,onChange:(again)=>{X._hsRefresh=true;X._acctRefresh='check';if(ctx.refreshKinds)ctx.refreshKinds();if(cur&&cur.kind==='settings')paint();}});},
     folderMcp:openFolder,
     folderNotes:openNotes, /* spec 083 T034a: {key, name, render(focus), onClose()} */
     notesKey:()=>cur&&cur.kind==='notes'?cur.key:null,

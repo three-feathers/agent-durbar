@@ -6,7 +6,7 @@
  *   - a screen is a placeholder: an awake desk's screen has no real text, its text is under 10.5 px, or text does not change when the agent writes (FR-030, FR-032);
  *   - the newest line is not at the bottom of the glass, or a repaint comes sooner than 2 s after the last under a stream of lines (FR-033);
  *   - a hostile line (token, home path, markup, a link, ANSI, 1 MB) shows on a screen or in the zoom other than masked, inert and capped (FR-031, SC-005);
- *   - a status screen is wrong: amber frame, red tint, dark glass with no text when asleep, a green done line (FR-035);
+ *   - a status screen is wrong: an amber screen with no ring when it needs you, a red screen on an error (FR-236), dark glass with no text when asleep, a green done line (FR-035);
  *   - the zoom, for every one of the 15 screens by real pointer moves: covers its own plate or a needs-you plate, leaves the window, is not 380-480 px wide or 12.5 px
  *     text, or stays after the pointer left; Esc closes it and it stays closed until the pointer has left; Tab to a desk's plate opens the same zoom, Esc closes it
  *     with the focus kept; it is a named region and not a live one (FR-034);
@@ -39,6 +39,7 @@ module.exports = async (ctx) => {
     await arm();
     for (let t = 0; t < 5; t++) {
       const was = await blurs();
+      await moveTo(p.x - 2, p.y); /* issue 1040: after the room returns, the first event only marks where the pointer is; the next move is the hover */
       if (!(await moveTo(p.x, p.y))) { console.log('[097-screens] the page did not get the pointer move for', i, JSON.stringify(await js(`({got:window.__mv,focus:document.hasFocus(),hidden:document.hidden})`))); await refocus(); await moveTo(1, 1); continue; }
       await H.until('(' + OPENED(i) + ')||window.__blurs!==' + jsLiteral(was), 15000);
       if (await js(OPENED(i))) return;
@@ -55,6 +56,9 @@ module.exports = async (ctx) => {
   const loadReal = async (w, h, query = {}) => {
     await H.load({ w, h, query: { officeview: 'real', romotion: '1', ...query }, ready: REAL, settle: false });
     await must(PICS, 'the pictures');
+    /* spec 097 FR-246: a done agent whose reply is read sits in the lounge row (a monitor without text); these checks read done screens at desks, so their replies stay unread */
+    await js(`(()=>{const U=window.__durbarSimUi;U.agents().filter(a=>!a.parent&&a.state==='done').forEach(a=>{a.lastOutput=a.lastOutput||'Done.';U.unread.mark(a.id);});U.crew.renderAll();return 1})()`);
+    await must(`!(window.__durbarSimUi.realLayout().lounge)`, 'every done agent at its desk');
     await must(`document.querySelectorAll('#stage .ro-stext:not(.off) .ro-sl').length>0`, 'text on the screens');
     await H.calm();
   };
@@ -73,7 +77,8 @@ module.exports = async (ctx) => {
         fonts:rows.map(r=>parseFloat(getComputedStyle(r).fontSize)),color:rows.length?getComputedStyle(rows[rows.length-1]).color:'',k:rows.length?rows[rows.length-1].dataset.k:'',
         head:rows.length&&e.classList.contains('small')?rows[rows.length-1].getBoundingClientRect().top-e.querySelector('.ro-clip').getBoundingClientRect().top:0,bars:e.querySelectorAll('.ro-bars i').length,tags:[...e.querySelectorAll('a,img,script,svg')].length});}return out;})()`);
     console.log('[097-screens]', w, h, all.map((s) => `${s.state}:${(s.text || '').slice(0, 30)}|${s.bars}`).join(' ; '));
-    assert.strictEqual(all.length, 15, '15 desks');
+    const seats = await js(`(window.__durbarSimUi.realLayout().lounge||{desks:[]}).desks.length`); /* spec 097 FR-246: a finished, read agent sits in the lounge row, its monitor without text */
+    assert.strictEqual(all.length + seats, 15, '15 desks and lounge seats');
     for (const s of all) {
       assert.ok(!s.none, 'a text box for ' + s.id);
       if (s.state === 'asleep') { assert.strictEqual(s.text, '', 'asleep: no text'); continue; }
@@ -85,12 +90,14 @@ module.exports = async (ctx) => {
     assert.ok(all.some((s) => s.bars > 0), 'FR-032: bars from earlier lines on small screens');
     // FR-035: status screens, computed
     const look = await js(`(()=>{const q=(st,sel,prop,pe)=>{const e=document.querySelector('#stage .ro-screen.st-'+st+' '+sel);return e?getComputedStyle(e,pe)[prop]:null;};
-      return {waitFrame:q('waiting','.ro-bezel','boxShadow'),errGlass:q('error','.ro-glass','backgroundColor'),workGlass:q('working','.ro-glass','backgroundColor'),
+      return {waitFrame:q('waiting','.ro-bezel','boxShadow'),waitGlass:q('waiting','.ro-glass','backgroundColor'),errGlass:q('error','.ro-glass','backgroundColor'),workGlass:q('working','.ro-glass','backgroundColor'),
         done:(()=>{const e=[...document.querySelectorAll('#stage .ro-stext.st-done .ro-rows .ro-sl')].pop();return e?[e.dataset.k,getComputedStyle(e).color]:null;})(),
         ask:(()=>{const e=[...document.querySelectorAll('#stage .ro-stext.st-waiting .ro-rows .ro-sl')].pop();return e?[e.dataset.k,e.textContent]:null;})()};})()`);
     console.log('[097-screens] status', JSON.stringify(look));
-    assert.ok(/rgb\(240, 160, 48\)/.test(look.waitFrame || ''), 'needs-you: an amber frame: ' + look.waitFrame);
-    assert.ok(look.errGlass && look.errGlass !== look.workGlass, 'error: a red tint on the glass');
+    /* spec 097 FR-236 (owner, 2026-11-05): the screen itself is the cue: an amber glass, no amber ring around the bezel; a red glass on an error */
+    assert.ok(!/rgb\(240, 160, 48\)/.test(look.waitFrame || ''), 'needs-you: no amber ring around the monitor (FR-236): ' + look.waitFrame);
+    assert.strictEqual(look.waitGlass, 'rgb(85, 58, 0)', 'needs-you: an amber screen (FR-236)');
+    assert.strictEqual(look.errGlass, 'rgb(101, 20, 20)', 'error: a red screen (FR-236)');
     assert.ok(look.done && look.done[0] === 'done' && /rgb\(159, 220, 174\)/.test(look.done[1]), 'done: the newest line green: ' + look.done);
     assert.ok(look.ask && look.ask[0] === 'ask' && look.ask[1].length > 3 && !/^Went to see/.test(look.ask[1]), 'needs-you: the question itself on the glass: ' + look.ask);
 
@@ -197,7 +204,18 @@ module.exports = async (ctx) => {
     await must(`true`, 'a tick');
     await js(`document.activeElement&&document.activeElement.blur&&document.activeElement.blur();0`);
     await refocus();
-    /* FR-230: a sign redrawing under the keyboard gives the focus back to the same button. A marked button proves the redraw happened */
+    /* issue 1040: Esc back to the office (the panel closes) with the pointer resting on a screen opens no zoom; the browser's pointerover there carries no move (here sent by hand, as macOS does). The first real move opens it as before */
+    await js(`document.body.classList.add('panel-open');0`);
+    await must(`document.querySelector('#stage .ro').classList.contains('paused')`, 'the office paused under the panel');
+    await js(`document.body.classList.remove('panel-open');0`);
+    await must(`!document.querySelector('#stage .ro').classList.contains('paused')`, 'the office back');
+    await js(`(()=>{const s=document.querySelector('#stage .ro-screen[data-for="'+CSS.escape(${jsLiteral(mid)})+'"]');s.dispatchEvent(new PointerEvent('pointerover',{bubbles:true,pointerType:'mouse',clientX:${jsLiteral(mp.x)},clientY:${jsLiteral(mp.y)}}));})();0`);
+    await must(`(()=>{const h=window.DurbarRealOffice.hoverState();return h.still&&!h.armed;})()`, 'back under a still pointer: nothing can open (still, no hover timer armed)');
+    assert.strictEqual(await js(`!!document.getElementById('roZoom')`), false, 'back under a still pointer: no zoom opens');
+    await hover(mid, { x: mp.x + 4, y: mp.y + 2 });
+    await moveTo(1, 1);
+    await must(`!document.getElementById('roZoom')`, 'the zoom closed when the pointer left');
+    /* FR-230: a sign redrawing under the keyboard keeps the focus on the same button. The changed counts prove the redraw happened; since spec 097 T149 the sign keeps its nodes (signFill) when only its counts change, so the button itself stays. Whether the button is the same node is not asserted in this first part (the simulator's cost line can appear during a run, which builds the sign again); the rebuild path, with new buttons, is the second part below */
     {
       const zone = (await js(`window.__durbarSimUi.realLayout().zones.filter(z=>z.desks.some(d=>d.state==='working')).map(z=>({id:z.id,desk:z.desks.find(d=>d.state==='working').id}))[0]`));
       const SIGN = `.ro-sign[data-folder=${JSON.stringify(zone.id)}]`;
@@ -208,9 +226,45 @@ module.exports = async (ctx) => {
         const was = await counts();
         await emit({ type: 'status', sessionId: zone.desk, status: i ? 'working' : 'idle', intent: 'Driver work' });
         await must(`document.querySelector(${jsLiteral(SIGN + ' .ro-sc')}).textContent!==${jsLiteral(was)}`, 'the sign redrawn');
-        await must(`(()=>{const a=document.activeElement;return a.dataset[${jsLiteral(attr)}]===${jsLiteral(zone.id)}&&!a.__marked;})()`, 'the focus on the redrawn sign\'s ' + attr + ' button');
+        assert.notStrictEqual(await counts(), was, 'the sign\'s counts changed after the redraw: a redraw that did not happen fails here');
+        await must(`(()=>{const a=document.activeElement;return a.dataset[${jsLiteral(attr)}]===${jsLiteral(zone.id)};})()`, 'the focus on the redrawn sign\'s ' + attr + ' button');
       }
       assert.strictEqual(await counts(), c0, 'the desk back as it was');
+      /* FR-230, the rebuild path (review on #969): a sign whose cost line comes or goes is built again (signFill's signature), so its + and menu button are new
+         elements; the render's focus keep (app.js) gives the focus to the new one. The cost line is hidden and shown by the simulator's quietHeads(['aiu']), the
+         app's own head-line switch, so the rebuild is the real one; the old button gone from the page proves it happened */
+      const COST = `!!document.querySelector(${jsLiteral(SIGN + ' .ro-cost')})`;
+      assert.ok(await js(COST), 'the sign has a cost line to take away');
+      for (const [i, attr] of ['newsess', 'foldermenu'].entries()) {
+        const had = await js(COST);
+        await js(`(()=>{const b=document.querySelector(${jsLiteral(SIGN + ' [data-' + attr + ']')});b.__marked=1;window.__oldBtn=b;b.focus();})();0`);
+        assert.ok(await js(`document.activeElement===window.__oldBtn`), 'the ' + attr + ' button has the focus before the rebuild');
+        await js(`window.__durbarSimUi.quietHeads(${jsLiteral(had ? ['aiu'] : [])});0`);
+        await emit({ type: 'status', sessionId: zone.desk, status: i ? 'working' : 'idle', intent: 'Driver work' });
+        await must((had ? '!' : '') + COST + '&&!window.__oldBtn.isConnected', 'the sign built again, its cost line ' + (had ? 'gone' : 'back') + ' and the old ' + attr + ' button out of the page');
+        await must(`(()=>{const a=document.activeElement;return !!a&&a.dataset[${jsLiteral(attr)}]===${jsLiteral(zone.id)}&&!a.__marked&&!!a.closest(${jsLiteral(SIGN)});})()`, 'the focus on the rebuilt sign\'s new ' + attr + ' button');
+      }
+      await js(`window.__durbarSimUi.quietHeads([]);window.__oldBtn=null;0`);
+    }
+    /* FR-016, FR-184 (review on #969): a plate keeps its nodes on a status change but rebuilds its helper list when the helpers change: a new helper adds one to
+       "+N" and a dot; the helper failing changes that dot. Through the event path, as an agent app reports a helper (a `subagent` event) */
+    {
+      /* a working desk with fewer than 3 helpers, so the new one's dot is among the 3 shown */
+      const desk = (await js(`window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks).filter(d=>d.state==='working').map(d=>d.id).find(id=>{const p=document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(id)+'"]'),h=p&&p.querySelector('.ro-help');return !!p&&(!h||+((/\\+(\\d+)/.exec(h.textContent)||[])[1])<3);})`));
+      assert.ok(desk, 'a working desk with fewer than 3 helpers');
+      await js(`window.__pl=()=>document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(${jsLiteral(desk)})+'"]');0`);
+      const help = () => js(`(()=>{const h=window.__pl().querySelector('.ro-help');return h?{n:(/\\+(\\d+)/.exec(h.textContent)||[])[1]||'',dots:[...h.querySelectorAll('.dot')].map(d=>d.className).join('|')}:{n:'0',dots:''};})()`);
+      const h0 = await help();
+      await js(`window.__nm=window.__pl().querySelector('b');0`);
+      const sub = 'drv-helper-1', base = { sessionId: desk };
+      await emit({ ...base, type: 'subagent', subagentId: sub, name: 'Driver helper', phase: 'started', task: 'Check the driver', agentName: 'explore' });
+      await emit({ ...base, type: 'status', status: 'working', agentId: sub, intent: 'Check the driver' });
+      await must(`(window.__pl().querySelector('.ro-help')||{textContent:''}).textContent.includes('+'+${jsLiteral(String(Number(h0.n) + 1))})`, 'the plate\'s helper count one up (was ' + JSON.stringify(h0) + ')');
+      const h1 = await help();
+      assert.strictEqual(Number(h1.n), Number(h0.n) + 1, 'a new helper adds one: ' + JSON.stringify([h0, h1]));
+      await emit({ ...base, type: 'subagent', subagentId: sub, name: 'Driver helper', phase: 'failed', task: 'Failed', error: 'Failed', agentName: 'explore' });
+      await must(`(()=>{const h=window.__pl().querySelector('.ro-help');return !!h&&[...h.querySelectorAll('.dot')].map(d=>d.className).join('|')!==${jsLiteral(h1.dots)};})()`, 'the plate\'s helper dots changed when the helper failed (were ' + h1.dots + ')');
+      assert.ok(await js(`window.__pl().querySelector('b')===window.__nm`), 'FR-184: the plate kept its name node while its helper list changed');
     }
     // keyboard parity: real Tab presses reach a plate; the same zoom opens; Esc closes it and keeps the focus; the next Tab moves on and opens the next
     const toSign = () => js(`(()=>{const s=document.querySelector('.ro-sign .ro-sb');s&&s.focus();})()`);
@@ -263,8 +317,8 @@ module.exports = async (ctx) => {
     assert.ok(sl, 'an idle desk to send to sleep');
     const s0 = await at(sl);
     await hover(sl, s0);
-    await js(`(()=>{const a=window.__durbarSimUi.agents().find(x=>x.id===${jsLiteral(sl)});a.state='done';a.lastOutput=a.lastOutput||'done';a.unread=false;a.lastEventAt=Date.now()-30*864e5;window.__durbarSimUi.setLive(true);})();0`);
-    await must(`window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks).find(x=>x.id===${jsLiteral(sl)}).state==='asleep'`, 'the desk asleep');
+    await js(`(()=>{const a=window.__durbarSimUi.agents().find(x=>x.id===${jsLiteral(sl)});a.state='done';a.lastOutput=a.lastOutput||'done';a.unread=false;a.lastEventAt=Date.now()-30*864e5;window.__durbarSimUi.unread.read(a.id);window.__durbarSimUi.setLive(true);})();0`);
+    await must(`(()=>{const L=window.__durbarSimUi.realLayout();return L.zones.flatMap(z=>z.desks).concat(L.lounge?L.lounge.desks:[]).find(x=>x.id===${jsLiteral(sl)}).state==='asleep'})()`, 'the agent asleep (in the lounge row, spec 097 FR-246)');
     assert.ok(await H.until(`!document.getElementById('roZoom')`, 1000), 'the zoom of a desk gone to sleep closes');
     await moveTo(1, 1);
   }

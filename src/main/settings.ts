@@ -36,6 +36,9 @@ export function randomPlaceId(): string {
   return s;
 }
 
+/** A setter's answer (issue #1094): `ok` is true only when the write reached disk; a rollback to the same value is not ok. */
+export interface Saved<T> { ok: boolean; value: T }
+
 export class SettingsStore {
   private s: AppSettings = {};
   /** `newPlaceId` makes candidate ids for new custom places; tests inject their own. */
@@ -63,14 +66,14 @@ export class SettingsStore {
   }
 
   /** `undefined`/invalid clears the default. Returns the value in force. A tighter cap (none -> a cap, or a lower one) stays in force for this run even when it cannot be saved (`unsaved`); a looser one or none is rolled back. */
-  setDefaultMaxAiCredits(v: unknown): number | undefined {
+  setDefaultMaxAiCredits(v: unknown): Saved<number | undefined> {
     const cap = parseCap(v);
     const next: AppSettings = { ...this.s };
     if (cap === undefined) delete next.defaultMaxAiCredits;
     else next.defaultMaxAiCredits = cap;
     const tighter = cap !== undefined && (this.s.defaultMaxAiCredits === undefined || cap < this.s.defaultMaxAiCredits);
-    this.commit(next, tighter ? 'defaultMaxAiCredits' : undefined);
-    return this.s.defaultMaxAiCredits;
+    const ok = this.commit(next, tighter ? 'defaultMaxAiCredits' : undefined);
+    return { ok, value: this.s.defaultMaxAiCredits };
   }
 
   /** Spec 093 FR-006: the parent of the last folder created from + Folder, when it is a valid absolute path. */
@@ -101,13 +104,13 @@ export class SettingsStore {
     return this.s.chatLinksIn === 'system' ? 'system' : 'session';
   }
 
-  /** Only `'session'` or `'system'` change it; the default is not written. Returns the value now in force. */
-  setChatLinksIn(v: unknown): 'session' | 'system' {
-    if (v !== 'session' && v !== 'system') return this.chatLinksIn;
+  /** Only `'session'` or `'system'` change it; the default is not written. Returns `{ ok, value }`: `ok` only when the write reached disk, `value` the one in force (issue #1094). */
+  setChatLinksIn(v: unknown): Saved<'session' | 'system'> {
+    if (v !== 'session' && v !== 'system') return { ok: false, value: this.chatLinksIn };
     const next: AppSettings = { ...this.s };
     if (v === 'system') next.chatLinksIn = 'system';
     else delete next.chatLinksIn;
-    return this.commit(next) ? v : this.chatLinksIn;
+    return this.commit(next) ? { ok: true, value: v } : { ok: false, value: this.chatLinksIn };
   }
 
   /** Spec 100 FR-020: the MCP warning levels. */
@@ -128,13 +131,55 @@ export class SettingsStore {
     return this.s.chatLinksNewTab === true;
   }
 
-  /** Only a real boolean changes it; the default (off) is not written. Returns the value now in force. */
-  setChatLinksNewTab(v: unknown): boolean {
-    if (typeof v !== 'boolean') return this.chatLinksNewTab;
+  /** Only a real boolean changes it; the default (off) is not written. Returns `{ ok, value }`: `ok` only when the write reached disk, `value` the one in force (issue #1094). */
+  setChatLinksNewTab(v: unknown): Saved<boolean> {
+    if (typeof v !== 'boolean') return { ok: false, value: this.chatLinksNewTab };
     const next: AppSettings = { ...this.s };
     if (v) next.chatLinksNewTab = true;
     else delete next.chatLinksNewTab;
-    return this.commit(next) ? v : this.chatLinksNewTab;
+    return this.commit(next) ? { ok: true, value: v } : { ok: false, value: this.chatLinksNewTab };
+  }
+
+  /** Spec 001 FR-192: *Still highlights (no motion)*, off by default. */
+  get stillHighlights(): boolean {
+    return this.s.stillHighlights === true;
+  }
+
+  /** Only a real boolean changes it; the default (off) is not written. `ok` only when the write reached disk (a failed write is not ok even when the value did not change); `value` the one in force (#1094). */
+  setStillHighlights(v: unknown): Saved<boolean> {
+    if (typeof v !== 'boolean') return { ok: false, value: this.stillHighlights };
+    const next: AppSettings = { ...this.s };
+    if (v) next.stillHighlights = true;
+    else delete next.stillHighlights;
+    return this.commit(next) ? { ok: true, value: v } : { ok: false, value: this.stillHighlights };
+  }
+
+  /** Spec 058 FR-227 (issue #1205): *Diagnostics*, off by default. */
+  get diagnostics(): boolean {
+    return this.s.diagnostics === true;
+  }
+
+  /** Only a real boolean changes it; the default (off) is not written. `ok` only when the write reached disk; `value` the one in force. */
+  setDiagnostics(v: unknown): Saved<boolean> {
+    if (typeof v !== 'boolean') return { ok: false, value: this.diagnostics };
+    const next: AppSettings = { ...this.s };
+    if (v) next.diagnostics = true;
+    else delete next.diagnostics;
+    return this.commit(next) ? { ok: true, value: v } : { ok: false, value: this.diagnostics };
+  }
+
+  /** Spec 052 FR-069 (issue #1182): *Motion*, on by default; only `false` is written, so a file of an older version means on. */
+  get motion(): boolean {
+    return this.s.motion !== false;
+  }
+
+  /** Only a real boolean changes it. `ok` only when the write reached disk; `value` the one in force. */
+  setMotion(v: unknown): Saved<boolean> {
+    if (typeof v !== 'boolean') return { ok: false, value: this.motion };
+    const next: AppSettings = { ...this.s };
+    if (v) delete next.motion;
+    else next.motion = false;
+    return this.commit(next) ? { ok: true, value: v } : { ok: false, value: this.motion };
   }
 
   /** Serious mode (spec 034): off by default. */
@@ -142,13 +187,27 @@ export class SettingsStore {
     return this.s.seriousMode === true;
   }
 
-  /** Only a real boolean changes it; anything else keeps the current value. Returns the value now in force. */
-  setSeriousMode(v: unknown): boolean {
-    if (typeof v !== 'boolean') return this.seriousMode;
+  /** Only a real boolean changes it; anything else keeps the current value. Returns `{ ok, value }`: `ok` only when the write reached disk, `value` the one in force (issue #1094). */
+  setSeriousMode(v: unknown): Saved<boolean> {
+    if (typeof v !== 'boolean') return { ok: false, value: this.seriousMode };
     const next: AppSettings = { ...this.s };
     if (v) next.seriousMode = true;
     else delete next.seriousMode;
-    return this.commit(next) ? v : this.seriousMode;
+    return this.commit(next) ? { ok: true, value: v } : { ok: false, value: this.seriousMode };
+  }
+
+  /** Auto-follow work (spec 052 FR-182, issue 686): off by default; only `true` is written. */
+  get autoFollowWork(): boolean {
+    return this.s.autoFollowWork === true;
+  }
+
+  /** Only a real boolean changes it; anything else keeps the current value. Returns `{ ok, value }`: `ok` only when the write reached disk, `value` the one in force (issue #1094). */
+  setAutoFollowWork(v: unknown): Saved<boolean> {
+    if (typeof v !== 'boolean') return { ok: false, value: this.autoFollowWork };
+    const next: AppSettings = { ...this.s };
+    if (v) next.autoFollowWork = true;
+    else delete next.autoFollowWork;
+    return this.commit(next) ? { ok: true, value: v } : { ok: false, value: this.autoFollowWork };
   }
 
   /** Spec 087 FR-007c: the apps with *Always continue on this computer* stored. */
@@ -156,9 +215,9 @@ export class SettingsStore {
     return (this.s.sandboxAlwaysContinue ?? []).includes(app);
   }
 
-  /** Spec 087 FR-007c: store or undo the choice for a known app id; anything else changes nothing. Returns the value now in force. */
-  setSandboxAlwaysContinue(app: unknown, on: unknown): boolean {
-    if (typeof app !== 'string' || !parseSandboxAlways([app]).length || typeof on !== 'boolean') return typeof app === 'string' && this.sandboxAlwaysContinue(app);
+  /** Spec 087 FR-007c: store or undo the choice for a known app id; anything else changes nothing. Returns `{ ok, value }`: `ok` only when the write reached disk, `value` the one in force (issue #1094). */
+  setSandboxAlwaysContinue(app: unknown, on: unknown): Saved<boolean> {
+    if (typeof app !== 'string' || !parseSandboxAlways([app]).length || typeof on !== 'boolean') return { ok: false, value: typeof app === 'string' && this.sandboxAlwaysContinue(app) };
     const set = new Set(this.s.sandboxAlwaysContinue ?? []);
     if (on) set.add(app);
     else set.delete(app);
@@ -166,8 +225,8 @@ export class SettingsStore {
     const list = parseSandboxAlways([...set]);
     if (list.length) next.sandboxAlwaysContinue = list;
     else delete next.sandboxAlwaysContinue;
-    this.commit(next, !on ? 'sandboxAlwaysContinue' : undefined); // turning the choice off is the safe direction: in force for this run even if it cannot be saved (`isUnsaved`); turning it on is rolled back
-    return this.sandboxAlwaysContinue(app);
+    const ok = this.commit(next, !on ? 'sandboxAlwaysContinue' : undefined); // turning the choice off is the safe direction: in force for this run even if it cannot be saved (`isUnsaved`); turning it on is rolled back
+    return { ok, value: this.sandboxAlwaysContinue(app) };
   }
 
   /** OS notifications when an agent needs you (spec 052 FR-059): on by default; only `false` is written. */
@@ -175,13 +234,13 @@ export class SettingsStore {
     return this.s.notifyNeedsMe !== false;
   }
 
-  /** Only a real boolean changes it; anything else keeps the current value. Returns the value now in force. */
-  setNotifyNeedsMe(v: unknown): boolean {
-    if (typeof v !== 'boolean') return this.notifyNeedsMe;
+  /** Only a real boolean changes it; anything else keeps the current value. Returns `{ ok, value }`: `ok` only when the write reached disk, `value` the one in force (issue #1094). */
+  setNotifyNeedsMe(v: unknown): Saved<boolean> {
+    if (typeof v !== 'boolean') return { ok: false, value: this.notifyNeedsMe };
     const next: AppSettings = { ...this.s };
     if (v) delete next.notifyNeedsMe;
     else next.notifyNeedsMe = false;
-    return this.commit(next) ? v : this.notifyNeedsMe;
+    return this.commit(next) ? { ok: true, value: v } : { ok: false, value: this.notifyNeedsMe };
   }
 
   /** Spec 068 FR-006: what happens when a coffee break ends: `auto` (default: resume by itself when it costs nothing extra) or `ask`. */
@@ -189,13 +248,13 @@ export class SettingsStore {
     return this.s.breakResume === 'ask' ? 'ask' : 'auto';
   }
 
-  /** Only 'auto' or 'ask' changes it; anything else keeps the current value. Only 'ask' is written. Returns the value now in force. */
-  setBreakResume(v: unknown): 'auto' | 'ask' {
-    if (v !== 'auto' && v !== 'ask') return this.breakResume;
+  /** Only 'auto' or 'ask' changes it; anything else keeps the current value. Only 'ask' is written. Returns `{ ok, value }`: `ok` only when the write reached disk, `value` the one in force (issue #1094). */
+  setBreakResume(v: unknown): Saved<'auto' | 'ask'> {
+    if (v !== 'auto' && v !== 'ask') return { ok: false, value: this.breakResume };
     const next: AppSettings = { ...this.s };
     if (v === 'ask') next.breakResume = 'ask';
     else delete next.breakResume;
-    return this.commit(next) ? v : this.breakResume;
+    return this.commit(next) ? { ok: true, value: v } : { ok: false, value: this.breakResume };
   }
 
   /** Spec 081 FR-022 (Q6 = A): the agent-app update check at start is on by default; only `false` is written. */
@@ -203,13 +262,13 @@ export class SettingsStore {
     return this.s.checkUpdatesAtStart !== false;
   }
 
-  /** Only a real boolean changes it; anything else keeps the current value. Returns the value now in force. */
-  setCheckUpdatesAtStart(v: unknown): boolean {
-    if (typeof v !== 'boolean') return this.checkUpdatesAtStart;
+  /** Only a real boolean changes it; anything else keeps the current value. Returns `{ ok, value }`: `ok` only when the write reached disk, `value` the one in force (issue #1094). */
+  setCheckUpdatesAtStart(v: unknown): Saved<boolean> {
+    if (typeof v !== 'boolean') return { ok: false, value: this.checkUpdatesAtStart };
     const next: AppSettings = { ...this.s };
     if (v) delete next.checkUpdatesAtStart;
     else next.checkUpdatesAtStart = false;
-    return this.commit(next) ? v : this.checkUpdatesAtStart;
+    return this.commit(next) ? { ok: true, value: v } : { ok: false, value: this.checkUpdatesAtStart };
   }
 
   /** Spec 058 FR-213: *Refresh MCP sign-ins automatically*: the stored choice, or the default (one constant) when none is stored. */
@@ -219,9 +278,9 @@ export class SettingsStore {
   }
 
   /** Only a real boolean changes it and is written as chosen (so a later change of the default keeps the person's choice). Returns the value now in force (a failed save keeps the old one). */
-  setMcpSignInRefresh(v: unknown): boolean {
-    if (typeof v !== 'boolean') return this.mcpSignInRefresh;
-    return this.commit({ ...this.s, mcpSignInRefresh: v }) ? v : this.mcpSignInRefresh; // issue #1023: a failed save keeps the old value
+  setMcpSignInRefresh(v: unknown): Saved<boolean> {
+    if (typeof v !== 'boolean') return { ok: false, value: this.mcpSignInRefresh };
+    return this.commit({ ...this.s, mcpSignInRefresh: v }) ? { ok: true, value: v } : { ok: false, value: this.mcpSignInRefresh }; // issue #1023: a failed save keeps the old value
   }
 
   /** Spec 081 FR-016: the last announced version per agent app, a copy. */
@@ -379,15 +438,19 @@ export class SettingsStore {
   }
 
   private save(): boolean {
+    let tmp: string | undefined;
     try {
       fs.mkdirSync(path.dirname(this.file), { recursive: true });
-      const tmp = `${this.file}.${process.pid}.tmp`;
+      tmp = `${this.file}.${process.pid}.tmp`;
       fs.writeFileSync(tmp, JSON.stringify({ version: 1, ...this.s }, null, 2), { mode: 0o600 });
       fs.renameSync(tmp, this.file);
+      tmp = undefined; // renamed: nothing left to remove
       return true;
     } catch {
       /* read-only profile, disk full, ...: keep working without persistence */
       return false;
+    } finally {
+      if (tmp) { try { fs.rmSync(tmp, { force: true }); } catch { /* best effort (issue #1047) */ } } // a partial write or a failed rename leaves no .tmp
     }
   }
 }

@@ -1,0 +1,53 @@
+/* Spec 101 FR-030..FR-036: the top-bar logo is an inline SVG of the 20 px drawing in the 32 px .brand-mark tile. Six tokens paint its
+   slots (--logo-plate is the tile, --logo-gold/-bot/-cream the light parts, --logo-eye/-screen the dark parts; `badge` uses the plate).
+   This file holds the palettes, so the colour literals below are token declarations (they stay out of the theme-literals ratchet of
+   spec 070 FR-040). Loaded after themes.css. No picture, no filter, no animation. */
+
+/* Clean office (FR-014, FR-034): the base palette; the plate is per icon (--logo-plate-N), --logo-plate is the chosen icon's */
+html{--logo-plate-1:#10141E;--logo-plate-2:#03183A;--logo-plate-3:#061C4A;--logo-plate-5:#07111F;--logo-plate:var(--logo-plate-1);--logo-gold:#FFC21A;--logo-bot:#C2DEFF;--logo-eye:#0E1420;--logo-cream:#FBF6EE;--logo-screen:#060C1A}
+html[data-logo="2"]{--logo-plate:var(--logo-plate-2)}
+html[data-logo="3"]{--logo-plate:var(--logo-plate-3)}
+html[data-logo="5"]{--logo-plate:var(--logo-plate-5)}
+
+/* every other UI style, built in or generated (FR-034): the theme's own pair, no new theme token; one plate for all icons */
+html[data-ui]:not([data-ui="clean"]){--logo-plate-1:var(--brand-bg);--logo-plate-2:var(--brand-bg);--logo-plate-3:var(--brand-bg);--logo-plate-5:var(--brand-bg);--logo-eye:var(--brand-bg);--logo-screen:var(--brand-bg);--logo-gold:var(--brand-mark);--logo-bot:var(--brand-mark);--logo-cream:var(--brand-mark)}
+
+/* a Real office world (FR-033, FR-101; html[data-world] is set by theme.js only while Real office shows a world; it wins over the theme).
+   A world without a block here (a new one) keeps the palette above. Contrast of every pair is held by test:logo-assets (FR-035). */
+html[data-world="photo"][data-world]{--logo-plate-1:#5C3312;--logo-plate-2:#5C3312;--logo-plate-3:#5C3312;--logo-plate-5:#5C3312;--logo-gold:#FFD45E;--logo-bot:#BFE0FF;--logo-eye:#1B2433;--logo-cream:#FBF3E4;--logo-screen:#17110C}
+html[data-world="cave"][data-world]{--logo-plate-1:#2A1710;--logo-plate-2:#2A1710;--logo-plate-3:#2A1710;--logo-plate-5:#2A1710;--logo-gold:#F2B46E;--logo-bot:#A3AFC0;--logo-eye:#140C08;--logo-cream:#F2D6A8;--logo-screen:#150D09}
+html[data-world="loft"][data-world]{--logo-plate-1:#2C0A5E;--logo-plate-2:#2C0A5E;--logo-plate-3:#2C0A5E;--logo-plate-5:#2C0A5E;--logo-gold:#FFE81F;--logo-bot:#2EE6F2;--logo-eye:#160733;--logo-cream:#FFF7E6;--logo-screen:#120329}
+
+.brand-mark{background:var(--logo-plate)}
+.brand-mark svg{display:block}
+.brand-mark [data-slot="plate"]{display:none}
+.brand-mark [data-slot="gold"]{fill:var(--logo-gold)}
+.brand-mark [data-slot="bot"]{fill:var(--logo-bot)}
+.brand-mark [data-slot="cream"]{fill:var(--logo-cream)}
+.brand-mark [data-slot="eye"]{fill:var(--logo-eye)}
+.brand-mark [data-slot="screen"]{fill:var(--logo-screen)}
+.brand-mark [data-slot="badge"]{fill:var(--logo-plate)}
+
+/* the Settings preview: the 1024 drawing with its own plate, painted by the same tokens */
+.logo-pv{display:block;flex:none}
+.logo-pv[data-id="2"]{--logo-plate:var(--logo-plate-2)}
+.logo-pv[data-id="3"]{--logo-plate:var(--logo-plate-3)}
+.logo-pv[data-id="5"]{--logo-plate:var(--logo-plate-5)}
+.logo-pv[data-id="1"]{--logo-plate:var(--logo-plate-1)}
+.logo-pv [data-slot="plate"],.logo-pv [data-slot="badge"]{fill:var(--logo-plate)}
+.logo-pv [data-slot="gold"]{fill:var(--logo-gold)}
+.logo-pv [data-slot="bot"]{fill:var(--logo-bot)}
+.logo-pv [data-slot="cream"]{fill:var(--logo-cream)}
+.logo-pv [data-slot="eye"]{fill:var(--logo-eye)}
+.logo-pv [data-slot="screen"]{fill:var(--logo-screen)}
+
+/* FR-036: forced colours: system colours only; the tile is Canvas with a CanvasText line (an inset outline, so the tile keeps its size) */
+@media (forced-colors:active){
+  .brand-mark{background:Canvas;outline:1px solid CanvasText;outline-offset:-1px}
+  :is(.brand-mark,.logo-pv) :is([data-slot="gold"],[data-slot="bot"],[data-slot="cream"]){fill:CanvasText}
+  :is(.brand-mark,.logo-pv) :is([data-slot="eye"],[data-slot="screen"],[data-slot="badge"]){fill:Canvas}
+  .logo-pv [data-slot="plate"]{fill:Canvas;stroke:CanvasText;stroke-width:24px}
+}
+
+/* Settings > Logo (FR-023): the preview at 64 CSS px above the name, in the current palette */
+.lgsw{display:flex;justify-content:center;align-items:center;padding:2px 0}

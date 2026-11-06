@@ -3,7 +3,7 @@
  * simulator, never a real session: 0 AI credits), merges what `perf-record-driver.js` writes into one JSON record, and has the pure
  * helpers (medians, the record's shape check) that `npm run test:perfrecord` runs without Electron.
  *
- * No timing assert anywhere: a number is recorded, never judged (AGENTS.md *Timing*, spec 021 FR-048b). Exit 0 unless the driver
+ * No timing assert anywhere: a number is recorded, never judged (docs/rules/review-rounds.md *Timing*, spec 021 FR-048b). Exit 0 unless the driver
  * itself breaks (no Electron, no output, a launch that crashed).
  */
 'use strict';

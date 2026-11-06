@@ -4,6 +4,7 @@
  * `FakeSession.send` replays a recorded turn (`turnScript`) through the session handler.
  */
 import { CopilotAdapter } from '../../src/adapters/copilot';
+import type { AutopilotTuning } from '../../src/adapters/autopilotHost';
 
 export type ScriptEvent = { type: string; data: unknown; agentId?: string | null };
 export type Call = { name: string; args: unknown[] };
@@ -34,6 +35,11 @@ export class FakeSession {
   /** Spec 087 FR-022c (review on PR #833): `options.update` with `enabled: false` waits until the test settles it from `deferred` (in order). */
   lowerDeferred = false;
   deferred: Array<{ resolve: () => void; reject: (e: Error) => void }> = [];
+  /** Spec 099: the runtime's mode; `modeSetFail` / `modeGetFail` reject; `modeSilent`: `mode.set` works but no `session.mode_changed` follows. */
+  mode = 'interactive';
+  modeSetFail = '';
+  modeGetFail = '';
+  modeSilent = false;
   /** `send` rejects with this message (spec 040 FR-015 error path). */
   sendFail = '';
   /** `send` never settles (spec 040 FR-015 timeout path). */
@@ -41,6 +47,10 @@ export class FakeSession {
   /** Spec 051 FR-018: what `rpc.gitHubAuth.getStatus` answers (a no-prompt status that carries `copilotPlan`); `statusFail` rejects; `statusHangs` never settles; `noGitHubAuth` leaves the method out. */
   statusAnswer: unknown = { isAuthenticated: true, authType: 'gh-cli', login: 'someone', statusMessage: 'ok', copilotPlan: 'individual' };
   statusFail = '';
+  /** Spec 085: what `rpc.usage.getMetrics` answers (the real shape: `codeChanges` with file names, lines; `totalNanoAiu`; `totalUserRequests`). */
+  metricsAnswer: unknown = { codeChanges: { filesModified: ['a.ts', 'b.ts', 'c.ts'], filesModifiedCount: 3, linesAdded: 40, linesRemoved: 7 }, totalNanoAiu: 2_500_000_000, totalUserRequests: 2, totalPremiumRequestCost: 1.5 };
+  metricsFail = '';
+  metricsHangs = false;
   statusHangs = false;
   constructor(public sessionId: string, public config: Record<string, unknown>) {}
   private rec<T>(name: string, v: T, ...args: unknown[]): T { this.calls.push({ name, args }); return v; }
@@ -55,12 +65,24 @@ export class FakeSession {
     return 'msg-' + this.calls.length;
   }
   getEvents = async (): Promise<unknown[]> => [];
-  abort = async (): Promise<void> => this.rec('abort', undefined);
+  abortFail: string | null = null;
+  abort = async (): Promise<void> => { this.rec('abort', undefined); if (this.abortFail) throw new Error(this.abortFail); };
   disconnect = async (): Promise<void> => this.rec('disconnect', undefined);
   rpc = {
     eventLog: { registerInterest: async (a: unknown) => this.rec('registerInterest', undefined, a) },
     options: { update: async (a: unknown) => { this.calls.push({ name: 'options.update', args: [a] }); if (this.updateFail && (a as { sandboxConfig?: unknown }).sandboxConfig) throw new Error(this.updateFail); if (this.updateHangs && (a as { sandboxConfig?: unknown }).sandboxConfig) return new Promise<void>(() => undefined); if (this.lowerDeferred && (a as { sandboxConfig?: { enabled?: unknown } }).sandboxConfig?.enabled === false) return new Promise<void>((resolve, reject) => { this.deferred.push({ resolve, reject }); }); } },
-    mode: { set: async (a: unknown) => this.rec('mode.set', { mode: (a as { mode?: string }).mode }, a) }, // spec 066 (plan first)
+    mode: { // spec 066 (plan first); spec 099: like the runtime it keeps the mode and confirms a change with `session.mode_changed`
+      get: async () => { this.calls.push({ name: 'mode.get', args: [] }); if (this.modeGetFail) throw new Error(this.modeGetFail); return this.mode; },
+      set: async (a: unknown) => {
+        this.calls.push({ name: 'mode.set', args: [a] });
+        if (this.modeSetFail) throw new Error(this.modeSetFail);
+        const next = (a as { mode?: string }).mode ?? 'interactive';
+        const previousMode = this.mode;
+        this.mode = next;
+        if (next !== previousMode && !this.modeSilent) this.fire('session.mode_changed', { newMode: next, previousMode });
+        return { mode: next };
+      },
+    },
     model: { switchTo: async (a: unknown) => this.rec('switchTo', this.switchAnswer, a) },
     queue: { removeAt: async (a: unknown) => this.rec('removeAt', { removed: this.removed }, a) },
     history: { compact: async (a: unknown) => this.rec('compact', this.compactAnswer, a) },
@@ -68,6 +90,8 @@ export class FakeSession {
       get: async () => this.rec('name.get', { name: this.nameAnswer }),
       set: async (a: unknown) => { this.calls.push({ name: 'name.set', args: [a] }); if (this.nameSetFail) throw new Error(this.nameSetFail); },
     },
+    // spec 085 FR-012: `rpc.usage.getMetrics` (@experimental); `metricsFail` rejects, `metricsHangs` never settles, a test deletes `rpc.usage` to act as an older runtime
+    usage: ({ getMetrics: async () => { this.calls.push({ name: 'usage.getMetrics', args: [] }); if (this.metricsHangs) return new Promise<unknown>(() => undefined); if (this.metricsFail) throw new Error(this.metricsFail); return this.metricsAnswer; } }) as Record<string, unknown> | undefined,
     metadata: { isProcessing: async () => this.rec('isProcessing', { processing: this.processing }) },
     gitHubAuth: {
       getStatus: async () => {
@@ -135,6 +159,10 @@ export class FakeClient {
   sendHangs = false;
   /** Handed to every session this client creates or resumes (spec 059). */
   nameSetFail = '';
+  /** Spec 099: the mode a resumed session comes back in; `modeSetFailOnResume` makes its `mode.set` reject; `modeSilentOnResume`: no `session.mode_changed` after it. */
+  resumeMode = 'interactive';
+  modeSetFailOnResume = '';
+  modeSilentOnResume = false;
   private track(s: FakeSession): FakeSession {
     s.turnScript = this.turnScript;
     s.nameAnswer = this.nameAnswer;
@@ -156,6 +184,9 @@ export class FakeClient {
     if (this.resumeGate) { const g = this.resumeGate; this.resumeGate = undefined; await g; } // spec 059: holds the first resume until the test lets it go
     this.resumed.push({ id, config });
     this.last = this.track(new FakeSession(id, config));
+    this.last.mode = this.resumeMode;
+    this.last.modeSetFail = this.modeSetFailOnResume;
+    this.last.modeSilent = this.modeSilentOnResume;
     return this.last;
   }
   /** Like the SDK: throws when the session is not on disk. */
@@ -201,6 +232,8 @@ export class FakeClient {
   modelsFail = '';
   listModelsFail = '';
   noQuota = false;
+  /** Spec 011 FR-081: what `account.getQuota` answers; default no snapshots. */
+  quotaResult: unknown = { quotaSnapshots: {} };
   noRpcModels = false;
   async getAuthStatus(): Promise<unknown> {
     this.authCalls.push('getAuthStatus');
@@ -214,7 +247,7 @@ export class FakeClient {
   get rpc(): Record<string, unknown> {
     return {
       sandbox: { getHostSupport: async () => { this.hostCalls++; if (this.sandboxHostFail) throw new Error(this.sandboxHostFail); return this.sandboxHost; } },
-      ...(this.noQuota ? {} : { account: { getQuota: async (p: unknown) => { this.authCalls.push('account.getQuota'); void p; if (this.quotaFail) throw new Error(this.quotaFail); return { quotaSnapshots: {} }; } } }),
+      ...(this.noQuota ? {} : { account: { getQuota: async (p: unknown) => { this.authCalls.push('account.getQuota'); void p; if (this.quotaFail) throw new Error(this.quotaFail); return this.quotaResult; } } }),
       ...(this.noRpcModels ? {} : { models: { list: async () => { this.authCalls.push('models.list'); if (this.modelsFail) throw new Error(this.modelsFail); return { models: [] }; } } }),
       ...(this.managed === undefined && !this.managedFail && !this.managedHangs ? {} : { managedSettings: { resolve: async (p: unknown) => {
         void p; this.managedCalls++;
@@ -227,7 +260,7 @@ export class FakeClient {
 }
 
 export class FakeCopilot extends CopilotAdapter {
-  constructor(public fake: FakeClient, oneShotTimeoutMs?: number) { super(); if (oneShotTimeoutMs !== undefined) this.oneShotTimeoutMs = oneShotTimeoutMs; }
+  constructor(public fake: FakeClient, oneShotTimeoutMs?: number, autopilotTuning?: AutopilotTuning) { super(); if (oneShotTimeoutMs !== undefined) this.oneShotTimeoutMs = oneShotTimeoutMs; if (autopilotTuning) this.autopilotTuning = autopilotTuning; }
   protected async getClient(): Promise<never> { return this.fake as never; }
 }
 

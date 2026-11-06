@@ -6,7 +6,7 @@
     "A": "approval/question wording, button labels and order unchanged",
     "S": "safety labels unchanged (Read-only / Ask first / Allow all, costs, limits)",
     "K": "keyboard + screen reader unchanged (roles, names, focus order, announce())",
-    "M": "reduced motion + Serious mode stop motion; no flashing",
+    "M": "reduced motion + Motion off stop motion; no flashing",
     "F": "15 agents fit at 1440x900 and 1280x800, no overlap or office scroll",
     "P": "Windows/macOS/Linux parity (CSS/JS only, no OS paths)",
     "C": "forced colours / prefers-contrast handled; never colour alone",
@@ -159,8 +159,8 @@
     {
       "id": "lounge",
       "name": "Lounge: couch and nap bunks",
-      "spec": "001 FR-051..057, 097 Q5",
-      "where": "shutters.js, app.js ~1089",
+      "spec": "001 FR-051..057, 097 Q5, 097 FR-246..FR-249",
+      "where": "shutters.js, app.js realModel, realoffice-layout.ts loungeRows",
       "code": "present",
       "blocks": [
         "person",

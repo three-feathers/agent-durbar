@@ -35,3 +35,17 @@ export function classifyMcpCall(text: unknown, mcpAuth?: boolean): McpCallClass 
   /* after sign-in: Entra's normal MFA and re-sign-in answers carry this word too, and signing in does fix those */
   return /\binteraction_required\b/i.test(t) ? 'policy' : undefined;
 }
+
+/**
+ * Spec 058 FR-225 (review of PR 1210): the narrow signal the check before a message acts on. `classifyMcpCall` is wide on purpose (it
+ * only words a failed call); a check restarts a server, so it reads only an HTTP 401 form, the runtime's own "MCP OAuth challenge
+ * required", `invalid_grant`, or an Entra sign-in code that signing in again fixes. Never a bare "unauthorized" or "token expired"
+ * ("unauthorized_client", "page token expired", "unauthorized for this plan tier", "error 401: license seat" are not sign-ins).
+ * A policy text (Conditional Access) is never one. Linear time, input cut first; reads the text, returns only a boolean.
+ */
+const CHECK_AUTH = /\bMCP OAuth challenge required\b|\bhttp(?:\/\d(?:\.\d)?)?[\s:=(-]{0,4}401\b|\b401\s+unauthori[sz]ed\b|\binvalid_grant\b|\bAADSTS(?:50058|50072|50074|50076|50078|50079|50132|50133|50173|70008|70043|70044|700082|65001)\b/i;
+export function isCheckUnauthorized(text: unknown): boolean {
+  const t = typeof text === 'string' ? text.slice(0, MAX) : '';
+  if (POLICY.test(t)) return false;
+  return CHECK_AUTH.test(t);
+}

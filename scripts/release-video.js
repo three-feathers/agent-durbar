@@ -17,7 +17,9 @@
  *   captures the page with `webContents.capturePage()` at FPS frames a second; the caption is drawn by a second, offscreen window into a
  *   band under the app, so no caption covers an app pixel. Before and after filming each scene it refuses to go on when the
  *   page's text (body text, input values, titles, labels, alt text) holds the home folder, the user or host name, this checkout's
- *   path or anything `redact` masks (FR-176): the clip shows simulator data only.
+ *   path or anything `redact` masks (FR-176): the clip shows simulator data only. Each feature scene zooms (eased, ZOOM_SECS) onto
+ *   the part that changes and holds it with a step caption (owner review of the v0.1.9 clip: "not followable"); the app runs at 2
+ *   device pixels a CSS pixel, so a zoom up to ZOOM_MAX crops captured pixels instead of enlarging them. One still per zoom (`-zoom`).
  *
  * It never touches a release, a tag or the notes. Any failure exits 1 and leaves no `release-*` file behind (FR-175: the release
  * still publishes, without a clip). One Electron at a time.
@@ -111,12 +113,114 @@ const SCENES = {
       await S.pickTheme('clean-office');
     },
   },
+  refresh: {
+    title: 'MCP sign-ins kept fresh', sub: 'After an hour away, one quiet line while expired sign-ins are renewed',
+    async play(S) {
+      const H = S.H, q = JSON.stringify;
+      // the simulator's reconnect takes 4.5 s (the send waits at most 5 s), so the "Reconnecting" line stays long enough to read
+      await S.reset({ simkinds: 'mixed', simsigninrefresh: '1', simsigninwait: '4500' });
+      const id = await H.js(`((window.__durbarSimUi.agents().find(a=>!a.parent&&a.live&&(a.info&&a.info.adapterId)==='claude'&&(a.state==='idle'||a.state==='done')&&!(a.info.sandbox&&a.info.sandbox.covers.includes('mcp'))))||{}).id||''`);
+      if (!id) throw new Error('refresh: no idle Claude Code chat');
+      const emit = (e) => H.js(`window.__durbarSimEmit(Object.assign({timestamp:Date.now()},${q(e)}))`);
+      const servers = (crm) => [{ name: 'docs', status: 'connected', transport: 'http' }, { name: 'crm', status: crm, transport: 'http' }, { name: 'files', status: 'connected', transport: 'stdio' }];
+      await emit({ type: 'mcp', sessionId: id, servers: servers('connected') });
+      await H.js(`window.__durbarSimSignIn.fate('docs','ok');window.__durbarSimSignIn.fate('crm','expired');window.__durbarSimSignIn.fate('files','ok');0`);
+      const o = await H.openSimAgent(`a=>a.id===${q(id)}`, '#msgInput');
+      if (!o.ok) throw new Error('refresh: the chat did not open');
+      await emit({ type: 'status', sessionId: id, status: 'idle' });
+      await H.until(`window.__durbarSimSignIn.lastResponse(${q(id)})!==undefined`, 4000);
+      await H.js(`window.__durbarSimSignIn.advance(${60 * 60 * 1000});0`);
+      await S.caption('MCP sign-ins kept fresh', 'A Claude Code chat with three MCP servers, left for an hour');
+      await S.film(1.6);
+      await H.js(`(()=>{const i=document.getElementById('msgInput');i.focus();i.value='Please continue with the report';i.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+      await H.settle();
+      await S.caption('{step}. Back after an hour: send a message', 'Expired MCP sign-ins are renewed before it goes');
+      await S.zoomTo(await S.rectOf(['#msgInput', '#sendBtn'], { above: 300, pad: 24 }));
+      await S.film(2);
+      await S.caption('{step}. One quiet line while they renew', 'No dialog, nothing to click: the message goes when they are done');
+      await S.check();
+      await H.js(`document.getElementById('sendBtn').click();0`);
+      // the line is up for well under a second in the simulator (each renewal takes 600 ms): taken once and held, so it can be read
+      const waiting = `[...document.querySelectorAll('#chat .note.mcpre:not(.mcpre-sign)')].pop()`;
+      if (!(await H.until(`(()=>{const n=${waiting};return !!n&&/Reconnecting/.test(n.textContent)})()`, 4000))) throw new Error('refresh: no Reconnecting line');
+      await H.js(`new Promise((r)=>requestAnimationFrame(()=>requestAnimationFrame(()=>r(0))))`); // after the chat brought the line into view
+      const line = await S.rectOfJs(waiting, { pad: 24, above: 90, minW: 760 });
+      const shot = await H.wc().capturePage();
+      await S.zoomTo(line, 0.6, shot);
+      await S.hold(shot, 3.4);
+      if (!(await H.until(`!!document.querySelector('#chat .note.mcpre-sign')`, 8000))) throw new Error('refresh: no sign-in line');
+      await H.js(`document.querySelector('#chat .note.mcpre-sign').scrollIntoView({block:'center'});0`);
+      await H.settle();
+      await S.caption('{step}. A server that needs you says so', 'crm needs a new sign-in: Sign in… opens its MCP servers row');
+      await S.zoomTo(await S.rectOf(['#chat .note.mcpre-sign'], { pad: 24, above: 90, minW: 760 }), 0.6);
+      await S.film(3.8);
+      await S.zoomOut();
+      await S.film(1);
+    },
+  },
+  needsyou: {
+    title: 'Needs you: the text reads clearly', sub: 'The inbox lists each request in full, with its parts apart',
+    async play(S) {
+      const H = S.H;
+      await S.reset({ simquestion: 'compact' });
+      await H.js(`window.__durbarSimUi.emit({type:'status',sessionId:'sim-2',timestamp:Date.now(),status:'needs-permission',intent:'Edit a file',permission:{requestId:'t-'+Date.now(),kind:'write',summary:'Write to notes/a.txt',scopeKey:'write:notes',scopeLabel:'write in notes',state:'pending',sandboxNote:'If you approve, Codex may run this outside its sandbox.'}})`);
+      await H.settle();
+      await H.js(`document.getElementById('inboxBtn').click()`);
+      if (!(await H.until(`[...document.querySelectorAll('#inboxDlg .ib-t')].some(p=>/notes/.test(p.textContent))`, 8000))) throw new Error('needsyou: no inbox row');
+      await H.js(`(()=>{const d=document.getElementById('inboxDlg');const sc=[...d.querySelectorAll('*')].find(e=>e.scrollHeight>e.clientHeight+4&&/auto|scroll/.test(getComputedStyle(e).overflowY));if(sc)sc.scrollTop=0;if(document.activeElement&&document.activeElement!==document.body)document.activeElement.blur();})()`);
+      await H.settle();
+      await S.caption('Needs you: the text reads clearly', 'The inbox in the top bar lists every request that waits for you');
+      await S.film(1.6);
+      // the first request: who asks, what for, the whole request text, then its buttons, each on its own line
+      const row = (k) => `(()=>[...document.querySelectorAll('#inboxDlg .ib-t')][${k}].closest('.ib-main').parentElement)()`;
+      await S.caption('{step}. Who asks, and the whole request', 'Name and state on top, the full text under it, the buttons apart');
+      await S.zoomTo(await S.rectOfJs(row(0), { pad: 18 }));
+      await S.film(3.8);
+      await S.caption('{step}. A sandbox warning stays readable', 'The note on what an approval allows is part of the text, not cut off');
+      await S.zoomTo(await S.rectOfJs(row(1), { pad: 18 }), 0.6);
+      await S.film(3.8);
+      await S.zoomOut();
+      await S.film(1);
+      await H.js(`(()=>{const d=document.getElementById('inboxDlg');const b=d&&[...d.querySelectorAll('button')].find(x=>/close|done/i.test(x.textContent+x.getAttribute('aria-label')));if(b)b.click();})()`);
+    },
+  },
+  mcpsettings: {
+    title: 'Settings > MCP servers', sub: 'Refresh MCP sign-ins automatically: on by default, one switch to turn it off',
+    async play(S) {
+      const H = S.H;
+      await S.reset();
+      await S.openSettings();
+      if (!(await H.until(`!!document.getElementById('mcpRefreshSw')`, 8000))) throw new Error('mcpsettings: no switch');
+      await H.js(`document.getElementById('advMcp').open=true;0`);
+      if (!(await H.until(`!!document.getElementById('mcpRefreshSw')&&document.getElementById('mcpRefreshSw').getClientRects().length>0`, 6000))) throw new Error('mcpsettings: switch not shown');
+      await H.js(`(()=>{const sc=document.querySelector('#screen .scr-body'),e=document.getElementById('mcpRefreshSw');sc.scrollTop+=e.getBoundingClientRect().top-sc.getBoundingClientRect().top-160;})()`);
+      await H.settle();
+      await S.caption('Settings > MCP servers', 'A new switch under the list of servers');
+      await S.film(1.8);
+      await S.caption('Refresh MCP sign-ins automatically', 'On by default: renewed before a message after an hour away');
+      await S.zoomTo(await S.rectOf(['#screen .mcp-refresh', '#mcpRefreshLine'], { pad: 20 }));
+      await S.film(3.8);
+      const flip = async (want) => {
+        await H.js(`document.getElementById('mcpRefreshSw').click();0`);
+        if (!(await H.until(`document.getElementById('mcpRefreshSw').getAttribute('aria-checked')===${JSON.stringify(String(want))}`, 4000))) throw new Error('mcpsettings: the switch did not change');
+        await H.clearToasts();
+        await H.settle();
+      };
+      await flip(false);
+      await S.caption('One switch to turn it off', 'Off: nothing reconnects by itself; Sign in and Restart still work');
+      await S.film(3.2);
+      await flip(true);
+      await S.zoomOut();
+      await S.film(1);
+      await S.closeSettings();
+    },
+  },
   outro: {
-    title: '{count} changes in {version}', sub: 'The full list is in the notes below',
+    title: '{count} changes in {version}', sub: 'The full list is in the notes below', titleNoCount: 'All changes in {version}',
     async play(S) { await S.reset(); await S.card(true); await S.film(3); await S.card(false); },
   },
 };
-const DEFAULT_SCENES = ['intro', 'crews', 'mcp', 'org', 'floors', 'office', 'outro'];
+const DEFAULT_SCENES = ['intro', 'refresh', 'needsyou', 'mcpsettings', 'outro'];
 
 /* ---------------------------------------------------------------- pure parts (tested by scripts/test-release-video.js) ---------------------------------------------------------------- */
 
@@ -143,9 +247,15 @@ function parseArgs(argv) {
   return a;
 }
 
-/** The caption text with {version} and {count} filled in. */
-function fill(text, vars) {
-  return String(text).replace(/\{(version|count)\}/g, (_, k) => (vars[k] === null || vars[k] === undefined ? '' : String(vars[k])));
+/** A scene's title template: without a --count, `titleNoCount` (no " changes in v1.2.3" with a missing number). */
+function sceneTitle(sc, vars) {
+  return sc.titleNoCount && (vars.count === null || vars.count === undefined || vars.count === '') ? sc.titleNoCount : sc.title;
+}
+/** A counter for the step captions of one clip: each `{step}` in a caption is the next number, so the numbers follow the order shown (issue #1214), never a number typed into a scene. */
+function stepCounter() { let n = 0; return () => ++n; }
+/** The caption text with {version}, {count} and {step} (the next step number, from `step`) filled in. */
+function fill(text, vars, step) {
+  return String(text).replace(/\{(version|count|step)\}/g, (_, k) => k === 'step' ? String(step ? step() : '') : (vars[k] === null || vars[k] === undefined ? '' : String(vars[k])));
 }
 
 /**
@@ -186,6 +296,8 @@ function childEnv(env = process.env) {
 }
 function safeUser() { try { return os.userInfo().username; } catch { return process.env.USER || process.env.USERNAME || ''; } }
 
+/** A home folder written out (`/home/<name>`, `/Users/<name>`, `C:\Users\<name>`): a sample path in the clip uses `~/` instead. */
+const HOME_PATH_RE = /(?:^|[^A-Za-z0-9_.-])(?:\/home\/[A-Za-z0-9._-]+|\/Users\/[A-Za-z0-9._-]+|[A-Za-z]:[\\/]Users[\\/][A-Za-z0-9._-]+)/;
 /**
  * FR-176: the problems in `text` (empty when clean). A user or host name counts only as a whole word, case-insensitively; a path anywhere.
  * `redact` is the app's own masker (src/shared/redact.ts); a text it changes holds something shaped like a secret.
@@ -200,6 +312,7 @@ function privacyProblems(text, forbidden, redact) {
     if (isPath ? t.includes(v) : new RegExp(`(^|[^a-z0-9_.-])${v.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^a-z0-9_-])`).test(lower)) hits.push(isPath ? 'a local path' : 'the user or host name');
   }
   if (typeof redact === 'function' && redact(t) !== t) hits.push('text that redact masks (token-shaped)');
+  if (HOME_PATH_RE.test(t)) hits.push('a home folder path'); // owner review of the v0.1.9 clip: any person's home folder, not only this machine's
   return [...new Set(hits)];
 }
 
@@ -262,6 +375,46 @@ function gifArgs(list, out, width, colors = 192) {
 /** The GIF tries, best first: each width with 192 colours, then the smallest width with 128. */
 function gifTries() { return [...GIF_WIDTHS.map((w) => ({ width: w, colors: 192 })), { width: GIF_WIDTHS[GIF_WIDTHS.length - 1], colors: 128 }]; }
 
+/* ---- the camera (owner review of the v0.1.9 clip: "make it better with zooms"): a crop of the app frame, always W:H_ in shape ---- */
+const ZOOM_MAX = 2;      // at most 2x: with the app at 2 device pixels a CSS pixel, a 2x crop is still one captured pixel per clip pixel (sharp text)
+const ZOOM_FPS = 30;     // a zoom is drawn from one capture at the MP4's rate, so it moves smoothly
+const ZOOM_SECS = 0.7;
+const FULL = Object.freeze({ x: 0, y: 0, w: W, h: H_ });
+/** The camera that shows `r` (CSS px of the app, padded by the caller) whole: the frame's shape, at most ZOOM_MAX, kept inside the app. */
+function fitCamera(r, { w = W, h = H_, zoomMax = ZOOM_MAX } = {}) {
+  if (!r || ![r.x, r.y, r.w, r.h].every(Number.isFinite) || r.w <= 0 || r.h <= 0) throw new Error('the zoom target has no size');
+  let cw = Math.max(r.w, r.h * w / h, w / zoomMax);
+  cw = Math.min(cw, w);
+  const ch = cw * h / w;
+  const cx = Math.min(Math.max(r.x + r.w / 2 - cw / 2, 0), w - cw);
+  const cy = Math.min(Math.max(r.y + r.h / 2 - ch / 2, 0), h - ch);
+  return { x: cx, y: cy, w: cw, h: ch };
+}
+/** Ease in and out (cubic): starts and ends at rest. */
+function ease(u) { const t = Math.min(1, Math.max(0, u)); return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; }
+function lerpCam(a, b, u) { const e = ease(u); return { x: a.x + (b.x - a.x) * e, y: a.y + (b.y - a.y) * e, w: a.w + (b.w - a.w) * e, h: a.h + (b.h - a.h) * e }; }
+/** The cameras of a zoom from `a` to `b` taking `secs`: one per ZOOM_FPS frame, the last exactly `b`. */
+function zoomPath(a, b, secs = ZOOM_SECS, fps = ZOOM_FPS) {
+  const n = Math.max(2, Math.round(secs * fps));
+  return Array.from({ length: n }, (_, i) => lerpCam(a, b, (i + 1) / n));
+}
+/** The camera in device pixels of a capture `scale` times the app's CSS size, inside the capture (whole pixels). */
+function cropRect(cam, scale, w = W, h = H_) {
+  const x = Math.max(0, Math.round(cam.x * scale)), y = Math.max(0, Math.round(cam.y * scale));
+  const width = Math.min(Math.round(w * scale) - x, Math.max(1, Math.round(cam.w * scale)));
+  const height = Math.min(Math.round(h * scale) - y, Math.max(1, Math.round(cam.h * scale)));
+  return { x, y, width, height };
+}
+
+/** The stills to keep for a scene: [published name, frame file]; `-zoom`, `-zoom-2`, ... at each zoom's hold. */
+function stillNames(base, s) {
+  const ext = (f) => f.split('.').pop();
+  const out = [];
+  if (s.still) out.push([`${base}-scene-${s.n}-${s.id}.${ext(s.still)}`, s.still]);
+  (s.zoomStills || []).forEach((f, i) => out.push([`${base}-scene-${s.n}-${s.id}-zoom${i ? '-' + (i + 1) : ''}.${ext(f)}`, f]));
+  return out;
+}
+
 /** The length a run must have (FR-172): a clip outside it means a scene broke or hung. */
 function lengthOk(seconds) { return seconds >= LEN_MIN && seconds <= LEN_MAX; }
 
@@ -296,7 +449,7 @@ async function main(argv = process.argv.slice(2), deps = {}) {
   try {
     console.log(`release-video: ${a.version}, scenes ${a.scenes.join(', ')}, frames in ${frames}`);
     const runOne = deps.runOne || require('./ui-suite').runOne;
-    const r = await runOne({ name: 'release-video', baseEnv: childEnv(), timeoutMs: RECORD_MS, killTree: true, env: { DURBAR_SIM_CLOCK: CLOCK, TZ: 'UTC', LANG: 'en_US.UTF-8', RV_VERSION: a.version, RV_SCENES: a.scenes.join(','), RV_COUNT: a.count === null ? '' : String(a.count) } }, frames);
+    const r = await runOne({ name: 'release-video', baseEnv: childEnv(), timeoutMs: RECORD_MS, killTree: true, dpr: 2, env: { DURBAR_SIM_CLOCK: CLOCK, TZ: 'UTC', LANG: 'en_US.UTF-8', RV_VERSION: a.version, RV_SCENES: a.scenes.join(','), RV_COUNT: a.count === null ? '' : String(a.count) } }, frames);
     if (!r.ok) throw new Error(`the recording failed (${r.why || 'exit ' + r.code}):\n${r.log.split(/\r?\n/).filter((l) => l.trim()).slice(-20).join('\n')}`);
     const shot = JSON.parse(fs.readFileSync(path.join(frames, 'frames.json'), 'utf8'));
     fs.writeFileSync(path.join(frames, 'list.ffconcat'), concatList(shot.frames));
@@ -317,11 +470,12 @@ async function main(argv = process.argv.slice(2), deps = {}) {
     if (mp4Bytes > MP4_MAX) throw new Error(`the MP4 is ${(mp4Bytes / 1048576).toFixed(1)} MB, over ${MP4_MAX / 1048576} MB`);
     const len = shot.seconds;
     if (!lengthOk(len)) throw new Error(`the clip is ${len.toFixed(1)} s, outside ${LEN_MIN}-${LEN_MAX} s`);
-    for (const s of shot.scenes) if (s.still) fs.copyFileSync(path.join(frames, s.still), path.join(out, `${base}-scene-${s.n}-${s.id}.${s.still.split('.').pop()}`));
+    for (const f of fs.readdirSync(out)) if (f.startsWith(`${base}-scene-`) && f.endsWith('.png')) fs.rmSync(path.join(out, f), { force: true }); // no still of an older run stays
+    for (const s of shot.scenes) for (const [name, file] of stillNames(base, s)) fs.copyFileSync(path.join(frames, file), path.join(out, name));
     fs.renameSync(mp4Part, finals[0]);
     fs.renameSync(gif.part, finals[1]);
     const manifest = { version: a.version, seconds: Number(len.toFixed(1)), mp4: { file: path.basename(finals[0]), bytes: mp4Bytes, width: W, height: FRAME_H, fps: MP4_FPS, probedSeconds: seconds(finals[0]) },
-      gif: { file: path.basename(finals[1]), bytes: gif.bytes, width: gif.width, colors: gif.colors, fps: FPS }, scenes: shot.scenes.map(({ id, title, sub, from, to }) => ({ id, title, sub, from, to })), privacy: shot.privacy };
+      gif: { file: path.basename(finals[1]), bytes: gif.bytes, width: gif.width, colors: gif.colors, fps: FPS }, scenes: shot.scenes.map(({ id, title, sub, from, to, zooms }) => ({ id, title, sub, from, to, zooms: zooms || [] })), privacy: shot.privacy };
     fs.writeFileSync(finals[2], JSON.stringify(manifest, null, 2) + '\n');
     console.log(`release-video: ${finals[0]} (${(mp4Bytes / 1048576).toFixed(2)} MB), ${finals[1]} (${(gif.bytes / 1048576).toFixed(2)} MB), ${len.toFixed(1)} s`);
     return manifest;
@@ -351,6 +505,7 @@ async function driver(ctx) {
   const frames = [];
   const scenes = [];
   let n = 0, clipMs = 0;
+  const steps = stepCounter();
 
   /* FR-172: the caption lives in its own band under the app frame (never over it), drawn by a second, offscreen window the size of
      the whole frame; title and end cards are that window's full frame. Its bitmap is taken again only when the caption changes. */
@@ -359,6 +514,24 @@ async function driver(ctx) {
   band.setContentSize(W, FRAME_H); // larger than a small (xvfb) screen, like the app's own test window
   await band.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(BAND_HTML));
   let bandBmp = null, cardOn = false, capTitle = '', capSub = '';
+  let cam = FULL, zoomStill = false;
+  /** One clip frame at clip time `t` (ms): the camera's part of the capture, scaled to the app's rows, and the band under it. */
+  const shoot = (img, t) => {
+    let app = null;
+    if (!cardOn) {
+      const sz = img.getSize();
+      const scale = sz.width / W; // device pixels a CSS pixel (2: the clip is recorded on a 2x screen)
+      const c = cropRect(cam, scale);
+      if (c.x || c.y || c.width !== sz.width || c.height !== sz.height) img = img.crop(c);
+      const s2 = img.getSize();
+      if (s2.width !== W || s2.height !== H_) img = img.resize({ width: W, height: H_, quality: 'best' });
+      app = img.toBitmap();
+    }
+    const bmp = composeFrame(app, bandBmp, { card: cardOn });
+    const file = `f${String(frames.length).padStart(5, '0')}.png`;
+    fs.writeFileSync(path.join(out, file), nativeImage.createFromBitmap(bmp, { width: W, height: FRAME_H }).toPNG());
+    frames.push({ file, t });
+  };
   const paintBand = async () => {
     // the page resolves after two animation frames with the new text; then poll (50 ms, as `until` does) until two captures agree (FR-048b)
     await band.webContents.executeJavaScript(`window.setBand(${jsLiteral(capTitle)},${jsLiteral(capSub)},${cardOn})`);
@@ -375,8 +548,11 @@ async function driver(ctx) {
     }
     const sz = img.getSize();
     if (!bandBmp) console.log(`[release-video] caption band window ${sz.width}x${sz.height} (${JSON.stringify(await band.webContents.executeJavaScript('[innerWidth,innerHeight,devicePixelRatio]'))})`);
-    if (sz.width !== W || sz.height < FRAME_H) throw new Error(`the caption band window is ${sz.width}x${sz.height}, not ${W}x${FRAME_H}`);
-    bandBmp = (sz.height === FRAME_H ? img : img.crop({ x: 0, y: 0, width: W, height: FRAME_H })).toBitmap(); // laid out from the top: a taller window only adds rows below
+    const k = sz.width / W; // 2 on the 2x screen the clip is recorded on
+    if (!(k >= 1) || sz.height < Math.round(FRAME_H * k)) throw new Error(`the caption band window is ${sz.width}x${sz.height}, not ${W}x${FRAME_H} at any scale`);
+    if (sz.height > Math.round(FRAME_H * k)) img = img.crop({ x: 0, y: 0, width: sz.width, height: Math.round(FRAME_H * k) }); // laid out from the top: a taller window only adds rows below
+    if (k !== 1) img = img.resize({ width: W, height: FRAME_H, quality: 'best' });
+    bandBmp = img.toBitmap();
     if (bandBmp.length !== W * FRAME_H * 4) throw new Error(`the caption band has the wrong size (${sz.width}x${sz.height})`);
   };
 
@@ -384,6 +560,7 @@ async function driver(ctx) {
     H,
     /** A fresh simulator page at 1440x900 (extra query values for the scene), calm: no toasts, the pointer off the controls. */
     async reset(query = {}) {
+      cam = FULL; zoomStill = false;
       await H.load({ w: W, h: H_, ready: 'fit', query });
       await H.office(query.simfloors === '1' ? 1 : 12);
       H.wc().sendInputEvent({ type: 'mouseMove', x: 1, y: 1 });
@@ -392,7 +569,7 @@ async function driver(ctx) {
     },
     /** The caption in the band under the app (title, then where to find it). */
     async caption(title, sub) {
-      capTitle = fill(title, vars); capSub = fill(sub, vars);
+      capTitle = fill(title, vars, steps); capSub = fill(sub, vars);
       await paintBand();
     },
     /** The full-frame title card (intro, outro) with the caption's text, or back to the app with the band. */
@@ -445,26 +622,57 @@ async function driver(ctx) {
       }
       throw new Error('mcp: no running Copilot chat with three connected servers');
     },
+    /** The union of the last element each selector matches, padded (CSS px of the app); `above` grows it upwards. */
+    async rectOf(sels, o = {}) {
+      return this.rectOfJs(`[${sels.map((s) => `[...document.querySelectorAll(${jsLiteral(s)})].pop()`).join(',')}]`, o);
+    },
+    /** The same for a page expression that gives an element or a list of elements. */
+    async rectOfJs(expr, { pad = 16, above = 0, minW = 0 } = {}) {
+      const r = await H.js(`(()=>{const v=${expr};const els=(Array.isArray(v)?v:[v]).filter(Boolean);if(!els.length)return null;let x1=1e9,y1=1e9,x2=-1e9,y2=-1e9;for(const e of els){const b=e.getBoundingClientRect();if(!b.width||!b.height)continue;x1=Math.min(x1,b.left);y1=Math.min(y1,b.top);x2=Math.max(x2,b.right);y2=Math.max(y2,b.bottom);}return x2>x1?{x:x1,y:y1,w:x2-x1,h:y2-y1}:null;})()`);
+      if (!r) throw new Error(`zoom target not found: ${expr.slice(0, 120)}`);
+      return { x: r.x - pad, y: r.y - pad - above, w: Math.max(minW, r.w + 2 * pad), h: r.h + 2 * pad + above }; // minW grows it to the right (text lines start on the left)
+    },
+    /** Zoom (eased, `secs`) from the current camera to one that shows `r`; the next film's middle frame is the scene's zoom still. */
+    async zoomTo(r, secs = ZOOM_SECS, img = null) {
+      const to = fitCamera(r);
+      const from = clipMs;
+      await this.glide(to, secs, img);
+      zoomStill = true;
+      scenes[scenes.length - 1].zooms.push({ at: Number((from / 1000).toFixed(2)), held: Number((clipMs / 1000).toFixed(2)), zoom: Number((W / to.w).toFixed(2)), camera: Object.fromEntries(Object.entries(to).map(([k, v]) => [k, Math.round(v)])) });
+    },
+    async zoomOut(secs = ZOOM_SECS) { await this.glide(FULL, secs); },
+    /** The camera move, drawn from one capture (the page is still while the camera moves) at ZOOM_FPS. */
+    async glide(to, secs, img = null) {
+      await this.check();
+      if (!img) img = await H.wc().capturePage();
+      for (const c of zoomPath(cam, to, secs)) { cam = c; shoot(img, clipMs); clipMs += 1000 / ZOOM_FPS; }
+      cam = to;
+    },
+    /** A moment that passes too fast to read (under a second in the app), held still for `secs` from one capture `img`. */
+    async hold(img, secs) {
+      await this.check();
+      const first = frames.length;
+      const n = Math.max(1, Math.round(secs * FPS));
+      for (let i = 0; i < n; i++) shoot(img, clipMs + i * 1000 / FPS);
+      clipMs += n * 1000 / FPS;
+      if (zoomStill) { scenes[scenes.length - 1].zoomStills.push(frames[first + Math.floor(n / 2)].file); zoomStill = false; }
+    },
     /** Record `secs` seconds at FPS frames a second; the scene's text is checked first and last (FR-176). */
     async film(secs) {
       await this.check();
       const period = 1000 / FPS;
       const start = Date.now();
+      const first = frames.length;
       let k = 0;
       while (Date.now() - start < secs * 1000) {
         const due = start + k * period;
         const wait = due - Date.now();
         if (wait > 0) await ctx.sleep(wait);
-        let img = await H.wc().capturePage();
-        const sz = img.getSize();
-        if (sz.width !== W || sz.height !== H_) img = img.resize({ width: W, height: H_ }); // a scaled display: the frame stays 1440x900
-        const bmp = composeFrame(cardOn ? null : img.toBitmap(), bandBmp, { card: cardOn });
-        const file = `f${String(frames.length).padStart(5, '0')}.png`;
-        fs.writeFileSync(path.join(out, file), nativeImage.createFromBitmap(bmp, { width: W, height: FRAME_H }).toPNG());
-        frames.push({ file, t: clipMs + (Date.now() - start) });
+        shoot(await H.wc().capturePage(), clipMs + (Date.now() - start));
         k++;
       }
       clipMs += Date.now() - start; // the clip's clock runs only while filming
+      if (zoomStill && frames.length > first) { scenes[scenes.length - 1].zoomStills.push(frames[first + Math.floor((frames.length - first) / 2)].file); zoomStill = false; }
       await this.check();
     },
     async check() {
@@ -479,13 +687,16 @@ async function driver(ctx) {
     const sc = SCENES[id];
     if (!sc) throw new Error(`unknown scene ${id}`);
     n++;
-    const rec = { n: String(n).padStart(2, '0'), id, title: fill(sc.title, vars), sub: fill(sc.sub, vars), from: Number((clipMs / 1000).toFixed(2)), firstFrame: frames.length };
+    const title = sceneTitle(sc, vars);
+    const rec = { n: String(n).padStart(2, '0'), id, title: fill(title, vars), sub: fill(sc.sub, vars), from: Number((clipMs / 1000).toFixed(2)), firstFrame: frames.length, zooms: [], zoomStills: [] };
+    cam = FULL; zoomStill = false;
     scenes.push(rec);
     // the caption is set by reset() callers through `S.caption`; put it on after every reset (a reload drops it)
     const reset = S.reset.bind(S);
-    S.reset = async (q) => { await reset(q); await S.caption(sc.title, sc.sub); };
+    S.reset = async (q) => { await reset(q); await S.caption(title, sc.sub); };
     await sc.play(S);
     S.reset = reset;
+    if (cam !== FULL) await S.zoomOut(); // a scene never ends zoomed in: the next starts from the whole app
     rec.to = Number((clipMs / 1000).toFixed(2));
     if (frames.length === rec.firstFrame) throw new Error(`scene ${id} filmed nothing`);
     rec.still = frames[Math.min(frames.length - 1, rec.firstFrame + Math.floor((frames.length - rec.firstFrame) * 0.6))].file;
@@ -497,5 +708,5 @@ async function driver(ctx) {
 }
 
 module.exports = driver;
-Object.assign(module.exports, { PLATFORM_ADDED, unexpectedEnvKeys, ENV_ALLOW, RECORD_MS, FFMPEG_MS, childEnv, gitEmail, run, W, H_, BAND, FRAME_H, composeFrame, SCENES, DEFAULT_SCENES, VERSION_RE, FPS, GIF_MAX, MP4_MAX, parseArgs, fill, forbiddenValues, privacyProblems, concatList, mp4Args, gifArgs, gifTries, lengthOk, main });
+Object.assign(module.exports, { sceneTitle, ZOOM_MAX, ZOOM_FPS, ZOOM_SECS, FULL, fitCamera, ease, zoomPath, cropRect, stillNames, HOME_PATH_RE, PLATFORM_ADDED, unexpectedEnvKeys, ENV_ALLOW, RECORD_MS, FFMPEG_MS, childEnv, gitEmail, run, W, H_, BAND, FRAME_H, composeFrame, SCENES, DEFAULT_SCENES, stepCounter, VERSION_RE, FPS, GIF_MAX, MP4_MAX, parseArgs, fill, forbiddenValues, privacyProblems, concatList, mp4Args, gifArgs, gifTries, lengthOk, main });
 if (require.main === module) main().catch((e) => { console.error('release-video:', e.message); process.exitCode = 1; });

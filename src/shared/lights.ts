@@ -1,5 +1,5 @@
-/* Spec 097 FR-040..FR-052: the Real office lights, the pure part. A desk's lamp, screen glow and call light come from its status
-   (FR-041), the room ambient from the share of active agents (FR-043), a lobby fixture's light from who is there (FR-045). No DOM, no
+/* Spec 097 FR-040..FR-052: the Real office lights, the pure part. A desk's lamp, screen glow and screen tint come from its status
+   (FR-041, FR-236), the room ambient from the share of active agents (FR-043), a lobby fixture's light from who is there (FR-045). No DOM, no
    imports: the page loads the compiled file after exports-shim.js (like redact.js) and reads `exports.lightFor` at call time; the
    tests import it. The renderer turns the result into CSS classes over the art (D4); every light repeats a cue that is also in words
    or an icon (FR-046). */
@@ -10,21 +10,22 @@
 /** The states Real office draws (spec 097 Edge cases "Every status"). */
 export type LightState = 'working' | 'thinking' | 'waiting' | 'error' | 'limit' | 'done' | 'idle' | 'asleep';
 export type Lamp = 'warm' | 'bright' | 'on' | 'low' | 'off';
-export type Glow = 'on' | 'breathe' | 'red' | 'low' | 'off';
-export type Call = 'amber' | 'red' | 'orange' | 'green-once' | null;
-export type Motion = 'pulse' | 'breathe' | 'fade' | null;
-export interface Light { lamp: Lamp; glow: Glow; call: Call; motion: Motion }
+export type Glow = 'on' | 'breathe' | 'low' | 'off';
+export type Motion = 'breathe' | null;
+/** FR-236 (owner, 2026-11-05 16:46 UTC): the monitor screen's status tint; `none` keeps the normal screen. No separate status lights. */
+export type Tint = 'amber' | 'red' | 'orange' | 'green' | 'none';
+export interface Light { lamp: Lamp; glow: Glow; motion: Motion; tint: Tint }
 
-/** FR-041, one row per state (the table of the spec, in its order). */
+/** FR-041 (amended by FR-236: the call light and the red glow are gone, the screen is the cue), one row per state, in the spec's order. */
 export const LIGHT_TABLE: Readonly<Record<LightState, Light>> = {
-  working: { lamp: 'warm', glow: 'on', call: null, motion: null },
-  thinking: { lamp: 'on', glow: 'breathe', call: null, motion: 'breathe' },
-  waiting: { lamp: 'bright', glow: 'on', call: 'amber', motion: 'pulse' },
-  error: { lamp: 'on', glow: 'red', call: 'red', motion: null },
-  limit: { lamp: 'on', glow: 'on', call: 'orange', motion: null },
-  done: { lamp: 'low', glow: 'low', call: 'green-once', motion: 'fade' },
-  idle: { lamp: 'low', glow: 'low', call: null, motion: null },
-  asleep: { lamp: 'off', glow: 'off', call: null, motion: null },
+  working: { lamp: 'warm', glow: 'on', motion: null, tint: 'none' },
+  thinking: { lamp: 'on', glow: 'breathe', motion: 'breathe', tint: 'none' },
+  waiting: { lamp: 'bright', glow: 'on', motion: null, tint: 'amber' },
+  error: { lamp: 'on', glow: 'on', motion: null, tint: 'red' },
+  limit: { lamp: 'on', glow: 'on', motion: null, tint: 'orange' },
+  done: { lamp: 'low', glow: 'low', motion: null, tint: 'none' },
+  idle: { lamp: 'low', glow: 'low', motion: null, tint: 'none' },
+  asleep: { lamp: 'off', glow: 'off', motion: null, tint: 'none' },
 };
 
 const lightOwn = (o: object, k: string): boolean => Object.prototype.hasOwnProperty.call(o, k);
@@ -42,11 +43,13 @@ export function lightState(status: string, flags?: { limit?: boolean; paused?: b
   return lightOwn(LIGHT_TABLE, s) ? (s as LightState) : 'idle';
 }
 
-/** FR-041 and FR-047: the light of one desk. With `still` (reduced motion or Serious mode) nothing pulses, breathes or fades: the
- *  pulsing call light stays at its bright level, the done tick shows without a fade. */
-export function lightFor(state: string, opts?: { still?: boolean }): Light {
-  const row = LIGHT_TABLE[lightState(state)];
-  return opts && opts.still ? { ...row, motion: null } : { ...row };
+/** FR-041, FR-047 and FR-236: the light of one desk. The tint is the table's (the light state picks amber, red or orange first); a done desk
+ *  with an unread reply (`unread`: DurbarUnread's `isUnread`, never a helper) gets green, and only a done one. With `still` (reduced motion or
+ *  Motion off) nothing breathes. */
+export function lightFor(state: string, opts?: { still?: boolean; unread?: boolean }): Light {
+  const ls = lightState(state), row = LIGHT_TABLE[ls];
+  const tint: Tint = ls === 'done' && opts && opts.unread ? 'green' : row.tint;
+  return opts && opts.still ? { ...row, motion: null, tint } : { ...row, tint };
 }
 
 /** FR-107: the lamp state in words, the same in every world (a flame or a neon strip is still "Lamp"): for the hover card, the chat header and the desk-side plate,
@@ -54,9 +57,9 @@ export function lightFor(state: string, opts?: { still?: boolean }): Light {
 export function lampWords(l: Light): string {
   if (l.lamp === 'off') return 'Lamp off';
   if (l.lamp === 'low') return 'Lamp low';
-  if (l.call === 'amber') return 'Lamp bright, amber call light';
-  if (l.call === 'red') return 'Lamp on, red error light';
-  if (l.call === 'orange') return 'Lamp on, orange call light';
+  if (l.tint === 'amber') return 'Lamp bright, amber screen';
+  if (l.tint === 'red') return 'Lamp on, red screen';
+  if (l.tint === 'orange') return 'Lamp on, orange screen';
   if (l.lamp === 'warm') return 'Lamp warm, steady';
   return 'Lamp on, breathing';
 }

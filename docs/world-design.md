@@ -59,6 +59,7 @@ Be specific without being a cliche: no tourist symbols, stereotypes, or copied l
 - **Use the space near the edges and the horizon.** Empty sand or floor is waste when people could be bigger.
 - **Few people, big screens:** readable text in the room at 3 to 4. **Many people, small screens:** state by colour and marks, with text on hover or focus.
 - Numbering and movement are natural: floor 1 at the bottom, up is up.
+- **Finished agents give their room away** (owner, 2026-11-06, spec 097 FR-246..FR-249): a done agent whose reply is read sits in a compact lounge seat (person, a small desk and monitor from the world's own pictures, the plate), so busy desks grow; an unread reply keeps the full desk. Who moves is the flat office's lounge rule, never a world's own. A world with a grid (the arcade) puts the seats in the grid's free cells rather than a row of its own.
 
 ## Screens
 
@@ -92,13 +93,16 @@ A world is not finished until its chat and settings screens have been looked at 
 - **A world pack may override the paper look.** The post-it is modern flat paper by default; a pack may restyle it (its own material, edge, tilt) as long as it keeps one colour per reason and the contrast above. **Open for the cave:** modern paper post-its look out of place in the Prehistoric cave (review, 2026-11-02; not yet an owner decision); the cave has no paper override yet, and its pieces (a slab, a bark scrap) are to be offered before it ships. Not redrawn now; the cave stays behind its closed flag.
 - **The room stays put when someone leaves.** Their seat, plate and status stay, with a square, readable post-it (in the world's own style) saying where they went. Rows and screens resize only when the number of sessions changes, and they ease.
 - **Prefer a rig to more pictures for small motions.** Cut a person into head, torso and hands with pivots, so hands stay on the keys. Image models repeat poses, so several "in-between" frames often add little.
-- Reduced motion and Serious mode stop it. Hidden and off-screen pause it.
+- Reduced motion and Settings > Motion off stop it (Serious mode does not). Hidden and off-screen pause it.
+- **Canvas only where CSS cannot do the job** (constitution V, Amendment 3, owner 2026-11-06), such as Brain view's thousands of points (spec 106). A world's own art stays frames and `transform`/`opacity` (spec 102 FR-261); a world restyles a canvas through tokens, fonts and point shape only.
 
 ## Light
 
 - People stand out from the background. A lighter room or a darker one is a choice to test against people, cards and labels, not a mood alone.
 - The light has one direction and temperature. Shadows agree with it.
 - **Light pools are pixels in the floor picture,** not extra layers, and never follow a person. No flicker and no moving water.
+- **Status light is the one exception, and it belongs to the desk.** The room's own light (windows, ceiling lamps) is part of the art. A status light (spec 097 D4, FR-040) is an overlay on a real object, such as a monitor's light bar shining down onto the desk. It stays when its person is away, never moves, and never crosses a face (spec 097 FR-236, 2026-11-04).
+- **Attention lights the desk, not the room.** Who needs you shows by a light at their desk and a word on their plate. The rest of the room keeps its light, and nothing dims labels or faces (owner, 2026-11-04: "just add light without any dusk"; spec 097 FR-236..FR-238).
 - **A bright sky hurts labels by their edges, not their text.** A white chip on a pale sky measured 1.42:1 with the sky, and about 15:1 for its text: give it an edge at 3:1 against whatever is behind it, computed per world, since one edge passes a pale sky and fails a mid-grey floor, and keep the sky below glare. Text never sits on the sky itself.
 
 ## Performance

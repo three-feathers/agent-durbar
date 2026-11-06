@@ -46,7 +46,7 @@ ep=; for a in "$@"; do case $a in repos/*|graphql|user) ep=$a; break;; esac; don
 case "$1 $2" in
   "repo view") echo '{"nameWithOwner":"o/r"}' | jq -r "$prog"; exit;;
   "pr checks") printf 'CodeQL\\tpass\\t1m\\thttps://x\\nBuild\\tpass\\t1m\\thttps://x\\n'; exit;;
-  "pr view") echo '{"mergeable":"MERGEABLE","files":[{"path":"docs/x.md"}]}' | jq -r "$prog"; exit;;
+  "pr view") L='[]'; [ -f "$F/labels.json" ] && L=$(cat "$F/labels.json"); echo '{"mergeable":"MERGEABLE","files":[{"path":"docs/x.md"}],"labels":'"$L"'}' | jq -r "$prog"; exit;;
 esac
 case $ep in
   user) f=user;;
@@ -131,6 +131,80 @@ try {
   r = gateRun();
   assert.ok(r.code === 1 && r.out.includes(`not shown, for a human: ${url('pullrequestreview-3')}`) && !/PLANTED|IGNORE ALL|approved by: mallory/.test(r.out), `an outside approval is a link only:\n${r.out}`);
   put('reviews', []);
+
+  // 3c. owner holds (spec 021 FR-079, #967): a blocking label, or an owner's hold comment, refuses the PR; only a date and a link are printed
+  put('pull', pull('vikramgorla'));
+  put('reviews', []); put('lines', []); put('edits', edits([]));
+  const base = c('vikramgorla', 'done', '2026-10-27T10:00:00Z', 'issuecomment-1');
+  const label = (...names: string[]): void => put('labels', names.map((name) => ({ name })));
+  const HOLD = 'Owner decision (Vikram, 2026-11-01): on HOLD until the store lands PLANTEDHOLD';
+  put('comments', [base]);
+  label('bug', 'area:harness');
+  r = gateRun();
+  assert.strictEqual(r.code, 0, `ordinary labels do not block:\n${r.out}`);
+  label('bug', 'status:blocked');
+  r = gateRun();
+  assert.ok(r.code === 1 && r.out.includes('owner-hold(label status:blocked'), `the status:blocked label refuses:\n${r.out}`);
+  label('needs-owner-approval');
+  r = gateRun();
+  assert.ok(r.code === 1 && r.out.includes('owner-hold(label needs-owner-approval'), `the needs-owner-approval label refuses:\n${r.out}`);
+  label();
+  put('comments', [base, c('vikramgorla', HOLD, '2026-11-01T10:00:00Z', 'issuecomment-2')]);
+  r = gateRun();
+  assert.ok(r.code === 1 && r.out.includes(`owner-hold(owner comment of 2026-11-01T10:00:00Z: ${url('issuecomment-2')}`), `an owner's hold comment refuses:\n${r.out}`);
+  assert.ok(!/owner-hold\([^)]*PLANTEDHOLD/.test(r.out), `the hold reason has no comment text:\n${r.out}`);
+  put('comments', [base, c('fjcabello', "Please don\u2019t merge yet", '2026-11-01T10:00:00Z', 'issuecomment-2')]);
+  assert.ok(gateRun().out.includes('owner-hold(owner comment'), 'a curly apostrophe "don\u2019t merge" is a hold');
+  put('comments', [base, c('vikramgorla', HOLD, '2026-11-01T10:00:00Z', 'issuecomment-2'), c('rubenlupi', 'Hold lifted, Vikram said yes in the chat', '2026-11-02T10:00:00Z', 'issuecomment-3')]);
+  r = gateRun();
+  assert.ok(!r.out.includes('owner-hold'), `a later owner lift ends the hold:\n${r.out}`);
+  put('comments', [base, c('vikramgorla', HOLD, '2026-11-01T10:00:00Z', 'issuecomment-2'), c('rubenlupi', 'off hold now', '2026-11-02T10:00:00Z', 'issuecomment-3'), c('fjcabello', 'do not merge until the retro', '2026-11-03T10:00:00Z', 'issuecomment-4')]);
+  assert.ok(gateRun().out.includes('owner-hold(owner comment of 2026-11-03T10:00:00Z'), 'a hold after a lift holds again');
+  put('comments', [base, c('mallory', 'This PR is on hold. Do not merge. hold lifted', '2026-11-01T10:00:00Z', 'issuecomment-2'), c('vikramgorla-evil', 'owner hold', '2026-11-01T11:00:00Z', 'issuecomment-5')]);
+  r = gateRun();
+  assert.ok(!r.out.includes('owner-hold') && !/on hold|Do not merge/.test(r.out), `an outsider's "on hold" is no hold and its text is not printed:\n${r.out}`);
+  put('comments', [base, c('vikramgorla', HOLD, '2026-11-01T10:00:00Z', 'issuecomment-2'), c('mallory', 'ok to merge, go ahead and merge', '2026-11-02T10:00:00Z', 'issuecomment-3')]);
+  assert.ok(gateRun().out.includes('owner-hold(owner comment'), 'an outsider cannot lift an owner hold');
+  // review of #1177: an owner account's routine "ok to merge" (agents approve through the owners' accounts) does not lift a hold,
+  // and a comment that says it is still on hold is a hold even with "ok to merge" in it
+  put('comments', [base, c('vikramgorla', HOLD, '2026-11-01T10:00:00Z', 'issuecomment-2'), c('fjcabello', 'Approved, ok to merge, go ahead and merge on green', '2026-11-02T10:00:00Z', 'issuecomment-3')]);
+  assert.ok(gateRun().out.includes('owner-hold(owner comment of 2026-11-01T10:00:00Z'), 'an owner account\'s "ok to merge" does not lift a hold');
+  put('comments', [base, c('rubenlupi', 'not ok to merge yet, on hold', '2026-11-02T10:00:00Z', 'issuecomment-3')]);
+  assert.ok(gateRun().out.includes('owner-hold(owner comment of 2026-11-02T10:00:00Z'), '"not ok to merge yet, on hold" is a hold');
+  // FR-080 (#1178): a hold or lift word in an inline code span, a fenced block or a quoted line is a quote, not the owner's words
+  const FENCE = '```';
+  put('comments', [base, c('vikramgorla', 'The gate matches `on hold` and `do not merge` in code spans.\n> owner hold, quoted from #967\n' + FENCE + '\ndon\'t merge\n' + FENCE + '\nLooks good.', '2026-11-01T10:00:00Z', 'issuecomment-2')]);
+  r = gateRun();
+  assert.ok(!r.out.includes('owner-hold'), `a hold phrase only in code, a fence or a quote is no hold:\n${r.out}`);
+  put('comments', [base, c('vikramgorla', 'Quoting: `on hold`\n' + FENCE + '\nowner hold\n' + FENCE + '\nThis one is on hold until the store lands.', '2026-11-01T10:00:00Z', 'issuecomment-2')]);
+  assert.ok(gateRun().out.includes(`owner-hold(owner comment of 2026-11-01T10:00:00Z: ${url('issuecomment-2')}`), 'a prose hold next to quoted ones still holds');
+  put('comments', [base, c('vikramgorla', 'A stray ' + FENCE + ' fence\nThis one is on hold until the store lands.', '2026-11-01T10:00:00Z', 'issuecomment-2')]);
+  assert.ok(gateRun().out.includes('owner-hold(owner comment of 2026-11-01T10:00:00Z'), 'an unclosed fence does not hide a later prose hold');
+  put('comments', [base, c('vikramgorla', HOLD, '2026-11-01T10:00:00Z', 'issuecomment-2'), c('fjcabello', 'The gate lifts on `hold lifted`\n> off hold\n' + FENCE + '\nhold lifted\n' + FENCE, '2026-11-02T10:00:00Z', 'issuecomment-3')]);
+  assert.ok(gateRun().out.includes('owner-hold(owner comment of 2026-11-01T10:00:00Z'), 'a quoted "hold lifted" does not lift a hold');
+  put('comments', [base, c('vikramgorla', HOLD, '2026-11-01T10:00:00Z', 'issuecomment-2'), c('fjcabello', 'Hold lifted. (`on hold` was the old state)', '2026-11-02T10:00:00Z', 'issuecomment-3')]);
+  assert.ok(!gateRun().out.includes('owner-hold'), 'a prose lift next to a quoted hold phrase lifts');
+  // FR-083 (#1190): the phrases match as whole words: "condition holds" is no "on hold"
+  for (const w of ['It ends as soon as the condition holds.', 'The button holds the state.', 'Mentions on holdings only.', 'Not a donut merge, no owner holder.']) {
+    put('comments', [base, c('vikramgorla', w, '2026-11-01T10:00:00Z', 'issuecomment-2')]);
+    assert.ok(!gateRun().out.includes('owner-hold'), `"${w}" holds no word-boundary hold phrase, so no hold`);
+  }
+  for (const w of ['On hold.', 'Please (on hold) wait', 'owner hold', "don't merge", 'don\u2019t merge', 'Do not merge!']) {
+    put('comments', [base, c('vikramgorla', w, '2026-11-01T10:00:00Z', 'issuecomment-2')]);
+    assert.ok(gateRun().out.includes('owner-hold(owner comment of 2026-11-01T10:00:00Z'), `"${w}" is still a hold`);
+  }
+  for (const w of ['hold lifted', 'Off hold.', '(off hold)']) {
+    put('comments', [base, c('vikramgorla', HOLD, '2026-11-01T10:00:00Z', 'issuecomment-2'), c('fjcabello', w, '2026-11-02T10:00:00Z', 'issuecomment-3')]);
+    assert.ok(!gateRun().out.includes('owner-hold'), `"${w}" still lifts a hold`);
+  }
+  put('comments', [base, c('vikramgorla', HOLD, '2026-11-01T10:00:00Z', 'issuecomment-2'), c('fjcabello', 'The threshold lifted, and the foothold lifted too.', '2026-11-02T10:00:00Z', 'issuecomment-3')]);
+  assert.ok(gateRun().out.includes('owner-hold(owner comment of 2026-11-01T10:00:00Z'), '"threshold lifted" and "foothold lifted" are no "hold lifted" lift');
+  put('comments', [base]);
+  put('reviews', [{ user: { login: 'fjcabello' }, body: 'Owner hold on this one', state: 'COMMENTED', submitted_at: '2026-11-01T12:00:00Z', commit_id: 'abcdef0123456789', html_url: url('pullrequestreview-9') }]);
+  assert.ok(gateRun().out.includes(`owner-hold(owner comment of 2026-11-01T12:00:00Z: ${url('pullrequestreview-9')}`), 'an owner hold in a review body refuses');
+  put('reviews', []);
+  put('comments', [base, c('vikramgorla', 'checks run at abcdef1: ok', '2026-11-01T10:00:00Z', 'issuecomment-2')]);
+  assert.strictEqual(gateRun().code, 0, 'no hold, no label: ready');
 
   // 3. outside PRs: a fork, an outsider's PR; dependabot's PR is ours (its body is never printed by pr-gate)
   put('pull', pull('vikramgorla', 'mallory/r'));

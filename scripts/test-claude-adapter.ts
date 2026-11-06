@@ -11,6 +11,7 @@ import { CLAUDE_ENTRYPOINT, ClaudeAdapter, PRE_TOOL_USE_HOOK, budgetText, claude
 import { createCliTransport } from '../src/adapters/claudeTransport';
 import type { AgentEvent } from '../src/adapters/types';
 import { FakeClaudeChild, fakeSpawn, SANDBOX_HOST_OK } from './fakes/claude-cli';
+import { tmpDir } from './test-tmp';
 
 const tick = (ms = 0): Promise<void> => new Promise((r) => setTimeout(r, ms));
 async function until<T>(what: string, f: () => T | undefined, ms = 1500): Promise<T> {
@@ -23,7 +24,7 @@ async function until<T>(what: string, f: () => T | undefined, ms = 1500): Promis
   }
 }
 
-const WS = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-claude-ws-'));
+const WS = tmpDir('durbar-claude-ws-');
 
 /** A fake child that answers initialize, and on each user message runs `turn(child, text)`. */
 function scripted(turn: (c: FakeClaudeChild, text: string) => void | Promise<void>) {
@@ -154,7 +155,7 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(cfg.mcpServers.fs, { type: 'stdio', command: 'npx', args: ['-y', 'mcp-fs'], env: { K: 'v' } });
     // spec 069 FR-009 (review 6 on #489): the JSON, values included, never goes on the command line (`ps` shows argv)
     const json = mcpConfigOf({ fs: { type: 'stdio', command: 'npx', args: [], env: { TOKEN: 'sk-planted-ARGV-secret' } } })!;
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-069-argv-'));
+    const root = tmpDir('durbar-069-argv-');
     const l = cliLaunchArgs({ mode: 'read-only', sessionId: 's', resume: false, mcpConfig: json }, root);
     assert.ok(!l.args.join(' ').includes('sk-planted-ARGV-secret') && !l.args.includes(json), 'no MCP JSON on argv');
     const file = l.args[l.args.indexOf('--mcp-config') + 1];
@@ -1048,8 +1049,8 @@ async function main(): Promise<void> {
 
   // ---- custom agents (spec 043 FR-008): chosen before the first message, passed on the first launch; a started session refuses ----
   {
-    const cfg = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-cagent-cfg-'));
-    const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-cagent-ws-'));
+    const cfg = tmpDir('durbar-cagent-cfg-');
+    const ws = tmpDir('durbar-cagent-ws-');
     fs.mkdirSync(path.join(ws, '.claude', 'agents'), { recursive: true });
     fs.writeFileSync(path.join(ws, '.claude', 'agents', 'pirate.md'), '---\nname: pirate\ndescription: Arr\n---\nYou are a pirate.');
     const sp = fakeSpawn();

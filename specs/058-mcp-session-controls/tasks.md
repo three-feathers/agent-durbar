@@ -561,7 +561,7 @@ apps, as T176 allows) after them.
   after; findings into PR #1073's `launchUpdate` with the `auth` key; tests with fakes (timeout, a child that never exits, an unknown
   status = `unknown`, a local server never started, Copilot's fail-closed stop, a chat waiting on the check's flight, macOS skipped)
   [FR-204]
-- [ ] T183 The 30-minute recheck: one timer in main, running and idle chats one after the other and awaited, a tick skipped while the
+- [ ] T183 *(superseded 2026-11-05 by T190..T194: a status recheck cannot see an Entra expiry that reads `connected`)* The 30-minute recheck: one timer in main, running and idle chats one after the other and awaited, a tick skipped while the
   last runs; a Copilot chat read only when its needs-auth servers are neither blocked nor in flight, holding their flight while it reads;
   Codex chats never read (a list without `serverName` starts copies of local servers, round 3); one reconnect on a new `needs-auth` that
   is not blocked (adapters with `mcpSignInReconnect` only), once at `resume`; stopped when the
@@ -580,6 +580,26 @@ apps, as T176 allows) after them.
 - [ ] T188 Review fixes and the adversarial self-review (`docs/review-checklist.md`): no token path, no shell, no wall clock, no loop
   [FR-204..FR-217]
 - [ ] T189 `/speckit-converge` for this delta: spec Status, tags, `[KNOWN GAP]`s from T176/T177 [FR-204..FR-217]
+- [x] T190 Capability `mcpBackgroundRenew` (Copilot true, Claude CLI/SDK and Codex false) and its contract test [FR-218]
+- [x] T191 Planner `planMcpRenew` (failure, in-flight call, sandbox, server filters, blocks, cooldown) and the refresher's marks, per-server queue
+  (`serial`) and cooldown per chat; reuse of `fly` and FR-210's records; no timer [FR-218, FR-219, FR-221]
+- [x] T192 Wiring in `mcpipc.ts`: a failed call of class `auth` feeds the failure; `builtin` and static-header marks in the chat view [FR-218]
+- [x] T193 The row's "Renewed HH:MM" (`AgentMcpEntry.renewedAt`, the dialog, the activity row), no chat line for success [FR-220]
+- [x] T194 Unit tests with a fake clock and fake adapter, and the four mutants [FR-222]
+- [x] T196 Renew at once, mid-turn (owner 2026-11-05 18:03 UTC): `noteCall`/`callsInFlight`, no idle rule for this trigger [FR-218]
+- [x] T197 The one automatic note: `mcpNudgeOp` (the adapter's `send`, a `user` event, a plain name), `nudged` line, limits (switch, limit, Stop, ended chat, gate) [FR-218]
+- [x] T198 Review fixes of PR #1203 (short turn, stale marks, per-session queue, the person's own actions, docs) [FR-218..FR-221]
+- [x] T199 Settings line, `docs/limits.md`, `docs/features.md`, `docs/safety.md` name the note and its credits [FR-218]
+- [x] T195 Simulator step "Renewed" at 1440x900 and 1280x800, looked at; docs, changelog fragment, Settings line [FR-220, FR-222]
+- [x] T200 `planMcpCheck` (pure) and the refresher's `checkChat`: skip rules, 5-minute freshness, 30 s unknown, parallel with the send [FR-223..FR-225]
+- [x] T201 Wiring in `mcpipc.ts` (`check` through `listMcpTools`, `canCheck`, the start check, `checkUnknown` on the dialog row) [FR-223, FR-225]
+- [x] T202 The "Reconnecting <name>..." line (`McpSignInRefreshNote` kinds `reconnecting` and `reconnect-end`, the window) [FR-226]
+- [x] T203 Diagnostics switch (`diagnostics` setting, Settings row) and the renewal activity row gated by it, FR-218's path too [FR-227]
+- [x] T204 Unit tests `test-mcp-presend.ts` with mutants, existing renewal tests updated for the gated row [FR-228]
+- [x] T205 Simulator step: the line at 1440x900 and 1280x800, looked at [FR-228]
+- [x] T206 `docs/limits.md`, `docs/features.md`, `docs/feature-inventory.md`, Settings line, changelog fragment [Docs]
+- [x] T207 Real check by the owner after the release: a real Entra server, macOS: `real:` 2026-11-06, v0.1.11, the renewal note was seen (FR-218..FR-222); the pre-send path and Keychain prompts were not reported [FR-228]
+- [ ] T208 Still open from T207: Windows; whether the pre-send check (FR-223..FR-228) fires on a real Entra server; macOS Keychain prompts; how long the session had been idle (not known); several chats or sessions sharing one server; a provider that rotates refresh tokens [KNOWN GAP]
 - **Built 2026-11-03, part 1** (branch `058-mcp-auth-refresh-build`, T178..T181, T184..T186 and T187's docs for them; over the
   ~500-line mark, so split along the plan's order): the planner, main's refresher (last response, resume, the per-chat gate every send
   path awaits, the per-server flight, records and blocks, the 5 s wait with Stop), `mcpRestartOp` as a promise map, Copilot's and Claude
@@ -620,3 +640,7 @@ apps, as T176 allows) after them.
   busy state); a wiring test checks both, with a fake that swallows the next error after an interrupt.
 - **Mutants** (T178, T181; each planted, `test:mcpsigninrefresh` and `test:mcpsession` run, then reverted; 2026-11-03):
   all 45 killed (third review: Stop after a wait on an idle chat interrupting, Stop never interrupting a busy chat after a wait, Stop not ending the wait, replacing the two earlier Stop mutants; 32, the review's four for the sandbox rule below, and eight for the second review: a busy chat waiting for an earlier reconnect, a throwing gate not caught in the refresher, `agents:send` or the scheduler, Stop during a wait not interrupting, no pruning, the server list always built, Claude's automatic path calling `mcp_authenticate`): `>` for `>=` at 60:00; `Date.now` for the clock; the mark set by a send instead of a response; the block cleared by a turn end; a local server kept; a switched-off server kept; a policy result not blocking; busy ignored; resume ignored; the macOS rule dropped; `allowReadOnly` ignored; no single flight; the switch ignored; one attempt per gap dropped; no 5 s bound; Stop not ending the wait; a blocked server joined; `agents:send` not awaiting the gate; `agents:stop` not ending the wait; the scheduler's send not awaiting the gate; End session not forgetting (killed after the test checked the order: `stopped`, then forget); the turn end not marked; the elicitation not declined; Restart not clearing the block; the automatic path writing the "restarted" row; taking part without `mcpSignInReconnect` (killed after a test with the flag removed); Copilot's automatic path falling back to disable/enable; Copilot's automatic path without the list re-read; a malformed stored switch reading the default; the fresh-report rule dropped (an old `connected` read as reconnected); a needs-sign-in result not blocking; no address fallback when the report names no transport. Two first survived (End session, the capability) and the tests were made to catch them.
+- [x] T190 Issue #1196 (FR-004, FR-188): `shots-058-mcp-refresh` sends the report after the marker call, since only an `mcp` event repaints the open dialog. Test: the driver with a 400 ms pause before the marker call (old fails, new passes) and under a CPU load.
+- [x] T209 Issue #1229 (FR-229): blocked servers show Sign in (`mcpsession.ts`, `mcpsignin.ts`, `mcpipc.ts`, `screens.js`), idle chat's Sign in starts the session (`ensureLive`) and the chat button starts the row's Sign in, never silent (`signInPressNote`), the chat line goes with the need. Tests: `test:mcpsignin`, `test:mcpwords`, `test:mcpsigninrefresh`; 8 mutants killed (blocked ignored, no ensureLive, no redo, no check skip for blocked, row without text, button without sign-in opt, row condition, mcpipc block never read). Real check by the owner pending.
+- [x] T210 Review of PR #1230 (FR-229 e..i): block respects state, switch and org policy; `connected` for a blocked connected server is not a fix; `clearKey` per server key; wait/off/policy/toolCall mutants get asserts; press text for a session not running and Sign in again. Tests in `test:mcpsignin`, `test:mcpwords`, `test:mcpsigninrefresh`; 12 more mutants killed. The cross-folder case is tested through `registerMcpIpc` (a same-name server blocked in another folder keeps its block; the by-name-clear mutant is killed). Claude Code real run [KNOWN GAP].
+- [x] T211 Second review round of PR #1230 (FR-229 j..l): fail-closed cases (stdio, no transport, builtin, source unknown) with M9/M10 mutants killed by their asserts; an explicit `again=true` for a blocked server obeys `canSignInAgainStatus`; shared `isRemoteTransport` (`src/shared/mcp.ts`, streamable-http); a renewal in flight writes no stale block over a call that worked (`test:mcpsigninrefresh`). The simulator's `isRemoteTransport` copy is compared with the shared one by source text and by answers; `isRemoteTransport` and the race guard's equal-tick boundary have labelled asserts.

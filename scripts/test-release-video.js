@@ -35,6 +35,25 @@ for (const [id, s] of Object.entries(RV.SCENES)) {
 assert.strictEqual(RV.fill('{count} changes in {version}', { version: 'v0.1.7', count: '28' }), '28 changes in v0.1.7');
 assert.strictEqual(RV.fill('{count} in {version}', { version: 'v1.0.0', count: null }), ' in v1.0.0');
 
+// ---- issue #1214: step captions are numbered 1..n by position in the clip, never by a number typed into a scene ----
+{
+  const shown = (ids) => {
+    const step = RV.stepCounter();
+    const out = [];
+    for (const sid of ids) for (const m of RV.SCENES[sid].play.toString().matchAll(/S\.caption\('((?:[^'\\]|\\.)*)'/g)) out.push(RV.fill(m[1], { version: '', count: null }, step));
+    return out;
+  };
+  const numbers = (caps) => caps.map((c) => /^(\d+)\. /.exec(c)).filter(Boolean).map((m) => Number(m[1]));
+  const caps = shown(RV.DEFAULT_SCENES);
+  const got = numbers(caps);
+  assert.ok(got.length >= 2, 'the default clip has numbered steps');
+  assert.deepStrictEqual(got, got.map((_, i) => i + 1), `step numbers are 1..n in the order shown (got ${got.join(',')})`);
+  assert.ok(!caps.some((c) => /\{step\}/.test(c)), 'no {step} is left unfilled');
+  const reversed = shown(['needsyou', 'refresh']);
+  assert.deepStrictEqual(numbers(reversed), numbers(reversed).map((_, i) => i + 1), 'another scene order is numbered 1..n too');
+  for (const [sid, sc] of Object.entries(RV.SCENES)) assert.ok(!/caption\('\d+\. /.test(sc.play.toString()), `${sid}: a step caption uses {step}, not a typed number`);
+}
+
 // ---- the privacy check (FR-176) ----
 const forbidden = RV.forbiddenValues({ home: '/home/alice', user: 'alice', host: 'alice-laptop', root: '/home/alice/src/agent-durbar', email: '' });
 assert.ok(forbidden.includes('/home/alice') && forbidden.includes('\\home\\alice'), 'the home folder, both slashes');
@@ -55,6 +74,70 @@ let realRedact = null;
 try { realRedact = require(path.join(__dirname, '..', 'dist', 'shared', 'redact.js')).redact; } catch { /* no build */ }
 if (realRedact) assert.deepStrictEqual(P('ghp_' + 'a'.repeat(36), realRedact), ['text that redact masks (token-shaped)'], 'the app redact catches a token');
 else console.log('release-video: dist/shared/redact.js not built, real-redact case skipped');
+
+// ---- owner review of the v0.1.9 clip: any home folder written out is refused, not only this machine's ----
+{
+  const none = RV.privacyProblems;
+  for (const t of ['node /home/vikram/tools/notes-mcp.js', 'at /Users/someone/x', 'C:\\Users\\pat\\notes', 'c:/Users/pat', '(/home/a.b)'])
+    assert.ok(none(t, [], (x) => x).includes('a home folder path'), `a home folder in ${JSON.stringify(t)}`);
+  for (const t of ['node ~/projects/demo/tools/notes-mcp.js', '/srv/home/x', '~/work/mcp-swiss', '/homework/x', 'see /home/ alone'])
+    assert.deepStrictEqual(none(t, [], (x) => x), [], `no home folder in ${JSON.stringify(t)}`);
+}
+
+// ---- the camera: eased zooms onto the part that changes, sharp at 2x, never out of the app frame ----
+{
+  const { W, H_ } = RV;
+  const near = (a, b) => Math.abs(a - b) < 1e-6;
+  const shape = (c) => near(c.w / c.h, W / H_);
+  // a small target: the zoom stops at ZOOM_MAX, centred on it
+  const c1 = RV.fitCamera({ x: 600, y: 400, w: 100, h: 40 });
+  assert.ok(shape(c1) && near(c1.w, W / RV.ZOOM_MAX), `at most ${RV.ZOOM_MAX}x`);
+  assert.ok(near(c1.x + c1.w / 2, 650) && near(c1.y + c1.h / 2, 420), 'centred on the target');
+  // a target near an edge: the camera stays inside the app (no black border)
+  for (const r of [{ x: 0, y: 0, w: 50, h: 20 }, { x: W - 30, y: H_ - 10, w: 30, h: 10 }, { x: -40, y: 850, w: 200, h: 100 }]) {
+    const c = RV.fitCamera(r);
+    assert.ok(c.x >= 0 && c.y >= 0 && c.x + c.w <= W + 1e-9 && c.y + c.h <= H_ + 1e-9 && shape(c), `inside the frame for ${JSON.stringify(r)}`);
+  }
+  // a wide or tall target is shown whole; a target larger than the app is the whole app
+  const wide = RV.fitCamera({ x: 100, y: 300, w: 1000, h: 50 });
+  assert.ok(wide.w >= 1000 && wide.x <= 100 && wide.x + wide.w >= 1100 && shape(wide), 'a wide target fits across');
+  const tall = RV.fitCamera({ x: 100, y: 100, w: 100, h: 600 });
+  assert.ok(tall.h >= 600 && tall.y <= 100 && tall.y + tall.h >= 700 && shape(tall), 'a tall target fits down');
+  assert.deepStrictEqual(RV.fitCamera({ x: -10, y: -10, w: 3000, h: 2000 }), { x: 0, y: 0, w: W, h: H_ }, 'larger than the app: the whole app');
+  assert.throws(() => RV.fitCamera({ x: 0, y: 0, w: 0, h: 10 }), /no size/);
+  assert.throws(() => RV.fitCamera(null), /no size/);
+  // easing: at rest at both ends, monotonic between
+  assert.ok(RV.ease(0) === 0 && RV.ease(1) === 1 && near(RV.ease(0.5), 0.5) && RV.ease(-1) === 0 && RV.ease(2) === 1);
+  for (let u = 0; u < 1; u += 0.05) assert.ok(RV.ease(u + 0.05) >= RV.ease(u), 'monotonic');
+  assert.ok(RV.ease(0.05) < 0.05 && RV.ease(0.95) > 0.95, 'slow at the start and the end');
+  // the path: ZOOM_FPS frames a second, ends exactly on the target, moves one way
+  const p = RV.zoomPath(RV.FULL, c1, 0.7);
+  assert.strictEqual(p.length, Math.round(0.7 * RV.ZOOM_FPS));
+  assert.deepStrictEqual(p[p.length - 1], { x: c1.x, y: c1.y, w: c1.w, h: c1.h }, 'ends on the target');
+  for (let i = 1; i < p.length; i++) assert.ok(p[i].w <= p[i - 1].w, 'zooms in steadily');
+  assert.ok(RV.ZOOM_SECS >= 0.6 && RV.ZOOM_SECS <= 0.8, 'the owner asked for about 0.6-0.8 s');
+  assert.ok(RV.zoomPath(c1, c1, 0.01).length >= 2, 'even a tiny move has frames');
+  // the crop in device pixels: a 2x capture of a 2x zoom is one captured pixel per clip pixel
+  const cr = RV.cropRect(c1, 2);
+  assert.ok(cr.width === Math.round(W / RV.ZOOM_MAX * 2) && cr.width === W, 'a 2x zoom on a 2x capture: no upscaling');
+  assert.deepStrictEqual(RV.cropRect(RV.FULL, 1), { x: 0, y: 0, width: W, height: H_ });
+  const edge = RV.cropRect({ x: W - 720.4, y: H_ - 450.4, w: 720.6, h: 450.6 }, 2);
+  assert.ok(edge.x + edge.width <= W * 2 && edge.y + edge.height <= H_ * 2, 'rounding never leaves the capture');
+  // stills: one per scene plus one per zoom
+  assert.deepStrictEqual(RV.stillNames('release-v0.1.9', { n: '02', id: 'refresh', still: 'f00010.png', zoomStills: ['f00004.png', 'f00007.png'] }).map((x) => x[0]),
+    ['release-v0.1.9-scene-02-refresh.png', 'release-v0.1.9-scene-02-refresh-zoom.png', 'release-v0.1.9-scene-02-refresh-zoom-2.png']);
+  assert.deepStrictEqual(RV.stillNames('b', { n: '01', id: 'intro', still: 'f1.png' }).map((x) => x[0]), ['b-scene-01-intro.png'], 'a scene without a zoom');
+  // every feature scene of the default clip zooms (the owner: "not followable" without)
+  const src3 = fs.readFileSync(path.join(__dirname, 'release-video.js'), 'utf8');
+  for (const id of RV.DEFAULT_SCENES.filter((s) => s !== 'intro' && s !== 'outro')) {
+    const body = src3.slice(src3.indexOf(`  ${id}: {`), src3.indexOf('\n  },', src3.indexOf(`  ${id}: {`)));
+    assert.ok(/S\.zoomTo\(/.test(body), `${id} zooms onto what changed`);
+  }
+  assert.ok(/dpr: 2/.test(src3), 'recorded at 2 device pixels a CSS pixel, so zoomed text stays sharp');
+  // the outro without --count names no empty number
+  assert.strictEqual(RV.fill(RV.sceneTitle(RV.SCENES.outro, { version: 'v0.1.9', count: null }), { version: 'v0.1.9', count: null }), 'All changes in v0.1.9');
+  assert.strictEqual(RV.fill(RV.sceneTitle(RV.SCENES.outro, { version: 'v0.1.9', count: '20' }), { version: 'v0.1.9', count: '20' }), '20 changes in v0.1.9');
+}
 
 // ---- review on #1083: the git email, the environment allow-list ----
 {

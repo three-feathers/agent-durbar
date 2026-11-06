@@ -676,6 +676,20 @@ Nothing here was run on a real session for this delta (0 credits); the `real:` e
 
 **Tasks:** T163..T164 in `tasks.md`. Numbers taken here: FR-191, T163..T164 (checked against `main`, the remote branches and the open PRs on 2026-10-30).
 
+### 2026-10-31: Settings switch *Still highlights (no motion)* (issue #780, WCAG 2.2.2; branch `001-still-highlights`)
+
+- **FR-192** `[IMPLEMENTED]` `test:` `sim:` The person at a desk that needs you or has a New reply keeps moving until the user answers (FR-178); only the OS reduced-motion setting stopped it. Settings (the **Highlights** section, after *Characters*) gets a switch **Still highlights (no motion)**, off by default (owner decision 2026-10-26: FR-178 ships as is). When on, the coloured glow (`--desk-new`, `--desk-needs`) and the New badge stay, but the movement that goes with a highlight stops: the person does not jump or pulse, the glow does not breathe, no `hl-in` entry class is set, the badge does not pulse once when it appears, and (see *Motion, all of it*) the waiting badge's pings, the waiting person's wave and the desk tap stop. It is **not** the same as OS reduced motion, which stops every animation (`*{animation:none!important}`): other animations still follow the OS setting, and Serious mode (spec 052 FR-069, separate) stops the looping ones.
+  - **One path:** the renderer sets the generic attribute `data-still-highlights` on `<html>` (like `data-serious`); `styles.css` has one rule on it that shares the existing `hl-still` rule (no second animation path), and `hlIn` and `unreadFresh` read the same flag as `REDUCED`. A later theme or scene (for example spec 097) can key its own CSS on the attribute.
+  - **Saved in main:** `settings:setStillHighlights` (a new channel) calls `SettingsStore.setStillHighlights(v)`: only a real boolean changes it, anything else keeps the value in force; `true` is written as `stillHighlights: true`, off is not written; `parseSettings` keeps only `true`. It is returned by `settings:get` and survives a restart. The simulator replaces the preload (`sim.ts`), so main's handler is tested on a stand-in `electron` with a real store (`test-stillhighlights.ts`).
+  - **Checked:** `check-unread` (switch on: no `hl-in`, no animation on the person, the glow or the badge, the glow colour and the New badge still drawn, no card transform; switch off again: animation back; both sizes), the same driver's `sw()` (the switch is in Settings, toggles, is labelled, the section's text is at least 10.5 px); the waiting badge's ping and a forced `.fresh` New badge (`animationName` none with the switch on, `ping` / `unread-pulse` with it off); a failed save, both ways (asked on and main says off: the words and the page say off; main says on while the page was off: the page applies it); a double press sends one save (a press while one is in flight is ignored); the boot read (`?simstillhl=1` starts the simulator with it saved on: applied at start, no visit to Settings); the Flat person drawn with and without the SMIL wave and a different signature, for the office kit and a theme kit (`__durbarSimUi.scene`); the compact `.wave` and the `.tap` on a probe with the real classes; a real New badge is not `.fresh` with the switch on (this replaces the old source-text pin on `unreadFresh`); and the Real office (below). The Settings row shows the value main saved (`settings:get`), and the window follows it when they differ. Main: `SettingsStore.setStillHighlights` returns `{ok, stillHighlights}`, `ok` only when the save worked (a failed write is not ok even when the value did not change); each type guard (store, handler) is tested on its own (`test-stillhighlights.ts`). `durbar_settings` (MCP, read-only) reports `stillHighlights` next to `seriousMode`. Waits are `until()`, not sleeps.
+  - **Motion, all of it (2026-11-02, review of 09aa0ac0):** the switch also stops the waiting badge's three pings (`.badge.waiting::after`, about 8 s, WCAG 2.2.2) and the waving hand of a waiting person in the Flat office (SVG `animateTransform`, which the CSS rule cannot reach: `scene()` leaves it out when `REDUCED||SERIOUS||STILL_HL`, and `stillSig` marks the scene's signature for Serious mode or this switch, so a desk already drawn is redrawn when the switch is turned, as for Serious mode; the theme kits get the same flag as their `reduced`). The compact densities' CSS wave (`.sc-c .wave`) and the 60 s desk tap (`.tap`, mood `impatient`) are stopped by the same one CSS rule on `data-still-highlights` (pre-review of #968). **Real office:** the switch is passed as the room's `still` (spec 097 FR-047, the same as reduced motion and Serious mode), so the call lights, the glows and the people's loops all stand still, the whole room and not only the highlighted desks: its motion is one system on the shared grid (FR-229, #1046), and what is still has no loop on that grid. The Flat office's halo behind a waiting desk's screen is already a still glow (FR-210, #1057), so it needs nothing here. `check-unread` has a Real-office pass (a pulsing call light and endless animations with the switch off; none, `.ro.still` and no `pulse` / `breathe` with it on; back when it is off).
+  - **Failed save (2026-11-02, 2026-11-03):** when the answer is not ok but says a boolean, the switch, the words (*It stays on* or *off*) and the window all show that value, not the value asked for and not the switch's earlier state.
+  - **Honest limits:** `[KNOWN GAP]` the switch is not read by a screen reader here (labelled `role="switch"`, as the other switches); the waving hand is asserted on the drawn markup (`scene()`), not by watching a waving person at a desk (a needs-you person walks to the Boss in the simulator); the theme kits' own idle motion (breathing, blinking) is not stopped by this switch, only their waiting wave; the chat header portrait's `lightFor(...,{still})` has no observable effect today (the portrait does not read `motion`), so no test can tell it from a mutant; the persistence is proved through main's handler and store, not by restarting a packaged app; not verified on Windows or macOS.
+
+**Changed 2026-11-01 (sweep of the build):** a save that fails is said: the switch answers not saved and the setting goes back to what it was, as Settings' own words say (*It stays off*).
+
+**Tasks:** T165..T166 in `tasks.md` (issue #780). Numbers taken here: FR-192, T165..T166 (checked against `main`, the remote branches and the open PRs on 2026-10-31).
+
 ### 2026-11-01: the layout search lays out one room, not the whole office (owner decision; branch `001-room-search`)
 
 Spec, plan and tasks only: nothing here is built. Numbers taken: FR-193..FR-203, SC-005..SC-007, T167..T183, checked 2026-11-01 against `main`, the remote branches and the open PRs (highest elsewhere: FR-192 and T166 on #968).
@@ -735,3 +749,39 @@ Spec 017 FR-029 (owner decision, no doors) removed the Office with cabins layout
   - **Honest limits:** `[KNOWN GAP]` CPU measured on Linux under xvfb, software rendering, one machine, not on macOS or Windows; the blur measured by captured pixels on Linux only, not by eye on a Retina screen; the pulse on waiting desks is lost, so "Waiting" is told by its colour and its words only.
 
 **Tasks:** T190..T191 in `tasks.md`. Numbers taken here: FR-210, T190..T191 (checked against `main`, the remote branches and the open PRs on 2026-11-02).
+
+### 2026-11-05: the screen's tint in Open office; the card glow and waiting halo go (owner; FR-230..FR-232, T192..T196)
+
+**Owner decisions, in order** (Vikram, Telegram, relayed by the coordinator):
+- 08:37 and 08:40 UTC: the Open office waiting halo "looks funny"; Open office takes Real office's lights instead, and the halo goes.
+- **16:46 UTC, recorded on #1150, which replaces the lights:** "no separate status lights in any world. Instead each desk's monitor screen is tinted by status (dark tint behind readable text, at least 4.5:1): amber = needs you, red = error, orange = spending limit (a bit redder than the mock, so it differs from amber), green = done with an unread New reply; working, thinking, idle and asleep keep the normal screen. The light bars, pools, corner call dots and the old glows/halos (Flat card glow, waiting halo, Real office amber ring and red halo) are removed, since the screen is the cue. Status words and the New reply tag stay. Applies to Real office, the arcade and the Flat office."
+
+The rule is spec 097 FR-236 (#1202); this delta is Open office's half, so world parity holds (spec 021 FR-078).
+
+- **FR-230** **The card glow and the waiting halo go** (amends FR-178 and FR-210).
+  - No desk card draws a glow (`::after`) for needs you or for a New reply.
+  - No compact scene draws `halo-waiting` behind its monitor. The working, thinking and error glows behind a compact scene's monitor are not named in the decision and stay.
+  - The words stay: the status pill says Waiting, and FR-172's "New" badge says New.
+  - FR-178's person pulses (the entry jump and breathe on a needs-you or New desk) stay. Owner decision, Vikram, Telegram, 2026-11-05 18:04 UTC, asked whether they go with the glow: "flat office - keep it".
+- **FR-231** **The screen's tint, in every scene kit** (office, pixel, crew).
+  - The scene's screen (`.scr`) takes spec 097 FR-236's four tints, the same values: amber `#553a00`, red `#651414`, orange `#7a2e00` and green `#0f4526` (`--tint-*` in `styles.css`, fixed for meaning, never a theme's).
+  - Precedence as there: amber when the agent needs you, orange at its limit or on a coffee break, red on an error or failing, green for a done desk with an unread reply (helpers never have one), else the normal screen.
+  - `app.js` computes it from the state the desk already shows (`deskTint`), because Open office loads no Real office file (097 SC-004). It is the desk card's `data-tint`, and CSS colours the screen from it, so a new reply tints without a new scene.
+  - Open office's screens are light, and their glyphs were drawn for that. On a tint they take a light ink (`--tint-ink`): the wait card becomes an outline and the done disc gives way to its tick, so no mark is lost.
+  - **A shut card** (the nap bed or lounge of FR-051) has no monitor, and never needs green: an agent with an unread reply keeps its desk (FR-173; `shutters.js` refuses `unread`), so a shut agent's reply is always read. A shut card carries no `data-tint`.
+  - No motion: the tint changes at once. Forced colours: SVG keeps its colours, and the status word and the New badge carry the meaning, as they always did.
+- **FR-232** *Folded into FR-231 (2026-11-05): the corner call light went with the decision; the screen is the cue.*
+
+- `sim:` `scripts/check-001-lights.js` (in `check:ui`), at 1440x900 and 1280x800 in the office, pixel and crew kits. It fails when:
+  - a desk's `data-tint` is not what its state says;
+  - a tinted screen is not filled with its tint, or an untinted one is;
+  - a tinted screen's glyphs are not the light ink;
+  - a card glows, `halo-waiting` is drawn, or an old light part exists;
+  - the screen animates.
+- Mutants, each failing:
+  - the card glow back: `sim-3: the card glows (...), FR-230`;
+  - green over amber, in the page and in `deskTint`'s code: `sim-14 "Waiting": data-tint green, its state says amber`;
+  - the glyph-ink rules removed: `sim-3: 6 glyph colours on the amber screen are not the light ink`.
+- `check-unread`, `check-crew` and `test:unread` assert the tint where they asserted the glow.
+
+**Tasks:** T192..T196 in `tasks.md`. Numbers taken here: FR-230..FR-232 and T192..T196, checked on 2026-11-05 against `main` (FR-229, T191), the remote branches and the open PRs.

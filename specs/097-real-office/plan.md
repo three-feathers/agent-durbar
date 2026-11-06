@@ -110,3 +110,53 @@ Order: row 9 of [spec 005's plan table](../005-chat-fullscreen-and-agent-strip/p
 ## The chat and Settings look like the room (delta 2026-11-02; FR-231..FR-235)
 
 Order: rows A15..A18 of [spec 005's plan table](../005-chat-fullscreen-and-agent-strip/plan.md). Tokens and the surface colour: [spec 070](../070-theme-tokens/spec.md) FR-068..FR-074. No new runtime dependency. Constitution V: no text on art, sizes unchanged but prose, contrast by test; art is one static background per surface, with no blur, blend or filter (FR-180, FR-182).
+
+## Attention lights (delta 2026-11-04; FR-236..FR-238, FR-243, FR-244, T185..T193)
+
+Owner decisions (Vikram, Telegram DMs, 2026-11-04):
+- 04:38 UTC: round 3's D1, without D4's Boss-door glow.
+- 04:52 UTC: "Ok, just add light without any dusk". FR-239..FR-242 are withdrawn; FR-043, FR-047 and FR-182 are unchanged.
+
+Spec *Changes* has the requirements and the honest limits. This is PR 1 (spec only). PR 2 builds it in the order below.
+
+- **Geometry, pure** (`src/shared/realoffice-layout.ts`, T185). `lightBar(desk, lay)` returns `{bar, clamp, bezel, pool, poolHole, onEdge}` for each `DeskBox`, from the `screen` and `glass` rects already there. The rules are tested where they are made:
+  - the bar inside the monitor's span;
+  - the pool narrowed, then lowered, clear of every `face` box;
+  - `onEdge` when a `ZoneBox.sign` or other chrome rect the layout places overlaps the bar's normal place.
+
+  No DOM: unit-tested on every OS (FR-019 stays under 5 ms).
+- **State, pure** (`src/shared/lights.ts`, T186).
+  - `Light` gains `bar: 'off'|'amber'|'red'|'orange'|'green'`, and `LIGHT_TABLE` gains the *Bar* column.
+  - `lightFor(state, { still, unread })`: unread turns an off bar green and nothing else.
+  - `lampWords` is unchanged: the words for green are the tag's.
+- **Drawing** (`src/renderer/realoffice.js`, `realoffice.css`, T187).
+  - Bar, clamp, bezel and pool sit in `.ro-lights` (under the chrome), one set per desk, created once and switched by class (`bar-amber` ...). A status change adds no node and no layout read (FR-244).
+  - The New reply tag is a `<span aria-hidden="true">` in `.ro-chrome`, placed from the plate's rect, shown by class from `isUnread(a)`. The plate's `aria-label` takes `unreadWords(a)`.
+  - Forced colours, reduced motion and Serious mode use the existing `.ro.still` and media rules.
+- **Reused, not added** (spec 021 FR-031):
+  - `isUnread` and `unreadWords` (`app.js`, DurbarUnread), not a second unread store;
+  - the existing light layer, its `--ro-*` colours and the FR-049 fixed-colour rule;
+  - `lightState`'s precedence;
+  - the layout's `face` boxes (the same ones `portraitCrop` uses);
+  - FR-050's contrast pass in `check-office-overlap.js`;
+  - `check-office-ops.js` for the op rows;
+  - `shots-097-realoffice.js` for pictures.
+- **Cost** (T190, T192): count checks only.
+  - `check-office-ops` counts 0 nodes and no extra layout reads for a status change that lights a bar.
+  - `test:theme-tokens` finds no `backdrop-filter`, `filter` or `mix-blend-mode` in the bar rules and no animation of anything but `opacity`.
+  - No frame-time measurement: the bar is gradients and opacity only.
+- **Constitution.**
+  - V: no state by colour alone (tag, plate words); no motion in the bar; text never on art.
+  - III: no new storage or IPC; the tag shows no content.
+  - VI: CSS and pure TS only.
+  - VIII: the mock's limits are in the spec.
+
+## The lounge row (delta 2026-11-06; FR-246..FR-249, T199..T203, issue #1220)
+
+One PR, spec first. Who moves is `shutPlan(r)` (spec 001 FR-051, `shutters.js` `roomPlan`): app.js's `realModel` already receives `m.rolled`; it marks those agents `lounge: true` and gives them the lounge words. Nothing else in the app decides it.
+
+- **Engine, pure** (`src/shared/realoffice-layout.ts`, T199): `realLayout` takes the lounge agents out of their folders, works out the row's height (`loungeRow`), searches the desk rows in the floor minus that height (the lobby keeps its range from the whole height) and places the seats under the last desk row. `Layout.lounge = {box, desks}`: each seat is a `DeskBox` with `lounge: true`, a `table` rect (the small desk) and the usual `person`, `face`, `screen`, `glass`, `plate`, `lamp`, so the renderer and `slipAvoid` reuse the desk code. `ASLEEP_W` and the slim desk go.
+- **Arcade, pure** (`src/shared/realoffice-arrangements.ts`, T200): the same split; the seats take cells after the cabinets (`packSeats(sizes, cols, keep, extra)` fills the rows' free cells, the last row first, then new rows) and `planFor` counts them, so the plan is never worse than with those agents at cabinets.
+- **Renderer** (`src/renderer/realoffice.js`, T201): the desk loop body becomes `deskOne(d)`, run for the zones' desks and then the lounge's; a seat draws the world's `desk.webp` small (`ld:` key) instead of the desk or cabinet, no screen text, a still person, the same plate, monitor, lamp and "z z"; seat plates are moved after the desks' plates for Tab. `sweep` fades a leaving desk picture; a new one fades in. The ease is `box()`'s.
+- **CSS**: `.ro-lseat` table, `.ro-lmon` monitor (photo and cave: the desk monitor scaled; arcade: a pixel frame in `worlds/retro/world.css`), `.ro-plate.lounge`.
+- **Checks**: `test:realoffice-layout` and `test-realoffice-aisles` (FR-246..FR-248, mutants), `scripts/check-097-lounge.js` (FR-246..FR-249), `shots-097-moments` asleep moment and `world-matrix.js` lounge scene updated.
