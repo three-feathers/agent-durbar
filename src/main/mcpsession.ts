@@ -14,6 +14,7 @@ import type { AgentInfo, AgentMcpEntry, AgentMcpReply, GlobalApp, McpRefreshResu
 import { maskMcpError } from './mcpmask';
 import { sourcesFor } from './mcpglobal';
 import { BUILTIN_SERVERS } from './mcpfiles';
+import { isRemoteTransport } from '../shared/mcp';
 import type { McpHealthMark } from '../shared/mcphealth';
 import type { McpCallClass } from '../shared/mcpcall';
 
@@ -80,7 +81,7 @@ export const canSignInAgainStatus = (s: { name?: string; status?: string; errorC
   // fail closed (review on #625): only a remote server Durbar knows by its http(s) address (a folder extra, a list Durbar passes or the
   // Copilot CLI list), never a built-in one (it uses the Copilot sign-in itself), and never a source or transport that says otherwise or
   // is unknown to the runtime; a stdio server has no address, so it is never a candidate whatever a re-read says
-  !!s && !needsSignIn(s) && (s.status === 'connected' || s.status === 'failed') && ((typeof url === 'string' && /^https?:\/\//i.test(url)) || (knownRemote && (s.transport === 'http' || s.transport === 'sse'))) &&
+  !!s && !needsSignIn(s) && (s.status === 'connected' || s.status === 'failed') && ((typeof url === 'string' && /^https?:\/\//i.test(url)) || (knownRemote && isRemoteTransport(s.transport))) &&
   !BUILTIN_SERVERS.includes(s.name ?? '') && s.source !== undefined && s.source !== 'builtin' && s.source !== 'unknown' && s.transport !== 'stdio' && s.transport !== 'memory';
 
 /** A server name that is safe to put in a command the user may copy: no spaces, quotes, newlines or shell characters (a folder extra's name comes from a file). */

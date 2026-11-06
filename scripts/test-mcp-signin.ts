@@ -965,6 +965,48 @@ async function main(): Promise<void> {
         const rowOrg = agentMcpReply({ a: info(sid), ad: adLive, live: BLOCKED, off: new Set(), secrets: [], cli: [{ name: 'teams', enabled: true }], extras: [], ambientDisabled: new Set(), signIn: () => undefined, signInBlocked: () => true, orgBlocked: () => ({ why: 'policy', refuse: true }) }).servers[0];
         assert.deepStrictEqual([rowOrg.needsSignIn, rowOrg.canSignIn], [undefined, undefined], 'an organization-refused blocked server shows no Sign in');
       }
+      // review of #1230 (findings 1-3): the automatic forced re-sign-in fails closed; a blocked server that does not qualify gets the plain sign-in
+      {
+        const OFFMAP: [string, McpServerStatus, string | undefined][] = [
+          ['stdio, no address', { name: 'teams', status: 'connected', source: 'user', transport: 'stdio' }, undefined],
+          ['no transport, no address', { name: 'teams', status: 'connected', source: 'user' }, undefined],
+          ['builtin name', { name: 'github-mcp-server', status: 'connected', source: 'user', transport: 'http' }, undefined],
+          ['source unknown', { name: 'teams', status: 'connected', source: 'unknown', transport: 'http' }, undefined],
+          ['source unknown, failed', { name: 'teams', status: 'failed', source: 'unknown', transport: 'http' }, undefined],
+          ['stdio, no address, failed', { name: 'teams', status: 'failed', source: 'user', transport: 'stdio' }, undefined],
+        ];
+        for (const [label, st, url] of OFFMAP) {
+          for (const status of [st.status as string]) {
+            const adx = new FakeAdapter({ displayName: 'Copilot', capabilities: { mcpSignIn: true, mcpSignInAgain: true } });
+            adx.signInResult = { kind: 'browser', url: PAGE };
+            await adx.start({ workspace: ws, quiet: true, sessionId: sid });
+            const dx = { ...d, router: routerOf(adx), live: () => [st], serverUrl: () => url };
+            const rr = await mcpSignInOp(dx, store, sid, st.name);
+            assert.ok(!adx.signInCalls.some((c) => c.again), `blocked ${status}, ${label}: never the forced re-sign-in (automatic)`);
+            assert.strictEqual(rr.ok, true, `blocked ${label}: the person still signs in (plain)`);
+            assert.deepStrictEqual(adx.signInCalls.map((c) => c.name + (c.again ? ' again' : '')), [st.name], `blocked ${label}: the plain sign-in, not the forced one`);
+            store.drop(sid, st.name);
+            // an explicit again=true is refused for the same server (finding 2)
+            const adr = new FakeAdapter({ displayName: 'Copilot', capabilities: { mcpSignIn: true, mcpSignInAgain: true } });
+            adr.signInResult = { kind: 'browser', url: PAGE };
+            await adr.start({ workspace: ws, quiet: true, sessionId: sid });
+            const r2x = await mcpSignInOp({ ...dx, router: routerOf(adr) }, store, sid, st.name, true);
+            assert.strictEqual(r2x.ok, false, `blocked ${label}: an explicit again=true is refused`);
+            assert.match((r2x as { error: string }).error, /cannot be signed in again now/, `blocked ${label}: refusal text`);
+            assert.deepStrictEqual(adr.signInCalls, [], `blocked ${label}: again=true never reaches the runtime`);
+          }
+        }
+        // a blocked remote server with no address still qualifies, for every remote transport name the renewal knows (finding 3)
+        for (const transport of ['http', 'sse', 'streamable-http', 'streamablehttp']) {
+          const adx = new FakeAdapter({ displayName: 'Copilot', capabilities: { mcpSignIn: true, mcpSignInAgain: true } });
+          adx.signInResult = { kind: 'browser', url: PAGE };
+          await adx.start({ workspace: ws, quiet: true, sessionId: sid });
+          const rr = await mcpSignInOp({ ...d, router: routerOf(adx), live: () => [{ name: 'teams', status: 'connected', source: 'user', transport: transport as McpServerStatus['transport'] }], serverUrl: () => undefined }, store, sid, 'teams');
+          assert.strictEqual(rr.ok, true, `blocked ${transport}, no address: signs in`);
+          assert.deepStrictEqual(adx.signInCalls.map((c) => (c.again ? 'again ' : '') + c.name), ['again teams'], `blocked ${transport}, no address: the app's own Sign in again`);
+          store.drop(sid, 'teams');
+        }
+      }
       // review of #1230 (3): the 10 s wait matters: the session reports the server only after a few steps
       {
         const adW = new FakeAdapter({ displayName: 'Copilot', capabilities: { mcpSignIn: true, mcpSignInAgain: true } });

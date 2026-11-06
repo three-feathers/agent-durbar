@@ -12,6 +12,7 @@
  */
 process.exitCode = 1;
 import * as assert from 'assert';
+import { isRemoteTransport } from '../src/shared/mcp';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -143,7 +144,7 @@ async function main(): Promise<void> {
     assert.strictEqual(norm(simBlock), norm(mainBlock), 'the simulator block is a copy of the planner');
     const js = ts.transpileModule(simBlock, { compilerOptions: { target: ts.ScriptTarget.ES2020 } }).outputText;
     // eslint-disable-next-line @typescript-eslint/no-implied-eval
-    const sim = new Function(js + '\nreturn planMcpSignInRefresh;')() as typeof planMcpSignInRefresh;
+    const sim = new Function('isRemoteTransport', js + '\nreturn planMcpSignInRefresh;')(isRemoteTransport) as typeof planMcpSignInRefresh;
     assert.ok(cases.length >= 25, `cases: ${cases.length}`);
     for (const [label, i] of cases) assert.deepStrictEqual(sim(i), planMcpSignInRefresh(i), label);
   }
@@ -365,6 +366,30 @@ async function main(): Promise<void> {
     assert.strictEqual(r3.isBlocked('copilot', 'p', 'https://p.example/mcp'), false, 'clearKey clears exactly that key');
     assert.deepStrictEqual(r2.recordOf(k)?.blocked, 'policy', 'a policy block stays for the run, Sign in and Restart do not clear it');
     assert.deepStrictEqual(g.logs, ["MCP server p was refused by your organization's sign-in rules (automatic)"]);
+  }
+
+  // FR-229 (review of #1230, 4): a call that worked while a renewal ran is not overwritten by that renewal's stale block
+  {
+    const f = fake({ hang: true });
+    const r = new McpSignInRefresher(f.d);
+    const url = 'https://race.example/mcp';
+    const key = signInKey('copilot', 'race', url);
+    f.chats.set('a', chat([srv('race', 'needs-auth', { key })]));
+    const p = r.beforeSend('a');
+    await tick();
+    assert.deepStrictEqual(f.calls, ['a:race'], 'the renewal runs');
+    r.clearKey(key); // a call of this server worked meanwhile
+    f.finish.get('a:race')!('needs-auth');
+    await p;
+    assert.notStrictEqual(r.recordOf(key)?.blocked, 'sign-in', 'no stale block over a call that worked during the reconnect');
+    assert.strictEqual(r.isBlocked('copilot', 'race', url), false);
+    // a success BEFORE the reconnect began does not hide a later block
+    const f2 = fake();
+    const r2 = new McpSignInRefresher({ ...f2.d, after: () => ({ status: 'needs-auth' }) });
+    r2.clearKey(key);
+    f2.chats.set('a', chat([srv('race', 'needs-auth', { key })]));
+    await r2.beforeSend('a');
+    assert.strictEqual(r2.isBlocked('copilot', 'race', url), true, 'a success before the reconnect: the block still lands');
   }
 
   // FR-214: no vendor or token text in a log line or a window line, whatever the app's error says

@@ -350,7 +350,7 @@ export async function mcpSignInOp(d: SignInDeps, store: McpSignInStore, id: unkn
   // FR-229: a server Durbar's renewal gave up on (the runtime may read it connected) is signed in with the app's own Sign in again, which forgets the dead sign-in
   const redo = again === true || (wasBlocked && runtimeSaysFine && !!ad.capabilities.mcpSignInAgain && canSignInAgainStatus(st, d.serverUrl?.(a.id, name), true));
   if (redo && !ad.capabilities.mcpSignInAgain) return { ok: false, error: `${ad.displayName} cannot sign in again from Agent Durbar.` };
-  if (!wasBlocked && (redo ? !canSignInAgainStatus(st, d.serverUrl?.(a.id, name)) : !needsSignIn(st))) return { ok: false, error: redo ? `${name} cannot be signed in again now.` : `${name} does not need a sign-in.` };
+  if (redo ? !canSignInAgainStatus(st, d.serverUrl?.(a.id, name), wasBlocked) : (!wasBlocked && !needsSignIn(st))) return { ok: false, error: redo ? `${name} cannot be signed in again now.` : `${name} does not need a sign-in.` };
   try {
     await d.settle?.(a.id, name); // a renewal already running finishes first: `oauth.login` and `restartServer` never overlap
   } catch {
