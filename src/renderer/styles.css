@@ -2127,7 +2127,7 @@ h2,h3,h4{text-wrap:balance}
 .nt-count:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
 .nt-count[hidden]{display:none}
 .nt-mark{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;padding:0;margin-left:6px;border:0;border-radius:6px;background:transparent;color:var(--ink-2);cursor:pointer;vertical-align:middle}
-.bubble.nt-found{outline:2px solid var(--focus);outline-offset:3px;animation:ntFound 1.2s ease-out} /* spec 083 FR-046: Open source outlines the message for 1.2 s (app.js removes the class); reduced motion drops the fade, the outline stays */
+.bubble.nt-found{outline:2px solid var(--focus);outline-offset:3px;animation:ntFound var(--nt-ms,1.2s) ease-out both} /* spec 083 FR-046: Open source outlines the message for 1.2 s (app.js removes the class); reduced motion drops the fade, the outline stays */
 @keyframes ntFound{from{outline-color:var(--focus)}to{outline-color:transparent}}
 .nt-mark:hover,.nt-mark:focus-visible{background:var(--surface-2);color:var(--ink)}
 .nt-mark:focus-visible{outline:2px solid var(--focus);outline-offset:1px}

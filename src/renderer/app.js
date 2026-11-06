@@ -2002,8 +2002,11 @@ const listRole=a=>{const app=appOf(a),r=String(a.role||'');if(!app||!r.startsWit
 const LVAL={name:a=>a.name,app:appOf,role:listRole,folder:a=>roomOf(a).name,task:a=>taskText(a),ago:sinceLast,cost:costVal,status:a=>ST_ORDER[pillSt(a)]};
 /* spec 034 FR-014: no figures here, so the mood words (cards: drawing + label) are written at the start of the task cell. One List row's
    button (cells and accessible name); spec 095 FR-010: the conversation search's office rows are built by it too. */
-function listRow0([a,sub]){const st=pillSt(a),mw=moodFor(a).words,ago=ACT.agoShort(sinceLast(a)),agoL=ACT.agoLong(sinceLast(a)),cost=costText(a),app=appOf(a);return `<button class="lrow" data-id="${esc(a.id)}" aria-pressed="${ui.selected===a.id}" aria-label="${esc(a.name)}${chatNoWords(a)}${draftWords(a)}${unreadWords(a)}, ${esc(a.role)}${app?', '+esc(app):''}, ${esc(roomOf(a).name)}, ${esc(stWord(a))}: ${esc(taskText(a))}${moodWords(a)}${agoL?'. Last activity '+agoL:''}${cost?'. Cost '+esc(cost):''}">
-    <span class="lname"><span class="dot ${st}"></span>${sub?'':chatNoHTML(a)+draftHTML(a)+unreadHTML(a)}<span class="lnm${sub?' sub':''}" title="${esc(a.name)}">${esc(a.name)}</span>${modeIcon(a,true)}</span><span class="lcell" title="${esc(app)}">${esc(app)}</span><span class="lcell lrole" title="${esc(a.role)}">${esc(listRole(a))}</span><span class="lcell mono lfold" title="${esc(roomOf(a).name)}">${esc(roomOf(a).name)}</span><span class="lcell" title="${esc(DurbarCutText.cutText((mw?mw+'. ':'')+taskText(a),300))}">${mw?`<span class="lmood">${esc(mw)}</span> · `:''}${esc(taskText(a))}</span><span class="lcell num"${agoL?` title="Last activity ${esc(agoL)}"`:''}>${esc(ago)}</span><span class="lcell num"${cost?` title="${esc(cost.endsWith(' est.')?cost+'. '+USD_TIP:cost)}"`:''}>${esc(cost)}</span><span><span class="pill st-${pillSt(a)}"${pillTip(a)}><i></i>${esc(stWord(a))}</span></span></button>`}
+/* `o` (spec 095 FR-010, review of phase 3 R1): the search's own classes and data attributes (`attrs`: already escaped), its accessible
+   name (`label`: text, escaped here) and the name's marked HTML (`nameHTML`: built with esc() by convsearch.js), passed in rather than
+   patched in afterwards (a String.replace with data in the replacement expands $& $` $') */
+function listRow0([a,sub],o){o=o||{};const st=pillSt(a),mw=moodFor(a).words,ago=ACT.agoShort(sinceLast(a)),agoL=ACT.agoLong(sinceLast(a)),cost=costText(a),app=appOf(a);return `<button class="lrow${o.cls?' '+o.cls:''}" data-id="${esc(a.id)}"${o.attrs||''} aria-pressed="${ui.selected===a.id}" aria-label="${o.label!=null?esc(o.label):`${esc(a.name)}${chatNoWords(a)}${draftWords(a)}${unreadWords(a)}, ${esc(a.role)}${app?', '+esc(app):''}, ${esc(roomOf(a).name)}, ${esc(stWord(a))}: ${esc(taskText(a))}${moodWords(a)}${agoL?'. Last activity '+agoL:''}${cost?'. Cost '+esc(cost):''}`}">
+    <span class="lname"><span class="dot ${st}"></span>${sub?'':chatNoHTML(a)+draftHTML(a)+unreadHTML(a)}<span class="lnm${sub?' sub':''}" title="${esc(a.name)}">${o.nameHTML!=null?o.nameHTML:esc(a.name)}</span>${modeIcon(a,true)}</span><span class="lcell" title="${esc(app)}">${esc(app)}</span><span class="lcell lrole" title="${esc(a.role)}">${esc(listRole(a))}</span><span class="lcell mono lfold" title="${esc(roomOf(a).name)}">${esc(roomOf(a).name)}</span><span class="lcell" title="${esc(DurbarCutText.cutText((mw?mw+'. ':'')+taskText(a),300))}">${mw?`<span class="lmood">${esc(mw)}</span> · `:''}${esc(taskText(a))}</span><span class="lcell num"${agoL?` title="Last activity ${esc(agoL)}"`:''}>${esc(ago)}</span><span class="lcell num"${cost?` title="${esc(cost.endsWith(' est.')?cost+'. '+USD_TIP:cost)}"`:''}>${esc(cost)}</span><span><span class="pill st-${pillSt(a)}"${pillTip(a)}><i></i>${esc(stWord(a))}</span></span></button>`}
 function renderList(){
   if(CS.active){renderConvResults();return;} /* spec 095 FR-004: while a query is active the List area shows the results */
   const groups=[];
@@ -2049,6 +2052,8 @@ async function csRun(v){
   if(!csAvailable())return;
   if(!CSU.longEnough(v)){
     if(CS.id){const id=CS.id;CS.id=null;bridge.convSearchCancel(id).catch(()=>{});}
+    /* review of phase 3 (R2): a scan cut short this way ends as Stop ends it, never left on "Searching, N of M sessions" */
+    const st=CS.st; if(st&&!st.done){CSU.finish(st,{progress:st.progress},csTime);st.userStop=true;csPaint();}
     csHint('Type at least 3 characters');return;
   }
   if(!agents.some(a=>!a.parent&&a.live)){csHint(CS_NONE);return;} /* Edge cases: nothing to search yet, no scan */
@@ -2101,8 +2106,8 @@ function renderConvResults(){
   const ex=(h,k)=>h.excerpts&&h.excerpts.length?`<div class="cs-exs">${h.excerpts.map((x,i)=>`<button type="button" class="cs-ex" data-csk="${esc(k)}" data-csx="${i}" data-csf="${esc(k)}#${i}" title="${h.group==='office'?'Open the chat at this message':h.adapter==='vscode'?'View this chat at this message':'Resume this session at this message'}">${CSU.excerptHTML(x,esc)}</button>`).join('')}${h.more?`<span class="cs-more">+${h.more} more</span>`:''}</div>`:'';
   const officeRow=h=>{
     const a=byId(h.agentId), k=CSU.keyOf(h); if(!a)return '';
-    let b=listRow0([a,false]).replace('<button class="lrow"',`<button class="lrow cs-row" data-csk="${esc(k)}" data-csnav="1" data-csf="${esc(k)}"`).replace(/aria-label="[^"]*"/,`aria-label="${esc(CSU.accName(h))}"`);
-    if(h.titleMarks&&h.titleMarks.length&&h.title===a.name)b=b.replace(`>${esc(a.name)}</span>`,`>${CSU.markedHTML(h.title,h.titleMarks,esc)}</span>`); /* FR-011: a title match marked in the row's title */
+    const named=h.titleMarks&&h.titleMarks.length&&h.title===a.name; /* FR-011: a title match marked in the row's title */
+    const b=listRow0([a,false],{cls:'cs-row',attrs:` data-csk="${esc(k)}" data-csnav="1" data-csf="${esc(k)}"`,label:CSU.accName(h),nameHTML:named?CSU.markedHTML(h.title,h.titleMarks,esc):null});
     return `<div class="cs-hit" data-csk="${esc(k)}">${b}${ex(h,k)}</div>`;};
   const earlierRow=h=>{
     const k=CSU.keyOf(h), opened=h.openedAs&&byId(h.openedAs), view=h.adapter==='vscode', ago=h.time?ACT.agoShort(Math.max(0,Date.now()-h.time)):'', agoL=h.time?ACT.agoLong(Math.max(0,Date.now()-h.time)):'';
@@ -3442,7 +3447,7 @@ async function chatSettled(){for(let i=0;i<120&&(!$('chat')||$('chat')._rsBusy);
 function revealMessage(b,chatEl,ms){
   SCROLL.reveal(b,{block:'center',scroller:chatEl});
   chatEl.dataset.pin=chatEl.scrollHeight-chatEl.scrollTop-chatEl.clientHeight<80?'1':'0'; chatEl._lastTop=chatEl.scrollTop; /* the reader is where the reveal put them: new text does not pull them away */
-  clearTimeout(b._ntT); b.classList.remove('nt-found'); void b.offsetWidth; b.classList.add('nt-found'); b._ntT=setTimeout(()=>b.classList.remove('nt-found'),ms); /* a second reveal restarts the time */
+  clearTimeout(b._ntT); b.classList.remove('nt-found'); b.style.setProperty('--nt-ms',ms+'ms'); void b.offsetWidth; b.classList.add('nt-found'); b._ntT=setTimeout(()=>{b.classList.remove('nt-found');b.style.removeProperty('--nt-ms');},ms); /* a second reveal restarts the time; the fade lasts as long as the mark (review of phase 3, R3) */
 }
 async function ntSourceBubble(src){
   const root=($('chat')||document).querySelector('.chat-inner')||$('chat'); if(!root)return null;
