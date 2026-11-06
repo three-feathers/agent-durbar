@@ -332,21 +332,22 @@ export function orderPlan(plan: ScanPlan): { list: PlanSession[]; notes: ScanNot
 export const READ_GATE_TIMEOUT_MS = 20_000;
 
 /**
- * One cross-scan gate for reads that start a process (an open Codex session's `thread/read`, FR-023): one read at a time across scans; a
+ * One cross-scan gate for Codex calls (an open session's `thread/read`, a folder's `thread/list` probe; FR-023): one at a time across scans; a
  * read of the same key already in flight is shared, never started twice. The result is dropped as soon as the read settles (A1). A read
  * that does not settle within `timeoutMs` rejects (the scan counts its session as unreadable), so a hung `thread/read` cannot block the
- * reads of later scans. `wait` is the timer (tests inject their own).
+ * reads of later scans. `run`'s own `timeoutMs` replaces it for one call (a call that may take longer, such as a whole probe). `wait` is the
+ * timer (tests inject their own).
  */
-export function createReadGate<T>(o: { timeoutMs?: number; wait?: (ms: number) => Promise<void> } = {}): { run(key: string, fn: () => Promise<T>): Promise<T>; inFlight(): number } {
+export function createReadGate<T>(o: { timeoutMs?: number; wait?: (ms: number) => Promise<void> } = {}): { run(key: string, fn: () => Promise<T>, timeoutMs?: number): Promise<T>; inFlight(): number } {
   const ms = o.timeoutMs ?? READ_GATE_TIMEOUT_MS;
   const wait = o.wait ?? ((t: number) => new Promise<void>((r) => { const h = setTimeout(r, t); h.unref?.(); }));
   let tail: Promise<unknown> = Promise.resolve();
   const live = new Map<string, Promise<T>>();
   return {
-    run(key, fn) {
+    run(key, fn, timeoutMs) {
       const cur = live.get(key);
       if (cur) return cur;
-      const p = tail.then(() => Promise.race([fn(), wait(ms).then((): never => { throw new Error('read timed out'); })]));
+      const p = tail.then(() => Promise.race([fn(), wait(timeoutMs ?? ms).then((): never => { throw new Error('read timed out'); })]));
       tail = p.catch(() => undefined);
       live.set(key, p);
       const drop = (): void => { if (live.get(key) === p) live.delete(key); };

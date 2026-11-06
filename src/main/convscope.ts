@@ -18,6 +18,7 @@ import { historyOf, previousSessionsOf } from '../adapters/router';
 import type { HistoryItem, HistoryResult } from '../adapters/history';
 import { SEARCH_HISTORY_LIMITS } from '../adapters/history';
 import { readClaudeHistoryStream } from '../adapters/claudeStream';
+import { DEFAULT_TIMEOUT_MS as CODEX_RPC_TIMEOUT_MS } from '../adapters/codexRpc';
 import { listChats, readChat } from '../adapters/vscodeChat';
 import type { ChatFileRef, UserDir } from '../adapters/vscodeChat';
 import type { AgentInfo } from '../shared/api';
@@ -41,8 +42,8 @@ export interface ScopeDeps {
   rememberChat?(agentId: string, ref: ChatFileRef): void;
   /** FR-030: the MCP secret values, never through a keychain prompt (`scanSecretValues`). */
   values: McpValueSources;
-  /** FR-023: the one cross-scan gate for what starts a Codex process (`createReadGate`): an open session's read and a folder's `thread/list`. */
-  gate: { run(key: string, fn: () => Promise<unknown>): Promise<unknown> };
+  /** FR-023: the one cross-scan gate for Codex calls (`createReadGate`): an open session's read and a folder's `thread/list`. */
+  gate: { run(key: string, fn: () => Promise<unknown>, timeoutMs?: number): Promise<unknown> };
   /** Tests: the Claude config folder and the readers. */
   claudeDir?: string;
   readClaude?: typeof readClaudeHistoryStream;
@@ -64,6 +65,12 @@ type Source =
   | { kind: 'none' };
 
 const VSCODE = 'vscode';
+/**
+ * Review of phase 2 (R3): the gate's limit for a folder's Codex `thread/list`, above the probe's worst case (two requests of
+ * `DEFAULT_TIMEOUT_MS` each, `initialize` and `thread/list`, plus the close), so the gate never lets a second app-server start beside one
+ * that is still running.
+ */
+export const CODEX_LIST_GATE_MS = 2 * CODEX_RPC_TIMEOUT_MS + 10_000;
 const UNTITLED = 'Untitled session';
 const text = (v: unknown): string => (typeof v === 'string' ? v : '');
 
@@ -116,7 +123,7 @@ export async function buildScope(d: ScopeDeps, stop: () => boolean = () => false
       try {
         // Codex lists through a short-lived app-server (`thread/list`): behind the gate, so two quick searches never start two at once
         const listing = (): Promise<Awaited<ReturnType<typeof previousSessionsOf>>> => previousSessionsOf(ad, a.cwd, openIds);
-        list = adapter === 'codex' ? ((await d.gate.run(`list\0${key}`, listing)) as Awaited<ReturnType<typeof previousSessionsOf>>) : await listing();
+        list = adapter === 'codex' ? ((await d.gate.run(`list\0${key}`, listing, CODEX_LIST_GATE_MS)) as Awaited<ReturnType<typeof previousSessionsOf>>) : await listing();
       } catch {
         unavailable.add(d.appName(adapter)); // FR-014: "Not searched: Codex (not installed)", once
         continue;
@@ -160,8 +167,11 @@ export async function buildScope(d: ScopeDeps, stop: () => boolean = () => false
       const ad = d.router.forAgent(src.agentId);
       if (!ad || !ad.isLive(src.agentId)) return { ok: false, reason: 'missing' }; // it ended meanwhile
       const once = (): Promise<HistoryResult> => historyOf(ad, src.agentId, SEARCH_HISTORY_LIMITS);
-      const h = src.adapter === 'codex' ? ((await d.gate.run(`read\0${src.agentId}`, once)) as HistoryResult) : await once();
-      return { ok: true, items: h.items };
+      // review of phase 2 (R1): checked again in the same tick as the call, after the wait at the gate; a Codex session that ended
+      // meanwhile would otherwise be read through a new app-server (`history` takes the probe branch for a session that is not live)
+      const gated = (): Promise<HistoryResult | undefined> => (ad.isLive(src.agentId) ? once() : Promise.resolve(undefined));
+      const h = src.adapter === 'codex' ? ((await d.gate.run(`read\0${src.agentId}`, gated)) as HistoryResult | undefined) : await once();
+      return h ? { ok: true, items: h.items } : { ok: false, reason: 'missing' };
     }
     if (src.kind === 'vscode') {
       const r = await (d.readChat ?? readChat)(src.ref);
