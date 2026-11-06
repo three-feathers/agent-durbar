@@ -2595,7 +2595,7 @@ function openPanel(id,focus){
   const chat=getChat(a); $('chat').appendChild(chat.el);
   updatePanelHeader(); renderGrants();
   const chatEl=$('chat'); chatEl.dataset.pin='1'; chatEl._lastTop=undefined; chatEl.scrollTop=1e6;
-  let rs=0; const restick=()=>{if(ui.selected!==a.id)return; const un=rs===0&&cvUnmarkIfResized(chat.el); /* marks dropped at this frame (another width or layout): the end moved by what that laid out, not by the person */ if(!un&&chatEl.scrollHeight-chatEl.scrollTop-chatEl.clientHeight>400)return; chatEl.scrollTop=chatEl.scrollHeight; if(++rs<4)requestAnimationFrame(restick); else chatEl.onscroll();}; if(chat.el.childElementCount>4)requestAnimationFrame(restick); /* spec 005 FR-210: the messages at the end get their real height a frame after the first layout, so the end moves; follow it for 4 frames, then read the pin again; a chat of 4 or fewer messages has no skipped one and is left alone */
+  let rs=0; const restick=()=>{if(ui.selected!==a.id){chatEl._rsBusy=0;return;} const un=rs===0&&cvUnmarkIfResized(chat.el); /* marks dropped at this frame (another width or layout): the end moved by what that laid out, not by the person */ if(!un&&chatEl.scrollHeight-chatEl.scrollTop-chatEl.clientHeight>400){chatEl._rsBusy=0;return;} chatEl.scrollTop=chatEl.scrollHeight; if(++rs<4)requestAnimationFrame(restick); else{chatEl._rsBusy=0;chatEl.onscroll();}}; chatEl._rsBusy=0; if(chat.el.childElementCount>4){chatEl._rsBusy=1;requestAnimationFrame(restick);} /* spec 083 FR-046: _rsBusy is on while the re-stick runs, so Open source reveals after it */ /* spec 005 FR-210: the messages at the end get their real height a frame after the first layout, so the end moves; follow it for 4 frames, then read the pin again; a chat of 4 or fewer messages has no skipped one and is left alone */
   chatEl.onscroll=()=>{const t=chatEl.scrollTop; if(chatEl.scrollHeight-t-chatEl.clientHeight<80)chatEl.dataset.pin='1'; else if(chatEl._lastTop===undefined||t<chatEl._lastTop-1)chatEl.dataset.pin='0'; chatEl._lastTop=t;}; /* spec 005 FR-214: the scroll event of the app's own stick-to-bottom write arrives a frame later, when a new block may already have grown the page; that is not the person leaving the end. Only a move up from the position of the last scroll event is (whoever wrote the last position, so no writer has to record it) */
   $('panel').querySelector('.panel-in').classList.toggle('helper-ro',!!(a.live&&a.parent)); /* spec 097 Changes 2026-11-04 (issue 1140): not 'ro', the Real office root's class, whose floor picture and corners it took */
   $('backBtn').onclick=closePanel;
@@ -3184,6 +3184,7 @@ function openNoteMenu(a,n,anchor,x,y,onScreen){
   const it=(act,label,sub,cls)=>`<button type="button" role="menuitem" data-nmact="${act}"${cls?` class="${cls}"`:''} title="${esc(sub)}"><span class="mt"><b>${esc(label)}</b><small>${esc(sub)}</small></span></button>`;
   const m=document.createElement('div');m.id='modeMenu';m.className='mode-menu nt-menu';m.setAttribute('role','menu');m.setAttribute('aria-label','Actions for the note '+(safeMask(n.title)||''));
   m.innerHTML=it('rename','Rename…','Change its title')+it('copy','Copy','Copy its text')
+    +(n.source&&n.source.session?it('source','Open source','Go to the chat and the message it came from'):'') /* FR-046 */
     +(n.done===true?it('undone','Mark not done','Back among the notes to use'):it('done','Mark done',onScreen?'Hides it from the / suggestions and the count; it moves to Done below':'Hides it from this list, the / suggestions and the count; it stays under Done on the folder\'s Notes screen')) /* FR-045 */
     +it('delete','Delete…','Remove it from the notes','mm-danger');
   document.body.appendChild(m);
@@ -3192,6 +3193,7 @@ function openNoteMenu(a,n,anchor,x,y,onScreen){
   m.addEventListener('click',e=>{const t=e.target.closest('[data-nmact]');if(!t)return;closeModeMenu();const act=t.dataset.nmact;
     if(act==='rename')renameNote(a,n,anchor);
     else if(act==='copy'){const ct=noteBoxText(n.text);if(ct==null){toast('Could not check this note for secrets, so it was not copied.',4500).classList.add('err');back();return;}navigator.clipboard.writeText(ct).then(()=>toast('Copied.',1500),()=>toast('Could not copy to the clipboard.',3000).classList.add('err'));back();}
+    else if(act==='source')openNoteSource(a,n);
     else if(act==='done'||act==='undone')markNoteDone(a,n,act==='done');
     else if(act==='delete'){
       const ids=ntRowIds(),i=ids.indexOf(n.id);
@@ -3200,6 +3202,69 @@ function openNoteMenu(a,n,anchor,x,y,onScreen){
     if(e.key==='ArrowDown'){e.preventDefault();focusIn(its[(i+1)%its.length]);}else if(e.key==='ArrowUp'){e.preventDefault();focusIn(its[(i+its.length-1)%its.length]);}
     else if(e.key==='Escape'||e.key==='Tab'){e.preventDefault();e.stopPropagation();closeModeMenu();back();}});
   focusIn(m.querySelector('button'));
+}
+
+/* ---- Open source (spec 083 FR-046, T050) ----
+   The note's session is in the office (an agent of this folder with that id): its chat opens. Else it is one of the folder's Previous
+   sessions: it opens through resumePrev, the row's own path (nothing is sent). Else a toast says it is gone and the note stays.
+   Then the message (role + digest, its `ord` first) is revealed inside #chat (SCROLL.reveal, never the page) and outlined 1.2 s. */
+const NT_GONE='The session this note came from is no longer available. The note stays.', NT_NOMSG='Could not find the message in this session.';
+async function ntSourceBubble(src){
+  const root=($('chat')||document).querySelector('.chat-inner')||$('chat'); if(!root)return null;
+  const all=[...root.querySelectorAll(src.role==='user'?'.msg.user .bubble':'.msg.agent .bubble')];
+  const dig=async b=>{const t=bubbleText(b);if(!b._nd||b._nd.t!==t)b._nd={t,d:await msgDigest(t)};return b._nd.d;};
+  if(all[src.ord]&&await dig(all[src.ord])===src.digest)return all[src.ord];
+  let best=null,bd=Infinity;
+  for(let i=0;i<all.length;i++){if(await dig(all[i])===src.digest){const d=Math.abs(i-src.ord);if(d<bd){bd=d;best=all[i];}}}
+  return best;
+}
+function ntLeaveNotes(){
+  if(notesIsOpen())closeNotes(false);
+  if(nsShown()){NS.ret=null;window.DurbarScreens.close();}
+}
+/* the office session a note's source names: main saved `resumeIdFor(agent)`, which is not always the window's id (a Codex thread id), so main
+   is asked (`notesList` answers each chat's own `session`, FR-021); where it cannot answer, the window's id stands in */
+async function ntOfficeSession(root,src){
+  const kind=x=>(x.info&&x.info.adapterId)||'copilot';
+  const cands=[root].concat(siblingsOf(root)).filter(x=>kind(x)===src.app);
+  const own=await Promise.all(cands.map(async x=>{let r=null;try{r=await bridge.notesList(x.id);}catch(e){r=null;}return r&&r.ok?r.session:x.id;}));
+  const i=own.findIndex(sid=>sid===src.session);
+  return i<0?null:cands[i];
+}
+/* after a refusal the focus goes back to the note's row (the menu that held it is gone) */
+function ntBackToRow(n){if(nsShown())nsFocusRow(n.id);else if(notesIsOpen())notesFocusRow(n.id);}
+async function openNoteSource(a,n){
+  const src=n&&n.source; if(!src||!src.session||!a)return;
+  const gone=()=>{toast(NT_GONE,5000);announce(NT_GONE);ntBackToRow(n);};
+  const root=liveRoot(a), kind=x=>(x.info&&x.info.adapterId)||'copilot';
+  const live=bridge.notesList?await ntOfficeSession(root,src):null;
+  let target=live||null;
+  if(live){ntLeaveNotes();openPanel(live.id,false);}
+  else{
+    /* Previous sessions lists a session through a chat of its own app, so the folder's chat of the note's app is the one asked (never the open chat's, which may be another app) */
+    const via=[root].concat(siblingsOf(root)).find(x=>kind(x)===src.app);
+    if(!via||!bridge.resumeSession||!bridge.listPrevious||!feat(via,'history')){gone();return;}
+    if(!prevOf(via).cli)await loadPrev(via);
+    const c=prevOf(via).cli;
+    if(!c||!c.ok||!c.sessions||!c.sessions.some(x=>x.id===src.session)){gone();return;}
+    target=await resumePrev(via,src.session,null); /* the Previous sessions path: no message is sent */
+    if(!target){ntBackToRow(n);return;} /* it said why; the drawer or screen stays */
+    ntLeaveNotes();
+  }
+  /* the chat has been placed once openPanel's re-stick (4 frames) is over; a reveal before that is dragged back to the end */
+  for(let i=0;i<120&&(!$('chat')||$('chat')._rsBusy);i++)await new Promise(r=>requestAnimationFrame(r));
+  await new Promise(r=>requestAnimationFrame(r));
+  const b=await ntSourceBubble(src);
+  if(ui.selected!==target.id)return;
+  const chatEl=$('chat');
+  if(b){
+    SCROLL.reveal(b,{block:'center',scroller:chatEl});
+    chatEl.dataset.pin=chatEl.scrollHeight-chatEl.scrollTop-chatEl.clientHeight<80?'1':'0'; chatEl._lastTop=chatEl.scrollTop; /* the reader is where the reveal put them: new text does not pull them away */
+    clearTimeout(b._ntT); b.classList.remove('nt-found'); void b.offsetWidth; b.classList.add('nt-found'); b._ntT=setTimeout(()=>b.classList.remove('nt-found'),1200); /* a second Open source restarts the 1.2 s */
+  }
+  {const ae=document.activeElement; /* the focus moves only from where Open source left it: nowhere (the menu and the drawer are gone), or a part of the notes UI still up; never from the message box or any other place the person went to while this waited */
+    if(!ae||ae===document.body||ae===document.documentElement||(ae.closest&&ae.closest('#notesDrawer,#modeMenu,#nsHost,#toasts')))focusIn(chatEl,{reveal:false});} /* the log is a focusable log */
+  if(b)announce('Message shown.'); else{toast(NT_NOMSG,5000);announce(NT_NOMSG);}
 }
 
 /* ---------------- spec 083 FR-044, FR-045 (T034a): the folder's Notes screen ----------------
@@ -8759,15 +8824,16 @@ function replayHistory(a,h,title,lead){
 async function resumePrev(a,sid,btn){
   const done=busy(btn,'Resuming…'); /* spec 052 FR-047: the shared busy state (it was a hand-made one) */
   const r=await bridge.resumeSession(a.id,sid,pristine(a)).catch(e=>({ok:false,error:String(e&&e.message||e)}));
-  if(!r.ok){toast('Could not resume: '+esc(r.error||'unknown error'),7000).classList.add('err');done();return;}
+  if(!r.ok){toast('Could not resume: '+esc(r.error||'unknown error'),7000).classList.add('err');done();return null;}
   if(r.removedId)removeLiveAgent(r.removedId);
   if(ui.selected&&!byId(ui.selected))closePanel();
   addLiveAgent(r.agent);
-  const na=liveById(r.agent.id); if(!na)return;
+  const na=liveById(r.agent.id); if(!na)return null;
   na.resumed=true; na.sent=false; replayHistory(na,r.history,r.title);
   modeBackNote(na,r.modeWas);
   setState(na,'idle',null,'Resumed. New messages continue this session.'); /* spec 001 delta 2026-10-29 (issue 451): no title here, it is the desk's name */
   openPanel(na.id,false);
+  return na; /* spec 083 FR-046: Open source reveals a message in it */
 }
 function leaveVsView(){
   if(!vsViewing)return; vsViewing=false;

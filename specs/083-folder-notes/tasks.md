@@ -175,7 +175,7 @@ description: "Tasks for spec 083: notes per folder, reachable inside the chats"
 
 ## Phase 5: User Story 6, back to the source (P3)
 
-- [ ] T050 [US6] *Open source*. [FR-046]
+- [x] T050 [US6] *Open source*. [FR-046] (`openNoteSource`, `ntSourceBubble` in `app.js`; `resumePrev` returns the agent; `test:` `scripts/check-notes-source.js`, listed in `ui-suite.js`)
   - AC1: an office session: its chat opens and the message is revealed inside `#chat` (`DurbarScroll.reveal`; `document.scrollingElement.scrollTop` stays 0) and outlined 1.2 s; no animation under reduced motion.
   - AC2: a previous session opens through the Previous sessions path (no `send`), then reveals.
   - AC3: a gone session and a missing message give the FR-046 toasts; the note stays.
