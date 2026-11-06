@@ -1620,7 +1620,8 @@
         if(o&&o.signIn)setTimeout(()=>{const n=o.signIn.name,ag=o.signIn.again===true,b=[...d.querySelectorAll(ag?'button[data-signagain]':'button[data-signin]')].find(y=>(ag?y.dataset.signagain:y.dataset.signin)===n&&!y.disabled);if(!b){ /* FR-229: never silent: the press says why nothing started */
           const row=(st.servers||[]).find(y=>y.name===n),W2=window.DurbarMcpWords;
           if(row&&row.signIn&&!ag)return; /* a sign-in is already open: its row shows Open sign-in page */
-          const msg=W2&&W2.signInPressNote?W2.signInPressNote(n,row):'Could not start the sign-in for '+n+'.';
+          const msg=W2&&W2.signInPressNote?W2.signInPressNote(n,row,undefined,st.live):'Could not start the sign-in for '+n+'.';
+          const ab=row&&row.canSignInAgain===true?[...d.querySelectorAll('button[data-signagain]')].find(y=>y.dataset.signagain===n):null;if(ab)focusIn(ab); /* the row's own Sign in again, named in the line */
           if(row)signNote.set(n,msg);void repaint();X.toast(esc(msg),5200).classList.add('err');X.announce(msg);return;}
         focusIn(b);if(ag)void signAgain([n],b);else void signIn(n);},0);
         if(st.canRefresh)setTimeout(()=>{void refresh(false);},0); /* FR-190: every open reads the states again */d.addEventListener('click',async e=>{

@@ -255,6 +255,12 @@ async function main(): Promise<void> {
     r.clearBlock('claude', 'docs');
     await r.beforeSend('c1');
     assert.deepStrictEqual(f.calls, [], 'another name or another app does not clear it');
+    // spec 058 FR-229: isBlocked and clearKey work on exactly one key (adapter, name, address or folder)
+    assert.strictEqual(r.isBlocked('copilot', 'docs', 'https://docs.example/mcp'), true, 'blocked');
+    for (const [ad, n, u] of [['claude', 'docs', 'https://docs.example/mcp'], ['copilot', 'other', 'https://docs.example/mcp'], ['copilot', 'docs', 'https://elsewhere.example/mcp'], ['copilot', 'docs', undefined]] as const) assert.strictEqual(r.isBlocked(ad, n, u), false, `not blocked for ${ad} ${n} ${u}`);
+    r.clearKey(signInKey('copilot', 'docs', 'https://elsewhere.example/mcp'));
+    r.clearKey(signInKey('claude', 'docs', 'https://docs.example/mcp'));
+    assert.strictEqual(r.isBlocked('copilot', 'docs', 'https://docs.example/mcp'), true, 'clearKey of another address or app leaves it');
     // a URL change is a new key: no block carried over
     f.chats.set('c2', chat([srv('docs', 'connected', { key: signInKey('copilot', 'docs', 'https://new.example/mcp') })]));
     const moved = r.beforeSend('c2');
@@ -347,6 +353,16 @@ async function main(): Promise<void> {
     const k = signInKey('copilot', 'p', 'https://p.example/mcp');
     assert.deepStrictEqual(r2.recordOf(k)?.blocked, 'policy');
     r2.clearBlock('copilot', 'p');
+    assert.strictEqual(r2.isBlocked('copilot', 'p', 'https://p.example/mcp'), false, 'a policy record is not a sign-in block (the row never shows Sign in for it)');
+    r2.clearKey(k);
+    assert.deepStrictEqual(r2.recordOf(k)?.blocked, 'policy', 'clearKey leaves a policy block too');
+    const g3 = fake();
+    const r3 = new McpSignInRefresher({ ...g3.d, after: () => ({ status: 'needs-auth' }) });
+    g3.chats.set('a', chat([srv('p', 'needs-auth')]));
+    await r3.beforeSend('a');
+    assert.strictEqual(r3.isBlocked('copilot', 'p', 'https://p.example/mcp'), true, 'a failed renewal blocks');
+    r3.clearKey(signInKey('copilot', 'p', 'https://p.example/mcp'));
+    assert.strictEqual(r3.isBlocked('copilot', 'p', 'https://p.example/mcp'), false, 'clearKey clears exactly that key');
     assert.deepStrictEqual(r2.recordOf(k)?.blocked, 'policy', 'a policy block stays for the run, Sign in and Restart do not clear it');
     assert.deepStrictEqual(g.logs, ["MCP server p was refused by your organization's sign-in rules (automatic)"]);
   }

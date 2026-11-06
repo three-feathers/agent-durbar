@@ -942,6 +942,57 @@ async function main(): Promise<void> {
       live = BLOCKED; blocked = true; ad.signInCalls.length = 0;
       assert.strictEqual((await mcpSignInOp({ ...d, serverUrl: () => undefined }, store, sid, 'teams')).ok, true, 'a blocked server signs in whatever the runtime and the address say');
       store.drop(sid, 'teams');
+      // review of #1230 (1): a block never skips the state, switch and policy rules
+      {
+        for (const bad of ['disabled', 'pending', 'stopped', 'not_configured']) {
+          const adx = new FakeAdapter({ displayName: 'Copilot', capabilities: { mcpSignIn: true, mcpSignInAgain: true } });
+          await adx.start({ workspace: ws, quiet: true, sessionId: sid });
+          const rr = await mcpSignInOp({ ...d, router: routerOf(adx), live: () => [{ name: 'teams', status: bad, source: 'user', transport: 'http' }] }, store, sid, 'teams');
+          assert.strictEqual(rr.ok, false, `blocked but ${bad}: refused`);
+          assert.deepStrictEqual(adx.signInCalls, [], `blocked but ${bad}: the runtime is not asked`);
+          assert.strictEqual(agentMcpReply({ a: info(sid), ad: adx, live: [{ name: 'teams', status: bad }], off: new Set(), secrets: [], cli: [{ name: 'teams', enabled: true }], extras: [], ambientDisabled: new Set(), signIn: () => undefined, signInBlocked: () => true }).servers[0].needsSignIn, undefined, `blocked but ${bad}: no Sign in on the row`);
+        }
+        ensured = 0;
+        const adIdle = new FakeAdapter({ displayName: 'Copilot', capabilities: { mcpSignIn: true, mcpSignInAgain: true } });
+        for (const [label, extra] of [['switched off', { off: () => true }], ['refused by the organization', { orgRefused: () => true }]] as const) {
+          const rr = await mcpSignInOp({ ...d, router: routerOf(adIdle), ...extra }, store, sid, 'teams');
+          assert.strictEqual(rr.ok, false, `blocked but ${label}: refused`);
+          assert.strictEqual(ensured, 0, `blocked but ${label}: no session is started`);
+        }
+        assert.deepStrictEqual(adIdle.signInCalls, []);
+        const rowOff = agentMcpReply({ a: info(sid), ad: adLive, live: BLOCKED, off: new Set(['teams']), secrets: [], cli: [{ name: 'teams', enabled: true }], extras: [], ambientDisabled: new Set(), signIn: () => undefined, signInBlocked: () => true }).servers[0];
+        assert.deepStrictEqual([rowOff.needsSignIn, rowOff.canSignIn], [undefined, undefined], 'a blocked server that is switched off shows no Sign in');
+        const rowOrg = agentMcpReply({ a: info(sid), ad: adLive, live: BLOCKED, off: new Set(), secrets: [], cli: [{ name: 'teams', enabled: true }], extras: [], ambientDisabled: new Set(), signIn: () => undefined, signInBlocked: () => true, orgBlocked: () => ({ why: 'policy', refuse: true }) }).servers[0];
+        assert.deepStrictEqual([rowOrg.needsSignIn, rowOrg.canSignIn], [undefined, undefined], 'an organization-refused blocked server shows no Sign in');
+      }
+      // review of #1230 (3): the 10 s wait matters: the session reports the server only after a few steps
+      {
+        const adW = new FakeAdapter({ displayName: 'Copilot', capabilities: { mcpSignIn: true, mcpSignInAgain: true } });
+        adW.signInResult = { kind: 'browser', url: PAGE };
+        let liveW: McpServerStatus[] = [];
+        const ensW = async (a: AgentInfo): Promise<void> => {
+          await adW.start({ workspace: ws, quiet: true, sessionId: a.id });
+          setTimeout(() => { liveW = [{ name: 'teams', status: 'pending' }]; }, 8);
+          setTimeout(() => { liveW = BLOCKED; }, 25);
+        };
+        const rw = await mcpSignInOp({ ...d, router: routerOf(adW), live: () => liveW, ensureLive: ensW, startWaitMs: 500, stepMs: 5 }, store, sid, 'teams');
+        assert.deepStrictEqual(rw, { ok: true, kind: 'browser', host: 'auth.example.com' }, 'waits through pending until the server is reported');
+        store.drop(sid, 'teams');
+        const adN = new FakeAdapter({ displayName: 'Copilot', capabilities: { mcpSignIn: true, mcpSignInAgain: true } });
+        const rn = await mcpSignInOp({ ...d, router: routerOf(adN), live: () => [], ensureLive: async (a: AgentInfo) => { await adN.start({ workspace: ws, quiet: true, sessionId: a.id }); }, startWaitMs: 30, stepMs: 5 }, store, sid, 'teams');
+        assert.match((rn as { error: string }).error, /not running in this session/, 'a server never reported: the plain message after the wait');
+      }
+      // review of #1230 (2): "connected" for a server the runtime already read connected is not a fix
+      {
+        const adC = new FakeAdapter({ displayName: 'Claude Code', capabilities: { mcpSignIn: true } });
+        adC.signInResult = { kind: 'connected' };
+        await adC.start({ workspace: ws, quiet: true, sessionId: sid });
+        const rc = await mcpSignInOp({ ...d, router: routerOf(adC), live: () => BLOCKED }, store, sid, 'teams');
+        assert.deepStrictEqual([rc.ok, (rc as { manual?: boolean }).manual], [false, true], 'blocked, read connected, the app says connected: not fixed, steps shown');
+        assert.match((rc as { error: string }).error, /says it is signed in\. If calls still fail, use the terminal steps/);
+        const rp = await mcpSignInOp({ ...d, router: routerOf(adC), live: () => [{ name: 'teams', status: 'needs-auth' }] }, store, sid, 'teams');
+        assert.deepStrictEqual(rp, { ok: true, kind: 'connected' }, 'a needs-auth server that comes back connected is signed in');
+      }
       // a plain needs-auth server of a running session still takes the plain Sign in (not again)
       ad.signInCalls.length = 0;
       live = NEEDS;

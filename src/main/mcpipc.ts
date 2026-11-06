@@ -306,8 +306,8 @@ export function registerMcpIpc(deps: {
       if (e.phase === 'start') refresher.noteCall(e.sessionId, e.mcpServer, e.callId, 'start');
       else if (e.phase === 'complete') {
         refresher.noteCall(e.sessionId, e.mcpServer, e.callId, 'ok'); // a success also re-arms the note
-        const ad = router.forAgent(e.sessionId);
-        if (ad) refresher.clearBlock(ad.id, e.mcpServer); // spec 058 FR-229: a call that worked: the sign-in is good, no stale block
+        const ca = agents.get(e.sessionId), cad = router.forAgent(e.sessionId);
+        if (ca && cad) refresher.clearKey(signInKeyOf(ca.id, cad.id, e.mcpServer)); // spec 058 FR-229: a call that worked: this server's sign-in is good (this key only, not a same-name server of another folder)
       }
       else if (e.phase === 'failed') refresher.noteCall(e.sessionId, e.mcpServer, e.callId, 'end');
     }
@@ -478,6 +478,10 @@ export function registerMcpIpc(deps: {
     return r;
   });
   /** Spec 058 FR-229: Durbar's renewal record of this server (the same key the renewal wrote it under). */
+  const signInKeyOf = (agentId: string, adapterId: string, name: string): string => {
+    const a = agents.get(agentId);
+    return signInKey(adapterId, name, serverUrlOf(agentId, name) ?? (a ? `folder:${keyOf(a)}` : undefined));
+  };
   const signInBlockedOf = (agentId: string, name: string): boolean => {
     const a = agents.get(agentId), ad = router.forAgent(agentId);
     return !!a && !!ad && refresher.isBlocked(ad.id, name, serverUrlOf(agentId, name) ?? `folder:${keyOf(a)}`);
@@ -513,7 +517,7 @@ export function registerMcpIpc(deps: {
   ipcHandle('agents:mcpSignIn', async (e, id: unknown, name: unknown, again?: unknown) => {
     if (!fromApp(e)) return { ok: false, error: 'invalid request' };
     if (typeof id === 'string' && typeof name === 'string') refresher.clearPending(id, name); // spec 058 FR-221
-    const r = await mcpSignInOp({ agents, router, live: (k) => live.get(k) ?? [], secrets: secretValuesFor, serverUrl: serverUrlOf, blocked: (aid, n) => signInBlockedOf(aid, n), ensureLive: deps.ensureLive, settle: (aid, n) => Promise.all([refresher.quiesce(aid, n), restarting.get(`${aid}\0${n}`)?.then(() => undefined, () => undefined)]).then(() => undefined) }, signIns, id, name, again);
+    const r = await mcpSignInOp({ agents, router, live: (k) => live.get(k) ?? [], secrets: secretValuesFor, serverUrl: serverUrlOf, blocked: (aid, n) => signInBlockedOf(aid, n), off: (aid, n) => off.get(aid)?.has(n) === true, orgRefused: (aid, n) => { try { return deps.orgMcpNow?.(aid, serverDefOf(aid, n))?.refuse === true; } catch { return false; } }, ensureLive: deps.ensureLive, settle: (aid, n) => Promise.all([refresher.quiesce(aid, n), restarting.get(`${aid}\0${n}`)?.then(() => undefined, () => undefined)]).then(() => undefined) }, signIns, id, name, again);
     // FR-210: the person signs in: automatic reconnects may try this server again
     const ad = typeof id === 'string' ? router.forAgent(id) : undefined;
     if (r.ok && ad && typeof name === 'string') refresher.clearBlock(ad.id, name);

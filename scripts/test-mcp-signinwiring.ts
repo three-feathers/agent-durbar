@@ -171,11 +171,16 @@ async function main(): Promise<void> {
     emit(sid, { type: 'mcp', servers: list('connected') });
     const rowOf = async (): Promise<{ status?: string; needsSignIn?: boolean } | undefined> => ((await call('agents:mcp', sid)) as { servers: Array<{ name: string; status?: string; needsSignIn?: boolean }> }).servers.find((x) => x.name === 'docs');
     assert.deepStrictEqual([(await rowOf())?.status, (await rowOf())?.needsSignIn], ['connected', true], 'blocked and read connected: the row still needs a sign-in');
+    // a call to this server that worked clears the block: the row is plain again (and a failed or other server's call does not)
+    emit(sid, { type: 'toolCall', callId: 'z1', tool: 'files-x', mcpServer: 'files', phase: 'complete' });
+    assert.strictEqual((await rowOf())?.needsSignIn, true, 'a successful call to another server leaves the block');
+    emit(sid, { type: 'toolCall', callId: 'z2', tool: 'docs-x', mcpServer: 'docs', phase: 'complete' });
+    assert.strictEqual((await rowOf())?.needsSignIn, undefined, 'a successful call to this server clears its block');
+    await tick();
     const r3 = call('agents:mcpRestart', sid, 'docs');
     await tick();
     pending.shift()!('connected');
     assert.deepStrictEqual(await r3, { ok: true });
-    assert.strictEqual((await rowOf())?.needsSignIn, undefined, 'after Restart the block is gone and the row is plain again');
     emit(sid, { type: 'mcp', servers: list('needs-auth') });
     clock.now += 1;
     const s4 = call('agents:send', sid, 'now', []);

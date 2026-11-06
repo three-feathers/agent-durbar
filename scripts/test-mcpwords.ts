@@ -5,7 +5,7 @@ import { maskMcpError } from '../src/main/mcpmask';
 import { maskHomePaths, maskSecretUrl, redact } from '../src/shared/redact';
 
 interface Words {
-  signInPressNote: (name: unknown, row: unknown, err?: unknown) => string;
+  signInPressNote: (name: unknown, row: unknown, err?: unknown, live?: boolean) => string;
   stateOf: (s: unknown, ctx?: { off?: boolean; defaultOn?: boolean; origin?: string; app?: string; launchedOff?: boolean; switchedHere?: boolean }) => { word: string; icon: string; cls: string };
   offBy: (ctx?: { off?: boolean; defaultOn?: boolean; launchedOff?: boolean; switchedHere?: boolean }) => string;
   iconSvg: (n: string) => string;
@@ -50,6 +50,8 @@ for (const [row, err] of [[undefined, undefined], [{}, undefined], [{ canSignIn:
 }
 assert.match(W.signInPressNote('teams', undefined), /not in this chat/, 'no row');
 assert.match(W.signInPressNote('teams', { canSignIn: false }), /cannot start the sign-in from here/, 'a row without Sign in');
+assert.match(W.signInPressNote('teams', undefined, undefined, false), /session is not running/, 'a session that is not running says so, not "not in the list"');
+assert.match(W.signInPressNote('teams', { canSignInAgain: true, canSignIn: false }), /Sign in again/, 'a row with Sign in again names it');
 assert.match(W.signInPressNote('teams', { signIn: { host: 'h' } }), /already open/, 'an open sign-in');
 assert.strictEqual(W.signInPressNote('teams', {}, 'The session did not start.'), 'Could not start the sign-in for teams: The session did not start.', 'the call\'s own masked text wins');
 assert.match(W.signInPressNote('', undefined), /for this server:/, 'no name');

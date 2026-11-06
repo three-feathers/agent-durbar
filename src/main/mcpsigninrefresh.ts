@@ -839,6 +839,11 @@ export class McpSignInRefresher {
     return this.records.get(signInKey(adapterId, name, url))?.blocked === 'sign-in';
   }
 
+  /** Spec 058 FR-229: a call that worked clears the sign-in block of exactly this server key (adapter, name, address or folder), never a same-name server elsewhere. */
+  clearKey(key: string): void {
+    if (this.records.get(key)?.blocked === 'sign-in') this.records.delete(key);
+  }
+
   /** Test and debug view: the record of one key (a copy). */
   recordOf(key: string): SignInRecordView | undefined {
     const r = this.records.get(key);

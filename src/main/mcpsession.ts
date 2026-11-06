@@ -68,17 +68,19 @@ export interface McpReplyInput {
   lastCall?(name: string): McpCallClass | undefined;
 }
 
+/** Spec 058 FR-229: the runtime states in which Durbar's own block still makes a server needs-sign-in (never disabled, pending, stopped or not configured). */
+export const BLOCK_STATES = ['connected', 'failed', 'needs-auth'];
 /** Spec 058 FR-065: the one rule for "this row needs a sign-in" (the window uses the same): the runtime's `needs-auth`, or a failed server whose failure is an auth one. */
 export const needsSignIn = (s: { status?: string; errorClass?: string } | undefined): boolean => !!s && (s.status === 'needs-auth' || (s.status === 'failed' && s.errorClass === 'auth'));
 /**
  * Spec 058 FR-164: a server that can be signed in again: reported by the session as connected or failed (not one that waits for its
  * first sign-in, which gets Sign in), and not a local (stdio) server, which has no OAuth sign-in.
  */
-export const canSignInAgainStatus = (s: { name?: string; status?: string; errorClass?: string; transport?: string; source?: string } | undefined, url: string | undefined): boolean =>
+export const canSignInAgainStatus = (s: { name?: string; status?: string; errorClass?: string; transport?: string; source?: string } | undefined, url: string | undefined, knownRemote = false): boolean =>
   // fail closed (review on #625): only a remote server Durbar knows by its http(s) address (a folder extra, a list Durbar passes or the
   // Copilot CLI list), never a built-in one (it uses the Copilot sign-in itself), and never a source or transport that says otherwise or
   // is unknown to the runtime; a stdio server has no address, so it is never a candidate whatever a re-read says
-  !!s && !needsSignIn(s) && (s.status === 'connected' || s.status === 'failed') && typeof url === 'string' && /^https?:\/\//i.test(url) &&
+  !!s && !needsSignIn(s) && (s.status === 'connected' || s.status === 'failed') && ((typeof url === 'string' && /^https?:\/\//i.test(url)) || (knownRemote && (s.transport === 'http' || s.transport === 'sse'))) &&
   !BUILTIN_SERVERS.includes(s.name ?? '') && s.source !== undefined && s.source !== 'builtin' && s.source !== 'unknown' && s.transport !== 'stdio' && s.transport !== 'memory';
 
 /** A server name that is safe to put in a command the user may copy: no spaces, quotes, newlines or shell characters (a folder extra's name comes from a file). */
@@ -111,7 +113,7 @@ export function agentMcpReply(i: McpReplyInput): AgentMcpReply {
     // FR-065/FR-068: a row that reads Needs sign-in, on, in a running session; the steps are the agent app's own text (missing = none)
     // FR-229: also a server Durbar's renewal gave up on (the runtime may still read it connected), and also while the session is not running
     // (Sign in then starts it); a server the runtime says is disabled or gone from the session stays out
-    const blocked = on && i.signInBlocked?.(name) === true && (!isLive || !st || st.status === 'connected' || needsSignIn(st));
+    const blocked = on && !i.orgBlocked?.(name)?.refuse && i.signInBlocked?.(name) === true && (!st || BLOCK_STATES.includes(st.status));
     const needs = (isLive && on && needsSignIn(st)) || blocked;
     const renewed = isLive && on ? i.renewedAt?.(name) : undefined;
     const canSignIn = needs && typeof ad?.startMcpSignIn === 'function';
