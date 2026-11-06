@@ -7,7 +7,7 @@
  * (spec 097 FR-030) the masks also read a copy without hidden characters (`unhide`, the window's own function), so a zero-width space
  * cannot hide a token. Pure: no fs, no network, no process, no log. Any failure throws, and the caller drops the hit (fail closed).
  */
-import { NOTE_MARK, NOTE_RUN, maskHomePaths, maskNoteText, openKeyBlockStart } from '../shared/redact';
+import { NOTE_MARK, NOTE_RUN, hasLiveMark, maskHomePaths, maskNoteText, openKeyBlockStart } from '../shared/redact';
 
 /** Characters of context on each side of a raw hit; the window is then widened to whitespace (never cut inside a token). */
 export const WINDOW_CHARS = 600;
@@ -50,7 +50,7 @@ export interface MaskedWindow {
  * double it (two passes). Measured under load, so it overestimates on an idle machine.
  */
 export function maskWork(s: string, hidden = false, values = 0): number {
-  const marks = NOTE_MARK.test(s);
+  const marks = hasLiveMark(s); // an inert invisible mark (an emoji's ZWJ) costs nothing extra: `maskNoteText` skips its mark pass for it (issue 1234)
   let runs = 0;
   if (marks) {
     for (const m of s.matchAll(new RegExp(NOTE_RUN.source, 'g'))) {

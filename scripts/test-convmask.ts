@@ -6,7 +6,9 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { MASK_CALL_WORK, MaskBudgetError, WINDOW_CHARS, cleanValues, createMasker, maskWork, scanSecretValues } from '../src/main/convmask';
-import { rendererScript } from '../src/main/convsearch';
+import type { SessionSearchApi } from '../src/main/convsearch';
+import { messageExcerpts, rendererScript } from '../src/main/convsearch';
+import { hasLiveMark, maskNoteText } from '../src/shared/redact';
 
 process.exitCode = 1;
 const ROOT = ((): string => {
@@ -241,6 +243,55 @@ assert.throws(() => M.maskText('already [redaction failed] here', []), 'a failed
   assert.ok(!calls.some((c) => c.startsWith('session:')));
   assert.throws(() => scanSecretValues({ ...src(true), knownSecretValues: () => { throw new Error('store'); } }, { folderKey: 'F', open: false }), 'a failing store throws (the scan then searches nothing of it)');
   assert.deepStrictEqual(cleanValues(['abcd', 'abcd', 7, 'xyz', 'longer-one']), ['longer-one', 'abcd']);
+}
+
+// 5. issue 1234: an inert invisible mark (an emoji ZWJ, a variation selector) does not price a long message as all marks
+{
+  const GHP = 'gh' + 'p_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8';
+  const ZWJ = '\u200d';
+  const VS = '\ufe0f';
+  const family = '\u{1F468}' + ZWJ + '\u{1F469}' + ZWJ + '\u{1F467}';
+  let long = '';
+  for (let i = 0; long.length < 20_600; i++) long += 'word' + i + ' invoice ';
+  const plainWork = maskWork(long);
+  assert.ok(plainWork < MASK_CALL_WORK / 2, `the plain message fits with room (${plainWork})`);
+  for (const [name, mark] of [['emoji ZWJ sequence', family], ['variation selector', '\u26a0' + VS], ['heart + VS', '\u2764' + VS]] as const) {
+    const t = long + ' ' + mark + ' end';
+    assert.ok(!hasLiveMark(t), `${name}: no live mark`);
+    assert.ok(maskWork(t) <= Math.ceil(t.length * 0.55), `${name}: 0.55 per character, not 2.5 (${maskWork(t)})`);
+    assert.ok(maskWork(t) < MASK_CALL_WORK, `${name}: under the per-mask budget`);
+    assert.doesNotThrow(() => M.maskText(t, []), `${name}: the whole message masks within budget`);
+    assert.doesNotThrow(() => M.maskedWindow(t, t.indexOf(' invoice '), t.indexOf(' invoice ') + 9, [], { whole: true }), `${name}: whole window`);
+  }
+  // a live mark still costs what it did: Markdown, and a ZWJ touching ASCII
+  for (const t of ['**x** ' + long, 'ab' + ZWJ + 'cd ' + long, ZWJ + long, long + ZWJ, family + ZWJ + ' ' + long]) assert.ok(hasLiveMark(t) && maskWork(t) > t.length * 2.4, 'a live mark is priced as marked');
+  // search still finds the message, and shows it masked
+  {
+    const S = rendererScript<SessionSearchApi>('sessionsearch.js', path.join(ROOT, 'src', 'main'));
+    const msg = long + ' ' + family + ' the export of ' + GHP + ' failed ' + '\u26a0' + VS;
+    const r = messageExcerpts(msg, 'export failed', { n: 1, speaker: 'agent', values: [], masker: M, search: S });
+    assert.ok(r && r.excerpts.length === 1, 'the long message with an emoji is still found');
+    assert.ok(!r!.excerpts[0].text.includes(GHP), 'and its token is masked');
+  }
+  // strength: a token split by those marks (between ASCII) is masked as before, alone and next to emoji
+  for (const mark of [ZWJ, '\u200b', '**', '`']) {
+    const split = GHP.slice(0, 12) + mark + GHP.slice(12);
+    for (const t of [split, family + ' ' + split + ' ' + family, long.slice(0, 3000) + family + ' ' + split]) {
+      assert.ok(hasLiveMark(t), 'a mark inside a token is live');
+      assert.ok(!maskNoteText(t, []).text.includes(GHP.slice(12)), `maskNoteText masks a token split by ${JSON.stringify(mark)}`);
+      const m = M.maskText(t, []);
+      assert.ok(!m.includes(GHP.slice(12)) && !m.includes(GHP.slice(0, 12) + GHP.slice(12, 20)), `maskText masks a token split by ${JSON.stringify(mark)}: ${JSON.stringify(m.slice(-60))}`);
+    }
+  }
+  // a variation selector inside a token: not a `NOTE_MARK` (spec 084 FR-033 gap), the masker's unhidden copy still masks it
+  assert.ok(!M.maskText(GHP.slice(0, 12) + VS + GHP.slice(12), []).includes(GHP.slice(12)), 'a token split by a variation selector is masked by maskText');
+  // a known secret value split by a ZWJ between ASCII characters is still masked, with emoji around
+  const val = 'my-secret-value-1234';
+  const sv = family + ' ' + val.slice(0, 9) + ZWJ + val.slice(9) + ' ' + family;
+  assert.ok(!maskNoteText(sv, [val]).text.includes('value-1234'), 'a value split by a ZWJ is masked');
+  assert.ok(!M.maskText(sv, [val]).includes('value-1234'), 'the masker masks it too');
+  // the inert-mark shortcut changes nothing the full pass would find: same output as with the mark removed, for emoji only
+  assert.strictEqual(maskNoteText(family + ' ' + GHP, []).text, family + ' [redacted]', 'a token after an emoji sequence');
 }
 
 console.log('convmask tests passed');

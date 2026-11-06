@@ -54,6 +54,7 @@
 
 ## Phase 4: Close-out
 
+- [x] T065 Issue 1234: `hasLiveMark` (`redact.ts`) so an inert invisible mark (emoji ZWJ) neither prices a long message as marked (`maskWork`) nor triggers `maskAcrossMarks`' whole-text pass; `test:convmask` cost, search and strength cases, mutant listed in the PR
 - [ ] T064 Other docs and website pages the change touches (not the README feature line, *Safety model* or keyboard sheet, which ship in Phase 3 with T060)
 
 - [ ] T062 Mutation check of plan *Testing* 6, each listed in the PR; `docs/agent-notes.md` entries learned (fold length changes, mask-before-cut windows, Copilot and Codex reader gap)

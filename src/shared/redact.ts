@@ -1631,6 +1631,22 @@ export const NOTE_MARK = /[*`~[\]\\​-‍﻿]/;
 const NOTE_ESCAPABLE = '\\`*_{}[]()#+-.!~|<>';
 export const NOTE_RUN = /[A-Za-z0-9_\-.+/=:@%]{12,}/g;
 
+/**
+ * True when `s` holds a mark that can split or join a token. An invisible mark (ZWJ, a variation selector in a list of marks) with a
+ * non-ASCII, non-space, non-mark character on both sides is inert: no token shape, value or keyword is made of such characters, so
+ * removing it joins nothing (issue 1234: an emoji ZWJ sequence made `maskAcrossMarks` and `maskWork` treat the whole message as marked).
+ * Markdown marks and any mark touching ASCII, a space, the text's edge or another mark stay live.
+ */
+export function hasLiveMark(s: string): boolean {
+  if (!NOTE_MARK.test(s)) return false;
+  const inert = (c: string): boolean => c.charCodeAt(0) >= 0x80 && !/\s/.test(c) && !NOTE_MARK.test(c);
+  for (const m of s.matchAll(new RegExp(NOTE_MARK.source, 'g'))) {
+    const i = m.index ?? 0;
+    if (m[0].charCodeAt(0) < 0x80 || i === 0 || i + 1 >= s.length || !inert(s[i - 1]) || !inert(s[i + 1])) return true;
+  }
+  return false;
+}
+
 /** `s` without its split marks, and for each kept character its index in `s` (plus a final entry, `s.length`). */
 function withoutMarks(s: string): { k: string; at: number[] } {
   const keep: string[] = [];
@@ -1698,7 +1714,7 @@ function changedRegions(k: string, r: string): Array<[number, number]> {
  * maps each find back to the text as written, so the Markdown around it stays. `find` gives the spans (in `k` coordinates) to mask.
  */
 function maskAcrossMarks(s: string, find: (k: string, at: number[], u: string) => Array<[number, number]>): string {
-  if (!NOTE_MARK.test(s)) return s;
+  if (!hasLiveMark(s)) return s;
   const { k, at } = withoutMarks(s);
   const spans: Array<[number, number]> = [];
   for (const [a, b] of find(k, at, s)) if (b > a) spans.push([at[a], at[b - 1] + 1]);
