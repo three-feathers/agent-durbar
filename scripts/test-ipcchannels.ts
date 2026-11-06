@@ -121,6 +121,7 @@ const FROM_APP = [
   'notes:add', 'notes:delete', 'notes:deleteAll', 'notes:export', 'notes:fileCount', 'notes:list', 'notes:save', 'notes:setFile', 'notes:startOver', 'notes:update', // spec 083 FR-062: the folder's notes, by agent id; T042: the project-file switch (writes and deletes in the project)
   'profiles:create', 'profiles:delete', 'profiles:generate', 'profiles:save', // spec 043 FR-011, FR-040: writes to (or deletes) profile files
   'schedules:remove', 'schedules:runNow', 'schedules:runs', 'schedules:save',
+  'search:cancel', 'search:start', // spec 095 FR-033: the conversation search reads the text of every session
   'schedules:restartLoop', 'schedules:stopLoop', // spec 072 FR-007, FR-008 (T007): Stop loop and Start again
 ];
 assert.strictEqual(new Set(FROM_APP).size, FROM_APP.length, 'no channel twice in the list');

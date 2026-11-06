@@ -27,6 +27,12 @@ import type { SetupKind } from '../shared/harnesssetup';
 import { register as registerModelIpc } from './ipc/model';
 import { onAutoTierFailed } from './ipc/model';
 import { register as registerPreviousIpc } from './ipc/previous';
+import { vsUserDirsOf } from './ipc/previous';
+import { register as registerConvSearchIpc } from './ipc/convsearch';
+import { buildScope } from './convscope';
+import { createReadGate, rendererScript } from './convsearch';
+import type { SessionSearchApi } from './convsearch';
+import { createMasker } from './convmask';
 import { register as registerProfilesIpc } from './ipc/profiles';
 import { createProfileFreshness } from './profilefiles';
 import { register as registerSlashIpc } from './ipc/slash';
@@ -788,6 +794,20 @@ const profileFreshness = createProfileFreshness();
 registerAgentsIpc({ browserGone, agents, router, agentState, opsDeps, remoteOps, mcpGate: (id) => mcp.signInRefresh.beforeSend(id), mcpStopWait: (id) => mcp.signInRefresh.stopWait(id), mcpBusy: (id) => chatBusy(id), mcpForget: (id) => mcp.signInRefresh.forget(id), mcpStopped: (id) => mcp.signInRefresh.noteStop(id), mcpSecrets: (id) => mcp.secretValuesFor(id), logMcp: (a, action) => logActivity(a, 'mcp-restart', action), getScheduler: () => scheduler, getCheckpointStore: () => checkpointStore, profileFreshness, vsChatRefs, continued, wsKey, asEffort, addMany, addWorkspace, sendOp, ensureLive, readyAdapterIds, forgetOpenSession, maskHistory, forgetSandboxNote: (id) => sandboxOps.forget(id), getSummaryDays: () => summaryDays }); // spec 087: sandboxOps is set below, before any IPC call
 registerAttachmentsIpc({ dev, pickedFiles, getStageDir, sizeOf });
 registerPreviousIpc({ browserGone, renameSessionOpFor, dev, agents, router, registry, agentState, getFolderStore: () => folderStore, getScheduler: () => scheduler, wsKey, resumeIdFor, forgetOpenSession, logActivity, addWorkspace, vsChatRefs, maskHistory });
+// spec 095 (T022): the conversation search. Scope from main's own agents and folder store; MCP values without a keychain prompt (as
+// NotesOps); one cross-scan gate for what starts a Codex process; the matcher is the window's own file, loaded when first needed
+const convGate = createReadGate<unknown>();
+let convMatcher: { masker: ReturnType<typeof createMasker>; search: SessionSearchApi } | undefined;
+const convSearch = registerConvSearchIpc({
+  hasSessions: () => agents.size > 0,
+  scope: (stop) => buildScope({
+    agents, router, store: folderStore, wsKey, resumeIdFor, appName: (id) => registry.get(id)?.displayName ?? id, vsUserDirs: () => vsUserDirsOf(dev),
+    rememberChat: (agentId, ref) => { const m = vsChatRefs.get(agentId) ?? new Map<string, ChatFileRef>(); m.set(ref.summary.key, ref); vsChatRefs.set(agentId, m); }, // FR-012: View opens it
+    values: { knownSecretValues: (key) => mcpStore?.knownSecretValues(key) ?? [], noPrompt: () => mcpStore?.noPrompt() ?? false, secretValuesFor: (id) => mcp.secretValuesFor(id) },
+    gate: convGate,
+  }, stop),
+  matcher: () => (convMatcher ??= { masker: createMasker({ unhide: (s) => rendererScript<{ unhide(s: string): string }>('safetext.js').unhide(s) }), search: rendererScript<SessionSearchApi>('sessionsearch.js') }),
+});
 registerCheckpointsIpc({ agents, getCheckpointStore: () => checkpointStore, busyStatus });
 registerSchedulesIpc({ getScheduler: () => scheduler, getFolderStore: () => folderStore });
 registerUsageIpc({ agents, getUsageStore: () => usageStore, getUsageTotalsStore: () => usageTotalsStore, usageLabel });
@@ -967,6 +987,7 @@ function createWindow(): void {
     // spec 052 FR-085 / FR-087 / FR-090: on macOS closing the window hides it (the agents keep running; ⌘Q quits);
     // elsewhere it asks first while agents work (closing ends their sessions); either way the window's place is remembered
     const w = win;
+    w.on('close', () => convSearch.cancelAll()); // spec 095 FR-023: closing (or hiding) the window stops a conversation search
     w.on('close', (ev) => {
       if (hideOnClose(process.platform, quitting)) {
         ev.preventDefault();
@@ -1185,6 +1206,7 @@ let disposedOnQuit = false;
 /** Spec 093 FR-043: a running clone is ended and its folder removed (at most 5 s) before the app quits; asked once. */
 let newFolderEnded = false;
 app.on('before-quit', (ev) => {
+  convSearch.cancelAll(); // spec 095 FR-023: a conversation search stops on quit (also when the quit is then cancelled)
   if (!quitConfirmed) {
     if (workingCount() > 0 && !dev.DURBAR_SHOT && !dev.DURBAR_DRIVER) {
       ev.preventDefault();

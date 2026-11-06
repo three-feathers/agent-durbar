@@ -43,14 +43,16 @@ export interface PreviousIpcDeps {
   maskHistory<H extends { items: { type: string; failed?: boolean; output?: string }[] }>(id: string, h: H): H;
 }
 
+/** The VS Code `User` folders to look in (a test folder under `DURBAR_VSCODE_USER_DIR`); the conversation search uses the same (spec 095). */
+export const vsUserDirsOf = (dev: DevEnv): UserDir[] => (dev.DURBAR_VSCODE_USER_DIR ? [{ product: 'Test', dir: dev.DURBAR_VSCODE_USER_DIR }] : vscodeUserDirs());
+
 export function register(deps: PreviousIpcDeps): void {
   const { renameSessionOpFor, dev, agents, router, registry, agentState, wsKey, resumeIdFor, forgetOpenSession, logActivity, addWorkspace, vsChatRefs, maskHistory } = deps;
   const folderStore = deps.getFolderStore;
   const scheduler = deps.getScheduler;
   // ---- Previous sessions of a folder (Copilot CLI/SDK store, resumable) and VS Code chat history (read-only) ----
   // The renderer only ever names an agent and an opaque id; folders and file paths are resolved here.
-  const vsUserDirs = (): UserDir[] =>
-    dev.DURBAR_VSCODE_USER_DIR ? [{ product: 'Test', dir: dev.DURBAR_VSCODE_USER_DIR }] : vscodeUserDirs();
+  const vsUserDirs = (): UserDir[] => vsUserDirsOf(dev);
 
   // Spec 006 FR-024..FR-032: the list, pin/hide and delete bodies live in prevsessions.ts. `sessions:delete` exists only here, on the
   // window's own IPC (ipcHandle): the MCP tools, remote control, schedules and agents have no path to it (scripts/test-prevsessions.ts).
