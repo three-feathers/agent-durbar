@@ -430,6 +430,78 @@ for (const [start, more] of [['AK' + 'IA' + up(16), 'A'], ['AK' + 'IA' + up(16),
   assert.strictEqual(redact(['gh' + 'p_' + an(36), 'gh' + 'o_' + an(36)].join(' x '), {}), '[redacted] x [redacted]', 'separated tokens');
 }
 
+// Issue #1227 (spec 012 FR-170, T144): shapes `redact` left readable. Every value is made up and split at run time.
+{
+  const aws = 'wJalrXUtn' + 'FEMI/K7MDENG/bPxRfi' + 'CYEXAMPLEKEY'; // the 40-character example every AWS page shows
+  const zw = '\u200b';
+  const eq = (input: string, want: string, label: string): void => assert.strictEqual(redact(input, {}), want, label);
+  // 1. mysql -pPASSWORD: the password glued to the flag
+  eq('mysql -p' + 'hunter2 -u root', 'mysql -p[redacted] -u root', 'mysql -p: glued password');
+  eq('mysql -u root -p' + 'hunter2 db', 'mysql -u root -p[redacted] db', 'mysql -p: after other flags');
+  eq('mysqldump -uroot -p' + 'S3cret --all-databases', 'mysqldump -uroot -p[redacted] --all-databases', 'mysql -p: mysqldump');
+  eq('mariadb -h db.example -p' + 'S3cret', 'mariadb -h db.example -p[redacted]', 'mysql -p: mariadb');
+  eq("mysql -p'my pass word' db", 'mysql -p[redacted] db', 'mysql -p: single-quoted with spaces');
+  eq('mysql -p"my pass word" db', 'mysql -p[redacted] db', 'mysql -p: double-quoted with spaces');
+  for (const t of ['mysql -p db', 'mysql -u root -p', 'mysql -P 3306 -u root db', 'mysql -P3306 -u root', 'mysql --password db', 'ls -pa /tmp', 'git push -pf origin', 'mysql --protocol=tcp db'])
+    eq(t, t, `mysql -p stays: ${t}`);
+  // 2. an AWS secret after a space
+  eq('aws configure set aws_secret_' + 'access_key ' + aws, 'aws configure set aws_secret_' + 'access_key [redacted]', 'aws secret after a space: configure set');
+  eq('AWS_SECRET_' + 'ACCESS_KEY ' + aws, 'AWS_SECRET_' + 'ACCESS_KEY [redacted]', 'aws secret after a space: upper case name');
+  eq('aws_secret_' + 'access_key "' + aws + '"', 'aws_secret_' + 'access_key "[redacted]"', 'aws secret after a space: quoted');
+  eq('aws_secret_' + 'access_key is required', 'aws_secret_' + 'access_key is required', 'aws secret name in prose stays');
+  eq('aws_secret_' + 'access_key ' + aws.slice(0, 39), 'aws_secret_' + 'access_key ' + aws.slice(0, 39), 'aws secret: 39 characters is not one');
+  // 3. Google API keys (already hidden on main; the test pins the issue's own shape: AIzaSy + 33)
+  eq('AI' + 'zaSy' + an(33), '[redacted]', 'google key: AIzaSy + 33');
+  eq('key=AI' + 'zaSy' + an(33) + '&x=1', 'key=[redacted]&x=1', 'google key in a query');
+  // 4. invisible characters inside a token
+  eq('gh' + 'p_' + zw + an(36), '[redacted]', 'zero-width space after the prefix');
+  eq('gh' + 'p_' + an(20) + zw + an(16), '[redacted]', 'zero-width space inside the body');
+  eq(zw + 'gh' + 'p_' + an(36), zw + '[redacted]', 'zero-width space before the token');
+  eq('sk' + '-' + an(10) + '\u00ad' + an(30), '[redacted]', 'soft hyphen inside an sk- key');
+  eq('AK' + 'IA' + up(8) + '\ufeff' + up(8), '[redacted]', 'BOM inside an AWS key id');
+  eq('see gh' + 'p_' + an(18) + '\u2060' + an(18) + ' and ok', 'see [redacted] and ok', 'word joiner, text around stays');
+  eq('a ' + 'gh' + 'p_' + an(36) + ' b\nline ' + zw + 'two', 'a [redacted] b\nline ' + zw + 'two', 'an invisible character elsewhere changes nothing else');
+  eq('hello' + zw + 'world', 'hello' + zw + 'world', 'a zero-width space in prose stays');
+  // 5. short values after a secret name: 4 to 7 characters with a letter and a digit
+  eq('password=abc123', 'password=[redacted]', 'short: password=abc123');
+  eq('pwd: ' + 'hunter2', 'pwd: [redacted]', 'short: pwd: hunter2');
+  eq('token: abc1234', 'token: [redacted]', 'short: token: abc1234');
+  eq('client_secret=a1b2c3d', 'client_secret=[redacted]', 'short: client_secret');
+  eq('{"password": "ab12"}', '{"password": "[redacted]"}', 'short: JSON, 4 characters');
+  eq('https://h.example/cb?token=abc123&x=1', 'https://h.example/cb?token=[redacted]&x=1', 'short: in a query');
+  for (const t of ['token: none', 'password: see below', 'the password: required', 'token: abc', 'token: a12', 'password=changeme', 'Password: ******', 'token: expired', 'token: 4096', 'password: 123456', 'secret: FR-186.', 'secret: T-14', 'token: string', 'password: optional', 'auth: abc123', 'pass: ab12', 'token: v2', 'password: <value>'])
+    eq(t, t, `short stays: ${t}`);
+  // 6. several words: each next word has a digit, so a word without one ends it
+  eq('password: ab12 cd34 ef56', 'password: [redacted]', 'phrase: three words');
+  eq('password: ab12 cd34 is the one', 'password: [redacted] is the one', 'phrase: stops at a word without a digit');
+  eq('password: ab12 and then', 'password: [redacted] and then', 'phrase: one word and prose');
+  eq('pwd=ab12 cd34, next=1', 'pwd=[redacted], next=1', 'phrase: stops at a comma');
+  eq('token: ab12 cd34', 'token: [redacted] cd34', 'phrase: only passwords take more words');
+  // 7. an unfinished value at the end of a stream
+  eq('X-Api-Key: sk-' + 'ab12', 'X-Api-Key: [redacted]', 'unfinished: X-Api-Key sk-ab12');
+  eq('api_key=gh' + 'p_a1', 'api_key=[redacted]', 'unfinished: api_key=ghp_a1');
+  eq('X-Api-Key: sk-learn', 'X-Api-Key: [redacted]', 'unfinished: a key-like start is hidden even as a word');
+  eq('X-Api-Key: none', 'X-Api-Key: none', 'unfinished stays: X-Api-Key: none');
+  // 8. `token <value>`
+  eq('token ' + 'abc1234xyz', 'token [redacted]', 'scheme word: token <value>');
+  eq('curl --apikey a1b2c3d4e5 https://h', 'curl --apikey [redacted] https://h', 'scheme word: apikey <value>');
+  for (const t of ['token ring network', 'token 4096', 'token 12345678', 'token docs/readme2.md', 'the token bucket', 'token configuration', 'token abc1234', 'token count: 1', 'api key rotation2'])
+    eq(t, t, `scheme word stays: ${t}`);
+  // 9. `Bearer x. <value>`
+  eq('Bearer x. ' + 'abc1234xyz9Q', 'Bearer [redacted]', 'bearer: a stop character after the first word');
+  eq('bearer ab, ' + 'abc1234xyz9Qrs', 'bearer [redacted]', 'bearer: comma, lower case');
+  eq('Bearer x. ' + 'abc1234xyz', 'Bearer x. ' + 'abc1234xyz', 'bearer stays: a value of 10 characters');
+  eq('Bearer x. then more', 'Bearer x. then more', 'bearer stays: no value');
+  eq('Bearer of bad news. Sorry', 'Bearer of bad news. Sorry', 'bearer stays: prose');
+  // 10. Cookie
+  eq('Cookie: sid=abc1234 x', 'Cookie: [redacted] x', 'cookie: short value, a word after it');
+  eq('Cookie:' + 'abcd1234efgh5678', 'Cookie:[redacted]', 'cookie: no space, no name');
+  eq('Cookie: lang=en x', 'Cookie: lang=en x', 'cookie stays: 2 characters');
+  eq('Cookie: theme=dark x', 'Cookie: theme=dark x', 'cookie stays: a word with no digit');
+  eq('cookie: a=b is the format', 'cookie: a=b is the format', 'cookie stays: prose');
+  eq('Cookie: id=123456 x', 'Cookie: id=123456 x', 'cookie stays: a number');
+}
+
 // A real image, whole, stays (every repo image: test-redact-images.ts).
 {
   const png = fs.readFileSync(path.join(__dirname, '..', '..', 'build', 'icon.png')).toString('base64');
