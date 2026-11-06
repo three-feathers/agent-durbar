@@ -80,13 +80,26 @@ jobs:
           cache: npm
       - if: steps.changes.outputs.code == 'true'
         run: npm ci
+      # spec 103: test:prereview drives the real pinned Agent SDK binary against a loopback mock (fake key, no network); only this job installs it
+      - if: steps.changes.outputs.code == 'true' && matrix.os == 'ubuntu-latest'
+        run: npm ci --ignore-scripts --no-audit --no-fund --prefix scripts/prereview
       - if: steps.changes.outputs.code == 'true'
         run: npm run typecheck
       - if: steps.changes.outputs.code == 'true'
         run: npm run build
       # compiles the test scripts once and runs the suites in parallel (scripts/run-tests.js)
       - if: steps.changes.outputs.code == 'true'
+        env:
+          # spec 103: on this job test:prereview must run the real-SDK test, never skip it (the install step above)
+          PREREVIEW_REQUIRE_REAL_SDK: ${{ matrix.os == 'ubuntu-latest' && '1' || '' }}
         run: npm test
+      # spec 102 T201: the art build script's own checks; it needs Pillow, nothing else does, and no art is made here
+      - if: steps.changes.outputs.code == 'true' && matrix.os == 'ubuntu-latest'
+        name: Art build script selftest
+        run: |
+          python3 -m venv "$RUNNER_TEMP/art"
+          "$RUNNER_TEMP/art/bin/pip" install --quiet pillow==11.3.0
+          "$RUNNER_TEMP/art/bin/python" -I scripts/build-arcade-pack.py --selftest
 
   package-smoke:
     name: Package smoke (unpacked Linux app)
@@ -162,7 +175,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        theme: [corporate, retro, durbar-indian, durbar-european, durbar-japanese, user]
+        theme: [retro, user]
         shard: [1, 2]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

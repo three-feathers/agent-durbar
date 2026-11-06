@@ -1,4 +1,4 @@
-node_modules/
+node_modules
 dist/
 out/
 release/
@@ -26,3 +26,6 @@ _site/
 
 # generated specs index (spec 025): npm run specs:index
 specs/INDEX.md
+
+# Python bytecode from scripts/build-arcade-*.py (one was committed by mistake, 2026-11-03)
+__pycache__/

@@ -10,6 +10,18 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+
+// spec 012 FR-166 (#1093): every folder made here is removed when the process exits (also a failed assert), with the files made beside it
+const madeTmp = [];
+function mkTmp(prefix) {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  madeTmp.push(d);
+  return d;
+}
+process.on('exit', () => {
+  for (const d of madeTmp) for (const p of [d, `${d}-notes.md`, `${d}-ttitle.txt`]) { try { fs.rmSync(p, { recursive: true, force: true }); } catch (_) { /* the OS cleans its temp folder */ } }
+});
+
 const { spawnSync } = require('child_process');
 const si = require('./specs-index.js');
 
@@ -41,7 +53,7 @@ for (const v of ['a --> b', 'a --!> b']) {
 
 // spec 021 FR-063: the status is one word from a fixed list, the note is short (planted bad values are refused)
 for (const w of si.STATUSES) assert.deepStrictEqual(si.parseBlock(blk(`group: g\ntitle: T\nstatus: ${w}`)).errors, [], `"${w}" is allowed`);
-assert.deepStrictEqual([...si.STATUSES], ['draft', 'specified', 'building', 'built', 'released', 'superseded']);
+assert.deepStrictEqual([...si.STATUSES], ['draft', 'specified', 'building', 'built', 'released', 'superseded', 'deprecated']);
 for (const bad of ['done', 'implemented', '**built**', 'Built', 'built; delta 2026-10-22: y', 'in progress']) {
   const r = si.parseBlock(blk(`group: g\ntitle: T\nstatus: ${bad}`));
   assert.ok(r.errors.some((e) => /"status" must be one of/.test(e)), `status "${bad}" is refused`);
@@ -72,7 +84,7 @@ assert.strictEqual(si.groupId('## Index'), 'index');
 
 // --- a throwaway repository ---
 function repo(readme, specs) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-specs-'));
+  const dir = mkTmp('durbar-specs-');
   fs.mkdirSync(path.join(dir, 'specs'));
   fs.writeFileSync(path.join(dir, 'specs', 'README.md'), readme);
   for (const [d, text] of Object.entries(specs)) {
@@ -218,6 +230,25 @@ const SPECS = { '001-one': bare('One'), '002-two': bare('Two'), '010-ten': bare(
   const d2 = repo(HAND.replace('| Two (issue #2) | draft |', '| Two (issue #2) | a --> b |'), SPECS);
   assert.ok(si.importIndex(d2).errors.some((e) => /row 002: "status" contains "-->"/.test(e)), 'a comment end in a row is refused by the import');
   assert.strictEqual(si.parseBlock(rd(d2, '002-two/spec.md')).meta, null, 'no block written');
+}
+
+// --- conflict markers (FR-018): an error even without the strict marker, in any .md under specs/ ---
+{
+  const d = repo(HAND, SPECS);
+  assert.deepStrictEqual(si.conflictMarkers(d), [], 'a clean tree has none');
+  assert.strictEqual(cli('--check', '--root', d).status, 0, 'warnings only, no markers: exit 0');
+  fs.mkdirSync(path.join(d, 'specs', '001-one', 'checklists'), { recursive: true });
+  fs.writeFileSync(path.join(d, 'specs', '001-one', 'plan.md'), 'a\r\n<<<<<<< HEAD\r\nb\r\n');
+  fs.writeFileSync(path.join(d, 'specs', '001-one', 'checklists', 'x.md'), '>>>>>>> origin/main\n');
+  const found = si.conflictMarkers(d);
+  assert.deepStrictEqual(found.map((f) => f.split(': ')[0]), ['specs/001-one/checklists/x.md:1', 'specs/001-one/plan.md:2']);
+  const r = cli('--check', '--root', d);
+  assert.strictEqual(r.status, 1, 'markers fail with no strict marker');
+  assert.ok(/plan\.md:2: a conflict marker/.test(r.stderr), 'names the file and line');
+  // not markers: a heading underline, text mentioning one mid-line, a longer run
+  fs.writeFileSync(path.join(d, 'specs', '001-one', 'plan.md'), 'Title\n=======\nsay `<<<<<<< HEAD` here\n<<<<<<<< eight\n');
+  fs.rmSync(path.join(d, 'specs', '001-one', 'checklists'), { recursive: true });
+  assert.deepStrictEqual(si.conflictMarkers(d), []);
 }
 
 console.log('test-specs-index: ok');

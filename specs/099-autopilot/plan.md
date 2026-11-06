@@ -52,22 +52,24 @@ Autopilot on a schedule (FR-084) is out of the first build, pending the other tw
 - `AgentEvent` adds `{ type: 'autopilot'; phase: 'started' | 'continued' | 'ended'; runId: string; n: number; limit: number; reason?: AutopilotEnd; spend?: { unit; value } }`,
   with `AutopilotEnd = 'done' | 'cap' | 'limit' | 'no-progress' | 'blocked' | 'stopped' | 'error'`. `eventguard` validates it.
 - `question` events get `autoAnswered?: true`.
-- `AgentInfo.autopilot?: { limit; cap?; run?: { n; startedAt } }` lives in main memory only.
+- `AgentInfo.autopilot?: { limit; cap?; hours?; run?: { continuation; startedAt } }` (the spec's FR-002 name) lives in main memory only.
 
 ### The shared core (`src/adapters/autopilot.ts`, pure)
 
 - `AutopilotRun`: a small state machine with the counter, the limit, the end-once guard and the no-progress counter. It takes
   one injected `halt()` callback (each adapter writes its own FR-050 order) and is used by all three adapters, so the rules are written once.
   - The backstop (FR-021): a second counter fed by each adapter, and elapsed time from an injected clock. Both end the run with `error`. It is a safety bound against a changed app, not a money limit. Proposed values: 2 hours (a raisable default, D13), `100 × (limit + 1)`.
-  - The guard stays armed after a failed stop or clear, and interrupts any later continuation (FR-054).
-- `AUTOPILOT_ANSWER` and the end-reason words.
-- `goalText(text)`: replaces control characters other than newline with a space, and for Claude Code refuses exactly `clear`
-  and empty text, returning the reason, and flags more than 4000 characters for a warning (D13, spec *Changes*).
-- `isClaudeContinuation(msg)`: a user message with `isSynthetic` whose text starts with `Stop hook feedback:`.
+  - The guard (FR-054) is armed from the moment of the end until the newest `halt(reason)` is confirmed (a resolve; a rejection or throw keeps it armed; an older call settling late changes nothing). `halt` is called once at the end for every reason (the adapter decides what a `done` clear means). Any continuation after the end repeats `halt`, is not counted and emits nothing. `clearFailed()` holds the guard for a clear the adapter ran itself, `confirmCleared()` releases it.
+  - Values as built: `limitOrDefault` (none = 5; 0, 1001, 1.5, NaN, null and text throw), backstop time 1-168 hours (default 2, only forward clock steps count, a non-numeric reading ends the run as `error`; the adapter owns the timer and calls `checkElapsed()` at least every `CLOCK_SAMPLE_MS`; `deadlineMs` is a hint), backstop turns `backstopPer × (limit + 1)` (more than that ends the run; `backstopPer` 100 by default, 1 for Codex; `backstopTurn()`), no progress after 2 unchanged (`noteProgress`), all ending with the reasons of FR-040.
+- `AUTOPILOT_ANSWER` and `AUTOPILOT_ENDS` (the reason names; the words shown to the person belong to the window).
+- `goalText(text, app?)`: removes hidden characters, replaces control characters other than newline with a space, refuses empty text, and on Claude Code (the default with no app) refuses `clear`, `stop`, `off`, `reset`, `none`, `cancel`, text over 4000 trimmed characters and a line shaped like a slash command (`/word`, no further `/` in that word), each with a reason (D13 applied to the CLI's own limits, spec *Changes*).
+- `isClaudeContinuation(msg)`: a main-stream user message with `isSynthetic === true` (a typed one never counts) with a text block that starts with `Stop hook feedback:`.
 - `codexGoalEnd(status)`: maps `complete` to done, `budgetLimited` and `usageLimited` to cap, `blocked` and `paused` to
   blocked, and `active` to nothing.
 
 ### Adapters
+
+Written once in `src/adapters/autopilotHost.ts` (Phase 2): the settings and run of one session, the 10 second wait, the clock sample, S3 and the fixed chat lines. `AUTOPILOT_WIRED` stays false until T030 (spec *Changes*).
 
 - **Copilot** (`copilot.ts`):
   - `setAutopilot` sets `live.autopilot` and calls `mode.set autopilot` or `interactive`;
@@ -119,7 +121,7 @@ Autopilot on a schedule (FR-084) is out of the first build, pending the other tw
 - The activity log gets `autopilot-on`, `autopilot-end <reason>` and `autopilot-off`, with no prompt text.
 - No progress: main takes the folder fingerprint at each `continued` event with the spec 063 runner (read-only), and calls
   `setAutopilot(null)` with reason `no-progress` after two unchanged ones in a row.
-- The scheduler (spec 044, 072) follows FR-083. In the first build, while T096 is held, a scheduled prompt or a loop's pass that is due for a session on Autopilot is not sent, and the run log says why (T032). `autopilot` on a schedule is refused (FR-084).
+- **Void 2026-11-01 (owner; spec *Changes*): the scheduler sends in the session's mode, nothing is held; the rest of this line is the old plan.** The scheduler (spec 044, 072) follows FR-083. In the first build, while T096 is held, a scheduled prompt or a loop's pass that is due for a session on Autopilot is not sent, and the run log says why (T032). `autopilot` on a schedule is refused (FR-084).
 
 ### Renderer
 
@@ -160,6 +162,7 @@ through the built adapters (T091, T092, T094) come after p2 and before `verified
 - No progress is a heuristic, and may stop a run that reads a lot before writing. Two unchanged continuations is a low bar,
   and the setting stays internal until real use.
 - A soft cap on Codex can overshoot by one turn. The dialog says so.
+- A Stop or Autopilot off can land while a send that starts a run waits (review on #967). Rule (FR-059): nothing an adapter sets for a run (the cap, the open turn, the run) is set for good before its last wait; after that wait it reads the Stop count and Autopilot again, and every way out before the run begins puts the cap back (Copilot `capForRun`, Claude Code `send`'s `finally`). Tests use gated fakes, never timers (T050).
 
 ## Complexity Tracking
 

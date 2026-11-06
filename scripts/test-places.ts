@@ -20,6 +20,8 @@ type Visits = {
   at: (id: string) => { place: string; label: string; since: number } | null;
   occupants: (p: string) => string[];
   size: () => number;
+  settled: () => boolean;
+  pin: (id: string, p: string, l?: string) => boolean;
 };
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const P = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'places.js')) as {
@@ -115,6 +117,20 @@ assert.ok(v.at('a'), 'still there right after the call ends');
 t += 1000; assert.strictEqual(v.tick(), false); assert.ok(v.at('a'), 'dwell not over');
 t += 1000; assert.strictEqual(v.tick(), true); assert.strictEqual(v.at('a'), null, 'back at the desk after the dwell');
 assert.strictEqual(v.size(), 0);
+
+// spec 097 FR-186: settled() is true only when nothing changes on its own: not while a call waits for its debounce or an ended visit for its dwell
+v = mk();
+assert.strictEqual(v.settled(), true, 'nobody anywhere: settled');
+v.onTool('a', start('c1', 'bash'));
+assert.strictEqual(v.settled(), false, 'a call in its debounce is not settled');
+t += 600; v.tick();
+assert.strictEqual(v.settled(), true, 'at the place with the call still open: settled (nothing changes until the call ends)');
+v.onTool('a', done('c1', 'bash'));
+assert.strictEqual(v.settled(), false, 'an ended visit in its dwell is not settled');
+t += 2000; v.tick();
+assert.strictEqual(v.settled(), true, 'back at the desk: settled');
+v.pin('a', 'coffee', 'Coffee');
+assert.strictEqual(v.settled(), true, 'a pinned break is settled');
 
 // a call that ends within the debounce never shows (no flicker), even when no tick ran in between
 v = mk();

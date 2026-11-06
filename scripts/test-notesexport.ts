@@ -73,7 +73,7 @@ function rig(o: RigOpts = {}): Rig {
   const ops = new NotesOps({
     agents, store: () => store, resumeIdFor: () => SESSION_ID, adapterIdOf: () => 'copilot', now: tickClock,
     folderValues: () => [], sessionValues: () => [],
-    file: () => file, fileOn: (k) => folders.get(k)?.notesFile === true, setFileOn: (k, on) => folders.setNotesFile(k, on), setTimer: (fn) => { timers.push(fn); },
+    file: () => file, fileOn: (k) => !!folders.get(k)?.notesProject, fileGit: (k) => folders.get(k)?.notesProject === 'git', setFileOn: (k, on, git) => folders.setNotesFile(k, on, git), setTimer: (fn) => { timers.push(fn); },
     valuesPending: () => o.pending?.() === true,
     confirmNative: async (kind, name, count) => { asked.push({ kind, name, count }); return o.confirm ? o.confirm(kind, count) : true; },
     ...(o.noDialog ? {} : { saveDialog: async (opts: ExportDialogOptions) => { dialogs.push(opts); return o.choose ? o.choose(opts) : undefined; } }),
@@ -409,10 +409,10 @@ async function main(): Promise<void> {
     assert.strictEqual((await notesOf(r.store, r.folder)).length, 1);
   });
   await test('the native texts: counts, singular, the folder name only, Cancel stays the helper\'s default', () => {
-    assert.deepStrictEqual(notesConfirmText('deleteAll', 'proj', 3), { ok: 'Delete all', message: 'Delete all 3 notes of proj?', detail: 'They are deleted from Durbar. A .durbar/notes.md left in the project and earlier exports still hold them.' });
+    assert.deepStrictEqual(notesConfirmText('deleteAll', 'proj', 3), { ok: 'Delete all', message: 'Delete all 3 notes of proj?', detail: 'They are deleted from Durbar. A .durbar/notes/notes.md left in the project and earlier exports still hold them.' });
     assert.strictEqual(notesConfirmText('deleteAll', 'proj', 1).message, 'Delete all 1 note of proj?');
     assert.strictEqual(notesConfirmText('forget', 'proj', 2).message, 'Remove proj and delete its 2 notes?');
-    assert.ok(/deleted from Durbar\. \.durbar\/notes\.md in the project is not touched, and a copy moved aside by Start over stays/.test(notesConfirmText('forget', 'proj', 2).detail));
+    assert.ok(/deleted from Durbar\. \.durbar\/notes\/notes\.md in the project is not touched, and a copy moved aside by Start over stays/.test(notesConfirmText('forget', 'proj', 2).detail));
     for (const k of ['deleteAll', 'forget'] as const) assert.ok(!/this computer/.test(notesConfirmText(k, 'proj', 2).detail), `${k}: no claim about the whole computer`);
     assert.strictEqual(notesConfirmText('forget', 'proj', 0).message, 'Remove proj and delete its notes?');
     assert.strictEqual(notesConfirmText('on', 'proj').ok, 'Turn on');
@@ -430,7 +430,7 @@ async function main(): Promise<void> {
     okOf(await r.ops.add('a1', { text: 'mine' }));
     okOf(await r.ops.add('b1', { text: 'theirs' }));
     okOf(await r.ops.setFile('a1', true));
-    const md = path.join(r.folder, '.durbar', 'notes.md');
+    const md = path.join(r.folder, '.durbar', 'notes', 'notes.md');
     assert.ok(nodeFs.existsSync(md), 'precondition: the project file is written');
     const mine = path.join(r.notesDir, `${r.store.fingerprintOf(r.folder)}.json`), theirs = path.join(r.notesDir, `${r.store.fingerprintOf(r.other)}.json`);
     assert.ok(nodeFs.existsSync(mine) && nodeFs.existsSync(theirs) && mine !== theirs, 'precondition: two store files');

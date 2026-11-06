@@ -141,36 +141,34 @@ assert.ok(/'keys\.js'/.test(fs.readFileSync(path.join(ROOT, 'scripts', 'copy-ass
 // the Mac title bar rules apply only under html[data-platform="darwin"], so the office geometry on Linux and Windows is unchanged
 const css = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'styles.css'), 'utf8');
 for (const line of css.split('\n').filter((l) => /app-region|padding-left:(max\()?78px/.test(l))) assert.ok(line.startsWith('html[data-platform="darwin"]'), `darwin-only: ${line.slice(0, 80)}`);
-// an open chat hides the top bar (body.panel-open), so the agent strip is the drag area then, with the same room and no-drag controls;
-// a screen opened over a chat (body.screen-open) also hides the strip, so then the screen's header is; a notice strip shown with a chat open is the first row (FR-138)
+// an open chat hides the top bar (body.panel-open), so the agent rail's top row and the chat header are the drag areas then (spec 052 FR-215),
+// with the same room and no-drag controls (in the header also anything with a tooltip);
+// a screen opened over a chat (body.screen-open) also hides the rail, so then the screen's header is; a notice strip shown with a chat open is the first row (FR-138)
 const D = 'html[data-platform="darwin"]';
 const rules = [
-  `${D} :is(.topbar,.strip,body.panel-open .notice-strip,body.panel-open.screen-open .scr-head){-webkit-app-region:drag}`,
-  `${D}:not([data-fullscreen]) .strip{padding-left:78px}`,
+  `${D} :is(.topbar,.rail-top,body.panel-open .ph,body.panel-open .notice-strip,body.panel-open.screen-open .scr-head){-webkit-app-region:drag}`,
+  `${D}:not([data-fullscreen]) .rail-top{padding-left:78px}`,
   `${D}:not([data-fullscreen]) .topbar::before{content:"";flex:none;order:-1;width:58px;margin-right:-14px}`, // room on the first row only
   `@media (max-width:1320px){${D}:not([data-fullscreen]) .topbar::before{width:64px;margin-right:-8px}}`,
   `${D} body.panel-open :is(#restoreStrip:not([hidden]),#restoreStrip[hidden]+#awayStrip:not([hidden]),#restoreStrip[hidden]+#awayStrip[hidden]+#crashStrip:not([hidden])){min-height:40px}`, // the first strip clears the 78x40 box
   `${D}:not([data-fullscreen]) body.panel-open .notice-strip{padding-left:78px}`,
   `${D}:not([data-fullscreen]) body.panel-open.screen-open .scr-head{padding-left:max(78px,calc((100% - 880px)/2 + 24px))}`, // FR-097 alignment kept
   `${D} :is(.topbar,body.panel-open .notice-strip,body.panel-open.screen-open .scr-head) :is(button,a,input,select,textarea,label,summary,[role="button"],[role="menu"],[role="group"],[tabindex],.more-menu){-webkit-app-region:no-drag}`,
-  `${D} .strip>:is(button,a,input,select,textarea,label,summary,[role="button"],[role="menu"],[role="group"],[tabindex],.strip-list){-webkit-app-region:no-drag}`,
-  `${D} .strip-list *{-webkit-app-region:initial}`,
+  `${D} :is(.rail-top,body.panel-open .ph) :is(button,a,input,select,textarea,label,summary,[role="button"],[role="menu"],[role="group"],[tabindex],[title],.more-menu,.grants){-webkit-app-region:no-drag}`,
   `${D} body.panel-open .notice-strip:not([hidden]) ~ .notice-strip{padding-left:20px}`,
-  `${D} .notice-strip:not([hidden]) ~ .workspace .strip{padding-left:12px}`,
+  `${D} .notice-strip:not([hidden]) ~ .workspace .rail-top{padding-left:8px}`,
   `${D} .notice-strip:not([hidden]) ~ #screen .scr-head{padding-left:max(24px,calc((100% - 880px)/2 + 24px))}`,
-  `${D} .strip{padding-right:0}`,
-  `${D} .strip::after{content:"";flex:none;align-self:stretch;width:32px;`, // the grab handle (grip dots)
   `${D} :is(.dlg-ov,#foldersPop,#floorsPop,#defaultsPop,.mode-menu,.more-menu){-webkit-app-region:no-drag}`,
 ];
 for (const rule of rules) assert.ok(css.includes(rule), `Mac title bar rule (FR-085, FR-138): ${rule.slice(0, 90)}`);
 assert.ok(!css.includes('scr-head){padding-left:78px}') && !/\.topbar[^{]*\{padding-left:78px/.test(css), 'no flat 78px on the screen header or the whole top bar');
 // the selectors the rules name exist in the page
 const screensCss = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'screens.css'), 'utf8');
-for (const sel of ['.mode-menu{', '.more-menu{', '#floorsPop{', '#foldersPop{', '#defaultsPop{', '.notice-strip{', '.strip-list{', '.dlg-ov{']) assert.ok(css.includes(sel), `selector exists in styles.css: ${sel}`);
+for (const sel of ['.mode-menu{', '.more-menu{', '#floorsPop{', '#foldersPop{', '#defaultsPop{', '.notice-strip{', '.rail-top{', '.ph{', '.dlg-ov{']) assert.ok(css.includes(sel), `selector exists in styles.css: ${sel}`);
 assert.ok(screensCss.includes('.scr-head{'), 'selector exists in screens.css: .scr-head');
 for (const id of ['restoreStrip', 'awayStrip', 'crashStrip', 'foldersPop', 'floorsPop', 'defaultsPop']) assert.ok(html.includes(`id="${id}"`), `index.html has #${id}`);
 assert.ok(html.indexOf('id="restoreStrip"') < html.indexOf('class="workspace"') && html.indexOf('id="awayStrip"') < html.indexOf('id="screen"') && html.indexOf('class="workspace"') < html.indexOf('id="screen"'), 'notice strips come before .workspace and #screen (the ~ rules need it)');
-assert.ok(css.includes('@keyframes sl-fade') && css.includes('animation-timeline:scroll(self inline)') && /\.strip-list\{animation:sl-fade[^}]*mask-image/.test(css), 'the agent strip fades where it is cut off');
+assert.ok(!/(^|[^-\w])\.strip(-list)?\b/m.test(css), 'the strip is gone (spec 005 FR-190): no rule names it');
 assert.ok(css.includes(':root{color-scheme:light}') && css.includes(':root[data-dark]{color-scheme:dark}'), 'color-scheme follows the theme');
 
 // ---- FR-085 (issue #591): double-click on the top bar follows AppleActionOnDoubleClick ----
@@ -222,14 +220,16 @@ assert.ok(preload.includes("ipcRenderer.send('window:titleDoubleClick')"), 'prel
     return n;
   };
   const should = (n: N | null): boolean => K.shouldSendTitleDoubleClick(n);
-  const topbar = node(['.topbar']), strip = node(['.strip']), notice = node(['.notice-strip']), head = node(['.scr-head']), list = node(['.strip-list'], strip);
-  assert.ok(should(topbar) && should(strip) && should(notice) && should(head), 'a bare drag area sends');
+  const topbar = node(['.topbar']), rail = node(['.rail-top']), ph = node(['.ph']), notice = node(['.notice-strip']), head = node(['.scr-head']);
+  assert.ok(should(topbar) && should(rail) && should(ph) && should(notice) && should(head), 'a bare drag area sends (FR-215: the rail\'s top row and the chat header too)');
+  assert.ok(!should(node(['.ph [title]'], ph)) && !should(node(['span'], node(['.ph [title]'], ph))), 'a tooltip in the chat header is no-drag: nothing');
+  assert.ok(!should(node(['.grants'], ph)), 'the session grants: nothing');
   assert.ok(should(node(['span'], topbar)) && should(node(['div'], node(['div'], head))), 'plain text inside a drag area sends');
   for (const c of ['button', 'a', 'input', 'select', 'textarea', 'label', 'summary', '[role="button"]', '[role="menu"]', '[role="group"]', '[tabindex]', '.more-menu', '[data-id]']) {
     assert.ok(!should(node([c], topbar)), `a double-click on ${c} sends nothing`);
     assert.ok(!should(node(['svg'], node([c], topbar))), `a double-click inside ${c} sends nothing`);
   }
-  assert.ok(!should(node(['button'], list)) && !should(list), 'the agent list sends nothing');
+  assert.ok(!should(node(['.rail-list'])) && !should(node(['button'], node(['.rail-list']))), 'the agent list (not a drag area) sends nothing');
   assert.ok(!should(node(['div'])), 'outside every drag area: nothing');
   assert.ok(!should(null) && !K.shouldSendTitleDoubleClick({}), 'no element: nothing');
 }
@@ -237,5 +237,11 @@ assert.ok(preload.includes("ipcRenderer.send('window:titleDoubleClick')"), 'prel
 assert.ok(/platform==='darwin'&&window\.agentDurbar\.titleDoubleClick\)document\.addEventListener\('dblclick',e=>\{\s*if\(KEYS\.shouldSendTitleDoubleClick\(e\.target\)\)/.test(app), 'the page sends it only on a Mac, through the filter');
 assert.ok(/handleTitleDoubleClick\(\{[\s\S]*?process\.platform[\s\S]*?liveWin\(\)[\s\S]*?e\.sender[\s\S]*?AppleActionOnDoubleClick/.test(appIpc), 'main hands the handler the platform, the live window, the sender and the system setting');
 assert.ok(/w\.on\('maximize', \(\) => noteWindowZoom/.test(main) && /w\.on\('unmaximize', \(\) => noteWindowZoom/.test(main), 'main notes the system\'s own zoom');
+
+// spec 070, the owner's pick 2026-11-01: text is not thinned on macOS; one rule, on body
+{
+  const css = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'styles.css'), 'utf8');
+  assert.deepStrictEqual(css.match(/-webkit-font-smoothing:\s*[\w-]+/g), ['-webkit-font-smoothing:auto'], 'font smoothing is auto, once');
+}
 
 console.log('macos tests passed');

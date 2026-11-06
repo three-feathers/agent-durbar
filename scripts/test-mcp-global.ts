@@ -16,6 +16,7 @@ import { backupAndWrite, COPILOT_REF_NOTE, GlobalLists, KEEP_BACKUPS, ownerOnlyM
 import type { AgentInfo } from '../src/shared/api';
 import { McpStore } from '../src/main/mcpstore';
 import type { McpServerInput } from '../src/shared/mcp';
+import { tmpDir } from './test-tmp';
 
 const SECRET = 'sk-planted-SECRET-0123456789abcdef';
 const SECRET2 = 'hdr-planted-SECRET-zyxwvu987654';
@@ -27,7 +28,7 @@ const ok = (name: string, f: () => void): void => {
   n++;
   console.log('ok', name);
 };
-const tmp = (): string => fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-069-'));
+const tmp = (): string => tmpDir('durbar-069-');
 
 // ---------------------------------------------------------------- paths (FR-001)
 ok('paths per app, env overrides, ~ labels', () => {

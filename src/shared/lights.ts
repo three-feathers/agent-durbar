@@ -1,0 +1,95 @@
+/* Spec 097 FR-040..FR-052: the Real office lights, the pure part. A desk's lamp, screen glow and screen tint come from its status
+   (FR-041, FR-236), the room ambient from the share of active agents (FR-043), a lobby fixture's light from who is there (FR-045). No DOM, no
+   imports: the page loads the compiled file after exports-shim.js (like redact.js) and reads `exports.lightFor` at call time; the
+   tests import it. The renderer turns the result into CSS classes over the art (D4); every light repeats a cue that is also in words
+   or an icon (FR-046). */
+
+/* The page loads this compiled file as a plain script, so its top-level names are page globals: the private ones carry a prefix
+   (lightOwn), and the exported ones are unique (test:realoffice-layout checks both modules load together, spec 097). */
+
+/** The states Real office draws (spec 097 Edge cases "Every status"). */
+export type LightState = 'working' | 'thinking' | 'waiting' | 'error' | 'limit' | 'done' | 'idle' | 'asleep';
+export type Lamp = 'warm' | 'bright' | 'on' | 'low' | 'off';
+export type Glow = 'on' | 'breathe' | 'low' | 'off';
+export type Motion = 'breathe' | null;
+/** FR-236 (owner, 2026-11-05 16:46 UTC): the monitor screen's status tint; `none` keeps the normal screen. No separate status lights. */
+export type Tint = 'amber' | 'red' | 'orange' | 'green' | 'none';
+export interface Light { lamp: Lamp; glow: Glow; motion: Motion; tint: Tint }
+
+/** FR-041 (amended by FR-236: the call light and the red glow are gone, the screen is the cue), one row per state, in the spec's order. */
+export const LIGHT_TABLE: Readonly<Record<LightState, Light>> = {
+  working: { lamp: 'warm', glow: 'on', motion: null, tint: 'none' },
+  thinking: { lamp: 'on', glow: 'breathe', motion: 'breathe', tint: 'none' },
+  waiting: { lamp: 'bright', glow: 'on', motion: null, tint: 'amber' },
+  error: { lamp: 'on', glow: 'on', motion: null, tint: 'red' },
+  limit: { lamp: 'on', glow: 'on', motion: null, tint: 'orange' },
+  done: { lamp: 'low', glow: 'low', motion: null, tint: 'none' },
+  idle: { lamp: 'low', glow: 'low', motion: null, tint: 'none' },
+  asleep: { lamp: 'off', glow: 'off', motion: null, tint: 'none' },
+};
+
+const lightOwn = (o: object, k: string): boolean => Object.prototype.hasOwnProperty.call(o, k);
+
+/** The renderer's status words to a light state. Limit wins over waiting (the agent asks for money, spec 017 FR-019), an error over
+ *  the rest; compacting and retrying are thinking (spec 017 FR-026), failing is an error, paused is idle; an unknown word is idle. */
+export function lightState(status: string, flags?: { limit?: boolean; paused?: boolean; asleep?: boolean }): LightState {
+  const f = flags || {};
+  if (f.asleep) return 'asleep';
+  if (f.limit) return 'limit';
+  if (f.paused) return 'idle';
+  const s = String(status || '');
+  if (s === 'compacting' || s === 'retrying') return 'thinking';
+  if (s === 'failing') return 'error';
+  return lightOwn(LIGHT_TABLE, s) ? (s as LightState) : 'idle';
+}
+
+/** FR-041, FR-047 and FR-236: the light of one desk. The tint is the table's (the light state picks amber, red or orange first); a done desk
+ *  with an unread reply (`unread`: DurbarUnread's `isUnread`, never a helper) gets green, and only a done one. With `still` (reduced motion or
+ *  Motion off) nothing breathes. */
+export function lightFor(state: string, opts?: { still?: boolean; unread?: boolean }): Light {
+  const ls = lightState(state), row = LIGHT_TABLE[ls];
+  const tint: Tint = ls === 'done' && opts && opts.unread ? 'green' : row.tint;
+  return opts && opts.still ? { ...row, motion: null, tint } : { ...row, tint };
+}
+
+/** FR-107: the lamp state in words, the same in every world (a flame or a neon strip is still "Lamp"): for the hover card, the chat header and the desk-side plate,
+ *  so a light is never the only cue (FR-046). One phrase per FR-041 row. */
+export function lampWords(l: Light): string {
+  if (l.lamp === 'off') return 'Lamp off';
+  if (l.lamp === 'low') return 'Lamp low';
+  if (l.tint === 'amber') return 'Lamp bright, amber screen';
+  if (l.tint === 'red') return 'Lamp on, red screen';
+  if (l.tint === 'orange') return 'Lamp on, orange screen';
+  if (l.lamp === 'warm') return 'Lamp warm, steady';
+  return 'Lamp on, breathing';
+}
+
+/** FR-043: an active agent works, thinks, waits for the user, hit its limit or failed. */
+export const isActive = (s: LightState): boolean => s === 'working' || s === 'thinking' || s === 'waiting' || s === 'limit' || s === 'error';
+
+/** FR-043: the room ambient, 0.70 (no visible agent active) to 1.00 (all active); an empty office is at full light. */
+export function ambientFor(states: readonly LightState[]): number {
+  if (!states.length) return 1;
+  const share = states.filter(isActive).length / states.length;
+  return Math.round((0.7 + 0.3 * Math.min(1, Math.max(0, share))) * 1000) / 1000;
+}
+
+/** FR-052: the green tick shows once per transition to done. `seen` maps a desk to the state it had at the last render; the result
+ *  is true only when the desk was drawn before in another state and is done now (a reload, a resize or a re-render never ticks). */
+export function doneTick(seen: Map<string, LightState>, id: string, state: LightState): boolean {
+  const prev = seen.get(id);
+  seen.set(id, state);
+  return state === 'done' && prev !== undefined && prev !== 'done';
+}
+
+export type FixtureLight = 'lamp' | 'busy' | 'glow' | 'soft' | null;
+/** FR-045: a lobby fixture's own light. Library and Bank: a lamp while someone is there; Boss: the busy light over the door once a
+ *  queue forms (2 or more visitors, or 1 that needs the user); Coffee: the machine glows while someone is there; the other places
+ *  (custom ones too): a soft light while occupied. The Postbox has no visitors and no light. */
+export function fixtureLight(place: string, visitors: number, needsYou: boolean): FixtureLight {
+  if (place === 'postbox' || visitors <= 0) return null;
+  if (place === 'library' || place === 'bank') return 'lamp';
+  if (place === 'boss') return visitors >= 2 || needsYou ? 'busy' : null;
+  if (place === 'coffee') return 'glow';
+  return 'soft';
+}

@@ -3,6 +3,12 @@ import * as assert from 'assert';
 import { MAX_LINE_BYTES, createCliTransport } from '../src/adapters/claudeTransport';
 import type { ChildLike, ControlAnswer, IncomingControl, TransportHandlers } from '../src/adapters/claudeTransport';
 import { fakeSpawn } from './fakes/claude-cli';
+import { liveMcpConfigCount, makeCliTransportFactory, privateMcpConfig, sweepMcpConfigs } from '../src/adapters/claude';
+import type { SpawnFn } from '../src/adapters/claudeTransport';
+import { execFileSync } from 'child_process';
+import * as fs from 'fs';
+import * as path from 'path';
+import { rmTmp, tmpDir } from './test-tmp';
 
 const tick = (ms = 0): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
@@ -162,6 +168,81 @@ async function main(): Promise<void> {
     await s3.t.close();
     assert.deepStrictEqual(steps, ['SIGTERM', 'SIGKILL']);
     assert.deepStrictEqual(s3.child.killed, [], 'child.kill is not used when a killer is injected');
+  }
+
+  // spec 012 FR-165 (#1093): the private MCP config folder (env and header values) is gone on every way the CLI can end
+  {
+    const root = tmpDir('durbar-fr165-');
+    const left = (): string[] => fs.readdirSync(root).filter((n) => n.startsWith('durbar-mcp-'));
+    const launch = { mode: 'read-only' as const, sessionId: 's', resume: false, mcpConfig: '{"mcpServers":{"x":{"env":{"TOKEN":"secret"}}}}' };
+    const start = (spawn: SpawnFn, exits: unknown[] = []) =>
+      makeCliTransportFactory({ spawn, tmpRoot: root })({ file: '/opt/claude/bin/claude', launch, cwd: '/work/repo', env: {}, handlers: { message: () => undefined, control: async () => ({ response: {} }), exit: (e) => exits.push(e) } });
+
+    // the folder exists while the CLI runs, and holds the config file only the owner may read
+    {
+      const f = fakeSpawn();
+      await start(f.spawn);
+      assert.strictEqual(left().length, 1, 'one folder while the CLI runs');
+      assert.ok(fs.existsSync(path.join(root, left()[0], 'mcp-config.json')));
+      assert.strictEqual(liveMcpConfigCount(), 1);
+      f.children[0].exit(0, null);
+      assert.strictEqual(left().length, 0, 'removed when the CLI exits');
+      assert.strictEqual(liveMcpConfigCount(), 0);
+    }
+    // the CLI cannot be spawned: spawn throws
+    {
+      const exits: unknown[] = [];
+      assert.throws(() => start(() => { throw new Error('spawn ENOENT'); }, exits), /ENOENT/);
+      assert.deepStrictEqual(left(), [], 'spawn threw: nothing left');
+      assert.strictEqual(liveMcpConfigCount(), 0);
+    }
+    // the CLI errors (asynchronous spawn error event)
+    {
+      const exits: unknown[] = [];
+      const f = fakeSpawn();
+      await start(f.spawn, exits);
+      f.children[0].fail('spawn EACCES');
+      assert.deepStrictEqual(left(), [], 'error event: nothing left');
+      assert.strictEqual(exits.length, 1, 'the exit is still reported');
+    }
+    // the CLI is killed from outside (signal exit)
+    {
+      const f = fakeSpawn();
+      await start(f.spawn);
+      f.children[0].exit(null, 'SIGKILL');
+      assert.deepStrictEqual(left(), [], 'killed: nothing left');
+    }
+    // the app closes the transport (stdin end, then TERM, then KILL when the CLI ignores them)
+    {
+      const f = fakeSpawn();
+      f.next = (c) => { c.exitOnEnd = false; c.exitOnTerm = false; };
+      const t = await start(f.spawn);
+      assert.strictEqual(left().length, 1);
+      await t.close();
+      assert.deepStrictEqual(left(), [], 'close(): nothing left');
+    }
+    // the app quits while the CLI still runs: nothing calls exit, the sweep (run on the process's exit event) removes the folder
+    {
+      const f = fakeSpawn();
+      await start(f.spawn);
+      assert.strictEqual(left().length, 1);
+      sweepMcpConfigs();
+      assert.deepStrictEqual(left(), [], 'sweep: nothing left');
+      assert.strictEqual(liveMcpConfigCount(), 0);
+    }
+    // a failed write (the JSON is not a string) removes the folder it just made and leaves nothing live
+    {
+      assert.throws(() => privateMcpConfig(undefined as unknown as string, root));
+      assert.deepStrictEqual(left(), [], 'write failure: nothing left');
+      assert.strictEqual(liveMcpConfigCount(), 0, 'write failure: nothing live');
+    }
+    // the exit hook itself (plain Node only; Electron's app.exit and process.exit skip the event: FR-165 KNOWN GAP): a process that makes a config folder and ends with process.exit leaves none behind
+    {
+      const mod = require.resolve('../src/adapters/claude');
+      execFileSync(process.execPath, ['-e', `require(${JSON.stringify(mod)}).privateMcpConfig('{}', ${JSON.stringify(root)}); process.exit(0);`], { stdio: 'ignore' });
+      assert.deepStrictEqual(left(), [], 'process.exit: nothing left');
+    }
+    rmTmp(root);
   }
 
   console.log('claude transport tests passed');

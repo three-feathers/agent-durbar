@@ -20,9 +20,9 @@ import {
 import type { CheckResult, LookupGet, UpdatePolicy } from '../src/shared/updatecheck';
 import { FIXED_HEADERS, makeDownloadGet, makeLookupGet } from '../src/main/netget';
 import type { NetRequestFactory, NetRequestLike, NetRequestOptions } from '../src/main/netget';
-import { UpdateChecker } from '../src/main/updatecheck';
+import { UpdateChecker, failureDetail } from '../src/main/updatecheck';
 import type { CheckerDeps, UpdatesView } from '../src/main/updatecheck';
-import { wingetTermsQuestion } from '../src/shared/updatecheck';
+import { wingetTermsQuestion, CLAUDE_UPDATE_DISABLED } from '../src/shared/updatecheck';
 import { ASK_LIMIT_MS, UpdateGate, startHeldBy, updateRunRefusal } from '../src/main/updategate';
 import type { RunReply, SessionCount } from '../src/main/updategate';
 import { SettingsStore } from '../src/main/settings';
@@ -262,6 +262,9 @@ const senv = (env: Record<string, string | undefined> = {}, homedir = HOME) => (
   assert.strictEqual(classifyFailure({ platform: 'win32', code: 1, text: "EPERM: operation not permitted, unlink 'C:\\x\\codex.exe'" }), 'in-use', 'the Windows EPERM on the binary');
   assert.strictEqual(c('win-uac-cancelled', { platform: 'win32', code: 1223 }), 'uac-cancelled');
   assert.strictEqual(c('claude-update-disabled'), 'managed');
+  assert.strictEqual(c('claude-update-disabled', { code: 0 }), 'managed', 'the real recording exits 0; the up-to-date branch must not take it');
+  assert.strictEqual(classifyFailure({ platform: 'linux', code: 1, text: 'updates are blocked (DISABLE_UPDATES is set)' }), 'managed', 'the DISABLE_UPDATES alternative (not recorded; kept for a failed run only)');
+  assert.ok(CLAUDE_UPDATE_DISABLED.test(fx('claude-update-disabled')) && !CLAUDE_UPDATE_DISABLED.test('Note: DISABLE_UPDATES is set, auto-updates are disabled'), 'the exit-0 rule is the recorded text only');
   assert.strictEqual(classifyFailure({ platform: 'win32', code: 1, text: 'This operation is disabled by Group Policy' }), 'managed');
   assert.strictEqual(c('claude-update-uptodate', { code: 0 }), 'vendor-up-to-date', '"up to date" is its own non-error result');
   assert.notStrictEqual(c('claude-update-uptodate', { code: 0 }), 'managed', 'claude update saying up to date is not Managed');
@@ -459,6 +462,39 @@ const bodyOf = (text: string | Buffer, status = 200) => (r: FakeReq) => { const 
     await d.checker.checkAll();
     assert.strictEqual(d.checker.result('codex')?.state, 'up-to-date');
     assert.strictEqual(d.checker.result('codex')?.installedNewer, true);
+  }
+  {
+    // #1081 (FR-190): `brew outdated` exits 1 when the cask IS outdated and still prints JSON; only that command and only code 1 with readable output
+    const outdated = (code: number, out: string, err = '') => checkerWith({ real: { codex: brewReal }, copies: { codex: { state: 'ready', version: '0.163.0' } }, tools: brewTools, answers: (c) => c.args[0] === 'info' ? { code: 0, stdout: fx('brew-info-codex-nooutdated'), stderr: '' } : { code, stdout: out, stderr: err } });
+    const a = outdated(1, fx('brew-outdated-codex'));
+    await a.checker.checkAll();
+    assert.deepStrictEqual([a.checker.result('codex')?.state, a.checker.result('codex')?.latest], ['update-available', '0.164.0'], 'exit 1 with JSON is an update');
+    const b = outdated(1, 'Error: something odd', 'Error: boom');
+    await b.checker.checkAll();
+    assert.deepStrictEqual([b.checker.result('codex')?.state, b.checker.result('codex')?.reason], ['could-not-check', 'exit 1'], 'exit 1 with junk stays a failure');
+    const e1 = outdated(1, fx('brew-outdated-empty'));
+    await e1.checker.checkAll();
+    assert.strictEqual(e1.checker.result('codex')?.state, 'could-not-check', 'exit 1 with an empty list does not name the cask');
+    const c0 = outdated(0, fx('brew-outdated-empty'));
+    await c0.checker.checkAll();
+    assert.strictEqual(c0.checker.result('codex')?.state, 'up-to-date', 'exit 0 with [] is up to date');
+    const c2 = outdated(2, fx('brew-outdated-codex'));
+    await c2.checker.checkAll();
+    assert.deepStrictEqual([c2.checker.result('codex')?.state, c2.checker.result('codex')?.reason], ['could-not-check', 'exit 2'], 'exit 2 stays a failure even with JSON');
+    // `brew info` exit 1 is never accepted
+    const ci = checkerWith({ real: { codex: brewReal }, copies: { codex: { state: 'ready', version: '0.163.0' } }, tools: brewTools, answers: () => ({ code: 1, stdout: fx('brew-info-codex-outdated'), stderr: '' }) });
+    await ci.checker.checkAll();
+    assert.strictEqual(ci.checker.result('codex')?.state, 'could-not-check', 'brew info exit 1 stays a failure');
+    // the detail: last stderr line, home folder as ~, token masked, capped
+    const home = '/Users/vikram';
+    const d = outdated(2, '', `first\nError: cannot read ${home}/Library/x ghp_${'a'.repeat(36)} ${'z'.repeat(300)}\n\n`);
+    await d.checker.checkAll();
+    const det = d.checker.result('codex')?.detail ?? '';
+    assert.ok(det.startsWith('Error: cannot read ~/Library/x'), det);
+    assert.ok(!det.includes('vikram') && !det.includes('ghp_'), det);
+    assert.ok(det.length <= 120, String(det.length));
+    assert.strictEqual(d.checker.result('codex')?.reason, 'exit 2');
+    assert.strictEqual(failureDetail(''), undefined);
   }
   {
     // npm: the npm that owns the copy, update notifier off for that child only
@@ -946,10 +982,10 @@ const bodyOf = (text: string | Buffer, status = 200) => (r: FakeReq) => { const 
     const s = new SettingsStore(file);
     s.load();
     assert.strictEqual(s.checkUpdatesAtStart, true, 'on by default (Q6 = A)');
-    assert.strictEqual(s.setCheckUpdatesAtStart('no'), true, 'only a real boolean changes it');
-    assert.strictEqual(s.setCheckUpdatesAtStart(false), false);
+    assert.strictEqual(s.setCheckUpdatesAtStart('no').value, true, 'only a real boolean changes it');
+    assert.strictEqual(s.setCheckUpdatesAtStart(false).value, false);
     assert.strictEqual(JSON.parse(fs.readFileSync(file, 'utf8')).checkUpdatesAtStart, false);
-    assert.strictEqual(s.setCheckUpdatesAtStart(true), true);
+    assert.strictEqual(s.setCheckUpdatesAtStart(true).value, true);
     assert.ok(!('checkUpdatesAtStart' in JSON.parse(fs.readFileSync(file, 'utf8'))), 'only false is written');
     // announced versions: an allowed app id and a valid version; anything else is dropped
     for (const [app, v] of [['__proto__', '1.0.0'], ['constructor', '1.0.0'], ['codex', '<b>'], ['codex', '1.0'], ['codex', 5], ['codex', '1'.repeat(70)], ['bash', '1.0.0'], [5, '1.0.0'], ['codex', null]] as Array<[unknown, unknown]>) assert.strictEqual(s.setAnnouncedVersion(app, v), false, `${String(app)} ${String(v)}`);

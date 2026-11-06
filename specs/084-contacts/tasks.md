@@ -24,7 +24,7 @@ description: "Tasks for spec 084: contacts, and sending the message box to a per
 
 ## Phase 0: Spec deltas
 
-- [ ] T001 [P] Dated `## Changes` entries in the owning specs, each pointing to 084. [FR-020..FR-025, FR-040, FR-054]
+- [x] T001 [P] Dated `## Changes` entries in the owning specs, each pointing to 084. [FR-020..FR-025, FR-040, FR-054]
   - AC1: spec 005: the Contacts drawer over `#chat` (shared frame with 083), *Contacts…* in the More menu, the recipient chip and the *Preview for…* Send label.
   - AC2: spec 003/018: message tools held in every mode (Allow all included) unless a live ticket matches; tickets approve once in Ask and Allow all and are never made in Read-only; no session grant for message tools; `PermissionLike.args`.
   - AC3: spec 073: the picker's `@` trigger and contact source (a separate list on the same element).

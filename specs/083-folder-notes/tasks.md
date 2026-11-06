@@ -13,7 +13,7 @@ description: "Tasks for spec 083: notes per folder, reachable inside the chats"
 - simulator and `npm test` only; zero AI credits; no real session, no `npm run smoke`, no `scripts/capture-raw.ts`;
 - no shell, no git calls from Durbar (FR-051); no path from the window;
 - never log note text, titles, session ids or secret values;
-- Durbar runs no git process; the only git-related write is FR-051's one `info/exclude` line; fake tokens in tests are built at run time;
+- Durbar runs no git process; the only git-related write is the `.gitignore` of `.durbar/notes` (spec Changes 2026-11-01, replacing FR-051's `info/exclude` line); fake tokens in tests are built at run time;
 - `npm run typecheck && npm run build && npm test` green;
 - UI tasks: `npm run check:office`, screenshots at 1440x900 and 1280x800 with `DURBAR_SIM=15`, and `npm run shots:docs -- --only <drivers>` for linked pictures that show the change;
 - renderer comments write "issue 699", never `#699` (theme-token ratchet).
@@ -175,14 +175,15 @@ description: "Tasks for spec 083: notes per folder, reachable inside the chats"
 
 ## Phase 5: User Story 6, back to the source (P3)
 
-- [ ] T050 [US6] *Open source*. [FR-046]
+- [x] T050 [US6] *Open source*. [FR-046] (`openNoteSource`, `ntSourceBubble` in `app.js`; `resumePrev` returns the agent; `test:` `scripts/check-notes-source.js`, listed in `ui-suite.js`)
   - AC1: an office session: its chat opens and the message is revealed inside `#chat` (`DurbarScroll.reveal`; `document.scrollingElement.scrollTop` stays 0) and outlined 1.2 s; no animation under reduced motion.
   - AC2: a previous session opens through the Previous sessions path (no `send`), then reveals.
   - AC3: a gone session and a missing message give the FR-046 toasts; the note stays.
 
 ## Phase 6: Converge
 
-- [ ] T060 `/speckit.converge`: spec statuses and `[IMPLEMENTED]` / `[KNOWN GAP]` tags match what was built; every linked screenshot that shows a changed screen is retaken (`npm run shots:docs -- --only …`); a `docs/agent-notes.md` entry for anything learned the hard way.
+- [x] T063 The project file in `.durbar/notes/` with a `.gitignore` of its own, no exclude line (spec Changes 2026-11-01; replaces PR #957): `notesfile.ts` (two-level place, `ensureIgnore`, `allowGit`), `notesops.ts` (`git` option, native `git` box), `folders.ts` (`notesProject`), `app.js` (box *Keep these notes in git*), tests with real `git`.
+- [x] T060 `/speckit.converge`: spec statuses and `[IMPLEMENTED]` / `[KNOWN GAP]` tags match what was built; every linked screenshot that shows a changed screen is retaken (`npm run shots:docs -- --only …`); a `docs/agent-notes.md` entry for anything learned the hard way. Done 2026-11-06: the notes pictures were retaken and looked at (both sizes); FR-050 and the status text rewritten to the built state; `npm run check:notes*` names fixed to `check:ui -- --only`.
 - [x] T061 Stale-lock takeover race (issue #723): a takeover guard file and a lock token in `NotesStore.lock()` / `unlockFile()`; tests with an injected fs for a fresh lock taken over between the stale judgement and the move, and for a holder that lost its lock. [FR-008]
 - [x] T062 One shared capped read (issue #917): `src/shared/cappedread.ts` used by `notesfile.ts`, `mcp/auth.ts` and `adapters/slashcommands.ts`; `test:cappedread` (real fs: symlink, hard link, FIFO in a child with a time limit, cap, growth, regular file) plus each caller's suite. [FR-050, FR-053]
 

@@ -1,4 +1,5 @@
 import { destroyAllViews } from './browser/views';
+import { captureWithoutRoom } from './docshot';
 import { registerSimScheme } from './browser/simpages';
 import { FolderSetupStore } from './foldersetupstore';
 import { acceptedFor, hasFolderRules, scanFolderSetupCached } from './foldersetup';
@@ -6,7 +7,7 @@ import type { FolderSetupStart } from '../shared/foldersetup';
 import type { McpServerSpec } from '../shared/mcp';
 import { copilotDir, copilotServerNames } from './mcpfiles'; // spec 061 FR-015: the explainer switches Copilot's own servers off
 import { parseEffort } from '../shared/effort';
-import { app, BrowserWindow, dialog, Menu, protocol, screen, shell } from 'electron';
+import { app, BrowserWindow, dialog, Menu, powerMonitor, protocol, screen, shell } from 'electron';
 import { register as registerActivityIpc } from './ipc/activity';
 import { register as registerAdaptersIpc } from './ipc/adapters';
 import { register as registerAgentsIpc } from './ipc/agents';
@@ -36,9 +37,8 @@ import { NotesStore } from './notesstore';
 import { NotesFile } from './notesfile';
 import { register as registerQuestionsIpc } from './ipc/questions';
 import { register as registerRemoteIpc } from './ipc/remote';
-import { register as registerDoorsIpc } from './ipc/doors';
-import { Doors, loadDoors, saveDoors } from './doors';
-import type { HeldRun } from './doors';
+import { register as registerHeldMigIpc } from './ipc/heldmig';
+import { HeldBeforeUpdate, discardAside, loadHeld, saveHeld } from './doormigrate';
 import { register as registerSchedulesIpc } from './ipc/schedules';
 import { register as registerSettingsIpc } from './ipc/settings';
 import { register as registerThemesIpc } from './ipc/themes';
@@ -49,12 +49,14 @@ import * as os from 'os';
 import * as path from 'path';
 import { PRODUCTION_DESCRIPTORS } from '../adapters/descriptors';
 import { offeredDescriptors } from '../adapters/experimental';
+import { sweepMcpConfigs } from '../adapters/claude';
 import { createRegistry, detectAll } from '../adapters/registry';
-import { configureDevClaudeBin, detectorFor, setLoginPath } from '../adapters/detect';
+import { configureDevClaudeBin, detectorFor, nodeDetectEnv, setLoginPath } from '../adapters/detect';
+import { missingChecker } from './mcpcmdcheck';
 import { mergeLoginPath, nodeLoginPathDeps, readLoginShellPath } from './loginpath';
 import { renameOp, titleSyncOf } from './sessionnames';
 import { adapterForAdd, createRouter, previousSessionsOf } from '../adapters/router';
-import { endSessionOp, restorable, sendWithSlash, startGuardOp, stopTurnOp, validMode } from './agentops';
+import { endSessionOp, mcpNudgeOp, restorable, scheduledSendOp, sendWithSlash, startGuardOp, stopTurnOp, validMode } from './agentops';
 import type { OpsDeps, StartGuardDeps } from './agentops';
 import { adapterOf } from './folders';
 import type { AgentAdapter, AgentEvent } from '../adapters/types';
@@ -68,6 +70,7 @@ import { GROUND } from '../shared/floors';
 import { createElicitTracker } from '../shared/elicit';
 import { CheckpointStore } from './checkpoints';
 import { DEFAULT_ADAPTER, FolderStore, modeForSession, restoreMode, sessionsToRestore } from './folders';
+import { SummaryDays } from './summarydays';
 import { AppStateStore, buildSinceAway, placeWindow, quitMessage } from './daily';
 import type { SinceAway } from './daily';
 import { CrashMarker, installCrashMarker, interruptedFrom } from './crashmarker';
@@ -78,6 +81,8 @@ import { McpStore } from './mcpstore';
 import { AgentStateTracker } from './mcp/agentstate';
 import { maskMcpEvent, maskMcpHistory } from './mcpmask';
 import { registerMcpIpc, safeStorageCodec } from './mcpipc';
+import { MCP_SIGNIN_REFRESH_DEFAULT } from './mcpsigninrefresh';
+import { McpCostStore } from './mcpcosts';
 import { appServerUrls } from './mcpsignin';
 import { globalFiles } from './mcpglobal';
 import { GlobalLists, sessionGlobalFor } from './mcpglobalio';
@@ -90,6 +95,7 @@ import { UsageStore } from './usagestore';
 import { AgentTrustStore } from './agenttrust';
 import { Scheduler, loadSchedules, publicDoc, saveSchedules, scheduleBusy } from './schedules';
 import type { SchedulerDeps } from './schedules';
+import { loopActivity, loopPrompt, loopPush, loopStillWanted, loopWaitOf, routeLoopEvent } from './loopwiring';
 import { UsageTotalsStore } from './usagetotalsstore';
 import { ActivityStore } from './activitystore';
 import { decisionOf } from '../shared/activity';
@@ -110,7 +116,8 @@ import { parseCapIn, parseThemeId, startCap } from '../shared/credits';
 import { broadFolderKind } from '../shared/broadfolder';
 import { REPO_URL, aboutPanelOptions } from '../shared/about';
 import { modelControlFor } from '../shared/modelswitch';
-import { createDebugSink } from '../shared/redact';
+import { createDebugSink, redact } from '../shared/redact';
+import { eventGate } from '../adapters/eventguard';
 import { profileDir } from './profiledir';
 import { simClockSetup } from './simclock';
 import { debugSwitchesToRemove } from './debugguard';
@@ -126,7 +133,7 @@ if (aumid) app.setAppUserModelId(aumid);
 // Developer/test hooks (spec 010): ignored in packaged builds unless DURBAR_DEV=1. Read hooks only from `dev`.
 const dev = devEnv(process.env, app.isPackaged);
 const devNote = devWarning(process.env, app.isPackaged);
-if (devNote) console.error(devNote);
+if (devNote) console.error(redact(devNote));
 configureDevClaudeBin(dev); // spec 012 FR-163: DURBAR_CLAUDE_BIN, dev/test only (`dev` is empty in a packaged build)
 // Spec 008 FR-103: a test run's window is never treated as hidden when another window covers it (the Windows CI desktop and a shared
 // X display run several drivers at once). Chromium then stops animation frames and throttles timers, so the page stopped drawing mid-check.
@@ -145,6 +152,7 @@ let folderStore: FolderStore | undefined;
 let settingsStore: SettingsStore | undefined;
 /** Global MCP servers (spec 019), created when the app is ready (needs userData and safeStorage). */
 let mcpStore: McpStore | undefined;
+let mcpCostStore: McpCostStore | undefined;
 /** All-time tool usage (spec 020), created when the app is ready. */
 let usageStore: UsageStore | undefined;
 /** Credit totals per folder kept across restarts (spec 011 FR-025, issue #21). */
@@ -156,6 +164,7 @@ let agentTrust: AgentTrustStore | undefined;
 let activityStore: ActivityStore | undefined;
 /** Spec 052 round 8: the window's place and size and the last quit time (not settings). Created when the app is ready. */
 let appState: AppStateStore | undefined;
+let summaryDays: SummaryDays | undefined; // spec 085 FR-009
 /** Spec 052 FR-089: what happened while the app was closed, built once at start; null after the card is dismissed. */
 let sinceAway: SinceAway | null = null;
 /** Spec 006 FR-038..FR-046 (#606): the running marker (never under the simulator) and the sessions the last run left mid-turn. */
@@ -178,6 +187,7 @@ for (const [name, value] of simClock.switches) app.commandLine.appendSwitch(name
 // spec 010 FR-024: under the simulator every descriptor creates an inert stand-in, never the real adapter
 const registry = createRegistry(simGuardDescriptors([...PRODUCTION_DESCRIPTORS, ...offeredDescriptors(dev)], SIMULATOR)); // Copilot, then Claude Code (spec 012 FR-135); detection decides what is ready
 const router = createRouter(registry);
+router.setEventGuard(eventGate((line) => console.warn(redact(line)))); // spec 010 FR-035: every event checked before any listener; a bad one is dropped
 /** Spec 076 section O (issue #602): each agent app's own organization policy, read by its adapter, cached 60 s. */
 const orgPolicies = new OrgPolicyCache({ ids: () => registry.list().map((d) => d.id), adapter: (id) => (registry.has(id) ? router.instance(id) : undefined) });
 /** Spec 076 FR-203: the start guard's deps; advice is shown once the session has started (a toast in the window). */
@@ -189,6 +199,7 @@ const appIdOf = (id: string): string | undefined => router.adapterIdOf(id) ?? ag
 const mcp = registerMcpIpc({
   store: () => mcpStore as McpStore,
   agents,
+  ensureLive: (a) => ensureLive(a), // spec 058 FR-229
   router,
   dev,
   appOf: appIdOf,
@@ -200,8 +211,33 @@ const mcp = registerMcpIpc({
   orgMcp: (id, s) => orgPolicies.mcp(appIdOf(id), s), // spec 076 FR-202/FR-203
   orgMcpNow: (id, s) => orgPolicies.mcpNow(appIdOf(id), s),
   orgTool: (id, server, tool) => orgPolicies.tool(appIdOf(id), server, tool),
+  pushContext: (id, view) => toRenderer('mcp-context', { id, view }), // spec 100 FR-003
+  costs: () => mcpCostStore,
+  globalList: (app) => { const a = globalLists.state(() => []).apps.find((x) => x.app === app); return a && !a.error ? a.servers.map((v) => v.name) : undefined; }, // spec 100 FR-012
+  // spec 058 FR-205..FR-215: the automatic MCP sign-in refresh; monotonic clock, the Settings switch (never under the simulator), main's busy state
+  signInRefresh: {
+    now: () => performance.now(),
+    on: () => !SIMULATOR && (settingsStore?.mcpSignInRefresh ?? MCP_SIGNIN_REFRESH_DEFAULT),
+    platform: process.platform,
+    busy: (id) => chatBusy(id),
+    push: (p) => toRenderer('agents:mcpSignInRefresh', p),
+    limited: (id) => agentState.onBreak(id),
+    nudge: (id, name) => nudgeAgent(id, name),
+    diagnostics: () => settingsStore?.diagnostics === true, // spec 058 FR-227
+  },
 });
-registerMcpGlobalIpc({ lists: () => globalLists, offList: () => mcpStore?.ambientDisabled() ?? [], setOff: (k, off) => mcpStore?.setAmbientDisabled(k, off) });
+// spec 058 FR-198: each searched folder read once (async readdir, 10 s cache), names looked up in sets; network paths never read
+const mcpMissing = missingChecker(nodeDetectEnv, (dir) => fs.promises.readdir(dir, { withFileTypes: true }).then((l) => l.filter((d) => d.isFile() || d.isSymbolicLink()).map((d) => d.name)));
+registerMcpGlobalIpc({
+  lists: () => globalLists,
+  offList: () => mcpStore?.ambientDisabled() ?? [],
+  setOff: (k, off) => mcpStore?.setAmbientDisabled(k, off),
+  // spec 058 FR-198: after the login shell's PATH was read (once, at most 3 s)
+  check: async (s) => {
+    await loginPathReady();
+    return mcpMissing(s);
+  },
+});
 /** Files the user picked through the native dialog; only these can be attached. */
 const pickedFiles = new Set<string>();
 /** Private folder for pasted / dropped files (removed on quit). */
@@ -225,7 +261,7 @@ const toRenderer = (channel: string, payload: unknown): void => {
 /** An MCP status event carries server error text: masked here, once, before the window sees it (spec 019 FR-021). */
 /** Spec 019 FR-022: the masked copy of an `mcp` event, built once per event; every path out of main (window, debug sink) uses it. */
 const outward = (e: AgentEvent): AgentEvent => maskMcpEvent(e, e.type === 'mcp' || (e.type === 'toolCall' && ((e.phase !== 'start' && e.mcpServer) || e.edit)) ? mcp.secretValuesFor(e.sessionId) : []); // spec 005 FR-024: edits too
-router.onEvent((e) => toRenderer('agent:event', toWindowEvent(e, outward))); // spec 087 (review rounds 7-8): the sandbox event cleaned too
+router.onEvent((e) => { if (!mcp.hidesEvent(e)) toRenderer('agent:event', toWindowEvent(e, outward)); }); // spec 087 (review rounds 7-8): the sandbox event cleaned too; spec 058 FR-215: an elicitation main declined is not shown
 // Spec 087 FR-011: the OS sandbox state is kept on the agent's info (cleaned: own known fields, reason masked and cut), so a reloaded
 // window gets it from agents:list; never saved
 router.onEvent((e) => {
@@ -252,9 +288,9 @@ router.onEvent((e) => {
 const lastStatus = new Map<string, string>();
 router.onEvent((e) => {
   if (e.type === 'status' && !e.agentId) lastStatus.set(e.sessionId, e.status);
-  // spec 044 FR-015: usage between a scheduled send and the end of that turn counts toward the schedule's own limit
-  if (e.type === 'usage') scheduler?.noteUsage(e.sessionId, e);
-  else if (e.type === 'status' && !e.agentId && (e.status === 'idle' || e.status === 'error' || e.status === 'stopped')) scheduler?.turnEnded(e.sessionId);
+  // spec 044 FR-015: usage between a scheduled send and the end of that turn counts toward the schedule's own limit; spec 072: a loop
+  // pass's final text, its end and its holds (after agentState and lastStatus above have taken the event)
+  routeLoopEvent(e, scheduler);
 });
 /** Key an agent's all-time counts are kept under: "<agent name> · <folder name>" (base name only, spec 020). */
 const usageLabel = (a: AgentInfo): string => agentLabel(a.name, a.workspaceFile ? path.basename(a.workspaceFile).replace(/\.code-workspace$/i, '') : a.cwd);
@@ -394,7 +430,7 @@ async function addWorkspace(
   const { result: id } = await startGuardOp(orgGuard, ad, { ...startOptionsFor(draft), resumeSessionId: opts.resumeSessionId });
   router.bind(id, adapterId);
   const saved = folderStore?.get(wsKey(draft));
-  const info: AgentInfo = { ...draft, id, hidden: saved?.hidden, closed: saved?.closed, label: saved?.label, defaultAgent: saved?.defaultAgent };
+  const info: AgentInfo = { ...draft, id, hidden: saved?.hidden, label: saved?.label, defaultAgent: saved?.defaultAgent };
   agents.set(id, info);
   applyStoredAlias(info); // spec 059 FR-014
   if (opts.persist) folderStore?.upsert({ workspace: wsKey(info), permMode, model, effort, maxAiCredits: usdCap ? saved?.maxAiCredits : info.maxAiCredits, floor: opts.floor, adapterId });
@@ -466,7 +502,7 @@ async function addMany(paths: string[], permMode: PermMode, opts: SessionOptions
 /** Folders remembered from earlier runs come back as "not started" agents: nothing runs until the first message. */
 function restoreFolders(): void {
   if (!folderStore) return;
-  for (const { folder: f, adapterId } of restorable(folderStore.load(), (i) => registry.has(i), console.warn)) {
+  for (const { folder: f, adapterId } of restorable(folderStore.load(), (i) => registry.has(i), (m) => console.warn(redact(m)))) {
     try {
       if (!fs.existsSync(f.workspace)) continue; // e.g. an unplugged drive: stays saved, just not shown
       // FR-021: the folder's last session comes back under its own id (resumed when first needed); a harness this build lacks starts fresh.
@@ -478,7 +514,7 @@ function restoreFolders(): void {
         // last mode wins over the folder's (several sessions of one folder may be in different modes), and the chat says which it was.
         const sm = modeForSession(f, [ls?.id], f.permMode);
         const rm = restoreMode(sm.mode);
-        const info = infoFor(f.workspace, rm.mode, ls?.id ?? randomUUID(), f.model || DEFAULT_MODEL, f.effort, { lazy: true, tier: f.contextTier, hidden: f.hidden, closed: f.closed, floor: folderStore.floorOfFolder(f.workspace), permRestored: rm.restored || undefined, permFrom: ls ? (sm.fromSession ? 'session' : 'folder') : undefined, maxAiCredits: router.instance(kind).capabilities?.capUnit === 'usd' ? undefined : f.maxAiCredits ?? settingsStore?.defaultMaxAiCredits }, router.instance(kind));
+        const info = infoFor(f.workspace, rm.mode, ls?.id ?? randomUUID(), f.model || DEFAULT_MODEL, f.effort, { lazy: true, tier: f.contextTier, hidden: f.hidden, floor: folderStore.floorOfFolder(f.workspace), permRestored: rm.restored || undefined, permFrom: ls ? (sm.fromSession ? 'session' : 'folder') : undefined, maxAiCredits: router.instance(kind).capabilities?.capUnit === 'usd' ? undefined : f.maxAiCredits ?? settingsStore?.defaultMaxAiCredits }, router.instance(kind));
         if (ls) info.resumeLast = true;
         if (f.label) info.label = f.label;
         if (f.defaultAgent) info.defaultAgent = f.defaultAgent;
@@ -539,9 +575,8 @@ async function sendOp(id: string, text: string, attachments: PickedFile[], ad: A
 
 // ---- scheduled prompts (spec 044): per folder, while the app runs; the run goes through the user's own send path ----
 let scheduler: Scheduler | undefined;
-/* spec 017 FR-015..FR-017, spec 044 FR-110: doors the user closed (Do not disturb) and the runs held there; keyed by the session's resume id */
-let doors: Doors | undefined;
-const doorKey = (a: AgentInfo): string => resumeIdFor(a.id);
+/* spec 017 FR-031: the scheduled prompts that were held behind a door before the update; asked about once, never sent or dropped by themselves. Keyed by the session's resume id. */
+let heldBefore: HeldBeforeUpdate | undefined;
 const folderAgent = (folder: string): AgentInfo | undefined => [...agents.values()].find((x) => wsKey(x) === folder);
 /** The session a schedule runs in: its target (FR-014), only while that session is in this folder, else the folder's agent. */
 const scheduleAgent = (s: { folder: string; target?: { session: string } }): AgentInfo | undefined => {
@@ -552,6 +587,8 @@ const scheduleAgent = (s: { folder: string; target?: { session: string } }): Age
 /** Spec 081 FR-013: the sessions of one app's adapter that are open (live) now. */
 const liveSessionsOf = (kind: string): AgentInfo[] => [...agents.values()].filter((a) => router.adapterIdOf(a.id) === kind && router.forAgent(a.id)?.isLive(a.id) === true);
 const busyStatus = (id: string): boolean => ['working', 'needs-permission'].includes(lastStatus.get(id) ?? '');
+/** Spec 058 FR-209: a turn runs or waits for the person, by the adapter's own status (not the window's Thinking after a send). */
+const chatBusy = (id: string): boolean => busyStatus(id) || agentState.get(id)?.state === 'waiting';
 /** Spec 006 FR-039: the main sessions that are busy, as the running marker lists them (ids and agent app only). */
 router.onEvent((e) => {
   if (!crashMarker || e.type !== 'status' || e.agentId) return;
@@ -575,26 +612,21 @@ const scheduleDeps = (file: string): SchedulerDeps => ({
     const unit = caps.capUnit === 'usd' ? 'usd' : 'aiu';
     return (unit === 'usd' ? caps.usage.costUsd : caps.usage.nanoAiu) ? unit : undefined; // FR-015: a limit needs the spend in that unit
   },
-  /* spec 044 FR-110: a run for an agent behind a door the user closed is queued there (held): never sent, never dropped. A full queue
-     (spec 017 FR-016, 200 runs) still answers true, so nothing goes out while the door is closed. */
-  hold: (s, now) => doorsIpc.hold(scheduleAgent(s)?.id, { at: now, prompt: s.prompt, scheduleId: s.id }), // the rule: doorops.ts (tested)
-  send: async (folder, prompt, s) => {
+  send: async (_folder, prompt, s) => {
     const a = scheduleAgent(s);
-    const ad = a ? router.forAgent(a.id) : undefined;
-    if (!a || !ad) return false;
-    agentState.ensure(a.id, a.lazy);
-    agentState.noteSend(a.id); // same as the interactive send: the window shows Thinking from the moment a prompt goes out
-    try {
-      await ensureLive(a);
-      toRenderer('agent:event', { type: 'user', sessionId: a.id, timestamp: Date.now(), text: prompt });
-      toRenderer('schedule:ran', { agentId: a.id, scheduleId: s.id, every: s.every, at: s.at, rule: s.rule });
-      await ad.send(a.id, { text: prompt });
-      noteLastSession(a);
-    } catch (err) {
-      agentState.noteSendFailed(a.id);
-      throw err;
-    }
-    return a.id;
+    // spec 058 FR-209: the scheduler's send awaits the same per-chat MCP sign-in gate as the window's send
+    // spec 072 FR-006, FR-009: a loop pass is the user's own send path in the session's mode, plus Durbar's footer (loops only)
+    return scheduledSendOp({ agent: a, adapter: a ? router.forAgent(a.id) : undefined, agentState, gate: (id) => mcp.signInRefresh.beforeSend(id), ensureLive: (x) => ensureLive(x), toWindow: toRenderer, noteLastSession, now: () => Date.now(), stillWanted: loopStillWanted(scheduler, s) }, loopPrompt(prompt, s), s);
+  },
+  /* spec 072 FR-015/FR-017: holds from main's own state of the session (agentState flags, the last status) */
+  waitOf: (session) => loopWaitOf(session, { status: (id) => lastStatus.get(id), waits: (id) => agentState.waitsOf(id) }),
+  /* spec 072 FR-023/FR-024: one activity row per loop start, pass, skip, hold and end, and the window's chat note; never the prompt or reply */
+  loopNote: (s, n) => {
+    const a = s.target ? agents.get(s.target.session) : undefined;
+    const row = loopActivity(n, s);
+    if (a && row) logActivity(a, row.decision, row.action);
+    const push = loopPush(n, s);
+    if (push) toRenderer('loop:pass', push);
   },
   setTimer: (ms, fn) => setTimeout(fn, ms),
   clearTimer: (t) => clearTimeout(t as NodeJS.Timeout),
@@ -657,6 +689,11 @@ const readyAdapterIds = async (): Promise<ReadonlySet<string>> => {
 };
 
 /** Spec 006 FR-020: the session a folder continues after a restart is the one that last got a message. */
+/** Spec 058 FR-218: the one automatic note to a chat after its MCP server was reconnected. */
+function nudgeAgent(id: string, name: string): Promise<void> {
+  const a = agents.get(id);
+  return mcpNudgeOp({ agent: a, adapter: a ? router.forAgent(a.id) : undefined, agentState, toWindow: toRenderer, noteLastSession, now: () => Date.now() }, name);
+}
 function noteLastSession(a: AgentInfo | undefined): void {
   if (!a) return;
   const rid = resumeIdFor(a.id); // Codex: its thread id
@@ -730,12 +767,10 @@ const renameSessionOpFor = (openIds: () => ReadonlySet<string>) => renameOp({
 
 // ---- IPC (spec 045 FR-060): every handler lives in src/main/ipc/<area>.ts, registered here through ipcHandle / ipcOn (ipcguard.ts). ----
 // Stores created in whenReady, and state that changes, are passed as getters so a handler reads them when it runs.
-const remoteOps = registerRemoteIpc({ agents, router, toRenderer, getWin: () => win, logActivity, doorClosed: (id) => { const a = agents.get(id); return !!a && !!doors?.isClosed(doorKey(a)); } });
-/* spec 017 FR-017: a held run goes out through the same path as a scheduled one (the window shows it as the user's message) */
-/* spec 044 FR-111 (review on #631): Send all goes through the scheduler (Pause all, the schedule, its limit, busy incl. coffee breaks, credited) */
-const doorsIpc = registerDoorsIpc({ agents, router, doors: () => doors, keyOf: doorKey, remoteOps, toRenderer, release: (run: HeldRun) => (scheduler ? scheduler.releaseDoorRun(run.scheduleId, run.prompt) : Promise.resolve('failed' as const)) });
+const remoteOps = registerRemoteIpc({ agents, router, toRenderer, getWin: () => win, logActivity });
+registerHeldMigIpc({ held: () => heldBefore, router });
 registerAppIpc({
-  getSinceAway: () => sinceAway,
+  getSinceAway: () => (sinceAway ? { ...sinceAway, briefing: summaryDays?.recent() } : null), // spec 085 FR-009: yesterday's and today's ended sessions, numbers only
   clearSinceAway: () => { sinceAway = null; },
   getWin: () => win,
   // FR-040: asked again on every call, so a session that was resumed meanwhile (its chat opened) leaves the card
@@ -751,7 +786,7 @@ const browser = registerBrowserIpc({ agents, getWin: () => win, toRenderer, simu
 const browserGone = (id: string): void => void browser.destroy(id).catch(() => undefined);
 /** Spec 043 FR-041: which profile file changes each session has seen (shared by ipc/agents.ts and ipc/profiles.ts). */
 const profileFreshness = createProfileFreshness();
-registerAgentsIpc({ browserGone, agents, router, agentState, opsDeps, remoteOps, mcpSecrets: (id) => mcp.secretValuesFor(id), logMcp: (a, action) => logActivity(a, 'mcp-restart', action), getScheduler: () => scheduler, getCheckpointStore: () => checkpointStore, profileFreshness, vsChatRefs, continued, wsKey, asEffort, addMany, addWorkspace, sendOp, ensureLive, readyAdapterIds, forgetOpenSession, maskHistory, forgetSandboxNote: (id) => sandboxOps.forget(id) }); // spec 087: sandboxOps is set below, before any IPC call
+registerAgentsIpc({ browserGone, agents, router, agentState, opsDeps, remoteOps, mcpGate: (id) => mcp.signInRefresh.beforeSend(id), mcpStopWait: (id) => mcp.signInRefresh.stopWait(id), mcpBusy: (id) => chatBusy(id), mcpForget: (id) => mcp.signInRefresh.forget(id), mcpStopped: (id) => mcp.signInRefresh.noteStop(id), mcpSecrets: (id) => mcp.secretValuesFor(id), logMcp: (a, action) => logActivity(a, 'mcp-restart', action), getScheduler: () => scheduler, getCheckpointStore: () => checkpointStore, profileFreshness, vsChatRefs, continued, wsKey, asEffort, addMany, addWorkspace, sendOp, ensureLive, readyAdapterIds, forgetOpenSession, maskHistory, forgetSandboxNote: (id) => sandboxOps.forget(id), getSummaryDays: () => summaryDays }); // spec 087: sandboxOps is set below, before any IPC call
 registerAttachmentsIpc({ dev, pickedFiles, getStageDir, sizeOf });
 registerPreviousIpc({ browserGone, renameSessionOpFor, dev, agents, router, registry, agentState, getFolderStore: () => folderStore, getScheduler: () => scheduler, wsKey, resumeIdFor, forgetOpenSession, logActivity, addWorkspace, vsChatRefs, maskHistory });
 registerCheckpointsIpc({ agents, getCheckpointStore: () => checkpointStore, busyStatus });
@@ -759,7 +794,7 @@ registerSchedulesIpc({ getScheduler: () => scheduler, getFolderStore: () => fold
 registerUsageIpc({ agents, getUsageStore: () => usageStore, getUsageTotalsStore: () => usageTotalsStore, usageLabel });
 const newFolderIpc = registerNewFolderIpc({ addMany, getSettingsStore: () => settingsStore, asEffort, toRenderer }); // spec 093: create a folder from + Folder (clone, new repository, empty folder)
 registerSettingsIpc({ getSettingsStore: () => settingsStore, getRunTheme: () => runTheme, clearRunTheme: () => { runTheme = undefined; } });
-registerThemesIpc({ dev, registry, router });
+registerThemesIpc({ dev });
 const harnessIpc = registerHarnessIpc({
   dev, registry, router, remoteOps, toRenderer, getWin: () => win, adaptersList,
   getSettingsStore: () => settingsStore,
@@ -777,6 +812,7 @@ const harnessIpc = registerHarnessIpc({
     // each running turn is interrupted first (stopTurnOp), then the session ends and stays resumable (endSessionOp does not interrupt by itself)
     endAll: async (kind) => {
       for (const a of liveSessionsOf(kind)) {
+        scheduler?.stopLoopFor(a.id, 'session'); // spec 072 FR-007: ending the session ends its loop
         await stopTurnOp(opsDeps, a.id);
         await endSessionOp({ release: (k) => remoteOps.release(k), router }, a.id);
       }
@@ -989,6 +1025,7 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
+  powerMonitor.on('resume', () => mcp.signInRefresh.resumed()); // spec 058 FR-205: a wake from sleep puts every chat past the quiet-hour gap
   app.setAboutPanelOptions(aboutPanelOptions(app.getVersion())); // owner and contributors: src/shared/about.ts (spec 008 FR-018)
   // spec 052 FR-083, FR-164: a Mac menu from roles (Settings… ⌘,; File > Add Folder… ⌘O); no menu on Windows and Linux (no Reload or DevTools for users)
   const menu = appMenuTemplate(process.platform, {
@@ -1014,6 +1051,8 @@ app.whenReady().then(() => {
   /* Dev/test theme seed (spec 036 FR-005): DURBAR_THEME=<id> makes the office open on that theme for the per-theme checks; invalid ids fall back in the renderer. */
   if (dev.DURBAR_THEME) runTheme = parseThemeId(dev.DURBAR_THEME);
   mcpStore = new McpStore(path.join(app.getPath('userData'), 'durbar-mcp.json'), safeStorageCodec);
+  mcpCostStore = new McpCostStore(path.join(app.getPath('userData'), 'durbar-mcp-costs.json')); // spec 100: its own file, so a figure can never overwrite a server store that failed to load
+  mcpCostStore.load();
   folderSetupStore = new FolderSetupStore(path.join(app.getPath('userData'), 'folder-setup.json')); // spec 061: digests and paths only
   mcpStore.load();
   usageStore = new UsageStore(path.join(app.getPath('userData'), 'durbar-tool-usage.json'));
@@ -1026,8 +1065,9 @@ app.whenReady().then(() => {
     agents, store: () => notesStore, resumeIdFor, adapterIdOf: (id) => router.adapterIdOf(id),
     folderValues: (key) => mcpStore?.knownSecretValues(key) ?? [], // FR-005: never decrypts, so no keychain prompt from a notes save
     sessionValues: (id) => (mcpStore?.noPrompt() ? mcp.secretValuesFor(id) : []), // forSession could unlock the vault: only when it cannot
-    // FR-050..FR-055 (T041, T042): the .durbar/notes.md mirror, only for a folder whose switch (`notesFile` in folders.json) is on
-    file: () => notesFile, fileOn: (key) => folderStore?.get(key)?.notesFile === true, setFileOn: (key, on) => folderStore?.setNotesFile(key, on) === true,
+    // FR-050..FR-055 (T041, T042): the .durbar/notes/notes.md mirror, only for a folder whose switch (`notesProject` in folders.json) is on
+    file: () => notesFile, fileOn: (key) => !!folderStore?.get(key)?.notesProject, fileGit: (key) => folderStore?.get(key)?.notesProject === 'git', setFileOn: (key, on, git) => folderStore?.setNotesFile(key, on, git) === true,
+    ignoreOwn: (key) => folderStore?.get(key)?.notesIgnoreOwn, setIgnoreOwn: (key, id) => folderStore?.setNotesIgnoreOwn(key, id) === true,
     valuesPending: () => !!mcpStore && !mcpStore.noPrompt(), // review of PR 931: a value still locked in the vault would leave the mask incomplete
     confirmNative: (kind, name, count) => nativeConfirm(win, notesConfirmText(kind, name, count)),
     // FR-048 (T034b): main shows the save dialog; the window never sends a path
@@ -1038,6 +1078,8 @@ app.whenReady().then(() => {
   });
   appState = new AppStateStore(path.join(app.getPath('userData'), 'durbar-app-state.json'));
   appState.load();
+  summaryDays = new SummaryDays(path.join(app.getPath('userData'), 'durbar-summary-days.json'));
+  summaryDays.load();
   const startedAt = Date.now();
   const quitAt = appState.quitAt;
   appState.setQuitAt(undefined); // spec 052 FR-089: a crash leaves no quit time, so it never shows a wrong "away" time
@@ -1059,8 +1101,20 @@ app.whenReady().then(() => {
     interrupted = found.items.length ? found : null;
   }
   {
+    // spec 017 FR-031: read through the old caps and the `.bad` rule; its `closed` flags are ignored; the file goes when its queue is empty
     const dfile = path.join(app.getPath('userData'), 'durbar-doors.json');
-    doors = new Doors(loadDoors(dfile), (doc) => { try { saveDoors(dfile, doc); } catch (err) { console.warn('[doors] could not save', err instanceof Error ? err.message : err); } });
+    const loaded = loadHeld(dfile);
+    if (loaded.damaged) console.warn('[held] the old file of held prompts could not be read; it was kept aside as durbar-doors.json.bad');
+    heldBefore = new HeldBeforeUpdate(loaded, {
+      sessionOf: (key) => [...agents.keys()].find((id) => resumeIdFor(id) === key),
+      scheduleExists: (id) => !!id && !!scheduler?.doc.schedules.some((x) => x.id === id),
+      release: (run) => (scheduler ? scheduler.releaseDoorRun(run.scheduleId, run.prompt) : Promise.resolve('failed' as const)),
+      persist: (doc) => { try { saveHeld(dfile, doc); } catch (err) { console.warn('[held] could not save', redact(err instanceof Error ? err.message : err)); } },
+      discardBad: () => discardAside(dfile),
+      changed: () => toRenderer('heldmig:changed', heldBefore?.list()),
+      stopped: (agentId, why) => toRenderer('heldmig:stopped', { id: agentId, why }),
+    });
+    setInterval(() => heldBefore?.retry(), 5000).unref(); // a coffee break that ends, or a sibling that frees the folder, moves a chosen Send on (retry does nothing without one)
   }
   {
     const file = path.join(app.getPath('userData'), 'durbar-schedules.json');
@@ -1097,7 +1151,7 @@ app.whenReady().then(() => {
       browserTabs: (id: string) => browser.tabsOf(id),
       js: <T>(code: string): Promise<T> => (win as BrowserWindow).webContents.executeJavaScript(code, true) as Promise<T>,
       sleep: (ms: number) => new Promise<void>((r) => setTimeout(r, ms)),
-      shot: async (file: string) => fs.writeFileSync(file, (await (win as BrowserWindow).webContents.capturePage()).toPNG()),
+      shot: (file: string) => captureWithoutRoom((code) => (win as BrowserWindow).webContents.executeJavaScript(code, true), async () => fs.writeFileSync(file, (await (win as BrowserWindow).webContents.capturePage()).toPNG()), dev.DURBAR_DOC_SHOTS === '1'),
       waitFor: async (expr: string, ms = 120000) => {
         const end = Date.now() + ms;
         while (Date.now() < end) {
@@ -1111,7 +1165,7 @@ app.whenReady().then(() => {
       const driver = require(dev.DURBAR_DRIVER as string) as (c: typeof ctx) => Promise<void>;
       // spec 008 FR-090: a failing driver exits 1, so CI on every OS sees it without reading the log
       let failed = false;
-      void driver(ctx).catch((err) => { failed = true; console.error('DRIVER FAILED', err); }).finally(() => void router.disposeAll().finally(() => app.exit(failed ? 1 : 0)));
+      void driver(ctx).catch((err) => { failed = true; console.error('DRIVER FAILED', redact(err instanceof Error ? err.stack ?? err.message : err)); }).finally(() => void router.disposeAll().finally(() => app.exit(failed ? 1 : 0)));
     });
   }
   // macOS: a click on the Dock icon brings back the hidden window (FR-085), or opens a new one
@@ -1146,6 +1200,7 @@ app.on('before-quit', (ev) => {
   }
   scheduler?.flush(); // spec 044 FR-037: a fold-only change of the run log is written now
   quitting = true; // only once the quit is confirmed: after a Cancel, closing the window on macOS still only hides it
+  scheduler?.endAllLoops('app-closed'); // spec 072 FR-008: before disposeAll, whose `stopped` events would say "the session has ended"
   if (!quitNoted) {
     quitNoted = true;
     if (win && !win.isDestroyed()) saveWindowState(win);
@@ -1176,9 +1231,11 @@ app.on('will-quit', () => {
   usageTotalsStore?.flush();
   activityStore?.flush();
   if (stageDir) fs.rmSync(stageDir, { recursive: true, force: true });
+  sweepMcpConfigs(); // spec 012 FR-165: a Claude CLI still running keeps no mcp-config.json (env and header values) behind
 });
 
 app.on('window-all-closed', () => {
+  scheduler?.endAllLoops('app-closed'); // spec 072 FR-008: the sessions are disposed next (and off a Mac the app quits)
   void router.disposeAll().finally(() => {
     if (process.platform !== 'darwin') app.quit();
   });

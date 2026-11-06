@@ -13,7 +13,7 @@ import * as assert from 'node:assert';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { FONT_ALLOW, HOSTILE_RE, TYPED_TOKENS, typedValue } from '../src/shared/themetokens';
-import { CONTRAST_PAIRS, contrast, luminance } from '../src/shared/themegen';
+import { CONTRAST_PAIRS, UI_PAIRS, BRAND_UIS, contrast, luminance, themeIssues } from '../src/shared/themegen';
 import { ART_SLOTS, checkUserManifest } from '../src/shared/themes';
 
 const ROOT = process.cwd();
@@ -81,7 +81,7 @@ for (const [k, spec] of Object.entries(TYPED_TOKENS)) {
 
 // ---- 3. the literal ratchet ----
 const RATCHET = path.join(ROOT, 'scripts', 'fixtures', 'theme-literals.json');
-const FILES = ['styles.css', 'screens.css', 'themes.css', 'app.js', 'screens.js', 'scenekits.js', 'index.html'];
+const FILES = ['styles.css', 'screens.css', 'themes.css', 'app.js', 'screens.js', 'scenekits.js', 'index.html', 'realoffice-world.css'];
 function literals(file: string): { colors: number; fonts: number } {
   let src = fs.readFileSync(path.join(ROOT, 'src', 'renderer', file), 'utf8');
   if (file.endsWith('.css')) src = src.replace(/\/\*[\s\S]*?\*\//g, '');
@@ -208,4 +208,199 @@ for (const f of FILES) {
   assert.ok(v.dropped.includes('art.gadget-laptop'));
   assert.strictEqual(T._validateManifest({ id: 'big', art: { 'gadget-cup': '<g>' + '<rect x="1" y="1" width="1" height="1"/>'.repeat(700) + '</g>' } }).art['gadget-cup'], undefined, 'a slot over 24,000 characters is dropped');
 }
+
+// ---- 6. spec 097 FR-100, FR-113: a Real office world's token set (owner 2026-10-31 10:46: the top bar and menus follow the world) ----
+{
+  assert.deepStrictEqual(T.WORLD_IDS, ['photo', 'retro', 'cave'], 'the photo office, the arcade and the cave (the arcade and the cave are behind their flags)');
+  const t = T.worldTokens('photo') as Record<string, string>;
+  assert.strictEqual(T.worldTokens('loft'), null, 'a world that is not built has no set');
+  assert.strictEqual(T.worldTokens('__proto__'), null, 'own keys only');
+  // complete: every Clean Office colour token has a value, so contrast never depends on the user's theme
+  for (const k of Object.keys(T._builtins()[T.CLEAN_ID].tokens).concat(Object.keys(T._tokens()))) assert.ok(t[k] !== undefined, `the world set has ${k}`);
+  // the world's own values are hex colours (the colour grammar), and status colours keep their meaning (070 FR-050): unchanged
+  const clean = T._tokens() as Record<string, string>;
+  for (const k of Object.keys(clean).filter((x) => /^--(c|pb|pc|halo)-|^--(amber|red|green|blue)(-ink)?$|^--desk-(new|needs)$/.test(x))) assert.strictEqual(t[k], clean[k], `status colour ${k} is unchanged`);
+  // 070 D4 on the resolved set: every CONTRAST_PAIR, the world's own pairs (glass composited over the worst backdrop) and themegen's UI_PAIRS
+  const rows = T.worldContrast('photo') as Array<{ fg: string; bg: string; min: number; ratio: number }>;
+  assert.ok(rows.length >= CONTRAST_PAIRS.length + 15, 'the world pairs are checked too: ' + rows.length);
+  // a glass pair is measured on the fill as it shows: the token mixed WORLD_GLASS with its worst backdrop (computed here on its own)
+  const mixG = (a: string, over: string): string => '#' + [1, 3, 5].map((i) => Math.round(parseInt(a.slice(i, i + 2), 16) * T.WORLD_GLASS + parseInt(over.slice(i, i + 2), 16) * (1 - T.WORLD_GLASS)).toString(16).padStart(2, '0')).join('');
+  const glass = rows.filter((r) => / \(glass over #[0-9a-f]{6}\)$/.test(r.bg));
+  assert.ok(glass.length >= 15, 'the glass pairs are composited: ' + glass.length);
+  for (const r of glass) {
+    const [, bgk, over] = /^(\S+) \(glass over (#[0-9a-f]{6})\)$/.exec(r.bg) as RegExpExecArray;
+    const want = contrast(t[r.fg], mixG(t[bgk], over));
+    assert.ok(Math.abs(r.ratio - want) < 0.01, `${r.fg} on ${r.bg}: ${r.ratio.toFixed(3)} is the composited ratio ${want.toFixed(3)}`);
+  }
+  const bad = rows.filter((r) => !(r.ratio >= r.min));
+  assert.deepStrictEqual(bad.map((r) => `${r.fg} on ${r.bg} ${r.ratio.toFixed(2)}:1 < ${r.min}`), [], 'every pair of the photo world passes WCAG AA');
+  const hex = (v: string): boolean => /^#[0-9a-f]{3,8}$/i.test(String(v || ''));
+  for (const [fg, bg, min] of CONTRAST_PAIRS) if (hex(t[fg]) && hex(t[bg])) assert.ok(contrast(t[fg], t[bg]) >= min, `${fg} on ${bg}: themegen agrees`); /* non-hex (--drop-bg's rgb()) is Clean Office's, as in theme.js */
+  for (const [fg, bg, min, why] of UI_PAIRS) assert.ok(contrast(t[fg], t[bg]) >= min, `${fg} on ${bg} (${why}): ${contrast(t[fg], t[bg]).toFixed(2)}:1`);
+  for (const ui of ['clean', ...BRAND_UIS]) assert.deepStrictEqual(themeIssues(t, clean, ui).filter((x) => !/the top bar/.test(x)), [], `no contrast issue with ui ${ui}`);
+  const worst = Math.min(...rows.map((r) => r.ratio / r.min));
+  // spec 102 FR-263 (owner, 2026-11-03): the arcade is dark everywhere. Complete; every status hue unchanged; the three status -ink shades
+  // lightened in the same hue (070 FR-050, amended for dark worlds); every pair AA, panels' glass composited over white
+  {
+    const r = T.worldTokens('retro') as Record<string, string>, rr = T.worldContrast('retro') as Array<{ fg: string; bg: string; min: number; ratio: number }>;
+    for (const k of Object.keys(T._builtins()[T.CLEAN_ID].tokens).concat(Object.keys(T._tokens()))) assert.ok(r[k] !== undefined, `retro has ${k}`);
+    const INKS = ['--red-ink', '--amber-ink', '--blue-ink'];
+    for (const k of Object.keys(clean).filter((x) => /^--(c|pb|pc|halo)-|^--(amber|red|green|blue)(-ink)?$|^--desk-(new|needs)$/.test(x) && !INKS.includes(x))) assert.strictEqual(r[k], clean[k], `retro: status colour ${k} is unchanged`);
+    const hue = (h: string): number => { const [R, G, B] = [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255), mx = Math.max(R, G, B), mn = Math.min(R, G, B), d = mx - mn; if (!d) return 0; const x = mx === R ? ((G - B) / d) % 6 : mx === G ? (B - R) / d + 2 : (R - G) / d + 4; return (x * 60 + 360) % 360; };
+    for (const k of INKS) { assert.ok(luminance(r[k]) > luminance(clean[k]), `retro: ${k} is lighter`); const dh = Math.abs(hue(r[k]) - hue(clean[k])); assert.ok(Math.min(dh, 360 - dh) <= 12, `retro: ${k} keeps its hue (${dh.toFixed(1)} degrees)`); }
+    assert.ok(luminance(r['--surface']) < 0.05 && luminance(r['--bg']) < 0.05 && luminance(r['--card']) < 0.05 && luminance(r['--wb-bg']) < 0.05, 'retro: page, cards and bar are dark');
+    assert.deepStrictEqual(rr.filter((x) => !(x.ratio >= x.min)).map((x) => `${x.fg} on ${x.bg} ${x.ratio.toFixed(2)}:1 < ${x.min}`), [], 'every pair of the arcade passes WCAG AA');
+    assert.ok(rr.some((x) => / \(glass over #ffffff\)$/.test(x.bg) && x.fg === '--ink'), 'a dark panel is checked over white');
+  }
+  // the cave's set: complete, status colours unchanged, every pair AA with the glass composited (the same checks as the photo set)
+  {
+    const c = T.worldTokens('cave') as Record<string, string>, cr = T.worldContrast('cave') as Array<{ fg: string; bg: string; min: number; ratio: number }>;
+    for (const k of Object.keys(T._builtins()[T.CLEAN_ID].tokens).concat(Object.keys(T._tokens()))) assert.ok(c[k] !== undefined, `the cave set has ${k}`);
+    for (const k of Object.keys(clean).filter((x) => /^--(c|pb|pc|halo)-|^--(amber|red|green|blue)(-ink)?$|^--desk-(new|needs)$/.test(x))) assert.strictEqual(c[k], clean[k], `cave: status colour ${k} is unchanged`);
+    assert.deepStrictEqual(cr.filter((r) => !(r.ratio >= r.min)).map((r) => `${r.fg} on ${r.bg} ${r.ratio.toFixed(2)}:1 < ${r.min}`), [], 'every pair of the cave world passes WCAG AA');
+    for (const [fg, bg, min] of CONTRAST_PAIRS) if (hex(c[fg]) && hex(c[bg])) assert.ok(contrast(c[fg], c[bg]) >= min, `cave: ${fg} on ${bg}: themegen agrees`);
+    for (const [fg, bg, min, why] of UI_PAIRS) assert.ok(contrast(c[fg], c[bg]) >= min, `cave: ${fg} on ${bg} (${why})`);
+  }
+  console.log(`photo world: ${rows.length} pairs + ${UI_PAIRS.length} UI pairs pass; tightest margin ${worst.toFixed(2)}x its minimum`);
+  // the CSS: the world rules are tokens only, the glass share equals WORLD_GLASS, forced colours win, reduced transparency is opaque
+  const block = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'realoffice-world.css'), 'utf8');
+  assert.ok(block.length > 500, 'the world rules are in realoffice-world.css');
+  assert.ok(!fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'index.html'), 'utf8').includes('realoffice-world.css'), 'flat mode does not load the world rules (FR-061)');
+  assert.strictEqual((block.match(/#[0-9a-f]{3,8}\b|rgba?\(|hsla?\(/gi) || []).length, 0, 'no colour literal in the world rules');
+  assert.ok(new RegExp(`var\\(--surface\\) ${Math.round(T.WORLD_GLASS * 100)}%,transparent`).test(block) && new RegExp(`var\\(--wb-bg\\) ${Math.round(T.WORLD_GLASS * 100)}%,transparent`).test(block), 'the glass share in the CSS is WORLD_GLASS');
+  assert.ok(/@media \(forced-colors:active\)\{[^@]*\.topbar\{background:Canvas;color:CanvasText/.test(block), 'forced colours: system colours on the bar');
+  assert.ok(/@media \(prefers-reduced-transparency:reduce\),\(prefers-contrast:more\)\{[^@]*backdrop-filter:none/.test(block), 'reduced transparency: opaque panels');
+  for (const [k, v] of T.WORLD_BAR_MAP as Array<[string, string]>) {
+    assert.ok(block.includes(`${k}:var(${v})`), `the bar re-scopes ${k} to ${v}`);
+    assert.ok(block.includes(`${k}:var(--wp-${k.slice(2)})`), `the bar's menu gets ${k} back`);
+    assert.strictEqual(t['--wp-' + k.slice(2)], t[k], `--wp-${k.slice(2)} is the page value`);
+    assert.ok(t[v], `${v} is in the set`);
+  }
+  assert.ok(!/(?:font|font-size|padding|margin|width|height|gap|line-height)\s*:/.test(block.replace(/\/\*[\s\S]*?\*\//g, '')), 'no font, size or spacing in the world rules (070 D2)');
+}
+// ---- 6b. spec 097 FR-180: what world CSS may animate, and nothing blends  ----
+function worldCssProblems(cssIn: string): string[] {
+  const css = cssIn.replace(/\/\*[\s\S]*?\*\//g, ''), out: string[] = [];
+  if (/mix-blend-mode\s*:/.test(css)) out.push('mix-blend-mode: nothing blends (FR-180)');
+  for (const m of css.matchAll(/@keyframes\s+([\w-]+)\s*\{((?:[^{}]*\{[^{}]*\})*)\s*\}/g)) {
+    for (const d of m[2].matchAll(/([a-z-]+)\s*:/g)) if (!['transform', 'opacity', 'animation-timing-function'].includes(d[1])) out.push(`@keyframes ${m[1]} animates ${d[1]}: only transform and opacity (FR-180)`);
+  }
+  for (const m of css.matchAll(/(?:^|[;{\s])transition(?:-property)?\s*:\s*([^;}]+)/g)) {
+    for (const part of m[1].replace(/\([^)]*\)/g, '').split(',')) { const name = part.trim().split(/\s+/)[0]; if (!['transform', 'opacity', 'none'].includes(name)) out.push(`transition names ${name}: only transform and opacity (FR-180)`); }
+  }
+  /* FR-181: a light moves in steps; FR-180, T151: the lights have no box-shadow to repaint */
+  /* (the people's loops keep to the 1/12 s grid, checked by `check-097-motion`, spec 097 FR-229; the lights are stepped here) */
+  for (const r of css.matchAll(/([^{}]*)\{([^{}]*)\}/g)) if (/\.ro-(glow|call|lamp|fxl)\b/.test(r[1])) for (const m of r[2].matchAll(/(?:^|[;{\s])animation\s*:\s*([^;}]+)/g)) if (!/steps\(\d+|step-(?:start|end)/.test(m[1]) && !/^none\b/.test(m[1].trim())) out.push(`animation "${m[1].trim()}" is not stepped (FR-181)`);
+  for (const m of css.matchAll(/([^{}]*)\{([^{}]*)\}/g)) if (/\.ro-(glow|call|lamp|fxl)\b/.test(m[1]) && /box-shadow\s*:(?!\s*none)/.test(m[2])) out.push(`${m[1].trim()} has a box-shadow: a light is a static gradient (T151)`);
+  /* FR-182: a blur only on the allow list, whatever the media query; `none` turns it off */
+  const ALLOW = new Set(['.toast', '.more-menu', '.mode-menu', '.grants-pop', '.ct-more-pop', '#defaultsPop', '#foldersPop', '#floorsPop']);
+  for (const m of css.matchAll(/([^{}]*)\{([^{}]*)\}/g)) {
+    if (!/(?:^|[;\s])(?:-webkit-)?backdrop-filter\s*:(?!\s*none)/.test(m[2])) continue;
+    const sel = m[1].replace(/html\[data-world\]\s*/g, '').trim();
+    const inner = /^:is\((.*)\)$/.exec(sel);
+    for (const one of (inner ? inner[1] : sel).split(',').map((x) => x.trim())) if (!ALLOW.has(one)) out.push(`backdrop-filter on ${one}: not on FR-182's allow list`);
+  }
+  if (/will-change\s*:/.test(css)) out.push('will-change: only on an element that animates now, and none does today (FR-180)');
+  return out;
+}
+{
+  /* FR-182 holds in every style sheet of the app, not only a world's */
+  for (const f of fs.readdirSync(path.join(ROOT, 'src', 'renderer')).filter((x) => x.endsWith('.css'))) assert.deepStrictEqual(worldCssProblems(fs.readFileSync(path.join(ROOT, 'src', 'renderer', f), 'utf8')).filter((p) => /backdrop-filter/.test(p)), [], `${f}: FR-182`);
+  for (const f of ['realoffice.css', 'realoffice-world.css']) assert.deepStrictEqual(worldCssProblems(fs.readFileSync(path.join(ROOT, 'src', 'renderer', f), 'utf8')), [], `${f}: FR-180`);
+  const red = (css: string, why: RegExp, what: string): void => assert.ok(worldCssProblems(css).some((p) => why.test(p)), 'red: ' + what);
+  red('.a{mix-blend-mode:screen}', /mix-blend-mode/, 'a blend mode');
+  red('@keyframes k{50%{box-shadow:0 0 1px red}}', /animates box-shadow/, 'a keyframe with box-shadow');
+  red('@keyframes k{0%{opacity:0}50%{filter:blur(1px)}}', /animates filter/, 'a keyframe with filter');
+  red('.a{transition:width 1s}', /transition names width/, 'a transition of a layout property');
+  red('.a{transition:opacity 1s,top 1s}', /transition names top/, 'the second name of a transition');
+  red('.a{transition:all 1s}', /transition names all/, 'transition: all');
+  red('.a{will-change:transform}', /will-change/, 'will-change');
+  red('html[data-world] :is(.toast,.dlg){backdrop-filter:blur(2px)}', /on \.dlg/, 'a blur on .dlg');
+  red('.scr-panel{-webkit-backdrop-filter:blur(2px)}', /on \.scr-panel/, 'a blur on a large panel');
+  assert.deepStrictEqual(worldCssProblems('html[data-world] .toast{backdrop-filter:blur(2px)}.dlg{backdrop-filter:none}@media (forced-colors:active){.dlg{backdrop-filter:none}}'), [], 'a listed blur, and turning it off, pass');
+  red('.ro-glow.a{animation:k 2s ease-in-out infinite}', /not stepped/, 'a smooth light');
+  red('.ro-glow.x{opacity:1;box-shadow:0 0 1px red}', /box-shadow/, 'a light with a box-shadow');
+  assert.deepStrictEqual(worldCssProblems('/* mix-blend-mode:screen */ .a{transition:opacity 1s;background:red}@keyframes k{50%{opacity:.5;transform:scale(2)}}'), [], 'the allowed forms pass');
+  assert.deepStrictEqual(worldCssProblems('.a{animation:k 2s steps(4,end) infinite;box-shadow:0 0 1px red}.ro-call.b{animation:none}.m-a{animation:k 1s linear infinite}'), [], 'a stepped animation, none, a shadow on something that is not a light, and a person\'s loop (the 1/12 s grid is check-097-motion\'s) pass');
+}
+// ---- 7. applied while Real office is shown, the user's theme restored on leaving (on a stub page) ----
+{
+  const mkDoc = (): { documentElement: { style: { m: Map<string, string>; setProperty: (k: string, v: string) => void; removeProperty: (k: string) => void }; dataset: Record<string, string> } } => {
+    const m = new Map<string, string>();
+    return { documentElement: { style: { m, setProperty: (k: string, v: string) => { m.set(k, String(v)); }, removeProperty: (k: string) => { m.delete(k); } }, dataset: {} } };
+  };
+  const g = global as unknown as { document?: unknown };
+  const fresh = (): { T: typeof T; doc: ReturnType<typeof mkDoc> } => {
+    const doc = mkDoc(); g.document = doc;
+    const file = require.resolve(path.join(ROOT, 'src', 'renderer', 'theme.js'));
+    delete require.cache[file];
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const X = require(file);
+    return { T: X, doc };
+  };
+  const snap = (d: ReturnType<typeof mkDoc>): string => JSON.stringify([[...d.documentElement.style.m.entries()].sort(), Object.keys(d.documentElement.dataset).sort().map((k) => [k, d.documentElement.dataset[k]])]);
+  const ids = (T.list() as Array<{ id: string }>).map((x) => x.id);
+  const dark = ids.find((id) => { const tk = T._builtins()[id].tokens || {}; return tk['--surface'] && luminance(tk['--surface']) < 0.2; }) || ids[1];
+  const other = ids.find((id) => id !== dark && id !== T.CLEAN_ID) || T.CLEAN_ID;
+  // the reference: a page that only ever had the theme
+  const ref = fresh(); ref.T.setTheme(dark); const want = snap(ref.doc);
+  const ref2 = fresh(); ref2.T.setTheme(other); const want2 = snap(ref2.doc);
+  const { T: W, doc } = fresh();
+  W.setTheme(dark);
+  assert.strictEqual(W.world(), null, 'flat by default: no world');
+  assert.strictEqual(snap(doc), want, 'no world: the theme alone');
+  assert.strictEqual(W.setWorld('photo'), 'photo');
+  const st = doc.documentElement.style.m, wt = W.worldTokens('photo');
+  for (const k of ['--surface', '--ink', '--bg', '--sage-ink', '--focus', '--wb-bg', '--wb-ink', '--wp-surface']) assert.strictEqual(st.get(k), wt[k], `world shown: ${k} is the world's`);
+  assert.strictEqual(doc.documentElement.dataset.world, 'photo', 'html[data-world] is set');
+  assert.ok(!('dark' in doc.documentElement.dataset), 'the world page is light');
+  assert.strictEqual(W.token('--surface'), wt['--surface'], 'token() reads the world (scenes draw what the CSS shows)');
+  assert.ok(/46,32,18/.test(String(st.get('--shadow-pop'))), 'the world shadow');
+  W.setTheme(other);
+  assert.strictEqual(st.get('--surface'), wt['--surface'], 'a theme picked while Real office is shown does not replace the world');
+  assert.strictEqual(W.setWorld(null), null);
+  assert.strictEqual(snap(doc), want2, 'leaving Real office restores the user\'s theme exactly (the one picked meanwhile)');
+  W.setWorld('photo'); W.setWorld('photo');
+  W.setWorld('nope');
+  assert.strictEqual(W.world(), null, 'an unknown world is flat');
+  assert.strictEqual(snap(doc), want2, 'and restores the theme');
+  // dark theme again, round trip twice
+  W.setTheme(dark); W.setWorld('photo'); W.setWorld(null); W.setWorld('photo'); W.setWorld(null);
+  assert.strictEqual(snap(doc), want, 'round trips leave the theme exactly as it was');
+  // the arcade: its own chrome style and a dark page while shown; leaving gives the theme back, its UI style and darkness too
+  W.setTheme(other); const want3 = snap(doc);
+  W.setWorld('retro');
+  assert.deepStrictEqual([doc.documentElement.dataset.ui, 'dark' in doc.documentElement.dataset, st.get('--surface')], ['retro', true, W.worldTokens('retro')['--surface']], 'the arcade shown');
+  W.setWorld(null);
+  assert.strictEqual(snap(doc), want3, 'leaving the arcade restores the theme exactly');
+  // #1144 (spec 097 FR-245): the photo office and the cave set their own plain chrome, so Retro Pixel's offset button shadows never reach them
+  W.setTheme('retro'); const want4 = snap(doc);
+  assert.strictEqual(doc.documentElement.dataset.ui, 'retro', 'Retro Pixel sets its UI style');
+  W.setWorld('photo');
+  assert.strictEqual(doc.documentElement.dataset.ui, 'clean', 'the photo office sets the plain UI style over the Retro theme');
+  W.setWorld(null);
+  assert.strictEqual(snap(doc), want4, 'leaving the photo office restores the theme exactly');
+  W.setWorld('cave');
+  assert.strictEqual(doc.documentElement.dataset.ui, 'clean', 'the cave sets the plain UI style over the Retro theme');
+  W.setWorld(null);
+  assert.strictEqual(snap(doc), want4, 'leaving the cave restores the theme exactly');
+  g.document = undefined;
+}
 console.log(`theme tokens guard passed (${n} corpus checks, ${FILES.length} files under the ratchet)`);
+
+// ---- 7. the toggle switch (.swt, spec 033 delta 2026-11-01): contrast per world, tokens only ----
+{
+  const scr = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'screens.css'), 'utf8');
+  const rule = (sel: string): string => { const at = ('\n' + scr).indexOf('\n' + sel + '{'); assert.ok(at >= 0, `${sel} rule exists`); const from = at + sel.length + 1; return scr.slice(from, scr.indexOf('}', from)); }; // plain string search: no selector is turned into a pattern
+  for (const sel of ['.swt', '.swt i', '.swt.on', '.swt.on i']) assert.ok(!/#[0-9a-fA-F]{3,8}\b|rgba?\(/.test(rule(sel)), `${sel}: no colour literal, tokens only`);
+  assert.ok(/background:var\(--sage-ink\)/.test(rule('.swt.on')) && /background:var\(--surface\)/.test(rule('.swt.on i')) && /background:var\(--ink-2\)/.test(rule('.swt i')), 'the on track is --sage-ink, the knobs --surface (on) and --ink-2 (off)');
+  assert.ok(/@media \(forced-colors:active\)\{[^@]*\.swt\.on\{background:Highlight/.test(scr), 'forced colours: on and off still differ');
+  const mixHex = (a: string, pct: number, b: string): string => '#' + [1, 3, 5].map((i) => Math.round(parseInt(a.slice(i, i + 2), 16) * pct + parseInt(b.slice(i, i + 2), 16) * (1 - pct)).toString(16).padStart(2, '0')).join('');
+  const sets: Array<[string, Record<string, string>]> = [['Clean Office', { ...T._tokens(), ...T._builtins()[T.CLEAN_ID].tokens }], ['Photo office', T.worldTokens('photo')]];
+  for (const [name, tk] of sets) {
+    const track = mixHex(tk['--ink'], 0.16, tk['--surface']); // --tone-neutral-track
+    const rows: Array<[string, string, string]> = [['on track on the page', tk['--sage-ink'], tk['--surface']], ['on knob on the on track', tk['--surface'], tk['--sage-ink']], ['off knob on the off track', tk['--ink-2'], track]];
+    for (const [what, a, b] of rows) assert.ok(contrast(a, b) >= 3, `${name}: ${what} ${contrast(a, b).toFixed(2)}:1 is under 3:1`);
+  }
+  console.log('toggle switch: on track, both knobs pass 3:1 in Clean Office and the photo world; tokens only; forced colours');
+}

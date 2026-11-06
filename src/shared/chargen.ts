@@ -87,7 +87,7 @@ export function buildCharacterPrompt(description: unknown, styleId: string = DEF
   return prompt;
 }
 
-/** FR-013: `n` different ideas for the dialog's chips (the neutral `pickFrom` of ideas.ts, which the theme maker's `pickIdeas` also uses). */
+/** FR-013: `n` different ideas for the dialog's chips (the neutral `pickFrom` of ideas.ts). */
 export function pickCharacterIdeas(n: number, rand: () => number = Math.random): string[] {
   return pickFrom(CHARACTER_IDEAS, n, rand);
 }

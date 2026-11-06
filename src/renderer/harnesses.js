@@ -95,6 +95,7 @@
     try { r = await B.harnessAccounts(refresh === 'check' ? 'check' : !!refresh); } catch (e) { r = null; }
     ACC = r && typeof r === 'object' ? r : ACC || {};
     paintAccounts();
+    paintQuota(); /* FR-088: who may be suggested depends on the sign-ins */
     onAccounts(ACC);
     return ACC;
   }
@@ -108,6 +109,7 @@
       let st = k.state;
       if (k.id === 'copilot' && st === 'ready' && copilot && copilot.known && copilot.signedIn === false) st = 'not-signed-in';
       CARDS[k.id] = st;
+      NAMES[k.id] = k.displayName || k.id;
       const [cls, word] = STATE[st] || STATE.unknown;
       /* spec 052 FR-097: "Simulated version." is the badge's tooltip, not a line of its own */
       const simV = st === 'ready' && k.version === 'sim';
@@ -116,7 +118,7 @@
       /* spec 012 FR-156: a ready card also says how far the sign-in was checked (the hint withSignIn set) */
       const hint = st === 'ready' ? [simV || hasInst ? '' : k.version ? 'Version ' + k.version + '.' : 'Ready to use.', k.hint && /^Signed in/.test(k.hint) ? k.hint : ''].filter(Boolean).join(' ') : st === 'not-signed-in' ? 'Installed; sign in once to use it.' : st === 'too-old' ? (k.hint || 'This version is too old for Durbar.') : st === 'not-installed' ? 'Not on this computer yet.' : 'Durbar could not tell; try Check again.';
       return `<li class="hs-card" data-kind="${esc(k.id)}"><div class="hs-top"><span class="hs-name"><b title="${esc(k.displayName || k.id)}">${esc(k.displayName || k.id)}</b>${FOR[k.id] ? `<span class="hs-for">${esc(FOR[k.id])}</span>` : ''}</span><span class="hs-st hs-${cls}"${simV ? ' title="Simulated version."' : ''}>${esc(word)}</span></div>
-        ${acctHTML(k.id, st)}${hint ? `<p class="scr-note small">${esc(hint)}</p>` : ''}${k.where && st !== 'not-installed' ? `<p class="scr-note small hs-where">Found at <code>${esc(String(k.where).slice(0, 200)).replace(/[\\/]/g, '$&<wbr>')}</code></p>` : ''}${k.id === 'copilot' && copilot && copilot.pwshMissing ? `<p class="scr-note small hs-pwsh">${esc(PWSH_HINT)}</p>` : ''}
+        ${acctHTML(k.id, st)}${st === 'ready' && B && B.harnessQuota ? `<div class="hs-quota" data-quota="${esc(k.id)}"></div>` : ''}${hint ? `<p class="scr-note small">${esc(hint)}</p>` : ''}${k.where && st !== 'not-installed' ? `<p class="scr-note small hs-where">Found at <code>${esc(String(k.where).slice(0, 200)).replace(/[\\/]/g, '$&<wbr>')}</code></p>` : ''}${k.id === 'copilot' && copilot && copilot.pwshMissing ? `<p class="scr-note small hs-pwsh">${esc(PWSH_HINT)}</p>` : ''}
         <div class="hs-upd" data-upd="${esc(k.id)}">${st === 'not-installed' ? '' : updInner(k.id)}</div>
         ${st === 'ready' ? `<div class="hs-sbx" data-sbx="${esc(k.id)}">${sbxInner(k.id)}</div>` : ''}
         <div class="hs-act" data-act="${esc(k.id)}">${actInner(k.id, st)}</div></li>`;
@@ -186,7 +188,7 @@
           if (r.state === 'up-to-date' && r.installedNewer) out.push('<p class="scr-note small">Installed is newer than the source\'s latest.</p>');
           if (r.newerOnLatest) out.push(`<p class="scr-note small hs-quiet">A newer latest-channel build exists (${esc(r.newerOnLatest)}).</p>`);
         }
-        if (r.state === 'could-not-check') out.push(`<p class="scr-note small">Could not check: ${esc(r.reason || 'unexpected answer')}${r.reason === 'winget needs its terms accepted' ? '. Check for update asks you whether to accept them.' : /^npm or node was not found/.test(r.reason || '') ? ". Durbar could not run npm with a node beside it: install Node.js (it brings npm), or start Durbar from a terminal where npm works, then choose Check for update." : ''}</p>`);
+        if (r.state === 'could-not-check') out.push(`<p class="scr-note small">Could not check: ${esc(r.reason || 'unexpected answer')}${r.reason === 'winget needs its terms accepted' ? '. Check for update asks you whether to accept them.' : /^npm or node was not found/.test(r.reason || '') ? ". Durbar could not run npm with a node beside it: install Node.js (it brings npm), or start Durbar from a terminal where npm works, then choose Check for update." : ''}</p>${r.detail ? `<p class="scr-note small hs-detail">Details: ${esc(r.detail)}</p>` : ''}`);
         if (r.checkedAt) out.push(`<p class="scr-note small hs-when">Checked ${esc(timeOf(r.checkedAt))}</p>`);
       }
     } else if (busy) out.push(`<p class="scr-note small" aria-busy="true">${chip('checking')}</p>`);
@@ -201,7 +203,7 @@
     const act = base || (st !== 'not-installed' && r && r.state === 'update-available' && !polOf().installBlocked && !polOf().checkHidden && !(UPD.waiting && UPD.waiting[id]) ? 'update' : '');
     const label = { install: 'Install…', update: 'Update…', signin: 'Sign in…' }[act];
     const chk = UPD && !polOf().checkHidden && st !== 'not-installed' ? `<button class="btn sm" type="button" data-hs="updcheck" data-kind="${esc(id)}" title="Ask whether a newer version exists" aria-label="Check for updates for ${esc(SOURCE_NAME[id] || id)}">Check for update</button>` : '';
-    return `${act ? `<button class="btn primary" type="button" data-hs="${act}" data-kind="${esc(id)}">${esc(label)}</button>` : ''}<button class="btn sm" type="button" data-hs="check" data-kind="${esc(id)}" title="Look at the installed app again: its version and sign-in">Check again</button>${chk}`;
+    return `${act ? `<button class="btn primary" type="button" data-hs="${act}" data-kind="${esc(id)}">${esc(label)}</button>` : ''}<button class="btn sm" type="button" data-hs="check" data-kind="${esc(id)}" title="Look at the installed app again: its version, sign-in and account limits">Check again</button>${chk}`;
   }
   /* the section's bar: Check for updates, the start-check switch and its note, or the organization's word */
   function barHTML() {
@@ -223,6 +225,76 @@
     try { const v = await B.harnessUpdates(check ? 'check' : undefined, app); if (v && typeof v === 'object') UPD = v; } catch (e) { /* keep the last */ }
     paintUpdates();
     return UPD;
+  }
+
+  /* ---- spec 011 FR-085..FR-090 (issue #690): the account limits the provider reports, separate from per-session usage. The state is
+     worked out from the clock at each paint, so a reading never reads as current after it went stale; one timer, for the next change,
+     only while the cards are on screen. Every value is escaped. Nothing here switches, routes or starts anything. ---- */
+  let QUOTA = null; /* { [id]: QuotaView }: the last answer per app; a refused or failed call never wipes it (FR-084) */
+  let QUOTA_FAILED_AT = null; /* the last call itself failed: what is kept is shown as not current */
+  let QUOTA_SEQ = 0, QUOTA_BUSY = false;
+  let quotaTimer = null;
+  let HAND = null; /* from app.js: { sessions(kind), open(agentId, toKind) } */
+  const NAMES = {};
+  const QX = () => window.exports;
+  const qViewOf = (id) => {
+    const v = QUOTA && Object.prototype.hasOwnProperty.call(QUOTA, id) ? QUOTA[id] : null;
+    if (v && QUOTA_FAILED_AT !== null && !v.failure) return { ...v, failure: 'unavailable', failedAt: QUOTA_FAILED_AT };
+    if (!v && QUOTA_FAILED_AT !== null) return { app: id, buckets: [], failure: 'unavailable', failedAt: QUOTA_FAILED_AT };
+    return v;
+  };
+  function suggestHTML(id, d, now) {
+    if (!d.near && !d.exhausted) return '';
+    const others = Object.keys(NAMES).map((k) => ({ id: k, name: NAMES[k], ready: CARDS[k] === 'ready', signedIn: !!(ACC && ACC[k] && ACC[k].status === 'signed-in'), view: qViewOf(k) || undefined }));
+    const alts = QX().quotaAlternatives(id, others, now);
+    if (!alts.length) return '<p class="scr-note small hs-q-sug">No other agent app is known to be ready and signed in right now.</p>';
+    const list = alts.map((a) => esc(a.name) + (a.known ? '' : ' (its limits are not known)')).join(', ');
+    const sess = HAND && HAND.sessions ? HAND.sessions(id) : [];
+    const btns = sess.map((s) => `<button type="button" class="btn sm" data-hs="qhand" data-kind="${esc(id)}" data-agent="${esc(s.id)}" data-to="${esc(alts[0].id)}">${esc('Continue ' + s.name + ' in another app…')}</button>`).join('');
+    return `<p class="scr-note small hs-q-sug">Also ready: ${list}. Each app has its own limits; they are not interchangeable. Nothing switches unless you choose it.</p>${btns ? `<div class="hs-q-hand">${btns}</div>` : ''}`;
+  }
+  function quotaInner(id) {
+    const head = (word, cls) => `<div class="hs-q-head"><b class="hs-q-title">Account limits</b><span class="hs-st hs-${cls}" data-qstate>${esc(word)}</span></div><p class="scr-note small hs-q-what">From the provider; not a bill and not this session's usage.</p>`;
+    const v = qViewOf(id);
+    if (!v) return head(QUOTA_BUSY ? 'Checking…' : 'Not checked yet', 'off');
+    const now = Date.now(), d = QX().quotaDisplay(v, now);
+    const rows = d.rows.map((r) => `<div class="hs-q-row" data-level="${esc(r.level)}"><div class="hs-q-label"><span>${esc(r.label)}</span>${r.level ? ` <span class="hs-st hs-warn hs-q-lvl">${r.level === 'near' ? 'Near a reported limit' : 'At a reported limit'}</span>` : ''}</div><dl class="hs-q-facts">${r.facts.map((f) => `<div class="hs-q-fact"><dt>${esc(f.label)}:</dt><dd>${esc(f.value)}</dd></div>`).join('')}</dl></div>`).join('');
+    const notes = d.notes.map((t) => `<p class="scr-note small hs-q-note">${esc(t)}</p>`).join('');
+    const meta = [d.source ? 'Source: ' + d.source : '', d.checked ? (d.state === 'current' ? 'Checked ' : 'Last good reading ') + d.checked : ''].filter(Boolean).map((t) => `<p class="scr-note small hs-q-meta">${esc(t)}</p>`).join('');
+    return head(d.word, d.tone) + rows + notes + meta + suggestHTML(id, d, now);
+  }
+  function stopQuotaTimer() { if (quotaTimer !== null) { clearTimeout(quotaTimer); quotaTimer = null; } }
+  function paintQuota() {
+    stopQuotaTimer();
+    if (!QX() || !QX().quotaDisplay) return;
+    const boxes = document.querySelectorAll('.hs-quota[data-quota]');
+    if (!boxes.length) return;
+    const now = Date.now();
+    let next = Infinity;
+    boxes.forEach((p) => {
+      const html = quotaInner(p.dataset.quota);
+      if (p.__html !== html) { p.__html = html; p.innerHTML = html; } /* an unchanged block keeps its focus */
+      const v = qViewOf(p.dataset.quota), d = v && QX().quotaDisplay(v, now);
+      if (d && d.nextChangeAt !== undefined) next = Math.min(next, d.nextChangeAt);
+    });
+    if (next !== Infinity) quotaTimer = setTimeout(paintQuota, Math.min(Math.max(next - now, 0) + 50, 3600000));
+  }
+  /* FR-083: 'cached' asks nothing; 'open' (Settings opened) and 'check' (Check again) ask within main's floors. Only the newest call paints. */
+  async function loadQuota(mode, app) {
+    if (!B || !B.harnessQuota) return QUOTA;
+    const seq = ++QUOTA_SEQ;
+    QUOTA_BUSY = true;
+    paintQuota();
+    let r = null;
+    try { r = await B.harnessQuota(mode || 'cached', app); } catch (e) { r = null; }
+    if (seq !== QUOTA_SEQ) return QUOTA;
+    QUOTA_BUSY = false;
+    if (r && r.ok && r.apps && typeof r.apps === 'object') {
+      QUOTA = app ? { ...(QUOTA || {}), ...r.apps } : r.apps;
+      QUOTA_FAILED_AT = null;
+    } else QUOTA_FAILED_AT = Date.now();
+    paintQuota();
+    return QUOTA;
   }
 
   /* running an operation: progress lines, link and code; resolves when main says it is done */
@@ -300,9 +372,8 @@
         [{ label: 'Close', cancel: true, onClick: (c) => c() }, { label: 'Open the official page', cls: 'primary', onClick: (c) => { B.harnessOpenPage(kind); c(); } }]);
       return;
     }
-    /* spec 052 FR-056: one plain sentence per way; the exact commands sit in a <details>, closed in Simple and open in Expert.
+    /* spec 052 FR-056: one plain sentence per way; the exact commands sit in an open <details>.
        Main still shows the exact command in its native confirmation before anything runs (spec 051 FR-004b). */
-    const simple = document.body.classList.contains('simple');
     /* spec 052 FR-077: each option leads with what differs (the manager); the shared words are in the lead sentence */
     const many = p.plans.length > 1;
     const tag = (pl, i) => (op === 'update' && pl.owner ? ' (installed this copy)' : many && i === 0 ? ' (recommended)' : many && i === p.plans.length - 1 && pl.manager === 'npm' ? ' (last resort)' : '');
@@ -312,7 +383,7 @@
     const opts = ownerFirst
       ? radio(p.plans[0], 0) + (p.plans.length > 1 ? `<details class="hs-cmds hs-other"><summary>Show other ways</summary><p class="scr-note small">Another way would install a second copy next to the one Durbar uses.</p>${p.plans.slice(1).map((pl, j) => radio(pl, j + 1)).join('')}</details>` : '')
       : p.plans.map(radio).join('');
-    const cmds = `<details class="hs-cmds"${simple ? '' : ' open'}><summary>Show the exact command</summary>${p.plans.map((pl) => `<p class="scr-note small">${esc(mgr(pl))}: <code>${esc(pl.display)}</code></p>`).join('')}</details>`;
+    const cmds = `<details class="hs-cmds" open><summary>Show the exact command</summary>${p.plans.map((pl) => `<p class="scr-note small">${esc(mgr(pl))}: <code>${esc(pl.display)}</code></p>`).join('')}</details>`;
     const choice = await new Promise((res) => {
       const md = modal((op === 'update' ? 'Update ' : 'Install ') + p.name, `<p class="scr-note">Durbar ${op === 'update' ? 'updates' : 'installs'} ${esc(p.name)} for you. Choose how:</p>${opts}${cmds}<p class="scr-note small">It runs on your computer, as you, and asks once more before it starts. Prefer to do it yourself? <button type="button" class="linkbtn" id="hsPage">Open the official page</button></p>${op === 'install' ? manualHTML(p, false) : ''}`,
         [{ label: 'Cancel', cancel: true, onClick: (c) => { c(); res(null); } }, { label: op === 'update' ? 'Update' : 'Install', cls: 'primary', onClick: (c) => { const v = document.querySelector('#hsDlg input[name="hsPlan"]:checked'); const i = v ? Number(v.value) : 0; c(); res(i); } }]);
@@ -446,20 +517,22 @@
     const b = e.target.closest && e.target.closest('[data-hs]'); if (!b) return false;
     const kind = b.dataset.kind, card = b.closest('.hs-card'), name = card ? card.querySelector('b').textContent : kind;
     if (b.dataset.hs === 'reveal') reveal(b);
-    else if (b.dataset.hs === 'sbxundo') { if (B.sandboxAlwaysOff) B.sandboxAlwaysOff(kind).then(() => loadSandbox()).then(() => toastLike('The OS sandbox note shows again for ' + name + '.')); }
+    else if (b.dataset.hs === 'sbxundo') { if (B.sandboxAlwaysOff) B.sandboxAlwaysOff(kind).then((r) => loadSandbox().then(() => toastLike(r && r.ok === false ? 'Could not turn this off for ' + name + '.' : r && r.saved === false ? 'The OS sandbox note shows again for ' + name + ' for this run only: it could not be saved, so after a restart Durbar may continue without the sandbox again.' : 'The OS sandbox note shows again for ' + name + '.'))); }
     else if (b.dataset.hs === 'check') onChange(true);
     else if (b.dataset.hs === 'checkall') checkNow();
     else if (b.dataset.hs === 'updcheck') checkNow(kind);
     else if (b.dataset.hs === 'cancelwait') { waitKinds.delete(kind); B.harnessRun(kind, 'update', 0, 'cancel').then(() => loadUpdates()); }
-    else if (b.dataset.hs === 'startchk') { if (B.setCheckUpdatesAtStart) B.setCheckUpdatesAtStart(!!b.checked).then((r) => { if (UPD && r) UPD.startCheck = r.checkUpdatesAtStart !== false; }); return true; }
+    else if (b.dataset.hs === 'startchk') { if (B.setCheckUpdatesAtStart) B.setCheckUpdatesAtStart(!!b.checked).catch(() => null).then((r) => { if (UPD && r && r.ok !== false) UPD.startCheck = r.checkUpdatesAtStart !== false; else { b.checked = !!(UPD && UPD.startCheck); const S = window.DurbarScreens; toastLike(S && S.saveFailText ? S.saveFailText(b.checked ? 'on' : 'off') : 'Could not save this setting.'); } }); return true; }
     else if (b.dataset.hs === 'install' || b.dataset.hs === 'update') install(kind, b.dataset.hs, name);
     else if (b.dataset.hs === 'signin') signin(kind, name);
+    /* FR-088: the person's own click opens the existing reviewed dialog; a session that ended meanwhile gets a note, and nothing starts */
+    else if (b.dataset.hs === 'qhand') { if (!HAND || !HAND.open || !HAND.open(b.dataset.agent, b.dataset.to)) { toastLike('That session has ended.'); paintQuota(); } }
     return true;
   }
 
   window.DurbarHarnesses = {
     init(o) {
-      B = o.bridge; MASK = typeof o.mask === 'function' ? o.mask : null; onChange = o.onChange || onChange; toastLike = o.toast || toastLike; onAccounts = o.onAccounts || onAccounts; onBadge = o.onBadge || onBadge;
+      B = o.bridge; MASK = typeof o.mask === 'function' ? o.mask : null; onChange = o.onChange || onChange; toastLike = o.toast || toastLike; onAccounts = o.onAccounts || onAccounts; onBadge = o.onBadge || onBadge; HAND = o.handover || HAND;
       if (B && B.onHarnessProgress) B.onHarnessProgress((p) => {
         LASTP[p.kind] = p;
         /* an update that waited for sessions to end has started: show its progress */
@@ -479,7 +552,9 @@
     setUpdates(v) { if (v && typeof v === 'object') { UPD = v; paintUpdates(); } },
     updateCount: () => updCount(),
     /* Settings > Agent apps is on screen (or not): main then knows the card is the announcement */
-    shown(on) { if (B && B.harnessVisible) B.harnessVisible(!!on).catch(() => undefined); },
+    shown(on) { if (!on) stopQuotaTimer(); if (B && B.harnessVisible) B.harnessVisible(!!on).catch(() => undefined); },
+    loadQuota,
+    quotaTimerArmed: () => quotaTimer !== null,
     available: () => !!(B && B.harnessRun),
     sectionHTML,
     loadAccounts,

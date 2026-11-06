@@ -1,6 +1,7 @@
 import { ALLOWED_BY_KEYS_MAX } from './types';
 import { isObj } from '../shared/guards';
 import { cleanSandboxState } from '../shared/sandbox';
+import { isAutopilotEnd, isSpendUnit, MAX_LIMIT, validLimit, validRunId } from './autopilot';
 /**
  * A runtime check of normalized events (spec 010 FR-010, T023): what every producer (the real adapters, the simulator) must send
  * so the renderer can rely on it. Pure; returns the problems found (none = valid). Shared by the simulator contract test and the
@@ -11,13 +12,16 @@ const optStr = (v: unknown): boolean => v === undefined || typeof v === 'string'
 const optNum = (v: unknown): boolean => v === undefined || (typeof v === 'number' && Number.isFinite(v) && v >= 0);
 const oneOf = (v: unknown, xs: readonly string[]): boolean => typeof v === 'string' && xs.includes(v);
 
-export const EVENT_TYPES = ['user', 'question', 'agentProfile', 'status', 'permission', 'grants', 'thinking', 'output', 'toolCall', 'subagent', 'usage', 'context', 'model', 'compaction', 'mcp', 'limit', 'usageLimit', 'retry', 'title', 'agentSchedule', 'remote', 'plan', 'sandbox'] as const;
+export const EVENT_TYPES = ['user', 'question', 'agentProfile', 'status', 'permission', 'grants', 'thinking', 'output', 'toolCall', 'subagent', 'usage', 'context', 'model', 'compaction', 'mcp', 'limit', 'usageLimit', 'retry', 'title', 'agentSchedule', 'remote', 'plan', 'sandbox', 'autopilot'] as const;
 const RETRY_REASONS = ['rate-limit', 'overloaded', 'server', 'network', 'timeout', 'auth', 'other'] as const;
 const STATUSES = ['idle', 'working', 'needs-permission', 'error', 'stopped'] as const;
 /** Spec 058 FR-180: the values of `McpServerStatus.signInEnd`. */
 export const SIGN_IN_ENDS = ['next-message', 'failed'] as const;
 /** Spec 058 FR-180: a `signInEnd` main accepts (anything else is ignored, as if missing). */
 export const validSignInEnd = (v: unknown): v is (typeof SIGN_IN_ENDS)[number] => oneOf(v, SIGN_IN_ENDS);
+
+/** Spec 003 FR-110: longest permission `requestId` (a tool call id); the window keeps it as a map key. */
+export const REQUEST_ID_MAX = 256;
 
 /** Spec 003 FR-102: the optional `allowedBy` of a permission (display only): a known kind and string fields, else the event is refused. */
 function allowedByProblems(a: unknown, where: string): string[] {
@@ -38,6 +42,7 @@ function permissionProblems(p: unknown, where: string): string[] {
   if (!isObj(p)) return [`${where}: not an object`];
   const out: string[] = [];
   if (!str(p.requestId) || !p.requestId) out.push(`${where}.requestId missing`);
+  else if ((p.requestId as string).length > REQUEST_ID_MAX) out.push(`${where}.requestId too long`);
   if (!str(p.kind)) out.push(`${where}.kind missing`);
   if (!str(p.summary)) out.push(`${where}.summary missing`);
   if (!oneOf(p.state, ['pending', 'approved', 'denied'])) out.push(`${where}.state is ${String(p.state)}`);
@@ -58,6 +63,34 @@ function editProblems(x: unknown): string[] {
   });
   if (x.partial !== undefined && typeof x.partial !== 'boolean') out.push('toolCall.edit.partial is not a boolean');
   if (!optNum(x.more)) out.push('toolCall.edit.more is not a number');
+  return out;
+}
+
+/**
+ * Spec 099 FR-081, T011: an `autopilot` event, as `AutopilotRun` emits it: a `limit` of 1 to 1000; `n` a whole number that is 0 on `started`,
+ * 1 to `limit` on `continued` and 0 to `limit` on `ended`; a known `reason` on `ended` only; `spend` on `ended` only; a bounded `runId` of safe characters.
+ */
+function autopilotProblems(e: Record<string, unknown>): string[] {
+  const out: string[] = [];
+  if (e.agentId !== undefined) out.push('autopilot.agentId: a helper never has Autopilot state (FR-008)');
+  const phase = e.phase;
+  if (!oneOf(phase, ['started', 'continued', 'ended'])) out.push(`autopilot.phase ${String(phase)}`);
+  if (!validRunId(e.runId)) out.push('autopilot.runId missing, too long or not plain');
+  const limitOk = validLimit(e.limit);
+  if (!limitOk) out.push(`autopilot.limit is not a whole number from 1 to ${MAX_LIMIT}`);
+  if (!(typeof e.n === 'number' && Number.isInteger(e.n) && e.n >= 0 && e.n <= MAX_LIMIT)) out.push(`autopilot.n is not a whole number from 0 to ${MAX_LIMIT}`);
+  else {
+    if (phase === 'started' && e.n !== 0) out.push('autopilot.n is not 0 on started');
+    if (phase === 'continued' && e.n < 1) out.push('autopilot.n is below 1 on continued');
+    if (limitOk && e.n > (e.limit as number)) out.push('autopilot.n is above limit');
+  }
+  if (phase === 'ended') {
+    if (!isAutopilotEnd(e.reason)) out.push('autopilot.reason missing or unknown on ended');
+  } else if (e.reason !== undefined) out.push(`autopilot.reason on phase ${String(phase)}`);
+  if (e.spend !== undefined) {
+    if (phase !== 'ended') out.push(`autopilot.spend on phase ${String(phase)}`);
+    if (!isObj(e.spend) || !isSpendUnit(e.spend.unit) || !(typeof e.spend.value === 'number' && Number.isFinite(e.spend.value) && e.spend.value >= 0)) out.push('autopilot.spend malformed');
+  }
   return out;
 }
 
@@ -100,6 +133,7 @@ export function eventProblems(e: unknown): string[] {
     case 'subagent':
       if (!str(e.subagentId) || !e.subagentId) out.push('subagent.subagentId missing');
       if (!oneOf(e.phase, ['started', 'completed', 'failed'])) out.push(`subagent.phase ${String(e.phase)}`);
+      if (e.background !== undefined && typeof e.background !== 'boolean') out.push('subagent.background is not a boolean');
       break;
     case 'usage':
       for (const k of ['inputTokens', 'outputTokens', 'cacheReadTokens', 'nanoAiu', 'costUsd']) if (!optNum(e[k])) out.push(`usage.${k} is not a non-negative number`);
@@ -154,7 +188,11 @@ export function eventProblems(e: unknown): string[] {
       if (!str(e.requestId) || !e.requestId) out.push('question.requestId missing');
       if (e.phase === 'asked' && (!Array.isArray(e.questions) || !e.questions.length || e.questions.some((q) => !isObj(q) || !str(q.question) || !Array.isArray(q.options)))) out.push('question.questions malformed');
       if (e.elicitation !== undefined && (!isObj(e.elicitation) || !str(e.elicitation.message) || !(Array.isArray(e.elicitation.fields) || str(e.elicitation.url)))) out.push('question.elicitation malformed');
+      if (e.autoAnswered !== undefined && e.autoAnswered !== true) out.push('question.autoAnswered is not true'); // spec 099 FR-081
       if (e.elicitAction !== undefined && !oneOf(e.elicitAction, ['accept', 'decline', 'cancel'])) out.push(`question.elicitAction ${String(e.elicitAction)}`);
+      break;
+    case 'autopilot':
+      out.push(...autopilotProblems(e));
       break;
     case 'plan':
       if (!oneOf(e.phase, ['proposed', 'resolved'])) out.push(`plan.phase ${String(e.phase)}`);
@@ -184,4 +222,42 @@ export function eventProblems(e: unknown): string[] {
       break;
   }
   return out;
+}
+
+/** Spec 010 FR-035 (issue #1039): how many dropped events a run logs before it stops saying so. */
+export const EVENT_DROP_LOG_MAX = 20;
+
+/**
+ * Spec 010 FR-035 (review of #1117): one `eventProblems` line without any value from the event. Every line starts with a field name
+ * written in this file; what follows can carry the agent's value (`status <value>`), so only the field and a fixed kind word are kept.
+ */
+export function problemWords(problem: string): string {
+  if (problem === 'not an object') return 'event: not an object';
+  if (problem.startsWith('unknown type')) return 'type: not one of the known values';
+  const field = /^[A-Za-z][A-Za-z.[\]]{0,59}/.exec(problem)?.[0] ?? 'field';
+  const rest = problem.slice(field.length);
+  const kind = /missing/.test(rest) ? 'missing' : /too long/.test(rest) ? 'too long' : /malformed/.test(rest) ? 'malformed' : /^ is not /.test(rest) ? 'wrong kind of value' : 'not one of the known values';
+  return `${field}: ${kind}`;
+}
+
+/**
+ * Spec 010 FR-035: main's check on every agent event (the router's event guard). True passes; a bad event is dropped with one line for
+ * `warn` naming only its type (when known) and each field with the kind of problem, never a value from the event (`problemWords`); main
+ * masks it again with `redact`. At most `EVENT_DROP_LOG_MAX` lines.
+ */
+export function eventGate(warn: (line: string) => void): (e: unknown) => boolean {
+  let logged = 0;
+  return (e) => {
+    const p = eventProblems(e);
+    if (!p.length) return true;
+    if (logged < EVENT_DROP_LOG_MAX) {
+      logged++;
+      const t = isObj(e) && oneOf(e.type, EVENT_TYPES) ? String(e.type) : 'unknown';
+      warn(`[events] dropped a bad ${t} event: ${[...new Set(p.map(problemWords))].join('; ')}`.slice(0, 300));
+    } else if (logged === EVENT_DROP_LOG_MAX) {
+      logged++;
+      warn('[events] further bad events are dropped without a log line');
+    }
+    return false;
+  };
 }

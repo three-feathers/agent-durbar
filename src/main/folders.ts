@@ -11,6 +11,8 @@ import { parseAutoTier, parseTier } from '../shared/modelswitch';
 import type { AutoTier, ContextTier } from '../shared/modelswitch';
 import * as floorOps from '../shared/floors';
 import type { FloorOp, FloorsDoc } from '../shared/floors';
+import { emptyOrder, parseOrder } from '../shared/roomorder';
+import type { OrderDoc } from '../shared/roomorder';
 import { cleanDisplayName, nameError, MAX_FOLDER_LABEL } from '../shared/names';
 import type { SessionNameEntry } from '../shared/sessionname';
 import { markIdOk, markSrcOk } from '../shared/sessionid';
@@ -22,8 +24,6 @@ export interface SavedFolder {
   workspace: string;
   permMode: SavedPermMode;
   hidden: boolean;
-  /** The room's door is closed in the office (spec 017). */
-  closed?: boolean;
   model?: string;
   effort?: string;
   /** Context tier chosen for this folder's sessions (spec 030); absent = the model's default. Only ever our own choice, never Copilot's settings. */
@@ -51,8 +51,10 @@ export interface SavedFolder {
   prevHidden?: PrevMark[];
   /** Spec 003 (2026-10-21 delta): the permission mode last chosen for each session of this folder (newest 50), so a session comes back in its own mode, not the folder's last one. Ids and modes only. */
   sessionModes?: SessionMode[];
-  /** Spec 083 FR-050 (T042): the folder's notes are mirrored to `.durbar/notes.md` in the project. A flag only; absent = off (the default). */
-  notesFile?: true;
+  /** Spec 083 FR-050 (T042): the folder's notes are mirrored to `.durbar/notes/notes.md` in the project; `'git'`: the person chose to keep them in git (no `.gitignore`). Absent = off (the default). */
+  notesProject?: true | 'git';
+  /** Spec 083 Changes 2026-11-01: identity (`dev:ino[:birth]`) of the `.durbar/notes/.gitignore` Durbar itself made (only that very file is ever deleted by Durbar). */
+  notesIgnoreOwn?: string;
 }
 
 export interface SessionMode {
@@ -238,6 +240,16 @@ export function parsePrevMarks(v: unknown): PrevMark[] | undefined {
 
 const MAX_FOLDERS = 200;
 
+/** Spec 017 FR-034: does a saved folder still carry the old `closed` flag (a door plate)? It is ignored on read and dropped from the file. */
+export function hasLegacyClosed(text: string): boolean {
+  try {
+    const list = (JSON.parse(text) as { folders?: unknown } | null)?.folders;
+    return Array.isArray(list) && list.some((e) => !!e && typeof e === 'object' && 'closed' in (e as object));
+  } catch {
+    return false;
+  }
+}
+
 /** Parse the file text; unknown shapes and bad entries are dropped, duplicates collapsed. */
 export function parseSavedFolders(text: string): SavedFolder[] {
   let doc: unknown;
@@ -258,7 +270,6 @@ export function parseSavedFolders(text: string): SavedFolder[] {
       workspace: o.workspace,
       permMode: o.permMode === 'ask' || o.permMode === 'allow' ? o.permMode : 'read-only',
       hidden: o.hidden === true,
-      closed: o.closed === true ? true : undefined,
       model: typeof o.model === 'string' && o.model.length <= 100 ? o.model : undefined,
       effort: parseEffort(o.effort),
       contextTier: parseTier(o.contextTier),
@@ -274,7 +285,8 @@ export function parseSavedFolders(text: string): SavedFolder[] {
       ...(parsePrevMarks(o.prevPinned) ? { prevPinned: parsePrevMarks(o.prevPinned) } : {}),
       ...(parsePrevMarks(o.prevHidden) ? { prevHidden: parsePrevMarks(o.prevHidden) } : {}),
       ...(parseSessionModes(o.sessionModes) ? { sessionModes: parseSessionModes(o.sessionModes) } : {}),
-      ...(o.notesFile === true ? { notesFile: true as const } : {}), // spec 083 FR-050: only `true` turns it on; anything else is off
+      ...(typeof o.notesIgnoreOwn === 'string' && /^[0-9]{1,24}:[0-9]{1,24}(?::[0-9]{1,24})?$/.test(o.notesIgnoreOwn) ? { notesIgnoreOwn: o.notesIgnoreOwn } : {}),
+      ...(o.notesProject === true || o.notesProject === 'git' ? { notesProject: o.notesProject } : {}), // spec 083 FR-050: only `true` or `'git'` turns it on; anything else is off (the old `notesFile` is dropped: Changes 2026-11-01)
     });
     if (out.length >= MAX_FOLDERS) break;
   }
@@ -291,28 +303,56 @@ export function parseSavedFloors(text: string): FloorsDoc {
   }
 }
 
+/** The saved manual order of rooms, desks and places (spec 033, delta 2026-11-01, issue #677), read tolerantly from the same file as the floors. */
+export function parseSavedOrder(text: string): OrderDoc {
+  try {
+    const doc = JSON.parse(text) as { order?: unknown } | null;
+    return parseOrder(doc && typeof doc === 'object' ? doc.order : undefined);
+  } catch {
+    return emptyOrder();
+  }
+}
+
 export class FolderStore {
   private folders: SavedFolder[] = [];
+  private orderDoc: OrderDoc = emptyOrder();
   private floorsDoc: FloorsDoc = floorOps.defaultFloors();
   constructor(private readonly file: string) {}
 
   load(): SavedFolder[] {
+    let legacy = false;
     try {
       const text = fs.readFileSync(this.file, 'utf8');
       this.folders = parseSavedFolders(text);
       this.floorsDoc = parseSavedFloors(text);
+      legacy = hasLegacyClosed(text);
+      this.orderDoc = parseSavedOrder(text);
     } catch {
       this.folders = [];
+      this.orderDoc = emptyOrder();
       this.floorsDoc = floorOps.defaultFloors();
     }
     // A folder pointing at a floor that is gone is on the ground floor (FR-014).
     for (const f of this.folders) if (f.floor && floorOps.floorOf(f.floor, this.floorsDoc) === floorOps.GROUND) f.floor = undefined;
+    if (legacy) this.save(); // spec 017 FR-034: the old `closed` flags are dropped from the file now, not at some later save
     return this.list();
   }
 
   /** A copy of the floors and the default floor for the next added folder. */
   floors(): FloorsDoc {
     return { floors: this.floorsDoc.floors.map((f) => ({ ...f })), lastFloor: this.floorsDoc.lastFloor };
+  }
+
+  /** A copy of the saved manual order of rooms, desks and places. */
+  order(): OrderDoc {
+    return parseOrder(this.orderDoc);
+  }
+
+  /** Replaces the saved order with the cleaned document; the cleaned copy is returned (what was kept). Throws when the file could not be written: the order is kept for this run, and the caller says so. */
+  setOrder(raw: unknown): OrderDoc {
+    this.orderDoc = parseOrder(raw);
+    if (!this.save()) throw new Error('The order could not be saved.');
+    return this.order();
   }
 
   /** The floor a saved folder is on (ground for unknown folders). */
@@ -591,23 +631,26 @@ export class FolderStore {
     this.save();
   }
 
-  setClosed(workspace: string, closed: boolean): boolean {
+  /** Spec 083 FR-050 (T042): the project-file switch of the folder's notes; `false` when the folder is not saved or the file could not be written. */
+  setNotesFile(workspace: string, on: boolean, git = false): boolean {
     const cur = this.get(workspace);
     if (!cur) return false;
-    cur.closed = closed ? true : undefined;
-    this.save();
-    return true;
+    const was = cur.notesProject;
+    if (on) cur.notesProject = git ? 'git' : true;
+    else delete cur.notesProject;
+    if (this.save()) return true;
+    if (was) cur.notesProject = was; else delete cur.notesProject; // not remembered: the switch keeps its old position
+    return false;
   }
 
-  /** Spec 083 FR-050 (T042): the project-file switch of the folder's notes; `false` when the folder is not saved or the file could not be written. */
-  setNotesFile(workspace: string, on: boolean): boolean {
+  /** Spec 083: record the identity of the `.durbar/notes/.gitignore` Durbar made (or forget it); `false` when the folder is not saved or the list could not be written. */
+  setNotesIgnoreOwn(workspace: string, id: string | undefined): boolean {
     const cur = this.get(workspace);
     if (!cur) return false;
-    const was = cur.notesFile;
-    if (on) cur.notesFile = true;
-    else delete cur.notesFile;
+    const was = cur.notesIgnoreOwn;
+    if (id) cur.notesIgnoreOwn = id; else delete cur.notesIgnoreOwn;
     if (this.save()) return true;
-    if (was) cur.notesFile = was; else delete cur.notesFile; // not remembered: the switch keeps its old position
+    if (was) cur.notesIgnoreOwn = was; else delete cur.notesIgnoreOwn;
     return false;
   }
 
@@ -637,6 +680,10 @@ export class FolderStore {
     const n = this.folders.length;
     this.folders = this.folders.filter((f) => f.workspace !== workspace);
     if (this.folders.length === n) return false;
+    // FR-081: a folder added again later has no saved position, so it must not come back to its old place
+    const rooms = this.orderDoc.rooms.filter((r) => r !== workspace);
+    const desks = Object.fromEntries(Object.entries(this.orderDoc.desks).filter(([k]) => k !== workspace));
+    this.orderDoc = { ...this.orderDoc, rooms, desks };
     this.save();
     return true;
   }
@@ -646,7 +693,7 @@ export class FolderStore {
     try {
       fs.mkdirSync(path.dirname(this.file), { recursive: true });
       const tmp = `${this.file}.${process.pid}.tmp`;
-      fs.writeFileSync(tmp, JSON.stringify({ version: 1, floors: this.floorsDoc.floors, lastFloor: this.floorsDoc.lastFloor, folders: this.folders }, null, 2), { mode: 0o600 });
+      fs.writeFileSync(tmp, JSON.stringify({ version: 1, floors: this.floorsDoc.floors, lastFloor: this.floorsDoc.lastFloor, folders: this.folders, ...(this.orderDoc.rooms.length || this.orderDoc.places.length || Object.keys(this.orderDoc.desks).length ? { order: this.orderDoc } : {}) }, null, 2), { mode: 0o600 });
       fs.renameSync(tmp, this.file);
       return true;
     } catch {

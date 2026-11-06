@@ -1,5 +1,5 @@
 /** IPC for sessions and agents: list, add, send, stop, end, new session, mode, cap, limit, pause, remove, wake, permissions, git status, open in VS Code (spec 045 FR-060; moved out of main.ts as it was). */
-import { dialog } from 'electron';
+import { dialog, shell } from 'electron';
 import { fromAppFrame as fromApp, ipcHandle, ipcOn } from '../ipcguard';
 import type { AdapterRouter } from '../../adapters/router';
 import { historyOf } from '../../adapters/router';
@@ -10,7 +10,8 @@ import { endSessionOp, errText, sessionOptsOf, setCapOp, setModeOp, stopTurnOp, 
 import type { OpsDeps } from '../agentops';
 import { folderGitStatus } from '../gitstatus';
 import type { GitStatus } from '../gitstatus';
-import { SessionStarts } from '../sessionsummary';
+import { SessionStarts, SummaryFinals, dayNumbers, readReported } from '../sessionsummary';
+import type { SummaryDays } from '../summarydays';
 import type { SessionSummary } from '../sessionsummary';
 import { applySetPaused } from '../mcp/agentstate';
 import { mcpRestartSessionOp } from '../mcpsession';
@@ -18,7 +19,7 @@ import type { AgentStateTracker } from '../mcp/agentstate';
 import type { CheckpointStore } from '../checkpoints';
 import type { createRemoteOps } from '../remoteops';
 import type { Scheduler } from '../schedules';
-import { openInVSCode } from '../vscode';
+import { listTargets, openInFirstEditor, openWith, ownedAgent, realDeps } from '../openwith';
 import type { AddWorkspace, EnsureLive, SendOp } from './types';
 
 export interface AgentsIpcDeps {
@@ -32,6 +33,8 @@ export interface AgentsIpcDeps {
   remoteOps: ReturnType<typeof createRemoteOps>;
   getScheduler(): Scheduler | undefined;
   getCheckpointStore(): CheckpointStore | undefined;
+  /** Spec 085 FR-009: the numbers-only day rollup of ended sessions (main.ts creates it at start; absent in a test). */
+  getSummaryDays?(): SummaryDays | undefined;
   /** Spec 043 FR-041: the profile list freshness shared with ipc/profiles.ts; a session that ends or is removed is forgotten. */
   profileFreshness?: { forget(id: string): void };
   /** Per agent: the VS Code chat files last listed; dropped when the agent goes (previous.ts fills it). */
@@ -54,12 +57,23 @@ export interface AgentsIpcDeps {
   forgetSandboxNote?(id: string): void;
   /** Spec 052 activity log row for Restart session (spec 058 FR-022). */
   logMcp(a: AgentInfo, action: string): void;
+  /** Spec 058 FR-208, FR-209: the per-chat MCP sign-in gate every send path awaits first (`stopped` = Stop during the wait). */
+  mcpGate?(id: string): Promise<'go' | 'stopped'>;
+  /** Spec 058 FR-208: Stop ends a running gate wait; true when there was one. */
+  mcpStopWait?(id: string): boolean;
+  /** Spec 058 FR-209: main's own busy state of the chat (a turn runs or waits for the person), not the window's Thinking. */
+  mcpBusy?(id: string): boolean;
+  /** Spec 058 T179: the session ended (End session, Restart session, removed): its next message is a first message again. */
+  mcpForget?(id: string): void;
+  /** Spec 058 FR-218: the person pressed Stop: a renewal's automatic note is not sent for a failure from before it. */
+  mcpStopped?(id: string): void;
 }
 
 export function register(deps: AgentsIpcDeps): void {
   const { agents, router, agentState, opsDeps, remoteOps, mcpSecrets, logMcp, wsKey, asEffort, addMany, addWorkspace, sendOp, ensureLive, readyAdapterIds, forgetOpenSession, vsChatRefs, continued, maskHistory } = deps;
   const scheduler = deps.getScheduler;
   const sessionStarts = new SessionStarts(); // spec 085: when and from which commit each session began in this run (memory only)
+  const finals = new SummaryFinals(); // spec 085 FR-009: the numbers of a session whose card was just built for its End; added to the day rollup only when the End comes, never for one asked before an earlier End
   const checkpointStore = deps.getCheckpointStore;
   ipcHandle('agents:list', () => [...agents.values()]);
   const sessionOpts = (o: unknown): SessionOptions & { persist: boolean } => sessionOptsOf(o, asEffort); // shared with folders:create (spec 093 FR-060)
@@ -87,18 +101,45 @@ export function register(deps: AgentsIpcDeps): void {
     if (ag && ag.cwd) await sessionStarts.noteStart(id, ag.cwd); // spec 085 FR-001: before the turn can change a file; first send only
     agentState.ensure(id, agents.get(id)?.lazy);
     agentState.noteSend(id); // the window shows Thinking from the moment the user sends (app.js sendLive)
+    // spec 058 FR-208/FR-209: the chat's MCP sign-in reconnects first, at most 5 s; Stop meanwhile = nothing is sent
+    // (review of PR #1080, item 4: a gate that throws never holds the message: it goes)
+    if (deps.mcpGate && (await Promise.resolve().then(() => deps.mcpGate?.(id)).catch(() => 'go' as const)) === 'stopped') {
+      agentState.noteNotSent(id);
+      return { ok: false, notSent: true, error: 'Not sent: you stopped it while MCP sign-ins were reconnecting.' };
+    }
     const r = await sendOp(id, text, attachments, ad, plan);
     if (!r.ok) agentState.noteSendFailed(id); // and Error when the send fails (app.js sendLive)
     return r;
   });
   // Stop only interrupts the running turn (the agent returns to Ready); End session frees the runtime session.
-  ipcHandle('agents:stop', (_e, id: string) => stopTurnOp(opsDeps, id));
+  // spec 058 FR-208: Stop ends a sign-in wait. It interrupts the turn when no wait was ended, or when a turn runs anyway (review of PR
+  // #1080, item 2). A wait ended on an idle chat is not interrupted: an interrupt with no turn would leave the app expecting an abort
+  // (Claude Code's abortExpected) and swallow the next real error (third review of PR #1080).
+  ipcHandle('agents:stop', (_e, id: string) => {
+    if (typeof id === 'string') deps.mcpStopped?.(id); // spec 058 FR-218
+    if (typeof id === 'string') scheduler()?.stopPassFor(id); // spec 072 FR-007: Stop during a loop pass ends the loop; between passes it stops only that turn
+    const ended = typeof id === 'string' && deps.mcpStopWait?.(id) === true;
+    if (ended && !(deps.mcpBusy?.(id) ?? false)) return undefined;
+    return stopTurnOp(opsDeps, id);
+  });
 
   /** End session (spec 005): remote control off first (spec 054 FR-011: off on GitHub too), then the adapter frees the session. Also Restart session's first step (spec 058 FR-022). */
-  const endSession = (id: string): Promise<void> => endSessionOp({ release: (k) => remoteOps.release(k), router }, id);
+  const endSession = async (id: string): Promise<void> => {
+    scheduler()?.stopLoopFor(id, 'session'); // spec 072 FR-007: End session (and Restart session's first step) ends the session's loop
+    try {
+      await endSessionOp({ release: (k) => remoteOps.release(k), router }, id);
+    } finally {
+      deps.mcpForget?.(id); // spec 058 T179: after the session's own `stopped`, so the next message is a first message
+    }
+  };
   ipcHandle('agents:end', async (_e, id: string) => {
     if (!agents.has(id)) return;
     await endSession(id);
+    const fin = finals.take(id, Date.now()); // also starts a new epoch: a read still on its way is dropped
+    const elapsed = sessionStarts.elapsedMs(id);
+    // a card built a minute ago for an End that never came is not counted; an End with no fresh card (the window gave up waiting) still ended a session: counted as not measured
+    const day = fin ? dayNumbers(fin) : elapsed !== undefined ? { minutes: Math.floor(elapsed / 60000), uncounted: 1 } : undefined;
+    if (day) deps.getSummaryDays?.()?.add(day); // spec 085 FR-009: the user ended it
     sessionStarts.forget(id); // spec 085: the next session in this folder starts its own count
     deps.profileFreshness?.forget(id); // spec 043 FR-041
     deps.forgetSandboxNote?.(id); // spec 087
@@ -178,6 +219,7 @@ export function register(deps: AgentsIpcDeps): void {
     router.unbind(a.id);
     checkpointStore()?.forget(a.id); // spec 065 FR-006
     sessionStarts.forget(a.id); // spec 085
+    finals.drop(a.id);
     deps.profileFreshness?.forget(a.id); // spec 043 FR-041
     deps.forgetSandboxNote?.(a.id); // spec 087
     deps.browserGone?.(a.id); // spec 080 FR-023
@@ -227,13 +269,22 @@ export function register(deps: AgentsIpcDeps): void {
     return a && a.cwd ? folderGitStatus(a.cwd) : { repo: false };
   });
   // spec 085 FR-002: what the session did (files, lines, commits, time), read from git; the window passes only the id
-  ipcHandle('agents:sessionSummary', async (e, id: unknown): Promise<SessionSummary> => {
+  // FR-010: with the agent app's own totals when it reports them (bounded counts, its adapter id as the source), asked only when `final: true` (the End follows)
+  ipcHandle('agents:sessionSummary', async (e, id: unknown, final?: unknown): Promise<SessionSummary> => {
     const a = fromApp(e) && typeof id === 'string' ? agents.get(id) : undefined;
-    return a && a.cwd ? sessionStarts.summarize(a.id, a.cwd) : { ok: false, error: 'unknown agent' };
+    if (!a || !a.cwd) return { ok: false, error: 'unknown agent' };
+    const epoch = finals.begin(a.id);
+    const [sum, reported] = await Promise.all([sessionStarts.summarize(a.id, a.cwd), final === true ? readReported(router.forAgent(a.id), a.id) : undefined]); // the app's own totals only at the End: the lounge never shows them
+    if (final === true && sum.ok) finals.offer(a.id, epoch, sum, Date.now());
+    return sum.ok && reported ? { ...sum, reported } : sum;
   });
-  ipcHandle('agents:openInVSCode', (_e, id: string) => {
-    const a = agents.get(id);
-    // Only paths of agents we started: the workspace file if there is one, else the folder.
-    return a ? openInVSCode(a.workspaceFile ?? a.cwd) : { ok: false, error: 'unknown agent' };
-  });
+  // spec 009 FR-019..FR-024 (issue #685): the "Open with" menu. The window sends an agent id (and a fixed target id); the folder is main's.
+  const ownedOf = (id: unknown) => ownedAgent(agents, id);
+  const owDeps = () => realDeps((p) => shell.openPath(p), (p) => shell.showItemInFolder(p));
+  /* FR-027: one guarded path; the workspace file if there is one, else the folder, of an agent main started */
+  ipcHandle('agents:openInVSCode', (e, id: unknown) => (fromApp(e) ? openInFirstEditor(ownedOf(id), owDeps()) : { ok: false, error: 'invalid request' }));
+  ipcHandle('agents:openWithTargets', (e, id: unknown) => (fromApp(e) ? listTargets(ownedOf(id), owDeps()) : []));
+  ipcHandle('agents:openWith', (e, id: unknown, target: unknown) =>
+    fromApp(e) ? openWith(ownedOf(id), target, owDeps()) : { ok: false, error: 'invalid request' },
+  );
 }

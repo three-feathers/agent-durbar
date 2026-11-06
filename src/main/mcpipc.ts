@@ -3,7 +3,7 @@ import type { OrgMcpServer, OrgVerdict } from '../shared/orgpolicy';
 import { safeStorage } from 'electron';
 import { fromAppFrame as fromApp, ipcHandle } from './ipcguard';
 import * as path from 'path';
-import type { AgentInfo, AgentMcpReply, GlobalApp, McpFolderState, McpState } from '../shared/api';
+import type { AgentInfo, AgentMcpReply, GlobalApp, McpContextView, McpFolderState, McpState } from '../shared/api';
 import type { McpServerStatus } from '../adapters/types';
 import { setMcpOp } from './agentops';
 import type { AdapterRouter } from '../adapters/router';
@@ -15,7 +15,13 @@ import { mcpSecretValues } from './mcpmask';
 import { claudeOffKey, mergeSessionServers, offOf } from './mcpglobal';
 import { agentMcpReply, mcpRefreshOp, mcpRestartOp } from './mcpsession';
 import { McpCallTracker } from './mcpcall';
+import { classifyMcpCall, isCheckUnauthorized } from '../shared/mcpcall';
+import { McpSignInRefresher, signInKey } from './mcpsigninrefresh';
+import type { SignInRefreshPush, SignInTimers } from './mcpsigninrefresh';
+import type { McpRestartResult } from '../shared/api';
 import { mcpToolsOp } from './mcptoolsop';
+import { cleanName, McpContextTracker, serverKey } from './mcpcontextop';
+import type { McpCostStore } from './mcpcosts';
 import { McpSignInStore, SignInPoller, mcpCancelSignInOp, mcpOpenSignInOp, mcpSignInOp, serverUrlFor } from './mcpsignin';
 import { McpStore } from './mcpstore';
 import { mcpHealthUpdate } from '../shared/mcphealth';
@@ -68,6 +74,8 @@ export function registerMcpIpc(deps: {
   appOf?(agentId: string): string | undefined;
   /** Spec 052 activity log row for an MCP restart (spec 058 FR-021). */
   log?(a: AgentInfo, action: string): void;
+  /** Spec 058 FR-229 (issue #1229): starts (resumes) a chat's session the way a send does, without a message: the Sign in of an idle chat. */
+  ensureLive?(a: AgentInfo): Promise<void>;
   /** Spec 058 FR-065: opens a sign-in page in the system browser (main's `shell.openExternal`); only called after the user's click. */
   openUrl?(url: string): Promise<void>;
   /** The clock of the sign-in store's 10-minute limit, and the timers of its 3-second poll (tests). */
@@ -78,7 +86,38 @@ export function registerMcpIpc(deps: {
   /** The same from the last read, for the often repainted list (never waits). */
   orgMcpNow?(agentId: string, s: OrgMcpServer): OrgVerdict | undefined;
   orgTool?(agentId: string, server: string, tool: string): Promise<OrgVerdict | undefined>;
-}): { optionsFor(agentId: string): { mcpServers: Record<string, McpServerSpec>; disabledMcpServers: string[]; disabledMcpTools?: Record<string, string[]> }; secretValuesFor(agentId: string): string[] } {
+  /** Spec 100 FR-003: new MCP figures for the window. */
+  pushContext?(id: string, view: McpContextView): void;
+  /** Spec 100 FR-004, FR-012: the last figures, in their own file: never in the store that holds the user's servers and secrets. */
+  costs?(): McpCostStore | undefined;
+  /** Spec 100 FR-012: the names of one agent app's own user list, or undefined when that list could not be read. */
+  globalList?(app: GlobalApp): string[] | undefined;
+  /** Spec 058 FR-205..FR-215: the automatic sign-in refresh (missing: it never runs). */
+  signInRefresh?: {
+    /** Monotonic clock (`performance.now()`), never the wall clock. */
+    now(): number;
+    /** The Settings switch (FR-213). */
+    on(): boolean;
+    platform: string;
+    /** Main's own busy state of the chat (a turn runs or waits for the person; spec 041), not the window's Thinking. */
+    busy(agentId: string): boolean;
+    push(p: SignInRefreshPush): void;
+    waitMs?: number;
+    timers?: SignInTimers;
+    allowReadOnly?: boolean;
+    /** Spec 058 FR-218, FR-219: the renewal timings (tests inject them). */
+    failCooldownMs?: number;
+    /** Spec 058 FR-218: Durbar's own spending limit or the agent app's usage limit holds this chat (main's agentState `onBreak`). */
+    limited?(agentId: string): boolean;
+    /** Spec 058 FR-218: send the agent the one automatic note (main shows it in the chat and sends it through the adapter). */
+    nudge?(agentId: string, name: string): Promise<void>;
+    /** Spec 058 FR-227: Settings > Diagnostics (off by default). */
+    diagnostics?(): boolean;
+    /** Spec 058 FR-223, FR-225: the check's times (tests inject them). */
+    checkFreshMs?: number;
+    checkTimeoutMs?: number;
+  };
+}): { optionsFor(agentId: string): { mcpServers: Record<string, McpServerSpec>; disabledMcpServers: string[]; disabledMcpTools?: Record<string, string[]> }; secretValuesFor(agentId: string): string[]; signInRefresh: McpSignInRefresher; hidesEvent(e: { type: string; requestId?: unknown }): boolean } {
   const { agents, router, dev } = deps;
   const store = deps.store;
   /** Per agent id, this run only: servers the user switched off for that agent. */
@@ -124,18 +163,187 @@ export function registerMcpIpc(deps: {
   };
   /** Spec 058 FR-187: the class of each server's last failed tool call (a word only; the text is classified and dropped here). */
   const calls = new McpCallTracker();
+  /** Spec 058 FR-207: how many `mcp` reports each session sent (a reconnect's result is read from a report that came after it). */
+  const reports = new Map<string, number>();
+  /** Spec 058 FR-215: elicitation requests main declined during an automatic reconnect (never shown to the window). */
+  const hidden = new Set<string>();
+  /**
+   * Spec 058 FR-205..FR-215: the automatic sign-in refresh. Built from this module's own maps (the chat's last report, its off list, the
+   * open sign-ins, the restarts, the call classes and the organization verdicts) and the existing per-server restart; no vendor here.
+   */
+  const policyOf = (agentId: string, name: string): boolean => {
+    if (calls.get(agentId, name) === 'policy') return true;
+    try {
+      return deps.orgMcpNow?.(agentId, serverDefOf(agentId, name))?.refuse === true;
+    } catch {
+      return false;
+    }
+  };
+  /** Spec 058 FR-218: a built-in server of the agent app is never renewed. */
+  const isBuiltin = (agentId: string, name: string): boolean => {
+    try {
+      return cli().servers.some((v) => v.name === name && v.origin === 'builtin');
+    } catch {
+      return false;
+    }
+  };
+  /** Spec 058 FR-218: a folder extra with a header of Durbar's own (a static bearer) is not an OAuth sign-in; names only, never a value. */
+  const hasStaticHeader = (agentId: string, name: string): boolean => {
+    const a = agents.get(agentId);
+    try {
+      const v = a ? store().list(keyOf(a)).find((x) => x.name === name) : undefined;
+      return !!v && Array.isArray(v.headers) && v.headers.length > 0;
+    } catch {
+      return false;
+    }
+  };
+  const rd = deps.signInRefresh;
+  const refresher = new McpSignInRefresher({
+    now: rd ? () => rd.now() : () => 0,
+    on: rd ? () => rd.on() : () => false,
+    platform: rd?.platform ?? process.platform,
+    allowReadOnly: rd?.allowReadOnly,
+    waitMs: rd?.waitMs,
+    timers: rd?.timers,
+    wall: deps.now ?? Date.now, // spec 058 FR-221: only for "Renewed 12:40" on the row
+    failCooldownMs: rd?.failCooldownMs,
+    nudge: rd?.nudge,
+    diagnostics: rd?.diagnostics, // spec 058 FR-227
+    checkFreshMs: rd?.checkFreshMs,
+    checkTimeoutMs: rd?.checkTimeoutMs,
+    // spec 058 FR-223, FR-225 (issue #1205): one real round-trip (`listMcpTools`: its FR-163 guard refuses a server that is not connected); only a fixed outcome
+    // leaves here, never the text
+    check: async (agentId, name) => {
+      const ad = router.forAgent(agentId);
+      if (!ad || typeof ad.listMcpTools !== 'function' || ad.capabilities.mcpTools !== true) return 'error';
+      try {
+        await ad.listMcpTools(agentId, name);
+        return 'ok';
+      } catch (err) {
+        return isCheckUnauthorized(err instanceof Error ? err.message : String(err)) ? 'unauthorized' : 'error'; // the narrow signal, not the wide word (FR-225)
+      }
+    },
+    view: (agentId) => {
+      const a = agents.get(agentId);
+      const ad = a ? router.forAgent(a.id) : undefined;
+      if (!a || !ad || !rd) return undefined;
+      const offNow = offFor(a.id);
+      return {
+        adapterId: ad.id,
+        takesPart: typeof ad.restartMcpServer === 'function' && ad.capabilities.mcpSignInReconnect === true,
+        renewable: ad.capabilities.mcpBackgroundRenew === true, // spec 058 FR-218
+        canCheck: typeof ad.listMcpTools === 'function' && ad.capabilities.mcpTools === true, // spec 058 FR-223
+        limited: rd.limited?.(a.id) === true,
+        live: ad.isLive(a.id),
+        busy: rd.busy(a.id),
+        readOnly: a.permMode === 'read-only',
+        // FR-207 (`real:` 2026-11-03, Copilot, Linux): under an OS sandbox that covers the app's MCP servers the reconnect renewed nothing,
+        // so there only the sign-in line shows; a sandbox in any state but off counts (fail closed)
+        ...(a.sandbox && a.sandbox.state !== 'off' && Array.isArray(a.sandbox.covers) && a.sandbox.covers.includes('mcp') ? { renews: false } : {}),
+        servers: () => (live.get(a.id) ?? []).map((x) => {
+          const url = serverUrlOf(a.id, x.name);
+          // the transport the app reported; else (`real:` 2026-11-03, Copilot's `list` names no transport) http when Durbar knows the
+          // server by an http(s) address (a folder extra, a list Durbar passes, the Copilot CLI list); unknown = not remote (FR-206)
+          const transport = x.transport ?? (typeof url === 'string' && /^https?:\/\//i.test(url) ? 'http' : undefined);
+          return {
+          name: x.name,
+          status: x.status,
+          ...(transport ? { transport } : {}),
+          key: signInKey(ad.id, x.name, url ?? `folder:${keyOf(a)}`), // spec 058 FR-210: a server known by no address is told apart by its folder, so same-name servers of two folders are not one
+          ...(offNow.has(x.name) ? { off: true } : {}),
+          ...(signIns.has(a.id, x.name) || signIns.starting(a.id, x.name) ? { signInOpen: true } : {}), // a sign-in under way (a reservation) counts as open: Sign in again must not meet a renewal
+          ...(restarting.has(`${a.id}\0${x.name}`) ? { restarting: true } : {}),
+          ...(policyOf(a.id, x.name) ? { policy: true } : {}),
+          ...(isBuiltin(a.id, x.name) ? { builtin: true } : {}),
+          ...(hasStaticHeader(a.id, x.name) ? { staticAuth: true } : {}),
+          };
+        }),
+      };
+    },
+    reconnect: async (agentId, name) => {
+      const before = reports.get(agentId) ?? 0;
+      const r = await mcpRestartOp(restartDeps, restarting, agentId, name, { auto: true });
+      return { ...r, fresh: (reports.get(agentId) ?? 0) !== before };
+    },
+    after: (agentId, name, error) => {
+      const st = (live.get(agentId) ?? []).find((x) => x.name === name);
+      return { status: st?.status, errorClass: st?.errorClass, policy: classifyMcpCall(error) === 'policy' || policyOf(agentId, name) };
+    },
+    push: (p) => rd?.push(p),
+    log: (agentId, line) => {
+      const a = agents.get(agentId);
+      if (a) deps.log?.(a, line);
+    },
+  });
+  /** Spec 100: what each session's MCP tool definitions take in its window (FR-003, FR-004). */
+  const contexts = new McpContextTracker({
+    agents,
+    router,
+    secrets: secretValuesFor,
+    live: (id) => live.get(id) ?? [],
+    off: (id) => off.get(id) ?? new Set<string>(),
+    push: (id, view) => deps.pushContext?.(id, view),
+    persist: (id, servers, at) => {
+      const app = deps.appOf?.(id);
+      if (!app) return;
+      const list = deps.globalList?.(app as GlobalApp);
+      deps.costs?.()?.set(app, servers, at, (s) => {
+        if (!list) return null;
+        const raw = list.find((n) => serverKey(n) === s.key);
+        if (raw === undefined) return undefined;
+        // the mark is compared with lists cleaned without session values: a name holding one is not marked, so that value is never written (its figure stays until the cap)
+        const plain = cleanName(raw, []);
+        return cleanName(raw, secretValuesFor(id)) === plain ? plain : undefined;
+      });
+    },
+    now: deps.now,
+  });
   router.onEvent((e) => {
     calls.onEvent(e);
+    // spec 058 FR-218: the calls to each MCP server that run now (a renewal waits for another one), then a failed call of class `auth` (the
+    // same class the row's word comes from) is renewed at once
+    if (e.type === 'toolCall' && e.mcpServer && typeof e.callId === 'string') {
+      if (e.phase === 'start') refresher.noteCall(e.sessionId, e.mcpServer, e.callId, 'start');
+      else if (e.phase === 'complete') {
+        refresher.noteCall(e.sessionId, e.mcpServer, e.callId, 'ok'); // a success also re-arms the note
+        const ca = agents.get(e.sessionId), cad = router.forAgent(e.sessionId);
+        if (ca && cad) refresher.clearKey(signInKeyOf(ca.id, cad.id, e.mcpServer)); // spec 058 FR-229: a call that worked: this server's sign-in is good (this key only, not a same-name server of another folder)
+      }
+      else if (e.phase === 'failed') refresher.noteCall(e.sessionId, e.mcpServer, e.callId, 'end');
+    }
+    if (e.type === 'toolCall' && e.phase === 'failed' && e.mcpServer && calls.get(e.sessionId, e.mcpServer) === 'auth') refresher.noteFailure(e.sessionId, e.mcpServer);
     if (e.type === 'mcp') {
       live.set(e.sessionId, e.servers);
+      reports.set(e.sessionId, (reports.get(e.sessionId) ?? 0) + 1); // spec 058 FR-207: a report after a reconnect is a fresh one
       calls.onServers(e.sessionId, e.servers); // FR-188: a server that came back to connected drops its call class
       health.set(e.sessionId, mcpHealthUpdate(health.get(e.sessionId), e.servers, Date.now()));
       signIns.onServers(e.sessionId, e.servers); // connected: the sign-in is finished
+      refresher.noteServers(e.sessionId, e.servers); // spec 058 FR-218: a server that was connected and now needs a sign-in is a failure (second trigger)
     } else if (e.type === 'status' && e.status === 'stopped') {
       live.delete(e.sessionId);
+      reports.delete(e.sessionId);
       health.delete(e.sessionId);
       signIns.dropAgent(e.sessionId); // End session, Restart session (it ends the session first), a failed reconnect
+      refresher.dropChat(e.sessionId); // spec 058 FR-222
     }
+    // spec 058 FR-205: the chat's last response ended (the turn-end signal the scheduler also reads)
+    if (e.type === 'status' && !e.agentId && (e.status === 'idle' || e.status === 'error' || e.status === 'stopped')) refresher.turnEnded(e.sessionId);
+    // spec 058 FR-215: an elicitation from a server under Durbar's automatic reconnect, while no turn runs, is declined (no card unasked)
+    if (e.type === 'question' && e.phase === 'asked' && e.elicitation && !e.agentId) {
+      const src = e.elicitation.source;
+      const rd = deps.signInRefresh;
+      if (typeof src === 'string' && rd && refresher.underAuto(e.sessionId, src) && !rd.busy(e.sessionId)) {
+        try {
+          router.forAgent(e.sessionId)?.answerElicitation?.(e.sessionId, e.requestId, { action: 'decline' });
+        } catch {
+          /* the request ends with the reconnect anyway */
+        }
+        refresher.noteDeclined(e.sessionId, src);
+        if (hidden.size >= 200) hidden.delete(hidden.values().next().value as string); // bounded
+        hidden.add(e.requestId);
+      }
+    }
+    contexts.onEvent(e); // after `live` is current
   });
 
   /** The Copilot CLI list is read again on every call, so edits of the file show up the next time a screen opens. */
@@ -156,7 +364,6 @@ export function registerMcpIpc(deps: {
       key,
       name: nameOfKey(key),
       servers: s.list(key),
-      legacy: s.legacyList(),
       secretsPersist: s.secretsPersist,
       skipped: s.forSession(key, [], names).skipped,
       cliNames: names,
@@ -176,6 +383,8 @@ export function registerMcpIpc(deps: {
   ipcHandle('mcp:setCli', (_e, name: unknown, enabled: unknown) => {
     if (typeof name !== 'string' || !name || name.length > 64) return { ok: false };
     store().setAmbientDisabled(name, enabled !== true);
+    refresher.clearPending(undefined, name); // spec 058 FR-221: a waiting failure mark is no longer wanted
+    refresher.clearBlock(undefined, name); // spec 058 FR-210: a switch change
     return { ok: true };
   });
   ipcHandle('mcp:folderState', (_e, key: unknown): McpFolderState | { ok: false; error: string } => (knownKey(key) ? folderState(key) : bad));
@@ -187,10 +396,13 @@ export function registerMcpIpc(deps: {
       return { ok: false, error: 'Could not save the server list.' };
     }
   });
-  ipcHandle('mcp:remove', (_e, key: unknown, name: unknown) => ({ ok: knownKey(key) && typeof name === 'string' && store().remove(key, name) }));
+  ipcHandle('mcp:remove', (_e, key: unknown, name: unknown) => {
+    const ok = knownKey(key) && typeof name === 'string' && store().remove(key, name);
+    if (ok && !store().extraNames([]).includes(name as string)) deps.costs?.()?.forget(cleanName(name as string, [])); // spec 100 FR-012
+    return { ok };
+  });
   ipcHandle('mcp:setEnabled', (_e, key: unknown, name: unknown, enabled: unknown, trustAck: unknown) =>
     knownKey(key) && typeof name === 'string' ? store().setEnabled(key, name, enabled === true, trustAck === true) : { ok: false, error: 'Unknown server.' });
-  ipcHandle('mcp:moveLegacy', (_e, name: unknown, key: unknown) => (knownKey(key) && typeof name === 'string' ? store().moveLegacy(name, key, cliNames()) : bad));
   /** Per-folder import from `.vscode/mcp.json` (spec 020 FR-020): preview, then apply the ticked ids. Read-only for the file; imported servers arrive off and untrusted. */
   ipcHandle('mcp:importPreview', (_e, key: unknown) => {
     if (!knownKey(key)) return { ...bad, label: '.vscode/mcp.json', files: [], items: [], digest: '', skipped: 0 };
@@ -205,7 +417,6 @@ export function registerMcpIpc(deps: {
       return { ok: false, error: 'Could not save the server list.', imported: [], failed: [] };
     }
   });
-  ipcHandle('mcp:removeLegacy', (_e, name: unknown) => ({ ok: typeof name === 'string' && store().removeLegacy(name) }));
 
   /** Spec 058 FR-078: what Agent Durbar passed as disabled at the last session start, and what the user switched since: a runtime `disabled` for these is ours, not the agent app's. */
   const launched = new Map<string, Set<string>>();
@@ -223,7 +434,7 @@ export function registerMcpIpc(deps: {
     // Claude sessions; Codex reports its own list as the session runs (runtime rows).
     const gn = deps.globalNames?.() ?? {};
     const all = cli().servers;
-    return agentMcpReply({
+    const reply = agentMcpReply({
       a,
       ad: router.forAgent(a.id),
       live: live.get(a.id) ?? [],
@@ -240,20 +451,41 @@ export function registerMcpIpc(deps: {
       health: health.get(a.id),
       lastCall: (n) => calls.get(a.id, n),
       signIn: (n) => signIns.view(a.id, n),
+      renewedAt: (n) => refresher.renewedAt(a.id, n), // spec 058 FR-221
+      signInBlocked: (n) => signInBlockedOf(a.id, n), // spec 058 FR-229
+      checkUnknown: (n) => refresher.checkUnknown(a.id, n), // spec 058 FR-225
       serverUrl: (n) => serverUrlOf(a.id, n),
       orgBlocked: deps.orgMcpNow ? (n) => deps.orgMcpNow?.(a.id, serverDefOf(a.id, n)) : undefined,
       global: gn,
       builtin: new Set(all.filter((x) => x.origin === 'builtin').map((x) => x.name)),
     });
+    return { ...reply, servers: reply.servers.map((x) => ({ ...x, costKey: serverKey(x.name) })) }; // spec 100: a row finds its figure whatever masking did to the shown name
   });
   /** Spec 058 FR-190: read the agent app's whole server list again (the dialog opening, Refresh); one read at a time per agent. */
   const refreshing = new Map<string, Promise<void>>();
   const lastRead = new Map<string, number>();
   ipcHandle('agents:mcpRefresh', (e, id: unknown, manual?: unknown) => (fromApp(e) ? mcpRefreshOp({ agents, router, lastRead, now: deps.now }, refreshing, id, manual) : { ok: false, supported: false, error: 'invalid request' }));
-  /** Spec 058 FR-021: restart one server of this agent's running session; one at a time per server. */
-  const restarting = new Set<string>();
-  ipcHandle('agents:mcpRestart', (_e, id: unknown, name: unknown) =>
-    mcpRestartOp({ agents, router, live: (k) => live.get(k) ?? [], off: (k) => new Set([...(off.get(k) ?? []), ...store().ambientDisabled(), ...offOf('claude', store().ambientDisabled())]), secrets: secretValuesFor, log: deps.log }, restarting, id, name));
+  /** Spec 058 FR-021, FR-209: restart one server of this agent's running session; one at a time per server, a second caller shares it. */
+  const restarting = new Map<string, Promise<McpRestartResult>>();
+  const offFor = (k: string): Set<string> => new Set([...(off.get(k) ?? []), ...store().ambientDisabled(), ...offOf('claude', store().ambientDisabled())]);
+  const restartDeps = { agents, router, live: (k: string) => live.get(k) ?? [], off: offFor, secrets: secretValuesFor, log: deps.log };
+  ipcHandle('agents:mcpRestart', async (_e, id: unknown, name: unknown) => {
+    if (typeof id === 'string' && typeof name === 'string') refresher.clearPending(id, name); // spec 058 FR-221: the person's own action wins over a waiting mark
+    const r = await mcpRestartOp(restartDeps, restarting, id, name);
+    // FR-210: the person's own Restart lets automatic reconnects try this server again
+    const ad = typeof id === 'string' ? router.forAgent(id) : undefined;
+    if (r.ok && ad && typeof name === 'string') refresher.clearBlock(ad.id, name);
+    return r;
+  });
+  /** Spec 058 FR-229: Durbar's renewal record of this server (the same key the renewal wrote it under). */
+  const signInKeyOf = (agentId: string, adapterId: string, name: string): string => {
+    const a = agents.get(agentId);
+    return signInKey(adapterId, name, serverUrlOf(agentId, name) ?? (a ? `folder:${keyOf(a)}` : undefined));
+  };
+  const signInBlockedOf = (agentId: string, name: string): boolean => {
+    const a = agents.get(agentId), ad = router.forAgent(agentId);
+    return !!a && !!ad && refresher.isBlocked(ad.id, name, serverUrlOf(agentId, name) ?? `folder:${keyOf(a)}`);
+  };
   /** Spec 058 FR-075/FR-185: the server's own address, for the "different site" line, from the lists this agent's app uses (`serverUrlFor`). */
   const serverUrlOf = (agentId: string, name: string): string | undefined => {
     const a = agents.get(agentId);
@@ -282,8 +514,15 @@ export function registerMcpIpc(deps: {
     }
   };
   /** Spec 058 FR-065: Sign in, Open sign-in page, Cancel. Window only; main holds the address, the window gets the host. */
-  ipcHandle('agents:mcpSignIn', (e, id: unknown, name: unknown, again?: unknown) =>
-    fromApp(e) ? mcpSignInOp({ agents, router, live: (k) => live.get(k) ?? [], secrets: secretValuesFor, serverUrl: serverUrlOf }, signIns, id, name, again) : { ok: false, error: 'invalid request' });
+  ipcHandle('agents:mcpSignIn', async (e, id: unknown, name: unknown, again?: unknown) => {
+    if (!fromApp(e)) return { ok: false, error: 'invalid request' };
+    if (typeof id === 'string' && typeof name === 'string') refresher.clearPending(id, name); // spec 058 FR-221
+    const r = await mcpSignInOp({ agents, router, live: (k) => live.get(k) ?? [], secrets: secretValuesFor, serverUrl: serverUrlOf, blocked: (aid, n) => signInBlockedOf(aid, n), off: (aid, n) => off.get(aid)?.has(n) === true, orgRefused: (aid, n) => { try { return deps.orgMcpNow?.(aid, serverDefOf(aid, n))?.refuse === true; } catch { return false; } }, ensureLive: deps.ensureLive, settle: (aid, n) => Promise.all([refresher.quiesce(aid, n), restarting.get(`${aid}\0${n}`)?.then(() => undefined, () => undefined)]).then(() => undefined) }, signIns, id, name, again);
+    // FR-210: the person signs in: automatic reconnects may try this server again
+    const ad = typeof id === 'string' ? router.forAgent(id) : undefined;
+    if (r.ok && ad && typeof name === 'string') refresher.clearBlock(ad.id, name);
+    return r;
+  });
   ipcHandle('agents:mcpOpenSignIn', (e, id: unknown, name: unknown, host: unknown) => (fromApp(e) ? mcpOpenSignInOp(signIns, agents, id, name, host) : { ok: false, error: 'invalid request' }));
   ipcHandle('agents:mcpCancelSignIn', (e, id: unknown, name: unknown) => (fromApp(e) ? mcpCancelSignInOp({ agents, router }, signIns, id, name) : { ok: false, error: 'invalid request' }));
   /** Spec 069 FR-061: the tools turned off for one server in this agent's folder (applies to new sessions and after Restart session). */
@@ -294,14 +533,39 @@ export function registerMcpIpc(deps: {
   });
   /** Spec 069 FR-032: the tools of one server of this agent's running session, masked and cut. */
   ipcHandle('agents:mcpTools', (_e, id: unknown, name: unknown) => mcpToolsOp({ agents, router, secrets: secretValuesFor, orgTool: deps.orgTool }, id, name));
+  /** Spec 100 FR-003: the last figures; `open` asks first, at most once a minute. Names and numbers only (FR-040). */
+  ipcHandle('agents:mcpContext', (_e, id: unknown, open: unknown) => contexts.get(id, open));
+  /** Spec 100 FR-012: the last figures per agent app, for Settings. */
+  ipcHandle('mcp:costs', () => {
+    const c = deps.costs?.();
+    if (!c) return { ok: false, costs: {} };
+    // FR-012: a figure of a server its app's own list no longer has goes; a list that could not be read proves nothing
+    const lists: Record<string, string[]> = {};
+    for (const app of ['copilot', 'claude', 'codex'] as const) {
+      const l = deps.globalList?.(app);
+      if (l) lists[app] = l.map((n) => cleanName(n, []));
+    }
+    c.prune(lists);
+    return { ok: true, costs: c.all() };
+  });
   ipcHandle('agents:setMcp', async (_e, id: unknown, name: unknown, enabled: unknown) => {
+    if (typeof id === 'string' && typeof name === 'string') refresher.clearPending(id, name); // spec 058 FR-221
     const r = await setMcpOp({ agents, router, wsKey: keyOf, orgMcpRefusal: async (a, n) => { const v = await deps.orgMcp?.(a.id, serverDefOf(a.id, n)); return v?.refuse ? `${v.why}: it cannot be switched on.` : undefined; } }, off, id, name, enabled);
     if (r.ok && typeof id === 'string' && typeof name === 'string') { const t = touched.get(id) ?? new Set<string>(); t.add(name); touched.set(id, t); }
+    const ad = typeof id === 'string' ? router.forAgent(id) : undefined;
+    if (r.ok && ad && typeof name === 'string') refresher.clearBlock(ad.id, name); // spec 058 FR-210: a switch change
     return r;
   });
 
   return {
     secretValuesFor,
+    signInRefresh: refresher,
+    /** Spec 058 FR-215: an elicitation main declined during an automatic reconnect is not passed to the window. */
+    hidesEvent(e) {
+      if (e.type !== 'question' || typeof e.requestId !== 'string' || !hidden.has(e.requestId)) return false;
+      if ((e as { phase?: unknown }).phase !== 'asked') hidden.delete(e.requestId); // its answer or cancel ends it (review of #1080, item 7)
+      return true;
+    },
     optionsFor(agentId: string) {
       const a = agents.get(agentId);
       if (!a) return { mcpServers: {}, disabledMcpServers: [...(off.get(agentId) ?? [])] };

@@ -12,7 +12,6 @@ type Total = { calls: number; inTokens: number; outTokens: number; nano: number;
 const U = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'usagetotals.js')) as {
   createLedger: () => { record: (room: string, e: unknown) => void; room: (id: string) => Total; office: () => Total };
   fmtTotal: (t: Total) => string;
-  fmtShort: (t: Total) => string;
 };
 const AIU = 1e9;
 
@@ -67,7 +66,6 @@ for (const e of codexUsage) assert.ok(!('costUsd' in e) && !('costBasis' in e) &
   assert.strictEqual(t.unreported, 2);
   assert.strictEqual(t.nano, 0);
   assert.strictEqual(U.fmtTotal(t), 'cost not reported');
-  assert.strictEqual(U.fmtShort(t), 'n/r');
   assert.ok(!/AIU|\$|USD/.test(U.fmtTotal(t)), 'no AIU or dollar figure');
 }
 
