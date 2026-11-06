@@ -67,6 +67,8 @@ const NOT_AFTER = '(?![A-Za-z0-9])';
 /** A body that may hold `_`, `-` or `.` must have a digit near its start and not read as lower-case words (`cfut_cross_validation_results_v2` is a name, not a key). Bounded lookaheads. */
 const dg = (cls: string, min: number): string => String.raw`(?![a-z]{1,32}(?:[_-][a-z0-9]{1,32}){2,16}(?![A-Za-z0-9_-]))(?=${cls}{0,128}[0-9])${cls}{${min},}`;
 const W = '[A-Za-z0-9_-]';
+/** A token whose body is letters and digits only, written back to back (`ghp_AAAA…ghp_BBBB…`, issue #1233). The body used to stop at the `_` of the next prefix, so that prefix was swallowed and the START rule (a letter precedes it) hid nothing of the second token. Now the body may hold the `_` that follows `lead` (the prefix without its `_`), so glued tokens are one match. One flat repeat of a fixed-width choice, so still linear. */
+const glued = (lead: string, min: number): string => String.raw`${lead}_(?:[A-Za-z0-9]|(?<=${lead})_){${min},}`;
 const PREFIXED = [
   // cloud
   String.raw`(?:ABIA|ACCA|A3T[A-Z0-9])(?=[A-Z]{0,15}[0-9])[A-Z0-9]{16}${NOT_AFTER}`, // the rarer AWS access key ids need a digit: `ACCAGTTGCATGCATGCATG` is DNA
@@ -86,7 +88,7 @@ const PREFIXED = [
   String.raw`gsk_[A-Za-z0-9]{40,}|pplx-[A-Za-z0-9]{40,}`,
   String.raw`(?<![-_])hf_[A-Za-z0-9]{30,}|api_org_[A-Za-z0-9]{30,}|(?<![-_])r8_[A-Za-z0-9]{30,}|tvly-${dg(W, 20)}|lsv2_[a-z]{2}_${dg('[A-Za-z0-9_]', 30)}`, // Hugging Face (letters only is real), Replicate, Tavily, LangSmith. A two-letter prefix does not start after `-` or `_`: base64url holds those by chance
   // package registries
-  String.raw`npm_[A-Za-z0-9]{36,}|pypi-Ag${dg(W, 50)}|rubygems_[a-f0-9]{48}|CLOJARS_[A-Za-z0-9]{60}|dckr_pat_${dg(W, 20)}`, // npm, PyPI, RubyGems, Clojars, Docker
+  String.raw`${glued('npm', 36)}|pypi-Ag${dg(W, 50)}|rubygems_[a-f0-9]{48}|CLOJARS_[A-Za-z0-9]{60}|dckr_pat_${dg(W, 20)}`, // npm, PyPI, RubyGems, Clojars, Docker
   // chat and mail (Slack, Discord, Telegram tokens: their own shapes below)
   String.raw`SG\.${dg('[A-Za-z0-9_.=-]', 40)}|(?<![-_])key-[a-f0-9]{32}${NOT_AFTER}|[a-f0-9]{32}-us[0-9]{1,2}${NOT_AFTER}|xkeysib-[a-f0-9]{64}-[A-Za-z0-9]{16}|re_[A-Za-z0-9]{8}_[A-Za-z0-9]{24}|[0-9]{15,16}(?:\||%7[Cc])${W}{27,40}${NOT_AFTER}`, // SendGrid, Mailgun, Mailchimp, Brevo, Resend, Facebook
   // payment
@@ -154,7 +156,7 @@ function maskJwts(s: string, mask: string): string {
  * (review of #1015: a guard on `glpat-`, a narrower start and a later prefix taking the head of an older token each did; `scripts/test-redact-shapes.ts` pins it). Guard a new shape, never one of these.
  */
 const HELD_SHAPES: Array<RegExp | Guarded | ((s: string, mask: string) => string)> = [
-  shape(String.raw`gh[pousr]_[A-Za-z0-9]{20,}`),
+  shape(glued('gh[pousr]', 20)),
   shape(String.raw`github_pat_[A-Za-z0-9_]{20,}`),
   shape(String.raw`glpat-[A-Za-z0-9_.-]{20,}`), // GitLab personal access token (spec 093: a clone URL's user part must not be one); no digit guard, 3% of real ones have none. `.`: the routable form
   shape(String.raw`sk-(?:ant-)?[A-Za-z0-9_-]{20,}`), // OpenAI, Anthropic, DeepSeek, OpenRouter. `sk-ant-` also glued to a word: below

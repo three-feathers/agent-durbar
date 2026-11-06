@@ -360,6 +360,24 @@ for (const [start, more] of [['AK' + 'IA' + up(16), 'A'], ['AK' + 'IA' + up(16),
 
 // Linear, part 2 (adversarial runs): the `shapes` part of test-redact-growth.ts.
 
+// Glued tokens (issue #1233, spec 012 FR-169): each token of a back-to-back run is masked whole, not only the first.
+{
+  const second = an(36).split('').reverse().join('');
+  for (const t of ['gh' + 'p_', 'gh' + 'o_', 'gh' + 'u_', 'gh' + 's_', 'gh' + 'r_', 'np' + 'm_', 'github' + '_pat_', 'sk' + '-', 'xo' + 'xb-']) {
+    const n = t.startsWith('github') ? 82 : 36;
+    const bodies = [an(n), an(n + 3).slice(3), second.slice(0, 36).padEnd(n, 'q')];
+    for (const k of [2, 3]) {
+      const text = bodies.slice(0, k).map((b) => t + b).join('');
+      const out = redact(text, {});
+      for (const b of bodies.slice(0, k)) assert.ok(!out.includes(b.slice(0, 12)) && !out.includes(b.slice(-12)), `glued x${k}: ${t}… leaves a body readable in ${out.replace(/[A-Za-z0-9]{12,}/g, '<LEAK>')}`);
+      assert.strictEqual(out, '[redacted]', `glued x${k}: ${t}… is one mask`);
+    }
+  }
+  // A glued short rest after a token (no full body) is still taken, as before; a space or a word between keeps both masked
+  assert.ok(!redact('gh' + 'p_' + an(36) + 'gh' + 'p_' + an(8), {}).includes('gh' + 'p_'), 'a short glued rest');
+  assert.strictEqual(redact(['gh' + 'p_' + an(36), 'gh' + 'o_' + an(36)].join(' x '), {}), '[redacted] x [redacted]', 'separated tokens');
+}
+
 // A real image, whole, stays (every repo image: test-redact-images.ts).
 {
   const png = fs.readFileSync(path.join(__dirname, '..', '..', 'build', 'icon.png')).toString('base64');
