@@ -50,8 +50,8 @@ description: "Tasks for spec 084: contacts, and sending the message box to a per
   - AC5: a URL over 2,000 characters gives `{error: 'too-long', encodedLength}`, and the `copyOnly` form drops `message`/`body`/`text`.
   - AC6: `CONTACT_LINK_ALLOWLIST` is the one constant with the five prefixes of FR-040 (a static test finds no other copy of them in `src/`); every result starts with one of its entries; 10,000 generated channels and texts (Unicode, emoji, RTL, `&`, `#`, `%`, CR/LF, NUL) and FR-004's hostile addresses (non-ASCII look-alikes included) never give another prefix or an extra query parameter (parse the result with `URL` and compare its parameter names; the test imports the constant) (SC-003).
   - AC7: `scripts/test-contactlinks.ts` (new `test:contactlinks`) covers AC1..AC6; it runs on all three CI OSes.
-- [ ] T012 [P] `maskOutgoing(text, values)` in `src/shared/redact.ts`. [FR-033, SC-002]
-  - AC1: masks known values (≥ 4 characters, longest first), then `redact`, then `redactMarkdown` token runs; returns the masked text and `changed`.
+- [x] T012 [P] `maskOutgoing(text, values)` in `src/shared/redact.ts`. [FR-033, SC-002]
+  - AC1: masks known values (≥ 4 characters, longest first), then the token runs across Markdown marks, then `redact`; returns the masked text and `changed`. (Order reworded 2026-11-06, review of T012: the code was right, `redact` first leaves a split token's tail.)
   - AC2: every token shape of `test-redact`'s corpus planted in a message, inside Markdown and split by `**` or a backtick, gives `changed: true`.
   - AC3: plain text with `release_notes`, emails and issue numbers gives `changed: false`.
   - AC4: if 083's `maskNoteText` exists, both share one core (a test calls both on the corpus and compares); `redact.ts` still has no imports.

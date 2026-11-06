@@ -1570,8 +1570,17 @@ export function createDebugSink(file: string, env: Env, append: (file: string, d
 
 // ---- Notes (spec 083 FR-005, issue 699) ----
 
-/** Characters that can sit inside a token without being part of it: emphasis, code, strike, link brackets, a Markdown escape's backslash, zero-width characters. */
-export const NOTE_MARK = /[*`~[\]\\​-‍﻿]/;
+/**
+ * Characters that can sit inside a token without being part of it: emphasis, code, strike, link brackets, a Markdown escape's backslash,
+ * control characters other than tab, line feed and carriage return (C0, DEL, C1; CR ends a line like LF, and a mark there would make
+ * every CRLF line end cost the convsearch mask budget, `maskWork`) and the invisible format characters a viewer
+ * may drop (soft hyphen, combining grapheme joiner, Arabic letter mark, Hangul fillers, Khmer vowel inherents, Mongolian selectors,
+ * zero-width and direction marks, bidi embeddings and isolates, word joiner and invisible operators, BOM). Not in it (spec 084 FR-033
+ * `[KNOWN GAP]`, 083 *Changes* 2026-11-06): the variation selectors U+FE00..FE0F (U+FE0F is in common emoji such as a warning sign,
+ * and any mark makes `maskWork` price the whole message as marked, so it dropped long messages from search), and, per UTF-16 code
+ * unit, the astral tag characters (U+E0000..).
+ */
+export const NOTE_MARK = /[*`~[\]\\\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180b-\u180f\u200b-\u200f\u202a-\u202e\u2060-\u206f\u3164\ufeff\uffa0]/;
 const NOTE_ESCAPABLE = '\\`*_{}[]()#+-.!~|<>';
 export const NOTE_RUN = /[A-Za-z0-9_\-.+/=:@%]{12,}/g;
 
@@ -1650,14 +1659,14 @@ function maskAcrossMarks(s: string, find: (k: string, at: number[], u: string) =
 }
 
 /**
- * Spec 083 FR-005 (D3): the one mask every note passes before it is stored, keeping the Markdown as written. In this order:
+ * The one core of `maskNoteText` (spec 083 FR-005) and `maskOutgoing` (spec 084 FR-033): masks text, keeping the Markdown as written. In this order:
  * (1) the known secret values (the folder's and the session's; under 4 characters skipped, longest first), also when marks split them;
  * (2) every token-like run, or region, that `redact` only finds once the Markdown marks are removed (a token split by `**` or a backtick,
  * or glued to the word before it), judged on the text as written, before `redact` can mask a head and leave its tail; (3) `redact`
  * (env secrets and token shapes) on the whole text. Mask first, cut after (the caller): a secret across
- * the cut would leave a head. `changed` says whether anything was masked (the note's `hidden`). Linear: one pass per step.
+ * the cut would leave a head. `changed` says whether anything was masked. Linear: one pass per step.
  */
-export function maskNoteText(text: unknown, values: readonly string[] = []): { text: string; changed: boolean } {
+function maskKeepingMarkdown(text: unknown, values: readonly string[]): { text: string; changed: boolean } {
   const original = typeof text === 'string' ? text : text == null ? '' : String(text);
   let s = original;
   const vals = [...new Set(values.filter((v) => typeof v === 'string' && v.length >= 4))].sort((a, b) => b.length - a.length);
@@ -1695,4 +1704,18 @@ export function maskNoteText(text: unknown, values: readonly string[] = []): { t
   });
   s = redact(s);
   return { text: s, changed: s !== original };
+}
+
+/** Spec 083 FR-005 (D3): the mask every note passes before it is stored; `changed` is the note's `hidden`. See `maskKeepingMarkdown`. */
+export function maskNoteText(text: unknown, values: readonly string[] = []): { text: string; changed: boolean } {
+  return maskKeepingMarkdown(text, values);
+}
+
+/**
+ * Spec 084 FR-033 (D10): the secret check of a message to a contact, in the window on every change of the field and in main right
+ * before the send; `values` are the known secret values of that chat's folder and session. `changed` blocks the send (no override) and
+ * `text` is what *Use the masked text* puts in the field. The same core and order as `maskNoteText`, so both always agree.
+ */
+export function maskOutgoing(text: unknown, values: readonly string[] = []): { text: string; changed: boolean } {
+  return maskKeepingMarkdown(text, Array.isArray(values) ? values : []); // a missing list is no list, never a throw
 }
