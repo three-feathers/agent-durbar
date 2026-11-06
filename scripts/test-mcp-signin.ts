@@ -936,7 +936,14 @@ async function main(): Promise<void> {
       ensureErr = new Error(`could not start https://x.example.com/a?code=SECRET`);
       const r3 = await mcpSignInOp({ ...d, router: routerOf(ad3) }, store, sid, 'teams');
       assert.deepStrictEqual([r3.ok, (r3 as { manual?: boolean }).manual], [false, true]);
-      assert.ok(!(r3 as { error: string }).error.includes('example.com') && !(r3 as { error: string }).error.includes('SECRET'), 'no address in the failure');
+      {
+        const text = (r3 as { error: string }).error;
+        // parse every address in the text and compare hostnames exactly (no substring test on a URL)
+        const hosts = (text.match(/https?:\/\/[^\s'"]+/gi) ?? []).map((u) => new URL(u).hostname);
+        assert.deepStrictEqual(hosts, [], 'no address in the failure');
+        assert.ok(text.split(/[^A-Za-z0-9.-]+/).every((w) => w !== 'x.example.com' && w !== 'example.com'), 'no bare host in the failure');
+        assert.ok(!/SECRET/.test(text), 'no secret in the failure');
+      }
       ensureErr = undefined;
       // blocked, running, and the app's own redo would not apply (no known address): Durbar's own record still lets the person sign in
       live = BLOCKED; blocked = true; ad.signInCalls.length = 0;
