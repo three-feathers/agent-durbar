@@ -38,6 +38,10 @@ const plan = (label: string, i: SignInPlanInput): ReturnType<typeof planMcpSignI
 };
 
 async function main(): Promise<void> {
+  // FR-229 (review of #1230): the one remote-transport check
+  for (const t of ['http', 'sse', 'streamable-http', 'streamablehttp', 'HTTP', 'SSE', 'Streamable-HTTP']) assert.strictEqual(isRemoteTransport(t), true, `isRemoteTransport accepts ${t}`);
+  for (const t of ['stdio', 'memory', '', 'httpx', 'xhttp', 'http ', undefined, null, 5, {}]) assert.strictEqual(isRemoteTransport(t), false, `isRemoteTransport rejects ${String(t)}`);
+
   assert.deepStrictEqual([MCP_SIGNIN_GAP_MS, MCP_SIGNIN_WAIT_MS, MCP_RECHECK_MS, MCP_SIGNIN_REFRESH_DEFAULT, MCP_SIGNIN_ALLOW_READ_ONLY], [H, 5000, 30 * 60_000, true, true], 'the constants (G1 fixed gap, G5 settled A)');
 
   // ---- the gap and the moments (FR-205) ----
@@ -142,9 +146,20 @@ async function main(): Promise<void> {
     const simBlock = cut('src/renderer/sim.ts');
     const norm = (t: string): string => t.split('\n').map((l) => l.trim()).filter(Boolean).join('\n');
     assert.strictEqual(norm(simBlock), norm(mainBlock), 'the simulator block is a copy of the planner');
+    // the simulator's own helper (outside the block) is the shared one, character for character, so it cannot drift
+    const helperOf = (file: string, prefix: string): string => {
+      const src = fs.readFileSync(path.join(__dirname, '..', '..', file), 'utf8').replace(/\r/g, '');
+      const m = src.split('\n').find((l) => l.startsWith(prefix));
+      assert.ok(m, `${file} defines isRemoteTransport`);
+      return m.slice(prefix.length).trim();
+    };
+    const simHelper = helperOf('src/renderer/sim.ts', 'const isRemoteTransport');
+    assert.strictEqual(simHelper, helperOf('src/shared/mcp.ts', 'export const isRemoteTransport'), 'the simulator copy of isRemoteTransport drifted from src/shared/mcp.ts');
+    const simIsRemote = new Function(`${ts.transpileModule('const f ' + simHelper, { compilerOptions: { target: ts.ScriptTarget.ES2020 } }).outputText}\nreturn f;`)() as (t: unknown) => boolean;
+    for (const t of ['http', 'sse', 'streamable-http', 'streamablehttp', 'HTTP', 'stdio', 'memory', '', undefined, 5]) assert.strictEqual(simIsRemote(t), isRemoteTransport(t), `sim isRemoteTransport(${String(t)})`);
     const js = ts.transpileModule(simBlock, { compilerOptions: { target: ts.ScriptTarget.ES2020 } }).outputText;
     // eslint-disable-next-line @typescript-eslint/no-implied-eval
-    const sim = new Function('isRemoteTransport', js + '\nreturn planMcpSignInRefresh;')(isRemoteTransport) as typeof planMcpSignInRefresh;
+    const sim = new Function('isRemoteTransport', js + '\nreturn planMcpSignInRefresh;')(simIsRemote) as typeof planMcpSignInRefresh;
     assert.ok(cases.length >= 25, `cases: ${cases.length}`);
     for (const [label, i] of cases) assert.deepStrictEqual(sim(i), planMcpSignInRefresh(i), label);
   }
@@ -390,6 +405,12 @@ async function main(): Promise<void> {
     f2.chats.set('a', chat([srv('race', 'needs-auth', { key })]));
     await r2.beforeSend('a');
     assert.strictEqual(r2.isBlocked('copilot', 'race', url), true, 'a success before the reconnect: the block still lands');
+    // no success ever (the default tick) is not a success during the reconnect either
+    const f3 = fake();
+    const r3 = new McpSignInRefresher({ ...f3.d, after: () => ({ status: 'needs-auth' }) });
+    f3.chats.set('a', chat([srv('race', 'needs-auth', { key })]));
+    await r3.beforeSend('a');
+    assert.strictEqual(r3.isBlocked('copilot', 'race', url), true, 'no success ever: the block lands (boundary: an equal tick is not "during")');
   }
 
   // FR-214: no vendor or token text in a log line or a window line, whatever the app's error says
