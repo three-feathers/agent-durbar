@@ -40,8 +40,8 @@ One pure state source in `src/shared` turns an agent's normalized events into a 
 
 | Phase | Groups | Content | Gate |
 |---|---|---|---|
-| P0 | G0 | Q1 decided 2026-11-06 (constitution 1.2.0, in this PR); Q2..Q4 answers | Before the code they touch |
-| P1 | G1 to G4 | State reducer and masking; dock with brain, card, sentence; accessibility; Full, Calm, Still; settings and shortcut; Real office and Flat skins | Q2 for the default |
+| P0 | G0 | Q1..Q4 decided 2026-11-06 (constitution 1.2.0 and 052's delta in this PR) | Done |
+| P1 | G1 to G4 | State reducer and masking; dock with brain, card, sentence; accessibility; Full, Calm, Still; settings and shortcut; Real office and Flat skins | None (Q2 decided) |
 | P2 | G5 to G7 | Office brains and orbs; loop rule on every surface; Your door loop item with *Look* and *Stop…* | P1 |
 | P3 | G8 to G10 | In front and presenter; turn map, bloom, export; Screen share; Retro arcade skin | P2 |
 | P4 | G11, G12 | Habits and the day view; stale-read alert | P3 for the dock; independent of In front |
@@ -74,4 +74,4 @@ None. The canvas was an exception to constitution V until the owner's decision o
 
 ## Risks
 
-Canvas cost on weak GPUs (FR-131; op counts and pause rules guard it); text over a moving glow (FR-097 measured on real pixels); two live regions talking over each other (FR-091's queue); a masking gap on a new surface (one formatter module, FR-086 tests); the right rail amending 052 FR-216 (Q4); stale-read false alarms (FR-075 is strict; FR-076's gap).
+Canvas cost on weak GPUs (FR-131; op counts and pause rules guard it); text over a moving glow (FR-097 measured on real pixels); two live regions talking over each other (FR-091's queue); a masking gap on a new surface (one formatter module, FR-086 tests); the right rail amending 052 FR-216 (Q4, decided; FR-196's collapse respected); stale-read false alarms (FR-075 is strict; FR-076's gap).

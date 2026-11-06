@@ -3,13 +3,13 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Brain view (owner request, Vikram 2026-11-05/06): a transparent point-cloud brain and a ring of seven tool glyphs per agent, docked in the chat's right rail above Your door, In front on request, in the office beside people who need you; loop warning with Look and Stop, turn map, habits, stale-read alert, screen share, masking and accessibility contract
-status: draft
-note: spec, plan, tasks and 8 mockup stills; nothing built; Q1 decided (constitution V amended, 1.2.0); Q2..Q4 open
+status: specified
+note: spec, plan, tasks, 8 mockup stills; Q1..Q4 decided 2026-11-06 (constitution 1.2.0); ready for P1; nothing built
 -->
 
 **Feature Branch**: `106-brain-view` (spec, plan and tasks only). The build is one small PR per task group, phases P1 to P4.
 **Created**: 2026-11-06
-**Status**: Draft: spec, plan and tasks only. Nothing is built, no dependency is added.
+**Status**: Specified, ready for P1 (2026-11-06: the owner answered Q1..Q4). Nothing is built, no dependency is added.
 **Input**: Owner requests and decisions (Vikram, Telegram, quoted with their dates), settled through 14 rounds of mockups with him:
 
 - **2026-11-05 19:40**: "can we have a mode where we can see everything what's happening with a visual workflow of how did the session run, which tool got called... a visual floating window which shows what the brain is doing... futuristic... adaptable to different worlds".
@@ -19,6 +19,7 @@ note: spec, plan, tasks and 8 mockup stills; nothing built; Q1 decided (constitu
 - **2026-11-06 06:31 and 07:12**: in the chat, the brain in front of the chat was preferred; **08:34 "2"**: docked beside the chat by default, with *In front* as an option. **08:35 to 08:36**: rails on both sides: the Agents rail on the left, Your door on the right (spec 005).
 - **2026-11-06 07:12**: "Looks good in terms of visualization". **07:44**: aim close to 10/10, checked with rotating personas. **10:06**: focus on readability and accessibility.
 - **2026-11-06 12:02 "1"**: insights are **habits (b)** as the picture, with **the day view (a)'s table and turn strip as its text equivalent**; **compare (c)** becomes a Your door **"stale read"** alert. Start the spec.
+- **2026-11-06 12:17 UTC "2"** (Q1): "yes, and change the constitution to allow canvas where CSS can't do the job". **12:46 UTC "1"** (Q2): Brain view on by default, docked beside the chat. **12:49 UTC "2"** (Q3): while screen share is on, the message box works and shows the typed text normally; it is the person's own text. **12:50 UTC "1"** (Q4): with Brain view on, the right rail (Brain on top, Your door below) opens with every chat, and the person can still collapse it.
 
 **Persona panel (simulated, not real users).** Each mockup round was scored by a panel of simulated personas (an agent playing them, not people), plus rotating guests. The fixed core panel's averages for wow / space-age / original / useful went from **6.6 / 5.75 / 5.75 / 6.75 in round 6 to 8.9 / 7.8 / 8.3 / 8.9 in round 14**. These numbers are a design aid only; they prove nothing about real users (`[KNOWN GAP]`, FR-133).
 
@@ -113,7 +114,7 @@ No events yet (a new session: the brain rests, the card says "Waiting for the fi
 ### D. Placements
 
 - **FR-030** **Docked, the default** (owner 2026-11-06 08:34 "2"). While a chat is open, the brain of that chat's agent sits **at the top of the right rail, above Your door**, in the rail's 360 px width (052 FR-216), so the chat keeps the width the rails give it (860 px at 1440, 700 px at 1280, beside the Agents rail). The Agents rail stays on the left (owner 08:35 to 08:36, spec 005 FR-190).
-- **FR-031** **The dock gives way to Your door.** While Your door has items, the dock is compact (about 230 px tall at 1440x900, the mockup's size); with Your door empty, it grows to fill the rail (to about 60 % of its height). **Your door's header and count stay visible in every state**, the legend's included. Collapsing the right rail (005 FR-196) hides the dock with it, and a small brain button in the chat header brings it back. **Amends 052 FR-216 for this one case:** with Brain view on, the right rail is shown when a chat opens, since the brain is in it; with Brain view off, Your door opens on request as today.
+- **FR-031** **The dock gives way to Your door.** While Your door has items, the dock is compact (about 230 px tall at 1440x900, the mockup's size); with Your door empty, it grows to fill the rail (to about 60 % of its height). **Your door's header and count stay visible in every state**, the legend's included. Collapsing the right rail (005 FR-196) hides the dock with it, and a small brain button in the chat header brings it back. **Amends 052 FR-216 for this one case** (Q4, owner 2026-11-06 12:50 UTC; 052's *Changes* 2026-11-06): with Brain view on, the right rail (the brain on top, Your door below) opens with every chat; with Brain view off, Your door opens on request as today. **005 FR-196's saved collapse state wins:** if the person collapsed the right rail, it stays collapsed when a chat opens, across chats and restarts (when `rememberOn()`), until they open it again.
 - **FR-032** **In front, optional.** *In front* lays the brain over the chat's log area (never over the composer, the rails or a dialog) with a 200 ms wipe, and **no ghost frames**: no frame shows both the old and the new layout half drawn. A mini-brain stays in the dock as the way back. Esc, the *Back* button, or the shortcut again returns, and focus goes back where it was. Under *Still* the wipe is a cut. The choice of Docked or In front is a display preference of the window, saved like the navigator shortcut (074 FR-013).
 - **FR-033** **Auto when idle** (owner 2026-11-05 19:48). The dock is the chat's resting picture: it is there whenever the chat is open and Brain view is on, also when the agent is idle, then showing its mood (FR-062). Nothing pops up over the user's work by itself: *In front* opens only on request.
 - **FR-034** **Office brains, only where they help.** In the office, a brain appears **only beside the person of an agent that needs you** (waiting, error, limit, looping?) **or that is hovered or keyboard-focused**, beside its own person, never over another's face, name or desk card. **At most 3 at once**: needs-you first, oldest wait first (`attention.js`), then the hovered or focused one. Any other agent that needs you, or one whose slot would overlap something, gets a **compact named orb** (a small brain dot with the name) at its person. The placement uses the office's own layout boxes (Real office's person and plate rectangles; Flat's desk rectangles) and is one pure function with tests.
@@ -146,7 +147,7 @@ No events yet (a new session: the brain rests, the card says "Waiting for the fi
 
 ### G. Motion, moods and Serious mode
 
-- **FR-060** **Settings > Display > Brain motion: Full / Calm / Still.** *Full*: bursts, glow sprites, sparks, bloom. *Calm*: no bloom, no glow, no sparks, thin bursts. *Still*: no motion at all; lights change in one step. **Still is forced** by the OS reduced motion, by *Still highlights* (001 FR-192), and by the renderer's battery signal (FR-104). Saved by `setting()` in main, like Serious mode. A separate switch, *Brain view* on/off, is on by default (Q2).
+- **FR-060** **Settings > Display > Brain motion: Full / Calm / Still.** *Full*: bursts, glow sprites, sparks, bloom. *Calm*: no bloom, no glow, no sparks, thin bursts. *Still*: no motion at all; lights change in one step. **Still is forced** by the OS reduced motion, by *Still highlights* (001 FR-192), and by the renderer's battery signal (FR-104). Saved by `setting()` in main, like Serious mode. A separate switch, *Brain view* on/off, is **on by default, docked beside the chat** (Q2, owner 2026-11-06 12:46 UTC); turning it off is saved the same way, and an unset setting means on.
 - **FR-061** **Motion that is not the point stops** (097 FR-181): an idle brain is still, apart from its mood's one slow change (at most 1 change a second); a waiting brain does not pulse more than the office's own waiting cue.
 - **FR-062** **Moods by silhouette, with words** (owner 2026-11-05 20:02), tied to existing timers: **relieved** at a turn's end, while the bloom runs (at most 3 s); **wants attention** while the reply is unread (`isUnread`); **bored** once read and idle, until 10 minutes after the turn ended; **asleep** by 097 FR-041's lamp-off rule (stopped, or finished over 10 minutes ago, `RECENT_MS`); **hibernating** after a day asleep (`DAY_MS` in `mood.js`). Each mood is a silhouette change of the point cloud (posture, density) and a word in the tag and the sentence, never colour alone. An unread reply past 10 minutes is asleep with the unread mark kept, as the lamp rule says.
 - **FR-063** **Serious mode hides moods** (spec 034, 052 FR-069): the brain shows only tool activity; the mood words go, and no mood silhouette is drawn.
@@ -168,7 +169,7 @@ No events yet (a new session: the brain rests, the card says "Waiting for the fi
   | Surface | While sharing |
   |---|---|
   | Chat (messages, tool rows, thinking, the diff view and its rows, Previous sessions, the header's path and task line) | placeholders; the diff view shows file count and +/− only, no names |
-  | Composer | Q3 |
+  | Composer (the open chat's message box) | **shown and working as normal, by the owner's choice** (Q3): the person's own text; only this box's value, not its suggestions (slash and mention lists show names only) and not other chats' drafts |
   | Agents rail and List rows | names and status words; second lines hidden |
   | Your door and the Needs you inbox (052) | who and what kind ("needs your OK"); request text hidden |
   | Brain view (dock, In front, turn map, tags, popovers, orbs) | tool word and state (FR-085's share row) |
@@ -195,7 +196,7 @@ No events yet (a new session: the brain rests, the card says "Waiting for the fi
   | Screen share | tool word and state only | any argument, path, message or cost |
 
 - **FR-086** **Masking tests are acceptance** (unit, on FR-001's state and each surface's formatter), at least these inputs, each checked on every surface of FR-085: `npm run deploy -- --token=ghp_…`; `curl -H "Authorization: Bearer sk-live-…" https://api.example.com/v1/users?key=XYZ`; `psql postgres://admin:hunter2@db.internal/prod`; a home path `/home/<user>/work/x/registry.ts` and `C:\Users\<user>\work\x\registry.ts`; `git push https://ana:ghp_…@github.com/acme/app.git`; `teams-mcp list_channels --cookie=SESS_…`. **Pass**: no cell holds a token-like value (`ghp_`, `sk-`, a `Bearer` value, `:password@`, `--token=`, `--cookie=`, `?key=` values); office cells hold no `/` or `\`; screen-share cells match `^Tool · state$`. Planted mutations (masking skipped on one surface) must fail them.
-- **FR-087** **Screen share acceptance** (driver, simulator, both sizes): with FR-086's inputs as canary strings in messages, tool calls, requests, notes and a notification, and sharing on, (a) the DOM's text, `title`, `aria-label` and live-region contents, the window title and every `Notification` raised hold none of them and no home path; (b) clicking every answer button, pressing every answer key and inbox key, and running every answering palette action sends **0 answers** to main; (c) turning sharing off restores the text and the controls. Planted mutations (one surface left unmasked, one answer path not gated) must fail it.
+- **FR-087** **Screen share acceptance** (driver, simulator, both sizes): with FR-086's inputs as canary strings in messages, tool calls, requests, notes and a notification, and sharing on, (a) the DOM's text, `title`, `aria-label` and live-region contents, the window title and every `Notification` raised hold none of them and no home path, **except the open chat's message box value**, which the driver types a canary into and expects to see unchanged (Q3); (b) clicking every answer button, pressing every answer key and inbox key, and running every answering palette action sends **0 answers** to main; (c) turning sharing off restores the text and the controls. Planted mutations (one surface left unmasked, one answer path not gated) must fail it.
 
 ### J. Accessibility contract (owner 2026-11-06 10:06: readability and accessibility first)
 
@@ -253,11 +254,11 @@ No events yet (a new session: the brain rests, the card says "Waiting for the fi
 
 Cost uses the app's existing estimate and is shown with "≈". The 230 px dock height, the 60 % growth and the office tag size come from the round 14 mockups at 1440x900 and are measured again by the first PR of each phase. The tool-name table (FR-012) is from the simulator and adapter fixtures on `main` today. The mockup names, folders, files and costs are invented.
 
-## Open questions (for the owner; the spec states a default)
+## Owner questions (all four answered 2026-11-06)
 
 - **Q1, decided** (Vikram, Telegram, 2026-11-06 12:17 UTC, option "2"): "yes, and change the constitution to allow canvas where CSS can't do the job". Constitution V is amended (version 1.2.0, Amendment 3): a canvas is allowed where CSS cannot do the job, with a still frame under reduced motion, a frame budget, a pause when hidden and no per-frame filters; FR-100..FR-104 meet each condition. Spec 102 FR-261 has a dated delta pointing to it (worlds keep frames, not code).
-- **Q2** Brain view on by default? Default: on, with the switch in Settings > Display.
-- **Q3** The composer while sharing (FR-080): the mockup shows it as a placeholder. Default: typing stays possible and the typed text shows as placeholder dots until sharing stops.
-- **Q4** FR-031 shows the right rail whenever a chat opens with Brain view on, amending 052 FR-216's "opened on request". Default: as written, since the owner chose both rails (2026-11-06 08:35).
+- **Q2, decided** (Vikram, Telegram, 2026-11-06 12:46 UTC, option "1"): Brain view is **on by default, docked beside the chat** (FR-030, FR-060); the switch in Settings > Display turns it off.
+- **Q3, decided** (Vikram, Telegram, 2026-11-06 12:49 UTC, option "2"): while screen share is on, the message box works and shows the typed text normally, since it is the person's own text (FR-080's table). Everything else in FR-080's table stays masked.
+- **Q4, decided** (Vikram, Telegram, 2026-11-06 12:50 UTC, option "1"): with Brain view on, the right rail (Brain on top, Your door below) opens with every chat, and the person can still collapse it; a saved collapse (005 FR-196) is respected (FR-031). This amends 052 FR-216's "opened on request", with a dated delta in spec 052.
 
 ## Changes
