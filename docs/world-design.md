@@ -59,6 +59,7 @@ Be specific without being a cliche: no tourist symbols, stereotypes, or copied l
 - **Use the space near the edges and the horizon.** Empty sand or floor is waste when people could be bigger.
 - **Few people, big screens:** readable text in the room at 3 to 4. **Many people, small screens:** state by colour and marks, with text on hover or focus.
 - Numbering and movement are natural: floor 1 at the bottom, up is up.
+- **Finished agents give their room away** (owner, 2026-11-06, spec 097 FR-246..FR-249): a done agent whose reply is read sits in a compact lounge seat (person, a small desk and monitor from the world's own pictures, the plate), so busy desks grow; an unread reply keeps the full desk. Who moves is the flat office's lounge rule, never a world's own. A world with a grid (the arcade) puts the seats in the grid's free cells rather than a row of its own.
 
 ## Screens
 

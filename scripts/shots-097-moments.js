@@ -116,34 +116,34 @@ module.exports = async (ctx) => {
       await H.load({ w, h, query: q(world), ready: REAL, settle: false });
       await must(PICS, 'the pictures');
       /* the simulator's finished agents finished just now (the couch); make them finish 34 minutes ago, named with nine characters (longer than the simulator's own), with their last message UNREAD: an unread reply keeps its full desk (spec 001 FR-173), so nobody sleeps yet (owner 2026-11-02) */
-      const widths = () => js(`(()=>{const L=window.__durbarSimUi.realLayout();return {face:Math.round(L.faceH*10)/10,desks:L.zones.flatMap(z=>z.desks).map(d=>[d.id,d.state,Math.round(d.slot.w*10)/10]).sort()}})()`);
+      const widths = () => js(`(()=>{const L=window.__durbarSimUi.realLayout();return {face:Math.round(L.faceH*10)/10,u:L.u,desks:L.zones.flatMap(z=>z.desks).map(d=>[d.id,d.state,Math.round(d.slot.w*10)/10]).sort(),lounge:(L.lounge?L.lounge.desks:[]).map(d=>[d.id,d.state])}})()`);
       await js(`window.__durbarSimUi.agents().filter(a=>!a.parent&&a.state==='done').forEach(a=>{a.lastEventAt=Date.now()-34*60000;a.name='Alexandre';window.__durbarSimUi.unread.mark(a.id)});window.__durbarSimUi.crew.renderAll()`);
       await must(PICS, 'the pictures');
       const before = await widths();
       assert.strictEqual(before.desks.filter((x) => x[1] === 'asleep').length, 0, `${tag}: an unread reply does not sleep`);
       assert.strictEqual(await js(`document.querySelectorAll('#stage .ro-plate.asleep').length`), 0, `${tag}: no asleep plate while the message is unread`);
       await shot(world, 'asleep-unread', w, h);
-      /* the message is read (the app's own Mark as read): that desk is asleep and narrows to 0.62, the others take the freed room, in one step */
+      /* the message is read (the app's own Mark as read): the agent is asleep and leaves its desk for the lounge row (spec 097 FR-246, owner 2026-11-06), the desks take the freed room */
       await js(`window.__durbarSimUi.agents().filter(a=>!a.parent&&a.state==='done').forEach(a=>window.__durbarSimUi.unread.read(a.id))`);
-      await must(`document.querySelectorAll('#stage .ro-plate.asleep').length>=1`, 'an asleep desk once read');
+      await must(`document.querySelectorAll('#stage .ro-plate.asleep').length>=1`, 'an asleep agent once read');
       const after = await widths();
-      const sleepers = after.desks.filter((x) => x[1] === 'asleep');
-      assert.ok(sleepers.length >= 1 && sleepers.every((x) => after.desks.some((o) => o[1] !== 'asleep' && Math.abs(x[2] / o[2] - 0.62) < 0.01)), `${tag}: an asleep desk whose message is read is 0.62 wide: ${JSON.stringify(sleepers)}`);
-      assert.ok(after.face >= before.face - 1, `${tag}: the room the narrowing frees is not lost (the row search is discrete: up to 1 px either way): desk faces ${before.face} -> ${after.face} px`);
-      console.log('[moments] widths when the message is read', `desk faces ${before.face} -> ${after.face} px; widths`, JSON.stringify(before.desks.slice(0, 5)), '->', JSON.stringify(after.desks.slice(0, 5)));
+      const sleepers = after.lounge.filter((x) => x[1] === 'asleep');
+      assert.ok(sleepers.length >= 1 && !after.desks.some((x) => x[1] === 'asleep'), `${tag}: an asleep agent whose message is read sits in the lounge row, not at a desk: ${JSON.stringify(after.lounge)}`);
+      assert.ok(after.u >= before.u - 1e-6, `${tag}: the room it leaves goes to the desks: u ${before.u} -> ${after.u}`);
+      console.log('[moments] when the message is read', `desk faces ${before.face} -> ${after.face} px; lounge`, JSON.stringify(after.lounge));
       const sl = await js(`(()=>{const P=[...document.querySelectorAll('#stage .ro-plate.asleep')];return P.map(p=>({id:p.dataset.id,l:p.getAttribute('aria-label'),t:p.getAttribute('title'),x:p.textContent,
         person:!!document.querySelector('#stage .ro-person.asleep[data-for="'+p.dataset.id+'"]'),zz:!!document.querySelector('#stage .ro-zz'),w:p.getBoundingClientRect().width,
         scr:(document.querySelector('#stage .ro-screen.asleep[data-for="'+p.dataset.id+'"]')||{className:''}).className}))})()`);
       for (const x of sl) {
-        assert.ok(/^.+, .+, folder .+, asleep at the desk, finished 34 minutes ago: .+ Open chat panel\.$/.test(x.l), `${tag}: the screen-reader name: ${x.l}`);
+        assert.ok(/^.+, .+, folder .+, asleep in the lounge, finished 34 minutes ago: .+ Open chat panel\.$/.test(x.l), `${tag}: the screen-reader name: ${x.l}`);
         assert.ok(/^Asleep \u00B7 .+ \u00B7 finished 34 min ago \u00B7 Lamp off\n.+/.test(x.t), `${tag}: the hover card: ${x.t}`);
         assert.ok(/Asleep \u00B7 finished 34 min ago$/.test(x.x), `${tag}: the plate: ${x.x}`);
-        assert.ok(x.person && x.zz, `${tag}: a person rests at the desk and the z z is drawn`);
+        assert.ok(x.person && x.zz, `${tag}: a person rests in the lounge and the z z is drawn`);
       }
-      const geo = await js(`(()=>{const L=window.__durbarSimUi.realLayout(),D=L.zones.flatMap(z=>z.desks),a=D.filter(d=>d.state==='asleep'),full=d=>D.find(x=>!x.narrow&&!x.away&&Math.abs(x.slot.y-d.slot.y)<1)||D.find(x=>!x.narrow&&!x.away);
-        return {ratio:a.map(d=>d.slot.w/full(d).slot.w),pose:a.map(d=>d.person&&d.person.pose),shades:document.querySelectorAll('#stage .ro-lamp.lamp-off').length,asleep:a.length,screensOff:document.querySelectorAll('#stage .ro-screen.asleep.off').length,
+      const geo = await js(`(()=>{const L=window.__durbarSimUi.realLayout(),a=(L.lounge?L.lounge.desks:[]).filter(d=>d.state==='asleep');
+        return {seat:a.map(d=>!!d.lounge&&!!d.table),pose:a.map(d=>d.person&&d.person.pose),shades:document.querySelectorAll('#stage .ro-lamp.lamp-off').length,asleep:a.length,screensOff:document.querySelectorAll('#stage .ro-screen.asleep.off').length,
           chair:a.filter(d=>d.away).length,small:[...document.querySelectorAll('#stage .ro-plate.asleep *,#stage .ro-zz')].filter(e=>parseFloat(getComputedStyle(e).fontSize)<10.5).length}})()`);
-      assert.ok(geo.ratio.length >= 1 && geo.ratio.every((r) => Math.abs(r - 0.62) < 0.02), `${tag}: an asleep desk whose message is read is 0.62 wide: ${geo.ratio}`);
+      assert.ok(geo.seat.length >= 1 && geo.seat.every(Boolean), `${tag}: each sleeper has a lounge seat with its small desk: ${geo.seat}`);
       assert.deepStrictEqual(geo.pose, geo.pose.map(() => 'rest'), `${tag}: the person is in rest`);
       assert.strictEqual(geo.shades, geo.asleep, `${tag}: a lamp-off marker on each asleep desk only`);
       /* review 2026-11-02: no dark oval over the room behind a sleeper; the person dims instead */

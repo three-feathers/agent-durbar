@@ -1652,17 +1652,16 @@ function realModel(model){
   const D=window.DurbarPlaces, E=window.exports;
   const stOf=(a,asleep)=>E.lightState(isFailing(a)?'failing':isRetrying(a)?'retrying':isCompacting(a)?'compacting':vis(a),{limit:!!a.limit,paused:!!a.paused,asleep:!!asleep});
   const folders=model.map(m=>{
-    const r=m.r, old=new Set((m.rolled||[]).filter(x=>x.k==='old').map(x=>x.a.id)); /* Q5: an agent asleep in a nap bed keeps a narrow desk, lamp and screen off */
+    const r=m.r, old=new Set((m.rolled||[]).filter(x=>x.k==='old').map(x=>x.a.id)), rolled=new Set((m.rolled||[]).map(x=>x.a.id)); /* spec 097 FR-246: who the flat office rolls into its lounge (shutPlan) sits in the lounge row; an old one asleep */
     const list=m.mains.concat((m.rolled||[]).map(x=>x.a));
     const counts=['waiting','error','working','done','idle'].map(k=>{const n=m.all.filter(a=>!a.parent&&(k==='working'?(vis(a)==='working'||vis(a)==='thinking'):vis(a)===k)).length;return {state:k,n,word:LABELS[k].toLowerCase()};}).filter(c=>c.n);
     const u=SIM_QUIET_HEADS.has('aiu')?null:roomAiu(r);
     return {id:r.id,name:r.name,path:deskMask(showPath(r.path)),cost:u?u.long:'',counts,newSess:!!(bridge&&bridge.newSession&&anyKindReady()&&!demoOn),menu:!!(bridge&&bridge.removeFolder&&!demoOn),
       agents:list.map(a=>{const v=VISITS.at(a.id),st=stOf(a,old.has(a.id)),task=deskMask(taskOf(a)),place=v?placeLabel(v.place):'',needs=st==='waiting'||st==='limit';
-        const asleep=old.has(a.id)&&!v;
-        if(asleep){ /* spec 097 FR-120, FR-129: asleep at the desk; the words of the lounge's peek card and label, the same masked reply (shutReply) */
-          const ago=ACT.agoLong(sinceLast(a)), said=SHUT.spoken(ago), line=shutReply(a,140), who=a.profile?a.profile.name+' · '+a.role:a.role;
-          return {id:a.id,name:a.name,role:a.role,state:st,word:'Asleep',task:ago?'finished '+ago:'',asleep:true,tip:'Asleep · '+stWord(a)+(ago?' · finished '+ago:'')+' · Lamp off\n'+shutReply(a,300),selected:ui.selected===a.id,ren:canRenameSession(a),unread:isUnread(a),away:null,awayLabel:'',
-            label:a.name+unreadWords(a)+', '+who+', folder '+deskMask(showPath(r.path))+', asleep at the desk'+(said?', finished '+said:'')+': '+line+(/[.!?…]$/.test(line)?'':'.')+' Open chat panel.',helpers:helpersOf(a).map(h=>stOf(h,false))};
+        if(rolled.has(a.id)&&!v){ /* spec 097 FR-246, FR-120: in the lounge row, resting or asleep; the words of the flat lounge's peek card and label, the same masked reply (shutReply) */
+          const asleep=old.has(a.id), ago=ACT.agoLong(sinceLast(a)), said=SHUT.spoken(ago), line=shutReply(a,140), who=a.profile?a.profile.name+' · '+a.role:a.role, word=asleep?'Asleep':stWord(a);
+          return {id:a.id,name:a.name,role:a.role,state:st,word,task:ago?'finished '+ago:'',asleep,lounge:true,tip:word+(asleep?' · '+stWord(a):'')+(ago?' · finished '+ago:'')+(asleep?' · Lamp off':'')+'\n'+shutReply(a,300),selected:ui.selected===a.id,ren:canRenameSession(a),unread:isUnread(a),away:null,awayLabel:'',
+            label:a.name+unreadWords(a)+', '+who+', folder '+deskMask(showPath(r.path))+(asleep?', asleep in the lounge':', resting in the lounge')+(said?', finished '+said:'')+': '+line+(/[.!?…]$/.test(line)?'':'.')+' Open chat panel.',helpers:helpersOf(a).map(h=>stOf(h,false))};
         }
         const br=v&&v.place===D.COFFEE&&BREAKS.get(a.id)&&BREAKS.get(a.id).kind!=='cap'?coffeeUntilWords(a):''; /* owner 2026-11-02: the post-it of a coffee break says until when (an app's usage window), never of Durbar's cap at the Bank */
         return {id:a.id,name:a.name,role:a.role,state:st,word:stWord(a),task,tip:deskTip(a),selected:ui.selected===a.id,ren:canRenameSession(a),unread:isUnread(a),away:v?v.place:null,awayLabel:place+(br?' '+br:''),

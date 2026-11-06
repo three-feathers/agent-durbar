@@ -56,6 +56,9 @@ module.exports = async (ctx) => {
   const loadReal = async (w, h, query = {}) => {
     await H.load({ w, h, query: { officeview: 'real', romotion: '1', ...query }, ready: REAL, settle: false });
     await must(PICS, 'the pictures');
+    /* spec 097 FR-246: a done agent whose reply is read sits in the lounge row (a monitor without text); these checks read done screens at desks, so their replies stay unread */
+    await js(`(()=>{const U=window.__durbarSimUi;U.agents().filter(a=>!a.parent&&a.state==='done').forEach(a=>{a.lastOutput=a.lastOutput||'Done.';U.unread.mark(a.id);});U.crew.renderAll();return 1})()`);
+    await must(`!(window.__durbarSimUi.realLayout().lounge)`, 'every done agent at its desk');
     await must(`document.querySelectorAll('#stage .ro-stext:not(.off) .ro-sl').length>0`, 'text on the screens');
     await H.calm();
   };
@@ -74,7 +77,8 @@ module.exports = async (ctx) => {
         fonts:rows.map(r=>parseFloat(getComputedStyle(r).fontSize)),color:rows.length?getComputedStyle(rows[rows.length-1]).color:'',k:rows.length?rows[rows.length-1].dataset.k:'',
         head:rows.length&&e.classList.contains('small')?rows[rows.length-1].getBoundingClientRect().top-e.querySelector('.ro-clip').getBoundingClientRect().top:0,bars:e.querySelectorAll('.ro-bars i').length,tags:[...e.querySelectorAll('a,img,script,svg')].length});}return out;})()`);
     console.log('[097-screens]', w, h, all.map((s) => `${s.state}:${(s.text || '').slice(0, 30)}|${s.bars}`).join(' ; '));
-    assert.strictEqual(all.length, 15, '15 desks');
+    const seats = await js(`(window.__durbarSimUi.realLayout().lounge||{desks:[]}).desks.length`); /* spec 097 FR-246: a finished, read agent sits in the lounge row, its monitor without text */
+    assert.strictEqual(all.length + seats, 15, '15 desks and lounge seats');
     for (const s of all) {
       assert.ok(!s.none, 'a text box for ' + s.id);
       if (s.state === 'asleep') { assert.strictEqual(s.text, '', 'asleep: no text'); continue; }
@@ -313,8 +317,8 @@ module.exports = async (ctx) => {
     assert.ok(sl, 'an idle desk to send to sleep');
     const s0 = await at(sl);
     await hover(sl, s0);
-    await js(`(()=>{const a=window.__durbarSimUi.agents().find(x=>x.id===${jsLiteral(sl)});a.state='done';a.lastOutput=a.lastOutput||'done';a.unread=false;a.lastEventAt=Date.now()-30*864e5;window.__durbarSimUi.setLive(true);})();0`);
-    await must(`window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks).find(x=>x.id===${jsLiteral(sl)}).state==='asleep'`, 'the desk asleep');
+    await js(`(()=>{const a=window.__durbarSimUi.agents().find(x=>x.id===${jsLiteral(sl)});a.state='done';a.lastOutput=a.lastOutput||'done';a.unread=false;a.lastEventAt=Date.now()-30*864e5;window.__durbarSimUi.unread.read(a.id);window.__durbarSimUi.setLive(true);})();0`);
+    await must(`(()=>{const L=window.__durbarSimUi.realLayout();return L.zones.flatMap(z=>z.desks).concat(L.lounge?L.lounge.desks:[]).find(x=>x.id===${jsLiteral(sl)}).state==='asleep'})()`, 'the agent asleep (in the lounge row, spec 097 FR-246)');
     assert.ok(await H.until(`!document.getElementById('roZoom')`, 1000), 'the zoom of a desk gone to sleep closes');
     await moveTo(1, 1);
   }

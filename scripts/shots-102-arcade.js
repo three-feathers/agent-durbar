@@ -196,7 +196,10 @@ module.exports = async (ctx) => {
   };
 
   await media(MOTION('no-preference'));
+  /* every state at a cabinet: the lounge (spec 097 FR-246, its own driver check-097-lounge) is switched off for this page, as Settings does, so a done agent keeps its cabinet */
+  await js(`localStorage.setItem('durbar.shutters','off');1`);
   await loadArcade(1440, 900, 15, { romotion: '1', simfreeze: '1' });
+  await js(`localStorage.removeItem('durbar.shutters');1`);
   await setStates(STATES);
   await must(`[...document.querySelectorAll('#stage .ro-marquee.mq-flash,#stage .ro-marquee.mq-flash-red')].length>=2`, 'flashes');
   await must(`${ROOM}.filter(a=>!a.animationName).length===0`, 'a sort over');
