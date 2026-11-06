@@ -2,32 +2,32 @@
    caveman. app.js asks only when the page runs under the simulator (`?sim=`); real sessions, saved choices and crew.js's random pick are untouched,
    and there are no gender tags in the app: this is a fixed table for the demo and its screenshots. Each row was chosen by looking at the art
    (the reading of each character is in specs/077-cheeky-crew/spec.md, FR-073). A crew with fewer fitting characters than names reuses some
-   (Prehistoric has 6 characters for 15 names). A later crew adds its own column. In the page: window.DurbarSimCrew; in Node: module.exports. */
+   (Prehistoric, Pirate, Monster, Royal and Rebels have 6 characters for 15 names). A later crew adds its own column. In the page: window.DurbarSimCrew; in Node: module.exports. */
 (function (root, api) {
   if (typeof module === 'object' && module.exports) module.exports = api; else root.DurbarSimCrew = api;
 })(typeof self !== 'undefined' ? self : this, (function () {
   'use strict';
-  /* name: [cheeky, prehistoric] (the order of CREW_KEYS) */
-  const CREW_KEYS = ['cheeky', 'prehistoric'];
+  /* name: [cheeky, prehistoric, pirate, monster, royal, rebels] (the order of CREW_KEYS) */
+  const CREW_KEYS = ['cheeky', 'prehistoric', 'pirate', 'monster', 'royal', 'rebels'];
   const NAMES = {
-    Ada: ['gamer', 'braids'],
-    Mira: ['bob-glasses', 'ponytail'],
-    Jonas: ['rocker', 'bigbeard'],
-    Noor: ['scientist', 'inventor'],
-    Kenji: ['skater', 'inventor'],
-    Elif: ['hacker', 'shaman'],
-    Tomas: ['metalhead', 'youngbeard'],
-    Priya: ['disco', 'braids'],
-    Lena: ['sporty', 'ponytail'],
-    Omar: ['buzzcut', 'youngbeard'],
-    Sven: ['surfer', 'bigbeard'],
-    Clara: ['punk', 'shaman'],
-    Hugo: ['bookworm', 'inventor'],
-    Rosa: ['bob-glasses', 'braids'],
-    Maya: ['gamer', 'ponytail'],
+    Ada: ['gamer', 'braids', 'captain', 'werewolf', 'knight', 'fox'],
+    Mira: ['bob-glasses', 'ponytail', 'privateer', 'ghost', 'princess', 'punkcat'],
+    Jonas: ['rocker', 'bigbeard', 'hook', 'frankenstein', 'king', 'bulldog'],
+    Noor: ['scientist', 'inventor', 'cabinboy', 'seacreature', 'alchemist', 'panda'],
+    Kenji: ['skater', 'inventor', 'eyepatch', 'seacreature', 'jester', 'panda'],
+    Elif: ['hacker', 'shaman', 'privateer', 'mummy', 'queen', 'punkcat'],
+    Tomas: ['metalhead', 'youngbeard', 'cook', 'vampire', 'king', 'raccoon'],
+    Priya: ['disco', 'braids', 'captain', 'werewolf', 'queen', 'fox'],
+    Lena: ['sporty', 'ponytail', 'privateer', 'mummy', 'princess', 'punkcat'],
+    Omar: ['buzzcut', 'youngbeard', 'eyepatch', 'frankenstein', 'alchemist', 'raccoon'],
+    Sven: ['surfer', 'bigbeard', 'hook', 'frankenstein', 'king', 'bulldog'],
+    Clara: ['punk', 'shaman', 'captain', 'ghost', 'knight', 'punkcat'],
+    Hugo: ['bookworm', 'inventor', 'cook', 'vampire', 'alchemist', 'owl'],
+    Rosa: ['bob-glasses', 'braids', 'privateer', 'mummy', 'queen', 'fox'],
+    Maya: ['gamer', 'ponytail', 'captain', 'werewolf', 'princess', 'fox'],
   };
   /* the key of a Characters value: the Cheeky crew is also what the theme's own crew and an unknown value draw (crew.js idsFor) */
-  const keyFor = (choice) => choice === 'prehistoric' ? 'prehistoric' : 'cheeky';
+  const keyFor = (choice) => (choice === 'prehistoric' || choice === 'pirate' || choice === 'monster' || choice === 'royal' || choice === 'rebels') ? choice : 'cheeky';
   const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
   /* the character of a demo name in a crew, or '' when the name has no row or the id is not one of `ids` */
   function characterFor(choice, name, ids) {

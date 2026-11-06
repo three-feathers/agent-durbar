@@ -7,7 +7,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { MASK_BUDGET_NOTE, MASK_CHARS, MASK_MAX_ENTRIES, SIM_NOTE, createReadToolHandlers, makePathReducer } from '../src/main/mcp/readtools';
-import { MASK_INPUT_MAX } from '../src/shared/redact';
+import { MASK_INPUT_MAX, redact } from '../src/shared/redact';
 import type { ReadToolsDeps } from '../src/main/mcp/readtools';
 import { AgentStateTracker } from '../src/main/mcp/agentstate';
 import { UsageTotalsStore } from '../src/main/usagetotalsstore';
@@ -15,7 +15,8 @@ import type { AgentInfo, McpAmbientView } from '../src/shared/api';
 import type { McpServerView } from '../src/shared/mcp';
 import type { SavedFolder } from '../src/main/folders';
 import { officeTotals } from '../src/shared/usagedoc';
-/** CPU time of this process (user + system) in ms: the cost budgets below use it, never the wall clock, so a loaded machine cannot fail them (AGENTS.md, Timing; issue #940). */
+import { tmpDir } from './test-tmp';
+/** CPU time of this process (user + system) in ms: the cost budgets below use it, never the wall clock, so a loaded machine cannot fail them (docs/rules/review-rounds.md, Timing; issue #940). */
 const cpuMs = (): number => { const c = process.cpuUsage(); return (c.user + c.system) / 1000; };
 
 const text = (t: string) => ({ content: [{ type: 'text' as const, text: t }] });
@@ -40,6 +41,7 @@ const names = (c: FakeMcpClient): string[] => c.request('tools/list').result.too
 const FORBIDDEN = /session|prompt|send|start|stop|end_turn|permission|resolve|grant|approve|limit|reset|usage_reset|turn/i;
 
 async function main(): Promise<void> {
+  let motionOff = false; // the Motion setting the fake store reports (spec 052 FR-069b)
   // the shipped build flag is off until T038
   assert.strictEqual(CHANGE_TOOLS_ENABLED, false, 'change tools are off in this build (FR-064)');
 
@@ -281,9 +283,9 @@ async function main(): Promise<void> {
       secretValue: SECRETS.extraPart,
     } as any;
     const mk = (n: number, nf: number, over: Partial<ReadToolsDeps> = {}) => {
-      const folders = Array.from({ length: nf }, (_, i) => folder(i, i === 1 ? { hidden: true, closed: true, label: 'Nice room', floor: 'f-aaaaaaaa', maxAiCredits: 120 } : {}));
+      const folders = Array.from({ length: nf }, (_, i) => folder(i, i === 1 ? { hidden: true, label: 'Nice room', floor: 'f-aaaaaaaa', maxAiCredits: 120 } : {}));
       const agents = Array.from({ length: n }, (_, i) => agentOf(folders[i % nf], i, i === 0 ? { lazy: true } : i === 1 ? { floor: 'f-aaaaaaaa', maxAiCredits: 120, permMode: 'allow' } : {}));
-      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-t016-'));
+      const dir = tmpDir('durbar-t016-');
       const usage = new UsageTotalsStore(path.join(dir, 'u.json'), { delayMs: 1e9, setTimer: () => 0, clearTimer: () => undefined });
       const tracker = new AgentStateTracker();
       const deps: ReadToolsDeps = {
@@ -292,7 +294,7 @@ async function main(): Promise<void> {
         tracker,
         floors: () => ({ floors: [{ id: 'ground', name: 'Ground floor', on: true }, { id: 'f-aaaaaaaa', name: 'Attic', on: false }], lastFloor: 'f-aaaaaaaa' }),
         usage,
-        settings: () => ({ defaultMaxAiCredits: 300, seriousMode: true, placeMap: { gh: 'web' }, customPlaces: [{ id: 'c-abc123', name: 'Lab', icon: 'flask' }], theme: 'secret-theme' }),
+        settings: () => ({ defaultMaxAiCredits: 300, seriousMode: true, ...(motionOff ? { motion: false as const } : {}), stillHighlights: true, placeMap: { gh: 'web' }, customPlaces: [{ id: 'c-abc123', name: 'Lab', icon: 'flask' }], theme: 'secret-theme' }),
         mcpCli: () => ({ cli: [{ name: 'cli1', origin: 'copilot-config', transport: 'stdio', args: ['s.js', '--password', SECRETS.argToken, `--token ${SECRETS.oneArg}`], command: `node --api-key=${SECRETS.cmdTok} ${SECRETS.pathDir}/s.js`, enabled: false }, { name: 'github-mcp-server', origin: 'builtin', enabled: true }], file: { label: '~/.copilot/mcp-config.json', found: true, skipped: 1, error: SECRETS.outside }, secretsPersist: false }),
         mcpExtras: (k) => (k === folders[0].workspace ? [extra, planted] : []),
         windowSim: () => false,
@@ -338,9 +340,9 @@ async function main(): Promise<void> {
       const { call, folders } = mk(15, 40);
       const f = (await call('durbar_list_folders')).data.folders;
       assert.strictEqual(f.length, 40);
-      assert.deepStrictEqual(Object.keys(f[1]).sort(), ['adapter', 'agents', 'cap', 'door', 'floor', 'floorOn', 'hidden', 'key', 'mode', 'name']);
+      assert.deepStrictEqual(Object.keys(f[1]).sort(), ['adapter', 'agents', 'cap', 'floor', 'floorOn', 'hidden', 'key', 'mode', 'name']);
       assert.strictEqual(f[1].name, 'Nice room');
-      assert.strictEqual(f[1].door, 'closed');
+      assert.ok(!('door' in f[1]), 'spec 041 FR-066: no door field');
       assert.strictEqual(f[1].hidden, true);
       assert.strictEqual(f[1].cap, 120);
       assert.strictEqual(f[1].floorOn, false, 'the attic is off');
@@ -385,7 +387,11 @@ async function main(): Promise<void> {
       assert.deepStrictEqual(fl.floors.map((x: any) => [x.id, x.on, x.ground]), [['ground', true, true], ['f-aaaaaaaa', false, false]]);
       assert.strictEqual(fl.lastFloor, 'f-aaaaaaaa');
       const st = (await call('durbar_settings')).data;
-      assert.deepStrictEqual(st, { defaultCap: 300, seriousMode: true, placeMap: { gh: 'web' }, customPlaces: [{ id: 'c-abc123', name: 'Lab', icon: 'flask' }] });
+      assert.deepStrictEqual(st, { defaultCap: 300, seriousMode: true, motion: true, stillHighlights: true, placeMap: { gh: 'web' }, customPlaces: [{ id: 'c-abc123', name: 'Lab', icon: 'flask' }] });
+      assert.strictEqual(st.motion, true, 'durbar_settings: motion is true by default (a file without the key)');
+      motionOff = true;
+      assert.strictEqual((await call('durbar_settings')).data.motion, false, 'durbar_settings: motion is false after Motion is turned off');
+      motionOff = false;
       const none = (await call('durbar_settings')).data;
       assert.ok(!('theme' in none));
     }
@@ -610,7 +616,7 @@ async function main(): Promise<void> {
 
     // 12g. usage: baseline plus this run for the same events
     {
-      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-t016u-'));
+      const dir = tmpDir('durbar-t016u-');
       const file = path.join(dir, 'u.json');
       const f0 = folder(0), f1 = folder(1);
       const seed = new UsageTotalsStore(file, { delayMs: 1e9, setTimer: () => 0, clearTimer: () => undefined });
@@ -784,6 +790,12 @@ async function main(): Promise<void> {
         assert.ok(best < 30, `12l(c0): the over-limit command cost ${best.toFixed(1)} ms (is the scheme pre-pass before the length check?)`);
       }
 
+      // The limit of the budget cases, in this run's terms (spec 012 T138): 20 times `redact` on 1 MB of ordinary text, measured here (about 2 s on the dev machine, as the limit was); uncharged key names took about 70 times, these cases at most about 1.5
+      let budgetYard = 0;
+      const budgetMs = (): number => {
+        if (!budgetYard) { const text = 'word '.repeat(200_000); budgetYard = Infinity; for (let i = 0; i < 3; i++) { const c0 = cpuMs(); redact(text); budgetYard = Math.min(budgetYard, cpuMs() - c0); } }
+        return budgetYard * 20;
+      };
       // (c) cost: a 1 MB CLI file built at run time, three shapes, each answered quickly and with no secret
       {
         const MB = 1_000_000;
@@ -800,7 +812,7 @@ async function main(): Promise<void> {
         for (const [label, entries] of cases) {
           const r = await state(entries);
           console.log(`mcp read tools: 12l ${label}: ${r.ms.toFixed(1)} ms`);
-          assert.ok(r.ms < 2000, `12l(c): ${label} took ${r.ms.toFixed(1)} ms`);
+          assert.ok(r.ms < budgetMs(), `12l(c): ${label} took ${r.ms.toFixed(1)} ms, limit ${budgetMs().toFixed(0)} ms`);
           assert.ok(!r.raw.includes(sec), `12l(c): ${label}: no planted secret`);
           if (label.startsWith('(vi)')) assert.ok(r.data.copilotCli.servers.length <= 400, `12l(c): (vi) lists ${r.data.copilotCli.servers.length} of 25000 entries; a command costs about 0.4 ms, so about 260 is the aim`);
         }
@@ -816,7 +828,7 @@ async function main(): Promise<void> {
         const ms = cpuMs() - t0;
         const r = { data: JSON.parse((res.content[0] as { text: string }).text) };
         console.log(`mcp read tools: 12l (vii) extras 50 folders x 100 servers x 64 tiny args: ${ms.toFixed(1)} ms`);
-        assert.ok(ms < 2000, `12l(c): extras took ${ms.toFixed(1)} ms`);
+        assert.ok(ms < budgetMs(), `12l(c): extras took ${ms.toFixed(1)} ms, limit ${budgetMs().toFixed(0)} ms`);
         assert.strictEqual(r.data.masking, MASK_BUDGET_NOTE, '12l(c): the budget note is there');
       }
 
@@ -834,7 +846,7 @@ async function main(): Promise<void> {
         const r = { raw: (res.content[0] as { text: string }).text, data: JSON.parse((res.content[0] as { text: string }).text) };
         const nExtra = (r.data.extras as Array<{ servers: unknown[] }>).reduce((n, e) => n + e.servers.length, 0);
         console.log(`mcp read tools: 12l (viii) 200 typical servers: ${ms.toFixed(1)} ms, ${r.raw.length} bytes`);
-        assert.ok(ms < 2000, `12l(d): 200 typical servers took ${ms.toFixed(1)} ms`);
+        assert.ok(ms < budgetMs(), `12l(d): 200 typical servers took ${ms.toFixed(1)} ms, limit ${budgetMs().toFixed(0)} ms`);
         assert.ok(!('masking' in r.data), '12l(d): 200 typical servers fit with no note');
         assert.strictEqual(r.data.copilotCli.servers.length + nExtra, 200, '12l(d): every server is listed');
         assert.ok(!r.raw.includes(R), '12l(d): nothing is hidden');
@@ -851,7 +863,7 @@ async function main(): Promise<void> {
         const data = JSON.parse((res.content[0] as { text: string }).text);
         const shown = (data.extras as Array<{ servers: Array<{ envKeys: unknown[] }> }>).reduce((n, e) => n + e.servers.reduce((m, v) => m + v.envKeys.length, 0), 0);
         console.log(`mcp read tools: 12l (ix) 10 folders x 100 servers x 128 env key names: ${ms.toFixed(1)} ms, ${shown} key names shown`);
-        assert.ok(ms < 2000, `12l(c): key names took ${ms.toFixed(1)} ms`);
+        assert.ok(ms < budgetMs(), `12l(c): key names took ${ms.toFixed(1)} ms, limit ${budgetMs().toFixed(0)} ms`);
         // each key costs MASK_PER_KEY (100) of the 90 000 units, minus what the servers themselves cost: about 880 are shown
         assert.ok(shown >= 800 && shown <= 900, `12l(c): key names are charged to the budget (${shown} shown of 128000, expected 800-900)`);
         assert.strictEqual(data.masking, MASK_BUDGET_NOTE, '12l(c): the note is there when key names were left out');

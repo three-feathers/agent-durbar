@@ -2,7 +2,6 @@
 import * as assert from 'assert';
 import { STYLE_PRESETS, STYLE_ID_RE, DEFAULT_STYLE_ID, stylePreset } from '../src/shared/charstyle';
 import { cleanDescription, buildCharacterPrompt, CHARACTER_IDEAS, pickCharacterIdeas, MARK_OPEN, MARK_CLOSE, MAX_PROMPT_CHARS, MAX_CHAR_DESCRIPTION, SHEET_NAME, WRAPPER_AFTER } from '../src/shared/chargen';
-import { pickIdeas, THEME_IDEAS } from '../src/shared/themegen';
 
 const ok = (r: ReturnType<typeof cleanDescription>): string => { assert.ok(r.ok, 'expected ok: ' + JSON.stringify(r)); return (r as { text: string }).text; };
 const cps = (s: string): number => Array.from(s).length;
@@ -104,6 +103,5 @@ for (const i of CHARACTER_IDEAS) { const c = cleanDescription(i); assert.ok(c.ok
   assert.ok(four.every((i) => CHARACTER_IDEAS.includes(i)), 'from the character list');
   assert.deepStrictEqual(pickCharacterIdeas(4, () => 0), CHARACTER_IDEAS.slice(0, 4), 'rand is used');
   assert.strictEqual(pickCharacterIdeas(99).length, 24, 'never more than there are');
-  assert.ok(pickIdeas(4).every((i) => THEME_IDEAS.includes(i)) && pickIdeas(4, () => 0).join() === THEME_IDEAS.slice(0, 4).join(), 'the theme maker still picks from its own list');
 }
 console.log('chargen tests passed');

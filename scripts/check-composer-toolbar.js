@@ -14,8 +14,6 @@
  *     turn shows Send beside it, and Stop brings Send back;
  *   - nothing in the toolbar overlaps or leaves the panel, no text under 10.5px;
  *   - with the panel 480px wide: still one row, "⋯" appears, the mode stays in the row, the moved controls are in its popover;
- *   - Simple: mode, attachments and Send only (profile, model and MCP hidden); the memory chip of an agent that cannot compact
- *     (2026-10-22) opens an info-only popup (aria-haspopup="dialog", no "tidy up" promise), Escape back to the chip;
  *   - demo (2026-10-22, once): Stop in a demo chat ends the canned turn: Stop and the spinner go and the reply stops growing;
  *   - a dark user theme (scripts/fixtures/themes/dark-audit.json): the same layout; screenshots.
  *   - compact toolbar (2026-10-23, issue 627): the model chip shows the name only; the context is a ring with a name and the tooltip
@@ -99,7 +97,7 @@ function SUMMARY() {
   };
 }
 
-const THEMES = ['clean-office', 'corporate', 'retro', 'durbar-indian', 'durbar-european', 'durbar-japanese'];
+const THEMES = ['clean-office', 'retro'];
 
 module.exports = async (ctx) => {
   const H = helpers(ctx);
@@ -243,8 +241,6 @@ module.exports = async (ctx) => {
   for (const [w, h] of SIZES) {
     const tag = `${w}x${h}`;
     await load(w, h);
-    await js(`localStorage.setItem('durbar.detail','expert')`);
-    await load(w, h);
     await openIdle();
     let m = await M();
     m.P.forEach((p) => check(false, `${tag}: ${p}`));
@@ -362,14 +358,14 @@ module.exports = async (ctx) => {
     await resizeSteps(tag, w, h);
 
     /* spec 005 FR-054 (issue 627): the owner's medium width (a 760px panel): everything, MCP and the ring included, in the row; no "⋯" */
-    await js(`(()=>{const s=document.createElement('style');s.id='midPanel';s.textContent='#panel{flex:0 0 760px!important;max-width:760px!important}';document.head.append(s);})()`);
+    await js(`(()=>{const s=document.createElement('style');s.id='midPanel';s.textContent='#panel>.panel-in{flex:0 0 760px!important;max-width:760px!important}';document.head.append(s);})()`);
     await ctx.sleep(150); await settle();
     m = await M();
     m.P.forEach((p) => check(false, `${tag} 760px: ${p}`));
     check(!m.more && ['agentChip', 'modeChip', 'modelChip', 'ctxChip', 'mcpBtn', 'attFile', 'attImg'].every((x) => m.rowIds.includes(x)), `${tag} 760px: not everything fits ${JSON.stringify({ more: m.more, row: m.rowIds, pop: m.popIds })}`);
     await js(`document.getElementById('midPanel').remove()`);
     /* narrow panel (spec #452's docking may give it 480px): one row, "⋯", the mode stays */
-    await js(`(()=>{const s=document.createElement('style');s.id='narrowPanel';s.textContent='#panel{flex:0 0 480px!important;max-width:480px!important}';document.head.append(s);})()`);
+    await js(`(()=>{const s=document.createElement('style');s.id='narrowPanel';s.textContent='#panel>.panel-in{flex:0 0 480px!important;max-width:480px!important}';document.head.append(s);})()`);
     await until(`(()=>{const b=document.getElementById('ctMoreBtn');return !!b&&!b.hidden})()`, 3000);
     await settle();
     m = await M();
@@ -380,39 +376,13 @@ module.exports = async (ctx) => {
       check(out.length > 0 && out.every((x) => ORDER.indexOf(x) < Math.min(...kept.map((k) => ORDER.indexOf(k)), 99)) && m.popIds.includes('agentChip'), `${tag} narrow: overflow order ${JSON.stringify({ out, kept })}`); }
     await js(`document.getElementById('ctMoreBtn').click()`);
     check(await until(`!document.getElementById('ctMorePop').hidden`, 2000), `${tag} narrow: "⋯" does not open`);
-    const pop = await js(`(()=>{const p=document.getElementById('ctMorePop'),r=p.getBoundingClientRect(),pr=document.getElementById('panel').getBoundingClientRect();return {inside:r.left>=pr.left-1&&r.right<=pr.right+1&&r.top>=0,focus:p.contains(document.activeElement)}})()`);
+    const pop = await js(`(()=>{const p=document.getElementById('ctMorePop'),r=p.getBoundingClientRect(),pr=document.querySelector('#panel>.panel-in').getBoundingClientRect();return {inside:r.left>=pr.left-1&&r.right<=pr.right+1&&r.top>=0,focus:p.contains(document.activeElement)}})()`);
     check(pop.inside && pop.focus, `${tag} narrow: the "⋯" popover ${JSON.stringify(pop)}`);
     await H.shot(path.join(OUT, `005-composer-narrow-${tag}.png`), { prep: 'calm', tag: 'composer' }); // focus stays in the popover
     await key('Escape');
     check(await until(`document.getElementById('ctMorePop').hidden&&(document.activeElement||{}).id==='ctMoreBtn'`, 2000), `${tag} narrow: Escape does not close "⋯" back to its button`);
     await js(`document.getElementById('narrowPanel').remove()`);
     check(await until(`document.getElementById('ctMoreBtn').hidden`, 3000), `${tag}: "⋯" stays after the panel is wide again`);
-
-    /* Simple: mode, attachments and Send; profile, model and MCP hidden */
-    await js(`localStorage.setItem('durbar.detail','simple')`);
-    await load(w, h);
-    await openIdle().catch(() => {});
-    m = await M();
-    m.P.forEach((p) => check(false, `${tag} simple: ${p}`));
-    check(m.rowIds.includes('modeChip') && m.rowIds.includes('attFile') && !m.rowIds.includes('modelChip') && !m.rowIds.includes('mcpBtn') && !m.rowIds.includes('agentChip'), `${tag} simple: toolbar ${m.rowIds}`);
-    await shot(`005-composer-simple-light-${tag}.png`);
-
-    /* Simple, memory chip: Noor can compact (a menu with Tidy up); Priya's app cannot compact (sim i = 6): an info-only popup, never a dead button */
-    const chipOf = () => js(`(()=>{const c=document.getElementById('ctxChip');return c?{pop:c.getAttribute('aria-haspopup'),title:c.title}:null})()`);
-    let ch = await chipOf();
-    check(ch && ch.pop === 'menu' && /tidy up/i.test(ch.title), `${tag} simple: compactable memory chip ${JSON.stringify(ch)}`);
-    const pid = await H.idOf('Priya');
-    await js(`document.querySelector(${jsLiteral(`#stage .desk[data-id="${pid}"]`)}).click()`);
-    await until(`!!document.getElementById('ctxChip')&&/Priya/.test((document.getElementById('panelHead')||{}).textContent||'')`, 4000);
-    ch = await chipOf();
-    check(ch && ch.pop === 'dialog' && !/tidy up/i.test(ch.title), `${tag} simple: memory chip without Compact ${JSON.stringify(ch)}`);
-    await js(`document.getElementById('ctxChip').classList.remove('mem-low')`); /* shown from 70% only: made visible so it can take focus back */
-    await js(`document.getElementById('ctxChip').click()`);
-    const im = await until(`!!document.getElementById('ctxMenu')`, 3000) && await js(`(()=>{const m=document.getElementById('ctxMenu');return {role:m.getAttribute('role'),info:!!m.querySelector('.mm-info'),btns:m.querySelectorAll('button').length,focus:document.activeElement===m}})()`);
-    check(im && im.role === 'dialog' && im.info && im.btns === 0 && im.focus, `${tag} simple: the memory chip without Compact opens no info popup ${JSON.stringify(im)}`);
-    await key('Escape');
-    check(await until(`!document.getElementById('ctxMenu')&&(document.activeElement||{}).id==='ctxChip'`, 3000), `${tag} simple: Escape does not close the info popup back to the chip`);
-    await js(`localStorage.setItem('durbar.detail','expert')`);
 
     /* demo Stop (once): the canned turn ends, Stop and the spinner go, the reply stops growing */
     if (w === SIZES[0][0]) {
@@ -460,7 +430,7 @@ module.exports = async (ctx) => {
         await key('Escape');
         check(await until(`!document.getElementById('ctxMenu')&&(document.activeElement||{}).id==='ctxChip'`, 3000), `${tag}: Escape does not close the summary back to the ring`);
       }
-      /* FR-055: the six built-in themes lay the row out the same: no overlap, 28px, 10.5px, everything incl. MCP in the row */
+      /* FR-055: the built-in themes lay the row out the same: no overlap, 28px, 10.5px, everything incl. MCP in the row */
       for (const th of THEMES) {
         await load(w, h, { theme: th });
         await until(`window.THEME&&THEME.current().id===${jsLiteral(th)}`, 6000);
@@ -480,13 +450,6 @@ module.exports = async (ctx) => {
     m = await M();
     m.P.forEach((p) => check(false, `${tag} dark: ${p}`));
     await shot(`005-composer-expert-dark-${tag}.png`);
-    await js(`localStorage.setItem('durbar.detail','simple')`);
-    await load(w, h, { theme: 'audit-dark', usertheme: DARK });
-    await openIdle().catch(() => {});
-    m = await M();
-    m.P.forEach((p) => check(false, `${tag} dark simple: ${p}`));
-    await shot(`005-composer-simple-dark-${tag}.png`);
-    await js(`localStorage.setItem('durbar.detail','expert')`);
   }
   console.log('[composer-toolbar] screenshots in ' + OUT);
   assert.deepStrictEqual(fails, [], fails.join('\n'));

@@ -163,6 +163,36 @@ for (const f of files) {
   assert.ok(long && long.type === 'subagent' && long.error && long.error.length === 4000, 'failure summary capped');
 }
 
+// 4c2. Spec 015 FR-018 (issue #1141): a helper started with `run_in_background: true` returns its tool result at once (a launch note); that
+// result is not its end. Only its task_notification closes it (by tool_use_id, or by a task_id from task_started); a foreground one is unchanged.
+{
+  const start = (id: string, bg: unknown): ClaudeMessage => ({ type: 'assistant', message: { id: 'm' + id, content: [{ type: 'tool_use', id, name: 'Agent', input: { prompt: 'p', ...(bg === undefined ? {} : { run_in_background: bg }) } }] } });
+  const result = (id: string): ClaudeMessage => ({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: id, content: 'Async agent launched successfully.' }] } });
+  const subs = (ms: ClaudeMessage[]): string[] => run(ms).filter((e) => e.type === 'subagent').map((e) => (e.type === 'subagent' ? `${e.subagentId}:${e.phase}${e.background ? ':bg' : ''}` : ''));
+  assert.deepStrictEqual(subs([start('tB', true), result('tB')]), ['tB:started:bg'], 'a background helper is not closed by its tool result');
+  assert.deepStrictEqual(subs([start('tB', true), result('tB'), { type: 'system', subtype: 'task_notification', tool_use_id: 'tB', status: 'completed' }]), ['tB:started:bg', 'tB:completed'], 'its task_notification closes it once');
+  assert.deepStrictEqual(subs([start('tB', true), { type: 'system', subtype: 'task_started', task_id: 'kB', tool_use_id: 'tB' }, result('tB'), { type: 'result', subtype: 'success' }, { type: 'system', subtype: 'task_notification', task_id: 'kB', status: 'stopped' }]), ['tB:started:bg', 'tB:failed'], 'by task_id, after the turn ended; stopped is failed');
+  assert.deepStrictEqual(subs([start('tF', false), result('tF')]), ['tF:started', 'tF:completed'], 'run_in_background false: the tool result still closes it');
+  assert.deepStrictEqual(subs([start('tS', 'true'), result('tS')]), ['tS:started', 'tS:completed'], 'only a real true is background');
+  // review of #1160: a failed launch ends a background helper as failed, with its error, and leaves nothing open
+  {
+    const outF: EventBody[] = [];
+    const mF = new ClaudeMapper((x) => outF.push(x));
+    mF.map(start('tE', true));
+    mF.map({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'tE', is_error: true, content: 'could not start the agent' }] } });
+    const ev = outF.filter((e) => e.type === 'subagent').map((e) => (e.type === 'subagent' ? `${e.phase}:${e.error ?? ''}` : ''));
+    assert.deepStrictEqual(ev, ['started:', 'failed:could not start the agent'], 'a background helper whose launch failed ends as failed with the error');
+    assert.strictEqual(mF.stats().openSubagents, 0, 'a failed background launch leaves no open helper');
+  }
+  const out: EventBody[] = [];
+  const m = new ClaudeMapper((b) => out.push(b));
+  m.map(start('tR', true)); m.map(result('tR'));
+  assert.strictEqual(m.stats().openSubagents, 1, 'the background helper stays open after its tool result');
+  m.reset();
+  m.map(start('tR', false)); m.map(result('tR'));
+  assert.deepStrictEqual(out.filter((e) => e.type === 'subagent').map((e) => (e.type === 'subagent' ? e.phase : '')), ['started', 'started', 'completed'], 'reset forgets the background mark');
+}
+
 // 4d. Cost: the running total_cost_usd becomes per-result deltas (0.01 then 0.03 -> 0.01, 0.02); a total that does not grow gives nothing.
 {
   const res = (c: number): ClaudeMessage => ({ type: 'result', subtype: 'success', total_cost_usd: c });

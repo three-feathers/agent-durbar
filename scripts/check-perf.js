@@ -11,6 +11,11 @@
  *   npm run build
  *   DURBAR_USER_DATA=$(mktemp -d) DURBAR_SIM=15 DURBAR_DRIVER=$PWD/scripts/check-perf.js xvfb-run -a npx electron . --no-sandbox
  *
+ * `--record <file>` (spec 097 FR-187, T145): instead of the checks above, record every measure of the performance table as JSON (flat and Real
+ * office, 15 and 40 agents, 3 runs, medians; machine, load, pixel ratio, gpu_compositing, app sha). No assert on any time; exit 0 unless the driver
+ * itself breaks. Pure Node, so it runs on macOS and Windows too (T162): `npm run check:perf -- --record perf.json [--gpu] [--quick] [--runs N] [--only real-15,flat-40]`.
+ * `--gpu` adds the real-GPU A/B rows (blur, blending, animations on and off). Details and limits: scripts/perf-record-driver.js, scripts/perf-record.js.
+ *
  * PERF_SECONDS (default 20) sets the load phase; PERF_SPEED (default 10) how much faster the simulator works than normal.
  */
 const assert = require('assert');
@@ -20,6 +25,8 @@ const SECONDS = Number(process.env.PERF_SECONDS || 20);
 const SPEED = String(process.env.PERF_SPEED || 10);
 
 module.exports = async (ctx) => {
+  // spec 097 T145: `--record` (scripts/perf-record.js) starts this file as the driver with DURBAR_PERF_RECORD_PHASE set (only recordAll sets it); it only records, it asserts nothing
+  if (process.env[require('./perf-record.js').PHASE_ENV]) return require('./perf-record-driver.js')(ctx);
   const H = helpers(ctx); // spec 008 FR-097: shared plumbing
   const { js } = H;
   await H.load({ w: 1440, h: 900, query: { simspeed: SPEED, simfreeze: undefined }, settle: false }); // not frozen: the page never stops changing, so no settling wait
@@ -44,7 +51,7 @@ module.exports = async (ctx) => {
   const openMs = await js(`new Promise(r=>{const d=document.querySelector('#stage .desk[data-id="sim-1"]');const t=performance.now();d.click();
     const w=()=>{const h=document.querySelector('#panel .panel-in');if(h){requestAnimationFrame(()=>r(Math.round(performance.now()-t)));}else requestAnimationFrame(w);};w();})`);
   const switchMs = await js(`(async()=>{const ids=[...document.querySelectorAll('#stage .desk[data-id]')].map(d=>d.dataset.id).filter(x=>/^sim-\\d+$/.test(x)).slice(1,11);const out=[];
-    for(const id of ids){const t=performance.now();const s=document.querySelector('.strip [data-id="'+id+'"], #stage .desk[data-id="'+id+'"]');if(!s)continue;s.click();
+    for(const id of ids){const t=performance.now();const s=document.querySelector('#stripList [data-sw="'+id+'"], #stage .desk[data-id="'+id+'"]');if(!s)continue;s.click();
       await new Promise(r=>{const w=()=>{const p=document.querySelector('#panel');if(p&&p.dataset&&(p.dataset.id===id||document.querySelector('#panel .panel-in')))requestAnimationFrame(()=>r());else requestAnimationFrame(w);};w();});out.push(performance.now()-t);}
     out.sort((a,b)=>a-b);return {n:out.length,p50:Math.round(out[Math.floor(out.length/2)]||0),max:Math.round(out[out.length-1]||0)};})()`);
 
@@ -73,6 +80,12 @@ module.exports = async (ctx) => {
 
 // `npm run check:perf` (or `node scripts/check-perf.js` after a build): starts Electron with this driver; xvfb-run on Linux without a display
 if (require.main === module) {
+  const rec = require('./perf-record.js').parseArgs(process.argv.slice(2));
+  if (process.argv.includes('--record')) {
+    if (!rec.record) { console.error('--record needs a file'); process.exit(2); }
+    require('./perf-record.js').recordAll(rec).then((code) => process.exit(code), (e) => { console.error('perf-record:', String(e && e.message || e).split('\n')[0]); process.exit(1); });
+    return;
+  }
   const fs = require('fs');
   const os = require('os');
   const { spawnSync } = require('child_process');

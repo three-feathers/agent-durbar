@@ -117,11 +117,11 @@ for (const v of ['true', '"false"', '0', 'null']) assert.deepStrictEqual(parseSe
   const ss = new SettingsStore(f);
   ss.load();
   assert.strictEqual(ss.notifyNeedsMe, true, 'on by default');
-  for (const junk of ['no', 0, null, undefined, {}]) assert.strictEqual(ss.setNotifyNeedsMe(junk), true, 'only a boolean changes it: ' + String(junk));
-  assert.strictEqual(ss.setNotifyNeedsMe(false), false);
+  for (const junk of ['no', 0, null, undefined, {}]) assert.strictEqual(ss.setNotifyNeedsMe(junk).value, true, 'only a boolean changes it: ' + String(junk));
+  assert.strictEqual(ss.setNotifyNeedsMe(false).value, false);
   const back = new SettingsStore(f); back.load();
   assert.strictEqual(back.notifyNeedsMe, false, 'kept after a restart');
-  assert.strictEqual(back.setNotifyNeedsMe(true), true);
+  assert.strictEqual(back.setNotifyNeedsMe(true).value, true);
   assert.ok(!('notifyNeedsMe' in JSON.parse(fs.readFileSync(f, 'utf8'))), 'on is not written');
   fs.rmSync(dir, { recursive: true, force: true });
 }

@@ -15,6 +15,9 @@ import type { McpServerStatus } from './types';
 import { nonEmptyStr as str } from '../shared/guards';
 import { EditStreams, editOf } from './edits';
 
+/** Whether a stream message is a helper's (a sub-agent's): the one rule `who()` uses, shared so no other reader decides it differently. */
+export const claudeHelperRef = (m: { parent_tool_use_id?: unknown; agent_id?: unknown }): string | undefined => str(m.parent_tool_use_id) || str(m.agent_id);
+
 /** Fields of the SDK messages this mapper reads (structural subset; shapes from the SDK docs, unverified on a real account). */
 export interface ClaudeContentBlock {
   type: string;
@@ -58,7 +61,7 @@ export const USAGE_IDS_CAP = 512;
 
 const num = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
 /** The CLI turns characters outside [A-Za-z0-9_-] in a server name into `_` when it builds `mcp__<server>__<tool>`. */
-const normalizeServer = (name: string): string => name.replace(/[^A-Za-z0-9_-]/g, '_');
+export const normalizeServer = (name: string): string => name.replace(/[^A-Za-z0-9_-]/g, '_');
 const isSubagentTool = (name: string): boolean => name === 'Agent' || name === 'Task';
 
 /**
@@ -147,6 +150,8 @@ export class ClaudeMapper {
   private thinkingStreamed = new Set<string>();
   /** Sub-agents started and not yet closed (by `task_notification` or by the Agent tool's own result): each gets exactly one closing event. */
   private openSubagents = new Set<string>();
+  /** Spec 015 FR-018: open sub-agents started with `run_in_background: true`; their tool result is a launch note, so only `task_notification` closes them. */
+  private backgroundSubagents = new Set<string>();
   /** Spec 005 FR-019: streamed arguments of file-changing tool_use blocks, and stream block index -> tool_use id per stream. */
   private edits = new EditStreams();
   private blockIds = new Map<string, string>();
@@ -193,6 +198,7 @@ export class ClaudeMapper {
     this.tools.clear();
     this.tasks.clear();
     this.openSubagents.clear();
+    this.backgroundSubagents.clear();
     this.streamMessage.clear();
     this.thinkingStreamed.clear();
     this.edits.clear();
@@ -204,10 +210,9 @@ export class ClaudeMapper {
 
   /** `agentId` of a normalized event: the spawning tool_use id, undefined for the main agent. */
   private who(m: ClaudeMessage): string | undefined {
-    const p = str(m.parent_tool_use_id);
-    if (p) return p;
-    const a = str(m.agent_id);
-    return a ? this.tasks.get(a) ?? a : undefined;
+    const ref = claudeHelperRef(m);
+    if (!ref) return undefined;
+    return str(m.parent_tool_use_id) ? ref : this.tasks.get(ref) ?? ref;
   }
 
   /** Map one SDK message. Never throws on unknown or malformed input. */
@@ -314,7 +319,7 @@ export class ClaudeMapper {
         });
       }
       case 'status': {
-        // spec 015 FR-007 (issue #601, `read:`): the CLI says `compacting` while it summarises the conversation; the main agent only
+        // spec 015 FR-007 (issue #601, `real:` 2026-11-02, #731): the CLI says `compacting` while it summarises, then `status: null` with `compact_result: 'success'` BEFORE `compact_boundary` (a `system/init` comes in between); the main agent only
         if (this.who(m)) return;
         if (m.status === 'compacting') return this.compactionStart();
         if (m.compact_result === 'failed') return this.compactionFailed();
@@ -325,7 +330,7 @@ export class ClaudeMapper {
         const meta = m.compact_metadata && typeof m.compact_metadata === 'object' ? (m.compact_metadata as Record<string, unknown>) : {};
         const size = (v: unknown): number | undefined => { const n = num(v); const r = n === undefined ? undefined : Math.round(n); return r !== undefined && r >= 0 && r < 1e9 ? r : undefined; };
         const pre = size(meta.pre_tokens);
-        const post = size(meta.post_tokens); // optional in the SDK (`read:` sdk.d.ts 0.3.310): the real size after, so the ring need not wait
+        const post = size(meta.post_tokens); // seen `real:` (2.1.316), optional in the SDK types: the real size after, so the ring need not wait
         this.compacting = false;
         this.lastCtx = undefined; // the size it held before is gone; the next message's usage gives the new one
         return this.emit({
@@ -362,6 +367,7 @@ export class ClaudeMapper {
   /** Mark a sub-agent closed and drop its task table entries; false when it was not open (already closed or never started). */
   private closeSubagent(id: string): boolean {
     if (!this.openSubagents.delete(id)) return false;
+    this.backgroundSubagents.delete(id);
     for (const [task, tool] of this.tasks) if (tool === id) this.tasks.delete(task);
     return true;
   }
@@ -437,8 +443,10 @@ export class ClaudeMapper {
           this.emit({ type: 'toolCall', callId, ...meta, phase: early ? 'update' : 'start', args: b.input, ...(edit ? { edit } : {}), agentId });
           if (isSubagentTool(name) && !this.openSubagents.has(callId)) {
             this.openSubagents.add(callId);
-            const input = (b.input ?? {}) as { prompt?: unknown; description?: unknown; subagent_type?: unknown };
-            this.emit({ type: 'subagent', subagentId: callId, phase: 'started', task: str(input.prompt) ?? str(input.description), agentName: str(input.subagent_type), agentId });
+            const input = (b.input ?? {}) as { prompt?: unknown; description?: unknown; subagent_type?: unknown; run_in_background?: unknown };
+            const background = input.run_in_background === true;
+            if (background) this.backgroundSubagents.add(callId);
+            this.emit({ type: 'subagent', subagentId: callId, phase: 'started', task: str(input.prompt) ?? str(input.description), agentName: str(input.subagent_type), ...(background ? { background: true } : {}), agentId });
           }
         }
       } catch (e) {
@@ -492,8 +500,9 @@ export class ClaudeMapper {
       // Spec 058 FR-060/FR-063: judge the whole text before the output cut, only for a failed MCP tool call
       const mcpAuth = b.is_error === true && !!meta.mcpServer && isMcpAuthChallenge(text);
       this.emit({ type: 'toolCall', callId: b.tool_use_id, ...meta, phase: b.is_error === true ? 'failed' : 'complete', output: cap(text), ...(mcpAuth ? { mcpAuth: true as const } : {}), agentId });
-      // The sub-agent tool's own result closes its helper if no task_notification did.
-      if (isSubagentTool(meta.tool) && this.closeSubagent(b.tool_use_id)) this.emit({ type: 'subagent', subagentId: b.tool_use_id, phase: b.is_error === true ? 'failed' : 'completed', ...(b.is_error === true ? { error: cap(textOf(b.content)) ?? 'failed' } : {}), agentId });
+      // The sub-agent tool's own result closes its helper if no task_notification did; a background helper's result is only its launch (FR-018),
+      // unless the launch itself failed: then it ends as failed with the error (review of #1160).
+      if (isSubagentTool(meta.tool) && (b.is_error === true || !this.backgroundSubagents.has(b.tool_use_id)) && this.closeSubagent(b.tool_use_id)) this.emit({ type: 'subagent', subagentId: b.tool_use_id, phase: b.is_error === true ? 'failed' : 'completed', ...(b.is_error === true ? { error: cap(textOf(b.content)) ?? 'failed' } : {}), agentId });
     }
   }
 

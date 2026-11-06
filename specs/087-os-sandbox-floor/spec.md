@@ -11,7 +11,7 @@ note: simulator and fakes; real checks on macOS and Windows open (T061, T062)
 
 **Created**: 2026-10-25
 
-**Status**: Built (2026-10-25) on the simulator and with fakes; Linux checked on a real session 2026-10-25 (T060: Claude Code verified in Read-only; Copilot Ask first let an approved write outside the folder through, K15) and 2026-10-28 (T066: a Copilot floor cleared in place and put back, K16); macOS and Windows not verified (T061, T062 open). See *Changes*.
+**Status**: Built (2026-10-25) on the simulator and with fakes; Linux checked on a real session 2026-10-25 (T060: Claude Code verified in Read-only; Copilot Ask first let an approved write outside the folder through, K15) and 2026-10-28 (T066: a Copilot floor cleared in place and put back, K16); macOS checked for that switch only 2026-11-01 (#834), otherwise macOS and Windows not verified (T061, T062 open). See *Changes*.
 
 **Input**: Issue #611, owner decision (Vikram, 2026-10-23, *go*): "Today Read-only / Ask first are enforced by Durbar's permission
 checks. Turn on each agent app's real OS sandbox underneath, so writes outside the folder or network calls are blocked by the OS
@@ -273,9 +273,9 @@ Allow all keeps the app's default. When the vendor's managed policy forces a san
   `src/shared/api.ts` and holds no vendor name or vendor setting key; the vendor keys stay in `src/adapters/` (constitution II).
   `reason` is masked by the existing redaction and clipped to 200 characters. An adapter without the field shows nothing (the UI
   degrades, constitution II).
-- **FR-012** `[IMPLEMENTED]` (sim: `scripts/check-sandbox-floor.js`; `[KNOWN GAP]` there is no Organization page yet for the FR-173 pointer) Settings > Agent apps (spec 081) shows one line per installed app: *OS sandbox: available (macOS sandbox)*, or
+- **FR-012** `[IMPLEMENTED]` (sim: `scripts/check-sandbox-floor.js`; `[KNOWN GAP]` Settings > Organization exists (spec 076 FR-208) but has no FR-173 pointer yet) Settings > Agent apps (spec 081) shows one line per installed app: *OS sandbox: available (macOS sandbox)*, or
   *not available: <reason>* with the fix (Linux packages, the Ubuntu AppArmor note already in the README for Codex, the Windows
-  build Copilot needs). The Organization page's FR-173 note (spec 076) points to this line.
+  build Copilot needs). The Organization page's FR-173 note (spec 076) is meant to point to this line; it is not on the page yet.
 - **FR-013** `[IMPLEMENTED]` (test: `scripts/test-claude-sandbox.ts`, `scripts/test-copilot-sandbox.ts` AC2) Mode switch (spec 018): the chip shows the floor in force, not the one asked for. Claude Code applies a new floor at the
   next spawn (the existing relaunch with `--resume` at the next message, spec 012 FR-116; until then the hook keeps the stricter of
   the launched and current mode, FR-115), Copilot through `options.update` at the switch, Codex as today (FR-144).
@@ -299,7 +299,7 @@ Allow all keeps the app's default. When the vendor's managed policy forces a san
 - **FR-018** `[IMPLEMENTED]` (test: `scripts/test-sandbox-floor.ts`) Pure modules with unit tests: `claudeSandboxSettings(mode, roots)`, `claudeSandboxState({ platform, version,
   haveBwrap, haveSocat, startExit })`, `copilotSandboxConfig(mode, roots, pathDirs, host)`, `copilotSandboxState(host, warning?)`,
   Codex's state from its existing checks; every OS through injected platform values.
-- **FR-019** `[IMPLEMENTED]` for the rule (test: `scripts/test-sandbox-floor.ts` T050; adapter refusals in the T020/T021 tests) `[KNOWN GAP]` not reachable in the app: spec 076 has no policy reader yet, so `requireOsSandbox()` answers `false` (the reader: issue #734) Organization policy (spec 076): a new key `permissions.requireOsSandbox` (boolean, default `false`) makes FR-007
+- **FR-019** `[IMPLEMENTED]` for the rule (test: `scripts/test-sandbox-floor.ts` T050; adapter refusals in the T020/T021 tests) reachable on macOS and Linux through spec 076 FR-209 (the machine `policy.json`, issue #734); `[KNOWN GAP]` Windows reads no policy yet (issue #1124) Organization policy (spec 076): a new key `permissions.requireOsSandbox` (boolean, default `false`) makes FR-007
   refuse instead of warn. It can only narrow (spec 076's narrow-only rule); bad values count as `true` (fail closed). Confirmed by
   owner decision Q1.
 - **FR-020** `[IMPLEMENTED]` Linux, Claude Code, Read-only only (real: T060, 2026-10-25, *Changes*) `[KNOWN GAP]` Linux Copilot (Read-only: Durbar refused the command first; Ask first: an approved write outside the folder was **not** refused, K15), Linux Claude Ask first and network, macOS (T061), Windows (T062) Real checks are separate tasks (constitution IV): one tiny read-only prompt per app and OS within the owner's budget
@@ -374,12 +374,71 @@ PR ([#728 comment](https://github.com/three-feathers/agent-durbar/pull/728#issue
 
 ## Changes
 
+### 2026-11-04: K15's extra writable path is Copilot's own temp grant; Durbar gives the runtime a private temp folder (FR-023, issue #755)
+
+*Read* (Mac session, no session run): the Copilot SDK 1.0.24 schema (`@github/copilot-sdk-darwin-arm64/schemas/api.schema.json`, `allowDevToolAccess`) says the working directory, **temporary storage**, session log paths and system locations "follow their own rules and stay granted", whatever `allowDevToolAccess` and `addCurrentWorkingDirectory` say. The runtime's own instructions to the model (strings in the same package's `runtime.node`) say: "For scratch files, use `$TMPDIR`. On macOS it is the only writable temp directory … That directory is granted as an exception." Durbar sends nothing extra: `copilotSandboxConfig` sends `readwritePaths` = the session folders in Ask first, `[]` in Read-only, and `addCurrentWorkingDirectory: false`. The 2026-10-25 "outside" folder was `/tmp/durbar-t060-outside-XXXXXX`, inside that temp grant, which is the second read-write rule (`readwritePathsCount: 2`).
+
+*Real check* (`real:` 2026-11-04, the Linux session under the owner's standing OK; Copilot CLI 1.0.105, Ask first, bubblewrap, a scratch copy of `scripts/sandbox-floor-real.ts … ask --spend`, 0.2594 AIU in all, one run per case). In every case `sandbox.decision` showed `policy_resolved`, `policySource: user_policy`, `addCurrentWorkingDirectory: false`, network off, denied 16, readonly 13, **readwrite 2**, enforcement engaged:
+1. An approved `touch` in a new folder under `$HOME` (outside the session folder and `/tmp`): **refused** (exit 1, "No such file or directory": the folder is not mounted in the sandbox).
+2. An approved `touch` in a new folder under `/tmp`: **allowed** (exit 0, the file existed).
+3. The same as 2, with the runtime's `TMPDIR` (and its session folder) set to a fresh private folder (0700): **refused** (exit 1, "No such file or directory"; Copilot retried once, refused again). So on Linux the temp grant follows the runtime's `TMPDIR`, not `/tmp` itself.
+
+- **FR-023** `[IMPLEMENTED]` `test:` **Copilot's runtime gets a private temp folder of its own.** When Durbar starts the Copilot runtime (`createClient`), it makes a new folder under the OS temp root (`fs.mkdtemp`, prefix `durbar-cprt-`, mode 0700 where modes apply) and starts the runtime with `TMPDIR` set to it (`TEMP` and `TMP` too on Windows). Only the runtime's environment changes, not Durbar's own. This narrows Copilot's own temp grant from the shared temp folder (`/tmp` on Linux) to that folder.
+  - **Review of #1126 (fjcabello's side), fixed:**
+    - The folder is bound to its client (`runtimeTmps`): stopping a runtime removes only that runtime's folder, so a runtime that a `getClient()` started while the old one was stopping keeps its own. `test:` a 50 ms stop during a refresh and during `dispose`.
+    - Any spelling of `TMPDIR`, `TEMP` or `TMP` in Durbar's environment is dropped before the runtime's are set, because Windows reads its environment without case.
+    - The dev path passes `RuntimeConnection.forStdio()` explicitly, so `COPILOT_SDK_DEFAULT_CONNECTION=inprocess` (which takes no `env`) cannot be chosen.
+    - The test's environment check uses a planted variable, since Windows spells `PATH` as `Path`.
+    - Mutants:
+      - removing only the right folder is replaced by the old "remove the current one", which fails `FR-023 refresh: the runtime started during the stop keeps its folder`;
+      - keeping a case variant of `TEMP` fails the Windows env assertion.
+  - **One folder per runtime, not per session.** FR-161 (spec 058) keeps ONE runtime for every Copilot session in a run (a runtime per session would ask for the keychain again per session on a Mac). So the Copilot sessions of one run share this folder `[KNOWN GAP]`.
+  - **Removed on every exit path:** when the runtime is stopped (`dispose`), when it is replaced after a new sign-in (`refreshAuth`, the next client gets a new folder), when its start fails, and when the app quits. The folder is in the same registry as spec 012 FR-165's MCP config folders (`privatedirs.ts`), swept on the process `exit` event and in `will-quit` (`sweepMcpConfigs`).
+  - `real:` 2026-11-04, Linux, at 457b980d (the Linux session, under the owner's standing OK; Copilot CLI 1.0.105, bubblewrap, Ask first, 0.157 AIU): with Durbar starting the runtime, an approved `touch "$TMPDIR/probe.txt"` was **allowed**, and the file landed in the `durbar-cprt-` folder (0700); the host `/tmp` was **refused** ("No such file or directory"); the folder was gone after `dispose`. That run had the runner's own `TMPDIR` set, so the private folder was made under it, not under `/tmp` (review of #1126).
+  - `real:` 2026-11-04, Linux, at 18843051, **`TMPDIR`, `TMP` and `TEMP` unset** (the Linux session, under the owner's standing OK; Copilot CLI 1.0.105 through Durbar's adapter, a scratch probe after `scripts/sandbox-floor-real.ts … ask --spend`, not committed; Ask first, bubblewrap, each exact command approved, one prompt each, 3 prompts, 0.2208 AIU in all). The runtime's folder was `/tmp/durbar-cprt-XXXXXX` (mode 0700). Every prompt showed `policy_resolved`, `policySource: user_policy`, `addCurrentWorkingDirectory: false`, network off, denied 16, readwrite 2, enforcement engaged:
+    1. `touch "$TMPDIR/k15-probe.txt"`: **allowed** (exit 0); the file landed in the `durbar-cprt-` folder under `/tmp`;
+    2. `touch` in a new folder beside it under `/tmp` (`/tmp/durbar-k15-sib-XXXXXX`): **refused** (exit 1, "No such file or directory": not mounted in the sandbox);
+    3. `touch` in a new folder under `$HOME`: **refused** (exit 1, "No such file or directory").
+    No `durbar-cprt-` folder was left after `dispose`; the session was deleted from Copilot's history and the probe folders removed.
+  - `real:` 2026-11-04, **macOS** 26.0 (Apple M4), at da058ebf (the Mac session, Vikram's own OK in its terminal: "Real checks are ok. Same rules as Linux."): Copilot CLI 1.0.105 through Durbar's adapter (a scratch copy of `scripts/sandbox-floor-real.ts … ask --spend`, not committed), Ask first, **seatbelt** (`policy_resolved`, readwrite 2, enforcement engaged), each command approved like a person would, one prompt each, 0.419 AIU in all:
+    1. `touch "$TMPDIR/k15-probe.txt"`: **allowed**; the file landed in the `durbar-cprt-` folder;
+    2. `touch` in a new folder beside it, under the per-user temp folder (`/var/folders/…/T`): **refused** ("Operation not permitted");
+    3. `touch` in a new folder under `/tmp`: **refused** ("Operation not permitted");
+    4. `touch` in a new folder under `$HOME`: **refused** ("Operation not permitted").
+    No `durbar-cprt-` folder was left after the runs.
+  - `test:` `scripts/test-copilot-tmpdir.ts` (fake client, no runtime): the client's `env` carries the folder as `TMPDIR` (and `TEMP`/`TMP` on Windows); the folder exists with mode 0700; a sign-in refresh makes a new folder and removes the old one; `dispose` and the quit sweep remove it.
+- **FR-021a text** (the chip tooltip): Ask first now says "writes: this folder and Copilot's temp folder" and "Copilot keeps a temp folder writable; Durbar gives it a private one", instead of "not only this folder". Read-only says "writes: none asked; a temp folder likely" (hedged, because Read-only is not seen; review of #1126; it is short so the longest tooltip still fits 300 characters). The *Sandboxed (partial)* label stays, because approved commands can still write in that folder.
+- `[KNOWN GAP]` K15 (issue #755):
+  - **Read-only:** not exercised (no folder allow rules for Copilot); the grant is most likely there too.
+  - **Windows:** `TEMP` and `TMP` are set (`test:`); the folder's ACL is inherited from `%TEMP%` (`read:`, Node's `mkdtemp`). Nothing was run on Windows.
+  - **A crash or a SIGKILL of Durbar** leaves the folder behind (no handler runs). The OS cleans its temp folder.
+  - **Not yet checked:** that the runtime's own tools (not only an approved shell `touch`) write inside the private `TMPDIR`. The `real:` line covers an approved shell command only.
+  - **Checked on Linux and macOS** (the `real:` lines under FR-023), Ask first only.
+  - **Cannot be removed from inside Durbar** (`read:` 2026-11-05, SDK 1.0.24 `schemas/api.schema.json`, not run): the schema says temporary storage "follow[s] [its] own rules and stay[s] granted" whatever `allowDevToolAccess` or `addCurrentWorkingDirectory` say, and the only knobs (`readwritePaths`, `deniedPaths`) do not name it. Whether a `deniedPaths` entry for the private folder would win over that grant was **not tested**; it is not recommended, since the runtime's own shell scratch files use that folder. The narrowing in FR-023 (private folder instead of `/tmp`) is the fix Durbar owns. Open for the owner: an upstream request that Copilot report the extra rule in `sandbox.decision` and offer an opt-out (draft kept in the issue, not posted).
+  - **Read-only, why unexercised:** Durbar's broker refuses Copilot's shell in Read-only before the sandbox runs, so a `touch` probe cannot tell; the grant would matter only for MCP and LSP servers (`sandboxMcpServers`, `sandboxLspServers`), which write to `TMPDIR` too (`read:`). The tooltip's "a temp folder likely" stays.
+  - **macOS path length** (a side effect of FR-023: a long `os.tmpdir()` makes the private `TMPDIR` too long for Unix sockets) is issue #1173, owned by another contributor; not changed here.
+
 ### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
 
 The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):
 
 > Built 2026-10-25 (simulator and fakes only): Claude Code and Copilot floors, Codex state and card line, the chip, tooltips, the sandbox note with Continue / Always / Change mode…, Settings > Agent apps line, the policy rule; real check on Linux 2026-10-25 (T060): Claude Code's sandbox refused a Read-only write (verified for Linux Read-only only); Copilot's floor was on, Durbar refused the Read-only command first, and in Ask first an approved write outside the folder was not refused (K15, cause unknown); macOS and Windows not verified (T061, T062 open); the policy key is not reachable until spec 076 has a reader. 2026-10-27 delta (issue #806): Restart without the sandbox built 2026-10-27 (FR-022, simulator and fakes only, not on a real session); 2026-10-28 T066 real run on Linux (CLI 1.0.98): verdict A, a running Copilot floor can be cleared in place (K16 resolved for Linux), so FR-022c is built (fakes and simulator): a switch to Allow all lowers the floor and Restart without the sandbox stays only as the fallback after a refused or unanswered lowering; macOS and Windows not verified
 
+
+### 2026-11-01: the same switch probe on macOS: verdict A, K16 cleared in place on macOS too (Refs #834)
+
+**The run** (`real:` 2026-11-01 06:05 UTC, approved by Vikram himself in the Mac session on his Copilot account). Host: macOS, Darwin 25.0.0, Apple M4, Node 22.16.0; the floor's mechanism `seatbelt`. Runtime: Copilot CLI 1.0.101, SDK 1.0.24. Script: `scripts/sandbox-floor-real.js copilot out.json switch --spend` from `main` at 479d961c, after a dry run (0 prompts) that passed. **Cost: 3 prompts, 0.156 AIU** (6 priced calls).
+
+| Step | What | Result |
+|---|---|---|
+| 1 | Control: Ask first, floor on, the card approved only for exactly C | both blocked: `touch` exit 1, *Operation not permitted*, no file; `curl` exit 6 |
+| 2 | `setPermMode(allow)`, then `options.update({ sandboxConfig: { enabled: false }, sandboxConfigSource: 'session_disabled' })` | resolved |
+| 3 | C in Allow all, same session | both worked: `touch` exit 0, the file there; `curl` exit 0 |
+| 4 | Back to Ask first, C again | both blocked again: `touch` exit 1, no file; `curl` exit 6 |
+
+**K16 is resolved for macOS too** on these versions. `[KNOWN GAP]` Windows is still not run (the probe refuses it by design); Linux has not been re-run on a runtime newer than 1.0.98; Durbar's own switch in the app was not run on a real session here (the probe calls the adapter, without the window).
+
+**Side finding:** on macOS the floor leaves `.git/hooks` and `.git/config` in the session folder as **two empty folders**; on Linux `config` was a file. The probe's cleanup refused the folder and exited 1 after a verdict it had already written; `gitPlaceholders` now accepts an empty `config` folder too. `[KNOWN GAP]`, not looked into: the same placeholders in a person's own folder with no `.git` of its own.
 
 ### 2026-10-28: T066 run on a real session: verdict A, K16 cleared in place on Linux; FR-022c built (T072; Refs #806)
 
@@ -556,7 +615,7 @@ the runtime does; nothing was run):
 - `read:` the default of the local sandbox when nothing is sent is not stated in the typings (the "Default: true" lines are for the
   sub-flags). The owner's own report is that a **new** Allow all session has no sandbox; T066 records it as a control.
 
-**New gap K16** (resolved for Linux 2026-10-28, `real:` T066, verdict A: cleared in place on CLI 1.0.98 / SDK 1.0.22; see *Changes* 2026-10-28; macOS and Windows `[KNOWN GAP]`): whether `options.update({ sandboxConfig: { enabled: false }, sandboxConfigSource: 'session_disabled' })` (or any
+**New gap K16** (resolved for Linux 2026-10-28 and macOS 2026-11-01, `real:` verdict A both: cleared in place on CLI 1.0.98 / SDK 1.0.22 and CLI 1.0.101 / SDK 1.0.24; see *Changes*; Windows `[KNOWN GAP]`): whether `options.update({ sandboxConfig: { enabled: false }, sandboxConfigSource: 'session_disabled' })` (or any
 other documented value) clears a floor that is already running in a Copilot session, with CLI 1.0.101 / SDK 1.0.22, and whether a later
 `enabled: true` update puts it back. Unverified; T066 settles it. (2026-10-28: the probe is built but could not run, the owner's VPS has no bubblewrap, so Copilot reports no sandbox
 support there; *Changes* 2026-10-28.)
@@ -666,7 +725,7 @@ default on the switch and B is offered only after an A refusal; if it fails, B i
   - *Claude Code and Codex unaffected, and why:* Claude's floor lives in argv and is rebuilt at the next launch, which a mode change already
     forces (spec 012 FR-116); Codex applies its profile per message (FR-144). Neither ever sets `untilNewSession`, so neither sees the
     action; a test pins that no Claude or Codex state produces it.
-- **FR-022c** `[IMPLEMENTED]` (outcome A; K16 cleared, `real:` T066 2026-10-28, Linux, CLI 1.0.98; test: `scripts/test-copilot-sandbox.ts` T072, `scripts/test-sandbox-floor.ts`; sim: `scripts/check-sandbox-floor.js`; the app's own switch not run on a real session; macOS and Windows not verified) **Clear the floor on the switch.** On a switch to Allow all the Copilot
+- **FR-022c** `[IMPLEMENTED]` (outcome A; K16 cleared, `real:` T066 2026-10-28, Linux, CLI 1.0.98; test: `scripts/test-copilot-sandbox.ts` T072, `scripts/test-sandbox-floor.ts`; sim: `scripts/check-sandbox-floor.js`; the app's own switch not run on a real session; macOS `real:` 2026-11-01, the probe, CLI 1.0.101; Windows not verified) **Clear the floor on the switch.** On a switch to Allow all the Copilot
   adapter sends `options.update({ sandboxConfig: { enabled: false }, sandboxConfigSource: 'session_disabled' })` (the exact payload T066 proved;
   no other field, never `allowBypass`), with the same 15 s limit as FR-004. The state follows the update: **resolved** → `null` (as a fresh
   Allow all session); **refused or no answer** → the floor is still assumed in force, the state keeps `untilNewSession: true` and FR-022
@@ -937,7 +996,7 @@ Built on branch `087-os-sandbox-build`, simulator and fakes only (zero credits).
   check that failed is not kept, so the next session asks again (a real `supported: false` answer is kept for the runtime's life). Protected
   paths are joined in the form of their root (CI on Windows, PR #733).
 - **Managed (US4 AC2).** No real surface reports a managed floor (FR-008, K12), so only the simulator shows *Sandboxed (managed)*.
-- **Policy (FR-019).** `requireOsSandboxFrom(layers)` is the rule; spec 076 has no reader yet, so the app passes no layer (`[KNOWN GAP]`; reading `policy.json` is issue #734).
+- **Policy (FR-019).** `requireOsSandboxFrom(layers)` is the rule; the app passes the machine layer from spec 076 FR-209 (macOS and Linux; `[KNOWN GAP]` Windows).
 - **Settings.** *Always continue* is stored as `sandboxAlwaysContinue` (app ids only) in the settings file and undone from the app's
   Settings card; IPC `agents:sandboxContinue`, `adapters:sandboxHosts`, `adapters:sandboxAlwaysOff` (all owner-only, `fromApp`).
 - **Tooltips (spec 052 FR-168 limits).** The chip's own title stays short (static, 120); the sandbox segment carries the coverage tooltip

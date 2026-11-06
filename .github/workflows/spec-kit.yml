@@ -32,6 +32,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          filter: blob:none # partial clone: every commit and tree, file contents fetched when read (the 1.3 GB full clone hit the 10-minute job limit, 2026-11-03)
       # FR-098: a merge queue entry was gated on its pull request (branch name, spec folder, PR description); the queue entry has
       # no PR description to read, so the gate reports success and says why
       - name: Merge queue entry (gated on its pull request)
@@ -67,6 +68,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          filter: blob:none # partial clone: every commit and tree, file contents fetched when read (the 1.3 GB full clone hit the 10-minute job limit, 2026-11-03)
       - name: Docs check self-test (throwaway repos, no network)
         run: bash .github/scripts/test-docs-check.sh
       - name: Warn when docs may be missing

@@ -4,12 +4,12 @@
  *   npm run check:ui -- --only check-rename-inline
  *   OUT=docs/screenshots  (optional) also saves the screenshots of the field open on the header, a card, a Previous sessions row and a folder
  *
- * At 1440x900 and 1280x800, in Expert and in Simple: every surface of FR-020 (chat title by click, F2 and Enter; desk card pencil and F2;
- * list row pencil and F2; Previous sessions rows (also a hidden one; no pencil on VS Code rows); the room header, the Folders panel and the
- * closed-room plate; none on helpers or in the list's Folder cell), every item of FR-021 (Enter, blur, window blur, Tab, Esc that never
+ * At 1440x900 and 1280x800: every surface of FR-020 (chat title by click, F2 and Enter; desk card pencil and F2;
+ * list row pencil and F2; Previous sessions rows (also a hidden one; no pencil on VS Code rows); the room header and the Folders panel;
+ * none on helpers or in the list's Folder cell), every item of FR-021 (Enter, blur, window blur, Tab, Esc that never
  * closes the chat, unchanged = no call, empty reset, a rule error on Enter and on blur, IME, paste, busy, one edit at a time), every item
  * of FR-023 (a late title, a rename elsewhere, an ended session, a removed one, a re-render, a view switch), the box of the item not
- * moving (D8), the field's font size, the macOS title bar not a drag region over the title, and the escaped EVIL name. Page code that must
+ * moving (D8), the field's font size, the title and every header control no-drag on a Mac (059 FR-025, 052 FR-215), and the escaped EVIL name. Page code that must
  * see the "chat just opened" state runs in ONE js call with the click that opens it (a round trip under load takes longer than 400 ms).
  * A miss prints DRIVER FAILED (Electron still exits 0), so the npm script exits non-zero unless "all checks passed" is printed.
  */
@@ -35,7 +35,7 @@ module.exports = async (ctx) => {
   const fills = (clipSel, max = 480) => js(`(()=>{const i=document.querySelector('.inl-input').getBoundingClientRect(),c=document.querySelector(${jsLiteral(clipSel)}).getBoundingClientRect();return {w:Math.round(i.width),gap:Math.abs(i.right-Math.min(c.right-4,i.left+${jsLiteral(max)}))}})()`);
   const err = () => js(`(()=>{const e=document.querySelector('.inl-err');return e&&!e.hidden?{t:e.textContent,role:e.getAttribute('role'),fs:parseFloat(getComputedStyle(e).fontSize)}:null})()`);
   const type = async (v) => { await opened(); return js(`(()=>{const i=document.querySelector('.inl-input');i.maxLength=500;i.value=${jsLiteral(v)};i.dispatchEvent(new Event('input',{bubbles:true}));})()`); };
-  const ae = () => js(`(()=>{const a=document.activeElement;if(!a||a===document.body)return 'body';return (a.id||a.tagName.toLowerCase()+(a.className?'.'+String(a.className).split(' ')[0]:''))+'|'+((a.dataset&&(a.dataset.id||a.dataset.ren||a.dataset.renfolder||a.dataset.renprev||a.dataset.door||a.dataset.pk))||'')})()`);
+  const ae = () => js(`(()=>{const a=document.activeElement;if(!a||a===document.body)return 'body';return (a.id||a.tagName.toLowerCase()+(a.className?'.'+String(a.className).split(' ')[0]:''))+'|'+((a.dataset&&(a.dataset.id||a.dataset.ren||a.dataset.renfolder||a.dataset.renprev||a.dataset.pk))||'')})()`);
   const aliasOf = (id) => js(`(()=>{const a=__durbarSimUi.agents().find(x=>x.id===${jsLiteral(id)});return a?(a.alias||''):null})()`);
   const nameOf = (id) => js(`(()=>{const a=__durbarSimUi.agents().find(x=>x.id===${jsLiteral(id)});return a?a.name:null})()`);
   const cardName = (id) => js(`(()=>{const e=document.querySelector(${jsLiteral(`#stage .desk[data-id="${id}"] .name`)});return e?e.textContent:null})()`);
@@ -63,25 +63,43 @@ module.exports = async (ctx) => {
   const closeField = async () => { if ((await st()).open) { await key('Escape'); await ctx.sleep(120); } };
 
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
-    for (const level of ['expert', 'simple']) {
+    {
       await H.load({ w, h, query: Q, ready: 'fit', settle: false });
-      await js(`localStorage.setItem('durbar.detail',${jsLiteral(level)})`);
-      await H.load({ query: Q, ready: 'fit', settle: false });
       await until(`document.querySelectorAll('#stage .unit>.ren[data-ren]').length>=6`, 10000);
       ctx.win.show(); ctx.win.focus(); ctx.win.webContents.focus();
       /* a CI window (Windows) may have no OS focus, or lose it while a field is open: blurAction keeps the field when document.hasFocus() is false (FR-021 item 2). The driver therefore never stubs hasFocus for long: blurField() stubs it true for ONE synchronous call, and the window-blur step stubs it false for one call. A real OS blur at any other time then keeps the field, as in the app. */
       const hasOs = async () => ((await js('document.hasFocus()')) ? 'has' : 'has no');
-      console.log('[rename-inline] ' + w + 'x' + h + ' ' + level + ': the window ' + (await hasOs()) + ' OS focus');
+      console.log('[rename-inline] ' + w + 'x' + h + ': the window ' + (await hasOs()) + ' OS focus');
       if (process.env.RI_UNFOCUSED === '1') { ctx.win.blur(); await ctx.sleep(300); console.log('[rename-inline] RI_UNFOCUSED=1: the window now ' + (await hasOs()) + ' OS focus'); }
-      const tag = `${w} ${level}`;
-      assert.ok(await js(`document.body.classList.contains('simple')===${level === 'simple'}`), `${tag}: the detail level is on`);
+      const tag = `${w}`;
       assert.ok(await js(`typeof __durbarSimUi.inline==='function'&&!!window.__simRenameCalls`), `${tag}: the simulator hooks exist`);
       const ids = await js(`[...document.querySelectorAll('#stage .unit>.ren[data-ren]')].map(b=>b.dataset.ren)`);
       assert.ok(ids.length >= 6, `${tag}: pencils on the desks: ${ids.length}`);
+      /* issue #1067: the pencil's 24px box (invisible until hover, still clickable) never covers the middle of a name it shares a line with: a click there opens the chat */
+      const mid = await js(`(()=>{const out=[];let n=0;for(const b of document.querySelectorAll('#stage .unit>.ren[data-ren]')){const d=b.parentElement.querySelector(':scope>.desk[data-id]'),nm=d&&d.querySelector('.name');if(!nm||!nm.getClientRects().length)continue;
+        const r=nm.getBoundingClientRect(),q=b.getBoundingClientRect();if(q.bottom<=r.top||q.top>=r.bottom)continue;n++;const mx=r.left+r.width/2,my=r.top+r.height/2,at=document.elementFromPoint(mx,my);
+        if(q.left<mx-0.5||(at&&(at===b||b.contains(at))))out.push(b.dataset.ren+' '+JSON.stringify(nm.textContent.trim())+' name '+Math.round(r.left)+'..'+Math.round(r.right)+' box '+Math.round(q.left)+'..'+Math.round(q.right));}
+        return {n,out};})()`);
+      assert.ok(mid.n >= 1, `${tag}: some pencils share their name's line (${mid.n})`);
+      assert.deepStrictEqual(mid.out, [], `${tag}: no pencil box covers the middle of its name (issue #1067)`);
+      /* the case the bug needs, made on purpose: the shortest name on a card too narrow for the pencil beside it, so the pencil falls back over the
+         name (a stylesheet rule, so a re-render keeps it); its box must still leave the name's middle to the card */
+      const forced = await js(`(async()=>{let best=null;for(const b of document.querySelectorAll('#stage .unit>.ren[data-ren]')){const d=b.parentElement.querySelector(':scope>.desk[data-id]'),nm=d&&d.querySelector('.name');if(!nm||!nm.getClientRects().length)continue;const w=nm.getBoundingClientRect().width;if(!best||w<best.w)best={id:d.dataset.id,w};}
+        if(!best)return {err:'no desk'};const d=document.querySelector('#stage .desk[data-id="'+CSS.escape(best.id)+'"]'),nm=d.querySelector('.name'),dr=d.getBoundingClientRect(),nr=nm.getBoundingClientRect();
+        const st=document.createElement('style');st.id='ri-1067';st.textContent='#stage .desk[data-id="'+CSS.escape(best.id)+'"]{width:'+Math.ceil(nr.right-dr.left+10)+'px!important;min-width:0!important;max-width:none!important}#stage .desk[data-id="'+CSS.escape(best.id)+'"] .name{flex:none!important;min-width:max-content!important}';document.head.appendChild(st);
+        window.__durbarSimUi.render();await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));await new Promise(r=>setTimeout(r,200));
+        const b=document.querySelector('#stage .ren[data-ren="'+CSS.escape(best.id)+'"]'),n2=document.querySelector('#stage .desk[data-id="'+CSS.escape(best.id)+'"] .name');const r=n2.getBoundingClientRect(),q=b.getBoundingClientRect();
+        const mx=r.left+r.width/2,my=r.top+r.height/2,at=document.elementFromPoint(mx,my);
+        const res={id:best.id,name:n2.textContent.trim(),nameW:Math.round(r.width),over:q.left<r.right,boxLeft:Math.round(q.left),mid:Math.round(mx),covers:q.left<mx-0.5||!!(at&&(at===b||b.contains(at)))};
+        st.remove();window.__durbarSimUi.render();return res;})()`);
+      console.log('[rename-inline] ' + tag + ' forced short name: ' + JSON.stringify(forced));
+      assert.ok(forced.over, `${tag}: the forced case puts the pencil over the name (${JSON.stringify(forced)})`);
+      assert.strictEqual(forced.covers, false, `${tag}: on a short name with no room, the pencil box leaves the name's middle to the card (issue #1067): ${JSON.stringify(forced)}`);
+      await settle();
       const [A, B, C, D, E] = ids;
 
-      // the screenshots of the edit state, on the fresh page (no rename has happened yet, so no leftover names), Expert only
-      if (level === 'expert') {
+      // the screenshots of the edit state, on the fresh page (no rename has happened yet, so no leftover names)
+      {
         await openChat(A); await click('#panelTitleBtn', 1); await ctx.sleep(150); await type('Billing refactor'); await shot(`059-rename-inline-header-${w}x${h}.png`); await key('Escape'); await settle(); await closePanel();
         await click(`#stage .ren[data-ren="${C}"]`, 1); await ctx.sleep(150); await type('Billing refactor'); await shot(`059-rename-inline-card-${w}x${h}.png`); await key('Escape'); await settle();
         const fpa = await js(`(()=>{const a=__durbarSimUi.agents().find(x=>x.live&&!x.parent&&x.info&&x.info.cwd==='~/work/mcp-swiss');return a?a.id:null})()`);
@@ -89,7 +107,7 @@ module.exports = async (ctx) => {
         await js(`(()=>{const b=document.getElementById('prevBtn');if(b&&b.getAttribute('aria-expanded')!=='true')b.click();})()`);
         await until(`document.querySelectorAll('#prevLists .prev-row[data-pg="cli"] .ren[data-renprev]').length>=2`, 5000);
         await js(`document.querySelector('#prevLists .prev-row[data-pg="cli"] .ren[data-renprev]').click()`); await ctx.sleep(150); await type('Billing refactor'); await shot(`059-rename-inline-prev-${w}x${h}.png`); await key('Escape'); await settle(); await closePanel();
-        const frid = await js(`document.querySelector('#stage .room-head [data-door]').dataset.door`);
+        const frid = await js(`document.querySelector('#stage .room[data-room]').dataset.room`);
         await click(`#stage .ren[data-renfolder="${frid}"]`, 1); await ctx.sleep(150); await type('Billing room'); await shot(`059-rename-inline-folder-${w}x${h}.png`); await key('Escape'); await settle();
         await none(`${tag}: the screenshots left no field open`);
       }
@@ -167,10 +185,12 @@ module.exports = async (ctx) => {
       assert.strictEqual(await ae(), 'panelTitleBtn|', `${tag}: focus is on the title button after saving`);
       assert.strictEqual(await box('#panelHead'), hb, `${tag}: the header kept its box after saving`);
       assert.strictEqual(await nameOf(A), 'Billing refactor');
-      // the macOS title bar is not a drag region over the title (the header .ph is not one)
+      // 059 FR-025 (delta 2026-11-04) with 052 FR-215: the header .ph is a Mac drag area, but the title, its button and every control in it are no-drag
       await js(`document.documentElement.dataset.platform='darwin'`);
-      const regions = await js(`['#panelTitle','#panelTitleBtn','#panelHead','.ph-top'].map(s=>getComputedStyle(document.querySelector(s)).webkitAppRegion||'none')`);
-      assert.ok(regions.every((x) => x !== 'drag'), `${tag}: the title and header are not a drag region on a Mac: ${regions}`);
+      const regions = await js(`['#panelTitle','#panelTitleBtn'].map(s=>getComputedStyle(document.querySelector(s)).webkitAppRegion||'none')`);
+      assert.ok(regions.every((x) => x === 'no-drag'), `${tag}: the title and its button are no-drag on a Mac: ${regions}`);
+      const dragging = await js(`(()=>{const c=[...document.querySelectorAll('#panelHead :is(button,a,input,[tabindex],[title])')];return {n:c.length,bad:c.filter(e=>getComputedStyle(e).webkitAppRegion!=='no-drag').map(e=>(e.id||e.className||e.tagName)+'='+(getComputedStyle(e).webkitAppRegion||'none'))}})()`);
+      assert.ok(dragging.n >= 3 && dragging.bad.length === 0, `${tag}: every control in the chat header is no-drag on a Mac (${dragging.n} read): ${JSON.stringify(dragging.bad)}`);
       await js(`delete document.documentElement.dataset.platform`);
       // empty resets (6): the runtime title comes back, "Name reset." is announced, the call carries ''
       await click('#panelTitleBtn', 1); await ctx.sleep(120); await type('   '); await key('Return'); await settle();
@@ -316,7 +336,7 @@ module.exports = async (ctx) => {
       assert.strictEqual(await js(`document.querySelectorAll('.inl-input').length`), 1, `${tag}: one field on screen while a save runs`);
       assert.strictEqual((await st()).anchorKey, 'desk:' + B);
       // the window loses its OS focus while the second field is open (a CI window may do it at any time): the field stays, as FR-021 item 2 says
-      ctx.win.blur(); await until(`!document.hasFocus()`, 4000);
+      ctx.win.blur(); assert.ok(await until(`!document.hasFocus()`, 4000), `${tag}: the page saw the focus loss`);
       await until(`__durbarSimUi.agents().find(x=>x.id===${jsLiteral(A)}).alias==='Slow save'`, 6000); await settle();
       assert.ok((await st()).open && (await st()).anchorKey === 'desk:' + B, `${tag}: an OS focus loss kept the second field open`);
       ctx.win.show(); ctx.win.focus(); ctx.win.webContents.focus(); await until(`document.hasFocus()`, 4000);
@@ -389,27 +409,27 @@ module.exports = async (ctx) => {
       assert.strictEqual(await js(`document.querySelector(${jsLiteral(rowSel(pk2) + ' .prev-t')}).textContent`), 'Hidden renamed', `${tag}: a hidden row renames`);
       await closePanel();
 
-      // ---- 4. folders: the room header, the Folders panel, the closed-room plate; a rename elsewhere; F2 on the door ----
-      const rid = await js(`document.querySelector('#stage .room-head [data-door]').dataset.door`);
+      // ---- 4. folders: the room header, the Folders panel, a rename elsewhere; F2 on the folder button ----
+      const rid = await js(`document.querySelector('#stage .room[data-room]').dataset.room`);
       const nf = await nFold();
-      const hdb = await box(`#stage .room-head:has([data-door="${rid}"])`);
+      const hdb = await box(`#stage .room[data-room="${rid}"] .room-head`);
       assert.strictEqual(await js(`document.querySelectorAll('#stage .room-head .ren[data-renfolder]').length`), await js(`document.querySelectorAll('#stage .room-head').length`), `${tag}: every open room has a pencil`);
       await click(`#stage .ren[data-renfolder="${rid}"]`, 1); await opened();
       f = await fld(); assert.ok(f && f.focus && f.max === 40 && f.fs >= 10.5 && /^Name of folder /.test(f.label), `${tag}: the room header pencil opens the folder field: ${jsLiteral(f)}`);
-      assert.strictEqual(await box(`#stage .room-head:has([data-door="${rid}"])`), hdb, `${tag}: the room header did not move`);
+      assert.strictEqual(await box(`#stage .room[data-room="${rid}"] .room-head`), hdb, `${tag}: the room header did not move`);
       await type('Typed folder'); await js(`__durbarSimUi.renameRoomElsewhere(${jsLiteral(rid)},'Changed elsewhere')`); await settle();
       assert.strictEqual((await fld()).v, 'Typed folder', `${tag}: the typed folder name stays when the name changes by another path (13)`);
       await key('Escape'); await settle();
-      assert.strictEqual(await js(`document.querySelector(${jsLiteral(`#stage .room-head:has([data-door="${rid}"]) .room-name`)}).textContent`), 'Changed elsewhere', `${tag}: Esc shows the new folder name`);
+      assert.strictEqual(await js(`document.querySelector(${jsLiteral(`#stage .room[data-room="${rid}"] .room-head .room-name`)}).textContent`), 'Changed elsewhere', `${tag}: Esc shows the new folder name`);
       assert.strictEqual(await nFold(), nf, `${tag}: no folder call yet`);
       await click(`#stage .ren[data-renfolder="${rid}"]`, 1); await ctx.sleep(120);
       await key('Return'); await settle(); assert.strictEqual(await nFold(), nf, `${tag}: unchanged folder text makes no call`);
       await click(`#stage .ren[data-renfolder="${rid}"]`, 1); await ctx.sleep(120); await type('Folder renamed'); await key('Return'); await settle();
       assert.strictEqual(await nFold(), nf + 1); assert.strictEqual((await calls()).folder[nf], 'Folder renamed');
-      assert.strictEqual(await js(`document.querySelector(${jsLiteral(`#stage .room-head:has([data-door="${rid}"]) .room-name`)}).textContent`), 'Folder renamed');
+      assert.strictEqual(await js(`document.querySelector(${jsLiteral(`#stage .room[data-room="${rid}"] .room-head .room-name`)}).textContent`), 'Folder renamed');
       await click(`#stage .ren[data-renfolder="${rid}"]`, 1); await ctx.sleep(120); await type(''); await key('Return'); await settle();
       assert.strictEqual((await calls()).folder[nf + 1], '', `${tag}: an empty folder name resets`);
-      assert.notStrictEqual(await js(`document.querySelector(${jsLiteral(`#stage .room-head:has([data-door="${rid}"]) .room-name`)}).textContent`), 'Folder renamed', `${tag}: the folder's own name is back`);
+      assert.notStrictEqual(await js(`document.querySelector(${jsLiteral(`#stage .room[data-room="${rid}"] .room-head .room-name`)}).textContent`), 'Folder renamed', `${tag}: the folder's own name is back`);
       // one folder-name rule (spec 059 delta 2026-10-24): hidden and control characters are refused with the reason, in the field and in the dialog
       const nf3 = await nFold();
       for (const bad of ['Proj\u0007x', 'Proj\u202eexe', 'zero\u200bwidth', 'x'.repeat(41)]) {
@@ -429,9 +449,7 @@ module.exports = async (ctx) => {
       }
       assert.strictEqual(await nFold(), nf3, `${tag}: the dialog sent nothing either`);
       await js(`(()=>{if(!document.getElementById('foldersPop').hidden)document.getElementById('foldersBtn').click();})()`); await until(`document.getElementById('foldersPop').hidden`);
-      // F2 on the door and on the folder ⋯ button
-      await focus(`#stage .room-head [data-door="${rid}"]`); await key('F2'); await settle();
-      assert.strictEqual((await st()).anchorKey, 'folder:room:' + rid, `${tag}: F2 on the door`); await closeField();
+      // F2 on the folder ⋯ button
       if (await js(`!!document.querySelector(${jsLiteral(`#stage [data-foldermenu="${rid}"]`)})`)) { await focus(`#stage [data-foldermenu="${rid}"]`); await key('F2'); await settle(); assert.strictEqual((await st()).anchorKey, 'folder:room:' + rid, `${tag}: F2 on the folder menu button`); await closeField(); }
       // the Folders panel row
       await js(`document.getElementById('foldersBtn').click()`); await until(`!document.getElementById('foldersPop').hidden`);
@@ -441,16 +459,8 @@ module.exports = async (ctx) => {
       await key('Escape'); await settle(); assert.ok(await js(`!document.getElementById('foldersPop').hidden`), `${tag}: Esc closes only the field, not the Folders panel`);
       assert.strictEqual(await js(`!!document.querySelector('#foldersPop [data-fp="rename"]')`), true, `${tag}: the Rename button (dialog) stays`);
       await key('Escape'); await settle();
-      // a closed room's plate: F2 on the plate
-      await js(`document.querySelector(${jsLiteral(`#stage .room-head [data-door="${rid}"]`)}).click()`); await until(`!!document.querySelector(${jsLiteral(`#stage .plate[data-door="${rid}"]`)})`);
-      await focus(`#stage .plate[data-door="${rid}"]`); await key('F2'); await settle();
-      assert.strictEqual((await st()).anchorKey, 'folder:room:' + rid, `${tag}: F2 on a closed room's plate`);
-      // the room opens again while the field is open: the name moves, the field follows; the folder leaves: it closes without a call
-      await closeField();
-      await js(`document.querySelector(${jsLiteral(`#stage .plate[data-door="${rid}"]`)}).click()`); await until(`!!document.querySelector(${jsLiteral(`#stage .room-head [data-door="${rid}"]`)})`);
-
       // item 7 of the review (FR-023 item 4, folders): a room hidden or removed while its field is open: it closes, no folder call, focus on a real control
-      const rids = await js(`[...document.querySelectorAll('#stage .room-head [data-door]')].map(d=>d.dataset.door)`);
+      const rids = await js(`[...document.querySelectorAll('#stage .room[data-room]')].map(d=>d.dataset.room)`);
       assert.ok(rids.length >= 3, `${tag}: rooms to hide and remove`);
       const nf2 = await nFold();
       await click(`#stage .ren[data-renfolder="${rids[1]}"]`, 1); await settle(); await type('Never saved folder');

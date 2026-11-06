@@ -111,7 +111,7 @@ module.exports = async (ctx) => {
     const pa = pc.find((x) => x.id === A.id), pb = pc.find((x) => x.id === B.id), pcx = pc.find((x) => x.id === C.id);
     assert.ok(pa && pb && pcx, 'each chat is listed: ' + JSON.stringify(pc));
     assert.strictEqual(pa.w, 'Failed');
-    assert.match(pa.hint, /command was not found/, 'the chat dialog\'s hint (FR-006)');
+    assert.match(pa.hint, /Install the command, or put its full path/, 'the chat dialog\'s hint (FR-006)');
     assert.ok(pa.det && pa.rs && pa.sess && pa.open, 'the failed Copilot chat has Details, Restart, Restart session and Open in chat: ' + JSON.stringify(pa));
     assert.ok(!pcx.rs && /cannot restart one server; use Restart session with these servers/.test(pcx.hint), 'Codex: no per-server Restart, the FR-032 line: ' + JSON.stringify(pcx));
     assert.ok(pb.rs, 'Claude Code chats can restart one server');

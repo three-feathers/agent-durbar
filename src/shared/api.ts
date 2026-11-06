@@ -1,6 +1,8 @@
+import type { OrderDoc } from './roomorder';
 import type { FolderSetupDecision, FolderSetupView, HookExplanation } from './foldersetup';
 import type { BroadKind } from './broadfolder';
 import type { AgentEvent, McpServerStatus } from '../adapters/types';
+import type { McpContextReport, McpWarnLevels } from './mcpcost';
 import type { HistoryItem, PreviousSession } from '../adapters/history';
 import type { VsChatSummary, VsChatTranscript } from '../adapters/vscodeChat';
 import type { UsageDoc } from './toolusage';
@@ -62,6 +64,8 @@ export interface AgentInfo {
   maxAiCredits?: number;
   /** Restored from a saved Allow all after a restart (spec 003 FR-026): shown as a small "restored" note until the mode is switched. */
   permRestored?: boolean;
+  /** Spec 099 FR-002: this session is on Autopilot (Allow all plus a goal loop). Main memory only: never saved, never restored (FR-005). */
+  autopilot?: { limit: number; cap?: number; hours?: number; run?: { continuation: number; startedAt: number } };
   /**
    * Spec 003 (2026-10-21): where the mode of a session that came back (restart or Previous sessions) was taken from, so the chat
    * can say it: `session` = the mode last chosen for this very session; `folder` = the folder's saved mode (nothing remembered for
@@ -70,8 +74,6 @@ export interface AgentInfo {
   permFrom?: 'session' | 'folder' | 'opener';
   /** The folder is hidden from the office (it keeps its saved sessions). */
   hidden?: boolean;
-  /** The room's door is closed (compact door plate in the office). */
-  closed?: boolean;
   /** Floor of the folder (spec 033); absent = the ground floor. */
   floor?: string;
   /** Display name of the folder's room (spec 006 FR-018); absent = the folder's own name. */
@@ -162,6 +164,7 @@ export type LimitChoice = { kind: 'add'; credits: number } | { kind: 'set'; cred
 
 import type { AboutView } from './about';
 import type { AccountView } from './account';
+import type { QuotaMode, QuotaView } from './quota';
 import type { AutoTier, CompactResult, ContextTier, ManagedAutoTier, ModelControl, ModelPricing, ModelSwitchRequest, ModelSwitchResult, PriceClass } from './modelswitch';
 
 /** Saved credit totals as the window receives them (spec 011 FR-026). Numbers, a display name and the folder's own path (already known to the window); the file holds a hash, never the path. */
@@ -194,8 +197,12 @@ export interface CustomPlaceResult {
 }
 
 export interface AppSettingsView {
+  /** Spec 100 FR-020: when the MCP warning shows. */
+  mcpWarnLevels?: McpWarnLevels;
   /** Owner, version and contributors for Settings > About (spec 008 FR-018). */
   about?: AboutView;
+  /** Settings in force for this run only because the file could not be written (issue 1023), e.g. `defaultMaxAiCredits`. */
+  unsaved?: string[];
   /** Default cap (AIU) applied to new sessions; unset = none. */
   defaultMaxAiCredits?: number;
   /** Places in the office (spec 024): MCP server name -> place id or `desk`; unmapped servers use the built-in rules. */
@@ -204,20 +211,28 @@ export interface AppSettingsView {
   customPlaces?: CustomPlaceView[];
   /** Serious mode (spec 034): the agent figures show no monster, ambulance or other mood drawing. */
   seriousMode?: boolean;
+  /** spec 052 FR-069: Settings > Motion; absent or true means on */
+  motion?: boolean;
+  /** Spec 001 FR-192: desk highlights keep the glow and the New badge but no motion. */
+  stillHighlights?: boolean;
+  /** Auto-follow work (spec 052 FR-182): off by default. */
+  autoFollowWork?: boolean;
   /** Active theme id (specs 035-040). Omitted = Clean Office. */
   theme?: string;
   /** Spec 077 FR-064: who sits at the desks (`theme`: the theme's own). */
-  characters?: 'theme' | 'minimalist' | 'cheeky' | 'prehistoric' | 'mine';
+  characters?: 'theme' | 'minimalist' | 'cheeky' | 'prehistoric' | 'pirate' | 'monster' | 'royal' | 'rebels' | 'mine';
   /** Spec 096 FR-033: folder key to character id, only ids main lists. */
   characterPins?: Record<string, string>;
-  /** Spec 096 FR-060: Settings > Characters > Motion; on unless turned off. */
-  characterMotion?: boolean;
   /** OS notifications when an agent needs you while the window is in the background (spec 052 FR-059). On unless turned off. */
   notifyNeedsMe?: boolean;
   /** Spec 068 FR-006: after a coffee break, `auto` resumes by itself when it costs nothing extra; `ask` always asks. */
   breakResume?: 'auto' | 'ask';
   /** Spec 080 FR-031: where a plain click on a chat link opens (default `'session'`). */
   chatLinksIn?: 'session' | 'system';
+  /** Spec 058 FR-213: *Refresh MCP sign-ins automatically* (on unless turned off). */
+  mcpSignInRefresh?: boolean;
+  /** Spec 058 FR-227 (issue #1205): *Diagnostics*, off by default: extra activity rows (a renewal that worked). */
+  diagnostics?: boolean;
 }
 
 /** Spec 096 FR-030, FR-031: a character's frames as WebP bytes. */
@@ -254,6 +269,20 @@ export interface CharacterTryResult {
   cancelled?: boolean;
   full?: boolean;
 }
+/** Spec 058 FR-208, FR-211: main's sign-in refresh lines for one chat (names and fixed kinds only; no vendor text, no token). */
+export type McpSignInRefreshNote =
+  | { id: string; kind: 'waiting'; count: number }
+  | { id: string; kind: 'late'; names: string[] }
+  | { id: string; kind: 'done' }
+  | { id: string; kind: 'not-sent' }
+  | { id: string; kind: 'needs-sign-in'; name: string }
+  /** Spec 058 FR-218 (2026-11-05): the agent was sent one short automatic message after a server was reconnected (the message itself is a `user` event). */
+  | { id: string; kind: 'nudged'; name: string }
+  /** The automatic message could not be sent (the adapter refused it): the window marks it so. */
+  | { id: string; kind: 'nudge-failed'; name: string }
+  /** Spec 058 FR-226 (issue #1205): a reconnect started by the check before a message runs / has ended (the line "Reconnecting <name>…"). */
+  | { id: string; kind: 'reconnecting'; name: string }
+  | { id: string; kind: 'reconnect-end'; name: string };
 
 /** A profile file (spec 043 FR-010); `path` is for display only, the window sends `id` back. */
 export interface ProfileFileInfo {
@@ -300,6 +329,9 @@ export interface ProfileInfo {
 }
 
 /** What a scheduled run came to (spec 044; main's `Outcome`). */
+/** Spec 017 FR-031: one prompt held behind a door before the update, as the window sees it (it masks and cuts the text). */
+export interface HeldBeforeItem { id: string; session?: string; prompt: string; at: number; canSend: boolean; why?: string }
+export interface HeldBeforeList { items: HeldBeforeItem[]; notice: boolean; damaged: boolean; aside: boolean }
 export type ScheduleOutcome = 'sent' | 'skipped-busy' | 'skipped-paused' | 'skipped-cap' | 'skipped-ended' | 'missed' | 'failed' | 'held' | 'ended' | 'skipped-door-full' | 'skipped-review';
 /** Spec 044 FR-036: one entry of a schedule's run log, as `scheduleRuns` returns it (newest first). Reason codes only, never text. */
 export interface ScheduleRunInfo {
@@ -334,11 +366,42 @@ export interface ScheduleInfo {
   cap?: { amount: number; unit: 'aiu' | 'usd' };
   spent?: number;
   spentUnknown?: boolean;
+  /** Spec 072 FR-002: a self-paced loop on `target`'s session: the user's limits, and main's own state (never taken from the window). */
+  loop?: LoopInfo;
+}
+/** Spec 072 FR-002: a loop's limits (minutes, epoch ms) and what main keeps: passes, the last ask, a hold, and how it ended. */
+export interface LoopInfo {
+  minDelay: number;
+  maxDelay: number;
+  defaultDelay: number;
+  maxPasses: number;
+  endAt: number;
+  startedAt?: number;
+  passes?: number;
+  inPass?: boolean;
+  lastAsk?: { minutes: number; reason: string; source: 'agent' | 'default' | 'clamped'; asked?: number };
+  noPaceStreak?: number;
+  errorStreak?: number;
+  hold?: 'pause-all' | 'person' | 'break';
+  ended?: { at: number; reason: 'user' | 'agent' | 'session' | 'limit' | 'passes' | 'time' | 'no-pace' | 'errors' | 'app-closed'; text: string };
+}
+/** Spec 072 FR-023: the `loop:pass` push for a pass's chat note: pass N went out, its next wake, or the loop's end. No prompt or reply. */
+export interface LoopPassInfo {
+  agentId: string;
+  scheduleId: string;
+  phase: 'sent' | 'next' | 'end';
+  pass?: number;
+  maxPasses: number;
+  next?: number;
+  reason?: string;
+  ended?: string;
 }
 /** Spec 052 FR-089: the Since you were away card's facts (src/main/daily.ts). */
 export interface SinceAwayInfo {
   awayMs: number;
   missed: Array<{ id: string; folderName: string; prompt: string; repeats: boolean }>;
+  /** Spec 085 FR-009: yesterday's and today's ended sessions (counts and minutes only); missing = none. */
+  briefing?: { sessions: number; files: number; added: number; removed: number; commits: number; minutes: number; uncounted?: number };
 }
 
 /** Spec 006 FR-040..FR-041 (issue #606): sessions the last run left in the middle of a turn, still resumable. Ids and folder names only. */
@@ -480,6 +543,8 @@ export interface GlobalEntryView {
   headerKeys: string[];
   /** Some value is a `${NAME}` reference (or Codex `env_vars` / `env_http_headers`). */
   refs?: boolean;
+  /** Spec 058 FR-198: a stdio command Agent Durbar looked up and did not find on this computer (a file lookup, nothing run). */
+  missing?: boolean;
 }
 
 /** One app's list as read now (spec 069 FR-002, FR-008). */
@@ -569,8 +634,6 @@ export interface McpFolderState {
   /** Display name of the folder. */
   name: string;
   servers: McpServerView[];
-  /** Old app-level servers that are not applied; they can be moved into this folder or removed. */
-  legacy: McpServerView[];
   secretsPersist: boolean;
   /** Extras that are on but are not passed to new sessions, with the reason. */
   skipped: { name: string; reason: string }[];
@@ -656,6 +719,8 @@ export interface UsageView {
 
 /** One MCP server as one agent sees it. */
 export interface AgentMcpEntry {
+  /** Spec 100: the key of this name in `McpContextReport` rows (`serverKey`). */
+  costKey?: string;
   name: string;
   /** `cli` = Copilot CLI list or built-in, `folder` = an extra of this agent's folder, `runtime` = only reported by the runtime. */
   origin: 'cli' | 'folder' | 'runtime';
@@ -670,6 +735,10 @@ export interface AgentMcpEntry {
   since?: number;
   /** Spec 058 FR-092: a failed or needs-sign-in state that came after the server was Running in this session. */
   afterRunning?: boolean;
+  /** Spec 058 FR-221 (2026-11-05): when Agent Durbar last renewed this server's sign-in in the background (epoch ms, display only); only for a connected server. */
+  renewedAt?: number;
+  /** Spec 058 FR-225 (issue #1205): the last check before a message got no answer in 30 s; the row says so until a call or check succeeds. */
+  checkUnknown?: true;
   /** Spec 058 FR-092: the transport the adapter reported (`stdio`, `http`, ...); missing = not reported. */
   transport?: string;
   /** The default from Settings: on for new sessions. */
@@ -688,6 +757,8 @@ export interface AgentMcpEntry {
   canRestart?: boolean;
   /** Spec 058 FR-065: **Sign in** is offered: the agent app can start its own sign-in, the session runs, and this server reads Needs sign-in. */
   canSignIn?: boolean;
+  /** Spec 058 FR-229 (issue #1229): Agent Durbar knows this server needs a new sign-in although the runtime list does not say so (a renewal that did not help, or a session that is not running). */
+  needsSignIn?: true;
   /** Spec 058 FR-164: **Sign in again** is offered: the agent app can redo the sign-in itself, the session runs, and this server is on and not waiting for a first sign-in. */
   canSignInAgain?: boolean;
   /** Spec 058 FR-065: a sign-in is open for this server. The host only, never the address; `expiresInMs` is what is left of the 10 minutes. */
@@ -726,6 +797,26 @@ export interface AgentMcpReply {
   /** Spec 069 FR-064: this agent app can turn single tools off (`agents:setMcpToolsOff`); missing = the checkboxes are disabled. */
   toolFilter?: boolean;
 }
+
+/** `agents:mcpContext` and the `mcp-context` push (spec 100): names and numbers only. `supported` false: this agent app has no figures at all. */
+export interface McpContextView {
+  ok: boolean;
+  supported: boolean;
+  report?: McpContextReport;
+  at?: number;
+}
+/** Spec 100 FR-012: one server's last figure kept in the MCP store. */
+export interface McpCostEntry {
+  tokens?: number;
+  deferredTokens?: number;
+  source: 'reported' | 'estimated';
+  capped?: boolean;
+  /** The name in the agent app's own user list, when it was on it at measuring time (`cleanName` form): only such a figure goes when the list no longer has it. */
+  list?: string;
+  at: number;
+}
+/** By agent app id, then server name. */
+export type McpCosts = Record<string, Record<string, McpCostEntry>>;
 
 /** `agents:mcpTools` (spec 069 FR-032): one server's tools, masked and cut in main. */
 export interface McpToolsResult {
@@ -832,11 +923,11 @@ export interface DurbarApi {
   /** Change the permission mode of agent `id` now (applies to the next request). `clearGrants`: forget "Approve for this session"; `approvePending`: approve what is waiting. */
   setPermMode?(id: string, mode: PermMode, opts?: { clearGrants?: boolean; approvePending?: boolean }): Promise<{ ok: boolean; error?: string; mode?: PermMode; pending?: number }>;
   /** Spec 087 FR-007a/FR-007c: *Continue without the OS sandbox* for this session (`always`: on this computer, where offered). Nothing is sent. */
-  sandboxContinue?(id: string, opts?: { always?: boolean }): Promise<{ ok: boolean; error?: string }>;
+  sandboxContinue?(id: string, opts?: { always?: boolean }): Promise<{ ok: boolean; error?: string; alwaysSaved?: false }>;
   /** Spec 087 FR-012: per ready agent app, whether its OS sandbox can run here (Settings > Agent apps). */
   sandboxHosts?(): Promise<Record<string, SandboxHostView>>;
   /** Spec 087 FR-007c: undo *Always continue on this computer* for an app. */
-  sandboxAlwaysOff?(app: string): Promise<{ ok: boolean }>;
+  sandboxAlwaysOff?(app: string): Promise<{ ok: boolean; saved?: false }>;
   /** Change the model, effort or context tier of agent `id` (spec 030). Validated in main; saved with the folder entry once applied. */
   setModel?(id: string, request: ModelSwitchRequest): Promise<{ ok: boolean; error?: string; result?: ModelSwitchResult }>;
   /** Remove a queued model switch (spec 030). */
@@ -853,8 +944,6 @@ export interface DurbarApi {
   checkpointPreview?(id: string, turn: number): Promise<CheckpointPreview | { ok: false; error: string }>;
   checkpointUndo?(id: string, turn: number): Promise<CheckpointUndo>;
   onCheckpoint?(cb: (p: CheckpointNote) => void): () => void;
-  /** Close or open the door of the room (folder) of agent `id`; remembered. */
-  setRoomClosed?(id: string, closed: boolean): Promise<{ ok: boolean }>;
   /** Hide or show the folder of agent `id`; the choice is remembered. */
   setFolderHidden?(id: string, hidden: boolean): Promise<{ ok: boolean }>;
   /** Remove the folder of agent `id`: ends its sessions and forgets the folder. */
@@ -881,6 +970,10 @@ export interface DurbarApi {
   onlyFloor?(id: string): Promise<FloorsResult>;
   /** Move the folder of agent `agentId` (all its agents) to a floor. */
   moveFolderToFloor?(agentId: string, floorId: string): Promise<FloorsResult>;
+  /** The saved manual order of rooms (by folder path), desks inside a room (by agent id) and places (by place id); sequencing only (issue #677). */
+  getOrder?(): Promise<OrderDoc>;
+  /** Saves the order; resolves with what was kept after cleaning. */
+  setOrder?(doc: OrderDoc): Promise<OrderDoc>;
 
   /** Credit caps (spec 011). `credits: null` removes the cap. */
   getSettings?(): Promise<AppSettingsView>;
@@ -895,6 +988,11 @@ export interface DurbarApi {
   removePlace?(id: string): Promise<CustomPlaceResult>;
   /** Turn Serious mode on or off (spec 034). */
   setSeriousMode?(on: boolean): Promise<{ ok: boolean; seriousMode?: boolean }>;
+  /** Turn Still highlights (no motion) on or off (spec 001 FR-192). */
+  setMotion?(on: boolean): Promise<{ ok: boolean; motion?: boolean }>;
+  setStillHighlights?(on: boolean): Promise<{ ok: boolean; stillHighlights?: boolean }>;
+  /** Turn Auto-follow work on or off (spec 052 FR-182). `ok: false` (nothing changed, the value in force is returned as `autoFollowWork`) for a value that is not a boolean or a save that failed; no `error` text. */
+  setAutoFollowWork?(on: boolean): Promise<{ ok: boolean; autoFollowWork?: boolean; unsaved?: true }>;
   /** Turn the "needs you" OS notifications on or off (spec 052 FR-059). */
   setNotifyNeedsMe?(on: boolean): Promise<{ ok: boolean; notifyNeedsMe?: boolean }>;
   /** Spec 068 FR-006: what happens when a coffee break ends. */
@@ -905,11 +1003,9 @@ export interface DurbarApi {
   /** Bring the window to the front (a click on a "needs you" notification, spec 052 FR-059). */
   focusWindow?(): Promise<{ ok: boolean }>;
   /** Set the theme (specs 037-040): a built-in id or an imported user theme id. */
-  setTheme?(id: string): Promise<{ ok: boolean; theme?: string; characters?: 'theme' | 'minimalist' | 'cheeky' | 'prehistoric' | 'mine' }>;
+  setTheme?(id: string): Promise<{ ok: boolean; theme?: string; characters?: 'theme' | 'minimalist' | 'cheeky' | 'prehistoric' | 'pirate' | 'monster' | 'royal' | 'rebels' | 'mine' }>;
   /** Spec 077 FR-064: set who sits at the desks; main refuses anything not on the list (`ok: false`, the value in force). */
-  setCharacters?(v: string): Promise<{ ok: boolean; characters: 'theme' | 'minimalist' | 'cheeky' | 'prehistoric' | 'mine' }>;
-  /** Spec 096 FR-060: Settings > Characters > Motion; a real boolean only. */
-  setCharacterMotion?(on: boolean): Promise<{ ok: boolean; characterMotion: boolean }>;
+  setCharacters?(v: string): Promise<{ ok: boolean; characters: 'theme' | 'minimalist' | 'cheeky' | 'prehistoric' | 'pirate' | 'monster' | 'royal' | 'rebels' | 'mine' }>;
   /** Spec 096 FR-031: one try: frames as WebP bytes, held by main under `tryId` until saved or dropped. The description is never stored. */
   characterGenerate?(description: string, adapterId: string): Promise<CharacterTryResult>;
   /** Spec 096 FR-031: no id cancels the running generation; a `tryId` drops that held try (Discard). */
@@ -928,12 +1024,8 @@ export interface DurbarApi {
   /** User themes (spec 040): scan userData/themes; each valid pack listed, each invalid one given back with a reason. */
   listUserThemes?(): Promise<Array<{ id: string; name?: string; ok: boolean; error?: string }>>;
   getUserTheme?(id: string): Promise<Record<string, unknown> | null>;
-  importTheme?(): Promise<{ ok: boolean; id?: string; name?: string; error?: string; cancelled?: boolean }>;
-  /** AI theme maker (spec 040 FR-014): one prompt to a harness with `oneShot`; returns a checked manifest (not saved). */
-  generateTheme?(description: string, adapterId: string): Promise<{ ok: boolean; manifest?: Record<string, unknown>; warnings?: string[]; passes?: number; costUsd?: number; nanoAiu?: number; error?: string }>;
-  saveGeneratedTheme?(manifest: Record<string, unknown>): Promise<{ ok: boolean; id?: string; name?: string; error?: string }>;
-  /** Example looks for the AI theme maker (spec 040 FR-021). */
-  themeIdeas?(): Promise<string[]>;
+  /** Spec 040 FR-032: remove one of your saved themes (the window asked first); built-in ids are refused. */
+  removeTheme?(id: string): Promise<{ ok: boolean; id?: string; error?: string }>;
   /* Spec 051: harness setup inside the app (install, update, sign in). Fixed commands only; the window never names a command. */
   harnessPlans?(kind: string, op: 'install' | 'update'): Promise<{ plans: Array<{ manager: string; display: string; note?: string; owner?: boolean; pinned?: string; own?: string; script?: unknown }>; page: string; name: string; blocked?: string }>;
   /** `gate` (spec 081 FR-013): the answer to the open-sessions dialog ('wait', 'end', or 'cancel' to release the update lock). A reply with `needsGate` asks the window to show that dialog. */
@@ -944,6 +1036,10 @@ export interface DurbarApi {
   /** Spec 081 FR-016: whether Settings > Agent apps is on screen (then the card is the announcement and no toast is shown). */
   harnessVisible?(on: boolean): Promise<boolean>;
   setCheckUpdatesAtStart?(on: boolean): Promise<{ ok: boolean; checkUpdatesAtStart?: boolean }>;
+  /** Spec 058 FR-213: *Refresh MCP sign-ins automatically*. */
+  setMcpSignInRefresh?(on: boolean): Promise<{ ok: boolean; mcpSignInRefresh?: boolean }>;
+  /** Spec 058 FR-227: Settings > Diagnostics (off by default). */
+  setDiagnostics?(on: boolean): Promise<{ ok: boolean; diagnostics?: boolean }>;
   harnessPaste?(text: string): Promise<{ ok: boolean; error?: string }>;
   harnessCancel?(): Promise<boolean>;
   harnessOpenPage?(kind: string): Promise<{ ok: boolean }>;
@@ -952,23 +1048,28 @@ export interface DurbarApi {
   copilotAuth?(): Promise<{ known: boolean; signedIn?: boolean; pwshMissing?: boolean }>;
   /** Spec 051 FR-014: the account each installed agent app reports (`{ [appId]: { status, text } }`); `refresh` asks again. Personal data: shown in the window only. */
   harnessAccounts?(refresh?: boolean | 'check'): Promise<Record<string, AccountView>>;
+  /** Spec 011 FR-090: the account limits each app's provider reports. `cached` asks nothing; `open` and `check` ask within their floors. Refused: `ok: false`. */
+  harnessQuota?(mode?: QuotaMode, app?: string): Promise<{ ok: true; apps: Record<string, QuotaView> } | { ok: false; error: string }>;
   onHarnessProgress?(cb: (p: { kind: string; op: string; lines: string[]; elapsedMs: number; url?: string; code?: string; needsPaste?: boolean }) => void): () => void;
   /** spec 012 FR-158: remote control ended because the agent app reconnected after a new sign-in. */
   /** Remote control ended without the user (spec 012 FR-158, spec 054 FR-062): an agent id, or the id with a plain reason. */
   onRemoteOff?(cb: (p: string | { id: string; reason?: string }) => void): () => void;
-  /** Spec 017 FR-015..FR-017: per agent id, a door the user closed and how many runs are held there (only doors that are closed or hold something). */
-  doorsList?(): Promise<Record<string, { closed: boolean; held: number }>>;
-  setDoor?(id: string, closed: boolean): Promise<{ ok: true; closed: boolean; held: number; remoteOff?: boolean } | { ok: false; error: string }>;
-  releaseHeld?(id: string, action: 'send' | 'discard'): Promise<{ ok: true; queued?: number; sent?: number; discarded?: number } | { ok: false; error: string }>;
-  onDoorsChanged?(cb: (doors: Record<string, { closed: boolean; held: number }>) => void): () => void;
-  /** Review on #631: the held prompts of a door (the window masks and cuts them in the Send all dialog). */
-  doorsHeld?(id: string): Promise<{ prompt: string; at: number }[]>;
-  /** Send all stopped; the runs stay held (why: paused-all, paused, cap, ended, failed). */
-  onDoorsStopped?(cb: (p: { id: string; why: string }) => void): () => void;
-  /** A scheduled run could not be kept at a closed door whose queue is full. */
-  onDoorsFull?(cb: (p: { id: string }) => void): () => void;
+  /** Spec 017 FR-031: scheduled prompts that were held behind a door before the update. Never sent or dropped without the person's choice. */
+  heldList?(): Promise<HeldBeforeList>;
+  /** The one-time notice was shown (whatever was chosen); it never comes again. */
+  heldNoticed?(): Promise<{ ok: boolean }>;
+  /** Send the chosen runs (all when no ids), one by one through the schedules; `skipped` = runs whose session or schedule has gone (they stay held). */
+  heldSend?(ids?: string[]): Promise<{ ok: true; started: number; skipped: number } | { ok: false; error: string }>;
+  heldDiscard?(ids?: string[]): Promise<{ ok: true; discarded: number } | { ok: false; error: string }>;
+  /** Delete the `.bad` file that was kept aside (the notice named it). */
+  heldDiscardBad?(): Promise<{ ok: boolean }>;
+  onHeldChanged?(cb: (l: HeldBeforeList) => void): () => void;
+  /** A Send stopped; the run stays held (why: paused-all, paused, cap, ended, updating, gone, failed). */
+  onHeldStopped?(cb: (p: { id?: string; why: string }) => void): () => void;
   /** Spec 076 FR-203: a session started under advice of its agent app's organization policy; the words to show (no policy values). */
   onOrgNote?(cb: (p: { id: string; text: string }) => void): () => void;
+  /** Spec 058 FR-208, FR-211: the sign-in refresh lines of a chat. */
+  onMcpSignInRefresh?(cb: (p: McpSignInRefreshNote) => void): () => void;
   /** Spec 054 FR-062: remote control is still on with a new (checked) link after a relaunch. */
   onRemoteUrl?(cb: (p: { id: string; url: string }) => void): () => void;
   onHarnessDone?(cb: (p: { kind: string; op: string; ok: boolean; exitCode?: number | null; reason?: string; lines: string[]; error?: string; failure?: string; fallback?: 'official'; note?: string }) => void): () => void;
@@ -986,6 +1087,10 @@ export interface DurbarApi {
   runScheduleNow?(id: string): Promise<{ ok: boolean; error?: string }>;
   /** Spec 044 FR-043: one schedule's run log, newest first; read-only. */
   scheduleRuns?(id: string): Promise<{ ok: true; runs: ScheduleRunInfo[] } | { ok: false }>;
+  /** Spec 072 FR-007: Stop loop (ends a running loop at once). */
+  stopLoop?(id: string): Promise<{ ok: boolean; error?: string }>;
+  /** Spec 072 FR-008: Start again (a new run of an ended loop with its old limits; passes and spend from zero). */
+  restartLoop?(id: string): Promise<{ ok: boolean; error?: string }>;
   /** Spec 052 FR-089: what happened while the app was closed (more than 30 minutes), or null. */
   sinceAway?(): Promise<SinceAwayInfo | null>;
   dismissSinceAway?(): Promise<{ ok: boolean }>;
@@ -994,6 +1099,8 @@ export interface DurbarApi {
   dismissInterrupted?(): Promise<{ ok: boolean }>;
   onSchedules?(cb: (doc: SchedulesInfo) => void): () => void;
   onScheduleRan?(cb: (r: { agentId: string; scheduleId: string; every?: number; at?: number; rule?: ScheduleInfo['rule'] }) => void): () => void;
+  /** Spec 072 FR-023: a loop pass went out, ended with its next wake, or the loop ended. */
+  onLoopPass?(cb: (p: LoopPassInfo) => void): () => void;
   /** Answer the agent's question (spec 012 FR-128): question text -> answer; null = skip. */
   answerQuestion?(id: string, requestId: string, answers: Record<string, string> | null): Promise<{ ok: boolean; error?: string }>;
   /** Answer an MCP elicitation (spec 012 FR-151): `accept` with the form's values (checked in main), `decline` or `cancel`. `field` names a field that failed the check. */
@@ -1040,7 +1147,6 @@ export interface DurbarApi {
   mcpUpsert?(key: string, input: McpServerInput, originalName?: string): Promise<McpResult>;
   mcpRemove?(key: string, name: string): Promise<{ ok: boolean }>;
   mcpSetEnabled?(key: string, name: string, enabled: boolean, trustAck?: boolean): Promise<McpResult>;
-  mcpMoveLegacy?(name: string, key: string): Promise<McpResult>;
   /** Per-folder import from VS Code's `.vscode/mcp.json` (spec 020 FR-020): a preview, then the ticked ids. Imported servers are off and untrusted. */
   mcpImportPreview?(key: string): Promise<McpImportPreview>;
   /** Spec 061: a folder's own agent setup (masked), the person's decision (window only, FR-013), and an AI explanation of a hook (FR-015). */
@@ -1048,7 +1154,6 @@ export interface DurbarApi {
   folderSetupDecide?(key: string, decision: FolderSetupDecision): Promise<{ ok: boolean; error?: string; view?: FolderSetupView; folderRules?: Record<string, boolean> }>;
   folderSetupExplain?(key: string, id: string): Promise<HookExplanation>;
   mcpImportApply?(key: string, ids: string[], digest: string): Promise<McpImportResult>;
-  mcpRemoveLegacy?(name: string): Promise<{ ok: boolean }>;
   /** Spec 069: the agent apps' user-level MCP lists (names only), read now. */
   mcpGlobalState?(): Promise<GlobalState>;
   /** Spec 069 FR-005: what adding `input` to the chosen apps' lists would write; nothing is written. */
@@ -1077,6 +1182,14 @@ export interface DurbarApi {
   agentMcpCancelSignIn?(id: string, name: string): Promise<{ ok: boolean; error?: string }>;
   /** Spec 069 FR-032: the tools of one MCP server of this agent's running session. */
   agentMcpTools?(id: string, name: string): Promise<McpToolsResult>;
+  /** Spec 100 FR-003: the last MCP figures of this agent; `open` (the dialog opening) asks the agent app first, at most once a minute. */
+  agentMcpContext?(id: string, open?: boolean): Promise<McpContextView>;
+  /** Spec 100 FR-003: new figures after a first load, a switch, a restart or a model change. */
+  onMcpContext?(cb: (p: { id: string; view: McpContextView }) => void): () => void;
+  /** Spec 100 FR-012: the last figures per agent app and server. */
+  mcpCosts?(): Promise<{ ok: boolean; costs: McpCosts }>;
+  /** Spec 100 FR-020: warn and strong levels, or off; validated in main; returns what is in force. */
+  setMcpWarnLevels?(v: McpWarnLevels): Promise<{ ok: boolean; levels: McpWarnLevels }>;
   /** Spec 069 FR-061: the tools of one server turned off in this agent's folder (applies to new sessions and after Restart session). */
   setAgentMcpToolsOff?(id: string, name: string, off: string[]): Promise<{ ok: boolean; error?: string }>;
   /** Spec 058 FR-022: end and resume this agent's session with the current MCP servers; `confirmed` after the window asked.
@@ -1093,7 +1206,8 @@ export interface DurbarApi {
   stageAttachment(name: string, mime: string, data: ArrayBuffer): Promise<StageResult>;
   /** `slash` (spec 073 FR-005): the message started with a folder or user entry and its text was sent; the value says where it came from.
    *  `slashNote` (a VS Code prompt file): the settings not applied and the variables left as written. */
-  send(id: string, text: string, attachments: PickedFile[], opts?: { plan?: boolean }): Promise<{ ok: boolean; error?: string; slash?: string; slashNote?: string }>;
+  /** `notSent` (spec 058 FR-208): Stop ended the MCP sign-in wait before the message went: nothing was sent. */
+  send(id: string, text: string, attachments: PickedFile[], opts?: { plan?: boolean }): Promise<{ ok: boolean; error?: string; slash?: string; slashNote?: string; notSent?: boolean }>;
   /** Spec 073 FR-010: the "/" entries of the agent's app in its folder (folder, user, app). */
   slashCommands?(id: string): Promise<{ ok: boolean; error?: string; entries: SlashCommandInfo[] }>;
   /**
@@ -1108,7 +1222,7 @@ export interface DurbarApi {
   notesDeleteAll?(id: string): Promise<NotesWrote>;
   notesStartOver?(id: string): Promise<NotesWrote>;
   notesFileCount?(id: string): Promise<NotesFileCount>;
-  notesSetFile?(id: string, on: boolean, opts?: { deleteFile?: boolean; exclude?: boolean }): Promise<NotesSetFile>;
+  notesSetFile?(id: string, on: boolean, opts?: { deleteFile?: boolean; git?: boolean }): Promise<NotesSetFile>;
   /** FR-048 (T034b): main shows the save dialog and writes the chosen file; the window sends no path. The simulator writes nothing (`demo`). */
   notesExport?(id: string): Promise<NotesExport>;
   /** A folder's notes changed (another chat, another process): refetch the open folder's notes when the fingerprint is its own. */
@@ -1121,11 +1235,17 @@ export interface DurbarApi {
   resolvePermission(id: string, requestId: string, approve: boolean, remember?: boolean, broad?: boolean): Promise<void>;
   /** Forget one "Approve for this session" grant (key from the `grants` event). */
   revokeGrant(id: string, key: string, callId?: string): Promise<number | void>;
-  openInVSCode(id: string): Promise<{ ok: boolean; error?: string; edition?: string }>;
+  /** Spec 009 FR-027: the first edition that can open the agent's folder; `note` says when it was a link (FR-021). */
+  openInVSCode(id: string): Promise<{ ok: boolean; error?: string; edition?: string; note?: string }>;
+  /** Spec 009 FR-019..FR-024 (issue #685): the installed editors and the file manager for the agent's own folder. Optional: older bridges lack it. */
+  openWithTargets?(id: string): Promise<{ id: string; label: string; hint: string }[]>;
+  /** Opens that folder in one of the fixed targets; the folder is main's (by agent id), never the window's. It never moves a session. */
+  openWith?(id: string, target: string): Promise<{ ok: boolean; error?: string; edition?: string; note?: string }>;
   /** Spec 063: the git branch and uncommitted changes of the agent's folder (read-only). Optional: older bridges lack it. */
   gitStatus?(id: string): Promise<FolderGitStatus>;
   /** Spec 085: what the session did since its first message in this run (time, git files and lines, commits), for the card shown when it ends. Optional: older bridges lack it. */
-  sessionSummary?(id: string): Promise<SessionSummaryInfo>;
+  /** `final: true` says the End follows: main adds the numbers to the day rollup when it happens (spec 085 FR-009). */
+  sessionSummary?(id: string, final?: boolean): Promise<SessionSummaryInfo>;
   /** Earlier Copilot CLI/SDK sessions in this agent's folder (newest first). Optional: not in the simulator. */
   listPrevious?(id: string): Promise<{ ok: boolean; error?: string; sessions: PreviousSession[]; pinned?: string[]; hidden?: string[]; names?: Record<string, string> }>;
   /** Pin, unpin, hide or unhide one row (spec 006 FR-026). `src` is the agent's adapter id or `vscode`; ids only, never a path. */
@@ -1203,9 +1323,10 @@ export type FolderGitStatus =
   | { repo: true; branch: string; detached?: boolean; ahead?: number; behind?: number; files: Array<{ path: string; state: 'modified' | 'added' | 'deleted' | 'renamed' | 'untracked' | 'conflict'; added?: number; removed?: number; binary?: boolean }>; more: number };
 
 /** Spec 085: what `sessionSummary` answers (mirrors `SessionSummary` in src/main/sessionsummary.ts; `unreadable`: git could not be read, which is not "not a git folder"). `pullRequests`: only when the adapter reports them (none does yet). */
+/** `reported` (FR-010): what the agent app itself reported, counts only; `source` is its adapter id. */
 export type SessionSummaryInfo =
   | { ok: false; error: string }
-  | { ok: true; ms: number; pullRequests?: number; git: { repo: false; unreadable?: true } | { repo: true; files: number; added: number; removed: number; binary: number; newFiles: number; commits: number; dirtyAtStart: boolean; noHead?: boolean; newFilesUnknown?: boolean } };
+  | { ok: true; ms: number; pullRequests?: number; reported?: { source: string; files?: number; added?: number; removed?: number; nanoAiu?: number; requests?: number }; git: { repo: false; unreadable?: true } | { repo: true; files: number; added: number; removed: number; binary: number; newFiles: number; commits: number; dirtyAtStart: boolean; noHead?: boolean; newFilesUnknown?: boolean } };
 
 /** Spec 065: the note after a turn whose file-edit tools changed files. */
 export interface CheckpointNote { id: string; turn: number; kind: 'turn' | 'undo'; files: { path: string; change: 'changed' | 'created' | 'deleted' }[]; notCovered: { path: string; why: string }[] }

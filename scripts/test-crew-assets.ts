@@ -4,15 +4,18 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
-import { webpInfo } from '../src/shared/webpcheck'; // the chunk walker moved to shared code (spec 096 FR-023)
+import { webpInfo } from './webpinfo';
 
 const ROOT = path.join(__dirname, '..', '..');
 const DIR = path.join(ROOT, 'src', 'renderer', 'crew', 'art');
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const C = require(path.join(ROOT, 'src', 'renderer', 'crew.js')) as { IDS: string[]; PREHISTORIC_IDS: string[]; POSES: string[]; BOX: { w: number; h: number }; PX_PER_UNIT: number; files: (ids?: string[]) => string[] };
+const C = require(path.join(ROOT, 'src', 'renderer', 'crew.js')) as { IDS: string[]; PREHISTORIC_IDS: string[]; PIRATE_IDS: string[]; MONSTER_IDS: string[]; ROYAL_IDS: string[]; REBELS_IDS: string[]; POSES: string[]; BOX: { w: number; h: number }; PX_PER_UNIT: number; files: (ids?: string[]) => string[] };
 
-const MAX_FILE = 40 * 1024, MAX_TOTAL = 2.5 * 1024 * 1024; // FR-050, FR-072 (3 poses per character; 13 Cheeky characters are 1.2 MB, 6 Prehistoric ones 0.6 MB)
+const MAX_FILE = 40 * 1024, MAX_TOTAL = 4.5 * 1024 * 1024; // FR-050, FR-072, FR-075, FR-076, FR-077 (3 poses per character; 13 Cheeky characters are 1.2 MB, 6 Prehistoric ones 0.6 MB, 6 Pirate ones 0.65 MB, 6 Monster ones 0.6 MB, 6 Royal ones 0.66 MB, 6 Animal Rebels ones 0.69 MB: 4.5 MB of the 4.5 MiB; 4 MiB before Animal Rebels, 3 MiB before Royal, 2.5 MiB before Monster)
 const COLUMNS = ['file', 'character', 'tool', 'date', 'prompt', 'made by', 'edited by', 'licence', 'generator terms read'];
+
+/** The RIFF chunk walker lives in webpinfo.ts (shared with test-realoffice-assets.ts, spec 097 T011). */
+export { webpInfo };
 
 /** The rows of the provenance table: file name (from backticks) -> its cells. */
 export function assetRows(md: string): Map<string, string[]> {
@@ -43,8 +46,8 @@ export function problems(files: Map<string, Buffer>, md: string, header = md): s
       row.forEach((cell, i) => { if (!cell) out.push(`${name}: ASSETS.md cell "${COLUMNS[i] || i}" is empty`); });
     }
     if (buf.length > MAX_FILE) out.push(`${name}: ${buf.length} bytes, over the ${MAX_FILE} cap`);
-    const info = webpInfo(buf);
-    if (!info) { out.push(`${name}: not a WebP file`); continue; }
+    let info;
+    try { info = webpInfo(buf); } catch (e) { out.push(`${name}: not a WebP file`); continue; }
     for (const c of info.chunks) if (!['VP8 ', 'VP8L', 'VP8X', 'ALPH'].includes(c)) out.push(`${name}: metadata or unexpected chunk "${c}" (strip EXIF, XMP, ICC and text)`);
     if (info.width !== 352 || info.height !== 352) out.push(`${name}: ${info.width}x${info.height}, the art is 352x352 (FR-059)`);
     if (info.width < C.BOX.w * C.PX_PER_UNIT || info.height < C.BOX.h * C.PX_PER_UNIT) out.push(`${name}: ${info.width}x${info.height}, the stage box needs at least ${C.BOX.w * C.PX_PER_UNIT}x${C.BOX.h * C.PX_PER_UNIT} (2x of its largest shown size)`);
@@ -63,7 +66,11 @@ const real = problems(files, md);
 assert.deepStrictEqual(real, [], 'the shipped pictures pass: ' + real.join('; '));
 for (const id of C.IDS) for (const pose of C.POSES) assert.ok(files.has(`${id}-${pose}.webp`), `${id}-${pose}.webp exists (every character, every pose)`);
 for (const id of C.PREHISTORIC_IDS) for (const pose of C.POSES) assert.ok(files.has(`prehistoric-${id}-${pose}.webp`), `prehistoric-${id}-${pose}.webp exists (FR-072)`);
-assert.deepStrictEqual([...files.keys()].sort(), C.files(C.IDS.concat(C.PREHISTORIC_IDS)).map((f) => f.replace(/^crew\/art\//, '')).sort(), 'the folder holds exactly the pictures crew.js names');
+for (const id of C.PIRATE_IDS) for (const pose of C.POSES) assert.ok(files.has(`pirate-${id}-${pose}.webp`), `pirate-${id}-${pose}.webp exists (FR-074)`);
+for (const id of C.MONSTER_IDS) for (const pose of C.POSES) assert.ok(files.has(`monster-${id}-${pose}.webp`), `monster-${id}-${pose}.webp exists (FR-075)`);
+for (const id of C.ROYAL_IDS) for (const pose of C.POSES) assert.ok(files.has(`royal-${id}-${pose}.webp`), `royal-${id}-${pose}.webp exists (FR-076)`);
+for (const id of C.REBELS_IDS) for (const pose of C.POSES) assert.ok(files.has(`rebels-${id}-${pose}.webp`), `rebels-${id}-${pose}.webp exists (FR-077)`);
+assert.deepStrictEqual([...files.keys()].sort(), C.files(C.IDS.concat(C.PREHISTORIC_IDS, C.PIRATE_IDS, C.MONSTER_IDS, C.ROYAL_IDS, C.REBELS_IDS)).map((f) => f.replace(/^crew\/art\//, '')).sort(), 'the folder holds exactly the pictures crew.js names');
 
 // ---- the check itself: each rule fails when its case is broken (so a rule removed from the check shows here) ----
 {

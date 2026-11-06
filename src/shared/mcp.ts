@@ -7,6 +7,8 @@
 import { createHash } from 'crypto';
 
 export type McpTransport = 'stdio' | 'http' | 'sse';
+/** Spec 058: the one check for "a remote server" (http, sse, streamable-http): renewal, the checks and the forced re-sign-in all use it; never a local (stdio) server. */
+export const isRemoteTransport = (t: unknown): boolean => typeof t === 'string' && /^(?:http|sse|streamable-?http)$/i.test(t);
 
 /** What is handed to a runtime session (agent-neutral shape; the Copilot adapter maps it to the SDK's `mcpServers`). */
 export interface McpServerSpec {

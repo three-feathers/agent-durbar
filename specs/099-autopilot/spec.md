@@ -4,7 +4,7 @@
 group: 046
 title: Autopilot mode: a fourth safety mode above Allow all, per session and confirmed each time, only for agent apps that support it; the agent's questions are shown but not waited on, the app keeps going after each turn until the task is done, up to a continuation limit (default 5) and an optional spend cap; Stop ends it; plan approval may offer Approve and run on Autopilot (spec 066 delta)
 status: draft
-note: spec, plan, tasks; owner answers Q1-Q4; real probes T090, T093; review of PR 923 applied; owner ruling D13; schedules out of the first build; nothing built
+note: spec, plan, tasks; owner answers; probes T090, T093; D13 applied; schedules out; phases 1 and 2 (core, adapters on fakes) built; no IPC or UI, unreachable
 -->
 
 **Feature Branch**: `099-autopilot` (spec). Code branches `099-pN-slug`, one per phase. It touches 003 (the permission modes), 002, 012
@@ -15,7 +15,7 @@ organization policy), 018 (the mode switch) and 010 (the simulator).
 
 **Status**: Draft. The owner decided the shape (D1-D7), answered Q1-Q4 (D8-D11 below) Q-D (D12) and, in one ruling, Q-A, Q-B and Q-C (D13; Q-A still pending Paco and Ruben). Real probes ran on Claude Code, Codex
 and, for Copilot, one autopilot turn capped at 30 AI credits (T090), then longer runs on all three apps with a question,
-several continuations and Stop at the limit (T093, *Evidence*). Nothing is built.
+several continuations and Stop at the limit (T093, *Evidence*). Phases 1 and 2 (the core, the types, the event guard, the adapters on fakes) are built; no IPC or window yet, so nothing can turn it on.
 
 **Input**: Owner (Vikram, Telegram DM, 2026-10-31 10:43 UTC): "I go with your suggestions except spend cap as mandatory, have it
 optional", answering the coordinator's proposal for an Autopilot mode.
@@ -30,7 +30,7 @@ delta in this PR for its one new button (FR-060).
 Existing capabilities checked (AGENTS.md FR-031):
 - **Self-paced loops (spec 072)** send a prompt again and again on Durbar's timer, within Durbar's limits. Autopilot sends one
   message and lets the agent app continue inside its own goal loop. The two do not share a mechanism. A loop's pass runs in
-  its schedule's mode (FR-083; spec 044 FR-180).
+  the session's mode (*Changes* 2026-11-01: FR-083's schedule mode and spec 044 FR-180 are void).
 - **Reused**: `setModeOp` and the Allow all path (FR-002), the cap paths of spec 011 and 012 FR-150 (FR-022), the question
   card (FR-030), the plan card (FR-060), the organization checks of spec 076 (FR-070), and the git status runner of spec 063
   (FR-023).
@@ -168,7 +168,7 @@ the session goes back to **Allow all**. The chip and the chat say so (FR-050).
 - **Autopilot…** appears only for agent apps that report the capability (FR-001).
 - It is greyed out with the reason when the organization's policy blocks Allow all or the app's goal feature (FR-070).
 - In Read-only and Ask first it is offered with a warning: the dialog says the folder becomes Allow all (FR-002, D13).
-- It is never offered as a folder's default or when adding a folder (FR-004). On a schedule it is out of the first build (FR-084).
+- It is never offered as a folder's default or when adding a folder (FR-004). A schedule has no mode (*Changes*, 2026-11-01), so it is not offered on one.
 - After a restart or a resume, the session comes back in **Allow all**, never in Autopilot, and the chat says so (FR-005).
 
 ### Story 4 - Approve a plan and let it run (P2)
@@ -197,21 +197,21 @@ the cap is reached, the run ends with **cap**. Without a cap, the dialog says pl
     *Not verified on a real session yet.*
 - **FR-002** **Autopilot is Allow all plus a per-session `autopilot` state**, not a new value of `PermMode`, `OrgMode` or a
   saved mode.
-  - `AgentInfo.autopilot?: { limit: number; cap?: number; run?: { continuation: number; startedAt: number } }` holds the state.
+  - `AgentInfo.autopilot?: { limit: number; cap?: number; hours?: number; run?: { continuation: number; startedAt: number } }` holds the state.
   - The window shows it as the fourth mode, and the mode menu lists Read-only, Ask first, Allow all and **Autopilot…**.
   - **From Read-only or Ask first: warn and let them choose** (owner ruling, D13). The menu offers **Autopilot…** in every mode. The native dialog (FR-055) says that the folder becomes Allow all, and that it stays Allow all after Autopilot ends.
     - After the confirmation, and only then, `agents:setAutopilot` sets the session's mode to `allow` through the existing `setModeOp` path: the organization check and the pending approvals. That also saves Allow all as the folder's mode (`store.setPermMode`, `src/main/agentops.ts:63`), which is why the dialog says so. This one dialog replaces the page's Allow all confirmation for this step. **Approvals waiting when this native path enters Autopilot stay waiting** (the page's "Also approve the N requests" option does not exist here): entering Autopilot never answers them. *(Decision by the coordinator, for owner review.)*
     - Cancel changes nothing. If `setModeOp` fails, Autopilot does not turn on, and the reason is shown. If the mode changed and Autopilot then fails to turn on, the session and the folder stay in Allow all, and the chat says so.
   - **Read-only and Ask first can never be combined with Autopilot.** Choosing either one ends Autopilot first (FR-051), so
     no code path leaves `autopilot` set while the mode is not `allow`.
-- **FR-003** *(For a schedule, asked when it is chosen or edited: FR-084, out of the first build.)* **The confirmation is asked every time** Autopilot is turned on: from the menu, from *Run again on Autopilot…*, and
+- **FR-003** *(A schedule has no mode and no Autopilot choice: *Changes* 2026-11-01.)* **The confirmation is asked every time** Autopilot is turned on: from the menu, from *Run again on Autopilot…*, and
   from the plan card. It is a native dialog the page cannot answer, asked by main (D12, FR-055). There is no "don't ask again".
 - **FR-004** **Never a default.**
   - Not offered when adding or creating a folder (the `confirmAllow` path), nor as a folder's mode.
-  - A scheduled prompt runs in the mode attached to that schedule (FR-083; spec 044 FR-180). While scheduled Autopilot is held (FR-084), a stored `autopilot` on a schedule is **not sent**: the run log records the closed outcome `mode-refused` with a visible reason (spec 044 FR-183, FR-184), and the same holds for a schedule whose target session is on Autopilot.
+  - A schedule has no mode (*Changes* 2026-11-01; FR-083's schedule wording and spec 044 FR-180 are void): a scheduled prompt runs in its session's mode, Autopilot included, and is sent like any other message.
   - Not settable by Durbar's MCP tools or by remote control.
   - `agents:setAutopilot` is window-only (`fromApp`).
-- **FR-005** **Never saved** *(for a session; a schedule stores its own choice: FR-084)*.
+- **FR-005** **Never saved** *(a schedule stores no mode: *Changes* 2026-11-01)*.
   - The folder store keeps `allow` for a session that was on Autopilot (`setSessionMode` gets `allow`).
   - After a restart, a sign-in refresh (spec 012 FR-158), *End session* followed by a message, or a resume from Previous
     sessions, the session is in Allow all. The chat says: "Autopilot ended when this session closed. It is in Allow all."
@@ -251,11 +251,13 @@ the cap is reached, the run ends with **cap**. Without a cap, the dialog says pl
   - **On**: the Allow all launch (`bypassPermissions`, unchanged).
   - **Send**: each message on Autopilot is sent as the user message `/goal <text>`. The CLI answers "Goal set: …" and starts on
     the condition by itself.
-  - `<text>` is the user's message (S2), with each run of control characters other than newline replaced by a space. A message
-    over 4000 characters gets a warning in the composer, and the user may still send it: "Goals this long were not checked on Claude Code." (D13; it was a refusal.)
+  - `<text>` is the user's message (S2), with each run of control characters other than newline replaced by a space. Hidden characters (bidi marks, tag characters, zero-width space; not ZWNJ or ZWJ) are removed, U+2028/9 become newlines, and text with no visible character is empty. **No visible character** means every character is white space, a control, a format character, a surrogate, private-use (U+E000 and the like), a noncharacter (U+FFFF), a combining mark on its own (U+0300), a `Default_Ignorable_Code_Point` (joiners, Hangul fillers, variation selectors, Khmer inherent vowels U+17B4/5, the reserved ranges U+FFF0-FFF8 and U+E0080 and up) or the braille blank U+2800. Ill-formed text (a lone surrogate anywhere) is refused as empty too, never sent. Durbar **refuses with a visible reason**, never sending: empty text (all apps); on Claude Code a text that is only `clear`, `stop`, `off`, `reset`, `none` or `cancel` (trimmed, any case: the CLI clears the goal on these), and a text over 4000 trimmed UTF-16 code units (the CLI's own limit; it answers in plain text, which could read as done). A line starting with `/` is **not** refused (*Changes* 2026-11-03): one message is one command, so `/cost` on a later line is part of the condition.
   - `real:` 2026-10-31: `/goal` works under `--setting-sources "" --strict-mcp-config`.
-  - `[KNOWN GAP]`: whether newlines inside the condition survive (the probes used one line); the 4000-character warning is
-    Durbar's own choice, not a documented CLI limit, and what the CLI does with a longer goal is not checked (a refusal shows as an error).
+  - `real:` Claude Code 2.1.317, macOS, 2026-11-03, Mac session, 0 credits (`claude -p --strict-mcp-config --setting-sources ""` against a dead API port, so no model ran):
+    - The limit is 4000, counted with JS `.length` after trim (UTF-16 code units). 4001 ASCII gives "Goal condition is limited to 4000 characters (got 4001)"; 2001 x U+1F600 gives "(got 4002)"; exactly 4000 is accepted.
+    - Six reserved words: `clear`, `stop`, `off`, `reset`, `none`, `cancel`. The check is on the whole trimmed argument, case-insensitive; each clears the active goal ("Goal cleared: <condition>" or "No goal set"). An empty `/goal` shows the status and does not clear.
+    - A `/word` line inside a multi-line goal does not run as a command: the args after the first whitespace (newlines included) are the condition. `/goal tests pass\n/cost` gives "Goal set: tests pass\n/cost"; a 3990-a + `\n/cost\n` + 10-b goal gives "(got 4007)".
+  - `[KNOWN GAP]`: whether newlines reach the Stop-hook evaluator; the interactive TUI path; clearing a live goal; the 2.1.316 build itself (the facts above are from 2.1.317). T091 still runs the built adapter.
 - **FR-012** **Codex.**
   - **On**: the Allow all thread settings (unchanged; from the next message, FR-144).
   - **Send**: `thread/goal/set {threadId, objective: <text>, tokenBudget: <cap or null>, origin: 'user'}` **instead of**
@@ -290,7 +292,7 @@ the cap is reached, the run ends with **cap**. Without a cap, the dialog says pl
   (`real:` T093, FR-040). With a limit above 8, Claude Code may end the run first; that run ends with **blocked**.
 
   **The backstop.** Every run has a second bound that does not read the continuation marker. **It is a safety bound against a changed app, not a money limit.** Reaching it stops the run in the same way as Stop and ends it with **error**, worded "Durbar could not confirm this run's turns, so it stopped it." The values are **proposed** (`test:` only, tuned after real use):
-  - **Elapsed time, all apps: 2 hours per run by default**, from the run's start, raisable the same way as the limit (D13): a field in the form, a warning at the choice above the default, repeated in the native dialog. It cannot be turned off, and the technical bound is 1 to 168 hours. It is wall-clock time, so time asleep counts: a run may end early, never late.
+  - **Elapsed time, all apps: 2 hours per run by default**, from the run's start, raisable the same way as the limit (D13): a field in the form, a warning at the choice above the default, repeated in the native dialog. It cannot be turned off, and the technical bound is 1 to 168 hours. It is wall-clock time between samples, counted only forward from the run's start (not from when the run was built): time asleep counts as a forward step, so a run may end early; a clock set back hides at most one sample interval (60 s) per step back, so it can end a little late (`[KNOWN GAP]`, see *Changes* 2026-10-31).
   - The turn counts below are not settings, because they only fire if an app changed. They grow with the limit the person chose.
   - **Copilot**: more than `100 × (limit + 1)` `assistant.turn_start` events in the main session (not a signal of a continuation, FR-020, so it counts model turns; T090 saw 3 for one message).
   - **Claude Code**: more than `100 × (limit + 1)` main-stream assistant message ids (`claudeMap.ts:144` tracks them). `num_turns` cannot stop a live run, because the whole goal is one `result` (*Evidence*). When that `result` arrives, a `num_turns` over the bound still reports **error** rather than **done**.
@@ -408,6 +410,12 @@ the cap is reached, the run ends with **cap**. Without a cap, the dialog says pl
   - If the clear cannot be confirmed, Durbar ends the session and kills its child where it has its own (Claude Code, Codex). The session's history stays.
   - The chat says so: "Durbar could not confirm that Autopilot stopped, so it ended this session's process." The run keeps the reason it was ending with, or **error** if it had none.
   - The next message resumes in Allow all and clears first (FR-053). If that clear fails too, the message is not sent, and the chat says why. Fake adapter tests: T025.
+- **FR-059** **A Stop, or Autopilot off, while a send that starts a run is still waiting** (Copilot's cap update, Claude Code's launch and its resume `/goal clear`) starts no run and leaves nothing behind (review on #967, 2026-11-04). The adapter reads the session again after the last wait, just before the run begins:
+  - **A Stop** (or the session ending) drops the message, as FR-229 of spec 052 drops one held by a Stop. **Autopilot off alone** sends it as a plain message, never a goal.
+  - **The Autopilot cap goes back** on every way out before the run begins: Copilot sends the session's own cap again; Claude Code drops the Autopilot `--max-budget-usd`, and the next launch is without it.
+  - Later sends work as before: no turn is left open and no Autopilot refusal sticks. No goal outlives the Stop. Codex reads Autopilot again right before `thread/goal/set`, with no wait between. Fake adapter tests with gated fakes: T050.
+  - **Every wait counts, the restore too** (round 2 of that review): any wait after that read, the cap restore included, is followed by the same read of Stop and Autopilot, and nothing that changes the mode comes between the last read and the goal. A failure the chat reported as "nothing was sent" (FR-054) is final: no plain resend follows it. T051.
+  - **Copilot: one operation queue per session** (round 6 of that review, replacing the round 2 to 5 waits on Copilot's turn-on): Autopilot on, Autopilot off and each send up to its runtime call run one at a time, in the order they were asked for, each reading the session again at its start and after each wait in it. Stop and End do not queue: each send and turn-on takes the Stop count when it is asked for, and a Stop or End since then drops the message (FR-229) or makes the turn-on fail with "Stop came before Autopilot was on, so Autopilot is off." (and sends no `mode.set autopilot` if its turn had not come). Stop and Autopilot off both read off at once, so a send already in its step goes plain; its mode change waits its turn. So a send made during a turn-on waits for it, two sends start one run (the second is a plain message in it, FR-058), and a turn-on asked for behind a run-starting send finds the run (FR-002). The turn-on's `mode.set autopilot` is bounded like the other Autopilot waits (`within`, the clear wait). It counts plan mode as left from its start; when it fails, times out or meets a Stop, Autopilot is off and plan mode counts as set, so the next plain message goes back to `interactive` first. Its `session.mode_changed` to `autopilot` arriving after that, within one more bound, is Durbar's own, not FR-006: no line and no abort, and the mode goes back to `interactive` as a step of the queue; after that bound a change to `autopilot` is FR-006 again. Every runtime call inside a send's step (the Autopilot cap update and its restore, the plan or `interactive` mode change) has the same bound, so one that never answers cannot hold the queue: the message is dropped with "Copilot did not answer in time, so this message was not sent.", the session's own cap is sent back (an unanswered restore is said, as FR-022 says a failed one, and the next goal sends its cap again, since which cap is in force is then not known), no turn is left open, plan mode counts as set when the mode is not known, and the next step goes on. Autopilot off's `mode.set interactive` has the same bound: one that does not answer is "not confirmed off" (FR-054), so the session ends, and a Stop's abort goes with that End. After its wait the turn-on reads End, Stop, Autopilot off and the permission mode again, and says which one came ("The session is not running.", the Stop line, "Autopilot was turned off before it came on.", or the Allow all refusal), with its own mode change still Durbar's for a bound. T051, T052, T053, T054.
 
 ### Window
 
@@ -502,7 +510,7 @@ the cap is reached, the run ends with **cap**. Without a cap, the dialog says pl
 ## Success Criteria
 
 - **SC-001** On the simulator, every end reason is reachable and is shown with words and an icon, at both sizes, 15 agents.
-- **SC-002** Tests prove that no path sets `autopilot` with a mode other than `allow`, and that nothing saves it for a session or folder; only a schedule's own confirmed choice is stored (FR-084).
+- **SC-002** Tests prove that no path sets `autopilot` with a mode other than `allow`, and that nothing saves it for a session or folder; a schedule stores none (*Changes* 2026-11-01).
 - **SC-003** Tests prove that the continuation count stops a run at `limit + 1` for each adapter's fake, and that with the marker removed the backstop still ends it with **error** (FR-021).
 - **SC-004** A real run per app is recorded under `## Changes` before `verified` becomes true, as one tiny task within the D7
   budget.
@@ -512,7 +520,7 @@ the cap is reached, the run ends with **cap**. Without a cap, the dialog says pl
 - **III (safe by default)**:
   - In a session, Autopilot is an explicit, per-session opt-in, confirmed every time, never a default, never saved, and named honestly. It
     only adds to Allow all, which is already the explicit opt-in that III names: Read-only stays the default, and Ask first and Read-only cannot combine with it.
-  - **On a schedule (FR-084, spec 044 FR-182) this is for the three owners to confirm**: the opt-in is per schedule and agent, stored, and runs unattended. It is out of the first build, and a stored `autopilot` on a schedule is refused until they do (FR-084, Q-A). Whether III needs an amendment is proposed in the PR, not decided here.
+  - **On a schedule**: none. A schedule has no mode and starts no Autopilot (*Changes* 2026-11-01, voiding FR-084 and spec 044 FR-182's opt-in).
   - Questions are answered by a fixed sentence, never by text from the agent.
   - Nothing new is stored. No tokens are read.
 - **II (adapters are plug-ins)**: the capability and the events are normalized, and vendor calls stay in the adapters.
@@ -590,6 +598,16 @@ Each recommendation is the reviewer's (rubenlupi, review of PR #923 at `dfe6428e
 
 ## Changes
 
+### 2026-11-01: a scheduled prompt runs in its session's mode, Autopilot included (owner decision, Vikram; replaces the entries of 2026-10-31 on schedules)
+
+Owner decision of Vikram, 2026-10-31 and restated 2026-11-01 (matching Paco; first written on PR #965's thread): **schedules take their session's mode, and a session can be in any mode, including Autopilot.** No per-schedule mode, no popup, no Allow all or Autopilot on a schedule.
+
+- **Void:** FR-083's 2026-10-31 18:56 wording (a prompt runs in its schedule's mode), FR-084 (Autopilot on a schedule, held), the 2026-10-31 19:02 ruling and its *What this changes* list, the 2026-10-31 entry *schedules out of the first build* with its *While T096 is held* choice, D13's Q-A line (nothing is set up on a schedule, so no schedule warning), and the plan's line on the scheduler (`plan.md`, "In the first build, while T096 is held ..."). T096 and T097 are dropped (`[-]`); T032 no longer holds.
+- **What stands:** D4 and FR-003 (confirmed each time) are not reversed for schedules after all: a schedule never starts Autopilot, a session does. FR-004's line that Autopilot is never offered as a folder default stands; its line that mentioned a scheduled prompt ("A scheduled prompt runs in the mode attached to that schedule", with the `mode-refused` and held-Autopilot clauses) is replaced by "a schedule has no mode" (FR-004 above, rewritten 2026-11-03).
+- **A scheduled message to a session on Autopilot is sent**, in the session's mode (Autopilot), through the normal send path. `[KNOWN GAP]` Whether the app counts it as one of the goal loop's continuations, and what the continuation count and end card then show, is not decided here; the first build ties the answer to the adapter's behaviour and asks the owner if it is unclear. FR-083's first wording ("a message that is not a run must not reach the app in its goal mode") is **not** brought back by this delta.
+
+
+- **2026-11-01**: FR-006 on Copilot, as on Claude Code and Codex: when turning a self-started loop off fails or gets no answer within the wait, the session ends and the chat says it could not be confirmed. Before, the failure was ignored and the loop could go on spending under a line saying it was off.
 - **2026-10-31**: Owner answers to Q1-Q4 recorded as D8-D11 (quote under *Clarifications*). S4 changed from "no attachments on
   Autopilot" to attachments per app capability (FR-001 `attachments`, FR-058). Copilot caps below 30 are raised to 30 (FR-022,
   FR-055). T090 ran (0.434 AI credits): FR-010 keeps the broker and drops the `setApproveAll` fallback; FR-020 names
@@ -630,7 +648,7 @@ Each recommendation is the reviewer's (rubenlupi, review of PR #923 at `dfe6428e
   - **Every number checked against the principle** (a hard limit stays only if it protects user data or is an organization rule). **Changed**:
     - run limit 1-20: now default 5, a warning above 20, technical bound 1-1000, never off (FR-021, T011, T012);
     - backstop time 2 hours: a raisable default, technical bound 1-168 hours, never off (FR-021);
-    - goal text 4000 characters on Claude Code: a warning, not a refusal (FR-011, T012).
+    - goal text 4000 characters on Claude Code: a warning, not a refusal (FR-011, T012); adjusted the same day to a refusal with a reason because the CLI itself refuses it (*Changes*, review of 716acc3b, awaiting owner review).
   - **Kept, with why**:
     - run limit default 5: a default the person can raise;
     - backstop turn counts `100 × (limit + 1)` and Codex `limit + 1`: a safety bound against a changed app, not a money limit, and they grow with the person's limit;
@@ -645,3 +663,111 @@ Each recommendation is the reviewer's (rubenlupi, review of PR #923 at `dfe6428e
     - `empty` and `reserved` goal text: not limits, the message would do something else (`/goal clear`, a bare `/goal`).
   - **Warnings, new**: more than 3 sessions on Autopilot at once, proposed (FR-072).
   - **Spec 044's new FRs** (FR-180..FR-184) hold no number. Stored `autopilot` refused and no Autopilot on a loop are held or open for the owners, not limits on money. The 10,000 character prompt limit is an older owner decision, not in these FRs, and is not changed.
+- **2026-10-31 (Phase 1 built, T010-T014; review of 716acc3b applied; choices awaiting owner review, none is an owner decision)**: `src/adapters/autopilot.ts`, the types, `eventguard`, `scripts/test-autopilot.ts`. No adapter, IPC or UI; no descriptor reports `autopilot`.
+  - `AgentInfo.autopilot.run` is `{continuation, startedAt}` as FR-002 has it (the plan said `n`; plan brought into line).
+  - **Goal text** (FR-011) **adjusts D13's application, awaiting owner review**: a goal over 4000 trimmed characters on Claude Code is **refused with a reason**, not warned. The CLI answers it in plain text and sends nothing, which could read as done; this is the app's own limit, like Copilot's 30 AI credits, not a limit Durbar adds. `empty` is refused on every app; `reserved` and the 4000 limit apply on Claude Code only (and with no app named, the strictest rules). Reserved: `clear`, `stop`, `off`, `reset`, `none`, `cancel`, trimmed and case-insensitive (`[KNOWN GAP]`: reported from a read of the 2.1.316 binary, not recorded; see FR-011). A line shaped like a slash command (`/word`, no further `/` in that word, after hidden characters are removed) is refused on Claude Code: reading cannot exclude that it runs a second command (a safe default, awaiting review; the first wording refused any line starting with `/`, which was too broad). Hidden characters are removed with `HIDDEN_ALL_RE` (`src/shared/names.ts`) plus LRM, RLM, ALM, U+206A-F and tag characters, joiners kept; U+2028/9 become newlines; a goal with no visible character is `empty`.
+  - **Event guard** (T011): the machine never emits `n` above `limit`, so the guard is as tight as the machine: `started` n 0, `continued` n 1 to `limit`, `ended` n 0 to `limit`, `spend` on `ended` only, a `runId` of letters, digits and `._:-`. (An earlier draft of this entry allowed `limit + 1`; that was wrong.)
+  - **`AutopilotRun`**: `halt` is called for every end reason, `done` included (FR-041). The guard is armed from the moment of the end until the newest `halt` is confirmed (FR-054); a continuation after the end, confirmed or not, repeats `halt` and is not counted (a later continuation after a confirmed stop means the app is still going). Backstop time counts only forward clock steps between samples, and a clock reading that is not a number ends the run as `error` (fail closed). The core owns no timer: the adapter calls `checkElapsed()` at least every `CLOCK_SAMPLE_MS` (60 s). `[KNOWN GAP]`: each step back between two samples can delay the end by up to one sample interval (60 s), not by its size; a backstop of turns takes `backstopPer`: 100 by default, 1 for Codex (`limit + 1`, FR-021). Hours 1-168 may be fractional.
+  - `isClaudeContinuation` refuses `isSidechain: true` too, and reads `isSynthetic` at the top level of the stream message, counts a marker in any text block, and treats a null `agentId` or `parent_tool_use_id` as the main stream; the probe's exact placement of `isSynthetic` is not checked (`[KNOWN GAP]`, T091).
+  - **Pre-review of e6b78258 (2026-11-03)**: `isClaudeContinuation` now decides helper or main with the Claude mapper's own rule (`claudeHelperRef` in `claudeMap.ts`: a non-empty `parent_tool_use_id` or `agent_id`; `who()` uses it too), plus `agentId` and `isSidechain`. The history reader (`claudeHistory.ts` `typedPrompt`) drops a synthetic `Stop hook feedback:` message, so it is no chat item and no session title; whether session files store `isSynthetic` stays `[KNOWN GAP]` (T091). The backstop clock starts at `start()`, not at construction. `continuation()` returns `ended` when a listener ended the run while handling `continued`. `whenStopped()` is resolved before `end()` (no halt was called) and follows the first halt after it. `end()` before `start()` emits `started` first. **Order at the end (FR-050)**: `halt` is called synchronously first, then `ended` is emitted, so the stop is in flight when a listener sees `ended`. `goalText` sends the trimmed text it checked, and refuses a goal of invisible characters only (braille blank, Hangul fillers, variation selectors, format characters). `eventguard` refuses an `autopilot` event with an `agentId` (FR-008).
+  - **Live change, user-visible (Previous sessions, Claude Code)**: `claudeHistory.ts` `typedPrompt` calls `isClaudeContinuation`, so a synthetic `Stop hook feedback:` message (for example from the person's own Stop hook) is no longer shown as a typed prompt in the chat history and no longer becomes the session title. A typed message with the same words still shows. This is the one reachable behaviour in Phase 1; the changelog has its own line. Tested in `test-autopilot.ts` section 14.
+  - **Pre-review round 2 (2026-11-03, FR-011)**: the blank-goal check now also refuses `Default_Ignorable_Code_Point`, surrogates, private-use, noncharacters and combining marks on their own, and ill-formed text; the rule is in FR-011.
+  - **Main's import chain**: `eventguard` is loaded by main (`mcpsession`, `mcpsignin`) and now reaches `autopilot.ts`, which imports `shared/guards`, `shared/names` (and `shared/redact`) and `claudeMap`: pure TypeScript, no Electron, no renderer, only constants at load. The renderer does not import `eventguard`. Judged fine for Phase 1; the guard is not split.
+  - **`[KNOWN GAP]` `question.autoAnswered` has no consumer yet**: it is typed and guarded, but `AgentStateTracker` (`src/main/mcp/agentstate.ts`), the renderer's question card and live region, and `shared/elicit.ts` do not read it, so an auto-answered question would show the agent as waiting for the person. Nothing emits it in Phase 1 (unreachable); task T029 covers it before any adapter emits it.
+  - **The CLI facts** (4000 characters, six reserved words, plain-text refusal) are now `real:` on Claude Code 2.1.317 (FR-011, *Changes* 2026-11-03), no longer a `[KNOWN GAP]`.
+- **2026-10-31 (Phase 2 built, T020-T028; choices awaiting owner review, none is an owner decision)**: `copilot.ts`, `claude.ts`, `codex.ts`, `autopilotHost.ts`, the fakes, `scripts/test-autopilot-{copilot,claude,codex,reach}.ts`. Fakes only; `verified: false`. T091, T092, T094 are `real:` to do. Where the texts left room, the choice fails closed:
+  - **Unreachable after this phase.** The real adapters report `capabilities.autopilot` as T020-T022 say. Nothing reads it and nothing calls `setAutopilot` outside the adapters: no channel, no main caller, no window. `test-autopilot-reach.ts` pins that. Nothing about a session that is not on Autopilot changes in this phase, with one exception on purpose: the Codex reopen reads the wanted mode again during a reopen, the same code as spec 044's `ae4527e2`, so the two merge. The dev SDK transport of Claude Code reports none, because `/goal` was never probed there.
+  - **FR-053 waits for T030 on a real session, awaiting owner review.** FR-053 says every resume of a session whose adapter reports `autopilot` clears first, and T020-T022 make the real adapters report it. Taken alone that would change every real resume now, for a feature nobody can turn on: an unprobed `/goal clear` on each Claude relaunch, where a failed answer refuses the person's message (FR-054). So `AUTOPILOT_WIRED` is false until T030. Clear-first runs on an adapter where `setAutopilot` was called, or when wired; it is built and tested with the flag on, and nothing can set a goal while it is off. `test-autopilot-reach.ts` fails if main calls `setAutopilot` while it is false.
+  - **Copilot `session.task_complete`, differs from FR-040's wording, awaiting owner review.** FR-040 counts any `outcome` but `blocked` as done. `read:` SDK 1.0.24 also has `continue`, "rejected because more work or validation remains", and `success: false`. Those do not end the run, which keeps counting: the runtime goes on, and a done ending would stop nothing (D8).
+  - **Clear answers.** Claude: "Goal cleared" (`real:` T093) and "No goal set" (`read:` 2.1.316 binary) both confirm, from a `result` with `num_turns: 0`, a `system` line or a local command's stdout; never assistant text. Where the text sits in stream-json is `[KNOWN GAP]` (T091). Codex: `cleared` true or false both confirm, anything else does not; method-not-found means no goals, so nothing to clear (`read:` only, T092). Copilot: on a resume `mode.get` first, and the wait for `session.mode_changed` holds only if it really was in `autopilot`.
+  - **Claude Code older than 2.1.309** (the probed version) gets no Autopilot and no clear: `real:` 2026-10-22, an unknown `/name` goes to the model and spends. A version that cannot be read gets the clear.
+  - **A `result` with `num_turns: 0`** for a goal ends with **error**, not done: the CLI answered without starting it. **The first `result` ends a Claude run**; what a typed message during a goal does to that is `[KNOWN GAP]` (T091).
+  - **An end that came from the app** (done, cap, blocked) gets the clear but no interrupt: FR-022 lets the running Codex turn finish; a Claude `result` means the turn is over; Copilot done keeps its mode (D8).
+  - **A continuation after done** is a turn nobody counts: since `halt('done')` cannot stop Copilot, it is stopped as a new run that ends at once with **error**, so the window sees it. With no run at all it is FR-006.
+  - **Copilot `session.idle`** ends a run only after the run's own work was seen; with no `task_complete` it ends with **error** (`stopped` when aborted). `cap_reached` and `paused` objectives are **blocked** (`read:`).
+  - **FR-006 acts only once wired.** Until then a goal an app reports in a session not on Autopilot is left alone, and `/goal` typed there goes through as today (FR-058 refuses it only on Autopilot). Once wired, the reactive path clears it: the signal is a `system` line, or a `result` with `num_turns: 0`, never a model's reply that says "Goal set", and never on a Claude Code older than 2.1.309.
+  - **Refused with a reason on Autopilot**: plan first until Phase 4, attachments where the capability is false, and a new run while an earlier turn is open (its flags or idle would be taken for the run's).
+  - **FR-022**: Copilot's confirmation of the Autopilot cap (`session_limits_changed`) does not reach the window, because main saves that event's value for the folder (`main.ts:300`). A failed clear on a Copilot or Codex resume makes `start` reject; on Claude Code, whose CLI starts at the first message, the send reports it.
+  - **Stop during a Codex reopen** sends no goal: the session comes back and Autopilot is off; a stricter mode during it turns the goal into a plain message in that mode. **Stop with Autopilot on and no run** also stops the turn that is going (a typed one after a done ending).
+  - **Codex shapes** are `read:` from the schema Codex 0.164.0 generates locally (`codex app-server generate-json-schema`): `thread/goal/updated {threadId, turnId?, goal}`, `thread/goal/cleared {threadId}`, `thread/goal/set` answers `{goal}`, `thread/goal/clear` answers `{cleared}`, `origin` is `user` or `automatic` on the requests. The notifications carry **no `origin`**, so FR-006's "not from Durbar" is read as "no run of Durbar's". Not seen on a real app with these exact fields but `status` and `tokensUsed` (T093).
+  - `[KNOWN GAP]` **Whether an Autopilot cap stays in Copilot's stored session** after End session, a quit or a sign-in refresh in the middle of a run: those paths send no restore, and nothing shows what a later resume without `sessionLimits` gets. If it stays, it is the tighter cap, the safe side. T094 checks it.
+  - `[KNOWN GAP]`: all of it on fakes. Not run: any real session, FR-054's 10 seconds on a real app, Windows and macOS process kills.
+  - **Merged with main, 2026-11-04** (after #963, #1099 and spec 052 FR-229):
+    - The adapters' `/word` refusal text (`goalRefusal` case `command`) is removed, and `test-autopilot-claude.ts` now checks that `tests pass\n/compact` is sent as one `/goal` message.
+    - On Copilot, Stop's Autopilot branch and End's `endQuietly` run inside FR-229's stop sequence, so a send made during them waits as it does for any Stop.
+    - `send` checks the Autopilot refusals before and again after that wait, because Autopilot may have been turned off during it. A Stop during the wait drops the message (FR-229). `test-autopilot-copilot.ts`: Autopilot turned off during the wait sends a plain message and starts no run. Without the second check the send rejects ("This session is not on Autopilot."), which fails `Autopilot went off during the wait: the message still goes`.
+    - The `test:autopilot-*` suites are listed in `scripts/test-suites.txt`.
+
+### 2026-11-04: Autopilot off bounded, the turn-on's real outcome, the cap state (review on #967, round 8)
+
+Full review of PR #967 at ce766d3f5 by rubenlupi's agent (2026-11-04): Autopilot off's `mode.set interactive` had no bound, so one that never answered held the queue and kept Stop from aborting; `setPermMode('ask')` during the turn-on left `setAutopilot` resolving "ok" with Autopilot off, then a false FR-006 line and an abort; with the cap update and its restore both unanswered, Durbar believed the Autopilot cap was in force and the next goal sent none; End during a turn-on said a Stop came.
+
+- **Changes:** FR-059's queue bullet (above). **Replaces:** nothing.
+- **How:** `autopilotOff` goes through `bounded`; on no answer `planMode` is set and `auto.close()` ends the session (FR-054), whose End aborts. `turnOnStep` re-reads End, Stop, `auto.on` and the broker's mode after its wait, rejects with the matching text (`COPILOT_TURN_ON_OFF` is new) and keeps `ownTurnOn` through `forget`. `capUnsure`, set by an unanswered or failed restore, makes the next goal send its cap even when it equals `capNow`.
+- Tests: `test-autopilot-copilot.ts` probes W1 to W4, W3b and W4b, and probe N's text, gated fakes with a 20 ms bound. No real session.
+
+### 2026-11-04: every runtime call of a queued step is bounded (review on #967)
+
+Before rubenlupi's round-7 review of PR #967 (2026-11-04), from the round-6 answer's own limits: the runtime calls inside a Copilot send step (cap update, cap restore, the plan or `interactive` mode change) had no bound, so one that hung held the whole queue, Autopilot on and off included; and `ownTurnOn` stayed set when a timed-out turn-on never answered, so a later real self-started loop would have lost its FR-006 line.
+
+- **Changes:** FR-059's queue bullet (above). **Replaces:** nothing.
+- **How:** `bounded` in `copilot.ts` wraps those calls in `within` with the turn-on's bound (`waitMs ?? CLEAR_WAIT_MS`) and fails with `COPILOT_STEP_NO_ANSWER`; an unanswered cap update counts as sent, so the restore sends the session's own cap; the mode change resets `turnOpen` on any failure and sets `planMode` before asking for `plan`. `ownTurnOn` is cleared one bound after a turn-on gave up (a timer keyed by `ownTurnOnId`), not at the next step, so probe L's late answer stays Durbar's own.
+- Tests: `test-autopilot-copilot.ts` probes H1 to H5, a gate never released and a 20 ms injected bound, no sleep. No real session.
+
+### 2026-11-04: one operation queue per Copilot session, round 6 (review on #967)
+
+Round 6 of rubenlupi's review on PR #967 (2026-11-04) found four windows opened by the round-4 wait on the turn-on: a Stop or End during it did not drop the message; a send waited on one turn-on only, so a second, failing one left a run going; two sends released by one turn-on both started runs (one orphaned with its timer); and the late answer of a timed-out turn-on fired FR-006 and an abort onto the person's plain turn. The owner side asked for a structural fix instead of a fifth patch.
+
+- **Changes:** FR-059's Copilot sentences become the queue bullet (above). **Replaces:** round 2's plan-send refusal (`COPILOT_PLAN_CROSSED`, the mode epoch), round 4's `turningOn` wait, and round 3's "Autopilot back on during the restore goes through the cap again", which a queue makes impossible (that turn-on now comes after the send).
+- **How:** `reserve` and `serial` in `copilot.ts`: each `send` (`sendStep`, up to the runtime call, which it starts but does not wait for), `setAutopilot` on (`turnOnStep`) and off (`autopilotOff`) takes its place in `live.ops` when it is called. The Stop count (`interrupts`) is taken at the call; End sets `live.ending`. `ownTurnOn` marks a turn-on's `mode.set autopilot` until its mode change, so a late one is undone (`undoLateTurnOn`) without the FR-006 line or abort.
+- Tests: `test-autopilot-copilot.ts` probes S, N, T2, Q and L for the four findings, S2 (a turn-on whose turn comes after a Stop), P (a Stop during a send's reset to interactive) and the `stop-now` and `stop-slow` cap-update cases (gated fakes; `orderedModes` answers mode changes in order, as the runtime does), and probes A to K adjusted to the queue (E, G and D now check the order). No real session.
+
+### 2026-11-04: Copilot's turn-on is bounded, round 5 (review on #967)
+
+Before rubenlupi's round-5 verdict on PR #967 (2026-11-04): the round-4 wait had no bound, so a `mode.set autopilot` that never answered held every later send for good; and a mutant of that wait hung the suite instead of failing an assert.
+
+- **Changes:** FR-059's plan sentence (above) gains the bound. **Replaces:** nothing.
+- **How:** `setAutopilot` wraps its `mode.set autopilot` in `within` with the Autopilot clear wait (`waitMs`, `CLEAR_WAIT_MS`), the bound its other runtime waits use (FR-031: reused). On timeout the catch runs as for a failure: Autopilot off, `auto.settings` cleared, `planMode` set (so a late `autopilot` answer is undone by the `interactive` reset before the next message), `turningOn` settled. The waits in probes F and I go through `until` (FR-048b), so a hang fails an assert.
+- Tests: `test-autopilot-copilot.ts` probe J (a gate never released, a 20 ms injected bound), gated fakes. No real session.
+
+### 2026-11-04: a send waits for Copilot's turn-on, round 4 (review on #967)
+
+Round 4 of rubenlupi's review on PR #967 (2026-11-04): a goal sent while `setAutopilot` waited on `mode.set autopilot` started a run; when that `mode.set` then failed, the caller was told it failed but the run went on, and the next plain message sent `mode.set interactive` mid-run. Mutant R2 (a failed turn-on keeps `auto.settings`) survived every suite.
+
+- **Changes:** FR-059's plan sentence (above) gains the turn-on wait. **Replaces:** nothing.
+- **How:** of the two fixes the review offered (end a run that began in the window, or let the send wait), the send waits: `setAutopilot` keeps its turn-on in `turningOn`, settled after its catch ran, and `send` awaits it before its refusals, so no run can begin on a mode that fails. Probe F now also checks the goal waits.
+- Tests: `test-autopilot-copilot.ts` probes F and I, gated fakes. No real session.
+
+### 2026-11-04: plan mode around Autopilot's own mode change, round 3 (review on #967)
+
+Round 3 of rubenlupi's review on PR #967 (2026-11-04): `planMode` stayed set while `setAutopilot` waited on `mode.set autopilot`, so a goal sent then (the plan card's "Approve and run on Autopilot") did `mode.set interactive` first; and when that `mode.set` failed during a plan send's wait, `planMode` was left unset with the runtime maybe still in plan mode, and the plan send was refused with the Autopilot text although Autopilot never came on.
+
+- **Changes:** FR-059's plan sentence (above). **Replaces:** the round-2 "refused with AUTOPILOT_NO_PLAN and leaves plan mode unset".
+- **How:** `setAutopilot` clears `planMode` before the await and sets it in the catch; the plan send's refusal is `COPILOT_PLAN_CROSSED`.
+- Tests: `test-autopilot-copilot.ts` probes E (text), F and G, gated fakes. No real session.
+
+### 2026-11-04: every wait of that send, round 2 (review on #967)
+
+Round 2 of rubenlupi's review on PR #967 (2026-11-04) found three waits FR-059 missed: on Copilot the plan-mode reset (`mode.set interactive`) after the read, so a goal could go with the runtime in `interactive` and a Stop during it brought back "This session is not on Autopilot."; on Copilot a Stop during the cap restore still sent the plain message; on Claude Code a failed resume `/goal clear` said "nothing was sent" and then sent the message plain through a relaunch.
+
+- **Adds:** FR-059's "every wait counts" sentence (above). **Replaces:** nothing.
+- **How:** Copilot's `setAutopilot` clears `planMode` once `mode.set autopilot` succeeded (that mode leaves plan mode), so a run's send has no mode change after the read; `capForRun` reads Stop and Autopilot again after the restore. Claude Code's `sendLaunched` returns why it ended (`began`, `plain`, `none`), and only `plain`, from the read itself, resends.
+- **Also:** Copilot's `setAutopilot` bumps a mode epoch (`modeEpoch`) when it turns Autopilot on; a plan send that saw it move across its `mode.set plan` refuses the plan message and does not set `planMode` (the edge left open in the round-2 answer).
+- Tests: `test-autopilot-copilot.ts` (probes A to E), `test-autopilot-claude.ts` (probe p5), gated fakes, no timer. No real session.
+
+### 2026-11-04: a Stop or Autopilot off during a send's last wait (review on #967)
+
+Review on PR #967 (rubenlupi's agent, 2026-11-04): on Copilot a Stop or `setAutopilot(null)` while the Autopilot cap update waited made the send fail with "This session is not on Autopilot.", left the turn open and the Autopilot cap in force, so every later Autopilot send was refused. On Claude Code the same during the resume's `/goal clear` left the Autopilot cap set for later launches.
+
+- **Adds:** FR-059 (above). **Replaces:** nothing; FR-022's "restored after every end" now also covers a run that never began.
+- **How:** Copilot reads the refusals again after the cap update, with the Stop count (`interrupts`) taken before it, and restores the session's cap on anything but a run starting now (`capForRun`). Claude Code keeps a Stop count (`stops`), checks it with Autopilot after the last wait, undoes the Autopilot cap in a `finally` until the run began, and sends a plain message again through the relaunch when Autopilot went off alone.
+- **Also from that review:** a test for the stop-sequence claim of the 2026-11-04 merge entry (a send during a Stop still stopping Autopilot waits, run and no run), for the Copilot resume wait on `session.mode_changed` (FR-053), End session stopping the clock sample (FR-052), the Codex `live.mode` guard before `thread/goal/set` (FR-002) and a whole-number token cap; the fixed sleeps in the Codex and Claude Code tests became condition waits (FR-048b); Copilot's `timed` now uses `within` (FR-031).
+- Tests: `test-autopilot-copilot.ts`, `test-autopilot-claude.ts`, `test-autopilot-codex.ts` on fakes only. No real session.
+
+### 2026-11-03: the `/word` refusal is dropped for Claude Code goals (owner decision, Vikram)
+
+Owner decision of Vikram, Telegram DM, 2026-11-03 22:50 UTC, option "A": drop the refusal of a goal with a line shaped like a slash command. The Mac session checked the CLI for real (`real:` 2.1.317, 0 credits, FR-011): one message is one command, so a `/word` line inside a multi-line goal is part of the condition and runs nothing.
+
+- **Replaces:** the 2026-11-03 safe-default `/word` rule (FR-011, `goalText` reason `command`, removed with `SLASH_COMMAND_RE`). `goalText` refuses `empty`, `reserved` and `too-long` only. The 4000-unit limit and the six reserved words stay: they match the CLI exactly.
+- **Evidence:** the facts are recorded in FR-011; the unverified items stay `[KNOWN GAP]` there. Test: `scripts/test-autopilot.ts` (multi-line `/cost`, a goal starting `/usr/bin` or `/word`, 4000/4001, 2001 emoji = 4002, six words in mixed case).
+- Phase 1: nothing starts a run yet, so no user-visible change.

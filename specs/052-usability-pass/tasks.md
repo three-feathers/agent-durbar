@@ -345,3 +345,65 @@
 
 ## FR-181: no Demo / Live badge in the top bar (2026-10-31, owner)
 - [x] T193 `check-no-demo-badge.js` first (fails with the badge), then `#protoBadge`, `.proto` and `setBadge` removed; UI-suite entry; the cues that remain are listed in the spec delta [FR-181]
+
+## FR-182..FR-190: opt-in auto-follow and attention queue (2026-11-01, issue #686)
+- [x] T194 One task for issue #686. Spec first (this delta, committed before `src/`). Then: `autoFollowWork` in `src/shared/credits.ts`, `src/main/settings.ts`, `src/main/ipc/settings.ts` (`{ok:false}` for a non-boolean), preload, `api.ts`, `sim.ts`; Settings switch; pure `src/renderer/autofollow.js` (queue, held place, guard decision, arrival key); `app.js` wiring (accepted send, arrival, guards, floors, strip, keys, palette, help); `styles.css` marker and strip; `test:autofollow`; `scripts/check-auto-follow.js` (UI suite); mutations of the guards and of off-by-default; changelog fragment [FR-182..FR-190]
+
+## FR-191..FR-205: the Needs you panel (2026-11-01, owner). Not before the Retro world
+- [x] T195 Q-NY-1..Q-NY-16 recorded as agent decisions of 2026-11-01, told to the owner and reversible by him [FR-191..FR-204]
+- [ ] T196 Tests first: `createArrivals()` in `attention.js`, `test-attention` with its mutants [FR-193, FR-205]
+- [ ] T197 Panel in place of the modal: non-modal region, no layout effect, automatic opening with no focus change, dismiss and reopen, the Settings switch, keys; `scripts/check-needs-panel.js` steps 1, 2, 3, 8 [FR-191, FR-192, FR-194, FR-195]
+- [ ] T198 Request binding and guards in rows, by the mechanism on `main` (#994, #1004): stale press, `RISE_GUARD_MS`, `e.repeat`, the word from the card's real outcome; driver steps 5, 6 and mutants [FR-197, FR-198, FR-200]
+- [ ] T199 What a row offers, per the agent decisions: limit, long request, question, form, error, usage window, Read-only; simulator hooks; driver step 7 [FR-196, FR-199]
+- [ ] T200 Announcements and the burst; keyed row updates; one slide, reduced motion, `check:perf`; driver step 4 [FR-201, FR-204]
+- [ ] T201 Chat, other views, sizes, Flat and Real office, tokens, slips; driver steps 9, 10 [FR-202, FR-203]
+- [ ] T224 Your door: faces in a line, "N outside your door, oldest first", the control's name, below notices. Measure first the rows at 1280 with a notice. Test: `check-needs-panel` step 11 [FR-191, FR-196, FR-203]
+- [ ] T225 In a chat, on request, the panel pushes the chat; composer never covered; hint and chips at 700 px; `check:perf` with a long chat. Test: step 11; mutant: panel over the chat [FR-202, Q-NY-1]
+- [ ] T202 Existing drivers follow the panel; pictures retaken; docs, changelog fragment; older FRs updated in place (the delta's list), spec 003, 074, 092, 097 lines included; `/speckit.converge` [FR-205]
+
+## FR-214..FR-227: design sweep (2026-11-01, owner). PRs, gates and line-count goals: spec 005 `plan.md`
+- [x] T220 [PR D1, first] `requestText()` puts a space between blocks. Test first: a pure-helper test and a driver that fail on `main` with the run-together words; mutant: old `textContent` [FR-214]
+- [ ] T221 [K2, PR #1011] `.swt.on` from a token: 2.47:1 to 6.08:1 and 6.92:1, in spec 033's delta and its driver. Tick when #1011 lands [FR-223]
+- [ ] T222 [PR R1, with spec 005] Mac rules on the rail's top row and chat header, also collapsed and hidden; `test-macos`. `[KNOWN GAP]` real Mac asked of its owner [FR-215]. R1 part done 2026-11-03 (top row and chat header; `test-macos`, `check-rail`); collapsed and narrow with R3 (005 T116)
+- [ ] T223 [PR N1] Measure first: 93 px and moving desks with three bars. Card kind and stay-open action in `toastActions()`; restore card, Change…, Dismiss, red lock, asks on every start. Test: new `check-notices`; desks unchanged with cards; a second start asks again; mutant: dismiss clears the lock [FR-218, FR-219, FR-220, FR-227]
+- [ ] T252 [PR N1] Flat at 15: shrink to the lock after 8 s unless hovered or focused, by injected clock; Photo top right clear. Test: `check-notices`; mutant: timer ignores hover [FR-221]
+- [ ] T214 [PR N2] Away and crash cards; `#restoreStrip`, `#awayStrip`, `#crashStrip` and `.notice-strip` removed; Mac notice rules removed; FR-015, FR-057's buttons, FR-089 changed in place. Test: `check-notices` (also the log at 700 and 600 px, 005 FR-195, 31 less on FR-199's fallback), `shots-006-crash`, `check:office` [FR-218]
+- [ ] T215 [After #1002's build, T197..T202, T224, T225] Notices as rows once the cards exist; the Your door control in the rail's rows once the rail exists. Test: `check-needs-panel` gains these steps [FR-216, FR-217]
+- [ ] T216 [PR K1] The toggle rule in `docs/design-rules.md` and `docs/review-checklist.md`; immediate checkboxes become `.swt` through `sw()`. Test: `check-ui-text`; existing screen drivers [FR-222]
+- [ ] T217 [PR K3] `accent-color`, `.inbox:focus-within`, `.send` from tokens (`.send` green in 070 A14, by whichever lands first), 3:1 and 4.5:1 in every set. Test: `check-ui-text`, ratchet lowered [FR-224]
+- [ ] T218 [PR K4] Information notes neutral, amber kept for what waits for you. Test: `check-ui-text` reads `.note.info` and a waiting card; mutant: amber default back [FR-225]
+- [ ] T219 [PR S, after spec 102 removes themes] Measure first, 7238 px and 22 headings. Section list and one row layout. Test: new `check-settings-nav` at both sizes, keyboard, jump to each section [FR-226]
+
+## FR-206..FR-208: the Needs you inbox cannot answer a request by accident (2026-11-01)
+- [x] T203 `check-inbox-safety.js` first (on `main` it fails: a stale button re-answers a request, a held A answers, key A sends a limit's hidden amount), then `reqOf` and the live-card check in `paintInbox` [FR-206]; UI-suite entry
+- [x] T204 Limit row: the amount field in the row, no letter keys, own words, empty amount sends nothing, typing is not a command [FR-207]
+- [x] T205 `inboxKey` ignores `e.repeat` on A, S, D, O, Enter, Space and the chat's Alt+A/S/D; no key on a row being answered [FR-208]; five mutants run
+- [x] T206 Review of #1004 (independent security review): `check-answer-safety.js` first, then the answer bar's focus rule and no limit buttons in the bar [FR-210], the composer's repeat guard [FR-211], the limit card's in-flight lock, rounding and late-answer rule, the row's kept amount and Open key [FR-209]; native key steps with `isAutoRepeat`; every mutant run one at a time and listed in the PR
+- [x] T207 Plan card focus (spec 066 FR-064) [FR-212]; driver step in `check-answer-safety.js`
+- [x] T208 Corrected FR-206's wording (the broker ignores a second answer: no wrong approval from the stale row)
+- [x] T209 Re-review of #1004 at 97a9e6d7: inbox clicks stay in the inbox (`#inboxDlg` excluded at the document click handler), Enter in the limit amount raises, focus stays in the dialog after an answer [FR-213]; real-mouse and native-key steps
+- [x] T210 Plan focus rule (no modal, empty box, focus on the page or in the box) and held Enter/Space on the plan's buttons (spec 066 FR-064, an agent decision) [FR-212]
+- [x] T211 Answer bar same-card rule by position (agent-supplied option labels cannot catch focus); late limit reply skips a settled card; `inboxKey` row guard, Space guard and `live.contains(src)` kept and tested; question answers locked in flight [FR-209, FR-210, FR-206, FR-208]
+- [x] T212 Third review of #1004: typing on a plan goes to the box; a hung limit answer (Sending…, 30 s unlock, "Still waiting", Copilot `cancelLimit` time limit); Space guard step; bar ignores locked cards; repaint keeps focus in the amount; tests for the question unlock and the amount's repeat check [FR-209, FR-210, FR-212, FR-213]
+- [x] T213 Fourth review of #1004: a settled limit card keeps its status (timer and late failure), `stop`/`interrupt` give up on cancel, abort and disconnect after 5 s (`test:copilotcap` with all three hanging), paste on the plan goes to the box [FR-209, FR-212]
+- [x] T226 Measure stop and interrupt after the 5 s give-up on a real Copilot runtime (issue #1028): `scripts/copilot-giveup-real.ts`, 7 prompts plus 2 to check the fixes [FR-228]
+- [x] T227 The row says Stop was sent; `send` waits for calls given up on (`test:copilotcap`, mutation-checked; `real:` the next message runs) [FR-229]
+- [x] T228 `start` and rename of the same id wait for a late close (`test:copilotcap`, mutation-checked; `real:` the resumed session lives) [FR-230]
+- [x] T246 Measure the runtime's own limit after a give-up on a real Copilot runtime (issue #1028 question 3): `--repl`, 32.05 AI credits [FR-231]
+- [x] T247 A send after a give-up waits for the end of the stopped turn (`test:copilotcap`, mutation-checked; `real:`) [FR-232]
+- [x] T248 Stop at a limit shows no error (`test:copilotcap`, mutation-checked; `real:`) [FR-233]
+- [x] T249 A raise under what was used keeps the card and the message (`test:copilotcap`, mutation-checked; `real:`) [FR-234]
+- [x] T250 A session over its cap opens again (`test:copilotcap`, mutation-checked; `real:`) [FR-235]
+- [x] T251 Remove the Simple / Expert switch: Expert is the only behaviour, "No spending limit" kept, the welcome question and the Settings control gone, a stored `durbar.detail` dropped once; 11 drivers lose the second dimension, `shots-052-ux` checks nothing renders the switch; docs and `*-simple-*` pictures removed [FR-236]
+- [x] T253 A text popup closes only on a press that starts outside it: one press tracker in `dialog.js` (`onBackdrop`, `isOutsideClick`) for every backdrop and the floors and Folders popovers, the focus trap returns to the last focused control; `scripts/check-edit-popups.js` (12 kinds with a field plus the inbox and keyboard sheet, both sizes, real input) and `test-dialog.ts`, each guard mutation-checked [FR-237]
+
+
+## 2026-11-02: activity export, atomic no-follow write (issue #973)
+- [x] T260 `activity:export` through `writeNotesExport` (new `what` and `maxBytes` options); `test-activity` cases for a link target, hard link, FIFO, folder, replace and mode [FR-071]
+- [x] T264 The inbox header's sizes move from `realoffice.css` to `styles.css`; driver `check-inbox-avatar` asserts every inbox avatar is at most 40 px and the first Allow button is hit by `elementFromPoint` [issue #1174]
+
+## 2026-11-05: Serious mode no longer stops motion (issue #1182)
+- [x] T265 Motion is its own Settings switch (default on, `motion:false` stored, `settings:setMotion`); Serious mode hides only the mood drawings and trouble signs; `scripts/check-serious-motion.js` (both sizes, mutation-checked) and `test-credits` round trip; `check-097-motion`, `check-office-ops-real` and `shots-097-realoffice` use the Motion switch [FR-069, FR-069a, FR-069b]
+
+## 2026-11-05: Windows UI drivers wait for the focus (issue #1179)
+- [x] T266 Windows flakes: `check-auto-follow` waits for arrivals with the real focus asked again at each look; `H.focusPage({emulate:'first'})` emulates from the start (`check-edit-popups`, `check-auto-follow`), `emulate:true` stays fallback-only (`check-list-columns`) [issue #1179, test driver only]

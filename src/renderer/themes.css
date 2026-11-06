@@ -13,7 +13,6 @@ html[data-ui]:not([data-ui="clean"]) .stage .desk.card.is-waiting,html[data-ui]:
 html[data-ui]:not([data-ui="clean"]) .stage .desk.card.is-error{background:color-mix(in srgb,var(--pb-error) 75%,var(--surface));border-color:var(--c-error)}
 html[data-ui]:not([data-ui="clean"]) .stage .room-name{background:var(--surface)}
 html[data-ui]:not([data-ui="clean"]) .btn,html[data-ui]:not([data-ui="clean"]) .seg button[aria-pressed="true"]{background:var(--surface)}
-html[data-ui]:not([data-ui="clean"]) .plate:hover{background:var(--surface)}
 /* spec 052 FR-103: the top-bar counters as one light strip in every style (also on a dark bar). The style's frame colour,
    corners and shadow go on the group; each counter keeps its 1px border, transparent, so no size changes */
 html[data-ui]:not([data-ui="clean"]) .topbar .stats{background:var(--surface);border-radius:var(--r-md);box-shadow:inset 0 0 0 1px var(--line)}
@@ -25,48 +24,18 @@ html[data-ui]:not([data-ui="clean"]) .topbar .stats>.stat-aiu:hover{background-c
 html[data-ui]:not([data-ui="clean"]) option{color:var(--ink);background:var(--surface)}
 /* display text: a style may give it another font; it is ellipsized, never wrapped, if that font is wider */
 html[data-ui]:not([data-ui="clean"]) .brand h1,html[data-ui]:not([data-ui="clean"]) .room-name,html[data-ui]:not([data-ui="clean"]) .place .pn,
-html[data-ui]:not([data-ui="clean"]) .plate-tx b,html[data-ui]:not([data-ui="clean"]) .scr h2,html[data-ui]:not([data-ui="clean"]) .dlg h2{font-family:var(--ui-display,inherit)}
+html[data-ui]:not([data-ui="clean"]) .scr h2,html[data-ui]:not([data-ui="clean"]) .dlg h2{font-family:var(--ui-display,inherit)}
 /* spec 070 FR-001: a pack that names a display font (data-display, set by theme.js) gets it on the same titles in any UI style, Clean included */
-html[data-display] .plate-tx b,html[data-display] .scr-head h2,html[data-display] .dlg h2{font-family:var(--ui-display,inherit)}
+html[data-display] .scr-head h2,html[data-display] .dlg h2{font-family:var(--ui-display,inherit)}
 html[data-ui]:not([data-ui="clean"]) .room-name{overflow:hidden;text-overflow:ellipsis;min-width:0;flex:0 1 auto}
-/* a dark top bar (corporate, retro, the courts): light text, ghost controls, a focus ring that shows on it */
-:is(html[data-ui="corporate"],html[data-ui="retro"],html[data-ui="court-indian"],html[data-ui="court-european"]) .topbar .brand h1{color:var(--ui-top-ink)}
-:is(html[data-ui="corporate"],html[data-ui="retro"],html[data-ui="court-indian"],html[data-ui="court-european"]) .topbar #liveBar .tgl{color:var(--ui-top-ink-2)}
-:is(html[data-ui="corporate"],html[data-ui="retro"],html[data-ui="court-indian"],html[data-ui="court-european"]) .topbar .seg{background:color-mix(in srgb,var(--ui-top-ink) 10%,transparent);border-color:color-mix(in srgb,var(--ui-top-ink) 28%,transparent)}
-:is(html[data-ui="corporate"],html[data-ui="retro"],html[data-ui="court-indian"],html[data-ui="court-european"]) .topbar .seg button{color:var(--ui-top-ink-2)}
-:is(html[data-ui="corporate"],html[data-ui="retro"],html[data-ui="court-indian"],html[data-ui="court-european"]) .topbar .seg button[aria-pressed="true"]{background:var(--surface);color:var(--ink)}
-:is(html[data-ui="corporate"],html[data-ui="retro"],html[data-ui="court-indian"],html[data-ui="court-european"]) .topbar .seg button:not([aria-pressed="true"]):hover{background:color-mix(in srgb,var(--ui-top-ink) 14%,transparent)}
-:is(html[data-ui="corporate"],html[data-ui="retro"],html[data-ui="court-indian"],html[data-ui="court-european"]) .topbar :focus-visible{outline-color:var(--ui-top-ink)}
-
-/* ---------- Corporate: glass and steel. Navy bar, white rooms with an accent edge, tag pills, square corners ---------- */
-html[data-ui="corporate"]{--ui-display:"Segoe UI","Helvetica Neue",Arial,system-ui,sans-serif;--ui-top-ink:#ffffff;--ui-top-ink-2:#d5e2f0}
-html[data-ui="corporate"] .topbar{background:var(--ink);--st-glyph:var(--ink);border-bottom-color:var(--ink);box-shadow:inset 0 -3px 0 var(--brand-bg)}
-html[data-ui="corporate"] .brand-mark{border-radius:6px}
-html[data-ui="corporate"] .brand h1{font-weight:700;letter-spacing:.01em}
-html[data-ui="corporate"] .stat,html[data-ui="corporate"] .btn,html[data-ui="corporate"] .seg,html[data-ui="corporate"] .select-wrap select,html[data-ui="corporate"] .defaults-grp select{border-radius:5px}
-html[data-ui="corporate"] .seg button{border-radius:3px}
-html[data-ui="corporate"] .topbar .btn{background:color-mix(in srgb,var(--ui-top-ink) 10%,transparent);border-color:color-mix(in srgb,var(--ui-top-ink) 30%,transparent);color:var(--ui-top-ink)}
-html[data-ui="corporate"] .topbar .btn:hover{background:color-mix(in srgb,var(--ui-top-ink) 18%,transparent)}
-html[data-ui="corporate"] .topbar .select-wrap select{background:color-mix(in srgb,var(--ui-top-ink) 10%,transparent);border-color:color-mix(in srgb,var(--ui-top-ink) 30%,transparent);color:var(--ui-top-ink)}
-html[data-ui="corporate"] .topbar .select-wrap::after{border-color:var(--ui-top-ink-2)}
-/* spec 052 FR-032: a 1997-office bevel on buttons, segmented buttons and the top-bar selects, inverted when pressed.
-   Inset shadows only, so no size changes; on the navy bar the dark edge is a shade of black, not the light --line-2. */
-html[data-ui="corporate"] .btn,html[data-ui="corporate"] .seg button{box-shadow:inset 1px 1px 0 #fff,inset -1px -1px 0 var(--line-2)}
-html[data-ui="corporate"] .btn:active:not(:disabled),html[data-ui="corporate"] .seg button:active,html[data-ui="corporate"] .seg button[aria-pressed="true"]{box-shadow:inset 1px 1px 0 var(--line-2),inset -1px -1px 0 #fff}
-html[data-ui="corporate"] .topbar .btn,html[data-ui="corporate"] .topbar .seg button,html[data-ui="corporate"] .topbar .select-wrap select{box-shadow:inset 1px 1px 0 color-mix(in srgb,#fff 45%,transparent),inset -1px -1px 0 rgba(0,0,0,.35)}
-html[data-ui="corporate"] .topbar .btn:active:not(:disabled),html[data-ui="corporate"] .topbar .seg button:active,html[data-ui="corporate"] .topbar .seg button[aria-pressed="true"],html[data-ui="corporate"] .topbar .select-wrap select:active{box-shadow:inset 1px 1px 0 rgba(0,0,0,.35),inset -1px -1px 0 color-mix(in srgb,#fff 45%,transparent)}
-html[data-ui="corporate"] .stage .room:not([data-alert="uneasy"]):not([data-alert="alarm"]){border-color:var(--line);box-shadow:inset 4px 0 0 var(--wall),0 1px 2px rgba(16,32,56,.07)}
-html[data-ui="corporate"] .stage .room{border-radius:8px}
-html[data-ui="corporate"] .stage .room-name{text-transform:uppercase;letter-spacing:.06em;font-weight:700}
-html[data-ui="corporate"] .stage:not([data-d="full"]) .room-name{border-color:var(--line);border-radius:3px;box-shadow:inset 3px 0 0 var(--wall)}
-html[data-ui="corporate"] .stage .desk.card,html[data-ui="corporate"] .stage .helper.hc{border-radius:5px;border-color:var(--line);box-shadow:0 1px 2px rgba(16,32,56,.08)}
-html[data-ui="corporate"] .stage .desk.card:hover,html[data-ui="corporate"] .stage .helper.hc:hover{border-color:var(--sel-border)}
-html[data-ui="corporate"] .pill{border-radius:3px}
-html[data-ui="corporate"] .more{border-radius:4px}
-html[data-ui="corporate"] .lobby .place{border-radius:5px;border-color:var(--line);box-shadow:inset 0 -2px 0 var(--brand-bg)}
-html[data-ui="corporate"] .lobby .place .pic{color:var(--brand-bg)}
-html[data-ui="corporate"] .lobby .place .pn{text-transform:uppercase;letter-spacing:.04em}
-html[data-ui="corporate"] .plate{border-radius:6px}
+/* a dark top bar (retro): light text, ghost controls, a focus ring that shows on it */
+html[data-ui="retro"] .topbar .brand h1{color:var(--ui-top-ink)}
+html[data-ui="retro"] .topbar #liveBar .tgl{color:var(--ui-top-ink-2)}
+html[data-ui="retro"] .topbar .seg{background:color-mix(in srgb,var(--ui-top-ink) 10%,transparent);border-color:color-mix(in srgb,var(--ui-top-ink) 28%,transparent)}
+html[data-ui="retro"] .topbar .seg button{color:var(--ui-top-ink-2)}
+html[data-ui="retro"] .topbar .seg button[aria-pressed="true"]{background:var(--surface);color:var(--ink)}
+html[data-ui="retro"] .topbar .seg button:not([aria-pressed="true"]):hover{background:color-mix(in srgb,var(--ui-top-ink) 14%,transparent)}
+html[data-ui="retro"] .topbar :focus-visible{outline-color:var(--ui-top-ink)}
 
 /* ---------- Retro Pixel: an 8-bit arcade. Dark page, thick black outlines, hard shadows, no round corners ---------- */
 html[data-ui="retro"]{--ui-display:ui-monospace,"Cascadia Mono","DejaVu Sans Mono",Menlo,Consolas,monospace;--ui-top-ink:#ffec27;--ui-top-ink-2:#fff1e8}
@@ -75,7 +44,7 @@ html[data-ui="retro"] .topbar{background:var(--ink);border-bottom-color:var(--in
 html[data-ui="retro"] .brand h1{text-transform:uppercase;letter-spacing:.08em;font-weight:800}
 html[data-ui="retro"] .brand-mark{border-radius:0;box-shadow:3px 3px 0 var(--sel-border)}
 html[data-ui="retro"] .stat,html[data-ui="retro"] .btn,html[data-ui="retro"] .seg,html[data-ui="retro"] .seg button,html[data-ui="retro"] .select-wrap select,html[data-ui="retro"] .defaults-grp select,
-html[data-ui="retro"] .pill,html[data-ui="retro"] .chip,html[data-ui="retro"] .toast,html[data-ui="retro"] .plate,html[data-ui="retro"] .door{border-radius:0}
+html[data-ui="retro"] .pill,html[data-ui="retro"] .chip,html[data-ui="retro"] .toast{border-radius:0}
 html[data-ui="retro"] .btn,html[data-ui="retro"] .stat,html[data-ui="retro"] .seg,html[data-ui="retro"] .select-wrap select,html[data-ui="retro"] .defaults-grp select{border-color:var(--line);box-shadow:0 0 0 1px var(--line),3px 3px 0 1px var(--line)}
 html[data-ui="retro"] .topbar .btn,html[data-ui="retro"] .topbar .stat,html[data-ui="retro"] .topbar .seg,html[data-ui="retro"] .topbar select{box-shadow:0 0 0 1px var(--line),3px 3px 0 1px var(--sel-border)}
 html[data-ui="retro"] .btn:active,html[data-ui="retro"] .stat:active{transform:translate(2px,2px);box-shadow:0 0 0 1px var(--line),1px 1px 0 1px var(--line)}
@@ -96,87 +65,22 @@ html[data-ui="retro"] .lobby .place.busy{background:var(--brand-bg)}
 html[data-ui="retro"] .lobby .place .pn{text-transform:uppercase;letter-spacing:.04em}
 html[data-ui="retro"] .slot,html[data-ui="retro"] .walker .wk{border-radius:0}
 html[data-ui="retro"] .walker .wk{border-color:var(--line);box-shadow:2px 2px 0 #000}
-html[data-ui="retro"] .plate{border-color:var(--line);box-shadow:0 0 0 1px var(--line),4px 4px 0 1px #000}
 html[data-ui="retro"] .empty,html[data-ui="retro"] .filter-note,html[data-ui="retro"] .filter-note b{color:var(--surface)}
 
-/* ---------- Durbar · Indian court: a maroon bar with a gold rule, ivory hall, arched rooms in a double gold frame ---------- */
-html[data-ui="court-indian"]{--ui-display:"Palatino Linotype",Palatino,"Book Antiqua","URW Palladio L",P052,Georgia,"DejaVu Serif",serif;--ui-top-ink:#f6d58a;--ui-top-ink-2:#fbe9c6}
-html[data-ui="court-indian"] body{background-image:radial-gradient(rgba(201,151,58,.22) 1px,transparent 1.6px);background-size:18px 18px}
-html[data-ui="court-indian"] .topbar{background:var(--brand-bg);border-bottom-color:var(--brand-bg);box-shadow:inset 0 -3px 0 #c9973a,inset 0 -5px 0 var(--brand-bg),inset 0 -6px 0 #e7c27a}
-html[data-ui="court-indian"] .brand h1{font-weight:700;letter-spacing:.03em}
-html[data-ui="court-indian"] .brand-mark{border-radius:50%;box-shadow:0 0 0 2px #c9973a}
-html[data-ui="court-indian"] .topbar .btn,html[data-ui="court-indian"] .topbar select,html[data-ui="court-indian"] .topbar .stat{border-color:#c9973a}
-html[data-ui="court-indian"] .stage .room{border-radius:26px 26px 12px 12px}
-html[data-ui="court-indian"] .stage:not([data-d="full"]) .room{border-radius:20px 20px 8px 8px}
-html[data-ui="court-indian"] .stage .room:not([data-alert="uneasy"]):not([data-alert="alarm"]){border-color:var(--line-2);box-shadow:inset 0 0 0 3px var(--tint),inset 0 0 0 4px color-mix(in srgb,var(--wall) 55%,transparent),0 2px 0 rgba(120,70,20,.12)}
-html[data-ui="court-indian"] .stage .room-name{font-weight:700;letter-spacing:.02em;color:var(--ink)}
-html[data-ui="court-indian"] .stage:not([data-d="full"]) .room-name{border-color:var(--line-2);border-radius:999px}
-html[data-ui="court-indian"] .stage .desk.card,html[data-ui="court-indian"] .stage .helper.hc{border-color:var(--line);box-shadow:inset 0 3px 0 -1px var(--wall),0 1px 2px rgba(80,40,10,.08)}
-html[data-ui="court-indian"] .stage .desk.card{border-radius:14px 14px 8px 8px}
-html[data-ui="court-indian"] .lobby .place{border-color:var(--line-2);border-radius:16px 16px 6px 6px}
-html[data-ui="court-indian"] .lobby .place .pic{color:var(--brand-bg)}
-html[data-ui="court-indian"] .plate{border-radius:20px 20px 8px 8px}
-
-/* ---------- Durbar · European court: royal navy and gilt, parchment, gilded double frames, serif small caps ---------- */
-html[data-ui="court-european"]{--ui-display:Baskerville,"Baskerville Old Face","Libre Baskerville",Garamond,"EB Garamond",Georgia,"DejaVu Serif",serif;--ui-top-ink:#e8c873;--ui-top-ink-2:#efe3c4}
-html[data-ui="court-european"] body{background-image:linear-gradient(rgba(255,255,255,.35),rgba(120,95,40,.06))}
-html[data-ui="court-european"] .topbar{background:var(--brand-bg);border-bottom-color:var(--brand-bg);box-shadow:inset 0 -2px 0 #b8995a,inset 0 -4px 0 var(--brand-bg),inset 0 -5px 0 #b8995a}
-html[data-ui="court-european"] .brand h1{text-transform:uppercase;letter-spacing:.08em;font-weight:700}
-html[data-ui="court-european"] .brand-mark{border-radius:4px;box-shadow:0 0 0 1px #b8995a}
-html[data-ui="court-european"] .stat,html[data-ui="court-european"] .btn,html[data-ui="court-european"] .seg,html[data-ui="court-european"] .select-wrap select,html[data-ui="court-european"] .defaults-grp select{border-radius:4px}
-html[data-ui="court-european"] .seg button,html[data-ui="court-european"] .pill{border-radius:3px}
-html[data-ui="court-european"] .topbar .btn,html[data-ui="court-european"] .topbar select,html[data-ui="court-european"] .topbar .stat{border-color:#b8995a}
-html[data-ui="court-european"] .stage .room{border-radius:6px}
-html[data-ui="court-european"] .stage .room:not([data-alert="uneasy"]):not([data-alert="alarm"]){border-color:var(--line-2);box-shadow:inset 0 0 0 4px var(--tint),inset 0 0 0 5px color-mix(in srgb,var(--line-2) 80%,transparent),0 1px 3px rgba(27,34,64,.12)}
-html[data-ui="court-european"] .stage .room-name{text-transform:uppercase;letter-spacing:.08em;font-weight:700} /* spec 052 FR-023: small caps rendered lowercase letters near 8.5px */
-html[data-ui="court-european"] .stage:not([data-d="full"]) .room-name{border-color:var(--line-2);border-radius:2px;box-shadow:inset 0 -2px 0 var(--wall)}
-html[data-ui="court-european"] .stage .desk.card,html[data-ui="court-european"] .stage .helper.hc{border-radius:4px;border-color:var(--line);box-shadow:0 1px 3px rgba(27,34,64,.10)}
-html[data-ui="court-european"] .more{border-radius:3px}
-html[data-ui="court-european"] .lobby .place{border-radius:4px;border-color:var(--line-2);box-shadow:inset 0 0 0 2px var(--surface),inset 0 0 0 3px color-mix(in srgb,var(--line-2) 60%,transparent)}
-html[data-ui="court-european"] .lobby .place .pic{color:var(--brand-bg)}
-html[data-ui="court-european"] .plate{border-radius:4px}
-
-/* ---------- Durbar · Japanese court: washi paper, a vermilion rule and seal, thin ink lines, near-square corners ---------- */
-html[data-ui="court-japanese"]{--ui-display:"Hiragino Mincho ProN","Yu Mincho",YuMincho,"Noto Serif CJK JP","Noto Serif JP","Source Han Serif",Georgia,"DejaVu Serif",serif}
-html[data-ui="court-japanese"] body{background-image:repeating-linear-gradient(0deg,rgba(120,100,70,.035) 0 1px,transparent 1px 3px),repeating-linear-gradient(90deg,rgba(120,100,70,.025) 0 1px,transparent 1px 7px)}
-html[data-ui="court-japanese"] .topbar{background:var(--surface);box-shadow:inset 0 -3px 0 var(--brand-bg)}
-html[data-ui="court-japanese"] .brand h1{font-weight:600;letter-spacing:.08em}
-html[data-ui="court-japanese"] .brand-mark{border-radius:3px}
-html[data-ui="court-japanese"] .stat,html[data-ui="court-japanese"] .btn,html[data-ui="court-japanese"] .seg,html[data-ui="court-japanese"] .seg button,html[data-ui="court-japanese"] .select-wrap select,
-html[data-ui="court-japanese"] .defaults-grp select,html[data-ui="court-japanese"] .pill,html[data-ui="court-japanese"] .more,html[data-ui="court-japanese"] .plate{border-radius:3px}
-html[data-ui="court-japanese"] .stage .room{border-radius:3px}
-html[data-ui="court-japanese"] .stage .room:not([data-alert="uneasy"]):not([data-alert="alarm"]){border-color:color-mix(in srgb,var(--ink) 45%,transparent);box-shadow:none}
-html[data-ui="court-japanese"] .stage .room-name{font-weight:600;letter-spacing:.06em}
-html[data-ui="court-japanese"] .stage:not([data-d="full"]) .room-name{border-color:color-mix(in srgb,var(--ink) 45%,transparent);border-radius:2px;box-shadow:inset 3px 0 0 var(--brand-bg)}
-html[data-ui="court-japanese"] .stage .desk.card,html[data-ui="court-japanese"] .stage .helper.hc{border-radius:3px;border-color:var(--line);box-shadow:none}
-html[data-ui="court-japanese"] .stage .desk.card:hover{border-color:var(--ink-2)}
-html[data-ui="court-japanese"] .lobby .place{border-radius:3px;border-color:var(--line-2);box-shadow:inset 0 -2px 0 var(--brand-bg)}
-html[data-ui="court-japanese"] .lobby .place .pic{color:var(--brand-bg)}
 
 /* ---------- spec 052 FR-053: the primary action is solid in every theme, in the theme's own accent: --brand-bg with
-   --brand-mark text (corporate 6.4:1, retro 15:1, Indian 5.7:1, European 8:1, Japanese 5.2:1; a generated theme with a
+   --brand-mark text (retro 15:1; a generated theme with a
    themed style is only checked at 3:1 for this pair in themegen.ts). The rule above gives every themed .btn a surface background; these outrank it.
    Disabled and warn buttons keep their own look. ---------- */
 html[data-ui]:not([data-ui="clean"]) .btn.primary:not(.warn,.danger,:disabled,[aria-disabled=true]){background:var(--brand-bg);border-color:transparent;color:var(--brand-mark)}
 html[data-ui]:not([data-ui="clean"]) .btn.primary:not(.warn,.danger,:disabled,[aria-disabled=true]):hover{background:color-mix(in srgb,var(--brand-bg) 86%,#000)}
-html[data-ui="corporate"] .btn.primary:not(.warn,.danger,:disabled,[aria-disabled=true]){border-color:color-mix(in srgb,var(--brand-bg) 80%,#000);box-shadow:inset 1px 1px 0 color-mix(in srgb,#fff 35%,transparent),inset -1px -1px 0 rgba(0,0,0,.35)}
 html[data-ui="retro"] .btn.primary:not(.warn,.danger,:disabled,[aria-disabled=true]){border-color:var(--line)}
 html[data-ui="retro"] .btn.primary:not(.warn,.danger,:disabled,[aria-disabled=true]):hover{background:color-mix(in srgb,var(--brand-bg) 88%,#000)}
 
-/* ---------- spec 052 FR-054: a period texture on the rooms, art only (2-4%), and a room-name accent per era.
+/* ---------- spec 052 FR-054: a period texture on the rooms, art only (2-4%).
    Gradients and inline SVG only; the room's colour and every size stay; text sits on its own surface above it. ---------- */
-html[data-ui="corporate"] .stage .room{background-image:linear-gradient(rgba(16,32,56,.025) 1px,transparent 1px),linear-gradient(90deg,rgba(16,32,56,.025) 1px,transparent 1px);background-size:24px 24px}
 html[data-ui="retro"] .stage .room{background-image:repeating-conic-gradient(rgba(17,17,34,.035) 0 25%,transparent 0 50%);background-size:2px 2px}
-html[data-ui="court-indian"] .stage .room{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 28 28'%3E%3Cg fill='%238a1c2c' fill-opacity='.035'%3E%3Ccircle cx='14' cy='14' r='2'/%3E%3Cellipse cx='14' cy='9' rx='1.6' ry='3'/%3E%3Cellipse cx='14' cy='19' rx='1.6' ry='3'/%3E%3Cellipse cx='9' cy='14' rx='3' ry='1.6'/%3E%3Cellipse cx='19' cy='14' rx='3' ry='1.6'/%3E%3Ccircle cx='0' cy='0' r='1.2'/%3E%3Ccircle cx='28' cy='0' r='1.2'/%3E%3Ccircle cx='0' cy='28' r='1.2'/%3E%3Ccircle cx='28' cy='28' r='1.2'/%3E%3C/g%3E%3C/svg%3E");background-size:28px 28px}
-html[data-ui="court-european"] .stage .room{background-image:repeating-linear-gradient(0deg,rgba(120,95,40,.03) 0 1px,transparent 1px 4px),repeating-linear-gradient(90deg,rgba(120,95,40,.035) 0 1px,transparent 1px 32px)}
-html[data-ui="court-japanese"] .stage .room{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='90' height='90' viewBox='0 0 90 90'%3E%3Cg fill='none' stroke='%23786446' stroke-opacity='.06' stroke-width='.6' stroke-linecap='round'%3E%3Cpath d='M4 12c9 3 18 1 27 5'/%3E%3Cpath d='M48 6c6 5 15 6 22 4'/%3E%3Cpath d='M12 40c4 7 13 9 18 15'/%3E%3Cpath d='M55 34c9-2 17 3 28 1'/%3E%3Cpath d='M38 62c7 2 12 8 20 9'/%3E%3Cpath d='M6 76c8-3 15 1 22-2'/%3E%3Cpath d='M66 70c3 6 10 9 18 10'/%3E%3Cpath d='M30 24c2 4 1 9 4 12'/%3E%3C/g%3E%3C/svg%3E");background-size:90px 90px}
-/* European: a double gilt rule under the name plate (box-shadow, so no border width changes) */
-html[data-ui="court-european"] .stage:not([data-d="full"]) .room-name{box-shadow:inset 0 -1px 0 var(--line-2),inset 0 -3px 0 var(--surface),inset 0 -4px 0 var(--line-2)}
 /* Retro: an 8-bit drop shadow on the room name */
 html[data-ui="retro"] .stage .room-name{text-shadow:1px 1px 0 #000}
 /* spec 052 FR-103: the counter strip takes each style's frame (group rules above; these come last so they win) */
-html[data-ui="corporate"] .topbar .stats{border-radius:5px}
 html[data-ui="retro"] .topbar .stats{border-radius:0;box-shadow:0 0 0 1px var(--line),3px 3px 0 1px var(--sel-border)}
-html[data-ui="court-indian"] .topbar .stats{box-shadow:inset 0 0 0 1px #c9973a}
-html[data-ui="court-european"] .topbar .stats{border-radius:4px;box-shadow:inset 0 0 0 1px #b8995a}
-html[data-ui="court-japanese"] .topbar .stats{border-radius:3px}

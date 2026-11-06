@@ -8,8 +8,9 @@
  */
 import { isMcpAuthChallenge } from './mcpauth';
 import type { AgentEvent, CompactionEvent, ContextTier, McpServerStatus } from './types';
+import { appApprovedPermission } from './types';
 import { cleanSessionTitle } from './history';
-import { nonEmptyStr as str } from '../shared/guards';
+import { isObj, nonEmptyStr as str } from '../shared/guards';
 import { parseAutoTier } from '../shared/modelswitch';
 import { EditStreams, editOf } from './edits';
 import { usageLimitClosing } from './usagelimit';
@@ -161,6 +162,12 @@ export class EventMapper {
         if (this.reasoningSeen.delete(d.reasoningId)) return;
         if (d.content) this.emit({ type: 'thinking', delta: d.content, reasoningId: d.reasoningId, agentId });
         return;
+      case 'permission.completed': {
+        // spec 003 FR-111 (`decisionSource` is experimental in the SDK): only the app's own assisted-approval judge, with an approved result
+        const kind = isObj(d.result) ? d.result.kind : undefined;
+        if (d.decisionSource !== 'assisted_approval' || typeof kind !== 'string' || !kind.startsWith('approved') || !str(d.toolCallId)) return;
+        return this.emit({ type: 'permission', permission: appApprovedPermission(d.toolCallId), agentId });
+      }
       case 'assistant.message_delta':
         return this.emit({ type: 'output', delta: d.deltaContent, agentId });
       case 'assistant.message':
@@ -328,6 +335,8 @@ export class EventMapper {
           task: d.agentDescription,
           agentName: d.agentName,
           model: d.model,
+          // spec 015 FR-018: SDK `TaskExecutionMode` is 'sync' | 'background'; only the exact word marks a background helper
+          ...(d.executionMode === 'background' ? { background: true } : {}),
         });
       case 'subagent.completed':
         return this.emit({
@@ -447,7 +456,7 @@ const COPILOT_RATE: Record<string, string> = {
 export function copilotUsageLimit(errorType: unknown, errorCode: unknown): (EventBody & { type: 'usageLimit' }) | null {
   const code = typeof errorCode === 'string' ? errorCode : '';
   if (errorType === 'rate_limit') return { type: 'usageLimit', scope: 'rate', source: Object.prototype.hasOwnProperty.call(COPILOT_RATE, code) ? COPILOT_RATE[code] : 'Copilot rate limit' };
-  if (errorType === 'quota' && (code === 'quota_exceeded' || code === 'session_quota_exceeded')) return { type: 'usageLimit', scope: 'quota', paid: true, source: 'Copilot premium requests' };
+  if (errorType === 'quota' && (code === 'quota_exceeded' || code === 'session_quota_exceeded')) return { type: 'usageLimit', scope: 'quota', paid: true, source: 'Copilot usage' };
   return null;
 }
 

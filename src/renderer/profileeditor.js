@@ -281,7 +281,7 @@
       <div class="pe-head">
         <div class="pe-tt"><h3 id="peT"></h3><span class="pe-dirty" id="peDirty" hidden>Unsaved</span><p class="pe-sub" id="peSub"></p></div>
         <div class="seg pe-modes" id="peModes" role="group" aria-label="View"><button type="button" data-pm="edit" aria-pressed="false">Edit</button><button type="button" data-pm="split" aria-pressed="false">Split</button><button type="button" data-pm="preview" aria-pressed="false">Preview</button></div>
-        <div class="pe-acts">${X.bridge.openProfileInVSCode?'<button class="btn sm" type="button" id="peVs" title="Open this file in VS Code">Open in VS Code</button>':''}<button class="btn sm primary" type="button" id="peSave" title="Save (Ctrl+S)">Save</button><button class="btn sm" type="button" id="peClose">Close</button></div>
+        <div class="pe-acts">${X.bridge.openProfileInVSCode?'<button class="btn sm" type="button" id="peVs" title="Open this file in VS Code, or Insiders or VSCodium if that is what is installed">Open in editor</button>':''}<button class="btn sm primary" type="button" id="peSave" title="Save (Ctrl+S)">Save</button><button class="btn sm" type="button" id="peClose">Close</button></div>
       </div>
       <p class="pe-ro" id="peRo" role="note" hidden></p>
       <div class="pe-main" id="peMain">
@@ -365,7 +365,7 @@
           if(r==='done'){ov.remove();resolve('ai');}else if($('peNName'))focusIn($('peNName'));};}ov.querySelector('#peNCancel').onclick=()=>done(null);
       ov.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();done(null);}else if(e.key==='Enter'&&e.target.id==='peNName'){e.preventDefault();go();}
         else if(e.key==='Tab'){const it=[...ov.querySelectorAll('select,input:not([type=radio]),input[type=radio]:checked,button')];const i=it.indexOf(doc.activeElement);if(e.shiftKey&&i<=0){e.preventDefault();focusIn(it[it.length-1]);}else if(!e.shiftKey&&i===it.length-1){e.preventDefault();focusIn(it[0]);}}});
-      ov.addEventListener('click',e=>{if(e.target===ov)done(null);});
+      window.DurbarDialog.onBackdrop(ov,()=>done(null)); /* spec 052 FR-237 */
       focusIn($('peNName'));
     });
   }

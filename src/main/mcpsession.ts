@@ -14,6 +14,7 @@ import type { AgentInfo, AgentMcpEntry, AgentMcpReply, GlobalApp, McpRefreshResu
 import { maskMcpError } from './mcpmask';
 import { sourcesFor } from './mcpglobal';
 import { BUILTIN_SERVERS } from './mcpfiles';
+import { isRemoteTransport } from '../shared/mcp';
 import type { McpHealthMark } from '../shared/mcphealth';
 import type { McpCallClass } from '../shared/mcpcall';
 
@@ -54,6 +55,12 @@ export interface McpReplyInput {
   health?: ReadonlyMap<string, McpHealthMark>;
   /** Spec 058 FR-065: the open sign-in of one server (host only), from `McpSignInStore.view`. */
   signIn?(name: string): { host: string; opened: boolean; expiresInMs: number; otherSite?: string } | undefined;
+  /** Spec 058 FR-221: when Durbar last renewed this server's sign-in in this session (wall clock ms), shown as "Renewed 12:40". */
+  renewedAt?(name: string): number | undefined;
+  /** Spec 058 FR-229 (issue #1229): Durbar's own renewal record says this server needs a new sign-in, whatever the runtime list reads. */
+  signInBlocked?(name: string): boolean;
+  /** Spec 058 FR-225: the last check before a message got no answer in 30 s. */
+  checkUnknown?(name: string): boolean;
   /** FR-164: the server's own address when Durbar knows one (a folder extra, a list Durbar passes, the Copilot CLI list); stdio has none. */
   serverUrl?(name: string): string | undefined;
   /** Spec 076 FR-202 (issue #602): why the agent app's own organization policy blocks this server, or undefined. */
@@ -62,17 +69,19 @@ export interface McpReplyInput {
   lastCall?(name: string): McpCallClass | undefined;
 }
 
+/** Spec 058 FR-229: the runtime states in which Durbar's own block still makes a server needs-sign-in (never disabled, pending, stopped or not configured). */
+export const BLOCK_STATES = ['connected', 'failed', 'needs-auth'];
 /** Spec 058 FR-065: the one rule for "this row needs a sign-in" (the window uses the same): the runtime's `needs-auth`, or a failed server whose failure is an auth one. */
 export const needsSignIn = (s: { status?: string; errorClass?: string } | undefined): boolean => !!s && (s.status === 'needs-auth' || (s.status === 'failed' && s.errorClass === 'auth'));
 /**
  * Spec 058 FR-164: a server that can be signed in again: reported by the session as connected or failed (not one that waits for its
  * first sign-in, which gets Sign in), and not a local (stdio) server, which has no OAuth sign-in.
  */
-export const canSignInAgainStatus = (s: { name?: string; status?: string; errorClass?: string; transport?: string; source?: string } | undefined, url: string | undefined): boolean =>
+export const canSignInAgainStatus = (s: { name?: string; status?: string; errorClass?: string; transport?: string; source?: string } | undefined, url: string | undefined, knownRemote = false): boolean =>
   // fail closed (review on #625): only a remote server Durbar knows by its http(s) address (a folder extra, a list Durbar passes or the
   // Copilot CLI list), never a built-in one (it uses the Copilot sign-in itself), and never a source or transport that says otherwise or
   // is unknown to the runtime; a stdio server has no address, so it is never a candidate whatever a re-read says
-  !!s && !needsSignIn(s) && (s.status === 'connected' || s.status === 'failed') && typeof url === 'string' && /^https?:\/\//i.test(url) &&
+  !!s && !needsSignIn(s) && (s.status === 'connected' || s.status === 'failed') && ((typeof url === 'string' && /^https?:\/\//i.test(url)) || (knownRemote && isRemoteTransport(s.transport))) &&
   !BUILTIN_SERVERS.includes(s.name ?? '') && s.source !== undefined && s.source !== 'builtin' && s.source !== 'unknown' && s.transport !== 'stdio' && s.transport !== 'memory';
 
 /** A server name that is safe to put in a command the user may copy: no spaces, quotes, newlines or shell characters (a folder extra's name comes from a file). */
@@ -103,10 +112,15 @@ export function agentMcpReply(i: McpReplyInput): AgentMcpReply {
     const hm = st ? i.health?.get(name) : undefined;
     const mark = hm && hm.status === (st?.status ?? '') ? hm : undefined;
     // FR-065/FR-068: a row that reads Needs sign-in, on, in a running session; the steps are the agent app's own text (missing = none)
-    const needs = isLive && on && needsSignIn(st);
+    // FR-229: also a server Durbar's renewal gave up on (the runtime may still read it connected), and also while the session is not running
+    // (Sign in then starts it); a server the runtime says is disabled or gone from the session stays out
+    const blocked = on && !i.orgBlocked?.(name)?.refuse && i.signInBlocked?.(name) === true && (!st || BLOCK_STATES.includes(st.status));
+    const needs = (isLive && on && needsSignIn(st)) || blocked;
+    const renewed = isLive && on ? i.renewedAt?.(name) : undefined;
     const canSignIn = needs && typeof ad?.startMcpSignIn === 'function';
+    const wantSignIn = needs && (!isLive || !needsSignIn(st)) ? { needsSignIn: true as const } : {};
     // FR-164: Sign in again, where the agent app can redo the sign-in itself (Copilot), for an on server the running session reports
-    const canSignInAgain = isLive && on && !!ad?.capabilities.mcpSignInAgain && typeof ad?.startMcpSignIn === 'function' && !i.builtin?.has(name) && canSignInAgainStatus(st, i.serverUrl?.(name));
+    const canSignInAgain = isLive && on && !needs && !!ad?.capabilities.mcpSignInAgain && typeof ad?.startMcpSignIn === 'function' && !i.builtin?.has(name) && canSignInAgainStatus(st, i.serverUrl?.(name));
     // FR-180: the steps come from the adapter's own text alone (also without an in-app call: Claude's SDK transport, an older app)
     // (a folder extra is known only to Durbar: its line points at Sign in, so it shows only where Sign in is offered)
     const steps = needs && ad?.capabilities.mcpSignInSteps && (origin !== 'folder' || canSignIn) ? signInStepsFor(ad.capabilities.mcpSignInSteps, name, origin) : undefined;
@@ -119,7 +133,7 @@ export function agentMcpReply(i: McpReplyInput): AgentMcpReply {
     const signRestart = needs && canRestart && !!ad?.capabilities.mcpSignInRestart && !!steps;
     // FR-188: only a Running (connected) row, on, in a running session says its last call failed; a word only, never the text
     const lastCall = isLive && on && st?.status === 'connected' ? i.lastCall?.(name) : undefined;
-    entries.push({ name, origin, status: st?.status, error: maskMcpError(st?.error, secrets), ...(st?.errorClass ? { errorClass: st.errorClass } : {}), ...(lastCall ? { lastCall } : {}), ...(mark ? { since: mark.since } : {}), ...(mark?.afterRunning ? { afterRunning: true } : {}), ...(st?.transport ? { transport: st.transport } : {}), defaultOn, off: off.has(name), ...(canRestart ? { canRestart: true } : {}), ...(canSignIn ? { canSignIn: true } : {}), ...(canSignInAgain ? { canSignInAgain: true } : {}), ...(open ? { signIn: open } : {}), ...(steps ? { signInSteps: steps } : {}), ...(end ? { signInEnd: end } : {}), ...(note ? { signInNote: note } : {}), ...(signRestart ? { signInRestart: true } : {}), ...(i.launchedOff?.has(name) ? { launchedOff: true } : {}), ...(i.switchedHere?.has(name) ? { switchedHere: true } : {}) });
+    entries.push({ name, origin, status: st?.status, error: maskMcpError(st?.error, secrets), ...(st?.errorClass ? { errorClass: st.errorClass } : {}), ...(lastCall ? { lastCall } : {}), ...(mark ? { since: mark.since } : {}), ...(st?.status === 'connected' && typeof renewed === 'number' ? { renewedAt: renewed } : {}), ...(st?.status === 'connected' && isLive && on && i.checkUnknown?.(name) === true ? { checkUnknown: true as const } : {}), ...(mark?.afterRunning ? { afterRunning: true } : {}), ...(st?.transport ? { transport: st.transport } : {}), defaultOn, off: off.has(name), ...(canRestart ? { canRestart: true } : {}), ...(canSignIn ? { canSignIn: true } : {}), ...wantSignIn, ...(canSignInAgain ? { canSignInAgain: true } : {}), ...(open ? { signIn: open } : {}), ...(steps ? { signInSteps: steps } : {}), ...(end ? { signInEnd: end } : {}), ...(note ? { signInNote: note } : {}), ...(signRestart ? { signInRestart: true } : {}), ...(i.launchedOff?.has(name) ? { launchedOff: true } : {}), ...(i.switchedHere?.has(name) ? { switchedHere: true } : {}) });
   };
   const cli = i.app === 'claude' || i.app === 'codex' ? [] : i.cli;
   const own = i.app === 'claude' ? (i.claudeList ?? []) : [];
@@ -169,30 +183,42 @@ export interface RestartDeps {
   log?(a: AgentInfo, action: string): void;
 }
 
-/** `agents:mcpRestart(id, name)` (FR-021). `running` holds `<agent id>\0<server>` while a restart runs: a second press is refused. */
-export async function mcpRestartOp(d: RestartDeps, running: Set<string>, id: unknown, name: unknown): Promise<McpRestartResult> {
+/**
+ * `agents:mcpRestart(id, name)` (FR-021). `running` holds, per `<agent id>\0<server>`, the restart that runs (spec 058 FR-209: a promise map):
+ * a second caller (the person's Restart, a send's automatic reconnect, the recheck) awaits the same restart instead of starting another.
+ * `opts.auto` (FR-207, FR-214): the automatic reconnect: the adapter's automatic form (Copilot: `restartServer` only, never disable/enable)
+ * and no "restarted" activity row (the refresher writes its own row instead).
+ */
+export function mcpRestartOp(d: RestartDeps, running: Map<string, Promise<McpRestartResult>>, id: unknown, name: unknown, opts: { auto?: boolean } = {}): Promise<McpRestartResult> {
   const a = typeof id === 'string' ? d.agents.get(id) : undefined;
-  if (!a || !validServerName(name)) return { ok: false, error: 'Unknown agent or server.' };
+  if (!a || !validServerName(name)) return Promise.resolve({ ok: false, error: 'Unknown agent or server.' });
   const ad = d.router.forAgent(a.id);
-  if (!ad) return { ok: false, error: 'Unknown agent or server.' };
-  if (typeof ad.restartMcpServer !== 'function') return { ok: false, error: `${ad.displayName} cannot restart one MCP server. Use Restart session with these servers.` };
-  if (!ad.isLive(a.id)) return { ok: false, error: NOT_RUNNING };
+  if (!ad) return Promise.resolve({ ok: false, error: 'Unknown agent or server.' });
+  if (typeof ad.restartMcpServer !== 'function') return Promise.resolve({ ok: false, error: `${ad.displayName} cannot restart one MCP server. Use Restart session with these servers.` });
+  if (!ad.isLive(a.id)) return Promise.resolve({ ok: false, error: NOT_RUNNING });
   const st = d.live(a.id).find((x) => x.name === name);
-  if (!st) return { ok: false, error: `${name} is not running in this session.` };
+  if (!st) return Promise.resolve({ ok: false, error: `${name} is not running in this session.` });
   // a server that is off (for this agent, in Settings, or as the runtime reports it) is never started by a Restart
-  if (d.off(a.id).has(name) || st.status === 'disabled') return { ok: false, error: 'Switch it on first.' };
+  if (d.off(a.id).has(name) || st.status === 'disabled') return Promise.resolve({ ok: false, error: 'Switch it on first.' });
   const key = `${a.id}\0${name}`;
-  if (running.has(key)) return { ok: false, error: `${name} is already restarting.` };
-  running.add(key);
-  try {
-    await ad.restartMcpServer(a.id, name);
-    d.log?.(a, `MCP server ${name} restarted`);
-    return { ok: true };
-  } catch (err) {
-    return { ok: false, error: maskMcpError(errText(err), d.secrets(a.id)) ?? 'Could not restart it.' };
-  } finally {
-    running.delete(key);
-  }
+  const runningNow = running.get(key);
+  if (runningNow) return runningNow;
+  const restart = ad.restartMcpServer.bind(ad);
+  const p = (async (): Promise<McpRestartResult> => {
+    try {
+      await (opts.auto === true ? restart(a.id, name, { auto: true }) : restart(a.id, name));
+      if (opts.auto !== true) d.log?.(a, `MCP server ${name} restarted`);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: maskMcpError(errText(err), d.secrets(a.id)) ?? 'Could not restart it.' };
+    }
+  })();
+  running.set(key, p);
+  const clear = (): void => {
+    if (running.get(key) === p) running.delete(key);
+  };
+  p.then(clear, clear);
+  return p;
 }
 
 /** How long a re-read of the agent app's server list may take before the dialog is told it could not be read (FR-191). */

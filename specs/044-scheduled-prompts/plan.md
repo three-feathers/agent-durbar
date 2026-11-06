@@ -95,7 +95,7 @@ Driver `scripts/check-sched-top.js` (`npm run check:sched-top`, in `ui-suite.js`
 6. The shortcut sheet lists Schedules with the keys.
 7. Demo on: the button is hidden and Ctrl+K has no Schedules item.
 8. Reduced motion: no roll (`--force-prefers-reduced-motion` run, as #511 does).
-9. Screenshots `docs/screenshots/044-topbar-{1440x900,1280x800}.png`, `044-topbar-simple-*.png`, `044-topbar-badge-*.png`.
+9. Screenshots `docs/screenshots/044-topbar-{1440x900,1280x800}.png`, `044-topbar-badge-*.png`.
 
 Existing checks that must still pass with the button: `shots-052-addleft` (add `#schedTopBtn` to its `topCheck`: it is not left of the add buttons and not first in tab order; run under `simsched=1` so the button has a count), `check:office` (its top-bar one-row checks at `check-office-overlap.js:191-204`, `:497-500`), `check:geometry`, `check:ui-text` (tooltip length, 10.5px, colours), `check:mac-titlebar`, `shots-044-everywhere`, `check-sched-edit`. Mutation: hide the room-making rule and `shots-052-addleft` must fail at 1280x800 Expert with floors.
 

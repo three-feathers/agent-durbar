@@ -300,7 +300,7 @@
         if ((boxy || /(auto|scroll|hidden|clip)/.test(cs.overflowX)) && el.scrollWidth > el.clientWidth + (/(auto|scroll|hidden|clip)/.test(cs.overflowX) ? 1 : 3) && /* content over a visible edge: under 3px is a rounding or focus-ring artifact (the inbox heading line is 2px over) */ !isCtl && !el.matches('textarea,input,select') && cs.display !== 'inline') {
           // a label cut with an ellipsis is not a scroll (the clipped rule asks for its title); anything else that overflows sideways is
           if (boxy) { if (!(cs.textOverflow === 'ellipsis' && /(hidden|clip)/.test(cs.overflowX))) add('x-scroll', root, el, `scrollWidth ${el.scrollWidth} > clientWidth ${el.clientWidth}`); }
-          else if (/(auto|scroll)/.test(cs.overflowX) && !el.closest(MACHINE) && !el.matches('.strip-list')) /* the agent strip is a horizontal scroller by design (15 sessions in a row) */ add('x-scroll', root, el, `scrollWidth ${el.scrollWidth} > clientWidth ${el.clientWidth}`);
+          else if (/(auto|scroll)/.test(cs.overflowX) && !el.closest(MACHINE)) add('x-scroll', root, el, `scrollWidth ${el.scrollWidth} > clientWidth ${el.clientWidth}`);
         }
         // a box that sticks out of its dialog / popover / menu (visible overflow)
         if (boxy && el !== root && shown(el) && (t || isCtl)) {

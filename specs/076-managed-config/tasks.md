@@ -197,3 +197,17 @@ Each phase is one small PR. Tasks reference the spec's FRs. Only P27 (section O,
 - [x] T203 Review on PR 644 (Ruben's agent): merge main; IPC and main wiring tests (`scripts/test-orgwiring.ts`, `test:orgwiring`) plus the `main.ts` hand-over pinned by text; linear dedupe (Set), byte caps (per list, per source, the Copilot answer) and the fail-closed rule written in FR-201; unchanged files and an unchanged Copilot answer are not read again; perf tests with the biggest allowed input; tests for `false` vs `undefined`, valid deny lists in the view and the driver's mode-menu guard (no `setPermMode` sent) [FR-201, FR-202, FR-203]
 - [x] T204 Review on PR 644: stale status text fixed; `[IMPLEMENTED]`/`test:`/`sim:` tags on FR-198..FR-207; detached doc comments fixed; FR-204 says the mode switch is not refused before the first read; FR-206 `[KNOWN GAP]` for Claude's haiku one-shot [FR-204, FR-206]
 - [x] T205 Review on PR 644 (Ruben's agent, round 2): the reuse key is a SHA-256 of the text read (a symlink swap with the same size and times is caught; `fileSignature` removed); tests for the `ownStrings` byte cap, the Claude key with its problems, a cyclic Copilot answer and the link swap [FR-201]
+- [x] T206 `src/renderer/orgwords.js`: pure status and row words from an `OrgPolicyAppView`; unreadable is never "no policy" [FR-208]
+- [x] T207 `scripts/test-orgwords.ts`: the three states, a failed view, escaping-neutral text, no value leaks; mutation checks [FR-208]
+- [x] T208 Settings > Organization section in `screens.js` (loaded after paint, failure = unknown), `index.html`, `copy-assets.js` [FR-208]
+- [x] T209 Simulator canned view for it, `shots-076-orgpolicy.js` section checks and shots at both sizes, changelog fragment, FR-207 wording [FR-208]
+
+## P1, first slice: the machine `policy.json` for `requireOsSandbox` (issue #734; FR-209)
+
+- [x] T210 `src/main/policyfile.ts` `readMachinePolicy` (fixed POSIX path per OS, FR-005 trust check, FR-009 cap, FR-031 capped read, version 1) and `requireOsSandbox()` in `sandboxpolicy.ts` reading it at each session start; tests on a fake file system in `scripts/test-sandbox-floor.ts` [FR-209]
+- [x] T211 Review of #1123 round 2: the policy path is walked one name at a time from `/`, so every folder of the literal path and of each link's target is trusted (a link only in a trusted folder, at most 40); the opened file's device is tested; tests for the `managed` swap, root-made links (accepted to a trusted folder, refused to a user-owned one), a link loop and the other-device swap, mutation-checked [FR-209]
+
+## P1, follow-ups folded in from issues (2026-11-07 triage pass)
+
+- [ ] T212 Issue #1124: read the machine `policy.json` on Windows (`<Program Files>\AgentDurbar\managed\` from `SHGetKnownFolderPath(FOLDERID_ProgramFiles)` through `koffi` as a direct, pinned dependency, plan first; never `%ProgramFiles%`); FR-005's write probe (skipped and said when elevated); the same `readMachinePolicy` result and tests; optionally FR-176 (`HKLM\SOFTWARE\Policies\ThreeFeathers\AgentDurbar` `PolicyJson`) [FR-002, FR-005, FR-209]
+- [ ] T213 Issue #1125: the rest of P1 around the machine policy: the user layer, narrow only [FR-003]; dev hooks ignored when a machine policy is present [FR-004]; the closed schema `samples/managed/schema/policy.schema.json` and unknown-key check [FR-006]; Reload button and folder watcher [FR-008]; closed mode for a broken file [FR-011]; the closed-mode banner and Settings > Organization showing this file [FR-209]

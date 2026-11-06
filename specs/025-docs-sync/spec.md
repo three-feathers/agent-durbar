@@ -63,3 +63,24 @@ The `status:` of the specs-index block used to read (moved here unchanged; the b
 ### 2026-10-23: the fold moves after the tag (spec 008 FR-117..FR-120)
 
 - Where FR-009 and FR-014 say "release PR", read the release's doc-only *fold PR*, cut from the tag after the tag's workflow has written the release notes from that commit's fragments (spec 008 owns the release flow). The fold itself is unchanged; `changelog:build` gains `--stdout` (print only the new section, edit nothing) and `--previous <tag>` (refuse while the previous release has no section). No change to this spec's status.
+
+### 2026-11-01: `specs:check` refuses conflict markers
+
+A merge was committed with conflict markers in a spec, and `specs:check` passed (spec 102's PR #999, fixed forward).
+
+- **FR-018** `[IMPLEMENTED]` `test:` `npm run specs:check` fails on a line starting with `<<<<<<<`, `|||||||` or `>>>>>>>` followed by a space or the end of the line, in any `.md` file under `specs/`, and names the file and line. It is an error whether or not `specs/README.md` has the strict marker of FR-012. A line of `=======` alone is not looked for, because it is a Markdown heading underline.
+
+### 2026-10-31: `deprecated` (spec 021 FR-068)
+
+- **FR-017** `[IMPLEMENTED]` The fixed status words gain `deprecated`: removed with no direct replacement; the note says why and when. Built by spec 021 T053. Which specs change: spec 021 FR-068's PRs; see spec 035 FR-020, spec 040 FR-033, spec 017 FR-035.
+
+### 2026-11-01: feature inventory (owner request, Vikram: "Maintain inventory of features somewhere and continuously update it")
+
+- **FR-021** `[IMPLEMENTED]` `test:` `docs/feature-inventory.md` has one row per user-visible feature: Flat and Real office state (`works`, `in PR`, `planned`, `missing`), arrangement worlds (`mock`, `planned`, `built`, optionally a spec 098 registry moment), owning specs and a proof tag (`test:`, `driver:`, `read:`). `docs/features.md` stays the user-facing text (FR-031 reuse: the table links, it does not copy).
+- **FR-022** `[IMPLEMENTED]` `test:` `npm run test:featureinventory` (in `npm test`) fails on a bad state word, a spec with no folder, a proof tag that does not resolve, an unknown registry moment, `built` without a registry `code: present`, a `status: built` spec in no row and not on the `Exempt:` line, and a registry world with `shippable: true` while the Helpers row is not `built` for worlds. The test mutates a copy of each input and expects each failure.
+- **FR-023** `[IMPLEMENTED]` Upkeep: a PR that adds, changes or removes a user-visible feature updates its row (one line in `AGENTS.md` *Keep docs in sync*, one in the review checklist). Replaces: the README "features" item, the `features.md (features, MCP, Tools)` aside, the duplicate "Cannot: say so" in *Screenshots*, and the merge-freeze aside on changelog fragments. ("assign it" for a docs follow-up issue is kept.)
+- `[KNOWN GAP]` Real office and world cells come from the 2026-11-01 parity audit (`read:`, one simulator run), not from a driver per row; `in PR` branch names go stale when a PR merges (the row is updated by that PR). The check cannot tell whether a row's state is true, only that its spec and proof exist.
+
+## Changes 2026-11-02: removed page and tools (owner decision, PR #1054)
+
+`docs/feature-history.md` and the pictures only it linked (the m2..m8, 002 and 003 pictures that no driver writes) were removed on 2026-11-02 by owner decision; the old text above that cites them stays as written, and they are in git history at commit `1c75b5bee`. Pictures a driver still writes were kept.

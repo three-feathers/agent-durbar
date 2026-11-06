@@ -15,7 +15,7 @@ Closes #<!-- issue number: one issue = one Spec Kit task -->
 - [ ] Every point of the linked issue is done (`Closes #N`), or what is left is written on the issue and it stays open (`Refs #N`)
 - [ ] Before asking for review, the agent ran [docs/review-checklist.md](../docs/review-checklist.md) on its own diff as an adversarial self-review (new FR/task numbers checked against `main` and open PRs, and named here), reconciled with current `origin/main`, confirmed mergeable (`scripts/pr-gate.sh <N>`), agreed the acceptance cases and cited CI for the exact head sha
 - [ ] The agent did a final review of the whole diff as a reviewer (not only CI) and says below what it checked; another team's agent or a human may review too
-- [ ] I posted my own `checks run at <sha>: …` comment on this PR (AGENTS.md, *Test once, then trust the record*)
+- [ ] I posted my own `checks run at <sha>: …` comment on this PR ([docs/rules/review-rounds.md](../docs/rules/review-rounds.md), *Test once, then trust the record*)
 - [ ] Before merging: every review, review thread and PR comment is read and answered, and `scripts/pr-gate.sh <N>` says *ready to merge*
 - [ ] Every solvable review finding is fixed in this PR (no "non-blocking" notes or small follow-up issues left behind; AGENTS.md, *Review findings are fixed in the PR*)
 - [ ] I checked that the app has no existing capability doing the same job, or this PR reuses/extends it (name it below)
@@ -42,7 +42,7 @@ Spec-Exempt: <reason>
 
 ## Docs
 
-- [ ] **Docs updated** in this PR: whichever of `README.md`, `docs/`, the spec's `tasks.md` and the screenshots it shows are affected, plus a `changelog.d/<branch>.md` fragment (not `CHANGELOG.md`) and the spec's `specs-index` block (new spec: `npm run specs:index -- --add specs/NNN-name`; never a row in `specs/README.md`) (list in [AGENTS.md](../AGENTS.md#keep-docs-in-sync)) — links:
+- [ ] **Docs updated** in this PR: whichever of `README.md`, `docs/`, the spec's `tasks.md` and the screenshots it shows are affected, plus a `changelog.d/<branch>.md` fragment (not `CHANGELOG.md`) and the spec's `specs-index` block (new spec: `npm run specs:index -- --add specs/NNN-name`; never a row in `specs/README.md`) (list in [docs/rules/docs-sync.md](../docs/rules/docs-sync.md)) — links:
 - [ ] ...or **no docs impact**: I wrote a `Docs: n/a <reason>` line below (only a reminder check reads it; it never blocks)
 
 <!--

@@ -24,6 +24,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { HarnessSetup } from '../src/main/harnesssetup';
 import type { AgentEvent } from '../src/adapters/types';
+import { tmpDir } from './test-tmp';
 
 const info = (id: string, state: AdapterInfo['state'], hint?: string): AdapterInfo => ({ id, displayName: id, state, capabilities: {}, ...(hint ? { hint } : {}) } as unknown as AdapterInfo);
 const answer = (a: SignInAnswer) => async () => a;
@@ -138,7 +139,7 @@ void (async () => {
   }
   // ---- FR-158: refreshAuth restarts Copilot's shared client and resumes the live sessions on the new one
   {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-refresh-'));
+    const dir = tmpDir('durbar-refresh-');
     // nothing started yet: nothing to stop, no client is created
     const idle = new RestartingFakeCopilot();
     await idle.refreshAuth();

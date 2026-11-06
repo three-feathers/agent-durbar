@@ -14,6 +14,7 @@ import { scheduleBusy } from '../src/main/schedules';
 import { eventProblems as validateEvent } from '../src/adapters/eventguard';
 import { AgentStateTracker } from '../src/main/mcp/agentstate';
 import type { AgentEvent } from '../src/adapters/types';
+import { tmpDir } from './test-tmp';
 
 interface Break { id: string; kind: string; phase: string; rehit?: boolean; heldByRehit?: boolean; resetsAt?: number; estimated: boolean; paid: boolean; source: string; noAuto: boolean }
 interface Breaks {
@@ -166,6 +167,15 @@ const mk = (o: Record<string, unknown> = {}): Breaks => C.createBreaks({ now, ..
       }
     }
     assert.ok(!clock.test('1 Nov') && !clock.test('soon'));
+    // shots-097-moments' plate pattern (a run just before midnight UTC read "resumes Tue 12:08 AM" and failed on "resumes at ")
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const mom = require(path.join(__dirname, '..', '..', 'scripts', 'shots-097-moments.js')) as { RESUMES: string };
+    const resumes = new RegExp('^' + mom.RESUMES + '$');
+    for (const loc of ['en-US', 'en-GB']) {
+      const lo = { locale: loc, timeZone: 'UTC' };
+      assert.ok(resumes.test(C.untilText(bn, true, late, lo)), `${loc} after midnight: ${C.untilText(bn, true, late, lo)}`);
+      assert.ok(resumes.test(C.untilText({ ...bn, resetsAt: Date.UTC(2026, 9, 23, 23, 59) }, true, late, lo)), `${loc} same day: ${C.untilText({ ...bn, resetsAt: Date.UTC(2026, 9, 23, 23, 59) }, true, late, lo)}`);
+    }
   }
   const b = { id: 'a', kind: 'provider', phase: 'on', resetsAt: Date.UTC(2026, 9, 21, 14, 30), estimated: false, paid: false, source: '', noAuto: false };
   assert.strictEqual(C.untilText(b, true, n, o), 'resumes at 14:30');
@@ -264,7 +274,7 @@ const valid = (b: EventBody): void => assert.deepStrictEqual(validateEvent({ ...
 }
 {
   assert.deepStrictEqual(copilotUsageLimit('rate_limit', 'user_weekly_rate_limited'), { type: 'usageLimit', scope: 'rate', source: 'Copilot weekly limit' });
-  assert.deepStrictEqual(copilotUsageLimit('quota', 'quota_exceeded'), { type: 'usageLimit', scope: 'quota', paid: true, source: 'Copilot premium requests' });
+  assert.deepStrictEqual(copilotUsageLimit('quota', 'quota_exceeded'), { type: 'usageLimit', scope: 'quota', paid: true, source: 'Copilot usage' });
   assert.strictEqual(copilotUsageLimit('quota', 'billing_not_configured'), null, 'no wait fixes billing');
   assert.strictEqual(copilotUsageLimit('authentication', undefined), null);
   assert.strictEqual(copilotUsageLimit('rate_limit', '__proto__')!.source, 'Copilot rate limit');
@@ -386,16 +396,16 @@ const valid = (b: EventBody): void => assert.deepStrictEqual(validateEvent({ ...
 {
   assert.deepStrictEqual(parseSettings('{"breakResume":"ask"}'), { breakResume: 'ask' });
   for (const v of ['"auto"', '"ASK"', 'true', '1', 'null']) assert.deepStrictEqual(parseSettings('{"breakResume":' + v + '}'), {}, 'only ask is kept: ' + v);
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-coffee-'));
+  const dir = tmpDir('durbar-coffee-');
   const f = path.join(dir, 's.json');
   const ss = new SettingsStore(f);
   ss.load();
   assert.strictEqual(ss.breakResume, 'auto');
-  for (const junk of ['no', 0, null, undefined, {}, true]) assert.strictEqual(ss.setBreakResume(junk), 'auto', 'junk: ' + String(junk));
-  assert.strictEqual(ss.setBreakResume('ask'), 'ask');
+  for (const junk of ['no', 0, null, undefined, {}, true]) assert.strictEqual(ss.setBreakResume(junk).value, 'auto', 'junk: ' + String(junk));
+  assert.strictEqual(ss.setBreakResume('ask').value, 'ask');
   const back = new SettingsStore(f); back.load();
   assert.strictEqual(back.breakResume, 'ask', 'kept after a restart');
-  back.setBreakResume('auto');
+  back.setBreakResume('auto').value;
   assert.ok(!('breakResume' in JSON.parse(fs.readFileSync(f, 'utf8'))), 'the default is not written');
   fs.rmSync(dir, { recursive: true, force: true });
 }

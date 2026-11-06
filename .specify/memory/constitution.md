@@ -2,7 +2,18 @@
 
 <!--
 Sync Impact Report
-Version change: 1.1.0 -> 1.1.1 (PATCH: wording; no principle or rule added, removed or redefined), 2026-10-21, Amendment 2
+Version change: 1.1.1 -> 1.2.0 (MINOR: a rule in principle V widened), 2026-11-06, Amendment 3
+Modified principles: V Calm, legible UI: "Motion is CSS-only" now allows a canvas where CSS cannot do the job (for example
+  thousands of animated points), on four conditions: reduced motion gives a still frame, the canvas has a frame budget, it
+  pauses when the window is hidden, and it uses no per-frame filters.
+  Reason: the owner's decision (Vikram, Telegram, 2026-11-06 12:17 UTC, choosing option "2"): "yes, and change the constitution
+  to allow canvas where CSS can't do the job". First user: spec 106 (Brain view), Q1 and FR-100..FR-104.
+Templates reviewed: plan, spec and tasks templates (no edit needed; the plan's Constitution Check reads this file), AGENTS.md,
+  CLAUDE.md, .github/copilot-instructions.md, docs/world-design.md (none restates "CSS-only"; world-design gains one line),
+  spec 102 FR-261 (a dated delta points here: worlds keep their frames-not-code rule)
+Follow-ups: none
+
+Previous: Version change: 1.1.0 -> 1.1.1 (PATCH: wording; no principle or rule added, removed or redefined), 2026-10-21, Amendment 2
 Modified sections: Additional Constraints: "Personal project of Vikram Gorla under his personal GitHub account; no org
   infrastructure or credentials are used" is replaced by the project's current facts: a Three Feathers project (GitHub
   organization `three-feathers`), built by a small team (vikramgorla, fjcabello and rubenlupi) with their coding agents.
@@ -112,6 +123,10 @@ Everything runtime-specific (Copilot today; Claude Code and Codex later) lives b
   automatically (full, roomy, card, mini, micro); the floor may scroll inside itself only past that scale.
 - State is never shown by colour alone (icon/word too). Agents that need the user (waiting, error) sort first.
 - Motion is CSS-only, coarse and cheap, and stops under `prefers-reduced-motion`. No emoji, no blur filters in compact scenes.
+  **Amendment 3 (2026-11-06, owner):** a `<canvas>` may animate where CSS cannot do the job (for example thousands of animated
+  points), only when: reduced motion (and the app's own still settings) gives a still frame; the canvas has a stated frame
+  budget in its spec; it pauses when the window is hidden; and it uses no per-frame filters (`filter`, `shadowBlur`, blend
+  modes). The spec that adds one names why CSS cannot do it.
 - Keyboard and screen-reader basics hold: focusable controls with names, Esc closes the chat, live regions for toasts.
 
 ### VI. Windows, macOS and Linux parity
@@ -176,4 +191,4 @@ request that states the reason and bumps the version (MAJOR: a principle removed
 added; PATCH: wording). Every plan's Constitution Check and every pull request review verifies compliance; a violation
 needs a written, time-boxed justification in the plan's Complexity Tracking table.
 
-**Version**: 1.1.1 | **Ratified**: 2026-10-16 | **Last Amended**: 2026-10-21
+**Version**: 1.2.0 | **Ratified**: 2026-10-16 | **Last Amended**: 2026-11-06

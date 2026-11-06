@@ -148,3 +148,18 @@
 
 - [x] T116: `.github/workflows/macos-pr.yml` (real macOS build and test, `paths:` filter, not required), `test-ui-suite.ts` guards, README/AGENTS wording [FR-135]
 - [x] T117: `guardWindow` in `scripts/driver-helpers.js` (armed by `waits(ctx)`), unit-tested in `test-ui-suite.ts`; `check-browser-tabs` drops its own copy [FR-136] (#922)
+- [x] T118: `scripts/test-suites.txt` (one suite per line) read by `run-tests.js` instead of the `test:serial` line; `test:serial` runs it with `--serial`; the audit helper, `test:checknames`, `test-run-tests.ts` and the review checklist follow [FR-137]
+- [x] T119: `scripts/test-renderer-syntax.js` (`node --check` over `src/renderer/*.js`, self-proving with a stray quote in a temp copy), `test:rendersyntax` in `scripts/test-suites.txt`, a line in `docs/review-checklist.md` [FR-170]
+
+## 2026-11-03: a clip and a Highlights block in the release notes (owner request; the release flow waits for the owner's look at the trial)
+
+- [x] T120: `scripts/release-video.js` (scene catalogue, the driver, the command through `ui-suite`'s `runOne`, ffmpeg encodes, the privacy check) with `scripts/test-release-video.js` (`test:releasevideo`), `npm run release:video` [FR-171, FR-172, FR-176, FR-177, FR-178]
+- [x] T121: the v0.1.7 trial clip, recorded and looked at frame by frame (again with the caption band under the app); not attached to the release [FR-171, FR-172, FR-176]
+- [x] T122: the `Highlight:` and `Scene:` fragment fields in `scripts/changelog.js` (check, strip on fold, `highlights()`/`highlightsBlock()`, shown by `changelog:preview`), tests in `test-changelog.js`, the format in `changelog.d/README.md` [FR-173]
+- [x] T123 (`read:`, prose steps, no test): the daily release steps in `changelog.d/README.md` (record, look, upload to the draft, image line, publish without it on failure) [FR-174, FR-175]
+- [x] T126: the release clip's camera (eased zooms, holds, a caption per step, `-zoom` stills), the home-path refusal and the neutral simulator paths, with tests [FR-171, FR-176, FR-178] (spec delta 2026-11-04)
+- [x] T124 (2026-11-04, v0.1.9: the owner saw the GIF play inline on the release page): the first published release with a clip: check the GIF renders inline on the release page (and the MP4 link); else the repository fallback of FR-174 [FR-174] (real check)
+- [x] T125: the Highlights block at the top of the draft's notes in `scripts/release-notes.js`, with tests [FR-173]
+- [x] T127 (2026-11-05, issue #1162): the simulator's About version from `package.json` through a generated `appversion.js`; `test:simversion`; release steps no longer list `sim.ts` [FR-179]
+- [x] T128 Issue #839 (FR-180): `check-inbox-safety` and `check-answer-safety` press the Mac keys; `check-answer-safety` waits for the card before scrolling; `shots-097-realoffice` measures the glass at `prefers-reduced-transparency: no-preference`; `check-characters` reports the app state on a crew-step timeout (cause not found yet)
+- [x] T129 Issue #1214: the release clip's step captions use `{step}`, numbered 1..n by position in the clip; test and mutant in `test:releasevideo` [FR-171] (spec delta 2026-11-06)

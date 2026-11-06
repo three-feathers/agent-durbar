@@ -83,6 +83,14 @@ export class AgentStateTracker {
   }
 
   /** The send was refused or failed (app.js:1710): Error, sub-label cleared. */
+  /** Spec 058 FR-208: Stop during the MCP sign-in wait: nothing was sent, the agent is ready again (not an error). */
+  noteNotSent(id: string): void {
+    const a = this.agents.get(id);
+    if (!a) return;
+    a.state = 'idle';
+    a.label = null;
+  }
+
   noteSendFailed(id: string): void {
     const a = this.agents.get(id);
     if (!a) return;
@@ -100,6 +108,12 @@ export class AgentStateTracker {
   onBreak(id: string): boolean {
     const a = this.agents.get(id);
     return !!a && (!!a.coffee || a.limit);
+  }
+
+  /** Spec 072 FR-015/FR-017: what the agent waits on now: an open question, or Durbar's spending cap (a `limit` request). */
+  waitsOf(id: string): { question: boolean; limit: boolean } | undefined {
+    const a = this.agents.get(id);
+    return a ? { question: a.question, limit: a.limit } : undefined;
   }
 
   get(id: string): AgentStateView | undefined {

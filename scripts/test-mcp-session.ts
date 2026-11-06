@@ -128,7 +128,7 @@ async function main(): Promise<void> {
       const off = new Set<string>(['quiet']);
       const live: McpServerStatus[] = [{ name: 'notes', status: 'failed' }, { name: 'quiet', status: 'disabled' }, { name: 'rt-off', status: 'disabled' }];
       const d: RestartDeps = { agents, router: routerOf(ad), live: () => live, off: () => off, secrets: () => ['sekret-value-42'], log: (_a, t) => logged.push(t) };
-      const running = new Set<string>();
+      const running = new Map<string, Promise<import('../src/shared/api').McpRestartResult>>();
 
       assert.deepStrictEqual(await mcpRestartOp(d, running, 'nope', 'notes'), { ok: false, error: 'Unknown agent or server.' });
       assert.strictEqual((await mcpRestartOp(d, running, sid, 'x'.repeat(65))).ok, false, 'a name over 64 characters is refused');
@@ -142,7 +142,7 @@ async function main(): Promise<void> {
       assert.deepStrictEqual(ad.restartCalls, [{ sessionId: sid, name: 'notes' }], 'exactly one per-server restart for the named server (SC-003)');
       assert.deepStrictEqual(logged, ['MCP server notes restarted'], 'one activity row, no error text');
 
-      // one at a time per server: a second press while the first runs is refused
+      // one at a time per server (spec 058 FR-209: a promise map): a second caller while the first runs awaits the same restart
       let release!: () => void;
       const gate = new Promise<void>((r) => (release = r));
       const slow = new FakeAdapter();
@@ -156,9 +156,13 @@ async function main(): Promise<void> {
       release();
       const [r1, r2] = await Promise.all([first, second]);
       assert.deepStrictEqual(r1, { ok: true });
-      assert.strictEqual(r2.ok, false, 'a second restart of the same server is refused');
-      assert.match(r2.error!, /already restarting/);
+      assert.strictEqual(r2, r1, 'the second caller gets the same result as the first (no second restart, no "already restarting")');
       assert.strictEqual(slow.restartCalls.length, 1, 'exactly one restart ran');
+      // FR-207: the automatic form passes `auto` to the adapter and writes no "restarted" row (the refresher writes its own)
+      const rowsBefore = logged.length;
+      assert.deepStrictEqual(await mcpRestartOp(d, running, sid, 'notes', { auto: true }), { ok: true });
+      assert.deepStrictEqual(ad.restartCalls[ad.restartCalls.length - 1], { sessionId: sid, name: 'notes', auto: true }, 'the automatic form reaches the adapter as auto');
+      assert.strictEqual(logged.length, rowsBefore, 'no "MCP server notes restarted" row for an automatic reconnect');
       assert.strictEqual(running.size, 0, 'the lock is released');
       assert.deepStrictEqual(await mcpRestartOp(d3, running, sid3, 'notes'), { ok: true }, 'after it, the server can be restarted again');
 
