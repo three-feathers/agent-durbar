@@ -803,7 +803,7 @@ const convSearch = registerConvSearchIpc({
   scope: (stop, codexLists) => buildScope({
     agents, router, store: folderStore, wsKey, resumeIdFor, appName: (id) => registry.get(id)?.displayName ?? id, vsUserDirs: () => vsUserDirsOf(dev),
     rememberChat: (agentId, ref) => { const m = vsChatRefs.get(agentId) ?? new Map<string, ChatFileRef>(); m.set(ref.summary.key, ref); vsChatRefs.set(agentId, m); }, // FR-012: View opens it
-    values: { knownSecretValues: (key) => mcpStore?.knownSecretValues(key) ?? [], noPrompt: () => mcpStore?.noPrompt() ?? false, secretValuesFor: (id) => mcp.secretValuesFor(id) },
+    values: { knownSecretValues: (key) => mcpStore?.knownSecretValues(key) ?? [], noPrompt: () => !mcpStore || mcpStore.noPrompt(), secretValuesFor: (id) => mcp.secretValuesFor(id) },
     gate: convGate, codexLists, // FR-026: the box session's Codex titles, memory only
   }, stop),
   matcher: () => (convMatcher ??= { masker: createMasker({ unhide: (s) => rendererScript<{ unhide(s: string): string }>('safetext.js').unhide(s) }), search: rendererScript<SessionSearchApi>('sessionsearch.js') }),
