@@ -1,1 +1,0 @@
-- **Real office: rename a session from its name plate** (spec 059, issue #1155): the same pencil as on an Open office desk appears beside the name when you point at or tab to a plate, and **F2** on a focused plate now edits the name in place too (it did nothing in Real office before). Enter saves, Esc cancels.

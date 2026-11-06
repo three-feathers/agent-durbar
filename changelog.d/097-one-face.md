@@ -1,1 +1,0 @@
-- **One face per agent in Real office** (spec 097, issue #1193): the left rail row showed a flat figure while the chat header showed the agent's Real office portrait; the rail, the header and the Needs you faces now use one picture. Checked in the simulator at 1440x900 and 1280x800 (`check-097-one-face`: Real office and Flat with two crews).

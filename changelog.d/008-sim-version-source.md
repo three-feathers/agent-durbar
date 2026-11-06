@@ -1,1 +1,0 @@
-- **Simulator About version from package.json** (spec 008 FR-179, #1162): the simulator's About label is the app version plus ` (simulator)`, generated at build time, so a release bump edits only `package.json` and `package-lock.json`. Checked by `test:simversion` (with a hard-coded-version mutant).

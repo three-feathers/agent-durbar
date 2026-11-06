@@ -1,1 +1,0 @@
-- **Windows UI checks steadier** (spec 052, issue #1179): `check-auto-follow` and `check-edit-popups` no longer fail on the first try when a neighbour driver's window takes the focus on the shared Windows desktop. Test driver only, no app change; checked on repeated Windows CI runs.

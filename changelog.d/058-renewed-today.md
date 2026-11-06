@@ -1,1 +1,0 @@
-- **The MCP sign-in renewal check no longer fails after the day it was written** (spec 058, PR #1211's CI): `shots-058-mcp-signin-refresh` reads the *Renewed 12:40* row against the run's own day, with the page clock held still, instead of a fixed date. Test driver only, no app change.
