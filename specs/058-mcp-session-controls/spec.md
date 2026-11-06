@@ -389,6 +389,14 @@ All answered by the owner: option A for each (see *Clarifications*). The options
 
 ## Changes
 
+### 2026-11-06: `shots-058-mcp-signin-refresh` reads the "Renewed" row against today, not a fixed date
+
+**Seen:** from 2026-11-06 the driver failed on Linux and Windows CI (PR #1211 run 42159584402): the row read `· Renewed 2026-11-05 12:40`, not `· Renewed 12:40`.
+
+**Cause (driver, not app):** the driver marked the server renewed at a fixed `2026-11-05 12:40`, so from the next day the row rightly shows the date (FR-221: with the date when not today).
+
+**Fix:** the driver holds the page's `Date.now` at 13:00 on the run's day while it reads the row, marks the server renewed 20 minutes before, and gives the real clock back after the picture, so the check never depends on the run's date or crosses midnight. No app change.
+
 ### 2026-11-05: `shots-058-mcp-refresh` sends the repainting report after the marker call (issue #1196)
 
 **Seen:** on Linux CI (PR #1191 run 42006041419) the assert `the marker call shows` failed once.

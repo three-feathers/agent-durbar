@@ -151,12 +151,14 @@ module.exports = async (ctx) => {
       const lay2 = await layout();
       assert.ok(lay2.min >= 10.5 && lay2.inChat && lay2.roles && lay2.pageX, `${w}: the automatic-note line is calm: ` + JSON.stringify(lay2));
       const chatLines = await js(`document.querySelectorAll('#chat .note').length`);
-      await js(`window.__durbarSimSignIn.renewed(${jsLiteral(id)},'docs',${jsLiteral(new Date(2026, 10, 5, 12, 40).getTime())});0`);
+      // the page's own clock, held at 13:00 today while the row is read, so "today" never depends on the run's date or crosses midnight
+      await js(`(()=>{if(!window.__realNow)window.__realNow=Date.now;const d=new Date(window.__realNow());d.setHours(13,0,0,0);const t=d.getTime();Date.now=()=>t;window.__durbarSimSignIn.renewed(${jsLiteral(id)},'docs',t-20*60000);return 0})()`);
       await js(`document.getElementById('mcpBtn').click()`);
       assert.ok(await until(`!!document.querySelector('#agMcp li.srv[data-n="docs"] .mst-renew')`, 6000), 'the dialog row shows the renewal note');
       const row = await js(`(()=>{const e=document.querySelector('#agMcp li.srv[data-n="docs"] .mst-renew');const r=e.getBoundingClientRect(),d=document.querySelector('#agMcp').getBoundingClientRect();return {t:e.textContent,fs:parseFloat(getComputedStyle(e).fontSize),inside:r.left>=d.left-1&&r.right<=d.right+1,other:!!document.querySelector('#agMcp li.srv[data-n="crm"] .mst-renew')||!!document.querySelector('#agMcp li.srv[data-n="files"] .mst-renew'),pageX:document.documentElement.scrollWidth<=innerWidth};})()`);
       assert.ok(row.t === '\u00b7 Renewed 12:40' && row.fs >= 10.5 && row.inside && !row.other && row.pageX, `${w}: the quiet "Renewed 12:40" note, only on the renewed server: ` + JSON.stringify(row));
       await shot(`058-mcp-renewed-${w}x${h}.png`);
+      await js(`(()=>{if(window.__realNow)Date.now=window.__realNow;return 0})()`);
       await js(`(()=>{const b=[...document.querySelectorAll('#scrDlg .dbtn .btn')].find(b=>b.textContent==='Done');if(b)b.click();})()`);
       assert.ok(await until(`!document.getElementById('scrDlg')`), 'the dialog closed');
       assert.strictEqual(await js(`document.querySelectorAll('#chat .note').length`), chatLines, 'no chat line came with it');
