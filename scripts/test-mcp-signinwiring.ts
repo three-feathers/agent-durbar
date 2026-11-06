@@ -99,9 +99,20 @@ async function main(): Promise<void> {
     // the adapter: a restart that the test finishes, reporting the whole list again (as the real adapters do)
     const list = (docs: string): McpServerStatus[] => [{ name: 'docs', status: docs, transport: 'http' }, { name: 'files', status: 'connected', transport: 'stdio' }];
     const pending: Array<(st: string) => void> = [];
+    // no timing assumption: a test waits for the restart to reach the adapter (a signal), never for a number of ticks
+    const waiters: Array<() => void> = [];
+    const park = (r: (st: string) => void): void => { pending.push(r); for (const w of waiters.splice(0)) w(); };
+    const nextResolver = async (): Promise<(st: string) => void> => {
+      const end = Date.now() + 30_000;
+      while (!pending.length) {
+        if (Date.now() > end) assert.fail('the restart never reached the adapter');
+        await Promise.race([new Promise<void>((r) => waiters.push(r)), new Promise<void>((r) => setTimeout(r, 1000))]);
+      }
+      return pending.shift()!;
+    };
     ad.restartMcpServer = async (s, n, o) => {
       ad.restartCalls.push({ sessionId: s, name: n, ...(o?.auto ? { auto: true } : {}) });
-      const st = await new Promise<string>((r) => pending.push(r));
+      const st = await new Promise<string>((r) => park(r));
       emit(s, { type: 'mcp', servers: list(st) });
       if (st !== 'connected') throw new Error('Server status: needs-auth');
     };
@@ -132,7 +143,7 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(sent, [], 'the window send waits for the gate: sendOp not called yet');
     assert.deepStrictEqual(ad.restartCalls, [{ sessionId: sid, name: 'docs', auto: true }], 'one automatic reconnect of the remote needs-auth server only');
     assert.deepStrictEqual(pushes, [{ id: sid, kind: 'waiting', count: 1 }]);
-    pending.shift()!('connected');
+    (await nextResolver())('connected');
     assert.deepStrictEqual(await s1, { ok: true });
     assert.deepStrictEqual(sent, [sid], 'sent after the reconnect');
     assert.deepStrictEqual(pushes[pushes.length - 1], { id: sid, kind: 'done' });
@@ -157,7 +168,7 @@ async function main(): Promise<void> {
     timers[timers.length - 1].fn();
     assert.deepStrictEqual(await s2, { ok: true }, 'sent at the bound');
     assert.deepStrictEqual(pushes[pushes.length - 1], { id: sid, kind: 'late', names: ['docs'] });
-    pending.shift()!('needs-auth');
+    (await nextResolver())('needs-auth');
     const mr = (await manual) as { ok: boolean };
     assert.strictEqual(mr.ok, false, 'the shared result');
     await tick();
@@ -178,7 +189,7 @@ async function main(): Promise<void> {
     const pB = pushes.length;
     const sB = call('agents:send', sidB, 'hi from b', []);
     await tick();
-    pending.shift()!('needs-auth');
+    (await nextResolver())('needs-auth');
     await sB;
     await tick();
     const iB = ad.restartCalls.findIndex((c) => c.sessionId === sidB);
@@ -199,7 +210,7 @@ async function main(): Promise<void> {
     await tick();
     const r3 = call('agents:mcpRestart', sid, 'docs');
     await tick();
-    pending.shift()!('connected');
+    (await nextResolver())('connected');
     assert.deepStrictEqual(await r3, { ok: true });
     emit(sid, { type: 'mcp', servers: list('needs-auth') });
     clock.now += 1;
@@ -241,7 +252,7 @@ async function main(): Promise<void> {
     emit(sid, { type: 'question', phase: 'asked', requestId: 'el-2', elicitation: { message: 'other', source: 'files' } });
     assert.strictEqual(answered.length, 1, 'another server: the normal card');
     assert.strictEqual(mcp.hidesEvent({ type: 'question', requestId: 'el-2' }), false);
-    pending.shift()!('connected');
+    (await nextResolver())('connected');
     await tick();
     assert.deepStrictEqual(pushes[pushes.length - 1], { id: sid, kind: 'needs-sign-in', name: 'docs' }, 'a declined elicitation: needs a sign-in, even though it reads connected');
 
@@ -249,7 +260,7 @@ async function main(): Promise<void> {
     {
       const realRestart = ad.restartMcpServer;
       pending.length = 0;
-      ad.restartMcpServer = async (s2, n, o) => { ad.restartCalls.push({ sessionId: s2, name: n, ...(o?.auto ? { auto: true } : {}) }); await new Promise<string>((res) => pending.push(res)); };
+      ad.restartMcpServer = async (s2, n, o) => { ad.restartCalls.push({ sessionId: s2, name: n, ...(o?.auto ? { auto: true } : {}) }); await new Promise<string>((res) => park(res)); };
       mcp.signInRefresh.clearBlock(undefined, 'docs');
       emit(sid, { type: 'mcp', servers: list('needs-auth') });
       emit(sid, { type: 'status', status: 'idle' });
@@ -264,7 +275,7 @@ async function main(): Promise<void> {
       busy = false;
       interrupts.length = 0;
       abortExpected = false;
-      pending.shift()!('connected');
+      (await nextResolver())('connected');
       await tick();
       ad.restartMcpServer = realRestart;
       clock.now += 2 * H;
@@ -296,7 +307,7 @@ async function main(): Promise<void> {
     await tick();
     assert.deepStrictEqual([shown, sentSched], [[], []], 'the scheduled prompt waits: no session start, nothing shown or sent');
     assert.strictEqual(ad.restartCalls[ad.restartCalls.length - 1].name, 'docs');
-    pending.shift()!('connected');
+    (await nextResolver())('connected');
     assert.strictEqual(await sch, sid2);
     assert.deepStrictEqual([shown, sentSched], [['live', 'agent:event', 'schedule:ran'], [sid2]], 'then it goes');
     // Stop during a scheduled wait: the run is a send error, nothing goes
@@ -310,7 +321,7 @@ async function main(): Promise<void> {
     assert.strictEqual(mcp.signInRefresh.stopWait(sid2), true);
     await assert.rejects(sch2, /Not sent/);
     assert.strictEqual(sentSched.length, 1, 'nothing sent after Stop');
-    pending.shift()!('connected');
+    (await nextResolver())('connected');
     await tick();
 
     // ---- End session forgets the mark (T179), after the session's own `stopped` (which is a turn end too) ----
@@ -364,7 +375,7 @@ async function main(): Promise<void> {
       const p1 = mcp.signInRefresh.beforeSend(sid3);
       await tick();
       assert.strictEqual(ad.restartCalls.length, n1 + 1, 'a sandbox that does not cover MCP: reconnected');
-      pending.shift()!('connected');
+      (await nextResolver())('connected');
       await p1;
       delete info.sandbox;
       clock.now += 2 * H;
@@ -383,7 +394,7 @@ async function main(): Promise<void> {
     const p3 = mcp.signInRefresh.beforeSend(sid3);
     await tick();
     assert.strictEqual(ad.restartCalls.length, base2 + 1, 'with it (the same chat, needs-auth): one reconnect');
-    pending.shift()!('connected');
+    (await nextResolver())('connected');
     await p3;
 
     // ---- spec 058 FR-218..FR-221 (2026-11-05; owner 18:03 UTC): renew at once after a failed call or a needs-auth report, then one note ----
@@ -413,7 +424,7 @@ async function main(): Promise<void> {
       await tick();
       assert.strictEqual(ad.restartCalls.length, n0 + 1, 'the needs-auth report of the same episode adds no second reconnect');
       assert.deepStrictEqual(nudges, [], 'no note before the reconnect worked');
-      pending.shift()!('connected');
+      (await nextResolver())('connected');
       await tick();
       assert.deepStrictEqual(nudges, [`${sid}:docs`], 'exactly one note after it worked');
       const reply = (await call('agents:mcp', sid)) as { servers: Array<{ name: string; renewedAt?: number }> };
@@ -428,7 +439,7 @@ async function main(): Promise<void> {
       emit(sid, { type: 'mcp', servers: list('needs-auth') });
       await tick();
       assert.strictEqual(ad.restartCalls.length, n0 + 2, 'a needs-auth report after connected renews, with no failed call');
-      pending.shift()!('connected');
+      (await nextResolver())('connected');
       await tick();
       assert.strictEqual(nudges.length, 2, 'and one more note');
       // a spending limit holds the chat: renewed, but no note
@@ -438,7 +449,7 @@ async function main(): Promise<void> {
       emit(sid, { type: 'mcp', servers: list('connected') });
       failCall(sid, 'c3');
       await tick();
-      pending.shift()!('connected');
+      (await nextResolver())('connected');
       await tick();
       assert.strictEqual(ad.restartCalls.length, n0 + 3, 'at a limit the server is still renewed');
       assert.strictEqual(nudges.length, 2, 'but no message is sent at a spending limit');
@@ -479,7 +490,7 @@ async function main(): Promise<void> {
       assert.deepStrictEqual(ad.restartCalls.slice(r0), [{ sessionId: sid, name: 'docs', auto: true }], 'the 401 text is unauthorized: one automatic reconnect');
       assert.strictEqual(sent.length, sent0 + 1, 'the message went without waiting for the check or its reconnect');
       assert.deepStrictEqual(pushes.slice(p0), [{ id: sid, kind: 'reconnecting', name: 'docs' }], 'only the Reconnecting line, no waiting line');
-      pending.shift()!('connected');
+      (await nextResolver())('connected');
       await tick();
       await s;
       assert.deepStrictEqual(pushes.slice(p0), [{ id: sid, kind: 'reconnecting', name: 'docs' }, { id: sid, kind: 'reconnect-end', name: 'docs' }], 'the line ends');
@@ -568,7 +579,7 @@ async function main(): Promise<void> {
       failCall(sid, 'd1');
       await tick();
       await call('agents:stop', sid);
-      pending.shift()!('connected');
+      (await nextResolver())('connected');
       await tick();
       assert.strictEqual(ad.restartCalls.length, nD + 1, 'renewed');
       assert.deepStrictEqual(nudges, [], 'the person pressed Stop meanwhile: no automatic message');
@@ -585,7 +596,7 @@ async function main(): Promise<void> {
       const signingE = call('agents:mcpSignIn', sid, 'docs');
       await tick();
       assert.strictEqual(startedE, false, 'the running renewal is awaited first');
-      pending.shift()!('connected');
+      (await nextResolver())('connected');
       await tick();
       await signingE;
       assert.strictEqual(startedE, true, 'then the person\'s sign-in starts');
