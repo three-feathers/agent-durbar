@@ -598,7 +598,8 @@ apps, as T176 allows) after them.
 - [x] T204 Unit tests `test-mcp-presend.ts` with mutants, existing renewal tests updated for the gated row [FR-228]
 - [x] T205 Simulator step: the line at 1440x900 and 1280x800, looked at [FR-228]
 - [x] T206 `docs/limits.md`, `docs/features.md`, `docs/feature-inventory.md`, Settings line, changelog fragment [Docs]
-- [ ] T207 Real check by the owner after the release: a real Entra server, macOS (Keychain), Windows [KNOWN GAP]
+- [x] T207 Real check by the owner after the release: a real Entra server, macOS: `real:` 2026-11-06, v0.1.11, the renewal note was seen (FR-218..FR-222); the pre-send path and Keychain prompts were not reported [FR-228]
+- [ ] T208 Still open from T207: Windows; whether the pre-send check (FR-223..FR-228) fires on a real Entra server; macOS Keychain prompts [KNOWN GAP]
 - **Built 2026-11-03, part 1** (branch `058-mcp-auth-refresh-build`, T178..T181, T184..T186 and T187's docs for them; over the
   ~500-line mark, so split along the plan's order): the planner, main's refresher (last response, resume, the per-chat gate every send
   path awaits, the per-server flight, records and blocks, the 5 s wait with Stop), `mcpRestartOp` as a promise map, Copilot's and Claude
