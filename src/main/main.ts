@@ -199,6 +199,7 @@ const appIdOf = (id: string): string | undefined => router.adapterIdOf(id) ?? ag
 const mcp = registerMcpIpc({
   store: () => mcpStore as McpStore,
   agents,
+  ensureLive: (a) => ensureLive(a), // spec 058 FR-229
   router,
   dev,
   appOf: appIdOf,

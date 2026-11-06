@@ -3649,12 +3649,21 @@ function mcpViewChanged(id,view){
   if(window.DurbarScreens&&window.DurbarScreens.mcpEvent)window.DurbarScreens.mcpEvent(id);
 }
 function mcpLevelsChanged(l){mcpLevels=l;for(const id of MCP_CTX.keys()){const a=liveById(id);if(a){repaintMcpChip(a);mcpWarnLine(a);}}}
+/* spec 058 FR-229 (issue 1229): a chat's "needs you to sign in again" line goes when Durbar no longer knows that server needs it (the row has neither the runtime's needs-auth nor Durbar's own mark) and no sign-in is open for it */
+function mcpSignLinesDrop(a,servers){
+  const chat=liveChat(a);if(!chat||!chat.el)return;
+  for(const x of chat.el.querySelectorAll('.note.mcpre-sign')){
+    const row=servers.find(y=>y.name===x.dataset.n);
+    if(row&&!row.signIn&&row.needsSignIn!==true&&row.status!=='needs-auth'&&!(row.status==='failed'&&row.errorClass==='auth'))x.remove();
+  }
+}
 async function refreshMcpCount(a){
   if(!a||!bridge.agentMcp||!ui.selected)return;
   {const cur=byId(ui.selected);if(!cur||liveRoot(cur)!==a||!$('mcpBtn'))return;} /* only for the open chat; opening a chat asks again */
   let st=null;try{st=await bridge.agentMcp(a.id);}catch(e){st=null;}
   if(bridge.agentMcpContext)Promise.resolve(bridge.agentMcpContext(a.id)).then(v=>{if(v&&v.ok){const o=MCP_CTX.get(a.id);if(JSON.stringify(o)!==JSON.stringify(v))mcpViewChanged(a.id,v);}}).catch(()=>{}); /* spec 100 FR-003: the last figures; asks nothing */
   if(!st||!st.ok)return;
+  mcpSignLinesDrop(a,st.servers||[]);
   const all=st.servers||[], n=all.filter(x=>x.defaultOn&&!x.off).length, was=MCP_N.get(a.id);
   const f=all.filter(x=>x.status==='failed'||x.status==='needs-auth').length;
   if(was&&was.on===n&&was.total===all.length&&(MCP_F.get(a.id)||0)===f)return; MCP_N.set(a.id,{on:n,total:all.length});MCP_F.set(a.id,f);
@@ -5586,7 +5595,11 @@ function mcpReLine(p){
   const shown=p.kind==='needs-sign-in'?[...chat.el.querySelectorAll('.note.mcpre-sign')].pop():p.kind==='late'?[...chat.el.querySelectorAll('.note.mcpre')].pop():a.mcpReNote;
   if(shown&&ui.selected&&liveRoot(byId(ui.selected)||a)===a&&SCROLL)requestAnimationFrame(()=>SCROLL.reveal(shown,{margin:8}));
 }
-document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest('.mcpre-btn');if(!b)return;e.stopPropagation();const a=byId(ui.selected),r=a&&liveRoot(a);if(r&&window.DurbarScreens)Promise.resolve(window.DurbarScreens.agentMcp(r,{...mcpOpts(r),focusServer:{name:b.dataset.n||''}})).finally(()=>refreshMcpCount(r));});
+document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest('.mcpre-btn');if(!b)return;e.stopPropagation();const a=byId(ui.selected),r=a&&liveRoot(a),nm=b.dataset.n||'';
+  const say=m=>{try{toast(esc(window.DurbarMcpWords.signInPressNote(nm,null,m)),5200).classList.add('err');}catch(_){}}; /* FR-229: a failed press always shows text */
+  if(!r||!window.DurbarScreens||!window.DurbarScreens.agentMcp){say('The MCP list is not available.');return;}
+  /* FR-229 (issue 1229): the press starts the row's own Sign in, as Settings' button does (FR-195); the row says why when it offers none */
+  Promise.resolve().then(()=>window.DurbarScreens.agentMcp(r,{...mcpOpts(r),focusServer:{name:nm},signIn:{name:nm,again:false}})).catch(err=>say(String(err&&err.message||err))).finally(()=>refreshMcpCount(r));});
 /* FR-208: Stop during the wait: the message is marked Not sent and its text goes back to the composer (when it is empty) */
 function mcpNotSent(a,chat,text,fromComposer){
   closeTurn(a);

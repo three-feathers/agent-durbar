@@ -67,6 +67,11 @@ const NOT_AFTER = '(?![A-Za-z0-9])';
 /** A body that may hold `_`, `-` or `.` must have a digit near its start and not read as lower-case words (`cfut_cross_validation_results_v2` is a name, not a key). Bounded lookaheads. */
 const dg = (cls: string, min: number): string => String.raw`(?![a-z]{1,32}(?:[_-][a-z0-9]{1,32}){2,16}(?![A-Za-z0-9_-]))(?=${cls}{0,128}[0-9])${cls}{${min},}`;
 const W = '[A-Za-z0-9_-]';
+/** A token whose body is letters and digits only, written back to back (`ghp_AAAA…ghp_BBBB…`, issue #1233). The body used to stop at the `_` of the next prefix, so that prefix was swallowed and the START rule (a letter precedes it) hid nothing of the second token. Now the body may hold the `_` that follows a lead (`swallow`: the prefix of its own or another GitHub or npm family without that `_`), so glued tokens, of one family or of `gh[pousr]_`, `github_pat_` and `npm_` in any order, are one match. The first `min` characters are letters or digits only, so a list of bare prefixes (`ghp_gho_ghu_…`) is no body. One flat repeat of a fixed-width choice, so still linear. */
+const GH_SWALLOW = 'gh[pousr]|github|github_pat|github_pat_[A-Za-z0-9]{22}|npm'; // `github_pat_` has a second `_` after its first 22 characters
+const glued = (prefix: string, min: number, swallow: string): string => String.raw`${prefix}[A-Za-z0-9]{${min}}(?:[A-Za-z0-9]|(?<=${swallow})_)*`;
+/** The GitHub and npm token shapes as a second token: `PREFIXED_NEXT` takes them too, after a token whose body swallowed their prefix. */
+const GH_NPM_NEXT = String.raw`gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}`;
 const PREFIXED = [
   // cloud
   String.raw`(?:ABIA|ACCA|A3T[A-Z0-9])(?=[A-Z]{0,15}[0-9])[A-Z0-9]{16}${NOT_AFTER}`, // the rarer AWS access key ids need a digit: `ACCAGTTGCATGCATGCATG` is DNA
@@ -154,7 +159,7 @@ function maskJwts(s: string, mask: string): string {
  * (review of #1015: a guard on `glpat-`, a narrower start and a later prefix taking the head of an older token each did; `scripts/test-redact-shapes.ts` pins it). Guard a new shape, never one of these.
  */
 const HELD_SHAPES: Array<RegExp | Guarded | ((s: string, mask: string) => string)> = [
-  shape(String.raw`gh[pousr]_[A-Za-z0-9]{20,}`),
+  shape(glued('gh[pousr]_', 20, GH_SWALLOW)),
   shape(String.raw`github_pat_[A-Za-z0-9_]{20,}`),
   shape(String.raw`glpat-[A-Za-z0-9_.-]{20,}`), // GitLab personal access token (spec 093: a clone URL's user part must not be one); no digit guard, 3% of real ones have none. `.`: the routable form
   shape(String.raw`sk-(?:ant-)?[A-Za-z0-9_-]{20,}`), // OpenAI, Anthropic, DeepSeek, OpenRouter. `sk-ant-` also glued to a word: below
@@ -180,8 +185,40 @@ const HELD_SHAPES: Array<RegExp | Guarded | ((s: string, mask: string) => string
   guarded(shape(String.raw`[MNO][DTjz][A-Za-z0-9_-]{21,26}${DOT}[A-Za-z0-9_-]{6}${DOT}[A-Za-z0-9_-]{27,}`), /(?:\.|%(?:25){0,8}2[Ee])[A-Za-z0-9_-]{6}(?:\.|%(?:25){0,8}2[Ee])/),
 ];
 /* The lookahead is every character these two can start with: without it a run of punctuation passes the start and tries all 100 alternatives at each position (`&` repeated: 90 to 14 ms per MB). */
-const TOKEN_SHAPES: Array<RegExp | Guarded> = [
-  new RegExp('(?=[A-Za-z0-9_~.])' + START_BOUNDED + `(?:${PREFIXED})`, 'g'),
+const PREFIXED_AT = new RegExp('(?=[A-Za-z0-9_~.])' + START_BOUNDED + `(?:${PREFIXED})`, 'g');
+/** The same without a start, tried at one place (`y`): a second token that begins where the first ends or inside the end of its body. */
+const PREFIXED_NEXT = new RegExp(`(?:${GH_NPM_NEXT}|${PREFIXED})`, 'y');
+/** How far back from the end of a match a swallowed second token can start: its prefix plus the structured part before the body runs on (the longest first parts, `sc_` + 30 characters + `.` + 6 + `.acc_`, reach 40 from the end of the first token). */
+const PREFIX_REACH = 40;
+/**
+ * `PREFIXED_AT`, and every token glued to a match (issue #1233, spec 012 FR-169). A token written right after another has a letter or digit before it, so the start rule
+ * hides nothing of it; and an open-ended body of letters and digits runs on into the next prefix. After each match the glued tokens are taken: one starting at its end
+ * (a fixed-length body) or starting in the last `PREFIX_REACH` characters of it (the swallowed prefix, whose body then runs on past the end). A token found there only
+ * extends the mask, never shortens it. Each match costs a bounded number of tries at fixed places, so still linear.
+ */
+function maskPrefixedGlued(s: string, mask: string): string {
+  let out = '';
+  let copied = 0;
+  PREFIXED_AT.lastIndex = 0;
+  for (let m = PREFIXED_AT.exec(s); m; m = PREFIXED_AT.exec(s)) {
+    const start = m.index;
+    let end = start + m[0].length;
+    for (let more = true; more; ) {
+      more = false;
+      for (let at = Math.max(start + 1, end - PREFIX_REACH); at <= end; at++) {
+        PREFIXED_NEXT.lastIndex = at;
+        const n = PREFIXED_NEXT.exec(s);
+        if (n && at + n[0].length > end) { end = at + n[0].length; more = true; break; }
+      }
+    }
+    out += s.slice(copied, start) + mask;
+    copied = end;
+    PREFIXED_AT.lastIndex = end;
+  }
+  return copied === 0 ? s : out + s.slice(copied);
+}
+const TOKEN_SHAPES: Array<RegExp | Guarded | ((s: string, mask: string) => string)> = [
+  maskPrefixedGlued,
   new RegExp(`(?=[A-Za-z0-9])${B64_START}(?:${B64_PREFIXED})${NOT_B64_AFTER}`, 'g'),
   /sk-ant-[A-Za-z0-9_-]{8,}/g, // no start: a key glued to a letter (`xsk-ant-…`) is still a key (from spec 103's `maskAll`)
   guarded(shape(String.raw`xox[os]-[0-9]{1,20}-[0-9]{1,20}-[0-9]{1,20}-[A-Fa-f0-9]{8,}`), /xox[os]-[0-9]/), // the legacy four-part Slack form (a plain `xoxo-…` is a hug: stays)
@@ -415,7 +452,7 @@ export function maskBareTokenShapes(text: string, mask: string): string {
   return maskBare(text, mask, true);
 }
 /** Test only: every pattern's source, for the check that none nests quantifiers (`scripts/test-redact-shapes.ts`). */
-export const _maskSourcesForTest = (): string[] => [...HELD_PATTERNS, ...PATTERNS, ...[...HELD_SHAPES, ...TOKEN_SHAPES].flatMap((t) => (typeof t === 'function' ? [] : t instanceof RegExp ? [t] : [t.re])), JWT_AT, NAMED_IN_QUERY, NAMED_SECRET, COOKIE_HEAD].map((r) => r.source);
+export const _maskSourcesForTest = (): string[] => [...HELD_PATTERNS, ...PATTERNS, ...[...HELD_SHAPES, ...TOKEN_SHAPES].flatMap((t) => (typeof t === 'function' ? [] : t instanceof RegExp ? [t] : [t.re])), PREFIXED_AT, PREFIXED_NEXT, JWT_AT, NAMED_IN_QUERY, NAMED_SECRET, COOKIE_HEAD].map((r) => r.source);
 /** Test only: the same without the marker guard, to prove the guard never changes the result. */
 export function maskTokenShapesUnguarded(text: string, mask: string): string {
   return maskShapes(text, mask, false);

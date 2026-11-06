@@ -13,6 +13,7 @@
  */
 
 import type { McpSignInRefreshNote } from '../shared/api';
+import { isRemoteTransport } from '../shared/mcp';
 
 /** FR-205: the quiet time after a chat's last response that makes its next message a "first message after a gap" (fixed, G1). */
 export const MCP_SIGNIN_GAP_MS = 60 * 60_000;
@@ -134,7 +135,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
     if (!s || typeof s.name !== 'string' || seen.has(s.name)) continue;
     seen.add(s.name);
     if (s.off === true || s.status === 'disabled') continue;
-    if (!/^(?:http|sse|streamable-?http)$/i.test(typeof s.transport === 'string' ? s.transport : '')) continue; // remote only: never a local (stdio) server
+    if (!isRemoteTransport(s.transport)) continue; // remote only: never a local (stdio) server
     if (s.signInOpen === true || s.restarting === true || s.policy === true) continue;
     const wants = s.status === 'needs-auth' || (why === 'gap' && s.status === 'connected' && i.platform !== 'darwin');
     if (!wants) continue;
@@ -204,7 +205,7 @@ export const planMcpRenew = (i: RenewPlanInput): RenewPlan => {
     if (!s || typeof s.name !== 'string' || seen.has(s.name)) continue;
     seen.add(s.name);
     if (s.off === true || s.status === 'disabled' || s.builtin === true || s.staticAuth === true) continue;
-    if (!/^(?:http|sse|streamable-?http)$/i.test(typeof s.transport === 'string' ? s.transport : '')) continue; // remote only
+    if (!isRemoteTransport(s.transport)) continue; // remote only
     if (s.signInOpen === true || s.restarting === true || s.policy === true) continue;
     const rec = Object.prototype.hasOwnProperty.call(i.records, s.key) ? i.records[s.key] : undefined;
     if (rec && rec.blocked) continue;
@@ -259,7 +260,7 @@ export function planMcpCheck(i: CheckPlanInput): string[] {
     seen.add(s.name);
     if (s.status !== 'connected') continue; // never a server that is not connected: a check must not make the runtime reconnect it
     if (s.off === true || s.builtin === true || s.staticAuth === true) continue;
-    if (!/^(?:http|sse|streamable-?http)$/i.test(typeof s.transport === 'string' ? s.transport : '')) continue; // remote only
+    if (!isRemoteTransport(s.transport)) continue; // remote only
     if (s.signInOpen === true || s.restarting === true || s.policy === true) continue;
     const rec = Object.prototype.hasOwnProperty.call(i.records, s.key) ? i.records[s.key] : undefined;
     if (rec && rec.blocked) continue;
@@ -379,6 +380,9 @@ export class McpSignInRefresher {
   private resumedAt: number | undefined;
   /** FR-209: per chat, the reconnects one send or recheck started or joined; every send path awaits it. */
   private readonly reconnecting = new Map<string, Promise<void>>();
+  /** FR-229: per server key, when a call that worked last cleared it (a renewal that began earlier writes no block). */
+  private readonly okAt = new Map<string, number>();
+  private okTick = 0;
   /** FR-210: per server key, the one automatic reconnect that runs, across chats. */
   private readonly flights = new Map<string, Promise<SignInResult>>();
   private readonly records = new Map<string, SignInRecordView>();
@@ -834,6 +838,17 @@ export class McpSignInRefresher {
     return true;
   }
 
+  /** Spec 058 FR-229: Durbar's own record says this server needs a new sign-in (a renewal that did not help), whatever the runtime list reads. */
+  isBlocked(adapterId: string, name: string, url: string | undefined): boolean {
+    return this.records.get(signInKey(adapterId, name, url))?.blocked === 'sign-in';
+  }
+
+  /** Spec 058 FR-229: a call that worked clears the sign-in block of exactly this server key (adapter, name, address or folder), never a same-name server elsewhere. */
+  clearKey(key: string): void {
+    this.okAt.set(key, ++this.okTick); // a renewal that began before this call must not write a stale block over it
+    if (this.records.get(key)?.blocked === 'sign-in') this.records.delete(key);
+  }
+
   /** Test and debug view: the record of one key (a copy). */
   recordOf(key: string): SignInRecordView | undefined {
     const r = this.records.get(key);
@@ -1041,6 +1056,7 @@ export class McpSignInRefresher {
       this.auto.add(tag);
       this.declined.delete(tag);
       const at = this.d.now();
+      const tick0 = this.okTick;
       let r: { ok: boolean; error?: string; fresh?: boolean } = { ok: false };
       try {
         r = await this.d.reconnect(agentId, name);
@@ -1056,7 +1072,8 @@ export class McpSignInRefresher {
       const res = signInResult({ ...st, ok: r.ok, fresh: r.fresh, declined: this.declined.has(tag) });
       const fromCheck = kind === 'renew' && this.checkOnly.has(tag);
       if (fromCheck) this.d.push({ id: agentId, kind: 'reconnect-end', name }); // FR-226: the line goes whatever the result
-      this.records.set(key, res === 'needs-sign-in' ? { at, blocked: 'sign-in' } : res === 'policy' ? { at, blocked: 'policy' } : { at });
+      const okSince = (this.okAt.get(key) ?? 0) > tick0; // FR-229: a call worked while this reconnect ran: the old failure is not news
+      this.records.set(key, res === 'needs-sign-in' && !okSince ? { at, blocked: 'sign-in' } : res === 'policy' ? { at, blocked: 'policy' } : { at });
       if (res === 'reconnected') {
         // FR-220: a renewal that reads connected is shown on the row (wall time, display only), for a chat that still exists
         try {
