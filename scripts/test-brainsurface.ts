@@ -78,7 +78,7 @@ for (const [label, tool, args] of INPUTS) {
 
 // ---- the same inputs fed to each formatter UNMASKED (a surface stays safe on its own: FR-086 "each surface's formatter")
 for (const [label, tool, args] of INPUTS) {
-  const identity: BrainMask = { redact: (t) => String(t ?? ''), maskSecretCommand: (c) => String(c ?? ''), maskSecretArgs: (a) => [...a], maskSecretUrl: (u) => String(u ?? ''), maskHomePaths: (t) => String(t ?? ''), maskTokenShapes: (t) => t, maskGluedTail: (t) => t, openKeyBlockStart: () => -1, schemePrefix: () => false };
+  const identity: BrainMask = { redact: (t) => String(t ?? ''), maskSecretCommand: (c) => String(c ?? ''), maskSecretArgs: (a) => [...a], maskSecretUrl: (u) => String(u ?? ''), maskHomePaths: (t) => String(t ?? ''), maskTokenShapes: (t) => t, maskGluedTail: (t) => t, openKeyBlockStart: () => -1, schemePrefix: () => false, schemeWord: () => false };
   const { step: dirty } = stepFrom(tool, args, identity); // the state built by a mask that masks nothing
   const raw = JSON.stringify(dirty);
   assert.ok(leaks(raw).length > 0, `${label}: the unmasked fixture really holds a secret (else this test proves nothing)`);

@@ -23,6 +23,8 @@ export interface BrainMask {
   openKeyBlockStart(text: string): number;
   /** Is the word the start of an auth scheme word (`Bea` of `Bearer`)? */
   schemePrefix(word: string): boolean;
+  /** Is the whole word an auth scheme word (`Bearer`)? */
+  schemeWord(word: string): boolean;
   /**
    * The app's usage units (spec 011 `usagetotals.js` `validNano`, spec 052 `costtable.js` `AIU_USD` and `money`): the page passes `DurbarUsage` and
    * `DurbarCost`. Without it a `nanoAiu` figure is "not reported" and only `costUsd` counts.
@@ -291,8 +293,12 @@ function expects(mask: BrainMask, text: string): boolean {
  */
 function heldOk(mask: BrainMask, head: string): boolean {
   const words = head.split(/\s+/).filter(Boolean);
-  const ok = words.every((w) => w.length <= 7 || /^["'(]?[A-Za-z][A-Za-z0-9_.-]{0,40}[:=]["']?$/.test(w) || mask.schemePrefix(w));
-  return ok;
+  // a name then its separator, with or without the scheme word glued on (`Authorization:Bearer`, `"Authorization":"Bea`)
+  const named = (w: string): boolean => {
+    const m = /^["'(]?[A-Za-z][A-Za-z0-9_.-]{0,40}["']?[:=]["']?(.*)$/.exec(w);
+    return !!m && (m[1] === '' || mask.schemePrefix(m[1].replace(/^["']/, '')));
+  };
+  return words.every((w) => w.length <= 7 || named(w) || mask.schemePrefix(w));
 }
 /**
  * Does the end of `joined`'s last line expect a secret value? `at` is where its raw tail starts, `head` the tail itself (header words, no secret yet). Null when not.
@@ -304,20 +310,30 @@ function valueExpected(mask: BrainMask, joined: string): { at: number; head: str
     const L = joined.slice(start);
     const starts: number[] = [];
     for (const m of L.matchAll(/\S+/g)) starts.push(m.index!);
-    // a header whose scheme word is still arriving ("Authorization: Bea"): redact masks the part word as the value, and "rer <secret>" follows
-    const last = L.match(/\S+$/);
-    if (last && last[0].length <= 9 && mask.schemePrefix(last[0]) && starts.length >= 2) {
+    // a header whose scheme word is still arriving ("Authorization: Bea", "Authorization:Bea"): redact masks the part word as the value, and
+    // "rer <secret>" follows. Only the nearest few words that can name a header are tried.
+    const lastW = L.match(/\S+$/);
+    if (lastW) {
       const lastAt = starts[starts.length - 1];
-      for (let k = starts.length - 2; k >= Math.max(0, starts.length - 12); k--) {
-        const before = L.slice(starts[k], lastAt);
-        const m = maskText(mask, before + 'Bearer ' + PROBE);
-        if (m !== '' && !m.includes(PROBE)) return { at: start + starts[k], head: L.slice(starts[k]) };
+      const sep = Math.max(lastW[0].lastIndexOf(':'), lastW[0].lastIndexOf('='));
+      const part = lastW[0].slice(sep + 1).replace(/^["']/, '');
+      if (part.length > 0 && part.length <= 9 && mask.schemePrefix(part)) {
+        const restAt = lastAt + sep + 1;
+        let tried = 0;
+        for (let k = starts.length - 1; k >= 0 && tried < 4; k--) {
+          if (starts[k] > lastAt || (starts[k] === lastAt && sep < 0) || !/[:=]/.test(L.slice(starts[k], k === starts.length - 1 ? restAt : starts[k + 1]))) continue;
+          tried++;
+          const m = maskText(mask, L.slice(starts[k], restAt) + 'Bearer ' + PROBE);
+          if (m !== '' && !m.includes(PROBE)) return { at: start + starts[k], head: L.slice(starts[k]) };
+        }
       }
     }
-    // J2: only a word that can start a header (a name with `:` or `=`, or a scheme word) is tried, so ordinary text costs no probe
-    for (let k = starts.length - 1; k >= Math.max(0, starts.length - 12); k--) {
+    // J2/K2: only a word that can start a header (a name with `:` or `=`, or a whole scheme word) is tried, nearest four, so ordinary text costs no probe
+    let tried = 0;
+    for (let k = starts.length - 1; k >= 0 && tried < 4; k--) {
       const word = L.slice(starts[k]).split(/\s/, 1)[0];
-      if (!/[:=]/.test(word) && !mask.schemePrefix(word)) continue;
+      if (!/[:=]/.test(word) && !mask.schemeWord(word)) continue;
+      tried++;
       const tail = L.slice(starts[k]);
       if (!expects(mask, tail)) continue;
       return { at: start + starts[k], head: tail };

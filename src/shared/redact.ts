@@ -546,6 +546,9 @@ const BEARER = /^(bearer|basic)(\s+)\S+\s*$/i;
 const SCHEME_WORDS = ['bearer', 'basic', 'token', 'digest', 'negotiate', 'apikey'];
 const SCHEME = new RegExp(`^(?:${SCHEME_WORDS.join('|')})$`, 'i');
 /** Spec 106 (F1b): is `word` the start of an auth scheme word, so a streamed `Authorization: Bea` may still become `Authorization: Bearer <secret>`? Uses the same words as R11. */
+export function schemeWord(word: string): boolean {
+  return SCHEME.test(word);
+}
 export function schemePrefix(word: string): boolean {
   const w = word.toLowerCase();
   return w.length > 0 && SCHEME_WORDS.some((s) => s.startsWith(w));

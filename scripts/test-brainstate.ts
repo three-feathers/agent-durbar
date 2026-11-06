@@ -464,16 +464,42 @@ assert.ok(Math.abs(s.turnCost - 0.05) < 1e-9, 'junk costs are ignored');
   }
   assert.ok(cases > 800, `the fuzz ran (${cases} cases)`);
 }
+// K1 (round 4): seeded random cut points over glued and quoted header forms (`Authorization:Bearer`, `"Authorization": "Bearer `), many secrets, tails and prefixes
+for (const seed0 of [1, 7, 42]) {
+  let seed = seed0;
+  const rnd = (): number => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+  const pick = <T>(a: T[]): T => a[Math.floor(rnd() * a.length)];
+  const SECS = ['Zq9Xw8Er7Ty6Ui5Op4Lk3Jh2', GH, 'dXNlcjpwYXNzd29yZDEyMzQ1Ng==', 'sk-proj-Ab1Cd2Ef3Gh4Ij5Kl6Mn7Op8Qr9St0', 'xoxb-' + '123456789012-1234567890123-' + 'AbCdEfGhIjKlMnOpQrStUvWx'];
+  const heads = ['Authorization: Bearer ', 'Authorization: Basic ', 'Authorization: token ', 'Proxy-Authorization: Bearer ', 'X-Api-Key: ', 'api_key=', 'password: ', 'password=', 'token: ', 'Cookie: sid=', 'client_secret=', '-H "Authorization: Bearer ', '--token ', 'auth: ', 'Authorization:Bearer ', 'Authorization:Basic ', 'curl -H "Authorization:Bearer ', '"Authorization": "Bearer ', 'authorization: bearer ', 'PRIVATE_TOKEN: ', 'x-auth-token: '];
+  const tails = ['', ' and', ' to', ' then I will', ' is sent to', ' b', ' a', ' ba', ' de', ' ne', ' tok', ' x.', ' x\n', ' Bearer', ' Authorization: Bearer', ' password', ' token', ' a b c', '" to', '" a', '\nnext a', ' apikey', ' basic', ' digest'];
+  const pres = ['', 'I will send ', 'Next: ', 'curl -s ', 'ok.\n', '  '];
+  let cases = 0;
+  for (let it = 0; it < 400; it++) {
+    const sec = pick(SECS), text = pick(pres) + pick(heads) + sec + pick(tails);
+    const slices: string[] = []; for (let j = 0; j + 8 <= sec.length; j += 3) slices.push(sec.slice(j, j + 8));
+    if (slices.some((x) => maskText(mask, text).includes(x))) continue; // redact itself does not mask this text as a whole (#1227)
+    const chunks: string[] = []; for (let i = 0; i < text.length;) { const n = 1 + Math.floor(rnd() * (rnd() < 0.3 ? 60 : 12)); chunks.push(text.slice(i, i + n)); i += n; }
+    cases++;
+    const kind = rnd() < 0.5 ? 'thinking' : 'output';
+    const st = feed(fresh(), [{ type: 'user' }, ...chunks.map((delta) => ({ type: kind, delta })), start('bash', { command: 'ls' })], 1);
+    const out = JSON.stringify(st) + formatStep('card', currentStep(st)!, { mask });
+    for (const x of slices) assert.ok(!out.includes(x), `seed ${seed0}: "${text}" cut as ${JSON.stringify(chunks)} kept "${x}"`);
+  }
+  assert.ok(cases > 330, `seed ${seed0} ran ${cases} cases`);
+}
 // J2: ordinary text costs no header probe: redact runs at most twice per delta (counted, never timed)
 {
   let calls = 0;
   const counting: BrainMask = { ...mask, redact: (x: unknown) => { calls++; return R.redact(x); } };
   let s2 = brainState(initBrain('Ada', counting), { type: 'user' }, 1, counting);
   let worst = 0;
-  for (const piece of 'I will read the file and then run the tests to see what broke, which is fine. '.repeat(3).split('')) {
+  for (const piece of 'I will read the file and then run the tests to see what broke, a b ba de ne to a fix, which is fine. '.repeat(3).split('')) {
     calls = 0; s2 = brainState(s2, { type: 'thinking', delta: piece }, 2, counting); worst = Math.max(worst, calls);
   }
   assert.ok(worst <= 2, `ordinary prose costs at most 2 redact calls per delta (worst ${worst})`);
+  let worst2 = 0;
+  for (const piece of 'the pair a=b and c:d then e=f g:h i=j so k:l x=y z:w'.split('')) { calls = 0; s2 = brainState(s2, { type: 'thinking', delta: piece }, 2, counting); worst2 = Math.max(worst2, calls); }
+  assert.ok(worst2 <= 6, `words with = or : cost at most 1 + 4 probes + 1 (worst ${worst2})`);
   calls = 0; s2 = brainState(s2, { type: 'thinking', delta: ' Authorization: Bear' }, 3, counting);
   assert.ok(calls >= 2, 'a header-looking line does get probed (so the counter counts)');
 }
