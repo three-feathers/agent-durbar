@@ -4,7 +4,7 @@
 group: 046
 title: Search conversations (issue #877): a search box in the top bar finds the text of open and previous sessions (title, your messages, the agent's replies; no tool output; earlier Copilot and Codex sessions by title only); results are List rows with the matching line highlighted; opening one jumps to that message; local only, masked, streamed with cancel
 status: building
-note: phases 1 and 2 built and node-tested (matcher, text-only readers, masker, scan core, IPC, scope from main, simulator fake; T003, T010-T018, T020-T025); no window yet (phase 3)
+note: phases 1-2 built, node-tested (core, readers, masker, scan, IPC, scope from main, sim fake; T003, T010-T018, T020-T025); no window yet (phase 3)
 -->
 
 **Feature Branch**: `095-search-conversations` (spec); code branches `095-pN-slug`, one per phase
