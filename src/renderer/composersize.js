@@ -15,7 +15,7 @@
   const KEY='durbar.composerHeight';
   const MAX_STORED=4000;
   /* the agent rail's width (spec 005 FR-236): default 220px, at least 180px, at most 40% of the window */
-  const RAIL_DEFAULT=220, RAIL_MIN=180, RAIL_FRAC=0.4, RAIL_KEY='durbar.railWidth', RAIL_MAX_STORED=2000;
+  const RAIL_DEFAULT=220, RAIL_MIN=180, RAIL_FRAC=0.4, RAIL_KEY='durbar.railWidth', RAIL_MAX_STORED=8000;
 
   /* {panelH, chatH, boxH}: the panel (.panel-in), the transcript (#chat) and the box (#msgInput) as they are now. The box can take what
      the transcript has above KEEP, so box + chat is what counts: measuring again after a resize gives the same limits. */

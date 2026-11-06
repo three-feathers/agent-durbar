@@ -109,7 +109,9 @@ t('FR-236: the rail shares clamp, keys and the remembered value', () => {
   assert.strictEqual(C.keyStep('End', 220, l, k), 576);
   assert.strictEqual(C.keyStep('PageUp', 220, l, k), 284);
   assert.strictEqual(C.parseRail('300'), 300);
-  for (const bad of [null, '', 'abc', '179', '2001', '-5', 'NaN', '{}']) assert.strictEqual(C.parseRail(bad), null, String(bad));
+  assert.strictEqual(C.parseRail('5200'), 5200); // 40% of a window wider than 5000px
+  assert.strictEqual(C.parseRail('8000'), 8000);
+  for (const bad of [null, '', 'abc', '179', '8001', '-5', 'NaN', '{}']) assert.strictEqual(C.parseRail(bad), null, String(bad));
 });
 
 console.log(`composer size: ${n} groups passed`);

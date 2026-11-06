@@ -30,6 +30,7 @@ module.exports = async (ctx) => {
     await H.settle();
   };
   const gripCentre = () => js(`(()=>{const r=document.getElementById('railGrip').getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)}})()`);
+  const DOWN = { modifiers: ['leftButtonDown'] };
   const mouse = (type, x, y, extra = {}) => wc().sendInputEvent({ type, x, y, button: 'left', clickCount: 1, ...extra });
   const press = async (code, mods) => { await js(`document.getElementById('railGrip').focus()`); await H.key(code, mods, { char: 'never' }); };
   const noOfficeScroll = () => js(`document.documentElement.scrollWidth<=innerWidth&&document.documentElement.scrollHeight<=innerHeight`);
@@ -50,18 +51,22 @@ module.exports = async (ctx) => {
     // drag: wider, then narrower, with real mouse events
     let c = await gripCentre();
     mouse('mouseMove', c.x, c.y); mouse('mouseDown', c.x, c.y);
-    mouse('mouseMove', c.x + 40, c.y); mouse('mouseMove', c.x + 80, c.y); mouse('mouseUp', c.x + 80, c.y);
+    mouse('mouseMove', c.x + 40, c.y, DOWN); mouse('mouseMove', c.x + 80, c.y, DOWN); mouse('mouseUp', c.x + 80, c.y);
     await widthIs(300, `${tag}: dragged 80px wider`);
     assert.strictEqual((await aria()).now, 300, `${tag}: aria-valuenow follows`);
     assert.strictEqual(await stored(), '300', `${tag}: the drag is remembered`);
     c = await gripCentre();
     mouse('mouseMove', c.x, c.y); mouse('mouseDown', c.x, c.y);
-    mouse('mouseMove', c.x - 60, c.y); mouse('mouseMove', c.x - 400, c.y); mouse('mouseUp', c.x - 400, c.y);
+    mouse('mouseMove', c.x - 60, c.y, DOWN); mouse('mouseMove', c.x - 400, c.y, DOWN); mouse('mouseUp', c.x - 400, c.y);
     await widthIs(180, `${tag}: dragged far left stops at the minimum`);
     c = await gripCentre();
     mouse('mouseMove', c.x, c.y); mouse('mouseDown', c.x, c.y);
-    mouse('mouseMove', c.x + 100, c.y); mouse('mouseMove', c.x + 2000, c.y); mouse('mouseUp', c.x + 2000, c.y);
+    mouse('mouseMove', c.x + 100, c.y, DOWN); mouse('mouseMove', c.x + 2000, c.y, DOWN);
     await widthIs(max, `${tag}: dragged far right stops at 40% of the window`);
+    assert.ok(await js(`document.getElementById('railGrip').classList.contains('dragging')`), `${tag}: .dragging while the button is held`);
+    mouse('mouseUp', c.x + 2000, c.y); // released beyond the window's right edge
+    await ok(`!document.getElementById('railGrip').classList.contains('dragging')`, `${tag}: .dragging is cleared after a release outside the window`);
+    assert.strictEqual(await stored(), String(max), `${tag}: the drag released outside the window is remembered`);
 
     // keyboard
     await press('Home'); await widthIs(180, `${tag}: Home`);
@@ -90,12 +95,52 @@ module.exports = async (ctx) => {
     ctx.win.setContentSize(W, Hh);
     await widthIs(max - 16, `${tag}: window back, the chosen width is back`);
 
+    // Enter resets
+    await press('Return'); await widthIs(220, `${tag}: Enter resets`);
+    assert.strictEqual(await stored(), null, `${tag}: Enter forgets the width`);
+    await press('End'); await widthIs(max, `${tag}: End again`);
+    await press('Left'); await widthIs(max - 16, `${tag}: back to ${max - 16}`);
+
     // double-click resets
     c = await gripCentre();
     mouse('mouseMove', c.x, c.y); mouse('mouseDown', c.x, c.y); mouse('mouseUp', c.x, c.y);
     mouse('mouseDown', c.x, c.y, { clickCount: 2 }); mouse('mouseUp', c.x, c.y, { clickCount: 2 });
     await widthIs(220, `${tag}: double-click resets`);
     await ok(`localStorage.getItem('durbar.railWidth')===null`, `${tag}: the reset forgets the width`);
+
+    // the list's scrollbar is never under the grip (FR-236): its strip hits #stripList, and the grip starts right of the list
+    const sb = await js(`(()=>{const l=document.getElementById('stripList'),r=l.getBoundingClientRect(),g=document.getElementById('railGrip').getBoundingClientRect();
+      const ys=[r.top+r.height/2],xs=[r.right-2,r.right-5];const hit=xs.map(x=>{const e=document.elementFromPoint(x,ys[0]);return !!e&&(e===l||l.contains(e))});
+      return {overflow:l.scrollHeight>l.clientHeight,hit,gripLeft:Math.round(g.left),listRight:Math.round(r.right)}})()`);
+    if (W === 1280) assert.ok(sb.overflow, `${tag}: the list scrolls with 15 agents: ${JSON.stringify(sb)}`);
+    assert.ok(sb.hit.every(Boolean) && sb.gripLeft >= sb.listRight, `${tag}: the list's scrollbar strip hits the list, not the grip: ${JSON.stringify(sb)}`);
+
+    // the Browser tab's native view follows the page area at several rail widths (spec 080)
+    await js(`document.getElementById('tabBrowser').click()`);
+    const views = () => ctx.win.contentView.children.filter((v) => v.webContents && v.webContents !== ctx.win.webContents);
+    await ok(`!document.getElementById('browserPane').hidden`, `${tag}: the Browser pane shows`);
+    for (let i = 0; i < 80 && views().length !== 1; i++) await ctx.sleep(50);
+    assert.strictEqual(views().length, 1, `${tag}: the view is attached`);
+    for (const target of [180, 292, max, 220]) {
+      await js(`document.getElementById('railGrip').focus()`);
+      const key = target === 220 ? 'Return' : target === 180 ? 'Home' : target === max ? 'End' : null;
+      if (key) await H.key(key, [], { char: 'never' });
+      else { await H.key('Home', [], { char: 'never' }); for (let k = 0; k < 7; k++) await H.key('Right', [], { char: 'never', pause: 0 }); }
+      await widthIs(target, `${tag}: browser case`);
+      const okRect = await until(`(()=>{const b=document.getElementById('bView').getBoundingClientRect();return [b.left,b.top,b.width,b.height]})().every(Number.isFinite)`, 2000);
+      assert.ok(okRect, `${tag}: bView measurable`);
+      let last = null;
+      for (let i = 0; i < 60; i++) {
+        const r = await js(`(()=>{const b=document.getElementById('bView').getBoundingClientRect();return {x:b.left,y:b.top,w:b.width,h:b.height}})()`);
+        const b = views()[0].getBounds(), near = (a, c) => Math.abs(a - c) <= 2;
+        last = { r, b };
+        if (near(r.x, b.x) && near(r.y, b.y) && near(r.w, b.width) && near(r.h, b.height)) { last = null; break; }
+        await ctx.sleep(50);
+      }
+      assert.strictEqual(last, null, `${tag}: the native view sits on the page area at rail ${target}px: ${JSON.stringify(last)}`);
+    }
+    await js(`document.getElementById('tabChat').click()`);
+    await ok(`document.getElementById('browserPane').hidden`, `${tag}: back to the Chat tab`);
 
     // 15 agents: every row reachable (the list scrolls inside the rail) and no text under 10.5px
     const fit = await js(`(()=>{const l=document.getElementById('stripList'),r=document.querySelector('.rail').getBoundingClientRect(),f=[...l.querySelectorAll('.sitem b,.sitem span')].map(e=>parseFloat(getComputedStyle(e).fontSize));return {rows:l.querySelectorAll('.sitem').length,inside:r.bottom<=innerHeight+1,minFont:Math.min(...f)}})()`);
