@@ -11,22 +11,24 @@ One row per thing a user can do or see. [features.md](features.md) stays the use
 | Feature | Flat | Real office | Worlds | Specs | Proof |
 |---|---|---|---|---|---|
 | Desk: name, role, status word, task | works | works | mock+planned (desk-card) | 001 034 097 | test:mood driver:shots-097-realoffice |
-| Moods and trouble signs (heavy, monster, siren) | works | works pose, dots and lights only; heavy, monster and siren missing (#1171) | mock+planned (desk-lights) | 034 097 | test:mood read:src/renderer/realoffice.js |
+| Moods and trouble signs (heavy, monster, siren); Serious mode hides them and only them (not motion, issue #1182) | works | works pose, dots and lights only; heavy, monster and siren missing (#1171) | mock+planned (desk-lights) | 034 097 | test:mood read:src/renderer/realoffice.js |
 | Helpers (sub-agents): card, tree, own chat, needs you | works | missing, only `+N` and 3 dots; planned as small figures beside the desk (#1139) | planned | 001 015 097 | test:helpercard read:src/renderer/realoffice.js |
 | Live activity on the desk | works | works, monitors show the newest output (PR 979) | mock+planned (live-screen) | 001 097 | test:liveact driver:shots-001-live-activity |
 | Model, tokens, cost, context, last tool on the desk | works | missing (#1148) | none | 019 097 | test:ctxbreakdown read:src/renderer/realoffice.js |
-| Unread "New", draft, question marks | works | planned New reply tag and green light bar (097 FR-237, FR-238; #1150); draft and question marks missing (#1149) | none | 001 005 | test:unread read:src/renderer/realoffice.js |
+| Unread "New", draft, question marks | works | works, a New reply tag and a green screen (097 FR-236, FR-238); draft and question marks missing (#1149) | none | 001 005 097 | test:unread driver:shots-097-realoffice |
 | Hover card | works | missing, tooltip only (#1151) | none | 001 097 | test:tooltip read:src/renderer/realoffice.js |
 | Drag to rearrange rooms, desks, places | works | missing (#1152) | none | 033 | test:roomorder driver:shots-033-order |
-| Rename a session (F2, pencil) | works | works F2 and menu; pencil missing (#1155) | none | 059 | test:sessionname read:src/renderer/app.js |
+| Rename a session (F2, pencil) | works | works, the pencil beside a plate's name and F2 on a plate (059 FR-170) | none | 059 | test:sessionname driver:check-097-plate-pencil |
 | Lobby places, visitors, away at a place | works | works | mock+planned (lobby) | 024 | test:places driver:shots-024 |
 | Boss queue, Bank, Postbox | works | works | mock+planned (boss-bank-post-coffee) | 001 024 | driver:shots-001-lobby read:src/renderer/realoffice.js |
 | Coffee break at a usage limit | works | works | planned (coffee-bar) | 068 | test:coffeebreak driver:shots-068-coffee |
-| Finished agents rest in the lounge | works | missing, rest at the desk (owner decision, 2026-10-31) | planned (lounge) | 001 097 | read:docs/experience/world-moments.json |
+| Finished agents rest in the lounge | works | works, a lounge row under the desks: done and read agents seated beside a small monitor, asleep after 10 minutes (097 FR-246..FR-249, owner decision 2026-11-06) | built (lounge) | 001 097 | test:realoffice-layout driver:check-097-lounge |
 | Floors, lift, All floors, Focus mode | works | works | mock+planned (lift-panel) | 033 092 | test:floors test:floornav driver:shots-092-lift |
 | Status pills as filters | works | works | none | 001 | driver:shots-001-welcome read:src/renderer/app.js |
 | Room doors (cabin signs) | missing, removed by owner decision (#954) | missing, removed | none | 017 | driver:check-no-doors |
-| Waiting desk halo (a still glow behind the screen) | works, still since #1057 | missing, the call light replaces it (owner decision, 2026-11-04) | none | 001 | driver:check-001-halo |
+| Waiting desk halo (a still glow behind the screen) | missing, the screen's tint replaces it (owner decision, 2026-11-05) | missing, the screen's tint replaces it (owner decision, 2026-11-05) | none | 001 | driver:check-001-lights |
+| Status screen tint: the monitor screen amber when an agent needs you, orange at its limit, red on an error, green with an unread reply | works | works | none | 001 097 | driver:check-001-lights driver:shots-097-realoffice |
+| Motion (default on): Settings > Motion stops walking, typing and lights; reduced motion does too, Serious mode does not (issue #1182) | works | works, the whole room stands still | none | 052 | driver:check-serious-motion driver:check-097-motion |
 | Still highlights (no motion): Settings > Highlights | works | works, the whole room stands still | none | 001 | test:stillhighlights driver:check-unread |
 | Simple / Expert switch and the "Do you write code?" question | missing, removed by owner decision (#1060) | missing, removed | none | 052 | driver:shots-052-ux |
 | Old app-level MCP servers in the folder extras dialog | missing, removed (#1058) | missing, removed | none | 020 | driver:shots-m10 |
@@ -58,11 +60,12 @@ One row per thing a user can do or see. [features.md](features.md) stays the use
 | Context ring and Compact | works | works | none | 019 034 | test:compaction test:ctxbreakdown |
 | MCP servers: state, sign-in, restart, global | works | works | none | 019 058 061 069 | test:mcphealth test:mcpsignin test:mcpglobal driver:shots-058-mcp-launch |
 | MCP problems strip at launch (reason, fix, Show, Dismiss) | works | works, the same strip above the office (driver); not checked with a world on (#1172) | none | 058 | driver:shots-058-mcp-launch test:mcpwords |
-| MCP sign-ins refreshed before a message after a quiet hour (waiting line, sign-in line, Settings switch) | works | works, chat and Settings only (window chrome, no office drawing); not checked with a world on (#1172) | none | 058 | test:mcpsigninrefresh driver:shots-058-mcp-signin-refresh |
+| MCP sign-ins refreshed before a message after a quiet hour, checked in the background before every message, and renewed after a failed call (waiting line, Reconnecting line, sign-in line, Settings switches, Renewed note) | works | works, chat and Settings only (window chrome, no office drawing); not checked with a world on (#1172) | none | 058 | test:mcpsigninrefresh driver:shots-058-mcp-signin-refresh |
 | Tools and Cost tabs | works | works | none | 019 020 | test:toolstats test:usagetotals |
 | Credit caps and usage display | works | works | planned (limit-card) | 011 | test:credits test:usagestore driver:shots-012-cost-cap |
 | OS sandbox floor | works | works | none | 087 | test:runtime-sandbox |
 | Themes and user themes | works | missing (#1153) | none | 035 036 037 038 039 040 | test:theme test:userthemes |
+| One face per agent: rail row, chat header, inbox faces are the same picture | works | works (one picker, `roFace`) | none | 097 | driver:check-097-one-face |
 | Characters (crews): the Characters choice drawn in the office | works | missing, only the Office people are drawn; every other crew shows them (#1154) | none | 077 096 | test:characters test:crew |
 | Harness setup, agent-app updates | works | works | none | 051 081 | test:harnesssetup test:updatecheck |
 | Remote control | works | works | none | 054 | test:remote driver:shots-054-remote |

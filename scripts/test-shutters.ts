@@ -119,7 +119,7 @@ const app = fs.readFileSync(path.join(R, 'app.js'), 'utf8');
 const css = fs.readFileSync(path.join(R, 'styles.css'), 'utf8');
 const ok = (c: boolean, m: string): void => { assert.ok(c, m); n++; };
 ok(/const mains=shown\.filter\(a=>!plan\.has\(a\.id\)\)/.test(app), 'officeModel: rolled agents are not desks in the layout search (FR-053)');
-ok(/function shutPlan\(r\)\{\s*if\(!shutOn\(\)\)return new Map\(\);\s*return SHUT\.roomPlan\(agents\.filter\(a=>!a\.parent&&a\.room===r\.id\)\.map\(shutInput\)\)/.test(app), 'the room rule reads the whole room, not the status filter, and the setting turns it off');
+ok(/function shutPlan\(r\)\{\s*if\(!shutOn\(\)\)return new Map\(\);[^}]*?SHUT\.roomPlan\(agents\.filter\(a=>!a\.parent&&a\.room===r\.id\)\.map\(shutInput\)\)/.test(app), 'the room rule reads the whole room, not the status filter, and the setting turns it off');
 ok(/\$\{shuttersHTML\(r,rolled\)\}<\/div><\/section>`/.test(app) && /<div class="units-in" style="--cols:\$\{cols\}">\$\{mains\.map\(a=>unitHTML\(a,d\)\)\.join\(''\)\}<\/div>\$\{shuttersHTML\(r,rolled\)\}/.test(app), 'the lounge sits at the end of the desk row, in both the full and the compact room');
 ok(/sw=shutW\(r,rolled\), over=2\*D\.rp\+4\+\(sw\?sw\+D\.gap:0\)/.test(app) && /sw\?Math\.floor\(\(aw-over\+D\.gap\)\/\(D\.cw\+D\.gap\)\):Infinity/.test(app) && /widths=mains\.map\(a=>unitWidth\(a,d\)\)\.concat\(sw\?\[sw\]:\[\]\)/.test(app), 'the room width counts the lounge, compact and full (FR-053)');
 ok(/const w=SHUT\.width\(recent\.length,shown\.length,more\)/.test(app), 'the corner width comes from shutters.js');

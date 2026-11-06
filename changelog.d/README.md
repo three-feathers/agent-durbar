@@ -33,7 +33,7 @@ No release PR folds the notes before the tag any more (its notes went stale whil
 no merge freeze is needed:
 
 0. **No spec folder per release** (spec 021 FR-063): a release adds one row to the *Release table* in [spec 008](../specs/008-packaging-and-release/spec.md#release-table) (tag, date, release link, one-line notes, corrective Yes/No/Unknown), in the version PR or the fold PR.
-1. A **version-only PR** sets the new version (`package.json`, `package-lock.json`, the simulator's About label).
+1. A **version-only PR** sets the new version (`package.json` and `package-lock.json` only: the simulator's About label reads `package.json` at build time, spec 008 FR-179).
 2. The release manager **tags a commit on `main`** (annotated; the daily stable release needs no owner OK, spec 021 FR-064; any other tag does). `release.yml`'s `verify` job checks the tag (on `main`, equal to
    `package.json`, the previous release already folded) and writes the draft's notes from exactly that commit's fragments:
    `node scripts/changelog.js build --release "<heading>" --stdout` prints the same section and edits nothing.

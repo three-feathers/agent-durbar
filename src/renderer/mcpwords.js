@@ -147,6 +147,11 @@
     const same=d.getFullYear()===n.getFullYear()&&d.getMonth()===n.getMonth()&&d.getDate()===n.getDate();
     return same?'at '+hm:'on '+d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+' at '+hm;
   }
+  /* Spec 058 FR-221: "Renewed 12:40" (local; with the date when not today) for a connected server Durbar renewed in the background; '' for no usable time. */
+  function renewedWord(at,now){
+    const w=whenText(at,now);
+    return w?'Renewed '+w.replace(/^at /,'').replace(/^on /,'').replace(' at ',' '):'';
+  }
   /* FR-093: the Copy diagnostics text, from the reply only (main masked the error, FR-005). Each value is masked by `redact` (the shared
      masking, the same code as main) BEFORE it is cut and flattened, so no head of a token survives a cut; then the whole text is masked
      again. The time is UTC only: with a local time next to it the text would give away the user's time zone. No folder, path, agent name
@@ -287,5 +292,5 @@
     }
     return {targets,failed,skipped};
   }
-  return {stateOf,offBy,iconSvg,hintFor,callWord,callHint,signInHint,plain,aggregate,reasonOf,whenText,diagnostics,fixFor,fileFindings,chatFinding,launchYoung,launchUpdate,restartTargets,LAUNCH_MS,RANK:RANK.slice(),ICON_NAMES:Object.keys(ICONS)};
+  return {stateOf,offBy,iconSvg,hintFor,callWord,callHint,signInHint,plain,aggregate,reasonOf,whenText,renewedWord,diagnostics,fixFor,fileFindings,chatFinding,launchYoung,launchUpdate,restartTargets,LAUNCH_MS,RANK:RANK.slice(),ICON_NAMES:Object.keys(ICONS)};
 })());

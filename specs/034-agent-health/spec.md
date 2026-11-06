@@ -248,3 +248,7 @@ The `status:` of the specs-index block used to read (moved here unchanged; the b
 ## Changes 2026-10-31: doors removed (pointer, spec 017 T024)
 
 Spec 017 FR-029 (owner decision, no doors) removed the Office with cabins layout, the desk door button, meeting-room signs, room door plates, **Close all** / **Open all**, door-held schedules and the door refusal of remote control, and `door-art`, `--door-*` and the door words of the theme contract. Any requirement in this spec about those (door plates, plate totals or siren, door signs, collapse, Close all / Open all, the `door` field) no longer applies and is kept as a record; Hide folder, floors and the plain status word stay. See spec 017's table of what was lost and what remains.
+
+## Changes 2026-11-05: Serious mode no longer stops motion (issue #1182)
+
+[spec 052](../052-usability-pass/spec.md) FR-069 (Changes 2026-11-05, issue #1182, owner decision of Vikram, 2026-11-04): Serious mode hides only the mood drawings and trouble signs and no longer stops motion; motion stops under the system's reduced motion or with Settings > **Motion** off (default on). Serious mode (FR-004, FR-011 and the Q) still turns off every drawing, tone and siren; it does not stop motion.

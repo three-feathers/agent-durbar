@@ -1293,3 +1293,11 @@ He answered "ok" to all ten, with the recommendations. These are decisions now, 
   - **Its exit, per world:** the flag opens on the owner's look and the store (T255, T257), or the world's code and pack are removed. A world that waits **over 30 days** after landing goes back to him with that choice.
   - **Not chosen, three worlds at once:** a very large PR, and art held on a branch for an unknown time, reaching users no sooner.
   This delta does not write the rule itself: that is the weekly retro's and spec 021's.
+
+## Changes 2026-11-05: Serious mode no longer stops motion (issue #1182)
+
+[spec 052](../052-usability-pass/spec.md) FR-069 (Changes 2026-11-05, issue #1182, owner decision of Vikram, 2026-11-04): Serious mode hides only the mood drawings and trouble signs and no longer stops motion; motion stops under the system's reduced motion or with Settings > **Motion** off (default on). "Forced colours, Serious mode, reduced motion" (and its scenario 6 and T170) now read: forced colours, reduced motion and Motion off; Serious mode hides only the moods.
+
+## Changes 2026-11-06: FR-261's "nothing draws to a canvas" and constitution V, Amendment 3
+
+The owner's decision (Vikram, Telegram, 2026-11-06 12:17 UTC, option "2"): "yes, and change the constitution to allow canvas where CSS can't do the job". Constitution V (version 1.2.0, Amendment 3) now allows a canvas where CSS cannot do the job, with a still frame under reduced motion, a frame budget, a pause when hidden and no per-frame filters. **FR-261 is unchanged for worlds:** a world still draws its people, fixtures and flashes with frames and `transform`/`opacity` (FR-254, FR-281: no code in a pack), because CSS does that job. The one canvas in a world's scene is app code outside the pack: [spec 106](../106-brain-view/spec.md)'s Brain view (FR-100..FR-104, FR-110..FR-112), whose skins are tokens, fonts and point shape, never pack content.

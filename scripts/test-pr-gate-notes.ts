@@ -1,5 +1,5 @@
 /*
- * scripts/pr-gate.sh skips exact status notes (AGENTS.md, "Test once, then trust the record"; spec 021 FR-036): a comment that is only
+ * scripts/pr-gate.sh skips exact status notes (docs/rules/review-rounds.md, "Test once, then trust the record"; spec 021 FR-036): a comment that is only
  * `reviewing at <sha>` or `checks run at <sha>: …` on one line. The pattern lives once, in scripts/pr-status-note.re (Oniguruma, as jq uses it).
  * This checks it against fixtures in JS (\A and \z become ^ and $ without the m flag) and, when jq is installed, with jq itself.
  */

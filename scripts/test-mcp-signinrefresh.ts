@@ -430,6 +430,7 @@ async function main(): Promise<void> {
     const ad = new FakeCopilot(client);
     (ad as unknown as { autoReadDelayMs: number }).autoReadDelayMs = 5;
     assert.strictEqual(ad.capabilities.mcpSignInReconnect, true);
+    assert.strictEqual(ad.capabilities.mcpBackgroundRenew, true, 'Copilot renews after a failed call (FR-218)');
     const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-058-auto-'));
     const sid = await ad.start({ workspace: ws, quiet: true });
     const s = client.last;
@@ -458,6 +459,7 @@ async function main(): Promise<void> {
   }
   assert.ok(CopilotAdapter && CLAUDE_CAPABILITIES.mcpSignInReconnect === true, 'the Claude CLI takes part');
   assert.ok(!('mcpSignInReconnect' in CLAUDE_SDK_CAPABILITIES), 'the Claude SDK transport does not (no mcp_reconnect)');
+  assert.ok(CLAUDE_CAPABILITIES.mcpBackgroundRenew === undefined && CLAUDE_SDK_CAPABILITIES.mcpBackgroundRenew === undefined && CODEX_CAPABILITIES.mcpBackgroundRenew === undefined, 'Claude Code and Codex renew by themselves: no background renewal (FR-218)');
   assert.ok(CODEX_CAPABILITIES.mcpSignInReconnect === undefined && CODEX_CAPABILITIES.mcpRestart === false, 'Codex: no automatic reconnect (FR-207, G7)');
 
   // ---- the Settings value (FR-213) ----
@@ -480,6 +482,19 @@ async function main(): Promise<void> {
     const st3 = new SettingsStore(file);
     st3.load();
     assert.strictEqual(st3.mcpSignInRefresh, false, 'a malformed stored value reads off (fail closed)');
+    // FR-227 (#1205): Diagnostics, off by default, only `true` is kept
+    assert.deepStrictEqual(parseSettings('{"diagnostics":true}'), { diagnostics: true });
+    for (const bad of ['false', '"true"', '1', 'null', '[]']) assert.deepStrictEqual(parseSettings(`{"diagnostics":${bad}}`), {}, `only true is kept: ${bad}`);
+    const dg = new SettingsStore(path.join(dir, 'diag.json'));
+    dg.load();
+    assert.strictEqual(dg.diagnostics, false, 'off by default');
+    assert.deepStrictEqual(dg.setDiagnostics('yes'), { ok: false, value: false }, 'a non-boolean changes nothing');
+    assert.deepStrictEqual(dg.setDiagnostics(true), { ok: true, value: true });
+    const dg2 = new SettingsStore(path.join(dir, 'diag.json'));
+    dg2.load();
+    assert.strictEqual(dg2.diagnostics, true, 'on survives a restart');
+    dg2.setDiagnostics(false);
+    assert.ok(!('diagnostics' in JSON.parse(fs.readFileSync(path.join(dir, 'diag.json'), 'utf8'))), 'off is not written');
     fs.rmSync(dir, { recursive: true, force: true });
   }
 

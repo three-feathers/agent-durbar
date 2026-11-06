@@ -28,7 +28,7 @@ module.exports = async (ctx) => {
   const turn = (id, text) => js(`(()=>{const E=e=>window.__durbarSimEmit(Object.assign({timestamp:Date.now(),sessionId:${jsLiteral(id)}},e));E({type:'status',status:'working',intent:'Working'});E({type:'output',final:true,text:${jsLiteral(text || 'All done.')}});E({type:'status',status:'idle'});})()`);
   const idleAgain = (id) => js(`(()=>{const E=e=>window.__durbarSimEmit(Object.assign({timestamp:Date.now(),sessionId:${jsLiteral(id)}},e));E({type:'output',final:false,delta:' more'});E({type:'status',status:'idle'});})()`);
   const marks = () => js(`[...document.querySelectorAll('#stage .unread-mark')].map(m=>m.closest('[data-id]').dataset.id).sort().join(',')`);
-  const info = (id) => js(`(()=>{const d=document.querySelector(${jsLiteral(sel(id))});if(!d)return null;const m=d.querySelector('.unread-mark');return {cls:d.className,state:d.dataset.state,label:d.getAttribute('aria-label')||'',mark:!!m,text:m?m.textContent.trim():'',tip:m?m.title:'',font:m?parseFloat(getComputedStyle(m).fontSize):0,outline:getComputedStyle(d).outlineStyle,oWidth:getComputedStyle(d).outlineWidth,aOutline:getComputedStyle(d,'::after').outlineStyle,glow:getComputedStyle(d,'::after').boxShadow,anim:(d.querySelector('.pp')?getComputedStyle(d.querySelector('.pp')).animationName:'no-pp'),cardAnim:getComputedStyle(d).animationName,gAnim:getComputedStyle(d,'::after').animationName,aria:m?m.getAttribute('aria-hidden'):''}})()`);
+  const info = (id) => js(`(()=>{const d=document.querySelector(${jsLiteral(sel(id))});if(!d)return null;const m=d.querySelector('.unread-mark');return {cls:d.className,state:d.dataset.state,label:d.getAttribute('aria-label')||'',mark:!!m,text:m?m.textContent.trim():'',tip:m?m.title:'',font:m?parseFloat(getComputedStyle(m).fontSize):0,outline:getComputedStyle(d).outlineStyle,oWidth:getComputedStyle(d).outlineWidth,aOutline:getComputedStyle(d,'::after').outlineStyle,cardGlow:getComputedStyle(d,'::after').boxShadow,bar:d.dataset.tint||'',glow:(d.querySelector('.scene .scr')?getComputedStyle(d.querySelector('.scene .scr')).fill:'none'),anim:(d.querySelector('.pp')?getComputedStyle(d.querySelector('.pp')).animationName:'no-pp'),cardAnim:getComputedStyle(d).animationName,gAnim:(d.querySelector('.scene .scr')?getComputedStyle(d.querySelector('.scene .scr')).animationName:'none'),aria:m?m.getAttribute('aria-hidden'):''}})()`);
   const done = () => js(`+document.querySelector('#stats .stat[data-k=done] b').textContent`);
   const anns = () => js(`window.__ann.filter(t=>/New reply/.test(t))`);
   const strip = (id) => '.sitem[data-sw="' + id + '"] .unread-mark'; // the chat strip's marker of one session (a selector, put into page code with jsLiteral)
@@ -36,10 +36,11 @@ module.exports = async (ctx) => {
   const openChat = async (id) => { await js(`document.querySelector(${jsLiteral(sel(id))}).click()`); await ok(`document.body.classList.contains('panel-open')&&document.querySelector('#chat')`, 'the chat of ' + id + ' opens'); };
   const closeChat = async () => { await H.key('Escape'); await ok(`!document.body.classList.contains('panel-open')`, 'the chat closes'); };
   // the colour --desk-new as the browser computes it (rgb), read through a probe so a theme or a fallback cannot hide a wrong value
-  const green = () => js(`(()=>{const p=document.createElement('i');p.style.color='var(--desk-new)';document.body.appendChild(p);const c=getComputedStyle(p).color;p.remove();return c;})()`);
-  const needsC = () => js(`(()=>{const p=document.createElement('i');p.style.color='var(--desk-needs)';document.body.appendChild(p);const c=getComputedStyle(p).color;p.remove();return c;})()`);
-  // the glow colour as the browser serialises it (the tight halo of --desk-new / --desk-needs), so the box-shadow can be searched for it
-  const glowOf = (tok) => js(`(()=>{const p=document.createElement('i');p.style.color='color-mix(in srgb,var('+${jsLiteral(tok)}+') 90%,transparent)';document.body.appendChild(p);const c=getComputedStyle(p).color;p.remove();return c;})()`);
+  const green = () => js(`(()=>{const p=document.createElement('i');p.style.color='var(--tint-green)';document.body.appendChild(p);const c=getComputedStyle(p).color;p.remove();return c;})()`);
+  const needsC = () => js(`(()=>{const p=document.createElement('i');p.style.color='var(--tint-amber)';document.body.appendChild(p);const c=getComputedStyle(p).color;p.remove();return c;})()`);
+  // spec 001 FR-230, FR-231: the card glow is gone; the screen's tint carries the colour. `glowOf` keeps its old token names and answers with the light colour
+  // the screen is tinted with (--tint-green for a new reply, --tint-amber for needs you), as the browser computes it, so the screen's fill can be compared with it
+  const glowOf = (tok) => { const t = { '--desk-new': '--tint-green', '--desk-needs': '--tint-amber' }[tok] || tok; return js(`(()=>{const p=document.createElement('i');p.style.color='var('+${jsLiteral(t)}+')';document.body.appendChild(p);const c=getComputedStyle(p).color;p.remove();return c;})()`); };
   const A = 'sim-7', B = 'sim-13', C = 'sim-15'; // Priya (idle, folder with others at work), Hugo (idle, likewise), Maya (Done, on the couch)
 
   // motion is emulated as allowed for the main loop (a Windows runner reports "reduce" by itself, which would drop the zoom and the entry class)
@@ -61,7 +62,7 @@ module.exports = async (ctx) => {
     await turn(A, 'Priya finished the migration.');
     await ok(`!!document.querySelector(${jsLiteral(sel(A) + ' .unread-mark')})`, `${tag}: Priya's desk is marked`);
     // three entry pulses at once, a slow breathe after (clock-free: the class and the computed animation, not a timer)
-    await ok(`(()=>{const d=document.querySelector(${jsLiteral(sel(A))});const p=d&&d.querySelector('.pp');return !!p&&d.classList.contains('hl-in')&&getComputedStyle(p).animationName.split(',')[0].trim()==='hl-enter'&&getComputedStyle(p).animationIterationCount.split(',')[0].trim()==='3'&&getComputedStyle(d,'::after').animationName==='hl-glow'})()`, `${tag}: the person of a new reply zooms in three entry pulses, and the glow breathes`);
+    await ok(`(()=>{const d=document.querySelector(${jsLiteral(sel(A))});const p=d&&d.querySelector('.pp');return !!p&&d.classList.contains('hl-in')&&getComputedStyle(p).animationName.split(',')[0].trim()==='hl-enter'&&getComputedStyle(p).animationIterationCount.split(',')[0].trim()==='3'&&d.dataset.tint==='green'})()`, `${tag}: the person of a new reply zooms in three entry pulses, and the screen is green`);
     assert.strictEqual((await info(A)).cardAnim, 'none', `${tag}: the desk card itself never zooms`);
     await H.settle();
     let a = await info(A);
@@ -75,7 +76,8 @@ module.exports = async (ctx) => {
     const gm = G.match(/\d+/g).map(Number); assert.ok(gm[1] > gm[0] && gm[1] > gm[2], `${tag}: the glow colour is green (g above r and b): ${G}`);
     assert.strictEqual(a.aOutline, 'none', `${tag}: no outline on the glow layer`);
     const GG = await glowOf('--desk-new');
-    assert.ok(a.glow.includes(GG), `${tag}: the unread desk glows in --desk-new: ${a.glow} vs ${GG}`);
+    assert.ok(a.glow.includes(GG), `${tag}: the unread desk's screen is green (--tint-green): ${a.glow} vs ${GG}`);
+    assert.strictEqual(a.cardGlow, 'none', `${tag}: FR-230: no glow around the card`);
     assert.ok(/, new reply not read yet\b/.test(a.label), `${tag}: the accessible name says it: ${a.label}`);
     assert.strictEqual(a.tip, 'New reply, not read yet', `${tag}: tooltip`);
     assert.strictEqual(a.aria, 'true', `${tag}: the badge is hidden from the reader (the name carries the words)`);
@@ -129,10 +131,10 @@ module.exports = async (ctx) => {
     await js(`window.__durbarSimEmit({timestamp:Date.now(),sessionId:${jsLiteral(A)},type:'status',status:'idle'})`);
     await ok(`!!document.querySelector(${jsLiteral(sel(A) + '[data-state=\"done\"]')})`, `${tag}: Priya is Done again after the question`);
     assert.ok((await info(A)).glow.includes(GG), `${tag}: and the green glow is back`);
-    // every Waiting desk glows amber, including Limit reached (and Coffee break when one is on the floor): the amber treatment is one rule on .is-waiting
-    const wd = await js(`[...document.querySelectorAll('#stage .desk[data-id]')].map(d=>({w:(d.querySelector('.pill,.stl')||{}).textContent||'',c:d.className,g:getComputedStyle(d,'::after').boxShadow}))`);
+    // Limit reached (and Coffee break when one is on the floor) is a needs-you desk whose screen is orange (spec 001 FR-231, spec 097 FR-236's precedence)
+    const wd = await js(`[...document.querySelectorAll('#stage .desk[data-id]')].map(d=>({w:(d.querySelector('.pill,.stl')||{}).textContent||'',c:d.className,g:d.dataset.tint||''}))`);
     assert.ok(wd.some((x) => /Limit reached/.test(x.w)), `${tag}: the simulator has a Limit reached desk`);
-    for (const x of wd.filter((y) => /Limit reached|Coffee break/.test(y.w))) assert.ok(/\bis-waiting\b/.test(x.c) && x.g.includes(NG), `${tag}: "${x.w.trim()}" is a needs-you desk and glows amber: ${x.c} ${x.g}`);
+    for (const x of wd.filter((y) => /Limit reached|Coffee break/.test(y.w))) assert.ok(/\bis-waiting\b/.test(x.c) && x.g === 'orange', `${tag}: "${x.w.trim()}" is a needs-you desk and its screen is orange (FR-237: the limit): ${x.c} ${x.g}`);
     if (process.env.OUT) await H.shot(path.join(OUT, `001-unread-${tag}.png`), { prep: 'calm', blur: true, settle: true });
 
     // the Browser tab and the Notes drawer are not "shown"
@@ -329,8 +331,8 @@ module.exports = async (ctx) => {
       assert.strictEqual(await js(`getComputedStyle(document.querySelector(${jsLiteral(sel(B))}),'::after').animationName`), 'none', `${tag}: the glow does not breathe`);
       // a desk that needs you (the issue's first case). The people at real needs-you desks walk to the Boss (an empty chair: glow only, FR-178), so the
       // real desk proves the glow and its still ::after, and a present person's desk is given the state in the page for one synchronous read of the CSS.
-      const needsReal = () => js(`(()=>{const d=document.querySelector('#stage .desk.is-waiting');if(!d)return null;return {id:d.dataset.id,cls:d.className,glow:getComputedStyle(d,'::after').boxShadow,gAnim:getComputedStyle(d,'::after').animationName}})()`);
-      const needsPerson = () => js(`(()=>{const d=[...document.querySelectorAll('#stage .desk:not(.is-waiting):not(.is-away):not(.is-unread)')].find(x=>x.querySelector('.pp'));if(!d)return null;d.classList.add('is-waiting');try{const p=d.querySelector('.pp');return {id:d.dataset.id,glow:getComputedStyle(d,'::after').boxShadow,gAnim:getComputedStyle(d,'::after').animationName,anim:getComputedStyle(p).animationName,tf:getComputedStyle(p).transform}}finally{d.classList.remove('is-waiting');}})()`);
+      const needsReal = () => js(`(()=>{const d=document.querySelector('#stage .desk.is-waiting');if(!d)return null;return {id:d.dataset.id,cls:d.className,glow:(d.querySelector('.scene .scr')?getComputedStyle(d.querySelector('.scene .scr')).fill:'none'),gAnim:(d.querySelector('.scene .scr')?getComputedStyle(d.querySelector('.scene .scr')).animationName:'none')}})()`);
+      const needsPerson = () => js(`(()=>{const d=[...document.querySelectorAll('#stage .desk:not(.is-waiting):not(.is-away):not(.is-unread)')].find(x=>x.querySelector('.pp'));if(!d)return null;const b0=d.dataset.tint;d.classList.add('is-waiting');d.dataset.tint='amber';try{const p=d.querySelector('.pp');return {id:d.dataset.id,glow:(d.querySelector('.scene .scr')?getComputedStyle(d.querySelector('.scene .scr')).fill:'none'),gAnim:(d.querySelector('.scene .scr')?getComputedStyle(d.querySelector('.scene .scr')).animationName:'none'),anim:getComputedStyle(p).animationName,tf:getComputedStyle(p).transform}}finally{d.classList.remove('is-waiting');d.dataset.tint=b0;}})()`);
       const nr = await needsReal();
       assert.ok(nr, `${tag}: there is a needs-you desk`);
       assert.ok(nr.glow !== 'none' && nr.glow.includes(await glowOf('--desk-needs')) && nr.gAnim === 'none', `${tag}: needs you: the amber glow stays and does not breathe: ${JSON.stringify(nr)}`);
@@ -345,7 +347,7 @@ module.exports = async (ctx) => {
       const on = await info(C);
       assert.ok(/hl-breathe|hl-enter/.test(on.anim), `${tag}: switched off, the person moves again: ${on.anim}`);
       const nOff = await needsPerson();
-      assert.ok(nOff && /hl-breathe|hl-enter/.test(nOff.anim) && /hl-glow/.test(nOff.gAnim), `${tag}: switched off, the needs-you person and glow move again: ${JSON.stringify(nOff)}`);
+      assert.ok(nOff && /hl-breathe|hl-enter/.test(nOff.anim) && nOff.gAnim === 'none', `${tag}: switched off, the needs-you person moves again and the screen never does: ${JSON.stringify(nOff)}`);
       console.log(`[unread] ${tag} ok`);
       // WCAG 2.2.2 (review of 09aa0ac0): the waiting badge's three pings and the badge pulse are motion too. Off: they run; on: they do not.
       // the badge exists only on the roomier desk densities, so the CSS rule is read on a probe badge in the page (same classes, same cascade)
@@ -418,7 +420,7 @@ module.exports = async (ctx) => {
     await H.load({ w: 1440, h: 900, query: { hlmotion: '1' } });
     assert.strictEqual(await js(`document.documentElement.hasAttribute('data-still-highlights')`), false, 'boot: not saved, not applied');
   }
-  // Real office (review of 09aa0ac0, 2): the switch holds the whole room still, the call lights and the people with them (spec 097 FR-047, the shared
+  // Real office (review of 09aa0ac0, 2): the switch holds the whole room still, the lights and the people with them (spec 097 FR-047, the shared
   // `still`); nothing endless runs in it with the switch on, and it all comes back when the switch is off.
   {
     const dbg = ctx.win.webContents.debugger;
@@ -427,7 +429,7 @@ module.exports = async (ctx) => {
       await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
       await H.load({ w: 1440, h: 900, query: { officeview: 'real' }, ready: `!!document.querySelector('#stage .ro .ro-plate')&&document.getElementById('stage').dataset.d==='real'`, settle: false });
       const endless = () => js(`(()=>{const ro=document.querySelector('#stage .ro');if(!ro)return -1;return ro.getAnimations({subtree:true}).filter(a=>{const t=a.effect&&a.effect.getComputedTiming();return t&&t.iterations===Infinity&&a.playState==='running';}).length;})()`);
-      await ok(`document.querySelectorAll('#stage .ro-call.pulse').length>0`, 'Real office: a pulsing call light with motion allowed', 60000);
+      await ok(`document.querySelectorAll('#stage .ro-glow.breathe').length>0`, 'Real office: a breathing screen glow with motion allowed', 60000); /* spec 097 FR-236: no call light any more */
       assert.strictEqual(await js(`document.querySelector('#stage .ro').classList.contains('still')`), false, 'Real office: the room is not still');
       assert.ok((await endless()) > 0, 'Real office: something endless runs while the switch is off');
       await H.click('#settingsBtn');
@@ -436,15 +438,14 @@ module.exports = async (ctx) => {
       await ok(`document.getElementById('stillSw').getAttribute('aria-checked')==='true'`, 'Real office: the switch is on');
       await H.click('#scrClose');
       await ok(`document.querySelector('#stage .ro').classList.contains('still')`, 'Real office: the room is still with the switch on', 30000);
-      await ok(`document.querySelectorAll('#stage .ro-call.pulse').length===0&&document.querySelectorAll('#stage .ro-glow.breathe').length===0`, 'Real office: no call light pulses and no glow breathes');
-      await ok(`getComputedStyle(document.querySelector('#stage .ro-call')).animationName==='none'`, 'Real office: a call light has no animation');
+      await ok(`document.querySelectorAll('#stage .ro-glow.breathe').length===0`, 'Real office: no glow breathes');
       assert.strictEqual(await endless(), 0, 'Real office: nothing endless runs with the switch on');
       await H.click('#settingsBtn');
       await ok(`!!document.getElementById('stillSw')`, 'Real office: Settings again');
       await H.click('#stillSw');
       await ok(`document.getElementById('stillSw').getAttribute('aria-checked')==='false'`, 'Real office: the switch is off again');
       await H.click('#scrClose');
-      await ok(`!document.querySelector('#stage .ro').classList.contains('still')&&document.querySelectorAll('#stage .ro-call.pulse').length>0`, 'Real office: the motion is back with the switch off', 30000);
+      await ok(`!document.querySelector('#stage .ro').classList.contains('still')&&document.querySelectorAll('#stage .ro-glow.breathe').length>0`, 'Real office: the motion is back with the switch off', 30000);
       console.log('[unread] real office ok');
     } finally {
       await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [] });

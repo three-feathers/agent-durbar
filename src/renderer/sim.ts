@@ -311,6 +311,7 @@ interface SimAgent {
   /** Spec 058 FR-071 (simmcpauth): servers with a sign-in open (Sign in pressed); `opened` after Open sign-in page. Dropped by End session and Restart session. */
   mcpSign?: Map<string, { opened: boolean; at: number; again?: boolean }>;
   /** The last `mcp` event emitted for this session, like main's `live` list: the dialog's reply reads it (a driver can emit its own). */
+  mcpRenewed?: Map<string, number>; /* spec 058 FR-220: when a driver says Durbar renewed a server in the background (wall clock, display only) */
   mcpReported?: SimAgent['mcpLive']; /* the last list a driver reported through `__durbarSimEmit` (not the simulator's own): its names stay in the dialog */
   mcpAppOff?: Set<string>; /* servers a reported `mcp` list had as `disabled` that this agent's switch did not turn off (the agent app's own config) */
   mcpLive?: { name: string; status: string; error?: string; errorClass?: McpServerStatus['errorClass']; transport?: string }[];
@@ -845,6 +846,8 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
       advance: (ms: number) => { simSignIn.offset += Math.max(0, Number(ms) || 0); },
       fate: (name: string, f: string) => { simSignIn.fates.set(String(name), String(f)); },
       lastResponse: (id: string) => simSignIn.last.get(id),
+      push: (p: { id: string; kind: string; name?: string }) => { simSignIn.push(p); },
+      renewed: (id: string, name: string, at: number) => { const q = sims.find((x) => x.info.id === id); if (q) (q.mcpRenewed ??= new Map()).set(String(name), Number(at)); },
     };
     const simSignInGate = async (s: SimAgent): Promise<'go' | 'stopped'> => {
       if (!simSignIn.flag) return 'go';
@@ -1977,6 +1980,8 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
         for (const x of servers) { const ob = simOrgServer(s.info.adapterId, x.name); if (ob) Object.assign(x, { orgBlocked: ob }); } // spec 076 FR-205
         /* spec 058 FR-188: a Running (connected), switched-on server in a running session says how its last call failed (the class only) */
         for (const x of servers) { const c = s.mcpCalls?.get(x.name); if (live && c && !s.mcpOff?.has(x.name) && (x as { status?: string }).status === 'connected') Object.assign(x, { lastCall: c }); }
+        /* spec 058 FR-220: "Renewed 12:40" on a connected, switched-on server Durbar renewed in the background */
+        for (const x of servers) { const t = s.mcpRenewed?.get(x.name); if (live && typeof t === 'number' && !s.mcpOff?.has(x.name) && (x as { status?: string }).status === 'connected') Object.assign(x, { renewedAt: t }); }
         return { ok: true, servers, live, app: SIM_APP_NAME[s.info.adapterId ?? 'copilot'] ?? 'GitHub Copilot', ...(kc.mcpStart ? { start: kc.mcpStart } : {}), ...(kc.mcpToggleApplies ? { toggleApplies: kc.mcpToggleApplies } : {}), canRestartSession: live && kc.resume, canListTools: true, toolFilter: true, ...(live && simSignApp(s) ? { canRefresh: true } : {}) };
       },
       /* spec 058 FR-040: a canned Restart: Starting for a moment, then Running */
@@ -2100,6 +2105,8 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
     /* spec 024: place mapping kept in memory (plain script: no imports, so the ids are listed here) */
     const placeMap: Record<string, string> = {};
     let seriousMode = false; /* spec 034 */
+    let motion = true; /* spec 052 FR-069 (issue #1182) */
+    let simDiagnostics = false; /* spec 058 FR-227: Settings > Diagnostics */
     let stillHighlights = typeof location !== 'undefined' && new URLSearchParams(location.search).get('simstillhl') === '1'; /* spec 001 FR-192; ?simstillhl=1 starts it saved on (the boot read) */
     let autoFollowWork = false; /* spec 052 FR-182: off by default; the simulator keeps it in memory and refuses a non-boolean like main */
     let notifyNeedsMe = false; /* spec 052 FR-059: off in the demo until you turn it on */
@@ -2210,12 +2217,14 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
     const capApi: Partial<DurbarApi> = {
       usageTotals: async () => ({ ok: true, since: savedSince, office: saved.office, folders: saved.folders }),
       usageResetTotals: async () => { savedSince = new Date().toISOString(); saved = { office: zero, folders: [] }; return { ok: true, since: savedSince, office: zero, folders: [] }; },
-      getSettings: async () => ({ mcpSignInRefresh: simSignIn.on, mcpWarnLevels: simMcpLevels, defaultMaxAiCredits: defaultCap, placeMap: { ...placeMap }, customPlaces: customPlaces.map((p) => ({ ...p })), seriousMode, stillHighlights, autoFollowWork, notifyNeedsMe, breakResume, chatLinksIn, ...(simTheme ? { theme: simTheme } : {}), characters: simCharacters, about: { name: 'Agent Durbar', version: '0.1.9 (simulator)', owner: 'Three Feathers', copyright: 'Copyright (c) 2026 Three Feathers contributors', website: 'https://github.com/three-feathers/agent-durbar', contributors: [{ label: 'vikramgorla', url: 'https://github.com/vikramgorla' }, { label: 'fjcabello', url: 'https://github.com/fjcabello' }, { label: 'rubenlupi', url: 'https://github.com/rubenlupi' }] } /* sample data, real values come from src/shared/about.ts */ }),
+      getSettings: async () => ({ mcpSignInRefresh: simSignIn.on, diagnostics: simDiagnostics, mcpWarnLevels: simMcpLevels, defaultMaxAiCredits: defaultCap, placeMap: { ...placeMap }, customPlaces: customPlaces.map((p) => ({ ...p })), seriousMode, motion, stillHighlights, autoFollowWork, notifyNeedsMe, breakResume, chatLinksIn, ...(simTheme ? { theme: simTheme } : {}), characters: simCharacters, about: { name: 'Agent Durbar', version: `${(globalThis as unknown as { DurbarAppVersion?: string }).DurbarAppVersion ?? 'dev'} (simulator)`, owner: 'Three Feathers', copyright: 'Copyright (c) 2026 Three Feathers contributors', website: 'https://github.com/three-feathers/agent-durbar', contributors: [{ label: 'vikramgorla', url: 'https://github.com/vikramgorla' }, { label: 'fjcabello', url: 'https://github.com/fjcabello' }, { label: 'rubenlupi', url: 'https://github.com/rubenlupi' }] } /* sample data, real values come from src/shared/about.ts */ }),
       setDefaultCap: async (c) => { defaultCap = c !== null && c >= 30 ? Math.round(c * 100) / 100 : undefined; return { ok: true, defaultMaxAiCredits: defaultCap }; },
       setSeriousMode: async (on) => { if (typeof on === 'boolean') seriousMode = on; return { ok: true, seriousMode }; },
+      setMotion: async (on) => { if (typeof on !== 'boolean') return { ok: false, motion }; motion = on; return { ok: true, motion }; },
       setStillHighlights: async (on) => { if (typeof on !== 'boolean') return { ok: false, stillHighlights }; stillHighlights = on; return { ok: true, stillHighlights }; },
       setAutoFollowWork: async (on) => { if (typeof on !== 'boolean') return { ok: false, autoFollowWork }; autoFollowWork = on; return { ok: true, autoFollowWork }; },
       setNotifyNeedsMe: async (on) => { if (typeof on === 'boolean') notifyNeedsMe = on; return { ok: true, notifyNeedsMe }; },
+      setDiagnostics: async (on) => { if (typeof on !== 'boolean') return { ok: false, diagnostics: simDiagnostics }; simDiagnostics = on; return { ok: true, diagnostics: simDiagnostics }; }, // spec 058 FR-227
       setMcpSignInRefresh: async (on) => { if (typeof on === 'boolean') simSignIn.on = on; return { ok: true, mcpSignInRefresh: simSignIn.on }; }, // spec 058 FR-213
       setBreakResume: async (v) => { if (v === 'auto' || v === 'ask') breakResume = v; return { ok: true, breakResume }; },
       setChatLinksIn: async (v) => { if (v === 'session' || v === 'system') chatLinksIn = v; return { ok: true, chatLinksIn }; },

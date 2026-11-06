@@ -400,3 +400,10 @@
 
 ## 2026-11-02: activity export, atomic no-follow write (issue #973)
 - [x] T260 `activity:export` through `writeNotesExport` (new `what` and `maxBytes` options); `test-activity` cases for a link target, hard link, FIFO, folder, replace and mode [FR-071]
+- [x] T264 The inbox header's sizes move from `realoffice.css` to `styles.css`; driver `check-inbox-avatar` asserts every inbox avatar is at most 40 px and the first Allow button is hit by `elementFromPoint` [issue #1174]
+
+## 2026-11-05: Serious mode no longer stops motion (issue #1182)
+- [x] T265 Motion is its own Settings switch (default on, `motion:false` stored, `settings:setMotion`); Serious mode hides only the mood drawings and trouble signs; `scripts/check-serious-motion.js` (both sizes, mutation-checked) and `test-credits` round trip; `check-097-motion`, `check-office-ops-real` and `shots-097-realoffice` use the Motion switch [FR-069, FR-069a, FR-069b]
+
+## 2026-11-05: Windows UI drivers wait for the focus (issue #1179)
+- [x] T266 Windows flakes: `check-auto-follow` waits for arrivals with the real focus asked again at each look; `H.focusPage({emulate:'first'})` emulates from the start (`check-edit-popups`, `check-auto-follow`), `emulate:true` stays fallback-only (`check-list-columns`) [issue #1179, test driver only]

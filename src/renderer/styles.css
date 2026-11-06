@@ -52,7 +52,10 @@
   /* spec 070 FR-001: typed theme tokens (theme.js TYPED_TOKENS); a pack may set them, these are Clean Office's */
   --font-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
   --shadow-card:none; --shadow-pop:0 14px 40px rgba(40,35,25,.22);
-  }
+
+  /* spec 001 FR-231: the screen tints, fixed for meaning (spec 097 FR-236, the same as Real office's; never a theme's), and the glyph ink on them */
+  --tint-amber:#553a00; --tint-red:#651414; --tint-orange:#7a2e00; --tint-green:#0f4526; --tint-ink:#f3ead6;
+}
 *{box-sizing:border-box}
 html,body{height:100%}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font);font-size:var(--t3-size);line-height:1.4;display:flex;flex-direction:column;overflow:hidden;-webkit-font-smoothing:auto}
@@ -82,6 +85,9 @@ html[data-density="compact"] #topMoreMenu{--h-ctl:32px; --h-chip:26px; --h-pill:
 .stat[aria-pressed="true"]{background:var(--surface-2);box-shadow:inset 0 -2px 0 var(--stat-sel-border,#8aa7be)}
 .stat[aria-pressed="true"] span.l{font-weight:650;color:var(--ink)}
 .stat b{font-size:14px;font-weight:600;font-variant-numeric:tabular-nums}
+/* spec 097, Changes 2026-11-04: a count keeps its width when its number changes, whatever the font: tabular-nums alone did not hold on the Windows runner's system font ("6" 7.78 px, "7" 7.52 px), so every status change resized a pill and the top bar measured itself again (fitTopbar). One "0" width per digit (ch); a tabular font looks as before */
+.stat b[data-d]{display:inline-block;text-align:center}
+.stat b[data-d="1"]{width:1ch}.stat b[data-d="2"]{width:2ch}.stat b[data-d="3"]{width:3ch}.stat b[data-d="4"]{width:4ch}
 /* usage total chip (spec 011 FR-019): same pill as the counters, but a note, not a filter */
 .stat-aiu{cursor:default}
 .stat-aiu:hover{background:transparent}
@@ -1362,6 +1368,7 @@ body.panel-open #panel{flex-direction:row}
 .note.perm:not(.pending) .pscope{display:none} /* a settled card no longer offers the grant */ /* spec 003 FR-108 */
 .note.perm .psbx{margin:4px 0 0;font-size:11.5px;color:var(--amber-ink);white-space:normal;overflow:visible;text-overflow:clip}
 .msg.user.not-sent .bubble{opacity:.75}
+.msg.user.auto .bubble{font-style:italic;border:1px dashed currentColor} /* spec 058 FR-218: Agent Durbar's own automatic message */
 .msg.user .unsent{font-size:11px;font-weight:600;color:var(--amber-ink);text-align:right;margin-top:2px}
 .note.sbx-note .sbx-done{margin:6px 0 0;font-size:11.5px}
 .dlg .chk{flex-direction:row;align-items:center;gap:8px;font-weight:500}
@@ -1563,6 +1570,14 @@ body.has-bridge .folder-ctl #foldersBtn{border-top-left-radius:0;border-bottom-l
 .inbox-row .ib-h:focus{outline:2px solid var(--focus);outline-offset:3px}
 .inbox-row:focus-within{border-color:var(--focus)}
 .inbox-keys{margin:0;font-size:var(--t5-size);color:var(--muted)}
+/* spec 097 FR-121: the inbox header (the Boss door and the queue's faces; aria-hidden). Here, not in realoffice.css (loaded lazily): without these sizes the faces fill the dialog (spec 052, issue #1174) */
+.inbox-dlg .ib-world{display:flex;align-items:center;gap:12px;padding:8px 12px;border-bottom:1px solid var(--line);background:var(--surface-2)}
+.inbox-dlg .ibw-door{height:54px;width:auto;border-radius:4px}
+.inbox-dlg .ibw-faces{margin-left:auto;display:flex}
+.inbox-dlg .ibw-face{width:30px;height:30px;margin-left:-6px;border-radius:50%;overflow:hidden;border:2px solid var(--surface);background:var(--surface-2);display:block}
+.inbox-dlg .ibw-face:first-child{margin-left:0}
+.inbox-dlg .ibw-face>*{width:100%;height:100%}
+
 
 /* spec 052 R3 design polish (Clean Office only unless noted; colour, border colour, background, shadow, radius, weight and
    letter-spacing only, so every size stays and check:geometry holds) */
@@ -1653,26 +1668,29 @@ html .notice-strip.info .ns-ic{background:transparent;color:var(--ink-2);box-sha
    corner under the chat number (the draft pencil moves up beside the number); inline on a plain desk, list row and strip item. One pulse when it is set, only when motion is allowed. */
 .unread-mark{flex:none;display:inline-flex;align-items:center;gap:4px;margin-right:5px;padding:0 5px;border:1px solid var(--pc-working);border-radius:4px;background:var(--pb-working);color:var(--pc-working);font-size:11px;font-weight:700;line-height:14px;vertical-align:1px;white-space:nowrap}
 .unread-mark i{display:block;width:6px;height:6px;border-radius:50%;background:var(--pc-working)}
-/* FR-178 (owner request 2026-10-26; 10:45 no outline, a glow instead; 10:51 only the person zooms, never the card). A desk that needs you glows amber-orange (--desk-needs),
-   a desk with a New reply glows green (--desk-new); needs you wins (green is not drawn on a waiting, failing, retrying or error desk; the badge stays). The glow is a box-shadow
-   halo on the desk's ::after: the card keeps its own shadows, selection ring, state bar and size. The drawn person (.pp) calls for attention: three entry pulses (class .hl-in, the
-   first 1.9 s), then a continuing smaller pulse, from the seat (transform-origin at the chair, so the figure "jumps up" and stays in its card). Only transform and opacity are
-   animated. prefers-reduced-motion: reduce gives the static glow only (no scale, no breathe). */
-.desk.is-unread:where(:not(.is-waiting,.is-failing,.is-retrying,.is-error)){--hl:var(--desk-new);--hl-e:1.15;--hl-b:1.05;--hl-p:2.4s}
-.desk.is-waiting{--hl:var(--desk-needs);--hl-e:1.25;--hl-b:1.1;--hl-p:1.6s}
+/* spec 001 FR-231 (owner 2026-11-05 16:46 UTC): the screen is the status cue, as in Real office. The desk card's data-tint colours the scene's
+   screen (.scr); a new reply tints without a new scene. The glyphs (.scr-c), drawn for a light screen, take a light ink on a tint: the wait card
+   becomes an outline and the done disc gives way to its tick, so no mark is lost. No motion. Forced colours: SVG keeps its colours, and the
+   status word and the New badge carry the meaning (they always did). */
+.desk[data-tint="amber"] .scene .scr{fill:var(--tint-amber)}.desk[data-tint="red"] .scene .scr{fill:var(--tint-red)}.desk[data-tint="orange"] .scene .scr{fill:var(--tint-orange)}.desk[data-tint="green"] .scene .scr{fill:var(--tint-green)}
+.desk:is([data-tint="amber"],[data-tint="red"],[data-tint="orange"],[data-tint="green"]) .scene .scr-c [stroke]{stroke:var(--tint-ink)}
+.desk:is([data-tint="amber"],[data-tint="red"],[data-tint="orange"],[data-tint="green"]) .scene .scr-c [fill]:not([fill="none"]){fill:var(--tint-ink)}
+.desk:is([data-tint="amber"],[data-tint="red"],[data-tint="orange"],[data-tint="green"]) .scene .scr-c rect[stroke][fill]{fill:none}
+.desk:is([data-tint="amber"],[data-tint="red"],[data-tint="orange"],[data-tint="green"]) .scene .scr-c circle[fill]:has(+.done-tick){fill:none}
+/* FR-178, amended by FR-230 (owner 2026-11-05): no glow around a desk card any more; the screen's tint (FR-231) carries needs you and New.
+   The drawn person (.pp) still calls for attention: three entry pulses (class .hl-in, the first 1.9 s), then a smaller pulse, from the seat (transform-origin at the chair).
+   Only transform is animated; reduced motion and Still highlights stop it. The pulses stay by the owner's decision (2026-11-05 18:04 UTC, "flat office - keep it"). */
+.desk.is-unread:where(:not(.is-waiting,.is-failing,.is-retrying,.is-error)){--hl-e:1.15;--hl-b:1.05;--hl-p:2.4s}
+.desk.is-waiting{--hl-e:1.25;--hl-b:1.1;--hl-p:1.6s}
 .desk.is-waiting:has(.crew-pic){--hl-e:1.15;--hl-b:1.07} /* spec 077: a crew portrait is bigger than the drawn figure, so at 1.25 its face reached the chat number at 1280x800; New's 1.15 keeps it clear (check-crew) */
-.desk.is-waiting,.desk.is-unread:where(:not(.is-waiting,.is-failing,.is-retrying,.is-error)){isolation:isolate} /* the glow layer sits behind the card's content inside the card, above the room */
-.desk.is-waiting::after,.desk.is-unread:where(:not(.is-waiting,.is-failing,.is-retrying,.is-error))::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;z-index:-1;box-shadow:0 0 6px 2px color-mix(in srgb,var(--hl) 90%,transparent),0 0 24px 8px color-mix(in srgb,var(--hl) 60%,transparent)}
 .desk.is-waiting .pp,.desk.is-unread:where(:not(.is-waiting,.is-failing,.is-retrying,.is-error)) .pp{transform-box:view-box;transform-origin:74px 99px}
 @media (prefers-reduced-motion:no-preference){
   .desk.is-waiting .pp,.desk.is-unread:where(:not(.is-waiting,.is-failing,.is-retrying,.is-error)) .pp{animation:hl-breathe var(--hl-p) ease-in-out infinite}
   .desk.hl-in.is-waiting .pp,.desk.hl-in.is-unread:where(:not(.is-waiting,.is-failing,.is-retrying,.is-error)) .pp{animation:hl-enter .6s ease-in-out 3,hl-breathe var(--hl-p) ease-in-out 1.8s infinite}
-  .desk.is-waiting::after,.desk.is-unread:where(:not(.is-waiting,.is-failing,.is-retrying,.is-error))::after{animation:hl-glow var(--hl-p) ease-in-out infinite}
 }
-html:is(.hl-still,[data-still-highlights]) .desk .pp,html[data-still-highlights] .badge.waiting::after,html:is(.hl-still,[data-still-highlights]) .desk::after,html[data-still-highlights] .unread-mark,html[data-still-highlights] :is(.wave,.tap){animation:none!important} /* hl-still: simulator drivers only (see app.js). data-still-highlights: Settings > Still highlights (FR-192, WCAG 2.2.2); the glow and the New badge stay; the person, the glow, the badge, the compact wave and the desk tap hold still (not every animation: reduced motion does that) */
+html:is(.hl-still,[data-still-highlights]) .desk .pp,html[data-still-highlights] .badge.waiting::after,html[data-still-highlights] .unread-mark,html[data-still-highlights] :is(.wave,.tap){animation:none!important} /* hl-still: simulator drivers only (see app.js). data-still-highlights: Settings > Still highlights (FR-192, WCAG 2.2.2); the glow and the New badge stay; the person, the glow, the badge, the compact wave and the desk tap hold still (not every animation: reduced motion does that) */
 @keyframes hl-enter{0%,100%{transform:scale(1)}50%{transform:scale(var(--hl-e,1.15))}}
 @keyframes hl-breathe{0%,100%{transform:scale(1)}50%{transform:scale(var(--hl-b,1.05))}}
-@keyframes hl-glow{0%,100%{opacity:.7}50%{opacity:1}}
 .stage .desk.card .unread-mark{position:absolute;left:2px;top:20px;margin:0;z-index:4;box-shadow:0 0 0 1px var(--card)}
 .stage .desk.card.is-unread .draft-mark{left:36px;top:2px} /* both on one desk: the pencil moves up beside the chat number (the name starts further right) */
 .lname .unread-mark{margin-right:6px}
@@ -1780,11 +1798,11 @@ html:not([data-ui]) #topBtns button:not([aria-pressed="true"]):hover{background:
 #addFolder.ring-once{position:relative}
 #addFolder.ring-once::after{content:"";position:absolute;inset:-3px;border-radius:inherit;border:2px solid var(--sel-border,#7fa0bd);opacity:0;pointer-events:none;animation:ringonce 1.4s ease-out 1 both}
 @keyframes ringonce{0%{opacity:.8;transform:scale(.96)}100%{opacity:0;transform:scale(1.22)}}
-/* FR-069: Serious mode stops every looping animation (idle bob and nod, typing hands, steam, bars, halos, waving, thinking dots,
+/* FR-069 (changed 2026-11-05, issue #1182): Settings > Motion off stops every looping animation (idle bob and nod, typing hands, steam, bars, halos, waving, thinking dots,
    carets, walking bob, mood signs). One-shot signals (the done tick, the waiting pings, the pops) stay. The busy spinner stays: it is a progress sign. */
-html[data-serious] :is(.bar,.glow,.hand-l,.hand-r,.head,.bubble-g,.td,.steam,.wave,.cursor,.tap,.dizzy,.amb-light,.siren-light,.live i,.typing i,.walker.walking .wk),
-html[data-serious] :is(.caret,.bubble.caret.md>*:last-child)::after,
-html[data-serious] .subblk.running .sub-st::before{animation:none!important}
+html[data-motion-off] :is(.bar,.glow,.hand-l,.hand-r,.head,.bubble-g,.td,.steam,.wave,.cursor,.tap,.dizzy,.amb-light,.siren-light,.live i,.typing i,.walker.walking .wk),
+html[data-motion-off] :is(.caret,.bubble.caret.md>*:last-child)::after,
+html[data-motion-off] .subblk.running .sub-st::before{animation:none!important}
 
 /* spec 052 FR-076: one expand arrow. "Show the change", "Show the exact command", Settings' "More" and the advanced section use the shared
    chevron (the Thinking / Previous sessions SVG, drawn as a mask in currentColor) that turns 90° when open; the browser's marker is hidden. */

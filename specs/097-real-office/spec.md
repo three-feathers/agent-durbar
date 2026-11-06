@@ -205,31 +205,31 @@ I can put my own characters (spec 096) in the Real office, and set a room or a d
 
 #### Lights (the owner's scheme)
 
-- **FR-040** **Light parts.** Each desk has a **lamp** (a warm radial light on the desk and person), a **screen glow** (light from the monitor on the face), and a small **call light** (a dot on the desk corner). Each lobby fixture has one light of its own. All are CSS overlays (D4). **Amended 2026-11-04 (FR-236):** a fifth part, the monitor's **light bar** with its pool; see *Changes*, attention lights.
+- **FR-040** **Light parts.** Each desk has a **lamp** (a warm radial light on the desk and person) and a **screen glow** (light from the monitor on the face). Each lobby fixture has one light of its own. All are CSS overlays (D4). **Amended 2026-11-05 (FR-236, owner):** the corner call light is gone; the status cue is the monitor screen's own tint (no separate status light).
 - **FR-041** **Status to light** (`lightFor(status, flags)`, pure):
 
-  | State | Lamp | Screen glow | Call light | Bar (2026-11-04, FR-237) | Motion |
-  |---|---|---|---|---|---|
-  | working | warm, steady | on | none | off (green with a new reply) | none |
-  | thinking (compacting, retrying) | on | slow breathe (5 s) | none | off (green with a new reply) | breathe |
-  | waiting (needs you) | brighter | on | **amber, gentle pulse (2.2 s)**: the strongest cue | **amber**, steady | pulse |
-  | error | on | faint red tint | **small steady red** | **red**, steady | none, no flashing |
-  | limit reached | on | on | **orange**, steady | **orange**, steady | none |
-  | done | dims to low | dims | brief green tick (2 s, then gone) | off (green with a new reply) | one fade |
-  | idle, paused | low | low | none | off (green with a new reply) | none |
-  | asleep (stopped, or finished over 10 min ago) | off | off | none | off (green with a new reply) | none; person rests at the desk (FR-129) |
+  | State | Lamp | Screen glow | Screen tint (FR-236) | Motion |
+  |---|---|---|---|---|
+  | working | warm, steady | on | none | none |
+  | thinking (compacting, retrying) | on | slow breathe (5 s) | none | breathe |
+  | waiting (needs you) | brighter | on | **amber** | none |
+  | error | on | on | **red** | none, no flashing |
+  | limit reached | on | on | **orange** | none |
+  | done | dims to low | dims | **green** while its reply is unread, else none | none |
+  | idle, paused | low | low | none | none |
+  | asleep (stopped, or finished over 10 min ago) | off | off | none | none; person rests at the desk (FR-129) |
 
-  The *Bar* column was added 2026-11-04 (FR-237). "A new reply" means `isUnread`; the bar never moves.
+  **Amended 2026-11-05 (FR-236, owner):** the *Call light* and *Bar* columns are gone, and so are the red screen glow and the done tick; the *Screen tint* column replaces them. "Unread" means `isUnread`; nothing in this table moves but the thinking glow.
 
-- **FR-042** **Red stays small.** An error never tints more than its own desk's lamp area and screen; the room, zone and neighbours are never red.
+- **FR-042** **Red stays small.** An error never tints more than its own desk's screen (FR-236); the room, zone and neighbours are never red.
 - **FR-043** **Room brightness.** The room ambient follows the share of active agents (working, thinking, waiting, limit, error) among visible ones: from 70 % (none active) to 100 % (all active), eased over 1.5 s (instant under reduced motion). It is an overlay on the art layer only.
 - **FR-044** **Readable at every light.** Name plates, folder signs, lobby plates, chips, the zoom and all text sit **above** the light layer and are never dimmed; their contrast is the theme's (spec 070 D4) whatever the lights do.
 - **FR-045** **Lobby lights.** Library: a reading lamp on when someone is there. Bank: a counter lamp on when someone is there. Boss: a busy light over the door on when a queue forms (2 or more visitors, or 1 that needs the user). Coffee: the machine glows while someone is there. Terminal, Web, Software, Other tools and custom places: a soft fixture light when occupied. Unoccupied fixtures are at room light. **Amended 2026-11-04 (attention lights):** the Boss door gets no extra glow (the mock's D4 glow was not chosen).
 - **FR-046** **Not colour alone.** Every light repeats a cue that is also in words or icons (plate, badge, bubble); no state is shown by light only (constitution V).
-- **FR-047** **Motion rules.** Under reduced motion or Serious mode no light pulses, breathes or fades: pulsing lights are steady at their bright level, the done tick shows for 2 s without a fade.
+- **FR-047** **Motion rules.** Under reduced motion or Serious mode no light pulses, breathes or fades. (Since FR-236, 2026-11-05, only the thinking glow breathes; the call light's pulse and the done tick are gone.)
 - **FR-048** **Cheap.** Lights use opacity and transforms only (compositor), no blur filters, no per-frame JavaScript; at most one CSS animation per desk.
 - **FR-049** **Theme.** Light colours are fixed (warm white, amber, red, orange, green) for meaning (spec 070 FR-050); dark themes do not change the art or lights, only the chrome.
-- **FR-050** **Contrast check.** The overlap check's Real office variant also measures the contrast of every plate and sign against its own background at room brightness 70 % and 100 % and fails under the theme's ratio. **Amended 2026-11-04 (FR-243):** also with every light bar lit, and for the New reply tag.
+- **FR-050** **Contrast check.** The overlap check's Real office variant also measures the contrast of every plate and sign against its own background at room brightness 70 % and 100 % and fails under the theme's ratio. **Amended 2026-11-05 (FR-243):** screen text is measured on its own glass, so on every tint too, and the New reply tag is measured.
 - **FR-051** **Forced colours.** Under `forced-colors: active` the light layer and ambient are not drawn (`display:none`), and status words and icons carry the meaning; under `prefers-contrast: more` lights are steady and the ambient stays at 100 %.
 - **FR-052** **Done tick, once.** The green tick shows once per transition to done, not again on re-render or resize.
 
@@ -316,7 +316,7 @@ Each has a recommendation (Q6 is for Paco, the crew owner). The build waits for 
 - **Q2 Ship or download the art.** *Answered 2026-10-31 (Vikram): the recommendation, see Changes.* (a) Ship in the app (+up to 10 MB, works offline, no new network code or CSP change); (b) download on first use. **Recommendation: (a)**, lazy-loaded (FR-060, FR-061); a download adds a network path, integrity checks and an offline failure mode for 10 MB.
 - **Q3 Does #692's manual lighting also come to the flat office?** *Answered 2026-10-31 (Vikram): the recommendation, see Changes.* **Recommendation: Real office only** (P3); flat has no lamps to dim, and #692 asks to keep the current look by default. #692 stays open, linked to this spec, and is closed by the P3 PR if the owner agrees.
 - **Q4 Art licence.** *Answered 2026-10-31 (Vikram): the recommendation, see Changes.* **Recommendation: MIT**, like the code and the crew art (spec 077), recorded in `ASSETS.md`; the owner confirms, since he approved the generation on his plan.
-- **Q5 Where finished and asleep agents go.** *Answered 2026-10-31 (Vikram): the recommendation, see Changes.* (a) They stay at their desk with lamp and screen off (asleep) or low (done); (b) a lounge strip with couches as in flat. **Recommendation: (a)**: no extra furniture without function ("dont unnecessarily waste screenspace"); asleep desks are narrow (0.62, like away desks).
+- **Q5 Where finished and asleep agents go.** *Answered 2026-10-31 (Vikram): the recommendation, see Changes.* (a) They stay at their desk with lamp and screen off (asleep) or low (done); (b) a lounge strip with couches as in flat. **Recommendation: (a)**: no extra furniture without function ("dont unnecessarily waste screenspace"); asleep desks are narrow (0.62, like away desks). **Answered again 2026-11-06 (Vikram, Telegram, issue #1220), replacing (a) for agents that are done and read:** at 12:43 UTC, "done and read desks (dark screen) take as much room as working ones; make them smaller to save space"; at 12:44 UTC he chose option 2 of the three offered: "just the person on a chair beside a small monitor, in one row with other finished agents (like the flat office's lounge)". Built as FR-246..FR-249 (Changes 2026-11-06); a done agent with an unread reply keeps its full desk (spec 001 FR-173).
 - **Q6 (for Paco) Does Real office ignore the Characters setting?** *Answered in part 2026-10-31, see Changes: no, crews appear in Real office in their own art and in their own world (Cheeky to the loft, Prehistoric to the cave), approved by Vikram 09:05 UTC and agreed by Paco 09:04 UTC; see FR-100, FR-114, FR-115.* (a) Yes, it always draws its own realistic people, so a user on Cheeky or Prehistoric (spec 077) never sees those crews in Real office, and only My characters (096, P3) can replace the pack (D3); (b) Real office also offers the 077 crews, drawn flat in front of the photoreal room. **Recommendation: (a) = D3**: a cartoon crew in a photoreal room breaks the picture. D3, FR-081 and FR-083 (and tasks T017, T051) stay as written, as the default, until Paco answers; FR-083's Settings line stays in either case if (a). Crew owner of 077 and 096: Paco (fjcabello); raised in his review of this PR, 2026-10-31.
 
 ## Constitution check
@@ -332,6 +332,28 @@ Each has a recommendation (Q6 is for Paco, the crew owner). The build waits for 
 
 ## Changes
 
+### 2026-11-05: `check-office-ops` counts each status update from a settled office (issue #1195, T198)
+
+**Seen:** on Linux CI (PR #1191 run 42006041419, earlier #1185) one of the 8 counted status updates at 40 agents drew 3 renders (1,1,1,1,1,1,1,3) and failed `every status update is one render, two at most`.
+
+**Cause (driver, not app):** the 8 samples ran back to back. A status event starts or ends a desk's visit, and the visit starts or ends on the 250 ms visit tick (`VISITS.tick`), which renders. On a slow machine that tick, and the previous sample's, land inside the next sample's window next to its own render. `sim:` reproduced on Linux with a CPU load (2 busy loops per core): 3 of 10 runs failed with exactly `(1,1,1,1,1,1,1,3)`, 0 of 20 on an idle machine. The app does not render twice for one update.
+
+**Fix:** before each counted update the driver waits, with `until()`, for the office's own settled signals (`__durbarSimUi.visitsSettled()` and `settleNow()`, as `check-office-ops-real` does) and two frames. The limit (1..2 renders) is unchanged, no sleep, no wall-clock assert. No behaviour change. A different load-only flake of the same driver (calibration trace with no event) is #1208.
+
+### 2026-11-04 the op rows' motion half fails on Windows CI (driver fix)
+
+**Seen:** `check-office-ops-real` (FR-183's `pictureArea@15motion` row, #969) failed twice on every Windows UI check, `main` itself included (f8867f035), with `motion on: second frames running: []`: no second frame and no rig at all. Linux and macOS passed.
+
+**Cause:** the driver, not the app. Windows CI runners report `prefers-reduced-motion: reduce` (docs/agent-notes.md), and then `moving()` rightly draws no second frame and no rig (FR-047). `check-097-motion` already emulates `no-preference` for that reason; this driver read the machine's own setting. `sim:` reproduced on Linux with `--force-prefers-reduced-motion`: the old driver fails with the same line, the new one passes.
+
+**Fix:** the driver emulates `prefers-reduced-motion: no-preference` before its first load and asserts it on the motion page, so the motion rows (`pictureArea@15motion`, FR-180's light rows) do not depend on the runner. The `animationsStill@reduced` row still emulates `reduce` itself, so reduced motion keeps its own check. No row or limit changed. `read:` the Windows result is the PR's own CI; not run on Windows by hand.
+
+**Next on Windows (#1180's first CI run):** with motion on, the driver reached its rows and failed one, `readsPerStatus@15 = 27` (limit 17, Linux 15; the 40-agent row read 15 on both). Nodes (22) and attribute writes (40, 48) were the same as on Linux: the slips are redrawn on every update on both systems (T184, already in `KNOWN_FAILURES`), so the slip redraw is not what differs. The 12 extra reads are not explained: a wider or narrower text, or a bigger slip font, injected on Linux left the count at 15. The driver now counts each layout read by the page line that made it and, for a failing reads row, prints the callers of the update with the most reads one per short line (the suite keeps a failed driver's last 25 lines of 240 characters). The next Windows run named them: the same 15 as Linux plus 12 from `fitTopbar()` (app.js, spec 052 FR-164), run by the top bar's ResizeObserver. So on Windows a part of the top bar changes size on a status update, and the bar is measured again; on Linux nothing in it moves (every status pill stays 32.02 px wide through the 8 updates, `sim:` probe). `sim:` a mutant that widens the Working pill by 3 px when it reads 6 gives exactly Windows' row on Linux: 27 at 15 agents with the same callers, 15 at 40. The counts already use tabular figures (`.stat b`), so which part resizes on Windows is not known from Linux: the instrument now records each top-bar part that changes size while counting (a ResizeObserver, from and to, with its text), printed with a failing reads row.
+
+**Cause of the reads (the Windows log at 9bd59e6d0):** the Working pill went 22.52 to 22.78 px, its count `6` 7.52 to 7.78 px wide: the runner's system font ignores `font-variant-numeric: tabular-nums`, so each digit has its own width, every status change that changes a count resizes a pill by a fraction of a pixel, and the top bar measures itself again. An app bug, not a driver one: the bar shifts by that fraction on screen too.
+
+**Fix (app, spec 052 FR-164's top bar):** each count has the width of its digits in `0`s (`ch`, by a `data-d` digit count from `renderStats`), centred, so a pill keeps its size when its number changes, whatever the font; a font with tabular figures looks as before. **Check:** the driver gives the counts proportional figures (the Windows case, on any OS) during its counted updates and has a new row, `topbarResizes` (limit 0): any top-bar part that changes size in the 8 updates fails it. `sim:` mutant without the CSS fix on Linux: `topbarResizes@15 = 40`, `topbarResizes@40 = 40` and `readsPerStatus = 27` at both (Windows' number); with it the driver passes. No limit raised. `read:` Windows proof is #1180's own CI; not seen by hand on Windows.
+
 ### 2026-11-04 the chat's look follows the setting for every chat (bug #1140, T195)
 
 **Owner report** (Vikram, Telegram, 2026-11-04, packaged v0.1.8 on macOS): with Real office chosen, the chat of a session that existed before looked like Open office, while a helper's chat of that same session looked like the Real office; restarting did not change it.
@@ -340,90 +362,70 @@ Each has a recommendation (Q6 is for Paco, the crew owner). The build waits for 
 
 **Fix:** the read-only mark is `helper-ro` (the first rename, `sub-ro`, was already taken by the sub-agent notice's own rule and painted the panel blue: found by the driver). Every chat, main or helper, new or resumed, takes the same world surface from `html[data-world]` and `#panel`, set from the Office layout setting; switching the setting with a chat open changes it at once (`setWorld` and `syncChatHeader` already ran on that path). The portrait stays on main chats only: FR-106's portrait is the person at the desk, and a helper has none.
 
+**Follow-up 2026-11-04 (main red after three merges):** `check-helper-bar` (#1163) and `check-helper-more` (#1161) were written in parallel with this rename and still waited for `#panel .panel-in.ro`. Each PR was green on its own branch, but on `main` both drivers failed "the helper's chat is open" on Linux and Windows. Both now read `.panel-in.helper-ro`. `test:` `npm run check:ui -- --only check-helper-bar,check-helper-more`, 2/2 on Linux. Lesson for reviews: a class rename is checked against the drivers on `origin/main` at merge time, not only those on the branch.
+
 **What the owner will see:** a helper's chat no longer shows the floor picture; both chats have the world's tinted surface. The fuller "chat in the world" look (FR-231..FR-233: corners, dark header, materials) is still specified, not built.
 
 - `sim:` `scripts/check-097-chat-look.js` at both sizes: a main session's chat and its helper's chat have the same panel surface and panel background, no picture behind the text and no element with the class `ro`; with each chat open, Open office gives the flat surface back and Real office brings the world (and the main chat's portrait) back without reopening. Mutant: the class back to `ro` fails "no element of the helper chat carries the Real office root's class \"ro\"".
 - `[KNOWN GAP]` not checked on the packaged macOS build the owner used; the cause is in renderer CSS and is the same on every platform (`read:`).
 
-### 2026-11-04 attention lights (owner decisions; FR-236..FR-238, FR-243, FR-244; FR-239..FR-242 withdrawn; T185..T193)
+### 2026-11-04, rewritten 2026-11-05: attention by the screen's tint (owner decisions; FR-236..FR-238, FR-243, FR-244; FR-239..FR-242 withdrawn; T185..T193)
 
-**Status: specified, not built.** Spec, plan and tasks only (PR 1 of 2); the build is PR 2.
+**Status: built in Real office and the arcade (#1202), and in Open office (spec 001 FR-230, FR-231, branch `001-screen-tints`). The owner OK'd the pictures of all three (Vikram, 2026-11-05 18:02 UTC: "screens are ok"; T191).**
 
-**Owner decisions** (Vikram, Telegram DMs):
-- **2026-11-04 04:38 UTC, after three rounds of mock-ups:** "A", read by his agent as its pick, round 3's D1 without D4's glow at the Boss door. Agents that need you still walk to the Boss as today ("Ok to only be at boss"): FR-024's visits, FR-121's queue and FR-128 do not change.
-- **2026-11-04 04:52 UTC, on PR #1122:** "Ok, just add light without any dusk". D1's warm dusk (the room dimmed and warmed outside the lit desks while anyone needs you) is dropped.
-  - FR-239..FR-242 are **withdrawn (owner, 2026-11-04)**, and their numbers are never reused. Task T189 is withdrawn too.
-  - FR-043 (the room ambient) and FR-047 (motion rules) are unchanged.
-  - **FR-182 is unaffected:** with no dusk, no `backdrop-filter` is proposed and no exception is asked for.
-
-**Why.** At a glance, the room should show who needs you, as a real office does (`docs/world-design.md` first principles 1 and 2). Today's cue is a 10 px call light on the monitor's corner and a lamp. Across 15 desks that is too weak, and Real office has no new-reply cue at all (`docs/feature-inventory.md`: *Unread "New"*, Real office `missing`).
-
-**Evidence (outside the repo, not committed).** The mock-ups were drawn over the simulator by a page-eval driver. Nothing in `src/` changed. Files: `lights-mock/` (round 1), `lights-mock2/` (round 2), `lights-mock3/` (round 3: D1..D4, `pick-15.png` = D1 at 15 agents) and driver `mock3.js`, all in the coordinator's scratchpad, 1440x900 only. The numbers below are the mock's. The mocked D1 includes the dusk, so no mock shows the bar alone.
-
-**Reconciled with `docs/world-design.md`.**
-- *"A real place, not a dashboard"*: the bar is a real object, a monitor light bar clamped on the monitor and shining down. It does not move, and its light falls where such a lamp's light falls: a pool on the desk top.
-- *"Light pools are pixels in the floor picture, not extra layers, and never follow a person"*: that rule is about the room's own light (windows, ceiling lamps), which is part of the art. Status lights have always been CSS overlays (D4, FR-040). A bar's pool belongs to a desk, not a person: it stays when the person goes to the Boss, and it never moves. The guide gets this line in this PR.
+**Owner decisions, in order** (Vikram, Telegram DMs):
+- 2026-11-04 04:38 and 04:52 UTC, on PR #1122: a monitor light bar with a pool on the desk, without the dusk. FR-239..FR-242 were withdrawn then, and their numbers are never reused; T189 too.
+- **2026-11-05 16:46 UTC, after seeing the light-bar pictures and a tinted-screen mock (recorded on #1150), this decision replaces the bar:** "no separate status lights in any world. Instead each desk's monitor screen is tinted by status (dark tint behind readable text, at least 4.5:1): amber = needs you, red = error, orange = spending limit (a bit redder than the mock, so it differs from amber), green = done with an unread New reply; working, thinking, idle and asleep keep the normal screen. The light bars, pools, corner call dots and the old glows/halos (Flat card glow, waiting halo, Real office amber ring and red halo) are removed, since the screen is the cue. Status words and the New reply tag stay. Applies to Real office, the arcade and the Flat office."
 
 #### Requirements
 
-- **FR-236** **The light bar.** Every desk's monitor carries a slim light bar (amends FR-040: a fifth light part).
-  - **Size and place:** 86 % of the monitor's width, about 8 px thick, centred on the monitor. Its bottom edge is 7 px above the monitor's top. A small clamp (about 18x9 px) holds it in the middle and meets the monitor's top edge.
-  - **Off** (dark, with a faint neutral line along its lower edge) in every state but those in FR-237.
-  - **Lit**, in the colour of FR-237: the lower line shines, a soft tint of the same colour falls on the monitor's top bezel (about 8 px), and a **light pool** lies on the desk top.
-  - **The pool:** a pre-tinted radial gradient (no blend, FR-180), centred under the bar, 1.25 times the bar's width, about 110 px tall at 1440x900 with 6 agents and scaled with `u`. Its top is at 8 % of the desk's height. It leaves the monitor's glass clear (a mask with the glass cut out), so it never paints over the screen.
-  - **No motion.** Lit or off, the bar and its pool never pulse, breathe or fade in a loop, in any mode. Only the on/off change itself may cross-fade, by `opacity` (FR-180), and it is instant under reduced motion and Serious mode (FR-047 as it stands).
-  - **Never across a face.** The bar lies inside the monitor's own span. FR-013's layout keeps faces off the monitor (the layout's `face` box), so the bar never meets a face, and the layout test asserts it. The pool is wider than the monitor. If at full width it would reach a face box (its own person's or a neighbour's), it shrinks to the monitor's width. If it still reaches one, its top moves down to that face box's bottom edge.
-  - **Below a header:** where a room header (a folder sign, `ZoneBox.sign`) or any other chrome text the layout places would overlap the bar at its normal height, the bar drops onto the monitor's top edge (its bottom 3 px over the monitor), and it never covers the header.
-  - **Waiting at the Boss:** an agent that needs you and stands at the Boss leaves its desk with the bar lit amber. The empty desk keeps its lit bar, its pool and its post-it.
-  - **Off switches:** under `forced-colors: active` the bar, pool and bezel tint are not drawn (FR-051's light layer rule). On a hidden window nothing about it runs (FR-074).
-- **FR-237** **Bar colours** (amends FR-041: the table gets a *Bar* column). Bar colours are FR-049's fixed light colours, never a theme's.
-  - **Amber** when the agent needs you (*waiting*, including a helper that needs you, which lifts its parent as in *Edge cases*).
-  - **Red** on an error.
-  - **Orange** on a limit.
-  - **Soft green** on a new reply not read yet (`isUnread`, DurbarUnread: the same marker the flat desk's "New" uses; helpers never have one).
-  - **Off** otherwise.
-  - Precedence: the light state (`lightState`: asleep, then limit, then paused, then the status) picks amber, red or orange first. Green only shows where none of those apply, so a new reply never hides a need.
-  - The mock's reference colours were amber 255,172,40, orange 250,128,36, red 230,70,58 and green 80,200,125. The build may keep the existing `--ro-*` values if the owner's look at T191 accepts them.
-  - **Not colour alone** (FR-046): each lit colour repeats a cue already shown in words or icons. Amber, red and orange: the plate's status word and icon. Green: FR-238's tag.
-- **FR-238** **"New reply" in Real office.** A desk with an unread reply shows a small tag with the words **New reply** just above its name plate, at the plate's right end.
-  - Look: white on green, at least 11 px, a 2 px light ring, at least 4.5:1.
-  - It lives in the chrome layer, above the lights, never on the art. It joins FR-091's overlap check like a chip.
-  - It goes when the reply is read: the same moment the flat "New" goes, from the same `isUnread`.
+- **FR-236** **The screen's tint is the status cue** (amends FR-040, FR-041 and FR-042).
+  - A desk's monitor glass is tinted by its light state: **amber** `#553a00` when the agent needs you, **red** `#651414` on an error (failing too), **orange** `#7a2e00` at the spending limit, and **green** `#0f4526` on a done desk whose reply is not read yet.
+  - Working, thinking, idle and asleep keep the normal glass.
+  - Orange is a little redder than the mock's `#682a04` (hue 23 against amber's 41 and red's 0), as the owner asked, and held apart from red: every pair of tints is at least 12 apart in CIEDE2000 (13.1 orange to red, 15.4 orange to amber). The first choice, `#6e2006` (hue 15), was only 7.5 from red and looked the same maroon at desk size (coordinator's Linux render, 2026-11-05).
+  - **Precedence** (`lightFor`): the light state first (asleep, limit, paused, then the status), so a need always shows over a new reply. Green only for a done desk; a helper never has an unread reply.
+  - **Contrast:** every screen-text colour (`--ro-scr-*`) on every tint is at least 4.5:1; the lowest is 4.72:1, on orange.
+  - **Removed** with the decision: the corner call light (with its amber ring, its pulse and the done tick), the red screen glow (the "red halo"), and the amber ring around a waiting or limit monitor's bezel.
+  - The arcade tints its cabinet screens the same way, under its scan lines.
+  - An empty desk keeps its tint while its agent is away (a waiting agent at the Boss leaves an amber screen).
+  - Forced colours: the glass is the system's `Canvas` (FR-051), so no tint shows; the plate's status word and the tag carry it.
+  - No motion: the tint changes with the class, at once.
+- **FR-237** *Folded into FR-236 (2026-11-05): the bar colours became the screen tints, with the same precedence.*
+- **FR-238** **"New reply" in Real office** (unchanged from 2026-11-04).
+  - A desk with an unread reply shows a small **New reply** tag just above its name plate, at the plate's right end: white on green, at least 11 px, a 2 px light ring, at least 4.5:1.
+  - It lives in the chrome layer and joins FR-091's overlap check like a chip. It goes when the reply is read, from the same `isUnread` as the flat "New".
   - Under forced colours it stays, in system colours with a border.
-  - The plate's accessible name gains flat's phrase ", new reply not read yet" (`unreadWords`). The tag is `aria-hidden`, so the words are not read twice.
-  - The tag is a word, not a colour, so light never carries the new-reply state alone (FR-046). With this, the inventory row *Unread "New"* becomes `planned` for Real office.
-- **FR-239** *Withdrawn (owner, 2026-11-04): the warm dusk.*
-- **FR-240** *Withdrawn (owner, 2026-11-04): the dusk's motion and off switches.*
-- **FR-241** *Withdrawn (owner, 2026-11-04): the dusk's cost and FR-182. FR-182 stands untouched.*
-- **FR-242** *Withdrawn (owner, 2026-11-04): the face dimming bound.*
-- **FR-243** **Contrast with the bars lit** (amends FR-050).
-  - The bar's light must not lower the contrast of any plate, sign, place plate, chip or New reply tag, or of the screen text, below the theme's ratio: 4.5:1 for plate text.
-  - These sit above the light layer on opaque backgrounds (FR-044), so with every bar lit each measures the same as with every bar off.
-  - FR-050's check measures both and also checks the tag.
-- **FR-244** **The bar is cheap.** It adds no `backdrop-filter`, no `filter`, no `mix-blend-mode` and no animation of anything but `opacity` (FR-180, FR-182).
-  - A status change that turns a bar on or off adds or removes no node: the bar, pool and tag exist on every desk and change by class. It adds no layout read (it uses the layout's rects) and writes only the desk's own classes, inside FR-178's op rows.
-
-#### Amended in place
-
-FR-040 (a fifth part, the bar), FR-041 (the *Bar* column), FR-045 (D4's door glow not taken) and FR-050 (contrast with the bars lit, and the tag) carry a one-line pointer to this delta. FR-043 and FR-047 are unchanged.
+  - The plate's accessible name gains ", new reply not read yet" (`unreadWords`), and the tag is `aria-hidden`.
+- **FR-239..FR-242** *Withdrawn (owner, 2026-11-04): the dusk.*
+- **FR-243** **Contrast with the tints** (amends FR-050).
+  - FR-050's pass measures screen text against its own glass's background, so on every tint, and measures the New reply tag.
+  - `test:realoffice-layout` also checks every `--ro-scr-*` colour on every tint at 4.5:1, read from `realoffice.css`, that every pair of tints is at least 12 apart in CIEDE2000, and that the arcade's tints are the same colours.
+- **FR-244** **The tint is cheap.** It is one class on the screen element, made once per desk. A status change that tints or clears a screen adds or removes no node and reads no layout; no filter, blend or animation is involved.
 
 #### Acceptance criteria
 
-1. `test:` For every state and flag, `lightFor` returns FR-041's row with the *Bar* column. Unread turns an *off* bar green and never overrides amber, red or orange. A helper's unread never counts.
-2. `test:` For 1..40 agents at both sizes, chat open and closed: each bar lies inside its monitor's span, centred, 86 % wide. No bar or pool rect meets a face box. No bar meets a sign or other chrome text rect, and a bar with a sign above it sits on the monitor's edge. Mutation-checked: a 100 % bar and a pool that ignores faces must fail.
-3. `sim:` A waiting agent at the Boss: its empty desk shows the amber bar, pool and post-it, and the plate says *Waiting* in words.
-4. `sim:` A done agent with an unread reply: green bar, **New reply** tag, the plate's name ends ", new reply not read yet". After the chat opens: the bar is off and the tag is gone.
-5. `sim:` Plate, sign, chip, tag and screen-text contrast with every bar lit equals the all-off value and is at least the theme's ratio (FR-243).
-6. `sim:` In forced colours no bar or pool is drawn and the tag remains; under reduced motion and Serious mode the on/off change is instant.
-7. `test:` + `sim:` FR-244: `test:theme-tokens` finds no `backdrop-filter`, `filter` or `mix-blend-mode` in the bar rules and no animation of anything but `opacity`; `check-office-ops` counts 0 nodes and no extra layout reads for a status change that lights a bar.
-8. `real:` The owner looks at the screenshots at both sizes (T191).
+1. `test:` For every state and flag, `lightFor` gives FR-041's row with its tint. Green comes only on a done desk with an unread reply, never over amber, red or orange.
+2. `test:` Every screen-text colour on every tint is at least 4.5:1, and the arcade's tints are Real office's.
+3. `sim:` A waiting agent at the Boss: its empty desk's screen is amber and its plate says *Waiting*.
+4. `sim:` Red on an error and orange at the limit. A done desk with an unread reply has a green screen, the **New reply** tag, and a name ending ", new reply not read yet"; once the chat is opened, the normal screen and no tag.
+5. `sim:` No call light is drawn. Forced colours: no screen keeps its tint, and the tag stays.
+6. `sim:` FR-243's contrast pass holds on every tint, and FR-244's node count stays at 0.
+7. `real:` The owner looks at the pictures at both sizes (T191): "screens are ok" (2026-11-05 18:02 UTC).
+
+#### Evidence
+
+- `test:` `test:realoffice-layout`: the tint table, its precedence, and the contrast of every text colour on every tint (plus the arcade's).
+  - Mutant: green whenever unread fails `FR-236: working with an unread reply: none`.
+  - Mutant: a lighter amber `#8a6a10` fails `FR-236: every screen-text colour on every tint at 4.5:1 or more` with `plain #c8d1da on amber #8a6a10: 3.27`.
+  - Mutant: orange back at `#6e2006` fails the tints-apart assert (orange to red 7.5).
+- `sim:` `shots-097-realoffice`: amber at the Boss; red, orange and green with the tag; read; no node added; forced colours.
+- `sim:` `check-office-ops`, row `tintNodesPerStatus` (limit 0), and `check-office-overlap` (`OFFICE_VIEW=real`, 31/31).
+- `sim:` `check-unread` and `check-office-ops-real` now take the thinking desk's breathing glow as their sign of motion, since the call light that used to pulse is gone.
 
 #### Honest limits
 
-- `[KNOWN GAP]` **The mock-ups were drawn over the simulator** by a page-eval script, never by app code, and at **1440x900 only**: 1280x800 was not mocked. The chosen mock (D1) had the dusk on, so the bar without the dusk was not seen by the owner; T191's pictures show it. The pool's no-face rule is new (the mock's pool was always 1.25 bars wide); the header rule was in the mock.
-- `[KNOWN GAP]` The bar's cost is unmeasured. It is gradients, opacity and a static mask on each lit pool, with no filter, so T190 checks counts only, not frame times.
-- Forced colours and reduced motion were not emulated in the mock.
-- Windows and macOS: CI only.
+- The tints were chosen on the simulator at 1440x900 and 1280x800 on one Mac. Their look on other screens is the owner's look (T191).
+- Windows and Linux: CI only.
 
 ### 2026-11-04: review on #969 answered (T149 corrected; op rows settled and tight; FR-230 rebuild and the plate's helper list tested)
 
@@ -1010,3 +1012,52 @@ Found on macOS in the pre-review of #981: when the office comes back (Esc from a
 Owner (Vikram, 2026-11-04, packaged v0.1.8, Real office): the chat header's buttons showed a hard, offset, light-coloured shadow he did not expect. `read:` cause: `themes.css` gives `.btn`, `.stat`, `.seg` and selects a `3px 3px 0` shadow under `html[data-ui="retro"]`; a world that sets no `ui` took the user's theme's, so a Retro Pixel user got the arcade's shadow in the Photo office, drawn in the world's light `--line`. This narrows the "the theme's style still applies" layering of FR-130 for the chrome style only.
 
 - **FR-245** **A world's chrome style is its own.** While a world is shown, `data-ui` is the world's `ui`; the Photo office and the cave set `ui: 'clean'` (the plain style, no offset button shadows), the arcade keeps `retro`. Whatever theme the user picked, no `.btn`, `.stat`, `.seg` or select in a world has a theme-style offset shadow; leaving the world gives the theme and its `ui` back unchanged (FR-130's round trip). Test: `test:theme-tokens` (the Photo office over Retro Pixel sets `data-ui="clean"`, leaving restores the snapshot) and `shots-097-chat` (with Retro Pixel picked, the Photo office chat header's `.btn` computed `box-shadow` is `none`, `data-ui` is `clean`); mutant: drop `ui: 'clean'` from the Photo office, both fail. `[IMPLEMENTED]`
+
+### 2026-11-05: one agent, one picture everywhere (FR-106, FR-121, issue #1193, T196)
+
+**Seen:** in Real office the chat header showed the agent's Real office portrait while its rail row (`.sav`) drew the flat/crew figure. **Cause:** two pickers: `syncChatHeader` chose the seat picture itself, `avatar(a)` (rail, inbox, chips, lounge) knew only the flat kits. **Rule:** `roFace(a)` is the one picker of an agent's Real office face (the person's seat picture in the pose of its lamp, cropped on the face; an agent away from its desk is the same person in the `rest` pose, a visit does not change who it is; only an agent with no person at all gets its initial as the disc). `avatar(a)` returns it while Real office is shown, so the rail row, the header, the inbox rows and the Needs you dialog's faces are the same picture; `syncChatHeader` reads `roFace` too. Every place carries `data-face` (`faceKey(a)`): the picture file, `initial|X`, or the flat kit, crew and look. While the rail is drawn, each room's `shutPlan` and each agent's `roFace` are worked out once (`withFaceMemo`, set only inside the render, so nothing is stale), not once per row; `check-097-one-face` counts the plans (at most one per room). Outside Real office nothing changes: the flat office, Retro Pixel and every crew draw as before and the header avatar follows the rail row. Test: `scripts/check-097-one-face.js` at 1440x900 and 1280x800 (Real office; Flat with the theme's people, Minimalist and two crews), mutant: `avatar` skips `roFace`.
+
+
+## Changes 2026-11-05: Motion off replaces Serious mode as a motion switch (FR-033, FR-047, FR-071, FR-102, issue #1182)
+
+[spec 052](../052-usability-pass/spec.md) FR-069 (Changes 2026-11-05, issue #1182, owner decision of Vikram, 2026-11-04): Serious mode hides only the mood drawings and trouble signs and no longer stops motion; motion stops under the system's reduced motion or with Settings > **Motion** off (default on). Every place in this spec that says motion stops "in Serious mode" (FR-033 caret, FR-047 lights, FR-071 people, the ride and the lights' on/off change, scenarios and Limits) now reads: under reduced motion or with Motion off. **FR-071** is: no person animation under reduced motion or with Motion off; a still frame (`typeA`, `waveA`) is shown. The `characterMotion` setting named there is **dropped** (spec 096 delta 2026-11-05: its switch is the global Motion); the `characterMotion` read in `app.js` is removed, no behaviour change (nothing wrote it). Serious mode only hides the moods; heavy, monster and siren are still missing here (#1171) and Serious mode hides them when they arrive. `check-097-motion`, `check-office-ops-real` and `shots-097-realoffice` use the Motion switch, `check-serious-motion` covers Serious mode.
+
+### 2026-11-05: chat text measured against the pixels behind it (issue #1146, T197)
+
+**Owner report** (Vikram, Telegram, 2026-11-04 08:05 UTC, packaged v0.1.8, Real office, macOS): a helper's chat was unreadable. Its message and header text lay on the blurred floor photo. The screenshot is confidential; the issue records only layout facts.
+
+**Already fixed by #1164** (merge `319dfdfc5`, T195): the helper panel no longer carries the Real office root's class `ro`, so no chat takes the floor picture. `read:` on `main` at `8fd7b834`, both chats sit on the world's opaque surface at both sizes. **What was missing is the guard:** FR-050 measures the room's plates and signs only, and the token lint (FR-040) checks tokens, not rendered pixels. So nothing measured chat text against what is really behind it.
+
+- **The check:** `scripts/check-097-chat-contrast.js` (in `check:ui`), at 1440x900 and 1280x800, for a main session's chat (given a reply with a link and inline code) and a helper's chat.
+  - Every glyph in the panel is made transparent and the window is captured, so the pixels inside each line of text are what is behind it: a surface, a chip's fill or a picture.
+  - Each line's own colour (computed `color`, times its and its ancestors' opacity) is blended over those pixels at every second device pixel. The 5th percentile is the line's figure.
+  - **It fails when:** body text, a link or a code chip is under 4.5:1, or large text is under 3:1; a header line ends past the window's right edge (#1146's clipped stats line); or a kind of text is not measured at all (no link, no code chip, fewer than 10 lines).
+- `sim:` both sizes pass: about 80 to 118 lines per chat. The worst line is a status word at 5.62:1 (`rgb(52, 96, 127)` on the surface), and no header line is clipped.
+- **Mutants:** both fail `1440x900: chat text at least 4.5:1 (large 3:1) against the pixels behind it`.
+  - `CONTRAST_MUTANT=ro` puts the class `ro` back on the helper panel (#1164's bug): the helper's header line falls to 2.44:1, as the owner saw.
+  - `CONTRAST_MUTANT=clear` makes the chat's surfaces transparent over the floor photo: "Open with" falls to 2.07:1.
+- `sim:` on macOS 26.0 (Apple M4), the platform of the report, with the same result. This is the simulator on a Mac, not a real agent session; no credits were used.
+- FR-233's reading sheet (mat, binding, code as a monitor) is not built here; it stays with #1166. When it lands, this check is the one that keeps its text readable.
+
+### 2026-11-05: the rename pencil on a plate (issue #1155, part of #1147)
+
+A Real office plate has Open office's rename pencil beside its name, and F2 on a focused plate edits the name in place. The rule, its placement by CSS anchor positioning, its checks and its mutants are in [spec 059](../059-rename-sessions/spec.md) FR-170 (the spec that owns renaming; T083 there). Here it only closes the parity gap that FR-090's plates had: before this, F2 on a plate did nothing. `sim:` `scripts/check-097-plate-pencil.js`.
+
+
+### 2026-11-06: finished, read agents sit in a lounge row (owner decision, issue #1220; FR-246..FR-249, T199..T203)
+
+**Owner request** (Vikram, Telegram, 2026-11-06 12:43 UTC): "done and read desks (dark screen) take as much room as working ones; make them smaller to save space". **Owner choice** (12:44 UTC, option 2): "just the person on a chair beside a small monitor, in one row with other finished agents (like the flat office's lounge)". This answers Q5 again for done and read agents and replaces the asleep desk's narrowing (FR-120, FR-129, the 2026-11-02 ruling's 0.62 desk): an asleep agent now always sits in the lounge row. Numbers checked 2026-11-06 against `main`, the remote branches and the open PRs: spec 097 ends at FR-245 and T198; spec 102 uses FR-240..FR-244 and FR-250 onwards, so FR-246..FR-249 are free in both.
+
+**Existing capability reused (FR-031):** who goes to the lounge is decided by the flat office's rule, not a second one: `DurbarShutters.roomPlan` through app.js `shutPlan(r)` (spec 001 FR-051, FR-173), which already decides who is "asleep" in Real office (`m.rolled`, `k: 'old'`). The plate, its click, keys and words, the person's seated picture, the monitor element, the lamp and screen light (`lightFor`), the "z z" and the layout ease of a change (`box()`'s `translate`/`scale` ease, spec Changes 2026-11-01) are the desk's own.
+
+- **FR-246** **Who sits in the lounge row.** A main agent sits in the lounge row exactly when spec 001's room rule rolls it in (FR-051, FR-173): Done, or Idle after a finished turn, its reply **read** (no New reply), not paused, not at a limit, not away at a place, no helper busy, and its folder has at least one main agent that keeps its desk. A recent one (finished under 10 minutes ago) rests with the lamp low and its screen dark; an old one is **asleep** (lamp off, screen off, the person dimmed, "z z", FR-120's words). Done with an **unread** reply keeps its full desk with the green screen and the New reply tag (FR-236, FR-238) until it is read, then moves. A folder where every agent is finished keeps its desks (FR-051's room rule: a folder never loses its sign, `+` and menu to the lounge). *Finished agents rest in the lounge* off (spec 001 FR-056): nobody moves. The engine does not judge: the app marks the agent (`RealAgent.lounge`), so the flat office and Real office cannot disagree. **Replaces:** the asleep desk's 0.62 width (`ASLEEP_W`, FR-120, FR-129, the 2026-11-02 ruling) is removed, since an asleep agent is never at a desk now; FR-017's away desk keeps its full width (the still room, FR-127).
+- **FR-247** **The row in the Photo office and the cave** (`rows` worlds). One row across the floor's width, under the desk rows, for every folder's finished agents, in status order (done before idle and asleep, FR-022) and then folder order. A seat is the person's own seated `rest` picture (the person on their chair, from the set) at a unit of 84 px (a face of about 25 px, above FR-229's 24 px floor), beside a small desk (the world's own `desk.webp`, whole, at 0.62 of the unit wide) with a small monitor on it (the desk monitor's own element and look; no text on it: dark when resting, off when asleep), and the name plate under them (36 px: name and role; "Done · finished 3 min ago" or "Asleep · finished 34 min ago"). Seats keep one width; more seats than one row holds go on a second row. The engine sets the row's height aside **before** it searches the desk rows, so the room the finished desks leave goes to the active and needs-you desks (`realLayout`, pure). No new art: the seated picture includes the chair, and the desk and monitor are the world's own; this is a composition of pictures the pack already has.
+- **FR-248** **The seats in the Retro arcade** (`aisles`). The same rule, in the arcade's own art: the person's `sit` frame (on a stool, the pose an asleep arcade player already had), at the hall's scale but at most 2, beside the world's own console `desk.webp` with a small CRT on it (a pixel frame in `worlds/retro/world.css`), and a one-line plate (name, then the status words; no marquee carries the name). The arcade is a grid of cells, not rows of desks, so its seats take **cells after the cabinets** in that grid: as many cells as the seats need at the narrowest cell a plan can have (a seat is narrower than a cabinet with its player: 5 seats take 4 cells), filling the free cells at the ends of the rows (the last row first), then new rows; the hall's plan is chosen with those cells counted (`packSeats(..., extra)`), so the hall is never smaller than with those agents at cabinets. In one cell run the seats stand on one line, the lowest plate line of its cells. With few free cells the seats may stand in the gaps of two rows, not one row: the arcade's grid has no row of its own to spare (`sim:` 15 agents at 1280x800).
+- **FR-249** **Moving there and back.** A move into the lounge and back to a desk eases: the person, plate and monitor keep their elements and glide with the existing layout ease (`translate` and `scale`, 280-520 ms, spec Changes 2026-11-01); the desk picture fades out or in (220 ms); nothing jumps. Under reduced motion or with Motion off nothing animates: everything is drawn at its new place at once. A seated person is a still picture (no breath), so a seat costs no running animation, in view or scrolled away (FR-181). Keyboard order: the desks, then the lounge seats (a plate that was a desk's is moved after the last desk's, unless it has the focus; `aisleTabOrder` lists the seats last); a lounge plate is the agent's one button ("<name>, <role>, folder <path>, resting in the lounge, finished 3 minutes ago: <masked last line>. Open chat panel." or "…, asleep in the lounge, …"); a click on the person, desk or monitor clicks the plate (FR-006), and hover or focus on a resting agent's monitor opens the zoom with its last lines (FR-034; an asleep one's screen is off, so it does not, FR-035).
+
+**Tests.** `test:` `test:realoffice-layout` (rows) and `test-realoffice-aisles` (arcade): a lounge agent has no desk and a seat, a done-unread or working one keeps its desk; 1..40 agents in 1..8 folders with a third of them in the lounge at both sizes, chat closed and open: nothing overlaps (faces, screens, plates, signs, seats), seats stay inside the floor and under the desk rows, the 15-agent cases never scroll; the freed room grows the desks (faces at least as big as with the same agents at desks); each rule has a mutant killed by its own assert. `sim:` `scripts/check-097-lounge.js` at 1440x900 and 1280x800, in the Photo office and the arcade: done and read agents sit in the row, a done-unread agent keeps its desk until Mark as read, an asleep one has the lamp off and "z z", a seat's plate opens the chat, an agent that starts again is back at a full desk with a running ease (none under emulated reduced motion), no overlap, text at least 10.5 px.
+
+**Built (2026-11-06, T199..T203).** `test:` `test:realoffice-layout`: 368 layouts with a lounge (1..40 agents, 1..8 folders, both sizes, chat closed and open) and 250 arcade layouts, nothing overlaps, the 15-agent cases never scroll, the staying desks' unit `u` is at least as large (with 4 desks or fewer their big screens at least as large); mutants, each killed by its own assert: the engine ignoring `lounge`, no height set aside, the small desk over the face, seats out of status order, an away agent seated, a 70 px unit (faces under 24 px), the arcade with too few cells, a seat box reaching the next row's sign strip, the plan not counting the cells, the console over the player. `sim:` `scripts/check-097-lounge.js` (Linux, Xvfb) at both sizes in the Photo office and the arcade; its mutants fail: an unread agent read too early, no ease (reduced motion emulated during the move), reduced motion not emulated, and the engine never told about the lounge (`lounge: false` in `realoffice.js`). `shots-097-moments` (asleep moment), `shots-097-screens`, `shots-102-arcade`, `check-097-motion`, `check-office-ops-real`, `OFFICE_VIEW=real check-office-overlap.js` and `world-matrix.js` (photo, 1280x800) pass. Pictures retaken with `shots-docs.js --only shots-097-realoffice` (`097-real-15-*`, `097-real-lobby-*`, `097-real-lights-1440x900.png`, `097-world-dialog|menu|toast-1440x900.png`).
+- `[KNOWN GAP]` Not run on a real session, Windows or macOS (no OS path or shell is involved; CI runs the drivers on all three).
+- `[KNOWN GAP]` With the row set aside, the desk search may choose fewer, wider rows: faces grow (`u` up 7 to 29 % at 15 agents while more than 4 desks stay) but each monitor can be smaller than before (`097-real-15-1440x900.png`: 13 desks in two rows). The engine still maximises `u` (FR-011); weighing screen size is an owner call.
+- `[KNOWN GAP]` In the arcade the seats can stand in the free cells of two rows rather than one row (FR-248).
