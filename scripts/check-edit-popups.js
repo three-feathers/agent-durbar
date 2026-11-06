@@ -164,7 +164,7 @@ module.exports = async (ctx) => {
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
     await H.load({ w, h, query: Q, ready: 'fit', settle: false });
     await until(`document.querySelectorAll('#stage .desk[data-id]').length>=3`, 10000);
-    await H.focusPage({ emulate: true });
+    await H.focusPage({ emulate: 'first' });
     try {
     const tag = `${w}x${h}`;
     const [A, B] = await ids();

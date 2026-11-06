@@ -1,5 +1,5 @@
 /* Real office mode (spec 097 phases P1, P2), loaded only when Real office is chosen (FR-061). Layers, bottom to top (plan "Lights"):
-   .ro-art (floor, fixtures, people, desks, monitors) < .ro-amb (room ambient) < .ro-lights (lamps, screen glow, call lights,
+   .ro-art (floor, fixtures, people, desks, monitors) < .ro-amb (room ambient) < .ro-lights (lamps, screen glow,
    fixture lights) < .ro-chrome (signs, plates, chips, cues: never dimmed, FR-044). The art keeps its own colours; everything that
    is UI uses the theme's tokens (D2). Light colours are fixed for meaning (FR-049). Lights are opacity and transforms only, with
    no blur filter and no script per frame (FR-048). */
@@ -34,9 +34,13 @@
 .ro-bezel{position:absolute;left:0;right:0;top:0;background:#18191b;border-radius:4px;padding:3px;box-shadow:0 3px 8px rgba(0,0,0,.28)}
 .ro-glass{position:relative;width:100%;height:100%;overflow:hidden;border-radius:2px;background:#0f1418}
 /* FR-035: error a faint red tint, needs-you an amber frame, asleep dark glass with no text (done: its newest line is green) */
-.ro-screen.st-error .ro-glass{background:#1d1111}
-.ro-screen:is(.st-waiting,.st-limit) .ro-glass{background:#1b1610}
-.ro-screen:is(.st-waiting,.st-limit) .ro-bezel{box-shadow:0 0 0 2px rgb(var(--ro-amber)),0 3px 8px rgba(0,0,0,.28)}
+/* FR-236 (owner, 2026-11-05 16:46 UTC): the screen is the status cue, no separate light. A dark tint behind the text, at least 4.5:1 for every
+   screen-text colour (--ro-scr-*: 5.26:1 at worst, err on amber; test:realoffice-layout holds it). Amber needs you, red error, orange the spending
+   limit (redder than the mock's, hue 23, kept at least 12 CIEDE2000 from red and amber: test:realoffice-layout), green a done desk with a reply not read yet. The other states keep the normal glass. */
+.ro-screen.tint-amber .ro-glass{background:#553a00}
+.ro-screen.tint-red .ro-glass{background:#651414}
+.ro-screen.tint-orange .ro-glass{background:#7a2e00}
+.ro-screen.tint-green .ro-glass{background:#0f4526}
 .ro-screen.off .ro-glass{background:#121314}
 /* FR-030..FR-033: the text of a monitor, in the chrome over the glass; newest at the bottom, the top scrolls away as in flat's side panel */
 .ro-stext{overflow:hidden;pointer-events:none;border-radius:2px;font:var(--ro-sf,11px)/var(--ro-sl,15px) ui-monospace,"Cascadia Mono",Menlo,Consolas,monospace;color:var(--ro-scr-plain)}
@@ -75,7 +79,7 @@
 /* FR-043: the room ambient, over the art only */
 .ro-ambient{background:#140e08;opacity:calc(var(--ro-amb,0) * .75);transition:opacity 1.5s steps(6,end)}
 
-/* FR-040, FR-041: lamp, screen glow and call light per desk. FR-180: nothing blends (a blend mode put 20 render passes in each frame): a lamp is a
+/* FR-040, FR-041: lamp and screen glow per desk (the call light went with FR-236: the screen tint is the cue). FR-180: nothing blends (a blend mode put 20 render passes in each frame): a lamp is a
    gradient pre-tinted to what --ro-warm screened over what lamps really lie on gave (--ro-lamp, the lit-area mean over the 15 and 8 agent office; --ro-fx-lamp for the lobby), and an off lamp is a dark gradient */
 .ro-lamp{border-radius:50%;background:radial-gradient(closest-side,rgba(var(--ro-lamp),.55),rgba(var(--ro-lamp),0));opacity:0}
 .ro-lamp.lamp-warm{opacity:.55}.ro-lamp.lamp-bright{opacity:.8}.ro-lamp.lamp-on{opacity:.42}.ro-lamp.lamp-low{opacity:.15}
@@ -90,34 +94,22 @@
   background-position:top center,bottom center,left center,right center,left top,right top,left bottom,right bottom;
   background-size:calc(100% - 2*var(--ro-ge)) var(--ro-ge),calc(100% - 2*var(--ro-ge)) var(--ro-ge),var(--ro-ge) calc(100% - 2*var(--ro-ge)),var(--ro-ge) calc(100% - 2*var(--ro-ge)),var(--ro-ge) var(--ro-ge),var(--ro-ge) var(--ro-ge),var(--ro-ge) var(--ro-ge),var(--ro-ge) var(--ro-ge)}
 .ro-glow.glow-on{opacity:.8}.ro-glow.glow-breathe{opacity:.7}.ro-glow.glow-low{opacity:.25}
-.ro-glow.glow-red{opacity:.9;--ro-gc:var(--ro-red);--ro-ga:.4;--ro-ge:20px}
-/* a call light's halo is a static gradient behind it too */
-.ro-call{width:10px;height:10px;border-radius:50%;border:1.5px solid rgba(var(--ro-ring),.85);isolation:isolate;--ro-cc:var(--ro-amber);--ro-ca:.45;background:rgb(var(--ro-cc))}
-.ro-call::after{content:"";position:absolute;inset:-12.5px;z-index:-1;border-radius:50%;background:radial-gradient(closest-side,rgba(var(--ro-cc),calc(var(--ro-ca)*.77)) 31%,rgba(var(--ro-cc),calc(var(--ro-ca)*.5)) 50%,rgba(var(--ro-cc),calc(var(--ro-ca)*.16)) 75%,rgba(var(--ro-cc),0))}
-.ro-call.call-amber{--ro-cc:var(--ro-amber);--ro-ca:.55}
-.ro-call.call-red{--ro-cc:var(--ro-red)}
-.ro-call.call-orange{--ro-cc:var(--ro-orange)}
-.ro-call.call-green{--ro-cc:var(--ro-green)}
 /* FR-045: lobby fixture lights */
 .ro-fxl{opacity:.9;background:radial-gradient(ellipse 50% 45% at 50% 40%,rgba(var(--ro-fx-lamp),.5),rgba(var(--ro-fx-lamp),0))}
 .ro-fxl.fxl-soft{opacity:.5}
 .ro-fxl.fxl-glow{background:radial-gradient(ellipse 45% 35% at 45% 55%,rgba(var(--ro-fx-lamp),.6),rgba(var(--ro-fx-lamp),0))}
 .ro-fxl.fxl-busy{background:radial-gradient(circle 7px at 50% 3%,rgb(var(--ro-amber)) 0 5px,rgba(var(--ro-amber),.45) 6px,rgba(var(--ro-amber),0) 16px)}
 
-/* FR-041 motion: one animation per desk at most (FR-048); none under reduced motion (styles.css), Serious mode or .still (FR-047). FR-181: stepped, at most 8 changes a second
+/* FR-041 motion: one animation per desk at most (FR-048); none under reduced motion (styles.css), Motion off or .still (FR-047). FR-181: stepped, at most 8 changes a second
    (the pulse 3.6, the breath 3.2, the tick's fade 5), and only the states of FR-041's table move: a stepped value causes damage only on a step */
-.ro-call.pulse{animation:ro-pulse 2.2s steps(4,end) infinite}
 .ro-glow.breathe{animation:ro-breathe 5s steps(8,end) infinite}
-.ro-call.fade{animation:ro-fade 2s steps(4,end) forwards}
-@keyframes ro-pulse{50%{opacity:.55;transform:scale(1.25)}}
 @keyframes ro-breathe{50%{opacity:.35}}
 @keyframes ro-blink{0%,100%{opacity:1}50%{opacity:0}}
-@keyframes ro-fade{0%,60%{opacity:1}100%{opacity:0}}
-.ro.still .ro-lights *,html[data-serious] .ro-lights *{animation:none!important}
+.ro.still .ro-lights *,html[data-motion-off] .ro-lights *{animation:none!important}
 .ro.still .ro-ambient{transition:none}
 
 /* People (spec Changes 2026-11-01): two pictures of a pose cross-fade, and a small eased movement runs on both, on one clock; opacity and transform only (FR-180),
-   so the compositor runs them. The second picture is hidden unless its animation runs, so every off switch below leaves the first showing: reduced motion (styles.css), Serious mode, .still and .hold (FR-071). */
+   so the compositor runs them. The second picture is hidden unless its animation runs, so every off switch below leaves the first showing: reduced motion (styles.css), Motion off, .still and .hold (FR-071). */
 .ro-person2,.ro-visitor2{opacity:0}
 .ro-art>:is(.m-a,.m-b,.m-br,.m-knock){transform-origin:var(--ro-org,50% 100%);backface-visibility:hidden}
 .m-a.m-type{animation:ro-fa var(--ro-per,1s) linear infinite,ro-type var(--ro-sw,6s) ease-in-out infinite}
@@ -136,7 +128,7 @@
 .ro-rig .h{animation:ro-rig-head var(--ro-sw,6s) ease-in-out infinite}
 .ro-rig .l,.ro-rig .r{animation:ro-rig-hand var(--ro-pat,2.8s) ease-in-out infinite}
 .ro-rig .r{animation-direction:reverse;animation-duration:calc(var(--ro-pat,2.8s)*1.13)}
-:is(.ro.still,.ro.hold,.ro.lod1,.ro.lod2) .ro-rig img,html[data-serious] .ro-rig img{animation:none!important}
+:is(.ro.still,.ro.hold,.ro.lod1,.ro.lod2) .ro-rig img,html[data-motion-off] .ro-rig img{animation:none!important}
 .ro.lod2 .ro-art>:is(.m-br,.m-rig,.m-knock){animation:none!important}
 .ro.paused .ro-rig img,.ro-off.ro-rig img{animation-play-state:paused!important}
 /* the coming picture first, so the figure never goes see-through */
@@ -152,8 +144,8 @@
 @keyframes ro-rig-hand{0%,58%,100%{transform:none}5%{transform:translateY(calc(var(--ro-u,1px)*-.75)) rotate(-2deg)}10%{transform:translateY(calc(var(--ro-u,1px)*.15))}16%{transform:translateY(calc(var(--ro-u,1px)*-.55)) rotate(1.5deg)}21%{transform:none}27%{transform:translateY(calc(var(--ro-u,1px)*-.85)) rotate(-1deg)}33%{transform:translateY(calc(var(--ro-u,1px)*.1))}39%{transform:translateY(calc(var(--ro-u,1px)*-.5)) rotate(1deg)}45%{transform:none}51%{transform:translateY(calc(var(--ro-u,1px)*-.6))}}
 @keyframes ro-rig-head{0%,100%{transform:rotate(-.9deg)}22%{transform:rotate(-.2deg) translateY(calc(var(--ro-u,1px)*.35))}48%{transform:rotate(.9deg)}74%{transform:rotate(.2deg) translateY(calc(var(--ro-u,1px)*.3))}}
 @keyframes ro-knock{0%,24%,100%{transform:none}6%,18%{transform:translateX(calc(var(--ro-u,1px)*.7)) rotate(.3deg)}12%{transform:translateX(0)}}
-:is(.ro.still,.ro.hold) .ro-art>*,html[data-serious] .ro-art>*{animation:none!important}
-:is(.ro.still,.ro.hold) .ro-caret,html[data-serious] .ro-caret{display:none}
+:is(.ro.still,.ro.hold) .ro-art>*,html[data-motion-off] .ro-art>*{animation:none!important}
+:is(.ro.still,.ro.hold) .ro-caret,html[data-motion-off] .ro-caret{display:none}
 /* FR-074: hidden, or a desk scrolled away or covered: stands still and catches up when seen again */
 .ro.paused :is(.ro-art>*,.ro-lights>*,.ro-caret),.ro-off,.ro-off .ro-caret{animation-play-state:paused!important}
 
@@ -271,8 +263,8 @@ button.ro-chip{font-family:inherit;margin:0}
 /* spec 097 FR-106, FR-224..FR-226: the chat in the world: the header portrait (32 px, aria-hidden, the flat avatar's size) with a ring in the lamp's colour; tokens only, no fallback */
 .ro-portrait{--rc-lamp:var(--line-ctl)}
 .ro-portrait:is([data-lamp="warm"],[data-lamp="on"]){--rc-lamp:var(--c-working)}
-.ro-portrait[data-lamp="bright"],.ro-portrait[data-call="amber"],.ro-portrait[data-call="orange"]{--rc-lamp:var(--c-waiting)}
-.ro-portrait[data-call="red"]{--rc-lamp:var(--c-error)}
+.ro-portrait[data-lamp="bright"],.ro-portrait[data-tint="amber"],.ro-portrait[data-tint="orange"]{--rc-lamp:var(--c-waiting)}
+.ro-portrait[data-tint="red"]{--rc-lamp:var(--c-error)}
 .ro-portrait{position:relative;flex:none;display:inline-block;width:32px;height:32px;border-radius:50%;background:var(--surface-2);outline:2px solid var(--rc-lamp);outline-offset:1px}
 .ro-portrait>.rp-clip{position:absolute;inset:0;border-radius:50%;overflow:hidden}
 .ro-portrait .rp-clip>img{position:absolute;display:block;max-width:none;height:auto}
@@ -280,3 +272,15 @@ button.ro-chip{font-family:inherit;margin:0}
 body.ro-chat .ph .avatar{display:none}
 .ro-lampwords{flex:none;font-size:var(--t5-size);color:var(--muted);white-space:nowrap}
 .ro-portrait>.rp-ini{display:flex;align-items:center;justify-content:center;width:100%;height:100%;font-size:var(--t3-size);color:var(--ink)}
+/* FR-238: "New reply" above the plate's right end, in the chrome (never dimmed, FR-044); made once per desk, shown by class; aria-hidden (the plate's name says it) */
+.ro-newtag{display:none;transform:translate(-100%,calc(-100% - 2px));padding:1px 6px;border-radius:7px;font-size:11px;font-weight:700;line-height:15px;white-space:nowrap;color:#fff;background:#1f7a45;box-shadow:0 0 0 2px rgba(255,255,255,.92);pointer-events:none}
+.ro-newtag.on{display:block}
+@media (forced-colors:active){.ro-newtag{color:CanvasText;background:Canvas;border:1px solid CanvasText;box-shadow:none}}
+/* spec 059 FR-170 (#1155): Open office's rename pencil (.ren, styles.css) beside a plate's name. It is the plate's next sibling, anchored by CSS to
+   the name (anchor-name and position-anchor are set per desk), so it follows the name with no script. The plate keeps 22px after the name for it,
+   so it covers neither the role nor the helper dots; a long name gives way first (ellipsis). It shows on the plate's hover and focus, as on a desk. */
+.ro-plate.has-ren .ro-l1>b{margin-right:22px}
+.ro-chrome>.ren.ro-ren{left:calc(anchor(right) - 1px);top:calc(anchor(center) - 12px)}
+.ro-chrome>.ro-plate:is(:hover,:focus-visible)+.ren.ro-ren{opacity:1}
+.ro-chrome>.ren.ro-ren:is(:hover,:focus-visible){opacity:1} /* on the pencil itself the plate is no longer :hover (a sibling, review of #1200): it stays shown under the pointer */
+

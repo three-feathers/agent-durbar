@@ -249,16 +249,42 @@ function closerAt(v: string): number {
   }
   return -1;
 }
+/** What the bare-token rule needs from `maskCookies`, the run end cached so that a run of heads costs one scan, not one per head. */
+interface BareCtx { runEnd: (i: number) => number; endOk: (i: number) => boolean; maskAt: (i: number) => number }
+/** A header value with no `=`: one opaque token (a session id, a signed blob), or one inside a pair of quotes. Returns where it ends, or -1 when it is not one. It must be at least 8 characters with no space, not `undefined`, `null`, `HttpOnly`, `Secure` or `deleted`, and what follows it must end the value: the line, a quote, a backslash, `;`, a shell character or a closing bracket (only spaces between). The token stops at the same characters (not at `:`, so `s:abc.sig` and `urn:sess:abc` are one token) and at the next `cookie:` head, so the shell part and the bracket stay visible, as after a pair. `cookie: Set-Cookie:` is two heads, not one token. */
+const BARE_PLAIN = /^(?:undefined|null|httponly|secure|deleted)$/i;
+function bareEnd(s: string, at: number, ctx: BareCtx): number {
+  const q = s[at];
+  if (q === '"' || q === "'") { const e = ctx.runEnd(at + 1); return s[e] === q && e - at - 1 >= 8 && !(e - at - 1 <= 9 && BARE_PLAIN.test(s.slice(at + 1, e))) ? e + 1 : -1; }
+  const i = ctx.runEnd(at);
+  if (i - at < 8 || (i - at <= 9 && BARE_PLAIN.test(s.slice(at, i)))) return -1;
+  return ctx.endOk(i) ? i : -1;
+}
+/** Characters the bare-token scans looked at, for the growth test (`scripts/test-redact-growth.ts`): a count, not a clock, so a stall fails on any machine. Read and reset by `bareStepsForTest`; one addition per scan, no cost worth naming. */
+let bareSteps = 0;
+export function bareStepsForTest(): number { const n = bareSteps; bareSteps = 0; return n; }
+const ENV_MASK = /\[redacted:[A-Za-z0-9_.-]{1,64}\]/y;
 /** A cookie header: `name=value` pairs split by `;`. Returns where the pairs end, or -1 when this is prose. A hand-written scan, one pass, no regex to go wrong: it stops at a quote, a backslash or the
  *  line's end. A pair followed by more text counts when its value is long enough to be one (`sid=abcdef12 && curl x`); `cookie: a=b is the format` is prose, and a short later pair ends it there, so an `Expires=Wed, 21 Oct` stays. */
-function cookieEnd(s: string, from: number, newlineFrom: (i: number) => number): number {
+function cookieEnd(s: string, from: number, newlineFrom: (i: number) => number, ctx: BareCtx, bareFirst: boolean): number {
   const ends = (c: string | undefined): boolean => c === undefined || c === '\r' || c === '\n' || c === '"' || c === "'" || c === '\\';
   let i = from;
   let end = -1;
   for (;;) {
     const nameAt = i;
     while (i < s.length && i - nameAt < 128 && !/[\s=;,"'\\|&`$(]/.test(s[i])) i++;
-    if (i === nameAt || s[i] !== '=') return end;
+    if (i === nameAt || s[i] !== '=') {
+      const done = nameAt === from && !bareFirst ? -1 : ctx.maskAt(nameAt); // a mask already there is a finished token: it is not replaced, the scan goes on after it
+      const b = done >= 0 ? done : nameAt === from && !bareFirst ? -1 : bareEnd(s, nameAt, ctx);
+      if (b < 0) return end;
+      if (done < 0) end = b;
+      i = b;
+      if (s[i] !== ';') return end;
+      i++;
+      while (s[i] === ' ' || s[i] === '\t') i++;
+      if (ends(s[i])) return end;
+      continue;
+    }
     const valueAt = ++i;
     if (s[i] === '"') { const q = s.indexOf('"', i + 1); const nl = newlineFrom(i); i = q < 0 || (nl >= 0 && nl < q) ? (nl < 0 ? s.length : nl) : q + 1; } else while (i < s.length && !/[\s;"'\\|&`]/.test(s[i]) && !(s[i] === '$' && (s[i + 1] === '(' || s[i + 1] === '{'))) i++;
     if (ends(s[i]) || s[i] === '|' || s[i] === '&' || s[i] === '`' || s[i] === '$') return i; // the shell after it stays visible (STOP's rule; a diff reaches the approval card through `redact`)
@@ -276,6 +302,7 @@ function cookieEnd(s: string, from: number, newlineFrom: (i: number) => number):
   }
 }
 const COOKIE_HEAD = shape(String.raw`(?:set-)?cookie\s{0,8}:\s{0,8}`, 'gi');
+const COOKIE_HEAD_NEXT = shape(String.raw`(?:set-)?cookie\s{0,8}:`, 'gi'); // the same head, to find the next one
 function maskCookies(s: string, mask: string): string {
   if (!/cookie/i.test(s)) return s;
   let out = '';
@@ -283,10 +310,44 @@ function maskCookies(s: string, mask: string): string {
   // the next line break, found once and kept: looking it up per head made `cookie: a="x" ` repeated quadratic (976 ms on 1 MB)
   let nl = -2;
   const newlineFrom = (i: number): number => { if (nl !== -1 && nl < i) nl = s.indexOf('\n', i); return nl; };
+  // Bare tokens (`bareEnd`): a head that starts inside the run the last one scanned ends at the same place (`cookie:cookie:` repeated took 18 s at 100 KB when each head scanned to the end) (a cut at the next head leaves no token, so what follows a run is looked at once per run).
+  let runS = -1;
+  let runE = -2;
+  const plainEnd = (i: number): number => {
+    if (i >= runS && i <= runE) { bareSteps++; return runE; }
+    let k = i;
+    while (k < s.length && !/[\s=;"'\\|&`)\]}>]/.test(s[k]) && !(s[k] === '$' && (s[k + 1] === '(' || s[k + 1] === '{'))) k++;
+    bareSteps += k - i + 1;
+    runS = i; runE = k;
+    return k;
+  };
+  const nextHead = (i: number): number => { // the heads are met in order, so the sum of these searches is one pass
+    COOKIE_HEAD_NEXT.lastIndex = i;
+    const h = COOKIE_HEAD_NEXT.exec(s);
+    bareSteps += (h ? h.index : s.length) - i + 1;
+    return h ? h.index : -1;
+  };
+  const ctx: BareCtx = {
+    runEnd: (i) => { const e = plainEnd(i); const h = nextHead(i); return h >= 0 && h < e ? h : e; },
+    endOk: (i) => {
+      let j = i;
+      while (s[j] === ' ' || s[j] === '\t') j++;
+      bareSteps += j - i + 1;
+      const c = s[j];
+      return c === undefined || /[\r\n"'\\;|&`)\]}>]/.test(c) || (c === '$' && (s[j + 1] === '(' || s[j + 1] === '{'));
+    },
+    maskAt: (i) => {
+      if (mask.length > 0 && s.startsWith(mask, i)) return i + mask.length;
+      if (s[i] !== '[') return -1;
+      ENV_MASK.lastIndex = i;
+      return ENV_MASK.test(s) ? ENV_MASK.lastIndex : -1;
+    },
+  };
   COOKIE_HEAD.lastIndex = 0;
   for (let m = COOKIE_HEAD.exec(s); m; m = COOKIE_HEAD.exec(s)) {
     const at = m.index + m[0].length;
-    const end = cookieEnd(s, at, newlineFrom);
+    const ws = m[0].slice(m[0].indexOf(':') + 1); // a bare token may follow on the same line, or on a folded one (`\r\n` then a space or tab), not on any next line
+    const end = cookieEnd(s, at, newlineFrom, ctx, !/[\r\n]/.test(ws) || /^[ \t]*\r?\n[ \t]+$/.test(ws));
     if (end > at) { out += s.slice(from, at) + mask; from = end; COOKIE_HEAD.lastIndex = end; }
   }
   return from === 0 ? s : out + s.slice(from);
@@ -306,7 +367,7 @@ const HELD_PATTERNS: RegExp[] = [
 /** Rules added by T137, after `HELD_SHAPES`. */
 const PATTERNS: RegExp[] = [
   KEY_BLOCK,
-  shape(String.raw`((?:set-)?cookie\\{0,2}["']\s{0,8}:\s{0,8}\\{0,2}")(?=[^\s=;,"'\\]{1,128}=)(?:[^"\\\r\n]|\\(?!"))*`, 'gi'), // `"Cookie": "sid=…"`, in JSON: to the closing quote. The header form: `maskCookies`.
+  shape(String.raw`((?:set-)?cookie\\{0,2}["']\s{0,8}:\s{0,8}\\{0,2}")(?=[^\s=;,"'\\]{1,128}=|[^\s=;,"'\\|&\x60$()]{8,}(?:"|\\))(?:[^"\\\r\n]|\\(?!"))*`, 'gi'), // `"Cookie": "sid=…"` or one opaque token, in JSON: to the closing quote. The header form: `maskCookies`.
   // a `.netrc` entry: the word `password`, a space, the value
   new RegExp(String.raw`(\bmachine\s{1,8}\S{1,253}\s{1,8}(?:login\s{1,8}\S{1,128}\s{1,8})?password\s{1,8})${CMD_VALUE}`, 'g'),
   // `curl -u user:pass` (only after `curl`: `git push -u origin:main` is not this); the user stays, a bare `-u user` has no secret to hide

@@ -427,22 +427,72 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
 // ---- FR-041: lights ----
 {
   assert.deepStrictEqual(Object.keys(LIGHT_TABLE), ['working', 'thinking', 'waiting', 'error', 'limit', 'done', 'idle', 'asleep'], 'one row per state');
-  const row = (s: string): string => { const l = lightFor(s); return [l.lamp, l.glow, l.call, l.motion].join('/'); };
-  assert.strictEqual(row('working'), 'warm/on//');
-  assert.strictEqual(row('thinking'), 'on/breathe//breathe');
-  assert.strictEqual(row('waiting'), 'bright/on/amber/pulse');
-  assert.strictEqual(row('error'), 'on/red/red/');
-  assert.strictEqual(row('limit'), 'on/on/orange/');
-  assert.strictEqual(row('done'), 'low/low/green-once/fade');
-  assert.strictEqual(row('idle'), 'low/low//');
-  assert.strictEqual(row('asleep'), 'off/off//');
+  const row = (s: string): string => { const l = lightFor(s); return [l.lamp, l.glow, l.motion, l.tint].join('/'); };
+  assert.strictEqual(row('working'), 'warm/on//none');
+  assert.strictEqual(row('thinking'), 'on/breathe/breathe/none');
+  assert.strictEqual(row('waiting'), 'bright/on//amber');
+  assert.strictEqual(row('error'), 'on/on//red', 'FR-236: no red halo, the screen is red');
+  assert.strictEqual(row('limit'), 'on/on//orange');
+  assert.strictEqual(row('done'), 'low/low//none');
+  assert.strictEqual(row('idle'), 'low/low//none');
+  assert.strictEqual(row('asleep'), 'off/off//none');
+  assert.ok(!('call' in lightFor('waiting')), 'FR-236: no call light');
+  // FR-236: the tint precedence (the light state first), green only for a done desk with an unread reply
+  for (const k of Object.keys(LIGHT_TABLE) as LightState[]) {
+    const want = k === 'done' ? 'green' : LIGHT_TABLE[k].tint;
+    assert.strictEqual(lightFor(k, { unread: true }).tint, want, `FR-236: ${k} with an unread reply: ${want}`);
+    assert.strictEqual(lightFor(k, { unread: true, still: true }).tint, want, `FR-236: ${k}, unread and still: ${want}`);
+  }
+  assert.strictEqual(lightFor('waiting', { unread: true }).tint, 'amber', 'FR-236: a new reply never hides a need');
+  assert.strictEqual(lightFor('failing', { unread: true }).tint, 'red', 'FR-236: failing is an error');
+  assert.strictEqual(lightFor(lightState('waiting', { limit: true }), { unread: true }).tint, 'orange', 'FR-236: limit wins');
+  assert.strictEqual(lightFor('done', { unread: false }).tint, 'none', 'FR-236: read: the normal screen');
+  // FR-236: every screen-text colour on every tint at least 4.5:1, read from realoffice.css (a changed colour cannot slip by)
+  {
+    const css = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'realoffice.css'), 'utf8');
+    const lin = (v: number): number => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+    const lum = (h: string): number => { const n = [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16)); return 0.2126 * lin(n[0]) + 0.7152 * lin(n[1]) + 0.0722 * lin(n[2]); };
+    const ratio = (a: string, b: string): number => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
+    const inks = [...css.matchAll(/--ro-scr-([a-z]+):(#[0-9a-f]{6})/g)].map((m) => [m[1], m[2]]);
+    const tints = [...css.matchAll(/\.ro-screen\.tint-([a-z]+) \.ro-glass\{background:(#[0-9a-f]{6})\}/g)].map((m) => [m[1], m[2]]);
+    assert.deepStrictEqual(tints.map((t) => t[0]).sort(), ['amber', 'green', 'orange', 'red'], 'FR-236: four tints in realoffice.css');
+    assert.ok(inks.length >= 7, 'the screen-text colours are read');
+    const low = tints.flatMap(([t, bg]) => inks.filter(([, c]) => ratio(c, bg) < 4.5).map(([k, c]) => `${k} ${c} on ${t} ${bg}: ${ratio(c, bg).toFixed(2)}`));
+    assert.deepStrictEqual(low, [], 'FR-236: every screen-text colour on every tint at 4.5:1 or more');
+    /* FR-236: the four tints are told apart: every pair at least 12 apart in CIEDE2000 (orange once sat 7.5 from red and read the same maroon) */
+    const toLab = (h: string): number[] => {
+      const [r, g, b] = [1, 3, 5].map((i) => { const v = parseInt(h.slice(i, i + 2), 16) / 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; });
+      const f = (t: number): number => (t > 216 / 24389 ? Math.cbrt(t) : (24389 / 27 * t + 16) / 116);
+      const X = f((0.4124 * r + 0.3576 * g + 0.1805 * b) / 0.95047), Y = f(0.2126 * r + 0.7152 * g + 0.0722 * b), Z = f((0.0193 * r + 0.1192 * g + 0.9505 * b) / 1.08883);
+      return [116 * Y - 16, 500 * (X - Y), 200 * (Y - Z)];
+    };
+    const de00 = (p: string, q: string): number => {
+      const [L1, a1, b1] = toLab(p), [L2, a2, b2] = toLab(q), rad = Math.PI / 180;
+      const Cb = (Math.hypot(a1, b1) + Math.hypot(a2, b2)) / 2, G = 0.5 * (1 - Math.sqrt(Cb ** 7 / (Cb ** 7 + 25 ** 7)));
+      const A1 = (1 + G) * a1, A2 = (1 + G) * a2, C1 = Math.hypot(A1, b1), C2 = Math.hypot(A2, b2);
+      const hue = (x: number, y: number): number => { const v = Math.atan2(y, x) / rad; return v < 0 ? v + 360 : v; };
+      const h1 = hue(A1, b1), h2 = hue(A2, b2);
+      let dh = h2 - h1; if (C1 * C2 === 0) dh = 0; else if (dh > 180) dh -= 360; else if (dh < -180) dh += 360;
+      const dL = L2 - L1, dC = C2 - C1, dH = 2 * Math.sqrt(C1 * C2) * Math.sin((dh / 2) * rad), Lb = (L1 + L2) / 2, Cp = (C1 + C2) / 2;
+      const hb = C1 * C2 === 0 ? h1 + h2 : Math.abs(h1 - h2) > 180 ? (h1 + h2 + 360) / 2 : (h1 + h2) / 2;
+      const T = 1 - 0.17 * Math.cos((hb - 30) * rad) + 0.24 * Math.cos(2 * hb * rad) + 0.32 * Math.cos((3 * hb + 6) * rad) - 0.2 * Math.cos((4 * hb - 63) * rad);
+      const RT = -Math.sin(2 * 30 * Math.exp(-(((hb - 275) / 25) ** 2)) * rad) * 2 * Math.sqrt(Cp ** 7 / (Cp ** 7 + 25 ** 7));
+      const SL = 1 + (0.015 * (Lb - 50) ** 2) / Math.sqrt(20 + (Lb - 50) ** 2), SC = 1 + 0.045 * Cp, SH = 1 + 0.015 * Cp * T;
+      return Math.sqrt((dL / SL) ** 2 + (dC / SC) ** 2 + (dH / SH) ** 2 + RT * (dC / SC) * (dH / SH));
+    };
+    assert.ok(Math.abs(de00('#000000', '#ffffff') - 100) < 0.01, 'CIEDE2000: black to white is 100');
+    const near = tints.flatMap(([t, a], i) => tints.slice(i + 1).filter(([, b]) => de00(a, b) < 12).map(([u, b]) => `${t} ${a} to ${u} ${b}: ${de00(a, b).toFixed(1)}`));
+    assert.deepStrictEqual(near, [], 'FR-236: every pair of tints at least 12 apart (CIEDE2000), so orange never reads as red or amber');
+    const arcade = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'realoffice', 'worlds', 'retro', 'world.css'), 'utf8');
+    const arcTints = [...arcade.matchAll(/\.ro-screen\.tint-([a-z]+) \.ro-glass\{background-color:(#[0-9a-f]{6})\}/g)].map((m) => [m[1], m[2]]);
+    assert.deepStrictEqual(Object.fromEntries(arcTints), Object.fromEntries(tints), 'FR-236: the arcade tints its screens with the same colours (the same contrast)');
+  }
   assert.strictEqual(lightState('compacting'), 'thinking'); assert.strictEqual(lightState('retrying'), 'thinking');
   assert.strictEqual(lightState('failing'), 'error'); assert.strictEqual(lightState('working', { paused: true }), 'idle');
   assert.strictEqual(lightState('waiting', { limit: true }), 'limit', 'limit wins over waiting');
   assert.strictEqual(lightState('error', { asleep: true }), 'asleep');
   assert.strictEqual(lightState('toString'), 'idle', 'own keys only'); assert.strictEqual(lightState('nonsense'), 'idle');
-  for (const s of STATES) assert.strictEqual(lightFor(s, { still: true }).motion, null, `FR-047: ${s} still under reduced motion or Serious mode`);
-  assert.strictEqual(lightFor('waiting', { still: true }).call, 'amber', 'the call light stays, steady');
+  for (const s of STATES) assert.strictEqual(lightFor(s, { still: true }).motion, null, `FR-047: ${s} still under reduced motion or Motion off`);
   lightFor("working").lamp = "off"; assert.strictEqual(lightFor('working').lamp, 'warm', 'the table cannot be changed through a result');
   // FR-043
   assert.strictEqual(ambientFor([]), 1);
@@ -564,7 +614,7 @@ for (const [W, H] of SIZES.slice(0, 2)) {
 // ---- FR-107: the lamp in words, one phrase per FR-041 row, the same for every world ----
 {
   const W = Object.fromEntries((Object.keys(LIGHT_TABLE) as LightState[]).map((k) => [k, lampWords(lightFor(k))]));
-  assert.deepStrictEqual(W, { working: 'Lamp warm, steady', thinking: 'Lamp on, breathing', waiting: 'Lamp bright, amber call light', error: 'Lamp on, red error light', limit: 'Lamp on, orange call light', done: 'Lamp low', idle: 'Lamp low', asleep: 'Lamp off' }, 'a phrase per light row');
+  assert.deepStrictEqual(W, { working: 'Lamp warm, steady', thinking: 'Lamp on, breathing', waiting: 'Lamp bright, amber screen', error: 'Lamp on, red screen', limit: 'Lamp on, orange screen', done: 'Lamp low', idle: 'Lamp low', asleep: 'Lamp off' }, 'a phrase per light row');
   assert.strictEqual(lampWords(lightFor('waiting', { still: true })), W.waiting, 'reduced motion does not change the words');
 }
 

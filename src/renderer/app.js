@@ -204,8 +204,10 @@ const RETRY=window.DurbarRetry; /* spec 034 FR-018: "Retrying" while the agent a
 const MOOD=MOODS.createMoodTracker();
 const ACT=window.DurbarActivity;
 let SERIOUS=false; /* Serious mode (Settings): no mood drawings at all */
-/* spec 052 FR-069: Serious mode also stops every looping animation (styles.css, html[data-serious]) */
 function markSerious(){document.documentElement.toggleAttribute('data-serious',SERIOUS);}
+/* spec 052 FR-069 (changed 2026-11-05, issue 1182): looping animation stops under the system's reduced motion or with Settings > Motion off (styles.css, html[data-motion-off]); Serious mode no longer stops it */
+let MOTION=true;
+function markMotion(){document.documentElement.toggleAttribute('data-motion-off',!MOTION);}
 /* spec 001 FR-192 (WCAG 2.2.2): Settings > Still highlights (no motion): the desk glow and the New badge stay, the person and the badge do not move (styles.css, html[data-still-highlights]) */
 let STILL_HL=false;
 function markStillHl(){document.documentElement.toggleAttribute('data-still-highlights',STILL_HL);}
@@ -712,11 +714,11 @@ function scene(a,mini,c){
   const kit=THEME.sceneKit(); /* another theme's people and desks (spec 035 FR-013); the office kit is the code below */
   /* spec 040 FR-023: the signature names the theme too, so a theme switch redraws the desk (same signature = the old SVG is kept) */
   const tk=THEME.themeIdForCache();
-  if(kit!=='office'&&window.DurbarScenes){const v=window.DurbarScenes.draw(kit,a,{st,mood,k,mini,c,T:T_,shade,reduced:REDUCED||SERIOUS||STILL_HL,themeKey:tk,art:kitArt(),crew:kit==='crew'?crewOf(a):'',crewFb:kit==='crew'&&CREW_BAD.has(crewOf(a))});if(v)return c?v:stillSig(v);}
+  if(kit!=='office'&&window.DurbarScenes){const v=window.DurbarScenes.draw(kit,a,{st,mood,k,mini,c,T:T_,shade,reduced:REDUCED||!MOTION||STILL_HL,themeKey:tk,art:kitArt(),crew:kit==='crew'?crewOf(a):'',crewFb:kit==='crew'&&CREW_BAD.has(crewOf(a))});if(v)return c?v:stillSig(v);}
   let s=`<svg class="scene${c?' sc-c':''}" data-sig="${st}|${k.shirt}${k.skin}${k.hair}${k.style}${k.glasses?1:0}|${c?'c':mini?'m':'f'}|${tk}|${mood.body}${mood.trouble||''}${mood.coffee?'C':''}" viewBox="${c?'16 5 176 116':mini?'22 4 166 118':'0 0 200 124'}" aria-hidden="true" focusable="false">`;
   s+=`<ellipse cx="100" cy="118" rx="88" ry="3.5" fill="${T_('--scene-shadow')}" opacity=".06"/>`;
   /* compact scenes: flat halo rects + CSS-only animation (no blur filter, no SMIL) so 15 of them stay cheap */
-  if(c){const hc={working:T_('--halo-working'),thinking:T_('--halo-thinking'),waiting:T_('--halo-waiting'),error:T_('--halo-error')}[st];
+  if(c){const hc={working:T_('--halo-working'),thinking:T_('--halo-thinking'),error:T_('--halo-error')}[st]; /* spec 001 FR-230: no waiting halo */
     if(hc) s+=`<g class="halo halo-${st}"><rect x="101" y="22" width="86" height="66" rx="17" fill="${hc}" opacity=".13"/><rect x="107" y="28" width="74" height="54" rx="13" fill="${hc}" opacity=".16"/></g>`;}
   else if(st==='working'||st==='thinking') s+=`<rect class="glow" x="106" y="28" width="76" height="54" rx="14" fill="${st==='working'?T_('--halo-working'):T_('--halo-thinking')}" filter="url(#soft)" opacity=".24"/>`;
   s+=`<rect x="52" y="50" width="44" height="48" rx="13" fill="${T_('--chair')}"/>`;
@@ -747,14 +749,16 @@ function scene(a,mini,c){
   const deskBack=THEME.slot('desk-back'), deskArt=THEME.slot('desk-art'), monitorArt=THEME.slot('monitor-art');
   s+=(deskBack===null?'':`<g class="art-slot" data-slot="desk-back">${deskBack}</g>`)+(deskArt===null?'':`<g class="art-slot" data-slot="desk-art">${deskArt}</g>`);
   const scr={working:T_('--screen-working'),thinking:T_('--screen-thinking'),waiting:T_('--screen-waiting'),idle:T_('--screen-idle'),error:T_('--screen-error'),done:T_('--screen-done')}[st];
-  s+=`<rect x="112" y="32" width="64" height="45" rx="5" fill="${T_('--monitor-frame')}"/><rect x="116" y="36" width="56" height="37" rx="3" fill="${scr}"/>`;
+  s+=`<rect x="112" y="32" width="64" height="45" rx="5" fill="${T_('--monitor-frame')}"/><rect class="scr" x="116" y="36" width="56" height="37" rx="3" fill="${scr}"/>`; /* spec 001 FR-231: .scr takes the status tint */
   s+=monitorArt===null?'':`<g class="art-slot" data-slot="monitor-art">${monitorArt}</g>`;
+  s+='<g class="scr-c">'; /* spec 001 FR-231: the screen's glyphs, recoloured on a tint */
   if(st==='working') s+=`<rect class="bar" x="121" y="41" width="34" height="3.6" rx="1.8" fill="${T_('--bar-blue')}"/><rect class="bar" x="121" y="48.5" width="26" height="3.6" rx="1.8" fill="${T_('--bar-sage')}"/><rect class="bar" x="121" y="56" width="42" height="3.6" rx="1.8" fill="${T_('--bar-blue')}"/><rect class="bar" x="121" y="63.5" width="20" height="3.6" rx="1.8" fill="${T_('--bar-blue-2')}"/>`;
   if(st==='thinking') s+=`<rect x="121" y="41" width="30" height="3.6" rx="1.8" fill="${T_('--halo-thinking')}" opacity=".55"/><rect x="121" y="48.5" width="40" height="3.6" rx="1.8" fill="${T_('--halo-thinking')}" opacity=".4"/><rect x="121" y="56" width="22" height="3.6" rx="1.8" fill="${T_('--halo-thinking')}" opacity=".55"/><rect x="121" y="63.5" width="5" height="3.6" rx="1.8" fill="${T_('--halo-thinking')}"${c?' class="cursor"':''}>${REDUCED||c?'':'<animate attributeName="opacity" values="1;.15;1" dur="1.6s" repeatCount="indefinite"/>'}</rect>`;
   if(st==='waiting') s+=`<rect x="121" y="41" width="30" height="3.6" rx="1.8" fill="${T_('--wait-dot')}" opacity=".5"/><rect x="123" y="49" width="42" height="19" rx="5" fill="${T_('--wait-card')}" stroke="${T_('--wait-note-stroke')}" stroke-width="1.2"/><circle cx="131" cy="58.5" r="3" fill="${T_('--wait-dot')}"/><rect x="138" y="54" width="20" height="3" rx="1.5" fill="${T_('--wait-note-line')}"/><rect x="138" y="60" width="14" height="3" rx="1.5" fill="${T_('--wait-note-line-2')}"/>`;
   if(st==='idle') s+=`<circle cx="144" cy="54.5" r="7" fill="none" stroke="${T_('--idle-clock')}" stroke-width="1.6"/><path d="M144 50.5v4l2.6 1.6" fill="none" stroke="${T_('--idle-clock')}" stroke-width="1.6" stroke-linecap="round"/>`;
   if(st==='error') s+=`<circle cx="144" cy="52" r="9" fill="none" stroke="${T_('--halo-error')}" stroke-width="2"/><path d="M144 47.5v5.5M144 56.6v.1" stroke="${T_('--halo-error')}" stroke-width="2.2" stroke-linecap="round"/><rect x="127" y="65" width="34" height="3" rx="1.5" fill="${T_('--err-mark')}"/>`;
   if(st==='done') s+=`<circle cx="144" cy="54.5" r="10" fill="${T_('--done-bg')}"/><path class="done-tick" d="M139 54.5l3.6 3.6 6.6-7" fill="none" stroke="${T_('--done-mark')}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>`;
+  s+='</g>';
   const lap=artSlot('gadget-laptop'), cup=artSlot('gadget-cup'); /* spec 070 FR-011: a pack's own laptop and cup replace the app's */
   s+=lap||`<rect x="59" y="82.2" width="36" height="3.8" rx="1.9" fill="${T_('--laptop')}"/>`;
   if(st==='idle'||mood.coffee) s+=(cup||`<rect x="98" y="76" width="10" height="10" rx="2.5" fill="${T_('--cup')}" stroke="${T_('--cup-line')}" stroke-width="1"/><path d="M108 78.5q4 0 4 3t-4 3" fill="none" stroke="${T_('--cup-line')}" stroke-width="1.4"/>`)+`<path class="steam" d="M101 73q-2-3 0-5" fill="none" stroke="${T_('--steam')}" stroke-width="1.2" stroke-linecap="round"/><path class="steam" d="M105 73q-2-3 0-5" fill="none" stroke="${T_('--steam')}" stroke-width="1.2" stroke-linecap="round"/>`;
@@ -764,7 +768,7 @@ function scene(a,mini,c){
   s+='<g class="pp">';
   s+=`<g class="${typing?'hand-l':''}">${armL(61,71,68,81)}${hand(68.5,81.4)}</g>`;
   if(st==='waiting'&&mood.trouble!=='impatient'&&mood.trouble!=='faint'){ /* impatient taps the desk, a fainted agent does not wave */
-    const wave = REDUCED||SERIOUS||STILL_HL||c?'':`<animateTransform attributeName="transform" type="rotate" values="-4 87 71;6 87 71;-4 87 71" dur="2.8s" repeatCount="indefinite"/>`;
+    const wave = REDUCED||!MOTION||STILL_HL||c?'':`<animateTransform attributeName="transform" type="rotate" values="-4 87 71;6 87 71;-4 87 71" dur="2.8s" repeatCount="indefinite"/>`;
     s+=`<g${c?' class="wave"':''}>${wave}${armL(87,71,97,46)}${hand(97.5,42.5)}</g>`;
   } else if(st==='idle'||mood.trouble==='faint'){
     s+=`<g>${armL(87,71,96,80)}${hand(97,80.5)}</g>`;
@@ -779,9 +783,36 @@ function scene(a,mini,c){
   return c?s:stillSig(s);
 }
 /* spec 052 FR-069, spec 001 FR-192: Serious mode and Still highlights draw full scenes without the SMIL wave; a mark in the signature redraws them when either is switched */
-function stillSig(svg){return SERIOUS||STILL_HL?svg.replace(' data-sig="',' data-sig="still|'):svg;}
+function stillSig(svg){return !MOTION||STILL_HL?svg.replace(' data-sig="',' data-sig="still|'):svg;}
 /* ov (spec 077 FR-068, the Characters previews): {kit, crew} draw another kit or a given character than the office's own */
+/* spec 097 (issue 1193): in Real office one agent is one picture everywhere. roFace(a) is the one place that picks the face: the person's seat picture in the pose of its lamp,
+   cropped on the face. avatar() (rail rows, chat header, inbox, chips, lounge) and syncChatHeader() both read it; null = draw the flat/crew art as before. */
+function roFace(a){
+  const fm=faceMemo&&faceMemo.face; if(fm&&a&&fm.has(a.id))return fm.get(a.id);
+  const r=roFace0(a); if(fm&&a)fm.set(a.id,r); return r;
+}
+function roFace0(a){
+  const E=window.exports||{}, RO=window.DurbarRealOffice;
+  if(!a||a.parent||OFFICE_VIEW!=='real'||RO_LOAD!=='ready'||!RO||!RO.personOf||!E.lightFor||!E.lightState)return null;
+  const pp=roPeople(), person=RO.personOf(a.id), v=VISITS.at(a.id), old=shutPlan(roomOf(a)).get(a.id)==='old'&&!v;
+  const ls=E.lightState(isFailing(a)?'failing':isRetrying(a)?'retrying':isCompacting(a)?'compacting':vis(a),{limit:!!a.limit,paused:!!a.paused,asleep:old});
+  const pose=(E.SEAT_POSE||{})[ls]||'rest';
+  const ok=/^[a-z0-9-]{1,24}$/.test(pp.set)&&/^[a-z0-9-]{1,24}$/.test(pp.world);
+  const file=ok&&person&&/^[a-z0-9-]{1,24}$/.test(person)?'realoffice/sets/'+pp.set+'/'+person+'-'+(v?'rest':pose)+'.webp':''; /* a visit does not change who the agent is: away, the same person at rest */
+  const sm=(packMeta('sets',pp.set)||{}).seat, seatM=sm&&person&&Object.prototype.hasOwnProperty.call(sm,person)?sm[person]:null, crop=seatM&&E.portraitCrop?E.portraitCrop(seatM):null;
+  return {ls,file,seatM,crop,pp,person,v};
+}
+const roFaceImg=f=>{
+  const st=f.crop&&f.seatM?`width:${f.seatM.w/f.crop.s*100}%;left:${-f.crop.x/f.crop.s*100}%;top:${-f.crop.y/f.crop.s*100}%`:'width:100%';
+  return `<span class="ro-face" style="position:relative;display:block;width:100%;height:100%;overflow:hidden;border-radius:50%"><img alt="" draggable="false" src="${esc(f.file)}" style="position:absolute;display:block;max-width:none;height:auto;${st}"></span>`;
+};
+/* what picture an agent has right now, as a short key: tests and the redraw compare it (the same for every place that shows the face) */
+function faceKey(a){
+  const f=roFace(a); if(f)return f.file||'initial|'+Array.from(String(a.name||'?'))[0].toUpperCase();
+  const kit=THEME.sceneKit(); return kit+'|'+(kit==='crew'?crewOf(a):'')+'|'+JSON.stringify(a.look||'');
+}
 function avatar(a,view,ov){
+  if(!ov){const rf=roFace(a);if(rf)return rf.file?roFaceImg(rf):`<span class="ro-face ro-ini" style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;border-radius:50%;font-weight:600;font-size:12px;background:var(--surface-2);color:var(--ink)">${esc(Array.from(String(a.name||'?'))[0].toUpperCase())}</span>`;} /* away: the initial, as the header */
   const k=themedLook(a.look);
   const kit=(ov&&ov.kit)||THEME.sceneKit(), cr=kit==='crew'?(ov&&ov.crew!==undefined?ov.crew:crewOf(a)):'';
   if(kit!=='office'&&window.DurbarScenes){const v=window.DurbarScenes.avatar(kit,a,{k,T:T_,shade,reduced:REDUCED,art:kitArt(),crew:cr,crewFb:kit==='crew'&&CREW_BAD.has(cr),view});if(v)return v;}
@@ -1029,7 +1060,7 @@ function helperCardHTML(h,L){
 const visitPlace=a=>{const v=a.parent?null:VISITS.at(a.id);return v?v.place:(RETURNING.has(a.id)?null:null);};
 function cardHTML(a,d,nSubs){
   const st=vis(a), use=usageShort(a);
-  return `<button class="desk card is-${st}${isUnread(a)?' is-unread':''}${hlIn(a,st)}${isRetrying(a)?' is-retrying':isCompacting(a)?' is-compacting':isFailing(a)?' is-failing':''}${isAway(a)?' is-away':''}" data-id="${esc(a.id)}" data-state="${st}"${isAway(a)&&VISITS.at(a.id)?` data-place="${VISITS.at(a.id).place}"`:''} aria-pressed="${ui.selected===a.id}" title="${esc(deskTip(a))}${moodWords(a)}${use?' · '+use:''}${esc(lastTip(a))}" aria-label="${esc(a.name)}${chatNoWords(a)}${draftWords(a)}${unreadWords(a)}, ${esc(a.role)}${modeWords(a)}${remoteWords(a)}, folder ${esc(roomOf(a).path)}, ${esc(stWord(a))}: ${esc(deskMask(taskOf(a)))}${moodWords(a)}${nSubs?`. ${nSubs} helper${nSubs>1?'s':''}`:''}${use?'. Usage '+use:''}. Open chat panel.">
+  return `<button class="desk card is-${st}${isUnread(a)?' is-unread':''}${hlIn(a,st)}${isRetrying(a)?' is-retrying':isCompacting(a)?' is-compacting':isFailing(a)?' is-failing':''}${isAway(a)?' is-away':''}" data-id="${esc(a.id)}" data-state="${st}" data-tint="${deskTint(a)}"${isAway(a)&&VISITS.at(a.id)?` data-place="${VISITS.at(a.id).place}"`:''} aria-pressed="${ui.selected===a.id}" title="${esc(deskTip(a))}${moodWords(a)}${use?' · '+use:''}${esc(lastTip(a))}" aria-label="${esc(a.name)}${chatNoWords(a)}${draftWords(a)}${unreadWords(a)}, ${esc(a.role)}${modeWords(a)}${remoteWords(a)}, folder ${esc(roomOf(a).path)}, ${esc(stWord(a))}: ${esc(deskMask(taskOf(a)))}${moodWords(a)}${nSubs?`. ${nSubs} helper${nSubs>1?'s':''}`:''}${use?'. Usage '+use:''}. Open chat panel.">
     <span class="sc">${sceneC(a)}</span>
     <span class="ci"><span class="l1">${chatNoHTML(a)}${draftHTML(a)}${unreadHTML(a)}${dialogHTML(a)}<span class="name"${nameTipAttr(a)}>${esc(a.name)}</span>${modeIcon(a)}<span class="role">${esc((a.profile?a.profile.name+" · "+a.role:a.role)+kindTag(a)+remoteTag(a))}</span><span class="stl st-${pillSt(a)}">${esc(stWord(a,true))}</span></span>    <span class="intent"${liveAttrs(a)} title="${esc(taskOf(a))}">${esc(deskLine(a))}</span>
     <span class="l3"><span class="pill st-${pillSt(a)}"${pillTip(a)}><i></i>${esc(stWord(a,true))}${pillWarn(a)}</span><span class="use"${use.endsWith(' est.')?` title="${esc(USD_TIP)}"`:''}>${capOf(a)&&use.includes(' · ')?`<span class="aiu">${useCost(use.split(' · ')[1])}</span>`:`<span class="tok">${esc(use.split(' · ')[0]||'')}</span>${use.includes(' · ')?`<span class="aiu"><span class="sep">&nbsp;· </span>${useCost(use.split(' · ')[1])}</span>`:''}`}</span></span></span>${GROW?grownSideHTML(a):''}</button>`;
@@ -1063,7 +1094,7 @@ function unitHTML(a,d){
   }
   let desk;
   if(d==='full'){
-    desk=`<button class="desk is-${st}${isUnread(a)?' is-unread':''}${hlIn(a,st)}${isAway(a)?' is-away':''}" data-id="${esc(a.id)}" data-state="${st}"${isAway(a)&&VISITS.at(a.id)?` data-place="${VISITS.at(a.id).place}"`:''} aria-pressed="${ui.selected===a.id}"${lastTip(a)?` title="${esc(lastTip(a).slice(3))}"`:''} aria-label="${esc(a.name)}${chatNoWords(a)}${draftWords(a)}${unreadWords(a)}, ${esc(a.role)}${modeWords(a)}${remoteWords(a)}, folder ${esc(roomOf(a).path)}, ${esc(stWord(a))}: ${esc(deskMask(taskOf(a)))}${moodWords(a)}${nSubs?`. ${nSubs} helper${nSubs>1?'s':''}`:''}. Open chat panel.">
+    desk=`<button class="desk is-${st}${isUnread(a)?' is-unread':''}${hlIn(a,st)}${isAway(a)?' is-away':''}" data-id="${esc(a.id)}" data-state="${st}" data-tint="${deskTint(a)}"${isAway(a)&&VISITS.at(a.id)?` data-place="${VISITS.at(a.id).place}"`:''} aria-pressed="${ui.selected===a.id}"${lastTip(a)?` title="${esc(lastTip(a).slice(3))}"`:''} aria-label="${esc(a.name)}${chatNoWords(a)}${draftWords(a)}${unreadWords(a)}, ${esc(a.role)}${modeWords(a)}${remoteWords(a)}, folder ${esc(roomOf(a).path)}, ${esc(stWord(a))}: ${esc(deskMask(taskOf(a)))}${moodWords(a)}${nSubs?`. ${nSubs} helper${nSubs>1?'s':''}`:''}. Open chat panel.">
       ${scene(a,false)}<span class="badge ${st}">${badgeSVG(st)}</span>
       <div class="info"><div class="who">${chatNoHTML(a)}${draftHTML(a)}${unreadHTML(a)}${dialogHTML(a)}<span class="name"${nameTipAttr(a)}>${esc(a.name)}</span>${modeIcon(a)}<span class="role">${esc((a.profile?a.profile.name+" · "+a.role:a.role)+kindTag(a)+remoteTag(a))}</span></div>
       <p class="task"${liveAttrs(a)} title="${esc(taskOf(a))}">${esc(deskLine(a))}</p><span class="pill st-${pillSt(a)}"${pillTip(a)}><i></i>${esc(stWord(a))}${pillWarn(a)}</span></div></button>`;    if(LIVE_SIDE)desk+=sideHTML(a);
@@ -1081,9 +1112,16 @@ let SHUT_PREF=(()=>{try{return localStorage.getItem('durbar.shutters')!=='off';}
 const shutOn=()=>!!SHUT&&SHUT_PREF;
 function setShutOn(on){SHUT_PREF=!!on;try{localStorage.setItem('durbar.shutters',SHUT_PREF?'on':'off');}catch(e){}scheduleRender();}
 const shutInput=a=>({id:a.id,state:vis(a),paused:!!a.paused,limit:!!a.limit,away:isAway(a),replied:!!a.lastOutput,helpersBusy:helpersOf(a).some(h=>{const s=vis(h);return s!=='done'&&s!=='idle';}),unread:isUnread(a),since:sinceLast(a)});
+/* issue 1193: while a render draws many faces (renderStrip), each room's plan and each agent's face are worked out once: faceMemo is set only inside withFaceMemo, so nothing is ever stale across renders */
+let faceMemo=null, faceMemoPlans=0; /* faceMemoPlans: how many room plans were computed in the last memoised render (the driver counts it) */
+function withFaceMemo(fn){const prev=faceMemo;faceMemo={plan:new Map(),face:new Map()};if(!prev)faceMemoPlans=0;try{return fn();}finally{faceMemo=prev;}}
 function shutPlan(r){
   if(!shutOn())return new Map();
-  return SHUT.roomPlan(agents.filter(a=>!a.parent&&a.room===r.id).map(shutInput));
+  const m=faceMemo&&faceMemo.plan; if(m&&m.has(r.id))return m.get(r.id);
+  if(faceMemo)faceMemoPlans++;
+  const p=SHUT.roomPlan(agents.filter(a=>!a.parent&&a.room===r.id).map(shutInput));
+  if(m)m.set(r.id,p);
+  return p;
 }
 let SHUT_PREV=null; /* ids rolled at the last render: a newly rolled agent rolls in once (FR-055), a desk that unrolls rolls out once */
 const SHUT_MARK='<svg class="sh-mark" viewBox="0 0 12 12" aria-hidden="true" focusable="false"><circle cx="6" cy="6" r="5.2" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M3.6 6.2 5.3 7.8 8.4 4.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
@@ -1623,12 +1661,12 @@ function realModel(model){
         const asleep=old.has(a.id)&&!v;
         if(asleep){ /* spec 097 FR-120, FR-129: asleep at the desk; the words of the lounge's peek card and label, the same masked reply (shutReply) */
           const ago=ACT.agoLong(sinceLast(a)), said=SHUT.spoken(ago), line=shutReply(a,140), who=a.profile?a.profile.name+' · '+a.role:a.role;
-          return {id:a.id,name:a.name,role:a.role,state:st,word:'Asleep',task:ago?'finished '+ago:'',asleep:true,tip:'Asleep · '+stWord(a)+(ago?' · finished '+ago:'')+' · Lamp off\n'+shutReply(a,300),selected:ui.selected===a.id,away:null,awayLabel:'',
-            label:a.name+', '+who+', folder '+deskMask(showPath(r.path))+', asleep at the desk'+(said?', finished '+said:'')+': '+line+(/[.!?…]$/.test(line)?'':'.')+' Open chat panel.',helpers:helpersOf(a).map(h=>stOf(h,false))};
+          return {id:a.id,name:a.name,role:a.role,state:st,word:'Asleep',task:ago?'finished '+ago:'',asleep:true,tip:'Asleep · '+stWord(a)+(ago?' · finished '+ago:'')+' · Lamp off\n'+shutReply(a,300),selected:ui.selected===a.id,ren:canRenameSession(a),unread:isUnread(a),away:null,awayLabel:'',
+            label:a.name+unreadWords(a)+', '+who+', folder '+deskMask(showPath(r.path))+', asleep at the desk'+(said?', finished '+said:'')+': '+line+(/[.!?…]$/.test(line)?'':'.')+' Open chat panel.',helpers:helpersOf(a).map(h=>stOf(h,false))};
         }
         const br=v&&v.place===D.COFFEE&&BREAKS.get(a.id)&&BREAKS.get(a.id).kind!=='cap'?coffeeUntilWords(a):''; /* owner 2026-11-02: the post-it of a coffee break says until when (an app's usage window), never of Durbar's cap at the Bank */
-        return {id:a.id,name:a.name,role:a.role,state:st,word:stWord(a),task,tip:deskTip(a),selected:ui.selected===a.id,away:v?v.place:null,awayLabel:place+(br?' '+br:''),
-          label:[a.name,a.role,stWord(a)].concat(task?[task]:[],needs?['needs you']:[],place?['at '+place]:[]).join(', ')+'. Open chat panel.', /* FR-090: text for setAttribute, not markup */
+        return {id:a.id,name:a.name,role:a.role,state:st,word:stWord(a),task,tip:deskTip(a),selected:ui.selected===a.id,ren:canRenameSession(a),unread:isUnread(a),away:v?v.place:null,awayLabel:place+(br?' '+br:''),
+          label:[a.name+unreadWords(a),a.role,stWord(a)].concat(task?[task]:[],needs?['needs you']:[],place?['at '+place]:[]).join(', ')+'. Open chat panel.', /* FR-090: text for setAttribute, not markup */
           helpers:helpersOf(a).map(h=>stOf(h,false))};})};
   });
   const places=lobbyPlaces().map(p=>{
@@ -1638,7 +1676,7 @@ function realModel(model){
       title:p.id===D.POSTBOX?placeLabelFull(p.id)+': the next scheduled runs. Open Settings > Schedules.':placeTip(p.id,ids,wait),
       visitors:ids.map(id=>{const a=byId(id),v=VISITS.at(id);return {id,name:a.name,needsYou:vis(a)==='waiting'||!!a.limit,title:visitorWords(a,v,true)};})};
   });
-  return {folders,places,slips:realSlips(),alertIcon:ALERT_ICON,sessions:agents.filter(a=>!a.parent).map(a=>({id:a.id,folder:a.room}))};
+  return {folders,places,slips:realSlips(),alertIcon:ALERT_ICON,renIcon:ICON('rename'),sessions:agents.filter(a=>!a.parent).map(a=>({id:a.id,folder:a.room}))};
 }
 /* spec 097 FR-121, FR-122, FR-124 (Real office): the requests the world draws as slips at the Boss door and the Bank, and as a bubble at the desk. Plain data
    from the very cards the chat and the inbox already hold (pendingCardOf, inboxActs, requestText), so the words, the buttons, their order and their tooltips are
@@ -1728,7 +1766,7 @@ function renderReal(stage,floor,aw,ah,model,empty){
   }
   if(stage.dataset.d!=='real'){stage.dataset.d='real';stage.textContent='';}
   layoutKey='';GROW=0;setGrow(stage,0);spreadOffice(stage,false);stagePrev=null;
-  RO_LAST=window.DurbarRealOffice.render(stage,Object.assign(realModel(model),empty?{empty}:{}),{w:aw,h:ah},{live:liveOn(),still:REDUCED||SERIOUS||STILL_HL,hold:roFrozen()||(!!APP_SETTINGS&&APP_SETTINGS.characterMotion===false),screenOf:realScreen,world:pp.world,set:pp.set,remember:rememberOn(), /* FR-071: the 096 Motion setting, once it exists, stops the people */
+  RO_LAST=window.DurbarRealOffice.render(stage,Object.assign(realModel(model),empty?{empty}:{}),{w:aw,h:ah},{live:liveOn(),still:REDUCED||!MOTION||STILL_HL,hold:roFrozen(),screenOf:realScreen,world:pp.world,set:pp.set,remember:rememberOn(), /* FR-071: Settings > Motion (still above) stops the people */
     rand:CREW&&(SIM||!rememberOn())?CREW.seededRand:Math.random,onArt:()=>scheduleRender()});
   stage.style.width=aw+'px';stage.style.height=RO_LAST.height+'px';
   stage.dataset.fit=RO_LAST.scroll?'scroll':'ok';floor.classList.toggle('scrolls',!!RO_LAST.scroll);
@@ -2111,6 +2149,7 @@ function addUserMsg(chat,text,atts,ts){
     c.innerHTML=(x.img?ICON('img'):ICON('file'))+'<span>'+esc(x.name)+'</span>';box.appendChild(c);});
   if(!(atts||[]).length)box.remove();
   chat.el.appendChild(m);stickyScroll(chat);
+  return m;
 }
 function getChat(a){
   if(a.live)return liveChat(a);
@@ -2248,25 +2287,22 @@ function setSend(){const b=$('sendBtn'),t=$('msgInput');if(!b||!t)return;const a
 function syncChatHeader(){
   const p=$('panel'); if(!p)return;
   const E=window.exports||{}, RO=window.DurbarRealOffice, a=byId(ui.selected);
-  const on=document.body.classList.contains('panel-open')&&officeView()==='real'&&RO_LOAD==='ready'&&!!RO&&!!RO.personOf&&!!E.lightFor&&!!E.lampWords&&!!a&&!a.parent;
+  const on=document.body.classList.contains('panel-open')&&officeView()==='real'&&RO_LOAD==='ready'&&!!RO&&!!RO.personOf&&!!E.lightFor&&!!E.lampWords&&!!a&&!a.parent&&!!roFace(a);
   const port0=document.getElementById('roPortrait');
   document.body.classList.toggle('ro-chat',on);
   if(!on){if(port0)port0.remove();return;}
-  const pp=roPeople(), person=RO.personOf(a.id), v=VISITS.at(a.id), old=shutPlan(roomOf(a)).get(a.id)==='old'&&!v;
-  const ls=E.lightState(isFailing(a)?'failing':isRetrying(a)?'retrying':isCompacting(a)?'compacting':vis(a),{limit:!!a.limit,paused:!!a.paused,asleep:old});
-  const lt=E.lightFor(ls,{still:REDUCED||SERIOUS||STILL_HL}), words=E.lampWords(lt), pose=(E.SEAT_POSE||{})[ls]||'rest';
-  const file=person&&!v&&/^[a-z0-9-]{1,24}$/.test(person)?'realoffice/sets/'+pp.set+'/'+person+'-'+pose+'.webp':'';
-  const pack=/^[a-z0-9-]{1,24}$/.test(pp.set)&&/^[a-z0-9-]{1,24}$/.test(pp.world);
+  const f=roFace(a), pp=f.pp, v=f.v, ls=f.ls, file=f.file, pack=/^[a-z0-9-]{1,24}$/.test(pp.set)&&/^[a-z0-9-]{1,24}$/.test(pp.world); /* the one picker (issue 1193) */
+  const lt=E.lightFor(ls,{still:REDUCED||!MOTION||STILL_HL}), words=E.lampWords(lt);
   const key=[a.id,ls,words,file,stWord(a),v?v.place:'',helpersOf(a).length,pp.world,pp.set].join('|');
   /* the header portrait: the person's head and shoulders in a ring that carries the lamp's colour, with the status dot */
   let port=port0; const top=p.querySelector('.ph-top');
   if(top&&(!port||port._k!==key)){
     if(port)port.remove();
     port=document.createElement('span');port.id='roPortrait';port.className='ro-portrait';port.setAttribute('aria-hidden','true');port._k=key;
-    port.dataset.lamp=lt.lamp;port.dataset.call=lt.call||'';
-    const sm=(packMeta('sets',pp.set)||{}).seat, seatM=sm&&person&&Object.prototype.hasOwnProperty.call(sm,person)?sm[person]:null, crop=seatM&&E.portraitCrop?E.portraitCrop(seatM):null;
+    port.dataset.lamp=lt.lamp;port.dataset.tint=lt.tint; /* spec 097 FR-236: the ring follows the screen tint */
+    port.dataset.face=faceKey(a);
     if(file&&pack){const clip=document.createElement('span');clip.className='rp-clip';const im=document.createElement('img');im.alt='';im.draggable=false;im.src=file;
-      if(crop&&seatM){im.style.width=(seatM.w/crop.s*100)+'%';im.style.left=(-crop.x/crop.s*100)+'%';im.style.top=(-crop.y/crop.s*100)+'%';} /* the face fills the circle: the data of the layout's face box */
+      if(f.crop&&f.seatM){im.style.width=(f.seatM.w/f.crop.s*100)+'%';im.style.left=(-f.crop.x/f.crop.s*100)+'%';im.style.top=(-f.crop.y/f.crop.s*100)+'%';} /* the face fills the circle: the data of the layout's face box */
       clip.appendChild(im);port.appendChild(clip);}
     else{const t=document.createElement('b');t.className='rp-ini';t.textContent=Array.from(String(a.name||'?'))[0].toUpperCase();port.appendChild(t);} /* away or no picture: the initial, as the office's disc */
     const d=document.createElement('i');d.className='dot '+({limit:'waiting',asleep:'idle'}[ls]||ls);port.appendChild(d);
@@ -2286,6 +2322,7 @@ function updatePanelHeader(){
   syncMoreBtn(); /* spec 005 FR-234 (issue 1145): no More button for a menu with no items */
   $('pauseBtn').querySelector('span').textContent=a.paused?'Resume':'Pause';
   syncRunState(); /* spec 005 FR-038: Send or Stop follows the turn */
+  const av=ph.querySelector('.avatar'),fk=faceKey(a); if(av&&av.dataset.face!==fk){av.dataset.face=fk;av.innerHTML=avatar(a);} /* the header's face follows the agent's picture (issue 1193) */
   syncChatHeader(); /* spec 097 FR-106: the portrait and the lamp words follow the header */
   requestAnimationFrame(syncChatHeader); /* once more when the panel has its layout */
 }
@@ -2532,7 +2569,7 @@ function openPanel(id,focus){
   const mdlName=a.live&&a.info?modelLabel(a.info):'';
   const subText=a.role+(parent?' · helper of '+parent.name:'');
   p.innerHTML=`${railHTML()}<div class="panel-in">
-   <div class="ph" id="panelHead"><div class="ph-top"><div class="avatar">${avatar(a)}</div><div class="ph-id"><h2 id="panelTitle" tabindex="-1" title="${esc(panelTipOf(a))}"${titleRenameable(a)?` aria-label="${esc(a.name)}"`:''}>${panelTitleHTML(a)}</h2><div class="sub" title="${esc(subText)}">${parent?'':chatNoHTML(a)}${!parent&&chatNoOf(a)?'<span class="sr-only">Chat '+chatNoOf(a)+'. </span>':''}${esc(subText)}</div></div>
+   <div class="ph" id="panelHead"><div class="ph-top"><div class="avatar" data-face="${esc(faceKey(a))}">${avatar(a)}</div><div class="ph-id"><h2 id="panelTitle" tabindex="-1" title="${esc(panelTipOf(a))}"${titleRenameable(a)?` aria-label="${esc(a.name)}"`:''}>${panelTitleHTML(a)}</h2><div class="sub" title="${esc(subText)}">${parent?'':chatNoHTML(a)}${!parent&&chatNoOf(a)?'<span class="sr-only">Chat '+chatNoOf(a)+'. </span>':''}${esc(subText)}</div></div>
       <div class="ph-meta"><span data-f="status"></span><span class="ph-ago" data-f="ago"></span><!-- spec 005 FR-039: the header keeps who and what (status, limit, remote, folder); how the next message runs is under the message box (FR-037) -->${a.live&&!a.parent&&bridge&&bridge.setCap?capChipHTML(liveRoot(a)):''}${canRemote(a)?remoteChipHTML(a):''}<span class="folder" title="${esc(room.path)}"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" style="flex:none"><path d="M1.8 4.2a1.4 1.4 0 0 1 1.4-1.4h3l1.6 1.8h4.8a1.4 1.4 0 0 1 1.4 1.4v6.2a1.4 1.4 0 0 1-1.4 1.4H3.2a1.4 1.4 0 0 1-1.4-1.4z"/></svg><span class="folder-t">${esc(showPath(room.path))}</span></span>${notesOn(a)?'<button class="nt-count" id="ntCount" type="button" aria-expanded="false" aria-controls="notesDrawer" data-notes-toggle hidden>Notes</button>':''}</div>      <div class="actions"><!-- spec 052 FR-003: two actions in view (FR-139: a third, + New, by owner decision), the rest under More (ids kept; End and Remove last); spec 006 FR-033 (2026-10-21): Previous sessions moved out of the actions, to their own section above the chat -->${a.live&&!a.parent&&bridge.newSession&&anyKindReady()&&!demoOn?`<button class="btn sm" id="newSessHdrBtn" type="button" title="New session in ${esc(room.name)}" aria-label="New session in ${esc(room.name)}">+ New</button>`:''}${a.live?`<button class="btn sm primary" id="vscodeBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="openWithMenu" title="Open this folder in an editor or the file manager. This does not move the conversation.">${CODE_SVG}Open with<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg></button><div class="more-menu" id="openWithMenu" role="menu" aria-label="Open with" aria-describedby="owNote" hidden><p role="none" class="ow-note" id="owNote">Opens this folder only. Your conversation stays here.${a.live&&bridge.newSession&&!a.parent&&anyKindReady()&&canHandover(a)?' To hand it to another app, use More, then Continue in another app…':''}</p><div id="owItems" role="none"></div></div>`:`<button class="btn sm primary" id="vscodeBtn" type="button" title="A demo agent: shows the command an editor would be opened with">${CODE_SVG}Open in editor</button>`/* spec 009 FR-019 (review of PR 976): a demo agent has no menu to promise */}
         <button class="btn sm" id="pauseBtn" type="button"><svg viewBox="0 0 16 16" fill="currentColor"><rect x="4" y="3" width="2.8" height="10" rx="1"/><rect x="9.2" y="3" width="2.8" height="10" rx="1"/></svg><span>Pause</span></button>
         <button class="btn sm" id="moreBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="moreMenu" title="More actions for this agent">More<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg></button><div class="more-menu" id="moreMenu" role="menu" aria-label="More actions" hidden>${a.live&&!a.parent?`<button class="more-it" role="menuitem" tabindex="-1" id="toolsHdrBtn" type="button" title="Which tools this agent used, how often, and its models and context window"><span class="mt">Tools and usage<small>Tools used, models, context window</small></span></button>`:''}${notesOn(a)?`<button class="more-it" role="menuitem" tabindex="-1" id="notesHdrBtn" type="button" data-notes-toggle aria-keyshortcuts="${esc(ariaKeys(NOTES_KEYS))}" title="Messages and ideas kept for this folder, to put back into the message box"><span class="mt">Notes…<small>Saved messages and ideas · ${esc(keyText(NOTES_KEYS))}</small></span></button>`:''}${a.live&&!a.parent&&bridge.listSchedules&&!demoOn?`<button class="more-it" role="menuitem" tabindex="-1" id="schedHdrBtn" type="button" title="Prompts sent to this folder's agent at a time, every day or at an interval"><span class="mt">Schedules${(()=>{try{const n=schedulesOf(room).filter(s=>!s.done).length;return n?' ('+n+')':'';}catch(e){return '';}})()}<small>Prompts sent at a set time</small></span></button>`:''}${a.live&&bridge.newSession&&!a.parent&&anyKindReady()?`<button class="more-it" role="menuitem" tabindex="-1" id="newSessBtn" type="button" title="Another agent with its own chat in this folder"><span class="mt">+ New session<small>Another agent in this folder</small></span></button>${canHandover(a)?'<button class="more-it" role="menuitem" tabindex="-1" id="handoverBtn" type="button" title="Start a session in another agent app from a summary of this conversation. You review it first."><span class="mt">Continue in another app…<small>Start there from a summary</small></span></button>':''}`:''}${canRemote(a)?`<button class="more-it${a.remote?' on':''}" role="menuitem" tabindex="-1" id="remoteBtn" type="button" title="Follow and steer this session from github.com and GitHub Mobile">${remoteItemInner(a)}</button>`:''}${a.live&&!a.parent&&resumeCmdOf(a)?`<button class="more-it" role="menuitem" tabindex="-1" id="copyResBtn" type="button" title="Copy a command that continues this session in a terminal (end the session here first)"><span class="mt">Copy resume command<small>Continue this session in a terminal</small></span></button>`:''}${canRenameSession(a)?`<button class="more-it" role="menuitem" tabindex="-1" id="renameSessBtn" type="button" title="Give this session a short name"><span class="mt">Rename…<small>A short name for this session</small></span></button>`:''}<div class="more-sep" role="separator"></div>${a.live&&bridge.end&&!a.parent?`<button class="more-it danger" role="menuitem" tabindex="-1" id="endBtn" type="button" title="End this session and free it. Sending a message later resumes it."><span class="mt">End session<small>A later message resumes it</small></span></button>`:''}${a.live&&bridge.removeSession&&!a.parent&&siblingsOf(a).length?`<button class="more-it danger" role="menuitem" tabindex="-1" id="rmSessBtn" type="button" title="End this session and take its card out of the office. The folder's other sessions stay."><span class="mt">Remove from office<small>Ends it; history stays in Previous sessions</small></span></button>`:(a.live&&bridge.removeFolder&&!a.parent&&!demoOn?`<button class="more-it danger" role="menuitem" tabindex="-1" id="rmFolderBtn" type="button" title="Forget ${esc(DurbarCutText.cutText(room.name,30))} in Agent Durbar. Its session ends; nothing on disk is deleted."><span class="mt">Remove folder<small>Forgets the folder; files stay on disk</small></span></button>`:'')}</div></div></div>
@@ -3888,7 +3925,7 @@ document.addEventListener('keydown',e=>{
   if(e.target&&e.target.closest&&!modalOpen()&&!e.repeat&&!e.target.closest('input,textarea,select,[contenteditable="true"]')&&INL().startsEdit(e,e.target.id==='panelTitle')){
     const t=e.target; let a=null,surf='',from='card',pid='';
     if(t.id==='panelTitle'||t.id==='panelTitleBtn'){a=byId(ui.selected);surf='panel';from='title';}
-    else if(t.matches('.desk[data-id]')){a=byId(t.dataset.id);surf='desk';}
+    else if(t.matches('.desk[data-id],.ro-plate[data-id]')){a=byId(t.dataset.id);surf='desk';} /* spec 059 FR-170: a Real office plate too */
     else if(t.matches('.lrow[data-id]')){a=byId(t.dataset.id);surf='list';}
     else if(t.matches('.ren[data-ren]')){a=byId(t.dataset.ren);surf=t.closest('#list')?'list':'desk';from='pencil';}
     else if(t.closest('#prev .prev-row[data-pg="cli"]')){a=byId(ui.selected);surf='prev';from=t.matches('.ren')?'pencil':'row';pid=t.closest('.prev-row').dataset.pk;}
@@ -4101,7 +4138,7 @@ function openInbox(focusId){
   {const wd=document.documentElement.dataset.world;
     if(officeView()==='real'&&/^[a-z0-9-]{1,24}$/.test(wd||'')){
       const hd=document.createElement('div');hd.className='ib-world';hd.dataset.surface='inbox';hd.setAttribute('aria-hidden','true');
-      hd.innerHTML='<img class="ibw-door" alt="" src="realoffice/worlds/'+wd+'/fx-boss.webp"><span class="ibw-faces">'+needsMeOrder().slice(0,4).map(a=>'<span class="ibw-face">'+avatar(a)+'</span>').join('')+'</span>';
+      hd.innerHTML='<img class="ibw-door" alt="" src="realoffice/worlds/'+wd+'/fx-boss.webp"><span class="ibw-faces">'+needsMeOrder().slice(0,4).map(a=>'<span class="ibw-face" data-face="'+esc(faceKey(a))+'">'+avatar(a)+'</span>').join('')+'</span>';
       const dl=d.querySelector('.inbox-dlg');dl.insertBefore(hd,dl.firstChild);
     }}
   document.body.appendChild(d);
@@ -4158,7 +4195,7 @@ function paintInbox(focusIndex){
     const rq=card?reqOf(card):'', isLimit=!!card&&card.classList.contains('limit'); /* FR-206: the request this row was painted for; FR-207: a limit row has its own amount and no letter key */
     const st=vis(a), q=card&&card.classList.contains('question'), what=card?(q?'asks':card.classList.contains('limit')?'reached its spending limit':card.classList.contains('coffee')?'is on a '+coffeeWord().toLowerCase():'needs your OK'):(st==='error'?'has an error':a.limit?'reached its limit':LABELS[st]||st);
     row.setAttribute('aria-labelledby','ibh'+i);row.dataset.id=a.id;
-    row.innerHTML='<div class="ib-av" aria-hidden="true">'+avatar(a)+'</div><div class="ib-main"><div class="ib-top"><h4 class="ib-h" id="ibh'+i+'" tabindex="-1"><b class="ib-n"></b> <span class="ib-sub"><span class="ib-w"></span> <span class="ib-f"></span> <span class="ib-wait"></span></span></h4></div><p class="ib-t" id="ibt'+i+'"></p><div class="ib-act"></div></div>';
+    row.innerHTML='<div class="ib-av" aria-hidden="true" data-face="'+esc(faceKey(a))+'">'+avatar(a)+'</div><div class="ib-main"><div class="ib-top"><h4 class="ib-h" id="ibh'+i+'" tabindex="-1"><b class="ib-n"></b> <span class="ib-sub"><span class="ib-w"></span> <span class="ib-f"></span> <span class="ib-wait"></span></span></h4></div><p class="ib-t" id="ibt'+i+'"></p><div class="ib-act"></div></div>';
     row.querySelector('.ib-h b').textContent=a.name;row.querySelector('.ib-h b').title=a.name;row.querySelector('.ib-w').textContent=what;row.querySelector('.ib-f').textContent='· '+roomOf(a).name;row.querySelector('.ib-f').title=roomOf(a).name; /* spec 052 FR-170: the name is its own line, the rest wraps below it */
     {const t=NEED_SINCE.get(a.id);row.querySelector('.ib-wait').textContent=t!=null?'· '+ATT.waitLabel(Date.now()-t):'';} /* FR-061 */
     const text=card?requestText(card):(taskOf(a)||'');row.querySelector('.ib-t').textContent=text;
@@ -4973,7 +5010,7 @@ let RIDE_T=0;
 function rideFloor(from,to,swap){
   clearTimeout(RIDE_T); document.querySelectorAll('.ro-ride').forEach(x=>x.remove()); document.querySelectorAll('#lift .ride-to').forEach(x=>x.classList.remove('ride-to'));
   const ro=document.querySelector('#stage .ro');
-  if(officeView()!=='real'||REDUCED||SERIOUS||reducedMotion()||!ro||!RO_LAST||!document.body||document.hidden)return false;
+  if(officeView()!=='real'||REDUCED||!MOTION||reducedMotion()||!ro||!RO_LAST||!document.body||document.hidden)return false;
   const FN=window.DurbarFloorNav, list=floorsOnList(), i=list.findIndex(x=>x.id===from), j=list.findIndex(x=>x.id===to), f=floorById(to), c=LIFT_COUNTS&&LIFT_COUNTS[to];
   const r=document.createElement('div'); r.className='ro-ride closing'; r.dataset.surface='floor-jumps'; r.setAttribute('aria-hidden','true');
   r.style.top=RO_LAST.lobbyH+'px'; r.style.height=Math.max(0,RO_LAST.height-RO_LAST.lobbyH)+'px';
@@ -4997,7 +5034,7 @@ function goToFloor(id,o){
   const from=curFloorId();
   curFloor=f.id; saveCurFloor(); noWalkNow();
   const after=()=>{renderAll();const fl=$('floor'); if(fl)fl.scrollTop=o.edge==='bottom'?fl.scrollHeight:0;};
-  if(!rideFloor(from,f.id,after))after(); /* spec 097 FR-125: in Real office the jump rides the lift (the cover closes over the old floor, the new one is drawn behind it, the cover opens); instant under reduced motion, Serious mode and in the flat office */
+  if(!rideFloor(from,f.id,after))after(); /* spec 097 FR-125: in Real office the jump rides the lift (the cover closes over the old floor, the new one is drawn behind it, the cover opens); instant under reduced motion, with Motion off and in the flat office */
   if(o.announce!==false)announceFloor(f.id);
   return true;
 }
@@ -5035,6 +5072,8 @@ function setFloorView(v,id){
 /* ---- spec 092 phase 2: the lift panel (FR-006..FR-008, FR-013..FR-016, FR-028) and its All button (FR-032) ---- */
 /* what an agent shows on its floor's lift button (FR-014): the inbox's predicate (needsMe) plus the unread New reply; each agent one kind */
 const liftKind=a=>{if(!a||a.parent)return null;if(needsMe(a))return a.limit||a.coffee?'limit':vis(a)==='error'?'error':'waiting';return isUnread(a)?'reply':null;};
+/* spec 001 FR-231 (spec 097 FR-236's tint and its precedence, without loading Real office's lights.js: 097 SC-004): the colour of a desk's screen. Green only for a done desk with an unread reply */
+const deskTint=a=>{if(!a||a.parent)return 'none';const k=liftKind(a);if(k==='limit')return 'orange';if(k==='error')return 'red';if(k==='waiting')return 'amber';if(isFailing(a))return 'red';return k==='reply'&&vis(a)==='done'?'green':'none';};
 function liftCounts(){
   const items=[];
   for(const a of agents){const k=liftKind(a);if(!k)continue;const r=roomOf(a),f=r&&floorById(r.floor);if(f)items.push({id:a.id,floor:f.id,kind:k,hidden:!!r.hidden});}
@@ -5431,6 +5470,12 @@ function mcpReLine(p){
     if(!a.mcpReNote||!chat.el.contains(a.mcpReNote)){a.mcpReNote=addNote(chat,'');a.mcpReNote.classList.add('mcpre');a.mcpReNote.setAttribute('role','status');}
     a.mcpReNote.textContent='MCP sign-ins are still reconnecting'+(names.length?': '+names.join(', '):'')+'. Sent anyway; a tool from those servers may wait or fail.';
     a.mcpReNote=null; /* it stays as said; the next line is a new one */
+  }else if(p.kind==='reconnecting'){ /* spec 058 FR-226 (issue 1205): only while a reconnect started by the check before a message runs; silent otherwise */
+    const nm=/^[A-Za-z0-9_.-]{1,64}$/.test(String(p.name))?String(p.name):'an MCP server', rc=(a.mcpRcNotes||(a.mcpRcNotes=new Map())), key=String(p.name);
+    const old=rc.get(key);if(old)old.remove();
+    const n=addNote(chat,'');n.classList.add('mcpre','mcpre-rc');n.setAttribute('role','status');n.textContent='Reconnecting '+nm+'…';rc.set(key,n);
+  }else if(p.kind==='reconnect-end'){
+    const rc=a.mcpRcNotes, n=rc&&rc.get(String(p.name));if(n){n.remove();rc.delete(String(p.name));}
   }else if(p.kind==='done'||p.kind==='not-sent')drop();
   else if(p.kind==='needs-sign-in'){
     const name=MCPRE_NAME(p.name);if(!name)return;
@@ -5441,6 +5486,14 @@ function mcpReLine(p){
     const b=document.createElement('button');b.type='button';b.className='btn sm mcpre-btn';b.textContent='Sign in…';b.dataset.n=String(p.name);
     b.setAttribute('aria-label','Sign in to '+name+' again: open the MCP servers');
     n.append(t,b);
+  }else if(p.kind==='nudged'){ /* spec 058 FR-218: the one automatic message, said plainly before it is sent */
+    const name=MCPRE_NAME(p.name)||'An MCP server';
+    const n=addNote(chat,'');n.classList.add('mcpre','mcpre-nudge');n.setAttribute('role','status');
+    n.textContent='Sent automatically: '+name+' was reconnected after a sign-in error, so the agent was asked to retry the step that failed.';
+  }else if(p.kind==='nudge-failed'){ /* the automatic message was refused: the bubble is marked, the line says so */
+    const last=[...chat.el.querySelectorAll('.msg.user.auto')].pop();
+    if(last&&!last.querySelector('.unsent')){last.classList.add('not-sent');const u=document.createElement('div');u.className='unsent';u.textContent='Not sent';last.appendChild(u);}
+    const n=[...chat.el.querySelectorAll('.note.mcpre-nudge')].pop();if(n)n.textContent='The automatic message was not sent. Ask the agent to retry the step yourself.';
   }
   /* review of PR 1080: the line is what the person's own send caused, so in the open chat it is brought into view (the chat's own scroller
      only, after layout), also when the chat was scrolled up and does not follow new text */
@@ -6500,7 +6553,9 @@ function onLiveEvent(e){
   if(e.agentId&&e.type!=='permission'&&e.type!=='grants'&&e.type!=='limit')return onSubEvent(a,e);
   const chat=liveChat(a), main=true;
   switch(e.type){
-  case 'user':{addUserMsg(chat,e.text,(e.attachments||[]).map(x=>({name:String(x.path).split(/[\\/]/).pop(),img:x.kind==='image',path:x.path})));return;}
+  case 'user':{const um=addUserMsg(chat,e.text,(e.attachments||[]).map(x=>({name:String(x.path).split(/[\\/]/).pop(),img:x.kind==='image',path:x.path})));
+    if(e.auto===true&&um){um.classList.add('auto');const mt=um.querySelector('.meta');if(mt)mt.textContent=mt.textContent.replace(/^You/,'Agent Durbar, automatic');} /* spec 058 FR-218: not the person's own message */
+    return;}
   case 'status':{
     if(!main)return;
     /* spec 015 FR-009b: the desk mark ends when the agent goes idle, stops or fails (a compaction in the background may still run: its line stays until the result);
@@ -6878,7 +6933,7 @@ function railAgeSaid(x,now){const t=NEED_SINCE.get(x.id);return vis(x)==='waitin
 function railReq(x){const c=x.live||chats[x.id]?pendingCardOf(x):null;return c?requestText(c):taskText(x);} /* never builds a demo chat just to look (as attentionItems) */
 function railRow(x,root,now){
   const st=pillSt(x),attn=st==='waiting'||st==='error'||st==='failing'||st==='retrying', sel=x.id===root, tall=needsMe(x); /* spec 052 FR-092: Failing here too; spec 034 FR-018: Retrying */
-  const head=`<span class="sav">${avatar(x)}</span>`, name=`<b>${esc(x.name)}${draftHTML(x)}${unreadHTML(x)}${dialogHTML(x)}</b>`;
+  const head=`<span class="sav" data-face="${esc(faceKey(x))}">${avatar(x)}</span>`, name=`<b>${esc(x.name)}${draftHTML(x)}${unreadHTML(x)}${dialogHTML(x)}</b>`;
   const cls=`sitem st-${st}${attn?' attn':''}${tall?' tall':''}${sel?' sel':''}`, key=`data-sw="${esc(x.id)}" data-key="sw:${esc(x.id)}" aria-current="${sel}"`, who=`${esc(x.name)}${chatNoWords(x)}${draftWords(x)}${unreadWords(x)}`, no=chatNoOf(x)?'C'+chatNoOf(x)+' · ':'';
   if(!tall)return `<button class="${cls}" type="button" ${key} title="${no}${esc(x.name)} · ${esc(stWord(x,true))}: ${esc(taskText(x))}" aria-label="${who}, ${esc(stWord(x,true))}. Open chat.">${head}<span class="stx">${name}</span><span class="sst"><span class="dot ${st}"></span><span class="sw">${esc(stWord(x,true))}</span></span></button>`;
   const req=SHORT(railReq(x),200); /* masked first (requestText), then cut: tooltips stay within 300 characters (spec 052 FR-171) */
@@ -6897,12 +6952,13 @@ function renderStrip(){
   renderRailDoor();
   /* spec 005 FR-216: a moved folder is re-inserted by morphHTML, which drops the focus; the focused row or heading gets it back by key */
   const fa=document.activeElement, fk=fa&&box.contains(fa)?(fa.dataset.sw!=null?'[data-sw="'+CSS.escape(fa.dataset.sw)+'"]':fa.dataset.rgfold!=null?'[data-rgfold="'+CSS.escape(fa.dataset.rgfold)+'"]':null):null;
-  morphHTML(box,railGroups().map((g,gi)=>{
+  const rows=withFaceMemo(()=>railGroups().map((g,gi)=>{
     const r=ROOMS.find(x=>x.id===g.room); if(!r)return '';
     const shut=folds.has(r.path), n=g.ids.length, here=!!root&&g.ids.includes(root);
     const need=shut&&g.needN?`<span class="rg-need" title="${g.needN} ${g.needN===1?'needs':'need'} you">${ALERT_ICON}${g.needN}</span>`:'';
     return `<div class="rgrp" data-key="rg:${esc(r.id)}"><h3 class="rg-hd"><button class="rg-h${shut&&here?' has-sel':''}" type="button" data-rgfold="${esc(r.id)}" aria-expanded="${!shut}" aria-controls="rgRows${gi}" title="${esc(r.name)}" aria-label="${esc(r.name)}: ${n} ${n===1?'session':'sessions'}${g.needN?', '+g.needN+(g.needN===1?' needs':' need')+' you':''}${shut&&here?', the open chat is here':''}">${ICON('chev')}<span class="rg-n">${esc(r.name)}</span>${need}<span class="rg-c" aria-hidden="true">${n}</span></button></h3><div class="rg-rows" id="rgRows${gi}"${shut?' hidden':''}>${g.ids.map(id=>railRow(byId(id),root,now)).join('')}</div></div>`;
   }).join(''));
+  morphHTML(box,rows);
   if(fk&&!box.contains(document.activeElement)){const n=box.querySelector(fk);if(n&&n.getClientRects().length)n.focus({preventScroll:true});}
   /* 052 FR-061: the ages tick as text only, every 30 s while the rail is shown */
   if(!railTick)railTick=setInterval(()=>{if(!$('stripList')){clearInterval(railTick);railTick=0;return;}const t=Date.now();document.querySelectorAll('#stripList .sitem.tall[data-sw]').forEach(el=>{const x=byId(el.dataset.sw),s=el.querySelector('.sage');if(x&&s){const v=railAge(x,t);if(s.textContent!==v)s.textContent=v;}});},30000);
@@ -8406,7 +8462,8 @@ function inlineNameEl(surface,id,pid){
     const row=prevRowEl('cli',pid); return row?row.querySelector('.prev-t'):null;
   }
   const list=surface==='list';
-  return document.querySelector((list?'#list .lrow':'#stage .desk')+'[data-id="'+CSS.escape(id)+'"] '+(list?'.lnm':'.name'));
+  const q='[data-id="'+CSS.escape(id)+'"]';
+  return document.querySelector(list?'#list .lrow'+q+' .lnm':'#stage .desk'+q+' .name, #stage .ro-plate'+q+' .ro-l1>b'); /* spec 059 FR-170: or a Real office plate's name */
 }
 /* One session's name edited in place. `from`: what started it ('title', 'pencil', 'card'), so focus goes back there. The save is the
    dialog's own submit part (submitSessionName), not a copy (FR-022). `pid`: the session id of a Previous sessions row. */
@@ -8415,7 +8472,7 @@ function startSessionEdit(a0,surface,from,pid){
   let prev=null,onDone=null,cur=a.name;
   if(surface==='prev'){const x=prevRenameArgs(a,pid,'.ren[data-renprev]'); if(!x)return false; prev=x.prev; onDone=x.onDone; cur=prev.name||prev.title||'';}
   const find=()=>inlineNameEl(surface,a.id,pid), el=find(); if(!el||el==='gone'||!el.getClientRects().length)return false; /* a hidden name (the other view) has no box to cover */
-  const app=kindWord((a.info||{}).adapterId), id=CSS.escape(a.id), root=surface==='list'?'#list':'#stage', row=surface==='list'?'.lrow':'.desk';
+  const app=kindWord((a.info||{}).adapterId), id=CSS.escape(a.id), root=surface==='list'?'#list':'#stage', row=surface==='list'?'.lrow':'.desk,.ro-plate';
   INL().open({doc:document,anchor:el,value:SN().shortName(cur,SN().MAX),max:SN().MAX,key:surface+':'+(pid||a.id),
     label:'Name of session '+cur,hint:'Enter saves, Escape cancels. Empty uses '+app+"'s title again.",
     check:SN().nameError,
@@ -8424,7 +8481,7 @@ function startSessionEdit(a0,surface,from,pid){
     reanchor:find,
     grow:surface!=='prev',maxWidth:surface==='list'?360:480,
     clip:()=>{const n=find();return n&&n!=='gone'?(surface==='panel'?$('panelHead'):surface==='prev'?n.closest('.prev-tx'):n.closest(row)):null;},
-    focusBack:()=>surface==='panel'?($('panelTitleBtn')||$('panelTitle')):surface==='prev'?(()=>{const r=prevRowEl('cli',pid);return r&&(r.querySelector('.ren[data-renprev]')||r.querySelector('.prev-more'));})():document.querySelector(from==='pencil'?root+' .ren[data-ren="'+id+'"]':root+' '+row+'[data-id="'+id+'"]')});
+    focusBack:()=>surface==='panel'?($('panelTitleBtn')||$('panelTitle')):surface==='prev'?(()=>{const r=prevRowEl('cli',pid);return r&&(r.querySelector('.ren[data-renprev]')||r.querySelector('.prev-more'));})():document.querySelector(from==='pencil'?root+' .ren[data-ren="'+id+'"]':row.split(',').map(r=>root+' '+r+'[data-id="'+id+'"]').join(','))});
   return true;
 }
 /* the item left the window while its field was open (FR-023 item 4): the field closed without saving; keep focus somewhere real, nearest first */
@@ -8938,7 +8995,7 @@ if(bridge){
   window.DurbarScreens.init({handover:{ /* spec 011 FR-088: a near-limit card offers the existing dialog for a live session; found again by id at the click */
     sessions:(kind)=>agents.filter(a=>a.live&&!a.parent&&(a.info&&a.info.adapterId||'copilot')===kind&&canHandover(a)).slice(0,3).map(a=>({id:a.id,name:a.name})),
     open:(id,to)=>{const a=byId(id);if(!a||!a.live||!canHandover(a))return false;newSession(a,{summary:true,handover:true,to});return true;}
-  },autoFollow:{get:()=>AF_ON,set:v=>setAutoFollowOn(v)},shutters:{get:()=>SHUT_PREF,set:setShutOn,usable:()=>!!SHUT},view:{get:officeView,set:setOfficeView,note:()=>roPeople().note&&officeView()==='real'?roPeople().note:'',world:{get:()=>roPeople().world,set:setRoWorld,list:roWorlds,defaultSet:()=>roPeople().setName}},navKey:{text:navKeyText,textOf:c=>keyText(NAV.comboParts(c)),defText:()=>keyText(NAV.comboParts(NAV.DEFAULT_COMBO)),isDefault:()=>NAV.sameCombo(NAV_KEY,NAV.DEFAULT_COMBO),set:setNavKey,recording:on=>{navRecording=!!on;},fromEvent:e=>NAV.comboFromEvent(e,IS_MAC),clash:c=>NAV.clashOf(c,IS_MAC)},roomName:id=>{const r=ROOMS.find(x=>x.id===id);return r?r.name:String(id||'');},refreshKinds:()=>loadKinds(true),setAccounts,density:{get:()=>DENSITY,set:setDensity},liveAct:{get:()=>LIVE_PREF,set:setLiveOn,usable:()=>!!LIVEACT},bridge,stats:STATS,esc,mask:safeMask,toast,announce,floors:{on:()=>floorsLive(),render:()=>renderFloorsSettings()},sched:{on:()=>!!bridge.listSchedules&&!demoOn,render:()=>renderSchedSettings()},onSettings:v=>{APP_SETTINGS=v||{};},onUsageReset,isSerious:()=>SERIOUS,isNotify:()=>NOTIFY,setNotify:on=>{NOTIFY=!!on;},breakResume:()=>BREAK_RESUME,setBreakResume:v=>{BREAK_RESUME=v==='ask'?'ask':'auto';},chatLinksIn:()=>CHAT_LINKS,setChatLinksIn:v=>{CHAT_LINKS=v==='system'?'system':'session';},setSerious:on=>{SERIOUS=!!on;markSerious();scheduleRender();},isStillHl:()=>STILL_HL,setStillHl:on=>{STILL_HL=!!on;markStillHl();scheduleRender();},usageSince:()=>LEDGER.since(),usageOffice:()=>LEDGER.office(),costData,usageError:()=>usageSaveError,
+  },autoFollow:{get:()=>AF_ON,set:v=>setAutoFollowOn(v)},shutters:{get:()=>SHUT_PREF,set:setShutOn,usable:()=>!!SHUT},view:{get:officeView,set:setOfficeView,note:()=>roPeople().note&&officeView()==='real'?roPeople().note:'',world:{get:()=>roPeople().world,set:setRoWorld,list:roWorlds,defaultSet:()=>roPeople().setName}},navKey:{text:navKeyText,textOf:c=>keyText(NAV.comboParts(c)),defText:()=>keyText(NAV.comboParts(NAV.DEFAULT_COMBO)),isDefault:()=>NAV.sameCombo(NAV_KEY,NAV.DEFAULT_COMBO),set:setNavKey,recording:on=>{navRecording=!!on;},fromEvent:e=>NAV.comboFromEvent(e,IS_MAC),clash:c=>NAV.clashOf(c,IS_MAC)},roomName:id=>{const r=ROOMS.find(x=>x.id===id);return r?r.name:String(id||'');},refreshKinds:()=>loadKinds(true),setAccounts,density:{get:()=>DENSITY,set:setDensity},liveAct:{get:()=>LIVE_PREF,set:setLiveOn,usable:()=>!!LIVEACT},bridge,stats:STATS,esc,mask:safeMask,toast,announce,floors:{on:()=>floorsLive(),render:()=>renderFloorsSettings()},sched:{on:()=>!!bridge.listSchedules&&!demoOn,render:()=>renderSchedSettings()},onSettings:v=>{APP_SETTINGS=v||{};},onUsageReset,isSerious:()=>SERIOUS,isNotify:()=>NOTIFY,setNotify:on=>{NOTIFY=!!on;},breakResume:()=>BREAK_RESUME,setBreakResume:v=>{BREAK_RESUME=v==='ask'?'ask':'auto';},chatLinksIn:()=>CHAT_LINKS,setChatLinksIn:v=>{CHAT_LINKS=v==='system'?'system':'session';},setSerious:on=>{SERIOUS=!!on;markSerious();scheduleRender();},isMotion:()=>MOTION,setMotion:on=>{MOTION=!!on;markMotion();scheduleRender();},isStillHl:()=>STILL_HL,setStillHl:on=>{STILL_HL=!!on;markStillHl();scheduleRender();},usageSince:()=>LEDGER.since(),usageOffice:()=>LEDGER.office(),costData,usageError:()=>usageSaveError,
     places:window.DurbarPlaces,customPlaces:()=>CUSTOM,placeMap:()=>PLACE_MAP,placeLabel,setCustomPlaces,placeServers:()=>[...SEEN_SERVERS],setPlaceMap:m=>{PLACE_MAP=(m&&typeof m==='object')?m:{};scheduleRender();},
     applyTheme,
     applyCharacters,charPreview, /* spec 077 FR-068 */
@@ -9006,7 +9063,7 @@ if(bridge){
     }).catch(()=>apply());}else apply();
   };
   if(bridge.getOrder)bridge.getOrder().then(d=>{ORDER=RO.sanitize(d);scheduleRender();}).catch(()=>{}); /* issue 677: a failed or corrupt read keeps the automatic order */
-  if(bridge.getSettings)bridge.getSettings().then(v=>{APP_SETTINGS=v||{};PLACE_MAP=(v&&v.placeMap)||{};CUSTOM=(v&&Array.isArray(v.customPlaces))?v.customPlaces:[];SERIOUS=!!(v&&v.seriousMode);markSerious();STILL_HL=!!(v&&v.stillHighlights);markStillHl();setAutoFollowOn(!!(v&&v.autoFollowWork===true));NOTIFY=!!(v&&v.notifyNeedsMe!==false);BREAK_RESUME=v&&v.breakResume==='ask'?'ask':'auto';CHAT_LINKS=v&&v.chatLinksIn==='system'?'system':'session';themeBoot(v);}).catch(()=>{});
+  if(bridge.getSettings)bridge.getSettings().then(v=>{APP_SETTINGS=v||{};PLACE_MAP=(v&&v.placeMap)||{};CUSTOM=(v&&Array.isArray(v.customPlaces))?v.customPlaces:[];SERIOUS=!!(v&&v.seriousMode);markSerious();STILL_HL=!!(v&&v.stillHighlights);markStillHl();MOTION=!(v&&v.motion===false);markMotion();setAutoFollowOn(!!(v&&v.autoFollowWork===true));NOTIFY=!!(v&&v.notifyNeedsMe!==false);BREAK_RESUME=v&&v.breakResume==='ask'?'ask':'auto';CHAT_LINKS=v&&v.chatLinksIn==='system'?'system':'session';themeBoot(v);}).catch(()=>{});
   setInterval(()=>{if(VISITS.tick())scheduleRender();},250);
   setInterval(coffeeTick,SIM_BREAK?1000:5000); /* spec 068: resume, ask or remind when a break is due */
   agents=LIVE.agents; ROOMS=LIVE.rooms;
@@ -9021,7 +9078,7 @@ if(pendingOpen&&demoOn){openPanel(pendingOpen,false);pendingOpen=null;}
 const settleNow=()=>{if(!agentsListed||!window.__durbarSimReplayed||baselineQueued||baselineAsking)return false;if(renderQueued){renderQueued=false;renderAll();}return true;};
 /* simulator drivers load with simfreeze=1: the desk glow then holds still (FR-178: the geometry and screenshot checks measure boxes, so no zoom may be mid-way); the unread driver opts back in with hlmotion=1 to test the motion itself */
 if(SIM&&qs.get('simfreeze')==='1'&&qs.get('hlmotion')!=='1')document.documentElement.classList.add('hl-still');
-if(SIM)window.__durbarSimUi={afPasses:()=>AF_PASSES,ops:()=>({...OPS}),agents:()=>agents,scene:(a,mini,c)=>scene(a,mini,c), /* a drawn scene's markup, for the drivers (FR-192: the SMIL wave) */cv:{mark:cvMark,release:cvRelease,drop:cvDrop,openPanel,setDensity},setLive:setLiveOn,setOfficeView,needsCount:()=>needsMeOrder().length,clearDetail:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return false;c.querySelectorAll(':scope > details.pdiff').forEach(x=>x.remove());scheduleRender();return true;},addDetail:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return false;const d=document.createElement('details');d.className='pdiff';d.innerHTML='<summary>Show the change (+1 \u22121)</summary><pre>- a\n+ b</pre>';c.insertBefore(d,c.querySelector(':scope > .note-actions'));scheduleRender();return true;},requestText:s=>{const n=document.createElement('div');n.className='note elicit';n.textContent=String(s);return requestText(n);},setSerious:v=>{SERIOUS=!!v;return SERIOUS;}, /* spec 097 (the moments driver): a change in the card, the card text's masking, Serious mode */unread:{mark:id=>UNREAD.complete(id,false)==='marked',read:id=>markRead(byId(id))}, /* spec 097 (the moments driver): the New reply mark and Mark as read, as the app sets them */order:{get:()=>ORDER,saved:()=>bridge.getOrder?bridge.getOrder():null,reset:resetOrder,path:id=>(ROOMS.find(r=>'room:'+r.id===id)||{}).path||''}, /* issue 677 (check 033-order): the order held and saved, Reset, a room's key */
+if(SIM)window.__durbarSimUi={afPasses:()=>AF_PASSES,railPlans:()=>{renderStrip();return faceMemoPlans;}, /* issue 1193: room plans one rail render worked out */ops:()=>({...OPS}),agents:()=>agents,scene:(a,mini,c)=>scene(a,mini,c), /* a drawn scene's markup, for the drivers (FR-192: the SMIL wave) */cv:{mark:cvMark,release:cvRelease,drop:cvDrop,openPanel,setDensity},setLive:setLiveOn,setOfficeView,needsCount:()=>needsMeOrder().length,clearDetail:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return false;c.querySelectorAll(':scope > details.pdiff').forEach(x=>x.remove());scheduleRender();return true;},addDetail:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return false;const d=document.createElement('details');d.className='pdiff';d.innerHTML='<summary>Show the change (+1 \u22121)</summary><pre>- a\n+ b</pre>';c.insertBefore(d,c.querySelector(':scope > .note-actions'));scheduleRender();return true;},requestText:s=>{const n=document.createElement('div');n.className='note elicit';n.textContent=String(s);return requestText(n);},setSerious:v=>{SERIOUS=!!v;return SERIOUS;}, setMotion:v=>{MOTION=!!v;markMotion();return MOTION;}, /* spec 097 (the moments driver): a change in the card, the card text's masking, Serious mode */unread:{mark:id=>UNREAD.complete(id,false)==='marked',read:id=>markRead(byId(id))}, /* spec 097 (the moments driver): the New reply mark and Mark as read, as the app sets them */order:{get:()=>ORDER,saved:()=>bridge.getOrder?bridge.getOrder():null,reset:resetOrder,path:id=>(ROOMS.find(r=>'room:'+r.id===id)||{}).path||''}, /* issue 677 (check 033-order): the order held and saved, Reset, a room's key */
   toast:(s,act)=>{const t=act?toastAction(esc(String(s)),String(act),()=>{},8000):toast(esc(String(s)),8000);return !!t;}, /* spec 097 FR-113: a toast for the world-chrome driver (simulator only) */visitsSettled:()=>VISITS.settled(), /* spec 097 FR-186: no visit is about to start or end on the wall clock (check-office-ops-real reads a settled lobby) */realLayout:()=>RO_LAST, /* spec 097: the last Real office layout (check-office-overlap's Real office variant) */slips:()=>realSlips(), /* spec 097: what the world draws as slips (the moments driver; simulator only) */uncrowd:()=>{agents.forEach(x=>VISITS.unpin(x.id));scheduleRender();return true;},crowd:(pid,n,from)=>{const a=agents.filter(x=>!x.parent).slice(from||0,(from||0)+n);a.forEach(x=>VISITS.pin(x.id,pid,'test'));scheduleRender();return a.length;}, /* spec 097: n main agents stand at a place (a "+N" crowd for the driver; simulator only) */crew:{state:()=>({map:{...CREW_MAP},help:{...CREW_HELP},bad:[...CREW_BAD],hasModule:!!CREW}),renderAll:()=>{renderAll();return true;},probe:()=>{try{crewPreload();syncCrew();return {ok:true,of:agents.map(x=>crewOf(x)).filter(Boolean).length};}catch(e){return {ok:false,err:String(e&&e.message)};}},openInbox:()=>{openInbox();return true;},closeInbox:()=>{closeInbox();return true;},openPanel:id=>{openPanel(id);return true;},fall:c=>{const f0=CREW.file;CREW.file=(i,p)=>i===c?'crew/art/gone.webp':f0(i,p);crewLoaded.clear();crewPreload();CREW.file=f0;return true;}}, /* spec 077 (check-crew): the character map, a render, and one character's pictures failing to load */
   readAll:(quiet)=>{const n=UNREAD.size;UNREAD.ids().forEach(id=>{UNREAD.read(id);UNREAD_AT.delete(id);});if(!quiet)scheduleRender();return n;},notes:{all:()=>[...NT.by.values()].map(x=>x.notes||[]).flat(),boxUsable:()=>boxUsable(),saveMsg:btn=>{const a=byId(ui.selected);return notesSaveMsg(a,msgInfo(btn),btn);},noCommands:()=>{const x=agents.find(q=>q.live&&!q.parent&&!slashSupported(q));return x?x.name:'';},selNow:()=>{showSelButton();const b=document.getElementById('ntSelBtn');return !!b&&!b.hidden;},open:()=>openNotes(byId(ui.selected)),close:()=>closeNotes(false),search:q=>{const f=$('ntSearch');if(!f)return false;f.value=q;f.dispatchEvent(new Event('input'));return true;},marks:{clear:()=>{document.querySelectorAll('#chat .nt-mark').forEach(x=>x.remove());document.querySelectorAll('#chat .bubble').forEach(b=>{b._nd=undefined;});return true;},run:()=>notesMarkAll(byId(ui.selected))},change:(note,patch)=>notesChange(byId(ui.selected),note,patch),rename:note=>renameNote(byId(ui.selected),note,null),plant:n=>{const a=byId(ui.selected),st=a&&notesOf(a);if(!st||!st.ok)return false;st.notes.push(n);notesPaint();if(slashUi)slashUpdate();return true;}}, /* spec 083: the check-notes driver reads the window's notes and takes the paths a click cannot */
   sizingLounges:()=>lastSizing.reduce((n,m)=>n+(m.rolled||[]).length,0), sizingMains:()=>lastSizing.reduce((n,m)=>n+m.mains.length,0), /* FR-181: the desks it is sized for (a pill does not reshape the cards) */ /* spec 001 FR-180: the finished agents the office is sized for */

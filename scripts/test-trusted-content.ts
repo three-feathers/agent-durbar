@@ -171,6 +171,34 @@ try {
   assert.ok(gateRun().out.includes('owner-hold(owner comment of 2026-11-01T10:00:00Z'), 'an owner account\'s "ok to merge" does not lift a hold');
   put('comments', [base, c('rubenlupi', 'not ok to merge yet, on hold', '2026-11-02T10:00:00Z', 'issuecomment-3')]);
   assert.ok(gateRun().out.includes('owner-hold(owner comment of 2026-11-02T10:00:00Z'), '"not ok to merge yet, on hold" is a hold');
+  // FR-080 (#1178): a hold or lift word in an inline code span, a fenced block or a quoted line is a quote, not the owner's words
+  const FENCE = '```';
+  put('comments', [base, c('vikramgorla', 'The gate matches `on hold` and `do not merge` in code spans.\n> owner hold, quoted from #967\n' + FENCE + '\ndon\'t merge\n' + FENCE + '\nLooks good.', '2026-11-01T10:00:00Z', 'issuecomment-2')]);
+  r = gateRun();
+  assert.ok(!r.out.includes('owner-hold'), `a hold phrase only in code, a fence or a quote is no hold:\n${r.out}`);
+  put('comments', [base, c('vikramgorla', 'Quoting: `on hold`\n' + FENCE + '\nowner hold\n' + FENCE + '\nThis one is on hold until the store lands.', '2026-11-01T10:00:00Z', 'issuecomment-2')]);
+  assert.ok(gateRun().out.includes(`owner-hold(owner comment of 2026-11-01T10:00:00Z: ${url('issuecomment-2')}`), 'a prose hold next to quoted ones still holds');
+  put('comments', [base, c('vikramgorla', 'A stray ' + FENCE + ' fence\nThis one is on hold until the store lands.', '2026-11-01T10:00:00Z', 'issuecomment-2')]);
+  assert.ok(gateRun().out.includes('owner-hold(owner comment of 2026-11-01T10:00:00Z'), 'an unclosed fence does not hide a later prose hold');
+  put('comments', [base, c('vikramgorla', HOLD, '2026-11-01T10:00:00Z', 'issuecomment-2'), c('fjcabello', 'The gate lifts on `hold lifted`\n> off hold\n' + FENCE + '\nhold lifted\n' + FENCE, '2026-11-02T10:00:00Z', 'issuecomment-3')]);
+  assert.ok(gateRun().out.includes('owner-hold(owner comment of 2026-11-01T10:00:00Z'), 'a quoted "hold lifted" does not lift a hold');
+  put('comments', [base, c('vikramgorla', HOLD, '2026-11-01T10:00:00Z', 'issuecomment-2'), c('fjcabello', 'Hold lifted. (`on hold` was the old state)', '2026-11-02T10:00:00Z', 'issuecomment-3')]);
+  assert.ok(!gateRun().out.includes('owner-hold'), 'a prose lift next to a quoted hold phrase lifts');
+  // FR-083 (#1190): the phrases match as whole words: "condition holds" is no "on hold"
+  for (const w of ['It ends as soon as the condition holds.', 'The button holds the state.', 'Mentions on holdings only.', 'Not a donut merge, no owner holder.']) {
+    put('comments', [base, c('vikramgorla', w, '2026-11-01T10:00:00Z', 'issuecomment-2')]);
+    assert.ok(!gateRun().out.includes('owner-hold'), `"${w}" holds no word-boundary hold phrase, so no hold`);
+  }
+  for (const w of ['On hold.', 'Please (on hold) wait', 'owner hold', "don't merge", 'don\u2019t merge', 'Do not merge!']) {
+    put('comments', [base, c('vikramgorla', w, '2026-11-01T10:00:00Z', 'issuecomment-2')]);
+    assert.ok(gateRun().out.includes('owner-hold(owner comment of 2026-11-01T10:00:00Z'), `"${w}" is still a hold`);
+  }
+  for (const w of ['hold lifted', 'Off hold.', '(off hold)']) {
+    put('comments', [base, c('vikramgorla', HOLD, '2026-11-01T10:00:00Z', 'issuecomment-2'), c('fjcabello', w, '2026-11-02T10:00:00Z', 'issuecomment-3')]);
+    assert.ok(!gateRun().out.includes('owner-hold'), `"${w}" still lifts a hold`);
+  }
+  put('comments', [base, c('vikramgorla', HOLD, '2026-11-01T10:00:00Z', 'issuecomment-2'), c('fjcabello', 'The threshold lifted, and the foothold lifted too.', '2026-11-02T10:00:00Z', 'issuecomment-3')]);
+  assert.ok(gateRun().out.includes('owner-hold(owner comment of 2026-11-01T10:00:00Z'), '"threshold lifted" and "foothold lifted" are no "hold lifted" lift');
   put('comments', [base]);
   put('reviews', [{ user: { login: 'fjcabello' }, body: 'Owner hold on this one', state: 'COMMENTED', submitted_at: '2026-11-01T12:00:00Z', commit_id: 'abcdef0123456789', html_url: url('pullrequestreview-9') }]);
   assert.ok(gateRun().out.includes(`owner-hold(owner comment of 2026-11-01T12:00:00Z: ${url('pullrequestreview-9')}`), 'an owner hold in a review body refuses');

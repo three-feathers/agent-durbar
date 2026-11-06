@@ -1,1 +1,0 @@
-- **The merge gate refuses held PRs** (spec 021 FR-079): `scripts/pr-gate.sh` now says "not ready" for a PR labelled `status:blocked` or `needs-owner-approval`, or one an owner has put on hold in a comment until an owner lifts it (only the date and link are printed). Checked with a fake `gh` and five planted mutants.

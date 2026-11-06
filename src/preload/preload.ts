@@ -63,6 +63,7 @@ const api: DurbarApi = {
   updatePlace: (id, patch) => ipcRenderer.invoke('settings:updatePlace', id, patch),
   removePlace: (id) => ipcRenderer.invoke('settings:removePlace', id),
   setSeriousMode: (on) => ipcRenderer.invoke('settings:setSeriousMode', on),
+  setMotion: (on) => ipcRenderer.invoke('settings:setMotion', on),
   setStillHighlights: (on) => ipcRenderer.invoke('settings:setStillHighlights', on),
   setAutoFollowWork: (on) => ipcRenderer.invoke('settings:setAutoFollowWork', on),
   setNotifyNeedsMe: (on) => ipcRenderer.invoke('settings:setNotifyNeedsMe', on),
@@ -81,6 +82,7 @@ const api: DurbarApi = {
   onHarnessUpdates: (cb) => sub('harness:updatesChanged', cb),
   harnessVisible: (on) => ipcRenderer.invoke('harness:visible', on === true),
   setCheckUpdatesAtStart: (on) => ipcRenderer.invoke('settings:setCheckUpdatesAtStart', on),
+  setDiagnostics: (on) => ipcRenderer.invoke('settings:setDiagnostics', on), // spec 058 FR-227
   setMcpSignInRefresh: (on) => ipcRenderer.invoke('settings:setMcpSignInRefresh', on === true), // spec 058 FR-213
   harnessPaste: (text) => ipcRenderer.invoke('harness:paste', text),
   harnessCancel: () => ipcRenderer.invoke('harness:cancel'),
