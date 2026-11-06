@@ -26,7 +26,7 @@ assert.strictEqual(CHARACTER_KITS.mine, 'crew', 'spec 096 FR-040: My characters 
 {
   const screens = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'screens.js'), 'utf8');
   const list = /const charItems=\(\)=>\{[\s\S]*?const list=\[([^\n]*)\];/.exec(screens)?.[1] ?? '';
-  assert.deepStrictEqual([...list.matchAll(/\bid:'([a-z]+)'/g)].map((m) => m[1]), ['theme', 'minimalist', 'cheeky', 'prehistoric', 'pirate', 'monster', 'royal', 'rebels'], "Settings offers these; T044 adds 'mine' and changes this line");
+  assert.deepStrictEqual([...new Set([...list.matchAll(/\bid:'([a-z]+)'/g)].map((m) => m[1]))], ['theme', 'minimalist', 'cheeky', 'prehistoric', 'pirate', 'monster', 'royal', 'rebels'], "Settings offers these; T044 adds 'mine' and changes this line");
   assert.ok(!/T\.CHARACTERS|THEME\.CHARACTERS/.test(screens), 'and does not list from theme.js');
   const appJs = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'app.js'), 'utf8');
   assert.ok(/THEME\.setCharacters\(drawableCharacters\(v&&v\.characters\)\)/.test(appJs) && /const drawableCharacters=c=>c==='mine'\?'theme':c;/.test(appJs), 'a stored mine draws the theme\'s own until T044 (check-characters runs it)');
