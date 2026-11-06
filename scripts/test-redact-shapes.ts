@@ -30,7 +30,7 @@ const FAMILIES: Record<string, string[]> = {
   hosting: ['HR' + 'KU-' + an(60), 'fo' + '1_' + an(43), 'fm' + '1r_' + an(120), 'fm' + '2_' + an(120), 'vc' + 'p_' + an(50), 'vc' + 'k_' + an(50)],
   databases: ['sb' + 'p_' + hex(40), 'sb_' + 'secret_' + an(30), 'na' + 'pi_' + lo(50), 'psc' + 'ale_tkn_' + an(40), 'psc' + 'ale_pw_' + an(40), 'psc' + 'ale_oauth_' + an(40), 'Ast' + 'raCS:' + an(24) + ':' + hex(64), '4b' + '1d' + an(38), 'da' + 'pi' + hex(32)],
   infra: [an(14) + '.at' + 'lasv1.' + an(70), 'hv' + 's.' + an(90), 'hv' + 'b.' + an(140), 'dp' + '.pt.' + an(43), 'dp' + '.st.' + an(43), 'pu' + 'l-' + hex(40), 'op' + 's_eyJ' + an(250), 'A3' + '-' + up(6) + '-' + up(11) + '-' + up(5) + '-' + up(5) + '-' + up(5), 'AGE-' + 'SECRET-KEY-1' + up(58), 'ts' + 'key-' + an(40), 'sha' + '256~' + an(43)],
-  github: ['gh' + 'p_' + an(36), 'gh' + 'o_' + an(36), 'gh' + 'u_' + an(36), 'gh' + 's_' + an(36), 'gh' + 'r_' + an(36), 'github' + '_pat_' + an(82)],
+  github: ['gh' + 'p_' + an(36), 'gh' + 'o_' + an(36), 'gh' + 'u_' + an(36), 'gh' + 's_' + an(36), 'gh' + 'r_' + an(36), 'github' + '_pat_' + an(22) + '_' + an(59)],
   gitlab: ['gl' + 'pat-' + an(20), 'gl' + 'dt-' + an(20), 'gl' + 'rt-' + an(20), 'gl' + 'ft-' + an(20), 'gl' + 'ffct-' + an(20), 'gl' + 'imt-' + an(25), 'gl' + 'agent-' + an(50), 'gl' + 'oas-' + an(64), 'gl' + 'soat-' + an(20), 'gl' + 'ptt-' + hex(40), 'gl' + 'cbt-a1_' + an(20), 'GR' + '1348941' + an(20)],
   atlassian: ['ATA' + 'TT3' + an(40)],
   ci: ['CCI' + 'PAT_' + an(30), 'CCI' + 'PRJ_' + an(30), 'sg' + 'p_' + hex(40), 'pa' + 't.' + an(22) + '.' + an(24) + '.' + an(20), 'PM' + 'AK-' + hex(24) + '-' + hex(34)],
@@ -392,18 +392,31 @@ for (const [start, more] of [['AK' + 'IA' + up(16), 'A'], ['AK' + 'IA' + up(16),
     }
   }
   assert.ok(glueTested > 150, `the glued loop ran: ${glueTested}`);
-  // Every ordered pair of the GitHub and npm families (issue #1233, review of PR #1235): the second prefix is swallowed by the first body, whatever the first family is
+  // Every ordered pair of the GitHub and npm families (issue #1233, review of PR #1235), at their real lengths: `github_pat_` is 22 characters, `_`, 59 characters.
   {
-    const fam: Array<[string, number]> = [['gh' + 'p_', 36], ['gh' + 'o_', 36], ['gh' + 'u_', 36], ['gh' + 's_', 36], ['gh' + 'r_', 36], ['github' + '_pat_', 82], ['np' + 'm_', 36]];
-    const body = (n: number, flip: boolean): string => (flip ? an(n).split('').reverse().join('') : an(n));
-    for (const [a, na] of fam) for (const [b, nb] of fam) {
-      const A = body(na, false);
-      const B = body(nb, true);
-      for (const text of [a + A + b + B, a + A + b + B + a + A, a + A + b + B + b + B]) {
-        const out = redact(text, {});
-        for (const x of [A, B]) assert.ok(!out.includes(x.slice(0, 12)) && !out.includes(x.slice(-12)), `pair ${a}${b}: a body is readable in ${out.replace(/[A-Za-z0-9]{12,}/g, '<LEAK>')}`);
-        assert.strictEqual(out, '[redacted]', `pair ${a}${b}: one mask for ${text.length} characters`);
-      }
+    const ALNUM = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let seed = 20261106; // seeded, so a failing chain fails the same way
+    const rnd = (n: number): number => { seed = (Math.imul(seed, 1103515245) + 12345) >>> 0; return (seed >>> 8) % n; };
+    const chars = (n: number): string => { let o = ''; for (let i = 0; i < n; i++) o += ALNUM[rnd(ALNUM.length)]; return o; };
+    const fam: Array<[string, () => string]> = [['gh' + 'p_', () => chars(36)], ['gh' + 'o_', () => chars(36)], ['gh' + 'u_', () => chars(36)], ['gh' + 's_', () => chars(36)], ['gh' + 'r_', () => chars(36)], ['github' + '_pat_', () => chars(22) + '_' + chars(59)], ['np' + 'm_', () => chars(36)]];
+    const check = (parts: Array<[string, string]>, label: string): void => {
+      const out = redact(parts.map(([p2, b]) => p2 + b).join(''), {});
+      for (const [, b] of parts) for (const piece of b.split('_')) assert.ok(!out.includes(piece.slice(0, 12)) && !out.includes(piece.slice(-12)), `${label}: a body is readable in ${out.replace(/[A-Za-z0-9]{12,}/g, '<LEAK>')}`);
+      assert.strictEqual(out, '[redacted]', `${label}: one mask`);
+    };
+    for (const [a, ga] of fam) for (const [b, gb] of fam) {
+      const A: [string, string] = [a, ga()];
+      const B: [string, string] = [b, gb()];
+      check([A, B], `pair ${a}${b}`);
+      check([A, B, A], `triple ${a}${b}${a}`);
+      check([A, B, B], `triple ${a}${b}${b}`);
+    }
+    // seeded chains of 2 to 5 tokens from the three families
+    for (let i = 0; i < 600; i++) {
+      const n = 2 + rnd(4);
+      const parts: Array<[string, string]> = [];
+      for (let k = 0; k < n; k++) { const [pre, g] = fam[rnd(fam.length)]; parts.push([pre, g()]); }
+      check(parts, `chain ${i}: ${parts.map(([p2]) => p2).join('')}`);
     }
   }
   // F1: a plain list of prefixes is no token (the `_` after a lead counts only after a full body of letters and digits)

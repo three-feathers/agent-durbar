@@ -68,7 +68,7 @@ const NOT_AFTER = '(?![A-Za-z0-9])';
 const dg = (cls: string, min: number): string => String.raw`(?![a-z]{1,32}(?:[_-][a-z0-9]{1,32}){2,16}(?![A-Za-z0-9_-]))(?=${cls}{0,128}[0-9])${cls}{${min},}`;
 const W = '[A-Za-z0-9_-]';
 /** A token whose body is letters and digits only, written back to back (`ghp_AAAA…ghp_BBBB…`, issue #1233). The body used to stop at the `_` of the next prefix, so that prefix was swallowed and the START rule (a letter precedes it) hid nothing of the second token. Now the body may hold the `_` that follows a lead (`swallow`: the prefix of its own or another GitHub or npm family without that `_`), so glued tokens, of one family or of `gh[pousr]_`, `github_pat_` and `npm_` in any order, are one match. The first `min` characters are letters or digits only, so a list of bare prefixes (`ghp_gho_ghu_…`) is no body. One flat repeat of a fixed-width choice, so still linear. */
-const GH_SWALLOW = 'gh[pousr]|github|github_pat|npm';
+const GH_SWALLOW = 'gh[pousr]|github|github_pat|github_pat_[A-Za-z0-9]{22}|npm'; // `github_pat_` has a second `_` after its first 22 characters
 const glued = (prefix: string, min: number, swallow: string): string => String.raw`${prefix}[A-Za-z0-9]{${min}}(?:[A-Za-z0-9]|(?<=${swallow})_)*`;
 /** The GitHub and npm token shapes as a second token: `PREFIXED_NEXT` takes them too, after a token whose body swallowed their prefix. */
 const GH_NPM_NEXT = String.raw`gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}`;
