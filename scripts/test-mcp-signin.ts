@@ -885,6 +885,84 @@ async function main(): Promise<void> {
       }
     }
 
+    // ---- spec 058 FR-229 (issue #1229): an idle chat's Sign in, and a server Durbar knows needs a sign-in ----
+    {
+      const store = new McpSignInStore(() => 0, async () => undefined);
+      const ad = new FakeAdapter({ displayName: 'Copilot', capabilities: { mcpSignIn: true, mcpSignInAgain: true, mcpSignInSteps: STEPS } });
+      ad.signInResult = { kind: 'browser', url: PAGE };
+      const sid = 'idle-1';
+      const agents = new Map([[sid, info(sid)]]);
+      const BLOCKED: McpServerStatus[] = [{ name: 'teams', status: 'connected', source: 'user', transport: 'http' }];
+      let live: McpServerStatus[] = [];
+      let blocked = true;
+      let ensured = 0;
+      let ensureErr: Error | undefined;
+      const ensureLive = async (a: AgentInfo): Promise<void> => {
+        ensured++;
+        if (ensureErr) throw ensureErr;
+        await ad.start({ workspace: ws, quiet: true, sessionId: a.id });
+        live = BLOCKED; // the started session reports the server, still reading connected
+      };
+      const d = { agents, router: routerOf(ad), live: () => live, secrets: () => [] as string[], blocked: () => blocked, ensureLive, startWaitMs: 50, stepMs: 5, serverUrl: () => 'https://teams.example.com/mcp' };
+      const calls = () => ad.signInCalls.map((c) => (c.cancel ? 'cancel ' : 'start ') + c.name + (c.again ? ' again' : ''));
+      // the dialog model: blocked server, session not running -> Sign in is offered and says why
+      const adLive = new FakeAdapter({ displayName: 'Copilot', capabilities: { mcpSignIn: true, mcpSignInAgain: true } });
+      await adLive.start({ workspace: ws, quiet: true, sessionId: sid });
+      const rep = (isLive: boolean, bl: boolean) => agentMcpReply({ a: info(sid), ad: isLive ? adLive : new FakeAdapter({ displayName: 'Copilot', capabilities: { mcpSignIn: true, mcpSignInAgain: true } }), live: isLive ? BLOCKED : [], off: new Set(), secrets: [], cli: [{ name: 'teams', enabled: true }], extras: [], ambientDisabled: new Set(), signIn: () => undefined, signInBlocked: () => bl, serverUrl: () => 'https://teams.example.com/mcp' }).servers[0];
+      const idle = rep(false, true);
+      assert.strictEqual(idle.canSignIn, true, 'blocked, session not running: Sign in is offered');
+      assert.strictEqual(idle.needsSignIn, true);
+      const running = rep(true, true);
+      assert.deepStrictEqual([running.status, running.canSignIn, running.needsSignIn, running.canSignInAgain], ['connected', true, true, undefined], 'the runtime reads connected but Durbar knows: Sign in, not Sign in again');
+      const clear = rep(true, false);
+      assert.deepStrictEqual([clear.canSignIn, clear.needsSignIn, clear.canSignInAgain], [undefined, undefined, true], 'no block: the old rows (connected: only Sign in again)');
+      // idle chat: the press starts the session, then the runtime's sign-in
+      assert.strictEqual(ad.isLive(sid), false);
+      const r = await mcpSignInOp(d, store, sid, 'teams');
+      assert.deepStrictEqual(r, { ok: true, kind: 'browser', host: 'auth.example.com' });
+      assert.strictEqual(ensured, 1, 'the session was started once');
+      assert.deepStrictEqual(calls(), ['start teams again'], 'a connected-but-blocked server is signed in with the app\'s own Sign in again (forgets the dead sign-in)');
+      store.drop(sid, 'teams');
+      // a server Durbar does not know as blocked and that is not running: refused as before, nothing started
+      blocked = false; ensured = 0;
+      const ad2 = new FakeAdapter({ displayName: 'Copilot', capabilities: { mcpSignIn: true } });
+      const r2 = await mcpSignInOp({ ...d, router: routerOf(ad2) }, store, sid, 'teams');
+      assert.strictEqual(r2.ok, false);
+      assert.match((r2 as { error: string }).error, /not running/);
+      assert.strictEqual(ensured, 0, 'no session is started for a server nobody knows needs a sign-in');
+      // the start fails: the shared wording shows, masked, with the steps
+      blocked = true;
+      const ad3 = new FakeAdapter({ displayName: 'Copilot', capabilities: { mcpSignIn: true, mcpSignInAgain: true } });
+      ensureErr = new Error(`could not start https://x.example.com/a?code=SECRET`);
+      const r3 = await mcpSignInOp({ ...d, router: routerOf(ad3) }, store, sid, 'teams');
+      assert.deepStrictEqual([r3.ok, (r3 as { manual?: boolean }).manual], [false, true]);
+      assert.ok(!(r3 as { error: string }).error.includes('example.com') && !(r3 as { error: string }).error.includes('SECRET'), 'no address in the failure');
+      ensureErr = undefined;
+      // blocked, running, and the app's own redo would not apply (no known address): Durbar's own record still lets the person sign in
+      live = BLOCKED; blocked = true; ad.signInCalls.length = 0;
+      assert.strictEqual((await mcpSignInOp({ ...d, serverUrl: () => undefined }, store, sid, 'teams')).ok, true, 'a blocked server signs in whatever the runtime and the address say');
+      store.drop(sid, 'teams');
+      // a plain needs-auth server of a running session still takes the plain Sign in (not again)
+      ad.signInCalls.length = 0;
+      live = NEEDS;
+      blocked = false;
+      assert.strictEqual((await mcpSignInOp(d, store, sid, 'teams')).ok, true);
+      assert.deepStrictEqual(calls(), ['start teams'], 'needs-auth: the plain Sign in');
+    }
+
+    // ---- FR-229: the window's wiring, by source (no DOM here; the drivers look at the picture) ----
+    {
+      const root = path.join(__dirname, '..', '..', 'src', 'renderer');
+      const app = fs.readFileSync(path.join(root, 'app.js'), 'utf8'), scr = fs.readFileSync(path.join(root, 'screens.js'), 'utf8');
+      const click = app.split('\n').slice(app.split('\n').findIndex((l) => l.includes("closest('.mcpre-btn')"))).slice(0, 5).join('\n');
+      assert.match(click, /signIn:\{name:nm,again:false\}/, 'the chat button starts the row\'s own Sign in');
+      assert.match(click, /\.catch\(err=>say\(/, 'a rejected call shows text');
+      assert.match(click, /if\(!r\|\|!window\.DurbarScreens[^\n]*say\(/, 'no MCP list: text');
+      assert.match(scr, /x\.needsSignIn===true\)&&!!\(x\.canSignIn\|\|x\.signInSteps\)/, 'the row\'s Sign in also for a server Durbar knows needs it');
+      assert.match(scr, /if\(!b\)\{[\s\S]{0,500}signInPressNote/, 'no Sign in button on the row: text, not silence');
+      assert.match(app, /mcpSignLinesDrop\(a,st\.servers\|\|\[\]\)/, 'the chat line goes with the need');
+    }
+
     done = true;
     console.log('[058] mcp signin: PASS');
   } finally {

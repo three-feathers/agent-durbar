@@ -1380,7 +1380,7 @@
         const detBox=detOpen?`<div class="srv-det"><pre class="srv-err" tabindex="0" data-err="${esc(x.name)}" aria-label="${esc('Error text of '+x.name)}">${esc(x.error)}</pre><button class="btn sm" type="button" data-copy="${esc(x.name)}" aria-label="${esc('Copy the error text of '+x.name)}">Copy</button></div>`:'';
         const hh=healthHTML(x,`data-diag="${esc(x.name)}"`,'Copy diagnostics of '+x.name);
         /* spec 058 (2026-10-23, Vikram's report): on a row that needs a sign-in, Restart is a dead end ("needs auth" again), so Sign in takes its place and Restart is hidden */
-        const needsSign=(x.status==='needs-auth'||(x.status==='failed'&&x.errorClass==='auth'))&&!!(x.canSignIn||x.signInSteps);
+        const needsSign=(x.status==='needs-auth'||(x.status==='failed'&&x.errorClass==='auth')||x.needsSignIn===true)&&!!(x.canSignIn||x.signInSteps); /* FR-229 (issue 1229): also a server Durbar knows needs a sign-in while the runtime reads it connected, or the session is not running */
         const signB=needsSign&&x.canSignIn&&!x.signIn?(signBusy.has(x.name)?`<button class="btn sm primary" type="button" disabled aria-label="${esc('Signing in to '+x.name)}">Signing in…</button>`:`<button class="btn sm primary" type="button" data-signin="${esc(x.name)}" aria-label="${esc('Sign in to '+x.name)}" title="Start ${esc(s.app||'your agent app')}'s own sign-in for this server">Sign in</button>`):'';
         const rsB=x.canRestart&&X.bridge.agentMcpRestart?(restarting.has(x.name)?`<button class="btn sm" type="button" disabled aria-label="${esc('Restarting '+x.name+' for '+a.name)}">Restarting…</button>`:`<button class="btn sm" type="button" data-restart="${esc(x.name)}" aria-label="${esc('Restart '+x.name+' for '+a.name)}" title="Restart only this server in this session">Restart</button>`):'';
         /* FR-176/FR-181 (Q21 A): an app that picks up a sign-in finished outside Durbar with Restart (Claude Code) keeps it next to Sign in */
@@ -1617,7 +1617,12 @@
         /* spec 100 FR-022: from the warning line: the heaviest server's switch has the focus; nothing is switched */
         if(o&&o.focusServer)setTimeout(()=>{const row=(st.servers||[]).find(y=>mc.serverOf({servers:[o.focusServer]},y)),b=row&&[...d.querySelectorAll('.dbody button.swt')].find(x=>x.dataset.n===row.name);if(b)focusIn(b);},0);
         /* spec 058 FR-195: from Settings: start this row's own Sign in / Sign in again, exactly as its button here would (only when the row offers it) */
-        if(o&&o.signIn)setTimeout(()=>{const n=o.signIn.name,ag=o.signIn.again===true,b=[...d.querySelectorAll(ag?'button[data-signagain]':'button[data-signin]')].find(y=>(ag?y.dataset.signagain:y.dataset.signin)===n&&!y.disabled);if(!b)return;focusIn(b);if(ag)void signAgain([n],b);else void signIn(n);},0);
+        if(o&&o.signIn)setTimeout(()=>{const n=o.signIn.name,ag=o.signIn.again===true,b=[...d.querySelectorAll(ag?'button[data-signagain]':'button[data-signin]')].find(y=>(ag?y.dataset.signagain:y.dataset.signin)===n&&!y.disabled);if(!b){ /* FR-229: never silent: the press says why nothing started */
+          const row=(st.servers||[]).find(y=>y.name===n),W2=window.DurbarMcpWords;
+          if(row&&row.signIn&&!ag)return; /* a sign-in is already open: its row shows Open sign-in page */
+          const msg=W2&&W2.signInPressNote?W2.signInPressNote(n,row):'Could not start the sign-in for '+n+'.';
+          if(row)signNote.set(n,msg);void repaint();X.toast(esc(msg),5200).classList.add('err');X.announce(msg);return;}
+        focusIn(b);if(ag)void signAgain([n],b);else void signIn(n);},0);
         if(st.canRefresh)setTimeout(()=>{void refresh(false);},0); /* FR-190: every open reads the states again */d.addEventListener('click',async e=>{
         const tg=e.target.closest('button[data-tools],button[data-tn]');if(tg){void toggleTools(tg.dataset.tools||tg.dataset.tn);return;}
         const ad=e.target.closest('[data-tall][aria-disabled="true"],input[data-tool][aria-disabled="true"]');if(ad){e.preventDefault();return;} /* FR-064: focusable, never changed */

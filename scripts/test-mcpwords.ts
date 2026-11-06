@@ -5,6 +5,7 @@ import { maskMcpError } from '../src/main/mcpmask';
 import { maskHomePaths, maskSecretUrl, redact } from '../src/shared/redact';
 
 interface Words {
+  signInPressNote: (name: unknown, row: unknown, err?: unknown) => string;
   stateOf: (s: unknown, ctx?: { off?: boolean; defaultOn?: boolean; origin?: string; app?: string; launchedOff?: boolean; switchedHere?: boolean }) => { word: string; icon: string; cls: string };
   offBy: (ctx?: { off?: boolean; defaultOn?: boolean; launchedOff?: boolean; switchedHere?: boolean }) => string;
   iconSvg: (n: string) => string;
@@ -42,6 +43,16 @@ for (const [k, w] of Object.entries(words)) {
   assert.ok(W.ICON_NAMES.includes(s.icon), `${k} has an icon shape`);
   assert.ok(s.cls.length > 0);
 }
+// spec 058 FR-229 (issue 1229): a chat's Sign in press that cannot start a sign-in always has text
+for (const [row, err] of [[undefined, undefined], [{}, undefined], [{ canSignIn: true }, undefined], [{ canSignIn: true }, 'No session.'], [{ signIn: { host: 'h' } }, undefined], [{ canSignIn: false }, '   '], [undefined, 7]] as Array<[unknown, unknown]>) {
+  const t = W.signInPressNote('teams', row, err);
+  assert.match(t, /^Could not start the sign-in for teams: \S.{8,}/, `text for ${JSON.stringify(row)} ${String(err)}`);
+}
+assert.match(W.signInPressNote('teams', undefined), /not in this chat/, 'no row');
+assert.match(W.signInPressNote('teams', { canSignIn: false }), /cannot start the sign-in from here/, 'a row without Sign in');
+assert.match(W.signInPressNote('teams', { signIn: { host: 'h' } }), /already open/, 'an open sign-in');
+assert.strictEqual(W.signInPressNote('teams', {}, 'The session did not start.'), 'Could not start the sign-in for teams: The session did not start.', 'the call\'s own masked text wins');
+assert.match(W.signInPressNote('', undefined), /for this server:/, 'no name');
 assert.strictEqual(new Set(['connected', 'pending', 'failed', 'needs-auth', 'disabled', 'stopped'].map((k) => W.stateOf(k).icon)).size, 6, 'the main states have different icons');
 for (const none of [undefined, null, '']) assert.strictEqual(W.stateOf(none).word, 'Not started yet');
 assert.strictEqual(W.stateOf('weird').word, 'Unknown state: weird', 'an unknown token is named');

@@ -834,6 +834,11 @@ export class McpSignInRefresher {
     return true;
   }
 
+  /** Spec 058 FR-229: Durbar's own record says this server needs a new sign-in (a renewal that did not help), whatever the runtime list reads. */
+  isBlocked(adapterId: string, name: string, url: string | undefined): boolean {
+    return this.records.get(signInKey(adapterId, name, url))?.blocked === 'sign-in';
+  }
+
   /** Test and debug view: the record of one key (a copy). */
   recordOf(key: string): SignInRecordView | undefined {
     const r = this.records.get(key);

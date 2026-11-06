@@ -293,6 +293,13 @@ export interface SignInDeps {
   serverUrl?(agentId: string, name: string): string | undefined;
   /** Spec 058 FR-218: resolves when no automatic renewal or restart of this server runs in this chat (Sign in again never overlaps one). */
   settle?(agentId: string, name: string): Promise<void>;
+  /** Spec 058 FR-229 (issue #1229): Durbar's own renewal record says this server needs a new sign-in (the runtime may still read it connected). */
+  blocked?(agentId: string, name: string): boolean;
+  /** Spec 058 FR-229: starts (resumes) the chat's session the way a send does, without sending a message; missing = a session that is not running is refused. */
+  ensureLive?(a: AgentInfo): Promise<void>;
+  /** FR-229: how long to wait for the started session to report this server (ms) and the step; test hooks. */
+  startWaitMs?: number;
+  stepMs?: number;
 }
 
 const NOT_RUNNING = 'This session is not running. Send a message to start it, then sign in.';
@@ -315,13 +322,27 @@ export async function mcpSignInOp(d: SignInDeps, store: McpSignInStore, id: unkn
   const ad = a ? d.router.forAgent(a.id) : undefined;
   if (!a || !ad || !validServerName(name)) return { ok: false, error: UNKNOWN };
   if (typeof ad.startMcpSignIn !== 'function') return { ok: false, manual: true, error: `${ad.displayName} cannot start a sign-in from Agent Durbar.` };
-  if (!ad.isLive(a.id)) return { ok: false, manual: true, error: NOT_RUNNING };
+  const wasBlocked = d.blocked?.(a.id, name) === true;
+  if (!ad.isLive(a.id)) {
+    // FR-229: an idle chat's Sign in starts the session the way a send does (no message), then signs in
+    if (!d.ensureLive || !wasBlocked) return { ok: false, manual: true, error: NOT_RUNNING };
+    try {
+      await d.ensureLive(a);
+    } catch (err) {
+      return { ok: false, manual: true, error: signInErrorText(err, d.secrets(a.id), NOT_RUNNING) };
+    }
+    if (!ad.isLive(a.id)) return { ok: false, manual: true, error: NOT_RUNNING };
+    const stepMs = d.stepMs ?? 200;
+    const end = Date.now() + (d.startWaitMs ?? 10_000);
+    while (!d.live(a.id).some((x) => x.name === name && x.status !== 'starting' && x.status !== 'pending') && Date.now() < end) await new Promise((r) => setTimeout(r, stepMs));
+  }
   const st = d.live(a.id).find((x) => x.name === name);
   if (!st) return { ok: false, error: `${name} is not running in this session.` };
   // FR-164: Sign in again (only `true` counts) is for a server the agent app can sign in again itself, and not one that waits for its first sign-in
-  const redo = again === true;
+  // FR-229: a server Durbar's renewal gave up on (the runtime may read it connected) is signed in with the app's own Sign in again, which forgets the dead sign-in
+  const redo = again === true || (wasBlocked && !needsSignIn(st) && !!ad.capabilities.mcpSignInAgain);
   if (redo && !ad.capabilities.mcpSignInAgain) return { ok: false, error: `${ad.displayName} cannot sign in again from Agent Durbar.` };
-  if (redo ? !canSignInAgainStatus(st, d.serverUrl?.(a.id, name)) : !needsSignIn(st)) return { ok: false, error: redo ? `${name} cannot be signed in again now.` : `${name} does not need a sign-in.` };
+  if (!wasBlocked && (redo ? !canSignInAgainStatus(st, d.serverUrl?.(a.id, name)) : !needsSignIn(st))) return { ok: false, error: redo ? `${name} cannot be signed in again now.` : `${name} does not need a sign-in.` };
   try {
     await d.settle?.(a.id, name); // a renewal already running finishes first: `oauth.login` and `restartServer` never overlap
   } catch {

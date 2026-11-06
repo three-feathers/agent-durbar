@@ -167,10 +167,15 @@ async function main(): Promise<void> {
     clock.now += 2 * H;
     await call('agents:send', sid, 'later', []);
     assert.strictEqual(ad.restartCalls.length, 2, 'blocked after a needs-sign-in result');
+    // spec 058 FR-229 (issue #1229): Durbar's own block shows on the dialog row although the runtime list reads connected; Restart clears it
+    emit(sid, { type: 'mcp', servers: list('connected') });
+    const rowOf = async (): Promise<{ status?: string; needsSignIn?: boolean } | undefined> => ((await call('agents:mcp', sid)) as { servers: Array<{ name: string; status?: string; needsSignIn?: boolean }> }).servers.find((x) => x.name === 'docs');
+    assert.deepStrictEqual([(await rowOf())?.status, (await rowOf())?.needsSignIn], ['connected', true], 'blocked and read connected: the row still needs a sign-in');
     const r3 = call('agents:mcpRestart', sid, 'docs');
     await tick();
     pending.shift()!('connected');
     assert.deepStrictEqual(await r3, { ok: true });
+    assert.strictEqual((await rowOf())?.needsSignIn, undefined, 'after Restart the block is gone and the row is plain again');
     emit(sid, { type: 'mcp', servers: list('needs-auth') });
     clock.now += 1;
     const s4 = call('agents:send', sid, 'now', []);

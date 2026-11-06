@@ -1,0 +1,1 @@
+- MCP: the chat's *Sign in...* button now starts the sign-in (it used to only open the MCP list and showed nothing when the row had no button), also in an idle chat, and the MCP row shows Sign in for a server whose automatic renewal gave up even while Copilot still says it is connected (spec 058 FR-229, issue #1229). Checked with fake-adapter tests; not on a real server yet.

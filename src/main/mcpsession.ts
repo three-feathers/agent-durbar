@@ -56,6 +56,8 @@ export interface McpReplyInput {
   signIn?(name: string): { host: string; opened: boolean; expiresInMs: number; otherSite?: string } | undefined;
   /** Spec 058 FR-221: when Durbar last renewed this server's sign-in in this session (wall clock ms), shown as "Renewed 12:40". */
   renewedAt?(name: string): number | undefined;
+  /** Spec 058 FR-229 (issue #1229): Durbar's own renewal record says this server needs a new sign-in, whatever the runtime list reads. */
+  signInBlocked?(name: string): boolean;
   /** Spec 058 FR-225: the last check before a message got no answer in 30 s. */
   checkUnknown?(name: string): boolean;
   /** FR-164: the server's own address when Durbar knows one (a folder extra, a list Durbar passes, the Copilot CLI list); stdio has none. */
@@ -107,11 +109,15 @@ export function agentMcpReply(i: McpReplyInput): AgentMcpReply {
     const hm = st ? i.health?.get(name) : undefined;
     const mark = hm && hm.status === (st?.status ?? '') ? hm : undefined;
     // FR-065/FR-068: a row that reads Needs sign-in, on, in a running session; the steps are the agent app's own text (missing = none)
-    const needs = isLive && on && needsSignIn(st);
+    // FR-229: also a server Durbar's renewal gave up on (the runtime may still read it connected), and also while the session is not running
+    // (Sign in then starts it); a server the runtime says is disabled or gone from the session stays out
+    const blocked = on && i.signInBlocked?.(name) === true && (!isLive || !st || st.status === 'connected' || needsSignIn(st));
+    const needs = (isLive && on && needsSignIn(st)) || blocked;
     const renewed = isLive && on ? i.renewedAt?.(name) : undefined;
     const canSignIn = needs && typeof ad?.startMcpSignIn === 'function';
+    const wantSignIn = needs && (!isLive || !needsSignIn(st)) ? { needsSignIn: true as const } : {};
     // FR-164: Sign in again, where the agent app can redo the sign-in itself (Copilot), for an on server the running session reports
-    const canSignInAgain = isLive && on && !!ad?.capabilities.mcpSignInAgain && typeof ad?.startMcpSignIn === 'function' && !i.builtin?.has(name) && canSignInAgainStatus(st, i.serverUrl?.(name));
+    const canSignInAgain = isLive && on && !needs && !!ad?.capabilities.mcpSignInAgain && typeof ad?.startMcpSignIn === 'function' && !i.builtin?.has(name) && canSignInAgainStatus(st, i.serverUrl?.(name));
     // FR-180: the steps come from the adapter's own text alone (also without an in-app call: Claude's SDK transport, an older app)
     // (a folder extra is known only to Durbar: its line points at Sign in, so it shows only where Sign in is offered)
     const steps = needs && ad?.capabilities.mcpSignInSteps && (origin !== 'folder' || canSignIn) ? signInStepsFor(ad.capabilities.mcpSignInSteps, name, origin) : undefined;
@@ -124,7 +130,7 @@ export function agentMcpReply(i: McpReplyInput): AgentMcpReply {
     const signRestart = needs && canRestart && !!ad?.capabilities.mcpSignInRestart && !!steps;
     // FR-188: only a Running (connected) row, on, in a running session says its last call failed; a word only, never the text
     const lastCall = isLive && on && st?.status === 'connected' ? i.lastCall?.(name) : undefined;
-    entries.push({ name, origin, status: st?.status, error: maskMcpError(st?.error, secrets), ...(st?.errorClass ? { errorClass: st.errorClass } : {}), ...(lastCall ? { lastCall } : {}), ...(mark ? { since: mark.since } : {}), ...(st?.status === 'connected' && typeof renewed === 'number' ? { renewedAt: renewed } : {}), ...(st?.status === 'connected' && isLive && on && i.checkUnknown?.(name) === true ? { checkUnknown: true as const } : {}), ...(mark?.afterRunning ? { afterRunning: true } : {}), ...(st?.transport ? { transport: st.transport } : {}), defaultOn, off: off.has(name), ...(canRestart ? { canRestart: true } : {}), ...(canSignIn ? { canSignIn: true } : {}), ...(canSignInAgain ? { canSignInAgain: true } : {}), ...(open ? { signIn: open } : {}), ...(steps ? { signInSteps: steps } : {}), ...(end ? { signInEnd: end } : {}), ...(note ? { signInNote: note } : {}), ...(signRestart ? { signInRestart: true } : {}), ...(i.launchedOff?.has(name) ? { launchedOff: true } : {}), ...(i.switchedHere?.has(name) ? { switchedHere: true } : {}) });
+    entries.push({ name, origin, status: st?.status, error: maskMcpError(st?.error, secrets), ...(st?.errorClass ? { errorClass: st.errorClass } : {}), ...(lastCall ? { lastCall } : {}), ...(mark ? { since: mark.since } : {}), ...(st?.status === 'connected' && typeof renewed === 'number' ? { renewedAt: renewed } : {}), ...(st?.status === 'connected' && isLive && on && i.checkUnknown?.(name) === true ? { checkUnknown: true as const } : {}), ...(mark?.afterRunning ? { afterRunning: true } : {}), ...(st?.transport ? { transport: st.transport } : {}), defaultOn, off: off.has(name), ...(canRestart ? { canRestart: true } : {}), ...(canSignIn ? { canSignIn: true } : {}), ...wantSignIn, ...(canSignInAgain ? { canSignInAgain: true } : {}), ...(open ? { signIn: open } : {}), ...(steps ? { signInSteps: steps } : {}), ...(end ? { signInEnd: end } : {}), ...(note ? { signInNote: note } : {}), ...(signRestart ? { signInRestart: true } : {}), ...(i.launchedOff?.has(name) ? { launchedOff: true } : {}), ...(i.switchedHere?.has(name) ? { switchedHere: true } : {}) });
   };
   const cli = i.app === 'claude' || i.app === 'codex' ? [] : i.cli;
   const own = i.app === 'claude' ? (i.claudeList ?? []) : [];
