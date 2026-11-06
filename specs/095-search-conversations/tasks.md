@@ -50,7 +50,7 @@
 - [x] T043 [US5] End-state line with the notes of FR-014 (not installed, too large, floors off, hidden not searched, Copilot and Codex earlier sessions title only, capped) [FR-014]
 - [x] T044 Copilot and Codex earlier sessions: title only with the end-state note (Q4 (a), review question B); no content reader [Q4; US5.2]
 - [x] T050 Driver `scripts/shots-095.js` (all cases of plan *Testing* 5) at 1440x900 and 1280x800 and in `npm run check:ui`; the 15-agent office with an empty box unchanged (`check:office`, geometry) [FR-051, FR-052; SC-004]
-- [ ] T051 `npm run shots:docs`: `DOC_SHOTS` entries for the new pictures, retake every linked picture that shows the top bar or List view; look at each [AGENTS.md *Keep docs in sync*]
+- [x] T051 `npm run shots:docs`: `DOC_SHOTS` entries for the new pictures, retake every linked picture that shows the top bar or List view; look at each [AGENTS.md *Keep docs in sync*]
 
 - [x] T060 README (feature line, *Safety model*: local search, masked, nothing stored, tool output not searched, earlier Copilot and Codex sessions title only, hidden sessions not searched) and the keyboard sheet text, in the window PR [AGENTS.md *Keep docs in sync*]
 - [x] T061 `changelog.d/095-search-ui.md` (user-visible, in the window PR; the branch is `095-search-ui`)
