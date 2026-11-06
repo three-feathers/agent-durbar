@@ -67,8 +67,11 @@ const NOT_AFTER = '(?![A-Za-z0-9])';
 /** A body that may hold `_`, `-` or `.` must have a digit near its start and not read as lower-case words (`cfut_cross_validation_results_v2` is a name, not a key). Bounded lookaheads. */
 const dg = (cls: string, min: number): string => String.raw`(?![a-z]{1,32}(?:[_-][a-z0-9]{1,32}){2,16}(?![A-Za-z0-9_-]))(?=${cls}{0,128}[0-9])${cls}{${min},}`;
 const W = '[A-Za-z0-9_-]';
-/** A token whose body is letters and digits only, written back to back (`ghp_AAAA…ghp_BBBB…`, issue #1233). The body used to stop at the `_` of the next prefix, so that prefix was swallowed and the START rule (a letter precedes it) hid nothing of the second token. Now the body may hold the `_` that follows `lead` (the prefix without its `_`), so glued tokens are one match. One flat repeat of a fixed-width choice, so still linear. */
-const glued = (lead: string, min: number): string => String.raw`${lead}_(?:[A-Za-z0-9]|(?<=${lead})_){${min},}`;
+/** A token whose body is letters and digits only, written back to back (`ghp_AAAA…ghp_BBBB…`, issue #1233). The body used to stop at the `_` of the next prefix, so that prefix was swallowed and the START rule (a letter precedes it) hid nothing of the second token. Now the body may hold the `_` that follows a lead (`swallow`: the prefix of its own or another GitHub or npm family without that `_`), so glued tokens, of one family or of `gh[pousr]_`, `github_pat_` and `npm_` in any order, are one match. The first `min` characters are letters or digits only, so a list of bare prefixes (`ghp_gho_ghu_…`) is no body. One flat repeat of a fixed-width choice, so still linear. */
+const GH_SWALLOW = 'gh[pousr]|github|github_pat|npm';
+const glued = (prefix: string, min: number, swallow: string): string => String.raw`${prefix}[A-Za-z0-9]{${min}}(?:[A-Za-z0-9]|(?<=${swallow})_)*`;
+/** The GitHub and npm token shapes as a second token: `PREFIXED_NEXT` takes them too, after a token whose body swallowed their prefix. */
+const GH_NPM_NEXT = String.raw`gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}`;
 const PREFIXED = [
   // cloud
   String.raw`(?:ABIA|ACCA|A3T[A-Z0-9])(?=[A-Z]{0,15}[0-9])[A-Z0-9]{16}${NOT_AFTER}`, // the rarer AWS access key ids need a digit: `ACCAGTTGCATGCATGCATG` is DNA
@@ -156,7 +159,7 @@ function maskJwts(s: string, mask: string): string {
  * (review of #1015: a guard on `glpat-`, a narrower start and a later prefix taking the head of an older token each did; `scripts/test-redact-shapes.ts` pins it). Guard a new shape, never one of these.
  */
 const HELD_SHAPES: Array<RegExp | Guarded | ((s: string, mask: string) => string)> = [
-  shape(glued('gh[pousr]', 20)),
+  shape(glued('gh[pousr]_', 20, GH_SWALLOW)),
   shape(String.raw`github_pat_[A-Za-z0-9_]{20,}`),
   shape(String.raw`glpat-[A-Za-z0-9_.-]{20,}`), // GitLab personal access token (spec 093: a clone URL's user part must not be one); no digit guard, 3% of real ones have none. `.`: the routable form
   shape(String.raw`sk-(?:ant-)?[A-Za-z0-9_-]{20,}`), // OpenAI, Anthropic, DeepSeek, OpenRouter. `sk-ant-` also glued to a word: below
@@ -184,9 +187,9 @@ const HELD_SHAPES: Array<RegExp | Guarded | ((s: string, mask: string) => string
 /* The lookahead is every character these two can start with: without it a run of punctuation passes the start and tries all 100 alternatives at each position (`&` repeated: 90 to 14 ms per MB). */
 const PREFIXED_AT = new RegExp('(?=[A-Za-z0-9_~.])' + START_BOUNDED + `(?:${PREFIXED})`, 'g');
 /** The same without a start, tried at one place (`y`): a second token that begins where the first ends or inside the end of its body. */
-const PREFIXED_NEXT = new RegExp(`(?:${PREFIXED})`, 'y');
-/** The longest a prefix is before its body: how far back from the end of a match a swallowed second prefix can start. */
-const PREFIX_REACH = 24;
+const PREFIXED_NEXT = new RegExp(`(?:${GH_NPM_NEXT}|${PREFIXED})`, 'y');
+/** How far back from the end of a match a swallowed second token can start: its prefix plus the structured part before the body runs on (the longest first parts, `sc_` + 30 characters + `.` + 6 + `.acc_`, reach 40 from the end of the first token). */
+const PREFIX_REACH = 40;
 /**
  * `PREFIXED_AT`, and every token glued to a match (issue #1233, spec 012 FR-169). A token written right after another has a letter or digit before it, so the start rule
  * hides nothing of it; and an open-ended body of letters and digits runs on into the next prefix. After each match the glued tokens are taken: one starting at its end

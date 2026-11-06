@@ -39,7 +39,7 @@ const FAMILIES: Record<string, string[]> = {
   registries: ['np' + 'm_' + an(36), 'py' + 'pi-Ag' + an(60), 'ruby' + 'gems_' + hex(48), 'CLO' + 'JARS_' + lo(60), 'AK' + 'Cp' + an(69), 'cm' + 'Vmd' + an(59), 'dc' + 'kr_pat_' + an(27)],
   mail: ['SG' + '.' + an(22) + '.' + an(43), 'ke' + 'y-' + hex(32), hex(32) + '-' + 'us12', 'xke' + 'ysib-' + hex(64) + '-' + an(16), 're' + '_' + an(8) + '_' + an(24), 'S' + 'K' + hex(32), 'EA' + 'AC' + an(120), '1234567' + '89012345' + '|' + an(30), 'A'.repeat(22) + 'B' + an(30) + '%2B' + an(60)],
   payment: ['sk' + '_live_' + an(24), 'rk' + '_live_' + an(24), 'sk' + '_test_' + an(24), 'wh' + 'sec_' + an(32), 'sq' + '0atp-' + an(22), 'sq' + '0csp-' + an(43), 'EA' + 'AA' + an(60), 'rz' + 'p_live_' + an(14), 'FLW' + 'SECK-' + an(32) + '-X', 'access-' + 'production-' + hex(8) + '-' + hex(4) + '-' + hex(4) + '-' + hex(4) + '-' + hex(12), 'sh' + 'pat_' + hex(32), 'sh' + 'pss_' + hex(32), 'pd' + 'l_live_' + an(40), 'duf' + 'fel_live_' + an(43)],
-  devTools: ['li' + 'n_api_' + an(40), 'nt' + 'n_' + an(46), 'sn' + 'tryu_' + hex(64), 'sn' + 'trys_' + an(80), 'gl' + 'c_' + an(40), 'gl' + 'sa_' + an(32) + '_' + hex(8), 'NR' + 'AK-' + up(27), 'NR' + 'II-' + an(32), 'NR' + 'JS-' + hex(19), 'dt' + '0c01.' + up(24) + '.' + up(64), 'ph' + 'x_' + an(40), 'sl' + '.' + an(135), 'pa' + 't' + an(14) + '.' + hex(64), 'pn' + 'u_' + an(36), 'rd' + 'me_' + lo(70), 'ship' + 'po_live_' + hex(40), 'EZ' + 'AK' + an(54), 'ic' + 'o-' + an(32), 'AP' + 'I-' + up(26), 'fi' + 'o-u-' + an(64), 's-' + 's4t2ud-' + hex(64), an(6) + '_' + an(29) + '_mmk', 'sm' + '_pat_' + an(16), 'tk' + '-us-' + an(48), 'p8' + 'e-' + an(32), 'sc' + '_' + an(10) + '.' + an(5) + '.acc_' + an(20) + '.' + an(40), 'eyJ' + 'rIjoi' + an(80)],
+  devTools: ['li' + 'n_api_' + an(40), 'nt' + 'n_' + an(46), 'sn' + 'tryu_' + hex(64), 'sn' + 'trys_' + an(80), 'gl' + 'c_' + an(40), 'gl' + 'sa_' + an(32) + '_' + hex(8), 'NR' + 'AK-' + up(27), 'NR' + 'II-' + an(32), 'NR' + 'JS-' + hex(19), 'dt' + '0c01.' + up(24) + '.' + up(64), 'ph' + 'x_' + an(40), 'sl' + '.' + an(135), 'pa' + 't' + an(14) + '.' + hex(64), 'pn' + 'u_' + an(36), 'rd' + 'me_' + lo(70), 'ship' + 'po_live_' + hex(40), 'EZ' + 'AK' + an(54), 'ic' + 'o-' + an(32), 'AP' + 'I-' + up(26), 'fi' + 'o-u-' + an(64), 's-' + 's4t2ud-' + hex(64), an(6) + '_' + an(29) + '_mmk', 'sm' + '_pat_' + an(16), 'tk' + '-us-' + an(48), 'p8' + 'e-' + an(32), 'sc' + '_' + an(10) + '.' + an(5) + '.acc_' + an(20) + '.' + an(40), 'eyJ' + 'rIjoi' + an(80), 'sc' + '_' + an(30) + '.' + an(5) + '.acc_' + an(20) + '.' + an(40), 'authress' + '_' + an(30) + '.' + an(5) + '.acc_' + an(20) + '.' + an(40)],
   skAntGlued: ['x' + 'sk-ant-' + an(8), '1' + 'sk-ant-' + an(12)],
   bearer: ['Bea' + 'rer ' + an(30)],
   jwt: ['ey' + 'J' + an(20) + '.ey' + 'J' + an(30) + '.' + an(30)],
@@ -392,6 +392,26 @@ for (const [start, more] of [['AK' + 'IA' + up(16), 'A'], ['AK' + 'IA' + up(16),
     }
   }
   assert.ok(glueTested > 150, `the glued loop ran: ${glueTested}`);
+  // Every ordered pair of the GitHub and npm families (issue #1233, review of PR #1235): the second prefix is swallowed by the first body, whatever the first family is
+  {
+    const fam: Array<[string, number]> = [['gh' + 'p_', 36], ['gh' + 'o_', 36], ['gh' + 'u_', 36], ['gh' + 's_', 36], ['gh' + 'r_', 36], ['github' + '_pat_', 82], ['np' + 'm_', 36]];
+    const body = (n: number, flip: boolean): string => (flip ? an(n).split('').reverse().join('') : an(n));
+    for (const [a, na] of fam) for (const [b, nb] of fam) {
+      const A = body(na, false);
+      const B = body(nb, true);
+      for (const text of [a + A + b + B, a + A + b + B + a + A, a + A + b + B + b + B]) {
+        const out = redact(text, {});
+        for (const x of [A, B]) assert.ok(!out.includes(x.slice(0, 12)) && !out.includes(x.slice(-12)), `pair ${a}${b}: a body is readable in ${out.replace(/[A-Za-z0-9]{12,}/g, '<LEAK>')}`);
+        assert.strictEqual(out, '[redacted]', `pair ${a}${b}: one mask for ${text.length} characters`);
+      }
+    }
+  }
+  // F1: a plain list of prefixes is no token (the `_` after a lead counts only after a full body of letters and digits)
+  for (const t of ['the prefixes ' + 'gh' + 'p_gho_ghu_ghs_ghr_gh' + 'p_gho_ghu_', ('gh' + 'p_').repeat(40), ('np' + 'm_gh' + 'p_').repeat(20)]) assert.strictEqual(redact(t, {}), t, `a prefix list stays: ${t.slice(0, 30)}`);
+  // The lookbehind is only for a lead the swallow list names: a body ending in `gh` and another letter, then `_`, is not glued
+  assert.strictEqual(redact('gh' + 'p_' + an(20) + 'ghx_' + an(8), {}), '[redacted]_' + an(8), 'a body ending in ghx stops at the underscore');
+  // The extension never shortens a mask: a token starting inside the first one and ending before its end changes nothing
+  assert.strictEqual(redact('cf' + 'ut_' + an(40) + 'AB' + 'IA' + up(16) + '-xyz', {}), '[redacted]', 'the mask only grows');
   // A glued short rest after a token (no full body) is still taken, as before; a space or a word between keeps both masked
   assert.ok(!redact('gh' + 'p_' + an(36) + 'gh' + 'p_' + an(8), {}).includes('gh' + 'p_'), 'a short glued rest');
   assert.strictEqual(redact(['gh' + 'p_' + an(36), 'gh' + 'o_' + an(36)].join(' x '), {}), '[redacted] x [redacted]', 'separated tokens');
