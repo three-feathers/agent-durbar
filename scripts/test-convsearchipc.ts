@@ -354,6 +354,26 @@ async function main(): Promise<void> {
     await settle(100);
     win1.sent.length = 0;
     win2.sent.length = 0;
+    // review of PR 1232 (Q2): another window's clear leaves this box session's titles alone; its own clear drops them
+    await start(E1, 'invoice');
+    runDeferred();
+    await settle(100);
+    fill();
+    assert.deepStrictEqual(await clear(E2), { ok: true });
+    assert.strictEqual(cache.size(), 1, 'window B\'s clear keeps window A\'s kept titles');
+    assert.deepStrictEqual(await clear(E1), { ok: true });
+    assert.strictEqual(cache.size(), 0, 'window A\'s own clear drops them');
+    // review of PR 1232 (R1): another window's clear never stops this window's scan: A still gets its batch and its done
+    win1.sent.length = 0;
+    scopeOf = () => ({ plan: { sessions: [sess({ sessionId: 'a1', title: 'invoice plan' })] }, read: async () => ({ ok: true, items: [] }), values: () => [], notes: NOTES0 });
+    const ra = await start(E1, 'invoice');
+    assert.deepStrictEqual(await clear(E2), { ok: true });
+    runDeferred();
+    await settle(200);
+    assert.ok(ra.ok, 'A started');
+    assert.deepStrictEqual(win1.sent.map(([ch]) => ch), ['search:batch', 'search:done'], 'A still gets its batch and its done after B\'s clear');
+    assert.strictEqual(win2.sent.length, 0);
+    win1.sent.length = 0;
   }
 
   // ---- T022: a hung Codex read cannot hold the gate; the next scan's read still runs
@@ -664,7 +684,14 @@ async function main(): Promise<void> {
     // main.ts hands over main's own state and stops the scan on window close and quit
     const mainSrc = read('src/main/main.ts');
     assert.ok(/registerConvSearchIpc\(\{/.test(mainSrc) && /hasSessions: \(\) => agents\.size > 0/.test(mainSrc), 'main.ts registers the search with its own agents');
-    assert.ok(/noPrompt: \(\) => mcpStore\?\.noPrompt\(\) \?\? false/.test(mainSrc) && /knownSecretValues: \(key\) => mcpStore\?\.knownSecretValues\(key\) \?\? \[\]/.test(mainSrc), 'MCP values without a prompt, as NotesOps');
+    assert.ok(/noPrompt: \(\) => !mcpStore \|\| mcpStore\.noPrompt\(\)/.test(mainSrc) && /knownSecretValues: \(key\) => mcpStore\?\.knownSecretValues\(key\) \?\? \[\]/.test(mainSrc), 'MCP values without a prompt, as NotesOps; no store yet means nothing is locked (review of PR 1232, Q1: as valuesPending, `!!mcpStore && ...`)');
+    {
+      // Q1: the wiring's own expression, run: no store yet is "nothing locked" (the note says nothing), a store that would prompt is locked
+      const body = /values: \{[^}]*noPrompt: \(\) => ([^,]+),/.exec(mainSrc)?.[1] ?? '';
+      // eslint-disable-next-line @typescript-eslint/no-implied-eval
+      const np = new Function('mcpStore', `return (${body});`) as (s: unknown) => boolean;
+      assert.deepStrictEqual([np(undefined), np({ noPrompt: () => true }), np({ noPrompt: () => false })], [true, true, false], `noPrompt as main wires it: ${body}`);
+    }
     assert.ok(/w\.on\('close', \(\) => convSearch\.cancelAll\(\)\)/.test(mainSrc), 'window close stops it');
     assert.ok(/app\.on\('before-quit', \(ev\) => \{\n {2}convSearch\.cancelAll\(\);/.test(mainSrc), 'quit stops it');
     // T024: the preload, the types, and no channel open under the simulator
