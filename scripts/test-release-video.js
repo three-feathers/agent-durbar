@@ -35,6 +35,25 @@ for (const [id, s] of Object.entries(RV.SCENES)) {
 assert.strictEqual(RV.fill('{count} changes in {version}', { version: 'v0.1.7', count: '28' }), '28 changes in v0.1.7');
 assert.strictEqual(RV.fill('{count} in {version}', { version: 'v1.0.0', count: null }), ' in v1.0.0');
 
+// ---- issue #1214: step captions are numbered 1..n by position in the clip, never by a number typed into a scene ----
+{
+  const shown = (ids) => {
+    const step = RV.stepCounter();
+    const out = [];
+    for (const sid of ids) for (const m of RV.SCENES[sid].play.toString().matchAll(/S\.caption\('((?:[^'\\]|\\.)*)'/g)) out.push(RV.fill(m[1], { version: '', count: null }, step));
+    return out;
+  };
+  const numbers = (caps) => caps.map((c) => /^(\d+)\. /.exec(c)).filter(Boolean).map((m) => Number(m[1]));
+  const caps = shown(RV.DEFAULT_SCENES);
+  const got = numbers(caps);
+  assert.ok(got.length >= 2, 'the default clip has numbered steps');
+  assert.deepStrictEqual(got, got.map((_, i) => i + 1), `step numbers are 1..n in the order shown (got ${got.join(',')})`);
+  assert.ok(!caps.some((c) => /\{step\}/.test(c)), 'no {step} is left unfilled');
+  const reversed = shown(['needsyou', 'refresh']);
+  assert.deepStrictEqual(numbers(reversed), numbers(reversed).map((_, i) => i + 1), 'another scene order is numbered 1..n too');
+  for (const [sid, sc] of Object.entries(RV.SCENES)) assert.ok(!/caption\('\d+\. /.test(sc.play.toString()), `${sid}: a step caption uses {step}, not a typed number`);
+}
+
 // ---- the privacy check (FR-176) ----
 const forbidden = RV.forbiddenValues({ home: '/home/alice', user: 'alice', host: 'alice-laptop', root: '/home/alice/src/agent-durbar', email: '' });
 assert.ok(forbidden.includes('/home/alice') && forbidden.includes('\\home\\alice'), 'the home folder, both slashes');
