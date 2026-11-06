@@ -28,9 +28,11 @@ One pure state source in `src/shared` turns an agent's normalized events into a 
 | `src/renderer/brainview/dock.js` | UMD | The dock and In front: header, cost line, legend, card, sentence, *Latest steps*, turn map lists, the shortcut, focus and the live-region queue. | FR-014, FR-015, FR-023..FR-025, FR-030..FR-033, FR-036, FR-050, FR-090..FR-095 |
 | `src/renderer/brainview/skins/*.css` | CSS | Real office, Retro arcade, Flat: tokens, fonts and point shape only. | FR-110..FR-112 |
 | `app.js` hooks | glue | Feed `agent:event` to the reducer (beside `liveact.js`), render the loop chip on desk cards and rail rows, add Your door items (loop, stale read), *Look*, *Stop…* (with `askDialog` and the existing Stop), Screen share. | FR-043..FR-046, FR-075, FR-080, FR-081 |
-| `src/main/brainexport.ts` | main | The one new channel, `brain:exportTurnMap(agentId, png, text)`: size caps, masks the text again, main's own save dialog (as `notesexport.ts`), writes. Window-only, in `test:ipcchannels`, never in `durbar-mcp`. | FR-052 |
+| `src/main/brainexport.ts` | main | The one new channel, `brain:exportTurnMap(agentId, png, text)` through `ipcHandle` (`fromAppFrame`): a live `agentId` of at most 128 characters, PNG signature and `IHDR` at most 4096 x 4096 within 8 MB, text at most 256 KB masked again, the file name built by main (`exportFileName` rules), main's save dialog (`exportDialogOptions` pattern), the write through `writeNotesExport` extended to bytes (`O_EXCL`, `O_NOFOLLOW`, `fsync`, rename). `simguard` under `DURBAR_SIM`. Window-only, in `test:ipcchannels`, never in `durbar-mcp`. | FR-052 |
 
-**IPC**: none new for P1, P2 and P4; events come on the existing `agent:event` push, settings through `setting()`. P3 adds `brain:exportTurnMap` only.
+**IPC**: none new for P1, P2 and P4; events come on the existing `agent:event` push, settings through `setting()`, and low power from the renderer's own `navigator.getBattery()` (FR-104; the OS low-power mode, known only to main's `powerMonitor`, is a stated gap, not a channel). P3 adds `brain:exportTurnMap` only.
+
+**Screen share gate**: one renderer flag read by every formatter that shows agent text (FR-080's table) and by the one call that sends an answer to main (FR-081), so no surface or answer path needs its own check; `Notification` bodies and the window title go through the same flag.
 
 **Lazy loading**: `brainview/*` and the point sets are injected on first use, as `realoffice/art/people.js` is (FR-105); off means not loaded.
 
@@ -38,8 +40,8 @@ One pure state source in `src/shared` turns an agent's normalized events into a 
 
 | Phase | Groups | Content | Gate |
 |---|---|---|---|
-| P0 | G0 | Owner's answer to Q1 (canvas exception) | Before any P1 code |
-| P1 | G1 to G4 | State reducer and masking; dock with brain, card, sentence; accessibility; Full, Calm, Still; settings and shortcut; Real office and Flat skins | Q1 |
+| P0 | G0 | Q1 decided 2026-11-06 (constitution 1.2.0, in this PR); Q2..Q4 answers | Before the code they touch |
+| P1 | G1 to G4 | State reducer and masking; dock with brain, card, sentence; accessibility; Full, Calm, Still; settings and shortcut; Real office and Flat skins | Q2 for the default |
 | P2 | G5 to G7 | Office brains and orbs; loop rule on every surface; Your door loop item with *Look* and *Stop…* | P1 |
 | P3 | G8 to G10 | In front and presenter; turn map, bloom, export; Screen share; Retro arcade skin | P2 |
 | P4 | G11, G12 | Habits and the day view; stale-read alert | P3 for the dock; independent of In front |
@@ -54,16 +56,14 @@ Reused: `agent:event` (`onEvent`), `liveact.js` (event feed and repaint rate), `
 - **II Adapters**: normalized events only; the tool table reads normalized `tool` names; missing `interrupt`, thinking or read paths degrade (FR-046, FR-076, FR-123). Pass.
 - **III Safe by default**: read-only view; nothing sends or approves; masked state; approvals off while sharing; the export is masked twice and main owns the path. Pass.
 - **IV No credits**: simulator and fixtures; a driver counts 0 adapter sends (SC-006). Pass.
-- **V Calm UI**: 12 px and 11.5 px floors (above 10.5), 15 agents at both sizes, state by shape and word, motion stops under reduced motion and *Still*. **Exception**: "Motion is CSS-only" is not met: the brain animates on a canvas. See Complexity Tracking.
+- **V Calm UI**: 12 px and 11.5 px floors (above 10.5), 15 agents at both sizes, state by shape and word, motion stops under reduced motion and *Still*. The canvas is allowed by **Amendment 3 (version 1.2.0, owner 2026-11-06)** and meets its four conditions: a still frame under reduced motion and *Still* (FR-060), frame budgets (FR-101), a pause when hidden (FR-104), no per-frame filters (FR-100). Pass.
 - **VI Platforms**: no OS-only code; ⌘ on a Mac; platform path compare in FR-075; `[KNOWN GAP]` no real macOS or Windows run until their owners check.
 - **VII Quality gates**: unit tests, drivers at both sizes, screenshots per phase.
 - **VIII Honest limits**: FR-130..FR-133; persona scores labelled simulated; mockups labelled.
 
 ## Complexity tracking
 
-| Violation | Why needed | Simpler alternative rejected because |
-|---|---|---|
-| Constitution V, "Motion is CSS-only, coarse and cheap"; spec 102 FR-261's "nothing draws to a canvas" (for worlds) | 10,000 lit points with lobes that light by tool, a trail and a bloom cannot be CSS elements at FR-101's budgets; the owner's chosen look is a point cloud | CSS-animated sprite frames: one sheet per lobe, state and skin (7 lobes x moods x 3 skins x 3 sizes) is megabytes of pictures and still cannot draw a trail between arbitrary lobes. SVG: thousands of nodes recalculate per frame. **Time box**: the exception is scoped to `src/renderer/brainview/` and holds only with FR-102's asserted op counts and FR-104's pause; it needs the owner's yes (Q1) or a MINOR constitution amendment before P1, and is reviewed after P2's recorded perf rows. |
+None. The canvas was an exception to constitution V until the owner's decision of 2026-11-06 12:17 UTC (Q1, option "2"); Amendment 3 (version 1.2.0, in this PR) now allows a canvas where CSS cannot do the job, on conditions FR-100..FR-104 meet. Why CSS cannot do it here, as the amendment asks: 10,000 lit points with lobes that light by tool, a trail between any two lobes and a bloom. CSS sprite frames would be one sheet per lobe, state and skin (7 lobes x moods x 3 skins x 3 sizes, megabytes of pictures) and still could not draw a trail between arbitrary lobes; SVG would recalculate thousands of nodes a frame. FR-102's asserted op counts and FR-104's pause keep it honest; P2's recorded perf rows are reviewed against FR-101.
 
 ## Test strategy
 
