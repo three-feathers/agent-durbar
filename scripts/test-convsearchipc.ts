@@ -1,0 +1,484 @@
+/**
+ * Spec 095 T020-T025: the conversation search's IPC and main wiring, by behaviour. `search:start` / `search:cancel` are registered on a
+ * stand-in for the electron module and called as the window would call them: refused from another page, query bounds (FR-033), a random
+ * 128-bit `searchId`, a stale or unknown id ignored, two starts make one scan, nothing from the window names a folder or a path, events
+ * only to the window that started the scan and nothing after it goes away, nothing raw in a payload (SC-002). The scope builder
+ * (`buildScope`, T021) runs on fake adapters, a fake folder store and fake readers. Source checks: not reachable from the MCP tools,
+ * remote control or schedules; no channel open under the simulator; the simulator's copy of the query rule equals main's.
+ * `npm run test:convsearchipc`. No Electron, no network, no real store, no credits.
+ */
+process.exitCode = 1;
+let stage = 'load';
+process.on('exit', (code) => { if (code) console.error(`convsearchipc: failed or never settled in: ${stage}`); });
+import * as assert from 'assert';
+import * as fs from 'fs';
+import * as path from 'path';
+import { pathToFileURL } from 'url';
+import { EventEmitter } from 'events';
+import type { AgentInfo, ConvSearchEvent, ConvSearchStart } from '../src/shared/api';
+import type { HistoryLimits, HistoryResult, PreviousSession } from '../src/adapters/history';
+import { SEARCH_HISTORY_LIMITS } from '../src/adapters/history';
+import type { ChatFileRef } from '../src/adapters/vscodeChat';
+
+const ROOT = ((): string => {
+  for (let d = __dirname; ; d = path.dirname(d)) {
+    if (fs.existsSync(path.join(d, 'package.json')) && fs.existsSync(path.join(d, 'src', 'renderer'))) return d;
+    if (path.dirname(d) === d) throw new Error('repo root not found');
+  }
+})();
+const read = (rel: string): string => fs.readFileSync(path.join(ROOT, rel), 'utf8').replace(/\r\n/g, '\n');
+const walk = (dir: string): string[] => fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(dir, e.name)) : /\.(ts|js)$/.test(e.name) ? [path.join(dir, e.name)] : []));
+const tick = (): Promise<void> => new Promise<void>((r) => setImmediate(r));
+const settle = async (n = 50): Promise<void> => { for (let i = 0; i < n; i++) await tick(); };
+const GH = 'gh' + 'p_' + 'a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5';
+const MCP_VALUE = 'mcp-' + 'folder-value-9431';
+const HOME = '/Users/' + 'alice';
+
+async function main(): Promise<void> {
+  const electronPath = require.resolve('electron');
+  const handlers = new Map<string, (e: unknown, ...a: unknown[]) => unknown>();
+  require.cache[electronPath] = { id: electronPath, filename: electronPath, loaded: true, exports: { ipcMain: { handle: (ch: string, fn: (e: unknown, ...a: unknown[]) => unknown) => handlers.set(ch, fn), on: () => undefined } } } as unknown as NodeJS.Module;
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  (require('../src/main/ipcguard') as typeof import('../src/main/ipcguard')).initSimGuard(false);
+  /* eslint-disable @typescript-eslint/no-require-imports */
+  const { register, cleanQuery, QUERY, SHORT, NONE } = require('../src/main/ipc/convsearch') as typeof import('../src/main/ipc/convsearch');
+  const { buildScope } = require('../src/main/convscope') as typeof import('../src/main/convscope');
+  const { createReadGate, orderPlan, rendererScript } = require('../src/main/convsearch') as typeof import('../src/main/convsearch');
+  const { createMasker } = require('../src/main/convmask') as typeof import('../src/main/convmask');
+  /* eslint-enable @typescript-eslint/no-require-imports */
+  const MAIN_DIR = path.join(ROOT, 'src', 'main');
+  const search = rendererScript<import('../src/main/convsearch').SessionSearchApi>('sessionsearch.js', MAIN_DIR);
+  const ST = rendererScript<{ unhide(s: string): string }>('safetext.js', MAIN_DIR);
+  const masker = createMasker({ unhide: (s) => ST.unhide(s) });
+
+  // ---- FR-033: the query bounds (pure)
+
+  stage = 'query bounds';
+  {
+    const ok = (q: unknown) => { const r = cleanQuery(q); assert.ok(r.ok, `${JSON.stringify(q)} is searched`); return r as { ok: true; query: string; cut: boolean }; };
+    const short = (q: unknown) => assert.deepStrictEqual(cleanQuery(q), { ok: false, code: 'short' }, `${JSON.stringify(q)} is too short`);
+    assert.deepStrictEqual(ok('a bc'), { ok: true, query: 'a bc', cut: false }, '"a bc" has 3 characters: allowed (Q3)');
+    short('x y');
+    short('  ab  ');
+    short('');
+    short('   ');
+    short('a\u0000b');
+    assert.deepStrictEqual(ok('  invoice   export \t').query, 'invoice export', 'trimmed, one space between words');
+    assert.strictEqual(ok('\u{1D4B3}\u{1D4B4}\u{1D4B5}').query.length, 6, 'three astral characters are 3 code points: allowed');
+    short('\u{1D4B3}\u{1D4B4}');
+    assert.strictEqual(ok('ab\u0000c\u001bd\u007fe\u0085f').query, 'ab c d e f', 'control characters out (as spaces, never gluing two words)');
+    const nine = ok('one two three four five six seven eight nine');
+    assert.deepStrictEqual([nine.query.split(' ').length, nine.cut], [QUERY.maxWords, true], 'at most 8 words, and the cut is said');
+    const long = ok('x'.repeat(250));
+    assert.deepStrictEqual([[...long.query].length, long.cut], [QUERY.maxChars, true], 'at most 200 characters');
+    const astral = ok('\u{1F600}'.repeat(205));
+    assert.strictEqual([...astral.query].length, 200, 'cut in code points, never inside a surrogate pair');
+    assert.ok(!/[\uD800-\uDBFF]$/.test(astral.query));
+    const huge = 'word '.repeat(200_000);
+    const t0 = Date.now();
+    assert.strictEqual(ok(huge).cut, true);
+    assert.ok(Date.now() - t0 < 200, 'a huge query is bounded before it is split');
+    assert.deepStrictEqual(ok('.* (a|b)+ [x]').query, '.* (a|b)+ [x]', 'the query is plain text, never a pattern');
+    for (const v of [undefined, null, 42, ['abc'], { q: 'abc' }]) assert.deepStrictEqual(cleanQuery(v), { ok: false, code: 'invalid' });
+    assert.strictEqual(SHORT, 'Type at least 3 characters.');
+  }
+
+  // ---- T020: the channels, on the stand-in electron
+
+  stage = 'channels';
+  const indexUrl = pathToFileURL(path.join(__dirname, '..', 'src', 'renderer', 'index.html')).href; // what ipcguard.ts takes as the app's page (next to the compiled main)
+  class Sender extends EventEmitter {
+    sent: Array<[string, ConvSearchEvent]> = [];
+    dead = false;
+    send(ch: string, p: ConvSearchEvent): void { this.sent.push([ch, JSON.parse(JSON.stringify(p))]); }
+    isDestroyed(): boolean { return this.dead; }
+  }
+  const windowOf = (s: Sender) => { const frame = { url: indexUrl }; (s as unknown as { mainFrame: unknown }).mainFrame = frame; return { senderFrame: frame, sender: s }; };
+  const win1 = new Sender();
+  const win2 = new Sender();
+  const E1 = windowOf(win1);
+  const E2 = windowOf(win2);
+  const other = { url: 'https://example.invalid/' };
+  const foreign = { senderFrame: other, sender: { mainFrame: other } };
+
+  let sessions = 2;
+  const scopeCalls: unknown[][] = [];
+  const stops: Array<() => boolean> = [];
+  type Scope = import('../src/main/convscope').Scope;
+  let scopeOf: () => Scope = () => ({ plan: { sessions: [] }, read: async () => ({ ok: true, items: [] }), values: () => [] });
+  let hold: Promise<void> | undefined;
+  const deferred: Array<() => void> = [];
+  const ipc = register({
+    hasSessions: () => sessions > 0,
+    scope: async (...a: unknown[]) => { scopeCalls.push(a); stops.push(a[0] as () => boolean); if (hold) await hold; return scopeOf(); },
+    matcher: () => ({ masker, search }),
+    defer: (fn) => { deferred.push(fn); },
+    sleep: () => tick(), // the 250 ms between batches, without waiting
+  });
+  const runDeferred = (): void => { for (const fn of deferred.splice(0)) fn(); };
+  assert.deepStrictEqual([...handlers.keys()].sort(), ['search:cancel', 'search:start'], 'the two channels');
+  const start = (e: unknown, ...a: unknown[]) => Promise.resolve().then(() => handlers.get('search:start')!(e, ...a)) as Promise<ConvSearchStart>;
+  const cancel = (e: unknown, ...a: unknown[]) => Promise.resolve().then(() => handlers.get('search:cancel')!(e, ...a)) as Promise<{ ok: boolean }>;
+
+  // not from the app's own page: refused before the handler (ipcHandle), so nothing is planned
+
+  await assert.rejects(start(foreign, 'invoice'), /did not come from its own window/);
+  await assert.rejects(cancel(foreign, 'f'.repeat(32)), /did not come from its own window/);
+  runDeferred();
+  assert.strictEqual(scopeCalls.length, 0);
+
+  // bounds enforced in main: a short query gets no scan
+
+  assert.deepStrictEqual(await start(E1, 'x y'), { ok: false, code: 'short', error: SHORT });
+  assert.deepStrictEqual((await start(E1, 42)).ok, false);
+  sessions = 0;
+  assert.deepStrictEqual(await start(E1, 'invoice'), { ok: false, code: 'none', error: NONE }, 'no session open: nothing to search, no scan');
+  sessions = 2;
+  runDeferred();
+  assert.strictEqual(scopeCalls.length, 0, 'no plan for a refused query');
+
+  // a plan with secrets, a home path and an MCP value in its messages; the payload walks clean (SC-002, FR-031)
+
+  const sess = (over: Partial<import('../src/main/convsearch').PlanSession>): import('../src/main/convsearch').PlanSession => ({ adapter: 'claude', app: 'Claude Code', folderKey: HOME + '/work/demo', folderName: 'demo', sessionId: 's1', agentId: 'a1', group: 'office', title: 'Untitled session', time: 0, content: 'read', ...over });
+  scopeOf = () => ({
+    plan: { sessions: [sess({ sessionId: 'a1' }), sess({ sessionId: 'p1', group: 'earlier', title: `invoice plan ${GH}` }), sess({ sessionId: 'p2', group: 'earlier', adapter: 'copilot', content: 'title', title: 'nothing here' })] },
+    read: async (s) => (s.sessionId === 'a1'
+      ? { ok: true, items: [{ type: 'user', text: `Look at ${HOME}/work/demo/invoice.ts and the export, token ${GH}, value ${MCP_VALUE}` }, { type: 'tool', callId: 'c', tool: 'grep', label: 'grep invoice export' }, { type: 'output', text: `The invoice export is fixed; key ${MCP_VALUE} unchanged.` }] }
+      : { ok: true, items: [{ type: 'output', text: 'the invoice export again' }] }),
+    values: () => [MCP_VALUE],
+  });
+  const r1 = await start(E1, 'invoice export', '/etc', { folder: '/etc' }, 'a1');
+  assert.ok(r1.ok && /^[0-9a-f]{32}$/.test(r1.searchId), `a random 128-bit id: ${JSON.stringify(r1)}`);
+  if (!r1.ok) throw new Error('unreachable');
+  assert.strictEqual(win1.sent.length, 0, 'no event before the answer (the scan is deferred)');
+  runDeferred();
+  await settle(400);
+  assert.strictEqual(scopeCalls.length, 1);
+  assert.strictEqual(scopeCalls[0].length, 1, 'the scope gets only a stop function: nothing the window sent (no folder, path or session)');
+  assert.strictEqual(typeof scopeCalls[0][0], 'function');
+  const evs = win1.sent.map(([ch, p]) => [ch, p] as const);
+  assert.ok(evs.length >= 2 && evs.every(([ch, p]) => p.searchId === r1.searchId && ch === `search:${p.kind}`), 'every event carries the id, on its own channel');
+  const done = evs[evs.length - 1][1];
+  assert.ok(done.kind === 'done' && !done.failed && done.notes.queryCut === false && done.notes.titleOnly.count === 1, JSON.stringify(done));
+  const hits = evs.flatMap(([, p]) => (p.kind === 'batch' ? p.hits : []));
+  assert.deepStrictEqual(hits.map((h) => h.sessionId).sort(), ['a1', 'p1'], 'the open session by content, the earlier one by its masked title');
+  const a1 = hits.find((h) => h.sessionId === 'a1')!;
+  assert.deepStrictEqual(Object.keys(a1).sort(), ['adapter', 'agentId', 'app', 'excerpts', 'folderName', 'group', 'more', 'sessionId', 'time', 'title', 'titleMarks'], 'FR-031: only these fields');
+  assert.ok(a1.excerpts.length >= 1 && a1.excerpts.every((x) => x.marks.length > 0));
+  const all = JSON.stringify(win1.sent);
+  for (const bad of [GH, GH.slice(6, 20), MCP_VALUE, HOME, 'alice', 'grep invoice']) assert.ok(!all.includes(bad), `no "${bad}" in any payload`);
+  assert.strictEqual(win2.sent.length, 0, 'the other window gets nothing');
+
+  // two starts back to back: one scan (the first never builds a plan), the second's events only
+
+  win1.sent.length = 0;
+  scopeCalls.length = 0;
+  const ra = await start(E1, 'invoice');
+  const rb = await start(E1, 'export');
+  assert.ok(ra.ok && rb.ok && ra.searchId !== rb.searchId, 'a new id per start');
+  if (!ra.ok || !rb.ok) throw new Error('unreachable');
+  runDeferred();
+  await settle(400);
+  assert.strictEqual(scopeCalls.length, 1, 'two starts = one scan');
+  assert.ok(win1.sent.length > 0 && win1.sent.every(([, p]) => p.searchId === rb.searchId), 'only the second search speaks');
+  assert.strictEqual(ipc.live(), undefined, 'a finished scan is not live');
+
+  // a start while the first is building its plan: the first stops (its stop() says so) and sends nothing
+
+  win1.sent.length = 0;
+  stops.length = 0;
+  let release!: () => void;
+  hold = new Promise<void>((r) => { release = r; });
+  const rc = await start(E1, 'invoice');
+  runDeferred();
+  await settle(5);
+  assert.strictEqual(stops.length, 1);
+  const rd = await start(E1, 'export');
+  assert.strictEqual(stops[0](), true, 'the first scan is told to stop');
+  runDeferred();
+  hold = undefined;
+  release();
+  await settle(400);
+  assert.ok(rc.ok && rd.ok && win1.sent.every(([, p]) => p.searchId === (rd as { searchId: string }).searchId), 'nothing from the cancelled scan');
+
+  // cancel: a stale, unknown, malformed or other window's id is ignored; the live id stops the scan, and no done follows
+
+  win1.sent.length = 0;
+  hold = new Promise<void>((r) => { release = r; });
+  const re = await start(E1, 'invoice');
+  if (!re.ok) throw new Error('start');
+  runDeferred();
+  await settle(5);
+  assert.deepStrictEqual(await cancel(E1, (rd as { searchId: string }).searchId), { ok: false }, 'a stale id is ignored');
+  assert.deepStrictEqual(await cancel(E1, 'f'.repeat(32)), { ok: false }, 'an unknown id is ignored');
+  assert.deepStrictEqual(await cancel(E1, re.searchId.toUpperCase()), { ok: false });
+  assert.deepStrictEqual(await cancel(E1, { searchId: re.searchId }), { ok: false });
+  assert.deepStrictEqual(await cancel(E2, re.searchId), { ok: false }, 'another window cannot stop it');
+  assert.strictEqual(ipc.live(), re.searchId, 'still live');
+  assert.deepStrictEqual(await cancel(E1, re.searchId), { ok: true });
+  assert.strictEqual(ipc.live(), undefined);
+  hold = undefined;
+  release();
+  await settle(200);
+  assert.strictEqual(win1.sent.length, 0, 'a cancelled scan sends nothing');
+  assert.deepStrictEqual(await cancel(E1, re.searchId), { ok: false }, 'and its id is stale now');
+
+  // FR-023: the window going away (closed, or loading again) ends its scan; cancelAll (window close, quit) too
+
+  for (const how of ['destroyed', 'did-start-loading', 'cancelAll'] as const) {
+    win1.sent.length = 0;
+    hold = new Promise<void>((r) => { release = r; });
+    const rf = await start(E1, 'invoice');
+    runDeferred();
+    await settle(5);
+    if (how === 'cancelAll') ipc.cancelAll();
+    else win1.emit(how);
+    assert.strictEqual(ipc.live(), undefined, `${how} stops the scan`);
+    assert.strictEqual(stops[stops.length - 1](), true);
+    hold = undefined;
+    release();
+    await settle(200);
+    assert.ok(rf.ok && win1.sent.length === 0, `${how}: nothing sent after`);
+  }
+  assert.ok(win1.listenerCount('destroyed') === 1 && win1.listenerCount('did-start-loading') === 1, 'one listener per window, not one per search');
+
+  // a scope that throws: said with a failed done, never silent
+
+  win1.sent.length = 0;
+  scopeOf = () => { throw new Error('store not ready'); };
+  const rg = await start(E1, 'invoice');
+  runDeferred();
+  await settle(50);
+  assert.ok(rg.ok);
+  assert.deepStrictEqual(win1.sent.map(([ch, p]) => [ch, p.kind, p.kind === 'done' && p.failed]), [['search:done', 'done', true]]);
+
+  // ---- T022: a hung Codex read cannot hold the gate; the next scan's read still runs
+
+  stage = 'read gate timeout';
+  {
+    const wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms)); // main's default timer is unref'd; here it must keep the test alive
+    const gate = createReadGate<string>({ timeoutMs: 20, wait });
+    const hung = gate.run('read\0cx1', () => new Promise<string>(() => undefined));
+    const next = gate.run('read\0cx2', async () => 'second');
+    await assert.rejects(hung, /read timed out/, 'the hung read gives up');
+    assert.strictEqual(await Promise.race([next, new Promise((r) => setTimeout(() => r('blocked'), 500))]), 'second', 'the next read ran');
+    assert.strictEqual(gate.inFlight(), 0, 'nothing kept');
+    const quick = createReadGate<string>({ timeoutMs: 20, wait });
+    assert.strictEqual(await quick.run('k', async () => 'fast'), 'fast', 'a read in time is untouched');
+  }
+
+  // ---- T021: the scope from main's state (fake adapters, store and readers)
+
+  stage = 'scope builder';
+  {
+    const ag = (id: string, adapterId: string, cwd: string, over: Partial<AgentInfo> = {}): AgentInfo => ({ id, name: path.basename(cwd), cwd, folders: [cwd], permMode: 'read-only', adapterId, ...over } as AgentInfo);
+    const agents = new Map<string, AgentInfo>([
+      ['c1', ag('c1', 'copilot', '/w/one', { title: 'Copilot one', alias: 'My copilot' })],
+      ['c2', ag('c2', 'copilot', '/w/one')],
+      ['k1', ag('k1', 'claude', '/w/one', { label: 'Room One' })],
+      ['k2', ag('k2', 'claude', '/w/two', { floor: 'f2' })],
+      ['x1', ag('x1', 'codex', '/w/three')],
+      ['x2', ag('x2', 'codex', '/w/four')],
+    ]);
+    const lists: string[] = [];
+    const histories: Array<[string, Partial<HistoryLimits> | undefined]> = [];
+    const prev: Record<string, PreviousSession[]> = {
+      'copilot /w/one': [{ id: 'cp1', title: 'copilot earlier', startTime: 1, modifiedTime: 10 }, { id: 'cp2', title: 'hidden one', startTime: 1, modifiedTime: 20 }],
+      'claude /w/one': [{ id: 'kp1', title: 'claude earlier', startTime: 1, modifiedTime: 30 }],
+      'claude /w/two': [{ id: 'kp2', title: 'on an off floor', startTime: 1, modifiedTime: 40 }],
+      'codex /w/four': [{ id: 'xp1', title: 'codex earlier', startTime: 1, modifiedTime: 50 }],
+    };
+    const live = new Set(['c1', 'c2', 'x2']);
+    const adapters = new Map<string, unknown>();
+    for (const kind of ['copilot', 'claude', 'codex']) adapters.set(kind, {
+      id: kind,
+      isLive: (id: string) => live.has(id),
+      history: async (id: string, limits?: Partial<HistoryLimits>): Promise<HistoryResult> => { histories.push([id, limits]); return { items: [{ type: 'user', text: `history of ${id}` }, { type: 'tool', callId: 'c', tool: 't', label: 'tool line' }], total: 2, truncated: false }; },
+      listPreviousSessions: async (cwd: string, exclude?: ReadonlySet<string>) => {
+        lists.push(`${kind} ${cwd}`);
+        assert.ok(exclude && ['c1', 'c2', 'k1', 'k2', 'x1', 'x2'].every((i) => exclude.has(i)), 'open sessions are left out (openIdsOf)');
+        if (kind === 'codex' && cwd === '/w/three') throw new Error('codex not signed in');
+        return prev[`${kind} ${cwd}`] ?? [];
+      },
+    });
+    const router = { forAgent: (id: string) => adapters.get(agents.get(id)!.adapterId) as never, adapterIdOf: (id: string) => agents.get(id)?.adapterId };
+    const store = {
+      get: (key: string) => (key === '/w/one' ? { workspace: key, prevHidden: [{ src: 'copilot', id: 'cp2' }, { src: 'claude', id: 'cp2' }] } : { workspace: key }) as never,
+      sessionNames: (key: string) => (key === '/w/one' ? [{ src: 'claude', id: 'kp1', name: 'Named by me' }, { src: 'copilot', id: 'kp1', name: 'wrong app' }] : []) as never,
+      floors: () => ({ floors: [{ id: 'ground', name: 'Ground floor', on: true }, { id: 'f2', name: 'Second', on: false }], lastFloor: 'ground' }),
+    };
+    const chatLists: string[] = [];
+    const remembered: Array<[string, string]> = [];
+    const ref = (key: string): ChatFileRef => ({ summary: { key, title: 'vs chat', updated: 60, requests: 1, format: 'json' }, file: '/secret/path/' + key + '.json' });
+    const claudeReads: unknown[][] = [];
+    const valueCalls: string[] = [];
+    const gateKeys: string[] = [];
+    let noPrompt = false;
+    const scope = await buildScope({
+      agents, router, store, wsKey: (a) => a.workspaceFile ?? a.cwd, resumeIdFor: (id) => (id === 'k1' ? 'k1-resume' : id), appName: (id) => ({ copilot: 'GitHub Copilot', claude: 'Claude Code', codex: 'Codex' }[id] ?? id),
+      vsUserDirs: () => [{ product: 'Test', dir: '/vs' }],
+      rememberChat: (agentId, r) => remembered.push([agentId, r.summary.key]),
+      values: { knownSecretValues: (k) => { valueCalls.push('known:' + k); return ['known-value-' + k.length]; }, noPrompt: () => noPrompt, secretValuesFor: (id) => { valueCalls.push('session:' + id); return ['session-value-' + id]; } },
+      gate: { run: (key, fn) => { gateKeys.push(key); return fn(); } },
+      claudeDir: '/claude-config',
+      readClaude: (async (...a: unknown[]) => { claudeReads.push(a); return { ok: true, history: { items: [{ type: 'output', text: 'claude text' }], total: 1, truncated: false } }; }) as never,
+      listChats: (async (_dirs: unknown, t: { folders: string[] }) => { chatLists.push(t.folders[0]); return { sessions: t.folders[0] === '/w/one' ? [ref('h/vs1')] : [], storesFound: 1, unreadable: 0, tooLarge: 0 }; }) as never,
+      readChat: (async () => ({ ok: true, transcript: { title: 't', blocks: [{ type: 'user', text: 'vs question' }, { type: 'tool', label: 'vs tool' }, { type: 'assistant', text: 'vs answer' }, { type: 'note', text: 'n' }], totalRequests: 1, shownRequests: 1, notes: [] } })) as never,
+    });
+    const by = (id: string) => scope.plan.sessions.find((s) => s.sessionId === id)!;
+    assert.deepStrictEqual(lists.sort(), ['claude /w/one', 'claude /w/two', 'codex /w/four', 'codex /w/three', 'copilot /w/one'], 'listed once per folder and app (two Copilot agents in /w/one: one list)');
+    assert.deepStrictEqual(chatLists.sort(), ['/w/four', '/w/one', '/w/three', '/w/two'], 'VS Code chats once per folder');
+    assert.deepStrictEqual(remembered, [['c1', 'h/vs1']], 'a listed chat can be opened with vschat:read (View)');
+    assert.deepStrictEqual(scope.plan.unavailable, ['Codex'], 'an app whose list fails is named once');
+    assert.deepStrictEqual(scope.plan.sessions.filter((s) => s.group === 'office').map((s) => s.sessionId), ['c1', 'c2', 'k1', 'k2', 'x1', 'x2'], 'the open agents, in the office order');
+    assert.deepStrictEqual([by('c1').title, by('c2').title, by('k1').folderName, by('k1').content, by('x1').content, by('x2').content], ['My copilot', 'Untitled session', 'Room One', 'read', 'title', 'read'], 'names (spec 059), room names; a Codex agent with no live session is title only (no process started)');
+    assert.deepStrictEqual([by('cp1').content, by('xp1').content, by('kp1').content, by('h/vs1').content], ['title', 'title', 'read', 'read'], 'earlier Copilot and Codex: title only (Q4, B); Claude Code and VS Code: content');
+    assert.deepStrictEqual([by('kp1').title, by('cp2').hidden, by('cp1').hidden, by('kp1').hidden], ['Named by me', true, false, false], 'the user\'s name for that app only; hide marks per app');
+    assert.deepStrictEqual([by('k2').floorOff, by('kp2').floorOff, by('c1').floorOff], [true, true, false], 'a floor that is off (Q9)');
+    assert.ok(scope.plan.sessions.filter((s) => s.group === 'earlier').every((s) => s.agentId && agents.has(s.agentId)), 'an earlier session names an open agent of its folder (for Resume / View)');
+    assert.ok(!JSON.stringify(scope.plan.sessions.map(({ folderKey: _k, ...s }) => s)).includes('/secret/path'), 'a chat file path never enters the plan');
+    const o = orderPlan(scope.plan);
+    assert.deepStrictEqual([o.notes.hidden, o.notes.floorsOff, o.notes.notInstalled], [1, 2, ['Codex']], 'hidden and off-floor sessions are skipped and counted');
+    // the readers: the search limits, the streamed Claude read, the gate for Codex, VS Code text blocks only
+    const stop = () => false;
+    const rk = await scope.read(by('k1'), stop);
+    assert.deepStrictEqual(claudeReads[0].slice(0, 4), ['k1-resume', '/w/one', SEARCH_HISTORY_LIMITS, '/claude-config'], 'an open Claude session: the streamed read of its resume id, with the search limits');
+    assert.strictEqual((claudeReads[0][4] as { stop: unknown }).stop, stop);
+    assert.ok(rk.ok && rk.items.length === 1);
+    await scope.read(by('kp1'), stop);
+    assert.deepStrictEqual(claudeReads[1].slice(0, 3), ['kp1', '/w/one', SEARCH_HISTORY_LIMITS]);
+    const rc1 = await scope.read(by('c1'), stop);
+    assert.deepStrictEqual(histories[0], ['c1', SEARCH_HISTORY_LIMITS], 'a live Copilot session: the adapter history with the search limits');
+    assert.ok(rc1.ok && rc1.items.length === 2, 'the scan drops tool items itself (D2)');
+    await scope.read(by('x2'), stop);
+    assert.deepStrictEqual(gateKeys, ['list\0/w/three', 'list\0/w/four', 'read\0x2'], 'every Codex call that starts a process goes through the gate');
+    live.delete('c2');
+    assert.deepStrictEqual(await scope.read(by('c2'), stop), { ok: false, reason: 'missing' }, 'a session that ended meanwhile is skipped');
+    const rv = await scope.read(by('h/vs1'), stop);
+    assert.deepStrictEqual(rv, { ok: true, items: [{ type: 'user', text: 'vs question' }, { type: 'output', text: 'vs answer' }] }, 'VS Code: user and answer blocks, in order');
+    assert.deepStrictEqual(await scope.read(by('cp1'), stop), { ok: false, reason: 'unreadable' }, 'a title-only session has no reader');
+    // FR-030: values without a keychain prompt
+    valueCalls.length = 0;
+    scope.values(by('c1'));
+    scope.values(by('cp1'));
+    assert.deepStrictEqual(valueCalls, ['known:/w/one', 'known:/w/one'], 'vault locked: the folder\'s known values only');
+    noPrompt = true;
+    valueCalls.length = 0;
+    scope.values(by('c1'));
+    scope.values(by('cp1'));
+    assert.deepStrictEqual(valueCalls, ['known:/w/one', 'session:c1', 'known:/w/one'], 'the open agent\'s values only when nothing can prompt; an earlier session gets its folder\'s');
+    // stop between folders
+    lists.length = 0;
+    await buildScope({ agents, router, store, wsKey: (a) => a.cwd, resumeIdFor: (id) => id, appName: (id) => id, vsUserDirs: () => [], values: { knownSecretValues: () => [], noPrompt: () => false, secretValuesFor: () => [] }, gate: { run: (_k, fn) => fn() }, listChats: (async () => ({ sessions: [], storesFound: 0, unreadable: 0, tooLarge: 0 })) as never }, () => true);
+    assert.strictEqual(lists.length, 0, 'a stopped search lists nothing more');
+  }
+
+  // ---- source checks (FR-025, FR-032, FR-033)
+
+  stage = 'source checks';
+  {
+    for (const f of ['src/main/ipc/convsearch.ts', 'src/main/convscope.ts']) {
+      const code = read(f).split('\n').filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n');
+      assert.ok(!/\bconsole\.|\blog\(|logActivity|debug\(/.test(code), `${f}: logs nothing (no query, no hit)`);
+      assert.ok(!/child_process|['"](?:net|http|https|tls|dgram|undici)['"]|\bfetch\(/.test(code), `${f}: no process, no network`);
+      assert.ok(!/\bwriteFile|appendFile|createWriteStream|mkdir|\brm(?:Sync)?\(|unlink|rename\(/.test(code), `${f}: writes nothing`);
+      assert.ok(!/Sync\(/.test(code), `${f}: no synchronous fs call`);
+    }
+    const ipcSrc = read('src/main/ipc/convsearch.ts');
+    assert.ok(/ipcHandle\('search:start', \(e, query: unknown\): ConvSearchStart =>/.test(ipcSrc), 'search:start takes only the query');
+    assert.ok(/ipcHandle\('search:cancel', \(e, searchId: unknown\)/.test(ipcSrc), 'search:cancel takes only the id');
+    assert.ok(/randomBytes\(16\)/.test(ipcSrc), 'a 128-bit id');
+    // not reachable from the MCP tools, remote control, schedules, loops or the shared ops
+    const WORDS = /convsearch|convscope|search:start|search:cancel|search:batch|convSearch|buildScope/;
+    const guarded = [...walk('src/main/mcp'), 'src/main/mcpipc.ts', 'src/main/remoteops.ts', 'src/main/ipc/remote.ts', 'src/main/schedules.ts', 'src/main/loopwiring.ts', 'src/main/agentops.ts', 'src/main/ipc/schedules.ts'];
+    for (const f of guarded) assert.ok(!WORDS.test(read(f.startsWith(ROOT) ? path.relative(ROOT, f) : f)), `${f} has no path to the conversation search`);
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { CHANGE_TOOLS, READ_TOOLS } = require('../src/main/mcp/tools') as typeof import('../src/main/mcp/tools');
+    const names = [...READ_TOOLS, ...CHANGE_TOOLS].map((t) => t.name);
+    assert.ok(!names.some((n) => /search|conversation|transcript/i.test(n)), `no MCP tool searches conversations: ${names.join(', ')}`);
+    // main.ts hands over main's own state and stops the scan on window close and quit
+    const mainSrc = read('src/main/main.ts');
+    assert.ok(/registerConvSearchIpc\(\{/.test(mainSrc) && /hasSessions: \(\) => agents\.size > 0/.test(mainSrc), 'main.ts registers the search with its own agents');
+    assert.ok(/noPrompt: \(\) => mcpStore\?\.noPrompt\(\) \?\? false/.test(mainSrc) && /knownSecretValues: \(key\) => mcpStore\?\.knownSecretValues\(key\) \?\? \[\]/.test(mainSrc), 'MCP values without a prompt, as NotesOps');
+    assert.ok(/w\.on\('close', \(\) => convSearch\.cancelAll\(\)\)/.test(mainSrc), 'window close stops it');
+    assert.ok(/app\.on\('before-quit', \(ev\) => \{\n {2}convSearch\.cancelAll\(\);/.test(mainSrc), 'quit stops it');
+    // T024: the preload, the types, and no channel open under the simulator
+    const pre = read('src/preload/preload.ts');
+    assert.ok(/convSearchStart: \(query\) => ipcRenderer\.invoke\('search:start', query\)/.test(pre) && /convSearchCancel: \(searchId\) => ipcRenderer\.invoke\('search:cancel', searchId\)/.test(pre), 'the bridge sends only the query and the id');
+    assert.ok(/sub\('search:batch', cb\), sub\('search:done', cb\)/.test(pre));
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { SIM_OPEN_CHANNELS } = require('../src/main/simguard') as typeof import('../src/main/simguard');
+    assert.ok(!Object.keys(SIM_OPEN_CHANNELS).some((c) => c.startsWith('search:')), 'no search channel is open under DURBAR_SIM');
+    // T025: the simulator's query rule is main's (cut out of sim.ts, compiled, compared)
+    const ts = require('typescript') as typeof import('typescript'); // eslint-disable-line @typescript-eslint/no-require-imports
+    const simSrc = read('src/renderer/sim.ts');
+    const block = simSrc.slice(simSrc.indexOf('/* convquery:begin */'), simSrc.indexOf('/* convquery:end */'));
+    assert.ok(block.includes('const simCleanQuery'), 'the simulator marks its query rule');
+    const js = ts.transpileModule(block, { compilerOptions: { target: ts.ScriptTarget.ES2020 } }).outputText;
+    // eslint-disable-next-line @typescript-eslint/no-implied-eval
+    const simClean = new Function(js + '\nreturn simCleanQuery;')() as typeof cleanQuery;
+    const corpus: unknown[] = ['a bc', 'x y', '', '  ab ', 'invoice export', 'a\u0000b\u0000c', 'one two three four five six seven eight nine', 'x'.repeat(250), '\u{1F600}'.repeat(205), 'word '.repeat(300), 'é ü', 'éx', 42, null];
+    for (const q of corpus) assert.deepStrictEqual(simClean(q), cleanQuery(q), `the simulator answers ${JSON.stringify(q)?.slice(0, 40)} as main does`);
+    assert.ok(/convSearchStart: async/.test(simSrc) && /simsearch/.test(simSrc), 'the simulator fakes the bridge, with a slow mode');
+    const fake = simSrc.slice(simSrc.indexOf('function simConvSearchApi'), simSrc.indexOf('\n}\n', simSrc.indexOf('function simConvSearchApi')));
+    assert.ok(fake.length > 1000 && !/fetch\(|XMLHttpRequest|localStorage|sessionStorage|indexedDB|bridge\(|agentDurbar/.test(fake), 'the fake does no I/O and calls no real bridge');
+  }
+
+  // ---- T025: the simulator's fake, run in node over a canned corpus (the page's own fold and mask)
+  stage = 'simulator fake';
+  {
+    const ts = require('typescript') as typeof import('typescript'); // eslint-disable-line @typescript-eslint/no-require-imports
+    const simSrc = read('src/renderer/sim.ts');
+    const from = simSrc.indexOf('/* convquery:begin */');
+    const fnAt = simSrc.indexOf('function simConvSearchApi');
+    const js = ts.transpileModule(simSrc.slice(from, simSrc.indexOf('\n}\n', fnAt) + 3), { compilerOptions: { target: ts.ScriptTarget.ES2020 } }).outputText;
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    (globalThis as unknown as { window: unknown }).window = { DurbarSessionSearch: search, DurbarRedact: require('../src/shared/redact') };
+    // eslint-disable-next-line @typescript-eslint/no-implied-eval
+    const make = new Function(js + '\nreturn simConvSearchApi;')() as (qs: URLSearchParams, scope: () => unknown[]) => Required<Pick<import('../src/shared/api').DurbarApi, 'convSearchStart' | 'convSearchCancel' | 'onConvSearch'>>;
+    const s0 = { adapter: 'copilot', app: 'GitHub Copilot', folderName: 'demo', agentId: 'sim-1', time: 0, content: 'read' };
+    let corpus: unknown[] = [
+      { ...s0, sessionId: 'sim-1', group: 'office', title: 'Untitled session', messages: [{ speaker: 'you', text: `Fix the invoice export, token ${GH}` }, { speaker: 'tool', text: 'grep invoice export' }, { speaker: 'agent', text: 'Done.' }] },
+      { ...s0, sessionId: 'sim-2', agentId: 'sim-2', group: 'office', title: 'Tool only', messages: [{ speaker: 'tool', text: 'invoice export' }] },
+      { ...s0, sessionId: 'prev-1', group: 'earlier', title: 'invoice export plan', content: 'title', time: 5, messages: [] },
+      { ...s0, sessionId: 'prev-2', group: 'earlier', title: 'nothing', content: 'title', time: 4, messages: [{ speaker: 'you', text: 'invoice export' }] },
+      { ...s0, sessionId: 'prev-3', group: 'earlier', title: 'invoice export hidden', hidden: true, messages: [] },
+    ];
+    const fake = make(new URLSearchParams(''), () => corpus);
+    const got: ConvSearchEvent[] = [];
+    fake.onConvSearch((e) => got.push(e));
+    assert.deepStrictEqual(await fake.convSearchStart('x y'), { ok: false, code: 'short', error: SHORT });
+    const r = await fake.convSearchStart('Invoice  export');
+    assert.ok(r.ok && /^[0-9a-f]{32}$/.test(r.searchId) && r.query === 'Invoice export');
+    if (!r.ok) throw new Error('sim start');
+    assert.strictEqual(got.length, 0, 'no event before the answer');
+    for (let i = 0; i < 200 && !got.some((e) => e.kind === 'done'); i++) await new Promise((res) => setTimeout(res, 5));
+    const end = got[got.length - 1];
+    assert.ok(end.kind === 'done' && end.searchId === r.searchId && end.notes.hidden === 1 && end.notes.titleOnly.count === 2, JSON.stringify(end));
+    const simHits = got.flatMap((e) => (e.kind === 'batch' ? e.hits : []));
+    assert.deepStrictEqual(simHits.map((h) => h.sessionId), ['sim-1', 'prev-1'], 'content of the open session, the earlier one by title; tool lines and hidden sessions never');
+    assert.ok(!JSON.stringify(got).includes(GH.slice(6, 20)), 'masked before it is shown');
+    assert.deepStrictEqual(simHits[0].excerpts.map((x) => [x.speaker, x.anchor.n, x.marks.length]), [['you', 0, 2]]);
+    assert.deepStrictEqual(await fake.convSearchCancel(r.searchId), { ok: false }, 'a finished search is stale');
+    // slow mode: one session per batch, and a cancel stops it
+    got.length = 0;
+    const slow = make(new URLSearchParams('simsearch=slow'), () => corpus);
+    slow.onConvSearch((e) => got.push(e));
+    const rs = await slow.convSearchStart('invoice');
+    if (!rs.ok) throw new Error('slow start');
+    for (let i = 0; i < 200 && !got.length; i++) await new Promise((res) => setTimeout(res, 10));
+    assert.ok(got[0].kind === 'batch' && got[0].progress.done === 1 && got[0].progress.total === 4, JSON.stringify(got[0]));
+    assert.deepStrictEqual(await slow.convSearchCancel('f'.repeat(32)), { ok: false });
+    assert.deepStrictEqual(await slow.convSearchCancel(rs.searchId), { ok: true });
+    const n = got.length;
+    await new Promise((res) => setTimeout(res, 900));
+    assert.strictEqual(got.length, n, 'nothing after a cancel');
+    corpus = corpus.filter((c) => (c as { group: string }).group !== 'office');
+    assert.deepStrictEqual((await fake.convSearchStart('invoice')).ok, false, 'no open session: nothing to search');
+  }
+
+  process.exitCode = 0;
+  console.log('convsearchipc: query bounds, fromApp, one live scan, stale ids, window-only events, scope from main, readers, gate timeout, sim parity OK');
+}
+
+main().catch((e) => { console.error(e); process.exitCode = 1; });

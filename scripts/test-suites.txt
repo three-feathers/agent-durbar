@@ -23,6 +23,7 @@ test:markdown
 test:sessionsearch
 test:convsearch
 test:convmask
+test:convsearchipc
 test:url
 test:mcp
 test:toolstats
