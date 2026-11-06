@@ -902,9 +902,13 @@ export interface ConvSearchNotes {
   /** The query was longer than 200 characters or 8 words and was cut (FR-033). */
   queryCut: boolean;
 }
+/**
+ * `stopped` on a `done`: main stopped the scan itself (the window closed or hid, or a quit began), so the window can leave "Searching…";
+ * the notes are then empty and `progress` is the last one sent. A cancel from the window or a new start sends no `done`.
+ */
 export type ConvSearchEvent =
   | { kind: 'batch'; searchId: string; hits: ConvSearchHit[]; progress: { done: number; total: number }; groups: { office: number; earlier: number } }
-  | { kind: 'done'; searchId: string; notes: ConvSearchNotes; progress: { done: number; total: number }; failed: boolean };
+  | { kind: 'done'; searchId: string; notes: ConvSearchNotes; progress: { done: number; total: number }; failed: boolean; stopped?: true };
 /** `short`: under 3 characters (spaces not counted); `none`: no session is open, nothing to search yet; `invalid`: not a query. */
 export type ConvSearchStart = { ok: true; searchId: string; query: string; cut: boolean } | { ok: false; code: 'short' | 'none' | 'invalid'; error: string };
 

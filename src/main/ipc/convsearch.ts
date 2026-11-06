@@ -3,7 +3,9 @@
  * conversation search. Window only: `ipcHandle` and `fromApp(e)` again here (the scan reads the text of every session). The window sends
  * only the query, cleaned and bounded here (`cleanQuery`), and a `searchId` main issued (random, 128 bits, one live at a time; a stale or
  * unknown one is ignored); the scope is main's (`buildScope`). A new start cancels the scan before it, so two starts leave one scan. The
- * events go to the window that started the scan only, and stop when it goes away. Nothing is logged or stored: not the query, not a hit.
+ * events go to the window that started the scan only, and stop when it goes away. A stop main starts (window close or hide, quit) ends
+ * with one `search:done` marked `stopped`; the window's own cancel and a new start end silently. Nothing is logged or stored: not the
+ * query, not a hit.
  * Not reachable from the MCP tools, remote control or schedules (`test:convsearchipc`). Under the simulator neither channel is open
  * (`SIM_OPEN_CHANNELS`): the simulator's bridge fakes them in the window.
  */
@@ -67,11 +69,20 @@ export function register(deps: ConvSearchIpcDeps): { cancelAll(): void; live(): 
   const yieldNow = deps.yieldNow ?? (() => new Promise<void>((r) => setImmediate(r)));
   const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   const defer = deps.defer ?? ((fn: () => void) => void setImmediate(fn));
-  let live: { id: string; sender: WebContents; cancel(): void } | undefined;
+  let live: { id: string; sender: WebContents; cancel(): void; stopped(): void } | undefined;
   const stopLive = (): void => {
     const l = live;
     live = undefined;
     l?.cancel();
+  };
+  /**
+   * Review of phase 2 (R2): a stop main starts itself (window close or hide, quit) tells a window that is still there, with one final
+   * `search:done` carrying `stopped: true`, so a close or quit that is then cancelled does not leave it on "Searching…" for ever.
+   */
+  const stopByMain = (): void => {
+    const l = live;
+    stopLive();
+    l?.stopped();
   };
   const watched = new WeakSet<WebContents>();
   /** FR-023: the window closing or loading again ends its scan (once per window, not a listener per search). */
@@ -94,7 +105,11 @@ export function register(deps: ConvSearchIpcDeps): { cancelAll(): void; live(): 
     watch(sender);
     let cancelled = false;
     let scan: ReturnType<typeof startScan> | undefined;
-    const me = { id, sender, cancel: (): void => { cancelled = true; scan?.cancel(); } };
+    let last = { done: 0, total: 0 };
+    const me = {
+      id, sender, cancel: (): void => { cancelled = true; scan?.cancel(); },
+      stopped: (): void => { if (!sender.isDestroyed()) sender.send('search:done', { kind: 'done', searchId: id, notes: { ...noNotes(), queryCut: q.cut }, progress: last, failed: false, stopped: true } satisfies ConvSearchEvent); },
+    };
     live = me;
     const send = (channel: 'search:batch' | 'search:done', payload: ConvSearchEvent): void => {
       if (!cancelled && live === me && !sender.isDestroyed()) sender.send(channel, payload);
@@ -112,7 +127,7 @@ export function register(deps: ConvSearchIpcDeps): { cancelAll(): void; live(): 
           const m = deps.matcher();
           scan = startScan(sc.plan, q.query, {
             now, yieldNow, sleep, read: sc.read, values: sc.values, masker: m.masker, search: m.search,
-            emit: (b) => send('search:batch', { kind: 'batch', searchId: id, hits: b.hits.map(toHit), progress: b.progress, groups: b.groups }),
+            emit: (b) => { last = { ...b.progress }; send('search:batch', { kind: 'batch', searchId: id, hits: b.hits.map(toHit), progress: b.progress, groups: b.groups }); },
           });
           const end = await scan.done;
           if (!end.cancelled) done(end.notes, end.progress, end.failed);
@@ -134,5 +149,5 @@ export function register(deps: ConvSearchIpcDeps): { cancelAll(): void; live(): 
     return { ok: true };
   });
 
-  return { cancelAll: stopLive, live: () => live?.id };
+  return { cancelAll: stopByMain, live: () => live?.id };
 }
