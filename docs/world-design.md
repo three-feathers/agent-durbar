@@ -59,6 +59,7 @@ Be specific without being a cliche: no tourist symbols, stereotypes, or copied l
 - **Use the space near the edges and the horizon.** Empty sand or floor is waste when people could be bigger.
 - **Few people, big screens:** readable text in the room at 3 to 4. **Many people, small screens:** state by colour and marks, with text on hover or focus.
 - Numbering and movement are natural: floor 1 at the bottom, up is up.
+- **Finished agents give their room away** (owner, 2026-11-06, spec 097 FR-246..FR-249): a done agent whose reply is read sits in a compact lounge seat (person, a small desk and monitor from the world's own pictures, the plate), so busy desks grow; an unread reply keeps the full desk. Who moves is the flat office's lounge rule, never a world's own. A world with a grid (the arcade) puts the seats in the grid's free cells rather than a row of its own.
 
 ## Screens
 
@@ -93,6 +94,7 @@ A world is not finished until its chat and settings screens have been looked at 
 - **The room stays put when someone leaves.** Their seat, plate and status stay, with a square, readable post-it (in the world's own style) saying where they went. Rows and screens resize only when the number of sessions changes, and they ease.
 - **Prefer a rig to more pictures for small motions.** Cut a person into head, torso and hands with pivots, so hands stay on the keys. Image models repeat poses, so several "in-between" frames often add little.
 - Reduced motion and Settings > Motion off stop it (Serious mode does not). Hidden and off-screen pause it.
+- **Canvas only where CSS cannot do the job** (constitution V, Amendment 3, owner 2026-11-06), such as Brain view's thousands of points (spec 106). A world's own art stays frames and `transform`/`opacity` (spec 102 FR-261); a world restyles a canvas through tokens, fonts and point shape only.
 
 ## Light
 

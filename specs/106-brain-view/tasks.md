@@ -1,0 +1,54 @@
+# Tasks: 106 Brain view
+
+**Input**: [spec.md](spec.md), [plan.md](plan.md). **Tests first**, 0 AI credits, simulator only. One PR per group (G0..G12); a task is one issue. Numbers checked against `main`, remote branches and open PRs on 2026-11-06. Every UI group adds simulator screenshots at 1440x900 and 1280x800, a changelog fragment, its `docs/feature-inventory.md` row and the touched `docs/` pages.
+
+## Spec
+
+- [x] T001 Spec, plan, tasks, mockup stills and specs-index block (`specs/106-brain-view/`). Test: `npm run specs:check`, `npm run rules:check`, `npm test`.
+
+## P0: gate
+
+- [x] T002a [G0] Q1 decided (owner 2026-11-06 12:17 UTC, option "2"): constitution V amended to 1.2.0 (Amendment 3), spec 102 FR-261 delta, `docs/world-design.md` line, in this PR. Test: `npm run specs:check`, `rules:check`.
+- [x] T002b [G0] Q2 decided (owner 2026-11-06 12:46 UTC, option "1"): on by default, docked; FR-060 and Q2 updated. Test: `specs:check`.
+- [x] T002c [G0] Q3 decided (owner 2026-11-06 12:49 UTC, option "2"): the composer is shown and works while sharing; FR-080's table and FR-087 updated. Test: `specs:check`.
+- [x] T002 [G0] Q4 decided (owner 2026-11-06 12:50 UTC, option "1"): the right rail opens with every chat while Brain view is on, a saved collapse respected; FR-031, spec 052's dated delta. Test: `specs:check`; no open question blocks P1.
+
+## P1: the docked brain (state, card, sentence, accessibility, masking, motion)
+
+- [ ] T003 [G1] `src/shared/brainstate.ts`: the reducer, turns, order, coalescing, caps, helpers, late events, the glyph table, the sentence phrases, injected masking. Test first: `test:brainstate`, with the glyph table checked against every tool name in the simulator and adapter fixtures; mutants [FR-001..FR-008, FR-012, FR-020, FR-022, FR-123]
+- [ ] T004 [G1] `src/shared/brainsurface.ts`: one formatter per surface; FR-085's table. Test first: `test:brainsurface` with FR-086's inputs on every surface and planted mutations (masking skipped on one surface fails) [FR-021, FR-085, FR-086, FR-121, SC-002]
+- [ ] T005 [G2] Point sets and glow sprites (`brainview/points.js`, generated at build time, lobe masks with soft edges); `brainview/draw.js` for the dock size with Full, Calm, Still, the trail, pause when hidden or unfocused, no idle loop. Test: `test:brainpoints` (sizes, soft-edge band); op counts in the pull-request suite (points per frame, 0 filters, 0 frames hidden or idle) [FR-010, FR-011, FR-013, FR-040, FR-060, FR-061, FR-100, FR-102..FR-105]
+- [ ] T006 [G2] The dock at the top of the right rail: header, cost line, legend, card, sentence, *Latest steps*; compact while Your door has items, grows when empty; the collapsed-rail button; the amendment of 052 FR-216. Test: `check-brain-dock` at both sizes (the rail opens with a chat when Brain view is on; a saved collapse stays collapsed across chats and a restart; with Brain view off Your door opens on request; Your door count visible in every state, legend inside the brain area, 15-agent fit) [FR-014, FR-015, FR-023..FR-025, FR-030, FR-031, FR-033, FR-037, SC-007]
+- [ ] T007 [G3] Accessibility: region and names, lobe as text, lists, focus order and ring, the live-region queue behind the chat's region, the optional Your door count announcement, forced colours. Test: `check-brain-dock` steps (focus order, announcements read from `#srAnnounce` in order and rate, typing guard, forced colours emulated) [FR-090..FR-093, FR-095, FR-096]
+- [ ] T008 [G3] `check-brain-audit`: overlaps, text floors (12 px, 11.5 px), contrast against captured background pixels, at rest and during card swaps, no leftover text, focus ring contrast, colour-blind simulation with state words. Test: the driver itself, with a planted overlap, a planted 11 px text and a planted low-contrast card each failing it [FR-016, FR-023, FR-024, FR-097, FR-098, SC-003]
+- [ ] T009 [G4] Settings: *Brain view* on/off (on by default, docked; an unset value means on) and *Brain motion* Full / Calm / Still through `setting()`, forced Still by reduced motion, *Still highlights* and low power from `navigator.getBattery()` (no IPC; missing API means no assumption); the shortcut Ctrl+Shift+B / ⌘⇧B in Settings > Keyboard with 074's recorder, clash check, `?` sheet and palette entry; Serious mode hides moods. Test: `test:settings` cases (junk refused, off not written); `check-brain-dock` (shortcut, rebind, clash, Still gives 0 animation frames) [FR-060, FR-063, FR-094, FR-104, FR-122, SC-004]
+- [ ] T010 [G4] Moods from the existing timers (relieved, wants attention, bored, asleep by the lamp rule, hibernating) as silhouettes and words; Real office and Flat skins. Test: `test:brainstate` mood cases by injected time; screenshots of each mood in both skins [FR-062, FR-110, FR-111]
+
+## P2: office brains and the loop
+
+- [ ] T011 [G5] `src/shared/brainplace.ts`: at most 3 brains (needs you, oldest first, then hovered or focused), orbs for the rest, beside each person with `placeBox` and `slipAvoid`, Flat's desk boxes. Test first: `test:brainplace` (both sizes, 15 and 40 agents, no overlap, order) [FR-034, FR-037]
+- [ ] T012 [G5] Office rendering: brains, orbs, tags (11.5 px, program name only), the hover card's extra line and *Show in chat*; 2,500-point set. Test: `check-brain-office` (fit, ≤ 3 brains, layout op rows of 097 FR-178 unchanged); `check-brain-audit` in the office [FR-035, FR-037, SC-003]
+- [ ] T013 [G6] The loop rule and wording in `brainstate.ts`. Test first: `test:brainloop` ((a), (b), a third tool clears, Think does not break a run, end and stop clear, N and cost wording, cost unknown; mutants) [FR-041, FR-042, SC-005]
+- [ ] T014 [G6] The loop on every surface: brain, dock sentence, desk card chip in every world and density, rail row status word. Test: `check-brain-loop` (simulator loop scenario; all surfaces agree, SC-001's same-step check) [FR-043, SC-001]
+- [ ] T015 [G7] Your door loop item with *Look* (first loop step, focus) and *Stop…* (`askDialog`, changed files with +/− from `EditInfo`, *Review changes* to the existing diff rows, focus on Cancel, Esc, the existing Stop, disabled without `interrupt`). Test: `check-brain-loop` steps; a driver count of 0 adapter sends for *Look* [FR-044..FR-046, FR-008, FR-120, SC-006]
+
+## P3: In front, turn map, bloom, export, screen share
+
+- [ ] T016 [G8] In front: over the log only, 200 ms wipe, no ghost frames, mini-brain in the dock, Esc and focus return, cut under Still; presenter layout; 10,000-point set. Test: `check-brain-dock` (frames sampled during the wipe show no mixed layout; focus returns); op counts [FR-032, FR-036]
+- [ ] T017 [G9] Turn map with tappable badges and its list; honest bloom (used lobes, own colours, brightness cap, one swell, < 3 luminance changes a second, none in Calm or Still). Test: `check-brain-audit` during bloom (contrast holds, luminance changes counted per second) [FR-050, FR-051]
+- [ ] T018 [G9] Export: `src/main/brainexport.ts`, `brain:exportTurnMap`, caps, masking again in main, main's save dialog. Test first: `test:brainexport` (a call from another frame refused; unknown, long or non-string `agentId` refused; non-PNG bytes, a bad signature, an `IHDR` over 4096, a PNG over 8 MB and text over 256 KB refused; the file name built by main whatever the window sends; re-masked text; a link at the chosen path refused; an existing `.txt` refuses both; `writeNotesExport`'s bytes form shared, not copied; `simguard`), `test:ipcchannels`, not in `durbar-mcp`; sensitive review (analyst, implementer, reviewer) [FR-052]
+- [ ] T019 [G10] Screen share: header toggle and palette command; FR-080's table on every surface (chat, diff view, rails, Your door, inbox, office, toasts, OS notifications, dialogs, palette and navigator, window title, tooltips and labels, browser, notes, files); one answer gate for buttons, answer keys, inbox keys and palette actions; off at start, on with the presenter layout. Test first: a unit test listing every answer path through the gate; `check-brain-share` per FR-087 (canaries in DOM text, `title`, `aria-label`, live regions, window title and `Notification` calls, the open composer's own value shown as typed; 0 answers sent by any path; planted unmasked surface and ungated path fail) [FR-080..FR-082, FR-087, SC-008]
+- [ ] T020 [G10] Retro arcade skin (voxel points, the world's pixel font and frames) and the feature inventory row for each offered world. Test: `check-brain-audit` in Retro arcade; `npm test`'s feature inventory check [FR-110..FR-112]
+- [ ] T027 [G10b, own PR] Brain view skin for the Prehistoric cave world, [issue #1219](https://github.com/three-feathers/agent-durbar/issues/1219). Test: `check-brain-audit` in the cave at both sizes; its feature inventory row [FR-110, FR-111]
+
+## P4: insights
+
+- [ ] T021 [G11] `src/shared/braininsight.ts` habits: shares of steps, one unit, describe phrases only; the day table and turn strips. Test first: `test:braininsight` (a phrase list with no judging words; planted "ask it to" fails; counts only, no content) [FR-070..FR-074]
+- [ ] T022 [G11] Habits view (b) with the day view (a)'s table as its text equivalent. Test: `check-brain-audit` on the view; screen-reader text is the table [FR-070, FR-071]
+- [ ] T023 [G12] Stale-read detector in `braininsight.ts` and the Your door alert with *Show both* and *Draft a re-read note* (a draft, never sent, never overwriting one). Test first: `test:braininsight` stale cases (read then edit then run; edit only; read again clears; next run after the edit clears; Windows and macOS case rules; never from command text); a driver with 0 sends that also checks an existing unsent draft and its attachments are kept, the note is added on a new line after it, and a second press adds nothing [FR-075, FR-076]
+
+## Known gaps (real checks, each its own issue when reached; not in CI)
+
+- [ ] T024 Real screen-reader run (NVDA on Windows, VoiceOver on macOS) of the dock, *Stop…* and the turn map, asked of the machines' owners [FR-130]
+- [ ] T025 Frame times on a real integrated GPU in Electron with `check:perf --record`, against FR-101 [FR-131]
+- [ ] T026 Per adapter: read paths and a failing test run's `phase`, from recorded fixtures first; a real session only with the owner's OK and its cost stated [FR-132, FR-133]

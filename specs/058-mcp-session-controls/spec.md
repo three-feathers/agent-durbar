@@ -407,10 +407,21 @@ All answered by the owner: option A for each (see *Clarifications*). The options
 
 - 2026-11-01 (sweep of the build): **FR-194**: the policy line hides and comes back with its call when older calls collapse.
 
+### 2026-11-06: the owner's real check of the Copilot MCP sign-in renewal (issues #1201, #1205; records evidence only, no code)
+
+- `real:` owner (Vikram), Telegram, 2026-11-06: 15:04 UTC "MCP refresh worked on 0.1.11" on his own Mac (macOS), against his own Microsoft (Entra) MCP
+  servers, release v0.1.11. At 15:07 UTC he confirmed he saw the automatic note in the chat ("The ... MCP server was reconnected after a sign-in error
+  ..."): the renew-on-failure path (FR-218..FR-222, PR #1203) fired on a real Entra server and the agent continued. This closes the FR-218..FR-222
+  `[KNOWN GAP]` "not seen on a real Entra server, nor on macOS" for macOS and Entra; it also answers "does a real model act on the note": it continued.
+- `[KNOWN GAP]` Still open: **Windows**; the **pre-send check** (FR-223..FR-228, PR #1210) specifically, since it is not known whether it fired
+  (only the note of the failed-call path was reported); how long the session had been idle; **macOS Keychain prompts** (none reported, not asked);
+  several chats or sessions sharing one server; a provider that rotates refresh tokens.
+- Evidence is the owner's report in chat, not a log or screenshot kept in the repo.
+
 ### 2026-11-05: renewing a remote MCP sign-in at once after a failed call, and one note to the agent (issue #1201; changes FR-212's design)
 
-**Status**: built 2026-11-05 (T190..T199), fakes, unit tests and the simulator only (`test:` `test-mcp-renew.ts`, `test-mcp-signinwiring.ts`, `sim:` `shots-058-mcp-signin-refresh.js`); probed free the same day (below). `[KNOWN GAP]` not seen on a real Entra
-server, nor on macOS or Windows. Numbers taken (checked on `origin/main`, remote branches and open PRs): **FR-218..FR-222**, **T190..T199**.
+**Status**: built 2026-11-05 (T190..T199), fakes, unit tests and the simulator only (`test:` `test-mcp-renew.ts`, `test-mcp-signinwiring.ts`, `sim:` `shots-058-mcp-signin-refresh.js`); probed free the same day (below). `real:` seen on the owner's real Entra servers on macOS, v0.1.11, 2026-11-06 (*Changes* 2026-11-06). `[KNOWN GAP]` not on
+Windows. Numbers taken (checked on `origin/main`, remote branches and open PRs): **FR-218..FR-222**, **T190..T199**.
 
 **Input** (owner, Vikram, Telegram, 2026-11-05 16:53 UTC): his Microsoft (Entra) MCP servers (Teams, mail and similar) stop working about
 every hour in Copilot chats; the server list still says *connected*, the agent's tool call fails, and the dialog's Restart fixes it. He
@@ -559,8 +570,8 @@ method is in this spec (`docs/agent-apps.md` is at its word budget), `docs/featu
 ### 2026-11-05: a background check of the sign-in servers before every message (issue #1205; extends FR-218..FR-222)
 
 **Status**: built 2026-11-05 (T200..T207), fakes, unit tests and the simulator only (`test:` `test-mcp-presend.ts`, `test-mcp-signinwiring.ts`, `sim:`
-`shots-058-mcp-signin-refresh.js`); probed free the same day (below). `[KNOWN GAP]` not seen on a real Entra server, nor on macOS or Windows (a
-restart may raise a macOS Keychain prompt): the owner checks after the release. Numbers taken (checked on `origin/main`, remote branches and open PRs):
+`shots-058-mcp-signin-refresh.js`); probed free the same day (below). `real:` the renewal after a failed call (FR-218..FR-222) was seen on the owner's real Entra servers on macOS, v0.1.11, 2026-11-06 (*Changes*
+2026-11-06). `[KNOWN GAP]` not known whether this pre-send check itself fired or what a restart costs in macOS Keychain prompts; not on Windows. Numbers taken (checked on `origin/main`, remote branches and open PRs):
 **FR-223..FR-228**, **T200..T207**.
 
 **Input** (owner, Vikram, Telegram, 2026-11-05 19:26-19:42 UTC, issue #1205): like VS Code, check the MCP servers before a message, not only after a
