@@ -134,10 +134,10 @@ const SCENES = {
       await S.film(1.6);
       await H.js(`(()=>{const i=document.getElementById('msgInput');i.focus();i.value='Please continue with the report';i.dispatchEvent(new Event('input',{bubbles:true}));})()`);
       await H.settle();
-      await S.caption('1. Back after an hour: send a message', 'Expired MCP sign-ins are renewed before it goes');
+      await S.caption('{step}. Back after an hour: send a message', 'Expired MCP sign-ins are renewed before it goes');
       await S.zoomTo(await S.rectOf(['#msgInput', '#sendBtn'], { above: 300, pad: 24 }));
       await S.film(2);
-      await S.caption('2. One quiet line while they renew', 'No dialog, nothing to click: the message goes when they are done');
+      await S.caption('{step}. One quiet line while they renew', 'No dialog, nothing to click: the message goes when they are done');
       await S.check();
       await H.js(`document.getElementById('sendBtn').click();0`);
       // the line is up for well under a second in the simulator (each renewal takes 600 ms): taken once and held, so it can be read
@@ -151,7 +151,7 @@ const SCENES = {
       if (!(await H.until(`!!document.querySelector('#chat .note.mcpre-sign')`, 8000))) throw new Error('refresh: no sign-in line');
       await H.js(`document.querySelector('#chat .note.mcpre-sign').scrollIntoView({block:'center'});0`);
       await H.settle();
-      await S.caption('3. A server that needs you says so', 'crm needs a new sign-in: Sign in… opens its MCP servers row');
+      await S.caption('{step}. A server that needs you says so', 'crm needs a new sign-in: Sign in… opens its MCP servers row');
       await S.zoomTo(await S.rectOf(['#chat .note.mcpre-sign'], { pad: 24, above: 90, minW: 760 }), 0.6);
       await S.film(3.8);
       await S.zoomOut();
@@ -173,10 +173,10 @@ const SCENES = {
       await S.film(1.6);
       // the first request: who asks, what for, the whole request text, then its buttons, each on its own line
       const row = (k) => `(()=>[...document.querySelectorAll('#inboxDlg .ib-t')][${k}].closest('.ib-main').parentElement)()`;
-      await S.caption('1. Who asks, and the whole request', 'Name and state on top, the full text under it, the buttons apart');
+      await S.caption('{step}. Who asks, and the whole request', 'Name and state on top, the full text under it, the buttons apart');
       await S.zoomTo(await S.rectOfJs(row(0), { pad: 18 }));
       await S.film(3.8);
-      await S.caption('2. A sandbox warning stays readable', 'The note on what an approval allows is part of the text, not cut off');
+      await S.caption('{step}. A sandbox warning stays readable', 'The note on what an approval allows is part of the text, not cut off');
       await S.zoomTo(await S.rectOfJs(row(1), { pad: 18 }), 0.6);
       await S.film(3.8);
       await S.zoomOut();
@@ -251,9 +251,11 @@ function parseArgs(argv) {
 function sceneTitle(sc, vars) {
   return sc.titleNoCount && (vars.count === null || vars.count === undefined || vars.count === '') ? sc.titleNoCount : sc.title;
 }
-/** The caption text with {version} and {count} filled in. */
-function fill(text, vars) {
-  return String(text).replace(/\{(version|count)\}/g, (_, k) => (vars[k] === null || vars[k] === undefined ? '' : String(vars[k])));
+/** A counter for the step captions of one clip: each `{step}` in a caption is the next number, so the numbers follow the order shown (issue #1214), never a number typed into a scene. */
+function stepCounter() { let n = 0; return () => ++n; }
+/** The caption text with {version}, {count} and {step} (the next step number, from `step`) filled in. */
+function fill(text, vars, step) {
+  return String(text).replace(/\{(version|count|step)\}/g, (_, k) => k === 'step' ? String(step ? step() : '') : (vars[k] === null || vars[k] === undefined ? '' : String(vars[k])));
 }
 
 /**
@@ -503,6 +505,7 @@ async function driver(ctx) {
   const frames = [];
   const scenes = [];
   let n = 0, clipMs = 0;
+  const steps = stepCounter();
 
   /* FR-172: the caption lives in its own band under the app frame (never over it), drawn by a second, offscreen window the size of
      the whole frame; title and end cards are that window's full frame. Its bitmap is taken again only when the caption changes. */
@@ -566,7 +569,7 @@ async function driver(ctx) {
     },
     /** The caption in the band under the app (title, then where to find it). */
     async caption(title, sub) {
-      capTitle = fill(title, vars); capSub = fill(sub, vars);
+      capTitle = fill(title, vars, steps); capSub = fill(sub, vars);
       await paintBand();
     },
     /** The full-frame title card (intro, outro) with the caption's text, or back to the app with the band. */
@@ -705,5 +708,5 @@ async function driver(ctx) {
 }
 
 module.exports = driver;
-Object.assign(module.exports, { sceneTitle, ZOOM_MAX, ZOOM_FPS, ZOOM_SECS, FULL, fitCamera, ease, zoomPath, cropRect, stillNames, HOME_PATH_RE, PLATFORM_ADDED, unexpectedEnvKeys, ENV_ALLOW, RECORD_MS, FFMPEG_MS, childEnv, gitEmail, run, W, H_, BAND, FRAME_H, composeFrame, SCENES, DEFAULT_SCENES, VERSION_RE, FPS, GIF_MAX, MP4_MAX, parseArgs, fill, forbiddenValues, privacyProblems, concatList, mp4Args, gifArgs, gifTries, lengthOk, main });
+Object.assign(module.exports, { sceneTitle, ZOOM_MAX, ZOOM_FPS, ZOOM_SECS, FULL, fitCamera, ease, zoomPath, cropRect, stillNames, HOME_PATH_RE, PLATFORM_ADDED, unexpectedEnvKeys, ENV_ALLOW, RECORD_MS, FFMPEG_MS, childEnv, gitEmail, run, W, H_, BAND, FRAME_H, composeFrame, SCENES, DEFAULT_SCENES, stepCounter, VERSION_RE, FPS, GIF_MAX, MP4_MAX, parseArgs, fill, forbiddenValues, privacyProblems, concatList, mp4Args, gifArgs, gifTries, lengthOk, main });
 if (require.main === module) main().catch((e) => { console.error('release-video:', e.message); process.exitCode = 1; });

@@ -145,6 +145,12 @@ Retired spec numbers, never to be reused for a new spec (`specs:check` and `--ad
 
 ## Changes
 
+### 2026-11-06: the clip's step captions are numbered by position in the clip (issue #1214, owner)
+
+*Why:* the v0.1.11 clip showed "3." and then "2.": each scene typed its own step numbers, so a scene's numbers did not follow the order shown.
+
+- A step caption is written `{step}. Title`; the driver fills `{step}` with the next number of a counter that runs once per clip, so the numbers are 1..n in the order shown (no number is typed into a scene). `test:releasevideo` checks 1..n for the default clip and another scene order, and that no scene types a number; a mutant with typed numbers fails `step numbers are 1..n in the order shown`. No new FR. Number taken: T129 (checked against `main`, remote branches and open PRs on 2026-11-06). Not recorded: no Electron run, the clip itself was not re-filmed.
+
 ### 2026-11-05: the simulator's About version comes from package.json (issue #1162, owner)
 
 *Why:* the version was hard-coded in the long `getSettings` line of `src/renderer/sim.ts`, so every release bump edited a line other PRs also edit and conflicted.
