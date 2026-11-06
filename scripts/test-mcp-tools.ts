@@ -16,7 +16,7 @@ import type { McpServerView } from '../src/shared/mcp';
 import type { SavedFolder } from '../src/main/folders';
 import { officeTotals } from '../src/shared/usagedoc';
 import { tmpDir } from './test-tmp';
-/** CPU time of this process (user + system) in ms: the cost budgets below use it, never the wall clock, so a loaded machine cannot fail them (AGENTS.md, Timing; issue #940). */
+/** CPU time of this process (user + system) in ms: the cost budgets below use it, never the wall clock, so a loaded machine cannot fail them (docs/rules/review-rounds.md, Timing; issue #940). */
 const cpuMs = (): number => { const c = process.cpuUsage(); return (c.user + c.system) / 1000; };
 
 const text = (t: string) => ({ content: [{ type: 'text' as const, text: t }] });

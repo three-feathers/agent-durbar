@@ -5,6 +5,8 @@
 /.claude/     @vikramgorla @fjcabello @rubenlupi
 /.github/     @vikramgorla @fjcabello @rubenlupi
 /AGENTS.md    @vikramgorla @fjcabello @rubenlupi
+# the task rules split out of AGENTS.md (spec 021 FR-082) are rule text too
+/docs/rules/    @vikramgorla @fjcabello @rubenlupi
 /CLAUDE.md    @vikramgorla @fjcabello @rubenlupi
 # who agents trust to read (AGENTS.md, Untrusted content; spec 021 FR-060): changing it is an owner decision
 /scripts/trusted-authors.txt    @vikramgorla @fjcabello @rubenlupi

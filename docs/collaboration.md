@@ -14,7 +14,7 @@ For a new contributor and their agent: the first-day setup, the steps for one pi
    npm run typecheck && npm run build && npm test     # no AI credits spent
    ```
 4. **Spec Kit check**: `uv tool install specify-cli`, then `specify integration status`. Expected: `Installed integrations: copilot, claude`, no modified or missing files, and the one accepted finding `unsafe-multi-install` (exit code 1; Claude and Copilot share the repo on purpose). Anything else means a broken setup: tell the maintainer, do not "fix" `.specify/` or `.claude/` yourself.
-5. **Start Claude Code in the repo**: `claude`. It reads `CLAUDE.md`, which imports `AGENTS.md`. Type `/` and you should see `speckit-specify`, `speckit-plan`, `speckit-tasks` and the rest. Read `AGENTS.md` yourself too, once.
+5. **Start Claude Code in the repo**: `claude`. It reads `CLAUDE.md`, which imports `AGENTS.md`. Type `/` and you should see `speckit-specify`, `speckit-plan`, `speckit-tasks` and the rest. Read `AGENTS.md` yourself too, once; it links the task rules in `docs/rules/`, read before each task.
 6. **Sign your commits** (AGENTS.md, *Commit identity and signed commits*). On the host where your agent runs: `ssh-keygen -t ed25519 -f ~/.ssh/durbar_signing`, then `git config gpg.format ssh`, `git config user.signingkey ~/.ssh/durbar_signing.pub`, `git config commit.gpgsign true`, `git config tag.gpgsign true`. Add the `.pub` to your GitHub account as a **Signing key** (Settings, SSH and GPG keys). Check: `git log --show-signature -1` (a local check needs `gpg.ssh.allowedSignersFile`; GitHub shows Verified without it). A missing key makes the commit fail: fix the key path, never pass `--no-gpg-sign`.
 7. **Optional: the team's reference agent setup** (sub-agents, `CLAUDE.local.md` template, review loop, always-on host): [docs/agent-setup/](agent-setup/README.md). Fill the placeholders in your own copy; never commit personal files.
 
@@ -37,11 +37,11 @@ The commands only; each step's rule is in AGENTS.md.
 5. **Implement** (`/speckit-implement`); test on the simulator (`DURBAR_SIM=15 npm start`) and with `npm test`.
 6. **Before the PR**: `npm run changelog:check`, `npm run specs:check`, then `npm run typecheck && npm run build && npm test`; for UI, `npm run shots:docs`; `/speckit-converge`. Theme or CSS changes: `npm run check:geometry` (Retro against Clean Office, about 20 s; `CHECK_ALL_THEMES=1` for every theme). The full layout check in every theme is on demand: `npm run check:themes` locally, or `gh workflow run ci.yml --ref <branch> -f full_themes=true`.
 7. **Open the PR** (`git push -u origin <branch>`, then `gh pr create`), fill the template, move the issue to *In review* on the board.
-8. **Review and merge** as AGENTS.md says (*Reviews and merge*); `scripts/pr-gate.sh <N>` must say *ready to merge*.
+8. **Review and merge** as AGENTS.md says (*Reviews and merge*, and the `docs/rules/` files it links); `scripts/pr-gate.sh <N>` must say *ready to merge*.
 
 ## Team norms
 
-Each person's working hours. Agents follow them for reviews of that person's PRs and for direct messages (AGENTS.md, *Chat and decisions*):
+Each person's working hours. Agents follow them for reviews of that person's PRs and for direct messages (docs/rules/chat-and-decisions.md):
 
 - Paco: no reviews of his PRs during his work hours (from 08:30, his local time) unless he asks for one; no direct messages 23:00-07:00.
 - Add yours here.
