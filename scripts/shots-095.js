@@ -123,6 +123,7 @@ module.exports = async (ctx) => {
     let j = await jumped(false);
     assert.ok(j && j.inView && /registry/i.test(j.text), `${w}: the matching message is in view: ${JSON.stringify(j)}`);
     await ok(`(window.__ann||[]).includes('Message shown.')`, `${w}: and said`);
+    assert.strictEqual(await js(`getComputedStyle(document.querySelector('#chat .bubble.nt-found')).animationDuration`), '2s', `${w}: the fade lasts as long as the 2 s mark (review of phase 3, R3)`);
     await shot('jump', w, h, { prep: 'calm' });
     await closeChat();
     await ok(`!document.body.classList.contains('panel-open')&&!!document.querySelector('#list .cs-hit')`, `${w}: closing the chat comes back to the results`);
@@ -190,6 +191,26 @@ module.exports = async (ctx) => {
     await js(`document.getElementById('csStop').click()`);
     await ok(`(document.querySelector('#list .cs-notes')||{}).textContent==='Stopped.'&&!document.getElementById('csStop')`, `${w}: Stop says "Stopped."`);
     await ok(`document.activeElement&&document.activeElement.id==='convSearch'`, `${w}: and the focus goes back to the box`);
+
+    // review of phase 3 (R1): data with String.replace patterns ($& $` $') in a title and an excerpt adds nothing to the row's markup
+    await typeQuery('registry');
+    await ok(`!!window.__durbarSimUi.cs.id()&&!!document.getElementById('csStop')`, `${w}: a search is running`);
+    const PAT = "$` style=position:fixed;inset:0;z-index:9999;background:red x=$' $& end";
+    const injected = await js(`(()=>{const a=window.__durbarSimUi.agents().filter(x=>!x.parent).slice(-1)[0];a.name=${jsLiteral('Pay ' + PAT)};
+      window.__durbarSimUi.cs.event({kind:'batch',searchId:window.__durbarSimUi.cs.id(),hits:[{adapter:a.info&&a.info.adapterId||'copilot',sessionId:a.id,agentId:a.id,group:'office',app:'GitHub Copilot',folderName:'demo',title:a.name,titleMarks:[[0,3]],time:0,
+        excerpts:[{text:${jsLiteral('registry ' + PAT)},marks:[[0,8]],speaker:'you',anchor:{n:0,head:'registry'}}],more:0}],progress:{done:1,total:9},groups:{office:1,earlier:0}});return a.id;})()`);
+    await ok(`[...document.querySelectorAll('#list .cs-hit button.lrow[data-id]')].some(b=>b.dataset.id===${jsLiteral(injected)})`, `${w}: the injected result is shown`, 3000);
+    const inj = await js(`(()=>{const h=[...document.querySelectorAll('#list .cs-hit')].find(x=>x.querySelector('button.lrow[data-id]')&&x.querySelector('button.lrow').dataset.id===${jsLiteral(injected)});
+      const rows=h.querySelectorAll('button.lrow'),b=rows[0];return {rows:rows.length,styled:[...document.querySelectorAll('#list [style]')].length,attrs:[...b.attributes].map(x=>x.name).sort(),label:b.getAttribute('aria-label'),name:(b.querySelector('.lnm')||{}).textContent,ex:(h.querySelector('.cs-ex')||{}).textContent};})()`);
+    assert.strictEqual(inj.rows, 1, `${w}: one row button: ${JSON.stringify(inj)}`);
+    assert.strictEqual(inj.styled, 0, `${w}: no style attribute anywhere in the results: ${JSON.stringify(inj)}`);
+    assert.deepStrictEqual(inj.attrs, ['aria-label', 'aria-pressed', 'class', 'data-csf', 'data-csk', 'data-csnav', 'data-id'], `${w}: only the row's own attributes`);
+    assert.ok(inj.label.includes(PAT) && inj.name === 'Pay ' + PAT && inj.ex.includes(PAT), `${w}: the text is shown as written: ${JSON.stringify(inj)}`);
+    // review of phase 3 (R2): shortening the query below 3 characters while it scans ends the state ("Stopped."), not a lasting "Searching"
+    await js(`document.getElementById('convSearch').focus()`);
+    for (let i = 0; i < 6; i++) await key('Backspace', [], { char: 'never', pause: 20 });
+    await ok(`document.getElementById('convSearch').value==='re'`, `${w}: the query is "re"`);
+    await ok(`(document.getElementById('convSearchHint').textContent||'')==='Type at least 3 characters'&&!/^Searching/.test((document.querySelector('#list .cs-st')||{}).textContent||'')&&(document.querySelector('#list .cs-notes')||{}).textContent==='Stopped.'&&!document.getElementById('csStop')`, `${w}: a short query ends the scan's state: "Stopped."`);
 
     await H.load({ w, h, query: { simsearch: 'locked' }, focus: true });
     await H.calm();
