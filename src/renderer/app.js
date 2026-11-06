@@ -2596,7 +2596,7 @@ function openPanel(id,focus){
   const chat=getChat(a); $('chat').appendChild(chat.el);
   updatePanelHeader(); renderGrants();
   const chatEl=$('chat'); chatEl.dataset.pin='1'; chatEl._lastTop=undefined; chatEl.scrollTop=1e6;
-  let rs=0; const restick=()=>{if(ui.selected!==a.id)return; const un=rs===0&&cvUnmarkIfResized(chat.el); /* marks dropped at this frame (another width or layout): the end moved by what that laid out, not by the person */ if(!un&&chatEl.scrollHeight-chatEl.scrollTop-chatEl.clientHeight>400)return; chatEl.scrollTop=chatEl.scrollHeight; if(++rs<4)requestAnimationFrame(restick); else chatEl.onscroll();}; if(chat.el.childElementCount>4)requestAnimationFrame(restick); /* spec 005 FR-210: the messages at the end get their real height a frame after the first layout, so the end moves; follow it for 4 frames, then read the pin again; a chat of 4 or fewer messages has no skipped one and is left alone */
+  let rs=0; const restick=()=>{if(ui.selected!==a.id){chatEl._rsBusy=0;return;} const un=rs===0&&cvUnmarkIfResized(chat.el); /* marks dropped at this frame (another width or layout): the end moved by what that laid out, not by the person */ if(!un&&chatEl.scrollHeight-chatEl.scrollTop-chatEl.clientHeight>400){chatEl._rsBusy=0;return;} chatEl.scrollTop=chatEl.scrollHeight; if(++rs<4)requestAnimationFrame(restick); else{chatEl._rsBusy=0;chatEl.onscroll();}}; chatEl._rsBusy=0; if(chat.el.childElementCount>4){chatEl._rsBusy=1;requestAnimationFrame(restick);} /* spec 083 FR-046: _rsBusy is on while the re-stick runs, so Open source reveals after it */ /* spec 005 FR-210: the messages at the end get their real height a frame after the first layout, so the end moves; follow it for 4 frames, then read the pin again; a chat of 4 or fewer messages has no skipped one and is left alone */
   chatEl.onscroll=()=>{const t=chatEl.scrollTop; if(chatEl.scrollHeight-t-chatEl.clientHeight<80)chatEl.dataset.pin='1'; else if(chatEl._lastTop===undefined||t<chatEl._lastTop-1)chatEl.dataset.pin='0'; chatEl._lastTop=t;}; /* spec 005 FR-214: the scroll event of the app's own stick-to-bottom write arrives a frame later, when a new block may already have grown the page; that is not the person leaving the end. Only a move up from the position of the last scroll event is (whoever wrote the last position, so no writer has to record it) */
   $('panel').querySelector('.panel-in').classList.toggle('helper-ro',!!(a.live&&a.parent)); /* spec 097 Changes 2026-11-04 (issue 1140): not 'ro', the Real office root's class, whose floor picture and corners it took */
   $('backBtn').onclick=closePanel;
@@ -3232,28 +3232,39 @@ async function ntOfficeSession(root,src){
   const i=own.findIndex(sid=>sid===src.session);
   return i<0?null:cands[i];
 }
+/* after a refusal the focus goes back to the note's row (the menu that held it is gone) */
+function ntBackToRow(n){if(nsShown())nsFocusRow(n.id);else if(notesIsOpen())notesFocusRow(n.id);}
 async function openNoteSource(a,n){
   const src=n&&n.source; if(!src||!src.session||!a)return;
-  const gone=()=>toast(NT_GONE,5000);
-  const root=liveRoot(a);
+  const gone=()=>{toast(NT_GONE,5000);announce(NT_GONE);ntBackToRow(n);};
+  const root=liveRoot(a), kind=x=>(x.info&&x.info.adapterId)||'copilot';
   const live=bridge.notesList?await ntOfficeSession(root,src):null;
   let target=live||null;
   if(live){ntLeaveNotes();openPanel(live.id,false);}
   else{
-    if(!bridge.resumeSession||!bridge.listPrevious||!feat(root,'history')){gone();return;}
-    const st=prevOf(root); if(!st.cli)await loadPrev(root);
-    const c=prevOf(root).cli;
+    /* Previous sessions lists a session through a chat of its own app, so the folder's chat of the note's app is the one asked (never the open chat's, which may be another app) */
+    const via=[root].concat(siblingsOf(root)).find(x=>kind(x)===src.app);
+    if(!via||!bridge.resumeSession||!bridge.listPrevious||!feat(via,'history')){gone();return;}
+    if(!prevOf(via).cli)await loadPrev(via);
+    const c=prevOf(via).cli;
     if(!c||!c.ok||!c.sessions||!c.sessions.some(x=>x.id===src.session)){gone();return;}
-    target=await resumePrev(root,src.session,null); /* the Previous sessions path: no message is sent */
-    if(!target)return; /* it said why; the drawer or screen stays */
+    target=await resumePrev(via,src.session,null); /* the Previous sessions path: no message is sent */
+    if(!target){ntBackToRow(n);return;} /* it said why; the drawer or screen stays */
     ntLeaveNotes();
   }
+  /* the chat has been placed once openPanel's re-stick (4 frames) is over; a reveal before that is dragged back to the end */
+  for(let i=0;i<120&&(!$('chat')||$('chat')._rsBusy);i++)await new Promise(r=>requestAnimationFrame(r));
   await new Promise(r=>requestAnimationFrame(r));
   const b=await ntSourceBubble(src);
-  if(!b||ui.selected!==target.id){if(ui.selected===target.id)toast(NT_NOMSG,5000);return;}
-  SCROLL.reveal(b,{block:'center',scroller:$('chat')});
-  clearTimeout(b._ntT); b.classList.remove('nt-found'); void b.offsetWidth; b.classList.add('nt-found'); b._ntT=setTimeout(()=>b.classList.remove('nt-found'),1200); /* a second Open source restarts the 1.2 s */
-  announce('Message shown.');
+  if(ui.selected!==target.id)return;
+  const chatEl=$('chat');
+  if(b){
+    SCROLL.reveal(b,{block:'center',scroller:chatEl});
+    chatEl.dataset.pin=chatEl.scrollHeight-chatEl.scrollTop-chatEl.clientHeight<80?'1':'0'; chatEl._lastTop=chatEl.scrollTop; /* the reader is where the reveal put them: new text does not pull them away */
+    clearTimeout(b._ntT); b.classList.remove('nt-found'); void b.offsetWidth; b.classList.add('nt-found'); b._ntT=setTimeout(()=>b.classList.remove('nt-found'),1200); /* a second Open source restarts the 1.2 s */
+  }
+  focusIn(chatEl,{reveal:false}); /* the menu and the drawer that held the focus are gone: the log has it (it is a focusable log) */
+  if(b)announce('Message shown.'); else{toast(NT_NOMSG,5000);announce(NT_NOMSG);}
 }
 
 /* ---------------- spec 083 FR-044, FR-045 (T034a): the folder's Notes screen ----------------
