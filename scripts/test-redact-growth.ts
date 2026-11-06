@@ -257,6 +257,7 @@ if (part === 'shapes' || part === 'shapes2') {
 {
   // issue #1227 (spec 012 FR-170): the rules of the gap fix, each with the shape that makes it try the most; also `password=` repeated (a required tail after the value was quadratic: 22 s at 256 KB)
   const gapUnits: Record<string, string> = {
+    mysqlContinued: 'mysql \\\n', mysqlContinuedCrlf: 'mysql a \\\r\n', mysqlBackslashes: 'mysql ' + '\\'.repeat(150) + ' ', bearerColon: 'Bearer: ', bearerColonLong: 'Bearer: ' + 'a1'.repeat(40) + ' ', spacedName: 'secret access key: ', spacedNameLong: 'aws secret access key = ' + 'aB3/'.repeat(10) + ' ', spacedNameRun: 'secret   access   ',
     passwordRun: 'password=', pwdRun: 'pwd:', mysql: 'mysql ', mysqlFlag: 'mysql -p ', mysqlLong: 'mysql ' + 'a'.repeat(195) + ' ', mysqlGlued: 'mysql -pa mysql -pb ', awsName: 'aws_secret_access_key ', awsLong: 'aws_secret_access_key ' + 'aB3/'.repeat(10) + ' ', awsRun: 'secret_access_key ' + 'aB3'.repeat(2000) + '#',
     schemeToken: 'token ', schemeTokenWord: 'token ab12cd34. ', schemeTokenLong: 'token ' + 'a1'.repeat(40) + ' ', apiKeySpace: 'api_key   ', bearerShort: 'Bearer x. ', bearerShortRun: 'Bearer a, ', bearerWordRun: 'Bearer ab. ' + 'a'.repeat(11) + ' ',
     shortName: 'token:ab12 ', shortNames: 'secret=a1,pwd=b2;', phrase: 'password: ab12 ', phraseLong: 'password: ab12' + ' cd34'.repeat(9) + ' ', phraseWords: 'pwd=a1 b2 c3 d4 e5 f6 g7 h8 i9 ', keyStart: 'api_key=sk-a ', keyStartLong: 'api_key=ghp_' + 'a'.repeat(30) + ' ',

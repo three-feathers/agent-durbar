@@ -490,6 +490,23 @@ for (const [start, more] of [['AK' + 'IA' + up(16), 'A'], ['AK' + 'IA' + up(16),
   eq('Cookie: theme=dark x', 'Cookie: theme=dark x', 'cookie stays: a word with no digit');
   eq('cookie: a=b is the format', 'cookie: a=b is the format', 'cookie stays: prose');
   eq('Cookie: id=123456 x', 'Cookie: id=123456 x', 'cookie stays: a number');
+  // 11. review of #1243 (fjcabello): neighbouring forms
+  eq('mysql -u root \\\n  -p' + 'hunter2x db', 'mysql -u root \\\n  -p[redacted] db', 'mysql continuation: LF');
+  eq('mysql -u root \\\r\n  -p' + 'hunter2x db', 'mysql -u root \\\r\n  -p[redacted] db', 'mysql continuation: CRLF');
+  eq('mysql -u root \\\n-p' + 'hunter2x', 'mysql -u root \\\n-p[redacted]', 'mysql continuation: the flag at the line start');
+  for (const t of ['mysql -u root \\\n  -P 3306 db', 'mysql \\\n -p db', 'echo a \\\n -pabc123', 'mysql -u root\n-pabc123x'])
+    eq(t, t, `mysql continuation stays: ${JSON.stringify(t)}`);
+  eq('Bearer: ' + 'ey12abcdEFGH', 'Bearer: [redacted]', 'bearer colon: with a space');
+  eq('bearer:' + 'ey12abcdEFGH', 'bearer:[redacted]', 'bearer colon: no space, lower case');
+  for (const t of ['Bearer: configuration', 'Bearer: none', 'Bearer: ey12abc'])
+    eq(t, t, `bearer colon stays: ${t}`);
+  eq('secret access key: ' + aws, 'secret access key: [redacted]', 'spaced name: colon');
+  eq('AWS Secret Access Key = ' + aws, 'AWS Secret Access Key = [redacted]', 'spaced name: equals, title case');
+  eq('secret access_key: ' + aws, 'secret access_key: [redacted]', 'spaced name: a space, then an underscore');
+  eq('secret   access key: ' + aws, 'secret   access key: [redacted]', 'spaced name: several spaces');
+  eq('aws secret_access key ' + aws, 'aws secret_access key [redacted]', 'spaced name: mixed with an underscore');
+  for (const t of ['secret access key: required', 'secret access key is ' + aws.slice(0, 20), 'secret access key: ' + aws.slice(0, 39)])
+    eq(t, t, `spaced name stays: ${t.slice(0, 40)}`);
 }
 
 // A real image, whole, stays (every repo image: test-redact-images.ts).

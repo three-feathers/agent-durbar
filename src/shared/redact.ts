@@ -404,6 +404,8 @@ function maskCookies(s: string, mask: string): string {
 /** A password in a command-shaped rule: ends at shell syntax, and at brackets, so `curl -u a:b(curl) x` shows `(curl)`. `Bearer x` is not one: its own shape takes the value too (in a note, even after a mark). */
 const CMD_VALUE = String.raw`(?![Bb][Ee][Aa][Rr][Ee][Rr]\s)(?:[^\s"'|;&\`$()<>]|\$(?![({]))+`;
 const HELD_PATTERNS: RegExp[] = [
+  // `Bearer: <value>` (a colon after the scheme word, as in hand-written headers): 8 or more characters with a digit, so `Bearer: configuration` stays
+  shape(String.raw`([Bb][Ee][Aa][Rr][Ee][Rr]:\s{0,8})(?=[A-Za-z0-9._~+/=-]{8})(?=[A-Za-z0-9._~+/=-]{0,64}[0-9])[A-Za-z0-9._~+/=-]+`),
   // `Bearer x. <value>`: a short first word and a stop character hide the value from the `Bearer` shape (issue #1227); the value is 12 or more characters with a digit. All of it goes: the first word may be the head of the secret.
   shape(String.raw`([Bb][Ee][Aa][Rr][Ee][Rr]\s{1,8})(?=[A-Za-z0-9_~+/=-]{1,7}[.,;:]\s{1,8}(?=[A-Za-z0-9._~+/=-]{0,64}[0-9])[A-Za-z0-9._~+/=-]{12})[A-Za-z0-9_~+/=-]{1,7}[.,;:]\s{1,8}[A-Za-z0-9._~+/=-]+`),
   shape(String.raw`(authorization\s{0,8}[:=]\s{0,8})(?:(?:bearer|basic|token)\s{1,8}){0,8}(?!'?\[(?:redacted|secret hidden)\]'?\}*(?:[\s",;]|$))[^\s",;]+`, 'gi'), // a value R12 already hid, whole, inside single quotes (`Authorization='[redacted]'}`) stays as it is; `[redacted]TOKEN` is not a hidden value
@@ -419,10 +421,12 @@ const HELD_PATTERNS: RegExp[] = [
 const PATTERNS: RegExp[] = [
   KEY_BLOCK,
   shape(String.raw`((?:set-)?cookie\\{0,2}["']\s{0,8}:\s{0,8}\\{0,2}")(?=[^\s=;,"'\\]{1,128}=|[^\s=;,"'\\|&\x60$()]{8,}(?:"|\\))(?:[^"\\\r\n]|\\(?!"))*`, 'gi'), // `"Cookie": "sid=…"` or one opaque token, in JSON: to the closing quote. The header form: `maskCookies`.
-  // `mysql -pPASSWORD` (the password glued to the flag; `-p` alone asks for it, `-P` is the port): the client programs of MySQL and MariaDB, after them the flag in the same line (issue #1227)
-  new RegExp(String.raw`(\b(?:mysql|mariadb)[a-z-]{0,12}\b[^\r\n]{0,200}?\s-p)(?:"[^"\r\n]{1,128}"|'[^'\r\n]{1,128}'|${CMD_VALUE})`, 'g'),
+  // `mysql -pPASSWORD` (the password glued to the flag; `-p` alone asks for it, `-P` is the port): the client programs of MySQL and MariaDB, after them the flag in the same command: one line, or lines joined by a `\` continuation (LF or CRLF) (issue #1227)
+  new RegExp(String.raw`(\b(?:mysql|mariadb)[a-z-]{0,12}\b(?:[^\r\n\\]|\\(?![\r\n])|\\\r?\n){0,200}?(?<=\s)-p)(?:"[^"\r\n]{1,128}"|'[^'\r\n]{1,128}'|${CMD_VALUE})`, 'g'),
   // `aws_secret_access_key <value>`: the name, a space and the 40-character value (the `=` and `:` forms are `NAMED_SECRET`'s)
   shape(String.raw`((?:aws[_-]?)?secret[_-]?access[_-]?key["']?\s{1,8}["']?)[A-Za-z0-9/+=]{40,}`, 'gi'),
+  // the name written as words (`secret access key: <value>`, `AWS Secret Access Key = <value>`): a space before `key` (`access_key` and `access-key` are `NAMED_SECRET`'s), then a separator or spaces and 40 or more base64 characters
+  shape(String.raw`((?:aws[ \t_-]?)?secret[ \t_-]{0,3}access[ \t]+key["']?(?:\s{1,8}|\s{0,8}[:=]\s{0,8})["']?)[A-Za-z0-9/+=]{40,}`, 'gi'),
   // `token <value>`, `apikey <value>`: a scheme word or a name with a space and no separator; 8 or more characters with a letter and a digit, and nothing `NOT_A_VALUE` knows
   shape(String.raw`((?:token|api[_-]?key)\s{1,8})(?!\/|${NOT_A_VALUE})(?=[A-Za-z0-9._~+/=-]{8})(?=[A-Za-z0-9._~+/=-]{0,64}[0-9])(?=[A-Za-z0-9._~+/=-]{0,64}[A-Za-z])[A-Za-z0-9._~+/=-]+`, 'gi'),
   // a `.netrc` entry: the word `password`, a space, the value
