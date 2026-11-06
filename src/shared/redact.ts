@@ -88,7 +88,7 @@ const PREFIXED = [
   String.raw`gsk_[A-Za-z0-9]{40,}|pplx-[A-Za-z0-9]{40,}`,
   String.raw`(?<![-_])hf_[A-Za-z0-9]{30,}|api_org_[A-Za-z0-9]{30,}|(?<![-_])r8_[A-Za-z0-9]{30,}|tvly-${dg(W, 20)}|lsv2_[a-z]{2}_${dg('[A-Za-z0-9_]', 30)}`, // Hugging Face (letters only is real), Replicate, Tavily, LangSmith. A two-letter prefix does not start after `-` or `_`: base64url holds those by chance
   // package registries
-  String.raw`${glued('npm', 36)}|pypi-Ag${dg(W, 50)}|rubygems_[a-f0-9]{48}|CLOJARS_[A-Za-z0-9]{60}|dckr_pat_${dg(W, 20)}`, // npm, PyPI, RubyGems, Clojars, Docker
+  String.raw`npm_[A-Za-z0-9]{36,}|pypi-Ag${dg(W, 50)}|rubygems_[a-f0-9]{48}|CLOJARS_[A-Za-z0-9]{60}|dckr_pat_${dg(W, 20)}`, // npm, PyPI, RubyGems, Clojars, Docker
   // chat and mail (Slack, Discord, Telegram tokens: their own shapes below)
   String.raw`SG\.${dg('[A-Za-z0-9_.=-]', 40)}|(?<![-_])key-[a-f0-9]{32}${NOT_AFTER}|[a-f0-9]{32}-us[0-9]{1,2}${NOT_AFTER}|xkeysib-[a-f0-9]{64}-[A-Za-z0-9]{16}|re_[A-Za-z0-9]{8}_[A-Za-z0-9]{24}|[0-9]{15,16}(?:\||%7[Cc])${W}{27,40}${NOT_AFTER}`, // SendGrid, Mailgun, Mailchimp, Brevo, Resend, Facebook
   // payment
@@ -182,8 +182,40 @@ const HELD_SHAPES: Array<RegExp | Guarded | ((s: string, mask: string) => string
   guarded(shape(String.raw`[MNO][DTjz][A-Za-z0-9_-]{21,26}${DOT}[A-Za-z0-9_-]{6}${DOT}[A-Za-z0-9_-]{27,}`), /(?:\.|%(?:25){0,8}2[Ee])[A-Za-z0-9_-]{6}(?:\.|%(?:25){0,8}2[Ee])/),
 ];
 /* The lookahead is every character these two can start with: without it a run of punctuation passes the start and tries all 100 alternatives at each position (`&` repeated: 90 to 14 ms per MB). */
-const TOKEN_SHAPES: Array<RegExp | Guarded> = [
-  new RegExp('(?=[A-Za-z0-9_~.])' + START_BOUNDED + `(?:${PREFIXED})`, 'g'),
+const PREFIXED_AT = new RegExp('(?=[A-Za-z0-9_~.])' + START_BOUNDED + `(?:${PREFIXED})`, 'g');
+/** The same without a start, tried at one place (`y`): a second token that begins where the first ends or inside the end of its body. */
+const PREFIXED_NEXT = new RegExp(`(?:${PREFIXED})`, 'y');
+/** The longest a prefix is before its body: how far back from the end of a match a swallowed second prefix can start. */
+const PREFIX_REACH = 24;
+/**
+ * `PREFIXED_AT`, and every token glued to a match (issue #1233, spec 012 FR-169). A token written right after another has a letter or digit before it, so the start rule
+ * hides nothing of it; and an open-ended body of letters and digits runs on into the next prefix. After each match the glued tokens are taken: one starting at its end
+ * (a fixed-length body) or starting in the last `PREFIX_REACH` characters of it (the swallowed prefix, whose body then runs on past the end). A token found there only
+ * extends the mask, never shortens it. Each match costs a bounded number of tries at fixed places, so still linear.
+ */
+function maskPrefixedGlued(s: string, mask: string): string {
+  let out = '';
+  let copied = 0;
+  PREFIXED_AT.lastIndex = 0;
+  for (let m = PREFIXED_AT.exec(s); m; m = PREFIXED_AT.exec(s)) {
+    const start = m.index;
+    let end = start + m[0].length;
+    for (let more = true; more; ) {
+      more = false;
+      for (let at = Math.max(start + 1, end - PREFIX_REACH); at <= end; at++) {
+        PREFIXED_NEXT.lastIndex = at;
+        const n = PREFIXED_NEXT.exec(s);
+        if (n && at + n[0].length > end) { end = at + n[0].length; more = true; break; }
+      }
+    }
+    out += s.slice(copied, start) + mask;
+    copied = end;
+    PREFIXED_AT.lastIndex = end;
+  }
+  return copied === 0 ? s : out + s.slice(copied);
+}
+const TOKEN_SHAPES: Array<RegExp | Guarded | ((s: string, mask: string) => string)> = [
+  maskPrefixedGlued,
   new RegExp(`(?=[A-Za-z0-9])${B64_START}(?:${B64_PREFIXED})${NOT_B64_AFTER}`, 'g'),
   /sk-ant-[A-Za-z0-9_-]{8,}/g, // no start: a key glued to a letter (`xsk-ant-…`) is still a key (from spec 103's `maskAll`)
   guarded(shape(String.raw`xox[os]-[0-9]{1,20}-[0-9]{1,20}-[0-9]{1,20}-[A-Fa-f0-9]{8,}`), /xox[os]-[0-9]/), // the legacy four-part Slack form (a plain `xoxo-…` is a hug: stays)
@@ -417,7 +449,7 @@ export function maskBareTokenShapes(text: string, mask: string): string {
   return maskBare(text, mask, true);
 }
 /** Test only: every pattern's source, for the check that none nests quantifiers (`scripts/test-redact-shapes.ts`). */
-export const _maskSourcesForTest = (): string[] => [...HELD_PATTERNS, ...PATTERNS, ...[...HELD_SHAPES, ...TOKEN_SHAPES].flatMap((t) => (typeof t === 'function' ? [] : t instanceof RegExp ? [t] : [t.re])), JWT_AT, NAMED_IN_QUERY, NAMED_SECRET, COOKIE_HEAD].map((r) => r.source);
+export const _maskSourcesForTest = (): string[] => [...HELD_PATTERNS, ...PATTERNS, ...[...HELD_SHAPES, ...TOKEN_SHAPES].flatMap((t) => (typeof t === 'function' ? [] : t instanceof RegExp ? [t] : [t.re])), PREFIXED_AT, PREFIXED_NEXT, JWT_AT, NAMED_IN_QUERY, NAMED_SECRET, COOKIE_HEAD].map((r) => r.source);
 /** Test only: the same without the marker guard, to prove the guard never changes the result. */
 export function maskTokenShapesUnguarded(text: string, mask: string): string {
   return maskShapes(text, mask, false);

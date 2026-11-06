@@ -373,6 +373,25 @@ for (const [start, more] of [['AK' + 'IA' + up(16), 'A'], ['AK' + 'IA' + up(16),
       assert.strictEqual(out, '[redacted]', `glued x${k}: ${t}… is one mask`);
     }
   }
+  // Every sample of every bare-token family, twice and three times back to back: one mask, nothing readable. A family added to FAMILIES is covered by this loop.
+  const CONTEXT = new Set(['authorization', 'cookie', 'cookieQuoted', 'curlUser', 'urlCredential', 'copilotTid', 'queryValue', 'named', 'netrc', 'bearer', 'jwt', 'keyBlock', 'slackHook', 'discordHook', 'teamsHook', 'telegram', 'discordBot', 'slackLegacy', 'skAntGlued']);
+  /** `[KNOWN GAP]` (spec 012 FR-169): shapes whose body has a fixed length and must END on a character that is not a letter or digit (`NOT_AFTER`, `NOT_B64_AFTER`), so a glued run is not a token at all. The loop checks each stays unmasked, so a fix that covers one fails here until it leaves the list. */
+  const GLUE_GAP = new Set(['AKIAAB3D', 'ASIAAB3D', 'ABIAAB3D', 'ACCAAB3D', 'A3TAAB3D', 'ABSKaB3d', 'AIzaaB3d', 'aB38Q~aB', '_a.8Q~aB', '~ab8Q~aB', '.ab8Q~aB', '1//0aB3d', 'oy2a3b6c', 'cioaB3dE', '4b1daB3d', 'dapi0a1b', 'cmVmdaB3', 'key-0a1b', '0a1b2c3d', 'SK0a1b2c', '12345678', 'ico-aB3d', 'API-AB3D', 'EAAAaB3d']);
+  let glueTested = 0;
+  for (const [family, samples] of Object.entries(FAMILIES)) {
+    if (CONTEXT.has(family)) continue;
+    for (const sample of samples) {
+      const wholes = [2, 3].map((k) => {
+        const out = redact(sample.repeat(k), {});
+        const whole = out.includes('[redacted]') && !/[A-Za-z0-9]{8}/.test(out.replace(/\[redacted\]/g, ''));
+        if (!whole && !GLUE_GAP.has(sample.slice(0, 8))) assert.fail(`${family}: glued x${k} of ${sample.slice(0, 8)}… leaves a body readable in ${out.replace(/[A-Za-z0-9]{12,}/g, '<LEAK>').slice(0, 80)}`);
+        return whole;
+      });
+      if (GLUE_GAP.has(sample.slice(0, 8))) assert.ok(wholes.includes(false), `${family}: ${sample.slice(0, 8)}… glued is now masked: take it off GLUE_GAP`);
+      else glueTested += 2;
+    }
+  }
+  assert.ok(glueTested > 150, `the glued loop ran: ${glueTested}`);
   // A glued short rest after a token (no full body) is still taken, as before; a space or a word between keeps both masked
   assert.ok(!redact('gh' + 'p_' + an(36) + 'gh' + 'p_' + an(8), {}).includes('gh' + 'p_'), 'a short glued rest');
   assert.strictEqual(redact(['gh' + 'p_' + an(36), 'gh' + 'o_' + an(36)].join(' x '), {}), '[redacted] x [redacted]', 'separated tokens');
