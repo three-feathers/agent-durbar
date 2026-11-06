@@ -504,7 +504,8 @@ export function redactMarkdown(u: string, k: string, env?: Env): string {
  * `:` counts only when more token characters follow, so "[redacted]." at the end of a sentence keeps its full stop. Linear.
  */
 export function maskGluedTail(text: string): string {
-  return text.replace(/\[redacted(?::[A-Za-z0-9_.-]{1,64})?\](?:[A-Za-z0-9_\-~+/=@%]|[.:](?=[A-Za-z0-9_\-~+/=@%.:]))+/g, '[redacted]');
+  // a mask then `@host`: the host of a URL with credentials stays (H6)
+  return text.replace(/\[redacted(?::[A-Za-z0-9_.-]{1,64})?\](?!@(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,}(?::\d{1,5})?(?:[/?#\s]|$))(?:[A-Za-z0-9_\-~+/=@%]|[.:](?=[A-Za-z0-9_\-~+/=@%.:]))+/g, '[redacted]');
 }
 
 const MASK = '[redacted]';
@@ -542,7 +543,13 @@ const LONG_FLAG = /^--[A-Za-z][A-Za-z0-9_.-]*(?:[=:\s]|$)/;
 /** `Bearer x` / `Basic x` as a whole arg: the word and exactly one token (so `Basic setup of the server` stays). */
 const BEARER = /^(bearer|basic)(\s+)\S+\s*$/i;
 /** R11: auth scheme words; the secret is the next arg. */
-const SCHEME = /^(?:bearer|basic|token|digest|negotiate|apikey)$/i;
+const SCHEME_WORDS = ['bearer', 'basic', 'token', 'digest', 'negotiate', 'apikey'];
+const SCHEME = new RegExp(`^(?:${SCHEME_WORDS.join('|')})$`, 'i');
+/** Spec 106 (F1b): is `word` the start of an auth scheme word, so a streamed `Authorization: Bea` may still become `Authorization: Bearer <secret>`? Uses the same words as R11. */
+export function schemePrefix(word: string): boolean {
+  const w = word.toLowerCase();
+  return w.length > 0 && SCHEME_WORDS.some((s) => s.startsWith(w));
+}
 /** `Name: <scheme word>` with nothing after it and a secret-looking name (`Authorization: Bearer`): the secret is the next arg (R11 b). */
 function schemeHeader(a: string, anyName = false): boolean {
   const h = HDR.exec(a);

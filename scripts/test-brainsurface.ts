@@ -1,13 +1,16 @@
 /** Brain view surfaces (spec 106 T004, FR-021, FR-080, FR-085, FR-086, FR-121, SC-002): `npm run test:brainsurface`. No credits. */
 import * as assert from 'assert';
+import * as path from 'path';
 import * as R from '../src/shared/redact';
 import { BrainMask, BrainState, BrainStep, brainState, currentStep, initBrain } from '../src/shared/brainstate';
 import {
-  STOP_SHARING_TO_ANSWER, SHARE_COST, SHARE_PLACEHOLDER, SurfaceCtx, Surface, cardLines, costText, exportText, formatStep, loopLine, midCut, officeLine, officeTag, orbName,
+  STOP_SHARING_TO_ANSWER, SHARE_COST, costDetail, SHARE_PLACEHOLDER, SurfaceCtx, Surface, cardLines, costText, exportText, formatStep, loopLine, midCut, officeLine, officeTag, orbName,
   relPath, sentenceFor, shareLine, transcriptText, turnMapLine, durationText,
 } from '../src/shared/brainsurface';
 
-const mask: BrainMask = R;
+const USAGE = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'usagetotals.js'));
+const COST = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'costtable.js'));
+const mask: BrainMask = { ...R, units: { validNano: USAGE.validNano, AIU_USD: COST.AIU_USD, money: COST.money } };
 const GH = 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8';
 const SK = 'sk-live-' + 'a1B2c3D4e5F6g7H8i9J0k1L2';
 const SESS = 'SESS_' + 'q9W8e7R6t5Y4u3I2o1P0aSdFg';
@@ -75,7 +78,7 @@ for (const [label, tool, args] of INPUTS) {
 
 // ---- the same inputs fed to each formatter UNMASKED (a surface stays safe on its own: FR-086 "each surface's formatter")
 for (const [label, tool, args] of INPUTS) {
-  const identity: BrainMask = { redact: (t) => String(t ?? ''), maskSecretCommand: (c) => String(c ?? ''), maskSecretArgs: (a) => [...a], maskSecretUrl: (u) => String(u ?? ''), maskHomePaths: (t) => String(t ?? ''), maskTokenShapes: (t) => t, maskGluedTail: (t) => t, openKeyBlockStart: () => -1 };
+  const identity: BrainMask = { redact: (t) => String(t ?? ''), maskSecretCommand: (c) => String(c ?? ''), maskSecretArgs: (a) => [...a], maskSecretUrl: (u) => String(u ?? ''), maskHomePaths: (t) => String(t ?? ''), maskTokenShapes: (t) => t, maskGluedTail: (t) => t, openKeyBlockStart: () => -1, schemePrefix: () => false };
   const { step: dirty } = stepFrom(tool, args, identity); // the state built by a mask that masks nothing
   const raw = JSON.stringify(dirty);
   assert.ok(leaks(raw).length > 0, `${label}: the unmasked fixture really holds a secret (else this test proves nothing)`);
@@ -178,6 +181,20 @@ assert.strictEqual(midCut('short.ts', 20), 'short.ts');
 assert.strictEqual(costText(0.04, ctx()), '≈ $0.04'); assert.strictEqual(costText(null, ctx()), 'cost unknown'); assert.strictEqual(costText(NaN, ctx()), 'cost unknown');
 assert.strictEqual(costText(0.04, ctx({ sharing: true })), SHARE_COST, 'cost is hidden while sharing'); assert.strictEqual(SHARE_COST, 'cost hidden while sharing');
 assert.strictEqual(STOP_SHARING_TO_ANSWER, 'Stop sharing to answer'); assert.strictEqual(SHARE_PLACEHOLDER, '[hidden while sharing]');
+// F8: the cost detail names the parts like the header's tooltip: credits at AIU_USD, plus Claude's estimate; unknown says nothing
+{
+  let c = initBrain('Ada', mask);
+  const ev = (e: unknown): void => { clock += 10; c = brainState(c, e, clock, mask); };
+  ev({ type: 'user' });
+  assert.strictEqual(costDetail(c, ctx()), '', 'no usage: nothing to say, the cost says "cost unknown"');
+  ev({ type: 'usage', nanoAiu: 4.2e9 });
+  assert.strictEqual(costDetail(c, ctx()), '≈ $0.04 = 4.20 AIU', 'Copilot: credits and their dollars');
+  ev({ type: 'usage', costUsd: 0.03 });
+  assert.strictEqual(costDetail(c, ctx()), '≈ $0.07 = 4.20 AIU + $0.03 Claude (est.)', 'Claude\'s estimate is added and named');
+  assert.strictEqual(costDetail(c, ctx({ sharing: true })), SHARE_COST, 'hidden while sharing');
+  assert.strictEqual(costText(c.turnCost, ctx()), '≈ $0.07');
+  assert.strictEqual(costText(0.001, ctx()), '<$0.01', 'under a cent: no "≈", as the top bar');
+}
 // the loop line and the sentence while sharing
 {
   let s = initBrain('Sven', mask);

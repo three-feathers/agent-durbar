@@ -21,6 +21,13 @@ export interface BrainMask {
   maskGluedTail(text: string): string;
   /** Where an unclosed private key block starts in `text`, else -1. */
   openKeyBlockStart(text: string): number;
+  /** Is the word the start of an auth scheme word (`Bea` of `Bearer`)? */
+  schemePrefix(word: string): boolean;
+  /**
+   * The app's usage units (spec 011 `usagetotals.js` `validNano`, spec 052 `costtable.js` `AIU_USD` and `money`): the page passes `DurbarUsage` and
+   * `DurbarCost`. Without it a `nanoAiu` figure is "not reported" and only `costUsd` counts.
+   */
+  units?: { validNano(x: unknown): boolean; AIU_USD: number; money?(usd: number): string };
 }
 
 export type GlyphId = 'think' | 'read' | 'edit' | 'shell' | 'web' | 'mcp' | 'you';
@@ -141,10 +148,16 @@ export interface BrainState {
   runs: Run[];
   /** An unclosed private key block is being streamed: deltas are dropped until its END marker (F1). */
   inKeyBlock: boolean;
+  /** Each stream (thinking, reply) keeps its own masked tail, so one cannot split a token of the other (H3); `buf` is the newer one. */
+  think: Tail;
+  out: Tail;
   /** Masked tail of the latest thinking or reply text: the source of "Why:" (never raw). */
   buf: string;
   /** Cost of the current turn from usage events (USD estimate); `costKnown` false = "cost unknown", never 0 (FR-015). */
   turnCost: number;
+  /** The parts of `turnCost`, named as the header's tooltip does ("= 0.42 AIU + $0.03 Claude (est.)"): credits (Copilot) and costUsd (Claude). */
+  turnAiu: number;
+  turnUsd: number;
   costKnown: boolean;
   /** When the displayed step last changed: FR-003's order is measured from here. */
   changedAt: number;
@@ -196,7 +209,7 @@ const cutTo = (s: string, max: number): string => {
 export function initBrain(name: string, mask: BrainMask): BrainState {
   const s: BrainState = {
     name: cutTo(maskText(mask, name), NAME_MAX) || 'Agent', turn: null, turnNo: 0, history: [], counts: { read: 0, edit: 0, shell: 0, web: 0, mcp: 0 }, stepsTotal: 0,
-    act: { kind: 'rest', glyph: null, stepN: null }, wait: null, loop: null, runs: [], inKeyBlock: false, buf: '', turnCost: 0, costKnown: false, changedAt: 0, rev: 0, paintedRev: -1, paintedAt: -Infinity, burstStep: 0, bloom: [], sentence: '',
+    act: { kind: 'rest', glyph: null, stepN: null }, wait: null, loop: null, runs: [], inKeyBlock: false, think: freshTail(), out: freshTail(), buf: '', turnCost: 0, turnAiu: 0, turnUsd: 0, costKnown: false, changedAt: 0, rev: 0, paintedRev: -1, paintedAt: -Infinity, burstStep: 0, bloom: [], sentence: '',
   };
   s.sentence = sentenceOf(s);
   return s;
@@ -264,6 +277,133 @@ function targetOf(ev: Ev, glyph: GlyphId, mask: BrainMask): Target {
   return none;
 }
 
+/* ---------- a value that is still to come (F1b) ---------- */
+
+/** A shaped, harmless run: appended after a text it is masked only when that text expects a secret value (redact's own header and secret-name rules decide, no second list). */
+const PROBE = 'aB3dE5gH7jK9mN1pQ3sT5vW7yZ0';
+function expects(mask: BrainMask, text: string): boolean {
+  const m = maskText(mask, text + ' ' + PROBE);
+  return m !== '' && !m.includes(PROBE);
+}
+/**
+ * Does the end of `joined`'s last line expect a secret value? `at` is where its raw tail starts, `head` the tail itself (header words, no secret yet). Null when not.
+ */
+function valueExpected(mask: BrainMask, joined: string): { at: number; head: string } | null {
+  try {
+    const line0 = joined.lastIndexOf('\n') + 1;
+    const start = Math.max(line0, joined.length - 400);
+    const L = joined.slice(start);
+    const starts: number[] = [];
+    for (const m of L.matchAll(/\S+/g)) starts.push(m.index!);
+    // a header whose scheme word is still arriving ("Authorization: Bea"): redact masks the part word as the value, and "rer <secret>" follows
+    const last = L.match(/\S+$/);
+    if (last && last[0].length <= 9 && mask.schemePrefix(last[0]) && starts.length >= 2) {
+      const lastAt = starts[starts.length - 1];
+      for (let k = starts.length - 2; k >= Math.max(0, starts.length - 12); k--) {
+        const before = L.slice(starts[k], lastAt);
+        const m = maskText(mask, before + 'Bearer ' + PROBE);
+        if (m !== '' && !m.includes(PROBE)) return { at: start + starts[k], head: L.slice(starts[k]) };
+      }
+    }
+    for (let k = starts.length - 1; k >= Math.max(0, starts.length - 12); k--) {
+      const tail = L.slice(starts[k]);
+      if (!expects(mask, tail)) continue;
+      return { at: start + starts[k], head: tail };
+    }
+  } catch { /* fail closed below: the caller masks the whole text */ }
+  return null;
+}
+
+/* ---------- streamed text: one masked tail per stream ---------- */
+
+/** One stream's masked tail; `key` is the depth of unclosed private key blocks (its pieces are dropped), `carry` a possible start of an END marker. */
+export interface Tail { buf: string; key: number; carry: string }
+const freshTail = (): Tail => ({ buf: '', key: 0, carry: '' });
+function clearStreams(s: BrainState): void { s.think = freshTail(); s.out = freshTail(); s.inKeyBlock = false; }
+
+const KEY_MARK = /-----(BEGIN|END)[\sA-Z0-9_-]{0,100}?PRIVATE\s{1,8}KEY(?:\s{1,8}BLOCK)?-----/gi;
+/** Depth of private key blocks after `text` from `depth`; `rest` is what follows the END that closes the outermost (H4: nested BEGIN lines count). */
+function scanKeys(text: string, depth: number): { depth: number; rest: string | null } {
+  KEY_MARK.lastIndex = 0;
+  for (let m = KEY_MARK.exec(text); m; m = KEY_MARK.exec(text)) {
+    depth += m[1].toUpperCase() === 'BEGIN' ? 1 : -1;
+    if (depth <= 0) return { depth: 0, rest: text.slice(m.index + m[0].length) };
+  }
+  return { depth, rest: null };
+}
+/** Depth after every marker of `text`, and where the outermost still-open block began (-1 when none). */
+function openDepth(text: string): { depth: number; at: number } {
+  KEY_MARK.lastIndex = 0;
+  let depth = 0, at = -1;
+  for (let m = KEY_MARK.exec(text); m; m = KEY_MARK.exec(text)) {
+    if (m[1].toUpperCase() === 'BEGIN') { if (depth === 0) at = m.index; depth++; } else if (depth > 0) depth--;
+  }
+  return { depth, at: depth > 0 ? at : -1 };
+}
+/** The end of `text` when it can be the start of a marker split across pieces (H1); base64 never holds five dashes. */
+function markerSuffix(text: string): string {
+  const pure = /^-{1,5}[A-Z ]{0,40}-{0,5}$/i;
+  const i = text.lastIndexOf('-----');
+  if (i >= 0 && pure.test(text.slice(i))) return text.slice(i);
+  const run = (/-{1,4}$/.exec(text) || [''])[0];
+  return run;
+}
+
+/** One piece of text into a stream's tail (F1, F1b, H1..H4): masks the masked tail plus the new text again, as a whole. */
+function streamText(tail: Tail, piece: string, whole: boolean, mask: BrainMask): Tail {
+  let { buf, key, carry } = tail;
+  let raw = piece;
+  if (whole) { buf = ''; key = 0; carry = ''; }
+  if (key > 0) { // inside a private key block: nothing is kept until its END marker
+    const text = carry + raw;
+    const r = scanKeys(text, key);
+    if (r.rest !== null) { key = 0; carry = ''; raw = r.rest; } else { key = r.depth; carry = markerSuffix(text); raw = ''; }
+  }
+  if (!raw) return { buf, key, carry };
+  // The masked tail plus the new text: a token split across deltas is whole again here. The head of a token that was already
+  // masked leaves its tail glued to the mask in the next delta, which matches no shape: that tail goes into the mask (F1).
+  const joined = buf + raw;
+  let open = -1;
+  let failed = false;
+  try { open = mask.openKeyBlockStart(joined); } catch { open = 0; failed = true; } // a failing check fails closed: treat as open, keep no text (H8)
+  // H4: nested BEGIN lines are counted, so an inner END cannot close the outer block
+  const nest = openDepth(joined);
+  if (open >= 0 || nest.depth > 0) { key = Math.max(1, nest.depth); carry = markerSuffix(joined); }
+  const cut = open >= 0 || nest.depth > 0 ? null : valueExpected(mask, joined);
+  if (failed) buf = '[redacted]';
+  else if (nest.depth > 0 && open < 0) buf = (safe(() => mask.maskGluedTail(maskText(mask, joined.slice(0, nest.at)))) + '[redacted]').slice(-BUF_MAX);
+  else if (cut) {
+    // F1b: a header or secret name that expects its value ("Authorization: Bearer") masks to a mark, and the value then arrives after a
+    // space. The header words (no secret yet) stay raw until the value comes, so the whole line masks together.
+    buf = (safe(() => mask.maskGluedTail(maskText(mask, joined.slice(0, cut.at)))) + cut.head).slice(-BUF_MAX);
+  } else buf = safe(() => mask.maskGluedTail(maskText(mask, joined))).slice(-BUF_MAX);
+  return { buf, key, carry };
+}
+
+/**
+ * One `usage` event as the app's own estimate (app.js header: `aiu * AIU_USD + usd`): credits (`nanoAiu`, Copilot) at AIU_USD, plus `costUsd` (Claude's estimate; Codex reports none). A usable
+ * figure is finite and non-negative (`validNano` also caps it); an event with neither is "not reported" (null), never 0. A helper's event
+ * arrives through its parent and is counted once, like spec 011's ledger.
+ */
+export function usageParts(e: Ev, mask: BrainMask): { aiu: number; aiuUsd: number; usd: number } | null {
+  let usd = 0, aiu = 0, known = false;
+  const c = e.costUsd;
+  if (typeof c === 'number' && Number.isFinite(c) && c >= 0) { usd = c; known = true; }
+  let aiuUsd = 0;
+  try {
+    const u = mask.units;
+    if (u && u.validNano(e.nanoAiu)) { aiu = (e.nanoAiu as number) / 1e9; aiuUsd = u.AIU_USD; known = true; }
+  } catch { /* fail closed: not reported */ }
+  return known ? { aiu, aiuUsd, usd } : null;
+}
+/** "≈ $0.04", "<$0.01" (no "≈", as the top bar), via the app's `money` when passed (FR-015). */
+export function usdText(usd: number, mask?: BrainMask): string {
+  let m = '';
+  try { if (mask && mask.units && mask.units.money) m = String(mask.units.money(usd)); } catch { m = ''; }
+  if (!m) m = usd > 0 && usd < 0.005 ? '<$0.01' : '$' + usd.toFixed(2);
+  return m.startsWith('<') ? m : '≈ ' + m;
+}
+
 /* ---------- the reducer ---------- */
 
 /** The newest whole sentence of a masked text; a fragment only when there is no whole one. */
@@ -281,7 +421,7 @@ function startTurn(s: BrainState, now: number): void {
   s.turnNo += 1;
   s.turn = { n: s.turnNo, startedAt: now, endedAt: null, result: null, steps: [], folded: 0, total: 0, late: 0 };
   s.act = { kind: 'rest', glyph: null, stepN: null };
-  s.wait = null; s.loop = null; s.runs = []; s.inKeyBlock = false; s.buf = ''; s.turnCost = 0; s.costKnown = false; s.bloom = []; s.burstStep = 0; s.changedAt = now;
+  s.wait = null; s.loop = null; s.runs = []; clearStreams(s); s.buf = ''; s.turnCost = 0; s.turnAiu = 0; s.turnUsd = 0; s.costKnown = false; s.bloom = []; s.burstStep = 0; s.changedAt = now;
 }
 
 export function usedLobes(turn: BrainTurn | null): LobeId[] {
@@ -309,6 +449,7 @@ function endTurn(s: BrainState, now: number, result: TurnResult): void {
   if (!t || t.endedAt !== null) return;
   const next: BrainTurn = { ...t, endedAt: now, result };
   s.turn = next;
+  clearStreams(s);
   s.history = [...s.history, { n: next.n, startedAt: next.startedAt, endedAt: now, result, steps: next.total, glyphs: glyphsOf(next), costUsd: s.costKnown ? s.turnCost : null }].slice(-HISTORY_MAX);
   s.loop = null; s.wait = null; s.act = { kind: 'rest', glyph: null, stepN: null }; s.bloom = usedLobes(next); s.changedAt = now;
 }
@@ -375,7 +516,7 @@ function onTool(s: BrainState, ev: Ev, now: number, mask: BrainMask): void {
       helper: typeof ev.agentId === 'string' && ev.agentId !== '', program: g.glyph === 'mcp' ? programOf(server) : tg.program, server, targetKind: tg.targetKind, target: tg.target,
       why: phase === 'start' && !ev.agentId ? lastSentence(s.buf) : '', files: tg.files, costAtStart: s.turnCost,
     };
-    if (phase === 'start' && !ev.agentId) s.buf = '';
+    if (phase === 'start' && !ev.agentId) { s.buf = ''; s.think = { ...s.think, buf: '' }; s.out = { ...s.out, buf: '' }; }
     turn.steps.push(st);
     if (turn.steps.length > STEP_CAP) { turn.steps.shift(); turn.folded += 1; }
     if (phase !== 'start') countAndRun(s, st, phase === 'failed', late);
@@ -432,22 +573,10 @@ export function brainState(prev: BrainState, ev: unknown, now: number, mask: Bra
         if (helper) break;
         const t = ensureTurn(s, now);
         const whole = e.type === 'output' && e.final === true && typeof e.text === 'string';
-        let raw = whole ? (e.text as string) : str(e.delta);
-        if (whole) { s.inKeyBlock = false; s.buf = ''; }
-        if (s.inKeyBlock) { // inside a private key block: nothing is kept until its END marker (F1)
-          const end = /-----END[\sA-Z0-9_-]{0,100}?PRIVATE\s{1,8}KEY(?:\s{1,8}BLOCK)?-----/i.exec(raw);
-          if (!end) raw = '';
-          else { raw = raw.slice(end.index + end[0].length); s.inKeyBlock = false; }
-        }
-        if (raw) {
-          // The masked tail plus the new text: a token split across deltas is whole again here. The head of a token that was already
-          // masked leaves its tail glued to the mask in the next delta, which matches no shape: that tail goes into the mask (F1).
-          const joined = s.buf + raw;
-          let open = -1;
-          try { open = mask.openKeyBlockStart(joined); } catch { open = 0; } // a failing check fails closed: treat as open
-          if (open >= 0) s.inKeyBlock = true;
-          s.buf = safe(() => mask.maskGluedTail(maskText(mask, joined))).slice(-BUF_MAX);
-        }
+        const key = e.type === 'thinking' ? 'think' : 'out';
+        s[key] = streamText(s[key], whole ? (e.text as string) : str(e.delta), whole, mask);
+        s.inKeyBlock = s.think.key > 0 || s.out.key > 0;
+        s.buf = s[key].buf;
         const cur = currentStep(s);
         if (t.endedAt === null && !(s.act.kind === 'tool' && cur && cur.state === 'running')) s.act = { kind: e.type === 'thinking' ? 'think' : 'reply', glyph: e.type === 'thinking' ? 'think' : null, stepN: null };
         break;
@@ -471,8 +600,8 @@ export function brainState(prev: BrainState, ev: unknown, now: number, mask: Bra
         break;
       }
       case 'usage': {
-        const c = e.costUsd;
-        if (typeof c === 'number' && Number.isFinite(c) && c >= 0) { s.turnCost += c; s.costKnown = true; syncHistory(s); }
+        const u = usageParts(e, mask);
+        if (u) { s.turnAiu += u.aiu; s.turnUsd += u.usd; s.turnCost += u.aiu * u.aiuUsd + u.usd; s.costKnown = true; syncHistory(s); }
         break;
       }
       default: return prev;
@@ -524,10 +653,10 @@ export function trailOf(s: BrainState): { n: number; glyph: GlyphId; lobe: LobeI
 }
 
 /** FR-042: "looping? Edit ↔ Shell · 3 times · ≈ $0.08"; '' when not looping. */
-export function loopText(s: BrainState, costWords?: string): string {
+export function loopText(s: BrainState, costWords?: string, mask?: BrainMask): string {
   const l = s.loop;
   if (!l) return '';
-  const cost = costWords ?? (l.costUsd === null ? 'cost unknown' : `≈ $${l.costUsd.toFixed(2)}`);
+  const cost = costWords ?? (l.costUsd === null ? 'cost unknown' : usdText(l.costUsd, mask));
   return `looping? ${GLYPHS[l.a].word} ↔ ${GLYPHS[l.b].word} · ${l.pairs} ${l.pairs === 1 ? 'time' : 'times'} · ${cost}`;
 }
 

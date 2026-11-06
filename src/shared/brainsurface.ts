@@ -7,7 +7,7 @@
  * such steps). Screen share (FR-080): `ctx.sharing` makes every formatter return the tool word and state only, never text, a path or a cost.
  * Pure: no DOM, no Node, no clock (time is passed in).
  */
-import { GLYPHS, baseName, currentStep, loopText, maskText } from './brainstate';
+import { GLYPHS, baseName, currentStep, loopText, maskText, usdText } from './brainstate';
 import type { BrainMask, BrainState, BrainStep } from './brainstate';
 
 export type Surface = 'office' | 'card' | 'front' | 'transcript' | 'turnmap' | 'export' | 'share';
@@ -174,7 +174,16 @@ export function formatStep(surface: Surface, st: BrainStep, ctx: SurfaceCtx): st
 /** FR-015, FR-080: "≈ $0.04", "cost unknown" (never $0), or the share wording. */
 export function costText(usd: number | null, ctx: SurfaceCtx): string {
   if (ctx.sharing) return SHARE_COST;
-  return typeof usd === 'number' && Number.isFinite(usd) && usd >= 0 ? `≈ $${usd.toFixed(2)}` : 'cost unknown';
+  return typeof usd === 'number' && Number.isFinite(usd) && usd >= 0 ? usdText(usd, ctx.mask) : 'cost unknown';
+}
+
+/** FR-015: the parts of the turn's estimate, as the header's tooltip words them: "≈ $0.42 = 42.00 AIU" or "… + $0.03 Claude (est.)"; '' when the cost is unknown; hidden while sharing. */
+export function costDetail(s: BrainState, ctx: SurfaceCtx): string {
+  if (ctx.sharing) return SHARE_COST;
+  if (!s.costKnown) return '';
+  const parts = [`${usdText(s.turnCost, ctx.mask)} = ${s.turnAiu.toFixed(2)} AIU`];
+  if (s.turnUsd) parts.push(`${usdText(s.turnUsd, ctx.mask).replace(/^≈ /, '')} Claude (est.)`);
+  return parts.join(' + ');
 }
 
 /** The sentence under the card (FR-022). Sharing: the current tool word and state only. */
@@ -190,7 +199,7 @@ export function sentenceFor(s: BrainState, ctx: SurfaceCtx): string {
 
 /** FR-043: the loop wording on every surface; sharing hides the cost. */
 export function loopLine(s: BrainState, ctx: SurfaceCtx): string {
-  return clean(ctx, ctx.sharing ? loopText(s, SHARE_COST) : loopText(s));
+  return clean(ctx, ctx.sharing ? loopText(s, SHARE_COST) : loopText(s, undefined, ctx.mask));
 }
 
 /** The "Waiting for the first step" card (edge case: no events yet). */

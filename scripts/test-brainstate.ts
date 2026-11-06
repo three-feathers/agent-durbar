@@ -4,9 +4,12 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as R from '../src/shared/redact';
 import { exportText, formatStep, officeLine, sentenceFor } from '../src/shared/brainsurface';
-import { BrainState, FRAME_MS, GLYPHS, HISTORY_MAX, PAINT_MS, REVEAL_ORDER, STEP_CAP, TRAIL_MAX, baseName, brainState, currentStep, glyphOf, initBrain, loopText, markPainted, maskText, programOf, revealStages, sentenceOf, shouldPaint, trailOf, usedLobes } from '../src/shared/brainstate';
+import { BrainMask, BrainState, FRAME_MS, GLYPHS, HISTORY_MAX, PAINT_MS, REVEAL_ORDER, STEP_CAP, TRAIL_MAX, baseName, brainState, currentStep, glyphOf, initBrain, loopText, markPainted, maskText, programOf, revealStages, sentenceOf, shouldPaint, trailOf, usedLobes } from '../src/shared/brainstate';
 
-const mask = R; // redact.ts's own functions, as the page passes them
+// the app's own usage units (spec 011 `usagetotals.js`, spec 052 `costtable.js`), as the page passes them next to redact's functions
+const USAGE = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'usagetotals.js'));
+const COST = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'costtable.js'));
+const mask: BrainMask = { ...R, units: { validNano: USAGE.validNano, AIU_USD: COST.AIU_USD, money: COST.money } }; // redact.ts's own functions
 const GH = 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8';
 let clock = 1_000_000;
 let id = 0;
@@ -264,6 +267,50 @@ assert.ok(!JSON.stringify(s).includes('SECRET-OUTPUT'), 'tool output is never ke
     check(`${name}: a head that already matches, then its tail`, run(['Use ' + tok.slice(0, head), tok.slice(head) + ' ok.']), tok);
     check(`${name}: head, then two tail pieces`, run(['Use ' + tok.slice(0, head), tok.slice(head, head + 4), tok.slice(head + 4)]), tok);
   }
+  // F1b: a header or secret name masks to a mark and the value follows after a space: it must mask too, wherever the chunks split
+  {
+    const V1 = 'Zq9Xw8Er7Ty6Ui5Op4Lk3Jh2', V2 = 'Kj3Hg2Fd1Sa0Lm9Nb8Vc7Xz6', B64 = 'dXNlcjpwYXNzd29yZDEyMzQ1Njc4OQ==';
+    const HEADERS: [string, string, string[]][] = [
+      ['Bearer', 'Authorization: Bearer ', [V1]], ['Basic', 'Authorization: Basic ', [B64]], ['Proxy-Authorization', 'Proxy-Authorization: Bearer ', [V1]],
+      ['X-Api-Key', 'X-Api-Key: ', [V1]], ['Cookie', 'Cookie: sid=', [V1, V2]],
+    ];
+    for (const [name, head, secrets] of HEADERS) {
+      const value = name === 'Cookie' ? V1 + '; theme=' + V2 : secrets[0];
+      const text = `Sending ${head}${value}${name === 'Cookie' ? '\n' : ' '}then going on.`;
+      const sliceOf = (v: string): string[] => { const o: string[] = []; for (let i = 0; i + 8 <= v.length; i++) o.push(v.slice(i, i + 8)); return o; };
+      for (const n of [1, 3, 5, 13]) {
+        const variants: string[][] = [];
+        const plain: string[] = []; for (let i = 0; i < text.length; i += n) plain.push(text.slice(i, i + n));
+        variants.push(plain);
+        const cut = text.indexOf(value) - (name === 'Cookie' ? 4 : 0); // a split right between the header and its value
+        const split: string[] = []; for (let i = 0; i < cut; i += n) split.push(text.slice(i, Math.min(cut, i + n)));
+        for (let i = cut; i < text.length; i += n) split.push(text.slice(i, i + n));
+        variants.push(split);
+        for (const chunks of variants) {
+          const st = run(chunks);
+          const j = JSON.stringify(st);
+          for (const sec of secrets) for (const x of sliceOf(sec)) assert.ok(!j.includes(x), `${name}, ${n}-char deltas: "${x}" survived in ${st.turn!.steps[0].why}`);
+          assert.ok(st.turn!.steps[0].why.includes('going on'), `${name}: the text after the secret is kept: "${st.turn!.steps[0].why}"`);
+        }
+      }
+    }
+    // the stream stops right after the value (nothing follows it): the state holds none of it
+    for (const [name, head, secrets] of HEADERS) {
+      const value = name === 'Cookie' ? V1 + '; theme=' + V2 : secrets[0];
+      const text = `Sending ${head}${value}`;
+      for (const n of [1, 3, 5, 13]) {
+        const chunks: string[] = []; for (let i = 0; i < text.length; i += n) chunks.push(text.slice(i, i + n));
+        const j = JSON.stringify(feed(fresh(), [{ type: 'user' }, ...chunks.map((delta) => ({ type: 'thinking', delta }))]));
+        for (const sec of secrets) for (let i = 0; i + 8 <= sec.length; i++) assert.ok(!j.includes(sec.slice(i, i + 8)), `${name} at the end of the stream, ${n}-char deltas: "${sec.slice(i, i + 8)}" kept`);
+      }
+    }
+    for (const n of [1, 3, 5, 13]) {
+      const text = 'Bearer tokens are explained here. Basic setup of a Cookie: header works. Done.';
+      const chunks: string[] = []; for (let i = 0; i < text.length; i += n) chunks.push(text.slice(i, i + n));
+      const b = feed(fresh(), [{ type: 'user' }, ...chunks.map((delta) => ({ type: 'thinking', delta }))]).buf;
+      assert.ok(b.includes('Bearer tokens are explained here.') && b.includes('Basic setup of a'), `prose after a scheme word survives at ${n} chars: "${b}"`);
+    }
+  }
   assert.strictEqual(run(['Use ' + GH.slice(0, 30), GH.slice(30) + ' ok. Done.']).turn!.steps[0].why, 'Done.', 'the mask swallows the glued tail and not the sentence after it');
   const dot = run(['Key is ' + GH.slice(0, 30), GH.slice(30) + '.']).turn!.steps[0].why;
   assert.ok(dot.endsWith('[redacted].') && dot.length < 40, `a full stop after a mask stays: "${dot}"`);
@@ -321,10 +368,83 @@ assert.strictEqual(initBrain('Ada\u202E', mask).name, 'Ada', 'also in a name');
 // ---- cost (FR-015, FR-042)
 s = feed(fresh(), [{ type: 'user' }]);
 assert.strictEqual(s.costKnown, false);
-s = feed(s, [{ type: 'usage', costUsd: 0.02 }, { type: 'usage', costUsd: 0.03 }, { type: 'usage', nanoAiu: 5 }]);
+s = feed(s, [{ type: 'usage', costUsd: 0.02 }, { type: 'usage', costUsd: 0.03 }, { type: 'usage', inputTokens: 5 }]);
 assert.strictEqual(s.costKnown, true); assert.ok(Math.abs(s.turnCost - 0.05) < 1e-9);
 s = feed(s, [{ type: 'usage', costUsd: -1 }, { type: 'usage', costUsd: NaN }]);
 assert.ok(Math.abs(s.turnCost - 0.05) < 1e-9, 'junk costs are ignored');
+
+// F8 (owner question): the brain's cost is the app's own estimate: Copilot's credits (nanoAiu) at AIU_USD, Claude's and Codex's costUsd, helpers once
+{
+  let c = feed(fresh(), [{ type: 'user' }, { type: 'usage', nanoAiu: 2e9 }, { type: 'usage', nanoAiu: 3e9 }]);
+  assert.ok(c.costKnown && Math.abs(c.turnCost - 0.05) < 1e-9, `a Copilot stream: 5 AIU at 0.01 is $0.05 (got ${c.turnCost})`);
+  assert.strictEqual(loopText({ ...c, loop: { a: 'edit', b: 'shell', pairs: 2, firstN: 1, costUsd: c.turnCost, half: 4, costAt: 0 } }, undefined, mask), 'looping? Edit ↔ Shell · 2 times · ≈ $0.05');
+  c = feed(fresh(), [{ type: 'user' }, { type: 'usage', costUsd: 0.04 }, { type: 'usage', costUsd: 0.01 }]);
+  assert.ok(c.costKnown && Math.abs(c.turnCost - 0.05) < 1e-9, 'a Claude stream: costUsd as it is');
+  c = feed(fresh(), [{ type: 'user' }, { type: 'usage', costUsd: 0.04 }, { type: 'usage', costUsd: 0.04, agentId: 'helper1' }]);
+  assert.ok(Math.abs(c.turnCost - 0.08) < 1e-9, 'a helper\'s usage event is counted once, in its parent\'s turn');
+  assert.strictEqual(feed(fresh(), [{ type: 'user' }, { type: 'usage', costUsd: 0.04, agentId: 'h' }]).turnCost, 0.04, 'once');
+  for (const bad of [-1, NaN, Infinity, '5', null, undefined, {}, 2e15]) {
+    c = feed(fresh(), [{ type: 'user' }, { type: 'usage', nanoAiu: bad }]);
+    assert.strictEqual(c.costKnown, false, `nanoAiu ${String(bad)} is not reported: cost unknown, never 0`);
+    assert.strictEqual(c.turnCost, 0);
+  }
+  c = feed(fresh(), [{ type: 'user' }, { type: 'usage', nanoAiu: 1e9 }, { type: 'usage', nanoAiu: -5 }, { type: 'usage', nanoAiu: 'x' }]);
+  assert.ok(c.costKnown && Math.abs(c.turnCost - 0.01) < 1e-12, 'a mixed stream counts what was reported and the invalid ones as unreported');
+  c = brainState(brainState(initBrain('Ada', R), { type: 'user' }, 1, R), { type: 'usage', nanoAiu: 1e9 }, 2, R);
+  assert.strictEqual(c.costKnown, false, 'without the app\'s units a credit figure is unreported, never guessed');
+  const tiny = feed(fresh(), [{ type: 'user' }, { type: 'usage', nanoAiu: 1e6 }]);
+  assert.strictEqual(loopText({ ...tiny, loop: { a: 'edit', b: 'shell', pairs: 2, firstN: 1, costUsd: tiny.turnCost, half: 4, costAt: 0 } }, undefined, mask), 'looping? Edit ↔ Shell · 2 times · <$0.01', 'under a cent reads "<$0.01" with no "≈", as the top bar');
+}
+
+// H1..H4, H8 (re-review of PR 1226): key blocks across pieces, one tail per stream
+{
+  const KEYHEAD = 'Key: -----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEAx1y2z3abcdefghijkl\n';
+  const th = (...d: string[]) => feed(fresh(), [{ type: 'user' }, ...d.map((delta) => ({ type: 'thinking', delta }))]);
+  // H1: an END marker split across pieces closes the block
+  for (const cut of [3, 7, 12, 20, 29]) {
+    const end = '-----END RSA PRIVATE KEY-----';
+    const k = th(KEYHEAD + 'QRSTUVWXYZ0123456789qwerty\n' + end.slice(0, cut), end.slice(cut) + '\nDone then.');
+    assert.strictEqual(k.inKeyBlock, false, `an END split after ${cut} characters closes the block`);
+    assert.ok(k.buf.includes('Done then.') && !k.buf.includes('QRSTUVWX'), `text after a split END is kept and the body is not: "${k.buf}"`);
+  }
+  assert.strictEqual(th(KEYHEAD, '-----', 'END RSA PRIVATE KEY-----\nOk.').inKeyBlock, false, 'five dashes alone, then the rest');
+  assert.strictEqual(th(KEYHEAD, 'abc--', '---END RSA PRIVATE KEY-----\nOk.').inKeyBlock, false, 'dashes split in the middle');
+  assert.strictEqual(th(KEYHEAD, 'MORE-BASE64+body/xyz', 'AAAA').inKeyBlock, true, 'a body without a marker keeps it open');
+  // H2: the end of a turn clears an open block
+  const open = th(KEYHEAD);
+  assert.strictEqual(open.inKeyBlock, true, 'the block is open');
+  const ended = feed(open, [{ type: 'status', status: 'idle' }]);
+  assert.strictEqual(ended.inKeyBlock, false, 'the turn end clears an open key block');
+  assert.strictEqual(feed(ended, [{ type: 'thinking', delta: 'Late words here.' }]).buf, 'Late words here.', 'and a late text is kept');
+  assert.strictEqual(feed(open, [{ type: 'user' }]).inKeyBlock, false, 'a new turn starts outside a block');
+  const lateOpen = feed(ended, [{ type: 'thinking', delta: KEYHEAD }]);
+  assert.strictEqual(lateOpen.inKeyBlock, true, 'a late text can open a block in the ended turn');
+  assert.strictEqual(feed(lateOpen, [{ type: 'user' }]).inKeyBlock, false, 'a turn start clears it too');
+  // H3: interleaved streams do not split each other's tokens
+  const il = feed(fresh(), [{ type: 'user' }, { type: 'thinking', delta: 'use ' + GH.slice(0, 28) }, { type: 'output', delta: ' Hi there' }, { type: 'thinking', delta: GH.slice(28) + ' ok.' }, start('bash', { command: 'ls' })]);
+  for (let i = 0; i + 8 <= GH.length; i++) assert.ok(!JSON.stringify(il).includes(GH.slice(i, i + 8)), `interleaved streams: "${GH.slice(i, i + 8)}" kept`);
+  const nw = feed(fresh(), [{ type: 'user' }, { type: 'thinking', delta: 'First thought.' }, { type: 'output', delta: 'Second reply.' }, start('bash', { command: 'ls' })]);
+  assert.strictEqual(nw.turn!.steps[0].why, 'Second reply.', 'Why comes from the newer stream');
+  const nw2 = feed(fresh(), [{ type: 'user' }, { type: 'output', delta: 'A reply.' }, { type: 'thinking', delta: 'A newer thought.' }, start('bash', { command: 'ls' })]);
+  assert.strictEqual(nw2.turn!.steps[0].why, 'A newer thought.');
+  // H4: a nested BEGIN: the inner END does not close the outer block
+  const nest = th('A -----BEGIN RSA PRIVATE KEY-----\nAAAA11112222\n-----BEGIN RSA PRIVATE KEY-----\nBBBB33334444\n-----END RSA PRIVATE KEY-----\nLEAKED5555666677\n');
+  assert.ok(nest.inKeyBlock && !JSON.stringify(nest).includes('LEAKED') && !JSON.stringify(nest).includes('BBBB3333'), 'content after an inner END is still dropped');
+  const nest2 = feed(nest, [{ type: 'thinking', delta: 'MORE7777\n-----END RSA PRIVATE KEY-----\nSafe words.' }]);
+  assert.ok(!nest2.inKeyBlock && nest2.buf.includes('Safe words.') && !JSON.stringify(nest2).includes('MORE7777'), 'the outer END closes it');
+  const nest3 = th(KEYHEAD, 'BODY\n-----BEGIN RSA PRIVATE KEY-----\nXXXX9999\n-----END RSA PRIVATE KEY-----\nLEAKTWO1234\n');
+  assert.ok(nest3.inKeyBlock && !JSON.stringify(nest3).includes('LEAKTWO'), 'a nested BEGIN in a later piece still counts');
+  // H6: the host after a URL's credentials stays
+  const url = th('go https://ana:hunter2xyz@example.com/path now.');
+  assert.ok(url.buf.includes('example.com/path') && !url.buf.includes('hunter2xyz'), `a URL's host stays: "${url.buf}"`);
+  assert.strictEqual(R.maskGluedTail('https://[redacted]@example.com/p ok'), 'https://[redacted]@example.com/p ok');
+  assert.strictEqual(R.maskGluedTail('[redacted]rest of it'), '[redacted] of it', 'a glued tail is swallowed, the words after a space stay');
+  // H8: a failing key-block check fails closed (treated as open)
+  const thrower = { ...mask, openKeyBlockStart: () => { throw new Error('boom'); } } as BrainMask;
+  const f8 = brainState(brainState(initBrain('Ada', thrower), { type: 'user' }, 1, thrower), { type: 'thinking', delta: 'some words' }, 2, thrower);
+  assert.strictEqual(f8.inKeyBlock, true, 'a throwing openKeyBlockStart leaves the block open');
+  assert.ok(!f8.buf.includes('some words'), 'and keeps no text');
+}
 
 // ---- bloom lobes (FR-051) and the sentence of an ended turn
 s = feed(fresh(), [{ type: 'user' }]);
