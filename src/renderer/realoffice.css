@@ -214,10 +214,11 @@ button.ro-chip{font-family:inherit;margin:0}
 .ro-edesk{cursor:default}
 .ro-escreen{cursor:default}
 
-/* owner 2026-11-02: an asleep desk narrows once its message is read; its person then sits in front of its own dark screen, the desk in front of the person */
-.ro-screen.asleep{z-index:1}
-.ro-person.asleep{z-index:2}
-.ro-desk.asleep{z-index:3}
+/* spec 097 FR-247 (owner 2026-11-06, issue #1220): the lounge row. A seat is the person on their chair, the world's own desk small and whole beside them with the
+   monitor on it (no text on it), and the plate under them, its second line on two lines; asleep seats keep FR-120's look (plate, dimmed person, "z z") */
+.ro-ltable{z-index:2;object-fit:fill;cursor:pointer}
+.ro-plate.lounge{background:var(--surface-2,var(--surface))}
+.ro-plate.lounge .ro-l2{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
 
 /* spec 097 FR-121, FR-122, FR-124: the queue slip at the Boss door, the limit slip at the Bank and the MCP bubble at the desk. An opaque face
    (never text over a picture), the app's own tokens and button classes; the world's paper, tablet or note is in its world.css. Nothing moves. */

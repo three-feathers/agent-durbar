@@ -313,5 +313,44 @@ for (const [W, H] of [[1408, 817], [1248, 717]] as const) for (const n of [1, 2,
   assert.ok(cov >= want, `${n} at ${W}x${H}: cabinets and people cover ${Math.round(cov * 100)} % of the floor, under ${want * 100} %`);
 }
 console.log(`floor covered with 4 or fewer: ${covs.join('; ')}`);
+// ---- spec 097 FR-248 (owner 2026-11-06, issue #1220): the arcade's lounge seats, in cells after the cabinets ----
+{
+  let lc = 0;
+  for (const [W, H] of SIZES) for (const n of [2, 3, 5, 8, 12, 15, 20, 40]) for (const f of [1, 2, 3, 4, 6]) {
+    if (f >= n) continue;
+    for (const nl of [...new Set([1, 2, 4, Math.floor(n / 3), n - f])].filter((x) => x >= 1 && x <= n - f)) {
+      const m = model(n, f, ['working', 'waiting', 'thinking', 'error', 'done', 'idle']);
+      m.folders.forEach((fo) => fo.agents.forEach((a) => { a.away = null; }));
+      let left = nl;
+      for (let j = 1; left > 0 && j < n; j++) for (const fo of m.folders) if (left > 0 && fo.agents[j]) { fo.agents[j].lounge = true; fo.agents[j].state = left % 2 ? 'done' : 'asleep'; left--; }
+      const L = aislesLayout(m, { w: W, h: H }, META, SIGNS(f)), tag = `${n} agents, ${f} folders, ${nl} in the lounge, ${W}x${H}`, g = L.g as number;
+      assert.deepStrictEqual(problems(L, W, n - nl), [], `${tag}: ${problems(L, W, n - nl).slice(0, 4).join('; ')}`);
+      const seats = L.lounge ? L.lounge.desks : [], ds = L.zones.flatMap((z) => z.desks), floor: Rect = { x: 0, y: L.lobbyH + (L.lane ? L.lane.h : 0), w: W, h: L.height - L.lobbyH - (L.lane ? L.lane.h : 0) };
+      assert.deepStrictEqual(seats.map((d) => d.id), sortDesks(m.folders.flatMap((fo) => fo.agents.filter((a) => a.lounge))).map((a) => a.id), `${tag}: every lounge agent has a seat, in status order`);
+      const out: string[] = [];
+      seats.forEach((s, i) => {
+        if (!s.lounge || !s.table || !s.person || s.person.pose !== 'sit') out.push(`seat ${s.id}: not a stool seat (${s.person && s.person.pose})`);
+        for (const r of [s.plate, s.screen, s.table as Rect, s.person as Rect, s.face as Rect]) if (!inside(r, floor, 1)) out.push(`seat ${s.id} leaves the floor ${JSON.stringify(r)}`);
+        for (const d of ds) for (const [nm, q] of [['cabinet', d.desk], ['player', d.stand as Rect], ['plate', d.plate], ['glass', d.glass], ['face', d.face as Rect]] as [string, Rect][]) for (const r of [s.plate, s.screen, s.table as Rect, s.person as Rect]) if (inter(r, q, 0.5)) out.push(`seat ${s.id} is on the ${nm} of ${d.id}`);
+        for (const z of L.zones) for (const r of [s.slot, s.plate, s.screen, s.table as Rect, s.person as Rect]) if (inter(r, z.sign, 0.5)) out.push(`seat ${s.id} is under the sign of ${z.id}`);
+        if (L.lane) for (const r of [s.plate, s.screen, s.table as Rect, s.person as Rect]) if (inter(r, L.lane, 0.5)) out.push(`seat ${s.id} is in the pill lane`);
+        if (inter(s.face as Rect, s.screen, 0.5) || inter(s.face as Rect, s.table as Rect, 0.5) || inter(s.person as Rect, s.screen, 0.5)) out.push(`seat ${s.id}: the monitor covers the person`);
+        if ((s.face as Rect).h < 24) out.push(`seat ${s.id}: face ${(s.face as Rect).h}px`);
+        if (s.slot.y !== s.person!.y || s.slot.y + s.slot.h !== s.plate.y + s.plate.h) out.push(`seat ${s.id}: its box is not its person and plate (it would reach into the next row's sign strip)`);
+        if (s.plate.w < 84) out.push(`seat ${s.id}: plate ${s.plate.w}px`);
+        for (const v of [s.person!.x, s.person!.y, s.table!.x, s.table!.y, s.screen.x, s.screen.y]) if (!Number.isInteger(v)) { out.push(`seat ${s.id}: ${v} is not on a whole pixel (FR-255)`); break; }
+        seats.forEach((o, j) => { if (j > i) for (const a of [s.plate, s.screen, s.table as Rect, s.person as Rect]) for (const b of [o.plate, o.screen, o.table as Rect, o.person as Rect]) if (inter(a, b, 0.5)) { out.push(`seats ${s.id} and ${o.id} overlap`); return; } });
+      });
+      assert.deepStrictEqual(out, [], `${tag}: ${out.slice(0, 4).join('; ')}`);
+      if (n <= 15) assert.ok(!L.scroll, `${tag}: no scroll at the 15-agent scale`);
+      /* never worse than with those agents at cabinets: the hall's scale is at least as large */
+      const all = JSON.parse(JSON.stringify(m)) as RealModel; all.folders.forEach((fo) => fo.agents.forEach((a) => { a.lounge = false; }));
+      const L0 = aislesLayout(all, { w: W, h: H }, META, SIGNS(f));
+      assert.ok(g >= (L0.g as number) && (L.scroll ? 1 : 0) <= (L0.scroll ? 1 : 0), `${tag}: the hall is smaller than with everyone at a cabinet (g ${L0.g} -> ${g})`);
+      lc++;
+    }
+  }
+  console.log(`arcade lounge: ${lc} layouts`);
+}
 console.log(`aisles tests passed (${cases} layouts)`);
 process.exitCode = 0;
