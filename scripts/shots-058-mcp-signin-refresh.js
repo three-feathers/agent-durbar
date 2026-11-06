@@ -19,6 +19,7 @@
  * - a hostile server name renders as text (checked after the pictures, on a first message);
  * - a Copilot chat whose OS sandbox covers its MCP servers (Read-only, Ask first) is not reconnected: only the sign-in line.
  * - (2026-11-05, FR-218) the one automatic note to the agent shows one calm line, "Sent automatically: <server> was reconnected after a sign-in error, so the agent was asked to retry the step that failed.", naming the server as configured;
+ * - (2026-11-05, FR-226/FR-227, #1205) the "Reconnecting <name>\u2026" line only while a check's reconnect runs (picture 058-mcp-reconnecting-<w>x<h>.png), a non-plain name shown as "an MCP server", and the Diagnostics switch (off by default).
  * - (2026-11-05, FR-220) a server renewed in the background reads "Renewed 12:40" on its dialog row (only that row, 10.5px or more), with no chat line (picture 058-mcp-renewed-<w>x<h>.png in OUT, not a documentation picture: the site budget).
  * Shots (DOC_SHOTS): 058-mcp-refresh-waiting-<w>x<h>.png (the waiting line), 058-mcp-refresh-signin-<w>x<h>.png (the sign-in line),
  * 058-mcp-refresh-settings-<w>x<h>.png (the switch and its line). Prints "[058] sign-in refresh PASS".
@@ -161,6 +162,23 @@ module.exports = async (ctx) => {
       assert.strictEqual(await js(`document.querySelectorAll('#chat .note').length`), chatLines, 'no chat line came with it');
     }
 
+    // ---- FR-226 (2026-11-05, issue #1205): the check before a message is silent; only a reconnect it starts shows "Reconnecting <name>…" ----
+    {
+      const notes0 = await js(`document.querySelectorAll('#chat .note').length`);
+      await js(`window.__durbarSimSignIn.push({id:${jsLiteral(id)},kind:'reconnecting',name:'Teams-work'});0`);
+      assert.ok(await until(`[...document.querySelectorAll('#chat .note.mcpre-rc')].some(n=>n.textContent==='Reconnecting Teams-work\u2026')`, 3000), 'the line names the server being reconnected');
+      await js(`window.__durbarSimSignIn.push({id:${jsLiteral(id)},kind:'reconnecting',name:'Teams (work)'});0`);
+      assert.ok(await until(`[...document.querySelectorAll('#chat .note.mcpre-rc')].some(n=>n.textContent==='Reconnecting an MCP server\u2026')`, 3000), 'a name that is not plain text is not shown');
+      await js(`(()=>{const n=[...document.querySelectorAll('#chat .note.mcpre-rc')].pop();if(n)n.scrollIntoView({block:'center'});})()`);
+      await H.clearToasts();
+      await shot(`058-mcp-reconnecting-${w}x${h}.png`);
+      const lay3 = await layout();
+      assert.ok(lay3.min >= 10.5 && lay3.inChat && lay3.roles && lay3.pageX, `${w}: the Reconnecting line is calm: ` + JSON.stringify(lay3));
+      await js(`window.__durbarSimSignIn.push({id:${jsLiteral(id)},kind:'reconnect-end',name:'Teams-work'});window.__durbarSimSignIn.push({id:${jsLiteral(id)},kind:'reconnect-end',name:'Teams (work)'});0`);
+      assert.ok(await until(`!document.querySelector('#chat .note.mcpre-rc')`, 3000), 'the line is gone when the reconnect ends');
+      assert.strictEqual(await js(`document.querySelectorAll('#chat .note').length`), notes0, 'nothing else stays in the chat');
+    }
+
     // ---- Settings: the switch and its line; off = nothing runs ----
     await js(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`);
     assert.ok(await until(`!document.body.classList.contains('panel-open')`), 'the chat closed');
@@ -168,10 +186,17 @@ module.exports = async (ctx) => {
     assert.ok(await until(`!!document.getElementById('mcpRefreshSw')&&document.getElementById('advMcp').open`), 'Settings at MCP servers, with the switch');
     const st = await js(`(()=>{const s=document.getElementById('mcpRefreshSw'),l=document.getElementById('mcpRefreshLine');l.scrollIntoView({block:'center'});return {on:s.getAttribute('aria-checked'),role:s.getAttribute('role'),label:s.getAttribute('aria-label'),line:l.textContent,fs:Math.min(parseFloat(getComputedStyle(l).fontSize),parseFloat(getComputedStyle(s.closest('.swrow')).fontSize)),pageX:document.documentElement.scrollWidth<=innerWidth}})()`);
     assert.ok(st.on === 'true' && st.role === 'switch' && st.label === 'Refresh MCP sign-ins automatically' && st.fs >= 10.5 && st.pageX, 'the switch is on by default: ' + JSON.stringify(st));
-    assert.strictEqual(st.line, 'Agent Durbar asks the agent app to reconnect remote MCP servers on its own before a message after an hour without a reply. This happens in every permission mode. Where the agent app runs its MCP servers in its own OS sandbox (Copilot in Read-only and Ask first), a reconnect did not renew the sign-in, so there Agent Durbar only tells you when a server needs you to sign in again. Only the app\u2019s own sign-in is renewed; Agent Durbar never sees it. A reconnect never starts a local server. In a Copilot chat, when a call to a remote server fails with a sign-in error, it reconnects that server at once and, if that worked, sends the agent one short automatic message asking it to retry the step. That is one extra message and uses AI credits; it is never sent at a spending limit, and your own message is never sent again. Turning this switch off stops both. Codex chats are not reconnected; they renew with their next session.', 'the Settings line, word for word');
+    assert.strictEqual(st.line, 'Agent Durbar asks the agent app to reconnect remote MCP servers on its own before a message after an hour without a reply. This happens in every permission mode. Where the agent app runs its MCP servers in its own OS sandbox (Copilot in Read-only and Ask first), a reconnect did not renew the sign-in, so there Agent Durbar only tells you when a server needs you to sign in again. Only the app\u2019s own sign-in is renewed; Agent Durbar never sees it. A reconnect never starts a local server. In a Copilot chat, when a call to a remote server fails with a sign-in error, it reconnects that server at once and, if that worked, sends the agent one short automatic message asking it to retry the step. That is one extra message and uses AI credits; it is never sent at a spending limit, and your own message is never sent again. Turning this switch off stops both. Codex chats are not reconnected; they renew with their next session. In a Copilot chat it also checks each remote sign-in server in the background beside every message you send (a tool-list request, no AI, never holding the message) and reconnects at once one that answers unauthorized.', 'the Settings line, word for word');
     await settle();
     await H.clearToasts();
     await shot(`058-mcp-refresh-settings-${w}x${h}.png`);
+    // FR-227: Diagnostics, off by default, its own switch; main's answer is what is in force
+    assert.strictEqual(await js(`(()=>{const d=document.getElementById('diagSw');return d?d.getAttribute('role')+'|'+d.getAttribute('aria-label')+'|'+d.getAttribute('aria-checked'):'missing'})()`), 'switch|Diagnostics|false', `${w}: Diagnostics is off by default`);
+    await js(`document.getElementById('diagSw').click()`);
+    assert.ok(await until(`document.getElementById('diagSw').getAttribute('aria-checked')==='true'`, 3000), 'Diagnostics turns on');
+    assert.strictEqual(await js(`window.__durbarSimUi.bridge().getSettings().then(s=>s.diagnostics)`), true, 'and is stored on');
+    await js(`document.getElementById('diagSw').click()`);
+    assert.ok(await until(`document.getElementById('diagSw').getAttribute('aria-checked')==='false'`, 3000), 'and off again');
     await js(`document.getElementById('mcpRefreshSw').click()`);
     assert.ok(await until(`document.getElementById('mcpRefreshSw').getAttribute('aria-checked')==='false'&&/^Off:/.test(document.getElementById('mcpRefreshMsg').textContent)`), 'switched off, said so');
     assert.strictEqual(await js(`window.__durbarSimUi.bridge().getSettings().then(s=>s.mcpSignInRefresh)`), false, 'stored off');

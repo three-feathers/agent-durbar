@@ -591,6 +591,14 @@ apps, as T176 allows) after them.
 - [x] T198 Review fixes of PR #1203 (short turn, stale marks, per-session queue, the person's own actions, docs) [FR-218..FR-221]
 - [x] T199 Settings line, `docs/limits.md`, `docs/features.md`, `docs/safety.md` name the note and its credits [FR-218]
 - [x] T195 Simulator step "Renewed" at 1440x900 and 1280x800, looked at; docs, changelog fragment, Settings line [FR-220, FR-222]
+- [x] T200 `planMcpCheck` (pure) and the refresher's `checkChat`: skip rules, 5-minute freshness, 30 s unknown, parallel with the send [FR-223..FR-225]
+- [x] T201 Wiring in `mcpipc.ts` (`check` through `listMcpTools`, `canCheck`, the start check, `checkUnknown` on the dialog row) [FR-223, FR-225]
+- [x] T202 The "Reconnecting <name>..." line (`McpSignInRefreshNote` kinds `reconnecting` and `reconnect-end`, the window) [FR-226]
+- [x] T203 Diagnostics switch (`diagnostics` setting, Settings row) and the renewal activity row gated by it, FR-218's path too [FR-227]
+- [x] T204 Unit tests `test-mcp-presend.ts` with mutants, existing renewal tests updated for the gated row [FR-228]
+- [x] T205 Simulator step: the line at 1440x900 and 1280x800, looked at [FR-228]
+- [x] T206 `docs/limits.md`, `docs/features.md`, `docs/feature-inventory.md`, Settings line, changelog fragment [Docs]
+- [ ] T207 Real check by the owner after the release: a real Entra server, macOS (Keychain), Windows [KNOWN GAP]
 - **Built 2026-11-03, part 1** (branch `058-mcp-auth-refresh-build`, T178..T181, T184..T186 and T187's docs for them; over the
   ~500-line mark, so split along the plan's order): the planner, main's refresher (last response, resume, the per-chat gate every send
   path awaits, the per-server flight, records and blocks, the 5 s wait with Stop), `mcpRestartOp` as a promise map, Copilot's and Claude

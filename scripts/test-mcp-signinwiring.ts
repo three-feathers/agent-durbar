@@ -81,6 +81,7 @@ async function main(): Promise<void> {
     const logs: string[] = [];
     let busy = false;
     let limitedNow = false;
+    let diagOn = true; // FR-227: the renewal row needs Diagnostics
     const nudges: string[] = [];
     const store = new McpStore(path.join(root, 'durbar-mcp.json'));
     store.load();
@@ -92,7 +93,7 @@ async function main(): Promise<void> {
       appOf: () => 'copilot',
       log: (_a, line) => logs.push(line),
       openUrl: async () => assert.fail('never the browser'),
-      signInRefresh: { now: () => clock.now, on: () => true, platform: 'linux', busy: () => busy, push: (p) => pushes.push(p), limited: () => limitedNow, nudge: async (id, name) => { nudges.push(`${id}:${name}`); }, timers: { set: (fn) => { const h = { fn, done: false }; timers.push(h); return h; }, clear: (h) => { (h as { done: boolean }).done = true; } } },
+      signInRefresh: { now: () => clock.now, on: () => true, platform: 'linux', busy: () => busy, push: (p) => pushes.push(p), limited: () => limitedNow, diagnostics: () => diagOn, nudge: async (id, name) => { nudges.push(`${id}:${name}`); }, timers: { set: (fn) => { const h = { fn, done: false }; timers.push(h); return h; }, clear: (h) => { (h as { done: boolean }).done = true; } } },
     });
 
     // the adapter: a restart that the test finishes, reporting the whole list again (as the real adapters do)
@@ -422,6 +423,59 @@ async function main(): Promise<void> {
       assert.strictEqual(ad.restartCalls.length, n0 + 3, 'no capability: no renewal');
     }
 
+    // ---- spec 058 FR-223..FR-227 (2026-11-05, issue #1205): the check before every message, through the adapter's `listMcpTools` ----
+    {
+      (ad as unknown as { capabilities: unknown }).capabilities = { ...ad.capabilities, mcpBackgroundRenew: true, mcpTools: true };
+      const listed: string[] = [];
+      let listFails: string | undefined;
+      ad.listMcpTools = async (_s, n) => { listed.push(n); if (listFails !== undefined) throw new Error(listFails); return []; };
+      mcp.signInRefresh.dropChat(sid);
+      mcp.signInRefresh.clearBlock(undefined, 'docs');
+      nudges.length = 0;
+      clock.now += 3 * H;
+      const r0 = ad.restartCalls.length;
+      const p0 = pushes.length;
+      emit(sid, { type: 'mcp', servers: list('connected') }); // a new chat's first report
+      await tick();
+      assert.deepStrictEqual(listed, ['docs'], 'the first report checks the remote server through listMcpTools, never the local one');
+      assert.strictEqual(ad.restartCalls.length, r0, 'a healthy server is not restarted');
+      emit(sid, { type: 'status', status: 'idle' }); // the turn ended: the next message is no "first after a gap"
+      clock.now += 6 * 60_000;
+      listFails = 'Request session.mcp.listTools failed with message: MCP OAuth challenge required (HTTP 401)';
+      const sent0 = sent.length;
+      const s = call('agents:send', sid, 'hello again', []);
+      await tick();
+      assert.deepStrictEqual(listed, ['docs', 'docs'], 'every message checks (not fresh any more)');
+      assert.deepStrictEqual(ad.restartCalls.slice(r0), [{ sessionId: sid, name: 'docs', auto: true }], 'the 401 text is unauthorized: one automatic reconnect');
+      assert.strictEqual(sent.length, sent0 + 1, 'the message went without waiting for the check or its reconnect');
+      assert.deepStrictEqual(pushes.slice(p0), [{ id: sid, kind: 'reconnecting', name: 'docs' }], 'only the Reconnecting line, no waiting line');
+      pending.shift()!('connected');
+      await tick();
+      await s;
+      assert.deepStrictEqual(pushes.slice(p0), [{ id: sid, kind: 'reconnecting', name: 'docs' }, { id: sid, kind: 'reconnect-end', name: 'docs' }], 'the line ends');
+      assert.deepStrictEqual(nudges, [], 'no note to the agent from a check');
+      // another failure (an organization policy text, a plain error) is not unauthorized
+      mcp.signInRefresh.dropChat(sid);
+      clock.now += 6 * 60_000;
+      for (const text of ['AADSTS53003 blocked by Conditional Access', 'tools/list failed: 500 internal error', 'unauthorized_client: the client is not authorized to use this grant type', 'invalid cursor: page token expired', 'MCP error -32602: Tool listing unauthorized for this plan tier', 'error 401: license seat not assigned', 'Session token is invalid for workspace (the user left the workspace)']) {
+        listFails = text;
+        const rcount: number = ad.restartCalls.length;
+        const lcount: number = listed.length;
+        emit(sid, { type: 'mcp', servers: list('connected') });
+        await tick();
+        assert.strictEqual(listed.length, lcount + 1, `${text.slice(0, 12)}: the check really ran`);
+        assert.strictEqual(ad.restartCalls.length, rcount, `${text.slice(0, 12)}: nothing is restarted`);
+        mcp.signInRefresh.dropChat(sid);
+      }
+      listFails = undefined;
+      assert.deepStrictEqual(forbidden, [], 'the check calls no sign-in, status refresh or cancel');
+      (ad as unknown as { capabilities: unknown }).capabilities = { ...ad.capabilities, mcpTools: false };
+      const l1 = listed.length;
+      emit(sid, { type: 'mcp', servers: list('connected') });
+      await tick();
+      assert.strictEqual(listed.length, l1, 'an adapter without the tool-list capability is never checked');
+    }
+
     // ---- review of PR #1203: the person's own actions are never followed by an automatic renewal ----
     {
       (ad as unknown as { capabilities: unknown }).capabilities = { ...ad.capabilities, mcpBackgroundRenew: true };
@@ -551,6 +605,7 @@ async function main(): Promise<void> {
     [/powerMonitor\.on\('resume', \(\) => mcp\.signInRefresh\.resumed\(\)\)/, 'a wake from sleep marks every chat'],
     [/now: \(\) => performance\.now\(\),\n\s+on: \(\) => !SIMULATOR && \(settingsStore\?\.mcpSignInRefresh \?\? MCP_SIGNIN_REFRESH_DEFAULT\),/, 'the monotonic clock and the switch (never under the simulator)'],
     [/push: \(p\) => toRenderer\('agents:mcpSignInRefresh', p\),/, 'the lines go to the window'],
+    [/diagnostics: \(\) => settingsStore\?\.diagnostics === true,/, 'Diagnostics is the Settings switch, off unless stored on (spec 058 FR-227)'],
     [/router\.onEvent\(\(e\) => \{ if \(!mcp\.hidesEvent\(e\)\) toRenderer\('agent:event'/, 'a declined elicitation is not shown'],
   ];
   for (const [re, what] of pins) assert.ok(re.test(mainSrc), `main.ts: ${what}`);

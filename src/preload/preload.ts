@@ -82,6 +82,7 @@ const api: DurbarApi = {
   onHarnessUpdates: (cb) => sub('harness:updatesChanged', cb),
   harnessVisible: (on) => ipcRenderer.invoke('harness:visible', on === true),
   setCheckUpdatesAtStart: (on) => ipcRenderer.invoke('settings:setCheckUpdatesAtStart', on),
+  setDiagnostics: (on) => ipcRenderer.invoke('settings:setDiagnostics', on), // spec 058 FR-227
   setMcpSignInRefresh: (on) => ipcRenderer.invoke('settings:setMcpSignInRefresh', on === true), // spec 058 FR-213
   harnessPaste: (text) => ipcRenderer.invoke('harness:paste', text),
   harnessCancel: () => ipcRenderer.invoke('harness:cancel'),

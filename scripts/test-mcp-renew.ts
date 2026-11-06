@@ -33,6 +33,7 @@ const make = (o: { hang?: boolean; nudgeHang?: boolean } = {}) => {
   const finish = new Map<string, (status: string) => void>();
   const status = new Map<string, string>();
   const on = { v: true };
+  const diag = { v: false };
   const real: RefresherDeps = {
     now: () => t.now,
     on: () => on.v,
@@ -48,11 +49,12 @@ const make = (o: { hang?: boolean; nudgeHang?: boolean } = {}) => {
     push: (p) => pushes.push(p),
     log: (_id, line) => logs.push(line),
     nudge: async (id, name) => { nudges.push(`${id}:${name}`); },
+    diagnostics: () => diag.v,
   };
   // the refresher never sends a message of the person's: its dependencies hold no `send`; any property it reads must be a known one
-  const allowed = new Set(['now', 'on', 'platform', 'wall', 'timers', 'view', 'reconnect', 'after', 'push', 'log', 'allowReadOnly', 'waitMs', 'failCooldownMs', 'nudge']);
+  const allowed = new Set(['now', 'on', 'platform', 'wall', 'timers', 'view', 'reconnect', 'after', 'push', 'log', 'allowReadOnly', 'waitMs', 'failCooldownMs', 'nudge', 'diagnostics', 'check', 'checkFreshMs', 'checkTimeoutMs']);
   const d = new Proxy(real, { get: (target, p) => { assert.ok(allowed.has(String(p)), `the refresher reads only its known dependencies, not ${String(p)}`); return (target as unknown as Record<string, unknown>)[p as string]; } });
-  return { d, t, pushes, logs, calls, nudges, chats, finish, status, on };
+  return { d, t, pushes, logs, calls, nudges, chats, finish, status, on, diag };
 };
 const chat = (servers: SignInServerView[], more: Partial<SignInChatView> = {}): SignInChatView => ({ adapterId: 'copilot', takesPart: true, renewable: true, live: true, busy: false, readOnly: false, servers: () => servers, ...more });
 const base = (more: Partial<RenewPlanInput> = {}): RenewPlanInput => ({ now: 10 * H, on: true, renewable: true, live: true, readOnly: false, allowReadOnly: true, cooldownMs: 5 * 60_000, servers: [], records: {}, ...more });
@@ -85,6 +87,7 @@ async function main(): Promise<void> {
   // ---- renew at once, mid-turn, one note on success ----
   {
     const m = make();
+    m.diag.v = true; // FR-227: the row of a renewal that worked is written only with Diagnostics (below: without)
     const r = new McpSignInRefresher(m.d);
     m.chats.set('a', chat([srv('docs', 'needs-auth')], { busy: true })); // a turn runs
     r.noteFailure('a', 'docs');

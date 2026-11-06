@@ -5470,6 +5470,12 @@ function mcpReLine(p){
     if(!a.mcpReNote||!chat.el.contains(a.mcpReNote)){a.mcpReNote=addNote(chat,'');a.mcpReNote.classList.add('mcpre');a.mcpReNote.setAttribute('role','status');}
     a.mcpReNote.textContent='MCP sign-ins are still reconnecting'+(names.length?': '+names.join(', '):'')+'. Sent anyway; a tool from those servers may wait or fail.';
     a.mcpReNote=null; /* it stays as said; the next line is a new one */
+  }else if(p.kind==='reconnecting'){ /* spec 058 FR-226 (issue 1205): only while a reconnect started by the check before a message runs; silent otherwise */
+    const nm=/^[A-Za-z0-9_.-]{1,64}$/.test(String(p.name))?String(p.name):'an MCP server', rc=(a.mcpRcNotes||(a.mcpRcNotes=new Map())), key=String(p.name);
+    const old=rc.get(key);if(old)old.remove();
+    const n=addNote(chat,'');n.classList.add('mcpre','mcpre-rc');n.setAttribute('role','status');n.textContent='Reconnecting '+nm+'…';rc.set(key,n);
+  }else if(p.kind==='reconnect-end'){
+    const rc=a.mcpRcNotes, n=rc&&rc.get(String(p.name));if(n){n.remove();rc.delete(String(p.name));}
   }else if(p.kind==='done'||p.kind==='not-sent')drop();
   else if(p.kind==='needs-sign-in'){
     const name=MCPRE_NAME(p.name);if(!name)return;

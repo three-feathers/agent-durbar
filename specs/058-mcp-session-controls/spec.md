@@ -548,6 +548,85 @@ tokens) with a 20 s access token; sign-in through `rpc.mcp.oauth.login` and a pl
 `docs/limits.md` (MCP sign-in refresh paragraph, honest: probed on a local server only), `docs/safety.md`, `docs/feature-inventory.md`, the probe's
 method is in this spec (`docs/agent-apps.md` is at its word budget), `docs/features.md`, a `changelog.d/` fragment. Settings' line under *Refresh MCP sign-ins automatically* names the renewal after a failed call.
 
+### 2026-11-05: a background check of the sign-in servers before every message (issue #1205; extends FR-218..FR-222)
+
+**Status**: built 2026-11-05 (T200..T207), fakes, unit tests and the simulator only (`test:` `test-mcp-presend.ts`, `test-mcp-signinwiring.ts`, `sim:`
+`shots-058-mcp-signin-refresh.js`); probed free the same day (below). `[KNOWN GAP]` not seen on a real Entra server, nor on macOS or Windows (a
+restart may raise a macOS Keychain prompt): the owner checks after the release. Numbers taken (checked on `origin/main`, remote branches and open PRs):
+**FR-223..FR-228**, **T200..T207**.
+
+**Input** (owner, Vikram, Telegram, 2026-11-05 19:26-19:42 UTC, issue #1205): like VS Code, check the MCP servers before a message, not only after a
+failure. 19:31 UTC: "Before every message and it can be in the background in parallel as well so that we are very resilient." 19:41 UTC, agreed:
+"**Silent when healthy:** no 'Checking...' line per message; a line shows only while a server is being reconnected. **Skip recently healthy servers:**
+a server with a successful call or check in the last 5 minutes is not checked again. **Free probe first:** `rpc.mcp.listTools` must not change the
+session's tool set mid-chat (which would break Copilot's prompt cache and cost credits)." 19:40 UTC: activity-log rows for renewals only when
+diagnostics is enabled. The server that does not answer within 30 s counts as unknown, the message goes, the dialog row says so.
+
+**Probe, free, local test server (`real:` 2026-11-05, Linux; 0 prompts, 0 AI credits, no account, fake values only).** Shipped **Copilot SDK 1.0.24 /
+runtime 1.0.101** (a worktree with its own `npm ci`; `package.json` pins 1.0.24), same setup as the FR-218 probe (`env -i`, scratch `HOME` and
+`COPILOT_HOME`, `DBUS_SESSION_BUS_ADDRESS` pointing nowhere, the real `CopilotClient`, `mcpOAuthTokenStorage: 'persistent'`, `scripts/demo-oauth-mcp.ts`,
+sign-in by `rpc.mcp.oauth.login` and a plain HTTP client). Scratch script, not in the repository.
+- **(a) A healthy server: no change to the session.** Eight `rpc.mcp.listTools` calls in a row on a connected server with a long-lived token: the
+  session's own tool metadata (`rpc.tools.getCurrentMetadata`, tool names) was **identical** before and after, and **no session event at all** came
+  (0 events, so no `session.tools_updated`, `session.mcp_server_tools_loaded` or `session.mcp_server_status_changed`); the server saw exactly one `tools/list` per call and no
+  `initialize`. The tool set is not re-registered, so the prompt cache is not touched. (Not measured: a real model turn, which needs credits.)
+- **(b) It fails on an expired token while `list` says connected.** With a 15 s access token: after expiry `rpc.mcp.list` kept saying `connected`,
+  and `listTools` failed both times with "MCP OAuth challenge required (HTTP 401)" (the server counted the 401s); no session event came with it.
+  `classifyMcpCall` reads that text as `auth` (the `HTTP 401` form).
+- **(c) Latency.** A healthy local round-trip took 1 to 5 ms (8 calls; a real remote server is slower: not measured), a failing one 1 to 3 ms.
+
+#### Requirements (delta)
+
+- **FR-223** **Check before every message, in parallel.** Before every message the person sends in a Copilot chat (the window's send and a scheduled
+  prompt: the FR-208 gate's two callers) and once when a new chat starts (its first `mcp` report with a connected server), main checks each **remote
+  sign-in server that reads `connected`** with the adapter's existing `listMcpTools` (`rpc.mcp.listTools`, a real round-trip, no AI; its
+  FR-163 guard already refuses a server that is not connected, so a check never reconnects one and raises no Keychain prompt of its own). The chat
+  qualifies like FR-218's (`restartMcpServer`, `mcpSignInReconnect`, `mcpBackgroundRenew`, and `listMcpTools`; Claude Code and Codex never) and the
+  Settings switch of FR-213 is on (it turns this off too, also while a check runs). **The message is never held:** the check starts beside the send
+  and the send does not await it; a throwing check or a missing dependency changes nothing. Not checked: local, built-in, static-header,
+  switched-off or disabled servers, a sign-in open or starting, the person's own Restart running, a `policy` server, a blocked server (FR-210),
+  a server still in the queue or running a renewal, one already being checked, and chats under the sandbox rule (`renews` false: a reconnect could not renew there).
+- **FR-224** **Skip what was checked a moment ago.** A server with a **successful tool call, or any check outcome (ok, plain error, unknown,
+  unauthorized), in this chat within the last 5 minutes** (`MCP_CHECK_FRESH_MS`, monotonic clock, per chat and server) is not checked (review of
+  PR 1210: a plain error was re-checked at every send). A server whose request is **still outstanding** after the 30 s verdict (a hung server)
+  is not asked again until that request settles (the runtime request is not cancelled; 16 pending requests were seen after 10 minutes without
+  this), and a server with a running or queued reconnect for its key is not checked.
+- **FR-225** **Unauthorized: reconnect at once, otherwise nothing.** A check that fails with a **narrow sign-in signal** (`isCheckUnauthorized`: an HTTP
+  401 form, "MCP OAuth challenge required", `invalid_grant`, or an Entra sign-in code that signing in again fixes; never a bare "unauthorized" or
+  "token expired", and never a policy text; review of PR 1210: `classifyMcpCall` is wide and read "unauthorized_client", "page token expired" and
+  "license seat" as sign-ins) marks
+  the server exactly as a failed call does (FR-218's `noteFailure`): one reconnect through the same planner and per-server queue (FR-219), the wait for
+  another call to the same server in that session, the 5-minute cooldown, the sign-in block and the **Sign in again** state after a repeat. Where the
+  check's own renewal read `connected` and the next check still fails, Durbar stops as FR-218 does (no second reconnect until a call or check
+  succeeded). A server that answers is **not restarted by the check**. **An unauthorized answer is old** and discarded when a reconnect of that server (a gap
+  reconnect at the same send, a renewal, the person's Restart or Sign in, a switch change) started after the check began (a generation stamp per chat
+  and server). Any other failure (a `policy` text, a server error, a server that is not connected) does nothing.
+  **No note to the agent from this path** (the agent never failed); when the agent's own call fails while the check's reconnect runs, FR-218's note
+  still goes after it (the call's failure takes the reconnect over). A server not answering within **30 s** (`MCP_CHECK_TIMEOUT_MS`, injected
+  timers) counts as **unknown**: nothing else happens, the message went long ago, and the server's dialog row says *Did not answer a check*
+  until a call or a check succeeds.
+- **FR-226** **Silent when healthy, one line while reconnecting.** No chat line per message and no activity row for a healthy check. Only while a
+  reconnect started by a check runs, one small note in the chat, `Reconnecting <name>...`, removed when it ends (success or not; a failure is FR-211's
+  *Sign in* line as today). The name is shown only when it is a plain name (`[A-Za-z0-9_.-]`, 1 to 64), else "an MCP server", as in FR-218.
+- **FR-227** **Diagnostics.** The activity-log row for a renewal that worked ("MCP server <name> renewed (automatic)", FR-220, **also the one of FR-218's
+  failed-call path**) is written **only when Diagnostics is on**. Failure rows (needs a new sign-in, could not reconnect, the Sign in again state) stay
+  always. Diagnostics: there was **no existing switch** (`git grep -i diagnostic src` finds only the debug sink `DURBAR_LOG`, a developer environment
+  variable, and the dialog's Copy diagnostics button), so this delta adds the smallest one: Settings > *Diagnostics*, **off by default**, stored as
+  `diagnostics: true` only (like *Still highlights*), through `setting()`, `parseSettings` and `SettingsStore`. It gates nothing else yet; **owner
+  decision wanted** (reported in the PR): keep this new setting, or tie the row to something else. Not in the simulator (`DURBAR_SIM` has no refresher).
+- **FR-228** **Tests and simulator.** `planMcpCheck` (pure) and `scripts/test-mcp-presend.ts` with an injected clock, fake timers and a fake adapter:
+  a check runs per send, in parallel (the send's promise settles with the check still pending); skipped within 5 minutes of a call or check success and
+  checked again after; unauthorized gives one reconnect through the queue; healthy gives none; 30 s gives unknown (row flag) and nothing else; the
+  start check; local, built-in, static-header, off, blocked and policy servers skipped; switch off gives nothing (also while it runs); no
+  activity row for a renewal without Diagnostics (this path and FR-218's), one with it; the "Reconnecting" line only during the reconnect; no note
+  from a check reconnect, a note when the call failed first; Claude/Codex never. Mutants (each fails its own assert) in the PR. The simulator step in
+  `scripts/shots-058-mcp-signin-refresh.js` shows the line at 1440x900 and 1280x800.
+
+#### Docs (delta)
+
+`docs/limits.md` (honest: local server only; not a real Entra server, macOS, Windows), `docs/features.md`, `docs/feature-inventory.md`, `docs/safety.md`
+if it names the refresh, Settings' line under *Refresh MCP sign-ins automatically*, a `changelog.d/` fragment.
+
 ### 2026-10-31: MCP context cost (spec 100)
 
 the per-agent MCP dialog's rows add each server's tokens and label, with a total and a footnote; a warning line in the chat opens this dialog with the heaviest server focused. Owned by [spec 100](../100-mcp-context/spec.md) FR-011, FR-022.
