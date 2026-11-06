@@ -905,6 +905,9 @@ export interface ConvSearchNotes {
   floorOffFolders: number;
   /** Saved MCP values were locked in the vault, so the open sessions' values were not masked (owner answer D): "Some saved MCP values are locked; excerpts may show them." */
   mcpValuesLocked: boolean;
+  /** FR-022 (review N-R2): folders whose earlier sessions were not listed within the plan's deadline, and their apps. */
+  lateLists: number;
+  lateApps: string[];
 }
 /**
  * `stopped` on a `done`: main stopped the scan itself (the window closed or hid, or a quit began), so the window can leave "Searching…";

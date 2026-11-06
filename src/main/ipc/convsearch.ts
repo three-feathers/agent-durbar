@@ -67,7 +67,7 @@ const toHit = (h: ScanHit): ConvSearchHit => ({
 });
 const noNotes = (): ScanNotes => ({ searched: 0, folders: 0, notInstalled: [], tooLarge: 0, unreadable: 0, titleOnly: { count: 0, apps: [] }, hidden: 0, floorsOff: 0, capped: { sessions: false, perFolder: false, results: false }, timedOut: false, cut: 0, bounded: 0, maskFailed: 0 });
 
-export function register(deps: ConvSearchIpcDeps): { cancelAll(): void; live(): string | undefined } {
+export function register(deps: ConvSearchIpcDeps): { cancelAll(): void; dropKept(): void; live(): string | undefined } {
   const now = deps.now ?? (() => performance.now());
   const yieldNow = deps.yieldNow ?? (() => new Promise<void>((r) => setImmediate(r)));
   const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
@@ -118,7 +118,7 @@ export function register(deps: ConvSearchIpcDeps): { cancelAll(): void; live(): 
     let cancelled = false;
     let scan: ReturnType<typeof startScan> | undefined;
     let last = { done: 0, total: 0 };
-    let extra: Scope['notes'] = { floorOffFolders: 0, mcpValuesLocked: false };
+    let extra: Scope['notes'] = { floorOffFolders: 0, mcpValuesLocked: false, lateLists: 0, lateApps: [] };
     const me = {
       id, sender, cancel: (): void => { cancelled = true; scan?.cancel(); },
       stopped: (): void => { if (!sender.isDestroyed()) sender.send('search:done', { kind: 'done', searchId: id, notes: { ...noNotes(), queryCut: q.cut, ...extra }, progress: last, failed: false, stopped: true } satisfies ConvSearchEvent); },
@@ -171,5 +171,6 @@ export function register(deps: ConvSearchIpcDeps): { cancelAll(): void; live(): 
     return { ok: true };
   });
 
-  return { cancelAll: stopByMain, live: () => live?.id };
+  // FR-026 (review N-R1): an earlier session was deleted in Durbar: the kept titles go at once (a running scan goes on)
+  return { cancelAll: stopByMain, dropKept: () => codexLists.clear(), live: () => live?.id };
 }

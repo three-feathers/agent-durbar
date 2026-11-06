@@ -48,8 +48,10 @@ export interface ScopeDeps {
   claudeDir?: string;
   /** FR-026: the box session's kept Codex lists (absent: list every time). */
   codexLists?: CodexListCache;
-  /** The clock of the kept lists (ms; default `Date.now`). */
+  /** The clock of the kept lists and of the plan's deadline (ms; default `Date.now`). */
   now?(): number;
+  /** The plan's deadline timer (tests inject their own; main: an unref'd `setTimeout`). */
+  wait?(ms: number): Promise<void>;
   readClaude?: typeof readClaudeHistoryStream;
   listChats?: typeof listChats;
   readChat?: typeof readChat;
@@ -60,11 +62,14 @@ export interface Scope {
   read: ScanDeps['read'];
   values: ScanDeps['values'];
   /** What the end state adds to the scan's notes (owner answers C and D, FR-014). */
-  notes: { floorOffFolders: number; mcpValuesLocked: boolean };
+  notes: { floorOffFolders: number; mcpValuesLocked: boolean; lateLists: number; lateApps: string[] };
 }
 
 /** FR-026: a kept list older than this is listed again (a session deleted in Previous sessions, or made in the Codex app, shows within it). */
 export const CODEX_LIST_TTL_MS = 5 * 60_000;
+/** FR-022 (review N-R2): the most building the plan may take; a listing still running then is given up, the rest are skipped. */
+export const SCOPE_LIST_MS = 30_000;
+const LATE = Symbol('late');
 
 /**
  * FR-026 (owner answer C): a folder's earlier Codex sessions as `thread/list` gave them, kept in memory for the search box session, so
@@ -134,6 +139,19 @@ export async function buildScope(d: ScopeDeps, stop: () => boolean = () => false
 
   // 1. the open sessions, in the office's order (FR-020): content when it can be read without starting anything
   let floorOffFolders = 0;
+  // FR-022 (review N-R2): the plan's own deadline; each listing races the time left, and none starts after it
+  const clock = d.now ?? Date.now;
+  const wait = d.wait ?? ((ms: number) => new Promise<void>((r) => { const h = setTimeout(r, ms); h.unref?.(); }));
+  const deadline = clock() + SCOPE_LIST_MS;
+  let lateLists = 0;
+  const lateApps = new Set<string>();
+  const inTime = async <T>(p: Promise<T>): Promise<T | typeof LATE> => {
+    const left = deadline - clock();
+    if (left <= 0) return LATE;
+    p.catch(() => undefined); // a listing given up that fails later is not an unhandled rejection
+    return Promise.race([p, wait(left).then((): typeof LATE => LATE)]);
+  };
+  const late = (app: string): void => { lateLists++; lateApps.add(app); };
   const firstOf = new Map<string, AgentInfo>(); // folder -> its first agent; folder + app -> the agent its earlier sessions are listed for
   for (const a of d.agents.values()) {
     const ad = d.router.forAgent(a.id);
@@ -176,10 +194,18 @@ export async function buildScope(d: ScopeDeps, stop: () => boolean = () => false
           const kept = d.codexLists?.get(key, ids, at);
           if (kept) list = kept.filter((s) => !openIds.has(s.id)); // a session resumed since: open now, not earlier
           else {
-            list = (await d.gate.run(`list\0${key}`, listing, CODEX_LIST_GATE_MS)) as PreviousSession[];
+            if (clock() >= deadline) { late(d.appName(adapter)); continue; } // past the plan's deadline: not started
+            const r = await inTime(d.gate.run(`list\0${key}`, listing, CODEX_LIST_GATE_MS) as Promise<PreviousSession[]>);
+            if (r === LATE) { late(d.appName(adapter)); continue; } // given up: not kept
+            list = r;
             d.codexLists?.set(key, ids, list, at);
           }
-        } else list = await listing();
+        } else {
+          if (clock() >= deadline) { late(d.appName(adapter)); continue; }
+          const r = await inTime(listing());
+          if (r === LATE) { late(d.appName(adapter)); continue; }
+          list = r;
+        }
       } catch {
         unavailable.add(d.appName(adapter)); // FR-014: "Not searched: Codex (not installed)", once
         continue;
@@ -196,7 +222,10 @@ export async function buildScope(d: ScopeDeps, stop: () => boolean = () => false
     } else {
       let chats;
       try {
-        chats = await (d.listChats ?? listChats)(d.vsUserDirs(), { folders: a.folders, workspaceFile: a.workspaceFile });
+        if (clock() >= deadline) { late('VS Code'); continue; }
+        const r = await inTime((d.listChats ?? listChats)(d.vsUserDirs(), { folders: a.folders, workspaceFile: a.workspaceFile }));
+        if (r === LATE) { late('VS Code'); continue; }
+        chats = r;
       } catch {
         continue;
       }
@@ -245,5 +274,5 @@ export async function buildScope(d: ScopeDeps, stop: () => boolean = () => false
   // owner answer D: the open agents' session values are left out of the mask while the vault would prompt (`scanSecretValues`): said
   let mcpValuesLocked = true;
   try { mcpValuesLocked = !d.values.noPrompt(); } catch { /* unknown: said as locked */ }
-  return { plan: { sessions, unavailable: [...unavailable] }, read, values, notes: { floorOffFolders, mcpValuesLocked } };
+  return { plan: { sessions, unavailable: [...unavailable] }, read, values, notes: { floorOffFolders, mcpValuesLocked, lateLists, lateApps: [...lateApps] } };
 }

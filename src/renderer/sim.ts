@@ -302,7 +302,7 @@ function simConvSearchApi(qs: URLSearchParams, scope: () => SimConvSession[]): P
       if (!S) return { ok: false, code: 'invalid', error: 'That is not a search.' };
       const me: { id: string; timer?: ReturnType<typeof setTimeout> } = { id: newId() };
       live = me;
-      const notes: ConvSearchNotes = { searched: 0, folders: 0, notInstalled: [], tooLarge: 0, unreadable: 0, titleOnly: { count: 0, apps: [] }, hidden: 0, floorsOff: 0, capped: { sessions: false, perFolder: false, results: false }, timedOut: false, cut: 0, bounded: 0, maskFailed: 0, queryCut: q.cut, floorOffFolders: 0, mcpValuesLocked: qs.get('simsearch') === 'locked' };
+      const notes: ConvSearchNotes = { searched: 0, folders: 0, notInstalled: [], tooLarge: 0, unreadable: 0, titleOnly: { count: 0, apps: [] }, hidden: 0, floorsOff: 0, capped: { sessions: false, perFolder: false, results: false }, timedOut: false, cut: 0, bounded: 0, maskFailed: 0, queryCut: q.cut, floorOffFolders: 0, mcpValuesLocked: qs.get('simsearch') === 'locked', lateLists: 0, lateApps: [] };
       const list = all.filter((s) => { if (s.hidden) notes.hidden++; return !s.hidden; });
       notes.folders = new Set(list.map((s) => s.folderName)).size;
       const groups = { office: 0, earlier: 0 };
