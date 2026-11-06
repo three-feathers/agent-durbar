@@ -93,6 +93,7 @@ A world is not finished until its chat and settings screens have been looked at 
 - **The room stays put when someone leaves.** Their seat, plate and status stay, with a square, readable post-it (in the world's own style) saying where they went. Rows and screens resize only when the number of sessions changes, and they ease.
 - **Prefer a rig to more pictures for small motions.** Cut a person into head, torso and hands with pivots, so hands stay on the keys. Image models repeat poses, so several "in-between" frames often add little.
 - Reduced motion and Settings > Motion off stop it (Serious mode does not). Hidden and off-screen pause it.
+- **Canvas only where CSS cannot do the job** (constitution V, Amendment 3, owner 2026-11-06), such as Brain view's thousands of points (spec 106). A world's own art stays frames and `transform`/`opacity` (spec 102 FR-261); a world restyles a canvas through tokens, fonts and point shape only.
 
 ## Light
 

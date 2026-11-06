@@ -1383,3 +1383,7 @@ Spec 017 FR-029 (owner decision, no doors) removed the Office with cabins layout
 - `check-status-tooltip` already retries only after a trusted blur, resize or scroll (its `osRetry`); its flake is not changed here, see tasks.
 
 `[IMPLEMENTED]` `test: test-ui-suite` (`emulate: 'first'` turns it on from the first call; `emulate: true` only as a fallback). `real:` Windows CI repeat run 41946441482 (3 jobs, 4 rounds each, retries off), listed in PR #1186's body. Not verified on macOS.
+
+## Changes 2026-11-06: Your door's right rail opens with every chat while Brain view is on (FR-216, spec 106)
+
+Owner decision (Vikram, Telegram, 2026-11-06 12:50 UTC, option "1"): with Brain view on, the right rail (Brain on top, Your door below) opens with every chat, and the person can still collapse it. **FR-216 is amended for that case only:** "opened on request" holds while Brain view is off. While it is on, the rail opens with each chat, unless the person collapsed it: spec 005 FR-196's saved collapse state wins, across chats and restarts (when `rememberOn()`). The rail's width, the chat's push and Your door's items are unchanged. Owned and tested by [spec 106](../106-brain-view/spec.md) FR-031 (T006); nothing changes here while Brain view is off.
