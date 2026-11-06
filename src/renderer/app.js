@@ -2145,6 +2145,7 @@ function csEnd(o){
   if(!was)return;
   CS.ending=true;
   try{if(opt.restore&&from&&from.view!==ui.view)setView(from.view);else renderAll();}finally{CS.ending=false;}
+  if($('list').querySelector('.cs-wrap'))renderList(); /* the Office view does not repaint the hidden list: no result is left in the page */
   if(!opt.keepFocus&&back&&back.isConnected&&back.getClientRects().length)focusIn(back);
   CS.back=null;
 }
