@@ -11,8 +11,12 @@ const C = require(path.join(ROOT, 'src', 'renderer', 'composersize.js')) as {
   limits: (m: { panelH: number; chatH: number; boxH: number }) => Lim;
   clamp: (h: number, l: Lim) => number;
   height: (o: { chosen: number | null; content: number; lim: Lim }) => number;
-  keyStep: (key: string, h: number, l: Lim) => number | 'reset' | null;
+  keyStep: (key: string, h: number, l: Lim, o?: { grow?: string; shrink?: string; big?: boolean }) => number | 'reset' | null;
   parse: (v: unknown) => number | null;
+  RAIL_DEFAULT: number; RAIL_MIN: number; RAIL_FRAC: number; RAIL_KEY: string;
+  railLimits: (winW: number) => Lim;
+  railWidth: (chosen: number | null, winW: number) => number;
+  parseRail: (v: unknown) => number | null;
 };
 
 let n = 0;
@@ -79,6 +83,35 @@ t('FR-047: the remembered value', () => {
   assert.strictEqual(C.parse('240'), 240);
   assert.strictEqual(C.parse('240.4'), 240);
   for (const bad of [null, undefined, '', 'abc', 'NaN', 'Infinity', '-5', '0', '12', '99999', '{}', 'true']) assert.strictEqual(C.parse(bad), null, String(bad));
+});
+
+t('FR-236: the rail shares clamp, keys and the remembered value', () => {
+  assert.strictEqual(C.RAIL_DEFAULT, 220); assert.strictEqual(C.RAIL_MIN, 180); assert.strictEqual(C.RAIL_FRAC, 0.4);
+  assert.strictEqual(C.RAIL_KEY, 'durbar.railWidth');
+  assert.notStrictEqual(C.RAIL_KEY, C.KEY);
+  const l = C.railLimits(1440);
+  assert.deepStrictEqual(l, { min: 180, max: 576, auto: 220 });
+  assert.strictEqual(C.railLimits(1280).max, 512);
+  // a tiny window: the maximum never goes under the minimum
+  assert.deepStrictEqual(C.railLimits(300), { min: 180, max: 180, auto: 180 });
+  assert.strictEqual(C.railLimits(0).max, 180);
+  assert.strictEqual(C.railWidth(null, 1440), 220);
+  assert.strictEqual(C.railWidth(100, 1440), 180);
+  assert.strictEqual(C.railWidth(900, 1440), 576);
+  assert.strictEqual(C.railWidth(900, 1000), 400); // clamped again when the window shrinks
+  const k = { grow: 'ArrowRight', shrink: 'ArrowLeft' };
+  assert.strictEqual(C.keyStep('ArrowRight', 220, l, k), 236);
+  assert.strictEqual(C.keyStep('ArrowLeft', 220, l, k), 204);
+  assert.strictEqual(C.keyStep('ArrowRight', 220, l, { ...k, big: true }), 284);
+  assert.strictEqual(C.keyStep('ArrowLeft', 190, l, k), 180);
+  assert.strictEqual(C.keyStep('ArrowUp', 220, l, k), null);
+  assert.strictEqual(C.keyStep('Home', 220, l, k), 180);
+  assert.strictEqual(C.keyStep('End', 220, l, k), 576);
+  assert.strictEqual(C.keyStep('PageUp', 220, l, k), 284);
+  assert.strictEqual(C.parseRail('300'), 300);
+  assert.strictEqual(C.parseRail('5200'), 5200); // 40% of a window wider than 5000px
+  assert.strictEqual(C.parseRail('8000'), 8000);
+  for (const bad of [null, '', 'abc', '179', '8001', '-5', 'NaN', '{}']) assert.strictEqual(C.parseRail(bad), null, String(bad));
 });
 
 console.log(`composer size: ${n} groups passed`);
