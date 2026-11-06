@@ -37,6 +37,9 @@ test:specsindex
 test:stillhighlights
 test:orgwords
 test:handoff
+test:brainstate
+test:brainloop
+test:brainsurface
 test:toolusage
 test:usagestore
 test:about

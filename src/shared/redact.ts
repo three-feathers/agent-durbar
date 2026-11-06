@@ -498,6 +498,16 @@ export function redactMarkdown(u: string, k: string, env?: Env): string {
   return m;
 }
 
+/**
+ * Spec 106 FR-021 (review of PR 1226, F1): token characters glued to a mask are the tail of a secret whose head was already masked (a
+ * secret that arrives in pieces: the head masks, the next piece is appended raw and matches no shape). They go into the mask. A `.` or
+ * `:` counts only when more token characters follow, so "[redacted]." at the end of a sentence keeps its full stop. Linear.
+ */
+export function maskGluedTail(text: string): string {
+  // a mask then `@host`: the host of a URL with credentials stays (H6)
+  return text.replace(/\[redacted(?::[A-Za-z0-9_.-]{1,64})?\](?!@(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,}(?::\d{1,5})?(?:[/?#\s]|$))(?:[A-Za-z0-9_\-~+/=@%]|[.:](?=[A-Za-z0-9_\-~+/=@%.:]))+/g, '[redacted]');
+}
+
 const MASK = '[redacted]';
 /** T065 (#374): a string longer than this is replaced by `[redacted]` whole, before any rule runs and never cut, so a 1 MB arg costs nothing. Above the 4096 display cap (T054) and the 4096 per-arg limit of per-folder extras (FR-022). */
 export const MASK_INPUT_MAX = 12288;
@@ -533,7 +543,16 @@ const LONG_FLAG = /^--[A-Za-z][A-Za-z0-9_.-]*(?:[=:\s]|$)/;
 /** `Bearer x` / `Basic x` as a whole arg: the word and exactly one token (so `Basic setup of the server` stays). */
 const BEARER = /^(bearer|basic)(\s+)\S+\s*$/i;
 /** R11: auth scheme words; the secret is the next arg. */
-const SCHEME = /^(?:bearer|basic|token|digest|negotiate|apikey)$/i;
+const SCHEME_WORDS = ['bearer', 'basic', 'token', 'digest', 'negotiate', 'apikey'];
+const SCHEME = new RegExp(`^(?:${SCHEME_WORDS.join('|')})$`, 'i');
+/** Spec 106 (F1b): is `word` the start of an auth scheme word, so a streamed `Authorization: Bea` may still become `Authorization: Bearer <secret>`? Uses the same words as R11. */
+export function schemeWord(word: string): boolean {
+  return SCHEME.test(word);
+}
+export function schemePrefix(word: string): boolean {
+  const w = word.toLowerCase();
+  return w.length > 0 && SCHEME_WORDS.some((s) => s.startsWith(w));
+}
 /** `Name: <scheme word>` with nothing after it and a secret-looking name (`Authorization: Bearer`): the secret is the next arg (R11 b). */
 function schemeHeader(a: string, anyName = false): boolean {
   const h = HDR.exec(a);
