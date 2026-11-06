@@ -500,6 +500,14 @@ for (const seed0 of [1, 7, 42]) {
   let worst2 = 0;
   for (const piece of 'the pair a=b and c:d then e=f g:h i=j so k:l x=y z:w'.split('')) { calls = 0; s2 = brainState(s2, { type: 'thinking', delta: piece }, 2, counting); worst2 = Math.max(worst2, calls); }
   assert.ok(worst2 <= 6, `words with = or : cost at most 1 + 4 probes + 1 (worst ${worst2})`);
+  // L1: a last word that starts a scheme word after many `k:v` words: the scheme-in-flight branch also probes only the nearest four
+  let worst3 = 0;
+  for (const last of [' a', ' to', ' Bea', ' b']) {
+    let s3 = brainState(initBrain('Ada', counting), { type: 'user' }, 1, counting);
+    s3 = brainState(s3, { type: 'thinking', delta: Array.from({ length: 12 }, (_, i) => `k${i}:v${i}`).join(' ') }, 2, counting);
+    calls = 0; s3 = brainState(s3, { type: 'thinking', delta: last }, 3, counting); worst3 = Math.max(worst3, calls);
+  }
+  assert.ok(worst3 <= 10, `a scheme-looking last word after many k:v words costs at most 1 + 4 + 4 probes (worst ${worst3})`);
   calls = 0; s2 = brainState(s2, { type: 'thinking', delta: ' Authorization: Bear' }, 3, counting);
   assert.ok(calls >= 2, 'a header-looking line does get probed (so the counter counts)');
 }

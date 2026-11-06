@@ -323,8 +323,8 @@ function valueExpected(mask: BrainMask, joined: string): { at: number; head: str
         for (let k = starts.length - 1; k >= 0 && tried < 4; k--) {
           if (starts[k] > lastAt || (starts[k] === lastAt && sep < 0) || !/[:=]/.test(L.slice(starts[k], k === starts.length - 1 ? restAt : starts[k + 1]))) continue;
           tried++;
-          const m = maskText(mask, L.slice(starts[k], restAt) + 'Bearer ' + PROBE);
-          if (m !== '' && !m.includes(PROBE)) return { at: start + starts[k], head: L.slice(starts[k]) };
+          // the words before the part scheme word must themselves expect a value (a bare `Bearer x` is masked after any words)
+          if (expects(mask, L.slice(starts[k], restAt))) return { at: start + starts[k], head: L.slice(starts[k]) };
         }
       }
     }
