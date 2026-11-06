@@ -16,7 +16,7 @@
  *   FR-015  `simsearch=slow`: "Searching, N of M sessions" and Stop, then "Stopped."
  *   FR-014  every end-state note the scan sent (owner answer D: `simsearch=locked`, the exact text)
  *   FR-003  the palette's "Search conversations" only focuses the box; the ? sheet lists the shortcut; Settings > Keyboard changes it
- *   FR-050  a mark has a non-colour cue and readable contrast in Clean Office and Retro
+ *   FR-050  a mark has a non-colour cue and readable contrast in Clean Office and Retro; Real office: the same box and results
  *   FR-052  rows never overlap, an excerpt is at most two lines, the list scrolls inside its area
  * Screenshots: 095-search-{results,jump,searching}-<w>x<h>.png
  */
@@ -243,5 +243,12 @@ module.exports = async (ctx) => {
       const a=L(rgb(cs.color)),b=L(bgOf(e));return {ratio:(Math.max(a,b)+0.05)/(Math.min(a,b)+0.05),weight:+cs.fontWeight,line:cs.textDecorationLine,ui:document.documentElement.dataset.ui||''};})()`);
     assert.ok(m.ratio >= 4.5 && m.weight >= 600 && /underline/.test(m.line), `${theme}: the mark reads (contrast ${m.ratio.toFixed(2)}, weight ${m.weight}, ${m.line})`);
   }
+  // ---- Real office (spec 097): the same top bar and List view; a result opens at its message ----
+  await H.load({ w: 1440, h: 900, query: { officeview: 'real' }, ready: `!!document.querySelector('#stage .ro .ro-plate')`, settle: false, focus: true });
+  await H.calm();
+  await typeQuery('registry');
+  await doneWith(1);
+  await js(`document.querySelector('#list .cs-row ~ .cs-exs .cs-ex').click()`);
+  await ok(`!!document.querySelector('#chat .bubble.nt-found')`, 'Real office: a result opens at its message');
   console.log('[095] search conversations: all checks passed');
 };
