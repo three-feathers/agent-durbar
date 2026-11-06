@@ -54,7 +54,7 @@ module.exports = async (ctx) => {
     const ex=[...L.querySelectorAll('.cs-ex')].map(e=>{const lh=parseFloat(getComputedStyle(e).lineHeight);return e.getBoundingClientRect().height/lh;});
     const de=document.documentElement;return {min:Math.min(...fonts),over,maxLines:Math.max(0,...ex),pageScroll:de.scrollHeight>innerHeight+1||de.scrollWidth>innerWidth+1,inner:getComputedStyle(L).overflowY};})()`);
   /* the marked bubble in the chat: inside the chat's view */
-  const jumped = (vs) => js(`(()=>{const c=document.getElementById('chat'),b=c&&c.querySelector('${vs ? '.vsbody ' : ''}.bubble.nt-found');if(!b)return null;const r=b.getBoundingClientRect(),q=c.getBoundingClientRect();return {text:b.textContent.slice(0,80),inView:r.top>=q.top-1&&r.bottom<=q.bottom+1};})()`);
+  const jumped = (vs) => js(`(()=>{const c=document.getElementById('chat'),b=c&&c.querySelector(${jsLiteral((vs ? '.vsbody ' : '') + '.bubble.nt-found')});if(!b)return null;const r=b.getBoundingClientRect(),q=c.getBoundingClientRect();return {text:b.textContent.slice(0,80),inView:r.top>=q.top-1&&r.bottom<=q.bottom+1};})()`);
   /* Escape until the chat is closed (the VS Code viewer takes one Escape back to the chat first) */
   const closeChat = async () => { for (let i = 0; i < 3 && (await js(`document.body.classList.contains('panel-open')`)); i++) { await key('Escape', [], { char: 'never' }); await until(`!document.body.classList.contains('panel-open')`, 1500); } };
   const watchAnnounce = () => js(`(()=>{window.__ann=[];const el=document.getElementById('srAnnounce');new MutationObserver(()=>{if(el.textContent)window.__ann.push(el.textContent);}).observe(el,{childList:true,characterData:true,subtree:true});})()`);
