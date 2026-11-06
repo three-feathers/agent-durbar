@@ -4,7 +4,7 @@
 
 **Tests**: required (constitution VII.3; SC-001..SC-005). Node tests and the simulator only; 0 AI credits; no network. Driver waits use `until()`.
 
-**Format**: `- [ ] Tnnn [P?] [USn?] description (file) [requirements]`. `[P]` = can run in parallel. One task = one small testable step; a phase = one PR. Numbers taken: spec 095, FR-001..FR-052 (sparse by group; FR-016 added in review), T001..T064 (T064 added in review).
+**Format**: `- [ ] Tnnn [P?] [USn?] description (file) [requirements]`. `[P]` = can run in parallel. One task = one small testable step; a phase = one PR. Numbers taken: spec 095, FR-001..FR-052 (sparse by group; FR-016 added in review), T001..T064 (T064 added in review; T026, T027 owner answers C and D, 2026-11-06).
 
 ## Phase 0: Spec (this PR)
 
@@ -33,6 +33,9 @@
 - [x] T023 IPC tests on a stand-in `electron`: not-`fromApp` refused, bounds, stale id, two starts = one scan, no folder/path accepted; MCP tools and remote control have no search; `test-ipcchannels.ts` owner-only list [FR-032, FR-033]
 - [x] T024 Preload, `DurbarApi` (`src/shared/api.ts`) types: `convSearchStart`, `convSearchCancel`, `onConvSearch`; no channel on `SIM_OPEN_CHANNELS`, `test:simguard` green [FR-033]
 - [x] T025 Simulator fake in `src/renderer/sim.ts`: canned corpus over open and earlier sessions, a slow mode for the progress state, no I/O [US1, US4]
+
+- [x] T026 Owner answer C (2026-11-06): no Codex `thread/list` for a folder on a floor that is off (counted, `notes.floorOffFolders`); the box session's Codex titles kept in memory (`createCodexListCache`), dropped as FR-026 says; `search:clear` + `convSearchClear`; tests in `test-convsearchipc.ts` [FR-014, FR-026, FR-033]
+- [x] T027 Owner answer D (2026-11-06): `notes.mcpValuesLocked` when `mcpStore.noPrompt()` is false; the window's note is phase 3 (T043) [FR-014, FR-030]
 
 ## Phase 3: The window (PR 3)
 
