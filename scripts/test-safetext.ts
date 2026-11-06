@@ -154,7 +154,7 @@ function redact_() { return (x: string) => redact(x, {}); }
     const out = S.maskLabel(raw, kind, mk);
     ok(out && !out.includes(KEY) && !out.includes(ghp), `label hides the secret in ${what}: ${out}`);
   }
-  ok(redact(`curl --api-key ${KEY} https://example.test/a`, {}).includes(KEY), 'plain redact() alone misses --api-key: the label needs the command mask');
+  ok(!redact(`curl --api-key ${KEY} https://example.test/a`, {}).includes(KEY), 'plain redact() hides --api-key <value> since spec 012 FR-170 (it missed it before; the label still takes the command mask)');
   eq(S.maskLabel('x', 'run', { redact: mk.redact }), '', 'a missing command mask fails closed');
   eq(S.maskLabel('', 'run', mk), '', 'empty label');
 }
