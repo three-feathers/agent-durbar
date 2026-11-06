@@ -148,19 +148,40 @@ module.exports = async (ctx) => {
     check(NEAR && NEAR.text, `${tag}: a reply sits 130..360 px above where its reveal would end (so the re-stick, 400 px, could drag it back) ${JSON.stringify(NEAR)}`);
     check(await save(srcId, 'agent', NEAR.ord, NEAR.text, srcId), `${tag}: a note of that reply is saved`);
     await open('Ada'); await openDrawer();
+    /* the order of two page writes is recorded: Open source writes the chat's pin in the same task as it outlines the message, so the pin reads '0' BEFORE the outline starts; left to the scroll event the pin would change a frame AFTER it (new text arriving in between would still drag the reader) */
+    await js(`(()=>{window.__ord=[];if(window.__ordObs)window.__ordObs.disconnect();const was=new WeakMap();window.__ordObs=new MutationObserver(ms=>{for(const m of ms){const e=m.target;if(m.attributeName==='data-pin')window.__ord.push('pin'+e.dataset.pin);else if(e.classList.contains('nt-found')&&!was.get(e)){was.set(e,1);window.__ord.push('found')}else if(!e.classList.contains('nt-found'))was.set(e,0)}});window.__ordObs.observe(document.body,{subtree:true,attributes:true,attributeFilter:['data-pin','class']})})()`);
     check(await openSource(NEAR.text.slice(0, 20)), `${tag}: Open source on the reply near the end`);
     check(await until(`!!document.querySelector('#chat .bubble.nt-found')`, 8000), `${tag}: the reply near the end is outlined`);
     const near = await js(`(()=>{const c=document.getElementById('chat');return {pin:c.dataset.pin,left:c.scrollHeight-c.scrollTop-c.clientHeight}})()`);
+    const ord = await js(`window.__ord`);
+    check(ord.includes('found') && ord.indexOf('pin0') >= 0 && ord.indexOf('pin0') < ord.indexOf('found'), `${tag}: the pin is written before the outline starts, not left to the scroll event (${JSON.stringify(ord)})`);
     check(near.pin === '0' && near.left > 80, `${tag}: the reveal stayed where it put the reader: pin 0, ${Math.round(near.left)} px above the end (${JSON.stringify(near)})`);
     check(await until(`!document.querySelector('#chat .bubble.nt-found')`, 4000), `${tag}: the outline ends`);
 
+    /* a stale ord (the message moved): the matching bubble nearest to it is the one outlined */
+    await open('Noor');
+    const STALE = TURNS[0];
+    const st0 = await js(`(()=>{const u=[...document.querySelectorAll('#chat .chat-inner .msg.user .bubble')];return {n:u.length,at:u.findIndex(b=>(b._raw||'')===${jsLiteral(STALE)})}})()`);
+    const staleOrd = (st0.at + 5) % st0.n;
+    check(st0.at >= 0 && st0.n >= 7 && staleOrd !== st0.at, `${tag}: the message is in the chat and another user message sits at the stale ord (${JSON.stringify(st0)})`);
+    check(await save(srcId, 'user', staleOrd, STALE, srcId), `${tag}: a note with a stale ord (${staleOrd}, the message is at ${st0.at}) is saved`);
+    await open('Ada'); await openDrawer();
+    check(await openSource(STALE.slice(0, 20)), `${tag}: Open source on the stale-ord note`);
+    check(await until(`!!document.querySelector('#chat .bubble.nt-found')`, 8000), `${tag}: the message is outlined although its ord is stale`);
+    const stale = await js(`[...document.querySelectorAll('#chat .chat-inner .msg.user .bubble')].indexOf(document.querySelector('#chat .bubble.nt-found'))`);
+    check(stale === st0.at, `${tag}: it is the bubble with that digest (place ${stale}, not the one at ord ${staleOrd})`);
+    check(await until(`!document.querySelector('#chat .bubble.nt-found')`, 4000), `${tag}: the outline ends`);
     /* the re-stick race, made certain: for 800 ms the page itself plays openPanel's re-stick (it reports #chat._rsBusy as set and pulls the log to its end each frame while the reader is within 400 px of it). A reveal that does not wait for _rsBusy lands inside that window and is dragged back. */
     await open('Ada'); await openDrawer();
     await js(`(()=>{window.__holdUntil=0;if(window.__holdOn)return;window.__holdOn=1;Object.defineProperty(HTMLElement.prototype,'_rsBusy',{configurable:true,get(){return performance.now()<window.__holdUntil?1:this.__rs},set(v){this.__rs=v}});const tick=()=>{const c=document.getElementById('chat');if(c&&performance.now()<window.__holdUntil&&c.scrollHeight-c.scrollTop-c.clientHeight<=400)c.scrollTop=c.scrollHeight;requestAnimationFrame(tick)};requestAnimationFrame(tick)})()`);
     await js(`void (window.__holdUntil=performance.now()+800)`);
     check(await openSource(NEAR.text.slice(0, 20)), `${tag}: Open source on the reply near the end, while a re-stick is running`);
+    /* the person starts typing in the message box while Open source waits: the focus stays there */
+    check(await until(`/Noor/.test((document.getElementById('panelTitle')||{}).textContent||'')&&!!document.getElementById('msgInput')`, 8000), `${tag}: Noor's chat is up while the re-stick runs`);
+    await js(`document.getElementById('msgInput').focus()`);
     check(await until(`performance.now()>window.__holdUntil+150&&!!document.querySelector('#chat .bubble.nt-found')`, 8000), `${tag}: the reply is outlined once the re-stick is over`);
     const held = await js(`(()=>{const c=document.getElementById('chat'),b=document.querySelector('#chat .bubble.nt-found'),r=b.getBoundingClientRect(),cr=c.getBoundingClientRect();return {pin:c.dataset.pin,left:c.scrollHeight-c.scrollTop-c.clientHeight,inside:r.top>=cr.top-1&&r.bottom<=cr.bottom+1,busy:!!c._rsBusy}})()`);
+    check(await js(`document.activeElement&&document.activeElement.id==='msgInput'`), `${tag}: the focus stayed in the message box (${JSON.stringify(await activeDesc())})`);
     check(held.pin === '0' && held.left > 80 && held.inside && !held.busy, `${tag}: the reveal waited for the re-stick and stayed where it put the reader (${JSON.stringify(held)})`);
     check(await until(`!document.querySelector('#chat .bubble.nt-found')`, 4000), `${tag}: the outline ends`);
 
