@@ -150,3 +150,13 @@ Spec *Changes* has the requirements and the honest limits. This is PR 1 (spec on
   - III: no new storage or IPC; the tag shows no content.
   - VI: CSS and pure TS only.
   - VIII: the mock's limits are in the spec.
+
+## The lounge row (delta 2026-11-06; FR-246..FR-249, T199..T203, issue #1220)
+
+One PR, spec first. Who moves is `shutPlan(r)` (spec 001 FR-051, `shutters.js` `roomPlan`): app.js's `realModel` already receives `m.rolled`; it marks those agents `lounge: true` and gives them the lounge words. Nothing else in the app decides it.
+
+- **Engine, pure** (`src/shared/realoffice-layout.ts`, T199): `realLayout` takes the lounge agents out of their folders, works out the row's height (`loungeRow`), searches the desk rows in the floor minus that height (the lobby keeps its range from the whole height) and places the seats under the last desk row. `Layout.lounge = {box, desks}`: each seat is a `DeskBox` with `lounge: true`, a `table` rect (the small desk) and the usual `person`, `face`, `screen`, `glass`, `plate`, `lamp`, so the renderer and `slipAvoid` reuse the desk code. `ASLEEP_W` and the slim desk go.
+- **Arcade, pure** (`src/shared/realoffice-arrangements.ts`, T200): the same split; the seats go in the last cabinet row's free cells when they fit (that row is then left-aligned), else the plan is chosen for the floor minus a lounge row.
+- **Renderer** (`src/renderer/realoffice.js`, T201): the desk loop body becomes `deskOne(d)`, run for the zones' desks and then the lounge's; a seat draws the world's `desk.webp` small (`ld:` key) instead of the desk or cabinet, no screen text, the same plate, person, monitor, lamp and "z z". `sweep` fades a leaving desk picture; a new one fades in. The ease is `box()`'s.
+- **CSS**: `.ro-lseat` table, `.ro-lmon` monitor (photo and cave: the desk monitor scaled; arcade: a pixel frame in `worlds/retro/world.css`), `.ro-plate.lounge`.
+- **Checks**: `test:realoffice-layout` and `test-realoffice-aisles` (FR-246..FR-248, mutants), `scripts/check-097-lounge.js` (FR-246..FR-249), `shots-097-moments` asleep moment and `world-matrix.js` lounge scene updated.
