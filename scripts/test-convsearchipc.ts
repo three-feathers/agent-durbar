@@ -251,6 +251,17 @@ async function main(): Promise<void> {
   await settle(50);
   assert.ok(rg.ok);
   assert.deepStrictEqual(win1.sent.map(([ch, p]) => [ch, p.kind, p.kind === 'done' && p.failed]), [['search:done', 'done', true]]);
+  // ... but a scan cancelled while its plan was built says nothing, even when that plan then fails
+  win1.sent.length = 0;
+  hold = new Promise<void>((r) => { release = r; });
+  const rh = await start(E1, 'invoice');
+  runDeferred();
+  await settle(5);
+  assert.ok(rh.ok && (await cancel(E1, rh.searchId)).ok);
+  hold = undefined;
+  release();
+  await settle(50);
+  assert.strictEqual(win1.sent.length, 0, 'nothing from a cancelled scan, not even its failure');
 
   // ---- T022: a hung Codex read cannot hold the gate; the next scan's read still runs
 
