@@ -4,6 +4,7 @@
  * point, with the real src/shared/redact.ts), the one character cap HX_CHARS, the tooltip cut HX_TIP, one mask per field change and a
  * CPU-time ratio for repaints, plus the source checks that keep the page wired to the module. `npm run test:helpercard`. No credits spent.
  */
+import './safetext-shared'; // the compiled hidden-character module for safetext.js (spec 084 FR-033)
 import assert from 'assert';
 import fs from 'fs';
 import path from 'path';

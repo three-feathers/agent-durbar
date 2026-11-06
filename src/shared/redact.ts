@@ -1590,16 +1590,37 @@ export function createDebugSink(file: string, env: Env, append: (file: string, d
 // ---- Notes (spec 083 FR-005, issue 699) ----
 
 /**
- * Characters that can sit inside a token without being part of it: emphasis, code, strike, link brackets, a Markdown escape's backslash,
- * control characters other than tab, line feed and carriage return (C0, DEL, C1; CR ends a line like LF, and a mark there would make
- * every CRLF line end cost the convsearch mask budget, `maskWork`) and the invisible format characters a viewer
- * may drop (soft hyphen, combining grapheme joiner, Arabic letter mark, Hangul fillers, Khmer vowel inherents, Mongolian selectors,
- * zero-width and direction marks, bidi embeddings and isolates, word joiner and invisible operators, BOM). Not in it (spec 084 FR-033
- * `[KNOWN GAP]`, 083 *Changes* 2026-11-06): the variation selectors U+FE00..FE0F (U+FE0F is in common emoji such as a warning sign,
- * and any mark makes `maskWork` price the whole message as marked, so it dropped long messages from search), and, per UTF-16 code
- * unit, the astral tag characters (U+E0000..).
+ * Spec 084 FR-033, 083 *Changes* 2026-11-06 (moved here from `src/renderer/safetext.js`, spec 097 FR-030, so there is one copy):
+ * what can sit invisibly inside a token and hide it from every shape. Default-ignorable code points (soft hyphen, zero-width characters,
+ * joiners, bidi marks, variation selectors, Hangul fillers, tag characters), every format character (`\p{Cf}`), the control characters
+ * other than tab, line feed and carriage return (those end a token or a line; CR renders as a line end), the line and paragraph
+ * separators, and the near-invisible spaces (six-per-em, punctuation, thin, hair, narrow no-break, medium mathematical). Wider spaces
+ * are a visible gap and stay out. Per code point (`u`), astral characters included. The masks read a copy without them
+ * (`unhide`); the text is shown as written, so the joiners real scripts and emoji need stay.
  */
-export const NOTE_MARK = /[*`~[\]\\\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180b-\u180f\u200b-\u200f\u202a-\u202e\u2060-\u206f\u3164\ufeff\uffa0]/;
+export const HIDDEN_CHARS = /\p{Default_Ignorable_Code_Point}|\p{Cf}|[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u2028\u2029\u2006\u2008\u2009\u200a\u202f\u205f]/u;
+const HIDDEN_ALL = new RegExp(HIDDEN_CHARS.source, 'gu');
+/** The text without `HIDDEN_CHARS` (DurbarSafeText.unhide in the window, `convmask` in main, and the notes and outgoing masks). */
+export function unhide(t: unknown): string {
+  return String(t == null ? '' : t).replace(HIDDEN_ALL, '');
+}
+/** For each character of `unhide(s)`, its index in `s` (plus a final entry, `s.length`). */
+function unhiddenIndex(s: string): Int32Array {
+  const at = new Int32Array(s.length + 1);
+  let j = 0;
+  let from = 0;
+  HIDDEN_ALL.lastIndex = 0;
+  for (let m = HIDDEN_ALL.exec(s); m; m = HIDDEN_ALL.exec(s)) {
+    for (let i = from; i < m.index; i++) at[j++] = i;
+    from = m.index + m[0].length;
+  }
+  for (let i = from; i < s.length; i++) at[j++] = i;
+  at[j] = s.length;
+  return at.subarray(0, j + 1);
+}
+
+/** Characters that can sit inside a token without being part of it in Markdown: emphasis, code, strike, link brackets, a Markdown escape's backslash. Invisible characters are `HIDDEN_CHARS`. */
+export const NOTE_MARK = /[*`~[\]\\]/;
 const NOTE_ESCAPABLE = '\\`*_{}[]()#+-.!~|<>';
 export const NOTE_RUN = /[A-Za-z0-9_\-.+/=:@%]{12,}/g;
 
@@ -1666,38 +1687,85 @@ function changedRegions(k: string, r: string): Array<[number, number]> {
 }
 
 /**
- * Masks what a mark hides: a secret split by `**`, a backtick, `~`, a bracket or a Markdown escape. Works on the text without marks and
- * maps each find back to the text as written, so the Markdown around it stays. `find` gives the spans (in `k` coordinates) to mask.
+ * What a mark hides: a secret split by `**`, a backtick, `~`, a bracket or a Markdown escape. Works on the text without marks and maps
+ * each find back to the text as written. `find` gives the spans in `k` coordinates; the result is in `s` coordinates.
  */
-function maskAcrossMarks(s: string, find: (k: string, at: number[], u: string) => Array<[number, number]>): string {
-  if (!NOTE_MARK.test(s)) return s;
+function spansAcrossMarks(s: string, find: (k: string, at: number[], u: string) => Array<[number, number]>): Array<[number, number]> {
+  if (!NOTE_MARK.test(s)) return [];
   const { k, at } = withoutMarks(s);
   const spans: Array<[number, number]> = [];
   for (const [a, b] of find(k, at, s)) if (b > a) spans.push([at[a], at[b - 1] + 1]);
-  return maskSpans(s, spans);
+  return spans;
+}
+
+const MASK_SHOWN = /\[redacted(?::[^\]\r\n]{1,128})?\]/;
+/**
+ * The spans of `orig` that `masked` (`orig` with some spans replaced by a mask, as `redact` and `maskSpans` write it) no longer shows.
+ * The literal pieces between the masks are placed twice, as early and as late as they fit; a character counts as shown only when every
+ * placement shows it, so an ambiguous placement hides more, never less. Anything that does not fit (a mask failed) hides all.
+ */
+function hiddenSpans(orig: string, masked: string): Array<[number, number]> {
+  if (masked === orig) return [];
+  const all: Array<[number, number]> = [[0, orig.length]];
+  let m = masked;
+  const cutTail = orig.length > REDACT_MAX_CHARS && m.endsWith(TRUNCATED);
+  if (cutTail) m = m.slice(0, -TRUNCATED.length);
+  const pieces = m.split(MASK_SHOWN);
+  const n = pieces.length;
+  if (n === 1) return !cutTail || !orig.startsWith(pieces[0]) ? all : [[pieces[0].length, orig.length]];
+  const early = new Array<number>(n);
+  const late = new Array<number>(n);
+  if (!orig.startsWith(pieces[0])) return all;
+  early[0] = 0;
+  let pos = pieces[0].length;
+  for (let i = 1; i < n; i++) {
+    const p = pieces[i];
+    const at = i === n - 1 && !cutTail ? (orig.endsWith(p) && orig.length - p.length >= pos ? orig.length - p.length : -1) : orig.indexOf(p, pos);
+    if (at < 0) return all;
+    early[i] = at;
+    pos = at + p.length;
+  }
+  late[n - 1] = cutTail ? orig.lastIndexOf(pieces[n - 1], orig.length - pieces[n - 1].length) : early[n - 1];
+  if (late[n - 1] < early[n - 1]) return all;
+  for (let i = n - 2; i >= 1; i--) {
+    const from = late[i + 1] - pieces[i].length;
+    const at = from < early[i] ? -1 : orig.lastIndexOf(pieces[i], from);
+    if (at < early[i]) return all;
+    late[i] = at;
+  }
+  late[0] = 0;
+  if (n > 1 && pieces[0].length > late[1]) return all;
+  const hidden: Array<[number, number]> = [];
+  let shownTo = 0;
+  for (let i = 0; i < n; i++) {
+    const a = late[i];
+    const b = early[i] + pieces[i].length;
+    if (b <= a) continue;
+    if (a > shownTo) hidden.push([shownTo, a]);
+    shownTo = Math.max(shownTo, b);
+  }
+  if (shownTo < orig.length) hidden.push([shownTo, orig.length]);
+  return hidden;
 }
 
 /**
- * The one core of `maskNoteText` (spec 083 FR-005) and `maskOutgoing` (spec 084 FR-033): masks text, keeping the Markdown as written. In this order:
- * (1) the known secret values (the folder's and the session's; under 4 characters skipped, longest first), also when marks split them;
- * (2) every token-like run, or region, that `redact` only finds once the Markdown marks are removed (a token split by `**` or a backtick,
- * or glued to the word before it), judged on the text as written, before `redact` can mask a head and leave its tail; (3) `redact`
- * (env secrets and token shapes) on the whole text. Mask first, cut after (the caller): a secret across
- * the cut would leave a head. `changed` says whether anything was masked. Linear: one pass per step.
+ * One pass on `s` as written: (1) the known values, as written and across Markdown marks; (2) every token-like run, or region, that
+ * `redact` only finds once the marks are removed (a token split by `**` or a backtick, or glued to the word before it), judged on the
+ * text as written; (3) what `redact` finds. All three are spans of the same text, masked once as their union, so a value or a run that
+ * overlaps a token's start cannot leave its body (review of PR 1236); then `redact` once more. With nothing from (1) or (2) the result
+ * is `redact(s)`, as before.
  */
-function maskKeepingMarkdown(text: unknown, values: readonly string[]): { text: string; changed: boolean } {
-  const original = typeof text === 'string' ? text : text == null ? '' : String(text);
-  let s = original;
-  const vals = [...new Set(values.filter((v) => typeof v === 'string' && v.length >= 4))].sort((a, b) => b.length - a.length);
-  for (const v of vals) if (s.includes(v)) s = s.split(v).join(MASK);
+function maskCore(s: string, vals: readonly string[], env: Env): string {
+  const spans: Array<[number, number]> = [];
+  for (const v of vals) for (let i = s.indexOf(v); i >= 0; i = s.indexOf(v, i + v.length)) spans.push([i, i + v.length]);
   if (vals.length) {
-    s = maskAcrossMarks(s, (k) => {
+    spans.push(...spansAcrossMarks(s, (k) => {
       const out: Array<[number, number]> = [];
       for (const v of vals) for (let i = k.indexOf(v); i >= 0; i = k.indexOf(v, i + v.length)) out.push([i, i + v.length]);
       return out;
-    });
+    }));
   }
-  s = maskAcrossMarks(s, (k, at, u) => {
+  spans.push(...spansAcrossMarks(s, (k, at, u) => {
     const out: Array<[number, number]> = [];
     // a run of `u` (marks are not run characters) that `redact` changes on its own, with the token characters glued after it across marks
     const kIndex = new Map<number, number>();
@@ -1708,7 +1776,7 @@ function maskKeepingMarkdown(text: unknown, values: readonly string[]): { text: 
       const touches = (i > 0 && NOTE_MARK.test(u[i - 1])) || (i + m[0].length < u.length && NOTE_MARK.test(u[i + m[0].length]));
       if (!touches) continue;
       let hit = seen.get(m[0]);
-      if (hit === undefined) { hit = redact(m[0]) !== m[0]; seen.set(m[0], hit); }
+      if (hit === undefined) { hit = redact(m[0], env) !== m[0]; seen.set(m[0], hit); }
       if (!hit) continue;
       const a = kIndex.get(i);
       const lastK = kIndex.get(i + m[0].length - 1);
@@ -1718,11 +1786,38 @@ function maskKeepingMarkdown(text: unknown, values: readonly string[]): { text: 
       out.push([a, b]);
     }
     // whatever `redact` finds in the text without marks that it did not find in the text as written
-    out.push(...changedRegions(k, redact(k)));
+    out.push(...changedRegions(k, redact(k, env)));
     return out;
-  });
-  s = redact(s);
-  return { text: s, changed: s !== original };
+  }));
+  if (!spans.length) return redact(s, env);
+  spans.push(...hiddenSpans(s, redact(s, env)));
+  return redact(maskSpans(s, spans), env);
+}
+
+/**
+ * The one core of `maskNoteText` (spec 083 FR-005) and `maskOutgoing` (spec 084 FR-033): masks text, keeping the Markdown and the
+ * text as written. `maskCore` on the text, and, when it holds hidden characters (`HIDDEN_CHARS`), also on the copy without them; the
+ * union of both is masked, so neither a hidden character inside a token nor one that glues a token to a word in the copy lets it
+ * through. Known values under 4 characters are skipped, longest first. Mask first, cut after (the caller): a secret across the cut
+ * would leave a head. `changed` says whether anything was masked. Linear: a fixed number of passes.
+ */
+function maskKeepingMarkdown(text: unknown, values: readonly string[]): { text: string; changed: boolean } {
+  const original = typeof text === 'string' ? text : text == null ? '' : String(text);
+  // longest first only for a stable order: the values are spans of one union, so a shorter value inside a longer one cannot leave a piece
+  const vals = [...new Set(values.filter((v) => typeof v === 'string' && v.length >= 4))].sort((a, b) => b.length - a.length);
+  const env = snapshot(); // the environment's secrets read once for every pass of this call, not once per pass
+  let out = maskCore(original, vals, env);
+  const c = unhide(original);
+  if (c !== original) {
+    const copy = maskCore(c, vals, env);
+    if (copy !== c) {
+      const at = unhiddenIndex(original);
+      const spans = hiddenSpans(original, out);
+      for (const [a, b] of hiddenSpans(c, copy)) if (b > a) spans.push([at[a], at[b - 1] + 1]);
+      out = redact(maskSpans(original, spans), env);
+    }
+  }
+  return { text: out, changed: out !== original };
 }
 
 /** Spec 083 FR-005 (D3): the mask every note passes before it is stored; `changed` is the note's `hidden`. See `maskKeepingMarkdown`. */

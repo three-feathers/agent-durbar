@@ -2,6 +2,7 @@
  * Spec 095 T013 (FR-030, SC-002): the conversation search's masking, `npm run test:convmask`. Synthetic secrets only (built from parts, so
  * no real-looking token sits in the repo); no credits, no network, no fs write.
  */
+import './safetext-shared'; // the compiled hidden-character module for safetext.js (spec 084 FR-033)
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -204,7 +205,8 @@ assert.ok(windows > 600, `enough windows (${windows})`);
     }
   }
   assert.strictEqual(maskWork('abcdefghijklmn '.repeat(10)), Math.ceil(150 * 0.55), 'no marks: runs cost nothing extra');
-  assert.strictEqual(maskWork('x'.repeat(100), true), Math.ceil(100 * 0.55 * 2), 'hidden characters: two passes');
+  assert.strictEqual(maskWork('x'.repeat(100), true), Math.ceil(100 * 0.55 * 3), 'hidden characters: three passes (text, copy, union)');
+  assert.strictEqual(maskWork('**' + 'x'.repeat(98), true), Math.ceil((100 * 2.5 + 250) * 3), 'hidden characters and a mark: three marked passes (the run next to the mark too)');
   // review of spec 084 T012 (2026-11-06): a carriage return is a line end, not a split mark, so a long CRLF message costs what its LF
   // version costs and stays inside one mask's budget (Windows parity: with CR a mark, 400 CRLF lines cost 152,000 and were dropped)
   const lf = 'Line with words, a long_identifier_name and release_notes.\n'.repeat(400);
@@ -213,9 +215,11 @@ assert.ok(windows > 600, `enough windows (${windows})`);
   assert.strictEqual(maskWork(lf), Math.ceil(lf.length * 0.55), 'LF lines: no marks');
   assert.strictEqual(maskWork(crlf), Math.ceil(crlf.length * 0.55), 'CRLF lines: no marks either, the same price per character as LF');
   assert.ok(maskWork(crlf) <= MASK_CALL_WORK, `a ${crlf.length}-character CRLF message fits one mask (${maskWork(crlf)})`);
-  // the same review, 2026-11-06: a variation selector (U+FE0F, in a warning sign or a heart) is not a split mark, so one emoji does not
-  // price a long message as marked (with U+FE0F a mark, one emoji in 20,000 characters cost 51,633 and the message was dropped)
-  for (const emoji of ['\u26a0\ufe0f', '\u2764\ufe0f']) {
+  // the same review and PR 1236, 2026-11-06: a variation selector or a joiner (in a warning sign, a heart, a joined emoji) is a hidden
+  // character, not a Markdown mark, so one emoji does not price a long message as marked (as a mark, one emoji in 20,000 characters cost
+  // 51,633 and the message was dropped); the caller prices hidden characters as three passes
+  assert.ok(maskWork('Heads up \u2764\ufe0f ' + lf.slice(0, 15_000), true) <= MASK_CALL_WORK, 'three passes of a 15,000-character message with an emoji fit one mask');
+  for (const emoji of ['\u26a0\ufe0f', '\u2764\ufe0f', '\u{1F468}\u200d\u{1F4BB}']) { // a warning sign, a heart, a joined emoji
     const withEmoji = `Heads up ${emoji} ` + lf;
     assert.strictEqual(maskWork(withEmoji), Math.ceil(withEmoji.length * 0.55), `one ${emoji} keeps the price per character of plain text`);
     assert.ok(maskWork(withEmoji) <= MASK_CALL_WORK, `a long message with ${emoji} fits one mask`);

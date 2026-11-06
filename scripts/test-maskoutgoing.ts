@@ -6,7 +6,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { assertLinearShape } from './redact-growth-lib';
-import { NOTE_MARK, maskNoteText, maskOutgoing } from '../src/shared/redact';
+import { HIDDEN_CHARS, NOTE_MARK, maskNoteText, maskOutgoing, redact } from '../src/shared/redact';
 
 // test-redact.ts's corpus (§3 `planted`), one sample per kind, with the part that must never survive
 const CORPUS: Array<[string, string, string]> = [
@@ -86,51 +86,127 @@ assert.deepStrictEqual(maskOutgoing(undefined), { text: '', changed: false });
 assert.deepStrictEqual(maskOutgoing(12345 as unknown as string), { text: '12345', changed: false });
 assert.deepStrictEqual(maskOutgoing('fine', null as unknown as string[]), { text: 'fine', changed: false });
 
-// review of T012 (2026-11-06): a control or an invisible format character inside a token or a known value is a split mark too, so a
-// viewer that drops it cannot show a secret the check missed; tab, line feed and carriage return are not marks (they end a token or a line)
-const INVISIBLE: Array<[string, string]> = [
-  ['U+0001', '\u0001'], ['U+001B', '\u001b'], ['U+000C', '\u000c'], ['U+007F', '\u007f'], ['U+0085', '\u0085'], ['U+00AD', '\u00ad'],
-  ['U+034F', '\u034f'], ['U+061C', '\u061c'], ['U+115F', '\u115f'], ['U+17B4', '\u17b4'], ['U+180E', '\u180e'], ['U+200B', '\u200b'],
-  ['U+200E', '\u200e'], ['U+200F', '\u200f'], ['U+202A', '\u202a'], ['U+202E', '\u202e'], ['U+2060', '\u2060'], ['U+2064', '\u2064'],
-  ['U+2066', '\u2066'], ['U+2069', '\u2069'], ['U+3164', '\u3164'], ['U+1160', '\u1160'], ['U+FEFF', '\ufeff'], ['U+FFA0', '\uffa0'],
-];
+// Review of PR 1236 (2026-11-06): every code point that can sit invisibly inside a token, BMP and astral, walked one by one. A case
+// leaks when the output with that character removed (what a viewer that drops it shows) still holds the token's tail or a piece of
+// the known value. The sets come from the Unicode properties themselves, so a character the list missed cannot hide here.
+const cps = (re: RegExp): number[] => { const out: number[] = []; for (let cp = 0; cp <= 0x10ffff; cp++) { if (cp >= 0xd800 && cp <= 0xdfff) continue; if (re.test(String.fromCodePoint(cp))) out.push(cp); } return out; };
+const CF = cps(/^\p{Cf}$/u);
+const DI = cps(/^\p{Default_Ignorable_Code_Point}$/u);
+const CC = cps(/^\p{Cc}$/u).filter((cp) => cp !== 9 && cp !== 10 && cp !== 13);
+const ZS = cps(/^\p{Zs}$/u);
+const NEAR_INVISIBLE = [0x2006, 0x2008, 0x2009, 0x200a, 0x202f, 0x205f]; // six-per-em, punctuation, thin, hair, narrow no-break, medium math
+assert.ok(CF.length >= 170 && DI.length >= 4174 && CC.length === 62 && ZS.length >= 17, `the property sets are complete (${CF.length} Cf, ${DI.length} DI, ${CC.length} Cc, ${ZS.length} Zs)`);
+const WALK = [...new Set([...CF, ...DI, ...CC, 0x2028, 0x2029, ...NEAR_INVISIBLE])].sort((a, b) => a - b);
 const VAL = 'plain-' + 'known-' + 'value7';
-for (const [cp, c] of INVISIBLE) {
-  for (const [name, v, part] of CORPUS) {
-    for (const i of splitAt(v, part)) {
-      const t = msg(v.slice(0, i) + c + v.slice(i));
-      texts.push(t);
-      const r = maskOutgoing(t);
-      assert.strictEqual(r.changed, true, `${name} split by ${cp} at ${i}: changed`);
-      assert.ok(!r.text.split(c).join('').includes(secretOf(v, part)), `${name} split by ${cp}: secret gone (${JSON.stringify(r.text)})`);
-    }
+const G = CORPUS[0][1];
+const hex = (cp: number): string => 'U+' + cp.toString(16).toUpperCase().padStart(4, '0');
+let walked = 0;
+for (const cp of WALK) {
+  const c = String.fromCodePoint(cp);
+  assert.ok(HIDDEN_CHARS.test(c), `${hex(cp)} is a hidden character`);
+  for (const at of cp < 0x10000 && (CF.includes(cp) || CC.includes(cp) || cp < 0x3000) ? [2, 9, 30] : [9]) { // three places in the BMP, one for the rest (time)
+    const t = `Hi Alex, ${G.slice(0, at)}${c}${G.slice(at)} thanks`;
+    const r = maskOutgoing(t);
+    const seen = r.text.split(c).join('');
+    assert.ok(r.changed && !seen.includes(G.slice(-12)) && !seen.includes(G.slice(at, at + 8)), `${hex(cp)} inside a token at ${at}: caught (${JSON.stringify(r.text)})`);
+    walked++;
   }
-  const kv = msg(VAL.slice(0, 7) + c + VAL.slice(7));
-  texts.push(kv);
-  const r = maskOutgoing(kv, [VAL]);
-  assert.strictEqual(r.changed, true, `known value split by ${cp}: changed`);
-  assert.ok(!/plain-|known-|value7/.test(r.text), `known value split by ${cp}: no piece left (${JSON.stringify(r.text)})`);
+  const r = maskOutgoing(`pass ${VAL.slice(0, 7)}${c}${VAL.slice(7)} end`, [VAL]);
+  assert.ok(r.changed && !/plain-|known-|value7/.test(r.text.split(c).join('')), `${hex(cp)} inside a known value: caught (${JSON.stringify(r.text)})`);
+  walked++;
 }
-for (const c of ['\t', '\n', '\r', ' ']) assert.ok(!NOTE_MARK.test(c), `${JSON.stringify(c)} is not a split mark`);
-for (const t of ['Line one\r\nline two with release_notes\r\n', 'Love it ❤\ufe0f and 👨\u200d💻, see #701.', 'a\u00adb soft hyphen, \u200eltr mark, x\u2060y']) {
+if (texts.length < 2000) for (const cp of [0x00ad, 0x200b, 0x2060, 0xfe0f, 0xe0001, 0x1d173, 0xfff9, 0x0600]) texts.push(`Hi ${G.slice(0, 9)}${String.fromCodePoint(cp)}${G.slice(9)} ok`);
+// tab, line feed and carriage return end a token or a line: neither hidden characters nor marks (a CRLF text costs as its LF one)
+for (const c of ['\t', '\n', '\r', ' ']) assert.ok(!NOTE_MARK.test(c) && !HIDDEN_CHARS.test(c), `${JSON.stringify(c)} is neither a mark nor hidden`);
+// [KNOWN GAP] (spec 084 FR-033): a visible space (every other \p{Zs}: U+0020, no-break, en and em spaces, figure, ideographic...) is a
+// visible gap, so a token split by one is two words to the check; the person sees the gap in the preview
+for (const cp of ZS.filter((x) => !NEAR_INVISIBLE.includes(x))) {
+  assert.ok(!HIDDEN_CHARS.test(String.fromCodePoint(cp)), `${hex(cp)} (a visible space) is not hidden`);
+  assert.strictEqual(maskOutgoing(`a ${G.slice(0, 12)}${String.fromCodePoint(cp)}${G.slice(12)} b`).text.includes(G.slice(-12)), true, `${hex(cp)}: the recorded gap (update the spec when it closes)`);
+}
+// real scripts and emoji keep their joiners: text with hidden characters and no secret comes back as written
+for (const t of ['Line one\r\nline two with release_notes\r\n', 'Love it ❤\ufe0f and \u{1F468}\u200d\u{1F4BB}, see #701.', 'a\u00adb soft hyphen, \u200eltr mark, x\u2060y', 'Persian می\u200cخواهم, thin\u2009space, flag \u{1F3F4}\u{E0067}\u{E0062}\u{E007F}']) {
   texts.push(t);
-  assert.deepStrictEqual(maskOutgoing(t), { text: t, changed: false }, `plain text with invisible characters unchanged: ${JSON.stringify(t)}`);
+  assert.deepStrictEqual(maskOutgoing(t), { text: t, changed: false }, `plain text with hidden characters unchanged: ${JSON.stringify(t)}`);
 }
-// [KNOWN GAP] (spec 084 FR-033, decided 2026-11-06): the variation selectors are not marks (U+FE0F is in common emoji, and a mark makes
-// `maskWork` price the whole message as marked), so a token or a known value split by one is not found; update the spec when it closes
+// the text around a caught token keeps its hidden characters as written
+assert.strictEqual(maskOutgoing(`ok ❤\ufe0f then ${G.slice(0, 9)}\u200b${G.slice(9)} end`).text, 'ok ❤\ufe0f then [redacted] end', 'only the token is masked; the emoji stays');
+// a hidden character that glues a token to the word before it in the copy: the text as written still finds it (union of both passes)
+assert.ok(!maskOutgoing(`word\u200b${G} and ${CORPUS[4][1]}`).text.includes(G.slice(-12)), 'a token after a hidden character next to a word is masked');
+// the AWS shape refuses a letter before it, so in the copy `wordAKIA…` is no key; the copy still finds the other token, and only the union
+// with the text as written masks both
+assert.strictEqual(maskOutgoing(`word\u200b${CORPUS[8][1]} and ${G}`).text, 'word\u200b[redacted] and [redacted]', 'the union of the copy and the text as written');
 {
-  const g = CORPUS[0][1];
-  for (const c of ['\ufe00', '\ufe0f']) {
-    assert.ok(!NOTE_MARK.test(c), `${JSON.stringify(c)} is not a split mark`);
-    assert.strictEqual(maskOutgoing(`a ${g.slice(0, 10)}${c}${g.slice(10)} b`).changed, false, 'variation selectors: the recorded gap (token)');
-    assert.strictEqual(maskOutgoing(`a ${VAL.slice(0, 7)}${c}${VAL.slice(7)} b`, [VAL]).changed, false, 'variation selectors: the recorded gap (known value)');
+  const A = CORPUS[8][1];
+  const out = maskOutgoing(`word\u200b${A.slice(0, 2)}**${A.slice(2)}** and ${G}`).text;
+  assert.ok(!out.replace(/\*/g, '').includes(A.slice(-12)) && !out.includes(G.slice(-12)), `a split token only the text as written finds, beside one the copy finds: both masked (${JSON.stringify(out)})`);
+}
+
+// review of the PR 1236 batch, finding 3: astral hidden characters are two code units; the map from the copy back to the text counts both
+assert.strictEqual(maskOutgoing('ok \u{E0001} ' + G.slice(0, 9) + '\u{E0020}' + G.slice(9) + ' end').text, 'ok \u{E0001} [redacted] end', 'an astral hidden character before and inside a token: exact output');
+{
+  const LONE = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/;
+  const astral = ['\u{E0001}', '\u{E0020}', '\u{E007F}', '\u{1D173}', '\u{E0100}', '\u{1F468}\u200d\u{1F4BB}', '❤\ufe0f', '\u{1F600}', '\u200b'];
+  let seed = 7;
+  const rnd = (n: number): number => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed % n; };
+  for (let round = 0; round < 2000; round++) {
+    const parts: string[] = [];
+    for (let i = 0, n = 2 + rnd(6); i < n; i++) {
+      const pick = rnd(4);
+      if (pick === 0) { const [, v] = CORPUS[rnd(CORPUS.length)]; const at = 2 + rnd(v.length - 3); parts.push(v.slice(0, at) + astral[rnd(astral.length)] + v.slice(at)); }
+      else if (pick === 1) parts.push(astral[rnd(astral.length)]);
+      else parts.push(['ok', 'abba', 'release_notes', 'x', '**b**'][rnd(5)]);
+    }
+    const text = parts.join(rnd(2) ? ' ' : '');
+    const r = maskOutgoing(text, rnd(3) ? [] : [VAL]);
+    assert.ok(!LONE.test(r.text), `no lone surrogate: ${JSON.stringify(text)} -> ${JSON.stringify(r.text)}`);
+    // every character the output shows outside the masks is from the text, in order (nothing dropped or made up)
+    const shown = r.text.split(/\[redacted(?::[^\]]*)?\]/);
+    let pos = 0;
+    for (const piece of shown) { const at = text.indexOf(piece, pos); assert.ok(at >= 0, `shown text is the text's own, in order: ${JSON.stringify(text)} -> ${JSON.stringify(r.text)}`); pos = at + piece.length; }
   }
 }
-// [KNOWN GAP] (spec 084 FR-033): astral tag characters are two code units and not in NOTE_MARK, so a token split by one is not found
+
+// review of PR 1236, finding 4: a known value that overlaps a token hides no less than `redact` does (one union of spans)
+assert.strictEqual(maskOutgoing(`x ${G} y`, ['gh' + 'p_']).text, 'x [redacted] y', 'a value at the start of a token');
 {
-  const g = CORPUS[0][1];
-  assert.strictEqual(maskOutgoing(`a ${g.slice(0, 10)}\udb40\udc01${g.slice(10)} b`).changed, false, 'astral tag characters: the recorded gap (update the spec when it closes)');
+  const GL = CORPUS[3][1];
+  assert.strictEqual(maskOutgoing(`#701 Hi ${GL}`, ['701 Hi ' + GL.slice(0, 5)]).text, '#[redacted]', 'a value from the word before into a token');
 }
+{
+  let seed = 1236;
+  const rnd = (n: number): number => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed % n; };
+  let cases = 0;
+  for (let round = 0; round < 3000; round++) {
+    const [name, v, part] = CORPUS[rnd(CORPUS.length)];
+    const secret = secretOf(v, part);
+    const before = ['', 'see ', 'key=', 'x '][rnd(4)];
+    const after = ['', ' now', '.', ' and more'][rnd(4)];
+    let tok = v;
+    const split = rnd(3);
+    if (split) { const i = 2 + rnd(v.length - 3); tok = v.slice(0, i) + (split === 1 ? '**' : '`') + v.slice(i) + (split === 1 ? '**' : '`'); }
+    const t = `Note: ${before}${tok}${after} end`;
+    const a = rnd(t.length - 4);
+    const value = t.slice(a, a + 4 + rnd(Math.min(24, t.length - a - 4) + 1));
+    if (value.length < 4) continue;
+    const r = maskOutgoing(t, [value]);
+    const flat = r.text.replace(/[*`]/g, '');
+    assert.ok(redact(t).replace(/[*`]/g, '') !== t.replace(/[*`]/g, '') || split, 'sanity: redact finds the token');
+    for (let j = 0; j + 8 <= secret.length; j++) assert.ok(!flat.includes(secret.slice(j, j + 8)), `${name} with value ${JSON.stringify(value)} in ${JSON.stringify(t)}: hides what redact hides (got ${JSON.stringify(r.text)})`);
+    assert.ok(!r.text.includes(value), `the value itself is masked: ${JSON.stringify(value)} in ${JSON.stringify(r.text)}`);
+    cases++;
+  }
+  assert.ok(cases > 2500, `overlap cases run (${cases})`);
+}
+
+// review of PR 1236, finding 5: a token-like run followed (not preceded) by a mark, where the text without marks no longer matches
+// the shape (a fixed-length key glued to capitals): only the run itself shows the shape
+assert.ok(!maskOutgoing(`k ${CORPUS[8][1]}**WORDS**`).text.includes(CORPUS[8][1].slice(-12)), 'a run that touches a mark only after it is checked on its own');
+// (checking only the mark before a run is an equivalent mutant now: a run is maximal, so the character before it is no run character,
+// and `redact` on the text as written, whose spans join the union, sees the run with the mark after it as a boundary)
+// a list that is not an array is no list: never a throw
+for (const bad of ['abcd', { length: 1, 0: 'fine' }, 42, true]) assert.deepStrictEqual(maskOutgoing('fine abcd', bad as unknown as string[]), { text: 'fine abcd', changed: false }, `values ${JSON.stringify(bad)}: ignored`);
+
 // review of T012: the 4-character boundary, and a value as long as the mask still counts as changed
 assert.deepStrictEqual(maskOutgoing('pin abcd', ['abcd']), { text: 'pin [redacted]', changed: true }, 'a 4-character value is masked');
 const TEN = 'q7' + 'w8e9r0t1';
@@ -146,7 +222,7 @@ for (const t of texts) {
 }
 const src = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'shared', 'redact.ts'), 'utf8');
 assert.ok(!/^\s*import\s/m.test(src) && !/\brequire\(/.test(src), 'redact.ts still has no imports');
-const body = (name: string): string => (src.match(new RegExp(`export function ${name}\\([^]*?\\n}\\n`)) ?? [''])[0];
+const body = (name: string): string => (src.match(new RegExp(`export function ${name}\\([^]*?\\r?\\n}\\r?\\n`)) ?? [''])[0];
 assert.match(body('maskOutgoing'), /return maskKeepingMarkdown\(/, 'maskOutgoing delegates to the shared core');
 assert.match(body('maskNoteText'), /return maskKeepingMarkdown\(/, 'maskNoteText delegates to the shared core');
 
@@ -154,4 +230,4 @@ assert.match(body('maskNoteText'), /return maskKeepingMarkdown\(/, 'maskNoteText
 const unit = 'Hi **Alex**, see `code` and [a link](https://example.invalid/a); ' + CORPUS[0][1] + ' and release_notes.\n';
 assertLinearShape('outgoing text', (x) => void maskOutgoing(x, [V1]), (n) => unit.repeat(Math.ceil(n / unit.length)).slice(0, n), 200_000);
 
-console.log(`mask outgoing: ${texts.length} texts, every corpus kind in Markdown and split, plain text unchanged, known values, one core with maskNoteText, linear`);
+console.log(`mask outgoing: ${walked} hidden-character cases over ${WALK.length} code points, ${texts.length} texts, every corpus kind in Markdown and split, plain text unchanged, known values, one core with maskNoteText, linear`);

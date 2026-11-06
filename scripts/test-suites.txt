@@ -8,6 +8,7 @@ test:attachments
 test:vscode
 test:runtime-core
 test:runtime-redact
+test:maskoutgoing
 test:runtime-mcp
 test:runtime-sandbox
 test:history
