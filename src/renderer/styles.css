@@ -2190,8 +2190,8 @@ body.has-csearch .cs-box{display:flex}
 .cs-mag{display:none;height:var(--h-ctl);width:var(--h-ctl);padding:0;align-items:center;justify-content:center}
 .topbar.tb-search .cs-mag{display:inline-flex}
 .topbar.tb-search .cs-box input{display:none}
-.topbar.tb-search .cs-box.open input{display:block;position:absolute;right:0;top:calc(100% + 6px);width:260px;z-index:40;box-shadow:0 6px 18px rgba(40,30,10,.16)}
-.cs-hint{position:absolute;right:0;top:calc(100% + 6px);z-index:41;white-space:nowrap;font-size:12px;line-height:18px;padding:4px 9px;border:1px solid var(--line);border-radius:var(--r-md);background:var(--raised);color:var(--ink-2);box-shadow:0 4px 12px rgba(40,30,10,.12)}
+.topbar.tb-search .cs-box.open input{display:block;position:absolute;right:0;top:calc(100% + 6px);width:260px;z-index:40;box-shadow:var(--shadow-pop)}
+.cs-hint{position:absolute;right:0;top:calc(100% + 6px);z-index:41;white-space:nowrap;font-size:12px;line-height:18px;padding:4px 9px;border:1px solid var(--line);border-radius:var(--r-md);background:var(--raised);color:var(--ink-2);box-shadow:var(--shadow-pop)}
 .cs-hint[hidden]{display:none}
 .topbar.tb-search .cs-box.open .cs-hint{top:calc(100% + 6px + var(--h-ctl) + 6px)}
 /* FR-004, FR-010, FR-052: the results view in #list, in the List's own grid; rows never overlap, an excerpt is at most two lines */
