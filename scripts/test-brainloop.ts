@@ -88,6 +88,21 @@ assert.ok(/^looping\? /.test(loopText(s)) && !/loop(ing)? detected|stuck|broken/
 reset(); seq(['edit', 'shell', 'edit', 'shell'], false);
 assert.strictEqual(loopText(s), 'looping? Edit ↔ Shell · 2 times · cost unknown', 'no usage event: cost unknown, never $0');
 assert.strictEqual(loopText(s, 'cost hidden while sharing'), 'looping? Edit ↔ Shell · 2 times · cost hidden while sharing');
+// F6: a repeated glyph does not restart the count or swap the order; singular; no cap at 20 pairs
+reset(); seq(['edit', 'shell', 'edit', 'shell'], false); step('shell'); step('edit'); step('shell');
+assert.ok(loopOf() && loopOf()!.a === 'edit' && loopOf()!.b === 'shell', 'the pair keeps its first-occurrence order across a repeat');
+assert.strictEqual(loopOf()!.pairs, 3, 'the count keeps running across a repeat (it did drop to 1 and swap the order)');
+assert.strictEqual(loopText(s), 'looping? Edit ↔ Shell · 3 times · cost unknown');
+reset(); seq(['edit', 'shell', 'edit', 'shell'], false); step('edit'); step('edit'); step('shell');
+assert.strictEqual(loopOf()!.pairs, 3); assert.strictEqual(loopOf()!.a, 'edit');
+reset(); seq(['edit', 'shell'], true); for (let i = 0; i < 49; i++) step(i % 2 === 0 ? 'edit' : 'shell');
+assert.ok(loopOf() && loopOf()!.pairs === 25 && loopOf()!.a === 'edit' && loopOf()!.b === 'shell', `50 alternating steps are 25 pairs, no cap at 20 and no swap (got ${JSON.stringify(loopOf())})`);
+assert.strictEqual(loopText(s), 'looping? Edit ↔ Shell · 25 times · cost unknown');
+assert.strictEqual(loopOf()!.firstN, 1, 'the loop starts at its first step');
+{
+  const one = { ...s, loop: { ...s.loop!, pairs: 1 } };
+  assert.strictEqual(loopText(one), 'looping? Edit ↔ Shell · 1 time · cost unknown', 'singular');
+}
 reset(); assert.strictEqual(loopText(s), '', 'not looping: no text');
 
 console.log('brainloop: all checks passed');

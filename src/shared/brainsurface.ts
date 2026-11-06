@@ -40,6 +40,7 @@ function cleanTarget(st: BrainStep, ctx: SurfaceCtx): string {
   try {
     if (st.targetKind === 'command') t = m.maskSecretCommand(t);
     else if (st.targetKind === 'url') t = m.maskSecretUrl(t);
+    else if (st.targetKind === 'query') t = m.maskSecretCommand(t);
   } catch { t = ''; }
   return clean(ctx, t);
 }

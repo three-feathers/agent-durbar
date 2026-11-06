@@ -17,6 +17,10 @@ export interface BrainMask {
   maskSecretUrl(url: unknown): string;
   maskHomePaths(text: unknown): string;
   maskTokenShapes(text: string, mask: string): string;
+  /** Token characters glued to a mask go into it (a secret that arrives in pieces). */
+  maskGluedTail(text: string): string;
+  /** Where an unclosed private key block starts in `text`, else -1. */
+  openKeyBlockStart(text: string): number;
 }
 
 export type GlyphId = 'think' | 'read' | 'edit' | 'shell' | 'web' | 'mcp' | 'you';
@@ -118,7 +122,8 @@ export interface BrainTurn {
 export interface TurnSummary { n: number; startedAt: number; endedAt: number; result: TurnResult; steps: number; glyphs: StepGlyph[]; costUsd: number | null }
 export type WaitKind = 'permission' | 'question' | 'limit';
 export interface Act { kind: 'rest' | 'tool' | 'think' | 'reply'; glyph: GlyphId | null; stepN: number | null }
-export interface LoopInfo { a: StepGlyph; b: StepGlyph; pairs: number; firstN: number; costUsd: number | null }
+/** `half` counts the loop's steps since it was set (pairs = half / 2, no cap); `costAt` is the turn cost when its first step began. */
+export interface LoopInfo { a: StepGlyph; b: StepGlyph; pairs: number; firstN: number; costUsd: number | null; half: number; costAt: number }
 interface Run { glyph: StepGlyph; failed: boolean; n: number; costAtStart: number }
 
 export interface BrainState {
@@ -134,6 +139,8 @@ export interface BrainState {
   wait: WaitKind | null;
   loop: LoopInfo | null;
   runs: Run[];
+  /** An unclosed private key block is being streamed: deltas are dropped until its END marker (F1). */
+  inKeyBlock: boolean;
   /** Masked tail of the latest thinking or reply text: the source of "Why:" (never raw). */
   buf: string;
   /** Cost of the current turn from usage events (USD estimate); `costKnown` false = "cost unknown", never 0 (FR-015). */
@@ -172,11 +179,13 @@ const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v)
 
 /** Fail closed: a missing or throwing mask yields no text at all, never raw text. */
 function safe(fn: (() => string) | undefined): string {
-  try { return fn ? String(fn()) : ''; } catch { return ''; }
+  try { const r = fn ? fn() : ''; return typeof r === 'string' ? r : ''; } catch { return ''; }
 }
+/** Bidi override and isolate characters can reorder what a line shows (F7): none of them is kept in any text. */
+export const stripBidi = (s: string): string => s.replace(/[\u202A-\u202E\u2066-\u2069]/g, '');
 /** FR-021: every text goes through redact (env values and shapes), home paths and token shapes. Exported for the surface formatters' tests. */
 export function maskText(mask: BrainMask, text: unknown): string {
-  return safe(() => mask.maskTokenShapes(mask.maskHomePaths(mask.redact(typeof text === 'string' ? text : text == null ? '' : String(text))), '[redacted]'));
+  return stripBidi(safe(() => mask.maskTokenShapes(mask.maskHomePaths(mask.redact(stripBidi(typeof text === 'string' ? text : text == null ? '' : String(text)))), '[redacted]')));
 }
 const cutTo = (s: string, max: number): string => {
   const one = s.replace(/\s+/g, ' ').trim();
@@ -187,7 +196,7 @@ const cutTo = (s: string, max: number): string => {
 export function initBrain(name: string, mask: BrainMask): BrainState {
   const s: BrainState = {
     name: cutTo(maskText(mask, name), NAME_MAX) || 'Agent', turn: null, turnNo: 0, history: [], counts: { read: 0, edit: 0, shell: 0, web: 0, mcp: 0 }, stepsTotal: 0,
-    act: { kind: 'rest', glyph: null, stepN: null }, wait: null, loop: null, runs: [], buf: '', turnCost: 0, costKnown: false, changedAt: 0, rev: 0, paintedRev: -1, paintedAt: -Infinity, burstStep: 0, bloom: [], sentence: '',
+    act: { kind: 'rest', glyph: null, stepN: null }, wait: null, loop: null, runs: [], inKeyBlock: false, buf: '', turnCost: 0, costKnown: false, changedAt: 0, rev: 0, paintedRev: -1, paintedAt: -Infinity, burstStep: 0, bloom: [], sentence: '',
   };
   s.sentence = sentenceOf(s);
   return s;
@@ -250,7 +259,8 @@ function targetOf(ev: Ev, glyph: GlyphId, mask: BrainMask): Target {
   const p = asText(pickString(args, PATH_KEYS), mask);
   if (p && glyph !== 'web') return { targetKind: 'file', target: cutTo(maskText(mask, p), PREVIEW_MAX), program: '', files };
   const q = asText(pickString(args, QUERY_KEYS), mask);
-  if (q) return { targetKind: 'query', target: cutTo(maskText(mask, q), PREVIEW_MAX), program: '', files };
+  // F5: a query or an Other tool's target can hold `password=…` or a flag: the command mask runs on it too
+  if (q) return { targetKind: 'query', target: cutTo(maskText(mask, safe(() => mask.maskSecretCommand(q))), PREVIEW_MAX), program: '', files };
   return none;
 }
 
@@ -271,7 +281,7 @@ function startTurn(s: BrainState, now: number): void {
   s.turnNo += 1;
   s.turn = { n: s.turnNo, startedAt: now, endedAt: null, result: null, steps: [], folded: 0, total: 0, late: 0 };
   s.act = { kind: 'rest', glyph: null, stepN: null };
-  s.wait = null; s.loop = null; s.runs = []; s.buf = ''; s.turnCost = 0; s.costKnown = false; s.bloom = []; s.burstStep = 0; s.changedAt = now;
+  s.wait = null; s.loop = null; s.runs = []; s.inKeyBlock = false; s.buf = ''; s.turnCost = 0; s.costKnown = false; s.bloom = []; s.burstStep = 0; s.changedAt = now;
 }
 
 export function usedLobes(turn: BrainTurn | null): LobeId[] {
@@ -280,13 +290,26 @@ export function usedLobes(turn: BrainTurn | null): LobeId[] {
   return out;
 }
 
+function glyphsOf(turn: BrainTurn): StepGlyph[] {
+  return turn.steps.filter((x) => (STEP_GLYPHS as readonly string[]).includes(x.glyph)).slice(-TRAIL_MAX).map((x) => x.glyph as StepGlyph);
+}
+/** F7: a late event joined the ended turn, so its history entry follows (step count, glyphs, cost). */
+function syncHistory(s: BrainState): void {
+  const t = s.turn;
+  if (!t || t.endedAt === null) return;
+  const i = s.history.findIndex((h) => h.n === t.n);
+  if (i < 0) return;
+  const h = s.history.slice();
+  h[i] = { ...h[i], steps: t.total, glyphs: glyphsOf(t), costUsd: s.costKnown ? s.turnCost : null };
+  s.history = h;
+}
+
 function endTurn(s: BrainState, now: number, result: TurnResult): void {
   const t = s.turn;
   if (!t || t.endedAt !== null) return;
   const next: BrainTurn = { ...t, endedAt: now, result };
   s.turn = next;
-  const glyphs = next.steps.filter((x) => (STEP_GLYPHS as readonly string[]).includes(x.glyph)).slice(-TRAIL_MAX).map((x) => x.glyph as StepGlyph);
-  s.history = [...s.history, { n: next.n, startedAt: next.startedAt, endedAt: now, result, steps: next.total, glyphs, costUsd: s.costKnown ? s.turnCost : null }].slice(-HISTORY_MAX);
+  s.history = [...s.history, { n: next.n, startedAt: next.startedAt, endedAt: now, result, steps: next.total, glyphs: glyphsOf(next), costUsd: s.costKnown ? s.turnCost : null }].slice(-HISTORY_MAX);
   s.loop = null; s.wait = null; s.act = { kind: 'rest', glyph: null, stepN: null }; s.bloom = usedLobes(next); s.changedAt = now;
 }
 
@@ -304,36 +327,46 @@ function evalLoop(s: BrainState): void {
     k = 2;
     while (k < L && r[L - 1 - k].glyph === (k % 2 === 0 ? A : B)) k++;
   }
-  const cost = (first: Run): number | null => (s.costKnown ? Math.max(0, s.turnCost - first.costAtStart) : null);
-  if (s.loop) {
+  const cost = (costAt: number): number | null => (s.costKnown ? Math.max(0, s.turnCost - costAt) : null);
+  const l = s.loop;
+  if (l) {
+    // F6: once set, the pair keeps its order and a running count; a repeated glyph pauses the count, it does not restart it (no RUNS_MAX cap)
     const last = r[L - 1];
-    if (last && last.glyph !== s.loop.a && last.glyph !== s.loop.b) s.loop = null; // a third tool clears it (FR-041)
-    else if (k >= 2) { const first = r[L - k]; s.loop = { a: first.glyph, b: r[L - k + 1].glyph, pairs: Math.floor(k / 2), firstN: first.n, costUsd: cost(first) }; }
-    if (s.loop) return;
+    if (!last || (last.glyph !== l.a && last.glyph !== l.b)) { s.loop = null; return; } // a third tool clears it (FR-041)
+    const half = L >= 2 && r[L - 2].glyph !== last.glyph ? l.half + 1 : l.half;
+    s.loop = { ...l, half, pairs: Math.floor(half / 2), costUsd: cost(l.costAt) };
+    return;
   }
   if (k >= 12 || (k >= 4 && r[L - 1].failed)) { // (b) 6 times whatever the results; (a) 4 steps and the last failed
     const first = r[L - k];
-    s.loop = { a: first.glyph, b: r[L - k + 1].glyph, pairs: Math.floor(k / 2), firstN: first.n, costUsd: cost(first) };
+    s.loop = { a: first.glyph, b: r[L - k + 1].glyph, pairs: Math.floor(k / 2), firstN: first.n, costUsd: cost(first.costAtStart), half: k, costAt: first.costAtStart };
   }
 }
 
 function onTool(s: BrainState, ev: Ev, now: number, mask: BrainMask): void {
   const phase = str(ev.phase);
   if (phase !== 'start' && phase !== 'update' && phase !== 'complete' && phase !== 'failed') return;
-  const callId = str(ev.callId) || str(ev.tool);
+  const given = str(ev.callId);
   const t0 = ensureTurn(s, now);
   const late = t0.endedAt !== null; // FR-005: a late event joins the ended turn, never starts one
   const turn: BrainTurn = { ...t0, steps: t0.steps.slice() };
   s.turn = turn;
+  const toolName = cutTo(maskText(mask, str(ev.tool) || 'tool'), 60);
+  // F7: calls without a callId never share a step by tool name: each start is its own step (key `~n`); a later event of the
+  // same tool closes the newest running one of them.
+  const callId = given || `~${turn.total + 1}`;
   let st: BrainStep | undefined;
   let idx = -1;
-  for (let i = turn.steps.length - 1; i >= 0; i--) if (turn.steps[i].callId === callId && turn.steps[i].state === 'running') { idx = i; st = turn.steps[i]; break; }
+  for (let i = turn.steps.length - 1; i >= 0; i--) {
+    const x = turn.steps[i];
+    if (x.state !== 'running') continue;
+    if (given ? x.callId === given : phase !== 'start' && x.callId.startsWith('~') && x.tool === toolName) { idx = i; st = x; break; }
+  }
   if (late) turn.late += 1;
   const g = glyphOf(ev.tool, ev.mcpServer);
   if (!st) {
     if (phase === 'update') return;
     const tg = targetOf(ev, g.glyph, mask);
-    const toolName = cutTo(maskText(mask, str(ev.tool) || 'tool'), 60);
     const server = ev.mcpServer ? cutTo(maskText(mask, ev.mcpServer), 40) : '';
     turn.total += 1;
     st = {
@@ -398,15 +431,28 @@ export function brainState(prev: BrainState, ev: unknown, now: number, mask: Bra
       case 'thinking': case 'output': {
         if (helper) break;
         const t = ensureTurn(s, now);
-        const raw = e.type === 'output' && e.final === true && typeof e.text === 'string' ? e.text : str(e.delta);
-        // mask the masked tail plus the new text: a token split across two deltas is whole again here
-        const joined = (e.type === 'output' && e.final === true && typeof e.text === 'string' ? '' : s.buf) + raw;
-        s.buf = maskText(mask, joined).slice(-BUF_MAX);
+        const whole = e.type === 'output' && e.final === true && typeof e.text === 'string';
+        let raw = whole ? (e.text as string) : str(e.delta);
+        if (whole) { s.inKeyBlock = false; s.buf = ''; }
+        if (s.inKeyBlock) { // inside a private key block: nothing is kept until its END marker (F1)
+          const end = /-----END[\sA-Z0-9_-]{0,100}?PRIVATE\s{1,8}KEY(?:\s{1,8}BLOCK)?-----/i.exec(raw);
+          if (!end) raw = '';
+          else { raw = raw.slice(end.index + end[0].length); s.inKeyBlock = false; }
+        }
+        if (raw) {
+          // The masked tail plus the new text: a token split across deltas is whole again here. The head of a token that was already
+          // masked leaves its tail glued to the mask in the next delta, which matches no shape: that tail goes into the mask (F1).
+          const joined = s.buf + raw;
+          let open = -1;
+          try { open = mask.openKeyBlockStart(joined); } catch { open = 0; } // a failing check fails closed: treat as open
+          if (open >= 0) s.inKeyBlock = true;
+          s.buf = safe(() => mask.maskGluedTail(maskText(mask, joined))).slice(-BUF_MAX);
+        }
         const cur = currentStep(s);
         if (t.endedAt === null && !(s.act.kind === 'tool' && cur && cur.state === 'running')) s.act = { kind: e.type === 'thinking' ? 'think' : 'reply', glyph: e.type === 'thinking' ? 'think' : null, stepN: null };
         break;
       }
-      case 'toolCall': onTool(s, e, now, mask); break;
+      case 'toolCall': onTool(s, e, now, mask); syncHistory(s); break;
       case 'permission': {
         const p = obj(e.permission);
         if (p && p.state === 'pending') { ensureTurn(s, now); if (s.turn!.endedAt === null) s.wait = 'permission'; }
@@ -426,7 +472,7 @@ export function brainState(prev: BrainState, ev: unknown, now: number, mask: Bra
       }
       case 'usage': {
         const c = e.costUsd;
-        if (typeof c === 'number' && Number.isFinite(c) && c >= 0) { s.turnCost += c; s.costKnown = true; }
+        if (typeof c === 'number' && Number.isFinite(c) && c >= 0) { s.turnCost += c; s.costKnown = true; syncHistory(s); }
         break;
       }
       default: return prev;
@@ -482,7 +528,7 @@ export function loopText(s: BrainState, costWords?: string): string {
   const l = s.loop;
   if (!l) return '';
   const cost = costWords ?? (l.costUsd === null ? 'cost unknown' : `≈ $${l.costUsd.toFixed(2)}`);
-  return `looping? ${GLYPHS[l.a].word} ↔ ${GLYPHS[l.b].word} · ${l.pairs} times · ${cost}`;
+  return `looping? ${GLYPHS[l.a].word} ↔ ${GLYPHS[l.b].word} · ${l.pairs} ${l.pairs === 1 ? 'time' : 'times'} · ${cost}`;
 }
 
 /* ---------- order and coalescing (FR-003, FR-004) ---------- */

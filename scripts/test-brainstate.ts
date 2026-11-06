@@ -3,7 +3,8 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as R from '../src/shared/redact';
-import { BrainState, FRAME_MS, GLYPHS, HISTORY_MAX, PAINT_MS, REVEAL_ORDER, STEP_CAP, TRAIL_MAX, baseName, brainState, currentStep, glyphOf, initBrain, loopText, markPainted, programOf, revealStages, sentenceOf, shouldPaint, trailOf, usedLobes } from '../src/shared/brainstate';
+import { exportText, formatStep, officeLine, sentenceFor } from '../src/shared/brainsurface';
+import { BrainState, FRAME_MS, GLYPHS, HISTORY_MAX, PAINT_MS, REVEAL_ORDER, STEP_CAP, TRAIL_MAX, baseName, brainState, currentStep, glyphOf, initBrain, loopText, markPainted, maskText, programOf, revealStages, sentenceOf, shouldPaint, trailOf, usedLobes } from '../src/shared/brainstate';
 
 const mask = R; // redact.ts's own functions, as the page passes them
 const GH = 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8';
@@ -230,6 +231,92 @@ assert.ok(big.buf.length <= 600, 'the reason buffer is bounded');
 const outp = start('bash', { command: 'ls' });
 s = feed(fresh(), [{ type: 'user' }, outp, { ...finish(outp), output: 'SECRET-OUTPUT-' + GH }]);
 assert.ok(!JSON.stringify(s).includes('SECRET-OUTPUT'), 'tool output is never kept (FR-074)');
+
+// ---- F1/F2 (review of PR 1226): a secret that arrives in pieces never leaves any part of itself in the state or on any surface
+{
+  const SK2 = 'sk-proj-' + 'aB3dE5gH7jK9mN1pQ3sT5vW7yZ0bC2dE4fG6hI8';
+  const TOKENS: Record<string, string> = {
+    gh: GH, skproj: SK2, sklive: 'sk-live-' + 'a1B2c3D4e5F6g7H8i9J0k1L2', xoxb: 'xoxb-123456789012-1234567890123-' + 'AbCdEfGhIjKlMnOpQrStUvWx',
+    pat: 'github_pat_' + '11ABCDEFG0123456789_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcd',
+    jwt: 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.' + 'abcdefghijKLMNOPQRSTUVWXYZ0123', aws: 'aws_secret_access_key=' + 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY',
+  };
+  /** Every 8-character slice of the secret part of a token. */
+  const slices = (tok: string): string[] => { const c = tok.replace(/^aws_secret_access_key=/, ''); const out: string[] = []; for (let i = 0; i + 8 <= c.length; i++) out.push(c.slice(i, i + 8)); return out; };
+  const surfaces = ['office', 'card', 'front', 'transcript', 'turnmap', 'export', 'share'] as const;
+  const check = (label: string, state: BrainState, tok: string): void => {
+    const all = [JSON.stringify(state)];
+    const cur = currentStep(state);
+    if (cur) for (const sf of surfaces) all.push(formatStep(sf, cur, { mask }));
+    all.push(sentenceFor(state, { mask }), exportText(state.turn ? state.turn.steps : [], { mask }));
+    for (const x of slices(tok)) for (const text of all) assert.ok(!text.includes(x), `${label}: "${x}" survived in "${text.slice(0, 120)}"`);
+  };
+  const run = (chunks: string[], kind: 'thinking' | 'output' = 'thinking'): BrainState => feed(fresh(), [{ type: 'user' }, ...chunks.map((delta) => ({ type: kind, delta })), start('bash', { command: 'ls' })], 1);
+  for (const [name, tok] of Object.entries(TOKENS)) {
+    const text = 'I will use ' + tok + ' for the call. Then go on.';
+    for (const n of [1, 3, 5, 13]) {
+      const chunks: string[] = [];
+      for (let i = 0; i < text.length; i += n) chunks.push(text.slice(i, i + n));
+      check(`${name} in ${n}-char deltas`, run(chunks), tok);
+      check(`${name} in ${n}-char output deltas`, run(chunks, 'output'), tok);
+    }
+    // the head already masks, the tail follows in the next delta (the glued-tail case)
+    const head = Math.max(12, Math.floor(tok.length * 0.6));
+    check(`${name}: a head that already matches, then its tail`, run(['Use ' + tok.slice(0, head), tok.slice(head) + ' ok.']), tok);
+    check(`${name}: head, then two tail pieces`, run(['Use ' + tok.slice(0, head), tok.slice(head, head + 4), tok.slice(head + 4)]), tok);
+  }
+  assert.strictEqual(run(['Use ' + GH.slice(0, 30), GH.slice(30) + ' ok. Done.']).turn!.steps[0].why, 'Done.', 'the mask swallows the glued tail and not the sentence after it');
+  const dot = run(['Key is ' + GH.slice(0, 30), GH.slice(30) + '.']).turn!.steps[0].why;
+  assert.ok(dot.endsWith('[redacted].') && dot.length < 40, `a full stop after a mask stays: "${dot}"`);
+  // a private key block over three chunks: nothing of its body is kept until the END marker; text after it is kept
+  const body = ['MIIEowIBAAKCAQEAx1y2z3abcdefghijkl', 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij0123456789abcdEF', 'QRSTUVWXYZ0123456789qwertyuiopasdfghjkl'];
+  const kb = run(['Key: -----BEGIN RSA PRIVATE KEY-----\n' + body[0], '\n' + body[1] + '\n', body[2] + '\n']);
+  for (const b of body) for (let i = 0; i + 8 <= b.length; i += 3) assert.ok(!JSON.stringify(kb).includes(b.slice(i, i + 8)), `key body slice "${b.slice(i, i + 8)}" survived`);
+  assert.strictEqual(kb.inKeyBlock, true, 'an open key block is remembered');
+  const kc = feed(fresh(), [{ type: 'user' }, { type: 'thinking', delta: 'Key: -----BEGIN RSA PRIVATE KEY-----\n' + body[0] }, { type: 'thinking', delta: body[1] + '\n' + body[2] + '\n-----END RSA PRIVATE KEY-----\nSafe words. Next I will run it.' }, start('bash', { command: 'ls' })]);
+  assert.strictEqual(kc.inKeyBlock, false, 'the END marker closes it');
+  assert.strictEqual(kc.turn!.steps[0].why, 'Next I will run it.', 'text after the END marker is kept');
+  for (const b of body) assert.ok(!JSON.stringify(kc).includes(b.slice(0, 10)), 'the closed block left nothing');
+  assert.strictEqual(feed(kc, [{ type: 'user' }]).inKeyBlock, false, 'a new turn starts outside a block');
+}
+// F7: a mask returning a non-string yields no text, never a coerced object
+assert.strictEqual(maskText({ ...mask, maskTokenShapes: () => ({ toString: () => 'LEAK-' + GH }) as unknown as string } as never, 'x'), '', 'a non-string result fails closed');
+assert.strictEqual(maskText({ ...mask, maskTokenShapes: () => 5 as unknown as string } as never, 'x'), '', 'a number result fails closed');
+assert.strictEqual(maskText(mask, 'a\u202Eb\u2066c\u2069d'), 'abcd', 'bidi override and isolate characters are dropped');
+assert.strictEqual(initBrain('Ada\u202E', mask).name, 'Ada', 'also in a name');
+
+// F3: the program of a command is taken from the MASKED command: a token as the first word never reaches the office cell
+{
+  const word = GH.slice(0, 20);
+  const st = feed(fresh(), [{ type: 'user' }, start('bash', { command: GH + ' --flag' }), start('bash', { command: 'FOO=1 ' + GH + ' x' })]).turn!.steps;
+  for (const x of st) {
+    assert.ok(!x.program.includes(word.slice(0, 8)) && !x.program.includes(GH.slice(8, 16)), `the program holds no part of a token: "${x.program}"`);
+    assert.ok(!officeLine(x, { mask }).includes(GH.slice(4, 12)), 'nor the office cell');
+  }
+}
+
+// F7: calls without a callId do not share one step; a late event updates the history entry
+{
+  let q = feed(fresh(), [{ type: 'user' }]);
+  q = feed(q, [{ type: 'toolCall', phase: 'start', tool: 'bash', args: { command: 'one' } }, { type: 'toolCall', phase: 'start', tool: 'bash', args: { command: 'two' } }]);
+  assert.strictEqual(q.turn!.steps.length, 2, 'two starts of one tool without callId are two steps');
+  assert.deepStrictEqual(q.turn!.steps.map((x) => x.target), ['one', 'two']);
+  q = feed(q, [{ type: 'toolCall', phase: 'complete', tool: 'bash' }]);
+  assert.deepStrictEqual(q.turn!.steps.map((x) => x.state), ['running', 'done'], 'a completion closes the newest running call of that tool');
+  q = feed(q, [{ type: 'toolCall', phase: 'failed', tool: 'bash' }]);
+  assert.deepStrictEqual(q.turn!.steps.map((x) => x.state), ['failed', 'done']);
+  assert.strictEqual(q.turn!.total, 2);
+  // late events keep the history summary true
+  let h = feed(fresh(), [{ type: 'user' }, { type: 'usage', costUsd: 0.01 }]);
+  h = call(h, 'view', { path: 'a' });
+  h = feed(h, [{ type: 'status', status: 'idle' }]);
+  assert.deepStrictEqual([h.history[0].steps, h.history[0].glyphs, h.history[0].costUsd], [1, ['read'], 0.01]);
+  h = call(h, 'bash', { command: 'ls' });
+  h = feed(h, [{ type: 'usage', costUsd: 0.02 }]);
+  assert.strictEqual(h.history[0].steps, 2, 'a late step updates the history count');
+  assert.deepStrictEqual(h.history[0].glyphs, ['read', 'shell'], 'and its glyphs');
+  assert.ok(Math.abs(h.history[0].costUsd! - 0.03) < 1e-9, 'a late usage event updates the history cost');
+  assert.strictEqual(h.history.length, 1);
+}
 
 // ---- cost (FR-015, FR-042)
 s = feed(fresh(), [{ type: 'user' }]);

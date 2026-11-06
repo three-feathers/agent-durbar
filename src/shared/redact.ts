@@ -498,6 +498,15 @@ export function redactMarkdown(u: string, k: string, env?: Env): string {
   return m;
 }
 
+/**
+ * Spec 106 FR-021 (review of PR 1226, F1): token characters glued to a mask are the tail of a secret whose head was already masked (a
+ * secret that arrives in pieces: the head masks, the next piece is appended raw and matches no shape). They go into the mask. A `.` or
+ * `:` counts only when more token characters follow, so "[redacted]." at the end of a sentence keeps its full stop. Linear.
+ */
+export function maskGluedTail(text: string): string {
+  return text.replace(/\[redacted(?::[A-Za-z0-9_.-]{1,64})?\](?:[A-Za-z0-9_\-~+/=@%]|[.:](?=[A-Za-z0-9_\-~+/=@%.:]))+/g, '[redacted]');
+}
+
 const MASK = '[redacted]';
 /** T065 (#374): a string longer than this is replaced by `[redacted]` whole, before any rule runs and never cut, so a 1 MB arg costs nothing. Above the 4096 display cap (T054) and the 4096 per-arg limit of per-folder extras (FR-022). */
 export const MASK_INPUT_MAX = 12288;

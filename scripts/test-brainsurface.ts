@@ -75,7 +75,7 @@ for (const [label, tool, args] of INPUTS) {
 
 // ---- the same inputs fed to each formatter UNMASKED (a surface stays safe on its own: FR-086 "each surface's formatter")
 for (const [label, tool, args] of INPUTS) {
-  const identity: BrainMask = { redact: (t) => String(t ?? ''), maskSecretCommand: (c) => String(c ?? ''), maskSecretArgs: (a) => [...a], maskSecretUrl: (u) => String(u ?? ''), maskHomePaths: (t) => String(t ?? ''), maskTokenShapes: (t) => t };
+  const identity: BrainMask = { redact: (t) => String(t ?? ''), maskSecretCommand: (c) => String(c ?? ''), maskSecretArgs: (a) => [...a], maskSecretUrl: (u) => String(u ?? ''), maskHomePaths: (t) => String(t ?? ''), maskTokenShapes: (t) => t, maskGluedTail: (t) => t, openKeyBlockStart: () => -1 };
   const { step: dirty } = stepFrom(tool, args, identity); // the state built by a mask that masks nothing
   const raw = JSON.stringify(dirty);
   assert.ok(leaks(raw).length > 0, `${label}: the unmasked fixture really holds a secret (else this test proves nothing)`);
@@ -91,6 +91,34 @@ for (const [label, tool, args] of INPUTS) {
   assert.deepStrictEqual(leaks(officeTag('Ada ' + GH + '/x', dirty, ctx())), [], `${label}: a token in the agent name`);
   assert.ok(!/[\\/]/.test(officeTag('Ada/Bob\\C', dirty, ctx())), 'no slash in the office tag even from the name');
   assert.deepStrictEqual(leaks(orbName('Ada ' + GH, ctx())), [], 'orb name');
+}
+
+// ---- F4: a step whose tool, server or "Other tool" name holds a token, handed to every surface UNMASKED: the outer clean() of each line must catch it
+{
+  const { step } = stepFrom('bash', { command: 'ls' });
+  const SECRET8 = [GH.slice(0, 8), GH.slice(8, 16), GH.slice(16, 24)];
+  const holds = (cell: string): boolean => SECRET8.some((x) => cell.includes(x)) || cell.includes(GH);
+  for (const dirty of [
+    { ...step, glyph: 'mcp' as const, word: 'MCP', server: 'srv-' + GH, tool: 'tool-' + GH, other: '' },
+    { ...step, other: GH, tool: GH },
+    { ...step, glyph: 'mcp' as const, word: 'MCP', server: '', tool: GH, other: '' },
+  ]) for (const surface of ['card', 'front', 'transcript', 'turnmap', 'export'] as Surface[]) assert.ok(!holds(formatStep(surface, dirty, ctx())), `a token in the tool or server name on ${surface}: "${formatStep(surface, dirty, ctx())}"`);
+  assert.ok(!holds(turnMapLine({ ...step, glyph: 'mcp', server: 'srv', tool: GH, other: '' }, ctx())), 'turnMapLine masks its whole line');
+}
+
+// ---- F5: a query and an "Other tool" target go through the command mask too; F7: bidi characters never reach a line
+{
+  for (const [tool, args] of [['grep', { pattern: 'password=hunter2xyz' }], ['web_search', { query: 'login password=hunter2xyz now' }], ['spawn_agent', { query: 'x --password=hunter2xyz' }], ['grep', { pattern: 'run --password hunter2xyz' }], ['web_search', { query: 'curl --token hunter2xyz' }], ['spawn_agent', { query: 'tool --api-key hunter2xyz' }]] as [string, unknown][]) {
+    const { state, step } = stepFrom(tool, args);
+    assert.ok(!JSON.stringify(state).includes('hunter2xyz'), `${tool}: the state holds no password`);
+    for (const surface of SURFACES) assert.ok(!formatStep(surface, step, ctx()).includes('hunter2xyz'), `${tool} on ${surface}`);
+    const raw = { ...step, targetKind: 'query' as const, target: 'run --password hunter2xyz' };
+    for (const surface of ['card', 'transcript', 'turnmap', 'export'] as Surface[]) assert.ok(!formatStep(surface, raw, ctx()).includes('hunter2xyz'), `${tool} on ${surface} from an unmasked query step`);
+  }
+  const { step } = stepFrom('bash', { command: 'ls' });
+  const bidi = { ...step, why: 'a\u202Eb\u2066c\u2069d', target: 'ls\u202Ex' };
+  for (const surface of ['card', 'transcript', 'turnmap'] as Surface[]) assert.ok(!/[\u202A-\u202E\u2066-\u2069]/.test(formatStep(surface, bidi, ctx())), `no bidi override on ${surface}`);
+  assert.ok(!/[\u202A-\u202E\u2066-\u2069]/.test(orbName('Ada\u202Ex', ctx())) && !/[\u202A-\u202E\u2066-\u2069]/.test(officeTag('Ada\u2067x', step, ctx())), 'nor in a name');
 }
 
 // ---- the checker catches a planted mutation: a surface that skips masking would fail leaks()
