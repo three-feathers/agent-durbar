@@ -585,7 +585,7 @@ async function main(): Promise<void> {
     cache.set('/w/x', [], [{ id: 't1', title: 'kept', startTime: 1, modifiedTime: 2 }], Date.now());
     ipc.dropKept();
     assert.strictEqual(cache.size(), 0, 'dropKept drops the kept titles');
-    assert.ok(/registerPreviousIpc\(\{ sessionsChanged: \(\) => convSearch\.dropKept\(\),/.test(read('src/main/main.ts')), 'main.ts points sessionsChanged at the search');
+    assert.ok(/registerPreviousIpc\(\{ browserGone, sessionsChanged: \(\) => convSearch\.dropKept\(\),/.test(read('src/main/main.ts')), 'main.ts points sessionsChanged at the search');
     assert.ok(/changed: \(\) => deps\.sessionsChanged\?\.\(\) \}/.test(read('src/main/ipc/previous.ts')), 'previous.ts hands it to PrevSessions');
   }
 
