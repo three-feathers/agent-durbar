@@ -167,7 +167,7 @@ export function register(deps: ConvSearchIpcDeps): { cancelAll(): void; dropKept
   ipcHandle('search:clear', (e): { ok: boolean } => {
     if (!fromApp(e)) return { ok: false };
     if (live?.sender === e.sender) stopLive();
-    dropCache();
+    if (cacheOwner === e.sender) dropCache(); // review of PR 1232 (Q2): another window's clear leaves this box session's titles alone
     return { ok: true };
   });
 
