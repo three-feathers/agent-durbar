@@ -2261,21 +2261,42 @@ function sizeComposer(){const t=$('msgInput');if(!t)return;const lim=composerLim
   const g=$('composerGrip');if(g){g.setAttribute('aria-valuenow',String(h));g.setAttribute('aria-valuemin',String(lim.min));g.setAttribute('aria-valuemax',String(lim.max));}}
 function setComposerChosen(h){composerChosen=h;try{if(h==null)localStorage.removeItem(CSZ.KEY);else localStorage.setItem(CSZ.KEY,String(h));}catch(e){}sizeComposer();}
 let cszRO=null,cszRaf=0;
-function wireComposerGrip(){const g=$('composerGrip'),t=$('msgInput');if(!g||!t)return;
+/* One splitter for the message box and the agent rail (spec 005 FR-044..FR-048, FR-236): pointer events only, double-click resets, the
+   window-splitter keys (DurbarComposerSize.keyStep). o: size() now, limits(), live(v) while dragging, commit(v|null) to keep (null = reset),
+   dir (+1: moving the pointer right or down grows it, -1 the other way), axis, keys (keyStep's grow/shrink), big (Shift makes the big step). */
+function wireSplitter(g,o){
   let drag=null;
-  const boxH=()=>Math.round(t.getBoundingClientRect().height);
   g.addEventListener('mousedown',e=>e.preventDefault()); /* the box keeps the focus and its caret */
-  g.addEventListener('pointerdown',e=>{if(e.button!==0)return;e.preventDefault();drag={id:e.pointerId,y:e.clientY,h:boxH(),lim:composerLimits(t),moved:false};try{g.setPointerCapture(e.pointerId);}catch(_){}});
-  g.addEventListener('pointermove',e=>{if(!drag||e.pointerId!==drag.id)return;const dy=drag.y-e.clientY;if(!drag.moved&&Math.abs(dy)<2)return;
-    if(!drag.moved){drag.moved=true;g.classList.add('dragging');}composerChosen=CSZ.clamp(drag.h+dy,drag.lim);sizeComposer();});
-  const end=e=>{if(!drag||e.pointerId!==drag.id)return;const moved=drag.moved;drag=null;g.classList.remove('dragging');try{g.releasePointerCapture(e.pointerId);}catch(_){}if(moved)setComposerChosen(composerChosen);};
+  g.addEventListener('pointerdown',e=>{if(e.button!==0)return;e.preventDefault();drag={id:e.pointerId,p:e[o.axis==='x'?'clientX':'clientY'],h:o.size(),lim:o.limits(),moved:false,v:null};try{g.setPointerCapture(e.pointerId);}catch(_){}});
+  g.addEventListener('pointermove',e=>{if(!drag||e.pointerId!==drag.id)return;const d=o.dir*(e[o.axis==='x'?'clientX':'clientY']-drag.p);if(!drag.moved&&Math.abs(d)<2)return;
+    if(!drag.moved){drag.moved=true;g.classList.add('dragging');}drag.v=CSZ.clamp(drag.h+d,drag.lim);o.live(drag.v);});
+  const end=e=>{if(!drag||e.pointerId!==drag.id)return;const d=drag;drag=null;g.classList.remove('dragging');try{g.releasePointerCapture(e.pointerId);}catch(_){}if(d.moved)o.commit(d.v);};
   g.addEventListener('pointerup',end);g.addEventListener('pointercancel',end);
-  g.addEventListener('dblclick',e=>{e.preventDefault();setComposerChosen(null);});
-  g.addEventListener('keydown',e=>{if(e.altKey||e.ctrlKey||e.metaKey||e.shiftKey||e.isComposing)return;const r=CSZ.keyStep(e.key,boxH(),composerLimits(t));if(r==null)return;
-    e.preventDefault();e.stopPropagation();setComposerChosen(r==='reset'?null:r);});
+  g.addEventListener('dblclick',e=>{e.preventDefault();o.commit(null);});
+  g.addEventListener('keydown',e=>{if(e.altKey||e.ctrlKey||e.metaKey||e.isComposing||(e.shiftKey&&!o.big))return;const r=CSZ.keyStep(e.key,o.size(),o.limits(),{grow:o.keys[0],shrink:o.keys[1],big:e.shiftKey});if(r==null)return;
+    e.preventDefault();e.stopPropagation();o.commit(r==='reset'?null:r);});
+}
+function wireComposerGrip(){const g=$('composerGrip'),t=$('msgInput');if(!g||!t)return;
+  wireSplitter(g,{axis:'y',dir:-1,keys:['ArrowUp','ArrowDown'],big:false,size:()=>Math.round(t.getBoundingClientRect().height),limits:()=>composerLimits(t),
+    live:v=>{composerChosen=v;sizeComposer();},commit:v=>setComposerChosen(v==null?null:v)});
   /* the limits follow the window and whatever opens above the chat (Previous sessions, the answer bar); once per frame */
   if(window.ResizeObserver){if(cszRO)cszRO.disconnect();else cszRO=new ResizeObserver(()=>{if(!cszRaf)cszRaf=requestAnimationFrame(()=>{cszRaf=0;sizeComposer();});});cszRO.observe($('chat'));}
   sizeComposer();
+}
+/* spec 005 FR-236 (issue 1223): the agent rail's width. The rail's right edge is a vertical splitter (default 220px, 180px to 40% of the window,
+   clamped again on every window resize); the chosen width is one value for the whole app, a display preference of this computer (localStorage,
+   never session data). It lives in the --rail-w custom property, so a rebuilt rail keeps it. */
+let railChosen=(()=>{try{return CSZ.parseRail(localStorage.getItem(CSZ.RAIL_KEY));}catch(e){return null;}})();
+function railLimits(){return CSZ.railLimits(window.innerWidth);}
+function sizeRail(live){const w=live!=null?live:CSZ.railWidth(railChosen,window.innerWidth),lim=railLimits();
+  document.documentElement.style.setProperty('--rail-w',w+'px');
+  const g=$('railGrip');if(g){g.setAttribute('aria-valuenow',String(w));g.setAttribute('aria-valuemin',String(lim.min));g.setAttribute('aria-valuemax',String(lim.max));}}
+function setRailChosen(v){railChosen=v;try{if(v==null)localStorage.removeItem(CSZ.RAIL_KEY);else localStorage.setItem(CSZ.RAIL_KEY,String(v));}catch(e){}sizeRail();}
+window.addEventListener('resize',()=>sizeRail());
+function wireRailGrip(){const g=$('railGrip'),r=g&&g.closest('.rail');if(!g||!r)return;
+  wireSplitter(g,{axis:'x',dir:1,keys:['ArrowRight','ArrowLeft'],big:true,size:()=>Math.round(r.getBoundingClientRect().width),limits:railLimits,
+    live:v=>sizeRail(v),commit:v=>setRailChosen(v)});
+  sizeRail();
 }
 function autoGrow(){sizeComposer();setSend();ntNoticeSync();}
 function setSend(){const b=$('sendBtn'),t=$('msgInput');if(!b||!t)return;const a=byId(ui.selected);const busy=a&&chats[a.id]&&chats[a.id].busy;b.setAttribute('aria-disabled',String(!!busy||(!t.value.trim()&&!attached.length)));syncRunState();}
@@ -2657,6 +2678,7 @@ function openPanel(id,focus){
   $('sendBtn').onclick=()=>{if($('sendBtn').getAttribute('aria-disabled')!=='true')sendMessage(input.value);};
   setSend(); wireToolbar(); /* spec 005 FR-037..FR-040 */
   wireComposerGrip(); /* spec 005 FR-044..FR-048 */
+  wireRailGrip(); /* spec 005 FR-236 */
   renderAll(); placeToasts(); const cur=document.querySelector('#stripList .sitem.sel'); if(cur)SCROLL.reveal(cur,{block:'nearest'});
   /* spec 074 FR-022 (issue 587): this chat's unsent text comes back */
   {const m=$('msgInput'),dr=DRAFTS.get(id);if(m&&dr){m.value=dr.t;autoGrow();}if(dr&&dr.att.length){renderAttached();setSend();}}
@@ -6921,7 +6943,7 @@ function railHTML(){
   const ib=$('inboxBtn');
   return `<nav class="rail" aria-label="Agents"><h2 class="sr-only">Agents</h2><div class="rail-top"><button class="btn back" id="backBtn" type="button" title="Back to the office (Esc)">${ICON('back')}<span>Office</span></button><!-- spec 005 FR-190: R2 (T127) puts the Plan | List switch here, R3 (T116) the collapse button --></div>
    <div class="rail-door"><button class="btn sm" id="railDoor" type="button" aria-haspopup="dialog" title="${esc(ib?ib.title:'Needs you')}"${ib&&ib.getAttribute('aria-keyshortcuts')?` aria-keyshortcuts="${esc(ib.getAttribute('aria-keyshortcuts'))}"`:''}>${ALERT_ICON}<span>Your door</span><b>0</b></button><!-- spec 052 FR-219: the red lock goes beside it (T223) --></div>
-   <div class="rail-list" id="stripList"></div></nav>`;
+   <div class="rail-list" id="stripList"></div><div class="rgrip" id="railGrip" role="separator" aria-orientation="vertical" aria-label="Resize the agent list" aria-controls="stripList" tabindex="0" title="Drag to resize the agent list. Double-click to go back to the default width."></div></nav>`;
 }
 /* "Waiting 3 min" (ATT.waitLabel, as the inbox and the Boss say it), or "Error · 3 min"; text only, never a size (052 FR-061) */
 function railAge(x,now){

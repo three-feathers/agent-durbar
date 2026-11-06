@@ -844,7 +844,7 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
    collapse, FR-216 of this spec) and two row heights only, plain 30px and tall 52px (who needs you). Nothing here grows with time. */
 body.panel-open #panel{flex-direction:row}
 #panel>.panel-in{flex:1;min-width:0}
-.rail{flex:none;width:220px;display:flex;flex-direction:column;min-height:0;background:var(--surface-2);border-right:1px solid var(--line)}
+.rail{position:relative;flex:none;width:var(--rail-w,220px);display:flex;flex-direction:column;min-height:0;background:var(--surface-2);border-right:1px solid var(--line)}
 .rail-top{flex:none;display:flex;align-items:center;gap:var(--s-2);height:40px;padding:0 var(--s-2)}
 .rail-top .back{flex:none;height:var(--h-ctl);padding:0 12px 0 8px}
 .rail-door{flex:none;display:flex;padding:0 var(--s-2) var(--s-1)}
@@ -2046,6 +2046,10 @@ h2,h3,h4{text-wrap:balance}
 @keyframes shut-peek{from{transform:scale(.9);opacity:0}to{transform:none;opacity:1}}
 /* ---- spec 005 FR-045, FR-049 (issue 592): the message box's resize handle on the composer's top edge. Tokens only; no text. ---- */
 .composer{position:relative}
+.rgrip{position:absolute;top:0;bottom:0;right:0;width:6px;cursor:ew-resize;touch-action:none;z-index:2}
+.rgrip::after{content:"";position:absolute;top:0;bottom:0;right:0;width:1px;background:transparent}
+.rgrip:hover::after,.rgrip.dragging::after{width:3px;background:var(--muted)}
+.rgrip:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
 .cgrip{position:absolute;left:0;right:0;top:0;height:8px;cursor:ns-resize;touch-action:none;z-index:1;border-radius:var(--r-sm)}
 .cgrip::after{content:"";position:absolute;left:50%;top:2px;width:36px;height:4px;margin-left:-18px;border-radius:999px;background:var(--line-2)}
 .cgrip:hover::after,.cgrip.dragging::after{background:var(--muted)}
