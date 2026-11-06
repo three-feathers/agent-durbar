@@ -26,6 +26,7 @@ Agent Durbar is an office-style desktop app to **see, chat with and coordinate A
 - **Full-screen chat** with thinking, tool calls, diffs, questions and file attachments streaming live; a browser tab in every chat. A rail on its left keeps every agent in view by folder, whoever needs you first; a folder collapses with a click.
 - **Three agent apps side by side:** Copilot, Claude Code and Codex, with one set of permission modes and model, context and spending controls.
 - **Needs you:** one inbox of every agent waiting for an answer or a permission, oldest first.
+- **Search conversations:** a box in the top bar (Ctrl+Shift+F) finds what you said in any open or earlier session and opens the chat at that message.
 - **Sessions that last:** resume after a restart or a crash, scheduled prompts, undo an agent's file changes, notes, continue in another app.
 - **MCP servers** shared across your agent apps, with health (checked at launch too), sign-in and restart from a chat or Settings, sign-ins the agent app renews by itself before a message after a quiet hour (on by default; Durbar never sees a token), per-tool switches and what each costs in context. When your organization's sign-in rules (Entra Conditional Access, for example a managed-device check) refuse a tool, the chat says so under the failed call and offers Sign in again….
 - **Two themes** (Clean Office and Retro Pixel), and your own saved themes; **four logos** to choose in Settings (the top-bar icon takes your theme's or world's colours; the app's own icon stays the same).
@@ -52,6 +53,8 @@ Agents run **locally, on your machine, as you**, in the folders you add. Every a
 - **Read-only** (the default): reads inside the session's folders only; everything else is denied.
 - **Ask first**: writes, shell commands, URLs and tools wait for *Allow once*, *Allow for this session* or *Deny*.
 - **Allow all**: no prompts. Use it only in folders you trust; it asks once to confirm.
+
+**Search conversations** runs on your computer only: Durbar reads the sessions' text through the agent apps' own files and sessions, masks every excerpt before you see it, stores nothing (no index; the earlier Codex session titles are kept in memory until you clear the box) and sends nothing. Tool output, hidden earlier sessions and the content of earlier Copilot and Codex sessions (their titles only) are not searched; when saved MCP values are locked in the vault, the results say excerpts may show them.
 
 Durbar never sees, stores or sends your tokens (each agent app reads its own sign-in) and has no accounts, servers or telemetry. It may ask Copilot or Claude Code to reconnect a chat's remote MCP servers before a message after a quiet hour, so the app renews its own sign-in; in Copilot's sandboxed modes (Read-only, Ask first) it only says when you need to sign in again (switch: *Settings > MCP servers*). Usage bills against **your** plans; a per-session spending limit is a soft limit. Details and spending caps: [docs/safety.md](docs/safety.md). Report a problem: [SECURITY.md](SECURITY.md).
 
