@@ -16,7 +16,8 @@
  *   FR-015  `simsearch=slow`: "Searching, N of M sessions" and Stop, then "Stopped."
  *   FR-014  every end-state note the scan sent (owner answer D: `simsearch=locked`, the exact text)
  *   FR-003  the palette's "Search conversations" only focuses the box; the ? sheet lists the shortcut; Settings > Keyboard changes it
- *   FR-050  a mark has a non-colour cue and readable contrast in Clean Office and Retro; Real office: the same box and results
+ *   FR-050  a mark has a non-colour cue and readable contrast in Clean Office and Retro; Real office: the same box and results;
+ *           reduced motion: the jump's outline without its fade
  *   FR-052  rows never overlap, an excerpt is at most two lines, the list scrolls inside its area
  * Screenshots: 095-search-{results,jump,searching}-<w>x<h>.png
  */
@@ -96,6 +97,14 @@ module.exports = async (ctx) => {
     assert.ok(!f1.over && f1.maxLines <= 2.05 && !f1.pageScroll && f1.inner === 'auto', `${w}: no overlap, excerpts within two lines, the list scrolls inside: ${JSON.stringify(f1)}`);
     await shot('results', w, h, { prep: 'calm', keepHover: true });
 
+    // ---- FR-033: an event for another id is ignored (the window's own check, besides main's) ----
+    const before = await js(`document.querySelectorAll('#list .cs-hit').length`);
+    await js(`window.__durbarSimUi.cs.event({kind:'batch',searchId:'f'.repeat(32),hits:[{adapter:'copilot',sessionId:'stale',agentId:window.__durbarSimUi.agents()[0].id,group:'office',app:'x',folderName:'x',title:'stale',titleMarks:[],time:0,excerpts:[],more:0}],progress:{done:1,total:1},groups:{office:1,earlier:0}})`);
+    await ctx.sleep(400);
+    assert.strictEqual(await js(`document.querySelectorAll('#list .cs-hit').length`), before, `${w}: a stale id's batch adds nothing`);
+    // ---- FR-026: clearing the box tells main (convSearchClear), counted on the simulator's bridge ----
+    await js(`(()=>{const b=window.__durbarSimUi.bridge();if(b.__csClears===undefined){b.__csClears=0;const f=b.convSearchClear;b.convSearchClear=(...a)=>{b.__csClears++;return f(...a);};}})()`);
+
     // ---- US3.3: Down from the box to the first result, J to the next ----
     await js(`document.getElementById('convSearch').focus()`);
     await key('Down', [], { char: 'never' });
@@ -149,6 +158,7 @@ module.exports = async (ctx) => {
     await js(`document.querySelector('#list [data-csnav]').focus()`);
     await key('Escape', [], { char: 'never' });
     await ok(`!document.body.classList.contains('list-mode')&&document.getElementById('convSearch').value===''&&!document.querySelector('#list .cs-hit')`, `${w}: Escape clears and goes back to the Office view`);
+    assert.ok((await js(`window.__durbarSimUi.bridge().__csClears`)) >= 2, `${w}: every clear told main (convSearchClear)`);
     await ok(`document.activeElement&&document.activeElement.dataset&&document.activeElement.dataset.id===${jsLiteral(desk)}`, `${w}: and to the desk it came from`);
 
     // ---- US2.4 (simsearch=older), FR-015 (simsearch=slow), FR-014 / owner answer D (simsearch=locked) ----
@@ -250,5 +260,22 @@ module.exports = async (ctx) => {
   await doneWith(1);
   await js(`document.querySelector('#list .cs-row ~ .cs-exs .cs-ex').click()`);
   await ok(`!!document.querySelector('#chat .bubble.nt-found')`, 'Real office: a result opens at its message');
+  // ---- FR-050: reduced motion: the jump marks the message without a fade (the outline stays, no animation) ----
+  {
+    const dbg = ctx.win.webContents.debugger;
+    if (!dbg.isAttached()) dbg.attach('1.3');
+    try {
+      await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
+      await H.load({ w: 1280, h: 800, focus: true });
+      await H.calm();
+      assert.ok(await js(`matchMedia('(prefers-reduced-motion: reduce)').matches`), 'reduced motion is emulated');
+      await typeQuery('registry');
+      await doneWith(1);
+      await js(`document.querySelector('#list .cs-row ~ .cs-exs .cs-ex').click()`);
+      await ok(`!!document.querySelector('#chat .bubble.nt-found')`, 'reduced motion: the message is marked');
+      const st = await js(`(()=>{const b=document.querySelector('#chat .bubble.nt-found'),cs=getComputedStyle(b);return {anim:cs.animationName,outline:cs.outlineStyle};})()`);
+      assert.ok(st.anim === 'none' && st.outline === 'solid', `reduced motion: an outline, no fade: ${JSON.stringify(st)}`);
+    } finally { await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [] }).catch(() => undefined); }
+  }
   console.log('[095] search conversations: all checks passed');
 };

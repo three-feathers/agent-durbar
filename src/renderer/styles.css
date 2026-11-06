@@ -2184,6 +2184,7 @@ h2,h3,h4{text-wrap:balance}
    cue (bold and an underline), every colour from the theme tokens. ---- */
 .cs-box{display:none;position:relative;align-items:center;flex:none}
 body.has-csearch .cs-box{display:flex}
+body.has-csearch.cs-demo .cs-box{visibility:hidden} /* the demo office: kept in the layout (no relayout when the demo is turned on or off), nothing to search */
 .cs-box input{height:var(--h-ctl);width:172px;border:1px solid var(--line-ctl);background:var(--surface-2);color:var(--ink);border-radius:var(--r-md);padding:0 9px;font:inherit;font-size:12.5px}
 .cs-box input::placeholder{color:var(--muted)}
 .cs-box input[aria-invalid="true"]{border-color:var(--tone-warn-line)}
