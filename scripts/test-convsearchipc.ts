@@ -42,7 +42,8 @@ async function main(): Promise<void> {
   (require('../src/main/ipcguard') as typeof import('../src/main/ipcguard')).initSimGuard(false);
   /* eslint-disable @typescript-eslint/no-require-imports */
   const { register, cleanQuery, QUERY, SHORT, NONE } = require('../src/main/ipc/convsearch') as typeof import('../src/main/ipc/convsearch');
-  const { buildScope } = require('../src/main/convscope') as typeof import('../src/main/convscope');
+  const { CODEX_LIST_GATE_MS, buildScope } = require('../src/main/convscope') as typeof import('../src/main/convscope');
+  const { DEFAULT_TIMEOUT_MS: CODEX_RPC_TIMEOUT_MS } = require('../src/adapters/codexRpc') as typeof import('../src/adapters/codexRpc');
   const { createReadGate, orderPlan, rendererScript } = require('../src/main/convsearch') as typeof import('../src/main/convsearch');
   const { createMasker } = require('../src/main/convmask') as typeof import('../src/main/convmask');
   /* eslint-enable @typescript-eslint/no-require-imports */
@@ -78,6 +79,9 @@ async function main(): Promise<void> {
     const t0 = Date.now();
     assert.strictEqual(ok(huge).cut, true);
     assert.ok(Date.now() - t0 < 200, 'a huge query is bounded before it is split');
+    // review of phase 2 (R4): the input is cut to 800 characters before it is split, so a word far behind is never reached
+    assert.deepStrictEqual(ok('abc' + ' '.repeat(900) + 'def'), { ok: true, query: 'abc', cut: true });
+    short('ab' + ' '.repeat(900) + 'cd');
     assert.deepStrictEqual(ok('.* (a|b)+ [x]').query, '.* (a|b)+ [x]', 'the query is plain text, never a pattern');
     for (const v of [undefined, null, 42, ['abc'], { q: 'abc' }]) assert.deepStrictEqual(cleanQuery(v), { ok: false, code: 'invalid' });
     assert.strictEqual(SHORT, 'Type at least 3 characters.');
@@ -238,7 +242,40 @@ async function main(): Promise<void> {
     hold = undefined;
     release();
     await settle(200);
-    assert.ok(rf.ok && win1.sent.length === 0, `${how}: nothing sent after`);
+    assert.ok(rf.ok);
+    if (how === 'cancelAll') {
+      // review of phase 2 (R2): a stop main starts tells the window once, so a cancelled close or quit does not leave it searching
+      assert.deepStrictEqual(win1.sent.map(([ch, p]) => [ch, p.kind, p.searchId === (rf as { searchId: string }).searchId, p.kind === 'done' && p.stopped, p.kind === 'done' && p.failed]), [['search:done', 'done', true, true, false]], 'exactly one done, marked stopped');
+    } else assert.strictEqual(win1.sent.length, 0, `${how}: the page that asked is gone, nothing sent`);
+  }
+  // a running scan (batches already sent) stopped by main: one stopped done with the last progress, nothing after it
+  {
+    win1.sent.length = 0;
+    let gate!: () => void;
+    const slowRead = new Promise<void>((r) => { gate = r; });
+    scopeOf = () => ({ plan: { sessions: [sess({ sessionId: 'r1', title: 'invoice one' }), sess({ sessionId: 'r2' })] }, read: async () => { await slowRead; return { ok: true, items: [{ type: 'output', text: 'invoice' }] }; }, values: () => [] });
+    const rr = await start(E1, 'invoice');
+    runDeferred();
+    for (let i = 0; i < 400 && !win1.sent.length; i++) await tick();
+    assert.ok(rr.ok && win1.sent.length === 1 && win1.sent[0][1].kind === 'batch', 'the title hit was sent');
+    ipc.cancelAll();
+    gate();
+    await settle(200);
+    const tail = win1.sent.slice(1);
+    assert.strictEqual(tail.length, 1);
+    const fin = tail[0][1];
+    assert.ok(fin.kind === 'done' && fin.stopped === true && fin.progress.done === 1 && fin.progress.total === 2, JSON.stringify(fin));
+    ipc.cancelAll();
+    await settle(20);
+    assert.strictEqual(win1.sent.length, 2, 'a second cancelAll with nothing live sends nothing');
+    win1.dead = true;
+    win1.sent.length = 0;
+    const rx = await start(E1, 'invoice');
+    runDeferred();
+    ipc.cancelAll();
+    await settle(50);
+    assert.ok(rx.ok && win1.sent.length === 0, 'nothing to a window that is gone');
+    win1.dead = false;
   }
   assert.ok(win1.listenerCount('destroyed') === 1 && win1.listenerCount('did-start-loading') === 1, 'one listener per window, not one per search');
 
@@ -274,6 +311,8 @@ async function main(): Promise<void> {
     await assert.rejects(hung, /read timed out/, 'the hung read gives up');
     assert.strictEqual(await Promise.race([next, new Promise((r) => setTimeout(() => r('blocked'), 500))]), 'second', 'the next read ran');
     assert.strictEqual(gate.inFlight(), 0, 'nothing kept');
+    const longer = createReadGate<string>({ timeoutMs: 20, wait });
+    assert.strictEqual(await longer.run('list\0f', () => new Promise<string>((r) => setTimeout(() => r('slow list'), 60)), 500), 'slow list', 'a call with its own longer limit is not cut at the default');
     const quick = createReadGate<string>({ timeoutMs: 20, wait });
     assert.strictEqual(await quick.run('k', async () => 'fast'), 'fast', 'a read in time is untouched');
   }
@@ -324,13 +363,15 @@ async function main(): Promise<void> {
     const claudeReads: unknown[][] = [];
     const valueCalls: string[] = [];
     const gateKeys: string[] = [];
+    const gateTimeouts: Array<number | undefined> = [];
+    let gateHold: Promise<void> | undefined;
     let noPrompt = false;
     const scope = await buildScope({
       agents, router, store, wsKey: (a) => a.workspaceFile ?? a.cwd, resumeIdFor: (id) => (id === 'k1' ? 'k1-resume' : id), appName: (id) => ({ copilot: 'GitHub Copilot', claude: 'Claude Code', codex: 'Codex' }[id] ?? id),
       vsUserDirs: () => [{ product: 'Test', dir: '/vs' }],
       rememberChat: (agentId, r) => remembered.push([agentId, r.summary.key]),
       values: { knownSecretValues: (k) => { valueCalls.push('known:' + k); return ['known-value-' + k.length]; }, noPrompt: () => noPrompt, secretValuesFor: (id) => { valueCalls.push('session:' + id); return ['session-value-' + id]; } },
-      gate: { run: (key, fn) => { gateKeys.push(key); return fn(); } },
+      gate: { run: (key, fn, ms) => { gateKeys.push(key); gateTimeouts.push(ms); return gateHold ? gateHold.then(fn) : fn(); } },
       claudeDir: '/claude-config',
       readClaude: (async (...a: unknown[]) => { claudeReads.push(a); return { ok: true, history: { items: [{ type: 'output', text: 'claude text' }], total: 1, truncated: false } }; }) as never,
       listChats: (async (_dirs: unknown, t: { folders: string[] }) => { chatLists.push(t.folders[0]); return { sessions: t.folders[0] === '/w/one' ? [ref('h/vs1')] : [], storesFound: 1, unreadable: 0, tooLarge: 0 }; }) as never,
@@ -363,6 +404,23 @@ async function main(): Promise<void> {
     assert.ok(rc1.ok && rc1.items.length === 2, 'the scan drops tool items itself (D2)');
     await scope.read(by('x2'), stop);
     assert.deepStrictEqual(gateKeys, ['list\0/w/three', 'list\0/w/four', 'read\0x2'], 'every Codex call that starts a process goes through the gate');
+    // review of phase 2 (R3): a listing holds the gate longer than a probe can take (two 30 s requests and the close); a read keeps the default
+    assert.deepStrictEqual(gateTimeouts, [CODEX_LIST_GATE_MS, CODEX_LIST_GATE_MS, undefined]);
+    assert.ok(CODEX_LIST_GATE_MS > 2 * CODEX_RPC_TIMEOUT_MS + 3_500, `${CODEX_LIST_GATE_MS} ms is above the probe's worst case`);
+    // review of phase 2 (R1): the session ends while its read waits at the gate: no history call (it would start an app-server)
+    {
+      let open!: () => void;
+      gateHold = new Promise<void>((r) => { open = r; });
+      const n = histories.length;
+      const waiting = scope.read(by('x2'), stop);
+      await settle(5);
+      live.delete('x2');
+      open();
+      assert.deepStrictEqual(await waiting, { ok: false, reason: 'missing' }, 'it ended at the gate: skipped');
+      assert.strictEqual(histories.length, n, 'history is never called for a session that is no longer live');
+      gateHold = undefined;
+      live.add('x2');
+    }
     live.delete('c2');
     assert.deepStrictEqual(await scope.read(by('c2'), stop), { ok: false, reason: 'missing' }, 'a session that ended meanwhile is skipped');
     const rv = await scope.read(by('h/vs1'), stop);
