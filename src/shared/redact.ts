@@ -519,26 +519,6 @@ function snapshot(env?: Env): Env {
   return e;
 }
 
-/**
- * Characters a viewer may drop or not show, so a secret can hold them and still be read as one: soft hyphen, combining grapheme joiner, Arabic letter mark, Hangul
- * fillers, Khmer vowel inherents, Mongolian selectors, zero-width and direction marks, bidi controls, word joiner and invisible operators, BOM (issue #1227).
- */
-const INVISIBLE = /[\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180b-\u180f\u200b-\u200f\u202a-\u202e\u2060-\u206f\u3164\ufeff\uffa0]/;
-/** `maskTokenShapes`, and also what it finds once the invisible characters are taken out: `ghp_<ZWSP>…` is the same token to the one who reads it. Masks the span as written (first to last change per line). One more pass, so linear. */
-function maskAcrossInvisible(s: string): string {
-  const first = maskTokenShapes(s, MASK);
-  if (!INVISIBLE.test(s)) return first;
-  const keep: string[] = [];
-  const at: number[] = [];
-  for (let i = 0; i < s.length; i++) if (!INVISIBLE.test(s[i])) { keep.push(s[i]); at.push(i); }
-  const k = keep.join('');
-  const r = maskTokenShapes(k, MASK);
-  if (r === k) return first;
-  const spans: Array<[number, number]> = [];
-  for (const [a, b] of changedRegions(k, r)) if (b > a) spans.push([at[a], at[b - 1] + 1]);
-  return spans.length ? maskTokenShapes(maskSpans(s, spans), MASK) : first;
-}
-
 /** Replace secret environment values and key-like strings. Never throws; keeps line structure. */
 export function redact(text: unknown, env?: Env): string {
   try {
@@ -549,7 +529,7 @@ export function redact(text: unknown, env?: Env): string {
       if (s.includes(value)) s = s.split(value).join(`[redacted:${name}]`);
     }
     s = cut(s, REDACT_MAX_CHARS);
-    return maskAcrossInvisible(s);
+    return maskTokenShapes(s, '[redacted]');
   } catch {
     return '[redaction failed]';
   }

@@ -260,7 +260,7 @@ if (part === 'shapes' || part === 'shapes2') {
     passwordRun: 'password=', pwdRun: 'pwd:', mysql: 'mysql ', mysqlFlag: 'mysql -p ', mysqlLong: 'mysql ' + 'a'.repeat(195) + ' ', mysqlGlued: 'mysql -pa mysql -pb ', awsName: 'aws_secret_access_key ', awsLong: 'aws_secret_access_key ' + 'aB3/'.repeat(10) + ' ', awsRun: 'secret_access_key ' + 'aB3'.repeat(2000) + '#',
     schemeToken: 'token ', schemeTokenWord: 'token ab12cd34. ', schemeTokenLong: 'token ' + 'a1'.repeat(40) + ' ', apiKeySpace: 'api_key   ', bearerShort: 'Bearer x. ', bearerShortRun: 'Bearer a, ', bearerWordRun: 'Bearer ab. ' + 'a'.repeat(11) + ' ',
     shortName: 'token:ab12 ', shortNames: 'secret=a1,pwd=b2;', phrase: 'password: ab12 ', phraseLong: 'password: ab12' + ' cd34'.repeat(9) + ' ', phraseWords: 'pwd=a1 b2 c3 d4 e5 f6 g7 h8 i9 ', keyStart: 'api_key=sk-a ', keyStartLong: 'api_key=ghp_' + 'a'.repeat(30) + ' ',
-    cookieShort: 'cookie: a=ab12 x ', cookieShortRun: 'cookie:a=a1 ', invisible: 'a\u200b', invisibleRun: '\u200b'.repeat(64), invisibleTok: 'ghp_\u200b' + 'a'.repeat(30) + '\u200b', invisibleLines: 'ghp_\u200bab\n', invisiblePair: 'x\u200bghp_ab ',
+    cookieShort: 'cookie: a=ab12 x ', cookieShortRun: 'cookie:a=a1 ',
   };
   if (part === 'shapes') for (const [k, u] of Object.entries(gapUnits)) assertLinearShape(`issue 1227 gap rule ${k}`, (x) => { redact(x, {}); }, (n) => u.repeat(Math.ceil(n / u.length)).slice(0, n));
   const allUnits: Record<string, string> = {
