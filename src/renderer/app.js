@@ -3185,6 +3185,7 @@ function openNoteMenu(a,n,anchor,x,y,onScreen){
   const it=(act,label,sub,cls)=>`<button type="button" role="menuitem" data-nmact="${act}"${cls?` class="${cls}"`:''} title="${esc(sub)}"><span class="mt"><b>${esc(label)}</b><small>${esc(sub)}</small></span></button>`;
   const m=document.createElement('div');m.id='modeMenu';m.className='mode-menu nt-menu';m.setAttribute('role','menu');m.setAttribute('aria-label','Actions for the note '+(safeMask(n.title)||''));
   m.innerHTML=it('rename','Rename…','Change its title')+it('copy','Copy','Copy its text')
+    +(n.source&&n.source.session?it('source','Open source','Go to the chat and the message it came from'):'') /* FR-046 */
     +(n.done===true?it('undone','Mark not done','Back among the notes to use'):it('done','Mark done',onScreen?'Hides it from the / suggestions and the count; it moves to Done below':'Hides it from this list, the / suggestions and the count; it stays under Done on the folder\'s Notes screen')) /* FR-045 */
     +it('delete','Delete…','Remove it from the notes','mm-danger');
   document.body.appendChild(m);
@@ -3193,6 +3194,7 @@ function openNoteMenu(a,n,anchor,x,y,onScreen){
   m.addEventListener('click',e=>{const t=e.target.closest('[data-nmact]');if(!t)return;closeModeMenu();const act=t.dataset.nmact;
     if(act==='rename')renameNote(a,n,anchor);
     else if(act==='copy'){const ct=noteBoxText(n.text);if(ct==null){toast('Could not check this note for secrets, so it was not copied.',4500).classList.add('err');back();return;}navigator.clipboard.writeText(ct).then(()=>toast('Copied.',1500),()=>toast('Could not copy to the clipboard.',3000).classList.add('err'));back();}
+    else if(act==='source')openNoteSource(a,n);
     else if(act==='done'||act==='undone')markNoteDone(a,n,act==='done');
     else if(act==='delete'){
       const ids=ntRowIds(),i=ids.indexOf(n.id);
@@ -3201,6 +3203,57 @@ function openNoteMenu(a,n,anchor,x,y,onScreen){
     if(e.key==='ArrowDown'){e.preventDefault();focusIn(its[(i+1)%its.length]);}else if(e.key==='ArrowUp'){e.preventDefault();focusIn(its[(i+its.length-1)%its.length]);}
     else if(e.key==='Escape'||e.key==='Tab'){e.preventDefault();e.stopPropagation();closeModeMenu();back();}});
   focusIn(m.querySelector('button'));
+}
+
+/* ---- Open source (spec 083 FR-046, T050) ----
+   The note's session is in the office (an agent of this folder with that id): its chat opens. Else it is one of the folder's Previous
+   sessions: it opens through resumePrev, the row's own path (nothing is sent). Else a toast says it is gone and the note stays.
+   Then the message (role + digest, its `ord` first) is revealed inside #chat (SCROLL.reveal, never the page) and outlined 1.2 s. */
+const NT_GONE='The session this note came from is no longer available. The note stays.', NT_NOMSG='Could not find the message in this session.';
+async function ntSourceBubble(src){
+  const root=($('chat')||document).querySelector('.chat-inner')||$('chat'); if(!root)return null;
+  const all=[...root.querySelectorAll(src.role==='user'?'.msg.user .bubble':'.msg.agent .bubble')];
+  const dig=async b=>{const t=bubbleText(b);if(!b._nd||b._nd.t!==t)b._nd={t,d:await msgDigest(t)};return b._nd.d;};
+  if(all[src.ord]&&await dig(all[src.ord])===src.digest)return all[src.ord];
+  let best=null,bd=Infinity;
+  for(let i=0;i<all.length;i++){if(await dig(all[i])===src.digest){const d=Math.abs(i-src.ord);if(d<bd){bd=d;best=all[i];}}}
+  return best;
+}
+function ntLeaveNotes(){
+  if(notesIsOpen())closeNotes(false);
+  if(nsShown()){NS.ret=null;window.DurbarScreens.close();}
+}
+/* the office session a note's source names: main saved `resumeIdFor(agent)`, which is not always the window's id (a Codex thread id), so main
+   is asked (`notesList` answers each chat's own `session`, FR-021); where it cannot answer, the window's id stands in */
+async function ntOfficeSession(root,src){
+  const kind=x=>(x.info&&x.info.adapterId)||'copilot';
+  const cands=[root].concat(siblingsOf(root)).filter(x=>kind(x)===src.app);
+  const own=await Promise.all(cands.map(async x=>{let r=null;try{r=await bridge.notesList(x.id);}catch(e){r=null;}return r&&r.ok?r.session:x.id;}));
+  const i=own.findIndex(sid=>sid===src.session);
+  return i<0?null:cands[i];
+}
+async function openNoteSource(a,n){
+  const src=n&&n.source; if(!src||!src.session||!a)return;
+  const gone=()=>toast(NT_GONE,5000);
+  const root=liveRoot(a);
+  const live=bridge.notesList?await ntOfficeSession(root,src):null;
+  let target=live||null;
+  if(live){ntLeaveNotes();openPanel(live.id,false);}
+  else{
+    if(!bridge.resumeSession||!bridge.listPrevious||!feat(root,'history')){gone();return;}
+    const st=prevOf(root); if(!st.cli)await loadPrev(root);
+    const c=prevOf(root).cli;
+    if(!c||!c.ok||!c.sessions||!c.sessions.some(x=>x.id===src.session)){gone();return;}
+    target=await resumePrev(root,src.session,null); /* the Previous sessions path: no message is sent */
+    if(!target)return; /* it said why; the drawer or screen stays */
+    ntLeaveNotes();
+  }
+  await new Promise(r=>requestAnimationFrame(r));
+  const b=await ntSourceBubble(src);
+  if(!b||ui.selected!==target.id){if(ui.selected===target.id)toast(NT_NOMSG,5000);return;}
+  SCROLL.reveal(b,{block:'center',scroller:$('chat')});
+  clearTimeout(b._ntT); b.classList.remove('nt-found'); void b.offsetWidth; b.classList.add('nt-found'); b._ntT=setTimeout(()=>b.classList.remove('nt-found'),1200); /* a second Open source restarts the 1.2 s */
+  announce('Message shown.');
 }
 
 /* ---------------- spec 083 FR-044, FR-045 (T034a): the folder's Notes screen ----------------
@@ -8760,15 +8813,16 @@ function replayHistory(a,h,title,lead){
 async function resumePrev(a,sid,btn){
   const done=busy(btn,'Resuming…'); /* spec 052 FR-047: the shared busy state (it was a hand-made one) */
   const r=await bridge.resumeSession(a.id,sid,pristine(a)).catch(e=>({ok:false,error:String(e&&e.message||e)}));
-  if(!r.ok){toast('Could not resume: '+esc(r.error||'unknown error'),7000).classList.add('err');done();return;}
+  if(!r.ok){toast('Could not resume: '+esc(r.error||'unknown error'),7000).classList.add('err');done();return null;}
   if(r.removedId)removeLiveAgent(r.removedId);
   if(ui.selected&&!byId(ui.selected))closePanel();
   addLiveAgent(r.agent);
-  const na=liveById(r.agent.id); if(!na)return;
+  const na=liveById(r.agent.id); if(!na)return null;
   na.resumed=true; na.sent=false; replayHistory(na,r.history,r.title);
   modeBackNote(na,r.modeWas);
   setState(na,'idle',null,'Resumed. New messages continue this session.'); /* spec 001 delta 2026-10-29 (issue 451): no title here, it is the desk's name */
   openPanel(na.id,false);
+  return na; /* spec 083 FR-046: Open source reveals a message in it */
 }
 function leaveVsView(){
   if(!vsViewing)return; vsViewing=false;

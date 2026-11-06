@@ -158,7 +158,7 @@ function simNotesApi(qs: URLSearchParams, folderOf: (id: string) => { key: strin
         if (DN) digest = await DN.digestOf(text, crypto.subtle);
       } catch { digest = ''; }
       if (!digest) { let h = 0; for (let i = 0; i < text.length; i++) h = (Math.imul(h, 31) + text.charCodeAt(i)) >>> 0; digest = ('0000000000000000' + h.toString(16) + text.length.toString(16)).slice(-16); }
-      return add(id, text, input.from ?? role, { ...src(f.session, input.ord, role), digest });
+      return add(id, text, input.from ?? role, { ...src((input as { simSession?: string }).simSession || f.session, input.ord, role), digest }); // simSession: a driver's note from another session (Open source, FR-046)
     },
     notesAdd: async (id, input) => add(id, input && input.text, 'typed'),
     notesUpdate: async (id, noteId, rev, patch) => {
@@ -2213,7 +2213,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
     } catch {
       /* no saved theme */
     }
-    const { forgetFolder: simNotesForget, ...simNotesCalls } = simNotesApi(simQuery, (id) => { const s = sims.find((x) => x.info.id === id); return s ? { key: s.info.workspaceFile || s.info.cwd, name: (s.info as AgentInfo & { roomName?: string }).roomName ?? s.info.name, session: s.info.id } : undefined; }); // spec 083 FR-060
+    const { forgetFolder: simNotesForget, ...simNotesCalls } = simNotesApi(simQuery, (id) => { const s = sims.find((x) => x.info.id === id); return s ? { key: s.info.workspaceFile || s.info.cwd, name: (s.info as AgentInfo & { roomName?: string }).roomName ?? s.info.name, session: simQuery.get('simresumeid') ? 'resume-' + s.info.id : s.info.id } : undefined; }); // spec 083 FR-060 (simresumeid=1: the saved session id is not the agent's id, as with a Codex thread id)
     const capApi: Partial<DurbarApi> = {
       usageTotals: async () => ({ ok: true, since: savedSince, office: saved.office, folders: saved.folders }),
       usageResetTotals: async () => { savedSince = new Date().toISOString(); saved = { office: zero, folders: [] }; return { ok: true, since: savedSince, office: zero, folders: [] }; },
