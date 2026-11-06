@@ -15,7 +15,8 @@ import { fromAppFrame as fromApp, ipcHandle } from '../ipcguard';
 import type { ConvSearchEvent, ConvSearchHit, ConvSearchNotes, ConvSearchStart } from '../../shared/api';
 import { startScan } from '../convsearch';
 import type { ScanDeps, ScanHit, ScanNotes } from '../convsearch';
-import type { Scope } from '../convscope';
+import { createCodexListCache } from '../convscope';
+import type { CodexListCache, Scope } from '../convscope';
 
 /** FR-033: the query's bounds (Q3: 3 characters, spaces not counted, in code points before `fold`). */
 export const QUERY = { maxChars: 200, maxWords: 8, minChars: 3 } as const;
@@ -45,8 +46,10 @@ export function cleanQuery(q: unknown): { ok: true; query: string; cut: boolean 
 export interface ConvSearchIpcDeps {
   /** True when an agent is open (no agent: nothing to search, no scan starts). */
   hasSessions(): boolean;
-  /** The plan and its readers, from main's own state (`buildScope`); `stop` says this search is no longer wanted. */
-  scope(stop: () => boolean): Promise<Scope>;
+  /** The plan and its readers, from main's own state (`buildScope`); `stop` says this search is no longer wanted; `codexLists` is main's own box-session cache (FR-026). */
+  scope(stop: () => boolean, codexLists: CodexListCache): Promise<Scope>;
+  /** Tests: the cache (default: a new one). */
+  codexLists?: CodexListCache;
   /** The masker and the window's fold functions (loaded from the built tree when first needed). */
   matcher(): Pick<ScanDeps, 'masker' | 'search'>;
   /** Tests: the clock and the timers (main: `performance.now`, `setImmediate`, `setTimeout`). */
@@ -70,6 +73,10 @@ export function register(deps: ConvSearchIpcDeps): { cancelAll(): void; live(): 
   const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   const defer = deps.defer ?? ((fn: () => void) => void setImmediate(fn));
   let live: { id: string; sender: WebContents; cancel(): void; stopped(): void } | undefined;
+  // FR-026 (owner answer C): the box session's earlier Codex titles, main's memory only, for the window that searched last
+  const codexLists = deps.codexLists ?? createCodexListCache();
+  let cacheOwner: WebContents | undefined;
+  const dropCache = (): void => { codexLists.clear(); cacheOwner = undefined; };
   const stopLive = (): void => {
     const l = live;
     live = undefined;
@@ -82,6 +89,7 @@ export function register(deps: ConvSearchIpcDeps): { cancelAll(): void; live(): 
   const stopByMain = (): void => {
     const l = live;
     stopLive();
+    dropCache(); // FR-026: the window closed or hid, or a quit began
     l?.stopped();
   };
   const watched = new WeakSet<WebContents>();
@@ -89,7 +97,10 @@ export function register(deps: ConvSearchIpcDeps): { cancelAll(): void; live(): 
   const watch = (w: WebContents): void => {
     if (watched.has(w)) return;
     watched.add(w);
-    const gone = (): void => { if (live?.sender === w) stopLive(); };
+    const gone = (): void => {
+      if (live?.sender === w) stopLive();
+      if (cacheOwner === w) dropCache(); // FR-026: the window is destroyed or loads again
+    };
     w.on?.('destroyed', gone);
     w.on?.('did-start-loading', gone);
   };
@@ -103,27 +114,30 @@ export function register(deps: ConvSearchIpcDeps): { cancelAll(): void; live(): 
     const id = randomBytes(16).toString('hex');
     const sender = e.sender;
     watch(sender);
+    if (cacheOwner !== sender) { codexLists.clear(); cacheOwner = sender; } // another window's box session is not this one's
     let cancelled = false;
     let scan: ReturnType<typeof startScan> | undefined;
     let last = { done: 0, total: 0 };
+    let extra: Scope['notes'] = { floorOffFolders: 0, mcpValuesLocked: false };
     const me = {
       id, sender, cancel: (): void => { cancelled = true; scan?.cancel(); },
-      stopped: (): void => { if (!sender.isDestroyed()) sender.send('search:done', { kind: 'done', searchId: id, notes: { ...noNotes(), queryCut: q.cut }, progress: last, failed: false, stopped: true } satisfies ConvSearchEvent); },
+      stopped: (): void => { if (!sender.isDestroyed()) sender.send('search:done', { kind: 'done', searchId: id, notes: { ...noNotes(), queryCut: q.cut, ...extra }, progress: last, failed: false, stopped: true } satisfies ConvSearchEvent); },
     };
     live = me;
     const send = (channel: 'search:batch' | 'search:done', payload: ConvSearchEvent): void => {
       if (!cancelled && live === me && !sender.isDestroyed()) sender.send(channel, payload);
     };
     const done = (notes: ScanNotes, progress: { done: number; total: number }, failed: boolean): void => {
-      const n: ConvSearchNotes = { ...notes, queryCut: q.cut };
+      const n: ConvSearchNotes = { ...notes, queryCut: q.cut, ...extra };
       send('search:done', { kind: 'done', searchId: id, notes: n, progress, failed });
     };
     defer(() => {
       if (cancelled) return; // a newer start or a cancel came first: this one never builds a plan (two starts make one scan)
       void (async () => {
         try {
-          const sc = await deps.scope(() => cancelled);
+          const sc = await deps.scope(() => cancelled, codexLists);
           if (cancelled) return;
+          extra = { ...sc.notes };
           const m = deps.matcher();
           scan = startScan(sc.plan, q.query, {
             now, yieldNow, sleep, read: sc.read, values: sc.values, masker: m.masker, search: m.search,
@@ -146,6 +160,14 @@ export function register(deps: ConvSearchIpcDeps): { cancelAll(): void; live(): 
     if (!fromApp(e)) return { ok: false };
     if (typeof searchId !== 'string' || !ID_RE.test(searchId) || !live || live.id !== searchId || live.sender !== e.sender) return { ok: false };
     stopLive();
+    return { ok: true };
+  });
+
+  // FR-026, FR-033: the box was cleared or closed: that window's scan stops (no `done`: the window asked) and the kept titles go
+  ipcHandle('search:clear', (e): { ok: boolean } => {
+    if (!fromApp(e)) return { ok: false };
+    if (live?.sender === e.sender) stopLive();
+    dropCache();
     return { ok: true };
   });
 

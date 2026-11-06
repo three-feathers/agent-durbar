@@ -15,7 +15,7 @@
  */
 import type { AdapterRouter } from '../adapters/router';
 import { historyOf, previousSessionsOf } from '../adapters/router';
-import type { HistoryItem, HistoryResult } from '../adapters/history';
+import type { HistoryItem, HistoryResult, PreviousSession } from '../adapters/history';
 import { SEARCH_HISTORY_LIMITS } from '../adapters/history';
 import { readClaudeHistoryStream } from '../adapters/claudeStream';
 import { DEFAULT_TIMEOUT_MS as CODEX_RPC_TIMEOUT_MS } from '../adapters/codexRpc';
@@ -46,6 +46,10 @@ export interface ScopeDeps {
   gate: { run(key: string, fn: () => Promise<unknown>, timeoutMs?: number): Promise<unknown> };
   /** Tests: the Claude config folder and the readers. */
   claudeDir?: string;
+  /** FR-026: the box session's kept Codex lists (absent: list every time). */
+  codexLists?: CodexListCache;
+  /** The clock of the kept lists (ms; default `Date.now`). */
+  now?(): number;
   readClaude?: typeof readClaudeHistoryStream;
   listChats?: typeof listChats;
   readChat?: typeof readChat;
@@ -55,6 +59,46 @@ export interface Scope {
   plan: ScanPlan;
   read: ScanDeps['read'];
   values: ScanDeps['values'];
+  /** What the end state adds to the scan's notes (owner answers C and D, FR-014). */
+  notes: { floorOffFolders: number; mcpValuesLocked: boolean };
+}
+
+/** FR-026: a kept list older than this is listed again (a session deleted in Previous sessions, or made in the Codex app, shows within it). */
+export const CODEX_LIST_TTL_MS = 5 * 60_000;
+
+/**
+ * FR-026 (owner answer C): a folder's earlier Codex sessions as `thread/list` gave them, kept in memory for the search box session, so
+ * the searches typed one after another start no new app-server. Nothing is written. A folder's list is dropped when it is older than
+ * `CODEX_LIST_TTL_MS`, or when an open Codex session of that folder has left the office since it was listed (it is an earlier session
+ * now). A new open Codex session does not drop it: it adds no earlier session, and a resumed one is left out by the open-session filter
+ * at each search. `clear()` drops everything (the box cleared or closed, the window gone, main's own stop).
+ */
+export interface CodexListCache {
+  get(folderKey: string, openCodexIds: readonly string[], now: number): PreviousSession[] | undefined;
+  set(folderKey: string, openCodexIds: readonly string[], list: readonly PreviousSession[], now: number): void;
+  clear(): void;
+  size(): number;
+}
+
+export function createCodexListCache(ttlMs: number = CODEX_LIST_TTL_MS): CodexListCache {
+  const m = new Map<string, { at: number; ids: Set<string>; list: PreviousSession[] }>();
+  return {
+    get(folderKey, openCodexIds, now) {
+      const e = m.get(folderKey);
+      if (!e) return undefined;
+      const open = new Set(openCodexIds);
+      if (!(now - e.at >= 0 && now - e.at < ttlMs) || [...e.ids].some((id) => !open.has(id))) {
+        m.delete(folderKey);
+        return undefined;
+      }
+      return e.list.map((p) => ({ ...p }));
+    },
+    set(folderKey, openCodexIds, list, now) {
+      m.set(folderKey, { at: now, ids: new Set(openCodexIds), list: list.map((p) => ({ ...p })) });
+    },
+    clear: () => m.clear(),
+    size: () => m.size,
+  };
 }
 
 /** Where a planned session is read from: main only (a path never leaves this file). */
@@ -89,6 +133,7 @@ export async function buildScope(d: ScopeDeps, stop: () => boolean = () => false
   const folderName = (a: AgentInfo): string => text(a.label) || text(a.name) || 'Folder';
 
   // 1. the open sessions, in the office's order (FR-020): content when it can be read without starting anything
+  let floorOffFolders = 0;
   const firstOf = new Map<string, AgentInfo>(); // folder -> its first agent; folder + app -> the agent its earlier sessions are listed for
   for (const a of d.agents.values()) {
     const ad = d.router.forAgent(a.id);
@@ -119,11 +164,22 @@ export async function buildScope(d: ScopeDeps, stop: () => boolean = () => false
       const adapter = adapterOf(a);
       const ad = d.router.forAgent(a.id);
       if (!ad?.listPreviousSessions) continue;
-      let list;
+      let list: PreviousSession[];
       try {
-        // Codex lists through a short-lived app-server (`thread/list`): behind the gate, so two quick searches never start two at once
-        const listing = (): Promise<Awaited<ReturnType<typeof previousSessionsOf>>> => previousSessionsOf(ad, a.cwd, openIds);
-        list = adapter === 'codex' ? ((await d.gate.run(`list\0${key}`, listing, CODEX_LIST_GATE_MS)) as Awaited<ReturnType<typeof previousSessionsOf>>) : await listing();
+        const listing = (): Promise<PreviousSession[]> => previousSessionsOf(ad, a.cwd, openIds);
+        if (adapter === 'codex') {
+          // owner answer C: a folder on a floor that is off starts no app-server; it is counted instead
+          if (off) { floorOffFolders++; continue; }
+          // FR-026: the box session's kept list, else `thread/list` through a short-lived app-server, behind the gate (one at a time)
+          const ids = [...d.agents.values()].filter((x) => d.wsKey(x) === key && adapterOf(x) === 'codex').map((x) => x.id);
+          const at = (d.now ?? Date.now)();
+          const kept = d.codexLists?.get(key, ids, at);
+          if (kept) list = kept.filter((s) => !openIds.has(s.id)); // a session resumed since: open now, not earlier
+          else {
+            list = (await d.gate.run(`list\0${key}`, listing, CODEX_LIST_GATE_MS)) as PreviousSession[];
+            d.codexLists?.set(key, ids, list, at);
+          }
+        } else list = await listing();
       } catch {
         unavailable.add(d.appName(adapter)); // FR-014: "Not searched: Codex (not installed)", once
         continue;
@@ -186,5 +242,8 @@ export async function buildScope(d: ScopeDeps, stop: () => boolean = () => false
     return { ok: false, reason: 'unreadable' };
   };
   const values = (s: PlanSession): readonly string[] => scanSecretValues(d.values, { folderKey: s.folderKey, agentId: s.agentId, open: s.group === 'office' });
-  return { plan: { sessions, unavailable: [...unavailable] }, read, values };
+  // owner answer D: the open agents' session values are left out of the mask while the vault would prompt (`scanSecretValues`): said
+  let mcpValuesLocked = true;
+  try { mcpValuesLocked = !d.values.noPrompt(); } catch { /* unknown: said as locked */ }
+  return { plan: { sessions, unavailable: [...unavailable] }, read, values, notes: { floorOffFolders, mcpValuesLocked } };
 }

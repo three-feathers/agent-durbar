@@ -250,9 +250,9 @@ const simCleanQuery = (q: unknown): { ok: true; query: string; cut: boolean } | 
  * then matched first, earlier Copilot and Codex sessions by title only, tool lines never searched, hidden earlier sessions not searched
  * (counted), every word in any order, at most 3 excerpts masked before they are cut (the page's own `maskNoteText`, failing closed), a
  * random `searchId`, one live search (a new start or a cancel ends the old one), events only for the live id. `simsearch=slow`: one
- * session every 400 ms, for the "Searching, N of M sessions" state.
+ * session every 400 ms, for the "Searching, N of M sessions" state; `simsearch=locked`: the end state says saved MCP values were locked.
  */
-function simConvSearchApi(qs: URLSearchParams, scope: () => SimConvSession[]): Pick<DurbarApi, 'convSearchStart' | 'convSearchCancel' | 'onConvSearch'> {
+function simConvSearchApi(qs: URLSearchParams, scope: () => SimConvSession[]): Pick<DurbarApi, 'convSearchStart' | 'convSearchCancel' | 'convSearchClear' | 'onConvSearch'> {
   type Search = { fold(s: unknown): string; terms(q: string): string[]; locate(t: unknown, q: string): Array<{ start: number; end: number; term: number }>; anchorKey(t: unknown): string };
   const lib = (): Search | undefined => (window as unknown as { DurbarSessionSearch?: Search }).DurbarSessionSearch;
   const mask = (t: string): string | undefined => {
@@ -302,7 +302,7 @@ function simConvSearchApi(qs: URLSearchParams, scope: () => SimConvSession[]): P
       if (!S) return { ok: false, code: 'invalid', error: 'That is not a search.' };
       const me: { id: string; timer?: ReturnType<typeof setTimeout> } = { id: newId() };
       live = me;
-      const notes: ConvSearchNotes = { searched: 0, folders: 0, notInstalled: [], tooLarge: 0, unreadable: 0, titleOnly: { count: 0, apps: [] }, hidden: 0, floorsOff: 0, capped: { sessions: false, perFolder: false, results: false }, timedOut: false, cut: 0, bounded: 0, maskFailed: 0, queryCut: q.cut };
+      const notes: ConvSearchNotes = { searched: 0, folders: 0, notInstalled: [], tooLarge: 0, unreadable: 0, titleOnly: { count: 0, apps: [] }, hidden: 0, floorsOff: 0, capped: { sessions: false, perFolder: false, results: false }, timedOut: false, cut: 0, bounded: 0, maskFailed: 0, queryCut: q.cut, floorOffFolders: 0, mcpValuesLocked: qs.get('simsearch') === 'locked' };
       const list = all.filter((s) => { if (s.hidden) notes.hidden++; return !s.hidden; });
       notes.folders = new Set(list.map((s) => s.folderName)).size;
       const groups = { office: 0, earlier: 0 };
@@ -331,6 +331,7 @@ function simConvSearchApi(qs: URLSearchParams, scope: () => SimConvSession[]): P
       stop();
       return { ok: true };
     },
+    convSearchClear: async () => { stop(); return { ok: true }; }, // FR-026: the simulator keeps no titles; the search stops without a done
     onConvSearch: (cb) => { subs.push(cb); return () => { const k = subs.indexOf(cb); if (k >= 0) subs.splice(k, 1); }; },
   };
 }

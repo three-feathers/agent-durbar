@@ -207,6 +207,7 @@ const api: DurbarApi = {
   // spec 095 FR-033: the window sends only the query (and main's own searchId); both events come to this window only
   convSearchStart: (query) => ipcRenderer.invoke('search:start', query),
   convSearchCancel: (searchId) => ipcRenderer.invoke('search:cancel', searchId),
+  convSearchClear: () => ipcRenderer.invoke('search:clear'),
   onConvSearch: (cb) => {
     const offs = [sub('search:batch', cb), sub('search:done', cb)];
     return () => offs.forEach((off) => off());

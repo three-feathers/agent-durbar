@@ -901,6 +901,10 @@ export interface ConvSearchNotes {
   maskFailed: number;
   /** The query was longer than 200 characters or 8 words and was cut (FR-033). */
   queryCut: boolean;
+  /** Folders whose earlier Codex sessions were not listed because their floor is off (owner answer C, FR-014). */
+  floorOffFolders: number;
+  /** Saved MCP values were locked in the vault, so the open sessions' values were not masked (owner answer D): "Some saved MCP values are locked; excerpts may show them." */
+  mcpValuesLocked: boolean;
 }
 /**
  * `stopped` on a `done`: main stopped the scan itself (the window closed or hid, or a quit began), so the window can leave "Searching…";
@@ -1273,6 +1277,8 @@ export interface DurbarApi {
    */
   convSearchStart?(query: string): Promise<ConvSearchStart>;
   convSearchCancel?(searchId: string): Promise<{ ok: boolean }>;
+  /** FR-026, FR-033: the box was cleared or closed: stops this window's scan (no `done`) and drops the kept Codex titles. */
+  convSearchClear?(): Promise<{ ok: boolean }>;
   onConvSearch?(cb: (e: ConvSearchEvent) => void): () => void;
   onEvent(cb: (e: AgentEvent) => void): () => void;
   onAgentAdded(cb: (a: AgentInfo) => void): () => void;
