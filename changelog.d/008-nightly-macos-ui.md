@@ -1,1 +1,0 @@
-- **The nightly macOS UI checks press the Mac's own keys** (spec 008, issue #839): the answer-key and paste checks use Command on a Mac, as the app expects, and the Real office glass check no longer takes the CI machine's Reduce transparency setting for a bug. One check (characters) now explains itself when it times out. No change to the app.
