@@ -42,7 +42,8 @@ async function main(): Promise<void> {
   (require('../src/main/ipcguard') as typeof import('../src/main/ipcguard')).initSimGuard(false);
   /* eslint-disable @typescript-eslint/no-require-imports */
   const { register, cleanQuery, QUERY, SHORT, NONE } = require('../src/main/ipc/convsearch') as typeof import('../src/main/ipc/convsearch');
-  const { CODEX_LIST_GATE_MS, buildScope } = require('../src/main/convscope') as typeof import('../src/main/convscope');
+  const { CODEX_LIST_GATE_MS, CODEX_LIST_TTL_MS, buildScope, createCodexListCache } = require('../src/main/convscope') as typeof import('../src/main/convscope');
+  type Scope = import('../src/main/convscope').Scope;
   const { DEFAULT_TIMEOUT_MS: CODEX_RPC_TIMEOUT_MS } = require('../src/adapters/codexRpc') as typeof import('../src/adapters/codexRpc');
   const { createReadGate, orderPlan, rendererScript } = require('../src/main/convsearch') as typeof import('../src/main/convsearch');
   const { createMasker } = require('../src/main/convmask') as typeof import('../src/main/convmask');
@@ -108,11 +109,13 @@ async function main(): Promise<void> {
   let sessions = 2;
   const scopeCalls: unknown[][] = [];
   const stops: Array<() => boolean> = [];
-  type Scope = import('../src/main/convscope').Scope;
-  let scopeOf: () => Scope = () => ({ plan: { sessions: [] }, read: async () => ({ ok: true, items: [] }), values: () => [] });
+  const NOTES0 = { floorOffFolders: 0, mcpValuesLocked: false };
+  let scopeOf: () => Scope = () => ({ plan: { sessions: [] }, read: async () => ({ ok: true, items: [] }), values: () => [], notes: NOTES0 });
   let hold: Promise<void> | undefined;
   const deferred: Array<() => void> = [];
+  const cache = createCodexListCache();
   const ipc = register({
+    codexLists: cache,
     hasSessions: () => sessions > 0,
     scope: async (...a: unknown[]) => { scopeCalls.push(a); stops.push(a[0] as () => boolean); if (hold) await hold; return scopeOf(); },
     matcher: () => ({ masker, search }),
@@ -120,7 +123,7 @@ async function main(): Promise<void> {
     sleep: () => tick(), // the 250 ms between batches, without waiting
   });
   const runDeferred = (): void => { for (const fn of deferred.splice(0)) fn(); };
-  assert.deepStrictEqual([...handlers.keys()].sort(), ['search:cancel', 'search:start'], 'the two channels');
+  assert.deepStrictEqual([...handlers.keys()].sort(), ['search:cancel', 'search:clear', 'search:start'], 'the three channels');
   const start = (e: unknown, ...a: unknown[]) => Promise.resolve().then(() => handlers.get('search:start')!(e, ...a)) as Promise<ConvSearchStart>;
   const cancel = (e: unknown, ...a: unknown[]) => Promise.resolve().then(() => handlers.get('search:cancel')!(e, ...a)) as Promise<{ ok: boolean }>;
 
@@ -150,6 +153,7 @@ async function main(): Promise<void> {
       ? { ok: true, items: [{ type: 'user', text: `Look at ${HOME}/work/demo/invoice.ts and the export, token ${GH}, value ${MCP_VALUE}` }, { type: 'tool', callId: 'c', tool: 'grep', label: 'grep invoice export' }, { type: 'output', text: `The invoice export is fixed; key ${MCP_VALUE} unchanged.` }] }
       : { ok: true, items: [{ type: 'output', text: 'the invoice export again' }] }),
     values: () => [MCP_VALUE],
+    notes: { floorOffFolders: 2, mcpValuesLocked: true },
   });
   const r1 = await start(E1, 'invoice export', '/etc', { folder: '/etc' }, 'a1');
   assert.ok(r1.ok && /^[0-9a-f]{32}$/.test(r1.searchId), `a random 128-bit id: ${JSON.stringify(r1)}`);
@@ -158,12 +162,14 @@ async function main(): Promise<void> {
   runDeferred();
   await settle(400);
   assert.strictEqual(scopeCalls.length, 1);
-  assert.strictEqual(scopeCalls[0].length, 1, 'the scope gets only a stop function: nothing the window sent (no folder, path or session)');
+  assert.strictEqual(scopeCalls[0].length, 2, 'the scope gets a stop function and main\'s own cache: nothing the window sent (no folder, path or session)');
   assert.strictEqual(typeof scopeCalls[0][0], 'function');
+  assert.strictEqual(scopeCalls[0][1], cache, 'the second is main\'s box-session cache (FR-026)');
   const evs = win1.sent.map(([ch, p]) => [ch, p] as const);
   assert.ok(evs.length >= 2 && evs.every(([ch, p]) => p.searchId === r1.searchId && ch === `search:${p.kind}`), 'every event carries the id, on its own channel');
   const done = evs[evs.length - 1][1];
   assert.ok(done.kind === 'done' && !done.failed && done.notes.queryCut === false && done.notes.titleOnly.count === 1, JSON.stringify(done));
+  assert.ok(done.kind === 'done' && done.notes.floorOffFolders === 2 && done.notes.mcpValuesLocked === true, 'owner answers C and D reach the end state');
   const hits = evs.flatMap(([, p]) => (p.kind === 'batch' ? p.hits : []));
   assert.deepStrictEqual(hits.map((h) => h.sessionId).sort(), ['a1', 'p1'], 'the open session by content, the earlier one by its masked title');
   const a1 = hits.find((h) => h.sessionId === 'a1')!;
@@ -253,7 +259,7 @@ async function main(): Promise<void> {
     win1.sent.length = 0;
     let gate!: () => void;
     const slowRead = new Promise<void>((r) => { gate = r; });
-    scopeOf = () => ({ plan: { sessions: [sess({ sessionId: 'r1', title: 'invoice one' }), sess({ sessionId: 'r2' })] }, read: async () => { await slowRead; return { ok: true, items: [{ type: 'output', text: 'invoice' }] }; }, values: () => [] });
+    scopeOf = () => ({ plan: { sessions: [sess({ sessionId: 'r1', title: 'invoice one' }), sess({ sessionId: 'r2' })] }, read: async () => { await slowRead; return { ok: true, items: [{ type: 'output', text: 'invoice' }] }; }, values: () => [], notes: NOTES0 });
     const rr = await start(E1, 'invoice');
     runDeferred();
     for (let i = 0; i < 400 && !win1.sent.length; i++) await tick();
@@ -299,6 +305,56 @@ async function main(): Promise<void> {
   release();
   await settle(50);
   assert.strictEqual(win1.sent.length, 0, 'nothing from a cancelled scan, not even its failure');
+
+  // ---- FR-026 (owner answer C): the box session's kept Codex titles live as long as the box session, in main's memory only
+  {
+    const clear = (e: unknown) => Promise.resolve().then(() => handlers.get('search:clear')!(e)) as Promise<{ ok: boolean }>;
+    await assert.rejects(clear(foreign), /did not come from its own window/);
+    const fill = (): void => cache.set('/w/x', [], [{ id: 't1', title: 'kept', startTime: 1, modifiedTime: 2 }], Date.now());
+    scopeOf = () => ({ plan: { sessions: [] }, read: async () => ({ ok: true, items: [] }), values: () => [], notes: NOTES0 });
+    // the box cleared or closed: the window's scan stops without a done, and the kept titles go
+    win1.sent.length = 0;
+    hold = new Promise<void>((r) => { release = r; });
+    const rc0 = await start(E1, 'invoice');
+    runDeferred();
+    await settle(5);
+    fill();
+    assert.deepStrictEqual(await clear(E1), { ok: true });
+    assert.ok(rc0.ok && ipc.live() === undefined && cache.size() === 0, 'search:clear stops the scan and drops the cache');
+    hold = undefined;
+    release();
+    await settle(100);
+    assert.strictEqual(win1.sent.length, 0, 'the window asked: no done');
+    // repeated searches keep it; main's stop, the window going away or another window's search drop it
+    await start(E1, 'invoice'); // the box session of this window begins; its search fills the cache
+    runDeferred();
+    await settle(100);
+    fill();
+    const rk = await start(E1, 'invoice');
+    runDeferred();
+    await settle(100);
+    assert.ok(rk.ok && cache.size() === 1, 'a new search of the same window keeps the kept titles');
+    ipc.cancelAll();
+    assert.strictEqual(cache.size(), 0, 'main\'s stop (window close or hide, quit) drops them');
+    for (const how of ['destroyed', 'did-start-loading'] as const) {
+      await start(E1, 'invoice');
+      runDeferred();
+      await settle(100);
+      fill();
+      win1.emit(how);
+      assert.strictEqual(cache.size(), 0, `${how} drops them`);
+    }
+    await start(E1, 'invoice');
+    runDeferred();
+    await settle(100);
+    fill();
+    await start(E2, 'invoice');
+    assert.strictEqual(cache.size(), 0, 'another window\'s search does not reuse this window\'s box session');
+    runDeferred();
+    await settle(100);
+    win1.sent.length = 0;
+    win2.sent.length = 0;
+  }
 
   // ---- T022: a hung Codex read cannot hold the gate; the next scan's read still runs
 
@@ -442,6 +498,69 @@ async function main(): Promise<void> {
     assert.strictEqual(lists.length, 0, 'a stopped search lists nothing more');
   }
 
+  // ---- FR-026 (owner answer C): the cache itself, and buildScope with it; owner answer D: locked values said
+  {
+    const c = createCodexListCache(1000);
+    const P = (id: string): PreviousSession => ({ id, title: id, startTime: 1, modifiedTime: 2 });
+    c.set('/f', ['x1'], [P('a')], 0);
+    assert.deepStrictEqual(c.get('/f', ['x1'], 999)?.map((p) => p.id), ['a'], 'kept within its time');
+    assert.deepStrictEqual(c.get('/f', ['x1', 'x9'], 999)?.map((p) => p.id), ['a'], 'a new Codex agent in the folder does not drop it');
+    assert.strictEqual(c.get('/f', ['x1'], 1000), undefined, 'older than its time: dropped');
+    assert.strictEqual(c.size(), 0);
+    c.set('/f', ['x1', 'x2'], [P('a')], 0);
+    assert.strictEqual(c.get('/f', ['x2'], 10), undefined, 'an open Codex session left the office: dropped (it is an earlier session now)');
+    c.set('/f', [], [P('a')], 50);
+    assert.strictEqual(c.get('/f', [], 10), undefined, 'a clock that went back: dropped');
+    c.set('/f', [], [P('a')], 0);
+    c.get('/f', [], 1)![0].title = 'changed';
+    assert.strictEqual(c.get('/f', [], 1)![0].title, 'a', 'a copy is handed out');
+    c.clear();
+    assert.strictEqual(c.size(), 0);
+    assert.strictEqual(CODEX_LIST_TTL_MS, 5 * 60_000);
+
+    const ag = (id: string, adapterId: string, cwd: string, floor?: string): AgentInfo => ({ id, name: path.basename(cwd), cwd, folders: [cwd], permMode: 'read-only', adapterId, ...(floor ? { floor } : {}) } as AgentInfo);
+    const agents = new Map<string, AgentInfo>([['x1', ag('x1', 'codex', '/c/one')], ['x2', ag('x2', 'codex', '/c/one')], ['x3', ag('x3', 'codex', '/c/off', 'up')]]);
+    const listed: string[] = [];
+    let fail = false;
+    const codex = { id: 'codex', isLive: () => false, listPreviousSessions: async (cwd: string, ex?: ReadonlySet<string>) => { listed.push(cwd); if (fail) throw new Error('no'); return [P('t1'), P('t2'), P('x2')].filter((p) => !ex?.has(p.id)); } };
+    let noPrompt = true;
+    let clock = 1000;
+    const cache2 = createCodexListCache();
+    const deps = {
+      agents, router: { forAgent: () => codex as never, adapterIdOf: (id: string) => agents.get(id)?.adapterId }, wsKey: (a: AgentInfo) => a.cwd, resumeIdFor: (id: string) => id, appName: () => 'Codex', vsUserDirs: () => [],
+      store: { get: () => undefined as never, sessionNames: () => [], floors: () => ({ floors: [{ id: 'ground', name: 'Ground floor', on: true }, { id: 'up', name: 'Up', on: false }], lastFloor: 'ground' }) },
+      values: { knownSecretValues: () => [], noPrompt: () => noPrompt, secretValuesFor: () => [] }, gate: { run: (_k: string, fn: () => Promise<unknown>) => fn() },
+      listChats: (async () => ({ sessions: [], storesFound: 0, unreadable: 0, tooLarge: 0 })) as never, codexLists: cache2, now: () => clock,
+    };
+    const titles = (sc: Scope) => sc.plan.sessions.filter((x) => x.group === 'earlier').map((x) => x.sessionId);
+    const s1 = await buildScope(deps);
+    assert.deepStrictEqual([listed, titles(s1), s1.notes], [['/c/one'], ['t1', 't2'], { floorOffFolders: 1, mcpValuesLocked: false }], 'a folder on a floor that is off is not listed, but counted');
+    const s2 = await buildScope(deps);
+    assert.deepStrictEqual([listed.length, titles(s2)], [1, ['t1', 't2']], 'the next search reuses the kept titles: no new thread/list (no app-server)');
+    agents.set('t1', ag('t1', 'codex', '/c/one')); // t1 resumed: open now, and a new Codex agent in the folder
+    const s3 = await buildScope(deps);
+    assert.deepStrictEqual([listed.length, titles(s3)], [1, ['t2']], 'a resumed session is left out of the kept list, which stays (a new agent does not drop it)');
+    agents.delete('t1');
+    const s4 = await buildScope(deps);
+    assert.deepStrictEqual([listed.length, titles(s4)], [1, ['t1', 't2']], 'it left the office again: it is in the kept list, shown again, nothing listed');
+    agents.delete('x2'); // open when the folder was listed, so not in the kept list: it left the office, so the folder is listed again
+    const s4b = await buildScope(deps);
+    assert.deepStrictEqual([listed.length, titles(s4b)], [2, ['t1', 't2', 'x2']], 'a session open at the listing left the office: listed again, and it shows');
+    clock += CODEX_LIST_TTL_MS;
+    await buildScope(deps);
+    assert.strictEqual(listed.length, 3, 'after 5 minutes: listed again');
+    cache2.clear();
+    fail = true;
+    const s5 = await buildScope(deps);
+    assert.deepStrictEqual([s5.plan.unavailable, cache2.size()], [['Codex'], 0], 'a listing that fails is not kept');
+    fail = false;
+    noPrompt = false;
+    assert.strictEqual((await buildScope(deps)).notes.mcpValuesLocked, true, 'owner answer D: values locked in the vault are said');
+    const thrower = { ...deps, values: { ...deps.values, noPrompt: (): boolean => { throw new Error('vault'); } } };
+    assert.strictEqual((await buildScope(thrower)).notes.mcpValuesLocked, true, 'not known: said as locked');
+    assert.deepStrictEqual(listed.filter((x) => x === '/c/off'), [], 'never a thread/list for the folder on the off floor');
+  }
+
   // ---- source checks (FR-025, FR-032, FR-033)
 
   stage = 'source checks';
@@ -504,7 +623,7 @@ async function main(): Promise<void> {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     (globalThis as unknown as { window: unknown }).window = { DurbarSessionSearch: search, DurbarRedact: require('../src/shared/redact') };
     // eslint-disable-next-line @typescript-eslint/no-implied-eval
-    const make = new Function(js + '\nreturn simConvSearchApi;')() as (qs: URLSearchParams, scope: () => unknown[]) => Required<Pick<import('../src/shared/api').DurbarApi, 'convSearchStart' | 'convSearchCancel' | 'onConvSearch'>>;
+    const make = new Function(js + '\nreturn simConvSearchApi;')() as (qs: URLSearchParams, scope: () => unknown[]) => Required<Pick<import('../src/shared/api').DurbarApi, 'convSearchStart' | 'convSearchCancel' | 'convSearchClear' | 'onConvSearch'>>;
     const s0 = { adapter: 'copilot', app: 'GitHub Copilot', folderName: 'demo', agentId: 'sim-1', time: 0, content: 'read' };
     let corpus: unknown[] = [
       { ...s0, sessionId: 'sim-1', group: 'office', title: 'Untitled session', messages: [{ speaker: 'you', text: `Fix the invoice export, token ${GH}` }, { speaker: 'tool', text: 'grep invoice export' }, { speaker: 'agent', text: 'Done.' }] },
@@ -542,6 +661,21 @@ async function main(): Promise<void> {
     const n = got.length;
     await new Promise((res) => setTimeout(res, 900));
     assert.strictEqual(got.length, n, 'nothing after a cancel');
+    // FR-026: the fake's clear stops a search without a done; simsearch=locked says the values were locked (owner answer D)
+    got.length = 0;
+    const rcl = await slow.convSearchStart('invoice');
+    assert.ok(rcl.ok);
+    assert.deepStrictEqual(await slow.convSearchClear(), { ok: true });
+    await new Promise((res) => setTimeout(res, 600));
+    assert.strictEqual(got.length, 0, 'cleared: nothing more');
+    const locked = make(new URLSearchParams('simsearch=locked'), () => corpus);
+    const lg: ConvSearchEvent[] = [];
+    locked.onConvSearch((e) => lg.push(e));
+    await locked.convSearchStart('invoice');
+    for (let i = 0; i < 200 && !lg.some((e) => e.kind === 'done'); i++) await new Promise((res) => setTimeout(res, 5));
+    const ld = lg[lg.length - 1];
+    assert.ok(ld.kind === 'done' && ld.notes.mcpValuesLocked === true && ld.notes.floorOffFolders === 0);
+    assert.ok(end.kind === 'done' && end.notes.mcpValuesLocked === false);
     corpus = corpus.filter((c) => (c as { group: string }).group !== 'office');
     assert.deepStrictEqual((await fake.convSearchStart('invoice')).ok, false, 'no open session: nothing to search');
   }
