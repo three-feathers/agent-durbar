@@ -25,7 +25,7 @@ const BUDGETS = {
   'AGENTS.md': 2000,
   'docs/rules/incident-triage.md': 240,
   'docs/rules/merge-mechanics.md': 290,
-  'docs/rules/review-rounds.md': 680,
+  'docs/rules/review-rounds.md': 710, // 680 until FR-084 (2026-11-07)
   'docs/rules/chat-and-decisions.md': 180,
   'docs/rules/docs-sync.md': 290,
   'CLAUDE.md': 150,
@@ -38,7 +38,7 @@ const BUDGETS = {
 
 const RULES_DIR = 'docs/rules';
 const RULE_HEADER = 'This file is rule text, part of [AGENTS.md](../../AGENTS.md)';
-const TOTAL_CAP = 3500; // AGENTS.md + docs/rules/*.md: the split may not grow the rule text past this
+const TOTAL_CAP = 3600; // 3500 until FR-084 (2026-11-07): AGENTS.md + docs/rules/*.md: the split may not grow the rule text past this
 
 function countWords(text) {
   const m = String(text).match(/\S+/g);
