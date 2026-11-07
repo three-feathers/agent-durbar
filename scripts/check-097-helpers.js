@@ -4,7 +4,7 @@
  *
  *   npm run check:ui -- --only check-097-helpers      (builds first)
  *   SHOTS_OUT=<dir>   where its pictures go (097-helpers-<world>-<w>x<h>.png; a temporary folder by default)
- *   HELPERS_MUTANT=nostrip|status|move   the strips are never drawn / a status change rebuilds the tile / a status change moves a strip (each must fail)
+ *   HELPERS_MUTANT=nostrip|status|move   the strips are never drawn / a status change rebuilds the tile / a status change moves a strip (each must fail; the move is a transform, because the app rewrites an inline `top` on its next render and so undid the old mutant before it was read)
  *
  * In the Photo office and the cave at 1440x900 and 1280x800 (15 agents, simhelpers=2) it fails (exit 1) when:
  *   - the layout scrolls, its desk face is under the SC-002 ratchet (31 px), or it did not choose the tile level at 15 agents;
@@ -107,7 +107,7 @@ module.exports = async (ctx) => {
     const chg = await js(`(()=>{try{const a=${SIM}.agents().find(x=>x.id===${jsLiteral(target.id)});a.state=a.state==='waiting'?'working':'waiting';${SIM}.render();return a.state}catch(e){return 'ERR '+e.message}})()`);
     assert.ok(!String(chg).startsWith('ERR'), `${tag}: the state change: ${chg}`);
     if (MUTANT === 'status') await js(`(()=>{const n=window.__hNode;n.replaceWith(n.cloneNode(true));return 1})()`);
-    if (MUTANT === 'move') await js(`(()=>{const b=document.querySelector('#stage .ro-hstrip');b.style.top=(parseFloat(b.style.top)+3)+'px';return 1})()`);
+    if (MUTANT === 'move') await js(`(()=>{const b=document.querySelector('#stage .ro-hstrip');b.style.transform='translateY(3px)';return 1})()`);
     await must(`document.querySelector('#stage .ro-ht[data-id="'+CSS.escape(${jsLiteral(target.id)})+'"] .ro-hs').textContent!==${jsLiteral(was)}`, `${tag}: the tile repaints its status word`);
     const after = await read();
     assert.ok(await js(`window.__hNode&&window.__hNode.isConnected&&window.__hNode===document.querySelector('#stage .ro-ht[data-id="'+CSS.escape(${jsLiteral(target.id)})+'"]')`), `${tag}: the tile keeps its node on a status change`);

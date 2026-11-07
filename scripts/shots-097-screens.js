@@ -246,24 +246,25 @@ module.exports = async (ctx) => {
       }
       await js(`window.__durbarSimUi.quietHeads([]);window.__oldBtn=null;0`);
     }
-    /* FR-016, FR-184 (review on #969): a plate keeps its nodes on a status change but rebuilds its helper list when the helpers change: a new helper adds one to
-       "+N" and a dot; the helper failing changes that dot. Through the event path, as an agent app reports a helper (a `subagent` event) */
+    /* FR-016, FR-184 (review on #969), spec 097 FR-306 (#1139): a plate keeps its nodes on a status change, and a new helper is one more tile in the desk's helper strip (the plate's "+N" is gone while the
+       strip is drawn); the helper failing changes its tile's class. Through the event path, as an agent app reports a helper (a `subagent` event) */
     {
-      /* a working desk with fewer than 3 helpers, so the new one's dot is among the 3 shown */
-      const desk = (await js(`window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks).filter(d=>d.state==='working').map(d=>d.id).find(id=>{const p=document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(id)+'"]'),h=p&&p.querySelector('.ro-help');return !!p&&(!h||+((/\\+(\\d+)/.exec(h.textContent)||[])[1])<3);})`));
-      assert.ok(desk, 'a working desk with fewer than 3 helpers');
-      await js(`window.__pl=()=>document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(${jsLiteral(desk)})+'"]');0`);
-      const help = () => js(`(()=>{const h=window.__pl().querySelector('.ro-help');return h?{n:(/\\+(\\d+)/.exec(h.textContent)||[])[1]||'',dots:[...h.querySelectorAll('.dot')].map(d=>d.className).join('|')}:{n:'0',dots:''};})()`);
+      /* a working desk with no helpers yet, so the new one's tile is the strip's first */
+      const desk = (await js(`window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks).filter(d=>d.state==='working').map(d=>d.id).find(id=>{const p=document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(id)+'"]');if(!p)return false;let e=p.nextElementSibling;if(e&&e.matches('.ren'))e=e.nextElementSibling;return !(e&&e.matches('.ro-hstrip'))&&!p.querySelector('.ro-help');})`));
+      assert.ok(desk, 'a working desk with no helpers');
+      await js(`window.__pl=()=>document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(${jsLiteral(desk)})+'"]');window.__st=()=>{const p=window.__pl();let e=p&&p.nextElementSibling;if(e&&e.matches('.ren'))e=e.nextElementSibling;return e&&e.matches('.ro-hstrip')?e:null};0`);
+      const help = () => js(`(()=>{const s=window.__st();return s?{n:s.querySelectorAll('.ro-ht').length,cls:[...s.querySelectorAll('.ro-ht')].map(t=>t.className).join('|')}:{n:0,cls:''};})()`);
       const h0 = await help();
       await js(`window.__nm=window.__pl().querySelector('b');0`);
       const sub = 'drv-helper-1', base = { sessionId: desk };
       await emit({ ...base, type: 'subagent', subagentId: sub, name: 'Driver helper', phase: 'started', task: 'Check the driver', agentName: 'explore' });
       await emit({ ...base, type: 'status', status: 'working', agentId: sub, intent: 'Check the driver' });
-      await must(`(window.__pl().querySelector('.ro-help')||{textContent:''}).textContent.includes('+'+${jsLiteral(String(Number(h0.n) + 1))})`, 'the plate\'s helper count one up (was ' + JSON.stringify(h0) + ')');
+      await must(`(window.__st()||{querySelectorAll:()=>[]}).querySelectorAll('.ro-ht').length===${h0.n + 1}`, 'the desk\'s helper strip one tile up (was ' + JSON.stringify(h0) + ')');
       const h1 = await help();
-      assert.strictEqual(Number(h1.n), Number(h0.n) + 1, 'a new helper adds one: ' + JSON.stringify([h0, h1]));
+      assert.strictEqual(h1.n, h0.n + 1, 'a new helper adds one tile: ' + JSON.stringify([h0, h1]));
+      assert.ok(await js(`!window.__pl().querySelector('.ro-help')`), 'the plate shows no "+N" while its helpers are drawn');
       await emit({ ...base, type: 'subagent', subagentId: sub, name: 'Driver helper', phase: 'failed', task: 'Failed', error: 'Failed', agentName: 'explore' });
-      await must(`(()=>{const h=window.__pl().querySelector('.ro-help');return !!h&&[...h.querySelectorAll('.dot')].map(d=>d.className).join('|')!==${jsLiteral(h1.dots)};})()`, 'the plate\'s helper dots changed when the helper failed (were ' + h1.dots + ')');
+      await must(`(()=>{const s=window.__st();return !!s&&[...s.querySelectorAll('.ro-ht')].map(t=>t.className).join('|')!==${jsLiteral(h1.cls)};})()`, 'the helper tile changed when the helper failed (was ' + h1.cls + ')');
       assert.ok(await js(`window.__pl().querySelector('b')===window.__nm`), 'FR-184: the plate kept its name node while its helper list changed');
     }
     // keyboard parity: real Tab presses reach a plate; the same zoom opens; Esc closes it and keeps the focus; the next Tab moves on and opens the next
