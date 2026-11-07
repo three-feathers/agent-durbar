@@ -470,7 +470,7 @@
         <li>It does not see your bill; costs are estimates.</li>
         <li>It sends nothing to any server of its own.</li>
         <li>Rooms you hide or switch off still run and cost money.</li></ul></section>`;
-    r.innerHTML=head('Settings')+`<div class="scr-body">${hsSec}${pfSec}${detailSec}${keySec}${notSec}${themeSec}${charSec}${logoSec}${motionSec}${stillSec}${capSec}${moodSec}${breakSec}${linksSec}${notifySec}${followSec}${schedSec}${floorsSec}${orgSec}${placesSec}
+    r.innerHTML=head('Settings')+`<div class="scr-wrap"><div class="scr-cols"><nav class="scr-nav" id="scrNav" aria-label="Settings sections" hidden></nav><div class="scr-body">${hsSec}${pfSec}${detailSec}${keySec}${notSec}${themeSec}${charSec}${logoSec}${motionSec}${stillSec}${capSec}${moodSec}${breakSec}${linksSec}${notifySec}${followSec}${schedSec}${floorsSec}${orgSec}${placesSec}
       <details class="scr-adv" id="advMcp"${advOpen?' open':''}><summary><h3 class="scr-adv-h">Advanced: MCP servers (extra tools for agents)</h3><span class="mtag warn" id="advMcpAtt"${live&&live.agg.attention?'':' hidden'}>${esc(attText(live?live.agg.attention:0))}</span></summary>
       <section class="scr-sec" aria-labelledby="mcpH"><h3 id="mcpH" tabindex="-1">MCP servers</h3>
         ${liveSection()}
@@ -488,7 +488,7 @@
       <section class="scr-sec" aria-labelledby="extH"><h3 id="extH">Extras for one folder <small>optional</small></h3>
         <p class="scr-note">Agent Durbar can add its own servers, but <b>only per folder or workspace</b>: open the <b>MCP</b> button in a room's header.</p>
         <details class="scr-more"><summary>More</summary><p class="scr-note small"><b>Folder extras…</b> in an agent's MCP menu opens the same list. Extras apply only to agents in that folder and are never shared with other folders. Switching one on shows its exact command first, and asks again if the command changes.</p></details>
-      </section></details>${aboutSec}</div>`;
+      </section></details>${aboutSec}</div></div></div>`;
     if(window.DurbarHarnesses&&window.DurbarHarnesses.shown)window.DurbarHarnesses.shown(!!hsSec); /* spec 081 FR-016: the card is the announcement while it is on screen */
     if(hsSec)window.DurbarHarnesses.loadAccounts(acctAgain); /* spec 051 FR-014: the account lines fill in after the paint (Codex takes about 2 s) */
     if(orgSec){(async()=>{ /* FR-208: a failed read is "unknown", never "no policy"; an empty view hides the section */
@@ -504,6 +504,7 @@
     if(hsSec&&window.DurbarHarnesses.loadQuota)window.DurbarHarnesses.loadQuota(acctAgain==='check'?'check':'open'); /* spec 011 FR-083: within main's floors */
     if(hsSec&&window.DurbarHarnesses.loadSandbox)window.DurbarHarnesses.loadSandbox(); /* spec 087 FR-012: the OS sandbox line per app, after the paint */
     wireHead();
+    wireSettingsNav();
     /* spec 051 FR-008: entry points open Settings at Agent apps */
     let atSec=false; /* a section was asked for (harnesses, mcp, schedules): its heading keeps the focus instead of the h2 */
     if(cur.section==='harnesses'){cur.section=null;const h=$('hsH');if(h){scrollInBody(h);h.focus({preventScroll:true});atSec=true;}}
@@ -761,6 +762,63 @@
   function liveActRow(){
     const on=!!X.liveAct.get();
     return `<div class="scr-row"><span class="scr-row-l" id="laL">Live activity on desks</span>${sw(on,'Live activity on desks: what each working agent is thinking or doing, on its desk','id="liveActSw" aria-describedby="laN"')}<span class="scr-note small" id="laN">What each working agent is thinking or doing, on its desk. Secrets are masked.</span></div>`;
+  }
+
+  /* ---------------- Settings: the section list (spec 052 FR-226, T219) ----------------
+     Built from the section headings that are on the page now (DurbarSettingsNav.build), so a section that appears or goes needs no edit here. A
+     jump scrolls .scr-body with the shared DurbarScroll.reveal (instant, so reduced motion needs nothing) and moves the focus to the heading;
+     aria-current follows the scroll. Roving tabindex: one Tab stop for the list, the arrows, Home and End move inside it. */
+  const SN_HEADS='.scr-body>.scr-sec>h3,.scr-body>.scr-adv>summary>h3';
+  function wireSettingsNav(){
+    const nav=$('scrNav'), body=document.querySelector('#screen .scr-body'), SN=window.DurbarSettingsNav;
+    if(!nav||!body||!SN)return;
+    let items=[], secs=[], now=-1, jump=null, raf=0;
+    const edge=()=>14; /* a heading within 14px of the top counts as reached (the jump leaves 12px) */
+    const paintNav=()=>{
+      const hs=[...body.querySelectorAll(SN_HEADS)];
+      const heads=hs.map(h=>{const c=h.cloneNode(true);c.querySelectorAll('small').forEach(x=>x.remove());return {id:h.id,text:c.textContent};});
+      items=SN.build(heads);
+      secs=items.map(it=>{const h=hs[it.at];if(!h.id)h.id=it.id;h.tabIndex=-1;return h.closest('.scr-sec,.scr-adv')||h;});
+      nav.hidden=items.length<2;
+      nav.innerHTML='<ul>'+items.map((it,i)=>`<li><button type="button" class="scr-nav-b" data-i="${i}" tabindex="-1">${esc(it.label)}</button></li>`).join('')+'</ul>';
+      now=-1;mark();
+    };
+    const mark=()=>{
+      if(!items.length)return;
+      const top=body.getBoundingClientRect().top;
+      const atEnd=body.scrollHeight-body.clientHeight-body.scrollTop<=1&&body.scrollTop>0;
+      let k=SN.current(secs.map(e=>e.getBoundingClientRect().top-top),edge(),atEnd);
+      if(jump){if(Math.abs(body.scrollTop-jump.at)<=1)k=jump.k;else jump=null;}
+      if(k===now&&nav.querySelector('[aria-current]'))return;
+      now=k;
+      nav.querySelectorAll('.scr-nav-b').forEach((b,i)=>{
+        if(i===k){b.setAttribute('aria-current','true');}else b.removeAttribute('aria-current');
+      });
+      const tab=nav.querySelector('.scr-nav-b:focus')||nav.querySelector(`.scr-nav-b[data-i="${k}"]`);
+      nav.querySelectorAll('.scr-nav-b').forEach(b=>{b.tabIndex=b===tab?0:-1;});
+      const cb=nav.querySelector(`.scr-nav-b[data-i="${k}"]`);
+      if(cb&&nav.scrollHeight>nav.clientHeight+1||cb&&nav.scrollWidth>nav.clientWidth+1)window.DurbarScroll.reveal(cb,{block:'nearest',inline:'nearest',margin:4,scroller:nav});
+    };
+    body.addEventListener('scroll',()=>{if(raf)return;raf=requestAnimationFrame(()=>{raf=0;if(body.isConnected)mark();});},{passive:true});
+    const go=i=>{
+      const sec=secs[i];if(!sec)return;
+      window.DurbarScroll.reveal(sec,{block:'start',margin:12,scroller:body});
+      jump={k:i,at:body.scrollTop};
+      const h=sec.matches('.scr-adv')?sec.querySelector('summary h3'):sec.querySelector('h3');
+      if(h)h.focus({preventScroll:true});
+      mark();
+    };
+    nav.addEventListener('click',e=>{const b=e.target.closest('.scr-nav-b');if(b)go(+b.dataset.i);});
+    nav.addEventListener('keydown',e=>{
+      const b=e.target.closest('.scr-nav-b');if(!b||e.ctrlKey||e.metaKey||e.altKey)return;
+      const bs=[...nav.querySelectorAll('.scr-nav-b')], i=bs.indexOf(b), n=SN.step(e.key,i,bs.length);
+      if(n<0)return;
+      e.preventDefault();
+      bs.forEach(x=>{x.tabIndex=-1;});bs[n].tabIndex=0;focusIn(bs[n]);
+    });
+    paintNav();
+    /* a section the page adds or drops after the paint (the Organization section when there is no policy) changes the list */
+    new MutationObserver(()=>{if(body.isConnected)paintNav();}).observe(body,{childList:true});
   }
   function head(title){
     const tabs=cur&&cur.kind==='tools'?'':'';

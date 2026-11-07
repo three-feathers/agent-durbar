@@ -372,7 +372,7 @@
 - [ ] T216 [PR K1] The toggle rule in `docs/design-rules.md` and `docs/review-checklist.md`; immediate checkboxes become `.swt` through `sw()`. Test: `check-ui-text`; existing screen drivers [FR-222]
 - [ ] T217 [PR K3] `accent-color`, `.inbox:focus-within`, `.send` from tokens (`.send` green in 070 A14, by whichever lands first), 3:1 and 4.5:1 in every set. Test: `check-ui-text`, ratchet lowered [FR-224]
 - [ ] T218 [PR K4] Information notes neutral, amber kept for what waits for you. Test: `check-ui-text` reads `.note.info` and a waiting card; mutant: amber default back [FR-225]
-- [ ] T219 [PR S, after spec 102 removes themes] Measure first, 7238 px and 22 headings. Section list and one row layout. Test: new `check-settings-nav` at both sizes, keyboard, jump to each section [FR-226]
+- [x] T219 [PR S] (owner decision 2026-11-07: the section list ships before 102 T266; it is built from the rendered sections so T266's removals need no list edit) Measure first, 7238 px and 22 headings. Section list (`settingsnav.js`, `<nav>` with `aria-current`) built from the rendered headings; the one row layout stays `[KNOWN GAP]` until the page is re-measured after 102. Tests: `test:settingsnav` (unit), new `check-settings-nav` at both sizes, keyboard, jump to each section [FR-226]
 
 ## FR-206..FR-208: the Needs you inbox cannot answer a request by accident (2026-11-01)
 - [x] T203 `check-inbox-safety.js` first (on `main` it fails: a stale button re-answers a request, a held A answers, key A sends a limit's hidden amount), then `reqOf` and the live-card check in `paintInbox` [FR-206]; UI-suite entry
