@@ -104,6 +104,13 @@ module.exports = async (ctx) => {
     await open('Omar');
     await must(`!!document.querySelector('#chat .note.limit')`, 'the limit card');
     await js(`document.querySelector('#chat .note.limit').scrollIntoView({block:'center'})`);
+    if (world === 'retro') {
+      /* review of #1283: the limit state's header chip (.ctxchip.high on --bad-bg) and its card, measured too */
+      const lim = await js(CONTRAST_OF(true));
+      assert.deepStrictEqual(lim.bad, [], `${tag}: contrast of ${lim.n} text elements at the limit`);
+      const chip = await js(`(()=>{const c=document.querySelector('.ctxchip.high');return c?{bg:getComputedStyle(c).backgroundColor,shown:c.getClientRects().length>0}:null})()`);
+      assert.ok(chip && chip.shown, `${tag}: the limit chip is shown (and measured above): ${JSON.stringify(chip)}`);
+    }
     await shot(world, 'chatlimit', w, h);
     // tab order equal to the flat office's for the same agent
     if (world === 'photo' || world === 'retro') {
@@ -135,6 +142,20 @@ module.exports = async (ctx) => {
       await pickTheme(was);
       assert.ok(sh.n > 0, `${tag}: the chat header has buttons (${sh.n})`);
       assert.deepStrictEqual([sh.ui, sh.shadows], ['clean', []], `${tag}: Retro Pixel theme in the Photo office: plain UI style and no offset shadow on .btn`);
+      /* spec 102 T221 (review of #1283): the arcade's mono marquee name is the world's alone. The Retro Pixel THEME in the flat office also has data-ui="retro"; its
+         chat name keeps what main gave it: no font-family of its own on .ph h2, so the header's inherited one, not the mono display font */
+      await js(`localStorage.setItem('durbar.officeview','flat')`);
+      await H.load({ w, h, query: { sim: '15', officeview: 'flat' }, settle: false });
+      await pickTheme('retro');
+      await js(`(()=>{const d=[...document.querySelectorAll('#stage .desk[data-id]')].find(x=>x.innerText.trim().startsWith('Mira'));d.click()})()`);
+      await must(`document.body.classList.contains('panel-open')`, 'the flat chat in Retro Pixel');
+      await H.settle();
+      const rp = await js(`(()=>{const h=document.getElementById('panelTitle'),e=document.documentElement;return {ui:e.dataset.ui,world:e.dataset.world||null,h2:getComputedStyle(h).fontFamily,ph:getComputedStyle(h.parentElement).fontFamily,display:getComputedStyle(e).getPropertyValue('--ui-display').trim()}})()`);
+      assert.strictEqual(rp.ui, 'retro', `${tag}: the Retro Pixel theme is shown (data-ui retro)`);
+      assert.strictEqual(rp.world, null, `${tag}: no world in the flat office`);
+      assert.strictEqual(rp.h2, rp.ph, `${tag}: Retro Pixel theme, flat office: the chat name's font is the header's own, as on main: ${JSON.stringify(rp)}`);
+      assert.notStrictEqual(rp.h2, rp.display, `${tag}: and not the arcade's mono display font`);
+      await pickTheme(was);
     }
   }
   async function shot(world, name, w, h) { await H.shot(path.join(OUT, `${world}-${name}-${w}x${h}.png`), { prep: 'calm', settle: true, tag: 'chat', what: `${world}-${name}-${w}x${h}` }); }

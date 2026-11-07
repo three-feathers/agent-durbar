@@ -261,10 +261,14 @@ for (const f of FILES) {
       if (s !== 'idle') for (const k of [`--pb-${s}`, `--pc-${s}`]) { const dh = Math.abs(hue(r[k]) - hue(clean[k])); assert.ok(Math.min(dh, 360 - dh) <= 12, `retro: ${k} keeps its hue (${dh.toFixed(1)} degrees)`); }
     }
     // the card's ink on its fill, measured here on its own: a permission, question or limit card is .note (ink-2 on pb-waiting), an error card .note.err (red-ink on pb-error)
-    for (const [fg, bg] of [['--ink-2', '--pb-waiting'], ['--ink', '--pb-waiting'], ['--ink-2', '--pb-error'], ['--amber-ink', '--pb-waiting'], ['--red-ink', '--pb-error'], ['--pc-working', '--pb-working'], ['--pc-thinking', '--pb-thinking'], ['--pc-waiting', '--pb-waiting'], ['--pc-idle', '--pb-idle'], ['--pc-error', '--pb-error'], ['--pc-done', '--pb-done']]) {
+    for (const [fg, bg] of [['--ink-2', '--pb-waiting'], ['--ink', '--pb-waiting'], ['--ink-2', '--pb-error'], ['--amber-ink', '--pb-waiting'], ['--red-ink', '--pb-error'], ['--pc-working', '--pb-working'], ['--pc-thinking', '--pb-thinking'], ['--pc-waiting', '--pb-waiting'], ['--pc-idle', '--pb-idle'], ['--pc-error', '--pb-error'], ['--pc-done', '--pb-done'], ['--red-ink', '--bad-bg'], ['--ink-2', '--bad-bg'], ['--ink', '--bad-bg']]) {
       assert.ok(contrast(r[fg], r[bg]) >= 4.5, `retro: ${fg} on ${bg}: ${contrast(r[fg], r[bg]).toFixed(2)}:1 is under 4.5:1`);
       assert.ok(rr.some((x) => x.fg === fg && x.bg === bg && x.min === 4.5), `retro: worldContrast checks ${fg} on ${bg}`);
     }
+    // review of #1283: no pale Clean Office `-bg` fill is left under the arcade's light ink (`--bad-bg` was: the limit chip at 1.77:1). Every `-bg` token of the arcade that is a
+    // plain colour is dark, bar and brand fills apart (own pairs); the drop overlay (`--drop-bg`, light `--drop-ink`) is a pair of its own. Not text fills: `--walker-bg` (an avatar disc), `--done-bg` (a tick disc)
+    for (const k of Object.keys(r).filter((x) => /-bg$/.test(x) && !/^--(wb|wp)-|^--(brand|walker|done)-bg$/.test(x))) assert.ok(/^#[0-9a-f]{6}$/i.test(r[k]) && luminance(r[k]) < 0.05, `retro: ${k} is a dark fill (${r[k]})`);
+    assert.ok(contrast(r['--drop-ink'], r['--drop-bg']) >= 4.5, `retro: --drop-ink on --drop-bg ${contrast(r['--drop-ink'], r['--drop-bg']).toFixed(2)}:1`);
     assert.ok(luminance(r['--surface']) < 0.05 && luminance(r['--bg']) < 0.05 && luminance(r['--card']) < 0.05 && luminance(r['--wb-bg']) < 0.05, 'retro: page, cards and bar are dark');
     assert.deepStrictEqual(rr.filter((x) => !(x.ratio >= x.min)).map((x) => `${x.fg} on ${x.bg} ${x.ratio.toFixed(2)}:1 < ${x.min}`), [], 'every pair of the arcade passes WCAG AA');
     assert.ok(rr.some((x) => / \(glass over #ffffff\)$/.test(x.bg) && x.fg === '--ink'), 'a dark panel is checked over white');
