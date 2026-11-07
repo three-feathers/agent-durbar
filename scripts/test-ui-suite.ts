@@ -349,7 +349,6 @@ process.on('exit', () => { if (!fr114Done) { console.error('FR-114 checks did no
     fs.rmSync(outDir, { recursive: true, force: true });
   }
   fr114Done = true;
-  // spec 008 FR-095, FR-138: one retry, alone; a repeated failure stays a failure, a pass on retry is FLAKY in the log and the job summary
 async function shardMain(): Promise<void> {
   const { shard, DRIVERS } = require(SUITE) as { shard: (l: unknown[], s?: string) => unknown[]; DRIVERS: Array<{ name: string }> };
   // review on #1257: main() must use shard(), from --shard and from UI_SUITE_SHARD; a bare --shard and an empty shard fail
@@ -396,6 +395,7 @@ async function shardMain(): Promise<void> {
     }
   }
 }
+// spec 008 FR-095, FR-138: one retry, alone; a repeated failure stays a failure, a pass on retry is FLAKY in the log and the job summary
 async function retries(): Promise<void> {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const { main, DRIVERS } = require(SUITE) as { main: (o: unknown) => Promise<void>; DRIVERS: Array<{ name: string; label?: string }> };
@@ -478,7 +478,20 @@ console.log('ui-suite: check-parallel and ui-suite install Electron once before 
       assert.deepStrictEqual(ex, Array.from({ length: n - 1 }, (_, i) => i + 2), `${os} excludes shards 2..${n}`);
     }
     assert.strictEqual([...text.matchAll(/-\s*\{\s*os:/g)].length, 2 * (n - 1), 'no other excludes');
-    assert.ok(!/^\s+if: matrix\.shard == 1\s*\n\s+run: node scripts\/check-theme-geometry/m.test(text), 'theme geometry runs in every shard');
+    // review on #1257: a step's whole text, from its "- name:" line to the next step
+    const step = (title: string): string => {
+      const at = text.indexOf(`- name: ${title}`);
+      assert.ok(at >= 0, `step "${title}" exists`);
+      const rest = text.slice(at + 1);
+      const next = rest.search(/\n\s+- (name|run|uses):/);
+      return next < 0 ? rest : rest.slice(0, next);
+    };
+    assert.ok(!/^\s+if:/m.test(step('Theme geometry')), 'theme geometry has no if: at all (every shard, every OS)');
+    for (const title of ['Office layout (15 agents, 1440x900 and 1280x800)', 'Mac title bar']) {
+      const cond = step(title).match(/^\s+if: (.*)$/m);
+      assert.ok(cond, `"${title}" has an if:`);
+      assert.ok(cond[1].startsWith('matrix.shard == 1 &&'), `"${title}" runs in shard 1 only: its if: starts with "matrix.shard == 1 &&"`);
+    }
   }
   console.log('ui-suite shards: ok');
 }
