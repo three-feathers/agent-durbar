@@ -556,7 +556,20 @@ async function driver(ctx) {
         await ctx.js(`document.getElementById('backBtn').click()`);
         await H.until(`!document.body.classList.contains('panel-open')&&!!document.querySelector('#stage .ro .ro-plate')`, 8000);
       }
-      if (marks.narrow) await ctx.js(`window.__durbarSimUi.unread.mark(${jsLiteral(marks.narrow)})`); /* a New reply tag on the narrowest plate too (FR-238) */
+      /* a New reply tag on the narrowest plate too (FR-238). unread.mark only sets the mark: nothing draws it, and an unread agent keeps its desk (spec 001 FR-173), so a lounge seat marked here moves to a desk at the NEXT render, which was the chat step's close (CI, Linux, 4 of 4 runs, and 4 of 6 on the Mac). Draw it now (paint) and wait for the tag and for the plates to stop moving, so the baseline below is taken with every seed applied. */
+      if (marks.narrow) {
+        await ctx.js(`window.__durbarSimUi.unread.mark(${jsLiteral(marks.narrow)})`);
+        await ctx.js(`window.__durbarSimUi.paint()`);
+        if (!(await H.until(`!!document.querySelector('#stage .ro-newtag.on[data-for]')&&window.__durbarSimUi.settleNow()`, 8000))) { total++; failed++; console.log(`FAIL ${tag}: no New reply tag showed on ${marks.narrow}`); }
+      }
+      const plateSig = `(async()=>{await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));return [...document.querySelectorAll('#stage .ro-plate')].map(e=>{const r=e.getBoundingClientRect();return e.dataset.id+'@'+Math.round(r.x)+','+Math.round(r.y)}).join(';')})()`;
+      for (let prevSig = null, end = Date.now() + 15000; ;) { /* the plates' own positions: stable() reads Open office's rooms and desks, none of which a Real office has */
+        const sig = await ctx.js(plateSig);
+        if (sig === prevSig) break;
+        if (Date.now() > end) throw new Error(`timed out after 15000 ms waiting for the plates to settle (${tag} with drafts)`);
+        prevSig = sig;
+        await sleep(50);
+      }
       if (!(await H.until(`document.querySelectorAll('#stage .ro-drafttag.on').length>=${jsLiteral(Math.min(picks.length, 2))}`, 8000))) { total++; failed++; console.log(`FAIL ${tag}: no Draft tag showed for the drafted desks (${JSON.stringify(marks)})`); }
       /* the seeding opened and closed chats, which takes wall-clock time: a visit that was waiting for its debounce or dwell starts or ends on its own and re-flows the office (CI, Linux, 4 of 4 runs). Seeds are all applied here; wait until nothing is about to start or end, then take the baseline. */
       if (!(await H.until(`window.__durbarSimUi.visitsSettled()&&window.__durbarSimUi.settleNow()`, 15000))) { total++; failed++; console.log(`FAIL ${tag}: the office did not settle after the drafts were seeded`); continue; }
