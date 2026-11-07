@@ -37,10 +37,15 @@
     for(let i=pool.length-2;i>=0&&!one;i--){const next=pool[i]+' '+out;if(Array.from(next).length>max)break;out=next;}
     return cutOf(out,max);
   }
+  /* spec 097 FR-317 (issue #1284): a tool NAME is shown through the same mask as a label (MCP servers choose names). Control codes out first, then the mask;
+     a name the mask changed in ANY way is shown as the generic word `tool`, never half hidden. No mask or a failing one: `tool` too. Every surface that shows a name calls this. */
+  const toolName=(raw,mask)=>{const m=mask||{};try{if(typeof m.redact!=='function')return 'tool'; /* no mask: fail closed, as a label */
+    const t=String(clearIn(raw==null?'':raw,m.redact)).trim();if(!t)return 'tool';
+    const x=ST.maskRaw(t,m.redact);return x===t?t:'tool';}catch(e){return 'tool';}}; /* shown only when the mask left it exactly as it was: any change, a failed or cut mask ("[redaction failed]", the 1,000,000-character cut), a throw: `tool` */
   /* A tool start as a verb phrase. kind: read | edit | run | search | tool (the chat's toolKind); label: the chat's toolLabel. */
   function phrase(o,mask){
     const m=mask||{}, cl=x=>m.redact?clearIn(x,m.redact):stripAnsi(x); /* control codes out first, the way the monitor line does (a token split by an escape must be whole for the mask) */
-    const kind=o&&o.kind||'tool', tool=String(cl(o&&o.tool||'tool')||'tool'), raw=String(cl(o&&o.label||'')).trim();
+    const kind=o&&o.kind||'tool', tool=toolName(o&&o.tool,m), raw=String(cl(o&&o.label||'')).trim();
     const isUrl=/^[a-z][a-z0-9+.-]{1,20}:\/\//i.test(raw);
     /* spec 097 FR-314 (review of PR 1272): the home folder goes BEFORE the cut, so a cut user name leaves no start of itself; no home mask: as it is */
     const hm=x=>{if(typeof m.home!=='function')return x;const h=m.home(x);return typeof h==='string'?h:'';};
@@ -172,5 +177,5 @@
     };
   }
   const KIND_WORD={think:'Thinking',tool:'Working',reply:'Replying'};
-  return {create,phrase,lastSentences,plain,excerpt,stripAnsi,KIND_WORD,PAINT_MS,LINE_MAX,PANEL_MAX,STREAM_MAX,SCREEN_LINES,SCREEN_CHARS};
+  return {create,phrase,toolName,lastSentences,plain,excerpt,stripAnsi,KIND_WORD,PAINT_MS,LINE_MAX,PANEL_MAX,STREAM_MAX,SCREEN_LINES,SCREEN_CHARS};
 })());

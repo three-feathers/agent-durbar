@@ -18,6 +18,7 @@ const L = require(path.join(R, 'liveact.js')) as {
   create(o: { mask: { redact(s: string): string; cmd(s: string): string; url(s: string): string } }): Feed;
   lastSentences(t: string, max: number, one?: boolean): string;
   phrase(o: Record<string, unknown>, mask?: Record<string, (s: string) => string>): string;
+  toolName(t: unknown, mask?: Record<string, (s: string) => string>): string;
   PAINT_MS: number; LINE_MAX: number; PANEL_MAX: number; STREAM_MAX: number;
 };
 const mask = { redact: (s: string) => redact(s, {}), cmd: (s: string) => maskSecretCommand(s, {}), url: (s: string) => maskSecretUrl(s, {}) };
@@ -431,5 +432,60 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
   ok(/ask\?LIVEACT\.strict\(/.test(rs), 'a question or error through the strict mask');
   const ro = fs.readFileSync(path.join(R, 'realoffice.js'), 'utf8');
   ok(!/\.ro-sl|ro-rows[^]*innerHTML/.test(ro.slice(ro.indexOf('function fillRows'), ro.indexOf('function paintScreen'))), 'rows take no markup');
+}
+// spec 097 FR-317 (issue #1284): a tool NAME goes through the mask like a label; a masked name shows as the generic word `tool`
+{
+  const names: Record<string, string> = {
+    ghp: 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4',
+    sk: 'sk-' + 'proj-A1b2C3d4E5f6G7h8I9j0K1l2M3n4',
+    aws: 'AKIA' + 'Z7Q2W9X4C6V8B1N3',
+    ansi: 'ghp_A1b2C3d4E5\x1b[0mf6G7h8I9j0K1l2M3n4',
+    bidi: 'ghp_A1b2C3d4E5\u202ef6G7h8I9j0K1l2M3n4',
+    ansiAws: 'AKIAZ7Q2W9\x1b[0mX4C6V8B1N3',
+  };
+  const hm = { ...mask, home: (s: string) => maskHomePaths(s, []) };
+  for (const [what, name] of Object.entries(names)) {
+    eq(L.toolName(name, hm), 'tool', what + ': toolName gives the generic word');
+    for (const kind of ['tool', 'read', 'run']) {
+      const p = L.phrase({ kind, tool: name, label: '' }, hm);
+      ok(!/ghp_|A1b2C3d4|sk-proj|AKIAZ7|Z7Q2W9|X4C6V8|f6G7h8/.test(p) && !/[\x00-\x1f\u202a-\u202e]/.test(p), what + '/' + kind + ': phrase shows no part of the name: ' + p);
+    }
+    eq(L.phrase({ kind: 'tool', tool: name, label: '' }, hm), 'Using tool', what + ': the desk line says Using tool');
+    const f = mk(); f.onEvent('s', ev({ type: 'toolCall', phase: 'start', callId: 'c', tool: name, args: {} }), { kind: 'tool', label: '' });
+    const r = f.of('s');
+    ok(r && r.tool === 'Using tool' && !/ghp_|AKIA|sk-/.test(r.text + r.lines + r.long + r.tool), what + ': the monitor line, desk line and fact: ' + JSON.stringify(r));
+  }
+  eq(L.toolName('read_file', hm), 'read_file', 'a plain name stays');
+  eq(L.toolName('mcp__github__create_issue', hm), 'mcp__github__create_issue', 'an MCP name with underscores stays');
+  eq(L.toolName('', hm), 'tool', 'empty: tool');
+  eq(L.toolName(undefined, hm), 'tool', 'missing: tool');
+  eq(L.toolName('bash\x1b[31m', hm), 'bash', 'control codes go');
+  const TK = 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4';
+  eq(L.toolName(TK, {}), 'tool', 'no mask: tool (fail closed, as a label)');
+  eq(L.toolName('read_file', {}), 'tool', 'no mask: tool even for a harmless name');
+  eq(L.toolName(TK, undefined), 'tool', 'no mask object: tool');
+  eq(L.toolName(TK, { redact: () => { throw new Error('boom'); } }), 'tool', 'a throwing mask: tool');
+  { let got: unknown; try { got = L.toolName({ toString() { throw new Error('boom'); } }, hm); } catch (e) { got = 'threw: ' + (e as Error).message; }
+    eq(got, 'tool', 'a mask that throws (toString throws) gives tool'); }
+  eq(L.toolName(TK, { redact: () => '[redaction failed]' }), 'tool', 'a failed redact (its own [redaction failed] result): tool');
+  eq(L.toolName(TK, { redact: () => TK + ' ' }), 'tool', 'any change at all: tool');
+  eq(L.toolName(TK, { redact: () => undefined as unknown as string }), 'tool', 'a mask answering no string: tool');
+  eq(L.toolName('x'.repeat(1000001) + TK, hm), 'tool', 'over the 1,000,000-character cut of redact: tool, never the raw token');
+  eq(L.phrase({ kind: 'tool', tool: TK, label: '' }, { redact: () => '[redaction failed]' }), 'Using tool', 'phrase with a failed mask: Using tool');
+  // the chat: every surface that names a tool calls the one function
+  const app = fs.readFileSync(path.join(R, 'app.js'), 'utf8');
+  ok(/const shownTool=t=>LIVE_MASK&&window\.DurbarLiveAct\?window\.DurbarLiveAct\.toolName\(t,LIVE_MASK\):'tool'/.test(app), 'the page has one chat tool-name function, no mask: tool');
+  const chip = app.slice(app.indexOf('function makeChip('), app.indexOf('document.addEventListener', app.indexOf('function makeChip(')));
+  ok(/name=TOOLNAME\[tool\]\|\|shownTool\(tool\)/.test(chip), 'the chip name uses it');
+  ok(/el\.title=name\+': '\+label/.test(chip) && !/el\.title=[^;]*\btool\b/.test(chip.replace(/TOOLNAME\[tool\]\|\|shownTool\(tool\)/, '')), 'the chip tooltip is built from the masked name, not the raw tool');
+  ok(/return shownTool\(e\.tool\)\+\(lbl\?/.test(app), 'the card task line uses it');
+  ok(/'Using '\+\(c\.tool\?shownTool\(c\.tool\):'a tool'\)/.test(app), 'the waiting line uses it');
+  const scr = fs.readFileSync(path.join(R, 'screens.js'), 'utf8');
+  ok(/const shown=t=>typeof X\.shownTool==='function'\?X\.shownTool\(t\):'tool'/.test(scr), 'screens has one tool-name function, failing closed');
+  ok(/aria-label="\$\{esc\(shown\(t\.name\)\+' of '\+n\)\}"><code title="\$\{esc\(shown\(t\.name\)\)\}">\$\{esc\(shown\(t\.name\)\)\}<\/code>/.test(scr), 'Settings MCP tool list: label, tooltip and name masked');
+  ok(/<th scope="row"><code>\$\{esc\(shown\(r\.name\)\)\}<\/code>/.test(scr), 'tool-usage table: name masked');
+  ok(/data-tool="\$\{esc\(t\.name\)\}"/.test(scr), 'the raw name stays for matching (data-tool)');
+  ok(/mcpCtxSet:\(id,v\)=>mcpViewChanged\(id,v\),\s*shownTool,/.test(app), 'the page hands screens the same shownTool');
+  ok(!/\+\s*e\.tool\s*\+|'Using '\+String\(c\.tool/.test(app), 'no raw tool name is joined into text');
 }
 console.log(`liveact: ${n} checks passed`);
