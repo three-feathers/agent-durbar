@@ -32,7 +32,19 @@ module.exports = async (ctx) => {
     return {n:sc.length,by,pics:sc.filter(s=>s.querySelector(${jsLiteral(CREW_IMG)})).length,anyPic:document.querySelectorAll(${jsLiteral('#stage ' + CREW_IMG)}).length};})()`);
   /* issue 839: what the app holds when a crew step times out (it only failed on the macOS runner, never on a Mac at scale 1 or 2 or under reduced
      motion): the next nightly says why instead of only "timed out" */
-  const why = () => H.js(`JSON.stringify({chars:window.THEME.characters(),kit:window.THEME.sceneKit(),theme:window.THEME.current().id,settings:!!document.getElementById('chList'),sceneOut:document.querySelectorAll('.scene-out').length,renders:(window.__durbarSimUi&&window.__durbarSimUi.ops?window.__durbarSimUi.ops().renders:-1),vis:document.visibilityState,focus:document.hasFocus(),sigs:[...new Set([...document.querySelectorAll('#stage .desk[data-id] svg.scene')].map(s=>(s.dataset.sig||'').split('|').slice(3).join('|')))].slice(0,4)})`);
+  const why = async () => (await whyNow()) + ' ' + (await afterRender());
+  /* the state is read only when a step fails: a forced redraw on a passing step would change what the next step sees */
+  /* ui-suite shows a failure's last 25 log lines cut at 240 characters (and the message at 300): the state goes out as short [why] lines first */
+  const must = async (ok, msg) => {
+    if (ok) return;
+    const w = await why().catch((e) => 'diagnostic failed: ' + e.message);
+    for (let i = 0; i < w.length; i += 200) console.log('[why] ' + w.slice(i, i + 200));
+    assert.fail(msg + ' (the state is in the [why] lines above)');
+  };
+  /* the state now; then the same after a forced full redraw (render(): layout key reset): signatures that change there mean the office skipped those
+     desks, signatures that stay mean the crew map itself holds the old crew (issue 839, run 42205363015: the Royal "king" still drawn under Rebels) */
+  const afterRender = async () => { const r0 = await H.js(`window.__durbarSimUi.ops().renders`); await H.js(`window.__durbarSimUi.render();true`); await H.until(`window.__durbarSimUi.ops().renders>${jsLiteral(r0)}`, 5000); return 'after a full redraw: ' + (await H.js(`JSON.stringify({map:[...new Set(Object.values(window.__durbarSimUi.crew.state().map))].slice(0,6),sigs:[...new Set([...document.querySelectorAll('#stage .desk[data-id] svg.scene')].map(s=>(s.dataset.sig||'').split('|').slice(3).join('|')))].slice(0,4)})`)); };
+  const whyNow = () => H.js(`JSON.stringify({chars:window.THEME.characters(),kit:window.THEME.sceneKit(),theme:window.THEME.current().id,settings:!!document.getElementById('chList'),sceneOut:document.querySelectorAll('.scene-out').length,renders:(window.__durbarSimUi&&window.__durbarSimUi.ops?window.__durbarSimUi.ops().renders:-1),vis:document.visibilityState,focus:document.hasFocus(),map:[...new Set(Object.values(window.__durbarSimUi.crew.state().map))].slice(0,6),sigs:[...new Set([...document.querySelectorAll('#stage .desk[data-id] svg.scene')].map(s=>(s.dataset.sig||'').split('|').slice(3).join('|')))].slice(0,4)})`);
   const openSettings = async () => {
     if (!(await H.js(`!!document.getElementById('chList')`))) await H.js(`document.getElementById('settingsBtn').click()`);
     assert.ok(await H.until(`!!document.getElementById('chList')&&!!document.getElementById('thList')`, 6000), 'Settings shows the Theme and Characters lists');
@@ -107,7 +119,7 @@ module.exports = async (ctx) => {
       // Cheeky on top of the theme
       await pickChars('cheeky');
       await close();
-      assert.ok(await H.until(`(()=>{const sc=[...document.querySelectorAll('#stage .desk[data-id] svg.scene')].filter(s=>s.getClientRects().length);return sc.length>=12&&sc.every(s=>/\\|crew(\\||$)/.test(s.dataset.sig||'')&&s.querySelector(${jsLiteral(CREW_IMG)}));})()`, 10000), `${where}: Cheeky: every desk draws the crew kit with a portrait (${JSON.stringify(await desks())})` + ' ' + (await why()));
+      await must(await H.until(`(()=>{const sc=[...document.querySelectorAll('#stage .desk[data-id] svg.scene')].filter(s=>s.getClientRects().length);return sc.length>=12&&sc.every(s=>/\\|crew(\\||$)/.test(s.dataset.sig||'')&&s.querySelector(${jsLiteral(CREW_IMG)}));})()`, 10000), `${where}: Cheeky: every desk draws the crew kit with a portrait (${JSON.stringify(await desks())})`);
       assert.strictEqual(await H.js(`window.THEME.current().id`), theme, `${where}: the theme stays ${theme}`);
       assert.strictEqual(await H.js(`window.THEME.themeKit()`), kit, `${where}: the theme's own kit is unchanged`);
       await H.clearToasts();
@@ -115,44 +127,44 @@ module.exports = async (ctx) => {
       // Prehistoric on top of the theme (FR-072): the crew kit with a Prehistoric picture on every desk
       await pickChars('prehistoric');
       await close();
-      assert.ok(await H.until(`(()=>{const sc=[...document.querySelectorAll('#stage .desk[data-id] svg.scene')].filter(s=>s.getClientRects().length);return sc.length>=12&&sc.every(s=>/\\|crew(\\||$)/.test(s.dataset.sig||'')&&s.querySelector('image[href*="crew/art/prehistoric-"]'));})()`, 10000), `${where}: Prehistoric: every desk draws the crew kit with a Prehistoric portrait` + ' ' + (await why()));
+      await must(await H.until(`(()=>{const sc=[...document.querySelectorAll('#stage .desk[data-id] svg.scene')].filter(s=>s.getClientRects().length);return sc.length>=12&&sc.every(s=>/\\|crew(\\||$)/.test(s.dataset.sig||'')&&s.querySelector('image[href*="crew/art/prehistoric-"]'));})()`, 10000), `${where}: Prehistoric: every desk draws the crew kit with a Prehistoric portrait`);
       assert.strictEqual(await H.js(`window.THEME.current().id`), theme, `${where}: the theme stays ${theme} under Prehistoric`);
       assert.ok(await H.until(`document.querySelectorAll('#stage image[href^="crew/art/"]:not([href*="prehistoric-"])').length===0`, 3000), `${where}: no Cheeky picture under Prehistoric`);
       // Pirate on top of the theme (FR-074): the crew kit with a Pirate picture on every desk
       await pickChars('pirate');
       await close();
-      assert.ok(await H.until(`(()=>{const sc=[...document.querySelectorAll('#stage .desk[data-id] svg.scene')].filter(s=>s.getClientRects().length);return sc.length>=12&&sc.every(s=>/\\|crew(\\||$)/.test(s.dataset.sig||'')&&s.querySelector('image[href*="crew/art/pirate-"]'));})()`, 10000), `${where}: Pirate: every desk draws the crew kit with a Pirate portrait` + ' ' + (await why()));
+      await must(await H.until(`(()=>{const sc=[...document.querySelectorAll('#stage .desk[data-id] svg.scene')].filter(s=>s.getClientRects().length);return sc.length>=12&&sc.every(s=>/\\|crew(\\||$)/.test(s.dataset.sig||'')&&s.querySelector('image[href*="crew/art/pirate-"]'));})()`, 10000), `${where}: Pirate: every desk draws the crew kit with a Pirate portrait`);
       assert.strictEqual(await H.js(`window.THEME.current().id`), theme, `${where}: the theme stays ${theme} under Pirate`);
       assert.ok(await H.until(`document.querySelectorAll('#stage image[href^="crew/art/"]:not([href*="pirate-"])').length===0`, 3000), `${where}: no other crew's picture under Pirate`); // waits like the Prehistoric line above: the desks repaint a moment after the pick
       // Monster on top of the theme (FR-075): the crew kit with a Monster picture on every desk
       await pickChars('monster');
       await close();
-      assert.ok(await H.until(`(()=>{const sc=[...document.querySelectorAll('#stage .desk[data-id] svg.scene')].filter(s=>s.getClientRects().length);return sc.length>=12&&sc.every(s=>/\\|crew(\\||$)/.test(s.dataset.sig||'')&&s.querySelector('image[href*="crew/art/monster-"]'));})()`, 10000), `${where}: Monster: every desk draws the crew kit with a Monster portrait` + ' ' + (await why()));
+      await must(await H.until(`(()=>{const sc=[...document.querySelectorAll('#stage .desk[data-id] svg.scene')].filter(s=>s.getClientRects().length);return sc.length>=12&&sc.every(s=>/\\|crew(\\||$)/.test(s.dataset.sig||'')&&s.querySelector('image[href*="crew/art/monster-"]'));})()`, 10000), `${where}: Monster: every desk draws the crew kit with a Monster portrait`);
       assert.strictEqual(await H.js(`window.THEME.current().id`), theme, `${where}: the theme stays ${theme} under Monster`);
       assert.ok(await H.until(`document.querySelectorAll('#stage image[href^="crew/art/"]:not([href*="monster-"])').length===0`, 3000), `${where}: no other crew's picture under Monster`); // waits for the repaint like the Prehistoric and Pirate lines (FR-048b)
       // Royal on top of the theme (FR-076): the crew kit with a Royal picture on every desk
       await pickChars('royal');
       await close();
-      assert.ok(await H.until(`(()=>{const sc=[...document.querySelectorAll('#stage .desk[data-id] svg.scene')].filter(s=>s.getClientRects().length);return sc.length>=12&&sc.every(s=>/\\|crew(\\||$)/.test(s.dataset.sig||'')&&s.querySelector('image[href*="crew/art/royal-"]'));})()`, 10000), `${where}: Royal: every desk draws the crew kit with a Royal portrait` + ' ' + (await why()));
+      await must(await H.until(`(()=>{const sc=[...document.querySelectorAll('#stage .desk[data-id] svg.scene')].filter(s=>s.getClientRects().length);return sc.length>=12&&sc.every(s=>/\\|crew(\\||$)/.test(s.dataset.sig||'')&&s.querySelector('image[href*="crew/art/royal-"]'));})()`, 10000), `${where}: Royal: every desk draws the crew kit with a Royal portrait`);
       assert.strictEqual(await H.js(`window.THEME.current().id`), theme, `${where}: the theme stays ${theme} under Royal`);
       assert.ok(await H.until(`document.querySelectorAll('#stage image[href^="crew/art/"]:not([href*="royal-"])').length===0`, 3000), `${where}: no other crew's picture under Royal`); // waits for the repaint like the Prehistoric, Pirate and Monster lines (FR-048b)
       // Animal Rebels on top of the theme (FR-077): the crew kit with an Animal Rebels picture on every desk
       await pickChars('rebels');
       await close();
-      assert.ok(await H.until(`(()=>{const sc=[...document.querySelectorAll('#stage .desk[data-id] svg.scene')].filter(s=>s.getClientRects().length);return sc.length>=12&&sc.every(s=>/\\|crew(\\||$)/.test(s.dataset.sig||'')&&s.querySelector('image[href*="crew/art/rebels-"]'));})()`, 10000), `${where}: Animal Rebels: every desk draws the crew kit with an Animal Rebels portrait` + ' ' + (await why()));
+      await must(await H.until(`(()=>{const sc=[...document.querySelectorAll('#stage .desk[data-id] svg.scene')].filter(s=>s.getClientRects().length);return sc.length>=12&&sc.every(s=>/\\|crew(\\||$)/.test(s.dataset.sig||'')&&s.querySelector('image[href*="crew/art/rebels-"]'));})()`, 10000), `${where}: Animal Rebels: every desk draws the crew kit with an Animal Rebels portrait`);
       assert.strictEqual(await H.js(`window.THEME.current().id`), theme, `${where}: the theme stays ${theme} under Animal Rebels`);
       assert.ok(await H.until(`document.querySelectorAll('#stage image[href^="crew/art/"]:not([href*="rebels-"])').length===0`, 3000), `${where}: no other crew's picture under Animal Rebels`); // waits for the repaint like the other crews' lines (FR-048b)
       // Minimalist on top of the theme
       await pickChars('minimalist');
       await close();
-      assert.ok(await H.until(`(()=>{const sc=[...document.querySelectorAll('#stage .desk[data-id] svg.scene')].filter(s=>s.getClientRects().length);return sc.length>=12&&sc.every(s=>!/\\|(pixel|crew)(\\||$)/.test(s.dataset.sig||''))&&!document.querySelector(${jsLiteral('#stage ' + CREW_IMG)});})()`, 10000), `${where}: Minimalist: the office figure on every desk (${JSON.stringify(await desks())})` + ' ' + (await why()));
+      await must(await H.until(`(()=>{const sc=[...document.querySelectorAll('#stage .desk[data-id] svg.scene')].filter(s=>s.getClientRects().length);return sc.length>=12&&sc.every(s=>!/\\|(pixel|crew)(\\||$)/.test(s.dataset.sig||''))&&!document.querySelector(${jsLiteral('#stage ' + CREW_IMG)});})()`, 10000), `${where}: Minimalist: the office figure on every desk (${JSON.stringify(await desks())})`);
       // back to Cheeky, then The theme's own: the theme's figures come back
       await pickChars('cheeky');
       await close();
       assert.ok(await H.until(`document.querySelectorAll(${jsLiteral('#stage .desk[data-id] svg.scene ' + CREW_IMG)}).length>=12`, 10000), `${where}: Cheeky again`);
       await pickChars('theme');
       await close();
-      assert.ok(await H.until(`(()=>{const sc=[...document.querySelectorAll('#stage .desk[data-id] svg.scene')].filter(s=>s.getClientRects().length);return sc.length>=12&&sc.every(s=>(s.dataset.sig||'').includes(${jsLiteral('|' + kit)}))&&!document.querySelector(${jsLiteral('#stage ' + CREW_IMG)});})()`, 10000), `${where}: The theme's own: ${kit} figures back, no portrait left (${JSON.stringify(await desks())})` + ' ' + (await why()));
+      await must(await H.until(`(()=>{const sc=[...document.querySelectorAll('#stage .desk[data-id] svg.scene')].filter(s=>s.getClientRects().length);return sc.length>=12&&sc.every(s=>(s.dataset.sig||'').includes(${jsLiteral('|' + kit)}))&&!document.querySelector(${jsLiteral('#stage ' + CREW_IMG)});})()`, 10000), `${where}: The theme's own: ${kit} figures back, no portrait left (${JSON.stringify(await desks())})`);
     }
     // a theme switch keeps the chosen crew: Cheeky on Retro, then Clean Office
     // the loop above ends on Retro: picking it again would repaint the Characters list late and race the next click

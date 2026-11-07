@@ -37,11 +37,19 @@
     for(let i=pool.length-2;i>=0&&!one;i--){const next=pool[i]+' '+out;if(Array.from(next).length>max)break;out=next;}
     return cutOf(out,max);
   }
+  /* spec 097 FR-317 (issue #1284): a tool NAME is shown through the same mask as a label (MCP servers choose names). Control codes out first, then the mask;
+     a name the mask changed in ANY way is shown as the generic word `tool`, never half hidden. No mask or a failing one: `tool` too. Every surface that shows a name calls this. */
+  const toolName=(raw,mask)=>{const m=mask||{};try{if(typeof m.redact!=='function')return 'tool'; /* no mask: fail closed, as a label */
+    const t=String(clearIn(raw==null?'':raw,m.redact)).trim();if(!t)return 'tool';
+    const x=ST.maskRaw(t,m.redact);return x===t?t:'tool';}catch(e){return 'tool';}}; /* shown only when the mask left it exactly as it was: any change, a failed or cut mask ("[redaction failed]", the 1,000,000-character cut), a throw: `tool` */
   /* A tool start as a verb phrase. kind: read | edit | run | search | tool (the chat's toolKind); label: the chat's toolLabel. */
   function phrase(o,mask){
-    const m=mask||{}, kind=o&&o.kind||'tool', tool=String(o&&o.tool||'tool'), raw=String(o&&o.label||'').trim();
+    const m=mask||{}, cl=x=>m.redact?clearIn(x,m.redact):stripAnsi(x); /* control codes out first, the way the monitor line does (a token split by an escape must be whole for the mask) */
+    const kind=o&&o.kind||'tool', tool=toolName(o&&o.tool,m), raw=String(cl(o&&o.label||'')).trim();
     const isUrl=/^[a-z][a-z0-9+.-]{1,20}:\/\//i.test(raw);
-    const lab=ST.maskLabel(raw,kind,m);
+    /* spec 097 FR-314 (review of PR 1272): the home folder goes BEFORE the cut, so a cut user name leaves no start of itself; no home mask: as it is */
+    const hm=x=>{if(typeof m.home!=='function')return x;const h=m.home(x);return typeof h==='string'?h:'';};
+    const lab=hm(ST.maskLabel(raw,kind,m));
     const t=tool.toLowerCase();
     let verb;
     if(isUrl||/fetch|web|url|http/.test(t))verb='Opening';
@@ -49,8 +57,8 @@
     else if(kind==='edit')verb='Editing';
     else if(kind==='run')verb='Running';
     else if(kind==='search')verb='Searching';
-    else return cutOf('Using '+tool+(lab?' '+lab:''),LINE_MAX);
-    return cutOf(verb+(lab?' '+lab:''),LINE_MAX);
+    else return cutOf(hm('Using '+tool+(lab?' '+lab:'')),LINE_MAX);
+    return cutOf(hm(verb+(lab?' '+lab:'')),LINE_MAX);
   }
   /* spec 097 FR-031: terminal control codes never reach a screen: CSI, OSC, DCS and the like, control characters and text-direction overrides.
      Stripped BEFORE masking: an escape inside a token (gh<ESC>[0mp_...) would hide it from the mask and be glued back by the strip. */
@@ -60,6 +68,7 @@
   /* the same text with only the escape's introducer gone: what `gh<ESC>[p_...` or `gh<U+009B>p_...` is if the letter after it belongs to a token, not to the escape */
   const INTRO=/\x1b\[|\x1b\]|\x1b[P^_X]|\x1b|[\x90\x98\x9b\x9d\x9e\x9f]/g;
   const introOut=t=>String(t==null?'':t).replace(INTRO,'').replace(/\r\n?/g,'\n').replace(CTRL,'');
+  const clearIn=(raw,redact)=>{const a=stripAnsi(raw);try{const b=introOut(raw),p=ST.unhide?ST.unhide(b):b;if(b!==a&&redact(p)!==p)return b;}catch(e){return '';}return a;};
   /* A sentence over SCREEN_CHARS goes on as more lines, cut at a word where there is one */
   const chunks=t=>{const c=Array.from(t),out=[];let i=0;
     while(c.length-i>SCREEN_CHARS){let j=i+SCREEN_CHARS;for(let k=j;k>i+SCREEN_CHARS/2;k--)if(c[k]===' '){j=k;break;}out.push(c.slice(i,j).join('').trim());i=j;}
@@ -75,7 +84,7 @@
        A text cut at KEEP loses its first word for the same reason. */
     const home=t=>{if(!mask.home)return t;const h=mask.home(t);return typeof h==='string'?h:'';};
     /* control codes out: as escapes, unless read the other way they leave a token, which must then be masked in that reading */
-    const clear=raw=>{const a=stripAnsi(raw);try{const b=introOut(raw),p=ST.unhide?ST.unhide(b):b;if(b!==a&&mask.redact(p)!==p)return b;}catch(e){return '';}return a;};
+    const clear=raw=>clearIn(raw,mask.redact);
     const block=(raw,k,done)=>{
       if(!mask.redact)return [];
       let t=String(raw==null?'':raw);
@@ -133,8 +142,10 @@
         if(e.phase!=='start'||x.skip)return false;
         commit(s);
         s.buf='';
+        /* spec 097 FR-314 (review of PR 1272): ONE phrase (`phrase` clears its input, masks it, the home folder too, before the cut): the desk line, the
+           grown desk's last tool, the zoom and the monitor line all read it. No redact: control codes are stripped and the label masks fail closed. */
         const p=phrase({kind:x.kind,tool:e.tool,label:x.label},mask);
-        if(mask.redact){const l=home(phrase({kind:x.kind,tool:clear(e.tool),label:clear(x.label)},mask));if(l)logPush(s,'cmd',l,e.callId);}
+        if(mask.redact&&p)logPush(s,'cmd',p,e.callId);
         s.tool=p; /* spec 001 FR-047: the last tool of this turn stays for a wide grown desk while the agent thinks or replies */
         return set(s,'tool',p,p);}
       case 'user':commit(s);s.buf='';s.tool='';return set(s,'','','');
@@ -166,5 +177,5 @@
     };
   }
   const KIND_WORD={think:'Thinking',tool:'Working',reply:'Replying'};
-  return {create,phrase,lastSentences,plain,excerpt,stripAnsi,KIND_WORD,PAINT_MS,LINE_MAX,PANEL_MAX,STREAM_MAX,SCREEN_LINES,SCREEN_CHARS};
+  return {create,phrase,toolName,lastSentences,plain,excerpt,stripAnsi,KIND_WORD,PAINT_MS,LINE_MAX,PANEL_MAX,STREAM_MAX,SCREEN_LINES,SCREEN_CHARS};
 })());
