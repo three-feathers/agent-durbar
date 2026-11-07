@@ -408,7 +408,9 @@ console.log(`theme tokens guard passed (${n} corpus checks, ${FILES.length} file
   }
   { // 070 T024 (FR-051): tier 3 for the switch and the primary button; the chain ends in --sage-ink, so the on track follows the world
   const root = css.slice(css.indexOf(':root{'), css.indexOf('\n}', css.indexOf(':root{')));
-  const decl = (n: string): string => { const m = root.match(new RegExp('(?:^|[\\s;])' + n + ':([^;]+);')); assert.ok(m, `${n} declared in :root`); return m![1]; };
+  const declIn = (src: string, n: string): string => { const all = [...src.matchAll(new RegExp('(?:^|[\\s;])' + n + ':([^;]+);', 'g'))]; assert.ok(all.length > 0, `${n} declared in :root`); return all[all.length - 1][1]; }; // CSS applies the last declaration, so the last one is read
+  const decl = (n: string): string => declIn(root, n);
+  assert.equal(declIn(':root{--accent:var(--sage-ink);--accent:var(--blue-ink);}', '--accent'), 'var(--blue-ink)', 'mutant: a later duplicate --accent wins, as in CSS');
   assert.equal(decl('--accent'), 'var(--sage-ink)');
   const scr2 = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'screens.css'), 'utf8');
   // the aliases sit on the consuming selectors (not :root), so each resolves per element and follows a scope that re-sets --surface or --ink
