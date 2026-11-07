@@ -43,12 +43,12 @@
 ## Flat's modern look and one button scale (2026-11-02, owner, #524; FR-061..FR-067). All PR A14, which closes #495 and #524
 
 - [ ] T033 Measure first: re-run the button table on `main`, Send and Compact included; a colour snapshot of Real office, cave, Retro and a user pack as a fixture, new driver `check-flat-look`. No visual change. Test: the driver passes on `main` [FR-063, FR-066]
-- [ ] T034 FR-061's values and `--accent` as tokens in both pinned copies; a non-Clean pack's fallback keeps today's values; `test-theme.ts`, `shots-097-realoffice.js` pins updated, naming each. Test: `test:theme-tokens`, `check-flat-look` [FR-061, FR-065, FR-066]
-- [ ] T035 `--h-ctl` 24 (FR-075), padding and text; `.ib`, `.fl-ib`, `.ptab`; approvals 28; design rule 1 changed in place. Test: acceptance 2, `check:geometry`, `check:office`, top bar at 1280 [FR-063, FR-064]
+- [~] T034 (slice, behind the flag: `--flat-*` tokens and the gate, `test:theme-tokens` section at the end; not in `CLEAN_TOKENS` or the pins, since theme.js stays untouched) FR-061's values and `--accent` as tokens in both pinned copies; a non-Clean pack's fallback keeps today's values; `test-theme.ts`, `shots-097-realoffice.js` pins updated, naming each. Test: `test:theme-tokens`, `check-flat-look` [FR-061, FR-065, FR-066]
+- [~] T035 (slice: `--h-ctl`, `--btn-*`, `--ib-size`, `--ptab-h`, `--ct-h`, `--btn-sm-h`; driver `shots-070-flat-look.js` measures) `--h-ctl` 24 (FR-075), padding and text; `.ib`, `.fl-ib`, `.ptab`; approvals 28; design rule 1 changed in place. Test: acceptance 2, `check:geometry`, `check:office`, top bar at 1280 [FR-063, FR-064]
 - [ ] T036 `--btn-primary-*`, Send, secondary outline, and the list of roles changed, in the PR description. Test: acceptance 1; mutant: a second primary in one dialog [FR-062]
 - [ ] T037 T020's literals, file by file, after #948 and #954; ratchet lowered. Test: acceptance 4, 5 [FR-065]
 - [ ] T038 Contrast pairs and mutants [FR-067]
-- [ ] T039 Pictures at 1440x900 and 1280x800, before and after: office, chat, Settings, a dialog, inbox, in Flat and Real office; `npm run shots:docs` retakes linked pictures. The owner looks and says yes before the merge; `real:` no AI credits [FR-061, FR-063, FR-066]
+- [~] T039 (pictures taken by `shots-070-flat-look.js`, flag off and on; the owner's look is pending) Pictures at 1440x900 and 1280x800, before and after: office, chat, Settings, a dialog, inbox, in Flat and Real office; `npm run shots:docs` retakes linked pictures. The owner looks and says yes before the merge; `real:` no AI credits [FR-061, FR-063, FR-066]
 
 ## World surfaces further from Flat (2026-11-02, owner; FR-068..FR-074). PRs A15..A17 of spec 005's plan
 
