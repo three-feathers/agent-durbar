@@ -191,11 +191,11 @@ module.exports = async (ctx) => {
   await js(`document.querySelector('#scrNav .scr-nav-b[data-i="5"]').focus()`);
   const before = await js(`document.activeElement.textContent`);
   await js(`document.querySelector('.scr-body>.scr-sec').remove()`); // the first section: every entry shifts by one
-  await ok(`document.querySelectorAll('#scrNav .scr-nav-b').length===${built0 - 1}`, 'narrow: the list is rebuilt without the removed section');
+  await ok(`document.querySelectorAll('#scrNav .scr-nav-b').length===${jsLiteral(built0 - 1)}`, 'narrow: the list is rebuilt without the removed section');
   assert.deepStrictEqual(await js(`({inNav:!!document.activeElement.closest('#scrNav'),text:document.activeElement.textContent,tag:document.activeElement.tagName})`), { inNav: true, text: before, tag: 'BUTTON' }, 'narrow: the focus stays on the same entry when the list is rebuilt');
   await js(`document.querySelector('#scrNav .scr-nav-b:last-child, #scrNav li:last-child .scr-nav-b').focus()`);
   await js(`[...document.querySelectorAll('.scr-body>.scr-sec,.scr-body>.scr-adv')].slice(-1)[0].remove()`); // the last section, under the focus on the last entry
-  await ok(`document.querySelectorAll('#scrNav .scr-nav-b').length===${built0 - 2}`, 'narrow: the list is rebuilt again');
+  await ok(`document.querySelectorAll('#scrNav .scr-nav-b').length===${jsLiteral(built0 - 2)}`, 'narrow: the list is rebuilt again');
   assert.strictEqual(await js(`!!document.activeElement.closest('#scrNav')`), true, 'narrow: the focus moves to the nearest entry when its own is gone');
   // fewer than two sections: no list at all (one entry is no navigation)
   await js(`[...document.querySelectorAll('.scr-body>.scr-sec,.scr-body>.scr-adv')].slice(1).forEach(e=>e.remove())`);
