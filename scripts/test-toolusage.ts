@@ -48,10 +48,10 @@ const s = sanitizeDoc(JSON.parse(`{"version":9,"since":"nope","tools":{"builtin:
   "servers":{"a":{"calls":2},"__proto__":{"calls":9},"b":{"calls":0}},
   "agents":{"Ada · app":{"calls":5,"tools":{"builtin:bash":{"calls":5},"mcp:ghost/t":{"calls":1}}},"constructor":{"calls":1},"empty":{}}}`), new Date('2026-01-01T00:00:00Z'));
 assert.strictEqual(s.since, '2026-01-01T00:00:00.000Z', 'bad since -> now');
-assert.deepStrictEqual(Object.keys(s.tools).sort(), ['builtin:bash', 'mcp:a/b']);
+assert.deepStrictEqual(Object.keys(s.tools).sort(), ['builtin:bash', 'mcp:a/b'], 'M12: a stored tool under a prototype key is dropped on load');
 assert.strictEqual(s.tools['builtin:bash'].failed, 0);
 assert.strictEqual(s.tools['mcp:a/b'].calls, 2);
-assert.deepStrictEqual(Object.keys(s.servers), ['a']);
+assert.deepStrictEqual(Object.keys(s.servers), ['a'], 'M12: a stored server under a prototype key is dropped on load');
 assert.deepStrictEqual(Object.keys(s.agents), ['Ada · app']);
 assert.deepStrictEqual(Object.keys(s.agents['Ada · app'].tools), ['builtin:bash'], 'a per-agent tool without a total is dropped');
 assert.strictEqual(sanitizeDoc({ tools: { 'builtin:x': { name: 'x', calls: 1e30 } } }).tools['builtin:x'].calls, 1e12, 'counts are clamped');
