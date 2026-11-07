@@ -50,7 +50,9 @@ description: "Tasks for spec 084: contacts, and sending the message box to a per
   - AC5: a URL over 2,000 characters gives `{error: 'too-long', encodedLength}`, and the `copyOnly` form drops `message`/`body`/`text`.
   - AC6: `CONTACT_LINK_ALLOWLIST` is the one constant with the five prefixes of FR-040 (a static test finds no other copy of them in `src/`); every result starts with one of its entries; 10,000 generated channels and texts (Unicode, emoji, RTL, `&`, `#`, `%`, CR/LF, NUL) and FR-004's hostile addresses (non-ASCII look-alikes included) never give another prefix or an extra query parameter (parse the result with `URL` and compare its parameter names; the test imports the constant) (SC-003).
   - AC7: `scripts/test-contactlinks.ts` (new `test:contactlinks`) covers AC1..AC6; it runs on all three CI OSes.
-  - AC8 (after T010 merges, review of T011): `contactlinks.ts` takes its caps (`CONTACTS_LIMITS.urlChars`, the 254 / 64 / 63 address caps, the Slack and Telegram lengths) and its address, Slack and Telegram rules from `src/shared/contacts.ts` instead of its own copies; a test pins `linkAddressOk` to `addressOk` on one corpus (T010's hostile list plus the 10,000 generated addresses) and `test-contactlinks` uses T010's hostile corpus.
+- [ ] T018 One source for the contact rules, after T010 and T011 are on `main` (reviews of T011 and PR 1246). [FR-003, FR-004, FR-005, FR-044]
+  - AC1: `contactlinks.ts` takes its caps (`CONTACTS_LIMITS.urlChars`, the 254 / 64 / 63 address caps, the Slack and Telegram lengths) and its address, Slack and Telegram rules from `src/shared/contacts.ts` instead of its own copies; a test pins `linkAddressOk` to `addressOk` on one corpus (T010's hostile list plus the 10,000 generated addresses) and `test-contactlinks` uses T010's hostile corpus.
+  - AC2: T010's save check refuses the Telegram names of `TELEGRAM_RESERVED_PATHS` (case-insensitive) with the field's reason, from that one list (no second copy); a test saves each name and gets the refusal.
 - [x] T012 [P] `maskOutgoing(text, values)` in `src/shared/redact.ts`. [FR-033, SC-002]
   - AC1: masks known values (≥ 4 characters, longest first), the token runs across Markdown marks and what `redact` finds as one union of spans, then `redact`; also on a copy without hidden characters (`HIDDEN_CHARS`), the union of both; returns the masked text and `changed`. (Reworded 2026-11-06, reviews of T012 and PR 1236.)
   - AC2: every token shape of `test-redact`'s corpus planted in a message, inside Markdown and split by `**` or a backtick, gives `changed: true`.
@@ -69,6 +71,7 @@ description: "Tasks for spec 084: contacts, and sending the message box to a per
   - AC4: an opener rejection gives `outcome: 'open-failed'` and a log entry; the error text returned is a fixed sentence.
   - AC5: under `DURBAR_SIM` the opener and clipboard are recording stubs; a test proves `shell.openExternal` and `clipboard.writeText` are not called (spy on the injected real ones).
   - AC6: `app:openExternal` is unchanged (a test still refuses `mailto:`, `slack:` and `msteams:` there).
+  - AC7: when the subject, body or text holds a direction-changing character (U+202A..U+202E, U+2066..U+2069, U+200E, U+200F, U+061C), the preview shows *Contains direction-changing characters* and strips or visibly marks them before the send (the builder encodes them unchanged); a test with each one.
 - [ ] T017 Proven click, rate limit and reachability in `src/main/ipc/contacts.ts`. [FR-083, FR-084, FR-085, SC-008]
   - AC1: main records the time of the last trusted `input-event` (mouse-up, key-up of Enter or Space) of the app window (injected source in tests); `contacts:open`, `sendMcp`, `importRun` and `draft` are refused without one in the last 1 s, with an expired (60 s), used or unknown `previewId`, or with a `previewId` of another agent; each refusal opens, copies and sends nothing (spy on opener, clipboard and adapter `send`).
   - AC2: a `previewId` is used up by its first accepted call; a second call with it is refused; an edited text needs a new preview.
@@ -188,7 +191,7 @@ description: "Tasks for spec 084: contacts, and sending the message box to a per
 
 ## Dependencies
 
-- T010..T017 before Phase 2; T017 after T014. T011, T012 before T014. T016 before T022. T020 before T021's *Manage contacts…*.
+- T018 after T010 and T011. T010..T017 before Phase 2; T017 after T014. T011, T012 before T014. T016 before T022. T020 before T021's *Manage contacts…*.
 - T030, T031 before T033; T032 before T033; T034 before T035.
 - T017 before T023, T033, T041 and T050. T033 before T041; T040 before T041.
 - T014 before T050.

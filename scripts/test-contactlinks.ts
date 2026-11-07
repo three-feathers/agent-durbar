@@ -7,7 +7,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import {
-  CONTACT_LINK_ALLOWLIST, SUBJECT_CODE_POINTS, buildContactLink, emailParts, encodeValue, encodedLengthOf, linkAddressOk, wellFormed, wellFormedFallback,
+  CONTACT_LINK_ALLOWLIST, SUBJECT_CODE_POINTS, TELEGRAM_RESERVED_PATHS, buildContactLink, telegramNameOk, emailParts, encodeValue, encodedLengthOf, linkAddressOk, wellFormed, wellFormedFallback,
   type LinkChannel, type LinkResult,
 } from '../src/shared/contactlinks';
 
@@ -44,13 +44,14 @@ export const HOSTILE_ADDRESSES: readonly string[] = [
   '.alex@example.invalid', 'alex.@example.invalid', 'al..ex@example.invalid', 'alex@-example.invalid', 'alex@example..invalid',
   'alex@example.invalid/../x', 'alex\u0000@example.invalid', 'a'.repeat(65) + '@example.invalid', 'a.'.repeat(60) + 'a@' + 'b'.repeat(63) + '.' + 'c'.repeat(63) + '.invalid',
   '', 'alex', '\ud800@example.invalid',
+  'alex@ex_ample.invalid', 'alex@example.inv_alid', 'alex@_example.invalid', 'alex@example_.invalid', 'alex@example.invalid_',
 ];
 const HOSTILE_SLACK: readonly string[] = [
   'T123&id=U999', 'T123?x=1', 'T123#x', 'T123\n', 't123', 'T1', 'T' + 'A'.repeat(21), 'tel:12345', 'javascript:alert', 'T12\u0430', 'T123 ', 'T%41BC', '',
 ];
 const HOSTILE_TELEGRAM: readonly string[] = [
   'alex_example?text=x', 'alex_example#x', 'alex/../x', 'tel:1234567', '_alexample', '1alexample', 'alex', 'al\u0435xexample', 'alex example',
-  'alex.example', 'alex-example', 'a'.repeat(33), 'alexexample\n', 'alexexample%2F', '',
+  'alex.example', 'alex-example', 'a'.repeat(33), 'alexexample\n', 'alexexample%2F', '', 'joinchat', 'Share', 'ADDSTICKERS', 'setLanguage',
 ];
 
 const TEAMS_WEB = 'https://teams.microsoft.com/l/chat/0/0?';
@@ -257,6 +258,67 @@ test('lone surrogates become U+FFFD (no URIError), pairs are kept', () => {
   assert.strictEqual(ok(buildContactLink({ kind: 'slack', team: 'T12', user: 'U12' }, 'a\ud800')).copyText, 'a\ufffd');
 });
 
+test('R1 hostile objects never throw: getters are not called, Proxy traps that throw give the error of their part', () => {
+  let called = 0;
+  const getter = (v: unknown) => ({ enumerable: true, get() { called++; if (v instanceof Error) throw v; return v; } });
+  const channels: Array<[string, object]> = [
+    ['throwing getter', Object.defineProperty({ kind: 'teams' }, 'upn', getter(new Error('boom')))],
+    ['valid-looking getter', Object.defineProperty({ kind: 'teams' }, 'upn', getter(UPN))],
+    ['getter on kind', Object.defineProperty({ upn: UPN }, 'kind', getter('teams'))],
+  ];
+  const revoked = Proxy.revocable({ kind: 'teams', upn: UPN }, {});
+  revoked.revoke();
+  channels.push(['revoked Proxy', revoked.proxy]);
+  channels.push(['throwing getOwnPropertyDescriptor trap', new Proxy({ kind: 'teams', upn: UPN }, { getOwnPropertyDescriptor() { throw new Error('trap'); } })]);
+  for (const [name, ch] of channels) assert.deepStrictEqual(buildContactLink(ch as LinkChannel, 'hi'), { error: 'bad-channel' }, name);
+  assert.strictEqual(called, 0, 'no getter is ever called');
+  // traps the builder does not use: the plain data still gives the link
+  for (const trap of ['get', 'has', 'ownKeys', 'getPrototypeOf'] as const) {
+    const p = new Proxy({ kind: 'teams', upn: UPN }, { [trap]() { throw new Error('trap ' + trap); } });
+    assert.strictEqual(ok(buildContactLink(p as LinkChannel, 'hi')).url, TEAMS_WEB + 'users=' + ENC_UPN + '&message=hi', trap);
+  }
+  // text: only a string is read
+  const revokedText = Proxy.revocable({}, {});
+  revokedText.revoke();
+  for (const t of [revokedText.proxy, new Proxy({}, { get() { throw new Error('x'); } }), { toString() { throw new Error('x'); } }]) {
+    assert.deepStrictEqual(buildContactLink({ kind: 'teams', upn: UPN }, t as unknown as string), { error: 'bad-text' });
+  }
+  // options: own data properties only; a hostile object gives bad-options
+  const ch = { kind: 'teams', upn: UPN };
+  const revokedOpts = Proxy.revocable({ copyOnly: true }, {});
+  revokedOpts.revoke();
+  for (const o of [revokedOpts.proxy, new Proxy({ copyOnly: true }, { getOwnPropertyDescriptor() { throw new Error('trap'); } }), 5, 'copyOnly']) {
+    assert.deepStrictEqual(buildContactLink(ch, 'hi', o as never), { error: 'bad-options' }, String(typeof o));
+  }
+  for (const o of [Object.create({ copyOnly: true, teamsApp: true }), Object.defineProperty({}, 'copyOnly', getter(true)), Object.defineProperty({}, 'teamsApp', getter(new Error('x')))]) {
+    const r = ok(buildContactLink(ch, 'hi', o));
+    assert.deepStrictEqual([r.url, r.prefill], [TEAMS_WEB + 'users=' + ENC_UPN + '&message=hi', true]);
+  }
+  assert.strictEqual(called, 0);
+  for (const trap of ['get', 'has', 'ownKeys'] as const) {
+    const o = new Proxy({ copyOnly: true }, { [trap]() { throw new Error('trap'); } });
+    assert.strictEqual(ok(buildContactLink(ch, 'hi', o)).prefill, false, trap);
+  }
+});
+test('R2 an underscore is fine in the local part and refused in any domain label', () => {
+  assert.ok(linkAddressOk('alex_example@example.invalid'));
+  for (const a of ['alex@ex_ample.invalid', 'alex@example.inv_alid', 'alex@_example.invalid', 'alex@example_.invalid', 'alex@a_b.example.io']) {
+    assert.ok(!linkAddressOk(a), a);
+  }
+});
+test('R3 Telegram names that open a page, not a chat, are refused in any case', () => {
+  for (const n of ['share', 'joinchat', 'addstickers', 'addemoji', 'addtheme', 'addlist', 'proxy', 'socks', 'login', 'setlanguage', 'confirmphone', 'invoice', 'giftcode', 'boost', 'contact', 'c', 's', 'm', 'iv', 'bg']) {
+    assert.ok(TELEGRAM_RESERVED_PATHS.has(n), n);
+  }
+  for (const n of TELEGRAM_RESERVED_PATHS) {
+    for (const v of [n, n.toUpperCase(), n[0].toUpperCase() + n.slice(1)]) {
+      assert.ok(!telegramNameOk(v), v);
+      assert.deepStrictEqual(buildContactLink({ kind: 'telegram', username: v }, 'hi'), { error: 'bad-channel' }, v);
+    }
+  }
+  for (const v of ['shares', 'share_bot', 'joinchats', 'alex_example', 'Login_Helper']) assert.ok('url' in buildContactLink({ kind: 'telegram', username: v }, 'hi'), v);
+});
+
 // AC6: the one allow-list
 function repoRoot(): string {
   let d = __dirname;
@@ -372,8 +434,9 @@ function genChannel(r: () => number): { ch: LinkChannel; valid: boolean } {
   const kind = pick(r, ['teams', 'email', 'slack', 'telegram'] as const);
   const hostile = r() < 0.3;
   if (kind === 'teams' || kind === 'email') {
-    const a = hostile ? (r() < 0.6 ? pick(r, HOSTILE_ADDRESSES) : word(r, 'abc', 3) + pick(r, PIECES) + '@example.invalid')
-      : word(r, 'abcxyz09._+-', 1 + Math.floor(r() * 10)).replace(/^\.|\.$|\.\.+/g, 'q') + '@' + word(r, 'abc09', 2) + '.example.invalid';
+    const h = r();
+    const a = hostile ? (h < 0.5 ? pick(r, HOSTILE_ADDRESSES) : h < 0.75 ? word(r, 'abc', 3) + pick(r, PIECES) + '@example.invalid' : 'alex@' + word(r, 'ab_-', 1 + Math.floor(r() * 5)) + '.' + pick(r, ['example', 'ex_ample']) + '.' + pick(r, ['invalid', 'inv_alid', 'io']))
+      : word(r, 'abcxyz09._+-_', 1 + Math.floor(r() * 10)).replace(/^\.|\.$|\.\.+/g, 'q') + '@' + word(r, 'abc09', 2) + '.example.invalid';
     return { ch: kind === 'teams' ? { kind, upn: a } : { kind, address: a }, valid: refAddressOk(a) };
   }
   if (kind === 'slack') {
@@ -382,7 +445,7 @@ function genChannel(r: () => number): { ch: LinkChannel; valid: boolean } {
     return { ch: { kind, team, user }, valid: /^T[A-Z0-9]{2,20}$/.test(team) && /^[UW][A-Z0-9]{2,20}$/.test(user) };
   }
   const username = hostile ? pick(r, HOSTILE_TELEGRAM) : 'a' + word(r, 'abcXYZ_09', 4 + Math.floor(r() * 28));
-  return { ch: { kind, username }, valid: /^[A-Za-z][A-Za-z0-9_]{4,31}$/.test(username) };
+  return { ch: { kind, username }, valid: /^[A-Za-z][A-Za-z0-9_]{4,31}$/.test(username) && !TELEGRAM_RESERVED_PATHS.has(username.toLowerCase()) };
 }
 const VALUE_RE = /^[A-Za-z0-9\-._~%]*$/;
 const expectedNames = (kind: string, copyOnly: boolean): string[] =>

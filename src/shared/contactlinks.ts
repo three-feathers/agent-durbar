@@ -44,7 +44,7 @@ export interface LinkOptions {
   copyOnly?: boolean;
 }
 
-export type LinkError = 'bad-channel' | 'bad-text' | 'too-long';
+export type LinkError = 'bad-channel' | 'bad-text' | 'bad-options' | 'too-long';
 export type LinkResult =
   | { url: string; encodedLength: number; prefill: boolean; copyText?: string }
   | { error: LinkError; encodedLength?: number };
@@ -58,6 +58,18 @@ const LABEL_RE = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$/;
 const SLACK_TEAM_RE = /^T[A-Z0-9]{2,20}$/;
 const SLACK_USER_RE = /^[UW][A-Z0-9]{2,20}$/;
 const TELEGRAM_RE = /^[A-Za-z][A-Za-z0-9_]{4,31}$/;
+/**
+ * t.me paths that open a Telegram page or action, not a person's chat (sharing, invite links, sticker, emoji and theme sets, chat
+ * folders, proxies, log-in, language packs, phone confirmation, invoices, gift codes, boosts, contact tokens, message, preview and
+ * Instant View links). They are refused case-insensitively, as Telegram usernames are. Names shorter than 5 fail TELEGRAM_RE anyway
+ * and are listed so this stays the one list (T018: spec 084 T010's save check uses it too). From reading t.me links, `read:`.
+ */
+export const TELEGRAM_RESERVED_PATHS: ReadonlySet<string> = new Set([
+  'share', 'joinchat', 'addstickers', 'addemoji', 'addtheme', 'addlist', 'proxy', 'socks', 'login', 'setlanguage', 'confirmphone',
+  'invoice', 'giftcode', 'boost', 'contact', 'c', 's', 'm', 'iv', 'bg',
+]);
+/** FR-003 and the reserved paths: a name that opens a person's or a group's chat. */
+export const telegramNameOk = (v: unknown): v is string => typeof v === 'string' && TELEGRAM_RE.test(v) && !TELEGRAM_RESERVED_PATHS.has(v.toLowerCase());
 
 export function linkAddressOk(v: unknown): v is string {
   if (typeof v !== 'string' || v.length > 254) return false;
@@ -150,10 +162,16 @@ function cutSubject(line: string): string {
   return line.slice(0, hard);
 }
 
-/** Own string field only (no prototype, read once). */
+/**
+ * An own data property only: never the prototype, never a getter (it is not called). A Proxy trap may still throw here; the caller
+ * catches that.
+ */
+function ownValue(c: object, key: string): unknown {
+  const d = Object.getOwnPropertyDescriptor(c, key);
+  return d && 'value' in d ? d.value : undefined;
+}
 function field(c: object, key: string): string | undefined {
-  if (!Object.prototype.hasOwnProperty.call(c, key)) return undefined;
-  const v = (c as Record<string, unknown>)[key];
+  const v = ownValue(c, key);
   return typeof v === 'string' ? v : undefined;
 }
 
@@ -167,42 +185,72 @@ function assemble(head: string, params: Array<[string, string]>): LinkResult {
   return { url, encodedLength: url.length, prefill: true };
 }
 
+interface ReadInput { kind?: string; upn?: string; address?: string; team?: string; user?: string; username?: string; text: string; teamsApp: boolean; copyOnly: boolean }
+
+/**
+ * Everything the builder uses, copied once into plain values. Reading a hostile object (a Proxy whose trap throws, a revoked Proxy)
+ * can throw only here, and each part's throw becomes its own error; after this only strings and booleans are touched.
+ */
+function readInput(channel: unknown, text: unknown, opts: unknown): ReadInput | { error: LinkError } {
+  let c: Omit<ReadInput, 'text' | 'teamsApp' | 'copyOnly'>;
+  try {
+    if (!channel || typeof channel !== 'object') return { error: 'bad-channel' };
+    c = {
+      kind: field(channel, 'kind'), upn: field(channel, 'upn'), address: field(channel, 'address'),
+      team: field(channel, 'team'), user: field(channel, 'user'), username: field(channel, 'username'),
+    };
+  } catch {
+    return { error: 'bad-channel' };
+  }
+  if (typeof text !== 'string') return { error: 'bad-text' };
+  let teamsApp = false;
+  let copyOnly = false;
+  try {
+    if (opts !== undefined && opts !== null) {
+      if (typeof opts !== 'object') return { error: 'bad-options' };
+      teamsApp = ownValue(opts, 'teamsApp') === true;
+      copyOnly = ownValue(opts, 'copyOnly') === true;
+    }
+  } catch {
+    return { error: 'bad-options' };
+  }
+  return { ...c, text, teamsApp, copyOnly };
+}
+
 /**
  * FR-040..FR-045: the link for one channel and text. Teams `users` + `message` (FR-041), email `subject` + `body` (FR-042),
  * Slack `team` + `id` with the text to copy (FR-043), Telegram `text` (FR-044); over 2,000 characters `too-long` (FR-045).
- * `copyOnly` drops `message` / `body` / `text` and returns `copyText` (for email the body; the subject stays). Never throws.
+ * `copyOnly` drops `message` / `body` / `text` and returns `copyText` (for email the body; the subject stays).
+ * Never throws: a channel, text or options it cannot read gives `bad-channel`, `bad-text` or `bad-options`.
  */
-export function buildContactLink(channel: LinkChannel, text: string, opts: LinkOptions = {}): LinkResult {
-  if (!channel || typeof channel !== 'object') return { error: 'bad-channel' };
-  if (typeof text !== 'string') return { error: 'bad-text' };
-  const o = opts && typeof opts === 'object' ? opts : {};
-  const copyOnly = o.copyOnly === true;
-  const kind = field(channel, 'kind');
-  const t = wellFormed(text);
+export function buildContactLink(channel: LinkChannel, text: string, opts?: LinkOptions): LinkResult {
+  const input = readInput(channel, text, opts);
+  if ('error' in input) return input;
+  const { kind, copyOnly } = input;
+  const t = wellFormed(input.text);
   const copied = (r: LinkResult, copyText: string): LinkResult => ('url' in r ? { ...r, prefill: false, copyText } : r);
   if (kind === 'teams') {
-    const upn = field(channel, 'upn');
+    const upn = input.upn;
     if (!linkAddressOk(upn)) return { error: 'bad-channel' };
-    const head = o.teamsApp === true ? TEAMS_APP : TEAMS_WEB;
+    const head = input.teamsApp ? TEAMS_APP : TEAMS_WEB;
     if (copyOnly) return copied(assemble(head, [['users', upn]]), t);
     return assemble(head, [['users', upn], ['message', t]]);
   }
   if (kind === 'email') {
-    const address = field(channel, 'address');
+    const address = input.address;
     if (!linkAddressOk(address)) return { error: 'bad-channel' };
     const { subject, body } = emailParts(t);
     if (copyOnly) return copied(assemble(MAILTO + address + '?', [['subject', subject]]), body);
     return assemble(MAILTO + address + '?', [['subject', subject], ['body', body]]);
   }
   if (kind === 'slack') {
-    const team = field(channel, 'team');
-    const user = field(channel, 'user');
+    const { team, user } = input;
     if (team === undefined || user === undefined || !SLACK_TEAM_RE.test(team) || !SLACK_USER_RE.test(user)) return { error: 'bad-channel' };
     return copied(assemble(SLACK, [['team', team], ['id', user]]), t);
   }
   if (kind === 'telegram') {
-    const username = field(channel, 'username');
-    if (username === undefined || !TELEGRAM_RE.test(username)) return { error: 'bad-channel' };
+    const username = input.username;
+    if (!telegramNameOk(username)) return { error: 'bad-channel' };
     if (copyOnly) return copied(assemble(TELEGRAM + username, []), t);
     return assemble(TELEGRAM + username + '?', [['text', t]]);
   }
