@@ -67,5 +67,64 @@
     };
   }
 
-  return {APP,COALESCE_MS,THROTTLE_MS,BODY_MAX,titleFor,clip,waitLabel,sortOldestFirst,createNotifier};
+  /* Your door (spec 052 FR-193, T196): what is NEW to the panel that opens by itself. Pure; time injected. Items are {key, id, kind, card}:
+     a card's key is its request id (all of an agent's cards, not only the oldest), a state with no card is agent plus kind. Unlike the notifier
+     it remembers a key after the agent leaves the list while that agent is paused (unpausing shows the same card: not new). A settled card, or a
+     card-less key whose agent left that state, is forgotten; an error is forgotten only after a full THROTTLE_MS out of error (a retry loop opens once).
+     Before `armed` everything is only remembered. observe() returns {fresh, startup}: startup is true once, on the first armed look with anything waiting. */
+  function createArrivals(o){
+    const now=(o&&o.now)||(()=>Date.now()), throttle=(o&&o.throttleMs)||THROTTLE_MS;
+    const known=new Map(); let wasArmed=false;
+    return {
+      observe(items,f){
+        const opts=f||{}, armed=!!opts.armed, paused=typeof opts.isPaused==='function'?opts.isPaused:()=>false;
+        const list=(Array.isArray(items)?items:[]).filter(x=>x&&x.key!=null&&x.id!=null), present=new Set(list.map(x=>String(x.key)));
+        const fresh=[];
+        for(const x of list){
+          const k=String(x.key), v=known.get(k);
+          if(v){v.seen=now();continue;}
+          /* the same agent gaining its card (a demo chat being built): its card-less wait of the same kind, or a plain wait */
+          const flip=x.card?[String(x.id)+'|'+x.kind,String(x.id)+'|w'].find(f=>known.has(f)&&!known.get(f).card):null;
+          if(flip){known.delete(flip);known.set(k,{id:x.id,kind:x.kind,card:true,seen:now()});continue;}
+          known.set(k,{id:x.id,kind:x.kind,card:!!x.card,seen:now()});
+          if(armed)fresh.push(x);
+        }
+        for(const [k,v] of [...known]){
+          if(present.has(k)||paused(v.id))continue;
+          if(!v.card&&v.kind==='e'&&now()-v.seen<throttle)continue;
+          known.delete(k);
+        }
+        let startup=false;
+        if(armed&&!wasArmed){wasArmed=true;startup=list.length>0;}
+        return {fresh,startup};
+      },
+    };
+  }
+
+  /* When the panel may open by itself. arrive(n): n new requests; startup(): something waited at app start; dismissed(): the person closed it.
+     decide({open, held}) -> 'open' | 'startup' | 'hold' | 'none'. A burst is one opening; a held opening stays pending (nothing is lost) and
+     opens once when the guard clears; a request within COALESCE_MS of a dismissal does not snap it back, and it opens at most once per THROTTLE_MS.
+     App start is not throttled or coalesced (the owner wants the list) but is held like any opening. */
+  function createDoorGate(o){
+    const now=(o&&o.now)||(()=>Date.now()), coalesce=(o&&o.coalesceMs)||COALESCE_MS, throttle=(o&&o.throttleMs)||THROTTLE_MS;
+    let pending=0, start=false, lastDismiss=-Infinity, lastOpen=-Infinity;
+    return {
+      arrive(n){if(n>0)pending+=n;},
+      startup(){start=true;},
+      dismissed(){lastDismiss=now();},
+      decide(s){
+        const st=s||{};
+        if(st.open){pending=0;start=false;return 'none';}
+        if(!pending&&!start)return 'none';
+        if(st.held)return 'hold';
+        const t=now();
+        if(start){start=false;pending=0;lastOpen=t;return 'startup';}
+        pending=0;
+        if(t-lastDismiss<coalesce||t-lastOpen<throttle)return 'none';
+        lastOpen=t;return 'open';
+      },
+    };
+  }
+
+  return {APP,COALESCE_MS,THROTTLE_MS,BODY_MAX,titleFor,clip,waitLabel,sortOldestFirst,createNotifier,createArrivals,createDoorGate};
 })());
