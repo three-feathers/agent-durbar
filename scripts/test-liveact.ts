@@ -1,5 +1,6 @@
 /** Live activity on the desks (spec 001 FR-028..FR-032): readout rules, masking through the shared redact module, the paint throttle,
  * and the page wiring. `npm run test:liveact`. No credits spent. */
+import './safetext-shared'; // the compiled hidden-character module for safetext.js (spec 084 FR-033)
 import assert from 'assert';
 import { assertLinearShape } from './redact-growth-lib';
 import fs from 'fs';
