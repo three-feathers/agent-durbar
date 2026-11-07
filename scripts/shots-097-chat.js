@@ -5,12 +5,14 @@
  *   SHOTS_OUT=<dir> DURBAR_USER_DATA=$(mktemp -d) DURBAR_SIM=15 DURBAR_SIM_FREEZE=1 \
  *     DURBAR_DRIVER=$PWD/scripts/shots-097-chat.js npx electron .        (xvfb-run -a ... --no-sandbox on Linux)
  *
- * For the Photo office and the cave (MOMENTS_WORLDS, default photo) at 1440x900 and 1280x800 it fails (exit 1) when:
+ * For the Photo office, the cave and the Retro arcade (MOMENTS_WORLDS, default photo; the arcade also at 1100x800) it fails (exit 1) when:
  *   - a desk-side column exists (the owner removed it on 2026-11-01) or the chat is not the window's width beside the 220px agent rail (spec 005 FR-190);
  *   - the header has no 32 px portrait with its lamp ring, dot and a cropped picture, or the lamp words ("Lamp warm, steady", ...) are not on the task line alone, whole beside a long task;
  *   - the tab order of the panel is not the flat office's (the same agent, same elements);
  *   - the panel surface is under 78 % opaque, or any text pair (title, lamp words, cards, hint) is under 4.5:1 against the composited surface (3:1 for large text);
  *   - text under 10.5 px;
+ *   - (spec 102 RA6, T221, `retro`) a pending permission card of a waiting agent is not dark, or any text of any card of the chat (title, paragraphs, summary, buttons) is under 4.5:1 (3:1 large);
+ *     the header's name is not on the marquee (a fill, the mark's yellow); the tab order differs from the flat office's for the same agent;
  *   - (#1144, FR-245) with Retro Pixel picked as the theme, a header button (.btn) in the Photo office has an offset box-shadow (the arcade's hard 3px shadow); the theme comes back after.
  * Screenshots: <SHOTS_OUT>/<world>-chat-<w>x<h>.png, <world>-chatlimit-<w>x<h>.png.
  */
@@ -22,6 +24,7 @@ const { helpers, jsLiteral } = require('./driver-helpers');
 
 const OUT = process.env.SHOTS_OUT || fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-097-chat-'));
 const SIZES = [[1440, 900], [1280, 800]];
+const sizesOf = (world) => (world === 'retro' ? [...SIZES, [1100, 800]] : SIZES); /* spec 102 T221: the arcade's chat also at 1100x800 */
 const WORLDS = (process.env.MOMENTS_WORLDS || 'photo').split(',');
 
 module.exports = async (ctx) => {
@@ -29,7 +32,7 @@ module.exports = async (ctx) => {
   const { js } = H;
   const must = async (expr, what, ms = 15000) => assert.ok(await H.until(expr, ms), 'timed out waiting for ' + what);
   const REAL = `!!document.querySelector('#stage .ro .ro-plate')&&document.getElementById('stage').dataset.d==='real'`;
-  const q = (world, extra = {}) => ({ officeview: 'real', ...(world === 'cave' ? { worldflags: 'cave', world: 'cave' } : {}), ...extra });
+  const q = (world, extra = {}) => ({ officeview: 'real', ...(world === 'cave' || world === 'retro' ? { worldflags: world, world } : {}), ...extra });
   const open = async (name) => {
     await js(`(()=>{const p=[...document.querySelectorAll('#stage .ro-plate')].find(x=>x.textContent.startsWith(${jsLiteral(name)}));p.click()})()`);
     await must(`document.body.classList.contains('panel-open')&&!!document.getElementById('roPortrait')`, 'the chat of ' + name);
@@ -37,18 +40,20 @@ module.exports = async (ctx) => {
   };
   const tabOrder = () => js(`[...document.querySelectorAll('#panel button,#panel [href],#panel input,#panel textarea,#panel select,#panel [tabindex]:not([tabindex="-1"])')].filter(e=>!e.closest('.rail-list')&&e.getClientRects().length).map(e=>e.id||e.getAttribute('aria-label')||e.textContent.trim().slice(0,20)||e.tagName).join('|').replace(/ \\u00B7 \\d+s/g,'')`); /* a running turn's clock ("Thinking · 1s") moves between two loads */
   /* every text element of the panel and its pair against the composited surface behind it */
-  const CONTRAST = `(()=>{const P=(c)=>{let m=/^color\\(srgb ([^)]+)\\)/.exec(c);if(m){const v=m[1].split(/[ \\/]+/).filter(Boolean).map(Number);return {r:v[0]*255,g:v[1]*255,b:v[2]*255,a:v.length>3?v[3]:1};}m=/rgba?\\(([^)]+)\\)/.exec(c);if(!m)return null;const v=m[1].split(/[ ,\\/]+/).filter(Boolean).map(Number);return {r:v[0],g:v[1],b:v[2],a:v.length>3?v[3]:1};};
+  const CONTRAST_OF = (deep) => `(()=>{const DEEP=${deep};const P=(c)=>{let m=/^color\\(srgb ([^)]+)\\)/.exec(c);if(m){const v=m[1].split(/[ \\/]+/).filter(Boolean).map(Number);return {r:v[0]*255,g:v[1]*255,b:v[2]*255,a:v.length>3?v[3]:1};}m=/rgba?\\(([^)]+)\\)/.exec(c);if(!m)return null;const v=m[1].split(/[ ,\\/]+/).filter(Boolean).map(Number);return {r:v[0],g:v[1],b:v[2],a:v.length>3?v[3]:1};};
     const bgOf=(e)=>{let acc={r:255,g:255,b:255};const st=[];for(let n=e;n;n=n.parentElement){const c=P(getComputedStyle(n).backgroundColor);if(c&&c.a>0)st.push(c);if(c&&c.a>=1)break;}
       for(const c of st.reverse())acc={r:c.r*c.a+acc.r*(1-c.a),g:c.g*c.a+acc.g*(1-c.a),b:c.b*c.a+acc.b*(1-c.a)};return acc;};
     const L=(c)=>{const f=(x)=>{x/=255;return x<=.03928?x/12.92:Math.pow((x+.055)/1.055,2.4)};return .2126*f(c.r)+.7152*f(c.g)+.0722*f(c.b)};
-    const els=[...document.querySelectorAll('#panelTitle,.ro-lampwords,#chat .note,.hint,#panel .ph-meta .pill')].filter(e=>e.getClientRects().length&&e.textContent.trim());
+    const own=(e)=>[...e.childNodes].some(n=>n.nodeType===3&&n.textContent.trim());
+    const els=[...document.querySelectorAll('#panelTitle,.ro-lampwords,#chat .note,.hint,#panel .ph-meta .pill'+(DEEP?',#chat .note *,#panel .ph *':''))].filter(e=>e.getClientRects().length&&e.textContent.trim()&&(!DEEP||own(e)||/^(note|hint|ro-lampwords)/.test(e.className)||e.id==='panelTitle'));
     const alpha=P(getComputedStyle(document.getElementById('panel')).backgroundColor).a;
     const bad=[];for(const e of els){const fg=P(getComputedStyle(e).color),bg=bgOf(e);const fa=fg.a;const f2={r:fg.r*fa+bg.r*(1-fa),g:fg.g*fa+bg.g*(1-fa),b:fg.b*fa+bg.b*(1-fa)};
       const l1=L(f2),l2=L(bg),r=(Math.max(l1,l2)+.05)/(Math.min(l1,l2)+.05);const px=parseFloat(getComputedStyle(e).fontSize),need=px>=24?3:4.5;
       if(r<need)bad.push((e.id||e.className||e.tagName)+' '+r.toFixed(2)+' < '+need);}
     return {alpha,n:els.length,bad,small:[...document.querySelectorAll('.ro-lampwords,#roPortrait')].filter(e=>e.children.length===0&&e.textContent.trim()&&parseFloat(getComputedStyle(e).fontSize)<10.5).length};})()`;
+  const CONTRAST = CONTRAST_OF(false);
 
-  for (const world of WORLDS) for (const [w, h] of SIZES) {
+  for (const world of WORLDS) for (const [w, h] of sizesOf(world)) {
     const tag = `${world} ${w}x${h}`;
     await H.load({ w, h, query: q(world), ready: REAL, settle: false });
     await must(`[...document.querySelectorAll('#stage .ro img')].every(i=>i.complete)`, 'the pictures');
@@ -72,6 +77,27 @@ module.exports = async (ctx) => {
     assert.strictEqual(ct.small, 0, `${tag}: no text under 10.5px`);
     const tabsReal = await tabOrder();
     await shot(world, 'chat', w, h);
+    if (world === 'retro') {
+      /* spec 102 T221: the name on the marquee; every text of the cards, deep, 4.5:1; a waiting agent's permission card is dark */
+      const mq = await js(`(()=>{const t=document.getElementById('panelTitle'),c=getComputedStyle(t);return {bg:c.backgroundColor,ink:c.color,px:parseFloat(c.fontSize),font:c.fontFamily}})()`);
+      assert.ok(mq.bg !== 'rgba(0, 0, 0, 0)' && mq.ink === 'rgb(255, 236, 39)' && /mono/i.test(mq.font) && mq.px >= 10.5, `${tag}: the header's name is on a marquee (filled, the mark's yellow, mono): ${JSON.stringify(mq)}`);
+      const deep = await js(CONTRAST_OF(true));
+      assert.deepStrictEqual(deep.bad, [], `${tag}: contrast of ${deep.n} text elements of the header and the cards (deep)`);
+      await js(`document.getElementById('backBtn').click()`);
+      await must(`!document.body.classList.contains('panel-open')`, 'back to the office');
+      await must(REAL, 'the office');
+      const waiting = await js(`window.__durbarSimUi.agents().filter(a=>a.state==='waiting').map(a=>a.name)`);
+      assert.ok(waiting.length > 0, `${tag}: a waiting agent in the simulator`);
+      await open(waiting[0]);
+      await must(`!!document.querySelector('#chat .note.perm:not(.settled)')`, 'the pending permission card');
+      await js(`document.querySelector('#chat .note.perm:not(.settled)').scrollIntoView({block:'center'})`);
+      const card = await js(`(()=>{const c=document.querySelector('#chat .note.perm:not(.settled)'),s=getComputedStyle(c);const m=/rgba?\\((\\d+), (\\d+), (\\d+)/.exec(s.backgroundColor);return {bg:s.backgroundColor,lum:m?(0.2126*+m[1]+0.7152*+m[2]+0.0722*+m[3])/255:1,btns:c.querySelectorAll('.btn').length}})()`);
+      assert.ok(card.lum < 0.2 && card.btns >= 2, `${tag}: the permission card is dark and has its buttons: ${JSON.stringify(card)}`);
+      const cd = await js(CONTRAST_OF(true));
+      assert.deepStrictEqual(cd.bad, [], `${tag}: contrast of ${cd.n} text elements with the permission card open`);
+      assert.strictEqual(cd.small, 0, `${tag}: no text under 10.5px with the card open`);
+      await shot(world, 'chatperm', w, h);
+    }
     await js(`document.getElementById('backBtn').click()`);
     await must(`!document.body.classList.contains('panel-open')`, 'back to the office');
     await must(REAL, 'the office');
@@ -80,7 +106,7 @@ module.exports = async (ctx) => {
     await js(`document.querySelector('#chat .note.limit').scrollIntoView({block:'center'})`);
     await shot(world, 'chatlimit', w, h);
     // tab order equal to the flat office's for the same agent
-    if (world === 'photo') {
+    if (world === 'photo' || world === 'retro') {
       await js(`localStorage.setItem('durbar.officeview','flat')`);
       await H.load({ w, h, query: { sim: '15', officeview: 'flat' }, settle: false });
       await js(`(()=>{const d=[...document.querySelectorAll('#stage .desk[data-id]')].find(x=>x.innerText.trim().startsWith('Mira'));d.click()})()`);
