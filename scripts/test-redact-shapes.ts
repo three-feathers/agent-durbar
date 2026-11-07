@@ -266,6 +266,16 @@ for (const s of STAYS) {
   assert.strictEqual(maskTokenShapes(s, '[redacted]'), s, `stays in maskTokenShapes: ${s.slice(0, 50)}`);
 }
 
+// The same list as running text: STAYS joined by line breaks, and in blocks of 5, must stay whole too, so a rule that looks across lines (the mysql `\\` continuation, a cookie scan) cannot over-mask a line from its neighbour (pre-review of #1243: a per-line comparison cannot see that).
+{
+  for (const sep of ['\n', '\r\n']) {
+    for (let i = 0; i < STAYS.length; i += 5) {
+      const block = STAYS.slice(i, i + 5).join(sep);
+      assert.strictEqual(redact(block, {}), block, `stays as lines (${JSON.stringify(sep)}, from ${i}): ${block.slice(0, 50)}`);
+    }
+  }
+}
+
 // Nothing the mask hid before T137 shows now (review of #1015: a digit guard on `glpat-` left 3% of real tokens visible; every sample here used to hold a digit, so no test saw it).
 // The samples are drawn from the old rules' own classes under profiles a fixed sample never has (no digit, one case, words), in the contexts the old mask hid them in.
 {
@@ -428,6 +438,138 @@ for (const [start, more] of [['AK' + 'IA' + up(16), 'A'], ['AK' + 'IA' + up(16),
   // A glued short rest after a token (no full body) is still taken, as before; a space or a word between keeps both masked
   assert.ok(!redact('gh' + 'p_' + an(36) + 'gh' + 'p_' + an(8), {}).includes('gh' + 'p_'), 'a short glued rest');
   assert.strictEqual(redact(['gh' + 'p_' + an(36), 'gh' + 'o_' + an(36)].join(' x '), {}), '[redacted] x [redacted]', 'separated tokens');
+}
+
+// Issue #1227 (spec 012 FR-170, T144): shapes `redact` left readable. Every value is made up and split at run time.
+{
+  const aws = 'wJalrXUtn' + 'FEMI/K7MDENG/bPxRfi' + 'CYEXAMPLEKEY'; // the 40-character example every AWS page shows
+  const eq = (input: string, want: string, label: string): void => assert.strictEqual(redact(input, {}), want, label);
+  // 1. mysql -pPASSWORD: the password glued to the flag
+  eq('mysql -p' + 'hunter2 -u root', 'mysql -p[redacted] -u root', 'mysql -p: glued password');
+  eq('mysql -u root -p' + 'hunter2 db', 'mysql -u root -p[redacted] db', 'mysql -p: after other flags');
+  eq('mysqldump -uroot -p' + 'S3cret --all-databases', 'mysqldump -uroot -p[redacted] --all-databases', 'mysql -p: mysqldump');
+  eq('mariadb -h db.example -p' + 'S3cret', 'mariadb -h db.example -p[redacted]', 'mysql -p: mariadb');
+  eq("mysql -p'my pass word' db", 'mysql -p[redacted] db', 'mysql -p: single-quoted with spaces');
+  eq('mysql -p"my pass word" db', 'mysql -p[redacted] db', 'mysql -p: double-quoted with spaces');
+  for (const t of ['mysql -p db', 'mysql -u root -p', 'mysql -P 3306 -u root db', 'mysql -P3306 -u root', 'mysql --password db', 'ls -pa /tmp', 'git push -pf origin', 'mysql --protocol=tcp db'])
+    eq(t, t, `mysql -p stays: ${t}`);
+  // 2. an AWS secret after a space
+  eq('aws configure set aws_secret_' + 'access_key ' + aws, 'aws configure set aws_secret_' + 'access_key [redacted]', 'aws secret after a space: configure set');
+  eq('AWS_SECRET_' + 'ACCESS_KEY ' + aws, 'AWS_SECRET_' + 'ACCESS_KEY [redacted]', 'aws secret after a space: upper case name');
+  eq('aws_secret_' + 'access_key "' + aws + '"', 'aws_secret_' + 'access_key "[redacted]"', 'aws secret after a space: quoted');
+  eq('aws_secret_' + 'access_key is required', 'aws_secret_' + 'access_key is required', 'aws secret name in prose stays');
+  eq('aws_secret_' + 'access_key ' + aws.slice(0, 39), 'aws_secret_' + 'access_key ' + aws.slice(0, 39), 'aws secret: 39 characters is not one');
+  // 3. Google API keys (already hidden on main; the test pins the issue's own shape: AIzaSy + 33)
+  eq('AI' + 'zaSy' + an(33), '[redacted]', 'google key: AIzaSy + 33');
+  eq('key=AI' + 'zaSy' + an(33) + '&x=1', 'key=[redacted]&x=1', 'google key in a query');
+  // 5. short values after a secret name: 4 to 7 characters with a letter and a digit
+  eq('password=abc123', 'password=[redacted]', 'short: password=abc123');
+  eq('pwd: ' + 'hunter2', 'pwd: [redacted]', 'short: pwd: hunter2');
+  eq('token: abc1234', 'token: [redacted]', 'short: token: abc1234');
+  eq('client_secret=a1b2c3d', 'client_secret=[redacted]', 'short: client_secret');
+  eq('{"password": "ab12"}', '{"password": "[redacted]"}', 'short: JSON, 4 characters');
+  eq('https://h.example/cb?token=abc123&x=1', 'https://h.example/cb?token=[redacted]&x=1', 'short: in a query');
+  for (const t of ['token: none', 'password: see below', 'the password: required', 'token: abc', 'token: a12', 'password=changeme', 'Password: ******', 'token: expired', 'token: 4096', 'password: 123456', 'secret: FR-186.', 'secret: T-14', 'token: string', 'password: optional', 'auth: abc123', 'pass: ab12', 'token: v2', 'password: <value>'])
+    eq(t, t, `short stays: ${t}`);
+  // 6. several words: each next word has a digit, so a word without one ends it
+  eq('password: ab12 cd34 ef56', 'password: [redacted]', 'phrase: three words');
+  eq('password: ab12 cd34 is the one', 'password: [redacted] is the one', 'phrase: stops at a word without a digit');
+  eq('password: ab12 and then', 'password: [redacted] and then', 'phrase: one word and prose');
+  eq('pwd=ab12 cd34, next=1', 'pwd=[redacted], next=1', 'phrase: stops at a comma');
+  eq('token: ab12 cd34', 'token: [redacted] cd34', 'phrase: only passwords take more words');
+  // 7. an unfinished value at the end of a stream
+  eq('X-Api-Key: sk-' + 'ab12', 'X-Api-Key: [redacted]', 'unfinished: X-Api-Key sk-ab12');
+  eq('api_key=gh' + 'p_a1', 'api_key=[redacted]', 'unfinished: api_key=ghp_a1');
+  eq('X-Api-Key: sk-learn', 'X-Api-Key: [redacted]', 'unfinished: a key-like start is hidden even as a word');
+  eq('X-Api-Key: none', 'X-Api-Key: none', 'unfinished stays: X-Api-Key: none');
+  // 8. `token <value>`
+  eq('token ' + 'abc1234xyz', 'token [redacted]', 'scheme word: token <value>');
+  eq('curl --apikey a1b2c3d4e5 https://h', 'curl --apikey [redacted] https://h', 'scheme word: apikey <value>');
+  for (const t of ['token ring network', 'token 4096', 'token 12345678', 'token docs/readme2.md', 'the token bucket', 'token configuration', 'token abc1234', 'token count: 1', 'api key rotation2'])
+    eq(t, t, `scheme word stays: ${t}`);
+  // 9. `Bearer x. <value>`
+  eq('Bearer x. ' + 'abc1234xyz9Q', 'Bearer [redacted]', 'bearer: a stop character after the first word');
+  eq('bearer ab, ' + 'abc1234xyz9Qrs', 'bearer [redacted]', 'bearer: comma, lower case');
+  eq('Bearer x. ' + 'abc1234xyz', 'Bearer x. ' + 'abc1234xyz', 'bearer stays: a value of 10 characters');
+  eq('Bearer x. then more', 'Bearer x. then more', 'bearer stays: no value');
+  eq('Bearer of bad news. Sorry', 'Bearer of bad news. Sorry', 'bearer stays: prose');
+  // 10. Cookie
+  eq('Cookie: sid=abc1234 x', 'Cookie: [redacted] x', 'cookie: short value, a word after it');
+  eq('Cookie:' + 'abcd1234efgh5678', 'Cookie:[redacted]', 'cookie: no space, no name');
+  eq('Cookie: lang=en x', 'Cookie: lang=en x', 'cookie stays: 2 characters');
+  eq('Cookie: theme=dark x', 'Cookie: theme=dark x', 'cookie stays: a word with no digit');
+  eq('cookie: a=b is the format', 'cookie: a=b is the format', 'cookie stays: prose');
+  eq('Cookie: id=123456 x', 'Cookie: id=123456 x', 'cookie stays: a number');
+  // 11. review of #1243 (fjcabello): neighbouring forms
+  eq('mysql -u root \\\n  -p' + 'hunter2x db', 'mysql -u root \\\n  -p[redacted] db', 'mysql continuation: LF');
+  eq('mysql -u root \\\r\n  -p' + 'hunter2x db', 'mysql -u root \\\r\n  -p[redacted] db', 'mysql continuation: CRLF');
+  eq('mysql -u root \\\n-p' + 'hunter2x', 'mysql -u root \\\n-p[redacted]', 'mysql continuation: the flag at the line start');
+  for (const t of ['mysql -u root \\\n  -P 3306 db', 'mysql \\\n -p db', 'echo a \\\n -pabc123', 'mysql -u root\n-pabc123x'])
+    eq(t, t, `mysql continuation stays: ${JSON.stringify(t)}`);
+  eq('Bearer: ' + 'ey12abcdEFGH', 'Bearer: [redacted]', 'bearer colon: with a space');
+  eq('bearer:' + 'ey12abcdEFGH', 'bearer:[redacted]', 'bearer colon: no space, lower case');
+  for (const t of ['Bearer: configuration', 'Bearer: none', 'Bearer: ey12abc'])
+    eq(t, t, `bearer colon stays: ${t}`);
+  eq('secret access key: ' + aws, 'secret access key: [redacted]', 'spaced name: colon');
+  eq('AWS Secret Access Key = ' + aws, 'AWS Secret Access Key = [redacted]', 'spaced name: equals, title case');
+  // 12. self-review of #1243 (F1 to F6) and the mutants it found alive
+  // F6: the rest of a password that arrived in pieces (the first word is already a mask)
+  eq('pwd=[redacted] blue8 x', 'pwd=[redacted] x', 'phrase after a mask: pwd');
+  eq('password: [redacted]4 ef56 done', 'password: [redacted] done', 'phrase after a mask: characters glued to the mask');
+  eq('password: [redacted] ef56 done', 'password: [redacted] done', 'phrase after a mask: password');
+  for (const t of ['password: [redacted] is', 'token: [redacted] blue8', 'password: [redacted] none'])
+    eq(t, t, `phrase after a mask stays: ${t}`);
+  // phrase limits (mutants: one space, word minimum 3, at most 2 words, order, passphrase, the pwd lookbehind)
+  eq('password: ab12  cd34', 'password: [redacted]', 'phrase: two spaces between words');
+  eq('password: ab12 c3', 'password: [redacted]', 'phrase: a word of 2 characters');
+  eq('password: ' + Array.from({ length: 10 }, (_, i) => 'ab' + String(i + 10)).join(' '), 'password: [redacted] ab19', 'phrase: nine words, the tenth stays');
+  eq('password=Summer2024Secret cd34 ef56', 'password=[redacted]', 'phrase: a long first word takes the tail too');
+  eq('passphrase: ab12 cd34', 'passphrase: [redacted]', 'phrase: passphrase');
+  for (const t of ['bpwd: ab12 cd34', 'bpwd=abc123']) eq(t, t, `pwd needs no letter before it: ${t}`);
+  // key leads cut short
+  for (const lead of ['sk-', 'gh' + 'p_', 'gh' + 'o_', 'gh' + 'u_', 'gh' + 's_', 'gh' + 'r_', 'gl' + 'pat-', 'xo' + 'xb-', 'hf_', 'np' + 'm_']) eq('api_key=' + lead + 'ab', 'api_key=[redacted]', `unfinished lead: ${lead}`);
+  // F5: the mysql window ends at a shell separator, and at a program name that is not followed by a space
+  for (const t of ['echo mysql; tar -pxf a1.tgz', 'mysql -e "x" && cp -pr src2 dst', 'mysql -e "select 1" | grep -pv', 'docker run mysql:8 sh -c "ls -pa1"', 'mysql -u r\n -pabc123x'])
+    eq(t, t, `mysql window stays: ${JSON.stringify(t)}`);
+  eq('mysql ' + 'a '.repeat(50) + '-p' + 'abc123x', 'mysql ' + 'a '.repeat(50) + '-p[redacted]', 'mysql: a flag 100 characters on');
+  // F2: any case, mysql8, a backtick value, PowerShell and cmd continuations
+  eq('MYSQL -p' + 'abc123x', 'MYSQL -p[redacted]', 'mysql: upper case');
+  eq('MySQL8 -u r -p' + 'abc123x', 'MySQL8 -u r -p[redacted]', 'mysql: mysql8');
+  eq('mysql -p`my pass` db', 'mysql -p[redacted] db', 'mysql: backtick-quoted value');
+  eq('mysql -u r `\n -p' + 'abc123x', 'mysql -u r `\n -p[redacted]', 'mysql: PowerShell continuation');
+  eq('mysql -u r ^\r\n -p' + 'abc123x', 'mysql -u r ^\r\n -p[redacted]', 'mysql: cmd continuation');
+  // F4: ids, versions and algorithm names stay; a real short password still goes
+  for (const v of ['T144', 'v1.2', 'v1.2.3', '0x1f', '0x02', '#ff00aa', 'sha256', 'utf8', 'base64', 'HS256', 'int64', 'ipv4', 'oauth2', 'ed25519', 'aes256', 'x509', 'pkcs8', 'PKCS#12', 'win32'])
+    for (const name of ['token', 'secret', 'password']) eq(`${name}: ${v}`, `${name}: ${v}`, `short stays: ${name}: ${v}`);
+  for (const v of ['abc123', 'a1b2c3d', 'Zx9Zx9', 'hunter2']) eq('password: ' + v, 'password: [redacted]', `short goes: ${v}`);
+  // F1: Bearer stops
+  const bv = 'abc123def456ghi';
+  eq('Bearer abcdefg. ' + bv, 'Bearer [redacted]', 'bearer: a first word of 7 characters');
+  eq('BEARER ab12:' + bv, 'BEARER [redacted]', 'bearer: no space after the stop');
+  eq('Bearer x) "' + bv + '"', 'Bearer [redacted]"', 'bearer: a quote before the value');
+  eq('Bearer ab! ' + bv, 'Bearer [redacted]', 'bearer: !');
+  eq('Bearer ab- ' + bv, 'Bearer [redacted]', 'bearer: -');
+  eq('Bearer x. abcdefghijkl', 'Bearer x. abcdefghijkl', 'bearer stays: 12 letters and no digit');
+  // survivors of the pre-review mutant run (2026-11-07): each line names the mutant it kills
+  for (const t of ['token: RS256', 'secret: tls13']) eq(t, t, `short stays: ${t} (NOT_SHORT without rs, tls)`);
+  eq('Bearer ab; ' + bv, 'Bearer [redacted]', 'bearer: ; after the first word');
+  eq('Bearer ab? ' + bv, 'Bearer [redacted]', 'bearer: ? after the first word');
+  eq('mysql -e "select `id`" -p' + 'S3cret', 'mysql -e "select `id`" -p[redacted]', 'mysql: a backtick that is not a continuation');
+  eq('mysql -e "a\\b" -p' + 'S3cret', 'mysql -e "a\\b" -p[redacted]', 'mysql: a backslash that is not a continuation');
+  eq('mysql -e "a^b" -p' + 'S3cret', 'mysql -e "a^b" -p[redacted]', 'mysql: a caret that is not a continuation');
+  eq('password=123abc', 'password=[redacted]', 'short goes: digits first, then letters');
+  eq('Cookie: v=a1 x', 'Cookie: v=a1 x', 'cookie stays: 2 characters with a letter and a digit');
+  eq('pwd=[redacted] ab12 cd34 ef56 x', 'pwd=[redacted] x', 'phrase after a mask: three words');
+  eq('passwd: ab12 cd34', 'passwd: [redacted]', 'phrase: passwd');
+  // survivors of the first mutant run
+  eq('secret_access_' + 'key ' + aws, 'secret_access_' + 'key [redacted]', 'aws secret after a space: no aws_ in the name');
+  eq('token    ' + 'abc1234xyz', 'token    [redacted]', 'scheme word: four spaces');
+  eq('Cookie: sid=ab12 x', 'Cookie: [redacted] x', 'cookie: exactly 4 characters');
+  eq('secret access_key: ' + aws, 'secret access_key: [redacted]', 'spaced name: a space, then an underscore');
+  eq('secret   access key: ' + aws, 'secret   access key: [redacted]', 'spaced name: several spaces');
+  eq('aws secret_access key ' + aws, 'aws secret_access key [redacted]', 'spaced name: mixed with an underscore');
+  for (const t of ['secret access key: required', 'secret access key is ' + aws.slice(0, 20), 'secret access key: ' + aws.slice(0, 39)])
+    eq(t, t, `spaced name stays: ${t.slice(0, 40)}`);
 }
 
 // A real image, whole, stays (every repo image: test-redact-images.ts).

@@ -243,8 +243,11 @@ export function openKeyBlockStart(text: string): number {
   }
   return open;
 }
+/** The names whose short values (4 to 7 characters) are hidden too. */
+const SHORT_NAMES = `(?:${['secret_?access_?key', 'session_?token', 'client_?secret', 'api_?secret', 'app_?secret', 'consumer_?secret', 'shared_?secret', 'secret_?key', 'api[_-]?key', 'access[_-]?key', 'auth[_-]?key', 'account_?key', 'sharedaccesskey', 'private[_-]?key', 'priv_?key', 'signing_?key', 'encryption_?key', 'master_?key', 'license_?key', 'service_?key', 'token', 'secret', 'password', 'passwd', 'passphrase', 'contrase(?:n|ñ)a', '_gitlab_session'].map(ci).join('|')}|(?<![A-Za-z])${ci('pwd')})`; // the names whose short values (4 to 7 characters) are hidden too (issue #1227)
 /** A name that holds a secret, right before its separator (checked backwards from the separator, so `max_tokens` and `token_count` are not it). */
 const SECRET_NAMES = `(?:${['secret_?access_?key', 'session_?token', 'client_?secret', 'api_?secret', 'app_?secret', 'consumer_?secret', 'shared_?secret', 'secret_?key', 'api[_-]?key', 'access[_-]?key', 'auth[_-]?key', 'account_?key', 'sharedaccesskey', 'private[_-]?key', 'priv_?key', 'signing_?key', 'encryption_?key', 'master_?key', 'license_?key', 'service_?key', 'token', 'secret', 'password', 'passwd', 'passphrase', 'contrase(?:n|ñ)a', '_gitlab_session'].map(ci).join('|')}|(?<![A-Za-z])(?:${['pwd', 'pass', 'auth'].map(ci).join('|')}))`;
+const PASSWORD_NAMES = `(?:${['password', 'passwd', 'passphrase', 'contrase(?:n|ñ)a'].map(ci).join('|')}|(?<![A-Za-z])${ci('pwd')})`; // a value that can be several words
 /**
  * A value's simple stop rule, the same in free text and commands: a space, a quote, a backtick, `<`, `>`, `,`, `;`, `|`, `&`, `$(`, `${`, `**`, and (`closerAt`) a closing bracket of one opened
  * before the name. So `token=abc12345;curl${IFS}x|sh` shows the shell, a note's `{token:abc12345,name:bob}` keeps its name, and `password=Summer2024&Secure!9` leaves `&Secure!9`
@@ -268,14 +271,28 @@ const NOT_A_VALUE = [
   String.raw`[0-9]{1,128}[.:/-][0-9.:/TZ+-]{0,128}${VALUE_END}`, // 127.0.0.1:8080, 1523/1523, 2026-11-01T10:00:00Z
   String.raw`(?![0-9a-f]{8}-[0-9a-f]{4}-)[a-z]{2}[a-z0-9]{0,30}(?:[_-][a-z0-9]{1,32}){1,16}${VALUE_END}`, // lower-case words, as in dg(): gpt-4o-mini, reset-flow-v2 (a UUID is not)
 ].join('|');
+/** A key-looking start that is not finished (a stream cut inside `X-Api-Key: sk-ab12`): too short for its own shape, and lower-case with a hyphen, which `NOT_A_VALUE` takes for words. */
+const KEY_START = String.raw`(?:sk|ghp|gho|ghu|ghs|ghr|glpat|xox[a-z]|hf|npm)[_-]${NV}{2,}`;
+/** A value of 4 to 7 characters that has a letter and a digit (`abc123`, `hunter2`): a number (`4096`), a word (`none`, `string`), an id, a version or an algorithm name (`NOT_SHORT`) is not one. Issue #1227. */
+const NOT_SHORT = `(?:#|(?:0x[0-9A-Fa-f]+|v?[0-9]{1,6}(?:\\.[0-9]{1,6}){1,6}\\.?|[A-Z][0-9]{1,5}|[A-Za-z]{1,6}-[0-9]{1,5}\\.?|${['sha', 'utf', 'base', 'hs', 'rs', 'es', 'ps', 'int', 'uint', 'float', 'ipv', 'oauth', 'ed', 'aes', 'x', 'pkcs#?', 'win', 'rsa', 'tls', 'http', 'md', 'des', 'crc', 'iso', 'ucs'].map((w) => `${ci(w)}[0-9]{1,5}`).join('|')})(?!${NV}))`; // `T144`, `v1.2.3`, `0x1f`, `#ff00aa`, `FR-186`, `sha256`, `utf8`, `HS256`, `int64`, `oauth2`, `ed25519`, `x509`, `PKCS#12`, `win32`: an id, a version or a name, not a secret
+const SHORT_VALUE = `(?=${NV}{4,7}(?!${NV}))(?!${NOT_SHORT})(?=${NV}{0,6}[0-9])(?=${NV}{0,6}[A-Za-z])`; // `a1b2c3d` and `abc123` are still hidden: a short hex id is a short password as far as the text can tell
+/** After a password's first word: up to 8 more words of 2 to 32 letters and digits that each hold a digit (`ab12 cd34 ef56`); a word without a digit (`is`, `the`) ends it. */
+const PHRASE_WORD = String.raw`\x20{1,2}(?=[A-Za-z0-9]{0,32}[0-9])[A-Za-z0-9]{2,32}(?![A-Za-z0-9])`;
+const PHRASE_TAIL = `(?:${PHRASE_WORD}){0,8}`; // optional: a required tail fails at the end of a long value and backtracks it, at every start (`password=` repeated was quadratic)
 /**
  * `name=value`, `"name": "value"`, `name := value`, in any case for the name but not the value (`$DB_PASS` is a variable, `$uperS3cret` is not), also JSON-escaped (FR-080 delta 2026-11-01). The match starts
  * at the separator, so plain text costs one test per `:` or `=`. A value is 8 or more characters with a digit in the first 128, or 20 or more with a symbol letters and hyphens do not explain
  * (`please-enter-your-password` is prose, and a saved note keeps the mask for good). The body has no tail, so open-ended is linear.
  */
-const named = (before: string, extra: string): RegExp => new RegExp(String.raw`(?<=${before}${SECRET_NAMES}\\{0,2}["'\`]?\s{0,8})((?::=|=>|[:=]|%3[DdAa])\s{0,8}\\{0,2}["'\`]?)(?:${SLASH_B64}|(?!\/|${NOT_A_VALUE})(?:(?=${NV}{8})(?=${NV}{0,128}[0-9])|(?=${NV}{20})(?=[A-Za-z_.-]{0,128}[+=~@!#^*?])))${valueBody(extra)}`, 'g');
+const named = (before: string, extra: string, names = SECRET_NAMES, short = false, tail = ''): RegExp => new RegExp(String.raw`(?<=${before}${names}\\{0,2}["'\`]?\s{0,8})((?::=|=>|[:=]|%3[DdAa])\s{0,8}\\{0,2}["'\`]?)(?:${SLASH_B64}|(?!\/|${NOT_A_VALUE})(?:(?=${NV}{8})(?=${NV}{0,128}[0-9])|(?=${NV}{20})(?=[A-Za-z_.-]{0,128}[+=~@!#^*?])${short ? `|${SHORT_VALUE}` : ''})${short ? `|(?=${KEY_START})` : ''})${valueBody(extra)}${tail}`, 'g');
 const NAMED_IN_QUERY = named('[?&]', '#');
-const NAMED_SECRET = named('', '');
+const NAMED_SECRET = named('', '', SECRET_NAMES, false);
+/** A password with several words is its own pass so that `NAMED_SECRET` sees the rest as a mask. */
+const NAMED_PHRASE = named('', '', PASSWORD_NAMES, true, PHRASE_TAIL);
+/** Short values are only for the names in `SHORT_NAMES` (not `pass` or `auth`, which are common words). */
+const NAMED_SHORT = named('', '', SHORT_NAMES, true);
+/** `pwd=[redacted] blue8 x`: a password of several words that arrived in pieces (the brain view masks the first word, the next delta brings the rest) keeps taking its words after the mask, also when a few characters of the next piece sit glued to it (`[redacted]4 ef56`, which `maskGluedTail` would take after this). At least one word, so it is anchored at a literal. It runs before `NAMED_PHRASE`, so one call takes at most 8 words after a mask or after a first word; masking the result again takes 8 more (a stream does). */
+const NAMED_PHRASE_MASKED = new RegExp(String.raw`(?<=${PASSWORD_NAMES}\\{0,2}["'\`]?\s{0,8})((?::=|=>|[:=]|%3[DdAa])\s{0,8}\\{0,2}["'\`]?)\[redacted\][A-Za-z0-9]{0,32}(?:${PHRASE_WORD}){1,8}`, 'g');
 /** Where in a value the first closing bracket with no opener inside the value is, or -1: `(token=abc12345)` keeps its `)`, `Sup3r(S3cret)99` is one value. */
 function closerAt(v: string): number {
   const open = { ')': 0, ']': 0, '}': 0 };
@@ -335,7 +352,8 @@ function cookieEnd(s: string, from: number, newlineFrom: (i: number) => number, 
     let j = i; // whitespace after the value: the end of the header only when the line ends there
     while (s[j] === ' ' || s[j] === '\t') j++;
     if (ends(s[j])) return i;
-    return i - valueAt >= 8 ? i : end;
+    const v = s.slice(valueAt, i); // 8 characters, or 4 to 7 with a letter and a digit (`sid=abc1234 x`, issue #1227)
+    return v.length >= 8 || (v.length >= 4 && /[0-9]/.test(v) && /[A-Za-z]/.test(v)) ? i : end;
   }
 }
 const COOKIE_HEAD = shape(String.raw`(?:set-)?cookie\s{0,8}:\s{0,8}`, 'gi');
@@ -392,6 +410,10 @@ function maskCookies(s: string, mask: string): string {
 /** A password in a command-shaped rule: ends at shell syntax, and at brackets, so `curl -u a:b(curl) x` shows `(curl)`. `Bearer x` is not one: its own shape takes the value too (in a note, even after a mark). */
 const CMD_VALUE = String.raw`(?![Bb][Ee][Aa][Rr][Ee][Rr]\s)(?:[^\s"'|;&\`$()<>]|\$(?![({]))+`;
 const HELD_PATTERNS: RegExp[] = [
+  // `Bearer: <value>` (a colon after the scheme word, as in hand-written headers): 8 or more characters with a digit, so `Bearer: configuration` stays
+  shape(String.raw`([Bb][Ee][Aa][Rr][Ee][Rr]:\s{0,8})(?=[A-Za-z0-9._~+/=-]{8})(?=[A-Za-z0-9._~+/=-]{0,64}[0-9])[A-Za-z0-9._~+/=-]+`),
+  // `Bearer x. <value>`: a short first word and a stop character (`. , ; : ! ? ) -`, spaces or none after it, an optional quote) hide the value from the `Bearer` shape (issue #1227); the value is 12 or more characters with a digit. All of it goes: the first word may be the head of the secret.
+  shape(String.raw`([Bb][Ee][Aa][Rr][Ee][Rr]\s{1,8})(?=[A-Za-z0-9_~+/=-]{1,7}[.,;:!?)-]\s{0,8}["']?(?=[A-Za-z0-9._~+/=-]{0,64}[0-9])[A-Za-z0-9._~+/=-]{12})[A-Za-z0-9_~+/=-]{1,7}[.,;:!?)-]\s{0,8}["']?[A-Za-z0-9._~+/=-]+`),
   shape(String.raw`(authorization\s{0,8}[:=]\s{0,8})(?:(?:bearer|basic|token)\s{1,8}){0,8}(?!'?\[(?:redacted|secret hidden)\]'?\}*(?:[\s",;]|$))[^\s",;]+`, 'gi'), // a value R12 already hid, whole, inside single quotes (`Authorization='[redacted]'}`) stays as it is; `[redacted]TOKEN` is not a hidden value
   shape(String.raw`([a-z][a-z0-9+.-]{1,20}:\/\/)[^\s/:@"]{0,200}:[^\s/@"]{1,200}(?=@)`, 'gi'),
   /(?<![A-Za-z0-9_-])tid=[0-9a-f]{8,64};[^\s"|<>`&]*/g,
@@ -405,6 +427,14 @@ const HELD_PATTERNS: RegExp[] = [
 const PATTERNS: RegExp[] = [
   KEY_BLOCK,
   shape(String.raw`((?:set-)?cookie\\{0,2}["']\s{0,8}:\s{0,8}\\{0,2}")(?=[^\s=;,"'\\]{1,128}=|[^\s=;,"'\\|&\x60$()]{8,}(?:"|\\))(?:[^"\\\r\n]|\\(?!"))*`, 'gi'), // `"Cookie": "sid=…"` or one opaque token, in JSON: to the closing quote. The header form: `maskCookies`.
+  // `mysql -pPASSWORD` (the password glued to the flag; `-p` alone asks for it, `-P` is the port): the client programs of MySQL and MariaDB, after them the flag in the same command: one line, or lines joined by a continuation (`\`, a PowerShell backtick or a cmd `^`, then LF or CRLF); a `;`, `&` or `|` ends the command, so `mysql; tar -pxf a1.tgz` stays; the program name in any case, `mysql8` too, and `-p` after a quoted or backtick-quoted value (issue #1227)
+  new RegExp(String.raw`(\b(?:${ci('mysql')}|${ci('mariadb')})[A-Za-z0-9-]{0,12}(?=\s)(?:[^\r\n\\\`^;&|]|[\\\`^](?![\r\n])|[\\\`^]\r?\n){0,200}?(?<=\s)-p)(?:"[^"\r\n]{1,128}"|'[^'\r\n]{1,128}'|\`[^\`\r\n]{1,128}\`|${CMD_VALUE})`, 'g'),
+  // `aws_secret_access_key <value>`: the name, a space and the 40-character value (the `=` and `:` forms are `NAMED_SECRET`'s)
+  shape(String.raw`((?:aws[_-]?)?secret[_-]?access[_-]?key["']?\s{1,8}["']?)[A-Za-z0-9/+=]{40,}`, 'gi'),
+  // the name written as words (`secret access key: <value>`, `AWS Secret Access Key = <value>`): a space before `key` (`access_key` and `access-key` are `NAMED_SECRET`'s), then a separator or spaces and 40 or more base64 characters
+  shape(String.raw`((?:aws[ \t_-]?)?secret[ \t_-]{0,3}access[ \t]+key["']?(?:\s{1,8}|\s{0,8}[:=]\s{0,8})["']?)[A-Za-z0-9/+=]{40,}`, 'gi'),
+  // `token <value>`, `apikey <value>`: a scheme word or a name with a space and no separator; 8 or more characters with a letter and a digit, and nothing `NOT_A_VALUE` knows
+  shape(String.raw`((?:token|api[_-]?key)\s{1,8})(?!\/|${NOT_A_VALUE})(?=[A-Za-z0-9._~+/=-]{8})(?=[A-Za-z0-9._~+/=-]{0,64}[0-9])(?=[A-Za-z0-9._~+/=-]{0,64}[A-Za-z])[A-Za-z0-9._~+/=-]+`, 'gi'),
   // a `.netrc` entry: the word `password`, a space, the value
   new RegExp(String.raw`(\bmachine\s{1,8}\S{1,253}\s{1,8}(?:login\s{1,8}\S{1,128}\s{1,8})?password\s{1,8})${CMD_VALUE}`, 'g'),
   // `curl -u user:pass` (only after `curl`: `git push -u origin:main` is not this); the user stays, a bare `-u user` has no secret to hide
@@ -437,7 +467,7 @@ function maskShapes(text: string, mask: string, guard: boolean): string {
   out = maskList(out, mask, guard, TOKEN_SHAPES);
   // Last: a value with its own shape is gone whole by now (a named-secret value stops at `\`, which would leave the tail of `token=123456\u003A…`).
   const value = (m: string, keep: string): string => { const v = m.slice(keep.length); const i = closerAt(v); return keep + mask + (i < 0 ? '' : v.slice(i)); };
-  return out.replace(NAMED_IN_QUERY, value).replace(NAMED_SECRET, value);
+  return out.replace(NAMED_IN_QUERY, value).replace(NAMED_PHRASE_MASKED, value).replace(NAMED_PHRASE, value).replace(NAMED_SHORT, value).replace(NAMED_SECRET, value);
 }
 
 /** The one key-shape mask (FR-031): replaces every key block, secret header, URL credential, named secret and bare token shape with `mask` (a JWT's leading underscores and words stay). `redact` adds the env values and the cut. Linear. */
@@ -452,7 +482,7 @@ export function maskBareTokenShapes(text: string, mask: string): string {
   return maskBare(text, mask, true);
 }
 /** Test only: every pattern's source, for the check that none nests quantifiers (`scripts/test-redact-shapes.ts`). */
-export const _maskSourcesForTest = (): string[] => [...HELD_PATTERNS, ...PATTERNS, ...[...HELD_SHAPES, ...TOKEN_SHAPES].flatMap((t) => (typeof t === 'function' ? [] : t instanceof RegExp ? [t] : [t.re])), PREFIXED_AT, PREFIXED_NEXT, JWT_AT, NAMED_IN_QUERY, NAMED_SECRET, COOKIE_HEAD].map((r) => r.source);
+export const _maskSourcesForTest = (): string[] => [...HELD_PATTERNS, ...PATTERNS, ...[...HELD_SHAPES, ...TOKEN_SHAPES].flatMap((t) => (typeof t === 'function' ? [] : t instanceof RegExp ? [t] : [t.re])), PREFIXED_AT, PREFIXED_NEXT, JWT_AT, NAMED_IN_QUERY, NAMED_SECRET, NAMED_PHRASE, NAMED_PHRASE_MASKED, NAMED_SHORT, COOKIE_HEAD].map((r) => r.source);
 /** Test only: the same without the marker guard, to prove the guard never changes the result. */
 export function maskTokenShapesUnguarded(text: string, mask: string): string {
   return maskShapes(text, mask, false);
