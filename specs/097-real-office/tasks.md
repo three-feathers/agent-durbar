@@ -217,3 +217,4 @@ The dusk was dropped (owner, 2026-11-04 04:52 UTC): FR-239..FR-242 and T189 are 
 - [x] T212 [US2] `deskFacts(a)` in app.js shared by the grown desk's side and the Real office zoom (`factsOf` option); the tool phrase also loses home paths. Test: `shots-097-screens`
 - [x] T213 [US2] Zoom shows the facts (`.ro-zk` in realoffice.js and realoffice.css), panel height and placement follow them. Test: `shots-097-screens` at both sizes, 15 desks each
 - [x] T214 [US2] Docs: changelog fragment, `docs/features.md`, the two zoom pictures retaken
+- [x] T215 [US2] Review of PR #1272 [FR-314]: tool phrase from cleared input, home folder masked before the cut (`liveact.js` `phrase`, `onEvent`), one mask in `deskFacts`, empty facts dropped, UNC paths in `maskHomePaths`; Q8 and the inventory row recorded. Tests: `test-liveact`, `test-redact`, `shots-097-screens` (the five mutants: innerHTML, FR-315 re-place, panel height, whole-line facts, no-redact zoom)
