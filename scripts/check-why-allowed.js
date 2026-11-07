@@ -218,8 +218,8 @@ module.exports = async (ctx) => {
       await ev({ type: 'status', status: 'needs-permission', intent: 'Waiting for your answer', permission: { requestId: 'hm1', kind: 'mcp', summary: 'mcp srv \u203a ' + MCP, state: 'pending', scopeKey: 'mcp:srv/' + MCP, scopeLabel: 'srv \u203a ' + MCP } });
       assert.ok(await until(`!!document.querySelector('#chat .note.perm.pending .note-actions .btn[data-act="session"]')`, 5000), `${w}: the hostile MCP request is a card`);
       const card = await js(`(()=>{const n=document.querySelector('#chat .note.perm.pending');return {sum:n.querySelector('.psum').textContent,btns:[...n.querySelectorAll('.btn')].map(b=>b.textContent+'|'+b.title),hint:(n.querySelector('.phid')||{}).textContent||''}})()`);
-      assert.ok(/mcp srv \u203a tool/.test(card.sum), `${w}: the card says tool: ${card.sum}`);
-      assert.ok(card.btns.some((b) => /Allow \u201csrv \u203a tool\u201d for this session/.test(b)), `${w}: the session button names the rule: ${card.btns}`);
+      assert.ok(/^tool$/.test(card.sum), `${w}: the card says tool (a name an escape splits is never half shown): ${card.sum}`);
+      assert.ok(card.btns.some((b) => /Allow \u201ctool\u201d for this session/.test(b)), `${w}: the session button names the rule: ${card.btns}`);
       assert.ok(/looks like a secret and is hidden/.test(card.hint), `${w}: the card says a part is hidden and what the grant covers: ${card.hint}`);
       await gone('MCP card');
       await js(`(()=>{const o=window.__durbarSimUi.bridge(),r=o.resolvePermission;window.__rp=[];o.resolvePermission=function(){window.__rp.push([...arguments]);return r.apply(this,arguments);};})()`);
@@ -232,7 +232,7 @@ module.exports = async (ctx) => {
       await gone('shell card');
       await ev({ type: 'grants', grants: [{ key: 'mcp:srv/' + MCP, kind: 'mcp', label: 'srv \u203a ' + MCP }, { key: 'shell-exact:' + AW, kind: 'shell', label: 'run ' + AW }] });
       assert.ok(await until(`document.querySelectorAll('#grants .gchip').length===2`, 5000), `${w}: two hostile rules as chips`);
-      assert.ok(await js(`[...document.querySelectorAll('#grants .gchip')].some(c=>/Allowed: srv \u203a tool/.test(c.textContent))`), `${w}: the chip says tool`);
+      assert.ok(await js(`[...document.querySelectorAll('#grants .gchip')].some(c=>/Allowed: tool/.test(c.textContent))`), `${w}: the chip says tool`);
       await gone('grant chips');
       await ev({ type: 'grants', grants: [{ key: 'mcp:srv/' + MCP, kind: 'mcp', label: 'srv \u203a ' + MCP }, { key: 'shell-exact:' + AW, kind: 'shell', label: 'run ' + AW }, { key: 'k3', kind: 'write', label: 'write in a/' }] });
       assert.ok(await until(`!!document.getElementById('grantsBtn')`, 5000), `${w}: three rules: one list chip`);
@@ -241,7 +241,7 @@ module.exports = async (ctx) => {
       await gone('grants list');
       await ev({ permission: { requestId: 'hw1', kind: 'mcp', summary: 'mcp srv', state: 'approved', via: 'session', allowedBy: { kind: 'session-grant', key: 'mcp:srv/' + MCP, label: 'srv \u203a ' + MCP } } });
       await call('hw1');
-      assert.ok(await until(`[...document.querySelectorAll('#chat .chip')].some(c=>(c.querySelector('.why-l')||{}).textContent==='srv \u203a tool')`, 5000), `${w}: the why-allowed label says tool`);
+      assert.ok(await until(`[...document.querySelectorAll('#chat .chip')].some(c=>(c.querySelector('.why-l')||{}).textContent==='tool')`, 5000), `${w}: the why-allowed label says tool`);
       await gone('why-allowed card');
       await ev({ type: 'grants', grants: [] });
       await js(`(()=>{const b=document.getElementById('grantsPop');if(b)b.hidden=true;})()`);
