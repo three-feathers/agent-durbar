@@ -20,6 +20,7 @@ const LIMITS = {
   'animationsRunning@40': 260, // measured 250
   animatedOtherProperties: 0, // FR-180: only transform and opacity animate
   tintNodesPerStatus: 0, // spec 097 FR-244 (T190): tinting or clearing a screen (FR-236) adds or removes no screen or New reply tag
+  statusNodes: 0, // spec 102 T262 (FR-229): in a world (the arcade) a status update adds or removes no element under the office
   leakedPlaced: 0, // a `data-placed` mark on anything but a role or a pencil
   staleFits: 0, // header and usage-line classes that a full fit would change, after a status filter and a body-class change
 };
