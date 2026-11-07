@@ -16,6 +16,7 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const MAX_TOKENS_PER_POINT = 1e12;
 const MAX_USD_PER_POINT = 1e6;
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
+const MAX_MODELS_PER_DAY = 50; // distinct model ids per day; the rest are added to `other-model`, so one process cannot grow the file
 const FILE_VERSION = 1;
 const DELTA = 1; // OTLP AggregationTemporality: 1 = delta, 2 = cumulative
 
@@ -27,7 +28,7 @@ function emptyModel() {
   for (const s of SOURCES) bySource[s] = { tokens: 0, costUsd: 0 };
   return { input: 0, output: 0, cacheRead: 0, cacheCreation: 0, costUsd: 0, bySource };
 }
-function emptyState(machine) { return { version: FILE_VERSION, machine, days: {} }; }
+function emptyState(machine) { return { version: FILE_VERSION, machine, skipped: 0, days: {} }; }
 
 /** The machine label: one the person chose (`DURBAR_USAGE_MACHINE`), never a host name. */
 function checkMachine(label) {
@@ -62,19 +63,19 @@ function pickAttrs(dp) {
   const out = { type: null, model: null, source: null };
   if (!Array.isArray(dp.attributes)) return out;
   for (const a of dp.attributes) {
-    if (!isObj(a) || typeof a.key !== 'string' || !isObj(a.value)) continue;
-    const s = a.value.stringValue;
-    if (typeof s !== 'string') continue;
-    if (a.key === 'type') out.type = s;
-    else if (a.key === 'model') out.model = s;
-    else if (a.key === 'query_source') out.source = s;
+    if (!isObj(a) || (a.key !== 'type' && a.key !== 'model' && a.key !== 'query_source')) continue; // the key is checked before the value is touched
+    if (!isObj(a.value) || typeof a.value.stringValue !== 'string') continue;
+    if (a.key === 'type') out.type = a.value.stringValue;
+    else if (a.key === 'model') out.model = a.value.stringValue;
+    else out.source = a.value.stringValue;
   }
   return out;
 }
 
-function modelSlot(state, day, model) {
+function modelSlot(state, day, model, capped = true) {
   if (!own(state.days, day)) state.days[day] = { models: {} };
   const models = state.days[day].models;
+  if (capped && !own(models, model) && Object.keys(models).length >= MAX_MODELS_PER_DAY) model = 'other-model';
   if (!own(models, model)) models[model] = emptyModel();
   return models[model];
 }
@@ -111,6 +112,7 @@ function ingest(state, body, nowMs = Date.now()) {
       }
     }
   }
+  state.skipped += res.skipped;
   return res;
 }
 
@@ -124,7 +126,7 @@ function validateState(raw, where = 'usage file') {
     for (const model of Object.keys(raw.days[day].models)) {
       const m = raw.days[day].models[model];
       if (!(MODEL_RE.test(model) || model === 'other-model') || !isObj(m)) throw new Error(`${where}: bad model`);
-      const slot = modelSlot(st, day, model);
+      const slot = modelSlot(st, day, model, false);
       for (const t of TYPES) slot[t] = num(m[t] === undefined ? 0 : m[t]);
       slot.costUsd = num(m.costUsd === undefined ? 0 : m.costUsd);
       for (const s of SOURCES) {
@@ -134,6 +136,7 @@ function validateState(raw, where = 'usage file') {
       }
     }
   }
+  st.skipped = raw.skipped === undefined ? 0 : num(raw.skipped);
   return st;
 }
 
@@ -182,6 +185,8 @@ function report(states, date) {
     for (const s of SOURCES) mainSub[s] += st.days[date].models[model].bySource[s].costUsd;
   }
   lines.push(`Day cost by source (list price): main ${usd(mainSub.main)}, subagent ${usd(mainSub.subagent)}, auxiliary ${usd(mainSub.auxiliary)}, other ${usd(mainSub.other)}.`, '');
+  const dropped = states.reduce((a, st) => a + st.skipped, 0);
+  lines.push(dropped > 0 ? `**Dropped data points: ${group(dropped)}** (cumulative temporality or invalid values; set OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=delta, see docs/build-cost.md). Totals above leave them out.` : 'Dropped data points: 0.', '');
   lines.push(`Machines: ${sorted.map((s) => s.machine).join(', ') || 'none'}. Tools that send no telemetry (another agent app) are added by hand: a usage file of the same shape with its own machine label (docs/build-cost.md).`);
   return lines.join('\n') + '\n';
 }
@@ -358,6 +363,6 @@ function chartSvg(history) {
 }
 
 module.exports = {
-  TOKEN_METRIC, COST_METRIC, TYPES, SOURCES, MODEL_RE, MACHINE_RE, DATE_RE, MAX_FILE_BYTES, FILE_VERSION,
+  TOKEN_METRIC, COST_METRIC, TYPES, SOURCES, MODEL_RE, MACHINE_RE, DATE_RE, MAX_FILE_BYTES, MAX_MODELS_PER_DAY, FILE_VERSION,
   modelName, MODEL_NAMES, BEGIN, END, LABEL, validateHistory, upsertRow, badgeSvg, chartSvg, esc, validateBaseline, cumulative, readmeBlock, rewriteReadme, emptyState, checkMachine, dayOf, ingest, validateState, firstDay, report, group, usd,
 };

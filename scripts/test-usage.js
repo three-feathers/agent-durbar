@@ -207,9 +207,9 @@ const withTimeout = (p, ms, msg) => Promise.race([p, new Promise((_, rej) => set
   for (const f of FAKE) assert.ok(!written.includes(f), `privacy: ${f.slice(0, 9)}... never reaches the file`);
   for (const k of ['email', 'user.id', 'account', 'organization', 'session', 'agent.name', 'timeUnixNano', 'attributes']) assert.ok(!written.includes(k), `privacy: no "${k}" key in the file`);
   const onDisk = JSON.parse(written);
-  assert.deepStrictEqual(Object.keys(onDisk).sort(), ['days', 'machine', 'version'], 'file: only version, machine and days');
+  assert.deepStrictEqual(Object.keys(onDisk).sort(), ['days', 'machine', 'skipped', 'version'], 'file: only version, machine, skipped and days');
   assert.strictEqual(onDisk.days['2026-11-07'].models[OPUS].input, 100, 'file: the sums are in the file');
-  assert.deepStrictEqual(fs.readdirSync(dir), ['usage-linux.json'], 'atomic: no temporary file is left');
+  assert.deepStrictEqual(fs.readdirSync(dir).filter((n) => !n.endsWith('.lock')),['usage-linux.json'], 'atomic: no temporary file is left');
   if (process.platform !== 'win32') assert.strictEqual(fs.statSync(file).mode & 0o077, 0, 'file: owner-only');
 
   // gzip is accepted, a second export adds (delta)
@@ -230,21 +230,132 @@ const withTimeout = (p, ms, msg) => Promise.race([p, new Promise((_, rej) => set
   r = await post(port, json, { 'content-encoding': 'br' }); assert.strictEqual(r.status, 415, 'encoding: br is refused');
   r = await post(port, json, { 'content-type': 'text/plain' }); assert.strictEqual(r.status, 415, 'type: text/plain (a cross-site simple request) is refused');
   r = await post(port, json, { host: 'evil.example' }); assert.strictEqual(r.status, 403, 'host: a non-loopback Host (DNS rebinding) is refused');
-  r = await post(port, json, {}, '/v1/traces'); assert.strictEqual(r.status, 404, 'path: only /v1/metrics');
+  for (const h of ['127.0.0.1.evil.example', 'localhost.', 'localhost.evil.example', 'a@127.0.0.1', '127.0.0.1@evil.example', '127.1', '0.0.0.0', '[::ffff:127.0.0.1]', 'evil.example:127.0.0.1', 'xlocalhost', '127.0.0.1:80a', 'localhost:']) {
+    r = await post(port, json, { host: h }); assert.strictEqual(r.status, 403, `host: ${h} is refused`);
+  }
+  for (const p2 of ['/v1/traces', '/v1/logs', '/v1/metrics/', '//v1/metrics', '/']) { r = await post(port, json, {}, p2); assert.strictEqual(r.status, 404, `path: ${p2} is refused, only /v1/metrics`); }
   r = await post(port, json, {}, '/v1/metrics', 'GET'); assert.strictEqual(r.status, 405, 'method: POST only');
   assert.strictEqual(fs.readFileSync(file, 'utf8'), before, 'refusals change nothing in the file');
+  for (const h of ['127.0.0.1', '127.0.0.1:4318', 'localhost', 'LOCALHOST:1', '[::1]', '[::1]:65535']) {
+    r = await post(port, json, { host: h }); assert.strictEqual(r.status, 200, `host: ${h} is accepted`);
+  }
   assert.ok(await withTimeout(post(port, json), 5000, 'post hung').then((x) => x.status === 200), 'the server still works after the refusals');
+  const finalInput = JSON.parse(fs.readFileSync(file, 'utf8')).days['2026-11-07'].models[OPUS].input;
+  assert.ok(finalInput >= 300, 'accepted posts were added');
   await new Promise((r2) => server.close(r2));
 
   // a restart carries on from the file; a foreign file is never overwritten
-  const again = R.createService({ dir, machine: 'linux', now: () => NOW });
-  assert.strictEqual(again.state.days['2026-11-07'].models[OPUS].input, 300, 'restart: sums are loaded from the file');
+  let again; assert.doesNotThrow(() => { again = R.createService({ dir, machine: 'linux', now: () => NOW }); }, 'lock: closing the server releases the lock');
+  assert.strictEqual(again.state.days['2026-11-07'].models[OPUS].input, finalInput, 'restart: sums are loaded from the file');
   fs.copyFileSync(path.join(dir, 'usage-linux.json'), path.join(dir, 'usage-mac.json'));
   assert.throws(() => R.createService({ dir, machine: 'mac' }), /belongs to machine/, 'restart: a file of another machine label is refused');
   fs.unlinkSync(path.join(dir, 'usage-mac.json'));
   const bad = path.join(tmp, 'b'); fs.mkdirSync(bad); fs.writeFileSync(path.join(bad, 'usage-linux.json'), '{"oops":1}');
   assert.throws(() => R.createService({ dir: bad, machine: 'linux' }), /not a usage file/, 'restart: a wrong file stops the receiver');
   assert.strictEqual(fs.readFileSync(path.join(bad, 'usage-linux.json'), 'utf8'), '{"oops":1}', 'restart: a wrong file is left as it was');
+
+  // ---- review of #1251: bounds, host, claims that had no test, lock ----
+  {
+    const asBuf = (o) => Buffer.from(JSON.stringify(o));
+    const day = '2026-11-07T10:00:00Z';
+    // 1. models per day are capped; the rest go to other-model, nothing is lost
+    const st = lib.emptyState('linux');
+    const many = []; for (let i = 0; i < 80; i++) many.push(tok('input', `m-${i}`, 1, day));
+    lib.ingest(st, body(many, []), NOW);
+    const models = st.days['2026-11-07'].models;
+    assert.strictEqual(Object.keys(models).length, lib.MAX_MODELS_PER_DAY + 1, 'models cap: at most the cap plus other-model per day');
+    assert.strictEqual(models['other-model'].input, 80 - lib.MAX_MODELS_PER_DAY, 'models cap: the extra models are added to other-model');
+    lib.ingest(st, body([tok('input', 'm-0', 5, day)], []), NOW);
+    assert.strictEqual(models['m-0'].input, 6, 'models cap: a model already listed keeps adding to its own row');
+    lib.ingest(st, body([tok('input', 'm-0', 1, '2026-11-08T10:00:00Z')], []), NOW);
+    assert.ok(st.days['2026-11-08'].models['m-0'], 'models cap: the cap is per day');
+    let touched = false;
+    const spy = { key: 'user.email', get value() { touched = true; return { stringValue: 'x' }; } };
+    lib.ingest(lib.emptyState('linux'), body([{ attributes: [spy, attr('type', 'input'), attr('model', OPUS)], asInt: '1', timeUnixNano: nano(day) }], []), NOW);
+    assert.strictEqual(touched, false, 'attributes: the value of a key that is not allowed is never read');
+    const rawMany = { version: 1, machine: 'linux', days: { '2026-11-07': { models: {} } } };
+    for (let i = 0; i < 60; i++) rawMany.days['2026-11-07'].models[`h-${i}`] = { input: i + 1 };
+    const loaded = lib.validateState(rawMany);
+    assert.strictEqual(Object.keys(loaded.days['2026-11-07'].models).length, 60, 'models cap: reading a file back never folds or loses a row');
+    assert.strictEqual(loaded.days['2026-11-07'].models['h-59'].input, 60, 'models cap: reading a file back keeps each row');
+
+    // 1b. a write over the file cap is refused and nothing is lost (the injected cap is small)
+    const d1 = path.join(tmp, 'cap'); const w1 = [];
+    const small = R.createService({ dir: d1, machine: 'linux', now: () => NOW, maxFileBytes: 700, write: (f, t) => { w1.push(t); fs.writeFileSync(f, t); } });
+    assert.strictEqual(small.handle(asBuf(body([tok('input', OPUS, 1, day)], [])), 'identity').status, 200, 'file cap: a small body fits');
+    const fileBefore = fs.readFileSync(small.file, 'utf8');
+    const big = []; for (let i = 0; i < 40; i++) big.push(tok('input', `big-model-${i}`, 1, day));
+    assert.strictEqual(small.handle(asBuf(body(big, [])), 'identity').status, 507, 'file cap: a write that would pass the cap is refused');
+    assert.strictEqual(fs.readFileSync(small.file, 'utf8'), fileBefore, 'file cap: the file keeps its data');
+    assert.strictEqual(small.state.days['2026-11-07'].models[OPUS].input, 1, 'file cap: the sums in memory keep their data');
+    assert.strictEqual(w1.length, 1, 'file cap: nothing was written for the refused body');
+    small.release();
+
+    // 3a. the write is atomic: a temporary file, then a rename over the file
+    const d2 = path.join(tmp, 'atomic'); fs.mkdirSync(d2);
+    const target = path.join(d2, 'usage-linux.json'); fs.writeFileSync(target, 'old');
+    const realRename = fs.renameSync; const seen = [];
+    fs.renameSync = (a2, b2) => { seen.push([a2, b2, fs.readFileSync(target, 'utf8'), fs.readFileSync(a2, 'utf8')]); return realRename(a2, b2); };
+    try { R.atomicWrite(target, 'new', 'x1'); } finally { fs.renameSync = realRename; }
+    assert.deepStrictEqual(seen.map((x) => [path.basename(x[0]), x[1], x[2], x[3]]), [['usage-linux.json.x1.tmp', target, 'old', 'new']], 'atomic: the new text is complete in a temporary file while the old file is whole, then renamed over it');
+    assert.strictEqual(fs.readFileSync(target, 'utf8'), 'new', 'atomic: the file has the new text');
+    // 3b. wx: a file (or link) already at the temporary name is never written through
+    fs.writeFileSync(path.join(d2, 'planted'), 'secret');
+    if (process.platform !== 'win32') fs.symlinkSync(path.join(d2, 'planted'), path.join(d2, 'usage-linux.json.x2.tmp'));
+    else fs.writeFileSync(path.join(d2, 'usage-linux.json.x2.tmp'), 'planted');
+    assert.throws(() => R.atomicWrite(target, 'new2', 'x2'), /EEXIST/, 'wx: an existing temporary name is refused');
+    assert.strictEqual(fs.readFileSync(path.join(d2, 'planted'), 'utf8'), 'secret', 'wx: the planted target is untouched');
+    assert.strictEqual(fs.readFileSync(target, 'utf8'), 'new', 'wx: the usage file is untouched');
+    // 3c. folder modes: a new folder is 0700, the default-named existing one is tightened, another existing one is left alone
+    if (process.platform !== 'win32') {
+      const d3 = path.join(tmp, 'newdir', 'deep'); R.createService({ dir: d3, machine: 'linux' }).release();
+      assert.strictEqual(fs.statSync(d3).mode & 0o077, 0, 'mode: a new folder is owner-only');
+      const d4 = path.join(tmp, 'x', '.durbar-usage'); fs.mkdirSync(d4, { recursive: true, mode: 0o755 }); fs.chmodSync(d4, 0o755);
+      R.createService({ dir: d4, machine: 'linux' }).release();
+      assert.strictEqual(fs.statSync(d4).mode & 0o077, 0, 'mode: an existing .durbar-usage folder is tightened to owner-only');
+      const d5 = path.join(tmp, 'shared'); fs.mkdirSync(d5, { mode: 0o755 }); fs.chmodSync(d5, 0o755);
+      R.createService({ dir: d5, machine: 'linux' }).release();
+      assert.strictEqual(fs.statSync(d5).mode & 0o777, 0o755, 'mode: another existing folder is not changed');
+    }
+    // 3d. per-point caps
+    const st2 = lib.emptyState('linux');
+    lib.ingest(st2, body([tok('input', OPUS, '1000000000001', day), tok('output', OPUS, '1000000000000', day)], [cost(OPUS, 1000001, day), cost(OPUS, 1000000, day)]), NOW);
+    const m2 = st2.days['2026-11-07'].models[OPUS];
+    assert.deepStrictEqual([m2.input, m2.output, m2.costUsd], [0, 1e12, 1e6], 'point cap: one past the token and the dollar cap is refused, the cap itself counts');
+    // 3e. the file-size check, on both readers
+    const big5 = path.join(tmp, 'big5.json'); fs.writeFileSync(big5, Buffer.alloc(lib.MAX_FILE_BYTES + 1, 0x20));
+    assert.throws(() => R.loadState(big5, 'linux'), /not a usage file/, 'size check: the receiver refuses a file over the cap before reading it');
+    assert.throws(() => D.readState(big5), /not a usage file/, 'size check: the report refuses a file over the cap before reading it');
+    // 3f. the trial copy: a failed write changes nothing in memory, so a retry is counted once
+    const d6 = path.join(tmp, 'trial'); let fail = true;
+    const tsvc = R.createService({ dir: d6, machine: 'linux', now: () => NOW, write: (f, t) => { if (fail) throw new Error('disk'); fs.writeFileSync(f, t); } });
+    assert.strictEqual(tsvc.handle(asBuf(sample), 'identity').status, 500, 'trial copy: a failed write answers 500');
+    assert.deepStrictEqual(tsvc.state.days, {}, 'trial copy: a failed write changes nothing in memory');
+    fail = false;
+    assert.strictEqual(tsvc.handle(asBuf(sample), 'identity').status, 200, 'trial copy: the retry is accepted');
+    assert.strictEqual(tsvc.state.days['2026-11-07'].models[OPUS].output, 50, 'trial copy: the retry is counted once');
+    tsvc.release();
+    // 4. lock: a second receiver on one folder and label is refused; the lock goes with the first; a dead process's lock is replaced
+    const d7 = path.join(tmp, 'lock');
+    const first = R.createService({ dir: d7, machine: 'linux' });
+    assert.throws(() => R.createService({ dir: d7, machine: 'linux' }), /another receiver holds/, 'lock: a second receiver on the same folder and label is refused');
+    R.createService({ dir: d7, machine: 'mac' }).release();
+    first.release();
+    R.createService({ dir: d7, machine: 'linux' }).release();
+    fs.writeFileSync(path.join(d7, 'usage-linux.lock'), '2147483646\n');
+    assert.doesNotThrow(() => R.createService({ dir: d7, machine: 'linux' }).release(), 'lock: the lock of a process that is gone is replaced');
+    fs.writeFileSync(path.join(d7, 'usage-linux.lock'), 'junk\n');
+    assert.throws(() => R.createService({ dir: d7, machine: 'linux' }), /another receiver holds/, 'lock: a lock file that is not a process id is not replaced');
+    fs.unlinkSync(path.join(d7, 'usage-linux.lock'));
+    assert.ok(!fs.existsSync(path.join(d7, 'usage-linux.lock')), 'lock: released');
+    // skipped points are counted and printed
+    const st3 = lib.emptyState('linux');
+    lib.ingest(st3, body([tok('input', OPUS, 1, day)], [cost(OPUS, 1, day)], 2), NOW);
+    assert.strictEqual(st3.skipped, 2, 'dropped: cumulative points are counted in the file state');
+    assert.ok(/Dropped data points: 2\*\*/.test(lib.report([st3], '2026-11-07')) && /TEMPORALITY_PREFERENCE=delta/.test(lib.report([st3], '2026-11-07')), 'dropped: the report prints the count and the fix');
+    assert.ok(/Dropped data points: 0\./.test(lib.report([lib.emptyState('linux')], '2026-11-07')), 'dropped: the report says zero when none');
+    assert.strictEqual(lib.validateState(JSON.parse(JSON.stringify(st3))).skipped, 2, 'dropped: the count survives a restart');
+  }
 
   // ---- the report ----
   const mk = (machine, iso, model, input, usdv) => { const s = lib.emptyState(machine); lib.ingest(s, body([tok('input', model, input, iso), tok('output', model, 10, iso)], [cost(model, usdv, iso)]), NOW); return s; };

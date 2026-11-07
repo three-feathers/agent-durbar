@@ -40,8 +40,8 @@ function parseArgs(argv, env = process.env) {
 }
 
 /** Write `text` to `file` through a temporary file in the same folder, then rename (atomic on one volume); owner-only where the OS has modes. */
-function atomicWrite(file, text) {
-  const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
+function atomicWrite(file, text, suffix = `${process.pid}.${Date.now()}`) {
+  const tmp = `${file}.${suffix}.tmp`; // `wx`: an existing file or a planted link at that name is never written through
   try {
     fs.writeFileSync(tmp, text, { mode: 0o600, flag: 'wx' });
     fs.renameSync(tmp, file);
@@ -67,12 +67,39 @@ function loadState(file, machine) {
   return st;
 }
 
-/** `handle(rawBuffer, contentEncoding)` -> `{status, body}`; pure apart from the file write. */
+/** A lock file next to the usage file (`wx`, holds the process id only): a second receiver on one folder and label would lose the first one's sums. A lock of a process that is gone is replaced. */
+function acquireLock(lockFile) {
+  for (let tries = 0; tries < 2; tries++) {
+    try {
+      fs.writeFileSync(lockFile, String(process.pid) + '\n', { mode: 0o600, flag: 'wx' });
+      return () => { try { if (fs.readFileSync(lockFile, 'utf8').trim() === String(process.pid)) fs.unlinkSync(lockFile); } catch { /* gone */ } };
+    } catch (e) {
+      if (!e || e.code !== 'EEXIST') throw e;
+      const held = new Error(`another receiver holds ${path.basename(lockFile)} (stop it, or delete the file if no receiver runs)`);
+      let pid = NaN;
+      try { pid = Number(fs.readFileSync(lockFile, 'utf8').trim()); } catch { continue; } // raced away: try again
+      if (!Number.isInteger(pid) || pid <= 0 || tries === 1) throw held;
+      let alive = true;
+      try { process.kill(pid, 0); } catch (k) { alive = !!k && k.code === 'EPERM'; }
+      if (alive) throw held;
+      try { fs.unlinkSync(lockFile); } catch { /* raced */ } // a lock of a process that is gone
+    }
+  }
+  throw new Error(`another receiver holds ${path.basename(lockFile)}`);
+}
+
+/** `handle(rawBuffer, contentEncoding)` -> `{status, body}`; pure apart from the file write. `opts.write` and `opts.maxFileBytes` are for tests. */
 function createService(opts) {
+  const created = !fs.existsSync(opts.dir);
   fs.mkdirSync(opts.dir, { recursive: true, mode: 0o700 });
+  if (created || path.basename(opts.dir) === '.durbar-usage') { try { fs.chmodSync(opts.dir, 0o700); } catch { /* no modes on this OS */ } }
   const file = path.join(opts.dir, `usage-${opts.machine}.json`);
-  const state = loadState(file, opts.machine);
+  const release = acquireLock(path.join(opts.dir, `usage-${opts.machine}.lock`));
+  let state;
+  try { state = loadState(file, opts.machine); } catch (e) { release(); throw e; }
   const now = opts.now || Date.now;
+  const write = opts.write || atomicWrite;
+  const maxFile = opts.maxFileBytes || lib.MAX_FILE_BYTES;
   function handle(buf, encoding) {
     if (buf.length > MAX_BODY) return { status: 413, body: { error: 'body too large' } };
     let raw = buf;
@@ -82,17 +109,20 @@ function createService(opts) {
     } else if (enc !== 'identity') return { status: 415, body: { error: 'content-encoding must be identity or gzip' } };
     let parsed;
     try { parsed = JSON.parse(raw.toString('utf8')); } catch { return { status: 400, body: { error: 'body is not JSON' } }; }
-    // ingest into a copy, so a body that throws half-way changes nothing
+    // ingest into a copy, so a body that throws, or a write that fails, changes nothing (a retry is then counted once)
     const trial = JSON.parse(JSON.stringify(state));
     let res;
     try { res = lib.ingest(trial, parsed, now()); } catch { return { status: 400, body: { error: 'not an OTLP metrics body' } }; }
-    if (res.tokens + res.costs > 0) {
-      try { atomicWrite(file, JSON.stringify(trial) + '\n'); } catch { return { status: 500, body: { error: 'could not write the usage file' } }; }
-      state.days = trial.days;
+    if (res.tokens + res.costs + res.skipped > 0) {
+      const text = JSON.stringify(trial) + '\n';
+      // a write that would pass the file cap is refused, and the file and the sums in memory stay as they were
+      if (Buffer.byteLength(text) > maxFile) return { status: 507, body: { error: 'usage file is full' } };
+      try { write(file, text); } catch { return { status: 500, body: { error: 'could not write the usage file' } }; }
+      state.days = trial.days; state.skipped = trial.skipped;
     }
     return { status: 200, body: {} };
   }
-  return { handle, file, state };
+  return { handle, file, state, release };
 }
 
 function createServer(opts) {
@@ -107,7 +137,7 @@ function createServer(opts) {
     if (req.method !== 'POST') { req.resume(); return reply(405, { error: 'POST only' }); }
     // a web page cannot send this content type to us without a preflight we never answer; Host must be loopback (DNS rebinding)
     if (!/^application\/json\s*(;|$)/i.test(String(req.headers['content-type'] || ''))) { req.resume(); return reply(415, { error: 'application/json only' }); }
-    if (!/^(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$/i.test(String(req.headers.host || ''))) { req.resume(); return reply(403, { error: 'loopback host only' }); }
+    if (!/^(127\.0\.0\.1|localhost|\[::1\])(:\d{1,5})?$/i.test(String(req.headers.host || ''))) { req.resume(); return reply(403, { error: 'loopback host only' }); }
     const declared = Number(req.headers['content-length']);
     if (Number.isFinite(declared) && declared > MAX_BODY) return void reply(413, { error: 'body too large' }, true);
     const chunks = []; let size = 0; let over = false;
@@ -120,6 +150,7 @@ function createServer(opts) {
     req.on('end', () => { if (over) return; const r = svc.handle(Buffer.concat(chunks), req.headers['content-encoding']); reply(r.status, r.body); });
     req.on('error', () => { /* the client went away */ });
   });
+  server.on('close', svc.release);
   server.requestTimeout = 15000; server.headersTimeout = 10000;
   return { server, svc };
 }
@@ -132,11 +163,12 @@ function main() {
   try { o = parseArgs(process.argv.slice(2)); } catch (e) { console.error(`usage-receiver: ${e.message}`); process.exit(2); }
   let made;
   try { made = createServer(o); } catch (e) { console.error(`usage-receiver: ${e.message}`); process.exit(1); }
+  process.once('exit', made.svc.release);
   made.server.on('error', (e) => { console.error(`usage-receiver: ${e.code || e.message}`); process.exit(1); });
   listen(made.server, o.port, () => {
     console.log(`usage-receiver: machine "${o.machine}", listening on 127.0.0.1:${made.server.address().port}, writing ${made.svc.file}`);
   });
 }
 
-module.exports = { listen, parseArgs, createServer, createService, atomicWrite, loadState, defaultDir, MAX_BODY, DEFAULT_PORT };
+module.exports = { acquireLock, listen, parseArgs, createServer, createService, atomicWrite, loadState, defaultDir, MAX_BODY, DEFAULT_PORT };
 if (require.main === module) main();
