@@ -62,7 +62,7 @@
   /* review of PR 1292, round 3: a masked shell command is `lost` (shown text cannot be trusted to say what runs) when the mask blanked the whole command or failed, changed it without
      a [redacted] marker, or replaced a span that holds command substitution or a shell operator ($( ` ; | & < > or a line break marker): the visible pieces are matched back into the
      raw command, so every character that is not visible lies in a span that is checked */
-  const REDACTED=/\[redacted[^\]]*\]/, SPANBAD=/\$\(|`|[;|&<>\n\r]|\u27e6(?:LF|CR)\u27e7/;
+  const REDACTED=/\[redacted[^\]]*\]/, SPANBAD=/\$\(|`|[;|&<>({\n\r]|\u27e6(?:LF|CR)\u27e7/;
   function shellLost(cmd,x){
     if(x===cmd)return false;
     if(/redaction failed/.test(x)||/^\s*\[redacted[^\]]*\]\s*$/.test(x))return true;
