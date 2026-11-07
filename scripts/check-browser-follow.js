@@ -19,6 +19,7 @@ module.exports = async (ctx) => {
   const H = helpers(ctx);
   const { js, until } = H;
   const ID = 'sim-1';
+  const NEAR = 24; /* "at the end": a stable offset of about 10 px with the pin on also shows on main (issue #1224, cause unknown; seen on Linux xvfb as 9); losing the place is hundreds of px (the padding:0 mutant sits about 300 px away) */
   const emit = (e) => js(`window.__durbarSimEmit(Object.assign({timestamp:Date.now(),sessionId:${jsLiteral(ID)}},${jsLiteral(e)}))`);
   const para = (i, n) => Array.from({ length: n }, (_, k) => `Paragraph ${i}.${k}: the quick brown fox jumps over the lazy dog while the build runs the tests and checks every file in the folder for drift, then reports.`).join('\n\n');
   const frames = (n) => js(`new Promise(r=>{let k=0;const f=()=>{if(++k>=${jsLiteral(n)})r(1);else requestAnimationFrame(f)};requestAnimationFrame(f)})`);
@@ -52,22 +53,22 @@ module.exports = async (ctx) => {
     await js(`(()=>{const c=document.getElementById('chat');c.scrollTop=c.scrollHeight;})()`); /* the person scrolls to the end: the pin goes on */
     assert.ok(await until(`document.getElementById('chat').dataset.pin==='1'`), `${tag}: at the end the pin is on`);
     await stream(100); await stream(101);
-    assert.ok(await until(`(()=>{const c=document.getElementById('chat');return c.scrollHeight-c.scrollTop-c.clientHeight<2})()`), `${tag}: the streaming turn is followed ${JSON.stringify(await st())}`);
+    assert.ok(await until(`(()=>{const c=document.getElementById('chat');return c.scrollHeight-c.scrollTop-c.clientHeight<${jsLiteral(NEAR)}})()`), `${tag}: the streaming turn is followed ${JSON.stringify(await st())}`);
     await frames(5);
     let s = await st();
-    assert.ok(s.kids <= 40 && s.gap < 2 && s.pin === '1', `${tag}: a short chat at the end, following: ${JSON.stringify(s)}`);
+    assert.ok(s.kids <= 40 && s.gap < NEAR && s.pin === '1', `${tag}: a short chat at the end, following: ${JSON.stringify(s)}`);
 
     // 1. following
     const wd = await trip(tag, 200);
     await frames(10);
     s = await st();
-    assert.ok(s.gap < 2 && s.pin === '1', `${tag}: back at the end and following, no new text: ${JSON.stringify(s)}`);
+    assert.ok(s.gap < NEAR && s.pin === '1', `${tag}: back at the end and following, no new text: ${JSON.stringify(s)}`);
     await frames(10);
     s = await st();
-    assert.ok(s.gap < 2 && s.pin === '1', `${tag}: still at the end 10 frames later: ${JSON.stringify(s)}`);
+    assert.ok(s.gap < NEAR && s.pin === '1', `${tag}: still at the end 10 frames later: ${JSON.stringify(s)}`);
     await emit({ type: 'status', status: 'working', intent: 'Working' }); await stream(300); await stream(301); await frames(10);
     s = await st();
-    assert.ok(s.gap < 24 && s.pin === '1', `${tag}: new text keeps it at the end (two streamed blocks are 400 px; a stable offset of about 10 px with the pin on also shows after new text on main, cause unknown, not frame lag, so under 24 px passes): ${JSON.stringify(s)}`);
+    assert.ok(s.gap < NEAR && s.pin === '1', `${tag}: new text keeps it at the end (two streamed blocks are 400 px; a stable offset of about 10 px with the pin on also shows after new text on main, cause unknown, not frame lag, so under 24 px passes): ${JSON.stringify(s)}`);
 
     assert.strictEqual(wd.wc, wd.w0, `${tag}: the messages keep their width while the chat is collapsed (Chat ${wd.w0} px, collapsed ${wd.wc} px)`);
 
