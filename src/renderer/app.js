@@ -9117,6 +9117,7 @@ if(bridge){
     /* spec 100: the dialog's and Settings' view of the figures */
     mcpCtx:id=>{const a=liveById(id);return a?{view:MCP_CTX.get(id)||null,window:mcpWindow(a),app:mcpAppWord(a)}:null;},
     mcpCtxSet:(id,v)=>mcpViewChanged(id,v),
+    shownTool, /* spec 097 FR-317: a tool name shown in Settings goes through the one mask */
     mcpLevels:()=>mcpLevelsNow(),
     setMcpLevels:l=>mcpLevelsChanged(l),
     mcpSession:id=>{const r=LIVE.agents.find(y=>y.id===id&&y.live&&!y.parent);return r?{a:r,mcp:!!feat(r,'mcp'),o:mcpOpts(r)}:null;},

@@ -468,6 +468,12 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
   ok(/name=TOOLNAME\[tool\]\|\|shownTool\(tool\)/.test(chip), 'the chip label and its tooltip use it');
   ok(/return shownTool\(e\.tool\)\+\(lbl\?/.test(app), 'the card task line uses it');
   ok(/'Using '\+\(c\.tool\?shownTool\(c\.tool\):'a tool'\)/.test(app), 'the waiting line uses it');
+  const scr = fs.readFileSync(path.join(R, 'screens.js'), 'utf8');
+  ok(/const shown=t=>typeof X\.shownTool==='function'\?X\.shownTool\(t\):'tool'/.test(scr), 'screens has one tool-name function, failing closed');
+  ok(/aria-label="\$\{esc\(shown\(t\.name\)\+' of '\+n\)\}"><code title="\$\{esc\(shown\(t\.name\)\)\}">\$\{esc\(shown\(t\.name\)\)\}<\/code>/.test(scr), 'Settings MCP tool list: label, tooltip and name masked');
+  ok(/<th scope="row"><code>\$\{esc\(shown\(r\.name\)\)\}<\/code>/.test(scr), 'tool-usage table: name masked');
+  ok(/data-tool="\$\{esc\(t\.name\)\}"/.test(scr), 'the raw name stays for matching (data-tool)');
+  ok(/mcpCtxSet:\(id,v\)=>mcpViewChanged\(id,v\),\s*shownTool,/.test(app), 'the page hands screens the same shownTool');
   ok(!/\+\s*e\.tool\s*\+|'Using '\+String\(c\.tool/.test(app), 'no raw tool name is joined into text');
 }
 console.log(`liveact: ${n} checks passed`);
