@@ -570,6 +570,29 @@ for (const [start, more] of [['AK' + 'IA' + up(16), 'A'], ['AK' + 'IA' + up(16),
   eq('aws secret_access key ' + aws, 'aws secret_access key [redacted]', 'spaced name: mixed with an underscore');
   for (const t of ['secret access key: required', 'secret access key is ' + aws.slice(0, 20), 'secret access key: ' + aws.slice(0, 39)])
     eq(t, t, `spaced name stays: ${t.slice(0, 40)}`);
+  // Review of #1243 by fjcabello (2026-11-07), round 2
+  eq('password=sha' + '256x', 'password=[redacted]', 'NOT_SHORT: a name plus more characters is a password: password=sha256x');
+  // R1: a name takes only the sizes it has, `#` only a hex colour: these are passwords and go
+  for (const [t, w] of [['password: Win' + '2024', 'password: [redacted]'], ['password=win' + '2024', 'password=[redacted]'], ['password: Iso' + '2024', 'password: [redacted]'], ['password: Des' + '123', 'password: [redacted]'], ['password=x' + '1234', 'password=[redacted]'], ['secret=Tls' + '1337', 'secret=[redacted]'], ['password=hs' + '2023', 'password=[redacted]'], ['apikey: es' + '2022', 'apikey: [redacted]'], ['password = Win' + '2024 cd34', 'password = [redacted]'], ['password=#hunt' + '3', 'password=[redacted]'], ['password=#Zz9' + '9q', 'password=[redacted]'], ['password=sha' + '2024', 'password=[redacted]']])
+    eq(t, w, `NOT_SHORT: a password goes: ${t}`);
+  // R1: what stays on purpose (a [KNOWN GAP] in FR-170 item 5, each pinned here)
+  for (const t of ['password=0x' + '1234', 'api_key=0x' + 'dead', 'token=v1.' + '2.3', 'password: X' + '12345', 'password=Q' + '2024', 'password=#abc' + '123', 'token: #ff' + '00aa', 'token: SHA' + '512', 'token: Win' + '64', 'token: AES' + '128', 'token: TLS' + '12', 'token: md' + '5'])
+    eq(t, t, `NOT_SHORT: left readable on purpose (known gap): ${t}`);
+  // R2: the quoted and array forms of -p
+  eq('test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-pS3' + 'cret9x"]', 'test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p[redacted]"]', 'mysql -p: docker healthcheck array');
+  eq("mysql -uroot '-pS3" + "cret9x' db", "mysql -uroot '-p[redacted]' db", "mysql -p: single-quoted whole argument");
+  eq('mysql -uroot "-pS3' + 'cret9x" db', 'mysql -uroot "-p[redacted]" db', 'mysql -p: double-quoted whole argument');
+  eq('{"cmd":["mysql","-u","root","-pS3' + 'cret9x"]}', '{"cmd":["mysql","-u","root","-p[redacted]"]}', 'mysql -p: JSON array, program quoted');
+  for (const t of ['docker run mysql:8 -p 3306:3306', '["CMD", "mysql", "-p", "x"]', 'docker run mysql:8 -p' + 'foo123 x'])
+    eq(t, t, `mysql -p stays: ${t}`);
+  // R3: a short flag value of prose (mkdir -pv) is not a password; 3 characters or more is
+  for (const t of ['After mysql starts, run mkdir -pv logs', 'mysql docs say use rsync -pt src dst', 'run mysql then `ls -pa1`', 'Install MySQL 8 and run cp -pR a b'])
+    eq(t, t, `mysql -p stays: prose with a short flag: ${t}`);
+  eq('mysql -u r -pab' + '1 db', 'mysql -u r -p[redacted] db', 'mysql -p: 3 characters go');
+  eq('mysql -u r -pAb' + '12', 'mysql -u r -p[redacted]', 'mysql -p: 4 characters go');
+  // #1298: the glued form in a sentence and a command line
+  eq('run mysql -p' + 'hunter2x db', 'run mysql -p[redacted] db', '#1298: mysql -p<pass> db glued');
+  assert.ok(!maskSecretCommand('run mysql -p' + 'hunter2x db').includes('hunter2x'), '#1298: maskSecretCommand hides the glued mysql password');
 }
 
 // A real image, whole, stays (every repo image: test-redact-images.ts).
