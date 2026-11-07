@@ -1,0 +1,1 @@
+- **Spec housekeeping** (spec 102): the light tasks of a world still behind its flag are booked as built or withdrawn, following the owners' decision of 2026-11-03 to keep one look; no app change. Checked with `npm run specs:check`.
