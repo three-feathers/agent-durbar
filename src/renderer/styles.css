@@ -19,7 +19,7 @@
   --m-wave:2.8s ease-in-out infinite; --m-cursor:1.6s ease-in-out infinite;
   --radius:16px;
   /* spec 070 FR-051 T024: tier 3, always var() of tiers 1 and 2, never set by a pack. --accent is the closed list's name for --sage-ink (FR-052), aliased first. */
-  --accent:var(--sage-ink); --btn-primary-bg:var(--accent); --btn-primary-ink:var(--surface); --switch-on:var(--accent); --switch-off:var(--tone-neutral-track);
+  --accent:var(--sage-ink); /* the other tier 3 names are set on .btn.primary and .swt, so they resolve per element: a scope that re-sets --surface or --ink reaches them (realoffice-world.css .topbar, .toast) */
   /* spec 052 FR-053: radius scale for controls and panels (rooms and desks keep their own) */
   --r-sm:6px; --r-md:10px; --r-lg:14px; --r-xl:18px;
   /* spec 052 FR-052: control borders at 3:1, the second tone of the focus ring (theme.js sets both per theme) */
@@ -41,7 +41,7 @@
   --btn-pad:14px; --btn-fs:13px; --btn-fw:550; --ib-size:34px; --ptab-h:30px; --ct-h:28px; --btn-sm-h:28px; --composer-pad:8px; --inbox-pad:6px;
   /* Flat's modern colours (FR-061, calculated, T039 is the owner's look); read only by the html[data-flat-look] block at the end */
   --flat-page:#ffffff; --flat-page-2:#f6f7f7; --flat-line:#e4e6e8; --flat-line-2:#d3d6d9; --flat-line-ctl:#858b90; --flat-accent:#177245; --flat-accent-hover:#135f39;
-  --btn-primary-hover:color-mix(in srgb,var(--btn-primary-bg) 86%,#000);
+  --btn-primary-hover:color-mix(in srgb,var(--accent) 86%,#000);
   --send-bg:#5f8aa8; --send-ink:#fff; --send-hover:#507b99;
   /* spec 052 FR-098 (round 10): the chrome's type scale (screens, dialogs, chat, inbox; never desk cards, rooms, the lobby or the top bar).
      T1 titles, T2 section titles and inbox headings, T3 body, T4 chips and metadata, T5 hints and counts. */
@@ -428,7 +428,7 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .btn{height:var(--h-ctl);padding:0 var(--btn-pad);border-radius:var(--r-md);border:1px solid var(--line-2);background:var(--raised);cursor:pointer;font-size:var(--btn-fs);font-weight:var(--btn-fw);display:inline-flex;align-items:center;gap:7px;white-space:nowrap}
 .btn:hover{background:var(--surface-2);border-color:#bdb3a2}
 /* spec 052 FR-053: the primary action is solid in every theme (themes.css gives each theme its own accent) */
-.btn.primary{background:var(--btn-primary-bg);border-color:transparent;color:var(--btn-primary-ink);font-weight:600} /* spec 052 FR-169: the text colour is the page's own, so it reads on --sage-ink in a dark theme too */
+.btn.primary{--btn-primary-bg:var(--accent);--btn-primary-ink:var(--surface);background:var(--btn-primary-bg);border-color:transparent;color:var(--btn-primary-ink);font-weight:600} /* spec 052 FR-169: the text colour is the page's own, so it reads on --sage-ink in a dark theme too */
 .btn.primary:hover{background:var(--btn-primary-hover)}
 .btn.danger{color:var(--red-ink)}
 .btn.danger:hover{background:var(--tone-bad-soft);border-color:var(--tone-bad-line);color:var(--tone-bad-ink)}
@@ -2193,7 +2193,7 @@ h2,h3,h4{text-wrap:balance}
 html[data-flat-look]:not([data-ui]):not([data-world]){
   --bg:var(--flat-page)!important; --surface:var(--flat-page)!important; --raised:var(--flat-page)!important; --card:var(--flat-page)!important; --surface-2:var(--flat-page-2)!important; --note:var(--flat-page-2)!important;
   --line:var(--flat-line)!important; --line-2:var(--flat-line-2)!important; --line-ctl:var(--flat-line-ctl)!important; --sage-ink:var(--flat-accent)!important;
-  --btn-primary-hover:var(--flat-accent-hover); --send-bg:var(--btn-primary-bg); --send-ink:var(--btn-primary-ink); --send-hover:var(--btn-primary-hover);
+  --btn-primary-hover:var(--flat-accent-hover); --send-bg:var(--accent); --send-ink:var(--surface); --send-hover:var(--btn-primary-hover);
   --r-sm:3px; --r-md:4px; --r-lg:6px; --r-xl:8px;
   --h-ctl:24px; --h-chip:24px; --btn-pad:8px; --btn-fs:var(--t4-size); --btn-fw:500; --ib-size:24px; --ptab-h:24px; --ct-h:24px; --btn-sm-h:24px;
   --composer-pad:6px; --inbox-pad:4px;
