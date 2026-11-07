@@ -419,10 +419,11 @@ module.exports = async (ctx) => {
       const small = await js(`[...document.querySelectorAll('#panel *')].filter(e=>e.children.length===0&&e.textContent.trim()&&e.getClientRects().length&&parseFloat(getComputedStyle(e).fontSize)<10.5).length`);
       assert.strictEqual(small, 0, `${tag}: the chat has no text under 10.5px`);
       await shot(world, 'cell-chat', w, h);
-      await js(`document.getElementById('panelClose')&&document.getElementById('panelClose').click()`);
-      await must(`!document.body.classList.contains('panel-open')`, 'back to the office');
+      await H.load({ w, h, query: q(world, { sim: '15', simfloors: '1' }), ready: REAL, settle: false });
+      await must(PICS, 'the pictures');
       await js(`(()=>{const b=document.querySelector('#lift .lift-all');if(b)b.click()})()`);
       if (await H.until(`!!document.querySelector('#stage .ro-building,#stage .allfloors,#stage [data-d="all"]')`, 4000)) await shot(world, 'cell-allfloors', w, h);
+      await js(`localStorage.removeItem('durbar.floor');localStorage.removeItem('durbar.floorView')`); /* the next size starts on one floor */
     }
   }
 };

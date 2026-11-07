@@ -378,7 +378,7 @@
         "photo": "designed",
         "cave": "designed",
         "loft": "designed",
-        "retro": "designed"
+        "retro": "fallback-flat"
       },
       "nonNegotiables": "MK"
     },
@@ -398,7 +398,7 @@
         "photo": "designed",
         "cave": "designed",
         "loft": "designed",
-        "retro": "designed"
+        "retro": "fallback-flat"
       },
       "nonNegotiables": "TKF"
     },
@@ -417,7 +417,7 @@
         "photo": "designed",
         "cave": "designed",
         "loft": "designed",
-        "retro": "designed"
+        "retro": "fallback-flat"
       },
       "nonNegotiables": "TKSC"
     },
@@ -455,7 +455,7 @@
         "photo": "designed",
         "cave": "designed",
         "loft": "designed",
-        "retro": "designed"
+        "retro": "missing"
       },
       "nonNegotiables": "ASKTC"
     },
@@ -474,7 +474,7 @@
         "photo": "designed",
         "cave": "designed",
         "loft": "designed",
-        "retro": "designed"
+        "retro": "missing"
       },
       "nonNegotiables": "AKT"
     },
