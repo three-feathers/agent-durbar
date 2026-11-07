@@ -394,3 +394,18 @@ async function retries(): Promise<void> {
 await retries();
 console.log('ui-suite: check-parallel and ui-suite install Electron once before their parallel jobs (FR-114)');
 })().catch((e) => { console.error(e); process.exitCode = 1; });
+
+// ---- spec 008 FR-181 (issue 839): --shard i/n takes every n-th driver; n shards are disjoint and together hold every driver ----
+{
+  const { shard, DRIVERS } = require(SUITE) as { shard: (l: unknown[], s?: string) => unknown[]; DRIVERS: unknown[] };
+  for (const n of [1, 2, 3, 5]) {
+    const parts = Array.from({ length: n }, (_, i) => shard(DRIVERS, `${i + 1}/${n}`));
+    const all = parts.flat();
+    assert.strictEqual(all.length, DRIVERS.length, `${n} shards hold every driver once`);
+    assert.strictEqual(new Set(all).size, DRIVERS.length, `${n} shards are disjoint`);
+    assert.ok(Math.max(...parts.map((p: unknown[]) => p.length)) - Math.min(...parts.map((p: unknown[]) => p.length)) <= 1, `${n} shards differ by one driver at most`);
+  }
+  assert.deepStrictEqual(shard(DRIVERS, undefined), DRIVERS, 'no shard: the whole list');
+  for (const bad of ['0/3', '4/3', '3', 'a/b', '1/0']) assert.throws(() => shard(DRIVERS, bad), /--shard wants i\/n/, `"${bad}" is refused`);
+  console.log('ui-suite shards: ok');
+}
