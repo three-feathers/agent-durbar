@@ -777,10 +777,13 @@
     const paintNav=()=>{
       const hs=[...body.querySelectorAll(SN_HEADS)];
       const heads=hs.map(h=>{const c=h.cloneNode(true);c.querySelectorAll('small').forEach(x=>x.remove());return {id:h.id,text:c.textContent};});
+      /* the focus stays on the same entry (by heading id, else the nearest place) when the list is rebuilt under it */
+      const fb=nav.querySelector('.scr-nav-b:focus'), fi=fb?+fb.dataset.i:-1, fid=fi>=0&&items[fi]?items[fi].id:null;
       items=SN.build(heads);
       secs=items.map(it=>{const h=hs[it.at];if(!h.id)h.id=it.id;h.tabIndex=-1;return h.closest('.scr-sec,.scr-adv')||h;});
       nav.hidden=items.length<2;
       nav.innerHTML='<ul>'+items.map((it,i)=>`<li><button type="button" class="scr-nav-b" data-i="${i}" tabindex="-1">${esc(it.label)}</button></li>`).join('')+'</ul>';
+      if(fi>=0){const k=fid?items.findIndex(it=>it.id===fid):-1,at=k>=0?k:Math.min(fi,items.length-1),nb=nav.querySelector(`.scr-nav-b[data-i="${at}"]`);if(nb)focusIn(nb);}
       now=-1;mark();
     };
     const mark=()=>{
@@ -811,7 +814,7 @@
     nav.addEventListener('click',e=>{const b=e.target.closest('.scr-nav-b');if(b)go(+b.dataset.i);});
     nav.addEventListener('keydown',e=>{
       const b=e.target.closest('.scr-nav-b');if(!b||e.ctrlKey||e.metaKey||e.altKey)return;
-      const bs=[...nav.querySelectorAll('.scr-nav-b')], i=bs.indexOf(b), n=SN.step(e.key,i,bs.length);
+      const bs=[...nav.querySelectorAll('.scr-nav-b')], i=bs.indexOf(b), n=SN.step(e.key,i,bs.length,getComputedStyle(nav.querySelector('ul')).flexDirection==='row');
       if(n<0)return;
       e.preventDefault();
       bs.forEach(x=>{x.tabIndex=-1;});bs[n].tabIndex=0;focusIn(bs[n]);

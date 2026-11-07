@@ -10,7 +10,7 @@ type Head = { id?: string; text: string };
 const N = require(path.join(ROOT, 'src', 'renderer', 'settingsnav.js')) as {
   build: (h: Head[]) => { id: string; label: string; at: number }[];
   current: (tops: number[], edge: number, atEnd?: boolean) => number;
-  step: (key: string, i: number, n: number) => number;
+  step: (key: string, i: number, n: number, row?: boolean) => number;
   MAX_LABEL: number;
 };
 
@@ -42,6 +42,12 @@ assert.strictEqual(N.step('ArrowUp', 0, 3), 0, 'no wrap at the start');
 assert.strictEqual(N.step('ArrowUp', 2, 3), 1);
 assert.strictEqual(N.step('Home', 2, 3), 0);
 assert.strictEqual(N.step('End', 0, 3), 2);
+assert.strictEqual(N.step('ArrowRight', 0, 3), -1, 'in the column, ArrowRight is not ours');
+assert.strictEqual(N.step('ArrowLeft', 1, 3), -1, 'in the column, ArrowLeft is not ours');
+assert.strictEqual(N.step('ArrowRight', 0, 3, true), 1, 'in the row, ArrowRight steps on');
+assert.strictEqual(N.step('ArrowRight', 2, 3, true), 2, 'in the row, no wrap at the end');
+assert.strictEqual(N.step('ArrowLeft', 2, 3, true), 1, 'in the row, ArrowLeft steps back');
+assert.strictEqual(N.step('ArrowLeft', 0, 3, true), 0, 'in the row, no wrap at the start');
 assert.strictEqual(N.step('Tab', 0, 3), -1);
 assert.strictEqual(N.step('ArrowDown', 0, 0), -1);
 

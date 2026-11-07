@@ -30,11 +30,12 @@
     for(let i=0;i<n;i++)if(tops[i]<=edge)k=i;
     return k;
   }
-  /* the entry a key moves the focus to (ArrowUp/ArrowDown step, Home/End jump, no wrap); -1 for any other key */
-  function step(key,i,n){
+  /* the entry a key moves the focus to (ArrowUp/ArrowDown step, Home/End jump, no wrap); -1 for any other key. In the narrow row (row true)
+     ArrowRight and ArrowLeft step too, as the row's own direction; in the column they are not ours. */
+  function step(key,i,n,row){
     if(!n)return -1;
-    if(key==='ArrowDown')return Math.min(n-1,i+1);
-    if(key==='ArrowUp')return Math.max(0,i-1);
+    if(key==='ArrowDown'||(row&&key==='ArrowRight'))return Math.min(n-1,i+1);
+    if(key==='ArrowUp'||(row&&key==='ArrowLeft'))return Math.max(0,i-1);
     if(key==='Home')return 0;
     if(key==='End')return n-1;
     return -1;

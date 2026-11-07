@@ -165,6 +165,7 @@ module.exports = async (ctx) => {
 
   // ---- narrow: a row above the page ----
   await open(640, 800, 'clean-office', null);
+  const built0 = await js(`document.querySelectorAll('#scrNav .scr-nav-b').length`);
   const row = await js(`(()=>{const n=document.getElementById('scrNav'),b=document.querySelector('#screen .scr-body'),nr=n.getBoundingClientRect(),br=b.getBoundingClientRect(),s=document.getElementById('screen').getBoundingClientRect(),ul=n.querySelector('ul');
     return {dir:getComputedStyle(ul).flexDirection,above:nr.bottom<=br.top+1,inScreen:nr.left>=s.left-1&&nr.right<=s.right+1,scrollsX:n.scrollWidth>n.clientWidth,h:Math.round(nr.height),bodyX:b.scrollWidth-b.clientWidth,pageX:document.scrollingElement.scrollWidth-innerWidth,bodyH:Math.round(br.height),min:Math.min(...[...n.querySelectorAll('.scr-nav-b')].map(x=>parseFloat(getComputedStyle(x).fontSize)))}})()`);
   assert.strictEqual(row.dir, 'row', `narrow: the list is a row: ${JSON.stringify(row)}`);
@@ -176,5 +177,29 @@ module.exports = async (ctx) => {
   await ok(`document.querySelector('#scrNav [aria-current]').dataset.i==='9'&&document.querySelector('#screen .scr-body').scrollTop>0`, 'narrow: a click jumps');
   assert.ok((await js(`(()=>{const n=document.getElementById('scrNav'),c=n.querySelector('[aria-current]').getBoundingClientRect(),r=n.getBoundingClientRect();return c.left>=r.left-1&&c.right<=r.right+1})()`)), 'narrow: the current entry is brought into view in the row');
   await H.shot(path.join(OUT, '052-settings-nav-narrow-640x800.png'), { prep: 'mouse', tag: '052' });
+  // keys in the row: ArrowRight and ArrowLeft step (and are ours: default prevented), the column's Up and Down still do
+  await js(`document.querySelector('#scrNav .scr-nav-b[data-i="2"]').focus()`);
+  const prevented = (key) => js(`(()=>{const e=new KeyboardEvent('keydown',{key:${jsLiteral(key)},bubbles:true,cancelable:true});document.activeElement.dispatchEvent(e);return e.defaultPrevented})()`);
+  assert.strictEqual(await prevented('ArrowRight'), true, 'narrow: ArrowRight is ours in the row (default prevented)');
+  await js(`document.querySelector('#scrNav .scr-nav-b[data-i="2"]').focus()`);
+  await H.key('Right'); await ok(`document.activeElement.dataset.i==='3'`, 'narrow: ArrowRight moves to the next entry');
+  await H.key('Right'); await ok(`document.activeElement.dataset.i==='4'`, 'narrow: ArrowRight again');
+  await H.key('Left'); await ok(`document.activeElement.dataset.i==='3'`, 'narrow: ArrowLeft goes back');
+  await H.key('Down'); await ok(`document.activeElement.dataset.i==='4'`, 'narrow: ArrowDown still steps in the row');
+  await H.key('Home'); await H.key('Left'); await ok(`document.activeElement.dataset.i==='0'`, 'narrow: no wrap before the first entry');
+  // the list is rebuilt under the focus (a section goes): the focus stays on the same entry, never falls to the body
+  await js(`document.querySelector('#scrNav .scr-nav-b[data-i="5"]').focus()`);
+  const before = await js(`document.activeElement.textContent`);
+  await js(`document.querySelector('.scr-body>.scr-sec').remove()`); // the first section: every entry shifts by one
+  await ok(`document.querySelectorAll('#scrNav .scr-nav-b').length===${built0 - 1}`, 'narrow: the list is rebuilt without the removed section');
+  assert.deepStrictEqual(await js(`({inNav:!!document.activeElement.closest('#scrNav'),text:document.activeElement.textContent,tag:document.activeElement.tagName})`), { inNav: true, text: before, tag: 'BUTTON' }, 'narrow: the focus stays on the same entry when the list is rebuilt');
+  await js(`document.querySelector('#scrNav .scr-nav-b:last-child, #scrNav li:last-child .scr-nav-b').focus()`);
+  await js(`[...document.querySelectorAll('.scr-body>.scr-sec,.scr-body>.scr-adv')].slice(-1)[0].remove()`); // the last section, under the focus on the last entry
+  await ok(`document.querySelectorAll('#scrNav .scr-nav-b').length===${built0 - 2}`, 'narrow: the list is rebuilt again');
+  assert.strictEqual(await js(`!!document.activeElement.closest('#scrNav')`), true, 'narrow: the focus moves to the nearest entry when its own is gone');
+  // fewer than two sections: no list at all (one entry is no navigation)
+  await js(`[...document.querySelectorAll('.scr-body>.scr-sec,.scr-body>.scr-adv')].slice(1).forEach(e=>e.remove())`);
+  await ok(`document.getElementById('scrNav').hidden===true`, 'narrow: with fewer than two sections the list is hidden');
+  assert.strictEqual(await js(`document.getElementById('scrNav').getClientRects().length`), 0, 'narrow: and takes no room');
   console.log('all checks passed');
 };
