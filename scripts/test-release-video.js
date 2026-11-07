@@ -87,9 +87,10 @@ const checkChoice = (M) => {
   assert.deepStrictEqual(pick(V12, ['notesource']).slice(1, 3), ['notesource', 'lounge'], 'a Scene: field comes first, once');
   assert.deepStrictEqual(pick([], ['crews', 'crews']), ['intro', 'crews', 'outro'], 'a Scene: field alone picks its scene, once');
   assert.throws(() => pick([], ['intro', 'nope', 'toString']), /no scene shows/, 'the cards and unknown ids are no scene');
-  const many = ['crews', 'mcp', 'org', 'floors', 'refresh', 'needsyou', 'mcpsettings', 'lounge'];
-  assert.strictEqual(pick([], many).length, M.AUTO_MAX + 2, 'a long release is cut to AUTO_MAX scenes between the cards');
-  assert.ok(M.AUTO_MAX >= 4 && M.AUTO_MAX <= 6, 'a clip of at most AUTO_MAX scenes stays inside its length bounds');
+  const six = ['crews', 'mcp', 'org', 'floors', 'refresh', 'needsyou'];
+  assert.strictEqual(M.AUTO_MAX, 5, 'AUTO_MAX is pinned at 5 feature scenes (a clip of 6 would pass LEN_MAX)');
+  assert.deepStrictEqual(pick([], six), ['intro', 'crews', 'mcp', 'org', 'floors', 'refresh', 'outro'], 'six candidates are cut to AUTO_MAX (5) scenes between the cards');
+  assert.ok(!lounge('- x (respec 097 FR-246): a') && !lounge('- x (prespec 097 FR-246): a'), '"respec 097" is not "spec 097" (word boundary)');
 };
 checkChoice(RV);
 for (const [sid, sc] of Object.entries(RV.SCENES)) {
@@ -110,6 +111,53 @@ for (const [sid, sc] of Object.entries(RV.SCENES)) {
   const src4 = fs.readFileSync(path.join(__dirname, 'release-video.js'), 'utf8');
   assert.ok(!/RV_SCENES \|\| DEFAULT/.test(src4) && /RV_SCENES is not set/.test(src4), 'the driver has no fixed fallback list either');
 }
+const checkSources = (M) => {
+  // releaseSources: the pending fragments (bullets and Scene: fields) and the version's own section of a folded CHANGELOG.md, not another version's
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'rv-src-'));
+  try {
+    fs.mkdirSync(path.join(root, 'changelog.d'));
+    fs.writeFileSync(path.join(root, 'changelog.d', 'a.md'), '- **Crews** (spec 077 FR-075): more.\n  Scene: crews\n');
+    fs.writeFileSync(path.join(root, 'CHANGELOG.md'), '# Changelog\n\n## Unreleased\n\n## v0.9.0 (2026-01-01)\n\n- **Rail** (spec 005 FR-236): drag.\n\n## v0.8.0 (2025-12-01)\n\n- **Lounge** (spec 097 FR-246): old.\n\n## v0.1.11 (2025-11-01)\n\n- **Sign in** (spec 058 FR-229): old.\n');
+    const src = M.releaseSources('v0.9.0', root);
+    assert.deepStrictEqual(src.sceneFields, ['crews'], 'the fragment\'s Scene: field');
+    assert.deepStrictEqual(M.chooseScenes(src), ['intro', 'crews', 'railwidth', 'outro'], 'a fragment and the folded section of that version');
+    assert.ok(!M.chooseScenes(src).includes('lounge'), 'another version\'s section is not read');
+    assert.deepStrictEqual(M.releaseSources('v0.7.0', root).bullets.length, 1, 'a version with no section: the fragments alone');
+    assert.strictEqual(M.releaseSources('v0.1.1', root).bullets.length, 1, 'v0.1.1 does not read the v0.1.11 section (exact heading match, not a prefix)');
+    // a CRLF CHANGELOG (a Windows checkout), the heading bare so a stray \r would break an exact match
+    fs.writeFileSync(path.join(root, 'CHANGELOG.md'), '# Changelog\r\n\r\n## v0.9.0\r\n\r\n- **Rail** (spec 005 FR-236): drag.\r\n\r\n## v0.8.0\r\n\r\n- **Lounge** (spec 097 FR-246): old.\r\n');
+    const crlf = M.releaseSources('v0.9.0', root);
+    assert.strictEqual(crlf.bullets.filter((b) => /spec 005/.test(b)).length, 1, 'a CRLF CHANGELOG: the version\'s section is found');
+    assert.ok(!crlf.bullets.some((b) => /spec 097/.test(b)), 'a CRLF CHANGELOG: the next section is not read');
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+};
+checkSources(RV);
+{
+  // main() with no --scenes and no match: a clear error, no release-* file, no recording, and the command exits non-zero
+  const out = fs.mkdtempSync(path.join(os.tmpdir(), 'rv-nomatch-'));
+  try {
+    let started = false;
+    assert.rejects(RV.main(['--version', 'v9.9.9', '--out', out], { releaseSources: () => ({ bullets: ['- **Nothing** (spec 021 FR-063): x.'], sceneFields: [] }), hasFfmpeg: () => true, ensure: () => true, runOne: async () => { started = true; } }), /no scene shows this release.*--scenes/).then(() => {
+      assert.ok(!started, 'no recording starts without scenes');
+      assert.deepStrictEqual(fs.readdirSync(out).filter((f) => f.startsWith('release-')), [], 'no release-* file without scenes');
+    }).catch((e) => { console.error(e); process.exit(1); });
+    // the real command, in a copy of the scripts over an empty changelog: exit code 1 and the message on stderr
+    const fake = fs.mkdtempSync(path.join(os.tmpdir(), 'rv-cmd-'));
+    fs.mkdirSync(path.join(fake, 'scripts')); fs.mkdirSync(path.join(fake, 'changelog.d'));
+    for (const f of ['release-video.js', 'changelog.js']) fs.copyFileSync(path.join(__dirname, f), path.join(fake, 'scripts', f));
+    fs.writeFileSync(path.join(fake, 'CHANGELOG.md'), '# Changelog\n\n## Unreleased\n');
+    const r = require('child_process').spawnSync(process.execPath, [path.join(fake, 'scripts', 'release-video.js'), '--version', 'v9.9.9', '--out', path.join(fake, 'out')], { encoding: 'utf8', timeout: 20000 });
+    assert.strictEqual(r.status, 1, 'the command exits non-zero when no scene shows the release');
+    assert.ok(/no scene shows this release.*--scenes/.test(r.stderr), 'and says so: ' + r.stderr);
+    assert.ok(!fs.existsSync(path.join(fake, 'out')) || fs.readdirSync(path.join(fake, 'out')).filter((f) => f.startsWith('release-')).length === 0, 'no release-* file from the command');
+    fs.rmSync(fake, { recursive: true, force: true });
+  } finally { setTimeout(() => fs.rmSync(out, { recursive: true, force: true }), 1000).unref(); }
+}
+// the GIF cap is 5 MiB (FR-172); the v0.1.12 GIF (5,240,561 bytes) is under it
+assert.strictEqual(RV.GIF_MAX, 5 * 1024 * 1024, 'the GIF cap is 5 MiB');
+assert.strictEqual(RV.GIF_MAX, 5242880);
+assert.ok(5240561 <= RV.GIF_MAX, 'the v0.1.12 GIF is under the cap');
+
 {
   // mutants of release-video.js: each must fail checkChoice with the assert it is aimed at (a mutant that fails for another reason does not count)
   const src5 = fs.readFileSync(path.join(__dirname, 'release-video.js'), 'utf8');
@@ -124,32 +172,23 @@ for (const [sid, sc] of Object.entries(RV.SCENES)) {
     ['nothing to show falls back instead of an error', "if (!feature.length) throw new Error(", "if (false) throw new Error(", /nothing to show is an error/],
     ['no cap on the number of scenes', ".slice(0, AUTO_MAX);", ";", /cut to AUTO_MAX/],
     ['Scene: fields after refs', "const feature = [...named, ...byRef]", "const feature = [...byRef, ...named]", /a Scene: field comes first/],
+    ['prefix version match', "l.startsWith(`## ${version} `) || l === `## ${version}`", "l.startsWith(`## ${version}`)", /v0\.1\.1 does not read/],
+    ['CRLF not normalised', ".replace(/\\r\\n?/g, '\\n').split('\\n');\n    const at", ".split('\\n');\n    const at", /CRLF CHANGELOG/],
+    ['spec without a word boundary', "/\\bspec (\\d{3})", "/spec (\\d{3})", /word boundary/],
+    ['AUTO_MAX raised', "const AUTO_MAX = 5;", "const AUTO_MAX = 6;", /AUTO_MAX is pinned|cut to AUTO_MAX/],
     ['spec without FR numbers shows an FR scene', "if (!ref.fr) return true;\n  return got.some", "if (!ref.fr || !got.length) return true;\n  return got.some", /named without FR numbers/],
   ];
   try {
     mutants.forEach(([name, from, to, expect], i) => {
       assert.ok(src5.includes(from), `mutant "${name}": its target text is still in release-video.js`);
-      const file = path.join(dir, `rv-mut-${i}.js`);
+      fs.mkdirSync(path.join(dir, String(i))); // its own folder: changelog.js finds the scene ids in ./release-video.js beside it
+      fs.copyFileSync(path.join(__dirname, 'changelog.js'), path.join(dir, String(i), 'changelog.js'));
+      const file = path.join(dir, String(i), 'release-video.js');
       fs.writeFileSync(file, src5.replace(from, to));
       const M = require(file);
-      assert.throws(() => checkChoice(M), (e) => e && e.message && expect.test(e.message), `mutant "${name}" is killed by its intended assert`);
+      assert.throws(() => { checkChoice(M); checkSources(M); }, (e) => e && e.message && expect.test(e.message), `mutant "${name}" is killed by its intended assert`);
     });
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
-}
-
-{
-  // releaseSources: the pending fragments (bullets and Scene: fields) and the version's own section of a folded CHANGELOG.md, not another version's
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'rv-src-'));
-  try {
-    fs.mkdirSync(path.join(root, 'changelog.d'));
-    fs.writeFileSync(path.join(root, 'changelog.d', 'a.md'), '- **Crews** (spec 077 FR-075): more.\n  Scene: crews\n');
-    fs.writeFileSync(path.join(root, 'CHANGELOG.md'), '# Changelog\n\n## Unreleased\n\n## v0.9.0 (2026-01-01)\n\n- **Rail** (spec 005 FR-236): drag.\n\n## v0.8.0 (2025-12-01)\n\n- **Lounge** (spec 097 FR-246): old.\n');
-    const src = RV.releaseSources('v0.9.0', root);
-    assert.deepStrictEqual(src.sceneFields, ['crews'], 'the fragment\'s Scene: field');
-    assert.deepStrictEqual(RV.chooseScenes(src), ['intro', 'crews', 'railwidth', 'outro'], 'a fragment and the folded section of that version');
-    assert.ok(!RV.chooseScenes(src).includes('lounge'), 'another version\'s section is not read');
-    assert.deepStrictEqual(RV.releaseSources('v0.7.0', root).bullets.length, 1, 'a version with no section: the fragments alone');
-  } finally { fs.rmSync(root, { recursive: true, force: true }); }
 }
 
 // ---- the privacy check (FR-176) ----

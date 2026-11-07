@@ -658,7 +658,7 @@ function seconds(file) {
 async function main(argv = process.argv.slice(2), deps = {}) {
   const a = parseArgs(argv);
   if (a.list) { for (const [id, s] of Object.entries(SCENES)) console.log(`${id.padEnd(11)} ${s.title}: ${s.sub}`); return null; }
-  if (a.scenes === null) a.scenes = (deps.chooseScenes || ((v) => chooseScenes(releaseSources(v))))(a.version);
+  if (a.scenes === null) a.scenes = (deps.chooseScenes || ((v) => chooseScenes((deps.releaseSources || releaseSources)(v))))(a.version);
   const out = path.resolve(a.out);
   fs.mkdirSync(out, { recursive: true });
   const base = `release-${a.version}`;
