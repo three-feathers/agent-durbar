@@ -12,20 +12,24 @@
  * No imports: usable from main, tests and any OS.
  */
 
+// Exported values are frozen and the module itself only uses its private bindings: in CommonJS an importer can replace a property
+// of `exports`, so internal code never reads its own exports (review of PR 1246).
 /** FR-040: the five prefixes a contact link may start with. The one list; the builder takes its prefixes from here. */
-export const CONTACT_LINK_ALLOWLIST: readonly string[] = Object.freeze([
+const ALLOWLIST: readonly string[] = Object.freeze([
   'https://teams.microsoft.com/l/chat/0/0?',
   'msteams:/l/chat/0/0?',
   'mailto:',
   'slack://user?',
   'https://t.me/',
 ]);
-const [TEAMS_WEB, TEAMS_APP, MAILTO, SLACK, TELEGRAM] = CONTACT_LINK_ALLOWLIST;
+export const CONTACT_LINK_ALLOWLIST: readonly string[] = ALLOWLIST;
+const [TEAMS_WEB, TEAMS_APP, MAILTO, SLACK, TELEGRAM] = ALLOWLIST;
 
 /** FR-045: `CONTACTS_LIMITS.urlChars` of spec 084 FR-005 (T010, `src/shared/contacts.ts`, not merged yet): switch to it when it lands. */
 const URL_CHARS = 2_000;
 /** FR-042: the subject is the first line, cut at a word to at most this many code points. */
-export const SUBJECT_CODE_POINTS = 78;
+const SUBJECT_CP = 78;
+export const SUBJECT_CODE_POINTS = SUBJECT_CP;
 
 /** What the builder reads of a channel (spec 084 FR-003); the contact model's `Channel` fits it. Other fields are ignored. */
 export interface LinkChannel {
@@ -64,12 +68,17 @@ const TELEGRAM_RE = /^[A-Za-z][A-Za-z0-9_]{4,31}$/;
  * Instant View links). They are refused case-insensitively, as Telegram usernames are. Names shorter than 5 fail TELEGRAM_RE anyway
  * and are listed so this stays the one list (T018: spec 084 T010's save check uses it too). From reading t.me links, `read:`.
  */
-export const TELEGRAM_RESERVED_PATHS: ReadonlySet<string> = new Set([
+const RESERVED: readonly string[] = Object.freeze([
   'share', 'joinchat', 'addstickers', 'addemoji', 'addtheme', 'addlist', 'proxy', 'socks', 'login', 'setlanguage', 'confirmphone',
   'invoice', 'giftcode', 'boost', 'contact', 'c', 's', 'm', 'iv', 'bg',
 ]);
+/** The list, exported frozen for spec 084 T010's save check (T018); the Set the check uses stays private. */
+export const TELEGRAM_RESERVED_PATHS: readonly string[] = RESERVED;
+const RESERVED_SET: ReadonlySet<string> = new Set(RESERVED);
 /** FR-003 and the reserved paths: a name that opens a person's or a group's chat. */
-export const telegramNameOk = (v: unknown): v is string => typeof v === 'string' && TELEGRAM_RE.test(v) && !TELEGRAM_RESERVED_PATHS.has(v.toLowerCase());
+export function telegramNameOk(v: unknown): v is string {
+  return typeof v === 'string' && TELEGRAM_RE.test(v) && !RESERVED_SET.has(v.toLowerCase());
+}
 
 export function linkAddressOk(v: unknown): v is string {
   if (typeof v !== 'string' || v.length > 254) return false;
@@ -143,7 +152,7 @@ const unitsAt = (s: string, i: number): number => ((s.codePointAt(i) as number) 
 function cutSubject(line: string): string {
   // the first 78 code points (UTF-16 units: `limit`), walked once; the rest of a huge line is never read
   let limit = 0;
-  for (let points = 0; limit < line.length && points < SUBJECT_CODE_POINTS; points++) limit += unitsAt(line, limit);
+  for (let points = 0; limit < line.length && points < SUBJECT_CP; points++) limit += unitsAt(line, limit);
   if (limit >= line.length) return line;
   // A grapheme boundary depends only on the text before it and the one code point after it, so segmenting the limit plus one code
   // point gives every boundary at or before the limit exactly.
@@ -181,7 +190,7 @@ function assemble(head: string, params: Array<[string, string]>): LinkResult {
   params.forEach(([name, value], i) => { encodedLength += (i ? 1 : 0) + name.length + 1 + encodedLengthOf(value); });
   if (encodedLength > URL_CHARS) return { error: 'too-long', encodedLength };
   const url = head + params.map(([name, value]) => name + '=' + encodeValue(value)).join('&');
-  if (!CONTACT_LINK_ALLOWLIST.some((p) => url.startsWith(p))) return { error: 'bad-channel' };
+  if (!ALLOWLIST.some((p) => url.startsWith(p))) return { error: 'bad-channel' };
   return { url, encodedLength: url.length, prefill: true };
 }
 

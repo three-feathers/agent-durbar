@@ -10,6 +10,7 @@ import {
   CONTACT_LINK_ALLOWLIST, SUBJECT_CODE_POINTS, TELEGRAM_RESERVED_PATHS, buildContactLink, telegramNameOk, emailParts, encodeValue, encodedLengthOf, linkAddressOk, wellFormed, wellFormedFallback,
   type LinkChannel, type LinkResult,
 } from '../src/shared/contactlinks';
+import * as contactlinks from '../src/shared/contactlinks';
 
 let passed = 0;
 function test(name: string, fn: () => void): void {
@@ -308,7 +309,7 @@ test('R2 an underscore is fine in the local part and refused in any domain label
 });
 test('R3 Telegram names that open a page, not a chat, are refused in any case', () => {
   for (const n of ['share', 'joinchat', 'addstickers', 'addemoji', 'addtheme', 'addlist', 'proxy', 'socks', 'login', 'setlanguage', 'confirmphone', 'invoice', 'giftcode', 'boost', 'contact', 'c', 's', 'm', 'iv', 'bg']) {
-    assert.ok(TELEGRAM_RESERVED_PATHS.has(n), n);
+    assert.ok(TELEGRAM_RESERVED_PATHS.includes(n), n);
   }
   for (const n of TELEGRAM_RESERVED_PATHS) {
     for (const v of [n, n.toUpperCase(), n[0].toUpperCase() + n.slice(1)]) {
@@ -317,6 +318,53 @@ test('R3 Telegram names that open a page, not a chat, are refused in any case', 
     }
   }
   for (const v of ['shares', 'share_bot', 'joinchats', 'alex_example', 'Login_Helper']) assert.ok('url' in buildContactLink({ kind: 'telegram', username: v }, 'hi'), v);
+});
+
+/** Every non-function export, walked: primitives, or frozen plain arrays and objects all the way down (no Set, Map or RegExp). */
+function assertDeepFrozen(v: unknown, where: string): void {
+  if (v === null || (typeof v !== 'object' && typeof v !== 'function')) return;
+  assert.ok(!(v instanceof Set) && !(v instanceof Map) && !(v instanceof WeakMap) && !(v instanceof WeakSet) && !(v instanceof RegExp), `${where}: a mutable structure`);
+  assert.ok(Array.isArray(v) || Object.getPrototypeOf(v) === Object.prototype, `${where}: only plain arrays and objects`);
+  assert.ok(Object.isFrozen(v), `${where} is not frozen`);
+  for (const k of Object.keys(v as object)) assertDeepFrozen((v as Record<string, unknown>)[k], `${where}.${k}`);
+}
+test('R5 exported lists are frozen arrays; changing them or the exports does not change the builder', () => {
+  const mod = contactlinks as unknown as Record<string, unknown>;
+  const values = Object.keys(mod).filter((k) => typeof mod[k] !== 'function');
+  assert.deepStrictEqual(values.sort(), ['CONTACT_LINK_ALLOWLIST', 'SUBJECT_CODE_POINTS', 'TELEGRAM_RESERVED_PATHS'], 'the exported values');
+  for (const k of values) assertDeepFrozen(mod[k], k);
+  assert.ok(Array.isArray(TELEGRAM_RESERVED_PATHS) && TELEGRAM_RESERVED_PATHS.includes('share'));
+  // strict mode: every change throws, and nothing changes
+  const list = TELEGRAM_RESERVED_PATHS as string[];
+  const allow = CONTACT_LINK_ALLOWLIST as string[];
+  const tries: Array<() => unknown> = [
+    () => list.push('x'), () => list.pop(), () => list.splice(0, 1), () => { list[0] = 'alexexample'; }, () => { list.length = 0; },
+    () => allow.push('javascript:'), () => { allow[2] = 'javascript:'; }, () => allow.shift(),
+  ];
+  for (const t of tries) assert.throws(t, TypeError);
+  assert.strictEqual(TELEGRAM_RESERVED_PATHS[0], 'share');
+  assert.deepStrictEqual(buildContactLink({ kind: 'telegram', username: 'share' }, 'hi'), { error: 'bad-channel' });
+  // CommonJS lets an importer replace an export: the builder only uses its private bindings
+  const saved = Object.fromEntries(Object.keys(mod).map((k) => [k, mod[k]]));
+  try {
+    mod.TELEGRAM_RESERVED_PATHS = [];
+    mod.CONTACT_LINK_ALLOWLIST = ['javascript:'];
+    mod.SUBJECT_CODE_POINTS = 2;
+    mod.telegramNameOk = () => true;
+    mod.linkAddressOk = () => true;
+    mod.encodeValue = (x: string) => x;
+    mod.encodedLengthOf = () => 0;
+    mod.wellFormed = (x: string) => x;
+    mod.emailParts = () => ({ subject: '', body: '' });
+    assert.deepStrictEqual(buildContactLink({ kind: 'telegram', username: 'share' }, 'hi'), { error: 'bad-channel' });
+    assert.deepStrictEqual(buildContactLink({ kind: 'teams', upn: 'a b@example.invalid' }, 'hi'), { error: 'bad-channel' });
+    assert.strictEqual(ok(buildContactLink({ kind: 'teams', upn: UPN }, 'a b')).url, TEAMS_WEB + 'users=' + ENC_UPN + '&message=a%20b');
+    assert.strictEqual(ok(buildContactLink({ kind: 'email', address: 'alex@example.invalid' }, 'one two three\nx')).url, 'mailto:alex@example.invalid?subject=one%20two%20three&body=x');
+    assert.strictEqual((buildContactLink({ kind: 'teams', upn: UPN }, 'x'.repeat(3_000)) as { error: string }).error, 'too-long');
+  } finally {
+    for (const [k, v] of Object.entries(saved)) mod[k] = v;
+  }
+  assert.strictEqual(contactlinks.CONTACT_LINK_ALLOWLIST, CONTACT_LINK_ALLOWLIST);
 });
 
 // AC6: the one allow-list
@@ -445,7 +493,7 @@ function genChannel(r: () => number): { ch: LinkChannel; valid: boolean } {
     return { ch: { kind, team, user }, valid: /^T[A-Z0-9]{2,20}$/.test(team) && /^[UW][A-Z0-9]{2,20}$/.test(user) };
   }
   const username = hostile ? pick(r, HOSTILE_TELEGRAM) : 'a' + word(r, 'abcXYZ_09', 4 + Math.floor(r() * 28));
-  return { ch: { kind, username }, valid: /^[A-Za-z][A-Za-z0-9_]{4,31}$/.test(username) && !TELEGRAM_RESERVED_PATHS.has(username.toLowerCase()) };
+  return { ch: { kind, username }, valid: /^[A-Za-z][A-Za-z0-9_]{4,31}$/.test(username) && !TELEGRAM_RESERVED_PATHS.includes(username.toLowerCase()) };
 }
 const VALUE_RE = /^[A-Za-z0-9\-._~%]*$/;
 const expectedNames = (kind: string, copyOnly: boolean): string[] =>
