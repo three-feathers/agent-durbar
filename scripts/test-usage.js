@@ -461,6 +461,78 @@ const withTimeout = (p, ms, msg) => Promise.race([p, new Promise((_, rej) => set
     assert.ok(!fs.existsSync(path.join(dD, 'usage-linux.lock')), 'load failure: the lock is released');
   }
 
+  // ---- third review of #1251: the loser exits, L3, L8, L9, S4 ----
+  {
+    const asBuf = (o) => Buffer.from(JSON.stringify(o));
+    const { spawn } = require('child_process');
+    const deadKill = () => { const e = new Error('gone'); e.code = 'ESRCH'; throw e; };
+    // L3. a 503 (lock lost) leaves memory unchanged, and reports the holder so the receiver can exit
+    const dL = path.join(tmp, 'l3');
+    const sv = R.createService({ dir: dL, machine: 'linux', now: () => NOW });
+    const snap = JSON.stringify([sv.state.days, sv.state.skipped]);
+    fs.writeFileSync(path.join(dL, 'usage-linux.lock'), '2147483646\n');
+    const r503 = sv.handle(asBuf(sample), 'identity');
+    assert.strictEqual(r503.status, 503, 'L3: the lock is lost');
+    assert.strictEqual(JSON.stringify([sv.state.days, sv.state.skipped]), snap, 'L3: a 503 leaves the sums in memory unchanged');
+    assert.strictEqual(r503.lockLost, '2147483646', 'L3: the answer names the holder of the lock');
+    // the loser of the deterministic distinct-pid race is told to leave (hook stands in for the exit)
+    const dR = path.join(tmp, 'l-race'); fs.mkdirSync(dR); const lfR = path.join(dR, 'usage-linux.lock');
+    fs.writeFileSync(lfR, '2147483646\n');
+    let rB = null;
+    const rA = R.acquireLock(lfR, { pid: 222222, kill: (p2) => { if (!rB) rB = R.acquireLock(lfR, { pid: 111111, kill: deadKill }); return deadKill(p2); } });
+    assert.ok(rB && rA && !rB.stillOurs() && rA.stillOurs() && rB.holder() === '222222', 'lock race: the loser can name the winner');
+    rA();
+
+    // L8, L9. takeover is temp file plus rename, owner-only, and a symlink at the lock path is replaced, not followed
+    if (process.platform !== 'win32') {
+      const dS = path.join(tmp, 'l8'); fs.mkdirSync(dS);
+      const target = path.join(dS, 'target.txt'); const lfS = path.join(dS, 'usage-linux.lock');
+      fs.writeFileSync(target, '2147483646\n');
+      let linked = true; try { fs.symlinkSync(target, lfS); } catch { linked = false; }
+      assert.ok(linked, 'L8: a symlink could be made for the test');
+      const renames = []; const realRename = fs.renameSync;
+      fs.renameSync = (a, b) => { renames.push([a, b]); return realRename(a, b); };
+      let relS; const oldUmask = process.umask(0o022);
+      try { relS = R.acquireLock(lfS, { pid: 888888, kill: deadKill }); } finally { fs.renameSync = realRename; process.umask(oldUmask); }
+      assert.strictEqual(renames.length, 1, 'L8: takeover renames one temporary file over the lock');
+      assert.ok(renames[0][1] === lfS && /\.tmp$/.test(renames[0][0]) && renames[0][0] !== lfS, 'L8: takeover renames a temporary file over the lock path');
+      assert.strictEqual(fs.readFileSync(target, 'utf8'), '2147483646\n', 'L8: takeover never writes through a symlink at the lock path');
+      assert.ok(!fs.lstatSync(lfS).isSymbolicLink() && fs.readFileSync(lfS, 'utf8').trim() === '888888', 'L8: the symlink is replaced by a real lock file');
+      assert.strictEqual(fs.lstatSync(lfS).mode & 0o077, 0, 'L9: the takeover file is owner-only even with a 022 umask');
+      relS();
+    }
+
+    // the real receiver as a child process (no shell): a lost lock exits 1 with one stderr line; SIGTERM removes the lock and exits 0
+    const startChild = (dir) => new Promise((resolve, reject) => {
+      const child = spawn(process.execPath, [path.join(__dirname, 'usage-receiver.js'), '--port', '0', '--dir', dir], { env: { ...process.env, DURBAR_USAGE_MACHINE: 'linux' }, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+      let out = ''; let err = '';
+      child.stderr.on('data', (c) => { err += c; });
+      child.once('error', reject);
+      const done = new Promise((res) => child.once('exit', (code, signal) => res({ code, signal, err })));
+      child.stdout.on('data', (c) => { out += c; const m = /127\.0\.0\.1:(\d+)/.exec(out); if (m) resolve({ child, port: Number(m[1]), done }); });
+      done.then(() => reject(new Error(`child exited early: ${err}`)));
+    });
+    const dX = path.join(tmp, 'child-lost'); const c1 = await startChild(dX);
+    fs.writeFileSync(path.join(dX, 'usage-linux.lock'), '2147483646\n');
+    const rr = await post(c1.port, JSON.stringify(sample));
+    assert.strictEqual(rr.status, 503, 'loser: the receiver whose lock was taken answers 503');
+    const fin = await withTimeout(c1.done, 5000, 'loser: the receiver did not exit after losing the lock').catch((e) => { c1.child.kill('SIGKILL'); throw e; });
+    assert.strictEqual(fin.code, 1, 'loser: exits non-zero when the lock is lost');
+    assert.strictEqual(fin.err.trim(), 'usage-receiver: lock lost to pid 2147483646, exiting', 'loser: one stderr line names the new holder');
+    assert.strictEqual(fs.readFileSync(path.join(dX, 'usage-linux.lock'), 'utf8').trim(), '2147483646', 'loser: the lock that is not ours is left alone');
+
+    if (process.platform === 'win32') {
+      console.log('test-usage: SIGTERM check skipped on Windows (POSIX signals do not apply the same way; spec 008 FR-181 KNOWN GAP)');
+    } else {
+      const dT = path.join(tmp, 'child-term'); const c2 = await startChild(dT);
+      assert.ok(fs.existsSync(path.join(dT, 'usage-linux.lock')), 'S4: the real receiver holds its lock while running');
+      c2.child.kill('SIGTERM');
+      const f2 = await withTimeout(c2.done, 5000, 'S4: the real receiver did not exit on SIGTERM').catch((e) => { c2.child.kill('SIGKILL'); throw e; });
+      assert.strictEqual(f2.code, 0, 'S4: SIGTERM ends the real receiver cleanly (exit 0)');
+      assert.ok(!fs.existsSync(path.join(dT, 'usage-linux.lock')), 'S4: SIGTERM removes the lock in the real receiver');
+    }
+  }
+
   // ---- the report ----
   const mk = (machine, iso, model, input, usdv) => { const s = lib.emptyState(machine); lib.ingest(s, body([tok('input', model, input, iso), tok('output', model, 10, iso)], [cost(model, usdv, iso)]), NOW); return s; };
   const a = mk('linux', '2026-11-07T10:00:00Z', OPUS, 1500000, 2.5);

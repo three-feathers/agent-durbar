@@ -73,8 +73,9 @@ function predatesBoot(mtimeMs, nowMs, uptimeSec) { return mtimeMs < nowMs - upti
 /**
  * A lock file next to the usage file (holds the process id only): a second receiver on one folder and label would lose the first one's sums.
  * Created with `wx`. A stale lock (its process is gone, or it was written before the last boot) is taken over atomically: a unique temporary
- * file with our id is renamed over it, then the lock is read back and must hold our id; two takers at once cannot both pass that read, and
- * `stillOurs()` is checked before every write as well. `o` (pid, kill, now, uptime, afterRename) is for tests.
+ * file with our id is renamed over it, then the lock is read back and must hold our id. Two takers at once can both pass that read (one runs its
+ * whole takeover inside the other's liveness check, which then renames over it), so both may briefly believe they hold the lock; the loser
+ * finds out at its first write, where `stillOurs()` is checked: it writes nothing, answers 503 and exits non-zero (`lockLost`). `o` (pid, kill, now, uptime, afterRename) is for tests.
  * Returns `release` (removes the lock only while it holds our id) with `release.stillOurs`.
  */
 function acquireLock(lockFile, o = {}) {
@@ -82,6 +83,7 @@ function acquireLock(lockFile, o = {}) {
   const mine = () => { try { return fs.readFileSync(lockFile, 'utf8').trim() === String(pid); } catch { return false; } };
   const release = () => { if (mine()) { try { fs.unlinkSync(lockFile); } catch { /* gone */ } } };
   release.stillOurs = mine;
+  release.holder = () => { try { return fs.readFileSync(lockFile, 'utf8').trim(); } catch { return 'unknown'; } };
   const held = () => new Error(`another receiver holds ${path.basename(lockFile)} (stop it, or delete the file if no receiver runs)`);
   try {
     fs.writeFileSync(lockFile, String(pid) + '\n', { mode: 0o600, flag: 'wx' });
@@ -138,7 +140,7 @@ function createService(opts) {
       const text = JSON.stringify(trial) + '\n';
       // a write that would pass the file cap is refused, and the file and the sums in memory stay as they were
       if (Buffer.byteLength(text) > maxFile) return { status: 507, body: { error: 'usage file is full' } };
-      if (!release.stillOurs()) return { status: 503, body: { error: 'the lock file is no longer ours: another receiver took over' } };
+      if (!release.stillOurs()) return { status: 503, body: { error: 'the lock file is no longer ours: another receiver took over' }, lockLost: release.holder() };
       try { write(file, text); } catch { return { status: 500, body: { error: 'could not write the usage file' } }; }
       state.days = trial.days; state.skipped = trial.skipped;
     }
@@ -147,12 +149,18 @@ function createService(opts) {
   return { handle, file, state, release };
 }
 
+/** The lock was taken from us: say so once on stderr and exit non-zero (a service manager restarts it, and the restart refuses loudly). Nothing is released: the lock is not ours. */
+function lockLost(holder) {
+  console.error(`usage-receiver: lock lost to pid ${/^\d{1,10}$/.test(holder) ? holder : 'unknown'}, exiting`);
+  process.exit(1);
+}
+
 function createServer(opts) {
   const svc = createService(opts);
   const server = http.createServer((req, res) => {
-    const reply = (status, body, close = false) => {
+    const reply = (status, body, close = false, after) => {
       res.writeHead(status, close ? { 'content-type': 'application/json', connection: 'close' } : { 'content-type': 'application/json' });
-      res.end(JSON.stringify(body), close ? () => req.destroy() : undefined); // an oversize body is not read on: the socket goes once the answer is out
+      res.end(JSON.stringify(body), close ? () => req.destroy() : after); // an oversize body is not read on: the socket goes once the answer is out
     };
     const url = (req.url || '').split('?')[0];
     if (url !== '/v1/metrics') { req.resume(); return reply(404, { error: 'not found' }); }
@@ -169,7 +177,7 @@ function createServer(opts) {
       if (size > MAX_BODY) { over = true; reply(413, { error: 'body too large' }, true); return; }
       chunks.push(c);
     });
-    req.on('end', () => { if (over) return; const r = svc.handle(Buffer.concat(chunks), req.headers['content-encoding']); reply(r.status, r.body); });
+    req.on('end', () => { if (over) return; const r = svc.handle(Buffer.concat(chunks), req.headers['content-encoding']); reply(r.status, r.body, false, r.lockLost === undefined ? undefined : () => (opts.onLockLost || lockLost)(r.lockLost)); });
     req.on('error', () => { /* the client went away */ });
   });
   server.on('close', svc.release);
