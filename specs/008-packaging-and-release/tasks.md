@@ -164,3 +164,9 @@
 - [x] T128 Issue #839 (FR-180): `check-inbox-safety` and `check-answer-safety` press the Mac keys; `check-answer-safety` waits for the card before scrolling; `shots-097-realoffice` measures the glass at `prefers-reduced-transparency: no-preference`; `check-characters` reports the app state on a crew-step timeout (cause not found yet)
 - [x] T129 Issue #1214: the release clip's step captions use `{step}`, numbered 1..n by position in the clip; test and mutant in `test:releasevideo` [FR-171] (spec delta 2026-11-06)
 - [x] T135 (2026-11-07, owner: the v0.1.12 clip showed v0.1.11's scenes): `refs` on every scene and a default taken from the release's fragments and CHANGELOG section instead of `DEFAULT_SCENES`; scenes `lounge`, `railwidth`, `signin`, `notesource`; `test:releasevideo` with ten mutants; v0.1.12 re-filmed and its assets replaced [FR-183] (spec delta 2026-11-07)
+
+## 2026-11-07: the Build cost report (owner request; FR-181)
+
+- [x] T131: `scripts/usage-lib.js`, `scripts/usage-receiver.js`, `scripts/usage-day.js`, `npm run usage:receiver` and `usage:day`; `scripts/test-usage.js` (`test:usage`, in `test-suites.txt`), mutation-checked [FR-181]
+- [x] T132: `docs/build-cost.md` (env vars, running the receiver, start-at-login examples as text, privacy), linked from README, `docs/development.md`, `docs/collaboration.md`, `changelog.d/README.md`; fragment `changelog.d/008-build-cost.md` [FR-181]
+- [x] T133: `npm run usage:readme` (`scripts/usage-readme.js`): the README *Build cost so far* block between markers, `docs/build-cost-baseline.json`, `docs/build-cost-history.json` (seeded 2026-11-07, v0.1.12), `docs/build-cost-badge.svg`, `docs/build-cost.svg`; the fold-PR release step; tests and goldens in `test:usage` [FR-181] (owner addition 2026-11-07; T133 checked against main, branches and open PRs)
