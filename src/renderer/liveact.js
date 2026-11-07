@@ -41,6 +41,27 @@
      a name the mask changed is shown as the generic word `tool`, never half hidden. No mask: control codes out only (as the label). Every surface that shows a name calls this. */
   const toolName=(raw,mask)=>{const m=mask||{};let t;try{t=String(m.redact?clearIn(raw==null?'':raw,m.redact):stripAnsi(raw)).trim();
     if(!t)return 'tool';if(!m.redact)return t;const x=ST.maskRaw(t,m.redact);return x&&!/\[redacted/.test(x)?t:'tool';}catch(e){return 'tool';}};
+  /* spec 097 FR-318 (issue #1290): the words of a permission request (its summary, the scope labels of its buttons, a grant chip, the "why allowed" label) through
+     the same masks as the chat: control codes out first (clearIn), then by kind. `shell`: the command after a leading `run ` through the command mask (maskLabel 'run');
+     `tool` (mcp, custom tool): each word of `server › tool` through toolName (a masked name is the word `tool`), then one redact over the whole; any other kind: redact
+     (a URL by the URL mask). Returns {text, hidden}: hidden is true when anything was replaced, so the card can say a part is hidden. A missing mask function, or a mask
+     that fails, gives the kind's neutral words (a command, tool, request) and hidden true: never the raw text. Empty text stays empty. Only shown text: ids, keys, scopes are untouched. */
+  const PERM_FB={shell:'a command',tool:'tool',other:'request'};
+  function permText(raw,kind,mask){
+    const m=mask||{}, k=kind==='shell'||kind==='tool'?kind:'other', fb={text:PERM_FB[k],hidden:true};
+    try{
+      if(raw==null||raw==='')return {text:'',hidden:false};
+      if(typeof m.redact!=='function')return fb;
+      const s=clearIn(String(raw),m.redact).replace(/\s+/g,' ').trim();
+      if(!s)return String(raw).trim()?fb:{text:'',hidden:false};
+      let out;
+      if(k==='shell'){const mm=/^(run )([\s\S]*)$/.exec(s),pre=mm?mm[1]:'',cmd=mm?mm[2]:s;if(!cmd)return {text:s,hidden:false};
+        const x=ST.maskLabel(cmd,'run',m);if(!x)return fb;out=pre+x;}
+      else if(k==='tool'){const j=s.split(/( › |\s+)/).map((w,i)=>i%2||!w?w:toolName(w,m)).join('');const x=ST.maskLabel(j,'other',m);if(!x)return fb;out=x;}
+      else{out=ST.maskLabel(s,'other',m);if(!out)return fb;}
+      return {text:out,hidden:out!==s};
+    }catch(e){return fb;}
+  }
   /* A tool start as a verb phrase. kind: read | edit | run | search | tool (the chat's toolKind); label: the chat's toolLabel. */
   function phrase(o,mask){
     const m=mask||{}, cl=x=>m.redact?clearIn(x,m.redact):stripAnsi(x); /* control codes out first, the way the monitor line does (a token split by an escape must be whole for the mask) */
@@ -67,7 +88,9 @@
   /* the same text with only the escape's introducer gone: what `gh<ESC>[p_...` or `gh<U+009B>p_...` is if the letter after it belongs to a token, not to the escape */
   const INTRO=/\x1b\[|\x1b\]|\x1b[P^_X]|\x1b|[\x90\x98\x9b\x9d\x9e\x9f]/g;
   const introOut=t=>String(t==null?'':t).replace(INTRO,'').replace(/\r\n?/g,'\n').replace(CTRL,'');
-  const clearIn=(raw,redact)=>{const a=stripAnsi(raw);try{const b=introOut(raw),p=ST.unhide?ST.unhide(b):b;if(b!==a&&redact(p)!==p)return b;}catch(e){return '';}return a;};
+  /* spec 097 FR-318: the escape-free text wins when the mask already finds a token in it (an OSC or CSI cut out of the middle of one leaves it whole); the introducer-only text is
+     for a token whose own letter the escape would swallow (`gh<ESC>[p_...`), which the escape-free text no longer shows. Taking it first left the tail of a token after an OSC. */
+  const clearIn=(raw,redact)=>{const a=stripAnsi(raw);try{const b=introOut(raw),u=ST.unhide?ST.unhide:x=>x;if(b!==a&&redact(u(a))===u(a)&&redact(u(b))!==u(b))return b;}catch(e){return '';}return a;};
   /* A sentence over SCREEN_CHARS goes on as more lines, cut at a word where there is one */
   const chunks=t=>{const c=Array.from(t),out=[];let i=0;
     while(c.length-i>SCREEN_CHARS){let j=i+SCREEN_CHARS;for(let k=j;k>i+SCREEN_CHARS/2;k--)if(c[k]===' '){j=k;break;}out.push(c.slice(i,j).join('').trim());i=j;}
@@ -176,5 +199,5 @@
     };
   }
   const KIND_WORD={think:'Thinking',tool:'Working',reply:'Replying'};
-  return {create,phrase,toolName,lastSentences,plain,excerpt,stripAnsi,KIND_WORD,PAINT_MS,LINE_MAX,PANEL_MAX,STREAM_MAX,SCREEN_LINES,SCREEN_CHARS};
+  return {create,phrase,toolName,permText,lastSentences,plain,excerpt,stripAnsi,KIND_WORD,PAINT_MS,LINE_MAX,PANEL_MAX,STREAM_MAX,SCREEN_LINES,SCREEN_CHARS};
 })());

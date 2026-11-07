@@ -202,6 +202,51 @@ module.exports = async (ctx) => {
     assert.deepStrictEqual(after, { chips: 1, imgs: 0, pwn: true }, `${w}: revoking a key the broker never held removed nothing and ran nothing`);
     await ev({ type: 'grants', grants: [] });
 
+    // 5b) spec 097 FR-318 (#1290): a tool name and a command that look like secrets (runtime-built, split by an escape and a text-direction mark) never show on the
+    // permission card (summary, buttons, tooltips), the grant chip, its tooltip, the grants list or the why-allowed card; the answer still goes by the real request id
+    {
+      const TK = 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4', AW = 'AKIA' + 'Z7Q2W9X4C6V8B1N3';
+      const split = (t, mid) => t.slice(0, 12) + mid + t.slice(12);
+      const MCP = split(TK, '\u001b[0m'), CMD = 'curl -H "Authorization: Bearer ' + split(TK, '\u202e') + '" https://example.test/x';
+      const PARTS = /ghp_|A1b2C3d4|E5f6G7h8|f6G7h8|K1l2M3n4|AKIA|Z7Q2W9|X4C6V8|Bearer ghp/;
+      const leak = (t) => PARTS.test(t) || /[\u001b\u202e]/.test(t);
+      const gone = async (what) => {
+        const seen = await js(`(()=>{const q=s=>[...document.querySelectorAll(s)];const all=[...q('#chat .note.perm'),...q('#grants'),...q('#chat .chip')];
+          return all.map(e=>e.outerHTML.replace(/ data-(revoke|tool|key)="[^"]*"/g,'')+' '+e.textContent).join(' ; ')})()`);
+        assert.ok(!leak(seen), `${w}: ${what}: no part of the name or command is on the card, chip or list: ${seen.match(PARTS)}`);
+      };
+      await ev({ type: 'status', status: 'needs-permission', intent: 'Waiting for your answer', permission: { requestId: 'hm1', kind: 'mcp', summary: 'mcp srv \u203a ' + MCP, state: 'pending', scopeKey: 'mcp:srv/' + MCP, scopeLabel: 'srv \u203a ' + MCP } });
+      assert.ok(await until(`!!document.querySelector('#chat .note.perm.pending .note-actions .btn[data-act="session"]')`, 5000), `${w}: the hostile MCP request is a card`);
+      const card = await js(`(()=>{const n=document.querySelector('#chat .note.perm.pending');return {sum:n.querySelector('.psum').textContent,btns:[...n.querySelectorAll('.btn')].map(b=>b.textContent+'|'+b.title),hint:(n.querySelector('.phid')||{}).textContent||''}})()`);
+      assert.ok(/mcp srv \u203a tool/.test(card.sum), `${w}: the card says tool: ${card.sum}`);
+      assert.ok(card.btns.some((b) => /Allow \u201csrv \u203a tool\u201d for this session/.test(b)), `${w}: the session button names the rule: ${card.btns}`);
+      assert.ok(/looks like a secret and is hidden/.test(card.hint), `${w}: the card says a part is hidden and what the grant covers: ${card.hint}`);
+      await gone('MCP card');
+      await js(`(()=>{const o=window.__durbarSimUi.bridge(),r=o.resolvePermission;window.__rp=[];o.resolvePermission=function(){window.__rp.push([...arguments]);return r.apply(this,arguments);};})()`);
+      await js(`document.querySelector('#chat .note.perm.pending .btn[data-act="session"]').click()`);
+      assert.deepStrictEqual(await js(`window.__rp.map(a=>[a[1],a[2],a[3]])`), [['hm1', true, true]], `${w}: the answer goes by the real request id`);
+      await ev({ type: 'status', status: 'needs-permission', intent: 'Waiting for your answer', permission: { requestId: 'hs1', kind: 'shell', summary: 'run ' + CMD, state: 'pending', scopeKey: 'shell-exact:' + CMD, scopeLabel: 'run ' + CMD.slice(0, 27) + '\u2026' } });
+      assert.ok(await until(`!!document.querySelector('#chat .note.perm.pending .psum')`, 5000), `${w}: the hostile shell request is a card`);
+      const sh = await js(`document.querySelector('#chat .note.perm.pending .psum').textContent`);
+      assert.ok(/^run curl /.test(sh) && /\[redacted/.test(sh) && !/tool$/.test(sh), `${w}: the command is masked, not replaced: ${sh}`);
+      await gone('shell card');
+      await ev({ type: 'grants', grants: [{ key: 'mcp:srv/' + MCP, kind: 'mcp', label: 'srv \u203a ' + MCP }, { key: 'shell-exact:' + AW, kind: 'shell', label: 'run ' + AW }] });
+      assert.ok(await until(`document.querySelectorAll('#grants .gchip').length===2`, 5000), `${w}: two hostile rules as chips`);
+      assert.ok(await js(`[...document.querySelectorAll('#grants .gchip')].some(c=>/Allowed: srv \u203a tool/.test(c.textContent))`), `${w}: the chip says tool`);
+      await gone('grant chips');
+      await ev({ type: 'grants', grants: [{ key: 'mcp:srv/' + MCP, kind: 'mcp', label: 'srv \u203a ' + MCP }, { key: 'shell-exact:' + AW, kind: 'shell', label: 'run ' + AW }, { key: 'k3', kind: 'write', label: 'write in a/' }] });
+      assert.ok(await until(`!!document.getElementById('grantsBtn')`, 5000), `${w}: three rules: one list chip`);
+      await js(`document.getElementById('grantsBtn').click()`);
+      assert.ok(await until(`!document.getElementById('grantsPop').hidden`, 5000), `${w}: the list is open`);
+      await gone('grants list');
+      await ev({ permission: { requestId: 'hw1', kind: 'mcp', summary: 'mcp srv', state: 'approved', via: 'session', allowedBy: { kind: 'session-grant', key: 'mcp:srv/' + MCP, label: 'srv \u203a ' + MCP } } });
+      await call('hw1');
+      assert.ok(await until(`[...document.querySelectorAll('#chat .chip')].some(c=>(c.querySelector('.why-l')||{}).textContent==='srv \u203a tool')`, 5000), `${w}: the why-allowed label says tool`);
+      await gone('why-allowed card');
+      await ev({ type: 'grants', grants: [] });
+      await js(`(()=>{const b=document.getElementById('grantsPop');if(b)b.hidden=true;})()`);
+    }
+
     // 6) Allow all: the mode is the reason; no rule, no undo button; Allow all itself is unchanged
     const all = await H.openSimAgent(`a=>a.id===${jsLiteral(ids[1])}`, '#msgInput');
     assert.ok(all.ok, `${w}: opened an Allow all agent ${JSON.stringify(all.seen)}`);

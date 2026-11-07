@@ -19,6 +19,7 @@ const L = require(path.join(R, 'liveact.js')) as {
   lastSentences(t: string, max: number, one?: boolean): string;
   phrase(o: Record<string, unknown>, mask?: Record<string, (s: string) => string>): string;
   toolName(t: unknown, mask?: Record<string, (s: string) => string>): string;
+  permText(t: unknown, kind: string, mask?: Record<string, (s: string) => string>): { text: string; hidden: boolean };
   PAINT_MS: number; LINE_MAX: number; PANEL_MAX: number; STREAM_MAX: number;
 };
 const mask = { redact: (s: string) => redact(s, {}), cmd: (s: string) => maskSecretCommand(s, {}), url: (s: string) => maskSecretUrl(s, {}) };
@@ -475,5 +476,65 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
   ok(/data-tool="\$\{esc\(t\.name\)\}"/.test(scr), 'the raw name stays for matching (data-tool)');
   ok(/mcpCtxSet:\(id,v\)=>mcpViewChanged\(id,v\),\s*shownTool,/.test(app), 'the page hands screens the same shownTool');
   ok(!/\+\s*e\.tool\s*\+|'Using '\+String\(c\.tool/.test(app), 'no raw tool name is joined into text');
+}
+
+// spec 097 FR-318 (issue #1290): the words of a permission request go through the same masks; a masked tool name is `tool`, a command keeps its shape
+{
+  const TK = 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4', AW = 'AKIA' + 'Z7Q2W9X4C6V8B1N3', SK = 'sk-' + 'proj-A1b2C3d4E5f6G7h8I9j0K1l2M3n4';
+  const split = (t: string, mid: string) => t.slice(0, 12) + mid + t.slice(12);
+  const PARTS = /ghp_|A1b2C3d4|E5f6G7h8|f6G7h8|K1l2M3n4|sk-proj|AKIAZ7|Z7Q2W9|X4C6V8/;
+  const hm = { ...mask, home: (s: string) => maskHomePaths(s, []) };
+  const shapes: Record<string, string> = { plain: TK, ansi: split(TK, '\u001b[0m'), osc: split(TK, '\u001b]0;t\u0007'), bidi: split(TK, '‮'), aws: AW, awsAnsi: split(AW, '\u001b[0m'), sk: SK, skBidi: split(SK, '‮') };
+  for (const [what, tok] of Object.entries(shapes)) {
+    // an MCP or custom tool: summary, scope label (server › tool), a grant chip's label
+    for (const [k, t] of [['summary', 'mcp srv › ' + tok], ['scope', 'srv › ' + tok], ['custom', 'custom-tool ' + tok], ['bare', tok]] as const) {
+      const r = L.permText(t, 'tool', hm);
+      ok(!PARTS.test(r.text) && !/[\x00-\x1f‪-‮]/.test(r.text) && r.hidden, what + '/' + k + ': no part of the name, and hidden is set: ' + r.text);
+      ok(/(^|\s)tool$/.test(r.text), what + '/' + k + ': the name reads tool: ' + r.text);
+    }
+    // a shell summary and its labels: masked as the chat masks a command, not replaced
+    for (const t of ['run curl -H "Authorization: Bearer ' + tok + '" https://example.test/x', 'run ' + tok, 'run export TOKEN=' + tok + ' && ls']) {
+      const r = L.permText(t, 'shell', hm);
+      ok(!PARTS.test(r.text) && !/[\x00-\x1f‪-‮]/.test(r.text) && r.hidden && /^run /.test(r.text) && r.text !== 'a command' && r.text !== 'tool', what + ': a shell summary is masked in place: ' + r.text);
+    }
+    // any other kind (write, read, url, a card's own summary)
+    const o = L.permText('fetch https://example.test/?k=' + tok + ' and ' + tok, 'other', hm);
+    ok(!PARTS.test(o.text) && o.hidden, what + ': another kind is masked: ' + o.text);
+  }
+  // clean text is unchanged and not flagged
+  for (const [t, k] of [['mcp github › create_issue', 'tool'], ['srv › mcp__github__create_issue', 'tool'], ['run npm test', 'shell'], ['run git (any arguments)', 'shell'], ['write in src/', 'other'], ['fetch example.test', 'other']] as const) {
+    const r = L.permText(t, k, hm);
+    eq(r, { text: t, hidden: false }, 'clean text stays: ' + t);
+  }
+  eq(L.permText('run git commit -m "a b"', 'shell', hm), { text: 'run git commit -m "a b"', hidden: false }, 'a quoted command keeps its shape');
+  eq(L.permText('', 'tool', hm), { text: '', hidden: false }, 'empty stays empty');
+  eq(L.permText(undefined, 'shell', hm), { text: '', hidden: false }, 'missing stays empty');
+  // fail closed: no mask, or a mask that throws or gives a non-string, shows the kind's neutral words, never the text
+  for (const [k, w] of [['tool', 'tool'], ['shell', 'a command'], ['other', 'request']] as const) {
+    eq(L.permText('mcp ' + TK, k, {}), { text: w, hidden: true }, k + ': no mask module: neutral words');
+    eq(L.permText('mcp ' + TK, k, undefined), { text: w, hidden: true }, k + ': no mask at all: neutral words');
+    eq(L.permText('mcp ' + TK, k, { redact: () => { throw new Error('x'); }, cmd: () => { throw new Error('x'); }, url: () => { throw new Error('x'); } }), { text: w, hidden: true }, k + ': a throwing mask: neutral words');
+    eq(L.permText('mcp ' + TK, k, { redact: () => 5 as unknown as string, cmd: () => 5 as unknown as string, url: () => 5 as unknown as string }), { text: w, hidden: true }, k + ': a mask that gives no string: neutral words');
+  }
+  // the page: every permission surface calls the one function; keys, ids and scopes stay raw
+  const app = fs.readFileSync(path.join(R, 'app.js'), 'utf8');
+  ok(/const shownPerm=\(t,kind\)=>window\.DurbarLiveAct\?window\.DurbarLiveAct\.permText\(t,permKind\(kind\),LIVE_MASK\|\|\{\}\):\{text:'request',hidden:true\}/.test(app), 'the page has one permission-text function, failing closed');
+  const card = app.slice(app.indexOf('function showPerm('), app.indexOf('function roAskHint('));
+  ok(/ps\.textContent=sumS\.text/.test(card) && !/ps\.textContent=p\.summary/.test(card), 'card text');
+  ok(/announce\(a\.name\+' needs your OK: '\+sumS\.text\)/.test(card), 'screen-reader announcement');
+  ok(/expertScopeLabel\(scopeS\.text\)/.test(card) && /cutText\(scopeS\.text,30\)/.test(card), 'session button and its tooltip');
+  ok(/cutText\(broadS\.text,18\)/.test(card), 'any-arguments tooltip');
+  ok(/scopeHint\(Object\.assign\(\{\},p,\{scopeLabel:p\.scopeLabel\?scopeS\.text:p\.scopeLabel,broadScopeLabel:p\.broadScopeLabel\?broadS\.text:p\.broadScopeLabel\}\)\)/.test(card), 'the scope hint');
+  ok(/HIDDEN_SCOPE/.test(card) && /sumS\.hidden\|\|scopeS\.hidden\|\|broadS\.hidden/.test(card), 'the card says a part is hidden when a grant button is offered');
+  ok(/bridge\.resolvePermission\(a\.id,p\.requestId,approve,remember,!!broad\)/.test(card) && /a\.pend\.set\(p\.requestId,/.test(card), 'the answer still binds to the real request id');
+  ok(/scopeLabel:broad\?p\.broadScopeLabel:p\.scopeLabel,summary:p\.summary/.test(card), 'the settled copy keeps the raw words (masked when drawn)');
+  const grants = app.slice(app.indexOf('function grantChipX('), app.indexOf('function closeGrants('));
+  ok(/const gLab=g=>shownPerm\(g\.label,String\(g\.key\|\|''\)\)/.test(app), 'a grant label is masked by its key kind');
+  ok(/aria-label="Revoke permission: \$\{esc\(gLab\(g\)\.text\)\}"/.test(grants) && /data-revoke="\$\{esc\(g\.key\)\}"/.test(grants), 'chip accessible name masked, revoke key raw');
+  ok(/shortGrantLabel\(gLab\(g\)\.text\)/.test(grants), 'chip and list text');
+  ok((grants.match(/cutText\(gLab\(g\)\.text,240\)/g) || []).length === 2 && !/cutText\(g\.label/.test(grants), 'chip and list tooltips');
+  const why = app.slice(app.indexOf('function whyPaint('), app.indexOf('function whyRefresh('));
+  ok(/shownPerm\(d\.label,String\(c\.whyBy&&c\.whyBy\.key\|\|''\)\)/.test(why) && /d\.label=wl\.text/.test(why) && why.indexOf('shownPerm(') < why.indexOf("pill.title="), 'the why-allowed label is masked before the tag, its title and the Undo name');
+  ok(!/\.label\)/.test(grants.replace(/gLab\(g\)\.text/g, '')) || !/g\.label/.test(grants.replace(/function gLab/, '')), 'no raw g.label is shown');
 }
 console.log(`liveact: ${n} checks passed`);
