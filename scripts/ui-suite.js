@@ -4,7 +4,7 @@
  *   npm run check:ui                      (builds first)
  *   node scripts/ui-suite.js --list       the drivers
  *   node scripts/ui-suite.js --only shots-017,shots-033
- *   node scripts/ui-suite.js --shard 2/3                  every third driver from the second (UI_SUITE_SHARD=2/3 too; spec 008 FR-181)
+ *   node scripts/ui-suite.js --shard 2/3                  every third driver from the second (UI_SUITE_SHARD=2/3 too; spec 008 FR-182)
  *   UI_SUITE_OUT=<folder>                 where every screenshot goes (default: a new temp folder, printed at the end)
  *   UI_SUITE_XVFB=1                       Linux: run under xvfb-run even when a display is set
  *   UI_SUITE_DPR=<1..4>                   force the device scale factor (2 = a Retina screen) for every driver
@@ -214,7 +214,7 @@ function args(a = process.argv.slice(2)) {
   return { list: a.includes('--list'), only: i >= 0 ? new Set(String(a[i + 1] || '').split(',').filter(Boolean)) : undefined, shard: j >= 0 ? String(a[j + 1] || '') : undefined };
 }
 
-/** Spec 008 FR-181 (issue #839): shard `i/n` (1-based) takes every n-th driver of the suite's order, starting at the i-th, so n shards are
+/** Spec 008 FR-182 (issue #839): shard `i/n` (1-based) takes every n-th driver of the suite's order, starting at the i-th, so n shards are
  *  disjoint and together hold every driver (the macOS nightly runs 3, each well under the job's time limit). No spec: the whole list. */
 function shard(list, spec) {
   if (spec === undefined || spec === '') return list;

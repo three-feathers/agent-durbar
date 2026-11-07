@@ -395,7 +395,7 @@ await retries();
 console.log('ui-suite: check-parallel and ui-suite install Electron once before their parallel jobs (FR-114)');
 })().catch((e) => { console.error(e); process.exitCode = 1; });
 
-// ---- spec 008 FR-181 (issue 839): --shard i/n takes every n-th driver; n shards are disjoint and together hold every driver ----
+// ---- spec 008 FR-182 (issue 839): --shard i/n takes every n-th driver; n shards are disjoint and together hold every driver ----
 {
   const { shard, DRIVERS } = require(SUITE) as { shard: (l: unknown[], s?: string) => unknown[]; DRIVERS: unknown[] };
   for (const n of [1, 2, 3, 5]) {
