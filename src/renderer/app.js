@@ -4273,7 +4273,7 @@ function doorSync(list){
   const r=DOOR_ARR.observe(doorItems(list),{armed:ATT_ARMED,isPaused:id=>{const a=byId(id);return !!a&&!!a.paused;}});
   if(r.fresh.length)DOOR_GATE.arrive(r.fresh.length);
   if(r.startup)DOOR_GATE.startup();
-  const d=DOOR_GATE.decide({open,held:doorHeld()});
+  const d=DOOR_GATE.ruling({open,held:doorHeld()});
   if(d==='open'||d==='startup'){openDoor(null,true,d==='startup',list.length);return;}
   const p=$('needsPanel'); if(p){doorPlace(p);if(p.dataset.sig!==doorSig(list))doorRepaint();}
 }

@@ -131,7 +131,7 @@ type ArrItem = { key: string; id: string; kind: string; card?: boolean };
 type Arrivals = { observe: (items: ArrItem[], f: { armed?: boolean; isPaused?: (id: string) => boolean }) => { fresh: ArrItem[]; startup: boolean } };
 type Gate = {
   arrive: (n: number) => void; startup: () => void; dismissed: () => void;
-  decide: (s: { open: boolean; held: boolean }) => 'open' | 'startup' | 'hold' | 'none';
+  ruling: (s: { open: boolean; held: boolean }) => 'open' | 'startup' | 'hold' | 'none';
 };
 const AA = A as unknown as {
   createArrivals: (o?: { now?: () => number; throttleMs?: number }) => Arrivals;
@@ -196,24 +196,24 @@ const AA = A as unknown as {
 
   // the gate: when the panel opens by itself
   t = 100000; const g = AA.createDoorGate({ now });
-  assert.strictEqual(g.decide({ open: false, held: false }), 'none', 'nothing arrived: nothing opens');
-  g.arrive(3); assert.strictEqual(g.decide({ open: false, held: false }), 'open', 'a burst opens once');
-  assert.strictEqual(g.decide({ open: false, held: false }), 'none', 'and only once');
-  g.arrive(1); t += 100; assert.strictEqual(g.decide({ open: true, held: false }), 'none', 'already open: no second slide');
-  t += A.THROTTLE_MS + 1; g.arrive(1); assert.strictEqual(g.decide({ open: false, held: true }), 'hold', 'a held opening stays held');
-  assert.strictEqual(g.decide({ open: false, held: false }), 'open', 'and opens once when the guard clears');
+  assert.strictEqual(g.ruling({ open: false, held: false }), 'none', 'nothing arrived: nothing opens');
+  g.arrive(3); assert.strictEqual(g.ruling({ open: false, held: false }), 'open', 'a burst opens once');
+  assert.strictEqual(g.ruling({ open: false, held: false }), 'none', 'and only once');
+  g.arrive(1); t += 100; assert.strictEqual(g.ruling({ open: true, held: false }), 'none', 'already open: no second slide');
+  t += A.THROTTLE_MS + 1; g.arrive(1); assert.strictEqual(g.ruling({ open: false, held: true }), 'hold', 'a held opening stays held');
+  assert.strictEqual(g.ruling({ open: false, held: false }), 'open', 'and opens once when the guard clears');
   t += A.THROTTLE_MS + 1; g.dismissed(); t += 100; g.arrive(1);
-  assert.strictEqual(g.decide({ open: false, held: false }), 'none', 'a new request within COALESCE_MS of a dismissal does not snap it back');
+  assert.strictEqual(g.ruling({ open: false, held: false }), 'none', 'a new request within COALESCE_MS of a dismissal does not snap it back');
   t += A.COALESCE_MS + 1; g.arrive(1);
-  assert.strictEqual(g.decide({ open: false, held: false }), 'open', 'after the coalescing window a new request reopens it');
+  assert.strictEqual(g.ruling({ open: false, held: false }), 'open', 'after the coalescing window a new request reopens it');
   t += 100; g.arrive(1);
-  assert.strictEqual(g.decide({ open: false, held: false }), 'none', 'but not twice within THROTTLE_MS of the last opening');
+  assert.strictEqual(g.ruling({ open: false, held: false }), 'none', 'but not twice within THROTTLE_MS of the last opening');
   t += A.THROTTLE_MS + 1; g.arrive(1);
-  assert.strictEqual(g.decide({ open: false, held: false }), 'open', 'after the throttle a new request reopens it');
-  g.startup(); assert.strictEqual(g.decide({ open: false, held: false }), 'startup', 'app start opens with Later');
-  assert.strictEqual(g.decide({ open: false, held: false }), 'none');
-  g.startup(); assert.strictEqual(g.decide({ open: false, held: true }), 'hold', 'app start is held like any opening');
-  assert.strictEqual(g.decide({ open: false, held: false }), 'startup', 'and still says startup when it opens');
+  assert.strictEqual(g.ruling({ open: false, held: false }), 'open', 'after the throttle a new request reopens it');
+  g.startup(); assert.strictEqual(g.ruling({ open: false, held: false }), 'startup', 'app start opens with Later');
+  assert.strictEqual(g.ruling({ open: false, held: false }), 'none');
+  g.startup(); assert.strictEqual(g.ruling({ open: false, held: true }), 'hold', 'app start is held like any opening');
+  assert.strictEqual(g.ruling({ open: false, held: false }), 'startup', 'and still says startup when it opens');
 }
 
 // wiring: the page loads the helper and the build copies it

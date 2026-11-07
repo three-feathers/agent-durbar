@@ -102,7 +102,7 @@
   }
 
   /* When the panel may open by itself. arrive(n): n new requests; startup(): something waited at app start; dismissed(): the person closed it.
-     decide({open, held}) -> 'open' | 'startup' | 'hold' | 'none'. A burst is one opening; a held opening stays pending (nothing is lost) and
+     ruling({open, held}) -> 'open' | 'startup' | 'hold' | 'none'. A burst is one opening; a held opening stays pending (nothing is lost) and
      opens once when the guard clears; a request within COALESCE_MS of a dismissal does not snap it back, and it opens at most once per THROTTLE_MS.
      App start is not throttled or coalesced (the owner wants the list) but is held like any opening. */
   function createDoorGate(o){
@@ -112,7 +112,7 @@
       arrive(n){if(n>0)pending+=n;},
       startup(){start=true;},
       dismissed(){lastDismiss=now();},
-      decide(s){
+      ruling(s){
         const st=s||{};
         if(st.open){pending=0;start=false;return 'none';}
         if(!pending&&!start)return 'none';
