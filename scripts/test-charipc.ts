@@ -546,7 +546,7 @@ async function main(): Promise<void> {
     {
       const src = fs.readFileSync(path.join(ROOT, 'src', 'main', 'ipc', 'characters.ts'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
       const logs = [...src.matchAll(/console\.\w+\(([^\n]*?)\)\)?;?\s*$/gm)].map((m) => m[1]);
-      assert.deepStrictEqual(logs, ['`[characters] ${m}`'], 'the one log line is the store\'s own');
+      assert.deepStrictEqual(logs, ['redact(`[characters] ${m}`)'], 'the one log line is the store\'s own, masked (test:consolemask)');
       assert.ok(!/\bshell\b|child_process|nativeImage/.test(src), 'no shell, no process, no decoder here');
       assert.ok(/fromApp\(e\)/.test(src));
       const preload = fs.readFileSync(path.join(ROOT, 'src', 'preload', 'preload.ts'), 'utf8');
