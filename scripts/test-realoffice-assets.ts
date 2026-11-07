@@ -265,7 +265,7 @@ if (worldIds.includes('retro')) {
   const sj = st.json as { pixelArt?: boolean; seat: Record<string, unknown>; stand: Record<string, { poses: Record<string, number[]> }>; faceBox: Record<string, { pose: string; box: number[] }> };
   assert.strictEqual(wj.pixelArt, true, 'the arcade is pixel art'); assert.strictEqual(sj.pixelArt, true, 'Retro pixel people are pixel art');
   assert.strictEqual(wj.defaultSet, 'retro'); assert.ok((ARRANGEMENTS as readonly string[]).includes(String(wj.arrangement)), 'its arrangement is one the engine has');
-  assert.ok(!wj.lightSets, 'lightSets waits for the night welcome part (FR-252: all three or none)');
+  assert.ok(!wj.lightSets, 'no lightSets: one light, night only (owner 2026-11-03)');
   for (const [id, b] of [...w.files, ...st.files]) {
     const info = webpInfo(b);
     assert.deepStrictEqual(info.chunks.filter((c) => c !== 'VP8X'), ['VP8L'], `${id}: lossless, one chunk, no animation (FR-254)`);

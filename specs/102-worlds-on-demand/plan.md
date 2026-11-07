@@ -187,7 +187,7 @@ world.json  arrangement: "circle"
 
 ```text
 scripts/build-arcade-pack.py (dev only: drawing, grid, lossless) -> committed WebP
-world.json  arrangement "aisles", pixelArt, lightSets, ui "retro", monitor {cells, screenRect, marqueeRect}
+world.json  arrangement "aisles", pixelArt, ui "retro" (no lightSets: night only, owner 2026-11-03), monitor {cells, screenRect, marqueeRect}
   -> realLayout(model, view, meta, signs, "aisles")   pure; returns g; no light parameter
   -> realoffice.js   same drawing; adds marquee and glow per desk; picks parts by light
   -> world.css       .ro[data-world="retro"]: image-rendering, marquee, beat; no filter, no blend (test)
