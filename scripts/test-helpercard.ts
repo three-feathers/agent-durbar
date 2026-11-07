@@ -4,6 +4,7 @@
  * point, with the real src/shared/redact.ts), the one character cap HX_CHARS, the tooltip cut HX_TIP, one mask per field change and a
  * CPU-time ratio for repaints, plus the source checks that keep the page wired to the module. `npm run test:helpercard`. No credits spent.
  */
+import './safetext-shared'; // the compiled hidden-character module for safetext.js (spec 084 FR-033)
 import assert from 'assert';
 import fs from 'fs';
 import path from 'path';
@@ -36,8 +37,9 @@ const hasSecret = (t: string) => tokens.some((x) => t.includes(x) || t.includes(
 
 const SAFE = ST.create({ redact: (s) => redact(s, {}), cut: cutText });
 const tooLabel = (tool: string, label: string, max: number): string => { const m = redact(label, {}); return typeof m === 'string' ? cutText(m, max) : ''; };
+const LA = require(path.join(R, 'liveact.js')) as { toolName(t: unknown, m?: { redact(s: string): string }): string };
 const deps = (over?: Record<string, unknown>) => ({
-  excerpt: (t: string, m: number, fb: string) => SAFE.excerpt(t, m, fb), mask: (t: string) => SAFE.mask(t), toolLabel: tooLabel, cut: cutText,
+  toolName: (t: string) => LA.toolName(t, { redact: (s) => redact(s, {}) }), excerpt: (t: string, m: number, fb: string) => SAFE.excerpt(t, m, fb), mask: (t: string) => SAFE.mask(t), toolLabel: tooLabel, cut: cutText,
   fmtTok: (x: number) => (x >= 1000 ? (x / 1000).toFixed(1) + 'k' : String(x)), ...over,
 });
 const card = (over?: Record<string, unknown>): Card => HC.create(deps(over));
@@ -285,7 +287,20 @@ eq(HC.HX_TIP, 200, 'the tooltip cut is the desk card\'s number');
     if (big < Math.max(base, MIN_BASE_MS) * MAX_RATIO) break;
   }
   const ratio = big / Math.max(base, MIN_BASE_MS);
-  console.log(`test-helpercard: repaint ratio ${ratio.toFixed(2)} (big ${big.toFixed(1)} ms, base ${base.toFixed(1)} ms, limit ${MAX_RATIO})`);
+  // ---- spec 097 FR-317 (#1284, review): the helper's tool name goes through the one tool-name mask, with the clear step ----
+{
+  const tk = 'ghp_' + 'Zq9Xw8Vu7Ts6Rp5On4Ml3Kj2Ih1G';
+  for (const [what, name] of [['plain', tk], ['ANSI', tk.slice(0, 9) + '\x1b[0m' + tk.slice(9)], ['OSC', tk.slice(0, 9) + '\x1b]0;t\x07' + tk.slice(9)], ['bidi', tk.slice(0, 9) + '\u202e' + tk.slice(9)]]) {
+    const ex = C.view(helper({ task: 'T', now: { kind: 'tool', tool: name, label: '' } }), 1);
+    eq(textOf(ex, 'now'), 'tool', what + ': the helper card names the tool as `tool`');
+    ok(!/Zq9Xw8|Ts6Rp5|Kj2Ih1/.test(ex.aria + ex.title + ex.lines.map((l) => l.text).join('|')), what + ': no part of the name on the card');
+  }
+  eq(textOf(C.view(helper({ task: 'T', now: { kind: 'tool', tool: 'grep', label: '' } }), 1), 'now'), 'grep', 'a plain name stays');
+  eq(textOf(card({ toolName: undefined }).view(helper({ task: 'T', now: { kind: 'tool', tool: 'grep', label: '' } }), 1), 'now'), 'tool', 'no tool-name function: tool');
+  eq(textOf(card({ toolName: () => { throw new Error('x'); } }).view(helper({ task: 'T', now: { kind: 'tool', tool: tk, label: '' } }), 1), 'now'), 'tool', 'a throwing tool-name function: tool');
+  ok(/toolName:t=>shownTool\(t\)/.test(fs.readFileSync(path.join(R, 'app.js'), 'utf8')), 'app.js hands the card the page shownTool');
+}
+console.log(`test-helpercard: repaint ratio ${ratio.toFixed(2)} (big ${big.toFixed(1)} ms, base ${base.toFixed(1)} ms, limit ${MAX_RATIO})`);
   ok(big < Math.max(base, MIN_BASE_MS) * MAX_RATIO, `1000 repaints of a 1 MB result: ${big.toFixed(1)} ms of CPU against ${base.toFixed(1)} ms for a short one (ratio ${ratio.toFixed(1)}, limit ${MAX_RATIO}; the memo makes it about 1)`);
 }
 

@@ -47,7 +47,8 @@ export interface MaskedWindow {
  * 2026-11-04 for `maskNoteText`): 0.55 per character for the linear passes; 2.5 per character when a split mark (`NOTE_MARK`) is present,
  * plus 250 for each token-like run (`NOTE_RUN`) next to a mark, which `maskNoteText` checks with `redact` on its own; plus 0.003 per
  * character for each MCP secret value (re-check of the review: 1 000-2 000 values over 20 000 characters took 50-108 ms). Hidden characters
- * double it (two passes). Measured under load, so it overestimates on an idle machine.
+ * (`HIDDEN_CHARS`, emoji joiners and variation selectors included) triple it: `maskNoteText` masks the text, the copy without them and,
+ * when the copy finds something, their union (review of PR 1236). Measured under load, so it overestimates on an idle machine.
  */
 export function maskWork(s: string, hidden = false, values = 0): number {
   const marks = NOTE_MARK.test(s);
@@ -58,7 +59,7 @@ export function maskWork(s: string, hidden = false, values = 0): number {
       if ((i > 0 && NOTE_MARK.test(s[i - 1])) || (i + m[0].length < s.length && NOTE_MARK.test(s[i + m[0].length]))) runs++;
     }
   }
-  return Math.ceil((s.length * (marks ? 2.5 : 0.55) + runs * 250 + values * s.length * 0.003) * (hidden ? 2 : 1));
+  return Math.ceil((s.length * (marks ? 2.5 : 0.55) + runs * 250 + values * s.length * 0.003) * (hidden ? 3 : 1));
 }
 /** The most one mask may cost (estimated, about 25 ms): the same as a message's whole budget (`BUDGET.messageWork`), which is what bounds a slice; a lower cap refused whole masks of mid-size texts the message budget allows (review of PR 1098). */
 export const MASK_CALL_WORK = 25_000;
@@ -102,9 +103,9 @@ export function createMasker(libs: MaskLibs): Masker {
     const vals = cleanValues(values);
     const c = unhide(s);
     if (maskWork(s, c !== s, vals.length) > budget) throw new MaskBudgetError();
-    if (c === s) return maskOnce(s, vals);
-    const m = maskOnce(c, vals);
-    return m === c ? maskOnce(s, vals) : m; // the copy without hidden characters is shown only when it hid something (as DurbarSafeText's unhid)
+    // `maskNoteText` reads the copy without hidden characters itself and masks the union with the text as written (spec 084 FR-033,
+    // review of PR 1236): a copy alone missed a token that removing a hidden character glued to a word. `c` prices it (three passes).
+    return maskOnce(s, vals);
   };
   const maskedWindow = (raw: string, from: number, to: number, values: readonly string[], o: WindowOptions = {}): MaskedWindow => {
     const s = String(raw);

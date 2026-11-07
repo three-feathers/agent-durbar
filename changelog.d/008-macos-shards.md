@@ -1,0 +1,1 @@
+- The nightly macOS UI checks run as three jobs of about 50 drivers each instead of one job that ran out of time at 80 minutes (spec 008 FR-182, owner decision 2026-11-07). Pull requests are unchanged.

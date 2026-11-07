@@ -4,12 +4,16 @@
    The order matters: dropping `_` first would break `ghp_...`, a cut inside a token leaves a half token no pattern knows, and a second pass over
    an earlier mask's output leaves the tail of a late-split token in clear (`[redacted]` glued to its tail).
    The single owner of `plain` and `excerpt`: liveact.js and app.js use these, they keep no copy.
-   Fails closed: no redact function, a throwing one, or a result that is not a string gives '' (the wrapper from `create` then shows a
-   neutral word). Pure: no DOM. In the page: window.DurbarSafeText; in Node (tests): module.exports. */
+   Fails closed: no redact function, a throwing one, a result that is not a string, or no shared hidden-character module (`unhide`, from
+   src/shared/redact.ts) gives '' (the wrapper from `create` then shows a neutral word and says `ready: false`). Pure: no DOM. In the page: window.DurbarSafeText; in Node (tests): module.exports. */
 (function(root, factory){
-  const api=factory(typeof module==='object'&&module.exports?require('./cuttext.js'):root.DurbarCutText);
+  const node=typeof module==='object'&&module.exports;
+  /* the shared hidden-character definition (src/shared/redact.ts, compiled): the page's `exports` (redact.js loads first), or redact.js
+     beside the renderer folder in the built tree. Never a .ts file. Tests of the source tree hand the compiled one in (`useShared`). */
+  const shared=(()=>{try{return node?require('../shared/redact.js'):root.exports;}catch(e){return null;}})();
+  const api=factory(node?require('./cuttext.js'):root.DurbarCutText,shared);
   if(typeof module==='object'&&module.exports) module.exports=api; else root.DurbarSafeText=api;
-})(typeof self!=='undefined'?self:this, function(CT){
+})(typeof self!=='undefined'?self:this, function(CT,SHARED){
   'use strict';
   /* Markdown escapes undone before the first mask: `ghp\_...` must read as a token (the backslash would break the pattern) */
   const unesc=t=>String(t==null?'':t).replace(/\\([\\`*_{}\[\]()#+\-.!~|<>])/g,'$1');
@@ -37,20 +41,25 @@
     found.sort((a,b)=>b.length-a.length);
     for(const r of found)m=m.replace(new RegExp(reEsc(r)+'[A-Za-z0-9_-]*','g'),()=>'[redacted]');
     return m;};
-  /* spec 097 FR-030 (review of P2): what can sit invisibly inside a token and hide it from every shape: default-ignorable characters (soft hyphen, zero-width,
-     bidi marks, joiners, tag characters), line separators and control characters. The masks read a copy without them; when they find nothing the text is
-     shown as it was, so the joiners real scripts need stay. */
-  const HIDDEN=/\p{Default_Ignorable_Code_Point}|[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u2028\u2029]/gu;
-  const unhide=t=>String(t==null?'':t).replace(HIDDEN,'');
-  const unhid=(raw,run,bare)=>{const s=String(raw==null?'':raw),c=unhide(s);if(c===s)return run(s);const m=run(c);return m===null||m===bare(c)?run(s):m;};
+  /* spec 097 FR-030 (review of P2): what can sit invisibly inside a token and hide it from every shape. The masks read a copy without it;
+     when they find nothing the text is shown as it was, so the joiners real scripts need stay. One definition, `HIDDEN_CHARS` and
+     `unhide` in src/shared/redact.ts (spec 084 FR-033, review of PR 1236). Without it every mask here fails closed: `unhide` throws,
+     the masks give null or '' (the wrapper shows its fallback word) and `create().ready` is false. */
+  let SH=SHARED&&typeof SHARED.unhide==='function'?SHARED:null;
+  const hasShared=()=>!!SH;
+  /* the compiled shared module, once, only when none was found at load (tests of the source tree; in the page and the built tree it is
+     always found, so nothing can replace it). True when it is used. */
+  const useShared=m=>{if(SH||!m||typeof m.unhide!=='function')return false;SH=m;return true;};
+  const unhide=t=>{if(!SH)throw new Error('no unhide');const c=SH.unhide(t);if(typeof c!=='string')throw new Error('no unhide');return c;};
+  const unhid=(raw,run,bare,fail)=>{try{const s=String(raw==null?'':raw),c=unhide(s);if(c===s)return run(s);const m=run(c);return m===null||m===bare(c)?run(s):m;}catch(e){return fail;}};
   const maskPlain0=(raw,redact,codeWord)=>{try{
     const u=unesc(raw),m=both(u,plainKeep(u,codeWord),redact);
     return m.replace(/_/g,'');}catch(e){return null;}};
   const maskPlain=(raw,redact,codeWord)=>{if(typeof redact!=='function')return null;
-    return unhid(raw,t=>maskPlain0(t,redact,codeWord),c=>plainKeep(unesc(c),codeWord).replace(/_/g,''));};
+    return unhid(raw,t=>maskPlain0(t,redact,codeWord),c=>plainKeep(unesc(c),codeWord).replace(/_/g,''),null);};
   /* the masked text, not made plain or cut: masked as it is, and again on the plain-kept text when Markdown that can split a token is
      present (otherwise the text is shown as it is). '' when masking is not possible. */
-  const maskRaw=(raw,redact)=>{if(typeof redact!=='function')return '';return unhid(raw,t=>maskRaw0(t,redact),c=>unesc(c));};
+  const maskRaw=(raw,redact)=>{if(typeof redact!=='function')return '';return unhid(raw,t=>maskRaw0(t,redact),c=>unesc(c),'');};
   const maskRaw0=(raw,redact)=>{try{const u=unesc(raw),m1=redact(u);if(typeof m1!=='string')return '';
     if(!SPLIT.test(u))return m1; /* no Markdown that can split a token: one pass is enough (and keeps the live readout cheap) */
     const k=plainKeep(u),m2=both(u,k,redact);return m2!==k?m2:m1;}catch(e){return '';}}; /* m2 holds what either pass found (both) */
@@ -61,7 +70,7 @@
   const isUrl=s=>/^[a-z][a-z0-9+.-]{1,20}:\/\//i.test(s);
   const maskLabel=(raw,kind,mask)=>{const s=String(raw==null?'':raw).trim();if(!s)return '';const m=mask||{};
     const f=kind==='run'?m.cmd:isUrl(s)?m.url:m.redact;if(typeof f!=='function')return '';
-    try{const one=t=>{const r=f(t);return typeof r==='string'?r:'';};return unhid(s,one,c=>c);}catch(e){return '';}};
+    try{const one=t=>{const r=f(t);return typeof r==='string'?r:'';};return unhid(s,one,c=>c,'');}catch(e){return '';}};
   /* the wrapper the page uses: fallback words and the "is masking possible" flag */
   function create(o){
     const red=o&&typeof o.redact==='function'?o.redact:null, cut=o&&typeof o.cut==='function'?o.cut:cutter;
@@ -71,7 +80,7 @@
     /* masked, plain, at most n characters (no n: not cut); `fallback` (default 'Finished.') when there is text but masking is not possible */
     const ex=(t,n,fallback)=>{if(t==null||t==='')return '';const fb=fallback==null?'Finished.':fallback;if(!red)return fb;
       const p=maskPlain(String(t),red,true);if(p===null)return fb;return n==null?p:cut(p,n);};
-    return {mask,excerpt:ex,plain,ready:!!red};
+    return {mask,excerpt:ex,plain,get ready(){return !!red&&hasShared();}};
   }
-  return {create,plain,plainKeep,unesc,unhide,maskRaw,excerpt,maskLabel};
+  return {create,plain,plainKeep,unesc,unhide,maskRaw,excerpt,maskLabel,useShared};
 });
