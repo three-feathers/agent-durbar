@@ -73,6 +73,8 @@ Branch names must match the Spec Kit gate (lowercase letters, digits and hyphens
    The site gets the clip later through spec 104; no YouTube.
 5. Check the draft, then publish it by hand as a **pre-release**, not *latest* (a stable tag: next section).
 
+- In the doc-only fold PR (from 2026-11-07, spec 008 FR-181, owner request): `npm run usage:readme -- --release vX.Y.Z` with every machine's `usage-*.json` in `~/.durbar-usage` (or `--files`). It rewrites the README's *Build cost so far* block, appends the release's row to `docs/build-cost-history.json` and regenerates `docs/build-cost-badge.svg` and `docs/build-cost.svg`; commit those five files. Method: [docs/build-cost.md](../docs/build-cost.md).
+
 ## A stable release (spec 008 FR-129)
 
 A tag without a `-` (`v1.2.3`) is handled by the same flow with these differences, all decided by `releaseKind()` in
@@ -88,7 +90,7 @@ A tag without a `-` (`v1.2.3`) is handled by the same flow with these difference
 - The fold PR for a stable tag also updates the hand-written alpha wording that tests assert: the landing page eyebrow and
   status in `docs/site/landing.json` with their asserts in `scripts/test-site.js`, and the README status block.
 
-- Optional, from 2026-11-07 (spec 008 FR-181): add the day's *Build cost* table (`npm run usage:day -- --date YYYY-MM-DD`, an API list-price estimate, not billing) to the notes; setup and privacy in [docs/build-cost.md](../docs/build-cost.md).
+- Optional: add the day's *Build cost* table (`npm run usage:day -- --date YYYY-MM-DD`, an API list-price estimate, not billing) to the notes; setup and privacy in [docs/build-cost.md](../docs/build-cost.md).
 
 ## Test builds (spec 008 FR-121..FR-124)
 

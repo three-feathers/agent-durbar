@@ -118,6 +118,76 @@ const post = (port, buf, headers = {}, p = '/v1/metrics', method = 'POST') => ne
 });
 const withTimeout = (p, ms, msg) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error(msg)), ms).unref())]);
 
+// ---- README block, history, badge and chart (FR-181 addition) ----
+{
+  const R2 = require('./usage-readme');
+  const base = lib.validateBaseline({ version: 1, since: '2026-10-25', through: '2026-11-07', note: 'older work and other machines.', models: { 'Opus 5.5': 2856, 'Sonnet 5.5': 902 }, machines: { linux: 3758 } });
+  const mkst = (machine, iso, model, usdv) => { const s = lib.emptyState(machine); lib.ingest(s, body([], [cost(model, usdv, iso)]), NOW); return s; };
+  const cum0 = lib.cumulative([], '2026-11-07', base);
+  assert.strictEqual(cum0.total, 3758, 'cumulative: the baseline alone');
+  const later = mkst('mac', '2026-11-09T10:00:00Z', 'claude-opus-5-5', 100);
+  const early = mkst('linux', '2026-11-07T10:00:00Z', 'claude-opus-5-5', 50); // the baseline's own day: already counted
+  assert.strictEqual(lib.cumulative([later, early], '2026-11-10', base).total, 3858, 'cumulative: usage after the baseline day is added, the baseline day is not counted twice');
+  assert.strictEqual(lib.cumulative([later], '2026-11-08', base).total, 3758, 'cumulative: days after --date are left out');
+  const cum1 = lib.cumulative([later], '2026-11-10', base);
+  const block = lib.readmeBlock(cum1, '2026-11-10', 'v0.1.13', base.note);
+  assert.ok(block.includes('**API list-price estimate, not billing**'), 'label: the estimate text is in the block');
+  assert.ok(/About US\$3,858\*\*/.test(block) && block.includes('as of 2026-11-10') && block.includes('`v0.1.13`'), 'block: total, date and release');
+  assert.ok(block.includes('Opus 5.5 74% (US$2,856)') && block.includes('claude-opus-5-5 3% (US$100)') && block.includes('mac 3% (US$100)') && block.includes('linux 97%'), 'block: split by model and by machine');
+  assert.ok(block.includes('docs/build-cost.md') && block.includes('Not counted yet: older work'), 'block: method link and what is not counted');
+  assert.throws(() => lib.readmeBlock(cum1, '2026-11-10', 'v1', 'x'), /--release/, 'block: a release must look like a tag');
+  const readme = `# T\n\nintro\n\n${lib.BEGIN}\nold stuff\n${lib.END}\n\nrest\n`;
+  const once = lib.rewriteReadme(readme, block);
+  assert.strictEqual(lib.rewriteReadme(once, block), once, 'rewrite: idempotent');
+  assert.ok(once.startsWith('# T\n\nintro\n\n') && once.endsWith('\n\nrest\n') && !once.includes('old stuff'), 'rewrite: only the block changes');
+  for (const [why, text] of [['no markers', '# T\n'], ['no end', `${lib.BEGIN}\nx`], ['no begin', `x\n${lib.END}`], ['reversed', `${lib.END}\n${lib.BEGIN}`], ['two blocks', readme + readme], ['two begins', `${lib.BEGIN}\n${lib.BEGIN}\nx\n${lib.END}`]]) {
+    assert.throws(() => lib.rewriteReadme(text, block), /exactly one "<!-- build-cost:begin/, `rewrite: ${why} fails clearly`);
+  }
+  // history, golden files, escaping, small histories
+  const row = (date, version, o, s2) => ({ date, version, models: { 'Opus 5.5': o, 'Sonnet 5.5': s2 }, machines: { linux: o + s2 } });
+  const hist = lib.validateHistory({ version: 1, rows: [row('2026-11-07', 'v0.1.12', 2856, 902), row('2026-11-10', 'v0.1.13', 3500, 1100), row('2026-11-14', 'v0.1.14', 6000, 1500)] });
+  const golden = (name, text) => {
+    const f = path.join(__dirname, 'fixtures', 'build-cost', name);
+    if (process.env.GOLDEN_WRITE === '1') { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, text); }
+    assert.strictEqual(text, fs.readFileSync(f, 'utf8'), `golden: ${name} is unchanged (GOLDEN_WRITE=1 rewrites it)`);
+  };
+  assert.strictEqual(lib.chartSvg(hist), lib.chartSvg(hist), 'chart: deterministic');
+  const chart = lib.chartSvg(hist);
+  assert.ok(chart.includes('US$0') && chart.includes('US$8,000') && chart.includes('11-14 v0.1.14') && chart.includes('release date, UTC'), 'chart: labelled axes');
+  assert.ok(chart.includes('API list-price estimate, not billing') && chart.includes('tabular-nums') && chart.includes('prefers-color-scheme:dark'), 'chart: label, tabular numbers, dark text');
+  golden('chart-three-rows.svg', lib.chartSvg(hist));
+  golden('badge.svg', lib.badgeSvg(3758));
+  assert.ok((chart.match(/<polygon/g) || []).length === 2, 'chart: one stacked area per model');
+  assert.ok(chart.length < 6000 && lib.badgeSvg(3758).length < 1000, 'size: the SVGs stay a few KB');
+  const evil = lib.validateHistory({ version: 1, rows: [{ date: '2026-11-07', version: 'v0.1.12', models: { 'A (x)': 5 }, machines: {} }] });
+  assert.ok(lib.esc('<a href="x">&\'') === '&lt;a href=&quot;x&quot;&gt;&amp;&#39;', 'escape: markup characters in a label');
+  assert.ok(!lib.chartSvg(evil).includes('<a '), 'escape: no markup from a label');
+  assert.throws(() => lib.validateHistory({ version: 1, rows: [{ date: '2026-11-07', version: 'v0.1.12', models: { '<script>': 1 }, machines: {} }] }), /bad entry/, 'escape: a markup model name is refused outright');
+  let none; assert.doesNotThrow(() => { none = lib.chartSvg(lib.validateHistory({ version: 1, rows: [] })); }, 'chart: an empty history renders');
+  assert.ok(none.includes('no releases recorded yet') && none.includes('<svg') && none.endsWith('</svg>\n'), 'chart: an empty history renders');
+  const one = lib.chartSvg(lib.validateHistory({ version: 1, rows: [row('2026-11-07', 'v0.1.12', 2856, 902)] }));
+  assert.ok(one.includes('<rect x=') && !one.includes('NaN') && !one.includes('Infinity'), 'chart: one row renders bars, no NaN');
+  const zero = lib.chartSvg(lib.validateHistory({ version: 1, rows: [row('2026-11-07', 'v0.1.12', 0, 0)] }));
+  assert.ok(!zero.includes('NaN') && !zero.includes('Infinity'), 'chart: an all-zero row renders');
+  assert.ok(lib.badgeSvg(3758).includes('≈ US$3,758 (list-price est.)') && lib.badgeSvg(3758).includes('build cost'), 'badge: its text');
+  assert.throws(() => lib.validateHistory({ version: 1, rows: [row('2026-11-10', 'v0.1.13', 1, 1), row('2026-11-07', 'v0.1.12', 1, 1)] }), /oldest first/, 'history: order checked');
+  const up = lib.upsertRow(hist, cum1, '2026-11-14', 'v0.1.14');
+  assert.strictEqual(up.rows.length, 3, 'history: the same version replaces its row');
+  assert.strictEqual(lib.upsertRow(hist, cum1, '2026-11-20', 'v0.1.15').rows.length, 4, 'history: a new version adds a row');
+  // the command, end to end on temporary files
+  const t2 = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-usage-readme-'));
+  const P = (n) => path.join(t2, n);
+  fs.writeFileSync(P('README.md'), readme); fs.writeFileSync(P('base.json'), JSON.stringify({ version: 1, since: '2026-10-25', through: '2026-11-07', note: 'older work.', models: { 'Opus 5.5': 10 }, machines: { linux: 10 } }));
+  const args = ['--release', 'v0.1.12', '--date', '2026-11-07', '--baseline', P('base.json'), '--readme', P('README.md'), '--history', P('h.json'), '--badge', P('b.svg'), '--chart', P('c.svg'), '--files', P('none.json')];
+  const mk2 = () => R2.build(R2.parseArgs(args.filter((a, i) => args[i - 1] !== '--files' && a !== '--files'), { DURBAR_USAGE_DIR: P('nodir') }, NOW));
+  const r1 = mk2();
+  assert.ok(r1.text.includes('About US$10**') && r1.history.rows.length === 1 && r1.badge.includes('US$10 ') && r1.chart.includes('<svg'), 'command: block, history, badge and chart from the baseline alone');
+  assert.throws(() => R2.parseArgs(['--date', '2026-11-07'], {}, NOW), /--release/, 'command: --release required');
+  fs.writeFileSync(P('README.md'), '# no markers\n');
+  assert.throws(() => mk2(), /exactly one/, 'command: a README without markers fails');
+  fs.rmSync(t2, { recursive: true, force: true });
+}
+
 (async () => {
   const dir = path.join(tmp, 'a');
   const { server, svc } = R.createServer({ dir, machine: 'linux', port: 0, now: () => NOW });

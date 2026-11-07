@@ -268,6 +268,7 @@
     "release:video": "npm run build && node scripts/release-video.js",
     "usage:receiver": "node scripts/usage-receiver.js",
     "usage:day": "node scripts/usage-day.js",
+    "usage:readme": "node scripts/usage-readme.js",
     "shots:compress": "node scripts/compress-shots.js",
     "check:office:fast": "npm run build && node scripts/check-parallel.js",
     "check:geometry": "npm run build && node scripts/check-theme-geometry.js",

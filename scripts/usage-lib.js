@@ -186,7 +186,173 @@ function report(states, date) {
   return lines.join('\n') + '\n';
 }
 
+// ---- the README block (FR-181, owner addition 2026-11-07) ----
+const BEGIN = '<!-- build-cost:begin (written by `npm run usage:readme`; method in docs/build-cost.md) -->';
+const END = '<!-- build-cost:end -->';
+const LABEL = 'API list-price estimate, not billing';
+const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9 ._:\[\]()+-]{0,79}$/; // a display name in the baseline
+
+/** The baseline file (committed, written by hand): what was spent before the receivers ran, or on machines and teams that are not tracked. */
+function validateBaseline(raw) {
+  if (!isObj(raw) || raw.version !== 1 || !DATE_RE.test(raw.since) || !DATE_RE.test(raw.through) || typeof raw.note !== 'string' || raw.note.length > 600) throw new Error('baseline: not a baseline file');
+  const usdOf = (v) => { if (typeof v !== 'number' || !Number.isFinite(v) || v < 0 || v > 1e9) throw new Error('baseline: a dollar amount is wrong'); return v; };
+  const out = { since: raw.since, through: raw.through, note: raw.note, models: {}, machines: {} };
+  for (const k of ['models', 'machines']) {
+    if (!isObj(raw[k])) throw new Error(`baseline: ${k} missing`);
+    for (const name of Object.keys(raw[k])) {
+      if (!NAME_RE.test(name)) throw new Error(`baseline: bad name in ${k}`);
+      out[k][name] = usdOf(raw[k][name]);
+    }
+  }
+  return out;
+}
+
+/** Cumulative list-price dollars to `date`: the baseline (through its own day) plus every usage-file day after `baseline.through` up to `date`. */
+function cumulative(states, date, baseline) {
+  const models = new Map(); const machines = new Map();
+  const add = (m, k, v) => m.set(k, (m.get(k) || 0) + v);
+  for (const [k, v] of Object.entries(baseline.models)) add(models, k, v);
+  for (const [k, v] of Object.entries(baseline.machines)) add(machines, k, v);
+  for (const st of states) for (const day of Object.keys(st.days)) {
+    if (day <= baseline.through || day > date) continue;
+    for (const model of Object.keys(st.days[day].models)) { const c = st.days[day].models[model].costUsd; add(models, model, c); add(machines, st.machine, c); }
+  }
+  let total = 0; for (const v of models.values()) total += v;
+  return { total, models, machines, since: baseline.since };
+}
+
+function split(map, total) {
+  return [...map.entries()].filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))
+    .map(([k, v]) => `${k} ${total > 0 ? Math.round((v / total) * 100) : 0}% (US$${group(v)})`).join(', ');
+}
+
+/** The README block, markers included. `release` is a tag such as `v0.1.12` (checked). Same inputs, same text. */
+function readmeBlock(cum, date, release, note) {
+  if (!DATE_RE.test(date)) throw new Error('--date must be YYYY-MM-DD');
+  if (!/^v\d{1,4}\.\d{1,4}\.\d{1,4}$/.test(release)) throw new Error('--release must look like v0.1.12');
+  return [BEGIN, '## Build cost so far', '',
+    `**About US$${group(cum.total)}** at API list prices to build this app with AI agents, as of ${date} (release [\`${release}\`](https://github.com/three-feathers/agent-durbar/releases/tag/${release})), tracked since ${cum.since}. `
+    + `This is an **${LABEL}**: Claude Code's own list-price figure, not what anyone was charged. Method and privacy: [docs/build-cost.md](docs/build-cost.md).`, '',
+    '![Cumulative build cost by model over releases (API list-price estimate, not billing)](docs/build-cost.svg)', '',
+    `- By model: ${split(cum.models, cum.total) || 'none yet'}.`,
+    `- By machine or team: ${split(cum.machines, cum.total) || 'none yet'}.`,
+    `- Not counted yet: ${note}`, END].join('\n');
+}
+
+/** `text` with the block between the markers replaced; exactly one begin line and one end line, in that order, or it throws and changes nothing. */
+function rewriteReadme(text, block) {
+  const count = (needle) => text.split(needle).length - 1;
+  const b = text.indexOf('<!-- build-cost:begin'); const e = text.indexOf(END);
+  if (count('<!-- build-cost:begin') !== 1 || count(END) !== 1 || b < 0 || e < b) {
+    throw new Error('README needs exactly one "<!-- build-cost:begin ... -->" line followed by one "<!-- build-cost:end -->" line');
+  }
+  return text.slice(0, b) + block + text.slice(e + END.length);
+}
+
+// ---- history, badge and chart (FR-181, owner addition 2026-11-07): plain SVG text, no network, no external service ----
+const VERSION_RE = /^v\d{1,4}\.\d{1,4}\.\d{1,4}$/;
+const esc = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+const f1 = (n) => n.toFixed(1);
+
+/** `docs/build-cost-history.json`: `{version:1, rows:[{date, version, models:{name:usd}, machines:{name:usd}}]}`, cumulative per row, oldest first. */
+function validateHistory(raw) {
+  if (!isObj(raw) || raw.version !== 1 || !Array.isArray(raw.rows) || raw.rows.length > 2000) throw new Error('history: not a history file');
+  const rows = raw.rows.map((r) => {
+    if (!isObj(r) || !DATE_RE.test(r.date) || !VERSION_RE.test(r.version)) throw new Error('history: a row needs date and version');
+    const row = { date: r.date, version: r.version, models: {}, machines: {} };
+    for (const k of ['models', 'machines']) {
+      if (!isObj(r[k])) throw new Error(`history: ${k} missing`);
+      for (const name of Object.keys(r[k])) {
+        const v = r[k][name];
+        if (!NAME_RE.test(name) || typeof v !== 'number' || !Number.isFinite(v) || v < 0 || v > 1e9) throw new Error(`history: bad entry in ${k}`);
+        row[k][name] = v;
+      }
+    }
+    return row;
+  });
+  for (let i = 1; i < rows.length; i++) if (rows[i].date < rows[i - 1].date) throw new Error('history: rows must be oldest first');
+  return { version: 1, rows };
+}
+
+/** Add today's row (the same version replaces its row), keep the order. */
+function upsertRow(history, cum, date, release) {
+  const row = { date, version: release, models: {}, machines: {} };
+  for (const [k, v] of cum.models) row.models[k] = Math.round(v * 100) / 100;
+  for (const [k, v] of cum.machines) row.machines[k] = Math.round(v * 100) / 100;
+  const rows = history.rows.filter((r) => r.version !== release).concat([row]).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.version < b.version ? -1 : 1));
+  return { version: 1, rows };
+}
+
+const rowTotal = (r) => Object.values(r.models).reduce((a, b) => a + b, 0);
+
+/** The badge: a grey label and a blue value with white text, so it reads on a light and on a dark page. Width from the text length (no font measuring: same bytes everywhere). */
+function badgeSvg(total) {
+  const left = 'build cost'; const right = `≈ US$${group(total)} (list-price est.)`;
+  const lw = Math.round(left.length * 6.2 + 14); const rw = Math.round(right.length * 6.2 + 14); const w = lw + rw;
+  const label = `${left}: ${right}`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="20" viewBox="0 0 ${w} 20" role="img" aria-label="${esc(label)}"><title>${esc(label)}</title>`
+    + `<rect width="${lw}" height="20" rx="3" fill="#555"/><rect x="${lw}" width="${rw}" height="20" rx="3" fill="#0969da"/><rect x="${lw}" width="4" height="20" fill="#0969da"/>`
+    + `<g fill="#fff" font-family="Verdana,DejaVu Sans,sans-serif" font-size="11" text-anchor="middle"><text x="${f1(lw / 2)}" y="14">${esc(left)}</text><text x="${f1(lw + rw / 2)}" y="14">${esc(right)}</text></g></svg>\n`;
+}
+
+const SERIES_COLORS = ['#0969da', '#bf8700', '#1a7f37', '#cf222e', '#8250df', '#6e7781'];
+
+/** Cumulative spend by model, stacked areas over release dates (time-proportional x). Zero rows: a note. One row: stacked bars at one date. */
+function chartSvg(history) {
+  const W = 640; const H = 240; const L = 62; const R = 46; const T = 14; const B = 66; const pw = W - L - R; const ph = H - T - B;
+  const rows = history.rows;
+  const head = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img"`;
+  const style = '<style>text{fill:#1f2328;font:11px Verdana,DejaVu Sans,sans-serif;font-variant-numeric:tabular-nums}.ax{stroke:#8c959f;stroke-width:1}.gr{stroke:#8c959f;stroke-opacity:.35;stroke-width:1}'
+    + '@media (prefers-color-scheme:dark){text{fill:#e6edf3}}</style>';
+  if (!rows.length) {
+    const t = `Build cost over time (${LABEL}): no releases recorded yet`;
+    return `${head} aria-label="${esc(t)}"><title>${esc(t)}</title>${style}<text x="${W / 2}" y="${H / 2}" text-anchor="middle">${esc(t)}</text></svg>\n`;
+  }
+  const last = rows[rows.length - 1];
+  const names = [];
+  for (const r of rows) for (const n of Object.keys(r.models)) if (!names.includes(n)) names.push(n);
+  names.sort((a, b) => (last.models[b] || 0) - (last.models[a] || 0) || (a < b ? -1 : 1));
+  const shown = names.slice(0, SERIES_COLORS.length - 1); const rest = names.slice(SERIES_COLORS.length - 1);
+  const series = shown.map((n, i) => ({ name: n, color: SERIES_COLORS[i], vals: rows.map((r) => r.models[n] || 0) }));
+  if (rest.length) series.push({ name: 'other', color: SERIES_COLORS[SERIES_COLORS.length - 1], vals: rows.map((r) => rest.reduce((a, n) => a + (r.models[n] || 0), 0)) });
+  const top = Math.max(...rows.map(rowTotal), 1);
+  const mag = Math.pow(10, Math.floor(Math.log10(top))); const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => s * 4 >= top);
+  const ymax = step * Math.ceil(top / step);
+  const y = (v) => T + ph - (v / ymax) * ph;
+  const t0 = Date.parse(rows[0].date + 'T00:00:00Z'); const t1 = Date.parse(last.date + 'T00:00:00Z');
+  const x = (r) => (rows.length < 2 || t1 === t0 ? L + pw / 2 : L + ((Date.parse(r.date + 'T00:00:00Z') - t0) / (t1 - t0)) * pw);
+  const out = [];
+  const desc = `Cumulative build cost, ${LABEL}: ${rows.map((r) => `${r.date} ${r.version} US$${group(rowTotal(r))}`).join('; ')}`;
+  out.push(`${head} aria-label="${esc(desc)}"><title>${esc('Build cost over time (' + LABEL + ')')}</title><desc>${esc(desc)}</desc>${style}`);
+  for (let v = 0; v <= ymax + 1e-9; v += step) {
+    out.push(`<line class="gr" x1="${L}" y1="${f1(y(v))}" x2="${W - R}" y2="${f1(y(v))}"/><text x="${L - 6}" y="${f1(y(v) + 4)}" text-anchor="end">US$${group(v)}</text>`);
+  }
+  const below = new Array(rows.length).fill(0);
+  for (const s of series) {
+    const lo = below.slice(); const hi = lo.map((b, i) => b + s.vals[i]);
+    if (rows.length < 2) {
+      const bw = 44; out.push(`<rect x="${f1(x(rows[0]) - bw / 2)}" y="${f1(y(hi[0]))}" width="${bw}" height="${f1(y(lo[0]) - y(hi[0]))}" fill="${s.color}"/>`);
+    } else {
+      const up = rows.map((r, i) => `${f1(x(r))},${f1(y(hi[i]))}`); const dn = rows.map((r, i) => `${f1(x(r))},${f1(y(lo[i]))}`).reverse();
+      out.push(`<polygon points="${up.concat(dn).join(' ')}" fill="${s.color}" fill-opacity=".85"/>`);
+    }
+    for (let i = 0; i < hi.length; i++) below[i] = hi[i];
+  }
+  out.push(`<line class="ax" x1="${L}" y1="${T}" x2="${L}" y2="${T + ph}"/><line class="ax" x1="${L}" y1="${T + ph}" x2="${W - R}" y2="${T + ph}"/>`);
+  const every = Math.ceil(rows.length / 6);
+  rows.forEach((r, i) => { if (i % every === 0 || i === rows.length - 1) out.push(`<text x="${f1(x(r))}" y="${T + ph + 14}" text-anchor="middle">${esc(r.date.slice(5))} ${esc(r.version)}</text>`); });
+  out.push(`<text x="${L + pw / 2}" y="${T + ph + 30}" text-anchor="middle">release date, UTC (cumulative US$, ${esc(LABEL)})</text>`);
+  let lx = L;
+  for (const s of series) {
+    const label = `${s.name} US$${group(s.vals[s.vals.length - 1])}`;
+    out.push(`<rect x="${lx}" y="${H - 20}" width="10" height="10" fill="${s.color}"/><text x="${lx + 14}" y="${H - 11}">${esc(label)}</text>`);
+    lx += 14 + Math.round(label.length * 6.6) + 12;
+  }
+  out.push('</svg>\n');
+  return out.join('');
+}
+
 module.exports = {
   TOKEN_METRIC, COST_METRIC, TYPES, SOURCES, MODEL_RE, MACHINE_RE, DATE_RE, MAX_FILE_BYTES, FILE_VERSION,
-  emptyState, checkMachine, dayOf, ingest, validateState, firstDay, report, group, usd,
+  BEGIN, END, LABEL, validateHistory, upsertRow, badgeSvg, chartSvg, esc, validateBaseline, cumulative, readmeBlock, rewriteReadme, emptyState, checkMachine, dayOf, ingest, validateState, firstDay, report, group, usd,
 };

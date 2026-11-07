@@ -168,3 +168,4 @@
 
 - [x] T131: `scripts/usage-lib.js`, `scripts/usage-receiver.js`, `scripts/usage-day.js`, `npm run usage:receiver` and `usage:day`; `scripts/test-usage.js` (`test:usage`, in `test-suites.txt`), mutation-checked [FR-181]
 - [x] T132: `docs/build-cost.md` (env vars, running the receiver, start-at-login examples as text, privacy), linked from README, `docs/development.md`, `docs/collaboration.md`, `changelog.d/README.md`; fragment `changelog.d/008-build-cost.md` [FR-181]
+- [x] T133: `npm run usage:readme` (`scripts/usage-readme.js`): the README *Build cost so far* block between markers, `docs/build-cost-baseline.json`, `docs/build-cost-history.json` (seeded 2026-11-07, v0.1.12), `docs/build-cost-badge.svg`, `docs/build-cost.svg`; the fold-PR release step; tests and goldens in `test:usage` [FR-181] (owner addition 2026-11-07; T133 checked against main, branches and open PRs)

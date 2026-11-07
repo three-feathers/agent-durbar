@@ -20,6 +20,7 @@ npm run shots:compress    # compress screenshots by hand: the linked ones, or th
 npm run release:video -- --version vX.Y.Z --out <dir>   # a 30-60 s clip of a release's changes from the simulator (MP4 + GIF, eased zooms on what changed, needs ffmpeg; spec 008 FR-171..FR-178; trial, not in the release flow yet)
 npm run usage:receiver    # spec 008 FR-181: a local receiver (127.0.0.1:4318, needs DURBAR_USAGE_MACHINE) that sums Claude Code's OpenTelemetry token and cost metrics per day and model into ~/.durbar-usage; docs/build-cost.md
 npm run usage:day -- --date YYYY-MM-DD [--files a.json,b.json]   # the Build cost markdown table per machine and model (API list-price estimate, not billing)
+npm run usage:readme -- --release vX.Y.Z   # in the fold PR after a release: rewrites the README's Build cost block, adds the release's row to docs/build-cost-history.json, regenerates docs/build-cost-badge.svg and docs/build-cost.svg (pure text, no network; `--check` writes nothing)
 npm run check:geometry    # Retro lays out exactly like Clean Office (CHECK_ALL_THEMES=1: every theme, about a minute)
 npm run check:ui          # every simulator driver that asserts, one after another, on any OS (UI_SUITE_XVFB=1 keeps windows off a Linux desktop); -- --list names them, -- --only check-notes,check-edits runs just those
 npm run check:themes      # on demand: the full layout check in every theme, a few at a time, low priority, memory limits
