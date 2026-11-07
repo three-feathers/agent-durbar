@@ -19,14 +19,14 @@ This file is rule text, part of [AGENTS.md](../../AGENTS.md) (FR-082): read it b
 - Locally run only what CI cannot prove, once: your own mutations, probes, security checks, Windows/macOS-only paths, drivers not in CI. PR CI runs real macOS only for platform-sensitive paths (FR-135), else a stub (FR-106): write "not verified on macOS".
 - Post one-line `checks run at <sha>: …` after checks (what you ran); a reviewer only for checks CI cannot run. `reviewing at <sha>` is optional. Cite the source of results you did not produce. `pr-gate.sh` treats exactly these as status, anything more as an ask.
 - The record holds only for its sha, except a main merge with unchanged patch id through the merge queue; `--admin` waits for CI on the new head.
-- **Rounds** (FR-042): one list per round in chat, in landing order; claim what you review. Skip a PR assigned to another unless an owner asks or its claim is over 1 hour old with no review (ask to release).
+- **Rounds** (FR-042): one list per round in chat, in landing order; claim what you review. Skip a PR assigned to another unless an owner asks or its claim is expired (AGENTS.md *Delivery speed*).
 - **One full review** (FR-056): the first assignee reviews fully; others skim for blockers, or ask openly, with reason, for a second pass on a security-heavy PR (*Sub-agents by size* list, or sandbox). Re-reviews: the same reviewer, smallest fitting model. One full-review approval suffices.
-- **SLA** (FR-050): take another side's PR within ~30 minutes, in its human's hours; claim at once even if a security-heavy review takes longer. **Teammates' PRs first** (FR-043).
+- **Teammates' PRs first** (FR-043).
 
 ## Pace and load
 
-- **Land before building** (FR-039): per side at most 8 open PRs and 5 features awaiting first review (spec-only PRs excluded); over that, only land. Security and owner-urgent items may exceed, saying so.
 - **Sub-agents by size** (FR-038): small = one smaller-model agent; medium = implementer that mutation-checks; sensitive (secrets, user files, IPC, redaction, permissions, spending) = analyst, implementer, reviewer. Two heavy agents per machine at most.
 - **Weekly retro** (FR-063): each side posts its retro, blind first, on the week's "Weekly retro" issue the same day; whoever finishes first merges them; owner decisions: one batched message.
+- **Fuzz, CI, mockups** (FR-084): run `scripts/fuzz/` before a security-relevant PR's first push, reviewers reuse it (T061). PR CI runs only the UI drivers the diff touches (unmapped file: all; a check fails on an unmapped driver); nightly and `main` run all (T063). Mockups: 3 rounds before the spec, then iterate in the app behind a flag.
 - **Daily release** (FR-064): when `main` has new fragments, agents publish a daily stable release unasked.
 - **Red means owned** (FR-063): a red scheduled workflow gets an owner within 24 h or is paused (owner OK if it spends credits).

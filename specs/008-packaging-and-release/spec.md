@@ -145,6 +145,10 @@ Retired spec numbers, never to be reused for a new spec (`specs:check` and `--ad
 
 ## Changes
 
+### 2026-11-07: PR CI runs the UI drivers the diff touches (owner decision, spec 021 FR-084 point 4; task T130)
+
+*Why:* faster delivery. Rule only here; not built. PR CI runs only the UI drivers a diff touches (file-to-driver map), the three-OS UI job is sharded; a file not in the map runs the full set, and a check fails if a driver is missing from the map (Ruben's conditions). Nightly runs and `main` keep the full three-OS matrix. `[KNOWN GAP]` until T130.
+
 ### 2026-11-06: the clip's step captions are numbered by position in the clip (issue #1214, owner)
 
 *Why:* the v0.1.11 clip showed "3." and then "2.": each scene typed its own step numbers, so a scene's numbers did not follow the order shown.
