@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /*
- * The size ratchet of spec 070 FR-054: counts the font-size, line-height and font-weight literals, the px values of padding, margin and gap,
+ * The size ratchet of spec 070 FR-054: counts the font-size, line-height and font-weight literals, the px, rem and em values of padding, margin, inset and gap,
  * the radii that are not a token, the shadow literals and the `<button>` class sets of the renderer, chrome and office apart, and compares
  * them with scripts/fixtures/ui-inventory.json. A count over the baseline fails ("use a token or a class set that exists"); a count under it
  * fails until the baseline is lowered in the same change (`node scripts/inventory.js --update`), as the colour ratchet of FR-040 does.
@@ -12,6 +12,9 @@
  *   node scripts/inventory.js --update   write the baseline (after lowering a count on purpose; never to raise one)
  *
  * Static detection: what the source names. Rules built from data at run time may be under-counted.
+ * Counted: px, rem and em lengths; the `font` shorthand (size, weight, line-height); logical spacing (margin-inline, padding-block-start, inset-*) and radii.
+ * [KNOWN GAP] not counted: inline styles written in JS (`style="..."`, `el.style.x`), rules on bare `html` or `:root` (the token defaults live there), and
+ * `top`/`right`/`bottom`/`left` offsets; a literal added there is not caught.
  */
 const fs = require('fs');
 const path = require('path');
@@ -20,7 +23,7 @@ const ROOT = path.join(__dirname, '..');
 const BASELINE = path.join(__dirname, 'fixtures', 'ui-inventory.json');
 const KINDS = ['font-size', 'line-height', 'font-weight', 'spacing', 'radius', 'shadow'];
 
-const PX = /(?<![\w.-])-?\d*\.?\d+px\b/g;
+const PX = /(?<![\w.-])-?\d*\.?\d+(?:px|rem|em)\b/g; /* a length literal: px, rem or em */
 const stripVarFallback = (v) => { let s = v, prev; do { prev = s; s = s.replace(/var\(\s*--[\w-]+\s*,[^()]*\)/g, 'var()'); } while (s !== prev); return s; };
 const lineOf = (src, i) => src.slice(0, i).split('\n').length;
 
@@ -65,10 +68,15 @@ function countRules(rules) {
       const v = stripVarFallback(raw.replace(/\s*!important/, ''));
       const px = (v.match(PX) || []).length;
       if (p === 'font-size') c['font-size'] += px;
+      else if (p === 'font') { /* the shorthand: size, weight and the line-height after the slash, each as its own property */
+        const m = v.match(/(?:^|\s)(\d*\.?\d+(?:px|rem|em))(?:\s*\/\s*(\d*\.?\d+(?:px|rem|em)?))?(?=\s|$)/);
+        if (m) { c['font-size']++; if (m[2]) c['line-height']++; }
+        if (/(?:^|\s)(?:[1-9]00|bold|bolder|lighter)(?=\s)/.test(v)) c['font-weight']++;
+      }
       else if (p === 'font-weight') { if (/^\d+$/.test(v) || /bold|normal/.test(v)) c['font-weight']++; }
-      else if (p === 'line-height') { if (/^[\d.]+(px)?$/.test(v)) c['line-height']++; }
-      else if (/^(padding|margin)(-(top|right|bottom|left|inline|block))?$|^(gap|row-gap|column-gap)$/.test(p)) c.spacing += px;
-      else if (/^border(-(top|bottom)-(left|right))?-radius$/.test(p)) { c.radius += (v.match(PX) || []).filter((x) => parseFloat(x) < 999).length; /* pill (999px) and 50% are the scale's own */ }
+      else if (p === 'line-height') { if (/^[\d.]+(px|rem|em)?$/.test(v)) c['line-height']++; }
+      else if (/^(padding|margin)(-(top|right|bottom|left|inline|block)(-(start|end))?)?$|^inset(-(inline|block)(-(start|end))?)?$|^(gap|row-gap|column-gap)$/.test(p)) c.spacing += px;
+      else if (/^border(-(top|bottom)-(left|right)|-(start|end)-(start|end))?-radius$/.test(p)) { c.radius += (v.match(PX) || []).filter((x) => parseFloat(x) < 999).length; /* pill (999px) and 50% are the scale's own */ }
       else if (p === 'box-shadow') { if (v !== 'none' && !/^var\(\)$/.test(v) && !/^var\(--[\w-]+\)$/.test(v)) c.shadow++; }
     }
   }
