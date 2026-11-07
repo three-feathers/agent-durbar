@@ -141,6 +141,8 @@ test:mcpservertools
 test:navigator
 test:crew
 test:characters
+test:chargen
+test:imagecheck
 test:crew-assets
 test:realoffice-layout
 test:realoffice-assets

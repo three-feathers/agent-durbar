@@ -221,6 +221,8 @@
     "test:worldpack": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-worldpack.js",
     "test:world-packs": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-world-packs.js",
     "test:crew": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-crew.js",
+    "test:chargen": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-chargen.js",
+    "test:imagecheck": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-imagecheck.js",
     "test:logo-assets": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-logo-assets.js",
     "test:crew-assets": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-crew-assets.js",
     "test:realoffice-layout": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-realoffice-layout.js && node dist-scripts/scripts/test-realoffice-aisles.js",
