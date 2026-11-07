@@ -8,6 +8,7 @@ import { app } from 'electron';
 import * as path from 'path';
 import { fromAppFrame as fromApp, ipcHandle } from '../ipcguard';
 import { WorldStore } from '../worlds/store';
+import type { RevokedSets } from '../worlds/store';
 
 const REFUSED = { ok: false, error: 'Agent Durbar refused a call that did not come from its own window.' };
 
@@ -16,8 +17,8 @@ export interface WorldsIpcDeps {
   simulator?: boolean;
   /** Tests: a store over a temp folder. */
   store?: WorldStore;
-  /** FR-083: the hashes the catalogue revoked, read each time. Main passes none until the catalogue exists (T035, T042); with none, nothing is revoked. */
-  revoked?: () => Iterable<string>;
+  /** FR-083: the hashes each catalogue revoked (the project's, and each source's by id), read each time. Main passes none until the catalogue exists (T035, T042); with none, nothing is revoked. */
+  revoked?: () => RevokedSets;
 }
 export interface WorldsIpc {
   store: WorldStore;
@@ -40,7 +41,7 @@ export function register(deps: WorldsIpcDeps = {}): WorldsIpc {
    */
   const revoke = (sweep: boolean): boolean => {
     let ok = true;
-    try { store.setRevoked(deps.revoked?.() ?? []); } catch { ok = false; }
+    try { store.setRevoked(deps.revoked?.() ?? {}); } catch { ok = false; }
     if (sweep) { try { removed += store.sweepRevoked().length; } catch { /* the next list sweeps again */ } }
     return ok;
   };

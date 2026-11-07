@@ -9,6 +9,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { INSTALLED_NAME, KEY_RE, SOURCE_ID_RE, WARN_STORE_BYTES, WARN_WORLD_COUNT, WORLD_ID_RE, WorldStore, fromValidated, fromValidatedFiles } from '../src/main/worlds/store';
 import type { FsLike, StoreInput } from '../src/main/worlds/store';
+import { THEME_ID_RE } from '../src/shared/credits';
 import { MANIFEST_NAME, PART_NAMES, validateWorldFiles, validateWorldZip } from '../src/shared/worldpack';
 import { sha256 } from '../src/shared/worldzip';
 import { goodPack, hostileSet, rawFrom, rawZip, toStored, webp } from './fixtures/worlds/gen';
@@ -77,7 +78,7 @@ function spyFs(failFrom = Infinity, dead = true): { fsx: FsLike; calls: Array<{ 
   let n = 0;
   const mut = new Set(['mkdirSync', 'writeFileSync', 'renameSync', 'unlinkSync', 'rmdirSync']);
   const fsx: Record<string, unknown> = { constants: fs.constants };
-  for (const op of ['lstatSync', 'openSync', 'fstatSync', 'readSync', 'closeSync', 'readdirSync', 'mkdirSync', 'writeFileSync', 'renameSync', 'unlinkSync', 'rmdirSync']) {
+  for (const op of ['lstatSync', 'openSync', 'fstatSync', 'readSync', 'closeSync', 'readdirSync', 'mkdirSync', 'writeFileSync', 'renameSync', 'unlinkSync', 'rmdirSync', 'fsyncSync']) {
     fsx[op] = (...a: unknown[]) => {
       const o = a[2] && typeof a[2] === 'object' ? (a[2] as Record<string, unknown>) : {};
       calls.push({ op, arg: typeof a[0] === 'string' ? a[0] : '', flag: op === 'writeFileSync' ? o.flag : undefined, mode: op === 'writeFileSync' ? o.mode : undefined });
@@ -587,9 +588,10 @@ try {
     const zipHash = sha256(Buffer.from('the zip'));
     const k1 = saved(store.save(goodInput({ packSha256: zipHash })));
     const k2 = saved(store.save(tiny(2)));
-    store.setRevoked(['nonsense', 'x'.repeat(64), sha256(Buffer.from('other'))]);
+    const none = { project: ['nonsense', 'x'.repeat(64), sha256(Buffer.from('other'))] };
+    store.setRevoked(none);
     assert.ok(store.list().every((e) => e.state !== 'revoked'), 'an unrelated hash revokes nothing');
-    store.setRevoked([zipHash]);
+    store.setRevoked({ project: [zipHash] });
     assert.strictEqual(store.list().find((e) => e.key === k1)?.state, 'revoked');
     assert.strictEqual(store.list().find((e) => e.key === k2)?.state, 'unfinished');
     s.calls.length = 0;
@@ -598,10 +600,116 @@ try {
     assert.deepStrictEqual(store.sweepRevoked(), [k1], 'the sweep removes it');
     assert.ok(!fs.existsSync(path.join(root, k1)) && fs.existsSync(path.join(root, k2)));
     assert.ok(store.part(k2, 'wall.webp').ok, 'other worlds stay');
-    // a revoked picture hash (a likeness report on one picture) revokes the world that holds it
-    store.setRevoked([sha256(tiny(2).files.find((f) => f.name === 'wall.webp')!.data as Buffer)]);
-    assert.deepStrictEqual(store.sweepRevoked(), [k2]);
-    assert.deepStrictEqual(store.list(), []);
+  }
+
+  // ---- 12b. revocation is scoped by source (FR-083, scenario 10): a catalogue reaches only its own worlds, never a person's ----
+  {
+    const { store, root } = env();
+    // the own world has a picture no other world holds (the fixture packs share one), so a hash of it can only mean that world
+    const ownFiles = withManifest(goodPack({}, ['wall.webp']), 'tiny-world', 'Mine 2', 2);
+    ownFiles['wall.webp'] = webp(120, 150, 77);
+    const ownInput: StoreInput = { origin: 'made', name: 'Mine 2', version: 2, unfinished: true, files: Object.keys(ownFiles).map((name) => ({ name, data: ownFiles[name] })) };
+    const pic = (_n: number): string => sha256(ownFiles['wall.webp']);
+    const proj = saved(store.save(goodInput({ packSha256: sha256(Buffer.from('proj zip')) })));
+    const srcA = saved(store.save(goodInput({ origin: 'source', sourceId: 'aaa', worldId: 'from-a', packSha256: sha256(Buffer.from('a zip')) })));
+    const srcB = saved(store.save(goodInput({ origin: 'source', sourceId: 'bbb', worldId: 'from-b', packSha256: sha256(Buffer.from('b zip')) })));
+    const mine = saved(store.save(ownInput)); // origin 'made': a u- key
+    assert.ok(mine.startsWith('u-'));
+    const everything = { project: [sha256(Buffer.from('proj zip')), sha256(Buffer.from('a zip')), sha256(Buffer.from('b zip')), pic(2)], sources: { bbb: [sha256(Buffer.from('proj zip')), sha256(Buffer.from('a zip')), pic(2)] } };
+    // a hash that matches a world from elsewhere has no effect; the person's own world is in no list
+    store.setRevoked({ project: [sha256(Buffer.from('a zip')), sha256(Buffer.from('b zip')), pic(2)], sources: { aaa: [sha256(Buffer.from('proj zip')), sha256(Buffer.from('b zip')), pic(2)], bbb: [sha256(Buffer.from('proj zip')), sha256(Buffer.from('a zip')), pic(2)] } });
+    assert.deepStrictEqual(store.list().map((e) => e.state).filter((x) => x === 'revoked'), [], 'a hash from another catalogue, or of a person\'s own world, changes no world (FR-083, scenario 10)');
+    assert.deepStrictEqual(store.sweepRevoked(), [], 'and the sweep removes nothing');
+    assert.ok(store.part(mine, 'wall.webp').ok, 'a person\'s own world is still served');
+    // its own catalogue's hash removes a world: project for p--, a source for its s-<id>--
+    store.setRevoked({ project: [sha256(Buffer.from('proj zip'))], sources: { aaa: [sha256(Buffer.from('a zip'))] } });
+    assert.deepStrictEqual(store.sweepRevoked().sort(), [proj, srcA].sort(), 'the project list takes p--, source aaa takes its own');
+    assert.ok(fs.existsSync(path.join(root, srcB)) && fs.existsSync(path.join(root, mine)), 'source bbb and the own world stay');
+    // a picture's hash in the project list never reaches a u- world, and a source list never reaches the project
+    store.setRevoked({ project: [pic(2)], sources: { bbb: [pic(2)], 'not a source id': [pic(2)] } });
+    assert.deepStrictEqual(store.sweepRevoked(), [], 'a revoked picture hash of an own (u-) world removes nothing');
+    assert.ok(store.list().find((e) => e.key === mine)?.state === 'unfinished' && fs.existsSync(path.join(root, mine)), 'the own world is not even flagged');
+    store.setRevoked(everything); // the project list holds every pack hash
+    assert.deepStrictEqual(store.sweepRevoked(), [], 'a pack hash in the project list never reaches a source world, and the own world has no list');
+    assert.ok(fs.existsSync(path.join(root, mine)) && store.part(mine, 'wall.webp').ok, 'the own world always stays');
+  }
+
+  // ---- 12c. the inode after open: a file swapped between lstat and open is refused (the only guard where O_NOFOLLOW is 0) ----
+  {
+    const sw = { armed: false, swapped: 0 };
+    const st = env();
+    const key = saved(st.store.save(goodInput()));
+    const target = path.join(st.root, key, 'wall.webp');
+    const wrapped = { ...fs, constants: fs.constants, openSync: (p: fs.PathLike, ...r: unknown[]) => {
+      if (sw.armed && String(p) === target) {
+        // a different file with the very same bytes (same size, same hash, one link) takes the place after the lstat: only its inode differs
+        const copy = target + '.swap';
+        fs.writeFileSync(copy, fs.readFileSync(target));
+        fs.renameSync(copy, target);
+        sw.swapped++;
+      }
+      return (fs.openSync as (...a: unknown[]) => number)(p, ...r);
+    } } as unknown as FsLike;
+    const probe = new WorldStore(st.root, wrapped);
+    assert.ok(probe.part(key, 'wall.webp').ok, 'unarmed: served');
+    sw.armed = true;
+    const r = probe.part(key, 'wall.webp');
+    assert.strictEqual(sw.swapped, 1, 'the swap happened between the lstat and the open');
+    assert.deepStrictEqual(r, { ok: false, reason: 'damaged' }, 'a file swapped after the lstat is refused: Damaged, no bytes');
+    assert.ok(!('bytes' in r), 'no bytes');
+  }
+
+  // ---- 12d. remove deletes the leftover `.old-` first: when the live folder then fails, repair cannot bring a removed world back ----
+  {
+    const st = env();
+    const key = saved(st.store.save(goodInput()));
+    fs.cpSync(path.join(st.root, key), path.join(st.root, '.old-' + key), { recursive: true }); // a complete leftover beside the live world
+    const live = path.join(st.root, key);
+    let failed = 0;
+    const flaky = { ...fs, constants: fs.constants, rmdirSync: (p: fs.PathLike, ...r: unknown[]) => {
+      if (String(p) === live && !failed) { failed++; throw Object.assign(new Error('injected rmdir'), { code: 'EBUSY' }); }
+      return (fs.rmdirSync as (...a: unknown[]) => void)(p, ...r);
+    } } as unknown as FsLike;
+    const res = new WorldStore(st.root, flaky).remove(key);
+    assert.strictEqual(failed, 1, 'the live folder\'s last delete failed');
+    assert.strictEqual(res.ok, false, 'remove says it could not');
+    const after = new WorldStore(st.root);
+    after.repair();
+    assert.ok(!fs.existsSync(path.join(st.root, '.old-' + key)), 'no leftover is waiting to bring the world back');
+    assert.ok(!after.list().some((e) => e.state === 'ok' || e.state === 'unfinished'), 'after repair the removed world has not come back');
+    assert.strictEqual(after.part(key, 'wall.webp').ok, false, 'and serves nothing');
+  }
+
+  // ---- 12e. fsync: every file and the temp folder before the rename, the store folder after it ----
+  {
+    const log: string[] = [];
+    const paths = new Map<number, string>();
+    const spy = { ...fs, constants: fs.constants,
+      openSync: (p: fs.PathLike, ...r: unknown[]) => { const fd = (fs.openSync as (...a: unknown[]) => number)(p, ...r); paths.set(fd, String(p)); return fd; },
+      fsyncSync: (fd: number) => { log.push('fsync ' + path.basename(paths.get(fd) ?? '?')); return fs.fsyncSync(fd); },
+      renameSync: (a: fs.PathLike, b: fs.PathLike) => { log.push('rename ' + path.basename(String(b))); return fs.renameSync(a, b); },
+    } as unknown as FsLike;
+    const st = env(spy);
+    const key = saved(st.store.save(goodInput()));
+    const files = fs.readdirSync(path.join(st.root, key));
+    const rn = log.findIndex((l) => l === 'rename ' + key);
+    assert.ok(rn > 0, 'the temp folder was renamed in');
+    const before = log.slice(0, rn);
+    for (const f of files) assert.ok(before.includes('fsync ' + f), 'file flushed before the rename: ' + f);
+    assert.ok(before.some((l) => /^fsync \.tmp-/.test(l)), 'the temp folder is flushed before the rename');
+    assert.ok(log.slice(rn + 1).includes('fsync worlds'), 'the store folder is flushed after the rename');
+    // a failing fsync (a system that cannot flush) never fails the save
+    const dead = { ...fs, constants: fs.constants, fsyncSync: () => { throw Object.assign(new Error('EPERM'), { code: 'EPERM' }); } } as unknown as FsLike;
+    assert.ok(env(dead).store.save(goodInput()).ok, 'fsync is best effort');
+  }
+
+  // ---- 12f. KEY_RE is built from THEME_ID_RE, not a copy of its text (FR-031) ----
+  {
+    for (const id of ['a', 'a-b_c', '0x', 'a'.repeat(64), 'a'.repeat(65), '-a', '_a', 'A', 'a.b', '', 'a b']) {
+      assert.strictEqual(KEY_RE.test('p--' + id), THEME_ID_RE.test(id), 'p-- key and world id agree for ' + JSON.stringify(id));
+      assert.strictEqual(KEY_RE.test('s-abc--' + id), THEME_ID_RE.test(id), 's- key and world id agree for ' + JSON.stringify(id));
+    }
+    assert.ok(KEY_RE.source.includes(THEME_ID_RE.source.slice(1, -1)), 'the key pattern holds the id pattern');
   }
 
   // ---- 13. caps: a size or a count is a warning, never a refusal ----

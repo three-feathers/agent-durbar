@@ -11,8 +11,8 @@
  * No error text here carries a path: the sentences are the store's own. Pack text (name) is kept in `installed.json` for the Manage list and goes nowhere else (FR-065).
  * `[KNOWN GAP]` a program that can write the profile folder can swap a folder between our `lstat` of it and the open of a file in it (O_NOFOLLOW covers the last part only). The same holds for removal and
  * repair: `rmTree` re-`lstat`s the folder after listing it and before each delete and compares device and inode, so a swap before the list is caught and nothing is deleted; a swap in the instant between
- * that check and one `unlink` is not. Such a program can also rewrite `installed.json` together with a part (out of scope, spec *Known gaps*). Writes are not `fsync`ed: a power cut can leave an empty file,
- * which the hash check at load calls Damaged. A file in a world folder that `installed.json` does not list (a `.DS_Store`) is never read or served and does not make the world damaged.
+ * that check and one `unlink` is not. Such a program can also rewrite `installed.json` together with a part (out of scope, spec *Known gaps*). A save `fsync`s every file and the temp folder before the rename, and the store folder after it
+ * (best effort, like the notes writers; Windows cannot flush a folder), so a power cut leaves a world that is whole or one the hash check at load calls Damaged. A file in a world folder that `installed.json` does not list (a `.DS_Store`) is never read or served and does not make the world damaged.
  */
 import { randomBytes } from 'crypto';
 import * as fs from 'fs';
@@ -28,7 +28,7 @@ export type FailCode = 'bad' | 'exists' | 'failed' | 'unknown' | 'remove' | 'stu
 export type StoreFailure = { ok: false; code: FailCode; error: string };
 
 /** The file system calls the store makes: a test hands in a wrapper that fails at a chosen step. */
-export type FsLike = Pick<typeof fs, 'lstatSync' | 'openSync' | 'fstatSync' | 'readSync' | 'closeSync' | 'readdirSync' | 'mkdirSync' | 'writeFileSync' | 'renameSync' | 'unlinkSync' | 'rmdirSync' | 'constants'>;
+export type FsLike = Pick<typeof fs, 'lstatSync' | 'openSync' | 'fstatSync' | 'readSync' | 'closeSync' | 'readdirSync' | 'mkdirSync' | 'writeFileSync' | 'renameSync' | 'unlinkSync' | 'rmdirSync' | 'fsyncSync' | 'constants'>;
 
 export const INSTALLED_NAME = 'installed.json';
 export const MAX_INSTALLED_BYTES = 16 * 1024;
@@ -44,9 +44,11 @@ export const WORLD_ID_RE = THEME_ID_RE;
 export const SOURCE_ID_RE = /^[a-z0-9]{1,16}$/;
 const OWN_ID_RE = /^[0-9a-f]{16}$/;
 /** FR-060, defined here: `p--<id>` (project), `s-<sourceId>--<id>` (other source; a source id has no `-`, so the split at the first `--` is unique), `u-<16 hex>` (own). Lower case only, no dot, no space. */
-export const KEY_RE = /^(?:p--[a-z0-9][a-z0-9_-]{0,63}|s-[a-z0-9]{1,16}--[a-z0-9][a-z0-9_-]{0,63}|u-[0-9a-f]{16})$/;
+const ID = THEME_ID_RE.source.slice(1, -1); // the one world-id pattern (FR-031), not a copy of its text
+const KEY = `(?:p--${ID}|s-[a-z0-9]{1,16}--${ID}|u-[0-9a-f]{16})`;
+export const KEY_RE = new RegExp(`^${KEY}$`);
 const TMP_RE = /^\.tmp-[0-9a-f]{12}$/;
-const OLD_RE = /^\.old-((?:p--[a-z0-9][a-z0-9_-]{0,63}|s-[a-z0-9]{1,16}--[a-z0-9][a-z0-9_-]{0,63}|u-[0-9a-f]{16}))$/;
+const OLD_RE = new RegExp(`^\\.old-(${KEY})$`);
 const SHA_RE = /^[0-9a-f]{64}$/;
 const ORIGINS: readonly Origin[] = ['project', 'source', 'uploaded', 'made', 'imported'];
 const BAD_NAME = /[\p{Cc}\p{Cf}\p{Cs}\p{Co}\p{Cn}\p{Zl}\p{Zp}<>`]/u;
@@ -66,6 +68,9 @@ const MSG = {
   leftover: 'A leftover from an earlier crash is in the way. Remove that world in Manage first.',
 } as const;
 const fail = (code: FailCode): StoreFailure => ({ ok: false, code, error: MSG[code] });
+
+/** FR-083: what each catalogue revoked, by where its worlds came from. */
+export interface RevokedSets { project?: Iterable<string>; sources?: Record<string, Iterable<string>> }
 
 export interface FileRec { sha256: string; bytes: number }
 export interface Installed {
@@ -183,7 +188,8 @@ class Stuck extends Error {}
 export class WorldStore {
   /** key to the parts whose bytes did not match their hash when last read (`*`: the full check failed). A mark goes when that part reads right again, so nothing stays damaged for good. */
   private readonly damaged = new Map<string, Set<string>>();
-  private revoked: ReadonlySet<string> = new Set();
+  private revokedProject: ReadonlySet<string> = new Set();
+  private revokedBySource: ReadonlyMap<string, ReadonlySet<string>> = new Map();
   /** `fsx`, `newId`, `now` and `warnBytes` (only ever lowered) are for tests. */
   constructor(
     private readonly root: string,
@@ -234,6 +240,17 @@ export class WorldStore {
   private readRegular(file: string, cap: number): Buffer | null {
     const r = this.readFile(file, cap);
     return r.ok ? r.buf : null;
+  }
+
+  /** Flushes a file or a folder to disk, best effort (a system that cannot flush a folder, or refuses, is not a failed save): the fsync the notes writers do. */
+  private flush(p: string, dir: boolean): void {
+    let fd: number | undefined;
+    try {
+      fd = this.fsx.openSync(p, dir ? this.fsx.constants.O_RDONLY : this.fsx.constants.O_RDWR);
+      this.fsx.fsyncSync(fd);
+    } catch { /* best effort */ } finally {
+      if (fd !== undefined) try { this.fsx.closeSync(fd); } catch { /* closed */ }
+    }
   }
 
   /** The root as a real folder: a link in its place is not used. */
@@ -331,14 +348,24 @@ export class WorldStore {
     return [...keys].sort();
   }
 
+  /** FR-083: a world is only ever matched against the list of the catalogue it came from: `p--` against the project's, `s-<id>--` against that source's, and a `u-` world (own) against none. */
   private isRevoked(rec: Installed): boolean {
-    if (!this.revoked.size) return false;
-    return (rec.packSha256 !== undefined && this.revoked.has(rec.packSha256)) || Object.values(rec.files).some((f) => this.revoked.has(f.sha256));
+    const set = rec.origin === 'project' ? this.revokedProject : rec.origin === 'source' && rec.sourceId !== undefined ? this.revokedBySource.get(rec.sourceId) : undefined;
+    if (!set || !set.size) return false;
+    return (rec.packSha256 !== undefined && set.has(rec.packSha256)) || Object.values(rec.files).some((f) => set.has(f.sha256));
   }
 
-  /** FR-083: the hashes the catalogue revoked (pack hashes, and any stored file's hash). A listed world with one is *Revoked*: not served; `sweepRevoked` removes it. */
-  setRevoked(hashes: Iterable<string>): void {
-    this.revoked = new Set([...hashes].filter((h) => typeof h === 'string' && SHA_RE.test(h)));
+  /**
+   * FR-083: the hashes each catalogue revoked (pack hashes, and any stored file's hash), replacing every earlier list. `project`: the project's catalogue, for `p--` worlds; `sources`: a source's id to its
+   * list, for that source's `s-<id>--` worlds. A person's own (`u-`) worlds are in no list. A listed world with a hash is *Revoked*: not served; `sweepRevoked` removes it.
+   */
+  setRevoked(sets: RevokedSets): void {
+    const clean = (hashes: Iterable<string> | undefined): Set<string> => new Set([...(hashes ?? [])].filter((h) => typeof h === 'string' && SHA_RE.test(h)));
+    const bySource = new Map<string, ReadonlySet<string>>();
+    const src = sets.sources ?? {};
+    for (const id of Object.keys(src)) if (SOURCE_ID_RE.test(id)) bySource.set(id, clean(src[id]));
+    this.revokedProject = clean(sets.project);
+    this.revokedBySource = bySource;
   }
 
   /** Every world folder named like a key, with its state. A folder that is a link, or whose record is unreadable, is listed as damaged (with no name) so it can be removed. */
@@ -525,13 +552,17 @@ export class WorldStore {
         const p = this.fileIn(tmp, f.name) as string;
         files[f.name] = { sha256: sha256(f.data), bytes: f.data.length }; // the hash of the very buffer written below
         this.fsx.writeFileSync(p, f.data, { flag: 'wx', mode: 0o600 });
+        this.flush(p, false);
       }
       const rec: Installed = { v: 1, key, origin: input.origin, name: input.name, version: input.version, state: input.unfinished ? 'unfinished' : 'ok', date: this.now().toISOString(), size: prep.size, files };
       if (input.origin === 'source') rec.sourceId = input.sourceId;
       if (needsWorld(input.origin)) rec.worldId = input.worldId;
       if (input.packSha256) rec.packSha256 = input.packSha256;
       const body = JSON.stringify({ v: rec.v, key: rec.key, origin: rec.origin, sourceId: rec.sourceId, worldId: rec.worldId, name: rec.name, version: rec.version, state: rec.state, packSha256: rec.packSha256, date: rec.date, size: rec.size, files: rec.files }, null, 2);
-      this.fsx.writeFileSync(this.fileIn(tmp, INSTALLED_NAME) as string, body, { flag: 'wx', mode: 0o600 });
+      const recPath = this.fileIn(tmp, INSTALLED_NAME) as string;
+      this.fsx.writeFileSync(recPath, body, { flag: 'wx', mode: 0o600 });
+      this.flush(recPath, false);
+      this.flush(tmp, true); // the folder's entries, before the rename that makes it the world
       if (!this.checkDir(tmp, key)) throw new Error('written folder did not check out');
       if (existing) {
         if (this.tooDeep(dest)) throw new Stuck(); // its `.old-` could never be deleted: refuse before moving anything
@@ -544,10 +575,12 @@ export class WorldStore {
           throw e;
         }
         tmpMade = false;
+        this.flush(this.root, true);
         try { this.rmTree(old); } catch { /* swept at the next start */ }
       } else {
         this.fsx.renameSync(tmp, dest);
         tmpMade = false;
+        this.flush(this.root, true);
       }
       this.damaged.delete(key);
       return { ok: true, key, warnings: [...(count + (existing ? 0 : 1) > WARN_WORLD_COUNT ? ['count' as const] : []), ...(bytes + prep.size > this.warnBytes ? ['size' as const] : [])] };

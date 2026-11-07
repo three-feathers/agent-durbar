@@ -31,7 +31,7 @@ const input = (id: string, name: string, files = GOOD): StoreInput => ({ origin:
 function spyFs(): { fsx: FsLike; calls: Array<{ op: string; arg: string }> } {
   const calls: Array<{ op: string; arg: string }> = [];
   const fsx: Record<string, unknown> = { constants: fs.constants };
-  for (const op of ['lstatSync', 'openSync', 'fstatSync', 'readSync', 'closeSync', 'readdirSync', 'mkdirSync', 'writeFileSync', 'renameSync', 'unlinkSync', 'rmdirSync']) {
+  for (const op of ['lstatSync', 'openSync', 'fstatSync', 'readSync', 'closeSync', 'readdirSync', 'mkdirSync', 'writeFileSync', 'renameSync', 'unlinkSync', 'rmdirSync', 'fsyncSync']) {
     fsx[op] = (...a: unknown[]) => { calls.push({ op, arg: typeof a[0] === 'string' ? a[0] : '' }); return (fs as unknown as Rec as Record<string, (...x: unknown[]) => unknown>)[op](...a); };
   }
   return { fsx: fsx as unknown as FsLike, calls };
@@ -134,7 +134,7 @@ async function main(): Promise<void> {
     assert.strictEqual(((await call(app, 'world:list')) as { worlds: Rec[] }).worlds.find((w) => w.key === k2)?.state, 'damaged');
     assert.strictEqual(((await call(app, 'world:part', k1, 'wall.webp')) as Rec).ok, true, 'the other world still serves');
     // revoked: served nothing
-    store.setRevoked([]);
+    store.setRevoked({});
 
     // ---- calls are answered in order, one at a time ----
     const order: number[] = [];
@@ -154,7 +154,7 @@ async function main(): Promise<void> {
       const k3 = (store.save(input('third', 'Third', files3)) as { key: string }).key;
       let revoked: string[] = [];
       handlers.clear();
-      register({ store, revoked: () => revoked });
+      register({ store, revoked: () => ({ project: revoked }) });
       assert.strictEqual(((await call(app, 'world:part', k3, 'wall.webp')) as Rec).ok, true, 'served before the revocation');
       revoked = [sha256(files3['wall.webp'])];
       assert.deepStrictEqual(await call(app, 'world:part', k3, 'wall.webp'), { ok: false, reason: 'revoked' }, 'a revoked world serves nothing');
@@ -162,6 +162,22 @@ async function main(): Promise<void> {
       assert.ok(!((await call(app, 'world:list')) as { worlds: Rec[] }).worlds.some((w) => w.key === k3), 'the list sweeps it');
       assert.ok(!fs.existsSync(path.join(root, k3)), 'and it is gone from disk');
       assert.ok(fs.existsSync(path.join(root, k1)), 'a world with other hashes stays');
+      {
+        // scenario 10 through the channels: a source's list holding a project world's hash, and any list holding a person's own world's hash, change nothing
+        const own = goodPack({ id: 'mine', name: 'Mine' });
+        own['wall.webp'] = webp(120, 150, 77);
+        const ku = (store.save({ ...input('mine', 'Mine', own), origin: 'made', worldId: undefined }) as { key: string }).key;
+        assert.ok(ku.startsWith('u-'));
+        const kp = (store.save(input('proj', 'Proj', goodPack({ id: 'proj', name: 'Proj' }))) as { key: string }).key;
+        handlers.clear();
+        register({ store, revoked: () => ({ project: [sha256(own['wall.webp'])], sources: { abc: [sha256(own['wall.webp']), sha256(goodPack({ id: 'proj', name: 'Proj' })['wall.webp'])] } }) });
+        const l = (await call(app, 'world:list')) as { worlds: Rec[]; removed: number };
+        assert.ok(l.worlds.some((w) => w.key === ku && w.state !== 'revoked') && l.removed === 0, 'a person\'s own world is not flagged or removed by any catalogue');
+        assert.ok(l.worlds.some((w) => w.key === kp && w.state !== 'revoked'), 'a source list does not reach a project world');
+        assert.strictEqual(((await call(app, 'world:part', ku, 'wall.webp')) as Rec).ok, true, 'and the own world is still served');
+        assert.deepStrictEqual(await call(app, 'world:remove', ku), { ok: true });
+        assert.deepStrictEqual(await call(app, 'world:remove', kp), { ok: true });
+      }
       revoked = [];
       handlers.clear();
       register({ store, revoked: () => { throw new Error('provider down'); } });
@@ -177,7 +193,7 @@ async function main(): Promise<void> {
         let mode: 'ok' | 'down' = 'ok';
         const hashes = [sha256(fl['wall.webp'])];
         handlers.clear();
-        register({ store, revoked: () => { if (mode === 'down') throw new Error('provider down'); return hashes; } });
+        register({ store, revoked: () => { if (mode === 'down') throw new Error('provider down'); return { project: hashes }; } });
         const r1 = (await call(app, 'world:list')) as { worlds: Rec[]; removed: number; revocationChecked: boolean };
         assert.ok(!r1.worlds.some((w) => w.key === k4) && !fs.existsSync(path.join(root, k4)), 'the sweep removed it');
         assert.deepStrictEqual({ removed: r1.removed, checked: r1.revocationChecked }, { removed: 1, checked: true }, 'and the list says one world was removed (counted from the start sweep)');
