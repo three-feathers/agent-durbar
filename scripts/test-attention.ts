@@ -126,6 +126,96 @@ for (const v of ['true', '"false"', '0', 'null']) assert.deepStrictEqual(parseSe
   fs.rmSync(dir, { recursive: true, force: true });
 }
 
+// ---- spec 052 FR-193 / FR-205 (T196): createArrivals(), what is new for Your door ----
+type ArrItem = { key: string; id: string; kind: string; card?: boolean };
+type Arrivals = { observe: (items: ArrItem[], f: { armed?: boolean; isPaused?: (id: string) => boolean }) => { fresh: ArrItem[]; startup: boolean } };
+type Gate = {
+  arrive: (n: number) => void; startup: () => void; dismissed: () => void;
+  ruling: (s: { open: boolean; held: boolean }) => 'open' | 'startup' | 'hold' | 'none';
+};
+const AA = A as unknown as {
+  createArrivals: (o?: { now?: () => number; throttleMs?: number }) => Arrivals;
+  createDoorGate: (o?: { now?: () => number; coalesceMs?: number; throttleMs?: number }) => Gate;
+};
+{
+  let t = 1000; const now = () => t;
+  const mk = () => AA.createArrivals({ now });
+  const cardOf = (id: string, rq: string): ArrItem => ({ key: 'r:' + rq, id, kind: 'p', card: true });
+  const plain = (id: string, kind: string): ArrItem => ({ key: id + '|' + kind, id, kind });
+  const keys = (r: { fresh: ArrItem[] }): string => r.fresh.map((x) => x.key).join(',');
+  const on = { armed: true };
+  // before arming nothing is new, but it is remembered
+  let r = mk(); let x = r.observe([cardOf('a', '1')], { armed: false });
+  assert.strictEqual(keys(x), '', 'before arming nothing is new');
+  assert.strictEqual(keys(r.observe([cardOf('a', '1')], on)), '', 'remembered from before arming');
+  // app start (Q-NY-3): the first armed look with anything waiting says startup, once
+  r = mk(); r.observe([cardOf('a', '1')], { armed: false });
+  x = r.observe([cardOf('a', '1')], on); assert.strictEqual(x.startup, true, 'something waits when arming turns on: startup');
+  assert.strictEqual(r.observe([cardOf('a', '1')], on).startup, false, 'startup is said once');
+  r = mk(); r.observe([], { armed: false }); assert.strictEqual(r.observe([], on).startup, false, 'nothing waits at arming: no startup');
+  // first sight is new, the same key again is not, a repaint with the same items is not
+  r = mk(); r.observe([], on);
+  assert.strictEqual(keys(r.observe([cardOf('a', '1')], on)), 'r:1', 'first sight is new');
+  assert.strictEqual(keys(r.observe([cardOf('a', '1')], on)), '', 'the same key again is not');
+  // a second card on a waiting agent is new (all cards are counted, not only the oldest)
+  assert.strictEqual(keys(r.observe([cardOf('a', '1'), cardOf('a', '2')], on)), 'r:2', 'a second card on a waiting agent is new');
+  // the demo flip: the same agent and kind gaining its card is not new
+  r = mk(); r.observe([], on);
+  assert.strictEqual(keys(r.observe([plain('d', 'p')], on)), 'd|p', 'a card-less ask is new');
+  assert.strictEqual(keys(r.observe([cardOf('d', '9')], on)), '', 'the demo chat being built is not new');
+  // a card is dropped once settled: the same request id cannot come back, a new one is new
+  r = mk(); r.observe([], on); r.observe([cardOf('a', '1')], on); r.observe([], on);
+  assert.strictEqual(keys(r.observe([cardOf('a', '2')], on)), 'r:2', 'after settling, a new card is new');
+  // pause: the agent leaves the list but is remembered; unpausing shows the same card, which is not new; a card first seen then is
+  r = mk(); r.observe([], on); r.observe([cardOf('a', '1')], on);
+  const paused = { armed: true, isPaused: (id: string) => id === 'a' };
+  r.observe([], paused);
+  assert.strictEqual(keys(r.observe([cardOf('a', '1')], on)), '', 'a card through pause and unpause is not new');
+  r.observe([], paused);
+  assert.strictEqual(keys(r.observe([cardOf('a', '1'), cardOf('a', '3')], on)), 'r:3', 'a card first seen on unpausing is new');
+  // an error that repeats while the agent retries gives one open within THROTTLE_MS
+  r = mk(); r.observe([], on); t = 5000;
+  assert.strictEqual(keys(r.observe([plain('e', 'e')], on)), 'e|e', 'an error is new');
+  r.observe([], on); t += A.THROTTLE_MS - 1;
+  assert.strictEqual(keys(r.observe([plain('e', 'e')], on)), '', 'the same error again within THROTTLE_MS is not');
+  r.observe([], on); t += A.THROTTLE_MS + 1;
+  assert.strictEqual(keys(r.observe([], on)), ''); // out of error for a full THROTTLE_MS: forgotten
+  assert.strictEqual(keys(r.observe([plain('e', 'e')], on)), 'e|e', 'after a full THROTTLE_MS out of error it is new again');
+  // a plain wait is forgotten at once when the agent leaves that state
+  r = mk(); r.observe([], on); r.observe([plain('w', 'w')], on); r.observe([], on);
+  assert.strictEqual(keys(r.observe([plain('w', 'w')], on)), 'w|w', 'a plain wait that left and came back is new');
+  // a burst: all fresh keys in one look (the app opens once)
+  r = mk(); r.observe([], on);
+  assert.strictEqual(r.observe(Array.from({ length: 15 }, (_, i) => cardOf('a' + i, 'b' + i)), on).fresh.length, 15, 'a burst is one look with 15 fresh');
+  // the injected clock is really used
+  let calls = 0; const rc = AA.createArrivals({ now: () => { calls++; return t; } }); rc.observe([plain('e', 'e')], on); rc.observe([], on);
+  assert.ok(calls > 0, 'the injected clock is read');
+  // junk items are skipped
+  r = mk(); r.observe([], on);
+  assert.strictEqual(r.observe([null, {}, { key: 'k' }] as unknown as ArrItem[], on).fresh.length, 0, 'junk items are skipped');
+
+  // the gate: when the panel opens by itself
+  t = 100000; const g = AA.createDoorGate({ now });
+  assert.strictEqual(g.ruling({ open: false, held: false }), 'none', 'nothing arrived: nothing opens');
+  g.arrive(3); assert.strictEqual(g.ruling({ open: false, held: false }), 'open', 'a burst opens once');
+  assert.strictEqual(g.ruling({ open: false, held: false }), 'none', 'and only once');
+  g.arrive(1); t += 100; assert.strictEqual(g.ruling({ open: true, held: false }), 'none', 'already open: no second slide');
+  t += A.THROTTLE_MS + 1; g.arrive(1); assert.strictEqual(g.ruling({ open: false, held: true }), 'hold', 'a held opening stays held');
+  assert.strictEqual(g.ruling({ open: false, held: false }), 'open', 'and opens once when the guard clears');
+  t += A.THROTTLE_MS + 1; g.dismissed(); t += 100; g.arrive(1);
+  assert.strictEqual(g.ruling({ open: false, held: false }), 'none', 'a new request within COALESCE_MS of a dismissal does not snap it back');
+  t += A.COALESCE_MS + 1; g.arrive(1);
+  assert.strictEqual(g.ruling({ open: false, held: false }), 'open', 'after the coalescing window a new request reopens it');
+  t += 100; g.arrive(1);
+  assert.strictEqual(g.ruling({ open: false, held: false }), 'none', 'but not twice within THROTTLE_MS of the last opening');
+  t += A.THROTTLE_MS + 1; g.arrive(1);
+  assert.strictEqual(g.ruling({ open: false, held: false }), 'open', 'after the throttle a new request reopens it');
+  g.startup(); assert.strictEqual(g.ruling({ open: false, held: false }), 'startup', 'app start opens with Later');
+  assert.strictEqual(g.ruling({ open: false, held: false }), 'none');
+  g.startup(); assert.strictEqual(g.ruling({ open: false, held: true }), 'hold', 'app start is held like any opening');
+  assert.strictEqual(g.ruling({ open: false, held: false }), 'startup', 'and still says startup when it opens');
+}
+
 // wiring: the page loads the helper and the build copies it
 const html = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'index.html'), 'utf8');
 assert.ok(html.indexOf('src="attention.js"') > 0 && html.indexOf('src="attention.js"') < html.indexOf('src="app.js"'), 'index.html loads attention.js before app.js');
