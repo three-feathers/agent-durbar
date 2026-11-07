@@ -69,6 +69,7 @@
     "test:redact-growth-shapes2": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-redact-growth.js shapes2",
     "test:redact-images-whole": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-redact-images.js whole",
     "test:redact-images-forms": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-redact-images.js forms",
+    "test:maskoutgoing": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-maskoutgoing.js",
     "test:runtime-redact": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-redact.js && node dist-scripts/scripts/test-redact-shapes.js",
     "test:runtime-mcp": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-mcp-paths.js && node dist-scripts/scripts/test-mcp-protocol.js && node dist-scripts/scripts/test-mcp-auth.js && node dist-scripts/scripts/test-mcp-agentstate.js && node dist-scripts/scripts/test-mcp-tools.js && node dist-scripts/scripts/test-mcp-simmain.js && node dist-scripts/scripts/test-mcp-errormask.js && node dist-scripts/scripts/test-demo-oauth-mcp.js",
     "test:runtime-sandbox": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-sandbox-floor.js && node dist-scripts/scripts/test-claude-sandbox.js && node dist-scripts/scripts/test-copilot-sandbox.js && node dist-scripts/scripts/test-sandbox-ops.js",
