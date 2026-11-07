@@ -82,6 +82,12 @@ const checkChoice = (M) => {
   assert.ok(!lounge('- x (spec 097 FR-245): a'), 'the FR before the scene');
   assert.ok(!lounge('- x (spec 005 FR-246): a'), 'the FR of another spec');
   assert.ok(!lounge('- x (spec 097): a'), 'a spec named without FR numbers does not show an FR scene');
+  // one parenthesis naming two specs: each spec gets its own FR list (the first list used to swallow the second spec)
+  assert.ok(lounge('- x (spec 021 FR-063, spec 097 FR-246): a'), 'two specs in one parenthesis: the second owns the FR');
+  assert.ok(!lounge('- x (spec 097 FR-100, spec 021 FR-246): a'), 'two specs in one parenthesis: the FR belongs to the other spec, not the lounge');
+  assert.ok(lounge('- x (spec 021 FR-063; spec 097 FR-246..FR-249 and spec 008 FR-1): a'), 'a semicolon and an "and" between specs');
+  assert.deepStrictEqual(M.frsNamed('(spec 021 FR-063, spec 097 FR-246)', '097'), [[246, 246]], 'frsNamed: the second spec of a pair');
+  assert.deepStrictEqual(M.frsNamed('(spec 021 FR-063, spec 097 FR-246)', '021'), [[63, 63]], 'frsNamed: the first spec of a pair keeps only its own FR');
   assert.ok(M.sceneIdsFor(['- x (spec 100): a']).includes('mcp'), 'a scene without `fr` takes any change to its spec');
   // Scene: fields come first, then refs; unknown ids and the cards are ignored; at most AUTO_MAX feature scenes
   assert.deepStrictEqual(pick(V12, ['notesource']).slice(1, 3), ['notesource', 'lounge'], 'a Scene: field comes first, once');
@@ -177,6 +183,7 @@ assert.ok(5240561 <= RV.GIF_MAX, 'the v0.1.12 GIF is under the cap');
     ['Scene: fields after refs', "const feature = [...named, ...byRef]", "const feature = [...byRef, ...named]", /a Scene: field comes first/],
     ['prefix version match', "l.startsWith(`## ${version} `) || l === `## ${version}`", "l.startsWith(`## ${version}`)", /v0\.1\.1 does not read/],
     ['CRLF not normalised', ".replace(/\\r\\n?/g, '\\n').split('\\n');\n    const at", ".split('\\n');\n    const at", /CRLF CHANGELOG/],
+    ['an FR list runs to the closing parenthesis (two specs in one)', "((?:(?!\\bspec \\d{3}\\b)[^)])*)", "([^)]*)", /second owns the FR|frsNamed: the second spec/],
     ['spec without a word boundary', "/\\bspec (\\d{3})", "/spec (\\d{3})", /word boundary/],
     ['AUTO_MAX raised', "const AUTO_MAX = 5;", "const AUTO_MAX = 6;", /AUTO_MAX is pinned|cut to AUTO_MAX/],
     ['spec without FR numbers shows an FR scene', "if (!ref.fr) return true;\n  return got.some", "if (!ref.fr || !got.length) return true;\n  return got.some", /named without FR numbers/],
@@ -367,6 +374,29 @@ const { killTree } = require('./ui-suite');
 (async () => {
   await Promise.all(pending); // the no-match main() case
   setTimeout(() => { console.error('release-video: the test hung (90 s)'); process.exit(1); }, 90000).unref(); // a stuck child fails instead of hanging
+  { // FR-175: a run that finds no scene removes the old clip first (the choice comes after the removal), and keeps no folder it did not have
+    const run = async (M) => {
+      const o = fs.mkdtempSync(path.join(os.tmpdir(), 'rv-nomatch2-'));
+      try {
+        for (const x of ['.mp4', '.gif', '.json']) fs.writeFileSync(path.join(o, 'release-v9.9.9' + x), 'old');
+        await assert.rejects(M.main(['--version', 'v9.9.9', '--out', o], { releaseSources: () => ({ bullets: [], sceneFields: [] }), hasFfmpeg: () => true, ensure: () => true, runOne: async () => { throw new Error('no recording'); } }), /no scene shows this release/);
+        assert.deepStrictEqual(fs.readdirSync(o).filter((f) => f.startsWith('release-')), [], 'a failed no-match run leaves no old clip behind (FR-175)');
+      } finally { fs.rmSync(o, { recursive: true, force: true }); }
+    };
+    await run(RV);
+    // mutant: the choice before the removal (the old order) must fail that assert
+    const srcM = fs.readFileSync(path.join(__dirname, 'release-video.js'), 'utf8');
+    const line = srcM.split('\n').find((l) => l.startsWith('  if (a.scenes === null) a.scenes = (deps.chooseScenes'));
+    const rmLine = '  for (const f of finals) fs.rmSync(f, { force: true });';
+    assert.ok(line && srcM.includes(rmLine), 'the choice line and the removal are found');
+    const md = fs.mkdtempSync(path.join(os.tmpdir(), 'rv-mut2-'));
+    try {
+      fs.copyFileSync(path.join(__dirname, 'changelog.js'), path.join(md, 'changelog.js'));
+      const mf = path.join(md, 'release-video.js');
+      fs.writeFileSync(mf, srcM.replace(line + '\n', '').replace('  const out = path.resolve(a.out);\n', line + '\n  const out = path.resolve(a.out);\n'));
+      await assert.rejects(run(require(mf)), /leaves no old clip behind/, 'mutant: the choice before the removal is killed by its assert');
+    } finally { fs.rmSync(md, { recursive: true, force: true }); }
+  }
   const out = fs.mkdtempSync(path.join(os.tmpdir(), 'rv-test-'));
   try {
     fs.writeFileSync(path.join(out, 'release-v0.1.7.gif'), 'old');

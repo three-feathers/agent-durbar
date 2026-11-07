@@ -401,7 +401,8 @@ const AUTO_MAX = 5;                  // feature scenes in a default clip, so its
 function frsNamed(text, spec) {
   const out = [];
   let named = false;
-  for (const m of String(text).matchAll(/\bspec (\d{3})\b([^)]*)/g)) {
+  // one match per `spec NNN`, its FR list ends at the next `spec` or a `)`, so "(spec 021 FR-063, spec 097 FR-246)" gives each spec its own
+  for (const m of String(text).matchAll(/\bspec (\d{3})\b((?:(?!\bspec \d{3}\b)[^)])*)/g)) {
     if (m[1] !== spec) continue;
     named = true;
     for (const r of m[2].matchAll(/FR-(\d+)(?:\.\.(?:FR-)?(\d+))?/g)) out.push([Number(r[1]), Number(r[2] || r[1])]);
@@ -661,12 +662,12 @@ function seconds(file) {
 async function main(argv = process.argv.slice(2), deps = {}) {
   const a = parseArgs(argv);
   if (a.list) { for (const [id, s] of Object.entries(SCENES)) console.log(`${id.padEnd(11)} ${s.title}: ${s.sub}`); return null; }
-  if (a.scenes === null) a.scenes = (deps.chooseScenes || ((v) => chooseScenes((deps.releaseSources || releaseSources)(v))))(a.version);
   const out = path.resolve(a.out);
-  fs.mkdirSync(out, { recursive: true });
   const base = `release-${a.version}`;
   const finals = ['.mp4', '.gif', '.json'].map((x) => path.join(out, base + x));
   for (const f of finals) fs.rmSync(f, { force: true }); // FR-175: an old clip never stands in for a failed new one, even when this run is killed
+  if (a.scenes === null) a.scenes = (deps.chooseScenes || ((v) => chooseScenes((deps.releaseSources || releaseSources)(v))))(a.version); // after the removal: no scene shows this release is a failure like any other, and it leaves no old clip
+  fs.mkdirSync(out, { recursive: true });
   if (!(deps.hasFfmpeg || hasFfmpeg)()) throw new Error('ffmpeg was not found (install it, or set FFMPEG=<path>); no clip was made');
   if (!fs.existsSync(path.join(ROOT, 'dist', 'renderer', 'index.html'))) throw new Error('no build: run `npm run build` first');
   if (!(deps.ensure || require('./ensure-electron').ensureElectron)()) throw new Error('the Electron binary is not installed and could not be fetched');
