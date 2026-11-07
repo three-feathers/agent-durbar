@@ -19,6 +19,8 @@ const COVERED: Array<{ key: string; alt: string; what: string; sample: string }>
   { key: '[^\\s=;,"\'\\\\]{1,128}', alt: 'cookie', what: 'cookie', sample: 'Cookie: a=b' },
   { key: '\\bmachine\\s{1,8}', alt: 'machine', what: 'netrc', sample: 'machine h login u password p' },
   { key: '\\bcurl\\b[^\\r\\n]{0,200}', alt: 'curl', what: 'curl -u', sample: 'curl -u u:p h' },
+  { key: '[^\\r\\n\\\\\\`^;&|]', alt: 'mysql', what: 'mysql -p', sample: 'mysql -u r -pab1' },
+  { key: '\\[redacted\\]', alt: '%3[DdAa]', what: 'named phrase after a mask', sample: 'password=abc' }, // FR-170 item 6: `contrase(?:n|ñ)a` in the lookbehind, covered by the name alternative
   { key: '[^()\\r\\n]{0,128}', alt: '%3[DdAa]', what: 'named secret', sample: 'password=abc' },
 ];
 const used = new Set<string>();

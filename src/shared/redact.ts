@@ -1687,7 +1687,7 @@ const PLAIN_ASCII = /^[\x20-\x7e]*$/;
  * class that admits non-ASCII (`[^...]`, `\S`) counts an inert hidden character toward its limit, so the copy without it reads a token the text
  * as written does not: the fast path would mask less than the reference. Each alternative is the head of such a rule: a secret name and its
  * separator (`named`: the value, its digit look-ahead and its closer), `cookie` (the header, the JSON form and `cookieEnd`'s 128-character name
- * loop, a count in code, not a regex), `machine` (netrc: host and login), `curl` (the window before `-u` and the user), `://` (URL credentials).
+ * loop, a count in code, not a regex), `machine` (netrc: host and login), `curl` (the window before `-u` and the user), `mysql`/`mariadb` (the window before `-p`), `://` (URL credentials).
  * Text-wide on purpose: the netrc `\s{1,8}` crosses line breaks. `scripts/test-livehead.ts` (FR-063) lists the mask rules with such a window and
  * fails when one has no alternative here. A per-line guard is possible later.
  */
@@ -1696,6 +1696,7 @@ const LIVE_HEADS: readonly string[] = [
   'cookie',
   String.raw`\bmachine\s`,
   String.raw`\bcurl\b`,
+  String.raw`\b(?:mysql|mariadb)`, // `-p` after the client name: a 200-character window (FR-170 item 1)
   String.raw`:\/\/`,
 ];
 const LIVE_HEAD = new RegExp(LIVE_HEADS.join('|'), 'i');
