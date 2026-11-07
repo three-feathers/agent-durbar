@@ -163,6 +163,7 @@
 - [x] T127 (2026-11-05, issue #1162): the simulator's About version from `package.json` through a generated `appversion.js`; `test:simversion`; release steps no longer list `sim.ts` [FR-179]
 - [x] T128 Issue #839 (FR-180): `check-inbox-safety` and `check-answer-safety` press the Mac keys; `check-answer-safety` waits for the card before scrolling; `shots-097-realoffice` measures the glass at `prefers-reduced-transparency: no-preference`; `check-characters` reports the app state on a crew-step timeout (cause not found yet)
 - [x] T129 Issue #1214: the release clip's step captions use `{step}`, numbered 1..n by position in the clip; test and mutant in `test:releasevideo` [FR-171] (spec delta 2026-11-06)
+- [x] T135 (2026-11-07, owner: the v0.1.12 clip showed v0.1.11's scenes): `refs` on every scene and a default taken from the release's fragments and CHANGELOG section instead of `DEFAULT_SCENES`; scenes `lounge`, `railwidth`, `signin`, `notesource`; `test:releasevideo` with ten mutants; v0.1.12 re-filmed and its assets replaced [FR-183] (spec delta 2026-11-07)
 
 ## 2026-11-07: the Build cost report (owner request; FR-181)
 
