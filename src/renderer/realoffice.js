@@ -929,7 +929,7 @@
     kb.textContent = '';
     for (const [k, v] of facts) { const l = document.createElement('span'); l.className = ZWIDE.has(k) ? 'ro-zi ro-zw' : 'ro-zi'; const kk = document.createElement('span'); kk.className = 'ro-zy'; text(kk, k); l.appendChild(kk); l.appendChild(document.createTextNode(' ')); const vv = document.createElement('span'); vv.className = 'ro-zv'; text(vv, v); l.appendChild(vv); kb.appendChild(l); }
     const wide = facts.filter(([k]) => ZWIDE.has(k)).length; /* long ones take a whole line, cut with an ellipsis when too long (FR-313) */
-    ZOOM.kh = facts.length ? (wide + Math.ceil((facts.length - wide) / 2)) * ZOOM_LH + 8 : 0; kb.hidden = !facts.length;
+    ZOOM.kh = facts.length ? (wide + Math.ceil((facts.length - wide) / 2)) * ZOOM_LH + 9 : 0; /* .ro-zk: 4 px padding above and below, a 1 px rule */ kb.hidden = !facts.length;
     ZOOM.rows = data.lines.reduce((n, l) => n + Math.max(1, Math.ceil(Array.from(l.t).length / 52)), 0);
   }
   function placeZoom() {
