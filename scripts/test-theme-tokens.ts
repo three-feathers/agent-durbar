@@ -12,8 +12,8 @@
 import * as assert from 'node:assert';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { FONT_ALLOW, HOSTILE_RE, TYPED_TOKENS, typedValue } from '../src/shared/themetokens';
-import { CONTRAST_PAIRS, UI_PAIRS, BRAND_UIS, contrast, luminance, themeIssues } from '../src/shared/themegen';
+import { BAR_TOKENS, FONT_ALLOW, HOSTILE_RE, TYPED_TOKENS, typedValue } from '../src/shared/themetokens';
+import { BAR_PAIRS, CONTRAST_PAIRS, UI_PAIRS, BRAND_UIS, WORLD_GLASS, contrast, glassOver, luminance, themeIssues } from '../src/shared/themegen';
 import { ART_SLOTS, checkUserManifest } from '../src/shared/themes';
 
 const ROOT = process.cwd();
@@ -23,6 +23,10 @@ const T = require(path.join(ROOT, 'src', 'renderer', 'theme.js'));
 // ---- 1. the two copies agree ----
 assert.deepStrictEqual(T.TYPED_TOKENS, TYPED_TOKENS, 'theme.js and themetokens.ts register the same typed tokens');
 assert.deepStrictEqual(T.FONT_ALLOW, FONT_ALLOW, 'the same font allow-list');
+// spec 070 FR-053: the bar's closed list, its pairs and its glass share are one in both copies
+assert.deepStrictEqual(T.BAR_TOKENS, BAR_TOKENS, 'theme.js and themetokens.ts register the same --wb-* names and defaults');
+assert.deepStrictEqual(T.BAR_PAIRS, BAR_PAIRS, 'the bar pairs of WORLD_PAIRS are the shared contrast check\'s');
+assert.strictEqual(T.WORLD_GLASS, WORLD_GLASS, 'the same glass share');
 assert.deepStrictEqual(T.CONTRAST_PAIRS, CONTRAST_PAIRS, 'theme.js checks the same text pairs as the AI maker');
 assert.deepStrictEqual(T.ART_SLOTS, ART_SLOTS, 'the same art slots');
 assert.strictEqual(T._HOSTILE_RE.source + '/' + T._HOSTILE_RE.flags, HOSTILE_RE.source + '/' + HOSTILE_RE.flags, 'the same hostile-value rule (FR-020)');
@@ -403,4 +407,81 @@ console.log(`theme tokens guard passed (${n} corpus checks, ${FILES.length} file
     for (const [what, a, b] of rows) assert.ok(contrast(a, b) >= 3, `${name}: ${what} ${contrast(a, b).toFixed(2)}:1 is under 3:1`);
   }
   console.log('toggle switch: on track, both knobs pass 3:1 in Clean Office and the photo world; tokens only; forced colours');
+}
+
+// ---- 070 T023 (FR-052, FR-053): `--wb-*` are on the registry; a pack sets the bar, a failing pair is repaired, a tier 3 name is refused ----
+{
+  const names = Object.keys(BAR_TOKENS);
+  assert.strictEqual(names.length, 13, 'the bar list');
+  assert.ok(names.every((k) => /^--wb-[a-z0-9-]+$/.test(k) && /^#[0-9a-f]{6}$/.test(BAR_TOKENS[k])), 'wb names, opaque hex defaults');
+  assert.ok(names.every((k) => !(k in T._tokens()) && !(k in TYPED_TOKENS)), 'in no other list: the bar list is its own');
+  assert.ok(BAR_PAIRS.length >= 14 && BAR_PAIRS.every(([a, b]) => a in BAR_TOKENS && b in BAR_TOKENS), 'every bar pair names the list');
+  // Flat's default bar passes its own pairs (the glass fill as it shows)
+  for (const [fg, bg, min, over] of BAR_PAIRS) assert.ok(contrast(BAR_TOKENS[fg], glassOver(BAR_TOKENS[bg], over)) >= min, `default ${fg} on ${bg}`);
+  // a pack with the bar: 0 dropped on both sides (before T023 on main both names were dropped: measured 2026-11-07)
+  const dark = { '--wb-bg': '#1c1f24', '--wb-bg-2': '#14161a', '--wb-surface': '#262a31', '--wb-surface-2': '#2e333b', '--wb-ink': '#f1f3f6', '--wb-ink-2': '#d3d8df', '--wb-muted': '#b4bcc7',
+    '--wb-line': '#3a404a', '--wb-line-2': '#4a515d', '--wb-line-ctl': '#8e98a6', '--wb-focus': '#ffd36b', '--wb-warn-bg': '#4a3510', '--wb-warn-ink': '#ffd9a0' };
+  const v = T._validateManifest({ id: 'barpack', name: 'Bar pack', tokens: dark });
+  assert.deepStrictEqual(v.dropped, [], 'a pack with all 13 bar names drops none');
+  assert.deepStrictEqual(v.tokens, dark, 'and keeps them');
+  assert.deepStrictEqual(themeIssues(dark, T._tokens()), [], 'the shared check: no issue for a good bar');
+  assert.ok(checkUserManifest(JSON.stringify({ id: 'barpack', name: 'x', tokens: dark })).ok, 'main accepts the same manifest');
+  // hostile or unusable bar values: dropped one by one, as other colours
+  const bad = T._validateManifest({ id: 'badbar', name: 'x', tokens: { '--wb-bg': 'url(x)', '--wb-ink': '#102030' } });
+  assert.deepStrictEqual(bad.dropped, ['--wb-bg'], 'a hostile bar value is dropped by name');
+  // tier 3 names (FR-051) are no pack's: dropped, never reach the page
+  for (const k of ['--btn-primary-bg', '--switch-on', '--pop-shadow', '--overlay', '--h-ctl', '--wp-bg', '--wb-bar-shadow']) {
+    const r = T._validateManifest({ id: 't3', name: 'x', tokens: { [k]: '#102030' } });
+    assert.deepStrictEqual([r.dropped, r.tokens], [[k], {}], `${k} is refused`);
+  }
+  // a failing pair is repaired on its non-surface side: light ink on the default light bar
+  const weak = { id: 'weakbar', name: 'Weak bar', tokens: { '--wb-ink': '#cfcfcf', '--wb-bg': '#fafafa' } };
+  assert.ok(themeIssues(weak.tokens, T._tokens()).some((i) => i.startsWith('--wb-ink ')), 'the shared check reports it');
+  T.registerUserThemes({ weakbar: weak });
+  const fixed = T.fallbacks('weakbar').contrast as string[];
+  assert.ok(fixed.includes('--wb-ink') && !fixed.includes('--wb-bg'), `only the ink changes (${fixed})`);
+  T.setTheme('weakbar');
+  assert.strictEqual(T.token('--wb-bg'), '#fafafa', 'the surface stays the pack\'s');
+  for (const [fg, bg, min, over] of BAR_PAIRS) {
+    const a = T.token(fg) ?? BAR_TOKENS[fg], b = T.token(bg) ?? BAR_TOKENS[bg];
+    assert.ok(contrast(a, glassOver(b, over)) >= min, `repaired: ${fg} on ${bg}`);
+  }
+  T.setTheme(T.CLEAN_ID);
+  console.log('bar tokens: 13 names in both copies, 0 dropped from a pack, a failing pair repaired, tier 3 names refused');
+}
+
+// ---- 070 T022 (FR-054): the size ratchet, `scripts/inventory.js --check`, inside this test; no second lint ----
+{
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const inv = require(path.join(ROOT, 'scripts', 'inventory.js')) as { inventory(dir: string, repo?: string): { chrome: Record<string, number>; office: Record<string, number>; buttonSets: string[] }; compare(a: unknown, b: unknown): string[]; KINDS: string[]; BASELINE: string };
+  const base = JSON.parse(fs.readFileSync(inv.BASELINE, 'utf8'));
+  const real = inv.inventory(path.join(ROOT, 'src', 'renderer'), ROOT);
+  assert.deepStrictEqual(inv.compare(real, base), [], 'the renderer equals scripts/fixtures/ui-inventory.json (lower it with node scripts/inventory.js --update, never raise it)');
+  assert.ok(real.chrome['font-size'] > 100 && real.buttonSets.length > 50 && real.office.shadow > 0, 'the counts are real, chrome and office apart');
+  // planted literals, one of each kind, in a scratch renderer: each fails by its own name; a clean copy passes; a lowered count fails until the baseline is lowered
+  const dir = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'inv-'));
+  try {
+    const rd = path.join(dir, 'src', 'renderer'); fs.mkdirSync(rd, { recursive: true });
+    const css = (extra: string): string => `.a{font-size:var(--t3-size);padding:var(--s-2)}\n${extra}\n`;
+    const html = (cls: string): string => `<button class="${cls}">x</button>`;
+    const run = (extra: string, cls = 'btn'): Array<string> => {
+      fs.writeFileSync(path.join(rd, 's.css'), css(extra)); fs.writeFileSync(path.join(rd, 'a.js'), html(cls));
+      return inv.compare(inv.inventory(rd, dir), start);
+    };
+    fs.writeFileSync(path.join(rd, 's.css'), css('')); fs.writeFileSync(path.join(rd, 'a.js'), html('btn'));
+    const start = inv.inventory(rd, dir);
+    assert.deepStrictEqual(run(''), [], 'a clean scratch renderer equals its own baseline');
+    const planted: Array<[string, string, RegExp]> = [
+      ['font-size', '.b{font-size:13px}', /chrome font-size: 1 is over the baseline 0/], ['line-height', '.b{line-height:20px}', /chrome line-height: 1 is over/], ['font-weight', '.b{font-weight:700}', /chrome font-weight: 1 is over/],
+      ['spacing', '.b{padding:5px 7px}', /chrome spacing: 2 is over/], ['radius', '.b{border-radius:5px}', /chrome radius: 1 is over/], ['shadow', '.b{box-shadow:0 1px 2px #000}', /chrome shadow: 1 is over/],
+      ['office rule', '#stage .b{font-size:13px}', /office font-size: 1 is over/],
+    ];
+    for (const [what, extra, re] of planted) assert.ok(run(extra).some((m) => re.test(m)), `a planted ${what} literal fails`);
+    assert.deepStrictEqual(run('.b{font-size:var(--t3-size);border-radius:var(--r-sm);box-shadow:var(--shadow-card);padding:var(--s-2);border-radius:999px}'), [], 'tokens, the pill and the scale cost nothing');
+    assert.ok(run('', 'btn novel').some((m) => /new button class set "btn novel"/.test(m)), 'a new button class set fails');
+    // under the baseline fails until lowered: a baseline that holds one more literal than the code
+    const high = JSON.parse(JSON.stringify(start)); high.chrome['font-size'] += 1;
+    assert.ok(inv.compare(start, high).some((m) => /under the baseline/.test(m)), 'a lower count fails until the baseline is lowered');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  console.log(`size ratchet: ${inv.KINDS.length} kinds, chrome and office apart, ${real.buttonSets.length} button class sets; a planted literal of each kind fails`);
 }

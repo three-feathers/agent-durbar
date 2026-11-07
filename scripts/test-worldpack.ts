@@ -235,6 +235,8 @@ assert.ok(check(goodPack({ tokens: undefined }), { knownSets: ['office'], requir
     for (const h of bad1) assert.ok(!ok({ ['--c-' + st]: hsv(h) }).ok, st + ' at ' + h + ' degrees is outside');
   }
   { const r = check(goodPack({ tokens: { '--bg': '#ffffff' } }), { ...opts, clean: { ...clean, '--bg': 'not a colour' } }); assert.ok(!r.ok && /not a plain colour/.test(r.reason), 'a base theme whose own value is no colour cannot vouch for a pack: ' + r.reason); }
+  // spec 070 FR-053 (T023): the bar's closed list imports; a tier 3 name does not
+  { const r = ok({ '--wb-bg': '#1c1f24', '--wb-ink': '#f1f3f6', '--wb-line-ctl': '#8e98a6' }); assert.ok(r.ok, '--wb-* import'); assert.ok(!ok({ '--wb-ink': '#f1f3f6', '--btn-primary-bg': '#102030' }).ok, 'a tier 3 name is refused'); assert.ok(!ok({ '--wb-bg': 'transparent' }).ok, 'a see-through bar colour is refused'); }
   // a pack that holds a hostile value in one token and a valid one beside it is refused whole
   assert.ok(!ok({ '--bg': '#ffffff', '--ink': 'url(x)' }).ok);
 }
