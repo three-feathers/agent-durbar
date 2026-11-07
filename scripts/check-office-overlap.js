@@ -681,6 +681,7 @@ async function driver(ctx) {
   }
   /* spec 001 FR-179 (review on PR 797): in the demo the room headers have no ⋯ menu, so no part may give way (nothing would hold it); the cost may (it is in the
      name's tooltip). pageCheck still runs: the name minimum and the pencil rules (the demo has no pencil either) hold where the layout allows it. */
+  const DEMO_NARROW_STEPS = [164, 148, 132, 116, 100];
   for (const [w, h] of SIZES) {
     if (!mine()) continue;
     await load('sim=15&simfreeze=1&simfloors=1&simsched=1', w, h);
@@ -690,11 +691,16 @@ async function driver(ctx) {
     const res0 = await measure(false);
     const tag = `demo ${w}x${h}`;
     /* the case would be vacuous with roomy headers (nothing has to give way): narrow every header, refit, and require that some header really had to give way */
-    await ctx.js(`(()=>{const st=document.createElement('style');st.id='demoNarrow';st.textContent='#stage .room-head{max-width:164px}';document.head.append(st);window.DurbarFit();})()`);
-    await must(`getComputedStyle(document.querySelector('#stage .room-head')).maxWidth==='164px'`, 'the narrowed headers to apply');
-    await stable('narrowed headers');
-    /* headers that had to give way: the cost is the only part allowed to (it is in the name's tooltip); none gave way means the narrowing proved nothing */
-    const squeezed = await ctx.js(`[...document.querySelectorAll('#stage .room-head')].filter(hd=>!hd.querySelector('.room-more')&&hd.classList.contains('no-aiu')).length`);
+    /* issue 1285: how narrow is "narrow" depends on the theme (a user theme's pixel font holds 164px with no part giving way), so narrow in steps until one gives way */
+    let squeezed = 0;
+    for (const maxW of DEMO_NARROW_STEPS) {
+      await ctx.js(`(()=>{let st=document.getElementById('demoNarrow');if(!st){st=document.createElement('style');st.id='demoNarrow';document.head.append(st);}st.textContent='#stage .room-head{max-width:'+${jsLiteral(maxW)}+'px}';window.DurbarFit();})()`);
+      await must(`getComputedStyle(document.querySelector('#stage .room-head')).maxWidth===${jsLiteral(maxW + 'px')}`, 'the narrowed headers to apply');
+      await stable('narrowed headers');
+      /* headers that had to give way: the cost is the only part allowed to (it is in the name's tooltip); none gave way means the narrowing proved nothing */
+      squeezed = await ctx.js(`[...document.querySelectorAll('#stage .room-head')].filter(hd=>!hd.querySelector('.room-more')&&hd.classList.contains('no-aiu')).length`);
+      if (squeezed) break;
+    }
     total++;
     if (!squeezed) { failed++; console.log(`FAIL ${tag}: narrowing the headers made none give way (not even the cost), so the case proves nothing`); }
     const res = res0; total++;

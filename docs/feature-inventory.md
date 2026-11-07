@@ -14,7 +14,7 @@ One row per thing a user can do or see. [features.md](features.md) stays the use
 | Moods and trouble signs (heavy, monster, siren); Serious mode hides them and only them (not motion, issue #1182) | works | works pose, dots and lights only; heavy, monster and siren missing (#1171) | mock+planned (desk-lights) | 034 097 | test:mood read:src/renderer/realoffice.js |
 | Helpers (sub-agents): card, tree, own chat, needs you | works | missing, only `+N` and 3 dots; planned as small figures beside the desk (#1139) | planned | 001 015 097 | test:helpercard read:src/renderer/realoffice.js |
 | Live activity on the desk | works | works, monitors show the newest output (PR 979) | mock+planned (live-screen) | 001 097 | test:liveact driver:shots-001-live-activity |
-| Model, tokens, cost, context, last tool on the desk | works | missing (#1148) | none | 019 097 | test:ctxbreakdown read:src/renderer/realoffice.js |
+| Model, tokens, cost, context, last tool on the desk | works | works in the hover zoom (#1148, 097 FR-312..FR-315); a figure on the name plate is open (Q8) | none | 019 097 | test:ctxbreakdown driver:shots-097-screens |
 | Unread "New", draft, question marks | works | works, a New reply tag and a green screen (097 FR-236, FR-238), a Draft tag and "unsent draft" in the plate's name (097 FR-316); a question shows as the "?" bubble, the plate's text and "needs you" (FR-038, FR-016) | none | 001 005 097 | test:unread driver:shots-097-realoffice driver:check-097-desk-marks |
 | Hover card | works | missing, tooltip only (#1151) | none | 001 097 | test:tooltip read:src/renderer/realoffice.js |
 | Drag to rearrange rooms, desks, places | works | missing (#1152) | none | 033 | test:roomorder driver:shots-033-order |

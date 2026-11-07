@@ -213,3 +213,12 @@ The dusk was dropped (owner, 2026-11-04 04:52 UTC): FR-239..FR-242 and T189 are 
 - [x] T215 [US1] Wiring: `realModel` gives each desk `draft` (`hasDraft`) and the model `draftIcon`; the plate's name adds `draftWords` before the New reply words (desk and lounge seat) [FR-316]
 - [x] T216 [US1] Driver `scripts/check-097-desk-marks.js` (in `ui-suite`) and the overlap check's new box, tests first [FR-316]
 - [x] T217 [US1] `realoffice.js` makes the Draft tag once per desk and shows it by class; `realoffice.css` styles it; changelog, `docs/features.md`, `docs/feature-inventory.md` [FR-316]
+
+## 2026-11-07: facts in the zoom (issue #1148, FR-312..FR-315)
+
+- [x] T211 [US2] Spec delta 2026-11-07 and Q8 [FR-312..FR-315]
+- [x] T212 [US2] `deskFacts(a)` in app.js shared by the grown desk's side and the Real office zoom (`factsOf` option); the tool phrase also loses home paths. Test: `shots-097-screens`
+- [x] T213 [US2] Zoom shows the facts (`.ro-zk` in realoffice.js and realoffice.css), panel height and placement follow them. Test: `shots-097-screens` at both sizes, 15 desks each
+- [x] T214 [US2] Docs: changelog fragment, `docs/features.md`, the two zoom pictures retaken
+- [x] T218 [US2] Review of PR #1272 [FR-314]: tool phrase from cleared input, home folder masked before the cut (`liveact.js` `phrase`, `onEvent`), one mask in `deskFacts`, empty facts dropped, UNC paths in `maskHomePaths`; Q8 and the inventory row recorded. Tests: `test-liveact`, `test-redact`, `shots-097-screens` (the five mutants: innerHTML, FR-315 re-place, panel height, whole-line facts, no-redact zoom)
+- [x] T219 [US2] A token-shaped tool name is masked on every surface [FR-317, #1284]: `DurbarLiveAct.toolName` (clear, `maskRaw(redact)`, else `tool`) called by `phrase`; the page's `shownTool` for chip name and tooltip, waiting line, card task line, the helper card, the Settings MCP tool list and tool-usage table; fails closed (exact-match, no mask: `tool`). Test: `test:liveact` (ghp_, sk-, AWS id, ANSI and bidi splits, five mutants) and a `shots-097-screens` step

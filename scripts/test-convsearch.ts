@@ -119,6 +119,13 @@ async function main(): Promise<void> {
     // the head is built after the full masking: a secret at the start of the message is masked in the head too
     const r2 = messageExcerpts(`**${GHP}** then the invoice`, 'invoice', o)!;
     assert.ok(!r2.excerpts[0].anchor.head.includes('gh' + 'p_') && r2.excerpts[0].anchor.head.startsWith('[redacted]'), `masked head: ${r2.excerpts[0].anchor.head}`);
+    // issue 1234 (spec 095 T065): a 20,000-character message with one emoji ZWJ sequence or VS16 is priced 0.55 per character and is searchable
+    for (const emoji of ['\u{1F468}\u200d\u{1F4BB}', '\u2764\ufe0f\u{1F600}']) {
+      const long = `Heads up ${emoji} ` + 'We looked at many things first. '.repeat(600) + 'then the invoice export was fixed. ' + 'more words here. '.repeat(10);
+      assert.ok(long.length >= 19_000 && long.length <= 25_000 / 0.55, `a long message (${long.length})`);
+      const rl = messageExcerpts(long, 'invoice export', { ...o, whole: undefined } as typeof o);
+      assert.ok(rl && rl.excerpts.length === 1, `a long message with ${JSON.stringify(emoji)} is searchable`);
+    }
     // A2: a word found only inside a secret is dropped (the masked text does not hold it)
     assert.deepStrictEqual(messageExcerpts(`key ${GHP} here`, 'zx9yw8', o)!.excerpts, [], 'a match inside a token is dropped');
     assert.deepStrictEqual(messageExcerpts(`see /home/${USER}/notes`, USER, o)!.excerpts, [], 'a match on a user name in a home path is dropped');
