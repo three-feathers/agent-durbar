@@ -8,6 +8,8 @@ test:attachments
 test:vscode
 test:runtime-core
 test:runtime-redact
+test:maskoutgoing
+test:contactlinks
 test:runtime-mcp
 test:runtime-sandbox
 test:history
@@ -33,13 +35,18 @@ test:blogcheck
 test:compressshots
 test:changelog
 test:releasevideo
+test:usage
 test:specsindex
 test:stillhighlights
 test:orgwords
 test:handoff
+test:brainstate
+test:brainloop
+test:brainsurface
 test:toolusage
 test:usagestore
 test:about
+test:contacts
 test:usagetotals
 test:costtable
 test:dialog

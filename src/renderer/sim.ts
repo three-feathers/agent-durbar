@@ -158,7 +158,7 @@ function simNotesApi(qs: URLSearchParams, folderOf: (id: string) => { key: strin
         if (DN) digest = await DN.digestOf(text, crypto.subtle);
       } catch { digest = ''; }
       if (!digest) { let h = 0; for (let i = 0; i < text.length; i++) h = (Math.imul(h, 31) + text.charCodeAt(i)) >>> 0; digest = ('0000000000000000' + h.toString(16) + text.length.toString(16)).slice(-16); }
-      return add(id, text, input.from ?? role, { ...src(f.session, input.ord, role), digest });
+      return add(id, text, input.from ?? role, { ...src((input as { simSession?: string }).simSession || f.session, input.ord, role), app: (input as { simApp?: string }).simApp || 'copilot', digest }); // simSession, simApp: a driver's note from another session or app (Open source, FR-046)
     },
     notesAdd: async (id, input) => add(id, input && input.text, 'typed'),
     notesUpdate: async (id, noteId, rev, patch) => {
@@ -502,6 +502,8 @@ interface SignInServerView { name: string; status: string; transport?: string; k
 interface SignInRecordView { at?: number; blocked?: 'sign-in' | 'policy' }
 interface SignInPlanInput { moment: 'send' | 'recheck'; now: number; lastResponseAt?: number; resumedAt?: number; on: boolean; allowReadOnly: boolean; readOnly: boolean; platform: string; takesPart: boolean; renews?: boolean; live: boolean; busy: boolean; servers: readonly SignInServerView[]; records: Readonly<Record<string, SignInRecordView>>; inFlight: readonly string[] }
 interface SignInPlan { why: 'off' | 'no-part' | 'not-live' | 'busy' | 'no-moment' | 'first' | 'gap' | 'recheck'; reconnect: { name: string; key: string }[]; join: { name: string; key: string }[]; signInOnly: string[] }
+/** Copy of `isRemoteTransport` in `src/shared/mcp.ts` (the simulator is plain browser code; the planner copy below uses it). */
+const isRemoteTransport = (t: unknown): boolean => typeof t === 'string' && /^(?:http|sse|streamable-?http)$/i.test(t);
 /* mcpsigninrefresh:begin */
 const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
   const GAP = 60 * 60_000;
@@ -526,7 +528,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
     if (!s || typeof s.name !== 'string' || seen.has(s.name)) continue;
     seen.add(s.name);
     if (s.off === true || s.status === 'disabled') continue;
-    if (!/^(?:http|sse|streamable-?http)$/i.test(typeof s.transport === 'string' ? s.transport : '')) continue; // remote only: never a local (stdio) server
+    if (!isRemoteTransport(s.transport)) continue; // remote only: never a local (stdio) server
     if (s.signInOpen === true || s.restarting === true || s.policy === true) continue;
     const wants = s.status === 'needs-auth' || (why === 'gap' && s.status === 'connected' && i.platform !== 'darwin');
     if (!wants) continue;
@@ -2213,7 +2215,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
     } catch {
       /* no saved theme */
     }
-    const { forgetFolder: simNotesForget, ...simNotesCalls } = simNotesApi(simQuery, (id) => { const s = sims.find((x) => x.info.id === id); return s ? { key: s.info.workspaceFile || s.info.cwd, name: (s.info as AgentInfo & { roomName?: string }).roomName ?? s.info.name, session: s.info.id } : undefined; }); // spec 083 FR-060
+    const { forgetFolder: simNotesForget, ...simNotesCalls } = simNotesApi(simQuery, (id) => { const s = sims.find((x) => x.info.id === id); return s ? { key: s.info.workspaceFile || s.info.cwd, name: (s.info as AgentInfo & { roomName?: string }).roomName ?? s.info.name, session: simQuery.get('simresumeid') ? 'resume-' + s.info.id : s.info.id } : undefined; }); // spec 083 FR-060 (simresumeid=1: the saved session id is not the agent's id, as with a Codex thread id)
     const capApi: Partial<DurbarApi> = {
       usageTotals: async () => ({ ok: true, since: savedSince, office: saved.office, folders: saved.folders }),
       usageResetTotals: async () => { savedSince = new Date().toISOString(); saved = { office: zero, folders: [] }; return { ok: true, since: savedSince, office: zero, folders: [] }; },
@@ -3526,7 +3528,8 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
           { id: 'prev-2', title: 'Why does the canton lookup return duplicates?', startTime: t - 30 * 3600e3, modifiedTime: t - 29 * 3600e3, branch: 'main' },
           { id: 'prev-3', title: 'Add a retry with backoff to the registry client', startTime: t - 50 * 3600e3, modifiedTime: t - 49 * 3600e3, branch: 'feature/retry' },
           { id: 'prev-4', title: 'Explain why the release workflow failed on the Windows runner and how to fix the path handling', startTime: t - 80 * 3600e3, modifiedTime: t - 79 * 3600e3, branch: 'fix/windows-paths' },
-        ].filter((x) => !prevDeleted.has(x.id));
+        ].map((x) => (simQuery.get('simprevkinds') && (src.info.adapterId ?? 'copilot') !== 'copilot' ? { ...x, id: (src.info.adapterId ?? 'copilot') + '-' + x.id } : x)) // simprevkinds=1: another app lists its own sessions (Open source from another app's chat, FR-046)
+          .filter((x) => !prevDeleted.has(x.id));
         return { ok: true, sessions: all, names: Object.fromEntries(simPrevNames), ...prevMarksOf(src.info.adapterId ?? 'copilot', all.map((x) => x.id)) };
       },
       // Spec 006 FR-026: pins and hides kept in memory for this run (the real ones are ids in durbar-folders.json), same exclusive rule and id shape as main.

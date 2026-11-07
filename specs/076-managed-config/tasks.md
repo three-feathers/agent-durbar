@@ -206,3 +206,8 @@ Each phase is one small PR. Tasks reference the spec's FRs. Only P27 (section O,
 
 - [x] T210 `src/main/policyfile.ts` `readMachinePolicy` (fixed POSIX path per OS, FR-005 trust check, FR-009 cap, FR-031 capped read, version 1) and `requireOsSandbox()` in `sandboxpolicy.ts` reading it at each session start; tests on a fake file system in `scripts/test-sandbox-floor.ts` [FR-209]
 - [x] T211 Review of #1123 round 2: the policy path is walked one name at a time from `/`, so every folder of the literal path and of each link's target is trusted (a link only in a trusted folder, at most 40); the opened file's device is tested; tests for the `managed` swap, root-made links (accepted to a trusted folder, refused to a user-owned one), a link loop and the other-device swap, mutation-checked [FR-209]
+
+## P1, follow-ups folded in from issues (2026-11-07 triage pass)
+
+- [ ] T212 Issue #1124: read the machine `policy.json` on Windows (`<Program Files>\AgentDurbar\managed\` from `SHGetKnownFolderPath(FOLDERID_ProgramFiles)` through `koffi` as a direct, pinned dependency, plan first; never `%ProgramFiles%`); FR-005's write probe (skipped and said when elevated); the same `readMachinePolicy` result and tests; optionally FR-176 (`HKLM\SOFTWARE\Policies\ThreeFeathers\AgentDurbar` `PolicyJson`) [FR-002, FR-005, FR-209]
+- [ ] T213 Issue #1125: the rest of P1 around the machine policy: the user layer, narrow only [FR-003]; dev hooks ignored when a machine policy is present [FR-004]; the closed schema `samples/managed/schema/policy.schema.json` and unknown-key check [FR-006]; Reload button and folder watcher [FR-008]; closed mode for a broken file [FR-011]; the closed-mode banner and Settings > Organization showing this file [FR-209]

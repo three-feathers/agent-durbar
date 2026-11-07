@@ -927,6 +927,8 @@ let LIVE_PREF=(()=>{try{return localStorage.getItem('durbar.liveActivity')!=='of
 const LIVE_MASK=(()=>{const L=window.DurbarLiveAct,R=NO_REDACT?null:window.DurbarRedact;if(!L||!R||typeof R.redact!=='function')return null;
   return {redact:t=>R.redact(t),cmd:t=>R.maskSecretCommand(t),url:t=>R.maskSecretUrl(t),home:t=>R.maskHomePaths(t)};})();
 const LIVEACT=LIVE_MASK?window.DurbarLiveAct.create({mask:LIVE_MASK}):null;
+/* spec 097 FR-317: a tool name on any chat surface (chip, its tooltip, the waiting line, a card's task) goes through the one mask; a masked name shows as `tool` */
+const shownTool=t=>LIVE_MASK&&window.DurbarLiveAct?window.DurbarLiveAct.toolName(t,LIVE_MASK):'tool'; /* no mask (redact module missing, ?noredact=1): the generic word, as a label fails closed (FR-065) */
 const liveOn=()=>!!LIVEACT&&LIVE_PREF;
 function setLiveOn(on){LIVE_PREF=!!on;try{localStorage.setItem('durbar.liveActivity',LIVE_PREF?'on':'off');}catch(e){}scheduleRender();}
 /* the readout to show now, or null: a live main agent that is Working or Thinking (Waiting, Error, Done and Idle keep their own text) */
@@ -952,15 +954,24 @@ function grownLine(a){
 }
 /* spec 001 FR-047: the side of a wide grown desk: the last reply (when the main text is not already showing it) and the facts (the tool of
    this turn, usage, context, time). Shown only when the render pass gives the card two or three columns (data-gc); hidden in the probe. */
+/* the facts of a desk in the flat office's words (FR-047), shared by the grown desk's side and the Real office zoom (spec 097 FR-312): [[label, text]] */
+function deskFacts(a,withModel){
+  /* spec 097 FR-314: each value is masked ONCE and a fact with nothing left is dropped. The tool phrase comes masked from LIVEACT (control codes out, secrets and
+     home folder out, before the cut), the rest through the one DurbarSafeText mask; no second pass over a masked text (it unescapes and garbles `~\proj\.github`). */
+  const facts=[], r=liveShown(a), put=(k,v,done)=>{const m=done?v:deskMask(v);if(typeof m==='string'&&m.trim())facts.push([k,m]);};
+  if(withModel&&a.live&&a.info){try{const m=modelLabel(a.info).text;if(m)put('Model',m);}catch(e){}}
+  if(r&&r.tool&&LIVE_MASK)put(r.kind==='tool'?'Now':'Last tool',r.tool,true);
+  const u=usageLong(a);
+  if(u){const p=u.split(' · ');if(p.length>2){put('Usage',p.slice(0,2).join(' · '));put('Cost',p.slice(2).join(' · '));}else put('Usage',u);}
+  try{const c=window.DurbarScreens&&window.DurbarScreens.ctxChip(a);if(c&&c.cls!=='unk')put('Context',c.text.replace(/^Context /,''));}catch(e){}
+  const busy=a.busySince&&(a.state==='working'||a.state==='thinking')?ACT.agoLong(Date.now()-a.busySince):'', last=ACT.agoLong(sinceLast(a));
+  if(busy)put('On this task',busy==='just now'?'just started':busy.replace(/ ago$/,'')); else if(last)put('Last activity',last);
+  return facts;
+}
+const realFacts=id=>{const a=byId(id);return a&&!a.parent?deskFacts(a,true):[];};
 function grownSideHTML(a){
   if(a.parent)return '';
-  const rep=grownShowsReply(a)?'':replyExcerpt(a), r=liveShown(a), facts=[];
-  if(r&&r.tool)facts.push([r.kind==='tool'?'Now':'Last tool',r.tool]);
-  const u=usageLong(a);
-  if(u){const p=u.split(' · ');if(p.length>2){facts.push(['Usage',p.slice(0,2).join(' · ')]);facts.push(['Cost',p.slice(2).join(' · ')]);}else facts.push(['Usage',u]);}
-  try{const c=window.DurbarScreens&&window.DurbarScreens.ctxChip(a);if(c&&c.cls!=='unk')facts.push(['Context',c.text.replace(/^Context /,'')]);}catch(e){}
-  const busy=a.busySince&&(a.state==='working'||a.state==='thinking')?ACT.agoLong(Date.now()-a.busySince):'', last=ACT.agoLong(sinceLast(a));
-  if(busy)facts.push(['On this task',busy==='just now'?'just started':busy.replace(/ ago$/,'')]); else if(last)facts.push(['Last activity',last]);
+  const rep=grownShowsReply(a)?'':replyExcerpt(a), facts=deskFacts(a,false);
   return `<span class="gx"${rep?' data-rep="1"':''}>${rep?`<span class="gx-r"><span class="gx-h">Last reply</span><span class="gx-t">${esc(rep)}</span></span>`:''}<span class="gx-f">${facts.map(([k,v])=>`<span class="gx-l"><span class="gx-k">${esc(k)}</span> ${esc(v)}</span>`).join('')}</span></span>`;
 }
 const liveAttrs=a=>{if(a.parent)return '';const r=LIVE_SIDE?null:liveShown(a);return ` data-live="${esc(a.id)}"${r?` data-lk="${r.kind}"`:''}`;};
@@ -1765,7 +1776,7 @@ function renderReal(stage,floor,aw,ah,model,empty){
   }
   if(stage.dataset.d!=='real'){stage.dataset.d='real';stage.textContent='';}
   layoutKey='';GROW=0;setGrow(stage,0);spreadOffice(stage,false);stagePrev=null;
-  RO_LAST=window.DurbarRealOffice.render(stage,Object.assign(realModel(model),empty?{empty}:{}),{w:aw,h:ah},{live:liveOn(),still:REDUCED||!MOTION||STILL_HL,hold:roFrozen(),screenOf:realScreen,world:pp.world,set:pp.set,remember:rememberOn(), /* FR-071: Settings > Motion (still above) stops the people */
+  RO_LAST=window.DurbarRealOffice.render(stage,Object.assign(realModel(model),empty?{empty}:{}),{w:aw,h:ah},{live:liveOn(),still:REDUCED||!MOTION||STILL_HL,hold:roFrozen(),screenOf:realScreen,factsOf:realFacts,world:pp.world,set:pp.set,remember:rememberOn(), /* FR-071: Settings > Motion (still above) stops the people */
     rand:CREW&&(SIM||!rememberOn())?CREW.seededRand:Math.random,onArt:()=>scheduleRender()});
   stage.style.width=aw+'px';stage.style.height=RO_LAST.height+'px';
   stage.dataset.fit=RO_LAST.scroll?'scroll':'ok';floor.classList.toggle('scrolls',!!RO_LAST.scroll);
@@ -2067,7 +2078,7 @@ const CHIPS_SHOWN=6;
 const OUT_SHOWN=20000, OUT_KEEP=1000000;
 const fmtDur=ms=>ms<1000?Math.round(ms)+' ms':ms<60000?(ms/1000).toFixed(1)+' s':Math.floor(ms/60000)+' min '+Math.round(ms%60000/1000)+' s';
 function makeChip({tool,kind,label,res,state,output,full,ms}){
-  const k=kind||toolKind(tool), name=TOOLNAME[tool]||tool||'tool';
+  const k=kind||toolKind(tool), name=TOOLNAME[tool]||shownTool(tool);
   const el=document.createElement('div');
   el.className='chip'+(state==='failed'||state==='fail'?' fail':state==='run'?' run':'');
   el.setAttribute('role','button');el.tabIndex=0;el.setAttribute('aria-expanded','false');
@@ -2261,21 +2272,42 @@ function sizeComposer(){const t=$('msgInput');if(!t)return;const lim=composerLim
   const g=$('composerGrip');if(g){g.setAttribute('aria-valuenow',String(h));g.setAttribute('aria-valuemin',String(lim.min));g.setAttribute('aria-valuemax',String(lim.max));}}
 function setComposerChosen(h){composerChosen=h;try{if(h==null)localStorage.removeItem(CSZ.KEY);else localStorage.setItem(CSZ.KEY,String(h));}catch(e){}sizeComposer();}
 let cszRO=null,cszRaf=0;
-function wireComposerGrip(){const g=$('composerGrip'),t=$('msgInput');if(!g||!t)return;
+/* One splitter for the message box and the agent rail (spec 005 FR-044..FR-048, FR-236): pointer events only, double-click resets, the
+   window-splitter keys (DurbarComposerSize.keyStep). o: size() now, limits(), live(v) while dragging, commit(v|null) to keep (null = reset),
+   dir (+1: moving the pointer right or down grows it, -1 the other way), axis, keys (keyStep's grow/shrink), big (Shift makes the big step). */
+function wireSplitter(g,o){
   let drag=null;
-  const boxH=()=>Math.round(t.getBoundingClientRect().height);
   g.addEventListener('mousedown',e=>e.preventDefault()); /* the box keeps the focus and its caret */
-  g.addEventListener('pointerdown',e=>{if(e.button!==0)return;e.preventDefault();drag={id:e.pointerId,y:e.clientY,h:boxH(),lim:composerLimits(t),moved:false};try{g.setPointerCapture(e.pointerId);}catch(_){}});
-  g.addEventListener('pointermove',e=>{if(!drag||e.pointerId!==drag.id)return;const dy=drag.y-e.clientY;if(!drag.moved&&Math.abs(dy)<2)return;
-    if(!drag.moved){drag.moved=true;g.classList.add('dragging');}composerChosen=CSZ.clamp(drag.h+dy,drag.lim);sizeComposer();});
-  const end=e=>{if(!drag||e.pointerId!==drag.id)return;const moved=drag.moved;drag=null;g.classList.remove('dragging');try{g.releasePointerCapture(e.pointerId);}catch(_){}if(moved)setComposerChosen(composerChosen);};
+  g.addEventListener('pointerdown',e=>{if(e.button!==0)return;e.preventDefault();drag={id:e.pointerId,p:e[o.axis==='x'?'clientX':'clientY'],h:o.size(),lim:o.limits(),moved:false,v:null};try{g.setPointerCapture(e.pointerId);}catch(_){}});
+  g.addEventListener('pointermove',e=>{if(!drag||e.pointerId!==drag.id)return;const d=o.dir*(e[o.axis==='x'?'clientX':'clientY']-drag.p);if(!drag.moved&&Math.abs(d)<2)return;
+    if(!drag.moved){drag.moved=true;g.classList.add('dragging');}drag.v=CSZ.clamp(drag.h+d,drag.lim);o.live(drag.v);});
+  const end=e=>{if(!drag||e.pointerId!==drag.id)return;const d=drag;drag=null;g.classList.remove('dragging');try{g.releasePointerCapture(e.pointerId);}catch(_){}if(d.moved)o.commit(d.v);};
   g.addEventListener('pointerup',end);g.addEventListener('pointercancel',end);
-  g.addEventListener('dblclick',e=>{e.preventDefault();setComposerChosen(null);});
-  g.addEventListener('keydown',e=>{if(e.altKey||e.ctrlKey||e.metaKey||e.shiftKey||e.isComposing)return;const r=CSZ.keyStep(e.key,boxH(),composerLimits(t));if(r==null)return;
-    e.preventDefault();e.stopPropagation();setComposerChosen(r==='reset'?null:r);});
+  g.addEventListener('dblclick',e=>{e.preventDefault();o.commit(null);});
+  g.addEventListener('keydown',e=>{if(e.altKey||e.ctrlKey||e.metaKey||e.isComposing||(e.shiftKey&&!o.big))return;const r=CSZ.keyStep(e.key,o.size(),o.limits(),{grow:o.keys[0],shrink:o.keys[1],big:e.shiftKey});if(r==null)return;
+    e.preventDefault();e.stopPropagation();o.commit(r==='reset'?null:r);});
+}
+function wireComposerGrip(){const g=$('composerGrip'),t=$('msgInput');if(!g||!t)return;
+  wireSplitter(g,{axis:'y',dir:-1,keys:['ArrowUp','ArrowDown'],big:false,size:()=>Math.round(t.getBoundingClientRect().height),limits:()=>composerLimits(t),
+    live:v=>{composerChosen=v;sizeComposer();},commit:v=>setComposerChosen(v==null?null:v)});
   /* the limits follow the window and whatever opens above the chat (Previous sessions, the answer bar); once per frame */
   if(window.ResizeObserver){if(cszRO)cszRO.disconnect();else cszRO=new ResizeObserver(()=>{if(!cszRaf)cszRaf=requestAnimationFrame(()=>{cszRaf=0;sizeComposer();});});cszRO.observe($('chat'));}
   sizeComposer();
+}
+/* spec 005 FR-236 (issue 1223): the agent rail's width. The rail's right edge is a vertical splitter (default 220px, 180px to 40% of the window,
+   clamped again on every window resize); the chosen width is one value for the whole app, a display preference of this computer (localStorage,
+   never session data). It lives in the --rail-w custom property, so a rebuilt rail keeps it. */
+let railChosen=(()=>{try{return CSZ.parseRail(localStorage.getItem(CSZ.RAIL_KEY));}catch(e){return null;}})();
+function railLimits(){return CSZ.railLimits(window.innerWidth);}
+function sizeRail(live){const w=live!=null?live:CSZ.railWidth(railChosen,window.innerWidth),lim=railLimits();
+  document.documentElement.style.setProperty('--rail-w',w+'px');
+  const g=$('railGrip');if(g){g.setAttribute('aria-valuenow',String(w));g.setAttribute('aria-valuemin',String(lim.min));g.setAttribute('aria-valuemax',String(lim.max));}}
+function setRailChosen(v){railChosen=v;try{if(v==null)localStorage.removeItem(CSZ.RAIL_KEY);else localStorage.setItem(CSZ.RAIL_KEY,String(v));}catch(e){}sizeRail();}
+window.addEventListener('resize',()=>sizeRail());
+function wireRailGrip(){const g=$('railGrip'),r=g&&g.closest('.rail');if(!g||!r)return;
+  wireSplitter(g,{axis:'x',dir:1,keys:['ArrowRight','ArrowLeft'],big:true,size:()=>Math.round(r.getBoundingClientRect().width),limits:railLimits,
+    live:v=>sizeRail(v),commit:v=>setRailChosen(v)});
+  sizeRail();
 }
 function autoGrow(){sizeComposer();setSend();ntNoticeSync();}
 function setSend(){const b=$('sendBtn'),t=$('msgInput');if(!b||!t)return;const a=byId(ui.selected);const busy=a&&chats[a.id]&&chats[a.id].busy;b.setAttribute('aria-disabled',String(!!busy||(!t.value.trim()&&!attached.length)));syncRunState();}
@@ -2595,7 +2627,7 @@ function openPanel(id,focus){
   const chat=getChat(a); $('chat').appendChild(chat.el);
   updatePanelHeader(); renderGrants();
   const chatEl=$('chat'); chatEl.dataset.pin='1'; chatEl._lastTop=undefined; chatEl.scrollTop=1e6;
-  let rs=0; const restick=()=>{if(ui.selected!==a.id)return; const un=rs===0&&cvUnmarkIfResized(chat.el); /* marks dropped at this frame (another width or layout): the end moved by what that laid out, not by the person */ if(!un&&chatEl.scrollHeight-chatEl.scrollTop-chatEl.clientHeight>400)return; chatEl.scrollTop=chatEl.scrollHeight; if(++rs<4)requestAnimationFrame(restick); else chatEl.onscroll();}; if(chat.el.childElementCount>4)requestAnimationFrame(restick); /* spec 005 FR-210: the messages at the end get their real height a frame after the first layout, so the end moves; follow it for 4 frames, then read the pin again; a chat of 4 or fewer messages has no skipped one and is left alone */
+  let rs=0; const restick=()=>{if(ui.selected!==a.id){chatEl._rsBusy=0;return;} const un=rs===0&&cvUnmarkIfResized(chat.el); /* marks dropped at this frame (another width or layout): the end moved by what that laid out, not by the person */ if(!un&&chatEl.scrollHeight-chatEl.scrollTop-chatEl.clientHeight>400){chatEl._rsBusy=0;return;} chatEl.scrollTop=chatEl.scrollHeight; if(++rs<4)requestAnimationFrame(restick); else{chatEl._rsBusy=0;chatEl.onscroll();}}; chatEl._rsBusy=0; if(chat.el.childElementCount>4){chatEl._rsBusy=1;requestAnimationFrame(restick);} /* spec 083 FR-046: _rsBusy is on while the re-stick runs, so Open source reveals after it */ /* spec 005 FR-210: the messages at the end get their real height a frame after the first layout, so the end moves; follow it for 4 frames, then read the pin again; a chat of 4 or fewer messages has no skipped one and is left alone */
   chatEl.onscroll=()=>{const t=chatEl.scrollTop; if(chatEl.scrollHeight-t-chatEl.clientHeight<80)chatEl.dataset.pin='1'; else if(chatEl._lastTop===undefined||t<chatEl._lastTop-1)chatEl.dataset.pin='0'; chatEl._lastTop=t;}; /* spec 005 FR-214: the scroll event of the app's own stick-to-bottom write arrives a frame later, when a new block may already have grown the page; that is not the person leaving the end. Only a move up from the position of the last scroll event is (whoever wrote the last position, so no writer has to record it) */
   $('panel').querySelector('.panel-in').classList.toggle('helper-ro',!!(a.live&&a.parent)); /* spec 097 Changes 2026-11-04 (issue 1140): not 'ro', the Real office root's class, whose floor picture and corners it took */
   $('backBtn').onclick=closePanel;
@@ -2657,6 +2689,7 @@ function openPanel(id,focus){
   $('sendBtn').onclick=()=>{if($('sendBtn').getAttribute('aria-disabled')!=='true')sendMessage(input.value);};
   setSend(); wireToolbar(); /* spec 005 FR-037..FR-040 */
   wireComposerGrip(); /* spec 005 FR-044..FR-048 */
+  wireRailGrip(); /* spec 005 FR-236 */
   renderAll(); placeToasts(); const cur=document.querySelector('#stripList .sitem.sel'); if(cur)SCROLL.reveal(cur,{block:'nearest'});
   /* spec 074 FR-022 (issue 587): this chat's unsent text comes back */
   {const m=$('msgInput'),dr=DRAFTS.get(id);if(m&&dr){m.value=dr.t;autoGrow();}if(dr&&dr.att.length){renderAttached();setSend();}}
@@ -3184,6 +3217,7 @@ function openNoteMenu(a,n,anchor,x,y,onScreen){
   const it=(act,label,sub,cls)=>`<button type="button" role="menuitem" data-nmact="${act}"${cls?` class="${cls}"`:''} title="${esc(sub)}"><span class="mt"><b>${esc(label)}</b><small>${esc(sub)}</small></span></button>`;
   const m=document.createElement('div');m.id='modeMenu';m.className='mode-menu nt-menu';m.setAttribute('role','menu');m.setAttribute('aria-label','Actions for the note '+(safeMask(n.title)||''));
   m.innerHTML=it('rename','Rename…','Change its title')+it('copy','Copy','Copy its text')
+    +(n.source&&n.source.session?it('source','Open source','Go to the chat and the message it came from'):'') /* FR-046 */
     +(n.done===true?it('undone','Mark not done','Back among the notes to use'):it('done','Mark done',onScreen?'Hides it from the / suggestions and the count; it moves to Done below':'Hides it from this list, the / suggestions and the count; it stays under Done on the folder\'s Notes screen')) /* FR-045 */
     +it('delete','Delete…','Remove it from the notes','mm-danger');
   document.body.appendChild(m);
@@ -3192,6 +3226,7 @@ function openNoteMenu(a,n,anchor,x,y,onScreen){
   m.addEventListener('click',e=>{const t=e.target.closest('[data-nmact]');if(!t)return;closeModeMenu();const act=t.dataset.nmact;
     if(act==='rename')renameNote(a,n,anchor);
     else if(act==='copy'){const ct=noteBoxText(n.text);if(ct==null){toast('Could not check this note for secrets, so it was not copied.',4500).classList.add('err');back();return;}navigator.clipboard.writeText(ct).then(()=>toast('Copied.',1500),()=>toast('Could not copy to the clipboard.',3000).classList.add('err'));back();}
+    else if(act==='source')openNoteSource(a,n);
     else if(act==='done'||act==='undone')markNoteDone(a,n,act==='done');
     else if(act==='delete'){
       const ids=ntRowIds(),i=ids.indexOf(n.id);
@@ -3200,6 +3235,69 @@ function openNoteMenu(a,n,anchor,x,y,onScreen){
     if(e.key==='ArrowDown'){e.preventDefault();focusIn(its[(i+1)%its.length]);}else if(e.key==='ArrowUp'){e.preventDefault();focusIn(its[(i+its.length-1)%its.length]);}
     else if(e.key==='Escape'||e.key==='Tab'){e.preventDefault();e.stopPropagation();closeModeMenu();back();}});
   focusIn(m.querySelector('button'));
+}
+
+/* ---- Open source (spec 083 FR-046, T050) ----
+   The note's session is in the office (an agent of this folder with that id): its chat opens. Else it is one of the folder's Previous
+   sessions: it opens through resumePrev, the row's own path (nothing is sent). Else a toast says it is gone and the note stays.
+   Then the message (role + digest, its `ord` first) is revealed inside #chat (SCROLL.reveal, never the page) and outlined 1.2 s. */
+const NT_GONE='The session this note came from is no longer available. The note stays.', NT_NOMSG='Could not find the message in this session.';
+async function ntSourceBubble(src){
+  const root=($('chat')||document).querySelector('.chat-inner')||$('chat'); if(!root)return null;
+  const all=[...root.querySelectorAll(src.role==='user'?'.msg.user .bubble':'.msg.agent .bubble')];
+  const dig=async b=>{const t=bubbleText(b);if(!b._nd||b._nd.t!==t)b._nd={t,d:await msgDigest(t)};return b._nd.d;};
+  if(all[src.ord]&&await dig(all[src.ord])===src.digest)return all[src.ord];
+  let best=null,bd=Infinity;
+  for(let i=0;i<all.length;i++){if(await dig(all[i])===src.digest){const d=Math.abs(i-src.ord);if(d<bd){bd=d;best=all[i];}}}
+  return best;
+}
+function ntLeaveNotes(){
+  if(notesIsOpen())closeNotes(false);
+  if(nsShown()){NS.ret=null;window.DurbarScreens.close();}
+}
+/* the office session a note's source names: main saved `resumeIdFor(agent)`, which is not always the window's id (a Codex thread id), so main
+   is asked (`notesList` answers each chat's own `session`, FR-021); where it cannot answer, the window's id stands in */
+async function ntOfficeSession(root,src){
+  const kind=x=>(x.info&&x.info.adapterId)||'copilot';
+  const cands=[root].concat(siblingsOf(root)).filter(x=>kind(x)===src.app);
+  const own=await Promise.all(cands.map(async x=>{let r=null;try{r=await bridge.notesList(x.id);}catch(e){r=null;}return r&&r.ok?r.session:x.id;}));
+  const i=own.findIndex(sid=>sid===src.session);
+  return i<0?null:cands[i];
+}
+/* after a refusal the focus goes back to the note's row (the menu that held it is gone) */
+function ntBackToRow(n){if(nsShown())nsFocusRow(n.id);else if(notesIsOpen())notesFocusRow(n.id);}
+async function openNoteSource(a,n){
+  const src=n&&n.source; if(!src||!src.session||!a)return;
+  const gone=()=>{toast(NT_GONE,5000);announce(NT_GONE);ntBackToRow(n);};
+  const root=liveRoot(a), kind=x=>(x.info&&x.info.adapterId)||'copilot';
+  const live=bridge.notesList?await ntOfficeSession(root,src):null;
+  let target=live||null;
+  if(live){ntLeaveNotes();openPanel(live.id,false);}
+  else{
+    /* Previous sessions lists a session through a chat of its own app, so the folder's chat of the note's app is the one asked (never the open chat's, which may be another app) */
+    const via=[root].concat(siblingsOf(root)).find(x=>kind(x)===src.app);
+    if(!via||!bridge.resumeSession||!bridge.listPrevious||!feat(via,'history')){gone();return;}
+    if(!prevOf(via).cli)await loadPrev(via);
+    const c=prevOf(via).cli;
+    if(!c||!c.ok||!c.sessions||!c.sessions.some(x=>x.id===src.session)){gone();return;}
+    target=await resumePrev(via,src.session,null); /* the Previous sessions path: no message is sent */
+    if(!target){ntBackToRow(n);return;} /* it said why; the drawer or screen stays */
+    ntLeaveNotes();
+  }
+  /* the chat has been placed once openPanel's re-stick (4 frames) is over; a reveal before that is dragged back to the end */
+  for(let i=0;i<120&&(!$('chat')||$('chat')._rsBusy);i++)await new Promise(r=>requestAnimationFrame(r));
+  await new Promise(r=>requestAnimationFrame(r));
+  const b=await ntSourceBubble(src);
+  if(ui.selected!==target.id)return;
+  const chatEl=$('chat');
+  if(b){
+    SCROLL.reveal(b,{block:'center',scroller:chatEl});
+    chatEl.dataset.pin=chatEl.scrollHeight-chatEl.scrollTop-chatEl.clientHeight<80?'1':'0'; chatEl._lastTop=chatEl.scrollTop; /* the reader is where the reveal put them: new text does not pull them away */
+    clearTimeout(b._ntT); b.classList.remove('nt-found'); void b.offsetWidth; b.classList.add('nt-found'); b._ntT=setTimeout(()=>b.classList.remove('nt-found'),1200); /* a second Open source restarts the 1.2 s */
+  }
+  {const ae=document.activeElement; /* the focus moves only from where Open source left it: nowhere (the menu and the drawer are gone), or a part of the notes UI still up; never from the message box or any other place the person went to while this waited */
+    if(!ae||ae===document.body||ae===document.documentElement||(ae.closest&&ae.closest('#notesDrawer,#modeMenu,#nsHost,#toasts')))focusIn(chatEl,{reveal:false});} /* the log is a focusable log */
+  if(b)announce('Message shown.'); else{toast(NT_NOMSG,5000);announce(NT_NOMSG);}
 }
 
 /* ---------------- spec 083 FR-044, FR-045 (T034a): the folder's Notes screen ----------------
@@ -3562,12 +3660,21 @@ function mcpViewChanged(id,view){
   if(window.DurbarScreens&&window.DurbarScreens.mcpEvent)window.DurbarScreens.mcpEvent(id);
 }
 function mcpLevelsChanged(l){mcpLevels=l;for(const id of MCP_CTX.keys()){const a=liveById(id);if(a){repaintMcpChip(a);mcpWarnLine(a);}}}
+/* spec 058 FR-229 (issue 1229): a chat's "needs you to sign in again" line goes when Durbar no longer knows that server needs it (the row has neither the runtime's needs-auth nor Durbar's own mark) and no sign-in is open for it */
+function mcpSignLinesDrop(a,servers){
+  const chat=liveChat(a);if(!chat||!chat.el)return;
+  for(const x of chat.el.querySelectorAll('.note.mcpre-sign')){
+    const row=servers.find(y=>y.name===x.dataset.n);
+    if(row&&!row.signIn&&row.needsSignIn!==true&&row.status!=='needs-auth'&&!(row.status==='failed'&&row.errorClass==='auth'))x.remove();
+  }
+}
 async function refreshMcpCount(a){
   if(!a||!bridge.agentMcp||!ui.selected)return;
   {const cur=byId(ui.selected);if(!cur||liveRoot(cur)!==a||!$('mcpBtn'))return;} /* only for the open chat; opening a chat asks again */
   let st=null;try{st=await bridge.agentMcp(a.id);}catch(e){st=null;}
   if(bridge.agentMcpContext)Promise.resolve(bridge.agentMcpContext(a.id)).then(v=>{if(v&&v.ok){const o=MCP_CTX.get(a.id);if(JSON.stringify(o)!==JSON.stringify(v))mcpViewChanged(a.id,v);}}).catch(()=>{}); /* spec 100 FR-003: the last figures; asks nothing */
   if(!st||!st.ok)return;
+  mcpSignLinesDrop(a,st.servers||[]);
   const all=st.servers||[], n=all.filter(x=>x.defaultOn&&!x.off).length, was=MCP_N.get(a.id);
   const f=all.filter(x=>x.status==='failed'||x.status==='needs-auth').length;
   if(was&&was.on===n&&was.total===all.length&&(MCP_F.get(a.id)||0)===f)return; MCP_N.set(a.id,{on:n,total:all.length});MCP_F.set(a.id,f);
@@ -5499,7 +5606,11 @@ function mcpReLine(p){
   const shown=p.kind==='needs-sign-in'?[...chat.el.querySelectorAll('.note.mcpre-sign')].pop():p.kind==='late'?[...chat.el.querySelectorAll('.note.mcpre')].pop():a.mcpReNote;
   if(shown&&ui.selected&&liveRoot(byId(ui.selected)||a)===a&&SCROLL)requestAnimationFrame(()=>SCROLL.reveal(shown,{margin:8}));
 }
-document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest('.mcpre-btn');if(!b)return;e.stopPropagation();const a=byId(ui.selected),r=a&&liveRoot(a);if(r&&window.DurbarScreens)Promise.resolve(window.DurbarScreens.agentMcp(r,{...mcpOpts(r),focusServer:{name:b.dataset.n||''}})).finally(()=>refreshMcpCount(r));});
+document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest('.mcpre-btn');if(!b)return;e.stopPropagation();const a=byId(ui.selected),r=a&&liveRoot(a),nm=b.dataset.n||'';
+  const say=m=>{try{toast(esc(window.DurbarMcpWords.signInPressNote(nm,null,m)),5200).classList.add('err');}catch(_){}}; /* FR-229: a failed press always shows text */
+  if(!r||!window.DurbarScreens||!window.DurbarScreens.agentMcp){say('The MCP list is not available.');return;}
+  /* FR-229 (issue 1229): the press starts the row's own Sign in, as Settings' button does (FR-195); the row says why when it offers none */
+  Promise.resolve().then(()=>window.DurbarScreens.agentMcp(r,{...mcpOpts(r),focusServer:{name:nm},signIn:{name:nm,again:false}})).catch(err=>say(String(err&&err.message||err))).finally(()=>refreshMcpCount(r));});
 /* FR-208: Stop during the wait: the message is marked Not sent and its text goes back to the composer (when it is empty) */
 function mcpNotSent(a,chat,text,fromComposer){
   closeTurn(a);
@@ -5576,7 +5687,7 @@ const EV=window.DurbarEditView;
 /* the card's task line for a tool start: "Editing app.js" for a file edit (FR-020), else "<tool> <label>" as before */
 function toolTask(e,folder,max){const lbl=editLabel(e)||toolLabel(e.args);
   if(toolKind(e.tool)==='edit'&&lbl&&!e.mcpServer)return SHORT((e.edit?EV.summary(e.edit,{running:true,folder}).text:'Editing '+EV.displayPath(lbl,folder).name),max);
-  return e.tool+(lbl?' '+safeToolLabel(e.tool,lbl,max):'');} /* FR-065: a command through maskSecretCommand, a URL through maskSecretUrl (the way LIVEACT masks it) */
+  return shownTool(e.tool)+(lbl?' '+safeToolLabel(e.tool,lbl,max):'');} /* FR-065: a command through maskSecretCommand, a URL through maskSecretUrl (the way LIVEACT masks it) */
 /* FR-024: the adapters mask before sending; the page masks again with the same module when it is loaded (window.DurbarRedact) */
 const edRed=t=>{const R=window.DurbarRedact;try{return R&&typeof R.redact==='function'?R.redact(t):t;}catch(_){return t;}};
 const editLabel=e=>e&&e.edit&&Array.isArray(e.edit.files)&&e.edit.files[0]?String(e.edit.files[0].path||''):'';
@@ -5642,7 +5753,7 @@ function tAct(T,id,c){
   const ty=T.typing;if(!ty)return;
   if(!id||!c){delete ty.dataset.act;delete ty.dataset.a0;T.actId=null;ty._act=null;typingPaint(ty);return;}
   const k=toolKind(c.tool);
-  const text=c.edit?EV.summary(c.edit,{running:true,folder:T.folder}).text:k!=='tool'?plainChip(k,c.tool,c.label,true):'Using '+String(c.tool||'a tool');
+  const text=c.edit?EV.summary(c.edit,{running:true,folder:T.folder}).text:k!=='tool'?plainChip(k,c.tool,c.label,true):'Using '+(c.tool?shownTool(c.tool):'a tool');
   if(T.actId!==id)ty.dataset.a0=String(c.seen||Date.now()); /* the tool's own time, also when it comes back after a newer one ended */
   T.actId=id;ty._act={T,id,c};ty.dataset.act=SHORT(text,80);typingPaint(ty);
 }
@@ -5863,7 +5974,7 @@ const safeExcerpt=(t,n,fb)=>SAFE.excerpt(t,n,fb),safeMask=t=>SAFE.mask(t);
 const TOOLMASK=RED?{redact:t=>RED.redact(t),cmd:t=>RED.maskSecretCommand(t),url:t=>RED.maskSecretUrl(t)}:{};
 const safeToolLabel=(tool,l,n)=>{const m=STX?STX.maskLabel(l,toolKind(tool),TOOLMASK):'';return m?SHORT(m,n):'';};
 /* spec 001 FR-089, FR-090: the text of an expanded helper card, through the same masking path as every other line of agent text; without safetext.js the layout never takes a level (compact tiles) */
-const HXC=window.DurbarHelperCard&&STX?window.DurbarHelperCard.create({excerpt:(t,n,fb)=>safeExcerpt(t,n,fb),mask:t=>safeMask(t),toolLabel:(tool,l,n)=>safeToolLabel(tool,l,n),cut:(t,n)=>SHORT(t,n),fmtTok:n=>fmtTok(n)}):null;
+const HXC=window.DurbarHelperCard&&STX?window.DurbarHelperCard.create({excerpt:(t,n,fb)=>safeExcerpt(t,n,fb),mask:t=>safeMask(t),toolLabel:(tool,l,n)=>safeToolLabel(tool,l,n),toolName:t=>shownTool(t),cut:(t,n)=>SHORT(t,n),fmtTok:n=>fmtTok(n)}):null;
 /* setState's backstop (FR-065): the task text is masked. With no redact module only Durbar's own fixed words stay (agent text is blanked) */
 const FIXED_TASK=new Set(['Ready','Thinking','Working','Finished.','Waiting for permission','Waiting for your OK on a plan','The agent asks you a question','Stopped. Ready for your next message.','Signed in again. Ready for your message.','Session ended. Send a message to resume it.','Ready. Send a message to start.','Plan rejected. Nothing was changed.','Continuing your last session…','Your last session here. It continues when you open it.']);
 const FIXED_TASK_FORMAT=/^Stopped at \$?[\d.,]+( AIU)?\. (Raise the limit to go on|Ready for your next message)\.$/; /* Durbar's own limit lines, whole string: a prefix alone would let agent text through */
@@ -6921,7 +7032,7 @@ function railHTML(){
   const ib=$('inboxBtn');
   return `<nav class="rail" aria-label="Agents"><h2 class="sr-only">Agents</h2><div class="rail-top"><button class="btn back" id="backBtn" type="button" title="Back to the office (Esc)">${ICON('back')}<span>Office</span></button><!-- spec 005 FR-190: R2 (T127) puts the Plan | List switch here, R3 (T116) the collapse button --></div>
    <div class="rail-door"><button class="btn sm" id="railDoor" type="button" aria-haspopup="dialog" title="${esc(ib?ib.title:'Needs you')}"${ib&&ib.getAttribute('aria-keyshortcuts')?` aria-keyshortcuts="${esc(ib.getAttribute('aria-keyshortcuts'))}"`:''}>${ALERT_ICON}<span>Your door</span><b>0</b></button><!-- spec 052 FR-219: the red lock goes beside it (T223) --></div>
-   <div class="rail-list" id="stripList"></div></nav>`;
+   <div class="rail-list" id="stripList"></div><div class="rgrip" id="railGrip" role="separator" aria-orientation="vertical" aria-label="Resize the agent list" aria-controls="stripList" tabindex="0" title="Drag to resize the agent list. Double-click to go back to the default width."></div></nav>`;
 }
 /* "Waiting 3 min" (ATT.waitLabel, as the inbox and the Boss say it), or "Error · 3 min"; text only, never a size (052 FR-061) */
 function railAge(x,now){
@@ -8759,15 +8870,16 @@ function replayHistory(a,h,title,lead){
 async function resumePrev(a,sid,btn){
   const done=busy(btn,'Resuming…'); /* spec 052 FR-047: the shared busy state (it was a hand-made one) */
   const r=await bridge.resumeSession(a.id,sid,pristine(a)).catch(e=>({ok:false,error:String(e&&e.message||e)}));
-  if(!r.ok){toast('Could not resume: '+esc(r.error||'unknown error'),7000).classList.add('err');done();return;}
+  if(!r.ok){toast('Could not resume: '+esc(r.error||'unknown error'),7000).classList.add('err');done();return null;}
   if(r.removedId)removeLiveAgent(r.removedId);
   if(ui.selected&&!byId(ui.selected))closePanel();
   addLiveAgent(r.agent);
-  const na=liveById(r.agent.id); if(!na)return;
+  const na=liveById(r.agent.id); if(!na)return null;
   na.resumed=true; na.sent=false; replayHistory(na,r.history,r.title);
   modeBackNote(na,r.modeWas);
   setState(na,'idle',null,'Resumed. New messages continue this session.'); /* spec 001 delta 2026-10-29 (issue 451): no title here, it is the desk's name */
   openPanel(na.id,false);
+  return na; /* spec 083 FR-046: Open source reveals a message in it */
 }
 function leaveVsView(){
   if(!vsViewing)return; vsViewing=false;
@@ -9005,6 +9117,7 @@ if(bridge){
     /* spec 100: the dialog's and Settings' view of the figures */
     mcpCtx:id=>{const a=liveById(id);return a?{view:MCP_CTX.get(id)||null,window:mcpWindow(a),app:mcpAppWord(a)}:null;},
     mcpCtxSet:(id,v)=>mcpViewChanged(id,v),
+    shownTool, /* spec 097 FR-317: a tool name shown in Settings goes through the one mask */
     mcpLevels:()=>mcpLevelsNow(),
     setMcpLevels:l=>mcpLevelsChanged(l),
     mcpSession:id=>{const r=LIVE.agents.find(y=>y.id===id&&y.live&&!y.parent);return r?{a:r,mcp:!!feat(r,'mcp'),o:mcpOpts(r)}:null;},

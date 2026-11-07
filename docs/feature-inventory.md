@@ -14,7 +14,7 @@ One row per thing a user can do or see. [features.md](features.md) stays the use
 | Moods and trouble signs (heavy, monster, siren); Serious mode hides them and only them (not motion, issue #1182) | works | works pose, dots and lights only; heavy, monster and siren missing (#1171) | mock+planned (desk-lights) | 034 097 | test:mood read:src/renderer/realoffice.js |
 | Helpers (sub-agents): card, tree, own chat, needs you | works | missing, only `+N` and 3 dots; planned as small figures beside the desk (#1139) | planned | 001 015 097 | test:helpercard read:src/renderer/realoffice.js |
 | Live activity on the desk | works | works, monitors show the newest output (PR 979) | mock+planned (live-screen) | 001 097 | test:liveact driver:shots-001-live-activity |
-| Model, tokens, cost, context, last tool on the desk | works | missing (#1148) | none | 019 097 | test:ctxbreakdown read:src/renderer/realoffice.js |
+| Model, tokens, cost, context, last tool on the desk | works | works in the hover zoom (#1148, 097 FR-312..FR-315); a figure on the name plate is open (Q8) | none | 019 097 | test:ctxbreakdown driver:shots-097-screens |
 | Unread "New", draft, question marks | works | works, a New reply tag and a green screen (097 FR-236, FR-238); draft and question marks missing (#1149) | none | 001 005 097 | test:unread driver:shots-097-realoffice |
 | Hover card | works | missing, tooltip only (#1151) | none | 001 097 | test:tooltip read:src/renderer/realoffice.js |
 | Drag to rearrange rooms, desks, places | works | missing (#1152) | none | 033 | test:roomorder driver:shots-033-order |
@@ -33,7 +33,7 @@ One row per thing a user can do or see. [features.md](features.md) stays the use
 | Simple / Expert switch and the "Do you write code?" question | missing, removed by owner decision (#1060) | missing, removed | none | 052 | driver:shots-052-ux |
 | Old app-level MCP servers in the folder extras dialog | missing, removed (#1058) | missing, removed | none | 020 | driver:shots-m10 |
 | Room menu: New session, Schedules, Rename, Cost, Move | works | works, the app's own room menu on the folder sign | none | 001 006 | driver:shots-005-cardmenu read:src/renderer/realoffice.js |
-| Full-screen chat, other agents in the rail (List, folders collapse) | works | works, in PR 097-chat-in-world for the world's own frame (rail not checked there, #1172) | mock+planned (chat-open) | 005 | test:innerscroll test:railorder driver:check-rail driver:shots-005-cardmenu |
+| Full-screen chat, other agents in the rail (List, folders collapse) | works | works, in PR 097-chat-in-world for the world's own frame (rail not checked there, #1172) | mock+planned (chat-open) | 005 | test:innerscroll test:railorder driver:check-rail driver:check-rail-resize test:composersize driver:shots-005-cardmenu |
 | Reopening a long chat is fast: older messages are skipped until near the view; the end is followed while a turn streams | works, simulator only | works, chat only (window chrome, no office drawing); not checked with a world on (#1172) | none | 005 | driver:check-chat-visibility |
 | Chat reads well in every world: a resumed session's chat has the same look; sub-agent chat text is readable | works | missing, a resumed session lacks the look (#1140); sub-agent text unreadable over the photo (#1146) | none | 005 097 | read:src/renderer/app.js |
 | Thinking, tool calls, Markdown | works | works | mock+planned (chat-shell) | 015 016 | test:markdown test:events |

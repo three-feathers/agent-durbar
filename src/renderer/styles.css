@@ -18,6 +18,8 @@
   --m-bar:3.4s ease-in-out infinite alternate; --m-glow:3.6s ease-in-out infinite alternate;
   --m-wave:2.8s ease-in-out infinite; --m-cursor:1.6s ease-in-out infinite;
   --radius:16px;
+  /* spec 070 FR-051 T024: tier 3, always var() of tiers 1 and 2, never set by a pack. --accent is the closed list's name for --sage-ink (FR-052), aliased first. */
+  --accent:var(--sage-ink); /* the other tier 3 names are set on .btn.primary and .swt, so they resolve per element: a scope that re-sets --surface or --ink reaches them (realoffice-world.css .topbar, .toast) */
   /* spec 052 FR-053: radius scale for controls and panels (rooms and desks keep their own) */
   --r-sm:6px; --r-md:10px; --r-lg:14px; --r-xl:18px;
   /* spec 052 FR-052: control borders at 3:1, the second tone of the focus ring (theme.js sets both per theme) */
@@ -420,8 +422,8 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .btn{height:var(--h-ctl);padding:0 14px;border-radius:var(--r-md);border:1px solid var(--line-2);background:var(--raised);cursor:pointer;font-size:13px;font-weight:550;display:inline-flex;align-items:center;gap:7px;white-space:nowrap}
 .btn:hover{background:var(--surface-2);border-color:#bdb3a2}
 /* spec 052 FR-053: the primary action is solid in every theme (themes.css gives each theme its own accent) */
-.btn.primary{background:var(--sage-ink);border-color:transparent;color:var(--surface);font-weight:600} /* spec 052 FR-169: the text colour is the page's own, so it reads on --sage-ink in a dark theme too */
-.btn.primary:hover{background:color-mix(in srgb,var(--sage-ink) 86%,#000)}
+.btn.primary{--btn-primary-bg:var(--accent);--btn-primary-ink:var(--surface);background:var(--btn-primary-bg);border-color:transparent;color:var(--btn-primary-ink);font-weight:600} /* spec 052 FR-169: the text colour is the page's own, so it reads on --sage-ink in a dark theme too */
+.btn.primary:hover{background:color-mix(in srgb,var(--btn-primary-bg) 86%,#000)}
 .btn.danger{color:var(--red-ink)}
 .btn.danger:hover{background:var(--tone-bad-soft);border-color:var(--tone-bad-line);color:var(--tone-bad-ink)}
 .btn svg{width:15px;height:15px;flex:none}
@@ -844,7 +846,7 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
    collapse, FR-216 of this spec) and two row heights only, plain 30px and tall 52px (who needs you). Nothing here grows with time. */
 body.panel-open #panel{flex-direction:row}
 #panel>.panel-in{flex:1;min-width:0}
-.rail{flex:none;width:220px;display:flex;flex-direction:column;min-height:0;background:var(--surface-2);border-right:1px solid var(--line)}
+.rail{position:relative;flex:none;width:var(--rail-w,220px);display:flex;flex-direction:column;min-height:0;background:var(--surface-2);border-right:1px solid var(--line)}
 .rail-top{flex:none;display:flex;align-items:center;gap:var(--s-2);height:40px;padding:0 var(--s-2)}
 .rail-top .back{flex:none;height:var(--h-ctl);padding:0 12px 0 8px}
 .rail-door{flex:none;display:flex;padding:0 var(--s-2) var(--s-1)}
@@ -852,7 +854,7 @@ body.panel-open #panel{flex-direction:row}
 .rail-door .btn svg{flex:none;width:14px;height:14px}
 .rail-door .btn b{margin-left:auto;font-variant-numeric:tabular-nums}
 .rail-door .btn.attn{background:var(--card-waiting);border-color:var(--card-waiting-line);color:var(--ink)}
-.rail-list{flex:1;min-height:0;display:flex;flex-direction:column;gap:var(--s-1);overflow-x:hidden;overflow-y:auto;padding:var(--s-1) var(--s-1) var(--s-2);scrollbar-width:thin}
+.rail-list{flex:1;min-height:0;margin-right:6px;display:flex;flex-direction:column;gap:var(--s-1);overflow-x:hidden;overflow-y:auto;padding:var(--s-1) var(--s-1) var(--s-2);scrollbar-width:thin}
 .rgrp{flex:none;display:flex;flex-direction:column;min-width:0}
 .rg-hd{margin:0;font:inherit}
 .rg-h{display:flex;align-items:center;gap:6px;width:100%;height:24px;padding:0 6px;border:1px solid transparent;border-radius:var(--r-sm);background:transparent;color:var(--ink-2);font-size:var(--t5-size);line-height:16px;font-weight:650;text-align:left;cursor:pointer;min-width:0}
@@ -1865,7 +1867,7 @@ h2,h3,h4{text-wrap:balance}
 /* spec 066: plan first. The proposed plan scrolls inside its card; the one-shot chip above the composer */
 .note.plan-card .plan-body{max-height:min(42vh,360px);overflow:auto;margin:6px 0 4px;padding:6px 10px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface-2)}
 .note.plan-card .plan-why{margin:4px 0 0;color:var(--ink-2);font-size:var(--t4-size)}
-.att.plan-chip{border-color:var(--accent,#2a6f5a);color:var(--accent-ink,var(--ink))}
+.att.plan-chip{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,var(--surface));color:var(--ink)} /* 070 T024: all three come from the world (accent edge, tinted page colour, page ink), so the chip reads in every world; the info tone gave 2.9:1 in the arcade, where --tone-info-soft is a mid grey */
 
 /* spec 001 FR-028..FR-030: live activity on the desks. The side panel has a fixed size and is reserved next to every main desk while the
    layout uses it (an empty one is invisible), so the office never moves when an agent starts or stops; text changes only. No animation. */
@@ -2046,6 +2048,10 @@ h2,h3,h4{text-wrap:balance}
 @keyframes shut-peek{from{transform:scale(.9);opacity:0}to{transform:none;opacity:1}}
 /* ---- spec 005 FR-045, FR-049 (issue 592): the message box's resize handle on the composer's top edge. Tokens only; no text. ---- */
 .composer{position:relative}
+.rgrip{position:absolute;top:0;bottom:0;right:0;width:6px;cursor:ew-resize;touch-action:none;z-index:2}
+.rgrip::after{content:"";position:absolute;top:0;bottom:0;right:0;width:1px;background:transparent}
+.rgrip:hover::after,.rgrip.dragging::after{width:3px;background:var(--muted)}
+.rgrip:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
 .cgrip{position:absolute;left:0;right:0;top:0;height:8px;cursor:ns-resize;touch-action:none;z-index:1;border-radius:var(--r-sm)}
 .cgrip::after{content:"";position:absolute;left:50%;top:2px;width:36px;height:4px;margin-left:-18px;border-radius:999px;background:var(--line-2)}
 .cgrip:hover::after,.cgrip.dragging::after{background:var(--muted)}
@@ -2123,6 +2129,8 @@ h2,h3,h4{text-wrap:balance}
 .nt-count:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
 .nt-count[hidden]{display:none}
 .nt-mark{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;padding:0;margin-left:6px;border:0;border-radius:6px;background:transparent;color:var(--ink-2);cursor:pointer;vertical-align:middle}
+.bubble.nt-found{outline:2px solid var(--focus);outline-offset:3px;animation:ntFound 1.2s ease-out} /* spec 083 FR-046: Open source outlines the message for 1.2 s (app.js removes the class); reduced motion drops the fade, the outline stays */
+@keyframes ntFound{from{outline-color:var(--focus)}to{outline-color:transparent}}
 .nt-mark:hover,.nt-mark:focus-visible{background:var(--surface-2);color:var(--ink)}
 .nt-mark:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
 .msg.agent .bubble>.nt-mark{position:absolute;bottom:-10px;right:118px;margin:0;width:24px;height:22px;border:1px solid var(--line);background:var(--surface);z-index:1}
