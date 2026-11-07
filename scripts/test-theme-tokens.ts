@@ -520,6 +520,7 @@ console.log('toggle switch: on track, both knobs pass 3:1 in Clean Office and th
       ['office rule', '#stage .b{font-size:13px}', /office font-size: 1 is over/],
       ['font shorthand', '.b{font:700 13px/20px Georgia}', /chrome font-size: 1 is over/], ['font shorthand weight', '.b{font:700 13px/20px Georgia}', /chrome font-weight: 1 is over/], ['font shorthand line-height', '.b{font:13px/20px Georgia}', /chrome line-height: 1 is over/],
       ['rem size', '.b{font-size:0.8rem}', /chrome font-size: 1 is over/], ['em line-height', '.b{line-height:1.2em}', /chrome line-height: 1 is over/], ['logical padding', '.b{padding-inline-start:7px}', /chrome spacing: 1 is over/],
+      ['text-shadow', '.b{text-shadow:0 1px 2px #000}', /chrome shadow: 1 is over/], ['drop-shadow', '.b{filter:drop-shadow(0 1px 2px #000)}', /chrome shadow: 1 is over/], ['uppercase unit', '.b{font-size:13PX}', /chrome font-size: 1 is over/],
       ['logical margin', '.b{margin-block:4px 6px}', /chrome spacing: 2 is over/], ['inset', '.b{inset:4px}', /chrome spacing: 1 is over/], ['logical radius', '.b{border-start-start-radius:5px}', /chrome radius: 1 is over/],
     ];
     for (const [what, extra, re] of planted) assert.ok(run(extra).some((m) => re.test(m)), `a planted ${what} literal fails`);
