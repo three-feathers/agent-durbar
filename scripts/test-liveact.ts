@@ -460,12 +460,23 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
   eq(L.toolName('', hm), 'tool', 'empty: tool');
   eq(L.toolName(undefined, hm), 'tool', 'missing: tool');
   eq(L.toolName('bash\x1b[31m', hm), 'bash', 'control codes go');
-  eq(L.toolName('ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4', {}), 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4', 'no mask: only control codes go (the page then shows no activity at all)');
+  const TK = 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4';
+  eq(L.toolName(TK, {}), 'tool', 'no mask: tool (fail closed, as a label)');
+  eq(L.toolName('read_file', {}), 'tool', 'no mask: tool even for a harmless name');
+  eq(L.toolName(TK, undefined), 'tool', 'no mask object: tool');
+  eq(L.toolName(TK, { redact: () => { throw new Error('boom'); } }), 'tool', 'a throwing mask: tool');
+  eq(L.toolName({ toString() { throw new Error('boom'); } }, hm), 'tool', 'a name that cannot be made a string: tool');
+  eq(L.toolName(TK, { redact: () => '[redaction failed]' }), 'tool', 'a failed redact (its own [redaction failed] result): tool');
+  eq(L.toolName(TK, { redact: () => TK + ' ' }), 'tool', 'any change at all: tool');
+  eq(L.toolName(TK, { redact: () => undefined as unknown as string }), 'tool', 'a mask answering no string: tool');
+  eq(L.toolName('x'.repeat(1000001) + TK, hm), 'tool', 'over the 1,000,000-character cut of redact: tool, never the raw token');
+  eq(L.phrase({ kind: 'tool', tool: TK, label: '' }, { redact: () => '[redaction failed]' }), 'Using tool', 'phrase with a failed mask: Using tool');
   // the chat: every surface that names a tool calls the one function
   const app = fs.readFileSync(path.join(R, 'app.js'), 'utf8');
-  ok(/const shownTool=t=>window\.DurbarLiveAct\?window\.DurbarLiveAct\.toolName\(t,LIVE_MASK\|\|\{\}\)/.test(app), 'the page has one chat tool-name function');
+  ok(/const shownTool=t=>LIVE_MASK&&window\.DurbarLiveAct\?window\.DurbarLiveAct\.toolName\(t,LIVE_MASK\):'tool'/.test(app), 'the page has one chat tool-name function, no mask: tool');
   const chip = app.slice(app.indexOf('function makeChip('), app.indexOf('document.addEventListener', app.indexOf('function makeChip(')));
-  ok(/name=TOOLNAME\[tool\]\|\|shownTool\(tool\)/.test(chip), 'the chip label and its tooltip use it');
+  ok(/name=TOOLNAME\[tool\]\|\|shownTool\(tool\)/.test(chip), 'the chip name uses it');
+  ok(/el\.title=name\+': '\+label/.test(chip) && !/el\.title=[^;]*\btool\b/.test(chip.replace(/TOOLNAME\[tool\]\|\|shownTool\(tool\)/, '')), 'the chip tooltip is built from the masked name, not the raw tool');
   ok(/return shownTool\(e\.tool\)\+\(lbl\?/.test(app), 'the card task line uses it');
   ok(/'Using '\+\(c\.tool\?shownTool\(c\.tool\):'a tool'\)/.test(app), 'the waiting line uses it');
   const scr = fs.readFileSync(path.join(R, 'screens.js'), 'utf8');
