@@ -24,15 +24,15 @@
     const mqReduce=win.matchMedia?win.matchMedia('(prefers-reduced-motion: reduce)'):null, mqForced=win.matchMedia?win.matchMedia('(forced-colors: active)'):null;
 
     const el=doc.createElement('section'); el.className='bv'; el.setAttribute('role','region'); el.setAttribute('aria-label','Brain view');
-    el.innerHTML='<div class="bv-head"><span class="bv-title">Brain</span><button type="button" class="bv-btn bv-motion"></button><button type="button" class="bv-btn bv-fold" aria-expanded="true">Hide</button></div>'+
-      '<div class="bv-body"><canvas class="bv-canvas" aria-hidden="true"></canvas><div class="bv-lobe"></div><p class="bv-sentence"></p><div class="bv-card"><div class="bv-c1"></div><div class="bv-c2"></div><div class="bv-c3"></div></div></div>';
+    el.innerHTML='<div class="bv-head"><strong class="bv-title">Brain</strong><button type="button" class="btn" data-bv="motion"></button><button type="button" class="btn" data-bv="fold" aria-expanded="true">Hide</button></div>'+
+      '<div class="bv-body"><canvas class="bv-canvas" aria-hidden="true"></canvas><strong class="bv-lobe"></strong><p class="bv-sentence"></p><div class="bv-card"><strong class="bv-c1"></strong><div class="bv-c2"></div><div class="bv-c3"></div></div></div>';
     doc.body.appendChild(el);
     const q=(c)=>el.querySelector(c), canvas=q('.bv-canvas');
     const draw=DR.create({canvas,size:'dock',width:240,motion,forced:!!(mqForced&&mqForced.matches),visible:!doc.hidden,focused:doc.hasFocus?doc.hasFocus():true,
       host:{now:()=>win.performance.now(),raf:(f)=>win.requestAnimationFrame(f),caf:(i)=>win.cancelAnimationFrame(i),dpr:()=>win.devicePixelRatio||1,makeCanvas:(w,h)=>{const c=doc.createElement('canvas');c.width=w;c.height=h;return c;}}});
-    const applyMotion=()=>{const m=mqReduce&&mqReduce.matches?'still':motion;draw.setMotion(m);const b=q('.bv-motion');b.textContent='Motion: '+WORD[m]+(m!==motion?' (system)':'');b.setAttribute('aria-label','Brain motion '+WORD[m]+(m!==motion?', set by reduced motion':'')+'. Press to change');b.disabled=m!==motion;};
-    q('.bv-motion').addEventListener('click',()=>{motion=MOTIONS[(MOTIONS.indexOf(motion)+1)%3];store.set('durbar.brainMotion',motion);applyMotion();});
-    q('.bv-fold').addEventListener('click',(e)=>{collapsed=!collapsed;el.classList.toggle('is-folded',collapsed);e.currentTarget.textContent=collapsed?'Show':'Hide';e.currentTarget.setAttribute('aria-expanded',String(!collapsed));});
+    const applyMotion=()=>{const m=mqReduce&&mqReduce.matches?'still':motion;draw.setMotion(m);const b=q('[data-bv=motion]');b.textContent='Motion: '+WORD[m]+(m!==motion?' (system)':'');b.setAttribute('aria-label','Brain motion '+WORD[m]+(m!==motion?', set by reduced motion':'')+'. Press to change');b.disabled=m!==motion;};
+    q('[data-bv=motion]').addEventListener('click',()=>{motion=MOTIONS[(MOTIONS.indexOf(motion)+1)%3];store.set('durbar.brainMotion',motion);applyMotion();});
+    q('[data-bv=fold]').addEventListener('click',(e)=>{collapsed=!collapsed;el.classList.toggle('is-folded',collapsed);e.currentTarget.textContent=collapsed?'Show':'Hide';e.currentTarget.setAttribute('aria-expanded',String(!collapsed));});
     if(mqReduce&&mqReduce.addEventListener)mqReduce.addEventListener('change',applyMotion);
     if(mqForced&&mqForced.addEventListener)mqForced.addEventListener('change',()=>draw.setForced(mqForced.matches));
     doc.addEventListener('visibilitychange',()=>draw.setVisible(!doc.hidden));

@@ -23,18 +23,17 @@ const CANARY = 'ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ab';
 module.exports = async (ctx) => {
   const H = helpers(ctx);
   const { js } = H;
-  const B = 'window.__durbarSimUi.brain';
   const wc = () => ctx.win.webContents;
   const must = async (expr, what, ms = 15000) => {
     const ok = await H.until(expr, ms);
-    if (!ok) console.log('[106-brain] page state: ' + JSON.stringify(await js(`({flag:${B}.flag,load:${B}.state()+' '+${B}.why(),queued:${B}.queued(),host:!!document.querySelector('.bv'),txt:(document.querySelector('.bv')||{innerText:''}).innerText.slice(0,160),tags:0,errs:window.__errs,mods:['GLYPHS','WAITING_CARD','relPath','sentenceFor','officeTag','cardLines','currentStep'].map(k=>k in window.exports?1:0).join('')})`)));
+    if (!ok) console.log('[106-brain] page state: ' + JSON.stringify(await js(`({flag:window.__durbarSimUi.brain.flag,load:window.__durbarSimUi.brain.state()+' '+window.__durbarSimUi.brain.why(),queued:window.__durbarSimUi.brain.queued(),host:!!document.querySelector('.bv'),txt:(document.querySelector('.bv')||{innerText:''}).innerText.slice(0,160),tags:0,errs:window.__errs,mods:['GLYPHS','WAITING_CARD','relPath','sentenceFor','officeTag','cardLines','currentStep'].map(k=>k in window.exports?1:0).join('')})`)));
     assert.ok(ok, 'timed out waiting for ' + what);
   };
   const dbg = () => { const d = wc().debugger; if (!d.isAttached()) d.attach('1.3'); return d; };
   const media = (features) => dbg().sendCommand('Emulation.setEmulatedMedia', { features });
   const emit = (e) => js(`void window.__durbarSimEmit(Object.assign({timestamp:Date.now()},${jsLiteral(e)}));0`);
-  const stats = () => js(`${B}.host().stats()`);
-  const calmDown = async () => { await H.until(`${B}.host()&&!${B}.host().stats().loopRunning`, 8000); };
+  const stats = () => js(`window.__durbarSimUi.brain.host().stats()`);
+  const calmDown = async () => { await H.until(`window.__durbarSimUi.brain.host()&&!window.__durbarSimUi.brain.host().stats().loopRunning`, 8000); };
   const DESKS = `[...document.querySelectorAll('#stage .desk[data-id]')].map(d=>{const r=d.getBoundingClientRect();return [d.dataset.id,Math.round(r.left),Math.round(r.top),Math.round(r.width),Math.round(r.height)].join(':')})`;
   await media([{ name: 'prefers-reduced-motion', value: 'no-preference' }, { name: 'forced-colors', value: 'none' }]);
 
@@ -97,10 +96,10 @@ module.exports = async (ctx) => {
     await H.shot(path.join(OUT, `106-brain-failed-${tag}.png`), { prep: 'calm' });
 
     // ---- Still by keyboard: no animation frame loop (SC-004)
-    await js(`document.querySelector('.bv-motion').focus();0`);
+    await js(`document.querySelector('.bv [data-bv=motion]').focus();0`);
     await H.key('Return'); // Full -> Calm
     await H.key('Return'); // Calm -> Still
-    await must(`/Still/.test(document.querySelector('.bv-motion').textContent)`, 'Still by keyboard');
+    await must(`/Still/.test(document.querySelector('.bv [data-bv=motion]').textContent)`, 'Still by keyboard');
     s = await stats(); const loops = s.loops, fr = s.frames;
     await emit({ type: 'toolCall', sessionId: id, callId: 'b-4', tool: 'grep', phase: 'start', args: { pattern: 'x' } });
     await must(`/Read/.test(document.querySelector('.bv-lobe').textContent)`, 'a step under Still');
@@ -111,7 +110,7 @@ module.exports = async (ctx) => {
     assert.strictEqual(s.loopRunning, false);
     await H.shot(path.join(OUT, `106-brain-still-${tag}.png`), { prep: 'calm' });
     // back to Full for the next checks
-    await H.key('Return'); await must(`/Full/.test(document.querySelector('.bv-motion').textContent)`, 'Full again');
+    await H.key('Return'); await must(`/Full/.test(document.querySelector('.bv [data-bv=motion]').textContent)`, 'Full again');
 
     // ---- hidden: nothing draws (the page is told it is hidden; a real hidden window cannot be made under xvfb); shown: one frame
     await js(`Object.defineProperty(document,'hidden',{get:()=>true,configurable:true});document.dispatchEvent(new Event('visibilitychange'));0`);
@@ -123,12 +122,12 @@ module.exports = async (ctx) => {
     assert.strictEqual(s.frames, hf, 'FR-104: a hidden page draws 0 frames');
     assert.strictEqual(s.loopRunning, false);
     await js(`delete document.hidden;document.dispatchEvent(new Event('visibilitychange'));0`);
-    await must(`${B}.host().stats().frames===${hf + 1}`, 'one frame when shown again', 3000);
+    await must(`window.__durbarSimUi.brain.host().stats().frames===${hf + 1}`, 'one frame when shown again', 3000);
 
     // ---- reduced motion (emulated): forced Still, the button says why
     await media([{ name: 'prefers-reduced-motion', value: 'reduce' }]);
-    await must(`/system/.test(document.querySelector('.bv-motion').textContent)`, 'the button says reduced motion decides');
-    assert.strictEqual(await js(`document.querySelector('.bv-motion').disabled`), true);
+    await must(`/system/.test(document.querySelector('.bv [data-bv=motion]').textContent)`, 'the button says reduced motion decides');
+    assert.strictEqual(await js(`document.querySelector('.bv [data-bv=motion]').disabled`), true);
     s = await stats(); const rl = s.loops;
     await emit({ type: 'toolCall', sessionId: id, callId: 'b-6', tool: 'fetch', phase: 'start', args: { url: 'https://example.test/' } });
     await must(`/Web/.test(document.querySelector('.bv-lobe').textContent)`, 'a step under reduced motion');
@@ -138,7 +137,7 @@ module.exports = async (ctx) => {
 
     // ---- forced colours: still, drawn
     await media([{ name: 'forced-colors', value: 'active' }]);
-    await must(`${B}.host().draw.mode()==='still'`, 'forced colours draw Still');
+    await must(`window.__durbarSimUi.brain.host().draw.mode()==='still'`, 'forced colours draw Still');
     assert.ok((await lit()).n > 1000, 'forced colours: still drawn');
     await H.shot(path.join(OUT, `106-brain-forced-${tag}.png`), { prep: 'calm' });
     await media([{ name: 'forced-colors', value: 'none' }]);

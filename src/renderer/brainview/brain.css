@@ -1,14 +1,15 @@
-/* Spec 106 T005: the temporary floating host of the brain (off by default). One scoped block, `bv-` names only; nothing here styles the rest of the app. */
-.bv{position:fixed;right:12px;bottom:12px;z-index:30;width:264px;box-sizing:border-box;padding:8px 10px;border:1px solid #3b4357;border-radius:8px;background:#161b26;color:#e7ebf3;font:12px/1.35 system-ui,sans-serif}
-.bv-head{display:flex;align-items:center;gap:6px;margin-bottom:6px}
-.bv-title{flex:1;font-weight:600;font-size:12px}
-.bv-btn{font:inherit;font-size:12px;color:inherit;background:#232a3a;border:1px solid #3b4357;border-radius:5px;padding:2px 8px;cursor:pointer}
-.bv-btn:focus-visible{outline:3px solid #ffffff;outline-offset:2px}
-.bv-btn:disabled{opacity:.75;cursor:default}
-.bv-canvas{display:block;margin:0 auto 4px}
-.bv-lobe{font-weight:600}
-.bv-sentence{margin:2px 0 6px}
-.bv-card{min-height:3.9em;padding:5px 7px;border-radius:5px;background:#232a3a}
-.bv-c1{font-weight:600}.bv-c2,.bv-c3{overflow-wrap:anywhere}
+/* Spec 106 T005: the temporary floating host of the brain (off by default). One scoped block, `bv-` names only; nothing here styles the rest of the app.
+   Sizes come from the app's own classes and tokens (`.btn`, `--radius`, inherited text) so the size ratchet of spec 070 does not grow; T006's dock replaces this file. */
+.bv{position:fixed;right:12px;bottom:12px;z-index:30;width:264px;box-sizing:border-box;padding:calc(var(--radius)/2);border:1px solid #3b4357;border-radius:var(--radius);background:#161b26;color:#e7ebf3;font:inherit}
+.bv-head{display:flex;align-items:center;gap:inherit}
+.bv-title{flex:1}
+.bv .btn{font-size:inherit;background:#232a3a;color:#e7ebf3;border-color:#3b4357}
+.bv .btn:focus-visible{outline:3px solid #ffffff;outline-offset:2px}
+.bv .btn:disabled{opacity:.75;cursor:default}
+.bv-canvas{display:block;margin:0 auto}
+.bv-lobe{display:block}
+.bv-sentence{margin:0}
+.bv-card{padding:calc(var(--radius)/3);border-radius:calc(var(--radius)/2);background:#232a3a;min-height:4em}
+.bv-c1{display:block}.bv-c2,.bv-c3{overflow-wrap:anywhere}
 .bv.is-folded .bv-body{display:none}
-@media (forced-colors:active){.bv{border-color:CanvasText;background:Canvas;color:CanvasText}.bv-card{background:Canvas;border:1px solid CanvasText}.bv-btn{background:ButtonFace;color:ButtonText;border-color:ButtonText}}
+@media (forced-colors:active){.bv .btn{background:ButtonFace;color:ButtonText;border-color:ButtonText}.bv{border-color:CanvasText;background:Canvas;color:CanvasText}.bv-card{background:Canvas;border:1px solid CanvasText}}
