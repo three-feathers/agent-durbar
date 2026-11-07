@@ -160,3 +160,12 @@ One PR, spec first. Who moves is `shutPlan(r)` (spec 001 FR-051, `shutters.js` `
 - **Renderer** (`src/renderer/realoffice.js`, T201): the desk loop body becomes `deskOne(d)`, run for the zones' desks and then the lounge's; a seat draws the world's `desk.webp` small (`ld:` key) instead of the desk or cabinet, no screen text, a still person, the same plate, monitor, lamp and "z z"; seat plates are moved after the desks' plates for Tab. `sweep` fades a leaving desk picture; a new one fades in. The ease is `box()`'s.
 - **CSS**: `.ro-lseat` table, `.ro-lmon` monitor (photo and cave: the desk monitor scaled; arcade: a pixel frame in `worlds/retro/world.css`), `.ro-plate.lounge`.
 - **Checks**: `test:realoffice-layout` and `test-realoffice-aisles` (FR-246..FR-248, mutants), `scripts/check-097-lounge.js` (FR-246..FR-249), `shots-097-moments` asleep moment and `world-matrix.js` lounge scene updated.
+
+## A desk's helpers in the room (delta 2026-11-07; FR-306..FR-311, T205..T210, issue #1139)
+
+Spec first. The owner answered Q7 with (a) (2026-11-07 14:48 UTC); the build is one PR, reusing the flat office's pieces (spec 001 FR-089..FR-097): `visibleHelpers` for order, cap and `+N more`; `helpercard.js` `view` and `html` for the card's masked, cut lines and its `aria` and `title`; the `[data-id]` and `[data-more]` handlers already in `app.js`.
+
+- **Engine, pure** (`src/shared/realoffice-layout.ts`, T206): a `helpers` count on `RealAgent`; `roRowGeom` adds the strip's fixed height (by level) to a row that holds such a desk; the helper level is one more step after the `u` search, kept only while `u` stays at least 1.4x the level-0 `u`; each `DeskBox` gains `strip: Rect & { level, shown }`; `slipAvoid` includes the strips. Measured in a scratch copy: a 22-44 px band under every row keeps the 15-agent face at 31.8 px (1280x800) and 36.0 px (1440x900).
+- **Renderer** (`src/renderer/realoffice.js`, T207): in `deskOne`, after the plate and its pencil, an `h:` keyed strip of buttons in the chrome layer; `plateFill` keeps its `+N` for the fallback only. `drawSlips`/`put()` are not touched (another lane owns them).
+- **CSS** (`src/renderer/realoffice.css`): `.ro-help-tile`, `.ro-help-card` on the plate's tokens; the cave's plate look by its world class.
+- **Checks**: `test:realoffice-layout` (FR-311's cases and mutants), `scripts/check-097-helpers.js`, `OFFICE_VIEW=real check-office-overlap.js`, `shots-097-realoffice`.

@@ -1028,8 +1028,9 @@ const helperCap=(d,a)=>(a&&HBOOST.get(a.id))||HCAP;
 const SC_CACHE=new Map();
 function sceneCacheKey(a){const st=vis(a),k=a.look,m=moodFor(a);return st+k.shirt+k.skin+k.hair+k.style+(k.glasses?1:0)+'|'+m.body+(m.trouble||'')+'|'+THEME.themeIdForCache()+crewKey(a);}
 function sceneC(a){const key=sceneCacheKey(a);let v=SC_CACHE.get(key);if(!v){v=scene(a,false,true);SC_CACHE.set(key,v);}return v;}
+const orderedHelpers=a=>helpersOf(a).slice().sort((x,y)=>prio(x)-prio(y)); /* waiting and error first (spec 001 FR-089); the flat office's strip and Real office's (spec 097 FR-306) read the one order */
 function visibleHelpers(a,d){
-  const all=helpersOf(a).slice().sort((x,y)=>prio(x)-prio(y));
+  const all=orderedHelpers(a);
   const cap=helperCap(d,a);
   if(all.length<=cap+1||ui.expanded[a.id])return {shown:all,hidden:[]};
   return {shown:all.slice(0,cap),hidden:all.slice(cap)};
@@ -1648,6 +1649,19 @@ function roFailed(){syncWorld();toast('The Real office could not be loaded, so t
 /* the plain model Real office draws (no markup but the places' own icons): every text is already masked (deskMask = DurbarSafeText) */
 /* the Alert sign of a needs-you chip in Real office (spec 097 FR-026): a warning triangle in the text colour, built here from trusted markup (the sign set of the removed meeting-room doors, spec 017, kept only for this one) */
 const ALERT_ICON='<svg viewBox="0 0 12 12" aria-hidden="true" focusable="false" data-icon="alert"><path d="M6 1.6 11 10.4H1Z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M6 4.8v2.6M6 8.9v.1" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>';
+/* spec 097 FR-306, FR-307 (issue 1139): a desk's helpers for the Real office strip, in visibleHelpers' order; the tile's words are the flat tile's (helperTileHTML: name, status word, masked task) */
+function realSubs(a,stOf){
+  const p=a.name;
+  return orderedHelpers(a).map(h=>{const w=label(h,true),t=deskMask(taskText(h)),n=deskMask(h.name)||'Helper';
+    return {id:h.id,name:n,state:stOf(h,false),word:w,label:n+', helper of '+p+', '+label(h)+(t?': '+t:''),title:n+' · '+label(h)+(t?': '+t:''),selected:ui.selected===h.id};});
+}
+/* spec 097 FR-307: the card of one helper at level 1 or 2 for the strip: the same view and markup as the flat card (helpercard.js), masked then cut */
+function realHelperCard(id,level){
+  const h=byId(id); if(!h||!HXC)return null;
+  const st=vis(h), s=h.sub||null, p=byId(h.parent);
+  const v=HXC.view({holder:h,name:h.name,parent:p?p.name:'',status:s?s.status:(st==='done'?'done':st==='error'?'failed':'running'),word:label(h),sub:s,task:h.task},level,{live:liveOn()});
+  return {name:v.name,aria:v.aria,title:v.title,html:HXC.html(v,esc)};
+}
 function realModel(model){
   const D=window.DurbarPlaces, E=window.exports;
   const stOf=(a,asleep)=>E.lightState(isFailing(a)?'failing':isRetrying(a)?'retrying':isCompacting(a)?'compacting':vis(a),{limit:!!a.limit,paused:!!a.paused,asleep:!!asleep});
@@ -1666,7 +1680,7 @@ function realModel(model){
         const br=v&&v.place===D.COFFEE&&BREAKS.get(a.id)&&BREAKS.get(a.id).kind!=='cap'?coffeeUntilWords(a):''; /* owner 2026-11-02: the post-it of a coffee break says until when (an app's usage window), never of Durbar's cap at the Bank */
         return {id:a.id,name:a.name,role:a.role,state:st,word:stWord(a),task,tip:deskTip(a),selected:ui.selected===a.id,ren:canRenameSession(a),unread:isUnread(a),away:v?v.place:null,awayLabel:place+(br?' '+br:''),
           label:[a.name+unreadWords(a),a.role,stWord(a)].concat(task?[task]:[],needs?['needs you']:[],place?['at '+place]:[]).join(', ')+'. Open chat panel.', /* FR-090: text for setAttribute, not markup */
-          helpers:helpersOf(a).map(h=>stOf(h,false))};})};
+          helpers:helpersOf(a).map(h=>stOf(h,false)),subs:realSubs(a,stOf),subsOpen:!!ui.expanded[a.id]};})};
   });
   const places=lobbyPlaces().map(p=>{
     const ids=p.id===D.POSTBOX?[]:placeVisitors(p.id), custom=CUSTOM.some(q=>q.id===p.id);
@@ -1766,7 +1780,7 @@ function renderReal(stage,floor,aw,ah,model,empty){
   if(stage.dataset.d!=='real'){stage.dataset.d='real';stage.textContent='';}
   layoutKey='';GROW=0;setGrow(stage,0);spreadOffice(stage,false);stagePrev=null;
   RO_LAST=window.DurbarRealOffice.render(stage,Object.assign(realModel(model),empty?{empty}:{}),{w:aw,h:ah},{live:liveOn(),still:REDUCED||!MOTION||STILL_HL,hold:roFrozen(),screenOf:realScreen,world:pp.world,set:pp.set,remember:rememberOn(), /* FR-071: Settings > Motion (still above) stops the people */
-    rand:CREW&&(SIM||!rememberOn())?CREW.seededRand:Math.random,onArt:()=>scheduleRender()});
+    rand:CREW&&(SIM||!rememberOn())?CREW.seededRand:Math.random,onArt:()=>scheduleRender(),helperCard:realHelperCard});
   stage.style.width=aw+'px';stage.style.height=RO_LAST.height+'px';
   stage.dataset.fit=RO_LAST.scroll?'scroll':'ok';floor.classList.toggle('scrolls',!!RO_LAST.scroll);
   return true;

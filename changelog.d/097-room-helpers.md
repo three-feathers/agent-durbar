@@ -1,0 +1,1 @@
+- **Helpers in Real office** (spec 097 FR-306..FR-311, issue #1139): each desk's sub-agents now show in the Photo office and the cave as small tiles under the desk's name plate (status dot, name, status word); click one to open its activity view, **+N more** shows the rest. The Retro arcade keeps its "+N" count for now. 15 agents still fit both window sizes.

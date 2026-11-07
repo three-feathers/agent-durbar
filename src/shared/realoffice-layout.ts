@@ -5,7 +5,8 @@
 
 export type RealState = 'working' | 'thinking' | 'waiting' | 'error' | 'limit' | 'done' | 'idle' | 'asleep';
 /** `lounge`: the app's room rule (spec 001 FR-051, `shutPlan`) rolls this finished, read agent in: it sits in the lounge row, not at a desk (spec 097 FR-246) */
-export interface RealAgent { id: string; state: RealState; away?: string | null; person?: string | null; lounge?: boolean }
+/** `helpers`: how many sub-agents the desk has (spec 097 FR-306: the engine reserves a strip for them under the plate) */
+export interface RealAgent { id: string; state: RealState; away?: string | null; person?: string | null; lounge?: boolean; helpers?: number }
 export interface RealFolder { id: string; agents: RealAgent[] }
 export interface RealVisitor { id: string; person?: string | null; needsYou?: boolean }
 export interface RealPlace { id: string; custom?: boolean; visitors: RealVisitor[] }
@@ -34,6 +35,8 @@ export interface DeskBox {
   face: Rect | null; away: { x: number; y: number; s: number } | null; narrow: boolean; lamp: Rect;
   bubble: { x: number; y: number } | null; bang: { x: number; y: number } | null; dots: { x: number; y: number } | null;
   call: { x: number; y: number };
+  /** spec 097 FR-306, FR-308: the helper strip under the plate, inside the slot: `level` 0 tile, 1 or 2 card; `shown` buttons fit, the rest are `+N more`; only a desk with helpers has one */
+  strip?: Rect & { level: number; shown: number; cols: number };
   /** `aisles` only (spec 102 FR-256..FR-259): the marquee, the standing person's box and the side the screen faces */
   /** spec 097 FR-247, FR-248: a seat of the lounge row (no desk or cabinet; `table` is the small desk the monitor stands on) */
   lounge?: boolean; table?: Rect;
@@ -50,6 +53,8 @@ export interface Layout {
   lane?: Rect;
   /** `aisles` only: the pixel scale (CSS px per art pixel) and the cabinet's size */
   g?: number; cabinet?: { w: number; h: number; gw: number; gh: number; cols: number; rows: number };
+  /** spec 097 FR-308: the helper level of the strip (0 tile, 1 or 2 card), or -1: none drawn, the plate keeps its `+N` and dots (no room, or no helpers) */
+  helpLevel?: number;
   /** spec 097 FR-246..FR-248: the lounge row (its box and its seats), when an agent sits there */
   lounge?: { box: Rect; desks: DeskBox[] };
 }
@@ -63,6 +68,19 @@ export const FACE_U = 0.30;
 export const U_MIN = Math.ceil(28 / FACE_U), U_MAX = 260, U_MAX_BIG = 420;
 /** FR-015: plate heights; the row keeps the needs-you height, so a status change never moves a desk. */
 export const PLATE_H = 36, PLATE_H_ASK = 50;
+/** Spec 097 FR-306..FR-308: the helper strip. `HELP_H`: its fixed height per level (tile, activity card, full card); `HELP_MINW`: the narrowest button per level (spec 001's
+ *  helper cards: 220 and 260 px); `HELP_GAP`: between buttons; `HX_MIN_F`: a card level is kept only while the desks stay this grown (spec 001 FR-091, helpercard.js). */
+export const HELP_H = [46, 40, 76], HELP_MINW = [96, 220, 260], HELP_GAP = 4, HX_MIN_F = 1.4;
+/** the tile level is a grid of up to 2 rows of 22 px tiles (a desk's slot at 15 agents holds one tile across, so 2 helpers need 2 rows); a card level is one row of cards */
+export const HELP_ROWS = [2, 1, 1];
+/** FR-308: the buttons across a strip of width `w` at `level` */
+export const helpCols = (w: number, level: number): number => Math.max(0, Math.floor((w + HELP_GAP) / (HELP_MINW[level] + HELP_GAP)));
+/** FR-308: how many helper buttons a strip of width `w` shows at `level` for `n` helpers: all when they fit, else one place is the `+N more` button */
+export function helpShown(w: number, level: number, n: number): number {
+  const cap = helpCols(w, level) * HELP_ROWS[level];
+  return n <= cap ? n : Math.max(0, cap - 1);
+}
+
 /** FR-011: the search is exhaustive up to this many folders; past it, rows of about equal size in the needs-you-first order (FR-019 budget). */
 export const ORDER_SEARCH_MAX = 7;
 /** FR-020: big screens with this many visible agents or fewer. */
@@ -112,8 +130,8 @@ function roSetPartitions<T>(list: T[], most: number): T[][][] {
   return res;
 }
 
-interface Row { zones: RealFolder[]; n: number; Sw: number; scrH: number }
-interface Geom { dh: number; head: number; deskBack: number; bottom: number }
+interface Row { zones: RealFolder[]; n: number; Sw: number; scrH: number; /** FR-306: the strip's height in this row, 0 when no desk of it has helpers */ strip: number }
+interface Geom { dh: number; head: number; deskBack: number; bottom: number; stripY: number; /** the row without its strip: the desk picture is cut here */ base: number }
 
 /** FR-013, FR-014, FR-015: a row's vertical geometry at unit u. The head room covers a raised hand of every seated person in the row
  *  (whatever their status), and the plate room is the needs-you height, so a status change never moves a desk. */
@@ -123,8 +141,9 @@ function roRowGeom(meta: RealMeta, r: Row, u: number): Geom {
   for (const z of r.zones) { const st = roZoneStats(meta, z); if (st.seated) { seated = true; rise = Math.max(rise, st.rise); hand = Math.max(hand, st.hand); } }
   const head = r.scrH ? r.scrH + 0.05 * u : Math.max(0.07 * u, seated ? rise * u - STRIP + 3 : 0);
   const deskBack = STRIP + head + (hand + 0.015) * u;
-  const bottom = deskBack + Math.max(0.62 * dh * 0.92, 0.22 * dh + PLATE_H_ASK + 4) + 4;
-  return { dh, head, deskBack, bottom };
+  const base = deskBack + Math.max(0.62 * dh * 0.92, 0.22 * dh + PLATE_H_ASK + 4) + 4;
+  /* FR-306: the strip stands under the needs-you plate's height (a fixed place, so a status change moves nothing, FR-015) and adds its own height to the row */
+  return { dh, head, deskBack, bottom: base + r.strip, stripY: base - 2, base };
 }
 /* per zone, once: does anyone sit, the highest raised hand (headTop / bodyH) and the lowest hands (hand), in units of u */
 const RO_ZONE_STATS = new WeakMap<RealFolder, { seated: boolean; rise: number; hand: number }>();
@@ -154,6 +173,8 @@ function roBalanced<T extends RealFolder>(order: T[], rows: number): T[][] {
   return out;
 }
 
+/** FR-306: a row holds the strip's height only when a desk of it has helpers (the lounge's seats never do, FR-306) */
+const roStrip = (zs: readonly RealFolder[], hh: number): number => (hh && zs.some((z) => z.agents.some((a) => (a.helpers || 0) > 0)) ? hh : 0);
 const roSlotWidth = (W: number, zones: number, n: number): number => (W - 2 * PAD - ZGAP * (zones - 1) - zones * 8) / n;
 
 /** FR-023: the lobby band's height range for an office of height H. */
@@ -162,11 +183,11 @@ export function lobbyRange(H: number): [number, number] {
 }
 
 /** FR-011, FR-020: the rows of folders and the unit u, by search. */
-function roPack(meta: RealMeta, folders: RealFolder[], W: number, Ho: number, lobbyMin: number): { rows: Row[]; u: number; used: number; fits: boolean; wide: boolean } {
+function roPack(meta: RealMeta, folders: RealFolder[], W: number, Ho: number, lobbyMin: number, hh = 0): { rows: Row[]; u: number; used: number; fits: boolean; wide: boolean } {
   const total = folders.reduce((p, f) => p + f.agents.length, 0);
   const avail = Ho - lobbyMin;
   if (total <= BIG_MAX) {
-    const row: Row = { zones: folders, n: folders.reduce((p, f) => p + f.agents.length, 0), Sw: 0, scrH: 0 };
+    const row: Row = { zones: folders, n: folders.reduce((p, f) => p + f.agents.length, 0), Sw: 0, scrH: 0, strip: roStrip(folders, hh) };
     row.Sw = roSlotWidth(W, folders.length, row.n);
     let u = Math.min(row.Sw / 1.3, 300, U_MAX_BIG);
     const base = (uu: number): number => roRowGeom(meta, { ...row, scrH: 0 }, uu).bottom + 0.05 * uu;
@@ -186,7 +207,7 @@ function roPack(meta: RealMeta, folders: RealFolder[], W: number, Ho: number, lo
     ? Array.from({ length: Math.min(maxRows, folders.length) }, (_, i) => roBalanced(folders, i + 1))
     : roSetPartitions(folders, maxRows).map((rs) => rs.map((zs) => zs.slice().sort((p, q) => at(p) - at(q))).sort((p, q) => at(p[0]) - at(q[0])));
   for (const part of cands) {
-    const rows: Row[] = part.map((zs) => { const n = zs.reduce((p, z) => p + z.agents.length, 0); return { zones: zs, n, Sw: roSlotWidth(W, zs.length, n), scrH: 0 }; });
+    const rows: Row[] = part.map((zs) => { const n = zs.reduce((p, z) => p + z.agents.length, 0); return { zones: zs, n, Sw: roSlotWidth(W, zs.length, n), scrH: 0, strip: roStrip(zs, hh) }; });
     const uW = Math.min(...rows.map((r) => r.Sw / (PW + SR)));
     const H = (u: number): number => rows.reduce((p, r) => p + roRowGeom(meta, r, u).bottom, 0);
     let lo = U_MIN, hi = Math.min(uW, U_MAX);
@@ -332,7 +353,7 @@ function roNote(px: number, sx: number, slotW: number, sl: number, deskY: number
 }
 
 /** FR-013, FR-016, FR-017, FR-036, FR-038: one desk (roStation) in a slot. */
-function roStation(meta: RealMeta, a: RealAgent, sx: number, y: number, Sw: number, u: number, g: Geom, big: boolean, scrH: number): DeskBox {
+function roStation(meta: RealMeta, a: RealAgent, sx: number, y: number, Sw: number, u: number, g: Geom, big: boolean, scrH: number, hl = -1, hh = 0): DeskBox {
   const narrow = roNarrow(a);
   const slotW = Sw;
   const deskY = y + g.deskBack, dw = slotW - 6, dh = g.dh;
@@ -358,9 +379,10 @@ function roStation(meta: RealMeta, a: RealAgent, sx: number, y: number, Sw: numb
   const plateH = roNeedsYou(a.state) ? PLATE_H_ASK : PLATE_H;
   const plate = { x: sx + 8, y: deskY + 0.22 * dh + 2, w: slotW - 16, h: plateH };
   /* the desk picture is dh tall; the row shows its top (desktop, front panel, the upper legs), so the box is cut at the row's bottom */
-  const desk = { x: sx + 3, y: deskY, w: dw, h: Math.min(dh, g.bottom - g.deskBack - 2), full: dh };
+  const desk = { x: sx + 3, y: deskY, w: dw, h: Math.min(dh, g.base - g.deskBack - 2), full: dh };
+  const strip = hl >= 0 && hh > 0 && (a.helpers || 0) > 0 ? { x: plate.x, y: y + g.stripY, w: plate.w, h: hh - 2, level: hl, cols: helpCols(plate.w, hl), shown: helpShown(plate.w, hl, a.helpers as number) } : undefined;
   return {
-    id: a.id, state: a.state, narrow, slot: { x: sx, y, w: slotW, h: 0 }, desk, plate, screen, glass, person, face,
+    id: a.id, state: a.state, narrow, slot: { x: sx, y, w: slotW, h: 0 }, desk, plate, screen, glass, person, face, ...(strip ? { strip } : {}),
     away: a.away ? roNote(px, sx, slotW, sl, deskY, u, big) : null, /* the note on the desk, where the person would sit */
     lamp: { x: sx + 0.02 * slotW, y: Math.max(y + STRIP, headY - 0.35 * u), w: 0.96 * slotW, h: deskY + dh * 0.5 - Math.max(y + STRIP, headY - 0.35 * u) },
     bubble: person && roNeedsYou(a.state) ? { x: px + 0.2 * u - 6, y: headY - 0.04 * u } : null,
@@ -383,17 +405,34 @@ export function realLayout(model: RealModel, viewport: { w: number; h: number },
   const [lobbyMin, lobbyMax] = lobbyRange(H0);
   const LR = lounge.length ? loungeRows(meta, lounge, W, 0) : null, R = LR ? LR.h : 0, Ho = Math.max(200, H0 - R);
   const zones: ZoneBox[] = [];
-  let u = U_MIN, big = false, used = 0, fits = true, rows: Row[] = [];
+  let u = U_MIN, big = false, used = 0, fits = true, rows: Row[] = [], helpLevel = -1;
   if (folders.length) {
     /* a folder too big for one row is split into parts (its sign repeats, "continued"), the fewest splits that fit; spec 097 delta 2026-10-31 */
-    let p = roPack(meta, folders, W, Ho, lobbyMin);
-    const rank = (x: typeof p): number => (x.fits ? 2 : x.wide ? 1 : 0);
-    for (const most of [8, 6, 5, 4]) {
-      if (p.fits) break;
-      if (!folders.some((f) => f.agents.length > most)) continue;
-      const parts = folders.flatMap((f) => { const k = Math.ceil(f.agents.length / most), per = Math.ceil(f.agents.length / k); return Array.from({ length: k }, (_, i) => ({ id: i ? f.id + '\u0000' + (i + 1) : f.id, agents: f.agents.slice(i * per, (i + 1) * per) })); });
-      const q = roPack(meta, parts, W, Ho, lobbyMin);
-      if (rank(q) > rank(p) || (rank(q) === rank(p) && (q.fits ? q.u > p.u : q.used < p.used))) p = q;
+    const rank = (x: ReturnType<typeof roPack>): number => (x.fits ? 2 : x.wide ? 1 : 0);
+    /* the search, as one function of the strip's height `hh` (0: none), so the helper levels (FR-308) are more steps of the same search */
+    const pack = (hh: number): ReturnType<typeof roPack> => {
+      let p = roPack(meta, folders, W, Ho, lobbyMin, hh);
+      for (const most of [8, 6, 5, 4]) {
+        if (p.fits) break;
+        if (!folders.some((f) => f.agents.length > most)) continue;
+        const parts = folders.flatMap((f) => { const k = Math.ceil(f.agents.length / most), per = Math.ceil(f.agents.length / k); return Array.from({ length: k }, (_, i) => ({ id: i ? f.id + '\u0000' + (i + 1) : f.id, agents: f.agents.slice(i * per, (i + 1) * per) })); });
+        const q = roPack(meta, parts, W, Ho, lobbyMin, hh);
+        if (rank(q) > rank(p) || (rank(q) === rank(p) && (q.fits ? q.u > p.u : q.used < p.used))) p = q;
+      }
+      return p;
+    };
+    let p = pack(0);
+    /* FR-308: with helpers, the level-0 tile strip is kept while the desks still fit and the slots can hold a tile; then level 2, then 1, are tried while u stays at least HX_MIN_F x the level-0 u. Else none: the plate's +N and dots (FR-016). */
+    if (folders.some((f) => f.agents.some((a) => (a.helpers || 0) > 0))) {
+      const room = (q: ReturnType<typeof roPack>, lv: number): boolean => q.rows.every((r) => !r.strip || r.Sw - 16 >= HELP_MINW[lv]);
+      const p0 = pack(HELP_H[0]);
+      if (p0.fits && room(p0, 0)) {
+        p = p0; helpLevel = 0;
+        for (const lv of [2, 1]) {
+          const q = pack(HELP_H[lv]);
+          if (q.fits && q.u >= HX_MIN_F * p0.u && room(q, lv)) { p = q; helpLevel = lv; break; }
+        }
+      }
     }
     rows = p.rows; u = p.u; used = p.used; fits = p.fits; big = rows.length === 1 && rows[0].scrH > 0;
   }
@@ -407,7 +446,7 @@ export function realLayout(model: RealModel, viewport: { w: number; h: number },
       const zw = r.Sw * z.agents.length + 8;
       const desks: DeskBox[] = [];
       let ax = x + 4;
-      for (const a of z.agents) { const d = roStation(meta, a, ax, y, r.Sw, u, g, big, r.scrH); d.slot.h = g.bottom; desks.push(d); ax += r.Sw; }
+      for (const a of z.agents) { const d = roStation(meta, a, ax, y, r.Sw, u, g, big, r.scrH, r.strip ? helpLevel : -1, r.strip); d.slot.h = g.bottom; desks.push(d); ax += r.Sw; }
       /* FR-018: the sign sits at the left unless a raised hand (a waving person's picture rising into the strip) is there */
       const s0 = z.id.split('\u0000')[0], s = signs && roOwn(signs, s0) ? signs[s0] : { name: s0, path: '', counts: 1 };
       const sw = signWidth(s.name, s.path, s.counts, zw);
@@ -425,7 +464,7 @@ export function realLayout(model: RealModel, viewport: { w: number; h: number },
   const lb = roLobby(meta, model.places, W, Lb);
   const fitsAll = fits && Ho + R <= H0 + 0.5;
   const height = fitsAll ? H0 : Math.ceil(Lb + used + PAD + R);
-  const lay: Layout = { u, big, lobbyH: Lb, floorH: height - Lb, width: W, height, scroll: !fitsAll, faceH: FACE_U * u, zones, fixtures: lb.fixtures, floorStrip: lb.floorStrip };
+  const lay: Layout = { u, big, lobbyH: Lb, floorH: height - Lb, width: W, height, scroll: !fitsAll, faceH: FACE_U * u, zones, fixtures: lb.fixtures, floorStrip: lb.floorStrip, helpLevel };
   if (LR) lay.lounge = loungeRows(meta, lounge, W, height - R).row;
   return lay;
 }
@@ -541,6 +580,7 @@ export function slipAvoid(lay: Layout): Rect[] {
     if (z.sign) out.push({ x: z.sign.x, y: z.sign.y, w: z.sign.w, h: z.sign.h });
     for (const d of z.desks) {
       out.push(d.plate);
+      if (d.strip) out.push({ x: d.strip.x, y: d.strip.y, w: d.strip.w, h: d.strip.h }); /* FR-310 */
       if (d.face) out.push(d.face);
       if (d.away) out.push({ x: d.away.x - d.away.s / 2 - 4, y: d.away.y - 2, w: d.away.s + 8, h: d.away.s + 6 }); /* the note's own square, with a little for its tilt */
       if (d.bubble) out.push({ x: d.bubble.x, y: d.bubble.y - 24, w: 24, h: 24 });
