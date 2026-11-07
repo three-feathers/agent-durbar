@@ -2,6 +2,6 @@
 export function pickFrom(list: readonly string[], n: number, rand: () => number = Math.random): string[] {
   const pool = list.slice();
   const out: string[] = [];
-  while (out.length < n && pool.length) out.push(pool.splice(Math.floor(rand() * pool.length), 1)[0]);
+  while (out.length < n && pool.length) out.push(pool.splice(Math.min(pool.length - 1, Math.max(0, Math.floor(rand() * pool.length))), 1)[0]);
   return out;
 }
