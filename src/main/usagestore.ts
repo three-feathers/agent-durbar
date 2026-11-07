@@ -37,7 +37,13 @@ export class UsageStore {
     this.doc = emptyDoc(this.now());
   }
 
+  /** A leftover `.tmp` (a crash, or a rename that failed) can hold a document from before the name mask: it is removed (review of #1294). */
+  private removeTmp(): void {
+    try { fs.rmSync(`${this.file}.tmp`, { force: true }); } catch { /* best effort */ }
+  }
+
   load(): void {
+    this.removeTmp();
     try {
       if (fs.statSync(this.file).size > MAX_FILE) return;
       const report = { masked: 0 };
@@ -71,6 +77,7 @@ export class UsageStore {
       this.dirty = false;
       this.lastError = undefined;
     } catch (err) {
+      this.removeTmp();
       this.lastError = err instanceof Error ? err.message.slice(0, 160) : 'write failed';
     }
   }

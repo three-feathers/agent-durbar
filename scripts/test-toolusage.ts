@@ -1,12 +1,15 @@
 /** All-time tool usage document (spec 020 FR-004..FR-006): `npm run test:toolusage`. */
 import * as assert from 'assert';
 import * as path from 'path';
-import { HIDDEN_SERVER, HIDDEN_TOOL, MAX_AGENTS, MAX_TOOLS, agentLabel, emptyDoc, recordEvent, sanitizeDoc, toolKey } from '../src/shared/toolusage';
+import { HIDDEN_SERVER, HIDDEN_TOOL, MAX_AGENTS, MAX_TOOLS, agentLabel, emptyDoc, nameCacheStats, recordEvent, sanitizeDoc, toolKey } from '../src/shared/toolusage';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const S = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'toolstats.js')) as { toolKey: (e: unknown) => unknown };
 
 const start = (tool: string, extra: Record<string, unknown> = {}) => ({ type: 'toolCall', phase: 'start', tool, callId: 'c1', sessionId: 's1', ...extra });
 const mcp = (server: string, t: string, ph = 'start') => ({ type: 'toolCall', phase: ph, tool: `${server}-${t}`, mcpServer: server, mcpTool: t });
+
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const REDACT = require(path.join(__dirname, '..', 'src', 'shared', 'redact')) as { maskNoteText: (t: string) => { changed: boolean } };
 
 // the key rule matches the renderer's per-session module
 for (const e of [start('bash'), mcp('github', 'search_issues'), { tool: undefined }, { tool: 'x', mcpServer: 'srv' }]) assert.deepStrictEqual(toolKey(e as never), S.toolKey(e));
@@ -25,7 +28,7 @@ assert.ok(!recordEvent(d, 'Ada · app', null));
 assert.ok(!recordEvent(d, '__proto__', start('bash')), 'forbidden agent label');
 assert.deepStrictEqual(d.tools['builtin:bash'], { source: 'builtin', server: '', name: 'bash', calls: 3, failed: 0 });
 assert.deepStrictEqual(d.tools['mcp:github/search_issues'], { source: 'mcp', server: 'github', name: 'search_issues', calls: 1, failed: 1 });
-assert.deepStrictEqual(d.servers, { github: { calls: 1, failed: 1 } });
+assert.deepStrictEqual({ ...d.servers }, { github: { calls: 1, failed: 1 } });
 assert.strictEqual(d.agents['Ada · app'].calls, 2);
 assert.strictEqual(d.agents['Mira · app'].tools['builtin:bash'].calls, 1);
 assert.strictEqual(d.agents['Mira · app'].failed, 1);
@@ -137,6 +140,100 @@ assert.ok(!agentLabel('Ada', '/home/v/secret-dir/app').includes('secret-dir'), '
   const clean = { masked: 0 };
   sanitizeDoc(JSON.parse(JSON.stringify(d)), new Date(), clean);
   assert.strictEqual(clean.masked, 0, 'no replacement in a clean file');
+}
+
+// review of #1294 (security): cache bound, whitespace splits, prototype keys, merge of servers, the 4096 cap, a throwing mask
+{
+  const TK = 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4', SK = 'sk-' + 'proj-A1b2C3d4E5f6G7h8I9j0K1l2M3n4', SK2 = 'sk-' + 'proj-Z9y8X7w6V5u4T3s2R1q0P9o8N7m6';
+  const PARTS = /ghp_|A1b2C3d4|E5f6G7h8|K1l2M3n4|Z9y8X7w6|sk-proj/;
+  const split = (t: string, mid: string) => t.slice(0, 12) + mid + t.slice(12);
+
+  // 2: a token split by a tab, CR, LF, another control code or a space is a token
+  for (const [what, mid] of [['tab', '\t'], ['cr', '\r'], ['lf', '\n'], ['space', ' '], ['mixed', ' \t\r\n '], ['vt', '\u000b']] as const) {
+    const dd = emptyDoc();
+    assert.ok(recordEvent(dd, 'Ada · app', start(split(TK, mid))), 'whitespace ' + what + ': counted');
+    assert.ok(recordEvent(dd, 'Ada · app', { type: 'toolCall', phase: 'start', tool: 'x', mcpServer: split(SK, mid), mcpTool: split(TK, mid) }));
+    assert.ok(!PARTS.test(JSON.stringify(dd)), 'whitespace ' + what + ': no part of the token is stored');
+    assert.strictEqual(toolKey(start(split(TK, mid))).key, 'builtin:' + HIDDEN_TOOL, 'whitespace ' + what + ': hidden');
+  }
+
+  // 3: prototype keys do no harm, as a tool or a server, when counting and on load
+  for (const bad of ['__proto__', 'constructor', 'prototype']) {
+    const dd = emptyDoc();
+    recordEvent(dd, 'Ada · app', { type: 'toolCall', phase: 'start', tool: 'x', mcpServer: bad, mcpTool: 't' });
+    recordEvent(dd, 'Ada · app', start(bad));
+    recordEvent(dd, bad, start('bash'));
+    assert.ok(!Object.prototype.hasOwnProperty.call(Object.prototype, 'calls'), 'proto: Object.prototype has no calls (' + bad + ')');
+    assert.strictEqual(({} as Record<string, unknown>).calls, undefined, 'proto: a new object has no calls (' + bad + ')');
+    assert.strictEqual(typeof (Object as unknown as Record<string, unknown>).calls, 'undefined', 'proto: Object has no calls (' + bad + ')');
+    assert.deepStrictEqual(Object.keys(dd.servers), [], 'proto: a server named ' + bad + ' is not counted');
+    assert.ok(!recordEvent(dd, 'Ada · app', { type: 'toolCall', phase: 'start', tool: 'x', mcpServer: bad, mcpTool: 't' }), 'proto: refused as a server (' + bad + ')');
+    assert.strictEqual(dd.tools['builtin:' + bad].calls, 1, 'proto: a tool with that name is an ordinary tool');
+    const stored = JSON.parse(`{"tools":{"${bad}":{"name":"x","calls":3},"builtin:ok":{"name":"ok","calls":1}},"servers":{"${bad}":{"calls":4}},"agents":{"${bad}":{"calls":1,"tools":{}},"Ada":{"calls":1,"tools":{"${bad}":{"calls":1}}}}}`);
+    const m = sanitizeDoc(stored);
+    assert.deepStrictEqual(Object.keys(m.servers), [], 'proto load: a stored server ' + bad + ' is dropped');
+    assert.deepStrictEqual(Object.keys(m.tools), ['builtin:ok'], 'proto load: a stored tool key ' + bad + ' is dropped');
+    assert.deepStrictEqual(Object.keys(m.agents), ['Ada'], 'proto load: an agent named ' + bad + ' is dropped, a per-agent tool key too');
+    assert.deepStrictEqual(Object.keys(m.agents.Ada.tools), [], 'proto load: per-agent tool key dropped (' + bad + ')');
+    assert.ok(!Object.prototype.hasOwnProperty.call(Object.prototype, 'calls'), 'proto load: no pollution (' + bad + ')');
+  }
+  assert.strictEqual(Object.getPrototypeOf(emptyDoc().servers), null, 'the maps have no prototype');
+
+  // 4 (M6): two stored secret-shaped servers merge by adding, not by overwriting
+  const two = sanitizeDoc({ servers: { [SK]: { calls: 1, failed: 0 }, [SK2]: { calls: 2, failed: 1 }, [split(SK, '\t')]: { calls: 4, failed: 2 }, srv: { calls: 1 } } });
+  assert.deepStrictEqual({ ...two.servers[HIDDEN_SERVER] }, { calls: 7, failed: 3 }, 'M6: stored secret-shaped servers are summed on load');
+  assert.deepStrictEqual(Object.keys(two.servers).sort(), [HIDDEN_SERVER, 'srv'].sort(), 'M6: and share one key');
+
+  // 4 (M9): only the first 4096 characters are judged; a long name is cheap and a token past the cap is not in the 120 stored
+  {
+    const long = 'x'.repeat(1_000_000) + ' ' + TK;
+    const t0 = Date.now();
+    const k = toolKey(start(long));
+    assert.ok(Date.now() - t0 < 5000, 'M9: a 1M-character name is judged quickly');
+    assert.strictEqual(k.name, 'x'.repeat(120), 'M9: past the 4096 cap nothing is judged, and only 120 x are stored');
+    assert.strictEqual(toolKey(start('y'.repeat(4000) + ' ' + TK)).name, HIDDEN_TOOL, 'M9: a token inside the first 4096 characters hides the name');
+    assert.strictEqual(toolKey(start('z'.repeat(4096) + ' ' + TK)).name, 'z'.repeat(120), 'M9: the cap is exactly 4096');
+  }
+
+  // 1: the verdict cache is keyed by the judged slice, is bounded, and holds no raw name or secret
+  {
+    const calls = { n: 0 };
+    const orig = REDACT.maskNoteText;
+    REDACT.maskNoteText = (t: string) => { calls.n++; return orig(t); };
+    try {
+      const base = 'c'.repeat(4096);
+      toolKey(start(base + 'A'));
+      const n1 = calls.n;
+      assert.ok(n1 > 0, 'cache: the mask ran');
+      toolKey(start(base + 'B'.repeat(200000)));
+      toolKey(start(base + 'A'));
+      assert.strictEqual(calls.n, n1, 'cache: names equal in the judged slice share one verdict (key is the slice)');
+      toolKey(start('plain-cache-name-1'));
+      const n2 = calls.n;
+      toolKey(start('plain-cache-name-1'));
+      assert.strictEqual(calls.n, n2, 'cache: a clean verdict is cached');
+      toolKey(start(TK + '1'));
+      const n3 = calls.n;
+      toolKey(start(TK + '1'));
+      assert.ok(calls.n > n3, 'cache: a secret-shaped name is not kept (judged again)');
+      for (let i = 0; i < 700; i++) toolKey(start(`n${i}-` + 'q'.repeat(20000)));
+      const st = nameCacheStats();
+      assert.ok(st.size <= 500, 'cache: bounded at 500 entries, got ' + st.size);
+      assert.ok(st.maxKeyLength <= 4096, 'cache: no key longer than the judged slice, got ' + st.maxKeyLength);
+    } finally { REDACT.maskNoteText = orig; }
+  }
+
+  // 4 (M14): a mask that throws hides the name, and the verdict is not cached
+  {
+    const orig = REDACT.maskNoteText;
+    REDACT.maskNoteText = () => { throw new Error('boom'); };
+    try {
+      assert.strictEqual(toolKey(start('throwing-tool-name')).name, HIDDEN_TOOL, 'M14: a throwing mask hides a tool name');
+      assert.strictEqual(toolKey({ tool: 'x', mcpServer: 'throwing-server', mcpTool: 't' }).server, HIDDEN_SERVER, 'M14: and a server name');
+      assert.strictEqual(sanitizeDoc({ tools: { 'builtin:t': { name: 'throwing-tool-name', calls: 1 } } }).tools['builtin:' + HIDDEN_TOOL].calls, 1, 'M14: and a stored name on load');
+    } finally { REDACT.maskNoteText = orig; }
+    assert.strictEqual(toolKey(start('throwing-tool-name')).name, 'throwing-tool-name', 'M14: a throw is not cached: the name is clean once the mask works');
+  }
 }
 
 console.log('toolusage: all checks passed');

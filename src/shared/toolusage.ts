@@ -43,7 +43,10 @@ export const MAX_SERVERS = 100;
 const MAX_NAME = 120;
 const MAX_COUNT = 1e12;
 
-export const emptyDoc = (now: Date = new Date()): UsageDoc => ({ version: 1, since: now.toISOString(), tools: {}, servers: {}, agents: {} });
+/** A map with no prototype: a key such as `__proto__` or `constructor` is just a key (review of #1294). */
+const dict = <T>(): Record<string, T> => Object.create(null) as Record<string, T>;
+
+export const emptyDoc = (now: Date = new Date()): UsageDoc => ({ version: 1, since: now.toISOString(), tools: dict(), servers: dict(), agents: dict() });
 
 const name = (v: unknown): string => (typeof v === 'string' ? v.replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, MAX_NAME) : '');
 
@@ -58,20 +61,26 @@ const name = (v: unknown): string => (typeof v === 'string' ? v.replace(/[\u0000
 export const HIDDEN_TOOL = '[hidden tool]';
 export const HIDDEN_SERVER = '[hidden server]';
 const NAME_LOOK = 4096; // longer names are judged on their first 4096 characters, then cut to MAX_NAME as before
+/* Verdict cache (review of #1294): keyed by the judged slice (a flat copy, so the huge raw name is not kept alive), at most 500 entries. Only a
+   clean verdict is kept: a secret-shaped name is never held in memory, and a throw is never cached. */
 const hiddenCache = new Map<string, boolean>();
+const CACHE_MAX = 500;
+export const nameCacheStats = (): { size: number; maxKeyLength: number } => ({ size: hiddenCache.size, maxKeyLength: Math.max(0, ...[...hiddenCache.keys()].map((k) => k.length)) });
+const WHITE = /[\s\u0000-\u001f\u007f]/g;
 function looksSecret(raw: string): boolean {
-  const hit = hiddenCache.get(raw);
-  if (hit !== undefined) return hit;
-  let r: boolean;
+  const text = raw.slice(0, NAME_LOOK);
+  const key = text.split('').join(''); // flat copy: a V8 slice would keep the whole raw string alive
+  if (hiddenCache.get(key) === false) return false;
   try {
-    const text = raw.slice(0, NAME_LOOK);
-    r = [text, stripAnsi(text)].some((v) => maskNoteText(v).changed);
+    const plain = stripAnsi(text);
+    // the text as it is, with its escape sequences cut out, and with tabs, line breaks, other control codes and spaces cut out (a token split by one is a token)
+    if ([text, plain, plain.replace(WHITE, '')].some((v) => maskNoteText(v).changed)) return true;
   } catch {
-    r = true;
+    return true;
   }
-  if (hiddenCache.size >= 500) hiddenCache.clear();
-  hiddenCache.set(raw, r);
-  return r;
+  if (hiddenCache.size >= CACHE_MAX) hiddenCache.clear();
+  hiddenCache.set(key, false);
+  return false;
 }
 /** A tool or server name for the file: the plain `name`, or `placeholder` when it looks like a secret. `report.masked` counts the replaced ones. */
 function hideable(v: unknown, placeholder: string, report?: { masked: number }): string {
@@ -139,7 +148,7 @@ export function sanitizeDoc(raw: unknown, now: Date = new Date(), report?: { mas
       if (Object.keys(doc.agents).length >= MAX_AGENTS) break;
       const label = name(k);
       if (!isObj(v) || !okKey(label)) continue;
-      const a: AgentUsage = { calls: count(v.calls), failed: count(v.failed), tools: {} };
+      const a: AgentUsage = { calls: count(v.calls), failed: count(v.failed), tools: dict() };
       if (isObj(v.tools)) {
         for (const [tk, tv] of Object.entries(v.tools)) {
           if (Object.keys(a.tools).length >= MAX_TOOLS_PER_AGENT) break;
@@ -166,7 +175,7 @@ export function recordEvent(doc: UsageDoc, agentLabel: string, ev: unknown): boo
   const label = name(agentLabel);
   if (!okKey(label)) return false;
   const k = toolKey(ev);
-  if (!okKey(k.key)) return false;
+  if (!okKey(k.key) || (k.server && !okKey(k.server))) return false;
   let t = doc.tools[k.key];
   if (!t) {
     if (Object.keys(doc.tools).length >= MAX_TOOLS) return false;
@@ -175,7 +184,7 @@ export function recordEvent(doc: UsageDoc, agentLabel: string, ev: unknown): boo
   let a = doc.agents[label];
   if (!a) {
     if (Object.keys(doc.agents).length >= MAX_AGENTS) return false;
-    a = { calls: 0, failed: 0, tools: {} };
+    a = { calls: 0, failed: 0, tools: dict() };
   }
   let at = a.tools[k.key];
   if (!at) {

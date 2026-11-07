@@ -107,5 +107,34 @@ assert.strictEqual(blocked.view().tools['builtin:bash'].calls, 1);
   assert.strictEqual(fs.statSync(f).mtimeMs, before, 'and not touched');
 }
 
+// review of #1294: a leftover .tmp can hold a pre-mask name; it is removed on load and after a failed rename
+{
+  const TK = 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4';
+  const PARTS = /ghp_|A1b2C3d4|E5f6G7h8|K1l2M3n4/;
+  const f = path.join(dir, 'tmp-case', 'usage.json');
+  fs.mkdirSync(path.dirname(f), { recursive: true });
+  const dirty = JSON.stringify({ version: 1, tools: { ['builtin:' + TK]: { source: 'builtin', server: '', name: TK, calls: 1, failed: 0 } } });
+  fs.writeFileSync(f, JSON.stringify({ version: 1, since: '2026-10-01T00:00:00.000Z', tools: { 'builtin:bash': { source: 'builtin', server: '', name: 'bash', calls: 2, failed: 0 } } }));
+  fs.writeFileSync(f + '.tmp', dirty);
+  const ld = new UsageStore(f, opts);
+  ld.load();
+  assert.ok(!fs.existsSync(f + '.tmp'), 'tmp-load: a stale .tmp is removed on load although the main file is clean');
+  assert.strictEqual(ld.view().tools['builtin:bash'].calls, 2, 'tmp-load: the clean file still loads');
+  // an oversized main file: the tmp goes too
+  fs.writeFileSync(f, ' '.repeat(2 * 1024 * 1024 + 1));
+  fs.writeFileSync(f + '.tmp', dirty);
+  new UsageStore(f, opts).load();
+  assert.ok(!fs.existsSync(f + '.tmp'), 'tmp-load: removed even when the main file is refused');
+  // a rename that fails (a directory sits where the file should go; fails on Linux, macOS and Windows alike)
+  const g = path.join(dir, 'tmp-case', 'dir-target.json');
+  fs.mkdirSync(g);
+  const bad = new UsageStore(g, opts);
+  bad.record('Ada · app', start(TK));
+  bad.flush();
+  assert.ok(bad.lastError, 'tmp-rename: the failed rename is reported');
+  assert.ok(!fs.existsSync(g + '.tmp'), 'tmp-rename: no .tmp is left after a failed rename');
+  assert.ok(!PARTS.test(JSON.stringify(bad.view())), 'tmp-rename: the in-memory document holds no part of the name');
+}
+
 fs.rmSync(dir, { recursive: true, force: true });
 console.log('usagestore: all checks passed');
