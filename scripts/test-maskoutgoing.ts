@@ -344,6 +344,51 @@ for (const t of texts) {
       assert.strictEqual(a.changed, b.changed, `long fuzz ${n}: changed as the reference for ${JSON.stringify(t)}`);
       assert.ok(subseq(shown(a.text), shown(b.text)), `long fuzz ${n}: nothing the reference hides is shown: ${JSON.stringify(t)}`);
     }
+    // the independent audit of PR 1244: bounded windows over non-ASCII classes in the other rule families (one repro per `LIVE_HEAD` alternative)
+    const Z = '\u200d';
+    const pad = (n: number): string => ('\u00e9' + Z).repeat(n) + '\u00e9';
+    const PW = 'Hunter2' + 'pass99';
+    const audit: Record<string, string> = {
+      netrc_host: `machine ${pad(130)} login bob password ${PW}`,
+      netrc_login: `machine example.org login ${pad(70)} password ${PW}`,
+      curl_window: `curl "${pad(110)}" -u bob:${PW} https://x.test`,
+      curl_user: `curl -u ${pad(70)}:${PW} https://x.test`,
+      curl_window_nourl: `curl "${pad(110)}" -u bob:${PW}`,
+      curl_user_nourl: `curl -u ${pad(70)}:${PW}`,
+      url_user: `https://${pad(110)}:${PW}@x.test/`,
+      url_pass: `https://bob:${pad(110)}@x.test/`,
+      json_cookie: `{"Cookie": "${pad(70)}=${PW}"}`,
+      cookie_hdr: `Cookie: ${pad(70)}=${PW}`,
+    };
+    for (const [k, t] of Object.entries(audit)) {
+      const a = maskOutgoing(t, []);
+      const b = maskKeepingMarkdownReference(t, []);
+      assert.strictEqual(a.changed, b.changed, `audit ${k}: changed as the reference`);
+      assert.ok(subseq(shown(a.text), shown(b.text)), `audit ${k}: nothing the reference hides is shown`);
+      assert.strictEqual(hiddenCanHide(t, [], {}), true, `audit ${k}: LIVE_HEAD makes the hidden characters live`);
+    }
+    // seeded structural templates: a non-ASCII run (with joiners) in the host, user, cookie name or curl argument, all window sizes
+    const run = (): string => { const n = 20 + Math.floor(rnd() * 150); let r = 'x'; for (let k = 0; k < n; k++) r += pick(['\u00e9', '\u0436', '\u65e5']) + (rnd() < 0.5 ? pick(hidden) : ''); return r; };
+    const tpl: Array<() => string> = [
+      () => `machine ${run()} login bob password ${PW}`,
+      () => `machine example.org login ${run()} password ${PW}`,
+      () => `curl "${run()}" -u bob:${PW} https://x.test`,
+      () => `curl -u ${run()}:${PW} https://x.test`,
+      () => `curl -u ${run()}:${PW}`,
+      () => `curl "${run()}" -u bob:${PW}`,
+      () => `https://${run()}:${PW}@x.test/`,
+      () => `https://bob:${run()}@x.test/`,
+      () => `{"Cookie": "${run()}=${PW}"}`,
+      () => `Cookie: ${run()}=${PW}`,
+      () => `Set-Cookie: ${run()}=${PW}; Path=/`,
+    ];
+    for (let n = 0; n < 3000; n++) {
+      const t = pick(tpl)();
+      const a = maskOutgoing(t, []);
+      const b = maskKeepingMarkdownReference(t, []);
+      assert.strictEqual(a.changed, b.changed, `template fuzz ${n}: changed as the reference for ${JSON.stringify(t)}`);
+      assert.ok(subseq(shown(a.text), shown(b.text)), `template fuzz ${n}: nothing the reference hides is shown: ${JSON.stringify(t)}`);
+    }
     // an env secret with a space (VS Code sets GIT_ASKPASS to such a path on macOS and Windows) leaves the rule as with none
     for (const e of [{ GIT_ASKPASS: '/a b/askpass.sh' }, { API_TOKEN: 'my secret value 12' }, { GIT_ASKPASS: '/Users/a b/Library/askpass.sh', VSCODE_GIT_ASKPASS_NODE: 'C:\\Program Files\\Code\\Code.exe' }]) {
       for (const t of ['\u2764\ufe0f\u{1F600}', '\u00e9\u200d\u00e9', 'gh\u200dp', '\u00e9\u200d x']) {
