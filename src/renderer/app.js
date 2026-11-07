@@ -2114,9 +2114,9 @@ function renderConvResults(){
     const on=CS.sort&&CS.sort.key===k,dir=on?(CS.sort.dir==='asc'?'ascending':'descending'):'none';
     return `<span role="columnheader" aria-sort="${dir}"${k==='folder'?' class="lfold"':k==='ago'?' class="num"':''}><button type="button" class="lsort" data-cssort="${k}" data-csf="sort-${k}" title="Sort the results by ${esc(t.toLowerCase())}">${esc(t)}<span class="sarr" aria-hidden="true">${on?(CS.sort.dir==='asc'?'▲':'▼'):'↕'}</span></button></span>`;}).join('');
   const scanning=!!st&&!st.done;
-  const state=st?`<div class="cs-state"><span class="cs-st">${esc(CSU.stateText(st))}</span>${scanning&&CS.id?'<button class="btn cs-stop" type="button" id="csStop" data-csf="stop">Stop</button>':''}</div>`:'';
+  const state=st?`<div class="cs-state"><span class="cs-st">${esc(CSU.stateText(st))}</span>${scanning&&CS.id?'<button class="btn sm" type="button" id="csStop" data-csf="stop">Stop</button>':''}</div>`:'';
   const notes=st&&st.done?CSU.notesText(st):'';
-  const ex=(h,k)=>h.excerpts&&h.excerpts.length?`<div class="cs-exs">${h.excerpts.map((x,i)=>`<button type="button" class="cs-ex" data-csk="${esc(k)}" data-csx="${i}" data-csf="${esc(k)}#${i}" title="${h.group==='office'?'Open the chat at this message':h.adapter==='vscode'?'View this chat at this message':'Resume this session at this message'}">${CSU.excerptHTML(x,esc)}</button>`).join('')}${h.more?`<span class="cs-more">+${h.more} more</span>`:''}</div>`:'';
+  const ex=(h,k)=>h.excerpts&&h.excerpts.length?`<div class="cs-exs">${h.excerpts.map((x,i)=>`<button type="button" data-csk="${esc(k)}" data-csx="${i}" data-csf="${esc(k)}#${i}" title="${h.group==='office'?'Open the chat at this message':h.adapter==='vscode'?'View this chat at this message':'Resume this session at this message'}">${CSU.excerptHTML(x,esc)}</button>`).join('')}${h.more?`<span class="cs-more">+${h.more} more</span>`:''}</div>`:'';
   const officeRow=h=>{
     const a=byId(h.agentId), k=CSU.keyOf(h); if(!a)return '';
     const named=h.titleMarks&&h.titleMarks.length&&h.title===a.name; /* FR-011: a title match marked in the row's title */
@@ -2125,7 +2125,7 @@ function renderConvResults(){
   const earlierRow=h=>{
     const k=CSU.keyOf(h), opened=h.openedAs&&byId(h.openedAs), view=h.adapter==='vscode', ago=h.time?ACT.agoShort(Math.max(0,Date.now()-h.time)):'', agoL=h.time?ACT.agoLong(Math.max(0,Date.now()-h.time)):'';
     const act=opened?'Open':view?'View':'Resume';
-    return `<div class="cs-hit" data-csk="${esc(k)}"><div class="lrow cs-prow"><span class="lname"><span class="lnm" title="${esc(h.title)}">${CSU.markedHTML(h.title,h.titleMarks,esc)}</span></span><span class="lcell" title="${esc(h.app)}">${esc(h.app)}</span><span class="lcell lrole">${view?'VS Code chat':'Earlier session'}</span><span class="lcell mono lfold" title="${esc(h.folderName)}">${esc(h.folderName)}</span><span class="lcell"></span><span class="lcell num"${agoL?` title="Last active ${esc(agoL)}"`:''}>${esc(ago)}</span><span class="lcell num"></span><span><button class="btn cs-act" type="button" data-csk="${esc(k)}" data-csnav="1" data-csf="${esc(k)}" aria-label="${esc(act+': '+CSU.accName(h))}">${act}</button></span></div>${ex(h,k)}</div>`;};
+    return `<div class="cs-hit" data-csk="${esc(k)}"><div class="lrow cs-prow"><span class="lname"><span class="lnm" title="${esc(h.title)}">${CSU.markedHTML(h.title,h.titleMarks,esc)}</span></span><span class="lcell" title="${esc(h.app)}">${esc(h.app)}</span><span class="lcell lrole">${view?'VS Code chat':'Earlier session'}</span><span class="lcell mono lfold" title="${esc(h.folderName)}">${esc(h.folderName)}</span><span class="lcell"></span><span class="lcell num"${agoL?` title="Last active ${esc(agoL)}"`:''}>${esc(ago)}</span><span class="lcell num"></span><span><button class="btn sm" type="button" data-csact="1" data-csk="${esc(k)}" data-csnav="1" data-csf="${esc(k)}" aria-label="${esc(act+': '+CSU.accName(h))}">${act}</button></span></div>${ex(h,k)}</div>`;};
   const group=(g,title,list,row)=>list.length?`<div class="cs-ghead" role="heading" aria-level="3">${esc(title)} <span>· ${list.length===1?'1 session':list.length+' sessions'}</span></div>${list.map(row).join('')}`:'';
   const none=st&&st.done&&!CSU.count(st)&&!st.failed?`<div class="empty">No conversation matches “${esc(CS.q.trim())}”.</div>`:'';
   L.innerHTML=`<div class="list-wrap cs-wrap" role="group" aria-label="Search results" data-sort="${CS.sort?CS.sort.key:''}"><div class="lrow lhead" role="row">${head}</div>${state}${notes?`<div class="cs-notes">${esc(notes)}</div>`:''}${group('office','In the office',view.office,officeRow)}${group('earlier','Earlier sessions',view.earlier,earlierRow)}${none}</div>`;
@@ -2217,13 +2217,13 @@ function csWire(){
     e.stopPropagation(); e.preventDefault();
     const h=CS.st&&CS.st.hits.get(k.dataset.csk); if(!h)return;
     const x=k.dataset.csx!=null?h.excerpts[+k.dataset.csx]:h.excerpts&&h.excerpts[0];
-    csOpen(h,x||null,k.matches('.cs-act')?k:null);
+    csOpen(h,x||null,k.matches('[data-csact]')?k:null);
   });
   /* US3.3: J/K and the arrows move between results like the List view; Escape clears and goes back */
   L.addEventListener('keydown',e=>{
     if(!CS.active||e.altKey||e.ctrlKey||e.metaKey||e.isComposing)return;
     if(e.key==='Escape'&&!e.shiftKey&&!e.target.closest('[role="menu"]')){e.preventDefault();e.stopPropagation();if(s)s.value='';csEnd({restore:true,clearBox:true});return;}
-    if(e.shiftKey||!/^(j|k|J|K|ArrowDown|ArrowUp)$/.test(e.key)||!e.target.closest('[data-csnav],.cs-ex,[data-cssort]'))return;
+    if(e.shiftKey||!/^(j|k|J|K|ArrowDown|ArrowUp)$/.test(e.key)||!e.target.closest('[data-csnav],[data-csx],[data-cssort]'))return;
     const rows=[...L.querySelectorAll('[data-csnav]')], cur=e.target.closest('.cs-hit'), i=cur?rows.findIndex(r=>r.closest('.cs-hit')===cur):-1, down=/^(j|J|ArrowDown)$/.test(e.key);
     const n=i<0?(down?rows[0]:null):rows[Math.max(0,Math.min(rows.length-1,i+(down?1:-1)))];
     e.preventDefault(); e.stopPropagation(); if(n)focusIn(n); else if(!down&&s)focusIn(s);

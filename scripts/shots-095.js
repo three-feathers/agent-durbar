@@ -38,7 +38,7 @@ module.exports = async (ctx) => {
   const shortcut = () => key('F', [MOD, 'shift'], { char: 'never' });
   const results = () => js(`(()=>{const L=document.getElementById('list');return {list:document.body.classList.contains('list-mode'),
     state:(L.querySelector('.cs-st')||{}).textContent||'',notes:(L.querySelector('.cs-notes')||{}).textContent||'',groups:[...L.querySelectorAll('.cs-ghead')].map(g=>g.textContent.trim()),
-    hits:[...L.querySelectorAll('.cs-hit')].map(h=>({k:h.dataset.csk,ex:h.querySelectorAll('.cs-ex').length,marks:h.querySelectorAll('mark').length})),stop:!!document.getElementById('csStop')};})()`);
+    hits:[...L.querySelectorAll('.cs-hit')].map(h=>({k:h.dataset.csk,ex:h.querySelectorAll('[data-csx]').length,marks:h.querySelectorAll('mark').length})),stop:!!document.getElementById('csStop')};})()`);
   const typeQuery = async (q) => {
     await js(`(()=>{const s=document.getElementById('convSearch');s.value='';s.dispatchEvent(new Event('input'));})()`);
     await ok(`!document.querySelector('#list .cs-wrap')`, 'an emptied box ends the search (no results left from the last one)', 3000);
@@ -51,7 +51,7 @@ module.exports = async (ctx) => {
   const fit = () => js(`(()=>{const L=document.getElementById('list'),rs=[...L.querySelectorAll('.cs-hit')].map(e=>e.getBoundingClientRect());
     const fonts=[...L.querySelectorAll('.cs-hit *, .cs-st, .cs-notes, .cs-ghead, .lhead *')].filter(e=>e.childNodes.length&&[...e.childNodes].some(n=>n.nodeType===3&&n.textContent.trim())).map(e=>parseFloat(getComputedStyle(e).fontSize));
     const over=rs.some((r,i)=>i>0&&r.top<rs[i-1].bottom-0.5);
-    const ex=[...L.querySelectorAll('.cs-ex')].map(e=>{const lh=parseFloat(getComputedStyle(e).lineHeight);return e.getBoundingClientRect().height/lh;});
+    const ex=[...L.querySelectorAll('[data-csx]')].map(e=>{const lh=parseFloat(getComputedStyle(e).lineHeight);return e.getBoundingClientRect().height/lh;});
     const de=document.documentElement;return {min:Math.min(...fonts),over,maxLines:Math.max(0,...ex),pageScroll:de.scrollHeight>innerHeight+1||de.scrollWidth>innerWidth+1,inner:getComputedStyle(L).overflowY};})()`);
   /* the marked bubble in the chat: inside the chat's view */
   const jumped = (vs) => js(`(()=>{const c=document.getElementById('chat'),b=c&&c.querySelector(${jsLiteral((vs ? '.vsbody ' : '') + '.bubble.nt-found')});if(!b)return null;const r=b.getBoundingClientRect(),q=c.getBoundingClientRect();return {text:b.textContent.slice(0,80),inView:r.top>=q.top-1&&r.bottom<=q.bottom+1};})()`);
@@ -156,7 +156,7 @@ module.exports = async (ctx) => {
     await ok(`!document.body.classList.contains('panel-open')&&!!document.querySelector('#list .cs-hit')`, `${w}: closing the chat comes back to the results`);
 
     // ---- US2.3: a VS Code chat opens in the viewer at its message ----
-    await js(`(()=>{const h=[...document.querySelectorAll('#list .cs-hit')].find(x=>/^earlier:vscode/.test(x.dataset.csk)&&x.querySelectorAll('.cs-ex').length>2);h.querySelectorAll('.cs-ex')[2].click();})()`);
+    await js(`(()=>{const h=[...document.querySelectorAll('#list .cs-hit')].find(x=>/^earlier:vscode/.test(x.dataset.csk)&&x.querySelectorAll('[data-csx]').length>2);h.querySelectorAll('[data-csx]')[2].click();})()`);
     await ok(`!!document.querySelector('#chat .vsbody .bubble.nt-found')`, `${w}: the VS Code viewer marks the message`);
     j = await jumped(true);
     assert.ok(j && j.inView && /Follow-up 1/.test(j.text), `${w}: the third excerpt's message: ${JSON.stringify(j)}`);
@@ -166,13 +166,13 @@ module.exports = async (ctx) => {
     // ---- US2.2: an earlier Claude Code session resumes at its message (Resume, the Previous sessions path) ----
     await typeQuery('filings handler');
     await doneWith(1);
-    await js(`(()=>{const h=[...document.querySelectorAll('#list .cs-hit')].find(x=>/^earlier:claude:/.test(x.dataset.csk)&&x.querySelector('.cs-ex'));h.querySelector('.cs-ex').click();})()`);
+    await js(`(()=>{const h=[...document.querySelectorAll('#list .cs-hit')].find(x=>/^earlier:claude:/.test(x.dataset.csk)&&x.querySelector('[data-csx]'));h.querySelector('[data-csx]').click();})()`);
     await ok(`document.body.classList.contains('panel-open')&&!!document.querySelector('#chat .bubble.nt-found')`, `${w}: the resumed session shows the message`, 12000);
     j = await jumped(false);
     assert.ok(j && j.inView && /filings/i.test(j.text), `${w}: the resumed session's message: ${JSON.stringify(j)}`);
     await closeChat();
     await ok(`!document.body.classList.contains('panel-open')`, `${w}: back`);
-    await ok(`[...document.querySelectorAll('#list .cs-act')].some(b=>b.textContent==='Open')`, `${w}: the resumed one now says Open (it is in the office)`);
+    await ok(`[...document.querySelectorAll('#list [data-csact]')].some(b=>b.textContent==='Open')`, `${w}: the resumed one now says Open (it is in the office)`);
 
     // ---- US3.2: Escape in the results clears the query and goes back to the Office view and the desk ----
     await focusBox();
@@ -195,16 +195,16 @@ module.exports = async (ctx) => {
     // US5.2: an earlier Copilot session is a title hit: Resume opens it at the end, no message marked
     await typeQuery('backoff');
     await doneWith(1);
-    await ok(`[...document.querySelectorAll('#list .cs-hit')].some(x=>/^earlier:copilot:/.test(x.dataset.csk)&&!x.querySelector('.cs-ex')&&x.querySelector('mark'))`, `${w}: an earlier Copilot session matches by its title, marked, with no excerpt`);
+    await ok(`[...document.querySelectorAll('#list .cs-hit')].some(x=>/^earlier:copilot:/.test(x.dataset.csk)&&!x.querySelector('[data-csx]')&&x.querySelector('mark'))`, `${w}: an earlier Copilot session matches by its title, marked, with no excerpt`);
     assert.ok(/Not searched: earlier GitHub Copilot sessions, by title only \(\d+\)\./.test((await results()).notes), `${w}: the end state says Copilot's earlier sessions are searched by title only (Q4)`);
-    await js(`[...document.querySelectorAll('#list .cs-hit')].find(x=>/^earlier:copilot:/.test(x.dataset.csk)).querySelector('.cs-act').click()`);
+    await js(`[...document.querySelectorAll('#list .cs-hit')].find(x=>/^earlier:copilot:/.test(x.dataset.csk)).querySelector('[data-csact]').click()`);
     await ok(`document.body.classList.contains('panel-open')`, `${w}: Resume opens it`, 12000);
     await ctx.sleep(400);
     assert.ok(!(await js(`!!document.querySelector('#chat .bubble.nt-found')`)), `${w}: a title hit opens at the end, no message marked`);
     await closeChat();
     await typeQuery('pipeline');
     await doneWith(1);
-    await js(`document.querySelector('#list .cs-row ~ .cs-exs .cs-ex').click()`);
+    await js(`document.querySelector('#list .cs-row ~ .cs-exs [data-csx]').click()`);
     await ok(`document.body.classList.contains('panel-open')`, `${w}: the chat opens`);
     await ok(`[...document.querySelectorAll('#toasts .toast')].some(t=>t.textContent.includes('That message is older than the chat shows.'))`, `${w}: "That message is older than the chat shows."`);
     assert.ok(!(await js(`!!document.querySelector('#chat .bubble.nt-found')`)), `${w}: and no wrong message is marked`);
@@ -231,7 +231,7 @@ module.exports = async (ctx) => {
         {adapter:'claude',sessionId:'evil-earlier',agentId:a.id,group:'earlier',app:'Claude Code',folderName:'demo',title:${jsLiteral('Evil ' + PAT)},titleMarks:[[0,4]],time:Date.now()-60000,excerpts:[],more:0}],progress:{done:1,total:9},groups:{office:1,earlier:1}});return a.id;})()`);
     await ok(`[...document.querySelectorAll('#list .cs-hit button.lrow[data-id]')].some(b=>b.dataset.id===${jsLiteral(injected)})`, `${w}: the injected result is shown`, 3000);
     const inj = await js(`(()=>{const h=[...document.querySelectorAll('#list .cs-hit')].find(x=>x.querySelector('button.lrow[data-id]')&&x.querySelector('button.lrow').dataset.id===${jsLiteral(injected)});
-      const rows=h.querySelectorAll('button.lrow'),b=rows[0];return {rows:rows.length,styled:[...document.querySelectorAll('#list [style]')].length,attrs:[...b.attributes].map(x=>x.name).sort(),label:b.getAttribute('aria-label'),name:(b.querySelector('.lnm')||{}).textContent,ex:(h.querySelector('.cs-ex')||{}).textContent};})()`);
+      const rows=h.querySelectorAll('button.lrow'),b=rows[0];return {rows:rows.length,styled:[...document.querySelectorAll('#list [style]')].length,attrs:[...b.attributes].map(x=>x.name).sort(),label:b.getAttribute('aria-label'),name:(b.querySelector('.lnm')||{}).textContent,ex:(h.querySelector('[data-csx]')||{}).textContent};})()`);
     assert.strictEqual(inj.rows, 1, `${w}: one row button: ${JSON.stringify(inj)}`);
     assert.strictEqual(inj.styled, 0, `${w}: no style attribute anywhere in the results: ${JSON.stringify(inj)}`);
     assert.deepStrictEqual(inj.attrs, ['aria-label', 'aria-pressed', 'class', 'data-csf', 'data-csk', 'data-csnav', 'data-id'], `${w}: only the row's own attributes`);
@@ -329,7 +329,7 @@ module.exports = async (ctx) => {
   await H.calm();
   await typeQuery('registry');
   await doneWith(1);
-  await js(`document.querySelector('#list .cs-row ~ .cs-exs .cs-ex').click()`);
+  await js(`document.querySelector('#list .cs-row ~ .cs-exs [data-csx]').click()`);
   await ok(`!!document.querySelector('#chat .bubble.nt-found')`, 'Real office: a result opens at its message');
   // ---- FR-050: reduced motion: the jump marks the message without a fade (the outline stays, no animation) ----
   {
@@ -342,7 +342,7 @@ module.exports = async (ctx) => {
       assert.ok(await js(`matchMedia('(prefers-reduced-motion: reduce)').matches`), 'reduced motion is emulated');
       await typeQuery('registry');
       await doneWith(1);
-      await js(`document.querySelector('#list .cs-row ~ .cs-exs .cs-ex').click()`);
+      await js(`document.querySelector('#list .cs-row ~ .cs-exs [data-csx]').click()`);
       await ok(`!!document.querySelector('#chat .bubble.nt-found')`, 'reduced motion: the message is marked');
       const st = await js(`(()=>{const b=document.querySelector('#chat .bubble.nt-found'),cs=getComputedStyle(b);return {anim:cs.animationName,outline:cs.outlineStyle};})()`);
       assert.ok(st.anim === 'none' && st.outline === 'solid', `reduced motion: an outline, no fade: ${JSON.stringify(st)}`);
