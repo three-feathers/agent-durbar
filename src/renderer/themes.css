@@ -39,6 +39,7 @@ html[data-ui="retro"] .topbar :focus-visible{outline-color:var(--ui-top-ink)}
 
 /* ---------- Retro Pixel: an 8-bit arcade. Dark page, thick black outlines, hard shadows, no round corners ---------- */
 html[data-ui="retro"]{--ui-display:ui-monospace,"Cascadia Mono","DejaVu Sans Mono",Menlo,Consolas,monospace;--ui-top-ink:#ffec27;--ui-top-ink-2:#fff1e8}
+html[data-ui="retro"] .ph h2{font-family:var(--ui-display)} /* spec 102 T221: the arcade's chat name on its marquee in the mono display font */
 html[data-ui="retro"] body{background-image:radial-gradient(rgba(255,255,255,.07) 1px,transparent 1.5px);background-size:8px 8px}
 html[data-ui="retro"] .topbar{background:var(--ink);border-bottom-color:var(--ink);box-shadow:inset 0 -4px 0 var(--sel-border)}
 html[data-ui="retro"] .brand h1{text-transform:uppercase;letter-spacing:.08em;font-weight:800}

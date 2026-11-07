@@ -79,8 +79,8 @@ module.exports = async (ctx) => {
     await shot(world, 'chat', w, h);
     if (world === 'retro') {
       /* spec 102 T221: the name on the marquee; every text of the cards, deep, 4.5:1; a waiting agent's permission card is dark */
-      const mq = await js(`(()=>{const t=document.getElementById('panelTitle'),c=getComputedStyle(t);return {bg:c.backgroundColor,ink:c.color,px:parseFloat(c.fontSize)}})()`);
-      assert.ok(mq.bg !== 'rgba(0, 0, 0, 0)' && mq.ink === 'rgb(255, 236, 39)' && mq.px >= 10.5, `${tag}: the header's name is on a marquee (filled, the mark's yellow): ${JSON.stringify(mq)}`);
+      const mq = await js(`(()=>{const t=document.getElementById('panelTitle'),c=getComputedStyle(t);return {bg:c.backgroundColor,ink:c.color,px:parseFloat(c.fontSize),font:c.fontFamily}})()`);
+      assert.ok(mq.bg !== 'rgba(0, 0, 0, 0)' && mq.ink === 'rgb(255, 236, 39)' && /mono/i.test(mq.font) && mq.px >= 10.5, `${tag}: the header's name is on a marquee (filled, the mark's yellow, mono): ${JSON.stringify(mq)}`);
       const deep = await js(CONTRAST_OF(true));
       assert.deepStrictEqual(deep.bad, [], `${tag}: contrast of ${deep.n} text elements of the header and the cards (deep)`);
       await js(`document.getElementById('backBtn').click()`);
