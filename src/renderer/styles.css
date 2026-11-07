@@ -2197,3 +2197,4 @@ body.panel-open .door-panel,#screen:not([hidden]) ~ .door-panel{display:none}
 @media (forced-colors:active){.door-panel{border:1px solid CanvasText}}
 .door-body .inbox-row .ib-ans{flex-wrap:wrap;max-width:100%}
 .door-body .inbox-row .ib-ans>.btn.session{flex:1 1 100%;display:block;height:auto;min-height:28px;padding-top:var(--r-sm);padding-bottom:var(--r-sm);white-space:normal;overflow:visible;text-overflow:clip;text-align:left} /* FR-199 (Q-NY-10): the session grant on its own line, wrapped and never cut */
+.door-body .inbox-row.is-limit .ib-ans>.btn.session{flex:none;display:inline-block;height:28px;min-height:0;padding-top:0;padding-bottom:0;white-space:nowrap;text-align:center} /* the limit row's Remove limit is a plain button like Raise limit and Stop here */
