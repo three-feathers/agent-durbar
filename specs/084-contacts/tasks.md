@@ -34,7 +34,7 @@ description: "Tasks for spec 084: contacts, and sending the message box to a per
 
 ## Phase 1: Foundation for the MVP (blocks US1..US3)
 
-- [ ] T010 [P] Pure contact model in `src/shared/contacts.ts`. [FR-002..FR-006, FR-005]
+- [x] T010 [P] Pure contact model in `src/shared/contacts.ts`. [FR-002..FR-006, FR-005]
   - AC1: `parseContactsDoc` keeps valid contacts, drops a bad one and keeps the rest; returns an error for an unknown version, non-JSON or a document over the derived byte cap.
   - AC2: `cleanContact` refuses each FR-004 hostile address (CR, LF, `?cc=`, `&message=`, `%0A`, `,`, `;`, quotes, `javascript:`, a full-width or other look-alike `@`, any non-ASCII character such as a Cyrillic `а` or Greek `ο` in the local part or domain, a full-width dot, a zero-width space) with the field's reason, and accepts plain ASCII `local@domain` up to 254 characters; Slack and Telegram ids follow their FR-003 patterns.
   - AC3: `applyChange` refuses a stale `rev` with `stale`; refuses the 301st contact, the 9th channel and the 6th alias with their reasons.
@@ -61,9 +61,9 @@ description: "Tasks for spec 084: contacts, and sending the message box to a per
 - [ ] T013 Store `src/main/contactsstore.ts`. [FR-001, FR-007, FR-008, FR-081]
   - AC1: creates `contacts/` 0700 and files 0600 on POSIX (checked with `stat` in a temp `userData`); atomic `wx` temp + rename.
   - AC2: two stores on one file: an outside change is re-read and merged by `id` before a write; a stale `rev` is refused (1,000 random operations, no lost or resurrected contact).
-  - AC3: an unreadable file (bad JSON, unknown version, over cap, a FIFO or link) is never overwritten; *Start over* renames it to `.bad-<UTC>` 0600.
+  - AC3: an unreadable file (bad JSON, unknown version, over cap, a FIFO or link) is never overwritten; *Start over* renames it to `.bad-<UTC>` 0600. The only way out is *Start over*. Before the first write after invalid contacts were dropped when reading, a `.bad-<UTC>` copy is kept and the UI says so.
   - AC4: the send log keeps at most 500 entries, oldest dropped, and has exactly FR-081's fields (a test fails if any other key, the text, or an `@` address appears).
-  - AC5: notes are stored masked (a planted token never reaches the file).
+  - AC5: notes are stored masked (a planted token never reaches the file). A note that masking makes longer than 1,000 characters is refused with a reason, never cut.
 - [ ] T014 IPC `src/main/ipc/contacts.ts`, preload and `src/shared/api.ts` types (MVP channels). [FR-085, FR-040, FR-033, FR-046]
   - AC1: `contacts:list/save/delete/star/move/preview/open/log/clearLog/export/deleteAll` registered with `fromApp`; `test-ipcchannels` lists them.
   - AC2: `contacts:preview` takes ids and text only, looks up the agent (a main chat, not a helper), runs `maskOutgoing` with that chat's known values (a text over 4,000 characters is refused before it is masked, so one check stays near 45 ms at worst; review of PR 1236) and refuses `blocked: secret` when changed, builds the link with T011 and returns a `previewId` bound to contact, channel, recipient, text and URL; `contacts:open(previewId)` opens exactly that URL, and the injected opener is called only with a result that starts with a `CONTACT_LINK_ALLOWLIST` entry.
@@ -88,7 +88,7 @@ description: "Tasks for spec 084: contacts, and sending the message box to a per
 ## Phase 2: MVP UI and option C (US1, US2, US3)
 
 - [ ] T020 [US1] Settings > Contacts section in `screens.js` + `src/renderer/contacts.js`. [FR-010..FR-014]
-  - AC1: list (favourites first in order, then by name), search, *Add contact…*, *Edit…*, *Star*, *Move up/down*, *Delete…* (*Cancel* focused); empty text as FR-010.
+  - AC1: list (favourites first in order, then by name), search, *Add contact…*, *Edit…*, *Star*, *Move up/down*, *Delete…* (*Cancel* focused); empty text as FR-010. A contact whose name is the same as another after NFKC and case folding, or that mixes confusable scripts, shows a look-alike warning in the list and in the preview. The comparison first strips default-ignorable characters (the `HIDDEN_CHARS` list of `redact.ts`), then applies NFKC and case folding.
   - AC2: the form shows only the fields of each channel kind; a refused field shows its reason (`role="alert"`) and the form does not save.
   - AC3: *Open Teams links in* choice saved (`settings.teamsApp`), its *not checked* note shown.
   - AC4: the *What Durbar does not do* list has FR-014's line.

@@ -207,6 +207,7 @@
     "test:brainloop": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-brainloop.js",
     "test:brainsurface": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-brainsurface.js",
     "test:toolusage": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-toolusage.js",
+    "test:contacts": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-contacts.js",
     "test:about": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-about.js",
     "test:modelswitch": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-modelswitch.js",
     "test:modelchoice": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-model-choice.js",
