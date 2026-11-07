@@ -88,6 +88,8 @@ A tag without a `-` (`v1.2.3`) is handled by the same flow with these difference
 - The fold PR for a stable tag also updates the hand-written alpha wording that tests assert: the landing page eyebrow and
   status in `docs/site/landing.json` with their asserts in `scripts/test-site.js`, and the README status block.
 
+- Optional, from 2026-11-07 (spec 008 FR-181): add the day's *Build cost* table (`npm run usage:day -- --date YYYY-MM-DD`, an API list-price estimate, not billing) to the notes; setup and privacy in [docs/build-cost.md](../docs/build-cost.md).
+
 ## Test builds (spec 008 FR-121..FR-124)
 
 A test-build tag (`vX.Y.Z[-alpha|beta|rc.N]-test.M`, allowed on a branch) does not use the fragments at all: its notes list the

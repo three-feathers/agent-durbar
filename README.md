@@ -71,7 +71,7 @@ npm run typecheck && npm run build && npm test
 npm start                 # the app; DURBAR_SIM=15 npm start for 15 simulated agents, no AI credits
 ```
 
-All `npm run` commands, the repository layout and how we work (spec-driven with [GitHub Spec Kit](https://github.com/github/spec-kit): no code without a spec, a plan and tasks): [docs/development.md](docs/development.md), [CONTRIBUTING.md](CONTRIBUTING.md), [AGENTS.md](AGENTS.md).
+What the agents spend to build the app (tokens per model, list-price dollars; contributors can add their own machine): [docs/build-cost.md](docs/build-cost.md). All `npm run` commands, the repository layout and how we work (spec-driven with [GitHub Spec Kit](https://github.com/github/spec-kit): no code without a spec, a plan and tasks): [docs/development.md](docs/development.md), [CONTRIBUTING.md](CONTRIBUTING.md), [AGENTS.md](AGENTS.md).
 
 ## More documentation
 
