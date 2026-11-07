@@ -6,7 +6,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { assertLinearShape } from './redact-growth-lib';
-import { HIDDEN_CHARS, NOTE_MARK, maskNoteText, maskOutgoing, redact } from '../src/shared/redact';
+import { HIDDEN_CHARS, NOTE_MARK, hiddenCanHide, maskKeepingMarkdownReference, maskNoteText, maskOutgoing, redact } from '../src/shared/redact';
 
 // test-redact.ts's corpus (§3 `planted`), one sample per kind, with the part that must never survive
 const CORPUS: Array<[string, string, string]> = [
@@ -228,6 +228,98 @@ for (const t of texts) {
     assert.deepStrictEqual(maskOutgoing(t2, vals), maskNoteText(t2, vals), `same result: ${JSON.stringify(t2.slice(0, 60))}`);
   }
 }
+
+// issue 1234 (spec 095 T065): an inert hidden character (between two non-ASCII, non-space characters) skips the copy pass. Seeded
+// differential fuzz against the reference (the masks as before: the copy pass always): what the new masks still show (the text without
+// its masks and spaces) is a subsequence of what the reference shows, so nothing the reference hides can become readable; most are
+// identical (the reference may hide a space or a neighbour more, never less). Tokens are cut by hidden characters of every class, alone, next to emoji, after long text.
+{
+  let seed = 0x1234b;
+  const rnd = (): number => { seed = (seed + 0x6d2b79f5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  const pick = <T>(a: readonly T[]): T => a[Math.floor(rnd() * a.length)];
+  const hiddenAll: string[] = [];
+  for (let cp = 0; cp < 0x110000; cp++) {
+    if (cp >= 0xd800 && cp <= 0xdfff) continue;
+    const ch = String.fromCodePoint(cp);
+    if (HIDDEN_CHARS.test(ch) && (cp < 0x3000 || cp > 0xe0000 || cp % 7 === 0 || cp === 0xfe0f || cp === 0xfeff)) hiddenAll.push(ch);
+  }
+  const hidden = ['\u200d', '\u200b', '\ufe0f', '\u{e0041}', '\u00ad', '\u2060', '\u200c', ...hiddenAll.slice(0, 40), pick(hiddenAll)];
+  const emoji = ['\u{1F600}', '\u{1F468}', '\u{1F4BB}', '\u2764', '\u26a0', '\u{1F3F4}', '\u{1F1E9}'];
+  const letters = ['\u00e9', '\u00fc', '\u0436', '\u0915', '\u0937', '\u65e5', '\u672c', '\u03b1', '\u0627'];
+  const wide = ['\uff21', '\uff47', '\uff48', '\uff50', '\uff3f', '\uff10', '\uff0a', '\uff40'];
+  const combining = ['\u0301', '\u0308', '\u0338', '\u20e3', '\u064b'];
+  const surrogate = ['\ud83d', '\ude00', '\udc68'];
+  const spaces = [' ', ' ', '\n', '\t', '\u00a0', '\u3000', '\u2003'];
+  const marks = ['**', '`', '~~', '[', ']', '\\', '_'];
+  const tokens = CORPUS.map(([, v]) => v);
+  const words = ['hello', 'release_notes', 'the build', 'password:', 'Bearer', 'invoice', 'a1B2c3', '2026-11-07'];
+  const vals = [V1, V2, 'caf\u00e9-secret-99', 'plain-secret-abcd'];
+  const piece = (): string => {
+    const r = rnd();
+    if (r < 0.2) { // a token cut once or twice by hidden characters, or marks
+      const t = pick(tokens);
+      const cut = (x: string): string => { const i = 1 + Math.floor(rnd() * (x.length - 1)); return x.slice(0, i) + pick(rnd() < 0.7 ? hidden : marks) + x.slice(i); };
+      return rnd() < 0.3 ? cut(cut(t)) : cut(t);
+    }
+    if (r < 0.3) return pick(tokens);
+    if (r < 0.42) return pick(emoji) + pick(hidden) + pick(emoji);
+    if (r < 0.5) return pick(letters) + pick(hidden) + pick(letters);
+    if (r < 0.56) return pick(wide) + pick(hidden) + pick(wide);
+    if (r < 0.6) return pick(combining) + pick(hidden) + pick(letters);
+    if (r < 0.64) return pick(surrogate) + pick(hidden) + pick(surrogate);
+    if (r < 0.68) return pick(hidden);
+    if (r < 0.74) return pick(marks);
+    if (r < 0.8) return pick(emoji) + pick(['\ufe0f', '']) + pick(wide) + pick(letters);
+    if (r < 0.86) return pick(vals).slice(0, 3 + Math.floor(rnd() * 8)) + pick(hidden) + pick(vals).slice(3);
+    if (r < 0.9) return pick(vals);
+    if (r < 0.96) return pick(words);
+    return pick(letters) + pick(letters);
+  };
+  const shown = (x: string): string => x.split(/\[redacted(?::[^\]\r\n]{1,128})?\]/).join('').replace(/\s/g, '');
+  const subseq = (small: string, big: string): boolean => { let j = 0; for (let i = 0; i < big.length && j < small.length; i++) if (big[i] === small[j]) j++; return j === small.length; };
+  let same = 0;
+  let gap = 0;
+  const unhideText = (x: string): string => x.replace(new RegExp(HIDDEN_CHARS.source, 'gu'), '');
+  const N = 32_000;
+  let live = 0;
+  let inert = 0;
+  let masked = 0;
+  for (let n = 0; n < N; n++) {
+    let t = rnd() < 0.1 ? 'Some long plain words about nothing in particular. '.repeat(1 + Math.floor(rnd() * 40)) : '';
+    for (let k = 1 + Math.floor(rnd() * 7); k > 0; k--) t += piece() + pick(spaces).repeat(rnd() < 0.5 ? 1 : 0);
+    const values = rnd() < 0.4 ? [pick(vals), pick(vals)] : [];
+    const a = maskOutgoing(t, values);
+    const b = maskKeepingMarkdownReference(t, values);
+    if (a.text === b.text) same++;
+    assert.strictEqual(a.changed, b.changed, `fuzz ${n}: changed as the reference for ${JSON.stringify(t)}`);
+    // `redact` leaves a token glued to another token (`AKIA...sk-ant-...`) readable with no hidden character at all; the reference hid it
+    // by accident, as its union of spans hides more than the copy found. That is not a hidden character's doing: tolerated only when the
+    // text without them, masked as the reference does, shows what the new masks show (`gap`, counted and printed).
+    const plain = unhideText(t);
+    if (!subseq(shown(a.text), shown(b.text))) {
+      assert.ok(plain !== t && subseq(unhideText(shown(a.text)), shown(maskKeepingMarkdownReference(plain, values).text)), `fuzz ${n}: nothing the reference hides is shown: ${JSON.stringify(t)} -> ${JSON.stringify(a.text)} (reference ${JSON.stringify(b.text)})`);
+      gap++;
+    }
+    assert.deepStrictEqual(maskNoteText(t, values), a, `fuzz ${n}: maskNoteText too`);
+    if (HIDDEN_CHARS.test(t)) { if (hiddenCanHide(t, values)) live++; else inert++; }
+    if (b.changed) masked++;
+  }
+  assert.ok(inert >= 1000 && live >= 1000 && masked >= 3000, `the fuzz exercises both paths and masks (inert ${inert}, live ${live}, masked ${masked})`);
+  // the rule itself
+  assert.strictEqual(hiddenCanHide('ab'), false);
+  assert.strictEqual(hiddenCanHide('\u{1F468}\u200d\u{1F4BB}'), false, 'a ZWJ sequence is inert');
+  assert.strictEqual(hiddenCanHide('\u2764\ufe0f\u{1F600}'), false, 'a VS16 between two emoji is inert');
+  assert.strictEqual(hiddenCanHide('\u2764\ufe0f x'), true, 'next to a space: live');
+  assert.strictEqual(hiddenCanHide('gh\u200dp'), true, 'next to ASCII: live');
+  assert.strictEqual(hiddenCanHide('\u200d\u00e9'), true, 'at the start: live');
+  assert.strictEqual(hiddenCanHide('\u00e9\u200d'), true, 'at the end: live');
+  assert.strictEqual(hiddenCanHide('\u00e9\u200d\u200b\u00e9'), false, 'a run of hidden characters between two letters: inert');
+  assert.strictEqual(hiddenCanHide('\u00e9\u200d\u200bx'), true, 'a run with an ASCII end: live');
+  assert.strictEqual(hiddenCanHide('\u00e9\u200d\u00e9', ['caf\u00e9']), true, 'a non-ASCII known value: live');
+  assert.strictEqual(hiddenCanHide('\ud83d\u200d\ude00'), true, 'a surrogate half beside it: live');
+  console.log(`mask outgoing fuzz: ${N} texts, none shows what the reference hides except ${gap} glued-token gaps the hidden-free text has too (${same} identical, inert ${inert}, live ${live}, masked ${masked})`);
+}
+
 const src = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'shared', 'redact.ts'), 'utf8');
 assert.ok(!/^\s*import\s/m.test(src) && !/\brequire\(/.test(src), 'redact.ts still has no imports');
 const body = (name: string): string => (src.match(new RegExp(`export function ${name}\\([^]*?\\r?\\n}\\r?\\n`)) ?? [''])[0];

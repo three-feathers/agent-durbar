@@ -1644,6 +1644,43 @@ const HIDDEN_ALL = new RegExp(HIDDEN_CHARS.source, 'gu');
 export function unhide(t: unknown): string {
   return String(t == null ? '' : t).replace(HIDDEN_ALL, '');
 }
+const PLAIN_ASCII = /^[\x21-\x7e]*$/;
+/** A character a token cannot be made of or sit next to: non-ASCII, not a space (U+0085 and the Unicode spaces included), not hidden, a whole code point. */
+function isInertSide(cp: number | undefined): boolean {
+  if (cp === undefined || cp < 0x80 || (cp >= 0xd800 && cp <= 0xdfff)) return false;
+  const ch = String.fromCodePoint(cp);
+  return !/\s/u.test(ch) && !HIDDEN_CHARS.test(ch);
+}
+/**
+ * Spec 095 *Changes* 2026-11-07 (issue 1234): whether `s` holds a hidden character (`HIDDEN_CHARS`) that can hide a token, so the masks
+ * must also read the copy without hidden characters (`maskKeepingMarkdown`, three passes, and `convmask.maskWork`'s x3). A run of hidden
+ * characters is inert when the characters on both sides are non-ASCII, not spaces and not hidden (a ZWJ or VS16 inside an emoji sequence
+ * or a script): every token shape is ASCII, so one split or glued by it has an ASCII neighbour and stays live. A run at either end, or next
+ * to a space or an ASCII character, is live. Known values (and the environment's secrets) with a non-ASCII or non-printable character are
+ * matched literally, so a hidden character could split one between two non-ASCII characters: then every hidden character is live.
+ * The one rule of `maskNoteText`, `maskOutgoing` and `maskWork`.
+ */
+export function hiddenCanHide(s: string, values: readonly string[] = [], env?: Env): boolean {
+  HIDDEN_ALL.lastIndex = 0;
+  let m = HIDDEN_ALL.exec(s);
+  if (!m) return false;
+  if (!values.every((v) => PLAIN_ASCII.test(v))) return true;
+  const e = snapshot(env);
+  for (const [, v] of SNAPSHOTS.get(e) ?? []) if (!PLAIN_ASCII.test(v)) return true;
+  while (m) {
+    const a = m.index;
+    let b = a + m[0].length;
+    HIDDEN_ALL.lastIndex = b;
+    for (let n = HIDDEN_ALL.exec(s); n && n.index === b; n = HIDDEN_ALL.exec(s)) b = n.index + n[0].length; // the whole run
+    if (/\s/u.test(s.slice(a, b))) return true; // a hidden character the rules read as a space (VT, FF, LS, PS, BOM) ends a value: live
+    const lo = a > 1 && s.charCodeAt(a - 1) >= 0xdc00 && s.charCodeAt(a - 1) <= 0xdfff && s.charCodeAt(a - 2) >= 0xd800 && s.charCodeAt(a - 2) <= 0xdbff ? a - 2 : a - 1;
+    const before = a > 0 ? s.codePointAt(lo) : undefined;
+    if (!isInertSide(before) || !isInertSide(b < s.length ? s.codePointAt(b) : undefined)) return true;
+    HIDDEN_ALL.lastIndex = b;
+    m = HIDDEN_ALL.exec(s);
+  }
+  return false;
+}
 /** For each character of `unhide(s)`, its index in `s` (plus a final entry, `s.length`). */
 function unhiddenIndex(s: string): Int32Array {
   const at = new Int32Array(s.length + 1);
@@ -1841,14 +1878,14 @@ function maskCore(s: string, vals: readonly string[], env: Env): string {
  * through. Known values under 4 characters are skipped, longest first. Mask first, cut after (the caller): a secret across the cut
  * would leave a head. `changed` says whether anything was masked. Linear: a fixed number of passes.
  */
-function maskKeepingMarkdown(text: unknown, values: readonly string[]): { text: string; changed: boolean } {
+function maskKeepingMarkdown(text: unknown, values: readonly string[], alwaysCopy = false): { text: string; changed: boolean } {
   const original = typeof text === 'string' ? text : text == null ? '' : String(text);
   // longest first only for a stable order: the values are spans of one union, so a shorter value inside a longer one cannot leave a piece
   const vals = [...new Set(values.filter((v) => typeof v === 'string' && v.length >= 4))].sort((a, b) => b.length - a.length);
   const env = snapshot(); // the environment's secrets read once for every pass of this call, not once per pass
   let out = maskCore(original, vals, env);
   const c = unhide(original);
-  if (c !== original) {
+  if (c !== original && (alwaysCopy || hiddenCanHide(original, vals, env))) {
     const copy = maskCore(c, vals, env);
     if (copy !== c) {
       const at = unhiddenIndex(original);
@@ -1858,6 +1895,11 @@ function maskKeepingMarkdown(text: unknown, values: readonly string[]): { text: 
     }
   }
   return { text: out, changed: out !== original };
+}
+
+/** Test reference only (spec 095 T065): the masks as they were before an inert hidden character skipped the copy pass, the copy always read. The differential fuzz in `scripts/test-maskoutgoing.ts` compares against it. */
+export function maskKeepingMarkdownReference(text: unknown, values: readonly string[] = []): { text: string; changed: boolean } {
+  return maskKeepingMarkdown(text, values, true);
 }
 
 /** Spec 083 FR-005 (D3): the mask every note passes before it is stored; `changed` is the note's `hidden`. See `maskKeepingMarkdown`. */

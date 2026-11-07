@@ -7,7 +7,7 @@
  * (spec 097 FR-030) the masks also read a copy without hidden characters (`unhide`, the window's own function), so a zero-width space
  * cannot hide a token. Pure: no fs, no network, no process, no log. Any failure throws, and the caller drops the hit (fail closed).
  */
-import { NOTE_MARK, NOTE_RUN, maskHomePaths, maskNoteText, openKeyBlockStart } from '../shared/redact';
+import { NOTE_MARK, NOTE_RUN, hiddenCanHide, maskHomePaths, maskNoteText, openKeyBlockStart } from '../shared/redact';
 
 /** Characters of context on each side of a raw hit; the window is then widened to whitespace (never cut inside a token). */
 export const WINDOW_CHARS = 600;
@@ -47,10 +47,12 @@ export interface MaskedWindow {
  * 2026-11-04 for `maskNoteText`): 0.55 per character for the linear passes; 2.5 per character when a split mark (`NOTE_MARK`) is present,
  * plus 250 for each token-like run (`NOTE_RUN`) next to a mark, which `maskNoteText` checks with `redact` on its own; plus 0.003 per
  * character for each MCP secret value (re-check of the review: 1 000-2 000 values over 20 000 characters took 50-108 ms). Hidden characters
- * (`HIDDEN_CHARS`, emoji joiners and variation selectors included) triple it: `maskNoteText` masks the text, the copy without them and,
- * when the copy finds something, their union (review of PR 1236). Measured under load, so it overestimates on an idle machine.
+ * (`HIDDEN_CHARS`) that can hide a token triple it (`hiddenCanHide`, the same rule as `maskNoteText`: it masks the text, the copy without
+ * them and, when the copy finds something, their union, review of PR 1236); an emoji joiner or variation selector between two non-ASCII
+ * characters is inert and costs nothing (issue 1234). `hidden` is whether the text has any: it is then judged here. Measured under load, so it overestimates on an idle machine.
  */
-export function maskWork(s: string, hidden = false, values = 0): number {
+export function maskWork(s: string, hidden = false, values: number | readonly string[] = 0): number {
+  const nVals = typeof values === 'number' ? values : values.length;
   const marks = NOTE_MARK.test(s);
   let runs = 0;
   if (marks) {
@@ -59,7 +61,8 @@ export function maskWork(s: string, hidden = false, values = 0): number {
       if ((i > 0 && NOTE_MARK.test(s[i - 1])) || (i + m[0].length < s.length && NOTE_MARK.test(s[i + m[0].length]))) runs++;
     }
   }
-  return Math.ceil((s.length * (marks ? 2.5 : 0.55) + runs * 250 + values * s.length * 0.003) * (hidden ? 3 : 1));
+  const live = hidden && hiddenCanHide(s, typeof values === 'number' ? [] : values);
+  return Math.ceil((s.length * (marks ? 2.5 : 0.55) + runs * 250 + nVals * s.length * 0.003) * (live ? 3 : 1));
 }
 /** The most one mask may cost (estimated, about 25 ms): the same as a message's whole budget (`BUDGET.messageWork`), which is what bounds a slice; a lower cap refused whole masks of mid-size texts the message budget allows (review of PR 1098). */
 export const MASK_CALL_WORK = 25_000;
@@ -102,7 +105,7 @@ export function createMasker(libs: MaskLibs): Masker {
     const s = String(raw);
     const vals = cleanValues(values);
     const c = unhide(s);
-    if (maskWork(s, c !== s, vals.length) > budget) throw new MaskBudgetError();
+    if (maskWork(s, c !== s, vals) > budget) throw new MaskBudgetError();
     // `maskNoteText` reads the copy without hidden characters itself and masks the union with the text as written (spec 084 FR-033,
     // review of PR 1236): a copy alone missed a token that removing a hidden character glued to a word. `c` prices it (three passes).
     return maskOnce(s, vals);
@@ -180,7 +183,7 @@ export function createMasker(libs: MaskLibs): Masker {
       if (whole) { ws = 0; we = n; }
     }
     const piece = s.slice(ws, we);
-    const work = maskWork(piece, unhide(piece) !== piece, cleanValues(values).length);
+    const work = maskWork(piece, unhide(piece) !== piece, cleanValues(values));
     if (work > budget) throw new MaskBudgetError();
     return { text: maskText(piece, values, Infinity), atStart: ws === 0, atEnd: we === n, work };
   };

@@ -4,7 +4,7 @@
 
 **Tests**: required (constitution VII.3; SC-001..SC-005). Node tests and the simulator only; 0 AI credits; no network. Driver waits use `until()`.
 
-**Format**: `- [ ] Tnnn [P?] [USn?] description (file) [requirements]`. `[P]` = can run in parallel. One task = one small testable step; a phase = one PR. Numbers taken: spec 095, FR-001..FR-052 (sparse by group; FR-016 added in review), T001..T064 (T064 added in review).
+**Format**: `- [ ] Tnnn [P?] [USn?] description (file) [requirements]`. `[P]` = can run in parallel. One task = one small testable step; a phase = one PR. Numbers taken: spec 095, FR-001..FR-052 (sparse by group; FR-016 added in review), T001..T065 (T064 added in review, T065 for issue 1234).
 
 ## Phase 0: Spec (this PR)
 
@@ -56,6 +56,7 @@
 
 - [ ] T064 Other docs and website pages the change touches (not the README feature line, *Safety model* or keyboard sheet, which ship in Phase 3 with T060)
 
+- [ ] T065 Issue 1234 (2026-11-07 *Changes*): `hiddenCanHide` in `redact.ts`; `maskKeepingMarkdown` skips the copy pass and `maskWork` prices x1 when every hidden character is inert; cost, strength and differential-fuzz tests, mutants (`src/shared/redact.ts`, `src/main/convmask.ts`, `scripts/test-convmask.ts`, `scripts/test-maskoutgoing.ts`) [FR-030]
 - [ ] T062 Mutation check of plan *Testing* 6, each listed in the PR; `docs/agent-notes.md` entries learned (fold length changes, mask-before-cut windows, Copilot and Codex reader gap)
 - [ ] T063 Spec housekeeping: tick tasks, `[IMPLEMENTED]` tags, specs-index status, `/speckit-converge`; owner `real:` checks on a real store (timings, Windows and macOS paths)
 
