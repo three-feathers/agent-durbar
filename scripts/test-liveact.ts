@@ -465,7 +465,8 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
   eq(L.toolName('read_file', {}), 'tool', 'no mask: tool even for a harmless name');
   eq(L.toolName(TK, undefined), 'tool', 'no mask object: tool');
   eq(L.toolName(TK, { redact: () => { throw new Error('boom'); } }), 'tool', 'a throwing mask: tool');
-  eq(L.toolName({ toString() { throw new Error('boom'); } }, hm), 'tool', 'a name that cannot be made a string: tool');
+  { let got: unknown; try { got = L.toolName({ toString() { throw new Error('boom'); } }, hm); } catch (e) { got = 'threw: ' + (e as Error).message; }
+    eq(got, 'tool', 'a mask that throws (toString throws) gives tool'); }
   eq(L.toolName(TK, { redact: () => '[redaction failed]' }), 'tool', 'a failed redact (its own [redaction failed] result): tool');
   eq(L.toolName(TK, { redact: () => TK + ' ' }), 'tool', 'any change at all: tool');
   eq(L.toolName(TK, { redact: () => undefined as unknown as string }), 'tool', 'a mask answering no string: tool');
