@@ -935,7 +935,7 @@ const shownPerm=(t,kind)=>window.DurbarLiveAct?window.DurbarLiveAct.permText(t,p
 /* spec 097 FR-318 (review of PR 1292): what a hidden part is, in words: a secret replaced, control characters shown as markers, or a request Durbar could not check (no mask) */
 const PERM_WHY={secret:'A part of this request looks like a secret and is hidden.',control:'This request holds control characters, shown as markers like \u27e6ESC\u27e7: read all of it before you allow it.',unchecked:'Durbar could not check this request\u2019s text, so it is not shown.',concealed:'This request hides a secret behind control characters, so its text cannot be shown.',cut:'This request is too long to show in full, so it cannot be allowed from here.'};
 const PERM_GRANT=' Allow for this session covers exactly what was asked, the hidden part included.';
-const permWhy=(...xs)=>{const w=xs.filter(x=>x&&x.hidden).map(x=>x.why||'secret');return w.includes('unchecked')?'unchecked':w.includes('concealed')?'concealed':w.includes('secret')?'secret':w.includes('control')?'control':w.length?'cut':'';};
+const permWhy=(...xs)=>{const w=xs.filter(x=>x&&x.hidden).map(x=>x.why||'secret');return w.includes('cut')?'cut':w.includes('unchecked')?'unchecked':w.includes('concealed')?'concealed':w.includes('secret')?'secret':w.length?'control':'';};
 const permBlind=w=>w==='unchecked'||w==='concealed'||w==='cut'; /* neutral words only: no Allow, Deny stays */
 const liveOn=()=>!!LIVEACT&&LIVE_PREF;
 function setLiveOn(on){LIVE_PREF=!!on;try{localStorage.setItem('durbar.liveActivity',LIVE_PREF?'on':'off');}catch(e){}scheduleRender();}

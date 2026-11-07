@@ -59,10 +59,29 @@
   const PMARK={'\x1b':'ESC','\n':'LF','\r':'CR','\t':'TAB'};
   const pmark=c=>'⟦'+(PMARK[c]||'U+'+c.codePointAt(0).toString(16).toUpperCase().padStart(4,'0'))+'⟧';
   const PERM_CAP=10000; /* characters looked at: more is cut (at a word) before any heavy work, and marked */
+  /* review of PR 1292, round 3: a masked shell command is `lost` (shown text cannot be trusted to say what runs) when the mask blanked the whole command or failed, changed it without
+     a [redacted] marker, or replaced a span that holds command substitution or a shell operator ($( ` ; | & < > or a line break marker): the visible pieces are matched back into the
+     raw command, so every character that is not visible lies in a span that is checked */
+  const REDACTED=/\[redacted[^\]]*\]/, SPANBAD=/\$\(|`|[;|&<>\n\r]|\u27e6(?:LF|CR)\u27e7/;
+  function shellLost(cmd,x){
+    if(x===cmd)return false;
+    if(/redaction failed/.test(x)||/^\s*\[redacted[^\]]*\]\s*$/.test(x))return true;
+    const parts=x.split(new RegExp(REDACTED.source,'g'));if(parts.length<2)return true;
+    if(!cmd.startsWith(parts[0]))return true;
+    let pos=parts[0].length;
+    for(let i=1;i<parts.length;i++){
+      const p=parts[i],last=i===parts.length-1;let idx;
+      if(last){if(!cmd.endsWith(p)||cmd.length-p.length<pos)return true;idx=cmd.length-p.length;}
+      else{idx=cmd.indexOf(p,pos);if(idx<0)return true;}
+      if(SPANBAD.test(cmd.slice(pos,idx)))return true;
+      pos=idx+p.length;
+    }
+    return false;
+  }
   function permCore(raw,k,m){ /* {s, out} (out null: the mask gave nothing) for a text without control characters */
     const s=String(raw).replace(/\s+/g,' ').trim();if(!s)return {s:'',out:''};
     if(k==='shell'){const mm=/^(run )([\s\S]*)$/.exec(s),pre=mm?mm[1]:'',cmd=mm?mm[2]:s;if(!cmd)return {s,out:s};
-      const x=ST.maskLabel(cmd,'run',m);return {s,out:x?pre+x:null};}
+      const x=ST.maskLabel(cmd,'run',m);return {s,out:x?pre+x:null,lost:x?shellLost(cmd,x):false};}
     if(k==='tool'){const j=s.split(/( › |\s+)/).map((w,i)=>i%2||!w?w:toolName(w,m)).join('');const x=ST.maskLabel(j,'other',m);return {s,out:x||null};}
     const x=ST.maskLabel(s,'other',m);return {s,out:x||null};
   }
@@ -73,12 +92,15 @@
       if(typeof m.redact!=='function')return fb('unchecked');
       let r0=String(raw),cut=false;
       if(r0.length>PERM_CAP){cut=true;r0=r0.slice(0,PERM_CAP);const i=r0.search(/\s\S*$/);r0=i>0?r0.slice(0,i):'';} /* cut at a word: never half a token */
-      const tail=t=>cut&&t.hidden?t:cut?{text:t.text,hidden:true,why:'cut'}:t, suf=cut?' ⟦cut⟧':'';
+      const tail=t=>cut?{text:t.text,hidden:true,why:'cut'}:t, suf=cut?' ⟦cut⟧':'';
       if(!PCTRL_T.test(r0)){
-        const c=permCore(r0,k,m);if(c.out===null)return fb('unchecked');return tail(c.out===c.s?{text:c.out+suf,hidden:false}:{text:c.out+suf,hidden:true,why:'secret'});}
+        const c=permCore(r0,k,m);if(c.out===null)return fb('unchecked');if(c.lost)return fb('concealed');return tail(c.out===c.s?{text:c.out+suf,hidden:false}:{text:c.out+suf,hidden:true,why:'secret'});}
       for(const v of [stripAnsi(r0),introOut(r0),r0.replace(PCTRL,'')]){ /* a token the controls split: the mask must find nothing in any reading */
         const c=permCore(v,k,m);if(c.out===null)return fb('unchecked');if(c.out!==c.s)return fb('concealed');} /* a secret behind controls: no text, and the card offers no Allow */
-      const c=permCore(r0.replace(PCTRL,pmark),k,m);if(c.out===null)return fb('unchecked');
+      let mk=r0.replace(PCTRL,pmark),mcut=false;
+      if(mk.length>PERM_CAP){mcut=true;mk=mk.slice(0,PERM_CAP);const i=mk.search(/\s\S*$/);mk=i>0?mk.slice(0,i):'';} /* the markers grow the text: the cap counts the marked length too */
+      const c=permCore(mk,k,m);if(c.out===null)return fb('unchecked');if(c.lost)return fb('concealed');
+      if(mcut)return {text:c.out+' \u27e6cut\u27e7',hidden:true,why:'cut'};
       return tail({text:c.out+suf,hidden:true,why:c.out!==c.s?'secret':'control'});
     }catch(e){return fb('unchecked');}
   }
