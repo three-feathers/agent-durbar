@@ -6,7 +6,8 @@ import './safetext-shared'; // the compiled hidden-character module for safetext
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
-import { MASK_CALL_WORK, MaskBudgetError, WINDOW_CHARS, cleanValues, createMasker, maskWork, scanSecretValues } from '../src/main/convmask';
+import { maskNoteText } from '../src/shared/redact';
+import { HIDDEN_RUN_WORK, MASK_CALL_WORK, MaskBudgetError, WINDOW_CHARS, cleanValues, createMasker, maskWork, scanSecretValues } from '../src/main/convmask';
 import { rendererScript } from '../src/main/convsearch';
 
 process.exitCode = 1;
@@ -205,8 +206,8 @@ assert.ok(windows > 600, `enough windows (${windows})`);
     }
   }
   assert.strictEqual(maskWork('abcdefghijklmn '.repeat(10)), Math.ceil(150 * 0.55), 'no marks: runs cost nothing extra');
-  assert.strictEqual(maskWork('x'.repeat(100), true), Math.ceil(100 * 0.55 * 3), 'hidden characters: three passes (text, copy, union)');
-  assert.strictEqual(maskWork('**' + 'x'.repeat(98), true), Math.ceil((100 * 2.5 + 250) * 3), 'hidden characters and a mark: three marked passes (the run next to the mark too)');
+  assert.strictEqual(maskWork('x'.repeat(50) + '\u200b' + 'x'.repeat(49), true), Math.ceil(100 * 0.55 * 3), 'live hidden characters: three passes (text, copy, union)');
+  assert.strictEqual(maskWork('**' + 'x'.repeat(47) + '\u200b' + 'x'.repeat(50), true), Math.ceil((100 * 2.5 + 250) * 3), 'live hidden characters and a mark: three marked passes (the run next to the mark too)');
   // review of spec 084 T012 (2026-11-06): a carriage return is a line end, not a split mark, so a long CRLF message costs what its LF
   // version costs and stays inside one mask's budget (Windows parity: with CR a mark, 400 CRLF lines cost 152,000 and were dropped)
   const lf = 'Line with words, a long_identifier_name and release_notes.\n'.repeat(400);
@@ -218,11 +219,53 @@ assert.ok(windows > 600, `enough windows (${windows})`);
   // the same review and PR 1236, 2026-11-06: a variation selector or a joiner (in a warning sign, a heart, a joined emoji) is a hidden
   // character, not a Markdown mark, so one emoji does not price a long message as marked (as a mark, one emoji in 20,000 characters cost
   // 51,633 and the message was dropped); the caller prices hidden characters as three passes
-  assert.ok(maskWork('Heads up \u2764\ufe0f ' + lf.slice(0, 15_000), true) <= MASK_CALL_WORK, 'three passes of a 15,000-character message with an emoji fit one mask');
+  assert.ok(maskWork('Heads up \u2764\ufe0f ' + lf.slice(0, 15_000), true) <= MASK_CALL_WORK, 'three passes of a 15,000-character message with a live hidden character fit one mask');
   for (const emoji of ['\u26a0\ufe0f', '\u2764\ufe0f', '\u{1F468}\u200d\u{1F4BB}']) { // a warning sign, a heart, a joined emoji
     const withEmoji = `Heads up ${emoji} ` + lf;
     assert.strictEqual(maskWork(withEmoji), Math.ceil(withEmoji.length * 0.55), `one ${emoji} keeps the price per character of plain text`);
     assert.ok(maskWork(withEmoji) <= MASK_CALL_WORK, `a long message with ${emoji} fits one mask`);
+  }
+  // issue 1234 (spec 095 *Changes* 2026-11-07, T065): a hidden character between two non-ASCII non-space characters (inside an emoji
+  // sequence or a script) cannot hide a token: priced x1 and the copy pass is skipped. A ZWJ sequence, a variation selector joined to
+  // a following emoji and a Devanagari joiner are inert; one next to a space, an ASCII character or an end is live (x3).
+  {
+    const base = 'Line with words, a long_identifier_name and release_notes.\n';
+    const body = base.repeat(Math.ceil(20_000 / base.length)).slice(0, 20_000);
+    const price = (t: string): number => maskWork(t, t.replace(/[\u200d\ufe0f\u200b]/g, '') !== t);
+    for (const [name, seq, runs] of [['ZWJ sequence', '\u{1F468}\u200d\u{1F4BB}', 1], ['VS16 inside', '\u2764\ufe0f\u{1F600}', 1], ['family', '\u{1F468}\u200d\u{1F469}\u200d\u{1F467}', 2], ['Devanagari', '\u0915\u094d\u200d\u0937', 1]] as const) {
+      const t = `${seq} ` + body;
+      assert.strictEqual(price(t), Math.ceil(t.length * 0.55 + runs * HIDDEN_RUN_WORK), `${name}: 0.55 per character and the scan of each inert run (${runs})`);
+      assert.ok(price(t) <= MASK_CALL_WORK, `${name}: a 20,000-character message fits`);
+      assert.strictEqual(M.maskText(t, []), t, `${name}: searchable and unchanged`);
+    }
+    for (const [name, t] of [['ZWSP in a word', 'ab\u200bcd ' + body], ['VS16 before a space', '\u2764\ufe0f ' + body], ['ZWJ after ASCII', 'a\u200d\u{1F600} ' + body], ['hidden at the start', '\u200b' + body], ['hidden at the end', body + '\u200b'], ['ZWJ between emoji and a space', '\u{1F600}\u200d ' + body], ['a value with a non-ASCII character', body + '\u00e9\u200d\u00e9']] as const) {
+      assert.strictEqual(maskWork(t, true, name.startsWith('a value') ? ['caf\u00e9-secret'] : []), Math.ceil((t.length * 0.55 + (name.startsWith('a value') ? t.length * 0.003 : 0)) * 3), `${name}: live, three passes`);
+    }
+    const tk = 'gh' + 'p_' + 'a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6Q7R8';
+    const cut = (i: number): string => tk.slice(0, i) + '\u200d' + tk.slice(i);
+    for (const hid of ['\u200d', '\u200b', '\ufe0f', '\u{e0041}']) {
+      for (const lead of ['', '\u{1F468}\u200d\u{1F4BB} ', '\u2764\ufe0f\u{1F600}', body.slice(0, 15_000) + '\n']) {
+        const t = lead + tk.slice(0, 10) + hid + tk.slice(10) + ' end';
+        const r = M.maskText(t, []);
+        assert.ok(!r.includes(tk.slice(14)), `a token split by ${JSON.stringify(hid)} after ${JSON.stringify(lead.slice(0, 6))} is masked: ${r.slice(-40)}`);
+      }
+    }
+    assert.ok(!M.maskText(cut(10), []).includes('a1B2c3D4'), 'split by a ZWJ: masked');
+  }
+  // review of PR 1244, item 5: dense inert hidden runs (joined emoji) are priced per run, the scan that finds them inert, run in `maskWork`
+  // and again in the mask. Measured 2026-11-07, idle machine: 45,000 characters of family emoji took 11.2 ms to mask and 5.5 ms to price
+  // (plain text 5.2 ms and 0.1 ms), 0.17 ms per 1,000 work with the term against 0.21 for plain text; without it 0.67 against 0.21.
+  {
+    const fam = '\u{1F468}\u200d\u{1F469}\u200d\u{1F467}\u200d\u{1F466}';
+    const dense = fam.repeat(500);
+    assert.strictEqual(maskWork(dense, true), Math.ceil(dense.length * 0.55 + 1500 * HIDDEN_RUN_WORK), 'dense joined emoji: 0.55 per character and HIDDEN_RUN_WORK per inert run (three per family)');
+    assert.ok(maskWork(fam.repeat(1500), true) > MASK_CALL_WORK && maskWork(fam.repeat(900), true) <= MASK_CALL_WORK, 'nothing but joined emoji is over one mask from about 11,000 characters (it was priced as plain text: 45,000)');
+    // measured against plain text (best of 5, CPU time of one process, the same call twice as the product makes it): per work, never above plain text's by more than 2x
+    const best = (f: () => unknown): number => { let m = Infinity; for (let i = 0; i < 5; i++) { const t0 = process.hrtime.bigint(); f(); m = Math.min(m, Number(process.hrtime.bigint() - t0)); } return m; };
+    const plain = 'Some plain words about nothing in particular, release notes. '.repeat(500);
+    const big = fam.repeat(2000);
+    const perWork = (t: string): number => best(() => { maskWork(t, true); maskNoteText(t, []); }) / maskWork(t, true);
+    assert.ok(perWork(big) <= 2 * perWork(plain), `dense emoji per work (${perWork(big).toFixed(1)}) stays within 2x of plain text (${perWork(plain).toFixed(1)})`);
   }
   const tok = (i: number) => 'gh' + 'p_' + (String(i).padStart(6, '0') + 'a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6').slice(0, 36);
   let dense = '**x** ';
