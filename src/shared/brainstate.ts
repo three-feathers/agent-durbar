@@ -199,7 +199,7 @@ function safe(fn: (() => string) | undefined): string {
 /** Bidi override and isolate characters can reorder what a line shows (F7): none of them is kept in any text. */
 export const stripBidi = (s: string): string => s.replace(/[\u202A-\u202E\u2066-\u2069]/g, '');
 /** FR-021: every text goes through redact (env values and shapes), home paths and token shapes. Exported for the surface formatters' tests. */
-export function maskText(mask: BrainMask, text: unknown): string {
+export function brainMaskText(mask: BrainMask, text: unknown): string {
   return stripBidi(safe(() => mask.maskTokenShapes(mask.maskHomePaths(mask.redact(stripBidi(typeof text === 'string' ? text : text == null ? '' : String(text)))), '[redacted]')));
 }
 const cutTo = (s: string, max: number): string => {
@@ -210,7 +210,7 @@ const cutTo = (s: string, max: number): string => {
 
 export function initBrain(name: string, mask: BrainMask): BrainState {
   const s: BrainState = {
-    name: cutTo(maskText(mask, name), NAME_MAX) || 'Agent', turn: null, turnNo: 0, history: [], counts: { read: 0, edit: 0, shell: 0, web: 0, mcp: 0 }, stepsTotal: 0,
+    name: cutTo(brainMaskText(mask, name), NAME_MAX) || 'Agent', turn: null, turnNo: 0, history: [], counts: { read: 0, edit: 0, shell: 0, web: 0, mcp: 0 }, stepsTotal: 0,
     act: { kind: 'rest', glyph: null, stepN: null }, wait: null, loop: null, runs: [], inKeyBlock: false, think: freshTail(), out: freshTail(), buf: '', turnCost: 0, turnAiu: 0, turnUsd: 0, costKnown: false, changedAt: 0, rev: 0, paintedRev: -1, paintedAt: -Infinity, burstStep: 0, bloom: [], sentence: '',
   };
   s.sentence = sentenceOf(s);
@@ -257,25 +257,25 @@ function targetOf(ev: Ev, glyph: GlyphId, mask: BrainMask): Target {
   for (const f of efiles) {
     const o = obj(f);
     if (!o || typeof o.path !== 'string') continue;
-    files.push({ path: cutTo(maskText(mask, o.path), PREVIEW_MAX), kind: str(o.kind) || 'edit', added: num(o.added), removed: num(o.removed) });
+    files.push({ path: cutTo(brainMaskText(mask, o.path), PREVIEW_MAX), kind: str(o.kind) || 'edit', added: num(o.added), removed: num(o.removed) });
   }
   if (files.length) return { targetKind: 'file', target: files[0].path, program: '', files };
   const args = ev.args;
   if (glyph === 'shell') {
     const c = asText(pickString(args, CMD_KEYS), mask);
     if (!c) return none;
-    const m = maskText(mask, safe(() => mask.maskSecretCommand(c)));
+    const m = brainMaskText(mask, safe(() => mask.maskSecretCommand(c)));
     return { targetKind: 'command', target: cutTo(m, PREVIEW_MAX), program: programOf(m), files };
   }
   if (glyph === 'web') {
     const u = asText(pickString(args, URL_KEYS), mask);
-    if (u) return { targetKind: 'url', target: cutTo(maskText(mask, safe(() => mask.maskSecretUrl(u))), PREVIEW_MAX), program: '', files };
+    if (u) return { targetKind: 'url', target: cutTo(brainMaskText(mask, safe(() => mask.maskSecretUrl(u))), PREVIEW_MAX), program: '', files };
   }
   const p = asText(pickString(args, PATH_KEYS), mask);
-  if (p && glyph !== 'web') return { targetKind: 'file', target: cutTo(maskText(mask, p), PREVIEW_MAX), program: '', files };
+  if (p && glyph !== 'web') return { targetKind: 'file', target: cutTo(brainMaskText(mask, p), PREVIEW_MAX), program: '', files };
   const q = asText(pickString(args, QUERY_KEYS), mask);
   // F5: a query or an Other tool's target can hold `password=…` or a flag: the command mask runs on it too
-  if (q) return { targetKind: 'query', target: cutTo(maskText(mask, safe(() => mask.maskSecretCommand(q))), PREVIEW_MAX), program: '', files };
+  if (q) return { targetKind: 'query', target: cutTo(brainMaskText(mask, safe(() => mask.maskSecretCommand(q))), PREVIEW_MAX), program: '', files };
   return none;
 }
 
@@ -284,7 +284,7 @@ function targetOf(ev: Ev, glyph: GlyphId, mask: BrainMask): Target {
 /** A shaped, harmless run: appended after a text it is masked only when that text expects a secret value (redact's own header and secret-name rules decide, no second list). */
 const PROBE = 'aB3dE5gH7jK9mN1pQ3sT5vW7yZ0';
 function expects(mask: BrainMask, text: string): boolean {
-  const m = maskText(mask, text + ' ' + PROBE);
+  const m = brainMaskText(mask, text + ' ' + PROBE);
   return m !== '' && !m.includes(PROBE);
 }
 /**
@@ -400,12 +400,12 @@ function streamText(tail: Tail, piece: string, whole: boolean, mask: BrainMask):
   let cut = open >= 0 || nest.depth > 0 ? null : valueExpected(mask, joined);
   if (cut && !heldOk(mask, cut.head)) cut = null; // J1: a raw head is held only when it holds no secret; else the whole text is masked
   if (failed) buf = '[redacted]';
-  else if (nest.depth > 0 && open < 0) buf = (safe(() => mask.maskGluedTail(maskText(mask, joined.slice(0, nest.at)))) + '[redacted]').slice(-BUF_MAX);
+  else if (nest.depth > 0 && open < 0) buf = (safe(() => mask.maskGluedTail(brainMaskText(mask, joined.slice(0, nest.at)))) + '[redacted]').slice(-BUF_MAX);
   else if (cut) {
     // F1b: a header or secret name that expects its value ("Authorization: Bearer") masks to a mark, and the value then arrives after a
     // space. The header words (no secret yet) stay raw until the value comes, so the whole line masks together.
-    buf = (safe(() => mask.maskGluedTail(maskText(mask, joined.slice(0, cut.at)))) + cut.head).slice(-BUF_MAX);
-  } else buf = safe(() => mask.maskGluedTail(maskText(mask, joined))).slice(-BUF_MAX);
+    buf = (safe(() => mask.maskGluedTail(brainMaskText(mask, joined.slice(0, cut.at)))) + cut.head).slice(-BUF_MAX);
+  } else buf = safe(() => mask.maskGluedTail(brainMaskText(mask, joined))).slice(-BUF_MAX);
   return { buf, key, carry };
 }
 
@@ -522,7 +522,7 @@ function onTool(s: BrainState, ev: Ev, now: number, mask: BrainMask): void {
   const late = t0.endedAt !== null; // FR-005: a late event joins the ended turn, never starts one
   const turn: BrainTurn = { ...t0, steps: t0.steps.slice() };
   s.turn = turn;
-  const toolName = cutTo(maskText(mask, str(ev.tool) || 'tool'), 60);
+  const toolName = cutTo(brainMaskText(mask, str(ev.tool) || 'tool'), 60);
   // F7: calls without a callId never share a step by tool name: each start is its own step (key `~n`); a later event of the
   // same tool closes the newest running one of them.
   const callId = given || `~${turn.total + 1}`;
@@ -538,7 +538,7 @@ function onTool(s: BrainState, ev: Ev, now: number, mask: BrainMask): void {
   if (!st) {
     if (phase === 'update') return;
     const tg = targetOf(ev, g.glyph, mask);
-    const server = ev.mcpServer ? cutTo(maskText(mask, ev.mcpServer), 40) : '';
+    const server = ev.mcpServer ? cutTo(brainMaskText(mask, ev.mcpServer), 40) : '';
     turn.total += 1;
     st = {
       n: turn.total, callId, glyph: g.glyph, word: GLYPHS[g.glyph].word, other: g.other ? toolName : '', tool: toolName,
