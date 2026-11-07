@@ -239,7 +239,7 @@ The other 17 cells are the same shared code, in tokens, or a `person`, `fixture`
 | RA2 | Frames, packs, asset tests; nothing draws them | RA0 | T206..T208 |
 | RA3 | Draw the hall: pixel scale, cabinet, marquee, CRT, signs, plates, fixtures | RA1, RA2, #979 | T209..T212 |
 | RA4 | Status, beat, flourish, dissolve | RA3 | T213..T216 |
-| RA5 | Light: night parts and tokens (the group withdrawn, 2026-11-03; closed 2026-11-07) | RA3 | T217..T219 |
+| RA5 | Light: night parts and tokens (the group withdrawn, 2026-11-03; T217, T219 closed 2026-11-07, T218 open) | RA3 | T217..T219 |
 | RA6 | UI style, chat, Settings | RA5, #1001 | T220, T221 |
 | RA7 | Nine moments and the registry | RA4, #994 | T222, T223 |
 | RA8 | Set contract and interoperation; `pixel` in Flat, closed | RA2, T111 | T224, T225, T122 |
