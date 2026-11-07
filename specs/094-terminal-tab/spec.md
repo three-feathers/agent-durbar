@@ -323,6 +323,10 @@ Q1-Q8 are answered (all (a), *Clarifications*). From the review on #811 (answers
 
 ## Changes
 
+### 2026-11-07: T040 builds the tablist module as a refactor (no behaviour change)
+
+`src/renderer/paneltabs.js` holds the chat tablist: `tabsFor` (Chat, then each owner offered; today Browser), `tabsHTML`, the roving `tabKey`/`nextTab`, `setSelected`, `wire`, `focusTab`. `browserpane.js` is a tab owner and calls it (`BP.tabKey` and `BP.tabsHTML` keep their signatures). Ids, ARIA and keys are unchanged. The unit cases live in `scripts/test-paneltabs.ts` (`test:paneltabs`) because `scripts/test-termpane.ts` does not exist before T042; T052 and T043 still create that file. Previous sessions stays in the `openPanel` template: it is not a tab, and moving it is the one-row header step (spec 005 T117). Terminal (FR-001) is added by T044 through `tabsFor`.
+
 ### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
 
 The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):

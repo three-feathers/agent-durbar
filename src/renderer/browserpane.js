@@ -10,15 +10,10 @@
   'use strict';
 
   /* ---- pure ---- */
-  /* The roving tabindex of a tablist (WAI-ARIA): the next tab for an arrow key, -1 for any other key. */
-  function tabKey(key,index,count){
-    if(!(count>0))return -1;
-    if(key==='ArrowRight')return (index+1)%count;
-    if(key==='ArrowLeft')return (index-1+count)%count;
-    if(key==='Home')return 0;
-    if(key==='End')return count-1;
-    return -1;
-  }
+  /* Spec 094 T040: the tablist (Chat | Browser) is src/renderer/paneltabs.js; Browser is one tab owner of it. */
+  const PT=typeof module==='object'&&module.exports?require('./paneltabs.js'):self.DurbarPanelTabs;
+  const tabKey=PT.tabKey;
+  const PANEL_TABS=PT.tabsFor({browser:true}), TAB_OF={chat:PANEL_TABS[0],browser:PANEL_TABS[1]};
   /* What the bar shows for a state: every word and flag in one place, so the DOM code only copies it. */
   function barModel(s){
     const open=!!(s&&s.open), loading=open&&!!s.loading, err=open&&!loading&&typeof s.error==='string'&&s.error?s.error:'';
@@ -161,11 +156,7 @@
   /* The tabs exist for a live top-level session, and only in the app (the page without the bridge has no browser). */
   function available(a){return !!(bridge&&bridge.browserOpen&&a&&a.live&&!a.parent);}
 
-  function tabsHTML(){
-    return '<div class="ptabs" id="panelTabs" role="tablist" aria-label="Chat or browser">'
-      +'<button class="ptab" id="tabChat" role="tab" type="button" aria-selected="true" aria-controls="chat" tabindex="0">Chat</button>'
-      +'<button class="ptab" id="tabBrowser" role="tab" type="button" aria-selected="false" aria-controls="browserPane" tabindex="-1">Browser</button></div>';
-  }
+  function tabsHTML(){return PT.tabsHTML(PANEL_TABS,'chat');}
   function paneHTML(){
     return '<div class="bpane" id="browserPane" role="tabpanel" aria-labelledby="tabBrowser" hidden>'
       /* spec 080 FR-122, FR-133: the page tabs, above the bar */
@@ -191,9 +182,8 @@
     const chat=tab==='chat';
     const pin=document.querySelector('#panel .panel-in');
     if(pin)pin.classList.toggle('on-browser',!chat);
-    const tc=$('tabChat'),tb=$('tabBrowser'),pane=$('browserPane');
-    if(tc){tc.setAttribute('aria-selected',String(chat));tc.tabIndex=chat?0:-1;}
-    if(tb){tb.setAttribute('aria-selected',String(!chat));tb.tabIndex=chat?-1:0;}
+    const pane=$('browserPane');
+    PT.setSelected(PANEL_TABS,tab);
     if(pane)pane.hidden=chat;
   }
 
@@ -354,7 +344,7 @@
     const id=cur.id;
     cur.tab=tab;
     setSelected(tab);
-    if(o&&o.focus){const t=$(tab==='chat'?'tabChat':'tabBrowser');if(t)t.focus({preventScroll:true});}
+    if(o&&o.focus)PT.focusTab(TAB_OF[tab]);
     if(tab==='chat'){
       unwatchSize();
       clearCover(cur);
@@ -498,17 +488,7 @@
     else cur={id:a.id,tab:'chat',shown:false,state:states.get(a.id)||{id:a.id,open:false,connecting:true},typing:false,ro:null,sizeQueued:false};
     const tab=startTab(a.id);
     cur.tab='chat'; /* the new template starts on Chat; select() below puts it back */
-    const tabs=[$('tabChat'),$('tabBrowser')];
-    tabs.forEach((t,i)=>{
-      t.onclick=()=>select(i?'browser':'chat');
-      t.onkeydown=e=>{
-        if(e.altKey||e.ctrlKey||e.metaKey||e.shiftKey)return;
-        const n=tabKey(e.key,i,tabs.length);
-        if(n<0)return;
-        e.preventDefault();e.stopPropagation();
-        select(n?'browser':'chat',{focus:true});
-      };
-    });
+    PT.wire(PANEL_TABS,(t,o)=>select(t.id,o));
     $('bBack').onclick=()=>bridge.browserBack(a.id);
     $('bFwd').onclick=()=>bridge.browserForward(a.id);
     $('bReload').onclick=e=>(e.currentTarget.dataset.mode==='stop'?bridge.browserStop(a.id):bridge.browserReload(a.id));
