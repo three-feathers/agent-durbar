@@ -458,6 +458,38 @@ console.log('toggle switch: on track, both knobs pass 3:1 in Clean Office and th
     assert.ok(contrast(a, glassOver(b, over)) >= min, `repaired: ${fg} on ${bg}`);
   }
   T.setTheme(T.CLEAN_ID);
+  // a dark bar: the glass is measured as it shows (0.9 of the colour over white), not as the bare colour (review of #1252)
+  const dk = { ...dark, '--wb-bg': '#202020', '--wb-ink': '#707070' };
+  assert.ok(contrast('#707070', glassOver('#202020', '#ffffff')) < 4.5, 'the dark pair fails on the glass');
+  assert.ok(contrast('#878787', '#202020') >= 4.5 && contrast('#878787', glassOver('#202020', '#ffffff')) < 4.5, 'and a repair that ignored the glass (#878787) would pass bare and still fail on it');
+  assert.ok(themeIssues(dk, T._tokens()).some((i) => i.startsWith('--wb-ink (#707070) on --wb-bg') && i.includes("bar's glass")), 'the shared check reports the dark pair on the glass');
+  assert.ok(themeIssues({ ...dk, '--wb-ink': '#878787' }, T._tokens()).some((i) => i.startsWith('--wb-ink (#878787) on --wb-bg')), 'a pair that passes bare (#878787 on #202020) but fails on the glass is reported');
+  T.registerUserThemes({ darkbar: { id: 'darkbar', name: 'Dark bar', tokens: dk } });
+  assert.ok((T.fallbacks('darkbar').contrast as string[]).includes('--wb-ink'), 'the ink of a dark bar is repaired');
+  T.setTheme('darkbar');
+  assert.strictEqual(T.token('--wb-bg'), '#202020', 'the dark surface stays the pack\'s');
+  for (const [fg, bg, min, over] of BAR_PAIRS) {
+    const a = T.token(fg) ?? BAR_TOKENS[fg], b = T.token(bg) ?? BAR_TOKENS[bg];
+    assert.ok(contrast(a, glassOver(b, over)) >= min, `dark bar repaired on the glass: ${fg} (${a}) on ${bg} (${b}) is ${contrast(a, glassOver(b, over)).toFixed(2)}:1, needs ${min}:1`);
+  }
+  T.setTheme(T.CLEAN_ID);
+  // switching from a theme with bar tokens to one without leaves no stale inline --wb-* (removeProperty)
+  {
+    const m = new Map<string, string>();
+    const g = global as unknown as { document?: unknown };
+    g.document = { documentElement: { style: { setProperty: (k: string, v: string) => { m.set(k, String(v)); }, removeProperty: (k: string) => { m.delete(k); } }, dataset: {} } };
+    try {
+      const file = require.resolve(path.join(ROOT, 'src', 'renderer', 'theme.js'));
+      delete require.cache[file];
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const X = require(file);
+      X.registerUserThemes({ withbar: { id: 'withbar', name: 'With bar', tokens: dark }, nobar: { id: 'nobar', name: 'No bar', tokens: { '--bg': '#ffffff' } } });
+      X.setTheme('withbar');
+      assert.ok([...m.keys()].some((k) => k.startsWith('--wb-')), 'a theme with bar tokens sets them inline');
+      X.setTheme('nobar');
+      assert.deepStrictEqual([...m.keys()].filter((k) => k.startsWith('--wb-')), [], 'switching to a theme without a bar leaves no --wb-* behind');
+    } finally { g.document = undefined; delete require.cache[require.resolve(path.join(ROOT, 'src', 'renderer', 'theme.js'))]; }
+  }
   console.log('bar tokens: 13 names in both copies, 0 dropped from a pack, a failing pair repaired, tier 3 names refused');
 }
 
@@ -486,6 +518,9 @@ console.log('toggle switch: on track, both knobs pass 3:1 in Clean Office and th
       ['font-size', '.b{font-size:13px}', /chrome font-size: 1 is over the baseline 0/], ['line-height', '.b{line-height:20px}', /chrome line-height: 1 is over/], ['font-weight', '.b{font-weight:700}', /chrome font-weight: 1 is over/],
       ['spacing', '.b{padding:5px 7px}', /chrome spacing: 2 is over/], ['radius', '.b{border-radius:5px}', /chrome radius: 1 is over/], ['shadow', '.b{box-shadow:0 1px 2px #000}', /chrome shadow: 1 is over/],
       ['office rule', '#stage .b{font-size:13px}', /office font-size: 1 is over/],
+      ['font shorthand', '.b{font:700 13px/20px Georgia}', /chrome font-size: 1 is over/], ['font shorthand weight', '.b{font:700 13px/20px Georgia}', /chrome font-weight: 1 is over/], ['font shorthand line-height', '.b{font:13px/20px Georgia}', /chrome line-height: 1 is over/],
+      ['rem size', '.b{font-size:0.8rem}', /chrome font-size: 1 is over/], ['em line-height', '.b{line-height:1.2em}', /chrome line-height: 1 is over/], ['logical padding', '.b{padding-inline-start:7px}', /chrome spacing: 1 is over/],
+      ['logical margin', '.b{margin-block:4px 6px}', /chrome spacing: 2 is over/], ['inset', '.b{inset:4px}', /chrome spacing: 1 is over/], ['logical radius', '.b{border-start-start-radius:5px}', /chrome radius: 1 is over/],
     ];
     for (const [what, extra, re] of planted) assert.ok(run(extra).some((m) => re.test(m)), `a planted ${what} literal fails`);
     assert.deepStrictEqual(run('.b{font-size:var(--t3-size);border-radius:var(--r-sm);box-shadow:var(--shadow-card);padding:var(--s-2);border-radius:999px}'), [], 'tokens, the pill and the scale cost nothing');
