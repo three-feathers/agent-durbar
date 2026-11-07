@@ -38,6 +38,8 @@ export const WARN_STORE_BYTES = 500 * 1024 * 1024;
 export const WARN_WORLD_COUNT = 64;
 /** A world folder is two levels (its files); anything deeper is not ours and `remove` says so instead of deleting half of it. */
 const MAX_DEPTH = 64; // levels a delete will go down (a world folder holds none; a stray extra may). Deeper is refused before anything is deleted
+/** fsync codes that mean "this system cannot flush here", not "the write failed". */
+const NO_FLUSH = new Set(['EPERM', 'EINVAL', 'ENOTSUP', 'EISDIR']);
 const TRANSIENT = new Set(['EMFILE', 'ENFILE', 'EAGAIN', 'EBUSY', 'EIO', 'EINTR', 'ENOMEM']);
 
 export const WORLD_ID_RE = THEME_ID_RE;
@@ -242,13 +244,15 @@ export class WorldStore {
     return r.ok ? r.buf : null;
   }
 
-  /** Flushes a file or a folder to disk, best effort (a system that cannot flush a folder, or refuses, is not a failed save): the fsync the notes writers do. */
+  /** Flushes a file or a folder to disk. A folder flush is best effort (some systems cannot flush a folder). A file flush ignores only the "cannot flush here" codes; any other error (EIO, ENOSPC) means the bytes may never reach the disk, so it is thrown and the save rolls back with the old copy intact. */
   private flush(p: string, dir: boolean): void {
     let fd: number | undefined;
     try {
       fd = this.fsx.openSync(p, dir ? this.fsx.constants.O_RDONLY : this.fsx.constants.O_RDWR);
       this.fsx.fsyncSync(fd);
-    } catch { /* best effort */ } finally {
+    } catch (e) {
+      if (!dir && !NO_FLUSH.has((e as NodeJS.ErrnoException).code ?? '')) throw e;
+    } finally {
       if (fd !== undefined) try { this.fsx.closeSync(fd); } catch { /* closed */ }
     }
   }

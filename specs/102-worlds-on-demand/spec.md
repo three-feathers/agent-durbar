@@ -773,6 +773,10 @@ Agent decisions stand until the owner changes them.
 
 ## Changes
 
+### 2026-11-07: a file fsync error fails the save, and the replace-path folder flush is tested (FR-083, #966 re-review)
+
+*Seen* (review of #966 at 39bcc1f4): `flush` swallowed every error, so an `EIO` from a **file** fsync let a replace report ok, delete `.old-` and leave only a possibly unwritten copy. *Decision*: a folder flush stays best effort; a file flush ignores only the "cannot flush here" codes (`EPERM`, `EINVAL`, `ENOTSUP`, `EISDIR`) and throws anything else, so the save rolls back and the old version stays served. Tests (`test:worldstore` 12e2, 12e3): on a replace the store-folder fsync comes after the rename and before the first delete under `.old-`; a file-fsync `EIO` gives `ok: false`, the old version intact and nothing left behind. `[KNOWN GAP]`: fsync behaviour on real Windows and macOS (and a real I/O error) is not verified; the tests inject errors on a stand-in fs.
+
 ### 2026-11-04: the arcade lobby on whole pixel scales too (FR-255, owner decision, issue #1104)
 
 *Seen* (Mac session, 2026-11-04, macOS 26.0, device scale 2, 15 simulated agents): the lobby's fixtures were drawn at 4.709x (1440x900) and 3.79x (1280x800), and its visitors at 2.64x and 2.13x. They were pixelated with no smoothing, but with uneven pixel widths. *Owner decision* (Vikram, Telegram DM, 2026-11-04 06:06 UTC, option A): snap the lobby's fixtures and visitors to whole device-pixel scales too, as FR-255 does for desks and people; the lobby may come out slightly smaller or larger.

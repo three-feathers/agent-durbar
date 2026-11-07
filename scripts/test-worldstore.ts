@@ -703,6 +703,63 @@ try {
     assert.ok(env(dead).store.save(goodInput()).ok, 'fsync is best effort');
   }
 
+  // ---- 12e2. replace path: the store folder is flushed after the renames and before the old copy is deleted ----
+  {
+    const log: string[] = [];
+    const paths = new Map<number, string>();
+    const spy = { ...fs, constants: fs.constants,
+      openSync: (p: fs.PathLike, ...r: unknown[]) => { const fd = (fs.openSync as (...a: unknown[]) => number)(p, ...r); paths.set(fd, String(p)); return fd; },
+      fsyncSync: (fd: number) => { log.push('fsync ' + path.basename(paths.get(fd) ?? '?')); return fs.fsyncSync(fd); },
+      renameSync: (a: fs.PathLike, b: fs.PathLike) => { log.push('rename ' + path.basename(String(b))); return fs.renameSync(a, b); },
+      unlinkSync: (p: fs.PathLike) => { log.push('delete ' + path.basename(String(p))); return fs.unlinkSync(p); },
+      rmdirSync: (p: fs.PathLike, ...r: unknown[]) => { log.push('delete ' + path.basename(String(p))); return (fs.rmdirSync as (...a: unknown[]) => void)(p, ...r); },
+    } as unknown as FsLike;
+    const st = env(spy);
+    const first = { ...tiny(1, 'rep'), origin: 'project' as const, worldId: 'rep' };
+    const key = saved(st.store.save(first));
+    log.length = 0;
+    assert.ok(st.store.save({ ...first, ...tiny(2, 'rep'), origin: 'project', worldId: 'rep' }, { replace: true }).ok, 'the replace saved');
+    const renamed = log.lastIndexOf('rename ' + key);
+    const firstDelete = log.findIndex((l) => l.startsWith('delete '));
+    const rootFlush = log.findIndex((l, i) => i > renamed && l === 'fsync worlds');
+    assert.ok(renamed >= 0, 'the new version was renamed in');
+    assert.ok(firstDelete > renamed, 'the old copy is deleted after the rename');
+    assert.ok(rootFlush > renamed, 'replace: the store folder is flushed after the rename');
+    assert.ok(rootFlush < firstDelete, 'replace: the store folder is flushed before the old copy is deleted');
+  }
+
+  // ---- 12e3. a file fsync that fails for real (EIO) fails the save and keeps the old copy; a "cannot flush here" code does not ----
+  {
+    const eio = (code: string, on: (p: string) => boolean): FsLike => {
+      const paths = new Map<number, string>();
+      return { ...fs, constants: fs.constants,
+        openSync: (p: fs.PathLike, ...r: unknown[]) => { const fd = (fs.openSync as (...a: unknown[]) => number)(p, ...r); paths.set(fd, String(p)); return fd; },
+        fsyncSync: (fd: number) => { if (on(paths.get(fd) ?? '')) throw Object.assign(new Error(code), { code }); return fs.fsyncSync(fd); },
+      } as unknown as FsLike;
+    };
+    const inTmp = (p: string): boolean => /\.tmp-/.test(p) && !fs.statSync(p).isDirectory();
+    const real = env();
+    const first = { ...tiny(1, 'rep'), origin: 'project' as const, worldId: 'rep' };
+    const key = saved(real.store.save(first));
+    const before = real.store.part(key, 'wall.webp');
+    const bad = new WorldStore(real.root, eio('EIO', inTmp));
+    const r = bad.save({ ...first, ...tiny(2, 'rep'), origin: 'project', worldId: 'rep' }, { replace: true });
+    assert.ok(!r.ok && r.code === 'failed', 'a file fsync EIO fails the save (never ok)');
+    const after = new WorldStore(real.root);
+    assert.deepStrictEqual(after.part(key, 'wall.webp'), before, 'after an fsync EIO the old version is still served');
+    assert.ok(!fs.readdirSync(real.root).some((n) => n.startsWith('.tmp-') || n.startsWith('.old-')), 'and nothing is left behind');
+    // a new save fails the same way and leaves nothing
+    const fresh = env(eio('EIO', inTmp));
+    const fr = fresh.store.save(goodInput());
+    assert.ok(!fr.ok, 'a first save with a file fsync EIO fails');
+    assert.deepStrictEqual(fs.readdirSync(fresh.root), [], 'and leaves nothing');
+    // a folder fsync error is still best effort
+    const folderEio = env(eio('EIO', (p) => { try { return fs.statSync(p).isDirectory(); } catch { return false; } }));
+    assert.ok(folderEio.store.save(goodInput()).ok, 'a folder fsync error does not fail the save');
+    // every "cannot flush here" code on a file is ignored
+    for (const code of ['EPERM', 'EINVAL', 'ENOTSUP', 'EISDIR']) assert.ok(env(eio(code, () => true)).store.save(goodInput()).ok, code + ' on a file fsync is best effort');
+  }
+
   // ---- 12f. KEY_RE is built from THEME_ID_RE, not a copy of its text (FR-031) ----
   {
     for (const id of ['a', 'a-b_c', '0x', 'a'.repeat(64), 'a'.repeat(65), '-a', '_a', 'A', 'a.b', '', 'a b']) {
