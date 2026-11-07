@@ -211,9 +211,9 @@ The dusk was dropped (owner, 2026-11-04 04:52 UTC): FR-239..FR-242 and T189 are 
 - [x] T202 [US1] Driver `scripts/check-097-lounge.js` (in `ui-suite`): both sizes, Photo office and arcade, unread keeps the desk, read moves, back to work eases, reduced motion does not; the moments driver's asleep moment and the world matrix's lounge scene follow the row [FR-246..FR-249]
 - [x] T203 [US1] Docs: changelog fragment, `docs/features.md`, `docs/feature-inventory.md`, `docs/experience/world-moments.json`, the linked Real office pictures retaken [FR-246..FR-249]
 
-## 2026-11-07: a desk's helpers in the room (issue #1139, FR-306..FR-311; waiting for the owner's answer to Q7)
+## 2026-11-07: a desk's helpers in the room (issue #1139, FR-306..FR-311; Q7 answered (a) by the owner, 2026-11-07)
 
-- [ ] T205 [US1] Owner answer to Q7 (where helpers sit and how they look); spec delta rewritten to the answer before any src change [FR-306..FR-311]
+- [x] T205 [US1] Owner answer to Q7: (a), Vikram 2026-11-07 14:48 UTC, DM relayed by the coordinator session; spec delta rewritten to the answer before any src change [FR-306..FR-311]
 - [ ] T206 [US1] Engine, pure: `RealAgent.helpers` (count) in the model; `realLayout` reserves the strip's fixed height in rows with a parent that has helpers and returns each desk's strip box and level (FR-308's rule, `HX_MIN_F` 1.4); `slipAvoid` gains the strip boxes. Test: `test:realoffice-layout` (no overlap, 15 agents never scroll, SC-002 ratchet, the level rule), mutants [FR-306, FR-308, FR-310]
 - [ ] T207 [US1] Wiring: `app.js` `realModel` passes each shown helper (id, name, status, the tile or card view from `helpercard.js`, `visibleHelpers`' hidden count); `realoffice.js` draws the strip (`h:` keys, plate look) under the plate, outside `drawSlips`; the plate's `+N` stays only on fallback; CSS in `realoffice.css` only [FR-306, FR-307, FR-309]
 - [ ] T208 [US1] Driver `scripts/check-097-helpers.js` (in `ui-suite`): both sizes, `simhelpers=2` and 15 agents, buttons and words, a status change moves no box, click opens the Sub-agent activity view, `+N more`, 10.5 px, no overlap; mutant: strip not drawn [FR-311]
