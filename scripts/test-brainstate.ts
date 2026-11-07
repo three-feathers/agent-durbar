@@ -519,6 +519,32 @@ for (const seed0 of [1, 7, 42]) {
   const r2 = feed(fresh(), [{ type: 'user' }, { type: 'output', delta: 'Old reply here.' }, start('bash', { command: 'one' }), { type: 'output', delta: ' fresh words' }, start('bash', { command: 'two' })]);
   assert.ok(!r2.turn!.steps[1].why.includes('Old reply'), 'also for a reply');
 }
+// N1 (review of #1243, security): a short value after a secret name that ENDS a thought is never kept raw, whatever its length: not in the step's Why, not in the tails, not after a tool start or idle
+{
+  const pw = ['abc' + '123', 'Win' + '2024', 'ab12 cd' + '34'];
+  for (const v of pw) for (const lead of ['I will log in with password: ', 'Use password: ', 'the db password: ']) {
+    const secret = v.split(' ')[0];
+    for (const [label, tail] of [['a tool start', start('bash', { command: 'ls' })], ['idle', { type: 'idle' }]] as Array<[string, unknown]>) {
+      const r = feed(fresh(), [{ type: 'user' }, { type: 'thinking', delta: lead + v }, tail]);
+      assert.ok(!JSON.stringify(r).includes(secret), `N1: no raw short value "${secret}" after "${lead}" and ${label}`);
+    }
+  }
+  // the header still holds: a value that has not arrived is not masked early
+  assert.ok(feed(fresh(), [{ type: 'user' }, { type: 'thinking', delta: 'status: idle, password: ' }]).think.buf.includes('password:'), 'N1: the header words stay readable');
+}
+// N2 (review of #1243, security): an unterminated quoted -p value is masked while it streams (one character per delta) and when the line ends there
+{
+  const pwd = 'S3' + 'cret9x';
+  for (const q of ['"', "'", '`']) {
+    let r = feed(fresh(), [{ type: 'user' }]);
+    for (const ch of 'mysql -u r -p' + q + pwd) {
+      r = feed(r, [{ type: 'thinking', delta: ch }]);
+      assert.ok(!JSON.stringify(r).includes(pwd.slice(0, 3)), `N2: streaming a -p${q} value one character at a time: no leak of "${pwd.slice(0, 3)}" after "${r.think.buf.slice(-12)}"`);
+    }
+    r = feed(r, [start('bash', { command: 'ls' })]);
+    assert.ok(!JSON.stringify(r).includes(pwd.slice(0, 3)), `N2: an unterminated -p${q} value at the end of a thought is masked`);
+  }
+}
 // J4: units: costUsd is capped like credits, a NaN rate is "cost unknown", the unit words come from the app (none in src/shared), no "0.00 AIU"
 {
   for (const big of [1e7, 1e300]) assert.strictEqual(feed(fresh(), [{ type: 'user' }, { type: 'usage', costUsd: big }]).costKnown, false, `costUsd ${big} is beyond the cap: not reported`);

@@ -289,7 +289,7 @@ function expects(mask: BrainMask, text: string): boolean {
 }
 /**
  * J1: a held raw head may only be header words. Every word is a name (`Authorization:`, `sid=`), a scheme word or short (7 characters or
- * fewer), ; a secret that arrived in the same piece as the header ("Bearer <secret> to") fails this.
+ * fewer, and not a value `SHORT_VALUE` would take after a name); a secret that arrived in the same piece as the header ("Bearer <secret> to") fails this.
  */
 function heldOk(mask: BrainMask, head: string): boolean {
   const words = head.split(/\s+/).filter(Boolean);
@@ -298,7 +298,9 @@ function heldOk(mask: BrainMask, head: string): boolean {
     const m = /^["'(]?[A-Za-z][A-Za-z0-9_.-]{0,40}["']?[:=]["']?(.*)$/.exec(w);
     return !!m && (m[1] === '' || mask.schemePrefix(m[1].replace(/^["']/, '')));
   };
-  return words.every((w) => w.length <= 7 || named(w) || mask.schemePrefix(w));
+  // N1 (review of #1243): a word `SHORT_VALUE` takes after a secret name (4 to 7 characters with a letter and a digit: `abc123`, `Win2024`) is a value, however short
+  const shortValue = (w: string): boolean => /^(?=.{4,7}$)(?=.*[0-9])(?=.*[A-Za-z])/.test(w.replace(/[^\w]+$/, ''));
+  return words.every((w) => named(w) || mask.schemePrefix(w) || (w.length <= 7 && !shortValue(w)));
 }
 /**
  * Does the end of `joined`'s last line expect a secret value? `at` is where its raw tail starts, `head` the tail itself (header words, no secret yet). Null when not.
