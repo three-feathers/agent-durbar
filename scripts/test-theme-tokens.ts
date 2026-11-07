@@ -249,9 +249,22 @@ for (const f of FILES) {
     const r = T.worldTokens('retro') as Record<string, string>, rr = T.worldContrast('retro') as Array<{ fg: string; bg: string; min: number; ratio: number }>;
     for (const k of Object.keys(T._builtins()[T.CLEAN_ID].tokens).concat(Object.keys(T._tokens()))) assert.ok(r[k] !== undefined, `retro has ${k}`);
     const INKS = ['--red-ink', '--amber-ink', '--blue-ink'];
-    for (const k of Object.keys(clean).filter((x) => /^--(c|pb|pc|halo)-|^--(amber|red|green|blue)(-ink)?$|^--desk-(new|needs)$/.test(x) && !INKS.includes(x))) assert.strictEqual(r[k], clean[k], `retro: status colour ${k} is unchanged`);
+    // spec 102 RA6 (2026-11-07): the status fills `--pb-*` and their inks `--pc-*` are dark/light shades of the same hue too, or a `.note` card (permission,
+    // question, limit) is cream with the page's light ink (#1279). Every other status colour is unchanged.
+    const FILLS = ['working', 'thinking', 'waiting', 'idle', 'error', 'done'].flatMap((s) => [`--pb-${s}`, `--pc-${s}`]);
+    for (const k of Object.keys(clean).filter((x) => /^--(c|pb|pc|halo)-|^--(amber|red|green|blue)(-ink)?$|^--desk-(new|needs)$/.test(x) && !INKS.includes(x) && !FILLS.includes(x))) assert.strictEqual(r[k], clean[k], `retro: status colour ${k} is unchanged`);
     const hue = (h: string): number => { const [R, G, B] = [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255), mx = Math.max(R, G, B), mn = Math.min(R, G, B), d = mx - mn; if (!d) return 0; const x = mx === R ? ((G - B) / d) % 6 : mx === G ? (B - R) / d + 2 : (R - G) / d + 4; return (x * 60 + 360) % 360; };
     for (const k of INKS) { assert.ok(luminance(r[k]) > luminance(clean[k]), `retro: ${k} is lighter`); const dh = Math.abs(hue(r[k]) - hue(clean[k])); assert.ok(Math.min(dh, 360 - dh) <= 12, `retro: ${k} keeps its hue (${dh.toFixed(1)} degrees)`); }
+    for (const s of ['working', 'thinking', 'waiting', 'idle', 'error', 'done']) {
+      assert.ok(luminance(r[`--pb-${s}`]) < 0.05, `retro: --pb-${s} is a dark fill (${r[`--pb-${s}`]})`);
+      assert.ok(luminance(r[`--pc-${s}`]) > luminance(r[`--pb-${s}`]), `retro: --pc-${s} is lighter than its fill`);
+      if (s !== 'idle') for (const k of [`--pb-${s}`, `--pc-${s}`]) { const dh = Math.abs(hue(r[k]) - hue(clean[k])); assert.ok(Math.min(dh, 360 - dh) <= 12, `retro: ${k} keeps its hue (${dh.toFixed(1)} degrees)`); }
+    }
+    // the card's ink on its fill, measured here on its own: a permission, question or limit card is .note (ink-2 on pb-waiting), an error card .note.err (red-ink on pb-error)
+    for (const [fg, bg] of [['--ink-2', '--pb-waiting'], ['--ink', '--pb-waiting'], ['--ink-2', '--pb-error'], ['--amber-ink', '--pb-waiting'], ['--red-ink', '--pb-error'], ['--pc-working', '--pb-working'], ['--pc-thinking', '--pb-thinking'], ['--pc-waiting', '--pb-waiting'], ['--pc-idle', '--pb-idle'], ['--pc-error', '--pb-error'], ['--pc-done', '--pb-done']]) {
+      assert.ok(contrast(r[fg], r[bg]) >= 4.5, `retro: ${fg} on ${bg}: ${contrast(r[fg], r[bg]).toFixed(2)}:1 is under 4.5:1`);
+      assert.ok(rr.some((x) => x.fg === fg && x.bg === bg && x.min === 4.5), `retro: worldContrast checks ${fg} on ${bg}`);
+    }
     assert.ok(luminance(r['--surface']) < 0.05 && luminance(r['--bg']) < 0.05 && luminance(r['--card']) < 0.05 && luminance(r['--wb-bg']) < 0.05, 'retro: page, cards and bar are dark');
     assert.deepStrictEqual(rr.filter((x) => !(x.ratio >= x.min)).map((x) => `${x.fg} on ${x.bg} ${x.ratio.toFixed(2)}:1 < ${x.min}`), [], 'every pair of the arcade passes WCAG AA');
     assert.ok(rr.some((x) => / \(glass over #ffffff\)$/.test(x.bg) && x.fg === '--ink'), 'a dark panel is checked over white');
