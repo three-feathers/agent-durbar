@@ -927,6 +927,8 @@ let LIVE_PREF=(()=>{try{return localStorage.getItem('durbar.liveActivity')!=='of
 const LIVE_MASK=(()=>{const L=window.DurbarLiveAct,R=NO_REDACT?null:window.DurbarRedact;if(!L||!R||typeof R.redact!=='function')return null;
   return {redact:t=>R.redact(t),cmd:t=>R.maskSecretCommand(t),url:t=>R.maskSecretUrl(t),home:t=>R.maskHomePaths(t)};})();
 const LIVEACT=LIVE_MASK?window.DurbarLiveAct.create({mask:LIVE_MASK}):null;
+/* spec 097 FR-317: a tool name on any chat surface (chip, its tooltip, the waiting line, a card's task) goes through the one mask; a masked name shows as `tool` */
+const shownTool=t=>window.DurbarLiveAct?window.DurbarLiveAct.toolName(t,LIVE_MASK||{}):String(t==null?'':t);
 const liveOn=()=>!!LIVEACT&&LIVE_PREF;
 function setLiveOn(on){LIVE_PREF=!!on;try{localStorage.setItem('durbar.liveActivity',LIVE_PREF?'on':'off');}catch(e){}scheduleRender();}
 /* the readout to show now, or null: a live main agent that is Working or Thinking (Waiting, Error, Done and Idle keep their own text) */
@@ -2076,7 +2078,7 @@ const CHIPS_SHOWN=6;
 const OUT_SHOWN=20000, OUT_KEEP=1000000;
 const fmtDur=ms=>ms<1000?Math.round(ms)+' ms':ms<60000?(ms/1000).toFixed(1)+' s':Math.floor(ms/60000)+' min '+Math.round(ms%60000/1000)+' s';
 function makeChip({tool,kind,label,res,state,output,full,ms}){
-  const k=kind||toolKind(tool), name=TOOLNAME[tool]||tool||'tool';
+  const k=kind||toolKind(tool), name=TOOLNAME[tool]||shownTool(tool);
   const el=document.createElement('div');
   el.className='chip'+(state==='failed'||state==='fail'?' fail':state==='run'?' run':'');
   el.setAttribute('role','button');el.tabIndex=0;el.setAttribute('aria-expanded','false');
@@ -5685,7 +5687,7 @@ const EV=window.DurbarEditView;
 /* the card's task line for a tool start: "Editing app.js" for a file edit (FR-020), else "<tool> <label>" as before */
 function toolTask(e,folder,max){const lbl=editLabel(e)||toolLabel(e.args);
   if(toolKind(e.tool)==='edit'&&lbl&&!e.mcpServer)return SHORT((e.edit?EV.summary(e.edit,{running:true,folder}).text:'Editing '+EV.displayPath(lbl,folder).name),max);
-  return e.tool+(lbl?' '+safeToolLabel(e.tool,lbl,max):'');} /* FR-065: a command through maskSecretCommand, a URL through maskSecretUrl (the way LIVEACT masks it) */
+  return shownTool(e.tool)+(lbl?' '+safeToolLabel(e.tool,lbl,max):'');} /* FR-065: a command through maskSecretCommand, a URL through maskSecretUrl (the way LIVEACT masks it) */
 /* FR-024: the adapters mask before sending; the page masks again with the same module when it is loaded (window.DurbarRedact) */
 const edRed=t=>{const R=window.DurbarRedact;try{return R&&typeof R.redact==='function'?R.redact(t):t;}catch(_){return t;}};
 const editLabel=e=>e&&e.edit&&Array.isArray(e.edit.files)&&e.edit.files[0]?String(e.edit.files[0].path||''):'';
@@ -5751,7 +5753,7 @@ function tAct(T,id,c){
   const ty=T.typing;if(!ty)return;
   if(!id||!c){delete ty.dataset.act;delete ty.dataset.a0;T.actId=null;ty._act=null;typingPaint(ty);return;}
   const k=toolKind(c.tool);
-  const text=c.edit?EV.summary(c.edit,{running:true,folder:T.folder}).text:k!=='tool'?plainChip(k,c.tool,c.label,true):'Using '+String(c.tool||'a tool');
+  const text=c.edit?EV.summary(c.edit,{running:true,folder:T.folder}).text:k!=='tool'?plainChip(k,c.tool,c.label,true):'Using '+(c.tool?shownTool(c.tool):'a tool');
   if(T.actId!==id)ty.dataset.a0=String(c.seen||Date.now()); /* the tool's own time, also when it comes back after a newer one ended */
   T.actId=id;ty._act={T,id,c};ty.dataset.act=SHORT(text,80);typingPaint(ty);
 }
@@ -9115,6 +9117,7 @@ if(bridge){
     /* spec 100: the dialog's and Settings' view of the figures */
     mcpCtx:id=>{const a=liveById(id);return a?{view:MCP_CTX.get(id)||null,window:mcpWindow(a),app:mcpAppWord(a)}:null;},
     mcpCtxSet:(id,v)=>mcpViewChanged(id,v),
+    shownTool, /* spec 097 FR-317: a tool name shown in Settings goes through the one mask */
     mcpLevels:()=>mcpLevelsNow(),
     setMcpLevels:l=>mcpLevelsChanged(l),
     mcpSession:id=>{const r=LIVE.agents.find(y=>y.id===id&&y.live&&!y.parent);return r?{a:r,mcp:!!feat(r,'mcp'),o:mcpOpts(r)}:null;},
