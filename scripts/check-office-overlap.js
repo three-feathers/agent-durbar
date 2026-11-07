@@ -558,6 +558,8 @@ async function driver(ctx) {
       }
       if (marks.narrow) await ctx.js(`window.__durbarSimUi.unread.mark(${jsLiteral(marks.narrow)})`); /* a New reply tag on the narrowest plate too (FR-238) */
       if (!(await H.until(`document.querySelectorAll('#stage .ro-drafttag.on').length>=${jsLiteral(Math.min(picks.length, 2))}`, 8000))) { total++; failed++; console.log(`FAIL ${tag}: no Draft tag showed for the drafted desks (${JSON.stringify(marks)})`); }
+      /* the seeding opened and closed chats, which takes wall-clock time: a visit that was waiting for its debounce or dwell starts or ends on its own and re-flows the office (CI, Linux, 4 of 4 runs). Seeds are all applied here; wait until nothing is about to start or end, then take the baseline. */
+      if (!(await H.until(`window.__durbarSimUi.visitsSettled()&&window.__durbarSimUi.settleNow()`, 15000))) { total++; failed++; console.log(`FAIL ${tag}: the office did not settle after the drafts were seeded`); continue; }
       await stable(tag + ' with drafts');
       for (const [step, amb] of [['closed', 0.7], ['closed', 1]]) {
         const res = await ctx.js(`(${realCheck.toString()})(${amb})`);
