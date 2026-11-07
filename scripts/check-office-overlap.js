@@ -486,6 +486,7 @@ async function driver(ctx) {
       document.querySelectorAll('#stage .ro-sign').forEach((e) => add('sign', e));
       document.querySelectorAll('#stage .ro-lplate').forEach((e) => add('placeplate', e));
       document.querySelectorAll('#stage .ro-chip').forEach((e) => add('chip', e));
+      document.querySelectorAll('#stage .ro-drafttag.on').forEach((e) => add('drafttag', e)); /* spec 097 FR-316 */
       document.querySelectorAll('#stage .ro-away').forEach((e) => add('away', e));
       document.querySelectorAll('#stage .ro-screen .ro-bezel').forEach((e) => add('screen', e));
       for (const z of L.zones) for (const d of z.desks) if (d.person) add('face', null, { x: o.left + d.person.vis.x, y: o.top + d.person.vis.y, r: o.left + d.person.vis.x + d.person.vis.w, b: o.top + d.person.vis.y + Math.min(d.person.vis.h, L.faceH * 1.2) });
