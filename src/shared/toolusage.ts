@@ -90,7 +90,10 @@ function hideable(v: unknown, placeholder: string, report?: { masked: number }):
   if (typeof v !== 'string') return '';
   const n = name(v);
   if (!n) return '';
-  if (!looksSecret(v)) return n;
+  // judge the name as it comes, AND with its leading padding (spaces, control codes, NBSP) cut off before the look-ahead, which is what the
+  // stored name is cut from (a token behind thousands of spaces is not out of view), AND the stored name itself as a backstop (review of #1294, round 2)
+  const lead = v.replace(/^[\s\u0000-\u001f\u007f]+/, '');
+  if (!looksSecret(v) && !looksSecret(lead) && !looksSecret(n)) return n;
   if (report) report.masked++;
   return placeholder;
 }

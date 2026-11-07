@@ -240,4 +240,33 @@ assert.ok(!agentLabel('Ada', '/home/v/secret-dir/app').includes('secret-dir'), '
   }
 }
 
+// review of #1294, round 2: a token behind thousands of padding characters is judged and not stored
+{
+  const TK = 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4';
+  const PARTS = /ghp_|A1b2C3d4|E5f6G7h8|K1l2M3n4/;
+  for (const [what, pad] of [['spaces', ' '], ['control codes', '\u0001'], ['NBSP', '\u00a0'], ['tabs', '\t']] as const) {
+    const padded = pad.repeat(5000) + TK;
+    const dd = emptyDoc();
+    assert.ok(recordEvent(dd, 'Ada · app', start(padded)), 'padding ' + what + ': tool counted');
+    assert.ok(recordEvent(dd, 'Ada · app', { type: 'toolCall', phase: 'start', tool: 'x', mcpServer: padded, mcpTool: 't' }), 'padding ' + what + ': server counted');
+    assert.ok(recordEvent(dd, 'Ada · app', { type: 'toolCall', phase: 'start', tool: 'x', mcpServer: 'srv', mcpTool: padded }), 'padding ' + what + ': MCP tool counted');
+    assert.ok(!PARTS.test(JSON.stringify(dd)), 'padding ' + what + ' (live): the document holds no part of the token');
+    assert.strictEqual(toolKey(start(padded)).name, HIDDEN_TOOL, 'padding ' + what + ' (live tool): hidden');
+    assert.strictEqual(toolKey({ tool: 'x', mcpServer: padded, mcpTool: 't' }).server, HIDDEN_SERVER, 'padding ' + what + ' (live server): hidden');
+    const ld = sanitizeDoc({ tools: { 'builtin:a': { name: padded, calls: 1 }, 'mcp:b': { source: 'mcp', server: padded, name: 't', calls: 1 } }, servers: { [padded]: { calls: 2 } } });
+    assert.ok(!PARTS.test(JSON.stringify(ld)), 'padding ' + what + ' (load): the loaded document holds no part of the token');
+    assert.strictEqual(ld.servers[HIDDEN_SERVER].calls, 2, 'padding ' + what + ' (load): the stored server is hidden');
+  }
+  // padding and then an escape sequence inside the token: only the padding-trimmed text, read through its escapes, is whole
+  for (const [what, mid] of [['ansi', '\u001b[0m'], ['osc', '\u001b]0;t\u0007']] as const) {
+    const p2 = ' '.repeat(5000) + TK.slice(0, 7) + mid + TK.slice(7);
+    const dd = emptyDoc();
+    recordEvent(dd, 'Ada · app', start(p2));
+    recordEvent(dd, 'Ada · app', { type: 'toolCall', phase: 'start', tool: 'x', mcpServer: p2, mcpTool: 't' });
+    assert.ok(!PARTS.test(JSON.stringify(dd)), 'padding then ' + what + ' (live): the document holds no part of the token');
+    assert.ok(!PARTS.test(JSON.stringify(sanitizeDoc({ tools: { 'builtin:a': { name: p2, calls: 1 } }, servers: { [p2]: { calls: 1 } } }))), 'padding then ' + what + ' (load): no part of the token');
+  }
+  assert.strictEqual(toolKey(start(' '.repeat(5000) + 'bash')).name, 'bash', 'padding: a clean padded name is kept, trimmed as before');
+}
+
 console.log('toolusage: all checks passed');
