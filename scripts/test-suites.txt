@@ -43,6 +43,7 @@ test:brainsurface
 test:toolusage
 test:usagestore
 test:about
+test:contacts
 test:usagetotals
 test:costtable
 test:dialog

@@ -34,7 +34,7 @@ description: "Tasks for spec 084: contacts, and sending the message box to a per
 
 ## Phase 1: Foundation for the MVP (blocks US1..US3)
 
-- [ ] T010 [P] Pure contact model in `src/shared/contacts.ts`. [FR-002..FR-006, FR-005]
+- [x] T010 [P] Pure contact model in `src/shared/contacts.ts`. [FR-002..FR-006, FR-005]
   - AC1: `parseContactsDoc` keeps valid contacts, drops a bad one and keeps the rest; returns an error for an unknown version, non-JSON or a document over the derived byte cap.
   - AC2: `cleanContact` refuses each FR-004 hostile address (CR, LF, `?cc=`, `&message=`, `%0A`, `,`, `;`, quotes, `javascript:`, a full-width or other look-alike `@`, any non-ASCII character such as a Cyrillic `а` or Greek `ο` in the local part or domain, a full-width dot, a zero-width space) with the field's reason, and accepts plain ASCII `local@domain` up to 254 characters; Slack and Telegram ids follow their FR-003 patterns.
   - AC3: `applyChange` refuses a stale `rev` with `stale`; refuses the 301st contact, the 9th channel and the 6th alias with their reasons.
