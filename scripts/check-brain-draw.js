@@ -122,7 +122,7 @@ module.exports = async (ctx) => {
     assert.strictEqual(s.frames, hf, 'FR-104: a hidden page draws 0 frames');
     assert.strictEqual(s.loopRunning, false);
     await js(`delete document.hidden;document.dispatchEvent(new Event('visibilitychange'));0`);
-    await must(`window.__durbarSimUi.brain.host().stats().frames===${hf + 1}`, 'one frame when shown again', 3000);
+    await must(`window.__durbarSimUi.brain.host().stats().frames===${jsLiteral(hf + 1)}`, 'one frame when shown again', 3000);
 
     // ---- reduced motion (emulated): forced Still, the button says why
     await media([{ name: 'prefers-reduced-motion', value: 'reduce' }]);
