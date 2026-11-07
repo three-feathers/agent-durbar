@@ -12,7 +12,7 @@ One row per thing a user can do or see. [features.md](features.md) stays the use
 |---|---|---|---|---|---|
 | Desk: name, role, status word, task | works | works | mock+planned (desk-card) | 001 034 097 | test:mood driver:shots-097-realoffice |
 | Moods and trouble signs (heavy, monster, siren); Serious mode hides them and only them (not motion, issue #1182) | works | works pose, dots and lights only; heavy, monster and siren missing (#1171) | mock+planned (desk-lights) | 034 097 | test:mood read:src/renderer/realoffice.js |
-| Helpers (sub-agents): card, tree, own chat, needs you | works | missing, only `+N` and 3 dots; planned as small figures beside the desk (#1139) | planned | 001 015 097 | test:helpercard read:src/renderer/realoffice.js |
+| Helpers (sub-agents): card, tree, own chat, needs you | works | in PR (branch 097-room-helpers, #1265): a strip of helper tiles under each desk's plate in the Photo office and the cave; the Retro arcade keeps `+N` and dots (#1139) | planned | 001 015 097 | test:helpercard test:realoffice-layout driver:check-097-helpers |
 | Live activity on the desk | works | works, monitors show the newest output (PR 979) | mock+planned (live-screen) | 001 097 | test:liveact driver:shots-001-live-activity |
 | Model, tokens, cost, context, last tool on the desk | works | missing (#1148) | none | 019 097 | test:ctxbreakdown read:src/renderer/realoffice.js |
 | Unread "New", draft, question marks | works | works, a New reply tag and a green screen (097 FR-236, FR-238); draft and question marks missing (#1149) | none | 001 005 097 | test:unread driver:shots-097-realoffice |
