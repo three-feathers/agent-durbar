@@ -37,6 +37,12 @@
   --tone-idea-bg:var(--pb-thinking); --tone-idea-ink:var(--pc-thinking); --tone-idea-soft:color-mix(in srgb,var(--pb-thinking) 55%,var(--surface)); --tone-idea-faint:color-mix(in srgb,var(--pb-thinking) 28%,var(--surface)); --tone-idea-line:color-mix(in srgb,var(--pc-thinking) 26%,var(--pb-thinking)); --tone-idea-hover:color-mix(in srgb,var(--pb-thinking) 88%,var(--pc-thinking));
   --tone-neutral-bg:color-mix(in srgb,var(--ink) 7%,var(--surface)); --tone-neutral-faint:color-mix(in srgb,var(--ink) 4%,var(--surface)); --tone-neutral-line:color-mix(in srgb,var(--ink) 18%,var(--surface)); --tone-neutral-track:color-mix(in srgb,var(--ink) 16%,var(--surface));
   --h-ctl:32px; --h-chip:26px; --h-pill:22px;
+  /* spec 070 A14 (T035, T036): the pieces of the button scale and the composer as tokens, today's values; html[data-flat-look] below sets Flat's (FR-075) */
+  --btn-pad:14px; --btn-fs:13px; --btn-fw:550; --ib-size:34px; --ptab-h:30px; --ct-h:28px; --btn-sm-h:28px; --composer-pad:8px; --inbox-pad:6px;
+  /* Flat's modern colours (FR-061, calculated, T039 is the owner's look); read only by the html[data-flat-look] block at the end */
+  --flat-page:#ffffff; --flat-page-2:#f6f7f7; --flat-line:#e4e6e8; --flat-line-2:#d3d6d9; --flat-line-ctl:#858b90; --flat-accent:#177245; --flat-accent-hover:#135f39;
+  --btn-primary-hover:color-mix(in srgb,var(--btn-primary-bg) 86%,#000);
+  --send-bg:#5f8aa8; --send-ink:#fff; --send-hover:#507b99;
   /* spec 052 FR-098 (round 10): the chrome's type scale (screens, dialogs, chat, inbox; never desk cards, rooms, the lobby or the top bar).
      T1 titles, T2 section titles and inbox headings, T3 body, T4 chips and metadata, T5 hints and counts. */
   --t1-size:16px; --t1-weight:650; --t1-lh:1.25;
@@ -419,11 +425,11 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .pusage{margin:0;font-size:var(--t5-size);color:var(--muted);font-variant-numeric:tabular-nums}
 .pusage:empty{display:none}
 .actions{display:flex;gap:8px;margin-top:12px}
-.btn{height:var(--h-ctl);padding:0 14px;border-radius:var(--r-md);border:1px solid var(--line-2);background:var(--raised);cursor:pointer;font-size:13px;font-weight:550;display:inline-flex;align-items:center;gap:7px;white-space:nowrap}
+.btn{height:var(--h-ctl);padding:0 var(--btn-pad);border-radius:var(--r-md);border:1px solid var(--line-2);background:var(--raised);cursor:pointer;font-size:var(--btn-fs);font-weight:var(--btn-fw);display:inline-flex;align-items:center;gap:7px;white-space:nowrap}
 .btn:hover{background:var(--surface-2);border-color:#bdb3a2}
 /* spec 052 FR-053: the primary action is solid in every theme (themes.css gives each theme its own accent) */
 .btn.primary{background:var(--btn-primary-bg);border-color:transparent;color:var(--btn-primary-ink);font-weight:600} /* spec 052 FR-169: the text colour is the page's own, so it reads on --sage-ink in a dark theme too */
-.btn.primary:hover{background:color-mix(in srgb,var(--btn-primary-bg) 86%,#000)}
+.btn.primary:hover{background:var(--btn-primary-hover)}
 .btn.danger{color:var(--red-ink)}
 .btn.danger:hover{background:var(--tone-bad-soft);border-color:var(--tone-bad-line);color:var(--tone-bad-ink)}
 .btn svg{width:15px;height:15px;flex:none}
@@ -545,14 +551,14 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .att button{flex:none}
 .att button{width:20px;height:20px;border:0;background:transparent;border-radius:6px;cursor:pointer;display:grid;place-items:center;color:inherit}
 .att button:hover{background:rgba(0,0,0,.07)}
-.inbox{display:flex;align-items:flex-end;gap:4px;border:1px solid var(--line-2);border-radius:14px;background:var(--raised);padding:6px}
+.inbox{display:flex;align-items:flex-end;gap:4px;border:1px solid var(--line-2);border-radius:var(--r-lg);background:var(--raised);padding:var(--inbox-pad)}
 .inbox:focus-within{border-color:var(--sel-border,#7fa0bd);box-shadow:0 0 0 3px #dbe7f1}
 .inbox textarea{flex:1;border:0;outline:0;resize:none;font:inherit;font-size:var(--t3-size);padding:7px 6px;min-height:36px;background:transparent;color:var(--ink)}
-.ib{width:34px;height:34px;border-radius:10px;border:0;background:transparent;cursor:pointer;display:grid;place-items:center;color:var(--ink-2);flex:none}
+.ib{width:var(--ib-size);height:var(--ib-size);border-radius:var(--r-md);border:0;background:transparent;cursor:pointer;display:grid;place-items:center;color:var(--ink-2);flex:none}
 .ib:hover{background:var(--surface-2)}
 .ib svg{width:18px;height:18px}
-.send{background:#5f8aa8;color:#fff;margin-left:4px}
-.send:hover{background:#507b99}
+.send{background:var(--send-bg);color:var(--send-ink);margin-left:4px}
+.send:hover{background:var(--send-hover)}
 .send[aria-disabled="true"]{background:var(--surface-2);color:var(--muted);cursor:not-allowed}
 .hint{font-size:var(--t5-size);line-height:var(--t5-lh);color:var(--muted);margin:4px 2px 0}
 
@@ -922,17 +928,17 @@ body.panel-open #panel{flex-direction:row}
 .more-it .mt{display:flex;flex-direction:column;gap:1px}
 .more-it .mt small{font-size:var(--t5-size);color:var(--muted);font-weight:400;text-wrap:balance} /* spec 052 FR-165: a hint is one line or two even ones, never an orphan word */
 .more-sep{height:1px;margin:4px 6px;background:var(--line)}
-.ph .btn{height:28px;padding:0 10px;font-size:var(--t4-size)} /* the header's buttons are .btn.sm (28px) */
+.ph .btn{height:var(--btn-sm-h);padding:0 10px;font-size:var(--t4-size)} /* the header's buttons are .btn.sm (28px) */
 .ph .avatar{width:32px;height:32px;margin:-2px 0} /* 32px, centred on the 28px first row */
 .mchip{display:inline-flex;align-items:center;height:var(--h-chip);padding:0 8px;border-radius:999px;background:var(--surface-2);border:1px solid var(--line);color:var(--ink-2);font-size:var(--t4-size);font-weight:600;white-space:nowrap}
 .ptask{-webkit-line-clamp:2}
 #chat{padding:16px max(16px,calc((100% - 880px)/2))}
-.composer{padding:8px max(16px,calc((100% - 880px)/2))}
+.composer{padding:var(--composer-pad) max(16px,calc((100% - 880px)/2))}
 .ph{padding-left:max(16px,calc((100% - 1240px)/2));padding-right:max(16px,calc((100% - 1240px)/2))}
 .panel-in.viewing .composer,.panel-in.viewing .prev{display:none}
 /* spec 080 T015: the Chat | Browser tabs and the browser bar. Theme tokens only; text 11px or more (FR-006); state is icon plus word. */
 .ptabs{flex:none;display:flex;gap:4px;padding:0 max(16px,calc((100% - 1240px)/2));border-bottom:1px solid var(--line);background:var(--surface)}
-.ptab{height:30px;padding:0 12px;border:0;border-bottom:2px solid transparent;background:none;color:var(--muted);font:inherit;font-size:var(--t4-size);font-weight:var(--t4-weight);cursor:pointer}
+.ptab{height:var(--ptab-h);padding:0 12px;border:0;border-bottom:2px solid transparent;background:none;color:var(--muted);font:inherit;font-size:var(--t4-size);font-weight:var(--t4-weight);cursor:pointer}
 .ptab:hover{color:var(--ink)}
 .ptab[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--sage-ink);font-weight:650}
 .panel-in.on-browser #chat{flex:0 0 0;height:0;min-height:0;padding:0;overflow:hidden;visibility:hidden}
@@ -1480,7 +1486,7 @@ body.panel-open #panel{flex-direction:row}
 .notice-strip .ns-t{flex:1 1 360px;min-width:0}
 .notice-strip .ns-t b{color:var(--amber-ink)}
 .notice-strip .ns-act{display:flex;gap:6px}
-.notice-strip .btn{height:28px;padding:0 10px;font-size:12px} /* spec 052 FR-076: .btn.sm; the strip stays 31px tall (1 + 28 + 1 padding, 1 border) */
+.notice-strip .btn{height:var(--btn-sm-h);padding:0 10px;font-size:12px} /* spec 052 FR-076: .btn.sm; the strip stays 31px tall (1 + 28 + 1 padding, 1 border) */
 
 /* spec 052 FR-021: stuck or memory nearly full, on the pill (the reason is in the tooltip and the card's label) */
 .pwarn{margin-left:4px;color:var(--amber-ink);font-size:11px;line-height:1}
@@ -1900,15 +1906,15 @@ h2,h3,h4{text-wrap:balance}
 .run-spin i{display:block;width:16px;height:16px;border-radius:50%;border:2px solid var(--line-2);border-top-color:currentColor;animation:run-spin .9s linear infinite}
 @keyframes run-spin{to{transform:rotate(360deg)}}
 @media (prefers-reduced-motion:reduce){.run-spin i{width:8px;height:8px;border:0;background:currentColor;animation:none}} /* FR-038: a static dot, no motion */
-.ctoolbar{--h-chip:28px;display:flex;align-items:center;gap:var(--s-1);margin-top:var(--s-1);min-width:0}
+.ctoolbar{--h-chip:var(--ct-h);display:flex;align-items:center;gap:var(--s-1);margin-top:var(--s-1);min-width:0}
 .ct-items{display:flex;align-items:center;gap:var(--s-1);flex:1 1 auto;min-width:0;overflow:hidden;padding:2px 0} /* one row; what does not fit goes into ⋯ (FR-040) */
 .ct{display:inline-flex;align-items:center;flex:none;min-width:0}
 .ct:empty{display:none}
-.ctoolbar .ib.ct-ib{width:28px;height:28px;border-radius:var(--r-md)}
+.ctoolbar .ib.ct-ib{width:var(--ct-h);height:var(--ct-h);border-radius:var(--r-md)}
 .ctoolbar .ib.ct-ib svg{width:16px;height:16px}
 .ctoolbar #ctMoreBtn{font-size:var(--t3-size);font-weight:700;color:var(--ink-2)}
 .ctoolbar #ctMoreBtn[hidden]{display:none}
-.ctoolbar .mchip,.ctoolbar .mode-chip,.ctoolbar .ctxchip,.ctoolbar .mode-sbx-btn{height:28px;font-size:var(--t4-size)}
+.ctoolbar .mchip,.ctoolbar .mode-chip,.ctoolbar .ctxchip,.ctoolbar .mode-sbx-btn{height:var(--ct-h);font-size:var(--t4-size)}
 .ctoolbar .mchip-btn span{max-width:220px}
 .ctoolbar .cti{width:14px;height:14px;flex:none}
 .ctoolbar .mchip{gap:var(--s-1)}
@@ -2180,3 +2186,16 @@ h2,h3,h4{text-wrap:balance}
 .room-head{cursor:grab}
 .room-head :is(button,a,input){cursor:pointer}
 #stage .place[data-reo]{cursor:grab}
+
+/* ---- spec 070 A14 (FR-061..FR-066, FR-075, FR-076; T034..T036, T044): Flat's modern look, behind html[data-flat-look] (flatlook.js; off by default).
+   Only Flat matches: Clean Office has no data-ui and no world is shown, so Real office, Retro, the cave and every other pack are untouched (FR-066).
+   Colours are !important because theme.js writes the pack's values as inline style; sizes and radii are tokens the rules above read. ---- */
+html[data-flat-look]:not([data-ui]):not([data-world]){
+  --bg:var(--flat-page)!important; --surface:var(--flat-page)!important; --raised:var(--flat-page)!important; --card:var(--flat-page)!important; --surface-2:var(--flat-page-2)!important; --note:var(--flat-page-2)!important;
+  --line:var(--flat-line)!important; --line-2:var(--flat-line-2)!important; --line-ctl:var(--flat-line-ctl)!important; --sage-ink:var(--flat-accent)!important;
+  --btn-primary-hover:var(--flat-accent-hover); --send-bg:var(--btn-primary-bg); --send-ink:var(--btn-primary-ink); --send-hover:var(--btn-primary-hover);
+  --r-sm:3px; --r-md:4px; --r-lg:6px; --r-xl:8px;
+  --h-ctl:24px; --h-chip:24px; --btn-pad:8px; --btn-fs:var(--t4-size); --btn-fw:500; --ib-size:24px; --ptab-h:24px; --ct-h:24px; --btn-sm-h:24px;
+  --composer-pad:6px; --inbox-pad:4px;
+}
+html[data-flat-look]:not([data-ui]):not([data-world])[data-density="compact"] :is(#panel,#screen,.dlg,.dlg-ov,.more-menu,.mode-menu,#topMoreMenu){--h-ctl:24px; --h-chip:24px}
