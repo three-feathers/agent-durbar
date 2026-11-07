@@ -7,7 +7,7 @@
  * (spec 097 FR-030) the masks also read a copy without hidden characters (`unhide`, the window's own function), so a zero-width space
  * cannot hide a token. Pure: no fs, no network, no process, no log. Any failure throws, and the caller drops the hit (fail closed).
  */
-import { NOTE_MARK, NOTE_RUN, hiddenCanHide, maskHomePaths, maskNoteText, openKeyBlockStart } from '../shared/redact';
+import { NOTE_MARK, NOTE_RUN, hiddenScan, maskHomePaths, maskNoteText, openKeyBlockStart } from '../shared/redact';
 
 /** Characters of context on each side of a raw hit; the window is then widened to whitespace (never cut inside a token). */
 export const WINDOW_CHARS = 600;
@@ -42,6 +42,8 @@ export interface MaskedWindow {
   work: number;
 }
 
+/** The work one inert hidden run costs (`hiddenScan`, run in `maskWork` and again in the mask): measured 2026-11-07 on an idle machine, 4.6 per run for joined emoji (45,000 characters of family emoji: 14.4 ms where plain text of the same length took 4.4 ms), 6 with margin. Spec 095 *Changes* 2026-11-07. */
+export const HIDDEN_RUN_WORK = 6;
 /**
  * Review of phase 1, finding 4 (FR-022, SC-003): the cost of one mask, estimated before it runs, in microseconds of the VPS (measured
  * 2026-11-04 for `maskNoteText`): 0.55 per character for the linear passes; 2.5 per character when a split mark (`NOTE_MARK`) is present,
@@ -49,7 +51,7 @@ export interface MaskedWindow {
  * character for each MCP secret value (re-check of the review: 1 000-2 000 values over 20 000 characters took 50-108 ms). Hidden characters
  * (`HIDDEN_CHARS`) that can hide a token triple it (`hiddenCanHide`, the same rule as `maskNoteText`: it masks the text, the copy without
  * them and, when the copy finds something, their union, review of PR 1236); an emoji joiner or variation selector between two non-ASCII
- * characters is inert and costs nothing (issue 1234). `hidden` is whether the text has any: it is then judged here. Measured under load, so it overestimates on an idle machine.
+ * characters is inert and costs only its scan, `HIDDEN_RUN_WORK` per run (issue 1234, review of PR 1244). `hidden` is whether the text has any: it is then judged here. Measured under load, so it overestimates on an idle machine.
  */
 export function maskWork(s: string, hidden = false, values: number | readonly string[] = 0): number {
   const nVals = typeof values === 'number' ? values : values.length;
@@ -61,8 +63,11 @@ export function maskWork(s: string, hidden = false, values: number | readonly st
       if ((i > 0 && NOTE_MARK.test(s[i - 1])) || (i + m[0].length < s.length && NOTE_MARK.test(s[i + m[0].length]))) runs++;
     }
   }
-  const live = hidden && hiddenCanHide(s, typeof values === 'number' ? [] : values);
-  return Math.ceil((s.length * (marks ? 2.5 : 0.55) + runs * 250 + nVals * s.length * 0.003) * (live ? 3 : 1));
+  const scan = hidden ? hiddenScan(s, typeof values === 'number' ? [] : values) : undefined;
+  const live = scan?.live === true;
+  // an inert hidden run costs the scan that finds it inert, run twice (here and in the mask): `HIDDEN_RUN_WORK` each; a live text pays the x3
+  const hiddenRuns = scan && !live ? scan.runs : 0;
+  return Math.ceil((s.length * (marks ? 2.5 : 0.55) + runs * 250 + nVals * s.length * 0.003) * (live ? 3 : 1) + hiddenRuns * HIDDEN_RUN_WORK);
 }
 /** The most one mask may cost (estimated, about 25 ms): the same as a message's whole budget (`BUDGET.messageWork`), which is what bounds a slice; a lower cap refused whole masks of mid-size texts the message budget allows (review of PR 1098). */
 export const MASK_CALL_WORK = 25_000;

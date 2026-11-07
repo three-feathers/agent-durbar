@@ -1654,7 +1654,16 @@ const PLAIN_ASCII = /^[\x20-\x7e]*$/;
  * Text-wide on purpose: the netrc `\s{1,8}` crosses line breaks. `scripts/test-livehead.ts` (FR-063) lists the mask rules with such a window and
  * fails when one has no alternative here. A per-line guard is possible later.
  */
-const LIVE_HEAD = new RegExp(String.raw`${SECRET_NAMES}\\{0,2}["'\`]?\s{0,8}(?::=|=>|[:=]|%3[DdAa])|cookie|\bmachine\s|\bcurl\b|:\/\/`, 'i');
+const LIVE_HEADS: readonly string[] = [
+  String.raw`${SECRET_NAMES}\\{0,2}["'\`]?\s{0,8}(?::=|=>|[:=]|%3[DdAa])`, // a secret name and its separator
+  'cookie',
+  String.raw`\bmachine\s`,
+  String.raw`\bcurl\b`,
+  String.raw`:\/\/`,
+];
+const LIVE_HEAD = new RegExp(LIVE_HEADS.join('|'), 'i');
+/** The alternatives of `LIVE_HEAD`, one regex each (`scripts/test-livehead.ts` checks each against its own sample). */
+export const _liveHeadsForTest = (): RegExp[] => LIVE_HEADS.map((h) => new RegExp(h, 'i'));
 /** A character a token cannot be made of or sit next to: non-ASCII, not a space (U+0085 and the Unicode spaces included), not hidden, a whole code point. */
 function isInertSide(cp: number | undefined): boolean {
   if (cp === undefined || cp < 0x80 || (cp >= 0xd800 && cp <= 0xdfff)) return false;
@@ -1671,26 +1680,39 @@ function isInertSide(cp: number | undefined): boolean {
  * The one rule of `maskNoteText`, `maskOutgoing` and `maskWork`.
  */
 export function hiddenCanHide(s: string, values: readonly string[] = [], env?: Env): boolean {
+  return hiddenScan(s, values, env).live;
+}
+/**
+ * `hiddenCanHide` and what the scan cost: `runs`, the hidden runs it walked (a live text stops at the first reason, so `runs` is only
+ * meaningful when `live` is false). `convmask.maskWork` prices the scan per run (review of PR 1244, item 5: it runs once in `maskWork`
+ * and once in the mask, and a text of joined emoji has thousands of runs).
+ */
+export function hiddenScan(s: string, values: readonly string[] = [], env?: Env): { live: boolean; runs: number } {
+  const LIVE = { live: true, runs: 0 };
   HIDDEN_ALL.lastIndex = 0;
   let m = HIDDEN_ALL.exec(s);
-  if (!m) return false;
-  if (!values.every((v) => PLAIN_ASCII.test(v))) return true;
-  if (LIVE_HEAD.test(s)) return true; // a rule's bounded window counts hidden characters too: always live
+  if (!m) return { live: false, runs: 0 };
+  if (!values.every((v) => PLAIN_ASCII.test(v))) return LIVE;
+  // a rule's bounded window counts hidden characters too: always live. The head is read on the text as written and on the text without its
+  // Markdown marks (`maskCore` masks both: `pass**word**=`, `Coo**kie**:`, `https:**//**`, `api\_key=` are heads there; review of PR 1244, item 1)
+  if (LIVE_HEAD.test(s) || (NOTE_MARK.test(s) && LIVE_HEAD.test(withoutMarks(s).k))) return LIVE;
   const e = snapshot(env);
-  for (const [, v] of SNAPSHOTS.get(e) ?? []) if (!PLAIN_ASCII.test(v)) return true;
+  for (const [, v] of SNAPSHOTS.get(e) ?? []) if (!PLAIN_ASCII.test(v)) return LIVE;
+  let runs = 0;
   while (m) {
     const a = m.index;
     let b = a + m[0].length;
     HIDDEN_ALL.lastIndex = b;
     for (let n = HIDDEN_ALL.exec(s); n && n.index === b; n = HIDDEN_ALL.exec(s)) b = n.index + n[0].length; // the whole run
-    if (/\s/u.test(s.slice(a, b))) return true; // a hidden character the rules read as a space (VT, FF, LS, PS, BOM) ends a value: live
+    if (/\s/u.test(s.slice(a, b))) return LIVE; // a hidden character the rules read as a space (VT, FF, LS, PS, BOM) ends a value: live
     const lo = a > 1 && s.charCodeAt(a - 1) >= 0xdc00 && s.charCodeAt(a - 1) <= 0xdfff && s.charCodeAt(a - 2) >= 0xd800 && s.charCodeAt(a - 2) <= 0xdbff ? a - 2 : a - 1;
     const before = a > 0 ? s.codePointAt(lo) : undefined;
-    if (!isInertSide(before) || !isInertSide(b < s.length ? s.codePointAt(b) : undefined)) return true;
+    if (!isInertSide(before) || !isInertSide(b < s.length ? s.codePointAt(b) : undefined)) return LIVE;
+    runs++;
     HIDDEN_ALL.lastIndex = b;
     m = HIDDEN_ALL.exec(s);
   }
-  return false;
+  return { live: false, runs };
 }
 /** For each character of `unhide(s)`, its index in `s` (plus a final entry, `s.length`). */
 function unhiddenIndex(s: string): Int32Array {

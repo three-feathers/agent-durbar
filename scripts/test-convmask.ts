@@ -6,7 +6,8 @@ import './safetext-shared'; // the compiled hidden-character module for safetext
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
-import { MASK_CALL_WORK, MaskBudgetError, WINDOW_CHARS, cleanValues, createMasker, maskWork, scanSecretValues } from '../src/main/convmask';
+import { maskNoteText } from '../src/shared/redact';
+import { HIDDEN_RUN_WORK, MASK_CALL_WORK, MaskBudgetError, WINDOW_CHARS, cleanValues, createMasker, maskWork, scanSecretValues } from '../src/main/convmask';
 import { rendererScript } from '../src/main/convsearch';
 
 process.exitCode = 1;
@@ -231,9 +232,9 @@ assert.ok(windows > 600, `enough windows (${windows})`);
     const base = 'Line with words, a long_identifier_name and release_notes.\n';
     const body = base.repeat(Math.ceil(20_000 / base.length)).slice(0, 20_000);
     const price = (t: string): number => maskWork(t, t.replace(/[\u200d\ufe0f\u200b]/g, '') !== t);
-    for (const [name, seq] of [['ZWJ sequence', '\u{1F468}\u200d\u{1F4BB}'], ['VS16 inside', '\u2764\ufe0f\u{1F600}'], ['family', '\u{1F468}\u200d\u{1F469}\u200d\u{1F467}'], ['Devanagari', '\u0915\u094d\u200d\u0937']] as const) {
+    for (const [name, seq, runs] of [['ZWJ sequence', '\u{1F468}\u200d\u{1F4BB}', 1], ['VS16 inside', '\u2764\ufe0f\u{1F600}', 1], ['family', '\u{1F468}\u200d\u{1F469}\u200d\u{1F467}', 2], ['Devanagari', '\u0915\u094d\u200d\u0937', 1]] as const) {
       const t = `${seq} ` + body;
-      assert.strictEqual(price(t), Math.ceil(t.length * 0.55), `${name}: 0.55 per character`);
+      assert.strictEqual(price(t), Math.ceil(t.length * 0.55 + runs * HIDDEN_RUN_WORK), `${name}: 0.55 per character and the scan of each inert run (${runs})`);
       assert.ok(price(t) <= MASK_CALL_WORK, `${name}: a 20,000-character message fits`);
       assert.strictEqual(M.maskText(t, []), t, `${name}: searchable and unchanged`);
     }
@@ -250,6 +251,21 @@ assert.ok(windows > 600, `enough windows (${windows})`);
       }
     }
     assert.ok(!M.maskText(cut(10), []).includes('a1B2c3D4'), 'split by a ZWJ: masked');
+  }
+  // review of PR 1244, item 5: dense inert hidden runs (joined emoji) are priced per run, the scan that finds them inert, run in `maskWork`
+  // and again in the mask. Measured 2026-11-07, idle machine: 45,000 characters of family emoji took 11.2 ms to mask and 5.5 ms to price
+  // (plain text 5.2 ms and 0.1 ms), 0.17 ms per 1,000 work with the term against 0.21 for plain text; without it 0.67 against 0.21.
+  {
+    const fam = '\u{1F468}\u200d\u{1F469}\u200d\u{1F467}\u200d\u{1F466}';
+    const dense = fam.repeat(500);
+    assert.strictEqual(maskWork(dense, true), Math.ceil(dense.length * 0.55 + 1500 * HIDDEN_RUN_WORK), 'dense joined emoji: 0.55 per character and HIDDEN_RUN_WORK per inert run (three per family)');
+    assert.ok(maskWork(fam.repeat(1500), true) > MASK_CALL_WORK && maskWork(fam.repeat(900), true) <= MASK_CALL_WORK, 'nothing but joined emoji is over one mask from about 11,000 characters (it was priced as plain text: 45,000)');
+    // measured against plain text (best of 5, CPU time of one process, the same call twice as the product makes it): per work, never above plain text's by more than 2x
+    const best = (f: () => unknown): number => { let m = Infinity; for (let i = 0; i < 5; i++) { const t0 = process.hrtime.bigint(); f(); m = Math.min(m, Number(process.hrtime.bigint() - t0)); } return m; };
+    const plain = 'Some plain words about nothing in particular, release notes. '.repeat(500);
+    const big = fam.repeat(2000);
+    const perWork = (t: string): number => best(() => { maskWork(t, true); maskNoteText(t, []); }) / maskWork(t, true);
+    assert.ok(perWork(big) <= 2 * perWork(plain), `dense emoji per work (${perWork(big).toFixed(1)}) stays within 2x of plain text (${perWork(plain).toFixed(1)})`);
   }
   const tok = (i: number) => 'gh' + 'p_' + (String(i).padStart(6, '0') + 'a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6').slice(0, 36);
   let dense = '**x** ';
