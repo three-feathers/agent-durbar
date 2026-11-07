@@ -1631,11 +1631,14 @@ export function createDebugSink(file: string, env: Env, append: (file: string, d
  * what can sit invisibly inside a token and hide it from every shape. Default-ignorable code points (soft hyphen, zero-width characters,
  * joiners, bidi marks, variation selectors, Hangul fillers, tag characters), every format character (`\p{Cf}`), the control characters
  * other than tab, line feed and carriage return (those end a token or a line; CR renders as a line end), the line and paragraph
- * separators, and the near-invisible spaces (six-per-em, punctuation, thin, hair, narrow no-break, medium mathematical). Wider spaces
+ * separators, the near-invisible spaces (six-per-em, punctuation, thin, hair, narrow no-break, medium mathematical), and five
+ * characters that render as an empty glyph but are neither `Cf` nor default-ignorable (review of PR 1236): U+2800 BRAILLE PATTERN BLANK,
+ * U+13441 EGYPTIAN HIEROGLYPH FULL BLANK, U+13442 EGYPTIAN HIEROGLYPH HALF BLANK, U+16FE4 KHITAN SMALL SCRIPT FILLER and U+1D159
+ * MUSICAL SYMBOL NULL NOTEHEAD. Wider spaces
  * are a visible gap and stay out. Per code point (`u`), astral characters included. The masks read a copy without them
  * (`unhide`); the text is shown as written, so the joiners real scripts and emoji need stay.
  */
-export const HIDDEN_CHARS = /\p{Default_Ignorable_Code_Point}|\p{Cf}|[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u2028\u2029\u2006\u2008\u2009\u200a\u202f\u205f]/u;
+export const HIDDEN_CHARS = /\p{Default_Ignorable_Code_Point}|\p{Cf}|[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u2028\u2029\u2006\u2008\u2009\u200a\u202f\u205f\u2800\u{13441}\u{13442}\u{16fe4}\u{1d159}]/u;
 const HIDDEN_ALL = new RegExp(HIDDEN_CHARS.source, 'gu');
 /** The text without `HIDDEN_CHARS` (DurbarSafeText.unhide in the window, `convmask` in main, and the notes and outgoing masks). */
 export function unhide(t: unknown): string {

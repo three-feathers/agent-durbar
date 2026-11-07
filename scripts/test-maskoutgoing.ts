@@ -96,7 +96,12 @@ const CC = cps(/^\p{Cc}$/u).filter((cp) => cp !== 9 && cp !== 10 && cp !== 13);
 const ZS = cps(/^\p{Zs}$/u);
 const NEAR_INVISIBLE = [0x2006, 0x2008, 0x2009, 0x200a, 0x202f, 0x205f]; // six-per-em, punctuation, thin, hair, narrow no-break, medium math
 assert.ok(CF.length >= 170 && DI.length >= 4174 && CC.length === 62 && ZS.length >= 17, `the property sets are complete (${CF.length} Cf, ${DI.length} DI, ${CC.length} Cc, ${ZS.length} Zs)`);
-const WALK = [...new Set([...CF, ...DI, ...CC, 0x2028, 0x2029, ...NEAR_INVISIBLE])].sort((a, b) => a - b);
+// review of PR 1236 (2026-11-07): characters that render as an empty glyph but are neither Cf nor default-ignorable, by name; a sweep of
+// the Unicode names (BLANK, FILLER, NULL, INVISIBLE, EMPTY, SPACE, PLACEHOLDER outside Cf, Zs and Cc) found these; the others it found
+// draw a visible glyph (spec 084 FR-033 [KNOWN GAP])
+const BLANK_GLYPHS = [0x2800, 0x13441, 0x13442, 0x16fe4, 0x1d159]; // braille pattern blank, hieroglyph full and half blank, Khitan filler, null notehead
+for (const cp of BLANK_GLYPHS) assert.ok(!/^[\p{Cf}\p{Default_Ignorable_Code_Point}]$/u.test(String.fromCodePoint(cp)), `U+${cp.toString(16)} is outside the property sets (so it is named)`);
+const WALK = [...new Set([...CF, ...DI, ...CC, 0x2028, 0x2029, ...NEAR_INVISIBLE, ...BLANK_GLYPHS])].sort((a, b) => a - b);
 const VAL = 'plain-' + 'known-' + 'value7';
 const G = CORPUS[0][1];
 const hex = (cp: number): string => 'U+' + cp.toString(16).toUpperCase().padStart(4, '0');
@@ -104,7 +109,7 @@ let walked = 0;
 for (const cp of WALK) {
   const c = String.fromCodePoint(cp);
   assert.ok(HIDDEN_CHARS.test(c), `${hex(cp)} is a hidden character`);
-  for (const at of cp < 0x10000 && (CF.includes(cp) || CC.includes(cp) || cp < 0x3000) ? [2, 9, 30] : [9]) { // three places in the BMP, one for the rest (time)
+  for (const at of BLANK_GLYPHS.includes(cp) || (cp < 0x10000 && (CF.includes(cp) || CC.includes(cp) || cp < 0x3000)) ? [2, 9, 30] : [9]) { // three places in the BMP, one for the rest (time)
     const t = `Hi Alex, ${G.slice(0, at)}${c}${G.slice(at)} thanks`;
     const r = maskOutgoing(t);
     const seen = r.text.split(c).join('');
@@ -144,9 +149,12 @@ assert.strictEqual(maskOutgoing(`word\u200b${CORPUS[8][1]} and ${G}`).text, 'wor
 
 // review of the PR 1236 batch, finding 3: astral hidden characters are two code units; the map from the copy back to the text counts both
 assert.strictEqual(maskOutgoing('ok \u{E0001} ' + G.slice(0, 9) + '\u{E0020}' + G.slice(9) + ' end').text, 'ok \u{E0001} [redacted] end', 'an astral hidden character before and inside a token: exact output');
+for (const [before, inside] of [['\u{13441}', '\u{1D159}'], ['\u{16FE4}', '\u{13442}'], ['\u2800', '\u{16FE4}'], ['\u{1D159}', '\u2800']]) {
+  assert.strictEqual(maskOutgoing(`ok ${before} ` + G.slice(0, 9) + inside + G.slice(9) + ' end').text, `ok ${before} [redacted] end`, `a blank glyph before and inside a token: exact output (${JSON.stringify(before + inside)})`);
+}
 {
   const LONE = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/;
-  const astral = ['\u{E0001}', '\u{E0020}', '\u{E007F}', '\u{1D173}', '\u{E0100}', '\u{1F468}\u200d\u{1F4BB}', '❤\ufe0f', '\u{1F600}', '\u200b'];
+  const astral = ['\u{E0001}', '\u{E0020}', '\u{E007F}', '\u{1D173}', '\u{E0100}', '\u{13441}', '\u{13442}', '\u{16FE4}', '\u{1D159}', '\u2800', '\u{1F468}\u200d\u{1F4BB}', '❤\ufe0f', '\u{1F600}', '\u200b'];
   let seed = 7;
   const rnd = (n: number): number => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed % n; };
   for (let round = 0; round < 2000; round++) {
