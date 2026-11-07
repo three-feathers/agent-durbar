@@ -66,12 +66,12 @@ module.exports = async (ctx) => {
     /* one pass over every desk: what the page draws, as plain values */
     const rows = await js(`(()=>{const tok=n=>{const e=document.createElement('i');e.style.color='var('+n+')';document.body.appendChild(e);const c=getComputedStyle(e).color;e.remove();return c;};
       const T={ok:tok('--green'),warn:tok('--amber'),high:tok('--red')},R=e=>{const r=e.getBoundingClientRect();return [r.left,r.top,r.right,r.bottom]};
-      return [...document.querySelectorAll('#stage .ro-screen[data-for]')].map(sc=>{const k=sc.dataset.for,sv=sc.querySelector(':scope > .ro-ctx'),r=sv&&sv.firstChild,pl=document.querySelector('#stage .ro-plate[data-id='+JSON.stringify(k)+']'),
+      return [...document.querySelectorAll('#stage .ro-screen[data-for]')].map(sc=>{const k=sc.dataset.for,sv=sc.querySelector(':scope > .ro-ctx'),r=sv&&sv.lastChild,kl=sv&&sv.firstChild,pl=document.querySelector('#stage .ro-plate[data-id='+JSON.stringify(k)+']'),
         gl=sc.querySelector('.ro-glass'),tx=document.querySelector('#stage .ro-stext[data-for='+JSON.stringify(k)+']'),cs=r&&getComputedStyle(r),shown=!!sv&&getComputedStyle(sv).display!=='none';
         let ring=null;if(shown){const x=parseFloat(cs.x),y=parseFloat(cs.y),W=parseFloat(cs.width),Hh=parseFloat(cs.height),s=parseFloat(cs.strokeWidth),b=sv.getBoundingClientRect();
           ring={out:[b.left+x-s/2,b.top+y-s/2,b.left+x+W+s/2,b.top+y+Hh+s/2],inn:[b.left+x+s/2,b.top+y+s/2,b.left+x+W-s/2,b.top+y+Hh-s/2],sw:s,per:Math.round(2*(W+Hh)),len:r.getTotalLength?Math.round(r.getTotalLength()):0};}
         return {k,lounge:sc.classList.contains('ro-lmon'),has:!!sv,shown,lv:sv?sv.dataset.lv||'':'',dash:r?r.getAttribute('stroke-dasharray')||'':'',stroke:cs?cs.stroke:'',hidden:sv?sv.getAttribute('aria-hidden'):'',inGlass:!!(gl&&gl.querySelector('.ro-ctx')),
-          label:pl?pl.getAttribute('aria-label'):'',glass:R(gl),text:tx?R(tx):null,ring,anim:r?r.getAnimations().length:0,trans:cs?cs.transitionDuration:'',T};});})()`);
+          label:pl?pl.getAttribute('aria-label'):'',glass:R(gl),text:tx?R(tx):null,ring,anim:r?r.getAnimations().length:0,ck:kl?{dash:kl.getAttribute('stroke-dasharray')||'',w:parseFloat(getComputedStyle(kl).strokeWidth),c:getComputedStyle(kl).stroke}:null,trans:cs?cs.transitionDuration:'',T};});})()`);
     const byId = new Map(rows.map((r) => [r.k, r]));
     const desks = rows.filter((r) => !r.lounge);
     assert.ok(desks.length >= 12, `${tag}: desks with a monitor (${desks.length})`);
@@ -98,7 +98,8 @@ module.exports = async (ctx) => {
       const inside = (b, a) => b[0] >= a[0] - 0.6 && b[1] >= a[1] - 0.6 && b[2] <= a[2] + 0.6 && b[3] <= a[3] + 0.6;
       assert.ok(inside(r.glass, r.ring.inn), `${tag}: ${id}: the line stays outside the glass (glass ${r.glass.map(Math.round)} ring inside ${r.ring.inn.map(Math.round)})`);
       if (r.text) assert.ok(inside(r.text, r.ring.inn), `${tag}: ${id}: the line stays off the screen's text (${r.text.map(Math.round)} vs ${r.ring.inn.map(Math.round)})`);
-      assert.ok(r.ring.sw >= 3, `${tag}: ${id}: the line is at least 3 px (${r.ring.sw})`);
+      assert.ok(r.ring.sw >= 4, `${tag}: ${id}: the line is at least 4 px (${r.ring.sw})`);
+      assert.ok(r.ck && r.ck.dash === r.dash && r.ck.w >= r.ring.sw + 2 && Math.max(...r.ck.c.match(/\d+/g).slice(0, 3).map(Number)) < 40, `${tag}: ${id}: a dark keyline at least 2 px wider lies under the line with the same dash (${JSON.stringify(r.ck)})`);
       assert.strictEqual(r.anim, 0, `${tag}: ${id}: the line has no animation`);
       assert.ok(/^0s(, 0s)*$/.test(r.trans), `${tag}: ${id}: the line has no transition (${r.trans})`);
     });
@@ -114,14 +115,14 @@ module.exports = async (ctx) => {
     await js(`(()=>{window.__ctxMut=0;const o=new MutationObserver(l=>{for(const m of l)window.__ctxMut+=m.addedNodes.length+m.removedNodes.length});o.observe(document.getElementById('stage'),{childList:true,subtree:true});window.__ctxObs=o;return 1})()`);
     await js(`window.__durbarSimEmit({type:'context',sessionId:${jsLiteral(pick)},timestamp:Date.now(),tokens:930,limit:1000})`);
     await js(`window.__cx=k=>document.querySelector('#stage .ro-screen[data-for='+JSON.stringify(k)+'] > .ro-ctx');window.__cl=k=>document.querySelector('#stage .ro-plate[data-id='+JSON.stringify(k)+']').getAttribute('aria-label');1`);
-    await must(`window.__cx(${jsLiteral(pick)}).dataset.lv==='high'&&window.__cx(${jsLiteral(pick)}).firstChild.getAttribute('stroke-dasharray')==='93 100'&&/context 93 %/.test(window.__cl(${jsLiteral(pick)}))`, `${tag}: a context event moves the line and the name`);
+    await must(`window.__cx(${jsLiteral(pick)}).dataset.lv==='high'&&window.__cx(${jsLiteral(pick)}).lastChild.getAttribute('stroke-dasharray')==='93 100'&&/context 93 %/.test(window.__cl(${jsLiteral(pick)}))`, `${tag}: a context event moves the line and the name`);
     await js(`new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r(1))))`);
     assert.strictEqual(await js(`window.__ctxObs.takeRecords().length+window.__ctxMut`), 0, `${tag}: a context event adds or removes no node`);
     await js(`window.__ctxObs.disconnect();1`);
 
     if (OUT) {
       await js(`window.__durbarSimEmit({type:'context',sessionId:${jsLiteral(pick)},timestamp:Date.now(),tokens:${jsLiteral(share(ids.indexOf(pick)) * 10)},limit:1000})`);
-      await must(`window.__cx(${jsLiteral(pick)}).firstChild.getAttribute('stroke-dasharray')===${jsLiteral(share(ids.indexOf(pick)) + ' 100')}`, `${tag}: the seeded share back`);
+      await must(`window.__cx(${jsLiteral(pick)}).lastChild.getAttribute('stroke-dasharray')===${jsLiteral(share(ids.indexOf(pick)) + ' 100')}`, `${tag}: the seeded share back`);
       await H.shot(path.join(OUT, `ctx-${world}-${w}x${h}.png`), { prep: 'mouse', tag: 'ctx-frame' });
       /* the 2x crop of three desks at a low, a mid and a high context (a green, an amber and a red line) */
       const want = [[18, 'low'], [78, 'mid'], [97, 'high']];

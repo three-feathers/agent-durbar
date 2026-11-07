@@ -82,4 +82,5 @@
 .ro[data-world="retro"] .ro-plate.lounge .ro-role{display:none}
 .ro[data-world="retro"] .ro-plate.lounge .ro-l2{display:block;flex:1 1 auto;min-width:0;-webkit-line-clamp:unset}
 /* spec 097 FR-324: the context line on the cabinet screen's frame (the 4 grid-pixel border round the CRT), centred in it; the svg is the whole screen box */
-.ro[data-world="retro"] .ro-ctx rect{x:calc(2px*var(--ro-g));y:calc(2px*var(--ro-g));width:calc(var(--ro-cw,0px) - 4px*var(--ro-g));height:calc(var(--ro-ch,0px) - 4px*var(--ro-g));stroke-width:max(3px,calc(1px*var(--ro-g)))}
+.ro[data-world="retro"] .ro-ctx rect{x:calc(2px*var(--ro-g));y:calc(2px*var(--ro-g));width:calc(var(--ro-cw,0px) - 4px*var(--ro-g));height:calc(var(--ro-ch,0px) - 4px*var(--ro-g));stroke-width:max(4px,calc(2px*var(--ro-g)))}
+.ro[data-world="retro"] .ro-ctx .ro-ck{stroke-width:calc(max(4px,2px*var(--ro-g)) + 2px)}

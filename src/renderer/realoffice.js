@@ -410,7 +410,7 @@
         }
         /* the monitor: the glass in the art; its text sits with the chrome, above the lights (FR-044), and repaints on its own (FR-033) */
         const sc = el(art, 'm:' + k, 'div', 'ro-screen st-' + d.state + (lt.glow === 'off' ? ' off' : '') + (a.asleep ? ' asleep' : '') + (d.lounge ? ' ro-lmon' : '') + (lt.tint !== 'none' ? ' tint-' + lt.tint : '')); /* FR-236: the screen is the status cue */ box(sc, d.screen); dset(sc, 'for', k);
-        if (!sc.firstChild) sc.innerHTML = '<div class="ro-bezel"><div class="ro-glass" aria-hidden="true"></div></div><div class="ro-neck"></div><div class="ro-foot"></div><svg class="ro-ctx" aria-hidden="true" focusable="false"><rect pathLength="100" fill="none"/></svg>'; /* spec 097 FR-324: the context line, made once per desk */
+        if (!sc.firstChild) sc.innerHTML = '<div class="ro-bezel"><div class="ro-glass" aria-hidden="true"></div></div><div class="ro-neck"></div><div class="ro-foot"></div><svg class="ro-ctx" aria-hidden="true" focusable="false"><rect class="ro-ck" pathLength="100" fill="none"/><rect pathLength="100" fill="none"/></svg>'; /* spec 097 FR-324: the context line, made once per desk */
         const bez = sc.firstChild; bez.style.height = px(d.glass.h + 6);
         ctxPaint(sc, a, d); /* FR-322: the line round the frame, outside the glass; attributes only (FR-326) */
         if (!d.lounge) screenBox(chrome, d, k);
@@ -564,10 +564,10 @@
      context, a known 0 % or a lounge seat. Only attributes and two custom properties change: no node, no layout read. */
   function ctxPaint(sc, a, d) {
     const s = sc.lastElementChild; if (!s || !s.classList.contains('ro-ctx')) return;
-    const f = d && d.lounge ? null : X().ctxFrame(a.ctx && a.ctx.pct, a.ctx && a.ctx.level), r = s.firstChild;
+    const f = d && d.lounge ? null : X().ctxFrame(a.ctx && a.ctx.pct, a.ctx && a.ctx.level);
     const lv = f ? f.lv : '', dash = f ? f.dash : '';
     if ((s.dataset.lv || '') !== lv) { if (lv) s.dataset.lv = lv; else delete s.dataset.lv; }
-    attr(r, 'stroke-dasharray', dash || null);
+    for (const r of s.children) attr(r, 'stroke-dasharray', dash || null); /* the dark keyline under the line (.ro-ck) and the line itself: the same dash */
     if (d) { setVar(s, '--ro-cw', px(d.screen.w)); setVar(s, '--ro-ch', px(CUR && CUR.pixelArt ? d.screen.h : d.glass.h + 6)); /* the arcade's screen box is the whole frame; the others' is the bezel */ }
   }
   /* FR-325: the plate's name with the context in the flat office's words, before "Open chat panel."; a lounge seat's name is the model's */
