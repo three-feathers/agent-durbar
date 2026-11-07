@@ -530,7 +530,7 @@ async function driver(ctx) {
       const se = document.scrollingElement;
       if (se.scrollWidth > innerWidth + 1 || se.scrollHeight > innerHeight + 1) P.push('the page overflows');
       if (amb != null) ro.style.removeProperty('--ro-amb');
-      return { problems: P, info: { plates: document.querySelectorAll('#stage .ro-plate').length, face: L.faceH, u: L.u, scroll: L.scroll, minFont, minRatio } };
+      return { problems: P, info: { plates: document.querySelectorAll('#stage .ro-plate').length, face: L.faceH, u: L.u, scroll: L.scroll, minFont, minRatio, drafts: document.querySelectorAll('#stage .ro-drafttag.on').length } };
     };
     /* simrooms=1: one folder of 15, split over rows (its sign repeats); simrooms=solo: 15 folders, past the exhaustive search */
     for (const [sim, rooms] of [[3, ''], [12, ''], [15, ''], [15, '1'], [15, 'solo']]) for (const [w, h] of SIZES) {
@@ -543,9 +543,24 @@ async function driver(ctx) {
         const css = '.ro,.ro *{font-family:"' + process.env.OFFICE_FONT.replace(/[^A-Za-z0-9 -]/g, '') + '",sans-serif!important}';
         await ctx.js(`(()=>{const st=document.createElement('style');st.textContent=${jsLiteral(css)};document.head.appendChild(st);window.__durbarSimUi.render();return true})()`);
       }
-      await stable(tag);
+      /* spec 097 FR-316 (issue #1149): unsent drafts on four desks (the narrowest plate also has a New reply tag, so both tags sit above it) and on a lounge seat when there is one: the Draft tag's box is checked against plates, tags, faces and screens at every size */
+      const order = await ctx.js(`[...document.querySelectorAll('#stage .ro-plate')].filter(p=>p.getClientRects().length).sort((a,b)=>a.getBoundingClientRect().width-b.getBoundingClientRect().width).map(p=>p.dataset.id)`);
+      const picks = order.slice(0, 4), lounge = await ctx.js(`(()=>{const e=document.querySelector('#stage .ro-lplate[data-id]');return e?e.dataset.id:null})()`);
+      const marks = { narrow: order[0] || null, rest: picks.length - 1, lounge };
+      for (const id of lounge ? [...picks, lounge] : picks) {
+        const sel = lounge === id ? `#stage .ro-lplate[data-id="${id}"]` : `#stage .ro-plate[data-id="${id}"]`;
+        await ctx.js(`(document.querySelector(${jsLiteral(sel)})||{click(){}}).click()`);
+        if (!(await H.until(`document.body.classList.contains('panel-open')&&!!document.getElementById('msgInput')`, 8000))) continue;
+        await ctx.js(`(()=>{const m=document.getElementById('msgInput');m.value='half a prompt';m.dispatchEvent(new Event('input',{bubbles:true}));return 1})()`);
+        await ctx.js(`document.getElementById('backBtn').click()`);
+        await H.until(`!document.body.classList.contains('panel-open')&&!!document.querySelector('#stage .ro .ro-plate')`, 8000);
+      }
+      if (marks.narrow) await ctx.js(`window.__durbarSimUi.unread.mark(${jsLiteral(marks.narrow)})`); /* a New reply tag on the narrowest plate too (FR-238) */
+      if (!(await H.until(`document.querySelectorAll('#stage .ro-drafttag.on').length>=${jsLiteral(Math.min(picks.length, 2))}`, 8000))) { total++; failed++; console.log(`FAIL ${tag}: no Draft tag showed for the drafted desks (${JSON.stringify(marks)})`); }
+      await stable(tag + ' with drafts');
       for (const [step, amb] of [['closed', 0.7], ['closed', 1]]) {
         const res = await ctx.js(`(${realCheck.toString()})(${amb})`);
+        if (!res.info.drafts) res.problems.push('no Draft tag was in the checked layout');
         total++;
         if (sim === 15 && res.info.scroll) res.problems.push('the office scrolls at the 15-agent scale');
         if (sim === 15 && !rooms && res.info.face < 30.5) res.problems.push(`desk face ${res.info.face.toFixed(1)}px (ratchet 30.5px, lowered 2026-11-01 for a room that stays still; SC-002 target 40px is a KNOWN GAP)`);

@@ -3,7 +3,7 @@
  * ", unsent draft" (Open office's words). Simulator only (sim=15), no AI credits; every wait is an until().
  *
  *   npm run check:ui -- --only check-097-desk-marks      (builds first)
- *   DESK_MARKS_MUTANT=stale   the tag's class is not removed when the draft goes (must fail)
+ *   DESK_MARKS_MUTANT=stale   the tag's class is not removed when the draft goes (must fail with "an emptied draft loses its tag"; the observer adds `on` only when it is missing: a bare add() of a class already set still fires an attribute mutation, so the old mutant looped in a microtask and froze the page until the suite's 601 s limit)
  *
  * At 1440x900 and 1280x800 in Real office it fails (exit 1) when:
  *   - a tag shows before any draft, or a desk without a draft has a tag, or a desk with one has none;
@@ -12,12 +12,16 @@
  *   - the draft going away (chat sent or emptied) leaves the tag shown, or any draft change adds or removes a tag node.
  */
 const assert = require('assert');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const { helpers, waits, jsLiteral } = require('./driver-helpers');
 
 const MUTANT = process.env.DESK_MARKS_MUTANT || '';
 const SIZES = [[1440, 900], [1280, 800]];
 
 module.exports = async (ctx) => {
+  const OUT = process.env.SHOTS_OUT || fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-097-desk-marks-'));
   const H = helpers(ctx);
   const { js } = H;
   const { until } = waits(ctx);
@@ -30,7 +34,7 @@ module.exports = async (ctx) => {
     await js(INSTALL);
     assert.deepStrictEqual(await shown(), [], `${tag}: no Draft tag before a draft`);
     assert.ok(!(await js(`/unsent draft/.test([...document.querySelectorAll('#stage .ro-plate')].map(p=>p.getAttribute('aria-label')).join('|'))`)), `${tag}: no plate says unsent draft before a draft`);
-    const ids = await js(`window.__durbarSimUi.agents().filter(a=>!a.parent).map(a=>a.id)`);
+    const ids = await js(`(()=>{const L=window.__durbarSimUi.realLayout(),aw=new Set(L.zones.flatMap(z=>z.desks).filter(d=>d.away).map(d=>d.id));return window.__durbarSimUi.agents().filter(a=>!a.parent&&!aw.has(a.id)).map(a=>a.id)})()`); /* an empty seat (away) has its post-it where the tag would sit: its tag moves onto the note's corner, which check-office-overlap measures */
     const picks = [ids[2], ids[5]];
     /* the tag nodes, counted before and after the draft changes: made once per desk, shown by class */
     const nodes = () => js(`document.querySelectorAll('#stage .ro-drafttag').length`);
@@ -67,12 +71,13 @@ module.exports = async (ctx) => {
       assert.strictEqual(g.hid, 'true', `${tag}: ${g.k}: the tag is aria-hidden`);
       assert.ok(g.svg && /Draft/.test(g.text), `${tag}: ${g.k}: a pencil and the word Draft`);
     }
+    await H.shot(path.join(OUT, `097-desk-marks-${tag}.png`), { prep: 'calm', tag: 'desk-marks', what: tag }); /* the owner's look (Q9): 15 agents, two drafted desks */
     /* emptying the draft hides its tag (the chat reopened shows the draft; the office is hidden under an open chat, so the tag is judged after it closes) */
     const k0 = picks[0];
     await js(`window.__dm.plate(${jsLiteral(k0)}).click()`);
     await must(`document.body.classList.contains('panel-open')&&document.getElementById('msgInput').value==='half a prompt'`, `${tag}: the draft comes back in its chat`);
     await js(`(()=>{const m=document.getElementById('msgInput');m.value='';m.dispatchEvent(new Event('input',{bubbles:true}));return 1})()`);
-    if (MUTANT === 'stale') await js(`(()=>{const t=window.__dm.tag(${jsLiteral(k0)});new MutationObserver(()=>t.classList.add('on')).observe(t,{attributes:true,attributeFilter:['class']});t.classList.add('on');return 1})()`);
+    if (MUTANT === 'stale') await js(`(()=>{const t=window.__dm.tag(${jsLiteral(k0)});new MutationObserver(()=>{if(!t.classList.contains('on'))t.classList.add('on')}).observe(t,{attributes:true,attributeFilter:['class']});t.classList.add('on');return 1})()`);
     await H.key('Escape');
     await must(`!document.body.classList.contains('panel-open')`, `${tag}: the chat closes`);
     await must(`!window.__dm.tag(${jsLiteral(k0)}).classList.contains('on')&&document.querySelectorAll('#stage .ro-drafttag.on').length===1`, `${tag}: an emptied draft loses its tag, the other keeps it`);
