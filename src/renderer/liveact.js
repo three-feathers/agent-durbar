@@ -52,9 +52,13 @@
      (why `secret`). By kind: `shell` the command after `run ` through the command mask (maskLabel 'run'); `tool` each word of `server › tool` through toolName, then one redact; any other
      kind: redact (a URL by the URL mask). Empty text stays empty. Only shown text: ids, keys, scopes are untouched. */
   const PERM_FB={shell:'a command',tool:'tool',other:'request'};
-  const PCTRL_T=/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f\u00ad\u061c\u200b\u200e\u200f\u2028-\u202e\u2066-\u2069\ufeff]/;
-  const PCTRL=new RegExp(PCTRL_T.source,'g');
-  const pmark=c=>c==='\x1b'?'\u27e6ESC\u27e7':'\u27e6U+'+c.charCodeAt(0).toString(16).toUpperCase().padStart(4,'0')+'\u27e7';
+  /* every character that can make a shown command differ from the real one: C0/C1 controls, any whitespace that is not a plain space (LF, CR, TAB, NBSP, U+2028...), every Cf and
+     Default_Ignorable_Code_Point (ZWJ, ZWNJ, U+2060, variation selectors, tags, soft hyphen, bidi) and the blank fillers (U+2800, U+3164, U+115F, U+1160, U+FFA0) */
+  const PCTRL_T=/[^\S ]|[\x00-\x1f\x7f-\x9f\p{Cf}\p{Default_Ignorable_Code_Point}\u2800\u3164\u115f\u1160\uffa0]/u;
+  const PCTRL=new RegExp(PCTRL_T.source,'gu');
+  const PMARK={'\x1b':'ESC','\n':'LF','\r':'CR','\t':'TAB'};
+  const pmark=c=>'⟦'+(PMARK[c]||'U+'+c.codePointAt(0).toString(16).toUpperCase().padStart(4,'0'))+'⟧';
+  const PERM_CAP=10000; /* characters looked at: more is cut (at a word) before any heavy work, and marked */
   function permCore(raw,k,m){ /* {s, out} (out null: the mask gave nothing) for a text without control characters */
     const s=String(raw).replace(/\s+/g,' ').trim();if(!s)return {s:'',out:''};
     if(k==='shell'){const mm=/^(run )([\s\S]*)$/.exec(s),pre=mm?mm[1]:'',cmd=mm?mm[2]:s;if(!cmd)return {s,out:s};
@@ -67,14 +71,15 @@
     try{
       if(raw==null||raw==='')return {text:'',hidden:false};
       if(typeof m.redact!=='function')return fb('unchecked');
-      const r0=String(raw);
+      let r0=String(raw),cut=false;
+      if(r0.length>PERM_CAP){cut=true;r0=r0.slice(0,PERM_CAP);const i=r0.search(/\s\S*$/);r0=i>0?r0.slice(0,i):'';} /* cut at a word: never half a token */
+      const tail=t=>cut&&t.hidden?t:cut?{text:t.text,hidden:true,why:'cut'}:t, suf=cut?' ⟦cut⟧':'';
       if(!PCTRL_T.test(r0)){
-        const c=permCore(r0,k,m);if(c.out===null)return fb('unchecked');return c.out===c.s?{text:c.out,hidden:false}:{text:c.out,hidden:true,why:'secret'};}
-      /* only invisible characters (bidi, zero-width, soft hyphen, C0 other than ESC): the text with them out loses nothing visible, so its masked form may be shown in place */
+        const c=permCore(r0,k,m);if(c.out===null)return fb('unchecked');return tail(c.out===c.s?{text:c.out+suf,hidden:false}:{text:c.out+suf,hidden:true,why:'secret'});}
       for(const v of [stripAnsi(r0),introOut(r0),r0.replace(PCTRL,'')]){ /* a token the controls split: the mask must find nothing in any reading */
-        const c=permCore(v,k,m);if(c.out===null)return fb('unchecked');if(c.out!==c.s)return /[\x1b\x80-\x9f]/.test(r0)?fb('secret'):{text:permCore(r0.replace(PCTRL,''),k,m).out,hidden:true,why:'secret'};}
+        const c=permCore(v,k,m);if(c.out===null)return fb('unchecked');if(c.out!==c.s)return fb('concealed');} /* a secret behind controls: no text, and the card offers no Allow */
       const c=permCore(r0.replace(PCTRL,pmark),k,m);if(c.out===null)return fb('unchecked');
-      return {text:c.out,hidden:true,why:c.out!==c.s?'secret':'control'};
+      return tail({text:c.out+suf,hidden:true,why:c.out!==c.s?'secret':'control'});
     }catch(e){return fb('unchecked');}
   }
   /* A tool start as a verb phrase. kind: read | edit | run | search | tool (the chat's toolKind); label: the chat's toolLabel. */

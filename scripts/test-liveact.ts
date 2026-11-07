@@ -507,8 +507,8 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
     // a shell summary and its labels: masked as the chat masks a command, not replaced
     for (const t of ['run curl -H "Authorization: Bearer ' + tok + '" https://example.test/x', 'run ' + tok, 'run export TOKEN=' + tok + ' && ls']) {
       const r = L.permText(t, 'shell', hm);
-      const split = /ansi|osc|Ansi/.test(what); // a token the controls split: the neutral words (never a half token); otherwise masked in place
-      ok(!PARTS.test(r.text) && !/[\x00-\x1f‪-‮]/.test(r.text) && r.hidden && (split ? r.text === 'a command' && r.why === 'secret' : /^run /.test(r.text) && r.text !== 'a command' && r.text !== 'tool' && r.why === 'secret'), what + ': a shell summary is masked in place: ' + r.text);
+      const split = /ansi|osc|bidi|Ansi|Bidi/.test(what); // a token the controls split: the neutral words (never a half token); otherwise masked in place
+      ok(!PARTS.test(r.text) && !/[\x00-\x1f‪-‮]/.test(r.text) && r.hidden && (split ? r.text === 'a command' && r.why === 'concealed' : /^run /.test(r.text) && r.text !== 'a command' && r.text !== 'tool' && r.why === 'secret'), what + ': a shell summary is masked in place: ' + r.text);
     }
     // any other kind (write, read, url, a card's own summary)
     const o = L.permText('fetch https://example.test/?k=' + tok + ' and ' + tok, 'other', hm);
@@ -573,12 +573,12 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
   // a token the escape splits, and a token inside the escape string: never shown, in any reading
   for (const t of ['run echo ' + TK.slice(0, 8) + ESC + '[0m' + TK.slice(8), 'run echo x' + ESC + ']0;' + TK + '\u0007 y', 'run echo ' + TK.slice(0, 8) + ESC + ']0;t\u0007' + TK.slice(8)]) {
     const r = L.permText(t, 'shell', hm);
-    ok(!/ghp_|A1b2|E5f6|K1l2/.test(r.text) && r.hidden && r.why === 'secret', 'item 1: a token with controls is never shown: ' + JSON.stringify(r.text));
+    ok(!/ghp_|A1b2|E5f6|K1l2/.test(r.text) && r.hidden && r.why === 'concealed', 'item 1: a token with controls is never shown: ' + JSON.stringify(r.text));
   }
   // each of the three readings is needed: the escape swallows the letter after it (introducers-out finds `gh<ESC>[p_...`); an escape string would swallow the rest (controls-out finds a token with P after an ESC)
   for (const [lab, t] of [['introducers-out', 'run echo gh' + ESC + '[' + TK.slice(2)], ['controls-out', 'run echo AKIAZ7Q2W9' + ESC + 'X4C6V8B1N3']] as const) {
     const r = L.permText(t, 'shell', hm);
-    ok(r.text === 'a command' && r.why === 'secret' && r.hidden, 'item 1 reading ' + lab + ': a token only this reading finds is never shown: ' + JSON.stringify(r.text));
+    ok(r.text === 'a command' && r.why === 'concealed' && r.hidden, 'item 1 reading ' + lab + ': a token only this reading finds is never shown: ' + JSON.stringify(r.text));
   }
   // clean text keeps its exact shape, no why
   eq(L.permText('run npm test', 'shell', hm), { text: 'run npm test', hidden: false }, 'clean text: no why');
@@ -618,7 +618,42 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
   // item 5: a request whose text could not be checked: truthful copy, no Allow
   const pw = /const PERM_WHY=\{([^\n]*)\};/.exec(app);
   ok(!!pw && !/unchecked:'[^']*secret/.test(pw![1]) && /unchecked:'Durbar could not check this request/.test(pw![1]), 'item 5: the unchecked copy does not claim a secret');
-  ok(/if\(hwhy==='unchecked'\)row\.querySelectorAll\('button:not\(\.danger\)'\)\.forEach\(b=>\{b\.disabled=true;b\.dataset\.blind='1'/.test(card), 'item 5: Allow once and the session buttons are disabled when the text could not be checked');
+  ok(/if\(permBlind\(hwhy\)\)row\.querySelectorAll\('button:not\(\.danger\)'\)\.forEach\(b=>\{b\.disabled=true;b\.dataset\.blind='1'/.test(card), 'item 5: Allow once and the session buttons are disabled when the text could not be checked or is concealed');
+  ok(/const permBlind=w=>w==='unchecked'\|\|w==='concealed'/.test(app), 'round 2 item 2: unchecked and concealed both block Allow');
+  ok(/hgrant=hwhy&&!permBlind\(hwhy\)&&/.test(card), 'round 2 item 2: a blocked card does not say the grant covers it');
   ok(/if\(src\.dataset\.blind\)\{ab\.disabled=true/.test(app) && /curSrc&&curSrc\.dataset\.blind/.test(app), 'item 5: the answer bar and inbox copies of a blind card are disabled too');
+}
+// round 2 of the review of PR 1292 (items 1-4)
+{
+  const hm = { ...mask, home: (s: string) => maskHomePaths(s, []) };
+  const TK = 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4';
+  // item 1: LF, CR and TAB are not spaces
+  for (const [c, name] of [['\n', 'LF'], ['\r', 'CR'], ['\t', 'TAB'], ['\r\n', 'CR']] as const) {
+    const r = L.permText('run echo safe' + c + 'rm -rf ./data', 'shell', hm);
+    ok(r.hidden === true && r.why === 'control' && r.text.includes('⟦' + name + '⟧') && /rm -rf \.\/data/.test(r.text), 'r2 item 1: ' + name + ' is a visible marker, not a space: ' + JSON.stringify(r.text));
+  }
+  eq(L.permText('run echo  a   b', 'shell', hm), { text: 'run echo a b', hidden: false }, 'r2 item 1: plain spaces stay (collapsed)');
+  // item 2: a token plus one escape: neutral words, why concealed (the card blocks Allow)
+  for (const k of ['shell', 'tool', 'other'] as const) {
+    const r = L.permText('run rm -rf ~ ; echo ' + TK.slice(0, 8) + '\u001b[0m' + TK.slice(8), k, hm);
+    ok(r.hidden && r.why === 'concealed' && !/ghp_|rm -rf/.test(r.text), 'r2 item 2: ' + k + ': a token behind a control reads as concealed, not secret: ' + JSON.stringify(r));
+  }
+  // item 3: every invisible or blank character is marked, with hidden
+  const inv: [string, string][] = [['ZWJ', '\u200d'], ['ZWNJ', '\u200c'], ['WJ', '\u2060'], ['VS16', '\ufe0f'], ['VS17', '\u{e0100}'], ['TAG', '\u{e0041}'], ['BRAILLE', '\u2800'], ['HANGUL', '\u3164'], ['U+115F', '\u115f'], ['U+FFA0', '\uffa0'], ['U+180E', '\u180e'], ['CGJ', '\u034f'], ['SHY', '\u00ad'], ['ZWSP', '\u200b'], ['NBSP', '\u00a0'], ['LSEP', '\u2028'], ['PSEP', '\u2029'], ['BOM', '\ufeff'], ['ARABIC NUMBER SIGN (Cf, not default-ignorable)', '\u0600']];
+  for (const [n, ch] of inv) {
+    const r = L.permText('run rm -rf ./da' + ch + 'ta', 'shell', hm);
+    ok(r.hidden === true && r.why === 'control' && /⟦[^⟧]+⟧/.test(r.text) && !r.text.includes(ch), 'r2 item 3: ' + n + ' is marked: ' + JSON.stringify(r.text));
+  }
+  eq(L.permText('run echo café 中文 \u{1f600}', 'shell', hm), { text: 'run echo café 中文 \u{1f600}', hidden: false }, 'r2 item 3: ordinary letters, CJK and emoji are not marked');
+  // item 4: a huge input is cut early, marked, and fast
+  for (const [lab, big] of [['ZWSP', 'run echo ' + '​'.repeat(1000000)], ['words', 'run ' + 'abcdef '.repeat(200000)], ['escapes', 'run a' + '\u001b'.repeat(1000000)]] as const) {
+    const t0 = Date.now(), r = L.permText(big, 'shell', hm), ms = Date.now() - t0;
+    ok(ms < 400, 'r2 item 4: ' + lab + ': a 1M input is looked at in under 400 ms (took ' + ms + ')');
+    ok(r.hidden === true && r.text.length < 120000 && /⟦cut⟧$/.test(r.text), 'r2 item 4: ' + lab + ': the text is cut and marked: ' + r.text.length);
+  }
+  { let pre = 'run echo '; for (let i = 0; pre.length < 9990; i++) pre += 'w' + i + ' ';
+    const r = L.permText(pre + TK + ' tail', 'shell', hm);
+    ok(r.hidden && r.why === 'cut' && !/ghp/.test(r.text), 'r2 item 4: a cut leaves no half token: ' + r.text.slice(-40)); }
+  { const r = L.permText('run echo ' + 'y '.repeat(4000), 'shell', hm); ok(!/cut/.test(r.text) && r.hidden === false, 'r2 item 4: a command under the cap is not cut'); }
 }
 console.log(`liveact: ${n} checks passed`);
