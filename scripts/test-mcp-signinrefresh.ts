@@ -12,6 +12,7 @@
  */
 process.exitCode = 1;
 import * as assert from 'assert';
+import { isRemoteTransport } from '../src/shared/mcp';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -37,6 +38,10 @@ const plan = (label: string, i: SignInPlanInput): ReturnType<typeof planMcpSignI
 };
 
 async function main(): Promise<void> {
+  // FR-229 (review of #1230): the one remote-transport check
+  for (const t of ['http', 'sse', 'streamable-http', 'streamablehttp', 'HTTP', 'SSE', 'Streamable-HTTP']) assert.strictEqual(isRemoteTransport(t), true, `isRemoteTransport accepts ${t}`);
+  for (const t of ['stdio', 'memory', '', 'httpx', 'xhttp', 'http ', undefined, null, 5, {}]) assert.strictEqual(isRemoteTransport(t), false, `isRemoteTransport rejects ${String(t)}`);
+
   assert.deepStrictEqual([MCP_SIGNIN_GAP_MS, MCP_SIGNIN_WAIT_MS, MCP_RECHECK_MS, MCP_SIGNIN_REFRESH_DEFAULT, MCP_SIGNIN_ALLOW_READ_ONLY], [H, 5000, 30 * 60_000, true, true], 'the constants (G1 fixed gap, G5 settled A)');
 
   // ---- the gap and the moments (FR-205) ----
@@ -141,9 +146,20 @@ async function main(): Promise<void> {
     const simBlock = cut('src/renderer/sim.ts');
     const norm = (t: string): string => t.split('\n').map((l) => l.trim()).filter(Boolean).join('\n');
     assert.strictEqual(norm(simBlock), norm(mainBlock), 'the simulator block is a copy of the planner');
+    // the simulator's own helper (outside the block) is the shared one, character for character, so it cannot drift
+    const helperOf = (file: string, prefix: string): string => {
+      const src = fs.readFileSync(path.join(__dirname, '..', '..', file), 'utf8').replace(/\r/g, '');
+      const m = src.split('\n').find((l) => l.startsWith(prefix));
+      assert.ok(m, `${file} defines isRemoteTransport`);
+      return m.slice(prefix.length).trim();
+    };
+    const simHelper = helperOf('src/renderer/sim.ts', 'const isRemoteTransport');
+    assert.strictEqual(simHelper, helperOf('src/shared/mcp.ts', 'export const isRemoteTransport'), 'the simulator copy of isRemoteTransport drifted from src/shared/mcp.ts');
+    const simIsRemote = new Function(`${ts.transpileModule('const f ' + simHelper, { compilerOptions: { target: ts.ScriptTarget.ES2020 } }).outputText}\nreturn f;`)() as (t: unknown) => boolean;
+    for (const t of ['http', 'sse', 'streamable-http', 'streamablehttp', 'HTTP', 'stdio', 'memory', '', undefined, 5]) assert.strictEqual(simIsRemote(t), isRemoteTransport(t), `sim isRemoteTransport(${String(t)})`);
     const js = ts.transpileModule(simBlock, { compilerOptions: { target: ts.ScriptTarget.ES2020 } }).outputText;
     // eslint-disable-next-line @typescript-eslint/no-implied-eval
-    const sim = new Function(js + '\nreturn planMcpSignInRefresh;')() as typeof planMcpSignInRefresh;
+    const sim = new Function('isRemoteTransport', js + '\nreturn planMcpSignInRefresh;')(simIsRemote) as typeof planMcpSignInRefresh;
     assert.ok(cases.length >= 25, `cases: ${cases.length}`);
     for (const [label, i] of cases) assert.deepStrictEqual(sim(i), planMcpSignInRefresh(i), label);
   }
@@ -255,6 +271,12 @@ async function main(): Promise<void> {
     r.clearBlock('claude', 'docs');
     await r.beforeSend('c1');
     assert.deepStrictEqual(f.calls, [], 'another name or another app does not clear it');
+    // spec 058 FR-229: isBlocked and clearKey work on exactly one key (adapter, name, address or folder)
+    assert.strictEqual(r.isBlocked('copilot', 'docs', 'https://docs.example/mcp'), true, 'blocked');
+    for (const [ad, n, u] of [['claude', 'docs', 'https://docs.example/mcp'], ['copilot', 'other', 'https://docs.example/mcp'], ['copilot', 'docs', 'https://elsewhere.example/mcp'], ['copilot', 'docs', undefined]] as const) assert.strictEqual(r.isBlocked(ad, n, u), false, `not blocked for ${ad} ${n} ${u}`);
+    r.clearKey(signInKey('copilot', 'docs', 'https://elsewhere.example/mcp'));
+    r.clearKey(signInKey('claude', 'docs', 'https://docs.example/mcp'));
+    assert.strictEqual(r.isBlocked('copilot', 'docs', 'https://docs.example/mcp'), true, 'clearKey of another address or app leaves it');
     // a URL change is a new key: no block carried over
     f.chats.set('c2', chat([srv('docs', 'connected', { key: signInKey('copilot', 'docs', 'https://new.example/mcp') })]));
     const moved = r.beforeSend('c2');
@@ -347,8 +369,48 @@ async function main(): Promise<void> {
     const k = signInKey('copilot', 'p', 'https://p.example/mcp');
     assert.deepStrictEqual(r2.recordOf(k)?.blocked, 'policy');
     r2.clearBlock('copilot', 'p');
+    assert.strictEqual(r2.isBlocked('copilot', 'p', 'https://p.example/mcp'), false, 'a policy record is not a sign-in block (the row never shows Sign in for it)');
+    r2.clearKey(k);
+    assert.deepStrictEqual(r2.recordOf(k)?.blocked, 'policy', 'clearKey leaves a policy block too');
+    const g3 = fake();
+    const r3 = new McpSignInRefresher({ ...g3.d, after: () => ({ status: 'needs-auth' }) });
+    g3.chats.set('a', chat([srv('p', 'needs-auth')]));
+    await r3.beforeSend('a');
+    assert.strictEqual(r3.isBlocked('copilot', 'p', 'https://p.example/mcp'), true, 'a failed renewal blocks');
+    r3.clearKey(signInKey('copilot', 'p', 'https://p.example/mcp'));
+    assert.strictEqual(r3.isBlocked('copilot', 'p', 'https://p.example/mcp'), false, 'clearKey clears exactly that key');
     assert.deepStrictEqual(r2.recordOf(k)?.blocked, 'policy', 'a policy block stays for the run, Sign in and Restart do not clear it');
     assert.deepStrictEqual(g.logs, ["MCP server p was refused by your organization's sign-in rules (automatic)"]);
+  }
+
+  // FR-229 (review of #1230, 4): a call that worked while a renewal ran is not overwritten by that renewal's stale block
+  {
+    const f = fake({ hang: true });
+    const r = new McpSignInRefresher(f.d);
+    const url = 'https://race.example/mcp';
+    const key = signInKey('copilot', 'race', url);
+    f.chats.set('a', chat([srv('race', 'needs-auth', { key })]));
+    const p = r.beforeSend('a');
+    await tick();
+    assert.deepStrictEqual(f.calls, ['a:race'], 'the renewal runs');
+    r.clearKey(key); // a call of this server worked meanwhile
+    f.finish.get('a:race')!('needs-auth');
+    await p;
+    assert.notStrictEqual(r.recordOf(key)?.blocked, 'sign-in', 'no stale block over a call that worked during the reconnect');
+    assert.strictEqual(r.isBlocked('copilot', 'race', url), false);
+    // a success BEFORE the reconnect began does not hide a later block
+    const f2 = fake();
+    const r2 = new McpSignInRefresher({ ...f2.d, after: () => ({ status: 'needs-auth' }) });
+    r2.clearKey(key);
+    f2.chats.set('a', chat([srv('race', 'needs-auth', { key })]));
+    await r2.beforeSend('a');
+    assert.strictEqual(r2.isBlocked('copilot', 'race', url), true, 'a success before the reconnect: the block still lands');
+    // no success ever (the default tick) is not a success during the reconnect either
+    const f3 = fake();
+    const r3 = new McpSignInRefresher({ ...f3.d, after: () => ({ status: 'needs-auth' }) });
+    f3.chats.set('a', chat([srv('race', 'needs-auth', { key })]));
+    await r3.beforeSend('a');
+    assert.strictEqual(r3.isBlocked('copilot', 'race', url), true, 'no success ever: the block lands (boundary: an equal tick is not "during")');
   }
 
   // FR-214: no vendor or token text in a log line or a window line, whatever the app's error says

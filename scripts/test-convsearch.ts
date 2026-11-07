@@ -2,6 +2,7 @@
  * Spec 095 T010, T014, T015, T017: the conversation search's scan over FAKE readers of the four kinds (open session, earlier Claude
  * Code, open Codex, VS Code chat), a fake clock and a fake yield: `npm run test:convsearch`. No credits, no network, no real store.
  */
+import './safetext-shared'; // the compiled hidden-character module for safetext.js (spec 084 FR-033)
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';

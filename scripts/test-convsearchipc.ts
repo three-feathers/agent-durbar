@@ -7,6 +7,7 @@
  * remote control or schedules; no channel open under the simulator; the simulator's copy of the query rule equals main's.
  * `npm run test:convsearchipc`. No Electron, no network, no real store, no credits.
  */
+import './safetext-shared'; // the compiled hidden-character module for safetext.js (spec 084 FR-033), as test-convmask and test-convsearch
 process.exitCode = 1;
 let stage = 'load';
 process.on('exit', (code) => { if (code) console.error(`convsearchipc: failed or never settled in: ${stage}`); });

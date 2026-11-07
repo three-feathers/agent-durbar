@@ -3,6 +3,7 @@
  * window.DurbarNotesScreen), with the drawer's own search (notes.js), DurbarNav.rank and the page's masking. `npm run test:notes-core`.
  * No credits, no disk.
  */
+import './safetext-shared'; // the compiled hidden-character module for safetext.js (spec 084 FR-033)
 import * as assert from 'assert';
 import { assertLinearShape } from './redact-growth-lib';
 import * as path from 'path';

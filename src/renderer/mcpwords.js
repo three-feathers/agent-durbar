@@ -292,5 +292,20 @@
     }
     return {targets,failed,skipped};
   }
-  return {stateOf,offBy,iconSvg,hintFor,callWord,callHint,signInHint,plain,aggregate,reasonOf,whenText,renewedWord,diagnostics,fixFor,fileFindings,chatFinding,launchYoung,launchUpdate,restartTargets,LAUNCH_MS,RANK:RANK.slice(),ICON_NAMES:Object.keys(ICONS)};
+  /* spec 058 FR-229 (issue 1229): the one text for a chat's Sign in press that could not start a sign-in. Never empty: `row` is the dialog's row for the
+     server (or none), `err` an error text of the call (already masked by main). The wording is the dialog's own ("Could not start the sign-in: ..."). */
+  function signInPressNote(name,row,err,live){
+    const n=plain(name,64)||'this server';
+    let why=typeof err==='string'&&err.trim()?plain(err,160):'';
+    if(!why){
+      if(live===false)why='The chat\u2019s session is not running. Send a message to start it, then sign in.';
+      else if(!row)why=n+' is not in this chat\u2019s MCP list.';
+      else if(row.signIn)why='A sign-in is already open: press Open sign-in page on its row.';
+      else if(row.canSignInAgain===true)why='This row offers Sign in again\u2026 instead: press it on the row.';
+      else if(row.canSignIn!==true)why='This app cannot start the sign-in from here. Open the row for the steps.';
+      else why='Unknown error.';
+    }
+    return 'Could not start the sign-in for '+n+': '+why;
+  }
+  return {signInPressNote,stateOf,offBy,iconSvg,hintFor,callWord,callHint,signInHint,plain,aggregate,reasonOf,whenText,renewedWord,diagnostics,fixFor,fileFindings,chatFinding,launchYoung,launchUpdate,restartTargets,LAUNCH_MS,RANK:RANK.slice(),ICON_NAMES:Object.keys(ICONS)};
 })());

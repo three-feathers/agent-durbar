@@ -624,6 +624,8 @@ interface SignInServerView { name: string; status: string; transport?: string; k
 interface SignInRecordView { at?: number; blocked?: 'sign-in' | 'policy' }
 interface SignInPlanInput { moment: 'send' | 'recheck'; now: number; lastResponseAt?: number; resumedAt?: number; on: boolean; allowReadOnly: boolean; readOnly: boolean; platform: string; takesPart: boolean; renews?: boolean; live: boolean; busy: boolean; servers: readonly SignInServerView[]; records: Readonly<Record<string, SignInRecordView>>; inFlight: readonly string[] }
 interface SignInPlan { why: 'off' | 'no-part' | 'not-live' | 'busy' | 'no-moment' | 'first' | 'gap' | 'recheck'; reconnect: { name: string; key: string }[]; join: { name: string; key: string }[]; signInOnly: string[] }
+/** Copy of `isRemoteTransport` in `src/shared/mcp.ts` (the simulator is plain browser code; the planner copy below uses it). */
+const isRemoteTransport = (t: unknown): boolean => typeof t === 'string' && /^(?:http|sse|streamable-?http)$/i.test(t);
 /* mcpsigninrefresh:begin */
 const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
   const GAP = 60 * 60_000;
@@ -648,7 +650,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
     if (!s || typeof s.name !== 'string' || seen.has(s.name)) continue;
     seen.add(s.name);
     if (s.off === true || s.status === 'disabled') continue;
-    if (!/^(?:http|sse|streamable-?http)$/i.test(typeof s.transport === 'string' ? s.transport : '')) continue; // remote only: never a local (stdio) server
+    if (!isRemoteTransport(s.transport)) continue; // remote only: never a local (stdio) server
     if (s.signInOpen === true || s.restarting === true || s.policy === true) continue;
     const wants = s.status === 'needs-auth' || (why === 'gap' && s.status === 'connected' && i.platform !== 'darwin');
     if (!wants) continue;

@@ -1,4 +1,5 @@
 /** Spec 083 T010 (FR-003, FR-004, FR-006, FR-008, SC-003, issue 699): the pure notes model. `npm run test:notes`. No credits. */
+import './safetext-shared'; // the compiled hidden-character module for safetext.js (spec 084 FR-033)
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';

@@ -721,6 +721,8 @@ export interface AgentMcpEntry {
   canRestart?: boolean;
   /** Spec 058 FR-065: **Sign in** is offered: the agent app can start its own sign-in, the session runs, and this server reads Needs sign-in. */
   canSignIn?: boolean;
+  /** Spec 058 FR-229 (issue #1229): Agent Durbar knows this server needs a new sign-in although the runtime list does not say so (a renewal that did not help, or a session that is not running). */
+  needsSignIn?: true;
   /** Spec 058 FR-164: **Sign in again** is offered: the agent app can redo the sign-in itself, the session runs, and this server is on and not waiting for a first sign-in. */
   canSignInAgain?: boolean;
   /** Spec 058 FR-065: a sign-in is open for this server. The host only, never the address; `expiresInMs` is what is left of the 10 minutes. */

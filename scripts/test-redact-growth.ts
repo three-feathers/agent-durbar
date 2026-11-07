@@ -288,6 +288,13 @@ if (part === 'shapes' || part === 'shapes2') {
     const r = spawnSync(process.execPath, ['-e', code], { encoding: 'utf8', timeout: 120_000, maxBuffer: 1 << 20 });
     assert.strictEqual(r.status, 0, `the bare-cookie child ended: ${r.signal ?? r.stderr}`);
     for (const [k, v] of Object.entries(JSON.parse(r.stdout) as Record<string, number>)) assert.ok(v < 10_000, `bare cookie run ${k}: ${v.toFixed(0)} ms CPU for 1 MB`);
+    // Glued chains (spec 012 FR-169, issue #1233): tokens written back to back, each family once as a long chain, at 32 KB (a start-anchored look back is 3 s there, so the ratio assert fails well before the 10 s backstops; at 400 KB it stalled for minutes). The look back from the end of a match is bounded (`PREFIX_REACH`), so the cost stays linear; from the start of the match it was quadratic.
+    {
+      const unitOf = (pre: string, body: string): string => pre + body;
+      const an36 = 'aB3dE6gH9jK2mN5pQ8sT1vW4yZ7aB3dE6gH9jK2mN'.slice(0, 36);
+      const chains: Array<[string, string]> = [['hf', unitOf('hf' + '_', an36.slice(0, 30))], ['npm', unitOf('np' + 'm_', an36)], ['shpat', unitOf('shp' + 'at_', '0a1b2c3d4e5f6a7b8c9d0a1b2c3d4e5f')], ['ghp', unitOf('gh' + 'p_', an36)], ['mixed', unitOf('gh' + 'p_', an36) + unitOf('np' + 'm_', an36) + unitOf('github' + '_pat_', an36 + an36.slice(0, 20))]];
+      for (const [name, unit] of chains) assertLinearShape(`glued chain ${name}`, (x) => { redact(x, {}); }, (n) => unit.repeat(Math.ceil(n / unit.length)).slice(0, n), 32_000);
+    }
   }
   // two suites, each trap in one (over 30 s on Windows as one); `pct` in both, as the neighbour the JWT traps are read against
   const units = Object.fromEntries(Object.entries(allUnits).filter(([k], i) => k === 'pct' || (part === 'shapes2') === (k.startsWith('jwt') || i % 2 === 1)));
