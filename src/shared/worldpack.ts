@@ -9,7 +9,7 @@
  */
 import { checkUserManifest, USER_THEME_LIMITS } from './themes';
 import { themeIssues, CONTRAST_PAIRS, UI_PAIRS } from './themegen';
-import { TYPED_TOKENS, typedValue } from './themetokens';
+import { BAR_TOKENS, TYPED_TOKENS, typedValue } from './themetokens';
 import { THEME_ID_RE } from './credits';
 import { ALLOWED_CHUNKS, webpInfo } from './webpcheck';
 import { crc32, openZip, segmentProblem, sha256, MAX_KEPT_ENTRIES, MAX_RAW_ENTRIES, type ZipHeader, type ZipLimits } from './worldzip';
@@ -241,8 +241,9 @@ function checkTokens(raw: Record<string, unknown>, clean: Record<string, string>
   if (!clean) return { ok: false, reason: 'Colours cannot be checked here, so the pack is refused.' };
   for (const k of keys) {
     if (Object.prototype.hasOwnProperty.call(TYPED_TOKENS, k)) { const tv = typedValue(k, strings[k]); if (tv === null) return { ok: false, reason: NOT_ALLOWED }; out[k] = tv; continue; }
-    if (!Object.prototype.hasOwnProperty.call(clean, k)) return { ok: false, reason: 'world.json sets a name the app does not know.' };
-    const base = colourBytes(clean[k]), mine = colourBytes(strings[k]);
+    const known = Object.prototype.hasOwnProperty.call(clean, k) ? clean[k] : Object.prototype.hasOwnProperty.call(BAR_TOKENS, k) ? BAR_TOKENS[k] : undefined; // the bar's closed list (spec 070 FR-053)
+    if (known === undefined) return { ok: false, reason: 'world.json sets a name the app does not know.' };
+    const base = colourBytes(known), mine = colourBytes(strings[k]);
     if (!base || !mine) return { ok: false, reason: 'A colour in world.json is not a plain colour (write #rrggbb).' };
     const minAlpha = base.alpha === 255 ? 255 : PAIR_KEYS.has(k) ? 230 : 0;
     if (mine.alpha < minAlpha) return { ok: false, reason: 'A colour in world.json is see-through where text has to be read on it.' };
