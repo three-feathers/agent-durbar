@@ -413,3 +413,8 @@ Q1-Q5 are answered (*Clarifications*, owner decisions, 2026-10-31). Their text a
 - **Source**: merge of `main` (constitution 1.2.0, the retired theme maker, spec 102's world pack validator) into PR #938.
 - **Reuse checked** (FR-031): `webpcheck.ts` is the one RIFF walker (`scripts/webpinfo.ts` wraps it; `worldpack.ts` uses it), so `test-crew-assets.ts` takes it from there; `themegen.ts` is now only the contrast rules, so `pickIdeas` and `aiTheme()` no longer exist and `test-chargen.ts` no longer asserts on them; `pickFrom` (`ideas.ts`) stays the neutral picker. The `crew.js`, `codex.ts` and `redact.ts` helpers named in plan.md still exist. FR-041, T040 and the plan now say the chips and harness picker are written new, not factored out of `aiTheme()`.
 - **Constitution 1.2.0** (canvas allowed under conditions): this spec's motion is images and CSS; the canvas appears only in the simulator's fake frames (T038), not in the app. No change.
+
+### 2026-11-07: review of #938, fixes (FR-030)
+
+- **FR-011**: `cleanDescription` applies NFKC first (U+FF1E, U+FE65, U+2329 and the full-width backtick fold to the ASCII ones), then removes `<`, `>` and the look-alikes NFKC leaves: `‹›«»` `〈〉《》` `⟨⟩⟪⟫` and the heavy angle ornaments. Test: `test:chargen` each form; `[mutant]` dropping NFKC fails "look-alike close ff1e removed".
+- **FR-013**: `pickFrom` clamps the index, so `rand() === 1` (or a negative value) never gives an undefined entry. Test: `test:chargen`; `[mutant]` without the clamp fails "index clamped to the last entry".

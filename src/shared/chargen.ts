@@ -31,7 +31,8 @@ const CONTROL_RE = /[\p{Cc}\p{Zl}\p{Zp}]/gu;
 // invisible format characters (zero width, bidi marks and overrides, soft hyphen, BOM) except the joiner that emoji sequences need
 const FORMAT_RE = /[^\P{Cf}\u200D]/gu;
 // every < and > goes: a marker needs three of them, and no removal can build a new one (a repeated search-and-remove loop is quadratic on nested input)
-const ANGLE_RE = /[<>]/g;
+// NFKC first folds the full-width, small and compatibility forms (U+FF1E, U+FE65, U+2329 ...) to < and >; the look-alikes it leaves alone are listed here
+const ANGLE_RE = /[<>\u2039\u203A\u00AB\u00BB\u3008-\u300B\u27E8-\u27EB\u276C-\u2771]/g;
 
 /** Cut to `max` code points, and not in the middle of a joined emoji (no trailing joiner or variation selector). */
 function cutCodePoints(s: string, max: number): string {
@@ -49,7 +50,7 @@ function cutCodePoints(s: string, max: number): string {
  */
 export function cleanDescription(raw: unknown): DescriptionResult {
   if (typeof raw !== 'string') return { ok: false, reason: 'Describe the person in a few words.' };
-  let s = raw.replace(CONTROL_RE, ' ').replace(FORMAT_RE, '').replace(/`/g, '').replace(ANGLE_RE, ' ');
+  let s = raw.normalize('NFKC').replace(CONTROL_RE, ' ').replace(FORMAT_RE, '').replace(/`/g, '').replace(ANGLE_RE, ' ');
   s = s.replace(/\s+/g, ' ').trim();
   s = cutCodePoints(s, MAX_CHAR_DESCRIPTION).trim();
   if (Array.from(s).length < MIN_CHAR_DESCRIPTION) return { ok: false, reason: 'Describe the person in at least ' + MIN_CHAR_DESCRIPTION + ' characters.' };
