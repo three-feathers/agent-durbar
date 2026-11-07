@@ -266,6 +266,16 @@ for (const s of STAYS) {
   assert.strictEqual(maskTokenShapes(s, '[redacted]'), s, `stays in maskTokenShapes: ${s.slice(0, 50)}`);
 }
 
+// The same list as running text: STAYS joined by line breaks, and in blocks of 5, must stay whole too, so a rule that looks across lines (the mysql `\\` continuation, a cookie scan) cannot over-mask a line from its neighbour (pre-review of #1243: a per-line comparison cannot see that).
+{
+  for (const sep of ['\n', '\r\n']) {
+    for (let i = 0; i < STAYS.length; i += 5) {
+      const block = STAYS.slice(i, i + 5).join(sep);
+      assert.strictEqual(redact(block, {}), block, `stays as lines (${JSON.stringify(sep)}, from ${i}): ${block.slice(0, 50)}`);
+    }
+  }
+}
+
 // Nothing the mask hid before T137 shows now (review of #1015: a digit guard on `glpat-` left 3% of real tokens visible; every sample here used to hold a digit, so no test saw it).
 // The samples are drawn from the old rules' own classes under profiles a fixed sample never has (no digit, one case, words), in the contexts the old mask hid them in.
 {
@@ -540,6 +550,17 @@ for (const [start, more] of [['AK' + 'IA' + up(16), 'A'], ['AK' + 'IA' + up(16),
   eq('Bearer ab! ' + bv, 'Bearer [redacted]', 'bearer: !');
   eq('Bearer ab- ' + bv, 'Bearer [redacted]', 'bearer: -');
   eq('Bearer x. abcdefghijkl', 'Bearer x. abcdefghijkl', 'bearer stays: 12 letters and no digit');
+  // survivors of the pre-review mutant run (2026-11-07): each line names the mutant it kills
+  for (const t of ['token: RS256', 'secret: tls13']) eq(t, t, `short stays: ${t} (NOT_SHORT without rs, tls)`);
+  eq('Bearer ab; ' + bv, 'Bearer [redacted]', 'bearer: ; after the first word');
+  eq('Bearer ab? ' + bv, 'Bearer [redacted]', 'bearer: ? after the first word');
+  eq('mysql -e "select `id`" -p' + 'S3cret', 'mysql -e "select `id`" -p[redacted]', 'mysql: a backtick that is not a continuation');
+  eq('mysql -e "a\\b" -p' + 'S3cret', 'mysql -e "a\\b" -p[redacted]', 'mysql: a backslash that is not a continuation');
+  eq('mysql -e "a^b" -p' + 'S3cret', 'mysql -e "a^b" -p[redacted]', 'mysql: a caret that is not a continuation');
+  eq('password=123abc', 'password=[redacted]', 'short goes: digits first, then letters');
+  eq('Cookie: v=a1 x', 'Cookie: v=a1 x', 'cookie stays: 2 characters with a letter and a digit');
+  eq('pwd=[redacted] ab12 cd34 ef56 x', 'pwd=[redacted] x', 'phrase after a mask: three words');
+  eq('passwd: ab12 cd34', 'passwd: [redacted]', 'phrase: passwd');
   // survivors of the first mutant run
   eq('secret_access_' + 'key ' + aws, 'secret_access_' + 'key [redacted]', 'aws secret after a space: no aws_ in the name');
   eq('token    ' + 'abc1234xyz', 'token    [redacted]', 'scheme word: four spaces');

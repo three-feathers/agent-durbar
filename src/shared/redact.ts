@@ -243,8 +243,9 @@ export function openKeyBlockStart(text: string): number {
   }
   return open;
 }
-/** A name that holds a secret, right before its separator (checked backwards from the separator, so `max_tokens` and `token_count` are not it). */
+/** The names whose short values (4 to 7 characters) are hidden too. */
 const SHORT_NAMES = `(?:${['secret_?access_?key', 'session_?token', 'client_?secret', 'api_?secret', 'app_?secret', 'consumer_?secret', 'shared_?secret', 'secret_?key', 'api[_-]?key', 'access[_-]?key', 'auth[_-]?key', 'account_?key', 'sharedaccesskey', 'private[_-]?key', 'priv_?key', 'signing_?key', 'encryption_?key', 'master_?key', 'license_?key', 'service_?key', 'token', 'secret', 'password', 'passwd', 'passphrase', 'contrase(?:n|ñ)a', '_gitlab_session'].map(ci).join('|')}|(?<![A-Za-z])${ci('pwd')})`; // the names whose short values (4 to 7 characters) are hidden too (issue #1227)
+/** A name that holds a secret, right before its separator (checked backwards from the separator, so `max_tokens` and `token_count` are not it). */
 const SECRET_NAMES = `(?:${['secret_?access_?key', 'session_?token', 'client_?secret', 'api_?secret', 'app_?secret', 'consumer_?secret', 'shared_?secret', 'secret_?key', 'api[_-]?key', 'access[_-]?key', 'auth[_-]?key', 'account_?key', 'sharedaccesskey', 'private[_-]?key', 'priv_?key', 'signing_?key', 'encryption_?key', 'master_?key', 'license_?key', 'service_?key', 'token', 'secret', 'password', 'passwd', 'passphrase', 'contrase(?:n|ñ)a', '_gitlab_session'].map(ci).join('|')}|(?<![A-Za-z])(?:${['pwd', 'pass', 'auth'].map(ci).join('|')}))`;
 const PASSWORD_NAMES = `(?:${['password', 'passwd', 'passphrase', 'contrase(?:n|ñ)a'].map(ci).join('|')}|(?<![A-Za-z])${ci('pwd')})`; // a value that can be several words
 /**
@@ -270,11 +271,6 @@ const NOT_A_VALUE = [
   String.raw`[0-9]{1,128}[.:/-][0-9.:/TZ+-]{0,128}${VALUE_END}`, // 127.0.0.1:8080, 1523/1523, 2026-11-01T10:00:00Z
   String.raw`(?![0-9a-f]{8}-[0-9a-f]{4}-)[a-z]{2}[a-z0-9]{0,30}(?:[_-][a-z0-9]{1,32}){1,16}${VALUE_END}`, // lower-case words, as in dg(): gpt-4o-mini, reset-flow-v2 (a UUID is not)
 ].join('|');
-/**
- * `name=value`, `"name": "value"`, `name := value`, in any case for the name but not the value (`$DB_PASS` is a variable, `$uperS3cret` is not), also JSON-escaped (FR-080 delta 2026-11-01). The match starts
- * at the separator, so plain text costs one test per `:` or `=`. A value is 8 or more characters with a digit in the first 128, or 20 or more with a symbol letters and hyphens do not explain
- * (`please-enter-your-password` is prose, and a saved note keeps the mask for good). The body has no tail, so open-ended is linear.
- */
 /** A key-looking start that is not finished (a stream cut inside `X-Api-Key: sk-ab12`): too short for its own shape, and lower-case with a hyphen, which `NOT_A_VALUE` takes for words. */
 const KEY_START = String.raw`(?:sk|ghp|gho|ghu|ghs|ghr|glpat|xox[a-z]|hf|npm)[_-]${NV}{2,}`;
 /** A value of 4 to 7 characters that has a letter and a digit (`abc123`, `hunter2`): a number (`4096`), a word (`none`, `string`), an id, a version or an algorithm name (`NOT_SHORT`) is not one. Issue #1227. */
@@ -283,11 +279,17 @@ const SHORT_VALUE = `(?=${NV}{4,7}(?!${NV}))(?!${NOT_SHORT})(?=${NV}{0,6}[0-9])(
 /** After a password's first word: up to 8 more words of 2 to 32 letters and digits that each hold a digit (`ab12 cd34 ef56`); a word without a digit (`is`, `the`) ends it. */
 const PHRASE_WORD = String.raw`\x20{1,2}(?=[A-Za-z0-9]{0,32}[0-9])[A-Za-z0-9]{2,32}(?![A-Za-z0-9])`;
 const PHRASE_TAIL = `(?:${PHRASE_WORD}){0,8}`; // optional: a required tail fails at the end of a long value and backtracks it, at every start (`password=` repeated was quadratic)
+/**
+ * `name=value`, `"name": "value"`, `name := value`, in any case for the name but not the value (`$DB_PASS` is a variable, `$uperS3cret` is not), also JSON-escaped (FR-080 delta 2026-11-01). The match starts
+ * at the separator, so plain text costs one test per `:` or `=`. A value is 8 or more characters with a digit in the first 128, or 20 or more with a symbol letters and hyphens do not explain
+ * (`please-enter-your-password` is prose, and a saved note keeps the mask for good). The body has no tail, so open-ended is linear.
+ */
 const named = (before: string, extra: string, names = SECRET_NAMES, short = false, tail = ''): RegExp => new RegExp(String.raw`(?<=${before}${names}\\{0,2}["'\`]?\s{0,8})((?::=|=>|[:=]|%3[DdAa])\s{0,8}\\{0,2}["'\`]?)(?:${SLASH_B64}|(?!\/|${NOT_A_VALUE})(?:(?=${NV}{8})(?=${NV}{0,128}[0-9])|(?=${NV}{20})(?=[A-Za-z_.-]{0,128}[+=~@!#^*?])${short ? `|${SHORT_VALUE}` : ''})${short ? `|(?=${KEY_START})` : ''})${valueBody(extra)}${tail}`, 'g');
 const NAMED_IN_QUERY = named('[?&]', '#');
 const NAMED_SECRET = named('', '', SECRET_NAMES, false);
-/** Short values are only for the names in `SHORT_NAMES` (not `pass` or `auth`, which are common words); a password with several words is its own pass so that `NAMED_SECRET` sees the rest as a mask. */
+/** A password with several words is its own pass so that `NAMED_SECRET` sees the rest as a mask. */
 const NAMED_PHRASE = named('', '', PASSWORD_NAMES, true, PHRASE_TAIL);
+/** Short values are only for the names in `SHORT_NAMES` (not `pass` or `auth`, which are common words). */
 const NAMED_SHORT = named('', '', SHORT_NAMES, true);
 /** `pwd=[redacted] blue8 x`: a password of several words that arrived in pieces (the brain view masks the first word, the next delta brings the rest) keeps taking its words after the mask, also when a few characters of the next piece sit glued to it (`[redacted]4 ef56`, which `maskGluedTail` would take after this). At least one word, so it is anchored at a literal. It runs before `NAMED_PHRASE`, so one call takes at most 8 words after a mask or after a first word; masking the result again takes 8 more (a stream does). */
 const NAMED_PHRASE_MASKED = new RegExp(String.raw`(?<=${PASSWORD_NAMES}\\{0,2}["'\`]?\s{0,8})((?::=|=>|[:=]|%3[DdAa])\s{0,8}\\{0,2}["'\`]?)\[redacted\][A-Za-z0-9]{0,32}(?:${PHRASE_WORD}){1,8}`, 'g');
