@@ -933,10 +933,10 @@ const shownTool=t=>LIVE_MASK&&window.DurbarLiveAct?window.DurbarLiveAct.toolName
 const permKind=k=>k==='shell'||/^shell(-exact)?:/.test(k)?'shell':k==='mcp'||k==='custom-tool'||/^(mcp|custom-tool):/.test(k)?'tool':'other';
 const shownPerm=(t,kind)=>window.DurbarLiveAct?window.DurbarLiveAct.permText(t,permKind(kind),LIVE_MASK||{}):{text:'request',hidden:true,why:'unchecked'};
 /* spec 097 FR-318 (review of PR 1292): what a hidden part is, in words: a secret replaced, control characters shown as markers, or a request Durbar could not check (no mask) */
-const PERM_WHY={secret:'A part of this request looks like a secret and is hidden.',control:'This request holds control characters, shown as markers like \u27e6ESC\u27e7: read all of it before you allow it.',unchecked:'Durbar could not check this request\u2019s text, so it is not shown.',concealed:'This request hides a secret behind control characters, so its text cannot be shown.',cut:'This request is long: only its start is shown (\u27e6cut\u27e7).'};
+const PERM_WHY={secret:'A part of this request looks like a secret and is hidden.',control:'This request holds control characters, shown as markers like \u27e6ESC\u27e7: read all of it before you allow it.',unchecked:'Durbar could not check this request\u2019s text, so it is not shown.',concealed:'This request hides a secret behind control characters, so its text cannot be shown.',cut:'This request is too long to show in full, so it cannot be allowed from here.'};
 const PERM_GRANT=' Allow for this session covers exactly what was asked, the hidden part included.';
 const permWhy=(...xs)=>{const w=xs.filter(x=>x&&x.hidden).map(x=>x.why||'secret');return w.includes('unchecked')?'unchecked':w.includes('concealed')?'concealed':w.includes('secret')?'secret':w.includes('control')?'control':w.length?'cut':'';};
-const permBlind=w=>w==='unchecked'||w==='concealed'; /* neutral words only: no Allow, Deny stays */
+const permBlind=w=>w==='unchecked'||w==='concealed'||w==='cut'; /* neutral words only: no Allow, Deny stays */
 const liveOn=()=>!!LIVEACT&&LIVE_PREF;
 function setLiveOn(on){LIVE_PREF=!!on;try{localStorage.setItem('durbar.liveActivity',LIVE_PREF?'on':'off');}catch(e){}scheduleRender();}
 /* the readout to show now, or null: a live main agent that is Working or Thinking (Waiting, Error, Done and Idle keep their own text) */
@@ -5665,7 +5665,7 @@ function whyPaint(c){
   const d=WHY&&c.whyBy?WHY.describe(c.whyBy,whyLive(c.aid),whyOpts(c)):null;
   el._whyC=c;
   if(!d)return;
-  if(d.label){const wl=shownPerm(d.label,String(c.whyBy&&c.whyBy.key||''));d.label=wl.text;if(wl.hidden)d.sentence+=' (A part of the rule is hidden: '+(wl.why==='control'?'it holds control characters, shown as markers.':wl.why==='unchecked'?'Durbar could not check its text.':wl.why==='concealed'?'it hides a secret behind control characters.':wl.why==='cut'?'it is long and cut.':'it looks like a secret.')+')';} /* spec 097 FR-318: the session rule's label through the one mask; d is this call's copy */
+  if(d.label){const wl=shownPerm(d.label,String(c.whyBy&&c.whyBy.key||''));d.label=wl.text;if(wl.hidden)d.sentence+=' (A part of the rule is hidden: '+(wl.why==='control'?'it holds control characters, shown as markers.':wl.why==='unchecked'?'Durbar could not check its text.':wl.why==='concealed'?'it hides a secret behind control characters.':wl.why==='cut'?'it is too long to show in full.':'it looks like a secret.')+')';} /* spec 097 FR-318: the session rule's label through the one mask; d is this call's copy */
   const pill=document.createElement('span');pill.className='why';pill.dataset.why=d.kind;if(d.gone)pill.dataset.gone='1';pill.textContent=d.pill;
   pill.title=d.sentence+(d.label||'');
   const body=document.createElement('span');body.className='xbody whybody';

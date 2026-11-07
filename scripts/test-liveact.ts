@@ -619,7 +619,9 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
   const pw = /const PERM_WHY=\{([^\n]*)\};/.exec(app);
   ok(!!pw && !/unchecked:'[^']*secret/.test(pw![1]) && /unchecked:'Durbar could not check this request/.test(pw![1]), 'item 5: the unchecked copy does not claim a secret');
   ok(/if\(permBlind\(hwhy\)\)row\.querySelectorAll\('button:not\(\.danger\)'\)\.forEach\(b=>\{b\.disabled=true;b\.dataset\.blind='1'/.test(card), 'item 5: Allow once and the session buttons are disabled when the text could not be checked or is concealed');
-  ok(/const permBlind=w=>w==='unchecked'\|\|w==='concealed'/.test(app), 'round 2 item 2: unchecked and concealed both block Allow');
+  ok(/const permBlind=w=>w==='unchecked'\|\|w==='concealed'\|\|w==='cut'/.test(app), 'round 2 item 2: unchecked, concealed and cut all block Allow');
+  ok(/cut:'This request is too long to show in full, so it cannot be allowed from here\.'/.test(app), 'round 3: the cut copy says it cannot be allowed from here');
+  ok(/permWhy=\(\.\.\.xs\)[^\n]*w\.length\?'cut'/.test(app), 'round 3: a cut request is the why of its card');
   ok(/hgrant=hwhy&&!permBlind\(hwhy\)&&/.test(card), 'round 2 item 2: a blocked card does not say the grant covers it');
   ok(/if\(src\.dataset\.blind\)\{ab\.disabled=true/.test(app) && /curSrc&&curSrc\.dataset\.blind/.test(app), 'item 5: the answer bar and inbox copies of a blind card are disabled too');
 }
