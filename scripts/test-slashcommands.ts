@@ -15,6 +15,7 @@
  *  - the renderer's pure helpers (`slashsuggest.js`): the word at the caret, filtering with the shared `DurbarNav.rank`, insertion,
  *    and the option row's escaping (a hostile entry).
  */
+import './safetext-shared'; // the compiled hidden-character module for safetext.js (spec 084 FR-033)
 import * as assert from 'assert';
 import { SANDBOX_HOST_OK } from './fakes/claude-cli';
 import { execFileSync } from 'child_process';

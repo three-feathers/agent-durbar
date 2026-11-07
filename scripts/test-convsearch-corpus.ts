@@ -5,6 +5,7 @@
  * a forced GC) stays under 64 MB above the start, also while the 45 MB file is read, so the file is never held whole; nothing is kept after
  * the scan (and the process's peak resident memory grows less than 64 MB, which a synchronous whole-file read would break). Part of `npm run test:convsearch`. No credits, no network; the temp folder is removed at the end.
  */
+import './safetext-shared'; // the compiled hidden-character module for safetext.js (spec 084 FR-033)
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';

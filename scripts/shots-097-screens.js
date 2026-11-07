@@ -22,6 +22,8 @@ const { helpers, jsLiteral } = require('./driver-helpers');
 const OUT = process.env.SHOTS_OUT || fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-097-screens-'));
 const SIZES = [[1440, 900], [1280, 800]];
 const TOKEN = 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4';
+/* what no screen, zoom or fact may show: the token whole or in its parts around an escape, a home folder, a link, a terminal or text-direction control */
+const BAD = ['ghp_', 'A1b2C3d4', 'E5f6G7h8', 'f6G7h8', 'alice', 'evil.example', '\u001b', '\u202e', 'Bearer ghp'];
 
 module.exports = async (ctx) => {
   const H = helpers(ctx);
@@ -134,8 +136,22 @@ module.exports = async (ctx) => {
     await emit({ type: 'output', sessionId: victim, delta: 'word '.repeat(220000) });
     await emit({ type: 'toolCall', sessionId: victim, callId: 'drv-h', tool: 'bash', phase: 'start', args: { command: 'curl -H "Authorization: Bearer ' + TOKEN + '" /home/alice/x' } });
     await must(`window.__scr(${jsLiteral(victim)}).textContent.includes('curl')`, 'the hostile command on the screen', 10000);
+    /* FR-317 (issue #1284): a token-shaped TOOL NAME (an MCP server chooses it), plain and split by an escape and U+202E, shows as `Using tool` on the screen and no
+       surface of the page (text, title, aria-label, any attribute) holds the token or a part of it */
+    const NAME = 'ghp_' + 'Zq9Xw8Vu7Ts6Rp5On4Ml3Kj2Ih1G';
+    for (const [n, tn] of [['plain', NAME], ['split', NAME.slice(0, 9) + '\u001b[0m' + NAME.slice(9, 15) + '\u202e' + NAME.slice(15)]]) {
+      await emit({ type: 'toolCall', sessionId: victim, callId: 'drv-n-' + n, tool: tn, phase: 'start', args: {} });
+      await must(`window.__scr(${jsLiteral(victim)}).textContent.includes('Using tool')`, 'the masked tool name (' + n + ') as a generic word on the screen', 10000);
+      const all = await js(`document.documentElement.outerHTML+' '+document.body.innerText`);
+      for (const bad of ['ghp_Z', 'Zq9Xw8', 'Ts6Rp5', 'Kj2Ih1']) assert.ok(!all.includes(bad), `${n} tool name: the page shows "${bad}"`);
+    }
+    /* review of PR 1272, FR-314: a token split by an escape and by U+202E, in a tool label, must be masked on the screen, in the zoom and on the flat desk alike (the tool fact is
+       built from the cleared input); markup in it stays text; then the agent thinks, so the zoom names it "Last tool" */
+    await emit({ type: 'toolCall', sessionId: victim, callId: 'drv-h2', tool: 'read_file', phase: 'start', args: { path: '/tmp/' + TOKEN.slice(0, 14) + '\u001b[0m' + TOKEN.slice(14, 20) + '\u202e' + TOKEN.slice(20) + ' <img src=x onerror=window.__pwned=1> /Users/alice/x' } });
+    await must(`window.__scr(${jsLiteral(victim)}).textContent.includes('/tmp/')`, 'the split-token tool line on the screen', 10000);
     const evil = await js(`(()=>{const e=window.__scr(${jsLiteral(victim)});return {text:e.textContent,tags:e.querySelectorAll('a,img,script').length,pwned:!!window.__pwned};})()`);
-    for (const bad of ['ghp_', 'A1b2C3d4', 'alice', 'evil.example', '\u001b', 'Bearer ghp']) assert.ok(!evil.text.includes(bad), `the screen shows "${bad}": ${evil.text.slice(0, 200)}`);
+    for (const bad of BAD) assert.ok(!evil.text.includes(bad), `the screen shows "${bad}": ${evil.text.slice(0, 200)}`);
+    await emit({ type: 'thinking', sessionId: victim, reasoningId: 'drv-r', delta: 'Checking the result. Then the next step. ' });
     assert.strictEqual(evil.tags, 0, 'no element from the text');
     assert.ok(!evil.pwned, 'nothing ran');
 
@@ -146,6 +162,7 @@ module.exports = async (ctx) => {
     const deskIds = await js(`window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks).filter(d=>d.state!=='asleep').map(d=>d.id)`);
     await moveTo(1, 1);
     let placed = {};
+    const seen = { victim: false, lastTool: 0 };
     for (const i of deskIds) {
       const p = await js(`(()=>{const b=document.querySelector('#stage .ro-screen[data-for="'+CSS.escape(${jsLiteral(i)})+'"]').getBoundingClientRect();return {x:b.left+b.width/2,y:b.top+b.height/3};})()`);
       await hover(i, p);
@@ -156,7 +173,7 @@ module.exports = async (ctx) => {
         return {w:b.width,h:b.height,side:P.dataset.side,inWin:b.left>=0&&b.top>=0&&b.right<=innerWidth&&b.bottom<=innerHeight,inFloor:b.left>=fl.left-0.5&&b.right<=fl.right+0.5&&b.top>=fl.top-0.5&&b.bottom<=fl.bottom+0.5,
           own:hit(own),needs:[...document.querySelectorAll('.ro-plate:is(.st-waiting,.st-limit),.ro-lplate.wait,.ro-chip.wait')].filter(hit).map(e=>e.textContent.slice(0,20)),
           font:rows.length?parseFloat(getComputedStyle(rows[0]).fontSize):0,fonts:[...P.querySelectorAll('.ro-zh *')].map(e=>parseFloat(getComputedStyle(e).fontSize)),role:P.getAttribute('role'),name:P.getAttribute('aria-label'),live:P.getAttribute('aria-live'),
-          blur:getComputedStyle(P).backdropFilter,desc:own.getAttribute('aria-describedby'),head:P.querySelector('.ro-zh').textContent,rows:rows.length,text:P.textContent,
+          blur:getComputedStyle(P).backdropFilter,desc:own.getAttribute('aria-describedby'),head:P.querySelector('.ro-zh').textContent,rows:rows.length,text:P.textContent,facts:[...P.querySelectorAll('.ro-zk .ro-zi')].map(e=>e.textContent),kfonts:[...P.querySelectorAll('.ro-zk *')].map(e=>parseFloat(getComputedStyle(e).fontSize)),kclip:[...P.querySelectorAll('.ro-zk .ro-zi')].filter(e=>!/^(Now|Last tool) /.test(e.textContent)).some(e=>e.scrollWidth>e.clientWidth+1),zkh:(()=>{const k=P.querySelector('.ro-zk');return k&&!k.hidden?k.getBoundingClientRect().height:0;})(),ph:b.height,zbh:P.querySelector('.ro-zb').getBoundingClientRect().height,narrow:[...P.querySelectorAll('.ro-zk .ro-zi')].filter(e=>/^(Model|Now|Last tool|Usage) /.test(e.textContent)).filter(e=>e.getBoundingClientRect().width<P.querySelector('.ro-zk').clientWidth*0.9).map(e=>e.textContent.slice(0,12)),marks:P.querySelectorAll('.ro-zk *:not(.ro-zi):not(.ro-zy):not(.ro-zv)').length,kin:(()=>{const k=P.querySelector('.ro-zk');if(!k||k.hidden)return true;const q=k.getBoundingClientRect();return q.bottom<=b.bottom&&q.top>=b.top&&q.right<=b.right+0.5;})(),
           lastVisible:rows.length?(()=>{const l=rows[rows.length-1].getBoundingClientRect();return l.bottom<=b.bottom&&l.top>=b.top;})():false,
           tags:P.querySelectorAll('a,img,script').length,under:document.elementFromPoint(${p.x},${p.y})&&document.elementFromPoint(${p.x},${p.y}).closest('.ro-zoom')?1:0};})()`);
       assert.ok(z.w >= 380 && z.w <= 480, i + ': 380-480 px wide: ' + z.w);
@@ -169,11 +186,31 @@ module.exports = async (ctx) => {
       assert.strictEqual(z.desc, 'roZoom', 'its plate is described by it');
       assert.strictEqual(z.blur, 'none', 'FR-182: no blur');
       assert.ok(z.rows >= 1 && z.lastVisible, 'the newest line in view');
+      /* spec 097 FR-312..FR-314: the facts in the flat office's words, readable, inside the panel, nothing but text */
+      assert.ok(z.facts.some((f) => /^Model /.test(f)), i + ': the zoom names the model: ' + JSON.stringify(z.facts));
+      assert.ok(z.facts.every((f) => /^(Model|Now|Last tool|Usage|Cost|Context|On this task|Last activity) /.test(f)), i + ': only the flat office\'s labels: ' + JSON.stringify(z.facts));
+      assert.ok(z.kfonts.length && z.kfonts.every((f) => f >= 10.5), i + ': the facts at least 10.5 px');
+      assert.ok(z.kin && !z.kclip, i + ': the facts inside the panel, no clipped item: ' + JSON.stringify(z.facts));
       assert.strictEqual(z.tags, 0, 'text only');
       assert.strictEqual(z.under, 0, 'it does not cover the pointer\'s screen');
-      for (const bad of ['ghp_', 'A1b2C3d4', 'alice', 'evil.example']) assert.ok(!z.text.includes(bad), `the zoom shows "${bad}"`);
+      for (const bad of BAD) assert.ok(!z.text.includes(bad), `the zoom shows "${bad}": ${JSON.stringify(z.facts)} ${z.head}`);
+      /* review of PR 1272 (7): the facts are text (innerHTML would make elements), Model, Now, Last tool and Usage take a whole line (FR-313), and the panel is as tall as its head,
+         its facts and the least number of lines (FR-315: height includes the facts) */
+      assert.strictEqual(z.marks, 0, i + ': a fact is text, no element inside the value: ' + JSON.stringify(z.facts));
+      assert.deepStrictEqual(z.narrow, [], i + ': Model, Now, Last tool and Usage have a whole line: ' + JSON.stringify(z.facts));
+      assert.ok(z.zbh >= 4 * 17 - 0.5, i + ': the lines area keeps the 4 lines least, under the facts: ' + z.zbh + ' of ' + z.ph + ' (facts ' + z.zkh + ')');
+      if (i === victim) {
+        const lt = z.facts.find((f) => /^Last tool /.test(f));
+        assert.ok(lt, 'the thinking victim names its Last tool: ' + JSON.stringify(z.facts));
+        assert.ok(lt.startsWith('Last tool Reading /tmp/[redacted] '), 'the split token is masked in the zoom as on the screen: ' + lt);
+        assert.ok(lt.includes('<img src=x onerror=window.__pwned=1>') && lt.includes('~/x'), 'markup stays text, the home folder is ~: ' + lt);
+        seen.victim = true;
+      }
+      if (z.facts.some((f) => /^Last tool /.test(f))) seen.lastTool++;
       placed[z.side] = (placed[z.side] || 0) + 1;
     }
+    assert.strictEqual(await js(`!!window.__pwned`), false, 'nothing ran from a fact');
+    assert.ok(seen.victim && seen.lastTool >= 1, 'the zoom of the hostile desk was read: ' + JSON.stringify(seen));
     console.log('[097-screens] zoom sides', w, h, JSON.stringify(placed));
     // the picture: the zoom of a desk in the middle
     const mid = deskIds[Math.floor(deskIds.length / 2)];
@@ -385,6 +422,59 @@ module.exports = async (ctx) => {
     assert.strictEqual(await js(`document.querySelector('#stage .ro').dataset.big`), '1', 'big screens with 3 agents');
     for (const s of big) { assert.ok(!s.small, 'not small'); assert.ok(s.lines >= 8, `SC-003: at least 8 lines: ${JSON.stringify(s)}`); assert.ok(s.font >= 11, 'at 11 px or more'); assert.strictEqual(s.font, s.h - 6 > 200 ? 13 : 11, 'FR-020: 13 px over 200 px tall: ' + JSON.stringify(s)); }
     await H.shot(path.join(OUT, `097-real-big-${w}x${h}.png`), { prep: 'calm' });
+  }
+
+  mark('facts change');
+  /* spec 097 FR-315 (review of PR 1272, 7): a fact that comes while the zoom is open changes its height, and the zoom is placed again: the panel grows by the new line and
+     its facts stay inside it. The one working desk has a tool fact; its turn ends (a `user` event) and a new tool starts, under the pointer. */
+  {
+    await loadReal(1440, 900, { sim: '3' });
+    await js(INSTALL);
+    ctx.win.show(); ctx.win.focus(); wc().focus();
+    await must(`document.hasFocus()`, 'the window active', 8000);
+    const ids = await js(`window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks).filter(d=>d.state==='working').map(d=>d.id)`);
+    const ZS = `(()=>{const P=document.getElementById('roZoom');if(!P)return null;const b=P.getBoundingClientRect(),k=P.querySelector('.ro-zk').getBoundingClientRect();return {h:b.height,facts:[...P.querySelectorAll('.ro-zk .ro-zi')].map(e=>e.textContent),kin:k.bottom<=b.bottom&&k.top>=b.top,zb:P.querySelector('.ro-zb').getBoundingClientRect().height};})()`;
+    await moveTo(1, 1);
+    const id = ids[0];
+    const pt = await js(`(()=>{const b=document.querySelector('#stage .ro-screen[data-for="'+CSS.escape(${jsLiteral(id)})+'"]').getBoundingClientRect();
+      for(const fy of [.33,.2,.5,.65,.8,.12])for(const fx of [.5,.3,.7,.15,.85]){const x=b.left+b.width*fx,y=b.top+b.height*fy,e=document.elementFromPoint(x,y);if(e&&!e.closest('.ro-slip,.ro-lplate,.ro-chip,.ro-sign'))return {x,y};}return null;})()`);
+    assert.ok(pt, 'a point of the working desk\'s screen that nothing covers');
+    await hover(id, pt);
+    const TOOL = `(()=>{const P=document.getElementById('roZoom');return !!P&&[...P.querySelectorAll('.ro-zk .ro-zi')].some(e=>/^(Now|Last tool) /.test(e.textContent));})()`;
+    const z0 = await js(ZS);
+    assert.ok(z0.facts.some((f) => /^(Now|Last tool) /.test(f)), 'the working desk has a tool fact to start from: ' + JSON.stringify(z0));
+    /* the turn ends: the tool fact goes, its line goes with it, and the panel is placed again, shorter */
+    await emit({ type: 'user', sessionId: id });
+    await must('!(' + TOOL + ")&&!!document.getElementById('roZoom')", 'the tool fact gone from the open zoom', 15000);
+    await js(`new Promise(r=>setTimeout(r,250))`); // the placement follows the fill in the same call; a bound on a negative
+    const z1 = await js(ZS);
+    assert.ok(z1.h <= z0.h - 16, 'FR-315: the panel is shorter by the fact line that went (it is placed again): ' + z0.h + ' to ' + z1.h + ' ' + JSON.stringify(z1.facts));
+    /* a tool starts under the pointer: the fact comes and the panel grows by its line */
+    await emit({ type: 'toolCall', sessionId: id, callId: 'drv-f', tool: 'read_file', phase: 'start', args: { path: 'src/facts/one.ts' } });
+    await must(`(()=>{const P=document.getElementById('roZoom');return !!P&&[...P.querySelectorAll('.ro-zk .ro-zi')].some(e=>/^Now /.test(e.textContent));})()`, 'the Now fact in the open zoom', 15000);
+    await js(`new Promise(r=>setTimeout(r,250))`);
+    const z2 = await js(ZS);
+    assert.ok(z2.h >= z1.h + 16, 'FR-315: the panel grew by the new fact line: ' + z1.h + ' to ' + z2.h);
+    assert.ok(z1.kin && z2.kin && z2.zb >= 4 * 17 - 0.5, 'the facts inside the panel and the 4 lines kept: ' + JSON.stringify(z2));
+    await moveTo(1, 1);
+    await must(`!document.getElementById('roZoom')`, 'the zoom closed');
+  }
+
+  mark('no redact');
+  /* review of PR 1272 (4, 7): without the redact module the zoom fails closed, tidily: no fact, not even a label with nothing after it, and the facts block is hidden */
+  {
+    await loadReal(1440, 900, { sim: '3', noredact: '1' });
+    await js(INSTALL);
+    ctx.win.show(); ctx.win.focus(); wc().focus();
+    await must(`document.hasFocus()`, 'the window active', 8000);
+    const ids = await js(`window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks).filter(d=>d.state!=='asleep').map(d=>d.id)`);
+    await moveTo(1, 1);
+    const pt = await js(`(()=>{const b=document.querySelector('#stage .ro-screen[data-for="'+CSS.escape(${jsLiteral(ids[0])})+'"]').getBoundingClientRect();return {x:b.left+b.width/2,y:b.top+b.height/3};})()`);
+    await hover(ids[0], pt);
+    const nz = await js(`(()=>{const P=document.getElementById('roZoom');const k=P.querySelector('.ro-zk');return {items:k.querySelectorAll('.ro-zi').length,hidden:k.hidden,empty:[...k.querySelectorAll('.ro-zv')].filter(e=>!e.textContent.trim()).length,text:P.textContent};})()`);
+    assert.deepStrictEqual([nz.items, nz.hidden, nz.empty], [0, true, 0], 'no redact: no fact, no empty label, the block hidden: ' + JSON.stringify(nz));
+    await moveTo(1, 1);
+    await must(`!document.getElementById('roZoom')`, 'the zoom closed');
   }
 
   console.log('[097-screens] OK');

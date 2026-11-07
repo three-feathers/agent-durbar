@@ -88,3 +88,10 @@ specs/008-packaging-and-release/
 - Reuse: `redact`/`cut` (spec 012) rather than any new masking; `previousRelease` keeps `RELEASE_TAG_RE`, which already leaves test tags out.
 - Tests in `scripts/test-changelog.js` on throwaway repositories (one `git fast-import` for the 102-commit cap case) and the static workflow checks; mutations listed in FR-124.
 - Docs: `docs/collaboration.md` (*Cutting a test build*), `changelog.d/README.md` (test builds have no fragments to fold), README *Development* line, a fragment.
+
+## 2026-11-07: the Build cost report (T131, T132, FR-181)
+
+- Plain Node scripts, built-ins only (`http`, `fs`, `os`, `path`, `zlib`), no dependency, no spawn. `usage-lib.js` holds every rule on what may be kept (an allowlist of three attributes, value and name checks); `usage-receiver.js` is the loopback server and the atomic file write; `usage-day.js` reads the files, validates them again (same validator) and prints the table.
+- Reuse: no existing usage code fits (spec 011 shows the app's own credits; this is the build team's spend, from Claude Code's telemetry); `scripts/test-suites.txt` and `run-tests.js` for the suite; the changelog fragment and docs-sync rules for docs.
+- One file per machine label, so machines never write the same file; the report adds files. Delta temporality only.
+- Docs: `docs/build-cost.md`, README, `docs/development.md`, `docs/collaboration.md`, `changelog.d/README.md`.
