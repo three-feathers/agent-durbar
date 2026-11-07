@@ -48,6 +48,14 @@
       ],
       "shippable": false,
       "pack": "src/renderer/realoffice/worlds/loft"
+    },
+    "retro": {
+      "name": "Retro arcade",
+      "crews": [
+        "retro"
+      ],
+      "shippable": false,
+      "pack": "src/renderer/realoffice/worlds/retro"
     }
   },
   "moments": [
@@ -65,7 +73,8 @@
       "worlds": {
         "photo": "designed",
         "cave": "designed",
-        "loft": "designed"
+        "loft": "designed",
+        "retro": "built"
       },
       "nonNegotiables": "TFMKPC"
     },
@@ -83,7 +92,8 @@
       "worlds": {
         "photo": "designed",
         "cave": "designed",
-        "loft": "designed"
+        "loft": "designed",
+        "retro": "built"
       },
       "nonNegotiables": "TFMKC"
     },
@@ -101,7 +111,8 @@
       "worlds": {
         "photo": "designed",
         "cave": "designed",
-        "loft": "designed"
+        "loft": "designed",
+        "retro": "built"
       },
       "nonNegotiables": "TAMKC"
     },
@@ -119,7 +130,8 @@
       "worlds": {
         "photo": "designed",
         "cave": "designed",
-        "loft": "designed"
+        "loft": "designed",
+        "retro": "built"
       },
       "nonNegotiables": "TFMKCR"
     },
@@ -136,7 +148,8 @@
       "worlds": {
         "photo": "designed",
         "cave": "designed",
-        "loft": "designed"
+        "loft": "designed",
+        "retro": "built"
       },
       "nonNegotiables": "MCT"
     },
@@ -152,7 +165,8 @@
       "worlds": {
         "photo": "designed",
         "cave": "designed",
-        "loft": "designed"
+        "loft": "designed",
+        "retro": "built"
       },
       "nonNegotiables": "RTKM"
     },
@@ -170,7 +184,8 @@
       "worlds": {
         "photo": "built",
         "cave": "built",
-        "loft": "missing"
+        "loft": "missing",
+        "retro": "built"
       },
       "nonNegotiables": "FMK"
     },
@@ -187,7 +202,8 @@
       "worlds": {
         "photo": "designed",
         "cave": "designed",
-        "loft": "missing"
+        "loft": "missing",
+        "retro": "built"
       },
       "nonNegotiables": "M"
     },
@@ -203,7 +219,8 @@
       "worlds": {
         "photo": "built",
         "cave": "built",
-        "loft": "missing"
+        "loft": "missing",
+        "retro": "built"
       },
       "nonNegotiables": "TK"
     },
@@ -220,7 +237,8 @@
       "worlds": {
         "photo": "built",
         "cave": "built",
-        "loft": "missing"
+        "loft": "missing",
+        "retro": "fallback-flat"
       },
       "nonNegotiables": "TKS"
     },
@@ -236,7 +254,8 @@
       "worlds": {
         "photo": "designed",
         "cave": "designed",
-        "loft": "designed"
+        "loft": "designed",
+        "retro": "fallback-flat"
       },
       "nonNegotiables": "TKMCF"
     },
@@ -252,7 +271,8 @@
       "worlds": {
         "photo": "designed",
         "cave": "designed",
-        "loft": "designed"
+        "loft": "designed",
+        "retro": "built"
       },
       "nonNegotiables": "MK"
     },
@@ -268,7 +288,8 @@
       "worlds": {
         "photo": "designed",
         "cave": "designed",
-        "loft": "designed"
+        "loft": "designed",
+        "retro": "fallback-flat"
       },
       "nonNegotiables": "TKC"
     },
@@ -286,7 +307,8 @@
       "worlds": {
         "photo": "designed",
         "cave": "designed",
-        "loft": "designed"
+        "loft": "designed",
+        "retro": "designed"
       },
       "nonNegotiables": "TFKM"
     },
@@ -302,7 +324,8 @@
       "worlds": {
         "photo": "designed",
         "cave": "designed",
-        "loft": "designed"
+        "loft": "designed",
+        "retro": "designed"
       },
       "nonNegotiables": "TK"
     },
@@ -318,7 +341,8 @@
       "worlds": {
         "photo": "designed",
         "cave": "designed",
-        "loft": "missing"
+        "loft": "missing",
+        "retro": "built"
       },
       "nonNegotiables": "KM"
     },
@@ -335,7 +359,8 @@
       "worlds": {
         "photo": "built",
         "cave": "built",
-        "loft": "missing"
+        "loft": "missing",
+        "retro": "built"
       },
       "nonNegotiables": "AKTS"
     },
@@ -352,7 +377,8 @@
       "worlds": {
         "photo": "designed",
         "cave": "designed",
-        "loft": "designed"
+        "loft": "designed",
+        "retro": "fallback-flat"
       },
       "nonNegotiables": "MK"
     },
@@ -371,7 +397,8 @@
       "worlds": {
         "photo": "designed",
         "cave": "designed",
-        "loft": "designed"
+        "loft": "designed",
+        "retro": "fallback-flat"
       },
       "nonNegotiables": "TKF"
     },
@@ -389,7 +416,8 @@
       "worlds": {
         "photo": "designed",
         "cave": "designed",
-        "loft": "designed"
+        "loft": "designed",
+        "retro": "fallback-flat"
       },
       "nonNegotiables": "TKSC"
     },
@@ -407,7 +435,8 @@
       "worlds": {
         "photo": "designed",
         "cave": "designed",
-        "loft": "missing"
+        "loft": "missing",
+        "retro": "built"
       },
       "nonNegotiables": "ATSK"
     },
@@ -425,7 +454,8 @@
       "worlds": {
         "photo": "designed",
         "cave": "designed",
-        "loft": "designed"
+        "loft": "designed",
+        "retro": "missing"
       },
       "nonNegotiables": "ASKTC"
     },
@@ -443,7 +473,8 @@
       "worlds": {
         "photo": "designed",
         "cave": "designed",
-        "loft": "designed"
+        "loft": "designed",
+        "retro": "missing"
       },
       "nonNegotiables": "AKT"
     },
@@ -461,7 +492,8 @@
       "worlds": {
         "photo": "designed",
         "cave": "designed",
-        "loft": "missing"
+        "loft": "missing",
+        "retro": "fallback-flat"
       },
       "nonNegotiables": "AKS"
     },
@@ -478,7 +510,8 @@
       "worlds": {
         "photo": "designed",
         "cave": "designed",
-        "loft": "designed"
+        "loft": "designed",
+        "retro": "designed"
       },
       "nonNegotiables": "AKT"
     },
@@ -496,7 +529,8 @@
       "worlds": {
         "photo": "designed",
         "cave": "designed",
-        "loft": "missing"
+        "loft": "missing",
+        "retro": "built"
       },
       "nonNegotiables": "TK"
     }
