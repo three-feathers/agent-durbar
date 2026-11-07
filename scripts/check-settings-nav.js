@@ -132,6 +132,13 @@ module.exports = async (ctx) => {
       await H.key('End'); await ok(`document.activeElement.dataset.i==='${n - 1}'`, `${tag}: End goes to the last entry`);
       await H.key('Down'); assert.strictEqual(await js(`document.activeElement.dataset.i`), String(n - 1), `${tag}: no wrap at the end`);
       await H.key('Home'); await ok(`document.activeElement.dataset.i==='0'`, `${tag}: Home goes to the first entry`);
+      // in the column Left and Right are not ours: the focus stays and the keys are not prevented
+      await js(`document.querySelector('#scrNav .scr-nav-b[data-i="1"]').focus()`);
+      assert.strictEqual(await prevented('ArrowRight'), false, `${tag}: column: ArrowRight is not prevented`);
+      assert.strictEqual(await prevented('ArrowLeft'), false, `${tag}: column: ArrowLeft is not prevented`);
+      await H.key('Right'); await H.key('Left');
+      assert.strictEqual(await js(`document.activeElement.dataset.i`), '1', `${tag}: column: Left and Right leave the focus on the entry`);
+      await js(`document.querySelector('#scrNav .scr-nav-b[data-i="0"]').focus()`);
       await H.key('Down'); await H.key('Down'); await H.key('Down');
       await H.key('Return');
       await ok(`(()=>{const h=[...document.querySelectorAll(${jsLiteral(HEADS)})][3];return document.activeElement===h})()`, `${tag}: Enter jumps to the section and focuses its heading`);
@@ -193,10 +200,12 @@ module.exports = async (ctx) => {
   await js(`document.querySelector('.scr-body>.scr-sec').remove()`); // the first section: every entry shifts by one
   await ok(`document.querySelectorAll('#scrNav .scr-nav-b').length===${jsLiteral(built0 - 1)}`, 'narrow: the list is rebuilt without the removed section');
   assert.deepStrictEqual(await js(`({inNav:!!document.activeElement.closest('#scrNav'),text:document.activeElement.textContent,tag:document.activeElement.tagName})`), { inNav: true, text: before, tag: 'BUTTON' }, 'narrow: the focus stays on the same entry when the list is rebuilt');
-  await js(`document.querySelector('#scrNav .scr-nav-b:last-child, #scrNav li:last-child .scr-nav-b').focus()`);
+  await js(`[...document.querySelectorAll('#scrNav .scr-nav-b')].pop().focus()`); // the LAST entry (every button is the only child of its li, so :last-child would match them all)
+  const lastText = await js(`document.activeElement.textContent`);
+  assert.strictEqual(await js(`document.activeElement.dataset.i`), String(built0 - 2), 'narrow: the last entry has the focus before its section goes');
   await js(`[...document.querySelectorAll('.scr-body>.scr-sec,.scr-body>.scr-adv')].slice(-1)[0].remove()`); // the last section, under the focus on the last entry
   await ok(`document.querySelectorAll('#scrNav .scr-nav-b').length===${jsLiteral(built0 - 2)}`, 'narrow: the list is rebuilt again');
-  assert.strictEqual(await js(`!!document.activeElement.closest('#scrNav')`), true, 'narrow: the focus moves to the nearest entry when its own is gone');
+  assert.deepStrictEqual(await js(`({i:document.activeElement.dataset.i,inNav:!!document.activeElement.closest('#scrNav'),text:document.activeElement.textContent})`).then((r) => ({ i: r.i, inNav: r.inNav, changed: r.text !== lastText })), { i: String(built0 - 3), inNav: true, changed: true }, 'narrow: its entry is gone, so the focus moves to the new last entry');
   // fewer than two sections: no list at all (one entry is no navigation)
   await js(`[...document.querySelectorAll('.scr-body>.scr-sec,.scr-body>.scr-adv')].slice(1).forEach(e=>e.remove())`);
   await ok(`document.getElementById('scrNav').hidden===true`, 'narrow: with fewer than two sections the list is hidden');
