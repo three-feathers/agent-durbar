@@ -30,11 +30,13 @@ export type DescriptionResult = { ok: true; text: string } | { ok: false; reason
 const CONTROL_RE = /[\p{Cc}\p{Zl}\p{Zp}]/gu;
 // invisible format characters (zero width, bidi marks and overrides, soft hyphen, BOM) except the joiner that emoji sequences need
 const FORMAT_RE = /[^\P{Cf}\u200D]/gu;
-// every < and > goes, and so does anything that could pass for one (a general rule, not a list): after NFKC, every opening/closing bracket,
-// initial/final quote, math symbol (≪ ≮ ⋘), modifier symbol/letter (˂ ˃), plus the arrow, geometric-shape, misc-symbol-and-arrow and
-// Canadian Syllabics (ᐸ ᐳ) blocks. ASCII ()[]{} and the plain curly quotes stay: they are not angle-shaped. A marker needs three
-// angles and no removal can build a new one (a repeated search-and-remove loop is quadratic on nested input).
-export const ANGLE_RE = /(?![()[\]{}\u2018\u2019\u201C\u201D])[<>\p{Ps}\p{Pe}\p{Pi}\p{Pf}\p{Sm}\p{Sk}\p{Lm}\u1400-\u167F\u2190-\u21FF\u25A0-\u25FF\u2B00-\u2BFF\u{1F800}-\u{1F8FF}]/gu;
+// every < and > goes, and so does anything non-ASCII that could pass for one (a general rule, not a list): after NFKC, every opening/closing
+// bracket, initial/final quote, math symbol (≪ ≮ ⋘) and modifier symbol (˂ ˃), the Spacing Modifier Letters block, plus the arrow,
+// geometric-shape, misc-symbol-and-arrow and Canadian Syllabics (ᐸ ᐳ) blocks. All other ASCII stays (C++, a=b|c~d, ^), as do ordinary
+// letters (CJK, kana, the prolonged sound mark ー, 々), ASCII ()[]{}, the plain curly quotes and the okina/apostrophe letters U+02BB, U+02BC
+// (Hawaiʻi: letters in Hawaiian, Samoan and Tongan, not angle-shaped). A marker needs three angles and no removal can build a new one
+// (a repeated search-and-remove loop is quadratic on nested input). Backticks are removed separately.
+export const ANGLE_RE = /[<>]|(?=[^\x00-\x7F])(?![\u02BB\u02BC\u2018\u2019\u201C\u201D])[\p{Ps}\p{Pe}\p{Pi}\p{Pf}\p{Sm}\p{Sk}\u02B0-\u02FF\u1400-\u167F\u2190-\u21FF\u25A0-\u25FF\u2B00-\u2BFF\u{1F800}-\u{1F8FF}]/gu;
 
 /** Cut to `max` code points, and not in the middle of a joined emoji (no trailing joiner or variation selector). */
 function cutCodePoints(s: string, max: number): string {

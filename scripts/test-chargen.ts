@@ -67,8 +67,12 @@ for (const ch of ['\uFF1C', '\uFE64', '\u2039', '\u00AB', '\u3008', '\u27E8', '\
   const t = cleanDescription('a nurse <\u0338<\u0338<\u0338LOOK');
   assert.ok(t.ok && !/[<>\u226E\u226F]/.test(t.text), 'a < plus combining slash (composes to U+226E) is removed');
   // what may survive: letters (not modifier letters), numbers, marks, spaces, connector/dash/other punctuation, currency, other symbols outside the arrow and shape blocks
-  const MAY_SURVIVE = /^[\p{L}\p{N}\p{M}\p{Zs}\p{Pc}\p{Pd}\p{Po}\p{Sc}\p{So}\p{Cn}\p{Co}()[\]{}\u2018\u2019\u201C\u201D\u200D]$/u;
-  const BANNED_BLOCKS = /[\p{Lm}\u1400-\u167F\u2190-\u21FF\u25A0-\u25FF\u2B00-\u2BFF\u{1F800}-\u{1F8FF}]/u;
+  const MAY_SURVIVE = /^[\x00-\x7F\p{L}\p{N}\p{M}\p{Zs}\p{Pc}\p{Pd}\p{Po}\p{Sc}\p{So}\p{Cn}\p{Co}()[\]{}\u2018\u2019\u201C\u201D\u200D]$/u;
+  const BANNED_BLOCKS = /[\p{Ps}\p{Pe}\p{Pi}\p{Pf}\p{Sm}\p{Sk}\u02B0-\u02FF\u1400-\u167F\u2190-\u21FF\u25A0-\u25FF\u2B00-\u2BFF\u{1F800}-\u{1F8FF}]/u;
+  // real text survives exactly (the rule must not over-strip): ASCII symbols, kana, CJK, okina, Arabic, Hindi, emoji
+  for (const txt of ['C++ engineer', 'a=b|c~d', 'x^2 and 5 - 3 * 2 / 1', 'コーヒー好き', '佐々木 々', 'Hawai\u02BBi native', 'o\u2019clock \u201Cquoted\u201D (note) [x] {y}', 'مهندسة برمجيات', 'डेवलपर महिला', 'a nurse \u{1F469}\u200D\u2695\uFE0F smiling \u{1F600}', 'Stra\u00DFe caf\u00E9']) {
+    assert.strictEqual(ok(cleanDescription(txt)), txt, 'real text survives exactly: ' + txt);
+  }
   const CHUNK = 10; // small: NFKC can expand one code point to 18, and the 300 cap must not hide a survivor
   let bad = '';
   let block: string[] = [];
@@ -79,6 +83,7 @@ for (const ch of ['\uFF1C', '\uFE64', '\u2039', '\u00AB', '\u3008', '\u27E8', '\
     for (const ch of Array.from(r.text)) {
       if (ch === 'Q' || ch === ' ') continue;
       if (/[<>]/.test(ch)) bad = 'ASCII angle survives';
+      else if (ch.codePointAt(0)! < 128 || /[\u02BB\u02BC\u2018\u2019\u201C\u201D]/.test(ch)) continue;
       else if (BANNED_BLOCKS.test(ch)) bad = 'banned block survives: U+' + ch.codePointAt(0)?.toString(16);
       else if (!MAY_SURVIVE.test(ch)) bad = 'not an allowed class, survives: U+' + ch.codePointAt(0)?.toString(16);
       if (bad) break;
