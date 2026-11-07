@@ -773,6 +773,14 @@ Agent decisions stand until the owner changes them.
 
 ## Changes
 
+### 2026-11-07: RA7: the arcade's moments, looked at and booked (FR-264, T222, T223; issue #1268)
+
+- **Light:** T222 said "both lights". The owner withdrew the light choice on 2026-11-03 (night only; the entry of that date below, booked in #1266), so "both lights" is the one night look. No day set is drawn or driven.
+- **What the driver found.** `shots-097-moments` now runs for `retro` (`MOMENTS_WORLDS=retro`; its flag is the simulator's page address, as the cave's). The arcade differs from the other worlds in four ways the driver now states instead of skipping: the person who sleeps is on the `sit` frame (2026-11-03), not `rest`; a slip is one line, a pill, never the full slip, so the review block checks the pill and that it opens the inbox, which holds the words and buttons; the ticket at a place is a dark card, so its own colour is its edge and words, not its paper (one per place, all different, 4.5:1); and the first-run card, like Photo's and the cave's, hides the top bar's counts, which `world.css` now does for `retro`.
+- **Words and buttons are the flat ones** (FR-013): the first-run card word for word with its three buttons in order; the empty floor's sentence; Answer in chat / Show in chat; the coffee plate and post-it words; the ride's announcement. Reduced motion (no ride, no ring) and forced colours (tickets and the sleeper's plate stay readable) run as for the other worlds.
+- **T223:** `docs/experience/world-moments.json` gains the world `retro` (`shippable: false`) and one cell for each of the 26 moments. A cell is `built` only where a picture of it in the arcade was looked at in the PR; the shared dark-token cells are `fallback-flat`; a cell nobody drew or looked at is `designed` or `missing`, never assumed.
+- **`[KNOWN GAP]`** the first-run card stands on the plain dark page, not in a hall with dark cabinets (`welcome-night` is not drawn, T206); the elicitation bubble is the app's dark card, not a pixel bubble; the lift and the ride are the plain panel. Each is a look the owner has not seen: PR question, not built here. `test:surfaces` is named by T223 but is not a script on `main`; `test:worldmatrix`, `test:worldpack` and `test:featureinventory` read the registry and are run instead.
+
 ### 2026-11-04: the arcade lobby on whole pixel scales too (FR-255, owner decision, issue #1104)
 
 *Seen* (Mac session, 2026-11-04, macOS 26.0, device scale 2, 15 simulated agents): the lobby's fixtures were drawn at 4.709x (1440x900) and 3.79x (1280x800), and its visitors at 2.64x and 2.13x. They were pixelated with no smoothing, but with uneven pixel widths. *Owner decision* (Vikram, Telegram DM, 2026-11-04 06:06 UTC, option A): snap the lobby's fixtures and visitors to whole device-pixel scales too, as FR-255 does for desks and people; the lobby may come out slightly smaller or larger.
