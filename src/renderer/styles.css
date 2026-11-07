@@ -2182,6 +2182,7 @@ h2,h3,h4{text-wrap:balance}
 /* spec 052 FR-191..FR-196 (T197): Your door, the Needs you panel. Fixed over the room: no layout space, no backdrop, below dialogs (60). Tokens only (the size ratchet counts every literal). */
 .door-panel{position:fixed;z-index:35;display:flex;flex-direction:column;gap:var(--row-pad);box-sizing:border-box;padding:var(--row-pad);border:1px solid var(--line);border-radius:var(--r-lg);background:var(--surface);color:var(--ink);box-shadow:var(--shadow-pop)}
 body.panel-open .door-panel,#screen:not([hidden]) ~ .door-panel{display:none}
+.door-panel .inbox-row .ib-ans{flex-wrap:wrap}.door-panel .inbox-row .ib-ans>.btn{white-space:normal;text-align:left}.door-panel .ib-note{font-size:var(--t3-size);line-height:var(--t3-lh);color:var(--ink-2)} /* spec 052 FR-199: option buttons and a limit row wrap inside the panel; the row's own lines */
 .door-head{display:flex;align-items:center;gap:var(--row-pad)}
 .door-head h2{margin:0;flex:1 1 auto;min-width:0;font-size:var(--t2-size);line-height:var(--t2-lh);font-weight:var(--t2-weight)}
 .door-head .btn{flex:none;min-height:28px;min-width:28px}
