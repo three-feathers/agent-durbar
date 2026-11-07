@@ -2193,7 +2193,8 @@ body.has-csearch.cs-demo .cs-box{visibility:hidden} /* the demo office: kept in 
 .topbar.tb-search .cs-box input{display:none}
 .topbar.tb-search .cs-box.open input{display:block;position:absolute;right:0;top:50%;transform:translateY(-50%);width:260px;z-index:40;box-shadow:var(--shadow-pop)} /* over the bar's own controls, never over the banner below (review of PR 1240, Q3) */
 .topbar.tb-search .cs-box.has-q:not(.open) .cs-mag{box-shadow:inset 0 -2px 0 var(--focus)} /* a query is active: the magnifier says so (and its accessible name holds the query) */
-.cs-hint{position:absolute;right:0;top:calc(100% + 6px);z-index:41;white-space:nowrap;font-size:12px;line-height:18px;padding:4px 9px;border:1px solid var(--line);border-radius:var(--r-md);background:var(--raised);color:var(--ink-2);box-shadow:var(--shadow-pop)}
+.cs-hint{position:absolute;right:calc(100% + 6px);top:50%;transform:translateY(-50%);z-index:41;max-width:360px;width:max-content;white-space:normal;font-size:12px;line-height:16px;padding:3px 9px;border:1px solid var(--line);border-radius:var(--r-md);background:var(--raised);color:var(--ink-2);box-shadow:var(--shadow-pop)} /* in the bar, left of the field, never over the banner below (review of PR 1240) */
+.topbar.tb-search .cs-box.open .cs-hint{right:calc(260px + 6px)} /* left of the opened field, which lies over the bar */
 .cs-hint[hidden]{display:none}
 
 /* FR-004, FR-010, FR-052: the results view in #list, in the List's own grid; rows never overlap, an excerpt is at most two lines */

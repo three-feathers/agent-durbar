@@ -95,6 +95,13 @@ module.exports = async (ctx) => {
     }
     await type('re');
     await ok(`(document.getElementById('convSearchHint').textContent||'')==='Type at least 3 characters'&&!document.getElementById('convSearchHint').hidden`, `${w}: "Type at least 3 characters"`);
+    {
+      // review of PR 1240: the hint stays in the bar, clear of the banner below, also with a long banner text
+      const hint = await js(`(()=>{const st=document.getElementById('restoreStrip'),t=st&&st.querySelector('.ns-t'),was=t&&t.textContent;if(t)t.textContent='Five folders (alpha-service, beta-gateway, gamma-ledger, delta-reports, epsilon-tools) let agents change files without asking.';
+        const e=document.getElementById('convSearchHint').getBoundingClientRect(),b=document.querySelector('.topbar').getBoundingClientRect(),r=st&&st.getClientRects().length?st.getBoundingClientRect():null;
+        const out={banner:!!r,inBar:e.top>=b.top-0.5&&e.bottom<=b.bottom+0.5&&e.left>=0,over:!!r&&e.left<r.right&&r.left<e.right&&e.top<r.bottom&&r.top<e.bottom,font:parseFloat(getComputedStyle(document.getElementById('convSearchHint')).fontSize)};if(t)t.textContent=was;return out;})()`);
+      assert.ok(hint.banner && hint.inBar && !hint.over && hint.font >= 10.5, `${w}: the hint stays in the bar, clear of the banner: ${JSON.stringify(hint)}`);
+    }
     assert.ok(!(await js(`document.body.classList.contains('list-mode')`)), `${w}: a short query keeps the Office view`);
 
     // ---- US1: a query switches to the List view; groups, marks, the final line ----
