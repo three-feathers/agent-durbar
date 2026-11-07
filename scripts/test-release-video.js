@@ -114,7 +114,7 @@ for (const [sid, sc] of Object.entries(RV.SCENES)) {
   assert.deepStrictEqual(caps('railwidth').filter((c) => /^\{step\}/.test(c)).map((c) => c.replace(/^\{step\}\. /, '')), ['The rail is 220 px wide', 'Drag it wider', 'Or narrower', 'Double-click: back to 220 px'], 'railwidth: the captions in the order of the actions');
   assert.ok(caps('signin').length === 2 && /needs you/.test(caps('signin')[0]) && /starts the sign-in/.test(caps('signin')[1]), 'signin: the line first, then the click');
   assert.ok(/Open source/.test(caps('notesource')[1]) && /at that message/.test(caps('notesource')[2]), 'notesource: the note, its menu, the opened chat');
-  const src4 = fs.readFileSync(path.join(__dirname, 'release-video.js'), 'utf8');
+  const src4 = fs.readFileSync(path.join(__dirname, 'release-video.js'), 'utf8').replace(/\r\n/g, '\n');
   assert.ok(!/RV_SCENES \|\| DEFAULT/.test(src4) && /RV_SCENES is not set/.test(src4), 'the driver has no fixed fallback list either');
 }
 const checkSources = (M) => {
@@ -169,7 +169,7 @@ assert.ok(5240561 <= RV.GIF_MAX, 'the v0.1.12 GIF is under the cap');
 
 {
   // mutants of release-video.js: each must fail checkChoice with the assert it is aimed at (a mutant that fails for another reason does not count)
-  const src5 = fs.readFileSync(path.join(__dirname, 'release-video.js'), 'utf8');
+  const src5 = fs.readFileSync(path.join(__dirname, 'release-video.js'), 'utf8').replace(/\r\n/g, '\n');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rv-mut-'));
   const mutants = [
     ['refs ignored: the default is empty of release scenes', "const byRef = sceneIdsFor(bullets, scenes).filter((id) => !named.includes(id));", "const byRef = [];", /no scene shows this release|v0\.1\.12/],
@@ -275,7 +275,7 @@ else console.log('release-video: dist/shared/redact.js not built, real-redact ca
     ['release-v0.1.9-scene-02-refresh.png', 'release-v0.1.9-scene-02-refresh-zoom.png', 'release-v0.1.9-scene-02-refresh-zoom-2.png']);
   assert.deepStrictEqual(RV.stillNames('b', { n: '01', id: 'intro', still: 'f1.png' }).map((x) => x[0]), ['b-scene-01-intro.png'], 'a scene without a zoom');
   // every feature scene of the default clip zooms (the owner: "not followable" without)
-  const src3 = fs.readFileSync(path.join(__dirname, 'release-video.js'), 'utf8');
+  const src3 = fs.readFileSync(path.join(__dirname, 'release-video.js'), 'utf8').replace(/\r\n/g, '\n');
   for (const id of ['refresh', 'needsyou', 'mcpsettings', 'lounge', 'railwidth', 'signin', 'notesource']) {
     const body = src3.slice(src3.indexOf(`  ${id}: {`), src3.indexOf('\n  },', src3.indexOf(`  ${id}: {`)));
     assert.ok(/S\.zoomTo\(/.test(body), `${id} zooms onto what changed`);
@@ -330,7 +330,7 @@ assert.ok(g.join(' ').includes('scale=720:-2') && g.join(' ').includes('max_colo
 assert.deepStrictEqual(RV.gifTries().map((t) => t.width), [800, 720, 640, 640], 'tries 800, 720, 640 px, then fewer colours');
 assert.ok(RV.GIF_MAX === 5 * 1024 * 1024 && RV.MP4_MAX === 20 * 1024 * 1024);
 assert.ok(RV.lengthOk(38) && RV.lengthOk(25) && !RV.lengthOk(24.9) && !RV.lengthOk(76), 'the length bounds');
-const src = fs.readFileSync(path.join(__dirname, 'release-video.js'), 'utf8');
+const src = fs.readFileSync(path.join(__dirname, 'release-video.js'), 'utf8').replace(/\r\n/g, '\n');
 assert.ok(!/shell:\s*true/.test(src) && /shell: false/.test(src), 'ffmpeg runs without a shell');
 assert.ok(!/gh release|releases\/|--notes/.test(src.replace(/^\s*\*.*$/gm, '')), 'the script never touches a release');
 
@@ -359,7 +359,7 @@ assert.ok(!/gh release|releases\/|--notes/.test(src.replace(/^\s*\*.*$/gm, '')),
   assert.deepStrictEqual(RV.unexpectedEnvKeys(['__CF_USER_TEXT_ENCODING'], 'win32'), ['__CF_USER_TEXT_ENCODING'], 'nor macOS\'s on Windows');
   assert.deepStrictEqual(RV.unexpectedEnvKeys(['path', 'Path', 'PATH', 'SystemRoot'], 'win32'), [], 'names in any case');
   assert.ok(!Object.keys(RV.childEnv({ LOGONSERVER: 'x', USERDOMAIN: 'y', USERNAME: 'z' })).length, 'what we pass leaves them out (only libuv adds them on Windows)');
-  const src2 = fs.readFileSync(path.join(__dirname, 'release-video.js'), 'utf8');
+  const src2 = fs.readFileSync(path.join(__dirname, 'release-video.js'), 'utf8').replace(/\r\n/g, '\n');
   assert.ok(/timeout: FFMPEG_MS, killSignal: 'SIGKILL'/.test(src2), 'every ffmpeg call has a limit and a hard kill');
 }
 // killTree: the whole tree goes, not only the wrapper (xvfb-run on Linux)
@@ -385,7 +385,7 @@ const { killTree } = require('./ui-suite');
     };
     await run(RV);
     // mutant: the choice before the removal (the old order) must fail that assert
-    const srcM = fs.readFileSync(path.join(__dirname, 'release-video.js'), 'utf8');
+    const srcM = fs.readFileSync(path.join(__dirname, 'release-video.js'), 'utf8').replace(/\r\n/g, '\n');
     const line = srcM.split('\n').find((l) => l.startsWith('  if (a.scenes === null) a.scenes = (deps.chooseScenes'));
     const rmLine = '  for (const f of finals) fs.rmSync(f, { force: true });';
     assert.ok(line && srcM.includes(rmLine), 'the choice line and the removal are found');
@@ -481,7 +481,7 @@ const { killTree } = require('./ui-suite');
     const { killTree: kt } = require('./ui-suite');
     kt({ pid: 5 }, { platform: 'win32', run: (f, a) => calls.push([f, ...a]) });
     assert.deepStrictEqual(calls, [['taskkill', '/pid', '5', '/T', '/F']], 'Windows: the arguments');
-    const uisrc = fs.readFileSync(path.join(__dirname, 'ui-suite.js'), 'utf8');
+    const uisrc = fs.readFileSync(path.join(__dirname, 'ui-suite.js'), 'utf8').replace(/\r\n/g, '\n');
     assert.ok(/const releaseGuard = d\.killTree \? guardTree\(child\)/.test(uisrc) && /clearTimeout\(timer\);\s*releaseGuard\(\);/.test(uisrc), 'runOne guards a killTree run and releases when it closes');
   }
   console.log('release-video: tests passed');
