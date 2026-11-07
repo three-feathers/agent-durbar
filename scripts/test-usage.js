@@ -521,6 +521,13 @@ const withTimeout = (p, ms, msg) => Promise.race([p, new Promise((_, rej) => set
     assert.strictEqual(fin.err.trim(), 'usage-receiver: lock lost to pid 2147483646, exiting', 'loser: one stderr line names the new holder');
     assert.strictEqual(fs.readFileSync(path.join(dX, 'usage-linux.lock'), 'utf8').trim(), '2147483646', 'loser: the lock that is not ours is left alone');
 
+    // a lock holding text with a line break never reaches stderr: the holder shows as "unknown"
+    const dY = path.join(tmp, 'child-fake'); const c3 = await startChild(dY);
+    fs.writeFileSync(path.join(dY, 'usage-linux.lock'), '1\nusage-receiver: FAKE LINE\n');
+    assert.strictEqual((await post(c3.port, JSON.stringify(sample))).status, 503, 'sanitiser: the lock is lost');
+    const f3 = await withTimeout(c3.done, 5000, 'sanitiser: the receiver did not exit').catch((e) => { c3.child.kill('SIGKILL'); throw e; });
+    assert.strictEqual(f3.err.trim(), 'usage-receiver: lock lost to pid unknown, exiting', 'sanitiser: a holder that is not a plain number prints as unknown, one line only');
+
     if (process.platform === 'win32') {
       console.log('test-usage: SIGTERM check skipped on Windows (POSIX signals do not apply the same way; spec 008 FR-181 KNOWN GAP)');
     } else {
