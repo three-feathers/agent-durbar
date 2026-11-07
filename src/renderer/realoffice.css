@@ -67,6 +67,11 @@
 .ro-zr,.ro-zf{color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ro-zs{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:right}
 .ro-zf{grid-column:1/-1}
+.ro-zk{flex:none;display:grid;grid-template-columns:1fr 1fr;column-gap:12px;padding:2px 9px 6px;font-size:11px;line-height:17px;border-top:1px solid var(--line)}
+.ro-zk[hidden]{display:none}
+.ro-zi{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.ro-zw{grid-column:1/-1}
+.ro-zy{color:var(--muted)}
 .ro-zb{position:relative;flex:1;min-height:0;overflow:hidden;background:#0f1418}
 .ro-zl .ro-sl{flex:none} /* whole lines, the newest in view */
 .ro-zoom[data-state="error"] .ro-zb{background:#1d1111}.ro-zoom:is([data-state="waiting"],[data-state="limit"]) .ro-zb{background:#1b1610}

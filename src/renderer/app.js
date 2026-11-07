@@ -952,15 +952,22 @@ function grownLine(a){
 }
 /* spec 001 FR-047: the side of a wide grown desk: the last reply (when the main text is not already showing it) and the facts (the tool of
    this turn, usage, context, time). Shown only when the render pass gives the card two or three columns (data-gc); hidden in the probe. */
-function grownSideHTML(a){
-  if(a.parent)return '';
-  const rep=grownShowsReply(a)?'':replyExcerpt(a), r=liveShown(a), facts=[];
-  if(r&&r.tool)facts.push([r.kind==='tool'?'Now':'Last tool',r.tool]);
+/* the facts of a desk in the flat office's words (FR-047), shared by the grown desk's side and the Real office zoom (spec 097 FR-312): [[label, text]] */
+function deskFacts(a,withModel){
+  const facts=[], r=liveShown(a);
+  if(withModel&&a.live&&a.info){try{const m=modelLabel(a.info).text;if(m)facts.push(['Model',m]);}catch(e){}}
+  if(r&&r.tool)if(LIVE_MASK)facts.push([r.kind==='tool'?'Now':'Last tool',LIVE_MASK.home(r.tool)]); /* the readout's tool phrase is masked for secrets; the log lines also lose home paths (FR-314) */
   const u=usageLong(a);
   if(u){const p=u.split(' · ');if(p.length>2){facts.push(['Usage',p.slice(0,2).join(' · ')]);facts.push(['Cost',p.slice(2).join(' · ')]);}else facts.push(['Usage',u]);}
   try{const c=window.DurbarScreens&&window.DurbarScreens.ctxChip(a);if(c&&c.cls!=='unk')facts.push(['Context',c.text.replace(/^Context /,'')]);}catch(e){}
   const busy=a.busySince&&(a.state==='working'||a.state==='thinking')?ACT.agoLong(Date.now()-a.busySince):'', last=ACT.agoLong(sinceLast(a));
   if(busy)facts.push(['On this task',busy==='just now'?'just started':busy.replace(/ ago$/,'')]); else if(last)facts.push(['Last activity',last]);
+  return facts;
+}
+const realFacts=id=>{const a=byId(id);return a&&!a.parent?deskFacts(a,true).map(([k,v])=>[k,deskMask(v)]):[];}; /* the desk readout's own masker: home paths too (FR-314) */
+function grownSideHTML(a){
+  if(a.parent)return '';
+  const rep=grownShowsReply(a)?'':replyExcerpt(a), facts=deskFacts(a,false);
   return `<span class="gx"${rep?' data-rep="1"':''}>${rep?`<span class="gx-r"><span class="gx-h">Last reply</span><span class="gx-t">${esc(rep)}</span></span>`:''}<span class="gx-f">${facts.map(([k,v])=>`<span class="gx-l"><span class="gx-k">${esc(k)}</span> ${esc(v)}</span>`).join('')}</span></span>`;
 }
 const liveAttrs=a=>{if(a.parent)return '';const r=LIVE_SIDE?null:liveShown(a);return ` data-live="${esc(a.id)}"${r?` data-lk="${r.kind}"`:''}`;};
@@ -1765,7 +1772,7 @@ function renderReal(stage,floor,aw,ah,model,empty){
   }
   if(stage.dataset.d!=='real'){stage.dataset.d='real';stage.textContent='';}
   layoutKey='';GROW=0;setGrow(stage,0);spreadOffice(stage,false);stagePrev=null;
-  RO_LAST=window.DurbarRealOffice.render(stage,Object.assign(realModel(model),empty?{empty}:{}),{w:aw,h:ah},{live:liveOn(),still:REDUCED||!MOTION||STILL_HL,hold:roFrozen(),screenOf:realScreen,world:pp.world,set:pp.set,remember:rememberOn(), /* FR-071: Settings > Motion (still above) stops the people */
+  RO_LAST=window.DurbarRealOffice.render(stage,Object.assign(realModel(model),empty?{empty}:{}),{w:aw,h:ah},{live:liveOn(),still:REDUCED||!MOTION||STILL_HL,hold:roFrozen(),screenOf:realScreen,factsOf:realFacts,world:pp.world,set:pp.set,remember:rememberOn(), /* FR-071: Settings > Motion (still above) stops the people */
     rand:CREW&&(SIM||!rememberOn())?CREW.seededRand:Math.random,onArt:()=>scheduleRender()});
   stage.style.width=aw+'px';stage.style.height=RO_LAST.height+'px';
   stage.dataset.fit=RO_LAST.scroll?'scroll':'ok';floor.classList.toggle('scrolls',!!RO_LAST.scroll);

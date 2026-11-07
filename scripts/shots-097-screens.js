@@ -156,7 +156,7 @@ module.exports = async (ctx) => {
         return {w:b.width,h:b.height,side:P.dataset.side,inWin:b.left>=0&&b.top>=0&&b.right<=innerWidth&&b.bottom<=innerHeight,inFloor:b.left>=fl.left-0.5&&b.right<=fl.right+0.5&&b.top>=fl.top-0.5&&b.bottom<=fl.bottom+0.5,
           own:hit(own),needs:[...document.querySelectorAll('.ro-plate:is(.st-waiting,.st-limit),.ro-lplate.wait,.ro-chip.wait')].filter(hit).map(e=>e.textContent.slice(0,20)),
           font:rows.length?parseFloat(getComputedStyle(rows[0]).fontSize):0,fonts:[...P.querySelectorAll('.ro-zh *')].map(e=>parseFloat(getComputedStyle(e).fontSize)),role:P.getAttribute('role'),name:P.getAttribute('aria-label'),live:P.getAttribute('aria-live'),
-          blur:getComputedStyle(P).backdropFilter,desc:own.getAttribute('aria-describedby'),head:P.querySelector('.ro-zh').textContent,rows:rows.length,text:P.textContent,
+          blur:getComputedStyle(P).backdropFilter,desc:own.getAttribute('aria-describedby'),head:P.querySelector('.ro-zh').textContent,rows:rows.length,text:P.textContent,facts:[...P.querySelectorAll('.ro-zk .ro-zi')].map(e=>e.textContent),kfonts:[...P.querySelectorAll('.ro-zk *')].map(e=>parseFloat(getComputedStyle(e).fontSize)),kclip:[...P.querySelectorAll('.ro-zk .ro-zi')].filter(e=>!/^(Now|Last tool) /.test(e.textContent)).some(e=>e.scrollWidth>e.clientWidth+1),kin:(()=>{const k=P.querySelector('.ro-zk');if(!k||k.hidden)return true;const q=k.getBoundingClientRect();return q.bottom<=b.bottom&&q.top>=b.top&&q.right<=b.right+0.5;})(),
           lastVisible:rows.length?(()=>{const l=rows[rows.length-1].getBoundingClientRect();return l.bottom<=b.bottom&&l.top>=b.top;})():false,
           tags:P.querySelectorAll('a,img,script').length,under:document.elementFromPoint(${p.x},${p.y})&&document.elementFromPoint(${p.x},${p.y}).closest('.ro-zoom')?1:0};})()`);
       assert.ok(z.w >= 380 && z.w <= 480, i + ': 380-480 px wide: ' + z.w);
@@ -169,9 +169,14 @@ module.exports = async (ctx) => {
       assert.strictEqual(z.desc, 'roZoom', 'its plate is described by it');
       assert.strictEqual(z.blur, 'none', 'FR-182: no blur');
       assert.ok(z.rows >= 1 && z.lastVisible, 'the newest line in view');
+      /* spec 097 FR-312..FR-314: the facts in the flat office's words, readable, inside the panel, nothing but text */
+      assert.ok(z.facts.some((f) => /^Model /.test(f)), i + ': the zoom names the model: ' + JSON.stringify(z.facts));
+      assert.ok(z.facts.every((f) => /^(Model|Now|Last tool|Usage|Cost|Context|On this task|Last activity) /.test(f)), i + ': only the flat office\'s labels: ' + JSON.stringify(z.facts));
+      assert.ok(z.kfonts.length && z.kfonts.every((f) => f >= 10.5), i + ': the facts at least 10.5 px');
+      assert.ok(z.kin && !z.kclip, i + ': the facts inside the panel, no clipped item: ' + JSON.stringify(z.facts));
       assert.strictEqual(z.tags, 0, 'text only');
       assert.strictEqual(z.under, 0, 'it does not cover the pointer\'s screen');
-      for (const bad of ['ghp_', 'A1b2C3d4', 'alice', 'evil.example']) assert.ok(!z.text.includes(bad), `the zoom shows "${bad}"`);
+      for (const bad of ['ghp_', 'A1b2C3d4', 'alice', 'evil.example']) assert.ok(!z.text.includes(bad), `the zoom shows "${bad}": ${JSON.stringify(z.facts)} ${z.head}`);
       placed[z.side] = (placed[z.side] || 0) + 1;
     }
     console.log('[097-screens] zoom sides', w, h, JSON.stringify(placed));
