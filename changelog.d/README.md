@@ -64,7 +64,7 @@ Branch names must match the Spec Kit gate (lowercase letters, digits and hyphens
 4. **The release clip** (spec 008 FR-174, FR-175; a stable or pre-release tag, never a `-test.M` build), after `release.yml` has made the draft and before you publish. It never holds a release.
    Not added to older releases.
    1. Record, on a checkout of the tag (needs ffmpeg; about 2 minutes; no AI credits): `npm run release:video -- --version <tag> --out <dir>`.
-      Without `--scenes` the clip shows the scenes the release's fragments name (`Scene:` fields, and the scenes whose `refs` a bullet's spec and FR numbers match; spec 008 FR-181). If it says no scene shows the release, pick with `--scenes <ids>` (`--list`), and add a scene or a `refs` entry afterwards.
+      Without `--scenes` the clip shows the scenes the release's fragments name (`Scene:` fields, and the scenes whose `refs` a bullet's spec and FR numbers match; spec 008 FR-183). If it says no scene shows the release, pick with `--scenes <ids>` (`--list`), and add a scene or a `refs` entry afterwards.
    2. Look at the stills in `<dir>` (FR-176: simulator data only, no path, name, token or chat text; captions in the band, nothing broken).
    3. Upload to the draft: `gh release upload <tag> <dir>/release-<tag>.mp4 <dir>/release-<tag>.gif`.
    4. Add the image line at the very top of the draft's notes (the Highlights block is already in them, built from the fragments' `Highlight:` fields by `scripts/release-notes.js`):
