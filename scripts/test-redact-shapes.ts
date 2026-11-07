@@ -8,7 +8,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { finishEdit } from '../src/shared/edits';
 import { heldSamples, heldSurfaces, jwtFuzzTexts, JWT_HELD, longestSurvivor } from './redact-held-lib';
-import { REDACT_MAX_CHARS, _maskSourcesForTest, maskBareTokenShapes, maskNoteText, maskSecretArgs, maskSecretCommand, maskSecretUrl, maskTokenShapes, maskTokenShapesUnguarded, redact, redactMarkdown } from '../src/shared/redact';
+import { REDACT_MAX_CHARS, _maskSourcesForTest, maskBareTokenShapes, maskNoteText, maskSecretArgs, maskKeepingMarkdownReference, maskOutgoing, maskSecretCommand, maskSecretUrl, maskTokenShapes, maskTokenShapesUnguarded, redact, redactMarkdown, unhide } from '../src/shared/redact';
 
 /** A made-up run of n characters from a class: not random (a test that fails must fail the same way) and never a real key. */
 const run = (n: number, chars = 'aB3dE6gH9jK2mN5pQ8sT1vW4yZ7'): string => { let s = ''; while (s.length < n) s += chars; return s.slice(0, n); };
@@ -572,6 +572,28 @@ for (const [start, more] of [['AK' + 'IA' + up(16), 'A'], ['AK' + 'IA' + up(16),
     eq(t, t, `spaced name stays: ${t.slice(0, 40)}`);
   // Review of #1243 by fjcabello (2026-11-07), round 2
   eq('password=sha' + '256x', 'password=[redacted]', 'NOT_SHORT: a name plus more characters is a password: password=sha256x');
+  // Merge with #1244: `mysql -p` with hidden characters, the fast path (`maskOutgoing`) against the full path (the reference, copy pass always)
+  {
+    const val = 'S3cret' + 'Value9';
+    const inertPad = (h: string): string => ('é' + h + 'é').repeat(70); // 210 characters, 140 without the hidden ones: the 200-character window of the mysql rule reaches `-p` only in the copy
+    for (const [hn, h] of [['ZWSP', '​'], ['ZWJ', '‍'], ['soft hyphen', '­'], ['VS16', '️']]) {
+      const cases: Array<[string, string]> = [
+        ['in the program name', `my${h}sql -p${val} db`], ['between -p and the value', `mysql -p${h}${val} db`], ['inside the value', `mysql -p${val.slice(0, 6)}${h}${val.slice(6)} db`],
+        ['in all three', `my${h}sql -p${h}${val.slice(0, 6)}${h}${val.slice(6)} db`],
+        ['after an inert run of 70 pairs', `mysql ${inertPad(h)} -p${val} db`], ['after an inert run, value split', `mysql ${inertPad(h)} -p${val.slice(0, 6)}${h}${val.slice(6)} db`],
+      ];
+      for (const [where, t] of cases) {
+        const fast = maskOutgoing(t, []).text;
+        const full = maskKeepingMarkdownReference(t, []).text;
+        const label = `mysql -p with ${hn} ${where}`;
+        assert.strictEqual(fast, full, `hidden mysql: fast path equals the full path: ${label}`);
+        for (const [n, out] of [['fast', fast], ['full', full]]) {
+          const plain = unhide(out);
+          assert.ok(!plain.includes(val) && !plain.includes('S3cret') && !plain.includes('Value9') && !plain.includes('cretV'), `hidden mysql: ${n} path shows no part of the value: ${label}`);
+        }
+      }
+    }
+  }
   // R1: a name takes only the sizes it has, `#` only a hex colour: these are passwords and go
   for (const [t, w] of [['password: Win' + '2024', 'password: [redacted]'], ['password=win' + '2024', 'password=[redacted]'], ['password: Iso' + '2024', 'password: [redacted]'], ['password: Des' + '123', 'password: [redacted]'], ['password=x' + '1234', 'password=[redacted]'], ['secret=Tls' + '1337', 'secret=[redacted]'], ['password=hs' + '2023', 'password=[redacted]'], ['apikey: es' + '2022', 'apikey: [redacted]'], ['password = Win' + '2024 cd34', 'password = [redacted]'], ['password=#hunt' + '3', 'password=[redacted]'], ['password=#Zz9' + '9q', 'password=[redacted]'], ['password=sha' + '2024', 'password=[redacted]']])
     eq(t, w, `NOT_SHORT: a password goes: ${t}`);
