@@ -143,6 +143,9 @@ test:crew
 test:characters
 test:chargen
 test:imagecheck
+test:charencoder
+test:charstore
+test:charipc
 test:crew-assets
 test:realoffice-layout
 test:realoffice-assets

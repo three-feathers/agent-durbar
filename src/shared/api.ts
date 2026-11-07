@@ -220,7 +220,9 @@ export interface AppSettingsView {
   /** Active theme id (specs 035-040). Omitted = Clean Office. */
   theme?: string;
   /** Spec 077 FR-064: who sits at the desks (`theme`: the theme's own). */
-  characters?: 'theme' | 'minimalist' | 'cheeky' | 'prehistoric' | 'pirate' | 'monster' | 'royal' | 'rebels';
+  characters?: 'theme' | 'minimalist' | 'cheeky' | 'prehistoric' | 'pirate' | 'monster' | 'royal' | 'rebels' | 'mine';
+  /** Spec 096 FR-033: folder key to character id, only ids main lists. */
+  characterPins?: Record<string, string>;
   /** OS notifications when an agent needs you while the window is in the background (spec 052 FR-059). On unless turned off. */
   notifyNeedsMe?: boolean;
   /** Spec 068 FR-006: after a coffee break, `auto` resumes by itself when it costs nothing extra; `ask` always asks. */
@@ -233,6 +235,40 @@ export interface AppSettingsView {
   diagnostics?: boolean;
 }
 
+/** Spec 096 FR-030, FR-031: a character's frames as WebP bytes. */
+export interface CharacterFrames {
+  working: Uint8Array;
+  waiting: Uint8Array;
+  resting: Uint8Array;
+  blink?: Uint8Array;
+}
+/** Spec 096 FR-025: a face point `[x, y]` per pose, in picture pixels. */
+export interface CharacterFace {
+  working: [number, number];
+  waiting: [number, number];
+  resting: [number, number];
+}
+/** Spec 096 FR-031: what `character:list` gives per character. */
+export interface CharacterListItem {
+  id: string;
+  name: string;
+  face: CharacterFace;
+  blink: boolean;
+  style: string;
+  created: string;
+}
+/** Spec 096 FR-031: the reply of `character:generate`. `cancelled`: the user cancelled; `full`: the 24-character cap is reached (the maker offers Manage). */
+export interface CharacterTryResult {
+  ok: boolean;
+  tryId?: string;
+  frames?: CharacterFrames;
+  face?: CharacterFace;
+  notes?: string[];
+  tookMs?: number;
+  error?: string;
+  cancelled?: boolean;
+  full?: boolean;
+}
 /** Spec 058 FR-208, FR-211: main's sign-in refresh lines for one chat (names and fixed kinds only; no vendor text, no token). */
 export type McpSignInRefreshNote =
   | { id: string; kind: 'waiting'; count: number }
@@ -967,9 +1003,24 @@ export interface DurbarApi {
   /** Bring the window to the front (a click on a "needs you" notification, spec 052 FR-059). */
   focusWindow?(): Promise<{ ok: boolean }>;
   /** Set the theme (specs 037-040): a built-in id or an imported user theme id. */
-  setTheme?(id: string): Promise<{ ok: boolean; theme?: string; characters?: 'theme' | 'minimalist' | 'cheeky' | 'prehistoric' | 'pirate' | 'monster' | 'royal' | 'rebels' }>;
+  setTheme?(id: string): Promise<{ ok: boolean; theme?: string; characters?: 'theme' | 'minimalist' | 'cheeky' | 'prehistoric' | 'pirate' | 'monster' | 'royal' | 'rebels' | 'mine' }>;
   /** Spec 077 FR-064: set who sits at the desks; main refuses anything not on the list (`ok: false`, the value in force). */
-  setCharacters?(v: string): Promise<{ ok: boolean; characters: 'theme' | 'minimalist' | 'cheeky' | 'prehistoric' | 'pirate' | 'monster' | 'royal' | 'rebels' }>;
+  setCharacters?(v: string): Promise<{ ok: boolean; characters: 'theme' | 'minimalist' | 'cheeky' | 'prehistoric' | 'pirate' | 'monster' | 'royal' | 'rebels' | 'mine' }>;
+  /** Spec 096 FR-031: one try: frames as WebP bytes, held by main under `tryId` until saved or dropped. The description is never stored. */
+  characterGenerate?(description: string, adapterId: string): Promise<CharacterTryResult>;
+  /** Spec 096 FR-031: no id cancels the running generation; a `tryId` drops that held try (Discard). */
+  characterCancel?(tryId?: string): Promise<{ ok: boolean }>;
+  /** Spec 096 FR-031: an empty name gets "My character N". */
+  characterSave?(tryId: string, name?: string): Promise<{ ok: boolean; id?: string; name?: string; error?: string }>;
+  characterList?(): Promise<CharacterListItem[]>;
+  characterFrames?(id: string): Promise<{ ok: boolean; frames?: CharacterFrames; error?: string }>;
+  characterRename?(id: string, name: string): Promise<{ ok: boolean; id?: string; name?: string; error?: string }>;
+  /** Spec 096 FR-033: `pinsRemoved` says how many folder pins went with it. */
+  characterDelete?(id: string): Promise<{ ok: boolean; pinsRemoved?: number; error?: string }>;
+  characterExport?(id: string): Promise<{ ok: boolean; to?: string; cancelled?: boolean; error?: string }>;
+  /** Spec 096 FR-033: `id` null clears the pin; `folderKey` is one main gave. */
+  characterPin?(folderKey: string, id: string | null): Promise<{ ok: boolean; pins?: Record<string, string>; error?: string }>;
+  characterIdeas?(): Promise<string[]>;
   /** User themes (spec 040): scan userData/themes; each valid pack listed, each invalid one given back with a reason. */
   listUserThemes?(): Promise<Array<{ id: string; name?: string; ok: boolean; error?: string }>>;
   getUserTheme?(id: string): Promise<Record<string, unknown> | null>;

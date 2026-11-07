@@ -343,8 +343,8 @@
   const SCENE_KITS=['office','pixel','crew'];
   /* Characters, separate from themes (spec 077 FR-064, FR-065): who sits at the desks. 'theme' is the theme's own kit (the default);
      the others name a kit that is drawn on top of any theme. The same list and rule as src/shared/characters.ts (test:characters). */
-  const CHARACTERS=['theme','minimalist','cheeky','prehistoric','pirate','monster','royal','rebels'];
-  const CHARACTER_KITS={minimalist:'office',cheeky:'crew',prehistoric:'crew',pirate:'crew',monster:'crew',royal:'crew',rebels:'crew'};
+  const CHARACTERS=['theme','minimalist','cheeky','prehistoric','pirate','monster','royal','rebels','mine'];
+  const CHARACTER_KITS={minimalist:'office',cheeky:'crew',prehistoric:'crew',pirate:'crew',monster:'crew',royal:'crew',rebels:'crew',mine:'crew'};
   const REMOVED_THEMES=['corporate','durbar-indian','durbar-european','durbar-japanese']; /* spec 035 FR-017: removed built-ins; FR-018 maps them to Clean Office, same list as src/shared/themes.ts (test:theme) */
   const LEGACY_CREW_THEME='cheeky-crew'; /* FR-066: no longer a theme; FR-067 maps it to Clean Office with Characters = Cheeky */
   function parseCharacters(v){return typeof v==='string'&&CHARACTERS.includes(v)?v:undefined;}
