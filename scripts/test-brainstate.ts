@@ -558,4 +558,34 @@ assert.strictEqual(loopText(s), 'looping? Edit ↔ Shell · 3 times · cost unkn
 assert.strictEqual(s.sentence, 'Ada may be looping between Edit and Shell');
 assert.strictEqual(sentenceOf(s), s.sentence);
 
+// Spec 012 FR-170 (issue #1227, review of #1243 F6): a password of several words streamed in pieces is masked whole, word per delta and at random cuts.
+{
+  const cases: Array<[string, string[]]> = [
+    ['password: ab12 cd34 ef56 done', ['ab12', 'cd34', 'ef56']],
+    ['pwd=red7 blue8 green9 x', ['red7', 'blue8', 'green9']],
+    ['passphrase: hunter2 hunter3 hunter4.', ['hunter2', 'hunter3', 'hunter4']],
+  ];
+  let seed = 1227;
+  const rnd = (): number => { seed = (Math.imul(seed, 1103515245) + 12345) >>> 0; return seed / 2 ** 32; };
+  const leaks = (chunks: string[], words: string[]): string[] => {
+    const st = feed(fresh(), [{ type: 'user' }, ...chunks.map((delta) => ({ type: 'thinking', delta })), start('bash', { command: 'ls' })], 1);
+    const out = JSON.stringify(st);
+    return words.filter((w) => out.includes(w));
+  };
+  for (const [text, words] of cases) {
+    const parts = text.split(/(?<= )/); // one word per delta
+    assert.deepStrictEqual(leaks(parts, words), [], `word per delta: ${JSON.stringify(parts)}`);
+    for (let k = 0; k < 400; k++) {
+      const n = 1 + Math.floor(rnd() * 6);
+      const cuts = new Set<number>();
+      while (cuts.size < n) cuts.add(1 + Math.floor(rnd() * (text.length - 1)));
+      const pts = [0, ...[...cuts].sort((x, y) => x - y), text.length];
+      const chunks = pts.slice(1).map((q, i) => text.slice(pts[i], q));
+      assert.deepStrictEqual(leaks(chunks, words), [], `random cuts: ${JSON.stringify(chunks)}`);
+    }
+  }
+  assert.deepStrictEqual(leaks(['pwd=red7 ', 'blue8 x'], ['red7', 'blue8']), [], 'the issue pair');
+  assert.deepStrictEqual(leaks(['password: ab12 cd34 e', 'f56 done'], ['ab12', 'cd34', 'ef56']), [], 'the issue pair with a cut inside a word');
+}
+
 console.log('brainstate: all checks passed');

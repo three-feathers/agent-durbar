@@ -502,6 +502,48 @@ for (const [start, more] of [['AK' + 'IA' + up(16), 'A'], ['AK' + 'IA' + up(16),
     eq(t, t, `bearer colon stays: ${t}`);
   eq('secret access key: ' + aws, 'secret access key: [redacted]', 'spaced name: colon');
   eq('AWS Secret Access Key = ' + aws, 'AWS Secret Access Key = [redacted]', 'spaced name: equals, title case');
+  // 12. self-review of #1243 (F1 to F6) and the mutants it found alive
+  // F6: the rest of a password that arrived in pieces (the first word is already a mask)
+  eq('pwd=[redacted] blue8 x', 'pwd=[redacted] x', 'phrase after a mask: pwd');
+  eq('password: [redacted]4 ef56 done', 'password: [redacted] done', 'phrase after a mask: characters glued to the mask');
+  eq('password: [redacted] ef56 done', 'password: [redacted] done', 'phrase after a mask: password');
+  for (const t of ['password: [redacted] is', 'token: [redacted] blue8', 'password: [redacted] none'])
+    eq(t, t, `phrase after a mask stays: ${t}`);
+  // phrase limits (mutants: one space, word minimum 3, at most 2 words, order, passphrase, the pwd lookbehind)
+  eq('password: ab12  cd34', 'password: [redacted]', 'phrase: two spaces between words');
+  eq('password: ab12 c3', 'password: [redacted]', 'phrase: a word of 2 characters');
+  eq('password: ' + Array.from({ length: 10 }, (_, i) => 'ab' + String(i + 10)).join(' '), 'password: [redacted] ab19', 'phrase: nine words, the tenth stays');
+  eq('password=Summer2024Secret cd34 ef56', 'password=[redacted]', 'phrase: a long first word takes the tail too');
+  eq('passphrase: ab12 cd34', 'passphrase: [redacted]', 'phrase: passphrase');
+  for (const t of ['bpwd: ab12 cd34', 'bpwd=abc123']) eq(t, t, `pwd needs no letter before it: ${t}`);
+  // key leads cut short
+  for (const lead of ['sk-', 'gh' + 'p_', 'gh' + 'o_', 'gh' + 'u_', 'gh' + 's_', 'gh' + 'r_', 'gl' + 'pat-', 'xo' + 'xb-', 'hf_', 'np' + 'm_']) eq('api_key=' + lead + 'ab', 'api_key=[redacted]', `unfinished lead: ${lead}`);
+  // F5: the mysql window ends at a shell separator, and at a program name that is not followed by a space
+  for (const t of ['echo mysql; tar -pxf a1.tgz', 'mysql -e "x" && cp -pr src2 dst', 'mysql -e "select 1" | grep -pv', 'docker run mysql:8 sh -c "ls -pa1"', 'mysql -u r\n -pabc123x'])
+    eq(t, t, `mysql window stays: ${JSON.stringify(t)}`);
+  eq('mysql ' + 'a '.repeat(50) + '-p' + 'abc123x', 'mysql ' + 'a '.repeat(50) + '-p[redacted]', 'mysql: a flag 100 characters on');
+  // F2: any case, mysql8, a backtick value, PowerShell and cmd continuations
+  eq('MYSQL -p' + 'abc123x', 'MYSQL -p[redacted]', 'mysql: upper case');
+  eq('MySQL8 -u r -p' + 'abc123x', 'MySQL8 -u r -p[redacted]', 'mysql: mysql8');
+  eq('mysql -p`my pass` db', 'mysql -p[redacted] db', 'mysql: backtick-quoted value');
+  eq('mysql -u r `\n -p' + 'abc123x', 'mysql -u r `\n -p[redacted]', 'mysql: PowerShell continuation');
+  eq('mysql -u r ^\r\n -p' + 'abc123x', 'mysql -u r ^\r\n -p[redacted]', 'mysql: cmd continuation');
+  // F4: ids, versions and algorithm names stay; a real short password still goes
+  for (const v of ['T144', 'v1.2', 'v1.2.3', '0x1f', '0x02', '#ff00aa', 'sha256', 'utf8', 'base64', 'HS256', 'int64', 'ipv4', 'oauth2', 'ed25519', 'aes256', 'x509', 'pkcs8', 'PKCS#12', 'win32'])
+    for (const name of ['token', 'secret', 'password']) eq(`${name}: ${v}`, `${name}: ${v}`, `short stays: ${name}: ${v}`);
+  for (const v of ['abc123', 'a1b2c3d', 'Zx9Zx9', 'hunter2']) eq('password: ' + v, 'password: [redacted]', `short goes: ${v}`);
+  // F1: Bearer stops
+  const bv = 'abc123def456ghi';
+  eq('Bearer abcdefg. ' + bv, 'Bearer [redacted]', 'bearer: a first word of 7 characters');
+  eq('BEARER ab12:' + bv, 'BEARER [redacted]', 'bearer: no space after the stop');
+  eq('Bearer x) "' + bv + '"', 'Bearer [redacted]"', 'bearer: a quote before the value');
+  eq('Bearer ab! ' + bv, 'Bearer [redacted]', 'bearer: !');
+  eq('Bearer ab- ' + bv, 'Bearer [redacted]', 'bearer: -');
+  eq('Bearer x. abcdefghijkl', 'Bearer x. abcdefghijkl', 'bearer stays: 12 letters and no digit');
+  // survivors of the first mutant run
+  eq('secret_access_' + 'key ' + aws, 'secret_access_' + 'key [redacted]', 'aws secret after a space: no aws_ in the name');
+  eq('token    ' + 'abc1234xyz', 'token    [redacted]', 'scheme word: four spaces');
+  eq('Cookie: sid=ab12 x', 'Cookie: [redacted] x', 'cookie: exactly 4 characters');
   eq('secret access_key: ' + aws, 'secret access_key: [redacted]', 'spaced name: a space, then an underscore');
   eq('secret   access key: ' + aws, 'secret   access key: [redacted]', 'spaced name: several spaces');
   eq('aws secret_access key ' + aws, 'aws secret_access key [redacted]', 'spaced name: mixed with an underscore');
