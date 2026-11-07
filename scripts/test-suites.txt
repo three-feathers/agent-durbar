@@ -157,6 +157,7 @@ test:browserurl
 test:browserviews
 test:browsertabs
 test:browseripc
+test:paneltabs
 test:browserpane
 test:chatlinks
 test:simguard
