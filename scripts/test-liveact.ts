@@ -326,6 +326,35 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
   f = F();
   f.onEvent('s', ev({ type: 'toolCall', phase: 'start', tool: 'bash', callId: 'c', args: {} }), { kind: 'run', label: 'curl -H "x: gh\x1b[0mp_A1b2C3d4E5f6G7h8I9j0K1l2M3n4" /home/alice/y' });
   ok(!all(f.screen('s')).includes('A1b2') && !all(f.screen('s')).includes('alice'), 'a tool label too: ' + all(f.screen('s')));
+  // spec 097 FR-314 (review of PR 1272): the desk readout, the grown desk's last tool (`of().tool`, the zoom's fact) and the monitor line are ONE phrase:
+  // cleared, masked, home folder out BEFORE the cut
+  for (const [what, label] of [['ANSI', '/tmp/ghp_A1b2C3d4E5\x1b[0mf6G7h8I9j0K1l2M3n4 end'], ['bidi override', '/tmp/ghp_A1b2C3d4E5\u202ef6G7h8I9j0K1l2M3n4 end']]) {
+    f = F();
+    f.onEvent('s', ev({ type: 'toolCall', phase: 'start', tool: 'read', callId: 'c', args: {} }), { kind: 'read', label });
+    const r = f.of('s') as NonNullable<Readout>, line = all(f.screen('s'));
+    eq(r.tool, 'Reading /tmp/[redacted] end', what + ': the readout tool is masked like the monitor line');
+    eq(r.text, r.tool, what + ': the desk line reads the same phrase');
+    eq(line, r.tool, what + ': the monitor line is that phrase');
+    ok(!/[\x00-\x1f\u202a-\u202e]/.test(r.tool), what + ': no control code in the tool fact');
+  }
+  f = F();
+  f.onEvent('s', ev({ type: 'toolCall', phase: 'start', tool: 'bash\x1b[0m', callId: 'c', args: {} }), { kind: 'tool', label: 'x' });
+  ok(!/\x1b/.test((f.of('s') as NonNullable<Readout>).tool), 'the tool name is cleared too');
+  eq(L.phrase({ kind: 'read', tool: 'read', label: '/tmp/ghp_A1b2C3d4E5\x1b[0mf6G7h8I9j0K1l2M3n4' }, { ...hm }), 'Reading /tmp/[redacted]', 'phrase itself clears its input (the lobby place text calls it directly)');
+  // a long path whose user name straddles the 160-character cut: no start of the name shows
+  for (const label of ['x'.repeat(130) + ' C:\\Users\\Alex Example\\proj\\a.txt', 'y'.repeat(140) + ' /home/alexexample/proj/a.txt', 'z'.repeat(120) + ' \\\\fs1.example.invalid\\share\\alexexample\\proj\\a.txt']) {
+    f = F();
+    f.onEvent('s', ev({ type: 'toolCall', phase: 'start', tool: 'read', callId: 'c', args: {} }), { kind: 'read', label });
+    const t = (f.of('s') as NonNullable<Readout>).tool;
+    ok(!/Alex|Exampl|alexe|alex|fs1|share/.test(t.slice(-40)) && !/Users|home\//.test(t), 'home folder masked before the cut: ' + t);
+    eq(all(f.screen('s')), t, 'the monitor line agrees: ' + t);
+  }
+  eq(L.phrase({ kind: 'read', label: 'w'.repeat(140) + ' /home/alexexample/x' }, { ...hm }), L.phrase({ kind: 'read', label: 'w'.repeat(140) + ' /home/alexexample/x' }, { ...hm }), 'phrase is pure');
+  ok(!/alex/.test(L.phrase({ kind: 'read', label: 'w'.repeat(142) + ' /home/alexexample/x' }, { ...hm })), 'phrase itself masks home before it cuts (the cut falls inside the name)');
+  // Windows backslashes stay as they are: one mask, no unescape
+  f = F();
+  f.onEvent('s', ev({ type: 'toolCall', phase: 'start', tool: 'read', callId: 'c', args: {} }), { kind: 'read', label: 'C:\\Users\\alexexample\\proj\\.github\\a.txt' });
+  eq((f.of('s') as NonNullable<Readout>).tool, 'Reading ~\\proj\\.github\\a.txt', 'a Windows path keeps its backslashes');
   // a token still arriving is not shown half: the word being written is held back until it ends
   f = F();
   f.onEvent('s', ev({ type: 'output', delta: 'Reading ghp_A1b2C3' }));

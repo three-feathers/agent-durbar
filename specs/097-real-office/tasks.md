@@ -210,3 +210,11 @@ The dusk was dropped (owner, 2026-11-04 04:52 UTC): FR-239..FR-242 and T189 are 
 - [x] T201 [US1] Wiring: app.js marks rolled agents `lounge` with the lounge words; `realoffice.js` draws a seat (person, small desk, monitor, plate, lamp, "z z") and fades the desk picture out and in; CSS for the photo office, the cave and the arcade [FR-246..FR-249]
 - [x] T202 [US1] Driver `scripts/check-097-lounge.js` (in `ui-suite`): both sizes, Photo office and arcade, unread keeps the desk, read moves, back to work eases, reduced motion does not; the moments driver's asleep moment and the world matrix's lounge scene follow the row [FR-246..FR-249]
 - [x] T203 [US1] Docs: changelog fragment, `docs/features.md`, `docs/feature-inventory.md`, `docs/experience/world-moments.json`, the linked Real office pictures retaken [FR-246..FR-249]
+
+## 2026-11-07: facts in the zoom (issue #1148, FR-312..FR-315)
+
+- [x] T211 [US2] Spec delta 2026-11-07 and Q8 [FR-312..FR-315]
+- [x] T212 [US2] `deskFacts(a)` in app.js shared by the grown desk's side and the Real office zoom (`factsOf` option); the tool phrase also loses home paths. Test: `shots-097-screens`
+- [x] T213 [US2] Zoom shows the facts (`.ro-zk` in realoffice.js and realoffice.css), panel height and placement follow them. Test: `shots-097-screens` at both sizes, 15 desks each
+- [x] T214 [US2] Docs: changelog fragment, `docs/features.md`, the two zoom pictures retaken
+- [x] T218 [US2] Review of PR #1272 [FR-314]: tool phrase from cleared input, home folder masked before the cut (`liveact.js` `phrase`, `onEvent`), one mask in `deskFacts`, empty facts dropped, UNC paths in `maskHomePaths`; Q8 and the inventory row recorded. Tests: `test-liveact`, `test-redact`, `shots-097-screens` (the five mutants: innerHTML, FR-315 re-place, panel height, whole-line facts, no-redact zoom)
