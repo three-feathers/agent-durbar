@@ -55,6 +55,14 @@ module.exports = async (ctx) => {
     const de=document.documentElement;return {min:Math.min(...fonts),over,maxLines:Math.max(0,...ex),pageScroll:de.scrollHeight>innerHeight+1||de.scrollWidth>innerWidth+1,inner:getComputedStyle(L).overflowY};})()`);
   /* the marked bubble in the chat: inside the chat's view */
   const jumped = (vs) => js(`(()=>{const c=document.getElementById('chat'),b=c&&c.querySelector(${jsLiteral((vs ? '.vsbody ' : '') + '.bubble.nt-found')});if(!b)return null;const r=b.getBoundingClientRect(),q=c.getBoundingClientRect();return {text:b.textContent.slice(0,80),inView:r.top>=q.top-1&&r.bottom<=q.bottom+1};})()`);
+  /* the box as a person reaches it: the magnifier on a narrow bar (the field shows only while it has the focus), the caret at the end */
+  const focusBox = async () => {
+    await js(`(()=>{const m=document.getElementById('convSearchBtn'),s=document.getElementById('convSearch');if(getComputedStyle(m).display!=='none'&&!document.getElementById('convSearchWrap').classList.contains('open'))m.click();else s.focus();s.setSelectionRange(s.value.length,s.value.length);})()`);
+    await ok(`document.activeElement&&document.activeElement.id==='convSearch'`, 'the box has the focus', 3000);
+  };
+  /* the simulator's bridge counts the clears and cancels the window sends (review of PR 1240, R3) */
+  const spy = () => js(`(()=>{const b=window.__durbarSimUi.bridge();for(const [m,k] of [['convSearchClear','__csClears'],['convSearchCancel','__csCancels']])if(b[k]===undefined){b[k]=0;const f=b[m];b[m]=(...a)=>{b[k]++;return f(...a);};}})()`);
+  const count = (k) => js(`window.__durbarSimUi.bridge()[${jsLiteral(k)}]`);
   /* Escape until the chat is closed (the VS Code viewer takes one Escape back to the chat first) */
   const closeChat = async () => { for (let i = 0; i < 3 && (await js(`document.body.classList.contains('panel-open')`)); i++) { await key('Escape', [], { char: 'never' }); await until(`!document.body.classList.contains('panel-open')`, 1500); } };
   const watchAnnounce = () => js(`(()=>{window.__ann=[];const el=document.getElementById('srAnnounce');new MutationObserver(()=>{if(el.textContent)window.__ann.push(el.textContent);}).observe(el,{childList:true,characterData:true,subtree:true});})()`);
@@ -78,6 +86,13 @@ module.exports = async (ctx) => {
     await shortcut();
     await ok(`document.activeElement&&document.activeElement.id==='convSearch'`, `${w}: Ctrl+Shift+F focuses the box`);
     await ok(`document.getElementById('convSearchBtn').getAttribute('aria-expanded')==='true'`, `${w}: the box says it is open`);
+    {
+      // review of PR 1240 (Q3): the opened field never covers the banner row under the bar, also with a long banner text
+      const cover = await js(`(()=>{const st=document.getElementById('restoreStrip'),t=st&&st.querySelector('.ns-t'),was=t&&t.textContent;if(t)t.textContent='Five folders (alpha-service, beta-gateway, gamma-ledger, delta-reports, epsilon-tools) let agents change files without asking.';
+        const s=document.getElementById('convSearch').getBoundingClientRect(),b=document.querySelector('.topbar').getBoundingClientRect(),r=st&&st.getClientRects().length?st.getBoundingClientRect():null;
+        const out={banner:!!r,inBar:s.top>=b.top-0.5&&s.bottom<=b.bottom+0.5,over:!!r&&s.left<r.right&&r.left<s.right&&s.top<r.bottom&&r.top<s.bottom};if(t)t.textContent=was;return out;})()`);
+      assert.ok(cover.banner && cover.inBar && !cover.over, `${w}: the open field stays in the bar, clear of the banner: ${JSON.stringify(cover)}`);
+    }
     await type('re');
     await ok(`(document.getElementById('convSearchHint').textContent||'')==='Type at least 3 characters'&&!document.getElementById('convSearchHint').hidden`, `${w}: "Type at least 3 characters"`);
     assert.ok(!(await js(`document.body.classList.contains('list-mode')`)), `${w}: a short query keeps the Office view`);
@@ -103,10 +118,10 @@ module.exports = async (ctx) => {
     await ctx.sleep(400);
     assert.strictEqual(await js(`document.querySelectorAll('#list .cs-hit').length`), before, `${w}: a stale id's batch adds nothing`);
     // ---- FR-026: clearing the box tells main (convSearchClear), counted on the simulator's bridge ----
-    await js(`(()=>{const b=window.__durbarSimUi.bridge();if(b.__csClears===undefined){b.__csClears=0;const f=b.convSearchClear;b.convSearchClear=(...a)=>{b.__csClears++;return f(...a);};}})()`);
+    await spy();
 
     // ---- US3.3: Down from the box to the first result, J to the next ----
-    await js(`document.getElementById('convSearch').focus()`);
+    await focusBox();
     await key('Down', [], { char: 'never' });
     await ok(`!!document.activeElement&&document.activeElement.matches('#list [data-csnav]')`, `${w}: Down goes to the first result`);
     const first = await js(`document.activeElement.dataset.csk`);
@@ -123,7 +138,12 @@ module.exports = async (ctx) => {
     let j = await jumped(false);
     assert.ok(j && j.inView && /registry/i.test(j.text), `${w}: the matching message is in view: ${JSON.stringify(j)}`);
     await ok(`(window.__ann||[]).includes('Message shown.')`, `${w}: and said`);
-    assert.strictEqual(await js(`getComputedStyle(document.querySelector('#chat .bubble.nt-found')).animationDuration`), '2s', `${w}: the fade lasts as long as the 2 s mark (review of phase 3, R3)`);
+    {
+      // the fade lasts as long as the 2 s mark; under reduced motion (the Windows runner reports it by itself) no fade, the outline stays (review of PR 1240, R1)
+      const f = await js(`(()=>{const cs=getComputedStyle(document.querySelector('#chat .bubble.nt-found'));return {reduce:matchMedia('(prefers-reduced-motion: reduce)').matches,dur:cs.animationDuration,name:cs.animationName,outline:cs.outlineStyle};})()`);
+      if (f.reduce) assert.ok(f.name === 'none' && f.outline === 'solid', `${w}: reduced motion: no fade, the outline stays: ${JSON.stringify(f)}`);
+      else assert.strictEqual(f.dur, '2s', `${w}: the fade lasts as long as the 2 s mark: ${JSON.stringify(f)}`);
+    }
     await shot('jump', w, h, { prep: 'calm' });
     await closeChat();
     await ok(`!document.body.classList.contains('panel-open')&&!!document.querySelector('#list .cs-hit')`, `${w}: closing the chat comes back to the results`);
@@ -148,7 +168,7 @@ module.exports = async (ctx) => {
     await ok(`[...document.querySelectorAll('#list .cs-act')].some(b=>b.textContent==='Open')`, `${w}: the resumed one now says Open (it is in the office)`);
 
     // ---- US3.2: Escape in the results clears the query and goes back to the Office view and the desk ----
-    await js(`document.getElementById('convSearch').focus()`);
+    await focusBox();
     await key('Escape', [], { char: 'never' }); // in the box: cleared, back to the office
     await ok(`!document.body.classList.contains('list-mode')&&document.getElementById('convSearch').value===''`, `${w}: Escape in the box ends it`);
     await js(`document.querySelector(${jsLiteral(`#stage .desk[data-id="${desk}"]`)}).focus()`);
@@ -184,21 +204,24 @@ module.exports = async (ctx) => {
 
     await H.load({ w, h, query: { simsearch: 'slow' }, focus: true });
     await H.calm();
+    await spy();
     await typeQuery('registry');
     await ok(`/^Searching, \\d+ of \\d+ sessions$/.test((document.querySelector('#list .cs-st')||{}).textContent||'')&&!!document.getElementById('csStop')`, `${w}: "Searching, N of M sessions" with Stop`);
     await ok(`(window.__durbarSimUi?1:1)&&document.querySelector('#list .cs-st').textContent!=='Searching, 0 of 0 sessions'`, `${w}: the progress moves`);
     await shot('searching', w, h, { prep: 'calm' });
     await js(`document.getElementById('csStop').click()`);
     await ok(`(document.querySelector('#list .cs-notes')||{}).textContent==='Stopped.'&&!document.getElementById('csStop')`, `${w}: Stop says "Stopped."`);
+    assert.strictEqual(await count('__csCancels'), 1, `${w}: Stop cancels main's scan once (review of PR 1240, R3)`);
     await ok(`document.activeElement&&document.activeElement.id==='convSearch'`, `${w}: and the focus goes back to the box`);
 
     // review of phase 3 (R1): data with String.replace patterns ($& $` $') in a title and an excerpt adds nothing to the row's markup
     await typeQuery('registry');
     await ok(`!!window.__durbarSimUi.cs.id()&&!!document.getElementById('csStop')`, `${w}: a search is running`);
-    const PAT = "$` style=position:fixed;inset:0;z-index:9999;background:red x=$' $& end";
+    const PAT = "$` style=position:fixed;inset:0;z-index:9999;background:red x=$' $& <img src=x onerror=alert(1)> \" autofocus x=\" & end"; // R1 and review of PR 1240 R4: replacement patterns and markup
     const injected = await js(`(()=>{const a=window.__durbarSimUi.agents().filter(x=>!x.parent).slice(-1)[0];a.name=${jsLiteral('Pay ' + PAT)};
       window.__durbarSimUi.cs.event({kind:'batch',searchId:window.__durbarSimUi.cs.id(),hits:[{adapter:a.info&&a.info.adapterId||'copilot',sessionId:a.id,agentId:a.id,group:'office',app:'GitHub Copilot',folderName:'demo',title:a.name,titleMarks:[[0,3]],time:0,
-        excerpts:[{text:${jsLiteral('registry ' + PAT)},marks:[[0,8]],speaker:'you',anchor:{n:0,head:'registry'}}],more:0}],progress:{done:1,total:9},groups:{office:1,earlier:0}});return a.id;})()`);
+        excerpts:[{text:${jsLiteral('registry ' + PAT)},marks:[[0,8]],speaker:'you',anchor:{n:0,head:'registry'}}],more:0},
+        {adapter:'claude',sessionId:'evil-earlier',agentId:a.id,group:'earlier',app:'Claude Code',folderName:'demo',title:${jsLiteral('Evil ' + PAT)},titleMarks:[[0,4]],time:Date.now()-60000,excerpts:[],more:0}],progress:{done:1,total:9},groups:{office:1,earlier:1}});return a.id;})()`);
     await ok(`[...document.querySelectorAll('#list .cs-hit button.lrow[data-id]')].some(b=>b.dataset.id===${jsLiteral(injected)})`, `${w}: the injected result is shown`, 3000);
     const inj = await js(`(()=>{const h=[...document.querySelectorAll('#list .cs-hit')].find(x=>x.querySelector('button.lrow[data-id]')&&x.querySelector('button.lrow').dataset.id===${jsLiteral(injected)});
       const rows=h.querySelectorAll('button.lrow'),b=rows[0];return {rows:rows.length,styled:[...document.querySelectorAll('#list [style]')].length,attrs:[...b.attributes].map(x=>x.name).sort(),label:b.getAttribute('aria-label'),name:(b.querySelector('.lnm')||{}).textContent,ex:(h.querySelector('.cs-ex')||{}).textContent};})()`);
@@ -206,8 +229,11 @@ module.exports = async (ctx) => {
     assert.strictEqual(inj.styled, 0, `${w}: no style attribute anywhere in the results: ${JSON.stringify(inj)}`);
     assert.deepStrictEqual(inj.attrs, ['aria-label', 'aria-pressed', 'class', 'data-csf', 'data-csk', 'data-csnav', 'data-id'], `${w}: only the row's own attributes`);
     assert.ok(inj.label.includes(PAT) && inj.name === 'Pay ' + PAT && inj.ex.includes(PAT), `${w}: the text is shown as written: ${JSON.stringify(inj)}`);
+    const evil = await js(`(()=>{const L=document.getElementById('list'),h=[...L.querySelectorAll('.cs-hit')].find(x=>x.dataset.csk==='earlier:claude:evil-earlier');
+      return {img:L.querySelectorAll('img').length,autofocus:L.querySelectorAll('[autofocus],[onerror]').length,title:h&&(h.querySelector('.lnm')||{}).textContent};})()`);
+    assert.deepStrictEqual(evil, { img: 0, autofocus: 0, title: 'Evil ' + PAT }, `${w}: markup in an excerpt and an earlier session's title stays text (review of PR 1240, R4)`);
     // review of phase 3 (R2): shortening the query below 3 characters while it scans ends the state ("Stopped."), not a lasting "Searching"
-    await js(`document.getElementById('convSearch').focus()`);
+    await focusBox();
     for (let i = 0; i < 6; i++) await key('Backspace', [], { char: 'never', pause: 20 });
     await ok(`document.getElementById('convSearch').value==='re'`, `${w}: the query is "re"`);
     await ok(`(document.getElementById('convSearchHint').textContent||'')==='Type at least 3 characters'&&!/^Searching/.test((document.querySelector('#list .cs-st')||{}).textContent||'')&&(document.querySelector('#list .cs-notes')||{}).textContent==='Stopped.'&&!document.getElementById('csStop')`, `${w}: a short query ends the scan's state: "Stopped."`);
@@ -221,6 +247,20 @@ module.exports = async (ctx) => {
     // FR-023: leaving the List view ends the search (the box is emptied, no result is left)
     await js(`document.getElementById('vOffice').click()`);
     await ok(`!document.body.classList.contains('list-mode')&&document.getElementById('convSearch').value===''&&!document.querySelector('#list .cs-wrap')`, `${w}: the Office button ends the search`);
+
+    // ---- review of PR 1240 (R2): the query goes short while the start is still answering: no scan is left, one cancel ----
+    await H.load({ w, h, query: { simsearch: 'delayed' }, focus: true });
+    await H.calm();
+    await spy();
+    await typeQuery('registry');
+    await ctx.sleep(300);
+    for (let i = 0; i < 6; i++) await key('Backspace', [], { char: 'never', pause: 10 });
+    await ok(`document.getElementById('convSearch').value==='re'`, `${w}: the query is "re" while the start is pending`);
+    await ok(`window.__durbarSimUi.bridge().__csCancels===1`, `${w}: the late start is cancelled`, 4000);
+    await ctx.sleep(1500);
+    const late = await js(`({rows:document.querySelectorAll('#list .cs-hit').length,state:(document.querySelector('#list .cs-st')||{}).textContent||'',cancels:window.__durbarSimUi.bridge().__csCancels})`);
+    assert.ok(late.rows === 0 && late.cancels === 1 && !/^Searching/.test(late.state), `${w}: no rows and one cancel after a late start: ${JSON.stringify(late)}`);
+    await key('Escape', [], { char: 'never' });
 
     // ---- FR-003: the palette entry only focuses the box; the ? sheet lists the shortcut ----
     await key('Escape', [], { char: 'never' });

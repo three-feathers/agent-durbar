@@ -15,7 +15,7 @@ const ROOT = ((): string => {
   }
 })();
 type Hit = { adapter: string; sessionId: string; agentId?: string; group: 'office' | 'earlier'; app: string; folderName: string; title: string; titleMarks: Array<[number, number]>; time: number; excerpts: Array<{ text: string; marks: Array<[number, number]>; speaker: string; anchor: { n: number; head: string } }>; more: number };
-type St = { hits: Map<string, Hit>; order: { office: string[]; earlier: string[] }; progress: { done: number; total: number }; done: boolean; notes: Record<string, unknown> | null; stopped: boolean; failed: boolean; userStop: boolean };
+type St = { hits: Map<string, Hit>; order: { office: string[]; earlier: string[] }; progress: { done: number; total: number }; done: boolean; notes: Record<string, unknown> | null; stopped: boolean; failed: boolean; userStop: boolean; queryCut: boolean };
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const C = require(path.join(ROOT, 'src', 'renderer', 'convsearch.js')) as {
   keyOf(h: Hit): string; longEnough(q: string): boolean; create(): St; addBatch(st: St, b: unknown): St; finish(st: St, d: unknown, timeOf?: (h: Hit) => number): St;
@@ -69,6 +69,10 @@ assert.ok(C.longEnough('a bc') && !C.longEnough('x y') && !C.longEnough('  ab ')
   assert.strictEqual(C.markedHTML('abcdef', [[4, 2], [-5, 1], [1, 3], [2, 4], [10, 20]], esc), '<mark>abcd</mark>ef', 'merged, clamped');
   assert.strictEqual(C.markedHTML('<img src=x onerror=1>', [[0, 4]], esc), '<mark>&lt;img</mark> src=x onerror=1&gt;', 'never raw HTML');
   assert.strictEqual(C.markedHTML(null as unknown as string, null, esc), '');
+  // review of PR 1240 (Q1): bidi controls are dropped for display and the marks move with the text
+  assert.strictEqual(C.markedHTML('a\u202Eb\u2066cd\u2069 invoice', [[8, 15]], esc), 'abcd <mark>invoice</mark>');
+  assert.strictEqual(C.markedHTML('\u202Dinvoice\u202C x', [[1, 8]], esc), '<mark>invoice</mark> x');
+  assert.ok(!/[\u202A-\u202E\u2066-\u2069]/.test(C.excerptHTML({ text: 'x\u2067y\u202Bz', marks: [], speaker: 'agent' }, esc)), 'none in an excerpt');
   assert.strictEqual(C.excerptHTML({ text: 'the invoice', marks: [[4, 11]], speaker: 'you' }, esc), '<span class="cs-who">You:</span> the <mark>invoice</mark>');
   assert.strictEqual(C.excerptHTML({ text: 'x', marks: [], speaker: 'agent' }, esc), '<span class="cs-who">Agent:</span> x');
   assert.strictEqual(C.excerptHTML({ text: 'x', marks: [], speaker: '<b>' }, esc), 'x', 'an unknown speaker shows no prefix');
@@ -98,7 +102,20 @@ assert.strictEqual(C.accName(hit({ group: 'earlier', title: 'invoice plan', titl
   assert.strictEqual(C.notesText(mine), 'Stopped.');
   const failed = C.create();
   C.finish(failed, { failed: true, notes: null });
-  assert.deepStrictEqual([C.stateText(failed), C.notesText(failed)], ['The search could not finish.', 'The search could not finish.']);
+  assert.deepStrictEqual([C.stateText(failed), C.notesText(failed)], ['The search could not finish.', ''], 'a start that fails says it once (review of PR 1240, R5)');
+  const failedAfter = C.create();
+  C.addBatch(failedAfter, { hits: [hit({ sessionId: 'z' })] });
+  C.finish(failedAfter, { failed: true, notes: { searched: 1, folders: 1 } });
+  assert.ok(C.notesText(failedAfter).startsWith('The search could not finish. Searched 1 session'), 'with results shown, the end line says it did not finish');
+  // review of PR 1240 (R6): a window-side Stop has no notes from main, and the cut query is still said
+  const cutStop = C.create();
+  cutStop.queryCut = true;
+  cutStop.userStop = true;
+  assert.strictEqual(C.notesText(cutStop), 'Stopped. Your search was cut to 8 words and 200 characters.');
+  const cutDone = C.create();
+  cutDone.queryCut = true;
+  C.finish(cutDone, { notes: { searched: 1, folders: 1 } });
+  assert.strictEqual(C.notesText(cutDone), 'Searched 1 session in 1 folder. Your search was cut to 8 words and 200 characters.', 'said once, from the window or from main');
   const capped = C.create();
   C.finish(capped, { notes: { searched: 400, folders: 9, capped: { sessions: true } } });
   assert.ok(C.notesText(capped).includes('Only the newest sessions were searched'));
