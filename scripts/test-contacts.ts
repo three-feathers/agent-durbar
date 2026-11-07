@@ -165,7 +165,8 @@ assert.strictEqual(guessInitials('ßen ßa'), 'SS');
     ['alias', (x) => cleanContact({ name: 'Paco', aliases: [`p${x}q`] }).ok],
   ];
   assert.strictEqual(cleanContact({ name: 'Paco\u2800' }).ok, false, 'a blank braille glyph reads as nothing');
-  for (const [f, ok] of fields) { const accepted = probes.filter(ok); assert.deepStrictEqual(accepted.map((x) => x.codePointAt(0)!.toString(16)), [], `${f}: nothing invisible or reversing is accepted`); }
+  const NEAR_SPACE = /^[\u00a0\u1680\u2000-\u200a\u202f\u205f\u3000]$/; // names and labels fold these to a plain space (below); no other field does
+  for (const [f, ok] of fields) { const accepted = probes.filter((x) => !(['name', 'label'].includes(f) && NEAR_SPACE.test(x))).filter(ok); assert.deepStrictEqual(accepted.map((x) => x.codePointAt(0)!.toString(16)), [], `${f}: nothing invisible or reversing is accepted`); }
   assert.strictEqual(cleanContact({ name: 'Pa\u202eoc' }).ok, false);
   for (const [f, ok] of fields.filter(([f]) => f !== 'alias')) assert.ok(ok('é') && ok('😀') && ok('Ж'), `${f}: ordinary letters, accents, emoji and Cyrillic names still pass`);
 }
@@ -246,6 +247,62 @@ assert.strictEqual(guessInitials('ßen ßa'), 'SS');
     }
   }
   assert.ok(nm('\u5c71\u7530 \u592a\u90ce') && nm('\ud55c\uae00 \uc774\ub984'), 'plain Han and Hangul names are fine');
+}
+// review 5, finding 2: near-invisible spaces are folded to a plain space in names and labels, and ALL of them are refused in handles, `to`, initials, aliases, addresses and recipes
+{
+  const spaces = ['\u00a0', '\u1680', '\u2000', '\u2001', '\u2002', '\u2003', '\u2004', '\u2005', '\u2006', '\u2007', '\u2008', '\u2009', '\u200a', '\u202f', '\u205f', '\u3000'];
+  for (const sp of spaces) {
+    const n = must(cleanContact({ name: `M.${sp}Dupont` })).fields.name;
+    assert.strictEqual(n, 'M. Dupont', `U+${sp.charCodeAt(0).toString(16)} in a name is stored as a plain space`);
+    assert.strictEqual(must(cleanContact({ name: `  Alex${sp}${sp}Example${sp}` })).fields.name, 'Alex Example', 'collapsed and trimmed');
+    assert.strictEqual(must(cleanChannel({ id: 'ch-aaaaaaaa', kind: 'email', address: 'a@example.invalid', label: `Work${sp}mail` })).channel.label, 'Work mail', 'a label folds it too');
+    assert.strictEqual(cleanChannel({ id: 'ch-aaaaaaaa', kind: 'slack', team: 'T0123ABC', user: 'U0123ABC', handle: `h${sp}x` }).ok, false, 'the Slack name does not fold, and refuses the whole near-space set');
+    assert.strictEqual(cleanChannel({ id: 'ch-aaaaaaaa', kind: 'email', address: 'a@example.invalid', to: `t${sp}x` }).ok, false, '`to` does not fold, and refuses the whole near-space set');
+    assert.strictEqual(cleanContact({ name: 'Paco', initials: `P${sp}` }).ok, false, 'initials refuse it too');
+    const rr = parseContactsDoc(JSON.stringify({ version: 1, recipes: [{ ...rec, label: `a${sp}b` }] }));
+    assert.ok(rr.ok && rr.doc.recipes.length === 0 && rr.dropped === 1, 'a recipe label refuses it');
+    assert.strictEqual(cleanContact({ name: 'Paco', aliases: [`a${sp}b`] }).ok, false, 'aliases never take a space');
+    assert.strictEqual(addressOk(`a${sp}b@example.invalid`), false, 'addresses never take a space');
+  }
+  // runs of different near-spaces collapse to one plain space, in a name and in a label
+  assert.strictEqual(must(cleanContact({ name: 'Alex\u202f\u2009 \u3000Example' })).fields.name, 'Alex Example', 'name: a run of mixed spaces is one space');
+  assert.strictEqual(must(cleanChannel({ id: 'ch-aaaaaaaa', kind: 'email', address: 'a@example.invalid', label: 'Work\u202f\u2009mail' })).channel.label, 'Work mail', 'label: a run of mixed spaces is one space');
+  assert.strictEqual(must(cleanChannel({ id: 'ch-aaaaaaaa', kind: 'email', address: 'a@example.invalid', label: ' \u00a0Work \u3000 \u3000mail\u200a ' })).channel.label, 'Work mail', 'label: trimmed and collapsed');
+  // a label of spaces only is no label (the stored doc and the read-back agree)
+  for (const only of ['\u202f\u3000\u00a0', '   ', '\u2009']) {
+    const r = must(cleanChannel({ id: 'ch-aaaaaaaa', kind: 'email', address: 'a@example.invalid', label: only }));
+    assert.ok(!('label' in r.channel), `label ${JSON.stringify(only)} is omitted`);
+    const doc2 = add(emptyContactsDoc(), 'Alex Example', { channels: [{ kind: 'email', address: 'a@example.invalid', label: only }] });
+    assert.ok(!('label' in doc2.contact.channels[0]), 'the stored channel has no label key');
+    const back2 = parseContactsDoc(serializeContactsDoc(doc2.doc));
+    assert.ok(back2.ok && back2.dropped === 0 && JSON.stringify(back2.doc) === JSON.stringify(doc2.doc), 'and the read-back is the same document');
+  }
+  const back = parseContactsDoc(serializeContactsDoc(add(emptyContactsDoc(), 'M.\u202fDupont').doc));
+  assert.ok(back.ok && back.dropped === 0 && back.doc.contacts[0].name === 'M. Dupont', 'stored and read back with a plain space');
+  assert.strictEqual(guessInitials('M.\u202fDupont'), 'MD');
+  assert.strictEqual(cleanContact({ name: 'a\nb' }).ok, false, 'a newline is still refused');
+  assert.strictEqual(cleanContact({ name: 'a\u2028b' }).ok, false, 'the line separator is still refused');
+  assert.strictEqual(cleanContact({ name: 'a\u200bb' }).ok, false, 'a zero-width space is still refused');
+  assert.strictEqual(cleanContact({ name: '\u202f' }).ok, false, 'a name of spaces only is empty');
+}
+// review 5, finding 1: initials follow the name rules (no leading mark, a cap of marks per cluster), and the guess always passes them
+{
+  const M = '\u0301';
+  assert.strictEqual(cc({ initials: `${M}A` }).ok, false, 'a leading mark');
+  assert.strictEqual(cc({ initials: `A${M.repeat(6)}` }).ok, false, 'A and six marks');
+  assert.strictEqual(cc({ initials: `A${M.repeat(L.marksPerCluster + 1)}` }).ok, false, 'one mark over the cap');
+  assert.ok(cc({ initials: `A${M.repeat(L.marksPerCluster)}` }).ok, 'at the cap');
+  assert.ok(cc({ initials: `A${M}B${M}` }).ok, 'the cap is per cluster');
+  const bad = parseContactsDoc(JSON.stringify({ version: 1, contacts: [{ ...JSON.parse(serializeContactsDoc(add(emptyContactsDoc(), 'Sam Sample').doc)).contacts[0], initials: `${M}S` }] }));
+  assert.ok(bad.ok && bad.doc.contacts.length === 0 && bad.dropped === 1, 'a stored contact with a leading-mark initial is dropped');
+  for (const n of ['\u0390' + M.repeat(3), '\u0390' + M.repeat(L.marksPerCluster) + ' \u0390' + M.repeat(L.marksPerCluster), 'e' + M.repeat(L.marksPerCluster) + ' x', 'ǰ' + M.repeat(3)]) {
+    const g = guessInitials(n);
+    assert.ok(cc({ initials: g }).ok, `${JSON.stringify(n)}: the guess ${JSON.stringify(g)} passes the initials rules`);
+    assert.ok((g.match(/\p{M}/gu) ?? []).length <= L.marksPerCluster * L.initialsMax, 'marks are kept within the cap');
+    const r = add(emptyContactsDoc(), n);
+    const back2 = parseContactsDoc(serializeContactsDoc(r.doc));
+    assert.ok(back2.ok && back2.dropped === 0 && back2.doc.contacts[0].initials === r.contact.initials, `${JSON.stringify(n)} round-trips`);
+  }
 }
 // review 3, finding 3: a leading combining mark is refused, and so is a stack of marks on one cluster
 {
@@ -329,8 +386,15 @@ assert.strictEqual(guessInitials('ßen ßa'), 'SS');
   assert.ok(cc({ initials: '🇪🇸' }).ok && cc({ initials: '🇪🇸🇫🇷' }).ok && !cc({ initials: '🇪🇸🇫🇷🇩🇪' }).ok, 'the validator counts clusters, not code points');
   assert.ok(!cc({ initials: 'e' + '\u0301'.repeat(L.initialsChars) }).ok, 'a cluster with a mountain of marks is over the character cap');
   const long = guessInitials('x' + '\u0301'.repeat(30) + ' y');
-  assert.strictEqual(long, 'X', 'a first cluster over the cap gives its first code point, not the next word\'s letter');
+  assert.strictEqual(long, 'X' + '\u0301'.repeat(L.marksPerCluster) + 'Y', 'a stack of marks is cut to the cap and the second word still counts');
   assert.ok(cc({ initials: long }).ok, 'and it reads back');
+  const jamo = '\u1100' + '\u1161'.repeat(20); // Hangul L + 20 V jamo: one cluster, all letters, no marks, 21 units
+  assert.ok(graphemes(jamo).length === 1 && jamo.length > L.initialsChars, 'a long letter-only cluster');
+  assert.strictEqual(cc({ initials: jamo }).ok, false, 'initials over the character cap are refused');
+  assert.strictEqual(guessInitials(`${jamo} x`), '\u1100', 'the first cluster over the cap gives its first code point, never the next word\'s letter');
+  const family = Array(3).fill('\u{1f468}\u200d\u{1f469}\u200d\u{1f467}\u200d\u{1f466}').join('\u200d');
+  assert.ok(graphemes(family).length === 1 && family.length > L.initialsChars, 'one cluster longer than the cap');
+  assert.strictEqual(guessInitials(family), '\u{1f468}', 'a first cluster over the cap gives its first code point');
   const zalgo = guessInitials('e' + '\u0301'.repeat(100) + ' b');
   assert.ok(zalgo.length <= L.initialsChars, `a guess never exceeds the character cap (${zalgo.length})`);
   assert.ok(cc({ initials: zalgo }).ok, 'and it reads back');

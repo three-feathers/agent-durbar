@@ -218,6 +218,14 @@ export function newId(prefix: 'p-' | 'ch-' | 'r-', rand: (n: number) => number):
   return s;
 }
 
+/**
+ * Near-invisible spaces (no-break, thin, hair, narrow no-break, medium mathematical, ideographic, the en and em spaces, Ogham) become an
+ * ordinary space in a name and a label BEFORE the hidden-character check, so `M.<U+202F>Dupont` (French names, Outlook) is stored as
+ * `M. Dupont`. Handles, `to`, initials, recipes and every other field never fold spaces and REFUSE the whole set (`textClean`). U+2028 and U+2029 are not spaces here.
+ */
+const NEAR_SPACE_RE = /[\u00a0\u1680\u2000-\u200a\u202f\u205f\u3000]/g;
+const HAS_NEAR_SPACE_RE = new RegExp(NEAR_SPACE_RE.source);
+const foldSpaces = (v: string): string => v.replace(NEAR_SPACE_RE, ' ');
 const intIn = (v: unknown, lo: number, hi: number): v is number => typeof v === 'number' && Number.isInteger(v) && v >= lo && v <= hi;
 /**
  * U+200C (ZWNJ) and U+200D (ZWJ) are format characters, yet real names need them (Persian `می‌خواهد`, Devanagari `क्‍ष`). Rule: one
@@ -253,7 +261,7 @@ function withoutJoiners(v: string): string {
   return out;
 }
 /** True when `v` holds nothing refused by CTRL_RE; with `joiners`, a legal joiner is let through. */
-const textClean = (v: string, joiners: boolean): boolean => !CTRL_RE.test(joiners ? withoutJoiners(v) : v);
+const textClean = (v: string, joiners: boolean): boolean => !HAS_NEAR_SPACE_RE.test(v) && !CTRL_RE.test(joiners ? withoutJoiners(v) : v);
 /** A name-like text: clean (joiners as above), not starting with a combining mark, and at most `marksPerCluster` marks on any cluster. */
 function nameLike(v: string): boolean {
   if (!textClean(v, true) || /^\p{M}/u.test(v.trimStart())) return false;
@@ -265,6 +273,11 @@ const plainText = (v: unknown, max: number, nameText = false): v is string => ty
 const SEGMENTER = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
 export const graphemes = (s: string): string[] => Array.from(SEGMENTER.segment(s), (x) => x.segment);
 
+/** `g` (one cluster) with at most `marksPerCluster` combining marks kept, the first ones. */
+function limitMarks(g: string): string {
+  let marks = 0;
+  return Array.from(g).filter((c) => !/^\p{M}$/u.test(c) || ++marks <= L.marksPerCluster).join('');
+}
 /** FR-002: up to two initials from the first letters of the first two words of the name counted and cut in grapheme clusters, so a flag, a keycap or an accented letter is never split. */
 export function guessInitials(name: string): string {
   const words = String(name ?? '').split(/\s+/).filter(Boolean);
@@ -278,13 +291,16 @@ export function guessInitials(name: string): string {
   if (!first.length) first.push(graphemes(words.join(' '))[0] ?? ''); // no letter or digit at all (an emoji name): the first character
   // upper-casing can lengthen a letter (`ß` is `SS`, a ligature is two or three letters): cap AFTER it, by graphemes
   // the same count as the validator (graphemes); a joiner the cut left at an edge, or doubled, is dropped so the value always reads back
+  // marks beyond `marksPerCluster` on a cluster are dropped (upper-casing can add some) and a leading mark is removed, as the validator's `nameLike` demands
   let out = '';
   for (const g of graphemes(first.join('').toUpperCase()).slice(0, L.initialsMax)) {
-    if ((out + g).length > L.initialsChars) break; // stop at the first cluster that does not fit: never take a later letter instead
-    out += g;
+    const h = limitMarks(g);
+    if ((out + h).length > L.initialsChars) break; // stop at the first cluster that does not fit: never take a later letter instead
+    out += h;
   }
   if (!out) out = Array.from(first.join('').toUpperCase())[0] ?? ''; // one cluster longer than the cap: its first code point
-  return out.replace(STRAY_JOINER_RE, '');
+  out = out.replace(STRAY_JOINER_RE, '').replace(/^\p{M}+/u, '');
+  return out || Array.from(String(name ?? '').trim())[0] || '';
 }
 
 export type FieldFail = { ok: false; field: string; error: string; cap?: boolean };
@@ -300,7 +316,12 @@ export function cleanChannel(v: unknown, newChannelId?: () => string): { ok: tru
   if (id === undefined || id === '') id = newChannelId?.();
   if (typeof id !== 'string' || !CHANNEL_ID_RE.test(id)) return bad('id', REASONS.channel);
   const out: Channel = { id, kind };
-  if (c.label !== undefined && c.label !== '') { if (!plainText(c.label, L.labelChars, true)) return bad('label', REASONS.label); out.label = c.label.trim(); }
+  if (c.label !== undefined && c.label !== '') {
+    const folded = typeof c.label === 'string' ? foldSpaces(c.label) : c.label;
+    if (!plainText(folded, L.labelChars, true)) return bad('label', REASONS.label);
+    const label = folded.replace(/\s+/g, ' ').trim();
+    if (label) out.label = label; // a label of spaces only is no label
+  }
   if (kind === 'teams') {
     if (!addressOk(c.upn)) return bad('upn', REASONS.upn);
     out.upn = c.upn;
@@ -332,8 +353,10 @@ export function cleanContact(v: unknown, newChannelId?: () => string): { ok: tru
   if (!v || typeof v !== 'object' || Array.isArray(v)) return bad('contact', REASONS.name);
   const c = v as Record<string, unknown>;
   if (typeof c.name !== 'string') return bad('name', REASONS.name);
-  if (c.name.length > L.nameChars || !nameLike(c.name)) return bad('name', REASONS.name);
-  const name = c.name.replace(/\s+/g, ' ').trim();
+  if (c.name.length > L.nameChars) return bad('name', REASONS.name);
+  const folded = foldSpaces(c.name);
+  if (!nameLike(folded)) return bad('name', REASONS.name);
+  const name = folded.replace(/\s+/g, ' ').trim();
   if (!name) return bad('name', REASONS.name); // the raw length was capped above, so the collapsed one is too
   const rawAliases = c.aliases === undefined ? [] : c.aliases;
   if (!Array.isArray(rawAliases)) return bad('aliases', REASONS.aliases);
@@ -351,7 +374,7 @@ export function cleanContact(v: unknown, newChannelId?: () => string): { ok: tru
     initials = c.initials.trim();
     if (c.initials.length > L.initialsChars) return bad('initials', REASONS.initials);
     const n = graphemes(initials).length;
-    if (n < 1 || n > L.initialsMax || !textClean(c.initials, true)) return bad('initials', REASONS.initials);
+    if (n < 1 || n > L.initialsMax || !nameLike(c.initials)) return bad('initials', REASONS.initials);
   }
   const notes = c.notes === undefined ? '' : typeof c.notes === 'string' ? stripControls(c.notes) : undefined;
   if (notes === undefined || notes.length > L.notesChars) return bad('notes', REASONS.notes);
