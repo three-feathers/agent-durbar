@@ -63,4 +63,4 @@ The *Spec Kit gate* check explains itself. Common causes: the branch is not `NNN
 - After adding Spec Kit extensions or presets, run `specify integration use claude` and `specify integration use copilot` once each and commit the result; they only register for the default integration.
 - Board: <https://github.com/orgs/three-feathers/projects/1> (created and refreshed by `bash .github/scripts/create-board.sh`, safe to re-run, needs `gh` scope `project`). Fields: Status (Todo, Claimed, In progress, In review, Done), Spec ID, Owner, Area. Its automation is switched on in the Project's web settings; GitHub has no API for it (steps in `specs/021-collaboration-harness/notes.md`).
 - Ruleset on `main`: `.github/ruleset-main.json` (spec 021 T012).
-- Cutting a release or a test build: [changelog.d/README.md](../changelog.d/README.md) (spec 008 FR-117..FR-124, FR-129). No merge freeze.
+- Cutting a release or a test build: [changelog.d/README.md](../changelog.d/README.md) (spec 008 FR-117..FR-124, FR-129). No merge freeze. The daily release can carry a *Build cost* table of the agents' token use: [build-cost.md](build-cost.md) (FR-181).
