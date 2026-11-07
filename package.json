@@ -219,6 +219,8 @@
     "test:characters": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-characters.js",
     "test:worldzip": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-worldzip.js",
     "test:worldpack": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-worldpack.js",
+    "test:worldstore": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-worldstore.js",
+    "test:worldipc": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-worldipc.js",
     "test:world-packs": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-world-packs.js",
     "test:crew": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-crew.js",
     "test:logo-assets": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-logo-assets.js",

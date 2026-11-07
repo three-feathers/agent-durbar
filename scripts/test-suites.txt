@@ -192,6 +192,8 @@ test:worldmatrix
 test:worldzip
 test:worldpack
 test:world-packs
+test:worldstore
+test:worldipc
 test:consolemask
 test:redact-growth-tokens
 test:redact-growth-adversarial

@@ -120,6 +120,7 @@ const FROM_APP = [
   'harness:accounts', 'harness:quota', 'harness:cancel', 'harness:copilotAuth', 'harness:openPage', 'harness:openSignIn', 'harness:paste', 'harness:plans', 'harness:run', 'harness:updates', 'harness:visible',
   'notes:add', 'notes:delete', 'notes:deleteAll', 'notes:export', 'notes:fileCount', 'notes:list', 'notes:save', 'notes:setFile', 'notes:startOver', 'notes:update', // spec 083 FR-062: the folder's notes, by agent id; T042: the project-file switch (writes and deletes in the project)
   'profiles:create', 'profiles:delete', 'profiles:generate', 'profiles:save', // spec 043 FR-011, FR-040: writes to (or deletes) profile files
+  'world:list', 'world:part', 'world:remove', // spec 102 FR-064: installed worlds, by key and part name; never open to the simulator
   'schedules:remove', 'schedules:runNow', 'schedules:runs', 'schedules:save',
   'schedules:restartLoop', 'schedules:stopLoop', // spec 072 FR-007, FR-008 (T007): Stop loop and Start again
 ];
