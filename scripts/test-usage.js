@@ -158,7 +158,8 @@ const withTimeout = (p, ms, msg) => Promise.race([p, new Promise((_, rej) => set
   const golden = (name, text) => {
     const f = path.join(__dirname, 'fixtures', 'build-cost', name);
     if (process.env.GOLDEN_WRITE === '1') { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, text); }
-    assert.strictEqual(text, fs.readFileSync(f, 'utf8'), `golden: ${name} is unchanged (GOLDEN_WRITE=1 rewrites it)`);
+    const lf = (t) => t.replace(/\r\n/g, '\n'); // a Windows checkout may turn the fixture into CRLF
+    assert.strictEqual(lf(text), lf(fs.readFileSync(f, 'utf8')), `golden: ${name} is unchanged (GOLDEN_WRITE=1 rewrites it)`);
   };
   assert.strictEqual(lib.chartSvg(hist), lib.chartSvg(hist), 'chart: deterministic');
   const chart = lib.chartSvg(hist);
@@ -167,6 +168,18 @@ const withTimeout = (p, ms, msg) => Promise.race([p, new Promise((_, rej) => set
   assert.ok(chart.includes('prefers-color-scheme:dark){.s0{fill:#388bfd}') && chart.includes('class="s0"'), 'chart: series colours have a lighter dark-mode value');
   golden('chart-three-rows.svg', lib.chartSvg(hist));
   golden('badge.svg', lib.badgeSvg(3758));
+  {
+    // CRLF: a CRLF copy of a fixture still compares equal; generated files hold LF only; a CRLF README is found and rewritten with CRLF throughout
+    const fx = fs.readFileSync(path.join(__dirname, 'fixtures', 'build-cost', 'chart-three-rows.svg'), 'utf8').replace(/\r?\n/g, '\r\n');
+    assert.ok(fx.includes('\r\n'), 'crlf: the copy has CRLF');
+    assert.strictEqual(fx.replace(/\r\n/g, '\n'), lib.chartSvg(hist).replace(/\r\n/g, '\n'), 'crlf: a CRLF copy of the golden chart compares equal after normalising');
+    assert.ok(!lib.chartSvg(hist).includes('\r') && !lib.badgeSvg(3758).includes('\r') && !block.includes('\r'), 'crlf: generated SVGs and the README block hold LF only');
+    const crReadme = readme.replace(/\n/g, '\r\n');
+    const crOnce = lib.rewriteReadme(crReadme, block);
+    assert.ok(!/[^\r]\n/.test(crOnce) && crOnce.includes(lib.BEGIN) && crOnce.includes(lib.END), 'crlf: a CRLF README keeps CRLF on every line after the rewrite');
+    assert.strictEqual(lib.rewriteReadme(crOnce, block), crOnce, 'crlf: a CRLF README rewrite is idempotent');
+    assert.strictEqual(lib.rewriteReadme(readme, block).includes('\r'), false, 'crlf: an LF README stays LF');
+  }
   assert.ok((chart.match(/<polygon/g) || []).length === 2, 'chart: one stacked area per model');
   assert.ok(chart.length < 6000 && lib.badgeSvg(3758).length < 1000, 'size: the SVGs stay a few KB');
   const evil = lib.validateHistory({ version: 1, rows: [{ date: '2026-11-07', version: 'v0.1.12', models: { 'A (x)': 5 }, machines: {} }] });

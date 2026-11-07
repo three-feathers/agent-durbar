@@ -265,7 +265,8 @@ function rewriteReadme(text, block) {
   if (count('<!-- build-cost:begin') !== 1 || count(END) !== 1 || b < 0 || e < b) {
     throw new Error('README needs exactly one "<!-- build-cost:begin ... -->" line followed by one "<!-- build-cost:end -->" line');
   }
-  return text.slice(0, b) + block + text.slice(e + END.length);
+  const eol = text.includes('\r\n') ? block.replace(/\r?\n/g, '\r\n') : block; // a README checked out with CRLF keeps one line ending
+  return text.slice(0, b) + eol + text.slice(e + END.length);
 }
 
 // ---- history, badge and chart (FR-181, owner addition 2026-11-07): plain SVG text, no network, no external service ----
