@@ -4,7 +4,7 @@
 
 **Tests**: required (constitution VII.3; SC-001..SC-005). Node tests and the simulator only; 0 AI credits; no network. Driver waits use `until()`.
 
-**Format**: `- [ ] Tnnn [P?] [USn?] description (file) [requirements]`. `[P]` = can run in parallel. One task = one small testable step; a phase = one PR. Numbers taken: spec 095, FR-001..FR-052 (sparse by group; FR-016 added in review), T001..T064 (T064 added in review).
+**Format**: `- [ ] Tnnn [P?] [USn?] description (file) [requirements]`. `[P]` = can run in parallel. One task = one small testable step; a phase = one PR. Numbers taken: spec 095, FR-001..FR-052 (sparse by group; FR-016 added in review), T001..T064 (T064 added in review; T026, T027 owner answers C and D, 2026-11-06).
 
 ## Phase 0: Spec (this PR)
 
@@ -26,13 +26,16 @@
 
 ## Phase 2: IPC and main wiring (PR 2)
 
-- [ ] T020 `src/main/ipc/convsearch.ts`: `search:start` / `search:cancel` with `fromApp`, query bounds (≤ 200 characters, ≤ 8 words, control characters out, minimum 3 characters after trim counted in code points, enforced in main: "a bc" allowed, "x y" refused), random `searchId`, one live scan, stale id ignored; `search:batch` / `search:done` to the starting window only [FR-033]
-- [ ] T021 Scope builder from main state: open agents (floors on, helper agents left out), `previousSessionsOf` per folder deduplicated by (adapter, folder, session id), `listChats` per folder, names per spec 059, hidden previous sessions not searched (Q5's note), floors off skipped (Q9), the top-bar folder filter ignored, Copilot and Codex earlier sessions title only; the window names nothing [FR-016, FR-020, FR-033; US5]
-- [ ] T022 Wiring in `main.ts`; scan stops on window close and quit [FR-023]
+- [x] T020 `src/main/ipc/convsearch.ts`: `search:start` / `search:cancel` with `fromApp`, query bounds (≤ 200 characters, ≤ 8 words, control characters out, minimum 3 characters after trim counted in code points, enforced in main: "a bc" allowed, "x y" refused), random `searchId`, one live scan, stale id ignored; `search:batch` / `search:done` to the starting window only [FR-033]
+- [x] T021 Scope builder from main state: open agents (floors on, helper agents left out), `previousSessionsOf` per folder deduplicated by (adapter, folder, session id), `listChats` per folder, names per spec 059, hidden previous sessions not searched (Q5's note), floors off skipped (Q9), the top-bar folder filter ignored, Copilot and Codex earlier sessions title only; the window names nothing [FR-016, FR-020, FR-033; US5]
+- [x] T022 Wiring in `main.ts`; scan stops on window close and quit [FR-023]
   - Also in T022 (review of PR 1098): the Codex read gate (`createReadGate`, `src/main/convsearch.ts`) gets a timeout, so a hung `thread/read` cannot block later reads, with a test (a read that never settles; the next scan's read still runs) [FR-023]
-- [ ] T023 IPC tests on a stand-in `electron`: not-`fromApp` refused, bounds, stale id, two starts = one scan, no folder/path accepted; MCP tools and remote control have no search; `test-ipcchannels.ts` owner-only list [FR-032, FR-033]
-- [ ] T024 Preload, `DurbarApi` (`src/shared/api.ts`) types: `convSearchStart`, `convSearchCancel`, `onConvSearch`; no channel on `SIM_OPEN_CHANNELS`, `test:simguard` green [FR-033]
-- [ ] T025 Simulator fake in `src/renderer/sim.ts`: canned corpus over open and earlier sessions, a slow mode for the progress state, no I/O [US1, US4]
+- [x] T023 IPC tests on a stand-in `electron`: not-`fromApp` refused, bounds, stale id, two starts = one scan, no folder/path accepted; MCP tools and remote control have no search; `test-ipcchannels.ts` owner-only list [FR-032, FR-033]
+- [x] T024 Preload, `DurbarApi` (`src/shared/api.ts`) types: `convSearchStart`, `convSearchCancel`, `onConvSearch`; no channel on `SIM_OPEN_CHANNELS`, `test:simguard` green [FR-033]
+- [x] T025 Simulator fake in `src/renderer/sim.ts`: canned corpus over open and earlier sessions, a slow mode for the progress state, no I/O [US1, US4]
+
+- [x] T026 Owner answer C (2026-11-06): no Codex `thread/list` for a folder on a floor that is off (counted, `notes.floorOffFolders`); the box session's Codex titles kept in memory (`createCodexListCache`), dropped as FR-026 says; `search:clear` + `convSearchClear`; tests in `test-convsearchipc.ts` [FR-014, FR-026, FR-033]
+- [x] T027 Owner answer D (2026-11-06): `notes.mcpValuesLocked` when `mcpStore.noPrompt()` is false; the window's note is phase 3 (T043) [FR-014, FR-030]
 
 ## Phase 3: The window (PR 3)
 

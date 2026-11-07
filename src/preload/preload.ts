@@ -204,6 +204,14 @@ const api: DurbarApi = {
   resumeSession: (id, sessionId, replace) => ipcRenderer.invoke('sessions:resume', id, sessionId, replace),
   listVsChats: (id) => ipcRenderer.invoke('vschat:list', id),
   readVsChat: (id, key) => ipcRenderer.invoke('vschat:read', id, key),
+  // spec 095 FR-033: the window sends only the query (and main's own searchId); both events come to this window only
+  convSearchStart: (query) => ipcRenderer.invoke('search:start', query),
+  convSearchCancel: (searchId) => ipcRenderer.invoke('search:cancel', searchId),
+  convSearchClear: () => ipcRenderer.invoke('search:clear'),
+  onConvSearch: (cb) => {
+    const offs = [sub('search:batch', cb), sub('search:done', cb)];
+    return () => offs.forEach((off) => off());
+  },
   openInVSCode: (id) => ipcRenderer.invoke('agents:openInVSCode', id),
   openWithTargets: (id) => ipcRenderer.invoke('agents:openWithTargets', id),
   openWith: (id, target) => ipcRenderer.invoke('agents:openWith', id, target),

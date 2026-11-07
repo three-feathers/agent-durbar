@@ -855,6 +855,72 @@ export interface UpdatesView {
   announce?: { app: string; version: string; name: string };
 }
 
+/**
+ * Spec 095 FR-031, FR-033 (search conversations): what main sends the window about a scan. Masked text, ids main already knows, a folder's
+ * display name, times and mark offsets only: never a path, a transcript or raw text. `kind` tells `search:batch` from `search:done`.
+ */
+export interface ConvSearchExcerpt {
+  /** Masked in main, at most 180 characters, with `…` where it was cut. */
+  text: string;
+  /** [start, end) of every query word found in `text`. */
+  marks: Array<[number, number]>;
+  speaker: 'you' | 'agent' | 'title';
+  /** FR-013: `n` = ordinal among the session's text messages; `head` = the first 60 characters of `anchorKey` of the masked message. */
+  anchor: { n: number; head: string };
+}
+export interface ConvSearchHit {
+  /** Adapter id (`copilot`, `claude`, `codex`) or `vscode`. */
+  adapter: string;
+  /** The open agent's id, or the earlier session's id (VS Code: the chat key). */
+  sessionId: string;
+  /** Open: the agent. Earlier: an open agent of that folder and app, for `resumeSession` / `readVsChat`. */
+  agentId?: string;
+  group: 'office' | 'earlier';
+  app: string;
+  folderName: string;
+  /** Masked. */
+  title: string;
+  titleMarks: Array<[number, number]>;
+  /** Last active, ms (0 when not known). */
+  time: number;
+  excerpts: ConvSearchExcerpt[];
+  /** Hits not shown ("+N more"). */
+  more: number;
+}
+export interface ConvSearchNotes {
+  searched: number;
+  folders: number;
+  notInstalled: string[];
+  tooLarge: number;
+  unreadable: number;
+  titleOnly: { count: number; apps: string[] };
+  hidden: number;
+  floorsOff: number;
+  capped: { sessions: boolean; perFolder: boolean; results: boolean };
+  timedOut: boolean;
+  cut: number;
+  bounded: number;
+  maskFailed: number;
+  /** The query was longer than 200 characters or 8 words and was cut (FR-033). */
+  queryCut: boolean;
+  /** Folders whose earlier Codex sessions were not listed because their floor is off (owner answer C, FR-014). */
+  floorOffFolders: number;
+  /** Saved MCP values were locked in the vault, so the open sessions' values were not masked (owner answer D): "Some saved MCP values are locked; excerpts may show them." */
+  mcpValuesLocked: boolean;
+  /** FR-022 (review N-R2): folders whose earlier sessions were not listed within the plan's deadline, and their apps. */
+  lateLists: number;
+  lateApps: string[];
+}
+/**
+ * `stopped` on a `done`: main stopped the scan itself (the window closed or hid, or a quit began), so the window can leave "Searching…";
+ * the notes are then empty and `progress` is the last one sent. A cancel from the window or a new start sends no `done`.
+ */
+export type ConvSearchEvent =
+  | { kind: 'batch'; searchId: string; hits: ConvSearchHit[]; progress: { done: number; total: number }; groups: { office: number; earlier: number } }
+  | { kind: 'done'; searchId: string; notes: ConvSearchNotes; progress: { done: number; total: number }; failed: boolean; stopped?: true };
+/** `short`: under 3 characters (spaces not counted); `none`: no session is open, nothing to search yet; `invalid`: not a query. */
+export type ConvSearchStart = { ok: true; searchId: string; query: string; cut: boolean } | { ok: false; code: 'short' | 'none' | 'invalid'; error: string };
+
 export interface DurbarApi {
   version(): Promise<string>;
   addFolder(permMode: PermMode, opts?: SessionOptions): Promise<AddResult>;
@@ -1210,6 +1276,15 @@ export interface DurbarApi {
   /** Read-only VS Code Copilot Chat history for this agent's folder. */
   listVsChats?(id: string): Promise<VsChatListResult>;
   readVsChat?(id: string, key: string): Promise<{ ok: boolean; error?: string; transcript?: VsChatTranscript }>;
+  /**
+   * Spec 095 FR-033: search the text of every open and earlier session (window only). The window sends only the query; main decides the
+   * scope from its own agents and folder store, streams `onConvSearch` events for that `searchId` and ignores a stale or unknown id.
+   */
+  convSearchStart?(query: string): Promise<ConvSearchStart>;
+  convSearchCancel?(searchId: string): Promise<{ ok: boolean }>;
+  /** FR-026, FR-033: the box was cleared or closed: stops this window's scan (no `done`) and drops the kept Codex titles. */
+  convSearchClear?(): Promise<{ ok: boolean }>;
+  onConvSearch?(cb: (e: ConvSearchEvent) => void): () => void;
   onEvent(cb: (e: AgentEvent) => void): () => void;
   onAgentAdded(cb: (a: AgentInfo) => void): () => void;
   /** The Settings… item of the macOS app menu (⌘,), spec 052 FR-083. */
